@@ -1,0 +1,37 @@
+name: 기능 요청
+description: 새 기능 또는 개선 제안
+title: "[feat] "
+labels: ["feature"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: 기능 설명
+      description: 무엇을 만들고 싶은지, 왜 필요한지
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 완료 조건
+      description: 어떤 상태가 되면 완료인지 (테스트 가능한 형태로)
+      placeholder: "- [ ] 회원가입 API가 이메일 중복을 거부한다"
+    validations:
+      required: true
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: 제외 범위
+      description: 이 이슈에서 안 할 것 (범위 폭주 방지 — 다른 이슈로 넘길 것을 명시)
+      placeholder: "- 이메일 인증 흐름 (별도 이슈)"
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: 선행 / 충돌 주의
+      description: 선행 이슈 번호, 같은 파일을 건드리는 다른 이슈 여부 (병렬 작업 충돌 방지)
+      placeholder: "- 선행: #12\n- 충돌 주의: MemberService.java — #15와 동시 작업 금지"
+  - type: input
+    id: spec
+    attributes:
+      label: 관련 스펙
+      placeholder: docs/specs/001-member-auth

@@ -1,0 +1,14 @@
+# 공통 설정. 프로필별 오버라이드는 application-{profile}.yml에. 시크릿 원문은 yml에 적지 않는다 (conventions.md).
+spring:
+  application:
+    name: finplay-api
+  jpa:
+    hibernate:
+      ddl-auto: validate # 스키마 변경은 Flyway로만 (ADR-0004)
+    open-in-view: false
+
+# 인증 spec(PRD 태스크 2) 구현 시 사용. 시크릿은 환경변수로만 주입.
+jwt:
+  secret: ${JWT_SECRET}
+  access-token-expiration-ms: 3600000 # 1시간
+  refresh-token-expiration-ms: 1209600000 # 14일

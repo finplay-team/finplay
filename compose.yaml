@@ -1,0 +1,11 @@
+# 로컬 개발용 MySQL. bootRun 시 spring-boot-docker-compose가 자동으로 띄우고 연결한다.
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: local-only
+      MYSQL_DATABASE: finplay
+    ports:
+      # 로컬 MySQL(3306)이나 다른 프로젝트 스택(13306)과 충돌하지 않는 포트.
+      # spring-boot-docker-compose가 매핑 포트를 자동 감지하므로 앱 설정 불필요.
+      - "13307:3306"

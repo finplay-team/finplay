@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SpotBugs 제외 규칙. 오탐이 재현 확인된 패턴만 추가한다 (추측성 제외 금지). -->
+<FindBugsFilter>
+    <!-- Spring 진입점 클래스는 분석 실익이 없다 -->
+    <Match>
+        <Class name="~.*Application" />
+    </Match>
+</FindBugsFilter>

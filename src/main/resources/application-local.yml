@@ -1,0 +1,5 @@
+# 로컬 개발 설정. datasource는 spring-boot-docker-compose가 compose.yaml에서 자동 구성한다.
+# 시크릿은 어떤 값도 yml에 적지 않는다 — JWT_SECRET 등은 .env(gitignore) 또는 IDE 환경변수로 주입 (.env.example 참조).
+logging:
+  level:
+    org.hibernate.SQL: debug

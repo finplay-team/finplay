@@ -1,0 +1,32 @@
+name: 버그 리포트
+description: 동작 오류 신고
+title: "[fix] "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: 현상
+      description: 무엇이 잘못 동작하는지
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: 재현 방법
+      placeholder: |
+        1. POST /api/members 호출
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 기대 동작
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 로그 / 에러 메시지
+      render: shell

@@ -1,0 +1,6 @@
+# 운영/배포 설정. 접속 정보 전부 환경변수로 주입한다 — 기본값 없음 (누락 시 기동 실패가 의도된 동작).
+spring:
+  datasource:
+    url: ${DB_URL} # 예: jdbc:mysql://<host>:3306/finplay
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
