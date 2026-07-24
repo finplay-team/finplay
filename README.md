@@ -27,7 +27,8 @@ FinPlay 백엔드 API 서버. Spring Boot 4.1 / Java 17 / Gradle (Kotlin DSL) / 
 | 문서 | 내용 |
 |---|---|
 | [`CLAUDE.md`](CLAUDE.md) | AI 에이전트 규칙 |
-| [`docs/prd.md`](docs/prd.md) | 1차 MVP 제품 요구사항 정본 (PRD) |
+| [Notion 10 X TEN](https://app.notion.com/p/10-X-TEN-ae2b1fddfba9830abe9c813974422885) | 제품 범위·API 단계·담당자 정본 |
+| [`docs/prd.md`](docs/prd.md) | Notion 결정을 옮긴 1차 MVP 구현 스냅샷 (PRD) |
 | [`docs/conventions.md`](docs/conventions.md) | 코드/팀 컨벤션 (브랜치, 커밋, 리뷰) |
 | [`docs/adr/`](docs/adr/) | 아키텍처 결정 기록 |
 | [`docs/specs/`](docs/specs/) | 기능 명세 (spec → plan → tasks) |
