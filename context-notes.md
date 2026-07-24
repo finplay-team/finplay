@@ -38,6 +38,14 @@
 - **Codex PR 자동 리뷰 — 도입 당일 철회** (ADR-0007 폐기): 만들어보니 리뷰가 3중(개발 중 항목별 code-reviewer + Codex CI + 로컬 /review-pr)이라 부담 > 이익. 리뷰는 "개발 중 1번(/feature 루프) + PR에서 1번(/review-pr)"으로 정리. 참고로 claude-code-action은 OpenAI 키 미지원(공식 확인)이라 Codex 키로 Claude 하네스 CI 전환은 원래 불가.
 - **하네스 경량화 3건** (무거움 우려에 대한 조정): ① 경량 경로 — 파일 1~2개 규모 작업은 /feature 없이 메인 세션 직접 (CLAUDE.md) ② /feature 항목별 검증은 `test`만, 전체 `build`는 마무리 1회 (커밋 전 spotlessApply 추가) ③ tasks.md 항목 굵기 가이드 (specs/README, 3~7개 권장). **핵심 안전장치(test-writer 분리·블랙박스 QA·리뷰 게이트)는 유지** — 추가 경량화는 감이 아니라 이슈→PR 지표를 보고 결정.
 - **정적 분석은 로컬 도구만** (튜터 피드백 "화이트박스 검증" 반영): SpotBugs 6.5.9 + JaCoCo 라인 60% 게이트를 `build`에 포함 — AI가 짠 코드를 사람이 숫자로 검증하는 장치. SonarCloud는 외부 서비스 셋업 비용 때문에 보류 (사용자 결정). 커버리지 제외는 진입점 클래스만, SpotBugs 제외는 재현된 오탐만.
+
+## 2026-07-24 — 이슈 #31 Redis·QueryDSL·컨테이너 기반 설정
+
+- **이슈 #31은 spec 001-foundation의 부분집합**: 이슈 본문 제외 범위에 `GlobalExceptionHandler`·`Clock`이 명시돼 있어 오류 체계·Clock은 건드리지 않음. 이번 PR은 Redis·QueryDSL·Kafka(compose) 기반만 담당 (파일 소유권 분리 — build.gradle.kts·compose.yaml·TestcontainersConfiguration은 이 PR만 수정). spec tasks.md 항목 3~5(오류 체계·Clock·마무리)는 후속 이슈 몫으로 미완료 유지.
+- **Redis Testcontainer는 `GenericContainer` + `@ServiceConnection(name = "redis")`**: 전용 Redis 모듈 추가 없이 core testcontainers만으로 Spring Boot가 Redis 연결로 인식하게 함. MySQL과 같은 static 싱글턴(ADR-0003). 이미지 `redis:7.4` 고정.
+- **compose 포트**: MySQL 13307 패턴을 따라 Redis `16379:6379`, Kafka `19092:9092` (로컬 6379·9092 점유 회피). spring-boot-docker-compose가 매핑 포트 자동 감지.
+- **Kafka는 compose 전용**: `apache/kafka:3.9.1`(KRaft 단일 노드) 추가하되 `spring-kafka` 미의존이라 앱은 연결 시도 안 함 → "앱 기동 성공 조건에서 제외" 충족. 테스트는 TestcontainersConfiguration만 쓰고 Kafka 컨테이너가 없으므로 "Kafka 없이 테스트 가능"도 충족.
+- **QueryDSL은 설정+compileJava까지만** (plan 지시): querydsl 5.1.0 jakarta 분류자 + apt 애노테이션 프로세서. 엔티티가 없어 Q클래스는 생성 안 되지만 compileJava 통과 확인. `JPAQueryFactory` 빈은 공용 기반으로 `com.finplay.api.common.QuerydslConfig`에 미리 제공 (002+ 리포지토리가 바로 주입). Q클래스 생성 검증은 엔티티가 생기는 002부터.
 - **병렬화는 spec 단위, 수단은 Agent View 우선** (`docs/parallel-agents.md`): Agent View(`claude agents`)는 내장 + 자동 worktree 격리라 "agentview 만들기" 요청은 문서화로 대체. 에이전트 팀은 실험 플래그로 활성화(팀원 간 직접 메시징)하되 파일 격리가 없어 코드 수정엔 파일 소유권 분리 필수. /feature 루프 내부는 순차 유지 (단계 의존 = 품질 게이트).
 
 ## 2026-07-23 — 1차 MVP spec 9개 작성
