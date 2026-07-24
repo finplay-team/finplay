@@ -61,6 +61,14 @@
 - [x] 검증 경량화 — 항목별 리뷰 → 마무리 1회, QA는 /review-pr에서만, 커버리지 게이트 60% → 40%
 - [x] 전체 검토 + github-workflow-agents 선별 이식 (이슈/PR 템플릿 보강, 작은/큰 루프, 되돌리기 금지) + 낡은 참조 2건 수정
 
+## MVP 범위·시세 정책 문서 확정 (2026-07-24)
+- [x] 이메일 인증을 가입 선행 단계로 편입 (PRD AUTH-004, 002 spec/plan/tasks. 인증 전 users·accounts 미생성)
+- [x] OAuth 이메일 자동 계정 연결 제거 (ACCOUNT_LINK_REQUIRED 거부. 명시적 연결 기능은 1차 제외)
+- [x] 배포·CI를 1차 MVP 범위로 편입 + `010-deployment` spec 신설 (최소 CI → 수동 배포 → 스모크)
+- [x] 차수 용어 대응표 (팀 회의 MVP/1차 고도화/2차 고도화 ↔ PRD 1차/2차/3차 MVP)
+- [x] 주식 시세 공급자 2종 분리 (`StockPriceProvider` — KRX 재생 공개 기본 / KIS 실시간 개발자 본인 전용, 승인 없는 공개 KIS는 fail-fast)
+- [x] /feature·/review-pr 전체 build 중복 제거 (SHA 재사용·CI 결과 판독·문서 전용 PR 생략)
+
 ## 남은 작업
 - [x] GitHub 레포 생성 + 푸시 — `finplay-team/finplay` (2026-07-23. ADR-0006 권장명은 `finplay-api`였으나 팀 결정으로 `finplay`)
 - [ ] 로컬 폴더명 `tradeclass-api` → `finplay-api` 변경 (팀원 클론 전이라면 지금이 적기)
@@ -69,7 +77,9 @@
 - [x] /review-pr 실전 검증 — docs-only PR 1건으로 리뷰·빌드·QA 모드 전부 확인 (2026-07-23)
 - [x] ~~CI paths-filter 실동작 검증~~ → **CI 워크플로우 제거** (2026-07-24 튜터 피드백 "CI는 배포 단계에" — 재도입 시점은 harness-roadmap)
 - [x] `/feature docs/specs/001-foundation` 루프 실측 (PR 전까지, 약 25분 — context-notes 참조. 측정 후 코드 폐기, 실제 구현은 재작업 필요)
-- [ ] 전역 예외 핸들러 + 에러 응답 포맷 구현 (conventions.md 기준)
+- [ ] 전역 예외 핸들러 + 에러 응답 포맷 구현 (`001-foundation` spec 범위. PRD §5 오류표 코드 전부를 ErrorCode enum으로 — 이메일 인증·OAuth 코드 5종 추가됨)
 - [x] JaCoCo 커버리지 최소선 추가 (현재 기준 **라인 40%** — 정본은 `docs/conventions.md`. 지표 보고 후 상향)
-- [ ] CI 스모크 단계 (부트 jar + 실제 HTTP 검증) — 통합 검증 태스크(PRD 9)에서 추가하기로 보류
+- [ ] 최소 CI 재도입 + 배포 후 스모크 (`scripts/smoke.ps1`) — **`010-deployment`로 이관** (2026-07-24. 첫 배포가 통합 검증보다 앞서므로 PRD 9가 아니다)
+- [ ] Coordinator(사람)·Orchestrator(AI) 역할 구분 문구 — `docs/parallel-agents.md` + `CLAUDE.md`
+- [ ] 지표 체계 문서화 (지표 7종 + `mode:solo`/`mode:parallel` 라벨) — `harness-roadmap.md`는 아직 측정 항목 3개
 - [ ] SonarCloud 연동 — 보류 (필요해지면 재검토, 현재는 로컬 도구로 충분 판단)
