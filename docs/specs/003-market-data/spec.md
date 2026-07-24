@@ -1,10 +1,12 @@
 # Spec: 종목과 시세 (종목 시드 · 주식 KRX 데이터 재생 · 코인 실시간 시세 · 장애 처리)
 
-> PRD 근거: MKT-001, MKT-002, MKT-003, MKT-004, MKT-005, MKT-006.
+> PRD 근거: MKT-001, MKT-002, MKT-003, MKT-004, MKT-005, MKT-006, MKT-007. 정책 근거: C-006, C-007.
 
 ## 개요
 
-주식 16종·코인 12종의 종목 정보를 제공한다. 주식은 KRX 실제 과거 데이터를 검증·정규화해 MySQL에 저장하고 실제 서비스 시간 09:00~15:30 KST에 1배속으로 재생한다. 코인은 업비트 WebSocket으로 실시간 시세를 받아 Redis에 보관한다. 이후 주문(004·005)이 소비할 "유효한 최신 가격"의 유일한 공급원이다.
+주식 16종·코인 12종의 종목 정보를 제공한다. 주식 시세는 공통 계약 `StockPriceProvider` 뒤에 두 공급자를 둔다 — KRX 실제 과거 1분봉을 재생하는 `KrxReplayPriceProvider`(공개 배포 기본값)와 한국투자 KIS Open API WebSocket으로 현재 시장의 실제 체결가를 받는 `KisRealtimePriceProvider`(개인 개발·제한 시연). 코인은 업비트 WebSocket으로 실시간 시세를 받아 Redis에 보관한다. 이후 주문(004·005)이 소비할 "유효한 최신 가격"의 유일한 공급원이다.
+
+**두 주식 데이터의 성격을 구분한다** — KRX 1분봉은 실제로 거래된 데이터이지만 **과거 데이터**이고, KIS 실시간 시세는 **현재 시장의 실제 체결 데이터**다. 그리고 "KIS API로 실시간 수신이 가능하다"와 "공개 회원에게 실시간 시세를 표출해도 된다"는 별개의 판단이다 (C-007).
 
 주식과 코인은 데이터 정본이 다르다 — 주식은 MySQL의 `stock_candles`가 정본이고, 코인은 Redis의 최신 틱이 정본이다. 회원에게는 시장별로 분리된 SSE(Server-Sent Events) 스트림(`/stocks/stream`, `/cryptos/stream`)으로 전달한다.
 
@@ -17,6 +19,8 @@
 - 운영자는 KRX 데이터 수집 배치를 실행해 검증을 통과한 1분봉만 저장되고, 재생할 원본 거래일이 장중에 바뀌지 않는 것을 확인한다.
 - 운영자는 특정 종목만 데이터가 손상된 날에도 나머지 종목은 정상 개장되는 것을 확인한다.
 - 운영자는 업비트 연결이 끊기면 해당 코인 주문이 자동 차단되고, 복구 후 새 틱이 오면 자동 재개되는 것을 확인한다.
+- 개발자는 개인 환경에서 `STOCK_FEED_PROVIDER=KIS_REALTIME`으로 실행해 현재 시장의 실제 체결가로 화면과 모의 주문을 확인한다.
+- 운영자는 공개 배포 환경이 기본값 `KRX_REPLAY`로 동작하며, 서면 허가 없이 공개 실시간 표출로 전환하려 하면 애플리케이션이 아예 기동하지 않는 것을 확인한다.
 
 ## 요구사항
 
@@ -65,6 +69,18 @@
 - [ ] 회원에게 원본 데이터 다운로드나 원본 조회 외부 API를 제공하지 않는다.
 - [ ] KRX 원본 파일을 공개 저장소에 커밋하지 않는다.
 
+### MKT-007 주식 시세 공급자 전환 구조
+- [ ] 주식 시세 공급자를 공통 계약 `StockPriceProvider`로 분리하고, `KrxReplayPriceProvider`(공개 기본)와 `KisRealtimePriceProvider`(개인 개발·제한 시연) 두 구현을 둔다.
+- [ ] 두 Provider는 동일한 내부 가격 모델을 반환하며, `PriceQueryService`·가격·캔들 API·SSE·모의 주문 체결·평가손익은 어느 Provider가 동작 중인지 몰라야 한다.
+- [ ] 화면에 표시되는 가격과 모의 주문 체결가격은 항상 같은 Provider에서 나온다.
+- [ ] `KisRealtimePriceProvider`는 KIS WebSocket 체결 틱을 수신하고, 차트용 1분 OHLCV로 **서버에서 집계**해 `KrxReplayPriceProvider`와 같은 분봉 모델로 제공한다.
+- [ ] KIS WebSocket 연결이 끊기면 해당 종목의 가격이 유효하지 않은 상태가 되고, 재연결 후 새 체결을 받으면 복귀한다 (MKT-004의 코인 규칙과 같은 원칙 — 마지막 가격으로 몰래 체결하지 않는다).
+- [ ] `STOCK_FEED_PROVIDER`(`KIS_REALTIME`·`KRX_REPLAY`), `SERVICE_EXPOSURE`(`PRIVATE`·`PUBLIC`), `KIS_PUBLIC_DISPLAY_APPROVED`(기본 `false`) 설정으로 실행 환경을 결정한다.
+- [ ] 허용 조합은 넷뿐이다 — PRIVATE+KIS_REALTIME, PRIVATE+KRX_REPLAY, PUBLIC+KRX_REPLAY(공개 기본값), 그리고 `KIS_PUBLIC_DISPLAY_APPROVED=true`이며 한국투자 서면 허가·계약 근거가 있을 때만 허용되는 PUBLIC+KIS_REALTIME.
+- [ ] PUBLIC + KIS_REALTIME + `KIS_PUBLIC_DISPLAY_APPROVED=false` 조합은 **애플리케이션 시작 단계에서 실패**한다 (fail-fast — 경고 로그만 남기고 기동하지 않는다).
+- [ ] KIS 키가 없어도 `KRX_REPLAY` 환경에서 애플리케이션 기동과 `./gradlew build`가 성공한다.
+- [ ] 자동 테스트는 `FakeKisRealtimePriceProvider`를 사용하고, 실제 KIS 연결은 외부 스모크로 구분해 보고한다.
+
 ## 비즈니스 규칙
 
 - 주식 시세의 정본은 MySQL `stock_candles`, 코인 시세의 정본은 Redis 최신 틱이다 — 두 시장의 정본은 서로 다르다.
@@ -92,11 +108,18 @@
 - 검증 실패나 데이터 누락으로 그날 주식 시장을 열지 않을 때, 이전 가격이나 임의 가격으로 몰래 대체하지 않는다.
 - 종목별 분봉 누락 임계치(정상적인 거래정지와 데이터 손상의 경계), 그 기준을 저장할 방식, KRX 상품의 timestamp 의미, production 파일 포맷 파서, 정확한 데이터 제공시각, API 수집 여부는 KRX 상품 답변 전까지 확정하지 않는다 (Decision Gate). 샘플 데이터 테스트는 샘플 자체의 기대 결과만 검증하며, 테스트용 숫자를 production 기본값으로 쓰지 않는다.
 - 주식 데이터 이용은 PRD C-006(비상업적 교육 목적 공개 서비스, 제한적 제3자 표출)을 따른다.
+- KRX 1분봉은 실제로 거래된 데이터이지만 **과거 데이터**이고, KIS 실시간 시세는 **현재 시장의 실제 체결 데이터**다 — SSE 페이로드에서도 KRX 재생 중에는 `sourceTradingDate`(과거 거래일)를 반드시 함께 전달해 둘을 혼동하지 않게 한다.
+- 공개 배포(`SERVICE_EXPOSURE=PUBLIC`)의 기본 시세 공급자는 `KRX_REPLAY`다. 공개 환경의 `KIS_REALTIME` 전환은 한국투자증권 **서면 허용 또는 계약 완료가 정본**이며, `KIS_PUBLIC_DISPLAY_APPROVED=true`로 바꾸는 것만으로 허가가 생기지 않는다 (C-007).
+- KRX 수집·재생 구현은 KIS 도입 여부와 무관하게 삭제하지 않는다 — 답변 지연·공개 표출 불허 시의 대체 수단이다.
+- KIS 실시간 체결 틱을 차트에 쓰려면 1분 OHLCV 집계가 필요하며, 이 책임은 서버(`KisRealtimePriceProvider` 계층)에 있다. 클라이언트가 틱을 모아 봉을 만들지 않는다.
 
 ## 범위 제외
 
 - 주문 검증·체결 로직 (004·005 — 여기서는 "유효한 최신 가격" 조회 계약까지만).
-- 실제 업비트 연결 검증, 실제 KRX 파일 수집 검증 (별도 외부 스모크 — 자동 테스트는 Fake Feed·샘플 파일).
+- 실제 업비트 연결 검증, 실제 KRX 파일 수집 검증, 실제 KIS WebSocket 연결 검증 (모두 별도 외부 스모크 — 자동 테스트는 Fake Feed·샘플 파일·`FakeKisRealtimePriceProvider`).
+- 공개 환경의 KIS 실시간 전환 실행 (한국투자 서면 답변 대기 — Decision Gate. 이번 범위는 전환 가능한 구조와 fail-fast 방어까지다).
+- KIS 실시간 시세의 과거 분봉 영구 보관 (집계 결과의 보관 기간·정본화 여부는 공개 전환이 결정된 뒤 판단).
+- KIS 주문 API 연동 (모의투자든 실거래든 — 주문은 전부 내부 가상 체결이다, C-006).
 - 지정가·호가창·체결강도 등 시세 고도화 (2차 이후).
 - 코인 과거 틱·코인 캔들 영구 저장 (PRD 1차 계약의 candles는 주식 1분봉 기반 — 코인은 최신 틱만).
 - KRX API 클라이언트 (추후 상품 확인 후 별도 작업).
@@ -120,4 +143,11 @@
 - [ ] Fake Feed로 정상 수신·과거 틱 무시·끊김(주문 차단)·재연결(새 틱 후 재개) 테스트 통과.
 - [ ] SSE 계약 테스트 통과: price 이벤트에만 id 존재(snapshot·status는 id 없음), snapshot에 주식 16종·코인 12종 전체 포함(가격 없는 종목도 포함), 가격 없는 종목은 price·sourceTime이 null이고 status는 UNAVAILABLE, 장 마감 후 marketStatus=CLOSED이면서 마지막 유효가격은 유지, 코인 stale 시 marketStatus=OPEN 유지하며 종목 status만 UNAVAILABLE.
 - [ ] Redis에 최신 가격·수신시각·연결상태 외 데이터가 저장되지 않음을 확인.
-- [ ] `./gradlew build` 통과. 실제 업비트 연결·실제 KRX 수집은 미실행 스모크로 구분 보고. 종목별 분봉 누락 임계치·그 저장 방식·production 파서·정확한 수집시각은 KRX 답변 대기 중인 미확정 항목으로 별도 표시.
+- [ ] Provider 선택 테스트 통과: `PRIVATE`+`KIS_REALTIME`이면 `KisRealtimePriceProvider`, `PUBLIC`+`KRX_REPLAY`이면 `KrxReplayPriceProvider`가 선택된다.
+- [ ] `PUBLIC`+`KIS_REALTIME`+`KIS_PUBLIC_DISPLAY_APPROVED=false`에서 애플리케이션 컨텍스트 기동이 실패하는 테스트 통과.
+- [ ] KIS 키 환경변수 없이 `KRX_REPLAY`로 빌드·테스트·기동이 성공하는 것을 확인.
+- [ ] 두 Provider가 `PriceQueryService`의 동일 계약을 만족하는 테스트 통과 (같은 시나리오를 Provider만 바꿔 실행).
+- [ ] `FakeKisRealtimePriceProvider`로 연결 끊김→가격 무효, 재연결→새 체결 후 복귀 테스트 통과.
+- [ ] 실시간 체결 틱이 1분 OHLCV로 집계되고 그 결과가 캔들 API 모델과 일치하는 테스트 통과.
+- [ ] 화면(SSE·가격 API)에 노출된 가격과 모의 주문 체결가격이 같은 Provider에서 나오는지 확인하는 테스트 통과.
+- [ ] `./gradlew build` 통과. 실제 업비트 연결·실제 KRX 수집·실제 KIS WebSocket 연결은 미실행 스모크로 구분 보고. 종목별 분봉 누락 임계치·그 저장 방식·production 파서·정확한 수집시각은 KRX 답변 대기 중인 미확정 항목으로 별도 표시.

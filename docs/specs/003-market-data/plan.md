@@ -3,7 +3,7 @@
 ## 관련 문서
 - Spec: `./spec.md`
 - 관련 ADR: ADR-0002 (도메인 패키지), ADR-0003 (테스트 전략), ADR-0004 (Flyway)
-- PRD: §1 C-006(데이터 이용 정책), §5 종목·시세 API, §6 데이터 모델·Redis 키 책임
+- PRD: §1 C-006(데이터 이용 정책)·C-007(시세 공급자와 공개 표출 정책), §4 MKT-007, §5 종목·시세 API, §6 데이터 모델·Redis 키 책임
 - 선행: `001-foundation` (Redis·Clock), `002-auth-account` (인증 — 조회 API·SSE는 인증 필요)
 
 ## API 설계
@@ -168,16 +168,51 @@ data:
 | `StockReplayService` | `StockReplaySession`을 읽어 오늘의 원본 거래일·준비상태를 확인하고, Clock과 조합해 `OPEN`·`CLOSED`를 계산한다 (`preparation_status != READY`면 이용 불가, `READY`면 Clock 기준 09:00~15:30 KST·영업일 여부로 OPEN·CLOSED 계산). 09:00~09:00:59는 첫 분봉의 시가, 09:01부터는 마감된 마지막 분봉의 종가를 현재가로 제공한다. 매분 스케줄(`@Scheduled`)로 새로 공개된 가격을 SSE로 push한다. **파일 수집이나 재생 대상 날짜 선택을 하지 않고, `StockReplaySession`의 DB 상태를 변경하지 않는다** (읽기 전용) |
 | `UpbitFeedClient` | 업비트 WebSocket 수신 → `PriceStore` 저장. 재연결 처리. 인터페이스로 추상화해 테스트는 Fake 구현 사용 |
 | `PriceStore` | Redis 읽기/쓰기 단일 창구 (코인 전용). 과거 틱 무시(수신 timestamp 비교 후 최신만 저장) |
-| `PriceQueryService` | 주문 도메인과 SSE가 공통으로 소비하는 "유효한 최신 가격" 계약 — 주식은 `StockReplayService`가 계산한 현재가(첫 분봉 구간은 시가, 이후는 마감된 종가), 코인은 stale 검사(10초) 통과한 Redis 가격. 유효하지 않으면 PRICE_UNAVAILABLE·MARKET_CLOSED 판정 근거 반환 |
+| `StockPriceProvider` (인터페이스) | 주식 시세 공급자 공통 계약. 현재가(가격·`sourceTime`·유효성)와 1분봉 조회, 시장 상태를 반환한다. 구현체가 무엇인지는 아래 소비 계층에 노출하지 않는다 |
+| `KrxReplayPriceProvider` | `StockPriceProvider` 구현 — 내부적으로 `StockReplayService`를 사용한다. **공개 배포(`PUBLIC`)의 기본 구현** |
+| `KisRealtimePriceProvider` | `StockPriceProvider` 구현 — KIS Open API 국내주식 WebSocket 체결 틱 수신, 재연결 처리, 연결상태 기록. **개인 개발·제한 시연(`PRIVATE`)용.** 인터페이스 뒤에 두어 테스트는 `FakeKisRealtimePriceProvider` 사용 |
+| `KisTickAggregator` | KIS 체결 틱을 **서버에서 1분 OHLCV로 집계**한다. 결과는 `KrxReplayPriceProvider`가 제공하는 것과 같은 분봉 모델이어야 캔들 API·차트가 Provider를 구분하지 않는다. 집계 결과의 영구 보관은 이번 범위 밖 (spec 범위 제외) |
+| `StockFeedConfig` | `STOCK_FEED_PROVIDER`·`SERVICE_EXPOSURE`·`KIS_PUBLIC_DISPLAY_APPROVED`를 읽어 `StockPriceProvider` 빈 하나를 결정한다. 아래 "실행 환경 조합"의 금지 조합이면 **애플리케이션 시작 단계에서 예외를 던져 기동을 실패**시킨다 (fail-fast) |
+| `PriceQueryService` | 주문 도메인과 SSE가 공통으로 소비하는 "유효한 최신 가격" 계약 — 주식은 주입된 `StockPriceProvider`가 제공하는 현재가, 코인은 stale 검사(10초) 통과한 Redis 가격. 유효하지 않으면 PRICE_UNAVAILABLE·MARKET_CLOSED 판정 근거 반환. **어느 주식 Provider가 동작 중인지 알지 못한다** |
 | `StockPriceSseController` / `CryptoPriceSseController` | `/stocks/stream`, `/cryptos/stream` 구독 엔드포인트. snapshot(배열 1건)·price·status 이벤트, heartbeat, emitter 정리 담당 |
 
 **전체 흐름 요약**:
 
 ```
+[KRX_REPLAY 경로 — 공개 배포 기본]
 KrxFileImporter → StockCandle 저장, MarketDataImport 저장
 StockReplaySessionScheduler → 수집 결과 확인 → StockReplaySession 생성 → PREPARING/READY/FAILED
-StockReplayService → StockReplaySession + Clock 조회 → 현재가격·OPEN/CLOSED 계산 → PriceQueryService·SSE에 제공
+StockReplayService → StockReplaySession + Clock 조회 → 현재가격·OPEN/CLOSED 계산
+   → KrxReplayPriceProvider
+
+[KIS_REALTIME 경로 — 개인 개발·제한 시연]
+KIS WebSocket 체결 틱 → KisRealtimePriceProvider → KisTickAggregator(1분 OHLCV)
+
+[공통 — 아래 계층은 Provider 종류를 모른다]
+StockFeedConfig가 둘 중 하나를 선택 → StockPriceProvider
+   → PriceQueryService → 가격·캔들 API · SSE · 모의 주문 체결 · 보유자산 평가손익
 ```
+
+### 실행 환경 조합 (PRD MKT-007·C-007)
+
+| 설정 | 값 | 기본값 |
+|---|---|---|
+| `STOCK_FEED_PROVIDER` | `KIS_REALTIME` · `KRX_REPLAY` | `KRX_REPLAY` |
+| `SERVICE_EXPOSURE` | `PRIVATE` · `PUBLIC` | `PRIVATE` |
+| `KIS_PUBLIC_DISPLAY_APPROVED` | `true` · `false` | `false` |
+
+| SERVICE_EXPOSURE | STOCK_FEED_PROVIDER | 결과 |
+|---|---|---|
+| PRIVATE | KIS_REALTIME | 허용 — 개인 개발·제한 시연 |
+| PRIVATE | KRX_REPLAY | 허용 — 로컬 재생 테스트 |
+| PUBLIC | KRX_REPLAY | 허용 — **현재 공개 배포 기본값** |
+| PUBLIC | KIS_REALTIME + `KIS_PUBLIC_DISPLAY_APPROVED=true` | 허용 — 단 한국투자 서면 허가·계약 근거가 실재할 때만 |
+| PUBLIC | KIS_REALTIME + `KIS_PUBLIC_DISPLAY_APPROVED=false` | **기동 실패 (fail-fast)** |
+
+- fail-fast는 요청 처리 시점이 아니라 **애플리케이션 시작 시점**에 판정한다. 경고 로그만 남기고 뜨는 동작은 금지한다 — 잘못된 조합으로 공개 서비스가 떠 있는 시간을 0으로 만들기 위함이다.
+- `KIS_PUBLIC_DISPLAY_APPROVED`는 **서면 허가·계약 확인 결과를 시스템에 반영하는 수단일 뿐이다.** 이 값을 `true`로 바꾸는 것 자체가 허가를 만들지 않는다. 정본은 한국투자증권의 서면 답변이며, 아직 받은 적이 없다 (Decision Gate — PRD §10).
+- KIS 키(`KIS_APP_KEY`·`KIS_APP_SECRET`·`KIS_ACCOUNT_NO`·`KIS_ACCOUNT_PRODUCT_CODE`)는 `KIS_REALTIME`일 때만 필요하다. `KRX_REPLAY`에서는 이 값들을 필수로 바인딩하지 않으며, 없어도 기동과 `./gradlew build`가 성공해야 한다.
+- 키 실제 값은 서버 환경변수 또는 AWS Secret에만 둔다. 브라우저·코드·문서·GitHub에 넣지 않는다 (`conventions.md` 시크릿 규칙). SSE·API 응답에도 실어보내지 않는다.
 
 ### 재생세션 nullable 규칙
 
@@ -245,6 +280,14 @@ StockReplayService → StockReplaySession + Clock 조회 → 현재가격·OPEN/
   - `StockReplayService` (`READY` 상태에서 Clock에 따른 OPEN·CLOSED 계산, `preparation_status != READY`면 이용 불가, 첫 분봉 시가·이후 마감 종가, 재생세션 DB를 쓰지 않음)
   - `StockCandleCleanupJob` (20영업일 경계·재생 중 거래일 보존)
   - `PriceStore` 과거 틱 무시, `PriceQueryService` 유효성 판정 (stale 10초·끊김·장외)
+  - `StockFeedConfig` Provider 선택: `PRIVATE`+`KIS_REALTIME`→`KisRealtimePriceProvider`, `PUBLIC`+`KRX_REPLAY`→`KrxReplayPriceProvider`, `PRIVATE`+`KRX_REPLAY`→`KrxReplayPriceProvider`
+  - `StockFeedConfig` fail-fast: `PUBLIC`+`KIS_REALTIME`+`KIS_PUBLIC_DISPLAY_APPROVED=false`면 컨텍스트 기동 실패 (`@SpringBootTest` 컨텍스트 로드 실패를 기대값으로 검증)
+  - KIS 키 환경변수가 전혀 없는 상태에서 `KRX_REPLAY` 기동·빌드 성공
+  - `StockPriceProvider` 계약 동등성: 같은 시나리오를 두 구현으로 각각 실행해 `PriceQueryService` 응답 계약이 동일함을 검증
+  - `FakeKisRealtimePriceProvider` 연결 끊김→가격 무효, 재연결→새 체결 수신 후 복귀
+  - `KisTickAggregator` 1분 OHLCV 집계 — 같은 분의 첫 체결이 open, 최고가 high, 최저가 low, 마지막 체결이 close, 수량 합이 volume. 분 경계에서 새 봉으로 넘어감. 결과 모델이 캔들 API 응답 모델과 동일
+  - 화면 가격과 체결가격의 공급자 일치: SSE·가격 API가 반환한 값과 모의 주문 체결가가 같은 `StockPriceProvider` 인스턴스에서 나온다
   - SSE 컨트롤러: 토큰 없음/잘못된 토큰 시 401, price 이벤트에만 id 존재(snapshot·status는 id 없음), snapshot에 주식 16종·코인 12종 전체 포함(가격 없는 종목도 포함), 가격 없는 종목은 price·sourceTime이 null이고 status는 UNAVAILABLE, 가격 변경 시 price 이벤트, 시장·연결상태 변경 시 status 이벤트, `sourceTime`과 `emittedAt` 구분, 주식은 `sourceTradingDate` 포함·코인은 미포함, 장 마감 후 marketStatus=CLOSED이면서 마지막 유효가격 유지(장 마감과 가격 없음 구분), 코인 stale 시 marketStatus는 OPEN 유지·종목 status만 UNAVAILABLE, `retry: 3000` 전달, heartbeat 전송, 연결 종료 시 emitter 제거, 재접속 시 snapshot 재전송, 누락 이벤트 전체 재전송 안 함
 - 슬라이스: `@DataJpaTest` — 종목 시드·UNIQUE(symbol), `stock_candles`/`stock_replay_sessions` UNIQUE 제약. `@WebMvcTest` — 목록·가격·캔들 계약, 404·400·409 매핑.
 - 통합 (Testcontainers MySQL+Redis): 샘플 KRX 파일 수집→`StockReplaySessionScheduler`가 세션 READY로 전환→재생→가격 조회(첫 분봉 시가, 이후 종가), 서버 재시작 시나리오에서 같은 원본 거래일 유지, DB에 OPEN·CLOSED가 저장되지 않음을 확인, 동일 거래일에 다른 file_hash 재수집을 거부해도 기존 READY 세션·StockCandle이 그대로인 시나리오, Fake Feed 정상 수신→가격 조회, 끊김→PRICE_UNAVAILABLE, 재연결 새 틱→복귀 시나리오.
+- 외부 스모크(자동 테스트와 구분 보고): 실제 업비트 WebSocket 연결, 실제 KRX 파일 수집, **실제 KIS Open API WebSocket 연결과 국내주식 체결 틱 수신**. Fake 통과를 실제 연동 성공으로 보고하지 않는다 (PRD C-005).

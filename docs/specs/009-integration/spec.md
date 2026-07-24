@@ -25,6 +25,7 @@
 - [ ] 1차 요구사항 ID(AUTH·ACCT·MKT·ORD·PORT·JOUR·COM) 각각에 대응 코드·테스트가 있음을 표로 정리한다.
 - [ ] `docs/api-routes.md`가 실제 controller와 일치한다.
 - [ ] 2차·3차 기능이 1차 코드 경로에 섞여 있지 않다 (PRD C-001).
+- [ ] 공개 배포 환경의 주식 시세 공급자 기본값이 `KRX_REPLAY`이고, 승인 없는 공개 `KIS_REALTIME` 조합이 기동 실패로 막히는 것을 확인한다 (PRD C-007).
 
 ### Docker 실행
 - [ ] Docker Compose로 MySQL·Redis가 기동되고 헬스체크가 통과한다.
