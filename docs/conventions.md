@@ -153,7 +153,7 @@ com.finplay.api
 - `dev`: 통합 브랜치이자 GitHub 기본 브랜치. 모든 기능 PR의 대상.
 - 작업 브랜치: `dev`에서 분기한 `feat/이슈번호-요약`, `fix/이슈번호-요약` (예: `feat/12-member-signup`) → `dev`로 PR.
 - 머지 조건: 리뷰 승인 1명 이상. Squash merge. PR 올리기 전 로컬 `./gradlew build` 통과는 작성자 의무 (CI 자동 검증은 배포 단계에서 도입 — 2026-07-24 튜터 피드백).
-- 문서·하네스 소규모 작업(경량 경로)은 `dev` 직접 커밋을 허용한다.
+- 문서·하네스 소규모 작업을 포함한 모든 변경은 `dev` 대상 PR로 병합한다. `dev` 직접 커밋은 허용하지 않는다.
 
 ### 커밋 메시지 (Conventional Commits)
 ```
