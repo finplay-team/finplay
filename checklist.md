@@ -45,7 +45,7 @@
 - [x] ~~Codex PR 1차 자동 리뷰 워크플로우~~ → **당일 철회** (리뷰 3중화 부담, ADR-0007 폐기)
 - [x] 병렬 에이전트 가이드 (`docs/parallel-agents.md` — Agent View는 내장이라 미구현, 사용법만 기록)
 - [x] 에이전트 팀 실험 기능 활성화 (settings.json env — 새 세션부터 적용)
-- [x] 정적 분석 게이트 — SpotBugs + JaCoCo 라인 커버리지 60% (build에 포함, 튜터 피드백 "화이트박스 검증")
+- [x] 정적 분석 게이트 — SpotBugs + JaCoCo 라인 커버리지 도입 (build에 포함, 튜터 피드백 "화이트박스 검증"). 도입 당시 60%, 이후 40%로 조정 — 아래 참조
 
 ## 1차 MVP spec 작성 (2026-07-23)
 - [x] PRD §8 태스크 9개 → spec 폴더 9개 생성 (001-foundation ~ 009-integration)
@@ -70,6 +70,6 @@
 - [x] ~~CI paths-filter 실동작 검증~~ → **CI 워크플로우 제거** (2026-07-24 튜터 피드백 "CI는 배포 단계에" — 재도입 시점은 harness-roadmap)
 - [x] `/feature docs/specs/001-foundation` 루프 실측 (PR 전까지, 약 25분 — context-notes 참조. 측정 후 코드 폐기, 실제 구현은 재작업 필요)
 - [ ] 전역 예외 핸들러 + 에러 응답 포맷 구현 (conventions.md 기준)
-- [x] JaCoCo 커버리지 최소선 추가 (시작값 60% — 팀 합의로 조정 가능)
+- [x] JaCoCo 커버리지 최소선 추가 (현재 기준 **라인 40%** — 정본은 `docs/conventions.md`. 지표 보고 후 상향)
 - [ ] CI 스모크 단계 (부트 jar + 실제 HTTP 검증) — 통합 검증 태스크(PRD 9)에서 추가하기로 보류
 - [ ] SonarCloud 연동 — 보류 (필요해지면 재검토, 현재는 로컬 도구로 충분 판단)
