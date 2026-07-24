@@ -95,9 +95,14 @@
   - **KRX 과거 실제 1분봉** — 실제로 거래된 데이터이지만 **과거 데이터**다. 재생 시점의 현재 시장 상황이 아니다.
   - **KIS 실시간 시세** — 한국투자 KIS Open API WebSocket으로 받는 **현재 시장의 실제 체결 데이터**다.
 - **"KIS API로 실시간 수신이 가능하다"와 "공개 회원에게 실시간 시세를 표출해도 된다"는 별개의 판단이다.** 전자는 기술 가능성, 후자는 계약·허가 문제다. 전자가 참이라고 후자를 가정하지 않는다.
-- 개인 개발·제한 시연 환경(`PRIVATE`)에서는 KIS 실시간 시세를 사용한다. 이 작업은 한국투자증권 서면 답변을 기다리지 않고 진행한다.
+- **현재 확인된 것은 개발자 본인의 KIS Open API 사용 가능 여부뿐이다.** 제3자에게 실시간 시세를 표출해도 되는지는 확인된 바 없다 — 팀원·튜터·심사위원도 제3자다.
+- 따라서 `KIS_REALTIME`은 **KIS 개인 계정 소유자인 개발자 본인만 접근하는 개인 개발·본인 전용 검증 환경**에서만 사용한다. 이 작업은 한국투자증권 서면 답변을 기다리지 않고 진행한다.
+- **팀원·튜터·심사위원 대상 시연은 공개 배포와 동일하게 `KRX_REPLAY`를 사용한다.** 서면 답변 전까지 제3자가 보는 화면에 KIS 실시간 시세를 띄우지 않는다.
+- `SERVICE_EXPOSURE=PRIVATE`는 "로그인이 필요한 서비스"를 뜻하지 않는다. **KIS 개인 계정 소유자인 개발자 본인만 접근할 수 있는 로컬 또는 접근 통제 환경**을 의미한다.
+- `PRIVATE` + `KIS_REALTIME` 환경을 공개 URL이나 여러 사용자가 접근하는 서버로 운영하지 않는다.
 - 일반 사용자가 접속하는 공개 배포 환경(`PUBLIC`)의 기본 공급자는 **KRX 과거 데이터 재생**이다. 공개 MVP 배포도 서면 답변을 기다리지 않고 이 방식으로 진행한다.
 - 공개 환경에서 KIS 실시간 시세로 전환하려면 **한국투자증권의 서면 허용 또는 필요한 계약 완료가 선행되어야 한다** — 이것이 공개 Provider 전환의 Decision Gate다. 현재 이 답변은 받은 적이 없으며, 그 내용을 추측해 문서·코드에 반영하지 않는다.
+- 서면 답변에서 **제한 시연 또는 공개 표출이 허용되면 그때 이 Decision Gate를 해제한다.** 허용 범위가 시연까지인지 공개까지인지에 따라 해제 범위도 달라지므로, 답변 내용을 확인한 뒤 다시 판단한다.
 - 설정 플래그(`KIS_PUBLIC_DISPLAY_APPROVED`)를 `true`로 바꾸는 것만으로 법적 허가가 생기지 않는다. **정본은 한국투자증권의 서면 허가·계약 확인 결과이며, 플래그는 그 결과를 시스템에 반영하는 수단일 뿐이다.**
 - KRX 수집·재생 구현은 삭제하지 않는다. 답변이 늦거나 공개 표출이 허용되지 않는 경우의 안전한 대체 수단으로 계속 유지한다.
 
@@ -316,7 +321,7 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 #### MKT-007 주식 시세 공급자 전환 구조 (C-007)
 
 - 주식 시세 공급자를 공통 계약 `StockPriceProvider`로 분리하고 구현 2개를 둔다.
-  - `KisRealtimePriceProvider` — KIS WebSocket 실시간 체결가 수신. 개인 개발·제한 시연 환경에서 사용한다.
+  - `KisRealtimePriceProvider` — KIS WebSocket 실시간 체결가 수신. 개발자 본인만 접근하는 개인 개발·본인 전용 검증 환경에서만 사용한다.
   - `KrxReplayPriceProvider` — KRX 과거 실제 1분봉 재생. **공개 배포의 기본 Provider**다.
 - 두 Provider는 동일한 내부 가격 모델을 반환한다. 아래 소비 계층은 어느 Provider가 동작 중인지 몰라야 한다 — `PriceQueryService`, 주식 가격·캔들 API, SSE, 모의 주문 체결, 보유자산 평가손익.
 - 화면에 보이는 가격과 모의 주문 체결가격은 **항상 같은 Provider**에서 나온다. 두 경로가 서로 다른 공급자를 쓰지 않는다.
@@ -326,16 +331,16 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 | 설정 | 값 | 의미 |
 |---|---|---|
 | `STOCK_FEED_PROVIDER` | `KIS_REALTIME` · `KRX_REPLAY` | 어느 Provider를 쓸지 |
-| `SERVICE_EXPOSURE` | `PRIVATE` · `PUBLIC` | 일반 사용자에게 공개되는 환경인지 |
+| `SERVICE_EXPOSURE` | `PRIVATE` · `PUBLIC` | `PRIVATE`는 개발자 본인만 접근하는 로컬·접근 통제 환경, `PUBLIC`은 본인 외 누구든 접근하는 환경(팀원·튜터·심사위원 시연 포함) |
 | `KIS_PUBLIC_DISPLAY_APPROVED` | 기본 `false` | 공개 환경의 KIS 실시간 표출에 대한 서면 허가·계약 확인 결과 반영 |
 
 - 허용 조합은 넷뿐이다.
 
 | SERVICE_EXPOSURE | STOCK_FEED_PROVIDER | 조건 | 용도 |
 |---|---|---|---|
-| PRIVATE | KIS_REALTIME | 없음 | 개인 개발·제한 시연 |
+| PRIVATE | KIS_REALTIME | 개발자 본인만 접근 | 개인 개발·본인 전용 검증 |
 | PRIVATE | KRX_REPLAY | 없음 | 로컬 재생 테스트 |
-| PUBLIC | KRX_REPLAY | 없음 | **현재 공개 배포 기본값** |
+| PUBLIC | KRX_REPLAY | 없음 | **현재 공개 배포 기본값. 팀원·튜터·심사위원 시연도 이 조합이다** |
 | PUBLIC | KIS_REALTIME | `KIS_PUBLIC_DISPLAY_APPROVED=true` **이고** 한국투자 서면 허가·계약 근거가 있을 때만 | 허가 이후 전환 |
 
 - **fail-fast** — `SERVICE_EXPOSURE=PUBLIC` + `STOCK_FEED_PROVIDER=KIS_REALTIME` + `KIS_PUBLIC_DISPLAY_APPROVED=false` 조합은 애플리케이션 **시작 단계에서 실패**시킨다. 경고 로그만 남기고 기동하지 않는다.
