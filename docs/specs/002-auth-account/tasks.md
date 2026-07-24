@@ -1,6 +1,6 @@
 # Tasks: 인증과 계좌
 
-작업 항목 9개. 항목 1개 = 커밋 1개 = Issue 1개 단위로 진행한다.
+구현 작업 후보는 9개다. 실제 GitHub Issue의 굵기(API별 또는 기능 묶음별)는 팀 회의에서 결정한다. Issue 하나가 여러 작업 항목이나 여러 논리적 커밋을 포함할 수 있으며, 아직 9개 Issue로 확정하지 않는다.
 
 - [ ] 마이그레이션(users·social_accounts·refresh_tokens·accounts·email_verifications) + 엔티티 + Repository (+ @DataJpaTest UNIQUE 제약 검증)
 - [ ] EmailSender 인터페이스 + FakeEmailSender + ResendEmailSender(RestClient, 운영 프로필 전용 빈) — RESEND_API_KEY·EMAIL_FROM 없이 기동·테스트가 통과하는지 확인 (+ 단위 테스트)
