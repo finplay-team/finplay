@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.jayway.jsonpath.JsonPath;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,8 +19,10 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @WebMvcTest
@@ -43,6 +46,35 @@ class GlobalExceptionHandlerTest {
 		mockMvc.perform(post("/test/validate")
 			.contentType(MediaType.APPLICATION_JSON)
 			.content("{\"name\":\"\"}"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.message").isNotEmpty())
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+	}
+
+	@Test
+	void mapsMalformedJsonBodyToValidationErrorCode() throws Exception {
+		mockMvc.perform(post("/test/validate")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("{\"name\":"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.message").isNotEmpty())
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+	}
+
+	@Test
+	void mapsMissingRequiredRequestParamToValidationErrorCode() throws Exception {
+		mockMvc.perform(get("/test/required-param"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.message").isNotEmpty())
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+	}
+
+	@Test
+	void mapsConstraintViolationOnRequestParamToValidationErrorCode() throws Exception {
+		mockMvc.perform(get("/test/min-param").param("page", "0"))
 			.andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
 			.andExpect(jsonPath("$.error.message").isNotEmpty())
@@ -86,6 +118,7 @@ class GlobalExceptionHandlerTest {
 		assertThat(body).doesNotContain("java.lang.IllegalStateException");
 	}
 
+	@Validated
 	@RestController
 	static class TestController {
 
@@ -103,6 +136,18 @@ class GlobalExceptionHandlerTest {
 		void validate(@Valid @RequestBody
 		TestRequest request) {
 			// 검증 통과 시 아무 것도 하지 않는다. 검증 실패 경로만 테스트한다.
+		}
+
+		@org.springframework.web.bind.annotation.GetMapping("/test/required-param")
+		void requiredParam(@RequestParam
+		String q) {
+			// 필수 파라미터 누락 시 MissingServletRequestParameterException이 발생한다.
+		}
+
+		@org.springframework.web.bind.annotation.GetMapping("/test/min-param")
+		void minParam(@RequestParam @Min(1)
+		int page) {
+			// @Min 위반 시 ConstraintViolationException이 발생한다.
 		}
 	}
 
