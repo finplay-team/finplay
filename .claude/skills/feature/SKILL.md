@@ -32,9 +32,10 @@ description: spec 폴더 하나를 받아 구현→테스트 루프를 돌리고
 ## 마무리 — 모든 항목 완료 후
 
 5. `.\gradlew.bat build` 실행 (전체 게이트: Spotless + SpotBugs + 커버리지 40%). 실패하면 원인 항목에 implementer 재투입 후 재실행.
+   - 통과하면 그 시점의 `git rev-parse HEAD`를 기록해 둔다. PR 본문의 **빌드 검증 SHA**에 적어야 `/review-pr`이 build를 재실행하지 않는다 (아래 8번 보고에 포함).
 6. **reviewer** 서브에이전트 투입 — **리뷰 모드** 명시 (범위: 이번 spec의 전체 diff, `git diff dev...HEAD`).
    - `RESULT: 차단 N건`에서 N > 0 → 차단 내역을 첨부해 해당 항목에 implementer 재투입 후 5번부터 재실행. [권장]은 기록만 하고 진행.
 7. **planner** 서브에이전트 투입 — **동기화 모드** 명시 → api-routes.md 갱신분이 있으면 `docs: ...` 커밋.
-8. 최종 보고: 완료 항목 / 커밋 목록 / [권장] 리뷰 잔여 사항.
+8. 최종 보고: 완료 항목 / 커밋 목록 / **빌드 검증 SHA** / [권장] 리뷰 잔여 사항.
 
 QA(reviewer QA 모드)는 /feature에서 수행하지 않는다 — PR 단계의 `/review-pr`에서 1회 수행한다 (경량 시작, 지표 보고 재조정).
