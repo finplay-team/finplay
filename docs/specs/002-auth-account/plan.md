@@ -20,7 +20,7 @@ Base URL `/api`. 인증 표시가 없는 것은 공개 엔드포인트.
 | POST | /api/auth/logout | `RefreshRequest` | 204 | Refresh Token 폐기. 인증 필요 |
 | GET | /api/auth/me | - | `MemberResponse` (id, email, nickname) | 내 정보. 인증 필요 |
 | GET | /api/auth/oauth/{provider}/authorize | - | 302 리다이렉트 | provider = kakao·naver |
-| GET | /api/auth/oauth/{provider}/callback | code 쿼리 | `TokenResponse` | 가입 또는 병합 후 토큰 발급 |
+| GET | /api/auth/oauth/{provider}/callback | code 쿼리 | `TokenResponse` | 신규 가입 후 토큰 발급. 이메일 미제공 400 `OAUTH_EMAIL_REQUIRED`, 같은 이메일의 기존 회원 존재 409 `ACCOUNT_LINK_REQUIRED` |
 
 - `TokenResponse` = accessToken, refreshToken, 만료 정보.
 - `SignupTokenResponse` = signupVerificationToken, expiresInSeconds(1800).
@@ -86,7 +86,7 @@ Base URL `/api`. 인증 표시가 없는 것은 공개 엔드포인트.
    WHERE token_hash = :hash AND consumed_at IS NULL AND token_expires_at > :now
   ```
   트랜잭션이 롤백되면 소비도 함께 롤백되어 남은 유효시간 안에 재시도할 수 있다.
-- OAuth = 소셜계정 연결 또는 신규 회원 + 계좌 2개 원자 처리.
+- OAuth = 신규 회원 + 계좌 2개 원자 처리. 기존 회원과의 자동 병합 경로는 없다 — 이메일이 겹치면 생성 없이 409로 거부한다.
 
 ## 데이터 모델
 
@@ -104,7 +104,7 @@ Base URL `/api`. 인증 표시가 없는 것은 공개 엔드포인트.
 
 ## 테스트 계획
 
-- 단위: AuthService (가입 중복 분기, 토큰 회전, OAuth 병합 판단 — 의존성 mock), JwtTokenProvider (발급·만료·변조), EmailVerificationService (발송 제한 3종, 시도 5회 초과 무효화, 재발송 시 이전 코드 무효화, 토큰 이메일 불일치 거부).
+- 단위: AuthService (가입 중복 분기, 토큰 회전, OAuth 신규·기존 이메일 거부 판단 — 의존성 mock), JwtTokenProvider (발급·만료·변조), EmailVerificationService (발송 제한 3종, 시도 5회 초과 무효화, 재발송 시 이전 코드 무효화, 토큰 이메일 불일치 거부).
 - 슬라이스: `@DataJpaTest` — users·social_accounts·accounts UNIQUE 제약과 `email_verifications` UNIQUE(token_hash)·기간 집계 쿼리 실동작. `@WebMvcTest` — 요청 검증(8자 미만 비밀번호 등 400)·401·429 포맷·응답 직렬화.
-- 통합 (Testcontainers): 인증번호 요청→확인→가입→계좌 2개 각 1,000만원 생성(`FakeEmailSender`), 가입 토큰 재사용 거부, 닉네임 중복 실패 후 같은 토큰 재시도 성공, Fake OAuth 신규 가입·기존 이메일 병합, 로그인→회전→이전 토큰 거부 시나리오.
+- 통합 (Testcontainers): 인증번호 요청→확인→가입→계좌 2개 각 1,000만원 생성(`FakeEmailSender`), 가입 토큰 재사용 거부, 닉네임 중복 실패 후 같은 토큰 재시도 성공, Fake OAuth 신규 가입·기존 이메일 409 거부(회원·계좌가 생기지 않음까지 확인), 로그인→회전→이전 토큰 거부 시나리오.
 - 모든 테스트는 `RESEND_API_KEY`·`EMAIL_FROM` 없이 통과해야 한다.
