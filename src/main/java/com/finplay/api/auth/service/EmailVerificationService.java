@@ -44,7 +44,7 @@ public class EmailVerificationService {
 		EmailVerificationRepository emailVerificationRepository,
 		EmailSender emailSender,
 		Clock clock,
-		@Value("${EMAIL_VERIFICATION_SECRET:finplay-local-dev-email-verification-secret-change-in-prod}")
+		@Value("${EMAIL_VERIFICATION_SECRET}")
 		String emailVerificationSecret) {
 		this.userRepository = userRepository;
 		this.emailVerificationRepository = emailVerificationRepository;

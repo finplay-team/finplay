@@ -51,6 +51,8 @@ dependencies {
 
 tasks.withType(Test).configureEach {
 	useJUnitPlatform()
+	// 전체 컨텍스트를 띄우는 @SpringBootTest용 더미 시크릿 (test 태스크 런타임에만 존재, 프로덕션 fail-fast 유지)
+	environment 'EMAIL_VERIFICATION_SECRET', 'test-email-verification-secret'
 	finalizedBy tasks.jacocoTestReport
 }
 
