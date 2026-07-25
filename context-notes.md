@@ -46,6 +46,13 @@
 - **compose 포트**: MySQL 13307 패턴을 따라 Redis `16379:6379`, Kafka `19092:9092` (로컬 6379·9092 점유 회피). spring-boot-docker-compose가 매핑 포트 자동 감지.
 - **Kafka는 compose 전용**: `apache/kafka:3.9.1`(KRaft 단일 노드) 추가하되 `spring-kafka` 미의존이라 앱은 연결 시도 안 함 → "앱 기동 성공 조건에서 제외" 충족. 테스트는 TestcontainersConfiguration만 쓰고 Kafka 컨테이너가 없으므로 "Kafka 없이 테스트 가능"도 충족.
 - **QueryDSL은 설정+compileJava까지만** (plan 지시): querydsl 5.1.0 jakarta 분류자 + apt 애노테이션 프로세서. 엔티티가 없어 Q클래스는 생성 안 되지만 compileJava 통과 확인. `JPAQueryFactory` 빈은 공용 기반으로 `com.finplay.api.common.QuerydslConfig`에 미리 제공 (002+ 리포지토리가 바로 주입). Q클래스 생성 검증은 엔티티가 생기는 002부터.
+
+## 2026-07-24 — Gradle 빌드 DSL을 Kotlin(.kts) → Groovy 전환
+
+- **결정 배경**: 사용자 요청으로 `build.gradle.kts`·`settings.gradle.kts`를 Groovy(`build.gradle`·`settings.gradle`)로 전환. 오케스트레이터는 "얻는 이득 없음 + 초기 셋팅의 Kotlin DSL 결정을 되돌림"을 이유로 유지를 2회 권고했으나 사용자가 진행 결정.
+- **작업 범위는 2개 파일뿐**: `.gradle.kts`는 이 둘이 전부였고, 소스(`src/`, Java)·래퍼(`gradlew*`)·README·CLAUDE.md(명령어만 참조)·CI(`.github/workflows` 부재)는 무관. 문법은 따옴표(`"`→`'`)·제네릭(`withType<Test>`→`withType(Test)`)·`.map`→`.collect`·`fileTree(it){exclude}`→`fileTree(dir:,exclude:)` 등 기계적 변환.
+- **올린 위치**: 사용자 결정으로 이슈 #32 PR(#36)에 함께 커밋. 오케스트레이터는 "오류 체계 PR에 무관한 빌드 변환이 섞이고 build.gradle은 원래 #31 소유 파일"이라며 별도 PR 분리를 권고했으나 사용자가 #36 유지 선택.
+- **검증**: Groovy 전환 후 `./gradlew build` BUILD SUCCESSFUL (compileJava·test·jacoco 커버리지 게이트·spotbugs·spotless 전부 정상 동작).
 - **병렬화는 spec 단위, 수단은 Agent View 우선** (`docs/parallel-agents.md`): Agent View(`claude agents`)는 내장 + 자동 worktree 격리라 "agentview 만들기" 요청은 문서화로 대체. 에이전트 팀은 실험 플래그로 활성화(팀원 간 직접 메시징)하되 파일 격리가 없어 코드 수정엔 파일 소유권 분리 필수. /feature 루프 내부는 순차 유지 (단계 의존 = 품질 게이트).
 
 ## 2026-07-23 — 1차 MVP spec 9개 작성
