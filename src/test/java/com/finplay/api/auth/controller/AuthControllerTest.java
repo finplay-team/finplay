@@ -85,6 +85,19 @@ class AuthControllerTest {
 	}
 
 	@Test
+	void signupRejectsOverlongVerificationTokenWithoutCallingService() throws Exception {
+		mockMvc.perform(post("/api/auth/signup")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(requestJson(EMAIL, NICKNAME, PASSWORD, true, "t".repeat(256))))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.message").isNotEmpty())
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(authService);
+	}
+
+	@Test
 	void signupMapsDuplicateResourceToConflictErrorFormat() throws Exception {
 		when(authService.signup(EMAIL, NICKNAME, PASSWORD, SIGNUP_TOKEN))
 			.thenThrow(new BusinessException(ErrorCode.DUPLICATE_RESOURCE));
