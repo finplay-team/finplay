@@ -14,7 +14,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 @Component
-public class JwtTokenProvider {
+public final class JwtTokenProvider {
 
 	private static final String ROLE_CLAIM = "role";
 	private static final String TOKEN_TYPE_CLAIM = "tokenType";
