@@ -53,7 +53,7 @@
 ### auth
 
 - `AuthController`: 요청 검증, `AuthService.signup` 호출, 201 응답만 담당한다.
-- `AuthService`: 가입 토큰 검증, 중복 검사, BCrypt 해시, 가입 토큰 소비, 회원 생성, 계좌 생성, JWT 발급, Refresh Token 해시 저장을 하나의 트랜잭션으로 조정한다.
+- `AuthService`: 가입 토큰 검증, 중복 검사, SHA-256 사전 해시·BCrypt 처리, 가입 토큰 소비, 회원 생성, 계좌 생성, JWT 발급, Refresh Token 해시 저장을 하나의 트랜잭션으로 조정한다.
 - `JwtTokenProvider`: 사용자 ID와 역할을 기반으로 Access/Refresh JWT를 발급한다. Access와 Refresh는 token type claim으로 구분한다.
 - `RefreshToken`: Refresh Token 원문의 SHA-256 해시, 사용자, 만료 시각, 생성 시각을 저장한다. 원문은 응답 이후 저장하지 않는다.
 - `EmailVerificationRepository`: 토큰 SHA-256 해시로 인증 행을 조회하고, `consumed_at IS NULL`, `token_expires_at > now` 조건을 포함한 조건부 UPDATE로 소비한다.
@@ -73,7 +73,7 @@
 2. 가입 토큰 원문을 SHA-256으로 해시하고 대응하는 이메일 인증 행을 찾는다.
 3. 인증 성공 여부, 토큰 만료·소비 여부, 요청 이메일 일치를 검사한다.
 4. 이메일과 닉네임 중복을 검사한다.
-5. 비밀번호를 BCrypt로 해시한다.
+5. 비밀번호를 SHA-256으로 사전 해시한 뒤 BCrypt로 처리한다.
 6. 조건부 UPDATE로 가입 토큰을 소비한다. 영향 행이 1이 아니면 409로 중단한다.
 7. 회원을 저장하고 account service로 계좌 2개를 생성한다.
 8. Access/Refresh JWT를 발급하고 Refresh Token 해시를 저장한다.
@@ -87,7 +87,7 @@ DB UNIQUE 제약은 동시 중복 가입의 최종 방어선이다. 사전 중�
 
 ## 보안과 설정
 
-- 비밀번호는 BCrypt 해시만 저장한다.
+- 8~100자 원문 비밀번호는 SHA-256 사전 해시 후 `{sha256-bcrypt}<BCrypt 해시>` 형식으로만 저장한다.
 - 가입 토큰과 Refresh Token은 SHA-256 해시만 저장한다.
 - JWT 서명은 `JWT_SECRET`을 사용하며 이메일 인증 HMAC 시크릿과 분리한다.
 - 실제 시크릿은 코드·YAML·문서에 기록하지 않는다.
@@ -125,7 +125,7 @@ Testcontainers MySQL로 다음 핵심 시나리오를 검증한다.
 1. 인증번호 발송·확인 후 회원가입하면 회원 1명과 STOCK·CRYPTO 계좌가 정확히 한 번 생성된다.
 2. 두 계좌의 현금잔고와 시드머니가 각각 10,000,000원이다.
 3. 가입 토큰 재사용은 409이며 회원·계좌가 추가되지 않는다.
-4. 닉네임 중복으로 실패한 가입은 토큰 소비가 롤백되고, 닉네임을 바꾸면 같은 토큰으로 성공한다.
+4. 닉네임 중복 가입은 소비 전에 실패해 토큰이 미소비 상태로 유지되고, 닉네임을 바꾸면 같은 토큰으로 성공한다.
 5. Refresh Token 원문은 DB에 없고 SHA-256 해시만 저장된다.
 
 완료 전에 대상 테스트, `spotlessApply`, 전체 `build`를 새로 실행한다. 자동 테스트 결과는 실제 외부 OAuth·메일 발송 검증으로 표현하지 않는다.

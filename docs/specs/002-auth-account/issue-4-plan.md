@@ -13,7 +13,7 @@
 - 작업 범위는 GitHub Issue #4와 `docs/specs/002-auth-account/issue-4-design.md`로 제한한다.
 - 새 Java 소스 첫 줄에는 파일 역할을 설명하는 한국어 한 줄 주석을 둔다.
 - DTO는 record로 작성하고 요청 문자열에는 최대 길이를 명시한다.
-- 비밀번호는 BCrypt, 가입 토큰과 Refresh Token은 SHA-256 해시만 저장한다.
+- 8~100자 원문 비밀번호는 SHA-256 사전 해시 후 `{sha256-bcrypt}<BCrypt 해시>` 형식으로, 가입 토큰과 Refresh Token은 SHA-256 해시만 저장한다.
 - `JWT_SECRET`과 `EMAIL_VERIFICATION_SECRET`은 서로 다른 환경변수이며 코드·YAML에 기본값을 두지 않는다.
 - Access Token은 1시간, Refresh Token은 14일이다.
 - 회원, 계좌 2개, 가입 토큰 소비, Refresh Token 해시 저장은 하나의 트랜잭션이다.
@@ -30,7 +30,7 @@
 
 - `src/main/java/com/finplay/api/auth/controller/AuthController.java`: 회원가입 HTTP 계약과 201 응답.
 - `src/main/java/com/finplay/api/auth/service/AuthService.java`: 가입 트랜잭션과 전체 유스케이스 조정.
-- `src/main/java/com/finplay/api/auth/config/AuthCryptoConfig.java`: BCrypt `PasswordEncoder` 빈.
+- `src/main/java/com/finplay/api/auth/config/AuthCryptoConfig.java`: SHA-256 사전 해시 후 BCrypt하는 `PasswordEncoder` 빈.
 - `src/main/java/com/finplay/api/auth/token/JwtTokenProvider.java`: Access/Refresh JWT 발급.
 - `src/main/java/com/finplay/api/auth/token/IssuedTokenPair.java`: 발급 토큰과 만료정보 내부 전달.
 - `src/main/java/com/finplay/api/auth/domain/RefreshToken.java`: Refresh Token 해시 영속 엔티티.
@@ -328,14 +328,14 @@ Optional<EmailVerification> findByTokenHash(String tokenHash);
 int consumeValidToken(@Param("tokenHash") String tokenHash, @Param("now") LocalDateTime now);
 ```
 
-- [ ] **Step 5: BCrypt 설정과 응답 DTO를 구현한다**
+- [ ] **Step 5: SHA-256 사전 해시·BCrypt 설정과 응답 DTO를 구현한다**
 
 `AuthCryptoConfig`:
 
 ```java
 @Bean
 PasswordEncoder passwordEncoder() {
-    return new BCryptPasswordEncoder();
+    return new Sha256BcryptPasswordEncoder();
 }
 ```
 
@@ -363,9 +363,9 @@ public record TokenResponse(
 `signup`은 `@Transactional`이며 다음 순서를 그대로 유지한다.
 
 ```java
-checkDuplicate(email, nickname);
 String tokenHash = sha256(signupVerificationToken);
 EmailVerification verification = findAndValidateVerification(tokenHash, email, now);
+checkDuplicate(email, nickname);
 int consumed = emailVerificationRepository.consumeValidToken(tokenHash, now);
 if (consumed != 1) {
     throw new BusinessException(ErrorCode.EMAIL_VERIFICATION_REQUIRED);
