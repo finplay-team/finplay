@@ -2,6 +2,7 @@
 package com.finplay.api.auth.service;
 
 import com.finplay.api.auth.domain.EmailVerification;
+import com.finplay.api.auth.dto.response.SignupTokenResponse;
 import com.finplay.api.auth.email.EmailSender;
 import com.finplay.api.auth.repository.EmailVerificationRepository;
 import com.finplay.api.auth.repository.UserRepository;
@@ -9,10 +10,12 @@ import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
+import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
 import javax.crypto.Mac;
@@ -31,6 +34,9 @@ public class EmailVerificationService {
 	private static final int RESEND_INTERVAL_SECONDS = 60;
 	private static final int HOURLY_LIMIT = 5;
 	private static final int DAILY_LIMIT = 10;
+	private static final int MAX_VERIFICATION_ATTEMPTS = 5;
+	private static final int SIGNUP_TOKEN_BYTES = 32;
+	private static final int SIGNUP_TOKEN_TTL_MINUTES = 30;
 
 	private final UserRepository userRepository;
 	private final EmailVerificationRepository emailVerificationRepository;
@@ -73,6 +79,35 @@ public class EmailVerificationService {
 		emailSender.sendVerificationCode(email, code);
 	}
 
+	// BusinessException에도 시도 횟수와 만료 상태가 커밋되어 무차별 대입을 차단한다.
+	@Transactional(noRollbackFor = BusinessException.class)
+	public SignupTokenResponse confirmVerificationCode(String email, String code) {
+		LocalDateTime now = LocalDateTime.now(clock);
+		EmailVerification verification = emailVerificationRepository.findFirstByEmailOrderByCreatedAtDesc(email)
+			.orElseThrow(() -> new BusinessException(ErrorCode.EMAIL_VERIFICATION_FAILED));
+
+		if (!verification.getExpiresAt().isAfter(now) || verification.getVerifiedAt() != null) {
+			throw new BusinessException(ErrorCode.EMAIL_VERIFICATION_FAILED);
+		}
+
+		if (verification.getAttemptCount() >= MAX_VERIFICATION_ATTEMPTS) {
+			verification.incrementAttemptCount();
+			verification.expire(now);
+			throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS);
+		}
+		if (!verification.getCodeHash().equals(hmac(code))) {
+			verification.incrementAttemptCount();
+			throw new BusinessException(ErrorCode.EMAIL_VERIFICATION_FAILED);
+		}
+
+		String signupVerificationToken = generateSignupVerificationToken();
+		verification.confirm(
+			now,
+			sha256(signupVerificationToken),
+			now.plusMinutes(SIGNUP_TOKEN_TTL_MINUTES));
+		return new SignupTokenResponse(signupVerificationToken, SIGNUP_TOKEN_TTL_MINUTES * 60L);
+	}
+
 	private void checkSendRateLimit(String email, LocalDateTime now) {
 		if (emailVerificationRepository.countByEmailAndCreatedAtAfter(
 			email, now.minusSeconds(RESEND_INTERVAL_SECONDS)) > 0) {
@@ -98,6 +133,12 @@ public class EmailVerificationService {
 		return String.format(CODE_FORMAT, secureRandom.nextInt(CODE_BOUND));
 	}
 
+	private String generateSignupVerificationToken() {
+		byte[] bytes = new byte[SIGNUP_TOKEN_BYTES];
+		secureRandom.nextBytes(bytes);
+		return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+	}
+
 	private String hmac(String code) {
 		try {
 			Mac mac = Mac.getInstance(HMAC_ALGORITHM);
@@ -105,6 +146,15 @@ public class EmailVerificationService {
 			return HexFormat.of().formatHex(mac.doFinal(code.getBytes(StandardCharsets.UTF_8)));
 		} catch (NoSuchAlgorithmException | InvalidKeyException ex) {
 			throw new IllegalStateException("인증번호 HMAC 계산에 실패했습니다.", ex);
+		}
+	}
+
+	private String sha256(String value) {
+		try {
+			return HexFormat.of().formatHex(
+				MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
+		} catch (NoSuchAlgorithmException ex) {
+			throw new IllegalStateException("가입 인증 토큰 SHA-256 계산에 실패했습니다.", ex);
 		}
 	}
 }

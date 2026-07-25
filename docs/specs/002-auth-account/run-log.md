@@ -1,5 +1,11 @@
 # Run Log: 002-auth-account
 
+## Issue #3 Task 1
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| 20:07 | implementer | `.\gradlew.bat compileJava` | plan.md 인증번호 확인·가입 토큰 발급, ADR-0002 service 트랜잭션 경계, conventions DTO·엔티티 상태 전이 규칙 |
+
 ## AI 로그 (에이전트 참조용)
 | 시각 | 에이전트 | 실행 명령 | 근거 |
 |---|---|---|---|

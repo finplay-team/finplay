@@ -20,8 +20,10 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Optional;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.junit.jupiter.api.BeforeEach;
@@ -187,6 +189,103 @@ class EmailVerificationServiceTest {
 
 		// expire(now)가 호출되어 만료 시각이 기준 시각으로 당겨진다 = 즉시 무효화.
 		assertThat(previous.getExpiresAt()).isEqualTo(NOW);
+	}
+
+	@Test
+	@DisplayName("정상 코드 확인은 평문 가입 토큰과 1800초 만료를 반환하고 엔티티에는 해시만 저장한다")
+	void confirmsValidCodeAndStoresHashedSignupToken() {
+		String code = "123456";
+		EmailVerification verification = EmailVerification.create(
+			EMAIL, expectedHmac(code), NOW.plusMinutes(5), NOW.minusMinutes(1));
+		when(emailVerificationRepository.findFirstByEmailOrderByCreatedAtDesc(EMAIL))
+			.thenReturn(Optional.of(verification));
+
+		var response = service.confirmVerificationCode(EMAIL, code);
+
+		assertThat(response.signupVerificationToken()).isNotBlank().matches("[A-Za-z0-9_-]+");
+		assertThat(Base64.getUrlDecoder().decode(response.signupVerificationToken())).hasSize(32);
+		assertThat(response.expiresInSeconds()).isEqualTo(1800L);
+		assertThat(verification.getTokenHash()).isNotEqualTo(response.signupVerificationToken());
+		assertThat(verification.getTokenHash()).isEqualTo(sha256(response.signupVerificationToken()));
+		assertThat(verification.getVerifiedAt()).isEqualTo(NOW);
+		assertThat(verification.getTokenExpiresAt()).isEqualTo(NOW.plusMinutes(30));
+	}
+
+	@Test
+	@DisplayName("코드 불일치는 다섯 번까지 실패를 누적한다")
+	void incrementsAttemptCountForEachOfTheFirstFiveMismatchedCodes() {
+		EmailVerification verification = EmailVerification.create(
+			EMAIL, expectedHmac("123456"), NOW.plusMinutes(5), NOW.minusMinutes(1));
+		when(emailVerificationRepository.findFirstByEmailOrderByCreatedAtDesc(EMAIL))
+			.thenReturn(Optional.of(verification));
+
+		for (int attempt = 1; attempt <= 5; attempt++) {
+			assertThatThrownBy(() -> service.confirmVerificationCode(EMAIL, "000000"))
+				.isInstanceOf(BusinessException.class)
+				.extracting(ex -> ((BusinessException)ex).getErrorCode())
+				.isEqualTo(ErrorCode.EMAIL_VERIFICATION_FAILED);
+			assertThat(verification.getAttemptCount()).isEqualTo(attempt);
+		}
+	}
+
+	@Test
+	@DisplayName("다섯 번 실패 뒤 여섯 번째 요청은 올바른 코드여도 차단하고 즉시 만료한다")
+	void blocksSixthAttemptAndExpiresVerificationEvenWhenCodeMatches() {
+		EmailVerification verification = EmailVerification.create(
+			EMAIL, expectedHmac("123456"), NOW.plusMinutes(5), NOW.minusMinutes(1));
+		when(emailVerificationRepository.findFirstByEmailOrderByCreatedAtDesc(EMAIL))
+			.thenReturn(Optional.of(verification));
+
+		for (int attempt = 1; attempt <= 5; attempt++) {
+			assertThatThrownBy(() -> service.confirmVerificationCode(EMAIL, "000000"))
+				.isInstanceOf(BusinessException.class);
+		}
+
+		assertThatThrownBy(() -> service.confirmVerificationCode(EMAIL, "123456"))
+			.isInstanceOf(BusinessException.class)
+			.extracting(ex -> ((BusinessException)ex).getErrorCode())
+			.isEqualTo(ErrorCode.TOO_MANY_REQUESTS);
+		assertThat(verification.getAttemptCount()).isEqualTo(6);
+		assertThat(verification.getExpiresAt()).isEqualTo(NOW);
+	}
+
+	@Test
+	@DisplayName("최신 인증 요청이 없거나 만료되었거나 이미 확인되었으면 인증에 실패한다")
+	void rejectsMissingExpiredOrAlreadyVerifiedLatestVerification() {
+		when(emailVerificationRepository.findFirstByEmailOrderByCreatedAtDesc(EMAIL))
+			.thenReturn(Optional.empty());
+
+		assertVerificationFails("최신 요청이 없을 때");
+
+		EmailVerification expired = EmailVerification.create(
+			EMAIL, expectedHmac("123456"), NOW.minusSeconds(1), NOW.minusMinutes(6));
+		when(emailVerificationRepository.findFirstByEmailOrderByCreatedAtDesc(EMAIL))
+			.thenReturn(Optional.of(expired));
+		assertVerificationFails("최신 요청이 만료되었을 때");
+
+		EmailVerification verified = EmailVerification.create(
+			EMAIL, expectedHmac("123456"), NOW.plusMinutes(5), NOW.minusMinutes(1));
+		verified.confirm(NOW, "already-issued-token", NOW.plusMinutes(30));
+		when(emailVerificationRepository.findFirstByEmailOrderByCreatedAtDesc(EMAIL))
+			.thenReturn(Optional.of(verified));
+		assertVerificationFails("최신 요청이 이미 확인되었을 때");
+	}
+
+	private void assertVerificationFails(String scenario) {
+		assertThatThrownBy(() -> service.confirmVerificationCode(EMAIL, "123456"))
+			.as(scenario)
+			.isInstanceOf(BusinessException.class)
+			.extracting(ex -> ((BusinessException)ex).getErrorCode())
+			.isEqualTo(ErrorCode.EMAIL_VERIFICATION_FAILED);
+	}
+
+	private static String sha256(String value) {
+		try {
+			return HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+				.digest(value.getBytes(StandardCharsets.UTF_8)));
+		} catch (java.security.NoSuchAlgorithmException ex) {
+			throw new IllegalStateException(ex);
+		}
 	}
 
 	private static String expectedHmac(String code) {
