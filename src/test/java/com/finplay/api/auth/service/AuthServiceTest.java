@@ -73,21 +73,27 @@ class AuthServiceTest {
 
 	@Test
 	void signupRejectsDuplicateEmail() {
+		stubValidVerification();
 		when(userRepository.existsByEmail(EMAIL)).thenReturn(true);
 
 		assertSignupFailsWith(ErrorCode.DUPLICATE_RESOURCE);
 
-		verify(emailVerificationRepository, never()).findByTokenHash(any());
+		verify(emailVerificationRepository).findByTokenHash(sha256(SIGNUP_TOKEN));
+		verify(emailVerificationRepository, never()).consumeValidToken(any(), any());
+		verify(userRepository, never()).saveAndFlush(any());
 	}
 
 	@Test
 	void signupRejectsDuplicateNickname() {
+		stubValidVerification();
 		when(userRepository.existsByEmail(EMAIL)).thenReturn(false);
 		when(userRepository.existsByNickname(NICKNAME)).thenReturn(true);
 
 		assertSignupFailsWith(ErrorCode.DUPLICATE_RESOURCE);
 
-		verify(emailVerificationRepository, never()).findByTokenHash(any());
+		verify(emailVerificationRepository).findByTokenHash(sha256(SIGNUP_TOKEN));
+		verify(emailVerificationRepository, never()).consumeValidToken(any(), any());
+		verify(userRepository, never()).saveAndFlush(any());
 	}
 
 	@Test

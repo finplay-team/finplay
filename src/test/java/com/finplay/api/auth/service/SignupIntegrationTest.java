@@ -3,12 +3,11 @@ package com.finplay.api.auth.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.time.Clock;
-import java.time.LocalDateTime;
 import java.util.HexFormat;
 import java.util.UUID;
 
@@ -17,8 +16,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.support.TransactionTemplate;
 
 import com.finplay.api.TestcontainersConfiguration;
 import com.finplay.api.account.domain.Market;
@@ -28,7 +25,6 @@ import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.dto.response.SignupTokenResponse;
 import com.finplay.api.auth.dto.response.TokenResponse;
 import com.finplay.api.auth.email.FakeEmailSender;
-import com.finplay.api.auth.repository.EmailVerificationRepository;
 import com.finplay.api.auth.repository.RefreshTokenRepository;
 import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.common.BusinessException;
@@ -50,9 +46,6 @@ class SignupIntegrationTest {
 	private FakeEmailSender fakeEmailSender;
 
 	@Autowired
-	private EmailVerificationRepository emailVerificationRepository;
-
-	@Autowired
 	private UserRepository userRepository;
 
 	@Autowired
@@ -60,12 +53,6 @@ class SignupIntegrationTest {
 
 	@Autowired
 	private RefreshTokenRepository refreshTokenRepository;
-
-	@Autowired
-	private PlatformTransactionManager transactionManager;
-
-	@Autowired
-	private Clock clock;
 
 	@BeforeEach
 	void clearSentEmails() {
@@ -101,20 +88,22 @@ class SignupIntegrationTest {
 	@Test
 	void reusingSignupTokenReturnsEmailVerificationRequired() {
 		String email = uniqueEmail("reused");
+		String nickname = uniqueNickname("reused");
 		String signupToken = issueSignupToken(email);
-		String tokenHash = sha256(signupToken);
-		TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
-		Integer consumed = transactionTemplate.execute(status ->
-			emailVerificationRepository.consumeValidToken(tokenHash, LocalDateTime.now(clock)));
-		assertThat(consumed).isEqualTo(1);
+		authService.signup(email, nickname, PASSWORD, signupToken);
+		long userCountBeforeReplay = userRepository.count();
+		long accountCountBeforeReplay = accountRepository.count();
 
-		assertThatThrownBy(() ->
-			authService.signup(email, uniqueNickname("reused"), PASSWORD, signupToken))
-			.isInstanceOf(BusinessException.class)
-			.extracting(ex -> ((BusinessException)ex).getErrorCode())
-			.isEqualTo(ErrorCode.EMAIL_VERIFICATION_REQUIRED);
+		BusinessException replayFailure = catchThrowableOfType(
+			() -> authService.signup(email, nickname, PASSWORD, signupToken),
+			BusinessException.class);
 
-		assertThat(userRepository.findByEmail(email)).isEmpty();
+		assertThat(userRepository.count()).isEqualTo(userCountBeforeReplay);
+		assertThat(accountRepository.count()).isEqualTo(accountCountBeforeReplay);
+		User firstSignupUser = userRepository.findByEmail(email).orElseThrow();
+		assertThat(firstSignupUser.getNickname()).isEqualTo(nickname);
+		assertThat(accountRepository.findAllByUserId(firstSignupUser.getId())).hasSize(2);
+		assertThat(replayFailure.getErrorCode()).isEqualTo(ErrorCode.EMAIL_VERIFICATION_REQUIRED);
 	}
 
 	@Test

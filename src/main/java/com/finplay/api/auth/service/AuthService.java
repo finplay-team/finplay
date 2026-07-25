@@ -55,10 +55,10 @@ public class AuthService {
 	@Transactional
 	public TokenResponse signup(
 		String email, String nickname, String password, String signupVerificationToken) {
-		checkDuplicate(email, nickname);
 		LocalDateTime now = LocalDateTime.now(clock);
 		String tokenHash = sha256(signupVerificationToken);
 		findAndValidateVerification(tokenHash, email, now);
+		checkDuplicate(email, nickname);
 
 		int consumed = emailVerificationRepository.consumeValidToken(tokenHash, now);
 		if (consumed != 1) {
