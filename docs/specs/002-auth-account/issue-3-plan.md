@@ -149,6 +149,6 @@
 
   기대: 컴파일, 테스트, Spotless, SpotBugs, JaCoCo 게이트가 모두 성공한다.
 
-- [ ] **3단계: 새 reviewer의 전체 브랜치 리뷰**
+- [x] **3단계: 새 reviewer의 전체 브랜치 리뷰**
 
   reviewer는 `git diff origin/dev...HEAD`를 대상으로 정확성, 트랜잭션 지속성, 오류 매핑, 테스트 수준, 문서 동기화를 검토한다. 차단 지적은 같은 implementer 세션으로 돌려보내고 대상 테스트와 build를 다시 실행한다.
