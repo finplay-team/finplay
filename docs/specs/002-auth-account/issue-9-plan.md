@@ -94,7 +94,7 @@ URI createAuthorizationUri(OAuthProviderName provider, String state);
 
 ### 3. Service·Controller·라우트 문서
 
-- [ ] service 단위 테스트에서 KAKAO·NAVER 선택, 생성한 state가 포함된 URI와 결과 반환, 미지원 provider의 `VALIDATION_ERROR`를 먼저 검증한다.
-- [ ] `@WebMvcTest`에서 provider별 302 `Location`과 `Set-Cookie`의 최종 결합 계약, 미지원 provider의 400 공통 오류 필드(`code`, `message`, `requestId`)를 먼저 검증한다.
-- [ ] Controller/service 최소 구현과 동시에 `.env.example`, `docs/api-routes.md`를 갱신한다.
+- [x] service 단위 테스트에서 KAKAO·NAVER 선택, 생성한 state가 포함된 URI와 결과 반환, 미지원 provider의 `VALIDATION_ERROR`를 검증한다.
+- [x] `@WebMvcTest`에서 provider별 302 `Location`과 `Set-Cookie`의 최종 결합 계약, 미지원 provider의 400 공통 오류 필드(`code`, `message`, `requestId`)를 검증한다.
+- [x] Controller/service 구현과 동시에 `.env.example`, `docs/api-routes.md`를 갱신한다.
 - [ ] `.\gradlew.bat spotlessApply`, 대상 테스트, `.\gradlew.bat build` 순서로 검증한다. Fake/자동 테스트 통과와 실제 OAuth 외부 스모크 미실행을 구분해 보고한다.
