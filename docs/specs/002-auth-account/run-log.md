@@ -1,5 +1,22 @@
 # Run Log: 002-auth-account
 
+## Issue #4
+
+### 최종 검증
+
+| 구분 | 실행 명령 | 결과 | 검증 수준 |
+|---|---|---|---|
+| 대상 테스트 | `.\gradlew.bat test --tests "*JwtTokenProviderTest" --tests "*AccountServiceTest" --tests "*AuthServiceTest" --tests "*AuthControllerTest" --tests "*SignupPersistenceRepositoryTest" --tests "*SignupIntegrationTest"` | `BUILD SUCCESSFUL` (68.4초), XML 6 suites·38 tests·failures 0·errors 0·skipped 0 | JWT·계좌·가입 서비스 단위 테스트, MVC 슬라이스, MySQL 8.4·Redis Testcontainers 기반 영속성·통합 테스트 |
+| 전체 빌드 1차 | `.\gradlew.bat build` | 실패: SpotBugs `CT_CONSTRUCTOR_THROW` 1건 | `JwtTokenProvider`를 `final`로 수정한 커밋 `0c134b8` 후 `spotbugsMain` warnings 0 확인 |
+| 전체 빌드 2차 | `.\gradlew.bat build` | 실패: mixed EOL로 `spotlessJavaCheck` 실패 | `.\gradlew.bat spotlessApply`로 줄바꿈 정규화 |
+| 최종 전체 빌드 | `.\gradlew.bat build` | `BUILD SUCCESSFUL` (11초) | Spotless·SpotBugs·JaCoCo를 포함한 전체 빌드 게이트 통과 |
+
+### 검증 범위와 남은 위험
+
+- 대상 테스트는 MySQL 8.4와 Redis Testcontainers를 사용했으며 운영 DB나 운영 Redis를 검증한 결과가 아니다.
+- 실제 Resend 메일 발송, 외부 API, 운영 환경 연동은 실행하지 않았다.
+- SpotBugs 분석에는 비차단 `org.jetbrains.annotations.Nullable` missing auxiliary class 메시지가 남아 있다.
+
 ## Issue #3 Task 3
 
 | 시각 | 에이전트 | 실행 명령 | 근거 |

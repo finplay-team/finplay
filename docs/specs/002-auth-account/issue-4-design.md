@@ -53,7 +53,7 @@
 ### auth
 
 - `AuthController`: 요청 검증, `AuthService.signup` 호출, 201 응답만 담당한다.
-- `AuthService`: 중복 검사, BCrypt 해시, 가입 토큰 검증·소비, 회원 생성, 계좌 생성, JWT 발급, Refresh Token 해시 저장을 하나의 트랜잭션으로 조정한다.
+- `AuthService`: 가입 토큰 검증, 중복 검사, BCrypt 해시, 가입 토큰 소비, 회원 생성, 계좌 생성, JWT 발급, Refresh Token 해시 저장을 하나의 트랜잭션으로 조정한다.
 - `JwtTokenProvider`: 사용자 ID와 역할을 기반으로 Access/Refresh JWT를 발급한다. Access와 Refresh는 token type claim으로 구분한다.
 - `RefreshToken`: Refresh Token 원문의 SHA-256 해시, 사용자, 만료 시각, 생성 시각을 저장한다. 원문은 응답 이후 저장하지 않는다.
 - `EmailVerificationRepository`: 토큰 SHA-256 해시로 인증 행을 조회하고, `consumed_at IS NULL`, `token_expires_at > now` 조건을 포함한 조건부 UPDATE로 소비한다.
@@ -70,16 +70,18 @@
 ## 처리 순서와 원자성
 
 1. 요청 DTO 검증을 통과한다.
-2. 이메일과 닉네임 중복을 검사한다.
-3. 가입 토큰 원문을 SHA-256으로 해시하고 대응하는 이메일 인증 행을 찾는다.
-4. 인증 성공 여부, 토큰 만료·소비 여부, 요청 이메일 일치를 검사한다.
+2. 가입 토큰 원문을 SHA-256으로 해시하고 대응하는 이메일 인증 행을 찾는다.
+3. 인증 성공 여부, 토큰 만료·소비 여부, 요청 이메일 일치를 검사한다.
+4. 이메일과 닉네임 중복을 검사한다.
 5. 비밀번호를 BCrypt로 해시한다.
 6. 조건부 UPDATE로 가입 토큰을 소비한다. 영향 행이 1이 아니면 409로 중단한다.
 7. 회원을 저장하고 account service로 계좌 2개를 생성한다.
 8. Access/Refresh JWT를 발급하고 Refresh Token 해시를 저장한다.
 9. 트랜잭션 커밋 후 토큰 쌍을 201로 반환한다.
 
-동시에 같은 가입 토큰을 사용하면 조건부 UPDATE에 성공한 요청 하나만 가입된다. 닉네임 중복이나 계좌 저장 실패처럼 소비 이후 예외가 발생하면 전체 트랜잭션이 롤백되므로 토큰도 소비되지 않는다. 남은 유효시간 동안 수정한 입력으로 재시도할 수 있다.
+토큰 검증이 중복 검사보다 먼저이므로 이미 소비된 토큰과 기존 이메일 중복이 함께 확인되는 요청은 `DUPLICATE_RESOURCE`가 아니라 `EMAIL_VERIFICATION_REQUIRED`로 거부한다. 반대로 유효한 새 토큰을 사용한 이메일·닉네임 중복 요청은 토큰 소비 전에 `DUPLICATE_RESOURCE`로 거부하므로 입력을 수정해 같은 토큰으로 재시도할 수 있다.
+
+동시에 같은 가입 토큰을 사용하면 조건부 UPDATE에 성공한 요청 하나만 가입된다. 저장 시점의 동시 중복이나 계좌 저장 실패처럼 소비 이후 예외가 발생하면 전체 트랜잭션이 롤백되므로 토큰도 소비되지 않는다. 남은 유효시간 동안 수정한 입력으로 재시도할 수 있다.
 
 DB UNIQUE 제약은 동시 중복 가입의 최종 방어선이다. 사전 중복 검사와 별개로 `users.email`, `users.nickname`, `accounts(user_id, market)` 제약을 유지한다.
 
