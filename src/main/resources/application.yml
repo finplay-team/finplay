@@ -12,3 +12,12 @@ jwt:
   secret: ${JWT_SECRET}
   access-token-expiration-ms: 3600000 # 1시간
   refresh-token-expiration-ms: 1209600000 # 14일
+
+# 실제 OAuth 공급자 설정. 실제 구현이 활성화되는 prod·oauth-real 프로필에서 환경변수로 주입한다.
+oauth:
+  kakao:
+    client-id: ${KAKAO_CLIENT_ID}
+    redirect-uri: ${KAKAO_REDIRECT_URI}
+  naver:
+    client-id: ${NAVER_CLIENT_ID}
+    redirect-uri: ${NAVER_REDIRECT_URI}

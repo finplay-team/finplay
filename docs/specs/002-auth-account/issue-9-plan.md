@@ -79,11 +79,11 @@ URI createAuthorizationUri(OAuthProviderName provider, String state);
 
 ### 1. Provider 계약과 프로필별 URI 생성
 
-- [ ] `OAuthProviderName`, `OAuthAuthorizationProvider`, 카카오·네이버·Fake 구현 테스트를 먼저 작성한다.
-- [ ] 카카오는 host/path 및 `response_type`, `client_id`, `redirect_uri`, `state`, `scope=account_email`을 검증한다.
-- [ ] 네이버는 host/path 및 필수 네 파라미터를 검증하고 `scope`가 없음을 검증한다.
-- [ ] local·test에서 키 없이 Fake 한 개만 활성화되고, `oauth-real`에서 실제 두 구현만 활성화되는지 `ApplicationContextRunner`로 검증한다.
-- [ ] 최소 구현 후 `.\gradlew.bat test --tests "*OAuthAuthorizationProviderTest" --tests "*OAuthProviderProfileTest"`를 통과시킨다.
+- [x] `OAuthProviderName`, `OAuthAuthorizationProvider`, 카카오·네이버·Fake 구현 테스트를 작성한다.
+- [x] 카카오는 host/path 및 `response_type`, `client_id`, `redirect_uri`, `state`, `scope=account_email`을 검증한다.
+- [x] 네이버는 host/path 및 필수 네 파라미터를 검증하고 `scope`가 없음을 검증한다.
+- [x] local·test에서 키 없이 Fake 한 개만 활성화되고, `oauth-real`에서 실제 두 구현만 활성화되는지 `ApplicationContextRunner`로 검증한다.
+- [x] `.\gradlew.bat test --tests "*OAuthAuthorizationProviderTest" --tests "*OAuthProviderProfileTest" --rerun-tasks`를 통과시킨다.
 
 ### 2. State 생성과 10분 보안 쿠키
 
