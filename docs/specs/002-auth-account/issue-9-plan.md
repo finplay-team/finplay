@@ -36,7 +36,7 @@
 | 미지원 provider | 400 `VALIDATION_ERROR`, 기존 공통 오류 본문 |
 
 - Controller는 raw path variable을 service에 전달하고, service 결과의 URI와 state로 302 `Location` 및 보안 쿠키를 만든다.
-- service가 provider 해석, state 생성, 활성 provider 선택과 URI 생성을 조합하고 `OAuthAuthorizationResult(URI authorizationUri, String state)`를 반환한다.
+- service가 provider 해석, state 생성, 활성 provider 선택과 URI 생성을 조합하고 `OAuthAuthorizationResult(OAuthProviderName provider, URI authorizationUri, String state)`를 반환한다.
 - `OAuthAuthorizationProvider` 계약:
 
 ```java
@@ -97,4 +97,4 @@ URI createAuthorizationUri(OAuthProviderName provider, String state);
 - [x] service 단위 테스트에서 KAKAO·NAVER 선택, 생성한 state가 포함된 URI와 결과 반환, 미지원 provider의 `VALIDATION_ERROR`를 검증한다.
 - [x] `@WebMvcTest`에서 provider별 302 `Location`과 `Set-Cookie`의 최종 결합 계약, 미지원 provider의 400 공통 오류 필드(`code`, `message`, `requestId`)를 검증한다.
 - [x] Controller/service 구현과 동시에 `.env.example`, `docs/api-routes.md`를 갱신한다.
-- [ ] `.\gradlew.bat spotlessApply`, 대상 테스트, `.\gradlew.bat build` 순서로 검증한다. Fake/자동 테스트 통과와 실제 OAuth 외부 스모크 미실행을 구분해 보고한다.
+- [x] `.\gradlew.bat build --no-daemon --max-workers=1`을 HEAD `35a9feeb00f2330053de8c88b7667b6d1354a538`에서 실행해 `BUILD SUCCESSFUL`을 확인했다. 실제 OAuth 외부 스모크는 Issue #10 범위로 미실행이다.
