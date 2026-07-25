@@ -10,7 +10,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 @Component
 @Profile({"prod", "oauth-real"})
-public class KakaoOAuthAuthorizationProvider implements OAuthAuthorizationProvider {
+public final class KakaoOAuthAuthorizationProvider implements OAuthAuthorizationProvider {
 
 	private static final String AUTHORIZATION_ENDPOINT = "https://kauth.kakao.com/oauth/authorize";
 

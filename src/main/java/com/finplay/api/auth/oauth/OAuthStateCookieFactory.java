@@ -11,7 +11,7 @@ import org.springframework.http.ResponseCookie;
 import org.springframework.stereotype.Component;
 
 @Component
-public class OAuthStateCookieFactory {
+public final class OAuthStateCookieFactory {
 
 	private static final String COOKIE_NAME = "oauth_state";
 	private static final String CALLBACK_PATH = "/api/auth/oauth/%s/callback";

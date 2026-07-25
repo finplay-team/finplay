@@ -10,7 +10,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 @Component
 @Profile({"prod", "oauth-real"})
-public class NaverOAuthAuthorizationProvider implements OAuthAuthorizationProvider {
+public final class NaverOAuthAuthorizationProvider implements OAuthAuthorizationProvider {
 
 	private static final String AUTHORIZATION_ENDPOINT = "https://nid.naver.com/oauth2.0/authorize";
 
