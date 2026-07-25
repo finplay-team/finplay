@@ -38,6 +38,13 @@ public class JwtTokenProvider {
 	}
 
 	public IssuedTokenPair issue(Long userId, String role) {
+		if (userId == null) {
+			throw new IllegalArgumentException("사용자 ID는 필수입니다.");
+		}
+		if (role == null || role.isBlank()) {
+			throw new IllegalArgumentException("역할은 필수입니다.");
+		}
+
 		Instant issuedAt = clock.instant();
 		Instant accessTokenExpiresAt = issuedAt.plusMillis(accessTokenExpirationMs);
 		Instant refreshTokenExpiresAt = issuedAt.plusMillis(refreshTokenExpirationMs);

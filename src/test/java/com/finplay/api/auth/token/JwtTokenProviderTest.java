@@ -2,6 +2,7 @@
 package com.finplay.api.auth.token;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
@@ -13,6 +14,9 @@ import java.util.Date;
 import javax.crypto.SecretKey;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
@@ -49,5 +53,25 @@ class JwtTokenProviderTest {
 		assertThat(tokens.refreshTokenExpiresInSeconds()).isEqualTo(1_209_600L);
 		assertThat(tokens.refreshTokenExpiresAt())
 				.isEqualTo(LocalDateTime.ofInstant(FIXED_INSTANT.plusSeconds(1_209_600), ZoneOffset.UTC));
+	}
+
+	@Test
+	void issueRejectsNullUserId() {
+		Clock fixedClock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
+		JwtTokenProvider provider = new JwtTokenProvider(JWT_SECRET, ACCESS_TOKEN_EXPIRATION_MS,
+				REFRESH_TOKEN_EXPIRATION_MS, fixedClock);
+
+		assertThatIllegalArgumentException().isThrownBy(() -> provider.issue(null, "USER"));
+	}
+
+	@ParameterizedTest
+	@NullSource
+	@ValueSource(strings = { "", " " })
+	void issueRejectsNullOrBlankRole(String role) {
+		Clock fixedClock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
+		JwtTokenProvider provider = new JwtTokenProvider(JWT_SECRET, ACCESS_TOKEN_EXPIRATION_MS,
+				REFRESH_TOKEN_EXPIRATION_MS, fixedClock);
+
+		assertThatIllegalArgumentException().isThrownBy(() -> provider.issue(7L, role));
 	}
 }
