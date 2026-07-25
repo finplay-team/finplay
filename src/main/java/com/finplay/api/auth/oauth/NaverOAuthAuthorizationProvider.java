@@ -22,8 +22,8 @@ public class NaverOAuthAuthorizationProvider implements OAuthAuthorizationProvid
 		String clientId,
 		@Value("${oauth.naver.redirect-uri}")
 		String redirectUri) {
-		this.clientId = clientId;
-		this.redirectUri = redirectUri;
+		this.clientId = requireConfigured(clientId, "네이버 OAuth clientId가 설정되지 않았습니다.");
+		this.redirectUri = requireConfigured(redirectUri, "네이버 OAuth redirectUri가 설정되지 않았습니다.");
 	}
 
 	@Override
@@ -41,5 +41,12 @@ public class NaverOAuthAuthorizationProvider implements OAuthAuthorizationProvid
 			.build()
 			.encode(StandardCharsets.UTF_8)
 			.toUri();
+	}
+
+	private String requireConfigured(String value, String message) {
+		if (value == null || value.isBlank()) {
+			throw new IllegalArgumentException(message);
+		}
+		return value;
 	}
 }

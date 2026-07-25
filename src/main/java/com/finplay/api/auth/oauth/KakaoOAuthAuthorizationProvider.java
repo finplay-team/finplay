@@ -22,8 +22,8 @@ public class KakaoOAuthAuthorizationProvider implements OAuthAuthorizationProvid
 		String clientId,
 		@Value("${oauth.kakao.redirect-uri}")
 		String redirectUri) {
-		this.clientId = clientId;
-		this.redirectUri = redirectUri;
+		this.clientId = requireConfigured(clientId, "카카오 OAuth clientId가 설정되지 않았습니다.");
+		this.redirectUri = requireConfigured(redirectUri, "카카오 OAuth redirectUri가 설정되지 않았습니다.");
 	}
 
 	@Override
@@ -42,5 +42,12 @@ public class KakaoOAuthAuthorizationProvider implements OAuthAuthorizationProvid
 			.build()
 			.encode(StandardCharsets.UTF_8)
 			.toUri();
+	}
+
+	private String requireConfigured(String value, String message) {
+		if (value == null || value.isBlank()) {
+			throw new IllegalArgumentException(message);
+		}
+		return value;
 	}
 }

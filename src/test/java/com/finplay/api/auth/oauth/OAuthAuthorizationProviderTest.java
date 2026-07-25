@@ -2,6 +2,7 @@
 package com.finplay.api.auth.oauth;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.net.URI;
 import java.net.URLDecoder;
@@ -63,6 +64,32 @@ class OAuthAuthorizationProviderTest {
 	}
 
 	@Test
+	@DisplayName("카카오 인가 URI는 복잡한 redirect URI와 state를 하나의 query 값으로 인코딩한다")
+	void kakaoEncodesComplexRedirectUriAndStateWithoutBreakingQueryBoundaries() {
+		KakaoOAuthAuthorizationProvider provider = new KakaoOAuthAuthorizationProvider(
+			"kakao-client-id",
+			"https://finplay.example/api/auth/oauth/kakao/callback?next=한 글&mode=a=b");
+
+		URI uri = provider.createAuthorizationUri(
+			OAuthProviderName.KAKAO, "state value&token=a=b/한글?");
+
+		assertThat(uri.getRawQuery())
+			.contains(
+				"redirect_uri=https://finplay.example/api/auth/oauth/kakao/callback"
+					+ "?next%3D%ED%95%9C%20%EA%B8%80%26mode%3Da%3Db")
+			.contains("state=state%20value%26token%3Da%3Db/%ED%95%9C%EA%B8%80?");
+		assertThat(decodedQueryParameters(uri))
+			.containsExactlyInAnyOrderEntriesOf(
+				Map.of(
+					"response_type", "code",
+					"client_id", "kakao-client-id",
+					"redirect_uri",
+					"https://finplay.example/api/auth/oauth/kakao/callback?next=한 글&mode=a=b",
+					"state", "state value&token=a=b/한글?",
+					"scope", "account_email"));
+	}
+
+	@Test
 	@DisplayName("네이버 인가 URI는 endpoint와 필수 파라미터를 포함하고 scope는 포함하지 않는다")
 	void naverCreatesAuthorizationUriWithRequiredParametersWithoutScope() {
 		NaverOAuthAuthorizationProvider provider = new NaverOAuthAuthorizationProvider(
@@ -83,6 +110,75 @@ class OAuthAuthorizationProviderTest {
 					"redirect_uri", "https://finplay.example/api/auth/oauth/naver/callback",
 					"state", "state-value_123"));
 		assertThat(decodedQueryParameters(uri)).doesNotContainKey("scope");
+	}
+
+	@Test
+	@DisplayName("네이버 인가 URI는 복잡한 redirect URI와 state를 하나의 query 값으로 인코딩한다")
+	void naverEncodesComplexRedirectUriAndStateWithoutBreakingQueryBoundaries() {
+		NaverOAuthAuthorizationProvider provider = new NaverOAuthAuthorizationProvider(
+			"naver-client-id",
+			"https://finplay.example/api/auth/oauth/naver/callback?next=한 글&mode=a=b");
+
+		URI uri = provider.createAuthorizationUri(
+			OAuthProviderName.NAVER, "state value&token=a=b/한글?");
+
+		assertThat(uri.getRawQuery())
+			.contains(
+				"redirect_uri=https://finplay.example/api/auth/oauth/naver/callback"
+					+ "?next%3D%ED%95%9C%20%EA%B8%80%26mode%3Da%3Db")
+			.contains("state=state%20value%26token%3Da%3Db/%ED%95%9C%EA%B8%80?");
+		assertThat(decodedQueryParameters(uri))
+			.containsExactlyInAnyOrderEntriesOf(
+				Map.of(
+					"response_type", "code",
+					"client_id", "naver-client-id",
+					"redirect_uri",
+					"https://finplay.example/api/auth/oauth/naver/callback?next=한 글&mode=a=b",
+					"state", "state value&token=a=b/한글?"));
+	}
+
+	@ParameterizedTest
+	@NullAndEmptySource
+	@ValueSource(strings = {" ", "\t"})
+	@DisplayName("카카오 clientId가 null 또는 blank이면 생성에 실패한다")
+	void kakaoRejectsMissingClientId(String clientId) {
+		assertThatThrownBy(() -> new KakaoOAuthAuthorizationProvider(
+			clientId, "https://finplay.example/api/auth/oauth/kakao/callback"))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("카카오 OAuth clientId가 설정되지 않았습니다.");
+	}
+
+	@ParameterizedTest
+	@NullAndEmptySource
+	@ValueSource(strings = {" ", "\t"})
+	@DisplayName("카카오 redirectUri가 null 또는 blank이면 생성에 실패한다")
+	void kakaoRejectsMissingRedirectUri(String redirectUri) {
+		assertThatThrownBy(() -> new KakaoOAuthAuthorizationProvider(
+			"kakao-client-id", redirectUri))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("카카오 OAuth redirectUri가 설정되지 않았습니다.");
+	}
+
+	@ParameterizedTest
+	@NullAndEmptySource
+	@ValueSource(strings = {" ", "\t"})
+	@DisplayName("네이버 clientId가 null 또는 blank이면 생성에 실패한다")
+	void naverRejectsMissingClientId(String clientId) {
+		assertThatThrownBy(() -> new NaverOAuthAuthorizationProvider(
+			clientId, "https://finplay.example/api/auth/oauth/naver/callback"))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("네이버 OAuth clientId가 설정되지 않았습니다.");
+	}
+
+	@ParameterizedTest
+	@NullAndEmptySource
+	@ValueSource(strings = {" ", "\t"})
+	@DisplayName("네이버 redirectUri가 null 또는 blank이면 생성에 실패한다")
+	void naverRejectsMissingRedirectUri(String redirectUri) {
+		assertThatThrownBy(() -> new NaverOAuthAuthorizationProvider(
+			"naver-client-id", redirectUri))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("네이버 OAuth redirectUri가 설정되지 않았습니다.");
 	}
 
 	@ParameterizedTest

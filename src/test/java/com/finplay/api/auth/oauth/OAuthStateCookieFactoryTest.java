@@ -10,9 +10,13 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.http.ResponseCookie;
 
 class OAuthStateCookieFactoryTest {
+
+	private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
+		.withUserConfiguration(OAuthStateCookieFactory.class);
 
 	@ParameterizedTest
 	@MethodSource("providerCallbackPaths")
@@ -54,6 +58,52 @@ class OAuthStateCookieFactoryTest {
 			.contains("; HttpOnly")
 			.contains("; SameSite=Lax")
 			.doesNotContain("; Secure");
+	}
+
+	@Test
+	@DisplayName("secure 설정이 없으면 fail-safe 기본값 true로 보안 쿠키를 만든다")
+	void defaultConfigurationCreatesSecureCookie() {
+		contextRunner.run(context -> {
+			assertThat(context).hasNotFailed();
+
+			ResponseCookie cookie = context.getBean(OAuthStateCookieFactory.class)
+				.create(OAuthProviderName.KAKAO, "state-value_123");
+
+			assertThat(cookie.isSecure()).isTrue();
+			assertThat(cookie.toString()).contains("; Secure");
+		});
+	}
+
+	@Test
+	@DisplayName("local 프로필에서 secure를 명시적으로 false로 설정하면 컨텍스트가 활성화된다")
+	void localProfileAllowsExplicitlyDisabledSecureAttribute() {
+		contextRunner
+			.withPropertyValues(
+				"spring.profiles.active=local", "oauth.state-cookie-secure=false")
+			.run(context -> {
+				assertThat(context).hasNotFailed();
+
+				ResponseCookie cookie = context.getBean(OAuthStateCookieFactory.class)
+					.create(OAuthProviderName.KAKAO, "state-value_123");
+
+				assertThat(cookie.isSecure()).isFalse();
+				assertThat(cookie.toString()).doesNotContain("; Secure");
+			});
+	}
+
+	@Test
+	@DisplayName("oauth-real 프로필에서 secure를 false로 설정하면 컨텍스트 기동에 실패한다")
+	void oauthRealProfileRejectsExplicitlyDisabledSecureAttribute() {
+		contextRunner
+			.withPropertyValues(
+				"spring.profiles.active=oauth-real", "oauth.state-cookie-secure=false")
+			.run(context -> {
+				assertThat(context).hasFailed();
+				assertThat(context.getStartupFailure())
+					.hasRootCauseInstanceOf(IllegalStateException.class)
+					.hasRootCauseMessage(
+						"prod 또는 oauth-real 프로필에서는 OAuth state 쿠키의 Secure 속성을 끌 수 없습니다.");
+			});
 	}
 
 	private static Stream<Arguments> providerCallbackPaths() {
