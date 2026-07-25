@@ -1,5 +1,11 @@
 # Run Log: 002-auth-account
 
+## Issue #3 Task 2
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| 20:26 | implementer | `.\gradlew.bat compileJava` | Task 2 HTTP 계약, Bean Validation, ADR-0002 controller-service 경계, API 경로 문서 동기화 |
+
 ## Issue #3 Task 1
 
 | 시각 | 에이전트 | 실행 명령 | 근거 |
