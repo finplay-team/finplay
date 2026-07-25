@@ -95,8 +95,8 @@ class SignupIntegrationTest {
 		long accountCountBeforeReplay = accountRepository.count();
 
 		BusinessException replayFailure = catchThrowableOfType(
-			() -> authService.signup(email, nickname, PASSWORD, signupToken),
-			BusinessException.class);
+			BusinessException.class,
+			() -> authService.signup(email, nickname, PASSWORD, signupToken));
 
 		assertThat(userRepository.count()).isEqualTo(userCountBeforeReplay);
 		assertThat(accountRepository.count()).isEqualTo(accountCountBeforeReplay);
