@@ -9,7 +9,7 @@
 
 ## 목표 구조
 
-현재(ADR-0005)는 사람이 로컬 세션에서 `/feature`, `/review-pr`을 실행하는 반자동이다. 다음 단계는 GitHub Actions 러너에서 에이전트가 실행되는 완전 자동 흐름이다.
+현재(ADR-0005, ADR-0009)는 사람이 Claude Code 또는 Codex 로컬 세션에서 `feature`, `review-pr`을 실행하는 반자동이다. 다음 단계는 GitHub Actions 러너에서 에이전트가 실행되는 완전 자동 흐름이다.
 
 ```
 ① 이슈 등록 + 라벨(agent:plan) 부착
@@ -21,7 +21,7 @@
 ③ 사람이 PR 검토 → 머지 결정 (자동 머지 금지 — ADR-0005의 원칙 유지)
 ```
 
-기존 하네스가 그대로 얹혀지는 구조다 — CLAUDE.md, docs/, `.claude/agents/`가 레포에 커밋돼 있어 러너의 에이전트도 로컬과 동일한 규칙·라우터·리뷰 기준을 쓴다.
+기존 하네스가 그대로 얹혀지는 구조다 — Claude용 `CLAUDE.md`·`.claude/`, Codex용 `AGENTS.md`·`.agents/`·`.codex/`, 공통 `docs/`가 커밋돼 있어 선택한 러너도 로컬과 동일한 규칙·라우터·리뷰 기준을 쓴다.
 
 ## 구현 단계 (착수 시 체크)
 
