@@ -4,27 +4,40 @@ package com.finplay.api.auth.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.reset;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import com.finplay.api.TestcontainersConfiguration;
 import com.finplay.api.account.domain.Market;
 import com.finplay.api.account.repository.AccountRepository;
+import com.finplay.api.account.service.AccountService;
 import com.finplay.api.auth.domain.RefreshToken;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.dto.response.SignupTokenResponse;
 import com.finplay.api.auth.dto.response.TokenResponse;
 import com.finplay.api.auth.email.FakeEmailSender;
+import com.finplay.api.auth.repository.EmailVerificationRepository;
 import com.finplay.api.auth.repository.RefreshTokenRepository;
 import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.common.BusinessException;
@@ -53,6 +66,12 @@ class SignupIntegrationTest {
 
 	@Autowired
 	private RefreshTokenRepository refreshTokenRepository;
+
+	@Autowired
+	private EmailVerificationRepository emailVerificationRepository;
+
+	@MockitoSpyBean
+	private AccountService accountService;
 
 	@BeforeEach
 	void clearSentEmails() {
@@ -149,6 +168,96 @@ class SignupIntegrationTest {
 			.doesNotContain(response.refreshToken());
 	}
 
+	@Test
+	void downstreamFailureRollsBackSignupAndAllowsRetryWithSameToken() {
+		String email = uniqueEmail("rollback");
+		String nickname = uniqueNickname("rollback");
+		String signupToken = issueSignupToken(email);
+		long usersBefore = userRepository.count();
+		long accountsBefore = accountRepository.count();
+		long refreshTokensBefore = refreshTokenRepository.count();
+
+		doThrow(new IllegalStateException("forced account creation failure"))
+			.when(accountService)
+			.createAccountsFor(any(User.class));
+
+		assertThatThrownBy(() -> authService.signup(email, nickname, PASSWORD, signupToken))
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessage("forced account creation failure");
+
+		assertThat(emailVerificationRepository.findByTokenHash(sha256(signupToken)).orElseThrow()
+			.getConsumedAt()).isNull();
+		assertThat(userRepository.findByEmail(email)).isEmpty();
+		assertThat(userRepository.count()).isEqualTo(usersBefore);
+		assertThat(accountRepository.count()).isEqualTo(accountsBefore);
+		assertThat(refreshTokenRepository.count()).isEqualTo(refreshTokensBefore);
+
+		reset(accountService);
+
+		TokenResponse retried = authService.signup(email, nickname, PASSWORD, signupToken);
+
+		assertThat(retried.accessToken()).isNotBlank();
+		User user = userRepository.findByEmail(email).orElseThrow();
+		assertThat(accountRepository.findAllByUserId(user.getId())).hasSize(2);
+		assertThat(userRepository.count()).isEqualTo(usersBefore + 1);
+		assertThat(accountRepository.count()).isEqualTo(accountsBefore + 2);
+		assertThat(refreshTokenRepository.count()).isEqualTo(refreshTokensBefore + 1);
+		assertThat(emailVerificationRepository.findByTokenHash(sha256(signupToken)).orElseThrow()
+			.getConsumedAt()).isNotNull();
+	}
+
+	@Test
+	void concurrentSignupWithSameTokenAllowsExactlyOneSuccess() throws Exception {
+		String email = uniqueEmail("concurrent");
+		String nickname = uniqueNickname("concurrent");
+		String signupToken = issueSignupToken(email);
+		long usersBefore = userRepository.count();
+		long accountsBefore = accountRepository.count();
+		long refreshTokensBefore = refreshTokenRepository.count();
+		CountDownLatch ready = new CountDownLatch(2);
+		CountDownLatch start = new CountDownLatch(1);
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		Callable<SignupAttempt> signup = () -> {
+			ready.countDown();
+			if (!start.await(10, TimeUnit.SECONDS)) {
+				throw new IllegalStateException("concurrent signup start timeout");
+			}
+			try {
+				authService.signup(email, nickname, PASSWORD, signupToken);
+				return SignupAttempt.succeeded();
+			} catch (BusinessException exception) {
+				return SignupAttempt.failed(exception.getErrorCode());
+			}
+		};
+
+		try {
+			Future<SignupAttempt> first = executor.submit(signup);
+			Future<SignupAttempt> second = executor.submit(signup);
+			assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+			start.countDown();
+
+			List<SignupAttempt> attempts = List.of(
+				first.get(30, TimeUnit.SECONDS),
+				second.get(30, TimeUnit.SECONDS));
+
+			assertThat(attempts).filteredOn(SignupAttempt::success).hasSize(1);
+			assertThat(attempts)
+				.filteredOn(attempt -> !attempt.success())
+				.extracting(SignupAttempt::errorCode)
+				.containsExactly(ErrorCode.EMAIL_VERIFICATION_REQUIRED);
+		} finally {
+			start.countDown();
+			executor.shutdownNow();
+			executor.awaitTermination(10, TimeUnit.SECONDS);
+		}
+
+		User user = userRepository.findByEmail(email).orElseThrow();
+		assertThat(userRepository.count()).isEqualTo(usersBefore + 1);
+		assertThat(accountRepository.findAllByUserId(user.getId())).hasSize(2);
+		assertThat(accountRepository.count()).isEqualTo(accountsBefore + 2);
+		assertThat(refreshTokenRepository.count()).isEqualTo(refreshTokensBefore + 1);
+	}
+
 	private String issueSignupToken(String email) {
 		fakeEmailSender.clear();
 		emailVerificationService.sendVerificationCode(email);
@@ -176,6 +285,17 @@ class SignupIntegrationTest {
 				MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
 		} catch (NoSuchAlgorithmException ex) {
 			throw new IllegalStateException(ex);
+		}
+	}
+
+	private record SignupAttempt(boolean success, ErrorCode errorCode) {
+
+		private static SignupAttempt succeeded() {
+			return new SignupAttempt(true, null);
+		}
+
+		private static SignupAttempt failed(ErrorCode errorCode) {
+			return new SignupAttempt(false, errorCode);
 		}
 	}
 }

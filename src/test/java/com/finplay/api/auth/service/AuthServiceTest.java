@@ -23,11 +23,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.finplay.api.account.service.AccountService;
+import com.finplay.api.auth.crypto.Sha256BcryptPasswordEncoder;
 import com.finplay.api.auth.domain.EmailVerification;
 import com.finplay.api.auth.domain.RefreshToken;
 import com.finplay.api.auth.domain.User;
@@ -65,7 +65,7 @@ class AuthServiceTest {
 		refreshTokenRepository = mock(RefreshTokenRepository.class);
 		accountService = mock(AccountService.class);
 		jwtTokenProvider = mock(JwtTokenProvider.class);
-		passwordEncoder = new BCryptPasswordEncoder();
+		passwordEncoder = new Sha256BcryptPasswordEncoder();
 		Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
 		authService = new AuthService(userRepository, emailVerificationRepository, refreshTokenRepository,
 			passwordEncoder, accountService, jwtTokenProvider, clock);
