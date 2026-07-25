@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 class OAuthProviderProfileTest {
@@ -28,12 +30,13 @@ class OAuthProviderProfileTest {
 		});
 	}
 
-	@Test
-	@DisplayName("oauth-real 프로필에서는 실제 카카오와 네이버 공급자만 활성화된다")
-	void oauthRealProfileWiresOnlyKakaoAndNaverProviders() {
+	@ParameterizedTest
+	@ValueSource(strings = {"prod", "oauth-real"})
+	@DisplayName("prod와 oauth-real 프로필에서는 실제 카카오와 네이버 공급자만 활성화된다")
+	void realOAuthProfileWiresOnlyKakaoAndNaverProviders(String profile) {
 		contextRunner
 			.withPropertyValues(
-				"spring.profiles.active=oauth-real",
+				"spring.profiles.active=" + profile,
 				"oauth.kakao.client-id=kakao-client-id",
 				"oauth.kakao.redirect-uri=https://finplay.example/api/auth/oauth/kakao/callback",
 				"oauth.naver.client-id=naver-client-id",

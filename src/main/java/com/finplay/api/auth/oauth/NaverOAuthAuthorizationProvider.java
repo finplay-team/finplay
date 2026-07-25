@@ -35,11 +35,11 @@ public final class NaverOAuthAuthorizationProvider implements OAuthAuthorization
 	public URI createAuthorizationUri(OAuthProviderName provider, String state) {
 		return UriComponentsBuilder.fromUriString(AUTHORIZATION_ENDPOINT)
 			.queryParam("response_type", "code")
-			.queryParam("client_id", clientId)
-			.queryParam("redirect_uri", redirectUri)
-			.queryParam("state", state)
-			.build()
+			.queryParam("client_id", "{clientId}")
+			.queryParam("redirect_uri", "{redirectUri}")
+			.queryParam("state", "{state}")
 			.encode(StandardCharsets.UTF_8)
+			.buildAndExpand(clientId, redirectUri, state)
 			.toUri();
 	}
 

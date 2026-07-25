@@ -68,23 +68,29 @@ class OAuthAuthorizationProviderTest {
 	void kakaoEncodesComplexRedirectUriAndStateWithoutBreakingQueryBoundaries() {
 		KakaoOAuthAuthorizationProvider provider = new KakaoOAuthAuthorizationProvider(
 			"kakao-client-id",
-			"https://finplay.example/api/auth/oauth/kakao/callback?next=한 글&mode=a=b");
+			"https://finplay.example/api/auth/oauth/kakao/callback?next=한 글&mode=a+b");
 
 		URI uri = provider.createAuthorizationUri(
 			OAuthProviderName.KAKAO, "state value&token=a=b/한글?");
 
 		assertThat(uri.getRawQuery())
-			.contains(
-				"redirect_uri=https://finplay.example/api/auth/oauth/kakao/callback"
-					+ "?next%3D%ED%95%9C%20%EA%B8%80%26mode%3Da%3Db")
-			.contains("state=state%20value%26token%3Da%3Db/%ED%95%9C%EA%B8%80?");
+			.isEqualTo(
+				"response_type=code&client_id=kakao-client-id"
+					+ "&redirect_uri=https%3A%2F%2Ffinplay.example%2Fapi%2Fauth%2Foauth"
+					+ "%2Fkakao%2Fcallback%3Fnext%3D%ED%95%9C%20%EA%B8%80%26mode%3Da%2Bb"
+					+ "&state=state%20value%26token%3Da%3Db%2F%ED%95%9C%EA%B8%80%3F"
+					+ "&scope=account_email")
+			.doesNotContain("+")
+			.contains("%2B")
+			.contains("%26")
+			.contains("%3D");
 		assertThat(decodedQueryParameters(uri))
 			.containsExactlyInAnyOrderEntriesOf(
 				Map.of(
 					"response_type", "code",
 					"client_id", "kakao-client-id",
 					"redirect_uri",
-					"https://finplay.example/api/auth/oauth/kakao/callback?next=한 글&mode=a=b",
+					"https://finplay.example/api/auth/oauth/kakao/callback?next=한 글&mode=a+b",
 					"state", "state value&token=a=b/한글?",
 					"scope", "account_email"));
 	}
@@ -117,23 +123,28 @@ class OAuthAuthorizationProviderTest {
 	void naverEncodesComplexRedirectUriAndStateWithoutBreakingQueryBoundaries() {
 		NaverOAuthAuthorizationProvider provider = new NaverOAuthAuthorizationProvider(
 			"naver-client-id",
-			"https://finplay.example/api/auth/oauth/naver/callback?next=한 글&mode=a=b");
+			"https://finplay.example/api/auth/oauth/naver/callback?next=한 글&mode=a+b");
 
 		URI uri = provider.createAuthorizationUri(
 			OAuthProviderName.NAVER, "state value&token=a=b/한글?");
 
 		assertThat(uri.getRawQuery())
-			.contains(
-				"redirect_uri=https://finplay.example/api/auth/oauth/naver/callback"
-					+ "?next%3D%ED%95%9C%20%EA%B8%80%26mode%3Da%3Db")
-			.contains("state=state%20value%26token%3Da%3Db/%ED%95%9C%EA%B8%80?");
+			.isEqualTo(
+				"response_type=code&client_id=naver-client-id"
+					+ "&redirect_uri=https%3A%2F%2Ffinplay.example%2Fapi%2Fauth%2Foauth"
+					+ "%2Fnaver%2Fcallback%3Fnext%3D%ED%95%9C%20%EA%B8%80%26mode%3Da%2Bb"
+					+ "&state=state%20value%26token%3Da%3Db%2F%ED%95%9C%EA%B8%80%3F")
+			.doesNotContain("+")
+			.contains("%2B")
+			.contains("%26")
+			.contains("%3D");
 		assertThat(decodedQueryParameters(uri))
 			.containsExactlyInAnyOrderEntriesOf(
 				Map.of(
 					"response_type", "code",
 					"client_id", "naver-client-id",
 					"redirect_uri",
-					"https://finplay.example/api/auth/oauth/naver/callback?next=한 글&mode=a=b",
+					"https://finplay.example/api/auth/oauth/naver/callback?next=한 글&mode=a+b",
 					"state", "state value&token=a=b/한글?"));
 	}
 

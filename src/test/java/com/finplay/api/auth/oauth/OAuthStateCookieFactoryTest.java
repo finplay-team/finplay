@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.http.ResponseCookie;
 
@@ -91,12 +92,13 @@ class OAuthStateCookieFactoryTest {
 			});
 	}
 
-	@Test
-	@DisplayName("oauth-real 프로필에서 secure를 false로 설정하면 컨텍스트 기동에 실패한다")
-	void oauthRealProfileRejectsExplicitlyDisabledSecureAttribute() {
+	@ParameterizedTest
+	@ValueSource(strings = {"prod", "oauth-real"})
+	@DisplayName("prod와 oauth-real 프로필에서 secure를 false로 설정하면 컨텍스트 기동에 실패한다")
+	void realOAuthProfileRejectsExplicitlyDisabledSecureAttribute(String profile) {
 		contextRunner
 			.withPropertyValues(
-				"spring.profiles.active=oauth-real", "oauth.state-cookie-secure=false")
+				"spring.profiles.active=" + profile, "oauth.state-cookie-secure=false")
 			.run(context -> {
 				assertThat(context).hasFailed();
 				assertThat(context.getStartupFailure())
