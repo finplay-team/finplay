@@ -33,6 +33,7 @@ FinPlay 백엔드 API 서버. Spring Boot 4.1 / Java 17 / Gradle (`build.gradle`
 - **경량 경로**: spec 단위 기능만 /feature를 탄다. 파일 1~2개 규모의 버그픽스·설정·문서 작업은 메인 세션이 직접 구현한다 (`./gradlew build` 통과 의무는 동일).
 - 서브에이전트 4개 (ADR-0008): planner(계획·문서 동기화) / implementer(구현) / tester(테스트 작성·실행) / reviewer(리뷰·블랙박스 QA, 모드 분리) — 정의는 `.claude/agents/`. 팀장은 메인 세션(오케스트레이터)이다.
 - 병렬 작업(독립 spec 동시 진행, 에이전트 팀)은 `docs/parallel-agents.md`를 따른다. /feature 루프 내부는 순차 유지.
+- 서브에이전트 세션 생명주기(implementer/tester 재사용·동일 세션 재개, reviewer 신규, 전환 조건)는 ADR-0010을 따른다. 실행 방법은 `/feature` 스킬에 있다.
 
 ## 아키텍처
 

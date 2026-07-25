@@ -61,3 +61,4 @@ Codex는 `AGENTS.md`, `.agents/skills/`, `.codex/agents/`를 사용한다. `.cod
 
 - Claude `/feature`와 Codex `feature`의 **최소 packet 원칙은 유지**한다 — 루프 안에서 에이전트끼리 자유 대화를 시키면 컨텍스트가 오염되고 판정이 흐려진다. 대화가 필요한 작업(경쟁 리뷰 등)만 팀 모드를 별도로 연다.
 - 속도가 문제면 순서는 이렇다. ① 독립 spec을 Agent View 또는 Orca 별도 worktree로 병렬화 ② 그래도 느리면 spec의 tasks.md 항목을 더 작게 쪼개 커밋 주기를 단축 ③ 루프 내부 병렬화는 하지 않는다.
+- 루프 안의 재시도·수정은 새 서브에이전트를 만들지 말고 동일 implementer/tester 세션을 재개한다. reviewer만 항상 새 세션이다 (ADR-0010).

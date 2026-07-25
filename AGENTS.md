@@ -42,6 +42,7 @@ FinPlay 백엔드 API 서버. Spring Boot 4.1 / Java 17 / Gradle(`build.gradle`,
 - 서브에이전트 완료 보고만 신뢰하지 않는다. 메인 에이전트가 diff와 검증 결과를 다시 확인한다.
 - 독립 spec 병렬 처리와 파일 소유권은 `docs/parallel-agents.md`를 따른다.
 - 모델·승인 정책·인증은 저장소에 고정하지 않는다. 각자 `~/.codex/config.toml`에서 모델과 승인 모드를 설정한 뒤 실행한다 (ADR-0009).
+- 서브에이전트 세션 생명주기(implementer/tester 재사용·재개, reviewer 신규, 전환 조건)는 ADR-0010을 따른다. 실행 방법은 `feature` 스킬에 있다.
 
 ## 브랜치와 리뷰
 
