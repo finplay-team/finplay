@@ -1,6 +1,6 @@
 # CLAUDE.md — finplay-api
 
-FinPlay 백엔드 API 서버. Spring Boot 4.1 / Java 17 / Gradle (Kotlin DSL) / MySQL.
+FinPlay 백엔드 API 서버. Spring Boot 4.1 / Java 17 / Gradle (`build.gradle`, Groovy DSL) / MySQL.
 프론트엔드: `FinPlay` (Vite + React + TypeScript, 별도 레포).
 
 ## 명령어

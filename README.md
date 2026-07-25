@@ -1,6 +1,6 @@
 # finplay-api
 
-FinPlay 백엔드 API 서버. Spring Boot 4.1 / Java 17 / Gradle (Kotlin DSL) / MySQL.
+FinPlay 백엔드 API 서버. Spring Boot 4.1 / Java 17 / Gradle (`build.gradle`, Groovy DSL) / MySQL.
 
 > ⚠️ **반드시 영문 경로에 클론하세요.** 한글이 포함된 경로에서는 Gradle 테스트 워커가 클래스패스를 읽지 못해 테스트가 전부 `ClassNotFoundException`으로 실패합니다 (컴파일은 되어서 더 헷갈림).
 
@@ -26,7 +26,8 @@ FinPlay 백엔드 API 서버. Spring Boot 4.1 / Java 17 / Gradle (Kotlin DSL) / 
 
 | 문서 | 내용 |
 |---|---|
-| [`CLAUDE.md`](CLAUDE.md) | AI 에이전트 규칙 |
+| [`AGENTS.md`](AGENTS.md) | Codex 프로젝트 규칙 |
+| [`CLAUDE.md`](CLAUDE.md) | Claude Code 프로젝트 규칙 |
 | [Notion 10 X TEN](https://app.notion.com/p/10-X-TEN-ae2b1fddfba9830abe9c813974422885) | 제품 범위·API 단계·담당자 정본 |
 | [`docs/prd.md`](docs/prd.md) | Notion 결정을 옮긴 1차 MVP 구현 스냅샷 (PRD) |
 | [`docs/conventions.md`](docs/conventions.md) | 코드/팀 컨벤션 (브랜치, 커밋, 리뷰) |
@@ -41,4 +42,4 @@ FinPlay 백엔드 API 서버. Spring Boot 4.1 / Java 17 / Gradle (Kotlin DSL) / 
 - 커밋/PR 제목은 Conventional Commits (`feat:`, `fix:`, ...).
 - 시크릿은 어떤 값도 yml·코드에 커밋 금지 — `.env`(gitignore)로 주입, 목록은 `.env.example` 참조.
 - 스키마 변경은 Flyway 마이그레이션으로만 (ADR-0004).
-- 기능 개발은 `/feature`, PR 리뷰는 `/review-pr` 스킬 사용 (ADR-0005).
+- 기능 개발·PR 리뷰는 Claude Code의 `/feature`·`/review-pr` 또는 Codex의 `feature`·`review-pr` 스킬을 사용 (ADR-0005, ADR-0009).

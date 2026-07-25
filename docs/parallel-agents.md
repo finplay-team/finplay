@@ -1,14 +1,14 @@
-# 병렬 에이전트 가이드 — Agent View · 에이전트 팀
+# 병렬 에이전트 가이드 — Claude Code · Codex/Orca
 
-작업 속도를 올리고 싶을 때 어떤 병렬 수단을 쓰는지 정한다. 공식 문서: [Agent View](https://code.claude.com/docs/en/agent-view.md), [Agent Teams](https://code.claude.com/docs/en/agent-teams.md).
+작업 속도를 올리고 싶을 때 어떤 병렬 수단을 쓰는지 정한다. 공식 문서: Claude Code [Agent View](https://code.claude.com/docs/en/agent-view.md)·[Agent Teams](https://code.claude.com/docs/en/agent-teams.md), Codex [Subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents).
 
 ## 결정 트리
 
 | 상황 | 수단 | 이유 |
 |---|---|---|
-| 독립적인 spec 2개 이상 동시 진행 | **Agent View** (`claude agents`) | 세션마다 **자동 git worktree 격리** — 파일 충돌 원천 차단 |
-| 경쟁 리뷰, 여러 가설 동시 탐색, 에이전트 간 대화가 필요한 작업 | **에이전트 팀** | 팀원 간 직접 메시징 + 공유 태스크 리스트 |
-| /feature 루프 내부 (구현→테스트→빌드→리뷰) | **순차 유지** | 각 단계가 이전 산출물에 의존 — 병렬화하면 품질 게이트가 무너진다 |
+| 독립적인 spec 2개 이상 동시 진행 | Claude **Agent View** 또는 Orca의 별도 worktree | 세션별 git worktree 격리로 파일 충돌 방지 |
+| 경쟁 리뷰, 여러 가설 동시 탐색 | Claude **에이전트 팀** 또는 Codex **subagent** | 독립 컨텍스트의 결과를 메인 세션이 종합 |
+| `feature` 루프 내부 (구현→테스트→빌드→리뷰) | **단계 순차 유지** | 각 단계가 이전 산출물에 의존 |
 
 ## Agent View — spec 단위 병렬 (기본 수단)
 
@@ -33,6 +33,16 @@ claude agents        # Agent View 실행
 - 나머지는 의존 사슬이라 순차가 맞다. 억지로 쪼개지 않는다.
 - 병렬 세션 2개가 끝나면 각 브랜치를 순서대로 PR/머지한다 (동시 머지 금지 — 마이그레이션 번호 `V{N}` 충돌 확인 필수, ADR-0004).
 
+## Codex/Orca — 역할 단위 서브에이전트
+
+Codex는 `AGENTS.md`, `.agents/skills/`, `.codex/agents/`를 사용한다. `.codex/config.toml`에서 동시에 실행할 서브에이전트를 3개로 제한한다.
+
+- spec 단위 병렬 구현은 같은 worktree의 서브에이전트로 처리하지 않는다. Orca에서 별도 worktree를 만들어 각 세션에 `feature` 스킬을 맡긴다.
+- 한 spec의 `feature` 루프는 implementer → tester → build → reviewer 순서를 유지한다.
+- `review-pr`에서는 reviewer 리뷰, tester 빌드 판독, reviewer QA를 최대 3개 인스턴스로 병렬 실행할 수 있다.
+- Codex 서브에이전트는 같은 worktree를 공유하므로 production 코드는 작업 항목마다 implementer 한 명만 수정한다.
+- 메인 에이전트가 역할별 결과, 실제 diff, 검증 명령을 다시 확인한다.
+
 ## 에이전트 팀 — 대화가 필요한 병렬 (실험 기능)
 
 `.claude/settings.json`의 `env`로 활성화돼 있다 (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`, 새 세션부터 적용).
@@ -47,7 +57,7 @@ claude agents        # Agent View 실행
 3. **Windows는 인프로세스 모드만** — 분할 화면(tmux/iTerm2)은 미지원. 화살표 키로 팀원 전환.
 4. 실험 기능 한계: `/resume`으로 팀원 미복원, 팀원이 태스크 완료 표시를 누락할 수 있음, 세션당 팀 1개.
 
-## /feature와의 관계
+## `feature`와의 관계
 
-- /feature의 **최소 packet 원칙은 유지**한다 — 루프 안에서 에이전트끼리 자유 대화를 시키면 컨텍스트가 오염되고 판정이 흐려진다. 대화가 필요한 작업(경쟁 리뷰 등)만 팀 모드를 별도로 연다.
-- 속도가 문제면 순서는 이렇다. ① 독립 spec을 Agent View로 병렬화 ② 그래도 느리면 spec의 tasks.md 항목을 더 작게 쪼개 커밋 주기를 단축 ③ 루프 내부 병렬화는 하지 않는다.
+- Claude `/feature`와 Codex `feature`의 **최소 packet 원칙은 유지**한다 — 루프 안에서 에이전트끼리 자유 대화를 시키면 컨텍스트가 오염되고 판정이 흐려진다. 대화가 필요한 작업(경쟁 리뷰 등)만 팀 모드를 별도로 연다.
+- 속도가 문제면 순서는 이렇다. ① 독립 spec을 Agent View 또는 Orca 별도 worktree로 병렬화 ② 그래도 느리면 spec의 tasks.md 항목을 더 작게 쪼개 커밋 주기를 단축 ③ 루프 내부 병렬화는 하지 않는다.
