@@ -39,6 +39,16 @@ Base URL `/api`. 인증 표시가 없는 것은 공개 엔드포인트.
 | email | 필수 | 이메일 형식 |
 | code | 필수 | 숫자 6자리. 불일치·만료·미발급 시 400 EMAIL_VERIFICATION_FAILED. 시도 5회 초과 시 해당 코드 무효화 후 429 TOO_MANY_REQUESTS |
 
+### Issue #3 인증번호 확인 처리
+
+- 기존 `EmailVerificationService`·`EmailVerification`·`EmailVerificationRepository`를 확장하며 확인 전용 서비스나 범용 인증 Manager를 추가하지 않는다.
+- 이메일의 최신 인증 행이 없거나, 이미 확인됐거나, 만료됐으면 400 `EMAIL_VERIFICATION_FAILED`로 응답한다.
+- 코드 불일치 1~5회는 `attempt_count`를 증가시켜 저장하고 400 `EMAIL_VERIFICATION_FAILED`로 응답한다.
+- 6번째 시도는 `attempt_count` 증가와 인증번호 즉시 무효화를 저장하고 429 `TOO_MANY_REQUESTS`로 응답한다. 실패 상태가 예외 응답 때문에 롤백되지 않도록 확인 메서드의 트랜잭션 정책을 명시한다.
+- 코드는 기존 `EMAIL_VERIFICATION_SECRET` 기반 HMAC-SHA-256 결과로 비교한다.
+- 성공하면 32바이트 난수 가입 토큰을 URL-safe Base64 원문으로 한 번만 반환한다. DB에는 SHA-256 해시, 확인 시각, 30분 만료 시각만 저장한다.
+- 이번 Issue는 가입 토큰 발급까지만 포함한다. 토큰 소비와 회원·계좌 생성은 후속 회원가입 API Issue에서 구현한다.
+
 ### SignupRequest
 | 필드 | 필수 | 검증 |
 |---|---|---|
