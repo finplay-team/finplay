@@ -87,10 +87,10 @@ URI createAuthorizationUri(OAuthProviderName provider, String state);
 
 ### 2. State 생성과 10분 보안 쿠키
 
-- [ ] 고정/주입 가능한 난수로 길이·URL-safe 형식·연속 호출의 상이성을 검증하는 state 생성기 단위 테스트를 먼저 작성한다.
-- [ ] auth 전용 `OAuthStateCookieFactory` 단위 테스트에서 전달한 state가 쿠키 값과 같고 `HttpOnly`, `SameSite=Lax`, provider별 callback Path, `Max-Age=600`인지 검증한다.
-- [ ] factory 단위 테스트에서 기본 프로퍼티와 prod·`oauth-real`은 `Secure=true`, 명시적으로 `false`를 준 local·test만 Secure 속성을 생략하는지 검증한다.
-- [ ] 최소 구현 후 `.\gradlew.bat test --tests "*OAuthStateGeneratorTest" --tests "*OAuthStateCookieFactoryTest"`를 통과시킨다.
+- [x] 고정/주입 가능한 난수로 길이·URL-safe 형식·연속 호출의 상이성을 검증하는 state 생성기 단위 테스트를 작성한다.
+- [x] auth 전용 `OAuthStateCookieFactory` 단위 테스트에서 전달한 state가 쿠키 값과 같고 `HttpOnly`, `SameSite=Lax`, provider별 callback Path, `Max-Age=600`인지 검증한다.
+- [x] factory 단위 테스트에서 기본 프로퍼티와 prod·`oauth-real`은 `Secure=true`, 명시적으로 `false`를 준 local·test만 Secure 속성을 생략하는지 검증한다.
+- [x] `.\gradlew.bat test --tests "*OAuthStateGeneratorTest" --tests "*OAuthStateCookieFactoryTest" --rerun-tasks`를 통과시킨다.
 
 ### 3. Service·Controller·라우트 문서
 
