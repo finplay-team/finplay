@@ -4,6 +4,7 @@ package com.finplay.api.auth.repository;
 import com.finplay.api.auth.domain.EmailVerification;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface EmailVerificationRepository extends JpaRepository<EmailVerification, Long> {
@@ -13,4 +14,6 @@ public interface EmailVerificationRepository extends JpaRepository<EmailVerifica
 
 	// 재발송 시 무효화 대상인 유효한 미확인 행 조회 (verified_at 널 = 미확인, expires_at 이후 = 아직 유효).
 	List<EmailVerification> findByEmailAndVerifiedAtIsNullAndExpiresAtAfter(String email, LocalDateTime now);
+
+	Optional<EmailVerification> findFirstByEmailOrderByCreatedAtDesc(String email);
 }

@@ -70,4 +70,14 @@ public class EmailVerification {
 	public void expire(LocalDateTime now) {
 		this.expiresAt = now;
 	}
+
+	public int incrementAttemptCount() {
+		return ++this.attemptCount;
+	}
+
+	public void confirm(LocalDateTime now, String tokenHash, LocalDateTime tokenExpiresAt) {
+		this.verifiedAt = now;
+		this.tokenHash = tokenHash;
+		this.tokenExpiresAt = tokenExpiresAt;
+	}
 }

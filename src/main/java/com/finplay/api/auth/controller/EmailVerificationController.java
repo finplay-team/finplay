@@ -1,7 +1,9 @@
 // 이메일 인증번호 발송 요청을 받는 컨트롤러
 package com.finplay.api.auth.controller;
 
+import com.finplay.api.auth.dto.request.EmailVerificationConfirmRequest;
 import com.finplay.api.auth.dto.request.EmailVerificationRequest;
+import com.finplay.api.auth.dto.response.SignupTokenResponse;
 import com.finplay.api.auth.service.EmailVerificationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -26,5 +28,13 @@ public class EmailVerificationController {
 		EmailVerificationRequest request) {
 		emailVerificationService.sendVerificationCode(request.email());
 		return ResponseEntity.status(HttpStatus.ACCEPTED).build();
+	}
+
+	@PostMapping("/confirm")
+	public ResponseEntity<SignupTokenResponse> confirmVerificationCode(
+		@Valid @RequestBody
+		EmailVerificationConfirmRequest request) {
+		return ResponseEntity.ok(
+			emailVerificationService.confirmVerificationCode(request.email(), request.code()));
 	}
 }
