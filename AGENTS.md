@@ -34,6 +34,8 @@ FinPlay 백엔드 API 서버. Spring Boot 4.1 / Java 17 / Gradle(`build.gradle`,
 ## Codex 에이전트 워크플로
 
 - spec 단위 기능 개발은 `feature` 스킬을 사용한다.
+- `feature` 스킬을 선택한 작업에서는 해당 스킬을 유일한 오케스트레이션 하네스로 사용한다. 범용 brainstorming, writing-plans, executing-plans, subagent-driven-development, task별 code-review 하네스를 중첩하거나 `.superpowers/sdd` 산출물을 만들지 않는다.
+- 범용 스킬의 기법이 필요해도 `feature`의 planner → implementer → tester → build → reviewer → 문서 동기화 단계 안에서만 적용하며, 별도 세션·ledger·review package를 추가하지 않는다.
 - PR 검토·게시 요청은 `review-pr` 스킬을 사용한다.
 - 파일 1~2개 규모의 버그 수정·설정·문서 작업은 메인 에이전트가 직접 처리할 수 있다.
 - 역할은 `.codex/agents/`의 planner, implementer, tester, reviewer를 사용한다.

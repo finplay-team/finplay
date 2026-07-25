@@ -7,6 +7,13 @@ description: Use when implementing one finplay-api spec folder through the plann
 
 spec 폴더 하나를 품질 게이트 순서대로 구현한다. 메인 에이전트는 오케스트레이터이며 production 코드를 직접 작성하지 않는다.
 
+## 단일 하네스 원칙
+
+- 이 스킬이 활성화되면 planner, implementer, tester, build, reviewer, 문서 동기화를 이 스킬 하나로 조정한다.
+- 같은 책임을 가진 범용 planning·execution·SDD·task-review 스킬을 중첩하지 않는다. 해당 스킬의 일반 기법은 필요할 때 이 워크플로 내부에서만 참고한다.
+- `.superpowers/sdd` ledger, task brief, 동결 review package처럼 이 스킬이 요구하지 않은 병렬 산출물을 만들지 않는다.
+- 계획은 결정 사항, 파일 소유권, 완료 조건, 테스트와 검증 명령만 담는다. 완성된 메서드 본문과 테스트 코드를 미리 복제하지 않으며, 기본 200줄을 넘길 필요가 있으면 작성 전에 사용자에게 이유를 설명한다.
+
 ## 사전 확인
 
 1. `AGENTS.md`와 `docs/context-router.md`를 읽는다.
