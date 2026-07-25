@@ -1,5 +1,11 @@
 # Run Log: 002-auth-account
 
+## Issue #3 Task 3
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| 20:35 | main | `.\gradlew.bat build` | Issue #3 전체 컴파일·테스트·Spotless·SpotBugs·JaCoCo 게이트, SHA `bdb888b` |
+
 ## Issue #3 Task 2
 
 | 시각 | 에이전트 | 실행 명령 | 근거 |

@@ -27,6 +27,7 @@
 **파일**
 
 - 수정: `src/test/java/com/finplay/api/auth/service/EmailVerificationServiceTest.java`
+- 생성: `src/test/java/com/finplay/api/auth/service/EmailVerificationTransactionIntegrationTest.java`
 - 수정: `src/main/java/com/finplay/api/auth/domain/EmailVerification.java`
 - 수정: `src/main/java/com/finplay/api/auth/repository/EmailVerificationRepository.java`
 - 수정: `src/main/java/com/finplay/api/auth/service/EmailVerificationService.java`
@@ -39,7 +40,7 @@
 - 생성: `EmailVerificationRepository.findFirstByEmailOrderByCreatedAtDesc(String email)`
 - 엔티티 상태 변경 메서드는 실패 시도 기록·한도 초과 무효화·인증 성공을 이름으로 드러낸다.
 
-- [ ] **1단계: 실패 테스트 작성**
+- [x] **1단계: 실패 테스트 작성**
 
   tester는 다음 소비자 행동을 독립 테스트로 추가한다.
 
@@ -48,7 +49,7 @@
   - 실패 5회 이후의 6번째 요청은 코드가 맞아도 `TOO_MANY_REQUESTS`이고 `attemptCount=6`, `expiresAt=now`가 된다.
   - 최신 행 미존재, 만료, 이미 확인된 행은 `EMAIL_VERIFICATION_FAILED`다.
 
-- [ ] **2단계: RED 검증**
+- [x] **2단계: RED 검증**
 
   실행:
 
@@ -58,20 +59,21 @@
 
   기대: 새 확인 메서드·응답 타입·엔티티 상태 변경이 아직 없어 컴파일 또는 테스트가 실패한다.
 
-- [ ] **3단계: 최소 production 구현**
+- [x] **3단계: 최소 production 구현**
 
   implementer는 최신 이메일 인증 행을 조회하고 상태를 검증한다. `@Transactional(noRollbackFor = BusinessException.class)`를 확인 메서드에 적용해 400/429 예외 뒤에도 시도 횟수와 무효화가 커밋되도록 한다. 성공 시 32바이트 토큰을 발급하고 SHA-256 hex 해시, 확인 시각, 30분 만료 시각을 엔티티에 기록한 뒤 원문은 응답으로만 반환한다.
 
-- [ ] **4단계: GREEN 검증**
+- [x] **4단계: GREEN 검증**
 
   실행:
 
   ```powershell
   .\gradlew.bat test --tests "com.finplay.api.auth.service.EmailVerificationServiceTest"
+  .\gradlew.bat test --tests "com.finplay.api.auth.service.EmailVerificationTransactionIntegrationTest"
   .\gradlew.bat compileJava
   ```
 
-  기대: 둘 다 성공한다.
+  기대: 단위 테스트, 실제 MySQL 실패 상태 커밋 통합 테스트, 컴파일이 모두 성공한다.
 
 ---
 
@@ -90,7 +92,7 @@
 - 성공 응답: HTTP 200, `{"signupVerificationToken":"<원문>","expiresInSeconds":1800}`
 - 오류 응답: 기존 전역 공통 오류 포맷
 
-- [ ] **1단계: 실패 테스트 작성**
+- [x] **1단계: 실패 테스트 작성**
 
   tester는 다음 MockMvc 행동을 추가한다.
 
@@ -98,7 +100,7 @@
   - 이메일 누락·형식 오류, 코드 누락·숫자 6자리 위반은 400 `VALIDATION_ERROR`다.
   - 서비스의 `EMAIL_VERIFICATION_FAILED`는 400, `TOO_MANY_REQUESTS`는 429 공통 오류 응답으로 매핑된다.
 
-- [ ] **2단계: RED 검증**
+- [x] **2단계: RED 검증**
 
   실행:
 
@@ -108,11 +110,11 @@
 
   기대: `/confirm` 매핑과 요청 DTO가 없어 새 테스트가 실패한다.
 
-- [ ] **3단계: 최소 production 및 문서 구현**
+- [x] **3단계: 최소 production 및 문서 구현**
 
   implementer는 `@PostMapping("/confirm")`을 추가한다. 요청 record에는 이메일 검증과 숫자 6자리 코드 검증을 선언하고, 서비스 결과를 HTTP 200으로 반환한다. `docs/api-routes.md`에는 공개 인증번호 확인 경로, 요청·성공 응답·400/429 오류 계약을 기록한다.
 
-- [ ] **4단계: GREEN 및 항목 검증**
+- [x] **4단계: GREEN 및 항목 검증**
 
   실행:
 
@@ -133,11 +135,11 @@
 - 수정: `docs/specs/002-auth-account/tasks.md`
 - 수정: `docs/specs/002-auth-account/run-log.md`
 
-- [ ] **1단계: 작업 체크와 실행 로그 동기화**
+- [x] **1단계: 작업 체크와 실행 로그 동기화**
 
   Issue #3에 해당하는 “인증번호 확인 API” 항목만 완료 처리하고, implementer가 실제 실행한 명령과 근거를 `run-log.md` 형식으로 기록한다.
 
-- [ ] **2단계: 전체 빌드**
+- [x] **2단계: 전체 빌드**
 
   실행:
 
