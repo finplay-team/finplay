@@ -119,8 +119,7 @@ class SignupIntegrationTest {
 		String retryEmail = uniqueEmail("retry");
 		String reusableToken = issueSignupToken(retryEmail);
 
-		assertThatThrownBy(() ->
-			authService.signup(retryEmail, duplicateNickname, PASSWORD, reusableToken))
+		assertThatThrownBy(() -> authService.signup(retryEmail, duplicateNickname, PASSWORD, reusableToken))
 			.isInstanceOf(BusinessException.class)
 			.extracting(ex -> ((BusinessException)ex).getErrorCode())
 			.isEqualTo(ErrorCode.DUPLICATE_RESOURCE);

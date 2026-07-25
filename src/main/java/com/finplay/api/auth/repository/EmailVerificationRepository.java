@@ -31,5 +31,7 @@ public interface EmailVerificationRepository extends JpaRepository<EmailVerifica
 		   and verification.consumedAt is null
 		   and verification.tokenExpiresAt > :now
 		""")
-	int consumeValidToken(@Param("tokenHash") String tokenHash, @Param("now") LocalDateTime now);
+	int consumeValidToken(@Param("tokenHash")
+	String tokenHash, @Param("now")
+	LocalDateTime now);
 }

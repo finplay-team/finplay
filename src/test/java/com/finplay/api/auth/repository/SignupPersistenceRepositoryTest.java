@@ -137,7 +137,7 @@ class SignupPersistenceRepositoryTest {
 	}
 
 	private static EmailVerification confirmedVerification(
-			String email, String tokenHash, LocalDateTime tokenExpiresAt) {
+		String email, String tokenHash, LocalDateTime tokenExpiresAt) {
 		EmailVerification verification = EmailVerification.create(
 			email, "code-hash", NOW.minusMinutes(1), NOW.minusMinutes(10));
 		verification.confirm(NOW.minusMinutes(1), tokenHash, tokenExpiresAt);

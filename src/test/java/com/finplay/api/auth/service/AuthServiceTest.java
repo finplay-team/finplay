@@ -68,7 +68,7 @@ class AuthServiceTest {
 		passwordEncoder = new BCryptPasswordEncoder();
 		Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
 		authService = new AuthService(userRepository, emailVerificationRepository, refreshTokenRepository,
-				passwordEncoder, accountService, jwtTokenProvider, clock);
+			passwordEncoder, accountService, jwtTokenProvider, clock);
 	}
 
 	@Test

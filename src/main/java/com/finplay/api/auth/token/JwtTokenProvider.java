@@ -27,9 +27,12 @@ public class JwtTokenProvider {
 	private final Clock clock;
 
 	public JwtTokenProvider(
-		@Value("${jwt.secret}") String jwtSecret,
-		@Value("${jwt.access-token-expiration-ms}") long accessTokenExpirationMs,
-		@Value("${jwt.refresh-token-expiration-ms}") long refreshTokenExpirationMs,
+		@Value("${jwt.secret}")
+		String jwtSecret,
+		@Value("${jwt.access-token-expiration-ms}")
+		long accessTokenExpirationMs,
+		@Value("${jwt.refresh-token-expiration-ms}")
+		long refreshTokenExpirationMs,
 		Clock clock) {
 		this.signingKey = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
 		this.accessTokenExpirationMs = accessTokenExpirationMs;

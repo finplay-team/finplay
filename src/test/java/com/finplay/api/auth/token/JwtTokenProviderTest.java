@@ -33,17 +33,17 @@ class JwtTokenProviderTest {
 	void issueCreatesSignedAccessAndRefreshTokensWithExpectedClaimsAndExpirations() {
 		Clock fixedClock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
 		JwtTokenProvider provider = new JwtTokenProvider(JWT_SECRET, ACCESS_TOKEN_EXPIRATION_MS,
-				REFRESH_TOKEN_EXPIRATION_MS, fixedClock);
+			REFRESH_TOKEN_EXPIRATION_MS, fixedClock);
 
 		IssuedTokenPair tokens = provider.issue(7L, "USER");
 
 		SecretKey signingKey = Keys.hmacShaKeyFor(JWT_SECRET.getBytes(StandardCharsets.UTF_8));
 		Claims accessClaims = Jwts.parser().clock(() -> Date.from(FIXED_INSTANT)).verifyWith(signingKey).build()
-				.parseSignedClaims(tokens.accessToken())
-				.getPayload();
+			.parseSignedClaims(tokens.accessToken())
+			.getPayload();
 		Claims refreshClaims = Jwts.parser().clock(() -> Date.from(FIXED_INSTANT)).verifyWith(signingKey).build()
-				.parseSignedClaims(tokens.refreshToken())
-				.getPayload();
+			.parseSignedClaims(tokens.refreshToken())
+			.getPayload();
 
 		assertThat(accessClaims.getSubject()).isEqualTo("7");
 		assertThat(accessClaims.get("role", String.class)).isEqualTo("USER");
@@ -52,25 +52,25 @@ class JwtTokenProviderTest {
 		assertThat(tokens.accessTokenExpiresInSeconds()).isEqualTo(3600L);
 		assertThat(tokens.refreshTokenExpiresInSeconds()).isEqualTo(1_209_600L);
 		assertThat(tokens.refreshTokenExpiresAt())
-				.isEqualTo(LocalDateTime.ofInstant(FIXED_INSTANT.plusSeconds(1_209_600), ZoneOffset.UTC));
+			.isEqualTo(LocalDateTime.ofInstant(FIXED_INSTANT.plusSeconds(1_209_600), ZoneOffset.UTC));
 	}
 
 	@Test
 	void issueRejectsNullUserId() {
 		Clock fixedClock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
 		JwtTokenProvider provider = new JwtTokenProvider(JWT_SECRET, ACCESS_TOKEN_EXPIRATION_MS,
-				REFRESH_TOKEN_EXPIRATION_MS, fixedClock);
+			REFRESH_TOKEN_EXPIRATION_MS, fixedClock);
 
 		assertThatIllegalArgumentException().isThrownBy(() -> provider.issue(null, "USER"));
 	}
 
 	@ParameterizedTest
 	@NullSource
-	@ValueSource(strings = { "", " " })
+	@ValueSource(strings = {"", " "})
 	void issueRejectsNullOrBlankRole(String role) {
 		Clock fixedClock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
 		JwtTokenProvider provider = new JwtTokenProvider(JWT_SECRET, ACCESS_TOKEN_EXPIRATION_MS,
-				REFRESH_TOKEN_EXPIRATION_MS, fixedClock);
+			REFRESH_TOKEN_EXPIRATION_MS, fixedClock);
 
 		assertThatIllegalArgumentException().isThrownBy(() -> provider.issue(7L, role));
 	}

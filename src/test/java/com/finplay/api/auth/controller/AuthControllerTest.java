@@ -67,12 +67,12 @@ class AuthControllerTest {
 	@ParameterizedTest(name = "{0}")
 	@MethodSource("invalidRequests")
 	void signupRejectsInvalidRequestWithoutCallingService(
-			String scenario,
-			String email,
-			String nickname,
-			String password,
-			Boolean termsAgreed,
-			String signupToken) throws Exception {
+		String scenario,
+		String email,
+		String nickname,
+		String password,
+		Boolean termsAgreed,
+		String signupToken) throws Exception {
 		mockMvc.perform(post("/api/auth/signup")
 			.contentType(MediaType.APPLICATION_JSON)
 			.content(requestJson(email, nickname, password, termsAgreed, signupToken)))
@@ -126,11 +126,11 @@ class AuthControllerTest {
 	}
 
 	private String requestJson(
-			String email,
-			String nickname,
-			String password,
-			Boolean termsAgreed,
-			String signupToken) throws Exception {
+		String email,
+		String nickname,
+		String password,
+		Boolean termsAgreed,
+		String signupToken) throws Exception {
 		Map<String, Object> request = new LinkedHashMap<>();
 		if (email != null) {
 			request.put("email", email);

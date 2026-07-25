@@ -31,7 +31,7 @@ class AccountServiceTest {
 		Clock fixedClock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
 		AccountService accountService = new AccountService(accountRepository, fixedClock);
 		User user = User.create("user@finplay.com", "password-hash", "finplayer",
-				LocalDateTime.ofInstant(FIXED_INSTANT, ZoneOffset.UTC));
+			LocalDateTime.ofInstant(FIXED_INSTANT, ZoneOffset.UTC));
 
 		accountService.createAccountsFor(user);
 
