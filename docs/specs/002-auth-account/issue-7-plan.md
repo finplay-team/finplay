@@ -270,18 +270,18 @@ Refresh JWT 파싱 실패, 해시 조회 결과 0건·2건 이상, JWT subject�
 
 - Create: `src/test/java/com/finplay/api/auth/service/LogoutIntegrationTest.java`
 
-- [ ] **Step 1: 실제 MySQL 통합 테스트를 작성한다**
+- [x] **Step 1: 실제 MySQL 통합 테스트를 작성한다**
   - 사용자 A 로그인 → A의 Access 사용자 ID와 Refresh Token으로 logout → 해당 행 `revoked_at` 기록 → 같은 원문 `authService.refresh`가 401.
   - 사용자 A·B 로그인 → A가 B의 Refresh Token으로 logout 시 403 → B 행의 `revoked_at`은 null → B의 원문으로 refresh 성공.
   - A가 여러 번 로그인해 Refresh Token 행이 여러 개면 제출한 한 행만 폐기되고 A의 다른 세션 토큰은 계속 회전 가능하다.
   - 테스트 메서드 전체에 롤백 `@Transactional`을 붙이지 않고 서비스 public 메서드의 실제 트랜잭션 커밋 상태를 새 조회로 확인한다.
-- [ ] **Step 2: 대상 테스트를 실행해 PASS를 확인한다**
+- [x] **Step 2: 대상 테스트를 실행해 PASS를 확인한다**
 
   ```powershell
   .\gradlew.bat test --tests "*LogoutIntegrationTest" --no-daemon --max-workers=1
   ```
 
-- [ ] **Step 3: 논리 커밋한다**
+- [x] **Step 3: 논리 커밋한다**
 
   ```powershell
   git add src/test/java/com/finplay/api/auth/service/LogoutIntegrationTest.java
