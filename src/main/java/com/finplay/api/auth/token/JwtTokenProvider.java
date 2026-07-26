@@ -63,6 +63,23 @@ public final class JwtTokenProvider {
 		}
 	}
 
+	public Optional<AuthenticatedUser> parseRefreshToken(String token) {
+		try {
+			Claims claims = accessTokenParser.parseSignedClaims(token).getPayload();
+			if (!REFRESH_TOKEN_TYPE.equals(claims.get(TOKEN_TYPE_CLAIM, String.class))) {
+				return Optional.empty();
+			}
+			Long userId = Long.valueOf(claims.getSubject());
+			String role = claims.get(ROLE_CLAIM, String.class);
+			if (role == null || role.isBlank()) {
+				return Optional.empty();
+			}
+			return Optional.of(new AuthenticatedUser(userId, role));
+		} catch (JwtException | IllegalArgumentException e) {
+			return Optional.empty();
+		}
+	}
+
 	public IssuedTokenPair issue(Long userId, String role) {
 		if (userId == null) {
 			throw new IllegalArgumentException("사용자 ID는 필수입니다.");

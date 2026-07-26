@@ -214,14 +214,14 @@ ADR-0004에 따라 병합된 `V2__create_auth_account_tables.sql`은 수정하�
 
 - Produces: `Optional<AuthenticatedUser> JwtTokenProvider.parseRefreshToken(String token)`
 
-- [ ] **Step 1: 실패 테스트를 작성한다**
+- [x] **Step 1: 실패 테스트를 작성한다**
   - `parseRefreshTokenReturnsUserForValidRefreshToken`
   - `parseRefreshTokenReturnsEmptyForAccessToken`
   - `parseRefreshTokenReturnsEmptyForExpiredToken`
   - `parseRefreshTokenReturnsEmptyForTamperedToken`
   - `parseRefreshTokenReturnsEmptyForMalformedToken`
   - 고정 `Clock`과 테스트 시크릿을 사용하고 토큰 원문을 출력하지 않는다.
-- [ ] **Step 2: 대상 테스트 실패를 확인한다**
+- [x] **Step 2: 대상 테스트 실패를 확인한다**
 
   ```powershell
   .\gradlew.bat test --tests "*JwtTokenProviderTest" --no-daemon --max-workers=1
@@ -229,12 +229,12 @@ ADR-0004에 따라 병합된 `V2__create_auth_account_tables.sql`은 수정하�
 
   Expected: `parseRefreshToken` 부재로 컴파일 또는 새 테스트 FAIL.
 
-- [ ] **Step 3: 최소 구현한다**
+- [x] **Step 3: 최소 구현한다**
   - 기존 JJWT parser와 `AuthenticatedUser`를 재사용한다.
   - `tokenType=REFRESH`만 허용하고 모든 파싱 실패는 `Optional.empty()`로 통일한다.
   - Access 파싱과 공통되는 코드가 세 번째 중복으로 드러나기 전에는 별도 Parser/Manager를 만들지 않는다.
-- [ ] **Step 4: 같은 대상 테스트를 다시 실행해 PASS를 확인한다**
-- [ ] **Step 5: 논리 커밋한다**
+- [x] **Step 4: 같은 대상 테스트를 다시 실행해 PASS를 확인한다**
+- [x] **Step 5: 논리 커밋한다**
 
   ```powershell
   git add src/main/java/com/finplay/api/auth/token/JwtTokenProvider.java src/test/java/com/finplay/api/auth/token/JwtTokenProviderTest.java
