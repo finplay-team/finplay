@@ -57,6 +57,17 @@ class JwtTokenProviderTest {
 	}
 
 	@Test
+	void issueCreatesDistinctAccessAndRefreshTokensForConsecutiveCallsWithFixedClock() {
+		JwtTokenProvider provider = providerAt(FIXED_INSTANT, JWT_SECRET);
+
+		IssuedTokenPair first = provider.issue(7L, "USER");
+		IssuedTokenPair second = provider.issue(7L, "USER");
+
+		assertThat(first.accessToken()).isNotEqualTo(second.accessToken());
+		assertThat(first.refreshToken()).isNotEqualTo(second.refreshToken());
+	}
+
+	@Test
 	void issueRejectsNullUserId() {
 		Clock fixedClock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
 		JwtTokenProvider provider = new JwtTokenProvider(JWT_SECRET, ACCESS_TOKEN_EXPIRATION_MS,

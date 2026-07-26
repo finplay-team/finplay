@@ -99,6 +99,22 @@ class LoginIntegrationTest {
 	}
 
 	@Test
+	void consecutiveLoginsPersistDistinctRefreshTokenHashes() {
+		String email = uniqueEmail("consecutive-login");
+		signup(email, uniqueNickname("consecutive-login"));
+
+		TokenResponse firstLoginTokens = authService.login(email, PASSWORD);
+		TokenResponse secondLoginTokens = authService.login(email, PASSWORD);
+
+		String firstTokenHash = sha256(firstLoginTokens.refreshToken());
+		String secondTokenHash = sha256(secondLoginTokens.refreshToken());
+		assertThat(firstTokenHash).isNotEqualTo(secondTokenHash);
+		assertThat(refreshTokenRepository.findAll())
+			.extracting(RefreshToken::getTokenHash)
+			.contains(firstTokenHash, secondTokenHash);
+	}
+
+	@Test
 	void loginFailsWithUnauthorizedForWrongPassword() {
 		String email = uniqueEmail("wrong-pw");
 		signup(email, uniqueNickname("wrong-pw"));

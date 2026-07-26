@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.Date;
 import java.util.Optional;
+import java.util.UUID;
 import javax.crypto.SecretKey;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -84,6 +85,7 @@ public final class JwtTokenProvider {
 
 	private String createToken(Long userId, String role, String tokenType, Instant issuedAt, Instant expiresAt) {
 		return Jwts.builder()
+			.id(UUID.randomUUID().toString())
 			.subject(String.valueOf(userId))
 			.claim(ROLE_CLAIM, role)
 			.claim(TOKEN_TYPE_CLAIM, tokenType)
