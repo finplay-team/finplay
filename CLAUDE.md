@@ -35,6 +35,13 @@ FinPlay 백엔드 API 서버. Spring Boot 4.1 / Java 17 / Gradle (`build.gradle`
 - 병렬 작업(독립 spec 동시 진행, 에이전트 팀)은 `docs/parallel-agents.md`를 따른다. /feature 루프 내부는 순차 유지.
 - 서브에이전트 세션 생명주기(implementer/tester 재사용·동일 세션 재개, reviewer 신규, 전환 조건)는 ADR-0010을 따른다. 실행 방법은 `/feature` 스킬에 있다.
 
+### 범용 에이전트 스킬 사용 제한
+
+- 기능 개발과 PR 리뷰는 프로젝트 전용 `/feature`, `/review-pr` 워크플로를 우선한다. 동일한 계획·구현·테스트·리뷰·완료 절차를 제공하는 범용 워크플로를 중복 실행하지 않는다.
+- `brainstorming`은 기존 PRD·spec·ADR만으로 결정할 수 없는 요구사항, 범위 또는 설계 선택이 있을 때만 사용한다. spec이 없어도 요구사항이 명확하면 기존 planner가 계획한다.
+- `systematic-debugging`은 실패 원인이 불명확하거나 반복되거나 빌드·환경·트랜잭션이 예상과 다르게 동작할 때만 사용한다. 원인이 명확한 실패는 기존 implementer ↔ tester 루프로 처리한다.
+- 범용 스킬을 예외적으로 사용해도 현재 `/feature` 또는 `/review-pr` 안에서 필요한 분석만 수행하며 별도 plan, ledger, task brief, reviewer 체인을 만들지 않는다.
+
 ## 아키텍처
 
 - 레이어드: `controller → service → repository`, 도메인별 패키지 (`com.finplay.api.<도메인>`)

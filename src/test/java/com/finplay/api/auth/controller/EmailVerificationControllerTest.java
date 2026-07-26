@@ -5,12 +5,14 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.finplay.api.auth.service.EmailVerificationService;
+import com.finplay.api.auth.dto.response.SignupTokenResponse;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import org.junit.jupiter.api.DisplayName;
@@ -93,6 +95,102 @@ class EmailVerificationControllerTest {
 		mockMvc.perform(post("/api/auth/email-verifications")
 			.contentType(MediaType.APPLICATION_JSON)
 			.content("{\"email\":\"user@finplay.com\"}"))
+			.andExpect(status().isTooManyRequests())
+			.andExpect(jsonPath("$.error.code").value("TOO_MANY_REQUESTS"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+	}
+
+	@Test
+	@DisplayName("유효한 인증번호 확인 요청은 200과 가입 검증 토큰 응답을 반환한다")
+	void returnsSignupVerificationTokenOnValidConfirmRequest() throws Exception {
+		when(emailVerificationService.confirmVerificationCode("user@finplay.com", "123456"))
+			.thenReturn(new SignupTokenResponse("signup-verification-token", 1800L));
+
+		mockMvc.perform(post("/api/auth/email-verifications/confirm")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("{\"email\":\"user@finplay.com\",\"code\":\"123456\"}"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.signupVerificationToken").value("signup-verification-token"))
+			.andExpect(jsonPath("$.expiresInSeconds").value(1800));
+
+		verify(emailVerificationService).confirmVerificationCode("user@finplay.com", "123456");
+	}
+
+	@Test
+	@DisplayName("인증번호 확인 요청에 이메일이 없으면 400 VALIDATION_ERROR를 반환한다")
+	void returnsValidationErrorWhenConfirmEmailIsMissing() throws Exception {
+		mockMvc.perform(post("/api/auth/email-verifications/confirm")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("{\"code\":\"123456\"}"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(emailVerificationService);
+	}
+
+	@Test
+	@DisplayName("인증번호 확인 요청의 이메일 형식이 잘못되면 400 VALIDATION_ERROR를 반환한다")
+	void returnsValidationErrorWhenConfirmEmailIsMalformed() throws Exception {
+		mockMvc.perform(post("/api/auth/email-verifications/confirm")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("{\"email\":\"not-an-email\",\"code\":\"123456\"}"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(emailVerificationService);
+	}
+
+	@Test
+	@DisplayName("인증번호 확인 요청에 코드가 없으면 400 VALIDATION_ERROR를 반환한다")
+	void returnsValidationErrorWhenConfirmCodeIsMissing() throws Exception {
+		mockMvc.perform(post("/api/auth/email-verifications/confirm")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("{\"email\":\"user@finplay.com\"}"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(emailVerificationService);
+	}
+
+	@Test
+	@DisplayName("인증번호 확인 요청의 코드가 숫자 여섯 자리가 아니면 400 VALIDATION_ERROR를 반환한다")
+	void returnsValidationErrorWhenConfirmCodeIsNotSixDigits() throws Exception {
+		mockMvc.perform(post("/api/auth/email-verifications/confirm")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("{\"email\":\"user@finplay.com\",\"code\":\"12ab5\"}"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(emailVerificationService);
+	}
+
+	@Test
+	@DisplayName("인증번호 확인 실패 예외는 400 공통 오류 응답으로 매핑한다")
+	void mapsEmailVerificationFailureToBadRequest() throws Exception {
+		doThrow(new BusinessException(ErrorCode.EMAIL_VERIFICATION_FAILED))
+			.when(emailVerificationService).confirmVerificationCode(any(), any());
+
+		mockMvc.perform(post("/api/auth/email-verifications/confirm")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("{\"email\":\"user@finplay.com\",\"code\":\"123456\"}"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("EMAIL_VERIFICATION_FAILED"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+	}
+
+	@Test
+	@DisplayName("인증번호 확인 요청 제한 예외는 429 공통 오류 응답으로 매핑한다")
+	void mapsConfirmRateLimitToTooManyRequestsStatus() throws Exception {
+		doThrow(new BusinessException(ErrorCode.TOO_MANY_REQUESTS))
+			.when(emailVerificationService).confirmVerificationCode(any(), any());
+
+		mockMvc.perform(post("/api/auth/email-verifications/confirm")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("{\"email\":\"user@finplay.com\",\"code\":\"123456\"}"))
 			.andExpect(status().isTooManyRequests())
 			.andExpect(jsonPath("$.error.code").value("TOO_MANY_REQUESTS"))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
