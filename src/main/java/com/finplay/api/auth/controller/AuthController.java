@@ -6,10 +6,12 @@ import com.finplay.api.auth.dto.request.RefreshRequest;
 import com.finplay.api.auth.dto.request.SignupRequest;
 import com.finplay.api.auth.dto.response.TokenResponse;
 import com.finplay.api.auth.service.AuthService;
+import com.finplay.api.auth.token.AuthenticatedUser;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -46,5 +48,15 @@ public class AuthController {
 	RefreshRequest request) {
 		TokenResponse response = authService.refresh(request.refreshToken());
 		return ResponseEntity.ok(response);
+	}
+
+	@PostMapping("/logout")
+	public ResponseEntity<Void> logout(
+		@AuthenticationPrincipal
+		AuthenticatedUser principal,
+		@Valid @RequestBody
+		RefreshRequest request) {
+		authService.logout(principal.userId(), request.refreshToken());
+		return ResponseEntity.noContent().build();
 	}
 }

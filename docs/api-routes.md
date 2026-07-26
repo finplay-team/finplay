@@ -10,6 +10,7 @@
 |---|---|---|---|---|
 | POST | /api/auth/email-verifications | auth | 인증번호 발송 (202, 본문 없음). 발송 제한·중복 이메일 검사 | 002 AUTH-004 |
 | POST | /api/auth/login | auth | 이메일·비밀번호 검증 후 Access·Refresh 토큰 발급 | 002 AUTH-002 |
+| POST | /api/auth/logout | auth | 본인의 Refresh Token을 폐기하고 로그아웃 (204, 본문 없음) | 002 AUTH-002 |
 | POST | /api/auth/refresh | auth | 유효한 Refresh Token을 회전하고 새 Access·Refresh 토큰 발급 | 002 AUTH-002 |
 | GET | /api/auth/oauth/{provider}/authorize | auth | 카카오·네이버 OAuth 인가 시작 (302, state 보안 쿠키) | 002 AUTH-003 |
 
@@ -49,6 +50,14 @@
 
 재발급에 성공하면 제출한 이전 Refresh Token은 즉시 폐기되고 새 Refresh Token의 SHA-256 해시만 저장된다. 같은 이전 토큰의 재사용과 동시 회전 요청 중 경합에서 진 요청은 401 `UNAUTHORIZED`다.
 
+## 로그아웃
+
+| Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|---|
+| POST | /api/auth/logout | Access Bearer 필수 | `{"refreshToken":"<Refresh JWT 원문>"}` (`RefreshRequest`) | 204 (본문 없음) | 누락·빈 값·4,096자 초과는 400 `VALIDATION_ERROR`. Access 인증 실패 또는 변조·만료·폐기·미존재 Refresh Token은 401 `UNAUTHORIZED`. 다른 사용자의 활성 Refresh Token은 403 `FORBIDDEN` 공통 오류 형식 | 002 AUTH-002, Issue #7 |
+
+로그아웃은 제출한 본인의 활성 Refresh Token 한 건만 폐기한다. 폐기된 토큰으로 이후 `/api/auth/refresh`를 호출하면 401 `UNAUTHORIZED`이며, 다른 사용자의 활성 Refresh Token을 제출하면 403 `FORBIDDEN`이고 해당 토큰은 폐기되지 않는다.
+
 ## 인증 규칙
 
 Spring Security는 세션을 만들지 않는 Bearer 인증을 사용한다. 현재 `SecurityConfig`의 공개 경로는 다음과 같고, 여기에 없는 모든 요청은 기본적으로 인증이 필요하다.
@@ -64,9 +73,10 @@ Spring Security는 세션을 만들지 않는 Bearer 인증을 사용한다. 현
 | 공개 | GET | `/actuator/health` |
 | 공개 | GET | `/swagger-ui.html`, `/swagger-ui/**` |
 | 공개 | GET | `/v3/api-docs/**` |
+| 보호 | POST | `/api/auth/logout` |
 | 보호 | 모든 Method | 위 공개 목록을 제외한 모든 경로 (`anyRequest().authenticated()`) |
 
 - 보호 경로는 `Authorization: Bearer <accessToken>`을 요구한다. 헤더가 없거나 Access Token이 만료·변조됐거나 Refresh Token이면 401 `UNAUTHORIZED`다.
 - 인증된 사용자가 권한 없는 리소스에 접근하면 403 `FORBIDDEN`이다.
 - 401·403은 모두 `{"error":{"code":"<UNAUTHORIZED|FORBIDDEN>","message":"<기본 메시지>","requestId":"<요청 ID>"}}` 공통 형식이며 `X-Request-Id` 응답 헤더를 포함한다.
-- `/api/auth/me`(Issue #8)와 logout(Issue #7)은 아직 구현되지 않았다. 후속 이슈가 엔드포인트를 추가할 때 필요한 공개 경로만 화이트리스트에 함께 추가한다.
+- `/api/auth/me`(Issue #8)는 아직 구현되지 않았다.

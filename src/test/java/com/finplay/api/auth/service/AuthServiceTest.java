@@ -392,6 +392,108 @@ class AuthServiceTest {
 		verifyRefreshDoesNotIssueOrSave();
 	}
 
+	@Test
+	void logoutRevokesSingleRefreshTokenOwnedByAuthenticatedUser() {
+		User user = existingUser(passwordEncoder.encode(RAW_PASSWORD));
+		RefreshToken storedToken = storedRefreshToken(user, 11L);
+		when(jwtTokenProvider.parseRefreshToken(REFRESH_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(7L, "USER")));
+		when(refreshTokenRepository.findAllByTokenHash(sha256(REFRESH_TOKEN)))
+			.thenReturn(List.of(storedToken));
+		when(refreshTokenRepository.revokeIfActiveAndNotExpired(11L, NOW)).thenReturn(1);
+
+		authService.logout(7L, REFRESH_TOKEN);
+
+		verify(refreshTokenRepository).findAllByTokenHash(sha256(REFRESH_TOKEN));
+		verify(refreshTokenRepository).revokeIfActiveAndNotExpired(11L, NOW);
+		verifyLogoutDoesNotIssueOrSave();
+	}
+
+	@Test
+	void logoutFailsWithUnauthorizedWhenJwtParsingFails() {
+		when(jwtTokenProvider.parseRefreshToken(REFRESH_TOKEN)).thenReturn(Optional.empty());
+
+		assertLogoutFailsWith(ErrorCode.UNAUTHORIZED, 7L);
+
+		verifyNoInteractions(refreshTokenRepository);
+		verifyLogoutDoesNotIssueOrSave();
+	}
+
+	@Test
+	void logoutFailsWithUnauthorizedWhenHashDoesNotExist() {
+		when(jwtTokenProvider.parseRefreshToken(REFRESH_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(7L, "USER")));
+		when(refreshTokenRepository.findAllByTokenHash(sha256(REFRESH_TOKEN)))
+			.thenReturn(List.of());
+
+		assertLogoutFailsWith(ErrorCode.UNAUTHORIZED, 7L);
+
+		verify(refreshTokenRepository, never()).revokeIfActiveAndNotExpired(any(), any());
+		verifyLogoutDoesNotIssueOrSave();
+	}
+
+	@Test
+	void logoutFailsWithUnauthorizedWhenHashMatchesMultipleRows() {
+		User user = existingUser(passwordEncoder.encode(RAW_PASSWORD));
+		RefreshToken first = storedRefreshToken(user, 11L);
+		RefreshToken second = storedRefreshToken(user, 12L);
+		when(jwtTokenProvider.parseRefreshToken(REFRESH_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(7L, "USER")));
+		when(refreshTokenRepository.findAllByTokenHash(sha256(REFRESH_TOKEN)))
+			.thenReturn(List.of(first, second));
+
+		assertLogoutFailsWith(ErrorCode.UNAUTHORIZED, 7L);
+
+		verify(refreshTokenRepository, never()).revokeIfActiveAndNotExpired(any(), any());
+		verifyLogoutDoesNotIssueOrSave();
+	}
+
+	@Test
+	void logoutFailsWithUnauthorizedWhenJwtUserDoesNotMatchStoredUser() {
+		User user = existingUser(passwordEncoder.encode(RAW_PASSWORD));
+		RefreshToken storedToken = storedRefreshToken(user, 11L);
+		when(jwtTokenProvider.parseRefreshToken(REFRESH_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(8L, "USER")));
+		when(refreshTokenRepository.findAllByTokenHash(sha256(REFRESH_TOKEN)))
+			.thenReturn(List.of(storedToken));
+
+		assertLogoutFailsWith(ErrorCode.UNAUTHORIZED, 7L);
+
+		verify(refreshTokenRepository, never()).revokeIfActiveAndNotExpired(any(), any());
+		verifyLogoutDoesNotIssueOrSave();
+	}
+
+	@Test
+	void logoutFailsWithForbiddenWhenAuthenticatedUserDoesNotOwnStoredToken() {
+		User user = existingUser(passwordEncoder.encode(RAW_PASSWORD));
+		RefreshToken storedToken = storedRefreshToken(user, 11L);
+		when(jwtTokenProvider.parseRefreshToken(REFRESH_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(7L, "USER")));
+		when(refreshTokenRepository.findAllByTokenHash(sha256(REFRESH_TOKEN)))
+			.thenReturn(List.of(storedToken));
+
+		assertLogoutFailsWith(ErrorCode.FORBIDDEN, 8L);
+
+		verify(refreshTokenRepository, never()).revokeIfActiveAndNotExpired(any(), any());
+		verifyLogoutDoesNotIssueOrSave();
+	}
+
+	@Test
+	void logoutFailsWithUnauthorizedWhenConditionalRevokeReturnsZero() {
+		User user = existingUser(passwordEncoder.encode(RAW_PASSWORD));
+		RefreshToken storedToken = storedRefreshToken(user, 11L);
+		when(jwtTokenProvider.parseRefreshToken(REFRESH_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(7L, "USER")));
+		when(refreshTokenRepository.findAllByTokenHash(sha256(REFRESH_TOKEN)))
+			.thenReturn(List.of(storedToken));
+		when(refreshTokenRepository.revokeIfActiveAndNotExpired(11L, NOW)).thenReturn(0);
+
+		assertLogoutFailsWith(ErrorCode.UNAUTHORIZED, 7L);
+
+		verify(refreshTokenRepository).revokeIfActiveAndNotExpired(11L, NOW);
+		verifyLogoutDoesNotIssueOrSave();
+	}
+
 	private User existingUser(String passwordHash) {
 		User user = User.create(EMAIL, passwordHash, NICKNAME, NOW.minusDays(1));
 		ReflectionTestUtils.setField(user, "id", 7L);
@@ -413,6 +515,18 @@ class AuthServiceTest {
 	}
 
 	private void verifyRefreshDoesNotIssueOrSave() {
+		verify(jwtTokenProvider, never()).issue(any(), any());
+		verify(refreshTokenRepository, never()).save(any());
+	}
+
+	private void assertLogoutFailsWith(ErrorCode errorCode, Long authenticatedUserId) {
+		assertThatThrownBy(() -> authService.logout(authenticatedUserId, REFRESH_TOKEN))
+			.isInstanceOf(BusinessException.class)
+			.extracting(ex -> ((BusinessException)ex).getErrorCode())
+			.isEqualTo(errorCode);
+	}
+
+	private void verifyLogoutDoesNotIssueOrSave() {
 		verify(jwtTokenProvider, never()).issue(any(), any());
 		verify(refreshTokenRepository, never()).save(any());
 	}

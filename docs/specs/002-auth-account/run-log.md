@@ -1,5 +1,30 @@
 # Run Log: 002-auth-account
 
+## Issue #7
+
+### 최종 검증
+
+| 구분 | 실행 명령·근거 | 결과 | 검증 수준 |
+|---|---|---|---|
+| 서비스 구현 컴파일 | `.\gradlew.bat compileJava --no-daemon --max-workers=1`, 커밋 `d33103f` | `BUILD SUCCESSFUL` (30초) | `AuthService.logout`의 Refresh JWT·해시·소유권 검증과 조건부 폐기 컴파일 |
+| Controller 구현 컴파일 | `.\gradlew.bat compileJava --no-daemon --max-workers=1`, 커밋 `e16f9d2` | `BUILD SUCCESSFUL` (18초) | 보호된 `POST /api/auth/logout`와 204 빈 응답 컴파일 |
+| 서비스 대상 테스트 | `.\gradlew.bat test --tests "*AuthServiceTest" --no-daemon --max-workers=1` | 27/27 통과 | JWT·DB 사용자 불일치 401, Access·DB 소유권 불일치 403, 조건부 폐기 검증 |
+| WebMvc·Security 대상 테스트 | `.\gradlew.bat test --tests "*AuthControllerTest" --tests "*SecurityConfigTest" --no-daemon --max-workers=1` | `AuthControllerTest` 42/42, `SecurityConfigTest` 21/21 통과 | 204·요청 검증·공통 오류와 logout 보호 경로 검증 |
+| logout 통합 테스트 | `.\gradlew.bat test --tests "*LogoutIntegrationTest" --no-daemon --max-workers=1` | MySQL 8.4 통합 3/3 통과 | 폐기 후 refresh 401, 타인 토큰 403·상태 보존, 선택 토큰만 폐기 검증 |
+| 최종 전체 빌드 | `.\gradlew.bat build --no-daemon --max-workers=1`, HEAD `c6c04f41c33843e98d12c8eb999d7e1ecbc7c56f` | `BUILD SUCCESSFUL` (2분 3초), 13 tasks(9 executed, 4 up-to-date) | 전체 tests·JaCoCo·SpotBugs·Spotless 게이트 통과 |
+| 리뷰 | reviewer가 Issue #7 변경 검토 | 코드·테스트 차단 0건, 문서 동기화 1건 | production·테스트 정적 diff와 API 문서 일치 여부 검토 |
+
+### 구현 근거
+
+- `d33103f` — `AuthService.logout`에 Refresh Token 검증·소유권 판정·조건부 폐기를 추가했다.
+- `e16f9d2` — 인증이 필요한 `POST /api/auth/logout`와 204 빈 응답을 추가했다.
+
+### 검증 범위와 남은 위험
+
+- 통합 테스트는 MySQL 8.4 Testcontainers를 사용했으며 운영 DB 검증 결과가 아니다.
+- 실제 외부 API, 운영 환경 연동, 실행 서버 대상 블랙박스 API QA는 실행하지 않았다.
+- reviewer의 문서 동기화 1건은 코드·테스트 차단과 구분되는 문서 범위 지적이다.
+
 ## Issue #6
 
 ### 최종 검증

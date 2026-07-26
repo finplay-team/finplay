@@ -110,6 +110,31 @@ public class AuthService {
 		return issueTokenPair(user, now);
 	}
 
+	@Transactional
+	public void logout(Long authenticatedUserId, String rawRefreshToken) {
+		AuthenticatedUser refreshTokenUser = jwtTokenProvider.parseRefreshToken(rawRefreshToken)
+			.orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED));
+		LocalDateTime now = LocalDateTime.now(clock);
+		var refreshTokens = refreshTokenRepository.findAllByTokenHash(sha256(rawRefreshToken));
+		if (refreshTokens.size() != 1) {
+			throw new BusinessException(ErrorCode.UNAUTHORIZED);
+		}
+
+		RefreshToken refreshToken = refreshTokens.get(0);
+		Long refreshTokenOwnerId = refreshToken.getUser().getId();
+		if (!refreshTokenUser.userId().equals(refreshTokenOwnerId)) {
+			throw new BusinessException(ErrorCode.UNAUTHORIZED);
+		}
+		if (!authenticatedUserId.equals(refreshTokenOwnerId)) {
+			throw new BusinessException(ErrorCode.FORBIDDEN);
+		}
+
+		int revoked = refreshTokenRepository.revokeIfActiveAndNotExpired(refreshToken.getId(), now);
+		if (revoked != 1) {
+			throw new BusinessException(ErrorCode.UNAUTHORIZED);
+		}
+	}
+
 	private TokenResponse issueTokenPair(User user, LocalDateTime now) {
 		IssuedTokenPair tokens = jwtTokenProvider.issue(user.getId(), user.getRole());
 		refreshTokenRepository.save(RefreshToken.create(
