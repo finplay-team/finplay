@@ -352,13 +352,13 @@ ADR-0004에 따라 병합된 `V2__create_auth_account_tables.sql`은 수정하�
 - Consumes: `{"refreshToken":"<Refresh JWT 원문>"}`
 - Produces: 200 `TokenResponse`
 
-- [ ] **Step 1: WebMvc 실패 테스트를 작성한다**
+- [x] **Step 1: WebMvc 실패 테스트를 작성한다**
   - 유효 요청은 200과 기존 `TokenResponse` 네 필드를 반환한다.
   - 누락·빈 문자열·공백 문자열·4,097자 입력은 400 `VALIDATION_ERROR`이며 서비스를 호출하지 않는다.
   - 4,096자 입력은 Bean Validation을 통과해 서비스에 그대로 전달된다.
   - 1~4,096자의 비어 있지 않은 입력이지만 서비스가 변조·만료·폐기·미존재·재사용으로 판단하면 401 `UNAUTHORIZED` 공통 오류 포맷과 requestId로 응답한다.
   - Access Bearer 헤더 없이 `/api/auth/refresh`를 호출해도 Security에서 선차단되지 않고 Controller에 도달한다.
-- [ ] **Step 2: 대상 테스트 실패를 확인한다**
+- [x] **Step 2: 대상 테스트 실패를 확인한다**
 
   ```powershell
   .\gradlew.bat test --tests "*AuthControllerTest" --no-daemon --max-workers=1
@@ -366,13 +366,13 @@ ADR-0004에 따라 병합된 `V2__create_auth_account_tables.sql`은 수정하�
 
   Expected: DTO·Controller 매핑·공개 경로 부재로 컴파일 또는 새 테스트 FAIL.
 
-- [ ] **Step 3: DTO, Controller, Security 공개 경로를 최소 구현한다**
+- [x] **Step 3: DTO, Controller, Security 공개 경로를 최소 구현한다**
   - 새 Java 파일 첫 줄에 역할을 설명하는 한국어 한 줄 주석을 둔다.
   - `RefreshRequest.refreshToken`에 `@NotBlank`와 `@Size(max = 4096)`를 적용한다.
   - Controller는 `authService.refresh(request.refreshToken())` 호출과 200 반환만 담당한다.
   - 기존 `PUBLIC_POST_PATHS`에 정확한 경로 하나만 추가한다.
-- [ ] **Step 4: 같은 대상 테스트를 다시 실행해 PASS를 확인한다**
-- [ ] **Step 5: 논리 커밋한다**
+- [x] **Step 4: 같은 대상 테스트를 다시 실행해 PASS를 확인한다**
+- [x] **Step 5: 논리 커밋한다**
 
   ```powershell
   git add src/main/java/com/finplay/api/auth/dto/request/RefreshRequest.java src/main/java/com/finplay/api/auth/controller/AuthController.java src/main/java/com/finplay/api/auth/config/SecurityConfig.java src/test/java/com/finplay/api/auth/controller/AuthControllerTest.java

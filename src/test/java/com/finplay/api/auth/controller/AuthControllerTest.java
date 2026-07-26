@@ -1,4 +1,4 @@
-// 회원가입 201·로그인 200 응답과 입력 검증, 비즈니스 오류 계약을 검증하는 WebMvc 슬라이스 테스트다.
+// 회원가입·로그인·토큰 재발급 응답과 입력 검증, 비즈니스 오류 계약을 검증하는 WebMvc 슬라이스 테스트다.
 package com.finplay.api.auth.controller;
 
 import static org.mockito.Mockito.verify;
@@ -42,6 +42,7 @@ class AuthControllerTest {
 	private static final String PASSWORD = "password123";
 	private static final String SHORT_PASSWORD = "pass123";
 	private static final String SIGNUP_TOKEN = "signup-token";
+	private static final String REFRESH_TOKEN = "refresh.jwt.token";
 
 	@Autowired
 	private MockMvc mockMvc;
@@ -197,6 +198,70 @@ class AuthControllerTest {
 		verify(authService).login(EMAIL, SHORT_PASSWORD);
 	}
 
+	@Test
+	void refreshReturnsOkWithAllTokenFieldsWithoutAuthorizationHeader() throws Exception {
+		TokenResponse response = new TokenResponse(
+			"rotated-access-token", "rotated-refresh-token", 3600L, 1_209_600L);
+		when(authService.refresh(REFRESH_TOKEN)).thenReturn(response);
+
+		mockMvc.perform(post("/api/auth/refresh")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(refreshRequestJson(REFRESH_TOKEN)))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.accessToken").value("rotated-access-token"))
+			.andExpect(jsonPath("$.refreshToken").value("rotated-refresh-token"))
+			.andExpect(jsonPath("$.accessTokenExpiresInSeconds").value(3600))
+			.andExpect(jsonPath("$.refreshTokenExpiresInSeconds").value(1_209_600));
+
+		verify(authService).refresh(REFRESH_TOKEN);
+	}
+
+	@ParameterizedTest(name = "{0}")
+	@MethodSource("invalidRefreshRequests")
+	void refreshRejectsInvalidRequestWithoutCallingService(String scenario, String refreshToken) throws Exception {
+		mockMvc.perform(post("/api/auth/refresh")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(refreshRequestJson(refreshToken)))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.message").isNotEmpty())
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(authService);
+	}
+
+	@Test
+	void refreshPassesExactly4096CharactersToService() throws Exception {
+		String maximumLengthToken = "r".repeat(4096);
+		TokenResponse response = new TokenResponse(
+			"maximum-access-token", "maximum-refresh-token", 3600L, 1_209_600L);
+		when(authService.refresh(maximumLengthToken)).thenReturn(response);
+
+		mockMvc.perform(post("/api/auth/refresh")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(refreshRequestJson(maximumLengthToken)))
+			.andExpect(status().isOk());
+
+		verify(authService).refresh(maximumLengthToken);
+	}
+
+	@ParameterizedTest(name = "유효 길이 경계 [{index}]")
+	@MethodSource("unauthorizedRefreshTokens")
+	void refreshMapsServiceUnauthorizedToCommonErrorFormat(String refreshToken) throws Exception {
+		when(authService.refresh(refreshToken))
+			.thenThrow(new BusinessException(ErrorCode.UNAUTHORIZED));
+
+		mockMvc.perform(post("/api/auth/refresh")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(refreshRequestJson(refreshToken)))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
+			.andExpect(jsonPath("$.error.message").value(ErrorCode.UNAUTHORIZED.getDefaultMessage()))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(authService).refresh(refreshToken);
+	}
+
 	private String loginRequestJson(String email, String password) throws Exception {
 		Map<String, Object> request = new LinkedHashMap<>();
 		if (email != null) {
@@ -206,6 +271,26 @@ class AuthControllerTest {
 			request.put("password", password);
 		}
 		return objectMapper.writeValueAsString(request);
+	}
+
+	private String refreshRequestJson(String refreshToken) throws Exception {
+		Map<String, Object> request = new LinkedHashMap<>();
+		if (refreshToken != null) {
+			request.put("refreshToken", refreshToken);
+		}
+		return objectMapper.writeValueAsString(request);
+	}
+
+	private static Stream<Arguments> invalidRefreshRequests() {
+		return Stream.of(
+			Arguments.of("refreshToken 누락", null),
+			Arguments.of("refreshToken 빈 문자열", ""),
+			Arguments.of("refreshToken 공백", "   "),
+			Arguments.of("refreshToken 4097자", "r".repeat(4097)));
+	}
+
+	private static Stream<String> unauthorizedRefreshTokens() {
+		return Stream.of("x", "r".repeat(4096));
 	}
 
 	private static Stream<Arguments> invalidLoginRequests() {

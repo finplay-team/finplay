@@ -1,7 +1,8 @@
-// 이메일 회원가입·로그인 요청을 검증해 인증 서비스로 전달하고 JWT 응답을 반환하는 컨트롤러
+// 이메일 회원가입·로그인·토큰 재발급 요청을 인증 서비스로 전달하고 JWT 응답을 반환하는 컨트롤러
 package com.finplay.api.auth.controller;
 
 import com.finplay.api.auth.dto.request.LoginRequest;
+import com.finplay.api.auth.dto.request.RefreshRequest;
 import com.finplay.api.auth.dto.request.SignupRequest;
 import com.finplay.api.auth.dto.response.TokenResponse;
 import com.finplay.api.auth.service.AuthService;
@@ -37,6 +38,13 @@ public class AuthController {
 	LoginRequest request) {
 		// 로그인은 리소스 생성이 아니므로 201이 아니라 200이다.
 		TokenResponse response = authService.login(request.email(), request.password());
+		return ResponseEntity.ok(response);
+	}
+
+	@PostMapping("/refresh")
+	public ResponseEntity<TokenResponse> refresh(@Valid @RequestBody
+	RefreshRequest request) {
+		TokenResponse response = authService.refresh(request.refreshToken());
 		return ResponseEntity.ok(response);
 	}
 }
