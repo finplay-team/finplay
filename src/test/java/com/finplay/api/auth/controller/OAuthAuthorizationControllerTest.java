@@ -9,10 +9,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.finplay.api.auth.config.SecurityConfig;
 import com.finplay.api.auth.oauth.OAuthAuthorizationResult;
 import com.finplay.api.auth.oauth.OAuthProviderName;
 import com.finplay.api.auth.oauth.OAuthStateCookieFactory;
 import com.finplay.api.auth.service.OAuthAuthorizationService;
+import com.finplay.api.auth.token.JwtTokenProvider;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import java.net.URI;
@@ -30,8 +32,9 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+// 대상 경로가 공개 화이트리스트에 있으므로 실제 Security 체인을 태워 화이트리스트 계약까지 함께 검증한다.
 @WebMvcTest(OAuthAuthorizationController.class)
-@Import(OAuthStateCookieFactory.class)
+@Import({OAuthStateCookieFactory.class, SecurityConfig.class})
 @TestPropertySource(properties = "oauth.state-cookie-secure=false")
 class OAuthAuthorizationControllerTest {
 
@@ -40,6 +43,9 @@ class OAuthAuthorizationControllerTest {
 
 	@MockitoBean
 	private OAuthAuthorizationService authorizationService;
+
+	@MockitoBean
+	private JwtTokenProvider jwtTokenProvider;
 
 	@ParameterizedTest
 	@MethodSource("successfulAuthorizationResponses")

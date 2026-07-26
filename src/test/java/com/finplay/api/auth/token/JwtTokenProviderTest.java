@@ -1,4 +1,4 @@
-// JWT 발급 결과의 클레임과 만료 시간을 검증하는 단위 테스트다.
+// JWT 발급 결과의 클레임·만료 시간과 Access Token 파싱 결과를 검증하는 단위 테스트다.
 package com.finplay.api.auth.token;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -26,6 +26,7 @@ class JwtTokenProviderTest {
 
 	private static final Instant FIXED_INSTANT = Instant.parse("2026-07-25T00:00:00Z");
 	private static final String JWT_SECRET = "test-jwt-secret-that-is-at-least-32-bytes";
+	private static final String OTHER_JWT_SECRET = "other-jwt-secret-that-is-at-least-32-bytes";
 	private static final long ACCESS_TOKEN_EXPIRATION_MS = 3_600_000L;
 	private static final long REFRESH_TOKEN_EXPIRATION_MS = 1_209_600_000L;
 
@@ -56,6 +57,17 @@ class JwtTokenProviderTest {
 	}
 
 	@Test
+	void issueCreatesDistinctAccessAndRefreshTokensForConsecutiveCallsWithFixedClock() {
+		JwtTokenProvider provider = providerAt(FIXED_INSTANT, JWT_SECRET);
+
+		IssuedTokenPair first = provider.issue(7L, "USER");
+		IssuedTokenPair second = provider.issue(7L, "USER");
+
+		assertThat(first.accessToken()).isNotEqualTo(second.accessToken());
+		assertThat(first.refreshToken()).isNotEqualTo(second.refreshToken());
+	}
+
+	@Test
 	void issueRejectsNullUserId() {
 		Clock fixedClock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
 		JwtTokenProvider provider = new JwtTokenProvider(JWT_SECRET, ACCESS_TOKEN_EXPIRATION_MS,
@@ -73,5 +85,76 @@ class JwtTokenProviderTest {
 			REFRESH_TOKEN_EXPIRATION_MS, fixedClock);
 
 		assertThatIllegalArgumentException().isThrownBy(() -> provider.issue(7L, role));
+	}
+
+	@Test
+	void parseAccessTokenReturnsUserIdAndRoleForValidAccessToken() {
+		JwtTokenProvider provider = providerAt(FIXED_INSTANT, JWT_SECRET);
+
+		String accessToken = provider.issue(7L, "USER").accessToken();
+
+		assertThat(provider.parseAccessToken(accessToken)).contains(new AuthenticatedUser(7L, "USER"));
+	}
+
+	@Test
+	void parseAccessTokenReturnsEmptyForRefreshToken() {
+		JwtTokenProvider provider = providerAt(FIXED_INSTANT, JWT_SECRET);
+
+		String refreshToken = provider.issue(7L, "USER").refreshToken();
+
+		assertThat(provider.parseAccessToken(refreshToken)).isEmpty();
+	}
+
+	@Test
+	void parseAccessTokenReturnsEmptyForExpiredToken() {
+		JwtTokenProvider issuer = providerAt(FIXED_INSTANT, JWT_SECRET);
+		String accessToken = issuer.issue(7L, "USER").accessToken();
+
+		Instant afterExpiration = FIXED_INSTANT.plusMillis(ACCESS_TOKEN_EXPIRATION_MS).plusSeconds(1);
+		JwtTokenProvider expiredClockProvider = providerAt(afterExpiration, JWT_SECRET);
+
+		assertThat(issuer.parseAccessToken(accessToken)).isPresent();
+		assertThat(expiredClockProvider.parseAccessToken(accessToken)).isEmpty();
+	}
+
+	@Test
+	void parseAccessTokenReturnsEmptyForTamperedSignature() {
+		JwtTokenProvider provider = providerAt(FIXED_INSTANT, JWT_SECRET);
+
+		String tamperedToken = tamperSignature(provider.issue(7L, "USER").accessToken());
+
+		assertThat(provider.parseAccessToken(tamperedToken)).isEmpty();
+	}
+
+	@Test
+	void parseAccessTokenReturnsEmptyForOtherSecret() {
+		JwtTokenProvider provider = providerAt(FIXED_INSTANT, JWT_SECRET);
+		JwtTokenProvider otherSecretProvider = providerAt(FIXED_INSTANT, OTHER_JWT_SECRET);
+
+		String foreignToken = otherSecretProvider.issue(7L, "USER").accessToken();
+
+		assertThat(provider.parseAccessToken(foreignToken)).isEmpty();
+	}
+
+	@ParameterizedTest
+	@NullSource
+	@ValueSource(strings = {"not-a-jwt", "", "   ", "a.b.c"})
+	void parseAccessTokenReturnsEmptyForMalformedToken(String token) {
+		JwtTokenProvider provider = providerAt(FIXED_INSTANT, JWT_SECRET);
+
+		assertThat(provider.parseAccessToken(token)).isEmpty();
+	}
+
+	private static JwtTokenProvider providerAt(Instant instant, String secret) {
+		return new JwtTokenProvider(secret, ACCESS_TOKEN_EXPIRATION_MS, REFRESH_TOKEN_EXPIRATION_MS,
+			Clock.fixed(instant, ZoneOffset.UTC));
+	}
+
+	private static String tamperSignature(String token) {
+		int signatureStart = token.lastIndexOf('.') + 1;
+		String signature = token.substring(signatureStart);
+		char firstChar = signature.charAt(0);
+		char replacement = firstChar == 'A' ? 'B' : 'A';
+		return token.substring(0, signatureStart) + replacement + signature.substring(1);
 	}
 }

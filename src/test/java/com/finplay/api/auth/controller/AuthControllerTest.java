@@ -1,4 +1,4 @@
-// 회원가입 API의 201 응답, 입력 검증, 비즈니스 오류 계약을 검증하는 WebMvc 슬라이스 테스트다.
+// 회원가입 201·로그인 200 응답과 입력 검증, 비즈니스 오류 계약을 검증하는 WebMvc 슬라이스 테스트다.
 package com.finplay.api.auth.controller;
 
 import static org.mockito.Mockito.verify;
@@ -18,23 +18,29 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.finplay.api.auth.config.SecurityConfig;
 import com.finplay.api.auth.dto.response.TokenResponse;
 import com.finplay.api.auth.service.AuthService;
+import com.finplay.api.auth.token.JwtTokenProvider;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 
 import tools.jackson.databind.ObjectMapper;
 
+// 대상 경로가 공개 화이트리스트에 있으므로 실제 Security 체인을 태워 화이트리스트 계약까지 함께 검증한다.
 @WebMvcTest(AuthController.class)
+@Import(SecurityConfig.class)
 class AuthControllerTest {
 
 	private static final String EMAIL = "user@finplay.com";
 	private static final String NICKNAME = "finplayer";
 	private static final String PASSWORD = "password123";
+	private static final String SHORT_PASSWORD = "pass123";
 	private static final String SIGNUP_TOKEN = "signup-token";
 
 	@Autowired
@@ -45,6 +51,9 @@ class AuthControllerTest {
 
 	@MockitoBean
 	private AuthService authService;
+
+	@MockitoBean
+	private JwtTokenProvider jwtTokenProvider;
 
 	@Test
 	void signupReturnsCreatedWithAllTokenFields() throws Exception {
@@ -123,6 +132,91 @@ class AuthControllerTest {
 			.andExpect(jsonPath("$.error.code").value("EMAIL_VERIFICATION_REQUIRED"))
 			.andExpect(jsonPath("$.error.message").value(ErrorCode.EMAIL_VERIFICATION_REQUIRED.getDefaultMessage()))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+	}
+
+	@Test
+	void loginReturnsOkWithTokenPair() throws Exception {
+		TokenResponse response = new TokenResponse(
+			"login-access-token", "login-refresh-token", 3600L, 1_209_600L);
+		when(authService.login(EMAIL, PASSWORD)).thenReturn(response);
+
+		mockMvc.perform(post("/api/auth/login")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(loginRequestJson(EMAIL, PASSWORD)))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.accessToken").value("login-access-token"))
+			.andExpect(jsonPath("$.refreshToken").value("login-refresh-token"))
+			.andExpect(jsonPath("$.accessTokenExpiresInSeconds").value(3600))
+			.andExpect(jsonPath("$.refreshTokenExpiresInSeconds").value(1_209_600));
+
+		verify(authService).login(EMAIL, PASSWORD);
+	}
+
+	@ParameterizedTest(name = "{0}")
+	@MethodSource("invalidLoginRequests")
+	void loginReturnsBadRequestForInvalidRequest(
+		String scenario, String email, String password) throws Exception {
+		mockMvc.perform(post("/api/auth/login")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(loginRequestJson(email, password)))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.message").isNotEmpty())
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(authService);
+	}
+
+	@Test
+	void loginReturnsUnauthorizedForInvalidCredentials() throws Exception {
+		when(authService.login(EMAIL, PASSWORD))
+			.thenThrow(new BusinessException(ErrorCode.UNAUTHORIZED));
+
+		mockMvc.perform(post("/api/auth/login")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(loginRequestJson(EMAIL, PASSWORD)))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
+			.andExpect(jsonPath("$.error.message").value(ErrorCode.UNAUTHORIZED.getDefaultMessage()))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+	}
+
+	@Test
+	void loginPassesShortPasswordToServiceInsteadOfRejectingItAsBadRequest() throws Exception {
+		// LoginRequest.password에 min을 두지 않은 것은 의도된 설계다(계획 HTTP 계약 표).
+		// min을 붙이면 짧은 입력만 400, 나머지는 401로 갈려 응답이 저장된 자격증명의 힌트가 된다.
+		when(authService.login(EMAIL, SHORT_PASSWORD))
+			.thenThrow(new BusinessException(ErrorCode.UNAUTHORIZED));
+
+		mockMvc.perform(post("/api/auth/login")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(loginRequestJson(EMAIL, SHORT_PASSWORD)))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"));
+
+		verify(authService).login(EMAIL, SHORT_PASSWORD);
+	}
+
+	private String loginRequestJson(String email, String password) throws Exception {
+		Map<String, Object> request = new LinkedHashMap<>();
+		if (email != null) {
+			request.put("email", email);
+		}
+		if (password != null) {
+			request.put("password", password);
+		}
+		return objectMapper.writeValueAsString(request);
+	}
+
+	private static Stream<Arguments> invalidLoginRequests() {
+		return Stream.of(
+			Arguments.of("email 누락", null, PASSWORD),
+			Arguments.of("email 형식 오류", "not-an-email", PASSWORD),
+			Arguments.of("email 공백", "   ", PASSWORD),
+			Arguments.of("email 256자", "a".repeat(244) + "@example.com", PASSWORD),
+			Arguments.of("password 누락", EMAIL, null),
+			Arguments.of("password 공백", EMAIL, "   "),
+			Arguments.of("password 101자", EMAIL, "p".repeat(101)));
 	}
 
 	private String requestJson(

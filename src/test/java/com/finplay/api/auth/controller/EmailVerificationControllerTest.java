@@ -11,19 +11,24 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.finplay.api.auth.config.SecurityConfig;
 import com.finplay.api.auth.service.EmailVerificationService;
 import com.finplay.api.auth.dto.response.SignupTokenResponse;
+import com.finplay.api.auth.token.JwtTokenProvider;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+// 대상 경로가 공개 화이트리스트에 있으므로 실제 Security 체인을 태워 화이트리스트 계약까지 함께 검증한다.
 @WebMvcTest(EmailVerificationController.class)
+@Import(SecurityConfig.class)
 class EmailVerificationControllerTest {
 
 	@Autowired
@@ -31,6 +36,9 @@ class EmailVerificationControllerTest {
 
 	@MockitoBean
 	private EmailVerificationService emailVerificationService;
+
+	@MockitoBean
+	private JwtTokenProvider jwtTokenProvider;
 
 	@Test
 	@DisplayName("정상 요청이면 202로 응답하고 본문은 없으며 서비스에 이메일이 전달된다")
