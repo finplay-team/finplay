@@ -215,7 +215,7 @@ exceptionHandling(authenticationEntryPoint, accessDeniedHandler)
 - Produces: `Optional<AuthenticatedUser> JwtTokenProvider.parseAccessToken(String token)`
 - Produces: `record AuthenticatedUser(Long userId, String role)`
 
-- [ ] **Step 1: 실패 테스트를 작성한다**
+- [x] **Step 1: 실패 테스트를 작성한다**
 
 `JwtTokenProviderTest`에 다음 케이스를 추가한다. 기존 고정 `Clock`·테스트 시크릿 설정을 그대로 쓴다.
 
@@ -230,7 +230,7 @@ parseAccessTokenReturnsEmptyForMalformedToken();    // "not-a-jwt", 빈 문자�
 
 만료 검증은 반드시 주입된 `Clock`을 기준으로 한다 — JJWT 파서에 `.clock(() -> Date.from(clock.instant()))`를 지정해 시스템 시계에 의존하지 않게 한다. 이걸 놓치면 만료 테스트가 실제 시간에 좌우된다.
 
-- [ ] **Step 2: 실패를 확인한다**
+- [x] **Step 2: 실패를 확인한다**
 
 ```powershell
 .\gradlew.bat test --tests "*JwtTokenProviderTest"
@@ -238,11 +238,11 @@ parseAccessTokenReturnsEmptyForMalformedToken();    // "not-a-jwt", 빈 문자�
 
 Expected: `parseAccessToken`이 없어 컴파일 FAIL.
 
-- [ ] **Step 3: 구현한다**
+- [x] **Step 3: 구현한다**
 
 `JwtTokenProvider.parseAccessToken`은 서명 검증 → 만료 검증 → `tokenType == "ACCESS"` 확인 → `subject`를 `Long`으로 변환 순서로 처리하고, 어느 단계에서든 `JwtException`·`IllegalArgumentException`·`NumberFormatException`이 나면 `Optional.empty()`를 반환한다. 예외를 밖으로 던지지 않는다(D4). 토큰 원문은 로그에 남기지 않는다.
 
-- [ ] **Step 4: 통과시킨다**
+- [x] **Step 4: 통과시킨다**
 
 ```powershell
 .\gradlew.bat test --tests "*JwtTokenProviderTest"
@@ -250,7 +250,7 @@ Expected: `parseAccessToken`이 없어 컴파일 FAIL.
 
 Expected: PASS.
 
-- [ ] **Step 5: 커밋한다**
+- [x] **Step 5: 커밋한다**
 
 ```powershell
 git add src/main/java/com/finplay/api/auth/token src/test/java/com/finplay/api/auth/token
@@ -276,7 +276,7 @@ git commit -m "feat: Access Token 검증과 인증 주체 파싱 추가"
 
 > 이 Task는 의존성 추가로 기존 슬라이스 테스트가 깨지므로, 프로덕션 구성과 기존 테스트 정리를 **한 커밋**으로 묶는다. 중간 커밋에서 빌드가 깨지지 않게 하기 위한 의도적 묶음이다.
 
-- [ ] **Step 1: 의존성을 추가하고 깨지는 범위를 먼저 확인한다**
+- [x] **Step 1: 의존성을 추가하고 깨지는 범위를 먼저 확인한다**
 
 ```groovy
 implementation 'org.springframework.boot:spring-boot-starter-security'
@@ -288,7 +288,7 @@ implementation 'org.springframework.boot:spring-boot-starter-security'
 
 Expected: `SecurityFilterChain` 빈이 없어 기본 자동설정이 모든 요청을 막고, 기존 컨트롤러 슬라이스가 401로 FAIL. **실제 실패 목록을 기록한다** — 아래 Step 5의 조정 대상은 추측이 아니라 이 출력으로 확정한다.
 
-- [ ] **Step 2: 필터체인 계약 테스트를 작성한다**
+- [x] **Step 2: 필터체인 계약 테스트를 작성한다**
 
 `SecurityConfigTest`에 다음을 추가한다(테스트 전용 컨트롤러 패턴은 위 "보호 API 인증 검증 방법" 참조).
 
@@ -303,7 +303,7 @@ allowsPublicAuthPathsWithoutToken();                  // /api/auth/login, /api/a
 
 401 응답은 반드시 `$.error.code`, `$.error.message`, `$.error.requestId`를 모두 단언하고, `X-Request-Id` 헤더 값과 본문 `requestId`가 같은지도 단언한다(D2 회귀 방지).
 
-- [ ] **Step 3: 실패를 확인한다**
+- [x] **Step 3: 실패를 확인한다**
 
 ```powershell
 .\gradlew.bat test --tests "*SecurityConfigTest"
@@ -311,14 +311,14 @@ allowsPublicAuthPathsWithoutToken();                  // /api/auth/login, /api/a
 
 Expected: `SecurityConfig`가 없어 FAIL.
 
-- [ ] **Step 4: 프로덕션 구성을 구현한다**
+- [x] **Step 4: 프로덕션 구성을 구현한다**
 
 - `JwtAuthenticationFilter`는 `OncePerRequestFilter`를 확장하고, `Authorization` 헤더가 `Bearer `로 시작할 때만 `parseAccessToken`을 호출한다. 성공 시 `UsernamePasswordAuthenticationToken(authenticatedUser, null, List.of(new SimpleGrantedAuthority("ROLE_" + role)))`을 `SecurityContextHolder`에 넣는다. 실패 시 아무것도 하지 않고 체인을 이어간다.
 - `SecurityConfig`는 위 "`SecurityFilterChain` 구성"과 "인증 규칙"의 화이트리스트를 그대로 구현한다. 화이트리스트 경로는 `private static final String[] PUBLIC_PATHS`처럼 상수로 뺀다(conventions — 매직 문자열 금지).
 - `RestAuthenticationEntryPoint`·`RestAccessDeniedHandler`는 상태코드·`Content-Type: application/json`·UTF-8을 설정하고 `ErrorResponse.of(errorCode, errorCode.getDefaultMessage(), MDC.get(RequestIdFilter.REQUEST_ID_MDC_KEY))`를 직렬화한다. 원인 예외 메시지를 본문에 노출하지 않는다.
 - `RequestIdFilter`에 `@Order(SecurityProperties.DEFAULT_FILTER_ORDER - 1)`를 붙인다. Boot 4의 `SecurityProperties` import 경로는 컴파일로 확인한다.
 
-- [ ] **Step 5: 기존 슬라이스 테스트를 정리한다**
+- [x] **Step 5: 기존 슬라이스 테스트를 정리한다**
 
 | 테스트 | 조치 | 근거 |
 |---|---|---|
@@ -327,7 +327,7 @@ Expected: `SecurityConfig`가 없어 FAIL.
 
 `/test/**`를 `SecurityConfig`의 공개 경로에 추가하는 해법은 **금지한다** — 테스트 편의로 운영 인증 경계를 넓히는 변경이다.
 
-- [ ] **Step 6: 통과시킨다**
+- [x] **Step 6: 통과시킨다**
 
 ```powershell
 .\gradlew.bat spotlessApply
@@ -336,7 +336,7 @@ Expected: `SecurityConfig`가 없어 FAIL.
 
 Expected: `SecurityConfigTest` 포함 전체 PASS.
 
-- [ ] **Step 7: 커밋한다**
+- [x] **Step 7: 커밋한다**
 
 ```powershell
 git add build.gradle src/main/java/com/finplay/api/auth/config src/main/java/com/finplay/api/auth/token/JwtAuthenticationFilter.java src/main/java/com/finplay/api/common/RequestIdFilter.java src/test/java/com/finplay/api/auth src/test/java/com/finplay/api/common/GlobalExceptionHandlerTest.java
@@ -355,7 +355,7 @@ git commit -m "feat: Spring Security 기반 Bearer 인증과 401/403 공통 응�
 
 > Task 2에서 골격을 만들었으므로 여기서는 **경계 케이스만** 채운다. 테스트 전용 변경이라 별도 커밋으로 둔다.
 
-- [ ] **Step 1: 경계 케이스를 추가한다**
+- [x] **Step 1: 경계 케이스를 추가한다**
 
 ```java
 rejectsBearerHeaderWithoutTokenValue();          // "Bearer", "Bearer " → 401
@@ -365,7 +365,7 @@ exposesUserIdAndRoleAsAuthenticationPrincipal(); // principal이 AuthenticatedUs
 rejectsNonHealthActuatorEndpointWithoutToken();  // /actuator/health만 공개임을 고정
 ```
 
-- [ ] **Step 2: 실행한다**
+- [x] **Step 2: 실행한다**
 
 ```powershell
 .\gradlew.bat test --tests "*SecurityConfigTest"
@@ -373,7 +373,7 @@ rejectsNonHealthActuatorEndpointWithoutToken();  // /actuator/health만 공개�
 
 Expected: PASS. 실패하면 프로덕션 결함인지 테스트 기대가 계획과 다른지 구분해 보고한다.
 
-- [ ] **Step 3: 커밋한다**
+- [x] **Step 3: 커밋한다**
 
 ```powershell
 git add src/test/java/com/finplay/api/auth/config/SecurityConfigTest.java
@@ -392,7 +392,7 @@ git commit -m "test: Bearer 인증 경계 케이스 검증 추가"
 - Consumes: `UserRepository.findByEmail`, `PasswordEncoder.matches`, `JwtTokenProvider.issue`, `RefreshTokenRepository.save`
 - Produces: `TokenResponse AuthService.login(String email, String password)`
 
-- [ ] **Step 1: 실패 테스트를 작성한다**
+- [x] **Step 1: 실패 테스트를 작성한다**
 
 `AuthServiceTest`에 추가한다.
 
@@ -406,7 +406,7 @@ loginDoesNotRevokeExistingRefreshTokens();               // 기존 토큰 삭제
 
 정상 케이스는 저장된 `RefreshToken.getTokenHash()`가 응답 `refreshToken` 원문과 다르고 테스트가 계산한 SHA-256 hex와 같은지 단언한다. 실패 3종은 모두 `ErrorCode.UNAUTHORIZED`인지 단언한다(D7).
 
-- [ ] **Step 2: 실패를 확인한다**
+- [x] **Step 2: 실패를 확인한다**
 
 ```powershell
 .\gradlew.bat test --tests "*AuthServiceTest"
@@ -414,7 +414,7 @@ loginDoesNotRevokeExistingRefreshTokens();               // 기존 토큰 삭제
 
 Expected: `login`이 없어 FAIL.
 
-- [ ] **Step 3: 구현한다**
+- [x] **Step 3: 구현한다**
 
 ```java
 @Transactional
@@ -432,7 +432,7 @@ public TokenResponse login(String email, String password) {
 
 `issueTokenPair(User user, LocalDateTime now)`는 기존 `signup` 말미의 발급·해시 저장 블록을 그대로 옮긴 private 메서드이며, `signup`도 이 메서드를 호출하도록 바꾼다(D6). 이 리팩터링으로 signup 동작이 바뀌면 안 되므로 **기존 signup 테스트가 수정 없이 통과**해야 한다.
 
-- [ ] **Step 4: 통과시킨다**
+- [x] **Step 4: 통과시킨다**
 
 ```powershell
 .\gradlew.bat test --tests "*AuthServiceTest" --tests "*SignupIntegrationTest"
@@ -440,7 +440,7 @@ public TokenResponse login(String email, String password) {
 
 Expected: PASS (signup 회귀 없음 포함).
 
-- [ ] **Step 5: 커밋한다**
+- [x] **Step 5: 커밋한다**
 
 ```powershell
 git add src/main/java/com/finplay/api/auth/service/AuthService.java src/test/java/com/finplay/api/auth/service/AuthServiceTest.java
@@ -460,7 +460,7 @@ git commit -m "feat: 이메일 로그인 자격증명 검증과 토큰 발급 �
 - Consumes: `AuthService.login(String, String)`
 - Produces: `POST /api/auth/login`
 
-- [ ] **Step 1: WebMvc 실패 테스트를 작성한다**
+- [x] **Step 1: WebMvc 실패 테스트를 작성한다**
 
 ```java
 loginReturnsOkWithTokenPair();                  // 200 + 4개 필드 jsonPath 값 검증
@@ -470,7 +470,7 @@ loginReturnsUnauthorizedForInvalidCredentials(); // 서비스의 UNAUTHORIZED �
 
 성공 응답은 `mock(TokenResponse.class)`가 아니라 실제 값이 든 `TokenResponse`를 stubbing한다(conventions). 400 케이스에서는 `verifyNoInteractions(authService)`로 서비스가 호출되지 않음을 확인한다.
 
-- [ ] **Step 2: 실패를 확인한다**
+- [x] **Step 2: 실패를 확인한다**
 
 ```powershell
 .\gradlew.bat test --tests "*AuthControllerTest"
@@ -478,11 +478,11 @@ loginReturnsUnauthorizedForInvalidCredentials(); // 서비스의 UNAUTHORIZED �
 
 Expected: 매핑과 DTO가 없어 FAIL.
 
-- [ ] **Step 3: 구현한다**
+- [x] **Step 3: 구현한다**
 
 `LoginRequest`는 위 "로그인" 표의 검증을 record 컴포넌트에 직접 붙이고 메시지는 한국어 + 마침표로 쓴다. `AuthController`에 `@PostMapping("/login")`을 추가하고 `ResponseEntity.ok(...)`로 200을 반환한다.
 
-- [ ] **Step 4: 통과시킨다**
+- [x] **Step 4: 통과시킨다**
 
 ```powershell
 .\gradlew.bat spotlessApply
@@ -491,7 +491,7 @@ Expected: 매핑과 DTO가 없어 FAIL.
 
 Expected: PASS.
 
-- [ ] **Step 5: 커밋한다**
+- [x] **Step 5: 커밋한다**
 
 ```powershell
 git add src/main/java/com/finplay/api/auth/controller/AuthController.java src/main/java/com/finplay/api/auth/dto/request/LoginRequest.java src/test/java/com/finplay/api/auth/controller/AuthControllerTest.java
@@ -509,7 +509,7 @@ git commit -m "feat: 로그인 API 추가"
 - Consumes: 실제 MySQL repository, `AuthService.signup`·`login`, 실제 `JwtTokenProvider`.
 - Verifies: 가입한 회원이 실제 DB 자격증명으로 로그인하고 Refresh Token이 해시로만 남는다.
 
-- [ ] **Step 1: Testcontainers 통합 테스트를 작성한다**
+- [x] **Step 1: Testcontainers 통합 테스트를 작성한다**
 
 `@SpringBootTest` + `@Import(TestcontainersConfiguration.class)`를 쓰고, 기존 `SignupIntegrationTest`의 인증번호→가입 준비 흐름(`FakeEmailSender`)을 재사용한다.
 
@@ -520,7 +520,7 @@ loginFailsWithUnauthorizedForWrongPassword();
 issuedAccessTokenIsAcceptedByJwtTokenProvider();       // parseAccessToken이 가입 회원 id를 돌려준다
 ```
 
-- [ ] **Step 2: 실행한다**
+- [x] **Step 2: 실행한다**
 
 ```powershell
 .\gradlew.bat test --tests "*LoginIntegrationTest"
@@ -528,7 +528,7 @@ issuedAccessTokenIsAcceptedByJwtTokenProvider();       // parseAccessToken이 �
 
 Expected: Docker와 MySQL 8.4가 있으면 PASS. Docker 불가면 실패 로그를 보존하고 단위·슬라이스 통과와 구분해 보고한다(추정으로 통과 처리 금지).
 
-- [ ] **Step 3: 커밋한다**
+- [x] **Step 3: 커밋한다**
 
 ```powershell
 git add src/test/java/com/finplay/api/auth/service/LoginIntegrationTest.java
@@ -542,7 +542,7 @@ git commit -m "test: 로그인 통합 검증 추가"
 **Files**
 - Modify: `docs/api-routes.md`, `docs/specs/002-auth-account/tasks.md`, `docs/specs/002-auth-account/run-log.md`
 
-- [ ] **Step 1: 라우트 문서를 갱신한다**
+- [x] **Step 1: 라우트 문서를 갱신한다**
 
 라우트 목록에 추가한다.
 
@@ -552,7 +552,7 @@ git commit -m "test: 로그인 통합 검증 추가"
 
 "로그인" 상세 표(요청·200 응답·400/401)와 "인증 규칙" 절(공개 경로 목록, 보호 경로 기본값, 401·403 공통 포맷)을 추가한다. 후속 이슈가 자기 경로를 화이트리스트에 추가한다는 점도 한 줄 적는다.
 
-- [ ] **Step 2: 전체 게이트를 실행한다**
+- [x] **Step 2: 전체 게이트를 실행한다**
 
 ```powershell
 .\gradlew.bat spotlessApply
@@ -561,13 +561,13 @@ git commit -m "test: 로그인 통합 검증 추가"
 
 Expected: compile, test, Spotless, SpotBugs, JaCoCo 40% 게이트 모두 PASS. 실패하면 고치고 재실행한다.
 
-- [ ] **Step 3: tasks와 run log를 실제 결과로 갱신한다**
+- [x] **Step 3: tasks와 run log를 실제 결과로 갱신한다**
 
 `tasks.md`의 "JWT·Security" 항목은 `GET /api/auth/me`(Issue #8)를 포함하므로 **완료로 체크하지 않는다.** 대신 로그인과 Bearer 인증이 이번 이슈에서 끝났고 `/api/auth/me`가 남아 있다는 사실을 항목 옆에 한 줄로 남긴다.
 
 `run-log.md`의 Issue #5 구역에 실행 시각, 명령, 통과 테스트 수, Docker/Testcontainers 여부를 기록한다.
 
-- [ ] **Step 4: 최종 diff를 확인한다**
+- [x] **Step 4: 최종 diff를 확인한다**
 
 ```powershell
 git status --short --branch
@@ -577,10 +577,10 @@ git diff --stat dev...HEAD
 
 Expected: 범위 밖 파일 변경이 없다. `V3__*.sql`이 생성되지 않았는지도 함께 확인한다(D10).
 
-- [ ] **Step 5: 문서 커밋을 만든다**
+- [x] **Step 5: 문서 커밋을 만든다**
 
 ```powershell
-git add docs/api-routes.md docs/specs/002-auth-account/tasks.md docs/specs/002-auth-account/run-log.md
+git add docs/agent-mistakes.md docs/api-routes.md docs/specs/002-auth-account/issue-5-plan.md docs/specs/002-auth-account/tasks.md docs/specs/002-auth-account/run-log.md
 git commit -m "docs: 이슈 5 구현 결과 동기화"
 ```
 
@@ -588,10 +588,10 @@ git commit -m "docs: 이슈 5 구현 결과 동기화"
 
 ## 완료 조건
 
-- [ ] 정상 로그인이 Access/Refresh 토큰 쌍을 200으로 반환한다.
-- [ ] 잘못된 이메일·비밀번호·소셜 전용 회원이 **동일한** 401 `UNAUTHORIZED` 공통 포맷으로 응답된다.
-- [ ] Method/Path가 `POST /api/auth/login` 계약과 일치한다.
-- [ ] 만료·변조·`REFRESH` 타입 토큰으로 보호 경로에 접근하면 401 공통 포맷이며 `requestId`와 `X-Request-Id`가 채워져 있다.
-- [ ] 공개 경로가 토큰 없이 동작하고 기존 signup·인증번호·OAuth authorize 테스트가 회귀 없이 통과한다.
-- [ ] Refresh Token 원문이 DB에 존재하지 않는다(해시만 저장).
-- [ ] `.\gradlew.bat build`가 통과한다.
+- [x] 정상 로그인이 Access/Refresh 토큰 쌍을 200으로 반환한다.
+- [x] 잘못된 이메일·비밀번호·소셜 전용 회원이 **동일한** 401 `UNAUTHORIZED` 공통 포맷으로 응답된다.
+- [x] Method/Path가 `POST /api/auth/login` 계약과 일치한다.
+- [x] 만료·변조·`REFRESH` 타입 토큰으로 보호 경로에 접근하면 401 공통 포맷이며 `requestId`와 `X-Request-Id`가 채워져 있다.
+- [x] 공개 경로가 토큰 없이 동작하고 기존 signup·인증번호·OAuth authorize 테스트가 회귀 없이 통과한다.
+- [x] Refresh Token 원문이 DB에 존재하지 않는다(해시만 저장).
+- [x] `.\gradlew.bat build`가 통과한다.
