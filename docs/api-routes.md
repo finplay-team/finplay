@@ -9,6 +9,7 @@
 | Method | URL | 도메인 | 요약 | Spec |
 |---|---|---|---|---|
 | POST | /api/auth/email-verifications | auth | 인증번호 발송 (202, 본문 없음). 발송 제한·중복 이메일 검사 | 002 AUTH-004 |
+| POST | /api/auth/login | auth | 이메일·비밀번호 검증 후 Access·Refresh 토큰 발급 | 002 AUTH-002 |
 | GET | /api/auth/oauth/{provider}/authorize | auth | 카카오·네이버 OAuth 인가 시작 (302, state 보안 쿠키) | 002 AUTH-003 |
 
 ## 시스템 엔드포인트
@@ -30,3 +31,11 @@
 | Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|
 | POST | /api/auth/signup | `{"email":"user@finplay.com","nickname":"finplayer","password":"password123","termsAgreed":true,"signupVerificationToken":"<가입 인증 토큰 원문>"}` | 201 `{"accessToken":"<JWT>","refreshToken":"<JWT>","accessTokenExpiresInSeconds":3600,"refreshTokenExpiresInSeconds":1209600}` | 400 `VALIDATION_ERROR`, 409 `DUPLICATE_RESOURCE` 또는 `EMAIL_VERIFICATION_REQUIRED` 공통 오류 형식 | 002 Issue #4 |
+
+## 로그인
+
+| Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|
+| POST | /api/auth/login | `{"email":"user@finplay.com","password":"password123"}` | 200 `{"accessToken":"<JWT>","refreshToken":"<JWT>","accessTokenExpiresInSeconds":3600,"refreshTokenExpiresInSeconds":1209600}` | 400 `VALIDATION_ERROR`, 401 `UNAUTHORIZED` 공통 오류 형식 | 002 AUTH-002 |
+
+회원 없음·소셜 전용 가입자·비밀번호 불일치는 원인과 무관하게 동일한 401 `UNAUTHORIZED`로 응답한다 (계정 열거 방지).
