@@ -232,13 +232,13 @@ Refresh JWT 파싱 실패, 해시 조회 결과 0건·2건 이상, JWT subject�
 - Consumes: Access Bearer의 `AuthenticatedUser`, `{"refreshToken":"<Refresh JWT 원문>"}`
 - Produces: 204, 본문 없음
 
-- [ ] **Step 1: WebMvc 실패 테스트를 작성한다**
+- [x] **Step 1: WebMvc 실패 테스트를 작성한다**
   - 유효 Access Bearer가 `AuthenticatedUser(userId, role)`로 파싱되고 유효 요청이면 서비스에 `userId`와 원문을 전달해 204, 빈 본문을 반환한다.
   - Access Bearer가 없으면 401 공통 오류 형식이며 서비스는 호출되지 않는다.
   - Refresh Token을 Bearer로 제출하면 401이고 서비스는 호출되지 않는다.
   - 요청 `refreshToken` 누락·빈 문자열·공백·4,097자는 400 `VALIDATION_ERROR`이고 서비스는 호출되지 않는다.
   - 서비스의 401 `UNAUTHORIZED`와 403 `FORBIDDEN`을 각각 공통 오류 형식으로 반환한다.
-- [ ] **Step 2: Security 회귀 실패 테스트를 추가한다**
+- [x] **Step 2: Security 회귀 실패 테스트를 추가한다**
   - `POST /api/auth/logout`은 공개 경로 목록에 포함되지 않아 인증 없이는 401이다.
   - 유효 Access Bearer는 Security를 통과해 Controller까지 도달한다.
 - [ ] **Step 3: 대상 테스트 실패를 확인한다**
@@ -249,13 +249,13 @@ Refresh JWT 파싱 실패, 해시 조회 결과 0건·2건 이상, JWT subject�
 
   Expected: logout Controller 매핑 부재로 404 또는 새 검증 FAIL.
 
-- [ ] **Step 4: Controller 매핑만 구현한다**
+- [x] **Step 4: Controller 매핑만 구현한다**
   - `@AuthenticationPrincipal AuthenticatedUser`를 받는다.
   - 기존 `RefreshRequest`를 재사용하고 `@Valid @RequestBody`를 유지한다.
   - 서비스 성공 뒤 `ResponseEntity.noContent().build()`를 반환한다.
   - `SecurityConfig.PUBLIC_POST_PATHS`는 수정하지 않는다.
-- [ ] **Step 5: 같은 대상 테스트를 다시 실행해 PASS를 확인한다**
-- [ ] **Step 6: 논리 커밋한다**
+- [x] **Step 5: 같은 대상 테스트를 다시 실행해 PASS를 확인한다**
+- [x] **Step 6: 논리 커밋한다**
 
   ```powershell
   git add src/main/java/com/finplay/api/auth/controller/AuthController.java src/test/java/com/finplay/api/auth/controller/AuthControllerTest.java src/test/java/com/finplay/api/auth/config/SecurityConfigTest.java

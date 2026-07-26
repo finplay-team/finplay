@@ -1,15 +1,18 @@
 // 회원가입·로그인·토큰 재발급 응답과 입력 검증, 비즈니스 오류 계약을 검증하는 WebMvc 슬라이스 테스트다.
 package com.finplay.api.auth.controller;
 
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Test;
@@ -19,6 +22,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -26,6 +30,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.finplay.api.auth.config.SecurityConfig;
 import com.finplay.api.auth.dto.response.TokenResponse;
 import com.finplay.api.auth.service.AuthService;
+import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.auth.token.JwtTokenProvider;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
@@ -42,7 +47,9 @@ class AuthControllerTest {
 	private static final String PASSWORD = "password123";
 	private static final String SHORT_PASSWORD = "pass123";
 	private static final String SIGNUP_TOKEN = "signup-token";
+	private static final String ACCESS_TOKEN = "access.jwt.token";
 	private static final String REFRESH_TOKEN = "refresh.jwt.token";
+	private static final long USER_ID = 42L;
 
 	@Autowired
 	private MockMvc mockMvc;
@@ -262,6 +269,92 @@ class AuthControllerTest {
 		verify(authService).refresh(refreshToken);
 	}
 
+	@Test
+	void logoutReturnsNoContentAndPassesPrincipalUserIdAndRawRefreshToken() throws Exception {
+		stubValidAccessToken();
+
+		mockMvc.perform(post("/api/auth/logout")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(refreshRequestJson(REFRESH_TOKEN)))
+			.andExpect(status().isNoContent())
+			.andExpect(content().string(""));
+
+		verify(authService).logout(USER_ID, REFRESH_TOKEN);
+	}
+
+	@Test
+	void logoutRejectsMissingAccessTokenWithoutCallingService() throws Exception {
+		mockMvc.perform(post("/api/auth/logout")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(refreshRequestJson(REFRESH_TOKEN)))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
+			.andExpect(jsonPath("$.error.message").value(ErrorCode.UNAUTHORIZED.getDefaultMessage()))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(authService);
+	}
+
+	@Test
+	void logoutRejectsRefreshBearerWithoutCallingService() throws Exception {
+		when(jwtTokenProvider.parseAccessToken(REFRESH_TOKEN)).thenReturn(Optional.empty());
+
+		mockMvc.perform(post("/api/auth/logout")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + REFRESH_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(refreshRequestJson(REFRESH_TOKEN)))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
+			.andExpect(jsonPath("$.error.message").value(ErrorCode.UNAUTHORIZED.getDefaultMessage()))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(authService);
+	}
+
+	@ParameterizedTest(name = "{0}")
+	@MethodSource("invalidRefreshRequests")
+	void logoutRejectsInvalidRequestWithoutCallingService(String scenario, String refreshToken) throws Exception {
+		stubValidAccessToken();
+
+		mockMvc.perform(post("/api/auth/logout")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(refreshRequestJson(refreshToken)))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.message").isNotEmpty())
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(authService);
+	}
+
+	@ParameterizedTest(name = "{0}")
+	@MethodSource("logoutServiceErrors")
+	void logoutMapsServiceErrorToCommonErrorFormat(
+		String scenario, ErrorCode errorCode, int expectedStatus) throws Exception {
+		stubValidAccessToken();
+		doThrow(new BusinessException(errorCode))
+			.when(authService)
+			.logout(USER_ID, REFRESH_TOKEN);
+
+		mockMvc.perform(post("/api/auth/logout")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(refreshRequestJson(REFRESH_TOKEN)))
+			.andExpect(status().is(expectedStatus))
+			.andExpect(jsonPath("$.error.code").value(errorCode.name()))
+			.andExpect(jsonPath("$.error.message").value(errorCode.getDefaultMessage()))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(authService).logout(USER_ID, REFRESH_TOKEN);
+	}
+
+	private void stubValidAccessToken() {
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+	}
+
 	private String loginRequestJson(String email, String password) throws Exception {
 		Map<String, Object> request = new LinkedHashMap<>();
 		if (email != null) {
@@ -291,6 +384,12 @@ class AuthControllerTest {
 
 	private static Stream<String> unauthorizedRefreshTokens() {
 		return Stream.of("x", "r".repeat(4096));
+	}
+
+	private static Stream<Arguments> logoutServiceErrors() {
+		return Stream.of(
+			Arguments.of("서비스 401", ErrorCode.UNAUTHORIZED, 401),
+			Arguments.of("서비스 403", ErrorCode.FORBIDDEN, 403));
 	}
 
 	private static Stream<Arguments> invalidLoginRequests() {

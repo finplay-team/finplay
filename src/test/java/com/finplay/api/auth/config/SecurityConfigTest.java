@@ -30,6 +30,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.RequestBuilder;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.finplay.api.auth.token.AuthenticatedUser;
@@ -54,6 +55,7 @@ class SecurityConfigTest {
 	private static final long REFRESH_TOKEN_EXPIRATION_MS = 1_209_600_000L;
 	private static final long USER_ID = 42L;
 	private static final String PROTECTED_PATH = "/test/protected";
+	private static final String LOGOUT_PATH = "/api/auth/logout";
 
 	@Autowired
 	private MockMvc mockMvc;
@@ -109,6 +111,19 @@ class SecurityConfigTest {
 	@Test
 	void allowsProtectedPathWithValidAccessToken() throws Exception {
 		mockMvc.perform(bearer(validAccessToken()))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.userId").value(42));
+	}
+
+	@Test
+	void rejectsLogoutWithoutAccessTokenAsUnauthorized() throws Exception {
+		expectUnauthorizedWithRequestId(post(LOGOUT_PATH));
+	}
+
+	@Test
+	void allowsLogoutWithValidAccessTokenToReachController() throws Exception {
+		mockMvc.perform(post(LOGOUT_PATH)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + validAccessToken()))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.userId").value(42));
 	}
@@ -218,6 +233,13 @@ class SecurityConfigTest {
 				.map(GrantedAuthority::getAuthority)
 				.toList());
 			return body;
+		}
+
+		@PostMapping(LOGOUT_PATH)
+		Map<String, Object> logout(
+			@AuthenticationPrincipal
+			AuthenticatedUser principal) {
+			return Map.of("userId", principal.userId());
 		}
 	}
 }
