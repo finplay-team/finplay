@@ -9,7 +9,7 @@
 | Method | URL | 도메인 | 요약 | Spec |
 |---|---|---|---|---|
 | POST | /api/auth/email-verifications | auth | 인증번호 발송 (202, 본문 없음). 발송 제한·중복 이메일 검사 | 002 AUTH-004 |
-| POST | /api/auth/signup | auth | 이메일 회원가입 및 Access·Refresh JWT 발급 (201) | 002 Issue #4 |
+| GET | /api/auth/oauth/{provider}/authorize | auth | 카카오·네이버 OAuth 인가 시작 (302, state 보안 쿠키) | 002 AUTH-003 |
 
 ## 시스템 엔드포인트
 
