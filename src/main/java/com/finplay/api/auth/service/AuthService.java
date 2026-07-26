@@ -68,6 +68,25 @@ public class AuthService {
 		User user = saveUser(email, passwordEncoder.encode(password), nickname, now);
 		accountService.createAccountsFor(user);
 
+		return issueTokenPair(user, now);
+	}
+
+	@Transactional
+	public TokenResponse login(String email, String password) {
+		LocalDateTime now = LocalDateTime.now(clock);
+		// 회원 없음·소셜 전용 가입자·비밀번호 불일치를 모두 같은 UNAUTHORIZED로 처리한다.
+		// 원인별로 응답이 갈리면 이메일 존재 여부가 노출된다.
+		User user = userRepository.findByEmail(email)
+			.orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED));
+		if (user.getPasswordHash() == null
+			|| !passwordEncoder.matches(password, user.getPasswordHash())) {
+			throw new BusinessException(ErrorCode.UNAUTHORIZED);
+		}
+		// 기존 Refresh Token은 폐기하지 않고 행을 추가만 한다 (다중 기기 로그인 유지, 폐기는 재발급·로그아웃 소관).
+		return issueTokenPair(user, now);
+	}
+
+	private TokenResponse issueTokenPair(User user, LocalDateTime now) {
 		IssuedTokenPair tokens = jwtTokenProvider.issue(user.getId(), user.getRole());
 		refreshTokenRepository.save(RefreshToken.create(
 			user, sha256(tokens.refreshToken()), tokens.refreshTokenExpiresAt(), now));

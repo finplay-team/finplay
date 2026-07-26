@@ -1,4 +1,4 @@
-// 회원가입 서비스의 검증 분기와 저장 대상 상태를 검증하는 단위 테스트다.
+// 회원가입·로그인 서비스의 검증 분기와 저장 대상 상태를 검증하는 단위 테스트다.
 package com.finplay.api.auth.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -7,6 +7,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import java.nio.charset.StandardCharsets;
@@ -17,6 +19,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -205,6 +208,108 @@ class AuthServiceTest {
 
 		verify(accountService, never()).createAccountsFor(any());
 		verify(refreshTokenRepository, never()).save(any());
+	}
+
+	@Test
+	void loginReturnsTokenPairAndPersistsHashedRefreshToken() {
+		User user = existingUser(passwordEncoder.encode(RAW_PASSWORD));
+		when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(user));
+		when(jwtTokenProvider.issue(7L, "USER")).thenReturn(new IssuedTokenPair(
+			ACCESS_TOKEN, REFRESH_TOKEN, NOW.plusDays(14), 3600L, 1_209_600L));
+
+		var response = authService.login(EMAIL, RAW_PASSWORD);
+
+		ArgumentCaptor<RefreshToken> refreshTokenCaptor = ArgumentCaptor.forClass(RefreshToken.class);
+		verify(refreshTokenRepository).save(refreshTokenCaptor.capture());
+		RefreshToken savedRefreshToken = refreshTokenCaptor.getValue();
+		assertThat(savedRefreshToken.getUser()).isSameAs(user);
+		assertThat(savedRefreshToken.getTokenHash()).isNotEqualTo(REFRESH_TOKEN);
+		assertThat(savedRefreshToken.getTokenHash()).isEqualTo(sha256(REFRESH_TOKEN));
+		assertThat(savedRefreshToken.getExpiresAt()).isEqualTo(NOW.plusDays(14));
+		assertThat(savedRefreshToken.getCreatedAt()).isEqualTo(NOW);
+		assertThat(savedRefreshToken.getRevokedAt()).isNull();
+
+		assertThat(response.accessToken()).isEqualTo(ACCESS_TOKEN);
+		assertThat(response.refreshToken()).isEqualTo(REFRESH_TOKEN);
+		assertThat(response.accessTokenExpiresInSeconds()).isEqualTo(3600L);
+		assertThat(response.refreshTokenExpiresInSeconds()).isEqualTo(1_209_600L);
+	}
+
+	@Test
+	void loginFailsWithUnauthorizedWhenEmailNotFound() {
+		when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.empty());
+
+		assertLoginFailsWithUnauthorized(RAW_PASSWORD);
+	}
+
+	@Test
+	void loginFailsWithUnauthorizedWhenPasswordDoesNotMatch() {
+		when(userRepository.findByEmail(EMAIL))
+			.thenReturn(Optional.of(existingUser(passwordEncoder.encode(RAW_PASSWORD))));
+
+		assertLoginFailsWithUnauthorized("wrong-password");
+	}
+
+	@Test
+	void loginFailsWithUnauthorizedWhenUserHasNoPasswordHash() {
+		// 소셜 전용 가입자는 passwordHash가 null이다. 비밀번호 대조 전에 걸러져야 한다.
+		when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(existingUser(null)));
+
+		assertLoginFailsWithUnauthorized(RAW_PASSWORD);
+	}
+
+	@Test
+	void loginFailureIsIndistinguishableRegardlessOfCause() {
+		// D7 — 원인별로 응답이 갈리면 이메일 존재 여부가 노출된다. 세 원인의 ErrorCode가 같아야 한다.
+		when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.empty());
+		ErrorCode emailNotFound = captureLoginErrorCode(RAW_PASSWORD);
+
+		when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(existingUser(null)));
+		ErrorCode noPasswordHash = captureLoginErrorCode(RAW_PASSWORD);
+
+		when(userRepository.findByEmail(EMAIL))
+			.thenReturn(Optional.of(existingUser(passwordEncoder.encode(RAW_PASSWORD))));
+		ErrorCode passwordMismatch = captureLoginErrorCode("wrong-password");
+
+		assertThat(List.of(emailNotFound, noPasswordHash, passwordMismatch))
+			.containsOnly(ErrorCode.UNAUTHORIZED);
+	}
+
+	@Test
+	void loginDoesNotRevokeExistingRefreshTokens() {
+		// D9 — 로그인은 refresh_tokens에 행을 추가만 한다. 기존 토큰 삭제·폐기 호출이 있으면 안 된다.
+		User user = existingUser(passwordEncoder.encode(RAW_PASSWORD));
+		when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(user));
+		when(jwtTokenProvider.issue(7L, "USER")).thenReturn(new IssuedTokenPair(
+			ACCESS_TOKEN, REFRESH_TOKEN, NOW.plusDays(14), 3600L, 1_209_600L));
+
+		authService.login(EMAIL, RAW_PASSWORD);
+
+		verify(refreshTokenRepository).save(any(RefreshToken.class));
+		verifyNoMoreInteractions(refreshTokenRepository);
+	}
+
+	private User existingUser(String passwordHash) {
+		User user = User.create(EMAIL, passwordHash, NICKNAME, NOW.minusDays(1));
+		ReflectionTestUtils.setField(user, "id", 7L);
+		return user;
+	}
+
+	private void assertLoginFailsWithUnauthorized(String password) {
+		assertThat(captureLoginErrorCode(password)).isEqualTo(ErrorCode.UNAUTHORIZED);
+
+		// 실패 경로에서는 토큰이 발급되거나 저장되지 않아야 한다.
+		verifyNoInteractions(jwtTokenProvider);
+		verify(refreshTokenRepository, never()).save(any());
+	}
+
+	private ErrorCode captureLoginErrorCode(String password) {
+		try {
+			authService.login(EMAIL, password);
+			throw new AssertionError("login이 BusinessException을 던지지 않았다.");
+		} catch (BusinessException ex) {
+			return ex.getErrorCode();
+		}
 	}
 
 	private void stubNoDuplicates() {
