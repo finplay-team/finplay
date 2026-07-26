@@ -56,15 +56,30 @@
 | 구분 | 공급자/명령 | 결과 | 검증 수준·사유 |
 |---|---|---|---|
 | 자동 회귀 | Fake OAuth 대상 테스트 | PASS | 단위·Mock HTTP·WebMvc·`mysql:8.4` Testcontainers. 실제 OAuth 아님 |
-| 전체 게이트 | `.\gradlew.bat build --no-daemon --max-workers=1` | PASS | 전체 tests·JaCoCo·SpotBugs·Spotless 통과. 커밋 후 검증 SHA 갱신 |
-| 실제 OAuth | KAKAO | NOT RUN (계획 시점) | authorize→callback→코드 교환→사용자 정보→신규/기존→JWT와 신규 SocialAccount·계좌 2개 DB 검증을 한 결과/사유로 갱신 |
-| 실제 OAuth | NAVER | NOT RUN (계획 시점) | authorize→callback→코드 교환→사용자 정보→신규/기존→JWT와 신규 SocialAccount·계좌 2개 DB 검증을 한 결과/사유로 갱신 |
+| 전체 게이트 | `.\gradlew.bat build --no-daemon --max-workers=1` | PASS | HEAD `273b6faab79e28bacb500dd7690072a493c7f582`, 전체 tests·JaCoCo·SpotBugs·Spotless `BUILD SUCCESSFUL` |
+| 실제 OAuth | KAKAO | NOT RUN | 팀원 계정 사용이 다음 날 가능해 로그인·동의 단계 미실행. 실제 연동 완료를 주장하지 않음 |
+| 실제 OAuth | NAVER | PASS | 사용자 조작 authorize→로그인/동의→callback→코드 교환→사용자 정보→신규/기존→JWT 및 DB 검증 완료. 기존 회원 두 번째 응답 렌더링 제한은 아래 기록 |
 
 - 실제 카카오·네이버는 각각 `PASS`여야 Issue #10 PR 완료 조건을 충족한다. 미검증 공급자는 실제 연동 완료로 주장하지 않는다.
 - 환경변수·개발자 콘솔 Callback URL·이메일 동의가 부족하면 추측하지 않고 공급자별 `NOT RUN` 사유를 기록한다.
 - 브라우저 로그인·동의 단계는 사용자 조작 완료를 기다린다.
 - 자동 회귀와 실제 공급자 스모크는 서로 대체하지 않고 run-log와 PR에 별도 기록한다.
 - Client ID/Secret, Provider Access Token, authorization code는 명령·결과·로그·PR에 기록하지 않는다.
+
+### oauth-real 런타임·NAVER 실제 스모크 기록
+
+- 실제 `oauth-real` 기동에서 `RestClient.Builder` main 자동설정 누락을 발견했다. `spring-boot-restclient` 추가, `OAuthRealContextIntegrationTest`, timeout counterfactual 테스트로 보완한 뒤 실제 jar 기동과 authorize 302를 확인했다.
+- NAVER 신규 로그인은 사용자 브라우저 조작으로 로그인·동의를 완료했고 callback의 코드 교환·사용자 정보 조회 후 FinPlay JWT 응답 필드와 만료 3,600초·1,209,600초를 확인했다.
+- 신규 DB는 `users=1`, `social_accounts(provider=NAVER)=1`, `accounts=2`였다. STOCK·CRYPTO 모두 `cash_balance=10,000,000`, `seed_money=10,000,000`이고 `refresh_tokens=1`이었다.
+- 같은 NAVER 계정의 두 번째 authorize/callback은 기존 회원으로 처리돼 users·social_accounts·accounts 수가 변하지 않았고 `refresh_tokens=2`가 됐다.
+- 두 번째 response 렌더링은 Chrome client의 `ERR_BLOCKED_BY_CLIENT`로 차단됐다. 다만 서버 트랜잭션의 `issueTokenPair` 경로에서 새 Refresh Token 행이 커밋돼 기존 회원 JWT pair 발급 경로가 실행된 사실을 확인했다. 브라우저에서 두 번째 JWT 응답 본문을 직접 확인했다는 의미는 아니다.
+- KAKAO는 팀원 계정 로그인·동의를 아직 수행하지 않아 `NOT RUN`이다. NAVER 성공으로 KAKAO 실제 연동까지 완료됐다고 주장하지 않는다.
+- 실제 스모크 과정과 이 기록에는 Client ID/Secret, Provider Access Token, authorization code 원문을 남기지 않았다.
+
+### PR 검증·리뷰 기록
+
+- 자동 회귀와 실제 NAVER 스모크를 별도 증빙으로 기록했다. KAKAO `NOT RUN`이므로 Task 5와 Issue #10 전체 완료 조건은 미충족 상태다.
+- 런타임 점검에서 발견한 `RestClient.Builder` 자동설정 누락은 의존성과 실제 프로필 컨텍스트·timeout 반증 테스트로 보완했고, 최종 HEAD 전체 build와 실제 jar authorize 302로 재검증했다.
 
 ## Issue #7
 

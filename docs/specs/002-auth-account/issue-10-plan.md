@@ -230,45 +230,46 @@ OAuthUserDto fetchUser(String authorizationCode, String state);
 
 ## Task 1: callback state·쿠키·HTTP 경계
 
-- [ ] 실패 테스트에서 KAKAO/NAVER provider 해석, query/cookie state의 상수 시간 일치, 누락·불일치 400, 외부 호출 없음, 모든 응답의 state 쿠키 만료를 고정한다.
-- [ ] `OAuthStateCookieFactory` 만료 기능, `OAuthCallbackService`의 state 선검증, `OAuthCallbackController`의 200 `TokenResponse` 계약을 최소 구현한다.
-- [ ] callback을 공개 GET 경로로 추가하고 미인증 접근은 callback 로직까지 도달하지만 다른 보호 경로는 그대로 401인지 Security 회귀 테스트로 확인한다.
-- [ ] 인가 코드·state·쿠키 원문이 오류 메시지와 테스트 출력에 노출되지 않는지 확인한다.
+- [x] 실패 테스트에서 KAKAO/NAVER provider 해석, query/cookie state의 상수 시간 일치, 누락·불일치 400, 외부 호출 없음, 모든 응답의 state 쿠키 만료를 고정한다.
+- [x] `OAuthStateCookieFactory` 만료 기능, `OAuthCallbackService`의 state 선검증, `OAuthCallbackController`의 200 `TokenResponse` 계약을 최소 구현한다.
+- [x] callback을 공개 GET 경로로 추가하고 미인증 접근은 callback 로직까지 도달하지만 다른 보호 경로는 그대로 401인지 Security 회귀 테스트로 확인한다.
+- [x] 인가 코드·state·쿠키 원문이 오류 메시지와 테스트 출력에 노출되지 않는지 확인한다.
 
 ## Task 2: Fake·카카오·네이버 callback Provider
 
-- [ ] `OAuthCallbackProvider`와 `OAuthUserDto` 계약을 실패 테스트로 고정한다.
-- [ ] Fake Provider가 외부 통신 없이 KAKAO/NAVER의 결정적 사용자 ID·이메일을 반환하도록 구현한다.
-- [ ] 카카오·네이버 코드 교환과 사용자 정보 조회를 `RestClient` 기반으로 구현하고 Mock HTTP 서버에서 method, URL, header, form, JSON 매핑을 검증한다.
-- [ ] 사용자 취소·만료/재사용 code는 400 `OAUTH_AUTHORIZATION_FAILED`, 공급자 장애·timeout·malformed response는 502 `OAUTH_PROVIDER_ERROR`로 정규화하고 민감한 공급자 응답은 노출하지 않는다.
-- [ ] local·test에서는 Fake만, `prod | oauth-real`에서는 실제 두 Provider만 활성화되고 실제 프로필의 Client ID/Secret/redirect URI 누락·공백은 fail-fast인지 검증한다.
-- [ ] Provider Access Token과 authorization code를 저장·로그·응답하지 않는다.
+- [x] `OAuthCallbackProvider`와 `OAuthUserDto` 계약을 실패 테스트로 고정한다.
+- [x] Fake Provider가 외부 통신 없이 KAKAO/NAVER의 결정적 사용자 ID·이메일을 반환하도록 구현한다.
+- [x] 카카오·네이버 코드 교환과 사용자 정보 조회를 `RestClient` 기반으로 구현하고 Mock HTTP 서버에서 method, URL, header, form, JSON 매핑을 검증한다.
+- [x] 사용자 취소·만료/재사용 code는 400 `OAUTH_AUTHORIZATION_FAILED`, 공급자 장애·timeout·malformed response는 502 `OAUTH_PROVIDER_ERROR`로 정규화하고 민감한 공급자 응답은 노출하지 않는다.
+- [x] local·test에서는 Fake만, `prod | oauth-real`에서는 실제 두 Provider만 활성화되고 실제 프로필의 Client ID/Secret/redirect URI 누락·공백은 fail-fast인지 검증한다.
+- [x] Provider Access Token과 authorization code를 저장·로그·응답하지 않는다.
 
 ## Task 3: 안전한 nickname과 기존/신규 소셜 로그인 트랜잭션
 
-- [ ] 신규 OAuth nickname 생성기를 테스트로 먼저 고정한다: `finplay-` + `SecureRandom` 기반 소문자 hex 12자리, 이메일/providerUserId 미포함.
-- [ ] `existsByNickname` 충돌 시 새 난수를 최대 5회 생성하고, 모두 충돌하면 식별정보를 노출하지 않는 공통 500 내부 오류이며 저장이 전혀 없는지 검증한다.
-- [ ] `SocialAccount`·Repository를 V2 스키마에 매핑하고 실제 MySQL에서 `(provider, provider_user_id)` 유일성을 검증한다.
-- [ ] 기존 조합은 기존 User로 JWT만 발급하며 User·SocialAccount·Account를 추가 생성하지 않는다.
-- [ ] 신규 조합은 이메일 없음 400, 이메일 충돌 409를 저장 전에 거부한다.
-- [ ] 신규 성공은 User 1·SocialAccount 1·STOCK/CRYPTO Account 2·Refresh Token 해시 1을 원자 저장한다.
-- [ ] 소셜 계정·계좌·Refresh Token 저장 실패 각각에서 회원을 포함한 전체 롤백을 실제 MySQL 통합 테스트로 검증한다.
+- [x] 신규 OAuth nickname 생성기를 테스트로 먼저 고정한다: `finplay-` + `SecureRandom` 기반 소문자 hex 12자리, 이메일/providerUserId 미포함.
+- [x] `existsByNickname` 충돌 시 새 난수를 최대 5회 생성하고, 모두 충돌하면 식별정보를 노출하지 않는 공통 500 내부 오류이며 저장이 전혀 없는지 검증한다.
+- [x] `SocialAccount`·Repository를 V2 스키마에 매핑하고 실제 MySQL에서 `(provider, provider_user_id)` 유일성을 검증한다.
+- [x] 기존 조합은 기존 User로 JWT만 발급하며 User·SocialAccount·Account를 추가 생성하지 않는다.
+- [x] 신규 조합은 이메일 없음 400, 이메일 충돌 409를 저장 전에 거부한다.
+- [x] 신규 성공은 User 1·SocialAccount 1·STOCK/CRYPTO Account 2·Refresh Token 해시 1을 원자 저장한다.
+- [x] 소셜 계정·계좌·Refresh Token 저장 실패 각각에서 회원을 포함한 전체 롤백을 실제 MySQL 통합 테스트로 검증한다.
 
 ## Task 4: Fake 자동 회귀·전체 게이트·문서
 
-- [ ] Fake authorize→callback→코드 교환 대체→사용자 정보 대체→신규 가입→JWT 전 흐름을 자동 통합 테스트로 검증한다.
-- [ ] 같은 Fake `provider + providerUserId` 재호출은 기존 회원 로그인이고 중복 행이 없음을 검증한다.
-- [ ] 이메일 미제공, 일반 회원 충돌, state 오류, 사용자 취소·만료/재사용 code, 공급자 장애·timeout·malformed response, 신규 가입 롤백을 자동 회귀 테스트로 유지한다.
-- [ ] Issue #9 authorize/state 테스트와 기존 auth-account 회귀를 포함한 대상 테스트, Spotless, `.\gradlew.bat build --no-daemon --max-workers=1`을 실행한다.
-- [ ] 실제 Controller 매핑 기준으로 `docs/api-routes.md`를 동기화하고 자동 검증 결과만 run-log·PR의 “자동 테스트” 영역에 기록한다.
+- [x] Fake authorize→callback→코드 교환 대체→사용자 정보 대체→신규 가입→JWT 전 흐름을 자동 통합 테스트로 검증한다.
+- [x] 같은 Fake `provider + providerUserId` 재호출은 기존 회원 로그인이고 중복 행이 없음을 검증한다.
+- [x] 이메일 미제공, 일반 회원 충돌, state 오류, 사용자 취소·만료/재사용 code, 공급자 장애·timeout·malformed response, 신규 가입 롤백을 자동 회귀 테스트로 유지한다.
+- [x] Issue #9 authorize/state 테스트와 기존 auth-account 회귀를 포함한 대상 테스트, Spotless, `.\gradlew.bat build --no-daemon --max-workers=1`을 실행한다.
+- [x] 실제 Controller 매핑 기준으로 `docs/api-routes.md`를 동기화하고 자동 검증 결과만 run-log·PR의 “자동 테스트” 영역에 기록한다.
+- [x] 실제 `oauth-real` 컨텍스트에서 `RestClient.Builder` 자동설정 누락을 재현하고 `spring-boot-restclient`, `OAuthRealContextIntegrationTest`, timeout counterfactual 테스트로 보완한 뒤 실제 jar 기동과 authorize 302를 확인한다.
 
 ## Task 5: 공급자별 실제 OAuth 스모크와 PR 완료 게이트
 
 - [ ] `oauth-real` 프로필에서 카카오 환경변수·개발자 콘솔 Callback URL·이메일 동의를 사람이 확인한 뒤 브라우저 authorize부터 시작한다.
 - [ ] 카카오 로그인/동의 화면은 사용자가 직접 조작할 때까지 대기하고, callback→코드 교환→사용자 정보→신규 회원→FinPlay JWT를 검증한다.
 - [ ] 카카오 신규 회원의 `social_accounts` 1행과 STOCK/CRYPTO 계좌 2행(각 10,000,000원)을 DB에서 확인하고, 같은 카카오 계정 재로그인으로 기존 회원 경로와 중복 없음도 확인한다.
-- [ ] 네이버도 별도의 환경 확인과 사용자 브라우저 조작 대기를 거쳐 같은 신규/기존/JWT/DB 흐름을 독립 검증한다.
-- [ ] 카카오·네이버 결과를 `PASS`·`FAIL`·`NOT RUN` 중 하나와 공급자별 사유로 run-log 및 PR에 분리 기록한다. 한 공급자의 성공으로 다른 공급자까지 실제 연동됐다고 주장하지 않는다.
+- [x] 네이버는 별도의 환경 확인과 사용자 브라우저 조작을 거쳐 신규/기존/JWT/DB 흐름을 독립 검증했다. 두 번째 callback 응답 렌더링은 Chrome client의 `ERR_BLOCKED_BY_CLIENT`로 확인하지 못했으나, 서버 트랜잭션에서 두 번째 Refresh Token 행 커밋을 확인했다.
+- [x] 카카오·네이버 결과를 `PASS`·`FAIL`·`NOT RUN` 중 하나와 공급자별 사유로 run-log 및 PR에 분리 기록한다. 한 공급자의 성공으로 다른 공급자까지 실제 연동됐다고 주장하지 않는다.
 - [ ] 두 공급자 모두 `PASS`이고 자동 회귀·전체 build도 별도로 통과해야 Issue #10 PR을 완료로 표시한다.
 
 ---
@@ -288,14 +289,14 @@ OAuthUserDto fetchUser(String authorizationCode, String state);
 
 환경변수·Callback URL·이메일 동의가 부족하면 설정을 추측해 진행하지 않는다. 해당 공급자를 `NOT RUN`으로 기록하고 정확한 부족 항목만 사유로 남긴다. 사용자 브라우저 조작이 필요한 동안에는 실패 처리하지 않고 사용자 완료를 기다린다.
 
-### PR 검증 기록 형식
+### PR 검증 기록
 
 | 구분 | 공급자/명령 | 결과 | 검증 수준·사유 |
 |---|---|---|---|
-| 자동 회귀 | 대상 테스트 명령 | PASS/FAIL | Fake Provider·MySQL Testcontainers, 실제 OAuth 아님 |
-| 전체 게이트 | `.\gradlew.bat build --no-daemon --max-workers=1` | PASS/FAIL | 실행 HEAD 포함 |
-| 실제 OAuth | KAKAO | PASS/FAIL/NOT RUN | authorize→callback→교환→정보→신규/기존→JWT, DB 검증 여부 |
-| 실제 OAuth | NAVER | PASS/FAIL/NOT RUN | authorize→callback→교환→정보→신규/기존→JWT, DB 검증 여부 |
+| 자동 회귀 | Fake OAuth 대상 테스트 | PASS | 단위·Mock HTTP·WebMvc·MySQL 8.4 Testcontainers. 실제 OAuth 아님 |
+| 전체 게이트 | `.\gradlew.bat build --no-daemon --max-workers=1` | PASS | HEAD `273b6faab79e28bacb500dd7690072a493c7f582`, `BUILD SUCCESSFUL` |
+| 실제 OAuth | KAKAO | NOT RUN | 팀원 계정 로그인·동의를 다음 날 수행할 수 있어 현재 미실행. 실제 연동 완료 주장 금지 |
+| 실제 OAuth | NAVER | PASS | 신규/기존·JWT·DB 검증 완료. 기존 회원 두 번째 응답 본문은 Chrome `ERR_BLOCKED_BY_CLIENT`로 미확인했으며 새 Refresh Token 행 커밋으로 서버 발급 경로 실행 확인 |
 
 ---
 
@@ -309,14 +310,14 @@ OAuthUserDto fetchUser(String authorizationCode, String state);
 
 ## 완료 체크리스트
 
-- [ ] Fake Provider 기반 신규/기존 OAuth와 오류·롤백 자동 회귀가 통과한다.
-- [ ] nickname 형식·비식별성·최대 5회 충돌 재시도와 안전한 실패가 통과한다.
-- [ ] `OAUTH_AUTHORIZATION_FAILED` 400과 `OAUTH_PROVIDER_ERROR` 502 분류 테스트가 통과한다.
-- [ ] 기존 Issue #9 authorize/state 및 auth-account 전체 회귀가 유지된다.
-- [ ] 신규 OAuth 회원의 SocialAccount 1·계좌 2·Refresh Token 해시가 회원과 원자 저장된다.
+- [x] Fake Provider 기반 신규/기존 OAuth와 오류·롤백 자동 회귀가 통과한다.
+- [x] nickname 형식·비식별성·최대 5회 충돌 재시도와 안전한 실패가 통과한다.
+- [x] `OAUTH_AUTHORIZATION_FAILED` 400과 `OAUTH_PROVIDER_ERROR` 502 분류 테스트가 통과한다.
+- [x] 기존 Issue #9 authorize/state 및 auth-account 전체 회귀가 유지된다.
+- [x] 신규 OAuth 회원의 SocialAccount 1·계좌 2·Refresh Token 해시가 회원과 원자 저장된다.
 - [ ] 실제 카카오 OAuth 전체 흐름과 신규/기존/DB 검증이 `PASS`다.
-- [ ] 실제 네이버 OAuth 전체 흐름과 신규/기존/DB 검증이 `PASS`다.
-- [ ] 자동 테스트와 실제 카카오·네이버 결과가 run-log와 PR에 별도 기록된다.
-- [ ] 시크릿·Provider Access Token·authorization code가 저장소·로그·검증 기록에 없다.
-- [ ] `docs/api-routes.md`가 실제 callback Controller와 일치한다.
-- [ ] 현재 HEAD에서 대상 테스트와 전체 build를 새로 실행해 결과를 기록한다.
+- [x] 실제 네이버 OAuth 전체 흐름과 신규/기존/DB 검증이 `PASS`다. 단, 기존 회원 두 번째 HTTP 응답의 브라우저 렌더링 제한은 run-log에 별도 기록한다.
+- [x] 자동 테스트와 실제 카카오·네이버 결과가 run-log와 PR에 별도 기록된다.
+- [x] 시크릿·Provider Access Token·authorization code가 저장소·로그·검증 기록에 없다.
+- [x] `docs/api-routes.md`가 실제 callback Controller와 일치한다.
+- [x] 현재 HEAD에서 대상 테스트와 전체 build를 새로 실행해 결과를 기록한다.
