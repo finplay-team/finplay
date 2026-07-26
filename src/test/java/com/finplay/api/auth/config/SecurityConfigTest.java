@@ -188,9 +188,9 @@ class SecurityConfigTest {
 	private static String tamperSignature(String token) {
 		int signatureStart = token.lastIndexOf('.') + 1;
 		String signature = token.substring(signatureStart);
-		char lastChar = signature.charAt(signature.length() - 1);
-		char replacement = lastChar == 'A' ? 'B' : 'A';
-		return token.substring(0, signatureStart) + signature.substring(0, signature.length() - 1) + replacement;
+		char firstChar = signature.charAt(0);
+		char replacement = firstChar == 'A' ? 'B' : 'A';
+		return token.substring(0, signatureStart) + replacement + signature.substring(1);
 	}
 
 	@TestConfiguration
