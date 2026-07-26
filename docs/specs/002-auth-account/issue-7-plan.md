@@ -298,27 +298,27 @@ Refresh JWT 파싱 실패, 해시 조회 결과 0건·2건 이상, JWT subject�
 - Modify: `docs/specs/002-auth-account/tasks.md`
 - Modify during feature workflow: `docs/specs/002-auth-account/run-log.md`
 
-- [ ] **Step 1: 실제 Controller 매핑으로 API 문서를 동기화한다**
+- [x] **Step 1: 실제 Controller 매핑으로 API 문서를 동기화한다**
   - 엔드포인트 목록에 `POST /api/auth/logout`을 추가한다.
   - 상세 표에 Access Bearer 필수, `RefreshRequest`, 204, 400·401·403 공통 오류를 기록한다.
   - Security 표에서 logout을 보호 경로로 기록하고 “아직 구현되지 않음” 문구를 제거한다.
-- [ ] **Step 2: tasks 상태를 갱신한다**
+- [x] **Step 2: tasks 상태를 갱신한다**
   - Issue #7 logout 하위 항목만 완료 처리한다.
   - `/api/auth/me`, OAuth와 다른 인증 잔여 작업은 완료 처리하지 않는다.
-- [ ] **Step 3: Spotless와 대상 테스트를 실행한다**
+- [x] **Step 3: Spotless와 대상 테스트를 실행한다**
 
   ```powershell
   .\gradlew.bat spotlessApply
   .\gradlew.bat test --tests "*AuthServiceTest" --tests "*AuthControllerTest" --tests "*SecurityConfigTest" --tests "*LogoutIntegrationTest" --no-daemon --max-workers=1
   ```
 
-- [ ] **Step 4: 전체 게이트를 실행한다**
+- [x] **Step 4: 전체 게이트를 실행한다**
 
   ```powershell
   .\gradlew.bat build --no-daemon --max-workers=1
   ```
 
-- [ ] **Step 5: 현재 diff와 라우트 일치를 확인한다**
+- [x] **Step 5: 현재 diff와 라우트 일치를 확인한다**
 
   ```powershell
   git diff --check
@@ -326,7 +326,7 @@ Refresh JWT 파싱 실패, 해시 조회 결과 0건·2건 이상, JWT subject�
   git status --short
   ```
 
-- [ ] **Step 6: 문서 변경을 논리 커밋한다**
+- [x] **Step 6: 문서 변경을 논리 커밋한다**
 
   ```powershell
   git add docs/api-routes.md docs/specs/002-auth-account/tasks.md docs/specs/002-auth-account/run-log.md
@@ -343,13 +343,13 @@ Refresh JWT 파싱 실패, 해시 조회 결과 0건·2건 이상, JWT subject�
 
 ## 완료 체크리스트
 
-- [ ] `POST /api/auth/logout`은 유효한 Access Bearer를 요구한다.
-- [ ] 요청은 기존 `RefreshRequest` 검증을 재사용한다.
-- [ ] 본인의 제출한 활성 Refresh Token 한 행만 폐기하고 204, 빈 본문을 반환한다.
-- [ ] 폐기된 토큰의 `/api/auth/refresh` 사용은 401 `UNAUTHORIZED`다.
-- [ ] 활성 타인 Refresh Token 시도는 403 `FORBIDDEN`이며 그 토큰은 계속 유효하다.
-- [ ] Access 사용자, Refresh JWT subject, DB 토큰 소유자를 대조한다.
-- [ ] Refresh Token 원문은 DB나 로그에 남지 않는다.
-- [ ] Access Token 블랙리스트, 전체 세션 로그아웃, 스키마 변경을 포함하지 않는다.
-- [ ] 실제 Controller 매핑과 `docs/api-routes.md`가 일치한다.
-- [ ] 대상 테스트와 `.\gradlew.bat build --no-daemon --max-workers=1` 결과를 새로 확인한다.
+- [x] `POST /api/auth/logout`은 유효한 Access Bearer를 요구한다.
+- [x] 요청은 기존 `RefreshRequest` 검증을 재사용한다.
+- [x] 본인의 제출한 활성 Refresh Token 한 행만 폐기하고 204, 빈 본문을 반환한다.
+- [x] 폐기된 토큰의 `/api/auth/refresh` 사용은 401 `UNAUTHORIZED`다.
+- [x] 활성 타인 Refresh Token 시도는 403 `FORBIDDEN`이며 그 토큰은 계속 유효하다.
+- [x] Access 사용자, Refresh JWT subject, DB 토큰 소유자를 대조한다.
+- [x] Refresh Token 원문은 DB나 로그에 남지 않는다.
+- [x] Access Token 블랙리스트, 전체 세션 로그아웃, 스키마 변경을 포함하지 않는다.
+- [x] 실제 Controller 매핑과 `docs/api-routes.md`가 일치한다.
+- [x] 대상 테스트와 `.\gradlew.bat build --no-daemon --max-workers=1` 결과를 새로 확인한다.
