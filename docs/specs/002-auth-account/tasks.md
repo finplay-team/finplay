@@ -8,6 +8,8 @@
 - [x] 인증번호 확인 API — 시도 5회 제한과 초과 시 429·만료 판정·signupVerificationToken 발급(SHA-256 저장) (+ 단위·@WebMvcTest)
 - [x] 회원가입 API — 가입 토큰 원자 소비·토큰 이메일 일치 검증·중복 409·계좌 2개 원자 생성 (+ 단위·@WebMvcTest)
 - [ ] JWT·Security — JwtTokenProvider + Bearer 인증 필터 + 401/403 공통 포맷 + 로그인·GET /api/auth/me (+ 단위·@WebMvcTest) — **Issue #5에서 로그인·Bearer 인증 완료, `GET /api/auth/me` 잔여(Issue #8)**
-- [ ] Refresh 회전·로그아웃 — 해시 저장·폐기·재사용 거부 (+ 단위 테스트)
+- [ ] Refresh 회전·로그아웃 — 해시 저장·폐기·재사용 거부
+  - [x] **Issue #6 완료:** `POST /api/auth/refresh`, 해시 조회·원자 회전·이전 토큰 재사용 401·동시 요청 단일 성공·롤백 검증
+  - [ ] **Issue #7 잔여:** logout 시 제출한 Refresh Token 폐기
 - [ ] OAuth 어댑터 — OAuthProvider 인터페이스 + Kakao·Naver·Fake 구현 + authorize/callback API + 신규 가입 트랜잭션 + OAUTH_EMAIL_REQUIRED(400)·ACCOUNT_LINK_REQUIRED(409) 분기 (+ 단위 테스트)
-- [ ] 통합 테스트(인증→가입→계좌 2개, 가입 토큰 재사용 거부, 가입 실패 후 같은 토큰 재시도 성공, Fake OAuth 신규 가입·기존 이메일 409 거부, 토큰 회전) + docs/api-routes.md 갱신
+- [ ] 통합 테스트(인증→가입→계좌 2개, 가입 토큰 재사용 거부, 가입 실패 후 같은 토큰 재시도 성공, Fake OAuth 신규 가입·기존 이메일 409 거부, 토큰 회전) + docs/api-routes.md 갱신 — **Issue #6에서 토큰 회전 MySQL 통합·롤백 테스트와 라우트 동기화 완료, 나머지 시나리오 잔여**

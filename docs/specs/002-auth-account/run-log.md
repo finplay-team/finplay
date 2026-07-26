@@ -1,5 +1,35 @@
 # Run Log: 002-auth-account
 
+## Issue #6
+
+### 최종 검증
+
+증분 비교 기준은 로컬 `dev`가 아니라 `origin/dev`의 `4c399a6`이며, 최종 구현 HEAD는 `e42f0be`다.
+
+| 구분 | 실행 명령·근거 | 결과 | 검증 수준 |
+|---|---|---|---|
+| JWT 대상 테스트 | `.\gradlew.bat test --tests "*JwtTokenProviderTest" --no-daemon --max-workers=1` | 25/25 통과 | Access·Refresh JWT 서명·만료·변조·토큰 타입·subject 파싱 단위 검증 |
+| Repository 대상 테스트 | `.\gradlew.bat test --tests "*RefreshTokenRepositoryTest" --no-daemon --max-workers=1` | 4/4 통과 | MySQL 8.4 Testcontainers 기반 활성 토큰 조건부 폐기 쿼리 검증 |
+| 서비스·통합·롤백 대상 테스트 | `.\gradlew.bat test --tests "*AuthServiceTest" --tests "*RefreshTokenIntegrationTest" --tests "*RefreshTokenRollbackIntegrationTest" --no-daemon --max-workers=1` | `AuthServiceTest` 20/20, MySQL 통합 2/2, MySQL 롤백 1/1 통과 | 해시 조회, 단일 회전, 이전 토큰 재사용 401, 동시 요청 단일 성공, 발급 실패 시 폐기 롤백 |
+| Controller 대상 테스트 | `.\gradlew.bat test --tests "*AuthControllerTest" --no-daemon --max-workers=1` | 33/33 통과 | 요청 누락·빈 값·4,096자 초과 400, 범위 내 무효 토큰 401, 200 응답과 공개 POST 경로 MVC 검증 |
+| 최종 전체 빌드 | `.\gradlew.bat build --no-daemon --max-workers=1`, HEAD `e42f0be` | `BUILD SUCCESSFUL` (2분 17초) | 전체 tests·JaCoCo·SpotBugs·Spotless 게이트 통과 |
+| 최초 리뷰 | reviewer가 `origin/dev` `4c399a6` 대비 HEAD `e42f0be` 검토 | production 차단 0건, 문서 동기화 차단 1건 | Controller·서비스·Repository·트랜잭션·동시성 구현 검토. 문서 차단은 후속 동기화에서 반영 |
+| 최종 재리뷰 | reviewer가 `origin/dev` `4c399a6` 대비 HEAD `c050aff` 전체 diff 재검토 | 차단 0건, 권장 0건, 참고 2건. 이전 문서 차단 해소 확인 | 문서 동기화 포함 최종 정적 diff 검토. 이 재리뷰에서는 Gradle·블랙박스 QA를 다시 실행하지 않음 |
+
+### 구현 근거
+
+- `6abfe0d` — Refresh JWT 검증 추가.
+- `9e2d538` — 활성·미만료 Refresh Token의 조건부 원자 폐기 쿼리 추가.
+- `3349c40` — 폐기와 새 토큰 발급·해시 저장의 단일 트랜잭션, 재사용·동시 요청·롤백 검증 추가.
+- `e42f0be` — `POST /api/auth/refresh`, 최대 4,096자 Bean Validation, 공개 POST 경로 추가.
+
+### 검증 범위와 남은 위험
+
+- Repository·통합·롤백 테스트는 MySQL 8.4 Testcontainers를 사용했으며 운영 DB 검증 결과가 아니다.
+- 운영 환경, 외부 API 연동, 실행 서버 대상 블랙박스 API QA는 실행하지 않았다.
+- logout은 Issue #7, `GET /api/auth/me`는 Issue #8의 잔여 범위다.
+- 최종 재리뷰의 참고 2건은 차단·권장 사항이 아니며, 재리뷰 시 Gradle·QA는 재실행하지 않았다.
+
 ## Issue #5
 
 ### 최종 검증
