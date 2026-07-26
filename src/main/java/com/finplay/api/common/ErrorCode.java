@@ -22,6 +22,7 @@ public enum ErrorCode {
 	IDEMPOTENCY_CONFLICT(HttpStatus.CONFLICT, "같은 키의 다른 요청이 이미 처리되었습니다."),
 	UNSUPPORTED_ORDER_TYPE(HttpStatus.UNPROCESSABLE_CONTENT, "지원하지 않는 주문 유형입니다."),
 	TOO_MANY_REQUESTS(HttpStatus.TOO_MANY_REQUESTS, "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요."),
+	INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 내부 오류가 발생했습니다."),
 	OAUTH_PROVIDER_ERROR(HttpStatus.BAD_GATEWAY, "OAuth 공급자 요청을 처리할 수 없습니다.");
 
 	private final HttpStatus httpStatus;

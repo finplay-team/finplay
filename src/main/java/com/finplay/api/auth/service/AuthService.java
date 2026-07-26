@@ -4,12 +4,15 @@ package com.finplay.api.auth.service;
 import com.finplay.api.account.service.AccountService;
 import com.finplay.api.auth.domain.EmailVerification;
 import com.finplay.api.auth.domain.RefreshToken;
+import com.finplay.api.auth.domain.SocialAccount;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.dto.response.TokenResponse;
+import com.finplay.api.auth.oauth.OAuthNicknameGenerator;
 import com.finplay.api.auth.oauth.OAuthProviderName;
 import com.finplay.api.auth.oauth.OAuthUserDto;
 import com.finplay.api.auth.repository.EmailVerificationRepository;
 import com.finplay.api.auth.repository.RefreshTokenRepository;
+import com.finplay.api.auth.repository.SocialAccountRepository;
 import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.auth.token.IssuedTokenPair;
@@ -30,28 +33,37 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class AuthService {
 
+	private static final String OAUTH_ONLY_PASSWORD_SENTINEL = "{oauth-only}";
+	private static final int MAX_NICKNAME_ATTEMPTS = 5;
+
 	private final UserRepository userRepository;
 	private final EmailVerificationRepository emailVerificationRepository;
 	private final RefreshTokenRepository refreshTokenRepository;
+	private final SocialAccountRepository socialAccountRepository;
 	private final PasswordEncoder passwordEncoder;
 	private final AccountService accountService;
 	private final JwtTokenProvider jwtTokenProvider;
+	private final OAuthNicknameGenerator oauthNicknameGenerator;
 	private final Clock clock;
 
 	public AuthService(
 		UserRepository userRepository,
 		EmailVerificationRepository emailVerificationRepository,
 		RefreshTokenRepository refreshTokenRepository,
+		SocialAccountRepository socialAccountRepository,
 		PasswordEncoder passwordEncoder,
 		AccountService accountService,
 		JwtTokenProvider jwtTokenProvider,
+		OAuthNicknameGenerator oauthNicknameGenerator,
 		Clock clock) {
 		this.userRepository = userRepository;
 		this.emailVerificationRepository = emailVerificationRepository;
 		this.refreshTokenRepository = refreshTokenRepository;
+		this.socialAccountRepository = socialAccountRepository;
 		this.passwordEncoder = passwordEncoder;
 		this.accountService = accountService;
 		this.jwtTokenProvider = jwtTokenProvider;
+		this.oauthNicknameGenerator = oauthNicknameGenerator;
 		this.clock = clock;
 	}
 
@@ -89,8 +101,15 @@ public class AuthService {
 		return issueTokenPair(user, now);
 	}
 
+	@Transactional
 	public TokenResponse oauthLogin(OAuthProviderName provider, OAuthUserDto oauthUser) {
-		throw new IllegalStateException("OAuth 로그인 영속성은 후속 작업에서 구현합니다.");
+		validateOAuthUser(provider, oauthUser);
+		LocalDateTime now = LocalDateTime.now(clock);
+
+		return socialAccountRepository.findByProviderAndProviderUserId(
+			provider, oauthUser.providerUserId())
+			.map(socialAccount -> issueTokenPair(socialAccount.getUser(), now))
+			.orElseGet(() -> createOAuthUser(provider, oauthUser, now));
 	}
 
 	@Transactional
@@ -146,6 +165,61 @@ public class AuthService {
 		refreshTokenRepository.save(RefreshToken.create(
 			user, sha256(tokens.refreshToken()), tokens.refreshTokenExpiresAt(), now));
 		return TokenResponse.from(tokens);
+	}
+
+	private TokenResponse createOAuthUser(
+		OAuthProviderName provider, OAuthUserDto oauthUser, LocalDateTime now) {
+		if (userRepository.existsByEmail(oauthUser.email())) {
+			throw new BusinessException(ErrorCode.ACCOUNT_LINK_REQUIRED);
+		}
+
+		String nickname = generateAvailableOAuthNickname();
+		User user = saveOAuthUser(oauthUser.email(), nickname, now);
+		saveSocialAccount(user, provider, oauthUser.providerUserId(), now);
+		accountService.createAccountsFor(user);
+
+		return issueTokenPair(user, now);
+	}
+
+	private void validateOAuthUser(OAuthProviderName provider, OAuthUserDto oauthUser) {
+		if (provider == null
+			|| oauthUser == null
+			|| oauthUser.providerUserId() == null
+			|| oauthUser.providerUserId().isBlank()) {
+			throw new BusinessException(ErrorCode.OAUTH_PROVIDER_ERROR);
+		}
+		if (oauthUser.email() == null || oauthUser.email().isBlank()) {
+			throw new BusinessException(ErrorCode.OAUTH_EMAIL_REQUIRED);
+		}
+	}
+
+	private String generateAvailableOAuthNickname() {
+		for (int attempt = 0; attempt < MAX_NICKNAME_ATTEMPTS; attempt++) {
+			String nickname = oauthNicknameGenerator.generate();
+			if (!userRepository.existsByNickname(nickname)) {
+				return nickname;
+			}
+		}
+		throw new BusinessException(ErrorCode.INTERNAL_ERROR);
+	}
+
+	private User saveOAuthUser(String email, String nickname, LocalDateTime now) {
+		try {
+			return userRepository.saveAndFlush(
+				User.create(email, OAUTH_ONLY_PASSWORD_SENTINEL, nickname, now));
+		} catch (DataIntegrityViolationException ex) {
+			throw new BusinessException(ErrorCode.DUPLICATE_RESOURCE);
+		}
+	}
+
+	private void saveSocialAccount(
+		User user, OAuthProviderName provider, String providerUserId, LocalDateTime now) {
+		try {
+			socialAccountRepository.saveAndFlush(
+				SocialAccount.create(user, provider, providerUserId, now));
+		} catch (DataIntegrityViolationException ex) {
+			throw new BusinessException(ErrorCode.DUPLICATE_RESOURCE);
+		}
 	}
 
 	private void checkDuplicate(String email, String nickname) {

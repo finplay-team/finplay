@@ -2,6 +2,16 @@
 
 ## Issue #10
 
+### Task 3 구현 기록
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| 22:34 | implementer | `.\gradlew.bat compileJava --no-daemon --max-workers=1` — `BUILD SUCCESSFUL` | issue-10-plan.md Task 3 기존/신규 소셜 로그인 원자 트랜잭션, ADR-0002 |
+
+- 22:34 — SocialAccount 매핑, 안전한 OAuth nickname, 기존/신규 소셜 로그인과 User·SocialAccount·계좌·Refresh Token 원자 저장을 구현하고 컴파일을 통과했다.
+- 메인 재검증 — Task 3 단위·`@DataJpaTest`·`@SpringBootTest` 6개 클래스를 `mysql:8.4` Testcontainers와 함께 실행해 `BUILD SUCCESSFUL`(1분 35초)을 확인했다.
+- 검증 수준 — 신규/기존 소셜 로그인, SocialAccount 유일성, 계좌 2개와 초기 잔액, Refresh Token 해시/JWT, SocialAccount·Account·Refresh 저장 실패의 전체 롤백을 실제 MySQL에서 검증했다. 실제 외부 OAuth 호출은 아니다.
+
 ### Task 2 구현 기록
 
 | 시각 | 에이전트 | 실행 명령 | 근거 |

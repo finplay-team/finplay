@@ -10,8 +10,8 @@ import org.springframework.http.HttpStatus;
 class ErrorCodeTest {
 
 	@Test
-	void hasExactlyEighteenErrorCodesFromPrdAndOAuthSpec() {
-		assertThat(ErrorCode.values()).hasSize(18);
+	void hasExactlyNineteenErrorCodesFromPrdAndOAuthSpec() {
+		assertThat(ErrorCode.values()).hasSize(19);
 	}
 
 	@Test
@@ -34,6 +34,7 @@ class ErrorCodeTest {
 			Map.entry(ErrorCode.IDEMPOTENCY_CONFLICT, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.UNSUPPORTED_ORDER_TYPE, HttpStatus.UNPROCESSABLE_CONTENT),
 			Map.entry(ErrorCode.TOO_MANY_REQUESTS, HttpStatus.TOO_MANY_REQUESTS),
+			Map.entry(ErrorCode.INTERNAL_ERROR, HttpStatus.INTERNAL_SERVER_ERROR),
 			Map.entry(ErrorCode.OAUTH_PROVIDER_ERROR, HttpStatus.BAD_GATEWAY));
 
 		// PRD와 OAuth spec에 정의된 코드를 하나도 빠짐없이 순회하며 상태를 대조한다.
@@ -54,6 +55,7 @@ class ErrorCodeTest {
 		assertThat(ErrorCode.INSUFFICIENT_CASH.getHttpStatus().value()).isEqualTo(409);
 		assertThat(ErrorCode.UNSUPPORTED_ORDER_TYPE.getHttpStatus().value()).isEqualTo(422);
 		assertThat(ErrorCode.TOO_MANY_REQUESTS.getHttpStatus().value()).isEqualTo(429);
+		assertThat(ErrorCode.INTERNAL_ERROR.getHttpStatus().value()).isEqualTo(500);
 		assertThat(ErrorCode.OAUTH_PROVIDER_ERROR.getHttpStatus().value()).isEqualTo(502);
 	}
 
