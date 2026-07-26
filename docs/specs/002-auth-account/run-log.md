@@ -2,6 +2,16 @@
 
 ## Issue #10
 
+### Task 1 구현 기록
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| 22:07 | implementer | `.\gradlew.bat compileJava --no-daemon --max-workers=1` — `BUILD SUCCESSFUL` | issue-10-plan.md Task 1 state 선검증·쿠키 만료·공개 callback 경계, ADR-0002 |
+
+- 22:07 — callback state 상수 시간 검증, 성공·실패 만료 쿠키 선등록, 공개 GET Controller/Security 및 API 문서를 추가하고 컴파일을 통과했다.
+- 메인 재검증 — `.\gradlew.bat test --tests "com.finplay.api.auth.service.OAuthCallbackServiceTest" --tests "com.finplay.api.auth.oauth.OAuthStateCookieFactoryTest" --tests "com.finplay.api.auth.controller.OAuthCallbackControllerTest" --tests "com.finplay.api.auth.config.SecurityConfigTest" --no-daemon --max-workers=1` — `BUILD SUCCESSFUL` (단위·WebMvc 슬라이스, 실제 OAuth·DB 아님).
+- 포맷 — `.\gradlew.bat spotlessApply --no-daemon --max-workers=1` — `BUILD SUCCESSFUL`.
+
 ### 계획 승인
 
 - 2026-07-26 — 신규 OAuth nickname 생성·충돌 정책과 `OAUTH_AUTHORIZATION_FAILED`(400)·`OAUTH_PROVIDER_ERROR`(502) 오류 분류를 사용자 승인으로 확정했다. 시크릿·토큰·authorization code 값은 기록하지 않았다.

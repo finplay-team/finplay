@@ -13,6 +13,7 @@
 | POST | /api/auth/logout | auth | 본인의 Refresh Token을 폐기하고 로그아웃 (204, 본문 없음) | 002 AUTH-002 |
 | POST | /api/auth/refresh | auth | 유효한 Refresh Token을 회전하고 새 Access·Refresh 토큰 발급 | 002 AUTH-002 |
 | GET | /api/auth/oauth/{provider}/authorize | auth | 카카오·네이버 OAuth 인가 시작 (302, state 보안 쿠키) | 002 AUTH-003 |
+| GET | /api/auth/oauth/{provider}/callback | auth | OAuth callback state 검증·state 쿠키 즉시 만료 후 FinPlay 토큰 발급 (200) | 002 AUTH-003, Issue #10 |
 
 ## 시스템 엔드포인트
 
@@ -70,6 +71,7 @@ Spring Security는 세션을 만들지 않는 Bearer 인증을 사용한다. 현
 | 공개 | POST | `/api/auth/email-verifications` |
 | 공개 | POST | `/api/auth/email-verifications/confirm` |
 | 공개 | GET | `/api/auth/oauth/*/authorize` |
+| 공개 | GET | `/api/auth/oauth/*/callback` |
 | 공개 | GET | `/actuator/health` |
 | 공개 | GET | `/swagger-ui.html`, `/swagger-ui/**` |
 | 공개 | GET | `/v3/api-docs/**` |

@@ -6,6 +6,8 @@ import com.finplay.api.auth.domain.EmailVerification;
 import com.finplay.api.auth.domain.RefreshToken;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.dto.response.TokenResponse;
+import com.finplay.api.auth.oauth.OAuthProviderName;
+import com.finplay.api.auth.oauth.OAuthUserDto;
 import com.finplay.api.auth.repository.EmailVerificationRepository;
 import com.finplay.api.auth.repository.RefreshTokenRepository;
 import com.finplay.api.auth.repository.UserRepository;
@@ -85,6 +87,10 @@ public class AuthService {
 		}
 		// 기존 Refresh Token은 폐기하지 않고 행을 추가만 한다 (다중 기기 로그인 유지, 폐기는 재발급·로그아웃 소관).
 		return issueTokenPair(user, now);
+	}
+
+	public TokenResponse oauthLogin(OAuthProviderName provider, OAuthUserDto oauthUser) {
+		throw new IllegalStateException("OAuth 로그인 영속성은 후속 작업에서 구현합니다.");
 	}
 
 	@Transactional

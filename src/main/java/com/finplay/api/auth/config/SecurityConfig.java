@@ -20,7 +20,6 @@ import tools.jackson.databind.ObjectMapper;
 @RequiredArgsConstructor
 public class SecurityConfig {
 
-	// 현재 존재하는 컨트롤러 경로만 등록한다. 후속 이슈(#10 OAuth callback)는 자기 경로를 직접 추가한다.
 	private static final String[] PUBLIC_POST_PATHS = {
 		"/api/auth/signup",
 		"/api/auth/login",
@@ -31,6 +30,7 @@ public class SecurityConfig {
 
 	private static final String[] PUBLIC_GET_PATHS = {
 		"/api/auth/oauth/*/authorize",
+		"/api/auth/oauth/*/callback",
 		"/actuator/health",
 		"/swagger-ui.html",
 		"/swagger-ui/**",
