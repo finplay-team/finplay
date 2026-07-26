@@ -389,20 +389,20 @@ ADR-0004에 따라 병합된 `V2__create_auth_account_tables.sql`은 수정하�
 - Modify: `docs/specs/002-auth-account/tasks.md`
 - Modify: `docs/specs/002-auth-account/run-log.md`
 
-- [ ] **Step 1: 실제 Controller 기준으로 API 문서를 갱신한다**
+- [x] **Step 1: 실제 Controller 기준으로 API 문서를 갱신한다**
   - `POST /api/auth/refresh` 요청·200 응답·400·401 계약을 추가한다.
   - 인증 규칙 표의 공개 POST 경로에 `/api/auth/refresh`를 추가한다.
   - “Refresh Token 회전은 아직 구현되지 않았다” 문구를 제거하고 logout·`/me` 잔여 범위만 남긴다.
-- [ ] **Step 2: spec 작업 상태를 갱신한다**
+- [x] **Step 2: spec 작업 상태를 갱신한다**
   - `tasks.md`의 “Refresh 회전·로그아웃” 항목을 회전 Issue #6 완료와 logout Issue #7 잔여가 구분되도록 보강한다.
   - `run-log.md`에 실제 실행 명령, 통과 수준, 미실행 외부 검증과 남은 위험을 기록한다.
-- [ ] **Step 3: 포맷을 적용한다**
+- [x] **Step 3: 포맷을 적용한다**
 
   ```powershell
   .\gradlew.bat spotlessApply --no-daemon --max-workers=1
   ```
 
-- [ ] **Step 4: 변경 파일과 diff를 확인한다**
+- [x] **Step 4: 변경 파일과 diff를 확인한다**
 
   ```powershell
   git status --short
@@ -412,7 +412,7 @@ ADR-0004에 따라 병합된 `V2__create_auth_account_tables.sql`은 수정하�
 
   범위 밖 파일, V2 수정, 새 마이그레이션, logout·`/me`·OAuth callback 구현이 없어야 한다.
 
-- [ ] **Step 5: 전체 빌드를 단독으로 실행한다**
+- [x] **Step 5: 전체 빌드를 단독으로 실행한다**
 
   ```powershell
   .\gradlew.bat build --no-daemon --max-workers=1
@@ -420,7 +420,7 @@ ADR-0004에 따라 병합된 `V2__create_auth_account_tables.sql`은 수정하�
 
   현재 저장소의 Gradle 동시 실행 실수 기록에 따라 다른 에이전트의 Gradle 프로세스가 끝난 뒤 단독 실행한다. Mock·단위 테스트와 실제 MySQL 통합 테스트의 통과 수준을 구분해 보고한다.
 
-- [ ] **Step 6: 문서와 최종 정리만 논리 커밋한다**
+- [x] **Step 6: 문서와 최종 정리만 논리 커밋한다**
 
   ```powershell
   git add docs/api-routes.md docs/specs/002-auth-account/tasks.md docs/specs/002-auth-account/run-log.md
@@ -431,14 +431,14 @@ ADR-0004에 따라 병합된 `V2__create_auth_account_tables.sql`은 수정하�
 
 ## 완료 체크리스트
 
-- [ ] `POST /api/auth/refresh`가 200 `TokenResponse`를 반환한다.
-- [ ] `refreshToken` 누락·빈 값·4,096자 초과는 400이고, 1~4,096자의 유효 형식 입력은 서비스 검증으로 전달된다.
-- [ ] Refresh JWT의 서명·만료·타입·subject와 DB 해시·사용자를 모두 검증한다.
-- [ ] 원문 Refresh Token은 DB와 로그에 남지 않는다.
-- [ ] 기존 토큰 조건부 폐기와 새 해시 행 저장이 단일 트랜잭션이다.
-- [ ] 1~4,096자의 비어 있지 않은 변조·만료·폐기·미존재·재사용·동시 요청 패배가 동일 401이다.
-- [ ] 같은 토큰의 동시 회전은 정확히 하나만 성공한다.
-- [ ] 새 토큰 발급·저장 실패 시 기존 폐기가 실제 MySQL에서 롤백된다.
-- [ ] logout, `/me`, OAuth callback, 스키마 변경을 포함하지 않는다.
-- [ ] 실제 Controller 매핑과 `docs/api-routes.md`가 일치한다.
-- [ ] 대상 테스트와 `.\gradlew.bat build --no-daemon --max-workers=1` 결과를 새로 확인한다.
+- [x] `POST /api/auth/refresh`가 200 `TokenResponse`를 반환한다.
+- [x] `refreshToken` 누락·빈 값·4,096자 초과는 400이고, 1~4,096자의 유효 형식 입력은 서비스 검증으로 전달된다.
+- [x] Refresh JWT의 서명·만료·타입·subject와 DB 해시·사용자를 모두 검증한다.
+- [x] 원문 Refresh Token은 DB와 로그에 남지 않는다.
+- [x] 기존 토큰 조건부 폐기와 새 해시 행 저장이 단일 트랜잭션이다.
+- [x] 1~4,096자의 비어 있지 않은 변조·만료·폐기·미존재·재사용·동시 요청 패배가 동일 401이다.
+- [x] 같은 토큰의 동시 회전은 정확히 하나만 성공한다.
+- [x] 새 토큰 발급·저장 실패 시 기존 폐기가 실제 MySQL에서 롤백된다.
+- [x] logout, `/me`, OAuth callback, 스키마 변경을 포함하지 않는다.
+- [x] 실제 Controller 매핑과 `docs/api-routes.md`가 일치한다.
+- [x] 대상 테스트와 `.\gradlew.bat build --no-daemon --max-workers=1` 결과를 새로 확인한다.
