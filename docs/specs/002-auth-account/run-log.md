@@ -2,6 +2,19 @@
 
 ## Issue #10
 
+### Task 4 production 점검 기록
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| 22:49 | implementer | `.\gradlew.bat compileJava --no-daemon --max-workers=1` — `BUILD SUCCESSFUL` | issue-10-plan.md Task 4 Fake authorize→callback→소셜 로그인 default profile 빈 연결 정적 점검 |
+| 23:05 | implementer | `.\gradlew.bat compileJava --no-daemon --max-workers=1`; `.\gradlew.bat spotbugsMain --no-daemon --max-workers=1` — 모두 `BUILD SUCCESSFUL` | 전체 build 차단 `NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE` 수정 재검증 |
+
+- 22:49 — default profile Fake 전체 흐름의 production 누락이 없음을 확인해 src는 변경하지 않고, 실제 오류 계약을 `docs/api-routes.md`에 보완했다.
+- 최초 전체 build는 테스트·JaCoCo 통과 후 Naver token nullable 응답의 분리 검증을 SpotBugs가 추적하지 못해 실패했다.
+- nullable 검증과 access token 반환을 같은 흐름으로 합쳐 경고를 해소했다. `org.jetbrains.annotations.Nullable` 보조 누락 메시지는 남지만 SpotBugs 경고·게이트는 통과했다.
+- 두 번째 전체 build는 테스트·JaCoCo·SpotBugs 통과 후 수정 파일의 줄바꿈 포맷을 `spotlessJavaCheck`가 차단했다. `spotlessApply` 후 재실행해 전체 `BUILD SUCCESSFUL`을 확인했다.
+- 메인 자동 회귀 — `FakeOAuthFlowIntegrationTest`를 실제 `mysql:8.4`로 재실행해 KAKAO/NAVER Fake 신규·기존·오류·DB 흐름의 `BUILD SUCCESSFUL`을 확인했다. 실제 공급자 검증은 아니다.
+
 ### Task 3 구현 기록
 
 | 시각 | 에이전트 | 실행 명령 | 근거 |
@@ -40,8 +53,8 @@
 
 | 구분 | 공급자/명령 | 결과 | 검증 수준·사유 |
 |---|---|---|---|
-| 자동 회귀 | Fake OAuth 대상 테스트 | 미실행 (계획 시점) | Fake Provider 결과이며 실제 OAuth와 구분 |
-| 전체 게이트 | `.\gradlew.bat build --no-daemon --max-workers=1` | 미실행 (계획 시점) | 실행 시 HEAD와 결과 기록 |
+| 자동 회귀 | Fake OAuth 대상 테스트 | PASS | 단위·Mock HTTP·WebMvc·`mysql:8.4` Testcontainers. 실제 OAuth 아님 |
+| 전체 게이트 | `.\gradlew.bat build --no-daemon --max-workers=1` | PASS | 전체 tests·JaCoCo·SpotBugs·Spotless 통과. 커밋 후 검증 SHA 갱신 |
 | 실제 OAuth | KAKAO | NOT RUN (계획 시점) | authorize→callback→코드 교환→사용자 정보→신규/기존→JWT와 신규 SocialAccount·계좌 2개 DB 검증을 한 결과/사유로 갱신 |
 | 실제 OAuth | NAVER | NOT RUN (계획 시점) | authorize→callback→코드 교환→사용자 정보→신규/기존→JWT와 신규 SocialAccount·계좌 2개 DB 검증을 한 결과/사유로 갱신 |
 

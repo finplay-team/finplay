@@ -29,6 +29,12 @@
 |---|---|---|---|---|---|
 | POST | /api/auth/email-verifications/confirm | `{"email":"user@finplay.com","code":"123456"}` | 200 `{"signupVerificationToken":"<원문>","expiresInSeconds":1800}` | 400 `VALIDATION_ERROR` 또는 `EMAIL_VERIFICATION_FAILED`, 429 `TOO_MANY_REQUESTS` 공통 오류 형식 | 002 AUTH-004 |
 
+## OAuth callback
+
+| Method | URL | 입력 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|
+| GET | /api/auth/oauth/{provider}/callback | query `code`, `state`; cookie `oauth_state`. 인가 취소 시 query `error`, `state` | 200 `{"accessToken":"<JWT>","refreshToken":"<JWT>","accessTokenExpiresInSeconds":3600,"refreshTokenExpiresInSeconds":1209600}` 및 `oauth_state` 만료 쿠키 | 400 `VALIDATION_ERROR`, `OAUTH_AUTHORIZATION_FAILED`, `OAUTH_EMAIL_REQUIRED`; 409 `ACCOUNT_LINK_REQUIRED` 또는 동시성 충돌 시 `DUPLICATE_RESOURCE`; 500 `INTERNAL_ERROR`; 502 `OAUTH_PROVIDER_ERROR` 공통 오류 형식. 성공·실패 모두 state 쿠키 즉시 만료 | 002 AUTH-003, Issue #10 |
+
 ## 이메일 회원가입
 
 | Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
