@@ -255,13 +255,13 @@ ADR-0004에 따라 병합된 `V2__create_auth_account_tables.sql`은 수정하�
 - Produces: 해시가 같은 Refresh Token 행 목록 조회
 - Produces: `id`, `now`를 받아 활성·미만료 행만 폐기하고 영향 행 수를 반환하는 갱신 메서드
 
-- [ ] **Step 1: 실제 MySQL 실패 테스트를 작성한다**
+- [x] **Step 1: 실제 MySQL 실패 테스트를 작성한다**
   - 유효 행의 첫 조건부 폐기는 `1`, 같은 행의 두 번째 폐기는 `0`.
   - 이미 폐기된 행은 `0`.
   - `expiresAt == now`와 과거 만료 행은 `0`.
   - 저장 원문이 아니라 SHA-256 해시로 행을 찾는다.
   - `@DataJpaTest`에 공유 `TestcontainersConfiguration`을 import하고 H2를 사용하지 않는다.
-- [ ] **Step 2: 대상 테스트 실패를 확인한다**
+- [x] **Step 2: 대상 테스트 실패를 확인한다**
 
   ```powershell
   .\gradlew.bat test --tests "*RefreshTokenRepositoryTest" --no-daemon --max-workers=1
@@ -269,12 +269,12 @@ ADR-0004에 따라 병합된 `V2__create_auth_account_tables.sql`은 수정하�
 
   Expected: 조회·조건부 갱신 메서드 부재로 컴파일 또는 새 테스트 FAIL.
 
-- [ ] **Step 3: Repository 쿼리만 구현한다**
+- [x] **Step 3: Repository 쿼리만 구현한다**
   - `@Modifying` JPQL 또는 native query로 D2의 조건을 그대로 표현한다.
   - 비즈니스 오류 판단은 Repository에 넣지 않고 영향 행 수만 반환한다.
   - 엔티티·스키마·V2 마이그레이션은 수정하지 않는다.
-- [ ] **Step 4: 같은 대상 테스트를 다시 실행해 PASS를 확인한다**
-- [ ] **Step 5: 논리 커밋한다**
+- [x] **Step 4: 같은 대상 테스트를 다시 실행해 PASS를 확인한다**
+- [x] **Step 5: 논리 커밋한다**
 
   ```powershell
   git add src/main/java/com/finplay/api/auth/repository/RefreshTokenRepository.java src/test/java/com/finplay/api/auth/repository/RefreshTokenRepositoryTest.java
