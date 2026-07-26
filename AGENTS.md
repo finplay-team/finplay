@@ -44,6 +44,17 @@ FinPlay 백엔드 API 서버. Spring Boot 4.1 / Java 17 / Gradle(`build.gradle`,
 - 모델·승인 정책·인증은 저장소에 고정하지 않는다. 각자 `~/.codex/config.toml`에서 모델과 승인 모드를 설정한 뒤 실행한다 (ADR-0009).
 - 서브에이전트 세션 생명주기(implementer/tester 재사용·재개, reviewer 신규, 전환 조건)는 ADR-0010을 따른다. 실행 방법은 `feature` 스킬에 있다.
 
+## 범용 에이전트 스킬 사용 제한
+
+- 기능 개발과 PR 리뷰는 프로젝트 전용 `feature`, `review-pr` 스킬을 정본으로 사용한다.
+- 프로젝트 전용 스킬이 적용되는 작업에서는 동일한 계획·구현·테스트·리뷰·완료 절차를 제공하는 범용 워크플로 스킬을 중복 사용하지 않는다.
+- `brainstorming`은 기존 PRD·spec·ADR만으로 결정할 수 없는 API 계약, 스키마·트랜잭션 경계, 요구사항 충돌, 범위 또는 설계 선택이 있을 때만 사용한다.
+- spec 파일이 없더라도 요구사항이 명확하면 `brainstorming` 없이 프로젝트 planner의 계획 모드를 사용한다.
+- `systematic-debugging`은 실패 원인이 불명확하거나 같은 실패가 반복되거나 빌드·환경·트랜잭션이 예상과 다르게 동작할 때만 사용한다.
+- 원인이 명확한 테스트 실패와 production 버그는 기존 implementer ↔ tester 수정 루프로 처리한다.
+- 범용 스킬을 예외적으로 사용해도 현재 프로젝트 워크플로 안에서 필요한 분석만 수행하며 별도 plan, ledger, task brief, reviewer 체인을 만들지 않는다.
+- 그 외 범용 계획·TDD·오케스트레이션·리뷰·완료 스킬은 프로젝트 `feature` 또는 `review-pr`과 중복 호출하지 않는다.
+
 ## 브랜치와 리뷰
 
 - 기능 브랜치는 `dev`에서 만들고 PR 대상도 `dev`로 한다.
