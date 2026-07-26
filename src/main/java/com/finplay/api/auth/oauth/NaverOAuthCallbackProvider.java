@@ -85,26 +85,23 @@ public final class NaverOAuthCallbackProvider implements OAuthCallbackProvider {
 					throw providerError();
 				})
 				.body(NaverTokenResponse.class);
-			validateTokenResponse(token);
-			return token.access_token();
+			if (token == null) {
+				throw providerError();
+			}
+			if (!isBlank(token.error())) {
+				if (SERVER_ERROR.equals(token.error()) || TEMPORARILY_UNAVAILABLE.equals(token.error())) {
+					throw providerError();
+				}
+				throw authorizationFailed();
+			}
+			String accessToken = token.access_token();
+			if (isBlank(accessToken)) {
+				throw providerError();
+			}
+			return accessToken;
 		} catch (BusinessException ex) {
 			throw ex;
 		} catch (RestClientException ex) {
-			throw providerError();
-		}
-	}
-
-	private void validateTokenResponse(NaverTokenResponse token) {
-		if (token == null) {
-			throw providerError();
-		}
-		if (!isBlank(token.error())) {
-			if (SERVER_ERROR.equals(token.error()) || TEMPORARILY_UNAVAILABLE.equals(token.error())) {
-				throw providerError();
-			}
-			throw authorizationFailed();
-		}
-		if (isBlank(token.access_token())) {
 			throw providerError();
 		}
 	}

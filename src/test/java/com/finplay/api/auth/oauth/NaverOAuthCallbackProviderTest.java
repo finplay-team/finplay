@@ -150,10 +150,34 @@ class NaverOAuthCallbackProviderTest {
 	}
 
 	@Test
-	@DisplayName("네이버 token malformed JSON 또는 access_token 누락은 공급자 오류로 정규화한다")
+	@DisplayName("네이버 token malformed JSON은 공급자 오류로 정규화한다")
 	void malformedTokenResponseBecomesProviderError() {
 		server.expect(requestTo("https://nid.naver.com/oauth2.0/token"))
 			.andRespond(withSuccess("{malformed", MediaType.APPLICATION_JSON));
+
+		assertProviderFailure(
+			() -> provider.fetchUser(AUTHORIZATION_CODE, STATE),
+			ErrorCode.OAUTH_PROVIDER_ERROR);
+		server.verify();
+	}
+
+	@Test
+	@DisplayName("네이버 token 응답 본문이 없어 null이면 공급자 오류로 정규화한다")
+	void nullTokenResponseBecomesProviderError() {
+		server.expect(requestTo("https://nid.naver.com/oauth2.0/token"))
+			.andRespond(withSuccess("", MediaType.APPLICATION_JSON));
+
+		assertProviderFailure(
+			() -> provider.fetchUser(AUTHORIZATION_CODE, STATE),
+			ErrorCode.OAUTH_PROVIDER_ERROR);
+		server.verify();
+	}
+
+	@Test
+	@DisplayName("네이버 token 응답에 access_token이 없으면 공급자 오류로 정규화한다")
+	void missingAccessTokenBecomesProviderError() {
+		server.expect(requestTo("https://nid.naver.com/oauth2.0/token"))
+			.andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
 
 		assertProviderFailure(
 			() -> provider.fetchUser(AUTHORIZATION_CODE, STATE),
