@@ -128,6 +128,27 @@ class OAuthCallbackControllerTest {
 		verify(callbackService).callback("naver", CODE, utf8State, utf8State);
 	}
 
+	@Test
+	@DisplayName("사용자 취소 error query는 400 인가 실패 본문과 state 만료 쿠키를 반환한다")
+	void callbackReturnsAuthorizationFailureForProviderErrorQuery() throws Exception {
+		given(callbackService.callback("kakao", null, STATE, STATE, "access_denied"))
+			.willThrow(new BusinessException(ErrorCode.OAUTH_AUTHORIZATION_FAILED));
+
+		mockMvc.perform(get("/api/auth/oauth/kakao/callback")
+			.param("error", "access_denied")
+			.param("state", STATE)
+			.cookie(new Cookie("oauth_state", STATE)))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("OAUTH_AUTHORIZATION_FAILED"))
+			.andExpect(jsonPath("$.error.message")
+				.value("OAuth 인가가 취소되었거나 유효하지 않습니다."))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty())
+			.andExpect(header().string(
+				HttpHeaders.SET_COOKIE,
+				containsString("; Path=/api/auth/oauth/kakao/callback")))
+			.andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("; Max-Age=0")));
+	}
+
 	private static Stream<Arguments> successfulCallbacks() {
 		return Stream.of(
 			Arguments.of("kakao", "/api/auth/oauth/kakao/callback"),

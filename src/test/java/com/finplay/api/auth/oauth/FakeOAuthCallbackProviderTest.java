@@ -1,0 +1,61 @@
+// Fake callback 공급자의 지원 범위와 결정적 fixture 및 인가 실패 계약을 단위 테스트한다.
+package com.finplay.api.auth.oauth;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.finplay.api.common.BusinessException;
+import com.finplay.api.common.ErrorCode;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+class FakeOAuthCallbackProviderTest {
+
+	private final FakeOAuthCallbackProvider provider = new FakeOAuthCallbackProvider();
+
+	@Test
+	@DisplayName("Fake callback 공급자는 KAKAO와 NAVER를 모두 지원한다")
+	void supportsBothProviders() {
+		assertThat(provider.supports(OAuthProviderName.KAKAO)).isTrue();
+		assertThat(provider.supports(OAuthProviderName.NAVER)).isTrue();
+		assertThat(provider.supports(null)).isFalse();
+	}
+
+	@Test
+	@DisplayName("fake-code는 결정적인 공급자 사용자 ID와 이메일을 반환한다")
+	void fetchUserReturnsDeterministicDefaultUser() {
+		assertThat(provider.fetchUser("fake-code", "state-value"))
+			.isEqualTo(new OAuthUserDto("fake-oauth-user", "fake-oauth@finplay.test"));
+	}
+
+	@Test
+	@DisplayName("fake-code-no-email은 이메일이 없는 결정적 사용자를 반환한다")
+	void fetchUserReturnsUserWithoutEmail() {
+		assertThat(provider.fetchUser("fake-code-no-email", "state-value"))
+			.isEqualTo(new OAuthUserDto("fake-oauth-user", null));
+	}
+
+	@Test
+	@DisplayName("fake-code-existing-email은 기존 이메일 충돌 fixture를 반환한다")
+	void fetchUserReturnsExistingEmailFixture() {
+		assertThat(provider.fetchUser("fake-code-existing-email", "state-value"))
+			.isEqualTo(new OAuthUserDto("fake-oauth-user", "existing-oauth@finplay.test"));
+	}
+
+	@Test
+	@DisplayName("알 수 없는 Fake code는 민감한 code를 노출하지 않는 인가 실패로 거부한다")
+	void fetchUserRejectsUnknownCodeWithoutExposingIt() {
+		String unknownCode = "unknown-sensitive-code";
+
+		assertThatThrownBy(() -> provider.fetchUser(unknownCode, "state-value"))
+			.isInstanceOfSatisfying(
+				BusinessException.class,
+				exception -> {
+					assertThat(exception.getErrorCode())
+						.isEqualTo(ErrorCode.OAUTH_AUTHORIZATION_FAILED);
+					assertThat(exception.getMessage())
+						.isEqualTo(ErrorCode.OAUTH_AUTHORIZATION_FAILED.getDefaultMessage())
+						.doesNotContain(unknownCode);
+				});
+	}
+}

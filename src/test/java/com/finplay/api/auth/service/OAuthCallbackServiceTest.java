@@ -85,6 +85,32 @@ class OAuthCallbackServiceTest {
 		assertThat(actual).isEqualTo(expected);
 	}
 
+	@Test
+	@DisplayName("사용자 취소 error query는 state 검증 뒤 공급자 호출 전에 인가 실패로 거부한다")
+	void callbackRejectsAuthorizationErrorAfterStateValidation() {
+		assertThatThrownBy(() -> callbackService.callback(
+			"kakao", null, ASCII_STATE, ASCII_STATE, "access_denied"))
+			.isInstanceOfSatisfying(
+				BusinessException.class,
+				exception -> assertThat(exception.getErrorCode())
+					.isEqualTo(ErrorCode.OAUTH_AUTHORIZATION_FAILED));
+
+		verifyNoInteractions(kakaoProvider, naverProvider, authService);
+	}
+
+	@Test
+	@DisplayName("사용자 취소 error query라도 state가 불일치하면 먼저 검증 오류로 거부한다")
+	void callbackValidatesStateBeforeAuthorizationError() {
+		assertThatThrownBy(() -> callbackService.callback(
+			"kakao", null, ASCII_STATE, "different-state", "access_denied"))
+			.isInstanceOfSatisfying(
+				BusinessException.class,
+				exception -> assertThat(exception.getErrorCode())
+					.isEqualTo(ErrorCode.VALIDATION_ERROR));
+
+		verifyNoInteractions(kakaoProvider, naverProvider, authService);
+	}
+
 	@ParameterizedTest
 	@MethodSource("invalidCallbacks")
 	@DisplayName("provider, code, query state, cookie state의 누락과 state 불일치는 공급자 호출 전에 거부한다")

@@ -17,7 +17,7 @@
 ## Issue #10 OAuth callback 작업 항목 (5개)
 
 - [x] callback state 상수 시간 검증·성공/실패 state 쿠키 만료·공개 GET Controller/Security 계약 구현
-- [ ] Fake·Kakao·Naver callback Provider의 코드 교환·사용자 정보, 사용자 취소·만료/재사용 code 400, 공급자 장애·timeout·malformed response 502, 프로필/환경변수 fail-fast 구현
+- [x] Fake·Kakao·Naver callback Provider의 코드 교환·사용자 정보, 사용자 취소·만료/재사용 code 400, 공급자 장애·timeout·malformed response 502, 프로필/환경변수 fail-fast 구현
 - [ ] `finplay-` + 무작위 소문자 hex 12자리 nickname(식별정보 미포함, 충돌 시 최대 5회 재생성)과 기존 소셜 로그인·신규 User·SocialAccount·계좌 2개·Refresh Token 원자 트랜잭션 및 롤백 구현
 - [ ] Fake OAuth 신규/기존·이메일 미제공·기존 이메일 충돌·state/공급자 오류 자동 회귀, 전체 build, API 문서 동기화
 - [ ] `oauth-real` 카카오·네이버 각각 authorize→callback→코드 교환→사용자 정보→신규/기존→FinPlay JWT 및 신규 SocialAccount·계좌 2개 DB 스모크 검증

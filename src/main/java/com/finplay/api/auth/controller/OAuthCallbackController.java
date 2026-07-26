@@ -31,11 +31,16 @@ public class OAuthCallbackController {
 		String code,
 		@RequestParam(required = false)
 		String state,
+		@RequestParam(required = false)
+		String error,
 		@CookieValue(name = "oauth_state", required = false)
 		String cookieState,
 		HttpServletResponse response) {
 		response.addHeader(HttpHeaders.SET_COOKIE, stateCookieFactory.expire(provider).toString());
 
+		if (error != null && !error.isBlank()) {
+			return ResponseEntity.ok(callbackService.callback(provider, code, state, cookieState, error));
+		}
 		return ResponseEntity.ok(callbackService.callback(provider, code, state, cookieState));
 	}
 }

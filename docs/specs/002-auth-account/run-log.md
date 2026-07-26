@@ -2,6 +2,16 @@
 
 ## Issue #10
 
+### Task 2 구현 기록
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| 22:19 | implementer | `.\gradlew.bat compileJava --no-daemon --max-workers=1` — `BUILD SUCCESSFUL` | issue-10-plan.md Task 2, 카카오·네이버 공식 OAuth REST 문서(2026-07-26 확인) |
+
+- 22:19 — Fake·카카오·네이버 callback Provider와 인가/공급자 오류 정규화, 실제 프로필 설정 fail-fast를 추가하고 컴파일을 통과했다.
+- 메인 재검증 — Fake/Kakao/Naver callback, profile, callback error, 기존 authorize, 공통 오류의 8개 대상 테스트를 한 Gradle 실행으로 검증해 `BUILD SUCCESSFUL`을 확인했다. 단위·Mock HTTP·WebMvc 수준이며 실제 OAuth가 아니다.
+- 비밀값 검사 — `oauth.txt`의 실제 값과 Git 추적 파일의 리터럴을 비교해 일치 0건을 확인했다. 값 자체는 출력·기록하지 않았다.
+
 ### Task 1 구현 기록
 
 | 시각 | 에이전트 | 실행 명령 | 근거 |

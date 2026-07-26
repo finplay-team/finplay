@@ -22,9 +22,21 @@ public class OAuthCallbackService {
 
 	public TokenResponse callback(
 		String rawProvider, String authorizationCode, String queryState, String cookieState) {
+		return callback(rawProvider, authorizationCode, queryState, cookieState, null);
+	}
+
+	public TokenResponse callback(
+		String rawProvider,
+		String authorizationCode,
+		String queryState,
+		String cookieState,
+		String authorizationError) {
 		OAuthProviderName provider = OAuthProviderName.from(rawProvider)
 			.orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_ERROR));
 		validateState(queryState, cookieState);
+		if (authorizationError != null && !authorizationError.isBlank()) {
+			throw new BusinessException(ErrorCode.OAUTH_AUTHORIZATION_FAILED);
+		}
 		if (authorizationCode == null || authorizationCode.isBlank()) {
 			throw new BusinessException(ErrorCode.VALIDATION_ERROR);
 		}
