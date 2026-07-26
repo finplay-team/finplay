@@ -191,7 +191,7 @@ Refresh JWT 파싱 실패, 해시 조회 결과 0건·2건 이상, JWT subject�
 
 - Produces: `void AuthService.logout(Long authenticatedUserId, String rawRefreshToken)`
 
-- [ ] **Step 1: 서비스 실패 테스트를 작성한다**
+- [x] **Step 1: 서비스 실패 테스트를 작성한다**
   - 유효한 Refresh JWT, 단일 해시 행, Access 사용자=JWT subject=DB 사용자이고 조건부 폐기 결과가 `1`이면 정상 종료한다.
   - JWT 파싱 실패, 해시 미존재·중복, JWT subject와 DB 사용자 불일치는 401 `UNAUTHORIZED`.
   - Access 사용자와 DB 토큰 사용자가 다르면 403 `FORBIDDEN`이고 조건부 폐기 메서드는 호출하지 않는다.
@@ -205,12 +205,12 @@ Refresh JWT 파싱 실패, 해시 조회 결과 0건·2건 이상, JWT subject�
 
   Expected: `logout` 부재로 컴파일 또는 새 테스트 FAIL.
 
-- [ ] **Step 3: 최소 서비스 구현을 추가한다**
+- [x] **Step 3: 최소 서비스 구현을 추가한다**
   - `@Transactional` public 메서드 하나에 D1~D3 순서를 구현한다.
   - 기존 private `sha256`, `parseRefreshToken`, `findAllByTokenHash`, `revokeIfActiveAndNotExpired`를 재사용한다.
   - 범용 Token Manager나 별도 로그아웃 전용 Repository를 추가하지 않는다.
-- [ ] **Step 4: 같은 대상 테스트를 다시 실행해 PASS를 확인한다**
-- [ ] **Step 5: 논리 커밋한다**
+- [x] **Step 4: 같은 대상 테스트를 다시 실행해 PASS를 확인한다**
+- [x] **Step 5: 논리 커밋한다**
 
   ```powershell
   git add src/main/java/com/finplay/api/auth/service/AuthService.java src/test/java/com/finplay/api/auth/service/AuthServiceTest.java
