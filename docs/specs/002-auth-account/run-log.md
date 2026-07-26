@@ -1,5 +1,26 @@
 # Run Log: 002-auth-account
 
+## Issue #10
+
+### 계획 승인
+
+- 2026-07-26 — 신규 OAuth nickname 생성·충돌 정책과 `OAUTH_AUTHORIZATION_FAILED`(400)·`OAUTH_PROVIDER_ERROR`(502) 오류 분류를 사용자 승인으로 확정했다. 시크릿·토큰·authorization code 값은 기록하지 않았다.
+
+### 검증 기록 계약 (implementer·reviewer가 실행 결과로 갱신)
+
+| 구분 | 공급자/명령 | 결과 | 검증 수준·사유 |
+|---|---|---|---|
+| 자동 회귀 | Fake OAuth 대상 테스트 | 미실행 (계획 시점) | Fake Provider 결과이며 실제 OAuth와 구분 |
+| 전체 게이트 | `.\gradlew.bat build --no-daemon --max-workers=1` | 미실행 (계획 시점) | 실행 시 HEAD와 결과 기록 |
+| 실제 OAuth | KAKAO | NOT RUN (계획 시점) | authorize→callback→코드 교환→사용자 정보→신규/기존→JWT와 신규 SocialAccount·계좌 2개 DB 검증을 한 결과/사유로 갱신 |
+| 실제 OAuth | NAVER | NOT RUN (계획 시점) | authorize→callback→코드 교환→사용자 정보→신규/기존→JWT와 신규 SocialAccount·계좌 2개 DB 검증을 한 결과/사유로 갱신 |
+
+- 실제 카카오·네이버는 각각 `PASS`여야 Issue #10 PR 완료 조건을 충족한다. 미검증 공급자는 실제 연동 완료로 주장하지 않는다.
+- 환경변수·개발자 콘솔 Callback URL·이메일 동의가 부족하면 추측하지 않고 공급자별 `NOT RUN` 사유를 기록한다.
+- 브라우저 로그인·동의 단계는 사용자 조작 완료를 기다린다.
+- 자동 회귀와 실제 공급자 스모크는 서로 대체하지 않고 run-log와 PR에 별도 기록한다.
+- Client ID/Secret, Provider Access Token, authorization code는 명령·결과·로그·PR에 기록하지 않는다.
+
 ## Issue #7
 
 ### 최종 검증
