@@ -8,10 +8,14 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.UUID;
 import org.slf4j.MDC;
+import org.springframework.boot.security.autoconfigure.web.servlet.SecurityFilterProperties;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+// Security 필터체인보다 먼저 실행되어야 401·403 응답에도 requestId가 채워진다.
 @Component
+@Order(SecurityFilterProperties.DEFAULT_FILTER_ORDER - 1)
 public class RequestIdFilter extends OncePerRequestFilter {
 
 	public static final String REQUEST_ID_MDC_KEY = "requestId";

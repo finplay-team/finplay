@@ -24,11 +24,13 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.finplay.api.auth.dto.response.TokenResponse;
 import com.finplay.api.auth.service.AuthService;
+import com.finplay.api.auth.token.JwtTokenProvider;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 
 import tools.jackson.databind.ObjectMapper;
 
+// 대상 경로가 공개 화이트리스트에 있으므로 실제 Security 체인을 태워 화이트리스트 계약까지 함께 검증한다.
 @WebMvcTest(AuthController.class)
 class AuthControllerTest {
 
@@ -45,6 +47,9 @@ class AuthControllerTest {
 
 	@MockitoBean
 	private AuthService authService;
+
+	@MockitoBean
+	private JwtTokenProvider jwtTokenProvider;
 
 	@Test
 	void signupReturnsCreatedWithAllTokenFields() throws Exception {

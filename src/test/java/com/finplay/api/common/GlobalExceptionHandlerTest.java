@@ -14,6 +14,8 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.security.autoconfigure.web.servlet.SecurityFilterAutoConfiguration;
+import org.springframework.boot.security.autoconfigure.web.servlet.ServletWebSecurityAutoConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
@@ -25,7 +27,12 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-@WebMvcTest(controllers = GlobalExceptionHandlerTest.TestController.class)
+// /test/**는 프로덕션 화이트리스트에 없고 넣어서도 안 되므로, 이 슬라이스에서만 Security 자동설정을 끈다.
+// addFilters = false는 RequestIdFilter까지 꺼서 requestId 단언이 깨지므로 쓰지 않는다.
+@WebMvcTest(controllers = GlobalExceptionHandlerTest.TestController.class, excludeAutoConfiguration = {
+	ServletWebSecurityAutoConfiguration.class,
+	SecurityFilterAutoConfiguration.class
+})
 @Import(GlobalExceptionHandlerTest.TestController.class)
 class GlobalExceptionHandlerTest {
 
