@@ -4,7 +4,9 @@ package com.finplay.api.auth.oauth;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatusCode;
@@ -38,7 +40,29 @@ public final class NaverOAuthCallbackProvider implements OAuthCallbackProvider {
 		String clientSecret,
 		@Value("${oauth.naver.redirect-uri}")
 		String redirectUri) {
-		this.restClient = builder.build();
+		this(builder.build(), clientId, clientSecret, redirectUri);
+	}
+
+	@Autowired
+	public NaverOAuthCallbackProvider(
+		RestClient.Builder builder,
+		ObjectProvider<OAuthRestClientFactory> restClientFactoryProvider,
+		@Value("${oauth.naver.client-id}")
+		String clientId,
+		@Value("${oauth.naver.client-secret}")
+		String clientSecret,
+		@Value("${oauth.naver.redirect-uri}")
+		String redirectUri) {
+		this(
+			restClientFactoryProvider.getIfAvailable(OAuthRestClientFactory::new).create(builder),
+			clientId,
+			clientSecret,
+			redirectUri);
+	}
+
+	private NaverOAuthCallbackProvider(
+		RestClient restClient, String clientId, String clientSecret, String redirectUri) {
+		this.restClient = restClient;
 		this.clientId = requireConfigured(clientId, "네이버 OAuth clientId가 설정되지 않았습니다.");
 		this.clientSecret = requireConfigured(clientSecret, "네이버 OAuth clientSecret이 설정되지 않았습니다.");
 		requireConfigured(redirectUri, "네이버 OAuth redirectUri가 설정되지 않았습니다.");

@@ -85,6 +85,25 @@ class OAuthCallbackServiceTest {
 		assertThat(actual).isEqualTo(expected);
 	}
 
+	@ParameterizedTest
+	@MethodSource("invalidProviderUsers")
+	@DisplayName("공급자 사용자 ID와 이메일 오류는 AuthService 호출 전에 차단한다")
+	void callbackRejectsInvalidProviderUserBeforeAuthService(
+		OAuthUserDto oauthUser, ErrorCode expectedErrorCode) {
+		given(kakaoProvider.supports(OAuthProviderName.KAKAO)).willReturn(true);
+		given(kakaoProvider.fetchUser(AUTHORIZATION_CODE, ASCII_STATE))
+			.willReturn(oauthUser);
+
+		assertThatThrownBy(() -> callbackService.callback(
+			"kakao", AUTHORIZATION_CODE, ASCII_STATE, ASCII_STATE))
+			.isInstanceOfSatisfying(
+				BusinessException.class,
+				exception -> assertThat(exception.getErrorCode())
+					.isEqualTo(expectedErrorCode));
+
+		verifyNoInteractions(authService);
+	}
+
 	@Test
 	@DisplayName("사용자 취소 error query는 state 검증 뒤 공급자 호출 전에 인가 실패로 거부한다")
 	void callbackRejectsAuthorizationErrorAfterStateValidation() {
@@ -147,6 +166,23 @@ class OAuthCallbackServiceTest {
 			Arguments.of("kakao", AUTHORIZATION_CODE, ASCII_STATE, null),
 			Arguments.of("kakao", AUTHORIZATION_CODE, ASCII_STATE, " "),
 			Arguments.of("kakao", AUTHORIZATION_CODE, ASCII_STATE, "different-state"));
+	}
+
+	private static Stream<Arguments> invalidProviderUsers() {
+		return Stream.of(
+			Arguments.of(null, ErrorCode.OAUTH_PROVIDER_ERROR),
+			Arguments.of(
+				new OAuthUserDto(null, "member@example.com"),
+				ErrorCode.OAUTH_PROVIDER_ERROR),
+			Arguments.of(
+				new OAuthUserDto(" ", "member@example.com"),
+				ErrorCode.OAUTH_PROVIDER_ERROR),
+			Arguments.of(
+				new OAuthUserDto("provider-user-id", null),
+				ErrorCode.OAUTH_EMAIL_REQUIRED),
+			Arguments.of(
+				new OAuthUserDto("provider-user-id", " "),
+				ErrorCode.OAUTH_EMAIL_REQUIRED));
 	}
 
 	private static TokenResponse tokenResponse() {

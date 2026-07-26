@@ -8,12 +8,14 @@
 |---|---|---|---|
 | 22:49 | implementer | `.\gradlew.bat compileJava --no-daemon --max-workers=1` — `BUILD SUCCESSFUL` | issue-10-plan.md Task 4 Fake authorize→callback→소셜 로그인 default profile 빈 연결 정적 점검 |
 | 23:05 | implementer | `.\gradlew.bat compileJava --no-daemon --max-workers=1`; `.\gradlew.bat spotbugsMain --no-daemon --max-workers=1` — 모두 `BUILD SUCCESSFUL` | 전체 build 차단 `NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE` 수정 재검증 |
+| 23:18 | implementer | `.\gradlew.bat compileJava --no-daemon --max-workers=1`; `.\gradlew.bat spotbugsMain --no-daemon --max-workers=1` — 모두 `BUILD SUCCESSFUL` | 리뷰 차단: 실제 OAuth connect 5초/read 10초 timeout과 트랜잭션 전 DTO 검증 |
 
 - 22:49 — default profile Fake 전체 흐름의 production 누락이 없음을 확인해 src는 변경하지 않고, 실제 오류 계약을 `docs/api-routes.md`에 보완했다.
 - 최초 전체 build는 테스트·JaCoCo 통과 후 Naver token nullable 응답의 분리 검증을 SpotBugs가 추적하지 못해 실패했다.
 - nullable 검증과 access token 반환을 같은 흐름으로 합쳐 경고를 해소했다. `org.jetbrains.annotations.Nullable` 보조 누락 메시지는 남지만 SpotBugs 경고·게이트는 통과했다.
 - 두 번째 전체 build는 테스트·JaCoCo·SpotBugs 통과 후 수정 파일의 줄바꿈 포맷을 `spotlessJavaCheck`가 차단했다. `spotlessApply` 후 재실행해 전체 `BUILD SUCCESSFUL`을 확인했다.
 - 메인 자동 회귀 — `FakeOAuthFlowIntegrationTest`를 실제 `mysql:8.4`로 재실행해 KAKAO/NAVER Fake 신규·기존·오류·DB 흐름의 `BUILD SUCCESSFUL`을 확인했다. 실제 공급자 검증은 아니다.
+- 리뷰 수정 — 실제 Kakao/Naver RestClient에 유한 timeout을 강제하고, providerUserId·email 오류를 `AuthService` 트랜잭션 진입 전에 각각 502·400으로 차단했다.
 
 ### Task 3 구현 기록
 

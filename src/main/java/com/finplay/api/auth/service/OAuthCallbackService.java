@@ -46,6 +46,7 @@ public class OAuthCallbackService {
 			.findFirst()
 			.orElseThrow(() -> new IllegalStateException("활성화된 OAuth callback 공급자가 없습니다."));
 		OAuthUserDto oauthUser = callbackProvider.fetchUser(authorizationCode, queryState);
+		validateOAuthUser(oauthUser);
 
 		return authService.oauthLogin(provider, oauthUser);
 	}
@@ -59,6 +60,17 @@ public class OAuthCallbackService {
 		byte[] cookieStateBytes = cookieState.getBytes(StandardCharsets.UTF_8);
 		if (!MessageDigest.isEqual(queryStateBytes, cookieStateBytes)) {
 			throw new BusinessException(ErrorCode.VALIDATION_ERROR);
+		}
+	}
+
+	private void validateOAuthUser(OAuthUserDto oauthUser) {
+		if (oauthUser == null
+			|| oauthUser.providerUserId() == null
+			|| oauthUser.providerUserId().isBlank()) {
+			throw new BusinessException(ErrorCode.OAUTH_PROVIDER_ERROR);
+		}
+		if (oauthUser.email() == null || oauthUser.email().isBlank()) {
+			throw new BusinessException(ErrorCode.OAUTH_EMAIL_REQUIRED);
 		}
 	}
 }

@@ -4,7 +4,9 @@ package com.finplay.api.auth.oauth;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatusCode;
@@ -36,7 +38,29 @@ public final class KakaoOAuthCallbackProvider implements OAuthCallbackProvider {
 		String clientSecret,
 		@Value("${oauth.kakao.redirect-uri}")
 		String redirectUri) {
-		this.restClient = builder.build();
+		this(builder.build(), clientId, clientSecret, redirectUri);
+	}
+
+	@Autowired
+	public KakaoOAuthCallbackProvider(
+		RestClient.Builder builder,
+		ObjectProvider<OAuthRestClientFactory> restClientFactoryProvider,
+		@Value("${oauth.kakao.client-id}")
+		String clientId,
+		@Value("${oauth.kakao.client-secret}")
+		String clientSecret,
+		@Value("${oauth.kakao.redirect-uri}")
+		String redirectUri) {
+		this(
+			restClientFactoryProvider.getIfAvailable(OAuthRestClientFactory::new).create(builder),
+			clientId,
+			clientSecret,
+			redirectUri);
+	}
+
+	private KakaoOAuthCallbackProvider(
+		RestClient restClient, String clientId, String clientSecret, String redirectUri) {
+		this.restClient = restClient;
 		this.clientId = requireConfigured(clientId, "카카오 OAuth clientId가 설정되지 않았습니다.");
 		this.clientSecret = requireConfigured(clientSecret, "카카오 OAuth clientSecret이 설정되지 않았습니다.");
 		this.redirectUri = requireConfigured(redirectUri, "카카오 OAuth redirectUri가 설정되지 않았습니다.");
