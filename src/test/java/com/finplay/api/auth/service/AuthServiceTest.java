@@ -1,4 +1,4 @@
-// 회원가입·로그인 서비스의 검증 분기와 저장 대상 상태를 검증하는 단위 테스트다.
+// 회원가입·로그인·토큰 회전 서비스의 검증 분기와 저장 대상 상태를 검증하는 단위 테스트다.
 package com.finplay.api.auth.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -37,6 +37,7 @@ import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.EmailVerificationRepository;
 import com.finplay.api.auth.repository.RefreshTokenRepository;
 import com.finplay.api.auth.repository.UserRepository;
+import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.auth.token.IssuedTokenPair;
 import com.finplay.api.auth.token.JwtTokenProvider;
 import com.finplay.api.common.BusinessException;
@@ -50,6 +51,8 @@ class AuthServiceTest {
 	private static final String SIGNUP_TOKEN = "signup-verification-token";
 	private static final String ACCESS_TOKEN = "access.jwt.token";
 	private static final String REFRESH_TOKEN = "refresh.jwt.token";
+	private static final String ROTATED_ACCESS_TOKEN = "rotated.access.jwt.token";
+	private static final String ROTATED_REFRESH_TOKEN = "rotated.refresh.jwt.token";
 	private static final Instant FIXED_INSTANT = Instant.parse("2026-07-25T10:30:00Z");
 	private static final LocalDateTime NOW = LocalDateTime.ofInstant(FIXED_INSTANT, ZoneOffset.UTC);
 
@@ -289,10 +292,129 @@ class AuthServiceTest {
 		verifyNoMoreInteractions(refreshTokenRepository);
 	}
 
+	@Test
+	void refreshReturnsRotatedPairAndPersistsOnlyNewRefreshTokenHash() {
+		User user = existingUser(passwordEncoder.encode(RAW_PASSWORD));
+		RefreshToken storedToken = storedRefreshToken(user, 11L);
+		when(jwtTokenProvider.parseRefreshToken(REFRESH_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(7L, "USER")));
+		when(refreshTokenRepository.findAllByTokenHash(sha256(REFRESH_TOKEN)))
+			.thenReturn(List.of(storedToken));
+		when(refreshTokenRepository.revokeIfActiveAndNotExpired(11L, NOW)).thenReturn(1);
+		when(jwtTokenProvider.issue(7L, "USER")).thenReturn(new IssuedTokenPair(
+			ROTATED_ACCESS_TOKEN, ROTATED_REFRESH_TOKEN, NOW.plusDays(14), 3600L, 1_209_600L));
+
+		var response = authService.refresh(REFRESH_TOKEN);
+
+		verify(refreshTokenRepository).findAllByTokenHash(sha256(REFRESH_TOKEN));
+		verify(refreshTokenRepository).revokeIfActiveAndNotExpired(11L, NOW);
+		ArgumentCaptor<RefreshToken> refreshTokenCaptor = ArgumentCaptor.forClass(RefreshToken.class);
+		verify(refreshTokenRepository).save(refreshTokenCaptor.capture());
+		RefreshToken savedRefreshToken = refreshTokenCaptor.getValue();
+		assertThat(savedRefreshToken.getUser()).isSameAs(user);
+		assertThat(savedRefreshToken.getTokenHash()).isEqualTo(sha256(ROTATED_REFRESH_TOKEN));
+		assertThat(savedRefreshToken.getTokenHash()).isNotEqualTo(ROTATED_REFRESH_TOKEN);
+		assertThat(savedRefreshToken.getExpiresAt()).isEqualTo(NOW.plusDays(14));
+		assertThat(savedRefreshToken.getCreatedAt()).isEqualTo(NOW);
+		assertThat(savedRefreshToken.getRevokedAt()).isNull();
+		assertThat(response.accessToken()).isEqualTo(ROTATED_ACCESS_TOKEN);
+		assertThat(response.refreshToken()).isEqualTo(ROTATED_REFRESH_TOKEN);
+		assertThat(response.accessTokenExpiresInSeconds()).isEqualTo(3600L);
+		assertThat(response.refreshTokenExpiresInSeconds()).isEqualTo(1_209_600L);
+	}
+
+	@Test
+	void refreshFailsWithUnauthorizedWhenJwtParsingFails() {
+		when(jwtTokenProvider.parseRefreshToken(REFRESH_TOKEN)).thenReturn(Optional.empty());
+
+		assertRefreshFailsWithUnauthorized();
+
+		verifyNoInteractions(refreshTokenRepository);
+		verifyRefreshDoesNotIssueOrSave();
+	}
+
+	@Test
+	void refreshFailsWithUnauthorizedWhenHashDoesNotExist() {
+		when(jwtTokenProvider.parseRefreshToken(REFRESH_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(7L, "USER")));
+		when(refreshTokenRepository.findAllByTokenHash(sha256(REFRESH_TOKEN)))
+			.thenReturn(List.of());
+
+		assertRefreshFailsWithUnauthorized();
+
+		verify(refreshTokenRepository, never()).revokeIfActiveAndNotExpired(any(), any());
+		verifyRefreshDoesNotIssueOrSave();
+	}
+
+	@Test
+	void refreshFailsWithUnauthorizedWhenHashMatchesMultipleRows() {
+		User user = existingUser(passwordEncoder.encode(RAW_PASSWORD));
+		RefreshToken first = storedRefreshToken(user, 11L);
+		RefreshToken second = storedRefreshToken(user, 12L);
+		when(jwtTokenProvider.parseRefreshToken(REFRESH_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(7L, "USER")));
+		when(refreshTokenRepository.findAllByTokenHash(sha256(REFRESH_TOKEN)))
+			.thenReturn(List.of(first, second));
+
+		assertRefreshFailsWithUnauthorized();
+
+		verify(refreshTokenRepository, never()).revokeIfActiveAndNotExpired(any(), any());
+		verifyRefreshDoesNotIssueOrSave();
+	}
+
+	@Test
+	void refreshFailsWithUnauthorizedWhenJwtUserDoesNotMatchStoredUser() {
+		User user = existingUser(passwordEncoder.encode(RAW_PASSWORD));
+		RefreshToken storedToken = storedRefreshToken(user, 11L);
+		when(jwtTokenProvider.parseRefreshToken(REFRESH_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(8L, "USER")));
+		when(refreshTokenRepository.findAllByTokenHash(sha256(REFRESH_TOKEN)))
+			.thenReturn(List.of(storedToken));
+
+		assertRefreshFailsWithUnauthorized();
+
+		verify(refreshTokenRepository, never()).revokeIfActiveAndNotExpired(any(), any());
+		verifyRefreshDoesNotIssueOrSave();
+	}
+
+	@Test
+	void refreshFailsWithUnauthorizedWhenConditionalRevokeReturnsZero() {
+		User user = existingUser(passwordEncoder.encode(RAW_PASSWORD));
+		RefreshToken storedToken = storedRefreshToken(user, 11L);
+		when(jwtTokenProvider.parseRefreshToken(REFRESH_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(7L, "USER")));
+		when(refreshTokenRepository.findAllByTokenHash(sha256(REFRESH_TOKEN)))
+			.thenReturn(List.of(storedToken));
+		when(refreshTokenRepository.revokeIfActiveAndNotExpired(11L, NOW)).thenReturn(0);
+
+		assertRefreshFailsWithUnauthorized();
+
+		verifyRefreshDoesNotIssueOrSave();
+	}
+
 	private User existingUser(String passwordHash) {
 		User user = User.create(EMAIL, passwordHash, NICKNAME, NOW.minusDays(1));
 		ReflectionTestUtils.setField(user, "id", 7L);
 		return user;
+	}
+
+	private RefreshToken storedRefreshToken(User user, Long id) {
+		RefreshToken refreshToken = RefreshToken.create(
+			user, sha256(REFRESH_TOKEN), NOW.plusDays(14), NOW.minusDays(1));
+		ReflectionTestUtils.setField(refreshToken, "id", id);
+		return refreshToken;
+	}
+
+	private void assertRefreshFailsWithUnauthorized() {
+		assertThatThrownBy(() -> authService.refresh(REFRESH_TOKEN))
+			.isInstanceOf(BusinessException.class)
+			.extracting(ex -> ((BusinessException)ex).getErrorCode())
+			.isEqualTo(ErrorCode.UNAUTHORIZED);
+	}
+
+	private void verifyRefreshDoesNotIssueOrSave() {
+		verify(jwtTokenProvider, never()).issue(any(), any());
+		verify(refreshTokenRepository, never()).save(any());
 	}
 
 	private void assertLoginFailsWithUnauthorized(String password) {

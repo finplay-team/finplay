@@ -296,12 +296,12 @@ ADR-0004에 따라 병합된 `V2__create_auth_account_tables.sql`은 수정하�
 
 - Produces: `TokenResponse AuthService.refresh(String rawRefreshToken)`
 
-- [ ] **Step 1: 서비스 실패 테스트를 작성한다**
+- [x] **Step 1: 서비스 실패 테스트를 작성한다**
   - 유효 JWT + 단일 DB 행 + 조건부 폐기 `1`이면 기존 `issueTokenPair` 경로로 새 쌍을 반환하고 새 해시 행을 저장한다.
   - JWT 파싱 실패, 해시 미존재, 해시 중복, JWT subject와 DB 사용자 불일치, 조건부 폐기 `0`은 모두 `UNAUTHORIZED`.
   - 실패 경로에서는 새 토큰을 발급하거나 새 Refresh Token 행을 저장하지 않는다.
   - 새 Refresh Token 원문이 Repository에 전달되지 않고 SHA-256 해시만 저장되는지 검증한다.
-- [ ] **Step 2: 단위 테스트 실패를 확인한다**
+- [x] **Step 2: 단위 테스트 실패를 확인한다**
 
   ```powershell
   .\gradlew.bat test --tests "*AuthServiceTest" --no-daemon --max-workers=1
@@ -309,27 +309,27 @@ ADR-0004에 따라 병합된 `V2__create_auth_account_tables.sql`은 수정하�
 
   Expected: `refresh` 부재로 컴파일 또는 새 테스트 FAIL.
 
-- [ ] **Step 3: 단일 `@Transactional` 회전 흐름을 구현한다**
+- [x] **Step 3: 단일 `@Transactional` 회전 흐름을 구현한다**
   - D1 순서로 JWT·DB 사용자를 검증한다.
   - 조건부 폐기 영향 행이 정확히 `1`일 때만 기존 `issueTokenPair`를 호출한다.
   - 만료·폐기·재사용·경합 패배의 내부 이유를 응답이나 로그로 구분해 노출하지 않는다.
-- [ ] **Step 4: 핵심 실제 MySQL 통합 실패 테스트를 작성한다**
+- [x] **Step 4: 핵심 실제 MySQL 통합 실패 테스트를 작성한다**
   - 로그인 → refresh 성공 → 이전 원문 재사용 401 → 새 원문은 다시 회전 가능.
   - 회전 뒤 기존 행은 폐기되고 새 해시 행 하나만 활성 상태다.
   - `CountDownLatch`로 두 스레드를 함께 출발시켜 같은 원문을 회전하면 결과가 정확히 `성공 1 + UNAUTHORIZED 1`이고 새 활성 행이 하나다.
   - 각 동시 호출은 별도 Spring 트랜잭션에서 실행되도록 서비스 public 메서드를 스레드에서 직접 호출한다. 테스트 메서드 자체에 전체 롤백 `@Transactional`을 붙이지 않는다.
-- [ ] **Step 5: 롤백 통합 실패 테스트를 작성한다**
+- [x] **Step 5: 롤백 통합 실패 테스트를 작성한다**
   - 실제 Testcontainers MySQL과 `@MockitoBean JwtTokenProvider`를 사용하는 별도 컨텍스트에서 유효 파싱은 성공시키고 새 쌍 발급은 런타임 예외로 실패시킨다.
   - `AuthService.refresh` 실패 뒤 새 트랜잭션으로 기존 행을 다시 조회해 `revokedAt == null`임을 확인한다.
   - 이후 발급 mock을 정상화해 같은 원문 회전이 성공함을 확인한다.
   - 단순 Mockito 단위 테스트 성공을 DB 롤백 검증으로 표현하지 않는다.
-- [ ] **Step 6: 대상 테스트를 순차 실행해 PASS를 확인한다**
+- [x] **Step 6: 대상 테스트를 순차 실행해 PASS를 확인한다**
 
   ```powershell
   .\gradlew.bat test --tests "*AuthServiceTest" --tests "*RefreshTokenIntegrationTest" --tests "*RefreshTokenRollbackIntegrationTest" --no-daemon --max-workers=1
   ```
 
-- [ ] **Step 7: 논리 커밋한다**
+- [x] **Step 7: 논리 커밋한다**
 
   ```powershell
   git add src/main/java/com/finplay/api/auth/service/AuthService.java src/test/java/com/finplay/api/auth/service

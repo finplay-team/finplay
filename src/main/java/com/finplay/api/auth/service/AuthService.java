@@ -9,6 +9,7 @@ import com.finplay.api.auth.dto.response.TokenResponse;
 import com.finplay.api.auth.repository.EmailVerificationRepository;
 import com.finplay.api.auth.repository.RefreshTokenRepository;
 import com.finplay.api.auth.repository.UserRepository;
+import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.auth.token.IssuedTokenPair;
 import com.finplay.api.auth.token.JwtTokenProvider;
 import com.finplay.api.common.BusinessException;
@@ -83,6 +84,29 @@ public class AuthService {
 			throw new BusinessException(ErrorCode.UNAUTHORIZED);
 		}
 		// 기존 Refresh Token은 폐기하지 않고 행을 추가만 한다 (다중 기기 로그인 유지, 폐기는 재발급·로그아웃 소관).
+		return issueTokenPair(user, now);
+	}
+
+	@Transactional
+	public TokenResponse refresh(String rawRefreshToken) {
+		AuthenticatedUser authenticatedUser = jwtTokenProvider.parseRefreshToken(rawRefreshToken)
+			.orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED));
+		LocalDateTime now = LocalDateTime.now(clock);
+		var refreshTokens = refreshTokenRepository.findAllByTokenHash(sha256(rawRefreshToken));
+		if (refreshTokens.size() != 1) {
+			throw new BusinessException(ErrorCode.UNAUTHORIZED);
+		}
+
+		RefreshToken refreshToken = refreshTokens.get(0);
+		User user = refreshToken.getUser();
+		if (!authenticatedUser.userId().equals(user.getId())) {
+			throw new BusinessException(ErrorCode.UNAUTHORIZED);
+		}
+
+		int revoked = refreshTokenRepository.revokeIfActiveAndNotExpired(refreshToken.getId(), now);
+		if (revoked != 1) {
+			throw new BusinessException(ErrorCode.UNAUTHORIZED);
+		}
 		return issueTokenPair(user, now);
 	}
 
