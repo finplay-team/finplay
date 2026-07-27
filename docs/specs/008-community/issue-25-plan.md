@@ -131,4 +131,3 @@ PRD §5와 현재 `ErrorCode`에 404 `NOT_FOUND`가 이미 존재하므로 게�
 - [ ] 목록·수정·삭제·댓글 등 다른 API를 구현하지 않는다.
 - [ ] 실제 Controller 매핑을 `docs/api-routes.md`에 동기화한다.
 - [ ] 대상 테스트와 `.\gradlew.bat build --no-daemon --max-workers=1`을 새로 실행해 통과한다.
-
