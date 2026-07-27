@@ -313,8 +313,10 @@
 | 21:06 | implementer | `.\gradlew.bat test --tests "*MeIntegrationTest" --no-daemon --max-workers=1` — 5/5 통과, `.\gradlew.bat spotlessApply` | issue-8-plan.md Task 3(실제 MySQL 가입 방식 판별·회원 간 격리·민감 필드 미노출), ADR-0003 Testcontainers 통합 테스트 |
 | 22:15 | implementer | `.\gradlew.bat build --no-daemon --max-workers=1` — BUILD SUCCESSFUL (대상 테스트 3종·spotlessApply 선행) | issue-8-plan.md Task 4, CLAUDE.md 규칙 4·7(완료 전 build, controller 변경 시 api-routes.md 동기화) |
 | 22:30 | reviewer(리뷰) | `git diff origin/dev...HEAD` (auth/me 관련 프로덕션·테스트·문서 파일), `MemberResponse`·`SocialAccountRepository`·`AuthService`·`AuthController`·마이그레이션(V2) 확인 | issue-8-plan.md D1~D7, conventions.md 레이어·DTO·Lombok·테스트 규칙, ADR-0002, ADR-0003, ADR-0004(마이그레이션 미추가 확인)
+| 10:20 | reviewer(리뷰) | `git diff origin/dev...HEAD`(커밋 4b7de6a·58ddc1f·f2d5521·58eb78d·62d858c) | issue-55-plan.md D1~D5, conventions.md, ADR-0002·0003·0004, docs/api-routes.md
 
 ## 모니터링 (사람용 요약)
+- Issue #55 리뷰 판정: 차단 0건, 권장 1건(tasks.md Issue #55 절 미추가), 참고 1건(EMAIL_VERIFICATION_SECRET 재사용은 계획서에서 이미 검토된 선택). D1~D5·HTTP 계약·재인증→중복→발송제한 순서·발송제한(userId)/무효화((userId,newEmail)) 구분이 코드·테스트에 그대로 반영됨을 확인, 머지 가능.
 - Issue #55 Task 4(통합 테스트) — `EmailChangeIntegrationTest` 7건 신설, `mysql:8.4` Testcontainers로 전부 통과(이 환경에서 Docker 가용 확인). 전체 회귀·문서 동기화는 메인 세션이 이어서 처리.
 - Issue #55 Task 3 — `EmailChangeRequest`·`EmailChangeController`(`POST /api/auth/email-changes`, Bearer 필수, 202 본문 없음) 추가, api-routes.md 동기화, 컴파일 통과.
 - Issue #55 Task 2 — `EmailChangeService.requestEmailChange` 신설: 재인증 증명(비밀번호/`reauthToken`) → 이메일 중복 → 발송 제한 순서로 판정 후 인증번호 발송, `AuthService` 미수정, 컴파일 통과.
