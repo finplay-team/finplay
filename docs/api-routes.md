@@ -19,6 +19,7 @@
 | GET | /api/community/posts?page=&size= | community | 인증 사용자의 게시물 목록을 최신순 페이지네이션으로 조회 | 008 COM-001, Issue #24 |
 | PATCH | /api/community/posts/{postId} | community | 본인 소유 커뮤니티 게시물의 제목·본문 수정 | 008 COM-001, Issue #26 |
 | DELETE | /api/community/posts/{postId} | community | 본인 소유 커뮤니티 게시물 삭제 (204, 본문 없음, 댓글도 함께 삭제) | 008 COM-001, Issue #27 |
+| GET | /api/community/posts/{postId}/comments | community | 인증 사용자가 게시물의 평면 댓글을 오래된 순으로 조회 | 008 COM-002, Issue #29 |
 | POST | /api/community/posts/{postId}/comments | community | 인증 사용자의 평면 댓글 작성 | 008 COM-002, Issue #28 |
 
 ## 시스템 엔드포인트
@@ -124,6 +125,14 @@ PR #49 차단 리뷰 후속 Fake 재사용·동시성·DB 불변 자동 회귀�
 | DELETE | /api/community/posts/{postId} | Access Bearer 필수 | 경로 변수 `postId`, 본문 없음 | 204 (본문 없음) | Access 인증 실패는 401 `UNAUTHORIZED`. 본인 소유가 아닌 게시물은 403 `FORBIDDEN`. 게시물 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 008 COM-001, Issue #27 |
 
 작성자 본인만 삭제할 수 있으며 소유자 확인은 Access Token의 인증 사용자로 판단한다. 삭제 시 해당 게시물에 달린 댓글을 먼저 모두 삭제한 뒤 게시물을 삭제한다.
+
+## 커뮤니티 게시물 댓글 목록 조회
+
+| Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|---|
+| GET | /api/community/posts/{postId}/comments | Access Bearer 필수 | 경로 변수 `postId` | 200 `[{"commentId":1,"authorNickname":"finplayer","content":"댓글 본문","createdAt":"2026-07-27T12:00:00"}]`; 댓글이 없으면 `[]` | Access 인증 실패는 401 `UNAUTHORIZED`. 게시물 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 008 COM-002, Issue #29 |
+
+대상 게시물의 댓글만 `createdAt` 오름차순으로 반환하며, 생성시각이 같으면 `commentId` 오름차순으로 안정 정렬한다. 작성자는 fetch join으로 함께 조회해 댓글 수에 따른 추가 쿼리를 방지한다.
 
 ## 커뮤니티 게시물 댓글 작성
 
