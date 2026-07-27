@@ -27,7 +27,7 @@ public class FakeOAuthAuthorizationProvider implements OAuthAuthorizationProvide
 
 	@Override
 	public URI createAuthorizationUri(OAuthProviderName provider, String state) {
-		String authorizationCode = grantStore.issue(state);
+		String authorizationCode = grantStore.issue(provider, state);
 		return UriComponentsBuilder.fromPath(CALLBACK_PATH)
 			.queryParam("code", authorizationCode)
 			.queryParam("state", state)

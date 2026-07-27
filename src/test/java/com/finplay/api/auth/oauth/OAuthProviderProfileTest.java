@@ -28,9 +28,10 @@ class OAuthProviderProfileTest {
 		.withUserConfiguration(
 			FakeOAuthGrantStore.class,
 			FakeOAuthAuthorizationProvider.class,
+			FakeKakaoOAuthCallbackProvider.class,
+			FakeNaverOAuthCallbackProvider.class,
 			KakaoOAuthAuthorizationProvider.class,
 			NaverOAuthAuthorizationProvider.class,
-			FakeOAuthCallbackProvider.class,
 			KakaoOAuthCallbackProvider.class,
 			NaverOAuthCallbackProvider.class);
 
@@ -43,9 +44,13 @@ class OAuthProviderProfileTest {
 			assertThat(context).hasSingleBean(FakeOAuthGrantStore.class);
 			assertThat(context.getBean(OAuthAuthorizationProvider.class))
 				.isInstanceOf(FakeOAuthAuthorizationProvider.class);
-			assertThat(context).hasSingleBean(OAuthCallbackProvider.class);
-			assertThat(context.getBean(OAuthCallbackProvider.class))
-				.isInstanceOf(FakeOAuthCallbackProvider.class);
+			assertThat(context.getBeansOfType(OAuthCallbackProvider.class))
+				.hasSize(2)
+				.containsOnlyKeys(
+					"fakeKakaoOAuthCallbackProvider",
+					"fakeNaverOAuthCallbackProvider");
+			assertThat(context.getBeansOfType(OAuthCallbackProvider.class).values())
+				.allMatch(FakeOAuthCallbackProvider.class::isInstance);
 			assertThat(context).doesNotHaveBean(KakaoOAuthAuthorizationProvider.class);
 			assertThat(context).doesNotHaveBean(NaverOAuthAuthorizationProvider.class);
 			assertThat(context).doesNotHaveBean(KakaoOAuthCallbackProvider.class);

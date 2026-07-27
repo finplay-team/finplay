@@ -6,9 +6,7 @@ import com.finplay.api.common.ErrorCode;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
-@Component
-@Profile("!prod & !oauth-real")
-public final class FakeOAuthCallbackProvider implements OAuthCallbackProvider {
+public class FakeOAuthCallbackProvider implements OAuthCallbackProvider {
 
 	private static final String NO_EMAIL_CODE = "fake-code-no-email";
 	private static final String EXISTING_EMAIL_CODE = "fake-code-existing-email";
@@ -17,14 +15,16 @@ public final class FakeOAuthCallbackProvider implements OAuthCallbackProvider {
 	private static final String EXISTING_EMAIL = "existing-oauth@finplay.test";
 
 	private final FakeOAuthGrantStore grantStore;
+	private final OAuthProviderName provider;
 
-	public FakeOAuthCallbackProvider(FakeOAuthGrantStore grantStore) {
+	public FakeOAuthCallbackProvider(FakeOAuthGrantStore grantStore, OAuthProviderName provider) {
 		this.grantStore = grantStore;
+		this.provider = provider;
 	}
 
 	@Override
-	public boolean supports(OAuthProviderName provider) {
-		return provider == OAuthProviderName.KAKAO || provider == OAuthProviderName.NAVER;
+	public boolean supports(OAuthProviderName candidate) {
+		return provider == candidate;
 	}
 
 	@Override
@@ -37,9 +37,27 @@ public final class FakeOAuthCallbackProvider implements OAuthCallbackProvider {
 	}
 
 	private OAuthUserDto fetchIssuedUser(String authorizationCode, String state) {
-		if (!grantStore.consume(authorizationCode, state)) {
+		if (!grantStore.consume(provider, authorizationCode, state)) {
 			throw new BusinessException(ErrorCode.OAUTH_AUTHORIZATION_FAILED);
 		}
 		return new OAuthUserDto(PROVIDER_USER_ID, DEFAULT_EMAIL);
+	}
+}
+
+@Component
+@Profile("!prod & !oauth-real")
+final class FakeKakaoOAuthCallbackProvider extends FakeOAuthCallbackProvider {
+
+	FakeKakaoOAuthCallbackProvider(FakeOAuthGrantStore grantStore) {
+		super(grantStore, OAuthProviderName.KAKAO);
+	}
+}
+
+@Component
+@Profile("!prod & !oauth-real")
+final class FakeNaverOAuthCallbackProvider extends FakeOAuthCallbackProvider {
+
+	FakeNaverOAuthCallbackProvider(FakeOAuthGrantStore grantStore) {
+		super(grantStore, OAuthProviderName.NAVER);
 	}
 }

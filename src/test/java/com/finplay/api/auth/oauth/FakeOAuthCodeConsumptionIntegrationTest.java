@@ -11,6 +11,7 @@ import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
@@ -38,7 +39,7 @@ class FakeOAuthCodeConsumptionIntegrationTest {
 	private FakeOAuthAuthorizationProvider authorizationProvider;
 
 	@Autowired
-	private FakeOAuthCallbackProvider callbackProvider;
+	private List<OAuthCallbackProvider> callbackProviders;
 
 	@Autowired
 	private FakeOAuthGrantStore grantStore;
@@ -47,8 +48,12 @@ class FakeOAuthCodeConsumptionIntegrationTest {
 	void springAuthorizationAndCallbackProvidersShareSameGrantStoreBean() {
 		assertThat(ReflectionTestUtils.getField(authorizationProvider, "grantStore"))
 			.isSameAs(grantStore);
-		assertThat(ReflectionTestUtils.getField(callbackProvider, "grantStore"))
-			.isSameAs(grantStore);
+		assertThat(callbackProviders)
+			.filteredOn(FakeOAuthCallbackProvider.class::isInstance)
+			.hasSize(2)
+			.allSatisfy(provider -> assertThat(
+				ReflectionTestUtils.getField(provider, "grantStore"))
+				.isSameAs(grantStore));
 	}
 
 	@Test
@@ -57,9 +62,11 @@ class FakeOAuthCodeConsumptionIntegrationTest {
 		Authorization second = authorize("state-second");
 
 		assertThat(first.code()).isNotBlank().isNotEqualTo(second.code());
-		assertThat(callbackProvider.fetchUser(first.code(), first.state()))
+		assertThat(callbackProvider(OAuthProviderName.KAKAO)
+			.fetchUser(first.code(), first.state()))
 			.isEqualTo(DEFAULT_USER);
-		assertThatThrownBy(() -> callbackProvider.fetchUser(second.code(), first.state()))
+		assertThatThrownBy(() -> callbackProvider(OAuthProviderName.KAKAO)
+			.fetchUser(second.code(), first.state()))
 			.isInstanceOfSatisfying(
 				BusinessException.class,
 				ex -> assertThat(ex.getErrorCode())
@@ -70,9 +77,9 @@ class FakeOAuthCodeConsumptionIntegrationTest {
 	void generatedCodeSucceedsOnlyOnceForMatchingState() {
 		Authorization authorization = authorize("single-use-state");
 
-		assertThat(callbackProvider.fetchUser(
+		assertThat(callbackProvider(OAuthProviderName.KAKAO).fetchUser(
 			authorization.code(), authorization.state())).isEqualTo(DEFAULT_USER);
-		assertThatThrownBy(() -> callbackProvider.fetchUser(
+		assertThatThrownBy(() -> callbackProvider(OAuthProviderName.KAKAO).fetchUser(
 			authorization.code(), authorization.state()))
 			.isInstanceOfSatisfying(
 				BusinessException.class,
@@ -93,7 +100,8 @@ class FakeOAuthCodeConsumptionIntegrationTest {
 				throw new IllegalStateException("concurrent callback start timeout");
 			}
 			try {
-				callbackProvider.fetchUser(authorization.code(), authorization.state());
+				callbackProvider(OAuthProviderName.KAKAO)
+					.fetchUser(authorization.code(), authorization.state());
 				return Attempt.succeeded();
 			} catch (BusinessException ex) {
 				return Attempt.failed(ex.getErrorCode());
@@ -125,18 +133,54 @@ class FakeOAuthCodeConsumptionIntegrationTest {
 
 	@Test
 	void specialFixtureCodesRemainAvailable() {
-		assertThat(callbackProvider.fetchUser("fake-code-no-email", "fixture-state"))
+		assertThat(callbackProvider(OAuthProviderName.KAKAO)
+			.fetchUser("fake-code-no-email", "fixture-state"))
 			.isEqualTo(new OAuthUserDto("fake-oauth-user", null));
-		assertThat(callbackProvider.fetchUser("fake-code-existing-email", "fixture-state"))
+		assertThat(callbackProvider(OAuthProviderName.NAVER)
+			.fetchUser("fake-code-existing-email", "fixture-state"))
 			.isEqualTo(new OAuthUserDto(
 				"fake-oauth-user", "existing-oauth@finplay.test"));
 	}
 
+	@Test
+	void wrongProviderDoesNotConsumeGrantBeforeOriginalProviderUsesItOnce() {
+		Authorization authorization = authorize(
+			OAuthProviderName.KAKAO, "provider-bound-state");
+
+		assertThatThrownBy(() -> callbackProvider(OAuthProviderName.NAVER)
+			.fetchUser(authorization.code(), authorization.state()))
+			.isInstanceOfSatisfying(
+				BusinessException.class,
+				ex -> assertThat(ex.getErrorCode())
+					.isEqualTo(ErrorCode.OAUTH_AUTHORIZATION_FAILED));
+		assertThat(callbackProvider(OAuthProviderName.KAKAO)
+			.fetchUser(authorization.code(), authorization.state()))
+			.isEqualTo(DEFAULT_USER);
+		assertThatThrownBy(() -> callbackProvider(OAuthProviderName.KAKAO)
+			.fetchUser(authorization.code(), authorization.state()))
+			.isInstanceOfSatisfying(
+				BusinessException.class,
+				ex -> assertThat(ex.getErrorCode())
+					.isEqualTo(ErrorCode.OAUTH_AUTHORIZATION_FAILED));
+	}
+
 	private Authorization authorize(String state) {
+		return authorize(OAuthProviderName.KAKAO, state);
+	}
+
+	private Authorization authorize(OAuthProviderName provider, String state) {
 		URI uri = authorizationProvider.createAuthorizationUri(
-			OAuthProviderName.KAKAO, state);
+			provider, state);
 		Map<String, String> query = queryParameters(uri);
 		return new Authorization(query.get("code"), query.get("state"));
+	}
+
+	private OAuthCallbackProvider callbackProvider(OAuthProviderName provider) {
+		return callbackProviders.stream()
+			.filter(candidate -> candidate instanceof FakeOAuthCallbackProvider)
+			.filter(candidate -> candidate.supports(provider))
+			.findFirst()
+			.orElseThrow();
 	}
 
 	private static Attempt get(Future<Attempt> future) {

@@ -26,21 +26,24 @@ public final class FakeOAuthGrantStore {
 		this.secureRandom = secureRandom;
 	}
 
-	public String issue(String state) {
+	public String issue(OAuthProviderName provider, String state) {
 		while (true) {
 			byte[] randomBytes = new byte[CODE_BYTE_LENGTH];
 			secureRandom.nextBytes(randomBytes);
 			String code = BASE64_URL_ENCODER.encodeToString(randomBytes);
-			if (grants.add(new FakeOAuthGrant(code, state))) {
+			if (grants.add(new FakeOAuthGrant(provider, code, state))) {
 				return code;
 			}
 		}
 	}
 
-	public boolean consume(String code, String state) {
-		return code != null && state != null && grants.remove(new FakeOAuthGrant(code, state));
+	public boolean consume(OAuthProviderName provider, String code, String state) {
+		return provider != null
+			&& code != null
+			&& state != null
+			&& grants.remove(new FakeOAuthGrant(provider, code, state));
 	}
 
-	private record FakeOAuthGrant(String code, String state) {
+	private record FakeOAuthGrant(OAuthProviderName provider, String code, String state) {
 	}
 }

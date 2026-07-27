@@ -12,20 +12,21 @@ import org.junit.jupiter.api.Test;
 class FakeOAuthCallbackProviderTest {
 
 	private final FakeOAuthGrantStore grantStore = new FakeOAuthGrantStore();
-	private final FakeOAuthCallbackProvider provider = new FakeOAuthCallbackProvider(grantStore);
+	private final FakeOAuthCallbackProvider provider = new FakeOAuthCallbackProvider(grantStore,
+		OAuthProviderName.KAKAO);
 
 	@Test
-	@DisplayName("Fake callback 공급자는 KAKAO와 NAVER를 모두 지원한다")
-	void supportsBothProviders() {
+	@DisplayName("provider별 Fake callback 공급자는 자신의 provider만 지원한다")
+	void supportsOnlyConfiguredProvider() {
 		assertThat(provider.supports(OAuthProviderName.KAKAO)).isTrue();
-		assertThat(provider.supports(OAuthProviderName.NAVER)).isTrue();
+		assertThat(provider.supports(OAuthProviderName.NAVER)).isFalse();
 		assertThat(provider.supports(null)).isFalse();
 	}
 
 	@Test
 	@DisplayName("발급된 code와 같은 state는 결정적인 공급자 사용자 ID와 이메일을 반환한다")
 	void fetchUserReturnsDeterministicDefaultUserForIssuedGrant() {
-		String code = grantStore.issue("state-value");
+		String code = grantStore.issue(OAuthProviderName.KAKAO, "state-value");
 
 		assertThat(provider.fetchUser(code, "state-value"))
 			.isEqualTo(new OAuthUserDto("fake-oauth-user", "fake-oauth@finplay.test"));
@@ -67,7 +68,7 @@ class FakeOAuthCallbackProviderTest {
 	@DisplayName("state 불일치와 재사용은 code와 state를 노출하지 않는 인가 실패다")
 	void fetchUserRejectsMismatchedAndReusedGrantWithoutSensitiveValues() {
 		String state = "sensitive-issued-state";
-		String code = grantStore.issue(state);
+		String code = grantStore.issue(OAuthProviderName.KAKAO, state);
 
 		assertAuthorizationFailureWithoutValues(
 			() -> provider.fetchUser(code, "different-sensitive-state"),
