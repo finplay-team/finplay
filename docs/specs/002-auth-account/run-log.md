@@ -56,7 +56,7 @@
 | 구분 | 공급자/명령 | 결과 | 검증 수준·사유 |
 |---|---|---|---|
 | 자동 회귀 | Fake OAuth 대상 테스트 | PASS | 단위·Mock HTTP·WebMvc·`mysql:8.4` Testcontainers. 실제 OAuth 아님 |
-| 전체 게이트 | `.\gradlew.bat build --no-daemon --max-workers=1` | PASS | HEAD `273b6faab79e28bacb500dd7690072a493c7f582`, 전체 tests·JaCoCo·SpotBugs·Spotless `BUILD SUCCESSFUL` |
+| 전체 게이트 | `.\gradlew.bat build --no-daemon --max-workers=1` | PASS | 검증 실행 HEAD `03040887451e2d842af7b987561978bf11288cc9`, 전체 tests·JaCoCo·SpotBugs·Spotless `BUILD SUCCESSFUL`(13 tasks up-to-date). 이후 검증 기록 문서만 변경 |
 | 실제 OAuth | KAKAO | PASS | 사용자 조작 authorize→로그인·이메일 동의→callback→코드 교환→사용자 정보→신규/기존→JWT 및 DB 검증 완료. 기존 회원 응답 렌더링 제한은 아래 기록 |
 | 실제 OAuth | NAVER | PASS | 사용자 조작 authorize→로그인/동의→callback→코드 교환→사용자 정보→신규/기존→JWT 및 DB 검증 완료. 기존 회원 두 번째 응답 렌더링 제한은 아래 기록 |
 
@@ -84,7 +84,7 @@
 ### PR 검증·리뷰 기록
 
 - 자동 회귀와 실제 KAKAO·NAVER 스모크를 각각 별도 증빙으로 기록했다. 두 공급자 `PASS`로 Task 5와 Issue #10 완료 조건을 충족한다.
-- 런타임 점검에서 발견한 `RestClient.Builder` 자동설정 누락은 의존성과 실제 프로필 컨텍스트·timeout 반증 테스트로 보완했고, 최종 HEAD 전체 build와 실제 jar authorize 302로 재검증했다.
+- 런타임 점검에서 발견한 `RestClient.Builder` 자동설정 누락은 의존성과 실제 프로필 컨텍스트·timeout 반증 테스트로 보완했고, 검증 실행 HEAD 전체 build와 실제 jar authorize 302로 재검증했다.
 
 ## Issue #7
 

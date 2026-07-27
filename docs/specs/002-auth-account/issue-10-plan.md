@@ -294,7 +294,7 @@ OAuthUserDto fetchUser(String authorizationCode, String state);
 | 구분 | 공급자/명령 | 결과 | 검증 수준·사유 |
 |---|---|---|---|
 | 자동 회귀 | Fake OAuth 대상 테스트 | PASS | 단위·Mock HTTP·WebMvc·MySQL 8.4 Testcontainers. 실제 OAuth 아님 |
-| 전체 게이트 | `.\gradlew.bat build --no-daemon --max-workers=1` | PASS | HEAD `273b6faab79e28bacb500dd7690072a493c7f582`, `BUILD SUCCESSFUL` |
+| 전체 게이트 | `.\gradlew.bat build --no-daemon --max-workers=1` | PASS | 검증 실행 HEAD `03040887451e2d842af7b987561978bf11288cc9`, `BUILD SUCCESSFUL`(13 tasks up-to-date). 이후 검증 기록 문서만 변경 |
 | 실제 OAuth | KAKAO | PASS | 신규/기존·JWT·DB 검증 완료. 기존 회원 요청 2회의 응답 본문은 Chrome `ERR_BLOCKED_BY_CLIENT`로 미확인했으며 Refresh Token 행 커밋으로 서버 발급 경로 실행 확인 |
 | 실제 OAuth | NAVER | PASS | 신규/기존·JWT·DB 검증 완료. 기존 회원 두 번째 응답 본문은 Chrome `ERR_BLOCKED_BY_CLIENT`로 미확인했으며 새 Refresh Token 행 커밋으로 서버 발급 경로 실행 확인 |
 
