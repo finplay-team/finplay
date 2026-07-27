@@ -20,6 +20,14 @@
 
 - `EmailChangeService`를 신설해 `AuthService.getMe`와 동일한 패턴으로 `socialAccountRepository.findByUserId` 존재 여부로 EMAIL/OAuth를 판별하고, EMAIL은 비밀번호, OAuth는 `reauthTokenRepository.consumeIfValidForUser`로 재인증한 뒤(두 경우 모두 실패 시 403 통일) 중복 이메일 409 → 발송 제한 429(`EmailChangeVerificationRepository.countByUserIdAndCreatedAtAfter`) → 이전 코드 무효화 → 코드 생성·HMAC 저장·발송 순서로 구현했다. `AuthService`는 수정하지 않았다.
 
+### Task 3: `EmailChangeController`와 HTTP 계약
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| implementer | implementer | `JAVA_HOME="C:/Program Files/Java/jdk-17" ./gradlew.bat compileJava --no-daemon --max-workers=1` — `BUILD SUCCESSFUL` | issue-55-plan.md Task 3·HTTP 계약 표(202 본문 없음, `newEmail` 필수·`currentPassword`/`reauthToken` 선택), conventions.md DTO 검증·API 규칙 |
+
+- `EmailChangeRequest`(`newEmail`만 `@NotBlank`+`@Email`+`@Size(max=255)`, `currentPassword`/`reauthToken`은 `@Size`만 적용해 서비스 계층 403 판단에 위임)와 `EmailChangeController`(`POST /api/auth/email-changes`, Bearer 인증, 202 본문 없음)를 추가했다. `SecurityConfig`는 수정하지 않았고, `docs/api-routes.md`에 라우트·전용 절·보호 경로 표를 갱신했다.
+
 ## Issue #53
 
 ### Task 1: state 서명·검증 계약과 오류 코드·환경변수
@@ -299,6 +307,7 @@
 | 22:30 | reviewer(리뷰) | `git diff origin/dev...HEAD` (auth/me 관련 프로덕션·테스트·문서 파일), `MemberResponse`·`SocialAccountRepository`·`AuthService`·`AuthController`·마이그레이션(V2) 확인 | issue-8-plan.md D1~D7, conventions.md 레이어·DTO·Lombok·테스트 규칙, ADR-0002, ADR-0003, ADR-0004(마이그레이션 미추가 확인)
 
 ## 모니터링 (사람용 요약)
+- Issue #55 Task 3 — `EmailChangeRequest`·`EmailChangeController`(`POST /api/auth/email-changes`, Bearer 필수, 202 본문 없음) 추가, api-routes.md 동기화, 컴파일 통과.
 - Issue #55 Task 2 — `EmailChangeService.requestEmailChange` 신설: 재인증 증명(비밀번호/`reauthToken`) → 이메일 중복 → 발송 제한 순서로 판정 후 인증번호 발송, `AuthService` 미수정, 컴파일 통과.
 - 14:30 — V2 마이그레이션(auth 5개 테이블) + User·EmailVerification 엔티티/Repository 추가, 컴파일 통과.
 - 15:10 — EmailSender 어댑터(Fake=`!prod`·Resend=`prod` RestClient) 추가, prod yml에 resend/email 설정, 컴파일 통과.
