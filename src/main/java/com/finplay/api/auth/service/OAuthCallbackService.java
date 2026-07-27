@@ -1,9 +1,10 @@
 // OAuth callback state를 검증한 뒤 공급자 조회와 FinPlay 로그인을 조정한다.
 package com.finplay.api.auth.service;
 
-import com.finplay.api.auth.dto.response.TokenResponse;
 import com.finplay.api.auth.oauth.OAuthCallbackProvider;
 import com.finplay.api.auth.oauth.OAuthProviderName;
+import com.finplay.api.auth.oauth.OAuthStateClaims;
+import com.finplay.api.auth.oauth.OAuthStateGenerator;
 import com.finplay.api.auth.oauth.OAuthUserDto;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
@@ -19,13 +20,16 @@ public class OAuthCallbackService {
 
 	private final List<OAuthCallbackProvider> callbackProviders;
 	private final AuthService authService;
+	private final OAuthStateGenerator stateGenerator;
 
-	public TokenResponse callback(
+	// purpose는 서명된 state 안에만 있어 응답 타입을 컨트롤러 라우팅으로 나눌 수 없다.
+	// Jackson은 선언 타입이 아니라 런타임 타입으로 직렬화하므로 Object 반환으로 분기한다.
+	public Object callback(
 		String rawProvider, String authorizationCode, String queryState, String cookieState) {
 		return callback(rawProvider, authorizationCode, queryState, cookieState, null);
 	}
 
-	public TokenResponse callback(
+	public Object callback(
 		String rawProvider,
 		String authorizationCode,
 		String queryState,
@@ -34,6 +38,7 @@ public class OAuthCallbackService {
 		OAuthProviderName provider = OAuthProviderName.from(rawProvider)
 			.orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_ERROR));
 		validateState(queryState, cookieState);
+		OAuthStateClaims claims = stateGenerator.verify(queryState);
 		if (authorizationError != null && !authorizationError.isBlank()) {
 			throw new BusinessException(ErrorCode.OAUTH_AUTHORIZATION_FAILED);
 		}
@@ -48,7 +53,10 @@ public class OAuthCallbackService {
 		OAuthUserDto oauthUser = callbackProvider.fetchUser(authorizationCode, queryState);
 		validateOAuthUser(oauthUser);
 
-		return authService.oauthLogin(provider, oauthUser);
+		return switch (claims.purpose()) {
+			case LOGIN -> authService.oauthLogin(provider, oauthUser);
+			case REAUTH -> authService.reauthenticate(claims.userId(), provider, oauthUser);
+		};
 	}
 
 	private void validateState(String queryState, String cookieState) {

@@ -11,6 +11,7 @@ import java.security.SecureRandom;
 import java.util.Base64;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -29,6 +30,8 @@ public class OAuthStateGenerator {
 	private final SecureRandom secureRandom;
 	private final byte[] hmacKey;
 
+	// 테스트용 생성자가 하나 더 있어 Spring이 후보를 고를 수 없으므로 주입 대상을 명시한다.
+	@Autowired
 	public OAuthStateGenerator(
 		@Value("${oauth.state-secret}")
 		String stateSecret) {

@@ -14,6 +14,12 @@
 |---|---|---|---|
 | 00:05 | implementer | `.\gradlew.bat compileJava compileTestJava --no-daemon --max-workers=1`; `.\gradlew.bat spotlessApply spotbugsMain`; `.\gradlew.bat test --tests "*AuthServiceTest" --tests "*OAuthAuthServiceTest"` — 모두 `BUILD SUCCESSFUL` | issue-53-plan.md D4(조회+발급만 하는 별도 트랜잭션)·D5(`reauth_tokens` 스키마·엔티티 패턴), ADR-0004(신규 V5 마이그레이션), conventions.md 엔티티·DTO 규칙 |
 
+### Task 3: callback purpose 분기와 reauth 응답 계약
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| 00:20 | implementer | `.\gradlew.bat test --tests "*OAuthLoginIntegrationTest" --tests "*FakeOAuthFlowIntegrationTest" --tests "*FakeOAuthCodeConsumptionIntegrationTest"` — 17건 전부 실패 후 원인 수정하고 재실행해 `BUILD SUCCESSFUL`; `.\gradlew.bat build --no-daemon --max-workers=1` — 503 tests `BUILD SUCCESSFUL` | issue-53-plan.md D3(분기 순서)·D8(`ReauthTokenResponse` 계약), ADR-0003 Testcontainers 통합 테스트, CLAUDE.md 규칙 4·7·9 |
+
 ## Issue #10
 
 ### PR #49 차단 리뷰 대응 및 최종 검증
@@ -275,4 +281,5 @@
 - 22:15 — Issue #8 Task 4: `GET /api/auth/me` 실제 계약(응답 4필드·401 공통 포맷·SecurityConfig 미변경)을 api-routes.md에 반영하고 tasks.md의 JWT·Security 항목을 완료 처리했다. plan.md API 표는 313fec8에서 이미 갱신돼 있어 확인만 했고, 전체 `build`를 직렬로 돌려 BUILD SUCCESSFUL을 확인했다.
 - 22:30 — 리뷰 판정: 차단 0건. AUTH-005 조회 계약(민감 필드 미노출·가입 방식 판별)과 D1~D7 설계가 구현·테스트에 그대로 반영됨을 확인, 머지 가능.
 - 23:30 — Issue #53 Task 1: `OAuthPurpose`·`OAuthStateClaims`와 HMAC-SHA-256 서명/검증(`generate(purpose, userId)`·`verify`, 실패는 전부 403 `REAUTHENTICATION_FAILED`)을 `OAuthStateGenerator`에 추가하고 `OAUTH_STATE_SECRET`을 yml·.env.example·build.gradle test 환경에 배선했다. `OAuthAuthorizationService.authorize`는 `generate(LOGIN, null)` 호출로만 바꿔 302 계약은 그대로 회귀 통과했다.
+- 00:20 — Issue #53 Task 3: `OAuthCallbackService`에 `stateGenerator.verify` 호출과 purpose 분기를 넣고 서비스·컨트롤러 반환 타입을 `Object`로 바꿨다. 실제 MySQL 통합 테스트를 처음 돌려서야 Task 1이 심어둔 결함(생성자 2개 `@Component`에 `@Autowired` 누락 → `@SpringBootTest` 전체가 `No default constructor found`)이 드러났고, 이는 컴파일·단위 테스트만으로는 잡히지 않아 `docs/agent-mistakes.md`에 기록했다. `ErrorCodeTest`의 코드 개수 고정(19→20)도 Task 1 여파로 함께 갱신했다.
 - 00:05 — Issue #53 Task 2: `V5__create_reauth_tokens_table.sql`·`ReauthToken`·`ReauthTokenRepository`·`ReauthTokenGenerator`·`ReauthTokenResponse`를 추가하고 `AuthService.reauthenticate`(회원·소셜계정 조회 후 해시만 저장, 실패는 전부 403)를 구현했다. `AuthService` 생성자가 2개 늘어 `AuthServiceTest`·`OAuthAuthServiceTest`의 생성 호출부를 갱신했고 기존 케이스는 그대로 통과했다. Docker가 없어 `@DataJpaTest`·Testcontainers 검증은 tester에게 위임한다.

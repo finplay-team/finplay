@@ -3,13 +3,18 @@ package com.finplay.api.auth.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
+import com.finplay.api.auth.dto.response.ReauthTokenResponse;
 import com.finplay.api.auth.dto.response.TokenResponse;
 import com.finplay.api.auth.oauth.OAuthCallbackProvider;
 import com.finplay.api.auth.oauth.OAuthProviderName;
+import com.finplay.api.auth.oauth.OAuthPurpose;
+import com.finplay.api.auth.oauth.OAuthStateGenerator;
 import com.finplay.api.auth.oauth.OAuthUserDto;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
@@ -29,7 +34,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class OAuthCallbackServiceTest {
 
 	private static final String AUTHORIZATION_CODE = "authorization-code";
-	private static final String ASCII_STATE = "state-value_123";
+	private static final OAuthStateGenerator STATE_GENERATOR = new OAuthStateGenerator(
+		"test-oauth-state-secret-that-is-at-least-32-bytes");
+	private static final String ASCII_STATE = STATE_GENERATOR.generate(OAuthPurpose.LOGIN, null);
 
 	@Mock
 	private OAuthCallbackProvider kakaoProvider;
@@ -44,7 +51,8 @@ class OAuthCallbackServiceTest {
 
 	@BeforeEach
 	void setUp() {
-		callbackService = new OAuthCallbackService(List.of(kakaoProvider, naverProvider), authService);
+		callbackService = new OAuthCallbackService(
+			List.of(kakaoProvider, naverProvider), authService, STATE_GENERATOR);
 	}
 
 	@ParameterizedTest
@@ -63,7 +71,7 @@ class OAuthCallbackServiceTest {
 		given(selectedProvider.fetchUser(AUTHORIZATION_CODE, ASCII_STATE)).willReturn(oauthUser);
 		given(authService.oauthLogin(provider, oauthUser)).willReturn(expected);
 
-		TokenResponse actual = callbackService.callback(rawProvider, AUTHORIZATION_CODE, ASCII_STATE, ASCII_STATE);
+		Object actual = callbackService.callback(rawProvider, AUTHORIZATION_CODE, ASCII_STATE, ASCII_STATE);
 
 		assertThat(actual).isEqualTo(expected);
 		verify(selectedProvider).fetchUser(AUTHORIZATION_CODE, ASCII_STATE);
@@ -71,18 +79,59 @@ class OAuthCallbackServiceTest {
 	}
 
 	@Test
-	@DisplayName("동일한 UTF-8 state는 바이트 기준 비교를 통과한다")
-	void callbackAcceptsEqualUtf8State() {
+	@DisplayName("query와 cookie가 같아도 서명되지 않은 state는 재인증 실패로 거부한다")
+	void callbackRejectsUnsignedStateThatMatchesCookie() {
 		String utf8State = "상태-검증-🔐";
-		OAuthUserDto oauthUser = new OAuthUserDto("provider-user-id", "member@example.com");
-		TokenResponse expected = tokenResponse();
-		given(kakaoProvider.supports(OAuthProviderName.KAKAO)).willReturn(true);
-		given(kakaoProvider.fetchUser(AUTHORIZATION_CODE, utf8State)).willReturn(oauthUser);
-		given(authService.oauthLogin(OAuthProviderName.KAKAO, oauthUser)).willReturn(expected);
 
-		TokenResponse actual = callbackService.callback("kakao", AUTHORIZATION_CODE, utf8State, utf8State);
+		assertThatThrownBy(
+			() -> callbackService.callback("kakao", AUTHORIZATION_CODE, utf8State, utf8State))
+			.isInstanceOfSatisfying(
+				BusinessException.class,
+				exception -> assertThat(exception.getErrorCode())
+					.isEqualTo(ErrorCode.REAUTHENTICATION_FAILED));
+
+		verifyNoInteractions(kakaoProvider, naverProvider, authService);
+	}
+
+	@Test
+	@DisplayName("REAUTH purpose state는 claims의 userId와 provider·공급자 사용자 정보를 그대로 AuthService.reauthenticate에 위임한다")
+	void callbackDispatchesReauthPurposeToAuthServiceReauthenticate() {
+		String reauthState = STATE_GENERATOR.generate(OAuthPurpose.REAUTH, 7L);
+		OAuthUserDto oauthUser = new OAuthUserDto("provider-user-id", "member@example.com");
+		ReauthTokenResponse expected = new ReauthTokenResponse("raw-reauth-token", 300L);
+		given(kakaoProvider.supports(OAuthProviderName.KAKAO)).willReturn(true);
+		given(kakaoProvider.fetchUser(AUTHORIZATION_CODE, reauthState)).willReturn(oauthUser);
+		given(authService.reauthenticate(7L, OAuthProviderName.KAKAO, oauthUser)).willReturn(expected);
+
+		Object actual = callbackService.callback(
+			"kakao", AUTHORIZATION_CODE, reauthState, reauthState);
 
 		assertThat(actual).isEqualTo(expected);
+		verify(authService).reauthenticate(7L, OAuthProviderName.KAKAO, oauthUser);
+		verify(authService, never()).oauthLogin(any(), any());
+	}
+
+	@ParameterizedTest
+	@MethodSource("tamperedStateAuthorizationErrors")
+	@DisplayName("서명은 유효했으나 위조된 state는 인가 취소 error query·공급자 호출보다 먼저 재인증 실패로 거부한다")
+	void callbackRejectsTamperedSignedStateBeforeAuthorizationErrorAndFetchUser(
+		String authorizationError) {
+		String validState = STATE_GENERATOR.generate(OAuthPurpose.REAUTH, 7L);
+		String[] parts = validState.split("\\.");
+		String tamperedState = parts[0] + "." + new StringBuilder(parts[1]).reverse();
+
+		assertThatThrownBy(() -> callbackService.callback(
+			"kakao", AUTHORIZATION_CODE, tamperedState, tamperedState, authorizationError))
+			.isInstanceOfSatisfying(
+				BusinessException.class,
+				exception -> assertThat(exception.getErrorCode())
+					.isEqualTo(ErrorCode.REAUTHENTICATION_FAILED));
+
+		verifyNoInteractions(kakaoProvider, naverProvider, authService);
+	}
+
+	private static Stream<Arguments> tamperedStateAuthorizationErrors() {
+		return Stream.of(Arguments.of((Object)null), Arguments.of("access_denied"));
 	}
 
 	@ParameterizedTest

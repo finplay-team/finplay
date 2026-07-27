@@ -10,8 +10,8 @@ import org.springframework.http.HttpStatus;
 class ErrorCodeTest {
 
 	@Test
-	void hasExactlyNineteenErrorCodesFromPrdAndOAuthSpec() {
-		assertThat(ErrorCode.values()).hasSize(19);
+	void hasExactlyTwentyErrorCodesFromPrdAndOAuthSpec() {
+		assertThat(ErrorCode.values()).hasSize(20);
 	}
 
 	@Test
@@ -23,6 +23,7 @@ class ErrorCodeTest {
 			Map.entry(ErrorCode.OAUTH_EMAIL_REQUIRED, HttpStatus.BAD_REQUEST),
 			Map.entry(ErrorCode.UNAUTHORIZED, HttpStatus.UNAUTHORIZED),
 			Map.entry(ErrorCode.FORBIDDEN, HttpStatus.FORBIDDEN),
+			Map.entry(ErrorCode.REAUTHENTICATION_FAILED, HttpStatus.FORBIDDEN),
 			Map.entry(ErrorCode.NOT_FOUND, HttpStatus.NOT_FOUND),
 			Map.entry(ErrorCode.DUPLICATE_RESOURCE, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.EMAIL_VERIFICATION_REQUIRED, HttpStatus.CONFLICT),

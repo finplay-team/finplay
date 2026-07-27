@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.finplay.api.auth.config.SecurityConfig;
+import com.finplay.api.auth.dto.response.ReauthTokenResponse;
 import com.finplay.api.auth.dto.response.TokenResponse;
 import com.finplay.api.auth.oauth.OAuthStateCookieFactory;
 import com.finplay.api.auth.service.OAuthCallbackService;
@@ -126,6 +127,47 @@ class OAuthCallbackControllerTest {
 			.andExpect(status().isOk());
 
 		verify(callbackService).callback("naver", CODE, utf8State, utf8State);
+	}
+
+	@Test
+	@DisplayName("reauth 분기 callback은 200 ReauthTokenResponse와 callback Path의 만료 쿠키를 반환한다")
+	void callbackReturnsReauthTokenAndExpiresStateCookie() throws Exception {
+		ReauthTokenResponse response = new ReauthTokenResponse("raw-reauth-token", 300L);
+		given(callbackService.callback("kakao", CODE, STATE, STATE)).willReturn(response);
+
+		mockMvc.perform(get("/api/auth/oauth/kakao/callback")
+			.param("code", CODE)
+			.param("state", STATE)
+			.cookie(new Cookie("oauth_state", STATE)))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.reauthToken").value("raw-reauth-token"))
+			.andExpect(jsonPath("$.expiresInSeconds").value(300))
+			.andExpect(header().string(
+				HttpHeaders.SET_COOKIE,
+				containsString("; Path=/api/auth/oauth/kakao/callback")))
+			.andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("; Max-Age=0")));
+
+		verify(callbackService).callback("kakao", CODE, STATE, STATE);
+	}
+
+	@Test
+	@DisplayName("reauth 분기 실패는 403 REAUTHENTICATION_FAILED 본문과 state 만료 쿠키를 반환한다")
+	void callbackReturnsReauthenticationFailedAndExpiresStateCookie() throws Exception {
+		given(callbackService.callback("kakao", CODE, STATE, STATE))
+			.willThrow(new BusinessException(ErrorCode.REAUTHENTICATION_FAILED));
+
+		mockMvc.perform(get("/api/auth/oauth/kakao/callback")
+			.param("code", CODE)
+			.param("state", STATE)
+			.cookie(new Cookie("oauth_state", STATE)))
+			.andExpect(status().isForbidden())
+			.andExpect(jsonPath("$.error.code").value("REAUTHENTICATION_FAILED"))
+			.andExpect(jsonPath("$.error.message").value("재인증에 실패했습니다."))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty())
+			.andExpect(header().string(
+				HttpHeaders.SET_COOKIE,
+				containsString("; Path=/api/auth/oauth/kakao/callback")))
+			.andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("; Max-Age=0")));
 	}
 
 	@Test
