@@ -8,7 +8,14 @@ import com.finplay.api.TestcontainersConfiguration;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.community.domain.CommunityPost;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityManagerFactory;
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.stream.Stream;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -18,8 +25,9 @@ import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
-import java.util.stream.Stream;
 
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -36,6 +44,17 @@ class CommunityPostRepositoryTest {
 
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
+
+	@Autowired
+	private EntityManager entityManager;
+
+	@Autowired
+	private EntityManagerFactory entityManagerFactory;
+
+	@BeforeEach
+	void removePostsPersistedByOtherTestContexts() {
+		repository.deleteAllInBatch();
+	}
 
 	@Test
 	void savePersistsAuthorTextAndMicrosecondTimestamps() {
@@ -77,5 +96,87 @@ class CommunityPostRepositoryTest {
 		return Stream.of(
 			Arguments.of("title-overlong", "t".repeat(101), "content"),
 			Arguments.of("content-overlong", "title", "c".repeat(5001)));
+	}
+
+	@Test
+	void findPostsOrderByCreatedAtDescReturnsNewestFirst() {
+		User author = userRepository.saveAndFlush(User.create("list@finplay.com", "hash", "lister", NOW));
+		CommunityPost oldest = repository.saveAndFlush(
+			CommunityPost.create(author, "oldest", "content", NOW.minusDays(2)));
+		CommunityPost middle = repository.saveAndFlush(
+			CommunityPost.create(author, "middle", "content", NOW.minusDays(1)));
+		CommunityPost newest = repository.saveAndFlush(
+			CommunityPost.create(author, "newest", "content", NOW));
+
+		Page<CommunityPost> page = repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10));
+
+		assertThat(page.getContent())
+			.extracting(CommunityPost::getId)
+			.containsExactly(newest.getId(), middle.getId(), oldest.getId());
+	}
+
+	@Test
+	void findPostsOrderByCreatedAtDescBreaksTiesByIdDescendingForSameTimestamp() {
+		User author = userRepository.saveAndFlush(User.create("tie@finplay.com", "hash", "tiebreaker", NOW));
+		CommunityPost first = repository.saveAndFlush(CommunityPost.create(author, "first", "content", NOW));
+		CommunityPost second = repository.saveAndFlush(CommunityPost.create(author, "second", "content", NOW));
+
+		Page<CommunityPost> page = repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10));
+
+		assertThat(page.getContent())
+			.extracting(CommunityPost::getId)
+			.containsExactly(second.getId(), first.getId());
+	}
+
+	@Test
+	void findPostsOrderByCreatedAtDescFetchesAuthorsWithoutAdditionalQueries() {
+		User author = userRepository.saveAndFlush(User.create("fetch@finplay.com", "hash", "fetcher", NOW));
+		repository.saveAndFlush(CommunityPost.create(author, "first", "content", NOW.minusMinutes(1)));
+		repository.saveAndFlush(CommunityPost.create(author, "second", "content", NOW));
+		entityManager.clear();
+
+		Statistics statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+		statistics.setStatisticsEnabled(true);
+		statistics.clear();
+
+		Page<CommunityPost> page = repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 1));
+		page.getContent().forEach(post -> assertThat(post.getAuthor().getNickname()).isEqualTo("fetcher"));
+
+		assertThat(statistics.getPrepareStatementCount()).isEqualTo(2);
+	}
+
+	@Test
+	void findPostsOrderByCreatedAtDescPaginatesWithoutDuplicateOrMissingItemsAcrossPages() {
+		User author = userRepository.saveAndFlush(User.create("page@finplay.com", "hash", "pager", NOW));
+		List<Long> createdIds = List.of(
+			repository.saveAndFlush(CommunityPost.create(author, "p1", "content", NOW.minusMinutes(4))).getId(),
+			repository.saveAndFlush(CommunityPost.create(author, "p2", "content", NOW.minusMinutes(3))).getId(),
+			repository.saveAndFlush(CommunityPost.create(author, "p3", "content", NOW.minusMinutes(2))).getId(),
+			repository.saveAndFlush(CommunityPost.create(author, "p4", "content", NOW.minusMinutes(1))).getId(),
+			repository.saveAndFlush(CommunityPost.create(author, "p5", "content", NOW)).getId());
+
+		Page<CommunityPost> firstPage = repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 3));
+		Page<CommunityPost> secondPage = repository.findPostsOrderByCreatedAtDesc(PageRequest.of(1, 3));
+
+		assertThat(firstPage.getTotalElements()).isEqualTo(5);
+		assertThat(firstPage.getTotalPages()).isEqualTo(2);
+		assertThat(firstPage.hasNext()).isTrue();
+		assertThat(secondPage.hasNext()).isFalse();
+
+		List<Long> combinedIds = Stream.concat(
+			firstPage.getContent().stream().map(CommunityPost::getId),
+			secondPage.getContent().stream().map(CommunityPost::getId))
+			.toList();
+		assertThat(combinedIds).hasSize(5).doesNotHaveDuplicates()
+			.containsExactlyInAnyOrderElementsOf(createdIds);
+	}
+
+	@Test
+	void findPostsOrderByCreatedAtDescReturnsEmptyPageWhenNoPostsExist() {
+		Page<CommunityPost> page = repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10));
+
+		assertThat(page.getContent()).isEmpty();
+		assertThat(page.getTotalElements()).isEqualTo(0);
+		assertThat(page.getTotalPages()).isEqualTo(0);
 	}
 }
