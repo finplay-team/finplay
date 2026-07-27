@@ -33,6 +33,14 @@
 | 01:10 | implementer | `.\gradlew.bat build --no-daemon --max-workers=1` — `BUILD SUCCESSFUL`, 519 tests / 실패 0 / 스킵 0 (HEAD `c7543d6`, 워킹트리 clean) | issue-53-plan.md 완료 체크리스트, CLAUDE.md 규칙 4·7, ADR-0003 |
 | 09:40 | reviewer(리뷰) | `git diff origin/dev...HEAD`(커밋 81b7cd6·17e294c·c08fcd1·c7543d6·ffaaba3 전체) | issue-53-plan.md D1~D8, conventions.md, ADR-0002·0003·0004, docs/api-routes.md, docs/agent-mistakes.md |
 
+### 실제 네이버 OAuth 재인증 스모크
+
+| 시각 | 실행 | 결과 |
+|---|---|---|
+| 01:09 | `oauth-real,local` 프로필로 `bootRun` 기동 후 실제 네이버 계정으로 `purpose=login` 로그인 → 발급된 accessToken으로 `purpose=reauth` authorize(브라우저 콘솔 fetch, Bearer 헤더) → 같은 네이버 계정으로 callback 완료 | `reauthToken` 200 정상 발급(`expiresInSeconds: 300`). `reauth_tokens` 1행(`user_id=1`, 해시만 저장, `expires_at`=`created_at`+5분, `consumed_at` NULL), `users`/`social_accounts`/`accounts` 행 수(1/1/2) 재인증 전후 불변을 MySQL로 직접 확인 |
+
+서명 포맷 적용으로 약 110자까지 늘어난 state가 네이버 실제 서버를 문제없이 왕복함을 확인해 issue-53-plan.md "미확정" 5번 항목을 해소했다. 카카오는 이번엔 실제 스모크를 수행하지 않았다(NOT RUN). Client ID/Secret·accessToken 원문은 로그·문서에 기록하지 않았다.
+
 ## Issue #10
 
 ### PR #49 차단 리뷰 대응 및 최종 검증

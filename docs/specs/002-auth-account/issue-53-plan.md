@@ -324,4 +324,4 @@ public record ReauthTokenResponse(String reauthToken, long expiresInSeconds) {}
 2. **userId 회원이 존재하지 않는 극단 케이스**: `reauthenticate`에서 state가 가리키는 `userId`로 회원을 찾지 못하면 403 `REAUTHENTICATION_FAILED`로 처리하기로 했다. 이슈 본문은 "다른 계정/미연결 provider/state 위·변조/만료·재사용 토큰" 4가지만 나열했고 이 경우는 명시하지 않았다.
 3. **`OAUTH_STATE_SECRET` 신규 환경변수**: 이슈는 "신규 환경변수 vs 기존 JWT 시크릿 재사용"을 결정하라고만 했다. 기존 `EMAIL_VERIFICATION_SECRET`/`JWT_SECRET` 분리 컨벤션을 근거로 신규 환경변수를 선택했다 — PRD에 이 변수명이 명시돼 있지는 않다.
 4. **재인증 경로의 `OAUTH_EMAIL_REQUIRED` 적용 여부**: PRD `AUTH-003`이 이메일 필수 규칙을 login/reauth로 구분하지 않으므로 `validateOAuthUser`(email 필수)를 두 경로에 동일 적용하기로 했다. 재인증은 이메일이 굳이 필요하지 않을 수 있다는 반론이 가능하지만, 이번 계획은 코드 재사용과 PRD 문구를 우선했다.
-5. **카카오·네이버 실제 콘솔의 state 길이 제한**: 서명 포맷 적용 시 state 문자열이 기존 43자에서 약 110자 내외로 늘어난다. 두 공급자 문서상 명시적 상한을 이번 계획 단계에서 확인하지 못했다 — 실제 스모크 단계(Task 5 이후 별도)에서 검증이 필요하다.
+5. **카카오·네이버 실제 콘솔의 state 길이 제한 (해소됨)**: 서명 포맷 적용 시 state 문자열이 기존 43자에서 약 110자 내외로 늘어난다. `oauth-real` 프로필 + 실제 네이버 계정으로 `purpose=reauth` authorize→callback 전체 흐름을 수동 스모크했고, 늘어난 state가 네이버 실제 서버를 왕복하는 데 문제없음을 확인했다(`reauthToken` 정상 발급, DB에 해시만 저장, `users`/`social_accounts`/`accounts` 행 수 불변). 카카오는 아직 별도 실제 스모크를 수행하지 않았다.
