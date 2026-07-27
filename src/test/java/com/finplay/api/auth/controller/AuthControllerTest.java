@@ -1,10 +1,12 @@
 // 회원가입·로그인·토큰 재발급 응답과 입력 검증, 비즈니스 오류 계약을 검증하는 WebMvc 슬라이스 테스트다.
 package com.finplay.api.auth.controller;
 
+import static org.hamcrest.Matchers.hasSize;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -18,6 +20,7 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -28,6 +31,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.finplay.api.auth.config.SecurityConfig;
+import com.finplay.api.auth.domain.SignupMethod;
+import com.finplay.api.auth.dto.response.MemberResponse;
 import com.finplay.api.auth.dto.response.TokenResponse;
 import com.finplay.api.auth.service.AuthService;
 import com.finplay.api.auth.token.AuthenticatedUser;
@@ -348,6 +353,80 @@ class AuthControllerTest {
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
 		verify(authService).logout(USER_ID, REFRESH_TOKEN);
+	}
+
+	@Test
+	void meReturnsOkWithIdEmailNicknameSignupMethodForAuthenticatedUser() throws Exception {
+		stubValidAccessToken();
+		when(authService.getMe(USER_ID))
+			.thenReturn(new MemberResponse(USER_ID, EMAIL, NICKNAME, SignupMethod.EMAIL));
+
+		mockMvc.perform(get("/api/auth/me")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.id").value(USER_ID))
+			.andExpect(jsonPath("$.email").value(EMAIL))
+			.andExpect(jsonPath("$.nickname").value(NICKNAME))
+			.andExpect(jsonPath("$.signupMethod").value("EMAIL"))
+			// 민감 필드가 어떤 이름으로도 새지 않도록 응답 키 집합 자체를 4개로 고정한다.
+			.andExpect(jsonPath("$.*", hasSize(4)));
+
+		verify(authService).getMe(USER_ID);
+	}
+
+	@ParameterizedTest(name = "{0} 가입자")
+	@EnumSource(value = SignupMethod.class, names = {"KAKAO", "NAVER"})
+	void meReturnsSignupMethodKakaoAndNaverForSocialMembers(SignupMethod signupMethod) throws Exception {
+		stubValidAccessToken();
+		when(authService.getMe(USER_ID))
+			.thenReturn(new MemberResponse(USER_ID, EMAIL, NICKNAME, signupMethod));
+
+		mockMvc.perform(get("/api/auth/me")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.signupMethod").value(signupMethod.name()));
+
+		verify(authService).getMe(USER_ID);
+	}
+
+	@Test
+	void meRejectsMissingAccessTokenWithoutCallingService() throws Exception {
+		mockMvc.perform(get("/api/auth/me"))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
+			.andExpect(jsonPath("$.error.message").value(ErrorCode.UNAUTHORIZED.getDefaultMessage()))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(authService);
+	}
+
+	@Test
+	void meRejectsRefreshBearerWithoutCallingService() throws Exception {
+		when(jwtTokenProvider.parseAccessToken(REFRESH_TOKEN)).thenReturn(Optional.empty());
+
+		mockMvc.perform(get("/api/auth/me")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + REFRESH_TOKEN))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
+			.andExpect(jsonPath("$.error.message").value(ErrorCode.UNAUTHORIZED.getDefaultMessage()))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(authService);
+	}
+
+	@Test
+	void meMapsServiceUnauthorizedToCommonErrorFormat() throws Exception {
+		stubValidAccessToken();
+		when(authService.getMe(USER_ID)).thenThrow(new BusinessException(ErrorCode.UNAUTHORIZED));
+
+		mockMvc.perform(get("/api/auth/me")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
+			.andExpect(jsonPath("$.error.message").value(ErrorCode.UNAUTHORIZED.getDefaultMessage()))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(authService).getMe(USER_ID);
 	}
 
 	private void stubValidAccessToken() {

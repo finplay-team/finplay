@@ -4,6 +4,7 @@ package com.finplay.api.auth.controller;
 import com.finplay.api.auth.dto.request.LoginRequest;
 import com.finplay.api.auth.dto.request.RefreshRequest;
 import com.finplay.api.auth.dto.request.SignupRequest;
+import com.finplay.api.auth.dto.response.MemberResponse;
 import com.finplay.api.auth.dto.response.TokenResponse;
 import com.finplay.api.auth.service.AuthService;
 import com.finplay.api.auth.token.AuthenticatedUser;
@@ -12,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -58,5 +60,12 @@ public class AuthController {
 		RefreshRequest request) {
 		authService.logout(principal.userId(), request.refreshToken());
 		return ResponseEntity.noContent().build();
+	}
+
+	@GetMapping("/me")
+	public ResponseEntity<MemberResponse> me(
+		@AuthenticationPrincipal
+		AuthenticatedUser principal) {
+		return ResponseEntity.ok(authService.getMe(principal.userId()));
 	}
 }
