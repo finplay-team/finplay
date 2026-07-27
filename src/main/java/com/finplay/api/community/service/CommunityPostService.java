@@ -3,6 +3,8 @@ package com.finplay.api.community.service;
 
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.service.UserQueryService;
+import com.finplay.api.common.BusinessException;
+import com.finplay.api.common.ErrorCode;
 import com.finplay.api.community.domain.CommunityPost;
 import com.finplay.api.community.dto.response.CommunityPostResponse;
 import com.finplay.api.community.repository.CommunityPostRepository;
@@ -26,5 +28,12 @@ public class CommunityPostService {
 		LocalDateTime now = LocalDateTime.now(clock);
 		CommunityPost post = CommunityPost.create(author, title, content, now);
 		return CommunityPostResponse.from(communityPostRepository.save(post));
+	}
+
+	@Transactional(readOnly = true)
+	public CommunityPostResponse getPost(Long postId) {
+		CommunityPost post = communityPostRepository.findById(postId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+		return CommunityPostResponse.from(post);
 	}
 }
