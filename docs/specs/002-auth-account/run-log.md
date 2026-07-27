@@ -8,6 +8,12 @@
 |---|---|---|---|
 | 23:30 | implementer | `.\gradlew.bat compileJava compileTestJava --no-daemon --max-workers=1` — `BUILD SUCCESSFUL`, `.\gradlew.bat spotlessApply`, `.\gradlew.bat test --tests "*OAuthStateGeneratorTest" --tests "*OAuthAuthorizationServiceTest" --tests "*OAuthAuthorizationControllerTest"` — `BUILD SUCCESSFUL` | issue-53-plan.md D1(HMAC-SHA-256 서명 state)·D2(서명 실패 403), conventions.md 시크릿·네이밍 규칙, ADR-0002 |
 
+### Task 2: `reauth_tokens` 스키마와 `AuthService.reauthenticate` 발급 트랜잭션
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| 00:05 | implementer | `.\gradlew.bat compileJava compileTestJava --no-daemon --max-workers=1`; `.\gradlew.bat spotlessApply spotbugsMain`; `.\gradlew.bat test --tests "*AuthServiceTest" --tests "*OAuthAuthServiceTest"` — 모두 `BUILD SUCCESSFUL` | issue-53-plan.md D4(조회+발급만 하는 별도 트랜잭션)·D5(`reauth_tokens` 스키마·엔티티 패턴), ADR-0004(신규 V5 마이그레이션), conventions.md 엔티티·DTO 규칙 |
+
 ## Issue #10
 
 ### PR #49 차단 리뷰 대응 및 최종 검증
@@ -269,3 +275,4 @@
 - 22:15 — Issue #8 Task 4: `GET /api/auth/me` 실제 계약(응답 4필드·401 공통 포맷·SecurityConfig 미변경)을 api-routes.md에 반영하고 tasks.md의 JWT·Security 항목을 완료 처리했다. plan.md API 표는 313fec8에서 이미 갱신돼 있어 확인만 했고, 전체 `build`를 직렬로 돌려 BUILD SUCCESSFUL을 확인했다.
 - 22:30 — 리뷰 판정: 차단 0건. AUTH-005 조회 계약(민감 필드 미노출·가입 방식 판별)과 D1~D7 설계가 구현·테스트에 그대로 반영됨을 확인, 머지 가능.
 - 23:30 — Issue #53 Task 1: `OAuthPurpose`·`OAuthStateClaims`와 HMAC-SHA-256 서명/검증(`generate(purpose, userId)`·`verify`, 실패는 전부 403 `REAUTHENTICATION_FAILED`)을 `OAuthStateGenerator`에 추가하고 `OAUTH_STATE_SECRET`을 yml·.env.example·build.gradle test 환경에 배선했다. `OAuthAuthorizationService.authorize`는 `generate(LOGIN, null)` 호출로만 바꿔 302 계약은 그대로 회귀 통과했다.
+- 00:05 — Issue #53 Task 2: `V5__create_reauth_tokens_table.sql`·`ReauthToken`·`ReauthTokenRepository`·`ReauthTokenGenerator`·`ReauthTokenResponse`를 추가하고 `AuthService.reauthenticate`(회원·소셜계정 조회 후 해시만 저장, 실패는 전부 403)를 구현했다. `AuthService` 생성자가 2개 늘어 `AuthServiceTest`·`OAuthAuthServiceTest`의 생성 호출부를 갱신했고 기존 케이스는 그대로 통과했다. Docker가 없어 `@DataJpaTest`·Testcontainers 검증은 tester에게 위임한다.

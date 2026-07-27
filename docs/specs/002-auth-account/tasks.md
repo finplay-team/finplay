@@ -29,7 +29,7 @@ Issue #10 완료 시 자동 테스트와 실제 공급자 스모크를 별도 �
 상세 설계는 `issue-53-plan.md` 참고.
 
 - [x] state 서명·검증 계약(`OAuthPurpose`·`OAuthStateClaims`·`OAuthStateGenerator.generate/verify`)과 `REAUTHENTICATION_FAILED`(403) 오류 코드, `OAUTH_STATE_SECRET` 환경변수 추가 — 기존 `authorize` 302 계약은 변경 없음
-- [ ] `reauth_tokens` Flyway 마이그레이션·`ReauthToken`·`ReauthTokenRepository`·`ReauthTokenGenerator`와 `AuthService.reauthenticate`(동일 계정 성공/다른 계정·미연결 provider 거부, 회원·계좌·시드머니 불변) 구현
+- [x] `reauth_tokens` Flyway 마이그레이션·`ReauthToken`·`ReauthTokenRepository`·`ReauthTokenGenerator`와 `AuthService.reauthenticate`(동일 계정 성공/다른 계정·미연결 provider 거부, 회원·계좌·시드머니 불변) 구현
 - [ ] `OAuthCallbackService`의 purpose 분기(LOGIN→기존 `oauthLogin` 그대로, REAUTH→`reauthenticate`)와 `ReauthTokenResponse` 응답 계약, Fake OAuth 기반 성공·거부 자동 테스트
 - [ ] `purpose=reauth` authorize 엔드포인트(`OAuthAuthorizationService.authorizeForReauth`, 컨트롤러 `params="purpose=reauth"`)와 `SecurityConfig`의 purpose 기반 인증 분기(reauth만 Bearer 필수)
 - [ ] 전체 회귀(Issue #9/#10 포함)·`./gradlew build`·`docs/api-routes.md`·`docs/specs/002-auth-account/tasks.md` 동기화

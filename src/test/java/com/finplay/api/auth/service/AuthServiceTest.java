@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
@@ -32,17 +33,22 @@ import org.springframework.test.util.ReflectionTestUtils;
 import com.finplay.api.account.service.AccountService;
 import com.finplay.api.auth.crypto.Sha256BcryptPasswordEncoder;
 import com.finplay.api.auth.domain.EmailVerification;
+import com.finplay.api.auth.domain.ReauthToken;
 import com.finplay.api.auth.domain.RefreshToken;
 import com.finplay.api.auth.domain.SignupMethod;
 import com.finplay.api.auth.domain.SocialAccount;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.dto.response.MemberResponse;
+import com.finplay.api.auth.dto.response.ReauthTokenResponse;
 import com.finplay.api.auth.repository.EmailVerificationRepository;
+import com.finplay.api.auth.repository.ReauthTokenRepository;
 import com.finplay.api.auth.repository.RefreshTokenRepository;
 import com.finplay.api.auth.repository.SocialAccountRepository;
 import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.auth.oauth.OAuthNicknameGenerator;
 import com.finplay.api.auth.oauth.OAuthProviderName;
+import com.finplay.api.auth.oauth.OAuthUserDto;
+import com.finplay.api.auth.oauth.ReauthTokenGenerator;
 import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.auth.token.IssuedTokenPair;
 import com.finplay.api.auth.token.JwtTokenProvider;
@@ -66,7 +72,9 @@ class AuthServiceTest {
 	private EmailVerificationRepository emailVerificationRepository;
 	private RefreshTokenRepository refreshTokenRepository;
 	private SocialAccountRepository socialAccountRepository;
+	private ReauthTokenRepository reauthTokenRepository;
 	private OAuthNicknameGenerator oauthNicknameGenerator;
+	private ReauthTokenGenerator reauthTokenGenerator;
 	private AccountService accountService;
 	private JwtTokenProvider jwtTokenProvider;
 	private PasswordEncoder passwordEncoder;
@@ -78,7 +86,9 @@ class AuthServiceTest {
 		emailVerificationRepository = mock(EmailVerificationRepository.class);
 		refreshTokenRepository = mock(RefreshTokenRepository.class);
 		socialAccountRepository = mock(SocialAccountRepository.class);
+		reauthTokenRepository = mock(ReauthTokenRepository.class);
 		oauthNicknameGenerator = mock(OAuthNicknameGenerator.class);
+		reauthTokenGenerator = mock(ReauthTokenGenerator.class);
 		accountService = mock(AccountService.class);
 		jwtTokenProvider = mock(JwtTokenProvider.class);
 		passwordEncoder = new Sha256BcryptPasswordEncoder();
@@ -88,10 +98,12 @@ class AuthServiceTest {
 			emailVerificationRepository,
 			refreshTokenRepository,
 			socialAccountRepository,
+			reauthTokenRepository,
 			passwordEncoder,
 			accountService,
 			jwtTokenProvider,
 			oauthNicknameGenerator,
+			reauthTokenGenerator,
 			clock);
 	}
 
@@ -546,6 +558,122 @@ class AuthServiceTest {
 			.isEqualTo(ErrorCode.UNAUTHORIZED);
 
 		verifyNoInteractions(socialAccountRepository);
+	}
+
+	@Test
+	void reauthenticateReturnsHashedTokenWithFiveMinuteTtlWhenSameMemberAndProviderMatch() {
+		User user = existingUser(passwordEncoder.encode(RAW_PASSWORD));
+		OAuthUserDto oauthUser = new OAuthUserDto("provider-user-id", "user@kakao.example.com");
+		SocialAccount socialAccount = SocialAccount.create(
+			user, OAuthProviderName.KAKAO, "provider-user-id", NOW.minusDays(1));
+		when(userRepository.findById(7L)).thenReturn(Optional.of(user));
+		when(socialAccountRepository.findByProviderAndProviderUserId(
+			OAuthProviderName.KAKAO, "provider-user-id")).thenReturn(Optional.of(socialAccount));
+		when(reauthTokenGenerator.generate()).thenReturn("raw-reauth-token");
+
+		ReauthTokenResponse response = authService.reauthenticate(7L, OAuthProviderName.KAKAO, oauthUser);
+
+		assertThat(response.reauthToken()).isEqualTo("raw-reauth-token");
+		assertThat(response.expiresInSeconds()).isEqualTo(300L);
+
+		ArgumentCaptor<ReauthToken> reauthTokenCaptor = ArgumentCaptor.forClass(ReauthToken.class);
+		verify(reauthTokenRepository).save(reauthTokenCaptor.capture());
+		ReauthToken saved = reauthTokenCaptor.getValue();
+		assertThat(saved.getUser()).isSameAs(user);
+		assertThat(saved.getTokenHash()).isEqualTo(sha256("raw-reauth-token"));
+		assertThat(saved.getTokenHash()).isNotEqualTo("raw-reauth-token");
+		assertThat(saved.getExpiresAt()).isEqualTo(NOW.plusMinutes(5));
+		assertThat(saved.getCreatedAt()).isEqualTo(NOW);
+
+		verify(userRepository, never()).save(any());
+		verify(socialAccountRepository, never()).save(any());
+		verifyNoInteractions(accountService);
+	}
+
+	@Test
+	void reauthenticateGeneratesDifferentRawTokensAcrossCalls() {
+		User user = existingUser(passwordEncoder.encode(RAW_PASSWORD));
+		OAuthUserDto oauthUser = new OAuthUserDto("provider-user-id", "user@kakao.example.com");
+		SocialAccount socialAccount = SocialAccount.create(
+			user, OAuthProviderName.KAKAO, "provider-user-id", NOW.minusDays(1));
+		when(userRepository.findById(7L)).thenReturn(Optional.of(user));
+		when(socialAccountRepository.findByProviderAndProviderUserId(
+			OAuthProviderName.KAKAO, "provider-user-id")).thenReturn(Optional.of(socialAccount));
+		when(reauthTokenGenerator.generate()).thenReturn("raw-reauth-token-1", "raw-reauth-token-2");
+
+		ReauthTokenResponse first = authService.reauthenticate(7L, OAuthProviderName.KAKAO, oauthUser);
+		ReauthTokenResponse second = authService.reauthenticate(7L, OAuthProviderName.KAKAO, oauthUser);
+
+		assertThat(first.reauthToken()).isNotEqualTo(second.reauthToken());
+
+		ArgumentCaptor<ReauthToken> reauthTokenCaptor = ArgumentCaptor.forClass(ReauthToken.class);
+		verify(reauthTokenRepository, times(2)).save(reauthTokenCaptor.capture());
+		List<String> savedHashes = reauthTokenCaptor.getAllValues().stream()
+			.map(ReauthToken::getTokenHash)
+			.toList();
+		assertThat(savedHashes).doesNotHaveDuplicates();
+		assertThat(savedHashes)
+			.noneMatch(hash -> hash.equals("raw-reauth-token-1") || hash.equals("raw-reauth-token-2"));
+	}
+
+	@Test
+	void reauthenticateFailsWithReauthenticationFailedWhenUserIdDoesNotExist() {
+		OAuthUserDto oauthUser = new OAuthUserDto("provider-user-id", "user@kakao.example.com");
+		when(userRepository.findById(999L)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> authService.reauthenticate(999L, OAuthProviderName.KAKAO, oauthUser))
+			.isInstanceOf(BusinessException.class)
+			.extracting(ex -> ((BusinessException)ex).getErrorCode())
+			.isEqualTo(ErrorCode.REAUTHENTICATION_FAILED);
+
+		verifyNoInteractions(socialAccountRepository);
+		verifyNoInteractions(reauthTokenRepository);
+		verifyNoInteractions(reauthTokenGenerator);
+		verifyNoInteractions(accountService);
+	}
+
+	@Test
+	void reauthenticateFailsWithReauthenticationFailedWhenProviderNotLinkedToAnyMember() {
+		User user = existingUser(passwordEncoder.encode(RAW_PASSWORD));
+		OAuthUserDto oauthUser = new OAuthUserDto("unlinked-provider-user-id", "user@kakao.example.com");
+		when(userRepository.findById(7L)).thenReturn(Optional.of(user));
+		when(socialAccountRepository.findByProviderAndProviderUserId(
+			OAuthProviderName.KAKAO, "unlinked-provider-user-id")).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> authService.reauthenticate(7L, OAuthProviderName.KAKAO, oauthUser))
+			.isInstanceOf(BusinessException.class)
+			.extracting(ex -> ((BusinessException)ex).getErrorCode())
+			.isEqualTo(ErrorCode.REAUTHENTICATION_FAILED);
+
+		verifyNoInteractions(reauthTokenRepository);
+		verifyNoInteractions(reauthTokenGenerator);
+		verifyNoInteractions(accountService);
+		verify(userRepository, never()).save(any());
+	}
+
+	@Test
+	void reauthenticateFailsWithReauthenticationFailedWhenSocialAccountBelongsToAnotherMember() {
+		User authenticatedUser = existingUser(passwordEncoder.encode(RAW_PASSWORD));
+		User anotherMember = User.create("other@finplay.com", passwordEncoder.encode(RAW_PASSWORD), "other-nick",
+			NOW.minusDays(2));
+		ReflectionTestUtils.setField(anotherMember, "id", 42L);
+		OAuthUserDto oauthUser = new OAuthUserDto("provider-user-id", "other@kakao.example.com");
+		SocialAccount socialAccountOfAnotherMember = SocialAccount.create(
+			anotherMember, OAuthProviderName.KAKAO, "provider-user-id", NOW.minusDays(1));
+		when(userRepository.findById(7L)).thenReturn(Optional.of(authenticatedUser));
+		when(socialAccountRepository.findByProviderAndProviderUserId(
+			OAuthProviderName.KAKAO, "provider-user-id")).thenReturn(Optional.of(socialAccountOfAnotherMember));
+
+		assertThatThrownBy(() -> authService.reauthenticate(7L, OAuthProviderName.KAKAO, oauthUser))
+			.isInstanceOf(BusinessException.class)
+			.extracting(ex -> ((BusinessException)ex).getErrorCode())
+			.isEqualTo(ErrorCode.REAUTHENTICATION_FAILED);
+
+		verifyNoInteractions(reauthTokenRepository);
+		verifyNoInteractions(reauthTokenGenerator);
+		verifyNoInteractions(accountService);
+		verify(userRepository, never()).save(any());
+		verify(socialAccountRepository, never()).save(any());
 	}
 
 	@Test

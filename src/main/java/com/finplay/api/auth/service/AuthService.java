@@ -3,16 +3,20 @@ package com.finplay.api.auth.service;
 
 import com.finplay.api.account.service.AccountService;
 import com.finplay.api.auth.domain.EmailVerification;
+import com.finplay.api.auth.domain.ReauthToken;
 import com.finplay.api.auth.domain.RefreshToken;
 import com.finplay.api.auth.domain.SignupMethod;
 import com.finplay.api.auth.domain.SocialAccount;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.dto.response.MemberResponse;
+import com.finplay.api.auth.dto.response.ReauthTokenResponse;
 import com.finplay.api.auth.dto.response.TokenResponse;
 import com.finplay.api.auth.oauth.OAuthNicknameGenerator;
 import com.finplay.api.auth.oauth.OAuthProviderName;
 import com.finplay.api.auth.oauth.OAuthUserDto;
+import com.finplay.api.auth.oauth.ReauthTokenGenerator;
 import com.finplay.api.auth.repository.EmailVerificationRepository;
+import com.finplay.api.auth.repository.ReauthTokenRepository;
 import com.finplay.api.auth.repository.RefreshTokenRepository;
 import com.finplay.api.auth.repository.SocialAccountRepository;
 import com.finplay.api.auth.repository.UserRepository;
@@ -25,6 +29,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.HexFormat;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -37,15 +42,18 @@ public class AuthService {
 
 	private static final String OAUTH_ONLY_PASSWORD_SENTINEL = "{oauth-only}";
 	private static final int MAX_NICKNAME_ATTEMPTS = 5;
+	private static final Duration REAUTH_TOKEN_TTL = Duration.ofMinutes(5);
 
 	private final UserRepository userRepository;
 	private final EmailVerificationRepository emailVerificationRepository;
 	private final RefreshTokenRepository refreshTokenRepository;
 	private final SocialAccountRepository socialAccountRepository;
+	private final ReauthTokenRepository reauthTokenRepository;
 	private final PasswordEncoder passwordEncoder;
 	private final AccountService accountService;
 	private final JwtTokenProvider jwtTokenProvider;
 	private final OAuthNicknameGenerator oauthNicknameGenerator;
+	private final ReauthTokenGenerator reauthTokenGenerator;
 	private final Clock clock;
 
 	public AuthService(
@@ -53,19 +61,23 @@ public class AuthService {
 		EmailVerificationRepository emailVerificationRepository,
 		RefreshTokenRepository refreshTokenRepository,
 		SocialAccountRepository socialAccountRepository,
+		ReauthTokenRepository reauthTokenRepository,
 		PasswordEncoder passwordEncoder,
 		AccountService accountService,
 		JwtTokenProvider jwtTokenProvider,
 		OAuthNicknameGenerator oauthNicknameGenerator,
+		ReauthTokenGenerator reauthTokenGenerator,
 		Clock clock) {
 		this.userRepository = userRepository;
 		this.emailVerificationRepository = emailVerificationRepository;
 		this.refreshTokenRepository = refreshTokenRepository;
 		this.socialAccountRepository = socialAccountRepository;
+		this.reauthTokenRepository = reauthTokenRepository;
 		this.passwordEncoder = passwordEncoder;
 		this.accountService = accountService;
 		this.jwtTokenProvider = jwtTokenProvider;
 		this.oauthNicknameGenerator = oauthNicknameGenerator;
+		this.reauthTokenGenerator = reauthTokenGenerator;
 		this.clock = clock;
 	}
 
@@ -112,6 +124,27 @@ public class AuthService {
 			provider, oauthUser.providerUserId())
 			.map(socialAccount -> issueTokenPair(socialAccount.getUser(), now))
 			.orElseGet(() -> createOAuthUser(provider, oauthUser, now));
+	}
+
+	// 재인증은 조회와 reauth_tokens 저장만 한다 — 회원·소셜계정·계좌·시드머니를 만들거나 바꾸지 않는다 (PRD AUTH-003).
+	@Transactional
+	public ReauthTokenResponse reauthenticate(
+		Long userId, OAuthProviderName provider, OAuthUserDto oauthUser) {
+		User user = userRepository.findById(userId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.REAUTHENTICATION_FAILED));
+		SocialAccount socialAccount = socialAccountRepository.findByProviderAndProviderUserId(
+			provider, oauthUser.providerUserId())
+			.orElseThrow(() -> new BusinessException(ErrorCode.REAUTHENTICATION_FAILED));
+		if (!socialAccount.getUser().getId().equals(userId)) {
+			throw new BusinessException(ErrorCode.REAUTHENTICATION_FAILED);
+		}
+
+		LocalDateTime now = LocalDateTime.now(clock);
+		String rawToken = reauthTokenGenerator.generate();
+		reauthTokenRepository.save(
+			ReauthToken.create(user, sha256(rawToken), now.plus(REAUTH_TOKEN_TTL), now));
+
+		return new ReauthTokenResponse(rawToken, REAUTH_TOKEN_TTL.toSeconds());
 	}
 
 	@Transactional(readOnly = true)
