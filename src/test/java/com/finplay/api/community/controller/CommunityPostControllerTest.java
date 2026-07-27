@@ -1,12 +1,15 @@
 // 게시글 생성 API의 인증, 검증, 응답 계약을 검증하는 WebMvc 슬라이스 테스트다.
 package com.finplay.api.community.controller;
 
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -329,6 +332,61 @@ class CommunityPostControllerTest {
 	@Test
 	void getPostsRejectsMissingAuthenticationWithoutCallingService() throws Exception {
 		mockMvc.perform(get("/api/community/posts"))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(service);
+	}
+
+	@Test
+	void deletePostReturnsNoContentWithEmptyBodyWhenOwnerDeletes() throws Exception {
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+
+		mockMvc.perform(delete("/api/community/posts/73")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isNoContent())
+			.andExpect(content().string(""));
+
+		verify(service).deletePost(USER_ID, 73L);
+	}
+
+	@Test
+	void deletePostReturnsCommonNotFoundErrorWhenServiceCannotFindPost() throws Exception {
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+		doThrow(new BusinessException(ErrorCode.NOT_FOUND)).when(service).deletePost(USER_ID, 404L);
+
+		mockMvc.perform(delete("/api/community/posts/404")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.error.code").value("NOT_FOUND"))
+			.andExpect(jsonPath("$.error.message").value("대상을 찾을 수 없습니다."))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(service).deletePost(USER_ID, 404L);
+	}
+
+	@Test
+	void deletePostReturnsCommonForbiddenErrorWhenServiceRejectsNonOwner() throws Exception {
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+		doThrow(new BusinessException(ErrorCode.FORBIDDEN)).when(service).deletePost(USER_ID, 73L);
+
+		mockMvc.perform(delete("/api/community/posts/73")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isForbidden())
+			.andExpect(jsonPath("$.error.code").value("FORBIDDEN"))
+			.andExpect(jsonPath("$.error.message").value("접근 권한이 없습니다."))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(service).deletePost(USER_ID, 73L);
+	}
+
+	@Test
+	void deletePostRejectsMissingAuthenticationWithoutCallingService() throws Exception {
+		mockMvc.perform(delete("/api/community/posts/73"))
 			.andExpect(status().isUnauthorized())
 			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
