@@ -21,13 +21,22 @@ public class OAuthAuthorizationService {
 	private final OAuthStateGenerator stateGenerator;
 
 	public OAuthAuthorizationResult authorize(String rawProvider) {
+		return createAuthorization(rawProvider, OAuthPurpose.LOGIN, null);
+	}
+
+	public OAuthAuthorizationResult authorizeForReauth(String rawProvider, Long userId) {
+		return createAuthorization(rawProvider, OAuthPurpose.REAUTH, userId);
+	}
+
+	private OAuthAuthorizationResult createAuthorization(
+		String rawProvider, OAuthPurpose purpose, Long userId) {
 		OAuthProviderName provider = OAuthProviderName.from(rawProvider)
 			.orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_ERROR));
 		OAuthAuthorizationProvider authorizationProvider = authorizationProviders.stream()
 			.filter(candidate -> candidate.supports(provider))
 			.findFirst()
 			.orElseThrow(() -> new IllegalStateException("활성화된 OAuth 인가 공급자가 없습니다: " + provider));
-		String state = stateGenerator.generate(OAuthPurpose.LOGIN, null);
+		String state = stateGenerator.generate(purpose, userId);
 		URI authorizationUri = authorizationProvider.createAuthorizationUri(provider, state);
 
 		return new OAuthAuthorizationResult(provider, authorizationUri, state);
