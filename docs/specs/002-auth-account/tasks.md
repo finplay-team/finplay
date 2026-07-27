@@ -17,9 +17,9 @@
 ## Issue #10 OAuth callback 작업 항목 (5개)
 
 - [x] callback state 상수 시간 검증·정상 브라우저 callback 응답의 state 쿠키 만료·공개 GET Controller/Security 계약 구현 — 서버 state 저장 기반 raw cookie 재전송 차단은 범위 밖
-- [x] PR #49 후속: Fake authorize의 state별 고유 code 발급과 thread-safe set 기반 `(code, state)` 원자적 1회 소비·재사용/동시성 400 구현 — 기존 Kakao/Naver 실제 Provider 계약은 변경하지 않음
+- [x] PR #49 후속: Fake authorize의 state별 고유 code 발급과 thread-safe store 기반 `(provider, code, state)` 원자적 1회 소비·재사용/동시성 400, 잘못된 provider 거부·grant 비소비 구현 — 기존 Kakao/Naver 실제 Provider 계약은 변경하지 않음
 - [x] `finplay-` + 무작위 소문자 hex 12자리 nickname(식별정보 미포함, 충돌 시 최대 5회 재생성)과 기존 소셜 로그인·신규 User·SocialAccount·계좌 2개·Refresh Token 원자 트랜잭션 및 롤백 구현
-- [x] Fake OAuth generated code 1회/재사용/동시성·authorize URI 고유 code·첫 callback 200 후 동일 code+state+raw cookie 재전송 400 및 DB 불변 회귀, 전체 build, API 문서 동기화
+- [x] Fake OAuth generated code 1회/재사용/동시성·교차-provider 거부 후 원 provider 1회 성공·authorize URI 고유 code·첫 callback 200 후 동일 `(provider, code, state)`와 raw cookie 재전송 400 및 DB 불변 회귀, 전체 build, API 문서 동기화
 - [x] `oauth-real` 카카오·네이버 각각 authorize→callback→코드 교환→사용자 정보→신규/기존→FinPlay JWT 및 신규 SocialAccount·계좌 2개 DB 스모크 검증 — **KAKAO·NAVER PASS. 두 공급자 모두 기존 회원 2차 응답 본문은 Chrome `ERR_BLOCKED_BY_CLIENT`로 직접 확인하지 못한 제한을 run-log에 기록**
 
 Issue #10 완료 시 자동 테스트와 실제 공급자 스모크를 별도 기록한다. 실제 카카오·네이버는 각각 `PASS`여야 하며, 환경변수·개발자 콘솔 Callback URL·이메일 동의 부족 시 추측하지 않고 공급자별 `NOT RUN` 사유를 남긴다. 브라우저 로그인·동의는 사용자 조작을 기다린다. Client ID/Secret, Provider Access Token, authorization code는 기록하지 않는다.

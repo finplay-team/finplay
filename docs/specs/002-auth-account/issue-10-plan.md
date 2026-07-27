@@ -51,7 +51,7 @@
 9. And 정상 브라우저 경로의 callback 응답은 Issue #9와 같은 Path의 `oauth_state` 만료 쿠키(`Max-Age=0`)를 포함한다. 서버는 state를 저장하지 않으므로 raw cookie 재전송 자체를 state 저장소로 차단하지 않는다.
 10. And 사용자가 인가를 취소하거나 authorization code가 만료·재사용되면 400 `OAUTH_AUTHORIZATION_FAILED` 공통 오류로 응답한다.
 11. And 공급자 장애·timeout·malformed response는 502 `OAUTH_PROVIDER_ERROR` 공통 오류로 응답한다.
-12. And 실제 공급자는 authorization code 단일 사용으로 재전송을 거부한다. Fake는 authorize마다 state에 결합된 고유 code를 만들고 원자적으로 한 번만 소비해 같은 code+state 재전송을 동일한 400으로 시뮬레이션한다.
+12. And 실제 공급자는 authorization code 단일 사용으로 재전송을 거부한다. Fake는 authorize마다 state에 결합된 고유 code를 만들고 `(provider, code, state)`를 원자적으로 한 번만 소비해 같은 grant 재전송을 동일한 400으로 시뮬레이션한다.
 
 ---
 
@@ -108,8 +108,8 @@ OAuthUserDto fetchUser(String authorizationCode, String state);
 - `KakaoOAuthCallbackProvider`, `NaverOAuthCallbackProvider`: `prod | oauth-real`
 - `FakeOAuthCallbackProvider`: `!prod & !oauth-real`, KAKAO·NAVER 모두 지원
 - `FakeOAuthAuthorizationProvider`는 authorize마다 동일 state에 결합된 고유 opaque code를 callback URI에 넣는다. Issue #9 문서·ADR은 수정하지 않고 Issue #10의 Fake 회귀 하네스 후속 변경으로 구현한다.
-- Fake authorize와 callback은 Fake 프로필 전용 thread-safe code 저장소를 공유한다. `(generatedCode, state)` 결합 키를 `ConcurrentHashMap.newKeySet()` 같은 set에 등록하고 callback의 원자적 `remove`가 성공한 첫 요청만 허용한다.
-- 같은 generated code+state의 순차·동시 재전송은 모두 400 `OAUTH_AUTHORIZATION_FAILED`다. 이 저장소는 실제 OAuth state 저장이 아니라 외부 공급자의 authorization code 단일 사용을 Fake로 모사하는 테스트 하네스다.
+- Fake authorize와 KAKAO/NAVER 전용 callback bean은 Fake 프로필 전용 thread-safe code 저장소를 공유한다. `(provider, code, state)` 결합 키를 set에 등록하고 callback의 원자적 소비가 성공한 첫 요청만 허용한다.
+- 잘못된 provider로 code와 state를 제출하면 400 `OAUTH_AUTHORIZATION_FAILED`이며 grant는 소비하지 않는다. 원 provider의 첫 요청은 성공하고, 이후 같은 `(provider, code, state)` 재사용과 동시 경합 후속 요청은 모두 400이다. 이 저장소는 실제 OAuth state 저장이 아니라 외부 공급자의 authorization code 단일 사용을 Fake로 모사하는 테스트 하네스다.
 - `no-email`, `existing-email` 등 특수 fixture code는 기존 오류 분기 테스트를 위해 generated code 저장소와 별도로 유지한다.
 - 외부 Provider Access Token은 메서드 지역 값으로만 사용하고 DB·로그·응답에 저장하지 않는다.
 - HTTP 응답 DTO는 공급자 JSON 구조를 그대로 모델링하되 controller 응답 DTO로 재사용하지 않는다.
@@ -251,8 +251,8 @@ OAuthUserDto fetchUser(String authorizationCode, String state);
 - [x] 사용자 취소·만료/재사용 code는 400 `OAUTH_AUTHORIZATION_FAILED`, 공급자 장애·timeout·malformed response는 502 `OAUTH_PROVIDER_ERROR`로 정규화하고 민감한 공급자 응답은 노출하지 않는다.
 - [x] local·test에서는 Fake만, `prod | oauth-real`에서는 실제 두 Provider만 활성화되고 실제 프로필의 Client ID/Secret/redirect URI 누락·공백은 fail-fast인지 검증한다.
 - [x] Provider Access Token과 authorization code를 저장·로그·응답하지 않는다.
-- [x] Fake authorize가 state마다 고유 code를 발급하고 공유 thread-safe set에 `(code, state)` 결합을 등록하도록 변경한다.
-- [x] Fake callback은 generated code+state를 원자적으로 한 번만 소비하고 재사용·동시 경합의 후속 요청을 400 `OAUTH_AUTHORIZATION_FAILED`로 거부한다. 특수 fixture code는 기존 오류 테스트용으로 유지한다.
+- [x] Fake authorize가 state마다 고유 code를 발급하고 공유 thread-safe store에 `(provider, code, state)` 결합을 등록하도록 변경한다.
+- [x] KAKAO/NAVER 전용 Fake callback bean은 잘못된 provider 요청을 grant 소비 없이 거부하고, 원 provider에서 generated grant를 원자적으로 한 번만 소비하며 재사용·동시 경합의 후속 요청을 400 `OAUTH_AUTHORIZATION_FAILED`로 거부한다. 특수 fixture code는 기존 오류 테스트용으로 유지한다.
 
 ## Task 3: 안전한 nickname과 기존/신규 소셜 로그인 트랜잭션
 
@@ -272,8 +272,8 @@ OAuthUserDto fetchUser(String authorizationCode, String state);
 - [x] Issue #9 authorize/state 테스트와 기존 auth-account 회귀를 포함한 대상 테스트, Spotless, `.\gradlew.bat build --no-daemon --max-workers=1`을 실행한다.
 - [x] 실제 Controller 매핑 기준으로 `docs/api-routes.md`를 동기화하고 자동 검증 결과만 run-log·PR의 “자동 테스트” 영역에 기록한다.
 - [x] 실제 `oauth-real` 컨텍스트에서 `RestClient.Builder` 자동설정 누락을 재현하고 `spring-boot-restclient`, `OAuthRealContextIntegrationTest`, timeout counterfactual 테스트로 보완한 뒤 실제 jar 기동과 authorize 302를 확인한다.
-- [x] Fake Provider의 generated code 1회 성공·순차 재사용 거부·동시성 단일 성공과 authorize URI별 고유 code를 자동 테스트로 검증한다.
-- [x] Fake 전체 flow에서 첫 callback 200 후 같은 code+state+raw cookie 재전송이 400 `OAUTH_AUTHORIZATION_FAILED`이고 RefreshToken·User·SocialAccount·Account가 불변인지 MySQL 통합 테스트로 검증한다.
+- [x] Fake Provider의 generated code 1회 성공·순차 재사용 거부·동시성 단일 성공, authorize URI별 고유 code, 잘못된 provider 거부·grant 비소비 후 원 provider 1회 성공을 자동 테스트로 검증한다.
+- [x] Fake 전체 flow에서 첫 callback 200 후 같은 `(provider, code, state)`와 raw cookie 재전송이 400 `OAUTH_AUTHORIZATION_FAILED`이고 RefreshToken·User·SocialAccount·Account가 불변인지 MySQL 통합 테스트로 검증한다.
 - [x] 기존 state 누락·쿠키 누락·불일치 400과 특수 fixture 오류 회귀를 유지하고 대상 테스트·전체 build를 다시 실행해 기록한다.
 
 ## Task 5: 공급자별 실제 OAuth 스모크와 PR 완료 게이트
@@ -306,9 +306,9 @@ OAuthUserDto fetchUser(String authorizationCode, String state);
 
 | 구분 | 공급자/명령 | 결과 | 검증 수준·사유 |
 |---|---|---|---|
-| 자동 회귀 | Fake OAuth 대상 테스트 | PASS | PR #49 후속 generated code 고유성·원자적 1회 소비·순차/동시 재사용 400·전체 flow 재전송 DB 불변 포함. 실제 OAuth 아님 |
+| 자동 회귀 | Fake OAuth 대상 테스트 | PASS | `(provider, code, state)` 결합, 잘못된 provider 거부·grant 비소비, 원 provider 1회 성공·재사용/동시성 400, 전체 flow 재전송 DB 불변 포함. 실제 OAuth 아님 |
 | 포맷 | `.\gradlew.bat spotlessApply` | PASS | PR #49 후속 production/test 포맷 적용 |
-| 전체 게이트 | `.\gradlew.bat build --no-daemon --max-workers=1` | PASS | PR #49 후속 production/test 상태에서 `BUILD SUCCESSFUL`(4분 8초). 이후 검증 기록 문서만 변경 |
+| 전체 게이트 | `.\gradlew.bat build --no-daemon --max-workers=1` | PASS | provider 결합 후 최종 production/test 상태에서 `BUILD SUCCESSFUL`(3분 23초). 이후 검증 기록 문서만 변경 |
 | 실제 OAuth | KAKAO | PASS | 기존 실제 스모크에서 신규/기존·JWT·DB 검증 완료. PR #49 후속 자동 검증에서는 재실행하지 않음 |
 | 실제 OAuth | NAVER | PASS | 기존 실제 스모크에서 신규/기존·JWT·DB 검증 완료. PR #49 후속 자동 검증에서는 재실행하지 않음 |
 
@@ -327,8 +327,8 @@ OAuthUserDto fetchUser(String authorizationCode, String state);
 - [x] Fake Provider 기반 신규/기존 OAuth와 오류·롤백 자동 회귀가 통과한다.
 - [x] nickname 형식·비식별성·최대 5회 충돌 재시도와 안전한 실패가 통과한다.
 - [x] `OAUTH_AUTHORIZATION_FAILED` 400과 `OAUTH_PROVIDER_ERROR` 502 분류 테스트가 통과한다.
-- [x] Fake authorize의 state별 고유 code와 generated code 원자적 1회 소비·순차 재사용·동시성 계약이 통과한다.
-- [x] 첫 Fake callback 200 후 같은 code+state+raw cookie 재전송 400과 RefreshToken·User·SocialAccount·Account 불변 통합 테스트가 통과한다.
+- [x] Fake authorize의 state별 고유 code, `(provider, code, state)` 원자적 1회 소비·순차 재사용·동시성, 잘못된 provider 거부·grant 비소비 후 원 provider 성공 계약이 통과한다.
+- [x] 첫 Fake callback 200 후 같은 `(provider, code, state)`와 raw cookie 재전송 400, RefreshToken·User·SocialAccount·Account 불변 통합 테스트가 통과한다.
 - [x] 기존 Issue #9 authorize/state 및 auth-account 전체 회귀가 유지된다.
 - [x] 신규 OAuth 회원의 SocialAccount 1·계좌 2·Refresh Token 해시가 회원과 원자 저장된다.
 - [x] 실제 카카오 OAuth 전체 흐름과 신규/기존/DB 검증이 `PASS`다. 단, 기존 회원 요청 2회의 HTTP 응답 본문은 Chrome 제한으로 직접 확인하지 못해 서버 트랜잭션·DB 증거로 확인한 범위를 run-log에 별도 기록한다.
