@@ -46,3 +46,5 @@
 ### 모니터링 (사람용 요약)
 - Task 1 — `PostCommentRepository.deleteByPost_Id(Long)` 파생 삭제 쿼리, `CommunityPostService.deletePost(authenticatedUserId, postId)`(NOT_FOUND→FORBIDDEN→댓글 삭제→게시물 삭제 순) 추가. 컴파일 통과. 컨트롤러·테스트·문서는 범위 밖.
 - Task 2 — `CommunityPostController`에 `@DeleteMapping("/{postId}")` 추가, `deletePost` 호출 후 204 No Content 응답. 컴파일 통과. 테스트·`docs/api-routes.md` 동기화는 범위 밖.
+- 리뷰 — 레이어링·소유권 검증(403)·미존재(404)·트랜잭션 경계(댓글 선삭제 후 게시물 삭제)·테스트 3계층 모두 적합. `docs/api-routes.md` DELETE 엔드포인트 미반영(Task 5 미완료)으로 차단 1건.
+- 문서 동기화 — planner(동기화 모드)가 `docs/api-routes.md`에 `DELETE /api/community/posts/{postId}` 요약 행과 상세 절(인증·요청·204 응답·401/403/404 오류·Spec 008 COM-001, Issue #27)을 추가하고 issue-27-tasks.md Task 5를 완료 처리했다.
