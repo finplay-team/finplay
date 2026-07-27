@@ -157,6 +157,38 @@ public class AuthService {
 		return MemberResponse.from(user, signupMethod);
 	}
 
+	// 재인증 증명 검증과 닉네임 변경을 한 트랜잭션으로 묶는다 — 닉네임 저장이 실패하면 재인증 토큰 소비도 롤백된다.
+	@Transactional
+	public MemberResponse changeNickname(
+		Long userId, String newNickname, String currentPassword, String reauthToken) {
+		LocalDateTime now = LocalDateTime.now(clock);
+		User user = userRepository.findById(userId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED));
+		// 클라이언트가 채운 필드가 아니라 DB의 실제 가입 방식으로 분기한다 (필드 조작으로 비밀번호 검증을 우회할 수 없게).
+		SignupMethod signupMethod = socialAccountRepository.findByUserId(userId)
+			.map(socialAccount -> SignupMethod.fromProvider(socialAccount.getProvider()))
+			.orElse(SignupMethod.EMAIL);
+
+		if (signupMethod == SignupMethod.EMAIL) {
+			verifyCurrentPassword(user, currentPassword);
+		} else {
+			consumeReauthToken(userId, reauthToken, now);
+		}
+
+		if (!user.getNickname().equals(newNickname)
+			&& userRepository.existsByNicknameAndIdNot(newNickname, userId)) {
+			throw new BusinessException(ErrorCode.DUPLICATE_RESOURCE);
+		}
+		user.changeNickname(newNickname, now);
+		try {
+			userRepository.saveAndFlush(user);
+		} catch (DataIntegrityViolationException ex) {
+			throw new BusinessException(ErrorCode.DUPLICATE_RESOURCE);
+		}
+
+		return MemberResponse.from(user, signupMethod);
+	}
+
 	@Transactional
 	public TokenResponse refresh(String rawRefreshToken) {
 		AuthenticatedUser authenticatedUser = jwtTokenProvider.parseRefreshToken(rawRefreshToken)
@@ -202,6 +234,26 @@ public class AuthService {
 		int revoked = refreshTokenRepository.revokeIfActiveAndNotExpired(refreshToken.getId(), now);
 		if (revoked != 1) {
 			throw new BusinessException(ErrorCode.UNAUTHORIZED);
+		}
+	}
+
+	private void verifyCurrentPassword(User user, String currentPassword) {
+		if (currentPassword == null || currentPassword.isBlank()) {
+			throw new BusinessException(ErrorCode.VALIDATION_ERROR, "이메일 회원은 현재 비밀번호가 필요합니다.");
+		}
+		if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
+			throw new BusinessException(ErrorCode.REAUTHENTICATION_FAILED);
+		}
+	}
+
+	// 토큰 미존재·타인 소유·이미 소비·만료를 구분하지 않는다 — 사유가 갈리면 토큰의 어느 속성이 틀렸는지 노출된다.
+	private void consumeReauthToken(Long userId, String reauthToken, LocalDateTime now) {
+		if (reauthToken == null || reauthToken.isBlank()) {
+			throw new BusinessException(ErrorCode.VALIDATION_ERROR, "OAuth 회원은 재인증 토큰이 필요합니다.");
+		}
+		int consumed = reauthTokenRepository.consumeIfValidForUser(sha256(reauthToken), userId, now);
+		if (consumed != 1) {
+			throw new BusinessException(ErrorCode.REAUTHENTICATION_FAILED);
 		}
 	}
 
