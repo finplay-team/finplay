@@ -53,7 +53,8 @@ class CommunityPostRepositoryTest {
 
 	@BeforeEach
 	void removePostsPersistedByOtherTestContexts() {
-		repository.deleteAllInBatch();
+		jdbcTemplate.update("delete from post_comments");
+		jdbcTemplate.update("delete from community_posts");
 	}
 
 	@Test
