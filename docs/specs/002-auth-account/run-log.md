@@ -28,6 +28,14 @@
 
 - `EmailChangeRequest`(`newEmail`만 `@NotBlank`+`@Email`+`@Size(max=255)`, `currentPassword`/`reauthToken`은 `@Size`만 적용해 서비스 계층 403 판단에 위임)와 `EmailChangeController`(`POST /api/auth/email-changes`, Bearer 인증, 202 본문 없음)를 추가했다. `SecurityConfig`는 수정하지 않았고, `docs/api-routes.md`에 라우트·전용 절·보호 경로 표를 갱신했다.
 
+### Task 4: 통합 테스트(Fake EmailSender + Testcontainers MySQL)
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| implementer | implementer | `JAVA_HOME="C:/Program Files/Java/jdk-17" ./gradlew.bat test --tests "*EmailChangeIntegrationTest" --no-daemon --max-workers=1` — 7/7 통과(`mysql:8.4` Testcontainers 실제 기동, Docker 가용) | issue-55-plan.md Task 4 첫 체크박스·완료 체크리스트, `SignupIntegrationTest`/`OAuthReauthCallbackIntegrationTest` 기존 패턴(서비스 직접 호출·`FakeEmailSender`·JdbcTemplate) |
+
+- `EmailChangeIntegrationTest`(`com.finplay.api.auth.service`)를 신설해 EMAIL/OAuth 성공(이메일 불변·해시만 저장·`reauth_tokens.consumed_at` 채움), 오답 비밀번호·이미 소비된 `reauthToken` 403(데이터 불변), 중복 이메일 409(데이터 불변), 60초 재발송 429(행 추가 없음), 이후 재발송 성공 시 이전 코드 무효화(`expires_at<=now`)를 검증했다. Clock이 실제 시스템 클럭이라 60초 창 통과는 `Clock.fixed` 대신 저장된 행의 `created_at`을 `JdbcTemplate`으로 61초 되돌리는 방식을 썼다(임의 판단, 별도 Mutable Clock 인프라를 새로 만들지 않기 위함).
+
 ## Issue #53
 
 ### Task 1: state 서명·검증 계약과 오류 코드·환경변수
@@ -307,6 +315,7 @@
 | 22:30 | reviewer(리뷰) | `git diff origin/dev...HEAD` (auth/me 관련 프로덕션·테스트·문서 파일), `MemberResponse`·`SocialAccountRepository`·`AuthService`·`AuthController`·마이그레이션(V2) 확인 | issue-8-plan.md D1~D7, conventions.md 레이어·DTO·Lombok·테스트 규칙, ADR-0002, ADR-0003, ADR-0004(마이그레이션 미추가 확인)
 
 ## 모니터링 (사람용 요약)
+- Issue #55 Task 4(통합 테스트) — `EmailChangeIntegrationTest` 7건 신설, `mysql:8.4` Testcontainers로 전부 통과(이 환경에서 Docker 가용 확인). 전체 회귀·문서 동기화는 메인 세션이 이어서 처리.
 - Issue #55 Task 3 — `EmailChangeRequest`·`EmailChangeController`(`POST /api/auth/email-changes`, Bearer 필수, 202 본문 없음) 추가, api-routes.md 동기화, 컴파일 통과.
 - Issue #55 Task 2 — `EmailChangeService.requestEmailChange` 신설: 재인증 증명(비밀번호/`reauthToken`) → 이메일 중복 → 발송 제한 순서로 판정 후 인증번호 발송, `AuthService` 미수정, 컴파일 통과.
 - 14:30 — V2 마이그레이션(auth 5개 테이블) + User·EmailVerification 엔티티/Repository 추가, 컴파일 통과.
