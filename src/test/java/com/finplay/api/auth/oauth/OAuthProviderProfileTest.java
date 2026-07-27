@@ -26,6 +26,7 @@ class OAuthProviderProfileTest {
 			PropertySourcesPlaceholderConfigurer.class,
 			PropertySourcesPlaceholderConfigurer::new)
 		.withUserConfiguration(
+			FakeOAuthGrantStore.class,
 			FakeOAuthAuthorizationProvider.class,
 			KakaoOAuthAuthorizationProvider.class,
 			NaverOAuthAuthorizationProvider.class,
@@ -39,6 +40,7 @@ class OAuthProviderProfileTest {
 		contextRunner.run(context -> {
 			assertThat(context).hasNotFailed();
 			assertThat(context).hasSingleBean(OAuthAuthorizationProvider.class);
+			assertThat(context).hasSingleBean(FakeOAuthGrantStore.class);
 			assertThat(context.getBean(OAuthAuthorizationProvider.class))
 				.isInstanceOf(FakeOAuthAuthorizationProvider.class);
 			assertThat(context).hasSingleBean(OAuthCallbackProvider.class);

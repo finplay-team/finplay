@@ -107,7 +107,23 @@ class FakeOAuthFlowIntegrationTest {
 		long accountCount = accounts.count();
 		long refreshCount = refreshTokens.count();
 
+		mockMvc.perform(get("/api/auth/oauth/{provider}/callback", provider)
+			.param("code", authorization.code())
+			.param("state", authorization.state())
+			.cookie(authorization.cookie()))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code")
+				.value("OAUTH_AUTHORIZATION_FAILED"))
+			.andExpect(header().string(
+				HttpHeaders.SET_COOKIE,
+				Matchers.containsString("; Max-Age=0")));
+		assertThat(users.count()).isEqualTo(userCount);
+		assertThat(socialAccounts.count()).isEqualTo(socialCount);
+		assertThat(accounts.count()).isEqualTo(accountCount);
+		assertThat(refreshTokens.count()).isEqualTo(refreshCount);
+
 		Authorization secondAuthorization = authorize(provider);
+		assertThat(secondAuthorization.code()).isNotEqualTo(authorization.code());
 		callback(
 			provider,
 			secondAuthorization.code(),
