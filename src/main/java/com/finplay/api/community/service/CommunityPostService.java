@@ -35,6 +35,13 @@ public class CommunityPostService {
 	}
 
 	@Transactional(readOnly = true)
+	public CommunityPostResponse getPost(Long postId) {
+		CommunityPost post = communityPostRepository.findById(postId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+		return CommunityPostResponse.from(post);
+	}
+
+	@Transactional(readOnly = true)
 	public CommunityPostListResponse getPosts(int page, int size) {
 		Pageable pageable = PageRequest.of(page, size);
 		Page<CommunityPost> posts = communityPostRepository.findPostsOrderByCreatedAtDesc(pageable);

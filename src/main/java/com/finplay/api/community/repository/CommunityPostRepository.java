@@ -7,4 +7,9 @@ import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface CommunityPostRepository
-	extends JpaRepository<CommunityPost, Long>, CommunityPostRepositoryCustom {}
+	extends JpaRepository<CommunityPost, Long>, CommunityPostRepositoryCustom {
+
+	@Override
+	@EntityGraph(attributePaths = "author")
+	Optional<CommunityPost> findById(Long id);
+}
