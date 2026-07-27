@@ -7,6 +7,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -49,6 +50,8 @@ class AuthControllerTest {
 
 	private static final String EMAIL = "user@finplay.com";
 	private static final String NICKNAME = "finplayer";
+	private static final String NEW_NICKNAME = "newplayer";
+	private static final String REAUTH_TOKEN = "reauth.raw.token";
 	private static final String PASSWORD = "password123";
 	private static final String SHORT_PASSWORD = "pass123";
 	private static final String SIGNUP_TOKEN = "signup-token";
@@ -427,6 +430,163 @@ class AuthControllerTest {
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
 		verify(authService).getMe(USER_ID);
+	}
+
+	@Test
+	void updateNicknameReturnsOkWithMemberResponseForEmailUser() throws Exception {
+		stubValidAccessToken();
+		when(authService.changeNickname(USER_ID, NEW_NICKNAME, PASSWORD, null))
+			.thenReturn(new MemberResponse(USER_ID, EMAIL, NEW_NICKNAME, SignupMethod.EMAIL));
+
+		mockMvc.perform(patch("/api/auth/me/nickname")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(nicknameRequestJson(NEW_NICKNAME, PASSWORD, null)))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.id").value(USER_ID))
+			.andExpect(jsonPath("$.email").value(EMAIL))
+			.andExpect(jsonPath("$.nickname").value(NEW_NICKNAME))
+			.andExpect(jsonPath("$.signupMethod").value("EMAIL"))
+			// 재인증 증명·비밀번호 해시가 어떤 이름으로도 새지 않도록 응답 키 집합을 4개로 고정한다.
+			.andExpect(jsonPath("$.*", hasSize(4)))
+			.andExpect(jsonPath("$.currentPassword").doesNotExist())
+			.andExpect(jsonPath("$.reauthToken").doesNotExist())
+			.andExpect(jsonPath("$.passwordHash").doesNotExist());
+
+		verify(authService).changeNickname(USER_ID, NEW_NICKNAME, PASSWORD, null);
+	}
+
+	@Test
+	void updateNicknameReturnsOkWithMemberResponseForOAuthUser() throws Exception {
+		stubValidAccessToken();
+		when(authService.changeNickname(USER_ID, NEW_NICKNAME, null, REAUTH_TOKEN))
+			.thenReturn(new MemberResponse(USER_ID, EMAIL, NEW_NICKNAME, SignupMethod.KAKAO));
+
+		mockMvc.perform(patch("/api/auth/me/nickname")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(nicknameRequestJson(NEW_NICKNAME, null, REAUTH_TOKEN)))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.nickname").value(NEW_NICKNAME))
+			.andExpect(jsonPath("$.signupMethod").value("KAKAO"))
+			.andExpect(jsonPath("$.*", hasSize(4)))
+			.andExpect(jsonPath("$.reauthToken").doesNotExist());
+
+		verify(authService).changeNickname(USER_ID, NEW_NICKNAME, null, REAUTH_TOKEN);
+	}
+
+	@ParameterizedTest(name = "{0}")
+	@MethodSource("invalidNicknameRequests")
+	void updateNicknameRejectsInvalidNicknameWithoutCallingService(
+		String scenario, String nickname) throws Exception {
+		stubValidAccessToken();
+
+		mockMvc.perform(patch("/api/auth/me/nickname")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(nicknameRequestJson(nickname, PASSWORD, null)))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.message").isNotEmpty())
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(authService);
+	}
+
+	@ParameterizedTest(name = "{0}")
+	@MethodSource("nicknameServiceErrors")
+	void updateNicknameMapsServiceErrorToCommonErrorFormat(
+		String scenario, ErrorCode errorCode, int expectedStatus) throws Exception {
+		stubValidAccessToken();
+		when(authService.changeNickname(USER_ID, NEW_NICKNAME, PASSWORD, null))
+			.thenThrow(new BusinessException(errorCode));
+
+		mockMvc.perform(patch("/api/auth/me/nickname")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(nicknameRequestJson(NEW_NICKNAME, PASSWORD, null)))
+			.andExpect(status().is(expectedStatus))
+			.andExpect(jsonPath("$.error.code").value(errorCode.name()))
+			.andExpect(jsonPath("$.error.message").value(errorCode.getDefaultMessage()))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(authService).changeNickname(USER_ID, NEW_NICKNAME, PASSWORD, null);
+	}
+
+	@Test
+	void updateNicknameMapsServiceValidationErrorToBadRequest() throws Exception {
+		stubValidAccessToken();
+		when(authService.changeNickname(USER_ID, NEW_NICKNAME, null, null))
+			.thenThrow(new BusinessException(ErrorCode.VALIDATION_ERROR, "이메일 회원은 현재 비밀번호가 필요합니다."));
+
+		mockMvc.perform(patch("/api/auth/me/nickname")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(nicknameRequestJson(NEW_NICKNAME, null, null)))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.message").value("이메일 회원은 현재 비밀번호가 필요합니다."))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(authService).changeNickname(USER_ID, NEW_NICKNAME, null, null);
+	}
+
+	@Test
+	void updateNicknameRejectsMissingAccessTokenWithoutCallingService() throws Exception {
+		mockMvc.perform(patch("/api/auth/me/nickname")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(nicknameRequestJson(NEW_NICKNAME, PASSWORD, null)))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
+			.andExpect(jsonPath("$.error.message").value(ErrorCode.UNAUTHORIZED.getDefaultMessage()))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(authService);
+	}
+
+	@Test
+	void updateNicknameRejectsRefreshBearerWithoutCallingService() throws Exception {
+		when(jwtTokenProvider.parseAccessToken(REFRESH_TOKEN)).thenReturn(Optional.empty());
+
+		mockMvc.perform(patch("/api/auth/me/nickname")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + REFRESH_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(nicknameRequestJson(NEW_NICKNAME, PASSWORD, null)))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
+			.andExpect(jsonPath("$.error.message").value(ErrorCode.UNAUTHORIZED.getDefaultMessage()))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(authService);
+	}
+
+	private String nicknameRequestJson(
+		String nickname, String currentPassword, String reauthToken) throws Exception {
+		Map<String, Object> request = new LinkedHashMap<>();
+		if (nickname != null) {
+			request.put("nickname", nickname);
+		}
+		if (currentPassword != null) {
+			request.put("currentPassword", currentPassword);
+		}
+		if (reauthToken != null) {
+			request.put("reauthToken", reauthToken);
+		}
+		return objectMapper.writeValueAsString(request);
+	}
+
+	private static Stream<Arguments> invalidNicknameRequests() {
+		return Stream.of(
+			Arguments.of("nickname 누락", null),
+			Arguments.of("nickname 빈 문자열", ""),
+			Arguments.of("nickname 공백", "   "),
+			Arguments.of("nickname 51자", "n".repeat(51)));
+	}
+
+	private static Stream<Arguments> nicknameServiceErrors() {
+		return Stream.of(
+			Arguments.of("재인증 실패 403", ErrorCode.REAUTHENTICATION_FAILED, 403),
+			Arguments.of("닉네임 중복 409", ErrorCode.DUPLICATE_RESOURCE, 409));
 	}
 
 	private void stubValidAccessToken() {
