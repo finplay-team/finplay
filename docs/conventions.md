@@ -95,7 +95,7 @@ com.finplay.api
 | MySQL/JPA | repository |
 | DB 트랜잭션 | service |
 | Redis 시세 저장·조회 | market의 전용 component (예: PriceStore) — key 문자열은 이 한 곳에서만 조립 |
-| 업비트 WebSocket | market의 전용 client component |
+| 빗썸 WebSocket | market의 전용 client component |
 
 전용 component를 만들더라도 기능 흐름은 service에서 읽히게 유지한다.
 
