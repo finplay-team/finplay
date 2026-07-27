@@ -16,6 +16,7 @@ jwt:
 # 실제 OAuth 공급자 설정. 실제 구현이 활성화되는 prod·oauth-real 프로필에서 환경변수로 주입한다.
 oauth:
   state-cookie-secure: ${OAUTH_STATE_COOKIE_SECURE:true}
+  state-secret: ${OAUTH_STATE_SECRET}
   kakao:
     client-id: ${KAKAO_CLIENT_ID}
     client-secret: ${KAKAO_CLIENT_SECRET}

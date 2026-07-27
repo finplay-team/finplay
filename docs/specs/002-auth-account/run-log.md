@@ -1,5 +1,13 @@
 # Run Log: 002-auth-account
 
+## Issue #53
+
+### Task 1: state 서명·검증 계약과 오류 코드·환경변수
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| 23:30 | implementer | `.\gradlew.bat compileJava compileTestJava --no-daemon --max-workers=1` — `BUILD SUCCESSFUL`, `.\gradlew.bat spotlessApply`, `.\gradlew.bat test --tests "*OAuthStateGeneratorTest" --tests "*OAuthAuthorizationServiceTest" --tests "*OAuthAuthorizationControllerTest"` — `BUILD SUCCESSFUL` | issue-53-plan.md D1(HMAC-SHA-256 서명 state)·D2(서명 실패 403), conventions.md 시크릿·네이밍 규칙, ADR-0002 |
+
 ## Issue #10
 
 ### PR #49 차단 리뷰 대응 및 최종 검증
@@ -260,3 +268,4 @@
 - 18:01 — 401·403 핸들러 2종의 수기 생성자를 `@RequiredArgsConstructor`로 교체(conventions Lombok 규칙 준수)해 SpotBugs EI_EXPOSE_REP2 2건 해소, `spotbugsMain` Total Warnings 0. exclude.xml·새 의존성은 추가하지 않았다.
 - 22:15 — Issue #8 Task 4: `GET /api/auth/me` 실제 계약(응답 4필드·401 공통 포맷·SecurityConfig 미변경)을 api-routes.md에 반영하고 tasks.md의 JWT·Security 항목을 완료 처리했다. plan.md API 표는 313fec8에서 이미 갱신돼 있어 확인만 했고, 전체 `build`를 직렬로 돌려 BUILD SUCCESSFUL을 확인했다.
 - 22:30 — 리뷰 판정: 차단 0건. AUTH-005 조회 계약(민감 필드 미노출·가입 방식 판별)과 D1~D7 설계가 구현·테스트에 그대로 반영됨을 확인, 머지 가능.
+- 23:30 — Issue #53 Task 1: `OAuthPurpose`·`OAuthStateClaims`와 HMAC-SHA-256 서명/검증(`generate(purpose, userId)`·`verify`, 실패는 전부 403 `REAUTHENTICATION_FAILED`)을 `OAuthStateGenerator`에 추가하고 `OAUTH_STATE_SECRET`을 yml·.env.example·build.gradle test 환경에 배선했다. `OAuthAuthorizationService.authorize`는 `generate(LOGIN, null)` 호출로만 바꿔 302 계약은 그대로 회귀 통과했다.

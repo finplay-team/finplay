@@ -10,6 +10,7 @@ import com.finplay.api.auth.oauth.FakeOAuthGrantStore;
 import com.finplay.api.auth.oauth.OAuthAuthorizationProvider;
 import com.finplay.api.auth.oauth.OAuthAuthorizationResult;
 import com.finplay.api.auth.oauth.OAuthProviderName;
+import com.finplay.api.auth.oauth.OAuthPurpose;
 import com.finplay.api.auth.oauth.OAuthStateGenerator;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
@@ -41,7 +42,7 @@ class OAuthAuthorizationServiceTest {
 	@DisplayName("provider 이름은 대소문자와 무관하게 선택되고 같은 state가 URI와 결과에 전달된다")
 	void authorizeSelectsProviderIgnoringCaseAndSharesStateWithUriAndResult(
 		String rawProvider, OAuthProviderName expectedProvider, String expectedPath) {
-		given(stateGenerator.generate()).willReturn("state-value_123");
+		given(stateGenerator.generate(OAuthPurpose.LOGIN, null)).willReturn("state-value_123");
 		OAuthAuthorizationService service = new OAuthAuthorizationService(
 			List.of(fakeProvider()), stateGenerator);
 

@@ -4,6 +4,7 @@ package com.finplay.api.auth.service;
 import com.finplay.api.auth.oauth.OAuthAuthorizationProvider;
 import com.finplay.api.auth.oauth.OAuthAuthorizationResult;
 import com.finplay.api.auth.oauth.OAuthProviderName;
+import com.finplay.api.auth.oauth.OAuthPurpose;
 import com.finplay.api.auth.oauth.OAuthStateGenerator;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
@@ -26,7 +27,7 @@ public class OAuthAuthorizationService {
 			.filter(candidate -> candidate.supports(provider))
 			.findFirst()
 			.orElseThrow(() -> new IllegalStateException("활성화된 OAuth 인가 공급자가 없습니다: " + provider));
-		String state = stateGenerator.generate();
+		String state = stateGenerator.generate(OAuthPurpose.LOGIN, null);
 		URI authorizationUri = authorizationProvider.createAuthorizationUri(provider, state);
 
 		return new OAuthAuthorizationResult(provider, authorizationUri, state);
