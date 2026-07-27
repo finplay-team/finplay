@@ -284,6 +284,7 @@
 | 04:20 | implementer | `.\gradlew.bat test --tests "*NicknameChangeIntegrationTest" --no-daemon --max-workers=1` — 4/4 통과, `.\gradlew.bat spotlessApply` | issue-54-plan.md Task 4·미확정 6번(Order/Execution 미존재로 계좌까지만 검증), ADR-0003 Testcontainers 통합 테스트 |
 
 | 05:10 | reviewer(리뷰) | `git diff origin/dev...HEAD` (Issue #54 프로덕션 5·테스트 5·문서 4 파일), `SecurityConfig`·`ErrorCode`·`db/migration`·`Sha256BcryptPasswordEncoder`·`User`·`AuthController` 원본 확인 | issue-54-plan.md D1~D7·완료 체크리스트, conventions.md 레이어·엔티티·DTO·테스트 규칙, ADR-0002, ADR-0003, ADR-0004(마이그레이션 미추가 확인), docs/api-routes.md |
+| 재검토 | reviewer(리뷰) | issue-54-plan.md "미확정·PRD 불일치" 1~5번 재검토 — `AuthService.changeNickname`·`consumeReauthToken`·`ReauthTokenRepository.consumeIfValidForUser`·`OAuthAuthorizationService.authorizeForReauth`·`OAuthCallbackService`·Issue #53 `reauthenticate` 원본 재확인 | docs/prd.md AUTH-005, GitHub Issue #54 본문, issue-54-plan.md D1·D2·D4·D7, Issue #53 issue-53-plan.md(발급 시 SocialAccount 검증 후 state에 바인딩) |
 
 ## 모니터링 (사람용 요약)
 - 14:30 — V2 마이그레이션(auth 5개 테이블) + User·EmailVerification 엔티티/Repository 추가, 컴파일 통과.
@@ -320,3 +321,4 @@
 - 03:25 — Issue #54 Task 5: HEAD `fca5233`(코드 워킹트리 clean) 상태에서 전체 `build`(Spotless·SpotBugs·JaCoCo 40% 포함)를 돌려 564 tests 전부 통과했다. `docs/api-routes.md`는 Task 3에서 이미 라우트·상세 계약·보호 경로를 갱신해 두었고 실제 `AuthController`의 `@PatchMapping("/me/nickname")`과 일치함을 확인해 추가 변경이 없었으며, `tasks.md`의 JWT·Security 항목에 Issue #54 완료를 명시하고 작업 항목 5개 절을 추가했다. 코드 수정은 필요 없었다.
 - 03:35 — Issue #54 Task 3: `NicknameUpdateRequest`(nickname만 `@NotBlank`, 재인증 필드 2개는 선택)와 보호된 `PATCH /api/auth/me/nickname`을 TDD로 추가해 `AuthControllerTest` 59/59가 통과했다. 응답 키 집합을 `hasSize(4)`로 고정하고 `currentPassword`·`reauthToken`·`passwordHash` 부재를 명시 검증했다. 인증 없음·Refresh Bearer 케이스는 매핑 추가 전부터 Security 체인이 401로 막아 `SecurityConfig`는 수정하지 않았고, api-routes.md에 라우트·상세 계약·보호 경로를 같은 커밋에서 동기화했다.
 - 05:10 — Issue #54 리뷰 판정: 차단 0건, 권장 2·참고 4. 원자적 소비 쿼리의 소유자 조건, 단일 트랜잭션 롤백, 본인 제외 중복 확인 이중 방어, `MemberResponse` 민감 필드 미노출, `SecurityConfig`·`ErrorCode`·마이그레이션 미변경, api-routes 일치를 확인, 머지 가능.
+- 재검토 — issue-54-plan.md 미확정 1~5번 전부 "유지" 판정. 5번(소비 시 SocialAccount 재조회 없음)은 Issue #53 authorize→callback 경로가 Access JWT 인증된 principal.userId()를 서명된 state에 실어 SocialAccount 소유자 검증까지 마친 뒤에만 reauth_tokens.user_id에 바인딩함을 재확인해, 소비 시점 재조회가 보안상 불필요함을 확인. 코드 변경 없음.
