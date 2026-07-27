@@ -16,7 +16,7 @@
   - 사용자 B가 사용자 A의 댓글 삭제 시도 → 403 → 댓글이 여전히 존재함을 검증한다.
   - 존재하지 않는 `commentId` → 404, 비로그인 → 401이며 각각 댓글 행 수 불변을 검증한다.
 
-- [ ] **4. 문서 동기화와 전체 게이트**
+- [x] **4. 문서 동기화와 전체 게이트**
   - 실제 `CommentController` 매핑(`DELETE /api/community/comments/{commentId}`)과 204·403·404·401 계약을 `docs/api-routes.md`에 반영한다(동기화 모드에서 처리).
   - 댓글 목록 조회(Issue #29) 미구현으로 "삭제 후 목록에서 제거" 기준은 `findById` 재조회 부재로 대체 검증했음을 확인한다.
   - `spotlessApply`, 대상 테스트, `.\gradlew.bat build --no-daemon --max-workers=1`, `git diff --check`를 순차 실행한다.

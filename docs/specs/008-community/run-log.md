@@ -46,3 +46,7 @@
 ### 모니터링 (사람용 요약)
 - Task 1 — `PostCommentService.deleteComment(authenticatedUserId, commentId)` 추가(`@Transactional`, NOT_FOUND/FORBIDDEN 후 delete). Repository 변경 없음. 컴파일 통과. 단위 테스트는 다음 단계(tester) 담당.
 - Task 2 — 신규 `CommentController`(`/api/community/comments`, DELETE `/{commentId}`) 추가, `PostCommentController`는 변경 없음, Security 화이트리스트 미추가(인증 필요 유지). `docs/api-routes.md`에 라우트·오류 표 반영. 컴파일 통과, 슬라이스 테스트는 다음 단계(tester) 담당.
+| 리뷰 | reviewer(리뷰) | `git diff dev...HEAD` (5193dfe) | conventions.md 레이어·API·Lombok·테스트 규칙, ADR-0002/0003/0004, issue-30-plan.md/tasks.md, docs/api-routes.md, SecurityConfig 화이트리스트 |
+
+### 모니터링 (사람용 요약, 추가)
+- 리뷰 — 컨트롤러 분리(D1)·서비스 재사용(D2) 설계 결정이 컨벤션과 일관됨. 레이어링·403/404·204·에러 포맷·Security 화이트리스트 미노출·3단계 테스트(단위/WebMvc/Testcontainers) 모두 양호. 차단 사항 없음.
