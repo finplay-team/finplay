@@ -12,6 +12,7 @@ import com.finplay.api.community.repository.CommunityPostRepository;
 import com.finplay.api.community.repository.PostCommentRepository;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,5 +44,16 @@ public class PostCommentService {
 			throw new BusinessException(ErrorCode.FORBIDDEN);
 		}
 		postCommentRepository.delete(comment);
+	}
+
+	@Transactional(readOnly = true)
+	public List<PostCommentResponse> getComments(Long postId) {
+		if (!communityPostRepository.existsById(postId)) {
+			throw new BusinessException(ErrorCode.NOT_FOUND);
+		}
+		return postCommentRepository.findAllByPostIdOrderByCreatedAtAscIdAsc(postId)
+			.stream()
+			.map(PostCommentResponse::from)
+			.toList();
 	}
 }

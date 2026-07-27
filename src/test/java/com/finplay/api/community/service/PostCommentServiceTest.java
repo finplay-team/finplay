@@ -22,11 +22,13 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.annotation.Transactional;
 
 class PostCommentServiceTest {
 
@@ -130,5 +132,57 @@ class PostCommentServiceTest {
 			.isEqualTo(ErrorCode.NOT_FOUND);
 
 		verify(commentRepository, never()).delete(any());
+	}
+
+	@Test
+	void getCommentsReturnsRepositoryResultsMappedInOriginalOrder() {
+		User firstAuthor = User.create("first@finplay.com", "hash", "first", LocalDateTime.now(CLOCK));
+		User secondAuthor = User.create("second@finplay.com", "hash", "second", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(firstAuthor, "title", "post", LocalDateTime.now(CLOCK));
+		PostComment first = PostComment.create(
+			post, firstAuthor, "first comment", LocalDateTime.now(CLOCK).minusMinutes(1));
+		PostComment second = PostComment.create(post, secondAuthor, "second comment", LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(first, "id", 11L);
+		ReflectionTestUtils.setField(second, "id", 12L);
+		when(postRepository.existsById(7L)).thenReturn(true);
+		when(commentRepository.findAllByPostIdOrderByCreatedAtAscIdAsc(7L))
+			.thenReturn(List.of(first, second));
+
+		List<PostCommentResponse> responses = service.getComments(7L);
+
+		assertThat(responses).containsExactly(
+			new PostCommentResponse(11L, "first", "first comment", LocalDateTime.now(CLOCK).minusMinutes(1)),
+			new PostCommentResponse(12L, "second", "second comment", LocalDateTime.now(CLOCK)));
+		verify(commentRepository).findAllByPostIdOrderByCreatedAtAscIdAsc(7L);
+	}
+
+	@Test
+	void getCommentsReturnsEmptyListForExistingPostWithoutComments() {
+		when(postRepository.existsById(7L)).thenReturn(true);
+		when(commentRepository.findAllByPostIdOrderByCreatedAtAscIdAsc(7L)).thenReturn(List.of());
+
+		assertThat(service.getComments(7L)).isEmpty();
+	}
+
+	@Test
+	void getCommentsDoesNotQueryCommentsWhenPostDoesNotExist() {
+		when(postRepository.existsById(404L)).thenReturn(false);
+
+		assertThatThrownBy(() -> service.getComments(404L))
+			.isInstanceOf(BusinessException.class)
+			.extracting(exception -> ((BusinessException)exception).getErrorCode())
+			.isEqualTo(ErrorCode.NOT_FOUND);
+
+		verify(commentRepository, never()).findAllByPostIdOrderByCreatedAtAscIdAsc(any());
+	}
+
+	@Test
+	void getCommentsDeclaresReadOnlyTransaction() throws NoSuchMethodException {
+		Transactional transactional = PostCommentService.class
+			.getMethod("getComments", Long.class)
+			.getAnnotation(Transactional.class);
+
+		assertThat(transactional).isNotNull();
+		assertThat(transactional.readOnly()).isTrue();
 	}
 }

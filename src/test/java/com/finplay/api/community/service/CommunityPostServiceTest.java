@@ -16,6 +16,7 @@ import com.finplay.api.community.domain.CommunityPost;
 import com.finplay.api.community.dto.response.CommunityPostListResponse;
 import com.finplay.api.community.dto.response.CommunityPostResponse;
 import com.finplay.api.community.repository.CommunityPostRepository;
+import com.finplay.api.community.repository.PostCommentRepository;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -24,6 +25,7 @@ import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mockito;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -36,8 +38,10 @@ class CommunityPostServiceTest {
 	private static final Clock CLOCK = Clock.fixed(NOW, ZoneOffset.UTC);
 
 	private final CommunityPostRepository repository = Mockito.mock(CommunityPostRepository.class);
+	private final PostCommentRepository postCommentRepository = Mockito.mock(PostCommentRepository.class);
 	private final UserQueryService userQueryService = Mockito.mock(UserQueryService.class);
-	private final CommunityPostService service = new CommunityPostService(repository, userQueryService, CLOCK);
+	private final CommunityPostService service = new CommunityPostService(
+		repository, postCommentRepository, userQueryService, CLOCK);
 
 	@Test
 	void createPostSavesAuthenticatedUserAndFixedCreationTime() {
@@ -181,5 +185,64 @@ class CommunityPostServiceTest {
 		assertThat(response.content()).isEmpty();
 		assertThat(response.totalElements()).isEqualTo(0);
 		assertThat(response.totalPages()).isEqualTo(0);
+	}
+
+	@Test
+	void deletePostDeletesPostWithoutCommentsWhenAuthorMatches() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(author, "id", 42L);
+		CommunityPost post = CommunityPost.create(author, "title", "content", LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(post, "id", 73L);
+		when(repository.findById(73L)).thenReturn(Optional.of(post));
+
+		service.deletePost(42L, 73L);
+
+		verify(postCommentRepository).deleteByPost_Id(73L);
+		verify(repository).delete(post);
+	}
+
+	@Test
+	void deletePostDeletesCommentsBeforePostWhenPostHasComments() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(author, "id", 42L);
+		CommunityPost post = CommunityPost.create(author, "title", "content", LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(post, "id", 73L);
+		when(repository.findById(73L)).thenReturn(Optional.of(post));
+
+		service.deletePost(42L, 73L);
+
+		InOrder inOrder = Mockito.inOrder(postCommentRepository, repository);
+		inOrder.verify(postCommentRepository).deleteByPost_Id(73L);
+		inOrder.verify(repository).delete(post);
+	}
+
+	@Test
+	void deletePostFailsWithNotFoundAndDoesNotDeleteWhenPostDoesNotExist() {
+		when(repository.findById(404L)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> service.deletePost(42L, 404L))
+			.isInstanceOf(BusinessException.class)
+			.extracting(exception -> ((BusinessException)exception).getErrorCode())
+			.isEqualTo(ErrorCode.NOT_FOUND);
+
+		verify(postCommentRepository, never()).deleteByPost_Id(any());
+		verify(repository, never()).delete(any());
+	}
+
+	@Test
+	void deletePostFailsWithForbiddenAndDoesNotDeleteWhenAuthorDiffers() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(author, "id", 42L);
+		CommunityPost post = CommunityPost.create(author, "title", "content", LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(post, "id", 73L);
+		when(repository.findById(73L)).thenReturn(Optional.of(post));
+
+		assertThatThrownBy(() -> service.deletePost(999L, 73L))
+			.isInstanceOf(BusinessException.class)
+			.extracting(exception -> ((BusinessException)exception).getErrorCode())
+			.isEqualTo(ErrorCode.FORBIDDEN);
+
+		verify(postCommentRepository, never()).deleteByPost_Id(any());
+		verify(repository, never()).delete(any());
 	}
 }
