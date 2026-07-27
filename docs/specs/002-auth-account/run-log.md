@@ -277,6 +277,7 @@
 | 21:06 | implementer | `.\gradlew.bat test --tests "*MeIntegrationTest" --no-daemon --max-workers=1` — 5/5 통과, `.\gradlew.bat spotlessApply` | issue-8-plan.md Task 3(실제 MySQL 가입 방식 판별·회원 간 격리·민감 필드 미노출), ADR-0003 Testcontainers 통합 테스트 |
 | 22:15 | implementer | `.\gradlew.bat build --no-daemon --max-workers=1` — BUILD SUCCESSFUL (대상 테스트 3종·spotlessApply 선행) | issue-8-plan.md Task 4, CLAUDE.md 규칙 4·7(완료 전 build, controller 변경 시 api-routes.md 동기화) |
 | 22:30 | reviewer(리뷰) | `git diff origin/dev...HEAD` (auth/me 관련 프로덕션·테스트·문서 파일), `MemberResponse`·`SocialAccountRepository`·`AuthService`·`AuthController`·마이그레이션(V2) 확인 | issue-8-plan.md D1~D7, conventions.md 레이어·DTO·Lombok·테스트 규칙, ADR-0002, ADR-0003, ADR-0004(마이그레이션 미추가 확인)
+| 02:14 | implementer | `.\gradlew.bat test --tests "*ReauthTokenRepositoryTest" --tests "*UserRepositoryTest" --no-daemon --max-workers=1` — 컴파일 실패 확인 후 7/7·5/5 통과, `.\gradlew.bat spotlessApply` | issue-54-plan.md Task 1(D2 원자적 소비 쿼리·D4 본인 제외 중복 확인), ADR-0003 `@DataJpaTest`, ADR-0004(마이그레이션 미추가) |
 
 ## 모니터링 (사람용 요약)
 - 14:30 — V2 마이그레이션(auth 5개 테이블) + User·EmailVerification 엔티티/Repository 추가, 컴파일 통과.
@@ -307,3 +308,4 @@
 - 00:20 — Issue #53 Task 3: `OAuthCallbackService`에 `stateGenerator.verify` 호출과 purpose 분기를 넣고 서비스·컨트롤러 반환 타입을 `Object`로 바꿨다. 실제 MySQL 통합 테스트를 처음 돌려서야 Task 1이 심어둔 결함(생성자 2개 `@Component`에 `@Autowired` 누락 → `@SpringBootTest` 전체가 `No default constructor found`)이 드러났고, 이는 컴파일·단위 테스트만으로는 잡히지 않아 `docs/agent-mistakes.md`에 기록했다. `ErrorCodeTest`의 코드 개수 고정(19→20)도 Task 1 여파로 함께 갱신했다.
 - 00:05 — Issue #53 Task 2: `V5__create_reauth_tokens_table.sql`·`ReauthToken`·`ReauthTokenRepository`·`ReauthTokenGenerator`·`ReauthTokenResponse`를 추가하고 `AuthService.reauthenticate`(회원·소셜계정 조회 후 해시만 저장, 실패는 전부 403)를 구현했다. `AuthService` 생성자가 2개 늘어 `AuthServiceTest`·`OAuthAuthServiceTest`의 생성 호출부를 갱신했고 기존 케이스는 그대로 통과했다. Docker가 없어 `@DataJpaTest`·Testcontainers 검증은 tester에게 위임한다.
 - 09:40 — Issue #53 리뷰 판정: 차단 0건. HMAC 상수 시간 검증, reauthenticate 회원/계좌 불변, purpose 분기 순서, SecurityConfig 안전 기본값, 이전 로그인 계약 무회귀를 D1~D8과 대조해 확인, 머지 가능.
+- 02:14 — Issue #54 Task 1: `ReauthTokenRepository.consumeIfValidForUser`(해시·소유자·미소비·미만료를 한 번의 조건부 UPDATE로 확인, `RefreshTokenRepository.revokeIfActiveAndNotExpired` 선례 재사용)와 `UserRepository.existsByNicknameAndIdNot`을 TDD로 추가했다. 벌크 UPDATE는 영속성 컨텍스트를 우회하므로 테스트에서 `EntityManager.clear()` 후 재조회로 `consumedAt` 값을 검증했고, 재사용·만료·타인 소유 케이스가 모두 0을 반환함을 실제 MySQL로 확인했다.
