@@ -34,3 +34,15 @@
 - 검증 — Service 3개, 명시적 빈 문자열을 포함한 Controller 검증, Repository MySQL 4개, 통합 2개와 Signup 조합 테스트가 통과했다.
 - 검증 — HEAD `dde3e3e`에서 전체 build가 407개 테스트·JaCoCo·SpotBugs·Spotless를 포함해 4분 29초에 통과했다.
 - 최종 — HEAD `7277d4c`에서 `./gradlew.bat build --no-daemon --max-workers=1`이 407개 테스트·JaCoCo·SpotBugs·Spotless를 포함해 4분 23초에 `BUILD SUCCESSFUL`로 통과했다.
+
+## Issue #27
+
+### AI 로그 (에이전트 참조용)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| Task 1 | implementer | `.\gradlew.bat compileJava --no-daemon --max-workers=1` — `BUILD SUCCESSFUL` | issue-27-tasks.md Task 1, conventions.md 레이어 규칙(service 트랜잭션 경계·orElseThrow), ADR-0002 |
+| Task 2 | implementer | `.\gradlew.bat compileJava --no-daemon --max-workers=1` — `BUILD SUCCESSFUL` | issue-27-tasks.md Task 2, conventions.md API 규칙(본문 없는 성공 204), ADR-0002(controller→service 흐름) |
+
+### 모니터링 (사람용 요약)
+- Task 1 — `PostCommentRepository.deleteByPost_Id(Long)` 파생 삭제 쿼리, `CommunityPostService.deletePost(authenticatedUserId, postId)`(NOT_FOUND→FORBIDDEN→댓글 삭제→게시물 삭제 순) 추가. 컴파일 통과. 컨트롤러·테스트·문서는 범위 밖.
+- Task 2 — `CommunityPostController`에 `@DeleteMapping("/{postId}")` 추가, `deletePost` 호출 후 204 No Content 응답. 컴파일 통과. 테스트·`docs/api-routes.md` 동기화는 범위 밖.
