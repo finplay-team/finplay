@@ -15,10 +15,10 @@
   - Service 단위: 본인 수정 성공(6필드+`updatedAt` 갱신 검증), 존재하지 않는 `postId`의 `NOT_FOUND`, 타인 수정 시 `FORBIDDEN` 및 엔티티 미변경을 검증한다.
   - Controller MVC 슬라이스: 정상 200/6필드, 제목·본문 누락·공백·길이 초과의 400 `VALIDATION_ERROR`(서비스 미호출 포함), 404·403 공통 오류 형식, 비로그인 401(서비스 미호출)을 검증한다.
 
-- [x] **4. 실제 DB 수정 통합 테스트** (이 세션 환경엔 Docker 미가용 — 코드 작성 완료, 실행 검증은 Docker 가용 환경에 위임. `docs/agent-mistakes.md` 2026-07-27 참고)
+- [x] **4. 실제 DB 수정 통합 테스트** (최초 작성 시점엔 이 세션 환경에 Docker 미가용이었으나, Docker Desktop 기동 후 재실행하여 5건 전체 통과 확인함. `docs/agent-mistakes.md` 2026-07-27 참고)
   - `@SpringBootTest` + MySQL Testcontainers에서 사용자와 게시물을 저장한 뒤 소유자 PATCH로 제목·본문·`updatedAt` 갱신을 실제 DB 재조회로 검증한다.
   - 타인 PATCH의 403과 DB 미변경, 존재하지 않는 `postId`의 404, 공백 제목/본문의 400과 DB 미변경, 비로그인의 401을 각각 검증한다.
 
-- [ ] **5. 문서 동기화와 완료 게이트**
-  - `docs/api-routes.md`의 커뮤니티 게시물 PATCH 엔드포인트 반영은 이 항목에서 직접 하지 않는다 — **동기화 모드에서 처리**(planner의 별도 실행 단계, `/feature` 마무리 단계).
-  - `spotlessApply`, 대상 테스트, `.\gradlew.bat build --no-daemon --max-workers=1`, `git diff --check`를 실행하고 결과를 기록한다.
+- [x] **5. 문서 동기화와 완료 게이트**
+  - `docs/api-routes.md`의 커뮤니티 게시물 PATCH 엔드포인트 반영은 이 항목에서 직접 하지 않는다 — **동기화 모드에서 처리**(planner의 별도 실행 단계, `/feature` 마무리 단계). → planner 동기화 모드에서 라우트 표와 상세 절 반영 완료.
+  - `spotlessApply`, 대상 테스트, `.\gradlew.bat build --no-daemon --max-workers=1`, `git diff --check`를 실행하고 결과를 기록한다. (오케스트레이터가 이미 실행·확인함)
