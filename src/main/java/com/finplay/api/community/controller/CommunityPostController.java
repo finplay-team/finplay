@@ -5,6 +5,7 @@ import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.community.dto.request.CommunityPostCreateRequest;
+import com.finplay.api.community.dto.request.CommunityPostUpdateRequest;
 import com.finplay.api.community.dto.response.CommunityPostListResponse;
 import com.finplay.api.community.dto.response.CommunityPostResponse;
 import com.finplay.api.community.service.CommunityPostService;
@@ -14,6 +15,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -48,6 +50,19 @@ public class CommunityPostController {
 		CommunityPostResponse response = communityPostService.createPost(principal.userId(), request.title(),
 			request.content());
 		return ResponseEntity.status(HttpStatus.CREATED).body(response);
+	}
+
+	@PatchMapping("/{postId}")
+	public ResponseEntity<CommunityPostResponse> updatePost(
+		@AuthenticationPrincipal
+		AuthenticatedUser principal,
+		@PathVariable
+		Long postId,
+		@Valid @RequestBody
+		CommunityPostUpdateRequest request) {
+		CommunityPostResponse response = communityPostService.updatePost(principal.userId(), postId, request.title(),
+			request.content());
+		return ResponseEntity.ok(response);
 	}
 
 	@GetMapping

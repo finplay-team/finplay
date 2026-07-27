@@ -5,6 +5,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -173,6 +174,51 @@ class CommunityPostControllerTest {
 	}
 
 	@Test
+	void updatePostReturnsOkWithEveryResponseFieldAndPrincipalUserId() throws Exception {
+		LocalDateTime createdAt = LocalDateTime.of(2026, 7, 26, 10, 30);
+		LocalDateTime updatedAt = LocalDateTime.of(2026, 7, 27, 12, 0);
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+		when(service.updatePost(USER_ID, 73L, "new title", "new content"))
+			.thenReturn(new CommunityPostResponse(
+				73L, "author", "new title", "new content", createdAt, updatedAt));
+
+		mockMvc.perform(patch("/api/community/posts/73")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("""
+				{"title":"new title","content":"new content"}
+				"""))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.postId").value(73))
+			.andExpect(jsonPath("$.authorNickname").value("author"))
+			.andExpect(jsonPath("$.title").value("new title"))
+			.andExpect(jsonPath("$.content").value("new content"))
+			.andExpect(jsonPath("$.createdAt").value("2026-07-26T10:30:00"))
+			.andExpect(jsonPath("$.updatedAt").value("2026-07-27T12:00:00"));
+
+		verify(service).updatePost(USER_ID, 73L, "new title", "new content");
+	}
+
+	@ParameterizedTest(name = "{0}")
+	@MethodSource("invalidRequests")
+	void updatePostRejectsInvalidTextWithoutCallingService(String scenario, String json) throws Exception {
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+
+		mockMvc.perform(patch("/api/community/posts/73")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(json))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.message").isNotEmpty())
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(service);
+	}
+
+	@Test
 	void getPostsReturnsOkWithDefaultPageAndSizeWhenParamsOmitted() throws Exception {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
@@ -225,6 +271,56 @@ class CommunityPostControllerTest {
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
 			.andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(service);
+	}
+
+	@Test
+	void updatePostReturnsCommonNotFoundErrorWhenServiceCannotFindPost() throws Exception {
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+		when(service.updatePost(USER_ID, 404L, "new title", "new content"))
+			.thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
+
+		mockMvc.perform(patch("/api/community/posts/404")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("{\"title\":\"new title\",\"content\":\"new content\"}"))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.error.code").value("NOT_FOUND"))
+			.andExpect(jsonPath("$.error.message").value("대상을 찾을 수 없습니다."))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(service).updatePost(USER_ID, 404L, "new title", "new content");
+	}
+
+	@Test
+	void updatePostReturnsCommonForbiddenErrorWhenServiceRejectsNonOwner() throws Exception {
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+		when(service.updatePost(USER_ID, 73L, "new title", "new content"))
+			.thenThrow(new BusinessException(ErrorCode.FORBIDDEN));
+
+		mockMvc.perform(patch("/api/community/posts/73")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("{\"title\":\"new title\",\"content\":\"new content\"}"))
+			.andExpect(status().isForbidden())
+			.andExpect(jsonPath("$.error.code").value("FORBIDDEN"))
+			.andExpect(jsonPath("$.error.message").value("접근 권한이 없습니다."))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(service).updatePost(USER_ID, 73L, "new title", "new content");
+	}
+
+	@Test
+	void updatePostRejectsMissingAuthenticationWithoutCallingService() throws Exception {
+		mockMvc.perform(patch("/api/community/posts/73")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("{\"title\":\"new title\",\"content\":\"new content\"}"))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
 		verifyNoInteractions(service);

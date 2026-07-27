@@ -101,6 +101,58 @@ class CommunityPostServiceTest {
 	}
 
 	@Test
+	void updatePostUpdatesFieldsAndUpdatedAtWhenAuthorMatches() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(author, "id", 42L);
+		LocalDateTime createdAt = LocalDateTime.of(2026, 7, 1, 0, 0);
+		CommunityPost post = CommunityPost.create(author, "old title", "old content", createdAt);
+		ReflectionTestUtils.setField(post, "id", 73L);
+		when(repository.findById(73L)).thenReturn(Optional.of(post));
+
+		CommunityPostResponse response = service.updatePost(42L, 73L, "new title", "new content");
+
+		assertThat(response.postId()).isEqualTo(73L);
+		assertThat(response.authorNickname()).isEqualTo("author");
+		assertThat(response.title()).isEqualTo("new title");
+		assertThat(response.content()).isEqualTo("new content");
+		assertThat(response.createdAt()).isEqualTo(createdAt);
+		assertThat(response.updatedAt()).isEqualTo(LocalDateTime.now(CLOCK));
+		assertThat(post.getTitle()).isEqualTo("new title");
+		assertThat(post.getContent()).isEqualTo("new content");
+	}
+
+	@Test
+	void updatePostFailsWithNotFoundWhenPostDoesNotExist() {
+		when(repository.findById(404L)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> service.updatePost(42L, 404L, "new title", "new content"))
+			.isInstanceOf(BusinessException.class)
+			.extracting(exception -> ((BusinessException)exception).getErrorCode())
+			.isEqualTo(ErrorCode.NOT_FOUND);
+
+		verify(repository).findById(404L);
+	}
+
+	@Test
+	void updatePostFailsWithForbiddenAndLeavesPostUnchangedWhenAuthorDiffers() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(author, "id", 42L);
+		LocalDateTime createdAt = LocalDateTime.of(2026, 7, 1, 0, 0);
+		CommunityPost post = CommunityPost.create(author, "old title", "old content", createdAt);
+		ReflectionTestUtils.setField(post, "id", 73L);
+		when(repository.findById(73L)).thenReturn(Optional.of(post));
+
+		assertThatThrownBy(() -> service.updatePost(999L, 73L, "new title", "new content"))
+			.isInstanceOf(BusinessException.class)
+			.extracting(exception -> ((BusinessException)exception).getErrorCode())
+			.isEqualTo(ErrorCode.FORBIDDEN);
+
+		assertThat(post.getTitle()).isEqualTo("old title");
+		assertThat(post.getContent()).isEqualTo("old content");
+		assertThat(post.getUpdatedAt()).isEqualTo(createdAt);
+	}
+
+	@Test
 	void getPostsMapsRepositoryPageToListResponseWithPageMetadata() {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
 		CommunityPost post = CommunityPost.create(author, "title", "content", LocalDateTime.now(CLOCK));
