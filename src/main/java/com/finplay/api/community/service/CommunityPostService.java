@@ -36,4 +36,15 @@ public class CommunityPostService {
 			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
 		return CommunityPostResponse.from(post);
 	}
+
+	@Transactional
+	public CommunityPostResponse updatePost(Long authenticatedUserId, Long postId, String title, String content) {
+		CommunityPost post = communityPostRepository.findById(postId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+		if (!post.getAuthor().getId().equals(authenticatedUserId)) {
+			throw new BusinessException(ErrorCode.FORBIDDEN);
+		}
+		post.update(title, content, LocalDateTime.now(clock));
+		return CommunityPostResponse.from(post);
+	}
 }
