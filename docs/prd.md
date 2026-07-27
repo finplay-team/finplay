@@ -563,7 +563,7 @@ Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conven
 | 403 | FORBIDDEN | 소유권·권한 없음 |
 | 403 | REAUTHENTICATION_FAILED | 현재 비밀번호 또는 연결된 OAuth 제공자 재인증 실패 |
 | 404 | NOT_FOUND | 대상 없음 |
-| 409 | DUPLICATE_RESOURCE | 이메일·닉네임·소셜계정 중복, 인증 요청 시 기존 회원 |
+| 409 | DUPLICATE_RESOURCE | 이메일·닉네임·소셜계정 중복, 인증 요청 시 기존 회원, 같은 `buyTradeId`의 투자일기 중복 작성 |
 | 409 | EMAIL_VERIFICATION_REQUIRED | 가입 토큰 없음·만료·사용됨·이메일 불일치 |
 | 409 | ACCOUNT_LINK_REQUIRED | 같은 이메일의 일반 회원 존재 — 소셜 자동 연결 불가 |
 | 409 | INSUFFICIENT_CASH | 매수 가능 현금 부족 |
