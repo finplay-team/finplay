@@ -1,5 +1,101 @@
 # Run Log: 002-auth-account
 
+## Issue #10
+
+### PR #49 차단 리뷰 대응 및 최종 검증
+
+- reviewer가 지적한 raw state cookie 재전송 문제는 서버 state 저장을 추가하는 제안 1 대신 제안 2로 대응한다. Issue #9의 authorize가 Redis·DB 변경 없이 브라우저 state 쿠키만 사용하는 계약을 유지한다.
+- 보장 범위를 “정상 브라우저 callback 응답에서 state 쿠키 만료”로 좁힌다. 서버는 state를 저장하지 않으므로 raw cookie 재전송 자체를 차단한다고 주장하지 않으며, 실제 공급자의 authorization code 단일 사용이 재전송을 거부한다.
+- Fake는 authorize마다 state에 결합된 고유 code를 발급하고 KAKAO/NAVER 전용 callback bean이 Fake 전용 thread-safe store에서 `(provider, code, state)`를 원자적으로 한 번만 소비한다. 특수 fixture code는 기존 오류 테스트용으로 유지한다.
+- 검증 완료: 잘못된 provider는 grant 소비 없이 400으로 거부되고, 원 provider는 이후 한 번 성공하며 재사용은 400이다. generated code 순차 재사용·동시성 단일 성공, authorize URI별 고유 code, 첫 전체 callback 200 후 동일 `(provider, code, state)`와 raw cookie 재전송 400, RefreshToken·User·SocialAccount·Account 불변, 기존 state 누락·불일치 400 회귀가 대상 테스트 묶음에서 `PASS`했다.
+- Issue #9 plan과 ADR은 수정하지 않는다. Issue #10의 Fake Provider·자동 회귀 후속 변경과 `docs/api-routes.md` 계약 정정으로 한정한다.
+- `.\gradlew.bat spotlessApply`와 관련 대상 테스트 묶음이 `PASS`했고, provider 결합 후 메인 최종 `.\gradlew.bat build --no-daemon --max-workers=1`은 3분 23초에 `BUILD SUCCESSFUL`이었다.
+
+### Task 4 production 점검 기록
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| 22:49 | implementer | `.\gradlew.bat compileJava --no-daemon --max-workers=1` — `BUILD SUCCESSFUL` | issue-10-plan.md Task 4 Fake authorize→callback→소셜 로그인 default profile 빈 연결 정적 점검 |
+| 23:05 | implementer | `.\gradlew.bat compileJava --no-daemon --max-workers=1`; `.\gradlew.bat spotbugsMain --no-daemon --max-workers=1` — 모두 `BUILD SUCCESSFUL` | 전체 build 차단 `NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE` 수정 재검증 |
+| 23:18 | implementer | `.\gradlew.bat compileJava --no-daemon --max-workers=1`; `.\gradlew.bat spotbugsMain --no-daemon --max-workers=1` — 모두 `BUILD SUCCESSFUL` | 리뷰 차단: 실제 OAuth connect 5초/read 10초 timeout과 트랜잭션 전 DTO 검증 |
+
+- 22:49 — default profile Fake 전체 흐름의 production 누락이 없음을 확인해 src는 변경하지 않고, 실제 오류 계약을 `docs/api-routes.md`에 보완했다.
+- 최초 전체 build는 테스트·JaCoCo 통과 후 Naver token nullable 응답의 분리 검증을 SpotBugs가 추적하지 못해 실패했다.
+- nullable 검증과 access token 반환을 같은 흐름으로 합쳐 경고를 해소했다. `org.jetbrains.annotations.Nullable` 보조 누락 메시지는 남지만 SpotBugs 경고·게이트는 통과했다.
+- 두 번째 전체 build는 테스트·JaCoCo·SpotBugs 통과 후 수정 파일의 줄바꿈 포맷을 `spotlessJavaCheck`가 차단했다. `spotlessApply` 후 재실행해 전체 `BUILD SUCCESSFUL`을 확인했다.
+- 메인 자동 회귀 — `FakeOAuthFlowIntegrationTest`를 실제 `mysql:8.4`로 재실행해 KAKAO/NAVER Fake 신규·기존·오류·DB 흐름의 `BUILD SUCCESSFUL`을 확인했다. 실제 공급자 검증은 아니다.
+- 리뷰 수정 — 실제 Kakao/Naver RestClient에 유한 timeout을 강제하고, providerUserId·email 오류를 `AuthService` 트랜잭션 진입 전에 각각 502·400으로 차단했다.
+
+### Task 3 구현 기록
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| 22:34 | implementer | `.\gradlew.bat compileJava --no-daemon --max-workers=1` — `BUILD SUCCESSFUL` | issue-10-plan.md Task 3 기존/신규 소셜 로그인 원자 트랜잭션, ADR-0002 |
+
+- 22:34 — SocialAccount 매핑, 안전한 OAuth nickname, 기존/신규 소셜 로그인과 User·SocialAccount·계좌·Refresh Token 원자 저장을 구현하고 컴파일을 통과했다.
+- 메인 재검증 — Task 3 단위·`@DataJpaTest`·`@SpringBootTest` 6개 클래스를 `mysql:8.4` Testcontainers와 함께 실행해 `BUILD SUCCESSFUL`(1분 35초)을 확인했다.
+- 검증 수준 — 신규/기존 소셜 로그인, SocialAccount 유일성, 계좌 2개와 초기 잔액, Refresh Token 해시/JWT, SocialAccount·Account·Refresh 저장 실패의 전체 롤백을 실제 MySQL에서 검증했다. 실제 외부 OAuth 호출은 아니다.
+
+### Task 2 구현 기록
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| 22:19 | implementer | `.\gradlew.bat compileJava --no-daemon --max-workers=1` — `BUILD SUCCESSFUL` | issue-10-plan.md Task 2, 카카오·네이버 공식 OAuth REST 문서(2026-07-26 확인) |
+
+- 22:19 — Fake·카카오·네이버 callback Provider와 인가/공급자 오류 정규화, 실제 프로필 설정 fail-fast를 추가하고 컴파일을 통과했다.
+- 메인 재검증 — Fake/Kakao/Naver callback, profile, callback error, 기존 authorize, 공통 오류의 8개 대상 테스트를 한 Gradle 실행으로 검증해 `BUILD SUCCESSFUL`을 확인했다. 단위·Mock HTTP·WebMvc 수준이며 실제 OAuth가 아니다.
+- 비밀값 검사 — `oauth.txt`의 실제 값과 Git 추적 파일의 리터럴을 비교해 일치 0건을 확인했다. 값 자체는 출력·기록하지 않았다.
+
+### Task 1 구현 기록
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| 22:07 | implementer | `.\gradlew.bat compileJava --no-daemon --max-workers=1` — `BUILD SUCCESSFUL` | issue-10-plan.md Task 1 state 선검증·쿠키 만료·공개 callback 경계, ADR-0002 |
+
+- 22:07 — callback state 상수 시간 검증, 성공·실패 만료 쿠키 선등록, 공개 GET Controller/Security 및 API 문서를 추가하고 컴파일을 통과했다.
+- 메인 재검증 — `.\gradlew.bat test --tests "com.finplay.api.auth.service.OAuthCallbackServiceTest" --tests "com.finplay.api.auth.oauth.OAuthStateCookieFactoryTest" --tests "com.finplay.api.auth.controller.OAuthCallbackControllerTest" --tests "com.finplay.api.auth.config.SecurityConfigTest" --no-daemon --max-workers=1` — `BUILD SUCCESSFUL` (단위·WebMvc 슬라이스, 실제 OAuth·DB 아님).
+- 포맷 — `.\gradlew.bat spotlessApply --no-daemon --max-workers=1` — `BUILD SUCCESSFUL`.
+
+### 계획 승인
+
+- 2026-07-26 — 신규 OAuth nickname 생성·충돌 정책과 `OAUTH_AUTHORIZATION_FAILED`(400)·`OAUTH_PROVIDER_ERROR`(502) 오류 분류를 사용자 승인으로 확정했다. 시크릿·토큰·authorization code 값은 기록하지 않았다.
+
+### 검증 기록 계약 (implementer·reviewer가 실행 결과로 갱신)
+
+| 구분 | 공급자/명령 | 결과 | 검증 수준·사유 |
+|---|---|---|---|
+| 자동 회귀 | Fake OAuth 대상 테스트 | PASS | `(provider, code, state)` 결합, 잘못된 provider 거부·grant 비소비, 원 provider 1회 성공·재사용/동시성 400, 전체 flow 재전송 DB 불변 포함. 실제 OAuth 아님 |
+| 전체 게이트 | `.\gradlew.bat build --no-daemon --max-workers=1` | PASS | provider 결합 후 최종 production/test 상태에서 전체 tests·JaCoCo·SpotBugs·Spotless `BUILD SUCCESSFUL`(3분 23초). 이후 검증 기록 문서만 변경 |
+| 실제 OAuth | KAKAO | PASS | 사용자 조작 authorize→로그인·이메일 동의→callback→코드 교환→사용자 정보→신규/기존→JWT 및 DB 검증 완료. 기존 회원 응답 렌더링 제한은 아래 기록 |
+| 실제 OAuth | NAVER | PASS | 사용자 조작 authorize→로그인/동의→callback→코드 교환→사용자 정보→신규/기존→JWT 및 DB 검증 완료. 기존 회원 두 번째 응답 렌더링 제한은 아래 기록 |
+| PR #49 차단 후속 | Fake code 단일 사용·재전송/동시성·DB 불변 대상 테스트와 전체 build | PASS | Spotless·관련 대상 테스트 묶음·전체 build 통과. 실제 KAKAO/NAVER 스모크를 이번 검증에서 재실행한 결과가 아님 |
+
+- 실제 카카오·네이버는 각각 `PASS`여야 Issue #10 PR 완료 조건을 충족한다. 미검증 공급자는 실제 연동 완료로 주장하지 않는다.
+- 환경변수·개발자 콘솔 Callback URL·이메일 동의가 부족하면 추측하지 않고 공급자별 `NOT RUN` 사유를 기록한다.
+- 브라우저 로그인·동의 단계는 사용자 조작 완료를 기다린다.
+- 자동 회귀와 실제 공급자 스모크는 서로 대체하지 않고 run-log와 PR에 별도 기록한다.
+- Client ID/Secret, Provider Access Token, authorization code는 명령·결과·로그·PR에 기록하지 않는다.
+
+### oauth-real 런타임·KAKAO/NAVER 실제 스모크 기록
+
+- 실제 `oauth-real` 기동에서 `RestClient.Builder` main 자동설정 누락을 발견했다. `spring-boot-restclient` 추가, `OAuthRealContextIntegrationTest`, timeout counterfactual 테스트로 보완한 뒤 실제 jar 기동과 authorize 302를 확인했다.
+- NAVER 신규 로그인은 사용자 브라우저 조작으로 로그인·동의를 완료했고 callback의 코드 교환·사용자 정보 조회 후 FinPlay JWT 응답 필드와 만료 3,600초·1,209,600초를 확인했다.
+- 신규 DB는 `users=1`, `social_accounts(provider=NAVER)=1`, `accounts=2`였다. STOCK·CRYPTO 모두 `cash_balance=10,000,000`, `seed_money=10,000,000`이고 `refresh_tokens=1`이었다.
+- 같은 NAVER 계정의 두 번째 authorize/callback은 기존 회원으로 처리돼 users·social_accounts·accounts 수가 변하지 않았고 `refresh_tokens=2`가 됐다.
+- NAVER 두 번째 response 렌더링은 Chrome client의 `ERR_BLOCKED_BY_CLIENT`로 차단됐다. 다만 서버 트랜잭션의 `issueTokenPair` 경로에서 새 Refresh Token 행이 커밋돼 기존 회원 JWT pair 발급 경로가 실행된 사실을 확인했다. 브라우저에서 두 번째 JWT 응답 본문을 직접 확인했다는 의미는 아니다.
+- KAKAO 신규 로그인은 사용자 브라우저 조작으로 로그인·이메일 동의를 완료했고 callback의 코드 교환·사용자 정보 조회 후 FinPlay JWT 응답 필드와 만료 3,600초·1,209,600초를 확인했다.
+- KAKAO 신규 DB는 `users=1`, `social_accounts(provider=KAKAO)=1`, `accounts=2`였다. STOCK·CRYPTO 모두 `cash_balance=10,000,000`, `seed_money=10,000,000`이고 `refresh_tokens=1`이었다.
+- 같은 KAKAO 계정의 기존 회원 재로그인 요청 2회는 서버에서 완료돼 users·social_accounts·accounts 수가 변하지 않았고 `refresh_tokens=3`이 됐다.
+- KAKAO 기존 회원 response 렌더링은 Chrome 브라우저 제어 계층의 `ERR_BLOCKED_BY_CLIENT`로 차단됐다. `AuthService.issueTokenPair`가 JWT pair를 생성한 뒤 Refresh Token 행을 저장하고 실제 행이 3개까지 커밋됐으므로 두 요청 모두 기존 회원 JWT 발급 경로가 실행된 사실을 확인했다. 브라우저에서 두 응답 본문을 직접 확인했다는 의미는 아니다.
+- KAKAO 실제 스모크 중 애플리케이션 로그의 `ERROR`, `ClientAbort`, `Broken pipe`, `Connection reset`은 모두 0건이었다.
+- 두 공급자 모두 신규 회원의 JWT 응답 본문을 직접 확인했다. 두 공급자 모두 기존 회원 재로그인의 응답 본문은 Chrome에서 직접 확인하지 못했고, 서버 트랜잭션과 DB Refresh Token 커밋으로 발급 경로 실행을 확인했다.
+- 실제 스모크 과정과 이 기록에는 Client ID/Secret, Provider Access Token, authorization code 원문을 남기지 않았다.
+
+### PR 검증·리뷰 기록
+
+- 자동 회귀와 실제 KAKAO·NAVER 스모크를 각각 별도 증빙으로 기록했다. PR #49 차단 리뷰 후속 자동 회귀와 전체 build도 `PASS`했으며, 실제 공급자 스모크는 이번 후속 검증에서 재실행하지 않았다.
+- 런타임 점검에서 발견한 `RestClient.Builder` 자동설정 누락은 의존성과 실제 프로필 컨텍스트·timeout 반증 테스트로 보완했고, 검증 실행 HEAD 전체 build와 실제 jar authorize 302로 재검증했다.
+
 ## Issue #7
 
 ### 최종 검증

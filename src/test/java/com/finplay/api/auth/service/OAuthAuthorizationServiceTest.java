@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 
 import com.finplay.api.auth.oauth.FakeOAuthAuthorizationProvider;
+import com.finplay.api.auth.oauth.FakeOAuthGrantStore;
 import com.finplay.api.auth.oauth.OAuthAuthorizationProvider;
 import com.finplay.api.auth.oauth.OAuthAuthorizationResult;
 import com.finplay.api.auth.oauth.OAuthProviderName;
@@ -13,7 +14,12 @@ import com.finplay.api.auth.oauth.OAuthStateGenerator;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import java.net.URI;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -34,15 +40,19 @@ class OAuthAuthorizationServiceTest {
 	@MethodSource("supportedProviderInputs")
 	@DisplayName("provider 이름은 대소문자와 무관하게 선택되고 같은 state가 URI와 결과에 전달된다")
 	void authorizeSelectsProviderIgnoringCaseAndSharesStateWithUriAndResult(
-		String rawProvider, OAuthProviderName expectedProvider, String expectedUri) {
+		String rawProvider, OAuthProviderName expectedProvider, String expectedPath) {
 		given(stateGenerator.generate()).willReturn("state-value_123");
 		OAuthAuthorizationService service = new OAuthAuthorizationService(
-			List.of(new FakeOAuthAuthorizationProvider()), stateGenerator);
+			List.of(fakeProvider()), stateGenerator);
 
 		OAuthAuthorizationResult result = service.authorize(rawProvider);
 
 		assertThat(result.provider()).isEqualTo(expectedProvider);
-		assertThat(result.authorizationUri()).isEqualTo(URI.create(expectedUri));
+		assertThat(result.authorizationUri().getPath()).isEqualTo(expectedPath);
+		assertThat(queryParameters(result.authorizationUri()).get("code"))
+			.matches("^[A-Za-z0-9_-]{43}$");
+		assertThat(queryParameters(result.authorizationUri()).get("state"))
+			.isEqualTo("state-value_123");
 		assertThat(result.state()).isEqualTo("state-value_123");
 	}
 
@@ -50,7 +60,7 @@ class OAuthAuthorizationServiceTest {
 	@DisplayName("미지원 provider는 VALIDATION_ERROR 비즈니스 예외로 거부한다")
 	void authorizeFailsWithValidationErrorForUnsupportedProvider() {
 		OAuthAuthorizationService service = new OAuthAuthorizationService(
-			List.of(new FakeOAuthAuthorizationProvider()), stateGenerator);
+			List.of(fakeProvider()), stateGenerator);
 
 		assertThatThrownBy(() -> service.authorize("google"))
 			.isInstanceOfSatisfying(
@@ -86,10 +96,22 @@ class OAuthAuthorizationServiceTest {
 			Arguments.of(
 				"KaKaO",
 				OAuthProviderName.KAKAO,
-				"/api/auth/oauth/kakao/callback?code=fake-code&state=state-value_123"),
+				"/api/auth/oauth/kakao/callback"),
 			Arguments.of(
 				"nAvEr",
 				OAuthProviderName.NAVER,
-				"/api/auth/oauth/naver/callback?code=fake-code&state=state-value_123"));
+				"/api/auth/oauth/naver/callback"));
+	}
+
+	private static FakeOAuthAuthorizationProvider fakeProvider() {
+		return new FakeOAuthAuthorizationProvider(new FakeOAuthGrantStore());
+	}
+
+	private static Map<String, String> queryParameters(URI uri) {
+		return Arrays.stream(uri.getRawQuery().split("&"))
+			.map(parameter -> parameter.split("=", 2))
+			.collect(Collectors.toMap(
+				parts -> URLDecoder.decode(parts[0], StandardCharsets.UTF_8),
+				parts -> URLDecoder.decode(parts[1], StandardCharsets.UTF_8)));
 	}
 }

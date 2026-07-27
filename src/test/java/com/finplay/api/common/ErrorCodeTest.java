@@ -10,8 +10,8 @@ import org.springframework.http.HttpStatus;
 class ErrorCodeTest {
 
 	@Test
-	void hasExactlySixteenErrorCodesFromPrd() {
-		assertThat(ErrorCode.values()).hasSize(16);
+	void hasExactlyNineteenErrorCodesFromPrdAndOAuthSpec() {
+		assertThat(ErrorCode.values()).hasSize(19);
 	}
 
 	@Test
@@ -19,6 +19,7 @@ class ErrorCodeTest {
 		Map<ErrorCode, HttpStatus> expected = Map.ofEntries(
 			Map.entry(ErrorCode.VALIDATION_ERROR, HttpStatus.BAD_REQUEST),
 			Map.entry(ErrorCode.EMAIL_VERIFICATION_FAILED, HttpStatus.BAD_REQUEST),
+			Map.entry(ErrorCode.OAUTH_AUTHORIZATION_FAILED, HttpStatus.BAD_REQUEST),
 			Map.entry(ErrorCode.OAUTH_EMAIL_REQUIRED, HttpStatus.BAD_REQUEST),
 			Map.entry(ErrorCode.UNAUTHORIZED, HttpStatus.UNAUTHORIZED),
 			Map.entry(ErrorCode.FORBIDDEN, HttpStatus.FORBIDDEN),
@@ -32,9 +33,11 @@ class ErrorCodeTest {
 			Map.entry(ErrorCode.PRICE_UNAVAILABLE, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.IDEMPOTENCY_CONFLICT, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.UNSUPPORTED_ORDER_TYPE, HttpStatus.UNPROCESSABLE_CONTENT),
-			Map.entry(ErrorCode.TOO_MANY_REQUESTS, HttpStatus.TOO_MANY_REQUESTS));
+			Map.entry(ErrorCode.TOO_MANY_REQUESTS, HttpStatus.TOO_MANY_REQUESTS),
+			Map.entry(ErrorCode.INTERNAL_ERROR, HttpStatus.INTERNAL_SERVER_ERROR),
+			Map.entry(ErrorCode.OAUTH_PROVIDER_ERROR, HttpStatus.BAD_GATEWAY));
 
-		// 표에 정의된 16개 코드를 하나도 빠짐없이 순회하며 상태를 대조한다.
+		// PRD와 OAuth spec에 정의된 코드를 하나도 빠짐없이 순회하며 상태를 대조한다.
 		assertThat(expected).hasSize(ErrorCode.values().length);
 		for (ErrorCode code : ErrorCode.values()) {
 			assertThat(code.getHttpStatus())
@@ -52,6 +55,8 @@ class ErrorCodeTest {
 		assertThat(ErrorCode.INSUFFICIENT_CASH.getHttpStatus().value()).isEqualTo(409);
 		assertThat(ErrorCode.UNSUPPORTED_ORDER_TYPE.getHttpStatus().value()).isEqualTo(422);
 		assertThat(ErrorCode.TOO_MANY_REQUESTS.getHttpStatus().value()).isEqualTo(429);
+		assertThat(ErrorCode.INTERNAL_ERROR.getHttpStatus().value()).isEqualTo(500);
+		assertThat(ErrorCode.OAUTH_PROVIDER_ERROR.getHttpStatus().value()).isEqualTo(502);
 	}
 
 	@Test
