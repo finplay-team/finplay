@@ -58,4 +58,10 @@ public class CommunityPost {
 	public static CommunityPost create(User author, String title, String content, LocalDateTime now) {
 		return new CommunityPost(author, title, content, now, now);
 	}
+
+	public void update(String title, String content, LocalDateTime now) {
+		this.title = title;
+		this.content = content;
+		this.updatedAt = now;
+	}
 }
