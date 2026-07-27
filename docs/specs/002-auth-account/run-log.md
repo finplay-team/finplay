@@ -283,6 +283,8 @@
 | 03:25 | implementer | `.\gradlew.bat spotlessApply`(UP-TO-DATE); 대상 테스트 5종 `BUILD SUCCESSFUL`; `.\gradlew.bat build --no-daemon --max-workers=1` — `BUILD SUCCESSFUL`(2분 20초), 65 suites / 564 tests / 실패·오류·스킵 0 (HEAD `fca5233`) | issue-54-plan.md Task 5·완료 체크리스트, CLAUDE.md 규칙 4·7, ADR-0003 |
 | 04:20 | implementer | `.\gradlew.bat test --tests "*NicknameChangeIntegrationTest" --no-daemon --max-workers=1` — 4/4 통과, `.\gradlew.bat spotlessApply` | issue-54-plan.md Task 4·미확정 6번(Order/Execution 미존재로 계좌까지만 검증), ADR-0003 Testcontainers 통합 테스트 |
 
+| 05:10 | reviewer(리뷰) | `git diff origin/dev...HEAD` (Issue #54 프로덕션 5·테스트 5·문서 4 파일), `SecurityConfig`·`ErrorCode`·`db/migration`·`Sha256BcryptPasswordEncoder`·`User`·`AuthController` 원본 확인 | issue-54-plan.md D1~D7·완료 체크리스트, conventions.md 레이어·엔티티·DTO·테스트 규칙, ADR-0002, ADR-0003, ADR-0004(마이그레이션 미추가 확인), docs/api-routes.md |
+
 ## 모니터링 (사람용 요약)
 - 14:30 — V2 마이그레이션(auth 5개 테이블) + User·EmailVerification 엔티티/Repository 추가, 컴파일 통과.
 - 15:10 — EmailSender 어댑터(Fake=`!prod`·Resend=`prod` RestClient) 추가, prod yml에 resend/email 설정, 컴파일 통과.
@@ -317,3 +319,4 @@
 - 04:20 — Issue #54 Task 4: `NicknameChangeIntegrationTest` 4건을 실제 MySQL(Docker 가용)에서 통과시켰다. OAuth 준비는 커밋된 상태를 실제로 재조회해야 해서 `@Transactional` 롤백형 MockMvc 콜백 대신 `authService.oauthLogin` + Issue #53 `reauthenticate` 서비스 경로로 유니크 데이터를 만들었고(고정 `fake-oauth-user`·고정 이메일 충돌 회피), 계좌 불변은 `id·market·cashBalance·seedMoney·realizedPnl·createdAt·updatedAt` 스냅샷 비교로 검증했다. 주문·체결 도메인은 부재해 계획 미확정 6번대로 제외했다.
 - 03:25 — Issue #54 Task 5: HEAD `fca5233`(코드 워킹트리 clean) 상태에서 전체 `build`(Spotless·SpotBugs·JaCoCo 40% 포함)를 돌려 564 tests 전부 통과했다. `docs/api-routes.md`는 Task 3에서 이미 라우트·상세 계약·보호 경로를 갱신해 두었고 실제 `AuthController`의 `@PatchMapping("/me/nickname")`과 일치함을 확인해 추가 변경이 없었으며, `tasks.md`의 JWT·Security 항목에 Issue #54 완료를 명시하고 작업 항목 5개 절을 추가했다. 코드 수정은 필요 없었다.
 - 03:35 — Issue #54 Task 3: `NicknameUpdateRequest`(nickname만 `@NotBlank`, 재인증 필드 2개는 선택)와 보호된 `PATCH /api/auth/me/nickname`을 TDD로 추가해 `AuthControllerTest` 59/59가 통과했다. 응답 키 집합을 `hasSize(4)`로 고정하고 `currentPassword`·`reauthToken`·`passwordHash` 부재를 명시 검증했다. 인증 없음·Refresh Bearer 케이스는 매핑 추가 전부터 Security 체인이 401로 막아 `SecurityConfig`는 수정하지 않았고, api-routes.md에 라우트·상세 계약·보호 경로를 같은 커밋에서 동기화했다.
+- 05:10 — Issue #54 리뷰 판정: 차단 0건, 권장 2·참고 4. 원자적 소비 쿼리의 소유자 조건, 단일 트랜잭션 롤백, 본인 제외 중복 확인 이중 방어, `MemberResponse` 민감 필드 미노출, `SecurityConfig`·`ErrorCode`·마이그레이션 미변경, api-routes 일치를 확인, 머지 가능.
