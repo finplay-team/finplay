@@ -9,6 +9,7 @@ import com.finplay.api.community.domain.CommunityPost;
 import com.finplay.api.community.dto.response.CommunityPostListResponse;
 import com.finplay.api.community.dto.response.CommunityPostResponse;
 import com.finplay.api.community.repository.CommunityPostRepository;
+import com.finplay.api.community.repository.PostCommentRepository;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class CommunityPostService {
 
 	private final CommunityPostRepository communityPostRepository;
+	private final PostCommentRepository postCommentRepository;
 	private final UserQueryService userQueryService;
 	private final Clock clock;
 
@@ -50,6 +52,17 @@ public class CommunityPostService {
 		}
 		post.update(title, content, LocalDateTime.now(clock));
 		return CommunityPostResponse.from(post);
+	}
+
+	@Transactional
+	public void deletePost(Long authenticatedUserId, Long postId) {
+		CommunityPost post = communityPostRepository.findById(postId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+		if (!post.getAuthor().getId().equals(authenticatedUserId)) {
+			throw new BusinessException(ErrorCode.FORBIDDEN);
+		}
+		postCommentRepository.deleteByPost_Id(postId);
+		communityPostRepository.delete(post);
 	}
 
 	@Transactional(readOnly = true)

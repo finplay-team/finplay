@@ -33,12 +33,16 @@ import com.finplay.api.account.service.AccountService;
 import com.finplay.api.auth.crypto.Sha256BcryptPasswordEncoder;
 import com.finplay.api.auth.domain.EmailVerification;
 import com.finplay.api.auth.domain.RefreshToken;
+import com.finplay.api.auth.domain.SignupMethod;
+import com.finplay.api.auth.domain.SocialAccount;
 import com.finplay.api.auth.domain.User;
+import com.finplay.api.auth.dto.response.MemberResponse;
 import com.finplay.api.auth.repository.EmailVerificationRepository;
 import com.finplay.api.auth.repository.RefreshTokenRepository;
 import com.finplay.api.auth.repository.SocialAccountRepository;
 import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.auth.oauth.OAuthNicknameGenerator;
+import com.finplay.api.auth.oauth.OAuthProviderName;
 import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.auth.token.IssuedTokenPair;
 import com.finplay.api.auth.token.JwtTokenProvider;
@@ -506,6 +510,57 @@ class AuthServiceTest {
 
 		verify(refreshTokenRepository).revokeIfActiveAndNotExpired(11L, NOW);
 		verifyLogoutDoesNotIssueOrSave();
+	}
+
+	@Test
+	void getMeReturnsMemberResponseWithSignupMethodEmailWhenNoSocialAccountExists() {
+		User user = existingUser(passwordEncoder.encode(RAW_PASSWORD));
+		when(userRepository.findById(7L)).thenReturn(Optional.of(user));
+		when(socialAccountRepository.findByUserId(7L)).thenReturn(Optional.empty());
+
+		MemberResponse response = authService.getMe(7L);
+
+		assertThat(response.id()).isEqualTo(7L);
+		assertThat(response.email()).isEqualTo(EMAIL);
+		assertThat(response.nickname()).isEqualTo(NICKNAME);
+		assertThat(response.signupMethod()).isEqualTo(SignupMethod.EMAIL);
+	}
+
+	@Test
+	void getMeReturnsMemberResponseWithSignupMethodKakaoWhenKakaoSocialAccountExists() {
+		assertThat(getMeSignupMethodFor(OAuthProviderName.KAKAO)).isEqualTo(SignupMethod.KAKAO);
+	}
+
+	@Test
+	void getMeReturnsMemberResponseWithSignupMethodNaverWhenNaverSocialAccountExists() {
+		assertThat(getMeSignupMethodFor(OAuthProviderName.NAVER)).isEqualTo(SignupMethod.NAVER);
+	}
+
+	@Test
+	void getMeFailsWithUnauthorizedWhenUserNotFound() {
+		when(userRepository.findById(7L)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> authService.getMe(7L))
+			.isInstanceOf(BusinessException.class)
+			.extracting(ex -> ((BusinessException)ex).getErrorCode())
+			.isEqualTo(ErrorCode.UNAUTHORIZED);
+
+		verifyNoInteractions(socialAccountRepository);
+	}
+
+	@Test
+	void signupMethodFromProviderMapsEachOAuthProvider() {
+		assertThat(SignupMethod.fromProvider(OAuthProviderName.KAKAO)).isEqualTo(SignupMethod.KAKAO);
+		assertThat(SignupMethod.fromProvider(OAuthProviderName.NAVER)).isEqualTo(SignupMethod.NAVER);
+	}
+
+	private SignupMethod getMeSignupMethodFor(OAuthProviderName provider) {
+		User user = existingUser(null);
+		when(userRepository.findById(7L)).thenReturn(Optional.of(user));
+		when(socialAccountRepository.findByUserId(7L)).thenReturn(
+			Optional.of(SocialAccount.create(user, provider, "provider-user-id", NOW.minusDays(1))));
+
+		return authService.getMe(7L).signupMethod();
 	}
 
 	private User existingUser(String passwordHash) {

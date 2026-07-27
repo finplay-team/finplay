@@ -9,6 +9,8 @@ import org.springframework.data.repository.query.Param;
 
 public interface PostCommentRepository extends JpaRepository<PostComment, Long> {
 
+	void deleteByPost_Id(Long postId);
+
 	@Query("""
 		select comment
 		from PostComment comment

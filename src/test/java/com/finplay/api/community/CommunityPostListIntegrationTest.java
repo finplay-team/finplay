@@ -24,6 +24,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest
@@ -43,11 +44,15 @@ class CommunityPostListIntegrationTest {
 	@Autowired
 	private JwtTokenProvider jwtTokenProvider;
 
+	@Autowired
+	private JdbcTemplate jdbcTemplate;
+
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
 	@BeforeEach
 	void removePostsPersistedByOtherIntegrationTests() {
-		postRepository.deleteAllInBatch();
+		jdbcTemplate.update("delete from post_comments");
+		jdbcTemplate.update("delete from community_posts");
 	}
 
 	@Test
