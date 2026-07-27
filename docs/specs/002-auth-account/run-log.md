@@ -31,6 +31,7 @@
 | 시각 | 에이전트 | 실행 명령 | 근거 |
 |---|---|---|---|
 | 01:10 | implementer | `.\gradlew.bat build --no-daemon --max-workers=1` — `BUILD SUCCESSFUL`, 519 tests / 실패 0 / 스킵 0 (HEAD `c7543d6`, 워킹트리 clean) | issue-53-plan.md 완료 체크리스트, CLAUDE.md 규칙 4·7, ADR-0003 |
+| 09:40 | reviewer(리뷰) | `git diff origin/dev...HEAD`(커밋 81b7cd6·17e294c·c08fcd1·c7543d6·ffaaba3 전체) | issue-53-plan.md D1~D8, conventions.md, ADR-0002·0003·0004, docs/api-routes.md, docs/agent-mistakes.md |
 
 ## Issue #10
 
@@ -297,3 +298,4 @@
 - 00:45 — Issue #53 Task 4: `authorizeForReauth`(provider 해석은 private `createAuthorization`으로 공유), `authorizeReauth` 컨트롤러 메서드(`params="purpose=reauth"`, 200 `OAuthReauthorizeResponse`), 기존 `authorize`의 purpose 방어 검증, `SecurityConfig`의 조건부 공개 매처를 추가했다. **계획서 D6의 `AntPathRequestMatcher`는 Spring Security 7.1에서 제거돼 존재하지 않아** jar 내용을 직접 확인하고 `PathPatternRequestMatcher`로 대체했다(`AndRequestMatcher`는 그대로 사용). 기존 302 계약은 `FakeOAuthFlowIntegrationTest`로 회귀 확인했다.
 - 00:20 — Issue #53 Task 3: `OAuthCallbackService`에 `stateGenerator.verify` 호출과 purpose 분기를 넣고 서비스·컨트롤러 반환 타입을 `Object`로 바꿨다. 실제 MySQL 통합 테스트를 처음 돌려서야 Task 1이 심어둔 결함(생성자 2개 `@Component`에 `@Autowired` 누락 → `@SpringBootTest` 전체가 `No default constructor found`)이 드러났고, 이는 컴파일·단위 테스트만으로는 잡히지 않아 `docs/agent-mistakes.md`에 기록했다. `ErrorCodeTest`의 코드 개수 고정(19→20)도 Task 1 여파로 함께 갱신했다.
 - 00:05 — Issue #53 Task 2: `V5__create_reauth_tokens_table.sql`·`ReauthToken`·`ReauthTokenRepository`·`ReauthTokenGenerator`·`ReauthTokenResponse`를 추가하고 `AuthService.reauthenticate`(회원·소셜계정 조회 후 해시만 저장, 실패는 전부 403)를 구현했다. `AuthService` 생성자가 2개 늘어 `AuthServiceTest`·`OAuthAuthServiceTest`의 생성 호출부를 갱신했고 기존 케이스는 그대로 통과했다. Docker가 없어 `@DataJpaTest`·Testcontainers 검증은 tester에게 위임한다.
+- 09:40 — Issue #53 리뷰 판정: 차단 0건. HMAC 상수 시간 검증, reauthenticate 회원/계좌 불변, purpose 분기 순서, SecurityConfig 안전 기본값, 이전 로그인 계약 무회귀를 D1~D8과 대조해 확인, 머지 가능.
