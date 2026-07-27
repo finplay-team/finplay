@@ -168,10 +168,14 @@ class CommunityPostUpdateIntegrationTest {
 
 	private User createUser(String prefix) {
 		String unique = UUID.randomUUID().toString().replace("-", "");
+		String nickname = prefix + "-" + unique;
+		if (nickname.length() > 50) {
+			nickname = nickname.substring(0, 50);
+		}
 		return userRepository.saveAndFlush(User.create(
 			prefix + "-" + unique + "@finplay.com",
 			"hash",
-			prefix + "-" + unique,
+			nickname,
 			LocalDateTime.now()));
 	}
 }
