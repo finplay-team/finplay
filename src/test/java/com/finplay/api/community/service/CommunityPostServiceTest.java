@@ -13,15 +13,20 @@ import com.finplay.api.auth.service.UserQueryService;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.community.domain.CommunityPost;
+import com.finplay.api.community.dto.response.CommunityPostListResponse;
 import com.finplay.api.community.dto.response.CommunityPostResponse;
 import com.finplay.api.community.repository.CommunityPostRepository;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 
 class CommunityPostServiceTest {
 
@@ -60,5 +65,36 @@ class CommunityPostServiceTest {
 			.extracting(exception -> ((BusinessException)exception).getErrorCode())
 			.isEqualTo(ErrorCode.UNAUTHORIZED);
 		verify(repository, never()).save(any());
+	}
+
+	@Test
+	void getPostsMapsRepositoryPageToListResponseWithPageMetadata() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(author, "title", "content", LocalDateTime.now(CLOCK));
+		Page<CommunityPost> page = new PageImpl<>(List.of(post), PageRequest.of(0, 10), 1);
+		when(repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10))).thenReturn(page);
+
+		CommunityPostListResponse response = service.getPosts(0, 10);
+
+		assertThat(response.content()).hasSize(1);
+		assertThat(response.content().get(0).authorNickname()).isEqualTo("author");
+		assertThat(response.content().get(0).title()).isEqualTo("title");
+		assertThat(response.page()).isEqualTo(0);
+		assertThat(response.size()).isEqualTo(10);
+		assertThat(response.totalElements()).isEqualTo(1);
+		assertThat(response.totalPages()).isEqualTo(1);
+		assertThat(response.hasNext()).isFalse();
+	}
+
+	@Test
+	void getPostsReturnsEmptyContentWhenNoPostsExist() {
+		Page<CommunityPost> emptyPage = new PageImpl<>(List.of(), PageRequest.of(0, 10), 0);
+		when(repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10))).thenReturn(emptyPage);
+
+		CommunityPostListResponse response = service.getPosts(0, 10);
+
+		assertThat(response.content()).isEmpty();
+		assertThat(response.totalElements()).isEqualTo(0);
+		assertThat(response.totalPages()).isEqualTo(0);
 	}
 }

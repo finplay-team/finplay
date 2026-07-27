@@ -4,6 +4,7 @@ package com.finplay.api.community.controller;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -11,9 +12,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.finplay.api.auth.config.SecurityConfig;
 import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.auth.token.JwtTokenProvider;
+import com.finplay.api.community.dto.response.CommunityPostListResponse;
 import com.finplay.api.community.dto.response.CommunityPostResponse;
 import com.finplay.api.community.service.CommunityPostService;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
@@ -116,6 +119,81 @@ class CommunityPostControllerTest {
 
 		verify(jwtTokenProvider).parseAccessToken(bearerToken);
 		verifyNoInteractions(service);
+	}
+
+	@Test
+	void getPostsReturnsOkWithDefaultPageAndSizeWhenParamsOmitted() throws Exception {
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+		LocalDateTime now = LocalDateTime.of(2026, 7, 27, 12, 0);
+		CommunityPostResponse item = new CommunityPostResponse(7L, "author", "title", "content", now, now);
+		when(service.getPosts(0, 10))
+			.thenReturn(new CommunityPostListResponse(List.of(item), 0, 10, 1, 1, false));
+
+		mockMvc.perform(get("/api/community/posts")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.content[0].postId").value(7))
+			.andExpect(jsonPath("$.page").value(0))
+			.andExpect(jsonPath("$.size").value(10))
+			.andExpect(jsonPath("$.totalElements").value(1))
+			.andExpect(jsonPath("$.totalPages").value(1))
+			.andExpect(jsonPath("$.hasNext").value(false));
+
+		verify(service).getPosts(0, 10);
+	}
+
+	@Test
+	void getPostsPassesExplicitPageAndSizeToService() throws Exception {
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+		when(service.getPosts(2, 5))
+			.thenReturn(new CommunityPostListResponse(List.of(), 2, 5, 0, 0, false));
+
+		mockMvc.perform(get("/api/community/posts")
+			.param("page", "2")
+			.param("size", "5")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.content").isArray())
+			.andExpect(jsonPath("$.content").isEmpty());
+
+		verify(service).getPosts(2, 5);
+	}
+
+	@ParameterizedTest(name = "{0}")
+	@MethodSource("invalidPageOrSize")
+	void getPostsRejectsInvalidPageOrSizeWithoutCallingService(String scenario, String page, String size)
+		throws Exception {
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+
+		mockMvc.perform(get("/api/community/posts")
+			.param("page", page)
+			.param("size", size)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(service);
+	}
+
+	@Test
+	void getPostsRejectsMissingAuthenticationWithoutCallingService() throws Exception {
+		mockMvc.perform(get("/api/community/posts"))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(service);
+	}
+
+	private static Stream<Arguments> invalidPageOrSize() {
+		return Stream.of(
+			Arguments.of("negative page", "-1", "10"),
+			Arguments.of("size below minimum", "0", "0"),
+			Arguments.of("size above maximum", "0", "51"));
 	}
 
 	private static Stream<Arguments> invalidRequests() {
