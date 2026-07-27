@@ -110,6 +110,35 @@ class NicknameChangeIntegrationTest {
 	}
 
 	@Test
+	void changeNicknameRollsBackReauthTokenConsumptionWhenNicknameSaveFailsThenSameTokenSucceeds() {
+		OAuthUserDto oauthUser = new OAuthUserDto(
+			uniqueProviderUserId("oauth-rollback"), uniqueEmail("oauth-rollback"));
+		User user = signupWithOAuth(OAuthProviderName.KAKAO, oauthUser);
+		String duplicateNickname = uniqueNickname("oauth-rollback-taken");
+		signupWithEmail(uniqueEmail("oauth-rollback-other"), duplicateNickname);
+		ReauthTokenResponse issued = authService.reauthenticate(
+			user.getId(), OAuthProviderName.KAKAO, oauthUser);
+
+		// 이미 다른 회원이 쓰는 닉네임이라 저장 단계에서 실패해야 한다 — 이때 토큰 소비도 함께 롤백된다.
+		BusinessException firstFailure = catchThrowableOfType(
+			BusinessException.class,
+			() -> authService.changeNickname(
+				user.getId(), duplicateNickname, null, issued.reauthToken()));
+		assertThat(firstFailure.getErrorCode()).isEqualTo(ErrorCode.DUPLICATE_RESOURCE);
+		assertThat(userRepository.findById(user.getId()).orElseThrow().getNickname())
+			.isEqualTo(user.getNickname());
+
+		// 같은 토큰이 아직 유효해야(롤백 증명) 새 닉네임으로 재시도가 성공한다.
+		String newNickname = uniqueNickname("oauth-rollback-changed");
+		MemberResponse response = authService.changeNickname(
+			user.getId(), newNickname, null, issued.reauthToken());
+
+		assertThat(response.nickname()).isEqualTo(newNickname);
+		assertThat(userRepository.findById(user.getId()).orElseThrow().getNickname())
+			.isEqualTo(newNickname);
+	}
+
+	@Test
 	void changeNicknameRejectsWrongPasswordWithoutAnyChange() {
 		String email = uniqueEmail("wrong-password");
 		String nickname = uniqueNickname("wrong-password");

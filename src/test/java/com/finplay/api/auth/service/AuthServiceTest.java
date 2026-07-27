@@ -701,6 +701,8 @@ class AuthServiceTest {
 
 		verifyNoInteractions(reauthTokenRepository);
 		verifyNoInteractions(accountService);
+		verifyNoInteractions(refreshTokenRepository);
+		verify(socialAccountRepository, never()).save(any());
 	}
 
 	@Test
@@ -742,6 +744,8 @@ class AuthServiceTest {
 		verify(reauthTokenRepository, never()).consumeIfValidForUser(RAW_REAUTH_TOKEN, 7L, NOW);
 		verify(userRepository).saveAndFlush(user);
 		verifyNoInteractions(accountService);
+		verifyNoInteractions(refreshTokenRepository);
+		verify(socialAccountRepository, never()).save(any());
 	}
 
 	@Test
