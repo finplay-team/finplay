@@ -35,3 +35,14 @@ Issue #10 완료 시 자동 테스트와 실제 공급자 스모크를 별도 �
 - [x] 전체 회귀(Issue #9/#10 포함)·`./gradlew build`·`docs/api-routes.md`·`docs/specs/002-auth-account/tasks.md` 동기화
 
 Issue #53은 `reauthToken` 발급까지만 구현한다. 소비(닉네임·이메일 변경 API)는 별도 후속 이슈다.
+
+## Issue #55 새 이메일 변경 인증번호 발송 작업 항목 (4개)
+
+상세 설계는 `issue-55-plan.md` 참고.
+
+- [x] `email_change_verifications` Flyway 마이그레이션(V6)·`EmailChangeVerification` 엔티티·`EmailChangeVerificationRepository`와 `ReauthTokenRepository.consumeIfValidForUser(tokenHash, userId, now)` 추가(Issue #54와 조율된 공유 설계) 구현
+- [x] `EmailChangeService.requestEmailChange` — EMAIL 회원 비밀번호 검증/OAuth 회원 `reauthToken` 소비 검증(실패 시 403 `REAUTHENTICATION_FAILED` 통일)·새 이메일 중복 409·발송 제한(60초·1시간 5회·하루 10회) 429·재발송 시 같은 회원+같은 새 이메일 이전 코드 무효화 구현
+- [x] `EmailChangeController`·`EmailChangeRequest`(`POST /api/auth/email-changes`, 202) 구현 및 `@WebMvcTest`로 성공·검증 실패 400·인증 없음 401·403/409/429 상태 매핑 검증
+- [x] Fake `EmailSender` + Testcontainers MySQL 통합 테스트(EMAIL/OAuth 각 성공 흐름, 실패 시 기존 `users`·`accounts`·`orders`·`executions` 불변)·전체 회귀·`./gradlew build`·`docs/api-routes.md`·`docs/specs/002-auth-account/tasks.md` 동기화
+
+Issue #55은 인증번호 발송까지만 구현한다. 확인·실제 `users.email` 변경·Refresh Token 폐기는 별도 후속 이슈다.
