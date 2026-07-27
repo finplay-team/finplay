@@ -34,3 +34,14 @@
 - 검증 — Service 3개, 명시적 빈 문자열을 포함한 Controller 검증, Repository MySQL 4개, 통합 2개와 Signup 조합 테스트가 통과했다.
 - 검증 — HEAD `dde3e3e`에서 전체 build가 407개 테스트·JaCoCo·SpotBugs·Spotless를 포함해 4분 29초에 통과했다.
 - 최종 — HEAD `7277d4c`에서 `./gradlew.bat build --no-daemon --max-workers=1`이 407개 테스트·JaCoCo·SpotBugs·Spotless를 포함해 4분 23초에 `BUILD SUCCESSFUL`로 통과했다.
+
+## Issue #29
+
+### AI 로그 (에이전트 참조용)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| 22:06 | implementer | `.\gradlew.bat spotlessApply --no-daemon --max-workers=1` — `BUILD SUCCESSFUL` | conventions.md Java 포맷 규칙 |
+| 22:06 | implementer | `.\gradlew.bat compileJava --no-daemon --max-workers=1` — `BUILD SUCCESSFUL` | issue-29-plan.md D1~D4, ADR-0002 레이어 구조 |
+
+### 모니터링 (사람용 요약)
+- 게시물 존재와 빈 댓글 목록을 구분하고, 대상 게시물 댓글을 작성자 fetch join 및 `createdAt ASC, id ASC`로 조회하는 GET API와 라우트 문서를 구현했다. 포맷과 컴파일이 통과했다.

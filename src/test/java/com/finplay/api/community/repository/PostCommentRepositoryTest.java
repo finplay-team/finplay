@@ -9,7 +9,14 @@ import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.community.domain.CommunityPost;
 import com.finplay.api.community.domain.PostComment;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityManagerFactory;
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.UUID;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -36,6 +43,18 @@ class PostCommentRepositoryTest {
 
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
+
+	@Autowired
+	private EntityManager entityManager;
+
+	@Autowired
+	private EntityManagerFactory entityManagerFactory;
+
+	@BeforeEach
+	void cleanSharedTablesInForeignKeySafeOrder() {
+		jdbcTemplate.update("delete from post_comments");
+		jdbcTemplate.update("delete from community_posts");
+	}
 
 	@Test
 	void savePersistsPostAuthorContentAndMicrosecondTimestamp() {
@@ -83,4 +102,52 @@ class PostCommentRepositoryTest {
 			.isInstanceOf(DataIntegrityViolationException.class);
 	}
 
+	@Test
+	void findAllByPostIdReturnsOnlyTargetPostCommentsInCreatedAtAndIdAscendingOrder() {
+		User firstAuthor = createUser("first");
+		User secondAuthor = createUser("second");
+		CommunityPost target = postRepository.saveAndFlush(CommunityPost.create(firstAuthor, "target", "post", NOW));
+		CommunityPost other = postRepository.saveAndFlush(CommunityPost.create(firstAuthor, "other", "post", NOW));
+		PostComment oldest = repository.saveAndFlush(
+			PostComment.create(target, firstAuthor, "oldest", NOW.minusMinutes(1)));
+		PostComment firstTie = repository.saveAndFlush(PostComment.create(target, firstAuthor, "first tie", NOW));
+		PostComment secondTie = repository.saveAndFlush(PostComment.create(target, secondAuthor, "second tie", NOW));
+		repository.saveAndFlush(PostComment.create(other, secondAuthor, "other post", NOW.minusMinutes(2)));
+		entityManager.clear();
+
+		List<PostComment> comments = repository.findAllByPostIdOrderByCreatedAtAscIdAsc(target.getId());
+
+		assertThat(comments)
+			.extracting(PostComment::getId)
+			.containsExactly(oldest.getId(), firstTie.getId(), secondTie.getId());
+		assertThat(comments)
+			.extracting(PostComment::getContent)
+			.doesNotContain("other post");
+	}
+
+	@Test
+	void findAllByPostIdFetchesAuthorsInOneQueryAfterPersistenceContextClear() {
+		User firstAuthor = createUser("fetch-first");
+		User secondAuthor = createUser("fetch-second");
+		CommunityPost post = postRepository.saveAndFlush(CommunityPost.create(firstAuthor, "target", "post", NOW));
+		repository.saveAndFlush(PostComment.create(post, firstAuthor, "first", NOW));
+		repository.saveAndFlush(PostComment.create(post, secondAuthor, "second", NOW.plusMinutes(1)));
+		entityManager.clear();
+		Statistics statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+		statistics.setStatisticsEnabled(true);
+		statistics.clear();
+
+		List<PostComment> comments = repository.findAllByPostIdOrderByCreatedAtAscIdAsc(post.getId());
+		assertThat(comments)
+			.extracting(comment -> comment.getAuthor().getNickname())
+			.containsExactly(firstAuthor.getNickname(), secondAuthor.getNickname());
+
+		assertThat(statistics.getPrepareStatementCount()).isEqualTo(1);
+	}
+
+	private User createUser(String prefix) {
+		String unique = UUID.randomUUID().toString().replace("-", "");
+		return userRepository.saveAndFlush(
+			User.create(prefix + "-" + unique + "@finplay.com", "hash", prefix + "-" + unique, NOW));
+	}
 }
