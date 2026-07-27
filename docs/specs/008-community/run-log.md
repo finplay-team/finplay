@@ -34,3 +34,15 @@
 - 검증 — Service 3개, 명시적 빈 문자열을 포함한 Controller 검증, Repository MySQL 4개, 통합 2개와 Signup 조합 테스트가 통과했다.
 - 검증 — HEAD `dde3e3e`에서 전체 build가 407개 테스트·JaCoCo·SpotBugs·Spotless를 포함해 4분 29초에 통과했다.
 - 최종 — HEAD `7277d4c`에서 `./gradlew.bat build --no-daemon --max-workers=1`이 407개 테스트·JaCoCo·SpotBugs·Spotless를 포함해 4분 23초에 `BUILD SUCCESSFUL`로 통과했다.
+
+## Issue #30
+
+### AI 로그 (에이전트 참조용)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| Task 1 | implementer | `.\gradlew.bat compileJava --no-daemon --max-workers=1` — `BUILD SUCCESSFUL` | issue-30-tasks.md Task 1, issue-30-plan.md D2(findById→소유자 비교→예외/삭제 패턴), CommunityPostService.updatePost 선례 |
+| Task 2 | implementer | `JAVA_HOME=/c/Users/pmsal/.jdks/ms-17.0.20 ./gradlew.bat compileJava --no-daemon -q` — 통과 | issue-30-tasks.md Task 2, docs/adr/0002-architecture.md(controller→service 흐름), docs/api-routes.md 동기화 규칙 |
+
+### 모니터링 (사람용 요약)
+- Task 1 — `PostCommentService.deleteComment(authenticatedUserId, commentId)` 추가(`@Transactional`, NOT_FOUND/FORBIDDEN 후 delete). Repository 변경 없음. 컴파일 통과. 단위 테스트는 다음 단계(tester) 담당.
+- Task 2 — 신규 `CommentController`(`/api/community/comments`, DELETE `/{commentId}`) 추가, `PostCommentController`는 변경 없음, Security 화이트리스트 미추가(인증 필요 유지). `docs/api-routes.md`에 라우트·오류 표 반영. 컴파일 통과, 슬라이스 테스트는 다음 단계(tester) 담당.
