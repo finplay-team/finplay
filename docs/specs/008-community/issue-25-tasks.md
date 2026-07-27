@@ -1,11 +1,11 @@
 # Tasks: Issue #25 커뮤니티 게시물 단건 조회 API
 
-- [ ] **1. 작성자 포함 단건 조회와 read-only Service 구현**
+- [x] **1. 작성자 포함 단건 조회와 read-only Service 구현**
   - Repository에 ID로 게시물과 LAZY 작성자를 함께 로드하는 `@EntityGraph` 또는 동등한 fetch join 조회를 추가한다.
   - Service에 `@Transactional(readOnly = true)` 조회 메서드를 추가하고 트랜잭션 안에서 기존 `CommunityPostResponse`로 변환한다.
   - 게시물 미존재는 기존 공통 `BusinessException(ErrorCode.NOT_FOUND)`로 처리하며 별도 오류 코드나 DTO를 만들지 않는다.
 
-- [ ] **2. GET Controller와 Service/MVC 테스트 구현**
+- [x] **2. GET Controller와 Service/MVC 테스트 구현**
   - `GET /api/community/posts/{postId}`를 기존 Controller에 추가하고 정상 200을 반환한다.
   - Service 단위 테스트로 정상 6필드 변환, 작성자 포함 조회 호출, 미존재 `NOT_FOUND`를 검증한다.
   - `@WebMvcTest`로 정상 200/6필드, 404 공통 오류, 비로그인 401 및 인증 실패 시 서비스 미호출을 검증한다.
