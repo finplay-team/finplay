@@ -19,9 +19,11 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class CommunityPostServiceTest {
 
@@ -60,5 +62,36 @@ class CommunityPostServiceTest {
 			.extracting(exception -> ((BusinessException)exception).getErrorCode())
 			.isEqualTo(ErrorCode.UNAUTHORIZED);
 		verify(repository, never()).save(any());
+	}
+
+	@Test
+	void getPostReturnsEveryFieldFromPostFoundByExactId() {
+		User author = User.create("reader@finplay.com", "hash", "reader", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(
+			author, "detail title", "detail content", LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(post, "id", 73L);
+		when(repository.findById(73L)).thenReturn(Optional.of(post));
+
+		CommunityPostResponse response = service.getPost(73L);
+
+		assertThat(response.postId()).isEqualTo(73L);
+		assertThat(response.authorNickname()).isEqualTo("reader");
+		assertThat(response.title()).isEqualTo("detail title");
+		assertThat(response.content()).isEqualTo("detail content");
+		assertThat(response.createdAt()).isEqualTo(LocalDateTime.now(CLOCK));
+		assertThat(response.updatedAt()).isEqualTo(LocalDateTime.now(CLOCK));
+		verify(repository).findById(73L);
+	}
+
+	@Test
+	void getPostFailsWithNotFoundWhenPostDoesNotExist() {
+		when(repository.findById(404L)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> service.getPost(404L))
+			.isInstanceOf(BusinessException.class)
+			.extracting(exception -> ((BusinessException)exception).getErrorCode())
+			.isEqualTo(ErrorCode.NOT_FOUND);
+
+		verify(repository).findById(404L);
 	}
 }
