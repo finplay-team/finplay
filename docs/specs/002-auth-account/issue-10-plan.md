@@ -265,12 +265,12 @@ OAuthUserDto fetchUser(String authorizationCode, String state);
 
 ## Task 5: 공급자별 실제 OAuth 스모크와 PR 완료 게이트
 
-- [ ] `oauth-real` 프로필에서 카카오 환경변수·개발자 콘솔 Callback URL·이메일 동의를 사람이 확인한 뒤 브라우저 authorize부터 시작한다.
-- [ ] 카카오 로그인/동의 화면은 사용자가 직접 조작할 때까지 대기하고, callback→코드 교환→사용자 정보→신규 회원→FinPlay JWT를 검증한다.
-- [ ] 카카오 신규 회원의 `social_accounts` 1행과 STOCK/CRYPTO 계좌 2행(각 10,000,000원)을 DB에서 확인하고, 같은 카카오 계정 재로그인으로 기존 회원 경로와 중복 없음도 확인한다.
+- [x] `oauth-real` 프로필에서 카카오 환경변수·개발자 콘솔 Callback URL·이메일 동의를 사람이 확인한 뒤 브라우저 authorize부터 시작한다.
+- [x] 카카오 로그인·이메일 동의를 사용자 조작으로 완료하고, callback→코드 교환→사용자 정보→신규 회원→FinPlay JWT 응답 필드와 Access 3,600초·Refresh 1,209,600초를 검증한다.
+- [x] 카카오 신규 회원의 `social_accounts` 1행과 STOCK/CRYPTO 계좌 2행(각 10,000,000원)을 DB에서 확인하고, 같은 카카오 계정의 기존 회원 요청 2회에서 User·SocialAccount·Account 중복이 없고 Refresh Token만 3행까지 증가함을 확인한다. 기존 회원 응답 본문은 Chrome `ERR_BLOCKED_BY_CLIENT`로 직접 확인하지 못했으나 서버의 `issueTokenPair`와 Refresh Token 커밋으로 JWT pair 발급 경로 실행을 확인했다.
 - [x] 네이버는 별도의 환경 확인과 사용자 브라우저 조작을 거쳐 신규/기존/JWT/DB 흐름을 독립 검증했다. 두 번째 callback 응답 렌더링은 Chrome client의 `ERR_BLOCKED_BY_CLIENT`로 확인하지 못했으나, 서버 트랜잭션에서 두 번째 Refresh Token 행 커밋을 확인했다.
 - [x] 카카오·네이버 결과를 `PASS`·`FAIL`·`NOT RUN` 중 하나와 공급자별 사유로 run-log 및 PR에 분리 기록한다. 한 공급자의 성공으로 다른 공급자까지 실제 연동됐다고 주장하지 않는다.
-- [ ] 두 공급자 모두 `PASS`이고 자동 회귀·전체 build도 별도로 통과해야 Issue #10 PR을 완료로 표시한다.
+- [x] 두 공급자 모두 `PASS`이고 자동 회귀·전체 build도 별도로 통과해 Issue #10 PR 완료 조건을 충족한다.
 
 ---
 
@@ -295,7 +295,7 @@ OAuthUserDto fetchUser(String authorizationCode, String state);
 |---|---|---|---|
 | 자동 회귀 | Fake OAuth 대상 테스트 | PASS | 단위·Mock HTTP·WebMvc·MySQL 8.4 Testcontainers. 실제 OAuth 아님 |
 | 전체 게이트 | `.\gradlew.bat build --no-daemon --max-workers=1` | PASS | HEAD `273b6faab79e28bacb500dd7690072a493c7f582`, `BUILD SUCCESSFUL` |
-| 실제 OAuth | KAKAO | NOT RUN | 팀원 계정 로그인·동의를 다음 날 수행할 수 있어 현재 미실행. 실제 연동 완료 주장 금지 |
+| 실제 OAuth | KAKAO | PASS | 신규/기존·JWT·DB 검증 완료. 기존 회원 요청 2회의 응답 본문은 Chrome `ERR_BLOCKED_BY_CLIENT`로 미확인했으며 Refresh Token 행 커밋으로 서버 발급 경로 실행 확인 |
 | 실제 OAuth | NAVER | PASS | 신규/기존·JWT·DB 검증 완료. 기존 회원 두 번째 응답 본문은 Chrome `ERR_BLOCKED_BY_CLIENT`로 미확인했으며 새 Refresh Token 행 커밋으로 서버 발급 경로 실행 확인 |
 
 ---
@@ -304,7 +304,7 @@ OAuthUserDto fetchUser(String authorizationCode, String state);
 
 1. **OAuth 신규 회원 nickname (승인 완료):** `finplay-` + 암호학적 무작위 소문자 hex 12자리로 생성한다. 이메일/providerUserId를 포함하지 않고 `existsByNickname` 충돌 시 최대 5회 재생성한 뒤 안전한 공통 500 내부 오류로 중단한다.
 2. **OAuth 외부 오류 (승인 완료):** 사용자 취소·만료/재사용 authorization code는 400 `OAUTH_AUTHORIZATION_FAILED`, 공급자 장애·timeout·malformed response는 502 `OAUTH_PROVIDER_ERROR`다.
-3. **실제 스모크 준비 상태 (외부 확인 필요):** 카카오·네이버 환경변수 값, 개발자 콘솔 Callback URL, 이메일 동의 상태는 계획 시점에 확인되지 않았다. 어느 하나라도 부족하면 해당 공급자는 `NOT RUN`이며 PR 완료 조건을 충족하지 못한다.
+3. **실제 스모크 준비·실행 (완료):** 카카오·네이버 각각 환경변수, 개발자 콘솔 Callback URL, 이메일 동의 상태를 확인한 뒤 사용자 조작으로 실제 스모크를 완료했다. 민감값 원문은 문서·로그·PR에 기록하지 않았다.
 
 ---
 
@@ -315,7 +315,7 @@ OAuthUserDto fetchUser(String authorizationCode, String state);
 - [x] `OAUTH_AUTHORIZATION_FAILED` 400과 `OAUTH_PROVIDER_ERROR` 502 분류 테스트가 통과한다.
 - [x] 기존 Issue #9 authorize/state 및 auth-account 전체 회귀가 유지된다.
 - [x] 신규 OAuth 회원의 SocialAccount 1·계좌 2·Refresh Token 해시가 회원과 원자 저장된다.
-- [ ] 실제 카카오 OAuth 전체 흐름과 신규/기존/DB 검증이 `PASS`다.
+- [x] 실제 카카오 OAuth 전체 흐름과 신규/기존/DB 검증이 `PASS`다. 단, 기존 회원 요청 2회의 HTTP 응답 본문은 Chrome 제한으로 직접 확인하지 못해 서버 트랜잭션·DB 증거로 확인한 범위를 run-log에 별도 기록한다.
 - [x] 실제 네이버 OAuth 전체 흐름과 신규/기존/DB 검증이 `PASS`다. 단, 기존 회원 두 번째 HTTP 응답의 브라우저 렌더링 제한은 run-log에 별도 기록한다.
 - [x] 자동 테스트와 실제 카카오·네이버 결과가 run-log와 PR에 별도 기록된다.
 - [x] 시크릿·Provider Access Token·authorization code가 저장소·로그·검증 기록에 없다.
