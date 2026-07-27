@@ -8,9 +8,14 @@ import com.finplay.api.TestcontainersConfiguration;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.community.domain.CommunityPost;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityManagerFactory;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Stream;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -39,6 +44,17 @@ class CommunityPostRepositoryTest {
 
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
+
+	@Autowired
+	private EntityManager entityManager;
+
+	@Autowired
+	private EntityManagerFactory entityManagerFactory;
+
+	@BeforeEach
+	void removePostsPersistedByOtherTestContexts() {
+		repository.deleteAllInBatch();
+	}
 
 	@Test
 	void savePersistsAuthorTextAndMicrosecondTimestamps() {
@@ -110,6 +126,23 @@ class CommunityPostRepositoryTest {
 		assertThat(page.getContent())
 			.extracting(CommunityPost::getId)
 			.containsExactly(second.getId(), first.getId());
+	}
+
+	@Test
+	void findPostsOrderByCreatedAtDescFetchesAuthorsWithoutAdditionalQueries() {
+		User author = userRepository.saveAndFlush(User.create("fetch@finplay.com", "hash", "fetcher", NOW));
+		repository.saveAndFlush(CommunityPost.create(author, "first", "content", NOW.minusMinutes(1)));
+		repository.saveAndFlush(CommunityPost.create(author, "second", "content", NOW));
+		entityManager.clear();
+
+		Statistics statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+		statistics.setStatisticsEnabled(true);
+		statistics.clear();
+
+		Page<CommunityPost> page = repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 1));
+		page.getContent().forEach(post -> assertThat(post.getAuthor().getNickname()).isEqualTo("fetcher"));
+
+		assertThat(statistics.getPrepareStatementCount()).isEqualTo(2);
 	}
 
 	@Test

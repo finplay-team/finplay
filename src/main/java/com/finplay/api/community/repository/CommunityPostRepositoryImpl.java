@@ -5,16 +5,19 @@ import com.finplay.api.auth.domain.QUser;
 import com.finplay.api.community.domain.CommunityPost;
 import com.finplay.api.community.domain.QCommunityPost;
 import com.querydsl.jpa.impl.JPAQueryFactory;
+import jakarta.persistence.EntityManager;
 import java.util.List;
-import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 
-@RequiredArgsConstructor
 public class CommunityPostRepositoryImpl implements CommunityPostRepositoryCustom {
 
 	private final JPAQueryFactory queryFactory;
+
+	public CommunityPostRepositoryImpl(EntityManager entityManager) {
+		this.queryFactory = new JPAQueryFactory(entityManager);
+	}
 
 	@Override
 	public Page<CommunityPost> findPostsOrderByCreatedAtDesc(Pageable pageable) {
@@ -29,10 +32,11 @@ public class CommunityPostRepositoryImpl implements CommunityPostRepositoryCusto
 			.limit(pageable.getPageSize())
 			.fetch();
 
-		long totalElements = queryFactory
+		Long fetchedTotalElements = queryFactory
 			.select(post.count())
 			.from(post)
 			.fetchOne();
+		long totalElements = fetchedTotalElements == null ? 0L : fetchedTotalElements;
 
 		return new PageImpl<>(content, pageable, totalElements);
 	}

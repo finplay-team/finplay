@@ -17,6 +17,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -43,6 +44,11 @@ class CommunityPostListIntegrationTest {
 	private JwtTokenProvider jwtTokenProvider;
 
 	private final ObjectMapper objectMapper = new ObjectMapper();
+
+	@BeforeEach
+	void removePostsPersistedByOtherIntegrationTests() {
+		postRepository.deleteAllInBatch();
+	}
 
 	@Test
 	void authenticatedListReturnsPostsNewestFirstWithoutDuplicatesAcrossPages() throws Exception {
@@ -93,7 +99,7 @@ class CommunityPostListIntegrationTest {
 		mockMvc.perform(get("/api/community/posts")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
 			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.content").isArray());
+			.andExpect(jsonPath("$.content").isEmpty());
 	}
 
 	@Test

@@ -13,6 +13,10 @@ public record CommunityPostListResponse(
 	int totalPages,
 	boolean hasNext) {
 
+	public CommunityPostListResponse {
+		content = List.copyOf(content);
+	}
+
 	public static CommunityPostListResponse from(Page<CommunityPost> page) {
 		List<CommunityPostResponse> content = page.getContent().stream()
 			.map(CommunityPostResponse::from)
