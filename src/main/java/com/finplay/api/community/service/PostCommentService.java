@@ -36,6 +36,16 @@ public class PostCommentService {
 		return PostCommentResponse.from(postCommentRepository.save(comment));
 	}
 
+	@Transactional
+	public void deleteComment(Long authenticatedUserId, Long commentId) {
+		PostComment comment = postCommentRepository.findById(commentId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+		if (!comment.getAuthor().getId().equals(authenticatedUserId)) {
+			throw new BusinessException(ErrorCode.FORBIDDEN);
+		}
+		postCommentRepository.delete(comment);
+	}
+
 	@Transactional(readOnly = true)
 	public List<PostCommentResponse> getComments(Long postId) {
 		if (!communityPostRepository.existsById(postId)) {

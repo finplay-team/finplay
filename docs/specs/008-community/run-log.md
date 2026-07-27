@@ -69,3 +69,19 @@
 - 환경 실패 — 문서의 오래된 `JAVA_HOME` 경로를 사용한 첫 wrapper 시도는 Gradle 시작 전에 실패했다. 설치된 `C:\Users\PMS\.jdks\corretto-17.0.18`로 바로잡았으며 통과 증거로 계산하지 않았다.
 - 집중 검증 — Docker 가용성을 확인한 뒤 Service·Controller·Repository MySQL·목록 통합 테스트를 수정된 JDK 환경에서 순차 실행해 모두 통과했다.
 - 최종 — HEAD `77427a6`에서 `.\gradlew.bat build --no-daemon --max-workers=1`이 5분 7초에 `BUILD SUCCESSFUL`로 끝났고 JaCoCo·SpotBugs·Spotless를 포함한 전체 게이트가 통과했다.
+
+## Issue #30
+
+### AI 로그 (에이전트 참조용)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| Task 1 | implementer | `.\gradlew.bat compileJava --no-daemon --max-workers=1` — `BUILD SUCCESSFUL` | issue-30-tasks.md Task 1, issue-30-plan.md D2(findById→소유자 비교→예외/삭제 패턴), CommunityPostService.updatePost 선례 |
+| Task 2 | implementer | `JAVA_HOME=/c/Users/pmsal/.jdks/ms-17.0.20 ./gradlew.bat compileJava --no-daemon -q` — 통과 | issue-30-tasks.md Task 2, docs/adr/0002-architecture.md(controller→service 흐름), docs/api-routes.md 동기화 규칙 |
+
+### 모니터링 (사람용 요약)
+- Task 1 — `PostCommentService.deleteComment(authenticatedUserId, commentId)` 추가(`@Transactional`, NOT_FOUND/FORBIDDEN 후 delete). Repository 변경 없음. 컴파일 통과. 단위 테스트는 다음 단계(tester) 담당.
+- Task 2 — 신규 `CommentController`(`/api/community/comments`, DELETE `/{commentId}`) 추가, `PostCommentController`는 변경 없음, Security 화이트리스트 미추가(인증 필요 유지). `docs/api-routes.md`에 라우트·오류 표 반영. 컴파일 통과, 슬라이스 테스트는 다음 단계(tester) 담당.
+| 리뷰 | reviewer(리뷰) | `git diff dev...HEAD` (5193dfe) | conventions.md 레이어·API·Lombok·테스트 규칙, ADR-0002/0003/0004, issue-30-plan.md/tasks.md, docs/api-routes.md, SecurityConfig 화이트리스트 |
+
+### 모니터링 (사람용 요약, 추가)
+- 리뷰 — 컨트롤러 분리(D1)·서비스 재사용(D2) 설계 결정이 컨벤션과 일관됨. 레이어링·403/404·204·에러 포맷·Security 화이트리스트 미노출·3단계 테스트(단위/WebMvc/Testcontainers) 모두 양호. 차단 사항 없음.

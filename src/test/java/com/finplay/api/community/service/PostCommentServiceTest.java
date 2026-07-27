@@ -92,6 +92,49 @@ class PostCommentServiceTest {
 	}
 
 	@Test
+	void deleteCommentDeletesWhenAuthenticatedUserIsAuthor() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(author, "title", "post", LocalDateTime.now(CLOCK));
+		PostComment comment = PostComment.create(post, author, "comment", LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(author, "id", 42L);
+		ReflectionTestUtils.setField(comment, "id", 9L);
+		when(commentRepository.findById(9L)).thenReturn(Optional.of(comment));
+
+		service.deleteComment(42L, 9L);
+
+		verify(commentRepository).delete(comment);
+	}
+
+	@Test
+	void deleteCommentThrowsForbiddenAndDoesNotDeleteWhenAuthenticatedUserIsNotAuthor() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(author, "title", "post", LocalDateTime.now(CLOCK));
+		PostComment comment = PostComment.create(post, author, "comment", LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(author, "id", 42L);
+		ReflectionTestUtils.setField(comment, "id", 9L);
+		when(commentRepository.findById(9L)).thenReturn(Optional.of(comment));
+
+		assertThatThrownBy(() -> service.deleteComment(999L, 9L))
+			.isInstanceOf(BusinessException.class)
+			.extracting(exception -> ((BusinessException)exception).getErrorCode())
+			.isEqualTo(ErrorCode.FORBIDDEN);
+
+		verify(commentRepository, never()).delete(any());
+	}
+
+	@Test
+	void deleteCommentThrowsNotFoundAndDoesNotDeleteWhenCommentDoesNotExist() {
+		when(commentRepository.findById(404L)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> service.deleteComment(42L, 404L))
+			.isInstanceOf(BusinessException.class)
+			.extracting(exception -> ((BusinessException)exception).getErrorCode())
+			.isEqualTo(ErrorCode.NOT_FOUND);
+
+		verify(commentRepository, never()).delete(any());
+	}
+
+	@Test
 	void getCommentsReturnsRepositoryResultsMappedInOriginalOrder() {
 		User firstAuthor = User.create("first@finplay.com", "hash", "first", LocalDateTime.now(CLOCK));
 		User secondAuthor = User.create("second@finplay.com", "hash", "second", LocalDateTime.now(CLOCK));
