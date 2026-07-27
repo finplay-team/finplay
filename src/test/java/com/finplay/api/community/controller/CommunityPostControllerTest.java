@@ -4,6 +4,7 @@ package com.finplay.api.community.controller;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -11,6 +12,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.finplay.api.auth.config.SecurityConfig;
 import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.auth.token.JwtTokenProvider;
+import com.finplay.api.common.BusinessException;
+import com.finplay.api.common.ErrorCode;
 import com.finplay.api.community.dto.response.CommunityPostResponse;
 import com.finplay.api.community.service.CommunityPostService;
 import java.time.LocalDateTime;
@@ -115,6 +118,55 @@ class CommunityPostControllerTest {
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
 		verify(jwtTokenProvider).parseAccessToken(bearerToken);
+		verifyNoInteractions(service);
+	}
+
+	@Test
+	void getPostReturnsOkWithEveryResponseField() throws Exception {
+		LocalDateTime createdAt = LocalDateTime.of(2026, 7, 26, 10, 30);
+		LocalDateTime updatedAt = LocalDateTime.of(2026, 7, 27, 12, 0);
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+		when(service.getPost(73L))
+			.thenReturn(new CommunityPostResponse(
+				73L, "detail-author", "detail title", "detail content", createdAt, updatedAt));
+
+		mockMvc.perform(get("/api/community/posts/73")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.postId").value(73))
+			.andExpect(jsonPath("$.authorNickname").value("detail-author"))
+			.andExpect(jsonPath("$.title").value("detail title"))
+			.andExpect(jsonPath("$.content").value("detail content"))
+			.andExpect(jsonPath("$.createdAt").value("2026-07-26T10:30:00"))
+			.andExpect(jsonPath("$.updatedAt").value("2026-07-27T12:00:00"));
+
+		verify(service).getPost(73L);
+	}
+
+	@Test
+	void getPostReturnsCommonNotFoundErrorWhenServiceCannotFindPost() throws Exception {
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+		when(service.getPost(404L)).thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
+
+		mockMvc.perform(get("/api/community/posts/404")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.error.code").value("NOT_FOUND"))
+			.andExpect(jsonPath("$.error.message").value("대상을 찾을 수 없습니다."))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(service).getPost(404L);
+	}
+
+	@Test
+	void getPostRejectsMissingAuthenticationWithoutCallingService() throws Exception {
+		mockMvc.perform(get("/api/community/posts/73"))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
 		verifyNoInteractions(service);
 	}
 
