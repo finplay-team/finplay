@@ -2,6 +2,15 @@
 
 ## Issue #10
 
+### PR #49 차단 리뷰 대응 및 최종 검증
+
+- reviewer가 지적한 raw state cookie 재전송 문제는 서버 state 저장을 추가하는 제안 1 대신 제안 2로 대응한다. Issue #9의 authorize가 Redis·DB 변경 없이 브라우저 state 쿠키만 사용하는 계약을 유지한다.
+- 보장 범위를 “정상 브라우저 callback 응답에서 state 쿠키 만료”로 좁힌다. 서버는 state를 저장하지 않으므로 raw cookie 재전송 자체를 차단한다고 주장하지 않으며, 실제 공급자의 authorization code 단일 사용이 재전송을 거부한다.
+- Fake는 authorize마다 state에 결합된 고유 code를 발급하고 Fake 전용 thread-safe set에서 `(code, state)`를 원자적으로 한 번만 소비한다. 특수 fixture code는 기존 오류 테스트용으로 유지한다.
+- 검증 완료: Fake generated code 1회 성공·순차 재사용 400·동시성 단일 성공, authorize URI별 고유 code, 첫 전체 callback 200 후 동일 code+state+raw cookie 재전송 400, RefreshToken·User·SocialAccount·Account 불변, 기존 state 누락·불일치 400 회귀가 대상 테스트 묶음에서 `PASS`했다.
+- Issue #9 plan과 ADR은 수정하지 않는다. Issue #10의 Fake Provider·자동 회귀 후속 변경과 `docs/api-routes.md` 계약 정정으로 한정한다.
+- `.\gradlew.bat spotlessApply`와 관련 대상 테스트 묶음이 `PASS`했고, `.\gradlew.bat build --no-daemon --max-workers=1`은 4분 8초에 `BUILD SUCCESSFUL`이었다.
+
 ### Task 4 production 점검 기록
 
 | 시각 | 에이전트 | 실행 명령 | 근거 |
@@ -55,10 +64,11 @@
 
 | 구분 | 공급자/명령 | 결과 | 검증 수준·사유 |
 |---|---|---|---|
-| 자동 회귀 | Fake OAuth 대상 테스트 | PASS | 단위·Mock HTTP·WebMvc·`mysql:8.4` Testcontainers. 실제 OAuth 아님 |
-| 전체 게이트 | `.\gradlew.bat build --no-daemon --max-workers=1` | PASS | 검증 실행 HEAD `03040887451e2d842af7b987561978bf11288cc9`, 전체 tests·JaCoCo·SpotBugs·Spotless `BUILD SUCCESSFUL`(13 tasks up-to-date). 이후 검증 기록 문서만 변경 |
+| 자동 회귀 | Fake OAuth 대상 테스트 | PASS | PR #49 후속 generated code 고유성·원자적 1회 소비·순차/동시 재사용 400·전체 flow 재전송 DB 불변 포함. 단위·통합 자동 테스트이며 실제 OAuth 아님 |
+| 전체 게이트 | `.\gradlew.bat build --no-daemon --max-workers=1` | PASS | PR #49 후속 production/test 상태에서 전체 tests·JaCoCo·SpotBugs·Spotless `BUILD SUCCESSFUL`(4분 8초). 이후 검증 기록 문서만 변경 |
 | 실제 OAuth | KAKAO | PASS | 사용자 조작 authorize→로그인·이메일 동의→callback→코드 교환→사용자 정보→신규/기존→JWT 및 DB 검증 완료. 기존 회원 응답 렌더링 제한은 아래 기록 |
 | 실제 OAuth | NAVER | PASS | 사용자 조작 authorize→로그인/동의→callback→코드 교환→사용자 정보→신규/기존→JWT 및 DB 검증 완료. 기존 회원 두 번째 응답 렌더링 제한은 아래 기록 |
+| PR #49 차단 후속 | Fake code 단일 사용·재전송/동시성·DB 불변 대상 테스트와 전체 build | PASS | Spotless·관련 대상 테스트 묶음·전체 build 통과. 실제 KAKAO/NAVER 스모크를 이번 검증에서 재실행한 결과가 아님 |
 
 - 실제 카카오·네이버는 각각 `PASS`여야 Issue #10 PR 완료 조건을 충족한다. 미검증 공급자는 실제 연동 완료로 주장하지 않는다.
 - 환경변수·개발자 콘솔 Callback URL·이메일 동의가 부족하면 추측하지 않고 공급자별 `NOT RUN` 사유를 기록한다.
@@ -83,7 +93,7 @@
 
 ### PR 검증·리뷰 기록
 
-- 자동 회귀와 실제 KAKAO·NAVER 스모크를 각각 별도 증빙으로 기록했다. 두 공급자 `PASS`로 Task 5와 Issue #10 완료 조건을 충족한다.
+- 자동 회귀와 실제 KAKAO·NAVER 스모크를 각각 별도 증빙으로 기록했다. PR #49 차단 리뷰 후속 자동 회귀와 전체 build도 `PASS`했으며, 실제 공급자 스모크는 이번 후속 검증에서 재실행하지 않았다.
 - 런타임 점검에서 발견한 `RestClient.Builder` 자동설정 누락은 의존성과 실제 프로필 컨텍스트·timeout 반증 테스트로 보완했고, 검증 실행 HEAD 전체 build와 실제 jar authorize 302로 재검증했다.
 
 ## Issue #7
