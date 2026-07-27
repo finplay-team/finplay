@@ -61,6 +61,31 @@ class OAuthStateCookieFactoryTest {
 			.doesNotContain("; Secure");
 	}
 
+	@ParameterizedTest
+	@MethodSource("providerCallbackPaths")
+	@DisplayName("만료 쿠키는 생성 쿠키와 같은 provider callback Path와 보안 속성 및 Max-Age 0을 사용한다")
+	void expireReturnsEmptyCookieForProviderCallback(
+		OAuthProviderName provider, String expectedPath) {
+		OAuthStateCookieFactory factory = new OAuthStateCookieFactory(true);
+
+		ResponseCookie cookie = factory.expire(provider);
+
+		assertThat(cookie.getName()).isEqualTo("oauth_state");
+		assertThat(cookie.getValue()).isEmpty();
+		assertThat(cookie.isHttpOnly()).isTrue();
+		assertThat(cookie.isSecure()).isTrue();
+		assertThat(cookie.getSameSite()).isEqualTo("Lax");
+		assertThat(cookie.getPath()).isEqualTo(expectedPath);
+		assertThat(cookie.getMaxAge()).isEqualTo(Duration.ZERO);
+		assertThat(cookie.toString())
+			.startsWith("oauth_state=")
+			.contains("; Path=" + expectedPath)
+			.contains("; Max-Age=0")
+			.contains("; Secure")
+			.contains("; HttpOnly")
+			.contains("; SameSite=Lax");
+	}
+
 	@Test
 	@DisplayName("secure 설정이 없으면 fail-safe 기본값 true로 보안 쿠키를 만든다")
 	void defaultConfigurationCreatesSecureCookie() {

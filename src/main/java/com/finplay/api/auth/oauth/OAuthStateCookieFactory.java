@@ -15,8 +15,10 @@ public final class OAuthStateCookieFactory {
 
 	private static final String COOKIE_NAME = "oauth_state";
 	private static final String CALLBACK_PATH = "/api/auth/oauth/%s/callback";
+	private static final String OAUTH_PATH = "/api/auth/oauth";
 	private static final Duration MAX_AGE = Duration.ofMinutes(10);
 	private static final String SAME_SITE = "Lax";
+	private static final Duration EXPIRED_MAX_AGE = Duration.ZERO;
 	private static final Profiles REAL_OAUTH_PROFILES = Profiles.of("prod | oauth-real");
 
 	private final boolean secure;
@@ -41,14 +43,37 @@ public final class OAuthStateCookieFactory {
 	}
 
 	public ResponseCookie create(OAuthProviderName provider, String state) {
-		String path = CALLBACK_PATH.formatted(provider.name().toLowerCase(Locale.ROOT));
-
 		return ResponseCookie.from(COOKIE_NAME, state)
 			.httpOnly(true)
 			.secure(secure)
 			.sameSite(SAME_SITE)
-			.path(path)
+			.path(callbackPath(provider))
 			.maxAge(MAX_AGE)
 			.build();
+	}
+
+	public ResponseCookie expire(OAuthProviderName provider) {
+		return buildExpiredCookie(callbackPath(provider));
+	}
+
+	public ResponseCookie expire(String rawProvider) {
+		String path = OAuthProviderName.from(rawProvider)
+			.map(this::callbackPath)
+			.orElse(OAUTH_PATH);
+		return buildExpiredCookie(path);
+	}
+
+	private ResponseCookie buildExpiredCookie(String path) {
+		return ResponseCookie.from(COOKIE_NAME, "")
+			.httpOnly(true)
+			.secure(secure)
+			.sameSite(SAME_SITE)
+			.path(path)
+			.maxAge(EXPIRED_MAX_AGE)
+			.build();
+	}
+
+	private String callbackPath(OAuthProviderName provider) {
+		return CALLBACK_PATH.formatted(provider.name().toLowerCase(Locale.ROOT));
 	}
 }

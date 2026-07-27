@@ -154,6 +154,8 @@ class SecurityConfigTest {
 	@Test
 	void allowsPublicGetPathsWithoutToken() throws Exception {
 		expectPassesSecurityChain(get("/api/auth/oauth/google/authorize"));
+		expectPassesSecurityChain(get("/api/auth/oauth/kakao/callback"));
+		expectPassesSecurityChain(get("/api/auth/oauth/naver/callback"));
 		expectPassesSecurityChain(get("/actuator/health"));
 	}
 

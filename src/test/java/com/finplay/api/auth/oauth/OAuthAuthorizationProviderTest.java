@@ -194,9 +194,10 @@ class OAuthAuthorizationProviderTest {
 
 	@ParameterizedTest
 	@ValueSource(strings = {"KAKAO", "NAVER"})
-	@DisplayName("Fake provider는 공급자별 callback 경로에 고정 code와 전달받은 state를 포함한다")
+	@DisplayName("Fake provider는 공급자별 callback 경로에 생성 code와 전달받은 state를 포함한다")
 	void fakeCreatesProviderCallbackUriWithCodeAndState(String providerName) {
-		FakeOAuthAuthorizationProvider provider = new FakeOAuthAuthorizationProvider();
+		FakeOAuthGrantStore grantStore = new FakeOAuthGrantStore();
+		FakeOAuthAuthorizationProvider provider = new FakeOAuthAuthorizationProvider(grantStore);
 		OAuthProviderName providerNameValue = OAuthProviderName.valueOf(providerName);
 
 		URI uri = provider.createAuthorizationUri(providerNameValue, "state-value_123");
@@ -209,9 +210,10 @@ class OAuthAuthorizationProviderTest {
 				providerNameValue == OAuthProviderName.KAKAO
 					? "/api/auth/oauth/kakao/callback"
 					: "/api/auth/oauth/naver/callback");
-		assertThat(decodedQueryParameters(uri))
-			.containsExactlyInAnyOrderEntriesOf(
-				Map.of("code", "fake-code", "state", "state-value_123"));
+		assertThat(decodedQueryParameters(uri).get("code"))
+			.matches("^[A-Za-z0-9_-]{43}$");
+		assertThat(decodedQueryParameters(uri).get("state"))
+			.isEqualTo("state-value_123");
 	}
 
 	private Map<String, String> decodedQueryParameters(URI uri) {

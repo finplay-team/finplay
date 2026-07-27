@@ -13,7 +13,12 @@ import org.springframework.web.util.UriComponentsBuilder;
 public class FakeOAuthAuthorizationProvider implements OAuthAuthorizationProvider {
 
 	private static final String CALLBACK_PATH = "/api/auth/oauth/{provider}/callback";
-	private static final String FAKE_CODE = "fake-code";
+
+	private final FakeOAuthGrantStore grantStore;
+
+	public FakeOAuthAuthorizationProvider(FakeOAuthGrantStore grantStore) {
+		this.grantStore = grantStore;
+	}
 
 	@Override
 	public boolean supports(OAuthProviderName provider) {
@@ -22,8 +27,9 @@ public class FakeOAuthAuthorizationProvider implements OAuthAuthorizationProvide
 
 	@Override
 	public URI createAuthorizationUri(OAuthProviderName provider, String state) {
+		String authorizationCode = grantStore.issue(provider, state);
 		return UriComponentsBuilder.fromPath(CALLBACK_PATH)
-			.queryParam("code", FAKE_CODE)
+			.queryParam("code", authorizationCode)
 			.queryParam("state", state)
 			.buildAndExpand(provider.name().toLowerCase(Locale.ROOT))
 			.encode(StandardCharsets.UTF_8)

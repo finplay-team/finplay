@@ -36,7 +36,9 @@ import com.finplay.api.auth.domain.RefreshToken;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.EmailVerificationRepository;
 import com.finplay.api.auth.repository.RefreshTokenRepository;
+import com.finplay.api.auth.repository.SocialAccountRepository;
 import com.finplay.api.auth.repository.UserRepository;
+import com.finplay.api.auth.oauth.OAuthNicknameGenerator;
 import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.auth.token.IssuedTokenPair;
 import com.finplay.api.auth.token.JwtTokenProvider;
@@ -59,6 +61,8 @@ class AuthServiceTest {
 	private UserRepository userRepository;
 	private EmailVerificationRepository emailVerificationRepository;
 	private RefreshTokenRepository refreshTokenRepository;
+	private SocialAccountRepository socialAccountRepository;
+	private OAuthNicknameGenerator oauthNicknameGenerator;
 	private AccountService accountService;
 	private JwtTokenProvider jwtTokenProvider;
 	private PasswordEncoder passwordEncoder;
@@ -69,12 +73,22 @@ class AuthServiceTest {
 		userRepository = mock(UserRepository.class);
 		emailVerificationRepository = mock(EmailVerificationRepository.class);
 		refreshTokenRepository = mock(RefreshTokenRepository.class);
+		socialAccountRepository = mock(SocialAccountRepository.class);
+		oauthNicknameGenerator = mock(OAuthNicknameGenerator.class);
 		accountService = mock(AccountService.class);
 		jwtTokenProvider = mock(JwtTokenProvider.class);
 		passwordEncoder = new Sha256BcryptPasswordEncoder();
 		Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
-		authService = new AuthService(userRepository, emailVerificationRepository, refreshTokenRepository,
-			passwordEncoder, accountService, jwtTokenProvider, clock);
+		authService = new AuthService(
+			userRepository,
+			emailVerificationRepository,
+			refreshTokenRepository,
+			socialAccountRepository,
+			passwordEncoder,
+			accountService,
+			jwtTokenProvider,
+			oauthNicknameGenerator,
+			clock);
 	}
 
 	@Test
