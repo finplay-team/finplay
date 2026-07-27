@@ -25,5 +25,5 @@
 - [ ] **5. 생성 통합 시나리오·문서 동기화·전체 게이트**
   - [ ] `@SpringBootTest` + MySQL Testcontainers에서 인증 사용자 저장, 위조 방지, 400/401 시 DB 비변경을 검증한다. (Docker 미실행)
   - [x] 실제 Controller 매핑과 요청 길이, 201 응답 6개 필드, 400·401 계약을 `docs/api-routes.md`에 동기화한다.
-  - [ ] `spotlessApply`, 대상 테스트, `build --no-daemon --max-workers=1`을 실행한다. (전체 build 미실행)
+  - [ ] `spotlessApply` 실행과 Service·Controller 대상 테스트 성공은 확인했다. 전체 `build --no-daemon --max-workers=1`도 실행했으나 Docker daemon이 없는 상태에서 Testcontainers worker가 10분 timeout되어 성공은 확인하지 못했다.
   - [x] `git diff --check`를 실행한다.
