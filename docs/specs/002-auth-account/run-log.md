@@ -1,5 +1,17 @@
 # Run Log: 002-auth-account
 
+## Issue #55
+
+### Task 1: `email_change_verifications` 스키마와 Repository, `ReauthTokenRepository` 소비 메서드
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| 02:15 | implementer | `JAVA_HOME="C:\Program Files\Java\jdk-17"` 지정 후 `.\gradlew.bat compileJava spotlessCheck --no-daemon --max-workers=1` — `BUILD SUCCESSFUL`(`spotlessApply` 선행) | issue-55-plan.md D1·D2(신규 테이블·컬럼 구성)·D3(`consumeIfValidForUser` 원자적 소비)·D5(제한은 `userId`, 무효화는 `(userId, newEmail)`), ADR-0004(신규 V6 마이그레이션), conventions.md 엔티티·리포지터리 규칙 |
+| 재검증 | implementer(중복 투입) | 병렬로 재투입된 세션이 기존 산출물(V6·엔티티·리포지터리·`consumeIfValidForUser`)이 계획과 일치함을 확인하고 `.\gradlew.bat compileJava --no-daemon --max-workers=1 --rerun-tasks` 재실행 — `BUILD SUCCESSFUL`, 추가 변경 없음 | issue-55-plan.md Task 1 체크박스 3개 |
+
+- 02:15 — V6 마이그레이션·`EmailChangeVerification`·`EmailChangeVerificationRepository`를 신설하고 `ReauthTokenRepository.consumeIfValidForUser`(`@Param` 필수 — `-parameters` 옵션 없음)를 추가해 컴파일을 통과했다. `docs/agent-mistakes.md`의 `JAVA_HOME` 경로는 이 장비에 없어 실제 설치 경로(`C:\Program Files\Java\jdk-17`)를 확인해 사용했고, 새 파일이 LF로 저장돼 `spotlessJavaCheck`가 차단해 `spotlessApply`로 해소했다.
+- 재검증 — Task 1이 같은 worktree에 이미 완료돼 있어(중복 투입) 파일을 계획서와 대조만 하고 추가 구현 없이 컴파일 재확인만 했다.
+
 ## Issue #53
 
 ### Task 1: state 서명·검증 계약과 오류 코드·환경변수
