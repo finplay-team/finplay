@@ -18,6 +18,8 @@ import com.finplay.api.TestcontainersConfiguration;
 import com.finplay.api.auth.domain.ReauthToken;
 import com.finplay.api.auth.domain.User;
 
+import jakarta.persistence.EntityManager;
+
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import(TestcontainersConfiguration.class)
@@ -30,6 +32,9 @@ class ReauthTokenRepositoryTest {
 
 	@Autowired
 	private ReauthTokenRepository reauthTokenRepository;
+
+	@Autowired
+	private EntityManager entityManager;
 
 	@Test
 	void saveStoresHashExpiryAndUnconsumedState() {
@@ -66,6 +71,64 @@ class ReauthTokenRepositoryTest {
 
 		assertThatThrownBy(() -> reauthTokenRepository.saveAndFlush(orphanToken))
 			.isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	@Test
+	void consumeIfValidForUserSucceedsAndReturnsOneForOwnedUnexpiredUnconsumedToken() {
+		User user = saveUser("reauth-consume@finplay.com", "reauth-consume-user");
+		ReauthToken token = reauthTokenRepository.saveAndFlush(
+			ReauthToken.create(user, "consume-token-hash", NOW.plusMinutes(5), NOW));
+
+		assertThat(reauthTokenRepository.consumeIfValidForUser("consume-token-hash", user.getId(), NOW))
+			.isEqualTo(1);
+
+		entityManager.clear();
+		ReauthToken consumed = reauthTokenRepository.findById(token.getId()).orElseThrow();
+		assertThat(consumed.getConsumedAt()).isEqualTo(NOW);
+	}
+
+	@Test
+	void consumeIfValidForUserReturnsZeroWhenAlreadyConsumed() {
+		User user = saveUser("reauth-reuse@finplay.com", "reauth-reuse-user");
+		ReauthToken token = reauthTokenRepository.saveAndFlush(
+			ReauthToken.create(user, "reuse-token-hash", NOW.plusMinutes(5), NOW));
+
+		assertThat(reauthTokenRepository.consumeIfValidForUser("reuse-token-hash", user.getId(), NOW))
+			.isEqualTo(1);
+		assertThat(
+			reauthTokenRepository.consumeIfValidForUser("reuse-token-hash", user.getId(), NOW.plusSeconds(1)))
+			.isZero();
+
+		entityManager.clear();
+		ReauthToken consumed = reauthTokenRepository.findById(token.getId()).orElseThrow();
+		assertThat(consumed.getConsumedAt()).isEqualTo(NOW);
+	}
+
+	@Test
+	void consumeIfValidForUserReturnsZeroWhenExpired() {
+		User user = saveUser("reauth-expired@finplay.com", "reauth-expired-user");
+		reauthTokenRepository.save(ReauthToken.create(user, "expires-now-token-hash", NOW, NOW.minusMinutes(5)));
+		reauthTokenRepository.saveAndFlush(
+			ReauthToken.create(user, "expired-token-hash", NOW.minusSeconds(1), NOW.minusMinutes(5)));
+
+		assertThat(reauthTokenRepository.consumeIfValidForUser("expires-now-token-hash", user.getId(), NOW))
+			.isZero();
+		assertThat(reauthTokenRepository.consumeIfValidForUser("expired-token-hash", user.getId(), NOW))
+			.isZero();
+	}
+
+	@Test
+	void consumeIfValidForUserReturnsZeroWhenOwnedByDifferentUser() {
+		User owner = saveUser("reauth-owner@finplay.com", "reauth-owner-user");
+		User other = saveUser("reauth-other@finplay.com", "reauth-other-user");
+		ReauthToken token = reauthTokenRepository.saveAndFlush(
+			ReauthToken.create(owner, "owned-token-hash", NOW.plusMinutes(5), NOW));
+
+		assertThat(reauthTokenRepository.consumeIfValidForUser("owned-token-hash", other.getId(), NOW)).isZero();
+
+		entityManager.clear();
+		ReauthToken untouched = reauthTokenRepository.findById(token.getId()).orElseThrow();
+		assertThat(untouched.getConsumedAt()).isNull();
 	}
 
 	private User saveUser(String email, String nickname) {
