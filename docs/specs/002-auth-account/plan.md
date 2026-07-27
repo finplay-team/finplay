@@ -18,7 +18,7 @@ Base URL `/api`. 인증 표시가 없는 것은 공개 엔드포인트.
 | POST | /api/auth/login | `LoginRequest` (email, password) | `TokenResponse` | 로그인 |
 | POST | /api/auth/refresh | `RefreshRequest` (refreshToken) | `TokenResponse` | 재발급 + 이전 토큰 폐기(회전) |
 | POST | /api/auth/logout | `RefreshRequest` | 204 | Refresh Token 폐기. 인증 필요 |
-| GET | /api/auth/me | - | `MemberResponse` (id, email, nickname) | 내 정보. 인증 필요 |
+| GET | /api/auth/me | - | `MemberResponse` (id, email, nickname, signupMethod) | 내 정보. 인증 필요 |
 | GET | /api/auth/oauth/{provider}/authorize | - | 302 리다이렉트 | provider = kakao·naver |
 | GET | /api/auth/oauth/{provider}/callback | code 쿼리 | `TokenResponse` | 신규 가입 후 토큰 발급. 이메일 미제공 400 `OAUTH_EMAIL_REQUIRED`, 같은 이메일의 기존 회원 존재 409 `ACCOUNT_LINK_REQUIRED` |
 

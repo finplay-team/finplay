@@ -230,6 +230,12 @@
 | 17:30 | implementer | `.\gradlew.bat compileJava --no-daemon --max-workers=1` | issue-5-plan.md Task 4(D6 issueTokenPair 추출·D7 동일 401·D9 기존 토큰 유지), conventions.md 레이어·트랜잭션 경계 |
 | 17:37 | implementer | `.\gradlew.bat compileJava --no-daemon --max-workers=1` | issue-5-plan.md Task 5 HTTP 계약 표(비밀번호 min 금지·D8 200 응답), conventions.md DTO 검증 메시지 규칙, CLAUDE.md 7(api-routes 동기화) |
 | 18:01 | implementer | `.\gradlew.bat spotbugsMain --no-daemon --max-workers=1` | SpotBugs EI_EXPOSE_REP2 2건 해소: conventions.md Lombok 표(component는 `@RequiredArgsConstructor`), exclude.xml 첫 줄 규칙(재현된 오탐만 제외) |
+| 20:45 | implementer | `.\gradlew.bat test --tests "*AuthServiceTest" --no-daemon --max-workers=1` — 32/32 통과 | issue-8-plan.md Task 1(D1 AuthService 자체 UserRepository·D2 MemberResponse·D3 SocialAccount 조회 판별·D4 SignupMethod 분리·D5 readOnly), conventions.md DTO·레이어 규칙 |
+| 20:46 | 메인 | `git cherry-pick`으로 이슈 8 커밋을 `feat/24-community-post-list`(공유 워크트리에서 다른 세션이 사용 중이던 브랜치)에서 `feat/008-auth-me`로 이동 | 오케스트레이터가 사전 확인 없이 implementer를 투입해 브랜치가 바뀐 상태에서 커밋된 것을 발견, 정정 |
+| 20:57 | implementer | `.\gradlew.bat test --tests "*AuthControllerTest" --no-daemon --max-workers=1` — 실패 4건 확인 후 48/48 통과 | issue-8-plan.md Task 2(D6 SecurityConfig 미변경·D7 200 MemberResponse), conventions.md 테스트 작성 규칙(jsonPath 값 검증) |
+| 21:06 | implementer | `.\gradlew.bat test --tests "*MeIntegrationTest" --no-daemon --max-workers=1` — 5/5 통과, `.\gradlew.bat spotlessApply` | issue-8-plan.md Task 3(실제 MySQL 가입 방식 판별·회원 간 격리·민감 필드 미노출), ADR-0003 Testcontainers 통합 테스트 |
+| 22:15 | implementer | `.\gradlew.bat build --no-daemon --max-workers=1` — BUILD SUCCESSFUL (대상 테스트 3종·spotlessApply 선행) | issue-8-plan.md Task 4, CLAUDE.md 규칙 4·7(완료 전 build, controller 변경 시 api-routes.md 동기화) |
+| 22:30 | reviewer(리뷰) | `git diff origin/dev...HEAD` (auth/me 관련 프로덕션·테스트·문서 파일), `MemberResponse`·`SocialAccountRepository`·`AuthService`·`AuthController`·마이그레이션(V2) 확인 | issue-8-plan.md D1~D7, conventions.md 레이어·DTO·Lombok·테스트 규칙, ADR-0002, ADR-0003, ADR-0004(마이그레이션 미추가 확인)
 
 ## 모니터링 (사람용 요약)
 - 14:30 — V2 마이그레이션(auth 5개 테이블) + User·EmailVerification 엔티티/Repository 추가, 컴파일 통과.
@@ -248,4 +254,9 @@
 - 17:20 — Issue #5 Task 2: Spring Security 체인·Bearer 필터·401/403 핸들러 추가, `RequestIdFilter`에 `@Order` 부여, 기존 슬라이스 4종 정리. `spring-boot-starter-security-test`가 없으면 `@WebMvcTest`에 Security 체인이 아예 붙지 않는 것을 실측해 test 의존성으로 추가.
 - 17:30 — Issue #5 Task 4: `AuthService.login`(원인 불문 동일 401, 기존 Refresh Token 유지) 추가하고 signup 말미 발급 블록을 `issueTokenPair` private 메서드로 추출해 공유, 컴파일 통과.
 - 17:37 — Issue #5 Task 5: `LoginRequest`(비밀번호 최소 길이 미적용)와 `POST /api/auth/login`(200) 추가, api-routes.md에 라우트·로그인 상세 표 반영, 컴파일 통과.
+- 20:45 — Issue #8 Task 1: `SignupMethod` enum·`MemberResponse` record·`SocialAccountRepository.findByUserId`·`AuthService.getMe`(회원 없으면 401)를 TDD로 추가해 `AuthServiceTest` 32개 통과. 이 구현은 공유 워크트리에서 다른 세션이 쓰던 `feat/24-community-post-list` 위에 실수로 커밋됐다가(해당 브랜치의 별개 머지 문제를 잘못 복원하는 커밋도 함께 생성됨) 오케스트레이터가 발견해 실제 작업 대상인 `feat/008-auth-me`로 `git cherry-pick`했다. `feat/24-community-post-list`는 원래 tip으로 되돌려 원상복구했다.
+- 20:57 — Issue #8 Task 2: 보호된 `GET /api/auth/me`를 TDD로 추가해 `AuthControllerTest` 48개 통과. 응답 키 집합을 `jsonPath("$.*", hasSize(4))`로 고정해 민감 필드 유출을 회귀 차단했고, `SecurityConfig`는 화이트리스트 밖 기본 보호만으로 401이 나오는 것을 확인해 수정하지 않았다.
+- 21:06 — Issue #8 Task 3: `MeIntegrationTest` 5건을 실제 MySQL에서 통과시켰다. 이메일·카카오·네이버 가입자를 실제로 만들어 `signupMethod`가 저장된 `SocialAccount` 행으로 판별됨을 확인하고, 주입된 `ObjectMapper`로 직렬화해 응답 키 4개 고정과 `passwordHash` 미노출을 회귀 차단했다. 처음에 Jackson 2 `com.fasterxml` 패키지로 `ObjectMapper`를 주입해 `NoSuchBeanDefinitionException`이 났고 이 프로젝트가 쓰는 Jackson 3 `tools.jackson`으로 교체했다.
 - 18:01 — 401·403 핸들러 2종의 수기 생성자를 `@RequiredArgsConstructor`로 교체(conventions Lombok 규칙 준수)해 SpotBugs EI_EXPOSE_REP2 2건 해소, `spotbugsMain` Total Warnings 0. exclude.xml·새 의존성은 추가하지 않았다.
+- 22:15 — Issue #8 Task 4: `GET /api/auth/me` 실제 계약(응답 4필드·401 공통 포맷·SecurityConfig 미변경)을 api-routes.md에 반영하고 tasks.md의 JWT·Security 항목을 완료 처리했다. plan.md API 표는 313fec8에서 이미 갱신돼 있어 확인만 했고, 전체 `build`를 직렬로 돌려 BUILD SUCCESSFUL을 확인했다.
+- 22:30 — 리뷰 판정: 차단 0건. AUTH-005 조회 계약(민감 필드 미노출·가입 방식 판별)과 D1~D7 설계가 구현·테스트에 그대로 반영됨을 확인, 머지 가능.

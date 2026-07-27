@@ -4,8 +4,10 @@ package com.finplay.api.auth.service;
 import com.finplay.api.account.service.AccountService;
 import com.finplay.api.auth.domain.EmailVerification;
 import com.finplay.api.auth.domain.RefreshToken;
+import com.finplay.api.auth.domain.SignupMethod;
 import com.finplay.api.auth.domain.SocialAccount;
 import com.finplay.api.auth.domain.User;
+import com.finplay.api.auth.dto.response.MemberResponse;
 import com.finplay.api.auth.dto.response.TokenResponse;
 import com.finplay.api.auth.oauth.OAuthNicknameGenerator;
 import com.finplay.api.auth.oauth.OAuthProviderName;
@@ -110,6 +112,16 @@ public class AuthService {
 			provider, oauthUser.providerUserId())
 			.map(socialAccount -> issueTokenPair(socialAccount.getUser(), now))
 			.orElseGet(() -> createOAuthUser(provider, oauthUser, now));
+	}
+
+	@Transactional(readOnly = true)
+	public MemberResponse getMe(Long userId) {
+		User user = userRepository.findById(userId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED));
+		SignupMethod signupMethod = socialAccountRepository.findByUserId(userId)
+			.map(socialAccount -> SignupMethod.fromProvider(socialAccount.getProvider()))
+			.orElse(SignupMethod.EMAIL);
+		return MemberResponse.from(user, signupMethod);
 	}
 
 	@Transactional
