@@ -25,10 +25,10 @@
 - **Content-Type**: `text/event-stream`.
 - **이벤트 이름** (3종으로 확정):
   - `snapshot` — 구독 시작 직후 1회. 해당 MVP 시장의 **전체 종목**(주식 16종·코인 12종)을 배열 한 건으로 전송한다 (종목별로 여러 건 보내지 않는다). 가격이 없는 종목도 배열에서 빼지 않고 `price`·`sourceTime`을 `null`, `status`를 `UNAVAILABLE`로 포함한다.
-  - `price` — 종목 하나의 가격이 변경될 때 전송 (주식: 매분 새로 공개된 가격, 코인: 업비트 수신 틱마다).
+  - `price` — 종목 하나의 가격이 변경될 때 전송 (주식: 매분 새로 공개된 가격, 코인: 빗썸 수신 틱마다).
   - `status` — 시장 개장·마감, 코인 stale·연결 끊김/복구, 주식 데이터 준비 실패 등 상태 변화.
 - **시간 필드 분리**:
-  - `sourceTime` — 원본 데이터의 실제 시각. 주식은 과거 원본 분봉의 실제 시각(재생 중인 과거 거래일 기준), 코인은 업비트 틱의 실제 시각.
+  - `sourceTime` — 원본 데이터의 실제 시각. 주식은 과거 원본 분봉의 실제 시각(재생 중인 과거 거래일 기준), 코인은 빗썸 틱의 실제 시각.
   - `emittedAt` — 우리 서버가 **지금** 이 SSE 이벤트를 전송한 실제 벽시계 시각(오늘 날짜).
   - `sourceTradingDate` — 주식에만 포함, 현재 재생 중인 실제 과거 거래일. 코인 이벤트에는 포함하지 않는다.
 - **id**: `price` 이벤트에만 부여한다 — `{market}:{symbol}:{sourceTime 기반 식별자}` (예: `STOCK:005930:202607220901`). `snapshot`·`status`는 id를 넣지 않는다(`Last-Event-ID` 기반 누락 이벤트 재전송을 MVP에서 지원하지 않고, `snapshot`은 여러 종목을 포함해 단일 symbol이 없기 때문).
@@ -166,7 +166,7 @@ data:
 | `StockReplaySessionScheduler` | `MarketDataImport`·`StockCandle`의 수집 결과를 확인해 오늘의 `StockReplaySession`을 생성하고 `source_trading_date`를 고정한다. `preparation_status`를 `PREPARING`→`READY` 또는 `PREPARING`→`FAILED`로만 전환한다. **`StockCandle`을 직접 저장하지 않는다.** 정확한 production 실행시각(장 시작 전 언제 실행할지)은 KRX 데이터 제공시각 확인 후 확정하는 Decision Gate — 테스트에서는 Clock으로 실행시점을 제어한다 |
 | `StockCandleCleanupJob` | 20영업일 초과 분봉 삭제 배치. 재생 중인 거래일(`StockReplaySession.source_trading_date`)은 제외 |
 | `StockReplayService` | `StockReplaySession`을 읽어 오늘의 원본 거래일·준비상태를 확인하고, Clock과 조합해 `OPEN`·`CLOSED`를 계산한다 (`preparation_status != READY`면 이용 불가, `READY`면 Clock 기준 09:00~15:30 KST·영업일 여부로 OPEN·CLOSED 계산). 09:00~09:00:59는 첫 분봉의 시가, 09:01부터는 마감된 마지막 분봉의 종가를 현재가로 제공한다. 매분 스케줄(`@Scheduled`)로 새로 공개된 가격을 SSE로 push한다. **파일 수집이나 재생 대상 날짜 선택을 하지 않고, `StockReplaySession`의 DB 상태를 변경하지 않는다** (읽기 전용) |
-| `UpbitFeedClient` | 업비트 WebSocket 수신 → `PriceStore` 저장. 재연결 처리. 인터페이스로 추상화해 테스트는 Fake 구현 사용 |
+| `BithumbFeedClient` | 빗썸 WebSocket 수신 → `PriceStore` 저장. 재연결 처리. 인터페이스로 추상화해 테스트는 Fake 구현 사용 |
 | `PriceStore` | Redis 읽기/쓰기 단일 창구 (코인 전용). 과거 틱 무시(수신 timestamp 비교 후 최신만 저장) |
 | `StockPriceProvider` (인터페이스) | 주식 시세 공급자 공통 계약. 현재가(가격·`sourceTime`·유효성)와 1분봉 조회, 시장 상태를 반환한다. 구현체가 무엇인지는 아래 소비 계층에 노출하지 않는다 |
 | `KrxReplayPriceProvider` | `StockPriceProvider` 구현 — 내부적으로 `StockReplayService`를 사용한다. **공개 배포(`PUBLIC`)의 기본 구현** |
@@ -245,7 +245,7 @@ StockFeedConfig가 둘 중 하나를 선택 → StockPriceProvider
 - `KrxApiClient`는 이번 스펙 범위에 없다. KRX API 상품이 확인되면 `KrxFileImporter`와 같은 저장 결과(검증·정규화된 `StockCandle`, `MarketDataImport` 이력)를 만드는 별도 구현을 추가하고, `StockReplaySessionScheduler`·`StockReplayService`·`PriceQueryService`·SSE 계층은 수정하지 않는다.
 - 종목별 "거래불가"를 표현하는 날짜별 전용 상태 테이블이나 `instruments`의 날짜 한정 컬럼은 만들지 않는다. 특정 종목·거래일에 유효한 `StockCandle`이 없으면 `PriceQueryService`가 자연히 `PRICE_UNAVAILABLE`을 반환한다 — 이 자체가 "거래불가"의 표현이다.
 - 공휴일 판정은 리소스 파일의 공휴일 목록(당해 연도)으로 단순 관리한다. 외부 캘린더 API 미사용.
-- 코인 stale 기준은 **10초로 확정** (업비트는 정상 연결 시 통상 수 초 이내로 틱이 계속 수신되므로, 일시적 네트워크 지연으로 오탐하지 않으면서 실제 장애를 빠르게 감지하는 균형점).
+- 코인 stale 기준은 **10초로 확정** (빗썸은 정상 연결 시 통상 수 초 이내로 틱이 계속 수신되므로, 일시적 네트워크 지연으로 오탐하지 않으면서 실제 장애를 빠르게 감지하는 균형점).
 - 종목별 분봉 누락 임계치(예: 기대 390개 대비 몇 %, 350개 이상 등)는 **확정하지 않는다** — 임시 숫자도 production 설정에 넣지 않는다. KRX 상품의 데이터 형식과 timestamp 의미(거래 없는 분을 생략하는지 여부)가 확인된 후 결정한다 (Decision Gate, spec.md 참조). 샘플 데이터 테스트는 샘플 자체의 기대 결과만 검증한다.
 
 ### Redis 키 설계 (PRD §6 책임 준수, 코인 전용)
@@ -253,7 +253,7 @@ StockFeedConfig가 둘 중 하나를 선택 → StockPriceProvider
 | 키 | 값 | 용도 |
 |---|---|---|
 | `price:crypto:{symbol}` | price, receivedAt | 코인 최신 시세 |
-| `feed:crypto:status` | CONNECTED·DISCONNECTED | 업비트 연결상태 |
+| `feed:crypto:status` | CONNECTED·DISCONNECTED | 빗썸 연결상태 |
 
 ## 데이터 모델
 
@@ -291,4 +291,4 @@ StockFeedConfig가 둘 중 하나를 선택 → StockPriceProvider
   - SSE 컨트롤러: 토큰 없음/잘못된 토큰 시 401, price 이벤트에만 id 존재(snapshot·status는 id 없음), snapshot에 주식 16종·코인 12종 전체 포함(가격 없는 종목도 포함), 가격 없는 종목은 price·sourceTime이 null이고 status는 UNAVAILABLE, 가격 변경 시 price 이벤트, 시장·연결상태 변경 시 status 이벤트, `sourceTime`과 `emittedAt` 구분, 주식은 `sourceTradingDate` 포함·코인은 미포함, 장 마감 후 marketStatus=CLOSED이면서 마지막 유효가격 유지(장 마감과 가격 없음 구분), 코인 stale 시 marketStatus는 OPEN 유지·종목 status만 UNAVAILABLE, `retry: 3000` 전달, heartbeat 전송, 연결 종료 시 emitter 제거, 재접속 시 snapshot 재전송, 누락 이벤트 전체 재전송 안 함
 - 슬라이스: `@DataJpaTest` — 종목 시드·UNIQUE(symbol), `stock_candles`/`stock_replay_sessions` UNIQUE 제약. `@WebMvcTest` — 목록·가격·캔들 계약, 404·400·409 매핑.
 - 통합 (Testcontainers MySQL+Redis): 샘플 KRX 파일 수집→`StockReplaySessionScheduler`가 세션 READY로 전환→재생→가격 조회(첫 분봉 시가, 이후 종가), 서버 재시작 시나리오에서 같은 원본 거래일 유지, DB에 OPEN·CLOSED가 저장되지 않음을 확인, 동일 거래일에 다른 file_hash 재수집을 거부해도 기존 READY 세션·StockCandle이 그대로인 시나리오, Fake Feed 정상 수신→가격 조회, 끊김→PRICE_UNAVAILABLE, 재연결 새 틱→복귀 시나리오.
-- 외부 스모크(자동 테스트와 구분 보고): 실제 업비트 WebSocket 연결, 실제 KRX 파일 수집, **실제 KIS Open API WebSocket 연결과 국내주식 체결 틱 수신**. Fake 통과를 실제 연동 성공으로 보고하지 않는다 (PRD C-005).
+- 외부 스모크(자동 테스트와 구분 보고): 실제 빗썸 WebSocket 연결, 실제 KRX 파일 수집, **실제 KIS Open API WebSocket 연결과 국내주식 체결 틱 수신**. Fake 통과를 실제 연동 성공으로 보고하지 않는다 (PRD C-005).

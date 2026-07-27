@@ -32,6 +32,12 @@ public class CommunityPostController {
 
 	private final CommunityPostService communityPostService;
 
+	@GetMapping("/{postId}")
+	public ResponseEntity<CommunityPostResponse> getPost(@PathVariable
+	Long postId) {
+		return ResponseEntity.ok(communityPostService.getPost(postId));
+	}
+
 	@PostMapping
 	public ResponseEntity<CommunityPostResponse> createPost(
 		@AuthenticationPrincipal

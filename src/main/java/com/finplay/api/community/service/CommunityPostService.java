@@ -3,6 +3,8 @@ package com.finplay.api.community.service;
 
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.service.UserQueryService;
+import com.finplay.api.common.BusinessException;
+import com.finplay.api.common.ErrorCode;
 import com.finplay.api.community.domain.CommunityPost;
 import com.finplay.api.community.dto.response.CommunityPostListResponse;
 import com.finplay.api.community.dto.response.CommunityPostResponse;
