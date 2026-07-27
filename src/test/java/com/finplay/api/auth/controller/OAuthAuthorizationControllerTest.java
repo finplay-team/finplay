@@ -1,8 +1,10 @@
 // OAuth 인가 컨트롤러의 redirect와 state 쿠키 및 오류 응답 계약을 검증한다.
 package com.finplay.api.auth.controller;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -12,12 +14,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.finplay.api.auth.config.SecurityConfig;
 import com.finplay.api.auth.oauth.OAuthAuthorizationResult;
 import com.finplay.api.auth.oauth.OAuthProviderName;
+import com.finplay.api.auth.oauth.OAuthPurpose;
+import com.finplay.api.auth.oauth.OAuthStateClaims;
 import com.finplay.api.auth.oauth.OAuthStateCookieFactory;
+import com.finplay.api.auth.oauth.OAuthStateGenerator;
 import com.finplay.api.auth.service.OAuthAuthorizationService;
+import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.auth.token.JwtTokenProvider;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import java.net.URI;
+import java.util.Optional;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -86,6 +93,94 @@ class OAuthAuthorizationControllerTest {
 			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
 			.andExpect(jsonPath("$.error.message").value("요청 값이 올바르지 않습니다."))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+	}
+
+	@Test
+	@DisplayName("purpose=login을 명시해도 미인증 요청은 회귀 없이 302로 리다이렉트된다")
+	void authorizeWithExplicitLoginPurposeRedirectsWithoutAuthentication() throws Exception {
+		given(authorizationService.authorize("kakao"))
+			.willReturn(new OAuthAuthorizationResult(
+				OAuthProviderName.KAKAO,
+				URI.create("https://kauth.kakao.com/oauth/authorize?response_type=code&state=state-value_123"),
+				"state-value_123"));
+
+		mockMvc.perform(get("/api/auth/oauth/kakao/authorize?purpose=login"))
+			.andExpect(status().isFound());
+	}
+
+	@Test
+	@DisplayName("purpose=reauth 요청을 Authorization 헤더 없이 호출하면 401 UNAUTHORIZED다")
+	void authorizeReauthWithoutAuthenticationReturnsUnauthorized() throws Exception {
+		mockMvc.perform(get("/api/auth/oauth/kakao/authorize?purpose=reauth"))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"));
+	}
+
+	@Test
+	@DisplayName("purpose=reauth 요청을 인증하고 호출하면 200과 authorizationUri 본문을 받는다")
+	void authorizeReauthWithAuthenticationReturnsAuthorizationUri() throws Exception {
+		given(jwtTokenProvider.parseAccessToken("valid-access-token"))
+			.willReturn(Optional.of(new AuthenticatedUser(42L, "USER")));
+		given(authorizationService.authorizeForReauth("kakao", 42L))
+			.willReturn(new OAuthAuthorizationResult(
+				OAuthProviderName.KAKAO,
+				URI.create("https://kauth.kakao.com/oauth/authorize?response_type=code&state=reauth-state"),
+				"reauth-state"));
+
+		mockMvc.perform(get("/api/auth/oauth/kakao/authorize?purpose=reauth")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer valid-access-token"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.authorizationUri")
+				.value("https://kauth.kakao.com/oauth/authorize?response_type=code&state=reauth-state"));
+	}
+
+	@Test
+	@DisplayName("purpose가 reauth도 login도 아닌 값이면 인증해도 400 VALIDATION_ERROR다")
+	void authorizeWithUnknownPurposeReturnsValidationError() throws Exception {
+		given(jwtTokenProvider.parseAccessToken("valid-access-token"))
+			.willReturn(Optional.of(new AuthenticatedUser(42L, "USER")));
+
+		mockMvc.perform(get("/api/auth/oauth/kakao/authorize?purpose=foo")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer valid-access-token"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
+	}
+
+	@Test
+	@DisplayName("authorizeReauth는 principal.userId()를 실제 OAuthStateGenerator가 만든 state에 REAUTH로 정확히 묶는다")
+	void authorizeReauthBindsAuthenticatedUserIdToStateClaims() throws Exception {
+		long userId = 77L;
+		OAuthStateGenerator realStateGenerator = new OAuthStateGenerator(
+			"test-oauth-state-secret-that-is-at-least-32-bytes");
+		given(jwtTokenProvider.parseAccessToken("valid-access-token"))
+			.willReturn(Optional.of(new AuthenticatedUser(userId, "USER")));
+		// eq(userId)로 인자를 고정해 controller가 principal.userId() 이외의 값을 넘기면 스터빙이 매치되지 않아 실패한다.
+		given(authorizationService.authorizeForReauth(eq("kakao"), eq(userId)))
+			.willAnswer(invocation -> {
+				String state = realStateGenerator.generate(OAuthPurpose.REAUTH, userId);
+				return new OAuthAuthorizationResult(
+					OAuthProviderName.KAKAO,
+					URI.create("https://kauth.kakao.com/oauth/authorize?response_type=code&state=" + state),
+					state);
+			});
+
+		String setCookieHeader = mockMvc.perform(get("/api/auth/oauth/kakao/authorize?purpose=reauth")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer valid-access-token"))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getHeader(HttpHeaders.SET_COOKIE);
+		String stateValue = extractCookieValue(setCookieHeader, "oauth_state");
+
+		assertThat(realStateGenerator.verify(stateValue))
+			.isEqualTo(new OAuthStateClaims(OAuthPurpose.REAUTH, userId));
+	}
+
+	private static String extractCookieValue(String setCookieHeader, String cookieName) {
+		String prefix = cookieName + "=";
+		String firstAttribute = setCookieHeader.split(";", 2)[0];
+		assertThat(firstAttribute).startsWith(prefix);
+		return firstAttribute.substring(prefix.length());
 	}
 
 	private static Stream<Arguments> successfulAuthorizationResponses() {

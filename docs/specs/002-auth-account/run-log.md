@@ -1,5 +1,46 @@
 # Run Log: 002-auth-account
 
+## Issue #53
+
+### Task 1: state 서명·검증 계약과 오류 코드·환경변수
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| 23:30 | implementer | `.\gradlew.bat compileJava compileTestJava --no-daemon --max-workers=1` — `BUILD SUCCESSFUL`, `.\gradlew.bat spotlessApply`, `.\gradlew.bat test --tests "*OAuthStateGeneratorTest" --tests "*OAuthAuthorizationServiceTest" --tests "*OAuthAuthorizationControllerTest"` — `BUILD SUCCESSFUL` | issue-53-plan.md D1(HMAC-SHA-256 서명 state)·D2(서명 실패 403), conventions.md 시크릿·네이밍 규칙, ADR-0002 |
+
+### Task 2: `reauth_tokens` 스키마와 `AuthService.reauthenticate` 발급 트랜잭션
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| 00:05 | implementer | `.\gradlew.bat compileJava compileTestJava --no-daemon --max-workers=1`; `.\gradlew.bat spotlessApply spotbugsMain`; `.\gradlew.bat test --tests "*AuthServiceTest" --tests "*OAuthAuthServiceTest"` — 모두 `BUILD SUCCESSFUL` | issue-53-plan.md D4(조회+발급만 하는 별도 트랜잭션)·D5(`reauth_tokens` 스키마·엔티티 패턴), ADR-0004(신규 V5 마이그레이션), conventions.md 엔티티·DTO 규칙 |
+
+### Task 3: callback purpose 분기와 reauth 응답 계약
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| 00:20 | implementer | `.\gradlew.bat test --tests "*OAuthLoginIntegrationTest" --tests "*FakeOAuthFlowIntegrationTest" --tests "*FakeOAuthCodeConsumptionIntegrationTest"` — 17건 전부 실패 후 원인 수정하고 재실행해 `BUILD SUCCESSFUL`; `.\gradlew.bat build --no-daemon --max-workers=1` — 503 tests `BUILD SUCCESSFUL` | issue-53-plan.md D3(분기 순서)·D8(`ReauthTokenResponse` 계약), ADR-0003 Testcontainers 통합 테스트, CLAUDE.md 규칙 4·7·9 |
+
+### Task 4: `purpose=reauth` authorize 엔드포인트와 Security 인증 분기
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| 00:45 | implementer | `jar tf spring-security-web-7.1.0.jar`로 매처 클래스 확인; `.\gradlew.bat test --tests "*OAuthAuthorizationServiceTest" --tests "*OAuthAuthorizationControllerTest" --tests "*SecurityConfigTest"`; `.\gradlew.bat test --tests "*FakeOAuthFlowIntegrationTest"`; `.\gradlew.bat spotlessApply spotbugsMain` — 모두 `BUILD SUCCESSFUL` | issue-53-plan.md D6(조건부 공개 매처)·D7(같은 클래스에 authorizeReauth 추가), conventions.md API·DTO 규칙, CLAUDE.md 규칙 7 |
+
+### Task 5: 전체 회귀·문서 동기화
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| 01:10 | implementer | `.\gradlew.bat build --no-daemon --max-workers=1` — `BUILD SUCCESSFUL`, 519 tests / 실패 0 / 스킵 0 (HEAD `c7543d6`, 워킹트리 clean) | issue-53-plan.md 완료 체크리스트, CLAUDE.md 규칙 4·7, ADR-0003 |
+| 09:40 | reviewer(리뷰) | `git diff origin/dev...HEAD`(커밋 81b7cd6·17e294c·c08fcd1·c7543d6·ffaaba3 전체) | issue-53-plan.md D1~D8, conventions.md, ADR-0002·0003·0004, docs/api-routes.md, docs/agent-mistakes.md |
+
+### 실제 네이버 OAuth 재인증 스모크
+
+| 시각 | 실행 | 결과 |
+|---|---|---|
+| 01:09 | `oauth-real,local` 프로필로 `bootRun` 기동 후 실제 네이버 계정으로 `purpose=login` 로그인 → 발급된 accessToken으로 `purpose=reauth` authorize(브라우저 콘솔 fetch, Bearer 헤더) → 같은 네이버 계정으로 callback 완료 | `reauthToken` 200 정상 발급(`expiresInSeconds: 300`). `reauth_tokens` 1행(`user_id=1`, 해시만 저장, `expires_at`=`created_at`+5분, `consumed_at` NULL), `users`/`social_accounts`/`accounts` 행 수(1/1/2) 재인증 전후 불변을 MySQL로 직접 확인 |
+
+서명 포맷 적용으로 약 110자까지 늘어난 state가 네이버 실제 서버를 문제없이 왕복함을 확인해 issue-53-plan.md "미확정" 5번 항목을 해소했다. 카카오는 이번엔 실제 스모크를 수행하지 않았다(NOT RUN). Client ID/Secret·accessToken 원문은 로그·문서에 기록하지 않았다.
+
 ## Issue #10
 
 ### PR #49 차단 리뷰 대응 및 최종 검증
@@ -260,3 +301,9 @@
 - 18:01 — 401·403 핸들러 2종의 수기 생성자를 `@RequiredArgsConstructor`로 교체(conventions Lombok 규칙 준수)해 SpotBugs EI_EXPOSE_REP2 2건 해소, `spotbugsMain` Total Warnings 0. exclude.xml·새 의존성은 추가하지 않았다.
 - 22:15 — Issue #8 Task 4: `GET /api/auth/me` 실제 계약(응답 4필드·401 공통 포맷·SecurityConfig 미변경)을 api-routes.md에 반영하고 tasks.md의 JWT·Security 항목을 완료 처리했다. plan.md API 표는 313fec8에서 이미 갱신돼 있어 확인만 했고, 전체 `build`를 직렬로 돌려 BUILD SUCCESSFUL을 확인했다.
 - 22:30 — 리뷰 판정: 차단 0건. AUTH-005 조회 계약(민감 필드 미노출·가입 방식 판별)과 D1~D7 설계가 구현·테스트에 그대로 반영됨을 확인, 머지 가능.
+- 23:30 — Issue #53 Task 1: `OAuthPurpose`·`OAuthStateClaims`와 HMAC-SHA-256 서명/검증(`generate(purpose, userId)`·`verify`, 실패는 전부 403 `REAUTHENTICATION_FAILED`)을 `OAuthStateGenerator`에 추가하고 `OAUTH_STATE_SECRET`을 yml·.env.example·build.gradle test 환경에 배선했다. `OAuthAuthorizationService.authorize`는 `generate(LOGIN, null)` 호출로만 바꿔 302 계약은 그대로 회귀 통과했다.
+- 01:10 — Issue #53 Task 5: HEAD `c7543d6`·워킹트리 clean 상태에서 전체 `build`(Spotless·SpotBugs·JaCoCo 40% 포함)를 돌려 519 tests 전부 통과했다. authorize(reauth)→callback(reauth)는 `OAuthReauthCallbackIntegrationTest` 4건, authorize(login)→callback(login)은 `FakeOAuthFlowIntegrationTest` 5건·`OAuthLoginIntegrationTest` 6건으로 같은 빌드 안에서 함께 실행됨을 테스트 결과 XML로 확인했다. api-routes.md는 Task 3·4에서 이미 authorize·callback 양쪽을 갱신해 추가 변경이 필요 없었고, tasks.md의 Issue #53 5번째 항목만 체크했다.
+- 00:45 — Issue #53 Task 4: `authorizeForReauth`(provider 해석은 private `createAuthorization`으로 공유), `authorizeReauth` 컨트롤러 메서드(`params="purpose=reauth"`, 200 `OAuthReauthorizeResponse`), 기존 `authorize`의 purpose 방어 검증, `SecurityConfig`의 조건부 공개 매처를 추가했다. **계획서 D6의 `AntPathRequestMatcher`는 Spring Security 7.1에서 제거돼 존재하지 않아** jar 내용을 직접 확인하고 `PathPatternRequestMatcher`로 대체했다(`AndRequestMatcher`는 그대로 사용). 기존 302 계약은 `FakeOAuthFlowIntegrationTest`로 회귀 확인했다.
+- 00:20 — Issue #53 Task 3: `OAuthCallbackService`에 `stateGenerator.verify` 호출과 purpose 분기를 넣고 서비스·컨트롤러 반환 타입을 `Object`로 바꿨다. 실제 MySQL 통합 테스트를 처음 돌려서야 Task 1이 심어둔 결함(생성자 2개 `@Component`에 `@Autowired` 누락 → `@SpringBootTest` 전체가 `No default constructor found`)이 드러났고, 이는 컴파일·단위 테스트만으로는 잡히지 않아 `docs/agent-mistakes.md`에 기록했다. `ErrorCodeTest`의 코드 개수 고정(19→20)도 Task 1 여파로 함께 갱신했다.
+- 00:05 — Issue #53 Task 2: `V5__create_reauth_tokens_table.sql`·`ReauthToken`·`ReauthTokenRepository`·`ReauthTokenGenerator`·`ReauthTokenResponse`를 추가하고 `AuthService.reauthenticate`(회원·소셜계정 조회 후 해시만 저장, 실패는 전부 403)를 구현했다. `AuthService` 생성자가 2개 늘어 `AuthServiceTest`·`OAuthAuthServiceTest`의 생성 호출부를 갱신했고 기존 케이스는 그대로 통과했다. Docker가 없어 `@DataJpaTest`·Testcontainers 검증은 tester에게 위임한다.
+- 09:40 — Issue #53 리뷰 판정: 차단 0건. HMAC 상수 시간 검증, reauthenticate 회원/계좌 불변, purpose 분기 순서, SecurityConfig 안전 기본값, 이전 로그인 계약 무회귀를 D1~D8과 대조해 확인, 머지 가능.

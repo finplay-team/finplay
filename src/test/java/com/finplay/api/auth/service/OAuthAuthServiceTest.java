@@ -19,7 +19,9 @@ import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.oauth.OAuthNicknameGenerator;
 import com.finplay.api.auth.oauth.OAuthProviderName;
 import com.finplay.api.auth.oauth.OAuthUserDto;
+import com.finplay.api.auth.oauth.ReauthTokenGenerator;
 import com.finplay.api.auth.repository.EmailVerificationRepository;
+import com.finplay.api.auth.repository.ReauthTokenRepository;
 import com.finplay.api.auth.repository.RefreshTokenRepository;
 import com.finplay.api.auth.repository.SocialAccountRepository;
 import com.finplay.api.auth.repository.UserRepository;
@@ -49,9 +51,11 @@ class OAuthAuthServiceTest {
 	private UserRepository users;
 	private RefreshTokenRepository refreshTokens;
 	private SocialAccountRepository socialAccounts;
+	private ReauthTokenRepository reauthTokens;
 	private AccountService accounts;
 	private JwtTokenProvider tokens;
 	private OAuthNicknameGenerator nicknames;
+	private ReauthTokenGenerator reauthTokenGenerator;
 	private AuthService service;
 
 	@BeforeEach
@@ -59,18 +63,22 @@ class OAuthAuthServiceTest {
 		users = mock(UserRepository.class);
 		refreshTokens = mock(RefreshTokenRepository.class);
 		socialAccounts = mock(SocialAccountRepository.class);
+		reauthTokens = mock(ReauthTokenRepository.class);
 		accounts = mock(AccountService.class);
 		tokens = mock(JwtTokenProvider.class);
 		nicknames = mock(OAuthNicknameGenerator.class);
+		reauthTokenGenerator = mock(ReauthTokenGenerator.class);
 		service = new AuthService(
 			users,
 			mock(EmailVerificationRepository.class),
 			refreshTokens,
 			socialAccounts,
+			reauthTokens,
 			new Sha256BcryptPasswordEncoder(),
 			accounts,
 			tokens,
 			nicknames,
+			reauthTokenGenerator,
 			Clock.fixed(NOW.toInstant(ZoneOffset.UTC), ZoneOffset.UTC));
 	}
 

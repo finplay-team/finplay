@@ -13,6 +13,9 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
+import org.springframework.security.web.util.matcher.AndRequestMatcher;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 import tools.jackson.databind.ObjectMapper;
 
 @Configuration
@@ -29,13 +32,18 @@ public class SecurityConfig {
 	};
 
 	private static final String[] PUBLIC_GET_PATHS = {
-		"/api/auth/oauth/*/authorize",
 		"/api/auth/oauth/*/callback",
 		"/actuator/health",
 		"/swagger-ui.html",
 		"/swagger-ui/**",
 		"/v3/api-docs/**"
 	};
+
+	// purpose가 없거나 login인 authorize만 공개다. 그 밖의 값(reauth 포함)은 anyRequest로 떨어져 인증을 요구한다.
+	private static final RequestMatcher OAUTH_LOGIN_AUTHORIZE_MATCHER = new AndRequestMatcher(
+		PathPatternRequestMatcher.withDefaults()
+			.matcher(HttpMethod.GET, "/api/auth/oauth/*/authorize"),
+		request -> isLoginPurpose(request.getParameter("purpose")));
 
 	private final JwtTokenProvider jwtTokenProvider;
 	private final ObjectMapper objectMapper;
@@ -51,6 +59,7 @@ public class SecurityConfig {
 			.authorizeHttpRequests(requests -> requests
 				.requestMatchers(HttpMethod.POST, PUBLIC_POST_PATHS).permitAll()
 				.requestMatchers(HttpMethod.GET, PUBLIC_GET_PATHS).permitAll()
+				.requestMatchers(OAUTH_LOGIN_AUTHORIZE_MATCHER).permitAll()
 				.anyRequest().authenticated())
 			.addFilterBefore(
 				new JwtAuthenticationFilter(jwtTokenProvider),
@@ -59,5 +68,9 @@ public class SecurityConfig {
 				.authenticationEntryPoint(new RestAuthenticationEntryPoint(objectMapper))
 				.accessDeniedHandler(new RestAccessDeniedHandler(objectMapper)));
 		return http.build();
+	}
+
+	private static boolean isLoginPurpose(String purpose) {
+		return purpose == null || purpose.isBlank() || "login".equalsIgnoreCase(purpose);
 	}
 }

@@ -23,3 +23,15 @@
 - [x] `oauth-real` 카카오·네이버 각각 authorize→callback→코드 교환→사용자 정보→신규/기존→FinPlay JWT 및 신규 SocialAccount·계좌 2개 DB 스모크 검증 — **KAKAO·NAVER PASS. 두 공급자 모두 기존 회원 2차 응답 본문은 Chrome `ERR_BLOCKED_BY_CLIENT`로 직접 확인하지 못한 제한을 run-log에 기록**
 
 Issue #10 완료 시 자동 테스트와 실제 공급자 스모크를 별도 기록한다. 실제 카카오·네이버는 각각 `PASS`여야 하며, 환경변수·개발자 콘솔 Callback URL·이메일 동의 부족 시 추측하지 않고 공급자별 `NOT RUN` 사유를 남긴다. 브라우저 로그인·동의는 사용자 조작을 기다린다. Client ID/Secret, Provider Access Token, authorization code는 기록하지 않는다.
+
+## Issue #53 OAuth 재인증 토큰 작업 항목 (5개)
+
+상세 설계는 `issue-53-plan.md` 참고.
+
+- [x] state 서명·검증 계약(`OAuthPurpose`·`OAuthStateClaims`·`OAuthStateGenerator.generate/verify`)과 `REAUTHENTICATION_FAILED`(403) 오류 코드, `OAUTH_STATE_SECRET` 환경변수 추가 — 기존 `authorize` 302 계약은 변경 없음
+- [x] `reauth_tokens` Flyway 마이그레이션·`ReauthToken`·`ReauthTokenRepository`·`ReauthTokenGenerator`와 `AuthService.reauthenticate`(동일 계정 성공/다른 계정·미연결 provider 거부, 회원·계좌·시드머니 불변) 구현
+- [x] `OAuthCallbackService`의 purpose 분기(LOGIN→기존 `oauthLogin` 그대로, REAUTH→`reauthenticate`)와 `ReauthTokenResponse` 응답 계약, Fake OAuth 기반 성공·거부 자동 테스트
+- [x] `purpose=reauth` authorize 엔드포인트(`OAuthAuthorizationService.authorizeForReauth`, 컨트롤러 `params="purpose=reauth"`)와 `SecurityConfig`의 purpose 기반 인증 분기(reauth만 Bearer 필수)
+- [x] 전체 회귀(Issue #9/#10 포함)·`./gradlew build`·`docs/api-routes.md`·`docs/specs/002-auth-account/tasks.md` 동기화
+
+Issue #53은 `reauthToken` 발급까지만 구현한다. 소비(닉네임·이메일 변경 API)는 별도 후속 이슈다.

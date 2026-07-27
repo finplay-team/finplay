@@ -1,7 +1,6 @@
-// OAuth callback 요청의 state 쿠키를 소비하고 FinPlay 토큰 응답을 반환한다.
+// OAuth callback 요청의 state 쿠키를 소비하고 로그인 토큰 또는 재인증 토큰 응답을 반환한다.
 package com.finplay.api.auth.controller;
 
-import com.finplay.api.auth.dto.response.TokenResponse;
 import com.finplay.api.auth.oauth.OAuthStateCookieFactory;
 import com.finplay.api.auth.service.OAuthCallbackService;
 import jakarta.servlet.http.HttpServletResponse;
@@ -24,7 +23,7 @@ public class OAuthCallbackController {
 	private final OAuthStateCookieFactory stateCookieFactory;
 
 	@GetMapping("/{provider}/callback")
-	public ResponseEntity<TokenResponse> callback(
+	public ResponseEntity<Object> callback(
 		@PathVariable
 		String provider,
 		@RequestParam(required = false)

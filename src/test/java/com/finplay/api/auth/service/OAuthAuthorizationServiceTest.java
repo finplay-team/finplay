@@ -10,6 +10,7 @@ import com.finplay.api.auth.oauth.FakeOAuthGrantStore;
 import com.finplay.api.auth.oauth.OAuthAuthorizationProvider;
 import com.finplay.api.auth.oauth.OAuthAuthorizationResult;
 import com.finplay.api.auth.oauth.OAuthProviderName;
+import com.finplay.api.auth.oauth.OAuthPurpose;
 import com.finplay.api.auth.oauth.OAuthStateGenerator;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
@@ -41,7 +42,7 @@ class OAuthAuthorizationServiceTest {
 	@DisplayName("provider 이름은 대소문자와 무관하게 선택되고 같은 state가 URI와 결과에 전달된다")
 	void authorizeSelectsProviderIgnoringCaseAndSharesStateWithUriAndResult(
 		String rawProvider, OAuthProviderName expectedProvider, String expectedPath) {
-		given(stateGenerator.generate()).willReturn("state-value_123");
+		given(stateGenerator.generate(OAuthPurpose.LOGIN, null)).willReturn("state-value_123");
 		OAuthAuthorizationService service = new OAuthAuthorizationService(
 			List.of(fakeProvider()), stateGenerator);
 
@@ -89,6 +90,34 @@ class OAuthAuthorizationServiceTest {
 		assertThatThrownBy(() -> service.authorize("kakao"))
 			.isInstanceOf(IllegalStateException.class)
 			.hasMessage("활성화된 OAuth 인가 공급자가 없습니다: KAKAO");
+	}
+
+	@Test
+	@DisplayName("authorizeForReauth는 REAUTH 목적과 해당 userId로 state를 생성해 결과와 URI에 담는다")
+	void authorizeForReauthGeneratesStateWithReauthPurposeAndUserId() {
+		given(stateGenerator.generate(OAuthPurpose.REAUTH, 42L)).willReturn("reauth-state-value");
+		OAuthAuthorizationService service = new OAuthAuthorizationService(
+			List.of(fakeProvider()), stateGenerator);
+
+		OAuthAuthorizationResult result = service.authorizeForReauth("kakao", 42L);
+
+		assertThat(result.provider()).isEqualTo(OAuthProviderName.KAKAO);
+		assertThat(result.state()).isEqualTo("reauth-state-value");
+		assertThat(queryParameters(result.authorizationUri()).get("state"))
+			.isEqualTo("reauth-state-value");
+	}
+
+	@Test
+	@DisplayName("authorizeForReauth도 미지원 provider는 VALIDATION_ERROR 비즈니스 예외로 거부한다")
+	void authorizeForReauthFailsWithValidationErrorForUnsupportedProvider() {
+		OAuthAuthorizationService service = new OAuthAuthorizationService(
+			List.of(fakeProvider()), stateGenerator);
+
+		assertThatThrownBy(() -> service.authorizeForReauth("google", 42L))
+			.isInstanceOfSatisfying(
+				BusinessException.class,
+				exception -> assertThat(exception.getErrorCode())
+					.isEqualTo(ErrorCode.VALIDATION_ERROR));
 	}
 
 	private static Stream<Arguments> supportedProviderInputs() {
