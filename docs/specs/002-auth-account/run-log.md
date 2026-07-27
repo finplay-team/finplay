@@ -12,6 +12,14 @@
 - 02:15 — V6 마이그레이션·`EmailChangeVerification`·`EmailChangeVerificationRepository`를 신설하고 `ReauthTokenRepository.consumeIfValidForUser`(`@Param` 필수 — `-parameters` 옵션 없음)를 추가해 컴파일을 통과했다. `docs/agent-mistakes.md`의 `JAVA_HOME` 경로는 이 장비에 없어 실제 설치 경로(`C:\Program Files\Java\jdk-17`)를 확인해 사용했고, 새 파일이 LF로 저장돼 `spotlessJavaCheck`가 차단해 `spotlessApply`로 해소했다.
 - 재검증 — Task 1이 같은 worktree에 이미 완료돼 있어(중복 투입) 파일을 계획서와 대조만 하고 추가 구현 없이 컴파일 재확인만 했다.
 
+### Task 2: `EmailChangeService.requestEmailChange` 재인증·중복·발송 제한 판정
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| implementer | implementer | `JAVA_HOME="C:/Program Files/Java/jdk-17" .\gradlew.bat compileJava --no-daemon --max-workers=1` — `BUILD SUCCESSFUL` | issue-55-plan.md D3(재인증 판별·소비)·D4(검증 순서·트랜잭션 시그니처)·D5(발송 제한은 `userId`, 무효화는 `(userId, newEmail)`), conventions.md 서비스·Lombok 규칙 |
+
+- `EmailChangeService`를 신설해 `AuthService.getMe`와 동일한 패턴으로 `socialAccountRepository.findByUserId` 존재 여부로 EMAIL/OAuth를 판별하고, EMAIL은 비밀번호, OAuth는 `reauthTokenRepository.consumeIfValidForUser`로 재인증한 뒤(두 경우 모두 실패 시 403 통일) 중복 이메일 409 → 발송 제한 429(`EmailChangeVerificationRepository.countByUserIdAndCreatedAtAfter`) → 이전 코드 무효화 → 코드 생성·HMAC 저장·발송 순서로 구현했다. `AuthService`는 수정하지 않았다.
+
 ## Issue #53
 
 ### Task 1: state 서명·검증 계약과 오류 코드·환경변수
@@ -291,6 +299,7 @@
 | 22:30 | reviewer(리뷰) | `git diff origin/dev...HEAD` (auth/me 관련 프로덕션·테스트·문서 파일), `MemberResponse`·`SocialAccountRepository`·`AuthService`·`AuthController`·마이그레이션(V2) 확인 | issue-8-plan.md D1~D7, conventions.md 레이어·DTO·Lombok·테스트 규칙, ADR-0002, ADR-0003, ADR-0004(마이그레이션 미추가 확인)
 
 ## 모니터링 (사람용 요약)
+- Issue #55 Task 2 — `EmailChangeService.requestEmailChange` 신설: 재인증 증명(비밀번호/`reauthToken`) → 이메일 중복 → 발송 제한 순서로 판정 후 인증번호 발송, `AuthService` 미수정, 컴파일 통과.
 - 14:30 — V2 마이그레이션(auth 5개 테이블) + User·EmailVerification 엔티티/Repository 추가, 컴파일 통과.
 - 15:10 — EmailSender 어댑터(Fake=`!prod`·Resend=`prod` RestClient) 추가, prod yml에 resend/email 설정, 컴파일 통과.
 - 15:45 — 인증번호 발송 API(`POST /api/auth/email-verifications`) 추가: Controller·EmailVerificationService(발송 제한 3종·HMAC 저장·이전 코드 무효화)·요청 DTO, api-routes 갱신, 컴파일 통과.
