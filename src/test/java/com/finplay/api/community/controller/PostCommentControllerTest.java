@@ -134,6 +134,7 @@ class PostCommentControllerTest {
 	private static Stream<Arguments> invalidRequests() {
 		return Stream.of(
 			Arguments.of("missing", "{}"),
+			Arguments.of("empty", "{\"content\":\"\"}"),
 			Arguments.of("blank", "{\"content\":\"   \"}"),
 			Arguments.of("overlong", "{\"content\":\"" + "c".repeat(1001) + "\"}"));
 	}
