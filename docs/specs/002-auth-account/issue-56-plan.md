@@ -253,8 +253,8 @@ public record EmailChangeConfirmRequest(
 
 ## Task 4: 통합 테스트·동시성·전체 회귀·문서 동기화
 
-- [ ] Testcontainers MySQL로 발송→확인 성공 전체 흐름, 재사용·5회 초과·만료·재발송 무효화·타인 요청 격리, 확인 성공 후 기존 Refresh Token 401 검증, 확인 전후 계좌·잔액·주문·체결 불변을 검증한다.
-- [ ] 동시에 같은 새 이메일을 다른 경로로 먼저 선점하는 경합 시나리오를 실제 MySQL로 재현해 409와 인증번호 미소비·Refresh Token 미폐기 롤백을 검증한다.
+- [x] Testcontainers MySQL로 발송→확인 성공 전체 흐름, 재사용·5회 초과·만료·재발송 무효화·타인 요청 격리, 확인 성공 후 기존 Refresh Token 401 검증, 확인 전후 계좌·잔액·주문·체결 불변을 검증한다.
+- [x] 동시에 같은 새 이메일을 다른 경로로 먼저 선점하는 경합 시나리오를 실제 MySQL로 재현해 409와 인증번호 미소비·Refresh Token 미폐기 롤백을 검증한다.
 - [ ] 대상 단위·슬라이스·통합 테스트 전체와 기존 회귀 스위트, Spotless, `./gradlew build`를 실행한다.
 - [ ] `docs/api-routes.md`에 `POST /api/auth/email-changes/confirm` 라우트를 추가하고 `docs/specs/002-auth-account/tasks.md`에 Issue #56 작업 항목 절을 추가한다.
 
