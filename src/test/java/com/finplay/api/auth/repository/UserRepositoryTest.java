@@ -35,6 +35,24 @@ class UserRepositoryTest {
 	}
 
 	@Test
+	@DisplayName("existsByNicknameAndIdNot은 자기 자신의 닉네임은 중복으로 보지 않는다")
+	void existsByNicknameAndIdNotReturnsFalseForOwnNickname() {
+		User user = userRepository.saveAndFlush(User.create("own@finplay.com", "hash", "ownNick", NOW));
+
+		assertThat(userRepository.existsByNicknameAndIdNot("ownNick", user.getId())).isFalse();
+	}
+
+	@Test
+	@DisplayName("existsByNicknameAndIdNot은 다른 회원이 쓰는 닉네임이면 true를 반환한다")
+	void existsByNicknameAndIdNotReturnsTrueForOtherUsersNickname() {
+		User me = userRepository.saveAndFlush(User.create("me@finplay.com", "hash", "myNick", NOW));
+		userRepository.saveAndFlush(User.create("other@finplay.com", "hash", "otherNick", NOW));
+
+		assertThat(userRepository.existsByNicknameAndIdNot("otherNick", me.getId())).isTrue();
+		assertThat(userRepository.existsByNicknameAndIdNot("nobodyNick", me.getId())).isFalse();
+	}
+
+	@Test
 	@DisplayName("이메일이 같으면 UNIQUE(email) 제약으로 저장이 거부된다")
 	void duplicateEmailViolatesUniqueConstraint() {
 		userRepository.saveAndFlush(User.create("dup@finplay.com", "hash", "nickA", NOW));

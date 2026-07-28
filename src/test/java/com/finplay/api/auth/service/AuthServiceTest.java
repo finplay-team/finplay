@@ -59,6 +59,8 @@ class AuthServiceTest {
 
 	private static final String EMAIL = "user@finplay.com";
 	private static final String NICKNAME = "finplayer";
+	private static final String NEW_NICKNAME = "finplayer-renamed";
+	private static final String RAW_REAUTH_TOKEN = "raw-reauth-token";
 	private static final String RAW_PASSWORD = "password123";
 	private static final String SIGNUP_TOKEN = "signup-verification-token";
 	private static final String ACCESS_TOKEN = "access.jwt.token";
@@ -677,6 +679,141 @@ class AuthServiceTest {
 	}
 
 	@Test
+	void changeNicknameSucceedsForEmailUserWithCorrectPassword() {
+		User user = stubEmailUser();
+		when(userRepository.existsByNicknameAndIdNot(NEW_NICKNAME, 7L)).thenReturn(false);
+		when(userRepository.saveAndFlush(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		MemberResponse response = authService.changeNickname(7L, NEW_NICKNAME, RAW_PASSWORD, null);
+
+		assertThat(response.id()).isEqualTo(7L);
+		assertThat(response.email()).isEqualTo(EMAIL);
+		assertThat(response.nickname()).isEqualTo(NEW_NICKNAME);
+		assertThat(response.signupMethod()).isEqualTo(SignupMethod.EMAIL);
+
+		ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
+		verify(userRepository).saveAndFlush(userCaptor.capture());
+		User savedUser = userCaptor.getValue();
+		assertThat(savedUser).isSameAs(user);
+		assertThat(savedUser.getNickname()).isEqualTo(NEW_NICKNAME);
+		assertThat(savedUser.getEmail()).isEqualTo(EMAIL);
+		assertThat(savedUser.getUpdatedAt()).isEqualTo(NOW);
+
+		verifyNoInteractions(reauthTokenRepository);
+		verifyNoInteractions(accountService);
+		verifyNoInteractions(refreshTokenRepository);
+		verify(socialAccountRepository, never()).save(any());
+	}
+
+	@Test
+	void changeNicknameFailsWithReauthenticationFailedForEmailUserWithWrongPassword() {
+		stubEmailUser();
+
+		assertChangeNicknameFailsWith(
+			ErrorCode.REAUTHENTICATION_FAILED, NEW_NICKNAME, "wrong-password", null);
+
+		verify(userRepository, never()).saveAndFlush(any());
+		verifyNoInteractions(reauthTokenRepository);
+	}
+
+	@Test
+	void changeNicknameFailsWithValidationErrorWhenEmailUserOmitsCurrentPassword() {
+		stubEmailUser();
+
+		assertChangeNicknameFailsWith(ErrorCode.VALIDATION_ERROR, NEW_NICKNAME, "  ", null);
+
+		verify(userRepository, never()).saveAndFlush(any());
+		verifyNoInteractions(reauthTokenRepository);
+	}
+
+	@Test
+	void changeNicknameSucceedsForOAuthUserWithValidReauthToken() {
+		User user = stubOAuthUser(OAuthProviderName.KAKAO);
+		when(reauthTokenRepository.consumeIfValidForUser(sha256(RAW_REAUTH_TOKEN), 7L, NOW)).thenReturn(1);
+		when(userRepository.existsByNicknameAndIdNot(NEW_NICKNAME, 7L)).thenReturn(false);
+		when(userRepository.saveAndFlush(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		MemberResponse response = authService.changeNickname(7L, NEW_NICKNAME, null, RAW_REAUTH_TOKEN);
+
+		assertThat(response.nickname()).isEqualTo(NEW_NICKNAME);
+		assertThat(response.signupMethod()).isEqualTo(SignupMethod.KAKAO);
+		assertThat(user.getNickname()).isEqualTo(NEW_NICKNAME);
+
+		// 원문이 아니라 해시로 소비돼야 한다.
+		verify(reauthTokenRepository).consumeIfValidForUser(sha256(RAW_REAUTH_TOKEN), 7L, NOW);
+		verify(reauthTokenRepository, never()).consumeIfValidForUser(RAW_REAUTH_TOKEN, 7L, NOW);
+		verify(userRepository).saveAndFlush(user);
+		verifyNoInteractions(accountService);
+		verifyNoInteractions(refreshTokenRepository);
+		verify(socialAccountRepository, never()).save(any());
+	}
+
+	@Test
+	void changeNicknameFailsWithReauthenticationFailedForOAuthUserWhenConsumeReturnsZero() {
+		stubOAuthUser(OAuthProviderName.NAVER);
+		when(reauthTokenRepository.consumeIfValidForUser(sha256(RAW_REAUTH_TOKEN), 7L, NOW)).thenReturn(0);
+
+		assertChangeNicknameFailsWith(
+			ErrorCode.REAUTHENTICATION_FAILED, NEW_NICKNAME, null, RAW_REAUTH_TOKEN);
+
+		verify(userRepository, never()).saveAndFlush(any());
+	}
+
+	@Test
+	void changeNicknameFailsWithValidationErrorWhenOAuthUserOmitsReauthToken() {
+		stubOAuthUser(OAuthProviderName.KAKAO);
+
+		assertChangeNicknameFailsWith(ErrorCode.VALIDATION_ERROR, NEW_NICKNAME, RAW_PASSWORD, "  ");
+
+		verify(userRepository, never()).saveAndFlush(any());
+		verifyNoInteractions(reauthTokenRepository);
+	}
+
+	@Test
+	void changeNicknameFailsWithDuplicateResourceWhenNicknameOwnedByAnotherUser() {
+		stubEmailUser();
+		when(userRepository.existsByNicknameAndIdNot(NEW_NICKNAME, 7L)).thenReturn(true);
+
+		assertChangeNicknameFailsWith(ErrorCode.DUPLICATE_RESOURCE, NEW_NICKNAME, RAW_PASSWORD, null);
+
+		verify(userRepository, never()).saveAndFlush(any());
+	}
+
+	@Test
+	void changeNicknameFailsWithDuplicateResourceOnConcurrentUniqueViolation() {
+		stubEmailUser();
+		when(userRepository.existsByNicknameAndIdNot(NEW_NICKNAME, 7L)).thenReturn(false);
+		when(userRepository.saveAndFlush(any(User.class)))
+			.thenThrow(new DataIntegrityViolationException("concurrent duplicate"));
+
+		assertChangeNicknameFailsWith(ErrorCode.DUPLICATE_RESOURCE, NEW_NICKNAME, RAW_PASSWORD, null);
+	}
+
+	@Test
+	void changeNicknameSucceedsAsNoOpWhenNewNicknameEqualsCurrentNickname() {
+		User user = stubEmailUser();
+		when(userRepository.saveAndFlush(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		MemberResponse response = authService.changeNickname(7L, NICKNAME, RAW_PASSWORD, null);
+
+		assertThat(response.nickname()).isEqualTo(NICKNAME);
+		assertThat(user.getUpdatedAt()).isEqualTo(NOW);
+		verify(userRepository, never()).existsByNicknameAndIdNot(any(), any());
+		verify(userRepository).saveAndFlush(user);
+	}
+
+	@Test
+	void changeNicknameFailsWithUnauthorizedWhenUserNotFound() {
+		when(userRepository.findById(7L)).thenReturn(Optional.empty());
+
+		assertChangeNicknameFailsWith(ErrorCode.UNAUTHORIZED, NEW_NICKNAME, RAW_PASSWORD, null);
+
+		verifyNoInteractions(socialAccountRepository);
+		verifyNoInteractions(reauthTokenRepository);
+		verify(userRepository, never()).saveAndFlush(any());
+	}
+
+	@Test
 	void signupMethodFromProviderMapsEachOAuthProvider() {
 		assertThat(SignupMethod.fromProvider(OAuthProviderName.KAKAO)).isEqualTo(SignupMethod.KAKAO);
 		assertThat(SignupMethod.fromProvider(OAuthProviderName.NAVER)).isEqualTo(SignupMethod.NAVER);
@@ -689,6 +826,30 @@ class AuthServiceTest {
 			Optional.of(SocialAccount.create(user, provider, "provider-user-id", NOW.minusDays(1))));
 
 		return authService.getMe(7L).signupMethod();
+	}
+
+	private User stubEmailUser() {
+		User user = existingUser(passwordEncoder.encode(RAW_PASSWORD));
+		when(userRepository.findById(7L)).thenReturn(Optional.of(user));
+		when(socialAccountRepository.findByUserId(7L)).thenReturn(Optional.empty());
+		return user;
+	}
+
+	private User stubOAuthUser(OAuthProviderName provider) {
+		User user = existingUser(null);
+		when(userRepository.findById(7L)).thenReturn(Optional.of(user));
+		when(socialAccountRepository.findByUserId(7L)).thenReturn(
+			Optional.of(SocialAccount.create(user, provider, "provider-user-id", NOW.minusDays(1))));
+		return user;
+	}
+
+	private void assertChangeNicknameFailsWith(
+		ErrorCode errorCode, String newNickname, String currentPassword, String reauthToken) {
+		assertThatThrownBy(
+			() -> authService.changeNickname(7L, newNickname, currentPassword, reauthToken))
+			.isInstanceOf(BusinessException.class)
+			.extracting(ex -> ((BusinessException)ex).getErrorCode())
+			.isEqualTo(errorCode);
 	}
 
 	private User existingUser(String passwordHash) {
