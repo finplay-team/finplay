@@ -11,6 +11,7 @@ import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.dto.response.MemberResponse;
 import com.finplay.api.auth.dto.response.ReauthTokenResponse;
 import com.finplay.api.auth.dto.response.TokenResponse;
+import com.finplay.api.auth.exception.EmailChangeConflictException;
 import com.finplay.api.auth.oauth.OAuthNicknameGenerator;
 import com.finplay.api.auth.oauth.OAuthProviderName;
 import com.finplay.api.auth.oauth.OAuthUserDto;
@@ -49,6 +50,7 @@ public class AuthService {
 	private final RefreshTokenRepository refreshTokenRepository;
 	private final SocialAccountRepository socialAccountRepository;
 	private final ReauthTokenRepository reauthTokenRepository;
+	private final EmailChangeService emailChangeService;
 	private final PasswordEncoder passwordEncoder;
 	private final AccountService accountService;
 	private final JwtTokenProvider jwtTokenProvider;
@@ -62,6 +64,7 @@ public class AuthService {
 		RefreshTokenRepository refreshTokenRepository,
 		SocialAccountRepository socialAccountRepository,
 		ReauthTokenRepository reauthTokenRepository,
+		EmailChangeService emailChangeService,
 		PasswordEncoder passwordEncoder,
 		AccountService accountService,
 		JwtTokenProvider jwtTokenProvider,
@@ -73,6 +76,7 @@ public class AuthService {
 		this.refreshTokenRepository = refreshTokenRepository;
 		this.socialAccountRepository = socialAccountRepository;
 		this.reauthTokenRepository = reauthTokenRepository;
+		this.emailChangeService = emailChangeService;
 		this.passwordEncoder = passwordEncoder;
 		this.accountService = accountService;
 		this.jwtTokenProvider = jwtTokenProvider;
@@ -186,6 +190,31 @@ public class AuthService {
 			throw new BusinessException(ErrorCode.DUPLICATE_RESOURCE);
 		}
 
+		return MemberResponse.from(user, signupMethod);
+	}
+
+	// 인증번호 검증·소비 → 이메일 변경 → 기존 Refresh Token 전체 폐기를 한 트랜잭션으로 묶는다.
+	// 인증번호 불일치·만료·5회초과의 일반 BusinessException은 시도 횟수 증가분을 커밋하고(noRollbackFor),
+	// 유니크 제약 경합에서 던지는 EmailChangeConflictException만 전체 롤백한다(rollbackFor, depth 0으로 우선 매칭).
+	@Transactional(noRollbackFor = BusinessException.class, rollbackFor = EmailChangeConflictException.class)
+	public MemberResponse confirmEmailChange(Long userId, String newEmail, String code) {
+		User user = userRepository.findById(userId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED));
+		LocalDateTime now = LocalDateTime.now(clock);
+
+		emailChangeService.validateAndConsumeCode(userId, newEmail, code);
+
+		user.changeEmail(newEmail, now);
+		try {
+			userRepository.saveAndFlush(user);
+		} catch (DataIntegrityViolationException ex) {
+			throw new EmailChangeConflictException();
+		}
+		refreshTokenRepository.revokeAllActiveByUserId(userId, now);
+
+		SignupMethod signupMethod = socialAccountRepository.findByUserId(userId)
+			.map(socialAccount -> SignupMethod.fromProvider(socialAccount.getProvider()))
+			.orElse(SignupMethod.EMAIL);
 		return MemberResponse.from(user, signupMethod);
 	}
 

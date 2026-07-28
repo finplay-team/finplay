@@ -95,6 +95,44 @@ class RefreshTokenRepositoryTest {
 		assertThat(refreshTokenRepository.revokeIfActiveAndNotExpired(expired.getId(), NOW)).isZero();
 	}
 
+	@Test
+	void revokeAllActiveByUserIdRevokesOnlyTargetUsersActiveTokens() {
+		User user = saveUser("bulk-revoke@finplay.com", "bulk-revoke-user");
+		User otherUser = saveUser("bulk-revoke-other@finplay.com", "bulk-revoke-other-user");
+
+		RefreshToken active1 = refreshTokenRepository.save(
+			RefreshToken.create(user, sha256("bulk-active-1"), NOW.plusDays(14), NOW));
+		RefreshToken active2 = refreshTokenRepository.save(
+			RefreshToken.create(user, sha256("bulk-active-2"), NOW.plusDays(14), NOW));
+
+		RefreshToken alreadyRevoked = RefreshToken.create(user, sha256("bulk-already-revoked"), NOW.plusDays(14), NOW);
+		ReflectionTestUtils.setField(alreadyRevoked, "revokedAt", NOW.minusHours(1));
+		refreshTokenRepository.save(alreadyRevoked);
+
+		// 이미 만료됐지만 아직 폐기되지 않은 토큰 — 만료 여부는 조건이 아니므로 폐기 대상에 포함되어야 한다.
+		RefreshToken expiredNotRevoked = refreshTokenRepository.save(
+			RefreshToken.create(user, sha256("bulk-expired-not-revoked"), NOW.minusDays(1), NOW.minusDays(15)));
+
+		RefreshToken otherUserActive = refreshTokenRepository.save(
+			RefreshToken.create(otherUser, sha256("bulk-other-active"), NOW.plusDays(14), NOW));
+		refreshTokenRepository.flush();
+
+		int revokedCount = refreshTokenRepository.revokeAllActiveByUserId(user.getId(), NOW.plusMinutes(1));
+
+		assertThat(revokedCount).isEqualTo(3);
+		entityManager.clear();
+		assertThat(refreshTokenRepository.findById(active1.getId()).orElseThrow().getRevokedAt())
+			.isEqualTo(NOW.plusMinutes(1));
+		assertThat(refreshTokenRepository.findById(active2.getId()).orElseThrow().getRevokedAt())
+			.isEqualTo(NOW.plusMinutes(1));
+		assertThat(refreshTokenRepository.findById(expiredNotRevoked.getId()).orElseThrow().getRevokedAt())
+			.isEqualTo(NOW.plusMinutes(1));
+		assertThat(refreshTokenRepository.findById(alreadyRevoked.getId()).orElseThrow().getRevokedAt())
+			.isEqualTo(NOW.minusHours(1));
+		assertThat(refreshTokenRepository.findById(otherUserActive.getId()).orElseThrow().getRevokedAt())
+			.isNull();
+	}
+
 	private User saveUser(String email, String nickname) {
 		return userRepository.saveAndFlush(User.create(email, "password-hash", nickname, NOW));
 	}

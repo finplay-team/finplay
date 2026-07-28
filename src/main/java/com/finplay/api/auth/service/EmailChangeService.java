@@ -1,4 +1,4 @@
-// 새 이메일 재인증·중복·발송 제한 판정과 인증번호 발송을 담당하는 서비스
+// 새 이메일 재인증·중복·발송 제한 판정, 인증번호 발송과 확인 시 검증·소비를 담당하는 서비스
 package com.finplay.api.auth.service;
 
 import com.finplay.api.auth.domain.EmailChangeVerification;
@@ -37,6 +37,7 @@ public class EmailChangeService {
 	private static final int RESEND_INTERVAL_SECONDS = 60;
 	private static final int HOURLY_LIMIT = 5;
 	private static final int DAILY_LIMIT = 10;
+	private static final int MAX_VERIFICATION_ATTEMPTS = 5;
 
 	private final UserRepository userRepository;
 	private final SocialAccountRepository socialAccountRepository;
@@ -91,6 +92,30 @@ public class EmailChangeService {
 
 		// 발송은 저장 이후에 한다. 발송 실패 시 트랜잭션이 롤백되어 저장·이전 코드 만료·토큰 소비가 함께 되돌려진다.
 		emailSender.sendVerificationCode(newEmail, code);
+	}
+
+	// D1: 조회 → 소비 상태 → 만료 → 시도 횟수 초과 → 코드 일치 순으로 검증하고 성공 시 소비 처리한다.
+	// 트랜잭션 경계는 갖지 않는다 — 호출자인 AuthService.confirmEmailChange의 트랜잭션 안에서 실행된다.
+	public void validateAndConsumeCode(Long userId, String newEmail, String code) {
+		LocalDateTime now = LocalDateTime.now(clock);
+		EmailChangeVerification verification = emailChangeVerificationRepository
+			.findFirstByUserIdAndNewEmailOrderByCreatedAtDesc(userId, newEmail)
+			.orElseThrow(() -> new BusinessException(ErrorCode.EMAIL_VERIFICATION_FAILED));
+
+		if (verification.getConsumedAt() != null || !verification.getExpiresAt().isAfter(now)) {
+			throw new BusinessException(ErrorCode.EMAIL_VERIFICATION_FAILED);
+		}
+		if (verification.getAttemptCount() >= MAX_VERIFICATION_ATTEMPTS) {
+			verification.incrementAttemptCount();
+			verification.expire(now);
+			throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS);
+		}
+		if (!verification.getCodeHash().equals(hmac(code))) {
+			verification.incrementAttemptCount();
+			throw new BusinessException(ErrorCode.EMAIL_VERIFICATION_FAILED);
+		}
+
+		verification.consume(now);
 	}
 
 	// EMAIL 회원은 현재 비밀번호, OAuth 전용 회원은 reauthToken으로 재인증한다. 실패 사유는 구분하지 않고 403으로 통일한다.

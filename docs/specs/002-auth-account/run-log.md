@@ -1,5 +1,37 @@
 # Run Log: 002-auth-account
 
+## Issue #56
+
+### Task 1: 엔티티·리포지터리 확장
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| implementer | implementer | `JAVA_HOME="C:\Program Files\Java\jdk-17" ./gradlew.bat compileJava` — `BUILD SUCCESSFUL`; `./gradlew.bat test --tests "com.finplay.api.auth.domain.*" --tests "*EmailChangeVerificationRepositoryTest" --tests "*RefreshTokenRepositoryTest"` — 전부 `BUILD SUCCESSFUL`(Docker 가용, `mysql:8.4` Testcontainers 실제 기동) | issue-56-plan.md D3(`incrementAttemptCount`·`consume(now)`)·D4(`revokeAllActiveByUserId` 벌크 UPDATE)·Architecture(19-22행 `changeEmail` 등), conventions.md 엔티티 상태 전이·Repository 규칙 |
+
+- `EmailChangeVerification.incrementAttemptCount()`·`consume(now)`, `User.changeEmail(newEmail, now)`는 순수 단위 테스트(`EmailChangeVerificationTest`·`UserTest`, 신규 `domain` 테스트 디렉터리)로 먼저 실패시키고 구현으로 통과시켰다 — 기존 `changeNickname`처럼 별도 엔티티 단위 테스트 선례가 없어, 서비스 계층 연결(Task 3) 전에 메서드 자체 동작만 고정하는 목적으로 신설했다.
+- `EmailChangeVerificationRepositoryTest`에 `findFirstByUserIdAndNewEmailOrderByCreatedAtDesc`가 재발송으로 쌓인 여러 행 중 최신 1건만 반환하는 케이스를, `RefreshTokenRepositoryTest`에 `revokeAllActiveByUserId`가 대상 회원의 활성 토큰만 폐기하고 타인·이미 폐기된 토큰은 불변임을 검증하는 케이스를 `@DataJpaTest`로 추가했다.
+- Task 2(`EmailChangeService.validateAndConsumeCode`)·Task 3(`AuthService.confirmEmailChange`, `EmailChangeConflictException`, Controller)는 이번 항목 범위 밖이라 손대지 않았다.
+
+### Task 2: `EmailChangeService.validateAndConsumeCode` 검증·소비
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| implementer | implementer | `JAVA_HOME="C:\Program Files\Java\jdk-17" ./gradlew.bat compileJava compileTestJava` — `BUILD SUCCESSFUL`; `./gradlew.bat test --tests "com.finplay.api.auth.service.EmailChangeServiceTest"` — `BUILD SUCCESSFUL`(16건 전부 통과) | issue-56-plan.md D1(75-100행, 검증 순서·`incrementAttemptCount`/`expire`/`consume` 호출), conventions.md 서비스 트랜잭션 경계 규칙 |
+
+- 착수 시점에 작업 디렉터리에 이미 `validateAndConsumeCode`와 대응 테스트 7건(요청 없음·타인 요청·이미 소비·만료·5회초과·코드불일치·성공)이 uncommitted 상태로 존재해, D1 검증 순서·`hmac` 재사용·`@Transactional` 미선언과 정확히 일치함을 코드 대조로 확인한 뒤 추가 구현 없이 컴파일·테스트로 재검증만 했다.
+- `user.changeEmail`·`refreshTokenRepository.revokeAllActiveByUserId`·409 변환은 호출하지 않아(Task 3 범위) 계획과 일치한다. `AuthService`·`EmailChangeConflictException`·`EmailChangeConfirmRequest`·`EmailChangeController`·`requestEmailChange`는 손대지 않았다.
+
+### Task 3: `AuthService.confirmEmailChange` 트랜잭션·롤백과 `EmailChangeController` 연결
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| implementer | implementer | `JAVA_HOME="C:\Program Files\Java\jdk-17" ./gradlew.bat compileJava --no-daemon --max-workers=1` — `BUILD SUCCESSFUL` | issue-56-plan.md D2(102-137행, `noRollbackFor`/`rollbackFor` depth 매칭)·D5(172-177행 `EmailChangeConfirmRequest`), conventions.md 서비스 트랜잭션 경계·엔티티 규칙 |
+
+- `EmailChangeConflictException`(`com.finplay.api.auth.exception`, `BusinessException` 상속, `ErrorCode.DUPLICATE_RESOURCE`)을 코드베이스 최초의 `BusinessException` 서브타입으로 추가했다.
+- `AuthService`에 `EmailChangeService` 의존성을 추가하고 `confirmEmailChange`를 D2 그대로 `@Transactional(noRollbackFor = BusinessException.class, rollbackFor = EmailChangeConflictException.class)`로 구현했다 — `validateAndConsumeCode` → `user.changeEmail` → `saveAndFlush`(`DataIntegrityViolationException` → `EmailChangeConflictException`) → `revokeAllActiveByUserId` 순서, `signupMethod`는 `getMe`/`changeNickname`과 동일하게 계산.
+- `EmailChangeConfirmRequest`(`EmailVerificationConfirmRequest`와 동일한 검증 애노테이션)와 `EmailChangeController.confirmEmailChange`(`POST /api/auth/email-changes/confirm`, `AuthService` 신규 주입, 200 `MemberResponse`)를 추가하고 `docs/api-routes.md`를 갱신했다.
+- 테스트 작성은 이번 항목 범위 밖(tester 담당)이라 수행하지 않았고, `compileJava`로만 컴파일을 확인했다.
+
 ## Issue #55
 
 ### Task 1: `email_change_verifications` 스키마와 Repository, `ReauthTokenRepository` 소비 메서드
@@ -322,8 +354,11 @@
 | 05:10 | reviewer(리뷰) | `git diff origin/dev...HEAD` (Issue #54 프로덕션 5·테스트 5·문서 4 파일), `SecurityConfig`·`ErrorCode`·`db/migration`·`Sha256BcryptPasswordEncoder`·`User`·`AuthController` 원본 확인 | issue-54-plan.md D1~D7·완료 체크리스트, conventions.md 레이어·엔티티·DTO·테스트 규칙, ADR-0002, ADR-0003, ADR-0004(마이그레이션 미추가 확인), docs/api-routes.md |
 | 재검토 | reviewer(리뷰) | issue-54-plan.md "미확정·PRD 불일치" 1~5번 재검토 — `AuthService.changeNickname`·`consumeReauthToken`·`ReauthTokenRepository.consumeIfValidForUser`·`OAuthAuthorizationService.authorizeForReauth`·`OAuthCallbackService`·Issue #53 `reauthenticate` 원본 재확인 | docs/prd.md AUTH-005, GitHub Issue #54 본문, issue-54-plan.md D1·D2·D4·D7, Issue #53 issue-53-plan.md(발급 시 SocialAccount 검증 후 state에 바인딩) |
 | 10:20 | reviewer(리뷰) | `git diff origin/dev...HEAD`(커밋 4b7de6a·58ddc1f·f2d5521·58eb78d·62d858c) | issue-55-plan.md D1~D5, conventions.md, ADR-0002·0003·0004, docs/api-routes.md
+| reviewer | reviewer(리뷰) | `git diff dev...HEAD`(커밋 7380c16·18275c4·dad6eeb·ecdf3aa·7f58cb1) | issue-56-plan.md D1~D5, conventions.md, ADR-0002·0003·0004, docs/api-routes.md
 
 ## 모니터링 (사람용 요약)
+- Issue #56 리뷰 판정: 차단 0건. `noRollbackFor=BusinessException`/`rollbackFor=EmailChangeConflictException` depth 매칭이 설계·실제 통합 테스트(경합 시 소비·토큰폐기 롤백, 5회초과 시 attempt_count 커밋)로 모두 확인됨. 서비스 책임 분리(EmailChangeService=검증/소비, AuthService=이메일변경/토큰폐기/트랜잭션)·순환의존 없음·api-routes.md 일치·기존 AuthServiceTest/OAuthAuthServiceTest mock 추가가 회귀를 깨지 않음을 확인, 머지 가능.
+- Issue #56 Task 1 — `EmailChangeVerification.incrementAttemptCount`·`consume`, `User.changeEmail`, `EmailChangeVerificationRepository.findFirstByUserIdAndNewEmailOrderByCreatedAtDesc`, `RefreshTokenRepository.revokeAllActiveByUserId` 추가. 순수 단위 테스트 2건 + `@DataJpaTest` 신규 케이스 2건 전부 통과, 컴파일 통과. Task 2·3(서비스 연결·Controller)은 범위 밖.
 - Issue #55 리뷰 판정: 차단 0건, 권장 1건(tasks.md Issue #55 절 미추가), 참고 1건(EMAIL_VERIFICATION_SECRET 재사용은 계획서에서 이미 검토된 선택). D1~D5·HTTP 계약·재인증→중복→발송제한 순서·발송제한(userId)/무효화((userId,newEmail)) 구분이 코드·테스트에 그대로 반영됨을 확인, 머지 가능.
 - Issue #55 Task 4(통합 테스트) — `EmailChangeIntegrationTest` 7건 신설, `mysql:8.4` Testcontainers로 전부 통과(이 환경에서 Docker 가용 확인). 전체 회귀·문서 동기화는 메인 세션이 이어서 처리.
 - Issue #55 Task 3 — `EmailChangeRequest`·`EmailChangeController`(`POST /api/auth/email-changes`, Bearer 필수, 202 본문 없음) 추가, api-routes.md 동기화, 컴파일 통과.

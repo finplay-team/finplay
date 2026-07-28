@@ -22,6 +22,7 @@ import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import java.nio.charset.StandardCharsets;
+import java.security.InvalidKeyException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
@@ -31,6 +32,8 @@ import java.time.ZoneOffset;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -262,6 +265,118 @@ class EmailChangeServiceTest {
 		assertThat(previous.getExpiresAt()).isEqualTo(NOW);
 	}
 
+	@Test
+	@DisplayName("확인 대상 인증번호 요청 이력이 없으면 EMAIL_VERIFICATION_FAILED(400)를 던진다")
+	void throwsEmailVerificationFailedWhenNoRequestFound() {
+		when(emailChangeVerificationRepository.findFirstByUserIdAndNewEmailOrderByCreatedAtDesc(USER_ID, NEW_EMAIL))
+			.thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> service.validateAndConsumeCode(USER_ID, NEW_EMAIL, "123456"))
+			.isInstanceOf(BusinessException.class)
+			.extracting(ex -> ((BusinessException)ex).getErrorCode())
+			.isEqualTo(ErrorCode.EMAIL_VERIFICATION_FAILED);
+	}
+
+	@Test
+	@DisplayName("다른 회원이 남의 새 이메일 조합을 확인하려 하면 요청 없음과 동일하게 EMAIL_VERIFICATION_FAILED(400)를 던진다")
+	void throwsEmailVerificationFailedWhenRequestedByOtherUser() {
+		Long otherUserId = 999L;
+		when(emailChangeVerificationRepository
+			.findFirstByUserIdAndNewEmailOrderByCreatedAtDesc(otherUserId, NEW_EMAIL))
+			.thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> service.validateAndConsumeCode(otherUserId, NEW_EMAIL, "123456"))
+			.isInstanceOf(BusinessException.class)
+			.extracting(ex -> ((BusinessException)ex).getErrorCode())
+			.isEqualTo(ErrorCode.EMAIL_VERIFICATION_FAILED);
+	}
+
+	@Test
+	@DisplayName("이미 소비된 인증번호로 재확인하면 EMAIL_VERIFICATION_FAILED(400)를 던진다")
+	void throwsEmailVerificationFailedWhenAlreadyConsumed() {
+		User user = emailMemberUser();
+		EmailChangeVerification verification = EmailChangeVerification.create(
+			user, NEW_EMAIL, hmac("123456"), NOW.plusMinutes(5), NOW.minusMinutes(1));
+		verification.consume(NOW.minusSeconds(30));
+		when(emailChangeVerificationRepository.findFirstByUserIdAndNewEmailOrderByCreatedAtDesc(USER_ID, NEW_EMAIL))
+			.thenReturn(Optional.of(verification));
+
+		assertThatThrownBy(() -> service.validateAndConsumeCode(USER_ID, NEW_EMAIL, "123456"))
+			.isInstanceOf(BusinessException.class)
+			.extracting(ex -> ((BusinessException)ex).getErrorCode())
+			.isEqualTo(ErrorCode.EMAIL_VERIFICATION_FAILED);
+	}
+
+	@Test
+	@DisplayName("인증번호가 만료됐으면(자연 만료·재발송 무효화 동일) EMAIL_VERIFICATION_FAILED(400)를 던진다")
+	void throwsEmailVerificationFailedWhenExpired() {
+		User user = emailMemberUser();
+		EmailChangeVerification verification = EmailChangeVerification.create(
+			user, NEW_EMAIL, hmac("123456"), NOW.minusMinutes(1), NOW.minusMinutes(6));
+		when(emailChangeVerificationRepository.findFirstByUserIdAndNewEmailOrderByCreatedAtDesc(USER_ID, NEW_EMAIL))
+			.thenReturn(Optional.of(verification));
+
+		assertThatThrownBy(() -> service.validateAndConsumeCode(USER_ID, NEW_EMAIL, "123456"))
+			.isInstanceOf(BusinessException.class)
+			.extracting(ex -> ((BusinessException)ex).getErrorCode())
+			.isEqualTo(ErrorCode.EMAIL_VERIFICATION_FAILED);
+	}
+
+	@Test
+	@DisplayName("5회 시도에 도달한 상태에서 확인하면 시도 횟수를 증가시키고 즉시 만료 처리한 뒤 TOO_MANY_REQUESTS(429)를 던진다")
+	void throwsTooManyRequestsAndExpiresWhenAttemptCountExceeded() {
+		User user = emailMemberUser();
+		EmailChangeVerification verification = EmailChangeVerification.create(
+			user, NEW_EMAIL, hmac("123456"), NOW.plusMinutes(5), NOW.minusMinutes(1));
+		for (int i = 0; i < 5; i++) {
+			verification.incrementAttemptCount();
+		}
+		when(emailChangeVerificationRepository.findFirstByUserIdAndNewEmailOrderByCreatedAtDesc(USER_ID, NEW_EMAIL))
+			.thenReturn(Optional.of(verification));
+
+		assertThatThrownBy(() -> service.validateAndConsumeCode(USER_ID, NEW_EMAIL, "123456"))
+			.isInstanceOf(BusinessException.class)
+			.extracting(ex -> ((BusinessException)ex).getErrorCode())
+			.isEqualTo(ErrorCode.TOO_MANY_REQUESTS);
+
+		assertThat(verification.getAttemptCount()).isEqualTo(6);
+		assertThat(verification.getExpiresAt()).isEqualTo(NOW);
+		assertThat(verification.getConsumedAt()).isNull();
+	}
+
+	@Test
+	@DisplayName("코드가 일치하지 않으면 시도 횟수를 증가시키고 EMAIL_VERIFICATION_FAILED(400)를 던진다")
+	void throwsEmailVerificationFailedAndIncrementsAttemptCountWhenCodeMismatches() {
+		User user = emailMemberUser();
+		EmailChangeVerification verification = EmailChangeVerification.create(
+			user, NEW_EMAIL, hmac("123456"), NOW.plusMinutes(5), NOW.minusMinutes(1));
+		when(emailChangeVerificationRepository.findFirstByUserIdAndNewEmailOrderByCreatedAtDesc(USER_ID, NEW_EMAIL))
+			.thenReturn(Optional.of(verification));
+
+		assertThatThrownBy(() -> service.validateAndConsumeCode(USER_ID, NEW_EMAIL, "654321"))
+			.isInstanceOf(BusinessException.class)
+			.extracting(ex -> ((BusinessException)ex).getErrorCode())
+			.isEqualTo(ErrorCode.EMAIL_VERIFICATION_FAILED);
+
+		assertThat(verification.getAttemptCount()).isEqualTo(1);
+		assertThat(verification.getConsumedAt()).isNull();
+	}
+
+	@Test
+	@DisplayName("유효한 인증번호에 올바른 코드로 확인하면 인증번호를 소비 처리한다")
+	void consumesVerificationWhenCodeMatches() {
+		User user = emailMemberUser();
+		EmailChangeVerification verification = EmailChangeVerification.create(
+			user, NEW_EMAIL, hmac("123456"), NOW.plusMinutes(5), NOW.minusMinutes(1));
+		when(emailChangeVerificationRepository.findFirstByUserIdAndNewEmailOrderByCreatedAtDesc(USER_ID, NEW_EMAIL))
+			.thenReturn(Optional.of(verification));
+
+		service.validateAndConsumeCode(USER_ID, NEW_EMAIL, "123456");
+
+		assertThat(verification.getConsumedAt()).isEqualTo(NOW);
+		assertThat(verification.getAttemptCount()).isZero();
+	}
+
 	private User emailMemberUser() {
 		User user = User.create("email-member@finplay.com", PASSWORD_HASH, "email-nick", NOW.minusDays(10));
 		ReflectionTestUtils.setField(user, "id", USER_ID);
@@ -283,6 +398,17 @@ class EmailChangeServiceTest {
 			return HexFormat.of()
 				.formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
 		} catch (NoSuchAlgorithmException ex) {
+			throw new IllegalStateException(ex);
+		}
+	}
+
+	// 서비스의 private hmac(code)와 동일한 계산으로 테스트 픽스처의 codeHash를 만든다.
+	private static String hmac(String code) {
+		try {
+			Mac mac = Mac.getInstance("HmacSHA256");
+			mac.init(new SecretKeySpec(SECRET.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+			return HexFormat.of().formatHex(mac.doFinal(code.getBytes(StandardCharsets.UTF_8)));
+		} catch (NoSuchAlgorithmException | InvalidKeyException ex) {
 			throw new IllegalStateException(ex);
 		}
 	}

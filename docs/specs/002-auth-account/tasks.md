@@ -58,3 +58,14 @@ Issue #54는 `reauthToken`을 처음으로 소비하는 사례이며 새 Flyway 
 - [x] Fake `EmailSender` + Testcontainers MySQL 통합 테스트(EMAIL/OAuth 각 성공 흐름, 실패 시 기존 `users`·`accounts`·`orders`·`executions` 불변)·전체 회귀·`./gradlew build`·`docs/api-routes.md`·`docs/specs/002-auth-account/tasks.md` 동기화
 
 Issue #55은 인증번호 발송까지만 구현한다. 확인·실제 `users.email` 변경·Refresh Token 폐기는 별도 후속 이슈다.
+
+## Issue #56 이메일 변경 확인 및 적용 작업 항목 (4개)
+
+상세 설계는 `issue-56-plan.md` 참고.
+
+- [x] `EmailChangeVerification.incrementAttemptCount()`·`consume(now)`, `EmailChangeVerificationRepository.findFirstByUserIdAndNewEmailOrderByCreatedAtDesc`, `RefreshTokenRepository.revokeAllActiveByUserId(userId, now)`, `User.changeEmail(newEmail, now)` 추가
+- [x] `EmailChangeService.validateAndConsumeCode` — 요청 없음/소비됨/만료 → 5회 초과(즉시 만료+429) → 코드 불일치 검증 순서 구현(트랜잭션 경계 없음, 호출자 트랜잭션에 편입)
+- [x] `AuthService.confirmEmailChange`(`@Transactional(noRollbackFor=BusinessException.class, rollbackFor=EmailChangeConflictException.class)`) — 검증·소비 → `users.email` 변경 → 기존 Refresh Token 전체 폐기, 신규 `EmailChangeConflictException`(코드베이스 최초 `BusinessException` 서브타입)으로 동시 이메일 경합 시 전체 롤백. `EmailChangeController`(`POST /api/auth/email-changes/confirm`, 200 `MemberResponse`) 및 `@WebMvcTest` 검증
+- [x] Testcontainers MySQL 통합 테스트(발송→확인 성공, 재사용·5회초과·만료·재발송무효화·타인요청 격리, 확인 성공 후 기존 Refresh Token 401, 계좌·주문·체결·OAuth 연결 불변, 동시 이메일 경합 409+원자적 롤백)·전체 회귀·`./gradlew build`·`docs/api-routes.md`·`docs/specs/002-auth-account/tasks.md` 동기화
+
+Issue #56은 트랜잭션 롤백 정책(새 예외 서브타입으로 `noRollbackFor`/`rollbackFor` depth 매칭 분리)과 서비스 배치(`EmailChangeService`는 인증번호 검증·소비 전용으로 축소, `users.email` 변경과 Refresh Token 폐기는 `AuthService`가 담당)를 사용자 확인을 받아 확정했다 — 상세 근거는 `issue-56-plan.md`의 "미확정·PRD 불일치" 절 참고.

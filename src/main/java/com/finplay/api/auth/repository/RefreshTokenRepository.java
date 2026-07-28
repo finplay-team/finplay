@@ -24,4 +24,16 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, Long
 	int revokeIfActiveAndNotExpired(@Param("id")
 	Long id, @Param("now")
 	LocalDateTime now);
+
+	// 이메일 변경 확인 성공 시 회원의 기존 활성 Refresh Token을 전부 폐기한다 — 만료 여부와 무관하게 이력을 남긴다.
+	@Modifying
+	@Query("""
+		UPDATE RefreshToken refreshToken
+		SET refreshToken.revokedAt = :now
+		WHERE refreshToken.user.id = :userId
+			AND refreshToken.revokedAt IS NULL
+		""")
+	int revokeAllActiveByUserId(@Param("userId")
+	Long userId, @Param("now")
+	LocalDateTime now);
 }

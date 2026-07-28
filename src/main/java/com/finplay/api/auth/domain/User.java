@@ -64,4 +64,9 @@ public class User {
 		this.nickname = nickname;
 		this.updatedAt = now;
 	}
+
+	public void changeEmail(String newEmail, LocalDateTime now) {
+		this.email = newEmail;
+		this.updatedAt = now;
+	}
 }

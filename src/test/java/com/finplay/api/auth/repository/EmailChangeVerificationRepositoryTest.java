@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -124,6 +125,48 @@ class EmailChangeVerificationRepositoryTest {
 
 		assertThat(found).hasSize(1);
 		assertThat(found.get(0).getId()).isEqualTo(matching.getId());
+	}
+
+	@Test
+	@DisplayName("findFirstByUserIdAndNewEmailOrderByCreatedAtDesc는 재발송으로 여러 행이 쌓였을 때 최신 행만 반환한다")
+	void findFirstByUserIdAndNewEmailOrderByCreatedAtDescReturnsLatestRowOnly() {
+		User user = saveUser("change-latest@finplay.com", "change-latest-user");
+		String targetEmail = "latest-target@finplay.com";
+
+		EmailChangeVerification oldest = EmailChangeVerification
+			.create(user, targetEmail, "hash-oldest", NOW.plusMinutes(5), NOW.minusMinutes(10));
+		EmailChangeVerification latest = EmailChangeVerification
+			.create(user, targetEmail, "hash-latest", NOW.plusMinutes(5), NOW);
+		emailChangeVerificationRepository.save(oldest);
+		emailChangeVerificationRepository.save(latest);
+		// 다른 새 이메일 — 제외.
+		emailChangeVerificationRepository
+			.save(EmailChangeVerification.create(user, "other@finplay.com", "hash-other", NOW.plusMinutes(5), NOW));
+		emailChangeVerificationRepository.flush();
+
+		EmailChangeVerification found = emailChangeVerificationRepository
+			.findFirstByUserIdAndNewEmailOrderByCreatedAtDesc(user.getId(), targetEmail)
+			.orElseThrow();
+
+		assertThat(found.getId()).isEqualTo(latest.getId());
+	}
+
+	@Test
+	@DisplayName("findFirstByUserIdAndNewEmailOrderByCreatedAtDesc는 같은 새 이메일이라도 다른 회원의 행은 반환하지 않는다")
+	void findFirstByUserIdAndNewEmailOrderByCreatedAtDescExcludesOtherUsersRowsWithSameNewEmail() {
+		User user = saveUser("change-owner@finplay.com", "change-owner-user");
+		User otherUser = saveUser("change-stranger@finplay.com", "change-stranger-user");
+		String targetEmail = "shared-target@finplay.com";
+
+		// 다른 회원이 더 최신에 같은 새 이메일로 발송한 행 — 본인 조회 결과에 포함되면 안 된다.
+		emailChangeVerificationRepository
+			.save(EmailChangeVerification.create(otherUser, targetEmail, "hash-stranger", NOW.plusMinutes(5), NOW));
+		emailChangeVerificationRepository.flush();
+
+		Optional<EmailChangeVerification> found = emailChangeVerificationRepository
+			.findFirstByUserIdAndNewEmailOrderByCreatedAtDesc(user.getId(), targetEmail);
+
+		assertThat(found).isEmpty();
 	}
 
 	private static EmailChangeVerification newVerification(User user, String newEmail, LocalDateTime createdAt) {
