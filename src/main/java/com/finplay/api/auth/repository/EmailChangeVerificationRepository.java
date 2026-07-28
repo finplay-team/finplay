@@ -4,6 +4,7 @@ package com.finplay.api.auth.repository;
 import com.finplay.api.auth.domain.EmailChangeVerification;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface EmailChangeVerificationRepository extends JpaRepository<EmailChangeVerification, Long> {
@@ -14,4 +15,7 @@ public interface EmailChangeVerificationRepository extends JpaRepository<EmailCh
 	// 재발송 시 무효화 대상인 유효한 미소비 행 조회 — 무효화 범위는 (회원, 새 이메일) 쌍으로 좁힌다.
 	List<EmailChangeVerification> findByUserIdAndNewEmailAndConsumedAtIsNullAndExpiresAtAfter(
 		Long userId, String newEmail, LocalDateTime now);
+
+	// 확인 대상 최신 행 조회 — 같은 회원·같은 새 이메일 조합에서 가장 최근에 발송된 1건을 찾는다.
+	Optional<EmailChangeVerification> findFirstByUserIdAndNewEmailOrderByCreatedAtDesc(Long userId, String newEmail);
 }

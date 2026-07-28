@@ -70,4 +70,12 @@ public class EmailChangeVerification {
 	public void expire(LocalDateTime now) {
 		this.expiresAt = now;
 	}
+
+	public int incrementAttemptCount() {
+		return ++this.attemptCount;
+	}
+
+	public void consume(LocalDateTime now) {
+		this.consumedAt = now;
+	}
 }

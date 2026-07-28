@@ -1,5 +1,17 @@
 # Run Log: 002-auth-account
 
+## Issue #56
+
+### Task 1: 엔티티·리포지터리 확장
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| implementer | implementer | `JAVA_HOME="C:\Program Files\Java\jdk-17" ./gradlew.bat compileJava` — `BUILD SUCCESSFUL`; `./gradlew.bat test --tests "com.finplay.api.auth.domain.*" --tests "*EmailChangeVerificationRepositoryTest" --tests "*RefreshTokenRepositoryTest"` — 전부 `BUILD SUCCESSFUL`(Docker 가용, `mysql:8.4` Testcontainers 실제 기동) | issue-56-plan.md D3(`incrementAttemptCount`·`consume(now)`)·D4(`revokeAllActiveByUserId` 벌크 UPDATE)·Architecture(19-22행 `changeEmail` 등), conventions.md 엔티티 상태 전이·Repository 규칙 |
+
+- `EmailChangeVerification.incrementAttemptCount()`·`consume(now)`, `User.changeEmail(newEmail, now)`는 순수 단위 테스트(`EmailChangeVerificationTest`·`UserTest`, 신규 `domain` 테스트 디렉터리)로 먼저 실패시키고 구현으로 통과시켰다 — 기존 `changeNickname`처럼 별도 엔티티 단위 테스트 선례가 없어, 서비스 계층 연결(Task 3) 전에 메서드 자체 동작만 고정하는 목적으로 신설했다.
+- `EmailChangeVerificationRepositoryTest`에 `findFirstByUserIdAndNewEmailOrderByCreatedAtDesc`가 재발송으로 쌓인 여러 행 중 최신 1건만 반환하는 케이스를, `RefreshTokenRepositoryTest`에 `revokeAllActiveByUserId`가 대상 회원의 활성 토큰만 폐기하고 타인·이미 폐기된 토큰은 불변임을 검증하는 케이스를 `@DataJpaTest`로 추가했다.
+- Task 2(`EmailChangeService.validateAndConsumeCode`)·Task 3(`AuthService.confirmEmailChange`, `EmailChangeConflictException`, Controller)는 이번 항목 범위 밖이라 손대지 않았다.
+
 ## Issue #55
 
 ### Task 1: `email_change_verifications` 스키마와 Repository, `ReauthTokenRepository` 소비 메서드
@@ -324,6 +336,7 @@
 | 10:20 | reviewer(리뷰) | `git diff origin/dev...HEAD`(커밋 4b7de6a·58ddc1f·f2d5521·58eb78d·62d858c) | issue-55-plan.md D1~D5, conventions.md, ADR-0002·0003·0004, docs/api-routes.md
 
 ## 모니터링 (사람용 요약)
+- Issue #56 Task 1 — `EmailChangeVerification.incrementAttemptCount`·`consume`, `User.changeEmail`, `EmailChangeVerificationRepository.findFirstByUserIdAndNewEmailOrderByCreatedAtDesc`, `RefreshTokenRepository.revokeAllActiveByUserId` 추가. 순수 단위 테스트 2건 + `@DataJpaTest` 신규 케이스 2건 전부 통과, 컴파일 통과. Task 2·3(서비스 연결·Controller)은 범위 밖.
 - Issue #55 리뷰 판정: 차단 0건, 권장 1건(tasks.md Issue #55 절 미추가), 참고 1건(EMAIL_VERIFICATION_SECRET 재사용은 계획서에서 이미 검토된 선택). D1~D5·HTTP 계약·재인증→중복→발송제한 순서·발송제한(userId)/무효화((userId,newEmail)) 구분이 코드·테스트에 그대로 반영됨을 확인, 머지 가능.
 - Issue #55 Task 4(통합 테스트) — `EmailChangeIntegrationTest` 7건 신설, `mysql:8.4` Testcontainers로 전부 통과(이 환경에서 Docker 가용 확인). 전체 회귀·문서 동기화는 메인 세션이 이어서 처리.
 - Issue #55 Task 3 — `EmailChangeRequest`·`EmailChangeController`(`POST /api/auth/email-changes`, Bearer 필수, 202 본문 없음) 추가, api-routes.md 동기화, 컴파일 통과.
