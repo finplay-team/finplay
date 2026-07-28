@@ -161,17 +161,17 @@ data:
 | `StockCandle` 엔티티 + Repository | 주식 1분봉 정본 (MySQL). `UNIQUE(instrument_id, trading_date, candle_time)` |
 | `StockReplaySession` 엔티티 + Repository | "오늘 어떤 원본 거래일을 재생 중인가"의 정본. `service_date`(오늘, UNIQUE)·`source_trading_date`·`preparation_status`(PREPARING·READY·FAILED)·`resolved_at`(결과가 결정된 시각 — READY·FAILED 공통, "성공 시각"이라는 오해를 피하기 위해 `prepared_at` 대신 이 이름을 쓴다)·`failure_reason`. `OPEN`·`CLOSED`는 이 엔티티에 저장하지 않는다. 상태별 필드 nullable 규칙은 아래 "재생세션 nullable 규칙" 참조 |
 | `InstrumentController` / `InstrumentService` | 목록·단건·가격·캔들 조회 |
-| `KrxFileImporter` | KRX 파일을 읽어 명백한 오류만 검증 → 허용 16종 추출 → 정규화 → `StockCandle` 저장 + `MarketDataImport` 이력 기록. **`StockReplaySession`을 직접 생성·수정하지 않는다.** 전체 파일 오류면 `StockCandle`을 부분 저장하지 않고 `MarketDataImport`에 FAILED 기록. 특정 종목만 명백한 구조 오류면 그 종목의 행만 거래일 단위로 저장하지 않고 나머지는 저장, `MarketDataImport`에 PARTIAL_SUCCESS와 문제 종목·원인 기록. **수집 전 `market_data_imports`에서 해당 `source_trading_date`의 기존 SUCCESS·PARTIAL_SUCCESS 이력과 file_hash를 확인해 재수집 정책(아래 "동일 거래일 재수집 정책" 참조)을 적용한다.** production 파일 포맷 파싱은 KRX 답변 대기 상태 — 샘플 데이터 기반 골격만 우선 구현 |
-| `MarketDataImport` 엔티티 + Repository | 수집 시도 이력(SUCCESS·PARTIAL_SUCCESS·FAILED·SKIPPED_DUPLICATE, 실패사유, 수집시각, file_hash). 저장에 실패해 `StockCandle` 행이 없는 경우도 기록 |
-| `StockReplaySessionScheduler` | `MarketDataImport`·`StockCandle`의 수집 결과를 확인해 오늘의 `StockReplaySession`을 생성하고 `source_trading_date`를 고정한다. `preparation_status`를 `PREPARING`→`READY` 또는 `PREPARING`→`FAILED`로만 전환한다. **`StockCandle`을 직접 저장하지 않는다.** 정확한 production 실행시각(장 시작 전 언제 실행할지)은 KRX 데이터 제공시각 확인 후 확정하는 Decision Gate — 테스트에서는 Clock으로 실행시점을 제어한다 |
-| `StockCandleCleanupJob` | 20영업일 초과 분봉 삭제 배치. 재생 중인 거래일(`StockReplaySession.source_trading_date`)은 제외 |
-| `StockReplayService` | `StockReplaySession`을 읽어 오늘의 원본 거래일·준비상태를 확인하고, Clock과 조합해 `OPEN`·`CLOSED`를 계산한다 (`preparation_status != READY`면 이용 불가, `READY`면 Clock 기준 09:00~15:30 KST·영업일 여부로 OPEN·CLOSED 계산). 09:00~09:00:59는 첫 분봉의 시가, 09:01부터는 마감된 마지막 분봉의 종가를 현재가로 제공한다. 매분 스케줄(`@Scheduled`)로 새로 공개된 가격을 SSE로 push한다. **파일 수집이나 재생 대상 날짜 선택을 하지 않고, `StockReplaySession`의 DB 상태를 변경하지 않는다** (읽기 전용) |
+| `KisHistoricalCandleCollector` | KIS Open API로 과거 1분봉을 조회해 명백한 오류만 검증 → 허용 16종 추출 → 정규화 → `StockCandle` 저장 + `MarketDataImport` 이력 기록 (이슈 #17). **`StockReplaySession`을 직접 생성·수정하지 않는다.** 전체 응답 오류면 `StockCandle`을 부분 저장하지 않고 `MarketDataImport`에 FAILED 기록. 특정 종목만 명백한 구조 오류면 그 종목의 행만 거래일 단위로 저장하지 않고 나머지는 저장, `MarketDataImport`에 PARTIAL_SUCCESS와 문제 종목·원인 기록. `UNIQUE(instrument_id, trading_date, candle_time)` 기반 기본 재실행 멱등성만 이슈 #17 범위이며, 동일 거래일 재수집 판정(아래 "동일 거래일 재수집 정책" 참조)은 이슈 #83에서 진행한다. production 응답 포맷 파싱은 KIS 상품 세부사항 확인 대기 상태 — 샘플 데이터 기반 골격만 우선 구현 |
+| `MarketDataImport` 엔티티 + Repository | 수집 시도 이력(SUCCESS·PARTIAL_SUCCESS·FAILED·SKIPPED_DUPLICATE, 실패사유, 수집시각). 저장에 실패해 `StockCandle` 행이 없는 경우도 기록 (이슈 #17) |
+| `StockReplaySessionScheduler` | `MarketDataImport`·`StockCandle`의 수집 결과를 확인해 오늘의 `StockReplaySession`을 생성하고 `source_trading_date`를 고정한다. `preparation_status`를 `PREPARING`→`READY` 또는 `PREPARING`→`FAILED`로만 전환한다. **`StockCandle`을 직접 저장하지 않는다.** 정확한 production 실행시각(장 시작 전 언제 실행할지)은 KIS 데이터 제공시각 확인 후 확정하는 Decision Gate — 테스트에서는 Clock으로 실행시점을 제어한다 (이슈 #17) |
+| `StockCandleCleanupJob` | 20영업일 초과 분봉 삭제 배치. 재생 중인 거래일(`StockReplaySession.source_trading_date`)은 제외 (**이슈 #83 — 장기운영 방어 로직, MVP 범위 아님**) |
+| `StockReplayService` | `StockReplaySession`을 읽어 오늘의 원본 거래일·준비상태를 확인하고, Clock과 조합해 `OPEN`·`CLOSED`를 계산한다 (`preparation_status != READY`면 이용 불가, `READY`면 Clock 기준 09:00~15:30 KST·영업일 여부로 OPEN·CLOSED 계산). 09:00~09:00:59는 첫 분봉의 시가, 09:01부터는 마감된 마지막 분봉의 종가를 현재가로 제공한다. 매분 스케줄(`@Scheduled`)로 새로 공개된 가격을 SSE로 push한다. **수집이나 재생 대상 날짜 선택을 하지 않고, `StockReplaySession`의 DB 상태를 변경하지 않는다** (읽기 전용) |
 | `BithumbFeedClient` | 빗썸 WebSocket 수신 → `PriceStore` 저장. 재연결 처리. 인터페이스로 추상화해 테스트는 Fake 구현 사용 |
 | `PriceStore` | Redis 읽기/쓰기 단일 창구 (코인 전용). 과거 틱 무시(수신 timestamp 비교 후 최신만 저장) |
 | `StockPriceProvider` (인터페이스) | 주식 시세 공급자 공통 계약. 현재가(가격·`sourceTime`·유효성)와 1분봉 조회, 시장 상태를 반환한다. 구현체가 무엇인지는 아래 소비 계층에 노출하지 않는다 |
-| `KrxReplayPriceProvider` | `StockPriceProvider` 구현 — 내부적으로 `StockReplayService`를 사용한다. **공개 배포(`PUBLIC`)의 기본 구현** |
-| `KisRealtimePriceProvider` | `StockPriceProvider` 구현 — KIS Open API 국내주식 WebSocket 체결 틱 수신, 재연결 처리, 연결상태 기록. **개인 개발·본인 전용 검증(`PRIVATE`)용.** 인터페이스 뒤에 두어 테스트는 `FakeKisRealtimePriceProvider` 사용 |
-| `KisTickAggregator` | KIS 체결 틱을 **서버에서 1분 OHLCV로 집계**한다. 결과는 `KrxReplayPriceProvider`가 제공하는 것과 같은 분봉 모델이어야 캔들 API·차트가 Provider를 구분하지 않는다. 집계 결과의 영구 보관은 이번 범위 밖 (spec 범위 제외) |
+| `KisHistoricalReplayPriceProvider` | `StockPriceProvider` 구현 — 내부적으로 `StockReplayService`를 사용한다. **공개 배포(`PUBLIC`)의 기본 구현** (이슈 #17) |
+| `KisRealtimePriceProvider` | `StockPriceProvider` 구현 — KIS Open API 국내주식 WebSocket 체결 틱 수신, 재연결 처리, 연결상태 기록. **개인 개발·본인 전용 검증(`PRIVATE`)용.** 인터페이스 뒤에 두어 테스트는 `FakeKisRealtimePriceProvider` 사용 (**이슈 #82 — MVP 범위 아님**) |
+| `KisTickAggregator` | KIS 체결 틱을 **서버에서 1분 OHLCV로 집계**한다. 결과는 `KisHistoricalReplayPriceProvider`가 제공하는 것과 같은 분봉 모델이어야 캔들 API·차트가 Provider를 구분하지 않는다. 집계 결과의 영구 보관은 이번 범위 밖 (spec 범위 제외) (**이슈 #82 — MVP 범위 아님**) |
 | `StockFeedConfig` | `STOCK_FEED_PROVIDER`·`SERVICE_EXPOSURE`·`KIS_PUBLIC_DISPLAY_APPROVED`를 읽어 `StockPriceProvider` 빈 하나를 결정한다. 아래 "실행 환경 조합"의 금지 조합이면 **애플리케이션 시작 단계에서 예외를 던져 기동을 실패**시킨다 (fail-fast) |
 | `PriceQueryService` | 주문 도메인과 SSE가 공통으로 소비하는 "유효한 최신 가격" 계약 — 주식은 주입된 `StockPriceProvider`가 제공하는 현재가, 코인은 stale 검사(10초) 통과한 Redis 가격. 유효하지 않으면 PRICE_UNAVAILABLE·MARKET_CLOSED 판정 근거 반환. **어느 주식 Provider가 동작 중인지 알지 못한다** |
 | `StockPriceSseController` / `CryptoPriceSseController` | `/stocks/stream`, `/cryptos/stream` 구독 엔드포인트. snapshot(배열 1건)·price·status 이벤트, heartbeat, emitter 정리 담당 |
@@ -179,13 +179,13 @@ data:
 **전체 흐름 요약**:
 
 ```
-[KRX_REPLAY 경로 — 공개 배포 기본]
-KrxFileImporter → StockCandle 저장, MarketDataImport 저장
+[KIS_HISTORICAL 경로 — 공개 배포 기본, 이슈 #17]
+KisHistoricalCandleCollector → StockCandle 저장, MarketDataImport 저장
 StockReplaySessionScheduler → 수집 결과 확인 → StockReplaySession 생성 → PREPARING/READY/FAILED
 StockReplayService → StockReplaySession + Clock 조회 → 현재가격·OPEN/CLOSED 계산
-   → KrxReplayPriceProvider
+   → KisHistoricalReplayPriceProvider
 
-[KIS_REALTIME 경로 — 개인 개발·본인 전용 검증]
+[KIS_REALTIME 경로 — 개인 개발·본인 전용 검증, 이슈 #82]
 KIS WebSocket 체결 틱 → KisRealtimePriceProvider → KisTickAggregator(1분 OHLCV)
 
 [공통 — 아래 계층은 Provider 종류를 모른다]
@@ -197,22 +197,22 @@ StockFeedConfig가 둘 중 하나를 선택 → StockPriceProvider
 
 | 설정 | 값 | 기본값 |
 |---|---|---|
-| `STOCK_FEED_PROVIDER` | `KIS_REALTIME` · `KRX_REPLAY` | `KRX_REPLAY` |
+| `STOCK_FEED_PROVIDER` | `KIS_REALTIME` · `KIS_HISTORICAL` | `KIS_HISTORICAL` |
 | `SERVICE_EXPOSURE` | `PRIVATE`(개발자 본인만 접근하는 로컬·접근 통제 환경) · `PUBLIC`(본인 외 접근 — 팀 시연 포함) | `PRIVATE` |
 | `KIS_PUBLIC_DISPLAY_APPROVED` | `true` · `false` | `false` |
 
 | SERVICE_EXPOSURE | STOCK_FEED_PROVIDER | 결과 |
 |---|---|---|
 | PRIVATE | KIS_REALTIME | 허용 — 개인 개발·본인 전용 검증 (개발자 본인만 접근) |
-| PRIVATE | KRX_REPLAY | 허용 — 로컬 재생 테스트 |
-| PUBLIC | KRX_REPLAY | 허용 — **현재 공개 배포 기본값. 팀원·튜터·심사위원 시연도 이 조합** |
+| PRIVATE | KIS_HISTORICAL | 허용 — 로컬 재생 테스트 |
+| PUBLIC | KIS_HISTORICAL | 허용 — **현재 공개 배포 기본값. 팀원·튜터·심사위원 시연도 이 조합** |
 | PUBLIC | KIS_REALTIME + `KIS_PUBLIC_DISPLAY_APPROVED=true` | 허용 — 단 한국투자 서면 허가·계약 근거가 실재할 때만 |
 | PUBLIC | KIS_REALTIME + `KIS_PUBLIC_DISPLAY_APPROVED=false` | **기동 실패 (fail-fast)** |
 
-- `PRIVATE`는 로그인 여부가 아니라 **접근 주체**로 판정한다 — KIS 개인 계정 소유자인 개발자 본인만 접근 가능한 로컬 또는 접근 통제 환경이어야 한다. 이 환경을 공개 URL이나 다중 사용자 서버로 운영하지 않는다. 팀원·튜터·심사위원이 접근하는 순간 그 환경은 `PUBLIC`이며, 서면 답변 전까지 `KRX_REPLAY`를 써야 한다.
+- `PRIVATE`는 로그인 여부가 아니라 **접근 주체**로 판정한다 — KIS 개인 계정 소유자인 개발자 본인만 접근 가능한 로컬 또는 접근 통제 환경이어야 한다. 이 환경을 공개 URL이나 다중 사용자 서버로 운영하지 않는다. 팀원·튜터·심사위원이 접근하는 순간 그 환경은 `PUBLIC`이며, 실시간 표출 서면 답변 전까지 `KIS_HISTORICAL`을 써야 한다.
 - fail-fast는 요청 처리 시점이 아니라 **애플리케이션 시작 시점**에 판정한다. 경고 로그만 남기고 뜨는 동작은 금지한다 — 잘못된 조합으로 공개 서비스가 떠 있는 시간을 0으로 만들기 위함이다.
-- `KIS_PUBLIC_DISPLAY_APPROVED`는 **서면 허가·계약 확인 결과를 시스템에 반영하는 수단일 뿐이다.** 이 값을 `true`로 바꾸는 것 자체가 허가를 만들지 않는다. 정본은 한국투자증권의 서면 답변이며, 아직 받은 적이 없다 (Decision Gate — PRD §10).
-- KIS 키(`KIS_APP_KEY`·`KIS_APP_SECRET`·`KIS_ACCOUNT_NO`·`KIS_ACCOUNT_PRODUCT_CODE`)는 `KIS_REALTIME`일 때만 필요하다. `KRX_REPLAY`에서는 이 값들을 필수로 바인딩하지 않으며, 없어도 기동과 `./gradlew build`가 성공해야 한다.
+- `KIS_PUBLIC_DISPLAY_APPROVED`는 **서면 허가·계약 확인 결과를 시스템에 반영하는 수단일 뿐이다.** 이 값을 `true`로 바꾸는 것 자체가 허가를 만들지 않는다. 정본은 한국투자증권의 서면 답변이며, 아직 받은 적이 없다 (Decision Gate — PRD §10, 실시간에 한정. 과거 데이터는 공공데이터로 이미 확인됨).
+- KIS 실시간 키(`KIS_APP_KEY`·`KIS_APP_SECRET`·`KIS_ACCOUNT_NO`·`KIS_ACCOUNT_PRODUCT_CODE`)는 `KIS_REALTIME`일 때만 필요하다. `KIS_HISTORICAL`에서는 이 값들을 필수로 바인딩하지 않으며, 없어도 기동과 `./gradlew build`가 성공해야 한다.
 - 키 실제 값은 서버 환경변수 또는 AWS Secret에만 둔다. 브라우저·코드·문서·GitHub에 넣지 않는다 (`conventions.md` 시크릿 규칙). SSE·API 응답에도 실어보내지 않는다.
 
 ### 재생세션 nullable 규칙
@@ -228,25 +228,24 @@ StockFeedConfig가 둘 중 하나를 선택 → StockPriceProvider
 - 후보 거래일을 고르기 전 `PREPARING`이면 `source_trading_date`는 NULL, 특정 거래일을 검증하는 중이면 그 값을 가질 수 있다.
 - `FAILED`인데 데이터 자체를 찾지 못했다면 `source_trading_date`는 NULL, 특정 거래일을 준비하다 실패했다면 그 값을 가질 수 있다 — 둘 다 허용.
 
-### 동일 거래일 재수집 정책
+### 동일 거래일 재수집 정책 (이슈 #83 — 장기운영 방어 로직, MVP 범위 아님)
 
 한 번 받아들인(SUCCESS·PARTIAL_SUCCESS) 거래일 데이터는 불변으로 취급한다. `market_data_imports.status`에서 해당 `source_trading_date`에 SUCCESS 또는 PARTIAL_SUCCESS가 있으면 "이미 받아들인 기준 데이터가 있다"로 보고, FAILED만 있으면 "아직 없다"로 본다.
 
 | 상황 | 처리 |
 |---|---|
-| 기존 SUCCESS·PARTIAL_SUCCESS 없음 (최초 수집) | 정상 전체 저장 시 SUCCESS, 일부 종목만 구조 오류 시 PARTIAL_SUCCESS, 전체 파일 오류 시 FAILED |
-| 같은 거래일 + 같은 file_hash 재수집 | `StockCandle`·`StockReplaySession` 변경 없음. `MarketDataImport`에 `SKIPPED_DUPLICATE` 이력만 추가(배치 실행 자체의 감사 추적용) |
-| 같은 거래일 + 다른 file_hash | `StockCandle`·`StockReplaySession`(기존 READY 세션 포함) 변경 없이 수집 거부. `MarketDataImport`에 FAILED 기록, 실패사유 `SOURCE_DATE_HASH_CONFLICT` |
-| 기존 이력이 FAILED만 있음 | 받아들인 데이터가 없으므로 새 파일 수집 시도를 허용, 결과에 따라 SUCCESS·PARTIAL_SUCCESS·FAILED 기록 |
+| 기존 SUCCESS·PARTIAL_SUCCESS 없음 (최초 수집) | 정상 전체 저장 시 SUCCESS, 일부 종목만 구조 오류 시 PARTIAL_SUCCESS, 전체 응답 오류 시 FAILED |
+| 같은 거래일 + 동일한 수집 결과 재수집 | `StockCandle`·`StockReplaySession` 변경 없음. `MarketDataImport`에 `SKIPPED_DUPLICATE` 이력만 추가(배치 실행 자체의 감사 추적용) |
+| 같은 거래일 + 상충하는 수집 결과 | `StockCandle`·`StockReplaySession`(기존 READY 세션 포함) 변경 없이 수집 거부. `MarketDataImport`에 FAILED 기록 |
+| 기존 이력이 FAILED만 있음 | 받아들인 데이터가 없으므로 새 수집 시도를 허용, 결과에 따라 SUCCESS·PARTIAL_SUCCESS·FAILED 기록 |
 
-- 검사는 `KrxFileImporter`의 애플리케이션 로직으로 수행한다 — `market_data_imports`에서 해당 `source_trading_date`의 기존 SUCCESS·PARTIAL_SUCCESS와 file_hash를 조회해 비교한다. DB UNIQUE 제약만으로 이 조건부 규칙(같은 해시는 허용, 다른 해시는 거부)을 표현하지 않는다 — `(source_trading_date, file_hash)` 인덱스는 조회 보조용으로만 쓴다.
+- 검사는 수집 컴포넌트의 애플리케이션 로직으로 수행한다 — `market_data_imports`에서 해당 `source_trading_date`의 기존 SUCCESS·PARTIAL_SUCCESS와 수집 결과 식별값을 조회해 비교한다. DB UNIQUE 제약만으로 이 조건부 규칙(동일 결과는 허용, 상충 결과는 거부)을 표현하지 않는다.
 - MVP 제외: 이미 받아들인 거래일 데이터의 자동 교체, 거래일 전체 원자적 삭제·재삽입, 데이터 버전 관리, 관리자 강제 교체 기능, 장중 데이터 변경.
 
-- `KrxApiClient`는 이번 스펙 범위에 없다. KRX API 상품이 확인되면 `KrxFileImporter`와 같은 저장 결과(검증·정규화된 `StockCandle`, `MarketDataImport` 이력)를 만드는 별도 구현을 추가하고, `StockReplaySessionScheduler`·`StockReplayService`·`PriceQueryService`·SSE 계층은 수정하지 않는다.
 - 종목별 "거래불가"를 표현하는 날짜별 전용 상태 테이블이나 `instruments`의 날짜 한정 컬럼은 만들지 않는다. 특정 종목·거래일에 유효한 `StockCandle`이 없으면 `PriceQueryService`가 자연히 `PRICE_UNAVAILABLE`을 반환한다 — 이 자체가 "거래불가"의 표현이다.
 - 공휴일 판정은 리소스 파일의 공휴일 목록(당해 연도)으로 단순 관리한다. 외부 캘린더 API 미사용.
 - 코인 stale 기준은 **10초로 확정** (빗썸은 정상 연결 시 통상 수 초 이내로 틱이 계속 수신되므로, 일시적 네트워크 지연으로 오탐하지 않으면서 실제 장애를 빠르게 감지하는 균형점).
-- 종목별 분봉 누락 임계치(예: 기대 390개 대비 몇 %, 350개 이상 등)는 **확정하지 않는다** — 임시 숫자도 production 설정에 넣지 않는다. KRX 상품의 데이터 형식과 timestamp 의미(거래 없는 분을 생략하는지 여부)가 확인된 후 결정한다 (Decision Gate, spec.md 참조). 샘플 데이터 테스트는 샘플 자체의 기대 결과만 검증한다.
+- 종목별 분봉 누락 임계치(예: 기대 390개 대비 몇 %, 350개 이상 등)는 **확정하지 않는다** — 임시 숫자도 production 설정에 넣지 않는다. KIS 상품의 데이터 형식과 timestamp 의미(거래 없는 분을 생략하는지 여부)가 확인된 후 결정한다 (Decision Gate, spec.md 참조). 샘플 데이터 테스트는 샘플 자체의 기대 결과만 검증한다.
 
 ### Redis 키 설계 (PRD §6 책임 준수, 코인 전용)
 
@@ -264,31 +263,31 @@ StockFeedConfig가 둘 중 하나를 선택 → StockPriceProvider
 | instruments | id PK, market(STOCK·CRYPTO), symbol, name, tick_size DECIMAL(18,8), min_order_amount BIGINT, tradable BOOLEAN, created_at | UNIQUE(symbol) |
 | stock_candles | id PK, instrument_id FK, trading_date DATE, candle_time TIME, open/high/low/close DECIMAL(18,4), volume BIGINT, data_source VARCHAR, collected_at | UNIQUE(instrument_id, trading_date, candle_time) |
 | stock_replay_sessions | id PK, service_date DATE, source_trading_date DATE(nullable), preparation_status(PREPARING·READY·FAILED), resolved_at(nullable), failure_reason(nullable), created_at | UNIQUE(service_date) |
-| market_data_imports | id PK, source VARCHAR, source_trading_date DATE, collected_at, status(SUCCESS·PARTIAL_SUCCESS·FAILED·SKIPPED_DUPLICATE), failure_reason, file_hash | 인덱스(source_trading_date, file_hash) — 재수집 시 기존 성공 이력·해시 조회용 |
+| market_data_imports | id PK, source VARCHAR, source_trading_date DATE, collected_at, status(SUCCESS·PARTIAL_SUCCESS·FAILED·SKIPPED_DUPLICATE), failure_reason | 인덱스(source_trading_date) — 재수집 시 기존 성공 이력 조회용. 수집 결과 식별 컬럼(구 `file_hash`)의 정확한 형태는 이슈 #83에서 API 응답 기준으로 재설계한다 |
 
 - `stock_candles`에 `validation_status` 컬럼을 두지 않는다 — 검증을 통과한 분봉만 저장되므로 저장된 모든 행이 같은 성공값을 반복하는 죽은 컬럼이 된다. 성공·부분성공·실패와 실패사유는 `market_data_imports`에만 기록한다.
 - 종목 시드는 마이그레이션에 포함한다 (기준 데이터 — 코드·환경 간 동일 보장, ADR-0004).
-- `stock_candles`·`stock_replay_sessions`·`market_data_imports`는 각각 `KrxFileImporter`·`StockReplaySessionScheduler`가 채운다 — 마이그레이션에 데이터를 포함하지 않는다 (거래일마다 갱신되는 운영 데이터이므로 ADR-0004의 "기준 데이터"와 다름).
+- `stock_candles`·`stock_replay_sessions`·`market_data_imports`는 각각 `KisHistoricalCandleCollector`·`StockReplaySessionScheduler`가 채운다 — 마이그레이션에 데이터를 포함하지 않는다 (거래일마다 갱신되는 운영 데이터이므로 ADR-0004의 "기준 데이터"와 다름).
 - 20영업일 초과 데이터 삭제는 `StockCandleCleanupJob`(스케줄 배치)이 담당하며, `stock_replay_sessions.source_trading_date`(재생 중인 거래일)는 삭제 대상에서 제외한다. `stock_replay_sessions`·`market_data_imports` 자체의 보관 기간은 별도 정책이 없다 (운영 이력이라 분봉과 달리 삭제 압박이 크지 않음 — 필요해지면 후속 결정).
 - 20영업일 규모(16종 × 390개 × 20일 ≈ 12.5만 행)는 MySQL 기본 설정으로 충분해 파티셔닝 등 별도 저장 전략은 도입하지 않는다.
 
 ## 테스트 계획
 
 - 단위:
-  - `KrxFileImporter` (정상 파일 저장, 전체 파일 오류 시 미저장·FAILED 기록, 특정 종목만 구조 오류 시 그 종목만 미저장·나머지 저장·PARTIAL_SUCCESS 기록, 재실행 멱등, `StockReplaySession`을 직접 쓰지 않음)
-  - `KrxFileImporter` 재수집 정책 (최초 정상→SUCCESS, 최초 일부 오류→PARTIAL_SUCCESS, 최초 전체 오류→FAILED, 동일 날짜·동일 해시→SKIPPED_DUPLICATE·Candle 변화 없음, 동일 날짜·다른 해시→FAILED/SOURCE_DATE_HASH_CONFLICT·Candle·세션 변화 없음, FAILED 이력만 있는 거래일은 재시도 허용, 서로 다른 파일의 Candle이 섞이지 않음)
-  - `StockReplaySessionScheduler` (`PREPARING`→`READY`, `PREPARING`→`FAILED`, `StockCandle`을 직접 쓰지 않음, Clock으로 실행시점 제어, 상태별 nullable 규칙 검증 — `PREPARING`+`resolved_at` 존재·`PREPARING`+`failure_reason` 존재·`READY`+`source_trading_date` 없음·`READY`+`resolved_at` 없음·`READY`+`failure_reason` 존재는 거부, `FAILED`+`resolved_at` 없음·`FAILED`+`failure_reason` 없음은 거부, `FAILED`+`source_trading_date` NULL과 값 존재는 둘 다 허용)
-  - `StockReplayService` (`READY` 상태에서 Clock에 따른 OPEN·CLOSED 계산, `preparation_status != READY`면 이용 불가, 첫 분봉 시가·이후 마감 종가, 재생세션 DB를 쓰지 않음)
-  - `StockCandleCleanupJob` (20영업일 경계·재생 중 거래일 보존)
+  - `KisHistoricalCandleCollector` (정상 응답 저장, 전체 응답 오류 시 미저장·FAILED 기록, 특정 종목만 구조 오류 시 그 종목만 미저장·나머지 저장·PARTIAL_SUCCESS 기록, `UNIQUE` 제약 기반 재실행 멱등, `StockReplaySession`을 직접 쓰지 않음) — 이슈 #17
+  - **(이슈 #83)** 동일 거래일 재수집 정책 (최초 정상→SUCCESS, 최초 일부 오류→PARTIAL_SUCCESS, 최초 전체 오류→FAILED, 동일 날짜·동일 수집 결과→SKIPPED_DUPLICATE·Candle 변화 없음, 동일 날짜·상충 결과→FAILED·Candle·세션 변화 없음, FAILED 이력만 있는 거래일은 재시도 허용, 서로 다른 수집 결과의 Candle이 섞이지 않음)
+  - `StockReplaySessionScheduler` (`PREPARING`→`READY`, `PREPARING`→`FAILED`, `StockCandle`을 직접 쓰지 않음, Clock으로 실행시점 제어, 상태별 nullable 규칙 검증 — `PREPARING`+`resolved_at` 존재·`PREPARING`+`failure_reason` 존재·`READY`+`source_trading_date` 없음·`READY`+`resolved_at` 없음·`READY`+`failure_reason` 존재는 거부, `FAILED`+`resolved_at` 없음·`FAILED`+`failure_reason` 없음은 거부, `FAILED`+`source_trading_date` NULL과 값 존재는 둘 다 허용) — 이슈 #17
+  - **(이슈 #83)** `StockCandleCleanupJob` (20영업일 경계·재생 중 거래일 보존)
   - `PriceStore` 과거 틱 무시, `PriceQueryService` 유효성 판정 (stale 10초·끊김·장외)
-  - `StockFeedConfig` Provider 선택: `PRIVATE`+`KIS_REALTIME`→`KisRealtimePriceProvider`, `PUBLIC`+`KRX_REPLAY`→`KrxReplayPriceProvider`, `PRIVATE`+`KRX_REPLAY`→`KrxReplayPriceProvider`
+  - `StockFeedConfig` Provider 선택: `PRIVATE`+`KIS_REALTIME`→`KisRealtimePriceProvider`, `PUBLIC`+`KIS_HISTORICAL`→`KisHistoricalReplayPriceProvider`, `PRIVATE`+`KIS_HISTORICAL`→`KisHistoricalReplayPriceProvider`
   - `StockFeedConfig` fail-fast: `PUBLIC`+`KIS_REALTIME`+`KIS_PUBLIC_DISPLAY_APPROVED=false`면 컨텍스트 기동 실패 (`@SpringBootTest` 컨텍스트 로드 실패를 기대값으로 검증)
-  - KIS 키 환경변수가 전혀 없는 상태에서 `KRX_REPLAY` 기동·빌드 성공
+  - KIS 실시간 키 환경변수가 전혀 없는 상태에서 `KIS_HISTORICAL` 기동·빌드 성공
   - `StockPriceProvider` 계약 동등성: 같은 시나리오를 두 구현으로 각각 실행해 `PriceQueryService` 응답 계약이 동일함을 검증
-  - `FakeKisRealtimePriceProvider` 연결 끊김→가격 무효, 재연결→새 체결 수신 후 복귀
-  - `KisTickAggregator` 1분 OHLCV 집계 — 같은 분의 첫 체결이 open, 최고가 high, 최저가 low, 마지막 체결이 close, 수량 합이 volume. 분 경계에서 새 봉으로 넘어감. 결과 모델이 캔들 API 응답 모델과 동일
+  - **(이슈 #82)** `FakeKisRealtimePriceProvider` 연결 끊김→가격 무효, 재연결→새 체결 수신 후 복귀
+  - **(이슈 #82)** `KisTickAggregator` 1분 OHLCV 집계 — 같은 분의 첫 체결이 open, 최고가 high, 최저가 low, 마지막 체결이 close, 수량 합이 volume. 분 경계에서 새 봉으로 넘어감. 결과 모델이 캔들 API 응답 모델과 동일
   - 화면 가격과 체결가격의 공급자 일치: SSE·가격 API가 반환한 값과 모의 주문 체결가가 같은 `StockPriceProvider` 인스턴스에서 나온다
   - SSE 컨트롤러: 토큰 없음/잘못된 토큰 시 401, price 이벤트에만 id 존재(snapshot·status는 id 없음), snapshot에 주식 16종·코인 12종 전체 포함(가격 없는 종목도 포함), 가격 없는 종목은 price·sourceTime이 null이고 status는 UNAVAILABLE, 가격 변경 시 price 이벤트, 시장·연결상태 변경 시 status 이벤트, `sourceTime`과 `emittedAt` 구분, 주식은 `sourceTradingDate` 포함·코인은 미포함, 장 마감 후 marketStatus=CLOSED이면서 마지막 유효가격 유지(장 마감과 가격 없음 구분), 코인 stale 시 marketStatus는 OPEN 유지·종목 status만 UNAVAILABLE, `retry: 3000` 전달, heartbeat 전송, 연결 종료 시 emitter 제거, 재접속 시 snapshot 재전송, 누락 이벤트 전체 재전송 안 함
 - 슬라이스: `@DataJpaTest` — 종목 시드·UNIQUE(symbol), `stock_candles`/`stock_replay_sessions` UNIQUE 제약. `@WebMvcTest` — 목록·가격·캔들 계약, 404·400·409 매핑.
-- 통합 (Testcontainers MySQL+Redis): 샘플 KRX 파일 수집→`StockReplaySessionScheduler`가 세션 READY로 전환→재생→가격 조회(첫 분봉 시가, 이후 종가), 서버 재시작 시나리오에서 같은 원본 거래일 유지, DB에 OPEN·CLOSED가 저장되지 않음을 확인, 동일 거래일에 다른 file_hash 재수집을 거부해도 기존 READY 세션·StockCandle이 그대로인 시나리오, Fake Feed 정상 수신→가격 조회, 끊김→PRICE_UNAVAILABLE, 재연결 새 틱→복귀 시나리오.
-- 외부 스모크(자동 테스트와 구분 보고): 실제 빗썸 WebSocket 연결, 실제 KRX 파일 수집, **실제 KIS Open API WebSocket 연결과 국내주식 체결 틱 수신**. Fake 통과를 실제 연동 성공으로 보고하지 않는다 (PRD C-005).
+- 통합 (Testcontainers MySQL+Redis, 이슈 #17): 샘플 KIS 응답 데이터 수집→`StockReplaySessionScheduler`가 세션 READY로 전환→재생→가격 조회(첫 분봉 시가, 이후 종가), 서버 재시작 시나리오에서 같은 원본 거래일 유지, DB에 OPEN·CLOSED가 저장되지 않음을 확인, Fake Feed 정상 수신→가격 조회, 끊김→PRICE_UNAVAILABLE, 재연결 새 틱→복귀 시나리오.
+- **(이슈 #83)** 통합: 동일 거래일에 상충하는 수집 결과 재수집을 거부해도 기존 READY 세션·StockCandle이 그대로인 시나리오.
+- 외부 스모크(자동 테스트와 구분 보고): 실제 빗썸 WebSocket 연결, 실제 KIS Open API 과거 데이터 수집, **실제 KIS Open API WebSocket 연결과 국내주식 체결 틱 수신**. Fake 통과를 실제 연동 성공으로 보고하지 않는다 (PRD C-005).
