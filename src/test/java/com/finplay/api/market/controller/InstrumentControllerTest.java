@@ -1,4 +1,4 @@
-// 종목 목록 API의 인증, 시장 필터링, 검증 실패, 응답 DTO 계약을 검증하는 WebMvc 슬라이스 테스트다.
+// 종목 목록·단건 조회 API의 인증, 시장 필터링, 검증 실패, 응답 DTO 계약을 검증하는 WebMvc 슬라이스 테스트다.
 package com.finplay.api.market.controller;
 
 import static org.mockito.Mockito.verify;
@@ -11,6 +11,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.finplay.api.auth.config.SecurityConfig;
 import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.auth.token.JwtTokenProvider;
+import com.finplay.api.common.BusinessException;
+import com.finplay.api.common.ErrorCode;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.dto.response.InstrumentResponse;
 import com.finplay.api.market.service.InstrumentService;
@@ -158,6 +160,70 @@ class InstrumentControllerTest {
 			.andExpect(jsonPath("$[0].tradable").exists())
 			.andExpect(jsonPath("$[0].id").doesNotExist())
 			.andExpect(jsonPath("$[0].createdAt").doesNotExist());
+	}
+
+	@Test
+	void getInstrumentReturnsStockInstrumentWithFullContractWhenFound() throws Exception {
+		authenticate();
+		when(instrumentService.getInstrument(1L)).thenReturn(
+			new InstrumentResponse(1L, "STOCK", "005930", "삼성전자", BigDecimal.valueOf(100), 70000L, true));
+
+		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}", 1L)))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.instrumentId").value(1))
+			.andExpect(jsonPath("$.market").value("STOCK"))
+			.andExpect(jsonPath("$.symbol").value("005930"))
+			.andExpect(jsonPath("$.name").value("삼성전자"))
+			.andExpect(jsonPath("$.tickSize").value(100))
+			.andExpect(jsonPath("$.minOrderAmount").value(70000))
+			.andExpect(jsonPath("$.tradable").value(true));
+
+		verify(instrumentService).getInstrument(1L);
+	}
+
+	@Test
+	void getInstrumentReturnsCryptoInstrumentWithFullContractWhenFound() throws Exception {
+		authenticate();
+		when(instrumentService.getInstrument(17L)).thenReturn(
+			new InstrumentResponse(17L, "CRYPTO", "BTC", "비트코인", BigDecimal.valueOf(1000), 5000L, true));
+
+		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}", 17L)))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.instrumentId").value(17))
+			.andExpect(jsonPath("$.market").value("CRYPTO"))
+			.andExpect(jsonPath("$.symbol").value("BTC"))
+			.andExpect(jsonPath("$.name").value("비트코인"))
+			.andExpect(jsonPath("$.tickSize").value(1000))
+			.andExpect(jsonPath("$.minOrderAmount").value(5000))
+			.andExpect(jsonPath("$.tradable").value(true));
+
+		verify(instrumentService).getInstrument(17L);
+	}
+
+	@Test
+	void getInstrumentReturnsCommonNotFoundErrorFormatWithoutExposingEntityWhenMissing() throws Exception {
+		authenticate();
+		when(instrumentService.getInstrument(999L)).thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
+
+		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}", 999L)))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.error.code").value("NOT_FOUND"))
+			.andExpect(jsonPath("$.error.message").isNotEmpty())
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty())
+			.andExpect(jsonPath("$.id").doesNotExist())
+			.andExpect(jsonPath("$.symbol").doesNotExist());
+
+		verify(instrumentService).getInstrument(999L);
+	}
+
+	@Test
+	void getInstrumentRejectsMissingAuthenticationWithoutCallingService() throws Exception {
+		mockMvc.perform(get("/api/instruments/{instrumentId}", 1L))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(instrumentService);
 	}
 
 	private void authenticate() {

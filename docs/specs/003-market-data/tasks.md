@@ -1,7 +1,7 @@
 # Tasks: 종목과 시세
 
 - [x] instruments 마이그레이션 + 16+12종 시드 + 엔티티·Repository + 종목 목록 API `GET /api/instruments?market=` (+ @DataJpaTest·@WebMvcTest) — 이슈 #14
-- [ ] 종목 단건 조회 API `GET /api/instruments/{instrumentId}` (+ @WebMvcTest) — 이슈 #15
+- [x] 종목 단건 조회 API `GET /api/instruments/{instrumentId}` (+ @WebMvcTest) — 이슈 #15
 - [ ] stock_candles 마이그레이션(UNIQUE(instrument_id, trading_date, candle_time), validation_status 컬럼 없음) + 엔티티·Repository
 - [ ] stock_replay_sessions 마이그레이션(UNIQUE(service_date), preparation_status는 PREPARING·READY·FAILED 3개만, resolved_at·source_trading_date·failure_reason은 nullable — prepared_at이 아닌 resolved_at 이름 사용) + 엔티티·Repository
 - [ ] market_data_imports 마이그레이션(status는 SUCCESS·PARTIAL_SUCCESS·FAILED·SKIPPED_DUPLICATE 4개) + 엔티티·Repository
