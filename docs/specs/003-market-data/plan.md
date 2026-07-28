@@ -12,10 +12,10 @@
 |---|---|---|---|---|
 | GET | /api/instruments?market= | 쿼리 market(선택) | `InstrumentResponse[]` | 종목 목록 |
 | GET | /api/instruments/{instrumentId} | - | `InstrumentResponse` | 종목 단건 |
-| GET | /api/instruments/{instrumentId}/price | - | `PriceResponse` (price, sourceTime, status, sourceTradingDate) | 최신 가격. 없으면 409 PRICE_UNAVAILABLE |
-| GET | /api/instruments/{instrumentId}/candles?interval=1m&from=&to= | 쿼리 | `CandleResponse[]` | 주식 1분봉 (`stock_candles` 기반, 공개된 분봉까지만) |
-| GET | /api/stocks/stream | Header: `Authorization: Bearer <accessToken>` | SSE | 주식 전용 스트림 |
-| GET | /api/cryptos/stream | Header: `Authorization: Bearer <accessToken>` | SSE | 코인 전용 스트림 |
+| GET | /api/instruments/{instrumentId}/price | - | `PriceResponse` (price, sourceTime, status, sourceTradingDate) | 최신 가격. 없으면 409 PRICE_UNAVAILABLE — 이슈 #16 |
+| GET | /api/instruments/{instrumentId}/candles?interval=1m&from=&to= | 쿼리 | `CandleResponse[]` | 주식 1분봉 (`stock_candles` 기반, 공개된 분봉까지만) — 이슈 #17 |
+| GET | /api/stocks/stream | Header: `Authorization: Bearer <accessToken>` | SSE | 주식 전용 스트림 — 이슈 #18 |
+| GET | /api/cryptos/stream | Header: `Authorization: Bearer <accessToken>` | SSE | 코인 전용 스트림 — 이슈 #19 |
 
 - 주식·코인 스트림을 분리한 이유: 프론트 화면이 시장별 탭으로 나뉘어 있어 각자 필요한 채널만 구독하면 되고, 재생 주기(1분)와 코인 갱신 주기(초 단위)가 달라 하나로 합치면 페이로드 구분 로직이 오히려 늘어난다.
 

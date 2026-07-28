@@ -3,7 +3,9 @@ package com.finplay.api.market.controller;
 
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.dto.response.InstrumentResponse;
+import com.finplay.api.market.dto.response.PriceResponse;
 import com.finplay.api.market.service.InstrumentService;
+import com.finplay.api.market.service.PriceQueryService;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -19,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class InstrumentController {
 
 	private final InstrumentService instrumentService;
+	private final PriceQueryService priceQueryService;
 
 	@GetMapping
 	public ResponseEntity<List<InstrumentResponse>> getInstruments(
@@ -32,5 +35,12 @@ public class InstrumentController {
 		@PathVariable
 		Long instrumentId) {
 		return ResponseEntity.ok(instrumentService.getInstrument(instrumentId));
+	}
+
+	@GetMapping("/{instrumentId}/price")
+	public ResponseEntity<PriceResponse> getPrice(
+		@PathVariable
+		Long instrumentId) {
+		return ResponseEntity.ok(PriceResponse.from(priceQueryService.getPrice(instrumentId)));
 	}
 }

@@ -25,3 +25,9 @@ oauth:
     client-id: ${NAVER_CLIENT_ID}
     client-secret: ${NAVER_CLIENT_SECRET}
     redirect-uri: ${NAVER_REDIRECT_URI}
+
+# 주식 시세 공급자 실행 환경 설정 (MKT-007, spec.md 실행 환경 조합). KIS 키가 없어도 기본값(KRX_REPLAY)으로 기동이 성공해야 한다.
+stock-feed:
+  provider: ${STOCK_FEED_PROVIDER:KRX_REPLAY}
+  service-exposure: ${SERVICE_EXPOSURE:PUBLIC}
+  kis-public-display-approved: ${KIS_PUBLIC_DISPLAY_APPROVED:false}
