@@ -1,6 +1,8 @@
 // 시장 필터를 적용해 종목 목록을 조회하는 서비스
 package com.finplay.api.market.service;
 
+import com.finplay.api.common.BusinessException;
+import com.finplay.api.common.ErrorCode;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.dto.response.InstrumentResponse;
@@ -24,5 +26,12 @@ public class InstrumentService {
 		return instruments.stream()
 			.map(InstrumentResponse::from)
 			.toList();
+	}
+
+	@Transactional(readOnly = true)
+	public InstrumentResponse getInstrument(Long instrumentId) {
+		Instrument instrument = instrumentRepository.findById(instrumentId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+		return InstrumentResponse.from(instrument);
 	}
 }
