@@ -13,7 +13,7 @@
 - [x] StockPriceProvider 인터페이스 + KrxReplayPriceProvider(StockReplayService 위임, 공개 기본) + StockFeedConfig (STOCK_FEED_PROVIDER·SERVICE_EXPOSURE·KIS_PUBLIC_DISPLAY_APPROVED로 빈 1개 선택, PUBLIC+KIS_REALTIME+미승인은 기동 실패) (+ 단위 테스트: 허용 조합 3종 Provider 선택, 금지 조합 컨텍스트 로드 실패, KIS 키 없이 KRX_REPLAY 기동 성공) — 이슈 #16 (Provider 계약·공급자 설정은 테스트 기준의 "공급자 설정"에 해당. KisRealtimePriceProvider가 아직 없으므로 PRIVATE+KIS_REALTIME 조합은 스텁/미승인 조합 검증까지만 — 실제 KIS 배선은 아래 항목에서 별도 진행)
 - [ ] KisRealtimePriceProvider + FakeKisRealtimePriceProvider (KIS 국내주식 WebSocket 체결 틱 수신·재연결·연결상태, 끊김 시 가격 무효·재연결 후 복귀. 키는 KIS_REALTIME일 때만 바인딩) (+ 단위 테스트는 Fake로) — 실제 KIS 연결은 외부 스모크로 구분 보고 — 이슈 #16 범위 아님 (실제 KIS 실시간 연동)
 - [ ] KisTickAggregator (체결 틱 → 1분 OHLCV 서버 집계, 결과 모델이 캔들 API·KrxReplayPriceProvider와 동일) (+ 단위 테스트: open/high/low/close/volume 산출, 분 경계 전환) — 이슈 #16 범위 아님 (KIS 실시간 체결 집계, KisRealtimePriceProvider 종속)
-- [ ] PriceStore (Redis 코인 최신 시세·과거 틱 무시, stale 10초) + BithumbFeedClient 인터페이스·Fake 구현 (+ 단위 테스트) — 이슈 #16 (코인 가격 장애·stale 시나리오 테스트에 필요, Fake 구현만 사용)
+- [x] PriceStore (Redis 코인 최신 시세·과거 틱 무시, stale 10초) + BithumbFeedClient 인터페이스·Fake 구현 (+ 단위 테스트) — 이슈 #16 (코인 가격 장애·stale 시나리오 테스트에 필요, Fake 구현만 사용)
 - [ ] PriceQueryService 유효성 판정 (주식은 주입된 StockPriceProvider만 사용 — 구현체를 알지 못함) (+ 단위 테스트: 두 Provider로 같은 시나리오를 돌려 동일 계약 확인) — 이슈 #16 (핵심 산출물 — 가격·시장상태 응답 계약)
 - [ ] 실제 BithumbFeedClient (WebSocket 수신·재연결·연결상태 기록) — 이슈 #16 범위 아님 (실제 빗썸 연동, 외부 스모크로 별도 진행)
 - [ ] 가격 API `GET /api/instruments/{instrumentId}/price` (Controller/Service/Repository 책임 분리, 공통 오류 응답·인증·소유권 규칙, 가격 없으면 409 PRICE_UNAVAILABLE) (+ @WebMvcTest: 401, 404, 409, 200 계약 — price·sourceTime·status·sourceTradingDate 필드) — 이슈 #16 (핵심 산출물)
