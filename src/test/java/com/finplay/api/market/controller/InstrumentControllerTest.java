@@ -16,7 +16,12 @@ import com.finplay.api.common.ErrorCode;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.dto.response.InstrumentResponse;
 import com.finplay.api.market.service.InstrumentService;
+import com.finplay.api.market.service.PriceQueryService;
+import com.finplay.api.market.service.PriceQuoteDto;
+import com.finplay.api.market.service.PriceStatus;
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.IntStream;
@@ -40,6 +45,9 @@ class InstrumentControllerTest {
 
 	@MockitoBean
 	private InstrumentService instrumentService;
+
+	@MockitoBean
+	private PriceQueryService priceQueryService;
 
 	@MockitoBean
 	private JwtTokenProvider jwtTokenProvider;
@@ -237,6 +245,92 @@ class InstrumentControllerTest {
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
 		verifyNoInteractions(instrumentService);
+	}
+
+	@Test
+	void getPriceRejectsMissingAuthenticationWithoutCallingService() throws Exception {
+		mockMvc.perform(get("/api/instruments/{instrumentId}/price", 1L))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(priceQueryService);
+	}
+
+	@Test
+	void getPriceReturnsCommonNotFoundErrorFormatWhenInstrumentMissing() throws Exception {
+		authenticate();
+		when(priceQueryService.getPrice(999L)).thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
+
+		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}/price", 999L)))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.error.code").value("NOT_FOUND"))
+			.andExpect(jsonPath("$.error.message").isNotEmpty())
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(priceQueryService).getPrice(999L);
+	}
+
+	@Test
+	void getPriceReturnsCommonConflictErrorFormatWhenPriceUnavailable() throws Exception {
+		authenticate();
+		when(priceQueryService.getPrice(1L)).thenThrow(new BusinessException(ErrorCode.PRICE_UNAVAILABLE));
+
+		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}/price", 1L)))
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.error.code").value("PRICE_UNAVAILABLE"))
+			.andExpect(jsonPath("$.error.message").isNotEmpty())
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(priceQueryService).getPrice(1L);
+	}
+
+	@Test
+	void getPriceReturnsFullContractWhenAvailableForStockInstrument() throws Exception {
+		authenticate();
+		LocalDateTime sourceTime = LocalDateTime.of(2026, 7, 28, 9, 1, 0);
+		LocalDate sourceTradingDate = LocalDate.of(2026, 7, 24);
+		when(priceQueryService.getPrice(1L)).thenReturn(
+			new PriceQuoteDto(BigDecimal.valueOf(70100), sourceTime, PriceStatus.AVAILABLE, sourceTradingDate));
+
+		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}/price", 1L)))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.price").value(70100))
+			.andExpect(jsonPath("$.sourceTime").value("2026-07-28T09:01:00"))
+			.andExpect(jsonPath("$.status").value("AVAILABLE"))
+			.andExpect(jsonPath("$.sourceTradingDate").value("2026-07-24"));
+
+		verify(priceQueryService).getPrice(1L);
+	}
+
+	@Test
+	void getPriceReturnsFullContractWhenAvailableForCryptoInstrumentWithoutSourceTradingDate() throws Exception {
+		authenticate();
+		LocalDateTime sourceTime = LocalDateTime.of(2026, 7, 28, 10, 30, 0);
+		when(priceQueryService.getPrice(17L)).thenReturn(
+			new PriceQuoteDto(BigDecimal.valueOf(95000000), sourceTime, PriceStatus.AVAILABLE, null));
+
+		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}/price", 17L)))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.price").value(95000000))
+			.andExpect(jsonPath("$.sourceTime").value("2026-07-28T10:30:00"))
+			.andExpect(jsonPath("$.status").value("AVAILABLE"))
+			.andExpect(jsonPath("$.sourceTradingDate").doesNotExist());
+
+		verify(priceQueryService).getPrice(17L);
+	}
+
+	@Test
+	void getPriceReturnsCommonValidationErrorForNonNumericIdWithoutCallingService() throws Exception {
+		authenticate();
+
+		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}/price", "abc")))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.message").isNotEmpty())
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(priceQueryService);
 	}
 
 	private void authenticate() {
