@@ -19,9 +19,9 @@ FinPlay 백엔드 API 서버. Spring Boot 4.1 / Java 17 / Gradle (`build.gradle`
 2. **ADR 위반 금지.** 기존 ADR과 어긋나는 구현이 필요하면 구현하지 말고 새 ADR 초안을 제안한다. ADR은 수정하지 않고 새 번호로 대체(superseded)한다.
 3. **테스트 전략 준수.** `docs/adr/0003-testing-strategy.md` 기준. 서비스 로직은 단위 테스트, Repository 쿼리는 `@DataJpaTest`, API 계약은 `@WebMvcTest`, 핵심 시나리오는 Testcontainers 통합 테스트. mock만으로 검증을 끝내지 않는다.
 4. **완료 선언 전 `./gradlew build` 실행.** 실패하면 고치고 재실행한다.
-5. **컨벤션은 `docs/conventions.md`를 따른다.** 레이어 구조, 네이밍, API 응답 포맷, 예외 처리 방식 포함.
+5. **컨벤션은 3개 문서로 나뉘어 있다.** 코드는 `docs/conventions.md`(레이어 구조, 네이밍, API 응답 포맷, 예외 처리, 리뷰 체크 질문), 브랜치·커밋·PR은 `docs/git-conventions.md`, 이슈·리뷰 운영은 `docs/team-conventions.md`를 따른다.
 6. **새 소스 파일 첫 줄에 한 줄 한국어 주석**으로 파일 역할을 적는다 (`// 주문 생성/조회를 담당하는 서비스`).
-7. **controller를 추가/변경하면 `docs/api-routes.md`를 같은 커밋에서 갱신한다.**
+7. **controller를 추가/변경하면 `docs/api-routes.md`(라우트 목록)와 `docs/api-contracts.md`(계약 상세)를 같은 커밋에서 함께 갱신한다.**
 8. **스키마 변경은 Flyway 마이그레이션으로만.** 엔티티 변경 시 `db/migration/V{N}__*.sql` 동반 필수, 머지된 마이그레이션 수정 금지 (ADR-0004).
 9. **구현 시작 전 `docs/agent-mistakes.md`를 읽는다.** 하네스/빌드 관련 실수를 재현·확인하면 같은 파일에 기록한다 (재현된 실수만, 추측 금지).
 
@@ -56,7 +56,10 @@ FinPlay 백엔드 API 서버. Spring Boot 4.1 / Java 17 / Gradle (`build.gradle`
 | `docs/agent-mistakes.md` | 재현·확인된 AI 실수 로그 |
 | `docs/adr/` | 아키텍처 결정 기록 (왜) |
 | `docs/specs/` | 기능 명세 spec → plan → tasks (무엇을) |
-| `docs/conventions.md` | 코드/팀 컨벤션 |
+| `docs/conventions.md` | 코드 컨벤션 + 리뷰 체크 질문 |
+| `docs/git-conventions.md` | 브랜치 네이밍·커밋 메시지·PR 제목·PR 본문 템플릿·머지 조건 |
+| `docs/team-conventions.md` | 이슈→브랜치→PR 흐름, 이슈 분할 기준, 리뷰 지적 처리 |
 | `docs/api-routes.md` | API 엔드포인트 지도 (controller와 항상 동기화) |
+| `docs/api-contracts.md` | 엔드포인트별 요청·응답·오류 계약 (블랙박스 QA 근거) |
 | `checklist.md` | 현재 진행 중인 작업 체크리스트 |
 | `context-notes.md` | 세션 간 인수인계용 결정 기록 |

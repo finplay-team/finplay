@@ -8,9 +8,11 @@ AI 에이전트는 **docs/ 전체를 순회하지 않는다.** 작업 유형에 
 | 기능 구현 | 해당 `docs/specs/NNN-*/` (spec, plan, tasks) + `docs/conventions.md` + `docs/adr/0002-architecture.md` |
 | 엔티티/스키마 변경 | 위 + `docs/adr/0004-flyway-migrations.md` |
 | 테스트 작성 | `docs/adr/0003-testing-strategy.md` |
-| 코드 리뷰 | `docs/conventions.md` + `docs/adr/0002-architecture.md` + `docs/adr/0003-testing-strategy.md` + `docs/adr/0004-flyway-migrations.md` + `docs/api-routes.md` |
-| 블랙박스 QA | 해당 spec의 `spec.md` + `docs/api-routes.md` — **구현 코드(src/main) 금지** |
-| API 문서 갱신 | `docs/api-routes.md` |
+| 코드 리뷰 | `docs/conventions.md`(리뷰 체크 질문 포함) + `docs/adr/0002-architecture.md` + `docs/adr/0003-testing-strategy.md` + `docs/adr/0004-flyway-migrations.md` + `docs/api-routes.md` |
+| 블랙박스 QA | 해당 spec의 `spec.md` + `docs/api-contracts.md` — **구현 코드(src/main) 금지** |
+| API 문서 갱신 | `docs/api-routes.md`(라우트 목록) + `docs/api-contracts.md`(계약 상세) — 둘을 같은 커밋에서 갱신 |
+| 브랜치 생성 / 커밋 / PR 작성 | `docs/git-conventions.md` |
+| 이슈 분할 / 리뷰 지적 처리 | `docs/team-conventions.md` |
 | 하네스/문서 수정 | `AGENTS.md` + `CLAUDE.md` + 이 파일 + `docs/adr/0005-local-agent-orchestration.md` + `docs/adr/0008-four-agent-roster.md` + `docs/adr/0009-codex-local-orchestration.md` + `docs/adr/0010-agent-session-lifecycle.md` |
 | 배포 / CI 구성 / 스모크 | `docs/specs/010-deployment/spec.md` + `docs/conventions.md`(시크릿 절) |
 | 하네스 CI 전환 (미착수) | `docs/harness-roadmap.md` + `docs/adr/0005-local-agent-orchestration.md` |

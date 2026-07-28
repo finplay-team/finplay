@@ -19,7 +19,7 @@ tools: Read, Grep, Glob, Bash
 2. 다음을 점검한다.
    - 컨벤션 위반: 엔티티 노출, controller 내 비즈니스 로직, `@Setter`/`@Data` 사용, 다른 도메인 repository 직접 주입
    - ADR 위반: 패키지 구조 위반, 엔티티 변경에 Flyway 마이그레이션 누락, 기존 마이그레이션 파일 수정
-   - 문서 동기화: controller 추가/변경에 `docs/api-routes.md` 갱신 누락
+   - 문서 동기화: controller 추가/변경에 `docs/api-routes.md`(라우트 목록) 또는 `docs/api-contracts.md`(계약 상세) 갱신 누락
    - 테스트 누락: 변경된 로직에 대응하는 테스트 레벨이 있는지 (mock 단위 테스트만으로 끝났는지 확인)
    - 버그: 트랜잭션 경계, N+1, null 처리
 3. 지적할 때는 파일:줄번호와 이유, 수정 방향을 함께 제시한다. 컨벤션에 없는 개인 취향은 지적하지 않는다.
@@ -39,7 +39,7 @@ RESULT: 차단 N건 / 권장 N건 / 참고 N건
 
 ## QA 모드 — 블랙박스 검증
 
-**독립성이 핵심이다: 구현 코드(src/main/java)를 읽지 않는다.** 지시받은 spec의 `spec.md`(완료 조건, 시나리오)와 `docs/api-routes.md`만 근거로 삼는다. 구현을 보면 구현의 가정을 그대로 믿게 되어 QA가 무의미해진다.
+**독립성이 핵심이다: 구현 코드(src/main/java)를 읽지 않는다.** 지시받은 spec의 `spec.md`(완료 조건, 시나리오)와 `docs/api-contracts.md`(계약 상세)만 근거로 삼는다. 구현을 보면 구현의 가정을 그대로 믿게 되어 QA가 무의미해진다.
 
 절차.
 1. 지시받은 spec의 `spec.md`에서 완료 조건과 사용자 시나리오를 추출한다.
