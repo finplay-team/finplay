@@ -43,13 +43,21 @@ RESULT: 차단 N건 / 권장 N건 / 참고 N건
 
 절차.
 1. 지시받은 spec의 `spec.md`에서 완료 조건과 사용자 시나리오를 추출한다.
-2. 앱을 기동한다: `.\gradlew.bat bootRun` 백그라운드 실행 (compose가 MySQL 자동 기동). `http://localhost:8080/actuator/health`가 UP이 될 때까지 대기 (최대 3분, 5초 간격 폴링).
-3. 완료 조건마다 curl로 검증한다.
+2. **컨테이너는 내리지 않고 재사용한다.** `docker compose up -d`로 MySQL·Redis를 기동한다 (이미 떠 있으면 즉시 반환, 비용 없음). 매번 껐다 켜는 대신 이 세션에서 계속 켜둔다 — PR마다 컨테이너를 새로 만드는 비용(수 분)이 QA를 느리게 만드는 주된 원인이다.
+3. **DB만 깨끗하게 리셋한다** (컨테이너는 그대로, 스키마만 초기화): `docker compose exec -T mysql mysql -uroot -plocal-only -e "DROP DATABASE IF EXISTS finplay; CREATE DATABASE finplay;"`. 다른 PR·브랜치가 만든 마이그레이션·데이터가 남아 있으면 이번 PR의 코드와 충돌(Flyway 체크섬 불일치, 잔여 데이터로 인한 오탐)할 수 있어 매 QA 실행 전 반드시 리셋한다.
+4. 앱을 기동한다: `.\gradlew.bat bootRun --args='--spring.docker.compose.lifecycle-management=start-only'` 백그라운드 실행 (`start-only`로 앱 종료 시 Spring Boot가 컨테이너를 자동으로 멈추지 않게 한다 — 2번에서 직접 관리하는 컨테이너를 그대로 유지). `http://localhost:8080/actuator/health`가 UP이 될 때까지 대기 (최대 3분, 5초 간격 폴링). Flyway가 빈 DB에 전체 마이그레이션을 새로 적용하므로 이 부분은 여전히 실행되지만 컨테이너 기동 자체보다 훨씬 빠르다.
+5. 완료 조건마다 curl로 검증한다.
    - 정상 경로: 기대 상태코드 + 응답 본문 필드 확인
    - 오류 경로: 잘못된 입력에 4xx + `{code, message}` 에러 포맷 확인
    - 경계: 중복 생성, 존재하지 않는 ID 조회 등 spec에 적힌 조건
-4. 검증 후 앱 프로세스를 종료하고 `docker compose down`으로 정리한다.
-5. 대상 spec 폴더의 `run-log.md`에 기록한다 (없으면 헤더와 함께 새로 만든다). AI 로그 표에 한 행(실행한 curl 시나리오 개수 + 근거 spec.md), 모니터링 섹션에 PASS/FAIL 요약 한 줄.
+6. 검증 후 앱 프로세스만 종료한다. **`docker compose down`은 실행하지 않는다** — 컨테이너는 다음 QA 실행을 위해 계속 켜둔다.
+7. 대상 spec 폴더의 `run-log.md`에 기록한다 (없으면 헤더와 함께 새로 만든다). AI 로그 표에 한 행(실행한 curl 시나리오 개수 + 근거 spec.md), 모니터링 섹션에 PASS/FAIL 요약 한 줄.
+
+이 절차는 "이미 검증했으니 QA를 건너뛴다"가 아니다 — 매번 전체 시나리오를 그대로 다 실행한다. 줄이는 건 컨테이너 기동 대기시간뿐이고, 검증 자체의 독립성·범위는 그대로 유지한다.
+
+**주의 1 (동시 실행 금지)**: 이 컴퓨터에서 다른 `/review-pr`·QA 세션이 동시에 돌고 있으면 이 최적화를 쓰지 않는다 — 3번의 DB 리셋이 그 세션이 검증 중인 데이터를 지워버려 다른 QA를 깨뜨릴 수 있다. 동시 실행이 의심되면 컨테이너를 공유하지 말고 기존 방식(매번 내렸다 올리기)으로 되돌아간다.
+
+**주의 2 (Redis 상태 확장 시 재검토)**: 지금은 3번이 MySQL 스키마만 리셋한다. `003-market-data`의 `PriceStore`(Redis 코인 시세 캐시)가 구현돼 Redis에 QA 판정에 영향을 주는 실제 상태가 생기면, 3번에 Redis 리셋 스텝(예: `FLUSHALL` 또는 관련 키 삭제)도 추가해야 한다 — 그 전까지는 MySQL만으로 충분하다.
 
 ### 반환 형식
 
