@@ -255,21 +255,21 @@ public record EmailChangeConfirmRequest(
 
 - [x] Testcontainers MySQL로 발송→확인 성공 전체 흐름, 재사용·5회 초과·만료·재발송 무효화·타인 요청 격리, 확인 성공 후 기존 Refresh Token 401 검증, 확인 전후 계좌·잔액·주문·체결 불변을 검증한다.
 - [x] 동시에 같은 새 이메일을 다른 경로로 먼저 선점하는 경합 시나리오를 실제 MySQL로 재현해 409와 인증번호 미소비·Refresh Token 미폐기 롤백을 검증한다.
-- [ ] 대상 단위·슬라이스·통합 테스트 전체와 기존 회귀 스위트, Spotless, `./gradlew build`를 실행한다.
-- [ ] `docs/api-routes.md`에 `POST /api/auth/email-changes/confirm` 라우트를 추가하고 `docs/specs/002-auth-account/tasks.md`에 Issue #56 작업 항목 절을 추가한다.
+- [x] 대상 단위·슬라이스·통합 테스트 전체와 기존 회귀 스위트, Spotless, `./gradlew build`를 실행한다. (`BUILD SUCCESSFUL in 3m 10s`, 커밋 `ecdf3aa`)
+- [x] `docs/api-routes.md`에 `POST /api/auth/email-changes/confirm` 라우트를 추가하고 `docs/specs/002-auth-account/tasks.md`에 Issue #56 작업 항목 절을 추가한다.
 
 ---
 
 ## 완료 체크리스트
 
-- [ ] 유효한 인증번호로 이메일이 한 번 변경되고 같은 인증번호 재사용은 거부되는 테스트가 통과한다.
-- [ ] 요청 없음·잘못된 코드·만료·재발송으로 무효화된 코드·다른 회원 요청이 모두 400 `EMAIL_VERIFICATION_FAILED`로 거부되고 `users.email`이 변하지 않는 테스트가 통과한다.
-- [ ] 5회 초과 시도가 429 `TOO_MANY_REQUESTS`로 응답하고 해당 인증번호가 즉시 무효화되는 테스트가 통과한다.
-- [ ] 동시 중복 이메일 경합이 409 `DUPLICATE_RESOURCE`로 처리되고, 이 경우 인증번호 소비·Refresh Token 폐기가 함께 롤백됨이 실제 MySQL 통합 테스트로 확인된다.
-- [ ] 확인 성공 후 기존 Refresh Token으로 `/api/auth/refresh`가 401이 되는 테스트가 통과한다.
-- [ ] 확인 성공·실패와 무관하게 계좌·잔액·주문·체결·투자일기, `social_accounts`의 `provider`+`providerUserId` 연결이 불변임이 검증된다.
-- [ ] `docs/api-routes.md`가 실제 Controller 매핑과 일치한다.
-- [ ] `./gradlew build`(Spotless·SpotBugs·JaCoCo 포함)가 통과한다.
+- [x] 유효한 인증번호로 이메일이 한 번 변경되고 같은 인증번호 재사용은 거부되는 테스트가 통과한다.
+- [x] 요청 없음·잘못된 코드·만료·재발송으로 무효화된 코드·다른 회원 요청이 모두 400 `EMAIL_VERIFICATION_FAILED`로 거부되고 `users.email`이 변하지 않는 테스트가 통과한다.
+- [x] 5회 초과 시도가 429 `TOO_MANY_REQUESTS`로 응답하고 해당 인증번호가 즉시 무효화되는 테스트가 통과한다.
+- [x] 동시 중복 이메일 경합이 409 `DUPLICATE_RESOURCE`로 처리되고, 이 경우 인증번호 소비·Refresh Token 폐기가 함께 롤백됨이 실제 MySQL 통합 테스트로 확인된다.
+- [x] 확인 성공 후 기존 Refresh Token으로 `/api/auth/refresh`가 401이 되는 테스트가 통과한다.
+- [x] 확인 성공·실패와 무관하게 계좌·잔액·주문·체결·투자일기, `social_accounts`의 `provider`+`providerUserId` 연결이 불변임이 검증된다.
+- [x] `docs/api-routes.md`가 실제 Controller 매핑과 일치한다.
+- [x] `./gradlew build`(Spotless·SpotBugs·JaCoCo 포함)가 통과한다.
 
 ---
 
