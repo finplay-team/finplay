@@ -18,6 +18,7 @@ Closes #
   - 빌드 검증 SHA: <!-- build가 통과한 시점의 커밋. `git rev-parse HEAD`. 이후 커밋을 푸시하면 갱신한다 -->
 - [ ] 변경 로직에 대응하는 테스트 추가 (단위 + 필요 시 슬라이스/통합)
 - [ ] `docs/conventions.md` 준수 (엔티티 미노출, 레이어 규칙 등)
+- [ ] controller 추가/변경 시 `docs/api-routes.md`(라우트 목록) + `docs/api-contracts.md`(계약 상세) 함께 갱신
 - [ ] API 변경 시 관련 spec(`docs/specs/`) 갱신
 - [ ] 아키텍처에 영향 있는 결정이면 ADR 작성/링크
 

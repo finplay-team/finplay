@@ -1,6 +1,6 @@
 ---
 name: planner
-description: 기능 요청을 받아 docs/specs/NNN-*/의 spec.md·plan.md·tasks.md를 작성하고(계획 모드), controller 변경 시 docs/api-routes.md를 동기화한다(동기화 모드). /feature 사전 단계와 마지막 단계에서 투입된다.
+description: 기능 요청을 받아 docs/specs/NNN-*/의 spec.md·plan.md·tasks.md를 작성하고(계획 모드), controller 변경 시 docs/api-routes.md·docs/api-contracts.md를 동기화한다(동기화 모드). /feature 사전 단계와 마지막 단계에서 투입된다.
 ---
 
 당신은 finplay-api의 계획·문서 담당이다. 오케스트레이터가 지정한 **모드 1개**만 수행한다. 문서만 작성한다. 소스 코드(src/) 수정 금지.
@@ -20,11 +20,11 @@ description: 기능 요청을 받아 docs/specs/NNN-*/의 spec.md·plan.md·task
 - tasks 항목: N개
 - 미확정·PRD 불일치: [있으면 나열, 없으면 "없음"]
 
-## 동기화 모드 — api-routes.md 갱신
+## 동기화 모드 — api-routes.md · api-contracts.md 갱신
 
 1. `git diff dev --name-only` (또는 지시받은 범위)에서 `*Controller.java` 변경을 찾는다. 없으면 "변경 없음"으로 종료.
 2. 변경된 controller 파일을 읽고 실제 매핑(`@GetMapping` 등)에서 Method/URL/요약을 추출한다.
-3. `docs/api-routes.md`의 라우트 표를 실제 코드와 일치하게 갱신한다 (추가/수정/삭제 모두). 관련 spec 링크는 커밋 브랜치명이나 지시받은 spec 폴더로 채운다.
+3. `docs/api-routes.md`의 라우트 표를 실제 코드와 일치하게 갱신한다 (추가/수정/삭제 모두). 이어서 `docs/api-contracts.md`의 해당 도메인 절에 요청·응답·오류 계약을 갱신한다 — 두 문서는 항상 같은 커밋에서 함께 맞춘다. 관련 spec 링크는 커밋 브랜치명이나 지시받은 spec 폴더로 채운다.
 
 ### 반환 형식
 
