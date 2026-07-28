@@ -4,6 +4,7 @@ package com.finplay.api.market.config;
 import com.finplay.api.market.service.KrxReplayPriceProvider;
 import com.finplay.api.market.service.StockPriceProvider;
 import com.finplay.api.market.service.StockReplayService;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -13,6 +14,10 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class StockFeedConfig {
 
+	private final StockFeedProvider stockFeedProvider;
+	private final ServiceExposure serviceExposure;
+	private final boolean kisPublicDisplayApproved;
+
 	@Autowired
 	StockFeedConfig(
 		@Value("${stock-feed.provider}")
@@ -21,15 +26,18 @@ public class StockFeedConfig {
 		ServiceExposure serviceExposure,
 		@Value("${stock-feed.kis-public-display-approved}")
 		boolean kisPublicDisplayApproved) {
-		validateAllowedCombination(stockFeedProvider, serviceExposure, kisPublicDisplayApproved);
+		this.stockFeedProvider = stockFeedProvider;
+		this.serviceExposure = serviceExposure;
+		this.kisPublicDisplayApproved = kisPublicDisplayApproved;
 	}
 
-	// 허용 조합 넷(PRIVATE+KIS_REALTIME, PRIVATE+KRX_REPLAY, PUBLIC+KRX_REPLAY, PUBLIC+KIS_REALTIME+승인) 중
-	// 유일한 금지 조합(PUBLIC+KIS_REALTIME+미승인)이면 기동 자체를 실패시킨다 (fail-fast, C-007).
-	private static void validateAllowedCombination(
-		StockFeedProvider provider, ServiceExposure exposure, boolean kisPublicDisplayApproved) {
-		boolean isForbidden = provider == StockFeedProvider.KIS_REALTIME
-			&& exposure == ServiceExposure.PUBLIC
+	// 생성자가 아니라 @PostConstruct에서 검증한다 — @Configuration 클래스는 CGLIB 프록시 때문에 final로 만들 수 없어
+	// 생성자에서 예외를 던지면 SpotBugs CT_CONSTRUCTOR_THROW에 걸린다. Spring은 @PostConstruct 예외도 빈 초기화
+	// 실패로 처리해 컨텍스트 기동을 여전히 fail-fast로 막는다 (spec.md MKT-007).
+	@PostConstruct
+	void validateAllowedCombination() {
+		boolean isForbidden = stockFeedProvider == StockFeedProvider.KIS_REALTIME
+			&& serviceExposure == ServiceExposure.PUBLIC
 			&& !kisPublicDisplayApproved;
 		if (isForbidden) {
 			throw new IllegalStateException(
