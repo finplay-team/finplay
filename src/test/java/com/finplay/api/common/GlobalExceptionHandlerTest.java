@@ -89,6 +89,15 @@ class GlobalExceptionHandlerTest {
 	}
 
 	@Test
+	void mapsEnumQueryParamTypeMismatchToValidationErrorCodeInsteadOfInternalError() throws Exception {
+		mockMvc.perform(get("/test/enum-param").param("status", "NOT_A_STATUS"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.message").isNotEmpty())
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+	}
+
+	@Test
 	void mapsUnmappedPathToNotFoundInCommonFormat() throws Exception {
 		mockMvc.perform(get("/test/no-such-endpoint"))
 			.andExpect(status().isNotFound())
@@ -156,6 +165,17 @@ class GlobalExceptionHandlerTest {
 		int page) {
 			// @Min 위반 시 ConstraintViolationException이 발생한다.
 		}
+
+		@org.springframework.web.bind.annotation.GetMapping("/test/enum-param")
+		void enumParam(@RequestParam(required = false)
+		ProbeStatus status) {
+			// 알 수 없는 값이면 MethodArgumentTypeMismatchException이 발생한다.
+		}
+	}
+
+	enum ProbeStatus {
+		OPEN,
+		CLOSED
 	}
 
 	record TestRequest(@NotBlank(message = "이름은 필수입니다.")
