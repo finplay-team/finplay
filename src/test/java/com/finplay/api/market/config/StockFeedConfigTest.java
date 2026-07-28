@@ -10,8 +10,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 
 class StockFeedConfigTest {
 
-	// 검증은 생성자가 아니라 @PostConstruct validateAllowedCombination()에서 일어난다 (SpotBugs CT_CONSTRUCTOR_THROW 회피).
-	// 생성자만 호출하면 검증을 거치지 않으므로, 여기서 직접 호출해 실제 검증 로직을 통과시킨다.
+	// 검증은 생성자에서 바로 일어난다 — new StockFeedConfig(...) 호출 자체가 검증을 통과한다(우회 경로 없음).
 
 	// 허용 조합 넷: PRIVATE+KRX_REPLAY, PRIVATE+KIS_REALTIME, PUBLIC+KRX_REPLAY, PUBLIC+KIS_REALTIME+승인=true
 	@ParameterizedTest
@@ -23,16 +22,14 @@ class StockFeedConfigTest {
 	})
 	void allowedCombinationDoesNotThrow(
 		ServiceExposure exposure, StockFeedProvider provider, boolean kisPublicDisplayApproved) {
-		StockFeedConfig config = new StockFeedConfig(provider, exposure, kisPublicDisplayApproved);
-		assertThatCode(config::validateAllowedCombination).doesNotThrowAnyException();
+		assertThatCode(() -> new StockFeedConfig(provider, exposure, kisPublicDisplayApproved))
+			.doesNotThrowAnyException();
 	}
 
 	// 유일한 금지 조합: PUBLIC+KIS_REALTIME+미승인 — 서면 허가 없이 공개 실시간 표출로 전환하면 기동 자체가 실패해야 한다 (C-007, fail-fast).
 	@Test
 	void forbiddenCombinationThrowsIllegalStateException() {
-		StockFeedConfig config = new StockFeedConfig(StockFeedProvider.KIS_REALTIME, ServiceExposure.PUBLIC, false);
-
-		assertThatThrownBy(config::validateAllowedCombination)
+		assertThatThrownBy(() -> new StockFeedConfig(StockFeedProvider.KIS_REALTIME, ServiceExposure.PUBLIC, false))
 			.isInstanceOf(IllegalStateException.class)
 			.hasMessageContaining("KIS_PUBLIC_DISPLAY_APPROVED");
 	}
