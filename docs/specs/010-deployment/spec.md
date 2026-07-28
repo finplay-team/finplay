@@ -30,12 +30,12 @@ CI 워크플로우는 2026-07-24 튜터 피드백("CI는 배포 단계에")으�
 - [ ] 배포는 사람이 수행한다 — 자동 배포·자동 머지는 하지 않는다 (ADR-0005).
 
 ### 주식 시세 공급자 설정 (PRD C-007·MKT-007)
-- [ ] 공개 배포 환경은 `SERVICE_EXPOSURE=PUBLIC` + `STOCK_FEED_PROVIDER=KRX_REPLAY`로 기동한다 — **이것이 현재 공개 배포의 기본값이다.**
+- [ ] 공개 배포 환경은 `SERVICE_EXPOSURE=PUBLIC` + `STOCK_FEED_PROVIDER=KIS_HISTORICAL`로 기동한다 — **이것이 현재 공개 배포의 기본값이다.**
 - [ ] `KIS_PUBLIC_DISPLAY_APPROVED`는 기본 `false`로 둔다.
 - [ ] 공개 환경에서 `STOCK_FEED_PROVIDER=KIS_REALTIME`을 승인 없이 설정하면 애플리케이션이 시작 단계에서 실패하는 것을 배포 전 1회 확인한다 (fail-fast).
-- [ ] KIS 키가 배포 환경에 없어도 `KRX_REPLAY` 기동이 성공하는 것을 확인한다.
+- [ ] KIS 실시간 키가 배포 환경에 없어도 `KIS_HISTORICAL` 기동이 성공하는 것을 확인한다.
 - [ ] 개인 개발·본인 전용 검증 환경은 `SERVICE_EXPOSURE=PRIVATE` + `STOCK_FEED_PROVIDER=KIS_REALTIME`으로 별도 운영한다 — 공개 배포와 설정을 공유하지 않는다. 이 환경은 **개발자 본인만 접근하는 로컬 또는 접근 통제 환경**이며, 공개 URL이나 여러 사용자가 접근하는 서버로 운영하지 않는다.
-- [ ] **팀원·튜터·심사위원 대상 시연은 공개 배포와 동일하게 `KRX_REPLAY`로 수행한다** — 서면 답변 전까지 제3자가 보는 화면에 KIS 실시간 시세를 띄우지 않는다.
+- [ ] **팀원·튜터·심사위원 대상 시연은 공개 배포와 동일하게 `KIS_HISTORICAL`로 수행한다** — 실시간 표출 서면 답변 전까지 제3자가 보는 화면에 KIS 실시간 시세를 띄우지 않는다.
 
 ### 시크릿 취급
 - [ ] `KIS_APP_KEY`·`KIS_APP_SECRET`·`KIS_ACCOUNT_NO`·`KIS_ACCOUNT_PRODUCT_CODE`의 실제 값은 **서버 환경변수 또는 AWS Secret에만** 저장한다.
@@ -65,16 +65,16 @@ CI 워크플로우는 2026-07-24 튜터 피드백("CI는 배포 단계에")으�
 - 스모크 계정은 배포 후 **1회 수동 생성**한다. 스크립트가 계정을 만들지 않는다 (이메일 인증이 선행되어야 하므로 자동 생성이 불가능하다).
 - 스모크 계정 비밀정보는 로컬 실행 시 `.env`, CI 실행 시 GitHub Secret으로 주입한다.
 - Mock·Fake 통과를 실제 외부 연동 성공으로 표현하지 않는다 (PRD C-005).
-- 공개 배포의 주식 시세 공급자 기본값은 `KRX_REPLAY`다. 공개 환경을 `KIS_REALTIME`으로 전환하는 것은 **한국투자증권의 서면 허용 또는 계약 완료가 확인된 뒤에만** 판단한다 — `KIS_PUBLIC_DISPLAY_APPROVED`를 `true`로 바꾸는 것만으로 허가가 생기지 않으며, 정본은 서면 답변이다 (PRD C-007). 현재 이 답변은 받은 적이 없다.
-- 답변이 늦거나 공개 표출이 허용되지 않아도 **KRX 재생 방식으로 MVP 배포를 진행한다.** 배포 일정을 이 답변에 묶지 않는다.
-- 현재 확인된 것은 개발자 본인의 KIS Open API 사용 가능 여부뿐이다. **팀원·튜터·심사위원도 제3자이므로 시연 화면은 `KRX_REPLAY`다.** 서면 답변에서 제한 시연 또는 공개 표출이 허용되면 그때 Decision Gate를 해제한다.
+- 공개 배포의 주식 시세 공급자 기본값은 `KIS_HISTORICAL`이다 — 과거 데이터는 공공데이터로 확인되어 서면 답변을 기다리지 않고 진행한다. 공개 환경을 `KIS_REALTIME`으로 전환하는 것은 **한국투자증권의 서면 허용 또는 계약 완료가 확인된 뒤에만** 판단한다 — `KIS_PUBLIC_DISPLAY_APPROVED`를 `true`로 바꾸는 것만으로 허가가 생기지 않으며, 정본은 서면 답변이다 (PRD C-007). 현재 이 답변은 받은 적이 없다.
+- 실시간 표출 답변이 늦거나 허용되지 않아도 **`KIS_HISTORICAL` 방식으로 MVP 배포를 진행한다.** 배포 일정을 이 답변에 묶지 않는다.
+- 현재 확인된 것은 과거 데이터의 공공데이터 지위와 개발자 본인의 KIS Open API 사용 가능 여부다. **팀원·튜터·심사위원도 제3자이므로 실시간 시연 화면은 `KIS_HISTORICAL`이다.** 서면 답변에서 제한 시연 또는 공개 표출이 허용되면 그때 Decision Gate를 해제한다.
 
 ## 범위 제외
 
 - 자동 배포·배포 파이프라인 (수동 배포로 시작).
 - 무중단 배포·롤백 자동화·오토스케일링.
 - 실제 이메일 수신, 실제 카카오·네이버 OAuth, 실제 KIS WebSocket 연결 확인 — 자동 스모크와 분리해 주요 배포 시 **수동 외부 스모크**로 처리한다 (PRD §9).
-- 공개 환경의 KIS 실시간 전환 실행 (한국투자 서면 답변 Decision Gate — 이번 범위는 기본값을 `KRX_REPLAY`로 고정하고 잘못된 조합을 fail-fast로 막는 것까지다).
+- 공개 환경의 KIS 실시간 전환 실행 (한국투자 서면 답변 Decision Gate — 이번 범위는 기본값을 `KIS_HISTORICAL`로 고정하고 잘못된 조합을 fail-fast로 막는 것까지다).
 - 부하테스트·모니터링 대시보드 (2차 MVP).
 - GitHub Issue 트리거 CI 하네스 (`docs/harness-roadmap.md` — 별도 ADR 후 착수).
 
@@ -83,7 +83,7 @@ CI 워크플로우는 2026-07-24 튜터 피드백("CI는 배포 단계에")으�
 - [ ] PR에서 CI가 `./gradlew build`를 실행하고 결과가 PR에 표시된다.
 - [ ] 문서만 바뀐 PR에서 Gradle 단계가 실행되지 않는다.
 - [ ] 운영 환경에 배포된 앱의 `/actuator/health`가 `UP`을 반환한다.
-- [ ] 공개 배포 환경이 `SERVICE_EXPOSURE=PUBLIC`·`STOCK_FEED_PROVIDER=KRX_REPLAY`·`KIS_PUBLIC_DISPLAY_APPROVED=false`로 기동됨을 확인한다.
+- [ ] 공개 배포 환경이 `SERVICE_EXPOSURE=PUBLIC`·`STOCK_FEED_PROVIDER=KIS_HISTORICAL`·`KIS_PUBLIC_DISPLAY_APPROVED=false`로 기동됨을 확인한다.
 - [ ] 승인 없는 공개 KIS 조합에서 기동이 실패하는 것을 배포 전 1회 확인한다.
 - [ ] Resend 발신 서브도메인 인증이 완료되고 실제 인증 메일 수신이 1회 확인된다 (수동 외부 스모크).
 - [ ] `scripts/smoke.ps1`이 성공 시 `exit 0`, 실패 시 `exit 1`로 동작한다.

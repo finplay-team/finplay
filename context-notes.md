@@ -198,3 +198,11 @@
 - **`docs/specs/007-journal/spec.md`**: 헤더 단계를 "2차 MVP (1차 고도화)"로 변경, 2차 착수 전까지 plan·tasks 작성과 구현 보류를 명시. 파일 자체는 삭제하지 않음 (요구사항 초안 보존용).
 - **이슈 #52**: 제목 `[MVP]` → `[1차 고도화]`로 변경, 본문의 "결정 반영" 체크리스트를 취소선 처리하고 2026-07-28 정정 배경을 상단에 추가. 지금 구현 착수하지 않고 2차 시점에 재확정.
 - **닉네임 API의 Notion "진행 중" 표기는 그대로 둠** (사용자: "그냥 넘어가") — 실제로는 완료(이슈 #54 종료)이지만 레포·Notion 어느 쪽도 지금 수정하지 않는다.
+
+## 2026-07-28 — 주식 과거 데이터 소스를 KRX → 한국투자증권(KIS) Open API로 전환 (사용자 결정, 이슈 #17)
+
+- **KRX 서면 안내 대기를 더 기다리지 않는다**: 한국투자증권 Open API 키를 발급받아 과거 1분봉도 KIS로 조회하기로 결정했다. 한국투자증권에 문의해 "과거 데이터는 공공데이터이므로 자유롭게 사용 가능"이라는 답변을 받아, PRD C-006의 KRX 서면 허가 대기(Decision Gate)가 과거 데이터 쪽에서는 해소됐다. **실시간 시세의 제3자 표출(C-007)은 별개로, 아직 확인된 바 없어 기존 제약을 그대로 유지한다** — 개발자 본인 전용 검증 환경에서만 `KIS_REALTIME`을 쓰고, 공개 배포·시연은 여전히 과거 데이터 재생(`KIS_HISTORICAL`, 구 `KRX_REPLAY`)을 쓴다.
+- **네이밍**: `STOCK_FEED_PROVIDER=KRX_REPLAY` → `KIS_HISTORICAL`, `KrxReplayPriceProvider` → `KisHistoricalReplayPriceProvider`, `KrxFileImporter` → `KisHistoricalCandleCollector`(파일 임포트가 아니라 API 호출이므로 이름도 교체). 단, 이슈 #16에서 **이미 병합된 코드**(`KrxReplayPriceProvider`, `KRX_REPLAY` enum 값)는 이번 문서 작업에서 리네이밍하지 않았다 — `docs/specs/003-market-data/tasks.md`에 별도 결정 필요로 남겨뒀다.
+- **팀원 Claude의 이슈 #17 범위 지적을 반영해 3분할**: 이슈 #17(MVP)은 캔들 조회 API + KIS Open API 기반 과거 데이터 수집의 기본 동작(`UNIQUE` 제약 기반 멱등성, 성공/부분성공/실패 판정)까지만 남기고, ① KIS 실시간 틱 집계(`KisRealtimePriceProvider`·`KisTickAggregator`)는 이슈 [#82](https://github.com/finplay-team/finplay/issues/82), ② 수집 파이프라인 장기운영 방어 로직(동일 거래일 재수집 세부 정책·`StockCandleCleanupJob`)은 이슈 [#83](https://github.com/finplay-team/finplay/issues/83)으로 분리했다. 근거: ①은 `PUBLIC`+`KIS_HISTORICAL`이 공개 배포 기본값인 한 MVP 데모 경로에서 한 줄도 실행되지 않고, ②는 MVP 데모 기간에는 20영업일치가 쌓이지도 않고 재수집 시나리오도 반복 운영해야 의미가 생긴다.
+- **반영 위치**: `docs/prd.md`(C-006·C-007·MKT-002·005·006·007), `docs/specs/003-market-data/{spec,plan,tasks}.md`, `docs/specs/009-integration/spec.md`, `docs/specs/010-deployment/spec.md`, GitHub 이슈 #17(본문 수정) + #82·#83(신규 생성). 브랜치 `docs/017-krx-to-kis-transition`에서 작업 후 PR 예정.
+- **이슈 본문에는 "KRX"를 아예 언급하지 않는다** (사용자 피드백): 처음에 "KRX가 아니라 한국투자증권을 쓴다"고 대비해서 썼다가 반려당함 — 대외적으로 보이는 이슈에는 이전 방식을 언급하지 않고 현재 결정만 명시한다. 내부 계획 문서(PRD·spec·plan·context-notes)는 의사결정 맥락 보존을 위해 KRX 언급을 유지했다.
