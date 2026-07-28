@@ -4,6 +4,8 @@ package com.finplay.api.auth.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -26,6 +28,7 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -40,6 +43,7 @@ import com.finplay.api.auth.domain.SocialAccount;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.dto.response.MemberResponse;
 import com.finplay.api.auth.dto.response.ReauthTokenResponse;
+import com.finplay.api.auth.exception.EmailChangeConflictException;
 import com.finplay.api.auth.repository.EmailVerificationRepository;
 import com.finplay.api.auth.repository.ReauthTokenRepository;
 import com.finplay.api.auth.repository.RefreshTokenRepository;
@@ -60,6 +64,8 @@ class AuthServiceTest {
 	private static final String EMAIL = "user@finplay.com";
 	private static final String NICKNAME = "finplayer";
 	private static final String NEW_NICKNAME = "finplayer-renamed";
+	private static final String NEW_EMAIL = "new@finplay.com";
+	private static final String VERIFICATION_CODE = "123456";
 	private static final String RAW_REAUTH_TOKEN = "raw-reauth-token";
 	private static final String RAW_PASSWORD = "password123";
 	private static final String SIGNUP_TOKEN = "signup-verification-token";
@@ -75,6 +81,7 @@ class AuthServiceTest {
 	private RefreshTokenRepository refreshTokenRepository;
 	private SocialAccountRepository socialAccountRepository;
 	private ReauthTokenRepository reauthTokenRepository;
+	private EmailChangeService emailChangeService;
 	private OAuthNicknameGenerator oauthNicknameGenerator;
 	private ReauthTokenGenerator reauthTokenGenerator;
 	private AccountService accountService;
@@ -89,6 +96,7 @@ class AuthServiceTest {
 		refreshTokenRepository = mock(RefreshTokenRepository.class);
 		socialAccountRepository = mock(SocialAccountRepository.class);
 		reauthTokenRepository = mock(ReauthTokenRepository.class);
+		emailChangeService = mock(EmailChangeService.class);
 		oauthNicknameGenerator = mock(OAuthNicknameGenerator.class);
 		reauthTokenGenerator = mock(ReauthTokenGenerator.class);
 		accountService = mock(AccountService.class);
@@ -101,6 +109,7 @@ class AuthServiceTest {
 			refreshTokenRepository,
 			socialAccountRepository,
 			reauthTokenRepository,
+			emailChangeService,
 			passwordEncoder,
 			accountService,
 			jwtTokenProvider,
@@ -811,6 +820,57 @@ class AuthServiceTest {
 		verifyNoInteractions(socialAccountRepository);
 		verifyNoInteractions(reauthTokenRepository);
 		verify(userRepository, never()).saveAndFlush(any());
+	}
+
+	@Test
+	void confirmEmailChangeSucceedsInOrderAndReturnsUpdatedMemberResponse() {
+		User user = stubEmailUser();
+		when(userRepository.saveAndFlush(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		MemberResponse response = authService.confirmEmailChange(7L, NEW_EMAIL, VERIFICATION_CODE);
+
+		assertThat(response.id()).isEqualTo(7L);
+		assertThat(response.email()).isEqualTo(NEW_EMAIL);
+		assertThat(response.nickname()).isEqualTo(NICKNAME);
+		assertThat(response.signupMethod()).isEqualTo(SignupMethod.EMAIL);
+		assertThat(user.getEmail()).isEqualTo(NEW_EMAIL);
+		assertThat(user.getUpdatedAt()).isEqualTo(NOW);
+
+		InOrder inOrder = inOrder(emailChangeService, userRepository, refreshTokenRepository);
+		inOrder.verify(emailChangeService).validateAndConsumeCode(7L, NEW_EMAIL, VERIFICATION_CODE);
+		inOrder.verify(userRepository).saveAndFlush(user);
+		inOrder.verify(refreshTokenRepository).revokeAllActiveByUserId(7L, NOW);
+	}
+
+	@Test
+	void confirmEmailChangeStopsBeforeEmailChangeWhenValidationThrowsBusinessException() {
+		stubEmailUser();
+		doThrow(new BusinessException(ErrorCode.EMAIL_VERIFICATION_FAILED))
+			.when(emailChangeService)
+			.validateAndConsumeCode(7L, NEW_EMAIL, VERIFICATION_CODE);
+
+		assertThatThrownBy(() -> authService.confirmEmailChange(7L, NEW_EMAIL, VERIFICATION_CODE))
+			.isInstanceOf(BusinessException.class)
+			.extracting(ex -> ((BusinessException)ex).getErrorCode())
+			.isEqualTo(ErrorCode.EMAIL_VERIFICATION_FAILED);
+
+		verify(userRepository, never()).saveAndFlush(any());
+		verifyNoInteractions(refreshTokenRepository);
+	}
+
+	@Test
+	void confirmEmailChangeConvertsUniqueViolationToConflictAndSkipsTokenRevocation() {
+		stubEmailUser();
+		when(userRepository.saveAndFlush(any(User.class)))
+			.thenThrow(new DataIntegrityViolationException("concurrent duplicate email"));
+
+		assertThatThrownBy(() -> authService.confirmEmailChange(7L, NEW_EMAIL, VERIFICATION_CODE))
+			.isInstanceOf(EmailChangeConflictException.class)
+			.extracting(ex -> ((BusinessException)ex).getErrorCode())
+			.isEqualTo(ErrorCode.DUPLICATE_RESOURCE);
+
+		verify(emailChangeService).validateAndConsumeCode(7L, NEW_EMAIL, VERIFICATION_CODE);
+		verifyNoInteractions(refreshTokenRepository);
 	}
 
 	@Test

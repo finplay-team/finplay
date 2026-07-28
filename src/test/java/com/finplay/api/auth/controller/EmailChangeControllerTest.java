@@ -30,6 +30,10 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.finplay.api.auth.config.SecurityConfig;
+import com.finplay.api.auth.domain.SignupMethod;
+import com.finplay.api.auth.dto.response.MemberResponse;
+import com.finplay.api.auth.exception.EmailChangeConflictException;
+import com.finplay.api.auth.service.AuthService;
 import com.finplay.api.auth.service.EmailChangeService;
 import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.auth.token.JwtTokenProvider;
@@ -46,6 +50,7 @@ class EmailChangeControllerTest {
 	private static final String NEW_EMAIL = "new@finplay.com";
 	private static final String CURRENT_PASSWORD = "password123";
 	private static final String REAUTH_TOKEN = "reauth-token";
+	private static final String VERIFICATION_CODE = "123456";
 	private static final String ACCESS_TOKEN = "access.jwt.token";
 	private static final long USER_ID = 42L;
 
@@ -57,6 +62,9 @@ class EmailChangeControllerTest {
 
 	@MockitoBean
 	private EmailChangeService emailChangeService;
+
+	@MockitoBean
+	private AuthService authService;
 
 	@MockitoBean
 	private JwtTokenProvider jwtTokenProvider;
@@ -139,6 +147,104 @@ class EmailChangeControllerTest {
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
 		verify(emailChangeService).requestEmailChange(USER_ID, NEW_EMAIL, CURRENT_PASSWORD, null);
+	}
+
+	@Test
+	void confirmReturnsOkWithUpdatedMemberResponse() throws Exception {
+		stubValidAccessToken();
+		MemberResponse memberResponse = new MemberResponse(USER_ID, NEW_EMAIL, "finplayer", SignupMethod.EMAIL);
+		when(authService.confirmEmailChange(USER_ID, NEW_EMAIL, VERIFICATION_CODE)).thenReturn(memberResponse);
+
+		mockMvc.perform(post("/api/auth/email-changes/confirm")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(confirmRequestJson(NEW_EMAIL, VERIFICATION_CODE)))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.id").value(USER_ID))
+			.andExpect(jsonPath("$.email").value(NEW_EMAIL))
+			.andExpect(jsonPath("$.nickname").value("finplayer"))
+			.andExpect(jsonPath("$.signupMethod").value("EMAIL"));
+
+		verify(authService).confirmEmailChange(USER_ID, NEW_EMAIL, VERIFICATION_CODE);
+	}
+
+	@ParameterizedTest(name = "{0}")
+	@MethodSource("invalidConfirmRequests")
+	void confirmReturnsValidationErrorForInvalidRequestWithoutCallingService(
+		String scenario, String newEmail, String code) throws Exception {
+		stubValidAccessToken();
+
+		mockMvc.perform(post("/api/auth/email-changes/confirm")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(confirmRequestJson(newEmail, code)))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.message").isNotEmpty())
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(authService);
+	}
+
+	@Test
+	void confirmReturnsUnauthorizedWithoutAuthorizationHeader() throws Exception {
+		mockMvc.perform(post("/api/auth/email-changes/confirm")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(confirmRequestJson(NEW_EMAIL, VERIFICATION_CODE)))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
+			.andExpect(jsonPath("$.error.message").value(ErrorCode.UNAUTHORIZED.getDefaultMessage()))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(authService);
+	}
+
+	@ParameterizedTest(name = "서비스 {0} 예외는 {1}로 매핑된다")
+	@MethodSource("confirmServiceErrors")
+	void confirmMapsServiceExceptionToExpectedHttpStatus(String scenario, int expectedStatus, String expectedCode)
+		throws Exception {
+		stubValidAccessToken();
+		BusinessException exception = "DUPLICATE_RESOURCE".equals(expectedCode)
+			? new EmailChangeConflictException()
+			: new BusinessException(ErrorCode.valueOf(expectedCode));
+		when(authService.confirmEmailChange(USER_ID, NEW_EMAIL, VERIFICATION_CODE)).thenThrow(exception);
+
+		mockMvc.perform(post("/api/auth/email-changes/confirm")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(confirmRequestJson(NEW_EMAIL, VERIFICATION_CODE)))
+			.andExpect(status().is(expectedStatus))
+			.andExpect(jsonPath("$.error.code").value(expectedCode))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(authService).confirmEmailChange(USER_ID, NEW_EMAIL, VERIFICATION_CODE);
+	}
+
+	private String confirmRequestJson(String newEmail, String code) throws Exception {
+		Map<String, Object> request = new LinkedHashMap<>();
+		if (newEmail != null) {
+			request.put("newEmail", newEmail);
+		}
+		if (code != null) {
+			request.put("code", code);
+		}
+		return objectMapper.writeValueAsString(request);
+	}
+
+	private static Stream<Arguments> invalidConfirmRequests() {
+		return Stream.of(
+			Arguments.of("newEmail 누락", null, "123456"),
+			Arguments.of("newEmail 형식 오류", "not-an-email", "123456"),
+			Arguments.of("code 누락", "new@finplay.com", null),
+			Arguments.of("code 형식 오류(문자 포함)", "new@finplay.com", "12345a"),
+			Arguments.of("code 자릿수 오류", "new@finplay.com", "12345"));
+	}
+
+	private static Stream<Arguments> confirmServiceErrors() {
+		return Stream.of(
+			Arguments.of("EMAIL_VERIFICATION_FAILED", 400, "EMAIL_VERIFICATION_FAILED"),
+			Arguments.of("TOO_MANY_REQUESTS", 429, "TOO_MANY_REQUESTS"),
+			Arguments.of("DUPLICATE_RESOURCE", 409, "DUPLICATE_RESOURCE"));
 	}
 
 	private void stubValidAccessToken() {

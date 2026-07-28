@@ -21,6 +21,17 @@
 - 착수 시점에 작업 디렉터리에 이미 `validateAndConsumeCode`와 대응 테스트 7건(요청 없음·타인 요청·이미 소비·만료·5회초과·코드불일치·성공)이 uncommitted 상태로 존재해, D1 검증 순서·`hmac` 재사용·`@Transactional` 미선언과 정확히 일치함을 코드 대조로 확인한 뒤 추가 구현 없이 컴파일·테스트로 재검증만 했다.
 - `user.changeEmail`·`refreshTokenRepository.revokeAllActiveByUserId`·409 변환은 호출하지 않아(Task 3 범위) 계획과 일치한다. `AuthService`·`EmailChangeConflictException`·`EmailChangeConfirmRequest`·`EmailChangeController`·`requestEmailChange`는 손대지 않았다.
 
+### Task 3: `AuthService.confirmEmailChange` 트랜잭션·롤백과 `EmailChangeController` 연결
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| implementer | implementer | `JAVA_HOME="C:\Program Files\Java\jdk-17" ./gradlew.bat compileJava --no-daemon --max-workers=1` — `BUILD SUCCESSFUL` | issue-56-plan.md D2(102-137행, `noRollbackFor`/`rollbackFor` depth 매칭)·D5(172-177행 `EmailChangeConfirmRequest`), conventions.md 서비스 트랜잭션 경계·엔티티 규칙 |
+
+- `EmailChangeConflictException`(`com.finplay.api.auth.exception`, `BusinessException` 상속, `ErrorCode.DUPLICATE_RESOURCE`)을 코드베이스 최초의 `BusinessException` 서브타입으로 추가했다.
+- `AuthService`에 `EmailChangeService` 의존성을 추가하고 `confirmEmailChange`를 D2 그대로 `@Transactional(noRollbackFor = BusinessException.class, rollbackFor = EmailChangeConflictException.class)`로 구현했다 — `validateAndConsumeCode` → `user.changeEmail` → `saveAndFlush`(`DataIntegrityViolationException` → `EmailChangeConflictException`) → `revokeAllActiveByUserId` 순서, `signupMethod`는 `getMe`/`changeNickname`과 동일하게 계산.
+- `EmailChangeConfirmRequest`(`EmailVerificationConfirmRequest`와 동일한 검증 애노테이션)와 `EmailChangeController.confirmEmailChange`(`POST /api/auth/email-changes/confirm`, `AuthService` 신규 주입, 200 `MemberResponse`)를 추가하고 `docs/api-routes.md`를 갱신했다.
+- 테스트 작성은 이번 항목 범위 밖(tester 담당)이라 수행하지 않았고, `compileJava`로만 컴파일을 확인했다.
+
 ## Issue #55
 
 ### Task 1: `email_change_verifications` 스키마와 Repository, `ReauthTokenRepository` 소비 메서드

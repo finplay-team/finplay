@@ -9,6 +9,7 @@
 | Method | URL | 도메인 | 요약 | Spec |
 |---|---|---|---|---|
 | POST | /api/auth/email-changes | auth | 인증 사용자의 새 이메일 변경 인증번호 발송 (202, 본문 없음). 재인증 증명·중복 이메일·발송 제한 검사 | 002 AUTH-005, Issue #55 |
+| POST | /api/auth/email-changes/confirm | auth | 새 이메일 인증번호 확인 후 users.email 원자적 변경, 성공 시 기존 Refresh Token 전체 폐기 | 002 AUTH-005, Issue #56 |
 | POST | /api/auth/email-verifications | auth | 인증번호 발송 (202, 본문 없음). 발송 제한·중복 이메일 검사 | 002 AUTH-004 |
 | POST | /api/auth/login | auth | 이메일·비밀번호 검증 후 Access·Refresh 토큰 발급 | 002 AUTH-002 |
 | POST | /api/auth/logout | auth | 본인의 Refresh Token을 폐기하고 로그아웃 (204, 본문 없음) | 002 AUTH-002 |
@@ -197,6 +198,7 @@ Spring Security는 세션을 만들지 않는 Bearer 인증을 사용한다. 현
 | 보호 | GET | `/api/auth/me` |
 | 보호 | PATCH | `/api/auth/me/nickname` |
 | 보호 | POST | `/api/auth/email-changes` |
+| 보호 | POST | `/api/auth/email-changes/confirm` |
 | 보호 | 모든 Method | 위 공개 목록을 제외한 모든 경로 (`anyRequest().authenticated()`) |
 
 - 보호 경로는 `Authorization: Bearer <accessToken>`을 요구한다. 헤더가 없거나 Access Token이 만료·변조됐거나 Refresh Token이면 401 `UNAUTHORIZED`다.

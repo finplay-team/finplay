@@ -245,11 +245,11 @@ public record EmailChangeConfirmRequest(
 
 ## Task 3: `AuthService.confirmEmailChange` 트랜잭션·롤백과 `EmailChangeController` 연결
 
-- [ ] `EmailChangeConflictException`(`com.finplay.api.auth.exception`, `BusinessException` 상속, `ErrorCode.DUPLICATE_RESOURCE`)을 추가한다(D2).
-- [ ] `AuthService`에 `EmailChangeService` 의존성을 추가하고, `confirmEmailChange(userId, newEmail, code)`를 `@Transactional(noRollbackFor = BusinessException.class, rollbackFor = EmailChangeConflictException.class)`로 구현한다 — `emailChangeService.validateAndConsumeCode` → `user.changeEmail` → `userRepository.saveAndFlush` → `refreshTokenRepository.revokeAllActiveByUserId` 순서로 직접 수행한다.
-- [ ] `userRepository.saveAndFlush` 실패(`DataIntegrityViolationException`) 시 `EmailChangeConflictException`으로 변환되어 전체 롤백되고(인증번호 미소비·Refresh Token 미폐기), `validateAndConsumeCode`가 던지는 일반 `BusinessException`은 시도 횟수 증가분이 커밋됨을 Mockito로 검증한다(depth 매칭 동작 확인).
-- [ ] `EmailChangeConfirmRequest`(`newEmail`·`code` 필수 검증)와 `EmailChangeController.confirmEmailChange`(`POST /api/auth/email-changes/confirm`, `authService.confirmEmailChange` 호출, 200 `MemberResponse`)를 구현한다.
-- [ ] `@WebMvcTest`로 200 성공 필드 검증, 검증 실패 400, 인증 헤더 없음 401, 서비스 예외의 400/429/409 HTTP 상태 매핑을 검증한다.
+- [x] `EmailChangeConflictException`(`com.finplay.api.auth.exception`, `BusinessException` 상속, `ErrorCode.DUPLICATE_RESOURCE`)을 추가한다(D2).
+- [x] `AuthService`에 `EmailChangeService` 의존성을 추가하고, `confirmEmailChange(userId, newEmail, code)`를 `@Transactional(noRollbackFor = BusinessException.class, rollbackFor = EmailChangeConflictException.class)`로 구현한다 — `emailChangeService.validateAndConsumeCode` → `user.changeEmail` → `userRepository.saveAndFlush` → `refreshTokenRepository.revokeAllActiveByUserId` 순서로 직접 수행한다.
+- [x] `userRepository.saveAndFlush` 실패(`DataIntegrityViolationException`) 시 `EmailChangeConflictException`으로 변환되어 전체 롤백되고(인증번호 미소비·Refresh Token 미폐기), `validateAndConsumeCode`가 던지는 일반 `BusinessException`은 시도 횟수 증가분이 커밋됨을 Mockito로 검증한다(depth 매칭 동작 확인).
+- [x] `EmailChangeConfirmRequest`(`newEmail`·`code` 필수 검증)와 `EmailChangeController.confirmEmailChange`(`POST /api/auth/email-changes/confirm`, `authService.confirmEmailChange` 호출, 200 `MemberResponse`)를 구현한다.
+- [x] `@WebMvcTest`로 200 성공 필드 검증, 검증 실패 400, 인증 헤더 없음 401, 서비스 예외의 400/429/409 HTTP 상태 매핑을 검증한다.
 
 ## Task 4: 통합 테스트·동시성·전체 회귀·문서 동기화
 
