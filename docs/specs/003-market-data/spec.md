@@ -52,7 +52,7 @@
 - [ ] 장애 중 마지막 가격으로 체결하거나 임의 가격으로 몰래 전환하지 않는다.
 
 ### MKT-005 데이터 수집과 보관
-- [ ] KIS Open API로 과거 데이터를 조회해 검증·정규화 후 `stock_candles`에 저장하는 수집 컴포넌트(`KisHistoricalCandleCollector`)가 있다 (이슈 #17).
+- [ ] KIS Open API로 과거 데이터를 조회해 검증·정규화 후 `stock_candles`에 저장하는 수집 컴포넌트(`KisHistoricalCandleCollector`)가 있다.
 - [ ] 재생 대상 거래일을 관리하는 재생세션(서비스 날짜·원본 거래일·준비상태·`resolved_at`·실패사유)이 있다. 준비상태는 `PREPARING`·`READY`·`FAILED` 세 가지만 존재한다.
 - [ ] 장 시작 전 검증 완료된 최신 거래일을 선택해 재생세션을 `READY`로 전환하고, 당일 바꾸지 않는다.
 - [ ] 시장의 개장·마감(OPEN·CLOSED)은 재생세션에 저장하지 않는다 — 준비상태가 `READY`인 세션과 Clock을 조합해 조회 시점에 계산한다.
@@ -61,9 +61,9 @@
 - [ ] 특정 종목의 행에만 위 명백한 구조 오류가 있으면 해당 종목의 행은 거래일 단위로 원자적으로 저장하지 않고, 나머지 정상 종목은 저장한다. 이 경우 수집 이력에 `PARTIAL_SUCCESS`와 문제 종목·원인을 기록한다. 해당 종목은 그 거래일의 유효한 `StockCandle`이 없으므로 가격 조회·주문에서 `PRICE_UNAVAILABLE`로 자연히 거부된다 — 이를 위한 날짜별 종목 전용 상태 테이블이나 컬럼은 만들지 않는다.
 - [ ] 분봉 수가 적다는 이유만으로 손상으로 판단하지 않는다 (실제 거래정지·거래 없음·KIS 상품의 빈 분 생략 가능성). 정상 분봉 개수 판단 기준은 확정하지 않는다 (Decision Gate).
 - [ ] 수집 시도 이력(성공·부분성공·실패, 실패사유, 수집시각, 중복식별값)을 별도로 기록한다 — 저장에 실패해 `stock_candles`에 행이 없는 경우도 이력에 남는다.
-- [ ] `UNIQUE(instrument_id, trading_date, candle_time)`으로 중복 저장을 막고, 수집 작업 재실행이 멱등하다 (이슈 #17에서 확보하는 기본 멱등성).
-- [ ] **(이슈 #83, MVP 데모 범위 제외)** 한 번 받아들인(SUCCESS·PARTIAL_SUCCESS) 거래일 데이터는 불변으로 취급한다. 같은 거래일에 동일한 수집 결과를 재수집하면 기존 `StockCandle`·재생세션을 바꾸지 않고 `market_data_imports`에 `SKIPPED_DUPLICATE` 이력만 남긴다. 같은 거래일에 상충하는 수집 결과가 들어오면 기존 데이터·세션을 바꾸지 않고 수집을 거부하며 `market_data_imports`에 `FAILED`로 기록한다. 그 거래일에 `FAILED` 이력만 있다면(받아들인 데이터 없음) 재시도를 허용한다.
-- [ ] **(이슈 #83, MVP 데모 범위 제외)** 최근 20영업일만 보관하고, 재생 중인 거래일은 삭제 대상에서 제외하는 정리 작업(`StockCandleCleanupJob`)이 있다.
+- [ ] `UNIQUE(instrument_id, trading_date, candle_time)`으로 중복 저장을 막고, 수집 작업 재실행이 멱등하다.
+- [ ] **(MVP 데모 범위 제외)** 한 번 받아들인(SUCCESS·PARTIAL_SUCCESS) 거래일 데이터는 불변으로 취급한다. 같은 거래일에 동일한 수집 결과를 재수집하면 기존 `StockCandle`·재생세션을 바꾸지 않고 `market_data_imports`에 `SKIPPED_DUPLICATE` 이력만 남긴다. 같은 거래일에 상충하는 수집 결과가 들어오면 기존 데이터·세션을 바꾸지 않고 수집을 거부하며 `market_data_imports`에 `FAILED`로 기록한다. 그 거래일에 `FAILED` 이력만 있다면(받아들인 데이터 없음) 재시도를 허용한다.
+- [ ] **(MVP 데모 범위 제외)** 최근 20영업일만 보관하고, 재생 중인 거래일은 삭제 대상에서 제외하는 정리 작업(`StockCandleCleanupJob`)이 있다.
 - [ ] 데이터 출처·실제 거래일·수집시각을 저장한다.
 
 ### MKT-006 공개 서비스 데이터 정책
@@ -71,16 +71,16 @@
 - [ ] KIS 원본 데이터 파일을 공개 저장소에 커밋하지 않는다.
 
 ### MKT-007 주식 시세 공급자 전환 구조
-- [ ] 주식 시세 공급자를 공통 계약 `StockPriceProvider`로 분리하고, `KisHistoricalReplayPriceProvider`(공개 기본, 이슈 #17)와 `KisRealtimePriceProvider`(개인 개발·본인 전용 검증, 이슈 #82) 두 구현을 둔다.
+- [ ] 주식 시세 공급자를 공통 계약 `StockPriceProvider`로 분리하고, `KisHistoricalReplayPriceProvider`(공개 기본)와 `KisRealtimePriceProvider`(개인 개발·본인 전용 검증) 두 구현을 둔다.
 - [ ] 두 Provider는 동일한 내부 가격 모델을 반환하며, `PriceQueryService`·가격·캔들 API·SSE·모의 주문 체결·평가손익은 어느 Provider가 동작 중인지 몰라야 한다.
 - [ ] 화면에 표시되는 가격과 모의 주문 체결가격은 항상 같은 Provider에서 나온다.
-- [ ] **(이슈 #82)** `KisRealtimePriceProvider`는 KIS WebSocket 체결 틱을 수신하고, 차트용 1분 OHLCV로 **서버에서 집계**해 `KisHistoricalReplayPriceProvider`와 같은 분봉 모델로 제공한다.
-- [ ] **(이슈 #82)** KIS WebSocket 연결이 끊기면 해당 종목의 가격이 유효하지 않은 상태가 되고, 재연결 후 새 체결을 받으면 복귀한다 (MKT-004의 코인 규칙과 같은 원칙 — 마지막 가격으로 몰래 체결하지 않는다).
+- [ ] `KisRealtimePriceProvider`는 KIS WebSocket 체결 틱을 수신하고, 차트용 1분 OHLCV로 **서버에서 집계**해 `KisHistoricalReplayPriceProvider`와 같은 분봉 모델로 제공한다.
+- [ ] KIS WebSocket 연결이 끊기면 해당 종목의 가격이 유효하지 않은 상태가 되고, 재연결 후 새 체결을 받으면 복귀한다 (MKT-004의 코인 규칙과 같은 원칙 — 마지막 가격으로 몰래 체결하지 않는다).
 - [ ] `STOCK_FEED_PROVIDER`(`KIS_REALTIME`·`KIS_HISTORICAL`), `SERVICE_EXPOSURE`(`PRIVATE`·`PUBLIC`), `KIS_PUBLIC_DISPLAY_APPROVED`(기본 `false`) 설정으로 실행 환경을 결정한다.
 - [ ] 허용 조합은 넷뿐이다 — PRIVATE+KIS_REALTIME(개발자 본인만 접근), PRIVATE+KIS_HISTORICAL, PUBLIC+KIS_HISTORICAL(공개 기본값 · 팀원·튜터·심사위원 시연 포함), 그리고 `KIS_PUBLIC_DISPLAY_APPROVED=true`이며 한국투자 서면 허가·계약 근거가 있을 때만 허용되는 PUBLIC+KIS_REALTIME.
 - [ ] PUBLIC + KIS_REALTIME + `KIS_PUBLIC_DISPLAY_APPROVED=false` 조합은 **애플리케이션 시작 단계에서 실패**한다 (fail-fast — 경고 로그만 남기고 기동하지 않는다).
 - [ ] KIS 실시간 키가 없어도 `KIS_HISTORICAL` 환경에서 애플리케이션 기동과 `./gradlew build`가 성공한다.
-- [ ] **(이슈 #82)** 자동 테스트는 `FakeKisRealtimePriceProvider`를 사용하고, 실제 KIS 연결은 외부 스모크로 구분해 보고한다.
+- [ ] 자동 테스트는 `FakeKisRealtimePriceProvider`를 사용하고, 실제 KIS 연결은 외부 스모크로 구분해 보고한다.
 
 ## 비즈니스 규칙
 
@@ -114,14 +114,14 @@
 - `SERVICE_EXPOSURE=PRIVATE`는 로그인 여부가 아니라 **접근 주체**로 판정한다 — KIS 개인 계정 소유자인 개발자 본인만 접근 가능한 로컬 또는 접근 통제 환경이어야 `PRIVATE`다. `PRIVATE`+`KIS_REALTIME` 환경을 공개 URL이나 여러 사용자가 접근하는 서버로 운영하지 않는다.
 - 공개 배포(`SERVICE_EXPOSURE=PUBLIC`)의 기본 시세 공급자는 `KIS_HISTORICAL`이다. 공개 환경의 `KIS_REALTIME` 전환은 한국투자증권 **서면 허용 또는 계약 완료가 정본**이며, `KIS_PUBLIC_DISPLAY_APPROVED=true`로 바꾸는 것만으로 허가가 생기지 않는다 (C-007).
 - KIS 과거 데이터 수집·재생 구현은 실시간 도입 여부와 무관하게 삭제하지 않는다 — 실시간 표출이 허용되지 않을 때의 대체 수단이다.
-- KIS 실시간 체결 틱을 차트에 쓰려면 1분 OHLCV 집계가 필요하며, 이 책임은 서버(`KisRealtimePriceProvider` 계층, 이슈 #82)에 있다. 클라이언트가 틱을 모아 봉을 만들지 않는다.
+- KIS 실시간 체결 틱을 차트에 쓰려면 1분 OHLCV 집계가 필요하며, 이 책임은 서버(`KisRealtimePriceProvider` 계층)에 있다. 클라이언트가 틱을 모아 봉을 만들지 않는다.
 
 ## 범위 제외
 
 - 주문 검증·체결 로직 (004·005 — 여기서는 "유효한 최신 가격" 조회 계약까지만).
 - 실제 빗썸 연결 검증, 실제 KIS Open API 과거 데이터 수집 검증, 실제 KIS WebSocket 연결 검증 (모두 별도 외부 스모크 — 자동 테스트는 Fake Feed·샘플 데이터·`FakeKisRealtimePriceProvider`).
-- KIS 실시간 체결 틱 집계(`KisRealtimePriceProvider`·`KisTickAggregator`) — 이슈 #82에서 별도 진행.
-- 수집 파이프라인 장기운영 방어 로직(동일 거래일 재수집 정책·`StockCandleCleanupJob`) — 이슈 #83에서 별도 진행. `UNIQUE(instrument_id, trading_date, candle_time)` 제약의 기본 멱등성만 이슈 #17 범위다.
+- KIS 실시간 체결 틱 집계(`KisRealtimePriceProvider`·`KisTickAggregator`) — 별도 진행.
+- 수집 파이프라인 장기운영 방어 로직(동일 거래일 재수집 정책·`StockCandleCleanupJob`) — 별도 진행. `UNIQUE(instrument_id, trading_date, candle_time)` 제약의 기본 멱등성만 이번 범위다.
 - 공개 환경의 KIS 실시간 전환 실행 (한국투자 서면 답변 대기 — Decision Gate. 이번 범위는 전환 가능한 구조와 fail-fast 방어까지다).
 - KIS 실시간 시세의 과거 분봉 영구 보관 (집계 결과의 보관 기간·정본화 여부는 공개 전환이 결정된 뒤 판단).
 - KIS 주문 API 연동 (모의투자든 실거래든 — 주문은 전부 내부 가상 체결이다, C-006).
@@ -140,10 +140,10 @@
 - [ ] 재생세션 상태별 nullable 규칙 테스트 통과: `PREPARING`+`resolved_at` 존재·`PREPARING`+`failure_reason` 존재·`READY`+`source_trading_date` 없음·`READY`+`resolved_at` 없음·`READY`+`failure_reason` 존재는 모두 거부되고, `FAILED`+`resolved_at` 없음·`FAILED`+`failure_reason` 없음은 거부되며, `FAILED`+`source_trading_date` NULL과 `FAILED`+`source_trading_date` 존재는 둘 다 허용되는 테스트 통과.
 - [ ] 샘플 KIS 응답 데이터로 명백한 전체 응답 오류 검증(파싱 불가·거래일 불일치·필수 필드 부재 등) 시 재생세션 FAILED·미개장 테스트 통과.
 - [ ] 특정 종목만 명백한 구조 오류가 있을 때 그 종목만 저장되지 않고 나머지 종목은 정상 저장되며, 수집 이력에 PARTIAL_SUCCESS와 문제 종목이 기록되는 테스트 통과.
-- [ ] 동일 수집 재실행 시 중복 저장되지 않는 멱등성 테스트 통과 (`UNIQUE` 제약 기반, 이슈 #17).
+- [ ] 동일 수집 재실행 시 중복 저장되지 않는 멱등성 테스트 통과 (`UNIQUE` 제약 기반).
 - [ ] 수집 시도 이력(성공·부분성공·실패)이 저장 성공 여부와 무관하게 기록되는 테스트 통과.
-- [ ] **(이슈 #83)** 재수집 정책 테스트 통과: 최초 정상 수집→SUCCESS+저장, 최초 일부 종목 오류→PARTIAL_SUCCESS, 최초 전체 응답 오류→FAILED, 동일 날짜·동일 데이터 재실행→SKIPPED_DUPLICATE(Candle 변화 없음), 동일 날짜·상충 데이터→FAILED(Candle·세션 변화 없음), FAILED 이력만 있는 거래일에 재시도 허용.
-- [ ] **(이슈 #83)** 20영업일 경과 분봉 정리(cleanup) 배치의 삭제·보존 경계 테스트 통과.
+- [ ] **(MVP 범위 아님)** 재수집 정책 테스트 통과: 최초 정상 수집→SUCCESS+저장, 최초 일부 종목 오류→PARTIAL_SUCCESS, 최초 전체 응답 오류→FAILED, 동일 날짜·동일 데이터 재실행→SKIPPED_DUPLICATE(Candle 변화 없음), 동일 날짜·상충 데이터→FAILED(Candle·세션 변화 없음), FAILED 이력만 있는 거래일에 재시도 허용.
+- [ ] **(MVP 범위 아님)** 20영업일 경과 분봉 정리(cleanup) 배치의 삭제·보존 경계 테스트 통과.
 - [ ] Fake Feed로 정상 수신·과거 틱 무시·끊김(주문 차단)·재연결(새 틱 후 재개) 테스트 통과.
 - [ ] SSE 계약 테스트 통과: price 이벤트에만 id 존재(snapshot·status는 id 없음), snapshot에 주식 16종·코인 12종 전체 포함(가격 없는 종목도 포함), 가격 없는 종목은 price·sourceTime이 null이고 status는 UNAVAILABLE, 장 마감 후 marketStatus=CLOSED이면서 마지막 유효가격은 유지, 코인 stale 시 marketStatus=OPEN 유지하며 종목 status만 UNAVAILABLE.
 - [ ] Redis에 최신 가격·수신시각·연결상태 외 데이터가 저장되지 않음을 확인.
@@ -151,7 +151,7 @@
 - [ ] `PUBLIC`+`KIS_REALTIME`+`KIS_PUBLIC_DISPLAY_APPROVED=false`에서 애플리케이션 컨텍스트 기동이 실패하는 테스트 통과.
 - [ ] KIS 실시간 키 환경변수 없이 `KIS_HISTORICAL`로 빌드·테스트·기동이 성공하는 것을 확인.
 - [ ] 두 Provider가 `PriceQueryService`의 동일 계약을 만족하는 테스트 통과 (같은 시나리오를 Provider만 바꿔 실행).
-- [ ] **(이슈 #82)** `FakeKisRealtimePriceProvider`로 연결 끊김→가격 무효, 재연결→새 체결 후 복귀 테스트 통과.
-- [ ] **(이슈 #82)** 실시간 체결 틱이 1분 OHLCV로 집계되고 그 결과가 캔들 API 모델과 일치하는 테스트 통과.
+- [ ] **(MVP 범위 아님)** `FakeKisRealtimePriceProvider`로 연결 끊김→가격 무효, 재연결→새 체결 후 복귀 테스트 통과.
+- [ ] **(MVP 범위 아님)** 실시간 체결 틱이 1분 OHLCV로 집계되고 그 결과가 캔들 API 모델과 일치하는 테스트 통과.
 - [ ] 화면(SSE·가격 API)에 노출된 가격과 모의 주문 체결가격이 같은 Provider에서 나오는지 확인하는 테스트 통과.
 - [ ] `./gradlew build` 통과. 실제 빗썸 연결·실제 KIS Open API 과거 데이터 수집·실제 KIS WebSocket 연결은 미실행 스모크로 구분 보고. 종목별 분봉 누락 임계치·그 저장 방식·production 파서·정확한 수집시각은 KIS 상품 세부사항 확인 대기 중인 미확정 항목으로 별도 표시.
