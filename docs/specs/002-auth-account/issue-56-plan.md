@@ -240,8 +240,8 @@ public record EmailChangeConfirmRequest(
 
 ## Task 2: `EmailChangeService.validateAndConsumeCode` 검증·소비
 
-- [ ] D1의 검증 순서(요청 없음/소비됨/만료 → 5회 초과 → 코드 불일치)를 `EmailChangeService.validateAndConsumeCode(userId, newEmail, code)`에 대한 실패 테스트로 먼저 고정한다. 이 메서드 자체는 `@Transactional`을 선언하지 않고, 호출자인 `AuthService.confirmEmailChange`(Task 3)의 트랜잭션 안에서 실행된다.
-- [ ] 성공 시 `verification.consume(now)` 호출까지만 구현한다 — `user.changeEmail`·`refreshTokenRepository.revokeAllActiveByUserId`·409 변환은 Task 3의 `AuthService`가 수행한다(D8, 사용자 확정).
+- [x] D1의 검증 순서(요청 없음/소비됨/만료 → 5회 초과 → 코드 불일치)를 `EmailChangeService.validateAndConsumeCode(userId, newEmail, code)`에 대한 실패 테스트로 먼저 고정한다. 이 메서드 자체는 `@Transactional`을 선언하지 않고, 호출자인 `AuthService.confirmEmailChange`(Task 3)의 트랜잭션 안에서 실행된다.
+- [x] 성공 시 `verification.consume(now)` 호출까지만 구현한다 — `user.changeEmail`·`refreshTokenRepository.revokeAllActiveByUserId`·409 변환은 Task 3의 `AuthService`가 수행한다(D8, 사용자 확정).
 
 ## Task 3: `AuthService.confirmEmailChange` 트랜잭션·롤백과 `EmailChangeController` 연결
 

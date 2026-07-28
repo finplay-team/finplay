@@ -12,6 +12,15 @@
 - `EmailChangeVerificationRepositoryTest`에 `findFirstByUserIdAndNewEmailOrderByCreatedAtDesc`가 재발송으로 쌓인 여러 행 중 최신 1건만 반환하는 케이스를, `RefreshTokenRepositoryTest`에 `revokeAllActiveByUserId`가 대상 회원의 활성 토큰만 폐기하고 타인·이미 폐기된 토큰은 불변임을 검증하는 케이스를 `@DataJpaTest`로 추가했다.
 - Task 2(`EmailChangeService.validateAndConsumeCode`)·Task 3(`AuthService.confirmEmailChange`, `EmailChangeConflictException`, Controller)는 이번 항목 범위 밖이라 손대지 않았다.
 
+### Task 2: `EmailChangeService.validateAndConsumeCode` 검증·소비
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| implementer | implementer | `JAVA_HOME="C:\Program Files\Java\jdk-17" ./gradlew.bat compileJava compileTestJava` — `BUILD SUCCESSFUL`; `./gradlew.bat test --tests "com.finplay.api.auth.service.EmailChangeServiceTest"` — `BUILD SUCCESSFUL`(16건 전부 통과) | issue-56-plan.md D1(75-100행, 검증 순서·`incrementAttemptCount`/`expire`/`consume` 호출), conventions.md 서비스 트랜잭션 경계 규칙 |
+
+- 착수 시점에 작업 디렉터리에 이미 `validateAndConsumeCode`와 대응 테스트 7건(요청 없음·타인 요청·이미 소비·만료·5회초과·코드불일치·성공)이 uncommitted 상태로 존재해, D1 검증 순서·`hmac` 재사용·`@Transactional` 미선언과 정확히 일치함을 코드 대조로 확인한 뒤 추가 구현 없이 컴파일·테스트로 재검증만 했다.
+- `user.changeEmail`·`refreshTokenRepository.revokeAllActiveByUserId`·409 변환은 호출하지 않아(Task 3 범위) 계획과 일치한다. `AuthService`·`EmailChangeConflictException`·`EmailChangeConfirmRequest`·`EmailChangeController`·`requestEmailChange`는 손대지 않았다.
+
 ## Issue #55
 
 ### Task 1: `email_change_verifications` 스키마와 Repository, `ReauthTokenRepository` 소비 메서드
