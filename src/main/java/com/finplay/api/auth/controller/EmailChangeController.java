@@ -1,4 +1,4 @@
-// 인증 사용자의 새 이메일 변경 인증번호 발송 요청을 받는 컨트롤러
+// 인증 사용자의 새 이메일 변경 인증번호 발송·확인 요청을 받는 컨트롤러
 package com.finplay.api.auth.controller;
 
 import com.finplay.api.auth.dto.request.EmailChangeConfirmRequest;

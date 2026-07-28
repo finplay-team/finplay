@@ -1,4 +1,4 @@
-// 새 이메일 재인증·중복·발송 제한 판정과 인증번호 발송을 담당하는 서비스
+// 새 이메일 재인증·중복·발송 제한 판정, 인증번호 발송과 확인 시 검증·소비를 담당하는 서비스
 package com.finplay.api.auth.service;
 
 import com.finplay.api.auth.domain.EmailChangeVerification;
