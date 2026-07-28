@@ -10,6 +10,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
@@ -36,10 +37,11 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler({
 		HttpMessageNotReadableException.class,
 		MissingServletRequestParameterException.class,
-		ConstraintViolationException.class
+		ConstraintViolationException.class,
+		MethodArgumentTypeMismatchException.class
 	})
 	public ResponseEntity<ErrorResponse> handleBadRequest(Exception ex) {
-		// 잘못된 JSON 본문·필수 파라미터 누락·파라미터 검증 실패를 모두 VALIDATION_ERROR(400)로 매핑한다.
+		// 잘못된 JSON 본문·필수 파라미터 누락·파라미터 검증 실패·쿼리 파라미터 타입 변환 실패를 모두 VALIDATION_ERROR(400)로 매핑한다.
 		// 사용자 입력 원문을 반사하지 않도록 고정 기본 메시지만 응답한다.
 		return build(ErrorCode.VALIDATION_ERROR, ErrorCode.VALIDATION_ERROR.getDefaultMessage());
 	}
