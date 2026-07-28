@@ -33,6 +33,7 @@ public class SecurityConfig {
 
 	private static final String[] PUBLIC_GET_PATHS = {
 		"/api/auth/oauth/*/callback",
+		"/api/instruments",
 		"/actuator/health",
 		"/swagger-ui.html",
 		"/swagger-ui/**",
