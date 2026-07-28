@@ -59,4 +59,9 @@ public class User {
 	public static User create(String email, String passwordHash, String nickname, LocalDateTime now) {
 		return new User(email, passwordHash, nickname, now);
 	}
+
+	public void changeNickname(String nickname, LocalDateTime now) {
+		this.nickname = nickname;
+		this.updatedAt = now;
+	}
 }

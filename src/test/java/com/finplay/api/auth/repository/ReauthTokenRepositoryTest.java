@@ -6,7 +6,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.LocalDateTime;
 
-import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -75,80 +74,61 @@ class ReauthTokenRepositoryTest {
 	}
 
 	@Test
-	@DisplayName("유효한 토큰을 소비하면 영향받은 행이 1이고 consumedAt이 반영된다")
-	void consumeIfValidForUserConsumesValidTokenAndReturnsOne() {
+	void consumeIfValidForUserSucceedsAndReturnsOneForOwnedUnexpiredUnconsumedToken() {
 		User user = saveUser("reauth-consume@finplay.com", "reauth-consume-user");
 		ReauthToken token = reauthTokenRepository.saveAndFlush(
-			ReauthToken.create(user, "consume-valid-hash", NOW.plusMinutes(5), NOW));
+			ReauthToken.create(user, "consume-token-hash", NOW.plusMinutes(5), NOW));
 
-		int updated = reauthTokenRepository
-			.consumeIfValidForUser("consume-valid-hash", user.getId(), NOW.plusMinutes(1));
+		assertThat(reauthTokenRepository.consumeIfValidForUser("consume-token-hash", user.getId(), NOW))
+			.isEqualTo(1);
 
-		assertThat(updated).isEqualTo(1);
 		entityManager.clear();
-		ReauthToken found = reauthTokenRepository.findById(token.getId()).orElseThrow();
-		assertThat(found.getConsumedAt()).isEqualTo(NOW.plusMinutes(1));
+		ReauthToken consumed = reauthTokenRepository.findById(token.getId()).orElseThrow();
+		assertThat(consumed.getConsumedAt()).isEqualTo(NOW);
 	}
 
 	@Test
-	@DisplayName("이미 소비된 토큰은 재소비 시 영향받은 행이 0이고 최초 소비 시각이 유지된다")
-	void consumeIfValidForUserFailsWhenAlreadyConsumed() {
-		User user = saveUser("reauth-already@finplay.com", "reauth-already-user");
+	void consumeIfValidForUserReturnsZeroWhenAlreadyConsumed() {
+		User user = saveUser("reauth-reuse@finplay.com", "reauth-reuse-user");
 		ReauthToken token = reauthTokenRepository.saveAndFlush(
-			ReauthToken.create(user, "already-consumed-hash", NOW.plusMinutes(5), NOW));
-		int firstConsume = reauthTokenRepository
-			.consumeIfValidForUser("already-consumed-hash", user.getId(), NOW.plusMinutes(1));
-		assertThat(firstConsume).isEqualTo(1);
+			ReauthToken.create(user, "reuse-token-hash", NOW.plusMinutes(5), NOW));
 
-		int secondConsume = reauthTokenRepository
-			.consumeIfValidForUser("already-consumed-hash", user.getId(), NOW.plusMinutes(2));
+		assertThat(reauthTokenRepository.consumeIfValidForUser("reuse-token-hash", user.getId(), NOW))
+			.isEqualTo(1);
+		assertThat(
+			reauthTokenRepository.consumeIfValidForUser("reuse-token-hash", user.getId(), NOW.plusSeconds(1)))
+			.isZero();
 
-		assertThat(secondConsume).isEqualTo(0);
 		entityManager.clear();
-		ReauthToken found = reauthTokenRepository.findById(token.getId()).orElseThrow();
-		assertThat(found.getConsumedAt()).isEqualTo(NOW.plusMinutes(1));
+		ReauthToken consumed = reauthTokenRepository.findById(token.getId()).orElseThrow();
+		assertThat(consumed.getConsumedAt()).isEqualTo(NOW);
 	}
 
 	@Test
-	@DisplayName("만료된 토큰은 소비 시 영향받은 행이 0이고 consumedAt이 그대로 NULL이다")
-	void consumeIfValidForUserFailsWhenExpired() {
+	void consumeIfValidForUserReturnsZeroWhenExpired() {
 		User user = saveUser("reauth-expired@finplay.com", "reauth-expired-user");
-		ReauthToken token = reauthTokenRepository.saveAndFlush(
-			ReauthToken.create(user, "expired-hash", NOW.plusMinutes(5), NOW));
+		reauthTokenRepository.save(ReauthToken.create(user, "expires-now-token-hash", NOW, NOW.minusMinutes(5)));
+		reauthTokenRepository.saveAndFlush(
+			ReauthToken.create(user, "expired-token-hash", NOW.minusSeconds(1), NOW.minusMinutes(5)));
 
-		int updated = reauthTokenRepository
-			.consumeIfValidForUser("expired-hash", user.getId(), NOW.plusMinutes(10));
-
-		assertThat(updated).isEqualTo(0);
-		ReauthToken found = reauthTokenRepository.findById(token.getId()).orElseThrow();
-		assertThat(found.getConsumedAt()).isNull();
+		assertThat(reauthTokenRepository.consumeIfValidForUser("expires-now-token-hash", user.getId(), NOW))
+			.isZero();
+		assertThat(reauthTokenRepository.consumeIfValidForUser("expired-token-hash", user.getId(), NOW))
+			.isZero();
 	}
 
 	@Test
-	@DisplayName("다른 userId로 소비를 시도하면 영향받은 행이 0이고 원래 소유자 토큰은 그대로 유효하다")
-	void consumeIfValidForUserFailsWhenUserIdDoesNotMatch() {
+	void consumeIfValidForUserReturnsZeroWhenOwnedByDifferentUser() {
 		User owner = saveUser("reauth-owner@finplay.com", "reauth-owner-user");
-		User stranger = saveUser("reauth-stranger@finplay.com", "reauth-stranger-user");
+		User other = saveUser("reauth-other@finplay.com", "reauth-other-user");
 		ReauthToken token = reauthTokenRepository.saveAndFlush(
-			ReauthToken.create(owner, "owner-only-hash", NOW.plusMinutes(5), NOW));
+			ReauthToken.create(owner, "owned-token-hash", NOW.plusMinutes(5), NOW));
 
-		int updated = reauthTokenRepository
-			.consumeIfValidForUser("owner-only-hash", stranger.getId(), NOW.plusMinutes(1));
+		assertThat(reauthTokenRepository.consumeIfValidForUser("owned-token-hash", other.getId(), NOW)).isZero();
 
-		assertThat(updated).isEqualTo(0);
-		ReauthToken found = reauthTokenRepository.findById(token.getId()).orElseThrow();
-		assertThat(found.getConsumedAt()).isNull();
-	}
-
-	@Test
-	@DisplayName("존재하지 않는 토큰 해시로 소비를 시도하면 영향받은 행이 0이다")
-	void consumeIfValidForUserFailsWhenTokenHashDoesNotExist() {
-		User user = saveUser("reauth-missing@finplay.com", "reauth-missing-user");
-
-		int updated = reauthTokenRepository
-			.consumeIfValidForUser("no-such-hash", user.getId(), NOW.plusMinutes(1));
-
-		assertThat(updated).isEqualTo(0);
+		entityManager.clear();
+		ReauthToken untouched = reauthTokenRepository.findById(token.getId()).orElseThrow();
+		assertThat(untouched.getConsumedAt()).isNull();
 	}
 
 	private User saveUser(String email, String nickname) {

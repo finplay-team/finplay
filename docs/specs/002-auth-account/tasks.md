@@ -7,7 +7,7 @@
 - [ ] 인증번호 발송 API — 발송 제한(60초·1시간 5회·하루 10회)·기존 회원 409·이전 코드 무효화·HMAC-SHA-256 저장 (+ 단위·@WebMvcTest)
 - [x] 인증번호 확인 API — 시도 5회 제한과 초과 시 429·만료 판정·signupVerificationToken 발급(SHA-256 저장) (+ 단위·@WebMvcTest)
 - [x] 회원가입 API — 가입 토큰 원자 소비·토큰 이메일 일치 검증·중복 409·계좌 2개 원자 생성 (+ 단위·@WebMvcTest)
-- [x] JWT·Security — JwtTokenProvider + Bearer 인증 필터 + 401/403 공통 포맷 + 로그인·GET /api/auth/me (+ 단위·@WebMvcTest) — **Issue #5에서 로그인·Bearer 인증 완료, Issue #8에서 `GET /api/auth/me`(id·email·nickname·signupMethod, 회원 간 격리, 민감 필드 미노출) 완료**
+- [x] JWT·Security — JwtTokenProvider + Bearer 인증 필터 + 401/403 공통 포맷 + 로그인·GET /api/auth/me (+ 단위·@WebMvcTest) — **Issue #5에서 로그인·Bearer 인증 완료, Issue #8에서 `GET /api/auth/me`(id·email·nickname·signupMethod, 회원 간 격리, 민감 필드 미노출) 완료, Issue #54에서 `PATCH /api/auth/me/nickname`(재인증 기반 닉네임 변경) 완료**
 - [x] Refresh 회전·로그아웃 — 해시 저장·폐기·재사용 거부
   - [x] **Issue #6 완료:** `POST /api/auth/refresh`, 해시 조회·원자 회전·이전 토큰 재사용 401·동시 요청 단일 성공·롤백 검증
   - [x] **Issue #7 완료:** logout 시 제출한 Refresh Token 폐기
@@ -35,6 +35,18 @@ Issue #10 완료 시 자동 테스트와 실제 공급자 스모크를 별도 �
 - [x] 전체 회귀(Issue #9/#10 포함)·`./gradlew build`·`docs/api-routes.md`·`docs/specs/002-auth-account/tasks.md` 동기화
 
 Issue #53은 `reauthToken` 발급까지만 구현한다. 소비(닉네임·이메일 변경 API)는 별도 후속 이슈다.
+
+## Issue #54 재인증 기반 닉네임 변경 작업 항목 (5개)
+
+상세 설계는 `issue-54-plan.md` 참고.
+
+- [x] `ReauthTokenRepository.consumeIfValidForUser`(해시·소유자·미소비·미만료를 한 번의 조건부 UPDATE로 확인)와 `UserRepository.existsByNicknameAndIdNot` 본인 제외 중복 확인 쿼리 추가 (+ `@DataJpaTest`)
+- [x] `User.changeNickname`(setter 금지, 닉네임·`updatedAt`만 갱신)과 `AuthService.changeNickname`(DB의 `social_accounts`로 가입 방식 판별, 이메일은 비밀번호 대조·OAuth는 토큰 원자적 소비, 재인증 검증과 닉네임 변경을 한 트랜잭션으로 처리) 구현 (+ 단위 테스트)
+- [x] `NicknameUpdateRequest`와 보호된 `PATCH /api/auth/me/nickname`(200 `MemberResponse`, 400/401/403/409 계약, `SecurityConfig` 미변경) 구현 (+ `@WebMvcTest`)
+- [x] 실제 MySQL 통합 검증 — 이메일/OAuth 각각 성공, 같은 `reauthToken` 재사용 403, 잘못된 비밀번호·중복 닉네임 거부 시 무변경, 계좌 2개·시드머니·잔액 불변
+- [x] 전체 회귀·`./gradlew build`·`docs/api-routes.md`·`docs/specs/002-auth-account/tasks.md` 동기화
+
+Issue #54는 `reauthToken`을 처음으로 소비하는 사례이며 새 Flyway 마이그레이션·새 `ErrorCode`를 추가하지 않는다. 주문·체결(Order/Execution) 불변 검증은 해당 도메인이 아직 없어 계좌까지로 범위를 좁혔다. 이메일 변경·비밀번호 변경은 AUTH-005의 별도 후속 이슈다.
 
 ## Issue #55 새 이메일 변경 인증번호 발송 작업 항목 (4개)
 
