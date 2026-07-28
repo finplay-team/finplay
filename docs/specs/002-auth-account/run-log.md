@@ -354,8 +354,10 @@
 | 05:10 | reviewer(리뷰) | `git diff origin/dev...HEAD` (Issue #54 프로덕션 5·테스트 5·문서 4 파일), `SecurityConfig`·`ErrorCode`·`db/migration`·`Sha256BcryptPasswordEncoder`·`User`·`AuthController` 원본 확인 | issue-54-plan.md D1~D7·완료 체크리스트, conventions.md 레이어·엔티티·DTO·테스트 규칙, ADR-0002, ADR-0003, ADR-0004(마이그레이션 미추가 확인), docs/api-routes.md |
 | 재검토 | reviewer(리뷰) | issue-54-plan.md "미확정·PRD 불일치" 1~5번 재검토 — `AuthService.changeNickname`·`consumeReauthToken`·`ReauthTokenRepository.consumeIfValidForUser`·`OAuthAuthorizationService.authorizeForReauth`·`OAuthCallbackService`·Issue #53 `reauthenticate` 원본 재확인 | docs/prd.md AUTH-005, GitHub Issue #54 본문, issue-54-plan.md D1·D2·D4·D7, Issue #53 issue-53-plan.md(발급 시 SocialAccount 검증 후 state에 바인딩) |
 | 10:20 | reviewer(리뷰) | `git diff origin/dev...HEAD`(커밋 4b7de6a·58ddc1f·f2d5521·58eb78d·62d858c) | issue-55-plan.md D1~D5, conventions.md, ADR-0002·0003·0004, docs/api-routes.md
+| reviewer | reviewer(리뷰) | `git diff dev...HEAD`(커밋 7380c16·18275c4·dad6eeb·ecdf3aa·7f58cb1) | issue-56-plan.md D1~D5, conventions.md, ADR-0002·0003·0004, docs/api-routes.md
 
 ## 모니터링 (사람용 요약)
+- Issue #56 리뷰 판정: 차단 0건. `noRollbackFor=BusinessException`/`rollbackFor=EmailChangeConflictException` depth 매칭이 설계·실제 통합 테스트(경합 시 소비·토큰폐기 롤백, 5회초과 시 attempt_count 커밋)로 모두 확인됨. 서비스 책임 분리(EmailChangeService=검증/소비, AuthService=이메일변경/토큰폐기/트랜잭션)·순환의존 없음·api-routes.md 일치·기존 AuthServiceTest/OAuthAuthServiceTest mock 추가가 회귀를 깨지 않음을 확인, 머지 가능.
 - Issue #56 Task 1 — `EmailChangeVerification.incrementAttemptCount`·`consume`, `User.changeEmail`, `EmailChangeVerificationRepository.findFirstByUserIdAndNewEmailOrderByCreatedAtDesc`, `RefreshTokenRepository.revokeAllActiveByUserId` 추가. 순수 단위 테스트 2건 + `@DataJpaTest` 신규 케이스 2건 전부 통과, 컴파일 통과. Task 2·3(서비스 연결·Controller)은 범위 밖.
 - Issue #55 리뷰 판정: 차단 0건, 권장 1건(tasks.md Issue #55 절 미추가), 참고 1건(EMAIL_VERIFICATION_SECRET 재사용은 계획서에서 이미 검토된 선택). D1~D5·HTTP 계약·재인증→중복→발송제한 순서·발송제한(userId)/무효화((userId,newEmail)) 구분이 코드·테스트에 그대로 반영됨을 확인, 머지 가능.
 - Issue #55 Task 4(통합 테스트) — `EmailChangeIntegrationTest` 7건 신설, `mysql:8.4` Testcontainers로 전부 통과(이 환경에서 Docker 가용 확인). 전체 회귀·문서 동기화는 메인 세션이 이어서 처리.
