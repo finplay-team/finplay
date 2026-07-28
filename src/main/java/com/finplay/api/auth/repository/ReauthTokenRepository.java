@@ -10,6 +10,7 @@ import org.springframework.data.repository.query.Param;
 
 public interface ReauthTokenRepository extends JpaRepository<ReauthToken, Long> {
 
+	// 소유자·미소비·미만료를 같은 WHERE 절에서 판정하는 원자적 1회 소비 (영향받은 행 수로 성공 판정, TOCTOU 방지).
 	@Modifying
 	@Query("""
 		UPDATE ReauthToken reauthToken

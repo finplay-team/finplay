@@ -1,5 +1,41 @@
 # Run Log: 002-auth-account
 
+## Issue #55
+
+### Task 1: `email_change_verifications` 스키마와 Repository, `ReauthTokenRepository` 소비 메서드
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| 02:15 | implementer | `JAVA_HOME="C:\Program Files\Java\jdk-17"` 지정 후 `.\gradlew.bat compileJava spotlessCheck --no-daemon --max-workers=1` — `BUILD SUCCESSFUL`(`spotlessApply` 선행) | issue-55-plan.md D1·D2(신규 테이블·컬럼 구성)·D3(`consumeIfValidForUser` 원자적 소비)·D5(제한은 `userId`, 무효화는 `(userId, newEmail)`), ADR-0004(신규 V6 마이그레이션), conventions.md 엔티티·리포지터리 규칙 |
+| 재검증 | implementer(중복 투입) | 병렬로 재투입된 세션이 기존 산출물(V6·엔티티·리포지터리·`consumeIfValidForUser`)이 계획과 일치함을 확인하고 `.\gradlew.bat compileJava --no-daemon --max-workers=1 --rerun-tasks` 재실행 — `BUILD SUCCESSFUL`, 추가 변경 없음 | issue-55-plan.md Task 1 체크박스 3개 |
+
+- 02:15 — V6 마이그레이션·`EmailChangeVerification`·`EmailChangeVerificationRepository`를 신설하고 `ReauthTokenRepository.consumeIfValidForUser`(`@Param` 필수 — `-parameters` 옵션 없음)를 추가해 컴파일을 통과했다. `docs/agent-mistakes.md`의 `JAVA_HOME` 경로는 이 장비에 없어 실제 설치 경로(`C:\Program Files\Java\jdk-17`)를 확인해 사용했고, 새 파일이 LF로 저장돼 `spotlessJavaCheck`가 차단해 `spotlessApply`로 해소했다.
+- 재검증 — Task 1이 같은 worktree에 이미 완료돼 있어(중복 투입) 파일을 계획서와 대조만 하고 추가 구현 없이 컴파일 재확인만 했다.
+
+### Task 2: `EmailChangeService.requestEmailChange` 재인증·중복·발송 제한 판정
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| implementer | implementer | `JAVA_HOME="C:/Program Files/Java/jdk-17" .\gradlew.bat compileJava --no-daemon --max-workers=1` — `BUILD SUCCESSFUL` | issue-55-plan.md D3(재인증 판별·소비)·D4(검증 순서·트랜잭션 시그니처)·D5(발송 제한은 `userId`, 무효화는 `(userId, newEmail)`), conventions.md 서비스·Lombok 규칙 |
+
+- `EmailChangeService`를 신설해 `AuthService.getMe`와 동일한 패턴으로 `socialAccountRepository.findByUserId` 존재 여부로 EMAIL/OAuth를 판별하고, EMAIL은 비밀번호, OAuth는 `reauthTokenRepository.consumeIfValidForUser`로 재인증한 뒤(두 경우 모두 실패 시 403 통일) 중복 이메일 409 → 발송 제한 429(`EmailChangeVerificationRepository.countByUserIdAndCreatedAtAfter`) → 이전 코드 무효화 → 코드 생성·HMAC 저장·발송 순서로 구현했다. `AuthService`는 수정하지 않았다.
+
+### Task 3: `EmailChangeController`와 HTTP 계약
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| implementer | implementer | `JAVA_HOME="C:/Program Files/Java/jdk-17" ./gradlew.bat compileJava --no-daemon --max-workers=1` — `BUILD SUCCESSFUL` | issue-55-plan.md Task 3·HTTP 계약 표(202 본문 없음, `newEmail` 필수·`currentPassword`/`reauthToken` 선택), conventions.md DTO 검증·API 규칙 |
+
+- `EmailChangeRequest`(`newEmail`만 `@NotBlank`+`@Email`+`@Size(max=255)`, `currentPassword`/`reauthToken`은 `@Size`만 적용해 서비스 계층 403 판단에 위임)와 `EmailChangeController`(`POST /api/auth/email-changes`, Bearer 인증, 202 본문 없음)를 추가했다. `SecurityConfig`는 수정하지 않았고, `docs/api-routes.md`에 라우트·전용 절·보호 경로 표를 갱신했다.
+
+### Task 4: 통합 테스트(Fake EmailSender + Testcontainers MySQL)
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| implementer | implementer | `JAVA_HOME="C:/Program Files/Java/jdk-17" ./gradlew.bat test --tests "*EmailChangeIntegrationTest" --no-daemon --max-workers=1` — 7/7 통과(`mysql:8.4` Testcontainers 실제 기동, Docker 가용) | issue-55-plan.md Task 4 첫 체크박스·완료 체크리스트, `SignupIntegrationTest`/`OAuthReauthCallbackIntegrationTest` 기존 패턴(서비스 직접 호출·`FakeEmailSender`·JdbcTemplate) |
+
+- `EmailChangeIntegrationTest`(`com.finplay.api.auth.service`)를 신설해 EMAIL/OAuth 성공(이메일 불변·해시만 저장·`reauth_tokens.consumed_at` 채움), 오답 비밀번호·이미 소비된 `reauthToken` 403(데이터 불변), 중복 이메일 409(데이터 불변), 60초 재발송 429(행 추가 없음), 이후 재발송 성공 시 이전 코드 무효화(`expires_at<=now`)를 검증했다. Clock이 실제 시스템 클럭이라 60초 창 통과는 `Clock.fixed` 대신 저장된 행의 `created_at`을 `JdbcTemplate`으로 61초 되돌리는 방식을 썼다(임의 판단, 별도 Mutable Clock 인프라를 새로 만들지 않기 위함).
+
 ## Issue #53
 
 ### Task 1: state 서명·검증 계약과 오류 코드·환경변수
@@ -285,8 +321,13 @@
 
 | 05:10 | reviewer(리뷰) | `git diff origin/dev...HEAD` (Issue #54 프로덕션 5·테스트 5·문서 4 파일), `SecurityConfig`·`ErrorCode`·`db/migration`·`Sha256BcryptPasswordEncoder`·`User`·`AuthController` 원본 확인 | issue-54-plan.md D1~D7·완료 체크리스트, conventions.md 레이어·엔티티·DTO·테스트 규칙, ADR-0002, ADR-0003, ADR-0004(마이그레이션 미추가 확인), docs/api-routes.md |
 | 재검토 | reviewer(리뷰) | issue-54-plan.md "미확정·PRD 불일치" 1~5번 재검토 — `AuthService.changeNickname`·`consumeReauthToken`·`ReauthTokenRepository.consumeIfValidForUser`·`OAuthAuthorizationService.authorizeForReauth`·`OAuthCallbackService`·Issue #53 `reauthenticate` 원본 재확인 | docs/prd.md AUTH-005, GitHub Issue #54 본문, issue-54-plan.md D1·D2·D4·D7, Issue #53 issue-53-plan.md(발급 시 SocialAccount 검증 후 state에 바인딩) |
+| 10:20 | reviewer(리뷰) | `git diff origin/dev...HEAD`(커밋 4b7de6a·58ddc1f·f2d5521·58eb78d·62d858c) | issue-55-plan.md D1~D5, conventions.md, ADR-0002·0003·0004, docs/api-routes.md
 
 ## 모니터링 (사람용 요약)
+- Issue #55 리뷰 판정: 차단 0건, 권장 1건(tasks.md Issue #55 절 미추가), 참고 1건(EMAIL_VERIFICATION_SECRET 재사용은 계획서에서 이미 검토된 선택). D1~D5·HTTP 계약·재인증→중복→발송제한 순서·발송제한(userId)/무효화((userId,newEmail)) 구분이 코드·테스트에 그대로 반영됨을 확인, 머지 가능.
+- Issue #55 Task 4(통합 테스트) — `EmailChangeIntegrationTest` 7건 신설, `mysql:8.4` Testcontainers로 전부 통과(이 환경에서 Docker 가용 확인). 전체 회귀·문서 동기화는 메인 세션이 이어서 처리.
+- Issue #55 Task 3 — `EmailChangeRequest`·`EmailChangeController`(`POST /api/auth/email-changes`, Bearer 필수, 202 본문 없음) 추가, api-routes.md 동기화, 컴파일 통과.
+- Issue #55 Task 2 — `EmailChangeService.requestEmailChange` 신설: 재인증 증명(비밀번호/`reauthToken`) → 이메일 중복 → 발송 제한 순서로 판정 후 인증번호 발송, `AuthService` 미수정, 컴파일 통과.
 - 14:30 — V2 마이그레이션(auth 5개 테이블) + User·EmailVerification 엔티티/Repository 추가, 컴파일 통과.
 - 15:10 — EmailSender 어댑터(Fake=`!prod`·Resend=`prod` RestClient) 추가, prod yml에 resend/email 설정, 컴파일 통과.
 - 15:45 — 인증번호 발송 API(`POST /api/auth/email-verifications`) 추가: Controller·EmailVerificationService(발송 제한 3종·HMAC 저장·이전 코드 무효화)·요청 DTO, api-routes 갱신, 컴파일 통과.
