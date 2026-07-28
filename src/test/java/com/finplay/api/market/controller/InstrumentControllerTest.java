@@ -37,7 +37,7 @@ class InstrumentControllerTest {
 	private JwtTokenProvider jwtTokenProvider;
 
 	@Test
-	void getInstrumentsReturnsAllTwentyEightWithoutAuthenticationWhenMarketParamOmitted() throws Exception {
+	void getInstrumentsReturnsServiceResultWithoutAuthenticationWhenMarketParamOmitted() throws Exception {
 		when(instrumentService.getInstruments(null))
 			.thenReturn(instruments("STOCK", 16));
 
