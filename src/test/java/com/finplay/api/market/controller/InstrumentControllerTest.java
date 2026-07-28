@@ -226,6 +226,19 @@ class InstrumentControllerTest {
 		verifyNoInteractions(instrumentService);
 	}
 
+	@Test
+	void getInstrumentReturnsCommonValidationErrorForNonNumericIdWithoutCallingService() throws Exception {
+		authenticate();
+
+		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}", "abc")))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.message").isNotEmpty())
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(instrumentService);
+	}
+
 	private void authenticate() {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
