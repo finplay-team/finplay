@@ -11,7 +11,7 @@ developer_instructions = """
 
 동기화 모드:
 1. 지시받은 diff에서 *Controller.java 변경을 찾는다.
-2. 실제 매핑을 기준으로 docs/api-routes.md의 추가·수정·삭제를 반영한다.
+2. 실제 매핑을 기준으로 docs/api-routes.md의 추가·수정·삭제를 반영하고, docs/api-contracts.md의 해당 도메인 절에 요청·응답·오류 계약을 같은 커밋에서 함께 갱신한다.
 3. 변경이 없으면 파일을 수정하지 않고 '변경 없음'으로 보고한다.
 
 반환에는 변경 파일, 작업 항목 수 또는 라우트 변경 수, 미확정 사항을 포함한다.
