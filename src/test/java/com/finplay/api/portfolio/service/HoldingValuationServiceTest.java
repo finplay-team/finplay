@@ -57,6 +57,61 @@ class HoldingValuationServiceTest {
 		assertThat(result.returnRate()).isEqualByComparingTo("-0.2000");
 	}
 
+	@Test
+	void evaluateHoldingReturnsNullEvaluationFieldsWithoutThrowingWhenPriceUnavailable() {
+		Instrument instrument = testInstrument();
+		Holding holding = testHolding(instrument, new BigDecimal("10"), new BigDecimal("50000"));
+		when(priceQueryService.getPriceQuote(instrument))
+			.thenReturn(new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null));
+
+		HoldingValuationDto result = service.evaluateHolding(holding);
+
+		assertThat(result.costBasis()).isEqualTo(500_000L);
+		assertThat(result.priceStatus()).isEqualTo(PriceStatus.UNAVAILABLE);
+		assertThat(result.evaluationAmount()).isNull();
+		assertThat(result.unrealizedPnl()).isNull();
+		assertThat(result.returnRate()).isNull();
+	}
+
+	@Test
+	void evaluateHoldingReturnsZeroCostBasisAndZeroReturnRateWhenQuantityIsZero() {
+		Instrument instrument = testInstrument();
+		Account account = testAccount();
+		Holding holding = Holding.create(account, instrument, NOW);
+		holding.applyBuy(new BigDecimal("10"), new BigDecimal("50000"), NOW);
+		holding.applySell(new BigDecimal("10"), NOW);
+		when(priceQueryService.getPriceQuote(instrument))
+			.thenReturn(new PriceQuoteDto(new BigDecimal("60000"), NOW, PriceStatus.AVAILABLE, null));
+
+		HoldingValuationDto result = service.evaluateHolding(holding);
+
+		assertThat(result.quantity()).isEqualByComparingTo("0");
+		assertThat(result.costBasis()).isEqualTo(0L);
+		assertThat(result.priceStatus()).isEqualTo(PriceStatus.AVAILABLE);
+		assertThat(result.evaluationAmount()).isEqualTo(0L);
+		assertThat(result.unrealizedPnl()).isEqualTo(0L);
+		assertThat(result.returnRate()).isEqualByComparingTo("0");
+	}
+
+	@Test
+	void evaluateHoldingReturnsZeroCostBasisAndReturnRateWhenAveragePriceIsZero() {
+		Instrument instrument = testInstrument();
+		Account account = testAccount();
+		Holding holding = Holding.create(account, instrument, NOW);
+		holding.applyBuy(new BigDecimal("10"), BigDecimal.ZERO, NOW);
+		when(priceQueryService.getPriceQuote(instrument))
+			.thenReturn(new PriceQuoteDto(new BigDecimal("60000"), NOW, PriceStatus.AVAILABLE, null));
+
+		HoldingValuationDto result = service.evaluateHolding(holding);
+
+		assertThat(result.averagePrice()).isEqualByComparingTo("0");
+		assertThat(result.costBasis()).isEqualTo(0L);
+		assertThat(result.priceStatus()).isEqualTo(PriceStatus.AVAILABLE);
+		assertThat(result.evaluationAmount()).isEqualTo(600_000L);
+		assertThat(result.unrealizedPnl()).isEqualTo(600_000L);
+		assertThat(result.returnRate()).isEqualByComparingTo("0");
+	}
+
 	private static Holding testHolding(Instrument instrument, BigDecimal quantity, BigDecimal price) {
 		Account account = testAccount();
 		Holding holding = Holding.create(account, instrument, NOW);
