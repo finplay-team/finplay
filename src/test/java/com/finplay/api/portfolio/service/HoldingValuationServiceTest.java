@@ -42,6 +42,7 @@ class HoldingValuationServiceTest {
 		assertThat(result.evaluationAmount()).isEqualTo(600_000L);
 		assertThat(result.unrealizedPnl()).isEqualTo(100_000L);
 		assertThat(result.returnRate()).isEqualByComparingTo("0.2000");
+		assertThat(result.currentPrice()).isEqualByComparingTo("60000");
 	}
 
 	@Test
@@ -58,6 +59,7 @@ class HoldingValuationServiceTest {
 		assertThat(result.evaluationAmount()).isEqualTo(400_000L);
 		assertThat(result.unrealizedPnl()).isEqualTo(-100_000L);
 		assertThat(result.returnRate()).isEqualByComparingTo("-0.2000");
+		assertThat(result.currentPrice()).isEqualByComparingTo("40000");
 	}
 
 	@Test
@@ -74,6 +76,7 @@ class HoldingValuationServiceTest {
 		assertThat(result.evaluationAmount()).isNull();
 		assertThat(result.unrealizedPnl()).isNull();
 		assertThat(result.returnRate()).isNull();
+		assertThat(result.currentPrice()).isNull();
 	}
 
 	@Test

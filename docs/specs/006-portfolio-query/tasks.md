@@ -89,7 +89,7 @@
 
 > 이 섹션은 `spec.md`의 PORT-001(실제 조회 API)만 다룬다. 평가 계산 자체는 이슈 #47(`HoldingValuationService`, 병합됨)을 그대로 재사용하되, "현재가" 노출을 위해 `HoldingValuationDto`에 필드 1개(`currentPrice`)를 추가한다(`plan.md` 이슈 #52 절 "DTO 확장" 참고 — 계산식·반올림·시세 무효 정책은 변경하지 않는다). 시세 무효 종목의 개별 필드 표현은 `#81`의 집계 정책과 다르게 `null` 그대로 노출하기로 결정했다(`plan.md` "시세 무효 종목의 개별 필드 표현 정책 확정" 절 근거 참고).
 
-- [ ] **`HoldingValuationDto` 확장: `currentPrice` 필드 추가 (기존 #47/#81 코드 영향 범위 포함)**
+- [x] **`HoldingValuationDto` 확장: `currentPrice` 필드 추가 (기존 #47/#81 코드 영향 범위 포함)**
   - `HoldingValuationDto`에 `currentPrice`(`BigDecimal`, nullable) 필드 추가(`priceStatus`와 `evaluationAmount` 사이 — plan.md 레코드 정의 참고).
   - `HoldingValuationService.evaluateHolding`의 두 `new HoldingValuationDto(...)` 호출(UNAVAILABLE 분기는 `null`, AVAILABLE 분기는 `quote.price()`)을 수정.
   - **`src/test/java/com/finplay/api/account/service/AccountServiceTest.java`의 `new HoldingValuationDto(...)` 4곳을 모두 컴파일되도록 인자를 추가한다** — 기존 기대값·검증 로직은 변경하지 않는다(회귀 확인 목적).

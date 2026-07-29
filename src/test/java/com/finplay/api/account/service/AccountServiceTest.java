@@ -103,11 +103,11 @@ class AccountServiceTest {
 		when(accountRepository.findByUserIdAndMarket(1L, Market.STOCK)).thenReturn(Optional.of(account));
 
 		HoldingValuationDto profitable = new HoldingValuationDto(
-			BigDecimal.TEN, BigDecimal.valueOf(1_000), 10_000L, PriceStatus.AVAILABLE, 12_000L, 2_000L,
-			BigDecimal.valueOf(0.2000));
+			BigDecimal.TEN, BigDecimal.valueOf(1_000), 10_000L, PriceStatus.AVAILABLE, BigDecimal.valueOf(1_200),
+			12_000L, 2_000L, BigDecimal.valueOf(0.2000));
 		HoldingValuationDto lossy = new HoldingValuationDto(
-			BigDecimal.ONE, BigDecimal.valueOf(500_000), 500_000L, PriceStatus.AVAILABLE, 400_000L, -100_000L,
-			BigDecimal.valueOf(-0.2000));
+			BigDecimal.ONE, BigDecimal.valueOf(500_000), 500_000L, PriceStatus.AVAILABLE, BigDecimal.valueOf(400_000),
+			400_000L, -100_000L, BigDecimal.valueOf(-0.2000));
 		when(holdingValuationService.evaluateActiveHoldingsForAccount(any()))
 			.thenReturn(List.of(profitable, lossy));
 
@@ -144,10 +144,10 @@ class AccountServiceTest {
 		when(accountRepository.findByUserIdAndMarket(1L, Market.CRYPTO)).thenReturn(Optional.of(account));
 
 		HoldingValuationDto available = new HoldingValuationDto(
-			BigDecimal.TEN, BigDecimal.valueOf(1_000), 10_000L, PriceStatus.AVAILABLE, 15_000L, 5_000L,
-			BigDecimal.valueOf(0.5000));
+			BigDecimal.TEN, BigDecimal.valueOf(1_000), 10_000L, PriceStatus.AVAILABLE, BigDecimal.valueOf(1_500),
+			15_000L, 5_000L, BigDecimal.valueOf(0.5000));
 		HoldingValuationDto unavailable = new HoldingValuationDto(
-			BigDecimal.ONE, BigDecimal.valueOf(500_000), 500_000L, PriceStatus.UNAVAILABLE, null, null, null);
+			BigDecimal.ONE, BigDecimal.valueOf(500_000), 500_000L, PriceStatus.UNAVAILABLE, null, null, null, null);
 		when(holdingValuationService.evaluateActiveHoldingsForAccount(any()))
 			.thenReturn(List.of(available, unavailable));
 

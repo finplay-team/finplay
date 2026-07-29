@@ -32,7 +32,7 @@ public class HoldingValuationService {
 		PriceQuoteDto quote = priceQueryService.getPriceQuote(holding.getInstrument());
 		if (quote.status() == PriceStatus.UNAVAILABLE) {
 			return new HoldingValuationDto(quantity, averagePrice, costBasis, PriceStatus.UNAVAILABLE, null, null,
-				null);
+				null, null);
 		}
 
 		long evaluationAmount = quantity.multiply(quote.price()).setScale(0, RoundingMode.FLOOR).longValueExact();
@@ -42,8 +42,8 @@ public class HoldingValuationService {
 			: BigDecimal.valueOf(unrealizedPnl)
 				.divide(BigDecimal.valueOf(costBasis), RETURN_RATE_SCALE, RoundingMode.HALF_UP);
 
-		return new HoldingValuationDto(quantity, averagePrice, costBasis, PriceStatus.AVAILABLE, evaluationAmount,
-			unrealizedPnl, returnRate);
+		return new HoldingValuationDto(quantity, averagePrice, costBasis, PriceStatus.AVAILABLE, quote.price(),
+			evaluationAmount, unrealizedPnl, returnRate);
 	}
 
 	@Transactional(readOnly = true)
