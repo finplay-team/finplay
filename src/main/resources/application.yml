@@ -36,3 +36,6 @@ oauth:
 kis:
   app-key: ${KIS_APP_KEY:}
   app-secret: ${KIS_APP_SECRET:}
+  # 조회 API(주식일별분봉조회)·토큰 발급 공통 기본 URL. 실전투자 접속 정보이며 환경변수로 덮어쓰지 않는다(과도한 설정화 방지) —
+  # 모의투자로 검증할 때만 로컬에서 이 값을 임시로 바꿔서 확인한다.
+  base-url: https://openapi.koreainvestment.com:9443
