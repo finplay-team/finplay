@@ -1,6 +1,7 @@
-// /api/stocks/stream 엔드포인트의 인증, register()·sendSnapshot() 위임, 재접속 시 재호출, emitter 정리 배선을 검증하는 WebMvc 슬라이스 테스트다.
+// /api/stocks/stream 엔드포인트의 인증, createEmitter→sendSnapshot→activate 순서 위임·반환값 전달, 재접속 시 재호출을 검증하는 WebMvc 슬라이스 테스트다.
 package com.finplay.api.market.controller;
 
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -13,12 +14,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.finplay.api.auth.config.SecurityConfig;
 import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.auth.token.JwtTokenProvider;
-import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.StockPriceStreamService;
-import com.finplay.api.market.sse.SseEmitterRegistry;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.mockito.InOrder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
@@ -43,54 +43,50 @@ class StockPriceSseControllerTest {
 	private MockMvc mockMvc;
 
 	@MockitoBean
-	private SseEmitterRegistry sseEmitterRegistry;
-
-	@MockitoBean
 	private StockPriceStreamService stockPriceStreamService;
 
 	@MockitoBean
 	private JwtTokenProvider jwtTokenProvider;
 
 	@Test
-	void streamRejectsMissingAuthenticationWithoutRegisteringEmitter() throws Exception {
+	void streamRejectsMissingAuthenticationWithoutSubscribing() throws Exception {
 		mockMvc.perform(get("/api/stocks/stream"))
 			.andExpect(status().isUnauthorized())
 			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
-		verifyNoInteractions(sseEmitterRegistry, stockPriceStreamService);
+		verifyNoInteractions(stockPriceStreamService);
 	}
 
 	@Test
-	void streamRegistersStockEmitterAndDelegatesTheSameInstanceToSendSnapshot() throws Exception {
+	void streamCallsCreateEmitterThenSendSnapshotThenActivateInOrderAndReturnsTheEmitter() throws Exception {
 		authenticate();
 		SseEmitter emitter = new SseEmitter();
-		when(sseEmitterRegistry.register(Market.STOCK)).thenReturn(emitter);
+		when(stockPriceStreamService.createEmitter()).thenReturn(emitter);
 
 		mockMvc.perform(authorized(get("/api/stocks/stream")))
 			.andExpect(request().asyncStarted());
 
-		// register()가 반환한 emitter가 그대로 sendSnapshot()에 전달돼야(=컨트롤러가 새 emitter를 만들지 않고
-		// 그 인스턴스를 그대로 반환해야) 등록 시 배선된 onCompletion/onTimeout/onError 정리 콜백(SseEmitterRegistry
-		// 계약)이 실제 요청과 연결된다. MvcResult.getAsyncResult()/request().asyncResult(...)는 이 emitter가
-		// 끝내 완료되지 않는 한 asyncDispatch를 무한정 기다리므로(spring.mvc.async.request-timeout=-1) 쓰지 않는다.
-		verify(sseEmitterRegistry).register(Market.STOCK);
-		verify(stockPriceStreamService).sendSnapshot(emitter);
+		// 컨트롤러는 createEmitter()가 만든 emitter로 sendSnapshot()을 먼저 호출(프록시를 거치는 트랜잭션 메서드)한
+		// 뒤에만 activate()로 매분 broadcast 대상에 추가해야 한다 — 순서가 바뀌면 새 구독자가 snapshot보다 price를
+		// 먼저 받는 경합이 재발한다 (PR #94 후속 리뷰).
+		InOrder inOrder = inOrder(stockPriceStreamService);
+		inOrder.verify(stockPriceStreamService).createEmitter();
+		inOrder.verify(stockPriceStreamService).sendSnapshot(emitter);
+		inOrder.verify(stockPriceStreamService).activate(emitter);
 	}
 
 	@Test
-	void streamResendsSnapshotOnEveryNewSubscriptionForReconnection() throws Exception {
+	void streamResubscribesOnEveryNewSubscriptionForReconnection() throws Exception {
 		authenticate();
 		SseEmitter firstEmitter = new SseEmitter();
 		SseEmitter secondEmitter = new SseEmitter();
-		when(sseEmitterRegistry.register(Market.STOCK)).thenReturn(firstEmitter).thenReturn(secondEmitter);
+		when(stockPriceStreamService.createEmitter()).thenReturn(firstEmitter).thenReturn(secondEmitter);
 
 		mockMvc.perform(authorized(get("/api/stocks/stream"))).andExpect(request().asyncStarted());
 		mockMvc.perform(authorized(get("/api/stocks/stream"))).andExpect(request().asyncStarted());
 
-		verify(sseEmitterRegistry, times(2)).register(Market.STOCK);
-		verify(stockPriceStreamService).sendSnapshot(firstEmitter);
-		verify(stockPriceStreamService).sendSnapshot(secondEmitter);
+		verify(stockPriceStreamService, times(2)).createEmitter();
 	}
 
 	private void authenticate() {
