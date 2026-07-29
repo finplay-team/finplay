@@ -59,7 +59,7 @@
   - `@DataJpaTest` 슬라이스 테스트(`HoldingRepositoryTest`, 신규): 다른 계좌·전량 매도(`isActive=false`) 보유 제외, `instrument` 지연 로딩 예외 없이 접근 가능.
   - 단위 테스트(`HoldingValuationServiceTest`, 기존 파일): `evaluateActiveHoldingsForAccount`가 활성 보유 목록을 정확히 평가·매핑하는지(시세 유효/무효 혼합 포함), 빈 목록 처리.
 
-- [ ] **응답 DTO: `AccountSummaryResponse`**
+- [x] **응답 DTO: `AccountSummaryResponse`**
   - `account/dto/response/AccountSummaryResponse.java` record 추가 — `cashBalance`·`holdingsValue`·`totalValue`·`realizedPnl`·`unrealizedPnl`·`returnRate` 6개 필드, 정적 팩토리 `of(...)` (plan.md 표 참고).
 
 - [ ] **Service: `AccountService.getAccountSummary`**
