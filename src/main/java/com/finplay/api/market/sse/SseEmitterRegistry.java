@@ -45,7 +45,7 @@ public class SseEmitterRegistry {
 		return emitter;
 	}
 
-	// 테스트·모니터링용 — 현재 market에 등록된 emitter 목록의 읽기 전용 스냅샷.
+	// 테스트·모니터링용 — 현재 market에 등록된 emitter 목록을 그대로 비추는 읽기 전용 뷰(등록·해제가 즉시 반영됨, 스냅샷 아님).
 	public List<SseEmitter> getEmitters(Market market) {
 		return Collections.unmodifiableList(emittersByMarket.get(market));
 	}
