@@ -1,13 +1,10 @@
 // KIS 과거 분봉을 명백한 오류만 검증해 정규화된 StockCandle로 저장하고 MarketDataImport 이력을 남기는 평일 08:10 KST 수집 배치
 package com.finplay.api.market.service;
 
-import com.finplay.api.market.domain.ImportStatus;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
-import com.finplay.api.market.domain.MarketDataImport;
 import com.finplay.api.market.domain.StockCandle;
 import com.finplay.api.market.repository.InstrumentRepository;
-import com.finplay.api.market.repository.MarketDataImportRepository;
 import com.finplay.api.market.repository.StockCandleRepository;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -30,12 +27,14 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 // 이 클래스가 검증하는 항목(spec.md MKT-005)과 검증 범위를 명확히 구분한다.
 //  - 종목 단위(atomic): 한 종목의 분봉 중 하나라도 아래 구조 오류가 있으면 그 종목의 그날 분봉 전체를 저장하지 않는다.
-//  - 전체 단위: KisHistoricalCandleClient 호출 자체가 예외를 던지면(응답 파싱 불가 등) 이번 수집 전체를 미저장·FAILED 처리한다.
-// 두 가지는 아래 이유로 이번 클라이언트 경계(RawMinuteCandle)에서 항상 구조적으로 만족되어 별도 런타임 검사를 두지 않는다.
+//    KisHistoricalCandleClient.fetchMinuteCandles 호출 자체가 예외를 던지는 경우(타임아웃 등 일시적 네트워크 실패
+//    포함)도 그 종목 하나만의 실패로 흡수한다 — 나머지 종목은 계속 수집을 진행한다(PR #94 리뷰 권장사항 ③).
+//  - 전체 단위: 종목 하나로 좁힐 수 없는 진짜 전체 오류(종목 목록 조회 실패, 검증·저장 로직 자체의 버그 등)만 collect()의
+//    최상위 catch에서 이번 실행 전체를 미저장·FAILED로 남긴다.
+// 아래 두 가지는 이번 클라이언트 경계(RawMinuteCandle)에서 항상 구조적으로 만족되어 별도 런타임 검사를 두지 않는다.
 //  - "MVP 허용 16종 여부": InstrumentRepository.findByMarketOrderByIdAsc(Market.STOCK)로만 순회하므로 애초에 허용 종목만 대상이다.
 //  - "조회 대상 거래일과 응답 거래일 일치": KisHistoricalCandleClient는 이번 Decision Gate(plan.md — output2 필드명은
 //    체결시각·시가·고가·저가·종가·거래량 6종만 확인 대상)에서 행별 거래일 필드를 노출하지 않는다. Collector는 항상 단일
@@ -51,7 +50,6 @@ public class KisHistoricalCandleCollector {
 	private static final LocalTime MARKET_OPEN_TIME = LocalTime.of(9, 0);
 	private static final LocalTime MARKET_CLOSE_TIME = LocalTime.of(15, 30);
 	private static final Pattern STOCK_SYMBOL_PATTERN = Pattern.compile("^\\d{6}$");
-	private static final int MAX_FAILURE_REASON_LENGTH = 500;
 	private static final String HOLIDAYS_RESOURCE_PATH = "/holidays-2026.txt";
 
 	// StockReplayService와 별개의 클래스가 각자의 목적(재생세션 개장 판정 vs. 수집 대상 거래일 계산)으로 같은 리소스 파일을
@@ -61,46 +59,57 @@ public class KisHistoricalCandleCollector {
 	private final InstrumentRepository instrumentRepository;
 	private final KisHistoricalCandleClient kisHistoricalCandleClient;
 	private final StockCandleRepository stockCandleRepository;
-	private final MarketDataImportRepository marketDataImportRepository;
+	private final KisHistoricalCandleImportWriter importWriter;
 	private final Clock clock;
 
 	// 평일 08:10 KST 실행 — 당일 분봉이 익영업일 오전 8시경 제공된다는 확인 결과에 여유를 둔 시각(plan.md "배치 실행 시각").
+	// 이 메서드 자체는 트랜잭션을 열지 않는다 — 종목별 KIS HTTP 호출(최대 10페이지, connect 5s/read 10s 타임아웃)이
+	// 16종 순차로 일어나는 동안 DB 커넥션을 점유하지 않기 위해서다. 실제 DB 작업은 importWriter의 별도 트랜잭션
+	// 메서드(persist·recordFailedImport)로만 이뤄진다(PR #94 리뷰 권장사항 ②).
 	@Scheduled(cron = "0 10 8 * * MON-FRI", zone = "Asia/Seoul")
-	@Transactional
 	public void collect() {
 		LocalDate tradingDate = resolvePreviousBusinessDay(LocalDate.now(clock));
 		LocalDateTime collectedAt = LocalDateTime.now(clock);
-		List<Instrument> stockInstruments = instrumentRepository.findByMarketOrderByIdAsc(Market.STOCK);
 		try {
+			// 종목 목록 조회 자체도 이 try 안에 둔다 — 실패하면(진짜 전체 오류) 아래 catch가 잡아 FAILED로 남긴다.
+			List<Instrument> stockInstruments = instrumentRepository.findByMarketOrderByIdAsc(Market.STOCK);
 			List<InstrumentOutcome> outcomes = new ArrayList<>();
 			for (Instrument instrument : stockInstruments) {
 				outcomes.add(collectInstrument(instrument, tradingDate, collectedAt));
 			}
-			persist(tradingDate, collectedAt, outcomes);
+			importWriter.persist(tradingDate, collectedAt, outcomes);
 		} catch (RuntimeException ex) {
-			// KisHistoricalCandleClient가 던지는 예외(응답 파싱 불가·지원하지 않는 응답 구조 등)는 종목 단위 구조 오류와
-			// 달리 전체 응답 자체를 신뢰할 수 없다는 뜻이므로, 이번 실행 전체를 미저장·FAILED로 남긴다 — 이전에 계산해 둔
-			// 다른 종목의 결과가 있어도(outcomes) 여기서는 저장하지 않는다(스코프 밖 persist 호출 자체가 없으므로 안전).
-			log.error("KIS 과거 분봉 수집이 전체 응답 오류로 중단되었습니다 (tradingDate={})", tradingDate, ex);
-			marketDataImportRepository.save(MarketDataImport.create(
-				DATA_SOURCE, tradingDate, collectedAt, ImportStatus.FAILED,
-				truncateReason("전체 응답 오류로 수집이 중단되었습니다: " + ex.getMessage())));
+			// 종목별 KIS 호출 실패는 collectInstrument 내부에서 이미 그 종목 하나만의 실패로 흡수된다 — 여기까지 올라오는
+			// 예외는 종목 하나로 좁힐 수 없는 진짜 전체 오류다(종목 목록 조회 실패, 검증/변환 로직 자체의 버그, 저장
+			// 트랜잭션 실패 등). 이전에 계산해 둔 다른 종목의 결과(outcomes)가 있어도 여기서는 저장하지 않는다.
+			log.error("KIS 과거 분봉 수집이 종목 단위로 좁힐 수 없는 오류로 중단되었습니다 (tradingDate={})", tradingDate, ex);
+			importWriter.recordFailedImport(tradingDate, collectedAt,
+				"수집이 예상치 못한 오류로 중단되었습니다: " + ex.getMessage());
 		}
 	}
 
 	private InstrumentOutcome collectInstrument(Instrument instrument, LocalDate tradingDate,
 		LocalDateTime collectedAt) {
-		boolean alreadyCollected = !stockCandleRepository
-			.findByInstrumentIdAndTradingDateOrderByCandleTimeAsc(instrument.getId(), tradingDate)
-			.isEmpty();
+		boolean alreadyCollected = stockCandleRepository
+			.existsByInstrumentIdAndTradingDate(instrument.getId(), tradingDate);
 		if (alreadyCollected) {
 			// UNIQUE(instrument_id, trading_date, candle_time) 기반 재실행 멱등성 — 이미 저장된 종목·거래일은 다시
-			// 조회·저장하지 않는다. 동일/상충 재수집 판정(SKIPPED_DUPLICATE 등, 이슈 #83)은 이번 범위가 아니다.
+			// 조회·저장하지 않는다. exists 여부만 확인해 이미 수집된 날의 최대 390행을 전부 로드하지 않는다(PR #94 리뷰
+			// 권장사항 ①). 동일/상충 재수집 판정(SKIPPED_DUPLICATE 등, 이슈 #83)은 이번 범위가 아니다.
 			return new InstrumentOutcome(instrument, List.of(), null);
 		}
 
-		List<RawMinuteCandle> rawCandles = kisHistoricalCandleClient.fetchMinuteCandles(instrument.getSymbol(),
-			tradingDate);
+		List<RawMinuteCandle> rawCandles;
+		try {
+			rawCandles = kisHistoricalCandleClient.fetchMinuteCandles(instrument.getSymbol(), tradingDate);
+		} catch (RuntimeException ex) {
+			// KIS 호출 자체가 예외를 던지는 경우(타임아웃·연결 재설정 등 일시적 네트워크 실패 포함) 이 종목 하나만의
+			// 실패로 흡수한다 — 나머지 종목은 계속 수집을 진행한다(PR #94 리뷰 권장사항 ③).
+			log.warn("KIS 과거 분봉 조회가 종목 단위로 실패했습니다 (symbol={}, tradingDate={})", instrument.getSymbol(),
+				tradingDate, ex);
+			return new InstrumentOutcome(instrument, List.of(), "분봉 조회 중 오류가 발생했습니다: " + ex.getMessage());
+		}
+
 		String failureReason = validateInstrumentCandles(instrument, rawCandles);
 		if (failureReason != null) {
 			return new InstrumentOutcome(instrument, List.of(), failureReason);
@@ -165,49 +174,6 @@ public class KisHistoricalCandleCollector {
 			raw.volume(), DATA_SOURCE, collectedAt);
 	}
 
-	private void persist(LocalDate tradingDate, LocalDateTime collectedAt, List<InstrumentOutcome> outcomes) {
-		List<InstrumentOutcome> failedOutcomes = outcomes.stream().filter(outcome -> outcome.failureReason() != null)
-			.toList();
-		List<InstrumentOutcome> succeededOutcomes = outcomes.stream().filter(outcome -> outcome.failureReason() == null)
-			.toList();
-
-		for (InstrumentOutcome outcome : succeededOutcomes) {
-			if (!outcome.candles().isEmpty()) {
-				stockCandleRepository.saveAll(outcome.candles());
-			}
-		}
-
-		ImportStatus status;
-		String failureReason = null;
-		if (failedOutcomes.isEmpty()) {
-			status = ImportStatus.SUCCESS;
-		} else if (succeededOutcomes.isEmpty()) {
-			// 대상 종목 전부가 구조 오류라면 "부분" 성공이 아니라 사실상 전체 실패다 — StockCandle은 어차피 하나도 저장되지
-			// 않으므로(succeededOutcomes가 비어 있음) PARTIAL_SUCCESS로 표시하지 않는다.
-			status = ImportStatus.FAILED;
-			failureReason = summarizeFailures(failedOutcomes);
-		} else {
-			status = ImportStatus.PARTIAL_SUCCESS;
-			failureReason = summarizeFailures(failedOutcomes);
-		}
-		marketDataImportRepository.save(
-			MarketDataImport.create(DATA_SOURCE, tradingDate, collectedAt, status, failureReason));
-	}
-
-	private static String summarizeFailures(List<InstrumentOutcome> failedOutcomes) {
-		String joined = failedOutcomes.stream()
-			.map(outcome -> outcome.instrument().getSymbol() + ": " + outcome.failureReason())
-			.collect(Collectors.joining("; "));
-		return truncateReason(joined);
-	}
-
-	private static String truncateReason(String reason) {
-		if (reason == null || reason.length() <= MAX_FAILURE_REASON_LENGTH) {
-			return reason;
-		}
-		return reason.substring(0, MAX_FAILURE_REASON_LENGTH);
-	}
-
 	// 오늘(from)의 직전 영업일을 계산한다 — 주말·공휴일(리소스 파일 기준)을 건너뛴다. 직전 영업일 데이터가 아직 준비되지
 	// 않았을 때의 폴백은 StockReplaySessionScheduler(이슈 #19 ⑥)의 책임이며, 이 메서드는 오늘 기준 하루 전 영업일 하나만
 	// 계산한다.
@@ -241,15 +207,6 @@ public class KisHistoricalCandleCollector {
 			}
 		} catch (IOException ex) {
 			throw new IllegalStateException("공휴일 리소스 파일을 읽는 중 오류가 발생했습니다: " + resourcePath, ex);
-		}
-	}
-
-	// 종목 하나의 수집 결과 — failureReason이 null이면 구조 오류 없음(candles가 비어 있을 수도 있다: 이미 저장돼 있어
-	// 건너뛴 경우, 또는 실제로 그날 분봉이 없는 경우 모두 정상 케이스로 취급한다).
-	private record InstrumentOutcome(Instrument instrument, List<StockCandle> candles, String failureReason) {
-		// 컬렉션 필드를 가진 record는 방어적 복사가 기본이다 (agent-mistakes.md 2026-07-29 — spotbugsMain EI_EXPOSE_REP).
-		private InstrumentOutcome {
-			candles = List.copyOf(candles);
 		}
 	}
 }

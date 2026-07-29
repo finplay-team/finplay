@@ -96,6 +96,11 @@ class MarketDataPipelineIntegrationTest {
 	@Autowired
 	private MarketDataImportRepository marketDataImportRepository;
 
+	// 실제 Spring 빈 그대로 재사용한다 — collect()의 트랜잭션 경계 분리(PR #94 리뷰 권장사항 ②·④)가 실제 프록시를 통해
+	// 동작하는지(자기 자신 호출로 인한 @Transactional 무력화 없이)까지 이 통합 테스트에서 함께 검증된다.
+	@Autowired
+	private KisHistoricalCandleImportWriter importWriter;
+
 	// StockReplaySessionScheduler는 KisHistoricalCandleClient에 의존하지 않으므로(spec.md MKT-005), 실제 Spring 빈을
 	// 그대로 재사용해도 안전하다 — 08:40 배치의 실제 배선을 검증하는 셈이다.
 	@Autowired
@@ -158,7 +163,7 @@ class MarketDataPipelineIntegrationTest {
 	// @Scheduled 우회하고 서비스 메서드를 직접 호출하는 방식(tasks.md 항목 ⑦ 지시)이다.
 	private KisHistoricalCandleCollector collectorWith(KisHistoricalCandleClient client) {
 		return new KisHistoricalCandleCollector(
-			instrumentRepository, client, stockCandleRepository, marketDataImportRepository, clock);
+			instrumentRepository, client, stockCandleRepository, importWriter, clock);
 	}
 
 	// "서버 재시작" 시뮬레이션 — StockReplaySessionScheduler는 인스턴스 상태가 없으므로, 새 인스턴스를 만들어 호출해도
@@ -168,8 +173,10 @@ class MarketDataPipelineIntegrationTest {
 			stockReplaySessionRepository, marketDataImportRepository, stockCandleRepository, clock);
 	}
 
-	// KisHistoricalCandleClient가 응답 파싱 실패 등으로 예외를 던지는 상황(전체 응답 오류)을 흉내낸다 — FakeKisHistoricalCandleClient는
-	// 실패를 표현할 수 없으므로(항상 정상 리스트 반환) 이 시나리오 전용 더블을 따로 둔다 (KisHistoricalCandleCollectorTest와 동일한 관례).
+	// KisHistoricalCandleClient가 모든 종목 호출에서 예외를 던지는 상황을 흉내낸다 — 각 종목 호출 실패는 그 종목 하나만의
+	// 실패로 흡수되지만(PR #94 리뷰 권장사항 ③), 대상 종목 전부가 실패하면 결과적으로 FAILED로 기록된다.
+	// FakeKisHistoricalCandleClient는 실패를 표현할 수 없으므로(항상 정상 리스트 반환) 이 시나리오 전용 더블을 따로 둔다
+	// (KisHistoricalCandleCollectorTest와 동일한 관례).
 	private static final class ThrowingKisHistoricalCandleClient implements KisHistoricalCandleClient {
 		@Override
 		public List<RawMinuteCandle> fetchMinuteCandles(String symbol, LocalDate tradingDate) {
@@ -281,7 +288,8 @@ class MarketDataPipelineIntegrationTest {
 		// 시나리오 A와 같은 실제 종목(index 0)을 재사용한다 — 거래일(TD_D)이 달라 StockCandle UNIQUE 제약과 충돌하지 않는다.
 		Instrument instrument = realStockInstrument(0);
 
-		// 08:10 KST — KisHistoricalCandleClient 자체가 예외를 던지는 전체 응답 오류를 흉내낸다.
+		// 08:10 KST — 대상 종목 전부에서 KisHistoricalCandleClient 호출이 예외를 던지는 상황을 흉내낸다(종목별 실패가
+		// 모두 합쳐져 결과적으로 FAILED).
 		setClock(SD_D, LocalTime.of(8, 10));
 		collectorWith(new ThrowingKisHistoricalCandleClient()).collect();
 

@@ -1,4 +1,4 @@
-// KisHistoricalCandleCollector의 08:10 KST 배치가 정상 저장·전체오류·부분오류·재실행 멱등을 올바르게 처리하는지 검증하는 단위 테스트
+// KisHistoricalCandleCollector의 08:10 KST 배치가 정상 저장·전체오류·부분오류·종목별 조회 실패·재실행 멱등을 올바르게 처리하는지 검증하는 단위 테스트
 package com.finplay.api.market.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -43,6 +43,11 @@ class KisHistoricalCandleCollectorTest {
 	private final InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
 	private final StockCandleRepository stockCandleRepository = mock(StockCandleRepository.class);
 	private final MarketDataImportRepository marketDataImportRepository = mock(MarketDataImportRepository.class);
+	// 트랜잭션 경계 분리(PR #94 리뷰 권장사항 ②·④) 이후 저장은 이 컴포넌트를 거친다 — 단위 테스트는 Spring 컨텍스트 없이
+	// 직접 생성해 같은 mock repository로 위임하므로 기존 verify(marketDataImportRepository)·verify(stockCandleRepository)
+	// 검증은 그대로 유효하다.
+	private final KisHistoricalCandleImportWriter importWriter = new KisHistoricalCandleImportWriter(
+		stockCandleRepository, marketDataImportRepository);
 
 	private static Clock fixedClock(LocalDateTime dateTime) {
 		return Clock.fixed(dateTime.atZone(KST).toInstant(), KST);
@@ -75,9 +80,8 @@ class KisHistoricalCandleCollectorTest {
 		Instrument instrumentB = stockInstrument(2L, "000660");
 		when(instrumentRepository.findByMarketOrderByIdAsc(Market.STOCK))
 			.thenReturn(List.of(instrumentA, instrumentB));
-		when(stockCandleRepository.findByInstrumentIdAndTradingDateOrderByCandleTimeAsc(anyLong(),
-			eq(EXPECTED_TRADING_DATE)))
-			.thenReturn(List.of());
+		when(stockCandleRepository.existsByInstrumentIdAndTradingDate(anyLong(), eq(EXPECTED_TRADING_DATE)))
+			.thenReturn(false);
 
 		FakeKisHistoricalCandleClient fakeClient = new FakeKisHistoricalCandleClient();
 		fakeClient.setCandles("005930", List.of(
@@ -85,7 +89,7 @@ class KisHistoricalCandleCollectorTest {
 		fakeClient.setCandles("000660", List.of(validCandle(LocalTime.of(9, 0), "120000")));
 
 		KisHistoricalCandleCollector collector = new KisHistoricalCandleCollector(
-			instrumentRepository, fakeClient, stockCandleRepository, marketDataImportRepository,
+			instrumentRepository, fakeClient, stockCandleRepository, importWriter,
 			fixedClock(WEEKDAY_RUN_AT));
 
 		collector.collect();
@@ -106,18 +110,20 @@ class KisHistoricalCandleCollectorTest {
 	}
 
 	@Test
-	void collectSavesNothingAndRecordsFailedWhenClientThrowsForEntireResponse() {
+	void collectSavesNothingAndRecordsFailedWhenClientThrowsForEveryInstrument() {
+		// KisHistoricalCandleClient.fetchMinuteCandles가 예외를 던져도 각 종목 하나만의 실패로 흡수된다(PR #94 리뷰
+		// 권장사항 ③) — 두 종목 모두 실패해 결과적으로 succeededOutcomes가 비므로 FAILED로 기록되지만, 이는 종목별 실패
+		// 목록을 모은 결과이지 "전체 응답 오류"로 collect()의 최상위 catch가 개입한 결과가 아니다.
 		Instrument instrumentA = stockInstrument(1L, "005930");
 		Instrument instrumentB = stockInstrument(2L, "000660");
 		when(instrumentRepository.findByMarketOrderByIdAsc(Market.STOCK))
 			.thenReturn(List.of(instrumentA, instrumentB));
-		when(stockCandleRepository.findByInstrumentIdAndTradingDateOrderByCandleTimeAsc(anyLong(),
-			eq(EXPECTED_TRADING_DATE)))
-			.thenReturn(List.of());
+		when(stockCandleRepository.existsByInstrumentIdAndTradingDate(anyLong(), eq(EXPECTED_TRADING_DATE)))
+			.thenReturn(false);
 
 		KisHistoricalCandleCollector collector = new KisHistoricalCandleCollector(
 			instrumentRepository, new ThrowingKisHistoricalCandleClient(), stockCandleRepository,
-			marketDataImportRepository, fixedClock(WEEKDAY_RUN_AT));
+			importWriter, fixedClock(WEEKDAY_RUN_AT));
 
 		collector.collect();
 
@@ -126,8 +132,69 @@ class KisHistoricalCandleCollectorTest {
 		verify(marketDataImportRepository).save(importCaptor.capture());
 		MarketDataImport savedImport = importCaptor.getValue();
 		assertThat(savedImport.getStatus()).isEqualTo(ImportStatus.FAILED);
-		assertThat(savedImport.getFailureReason()).contains("전체 응답 오류");
+		assertThat(savedImport.getFailureReason()).contains("005930").contains("000660");
 		assertThat(savedImport.getSourceTradingDate()).isEqualTo(EXPECTED_TRADING_DATE);
+	}
+
+	@Test
+	void collectSkipsOnlyInstrumentWhoseFetchThrowsAndRecordsPartialSuccess() {
+		// 종목 하나만 KIS 호출이 일시적으로 실패해도(타임아웃 등) 나머지 종목의 정상 결과는 버려지지 않아야 한다
+		// (PR #94 리뷰 권장사항 ③의 핵심 시나리오 — 16종 중 1종만 실패해도 전체가 FAILED가 되던 것을 고친다).
+		Instrument healthyInstrument = stockInstrument(1L, "005930");
+		Instrument flakyInstrument = stockInstrument(2L, "000660");
+		when(instrumentRepository.findByMarketOrderByIdAsc(Market.STOCK))
+			.thenReturn(List.of(healthyInstrument, flakyInstrument));
+		when(stockCandleRepository.existsByInstrumentIdAndTradingDate(anyLong(), eq(EXPECTED_TRADING_DATE)))
+			.thenReturn(false);
+
+		KisHistoricalCandleClient partiallyFlakyClient = (symbol, tradingDate) -> {
+			if ("000660".equals(symbol)) {
+				throw new RuntimeException("연결이 재설정되었습니다");
+			}
+			return List.of(validCandle(LocalTime.of(9, 0), "70000"));
+		};
+
+		KisHistoricalCandleCollector collector = new KisHistoricalCandleCollector(
+			instrumentRepository, partiallyFlakyClient, stockCandleRepository, importWriter,
+			fixedClock(WEEKDAY_RUN_AT));
+
+		collector.collect();
+
+		ArgumentCaptor<List<StockCandle>> savedCandlesCaptor = ArgumentCaptor.forClass(List.class);
+		verify(stockCandleRepository, times(1)).saveAll(savedCandlesCaptor.capture());
+		assertThat(savedCandlesCaptor.getValue()).hasSize(1);
+		assertThat(savedCandlesCaptor.getValue().get(0).getInstrument().getSymbol()).isEqualTo("005930");
+
+		ArgumentCaptor<MarketDataImport> importCaptor = ArgumentCaptor.forClass(MarketDataImport.class);
+		verify(marketDataImportRepository).save(importCaptor.capture());
+		MarketDataImport savedImport = importCaptor.getValue();
+		assertThat(savedImport.getStatus()).isEqualTo(ImportStatus.PARTIAL_SUCCESS);
+		assertThat(savedImport.getFailureReason()).contains("000660");
+	}
+
+	@Test
+	void collectRecordsFailedInSeparateTransactionWhenFailureIsNotAttributableToAnyInstrument() {
+		// 종목 목록은 있지만 검증·저장 로직 자체에서(여기서는 marketDataImportRepository.save 실패로 흉내) 예외가 나면
+		// 종목 하나로 좁힐 수 없는 진짜 전체 오류다 — collect()의 최상위 catch가 recordFailedImport(REQUIRES_NEW 취지의
+		// 별도 호출, PR #94 리뷰 권장사항 ④)로 FAILED 이력을 남겨야 한다.
+		when(instrumentRepository.findByMarketOrderByIdAsc(Market.STOCK)).thenReturn(List.of());
+		when(marketDataImportRepository.save(any()))
+			.thenThrow(new RuntimeException("DB 저장 중 오류"))
+			.thenAnswer(invocation -> invocation.getArgument(0));
+
+		KisHistoricalCandleCollector collector = new KisHistoricalCandleCollector(
+			instrumentRepository, new FakeKisHistoricalCandleClient(), stockCandleRepository, importWriter,
+			fixedClock(WEEKDAY_RUN_AT));
+
+		collector.collect();
+
+		verify(stockCandleRepository, never()).saveAll(any());
+		ArgumentCaptor<MarketDataImport> importCaptor = ArgumentCaptor.forClass(MarketDataImport.class);
+		verify(marketDataImportRepository, times(2)).save(importCaptor.capture());
+		MarketDataImport recordedFailure = importCaptor.getAllValues().get(1);
+		assertThat(recordedFailure.getStatus()).isEqualTo(ImportStatus.FAILED);
+		assertThat(recordedFailure.getFailureReason()).contains("예상치 못한 오류");
+		assertThat(recordedFailure.getSourceTradingDate()).isEqualTo(EXPECTED_TRADING_DATE);
 	}
 
 	@Test
@@ -136,9 +203,8 @@ class KisHistoricalCandleCollectorTest {
 		Instrument brokenInstrument = stockInstrument(2L, "000660");
 		when(instrumentRepository.findByMarketOrderByIdAsc(Market.STOCK))
 			.thenReturn(List.of(validInstrument, brokenInstrument));
-		when(stockCandleRepository.findByInstrumentIdAndTradingDateOrderByCandleTimeAsc(anyLong(),
-			eq(EXPECTED_TRADING_DATE)))
-			.thenReturn(List.of());
+		when(stockCandleRepository.existsByInstrumentIdAndTradingDate(anyLong(), eq(EXPECTED_TRADING_DATE)))
+			.thenReturn(false);
 
 		FakeKisHistoricalCandleClient fakeClient = new FakeKisHistoricalCandleClient();
 		fakeClient.setCandles("005930", List.of(validCandle(LocalTime.of(9, 0), "70000")));
@@ -147,7 +213,7 @@ class KisHistoricalCandleCollectorTest {
 			validCandle(LocalTime.of(9, 0), "120000"), validCandle(LocalTime.of(9, 0), "120100")));
 
 		KisHistoricalCandleCollector collector = new KisHistoricalCandleCollector(
-			instrumentRepository, fakeClient, stockCandleRepository, marketDataImportRepository,
+			instrumentRepository, fakeClient, stockCandleRepository, importWriter,
 			fixedClock(WEEKDAY_RUN_AT));
 
 		collector.collect();
@@ -175,20 +241,17 @@ class KisHistoricalCandleCollectorTest {
 		KisHistoricalCandleClient spyClient = spy(fakeClient);
 
 		KisHistoricalCandleCollector collector = new KisHistoricalCandleCollector(
-			instrumentRepository, spyClient, stockCandleRepository, marketDataImportRepository,
+			instrumentRepository, spyClient, stockCandleRepository, importWriter,
 			fixedClock(WEEKDAY_RUN_AT));
 
 		// 1차 실행: 아직 저장된 분봉이 없다.
-		when(stockCandleRepository.findByInstrumentIdAndTradingDateOrderByCandleTimeAsc(1L, EXPECTED_TRADING_DATE))
-			.thenReturn(List.of());
+		when(stockCandleRepository.existsByInstrumentIdAndTradingDate(1L, EXPECTED_TRADING_DATE))
+			.thenReturn(false);
 		collector.collect();
 
 		// 2차 실행(재실행): 이미 저장된 분봉이 있다고 가정한다 — UNIQUE 제약 기반 멱등 재실행 시나리오.
-		StockCandle existing = StockCandle.create(
-			instrument, EXPECTED_TRADING_DATE, LocalTime.of(9, 0), BigDecimal.TEN, BigDecimal.TEN, BigDecimal.TEN,
-			BigDecimal.TEN, 1L, "KIS", LocalDateTime.now());
-		when(stockCandleRepository.findByInstrumentIdAndTradingDateOrderByCandleTimeAsc(1L, EXPECTED_TRADING_DATE))
-			.thenReturn(List.of(existing));
+		when(stockCandleRepository.existsByInstrumentIdAndTradingDate(1L, EXPECTED_TRADING_DATE))
+			.thenReturn(true);
 		collector.collect();
 
 		// 종목 조회(fetchMinuteCandles)는 최초 1회만 일어나야 한다 — 재실행에서는 다시 조회하지 않는다.
@@ -222,14 +285,13 @@ class KisHistoricalCandleCollectorTest {
 
 		Instrument instrument = stockInstrument(1L, "005930");
 		when(instrumentRepository.findByMarketOrderByIdAsc(Market.STOCK)).thenReturn(List.of(instrument));
-		when(stockCandleRepository.findByInstrumentIdAndTradingDateOrderByCandleTimeAsc(1L, expectedFriday))
-			.thenReturn(List.of());
+		when(stockCandleRepository.existsByInstrumentIdAndTradingDate(1L, expectedFriday)).thenReturn(false);
 
 		FakeKisHistoricalCandleClient fakeClient = new FakeKisHistoricalCandleClient();
 		fakeClient.setCandles("005930", List.of(validCandle(LocalTime.of(9, 0), "70000")));
 
 		KisHistoricalCandleCollector collector = new KisHistoricalCandleCollector(
-			instrumentRepository, fakeClient, stockCandleRepository, marketDataImportRepository,
+			instrumentRepository, fakeClient, stockCandleRepository, importWriter,
 			fixedClock(mondayRunAt));
 
 		collector.collect();
@@ -249,14 +311,13 @@ class KisHistoricalCandleCollectorTest {
 
 		Instrument instrument = stockInstrument(1L, "005930");
 		when(instrumentRepository.findByMarketOrderByIdAsc(Market.STOCK)).thenReturn(List.of(instrument));
-		when(stockCandleRepository.findByInstrumentIdAndTradingDateOrderByCandleTimeAsc(1L, expectedFriday))
-			.thenReturn(List.of());
+		when(stockCandleRepository.existsByInstrumentIdAndTradingDate(1L, expectedFriday)).thenReturn(false);
 
 		FakeKisHistoricalCandleClient fakeClient = new FakeKisHistoricalCandleClient();
 		fakeClient.setCandles("005930", List.of(validCandle(LocalTime.of(9, 0), "70000")));
 
 		KisHistoricalCandleCollector collector = new KisHistoricalCandleCollector(
-			instrumentRepository, fakeClient, stockCandleRepository, marketDataImportRepository,
+			instrumentRepository, fakeClient, stockCandleRepository, importWriter,
 			fixedClock(tuesdayRunAt));
 
 		collector.collect();
