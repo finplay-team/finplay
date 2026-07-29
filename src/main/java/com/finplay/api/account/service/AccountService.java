@@ -57,6 +57,9 @@ public class AccountService {
 			if (valuation.priceStatus() == PriceStatus.AVAILABLE) {
 				holdingsValue += valuation.evaluationAmount();
 				unrealizedPnl += valuation.unrealizedPnl();
+			} else {
+				// 시세 무효(휴장 등)는 손익을 모르니 원가만큼 있는 것으로 취급 — 미실현손익은 0 기여
+				holdingsValue += valuation.costBasis();
 			}
 		}
 

@@ -129,7 +129,10 @@ class AccountServiceTest {
 	}
 
 	@Test
-	void getAccountSummaryExcludesUnavailablePricedHoldingsFromSums() {
+	void getAccountSummaryIncludesCostBasisForUnavailablePricedHoldingsWithoutPnlContribution() {
+		// PR #96 리뷰 차단 반영: 시세 무효(휴장 등) 보유는 evaluationAmount 대신 costBasis를
+		// holdingsValue에 반영하고 unrealizedPnl에는 기여하지 않는다(휴장 시간대 전종목 UNAVAILABLE로
+		// holdingsValue=0·수익률 대폭 마이너스가 되는 오류 재현·수정, plan.md "이슈 #81" 절 참고).
 		AccountRepository accountRepository = mock(AccountRepository.class);
 		HoldingValuationService holdingValuationService = mock(HoldingValuationService.class);
 		Clock fixedClock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
@@ -150,9 +153,10 @@ class AccountServiceTest {
 
 		AccountSummaryResponse result = accountService.getAccountSummary(1L, Market.CRYPTO);
 
-		assertThat(result.holdingsValue()).isEqualTo(15_000L);
-		assertThat(result.unrealizedPnl()).isEqualTo(5_000L);
-		assertThat(result.totalValue()).isEqualTo(account.getCashBalance() + 15_000L);
+		long expectedHoldingsValue = 15_000L + 500_000L; // available.evaluationAmount + unavailable.costBasis
+		assertThat(result.holdingsValue()).isEqualTo(expectedHoldingsValue);
+		assertThat(result.unrealizedPnl()).isEqualTo(5_000L); // unavailable은 0 기여
+		assertThat(result.totalValue()).isEqualTo(account.getCashBalance() + expectedHoldingsValue);
 	}
 
 	@Test

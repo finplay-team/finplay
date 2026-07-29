@@ -139,7 +139,7 @@ class AccountSummaryIntegrationTest {
 	}
 
 	@Test
-	void holdingWithUnavailablePriceIsExcludedFromSummaryWithoutException() {
+	void includesUnavailablePricedHoldingAtCostBasisWithoutPnl() {
 		User user = createUser("summary-badpx");
 		createAccount(user, com.finplay.api.account.domain.Market.CRYPTO);
 		String symbol = "SUMBTC" + UUID.randomUUID().toString().substring(0, 6);
@@ -163,12 +163,17 @@ class AccountSummaryIntegrationTest {
 		AccountSummaryResponse response = accountService.getAccountSummary(
 			user.getId(), com.finplay.api.account.domain.Market.CRYPTO);
 
+		// PR #96 리뷰 반영 정책: 시세 무효 보유는 costBasis(quantity*averagePrice=1*1000000=1000000)만큼
+		// holdingsValue에 가산하고 unrealizedPnl에는 기여하지 않는다(AccountService.getAccountSummary 참고).
+		long expectedHoldingsValue = 1_000_000L;
+		long expectedTotalValue = expectedCashBalance + expectedHoldingsValue;
+
 		assertThat(response.cashBalance()).isEqualTo(expectedCashBalance);
-		assertThat(response.holdingsValue()).isZero();
+		assertThat(response.holdingsValue()).isEqualTo(expectedHoldingsValue);
 		assertThat(response.unrealizedPnl()).isZero();
-		assertThat(response.totalValue()).isEqualTo(expectedCashBalance);
-		// returnRate = (8999500 - 10000000) / 10000000 = -0.10005 → HALF_UP 스케일4는 0에서 먼 방향으로 반올림 → -0.1001
-		assertThat(response.returnRate()).isEqualByComparingTo(new BigDecimal("-0.1001"));
+		assertThat(response.totalValue()).isEqualTo(expectedTotalValue);
+		// returnRate = (9999500 - 10000000) / 10000000 = -0.00005 → HALF_UP 스케일4는 0에서 먼 방향으로 반올림 → -0.0001
+		assertThat(response.returnRate()).isEqualByComparingTo(new BigDecimal("-0.0001"));
 	}
 
 	@Test

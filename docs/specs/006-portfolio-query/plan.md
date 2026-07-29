@@ -270,9 +270,15 @@ PRD C-003에 따라 전 구간 `BigDecimal`/`long`만 사용한다(`double`/`flo
 
 이슈 #47의 `HoldingValuationService.evaluateHolding`은 시세가 무효(`PriceStatus.UNAVAILABLE`)면 `evaluationAmount`·`unrealizedPnl`·`returnRate`를 `null`로 반환하고 예외를 던지지 않는다("무효 종목을 목록에서 어떻게 표시할지는 각 API가 결정" — #47 plan 절). 계좌 요약은 단일 숫자(`holdingsValue`·`unrealizedPnl`)를 반환해야 하고 spec 완료 조건이 "보유 종목이 없어도 0으로 채운 정상 응답"을 요구하므로, 이 API는 다음과 같이 확정한다.
 
-- **시세 무효 종목은 합산에서 제외한다** (기여분 0으로 처리) — 즉 `priceStatus == PriceStatus.AVAILABLE`인 보유만 `holdingsValue`·`unrealizedPnl` 합계에 더한다. `UNAVAILABLE`인 보유는 두 합계에 아무 것도 더하지 않는다(원가도 더하지 않는다 — 원가만 부분 반영하면 `totalValue`·`returnRate`가 왜곡되므로 해당 종목을 아예 없는 것처럼 취급).
 - 이 API는 예외를 던지지 않는다(`PriceQueryService.getPrice`의 throw 변형을 쓰지 않음 — `HoldingValuationService.evaluateHolding`이 이미 비throw 변형만 사용하므로 자동으로 보장된다). 한 종목의 시세 무효가 전체 계좌 요약 조회를 막지 않는다.
 - 통합 테스트에서 "시세 무효 종목 보유 상황"을 반드시 검증한다(아래 테스트 계획).
+
+> **정책 수정 (PR #96 리뷰 차단 반영, 2026-07-30)**: 최초 구현은 "시세 무효 종목은 원가까지 포함해 합산에서 완전히 제외(0 기여)"였다. 그러나 주식 시세가 재생(replay) 기반이라 장 마감 시간대(평일 09:01 이전·주말·공휴일 — 하루 대부분)엔 **전 종목이 동시에 `UNAVAILABLE`**이 되고, 이 경우 원가까지 제외하면 실제 손실이 없는데도 `holdingsValue=0`·`totalValue=현금만`·수익률 대폭 마이너스로 보이는 오류가 발생한다(QA 재현: 00:52 KST, 현금+보유 10주 계좌가 수익률 -7%로 응답). 이를 반영해 다음과 같이 정책을 바꾼다.
+>
+> - **`AVAILABLE`**: 기존과 동일 — `evaluationAmount`를 `holdingsValue`에, `unrealizedPnl`을 `unrealizedPnl` 합계에 가산.
+> - **`UNAVAILABLE`**: `evaluationAmount`(`null`) 대신 **`HoldingValuationDto.costBasis`(보유수량 × 평균단가, 시세와 무관하게 항상 채워짐)를 `holdingsValue`에 가산**하고, `unrealizedPnl` 합계에는 **0만 가산**(손익을 알 수 없으니 "원금만큼 있다"로 취급, 손익 자체는 표시하지 않음).
+> - 근거: 휴장 중에도 보유자산이 "없어진 것처럼" 보이면 사용자 신뢰를 해친다. 원가는 시세와 무관하게 항상 신뢰 가능한 값이므로 이를 폴백으로 쓰면 최소한 "원금만큼의 자산이 있다"는 사실은 보존되고, 손익만 "알 수 없음(0 표시)"으로 남는다. 이 방식이 "완전 제외"보다 실제 상태를 덜 왜곡한다.
+> - `AccountService.getAccountSummary` 구현·`AccountServiceTest`(시세 무효 혼합 케이스)·`docs/api-contracts.md` `## account` 절을 이 정책으로 갱신했다.
 
 ### Repository 설계 (`HoldingRepository`, portfolio 도메인)
 
