@@ -16,6 +16,7 @@
 | 23:50 | implementer | `./gradlew compileJava` | 이슈 #81 plan.md "응답 DTO 설계"(6필드, `of(...)` 팩토리), tasks.md 항목2 |
 | 23:58 | implementer | `./gradlew test --tests com.finplay.api.account.service.AccountServiceTest` | 이슈 #81 plan.md "Service 설계"(`getAccountSummary`, `@RequiredArgsConstructor` 교체), tasks.md 항목3 |
 | 14:48 | implementer | `./gradlew compileJava compileTestJava && ./gradlew test --tests com.finplay.api.account.controller.AccountControllerTest` | 이슈 #81 plan.md "Controller 설계"(`GET /api/accounts/summary`, `account.domain.Market` 타입 주의), tasks.md 항목4 |
+| 00:07 | implementer | `./gradlew build --no-daemon --max-workers=1` (JAVA_HOME=corretto-17, Docker 기동 후) | 이슈 #81 plan.md "테스트 계획"(통합), tasks.md 항목5, `OrderBuyIntegrationTest`(#13)·`OrderListIntegrationTest`(#21) MutableClock 픽스처 패턴 |
 
 ## 모니터링 (사람용 요약)
 - 15:20 — OrderRepository에 사용자별 최신순 조회 JPQL 추가, DataJpaTest 3건(본인만/정렬/빈목록) 통과.
@@ -31,3 +32,4 @@
 - 23:50 — 이슈 #81 항목2: `AccountSummaryResponse` record 추가(6필드: cashBalance·holdingsValue·totalValue·realizedPnl·unrealizedPnl·returnRate, `of(...)` 정적 팩토리). 컴파일 통과. controller 미변경이라 api-routes.md·api-contracts.md 갱신 대상 아님(controller 작업 항목에서 처리).
 - 23:58 — 이슈 #81 항목3: `AccountService`에 `HoldingValuationService` 의존성 추가(`@RequiredArgsConstructor`로 교체)·`getAccountSummary` 구현(AVAILABLE만 합산, `totalValue`·`returnRate` 계산). 단위 테스트 5건(유효만/무효 혼합 제외/활성 보유 없음/계좌 없음 NOT_FOUND 회귀 포함, 기존 2건 유지) 총 7건 통과, account·portfolio 스위트 회귀 없음. controller 미변경이라 문서 동기화 대상 아님(다음 항목에서 처리).
 - 14:48 — 이슈 #81 항목4: 신규 `com.finplay.api.account.controller.AccountController` 추가(`GET /api/accounts/summary`, `account.domain.Market` 타입 사용, 별도 검증 코드 없음). 신규 `AccountControllerTest`(WebMvc 슬라이스) 5건(STOCK·CRYPTO 200 필드 계약, market 누락 400, market=FOREX 400, 인증 실패 401) 전체 통과. controller 신규 추가지만 문서 동기화(prd.md·api-routes.md·api-contracts.md)는 다음 항목(통합 테스트 이후 마지막 항목)에서 처리 예정.
+- 00:07 — 이슈 #81 항목5: 신규 `AccountSummaryIntegrationTest`(Testcontainers) 추가 — 회원가입 직후 0값(시드머니만 예외), 매수 후 원장·최신 분봉가 기준 6필드 정확 일치, 크립토 피드 단절로 시세 무효화된 보유 제외(예외 없음), 타인 매수가 본인 조회에 미섞임 4건. 클래스에 `@Transactional`을 추가해 각 테스트 종료 시 자동 롤백시킴 — 없으면 이 클래스가 `com.finplay.api.account...`로 다른 통합 테스트(`order...`)보다 알파벳순으로 먼저 실행되어 커밋된 종목·주문 데이터가 `InstrumentRepositoryTest`(정확히 28건 단정)·`StockReplaySessionRepositoryTest`를 깨뜨림을 재현·확인함(사람이 실행하는 CI 등 실제 실행 순서에서도 같은 문제가 재발할 수 있어 agent-mistakes.md에 기록). `./gradlew build --no-daemon --max-workers=1` 전체(936개 테스트, Spotless·SpotBugs·JaCoCo 40%) BUILD SUCCESSFUL.
