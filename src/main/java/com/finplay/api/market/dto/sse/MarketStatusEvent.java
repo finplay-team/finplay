@@ -17,13 +17,4 @@ public record MarketStatusEvent(
 	LocalDateTime emittedAt) {
 
 	// symbol·status·reason은 시장 전체 상태 변화(예: 장 마감)에서는 null일 수 있다 — 클래스 레벨 @JsonInclude(NON_NULL)로 필드 자체가 생략된다.
-	public static MarketStatusEvent of(
-		Market market,
-		String symbol,
-		StockMarketStatus marketStatus,
-		PriceStatus status,
-		String reason,
-		LocalDateTime emittedAt) {
-		return new MarketStatusEvent(market, symbol, marketStatus, status, reason, emittedAt);
-	}
 }

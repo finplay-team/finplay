@@ -19,14 +19,4 @@ public record MarketPriceEvent(
 	StockMarketStatus marketStatus) {
 
 	// sourceTradingDate는 주식에서만 값을 가진다 — 코인은 null이며 클래스 레벨 @JsonInclude(NON_NULL)로 필드 자체가 생략된다 (plan.md SSE 계약).
-	public static MarketPriceEvent of(
-		Market market,
-		String symbol,
-		BigDecimal price,
-		LocalDateTime sourceTime,
-		LocalDateTime emittedAt,
-		LocalDate sourceTradingDate,
-		StockMarketStatus marketStatus) {
-		return new MarketPriceEvent(market, symbol, price, sourceTime, emittedAt, sourceTradingDate, marketStatus);
-	}
 }

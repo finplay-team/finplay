@@ -32,6 +32,9 @@ public class SseEmitterRegistry {
 	}
 
 	// emitter를 생성해 market별 집합에 등록하고, 그 자리에서 retry: 3000을 1회 전송한다. 컨트롤러(#19·#20)는 이후 snapshot·price·status를 이 emitter로 push한다.
+	// 계약: 이 반환값은 반드시 호출한 컨트롤러 메서드의 반환값으로 그대로 돌려줘야 한다. 그렇지 않으면 Spring이
+	// 비동기 요청 처리를 시작하지 않아 emitter가 완료·타임아웃 콜백 없이 이 집합에 영구히 남는다 — register()가
+	// 쓰는 무제한 timeout의 SseEmitter는 자동 회수 경로가 없다.
 	public SseEmitter register(Market market) {
 		SseEmitter emitter = new SseEmitter();
 		CopyOnWriteArrayList<SseEmitter> emitters = emittersByMarket.get(market);
@@ -58,7 +61,12 @@ public class SseEmitterRegistry {
 			for (SseEmitter emitter : emitters) {
 				try {
 					emitter.send(SseEmitter.event().comment(HEARTBEAT_COMMENT));
-				} catch (IOException e) {
+				} catch (IOException | RuntimeException e) {
+					// complete()된 emitter에 send()를 호출하면 IOException이 아니라 검사되지 않는
+					// IllegalStateException이 발생한다(Assert.state(!this.complete, ...)) — complete()가
+					// complete=true를 즉시 세팅하지만 컨테이너의 completion 콜백(emitters.remove())은 그 이후에
+					// 실행되므로, 이 창에서 tick이 이 emitter를 다시 순회할 수 있다. RuntimeException까지 잡지
+					// 않으면 EnumMap 순회 전체가 중단되어 다른 market 구독자의 heartbeat까지 끊긴다.
 					log.debug("heartbeat 전송 실패로 emitter 정리: market={}", entry.getKey(), e);
 					emitters.remove(emitter);
 					emitter.completeWithError(e);
@@ -70,7 +78,7 @@ public class SseEmitterRegistry {
 	private void sendRetryHint(SseEmitter emitter, CopyOnWriteArrayList<SseEmitter> emitters) {
 		try {
 			emitter.send(SseEmitter.event().reconnectTime(RETRY_MILLIS));
-		} catch (IOException e) {
+		} catch (IOException | RuntimeException e) {
 			log.debug("retry 힌트 전송 실패로 emitter 정리", e);
 			emitters.remove(emitter);
 			emitter.completeWithError(e);

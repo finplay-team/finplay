@@ -24,14 +24,6 @@ public record MarketSnapshotEvent(
 	}
 
 	// sourceTradingDate는 주식에서만 값을 가진다 — 코인은 null이며 클래스 레벨 @JsonInclude(NON_NULL)로 필드 자체가 생략된다 (plan.md SSE 계약).
-	public static MarketSnapshotEvent of(
-		Market market,
-		LocalDate sourceTradingDate,
-		StockMarketStatus marketStatus,
-		LocalDateTime emittedAt,
-		List<InstrumentPriceSnapshot> prices) {
-		return new MarketSnapshotEvent(market, sourceTradingDate, marketStatus, emittedAt, prices);
-	}
 
 	// snapshot 배열 안의 종목 1건 — 가격이 없는 종목도 배열에서 빼지 않고 price·sourceTime=null, status=UNAVAILABLE로 포함한다.
 	public record InstrumentPriceSnapshot(String symbol, BigDecimal price, LocalDateTime sourceTime,

@@ -1,6 +1,14 @@
 // SseEmitterRegistry의 onCompletion·onTimeout·onError 콜백이 실제 Spring SSE 생명주기에서 동작하는지 검증하기 위한
 // 테스트 지원 클래스. ResponseBodyEmitter.Handler는 패키지 접근 제한(package-private)이라 같은 패키지에 두어야
 // 실제 프레임워크 콜백 등록·트리거 경로를 (mock이 아닌) 그대로 재현할 수 있다. src/main 코드는 아니며 테스트 전용이다.
+//
+// 위험: 이 클래스는 package-private SPI(ResponseBodyEmitter.Handler)와 package-private 메서드
+// (ResponseBodyEmitter.initialize(Handler))에 의존한다. Spring 마이너 업그레이드가 이 인터페이스에 메서드를
+// 추가하면(과거 6.0.12에서 send(Set<DataWithMediaType>) 추가 이력 있음) 이 파일의 컴파일이 먼저 깨진다.
+// 채택 근거: 이슈 #18 시점에는 SSE 엔드포인트 컨트롤러가 아직 없어(#19·#20 예정) MockMvc의
+// asyncDispatch 경로로 완료·타임아웃·에러 콜백을 실제 트리거할 방법이 없었다 — 대안으로 이 핸들러를 채택했다.
+// Spring 업그레이드로 컴파일이 깨지면, 신규 메서드 구현 추가 또는 컨트롤러가 생긴 뒤 MockMvc 기반 테스트로
+// 교체하는 방안을 검토한다.
 package org.springframework.web.servlet.mvc.method.annotation;
 
 import java.io.IOException;

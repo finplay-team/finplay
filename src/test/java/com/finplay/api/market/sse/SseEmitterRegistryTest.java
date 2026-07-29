@@ -130,6 +130,44 @@ class SseEmitterRegistryTest {
 	}
 
 	@Test
+	void sendHeartbeatAfterEmitterCompletesRemovesItWithoutThrowing() throws IOException {
+		// emitter.complete()는 내부 complete 플래그만 즉시 세팅하고, 컨테이너의 onCompletion 콜백(레지스트리에서
+		// emitters.remove()를 실행하는 경로)은 별도로 트리거되기 전까지는 호출되지 않는다. 그 사이 tick이 오면
+		// 레지스트리는 이미 complete()된 emitter에 send()를 시도하게 되고, 이는 IOException이 아니라 검사되지
+		// 않는 IllegalStateException을 던진다. sendHeartbeat()가 이를 잡아 목록에서 정리하는지 검증한다.
+		SseEmitterRegistry registry = new SseEmitterRegistry();
+		SseEmitter emitter = registry.register(Market.STOCK);
+		SseEmitterTestHandler handler = new SseEmitterTestHandler();
+		handler.attachTo(emitter);
+
+		emitter.complete();
+
+		registry.sendHeartbeat();
+
+		assertThat(registry.getEmitters(Market.STOCK)).doesNotContain(emitter);
+		assertThat(handler.isCompleteWithErrorCalled()).isTrue();
+	}
+
+	@Test
+	void sendHeartbeatSkipsFailedEmitterButStillReachesTheNextOne() throws IOException {
+		SseEmitterRegistry registry = new SseEmitterRegistry();
+		SseEmitter failingEmitter = registry.register(Market.STOCK);
+		SseEmitter healthyEmitter = registry.register(Market.STOCK);
+		SseEmitterTestHandler failingHandler = new SseEmitterTestHandler();
+		SseEmitterTestHandler healthyHandler = new SseEmitterTestHandler();
+		failingHandler.attachTo(failingEmitter);
+		healthyHandler.attachTo(healthyEmitter);
+		int healthyEventsBeforeHeartbeat = healthyHandler.getSentEvents().size();
+
+		failingEmitter.complete();
+
+		registry.sendHeartbeat();
+
+		assertThat(registry.getEmitters(Market.STOCK)).doesNotContain(failingEmitter).containsExactly(healthyEmitter);
+		assertThat(healthyHandler.getSentEvents().size()).isGreaterThan(healthyEventsBeforeHeartbeat);
+	}
+
+	@Test
 	void sendHeartbeatWithNoRegisteredEmittersDoesNothing() {
 		SseEmitterRegistry registry = new SseEmitterRegistry();
 
