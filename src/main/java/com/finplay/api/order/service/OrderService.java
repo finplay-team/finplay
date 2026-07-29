@@ -26,6 +26,11 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class OrderService {
 
+	// PR #93 리뷰 권장사항: execute() 트랜잭션 안에서는 이 제약 말고도 uk_holdings_account_instrument 등
+	// 다른 유니크 제약이 위반될 수 있다. 그런 경우까지 멱등키 경합으로 잘못 판단해 409로 감추지 않도록,
+	// 실제 위반된 제약이 이것일 때만 재조회 폴백을 탄다.
+	private static final String IDEMPOTENCY_KEY_CONSTRAINT_NAME = "uk_orders_user_idempotency";
+
 	private final OrderExecutionService orderExecutionService;
 	private final OrderRepository orderRepository;
 	private final TradeRepository tradeRepository;
@@ -42,11 +47,21 @@ public class OrderService {
 		try {
 			return orderExecutionService.execute(userId, idempotencyKey, requestHash, request);
 		} catch (DataIntegrityViolationException concurrentDuplicate) {
-			log.warn("주문 저장 중 제약 위반 발생 — 멱등키 경합으로 간주해 재조회를 시도한다. userId={}, idempotencyKey={}",
+			if (!isIdempotencyKeyConstraintViolation(concurrentDuplicate)) {
+				// 멱등키 경합이 아닌 다른 유니크 제약 위반(예: holdings 동시성)이다 — 원인을 감추지 않고 그대로 전파한다.
+				// 방치된 방어적 경로: 원인 조사는 2차 동시성 고도화(분산락 등)에서 다룬다.
+				throw concurrentDuplicate;
+			}
+			log.warn("주문 저장 중 멱등키 제약 위반 발생 — 경합으로 간주해 재조회를 시도한다. userId={}, idempotencyKey={}",
 				userId, idempotencyKey, concurrentDuplicate);
 			return findReplayResponse(userId, idempotencyKey, requestHash)
 				.orElseThrow(() -> new BusinessException(ErrorCode.IDEMPOTENCY_CONFLICT));
 		}
+	}
+
+	private boolean isIdempotencyKeyConstraintViolation(DataIntegrityViolationException exception) {
+		Throwable cause = exception.getMostSpecificCause();
+		return cause.getMessage() != null && cause.getMessage().contains(IDEMPOTENCY_KEY_CONSTRAINT_NAME);
 	}
 
 	// 기존 Order를 찾으면 본문 해시를 비교해 응답을 재구성하거나(일치) 즉시 409(불일치)를 던진다.

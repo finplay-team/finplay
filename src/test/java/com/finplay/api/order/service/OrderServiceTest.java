@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -138,7 +139,8 @@ class OrderServiceTest {
 			.thenReturn(Optional.empty(), Optional.of(existingOrder));
 		when(tradeRepository.findByOrderId(100L)).thenReturn(Optional.of(existingTrade));
 		when(orderExecutionService.execute(any(), anyString(), anyString(), any()))
-			.thenThrow(new DataIntegrityViolationException("동시 경합으로 유니크 제약 위반"));
+			.thenThrow(new DataIntegrityViolationException(
+				"Duplicate entry '1-idem-key-1' for key 'orders.uk_orders_user_idempotency'"));
 
 		OrderResponse response = orderService.createOrder(USER_ID, IDEMPOTENCY_KEY, sampleRequest());
 
@@ -150,12 +152,29 @@ class OrderServiceTest {
 	void createOrderThrowsIdempotencyConflictWhenExecuteHitsConcurrentUniqueConstraintAndReplayIsNotFound() {
 		when(orderRepository.findByUserIdAndIdempotencyKey(USER_ID, IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
 		when(orderExecutionService.execute(any(), anyString(), anyString(), any()))
-			.thenThrow(new DataIntegrityViolationException("동시 경합으로 유니크 제약 위반"));
+			.thenThrow(new DataIntegrityViolationException(
+				"Duplicate entry '1-idem-key-1' for key 'orders.uk_orders_user_idempotency'"));
 
 		assertThatThrownBy(() -> orderService.createOrder(USER_ID, IDEMPOTENCY_KEY, sampleRequest()))
 			.isInstanceOf(BusinessException.class)
 			.satisfies(exception -> assertThat(((BusinessException)exception).getErrorCode())
 				.isEqualTo(ErrorCode.IDEMPOTENCY_CONFLICT));
+	}
+
+	@Test
+	void createOrderRethrowsUnrelatedUniqueConstraintViolationWithoutMaskingItAsIdempotencyConflict() {
+		// PR #93 리뷰 권장사항: holdings 등 다른 유니크 제약 위반까지 멱등키 충돌로 잘못 판단하면 안 된다.
+		when(orderRepository.findByUserIdAndIdempotencyKey(USER_ID, IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
+		DataIntegrityViolationException holdingsConstraintViolation = new DataIntegrityViolationException(
+			"Duplicate entry '10-42' for key 'holdings.uk_holdings_account_instrument'");
+		when(orderExecutionService.execute(any(), anyString(), anyString(), any()))
+			.thenThrow(holdingsConstraintViolation);
+
+		assertThatThrownBy(() -> orderService.createOrder(USER_ID, IDEMPOTENCY_KEY, sampleRequest()))
+			.isSameAs(holdingsConstraintViolation);
+
+		// 원인이 다른 제약이므로 재조회(멱등키 폴백)를 시도하지 않는다 — findByUserIdAndIdempotencyKey는 선제 조회 1회만 호출됨.
+		verify(orderRepository, times(1)).findByUserIdAndIdempotencyKey(USER_ID, IDEMPOTENCY_KEY);
 	}
 
 	@Test
