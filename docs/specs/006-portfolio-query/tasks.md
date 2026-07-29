@@ -74,10 +74,10 @@
   - `market` 누락·잘못된 리터럴은 기존 `GlobalExceptionHandler`가 이미 400 `VALIDATION_ERROR`로 처리하므로 컨트롤러에 별도 검증 코드를 추가하지 않는다.
   - `@WebMvcTest` 슬라이스 테스트(`AccountControllerTest`, 신규, `OrderControllerTest` 패턴 재사용): `market=STOCK`·`market=CRYPTO` 200 필드 계약, `market` 누락 400, `market=FOREX` 400, 인증 실패 401.
 
-- [ ] **통합 테스트: 매수 파이프라인 기반 계좌 요약 시나리오**
+- [x] **통합 테스트: 매수 파이프라인 기반 계좌 요약 시나리오**
   - Testcontainers 기반 통합 테스트(기존 매수 통합 테스트 파일 인접 또는 신규 `AccountSummaryIntegrationTest`)에 시나리오 추가: 회원가입 직후 빈 계좌 200(모두 0, `cashBalance`는 초기 시드머니) → 매수 API로 실제 매수 실행 후 재조회해 6개 값이 원장·시세 기준으로 정확히 일치 → 시세 무효 종목 보유 상황에서도 예외 없이 200(해당 종목 합산 제외 확인) → 타인 계좌 매수가 본인 조회에 섞이지 않음.
 
-- [ ] **문서 동기화: `docs/prd.md` · `docs/api-routes.md` · `docs/api-contracts.md`**
+- [x] **문서 동기화: `docs/prd.md` · `docs/api-routes.md` · `docs/api-contracts.md`**
   - `docs/prd.md` ACCT-002 절에 수익률 필드를 추가(계산식 근거 명시, #51이 동일 계산식을 재사용함을 명시).
   - `docs/api-routes.md` 라우트 표에 `GET /api/accounts/summary?market=` 행 추가(Spec 컬럼에 `006 ACCT-002, Issue #81` 표기).
   - `docs/api-contracts.md`에 신규 `## account` 절 추가 — 요청(쿼리 `market` 필수), 성공 200 예시(`AccountSummaryResponse` 6개 필드), 오류(400 `VALIDATION_ERROR`, 401 `UNAUTHORIZED`) 표.

@@ -6,7 +6,7 @@
 
 블랙박스 QA는 구현 코드(`src/main`)를 읽지 않고 이 문서와 spec만을 계약 근거로 사용한다 (`docs/context-router.md`).
 
-순서는 도메인 기준이다 — auth → market → community → order.
+순서는 도메인 기준이다 — auth → market → community → order → account.
 
 ---
 
@@ -234,3 +234,17 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 | GET | /api/orders | Access Bearer 필수 | 본문·경로 변수·쿼리 없음 | 200 `[{"orderId":1,"market":"STOCK","instrumentId":1,"side":"BUY","orderType":"MARKET","status":"FILLED","quantity":10,"requestedAt":"2026-07-29T09:00:00"}, ...]` (`OrderListItemResponse[]`); 주문이 없으면 200 `[]` | Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 006 PORT-003, Issue #21 |
 
 조회 대상은 요청에서 받지 않고 Access Token의 인증 사용자 본인 소유 주문으로만 결정한다. `requestedAt` 내림차순, 동시각은 `id` 내림차순으로 정렬한다. 응답 필드는 `orderId`·`market`·`instrumentId`·`side`·`orderType`·`status`·`quantity`·`requestedAt` 8개로 고정이며, 체결 전용 필드(`tradeId`·`price`·`amount`·`fee`·`executedAt`)는 어떤 이름으로도 포함하지 않는다.
+
+---
+
+## account
+
+### 시장별 계좌 요약 조회
+
+| Method | URL | 인증 | 쿼리 파라미터 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|---|
+| GET | /api/accounts/summary?market= | Access Bearer 필수 | `market`(필수, `STOCK`\|`CRYPTO` 리터럴만 허용) | 200 `{"cashBalance":9300000,"holdingsValue":720000,"totalValue":10020000,"realizedPnl":0,"unrealizedPnl":20000,"returnRate":0.0020}` (`AccountSummaryResponse`, 6개 필드 고정) | `market` 누락 또는 `STOCK`\|`CRYPTO` 외 리터럴(예: `FOREX`)은 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 006 ACCT-002, Issue #81 |
+
+조회 대상은 요청에서 받지 않고 Access Token의 인증 사용자 본인 소유의 해당 시장 계좌로만 결정한다(경로·쿼리에 계좌 식별자 없음 — 타인 계좌 조회 자체가 불가능한 구조). 보유 종목이 없어도(신규 가입 직후 등) 예외 없이 200과 0으로 채운 응답을 반환한다(단 `cashBalance`는 초기 시드머니).
+
+응답 6개 필드: `cashBalance`(현금잔고, 계좌 원장 값 그대로) · `holdingsValue`(활성 보유 중 시세 유효 종목의 평가금액 합산) · `totalValue`(`cashBalance + holdingsValue`) · `realizedPnl`(계좌 원장 값 그대로, 재계산 없음) · `unrealizedPnl`(활성 보유 중 시세 유효 종목의 미실현손익 합산) · `returnRate`(`(totalValue − seedMoney) ÷ seedMoney`, scale 4 `RoundingMode.HALF_UP`, 비율 값이며 `%` 변환은 응답 책임이 아님). 시세가 무효(`PriceStatus.UNAVAILABLE`)한 보유 종목은 원가를 포함해 `holdingsValue`·`unrealizedPnl` 합산에서 완전히 제외한다(0 기여) — 한 종목의 시세 무효가 전체 계좌 요약 조회를 막지 않는다. ACCT-003(합산 포트폴리오, Issue #51)은 이 계산식을 그대로 재사용한다.
