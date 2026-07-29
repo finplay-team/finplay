@@ -62,7 +62,7 @@
 - [x] **응답 DTO: `AccountSummaryResponse`**
   - `account/dto/response/AccountSummaryResponse.java` record 추가 — `cashBalance`·`holdingsValue`·`totalValue`·`realizedPnl`·`unrealizedPnl`·`returnRate` 6개 필드, 정적 팩토리 `of(...)` (plan.md 표 참고).
 
-- [ ] **Service: `AccountService.getAccountSummary`**
+- [x] **Service: `AccountService.getAccountSummary`**
   - 기존 `AccountService`에 `HoldingValuationService` 의존성 추가(생성자를 `@RequiredArgsConstructor`로 교체 — `HoldingRepository`는 주입하지 않음), `@Transactional(readOnly = true) getAccountSummary(Long userId, Market market)` 추가.
   - 기존 `getAccountFor(userId, market)`를 그대로 호출해 소유권 검증 재사용(별도 403/404 분기 없음).
   - 시세 유효(`AVAILABLE`) 보유만 `holdingsValue`·`unrealizedPnl` 합산에 반영, 무효(`UNAVAILABLE`) 보유는 합산에서 제외(0 기여, plan.md "시세 무효 종목 합산 정책 확정" 절).
