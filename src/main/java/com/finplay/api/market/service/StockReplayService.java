@@ -17,6 +17,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -71,6 +72,37 @@ public class StockReplayService {
 		return new StockReplayPriceDto(true, marketStatus, sourceTradingDate, price, sourceTime);
 	}
 
+	// 캔들 API — 아직 마감하지 않은 분봉은 응답에서 제외한다(공개 컷오프 로직은 findRevealedCandle과 동일한 resolveRevealCutoff를 재사용).
+	// 재생세션이 준비되지 않았거나 공개된 분봉이 없으면 예외 없이 빈 목록을 반환한다(가격 API의 PRICE_UNAVAILABLE과 다른 계약).
+	@Transactional(readOnly = true)
+	public List<StockCandleDto> getRevealedCandles(Long instrumentId, LocalDateTime from, LocalDateTime to) {
+		LocalDateTime now = LocalDateTime.now(clock);
+		Optional<StockReplaySession> readySession = findReadySession(now.toLocalDate());
+		if (readySession.isEmpty()) {
+			return List.of();
+		}
+
+		LocalDate sourceTradingDate = readySession.get().getSourceTradingDate();
+		Optional<LocalTime> cutoff = resolveRevealCutoff(instrumentId, sourceTradingDate, now.toLocalTime());
+		if (cutoff.isEmpty()) {
+			return List.of();
+		}
+
+		LocalTime rangeStart = from != null ? from.toLocalTime() : LocalTime.MIN;
+		LocalTime requestedEnd = to != null ? to.toLocalTime() : LocalTime.MAX;
+		LocalTime rangeEnd = requestedEnd.isBefore(cutoff.get()) ? requestedEnd : cutoff.get();
+		if (rangeStart.isAfter(rangeEnd)) {
+			return List.of();
+		}
+
+		return stockCandleRepository
+			.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+				instrumentId, sourceTradingDate, rangeStart, rangeEnd)
+			.stream()
+			.map(StockCandleDto::from)
+			.toList();
+	}
+
 	private Optional<StockReplaySession> findReadySession(LocalDate serviceDate) {
 		return stockReplaySessionRepository
 			.findByServiceDate(serviceDate)
@@ -93,6 +125,8 @@ public class StockReplayService {
 		return !time.isBefore(MARKET_OPEN_TIME) && time.isBefore(FIRST_CANDLE_END_TIME);
 	}
 
+	// 가격 API 전용 — 첫 분봉 구간은 재조회 없이 asc 쿼리 결과를 그대로 반환한다(쿼리 1회, 이슈 #16 확정 계약).
+	// 캔들 API(getRevealedCandles)는 범위 조회를 위해 컷오프 "시각"만 필요하므로 별도의 resolveRevealCutoff를 쓴다 — 이 메서드와 공유하지 않는다.
 	private Optional<StockCandle> findRevealedCandle(Long instrumentId, LocalDate sourceTradingDate, LocalTime now) {
 		if (isWithinFirstCandleWindow(now)) {
 			return stockCandleRepository.findFirstByInstrumentIdAndTradingDateOrderByCandleTimeAsc(
@@ -107,6 +141,22 @@ public class StockReplayService {
 		return stockCandleRepository
 			.findFirstByInstrumentIdAndTradingDateAndCandleTimeLessThanEqualOrderByCandleTimeDesc(
 				instrumentId, sourceTradingDate, cutoff);
+	}
+
+	// 캔들 API(getRevealedCandles) 전용 컷오프 계산 — 첫 분봉 구간(09:00~09:00:59)은 그 첫 분봉 자체의 실제 시각을,
+	// 09:01부터는 마감이 완료된 마지막 분봉의 시각을 반환한다. 09:00 이전이거나 첫 분봉이 아직 없으면 Optional.empty().
+	private Optional<LocalTime> resolveRevealCutoff(Long instrumentId, LocalDate sourceTradingDate, LocalTime now) {
+		if (isWithinFirstCandleWindow(now)) {
+			return stockCandleRepository
+				.findFirstByInstrumentIdAndTradingDateOrderByCandleTimeAsc(instrumentId, sourceTradingDate)
+				.map(StockCandle::getCandleTime);
+		}
+		LocalTime currentMinute = now.truncatedTo(ChronoUnit.MINUTES);
+		if (currentMinute.isBefore(FIRST_CANDLE_END_TIME)) {
+			// 09:00 이전(개장 전)이며 첫 분봉 구간도 아니므로 아직 공개된 분봉이 없다.
+			return Optional.empty();
+		}
+		return Optional.of(currentMinute.minusMinutes(1));
 	}
 
 	// 클래스패스 리소스 파일에서 공휴일 목록(한 줄에 yyyy-MM-dd, #으로 시작하는 줄은 주석)을 읽어 Set으로 반환한다.
