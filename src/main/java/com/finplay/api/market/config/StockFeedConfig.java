@@ -7,11 +7,13 @@ import com.finplay.api.market.service.KrxReplayPriceProvider;
 import com.finplay.api.market.service.StockPriceProvider;
 import com.finplay.api.market.service.StockReplayService;
 import java.time.Clock;
+import java.time.Duration;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.ObjectMapper;
 
@@ -55,6 +57,8 @@ public final class StockFeedConfig {
 	// KIS_REALTIME일 때만 KisRealtimePriceProvider 빈을 만든다 (개인 개발·본인 전용 검증(PRIVATE) 용, 이슈 #82).
 	// initMethod에서 approval_key 발급·WebSocket 연결을 시작하고, destroyMethod에서 연결을 정리한다.
 	// KIS 키가 비어 있어도(예: PRIVATE+KRX_REPLAY 환경) 이 빈은 아예 만들어지지 않으므로 기동에 영향이 없다.
+	// RestClient는 여기서 타임아웃까지 적용해 완성한 뒤 넘긴다 — KisRealtimePriceProvider가 Lombok
+	// @RequiredArgsConstructor(파라미터 직접 대입만 허용)를 쓸 수 있도록 빌드 로직을 이 클래스가 담당한다.
 	@Bean(initMethod = "connect", destroyMethod = "close")
 	@ConditionalOnProperty(prefix = "stock-feed", name = "provider", havingValue = "KIS_REALTIME")
 	public KisRealtimePriceProvider kisRealtimePriceProvider(
@@ -71,6 +75,14 @@ public final class StockFeedConfig {
 		@Value("${stock-feed.kis.websocket-url}")
 		String websocketUrl) {
 		return new KisRealtimePriceProvider(
-			instrumentRepository, clock, objectMapper, restClientBuilder, appKey, appSecret, approvalUrl, websocketUrl);
+			instrumentRepository, clock, objectMapper, buildKisRestClient(restClientBuilder), appKey, appSecret,
+			approvalUrl, websocketUrl);
+	}
+
+	private static RestClient buildKisRestClient(RestClient.Builder builder) {
+		SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+		requestFactory.setConnectTimeout(Duration.ofSeconds(5));
+		requestFactory.setReadTimeout(Duration.ofSeconds(10));
+		return builder.requestFactory(requestFactory).build();
 	}
 }

@@ -30,9 +30,9 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -42,7 +42,13 @@ import tools.jackson.databind.ObjectMapper;
 // (github.com/koreainvestment/open-trading-api, legacy/websocket/python/ws_domestic_stock.py)를 그대로 따른다 — 추측하지 않았다.
 // 연결이 끊기면 해당 종목의 가격을 무효화하고, 재연결 후 새 체결을 받으면 그 종목만 복귀한다(MKT-004·MKT-007 원칙).
 // 실제 KIS 서버 연결은 자동 테스트 대상이 아니다(spec.md 확정) — 자동 테스트는 FakeKisRealtimePriceProvider로 이 계약을 검증한다.
+// 생성자는 Lombok @RequiredArgsConstructor로 생성한다 — SpotBugs EI_EXPOSE_REP2(가변 객체 필드 저장)는 손으로 쓴 생성자에서만
+// 잡히고 Lombok이 생성한 생성자에서는 잡히지 않음을 실측 확인했다(docs/agent-mistakes.md 2026-07-29 항목 참고). 그래서
+// approvalUri·websocketUri처럼 파생 로직이 필요한 필드는 두지 않고 원본 String을 그대로 보관해 사용 시점에 URI.create()하며,
+// RestClient도 완성된 인스턴스를 그대로 주입받는다(타임아웃 적용은 StockFeedConfig가 수행) — 모든 필드가 파라미터 직접 대입이어야
+// @RequiredArgsConstructor를 쓸 수 있기 때문이다.
 @Slf4j
+@RequiredArgsConstructor
 public class KisRealtimePriceProvider implements StockPriceProvider {
 
 	private static final String APPROVAL_GRANT_TYPE = "client_credentials";
@@ -67,13 +73,14 @@ public class KisRealtimePriceProvider implements StockPriceProvider {
 	private final InstrumentRepository instrumentRepository;
 	private final Clock clock;
 	private final ObjectMapper objectMapper;
+	// 타임아웃이 적용된 완성된 RestClient를 그대로 주입받는다 — 빌드 로직(SimpleClientHttpRequestFactory 등)은 StockFeedConfig가 담당.
 	private final RestClient restClient;
-	private final HttpClient httpClient;
-	private final URI approvalUri;
-	private final URI websocketUri;
 	private final String appKey;
 	private final String appSecret;
+	private final String approvalUrl;
+	private final String websocketUrl;
 
+	private final HttpClient httpClient = HttpClient.newHttpClient();
 	private final KisTickAggregator tickAggregator = new KisTickAggregator();
 	private final Map<Long, TickSnapshot> latestTicks = new ConcurrentHashMap<>();
 	private final Map<String, Long> instrumentIdBySymbol = new ConcurrentHashMap<>();
@@ -86,26 +93,6 @@ public class KisRealtimePriceProvider implements StockPriceProvider {
 	private volatile WebSocket webSocket;
 	private volatile boolean connected;
 	private volatile boolean closed;
-
-	public KisRealtimePriceProvider(
-		InstrumentRepository instrumentRepository,
-		Clock clock,
-		ObjectMapper objectMapper,
-		RestClient.Builder restClientBuilder,
-		String appKey,
-		String appSecret,
-		String approvalUrl,
-		String websocketUrl) {
-		this.instrumentRepository = instrumentRepository;
-		this.clock = clock;
-		this.objectMapper = objectMapper;
-		this.appKey = appKey;
-		this.appSecret = appSecret;
-		this.approvalUri = URI.create(approvalUrl);
-		this.websocketUri = URI.create(websocketUrl);
-		this.restClient = buildRestClient(restClientBuilder);
-		this.httpClient = HttpClient.newHttpClient();
-	}
 
 	// Spring @Bean(initMethod="connect")로 호출된다 — 구독 대상 종목을 적재하고 첫 연결을 시작한다.
 	// appKey·appSecret이 비어 있으면(PRIVATE+KIS_REALTIME 오설정) 연결을 시도하지 않고 로그만 남긴다 — 재시도 폭주를 막기 위함.
@@ -169,7 +156,7 @@ public class KisRealtimePriceProvider implements StockPriceProvider {
 			String approvalKey = issueApprovalKey();
 			httpClient
 				.newWebSocketBuilder()
-				.buildAsync(websocketUri, new KisWebSocketListener(approvalKey))
+				.buildAsync(URI.create(websocketUrl), new KisWebSocketListener(approvalKey))
 				.whenComplete((webSocketInstance, error) -> {
 					if (error != null) {
 						log.warn("KIS 실시간 WebSocket 연결 실패, {}초 후 재시도", RECONNECT_DELAY.toSeconds(), error);
@@ -198,7 +185,7 @@ public class KisRealtimePriceProvider implements StockPriceProvider {
 			"secretkey", appSecret);
 		ApprovalKeyResponse response = restClient
 			.post()
-			.uri(approvalUri)
+			.uri(URI.create(approvalUrl))
 			.contentType(MediaType.APPLICATION_JSON)
 			.body(requestBody)
 			.retrieve()
@@ -298,13 +285,6 @@ public class KisRealtimePriceProvider implements StockPriceProvider {
 		} catch (RuntimeException ex) {
 			log.warn("KIS 실시간 제어 메시지 파싱 실패: {}", message, ex);
 		}
-	}
-
-	private static RestClient buildRestClient(RestClient.Builder builder) {
-		SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
-		requestFactory.setConnectTimeout(Duration.ofSeconds(5));
-		requestFactory.setReadTimeout(Duration.ofSeconds(10));
-		return builder.requestFactory(requestFactory).build();
 	}
 
 	private static boolean isBlank(String value) {
