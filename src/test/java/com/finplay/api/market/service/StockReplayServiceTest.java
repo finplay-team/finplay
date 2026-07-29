@@ -44,7 +44,8 @@ class StockReplayServiceTest {
 	}
 
 	private StockReplayService service(Clock clock) {
-		return new StockReplayService(stockReplaySessionRepository, stockCandleRepository, clock);
+		return new StockReplayService(
+			stockReplaySessionRepository, stockCandleRepository, clock, new BusinessDayCalendar());
 	}
 
 	private static StockReplaySession readySession(LocalDate serviceDate, LocalDate sourceTradingDate) {

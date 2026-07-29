@@ -8,15 +8,15 @@ import java.util.Map;
 
 public class FakeKisHistoricalCandleClient implements KisHistoricalCandleClient {
 
-	private final Map<String, List<RawMinuteCandle>> candlesBySymbol = new HashMap<>();
+	private final Map<String, List<RawMinuteCandleDto>> candlesBySymbol = new HashMap<>();
 
 	// 테스트 전용: 이 종목의 fetchMinuteCandles 호출 결과를 고정한다.
-	public void setCandles(String symbol, List<RawMinuteCandle> candles) {
+	public void setCandles(String symbol, List<RawMinuteCandleDto> candles) {
 		candlesBySymbol.put(symbol, candles);
 	}
 
 	@Override
-	public List<RawMinuteCandle> fetchMinuteCandles(String symbol, LocalDate tradingDate) {
+	public List<RawMinuteCandleDto> fetchMinuteCandles(String symbol, LocalDate tradingDate) {
 		return candlesBySymbol.getOrDefault(symbol, List.of());
 	}
 }

@@ -108,19 +108,19 @@ class KisHistoricalCandleClientImplTest {
 			.andRespond(withSuccess(
 				candlePageJson(LocalTime.of(9, 0), LocalTime.of(9, 5)), MediaType.APPLICATION_JSON));
 
-		List<RawMinuteCandle> candles = client.fetchMinuteCandles(SYMBOL, TRADING_DATE);
+		List<RawMinuteCandleDto> candles = client.fetchMinuteCandles(SYMBOL, TRADING_DATE);
 
 		// 120건(13:31~15:30) + 6건(09:00~09:05) = 126건, 중복·누락 없이 시각 오름차순.
 		assertThat(candles).hasSize(126);
 		assertThat(candles.get(0).candleTime()).isEqualTo(LocalTime.of(9, 0));
 		assertThat(candles.get(candles.size() - 1).candleTime()).isEqualTo(LocalTime.of(15, 30));
-		assertThat(candles).extracting(RawMinuteCandle::candleTime).doesNotHaveDuplicates();
+		assertThat(candles).extracting(RawMinuteCandleDto::candleTime).doesNotHaveDuplicates();
 		assertThat(candles).isSortedAccordingTo((a, b) -> a.candleTime().compareTo(b.candleTime()));
 		server.verify();
 	}
 
 	@Test
-	void fetchMinuteCandlesMapsOutput2FieldsToRawMinuteCandle() {
+	void fetchMinuteCandlesMapsOutput2FieldsToRawMinuteCandleDto() {
 		RestClient.Builder builder = newBuilder();
 		MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
 		KisHistoricalCandleClientImpl client = newClient(builder, APP_KEY, APP_SECRET);
@@ -137,10 +137,10 @@ class KisHistoricalCandleClientImplTest {
 					""",
 				MediaType.APPLICATION_JSON));
 
-		List<RawMinuteCandle> candles = client.fetchMinuteCandles(SYMBOL, TRADING_DATE);
+		List<RawMinuteCandleDto> candles = client.fetchMinuteCandles(SYMBOL, TRADING_DATE);
 
 		assertThat(candles).hasSize(1);
-		RawMinuteCandle candle = candles.get(0);
+		RawMinuteCandleDto candle = candles.get(0);
 		assertThat(candle.candleTime()).isEqualTo(LocalTime.of(9, 0));
 		assertThat(candle.open()).isEqualByComparingTo(new BigDecimal("71000"));
 		assertThat(candle.high()).isEqualByComparingTo(new BigDecimal("71500"));
@@ -163,7 +163,7 @@ class KisHistoricalCandleClientImplTest {
 			.andExpect(method(HttpMethod.GET))
 			.andRespond(withSuccess("{\"output2\":[]}", MediaType.APPLICATION_JSON));
 
-		List<RawMinuteCandle> candles = client.fetchMinuteCandles(SYMBOL, TRADING_DATE);
+		List<RawMinuteCandleDto> candles = client.fetchMinuteCandles(SYMBOL, TRADING_DATE);
 
 		assertThat(candles).isEmpty();
 		server.verify();

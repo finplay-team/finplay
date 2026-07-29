@@ -106,6 +106,10 @@ class MarketDataPipelineIntegrationTest {
 	@Autowired
 	private StockReplaySessionScheduler stockReplaySessionScheduler;
 
+	// 영업일 계산 공통화(PR #94 리뷰 권장) 이후 세 클래스가 공유하는 실제 Spring 빈을 그대로 재사용한다.
+	@Autowired
+	private BusinessDayCalendar businessDayCalendar;
+
 	@Autowired
 	private PriceQueryService priceQueryService;
 
@@ -154,8 +158,8 @@ class MarketDataPipelineIntegrationTest {
 		}
 	}
 
-	private static RawMinuteCandle candle(LocalTime time, String open, String high, String low, String close) {
-		return new RawMinuteCandle(
+	private static RawMinuteCandleDto candle(LocalTime time, String open, String high, String low, String close) {
+		return new RawMinuteCandleDto(
 			time, new BigDecimal(open), new BigDecimal(high), new BigDecimal(low), new BigDecimal(close), 100L);
 	}
 
@@ -163,14 +167,15 @@ class MarketDataPipelineIntegrationTest {
 	// @Scheduled 우회하고 서비스 메서드를 직접 호출하는 방식(tasks.md 항목 ⑦ 지시)이다.
 	private KisHistoricalCandleCollector collectorWith(KisHistoricalCandleClient client) {
 		return new KisHistoricalCandleCollector(
-			instrumentRepository, client, stockCandleRepository, importWriter, clock);
+			instrumentRepository, client, stockCandleRepository, importWriter, clock, businessDayCalendar);
 	}
 
 	// "서버 재시작" 시뮬레이션 — StockReplaySessionScheduler는 인스턴스 상태가 없으므로, 새 인스턴스를 만들어 호출해도
 	// 결과는 오직 DB 상태에만 의존한다. 실제 프로세스 재시작 대신 같은 ApplicationContext 안에서 이 방식으로 대체한다.
 	private StockReplaySessionScheduler freshSchedulerInstanceAfterRestart() {
 		return new StockReplaySessionScheduler(
-			stockReplaySessionRepository, marketDataImportRepository, stockCandleRepository, clock);
+			stockReplaySessionRepository, marketDataImportRepository, stockCandleRepository, clock,
+			businessDayCalendar);
 	}
 
 	// KisHistoricalCandleClient가 모든 종목 호출에서 예외를 던지는 상황을 흉내낸다 — 각 종목 호출 실패는 그 종목 하나만의
@@ -179,7 +184,7 @@ class MarketDataPipelineIntegrationTest {
 	// (KisHistoricalCandleCollectorTest와 동일한 관례).
 	private static final class ThrowingKisHistoricalCandleClient implements KisHistoricalCandleClient {
 		@Override
-		public List<RawMinuteCandle> fetchMinuteCandles(String symbol, LocalDate tradingDate) {
+		public List<RawMinuteCandleDto> fetchMinuteCandles(String symbol, LocalDate tradingDate) {
 			throw new IllegalStateException("응답 파싱 실패: 지원하지 않는 응답 구조");
 		}
 	}

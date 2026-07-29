@@ -60,16 +60,16 @@ class KisHistoricalCandleCollectorTest {
 		return instrument;
 	}
 
-	private static RawMinuteCandle validCandle(LocalTime time, String price) {
+	private static RawMinuteCandleDto validCandle(LocalTime time, String price) {
 		BigDecimal p = new BigDecimal(price);
-		return new RawMinuteCandle(time, p, p, p, p, 100L);
+		return new RawMinuteCandleDto(time, p, p, p, p, 100L);
 	}
 
 	// KisHistoricalCandleClient가 응답 파싱 실패 등으로 예외를 던지는 상황을 흉내내는 테스트 전용 더블.
 	// FakeKisHistoricalCandleClient는 실패를 표현할 수 없어(항상 정상 리스트 반환) 이 시나리오 전용으로 따로 둔다.
 	private static class ThrowingKisHistoricalCandleClient implements KisHistoricalCandleClient {
 		@Override
-		public List<RawMinuteCandle> fetchMinuteCandles(String symbol, LocalDate tradingDate) {
+		public List<RawMinuteCandleDto> fetchMinuteCandles(String symbol, LocalDate tradingDate) {
 			throw new IllegalStateException("응답 파싱 실패: 지원하지 않는 응답 구조");
 		}
 	}
@@ -90,7 +90,7 @@ class KisHistoricalCandleCollectorTest {
 
 		KisHistoricalCandleCollector collector = new KisHistoricalCandleCollector(
 			instrumentRepository, fakeClient, stockCandleRepository, importWriter,
-			fixedClock(WEEKDAY_RUN_AT));
+			fixedClock(WEEKDAY_RUN_AT), new BusinessDayCalendar());
 
 		collector.collect();
 
@@ -123,7 +123,7 @@ class KisHistoricalCandleCollectorTest {
 
 		KisHistoricalCandleCollector collector = new KisHistoricalCandleCollector(
 			instrumentRepository, new ThrowingKisHistoricalCandleClient(), stockCandleRepository,
-			importWriter, fixedClock(WEEKDAY_RUN_AT));
+			importWriter, fixedClock(WEEKDAY_RUN_AT), new BusinessDayCalendar());
 
 		collector.collect();
 
@@ -156,7 +156,7 @@ class KisHistoricalCandleCollectorTest {
 
 		KisHistoricalCandleCollector collector = new KisHistoricalCandleCollector(
 			instrumentRepository, partiallyFlakyClient, stockCandleRepository, importWriter,
-			fixedClock(WEEKDAY_RUN_AT));
+			fixedClock(WEEKDAY_RUN_AT), new BusinessDayCalendar());
 
 		collector.collect();
 
@@ -184,7 +184,7 @@ class KisHistoricalCandleCollectorTest {
 
 		KisHistoricalCandleCollector collector = new KisHistoricalCandleCollector(
 			instrumentRepository, new FakeKisHistoricalCandleClient(), stockCandleRepository, importWriter,
-			fixedClock(WEEKDAY_RUN_AT));
+			fixedClock(WEEKDAY_RUN_AT), new BusinessDayCalendar());
 
 		collector.collect();
 
@@ -214,7 +214,7 @@ class KisHistoricalCandleCollectorTest {
 
 		KisHistoricalCandleCollector collector = new KisHistoricalCandleCollector(
 			instrumentRepository, fakeClient, stockCandleRepository, importWriter,
-			fixedClock(WEEKDAY_RUN_AT));
+			fixedClock(WEEKDAY_RUN_AT), new BusinessDayCalendar());
 
 		collector.collect();
 
@@ -242,7 +242,7 @@ class KisHistoricalCandleCollectorTest {
 
 		KisHistoricalCandleCollector collector = new KisHistoricalCandleCollector(
 			instrumentRepository, spyClient, stockCandleRepository, importWriter,
-			fixedClock(WEEKDAY_RUN_AT));
+			fixedClock(WEEKDAY_RUN_AT), new BusinessDayCalendar());
 
 		// 1차 실행: 아직 저장된 분봉이 없다.
 		when(stockCandleRepository.existsByInstrumentIdAndTradingDate(1L, EXPECTED_TRADING_DATE))
@@ -292,7 +292,7 @@ class KisHistoricalCandleCollectorTest {
 
 		KisHistoricalCandleCollector collector = new KisHistoricalCandleCollector(
 			instrumentRepository, fakeClient, stockCandleRepository, importWriter,
-			fixedClock(mondayRunAt));
+			fixedClock(mondayRunAt), new BusinessDayCalendar());
 
 		collector.collect();
 
@@ -318,7 +318,7 @@ class KisHistoricalCandleCollectorTest {
 
 		KisHistoricalCandleCollector collector = new KisHistoricalCandleCollector(
 			instrumentRepository, fakeClient, stockCandleRepository, importWriter,
-			fixedClock(tuesdayRunAt));
+			fixedClock(tuesdayRunAt), new BusinessDayCalendar());
 
 		collector.collect();
 

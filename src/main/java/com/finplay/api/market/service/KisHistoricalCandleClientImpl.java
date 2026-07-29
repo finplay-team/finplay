@@ -2,6 +2,7 @@
 package com.finplay.api.market.service;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.finplay.api.market.config.KisProperties;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -19,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -27,7 +29,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 // output2의 개별 필드명(stck_cntg_hour·stck_oprc·stck_hgpr·stck_lwpr·stck_prpr·cntg_vol)과 분봉 timestamp 기준(구간
 // 시작/종료)은 실제 KIS 응답으로 확인하지 못했다(Decision Gate, spec.md·plan.md 참고) — KIS 다른 시세 API의 명명 관례를
-// 따른 최선 추정으로 구현했다. 이 매핑은 toRawMinuteCandle 메서드 한 곳에만 있으므로, 외부 스모크로 실제 응답을 확인한
+// 따른 최선 추정으로 구현했다. 이 매핑은 toRawMinuteCandleDto 메서드 한 곳에만 있으므로, 외부 스모크로 실제 응답을 확인한
 // 뒤에는 이 지점만 교정하면 된다. 페이징 방향(역방향 — FID_INPUT_HOUR_1을 조회 상한 시각으로 보고 그 이전 데이터를
 // 반환한다고 가정, 응답의 가장 이른 시각-1분을 다음 호출의 상한으로 삼아 09:00에 도달할 때까지 반복)도 같은 이유로
 // requestPage/fetchMinuteCandles 안에만 격리했다.
@@ -61,6 +63,9 @@ public class KisHistoricalCandleClientImpl implements KisHistoricalCandleClient 
 	private static final Duration TOKEN_EXPIRY_SAFETY_MARGIN = Duration.ofMinutes(5);
 
 	// 타임아웃이 적용된 완성된 RestClient를 그대로 주입받는다 — 빌드 로직은 KisRestClientConfig가 담당(SpotBugs EI_EXPOSE_REP2 회피).
+	// @Qualifier로 이름 매칭을 명시한다 — 컨텍스트에 RestClient 빈이 하나뿐이라 타입 매칭만으로도 우연히 동작하지만,
+	// 두 번째 RestClient 빈이 추가되면 이름 매칭 없이는 NoUniqueBeanDefinitionException으로 기동이 깨진다(PR #94 리뷰 권장).
+	@Qualifier("kisRestClient")
 	private final RestClient restClient;
 	private final Clock clock;
 	private final KisProperties properties;
@@ -69,17 +74,17 @@ public class KisHistoricalCandleClientImpl implements KisHistoricalCandleClient 
 	private volatile Instant cachedAccessTokenExpiry;
 
 	@Override
-	public List<RawMinuteCandle> fetchMinuteCandles(String symbol, LocalDate tradingDate) {
+	public List<RawMinuteCandleDto> fetchMinuteCandles(String symbol, LocalDate tradingDate) {
 		requireCredentials();
-		Map<LocalTime, RawMinuteCandle> collected = new LinkedHashMap<>();
+		Map<LocalTime, RawMinuteCandleDto> collected = new LinkedHashMap<>();
 		LocalTime cursor = MARKET_CLOSE_TIME;
 		for (int page = 0; page < MAX_PAGES_PER_SYMBOL; page++) {
-			List<RawMinuteCandle> rows = requestPage(symbol, tradingDate, cursor);
+			List<RawMinuteCandleDto> rows = requestPage(symbol, tradingDate, cursor);
 			if (rows.isEmpty()) {
 				break;
 			}
 			LocalTime earliestInPage = cursor;
-			for (RawMinuteCandle candle : rows) {
+			for (RawMinuteCandleDto candle : rows) {
 				collected.putIfAbsent(candle.candleTime(), candle);
 				if (candle.candleTime().isBefore(earliestInPage)) {
 					earliestInPage = candle.candleTime();
@@ -98,11 +103,11 @@ public class KisHistoricalCandleClientImpl implements KisHistoricalCandleClient 
 		return collected.values().stream()
 			.filter(candle -> !candle.candleTime().isBefore(MARKET_OPEN_TIME)
 				&& !candle.candleTime().isAfter(MARKET_CLOSE_TIME))
-			.sorted(Comparator.comparing(RawMinuteCandle::candleTime))
+			.sorted(Comparator.comparing(RawMinuteCandleDto::candleTime))
 			.toList();
 	}
 
-	private List<RawMinuteCandle> requestPage(String symbol, LocalDate tradingDate, LocalTime cursor) {
+	private List<RawMinuteCandleDto> requestPage(String symbol, LocalDate tradingDate, LocalTime cursor) {
 		String accessToken = ensureAccessToken();
 		String uri = UriComponentsBuilder
 			.fromUriString(properties.baseUrl() + CANDLE_PATH)
@@ -130,18 +135,18 @@ public class KisHistoricalCandleClientImpl implements KisHistoricalCandleClient 
 		if (response == null || response.output2() == null) {
 			return List.of();
 		}
-		return response.output2().stream().map(KisHistoricalCandleClientImpl::toRawMinuteCandle).toList();
+		return response.output2().stream().map(KisHistoricalCandleClientImpl::toRawMinuteCandleDto).toList();
 	}
 
-	private static RawMinuteCandle toRawMinuteCandle(Output2Row row) {
-		LocalTime candleTime = LocalTime.parse(row.stck_cntg_hour(), CANDLE_TIME_FORMAT);
-		return new RawMinuteCandle(
+	private static RawMinuteCandleDto toRawMinuteCandleDto(Output2Row row) {
+		LocalTime candleTime = LocalTime.parse(row.candleTime(), CANDLE_TIME_FORMAT);
+		return new RawMinuteCandleDto(
 			candleTime,
-			new BigDecimal(row.stck_oprc()),
-			new BigDecimal(row.stck_hgpr()),
-			new BigDecimal(row.stck_lwpr()),
-			new BigDecimal(row.stck_prpr()),
-			Long.parseLong(row.cntg_vol()));
+			new BigDecimal(row.open()),
+			new BigDecimal(row.high()),
+			new BigDecimal(row.low()),
+			new BigDecimal(row.close()),
+			Long.parseLong(row.volume()));
 	}
 
 	private String ensureAccessToken() {
@@ -212,11 +217,17 @@ public class KisHistoricalCandleClientImpl implements KisHistoricalCandleClient 
 
 	@JsonIgnoreProperties(ignoreUnknown = true)
 	private record Output2Row(
-		String stck_cntg_hour,
-		String stck_oprc,
-		String stck_hgpr,
-		String stck_lwpr,
-		String stck_prpr,
-		String cntg_vol) {
+		@JsonProperty("stck_cntg_hour")
+		String candleTime,
+		@JsonProperty("stck_oprc")
+		String open,
+		@JsonProperty("stck_hgpr")
+		String high,
+		@JsonProperty("stck_lwpr")
+		String low,
+		@JsonProperty("stck_prpr")
+		String close,
+		@JsonProperty("cntg_vol")
+		String volume) {
 	}
 }

@@ -7,18 +7,10 @@ import com.finplay.api.market.domain.StockReplaySession;
 import com.finplay.api.market.repository.MarketDataImportRepository;
 import com.finplay.api.market.repository.StockCandleRepository;
 import com.finplay.api.market.repository.StockReplaySessionRepository;
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.time.Clock;
-import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Optional;
-import java.util.Set;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -39,17 +31,12 @@ public class StockReplaySessionScheduler {
 	// 여유를 둔 값이다. 정상 운영에서는 직전 영업일 한 번의 조회로 대부분 해결된다.
 	private static final int MAX_LOOKBACK_BUSINESS_DAYS = 30;
 	private static final String NO_VALIDATED_DATA_FAILURE_REASON = "검증 완료된 거래일 데이터를 찾지 못했습니다.";
-	private static final String HOLIDAYS_RESOURCE_PATH = "/holidays-2026.txt";
-
-	// KisHistoricalCandleCollector·StockReplayService와 별개의 클래스가 각자의 목적(수집 대상 거래일 계산 vs. 재생세션
-	// 개장 판정 vs. 검증 완료 거래일 폴백 탐색)으로 같은 리소스 파일을 읽는다 — 세 번째 중복이지만, 이미 테스트가 붙은
-	// 두 클래스의 내부 구조를 이번 항목 범위에서 함께 리팩터링하지 않는다(공통화는 별도 판단 필요, conventions.md).
-	private static final Set<LocalDate> HOLIDAYS_2026 = loadHolidays(HOLIDAYS_RESOURCE_PATH);
 
 	private final StockReplaySessionRepository stockReplaySessionRepository;
 	private final MarketDataImportRepository marketDataImportRepository;
 	private final StockCandleRepository stockCandleRepository;
 	private final Clock clock;
+	private final BusinessDayCalendar businessDayCalendar;
 
 	// 평일 08:40 KST 실행 — KisHistoricalCandleCollector(08:10)가 남긴 수집 결과를 확인한 뒤 재생세션을 고정한다
 	// (plan.md "배치 실행 시각").
@@ -86,12 +73,12 @@ public class StockReplaySessionScheduler {
 	// 존재)된 첫 거래일을 찾는다. 직전 영업일 데이터가 아직 없으면 그 전 영업일로 자연 폴백한다 — 별도 폴백 분기 없이
 	// 같은 탐색 루프가 그대로 이어진다(spec.md MKT-005·plan.md "배치 실행 시각").
 	private Optional<LocalDate> resolveLatestValidatedTradingDate(LocalDate serviceDate) {
-		LocalDate candidate = previousBusinessDay(serviceDate);
+		LocalDate candidate = businessDayCalendar.previousBusinessDay(serviceDate);
 		for (int attempt = 0; attempt < MAX_LOOKBACK_BUSINESS_DAYS; attempt++) {
 			if (isValidatedTradingDate(candidate)) {
 				return Optional.of(candidate);
 			}
-			candidate = previousBusinessDay(candidate);
+			candidate = businessDayCalendar.previousBusinessDay(candidate);
 		}
 		return Optional.empty();
 	}
@@ -103,39 +90,5 @@ public class StockReplaySessionScheduler {
 			.anyMatch(marketDataImport -> marketDataImport.getStatus() == ImportStatus.SUCCESS
 				|| marketDataImport.getStatus() == ImportStatus.PARTIAL_SUCCESS);
 		return hasValidatedImport && stockCandleRepository.existsByTradingDate(tradingDate);
-	}
-
-	// from의 직전 영업일을 계산한다 — 주말·공휴일(리소스 파일 기준)을 건너뛴다.
-	private static LocalDate previousBusinessDay(LocalDate from) {
-		LocalDate candidate = from.minusDays(1);
-		while (isWeekend(candidate) || HOLIDAYS_2026.contains(candidate)) {
-			candidate = candidate.minusDays(1);
-		}
-		return candidate;
-	}
-
-	private static boolean isWeekend(LocalDate date) {
-		DayOfWeek dayOfWeek = date.getDayOfWeek();
-		return dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY;
-	}
-
-	// 클래스패스 리소스 파일에서 공휴일 목록(한 줄에 yyyy-MM-dd, #으로 시작하는 줄은 주석)을 읽어 Set으로 반환한다.
-	private static Set<LocalDate> loadHolidays(String resourcePath) {
-		try (InputStream inputStream = StockReplaySessionScheduler.class.getResourceAsStream(resourcePath)) {
-			if (inputStream == null) {
-				throw new IllegalStateException("공휴일 리소스 파일을 찾을 수 없습니다: " + resourcePath);
-			}
-			try (BufferedReader reader = new BufferedReader(
-				new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
-				return reader
-					.lines()
-					.map(String::strip)
-					.filter(line -> !line.isEmpty() && !line.startsWith("#"))
-					.map(LocalDate::parse)
-					.collect(Collectors.toUnmodifiableSet());
-			}
-		} catch (IOException ex) {
-			throw new IllegalStateException("공휴일 리소스 파일을 읽는 중 오류가 발생했습니다: " + resourcePath, ex);
-		}
 	}
 }

@@ -40,13 +40,16 @@ class CandleQueryServiceIntegrationTest {
 	@Autowired
 	private StockReplaySessionRepository stockReplaySessionRepository;
 
+	@Autowired
+	private BusinessDayCalendar businessDayCalendar;
+
 	private Clock clockAt(LocalDate date, LocalTime time) {
 		return Clock.fixed(LocalDateTime.of(date, time).atZone(KST).toInstant(), KST);
 	}
 
 	private CandleQueryService candleQueryServiceAt(Clock clock) {
 		StockReplayService stockReplayService = new StockReplayService(
-			stockReplaySessionRepository, stockCandleRepository, clock);
+			stockReplaySessionRepository, stockCandleRepository, clock, businessDayCalendar);
 		KisHistoricalReplayPriceProvider provider = new KisHistoricalReplayPriceProvider(stockReplayService);
 		return new CandleQueryService(instrumentRepository, provider);
 	}

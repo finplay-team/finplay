@@ -6,14 +6,8 @@ import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.domain.StockCandle;
 import com.finplay.api.market.repository.InstrumentRepository;
 import com.finplay.api.market.repository.StockCandleRepository;
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.math.BigDecimal;
-import java.nio.charset.StandardCharsets;
 import java.time.Clock;
-import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -22,7 +16,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -34,7 +27,7 @@ import org.springframework.stereotype.Service;
 //    포함)도 그 종목 하나만의 실패로 흡수한다 — 나머지 종목은 계속 수집을 진행한다(PR #94 리뷰 권장사항 ③).
 //  - 전체 단위: 종목 하나로 좁힐 수 없는 진짜 전체 오류(종목 목록 조회 실패, 검증·저장 로직 자체의 버그 등)만 collect()의
 //    최상위 catch에서 이번 실행 전체를 미저장·FAILED로 남긴다.
-// 아래 두 가지는 이번 클라이언트 경계(RawMinuteCandle)에서 항상 구조적으로 만족되어 별도 런타임 검사를 두지 않는다.
+// 아래 두 가지는 이번 클라이언트 경계(RawMinuteCandleDto)에서 항상 구조적으로 만족되어 별도 런타임 검사를 두지 않는다.
 //  - "MVP 허용 16종 여부": InstrumentRepository.findByMarketOrderByIdAsc(Market.STOCK)로만 순회하므로 애초에 허용 종목만 대상이다.
 //  - "조회 대상 거래일과 응답 거래일 일치": KisHistoricalCandleClient는 이번 Decision Gate(plan.md — output2 필드명은
 //    체결시각·시가·고가·저가·종가·거래량 6종만 확인 대상)에서 행별 거래일 필드를 노출하지 않는다. Collector는 항상 단일
@@ -50,17 +43,13 @@ public class KisHistoricalCandleCollector {
 	private static final LocalTime MARKET_OPEN_TIME = LocalTime.of(9, 0);
 	private static final LocalTime MARKET_CLOSE_TIME = LocalTime.of(15, 30);
 	private static final Pattern STOCK_SYMBOL_PATTERN = Pattern.compile("^\\d{6}$");
-	private static final String HOLIDAYS_RESOURCE_PATH = "/holidays-2026.txt";
-
-	// StockReplayService와 별개의 클래스가 각자의 목적(재생세션 개장 판정 vs. 수집 대상 거래일 계산)으로 같은 리소스 파일을
-	// 읽는다 — 두 번째 중복이라 공통화하지 않는다(conventions.md: 공통화는 세 번째 중복부터 검토).
-	private static final Set<LocalDate> HOLIDAYS_2026 = loadHolidays(HOLIDAYS_RESOURCE_PATH);
 
 	private final InstrumentRepository instrumentRepository;
 	private final KisHistoricalCandleClient kisHistoricalCandleClient;
 	private final StockCandleRepository stockCandleRepository;
 	private final KisHistoricalCandleImportWriter importWriter;
 	private final Clock clock;
+	private final BusinessDayCalendar businessDayCalendar;
 
 	// 평일 08:10 KST 실행 — 당일 분봉이 익영업일 오전 8시경 제공된다는 확인 결과에 여유를 둔 시각(plan.md "배치 실행 시각").
 	// 이 메서드 자체는 트랜잭션을 열지 않는다 — 종목별 KIS HTTP 호출(최대 10페이지, connect 5s/read 10s 타임아웃)이
@@ -68,7 +57,7 @@ public class KisHistoricalCandleCollector {
 	// 메서드(persist·recordFailedImport)로만 이뤄진다(PR #94 리뷰 권장사항 ②).
 	@Scheduled(cron = "0 10 8 * * MON-FRI", zone = "Asia/Seoul")
 	public void collect() {
-		LocalDate tradingDate = resolvePreviousBusinessDay(LocalDate.now(clock));
+		LocalDate tradingDate = businessDayCalendar.previousBusinessDay(LocalDate.now(clock));
 		LocalDateTime collectedAt = LocalDateTime.now(clock);
 		try {
 			// 종목 목록 조회 자체도 이 try 안에 둔다 — 실패하면(진짜 전체 오류) 아래 catch가 잡아 FAILED로 남긴다.
@@ -99,7 +88,7 @@ public class KisHistoricalCandleCollector {
 			return new InstrumentOutcome(instrument, List.of(), null);
 		}
 
-		List<RawMinuteCandle> rawCandles;
+		List<RawMinuteCandleDto> rawCandles;
 		try {
 			rawCandles = kisHistoricalCandleClient.fetchMinuteCandles(instrument.getSymbol(), tradingDate);
 		} catch (RuntimeException ex) {
@@ -124,12 +113,12 @@ public class KisHistoricalCandleCollector {
 	// 종목 하나의 분봉 목록 전체를 검증한다 — 하나라도 위반하면 그 종목의 그날 분봉 전체를 원자적으로 저장하지 않는다.
 	// 분봉 개수가 적거나 0건인 것 자체는 오류로 보지 않는다(실제 거래정지·거래 없음·빈 분 생략 가능성 — spec.md, 임계치는
 	// Decision Gate이므로 이 클래스에서 임의 숫자를 도입하지 않는다).
-	private String validateInstrumentCandles(Instrument instrument, List<RawMinuteCandle> rawCandles) {
+	private String validateInstrumentCandles(Instrument instrument, List<RawMinuteCandleDto> rawCandles) {
 		if (!STOCK_SYMBOL_PATTERN.matcher(instrument.getSymbol()).matches()) {
 			return "종목코드 형식이 올바르지 않습니다: " + instrument.getSymbol();
 		}
 		Set<LocalTime> seenCandleTimes = new HashSet<>();
-		for (RawMinuteCandle candle : rawCandles) {
+		for (RawMinuteCandleDto candle : rawCandles) {
 			String rowFailureReason = validateRow(candle, seenCandleTimes);
 			if (rowFailureReason != null) {
 				return rowFailureReason;
@@ -138,7 +127,7 @@ public class KisHistoricalCandleCollector {
 		return null;
 	}
 
-	private String validateRow(RawMinuteCandle candle, Set<LocalTime> seenCandleTimes) {
+	private String validateRow(RawMinuteCandleDto candle, Set<LocalTime> seenCandleTimes) {
 		if (candle.candleTime() == null || candle.open() == null || candle.high() == null
 			|| candle.low() == null || candle.close() == null || candle.volume() == null) {
 			return "필수 필드가 누락된 분봉이 있습니다.";
@@ -168,45 +157,9 @@ public class KisHistoricalCandleCollector {
 	}
 
 	private static StockCandle toStockCandle(
-		Instrument instrument, LocalDate tradingDate, RawMinuteCandle raw, LocalDateTime collectedAt) {
+		Instrument instrument, LocalDate tradingDate, RawMinuteCandleDto raw, LocalDateTime collectedAt) {
 		return StockCandle.create(
 			instrument, tradingDate, raw.candleTime(), raw.open(), raw.high(), raw.low(), raw.close(),
 			raw.volume(), DATA_SOURCE, collectedAt);
-	}
-
-	// 오늘(from)의 직전 영업일을 계산한다 — 주말·공휴일(리소스 파일 기준)을 건너뛴다. 직전 영업일 데이터가 아직 준비되지
-	// 않았을 때의 폴백은 StockReplaySessionScheduler(이슈 #19 ⑥)의 책임이며, 이 메서드는 오늘 기준 하루 전 영업일 하나만
-	// 계산한다.
-	private static LocalDate resolvePreviousBusinessDay(LocalDate from) {
-		LocalDate candidate = from.minusDays(1);
-		while (isWeekend(candidate) || HOLIDAYS_2026.contains(candidate)) {
-			candidate = candidate.minusDays(1);
-		}
-		return candidate;
-	}
-
-	private static boolean isWeekend(LocalDate date) {
-		DayOfWeek dayOfWeek = date.getDayOfWeek();
-		return dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY;
-	}
-
-	// 클래스패스 리소스 파일에서 공휴일 목록(한 줄에 yyyy-MM-dd, #으로 시작하는 줄은 주석)을 읽어 Set으로 반환한다.
-	private static Set<LocalDate> loadHolidays(String resourcePath) {
-		try (InputStream inputStream = KisHistoricalCandleCollector.class.getResourceAsStream(resourcePath)) {
-			if (inputStream == null) {
-				throw new IllegalStateException("공휴일 리소스 파일을 찾을 수 없습니다: " + resourcePath);
-			}
-			try (BufferedReader reader = new BufferedReader(
-				new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
-				return reader
-					.lines()
-					.map(String::strip)
-					.filter(line -> !line.isEmpty() && !line.startsWith("#"))
-					.map(LocalDate::parse)
-					.collect(Collectors.toUnmodifiableSet());
-			}
-		} catch (IOException ex) {
-			throw new IllegalStateException("공휴일 리소스 파일을 읽는 중 오류가 발생했습니다: " + resourcePath, ex);
-		}
 	}
 }

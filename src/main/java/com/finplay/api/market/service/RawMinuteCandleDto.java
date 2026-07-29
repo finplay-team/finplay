@@ -4,7 +4,7 @@ package com.finplay.api.market.service;
 import java.math.BigDecimal;
 import java.time.LocalTime;
 
-public record RawMinuteCandle(
+public record RawMinuteCandleDto(
 	LocalTime candleTime,
 	BigDecimal open,
 	BigDecimal high,

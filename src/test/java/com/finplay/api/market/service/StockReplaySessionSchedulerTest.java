@@ -45,7 +45,8 @@ class StockReplaySessionSchedulerTest {
 
 	private StockReplaySessionScheduler newScheduler(Clock clock) {
 		return new StockReplaySessionScheduler(
-			stockReplaySessionRepository, marketDataImportRepository, stockCandleRepository, clock);
+			stockReplaySessionRepository, marketDataImportRepository, stockCandleRepository, clock,
+			new BusinessDayCalendar());
 	}
 
 	private static MarketDataImport successImport(LocalDate tradingDate) {
