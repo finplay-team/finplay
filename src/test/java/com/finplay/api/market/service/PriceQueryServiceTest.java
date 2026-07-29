@@ -185,4 +185,128 @@ class PriceQueryServiceTest {
 		verifyNoInteractions(stockPriceProvider);
 		verifyNoInteractions(priceStore);
 	}
+
+	// 이하 getPriceQuote(SSE snapshot·price 전용 경로, 이슈 #18) — 가격이 없어도 예외를 던지지 않고 status=UNAVAILABLE로 반환해야 한다.
+
+	@Test
+	void getPriceQuoteReturnsAvailableQuoteWhenStockProviderHasPriceWithoutThrowing() {
+		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
+		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
+		PriceStore priceStore = mock(PriceStore.class);
+		Instrument instrument = Instrument.create(
+			Market.STOCK, "005930", "삼성전자", BigDecimal.valueOf(100), 70000L, true, NOW);
+		when(instrumentRepository.findById(1L)).thenReturn(Optional.of(instrument));
+		StockReplayPriceDto quote = new StockReplayPriceDto(
+			true, StockMarketStatus.OPEN, LocalDate.of(2026, 7, 28), new BigDecimal("71000"),
+			LocalDateTime.of(2026, 7, 28, 9, 5));
+		when(stockPriceProvider.getCurrentPrice(any())).thenReturn(quote);
+		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
+			priceStore);
+
+		PriceQuoteDto result = priceQueryService.getPriceQuote(1L);
+
+		assertThat(result.price()).isEqualTo(new BigDecimal("71000"));
+		assertThat(result.sourceTime()).isEqualTo(LocalDateTime.of(2026, 7, 28, 9, 5));
+		assertThat(result.sourceTradingDate()).isEqualTo(LocalDate.of(2026, 7, 28));
+		assertThat(result.status()).isEqualTo(PriceStatus.AVAILABLE);
+	}
+
+	@Test
+	void getPriceQuoteReturnsUnavailableQuoteWithoutThrowingWhenStockProviderHasNoPrice() {
+		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
+		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
+		PriceStore priceStore = mock(PriceStore.class);
+		Instrument instrument = Instrument.create(
+			Market.STOCK, "005930", "삼성전자", BigDecimal.valueOf(100), 70000L, true, NOW);
+		when(instrumentRepository.findById(1L)).thenReturn(Optional.of(instrument));
+		StockReplayPriceDto quote = new StockReplayPriceDto(
+			false, StockMarketStatus.CLOSED, LocalDate.of(2026, 7, 27), null, null);
+		when(stockPriceProvider.getCurrentPrice(any())).thenReturn(quote);
+		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
+			priceStore);
+
+		PriceQuoteDto result = priceQueryService.getPriceQuote(1L);
+
+		assertThat(result.price()).isNull();
+		assertThat(result.sourceTime()).isNull();
+		assertThat(result.status()).isEqualTo(PriceStatus.UNAVAILABLE);
+	}
+
+	@Test
+	void getPriceQuoteReturnsAvailableQuoteWhenCryptoPriceStoreHasLatestPriceWithoutThrowing() {
+		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
+		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
+		PriceStore priceStore = mock(PriceStore.class);
+		Instrument instrument = Instrument.create(Market.CRYPTO, "BTC", "비트코인", BigDecimal.valueOf(1000), 5000L, true,
+			NOW);
+		when(instrumentRepository.findById(2L)).thenReturn(Optional.of(instrument));
+		when(priceStore.isPriceAvailable("BTC")).thenReturn(true);
+		when(priceStore.getLatestPrice("BTC"))
+			.thenReturn(Optional.of(new CryptoPriceDto("BTC", new BigDecimal("50000000"), NOW)));
+		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
+			priceStore);
+
+		PriceQuoteDto result = priceQueryService.getPriceQuote(2L);
+
+		assertThat(result.price()).isEqualTo(new BigDecimal("50000000"));
+		assertThat(result.status()).isEqualTo(PriceStatus.AVAILABLE);
+		assertThat(result.sourceTradingDate()).isNull();
+	}
+
+	@Test
+	void getPriceQuoteReturnsUnavailableQuoteWithoutThrowingWhenCryptoPriceStoreReportsUnavailable() {
+		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
+		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
+		PriceStore priceStore = mock(PriceStore.class);
+		Instrument instrument = Instrument.create(Market.CRYPTO, "BTC", "비트코인", BigDecimal.valueOf(1000), 5000L, true,
+			NOW);
+		when(instrumentRepository.findById(2L)).thenReturn(Optional.of(instrument));
+		when(priceStore.isPriceAvailable("BTC")).thenReturn(false);
+		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
+			priceStore);
+
+		PriceQuoteDto result = priceQueryService.getPriceQuote(2L);
+
+		assertThat(result.price()).isNull();
+		assertThat(result.status()).isEqualTo(PriceStatus.UNAVAILABLE);
+		verify(priceStore, never()).getLatestPrice(any());
+	}
+
+	@Test
+	void getPriceQuoteThrowsNotFoundWhenInstrumentMissing() {
+		// 가격 없음(UNAVAILABLE)과 종목 자체가 없음(NOT_FOUND)은 다른 문제다 — getPriceQuote도 종목 조회 실패는 여전히 예외로 던진다.
+		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
+		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
+		PriceStore priceStore = mock(PriceStore.class);
+		when(instrumentRepository.findById(999L)).thenReturn(Optional.empty());
+		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
+			priceStore);
+
+		assertThatThrownBy(() -> priceQueryService.getPriceQuote(999L))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode()).isEqualTo(ErrorCode.NOT_FOUND));
+	}
+
+	// getPrice(Long)의 409 PRICE_UNAVAILABLE 계약 회귀 확인 — getPriceQuote 위임으로 리팩터링된 이후에도
+	// 반환된 UNAVAILABLE 상태를 getPrice가 여전히 예외로 승격시키는지 별도로 고정한다 (이슈 #18).
+	@Test
+	void getPriceStillThrowsPriceUnavailableAfterDelegatingToGetPriceQuote() {
+		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
+		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
+		PriceStore priceStore = mock(PriceStore.class);
+		Instrument instrument = Instrument.create(
+			Market.STOCK, "005930", "삼성전자", BigDecimal.valueOf(100), 70000L, true, NOW);
+		when(instrumentRepository.findById(1L)).thenReturn(Optional.of(instrument));
+		StockReplayPriceDto quote = new StockReplayPriceDto(false, StockMarketStatus.CLOSED, null, null, null);
+		when(stockPriceProvider.getCurrentPrice(any())).thenReturn(quote);
+		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
+			priceStore);
+
+		// getPriceQuote 자체는 UNAVAILABLE을 반환할 뿐 예외를 던지지 않는다.
+		assertThat(priceQueryService.getPriceQuote(1L).status()).isEqualTo(PriceStatus.UNAVAILABLE);
+		// 반면 getPrice는 동일 상황에서 여전히 409 PRICE_UNAVAILABLE 예외를 던진다 (기존 계약 유지).
+		assertThatThrownBy(() -> priceQueryService.getPrice(1L))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode()).isEqualTo(ErrorCode.PRICE_UNAVAILABLE));
+	}
 }

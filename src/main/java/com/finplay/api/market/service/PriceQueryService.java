@@ -6,7 +6,6 @@ import com.finplay.api.common.ErrorCode;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.repository.InstrumentRepository;
-import com.finplay.api.market.store.CryptoPriceDto;
 import com.finplay.api.market.store.PriceStore;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -20,36 +19,57 @@ public class PriceQueryService {
 	private final StockPriceProvider stockPriceProvider;
 	private final PriceStore priceStore;
 
+	// 가격이 없으면 PRICE_UNAVAILABLE 예외를 던진다 — 가격 API의 409 계약 (이슈 #16 확정, 동작 변경 없음). getPriceQuote를 감싸 판정 로직을 중복하지 않는다.
 	@Transactional(readOnly = true)
 	public PriceQuoteDto getPrice(Long instrumentId) {
-		Instrument instrument = instrumentRepository
-			.findById(instrumentId)
-			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
-		return getPrice(instrument);
+		return requireAvailable(getPriceQuote(instrumentId));
 	}
 
 	@Transactional(readOnly = true)
 	public PriceQuoteDto getPrice(Instrument instrument) {
-		return instrument.getMarket() == Market.STOCK ? getStockPrice(instrument) : getCryptoPrice(instrument);
+		return requireAvailable(getPriceQuote(instrument));
+	}
+
+	// 가격이 없어도 예외를 던지지 않고 status=UNAVAILABLE로 표현한다 — SSE snapshot·price처럼 "가격 없음"도 정상 응답인 소비자를 위한 경로 (이슈 #18).
+	@Transactional(readOnly = true)
+	public PriceQuoteDto getPriceQuote(Long instrumentId) {
+		Instrument instrument = instrumentRepository
+			.findById(instrumentId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+		return getPriceQuote(instrument);
+	}
+
+	@Transactional(readOnly = true)
+	public PriceQuoteDto getPriceQuote(Instrument instrument) {
+		return instrument.getMarket() == Market.STOCK ? getStockPriceQuote(instrument)
+			: getCryptoPriceQuote(instrument);
+	}
+
+	private PriceQuoteDto requireAvailable(PriceQuoteDto quote) {
+		if (quote.status() == PriceStatus.UNAVAILABLE) {
+			throw new BusinessException(ErrorCode.PRICE_UNAVAILABLE);
+		}
+		return quote;
 	}
 
 	// 어느 StockPriceProvider 구현체(KrxReplayPriceProvider·KisRealtimePriceProvider)가 동작 중인지 알지 못한 채 인터페이스로만 위임한다.
-	private PriceQuoteDto getStockPrice(Instrument instrument) {
+	private PriceQuoteDto getStockPriceQuote(Instrument instrument) {
 		StockReplayPriceDto quote = stockPriceProvider.getCurrentPrice(instrument.getId());
 		if (!quote.isPriceAvailable()) {
-			throw new BusinessException(ErrorCode.PRICE_UNAVAILABLE);
+			return new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, quote.sourceTradingDate());
 		}
 		return new PriceQuoteDto(quote.price(), quote.sourceTime(), PriceStatus.AVAILABLE, quote.sourceTradingDate());
 	}
 
-	private PriceQuoteDto getCryptoPrice(Instrument instrument) {
+	private PriceQuoteDto getCryptoPriceQuote(Instrument instrument) {
 		String symbol = instrument.getSymbol();
 		if (!priceStore.isPriceAvailable(symbol)) {
-			throw new BusinessException(ErrorCode.PRICE_UNAVAILABLE);
+			return new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null);
 		}
-		CryptoPriceDto latestPrice = priceStore
+		return priceStore
 			.getLatestPrice(symbol)
-			.orElseThrow(() -> new BusinessException(ErrorCode.PRICE_UNAVAILABLE));
-		return new PriceQuoteDto(latestPrice.price(), latestPrice.receivedAt(), PriceStatus.AVAILABLE, null);
+			.map(latestPrice -> new PriceQuoteDto(latestPrice.price(), latestPrice.receivedAt(), PriceStatus.AVAILABLE,
+				null))
+			.orElseGet(() -> new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null));
 	}
 }

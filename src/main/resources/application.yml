@@ -6,6 +6,11 @@ spring:
     hibernate:
       ddl-auto: validate # 스키마 변경은 Flyway로만 (ADR-0004)
     open-in-view: false
+  mvc:
+    async:
+      # SSE(/stocks/stream, /cryptos/stream) 연결이 장시간 유지돼야 하므로 컨테이너 async 타임아웃을 두지 않는다.
+      # 연결 생존 확인은 SseEmitterRegistry의 20초 heartbeat가 담당한다 (이슈 #18).
+      request-timeout: -1
 
 # 인증 spec(PRD 태스크 2) 구현 시 사용. 시크릿은 환경변수로만 주입.
 jwt:
