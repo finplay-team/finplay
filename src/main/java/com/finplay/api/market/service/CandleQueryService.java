@@ -22,8 +22,13 @@ public class CandleQueryService {
 
 	@Transactional(readOnly = true)
 	public List<CandleResponse> getCandles(Long instrumentId, String interval, LocalDateTime from, LocalDateTime to) {
+		// CandleInterval.from은 값을 쓰지 않고 "1m 외에는 즉시 400"이라는 검증 목적으로만 호출한다(반환값은 의도적으로 버림).
 		CandleInterval.from(interval);
-		if (from != null && to != null && from.isAfter(to)) {
+		// 리뷰 확정(PR #87 QA FAIL, 옵션 c): 캔들은 항상 재생 중인 단일 거래일(source_trading_date) 안에서만 조회되므로
+		// from·to의 날짜 성분은 무시하고 시각(LocalTime)만 쓴다. from>to 판정도 같은 기준(시각)으로 통일한다 —
+		// 그렇지 않으면 날짜 기준 판정과 실제 조회에 쓰이는 시각 기준 필터링이 서로 어긋나 검증을 통과한 요청이
+		// 조용히 빈 배열을 반환하거나, 시각상 유효한 요청이 날짜 때문에 400으로 거부되는 문제가 있었다.
+		if (from != null && to != null && from.toLocalTime().isAfter(to.toLocalTime())) {
 			throw new BusinessException(ErrorCode.VALIDATION_ERROR, "from은 to보다 늦을 수 없습니다.");
 		}
 

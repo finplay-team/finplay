@@ -100,13 +100,28 @@ class CandleQueryServiceIntegrationTest {
 	}
 
 	@Test
-	void firstCandleWindowExposesOnlyTheFirstMinuteCandle() {
+	void firstCandleWindowReturnsEmptyListBecauseTheFirstCandleIsNotYetClosed() {
+		// 리뷰 확정(PR #87 차단 1): 09:00~09:00:59에는 첫 분봉조차 아직 마감 전이므로 캔들 목록은 빈 배열이어야 한다.
 		Instrument instrument = saveInstrument("CDL0002");
 		saveCandle(instrument, LocalTime.of(9, 0), "71100");
 		LocalDate serviceDate = LocalDate.of(2026, 7, 30);
 		saveReadySession(serviceDate);
 
 		CandleQueryService service = candleQueryServiceAt(clockAt(serviceDate, LocalTime.of(9, 0, 30)));
+		List<CandleResponse> candles = service.getCandles(instrument.getId(), "1m", null, null);
+
+		assertThat(candles).isEmpty();
+	}
+
+	@Test
+	void oneMinuteBoundaryExposesTheNowClosedFirstCandle() {
+		// 09:01:00 정각 컷오프 경계 — 09:00 분봉이 막 마감 완료되어 처음으로 노출된다.
+		Instrument instrument = saveInstrument("CDL0007");
+		saveCandle(instrument, LocalTime.of(9, 0), "71100");
+		LocalDate serviceDate = LocalDate.of(2026, 8, 7);
+		saveReadySession(serviceDate);
+
+		CandleQueryService service = candleQueryServiceAt(clockAt(serviceDate, LocalTime.of(9, 1, 0)));
 		List<CandleResponse> candles = service.getCandles(instrument.getId(), "1m", null, null);
 
 		assertThat(candles).hasSize(1);

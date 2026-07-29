@@ -282,37 +282,37 @@ class StockReplayServiceTest {
 	}
 
 	@Test
-	void getRevealedCandlesReturnsOnlyFirstCandleDuringFirstCandleWindowWhenFromToOmitted() {
+	void getRevealedCandlesReturnsEmptyListDuringFirstCandleWindowWithoutQueryingCandles() {
+		// 리뷰 확정(PR #87 차단 1): 09:00~09:00:59는 첫 분봉조차 아직 마감 전이므로 캔들 목록은 예외 없이 빈 배열이어야 한다.
+		// 가격 API(getCurrentPrice)가 이 구간에서 첫 분봉의 시가를 노출하는 것과는 다른 계약이다.
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(9, 0, 30)));
+
+		List<StockCandleDto> candles = service.getRevealedCandles(INSTRUMENT_ID, null, null);
+
+		assertThat(candles).isEmpty();
+		verifyNoInteractions(stockCandleRepository);
+	}
+
+	@Test
+	void getRevealedCandlesRevealsFirstCandleExactlyAtOneMinuteBoundary() {
+		// 09:01:00 정각 — 컷오프 경계값. currentMinute=09:01, cutoff=09:01-1분=09:00(첫 분봉, 이제 막 마감 완료).
 		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
 			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
 		StockCandle firstCandle = candle(LocalTime.of(9, 0), BigDecimal.valueOf(1000), BigDecimal.valueOf(1010));
-		when(stockCandleRepository.findFirstByInstrumentIdAndTradingDateOrderByCandleTimeAsc(INSTRUMENT_ID, WEEKDAY))
-			.thenReturn(Optional.of(firstCandle));
 		when(stockCandleRepository.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
 			INSTRUMENT_ID, WEEKDAY, LocalTime.MIN, LocalTime.of(9, 0)))
 			.thenReturn(List.of(firstCandle));
-		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(9, 0, 30)));
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(9, 1, 0)));
 
 		List<StockCandleDto> candles = service.getRevealedCandles(INSTRUMENT_ID, null, null);
 
 		assertThat(candles).hasSize(1);
 		assertThat(candles.get(0).candleTime()).isEqualTo(LocalTime.of(9, 0));
 		assertThat(candles.get(0).tradingDate()).isEqualTo(WEEKDAY);
-	}
-
-	@Test
-	void getRevealedCandlesReturnsEmptyListWhenFirstCandleNotYetStoredDuringFirstCandleWindow() {
-		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
-			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
-		when(stockCandleRepository.findFirstByInstrumentIdAndTradingDateOrderByCandleTimeAsc(INSTRUMENT_ID, WEEKDAY))
-			.thenReturn(Optional.empty());
-		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(9, 0, 30)));
-
-		List<StockCandleDto> candles = service.getRevealedCandles(INSTRUMENT_ID, null, null);
-
-		assertThat(candles).isEmpty();
 		verify(stockCandleRepository, never())
-			.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(any(), any(), any(), any());
+			.findFirstByInstrumentIdAndTradingDateOrderByCandleTimeAsc(any(), any());
 	}
 
 	@Test

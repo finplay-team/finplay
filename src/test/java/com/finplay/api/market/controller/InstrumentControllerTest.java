@@ -381,6 +381,38 @@ class InstrumentControllerTest {
 	}
 
 	@Test
+	void getCandlesReturnsCommonValidationErrorWhenIntervalParamIsMissing() throws Exception {
+		// interval은 필수 쿼리 파라미터다 — 누락 시 MissingServletRequestParameterException을
+		// GlobalExceptionHandler가 400 VALIDATION_ERROR로 매핑하는지 고정한다.
+		authenticate();
+
+		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}/candles", 1L)))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.message").isNotEmpty())
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(candleQueryService);
+	}
+
+	@Test
+	void getCandlesReturnsCommonValidationErrorWhenFromIsNotIsoFormat() throws Exception {
+		// from이 ISO-8601 LocalDateTime 형식이 아니면 MethodArgumentTypeMismatchException을
+		// GlobalExceptionHandler가 400 VALIDATION_ERROR로 매핑하는지 고정한다.
+		authenticate();
+
+		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}/candles", 1L)
+			.param("interval", "1m")
+			.param("from", "not-a-date")))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.message").isNotEmpty())
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(candleQueryService);
+	}
+
+	@Test
 	void getCandlesReturnsCommonValidationErrorWhenFromIsAfterTo() throws Exception {
 		authenticate();
 		LocalDateTime from = LocalDateTime.of(2026, 7, 27, 10, 0);

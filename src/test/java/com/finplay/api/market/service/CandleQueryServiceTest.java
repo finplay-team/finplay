@@ -68,6 +68,35 @@ class CandleQueryServiceTest {
 	}
 
 	@Test
+	void getCandlesRejectsWhenFromTimeIsAfterToTimeEvenIfFromDateIsEarlier() {
+		// 리뷰 확정(PR #87 QA FAIL 옵션 c): from>to 판정은 날짜가 아니라 시각(LocalTime)만 비교한다.
+		// 날짜만 보면 from(07-22)이 to(07-23)보다 이르지만, 시각은 09:01 > 09:00이므로 400이어야 한다.
+		LocalDateTime from = LocalDateTime.of(2026, 7, 22, 9, 1);
+		LocalDateTime to = LocalDateTime.of(2026, 7, 23, 9, 0);
+
+		assertThatThrownBy(() -> service.getCandles(STOCK_INSTRUMENT_ID, "1m", from, to))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
+				.isEqualTo(ErrorCode.VALIDATION_ERROR));
+
+		verifyNoInteractions(instrumentRepository);
+		verifyNoInteractions(stockPriceProvider);
+	}
+
+	@Test
+	void getCandlesAllowsFromLaterByDateThanToWhenFromTimeIsNotAfterToTime() {
+		// 날짜만 보면 from(07-23)이 to(07-22)보다 늦지만, 시각은 09:00 <= 09:01이므로 통과해야 한다(날짜 성분은 무시).
+		LocalDateTime from = LocalDateTime.of(2026, 7, 23, 9, 0);
+		LocalDateTime to = LocalDateTime.of(2026, 7, 22, 9, 1);
+		when(instrumentRepository.findById(STOCK_INSTRUMENT_ID)).thenReturn(Optional.of(stockInstrument()));
+		when(stockPriceProvider.getCandles(STOCK_INSTRUMENT_ID, from, to)).thenReturn(List.of());
+
+		List<CandleResponse> result = service.getCandles(STOCK_INSTRUMENT_ID, "1m", from, to);
+
+		assertThat(result).isEmpty();
+	}
+
+	@Test
 	void getCandlesAllowsFromEqualToTo() {
 		LocalDateTime sameInstant = LocalDateTime.of(2026, 7, 27, 9, 0);
 		when(instrumentRepository.findById(STOCK_INSTRUMENT_ID)).thenReturn(Optional.of(stockInstrument()));
