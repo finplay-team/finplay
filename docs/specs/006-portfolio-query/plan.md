@@ -398,4 +398,8 @@ public class AccountController {
   - 매수 API로 실제 매수 실행 후 조회 → `cashBalance`(차감 반영)·`holdingsValue`·`totalValue`·`unrealizedPnl`·`returnRate`가 원장·시세 기준으로 정확히 일치.
   - 시세가 무효한 종목을 보유한 상황(예: `PriceStore`에 값이 없는 코인 보유) → 예외 없이 200, 해당 종목이 합산에서 제외됐는지 확인.
   - 타인 계좌 매수 후 본인 계좌 조회 시 타인 데이터가 섞이지 않는지 확인.
+
+### 후속 검토 사항 (PR #96 리뷰 권장, 이번 PR 범위 아님)
+
+- **시세 조회 N+1 성격**: `HoldingValuationService.evaluateHolding`이 보유 1건마다 `PriceQueryService.getPriceQuote`를 호출한다 — 주식은 종목마다 재생세션·분봉 조회 2회, 코인은 종목마다 Redis 연결상태 조회가 반복된다. MVP 규모(계좌당 보유 수 적음)에서는 문제없지만, 합산 포트폴리오(#51)가 두 계좌(STOCK·CRYPTO)를 동시에 처리하며 호출 수가 배로 늘어난다. **#51 착수 전에 재생세션·연결상태 조회를 계좌(또는 요청) 단위로 배치화할지 검토한다.**
   - 응답값이 어떤 테이블에도 저장되지 않는지(평가값 미저장 요구사항) 간접 확인 — 동일 조회를 반복 호출해도 매번 최신 계산 결과가 나오는지(가격 변경 시나리오로 확인 가능하면 포함).
