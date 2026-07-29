@@ -53,7 +53,7 @@
 
 > 이 섹션은 `spec.md`의 ACCT-002(실제 조회 API)만 다룬다. 평가 계산 자체는 이슈 #47(`HoldingValuationService`, 병합됨)을 그대로 재사용한다(`plan.md` 이슈 #81 절 참고).
 
-- [ ] **Repository: 계좌별 활성 보유 조회 + `HoldingValuationService` 계좌 단위 진입점**
+- [x] **Repository: 계좌별 활성 보유 조회 + `HoldingValuationService` 계좌 단위 진입점**
   - `HoldingRepository`에 `findAllByAccountIdAndIsActiveTrue(Long accountId)` 추가 (`instrument` `JOIN FETCH` 포함 JPQL, plan.md 참고).
   - `HoldingValuationService`에 `HoldingRepository`를 새로 주입하고 `evaluateActiveHoldingsForAccount(Long accountId)` 추가(계좌의 활성 보유를 조회해 각각 `evaluateHolding`으로 평가한 `List<HoldingValuationDto>` 반환). **`account` 도메인이 `HoldingRepository`를 직접 참조하면 안 된다(ADR-0002) — 이 메서드가 유일한 진입점이어야 한다.**
   - `@DataJpaTest` 슬라이스 테스트(`HoldingRepositoryTest`, 신규): 다른 계좌·전량 매도(`isActive=false`) 보유 제외, `instrument` 지연 로딩 예외 없이 접근 가능.

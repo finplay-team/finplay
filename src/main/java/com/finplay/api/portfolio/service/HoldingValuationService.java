@@ -5,8 +5,10 @@ import com.finplay.api.market.service.PriceQueryService;
 import com.finplay.api.market.service.PriceQuoteDto;
 import com.finplay.api.market.service.PriceStatus;
 import com.finplay.api.portfolio.domain.Holding;
+import com.finplay.api.portfolio.repository.HoldingRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,6 +20,8 @@ public class HoldingValuationService {
 	private static final int RETURN_RATE_SCALE = 4;
 
 	private final PriceQueryService priceQueryService;
+
+	private final HoldingRepository holdingRepository;
 
 	@Transactional(readOnly = true)
 	public HoldingValuationDto evaluateHolding(Holding holding) {
@@ -40,5 +44,12 @@ public class HoldingValuationService {
 
 		return new HoldingValuationDto(quantity, averagePrice, costBasis, PriceStatus.AVAILABLE, evaluationAmount,
 			unrealizedPnl, returnRate);
+	}
+
+	@Transactional(readOnly = true)
+	public List<HoldingValuationDto> evaluateActiveHoldingsForAccount(Long accountId) {
+		return holdingRepository.findAllByAccountIdAndIsActiveTrue(accountId).stream()
+			.map(this::evaluateHolding)
+			.toList();
 	}
 }
