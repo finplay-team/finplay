@@ -81,4 +81,12 @@ public class HoldingLot {
 		LocalDateTime now) {
 		return new HoldingLot(holding, buyTrade, quantity, unitCost, buyFee, executedAt, now);
 	}
+
+	public void consume(BigDecimal quantity) {
+		BigDecimal newRemaining = this.remainingQuantity.subtract(quantity);
+		if (newRemaining.signum() < 0) {
+			throw new IllegalStateException("잔여수량보다 큰 수량을 소비할 수 없습니다.");
+		}
+		this.remainingQuantity = newRemaining;
+	}
 }

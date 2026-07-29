@@ -1,0 +1,123 @@
+// TradeAllocationRepository의 lot별 배분 원가·수수료 합계 쿼리를 검증하는 슬라이스 테스트다.
+package com.finplay.api.portfolio.repository;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.finplay.api.TestcontainersConfiguration;
+import com.finplay.api.account.domain.Account;
+import com.finplay.api.account.repository.AccountRepository;
+import com.finplay.api.auth.domain.User;
+import com.finplay.api.auth.repository.UserRepository;
+import com.finplay.api.market.domain.Instrument;
+import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.repository.InstrumentRepository;
+import com.finplay.api.order.domain.Order;
+import com.finplay.api.order.domain.OrderSide;
+import com.finplay.api.order.domain.OrderType;
+import com.finplay.api.order.domain.Trade;
+import com.finplay.api.order.repository.OrderRepository;
+import com.finplay.api.order.repository.TradeRepository;
+import com.finplay.api.portfolio.domain.Holding;
+import com.finplay.api.portfolio.domain.HoldingLot;
+import com.finplay.api.portfolio.domain.TradeAllocation;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
+import org.springframework.context.annotation.Import;
+
+@DataJpaTest
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+@Import(TestcontainersConfiguration.class)
+class TradeAllocationRepositoryTest {
+
+	private static final LocalDateTime NOW = LocalDateTime.of(2026, 7, 29, 10, 0, 0);
+
+	@Autowired
+	private UserRepository userRepository;
+
+	@Autowired
+	private AccountRepository accountRepository;
+
+	@Autowired
+	private InstrumentRepository instrumentRepository;
+
+	@Autowired
+	private OrderRepository orderRepository;
+
+	@Autowired
+	private TradeRepository tradeRepository;
+
+	@Autowired
+	private HoldingRepository holdingRepository;
+
+	@Autowired
+	private HoldingLotRepository holdingLotRepository;
+
+	@Autowired
+	private TradeAllocationRepository tradeAllocationRepository;
+
+	private Account account;
+	private Instrument instrument;
+
+	@BeforeEach
+	void setUp() {
+		User user = userRepository.saveAndFlush(User.create("trader@finplay.com", "hash", "trader", NOW));
+		account = accountRepository.saveAndFlush(
+			Account.create(user, com.finplay.api.account.domain.Market.STOCK, NOW));
+		instrument = instrumentRepository.saveAndFlush(
+			Instrument.create(Market.STOCK, "TEST01", "테스트종목", BigDecimal.valueOf(100), 10_000L, true, NOW));
+	}
+
+	@Test
+	@DisplayName("배분 기록이 없는 lot의 합계는 0이다")
+	void sumsReturnZeroWhenNoAllocationsExist() {
+		HoldingLot lot = createLot(BigDecimal.valueOf(10));
+
+		assertThat(tradeAllocationRepository.sumAllocatedCostByHoldingLotId(lot.getId())).isZero();
+		assertThat(tradeAllocationRepository.sumAllocatedBuyFeeByHoldingLotId(lot.getId())).isZero();
+	}
+
+	@Test
+	@DisplayName("한 lot에 배분 기록이 여러 건이면 원가·수수료가 각각 합산된다")
+	void sumsAccumulateAcrossMultipleAllocationsForSameLot() {
+		HoldingLot lot = createLot(BigDecimal.valueOf(10));
+		Trade firstSell = createSellTrade(BigDecimal.valueOf(4));
+		Trade secondSell = createSellTrade(BigDecimal.valueOf(6));
+
+		tradeAllocationRepository.saveAndFlush(
+			TradeAllocation.create(firstSell, lot, BigDecimal.valueOf(4), 280_000L, 40L, NOW));
+		tradeAllocationRepository.saveAndFlush(
+			TradeAllocation.create(secondSell, lot, BigDecimal.valueOf(6), 420_000L, 60L, NOW));
+
+		assertThat(tradeAllocationRepository.sumAllocatedCostByHoldingLotId(lot.getId())).isEqualTo(700_000L);
+		assertThat(tradeAllocationRepository.sumAllocatedBuyFeeByHoldingLotId(lot.getId())).isEqualTo(100L);
+	}
+
+	private HoldingLot createLot(BigDecimal quantity) {
+		Holding holding = holdingRepository.saveAndFlush(Holding.create(account, instrument, NOW));
+		Order order = orderRepository.saveAndFlush(Order.create(
+			account.getUser(), account, instrument, OrderSide.BUY, OrderType.MARKET,
+			quantity, "idem-" + System.nanoTime(), "a".repeat(64), NOW));
+		Trade buyTrade = tradeRepository.saveAndFlush(Trade.of(
+			order, account, instrument, OrderSide.BUY,
+			BigDecimal.valueOf(70000), quantity,
+			70000L * quantity.longValueExact(), 100L, null, NOW, NOW));
+		return holdingLotRepository.saveAndFlush(
+			HoldingLot.create(holding, buyTrade, quantity, BigDecimal.valueOf(70000), 100L, NOW, NOW));
+	}
+
+	private Trade createSellTrade(BigDecimal quantity) {
+		Order sellOrder = orderRepository.saveAndFlush(Order.create(
+			account.getUser(), account, instrument, OrderSide.SELL, OrderType.MARKET,
+			quantity, "idem-sell-" + System.nanoTime(), "b".repeat(64), NOW));
+		return tradeRepository.saveAndFlush(Trade.of(
+			sellOrder, account, instrument, OrderSide.SELL,
+			BigDecimal.valueOf(75000), quantity,
+			75000L * quantity.longValueExact(), 100L, 49_900L, NOW, NOW));
+	}
+}
