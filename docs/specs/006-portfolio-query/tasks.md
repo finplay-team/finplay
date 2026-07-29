@@ -96,22 +96,22 @@
   - `HoldingValuationServiceTest`(기존 파일)에 회귀 테스트 추가: 이익/손실 케이스 `currentPrice == quote.price()`, `UNAVAILABLE` 케이스 `currentPrice == null`.
   - `AccountService.getAccountSummary`가 named accessor만 사용해 이 확장에 영향받지 않는지 확인(`./gradlew build`로 회귀 확인).
 
-- [ ] **응답 DTO: `HoldingListItemResponse`**
+- [x] **응답 DTO: `HoldingListItemResponse`**
   - `portfolio/dto/response/HoldingListItemResponse.java` record 추가 — `instrumentId`·`symbol`·`name`·`quantity`·`averagePrice`·`currentPrice`·`evaluationAmount`·`unrealizedPnl`·`returnRate`·`priceStatus` 10개 필드, 정적 팩토리 `from(Holding holding, HoldingValuationDto valuation)`(plan.md 표 참고).
   - `market`·`costBasis`는 의도적으로 제외(plan.md 근거) — 코드 리뷰 관점에서 스스로 재확인.
 
-- [ ] **Service: `HoldingService` 신규 (portfolio 도메인)**
+- [x] **Service: `HoldingService` 신규 (portfolio 도메인)**
   - `com.finplay.api.portfolio.service.HoldingService` 신규 — `AccountService`·`HoldingRepository`·`HoldingValuationService` 3개 의존성 주입(`@RequiredArgsConstructor`), `@Transactional(readOnly = true) getHoldings(Long userId, com.finplay.api.account.domain.Market market)` 추가.
   - `accountService.getAccountFor(userId, market)`로 소유권 검증 재사용 → `holdingRepository.findAllByAccountIdAndIsActiveTrue(account.getId())` → 각 `Holding`을 `holdingValuationService.evaluateHolding(holding)`으로 평가 → `HoldingListItemResponse.from(...)`으로 매핑.
   - **`evaluateActiveHoldingsForAccount`(#81이 추가한 배치 메서드)는 재사용하지 않는다** — `Holding` 엔티티(종목 표시 정보 필요)를 함께 반환하지 않으므로 기존 두 원시 메서드를 직접 조합한다(plan.md 근거).
   - 단위 테스트(`HoldingServiceTest`, 신규, Mockito): 시세 유효/무효 혼합 2건 매핑 정확성(무효 건은 4개 필드 `null`·`priceStatus="UNAVAILABLE"`), 활성 보유 없음 → 빈 리스트, 계좌 없음 → `BusinessException(NOT_FOUND)` 전파. 응답 객체를 mock으로 만들지 않고 실제 값으로 검증.
 
-- [ ] **Controller: `GET /api/holdings`**
+- [x] **Controller: `GET /api/holdings`**
   - 신규 패키지 `com.finplay.api.portfolio.controller`에 `HoldingController` 추가 — `@GetMapping`, `@AuthenticationPrincipal AuthenticatedUser`, `@RequestParam com.finplay.api.account.domain.Market market`(필수 — `market.domain.Market` import 금지, plan.md "입력 명세" 참고).
   - `market` 누락·잘못된 리터럴은 기존 `GlobalExceptionHandler`가 이미 400 `VALIDATION_ERROR`로 처리하므로 컨트롤러에 별도 검증 코드를 추가하지 않는다.
   - `@WebMvcTest` 슬라이스 테스트(`HoldingControllerTest`, 신규, `AccountControllerTest` 패턴 재사용): `market=STOCK`·`market=CRYPTO` 200 필드 계약(10개 필드), 보유 없음 200 빈 배열, `market` 누락 400, `market=FOREX` 400, 인증 실패 401.
 
-- [ ] **통합 테스트: 매수·매도 파이프라인 기반 보유 종목 목록 시나리오**
+- [x] **통합 테스트: 매수·매도 파이프라인 기반 보유 종목 목록 시나리오**
   - Testcontainers 기반 통합 테스트(신규 `HoldingIntegrationTest` 또는 기존 매수 통합 테스트 파일 인접)에 시나리오 추가: 2종목 매수 후 1종목 전량 매도 → `GET /api/holdings?market=` 호출 → 매도한 종목이 목록에서 제외되고 남은 종목의 6개 값(수량·평균단가·현재가·평가금액·미실현손익·수익률)이 원장·시세 기준으로 정확한지 검증(spec 완료 조건 직접 구현).
   - 보유 종목 없는 신규 계좌 → 200 빈 배열, 타인 계좌 보유가 섞이지 않음, `market` 누락/잘못된 값 400·비로그인 401 최소 1건 확인.
 
