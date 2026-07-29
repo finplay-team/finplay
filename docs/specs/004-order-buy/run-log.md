@@ -11,6 +11,7 @@
 
 | - | reviewer(리뷰) | `git diff dev...HEAD --stat` 후 전체 diff 검토 | docs/conventions.md, ADR-0002/0003/0004, docs/agent-mistakes.md |
 | - | implementer | `./gradlew compileJava compileTestJava test --tests "*OrderServiceTest"` | 리뷰 차단 1건 수정 — ADR-0002(도메인 간 참조는 service 레이어만) |
+| - | implementer | `./gradlew compileJava compileTestJava`, `./gradlew test --tests OrderRepositoryTest --tests TradeRepositoryTest` | plan.md "이슈 #22" 신규 리포지토리 메서드 절, tasks.md 이슈 #22 항목 1 |
 
 ## 모니터링 (사람용 요약)
 - 항목 1(account·market·common 확장 지점) 구현 완료, 컴파일 통과. 테스트는 tester 담당.
@@ -20,3 +21,4 @@
 - 항목 5(`OrderBuyIntegrationTest`) 구현 완료. 전역 Clock 빈을 테스트 전용 `@Primary` MutableClock으로 교체해 주식 장중·분봉 조회를 고정 시각(2026-07-29 수, 공휴일 아님)에 결정론적으로 재현 — 실제 시스템 시각에 의존하지 않음. 매수 성공(4테이블 원자 저장)·현금부족(4테이블 무흔적)·재매수(평균단가 재계산+lot 2건) 3케이스 모두 통과, `./gradlew clean build` 전체(Spotless·SpotBugs·JaCoCo 포함) 통과.
 - 리뷰(코드리뷰 모드): 차단 1건(OrderService가 market 도메인의 InstrumentRepository를 직접 주입 — ADR-0002 위반, InstrumentService 등 market 서비스 경유로 리팩터 필요), 권장 1건(PortfolioBuyService 수동 생성자 → @RequiredArgsConstructor). 나머지 컨벤션·ADR·문서 동기화·테스트 레벨은 이상 없음.
 - 차단 1건 수정 완료: `InstrumentService.getInstrumentEntity(Long)` 추가 후 `OrderService`가 `InstrumentRepository` 대신 이 메서드만 거치도록 리팩터. `OrderServiceTest` mock 대상도 `InstrumentService`로 교체. `OrderServiceTest` 14케이스 전부 통과, compileJava/compileTestJava 통과.
+- 이슈 #22 항목 1(리포지토리 확장) 구현 완료: `OrderRepository.findByUserIdAndIdempotencyKey`(JOIN FETCH instrument), `TradeRepository.findByOrderId` 추가. `OrderRepositoryTest`에 존재/미존재/타사용자 케이스 3건 추가, 신규 `TradeRepositoryTest`(존재/미존재 2건) 작성. 9케이스 전부 통과(Testcontainers MySQL), compileJava/compileTestJava 통과.
