@@ -21,6 +21,7 @@
 | 16:20 | implementer | `./gradlew test --tests "*AccountServiceTest"` | PR #96 리뷰 차단 반영 — 시세 무효 보유 합산 정책을 원가(costBasis) 반영 방식으로 수정 |
 | 02:12 | implementer | `./gradlew build` | 이슈 #52 tasks.md 항목1, plan.md "DTO 확장" 절(`HoldingValuationDto.currentPrice` 추가) |
 | 09:40 | implementer | `./gradlew compileJava` | 이슈 #52 tasks.md 항목2, plan.md "응답 DTO 설계" 표(10필드, `market`·`costBasis` 제외 근거) |
+| 10:05 | implementer | `./gradlew compileJava compileTestJava && ./gradlew test --tests com.finplay.api.portfolio.service.HoldingServiceTest` | 이슈 #52 tasks.md 항목3, plan.md "Service 설계"(`HoldingService`, `evaluateActiveHoldingsForAccount` 미재사용 근거) |
 
 ## 모니터링 (사람용 요약)
 - 15:20 — OrderRepository에 사용자별 최신순 조회 JPQL 추가, DataJpaTest 3건(본인만/정렬/빈목록) 통과.
@@ -41,3 +42,4 @@
 - 16:20 — PR #96 리뷰 차단 1건 반영: 시세 무효(휴장) 보유를 합산에서 완전 제외하던 정책이 장 마감 시간대 전종목 UNAVAILABLE 상황에서 실손실 없이 holdingsValue=0·수익률 대폭 마이너스로 보이는 오류를 냄(QA 재현). `AccountService.getAccountSummary`를 수정해 UNAVAILABLE 보유는 `costBasis`를 `holdingsValue`에 가산(unrealizedPnl은 0 기여)하도록 변경. `AccountServiceTest` 혼합 케이스 테스트를 새 정책으로 갱신(7건 전체 통과), plan.md "이슈 #81" 절에 정책 수정 근거 기록, `docs/api-contracts.md` `## account` 절에 새 동작 명시. 통합 테스트(`AccountSummaryIntegrationTest`)는 별도 세션이 처리 예정이라 건드리지 않음.
 - 02:12 — 이슈 #52 항목1: `HoldingValuationDto`에 `currentPrice`(`BigDecimal`, nullable, `priceStatus`~`evaluationAmount` 사이) 추가, `HoldingValuationService.evaluateHolding` 두 분기(UNAVAILABLE→null, AVAILABLE→`quote.price()`) 수정. 이미 병합된 `AccountServiceTest`의 `new HoldingValuationDto(...)` 4곳에 인자 추가(기존 기대값·검증 로직 불변). `HoldingValuationServiceTest`에 회귀 assertion 3건 추가(이익/손실 `currentPrice==quote.price()`, UNAVAILABLE `currentPrice==null`). `AccountService.getAccountSummary`는 named accessor만 사용해 영향 없음(코드 미변경, 확인만). controller 변경 없어 api-routes.md·api-contracts.md 갱신 대상 아님. `./gradlew build` 전체 BUILD SUCCESSFUL(컴파일·전체 테스트·Spotless·SpotBugs·JaCoCo 통과, 회귀 없음).
 - 09:40 — 이슈 #52 항목2: `portfolio/dto/response/HoldingListItemResponse.java` record 신규 추가(10필드, `market`·`costBasis` 의도적 제외), 정적 팩토리 `from(Holding, HoldingValuationDto)`(`priceStatus`는 `.name()`으로 String 변환). controller 미변경이라 api-routes.md·api-contracts.md 갱신 대상 아님(controller 작업 항목에서 처리). `./gradlew compileJava` BUILD SUCCESSFUL.
+- 10:05 — 이슈 #52 항목3: `com.finplay.api.portfolio.service.HoldingService` 신규 추가(`getAccountFor`+`findAllByAccountIdAndIsActiveTrue`+`evaluateHolding` 조합, `evaluateActiveHoldingsForAccount` 미재사용). 신규 `HoldingServiceTest` 3건(유효/무효 혼합 매핑·활성 보유 없음 빈 리스트·계좌 없음 NOT_FOUND 전파) 전체 통과. controller 미변경이라 api-routes.md·api-contracts.md 갱신 대상 아님(controller 작업 항목에서 처리).
