@@ -1,4 +1,4 @@
-// 시장가 매수 주문 생성 요청을 받아 인증 사용자 ID로 서비스에 전달하는 컨트롤러
+// 주문 생성·목록 조회를 담당하는 컨트롤러
 package com.finplay.api.order.controller;
 
 import com.finplay.api.auth.token.AuthenticatedUser;
