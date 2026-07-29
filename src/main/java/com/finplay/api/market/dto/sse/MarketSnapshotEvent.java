@@ -18,6 +18,11 @@ public record MarketSnapshotEvent(
 	LocalDateTime emittedAt,
 	List<InstrumentPriceSnapshot> prices) {
 
+	// 불변 복사본으로 저장·반환해 내부 리스트가 호출자에 의해 변경되지 않도록 한다 (SpotBugs EI_EXPOSE_REP/REP2).
+	public MarketSnapshotEvent {
+		prices = List.copyOf(prices);
+	}
+
 	// sourceTradingDate는 주식에서만 값을 가진다 — 코인은 null이며 클래스 레벨 @JsonInclude(NON_NULL)로 필드 자체가 생략된다 (plan.md SSE 계약).
 	public static MarketSnapshotEvent of(
 		Market market,
