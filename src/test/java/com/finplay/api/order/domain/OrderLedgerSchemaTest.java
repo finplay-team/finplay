@@ -140,6 +140,26 @@ class OrderLedgerSchemaTest {
 	}
 
 	@Test
+	@DisplayName("같은 order_id로 Trade를 두 번 저장하면 UNIQUE(trades.order_id) 위반 예외가 발생한다")
+	void duplicateOrderIdForTradeViolatesUniqueConstraint() {
+		Order order = orderRepository.saveAndFlush(Order.create(
+			user, account, instrument, OrderSide.BUY, OrderType.MARKET,
+			BigDecimal.valueOf(10), "trade-uk-idem-1", "g".repeat(64), NOW));
+		tradeRepository.saveAndFlush(Trade.of(
+			order, account, instrument, OrderSide.BUY,
+			BigDecimal.valueOf(70000), BigDecimal.valueOf(10),
+			700_000L, 100L, null, NOW, NOW));
+
+		Trade duplicate = Trade.of(
+			order, account, instrument, OrderSide.BUY,
+			BigDecimal.valueOf(71000), BigDecimal.valueOf(5),
+			355_000L, 50L, null, NOW, NOW);
+
+		assertThatThrownBy(() -> tradeRepository.saveAndFlush(duplicate))
+			.isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	@Test
 	@DisplayName("Holding을 저장하고 조회하면 보유수량·평균단가·활성여부가 그대로 유지된다")
 	void holdingSavesAndLoadsWithAllFields() {
 		Holding saved = holdingRepository.saveAndFlush(Holding.create(account, instrument, NOW));
@@ -191,6 +211,27 @@ class OrderLedgerSchemaTest {
 		assertThat(found.getBuyFee()).isEqualTo(100L);
 		assertThat(found.getExecutedAt()).isEqualTo(NOW);
 		assertThat(found.getCreatedAt()).isEqualTo(NOW);
+	}
+
+	@Test
+	@DisplayName("같은 buy_trade_id로 HoldingLot을 두 번 저장하면 UNIQUE(holding_lots.buy_trade_id) 위반 예외가 발생한다")
+	void duplicateBuyTradeIdForHoldingLotViolatesUniqueConstraint() {
+		Order order = orderRepository.saveAndFlush(Order.create(
+			user, account, instrument, OrderSide.BUY, OrderType.MARKET,
+			BigDecimal.valueOf(10), "lot-uk-idem-1", "h".repeat(64), NOW));
+		Trade buyTrade = tradeRepository.saveAndFlush(Trade.of(
+			order, account, instrument, OrderSide.BUY,
+			BigDecimal.valueOf(70000), BigDecimal.valueOf(10),
+			700_000L, 100L, null, NOW, NOW));
+		Holding holding = holdingRepository.saveAndFlush(Holding.create(account, instrument, NOW));
+		holdingLotRepository.saveAndFlush(HoldingLot.create(
+			holding, buyTrade, BigDecimal.valueOf(10), BigDecimal.valueOf(70000), 100L, NOW, NOW));
+
+		HoldingLot duplicate = HoldingLot.create(
+			holding, buyTrade, BigDecimal.valueOf(10), BigDecimal.valueOf(70000), 100L, NOW, NOW);
+
+		assertThatThrownBy(() -> holdingLotRepository.saveAndFlush(duplicate))
+			.isInstanceOf(DataIntegrityViolationException.class);
 	}
 
 	@Test
