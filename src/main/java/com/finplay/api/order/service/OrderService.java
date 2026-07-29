@@ -16,10 +16,12 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class OrderService {
@@ -40,6 +42,8 @@ public class OrderService {
 		try {
 			return orderExecutionService.execute(userId, idempotencyKey, requestHash, request);
 		} catch (DataIntegrityViolationException concurrentDuplicate) {
+			log.warn("주문 저장 중 제약 위반 발생 — 멱등키 경합으로 간주해 재조회를 시도한다. userId={}, idempotencyKey={}",
+				userId, idempotencyKey, concurrentDuplicate);
 			return findReplayResponse(userId, idempotencyKey, requestHash)
 				.orElseThrow(() -> new BusinessException(ErrorCode.IDEMPOTENCY_CONFLICT));
 		}
