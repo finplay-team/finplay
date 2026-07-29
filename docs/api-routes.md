@@ -33,7 +33,7 @@
 | GET | /api/community/posts/{postId}/comments | community | 인증 사용자가 게시물의 평면 댓글을 오래된 순으로 조회 | 008 COM-002, Issue #29 |
 | POST | /api/community/posts/{postId}/comments | community | 인증 사용자의 평면 댓글 작성 | 008 COM-002, Issue #28 |
 | DELETE | /api/community/comments/{commentId} | community | 본인 소유 댓글 삭제 (204, 본문 없음) | 008 COM-002, Issue #30 |
-| POST | /api/orders | order | 인증 사용자의 시장가 매수·매도 주문을 검증·즉시 전량 체결하고 주문+체결 결과 반환 (201, 매도는 FIFO lot 배분·실현손익 포함). `Idempotency-Key` 헤더 필수(존재 검증만, 재현 방지는 #22) | 004 ORD-001~004·006(부분), 005 ORD-001~006(매도), Issue #13, Issue #41 |
+| POST | /api/orders | order | 인증 사용자의 시장가 매수·매도 주문을 검증·즉시 전량 체결하고 주문+체결 결과 반환 (201, 매도는 FIFO lot 배분·실현손익 포함). `Idempotency-Key` 헤더 필수 — 동일 키+동일 본문 재요청은 최초 응답 재현(재체결 없음), 동일 키+다른 본문 또는 재현 실패 시 409 `IDEMPOTENCY_CONFLICT` | 004 ORD-001~004·006, 005 ORD-001~006(매도), Issue #13, Issue #41, Issue #22 |
 | GET | /api/orders | order | 인증 사용자 본인의 주문 목록을 최신순(동시각 `id` 내림차순)으로 조회. 체결 전용 필드는 노출하지 않음 | 006 PORT-003, Issue #21 |
 
 ## 시스템 엔드포인트

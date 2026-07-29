@@ -149,3 +149,131 @@ public Account getAccountFor(Long userId, Market market) {
 ## 문서 갱신
 
 `OrderController` 추가로 `docs/api-routes.md`·`docs/api-contracts.md`를 이번 tasks 마지막 항목에서 같은 커밋으로 갱신한다(동기화 모드, planner 재투입 또는 /feature 마무리 단계).
+
+---
+
+## 이슈 #22 — ORD-006 멱등성 재요청 응답 재현
+
+### 관련 문서
+
+- 근거: GitHub 이슈 #22 (본문 요약: 두 번째 요청에 최초 응답을 그대로 반환, 같은 키·다른 본문은 409, 동시 경합으로 유니크 제약에 걸려도 409, 새 마이그레이션 금지, 매도(#41)까지 포함)
+- spec.md ORD-006, 위 "미확정·PRD 불일치" 절의 "Idempotency-Key 범위 축소" 항목(이번 이슈로 해소)
+- 선행 구현: 이슈 #13(`OrderService.createOrder`, `Order.idempotencyKey`/`requestHash` 저장만), 이슈 #12(011, `V10__create_order_ledger_tables.sql`의 `uk_orders_user_idempotency UNIQUE (user_id, idempotency_key)` — 이미 존재, 재사용), 이슈 #41(SELL 병합됨, `OrderResponse.of`가 매도 응답도 이미 조립)
+- 관련 ADR: ADR-0002(도메인 서비스 분리·self-invocation 회피를 위한 클래스 분리 근거), ADR-0004(신규 마이그레이션 없음 확인)
+- 참고 기존 패턴: `AuthService.changeNickname`/`confirmEmailChange`(`DataIntegrityViolationException` catch 후 즉시 다른 예외로 변환) — 이번 이슈가 이 패턴을 그대로 재사용하지 않는 이유는 아래 "왜 기존 패턴을 재사용하지 않는가" 참조.
+
+### 새 마이그레이션 없음 확인
+
+`src/main/resources/db/migration/V10__create_order_ledger_tables.sql`에 이미 `CONSTRAINT uk_orders_user_idempotency UNIQUE (user_id, idempotency_key)`가 있다. 이번 spec은 이 제약을 그대로 재사용하고 신규 컬럼·마이그레이션을 추가하지 않는다(ADR-0004, 이슈 #22 명시 제외범위).
+
+### 아키텍처 결정 — "애플리케이션 선제조회"와 "유니크 제약 위반 캐치"를 함께 쓴다 (양자택일 아님)
+
+두 메커니즘을 순서대로 배치해 서로 다른 상황을 담당하게 한다.
+
+1. **애플리케이션 레벨 선제 조회(주 경로)**: `OrderService.createOrder` 시작부에서 `(userId, idempotencyKey)`로 기존 `Order`를 먼저 조회한다. DB 유니크 제약 위반에 기대지 않고, 순차적으로 들어오는 절대다수의 재요청(네트워크 재시도 등)을 이 경로에서 처리한다. 여기서 다른 본문(해시 불일치)이면 **기존 체결·검증 로직을 전혀 타지 않고** 즉시 409 `IDEMPOTENCY_CONFLICT`를 던진다.
+2. **유니크 제약 위반 캐치(동시성 폴백)**: 두 요청이 진짜로 동시에 들어와 1번 조회 시점엔 둘 다 기존 Order를 찾지 못해 그대로 검증·체결을 진행하다, INSERT 단계에서 유니크 제약에 부딪히는 극히 드문 경합만 여기서 잡는다. 이는 spec.md 범위 제외 "분산락 기반 동시성 제어(2차)" 이전의 최선 대응이며, 정합성(중복 체결 금지)은 어차피 DB 유니크 제약이 최종 보증한다 — 이번 폴백은 "그 경우에도 최초 응답을 반환할 수 있으면 반환한다"는 사용자 경험 개선일 뿐이다.
+
+이슈 #22는 두 경로 모두에서 "최초 응답 재구성 시도 → 실패하면 409"를 요구한다("이 경우도 재요청과 동일하게 최초 응답 반환 시도, 그래도 안되면 409"). 이 요구가 클래스 분리를 강제한다 — 아래 참조.
+
+### 왜 기존 `AuthService` 패턴(단일 클래스, catch 후 즉시 변환)을 재사용하지 않는가
+
+`AuthService.changeNickname`/`confirmEmailChange`는 `DataIntegrityViolationException`을 같은 `@Transactional` 메서드 안에서 잡아 **즉시 다른 예외로 변환만 하고 그대로 종료**한다(추가 조회 없음). JPA/Hibernate는 flush·insert 실패 이후 해당 영속성 컨텍스트를 rollback-only로 전환하므로, 그 세션으로 추가 조회를 시도하는 것은 안전하지 않다 — `AuthService`의 두 메서드는 "즉시 변환 후 종료"만 하기 때문에 이 문제를 피해간다.
+
+이번 이슈는 실패 직후 **`Order`+`Trade`를 다시 읽어 응답을 재구성**해야 한다. 이는 깨진 영속성 컨텍스트가 아니라 **트랜잭션이 완전히 롤백된 뒤 새로 여는 조회**가 필요하다는 뜻이다. 같은 클래스 안에서 `@Transactional` 메서드를 `this.xxx(...)`로 호출하면 Spring 프록시를 우회해(self-invocation) 트랜잭션이 아예 시작되지 않는 문제가 있어, 같은 클래스에 트랜잭션 경계를 두 단계로 두는 시도 자체가 위험하다. 따라서 **새 서비스 빈으로 분리**해 프록시 경계를 명확히 만든다(기존 `portfolio` 도메인이 `PortfolioBuyService`/`PortfolioSellService`로 책임을 나눈 전례와 같은 방식).
+
+### 클래스 분리
+
+- **신규** `com.finplay.api.order.service.OrderExecutionService` — 기존 `OrderService`의 검증→가격조회→체결→계좌/보유 갱신 로직(`createOrder`(현재 진입점)·`createBuyOrder`·`createSellOrder`·`validateOrderType`·`getValidatedInstrument`·`validateQuantityFormat`·`getAccountFor`·`priceOrder`·`validateMinOrderAmount`·`OrderPricing` record) 전체를 **그대로 이동**한다. public 메서드는 하나만 남긴다:
+
+  ```java
+  @Transactional
+  public OrderResponse execute(
+      Long userId, String idempotencyKey, String requestHash, OrderCreateRequest request)
+  ```
+
+  현재 `createOrder`를 이름만 `execute`로 바꾸고, 시그니처에 `requestHash`를 추가로 받는다(이 클래스 내부에서는 재계산하지 않는다). `calculateRequestHash` 메서드는 이 클래스에서 제거하고 `OrderService`로 옮긴다(아래 참조 — 선제 조회에도 필요해 단일 소스로 유지).
+- 기존 `OrderService`는 얇은 오케스트레이터로 축소한다. 유지: `getMyOrders`(변경 없음). 신규/이동: `createOrder`(아래 확정 로직), `findReplayResponse`(private, 신규), `calculateRequestHash`(이동, 로직 변경 없음).
+
+### `OrderService.createOrder` 확정 로직
+
+```java
+public OrderResponse createOrder(Long userId, String idempotencyKey, OrderCreateRequest request) {
+    String requestHash = calculateRequestHash(request);
+
+    Optional<OrderResponse> replay = findReplayResponse(userId, idempotencyKey, requestHash);
+    if (replay.isPresent()) {
+        return replay.get();
+    }
+
+    try {
+        return orderExecutionService.execute(userId, idempotencyKey, requestHash, request);
+    } catch (DataIntegrityViolationException concurrentDuplicate) {
+        return findReplayResponse(userId, idempotencyKey, requestHash)
+            .orElseThrow(() -> new BusinessException(ErrorCode.IDEMPOTENCY_CONFLICT));
+    }
+}
+
+// 기존 Order를 찾으면 본문 해시를 비교해 응답을 재구성하거나(일치) 즉시 409(불일치)를 던진다.
+// 찾지 못하면 빈 Optional — 호출부가 신규 생성 경로로 진행한다.
+private Optional<OrderResponse> findReplayResponse(Long userId, String idempotencyKey, String requestHash) {
+    return orderRepository.findByUserIdAndIdempotencyKey(userId, idempotencyKey)
+        .map(existingOrder -> {
+            if (!existingOrder.getRequestHash().equals(requestHash)) {
+                throw new BusinessException(ErrorCode.IDEMPOTENCY_CONFLICT);
+            }
+            Trade existingTrade = tradeRepository.findByOrderId(existingOrder.getId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.IDEMPOTENCY_CONFLICT));
+            return OrderResponse.of(existingOrder, existingTrade);
+        });
+}
+```
+
+확정 사항(구현자가 임의로 바꾸지 않는다):
+
+- `createOrder`에는 `@Transactional`을 걸지 않는다 — 트랜잭션 경계는 `OrderExecutionService.execute`만 소유한다. `findReplayResponse`의 두 조회도 Spring Data 리포지토리가 각각 개별적으로 트랜잭션을 여는 단순 조회라 별도 애노테이션이 필요 없다.
+- 같은 키에 다른 본문(해시 불일치)이면 **검증·체결을 전혀 시도하지 않고** 즉시 409를 던진다 — 재검증 결과가 최초 요청과 달라질 수 있는 경합(예: 그 사이 장이 닫힘)을 피하기 위함이다.
+- 동시성 폴백 경로(`catch` 블록)에서 재조회까지 실패하면(이론상 도달하지 않음 — 유니크 제약 위반은 반드시 경쟁 상대의 행이 이미 커밋되었음을 의미) 방어적으로 409 `IDEMPOTENCY_CONFLICT`를 던진다.
+- `OrderController`는 변경하지 않는다 — 재구성 응답이든 신규 생성 응답이든 컨트롤러 입장에서는 동일한 `OrderResponse`라 구분 없이 201로 감싼다("최초 응답을 그대로 반환"에는 상태코드도 포함되므로, 원래 성공이 201이었던 이상 재현 응답도 201로 나가는 것이 맞다).
+
+### `execute` 내부에서 유니크 제약 위반이 발생하는 시점
+
+`Order.id`는 `GenerationType.IDENTITY`라 `orderRepository.save(order)` 호출 시점에 즉시 INSERT가 실행된다(배치·지연 없음 — Hibernate가 생성된 키를 즉시 확보해야 하기 때문). 따라서 유니크 제약 위반은 `Trade` 저장·`account.deductCash`·`PortfolioBuyService`/`PortfolioSellService` 호출보다 **먼저** 발생하며, 그 시점까지 해당 트랜잭션은 다른 어떤 부작용도 만들지 않은 채로 롤백된다 — 부분 커밋·정합성 훼손 우려 없음.
+
+### 신규 리포지토리 메서드
+
+```java
+// OrderRepository — instrument는 지연로딩 연관관계이고 OrderResponse.of가 order.getInstrument()에 바로 접근하므로
+// 세션이 닫히기 전에 JOIN FETCH로 즉시 초기화해야 한다(기존 findAllByUserIdOrderByRequestedAtDescIdDesc와 동일 패턴).
+@Query("SELECT o FROM Order o JOIN FETCH o.instrument WHERE o.user.id = :userId AND o.idempotencyKey = :idempotencyKey")
+Optional<Order> findByUserIdAndIdempotencyKey(
+    @Param("userId") Long userId, @Param("idempotencyKey") String idempotencyKey);
+```
+
+```java
+// TradeRepository — OrderResponse.of가 사용하는 Trade 필드는 전부 스칼라 컬럼이라 지연로딩 문제 없음. 파생 쿼리로 충분.
+Optional<Trade> findByOrderId(Long orderId);
+```
+
+`trades.order_id`에 `uk_trades_order UNIQUE (order_id)` 제약이 이미 있어(V10) 주문 1건당 체결이 최대 1건임을 스키마가 보장한다 — `findByOrderId`가 항상 0~1건만 반환한다.
+
+### 다른 사용자가 같은 키를 쓰는 경우
+
+`findByUserIdAndIdempotencyKey`가 `userId`로 스코프를 좁히고, DB 유니크 제약도 `(user_id, idempotency_key)` 복합키이므로 서로 다른 사용자의 요청은 애초에 같은 행을 두고 경합하지 않는다 — 서비스 레벨에서 별도 분기를 추가하지 않는다. 통합 테스트로 "서로 간섭 없음"만 확인한다(신규 코드 없음, 회귀 확인 목적).
+
+### 테스트 계획
+
+- 기존 `OrderServiceTest`(494줄, 검증·수수료·성공·실패 케이스 전체)는 **클래스명을 `OrderExecutionServiceTest`로 변경**하고 대상을 `OrderExecutionService`로 바꾼다. 테스트 케이스 내용은 그대로 유지 — `orderService.createOrder(...)` 호출부만 `orderExecutionService.execute(userId, idempotencyKey, requestHash, request)` 호출로 바꾸고, 각 테스트가 넘기는 `requestHash`는 임의 고정값(예: `"test-hash"`)이면 충분하다(이 레이어는 해시를 비교하지 않고 그대로 저장만 한다).
+- 새 `OrderServiceTest`(슬림, `OrderService` 대상 — `OrderExecutionService`·`OrderRepository`·`TradeRepository` 3개만 mock):
+  - 재요청(같은 키+같은 본문) → 기존 `Order`+`Trade` mock으로 `OrderResponse.of`와 동일한 값 반환, `orderExecutionService.execute` **미호출** 검증(`verifyNoInteractions`/`never()`).
+  - 같은 키+다른 본문(해시 불일치) → 409 `IDEMPOTENCY_CONFLICT`, `execute` 미호출 검증.
+  - 신규 키(기존 Order 없음) → `orderExecutionService.execute` 1회 호출, 반환값 그대로 전달 검증.
+  - `execute`가 `DataIntegrityViolationException`을 던짐 + 재조회 시 기존 Order/Trade 발견 → 재구성된 응답 반환(추가 체결 없음 — `execute` 호출이 1회뿐임을 검증).
+  - `execute`가 `DataIntegrityViolationException`을 던짐 + 재조회해도 못 찾음(방어적 케이스) → 409 `IDEMPOTENCY_CONFLICT`.
+- `@DataJpaTest`: 기존 `OrderRepositoryTest`에 `findByUserIdAndIdempotencyKey` 케이스 추가(존재/미존재/다른 사용자 동일 키 조회 안 됨). 신규 `TradeRepositoryTest`(슬라이스)로 `findByOrderId` 존재/미존재 검증.
+- 통합(Testcontainers): 기존 `OrderBuyIntegrationTest`/`OrderSellIntegrationTest`에 케이스 추가하거나 신규 `OrderIdempotencyIntegrationTest` — 동일 키+동일 본문 재요청(매수·매도 각 1케이스) 시 `orders`/`trades`/`holdings`/`holding_lots` 행 수가 늘지 않고 응답이 최초와 동일함을 검증, 동일 키+다른 본문은 409 `IDEMPOTENCY_CONFLICT`, 서로 다른 사용자가 같은 키를 써도 각자 정상 체결됨을 확인.
+
+### 문서 갱신
+
+- `docs/api-contracts.md`의 `POST /api/orders` 행(현재 222·224행) — "이번 구현은 `Idempotency-Key` 헤더 존재 검증까지만 하며 ... #22에서 구현 예정" 문구를 제거하고, 재요청 재현(동일 응답 반환)과 다른 본문 409 `IDEMPOTENCY_CONFLICT` 계약을 명시한다. 근거 열에 Issue #22 추가.
+- `docs/api-routes.md`의 `POST /api/orders` 행(현재 36행) — "존재 검증만, 재현 방지는 #22" 문구를 재현·충돌 판정 포함으로 갱신.
+- 두 문서는 같은 커밋에서 함께 갱신한다(동기화 모드, planner 재투입).
