@@ -31,16 +31,8 @@ oauth:
     client-secret: ${NAVER_CLIENT_SECRET}
     redirect-uri: ${NAVER_REDIRECT_URI}
 
-# 주식 시세 공급자 실행 환경 설정 (MKT-007, spec.md 실행 환경 조합). KIS 키가 없어도 기본값(KRX_REPLAY)으로 기동이 성공해야 한다.
-stock-feed:
-  provider: ${STOCK_FEED_PROVIDER:KRX_REPLAY}
-  service-exposure: ${SERVICE_EXPOSURE:PUBLIC}
-  kis-public-display-approved: ${KIS_PUBLIC_DISPLAY_APPROVED:false}
-  # KIS_REALTIME일 때만 쓰인다(개인 개발·본인 전용 검증). 계좌번호는 approval_key 발급·실시간 구독에 필요 없다(KIS 공식
-  # 샘플 get_approval 확인 — appkey·secretkey만 사용). URL은 실전투자 기본값이며, 모의투자로 검증하려면 환경변수로
-  # openapivts.koreainvestment.com:29443(REST)·ops.koreainvestment.com:31000(WS)로 덮어쓴다.
-  kis:
-    app-key: ${KIS_APP_KEY:}
-    app-secret: ${KIS_APP_SECRET:}
-    approval-url: ${KIS_APPROVAL_URL:https://openapi.koreainvestment.com:9443/oauth2/Approval}
-    websocket-url: ${KIS_WEBSOCKET_URL:ws://ops.koreainvestment.com:21000}
+# 한국투자증권(KIS) Open API 키 — 과거 분봉 수집 배치(KisHistoricalCandleCollector)가 사용한다(MKT-005).
+# 값이 없어도 애플리케이션 기동·./gradlew build는 성공하며, 없으면 수집이 실패해 그날 재생세션이 FAILED가 될 뿐이다.
+kis:
+  app-key: ${KIS_APP_KEY:}
+  app-secret: ${KIS_APP_SECRET:}
