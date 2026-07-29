@@ -9,9 +9,14 @@
 | - | implementer | `./gradlew compileJava`, `./gradlew compileTestJava`, `./gradlew test --tests OrderControllerTest` | plan.md API 설계·패키지 구성, tasks.md 항목 4, docs/conventions.md API 응답 포맷 |
 | - | implementer | `./gradlew clean build --no-daemon --max-workers=1` (JAVA_HOME=corretto-17) | plan.md 테스트 계획(통합 시나리오), tasks.md 항목 5, docs/agent-mistakes.md(JAVA_HOME·Docker) |
 
+| - | reviewer(리뷰) | `git diff dev...HEAD --stat` 후 전체 diff 검토 | docs/conventions.md, ADR-0002/0003/0004, docs/agent-mistakes.md |
+| - | implementer | `./gradlew compileJava compileTestJava test --tests "*OrderServiceTest"` | 리뷰 차단 1건 수정 — ADR-0002(도메인 간 참조는 service 레이어만) |
+
 ## 모니터링 (사람용 요약)
 - 항목 1(account·market·common 확장 지점) 구현 완료, 컴파일 통과. 테스트는 tester 담당.
 - 항목 2(Holding.applyBuy·HoldingRepository 조회·PortfolioBuyService) 구현 완료, 컴파일 통과. 테스트는 tester 담당.
 - 항목 3(OrderCreateRequest·OrderService.createBuyOrder) 구현 완료, 컴파일 통과. 컴파일에 필요해 OrderResponse도 최소 형태로 함께 생성(항목 4에서 재사용/조정 가능). 테스트는 tester 담당.
 - 항목 4(OrderController·OrderResponse 검토) 구현 완료. OrderResponse는 plan.md 응답 계약과 이미 일치해 필드 변경 없음. `@Validated`+`@NotBlank`로 헤더 공백값도 400 처리. `OrderControllerTest`(@WebMvcTest) 6케이스(성공·헤더누락·market/side 리터럴 오류·422·409·401) 작성해 통과 확인, 컴파일 통과. api-routes.md·api-contracts.md 갱신 완료.
 - 항목 5(`OrderBuyIntegrationTest`) 구현 완료. 전역 Clock 빈을 테스트 전용 `@Primary` MutableClock으로 교체해 주식 장중·분봉 조회를 고정 시각(2026-07-29 수, 공휴일 아님)에 결정론적으로 재현 — 실제 시스템 시각에 의존하지 않음. 매수 성공(4테이블 원자 저장)·현금부족(4테이블 무흔적)·재매수(평균단가 재계산+lot 2건) 3케이스 모두 통과, `./gradlew clean build` 전체(Spotless·SpotBugs·JaCoCo 포함) 통과.
+- 리뷰(코드리뷰 모드): 차단 1건(OrderService가 market 도메인의 InstrumentRepository를 직접 주입 — ADR-0002 위반, InstrumentService 등 market 서비스 경유로 리팩터 필요), 권장 1건(PortfolioBuyService 수동 생성자 → @RequiredArgsConstructor). 나머지 컨벤션·ADR·문서 동기화·테스트 레벨은 이상 없음.
+- 차단 1건 수정 완료: `InstrumentService.getInstrumentEntity(Long)` 추가 후 `OrderService`가 `InstrumentRepository` 대신 이 메서드만 거치도록 리팩터. `OrderServiceTest` mock 대상도 `InstrumentService`로 교체. `OrderServiceTest` 14케이스 전부 통과, compileJava/compileTestJava 통과.

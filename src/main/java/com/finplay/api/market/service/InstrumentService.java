@@ -30,8 +30,13 @@ public class InstrumentService {
 
 	@Transactional(readOnly = true)
 	public InstrumentResponse getInstrument(Long instrumentId) {
-		Instrument instrument = instrumentRepository.findById(instrumentId)
+		return InstrumentResponse.from(getInstrumentEntity(instrumentId));
+	}
+
+	// 다른 도메인(order 등)이 Instrument 엔티티가 필요할 때 InstrumentRepository를 직접 주입하지 않고 이 메서드만 거치게 한다 (ADR-0002).
+	@Transactional(readOnly = true)
+	public Instrument getInstrumentEntity(Long instrumentId) {
+		return instrumentRepository.findById(instrumentId)
 			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
-		return InstrumentResponse.from(instrument);
 	}
 }

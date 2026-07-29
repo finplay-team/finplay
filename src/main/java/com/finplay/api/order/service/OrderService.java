@@ -9,7 +9,7 @@ import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
-import com.finplay.api.market.repository.InstrumentRepository;
+import com.finplay.api.market.service.InstrumentService;
 import com.finplay.api.market.service.PriceQueryService;
 import com.finplay.api.market.service.PriceQuoteDto;
 import com.finplay.api.order.domain.Order;
@@ -44,7 +44,7 @@ public class OrderService {
 
 	private final UserQueryService userQueryService;
 	private final AccountService accountService;
-	private final InstrumentRepository instrumentRepository;
+	private final InstrumentService instrumentService;
 	private final PriceQueryService priceQueryService;
 	private final PortfolioBuyService portfolioBuyService;
 	private final OrderRepository orderRepository;
@@ -60,9 +60,7 @@ public class OrderService {
 			throw new BusinessException(ErrorCode.VALIDATION_ERROR, "매수 주문만 지원합니다.");
 		}
 
-		Instrument instrument = instrumentRepository
-			.findById(request.instrumentId())
-			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+		Instrument instrument = instrumentService.getInstrumentEntity(request.instrumentId());
 
 		if (instrument.getMarket() != request.market()) {
 			throw new BusinessException(ErrorCode.VALIDATION_ERROR, "요청한 시장과 종목의 시장이 일치하지 않습니다.");

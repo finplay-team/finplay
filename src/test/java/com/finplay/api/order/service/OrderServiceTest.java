@@ -18,7 +18,7 @@ import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
-import com.finplay.api.market.repository.InstrumentRepository;
+import com.finplay.api.market.service.InstrumentService;
 import com.finplay.api.market.service.PriceQueryService;
 import com.finplay.api.market.service.PriceQuoteDto;
 import com.finplay.api.market.service.PriceStatus;
@@ -35,7 +35,6 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
-import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -49,7 +48,7 @@ class OrderServiceTest {
 
 	private final UserQueryService userQueryService = mock(UserQueryService.class);
 	private final AccountService accountService = mock(AccountService.class);
-	private final InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
+	private final InstrumentService instrumentService = mock(InstrumentService.class);
 	private final PriceQueryService priceQueryService = mock(PriceQueryService.class);
 	private final PortfolioBuyService portfolioBuyService = mock(PortfolioBuyService.class);
 	private final OrderRepository orderRepository = mock(OrderRepository.class);
@@ -63,7 +62,7 @@ class OrderServiceTest {
 		orderService = new OrderService(
 			userQueryService,
 			accountService,
-			instrumentRepository,
+			instrumentService,
 			priceQueryService,
 			portfolioBuyService,
 			orderRepository,
@@ -118,7 +117,7 @@ class OrderServiceTest {
 			Market.STOCK, 1L, OrderSide.SELL, "MARKET", new BigDecimal("1"));
 
 		assertBusinessExceptionAndNoSideEffects(request, ErrorCode.VALIDATION_ERROR);
-		verifyNoInteractions(instrumentRepository, priceQueryService, accountService);
+		verifyNoInteractions(instrumentService, priceQueryService, accountService);
 	}
 
 	@Test
@@ -127,13 +126,13 @@ class OrderServiceTest {
 			Market.STOCK, 1L, OrderSide.BUY, "LIMIT", new BigDecimal("1"));
 
 		assertBusinessExceptionAndNoSideEffects(request, ErrorCode.UNSUPPORTED_ORDER_TYPE);
-		verifyNoInteractions(instrumentRepository, priceQueryService, accountService);
+		verifyNoInteractions(instrumentService, priceQueryService, accountService);
 	}
 
 	@Test
 	void createBuyOrderThrowsValidationErrorWhenStockQuantityIsFractional() {
 		Instrument instrument = stockInstrument();
-		when(instrumentRepository.findById(instrument.getId())).thenReturn(Optional.of(instrument));
+		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
 		OrderCreateRequest request = request(Market.STOCK, instrument.getId(), "1.5");
 
 		assertBusinessExceptionAndNoSideEffects(request, ErrorCode.VALIDATION_ERROR);
@@ -143,7 +142,7 @@ class OrderServiceTest {
 	@Test
 	void createBuyOrderThrowsValidationErrorWhenCryptoQuantityExceedsEightDecimals() {
 		Instrument instrument = cryptoInstrument(5_000L);
-		when(instrumentRepository.findById(instrument.getId())).thenReturn(Optional.of(instrument));
+		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
 		OrderCreateRequest request = request(Market.CRYPTO, instrument.getId(), "0.123456789");
 
 		assertBusinessExceptionAndNoSideEffects(request, ErrorCode.VALIDATION_ERROR);
@@ -153,7 +152,7 @@ class OrderServiceTest {
 	@Test
 	void createBuyOrderThrowsValidationErrorWhenQuantityIsZero() {
 		Instrument instrument = stockInstrument();
-		when(instrumentRepository.findById(instrument.getId())).thenReturn(Optional.of(instrument));
+		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
 		OrderCreateRequest request = request(Market.STOCK, instrument.getId(), "0");
 
 		assertBusinessExceptionAndNoSideEffects(request, ErrorCode.VALIDATION_ERROR);
@@ -163,7 +162,7 @@ class OrderServiceTest {
 	@Test
 	void createBuyOrderThrowsValidationErrorWhenQuantityIsNegative() {
 		Instrument instrument = stockInstrument();
-		when(instrumentRepository.findById(instrument.getId())).thenReturn(Optional.of(instrument));
+		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
 		OrderCreateRequest request = request(Market.STOCK, instrument.getId(), "-5");
 
 		assertBusinessExceptionAndNoSideEffects(request, ErrorCode.VALIDATION_ERROR);
@@ -173,7 +172,7 @@ class OrderServiceTest {
 	@Test
 	void createBuyOrderThrowsValidationErrorWhenCryptoOrderAmountBelowMinimum() {
 		Instrument instrument = cryptoInstrument(5_000L);
-		when(instrumentRepository.findById(instrument.getId())).thenReturn(Optional.of(instrument));
+		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
 		// rawAmount = 40000 * 0.1 = 4000 < 5000 최소 주문금액
 		when(priceQueryService.getPrice(instrument))
 			.thenReturn(new PriceQuoteDto(new BigDecimal("40000"), NOW, PriceStatus.AVAILABLE, null));
@@ -186,7 +185,7 @@ class OrderServiceTest {
 	@Test
 	void createBuyOrderThrowsValidationErrorWhenRequestMarketDoesNotMatchInstrumentMarket() {
 		Instrument instrument = stockInstrument();
-		when(instrumentRepository.findById(instrument.getId())).thenReturn(Optional.of(instrument));
+		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
 		OrderCreateRequest request = request(Market.CRYPTO, instrument.getId(), "1");
 
 		assertBusinessExceptionAndNoSideEffects(request, ErrorCode.VALIDATION_ERROR);
@@ -196,7 +195,7 @@ class OrderServiceTest {
 	@Test
 	void createBuyOrderThrowsMarketClosedWhenStockMarketIsClosed() {
 		Instrument instrument = stockInstrument();
-		when(instrumentRepository.findById(instrument.getId())).thenReturn(Optional.of(instrument));
+		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
 		doThrow(new BusinessException(ErrorCode.MARKET_CLOSED))
 			.when(priceQueryService).assertOrderable(instrument);
 		OrderCreateRequest request = request(Market.STOCK, instrument.getId(), "1");
@@ -208,7 +207,7 @@ class OrderServiceTest {
 	@Test
 	void createBuyOrderThrowsPriceUnavailableWhenStockPriceIsInvalid() {
 		Instrument instrument = stockInstrument();
-		when(instrumentRepository.findById(instrument.getId())).thenReturn(Optional.of(instrument));
+		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
 		when(priceQueryService.getPrice(instrument)).thenThrow(new BusinessException(ErrorCode.PRICE_UNAVAILABLE));
 		OrderCreateRequest request = request(Market.STOCK, instrument.getId(), "1");
 
@@ -219,7 +218,7 @@ class OrderServiceTest {
 	@Test
 	void createBuyOrderThrowsPriceUnavailableWhenCryptoPriceIsInvalid() {
 		Instrument instrument = cryptoInstrument(5_000L);
-		when(instrumentRepository.findById(instrument.getId())).thenReturn(Optional.of(instrument));
+		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
 		when(priceQueryService.getPrice(instrument)).thenThrow(new BusinessException(ErrorCode.PRICE_UNAVAILABLE));
 		OrderCreateRequest request = request(Market.CRYPTO, instrument.getId(), "0.1");
 
@@ -231,7 +230,7 @@ class OrderServiceTest {
 	void createBuyOrderThrowsInsufficientCashWhenCashBalanceBelowAmountPlusFee() {
 		Instrument instrument = stockInstrument();
 		Account account = account(com.finplay.api.account.domain.Market.STOCK);
-		when(instrumentRepository.findById(instrument.getId())).thenReturn(Optional.of(instrument));
+		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
 		// amount = 50,000,000 * 1 > 계좌 기본 현금 10,000,000
 		when(priceQueryService.getPrice(instrument))
 			.thenReturn(new PriceQuoteDto(new BigDecimal("50000000"), NOW, PriceStatus.AVAILABLE, null));
@@ -252,7 +251,7 @@ class OrderServiceTest {
 	}
 
 	private void stubHappyPath(Instrument instrument, Account account, User user, BigDecimal price) {
-		when(instrumentRepository.findById(instrument.getId())).thenReturn(Optional.of(instrument));
+		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
 		when(priceQueryService.getPrice(instrument))
 			.thenReturn(new PriceQuoteDto(price, NOW, PriceStatus.AVAILABLE, null));
 		com.finplay.api.account.domain.Market accountMarket = com.finplay.api.account.domain.Market
