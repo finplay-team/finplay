@@ -13,6 +13,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -63,5 +64,14 @@ public class Holding {
 
 	public static Holding create(Account account, Instrument instrument, LocalDateTime now) {
 		return new Holding(account, instrument, now);
+	}
+
+	public void applyBuy(BigDecimal quantity, BigDecimal price, LocalDateTime now) {
+		BigDecimal newQuantity = this.quantity.add(quantity);
+		BigDecimal totalCost = this.quantity.multiply(this.averagePrice).add(quantity.multiply(price));
+		this.averagePrice = totalCost.divide(newQuantity, 8, RoundingMode.HALF_UP);
+		this.quantity = newQuantity;
+		this.isActive = true;
+		this.updatedAt = now;
 	}
 }
