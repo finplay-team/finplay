@@ -33,6 +33,7 @@
 | GET | /api/community/posts/{postId}/comments | community | 인증 사용자가 게시물의 평면 댓글을 오래된 순으로 조회 | 008 COM-002, Issue #29 |
 | POST | /api/community/posts/{postId}/comments | community | 인증 사용자의 평면 댓글 작성 | 008 COM-002, Issue #28 |
 | DELETE | /api/community/comments/{commentId} | community | 본인 소유 댓글 삭제 (204, 본문 없음) | 008 COM-002, Issue #30 |
+| POST | /api/orders | order | 인증 사용자의 시장가 매수 주문을 검증·즉시 전량 체결하고 주문+체결 결과 반환 (201). `Idempotency-Key` 헤더 필수(존재 검증만, 재현 방지는 #22) | 004 ORD-001~004·006(부분), Issue #13 |
 
 ## 시스템 엔드포인트
 

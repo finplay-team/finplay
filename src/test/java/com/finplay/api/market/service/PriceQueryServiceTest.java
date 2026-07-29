@@ -309,4 +309,51 @@ class PriceQueryServiceTest {
 			.isInstanceOf(BusinessException.class)
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode()).isEqualTo(ErrorCode.PRICE_UNAVAILABLE));
 	}
+
+	@Test
+	void assertOrderablePassesWhenStockMarketIsOpen() {
+		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
+		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
+		PriceStore priceStore = mock(PriceStore.class);
+		Instrument instrument = Instrument.create(
+			Market.STOCK, "005930", "삼성전자", BigDecimal.valueOf(100), 70000L, true, NOW);
+		when(stockPriceProvider.getMarketStatus()).thenReturn(StockMarketStatus.OPEN);
+		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
+			priceStore);
+
+		priceQueryService.assertOrderable(instrument);
+
+		verifyNoInteractions(priceStore);
+	}
+
+	@Test
+	void assertOrderableThrowsMarketClosedWhenStockMarketIsClosed() {
+		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
+		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
+		PriceStore priceStore = mock(PriceStore.class);
+		Instrument instrument = Instrument.create(
+			Market.STOCK, "005930", "삼성전자", BigDecimal.valueOf(100), 70000L, true, NOW);
+		when(stockPriceProvider.getMarketStatus()).thenReturn(StockMarketStatus.CLOSED);
+		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
+			priceStore);
+
+		assertThatThrownBy(() -> priceQueryService.assertOrderable(instrument))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode()).isEqualTo(ErrorCode.MARKET_CLOSED));
+	}
+
+	@Test
+	void assertOrderableAlwaysPassesForCryptoRegardlessOfStockMarketStatus() {
+		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
+		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
+		PriceStore priceStore = mock(PriceStore.class);
+		Instrument instrument = Instrument.create(Market.CRYPTO, "BTC", "비트코인", BigDecimal.valueOf(1000), 5000L, true,
+			NOW);
+		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
+			priceStore);
+
+		priceQueryService.assertOrderable(instrument);
+
+		verifyNoInteractions(stockPriceProvider, priceStore);
+	}
 }

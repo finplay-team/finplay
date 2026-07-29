@@ -2,10 +2,14 @@
 package com.finplay.api.account.repository;
 
 import com.finplay.api.account.domain.Account;
+import com.finplay.api.account.domain.Market;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface AccountRepository extends JpaRepository<Account, Long> {
 
 	List<Account> findAllByUserId(Long userId);
+
+	Optional<Account> findByUserIdAndMarket(Long userId, Market market);
 }
