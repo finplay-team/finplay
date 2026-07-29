@@ -256,7 +256,7 @@ class MarketDataPipelineIntegrationTest {
 		// 시각에 조회한 가격과 그 시각에 체결된 주문의 체결가가 동일해야 한다.
 		User user = createUser("pipeline");
 		createAccount(user);
-		OrderResponse orderResponse = orderService.createBuyOrder(
+		OrderResponse orderResponse = orderService.createOrder(
 			user.getId(), "idem-pipeline-1", buyRequest(instrument.getId()));
 		assertThat(orderResponse.price()).isEqualByComparingTo(closeQuote.price());
 		assertThat(orderResponse.price()).isEqualByComparingTo("70300");
