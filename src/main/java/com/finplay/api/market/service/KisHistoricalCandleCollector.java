@@ -88,7 +88,8 @@ public class KisHistoricalCandleCollector {
 		}
 	}
 
-	private InstrumentOutcome collectInstrument(Instrument instrument, LocalDate tradingDate, LocalDateTime collectedAt) {
+	private InstrumentOutcome collectInstrument(Instrument instrument, LocalDate tradingDate,
+		LocalDateTime collectedAt) {
 		boolean alreadyCollected = !stockCandleRepository
 			.findByInstrumentIdAndTradingDateOrderByCandleTimeAsc(instrument.getId(), tradingDate)
 			.isEmpty();
@@ -98,7 +99,8 @@ public class KisHistoricalCandleCollector {
 			return new InstrumentOutcome(instrument, List.of(), null);
 		}
 
-		List<RawMinuteCandle> rawCandles = kisHistoricalCandleClient.fetchMinuteCandles(instrument.getSymbol(), tradingDate);
+		List<RawMinuteCandle> rawCandles = kisHistoricalCandleClient.fetchMinuteCandles(instrument.getSymbol(),
+			tradingDate);
 		String failureReason = validateInstrumentCandles(instrument, rawCandles);
 		if (failureReason != null) {
 			return new InstrumentOutcome(instrument, List.of(), failureReason);
@@ -164,8 +166,10 @@ public class KisHistoricalCandleCollector {
 	}
 
 	private void persist(LocalDate tradingDate, LocalDateTime collectedAt, List<InstrumentOutcome> outcomes) {
-		List<InstrumentOutcome> failedOutcomes = outcomes.stream().filter(outcome -> outcome.failureReason() != null).toList();
-		List<InstrumentOutcome> succeededOutcomes = outcomes.stream().filter(outcome -> outcome.failureReason() == null).toList();
+		List<InstrumentOutcome> failedOutcomes = outcomes.stream().filter(outcome -> outcome.failureReason() != null)
+			.toList();
+		List<InstrumentOutcome> succeededOutcomes = outcomes.stream().filter(outcome -> outcome.failureReason() == null)
+			.toList();
 
 		for (InstrumentOutcome outcome : succeededOutcomes) {
 			if (!outcome.candles().isEmpty()) {
@@ -226,7 +230,8 @@ public class KisHistoricalCandleCollector {
 			if (inputStream == null) {
 				throw new IllegalStateException("공휴일 리소스 파일을 찾을 수 없습니다: " + resourcePath);
 			}
-			try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
+			try (BufferedReader reader = new BufferedReader(
+				new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
 				return reader
 					.lines()
 					.map(String::strip)
