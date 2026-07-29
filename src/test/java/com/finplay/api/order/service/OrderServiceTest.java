@@ -24,8 +24,10 @@ import com.finplay.api.market.service.PriceQuoteDto;
 import com.finplay.api.market.service.PriceStatus;
 import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderSide;
+import com.finplay.api.order.domain.OrderType;
 import com.finplay.api.order.domain.Trade;
 import com.finplay.api.order.dto.request.OrderCreateRequest;
+import com.finplay.api.order.dto.response.OrderListItemResponse;
 import com.finplay.api.order.dto.response.OrderResponse;
 import com.finplay.api.order.repository.OrderRepository;
 import com.finplay.api.order.repository.TradeRepository;
@@ -35,9 +37,11 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class OrderServiceTest {
 
@@ -240,6 +244,46 @@ class OrderServiceTest {
 
 		assertBusinessExceptionAndNoSideEffects(request, ErrorCode.INSUFFICIENT_CASH);
 		assertThat(account.getCashBalance()).isEqualTo(10_000_000L);
+	}
+
+	@Test
+	void getMyOrdersMapsRepositoryOrdersToOrderListItemResponseFields() {
+		Instrument instrument = stockInstrument();
+		ReflectionTestUtils.setField(instrument, "id", 42L);
+		Order order = Order.create(
+			testUser(),
+			account(com.finplay.api.account.domain.Market.STOCK),
+			instrument,
+			OrderSide.BUY,
+			OrderType.MARKET,
+			new BigDecimal("3"),
+			IDEMPOTENCY_KEY,
+			"h".repeat(64),
+			NOW);
+		ReflectionTestUtils.setField(order, "id", 100L);
+		when(orderRepository.findAllByUserIdOrderByRequestedAtDescIdDesc(USER_ID)).thenReturn(List.of(order));
+
+		List<OrderListItemResponse> responses = orderService.getMyOrders(USER_ID);
+
+		assertThat(responses).hasSize(1);
+		OrderListItemResponse response = responses.get(0);
+		assertThat(response.orderId()).isEqualTo(100L);
+		assertThat(response.market()).isEqualTo("STOCK");
+		assertThat(response.instrumentId()).isEqualTo(42L);
+		assertThat(response.side()).isEqualTo("BUY");
+		assertThat(response.orderType()).isEqualTo("MARKET");
+		assertThat(response.status()).isEqualTo("FILLED");
+		assertThat(response.quantity()).isEqualByComparingTo(new BigDecimal("3"));
+		assertThat(response.requestedAt()).isEqualTo(NOW);
+	}
+
+	@Test
+	void getMyOrdersReturnsEmptyListWhenUserHasNoOrders() {
+		when(orderRepository.findAllByUserIdOrderByRequestedAtDescIdDesc(USER_ID)).thenReturn(List.of());
+
+		List<OrderListItemResponse> responses = orderService.getMyOrders(USER_ID);
+
+		assertThat(responses).isEmpty();
 	}
 
 	private void assertBusinessExceptionAndNoSideEffects(OrderCreateRequest request, ErrorCode expectedErrorCode) {
