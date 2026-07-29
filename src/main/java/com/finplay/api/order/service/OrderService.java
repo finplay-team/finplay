@@ -17,6 +17,7 @@ import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.domain.OrderType;
 import com.finplay.api.order.domain.Trade;
 import com.finplay.api.order.dto.request.OrderCreateRequest;
+import com.finplay.api.order.dto.response.OrderListItemResponse;
 import com.finplay.api.order.dto.response.OrderResponse;
 import com.finplay.api.order.repository.OrderRepository;
 import com.finplay.api.order.repository.TradeRepository;
@@ -29,6 +30,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.HexFormat;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -119,6 +121,13 @@ public class OrderService {
 		portfolioBuyService.applyBuyTrade(account, instrument, trade, quantity, price, fee, now);
 
 		return OrderResponse.of(order, trade);
+	}
+
+	@Transactional(readOnly = true)
+	public List<OrderListItemResponse> getMyOrders(Long userId) {
+		return orderRepository.findAllByUserIdOrderByRequestedAtDescIdDesc(userId).stream()
+			.map(OrderListItemResponse::from)
+			.toList();
 	}
 
 	private void validateQuantityFormat(Market market, BigDecimal quantity) {

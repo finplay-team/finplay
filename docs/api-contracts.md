@@ -222,3 +222,11 @@ PR #49 차단 리뷰 후속 Fake 재사용·동시성·DB 불변 자동 회귀�
 | POST | /api/orders | Access Bearer 필수, Header `Idempotency-Key` 필수(`OrderCreateRequest`와 별도) | `{"market":"STOCK","instrumentId":1,"side":"BUY","orderType":"MARKET","quantity":"10"}` (`market`은 `STOCK`\|`CRYPTO` 리터럴만 파싱 성공, `side`는 `BUY`\|`SELL` 리터럴만 파싱 성공, `orderType`은 문자열, `quantity`는 문자열 숫자) | 201 `{"orderId":1,"market":"STOCK","instrumentId":1,"side":"BUY","orderType":"MARKET","status":"FILLED","quantity":10,"requestedAt":"2026-07-29T09:00:00","tradeId":1,"price":70000,"amount":700000,"fee":105,"executedAt":"2026-07-29T09:00:00"}` (`OrderResponse`) | `Idempotency-Key` 누락, `market`\|`side` 미지원 리터럴(Jackson 파싱 실패), `side=SELL`, 수량 형식 위반(주식 소수·코인 8자리 초과·0 이하), 코인 최소주문금액(5,000원) 미달, 요청 시장≠종목 시장은 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED`. `instrumentId` 미존재는 404 `NOT_FOUND`. 주식 장외는 409 `MARKET_CLOSED`, 유효한 최신 가격 없음은 409 `PRICE_UNAVAILABLE`, 현금 부족은 409 `INSUFFICIENT_CASH`. `orderType != "MARKET"`(예: `"LIMIT"`)은 422 `UNSUPPORTED_ORDER_TYPE` 공통 오류 형식 | 004 ORD-001~004, Issue #13 |
 
 계좌·주문자는 요청에서 받지 않고 Access Token의 인증 사용자로 결정한다. 이번 구현은 `Idempotency-Key` 헤더 **존재 검증까지만** 하며(이슈 #13 범위), 동일 키 재요청 시 기존 응답 반환과 다른 본문 409 `IDEMPOTENCY_CONFLICT` 판정은 다루지 않는다(#22에서 구현 예정 — `orders.idempotency_key`/`request_hash`에는 값을 정직하게 저장). 검증·시세·현금 부족 등 모든 실패 경로는 주문·체결·계좌·보유 테이블에 어떤 흔적도 남기지 않는다(하나의 `@Transactional` 롤백).
+
+### 내 주문 목록 조회
+
+| Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|---|
+| GET | /api/orders | Access Bearer 필수 | 본문·경로 변수·쿼리 없음 | 200 `[{"orderId":1,"market":"STOCK","instrumentId":1,"side":"BUY","orderType":"MARKET","status":"FILLED","quantity":10,"requestedAt":"2026-07-29T09:00:00"}, ...]` (`OrderListItemResponse[]`); 주문이 없으면 200 `[]` | Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 006 PORT-003, Issue #21 |
+
+조회 대상은 요청에서 받지 않고 Access Token의 인증 사용자 본인 소유 주문으로만 결정한다. `requestedAt` 내림차순, 동시각은 `id` 내림차순으로 정렬한다. 응답 필드는 `orderId`·`market`·`instrumentId`·`side`·`orderType`·`status`·`quantity`·`requestedAt` 8개로 고정이며, 체결 전용 필드(`tradeId`·`price`·`amount`·`fee`·`executedAt`)는 어떤 이름으로도 포함하지 않는다.

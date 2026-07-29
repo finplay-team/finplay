@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -16,10 +17,12 @@ import com.finplay.api.auth.token.JwtTokenProvider;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.order.dto.request.OrderCreateRequest;
+import com.finplay.api.order.dto.response.OrderListItemResponse;
 import com.finplay.api.order.dto.response.OrderResponse;
 import com.finplay.api.order.service.OrderService;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -255,6 +258,45 @@ class OrderControllerTest {
 			.header("Idempotency-Key", IDEMPOTENCY_KEY)
 			.contentType(MediaType.APPLICATION_JSON)
 			.content(VALID_BODY))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(orderService);
+	}
+
+	@Test
+	void getMyOrdersReturnsOkWithEveryFieldAndNoTradeOnlyField() throws Exception {
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(java.util.Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+		LocalDateTime requestedAt = LocalDateTime.of(2026, 7, 29, 9, 0);
+		OrderListItemResponse item = new OrderListItemResponse(
+			1L, "STOCK", 1L, "BUY", "MARKET", "FILLED", new BigDecimal("10"), requestedAt);
+		when(orderService.getMyOrders(USER_ID)).thenReturn(List.of(item));
+
+		mockMvc.perform(get("/api/orders")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$[0].orderId").value(1))
+			.andExpect(jsonPath("$[0].market").value("STOCK"))
+			.andExpect(jsonPath("$[0].instrumentId").value(1))
+			.andExpect(jsonPath("$[0].side").value("BUY"))
+			.andExpect(jsonPath("$[0].orderType").value("MARKET"))
+			.andExpect(jsonPath("$[0].status").value("FILLED"))
+			.andExpect(jsonPath("$[0].quantity").value(10))
+			.andExpect(jsonPath("$[0].requestedAt").value("2026-07-29T09:00:00"))
+			.andExpect(jsonPath("$[0].tradeId").doesNotExist())
+			.andExpect(jsonPath("$[0].price").doesNotExist())
+			.andExpect(jsonPath("$[0].amount").doesNotExist())
+			.andExpect(jsonPath("$[0].fee").doesNotExist())
+			.andExpect(jsonPath("$[0].executedAt").doesNotExist());
+
+		verify(orderService).getMyOrders(USER_ID);
+	}
+
+	@Test
+	void getMyOrdersRejectsMissingAuthenticationWithoutCallingService() throws Exception {
+		mockMvc.perform(get("/api/orders"))
 			.andExpect(status().isUnauthorized())
 			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
