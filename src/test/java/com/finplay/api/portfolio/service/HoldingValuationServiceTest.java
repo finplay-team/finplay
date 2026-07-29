@@ -11,8 +11,10 @@ import com.finplay.api.market.service.PriceQueryService;
 import com.finplay.api.market.service.PriceQuoteDto;
 import com.finplay.api.market.service.PriceStatus;
 import com.finplay.api.portfolio.domain.Holding;
+import com.finplay.api.portfolio.repository.HoldingRepository;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
@@ -21,7 +23,8 @@ class HoldingValuationServiceTest {
 	private static final LocalDateTime NOW = LocalDateTime.of(2026, 7, 29, 10, 0, 0);
 
 	private final PriceQueryService priceQueryService = Mockito.mock(PriceQueryService.class);
-	private final HoldingValuationService service = new HoldingValuationService(priceQueryService);
+	private final HoldingRepository holdingRepository = Mockito.mock(HoldingRepository.class);
+	private final HoldingValuationService service = new HoldingValuationService(priceQueryService, holdingRepository);
 
 	@Test
 	void evaluateHoldingReturnsPositivePnlAndReturnRateWhenPriceRoseAboveAveragePrice() {
@@ -110,6 +113,48 @@ class HoldingValuationServiceTest {
 		assertThat(result.evaluationAmount()).isEqualTo(600_000L);
 		assertThat(result.unrealizedPnl()).isEqualTo(600_000L);
 		assertThat(result.returnRate()).isEqualByComparingTo("0");
+	}
+
+	@Test
+	void evaluateActiveHoldingsForAccountReturnsEvaluatedListForMixedPriceAvailability() {
+		Long accountId = 1L;
+		Instrument availableInstrument = testInstrument();
+		Instrument unavailableInstrument = Instrument.create(
+			com.finplay.api.market.domain.Market.CRYPTO,
+			"BTC",
+			"비트코인",
+			new BigDecimal("100"),
+			0L,
+			true,
+			NOW);
+		Holding availableHolding = testHolding(availableInstrument, new BigDecimal("10"), new BigDecimal("50000"));
+		Holding unavailableHolding = testHolding(unavailableInstrument, new BigDecimal("5"), new BigDecimal("100"));
+		when(holdingRepository.findAllByAccountIdAndIsActiveTrue(accountId))
+			.thenReturn(List.of(availableHolding, unavailableHolding));
+		when(priceQueryService.getPriceQuote(availableInstrument))
+			.thenReturn(new PriceQuoteDto(new BigDecimal("60000"), NOW, PriceStatus.AVAILABLE, null));
+		when(priceQueryService.getPriceQuote(unavailableInstrument))
+			.thenReturn(new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null));
+
+		List<HoldingValuationDto> result = service.evaluateActiveHoldingsForAccount(accountId);
+
+		assertThat(result).hasSize(2);
+		assertThat(result.get(0).priceStatus()).isEqualTo(PriceStatus.AVAILABLE);
+		assertThat(result.get(0).evaluationAmount()).isEqualTo(600_000L);
+		assertThat(result.get(0).unrealizedPnl()).isEqualTo(100_000L);
+		assertThat(result.get(1).priceStatus()).isEqualTo(PriceStatus.UNAVAILABLE);
+		assertThat(result.get(1).evaluationAmount()).isNull();
+		assertThat(result.get(1).unrealizedPnl()).isNull();
+	}
+
+	@Test
+	void evaluateActiveHoldingsForAccountReturnsEmptyListWhenNoActiveHoldings() {
+		Long accountId = 2L;
+		when(holdingRepository.findAllByAccountIdAndIsActiveTrue(accountId)).thenReturn(List.of());
+
+		List<HoldingValuationDto> result = service.evaluateActiveHoldingsForAccount(accountId);
+
+		assertThat(result).isEmpty();
 	}
 
 	private static Holding testHolding(Instrument instrument, BigDecimal quantity, BigDecimal price) {

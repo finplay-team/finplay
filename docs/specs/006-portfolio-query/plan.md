@@ -201,3 +201,205 @@ PRD C-003에 따라 전 구간 `BigDecimal`/`long`만 사용한다(`double`/`flo
   - 정상 케이스: 이익(평가금액 > 원가)·손실(평가금액 < 원가) 각각에서 `evaluationAmount`·`unrealizedPnl`·`returnRate` 계산값을 실제 수치로 검증(mock 응답 객체 금지 컨벤션).
   - 경계 케이스: 시세 무효(`PriceStatus.UNAVAILABLE`) → 세 필드 모두 `null`이고 예외가 발생하지 않음. 보유수량 0 → `costBasis=0`, `returnRate=BigDecimal.ZERO`. 평균단가 0 → `costBasis=0`, `returnRate=BigDecimal.ZERO`.
 - Repository·API 슬라이스·Testcontainers 통합 테스트는 이 이슈 범위에 없다(API가 없으므로) — #81/#52/#51 각 이슈가 자신의 통합 테스트에서 이 서비스를 통해 검증한다.
+
+---
+
+## 이슈 #81: 시장별 계좌 요약 조회 API 구현 (ACCT-002)
+
+> **범위 안내**: 이 섹션은 `spec.md`의 ACCT-002가 요구하는 **실제 조회 API**만 설계한다. 평가금액·미실현손익 계산 자체는 이슈 #47(`HoldingValuationService`, 위 절)이 이미 구현·완료했고 이번 이슈는 이를 재사용만 한다. ACCT-003(합산 포트폴리오, #51)·PORT-001(보유 종목 목록, #52)·PORT-002(거래내역, #82)는 각자 착수될 때 별도로 설계한다 — 지금은 미확정이며 임의로 설계하지 않는다.
+
+### 관련 문서
+
+- Spec: `./spec.md` ACCT-002 절
+- PRD 근거: `docs/prd.md` ACCT-002 (이번 이슈에서 수익률 필드를 추가해 갱신 — 문서 동기화 절 참고)
+- 선행 절: 이 문서의 "이슈 #47" 절(`HoldingValuationService`/`HoldingValuationDto` 시그니처·반올림 규칙·시세 무효 처리 규칙 — 이번 이슈가 그대로 재사용)
+- 관련 ADR: [ADR-0002](../../adr/0002-architecture.md) — **도메인 간 참조는 service 레이어를 통해서만, 다른 도메인의 repository를 직접 주입하지 않는다.** `Holding`은 `portfolio` 도메인 엔티티이므로 `account` 도메인의 `AccountService`가 `HoldingRepository`(portfolio)를 직접 주입하면 ADR 위반이다 — 아래 "Service 설계"에서 이를 피하는 구조를 명시한다.
+- 선행 이슈: #12(원장 스키마, 병합됨), #47(평가 계산, 병합됨), #13·#41(매수·매도, 병합됨)
+- 후속: #51(합산 포트폴리오)이 이 이슈의 수익률 계산식(`(총평가액 − 시드머니) ÷ 시드머니`)을 그대로 재사용한다 — #51에서 새 계산식을 만들지 않는다.
+
+### 기존 구조 확인
+
+| 대상 | 현재 상태 | 이번 변경 |
+|---|---|---|
+| `com.finplay.api.account.domain.Account` | `cashBalance`(long)·`seedMoney`(long, 생성 시 `INITIAL_SEED_MONEY`=10,000,000 고정, setter 없음)·`realizedPnl`(long) 필드 이미 존재 | 변경 없음 — 세 값 모두 그대로 읽기만 한다 |
+| `com.finplay.api.account.repository.AccountRepository` | `findAllByUserId`, `findByUserIdAndMarket` 존재 | 변경 없음 |
+| `com.finplay.api.account.service.AccountService` | 명시적 2-인자 생성자(`accountRepository`, `clock`), `createAccountsFor`·`getAccountFor(userId, market)`만 존재 | `getAccountSummary(Long userId, Market market)` 추가. 생성자 주입 대상이 늘어나므로 **명시적 생성자를 `@RequiredArgsConstructor`로 교체**(컨벤션 — service는 Lombok 생성자 주입, 기존 파일이 예외적으로 수기 생성자였을 뿐 이번에 맞춘다) |
+| `com.finplay.api.account.controller` | 컨트롤러 없음(패키지 자체가 없음) | `AccountController` 신규 생성 |
+| `com.finplay.api.portfolio.repository.HoldingRepository` | `findByAccountIdAndInstrumentId`만 존재, 계좌 전체 보유 목록 조회 메서드 없음 | 계좌별 활성 보유 목록 조회 메서드 추가 (아래 "Repository 설계") |
+| `com.finplay.api.portfolio.service.HoldingValuationService` | `evaluateHolding(Holding holding)`(단건)만 존재, `PriceQueryService`만 주입받음 | 계좌 단위로 활성 보유를 조회+평가까지 묶는 메서드 추가 — `HoldingRepository`를 이 서비스에 새로 주입(같은 `portfolio` 도메인이라 ADR-0002 위반 아님) |
+| `com.finplay.api.auth.token.AuthenticatedUser` | `record(Long userId, String role)` | 변경 없음 — `principal.userId()`로 재사용 |
+
+### Market 타입 주의 (임의 해석 금지)
+
+이 코드베이스에는 이름이 같은 `enum Market`이 **두 개** 존재한다 — `com.finplay.api.account.domain.Market`(계좌가 속한 시장, `Account.market` 타입)과 `com.finplay.api.market.domain.Market`(종목이 속한 시장, `Instrument.market` 타입). `OrderCreateRequest.market`은 후자(종목 시장과 직접 비교하기 위해)를 쓰지만, 이번 API는 **계좌를 조회하는 것이 목적**이므로 `AccountService.getAccountFor(Long userId, Market market)`의 시그니처와 동일한 **`com.finplay.api.account.domain.Market`** 을 컨트롤러 쿼리 파라미터 타입으로 써야 한다. `market.domain.Market`을 import하면 `getAccountFor` 호출부에서 타입이 맞지 않아 컴파일이 실패한다.
+
+### API 설계
+
+| Method | URL | 요청 | 응답 | 설명 |
+|---|---|---|---|---|
+| GET | /api/accounts/summary?market={STOCK\|CRYPTO} | 인증만(Access Bearer), 쿼리 파라미터 `market` 필수 | `AccountSummaryResponse` | 인증 사용자 본인의 해당 시장 계좌 요약(현금잔고·보유평가액·총평가액·실현손익·미실현손익·수익률) 반환 |
+
+- 인증: `@AuthenticationPrincipal AuthenticatedUser`에서 `userId`를 얻는다. 경로·쿼리에 계좌 식별자(`accountId`)를 받지 않는다 — `POST /api/orders`·`GET /api/orders`와 동일하게 "요청에서 대상을 받지 않는" 패턴이라 타인 계좌 조회 자체가 불가능한 구조다.
+- 보유 종목이 없어도(신규 가입 직후 등) 예외 없이 200과 0으로 채운 `AccountSummaryResponse`를 반환한다(spec 완료 조건, PRD ACCT-002).
+
+### 입력 명세
+
+| 파라미터 | 위치 | 타입 | 필수 | 검증 | 근거 |
+|---|---|---|---|---|---|
+| `market` | 쿼리 | `com.finplay.api.account.domain.Market`(enum: `STOCK`\|`CRYPTO`) | 필수 | Spring이 쿼리 파라미터를 enum으로 바인딩 — 생략 시 `MissingServletRequestParameterException`, `STOCK`\|`CRYPTO`가 아닌 문자열(예: `FOREX`)은 `MethodArgumentTypeMismatchException`. **둘 다 이미 `GlobalExceptionHandler.handleBadRequest`가 400 `VALIDATION_ERROR`로 매핑한다**(`GlobalExceptionHandlerTest.mapsMissingRequiredRequestParamToValidationErrorCode`·`mapsEnumQueryParamTypeMismatchToValidationErrorCodeInsteadOfInternalError`로 이미 검증된 공통 동작) — **컨트롤러에 별도 400 처리 코드를 추가하지 않는다**. `@RequestParam Market market`으로 선언하는 것만으로 이슈 #81의 "market 누락/잘못된 값 400" 수용 기준이 충족된다 |
+
+- 요청 본문 없음.
+
+### 응답 DTO 설계
+
+`com.finplay.api.account.dto.response.AccountSummaryResponse` (record, 단건 응답 접미사 `~Response`).
+
+| 필드 | 타입 | 근거 |
+|---|---|---|
+| cashBalance | long | `Account.cashBalance` 그대로 |
+| holdingsValue | long | 활성 보유 중 시세 유효(`AVAILABLE`)한 항목의 `evaluationAmount` 합산(원단위) |
+| totalValue | long | `cashBalance + holdingsValue` (완료 조건 "총평가액 = 현금잔고 + 보유평가액 항상 성립"의 직접 구현) |
+| realizedPnl | long | `Account.realizedPnl` 그대로(계좌 원장 값, 재계산 없음 — 이슈 #81 요구사항) |
+| unrealizedPnl | long | 활성 보유 중 시세 유효한 항목의 `unrealizedPnl` 합산(원단위) |
+| returnRate | BigDecimal | `(totalValue - seedMoney) / seedMoney`, scale 4 `RoundingMode.HALF_UP`. `seedMoney == 0`이면 `BigDecimal.ZERO`(방어적 — 현재 `Account`는 항상 `INITIAL_SEED_MONEY`로 생성되어 실질적으로 발생하지 않지만 0-나눗셈 예외를 피하기 위해 `HoldingValuationService.returnRate`와 동일한 관례를 따른다) |
+
+- 정적 팩토리 `AccountSummaryResponse.of(long cashBalance, long holdingsValue, long totalValue, long realizedPnl, long unrealizedPnl, BigDecimal returnRate)` — 단일 엔티티에서 바로 매핑하는 것이 아니라 여러 계산값을 조합하므로 컨벤션의 `of(...)` 규칙(인자 2개 이상 조합)을 따른다.
+- `returnRate`는 비율 값(예: `0.0523` = 5.23%)이며 `%` 변환·표시 포맷은 이 응답의 책임이 아니다(`HoldingValuationService.returnRate`와 동일 관례, 소비 화면이 처리).
+
+### 시세 무효 종목 합산 정책 확정 (spec.md 미결 사항 — 이 이슈에서 결정)
+
+이슈 #47의 `HoldingValuationService.evaluateHolding`은 시세가 무효(`PriceStatus.UNAVAILABLE`)면 `evaluationAmount`·`unrealizedPnl`·`returnRate`를 `null`로 반환하고 예외를 던지지 않는다("무효 종목을 목록에서 어떻게 표시할지는 각 API가 결정" — #47 plan 절). 계좌 요약은 단일 숫자(`holdingsValue`·`unrealizedPnl`)를 반환해야 하고 spec 완료 조건이 "보유 종목이 없어도 0으로 채운 정상 응답"을 요구하므로, 이 API는 다음과 같이 확정한다.
+
+- 이 API는 예외를 던지지 않는다(`PriceQueryService.getPrice`의 throw 변형을 쓰지 않음 — `HoldingValuationService.evaluateHolding`이 이미 비throw 변형만 사용하므로 자동으로 보장된다). 한 종목의 시세 무효가 전체 계좌 요약 조회를 막지 않는다.
+- 통합 테스트에서 "시세 무효 종목 보유 상황"을 반드시 검증한다(아래 테스트 계획).
+
+> **정책 수정 (PR #96 리뷰 차단 반영, 2026-07-30)**: 최초 구현은 "시세 무효 종목은 원가까지 포함해 합산에서 완전히 제외(0 기여)"였다. 그러나 주식 시세가 재생(replay) 기반이라 장 마감 시간대(평일 09:01 이전·주말·공휴일 — 하루 대부분)엔 **전 종목이 동시에 `UNAVAILABLE`**이 되고, 이 경우 원가까지 제외하면 실제 손실이 없는데도 `holdingsValue=0`·`totalValue=현금만`·수익률 대폭 마이너스로 보이는 오류가 발생한다(QA 재현: 00:52 KST, 현금+보유 10주 계좌가 수익률 -7%로 응답). 이를 반영해 다음과 같이 정책을 바꾼다.
+>
+> - **`AVAILABLE`**: 기존과 동일 — `evaluationAmount`를 `holdingsValue`에, `unrealizedPnl`을 `unrealizedPnl` 합계에 가산.
+> - **`UNAVAILABLE`**: `evaluationAmount`(`null`) 대신 **`HoldingValuationDto.costBasis`(보유수량 × 평균단가, 시세와 무관하게 항상 채워짐)를 `holdingsValue`에 가산**하고, `unrealizedPnl` 합계에는 **0만 가산**(손익을 알 수 없으니 "원금만큼 있다"로 취급, 손익 자체는 표시하지 않음).
+> - 근거: 휴장 중에도 보유자산이 "없어진 것처럼" 보이면 사용자 신뢰를 해친다. 원가는 시세와 무관하게 항상 신뢰 가능한 값이므로 이를 폴백으로 쓰면 최소한 "원금만큼의 자산이 있다"는 사실은 보존되고, 손익만 "알 수 없음(0 표시)"으로 남는다. 이 방식이 "완전 제외"보다 실제 상태를 덜 왜곡한다.
+> - `AccountService.getAccountSummary` 구현·`AccountServiceTest`(시세 무효 혼합 케이스)·`docs/api-contracts.md` `## account` 절을 이 정책으로 갱신했다.
+
+### Repository 설계 (`HoldingRepository`, portfolio 도메인)
+
+```java
+@Query("SELECT h FROM Holding h JOIN FETCH h.instrument WHERE h.account.id = :accountId AND h.isActive = true")
+List<Holding> findAllByAccountIdAndIsActiveTrue(@Param("accountId") Long accountId);
+```
+
+- `isActive = true`만 조회한다 — 전량 매도한 종목(`quantity = 0`, PORT-001 규칙과 동일 전례)은 애초에 합산 대상이 아니므로 DB 단에서 제외해 불필요한 `PriceQueryService` 호출을 만들지 않는다.
+- `instrument`를 `JOIN FETCH`한다 — `HoldingValuationService.evaluateHolding`이 `holding.getInstrument()`로 시세를 조회하므로 N+1을 피한다(PORT-003 절의 `Order` `JOIN FETCH` 전례와 동일).
+- 계좌 하나에 여러 보유가 있을 수 있어 단순 파생 쿼리로는 `JOIN FETCH`를 못 쓰므로 JPQL `@Query`를 쓴다(단순 조건 1개+조인 1개라 QueryDSL 대상은 아님 — `docs/conventions.md` QueryDSL 기준).
+
+### Service 설계
+
+**`HoldingValuationService`(portfolio 도메인)에 계좌 단위 조회+평가 메서드 추가** — `account` 도메인이 `HoldingRepository`(portfolio)를 직접 참조하지 않고 이 서비스를 통해서만 보유 평가 결과를 얻게 하기 위함(ADR-0002).
+
+```java
+// HoldingValuationService에 HoldingRepository 필드 추가 후:
+@Transactional(readOnly = true)
+public List<HoldingValuationDto> evaluateActiveHoldingsForAccount(Long accountId) {
+    return holdingRepository.findAllByAccountIdAndIsActiveTrue(accountId).stream()
+        .map(this::evaluateHolding)
+        .toList();
+}
+```
+
+**`AccountService`(account 도메인)** — `HoldingValuationService`만 주입받는다(`HoldingRepository`는 주입하지 않는다 — ADR-0002).
+
+```java
+@Transactional(readOnly = true)
+public AccountSummaryResponse getAccountSummary(Long userId, Market market) {
+    Account account = getAccountFor(userId, market); // 기존 메서드 재사용 — 소유권 검증이 이미 포함됨
+
+    List<HoldingValuationDto> valuations = holdingValuationService.evaluateActiveHoldingsForAccount(account.getId());
+    long holdingsValue = 0L;
+    long unrealizedPnl = 0L;
+    for (HoldingValuationDto valuation : valuations) {
+        if (valuation.priceStatus() == PriceStatus.AVAILABLE) {
+            holdingsValue += valuation.evaluationAmount();
+            unrealizedPnl += valuation.unrealizedPnl();
+        }
+    }
+
+    long cashBalance = account.getCashBalance();
+    long totalValue = cashBalance + holdingsValue;
+    long realizedPnl = account.getRealizedPnl();
+    long seedMoney = account.getSeedMoney();
+    BigDecimal returnRate = seedMoney == 0
+        ? BigDecimal.ZERO
+        : BigDecimal.valueOf(totalValue - seedMoney)
+            .divide(BigDecimal.valueOf(seedMoney), 4, RoundingMode.HALF_UP);
+
+    return AccountSummaryResponse.of(cashBalance, holdingsValue, totalValue, realizedPnl, unrealizedPnl, returnRate);
+}
+```
+
+- 소유권 검증: 별도 분기 없이 `getAccountFor(userId, market)`가 `findByUserIdAndMarket(userId, market)`로 조회하므로 타인 계좌를 조회할 입력 자체가 없다(PORT-003과 동일 근거 — "위반 시 403 또는 404"는 006 spec 공통 문구이며, 이 엔드포인트엔 타인 리소스를 식별할 입력이 없어 위반이 발생하지 않는다). 계좌가 존재하지 않는 극단적 케이스만 기존 로직 그대로 `BusinessException(NOT_FOUND)`.
+- `AccountService`의 생성자를 `@RequiredArgsConstructor`로 교체(`accountRepository`, `holdingValuationService`, `clock` 3개 `final` 필드) — 컨벤션 위반이던 기존 수기 생성자를 이 기회에 정리한다.
+
+### Controller 설계
+
+```java
+package com.finplay.api.account.controller;
+
+import com.finplay.api.account.domain.Market; // market.domain.Market이 아님 — 위 "Market 타입 주의" 참고
+import com.finplay.api.account.dto.response.AccountSummaryResponse;
+import com.finplay.api.account.service.AccountService;
+import com.finplay.api.auth.token.AuthenticatedUser;
+
+@RestController
+@RequestMapping("/api/accounts")
+@RequiredArgsConstructor
+public class AccountController {
+
+    private final AccountService accountService;
+
+    @GetMapping("/summary")
+    public ResponseEntity<AccountSummaryResponse> getAccountSummary(
+        @AuthenticationPrincipal AuthenticatedUser principal,
+        @RequestParam Market market) {
+        return ResponseEntity.ok(accountService.getAccountSummary(principal.userId(), market));
+    }
+}
+```
+
+- 새 패키지 `com.finplay.api.account.controller`를 만든다(기존에 컨트롤러가 없었음).
+- `@RequestParam`에 기본값을 두지 않는다 — 생략 시 400이 나와야 하므로(수용 기준) `required = true`(기본값)를 그대로 둔다.
+
+### 데이터 모델
+
+없음 — 신규 컬럼·마이그레이션 불필요. 기존 `accounts`·`holdings` 테이블을 조회만 한다. 평가값(`holdingsValue`·`unrealizedPnl`·`returnRate`)은 어디에도 저장하지 않는다(spec 비즈니스 규칙).
+
+### 문서 동기화
+
+같은 커밋에서 갱신(CLAUDE.md 규칙 7 + 이슈 #81 본문 요구):
+
+- `docs/prd.md` ACCT-002 절에 수익률 필드를 추가한다 — 현재 "현금잔고, 보유평가액, 총평가액, 실현손익, 미실현손익을 시장별로 반환한다." 문장에 수익률을 포함하도록 갱신(`(총평가액 − 시드머니) ÷ 시드머니` 계산식 근거 명시, #51이 동일 계산식을 재사용함을 각주로 남긴다).
+- `docs/api-routes.md`: 라우트 표에 `GET | /api/accounts/summary?market= | account | ... | 006 ACCT-002, Issue #81` 행 추가.
+- `docs/api-contracts.md`: 새 `## account` 절 신설(이 API가 계좌 도메인 최초 컨트롤러이므로 절 자체가 없음) — 요청(쿼리 `market` 필수), 성공 200 예시(`AccountSummaryResponse` 6개 필드 값 포함), 오류(market 누락/잘못된 값 400 `VALIDATION_ERROR`, 인증 실패 401 `UNAUTHORIZED`) 표 추가.
+
+### 테스트 계획 (ADR-0003 기준)
+
+- **단위 — `HoldingValuationServiceTest`(기존 파일)**: `evaluateActiveHoldingsForAccount` 추가 — `HoldingRepository.findAllByAccountIdAndIsActiveTrue`를 Mockito로 stub(활성 보유 2건 이상, 시세 유효/무효 혼합)해 각 `Holding`이 `evaluateHolding`과 동일한 매핑 결과로 반환되는지 검증. 활성 보유 없음 → 빈 리스트.
+- **슬라이스 Repository — `HoldingRepositoryTest`(신규, `@DataJpaTest`)**: `findAllByAccountIdAndIsActiveTrue`가 (1) 다른 `account_id`의 보유를 제외하고 (2) `isActive = false`(전량 매도) 보유를 제외하며 (3) `instrument`를 지연 로딩 예외 없이 접근 가능한지(`JOIN FETCH` 확인) 검증.
+- **단위 — `AccountServiceTest`(기존 파일)**: `getAccountSummary` 추가 — `HoldingValuationService`를 Mockito로 stub.
+  - 시세 유효 보유만 있는 케이스: `holdingsValue`·`unrealizedPnl`이 정확히 합산되고 `totalValue = cashBalance + holdingsValue`, `returnRate` 계산식이 정확한지 실제 수치로 검증.
+  - 시세 무효 보유가 섞인 케이스: 해당 보유가 `holdingsValue`·`unrealizedPnl` 합계에서 제외되는지(0 기여) 검증, 예외가 발생하지 않음을 확인.
+  - 활성 보유 없음(빈 리스트) 케이스: `holdingsValue=0`·`unrealizedPnl=0`이고 `cashBalance`·`realizedPnl`은 계좌 값 그대로, `totalValue = cashBalance`.
+  - 계좌 없음 케이스: `getAccountFor`가 이미 검증된 대로 `BusinessException(NOT_FOUND)`을 던지는지(회귀 확인).
+- **슬라이스 API — `AccountControllerTest`(신규, `@WebMvcTest`)**: `OrderControllerTest` 패턴(`@Import(SecurityConfig.class)`, `MockitoBean JwtTokenProvider`) 재사용.
+  - `market=STOCK`·`market=CRYPTO` 각각 200과 `jsonPath`로 6개 필드 값 검증.
+  - `market` 쿼리 파라미터 누락 → 400 `VALIDATION_ERROR`.
+  - `market=FOREX`(미지원 리터럴) → 400 `VALIDATION_ERROR`.
+  - 인증 실패(Authorization 헤더 없음) → 401 `UNAUTHORIZED`.
+- **통합 — Testcontainers(기존 매수 통합 테스트 파일 인접 또는 신규 `AccountSummaryIntegrationTest`)**:
+  - 회원가입 직후(매수 이력 없음) `GET /api/accounts/summary?market=STOCK` → 200, 6개 값 모두 0(단 `cashBalance`는 초기 시드머니).
+  - 매수 API로 실제 매수 실행 후 조회 → `cashBalance`(차감 반영)·`holdingsValue`·`totalValue`·`unrealizedPnl`·`returnRate`가 원장·시세 기준으로 정확히 일치.
+  - 시세가 무효한 종목을 보유한 상황(예: `PriceStore`에 값이 없는 코인 보유) → 예외 없이 200, 해당 종목이 합산에서 제외됐는지 확인.
+  - 타인 계좌 매수 후 본인 계좌 조회 시 타인 데이터가 섞이지 않는지 확인.
+
+### 후속 검토 사항 (PR #96 리뷰 권장, 이번 PR 범위 아님)
+
+- **시세 조회 N+1 성격**: `HoldingValuationService.evaluateHolding`이 보유 1건마다 `PriceQueryService.getPriceQuote`를 호출한다 — 주식은 종목마다 재생세션·분봉 조회 2회, 코인은 종목마다 Redis 연결상태 조회가 반복된다. MVP 규모(계좌당 보유 수 적음)에서는 문제없지만, 합산 포트폴리오(#51)가 두 계좌(STOCK·CRYPTO)를 동시에 처리하며 호출 수가 배로 늘어난다. **#51 착수 전에 재생세션·연결상태 조회를 계좌(또는 요청) 단위로 배치화할지 검토한다.**
+  - 응답값이 어떤 테이블에도 저장되지 않는지(평가값 미저장 요구사항) 간접 확인 — 동일 조회를 반복 호출해도 매번 최신 계산 결과가 나오는지(가격 변경 시나리오로 확인 가능하면 포함).
