@@ -2,6 +2,10 @@
 package com.finplay.api.portfolio.repository;
 
 import com.finplay.api.portfolio.domain.Holding;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-public interface HoldingRepository extends JpaRepository<Holding, Long> {}
+public interface HoldingRepository extends JpaRepository<Holding, Long> {
+
+	Optional<Holding> findByAccountIdAndInstrumentId(Long accountId, Long instrumentId);
+}

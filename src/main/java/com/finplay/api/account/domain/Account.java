@@ -66,4 +66,11 @@ public class Account {
 	public static Account create(User user, Market market, LocalDateTime now) {
 		return new Account(user, market, now);
 	}
+
+	public void deductCash(long amount) {
+		if (amount > this.cashBalance) {
+			throw new IllegalStateException("현금 잔고보다 큰 금액을 차감할 수 없습니다.");
+		}
+		this.cashBalance -= amount;
+	}
 }
