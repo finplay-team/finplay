@@ -38,7 +38,7 @@ public class OrderController {
 		String idempotencyKey,
 		@Valid @RequestBody
 		OrderCreateRequest request) {
-		OrderResponse response = orderService.createBuyOrder(principal.userId(), idempotencyKey, request);
+		OrderResponse response = orderService.createOrder(principal.userId(), idempotencyKey, request);
 		return ResponseEntity.status(HttpStatus.CREATED).body(response);
 	}
 

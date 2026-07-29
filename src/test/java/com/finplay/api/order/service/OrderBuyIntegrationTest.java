@@ -105,7 +105,7 @@ class OrderBuyIntegrationTest {
 		Instrument instrument = createStockInstrument("BUYOK");
 		createCandle(instrument, FIRST_CANDLE_TIME, new BigDecimal("70000"));
 
-		OrderResponse response = orderService.createBuyOrder(
+		OrderResponse response = orderService.createOrder(
 			user.getId(), "idem-buy-success", buyRequest(instrument.getId(), "10"));
 
 		// price=70000, quantity=10 → amount=700000, fee=700000*0.00015=105(내림 전 정확히 105)
@@ -144,7 +144,7 @@ class OrderBuyIntegrationTest {
 		long holdingsBefore = holdingRepository.count();
 		long holdingLotsBefore = holdingLotRepository.count();
 
-		assertThatThrownBy(() -> orderService.createBuyOrder(
+		assertThatThrownBy(() -> orderService.createOrder(
 			user.getId(), "idem-buy-insufficient", buyRequest(instrument.getId(), "1")))
 			.isInstanceOf(BusinessException.class)
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
@@ -168,10 +168,10 @@ class OrderBuyIntegrationTest {
 		createCandle(instrument, SECOND_CANDLE_TIME, new BigDecimal("80000"));
 
 		// 첫 매수: 10:00 시각 → 09:59에 마감된 분봉(60000)이 체결가
-		orderService.createBuyOrder(user.getId(), "idem-rebuy-1", buyRequest(instrument.getId(), "10"));
+		orderService.createOrder(user.getId(), "idem-rebuy-1", buyRequest(instrument.getId(), "10"));
 		// 두 번째 매수: 10:01로 시각을 이동 → 10:00에 마감된 분봉(80000)이 체결가
 		((MutableClock)clock).set(BASE_NOW.plusMinutes(1));
-		orderService.createBuyOrder(user.getId(), "idem-rebuy-2", buyRequest(instrument.getId(), "10"));
+		orderService.createOrder(user.getId(), "idem-rebuy-2", buyRequest(instrument.getId(), "10"));
 
 		Holding holding = holdingRepository
 			.findByAccountIdAndInstrumentId(account.getId(), instrument.getId())
