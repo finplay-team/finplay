@@ -74,4 +74,16 @@ public class Holding {
 		this.isActive = true;
 		this.updatedAt = now;
 	}
+
+	public void applySell(BigDecimal quantity, LocalDateTime now) {
+		BigDecimal newQuantity = this.quantity.subtract(quantity);
+		if (newQuantity.signum() < 0) {
+			throw new IllegalStateException("보유수량보다 큰 수량을 매도할 수 없습니다.");
+		}
+		this.quantity = newQuantity;
+		if (newQuantity.signum() == 0) {
+			this.isActive = false;
+		}
+		this.updatedAt = now;
+	}
 }

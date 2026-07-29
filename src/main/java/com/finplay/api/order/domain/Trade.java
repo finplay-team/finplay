@@ -107,4 +107,11 @@ public class Trade {
 		return new Trade(
 			order, account, instrument, side, price, quantity, amount, fee, realizedPnl, executedAt, now);
 	}
+
+	public void fillRealizedPnl(long realizedPnl) {
+		if (this.realizedPnl != null) {
+			throw new IllegalStateException("실현손익은 이미 채워져 있어 다시 채울 수 없습니다.");
+		}
+		this.realizedPnl = realizedPnl;
+	}
 }

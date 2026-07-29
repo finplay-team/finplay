@@ -1,4 +1,4 @@
-// 시장가 매수 주문 생성 결과(주문+체결)를 노출하는 응답 DTO
+// 시장가 매수·매도 주문 생성 결과(주문+체결+실현손익)를 노출하는 응답 DTO
 package com.finplay.api.order.dto.response;
 
 import com.finplay.api.order.domain.Order;
@@ -19,6 +19,7 @@ public record OrderResponse(
 	BigDecimal price,
 	long amount,
 	long fee,
+	Long realizedPnl,
 	LocalDateTime executedAt) {
 
 	public static OrderResponse of(Order order, Trade trade) {
@@ -35,6 +36,7 @@ public record OrderResponse(
 			trade.getPrice(),
 			trade.getAmount(),
 			trade.getFee(),
+			trade.getRealizedPnl(),
 			trade.getExecutedAt());
 	}
 }

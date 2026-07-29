@@ -39,6 +39,33 @@ class AccountTest {
 		assertThat(account.getCashBalance()).isEqualTo(10_000_000L);
 	}
 
+	@Test
+	void addCashIncreasesCashBalanceByAmount() {
+		Account account = Account.create(testUser(), Market.STOCK, NOW);
+
+		account.addCash(500_000L);
+
+		assertThat(account.getCashBalance()).isEqualTo(10_500_000L);
+	}
+
+	@Test
+	void addRealizedPnlIncreasesRealizedPnlWithPositiveAmount() {
+		Account account = Account.create(testUser(), Market.STOCK, NOW);
+
+		account.addRealizedPnl(49_900L);
+
+		assertThat(account.getRealizedPnl()).isEqualTo(49_900L);
+	}
+
+	@Test
+	void addRealizedPnlAllowsNegativeAmountToAccumulateLoss() {
+		Account account = Account.create(testUser(), Market.STOCK, NOW);
+
+		account.addRealizedPnl(-20_000L);
+
+		assertThat(account.getRealizedPnl()).isEqualTo(-20_000L);
+	}
+
 	private static User testUser() {
 		return User.create("trader@finplay.com", "password-hash", "trader", NOW);
 	}
