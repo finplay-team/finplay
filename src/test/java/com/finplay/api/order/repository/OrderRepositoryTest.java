@@ -136,4 +136,41 @@ class OrderRepositoryTest {
 
 		assertThat(statistics.getPrepareStatementCount()).isEqualTo(1);
 	}
+
+	@Test
+	@DisplayName("동일 사용자·동일 idempotencyKey의 주문을 조회한다 (이슈 #22)")
+	void findsOrderByUserIdAndIdempotencyKeyWhenExists() {
+		Order order = orderRepository.saveAndFlush(Order.create(
+			owner, ownerAccount, instrument, OrderSide.BUY, OrderType.MARKET,
+			BigDecimal.valueOf(10), "idem-exists", "h".repeat(64), NOW));
+
+		var result = orderRepository.findByUserIdAndIdempotencyKey(owner.getId(), "idem-exists");
+
+		assertThat(result).isPresent();
+		assertThat(result.get().getId()).isEqualTo(order.getId());
+		assertThat(result.get().getInstrument().getSymbol()).isEqualTo(instrument.getSymbol());
+	}
+
+	@Test
+	@DisplayName("존재하지 않는 idempotencyKey는 빈 값을 반환한다 (이슈 #22)")
+	void findByUserIdAndIdempotencyKeyReturnsEmptyWhenNotFound() {
+		var result = orderRepository.findByUserIdAndIdempotencyKey(owner.getId(), "no-such-key");
+
+		assertThat(result).isEmpty();
+	}
+
+	@Test
+	@DisplayName("다른 사용자가 동일한 idempotencyKey를 써도 조회되지 않는다 (이슈 #22)")
+	void findByUserIdAndIdempotencyKeyDoesNotLeakAcrossUsers() {
+		User other = userRepository.saveAndFlush(User.create("other2@finplay.com", "hash", "other2", NOW));
+		Account otherAccount = accountRepository.saveAndFlush(
+			Account.create(other, com.finplay.api.account.domain.Market.STOCK, NOW));
+		orderRepository.saveAndFlush(Order.create(
+			other, otherAccount, instrument, OrderSide.BUY, OrderType.MARKET,
+			BigDecimal.valueOf(10), "shared-idem", "i".repeat(64), NOW));
+
+		var result = orderRepository.findByUserIdAndIdempotencyKey(owner.getId(), "shared-idem");
+
+		assertThat(result).isEmpty();
+	}
 }

@@ -59,8 +59,8 @@ class OrderControllerTest {
 		LocalDateTime now = LocalDateTime.of(2026, 7, 29, 9, 0);
 		OrderResponse response = new OrderResponse(
 			1L, "STOCK", 1L, "BUY", "MARKET", "FILLED", new BigDecimal("10"), now,
-			1L, new BigDecimal("70000"), 700_000L, 105L, now);
-		when(orderService.createBuyOrder(eq(USER_ID), eq(IDEMPOTENCY_KEY), any(OrderCreateRequest.class)))
+			1L, new BigDecimal("70000"), 700_000L, 105L, null, now);
+		when(orderService.createOrder(eq(USER_ID), eq(IDEMPOTENCY_KEY), any(OrderCreateRequest.class)))
 			.thenReturn(response);
 
 		mockMvc.perform(post("/api/orders")
@@ -81,9 +81,40 @@ class OrderControllerTest {
 			.andExpect(jsonPath("$.price").value(70000))
 			.andExpect(jsonPath("$.amount").value(700000))
 			.andExpect(jsonPath("$.fee").value(105))
+			.andExpect(jsonPath("$.realizedPnl").doesNotExist())
 			.andExpect(jsonPath("$.executedAt").value("2026-07-29T09:00:00"));
 
-		verify(orderService).createBuyOrder(eq(USER_ID), eq(IDEMPOTENCY_KEY), any(OrderCreateRequest.class));
+		verify(orderService).createOrder(eq(USER_ID), eq(IDEMPOTENCY_KEY), any(OrderCreateRequest.class));
+	}
+
+	@Test
+	void createOrderReturnsCreatedWithRealizedPnlWhenSideIsSell() throws Exception {
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(java.util.Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+		LocalDateTime now = LocalDateTime.of(2026, 7, 29, 9, 0);
+		OrderResponse response = new OrderResponse(
+			2L, "STOCK", 1L, "SELL", "MARKET", "FILLED", new BigDecimal("10"), now,
+			2L, new BigDecimal("70000"), 700_000L, 105L, 15_000L, now);
+		when(orderService.createOrder(eq(USER_ID), eq(IDEMPOTENCY_KEY), any(OrderCreateRequest.class)))
+			.thenReturn(response);
+
+		mockMvc.perform(post("/api/orders")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.header("Idempotency-Key", IDEMPOTENCY_KEY)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("""
+				{"market":"STOCK","instrumentId":1,"side":"SELL","orderType":"MARKET","quantity":"10"}
+				"""))
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.orderId").value(2))
+			.andExpect(jsonPath("$.side").value("SELL"))
+			.andExpect(jsonPath("$.status").value("FILLED"))
+			.andExpect(jsonPath("$.tradeId").value(2))
+			.andExpect(jsonPath("$.amount").value(700000))
+			.andExpect(jsonPath("$.fee").value(105))
+			.andExpect(jsonPath("$.realizedPnl").value(15000));
+
+		verify(orderService).createOrder(eq(USER_ID), eq(IDEMPOTENCY_KEY), any(OrderCreateRequest.class));
 	}
 
 	@Test
@@ -216,7 +247,7 @@ class OrderControllerTest {
 	void createOrderReturnsUnsupportedOrderTypeWhenServiceRejectsOrderType() throws Exception {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(java.util.Optional.of(new AuthenticatedUser(USER_ID, "USER")));
-		when(orderService.createBuyOrder(eq(USER_ID), eq(IDEMPOTENCY_KEY), any(OrderCreateRequest.class)))
+		when(orderService.createOrder(eq(USER_ID), eq(IDEMPOTENCY_KEY), any(OrderCreateRequest.class)))
 			.thenThrow(new BusinessException(ErrorCode.UNSUPPORTED_ORDER_TYPE));
 
 		mockMvc.perform(post("/api/orders")
@@ -230,14 +261,14 @@ class OrderControllerTest {
 			.andExpect(jsonPath("$.error.code").value("UNSUPPORTED_ORDER_TYPE"))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
-		verify(orderService).createBuyOrder(eq(USER_ID), eq(IDEMPOTENCY_KEY), any(OrderCreateRequest.class));
+		verify(orderService).createOrder(eq(USER_ID), eq(IDEMPOTENCY_KEY), any(OrderCreateRequest.class));
 	}
 
 	@Test
 	void createOrderReturnsInsufficientCashWhenServiceRejectsCashShortage() throws Exception {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(java.util.Optional.of(new AuthenticatedUser(USER_ID, "USER")));
-		when(orderService.createBuyOrder(eq(USER_ID), eq(IDEMPOTENCY_KEY), any(OrderCreateRequest.class)))
+		when(orderService.createOrder(eq(USER_ID), eq(IDEMPOTENCY_KEY), any(OrderCreateRequest.class)))
 			.thenThrow(new BusinessException(ErrorCode.INSUFFICIENT_CASH));
 
 		mockMvc.perform(post("/api/orders")
@@ -249,7 +280,7 @@ class OrderControllerTest {
 			.andExpect(jsonPath("$.error.code").value("INSUFFICIENT_CASH"))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
-		verify(orderService).createBuyOrder(eq(USER_ID), eq(IDEMPOTENCY_KEY), any(OrderCreateRequest.class));
+		verify(orderService).createOrder(eq(USER_ID), eq(IDEMPOTENCY_KEY), any(OrderCreateRequest.class));
 	}
 
 	@Test

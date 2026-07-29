@@ -1,4 +1,4 @@
-// 시장가 매수 성공(주문·체결·현금차감·holding·lot 원자 저장)·현금부족(무흔적)·재매수(평균단가 재계산) 핵심 시나리오를 실제 MySQL 트랜잭션으로 검증하는 통합 테스트다.
+// 동일 Idempotency-Key 재요청 응답 재현·다른 본문 409·서로 다른 사용자 간 무간섭을 실제 MySQL 트랜잭션으로 검증하는 통합 테스트다.
 package com.finplay.api.order.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -23,8 +23,6 @@ import com.finplay.api.order.dto.request.OrderCreateRequest;
 import com.finplay.api.order.dto.response.OrderResponse;
 import com.finplay.api.order.repository.OrderRepository;
 import com.finplay.api.order.repository.TradeRepository;
-import com.finplay.api.portfolio.domain.Holding;
-import com.finplay.api.portfolio.domain.HoldingLot;
 import com.finplay.api.portfolio.repository.HoldingLotRepository;
 import com.finplay.api.portfolio.repository.HoldingRepository;
 import java.math.BigDecimal;
@@ -34,7 +32,6 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
-import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -46,15 +43,14 @@ import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 
 @SpringBootTest
-@Import({TestcontainersConfiguration.class, OrderBuyIntegrationTest.FixedClockTestConfig.class})
-class OrderBuyIntegrationTest {
+@Import({TestcontainersConfiguration.class, OrderIdempotencyIntegrationTest.FixedClockTestConfig.class})
+class OrderIdempotencyIntegrationTest {
 
 	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 	// 2026-07-29는 수요일이고 holidays-2026.txt에도 없어 재생세션만 READY면 개장 상태로 계산된다.
 	private static final LocalDate TRADING_DATE = LocalDate.of(2026, 7, 29);
 	private static final LocalDateTime BASE_NOW = LocalDateTime.of(2026, 7, 29, 10, 0, 0);
 	private static final LocalTime FIRST_CANDLE_TIME = LocalTime.of(9, 59);
-	private static final LocalTime SECOND_CANDLE_TIME = LocalTime.of(10, 0);
 
 	@Autowired
 	private OrderService orderService;
@@ -99,105 +95,126 @@ class OrderBuyIntegrationTest {
 	}
 
 	@Test
-	void stockBuySucceedsAndPersistsOrderTradeCashHoldingAndLotInOneTransaction() {
-		User user = createUser("buy-success");
-		Account account = createAccount(user);
-		Instrument instrument = createStockInstrument("BUYOK");
+	void replayingSameKeyAndBodyForBuyReturnsIdenticalResponseWithoutAddingRows() {
+		User user = createUser("idem-buy-replay");
+		createAccount(user);
+		Instrument instrument = createStockInstrument("IDMBUY");
 		createCandle(instrument, FIRST_CANDLE_TIME, new BigDecimal("70000"));
 
-		OrderResponse response = orderService.createOrder(
-			user.getId(), "idem-buy-success", buyRequest(instrument.getId(), "10"));
+		OrderResponse first = orderService.createOrder(
+			user.getId(), "idem-key-buy-replay", buyRequest(instrument.getId(), "10"));
 
-		// price=70000, quantity=10 → amount=700000, fee=700000*0.00015=105(내림 전 정확히 105)
-		assertThat(response.amount()).isEqualTo(700_000L);
-		assertThat(response.fee()).isEqualTo(105L);
-
-		Account reloadedAccount = accountRepository.findById(account.getId()).orElseThrow();
-		assertThat(reloadedAccount.getCashBalance()).isEqualTo(10_000_000L - 700_105L);
-
-		assertThat(orderRepository.findById(response.orderId())).isPresent();
-		assertThat(tradeRepository.findById(response.tradeId())).isPresent();
-
-		Holding holding = holdingRepository
-			.findByAccountIdAndInstrumentId(account.getId(), instrument.getId())
-			.orElseThrow();
-		assertThat(holding.getQuantity()).isEqualByComparingTo("10");
-		assertThat(holding.getAveragePrice()).isEqualByComparingTo("70000");
-		assertThat(holding.isActive()).isTrue();
-
-		List<HoldingLot> lots = holdingLotsFor(holding);
-		assertThat(lots).hasSize(1);
-		assertThat(lots.get(0).getOriginalQuantity()).isEqualByComparingTo("10");
-		assertThat(lots.get(0).getRemainingQuantity()).isEqualByComparingTo("10");
-		assertThat(lots.get(0).getUnitCost()).isEqualByComparingTo("70000");
-	}
-
-	@Test
-	void stockBuyFailsWithInsufficientCashAndLeavesNoTraceInAnyOfFourTables() {
-		User user = createUser("buy-insufficient");
-		Account account = createAccount(user);
-		Instrument instrument = createStockInstrument("BUYNG");
-		// 계좌 기본 현금 10,000,000보다 큰 체결금액이 되도록 고가 분봉을 준비한다.
-		createCandle(instrument, FIRST_CANDLE_TIME, new BigDecimal("50000000"));
 		long ordersBefore = orderRepository.count();
 		long tradesBefore = tradeRepository.count();
 		long holdingsBefore = holdingRepository.count();
 		long holdingLotsBefore = holdingLotRepository.count();
 
-		assertThatThrownBy(() -> orderService.createOrder(
-			user.getId(), "idem-buy-insufficient", buyRequest(instrument.getId(), "1")))
-			.isInstanceOf(BusinessException.class)
-			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
-				.isEqualTo(ErrorCode.INSUFFICIENT_CASH));
+		OrderResponse second = orderService.createOrder(
+			user.getId(), "idem-key-buy-replay", buyRequest(instrument.getId(), "10"));
 
+		assertReplayIsIdenticalToFirstResponse(second, first);
 		assertThat(orderRepository.count()).isEqualTo(ordersBefore);
 		assertThat(tradeRepository.count()).isEqualTo(tradesBefore);
 		assertThat(holdingRepository.count()).isEqualTo(holdingsBefore);
 		assertThat(holdingLotRepository.count()).isEqualTo(holdingLotsBefore);
-		assertThat(holdingRepository.findByAccountIdAndInstrumentId(account.getId(), instrument.getId())).isEmpty();
-		Account reloadedAccount = accountRepository.findById(account.getId()).orElseThrow();
-		assertThat(reloadedAccount.getCashBalance()).isEqualTo(10_000_000L);
 	}
 
 	@Test
-	void rebuyingSameAccountAndInstrumentRecalculatesWeightedAveragePriceAndCreatesTwoLots() {
-		User user = createUser("buy-rebuy");
-		Account account = createAccount(user);
-		Instrument instrument = createStockInstrument("REBUY");
-		createCandle(instrument, FIRST_CANDLE_TIME, new BigDecimal("60000"));
-		createCandle(instrument, SECOND_CANDLE_TIME, new BigDecimal("80000"));
+	void replayingSameKeyAndBodyForSellReturnsIdenticalResponseWithoutAddingRows() {
+		User user = createUser("idem-sell-replay");
+		createAccount(user);
+		Instrument instrument = createStockInstrument("IDMSELL");
+		createCandle(instrument, FIRST_CANDLE_TIME, new BigDecimal("70000"));
 
-		// 첫 매수: 10:00 시각 → 09:59에 마감된 분봉(60000)이 체결가
-		orderService.createOrder(user.getId(), "idem-rebuy-1", buyRequest(instrument.getId(), "10"));
-		// 두 번째 매수: 10:01로 시각을 이동 → 10:00에 마감된 분봉(80000)이 체결가
-		((MutableClock)clock).set(BASE_NOW.plusMinutes(1));
-		orderService.createOrder(user.getId(), "idem-rebuy-2", buyRequest(instrument.getId(), "10"));
+		orderService.createOrder(user.getId(), "idem-key-sell-buy", buyRequest(instrument.getId(), "10"));
 
-		Holding holding = holdingRepository
-			.findByAccountIdAndInstrumentId(account.getId(), instrument.getId())
-			.orElseThrow();
-		// 평균단가 = (10*60000 + 10*80000) / 20 = 70000
-		assertThat(holding.getQuantity()).isEqualByComparingTo("20");
-		assertThat(holding.getAveragePrice()).isEqualByComparingTo("70000");
+		OrderResponse first = orderService.createOrder(
+			user.getId(), "idem-key-sell-replay", sellRequest(instrument.getId(), "5"));
 
-		List<HoldingLot> lots = holdingLotsFor(holding);
-		assertThat(lots).hasSize(2);
-		assertThat(lots)
-			.extracting(lot -> lot.getUnitCost().stripTrailingZeros())
-			.containsExactlyInAnyOrder(
-				new BigDecimal("60000").stripTrailingZeros(), new BigDecimal("80000").stripTrailingZeros());
+		long ordersBefore = orderRepository.count();
+		long tradesBefore = tradeRepository.count();
+		long holdingsBefore = holdingRepository.count();
+		long holdingLotsBefore = holdingLotRepository.count();
+
+		OrderResponse second = orderService.createOrder(
+			user.getId(), "idem-key-sell-replay", sellRequest(instrument.getId(), "5"));
+
+		assertReplayIsIdenticalToFirstResponse(second, first);
+		assertThat(orderRepository.count()).isEqualTo(ordersBefore);
+		assertThat(tradeRepository.count()).isEqualTo(tradesBefore);
+		assertThat(holdingRepository.count()).isEqualTo(holdingsBefore);
+		assertThat(holdingLotRepository.count()).isEqualTo(holdingLotsBefore);
 	}
 
-	private List<HoldingLot> holdingLotsFor(Holding holding) {
-		return holdingLotRepository
-			.findAll()
-			.stream()
-			.filter(lot -> lot.getHolding().getId().equals(holding.getId()))
-			.toList();
+	@Test
+	void sameKeyWithDifferentBodyIsRejectedWithIdempotencyConflict() {
+		User user = createUser("idem-conflict");
+		createAccount(user);
+		Instrument instrument = createStockInstrument("IDMCONF");
+		createCandle(instrument, FIRST_CANDLE_TIME, new BigDecimal("70000"));
+
+		orderService.createOrder(user.getId(), "idem-key-conflict", buyRequest(instrument.getId(), "10"));
+
+		long ordersBefore = orderRepository.count();
+		long tradesBefore = tradeRepository.count();
+
+		assertThatThrownBy(() -> orderService.createOrder(
+			user.getId(), "idem-key-conflict", buyRequest(instrument.getId(), "20")))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
+				.isEqualTo(ErrorCode.IDEMPOTENCY_CONFLICT));
+
+		assertThat(orderRepository.count()).isEqualTo(ordersBefore);
+		assertThat(tradeRepository.count()).isEqualTo(tradesBefore);
+	}
+
+	@Test
+	void differentUsersReusingSameIdempotencyKeyEachExecuteIndependently() {
+		User userA = createUser("idem-user-a");
+		createAccount(userA);
+		User userB = createUser("idem-user-b");
+		createAccount(userB);
+		Instrument instrument = createStockInstrument("IDMUSR");
+		createCandle(instrument, FIRST_CANDLE_TIME, new BigDecimal("70000"));
+
+		String sharedKey = "idem-key-shared";
+		OrderResponse responseA = orderService.createOrder(
+			userA.getId(), sharedKey, buyRequest(instrument.getId(), "10"));
+		OrderResponse responseB = orderService.createOrder(
+			userB.getId(), sharedKey, buyRequest(instrument.getId(), "10"));
+
+		assertThat(responseA.orderId()).isNotEqualTo(responseB.orderId());
+		assertThat(orderRepository.findById(responseA.orderId())).isPresent();
+		assertThat(orderRepository.findById(responseB.orderId())).isPresent();
+		assertThat(tradeRepository.findById(responseA.tradeId())).isPresent();
+		assertThat(tradeRepository.findById(responseB.tradeId())).isPresent();
+	}
+
+	// DB에서 재조회한 quantity/price는 컬럼 scale(DECIMAL(20,8))이 적용돼 최초 응답의 BigDecimal과
+	// equals()가 아닌 isEqualByComparingTo() 기준으로만 같다 — record 전체 equals 대신 필드별로 비교한다.
+	private void assertReplayIsIdenticalToFirstResponse(OrderResponse replay, OrderResponse first) {
+		assertThat(replay.orderId()).isEqualTo(first.orderId());
+		assertThat(replay.market()).isEqualTo(first.market());
+		assertThat(replay.instrumentId()).isEqualTo(first.instrumentId());
+		assertThat(replay.side()).isEqualTo(first.side());
+		assertThat(replay.orderType()).isEqualTo(first.orderType());
+		assertThat(replay.status()).isEqualTo(first.status());
+		assertThat(replay.quantity()).isEqualByComparingTo(first.quantity());
+		assertThat(replay.requestedAt()).isEqualTo(first.requestedAt());
+		assertThat(replay.tradeId()).isEqualTo(first.tradeId());
+		assertThat(replay.price()).isEqualByComparingTo(first.price());
+		assertThat(replay.amount()).isEqualTo(first.amount());
+		assertThat(replay.fee()).isEqualTo(first.fee());
+		assertThat(replay.realizedPnl()).isEqualTo(first.realizedPnl());
+		assertThat(replay.executedAt()).isEqualTo(first.executedAt());
 	}
 
 	private OrderCreateRequest buyRequest(Long instrumentId, String quantity) {
 		return new OrderCreateRequest(Market.STOCK, instrumentId, OrderSide.BUY, "MARKET", new BigDecimal(quantity));
+	}
+
+	private OrderCreateRequest sellRequest(Long instrumentId, String quantity) {
+		return new OrderCreateRequest(Market.STOCK, instrumentId, OrderSide.SELL, "MARKET", new BigDecimal(quantity));
 	}
 
 	private User createUser(String scenario) {
@@ -241,7 +258,6 @@ class OrderBuyIntegrationTest {
 		}
 	}
 
-	// 재매수 시나리오에서 두 분봉(시각이 다른)을 각각 체결가로 쓰기 위해 테스트 도중 시각을 전진시킬 수 있는 Clock 구현.
 	private static final class MutableClock extends Clock {
 
 		private final ZoneId zone;

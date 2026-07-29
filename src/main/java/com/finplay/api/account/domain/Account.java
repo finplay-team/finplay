@@ -73,4 +73,12 @@ public class Account {
 		}
 		this.cashBalance -= amount;
 	}
+
+	public void addCash(long amount) {
+		this.cashBalance += amount;
+	}
+
+	public void addRealizedPnl(long amount) {
+		this.realizedPnl += amount;
+	}
 }

@@ -88,14 +88,14 @@ class OrderListIntegrationTest {
 		createCandle(instrument, SECOND_CANDLE_TIME, new BigDecimal("80000"));
 
 		// 10:00 시각 → 09:59 분봉(70000)이 체결가. owner 첫 주문, other 주문 순으로 같은 시각에 생성한다.
-		orderService.createBuyOrder(
+		orderService.createOrder(
 			owner.getId(), "list-owner-idem-1", buyRequest(instrument.getId(), "10"));
-		orderService.createBuyOrder(
+		orderService.createOrder(
 			other.getId(), "list-other-idem-1", buyRequest(instrument.getId(), "5"));
 
 		// 10:01로 시각을 이동 → 10:00 분봉(80000)이 체결가. owner 두 번째(최신) 주문.
 		((MutableClock)clock).set(BASE_NOW.plusMinutes(1));
-		orderService.createBuyOrder(
+		orderService.createOrder(
 			owner.getId(), "list-owner-idem-2", buyRequest(instrument.getId(), "20"));
 
 		List<OrderListItemResponse> result = orderService.getMyOrders(owner.getId());

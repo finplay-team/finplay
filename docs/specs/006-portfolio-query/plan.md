@@ -107,3 +107,97 @@ public ResponseEntity<List<OrderListItemResponse>> getMyOrders(
 - **슬라이스 Repository**: `@DataJpaTest` — `findAllByUserIdOrderByRequestedAtDescIdDesc`가 (1) 다른 `user_id`의 주문을 제외하고 (2) `requestedAt` 내림차순·동시각 `id` 내림차순으로 정렬해 반환하는지 검증. 새 테스트 클래스 또는 기존 `OrderLedgerSchemaTest` 근처에 배치.
 - **슬라이스 API**: `src/test/java/com/finplay/api/order/controller/OrderControllerTest.java`(기존 파일, `@WebMvcTest`)에 `GET /api/orders` 테스트 추가 — 200 응답의 `jsonPath`로 필드 계약 검증(체결 전용 필드가 응답에 없음도 함께 확인), 인증 실패 401.
 - **통합**: `src/test/java/com/finplay/api/order/service/OrderBuyIntegrationTest.java`(기존 Testcontainers 파일) 또는 인접한 `OrderIntegrationTest`에 시나리오 추가 — #13 매수 파이프라인으로 실제 주문 2건 이상(가능하면 서로 다른 사용자 포함) 생성 후 `GET /api/orders` 호출 → 본인 주문만 최신순으로 반환, 필드 계약 일치, 타인 주문 제외, 체결 전용 필드 미노출을 한 시나리오에서 검증. 주문이 없는 신규 사용자에 대해 200 빈 배열도 검증.
+
+---
+
+## 이슈 #47: 보유 평가 계산 공통 구현 (ACCT-002 · PORT-001 선행, API 없음)
+
+> **범위 안내**: 이 섹션은 `spec.md`의 ACCT-002·PORT-001이 언급하는 "평가금액·미실현손익 계산"의 **공통 계산 진입점만** 다룬다. 계좌 요약 API(#81), 보유 종목 API(#52), 합산 포트폴리오 API(#51), 거래내역(PORT-002/#82)은 각 이슈가 착수될 때 별도로 설계한다 — 지금은 미확정이며 임의로 설계하지 않는다. **이 이슈는 controller·API를 추가하지 않는다.**
+
+### 관련 문서
+
+- Spec: `./spec.md` ACCT-002·PORT-001 절, 비즈니스 규칙 5번째 항목("시세가 유효하지 않은 종목의 평가값 처리 방식은 plan에서 확정한다")
+- PRD 근거: ACCT-002, PORT-001, [C-003](../../prd.md)(금액 double/float 금지, BigDecimal/원단위 BIGINT만 사용)
+- 반올림 전례: `docs/specs/004-order-buy/plan.md` 섹션 5 "금액 계산 — 반올림 규칙 확정"(`amount = price.multiply(quantity).setScale(0, RoundingMode.FLOOR)` 확정 — 이 계산도 동일 방향으로 통일한다)
+- 관련 ADR: [ADR-0002](../../adr/0002-architecture.md)(도메인 간 참조는 service 레이어를 통해서만 — 이번 서비스는 `portfolio` 도메인에 두고 이후 `account` 도메인 서비스가 이를 호출하는 방식으로 재사용한다)
+- 선행 이슈: #12(원장 스키마, 병합됨), #16(현재가 조회 및 공통 가격 계약, 병합됨)
+
+### 기존 구조 확인
+
+| 대상 | 현재 상태 | 이번 변경 |
+|---|---|---|
+| `com.finplay.api.portfolio.domain.Holding` | `quantity`(`BigDecimal`, precision 30 scale 8), `averagePrice`(`BigDecimal`, precision 18 scale 8), `instrument`(FK) 이미 보유 | 변경 없음 — 계산 입력으로 그대로 사용 |
+| `com.finplay.api.market.service.PriceQueryService` | `getPrice(...)`(시세 무효 시 `BusinessException(PRICE_UNAVAILABLE)` throw, 409) / `getPriceQuote(...)`(시세 무효 시 throw 없이 `PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, ...)` 반환) 두 변형이 이미 존재(#16, #18) | 변경 없음 — 이 계산 진입점은 반드시 **`getPriceQuote(Instrument)`(비throw 변형)만** 사용한다 |
+| `com.finplay.api.portfolio.service.SellAllocationDto`, `com.finplay.api.market.service.PriceQuoteDto` | service 간 내부 전달 DTO를 record로 해당 `service` 패키지에 직접 두는 전례(`dto/` 하위가 아님) | 이번 `HoldingValuationDto`도 동일 전례를 따른다 |
+| `com.finplay.api.order.service.OrderExecutionService.priceOrder(...)` | 원단위 금액을 `BigDecimal.multiply(...).setScale(0, RoundingMode.FLOOR).longValueExact()`로 확정(004-order-buy 섹션 5) | 이번 평가금액·원가 계산도 동일 규칙 재사용 |
+
+### 공통 진입점 설계
+
+- 위치: `com.finplay.api.portfolio.service.HoldingValuationService`(신규) — `Holding`이 portfolio 도메인 엔티티이므로 이 계산도 portfolio 도메인에 둔다. `account` 도메인(#81)이 필요하면 자신의 service에서 이 service를 주입해 호출한다(ADR-0002: 도메인 간 참조는 service 레이어를 통해서만, repository 직접 참조 금지).
+- 시그니처:
+
+```java
+@Service
+@RequiredArgsConstructor
+public class HoldingValuationService {
+
+    private final PriceQueryService priceQueryService;
+
+    @Transactional(readOnly = true)
+    public HoldingValuationDto evaluateHolding(Holding holding) { ... }
+}
+```
+
+- 입력: `Holding` 엔티티 1건(계좌·종목별로 이미 로딩된 것을 그대로 받는다 — 이 메서드는 리스트 조회·필터링을 하지 않는다. 활성 보유만 넘길지, 전량 매도 종목까지 넘길지는 호출부(#81/#52/#51)의 책임이며 PORT-001의 "전량 매도한 종목 제외"는 이 계산 진입점이 아니라 각 API의 목록 조회 단계에서 처리한다).
+- 출력: `HoldingValuationDto`(신규, `portfolio.service` 패키지, record):
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| quantity | BigDecimal | `holding.getQuantity()` 그대로 |
+| averagePrice | BigDecimal | `holding.getAveragePrice()` 그대로 |
+| costBasis | long | 보유수량 × 평균단가, 원단위 내림 (시세와 무관하게 항상 계산 가능) |
+| priceStatus | `com.finplay.api.market.service.PriceStatus` | `AVAILABLE`/`UNAVAILABLE` — 기존 enum 재사용(신규 enum 만들지 않음) |
+| evaluationAmount | Long (nullable) | `priceStatus == UNAVAILABLE`이면 `null`, 아니면 보유수량 × 최신가 원단위 내림 |
+| unrealizedPnl | Long (nullable) | `priceStatus == UNAVAILABLE`이면 `null`, 아니면 `evaluationAmount - costBasis` |
+| returnRate | BigDecimal (nullable) | `priceStatus == UNAVAILABLE`이면 `null`, `costBasis == 0`이면 `BigDecimal.ZERO`, 아니면 `unrealizedPnl ÷ costBasis`(scale 4, `RoundingMode.HALF_UP`) |
+
+### 계산 규칙 확정 (반올림·스케일)
+
+PRD C-003에 따라 전 구간 `BigDecimal`/`long`만 사용한다(`double`/`float` 금지).
+
+1. **원가(costBasis, 원단위 `long`)** = `holding.getQuantity().multiply(holding.getAveragePrice())` → `.setScale(0, RoundingMode.FLOOR).longValueExact()`. 시세 유효 여부와 무관하게 항상 계산한다.
+2. **평가금액(evaluationAmount, 원단위 `long`, nullable)** = `holding.getQuantity().multiply(quote.price())` → `.setScale(0, RoundingMode.FLOOR).longValueExact()`. `004-order-buy`에서 확정한 거래금액 내림 규칙과 방향을 통일한다(반올림·올림이 아님).
+3. **미실현손익(unrealizedPnl, 원단위 `long`, nullable)** = `evaluationAmount - costBasis`(정수 뺄셈, 추가 반올림 없음 — 두 값이 이미 원단위로 확정돼 있으므로 재변환하지 않는다).
+4. **수익률(returnRate, `BigDecimal`, nullable)** = `BigDecimal.valueOf(unrealizedPnl).divide(BigDecimal.valueOf(costBasis), 4, RoundingMode.HALF_UP)`. 소수 4자리(예: `0.1523` = 15.23%)의 **비율 값**을 반환한다 — 퍼센트 표시(×100, `%` 접미사)는 이 계산의 책임이 아니라 소비하는 API/화면 계층의 책임이다.
+   - `costBasis == 0`(보유수량 0 또는 평균단가 0)이면 0으로 나누는 상황이라 `ArithmeticException`을 피하기 위해 **`returnRate = BigDecimal.ZERO`로 확정**한다(수익률 "정의 불가"를 별도 값으로 표현하지 않는다 — 어차피 원금이 0이면 미실현손익도 0이므로 0%가 합리적인 표현이다).
+
+### 시세 무효 종목 처리 규칙 확정 (spec.md 미결 사항)
+
+- **이 계산 진입점은 예외를 던지지 않는다.** `PriceQueryService.getPriceQuote(Instrument)`(비throw 변형)만 사용하고, 시세가 무효(`PriceStatus.UNAVAILABLE`)면 `HoldingValuationDto`의 `evaluationAmount`/`unrealizedPnl`/`returnRate`를 `null`로 채워 정상 반환한다.
+- 근거: 이 서비스는 계좌 요약(#81)·보유 종목(#52)·합산 포트폴리오(#51) 3개 API가 공유하는 하위 계산이다. 만약 여기서 예외를 던지면 세 호출부가 각자 try-catch로 "한 종목의 시세 무효가 전체 조회를 막지 않는다"는 동일 처리를 중복 구현해야 한다 — 그 중복을 막는 것이 #47의 목적이다. 대신 `priceStatus` 필드로 상태를 알려주고, "무효 종목을 목록에서 어떻게 표시할지"(마지막 유효가 표기, `null` 그대로 노출, 평가액 합산에서 제외 등 최종 표현)는 각 API 자신의 spec/plan에서 결정한다.
+- `costBasis`는 시세와 무관하게 항상 값을 갖는다 — 보유수량·평균단가는 원장에만 의존하므로 시세 무효와 관계없이 계산 가능하다.
+
+### 경계 케이스 처리표
+
+| 케이스 | costBasis | evaluationAmount | unrealizedPnl | returnRate |
+|---|---|---|---|---|
+| 정상(시세 유효, 이익) | 값 있음 | 값 있음 | 양수 | 값 있음 |
+| 정상(시세 유효, 손실) | 값 있음 | 값 있음 | 음수 | 음수 값 있음 |
+| 시세 무효(`PriceStatus.UNAVAILABLE`) | 값 있음 | `null` | `null` | `null` |
+| 보유수량 0 | `0` | 시세 유효 시 `0`, 무효 시 `null` | 시세 유효 시 `0`, 무효 시 `null` | `BigDecimal.ZERO` |
+| 평균단가 0 | `0` | 시세 유효 시 값 있음(보유수량 × 최신가), 무효 시 `null` | 시세 유효 시 evaluationAmount와 동일값(원가 0), 무효 시 `null` | `BigDecimal.ZERO` |
+
+### 데이터 모델
+
+없음 — 신규 컬럼·마이그레이션·저장소 변경 없음. 평가값은 어디에도 저장하지 않는다(spec 비즈니스 규칙, PRD ACCT-002).
+
+### 문서 동기화
+
+해당 없음 — controller 변경이 없어 `docs/api-routes.md`·`docs/api-contracts.md` 갱신 대상이 아니다(CLAUDE.md 규칙 7은 controller 변경 시에만 적용). 세 소비 API(#81/#52/#51)가 각자 구현될 때 그 API의 계약 문서에서 이 계산 결과 필드를 노출한다.
+
+### 테스트 계획 (ADR-0003 기준)
+
+- **단위**: `src/test/java/com/finplay/api/portfolio/service/HoldingValuationServiceTest.java`(신규) — Mockito로 `PriceQueryService.getPriceQuote(Instrument)`를 stub.
+  - 정상 케이스: 이익(평가금액 > 원가)·손실(평가금액 < 원가) 각각에서 `evaluationAmount`·`unrealizedPnl`·`returnRate` 계산값을 실제 수치로 검증(mock 응답 객체 금지 컨벤션).
+  - 경계 케이스: 시세 무효(`PriceStatus.UNAVAILABLE`) → 세 필드 모두 `null`이고 예외가 발생하지 않음. 보유수량 0 → `costBasis=0`, `returnRate=BigDecimal.ZERO`. 평균단가 0 → `costBasis=0`, `returnRate=BigDecimal.ZERO`.
+- Repository·API 슬라이스·Testcontainers 통합 테스트는 이 이슈 범위에 없다(API가 없으므로) — #81/#52/#51 각 이슈가 자신의 통합 테스트에서 이 서비스를 통해 검증한다.
