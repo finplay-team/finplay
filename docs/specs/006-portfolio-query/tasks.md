@@ -34,15 +34,15 @@
 
 > 이 섹션은 `spec.md`의 ACCT-002·PORT-001이 요구하는 "평가금액·미실현손익 계산"의 공통 진입점만 다룬다(`plan.md` 이슈 #47 절 참고). API·controller 변경이 없어 문서 동기화 항목이 없다. 계좌 요약(#81)·보유 종목(#52)·합산 포트폴리오(#51)는 각자 착수될 때 이 서비스를 재사용해 별도 tasks로 진행한다.
 
-- [ ] **`HoldingValuationDto` + `HoldingValuationService.evaluateHolding` 구현 (정상 케이스)**
+- [x] **`HoldingValuationDto` + `HoldingValuationService.evaluateHolding` 구현 (정상 케이스)**
   - 신규 파일 `com.finplay.api.portfolio.service.HoldingValuationDto`(record: `quantity`·`averagePrice`·`costBasis`·`priceStatus`·`evaluationAmount`·`unrealizedPnl`·`returnRate`, plan.md 표 참고), `com.finplay.api.portfolio.service.HoldingValuationService`(`evaluateHolding(Holding holding)`, `PriceQueryService.getPriceQuote(Instrument)` 비throw 변형만 사용).
   - 반올림 규칙(plan.md "계산 규칙 확정" 절): `costBasis`·`evaluationAmount`는 `BigDecimal.setScale(0, RoundingMode.FLOOR).longValueExact()`, `unrealizedPnl`은 정수 뺄셈, `returnRate`는 `divide(..., 4, RoundingMode.HALF_UP)`.
   - 단위 테스트(`HoldingValuationServiceTest`, Mockito로 `PriceQueryService` stub): 이익 케이스·손실 케이스 각각에서 4개 계산 필드를 실제 수치로 검증(mock 응답 객체 금지 컨벤션).
 
-- [ ] **경계 케이스 처리 및 단위 테스트**
+- [x] **경계 케이스 처리 및 단위 테스트**
   - 시세 무효(`PriceStatus.UNAVAILABLE`) 케이스: 예외를 던지지 않고 `evaluationAmount`·`unrealizedPnl`·`returnRate`가 모두 `null`로 반환되는지 검증(plan.md "시세 무효 종목 처리 규칙 확정" 절).
   - `costBasis == 0`이 되는 두 경계(보유수량 0, 평균단가 0) 각각에서 `ArithmeticException` 없이 `returnRate = BigDecimal.ZERO`로 반환되는지 검증(plan.md "경계 케이스 처리표" 참고).
 
-- [ ] **`PriceQueryService` 연동 확인 및 회귀 검증**
+- [x] **`PriceQueryService` 연동 확인 및 회귀 검증**
   - `HoldingValuationService`가 throw 변형 `getPrice(...)`가 아니라 비throw 변형 `getPriceQuote(...)`만 호출하는지 코드 리뷰 관점에서 재확인 — "시세 무효가 조회 자체를 막지 않는다"는 요구사항의 직접 구현이므로 실수로 throw 변형을 쓰면 계약 위반.
   - 기존 `order`·`portfolio`·`market` 패키지 테스트 스위트에 회귀가 없는지 확인, `./gradlew build` 통과(SpotBugs·JaCoCo 게이트 포함).
