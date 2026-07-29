@@ -47,7 +47,7 @@ class CandleQueryServiceIntegrationTest {
 	private CandleQueryService candleQueryServiceAt(Clock clock) {
 		StockReplayService stockReplayService = new StockReplayService(
 			stockReplaySessionRepository, stockCandleRepository, clock);
-		KrxReplayPriceProvider provider = new KrxReplayPriceProvider(stockReplayService);
+		KisHistoricalReplayPriceProvider provider = new KisHistoricalReplayPriceProvider(stockReplayService);
 		return new CandleQueryService(instrumentRepository, provider);
 	}
 

@@ -61,7 +61,7 @@ public class PriceQueryService {
 		}
 	}
 
-	// 어느 StockPriceProvider 구현체(MVP는 KrxReplayPriceProvider 하나뿐)가 동작 중인지 알지 못한 채 인터페이스로만 위임한다.
+	// 어느 StockPriceProvider 구현체(MVP는 KisHistoricalReplayPriceProvider 하나뿐)가 동작 중인지 알지 못한 채 인터페이스로만 위임한다.
 	private PriceQuoteDto getStockPriceQuote(Instrument instrument) {
 		StockReplayPriceDto quote = stockPriceProvider.getCurrentPrice(instrument.getId());
 		if (!quote.isPriceAvailable()) {

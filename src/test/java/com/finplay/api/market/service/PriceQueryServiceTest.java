@@ -69,9 +69,9 @@ class PriceQueryServiceTest {
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode()).isEqualTo(ErrorCode.PRICE_UNAVAILABLE));
 	}
 
-	// KRX_REPLAY 스타일: 재생 세션 기반이라 과거 거래일(sourceTradingDate)이 채워진 채로 종가를 돌려주는 구현을 흉내낸다.
+	// KIS_HISTORICAL 스타일: 재생 세션 기반이라 과거 거래일(sourceTradingDate)이 채워진 채로 종가를 돌려주는 구현을 흉내낸다.
 	@Test
-	void getPriceMapsSameContractForKrxReplayStyleProvider() {
+	void getPriceMapsSameContractForKisHistoricalReplayStyleProvider() {
 		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
 		Instrument instrument = Instrument.create(
 			Market.STOCK, "005930", "삼성전자", BigDecimal.valueOf(100), 70000L, true, NOW);
