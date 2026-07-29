@@ -332,6 +332,30 @@ class OrderServiceTest {
 	}
 
 	@Test
+	void createOrderThrowsValidationErrorWhenCryptoOrderAmountBelowMinimumOnSell() {
+		// 최소주문금액 검증은 BUY·SELL 공유 로직(priceOrder)이지만 회귀 방지를 위해 SELL 경로도 명시적으로 검증한다.
+		Instrument instrument = cryptoInstrument(5_000L);
+		Account account = account(com.finplay.api.account.domain.Market.CRYPTO);
+		Holding holding = mock(Holding.class);
+		BigDecimal quantity = new BigDecimal("0.1");
+		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
+		when(accountService.getAccountFor(USER_ID, com.finplay.api.account.domain.Market.CRYPTO))
+			.thenReturn(account);
+		when(portfolioSellService.getHoldingOrThrow(account, instrument, quantity)).thenReturn(holding);
+		// rawAmount = 40000 * 0.1 = 4000 < 5000 최소 주문금액
+		when(priceQueryService.getPrice(instrument))
+			.thenReturn(new PriceQuoteDto(new BigDecimal("40000"), NOW, PriceStatus.AVAILABLE, null));
+		OrderCreateRequest request = sellRequest(Market.CRYPTO, instrument.getId(), "0.1");
+
+		assertThatThrownBy(() -> orderService.createOrder(USER_ID, IDEMPOTENCY_KEY, request))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode()).isEqualTo(ErrorCode.VALIDATION_ERROR));
+
+		verifyNoInteractions(userQueryService, orderRepository, tradeRepository, portfolioBuyService);
+		verify(portfolioSellService, never()).applySellTrade(any(), any(), any(), any());
+	}
+
+	@Test
 	void createOrderSellThrowsInsufficientQtyAndNeverQueriesPriceOrSavesAnything() {
 		Instrument instrument = stockInstrument();
 		Account account = account(com.finplay.api.account.domain.Market.STOCK);
