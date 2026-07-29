@@ -2,6 +2,7 @@
 package com.finplay.api.market.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -20,6 +21,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
@@ -252,5 +254,157 @@ class StockReplayServiceTest {
 		assertThat(dto.price()).isNull();
 		assertThat(dto.sourceTime()).isNull();
 		assertThat(dto.isPriceAvailable()).isFalse();
+	}
+
+	// --- 캔들 API 공개 컷오프(getRevealedCandles) ---
+
+	@Test
+	void getRevealedCandlesReturnsEmptyListWhenNoReadySession() {
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY)).thenReturn(Optional.empty());
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(10, 0)));
+
+		List<StockCandleDto> candles = service.getRevealedCandles(INSTRUMENT_ID, null, null);
+
+		assertThat(candles).isEmpty();
+		verifyNoInteractions(stockCandleRepository);
+	}
+
+	@Test
+	void getRevealedCandlesReturnsEmptyListBeforeMarketOpenWithoutQueryingCandles() {
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(8, 59)));
+
+		List<StockCandleDto> candles = service.getRevealedCandles(INSTRUMENT_ID, null, null);
+
+		assertThat(candles).isEmpty();
+		verifyNoInteractions(stockCandleRepository);
+	}
+
+	@Test
+	void getRevealedCandlesReturnsEmptyListDuringFirstCandleWindowWithoutQueryingCandles() {
+		// 리뷰 확정(PR #87 차단 1): 09:00~09:00:59는 첫 분봉조차 아직 마감 전이므로 캔들 목록은 예외 없이 빈 배열이어야 한다.
+		// 가격 API(getCurrentPrice)가 이 구간에서 첫 분봉의 시가를 노출하는 것과는 다른 계약이다.
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(9, 0, 30)));
+
+		List<StockCandleDto> candles = service.getRevealedCandles(INSTRUMENT_ID, null, null);
+
+		assertThat(candles).isEmpty();
+		verifyNoInteractions(stockCandleRepository);
+	}
+
+	@Test
+	void getRevealedCandlesRevealsFirstCandleExactlyAtOneMinuteBoundary() {
+		// 09:01:00 정각 — 컷오프 경계값. currentMinute=09:01, cutoff=09:01-1분=09:00(첫 분봉, 이제 막 마감 완료).
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		StockCandle firstCandle = candle(LocalTime.of(9, 0), BigDecimal.valueOf(1000), BigDecimal.valueOf(1010));
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+			INSTRUMENT_ID, WEEKDAY, LocalTime.MIN, LocalTime.of(9, 0)))
+			.thenReturn(List.of(firstCandle));
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(9, 1, 0)));
+
+		List<StockCandleDto> candles = service.getRevealedCandles(INSTRUMENT_ID, null, null);
+
+		assertThat(candles).hasSize(1);
+		assertThat(candles.get(0).candleTime()).isEqualTo(LocalTime.of(9, 0));
+		assertThat(candles.get(0).tradingDate()).isEqualTo(WEEKDAY);
+		verify(stockCandleRepository, never())
+			.findFirstByInstrumentIdAndTradingDateOrderByCandleTimeAsc(any(), any());
+	}
+
+	@Test
+	void getRevealedCandlesReturnsCandlesUpToLastClosedMinuteAfterFirstCandleWindowWhenFromToOmitted() {
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		StockCandle firstCandle = candle(LocalTime.of(9, 0), BigDecimal.valueOf(1000), BigDecimal.valueOf(1010));
+		StockCandle secondCandle = candle(LocalTime.of(9, 1), BigDecimal.valueOf(1010), BigDecimal.valueOf(1020));
+		// 09:02:15 — 09:01 분봉까지만 마감 완료, 09:02 분봉(형성 중)은 아직 노출되지 않아야 한다.
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+			INSTRUMENT_ID, WEEKDAY, LocalTime.MIN, LocalTime.of(9, 1)))
+			.thenReturn(List.of(firstCandle, secondCandle));
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(9, 2, 15)));
+
+		List<StockCandleDto> candles = service.getRevealedCandles(INSTRUMENT_ID, null, null);
+
+		assertThat(candles).hasSize(2);
+		assertThat(candles).extracting(StockCandleDto::candleTime)
+			.containsExactly(LocalTime.of(9, 0), LocalTime.of(9, 1));
+		// 첫 분봉 시각 조회(findFirst...OrderByCandleTimeAsc)는 첫 분봉 구간 전용이므로 이 시각대에서는 호출되지 않는다.
+		verify(stockCandleRepository, never())
+			.findFirstByInstrumentIdAndTradingDateOrderByCandleTimeAsc(INSTRUMENT_ID, WEEKDAY);
+	}
+
+	@Test
+	void getRevealedCandlesClipsRequestedToBeyondCutoffSoUnclosedCandleIsNeverExposed() {
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		// now=09:05:00 → 컷오프는 09:04(마감된 마지막 분봉). 요청 to=09:10은 컷오프보다 늦으므로 09:04로 잘려야 한다.
+		LocalDateTime requestedTo = LocalDateTime.of(WEEKDAY, LocalTime.of(9, 10));
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+			INSTRUMENT_ID, WEEKDAY, LocalTime.MIN, LocalTime.of(9, 4)))
+			.thenReturn(List.of());
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(9, 5, 0)));
+
+		service.getRevealedCandles(INSTRUMENT_ID, null, requestedTo);
+
+		verify(stockCandleRepository).findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+			INSTRUMENT_ID, WEEKDAY, LocalTime.MIN, LocalTime.of(9, 4));
+		verify(stockCandleRepository, never()).findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+			INSTRUMENT_ID, WEEKDAY, LocalTime.MIN, LocalTime.of(9, 10));
+	}
+
+	@Test
+	void getRevealedCandlesUsesRequestedToWhenItIsBeforeTheCutoff() {
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		// now=09:05:00 → 컷오프는 09:04. 요청 to=09:02는 컷오프보다 이르므로 그대로 09:02가 써야 한다.
+		LocalDateTime requestedTo = LocalDateTime.of(WEEKDAY, LocalTime.of(9, 2));
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+			INSTRUMENT_ID, WEEKDAY, LocalTime.MIN, LocalTime.of(9, 2)))
+			.thenReturn(List.of());
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(9, 5, 0)));
+
+		service.getRevealedCandles(INSTRUMENT_ID, null, requestedTo);
+
+		verify(stockCandleRepository).findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+			INSTRUMENT_ID, WEEKDAY, LocalTime.MIN, LocalTime.of(9, 2));
+	}
+
+	@Test
+	void getRevealedCandlesReturnsEmptyListWhenRequestedFromIsAfterClippedRangeEndWithoutQueryingCandles() {
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		// now=09:05:00 → 컷오프 09:04. 요청 from=09:10은 컷오프보다 늦으므로 범위가 역전되어 빈 목록이어야 한다.
+		LocalDateTime requestedFrom = LocalDateTime.of(WEEKDAY, LocalTime.of(9, 10));
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(9, 5, 0)));
+
+		List<StockCandleDto> candles = service.getRevealedCandles(INSTRUMENT_ID, requestedFrom, null);
+
+		assertThat(candles).isEmpty();
+		verify(stockCandleRepository, never())
+			.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(any(), any(), any(), any());
+	}
+
+	@Test
+	void getRevealedCandlesIgnoresDateComponentOfFromAndAlwaysScopesToSourceTradingDate() {
+		// 설계 확인용: from의 날짜 성분(2099-01-01, 재생 중인 sourceTradingDate와 무관한 날짜)은 무시되고
+		// LocalTime 성분(09:01)만 재생 중인 단일 거래일(WEEKDAY)의 시각 범위로 사용된다.
+		// 클라이언트가 실제로 다른 날짜를 의도해 from을 보냈더라도 검증·오류 없이 조용히 시각만 반영된다 — 구현자 해석 그대로의 동작.
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		LocalDateTime fromWithUnrelatedDate = LocalDateTime.of(LocalDate.of(2099, 1, 1), LocalTime.of(9, 1));
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+			INSTRUMENT_ID, WEEKDAY, LocalTime.of(9, 1), LocalTime.of(9, 4)))
+			.thenReturn(List.of());
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(9, 5, 0)));
+
+		service.getRevealedCandles(INSTRUMENT_ID, fromWithUnrelatedDate, null);
+
+		// sourceTradingDate(WEEKDAY)로 조회되었지 from의 날짜(2099-01-01)로는 조회되지 않았다.
+		verify(stockCandleRepository).findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+			INSTRUMENT_ID, WEEKDAY, LocalTime.of(9, 1), LocalTime.of(9, 4));
 	}
 }

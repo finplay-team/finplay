@@ -1,6 +1,8 @@
 // 종목 목록·단건 조회 API의 인증, 시장 필터링, 검증 실패, 응답 DTO 계약을 검증하는 WebMvc 슬라이스 테스트다.
 package com.finplay.api.market.controller;
 
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -14,7 +16,9 @@ import com.finplay.api.auth.token.JwtTokenProvider;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.dto.response.CandleResponse;
 import com.finplay.api.market.dto.response.InstrumentResponse;
+import com.finplay.api.market.service.CandleQueryService;
 import com.finplay.api.market.service.InstrumentService;
 import com.finplay.api.market.service.PriceQueryService;
 import com.finplay.api.market.service.PriceQuoteDto;
@@ -48,6 +52,9 @@ class InstrumentControllerTest {
 
 	@MockitoBean
 	private PriceQueryService priceQueryService;
+
+	@MockitoBean
+	private CandleQueryService candleQueryService;
 
 	@MockitoBean
 	private JwtTokenProvider jwtTokenProvider;
@@ -331,6 +338,165 @@ class InstrumentControllerTest {
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
 		verifyNoInteractions(priceQueryService);
+	}
+
+	@Test
+	void getCandlesRejectsMissingAuthenticationWithoutCallingService() throws Exception {
+		mockMvc.perform(get("/api/instruments/{instrumentId}/candles", 1L).param("interval", "1m"))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(candleQueryService);
+	}
+
+	@Test
+	void getCandlesReturnsCommonNotFoundErrorFormatWhenInstrumentMissing() throws Exception {
+		authenticate();
+		when(candleQueryService.getCandles(999L, "1m", null, null))
+			.thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
+
+		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}/candles", 999L).param("interval", "1m")))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.error.code").value("NOT_FOUND"))
+			.andExpect(jsonPath("$.error.message").isNotEmpty())
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(candleQueryService).getCandles(999L, "1m", null, null);
+	}
+
+	@Test
+	void getCandlesReturnsCommonValidationErrorForUnsupportedInterval() throws Exception {
+		authenticate();
+		when(candleQueryService.getCandles(eq(1L), eq("5m"), isNull(), isNull()))
+			.thenThrow(new BusinessException(ErrorCode.VALIDATION_ERROR, "지원하지 않는 캔들 간격입니다. interval=1m만 지원합니다."));
+
+		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}/candles", 1L).param("interval", "5m")))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.message").isNotEmpty())
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(candleQueryService).getCandles(1L, "5m", null, null);
+	}
+
+	@Test
+	void getCandlesReturnsCommonValidationErrorWhenIntervalParamIsMissing() throws Exception {
+		// interval은 필수 쿼리 파라미터다 — 누락 시 MissingServletRequestParameterException을
+		// GlobalExceptionHandler가 400 VALIDATION_ERROR로 매핑하는지 고정한다.
+		authenticate();
+
+		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}/candles", 1L)))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.message").isNotEmpty())
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(candleQueryService);
+	}
+
+	@Test
+	void getCandlesReturnsCommonValidationErrorWhenFromIsNotIsoFormat() throws Exception {
+		// from이 ISO-8601 LocalDateTime 형식이 아니면 MethodArgumentTypeMismatchException을
+		// GlobalExceptionHandler가 400 VALIDATION_ERROR로 매핑하는지 고정한다.
+		authenticate();
+
+		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}/candles", 1L)
+			.param("interval", "1m")
+			.param("from", "not-a-date")))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.message").isNotEmpty())
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(candleQueryService);
+	}
+
+	@Test
+	void getCandlesReturnsCommonValidationErrorWhenFromIsAfterTo() throws Exception {
+		authenticate();
+		LocalDateTime from = LocalDateTime.of(2026, 7, 27, 10, 0);
+		LocalDateTime to = LocalDateTime.of(2026, 7, 27, 9, 0);
+		when(candleQueryService.getCandles(1L, "1m", from, to))
+			.thenThrow(new BusinessException(ErrorCode.VALIDATION_ERROR, "from은 to보다 늦을 수 없습니다."));
+
+		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}/candles", 1L)
+			.param("interval", "1m")
+			.param("from", "2026-07-27T10:00:00")
+			.param("to", "2026-07-27T09:00:00")))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.message").isNotEmpty())
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(candleQueryService).getCandles(1L, "1m", from, to);
+	}
+
+	@Test
+	void getCandlesReturnsCommonValidationErrorForCryptoInstrumentId() throws Exception {
+		authenticate();
+		when(candleQueryService.getCandles(eq(17L), eq("1m"), isNull(), isNull()))
+			.thenThrow(new BusinessException(ErrorCode.VALIDATION_ERROR, "주식 종목만 캔들 조회를 지원합니다."));
+
+		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}/candles", 17L).param("interval", "1m")))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.message").isNotEmpty())
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(candleQueryService).getCandles(17L, "1m", null, null);
+	}
+
+	@Test
+	void getCandlesReturnsFullContractWithCandlesWhenAvailable() throws Exception {
+		authenticate();
+		LocalDateTime from = LocalDateTime.of(2026, 7, 27, 9, 0);
+		LocalDateTime to = LocalDateTime.of(2026, 7, 27, 9, 5);
+		when(candleQueryService.getCandles(1L, "1m", from, to)).thenReturn(List.of(
+			new CandleResponse(LocalDateTime.of(2026, 7, 27, 9, 0), BigDecimal.valueOf(70000),
+				BigDecimal.valueOf(70500), BigDecimal.valueOf(69900), BigDecimal.valueOf(70200), 12345L)));
+
+		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}/candles", 1L)
+			.param("interval", "1m")
+			.param("from", "2026-07-27T09:00:00")
+			.param("to", "2026-07-27T09:05:00")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.length()").value(1))
+			.andExpect(jsonPath("$[0].sourceTime").value("2026-07-27T09:00:00"))
+			.andExpect(jsonPath("$[0].open").value(70000))
+			.andExpect(jsonPath("$[0].high").value(70500))
+			.andExpect(jsonPath("$[0].low").value(69900))
+			.andExpect(jsonPath("$[0].close").value(70200))
+			.andExpect(jsonPath("$[0].volume").value(12345));
+
+		verify(candleQueryService).getCandles(1L, "1m", from, to);
+	}
+
+	@Test
+	void getCandlesReturnsFullContractWithNullFromToWhenOmitted() throws Exception {
+		authenticate();
+		when(candleQueryService.getCandles(1L, "1m", null, null)).thenReturn(List.of(
+			new CandleResponse(LocalDateTime.of(2026, 7, 27, 9, 0), BigDecimal.valueOf(70000),
+				BigDecimal.valueOf(70500), BigDecimal.valueOf(69900), BigDecimal.valueOf(70200), 12345L)));
+
+		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}/candles", 1L).param("interval", "1m")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.length()").value(1));
+
+		verify(candleQueryService).getCandles(1L, "1m", null, null);
+	}
+
+	@Test
+	void getCandlesReturnsEmptyArrayWithOkStatusWhenReplaySessionNotReadyOrNoCandleRevealedYet() throws Exception {
+		// 재생세션 미준비·아직 공개된 분봉이 없는 경우에도 가격 API(409 PRICE_UNAVAILABLE)와 달리 예외 없이 200 + 빈 배열이어야 한다.
+		authenticate();
+		when(candleQueryService.getCandles(1L, "1m", null, null)).thenReturn(List.of());
+
+		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}/candles", 1L).param("interval", "1m")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.length()").value(0));
+
+		verify(candleQueryService).getCandles(1L, "1m", null, null);
 	}
 
 	private void authenticate() {

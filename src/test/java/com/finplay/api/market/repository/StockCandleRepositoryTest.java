@@ -199,4 +199,66 @@ class StockCandleRepositoryTest {
 		assertThat(exact).isPresent();
 		assertThat(exact.get().getCandleTime()).isEqualTo(LocalTime.of(9, 1));
 	}
+
+	// --- 캔들 API 시각 범위 조회(findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc) ---
+
+	@Test
+	void findByCandleTimeBetweenReturnsOnlyCandlesWithinRangeOrderedByTimeAscending() {
+		stockCandleRepository.save(newCandle(instrumentA, TRADING_DATE, LocalTime.of(9, 2), "71400"));
+		stockCandleRepository.save(newCandle(instrumentA, TRADING_DATE, LocalTime.of(9, 0), "71200"));
+		stockCandleRepository.save(newCandle(instrumentA, TRADING_DATE, LocalTime.of(9, 1), "71300"));
+		// 범위 밖(이전) — 결과에서 제외되어야 함
+		stockCandleRepository.save(newCandle(instrumentA, TRADING_DATE, LocalTime.of(8, 59), "71100"));
+		// 범위 밖(이후) — 결과에서 제외되어야 함
+		stockCandleRepository.save(newCandle(instrumentA, TRADING_DATE, LocalTime.of(9, 3), "71500"));
+
+		List<StockCandle> candles = stockCandleRepository
+			.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+				instrumentA.getId(), TRADING_DATE, LocalTime.of(9, 0), LocalTime.of(9, 2));
+
+		assertThat(candles).hasSize(3);
+		assertThat(candles).extracting(StockCandle::getCandleTime)
+			.containsExactly(LocalTime.of(9, 0), LocalTime.of(9, 1), LocalTime.of(9, 2));
+	}
+
+	@Test
+	void findByCandleTimeBetweenIsInclusiveOfBothRangeEndpoints() {
+		stockCandleRepository.save(newCandle(instrumentA, TRADING_DATE, LocalTime.of(9, 0), "71200"));
+		stockCandleRepository.save(newCandle(instrumentA, TRADING_DATE, LocalTime.of(9, 1), "71300"));
+
+		List<StockCandle> candles = stockCandleRepository
+			.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+				instrumentA.getId(), TRADING_DATE, LocalTime.of(9, 0), LocalTime.of(9, 1));
+
+		assertThat(candles).hasSize(2);
+	}
+
+	@Test
+	void findByCandleTimeBetweenExcludesOtherTradingDateAndOtherInstrument() {
+		stockCandleRepository.save(newCandle(instrumentA, TRADING_DATE, LocalTime.of(9, 0), "71200"));
+		stockCandleRepository.save(newCandle(instrumentA, OTHER_TRADING_DATE, LocalTime.of(9, 0), "80000"));
+		stockCandleRepository.save(newCandle(instrumentB, TRADING_DATE, LocalTime.of(9, 0), "90000"));
+
+		// LocalTime.MAX(23:59:59.999999999)는 MySQL TIME(0) 컬럼 바인딩 시 드라이버가 반올림해 00:00:00으로
+		// 넘어가 버리는 것을 확인했다(진단용 프로브로 재현) — 실제 운영 코드(StockReplayService.getRevealedCandles)는
+		// requestedEnd(LocalTime.MAX)를 항상 공개 컷오프 값으로 치환하므로 이 값을 그대로 바인딩하지 않는다.
+		// 여기서는 하루 범위를 안전하게 표현하는 23:59:59를 상한으로 사용한다.
+		List<StockCandle> candles = stockCandleRepository
+			.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+				instrumentA.getId(), TRADING_DATE, LocalTime.MIN, LocalTime.of(23, 59, 59));
+
+		assertThat(candles).hasSize(1);
+		assertThat(candles.get(0).getClose()).isEqualByComparingTo("71200");
+	}
+
+	@Test
+	void findByCandleTimeBetweenReturnsEmptyWhenNoCandleFallsWithinRange() {
+		stockCandleRepository.save(newCandle(instrumentA, TRADING_DATE, LocalTime.of(9, 5), "71600"));
+
+		List<StockCandle> candles = stockCandleRepository
+			.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+				instrumentA.getId(), TRADING_DATE, LocalTime.of(9, 0), LocalTime.of(9, 2));
+
+		assertThat(candles).isEmpty();
+	}
 }

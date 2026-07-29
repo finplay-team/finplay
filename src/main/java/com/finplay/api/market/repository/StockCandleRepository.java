@@ -20,4 +20,8 @@ public interface StockCandleRepository extends JpaRepository<StockCandle, Long> 
 
 	Optional<StockCandle> findFirstByInstrumentIdAndTradingDateAndCandleTimeLessThanEqualOrderByCandleTimeDesc(
 		Long instrumentId, LocalDate tradingDate, LocalTime candleTime);
+
+	// 캔들 API — 종목·거래일·분봉시각(from~to, 양끝 포함) 범위 조회
+	List<StockCandle> findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+		Long instrumentId, LocalDate tradingDate, LocalTime from, LocalTime to);
 }
