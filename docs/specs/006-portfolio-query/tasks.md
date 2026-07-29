@@ -69,7 +69,7 @@
   - `totalValue = cashBalance + holdingsValue`, `returnRate = (totalValue - seedMoney) / seedMoney`(scale 4, `RoundingMode.HALF_UP`, `seedMoney == 0`이면 `BigDecimal.ZERO`).
   - 단위 테스트(`AccountServiceTest`, 기존 파일, Mockito로 `HoldingValuationService` stub): 시세 유효만 있는 케이스·시세 무효 혼합 케이스(제외 확인)·활성 보유 없음(모두 0) 케이스·계좌 없음(`NOT_FOUND` 회귀) 각각 실제 수치로 검증.
 
-- [ ] **Controller: `GET /api/accounts/summary`**
+- [x] **Controller: `GET /api/accounts/summary`**
   - 신규 패키지 `com.finplay.api.account.controller`에 `AccountController` 추가 — `@GetMapping("/summary")`, `@AuthenticationPrincipal AuthenticatedUser`, `@RequestParam com.finplay.api.account.domain.Market market`(필수 — `market.domain.Market`을 잘못 import하지 않도록 주의, plan.md "Market 타입 주의" 참고).
   - `market` 누락·잘못된 리터럴은 기존 `GlobalExceptionHandler`가 이미 400 `VALIDATION_ERROR`로 처리하므로 컨트롤러에 별도 검증 코드를 추가하지 않는다.
   - `@WebMvcTest` 슬라이스 테스트(`AccountControllerTest`, 신규, `OrderControllerTest` 패턴 재사용): `market=STOCK`·`market=CRYPTO` 200 필드 계약, `market` 누락 400, `market=FOREX` 400, 인증 실패 401.

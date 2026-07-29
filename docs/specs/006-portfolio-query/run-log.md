@@ -15,6 +15,7 @@
 | 23:35 | implementer | `./gradlew compileJava compileTestJava && ./gradlew test --tests com.finplay.api.portfolio.repository.HoldingRepositoryTest --tests com.finplay.api.portfolio.service.HoldingValuationServiceTest` | 이슈 #81 plan.md "Repository 설계"·"Service 설계"(HoldingRepository는 portfolio 도메인이 직접 소유, ADR-0002) |
 | 23:50 | implementer | `./gradlew compileJava` | 이슈 #81 plan.md "응답 DTO 설계"(6필드, `of(...)` 팩토리), tasks.md 항목2 |
 | 23:58 | implementer | `./gradlew test --tests com.finplay.api.account.service.AccountServiceTest` | 이슈 #81 plan.md "Service 설계"(`getAccountSummary`, `@RequiredArgsConstructor` 교체), tasks.md 항목3 |
+| 14:48 | implementer | `./gradlew compileJava compileTestJava && ./gradlew test --tests com.finplay.api.account.controller.AccountControllerTest` | 이슈 #81 plan.md "Controller 설계"(`GET /api/accounts/summary`, `account.domain.Market` 타입 주의), tasks.md 항목4 |
 
 ## 모니터링 (사람용 요약)
 - 15:20 — OrderRepository에 사용자별 최신순 조회 JPQL 추가, DataJpaTest 3건(본인만/정렬/빈목록) 통과.
@@ -29,3 +30,4 @@
 - 23:35 — 이슈 #81 항목1: `HoldingRepository.findAllByAccountIdAndIsActiveTrue`(JOIN FETCH) 추가, `HoldingValuationService.evaluateActiveHoldingsForAccount` 추가(account 도메인의 유일 진입점). DataJpaTest 4건·기존 서비스 단위테스트에 2건 추가(총 7건) 전체 통과. controller 없어 문서 동기화 대상 아님.
 - 23:50 — 이슈 #81 항목2: `AccountSummaryResponse` record 추가(6필드: cashBalance·holdingsValue·totalValue·realizedPnl·unrealizedPnl·returnRate, `of(...)` 정적 팩토리). 컴파일 통과. controller 미변경이라 api-routes.md·api-contracts.md 갱신 대상 아님(controller 작업 항목에서 처리).
 - 23:58 — 이슈 #81 항목3: `AccountService`에 `HoldingValuationService` 의존성 추가(`@RequiredArgsConstructor`로 교체)·`getAccountSummary` 구현(AVAILABLE만 합산, `totalValue`·`returnRate` 계산). 단위 테스트 5건(유효만/무효 혼합 제외/활성 보유 없음/계좌 없음 NOT_FOUND 회귀 포함, 기존 2건 유지) 총 7건 통과, account·portfolio 스위트 회귀 없음. controller 미변경이라 문서 동기화 대상 아님(다음 항목에서 처리).
+- 14:48 — 이슈 #81 항목4: 신규 `com.finplay.api.account.controller.AccountController` 추가(`GET /api/accounts/summary`, `account.domain.Market` 타입 사용, 별도 검증 코드 없음). 신규 `AccountControllerTest`(WebMvc 슬라이스) 5건(STOCK·CRYPTO 200 필드 계약, market 누락 400, market=FOREX 400, 인증 실패 401) 전체 통과. controller 신규 추가지만 문서 동기화(prd.md·api-routes.md·api-contracts.md)는 다음 항목(통합 테스트 이후 마지막 항목)에서 처리 예정.
