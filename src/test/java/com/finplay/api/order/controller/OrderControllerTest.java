@@ -117,6 +117,23 @@ class OrderControllerTest {
 	}
 
 	@Test
+	void createOrderRejectsIdempotencyKeyOverMaxLengthWithoutCallingService() throws Exception {
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(java.util.Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+
+		mockMvc.perform(post("/api/orders")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.header("Idempotency-Key", "a".repeat(101))
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(VALID_BODY))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(orderService);
+	}
+
+	@Test
 	void createOrderRejectsMissingQuantityWithoutCallingService() throws Exception {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(java.util.Optional.of(new AuthenticatedUser(USER_ID, "USER")));

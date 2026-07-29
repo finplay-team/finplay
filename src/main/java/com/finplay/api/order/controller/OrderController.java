@@ -7,6 +7,7 @@ import com.finplay.api.order.dto.response.OrderResponse;
 import com.finplay.api.order.service.OrderService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -30,7 +31,7 @@ public class OrderController {
 	public ResponseEntity<OrderResponse> createOrder(
 		@AuthenticationPrincipal
 		AuthenticatedUser principal,
-		@RequestHeader("Idempotency-Key") @NotBlank
+		@RequestHeader("Idempotency-Key") @NotBlank @Size(max = 100)
 		String idempotencyKey,
 		@Valid @RequestBody
 		OrderCreateRequest request) {

@@ -10,19 +10,15 @@ import com.finplay.api.portfolio.repository.HoldingLotRepository;
 import com.finplay.api.portfolio.repository.HoldingRepository;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 @Service
+@RequiredArgsConstructor
 public class PortfolioBuyService {
 
 	private final HoldingRepository holdingRepository;
 	private final HoldingLotRepository holdingLotRepository;
-
-	public PortfolioBuyService(
-		HoldingRepository holdingRepository, HoldingLotRepository holdingLotRepository) {
-		this.holdingRepository = holdingRepository;
-		this.holdingLotRepository = holdingLotRepository;
-	}
 
 	public void applyBuyTrade(
 		Account account,
