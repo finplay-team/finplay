@@ -115,7 +115,7 @@
   - Testcontainers 기반 통합 테스트(신규 `HoldingIntegrationTest` 또는 기존 매수 통합 테스트 파일 인접)에 시나리오 추가: 2종목 매수 후 1종목 전량 매도 → `GET /api/holdings?market=` 호출 → 매도한 종목이 목록에서 제외되고 남은 종목의 6개 값(수량·평균단가·현재가·평가금액·미실현손익·수익률)이 원장·시세 기준으로 정확한지 검증(spec 완료 조건 직접 구현).
   - 보유 종목 없는 신규 계좌 → 200 빈 배열, 타인 계좌 보유가 섞이지 않음, `market` 누락/잘못된 값 400·비로그인 401 최소 1건 확인.
 
-- [ ] **문서 동기화: `docs/prd.md` · `docs/api-routes.md` · `docs/api-contracts.md`**
+- [x] **문서 동기화: `docs/prd.md` · `docs/api-routes.md` · `docs/api-contracts.md`**
   - `docs/prd.md` PORT-001 절에 현재가·수익률 필드를 추가(plan.md 문서 동기화 절 참고).
   - `docs/api-routes.md` 라우트 표에 `GET /api/holdings?market=` 행 추가(Spec 컬럼에 `006 PORT-001, Issue #52` 표기).
   - `docs/api-contracts.md`에 신규 `## portfolio` 절 추가 — 요청(쿼리 `market` 필수), 성공 200 예시(`HoldingListItemResponse[]`, 시세 유효/무효 각 1건 포함), 오류(400 `VALIDATION_ERROR`, 401 `UNAUTHORIZED`) 표. 시세 무효 항목의 표현 정책(4개 필드 `null` + `priceStatus`)을 본문에 명시.
