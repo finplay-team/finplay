@@ -36,3 +36,11 @@ stock-feed:
   provider: ${STOCK_FEED_PROVIDER:KRX_REPLAY}
   service-exposure: ${SERVICE_EXPOSURE:PUBLIC}
   kis-public-display-approved: ${KIS_PUBLIC_DISPLAY_APPROVED:false}
+  # KIS_REALTIME일 때만 쓰인다(개인 개발·본인 전용 검증). 계좌번호는 approval_key 발급·실시간 구독에 필요 없다(KIS 공식
+  # 샘플 get_approval 확인 — appkey·secretkey만 사용). URL은 실전투자 기본값이며, 모의투자로 검증하려면 환경변수로
+  # openapivts.koreainvestment.com:29443(REST)·ops.koreainvestment.com:31000(WS)로 덮어쓴다.
+  kis:
+    app-key: ${KIS_APP_KEY:}
+    app-secret: ${KIS_APP_SECRET:}
+    approval-url: ${KIS_APPROVAL_URL:https://openapi.koreainvestment.com:9443/oauth2/Approval}
+    websocket-url: ${KIS_WEBSOCKET_URL:ws://ops.koreainvestment.com:21000}
