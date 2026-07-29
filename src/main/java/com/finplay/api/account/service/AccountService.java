@@ -5,6 +5,8 @@ import com.finplay.api.account.domain.Account;
 import com.finplay.api.account.domain.Market;
 import com.finplay.api.account.repository.AccountRepository;
 import com.finplay.api.auth.domain.User;
+import com.finplay.api.common.BusinessException;
+import com.finplay.api.common.ErrorCode;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -28,5 +30,12 @@ public class AccountService {
 		accountRepository.saveAll(List.of(
 			Account.create(user, Market.STOCK, now),
 			Account.create(user, Market.CRYPTO, now)));
+	}
+
+	@Transactional(readOnly = true)
+	public Account getAccountFor(Long userId, Market market) {
+		return accountRepository
+			.findByUserIdAndMarket(userId, market)
+			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
 	}
 }

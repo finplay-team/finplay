@@ -33,6 +33,15 @@ public class PriceQueryService {
 		return instrument.getMarket() == Market.STOCK ? getStockPrice(instrument) : getCryptoPrice(instrument);
 	}
 
+	// 주식 장외는 MARKET_CLOSED, 그 외(코인·주식 장중)는 통과시킨다. 주문 서비스는 이 메서드로만 주문 가능 여부를 판단해야 한다.
+	@Transactional(readOnly = true)
+	public void assertOrderable(Instrument instrument) {
+		if (instrument.getMarket() == Market.STOCK
+			&& stockPriceProvider.getMarketStatus() == StockMarketStatus.CLOSED) {
+			throw new BusinessException(ErrorCode.MARKET_CLOSED);
+		}
+	}
+
 	// 어느 StockPriceProvider 구현체(KrxReplayPriceProvider·KisRealtimePriceProvider)가 동작 중인지 알지 못한 채 인터페이스로만 위임한다.
 	private PriceQuoteDto getStockPrice(Instrument instrument) {
 		StockReplayPriceDto quote = stockPriceProvider.getCurrentPrice(instrument.getId());

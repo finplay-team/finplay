@@ -1,15 +1,18 @@
-// 회원의 시장별 초기 계좌 생성 상태를 검증하는 단위 테스트다.
+// 회원의 시장별 초기 계좌 생성·조회 상태를 검증하는 단위 테스트다.
 package com.finplay.api.account.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.StreamSupport;
 
 import org.junit.jupiter.api.Test;
@@ -19,6 +22,8 @@ import com.finplay.api.account.domain.Account;
 import com.finplay.api.account.domain.Market;
 import com.finplay.api.account.repository.AccountRepository;
 import com.finplay.api.auth.domain.User;
+import com.finplay.api.common.BusinessException;
+import com.finplay.api.common.ErrorCode;
 
 class AccountServiceTest {
 
@@ -44,5 +49,33 @@ class AccountServiceTest {
 			assertThat(account.getSeedMoney()).isEqualTo(10_000_000L);
 			assertThat(account.getRealizedPnl()).isZero();
 		});
+	}
+
+	@Test
+	void getAccountForReturnsAccountWhenRepositoryFindsIt() {
+		AccountRepository accountRepository = mock(AccountRepository.class);
+		Clock fixedClock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
+		AccountService accountService = new AccountService(accountRepository, fixedClock);
+		User user = User.create("user@finplay.com", "password-hash", "finplayer",
+			LocalDateTime.ofInstant(FIXED_INSTANT, ZoneOffset.UTC));
+		Account account = Account.create(user, Market.STOCK,
+			LocalDateTime.ofInstant(FIXED_INSTANT, ZoneOffset.UTC));
+		when(accountRepository.findByUserIdAndMarket(1L, Market.STOCK)).thenReturn(Optional.of(account));
+
+		Account result = accountService.getAccountFor(1L, Market.STOCK);
+
+		assertThat(result).isSameAs(account);
+	}
+
+	@Test
+	void getAccountForThrowsNotFoundWhenNoAccountExistsForUserAndMarket() {
+		AccountRepository accountRepository = mock(AccountRepository.class);
+		Clock fixedClock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
+		AccountService accountService = new AccountService(accountRepository, fixedClock);
+		when(accountRepository.findByUserIdAndMarket(1L, Market.STOCK)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> accountService.getAccountFor(1L, Market.STOCK))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode()).isEqualTo(ErrorCode.NOT_FOUND));
 	}
 }
