@@ -1,6 +1,6 @@
 # Tasks: 종목과 시세
 
-> **MVP 주식 시세 방향 (확정)**: 직전 영업일 분봉을 KIS Open API REST로 08:10에 수집하고 09:00부터 재생하는 경로 **하나뿐**이다. KIS 실시간 WebSocket 체결 수신·틱 집계는 MVP에서 쓰지 않으며, **그것을 고르기 위한 설정 전환 구조(`StockFeedConfig`·`StockFeedProvider`·`ServiceExposure`·`stock-feed.*`)도 함께 삭제한다** — 실시간 경로 방어 외에 참조가 없어 좀비 코드가 되기 때문이다. 전환 구조와 fail-fast는 이슈 #82에서 실시간 구현체와 **함께** 되살린다. 배경과 근거는 `spec.md` 개요·MKT-007, `plan.md`의 "KIS 과거 분봉 수집 설계"·"배치 실행 시각"·"리네이밍"·"실행 환경 조합" 참조.
+> **MVP 주식 시세 방향 (확정)**: 직전 영업일 분봉을 KIS Open API REST로 08:10에 수집하고 09:00부터 재생하는 경로 **하나뿐**이다. KIS 실시간 WebSocket 체결 수신·틱 집계는 MVP에서 쓰지 않으며, **그것을 고르기 위한 설정 전환 구조(`StockFeedConfig`·`StockFeedProvider`·`ServiceExposure`·`stock-feed.*`)도 함께 삭제한다** — 실시간 경로 방어 외에 참조가 없어 좀비 코드가 되기 때문이다. 전환 구조와 fail-fast는 KIS 실시간 후속에서 실시간 구현체와 **함께** 되살린다. 배경과 근거는 `spec.md` 개요·MKT-007, `plan.md`의 "KIS 과거 분봉 수집 설계"·"배치 실행 시각"·"리네이밍"·"실행 환경 조합" 참조.
 
 ## 완료된 항목
 
@@ -43,9 +43,11 @@
 
 ## 후속 이슈 (MVP 범위 아님)
 
-- [ ] **(이슈 #82 — KIS 실시간 틱 집계) 공급자 전환 구조와 fail-fast 방어 복원 — 실시간 구현체와 반드시 같은 작업에서.** `StockFeedConfig`·`StockFeedProvider`(`KIS_REALTIME`·`KIS_HISTORICAL`)·`ServiceExposure`·`KIS_PUBLIC_DISPLAY_APPROVED`·`application.yml`의 `stock-feed:` 블록·`.env.example` 항목 3종을 되살리고, 허용 조합 4종과 `PUBLIC`+`KIS_REALTIME`+미승인 기동 실패(fail-fast)를 다시 구현한다. 계약 정본은 `plan.md`의 "실행 환경 조합" 절. **구현체만 먼저 들어오고 이 방어가 빠지면 공개 환경에서 무허가 실시간 표출이 가능해진다 (C-007 위반)** — 순서를 뒤집지 않는다. (+ 단위 테스트: 조합별 Provider 선택, 금지 조합 컨텍스트 로드 실패)
-- [ ] **(이슈 #82)** `KisRealtimePriceProvider` + `FakeKisRealtimePriceProvider` (KIS 국내주식 WebSocket 체결 틱 수신·재연결·연결상태, 끊김 시 가격 무효·재연결 후 복귀. 키는 KIS_REALTIME일 때만 바인딩) (+ 단위 테스트는 Fake로) — 실제 KIS WebSocket 연결은 외부 스모크로 구분 보고. 위 이슈 #19 ①에서 삭제한 코드를 실시간 표출 허용이 확인된 뒤 다시 도입한다
-- [ ] **(이슈 #82)** `KisTickAggregator` (체결 틱 → 1분 OHLCV 서버 집계, 결과 모델이 캔들 API·`KisHistoricalReplayPriceProvider`와 동일) (+ 단위 테스트: open/high/low/close/volume 산출, 분 경계 전환)
+> **KIS 실시간 항목에는 대응 GitHub 이슈가 없다.** 이전 문서가 "이슈 #82"로 적어 왔으나 실제 #82는 「[MVP][포트폴리오] 내 체결 내역 조회 API」이고 KIS 실시간과 무관하다 — 틱 집계 이슈는 만들어진 적이 없다(2026-07-31 이슈 #109에서 확인). 착수할 때 이슈를 새로 만든다. 아래 `이슈 #83` 항목은 실제 이슈와 일치하므로 번호를 그대로 둔다.
+
+- [ ] **(KIS 실시간 후속) 공급자 전환 구조와 fail-fast 방어 복원 — 실시간 구현체와 반드시 같은 작업에서.** `StockFeedConfig`·`StockFeedProvider`(`KIS_REALTIME`·`KIS_HISTORICAL`)·`ServiceExposure`·`KIS_PUBLIC_DISPLAY_APPROVED`·`application.yml`의 `stock-feed:` 블록·`.env.example` 항목 3종을 되살리고, 허용 조합 4종과 `PUBLIC`+`KIS_REALTIME`+미승인 기동 실패(fail-fast)를 다시 구현한다. 계약 정본은 `plan.md`의 "실행 환경 조합" 절. **구현체만 먼저 들어오고 이 방어가 빠지면 공개 환경에서 무허가 실시간 표출이 가능해진다 (C-007 위반)** — 순서를 뒤집지 않는다. (+ 단위 테스트: 조합별 Provider 선택, 금지 조합 컨텍스트 로드 실패)
+- [ ] **(KIS 실시간 후속)** `KisRealtimePriceProvider` + `FakeKisRealtimePriceProvider` (KIS 국내주식 WebSocket 체결 틱 수신·재연결·연결상태, 끊김 시 가격 무효·재연결 후 복귀. 키는 KIS_REALTIME일 때만 바인딩) (+ 단위 테스트는 Fake로) — 실제 KIS WebSocket 연결은 외부 스모크로 구분 보고. 위 이슈 #19 ①에서 삭제한 코드를 실시간 표출 허용이 확인된 뒤 다시 도입한다
+- [ ] **(KIS 실시간 후속)** `KisTickAggregator` (체결 틱 → 1분 OHLCV 서버 집계, 결과 모델이 캔들 API·`KisHistoricalReplayPriceProvider`와 동일) (+ 단위 테스트: open/high/low/close/volume 산출, 분 경계 전환)
 - [ ] **(이슈 #83 — 장기운영 방어 로직)** 동일 거래일 재수집 정책 (수집 전 market_data_imports에서 해당 source_trading_date의 기존 SUCCESS·PARTIAL_SUCCESS와 수집 결과 비교. 동일 데이터는 StockCandle·세션 불변 + SKIPPED_DUPLICATE 이력만, 상충 데이터는 거부 + FAILED 기록, FAILED 이력만 있으면 재시도 허용) (+ 단위 테스트)
 - [ ] **(이슈 #83)** `StockCandleCleanupJob` (20영업일 초과 삭제, 재생 중 거래일 보존) (+ 단위 테스트)
 - [ ] **(이슈 #83)** 동일 거래일 다른 수집 결과 재수집 거부 시 기존 READY 세션·StockCandle 불변 확인 통합 테스트

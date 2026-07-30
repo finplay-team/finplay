@@ -6,7 +6,7 @@
 
 주식 16종·코인 12종의 종목 정보를 제공한다. **MVP의 주식 시세 방식은 하나뿐이다 — "직전 영업일 분봉 재생"이다.** 당일 아침 배치가 직전 영업일(09:00~15:30 KST)의 1분봉을 한국투자증권(KIS) Open API **REST**로 수집·검증해 MySQL(`stock_candles`)에 저장하고, 09:00부터 그 데이터를 1배속으로 재생한다. 재생 구현체는 `KisHistoricalReplayPriceProvider`이며, 공통 계약 `StockPriceProvider` 뒤에 둔다. 코인은 빗썸 WebSocket으로 실시간 시세를 받아 Redis에 보관한다. 이후 주문(004·005)이 소비할 "유효한 최신 가격"의 유일한 공급원이다.
 
-**KIS 실시간 WebSocket 체결 수신은 MVP에서 쓰지 않으며, 그것을 고르기 위한 설정 스위치도 두지 않는다.** MVP가 유지하는 것은 공통 계약 `StockPriceProvider` 하나뿐이다 — 이 계약은 `PriceQueryService`·`CandleQueryService`·`StockPriceStreamService`가 실제로 의존하는 이음매이므로 구현체가 하나여도 살아 있는 코드다. 반면 `STOCK_FEED_PROVIDER`·`SERVICE_EXPOSURE`·`KIS_PUBLIC_DISPLAY_APPROVED` 설정 3종과 그 fail-fast 검증은 **오직 실시간 경로를 방어하기 위해서만 존재한다** — 실시간 구현체를 지우면 뒤에 아무것도 연결되지 않은 채 자기 값 하나를 거부하기만 하는 좀비 코드가 되므로, 설정 구조 전체를 실시간 구현체와 **함께** 제거하고 이슈 #82에서 **함께** 되살린다. MVP의 구현체는 `KisHistoricalReplayPriceProvider` 하나뿐이며, 고를 대상이 하나이므로 설정으로 선택하지 않고 `@Service`로 직접 등록한다.
+**KIS 실시간 WebSocket 체결 수신은 MVP에서 쓰지 않으며, 그것을 고르기 위한 설정 스위치도 두지 않는다.** MVP가 유지하는 것은 공통 계약 `StockPriceProvider` 하나뿐이다 — 이 계약은 `PriceQueryService`·`CandleQueryService`·`StockPriceStreamService`가 실제로 의존하는 이음매이므로 구현체가 하나여도 살아 있는 코드다. 반면 `STOCK_FEED_PROVIDER`·`SERVICE_EXPOSURE`·`KIS_PUBLIC_DISPLAY_APPROVED` 설정 3종과 그 fail-fast 검증은 **오직 실시간 경로를 방어하기 위해서만 존재한다** — 실시간 구현체를 지우면 뒤에 아무것도 연결되지 않은 채 자기 값 하나를 거부하기만 하는 좀비 코드가 되므로, 설정 구조 전체를 실시간 구현체와 **함께** 제거하고 KIS 실시간 후속에서 **함께** 되살린다. MVP의 구현체는 `KisHistoricalReplayPriceProvider` 하나뿐이며, 고를 대상이 하나이므로 설정으로 선택하지 않고 `@Service`로 직접 등록한다.
 
 **주식 데이터의 성격을 분명히 한다** — KIS 과거 1분봉은 실제로 거래된 데이터이지만 **과거 데이터**다. 한국투자증권 확인 결과 과거 데이터는 공공데이터로, 제3자 표출에 별도 허가가 필요 없다 (C-006). 반면 실시간 시세는 **현재 시장의 실제 체결 데이터**이고, "KIS API로 실시간 수신이 가능하다"와 "공개 회원에게 실시간 시세를 표출해도 된다"는 별개의 판단이다 (C-007) — 이 구분은 실시간에만 적용된다.
 
@@ -31,8 +31,8 @@ REST를 쓰는 이유는 오직 하나다 — **WebSocket은 "지금 가격"만 
 - 운영자는 특정 종목만 데이터가 손상된 날에도 나머지 종목은 정상 개장되는 것을 확인한다.
 - 운영자는 빗썸 연결이 끊기면 해당 코인 주문이 자동 차단되고, 복구 후 새 틱이 오면 자동 재개되는 것을 확인한다.
 - 팀원·튜터·심사위원은 시연에서 과거 분봉 재생 화면을 본다 — 이것이 MVP의 유일한 주식 시세 방식이며, 애초에 다른 방식으로 전환할 설정이 존재하지 않는다.
-- **(MVP 범위 아님 — 이슈 #82)** 개발자는 본인만 접근하는 로컬 환경에서 `STOCK_FEED_PROVIDER=KIS_REALTIME`으로 실행해 현재 시장의 실제 체결가로 화면과 모의 주문을 확인한다. MVP에는 이 설정값도, 구현체도 없다.
-- **(MVP 범위 아님 — 이슈 #82)** 운영자는 서면 허가 없이 공개 실시간 표출로 전환하려 하면 애플리케이션이 아예 기동하지 않는 것을 확인한다. MVP에는 전환 설정이 없어 이 시나리오가 성립하지 않는다.
+- **(MVP 범위 아님 — KIS 실시간 후속)** 개발자는 본인만 접근하는 로컬 환경에서 `STOCK_FEED_PROVIDER=KIS_REALTIME`으로 실행해 현재 시장의 실제 체결가로 화면과 모의 주문을 확인한다. MVP에는 이 설정값도, 구현체도 없다.
+- **(MVP 범위 아님 — KIS 실시간 후속)** 운영자는 서면 허가 없이 공개 실시간 표출로 전환하려 하면 애플리케이션이 아예 기동하지 않는 것을 확인한다. MVP에는 전환 설정이 없어 이 시나리오가 성립하지 않는다.
 
 ## 요구사항
 
@@ -84,18 +84,18 @@ REST를 쓰는 이유는 오직 하나다 — **WebSocket은 "지금 가격"만 
 
 ### MKT-007 주식 시세 공급자 전환 구조
 
-> **MVP 범위 한정**: 이번 MVP가 만드는 것은 **공통 계약 `StockPriceProvider`와 그 유일한 구현체 `KisHistoricalReplayPriceProvider`**까지다. 실시간 구현체(`KisRealtimePriceProvider`·`KisTickAggregator`·`FakeKisRealtimePriceProvider`)뿐 아니라 **설정 기반 전환 구조(`StockFeedConfig`·`StockFeedProvider`·`ServiceExposure`·`stock-feed.*` 프로퍼티)와 fail-fast 방어도 MVP에서는 두지 않는다** — 이 설정 3종은 실시간 경로를 방어하는 것 외에 다른 참조가 없어(실측: `StockFeedConfig`와 그 전용 테스트 2개 밖에서 참조 없음), 실시간 구현체가 사라지면 좀비 코드가 된다. 전환 구조와 fail-fast는 실시간 구현체가 돌아오는 이슈 #82에서 **반드시 함께** 되살린다.
+> **MVP 범위 한정**: 이번 MVP가 만드는 것은 **공통 계약 `StockPriceProvider`와 그 유일한 구현체 `KisHistoricalReplayPriceProvider`**까지다. 실시간 구현체(`KisRealtimePriceProvider`·`KisTickAggregator`·`FakeKisRealtimePriceProvider`)뿐 아니라 **설정 기반 전환 구조(`StockFeedConfig`·`StockFeedProvider`·`ServiceExposure`·`stock-feed.*` 프로퍼티)와 fail-fast 방어도 MVP에서는 두지 않는다** — 이 설정 3종은 실시간 경로를 방어하는 것 외에 다른 참조가 없어(실측: `StockFeedConfig`와 그 전용 테스트 2개 밖에서 참조 없음), 실시간 구현체가 사라지면 좀비 코드가 된다. 전환 구조와 fail-fast는 실시간 구현체가 돌아오는 KIS 실시간 후속에서 **반드시 함께** 되살린다.
 
 - [ ] 주식 시세 공급자를 공통 계약 `StockPriceProvider`로 분리하고, `KisHistoricalReplayPriceProvider`를 유일한 구현으로 둔다. 고를 대상이 하나이므로 설정으로 빈을 선택하지 않고 `@Service`로 직접 등록한다.
 - [ ] Provider는 내부 가격 모델만 반환하며, `PriceQueryService`·가격·캔들 API·SSE·모의 주문 체결·평가손익은 어느 Provider가 동작 중인지 몰라야 한다. 이 이음매는 구현체가 하나뿐인 MVP에서도 유지한다 — 소비 계층이 실제로 이 계약에 의존하므로 빈 껍데기가 아니며, 두 번째 구현체가 들어올 때 소비 계층을 고치지 않기 위한 것이다.
 - [ ] 화면에 표시되는 가격과 모의 주문 체결가격은 항상 같은 Provider에서 나온다.
-- [ ] **(MVP 범위 아님 — 이슈 #82)** `KisRealtimePriceProvider`는 KIS WebSocket 체결 틱을 수신하고, 차트용 1분 OHLCV로 **서버에서 집계**해 `KisHistoricalReplayPriceProvider`와 같은 분봉 모델로 제공한다.
-- [ ] **(MVP 범위 아님 — 이슈 #82)** KIS WebSocket 연결이 끊기면 해당 종목의 가격이 유효하지 않은 상태가 되고, 재연결 후 새 체결을 받으면 복귀한다 (MKT-004의 코인 규칙과 같은 원칙 — 마지막 가격으로 몰래 체결하지 않는다).
-- [ ] **(MVP 범위 아님 — 이슈 #82)** `STOCK_FEED_PROVIDER`(`KIS_REALTIME`·`KIS_HISTORICAL`), `SERVICE_EXPOSURE`(`PRIVATE`·`PUBLIC`), `KIS_PUBLIC_DISPLAY_APPROVED`(기본 `false`) 설정으로 실행 환경을 결정한다.
-- [ ] **(MVP 범위 아님 — 이슈 #82)** 허용 조합은 넷뿐이다 — PRIVATE+KIS_REALTIME(개발자 본인만 접근), PRIVATE+KIS_HISTORICAL, PUBLIC+KIS_HISTORICAL(공개 기본값 · 팀원·튜터·심사위원 시연 포함), 그리고 `KIS_PUBLIC_DISPLAY_APPROVED=true`이며 한국투자 서면 허가·계약 근거가 있을 때만 허용되는 PUBLIC+KIS_REALTIME.
-- [ ] **(MVP 범위 아님 — 이슈 #82)** PUBLIC + KIS_REALTIME + `KIS_PUBLIC_DISPLAY_APPROVED=false` 조합은 **애플리케이션 시작 단계에서 실패**한다 (fail-fast — 경고 로그만 남기고 기동하지 않는다). 이 방어는 실시간 구현체와 한 몸이므로 구현체보다 먼저 사라지거나 늦게 돌아와서는 안 된다.
+- [ ] **(MVP 범위 아님 — KIS 실시간 후속)** `KisRealtimePriceProvider`는 KIS WebSocket 체결 틱을 수신하고, 차트용 1분 OHLCV로 **서버에서 집계**해 `KisHistoricalReplayPriceProvider`와 같은 분봉 모델로 제공한다.
+- [ ] **(MVP 범위 아님 — KIS 실시간 후속)** KIS WebSocket 연결이 끊기면 해당 종목의 가격이 유효하지 않은 상태가 되고, 재연결 후 새 체결을 받으면 복귀한다 (MKT-004의 코인 규칙과 같은 원칙 — 마지막 가격으로 몰래 체결하지 않는다).
+- [ ] **(MVP 범위 아님 — KIS 실시간 후속)** `STOCK_FEED_PROVIDER`(`KIS_REALTIME`·`KIS_HISTORICAL`), `SERVICE_EXPOSURE`(`PRIVATE`·`PUBLIC`), `KIS_PUBLIC_DISPLAY_APPROVED`(기본 `false`) 설정으로 실행 환경을 결정한다.
+- [ ] **(MVP 범위 아님 — KIS 실시간 후속)** 허용 조합은 넷뿐이다 — PRIVATE+KIS_REALTIME(개발자 본인만 접근), PRIVATE+KIS_HISTORICAL, PUBLIC+KIS_HISTORICAL(공개 기본값 · 팀원·튜터·심사위원 시연 포함), 그리고 `KIS_PUBLIC_DISPLAY_APPROVED=true`이며 한국투자 서면 허가·계약 근거가 있을 때만 허용되는 PUBLIC+KIS_REALTIME.
+- [ ] **(MVP 범위 아님 — KIS 실시간 후속)** PUBLIC + KIS_REALTIME + `KIS_PUBLIC_DISPLAY_APPROVED=false` 조합은 **애플리케이션 시작 단계에서 실패**한다 (fail-fast — 경고 로그만 남기고 기동하지 않는다). 이 방어는 실시간 구현체와 한 몸이므로 구현체보다 먼저 사라지거나 늦게 돌아와서는 안 된다.
 - [ ] KIS 키(MVP에서는 과거 분봉 수집 배치가 쓰는 `KIS_APP_KEY`·`KIS_APP_SECRET`)가 없어도 애플리케이션 기동과 `./gradlew build`가 성공한다.
-- [ ] **(MVP 범위 아님 — 이슈 #82)** 실시간 Provider의 자동 테스트는 `FakeKisRealtimePriceProvider`를 사용하고, 실제 KIS WebSocket 연결은 외부 스모크로 구분해 보고한다. MVP에서는 이 Fake도 두지 않는다.
+- [ ] **(MVP 범위 아님 — KIS 실시간 후속)** 실시간 Provider의 자동 테스트는 `FakeKisRealtimePriceProvider`를 사용하고, 실제 KIS WebSocket 연결은 외부 스모크로 구분해 보고한다. MVP에서는 이 Fake도 두지 않는다.
 - [ ] MVP의 KIS 과거 분봉 수집 자동 테스트는 Fake KIS 응답 클라이언트를 쓰고, 실제 KIS Open API 호출은 외부 스모크로 구분해 보고한다.
 
 ### MKT-008 코인 차트(1분봉) 조회
@@ -108,7 +108,7 @@ REST를 쓰는 이유는 오직 하나다 — **WebSocket은 "지금 가격"만 
 - [ ] 한 요청의 최대 분봉 개수는 200개다(빗썸 API 상한). `from`·`to` 범위가 200분을 넘으면 `to` 기준 최신 200개만 반환한다.
 - [ ] `from`·`to`를 모두 생략하면 진행 중인 분봉을 포함해 최신부터 직전으로 200개를 반환한다 — 즉 "직전 약 3시간 20분의 실시간 차트".
 - [ ] 진행 중인 분봉은 다시 조회할 때마다 값이 갱신된다(고가·저가·종가·거래량이 자란다). 이는 정상이며 캐시하지 않는 이유 중 하나다.
-- [ ] 분(minute) 이하 해상도의 실시간 갱신은 프론트가 이미 구독하는 SSE 틱(MKT-003)으로 마지막 봉을 갱신해 얻는다 — 서버가 틱을 분봉으로 집계해 캔들 응답에 합성해 넣지 않는다. 서버는 진행 중 분봉 상태를 메모리에 들고 있지 않는다.
+- [ ] 분(minute) 이하 해상도의 실시간 갱신은 프론트가 이 캔들 API를 짧은 주기로 재조회해 얻는다(코인 전용 SSE 스트림은 없다) — 서버가 틱을 분봉으로 집계해 캔들 응답에 합성해 넣지 않는다. 서버는 진행 중 분봉 상태를 메모리에 들고 있지 않는다.
 - [ ] 빗썸 조회 실패(타임아웃·비정상 상태코드·파싱 불가)는 502 `MARKET_DATA_PROVIDER_ERROR`로 반환한다. 빈 배열(200)로 성공을 위장하거나 이전 값으로 대체하지 않는다.
 - [ ] 코인 1분봉을 MySQL·Redis에 저장하지 않는다 — 코인 캔들 테이블도, 캔들 캐시 키도 만들지 않는다.
 - [ ] 코인 캔들에는 `sourceTradingDate` 개념이 없다 — 과거 데이터 재생이 아니라 실제 현재 시각의 분봉이다.
@@ -149,19 +149,19 @@ REST를 쓰는 이유는 오직 하나다 — **WebSocket은 "지금 가격"만 
 - 주식 데이터 이용은 PRD C-006(비상업적 교육 목적 공개 서비스)을 따른다 — 과거 데이터는 공공데이터로 확인되어 제3자 표출 제약이 없다.
 - KIS 과거 1분봉은 실제로 거래된 데이터이지만 **과거 데이터**이고, KIS 실시간 시세는 **현재 시장의 실제 체결 데이터**다 — SSE 페이로드에서도 과거 데이터 재생 중에는 `sourceTradingDate`(과거 거래일)를 반드시 함께 전달해 둘을 혼동하지 않게 한다.
 - 현재 확인된 것은 **과거 데이터의 공공데이터 지위와 개발자 본인의 KIS Open API 사용 가능 여부**다. 실시간 시세의 제3자 표출 허용 여부는 확인된 바 없으며, 팀원·튜터·심사위원도 제3자다. 따라서 **MVP는 과거 분봉 재생 하나로 간다** — 시연도, 공개 배포도 이 경로다. 실시간은 구현체도 전환 설정도 두지 않으므로 잘못 켜질 여지가 없다.
-- **(MVP 범위 아님 — 이슈 #82)** `SERVICE_EXPOSURE=PRIVATE`는 로그인 여부가 아니라 **접근 주체**로 판정한다 — KIS 개인 계정 소유자인 개발자 본인만 접근 가능한 로컬 또는 접근 통제 환경이어야 `PRIVATE`다. `PRIVATE`+`KIS_REALTIME` 환경을 공개 URL이나 여러 사용자가 접근하는 서버로 운영하지 않는다.
-- **(MVP 범위 아님 — 이슈 #82)** 공개 환경의 `KIS_REALTIME` 전환은 한국투자증권 **서면 허용 또는 계약 완료가 정본**이며, `KIS_PUBLIC_DISPLAY_APPROVED=true`로 바꾸는 것만으로 허가가 생기지 않는다 (C-007). MVP에는 전환 설정 자체가 없으므로 공개 배포는 과거 분봉 재생으로 고정이다.
+- **(MVP 범위 아님 — KIS 실시간 후속)** `SERVICE_EXPOSURE=PRIVATE`는 로그인 여부가 아니라 **접근 주체**로 판정한다 — KIS 개인 계정 소유자인 개발자 본인만 접근 가능한 로컬 또는 접근 통제 환경이어야 `PRIVATE`다. `PRIVATE`+`KIS_REALTIME` 환경을 공개 URL이나 여러 사용자가 접근하는 서버로 운영하지 않는다.
+- **(MVP 범위 아님 — KIS 실시간 후속)** 공개 환경의 `KIS_REALTIME` 전환은 한국투자증권 **서면 허용 또는 계약 완료가 정본**이며, `KIS_PUBLIC_DISPLAY_APPROVED=true`로 바꾸는 것만으로 허가가 생기지 않는다 (C-007). MVP에는 전환 설정 자체가 없으므로 공개 배포는 과거 분봉 재생으로 고정이다.
 - KIS 과거 데이터 수집·재생 구현은 실시간 도입 여부와 무관하게 삭제하지 않는다 — MVP의 유일한 주식 시세 경로이자, 실시간 표출이 허용되지 않을 때의 대체 수단이다.
-- **(MVP 범위 아님 — 이슈 #82)** KIS 실시간 체결 틱을 차트에 쓰려면 1분 OHLCV 집계가 필요하며, 이 책임은 서버(`KisRealtimePriceProvider` 계층)에 있다. 클라이언트가 틱을 모아 봉을 만들지 않는다.
+- **(MVP 범위 아님 — KIS 실시간 후속)** KIS 실시간 체결 틱을 차트에 쓰려면 1분 OHLCV 집계가 필요하며, 이 책임은 서버(`KisRealtimePriceProvider` 계층)에 있다. 클라이언트가 틱을 모아 봉을 만들지 않는다.
 
 ## 범위 제외
 
 - 주문 검증·체결 로직 (004·005 — 여기서는 "유효한 최신 가격" 조회 계약까지만).
 - 실제 빗썸 연결 검증(WebSocket 틱·캔들 REST 모두), 실제 KIS Open API 과거 데이터 수집 검증 (모두 별도 외부 스모크 — 자동 테스트는 Fake Feed·샘플 KIS 응답 데이터·`FakeCryptoCandleProvider`).
-- **KIS 실시간 WebSocket 체결 수신·틱 집계 전부 (`KisRealtimePriceProvider`·`KisTickAggregator`·`FakeKisRealtimePriceProvider`) — MVP에서 쓰지 않는다.** PR #94에 선반영된 이 코드 3종과 그 테스트는 이슈 #19에서 **삭제**하고, 이슈 #82로 미룬다.
-- **설정 기반 공급자 전환 구조 전부 (`StockFeedConfig`·`StockFeedProvider`·`ServiceExposure`·`application.yml`의 `stock-feed:` 블록·`.env.example`의 `STOCK_FEED_PROVIDER`·`SERVICE_EXPOSURE`·`KIS_PUBLIC_DISPLAY_APPROVED`)도 이슈 #19에서 삭제한다.** 이 설정 3종은 실시간 경로 방어 외에 참조가 없어(실측: `StockFeedConfig`와 전용 테스트 2개뿐), 실시간 구현체가 빠지면 좀비 코드가 된다. 이슈 #82에서 실시간 구현체와 **함께** 되살린다 — 구현체만 먼저 돌아오고 fail-fast가 빠지면 C-007 위반이다. 다만 **`StockPriceProvider` 인터페이스는 남긴다** — 소비 계층이 실제로 의존하는 이음매다.
+- **KIS 실시간 WebSocket 체결 수신·틱 집계 전부 (`KisRealtimePriceProvider`·`KisTickAggregator`·`FakeKisRealtimePriceProvider`) — MVP에서 쓰지 않는다.** PR #94에 선반영된 이 코드 3종과 그 테스트는 이슈 #19에서 **삭제**하고, KIS 실시간 후속으로 미룬다.
+- **설정 기반 공급자 전환 구조 전부 (`StockFeedConfig`·`StockFeedProvider`·`ServiceExposure`·`application.yml`의 `stock-feed:` 블록·`.env.example`의 `STOCK_FEED_PROVIDER`·`SERVICE_EXPOSURE`·`KIS_PUBLIC_DISPLAY_APPROVED`)도 이슈 #19에서 삭제한다.** 이 설정 3종은 실시간 경로 방어 외에 참조가 없어(실측: `StockFeedConfig`와 전용 테스트 2개뿐), 실시간 구현체가 빠지면 좀비 코드가 된다. KIS 실시간 후속에서 실시간 구현체와 **함께** 되살린다 — 구현체만 먼저 돌아오고 fail-fast가 빠지면 C-007 위반이다. 다만 **`StockPriceProvider` 인터페이스는 남긴다** — 소비 계층이 실제로 의존하는 이음매다.
 - 수집 파이프라인 장기운영 방어 로직(동일 거래일 재수집 정책·`StockCandleCleanupJob`) — 별도 진행. `UNIQUE(instrument_id, trading_date, candle_time)` 제약의 기본 멱등성만 이번 범위다.
-- 공개 환경의 KIS 실시간 전환 실행 (한국투자 서면 답변 대기 — Decision Gate). 이번 범위는 전환 구조 자체를 만들지 않으므로 전환할 수단이 아예 없다 — 구조와 fail-fast 방어는 이슈 #82에서 실시간 구현체와 함께 도입한다.
+- 공개 환경의 KIS 실시간 전환 실행 (한국투자 서면 답변 대기 — Decision Gate). 이번 범위는 전환 구조 자체를 만들지 않으므로 전환할 수단이 아예 없다 — 구조와 fail-fast 방어는 KIS 실시간 후속에서 실시간 구현체와 함께 도입한다.
 - KIS 실시간 시세의 과거 분봉 영구 보관 (집계 결과의 보관 기간·정본화 여부는 공개 전환이 결정된 뒤 판단).
 - KIS 주문 API 연동 (모의투자든 실거래든 — 주문은 전부 내부 가상 체결이다, C-006).
 - 지정가·호가창·체결강도 등 시세 고도화 (2차 이후).
@@ -193,11 +193,11 @@ REST를 쓰는 이유는 오직 하나다 — **WebSocket은 "지금 가격"만 
 - [ ] 주식 캔들 회귀 테스트 통과: `volume`을 `BigDecimal`로 넓힌 뒤에도 기존 주식 캔들 응답의 값·정렬·공개 컷오프·200 빈 배열 계약이 그대로 유지됨.
 - [ ] 코인 캔들 REST 장애와 코인 WebSocket 장애가 서로 독립임을 확인하는 테스트 통과: 캔들 조회 실패 시에도 현재가 API·주문이 정상, WebSocket 끊김(가격 `UNAVAILABLE`) 상태에서도 캔들 조회는 성공.
 - [ ] `KisHistoricalReplayPriceProvider`가 `@Service`로 등록되어 `StockPriceProvider` 주입 지점(`PriceQueryService`·`CandleQueryService`·`StockPriceStreamService`)이 정상 동작하는 것을 확인 (설정 조합 테스트 없음 — 선택 설정 자체가 없다).
-- [ ] **(MVP 범위 아님 — 이슈 #82)** 설정 조합별 Provider 선택 테스트와 `PUBLIC`+`KIS_REALTIME`+`KIS_PUBLIC_DISPLAY_APPROVED=false` 기동 실패 테스트 — 전환 구조를 되살릴 때 함께 복원한다.
+- [ ] **(MVP 범위 아님 — KIS 실시간 후속)** 설정 조합별 Provider 선택 테스트와 `PUBLIC`+`KIS_REALTIME`+`KIS_PUBLIC_DISPLAY_APPROVED=false` 기동 실패 테스트 — 전환 구조를 되살릴 때 함께 복원한다.
 - [ ] KIS 키 환경변수 없이 빌드·테스트·기동이 성공하는 것을 확인.
-- [ ] **(MVP 범위 아님 — 이슈 #82)** 두 Provider가 `PriceQueryService`의 동일 계약을 만족하는 테스트 통과 (같은 시나리오를 Provider만 바꿔 실행). MVP에는 Provider가 하나뿐이라 비교 대상이 없다.
-- [ ] **(MVP 범위 아님 — 이슈 #82)** `FakeKisRealtimePriceProvider`로 연결 끊김→가격 무효, 재연결→새 체결 후 복귀 테스트 통과.
-- [ ] **(MVP 범위 아님 — 이슈 #82)** 실시간 체결 틱이 1분 OHLCV로 집계되고 그 결과가 캔들 API 모델과 일치하는 테스트 통과.
+- [ ] **(MVP 범위 아님 — KIS 실시간 후속)** 두 Provider가 `PriceQueryService`의 동일 계약을 만족하는 테스트 통과 (같은 시나리오를 Provider만 바꿔 실행). MVP에는 Provider가 하나뿐이라 비교 대상이 없다.
+- [ ] **(MVP 범위 아님 — KIS 실시간 후속)** `FakeKisRealtimePriceProvider`로 연결 끊김→가격 무효, 재연결→새 체결 후 복귀 테스트 통과.
+- [ ] **(MVP 범위 아님 — KIS 실시간 후속)** 실시간 체결 틱이 1분 OHLCV로 집계되고 그 결과가 캔들 API 모델과 일치하는 테스트 통과.
 - [ ] 화면(SSE·가격 API)에 노출된 가격과 모의 주문 체결가격이 같은 Provider에서 나오는지 확인하는 테스트 통과.
 - [ ] 수집 배치가 평일 08:10, 재생세션 확정이 평일 08:40에 동작하도록 스케줄이 걸려 있고, 고정 Clock으로 두 시각의 동작을 재현하는 테스트 통과.
 - [ ] `KrxReplayPriceProvider`→`KisHistoricalReplayPriceProvider` 클래스 리네이밍이 코드·테스트에 일관되게 반영되고 기존 테스트가 회귀 없이 통과 (`STOCK_FEED_PROVIDER` 설정값 리네이밍은 enum·프로퍼티가 삭제되므로 불필요해졌다).

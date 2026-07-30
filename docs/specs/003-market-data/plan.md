@@ -217,10 +217,10 @@ data:
 | `CandleQueryService` | 캔들 조회의 시장 분기점. `Instrument.market`이 `STOCK`이면 `StockPriceProvider`, `CRYPTO`면 `CryptoCandleProvider`에 위임하고 같은 `CandleResponse[]` 계약으로 반환한다. **기존의 "코인이면 400 `VALIDATION_ERROR`" 거부를 제거한다** (이슈 #17에서 추가 → 이슈 #20에서 제거) |
 | `StockPriceProvider` (인터페이스) | 주식 시세 공급자 공통 계약. 현재가(가격·`sourceTime`·유효성)와 1분봉 조회, 시장 상태를 반환한다. 구현체가 무엇인지는 아래 소비 계층에 노출하지 않는다 |
 | `KisHistoricalReplayPriceProvider` | `StockPriceProvider` 구현 — 내부적으로 `StockReplayService`를 사용한다. **MVP의 유일한 주식 Provider.** 고를 대상이 하나이므로 설정으로 선택하지 않고 `@Service`로 직접 등록한다. 이슈 #16에 `KrxReplayPriceProvider`라는 이름으로 병합됐고, 이슈 #19에서 이 이름으로 리네이밍한다 (아래 "리네이밍" 참조) |
-| ~~`KisRealtimePriceProvider`~~ | KIS WebSocket 체결 틱 Provider. **MVP에서 쓰지 않는다** — PR #94에 선반영된 구현·테스트는 이슈 #19에서 삭제하고 이슈 #82로 미룬다 (**MVP 범위 아님**) |
-| ~~`KisTickAggregator`~~ | 체결 틱 → 1분 OHLCV 서버 집계. **MVP에서 쓰지 않는다** — 위와 같이 이슈 #19에서 삭제, 이슈 #82로 이월 (**MVP 범위 아님**) |
-| ~~`FakeKisRealtimePriceProvider`~~ | 실시간 Provider의 테스트용 Fake. 대상 구현체가 사라지므로 함께 삭제한다 (**MVP 범위 아님 — 이슈 #82**) |
-| ~~`StockFeedConfig`~~ · ~~`StockFeedProvider`~~ · ~~`ServiceExposure`~~ | 설정 기반 공급자 전환과 fail-fast 방어. **MVP에서 통째로 삭제한다** (이슈 #19). 이 3종은 `StockFeedConfig`와 전용 테스트 2개 밖에서 참조되지 않아(실측), 실시간 구현체가 빠지면 뒤에 아무것도 연결되지 않은 채 자기 값 하나를 거부하기만 하는 좀비 코드가 된다. `application.yml`의 `stock-feed:` 블록·`.env.example`의 설정 3종도 함께 제거. **이슈 #82에서 실시간 구현체와 함께 되살린다** — 아래 "실행 환경 조합" 참조 (**MVP 범위 아님**) |
+| ~~`KisRealtimePriceProvider`~~ | KIS WebSocket 체결 틱 Provider. **MVP에서 쓰지 않는다** — PR #94에 선반영된 구현·테스트는 이슈 #19에서 삭제하고 KIS 실시간 후속으로 미룬다 (**MVP 범위 아님**) |
+| ~~`KisTickAggregator`~~ | 체결 틱 → 1분 OHLCV 서버 집계. **MVP에서 쓰지 않는다** — 위와 같이 이슈 #19에서 삭제, KIS 실시간 후속으로 이월 (**MVP 범위 아님**) |
+| ~~`FakeKisRealtimePriceProvider`~~ | 실시간 Provider의 테스트용 Fake. 대상 구현체가 사라지므로 함께 삭제한다 (**MVP 범위 아님 — KIS 실시간 후속**) |
+| ~~`StockFeedConfig`~~ · ~~`StockFeedProvider`~~ · ~~`ServiceExposure`~~ | 설정 기반 공급자 전환과 fail-fast 방어. **MVP에서 통째로 삭제한다** (이슈 #19). 이 3종은 `StockFeedConfig`와 전용 테스트 2개 밖에서 참조되지 않아(실측), 실시간 구현체가 빠지면 뒤에 아무것도 연결되지 않은 채 자기 값 하나를 거부하기만 하는 좀비 코드가 된다. `application.yml`의 `stock-feed:` 블록·`.env.example`의 설정 3종도 함께 제거. **KIS 실시간 후속에서 실시간 구현체와 함께 되살린다** — 아래 "실행 환경 조합" 참조 (**MVP 범위 아님**) |
 | `PriceQueryService` | 주문 도메인과 SSE가 공통으로 소비하는 "유효한 최신 가격" 계약 — 주식은 주입된 `StockPriceProvider`가 제공하는 현재가, 코인은 stale 검사(10초) 통과한 Redis 가격. **두 조회 경로를 제공한다**: 기존 `getPrice`(Long·Instrument)는 유효하지 않으면 `BusinessException(PRICE_UNAVAILABLE)`을 던져 가격 API의 409 계약을 유지하고(이슈 #16 확정, 동작 변경 없음), 새 `getPriceQuote`류 경로는 예외를 던지지 않고 `PriceQuoteDto`의 `status`를 `AVAILABLE`·`UNAVAILABLE`로 채워 반환한다 — SSE(#19·#20)의 snapshot·price 판정처럼 "가격이 없는 상태 자체를 정상 응답으로 표현해야 하는" 소비자를 위한 경로다. `getPrice`는 이 조회 경로를 감싸 `UNAVAILABLE`일 때만 예외로 변환하는 방식으로 구현해 두 경로가 판정 로직을 중복하지 않는다. **어느 주식 Provider가 동작 중인지 알지 못한다** (이슈 #18: 예외를 던지지 않는 조회 경로 추가) |
 | `SseEmitterRegistry` | `STOCK`·`CRYPTO` market별 `SseEmitter` 집합을 관리하는 공통 컴포넌트(코인은 실제로 쓰이지 않지만 market 매개변수를 일반화해 두 시장을 함께 지원할 수 있게 만들어진 기존 구현이다). `register(market)` 호출 시 `SseEmitter`를 생성해 집합에 추가하고 그 자리에서 `retry: 3000`을 1회 전송한다. `onCompletion`·`onTimeout`·`onError` 콜백에서 해당 emitter를 집합에서 제거한다. `@Scheduled`(`@EnableScheduling` 필요)로 20초마다 등록된 모든 emitter에 heartbeat 주석(`:heartbeat\n\n`)을 전송한다. snapshot·price·status 이벤트의 payload 구성이나 실제 전송 트리거는 담당하지 않는다 — 그건 `StockPriceSseController`(#19)의 책임이다 (이슈 #18) |
 | SSE 이벤트 DTO (`snapshot`/`price`/`status`) | 3종 이벤트의 직렬화 모델. `sourceTime`(원본 데이터의 실제 시각)·`emittedAt`(서버가 지금 전송한 벽시계 시각)·`sourceTradingDate`(주식에만 포함, 코인 이벤트는 필드 자체를 생략)를 구분해서 담는다. 필드 상세는 아래 "SSE 계약"의 JSON 예시를 따른다 (이슈 #18 — DTO·직렬화만, 실제 컨트롤러 배선은 #19·#20) |
@@ -237,13 +237,13 @@ data:
 09:00~ StockReplayService → StockReplaySession + Clock 조회 → 현재가격·OPEN/CLOSED 계산
    → KisHistoricalReplayPriceProvider
 
-[KIS_REALTIME 경로 — MVP 범위 아님, 이슈 #82. 구현체를 두지 않는다]
+[KIS_REALTIME 경로 — MVP 범위 아님, KIS 실시간 후속. 구현체를 두지 않는다]
 (KIS WebSocket 체결 틱 → KisRealtimePriceProvider → KisTickAggregator) — 미구현
 
 [공통 — 아래 계층은 Provider 종류를 모른다]
 KisHistoricalReplayPriceProvider를 @Service로 직접 등록 → StockPriceProvider
    → PriceQueryService → 가격·캔들 API · SSE · 모의 주문 체결 · 보유자산 평가손익
-   (구현체가 하나뿐이라 선택 설정 없음 — 이슈 #82에서 두 번째 구현체가 들어올 때 StockFeedConfig 부활)
+   (구현체가 하나뿐이라 선택 설정 없음 — KIS 실시간 후속에서 두 번째 구현체가 들어올 때 StockFeedConfig 부활)
 
 [코인 — 두 경로가 서로 독립이다. 코인은 전용 SSE 엔드포인트가 없다]
 빗썸 WebSocket 틱 → BithumbFeedClient → PriceStore(Redis) → PriceQueryService
@@ -306,14 +306,14 @@ KisHistoricalReplayPriceProvider를 @Service로 직접 등록 → StockPriceProv
 |---|---|---|
 | `KrxReplayPriceProvider` | `KisHistoricalReplayPriceProvider` | `src/main/.../market/service/`, 참조 테스트 |
 
-- **설정값 `KRX_REPLAY`→`KIS_HISTORICAL` 리네이밍은 불필요해졌다** — `StockFeedProvider` enum과 `stock-feed.*` 프로퍼티 자체가 삭제되므로 (아래 "실행 환경 조합" 참조), 남는 리네이밍은 클래스명 하나뿐이다. 이슈 #82에서 전환 구조를 되살릴 때 처음부터 `KIS_HISTORICAL`이라는 이름으로 만든다.
+- **설정값 `KRX_REPLAY`→`KIS_HISTORICAL` 리네이밍은 불필요해졌다** — `StockFeedProvider` enum과 `stock-feed.*` 프로퍼티 자체가 삭제되므로 (아래 "실행 환경 조합" 참조), 남는 리네이밍은 클래스명 하나뿐이다. KIS 실시간 후속에서 전환 구조를 되살릴 때 처음부터 `KIS_HISTORICAL`이라는 이름으로 만든다.
 - DB 스키마·API 응답 계약에는 이 이름이 노출되지 않으므로 마이그레이션·`docs/api-contracts.md` 변경은 없다.
 
-### 실행 환경 조합 (PRD MKT-007·C-007) — **MVP 범위 아님, 이슈 #82로 이월**
+### 실행 환경 조합 (PRD MKT-007·C-007) — **MVP 범위 아님, KIS 실시간 후속으로 이월**
 
 > **이 절 전체가 1차 MVP 구현 대상이 아니다.** 아래 설정 3종·허용 조합·fail-fast는 **실시간 Provider가 도입될 때의 계약**이며, 이슈 #19에서 관련 코드(`StockFeedConfig`·`StockFeedProvider`·`ServiceExposure`·`application.yml`의 `stock-feed:` 블록·`.env.example` 항목 3종)를 **삭제한다**. 이유: 실측 결과 이 설정들은 `StockFeedConfig`와 그 전용 테스트 2개 밖에서 전혀 참조되지 않아, 실시간 구현체가 빠지면 "스위치는 있는데 뒤에 아무것도 연결돼 있지 않고 자기 값 하나를 거부하기만 하는" 좀비 코드가 된다.
 >
-> **이슈 #82 복원 조건 (중요)**: 실시간 구현체를 되살릴 때 **이 절의 전환 구조와 fail-fast 방어를 반드시 함께** 되살린다. 구현체만 먼저 들어오고 방어가 빠지면 공개 환경에서 무허가 실시간 표출이 가능해진다 (C-007 위반). 아래 표는 그때 복원할 계약의 정본이므로 지우지 않고 남겨둔다.
+> **KIS 실시간 후속 복원 조건 (중요)**: 실시간 구현체를 되살릴 때 **이 절의 전환 구조와 fail-fast 방어를 반드시 함께** 되살린다. 구현체만 먼저 들어오고 방어가 빠지면 공개 환경에서 무허가 실시간 표출이 가능해진다 (C-007 위반). 아래 표는 그때 복원할 계약의 정본이므로 지우지 않고 남겨둔다.
 
 | 설정 | 값 | 기본값 |
 |---|---|---|
@@ -329,7 +329,7 @@ KisHistoricalReplayPriceProvider를 @Service로 직접 등록 → StockPriceProv
 | PUBLIC | KIS_REALTIME + `KIS_PUBLIC_DISPLAY_APPROVED=true` | 허용 — 단 한국투자 서면 허가·계약 근거가 실재할 때만 |
 | PUBLIC | KIS_REALTIME + `KIS_PUBLIC_DISPLAY_APPROVED=false` | **기동 실패 (fail-fast)** |
 
-- **1차 MVP에는 위 설정이 존재하지 않는다.** 주식 시세 경로는 과거 분봉 재생 하나로 고정이며, 전환할 대상도 잘못 고를 값도 없다. 위 표는 이슈 #82 복원 시점의 계약이다.
+- **1차 MVP에는 위 설정이 존재하지 않는다.** 주식 시세 경로는 과거 분봉 재생 하나로 고정이며, 전환할 대상도 잘못 고를 값도 없다. 위 표는 KIS 실시간 후속 복원 시점의 계약이다.
 - `PRIVATE`는 로그인 여부가 아니라 **접근 주체**로 판정한다 — KIS 개인 계정 소유자인 개발자 본인만 접근 가능한 로컬 또는 접근 통제 환경이어야 한다. 이 환경을 공개 URL이나 다중 사용자 서버로 운영하지 않는다. 팀원·튜터·심사위원이 접근하는 순간 그 환경은 `PUBLIC`이며, 실시간 표출 서면 답변 전까지 `KIS_HISTORICAL`을 써야 한다.
 - fail-fast는 요청 처리 시점이 아니라 **애플리케이션 시작 시점**에 판정한다. 경고 로그만 남기고 뜨는 동작은 금지한다 — 잘못된 조합으로 공개 서비스가 떠 있는 시간을 0으로 만들기 위함이다.
 - `KIS_PUBLIC_DISPLAY_APPROVED`는 **서면 허가·계약 확인 결과를 시스템에 반영하는 수단일 뿐이다.** 이 값을 `true`로 바꾸는 것 자체가 허가를 만들지 않는다. 정본은 한국투자증권의 서면 답변이며, 아직 받은 적이 없다 (Decision Gate — PRD §10, 실시간에 한정. 과거 데이터는 공공데이터로 이미 확인됨).
@@ -406,11 +406,11 @@ KisHistoricalReplayPriceProvider를 @Service로 직접 등록 → StockPriceProv
   - **(이슈 #83)** `StockCandleCleanupJob` (20영업일 경계·재생 중 거래일 보존)
   - `PriceStore` 과거 틱 무시, `PriceQueryService` 유효성 판정 (stale 10초·끊김·장외)
   - `KisHistoricalReplayPriceProvider`가 `@Service`로 등록되어 `StockPriceProvider` 주입 지점(`PriceQueryService`·`CandleQueryService`·`StockPriceStreamService`)이 정상 동작 — 설정 조합 테스트는 두지 않는다(선택 설정 자체가 없음)
-  - **(이슈 #82)** `StockFeedConfig` Provider 선택·fail-fast 테스트 (`PUBLIC`+`KIS_REALTIME`+미승인 컨텍스트 기동 실패 포함) — 전환 구조를 되살릴 때 함께 복원
+  - **(KIS 실시간 후속)** `StockFeedConfig` Provider 선택·fail-fast 테스트 (`PUBLIC`+`KIS_REALTIME`+미승인 컨텍스트 기동 실패 포함) — 전환 구조를 되살릴 때 함께 복원
   - KIS 키 환경변수가 전혀 없는 상태에서 기동·빌드 성공
-  - **(이슈 #82)** `StockPriceProvider` 계약 동등성: 같은 시나리오를 두 구현으로 각각 실행해 `PriceQueryService` 응답 계약이 동일함을 검증 — MVP에는 구현체가 하나뿐이라 이 테스트를 두지 않는다
-  - **(이슈 #82)** `FakeKisRealtimePriceProvider` 연결 끊김→가격 무효, 재연결→새 체결 수신 후 복귀
-  - **(이슈 #82)** `KisTickAggregator` 1분 OHLCV 집계 — 같은 분의 첫 체결이 open, 최고가 high, 최저가 low, 마지막 체결이 close, 수량 합이 volume. 분 경계에서 새 봉으로 넘어감. 결과 모델이 캔들 API 응답 모델과 동일
+  - **(KIS 실시간 후속)** `StockPriceProvider` 계약 동등성: 같은 시나리오를 두 구현으로 각각 실행해 `PriceQueryService` 응답 계약이 동일함을 검증 — MVP에는 구현체가 하나뿐이라 이 테스트를 두지 않는다
+  - **(KIS 실시간 후속)** `FakeKisRealtimePriceProvider` 연결 끊김→가격 무효, 재연결→새 체결 수신 후 복귀
+  - **(KIS 실시간 후속)** `KisTickAggregator` 1분 OHLCV 집계 — 같은 분의 첫 체결이 open, 최고가 high, 최저가 low, 마지막 체결이 close, 수량 합이 volume. 분 경계에서 새 봉으로 넘어감. 결과 모델이 캔들 API 응답 모델과 동일
   - 화면 가격과 체결가격의 공급자 일치: SSE·가격 API가 반환한 값과 모의 주문 체결가가 같은 `StockPriceProvider` 인스턴스에서 나온다
   - **(이슈 #18)** `SseEmitterRegistry`: `register(market)` 호출 시 해당 market의 emitter 집합에 추가되고 `retry: 3000`이 전송됨, `onCompletion`·`onTimeout`·`onError` 콜백 발생 시 집합에서 제거됨, `STOCK`·`CRYPTO` 집합이 서로 섞이지 않음. SSE 이벤트 DTO 3종 직렬화: `sourceTime`·`emittedAt`·`sourceTradingDate` 필드가 의도한 대로 구분되어 나오는지(코인은 `sourceTradingDate` 생략), snapshot의 `prices` 배열·price/status 이벤트의 단일 종목 필드 구조. `PriceQueryService`의 새 예외 없는 조회 경로: 가격 있음→AVAILABLE 반환, 가격 없음→예외 없이 UNAVAILABLE 반환, 기존 `getPrice`는 여전히 PRICE_UNAVAILABLE에서 예외를 던져 409 계약 유지(회귀 테스트)
   - **(이슈 #19·#20)** SSE 컨트롤러: 토큰 없음/잘못된 토큰 시 401, price 이벤트에만 id 존재(snapshot·status는 id 없음), snapshot에 주식 16종·코인 12종 전체 포함(가격 없는 종목도 포함), 가격 없는 종목은 price·sourceTime이 null이고 status는 UNAVAILABLE, 가격 변경 시 price 이벤트, 시장·연결상태 변경 시 status 이벤트, `sourceTime`과 `emittedAt` 구분, 주식은 `sourceTradingDate` 포함·코인은 미포함, 장 마감 후 marketStatus=CLOSED이면서 마지막 유효가격 유지(장 마감과 가격 없음 구분), 코인 stale 시 marketStatus는 OPEN 유지·종목 status만 UNAVAILABLE, 재접속 시 snapshot 재전송, 누락 이벤트 전체 재전송 안 함 (retry·heartbeat·emitter 정리 자체는 #18의 `SseEmitterRegistry` 단위 테스트로 이미 커버 — 컨트롤러 테스트에서 재검증하지 않는다)
@@ -421,7 +421,7 @@ KisHistoricalReplayPriceProvider를 @Service로 직접 등록 → StockPriceProv
 - 슬라이스: `@DataJpaTest` — 종목 시드·UNIQUE(symbol), `stock_candles`/`stock_replay_sessions` UNIQUE 제약, `market_data_imports` 저장·`source_trading_date` 조회(#19). `@WebMvcTest` — 목록·가격·캔들 계약, 404·400·409 매핑, SSE 컨트롤러 계약(#19·#20), 코인 캔들 계약(#20: 401, 코인 200, `interval` 오류 400, 빗썸 실패 502).
 - 통합 (Testcontainers MySQL+Redis, 이슈 #19): 샘플 KIS 응답 데이터 수집→`StockReplaySessionScheduler`가 세션 READY로 전환→재생→가격 조회(첫 분봉 시가, 이후 종가), 서버 재시작 시나리오에서 같은 원본 거래일 유지, DB에 OPEN·CLOSED가 저장되지 않음을 확인, Fake Feed 정상 수신→가격 조회, 끊김→PRICE_UNAVAILABLE, 재연결 새 틱→복귀 시나리오.
 - **(이슈 #83)** 통합: 동일 거래일에 상충하는 수집 결과 재수집을 거부해도 기존 READY 세션·StockCandle이 그대로인 시나리오.
-- 외부 스모크(자동 테스트와 구분 보고): 실제 빗썸 WebSocket 연결, **실제 빗썸 캔들 REST 조회(이슈 #20 — 12종 전체가 200 응답하는지, 필드명이 문서와 일치하는지)**, **실제 KIS Open API 과거 분봉 수집(`inquire-time-dailychartprice` 1회 호출로 `output2` 필드명·timestamp 기준 확인 포함)**. 실제 KIS WebSocket 연결 스모크는 이슈 #82로 이월한다. Fake 통과를 실제 연동 성공으로 보고하지 않는다 (PRD C-005).
+- 외부 스모크(자동 테스트와 구분 보고): 실제 빗썸 WebSocket 연결, **실제 빗썸 캔들 REST 조회(이슈 #20 — 12종 전체가 200 응답하는지, 필드명이 문서와 일치하는지)**, **실제 KIS Open API 과거 분봉 수집(`inquire-time-dailychartprice` 1회 호출로 `output2` 필드명·timestamp 기준 확인 포함)**. 실제 KIS WebSocket 연결 스모크는 KIS 실시간 후속으로 이월한다. Fake 통과를 실제 연동 성공으로 보고하지 않는다 (PRD C-005).
 
 ### 로컬 코인 실데이터 전환 (`crypto-real` 프로필, 이슈 #107)
 

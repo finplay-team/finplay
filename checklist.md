@@ -87,7 +87,7 @@
 ## 시세 소스 KRX → KIS 전환, 이슈 #17 범위 분리 (2026-07-28)
 - [x] PRD·spec 003/009/010 문서에서 KRX 관련 기술을 KIS Open API 기준으로 갱신 (`KIS_HISTORICAL`·`KisHistoricalReplayPriceProvider`·`KisHistoricalCandleCollector`)
 - [x] 이슈 #17 본문을 KIS Open API 기준으로 수정 (범위: 캔들 조회 API + 과거 데이터 수집 기본 동작만)
-- [x] 이슈 #82(KIS 실시간 틱 집계), #83(수집 파이프라인 장기운영 방어 로직) 신규 생성 — #17에서 분리
+- [x] 이슈 #83(수집 파이프라인 장기운영 방어 로직) 신규 생성 — #17에서 분리. **KIS 실시간 틱 집계는 이슈가 만들어진 적이 없다** — 이 줄이 적어 온 "이슈 #82"는 무관한 「[MVP][포트폴리오] 내 체결 내역 조회 API」이며, 실시간 항목은 `docs/specs/003-market-data/tasks.md`의 후속 항목으로만 남아 있다 (2026-07-31 이슈 #109에서 정정)
 - [x] 이미 병합된 이슈 #16 코드(`KrxReplayPriceProvider`·`KRX_REPLAY` enum)의 KIS 네이밍 리네이밍 여부 결정 및 실행 — 이슈 #19에서 완료(`KrxReplayPriceProvider`→`KisHistoricalReplayPriceProvider` 리네이밍, `KRX_REPLAY` enum은 `StockFeedProvider` 삭제로 리네이밍 자체가 불필요해짐)
 - [ ] 이슈 #17 실제 구현 (`/feature docs/specs/003-market-data`)
 
@@ -120,3 +120,13 @@
 - [x] `docs/api-routes.md`·`docs/api-contracts.md` 동시 갱신
 - [x] `./gradlew build` 통과
 - [x] 실측 검증 — 수집 성공률 30%(16종 중 1종) → 100%(5,630건), 소요 1분 20초
+
+## 코인 SSE 스테일 참조·이슈번호 오참조 정정 (2026-07-31, 이슈 #109)
+- [x] `docs/prd.md` MKT-008 — 분 이하 해상도 실시간 갱신을 "SSE 틱" → "캔들 API 짧은 주기 재조회"로 정정
+- [x] `docs/specs/003-market-data/spec.md` MKT-008 — 같은 문장 정정
+- [x] 존재하지 않는 "이슈 #82"(KIS 실시간 틱 집계) 참조 53곳을 서술("KIS 실시간 후속")로 교체 — prd.md 13·spec.md 20·plan.md 15·tasks.md 4·checklist.md 1
+- [x] `tasks.md` 후속 이슈 절 머리에 "대응 GitHub 이슈 없음" 주석 추가 — 다음 사람이 번호를 다시 지어내지 않도록
+- [x] GitHub 이슈 #98(코인 시세 SSE 스트림 API)을 `not planned`로 재분류 + 스코프 아웃 사유 코멘트
+- [x] 로컬 시드 엔드포인트 이름 확인 — 백엔드 문서는 이미 `POST /api/dev/stock-replay-imports`로 정확해 정정 대상이 없다. `stock-replay-seeds` 오기는 프론트 레포(`FinPlay`) `checklist.md` 몫
+- [x] 고친 문서의 참조 대상 실재 확인 — plan.md 절 제목 4종, 이슈 #19·#83, 엔드포인트 경로, `/api/cryptos/stream` 잔재 없음
+- [x] `./gradlew build` 미실행 — Java 코드 무변경. `docs/specs/010-deployment/spec.md:23` "문서만 바뀐 PR은 Gradle 단계를 건너뛴다" 방침
