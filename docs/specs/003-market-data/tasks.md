@@ -17,6 +17,7 @@
 - [x] 캔들 API 통합 테스트 (픽스처 분봉 + 고정 Clock으로 장중·마감 후 시나리오 검증) + docs/api-routes.md·docs/api-contracts.md 갱신 — 이슈 #17
 - [x] SSE 공통 골격 — `@EnableScheduling` + `spring.mvc.async.request-timeout` 설정, SSE 이벤트 DTO 3종(`snapshot`/`price`/`status`), `SseEmitterRegistry`(market별 emitter 관리·`retry: 3000`·20초 heartbeat·콜백 정리), `PriceQueryService`에 예외를 던지지 않는 조회 경로 추가 (+ 단위 테스트) — 이슈 #18
 - [x] `/api/stocks/stream` SSE (`StockPriceSseController`, fetch+Bearer 인증, `SseEmitterRegistry.register(STOCK)`, 구독 직후 주식 16종 전체 `snapshot` 1건 — 가격 없는 종목도 UNAVAILABLE로 포함, id는 `price` 이벤트에만, 매분 새로 공개된 가격 push, 장 마감 후 마지막 유효가격 유지, marketStatus와 종목별 status 분리) (+ @WebMvcTest) — 이슈 #19 **(PR #94에 구현 완료 — 방향 맞음, 유지)**
+- [x] 코인 1분봉 차트 연동 (MKT-008) — `CryptoCandleProvider` 인터페이스 + `BithumbRestCandleProvider`(빗썸 공개 캔들 REST `GET /v1/candles/minutes/1`, 심볼→`KRW-{symbol}` 변환, `from`·`to`→`to`+`count` 변환·최대 200개, 빗썸 내림차순→시각 오름차순 반전, **진행 중인 분봉 포함**(주식과 반대 — 코인은 실시간이라 가릴 대상이 없다. StockReplayService의 공개 컷오프 로직을 재사용하지 않는다), `trade_price`→`close`·`candle_acc_trade_volume`→`volume` 매핑, 연결·읽기 타임아웃 설정) + `FakeCryptoCandleProvider`(자동 테스트용) + `CandleQueryService` 시장 분기(CRYPTO는 CryptoCandleProvider 위임, 기존 "코인이면 400 VALIDATION_ERROR" 거부 제거) + `CandleResponse.volume`을 long→BigDecimal로 확대 + `ErrorCode.MARKET_DATA_PROVIDER_ERROR`(502) 추가. 저장·캐시 없음 — 마이그레이션·Redis 키 추가 금지 (+ 단위 테스트: 정렬 반전, 진행 중 분봉 포함(주식과 반대라는 것을 고정), 필드 매핑(거래대금과 수량 혼동 없음), 심볼 변환, from/to 조합별 count 산출·200 캡, 소수 volume 미절단, 타임아웃·비정상 상태코드·파싱 불가 시 502 발생(빈 배열 아님), Redis·MySQL 미기록, 주식 캔들 회귀(volume 확대 후 값·정렬·공개 컷오프·200 빈 배열 유지), 코인 캔들 경로와 현재가 경로의 독립성 / @WebMvcTest: 401, 코인 200, interval 오류 400, 빗썸 실패 502) + docs/api-routes.md·docs/api-contracts.md 같은 커밋 갱신 — 이슈 #20 (실제 빗썸 REST 조회는 외부 스모크로 구분 보고)
 
 ## 이슈 #19 — 남은 작업 (구현 순서)
 
@@ -40,5 +41,4 @@
 - [ ] **(이슈 #83 — 장기운영 방어 로직)** 동일 거래일 재수집 정책 (수집 전 market_data_imports에서 해당 source_trading_date의 기존 SUCCESS·PARTIAL_SUCCESS와 수집 결과 비교. 동일 데이터는 StockCandle·세션 불변 + SKIPPED_DUPLICATE 이력만, 상충 데이터는 거부 + FAILED 기록, FAILED 이력만 있으면 재시도 허용) (+ 단위 테스트)
 - [ ] **(이슈 #83)** `StockCandleCleanupJob` (20영업일 초과 삭제, 재생 중 거래일 보존) (+ 단위 테스트)
 - [ ] **(이슈 #83)** 동일 거래일 다른 수집 결과 재수집 거부 시 기존 READY 세션·StockCandle 불변 확인 통합 테스트
-- [ ] `/api/cryptos/stream` SSE (`CryptoPriceSseController`, fetch+Bearer 인증, `SseEmitterRegistry.register(CRYPTO)`, 구독 직후 코인 12종 전체 `snapshot` 1건, 빗썸 수신 틱마다 `price` 이벤트, 코인 stale·연결 끊김 시 종목 status만 UNAVAILABLE·marketStatus는 OPEN 유지, `sourceTradingDate` 미포함) (+ @WebMvcTest) — 이슈 #20
 - [ ] 실제 `BithumbFeedClient` (WebSocket 수신·재연결·연결상태 기록) — 실제 빗썸 연동, 외부 스모크로 별도 진행

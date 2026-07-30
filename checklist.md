@@ -90,3 +90,23 @@
 - [x] 이슈 #82(KIS 실시간 틱 집계), #83(수집 파이프라인 장기운영 방어 로직) 신규 생성 — #17에서 분리
 - [x] 이미 병합된 이슈 #16 코드(`KrxReplayPriceProvider`·`KRX_REPLAY` enum)의 KIS 네이밍 리네이밍 여부 결정 및 실행 — 이슈 #19에서 완료(`KrxReplayPriceProvider`→`KisHistoricalReplayPriceProvider` 리네이밍, `KRX_REPLAY` enum은 `StockFeedProvider` 삭제로 리네이밍 자체가 불필요해짐)
 - [ ] 이슈 #17 실제 구현 (`/feature docs/specs/003-market-data`)
+
+## 코인 차트 빗썸 연동, MKT-008 신설 (2026-07-30)
+- [x] PRD에 MKT-008(코인 차트 1분봉) 신설 + 공통 오류표에 502 `MARKET_DATA_PROVIDER_ERROR` 추가 + Redis 키 책임에 "캔들 캐시 키 없음" 명시 + §10 레이트리밋 Decision Gate 추가
+- [x] spec 003 갱신 — MKT-008 요구사항·비즈니스 규칙·범위 제외 정정("코인 캔들 영구 저장 제외" → "우리 저장소 보관 제외, 빗썸 조회 중계")·완료 조건
+- [x] plan 003 갱신 — 코인 캔들 설계 절(외부 엔드포인트·필드 매핑·정렬 반전·진행 중 봉 제외·from/to→to+count 변환·502 처리·캐시 없음), 구성 요소 4종 추가, 테스트 계획
+- [x] tasks 003에 코인 차트 작업 항목 추가 (이슈 #20)
+- [x] api-routes.md·api-contracts.md 캔들 절을 주식·코인 공통으로 갱신
+- [x] 이슈 #20 본문에 코인 차트(MKT-008) 범위 추가 — 기존 `/api/cryptos/stream` SSE 범위는 그대로 유지
+- [ ] 이슈 #20 실제 구현 (`CryptoCandleProvider`·`BithumbRestCandleProvider`·`CandleResponse.volume` BigDecimal 확대·`MARKET_DATA_PROVIDER_ERROR` 추가)
+- [ ] 프론트에서 코인 캔들 400 거부를 분기 처리하던 코드가 있으면 정리 (별도 레포 `FinPlay`)
+- [ ] 실제 빗썸 캔들 REST 외부 스모크 (12종 전체 200 응답·필드명 일치 확인)
+
+## 이슈 #20 SSE 축 제거 (2026-07-30, 같은 날 추가 정정)
+- [x] 이슈 #20 본문 재작성 — SSE 절 삭제, 코인 실시간 1분봉 차트 단일 범위로 확정
+- [x] prd.md §5 API 목록에서 `GET /api/cryptos/stream` 제거 (`/stocks/stream`만 유지)
+- [x] spec.md 개요·시나리오에서 `/cryptos/stream` 서술 제거 — "코인은 전용 스트림 없음, 캔들 API 재조회로 충당" 명시
+- [x] plan.md API 표·이슈 분할·SSE 계약·구성요소 표·흐름도에서 `CryptoPriceSseController`·`/cryptos/stream` 관련 서술 정리 (`/stocks/stream`(#19)만 SSE 대상, MKT-003/004 기반 주문 체결 경로는 유지)
+- [x] tasks.md에서 미구현 코인 SSE 태스크 항목 삭제
+- [x] api-contracts.md 캔들 절의 "SSE 틱으로 갱신" 문구를 "짧은 주기 재조회"로 정정
+- [ ] 이슈 #20 실제 구현 착수 (차트만)
