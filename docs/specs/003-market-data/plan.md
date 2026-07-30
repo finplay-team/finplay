@@ -422,3 +422,21 @@ KisHistoricalReplayPriceProvider를 @Service로 직접 등록 → StockPriceProv
 - 통합 (Testcontainers MySQL+Redis, 이슈 #19): 샘플 KIS 응답 데이터 수집→`StockReplaySessionScheduler`가 세션 READY로 전환→재생→가격 조회(첫 분봉 시가, 이후 종가), 서버 재시작 시나리오에서 같은 원본 거래일 유지, DB에 OPEN·CLOSED가 저장되지 않음을 확인, Fake Feed 정상 수신→가격 조회, 끊김→PRICE_UNAVAILABLE, 재연결 새 틱→복귀 시나리오.
 - **(이슈 #83)** 통합: 동일 거래일에 상충하는 수집 결과 재수집을 거부해도 기존 READY 세션·StockCandle이 그대로인 시나리오.
 - 외부 스모크(자동 테스트와 구분 보고): 실제 빗썸 WebSocket 연결, **실제 빗썸 캔들 REST 조회(이슈 #20 — 12종 전체가 200 응답하는지, 필드명이 문서와 일치하는지)**, **실제 KIS Open API 과거 분봉 수집(`inquire-time-dailychartprice` 1회 호출로 `output2` 필드명·timestamp 기준 확인 포함)**. 실제 KIS WebSocket 연결 스모크는 이슈 #82로 이월한다. Fake 통과를 실제 연동 성공으로 보고하지 않는다 (PRD C-005).
+
+### 로컬 코인 실데이터 전환 (`crypto-real` 프로필, 이슈 #107)
+
+로컬(`!prod`)에서 코인 캔들은 `FakeCryptoCandleProvider`라 영구히 `200 []`이고, 현재가는 `BithumbFeedSimulator`의 합성 랜덤값이다. 두 경로를 **스프링 프로필 하나**로 함께 실데이터로 전환한다 — 한쪽만 켜지면 차트와 현재가가 어긋난다. 프로필 이름·패턴은 기존 `oauth-real` 선례를 따른다.
+
+| 대상 | 기본(프로필 OFF) | `crypto-real` ON |
+|---|---|---|
+| 캔들 `CryptoCandleProvider` | `FakeCryptoCandleProvider` (`@Profile("!prod & !crypto-real")`) | `BithumbRestCandleProvider` (`@Profile({"prod","crypto-real"})`) |
+| 현재가 주입 | `BithumbFeedSimulator` (합성 틱) | `BithumbRestTickerPoller` (`@Profile("!prod & crypto-real")`) |
+| `bithumb.feed.simulate.enabled` | `true`(기본) | `application-crypto-real.yml`에서 `false` |
+
+- **왜 로컬은 REST인가**: `BithumbWebSocketFeedClient`(`@Profile("prod")`)의 ticker 메시지 필드 구성은 실제 연결로 검증된 적이 없는 Decision Gate다. 반면 빗썸 공개 REST는 인증 없이 실제 호출로 검증됐다(2026-07-30). prod은 계속 WebSocket을 쓰므로 두 경로의 역할이 겹치지 않는다.
+- **ticker REST 명세**: `GET https://api.bithumb.com/v1/ticker?markets=KRW-BTC,KRW-ETH,...` → 응답 배열 각 항목의 `trade_price`를 현재가로 쓴다. 심볼 변환은 캔들과 같은 `KRW-{symbol}`.
+- **폴링 주기 3초** — `PriceStore`의 stale 기준 10초보다 짧아야 한다. 길면 가격이 존재하는데도 `409 PRICE_UNAVAILABLE`이 뜬다. 주입 통로는 `FakeBithumbFeedClient.emitTick(symbol, price, receivedAt)`으로, 시뮬레이터가 쓰던 것과 동일하다(과거 틱 무시 규칙은 `PriceStore`가 이미 처리).
+- **실패 처리**: 조회 실패·타임아웃·파싱 불가는 그 회차 skip + 로그. 임의값으로 대체하지 않는다 (MKT-004). 마지막 값이 10초 뒤 stale이 되어 `PRICE_UNAVAILABLE`로 정직하게 드러난다.
+- **연결 상태**: `feed:crypto:status`는 폴러가 직접 쓰지 않는다. `BithumbFeedLifecycle`이 `ApplicationReadyEvent`에서 활성 `BithumbFeedClient`(로컬은 `FakeBithumbFeedClient`)의 `start()`를 호출해 이미 `CONNECTED`가 된다.
+- **기본값은 현행 유지** — 자동 테스트가 외부 네트워크에 의존하면 안 된다 (C-005). 실제 ticker REST 조회는 외부 스모크로 구분 보고한다.
+- **제외**: prod 환경, `BithumbFeedSimulator` 코드 수정, WebSocket ticker 필드 Decision Gate 해소, 코인 SSE, 코인 분봉 저장·캐시(MKT-008 — 보관 없이 중계).
