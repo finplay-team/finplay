@@ -211,7 +211,7 @@ data:
 | `BithumbFeedClient` | 빗썸 WebSocket 수신 → `PriceStore` 저장. 재연결 처리. 인터페이스로 추상화해 테스트는 Fake 구현 사용 |
 | `PriceStore` | Redis 읽기/쓰기 단일 창구 (코인 전용). 과거 틱 무시(수신 timestamp 비교 후 최신만 저장) |
 | `CryptoCandleProvider` (인터페이스) | 코인 1분봉 조회 공통 계약. 심볼·간격·시각 범위를 받아 시각 오름차순 분봉 목록을 반환한다. 구현체가 무엇인지 `CandleQueryService`에 노출하지 않는다 (이슈 #20) |
-| `BithumbRestCandleProvider` | `CryptoCandleProvider` 구현 — 빗썸 공개 캔들 REST 호출, 심볼→`KRW-{symbol}` 변환, `from`·`to`→`to`+`count` 변환, 내림차순→오름차순 반전, 진행 중 분봉 제외, 실패 시 `MARKET_DATA_PROVIDER_ERROR`(502). 응답을 저장·캐시하지 않는다 (이슈 #20) |
+| `BithumbRestCandleProvider` | `CryptoCandleProvider` 구현 — 빗썸 공개 캔들 REST 호출, 심볼→`KRW-{symbol}` 변환, `from`·`to`→`to`+`count` 변환, 내림차순→오름차순 반전, **진행 중 분봉 포함**(주식과 반대 — 위 "코인 캔들 설계" 절 참조), 실패 시 `MARKET_DATA_PROVIDER_ERROR`(502). 응답을 저장·캐시하지 않는다 (이슈 #20) |
 | `FakeCryptoCandleProvider` | 자동 테스트용 `CryptoCandleProvider` 구현. 실제 빗썸 REST 연결은 외부 스모크로 구분 보고한다 (C-005) — Fake 통과를 실제 연동 성공으로 보고하지 않는다 (이슈 #20) |
 | `CandleQueryService` | 캔들 조회의 시장 분기점. `Instrument.market`이 `STOCK`이면 `StockPriceProvider`, `CRYPTO`면 `CryptoCandleProvider`에 위임하고 같은 `CandleResponse[]` 계약으로 반환한다. **기존의 "코인이면 400 `VALIDATION_ERROR`" 거부를 제거한다** (이슈 #17에서 추가 → 이슈 #20에서 제거) |
 | `StockPriceProvider` (인터페이스) | 주식 시세 공급자 공통 계약. 현재가(가격·`sourceTime`·유효성)와 1분봉 조회, 시장 상태를 반환한다. 구현체가 무엇인지는 아래 소비 계층에 노출하지 않는다 |

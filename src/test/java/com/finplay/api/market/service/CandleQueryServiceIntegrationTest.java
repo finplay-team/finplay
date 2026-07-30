@@ -48,7 +48,8 @@ class CandleQueryServiceIntegrationTest {
 		StockReplayService stockReplayService = new StockReplayService(
 			stockReplaySessionRepository, stockCandleRepository, clock);
 		KrxReplayPriceProvider provider = new KrxReplayPriceProvider(stockReplayService);
-		return new CandleQueryService(instrumentRepository, provider);
+		// 이 통합 테스트는 주식 캔들 회귀만 다룬다 — 코인 경로는 건드리지 않으므로 Fake로 충분하다.
+		return new CandleQueryService(instrumentRepository, provider, new FakeCryptoCandleProvider());
 	}
 
 	private Instrument saveInstrument(String symbol) {

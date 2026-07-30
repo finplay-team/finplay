@@ -36,3 +36,9 @@ stock-feed:
   provider: ${STOCK_FEED_PROVIDER:KRX_REPLAY}
   service-exposure: ${SERVICE_EXPOSURE:PUBLIC}
   kis-public-display-approved: ${KIS_PUBLIC_DISPLAY_APPROVED:false}
+
+# 빗썸 공개 캔들 REST 조회 타임아웃 (MKT-008). 인증·API Key 불필요한 공개 API — 무한 대기로 요청 스레드를 붙잡지 않도록 짧게 잡는다.
+bithumb:
+  candle:
+    connect-timeout-ms: ${BITHUMB_CANDLE_CONNECT_TIMEOUT_MS:2000}
+    read-timeout-ms: ${BITHUMB_CANDLE_READ_TIMEOUT_MS:3000}

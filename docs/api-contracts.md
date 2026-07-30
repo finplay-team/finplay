@@ -139,7 +139,7 @@ PR #49 차단 리뷰 후속 Fake 재사용·동시성·DB 불변 자동 회귀�
 | GET | /api/instruments/{instrumentId}/candles | Access Bearer 필수 | `interval`(필수, 1차는 `1m`만), `from`·`to`(선택, ISO-8601 `LocalDateTime`, 예: `2026-07-27T09:00:00`) | 200 `[{"sourceTime":"2026-07-22T09:00:00","open":71000,"high":71500,"low":70900,"close":71200,"volume":12345}, ...]` (`CandleResponse[]`, 시각 오름차순). 주식은 아직 공개된 분봉이 없거나 재생세션이 준비되지 않은 경우에도 예외 없이 200 `[]` | `interval`이 `1m`이 아니면 400 `VALIDATION_ERROR`. `from > to`면 400 `VALIDATION_ERROR`. 존재하지 않는 `instrumentId`는 404 `NOT_FOUND`. 코인에서 빗썸 조회가 실패하면 502 `MARKET_DATA_PROVIDER_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 003 MKT-002·MKT-008, Issue #17, Issue #20 |
 
 - **주식과 코인의 출처가 다르다** — 응답 형식은 같지만 주식은 MySQL `stock_candles`의 **과거 거래일 재생** 분봉, 코인은 빗썸 공개 캔들 REST의 **지금 이 순간까지의 실시간** 분봉이다. 소비자는 `market`에 따라 파싱을 나누지 않지만, **미마감 분봉 규칙은 시장별로 다르다**(바로 아래 두 절 참조).
-- 검증 순서는 `CandleQueryService.getCandles`가 `interval` → `from`/`to` → `instrumentId` 존재(404) → 시장 종류 순으로 판정한 뒤 주식은 `StockPriceProvider.getCandles`, 코인은 `CryptoCandleProvider.getCandles`에 위임한다(컨트롤러에 try-catch 없음).
+- 검증 순서는 `CandleQueryService.getCandles`가 `interval` → `instrumentId` 존재(404) → 시장 종류 → `from`/`to`(시장별 판정 기준 상이 — 코인은 날짜 포함 전체 시각, 주식은 시각만) 순으로 판정한 뒤 주식은 `StockPriceProvider.getCandles`, 코인은 `CryptoCandleProvider.getCandles`에 위임한다(컨트롤러에 try-catch 없음).
 - **코인 `instrumentId`는 더 이상 400이 아니다** (Issue #20). Issue #17에서 "주식 종목만 캔들 조회를 지원합니다" 400 `VALIDATION_ERROR`로 거부했던 계약이 제거됐다 — 프론트에서 이 400을 분기 처리하던 코드가 있으면 함께 정리한다.
 - `volume`은 코인의 소수 수량(예: `0.26725783`)을 표현하기 위해 `BigDecimal`이다. 주식 값의 표현(`12345`)은 바뀌지 않는다.
 - `from`·`to`를 모두 생략하면 주식은 재생 중인 거래일 전체(그 중 이미 공개된 분봉), 코인은 진행 중인 분봉을 포함해 최신부터 직전으로 200개(약 3시간 20분)를 반환한다.
