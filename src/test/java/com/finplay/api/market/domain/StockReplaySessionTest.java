@@ -104,4 +104,117 @@ class StockReplaySessionTest {
 		assertThat(session.getResolvedAt()).isEqualTo(RESOLVED_AT);
 		assertThat(session.getFailureReason()).isEqualTo("검증 실패");
 	}
+
+	// --- resolveReady/resolveFailed (StockReplaySessionScheduler 전용 인스턴스 메서드) ---
+	// 정적 팩토리 ready()/failed()와 같은 nullable 규칙을 PREPARING 세션의 상태 전환에서도 강제하는지 검증한다.
+
+	@Test
+	void resolveReadyTransitionsPreparingSessionToReadyWithGivenSourceTradingDateAndResolvedAt() {
+		StockReplaySession session = StockReplaySession.preparing(SERVICE_DATE, null, CREATED_AT);
+
+		session.resolveReady(SOURCE_TRADING_DATE, RESOLVED_AT);
+
+		assertThat(session.getPreparationStatus()).isEqualTo(PreparationStatus.READY);
+		assertThat(session.getSourceTradingDate()).isEqualTo(SOURCE_TRADING_DATE);
+		assertThat(session.getResolvedAt()).isEqualTo(RESOLVED_AT);
+		assertThat(session.getFailureReason()).isNull();
+	}
+
+	@Test
+	void resolveReadyRejectsNullSourceTradingDate() {
+		StockReplaySession session = StockReplaySession.preparing(SERVICE_DATE, null, CREATED_AT);
+
+		assertThatThrownBy(() -> session.resolveReady(null, RESOLVED_AT))
+			.isInstanceOf(IllegalArgumentException.class);
+	}
+
+	@Test
+	void resolveReadyRejectsNullResolvedAt() {
+		StockReplaySession session = StockReplaySession.preparing(SERVICE_DATE, null, CREATED_AT);
+
+		assertThatThrownBy(() -> session.resolveReady(SOURCE_TRADING_DATE, null))
+			.isInstanceOf(IllegalArgumentException.class);
+	}
+
+	@Test
+	void resolveReadyRejectsWhenSessionIsAlreadyReady() {
+		StockReplaySession session = StockReplaySession.ready(SERVICE_DATE, SOURCE_TRADING_DATE, RESOLVED_AT,
+			CREATED_AT);
+
+		assertThatThrownBy(() -> session.resolveReady(SOURCE_TRADING_DATE, RESOLVED_AT))
+			.isInstanceOf(IllegalStateException.class);
+	}
+
+	@Test
+	void resolveReadyRejectsWhenSessionIsAlreadyFailed() {
+		StockReplaySession session = StockReplaySession.failed(SERVICE_DATE, null, RESOLVED_AT, "데이터 없음", CREATED_AT);
+
+		assertThatThrownBy(() -> session.resolveReady(SOURCE_TRADING_DATE, RESOLVED_AT))
+			.isInstanceOf(IllegalStateException.class);
+	}
+
+	@Test
+	void resolveFailedTransitionsPreparingSessionToFailedAllowingNullSourceTradingDateWhenNoCandidateWasFound() {
+		StockReplaySession session = StockReplaySession.preparing(SERVICE_DATE, null, CREATED_AT);
+
+		session.resolveFailed(null, RESOLVED_AT, "검증 완료된 거래일 데이터를 찾지 못했습니다.");
+
+		assertThat(session.getPreparationStatus()).isEqualTo(PreparationStatus.FAILED);
+		assertThat(session.getSourceTradingDate()).isNull();
+		assertThat(session.getResolvedAt()).isEqualTo(RESOLVED_AT);
+		assertThat(session.getFailureReason()).isEqualTo("검증 완료된 거래일 데이터를 찾지 못했습니다.");
+	}
+
+	@Test
+	void resolveFailedTransitionsPreparingSessionToFailedAllowingPresentSourceTradingDateWhenAFailedCandidateWasIdentified() {
+		StockReplaySession session = StockReplaySession.preparing(SERVICE_DATE, SOURCE_TRADING_DATE, CREATED_AT);
+
+		session.resolveFailed(SOURCE_TRADING_DATE, RESOLVED_AT, "검증 실패");
+
+		assertThat(session.getPreparationStatus()).isEqualTo(PreparationStatus.FAILED);
+		assertThat(session.getSourceTradingDate()).isEqualTo(SOURCE_TRADING_DATE);
+		assertThat(session.getResolvedAt()).isEqualTo(RESOLVED_AT);
+		assertThat(session.getFailureReason()).isEqualTo("검증 실패");
+	}
+
+	@Test
+	void resolveFailedRejectsNullResolvedAt() {
+		StockReplaySession session = StockReplaySession.preparing(SERVICE_DATE, null, CREATED_AT);
+
+		assertThatThrownBy(() -> session.resolveFailed(null, null, "데이터 없음"))
+			.isInstanceOf(IllegalArgumentException.class);
+	}
+
+	@Test
+	void resolveFailedRejectsNullFailureReason() {
+		StockReplaySession session = StockReplaySession.preparing(SERVICE_DATE, null, CREATED_AT);
+
+		assertThatThrownBy(() -> session.resolveFailed(null, RESOLVED_AT, null))
+			.isInstanceOf(IllegalArgumentException.class);
+	}
+
+	@Test
+	void resolveFailedRejectsBlankFailureReason() {
+		StockReplaySession session = StockReplaySession.preparing(SERVICE_DATE, null, CREATED_AT);
+
+		assertThatThrownBy(() -> session.resolveFailed(null, RESOLVED_AT, "   "))
+			.isInstanceOf(IllegalArgumentException.class);
+	}
+
+	@Test
+	void resolveFailedRejectsWhenSessionIsAlreadyReady() {
+		StockReplaySession session = StockReplaySession.ready(SERVICE_DATE, SOURCE_TRADING_DATE, RESOLVED_AT,
+			CREATED_AT);
+
+		assertThatThrownBy(() -> session.resolveFailed(null, RESOLVED_AT, "데이터 없음"))
+			.isInstanceOf(IllegalStateException.class);
+	}
+
+	@Test
+	void resolveFailedRejectsWhenSessionIsAlreadyFailed() {
+		StockReplaySession session = StockReplaySession.failed(SERVICE_DATE, null, RESOLVED_AT, "데이터 없음", CREATED_AT);
+
+		assertThatThrownBy(() -> session.resolveFailed(null, RESOLVED_AT, "데이터 없음"))
+			.isInstanceOf(IllegalStateException.class);
+	}
 }

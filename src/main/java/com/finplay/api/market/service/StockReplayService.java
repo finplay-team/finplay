@@ -6,21 +6,13 @@ import com.finplay.api.market.domain.StockCandle;
 import com.finplay.api.market.domain.StockReplaySession;
 import com.finplay.api.market.repository.StockCandleRepository;
 import com.finplay.api.market.repository.StockReplaySessionRepository;
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.time.Clock;
-import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,15 +24,11 @@ public class StockReplayService {
 	private static final LocalTime MARKET_OPEN_TIME = LocalTime.of(9, 0);
 	private static final LocalTime FIRST_CANDLE_END_TIME = LocalTime.of(9, 1);
 	private static final LocalTime MARKET_CLOSE_TIME = LocalTime.of(15, 30);
-	private static final String HOLIDAYS_RESOURCE_PATH = "/holidays-2026.txt";
-
-	// MVP 수준의 2026년 한국 공휴일 목록을 리소스 파일에서 읽어온다 (plan.md: "공휴일 판정은 리소스 파일의 공휴일 목록으로 단순 관리한다").
-	// 정확한 음력 날짜(설날·추석 등) 검증과 연도별 파일 전환은 후속 결정 (plan.md Decision Gate, 외부 캘린더 API 미사용).
-	private static final Set<LocalDate> HOLIDAYS_2026 = loadHolidays(HOLIDAYS_RESOURCE_PATH);
 
 	private final StockReplaySessionRepository stockReplaySessionRepository;
 	private final StockCandleRepository stockCandleRepository;
 	private final Clock clock;
+	private final BusinessDayCalendar businessDayCalendar;
 
 	@Transactional(readOnly = true)
 	public StockMarketStatus getMarketStatus() {
@@ -129,10 +117,10 @@ public class StockReplayService {
 		}
 		LocalDate today = now.toLocalDate();
 		LocalTime time = now.toLocalTime();
-		boolean isWeekend = today.getDayOfWeek() == DayOfWeek.SATURDAY || today.getDayOfWeek() == DayOfWeek.SUNDAY;
-		boolean isHoliday = HOLIDAYS_2026.contains(today);
 		boolean withinTradingHours = !time.isBefore(MARKET_OPEN_TIME) && time.isBefore(MARKET_CLOSE_TIME);
-		return (!isWeekend && !isHoliday && withinTradingHours) ? StockMarketStatus.OPEN : StockMarketStatus.CLOSED;
+		return (businessDayCalendar.isBusinessDay(today) && withinTradingHours)
+			? StockMarketStatus.OPEN
+			: StockMarketStatus.CLOSED;
 	}
 
 	private boolean isWithinFirstCandleWindow(LocalTime time) {
@@ -169,25 +157,5 @@ public class StockReplayService {
 			return Optional.empty();
 		}
 		return Optional.of(currentMinute.minusMinutes(1));
-	}
-
-	// 클래스패스 리소스 파일에서 공휴일 목록(한 줄에 yyyy-MM-dd, #으로 시작하는 줄은 주석)을 읽어 Set으로 반환한다.
-	private static Set<LocalDate> loadHolidays(String resourcePath) {
-		try (InputStream inputStream = StockReplayService.class.getResourceAsStream(resourcePath)) {
-			if (inputStream == null) {
-				throw new IllegalStateException("공휴일 리소스 파일을 찾을 수 없습니다: " + resourcePath);
-			}
-			try (BufferedReader reader = new BufferedReader(
-				new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
-				return reader
-					.lines()
-					.map(String::strip)
-					.filter(line -> !line.isEmpty() && !line.startsWith("#"))
-					.map(LocalDate::parse)
-					.collect(Collectors.toUnmodifiableSet());
-			}
-		} catch (IOException ex) {
-			throw new IllegalStateException("공휴일 리소스 파일을 읽는 중 오류가 발생했습니다: " + resourcePath, ex);
-		}
 	}
 }
