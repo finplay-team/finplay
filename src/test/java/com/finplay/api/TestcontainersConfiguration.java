@@ -4,6 +4,8 @@ package com.finplay.api;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.mysql.MySQLContainer;
 import org.testcontainers.utility.DockerImageName;
@@ -32,5 +34,14 @@ public class TestcontainersConfiguration {
 	@ServiceConnection(name = "redis")
 	GenericContainer<?> redisContainer() {
 		return REDIS;
+	}
+
+	// BithumbFeedSimulator(이슈 #104, !prod 전용)가 feed:crypto:status(전역 Redis 키)를 직접 통제하는
+	// CONNECTED/DISCONNECTED 시나리오 테스트(AccountSummaryIntegrationTest 등)와 경쟁하지 않도록 자동 테스트
+	// 전체에서 비활성화한다. src/test/resources/application.yml로 두면 Boot가 src/main의 application.yml
+	// 전체를 가리므로(첫 번째로 발견된 파일만 로드) 이 프로퍼티 하나만 얹는 @DynamicPropertySource를 쓴다.
+	@DynamicPropertySource
+	static void disableBithumbFeedSimulator(DynamicPropertyRegistry registry) {
+		registry.add("bithumb.feed.simulate.enabled", () -> "false");
 	}
 }
