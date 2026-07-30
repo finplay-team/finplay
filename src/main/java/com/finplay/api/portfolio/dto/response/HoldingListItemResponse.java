@@ -17,7 +17,7 @@ public record HoldingListItemResponse(
 	BigDecimal returnRate,
 	String priceStatus) {
 
-	public static HoldingListItemResponse from(Holding holding, HoldingValuationDto valuation) {
+	public static HoldingListItemResponse of(Holding holding, HoldingValuationDto valuation) {
 		return new HoldingListItemResponse(
 			holding.getInstrument().getId(),
 			holding.getInstrument().getSymbol(),

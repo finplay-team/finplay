@@ -23,7 +23,7 @@ public class HoldingService {
 	public List<HoldingListItemResponse> getHoldings(Long userId, Market market) {
 		Account account = accountService.getAccountFor(userId, market);
 		return holdingRepository.findAllByAccountIdAndIsActiveTrue(account.getId()).stream()
-			.map(holding -> HoldingListItemResponse.from(holding, holdingValuationService.evaluateHolding(holding)))
+			.map(holding -> HoldingListItemResponse.of(holding, holdingValuationService.evaluateHolding(holding)))
 			.toList();
 	}
 }
