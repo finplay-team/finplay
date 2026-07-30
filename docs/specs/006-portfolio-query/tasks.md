@@ -127,7 +127,7 @@
 
 > 이 섹션은 `spec.md`의 PORT-002(실제 조회 API)만 다룬다. 시세 조회·평가 계산(`PriceQueryService`·`HoldingValuationService`)은 이 API와 무관하다 — 체결 원장을 그대로 읽어 반환할 뿐 재계산하지 않는다(`plan.md` 이슈 #82 절 참고). 커서 포맷·정렬 기준·손상된 커서 400·`market` 필수는 사람이 이미 결정했고, 커서 정밀도·`limit` 기본값·상한값은 이번 이슈에서 확정했다.
 
-- [ ] **Repository: `TradeRepositoryCustom`/`TradeRepositoryImpl` (QueryDSL 커서 조회)**
+- [x] **Repository: `TradeRepositoryCustom`/`TradeRepositoryImpl` (QueryDSL 커서 조회)**
   - `TradeRepositoryCustom` 인터페이스 + `TradeRepositoryImpl`(`CommunityPostRepositoryImpl` 전례대로 생성자에서 `new JPAQueryFactory(entityManager)`) 추가 — `findByAccountIdWithCursor(Long accountId, LocalDateTime cursorExecutedAt, Long cursorId, int fetchSize)`, `instrument` `fetchJoin()`, `trade.executedAt.desc(), trade.id.desc()` 정렬, 커서 있을 때만 `executedAt < cursor 또는 (executedAt = cursor 그리고 id < cursor id)` 조건 추가(plan.md 쿼리 참고).
   - 기존 `TradeRepository`가 `TradeRepositoryCustom`도 상속하도록 변경(`findByOrderId`는 그대로 유지).
   - `@DataJpaTest` 슬라이스 테스트(`TradeRepositoryTest`, 신규): 다른 계좌 체결 제외, `executedAt` 내림차순·동시각 `id` 내림차순 정렬, 커서로 연속 2회 조회한 결과가 커서 없이 한 번에 조회한 전체 결과와 중복·누락 없이 일치, `instrument` 지연 로딩 예외 없음(`fetchJoin` 확인).
