@@ -6,6 +6,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -75,6 +76,22 @@ public class PriceStore {
 		return getLatestPrice(symbol)
 			.map(price -> !isStale(price.receivedAt()))
 			.orElse(false);
+	}
+
+	// 계좌(=market) 단위로 여러 심볼을 평가할 때 심볼과 무관한 전역 연결상태(getConnectionStatus, Redis 전역 키
+	// feed:crypto:status)를 요청당 1회만 조회하고, 심볼별로 실제로 달라지는 개별 가격 조회만 반복한다 (PR #97 리뷰 권장사항).
+	// 연결이 끊겨 있으면 개별 가격 조회 없이 즉시 빈 Map을 반환한다 (fail-closed, isPriceAvailable과 동일 정책).
+	public Map<String, CryptoPriceDto> getLatestPrices(List<String> symbols) {
+		if (getConnectionStatus() != FeedConnectionStatus.CONNECTED) {
+			return Map.of();
+		}
+		Map<String, CryptoPriceDto> prices = new HashMap<>();
+		for (String symbol : symbols) {
+			getLatestPrice(symbol)
+				.filter(price -> !isStale(price.receivedAt()))
+				.ifPresent(price -> prices.put(symbol, price));
+		}
+		return prices;
 	}
 
 	private Optional<LocalDateTime> readReceivedAt(HashOperations<String, String, String> hashOps, String key) {

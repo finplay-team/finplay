@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -20,6 +21,8 @@ import com.finplay.api.market.store.PriceStore;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
@@ -308,6 +311,96 @@ class PriceQueryServiceTest {
 		assertThatThrownBy(() -> priceQueryService.getPrice(1L))
 			.isInstanceOf(BusinessException.class)
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode()).isEqualTo(ErrorCode.PRICE_UNAVAILABLE));
+	}
+
+	// 이하 getPriceQuotes(List) — 배치 조회 (PR #97 리뷰 권장사항, 다음 이슈 #51 착수 전 정리).
+
+	@Test
+	void getPriceQuotesForStockDelegatesToProviderBatchMethodOnceAndPreservesOrder() {
+		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
+		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
+		PriceStore priceStore = mock(PriceStore.class);
+		Instrument first = Instrument.create(Market.STOCK, "005930", "삼성전자", BigDecimal.valueOf(100), 70000L, true,
+			NOW);
+		Instrument second = Instrument.create(Market.STOCK, "000660", "SK하이닉스", BigDecimal.valueOf(100), 80000L, true,
+			NOW);
+		StockReplayPriceDto firstQuote = new StockReplayPriceDto(
+			true, StockMarketStatus.CLOSED, LocalDate.of(2026, 7, 27), new BigDecimal("71000"),
+			LocalDateTime.of(2026, 7, 27, 15, 30));
+		StockReplayPriceDto secondQuote = new StockReplayPriceDto(false, StockMarketStatus.CLOSED, null, null, null);
+		// 테스트 대상 Instrument는 persist하지 않아 getId()가 null이므로(List.of는 null 원소를 금지) any()로 매칭한다.
+		when(stockPriceProvider.getCurrentPrices(any())).thenReturn(List.of(firstQuote, secondQuote));
+		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
+			priceStore);
+
+		List<PriceQuoteDto> results = priceQueryService.getPriceQuotes(List.of(first, second));
+
+		assertThat(results).hasSize(2);
+		assertThat(results.get(0).price()).isEqualTo(new BigDecimal("71000"));
+		assertThat(results.get(0).status()).isEqualTo(PriceStatus.AVAILABLE);
+		assertThat(results.get(1).status()).isEqualTo(PriceStatus.UNAVAILABLE);
+		// 종목과 무관한 전역 상태 중복 조회를 없애는 것이 배치화의 목적이므로 배치 메서드는 요청당 1회만 호출돼야 한다.
+		verify(stockPriceProvider, times(1)).getCurrentPrices(any());
+		verify(stockPriceProvider, never()).getCurrentPrice(any());
+	}
+
+	@Test
+	void getPriceQuotesForStockMapsSameContractAsSingleGetPriceQuoteForEachInstrument() {
+		// 회귀 확인 — getPriceQuotes(배치)와 getPriceQuote(단건)는 같은 StockReplayPriceDto 입력에 대해
+		// 동일한 PriceQuoteDto를 만들어야 한다(원가·평가금액 계산에 쓰이는 계약이 배치화로 달라지면 안 됨).
+		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
+		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
+		PriceStore priceStore = mock(PriceStore.class);
+		Instrument instrument = Instrument.create(
+			Market.STOCK, "005930", "삼성전자", BigDecimal.valueOf(100), 70000L, true, NOW);
+		StockReplayPriceDto quote = new StockReplayPriceDto(
+			true, StockMarketStatus.OPEN, LocalDate.of(2026, 7, 28), new BigDecimal("71500"),
+			LocalDateTime.of(2026, 7, 28, 10, 0));
+		when(stockPriceProvider.getCurrentPrice(any())).thenReturn(quote);
+		when(stockPriceProvider.getCurrentPrices(any())).thenReturn(List.of(quote));
+		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
+			priceStore);
+
+		PriceQuoteDto viaSingle = priceQueryService.getPriceQuote(instrument);
+		PriceQuoteDto viaBatch = priceQueryService.getPriceQuotes(List.of(instrument)).get(0);
+
+		assertThat(viaBatch).isEqualTo(viaSingle);
+	}
+
+	@Test
+	void getPriceQuotesForCryptoDelegatesToPriceStoreBatchMethodOnceAndMapsMissingSymbolAsUnavailable() {
+		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
+		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
+		PriceStore priceStore = mock(PriceStore.class);
+		Instrument btc = Instrument.create(Market.CRYPTO, "BTC", "비트코인", BigDecimal.valueOf(1000), 5000L, true, NOW);
+		Instrument eth = Instrument.create(Market.CRYPTO, "ETH", "이더리움", BigDecimal.valueOf(1000), 6000L, true, NOW);
+		when(priceStore.getLatestPrices(List.of("BTC", "ETH")))
+			.thenReturn(Map.of("BTC", new CryptoPriceDto("BTC", new BigDecimal("50000000"), NOW)));
+		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
+			priceStore);
+
+		List<PriceQuoteDto> results = priceQueryService.getPriceQuotes(List.of(btc, eth));
+
+		assertThat(results.get(0).price()).isEqualTo(new BigDecimal("50000000"));
+		assertThat(results.get(0).status()).isEqualTo(PriceStatus.AVAILABLE);
+		assertThat(results.get(1).status()).isEqualTo(PriceStatus.UNAVAILABLE);
+		verify(priceStore, times(1)).getLatestPrices(any());
+		verify(priceStore, never()).getLatestPrice(any());
+		verify(priceStore, never()).isPriceAvailable(any());
+	}
+
+	@Test
+	void getPriceQuotesReturnsEmptyListWithoutTouchingProvidersWhenInstrumentsIsEmpty() {
+		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
+		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
+		PriceStore priceStore = mock(PriceStore.class);
+		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
+			priceStore);
+
+		List<PriceQuoteDto> results = priceQueryService.getPriceQuotes(List.of());
+
+		assertThat(results).isEmpty();
+		verifyNoInteractions(stockPriceProvider, priceStore);
 	}
 
 	@Test

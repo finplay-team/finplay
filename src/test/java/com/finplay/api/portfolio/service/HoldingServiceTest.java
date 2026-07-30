@@ -54,8 +54,9 @@ class HoldingServiceTest {
 			12_000L, 2_000L, BigDecimal.valueOf(0.2000));
 		HoldingValuationDto unavailableValuation = new HoldingValuationDto(
 			BigDecimal.ONE, BigDecimal.valueOf(500_000), 500_000L, PriceStatus.UNAVAILABLE, null, null, null, null);
-		when(holdingValuationService.evaluateHolding(availableHolding)).thenReturn(availableValuation);
-		when(holdingValuationService.evaluateHolding(unavailableHolding)).thenReturn(unavailableValuation);
+		// HoldingService.getHoldings는 배치 경로(evaluateHoldings)를 사용한다 (PR #97 리뷰 권장사항 배치화).
+		when(holdingValuationService.evaluateHoldings(List.of(availableHolding, unavailableHolding)))
+			.thenReturn(List.of(availableValuation, unavailableValuation));
 
 		List<HoldingListItemResponse> result = holdingService.getHoldings(1L, Market.STOCK);
 

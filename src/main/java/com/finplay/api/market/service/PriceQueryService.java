@@ -6,7 +6,10 @@ import com.finplay.api.common.ErrorCode;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.repository.InstrumentRepository;
+import com.finplay.api.market.store.CryptoPriceDto;
 import com.finplay.api.market.store.PriceStore;
+import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,6 +46,40 @@ public class PriceQueryService {
 	public PriceQuoteDto getPriceQuote(Instrument instrument) {
 		return instrument.getMarket() == Market.STOCK ? getStockPriceQuote(instrument)
 			: getCryptoPriceQuote(instrument);
+	}
+
+	// 계좌(=market) 단위로 여러 종목의 시세를 한 번에 조회한다 — 호출측(HoldingValuationService 등)이 이미 계좌 단위로 종목을
+	// 모아서 넘기므로 instruments는 전부 같은 market이라고 가정한다 (PR #97 리뷰 권장사항, 다음 이슈 #51 착수 전 정리).
+	// 반환 순서는 instruments 순서와 일치한다.
+	@Transactional(readOnly = true)
+	public List<PriceQuoteDto> getPriceQuotes(List<Instrument> instruments) {
+		if (instruments.isEmpty()) {
+			return List.of();
+		}
+		Market market = instruments.get(0).getMarket();
+		return market == Market.STOCK ? getStockPriceQuotes(instruments) : getCryptoPriceQuotes(instruments);
+	}
+
+	private List<PriceQuoteDto> getStockPriceQuotes(List<Instrument> instruments) {
+		List<Long> instrumentIds = instruments.stream().map(Instrument::getId).toList();
+		List<StockReplayPriceDto> quotes = stockPriceProvider.getCurrentPrices(instrumentIds);
+		return quotes.stream()
+			.map(quote -> quote.isPriceAvailable()
+				? new PriceQuoteDto(quote.price(), quote.sourceTime(), PriceStatus.AVAILABLE, quote.sourceTradingDate())
+				: new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, quote.sourceTradingDate()))
+			.toList();
+	}
+
+	private List<PriceQuoteDto> getCryptoPriceQuotes(List<Instrument> instruments) {
+		List<String> symbols = instruments.stream().map(Instrument::getSymbol).toList();
+		Map<String, CryptoPriceDto> latestPrices = priceStore.getLatestPrices(symbols);
+		return instruments.stream()
+			.map(instrument -> {
+				CryptoPriceDto price = latestPrices.get(instrument.getSymbol());
+				return price == null ? new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null)
+					: new PriceQuoteDto(price.price(), price.receivedAt(), PriceStatus.AVAILABLE, null);
+			})
+			.toList();
 	}
 
 	private PriceQuoteDto requireAvailable(PriceQuoteDto quote) {

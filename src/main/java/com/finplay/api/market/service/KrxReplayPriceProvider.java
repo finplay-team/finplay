@@ -21,6 +21,11 @@ public class KrxReplayPriceProvider implements StockPriceProvider {
 	}
 
 	@Override
+	public List<StockReplayPriceDto> getCurrentPrices(List<Long> instrumentIds) {
+		return stockReplayService.getCurrentPrices(instrumentIds);
+	}
+
+	@Override
 	public List<StockCandleDto> getCandles(Long instrumentId, LocalDateTime from, LocalDateTime to) {
 		return stockReplayService.getRevealedCandles(instrumentId, from, to);
 	}
