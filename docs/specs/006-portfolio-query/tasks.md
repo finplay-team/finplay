@@ -151,7 +151,7 @@
   - `market` 누락·잘못된 리터럴은 기존 `GlobalExceptionHandler`가 처리하므로 컨트롤러에 별도 코드를 추가하지 않는다. `OrderController`에는 메서드를 추가하지 않는다.
   - `@WebMvcTest` 슬라이스 테스트(`TradeControllerTest`, 신규, `AccountControllerTest` 패턴 재사용): `market=STOCK`·`market=CRYPTO` 200 필드 계약(9개 항목 필드 + 페이지 메타), `market` 누락/`FOREX` 400, `limit=0`·`limit=101` 400, `limit` 생략 시 기본값 20 전달 확인, 손상된 `cursor` 값에 대해 서비스가 던진 예외가 400으로 매핑되는지, 인증 실패 401.
 
-- [ ] **통합 테스트: 매수·매도 파이프라인 기반 체결 내역 다중 페이지 시나리오**
+- [x] **통합 테스트: 매수·매도 파이프라인 기반 체결 내역 다중 페이지 시나리오**
   - Testcontainers 기반 통합 테스트(신규 `TradeIntegrationTest` 또는 기존 매수·매도 통합 테스트 파일 인접)에 시나리오 추가: 매수 API로 여러 건 체결 후 일부를 매도 API로 체결 → `GET /api/trades?market=` → 매수 건 `realizedPnl=null`, 매도 건 FIFO 실현손익이 원장과 일치.
   - `limit`을 데이터 건수보다 작게 설정해 `nextCursor`를 따라가며 전체를 여러 페이지로 수집한 결과가, 커서 없이 큰 `limit`으로 한 번에 조회한 결과와 항목 집합·순서가 정확히 일치하는지 검증(중복·누락 없음의 최종 근거, spec 완료 조건).
   - 타인 계좌 체결이 섞이지 않는지, 손상된 `cursor`·`market` 누락 400과 비로그인 401 최소 1건씩, 체결내역 없는 신규 계좌 200 빈 배열 확인.
