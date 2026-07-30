@@ -120,3 +120,43 @@
   - `docs/api-routes.md` 라우트 표에 `GET /api/holdings?market=` 행 추가(Spec 컬럼에 `006 PORT-001, Issue #52` 표기).
   - `docs/api-contracts.md`에 신규 `## portfolio` 절 추가 — 요청(쿼리 `market` 필수), 성공 200 예시(`HoldingListItemResponse[]`, 시세 유효/무효 각 1건 포함), 오류(400 `VALIDATION_ERROR`, 401 `UNAUTHORIZED`) 표. 시세 무효 항목의 표현 정책(4개 필드 `null` + `priceStatus`)을 본문에 명시.
   - 같은 커밋에서 세 문서를 함께 갱신(CLAUDE.md 규칙 7).
+
+---
+
+## 이슈 #82: 시장별 체결 내역 조회 API 구현 (PORT-002, GitHub 이슈 #82)
+
+> 이 섹션은 `spec.md`의 PORT-002(실제 조회 API)만 다룬다. 시세 조회·평가 계산(`PriceQueryService`·`HoldingValuationService`)은 이 API와 무관하다 — 체결 원장을 그대로 읽어 반환할 뿐 재계산하지 않는다(`plan.md` 이슈 #82 절 참고). 커서 포맷·정렬 기준·손상된 커서 400·`market` 필수는 사람이 이미 결정했고, 커서 정밀도·`limit` 기본값·상한값은 이번 이슈에서 확정했다.
+
+- [x] **Repository: `TradeRepositoryCustom`/`TradeRepositoryImpl` (QueryDSL 커서 조회)**
+  - `TradeRepositoryCustom` 인터페이스 + `TradeRepositoryImpl`(`CommunityPostRepositoryImpl` 전례대로 생성자에서 `new JPAQueryFactory(entityManager)`) 추가 — `findByAccountIdWithCursor(Long accountId, LocalDateTime cursorExecutedAt, Long cursorId, int fetchSize)`, `instrument` `fetchJoin()`, `trade.executedAt.desc(), trade.id.desc()` 정렬, 커서 있을 때만 `executedAt < cursor 또는 (executedAt = cursor 그리고 id < cursor id)` 조건 추가(plan.md 쿼리 참고).
+  - 기존 `TradeRepository`가 `TradeRepositoryCustom`도 상속하도록 변경(`findByOrderId`는 그대로 유지).
+  - `@DataJpaTest` 슬라이스 테스트(`TradeRepositoryTest`, 신규): 다른 계좌 체결 제외, `executedAt` 내림차순·동시각 `id` 내림차순 정렬, 커서로 연속 2회 조회한 결과가 커서 없이 한 번에 조회한 전체 결과와 중복·누락 없이 일치, `instrument` 지연 로딩 예외 없음(`fetchJoin` 확인).
+
+- [x] **값 객체: `TradeCursor` 파싱·인코딩**
+  - `order/service/TradeCursor.java`(record: `executedAt`, `id`) 추가 — `parse(String raw)`(`null`/빈 문자열 → `null`, 손상된 형식 → `BusinessException(VALIDATION_ERROR)`), `encode(Trade lastTrade)`(`DateTimeFormatter.ISO_LOCAL_DATE_TIME` + `"_"` + id, plan.md 근거 참고).
+  - 단위 테스트(`TradeCursorTest`, 신규, 순수 JUnit): 정상 파싱, `null`/빈 문자열 처리, 구분자 없음·날짜 파싱 실패·id 파싱 실패 각각 400 예외, `encode` → `parse` 왕복 일치(라운드트립).
+
+- [x] **응답 DTO: `TradeListItemResponse` · `TradeListResponse`**
+  - `order/dto/response/TradeListItemResponse.java`(record) 추가 — `tradeId`·`instrumentId`·`side`·`price`·`quantity`·`amount`·`fee`·`realizedPnl`·`executedAt` 9개 필드, 정적 팩토리 `from(Trade trade)`.
+  - `order/dto/response/TradeListResponse.java`(record) 추가 — `content`·`nextCursor`·`hasNext`, 정적 팩토리 `of(...)`, 컴팩트 생성자에서 `content` 방어적 불변화(`CommunityPostListResponse` 전례).
+  - `OrderListItemResponse`(#21) 필드와 겹치지 않는지 plan.md "필드 대조표" 기준으로 코드 리뷰 관점에서 스스로 재확인(특히 price·amount·fee·realizedPnl·executedAt이 이 응답에만 있는지).
+
+- [x] **Service: `TradeService.getMyTrades` (신규 클래스)**
+  - `order/service/TradeService.java` 신규 — `AccountService`·`TradeRepository` 2개 의존성(`@RequiredArgsConstructor`), `@Transactional(readOnly = true) getMyTrades(Long userId, Market market, String cursor, int limit)` 추가. `OrderService`에는 추가하지 않는다(plan.md "왜 TradeService를 새로 만드는가" 근거).
+  - `accountService.getAccountFor(userId, market)`로 소유권+시장 스코프 검증 재사용 → `TradeCursor.parse(cursor)` → `tradeRepository.findByAccountIdWithCursor(accountId, ..., limit + 1)` → `hasNext` 판정 → `TradeListItemResponse.from(...)`/`TradeListResponse.of(...)`로 조립(plan.md 구현 참고).
+  - 단위 테스트(`TradeServiceTest`, 신규, Mockito): `limit`건 이하 반환 시 `hasNext=false`·`nextCursor=null`, `limit+1`건 반환 시 `hasNext=true`·`nextCursor`가 페이지 마지막 항목 기준으로 정확히 생성, 매수(`realizedPnl=null`)·매도(`realizedPnl` 값 있음) 매핑 정확성(실제 값으로 검증, mock 응답 객체 금지), 손상된 `cursor` 전달 시 예외 전파, 체결내역 없음 → 빈 목록.
+
+- [x] **Controller: `GET /api/trades` (신규 `TradeController`)**
+  - 신규 `order/controller/TradeController.java` 추가 — `@RequestMapping("/api/trades")`, `@GetMapping`, `@AuthenticationPrincipal AuthenticatedUser`, `@RequestParam com.finplay.api.account.domain.Market market`(필수), `@RequestParam(required = false) String cursor`, `@RequestParam(defaultValue = "20") int limit`. `DEFAULT_LIMIT=20`·`MIN_LIMIT=1`·`MAX_LIMIT=100` 상수 + `validateLimit` private 메서드(`CommunityPostController.validatePageAndSize` 전례, 범위 벗어나면 `BusinessException(VALIDATION_ERROR)`, 클램핑 없음).
+  - `market` 누락·잘못된 리터럴은 기존 `GlobalExceptionHandler`가 처리하므로 컨트롤러에 별도 코드를 추가하지 않는다. `OrderController`에는 메서드를 추가하지 않는다.
+  - `@WebMvcTest` 슬라이스 테스트(`TradeControllerTest`, 신규, `AccountControllerTest` 패턴 재사용): `market=STOCK`·`market=CRYPTO` 200 필드 계약(9개 항목 필드 + 페이지 메타), `market` 누락/`FOREX` 400, `limit=0`·`limit=101` 400, `limit` 생략 시 기본값 20 전달 확인, 손상된 `cursor` 값에 대해 서비스가 던진 예외가 400으로 매핑되는지, 인증 실패 401.
+
+- [x] **통합 테스트: 매수·매도 파이프라인 기반 체결 내역 다중 페이지 시나리오**
+  - Testcontainers 기반 통합 테스트(신규 `TradeIntegrationTest` 또는 기존 매수·매도 통합 테스트 파일 인접)에 시나리오 추가: 매수 API로 여러 건 체결 후 일부를 매도 API로 체결 → `GET /api/trades?market=` → 매수 건 `realizedPnl=null`, 매도 건 FIFO 실현손익이 원장과 일치.
+  - `limit`을 데이터 건수보다 작게 설정해 `nextCursor`를 따라가며 전체를 여러 페이지로 수집한 결과가, 커서 없이 큰 `limit`으로 한 번에 조회한 결과와 항목 집합·순서가 정확히 일치하는지 검증(중복·누락 없음의 최종 근거, spec 완료 조건).
+  - 타인 계좌 체결이 섞이지 않는지, 손상된 `cursor`·`market` 누락 400과 비로그인 401 최소 1건씩, 체결내역 없는 신규 계좌 200 빈 배열 확인.
+
+- [x] **문서 동기화: `docs/api-routes.md` · `docs/api-contracts.md`**
+  - `docs/api-routes.md` 라우트 표에 `GET /api/trades?market=&cursor=&limit=` 행 추가(Spec 컬럼에 `006 PORT-002, Issue #82` 표기).
+  - `docs/api-contracts.md`의 `## order` 절에 "내 체결 내역 조회" 표 추가 — 요청(쿼리 `market` 필수, `cursor`·`limit` 선택), 성공 200 예시(매수·매도 각 1건, `nextCursor`·`hasNext` 포함), 오류(400 `VALIDATION_ERROR` — `market`·손상된 `cursor`·`limit` 범위 세 경우 모두, 401 `UNAUTHORIZED`).
+  - 같은 커밋에서 두 문서를 함께 갱신(CLAUDE.md 규칙 7).
