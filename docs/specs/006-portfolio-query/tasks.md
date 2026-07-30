@@ -167,11 +167,11 @@
 
 > 이 섹션은 `spec.md`의 ACCT-003(전체 포트폴리오 합산 요약)만 다룬다. 계산식 자체는 이슈 #81(`AccountService.getAccountSummary`, 병합됨)을 그대로 재사용하며 새 계산식을 만들지 않는다(`plan.md` 이슈 #51 절 참고). #82(체결 내역)에는 의존하지 않는다 — 실현손익은 `AccountSummaryResponse.realizedPnl()`을 그대로 합산한다.
 
-- [ ] **응답 DTO: `PortfolioSummaryResponse`**
+- [x] **응답 DTO: `PortfolioSummaryResponse`**
   - `portfolio/dto/response/PortfolioSummaryResponse.java` record 추가 — `totalValue`·`returnRate`·`unrealizedPnl`·`realizedPnl` 4개 필드, 정적 팩토리 `of(...)`(plan.md 표 참고).
   - `AccountSummaryResponse`(#81)의 `cashBalance`·`holdingsValue` 등 중간값은 포함하지 않는지, `market`별 breakdown을 임의로 추가하지 않았는지 코드 리뷰 관점에서 스스로 재확인(plan.md "응답 DTO 설계" 근거 — PRD·spec에 없는 필드를 임의로 넣지 않는다).
 
-- [ ] **Service: `PortfolioService` 신규 (portfolio 도메인)**
+- [x] **Service: `PortfolioService` 신규 (portfolio 도메인)**
   - `com.finplay.api.portfolio.service.PortfolioService` 신규 — `AccountService` 1개만 의존성 주입(`@RequiredArgsConstructor`, `HoldingRepository`·`HoldingValuationService`는 주입하지 않음), `@Transactional(readOnly = true) getPortfolioSummary(Long userId)` 추가.
   - `accountService.getAccountFor(userId, Market.STOCK)`·`getAccountFor(userId, Market.CRYPTO)`로 시드머니 합계(`Account.getSeedMoney()` 합) 조달 + `accountService.getAccountSummary(userId, Market.STOCK)`·`getAccountSummary(userId, Market.CRYPTO)`로 6개 필드 조회 → `totalValue`·`unrealizedPnl`·`realizedPnl`은 두 시장 합, `returnRate = (totalValue - seedMoneyTotal) / seedMoneyTotal`(scale 4, `RoundingMode.HALF_UP`, `seedMoneyTotal == 0`이면 `BigDecimal.ZERO`) — plan.md 구현 참고.
   - **시장별 수익률을 더하거나 평균 내지 않는지** — `returnRate`가 반드시 `totalValue`·`seedMoneyTotal` 기준으로 재계산되는지 코드 리뷰 관점에서 스스로 재확인(이슈 #51 명시 요구사항, plan.md "응답 DTO 설계" 표 근거).
