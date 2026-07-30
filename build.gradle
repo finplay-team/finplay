@@ -63,6 +63,19 @@ tasks.withType(Test).configureEach {
 	environment 'EMAIL_VERIFICATION_SECRET', 'test-email-verification-secret'
 	environment 'JWT_SECRET', 'test-jwt-secret-that-is-at-least-32-bytes'
 	environment 'OAUTH_STATE_SECRET', 'test-oauth-state-secret-that-is-at-least-32-bytes'
+	// BithumbFeedSimulator(이슈 #104, !prod 전용)를 @SpringBootTest 전체 컨텍스트에서 비활성화한다.
+	// @ConditionalOnProperty는 컨텍스트 refresh 중 빈 정의 스캔 단계(ConfigurationClassPostProcessor)에서
+	// 평가되는데, @DynamicPropertySource를 @Import된 설정 클래스에 두면 수집되지 않고(PR #110 리뷰), 대안으로
+	// 시도한 DynamicPropertyRegistrar 빈도 그 프로퍼티를 finishBeanFactoryInitialization 단계(빈 정의 스캔보다
+	// 늦음, preInstantiateSingletons 이전)에서만 등록해 조건 평가 시점보다 늦다(spring-test-7.0.8 바이트코드로
+	// 재확인, 회귀 테스트로 실제 실패 재현함). bithumb.feed.simulate.enabled 자체를 JVM 시스템 프로퍼티로 두면
+	// @SpringBootTest뿐 아니라 이 프로퍼티의 matchIfMissing 기본 동작을 검증하는 순수 ApplicationContextRunner
+	// 슬라이스 테스트(BithumbFeedSimulatorConditionalTest, 부트 설정 로딩을 거치지 않고 StandardEnvironment의
+	// systemProperties를 그대로 봄)까지 오염시켜 "프로퍼티 미설정 시 기본값" 케이스가 거짓으로 깨진다. 대신
+	// spring.config.additional-location으로 이 프로퍼티 하나만 담은 별도 파일을 가리킨다 — 이 위치는
+	// ConfigDataEnvironmentPostProcessor(SpringApplication 부트스트랩, 즉 @SpringBootTest)만 해석하므로
+	// ApplicationContextRunner에는 영향이 없다.
+	systemProperty 'spring.config.additional-location', 'classpath:/bithumb-feed-simulator-disabled-for-tests.yml'
 	finalizedBy tasks.jacocoTestReport
 }
 
