@@ -11,7 +11,7 @@ class ErrorCodeTest {
 
 	@Test
 	void hasExactlyTwentyErrorCodesFromPrdAndOAuthSpec() {
-		assertThat(ErrorCode.values()).hasSize(20);
+		assertThat(ErrorCode.values()).hasSize(21);
 	}
 
 	@Test
@@ -36,7 +36,8 @@ class ErrorCodeTest {
 			Map.entry(ErrorCode.UNSUPPORTED_ORDER_TYPE, HttpStatus.UNPROCESSABLE_CONTENT),
 			Map.entry(ErrorCode.TOO_MANY_REQUESTS, HttpStatus.TOO_MANY_REQUESTS),
 			Map.entry(ErrorCode.INTERNAL_ERROR, HttpStatus.INTERNAL_SERVER_ERROR),
-			Map.entry(ErrorCode.OAUTH_PROVIDER_ERROR, HttpStatus.BAD_GATEWAY));
+			Map.entry(ErrorCode.OAUTH_PROVIDER_ERROR, HttpStatus.BAD_GATEWAY),
+			Map.entry(ErrorCode.MARKET_DATA_PROVIDER_ERROR, HttpStatus.BAD_GATEWAY));
 
 		// PRD와 OAuth spec에 정의된 코드를 하나도 빠짐없이 순회하며 상태를 대조한다.
 		assertThat(expected).hasSize(ErrorCode.values().length);

@@ -433,28 +433,14 @@ class InstrumentControllerTest {
 	}
 
 	@Test
-	void getCandlesReturnsCommonValidationErrorForCryptoInstrumentId() throws Exception {
-		authenticate();
-		when(candleQueryService.getCandles(eq(17L), eq("1m"), isNull(), isNull()))
-			.thenThrow(new BusinessException(ErrorCode.VALIDATION_ERROR, "주식 종목만 캔들 조회를 지원합니다."));
-
-		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}/candles", 17L).param("interval", "1m")))
-			.andExpect(status().isBadRequest())
-			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
-			.andExpect(jsonPath("$.error.message").isNotEmpty())
-			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
-
-		verify(candleQueryService).getCandles(17L, "1m", null, null);
-	}
-
-	@Test
 	void getCandlesReturnsFullContractWithCandlesWhenAvailable() throws Exception {
 		authenticate();
 		LocalDateTime from = LocalDateTime.of(2026, 7, 27, 9, 0);
 		LocalDateTime to = LocalDateTime.of(2026, 7, 27, 9, 5);
 		when(candleQueryService.getCandles(1L, "1m", from, to)).thenReturn(List.of(
 			new CandleResponse(LocalDateTime.of(2026, 7, 27, 9, 0), BigDecimal.valueOf(70000),
-				BigDecimal.valueOf(70500), BigDecimal.valueOf(69900), BigDecimal.valueOf(70200), 12345L)));
+				BigDecimal.valueOf(70500), BigDecimal.valueOf(69900), BigDecimal.valueOf(70200),
+				BigDecimal.valueOf(12345))));
 
 		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}/candles", 1L)
 			.param("interval", "1m")
@@ -477,13 +463,68 @@ class InstrumentControllerTest {
 		authenticate();
 		when(candleQueryService.getCandles(1L, "1m", null, null)).thenReturn(List.of(
 			new CandleResponse(LocalDateTime.of(2026, 7, 27, 9, 0), BigDecimal.valueOf(70000),
-				BigDecimal.valueOf(70500), BigDecimal.valueOf(69900), BigDecimal.valueOf(70200), 12345L)));
+				BigDecimal.valueOf(70500), BigDecimal.valueOf(69900), BigDecimal.valueOf(70200),
+				BigDecimal.valueOf(12345))));
 
 		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}/candles", 1L).param("interval", "1m")))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.length()").value(1));
 
 		verify(candleQueryService).getCandles(1L, "1m", null, null);
+	}
+
+	@Test
+	void getCandlesReturnsCommonValidationErrorForCryptoInstrumentIdIsNoLongerRejectedByDefault() throws Exception {
+		// 회귀 고정(MKT-008, 이슈 #20): 예전에는 코인 instrumentId를 서비스에 묻기도 전에 400으로 거부했다.
+		// 이제는 서비스에 위임하고 서비스가 반환한 대로 응답한다 — 여기서는 정상 200 코인 캔들 계약을 검증한다.
+		authenticate();
+		when(candleQueryService.getCandles(17L, "1m", null, null)).thenReturn(List.of(
+			new CandleResponse(LocalDateTime.of(2026, 7, 30, 11, 43), new BigDecimal("95000000"),
+				new BigDecimal("95100000"), new BigDecimal("94900000"), new BigDecimal("95050000"),
+				new BigDecimal("0.26725783"))));
+
+		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}/candles", 17L).param("interval", "1m")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.length()").value(1))
+			.andExpect(jsonPath("$[0].sourceTime").value("2026-07-30T11:43:00"))
+			.andExpect(jsonPath("$[0].close").value(95050000))
+			// 코인 volume은 소수 수량이다 — long이었다면 0으로 잘렸을 값이 그대로 노출돼야 한다.
+			.andExpect(jsonPath("$[0].volume").value(0.26725783))
+			.andExpect(jsonPath("$[0].sourceTradingDate").doesNotExist());
+
+		verify(candleQueryService).getCandles(17L, "1m", null, null);
+	}
+
+	@Test
+	void getCandlesReturnsCommonValidationErrorForUnsupportedIntervalOnCryptoInstrument() throws Exception {
+		authenticate();
+		when(candleQueryService.getCandles(eq(17L), eq("5m"), isNull(), isNull()))
+			.thenThrow(new BusinessException(ErrorCode.VALIDATION_ERROR, "지원하지 않는 캔들 간격입니다. interval=1m만 지원합니다."));
+
+		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}/candles", 17L).param("interval", "5m")))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.message").isNotEmpty())
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(candleQueryService).getCandles(17L, "5m", null, null);
+	}
+
+	@Test
+	void getCandlesReturnsBadGatewayWhenBithumbCandleProviderFails() throws Exception {
+		// MKT-008: 빗썸 캔들 조회 실패(타임아웃·비정상 상태코드·파싱 불가)는 502 MARKET_DATA_PROVIDER_ERROR다 —
+		// 빈 배열 200으로 성공을 위장하지 않는다.
+		authenticate();
+		when(candleQueryService.getCandles(17L, "1m", null, null))
+			.thenThrow(new BusinessException(ErrorCode.MARKET_DATA_PROVIDER_ERROR));
+
+		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}/candles", 17L).param("interval", "1m")))
+			.andExpect(status().isBadGateway())
+			.andExpect(jsonPath("$.error.code").value("MARKET_DATA_PROVIDER_ERROR"))
+			.andExpect(jsonPath("$.error.message").isNotEmpty())
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(candleQueryService).getCandles(17L, "1m", null, null);
 	}
 
 	@Test
