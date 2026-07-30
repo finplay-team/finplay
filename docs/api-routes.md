@@ -24,7 +24,7 @@
 | GET | /api/instruments?market= | market | 인증 사용자의 종목 목록 조회 (market 선택: STOCK·CRYPTO, 생략 시 전체) | 003 MKT-001, Issue #14 |
 | GET | /api/instruments/{instrumentId} | market | 인증 사용자의 종목 단건 조회 | 003 MKT-001, Issue #15 |
 | GET | /api/instruments/{instrumentId}/price | market | 인증 사용자의 종목 현재가 조회. 주식은 StockPriceProvider(재생/실시간 공급자 불문), 코인은 PriceStore(Redis)에서 유효한 최신 가격만 반환 | 003 MKT-002/MKT-003/MKT-004, Issue #16 |
-| GET | /api/instruments/{instrumentId}/candles?interval=1m&from=&to= | market | 인증 사용자의 주식 1분봉 조회(`stock_candles` 기반). 아직 마감하지 않은 분봉은 제외, 재생세션 미준비 시 200 빈 배열 | 003 MKT-002, Issue #17 |
+| GET | /api/instruments/{instrumentId}/candles?interval=1m&from=&to= | market | 인증 사용자의 1분봉 조회. 주식은 `stock_candles` 과거 거래일 재생(미마감 분봉 제외, 재생세션 미준비 시 200 빈 배열), 코인은 빗썸 공개 캔들 REST의 실시간 분봉(저장 없음, 최대 200개, **진행 중 분봉 포함**, 조회 실패 시 502) | 003 MKT-002·MKT-008, Issue #17, Issue #20 |
 | POST | /api/community/posts | community | 인증 사용자의 텍스트 게시물 작성 | 008 COM-001, Issue #23 |
 | GET | /api/community/posts?page=&size= | community | 인증 사용자의 게시물 목록을 최신순 페이지네이션으로 조회 | 008 COM-001, Issue #24 |
 | GET | /api/community/posts/{postId} | community | 인증 사용자의 커뮤니티 게시물 단건 조회 | 008 COM-001, Issue #25 |
