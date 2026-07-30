@@ -28,7 +28,7 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriComponentsBuilder;
 
 @Component
-@Profile("prod")
+@Profile({"prod", "crypto-real"})
 public class BithumbRestCandleProvider implements CryptoCandleProvider {
 
 	private static final String CANDLE_ENDPOINT = "https://api.bithumb.com/v1/candles/minutes/1";
