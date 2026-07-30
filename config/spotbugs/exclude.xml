@@ -5,4 +5,15 @@
     <Match>
         <Class name="~.*Application" />
     </Match>
+    <!-- 재현 확인(이슈 #104 ⑩): WebSocketHandler 콜백(afterConnectionEstablished)이 넘겨주는 WebSocketSession은
+         살아있는 연결 핸들이라 방어적 복사가 불가능하다(복사본은 실제 연결이 아니게 됨). subscribe()·isConnected()·
+         stop()이 콜백 밖에서 이 세션으로 메시지 전송·연결상태 확인·종료를 수행해야 하므로 필드 보관이 구조적으로
+         불가피하다 — docs/agent-mistakes.md 2026-07-29 패턴(손으로 쓴 생성자 → @RequiredArgsConstructor)은 생성자
+         주입 필드에만 적용되고, 콜백이 매번 갱신하는 이 필드에는 적용되지 않는다. 클래스+필드+버그패턴 3중으로
+         좁혀 다른 EI_EXPOSE_REP2 오탐까지 함께 숨기지 않는다. -->
+    <Match>
+        <Class name="com.finplay.api.market.feed.BithumbWebSocketFeedClient" />
+        <Field name="session" />
+        <Bug pattern="EI_EXPOSE_REP2" />
+    </Match>
 </FindBugsFilter>

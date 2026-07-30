@@ -1,0 +1,9 @@
+# @SpringBootTest 전체 컨텍스트에서 BithumbFeedSimulator(이슈 #104, !prod 전용)를 비활성화하는 전용 설정 파일.
+# build.gradle test 태스크의 spring.config.additional-location으로만 로드된다 — 파일명이 application*.yml이
+# 아니므로 src/main/resources/application.yml과 "첫 번째로 발견된 파일만 로드" 충돌이 없고, ConfigDataEnvironment
+# PostProcessor(SpringApplication 부트스트랩)만 이 위치를 해석하므로 ApplicationContextRunner 기반 슬라이스
+# 테스트(BithumbFeedSimulatorConditionalTest)에는 영향을 주지 않는다(PR #110 리뷰 후속 수정).
+bithumb:
+  feed:
+    simulate:
+      enabled: false

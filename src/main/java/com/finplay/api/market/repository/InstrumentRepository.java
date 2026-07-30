@@ -11,4 +11,6 @@ public interface InstrumentRepository extends JpaRepository<Instrument, Long> {
 	List<Instrument> findAllByOrderByIdAsc();
 
 	List<Instrument> findByMarketOrderByIdAsc(Market market);
+
+	List<Instrument> findByMarketAndTradableTrueOrderByIdAsc(Market market);
 }
