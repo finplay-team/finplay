@@ -1,0 +1,143 @@
+// crypto-real 프로필에서 빗썸 공개 ticker REST를 주기 조회해 코인 실시세를 FakeBithumbFeedClient로 주입하는 로컬 전용 폴러 (이슈 #107)
+package com.finplay.api.market.feed;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.finplay.api.market.domain.Instrument;
+import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.repository.InstrumentRepository;
+import java.math.BigDecimal;
+import java.net.URI;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.stream.Collectors;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Profile;
+import org.springframework.http.HttpStatusCode;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestClient;
+import org.springframework.web.util.UriComponentsBuilder;
+
+// 사용자 대상 스위치는 crypto-real 프로필 하나다. bithumb.feed.ticker.enabled는 켜고 끄는 용도가 아니라
+// 테스트 격리 전용 프로퍼티다 — 이 빈은 @Scheduled로 실제 빗썸을 호출하므로 @ActiveProfiles("crypto-real")
+// 통합 테스트에서 빈이 생성되면 자동 테스트가 외부 네트워크에 의존하게 된다(PRD C-005 위반).
+// BithumbFeedSimulator의 bithumb.feed.simulate.enabled와 완전히 같은 격리 패턴이며, 테스트용 false 주입은
+// 별도 설정 파일이 담당한다. 기본은 matchIfMissing=true라 프로필만 켜면 그대로 동작한다.
+@Slf4j
+@Component
+@Profile("!prod & crypto-real")
+@ConditionalOnProperty(prefix = "bithumb.feed.ticker", name = "enabled", havingValue = "true", matchIfMissing = true)
+public class BithumbRestTickerPoller {
+
+	private static final String TICKER_ENDPOINT = "https://api.bithumb.com/v1/ticker";
+	private static final String KRW_MARKET_PREFIX = "KRW-";
+	// PriceStore의 stale 기준 10초보다 짧아야 한다 — 길면 가격이 있는데도 409 PRICE_UNAVAILABLE이 뜬다.
+	private static final long POLL_INTERVAL_MS = 3000;
+
+	private final RestClient restClient;
+	private final InstrumentRepository instrumentRepository;
+	private final FakeBithumbFeedClient fakeBithumbFeedClient;
+	private final Clock clock;
+
+	@Autowired
+	public BithumbRestTickerPoller(
+		RestClient.Builder builder,
+		InstrumentRepository instrumentRepository,
+		FakeBithumbFeedClient fakeBithumbFeedClient,
+		Clock clock,
+		@Value("${bithumb.feed.ticker.connect-timeout-ms:2000}")
+		long connectTimeoutMs,
+		@Value("${bithumb.feed.ticker.read-timeout-ms:3000}")
+		long readTimeoutMs) {
+		this(applyTimeouts(builder, connectTimeoutMs, readTimeoutMs).build(), instrumentRepository,
+			fakeBithumbFeedClient, clock);
+	}
+
+	// 테스트 전용: MockRestServiceServer로 이미 구성된 RestClient를 직접 주입한다 (타임아웃 팩토리를 거치지 않는다).
+	BithumbRestTickerPoller(RestClient restClient, InstrumentRepository instrumentRepository,
+		FakeBithumbFeedClient fakeBithumbFeedClient, Clock clock) {
+		this.restClient = restClient;
+		this.instrumentRepository = instrumentRepository;
+		this.fakeBithumbFeedClient = fakeBithumbFeedClient;
+		this.clock = clock;
+	}
+
+	// 조회 실패·타임아웃·비정상 상태코드·파싱 불가는 이번 회차를 건너뛰고 로그만 남긴다. 예외를 밖으로 던지면
+	// 스케줄러가 죽으므로 절대 전파하지 않으며, 임의값·마지막 값으로 대체하지도 않는다 (MKT-004) —
+	// 마지막 값이 10초 뒤 자연히 stale이 되어 PRICE_UNAVAILABLE로 정직하게 드러난다.
+	@Scheduled(fixedRate = POLL_INTERVAL_MS)
+	public void pollTickers() {
+		try {
+			List<Instrument> cryptoInstruments = instrumentRepository
+				.findByMarketAndTradableTrueOrderByIdAsc(Market.CRYPTO);
+			if (cryptoInstruments.isEmpty()) {
+				return;
+			}
+			String markets = cryptoInstruments.stream()
+				.map(instrument -> KRW_MARKET_PREFIX + instrument.getSymbol())
+				.collect(Collectors.joining(","));
+
+			BithumbTickerItem[] response = fetchTickers(markets);
+			if (response == null) {
+				log.warn("빗썸 ticker 응답이 비어 있어 이번 회차를 건너뛴다 (markets={})", markets);
+				return;
+			}
+			emitTicks(response);
+		} catch (RuntimeException ex) {
+			log.warn("빗썸 ticker 조회 실패 — 이번 회차를 건너뛴다: {}", ex.toString());
+		}
+	}
+
+	private BithumbTickerItem[] fetchTickers(String markets) {
+		URI uri = UriComponentsBuilder.fromUriString(TICKER_ENDPOINT)
+			.queryParam("markets", markets)
+			.build()
+			.toUri();
+
+		return restClient
+			.get()
+			.uri(uri)
+			.retrieve()
+			.onStatus(HttpStatusCode::isError, (request, httpResponse) -> {
+				throw new IllegalStateException("빗썸 ticker 응답 상태 코드 " + httpResponse.getStatusCode());
+			})
+			.body(BithumbTickerItem[].class);
+	}
+
+	// 항목 일부에 필수 필드가 없거나 심볼 형식이 다르면 그 항목만 건너뛰고 나머지는 정상 주입한다.
+	private void emitTicks(BithumbTickerItem[] response) {
+		LocalDateTime receivedAt = LocalDateTime.now(clock);
+		for (BithumbTickerItem item : response) {
+			if (item == null || item.market() == null || item.trade_price() == null
+				|| !item.market().startsWith(KRW_MARKET_PREFIX)) {
+				log.warn("빗썸 ticker 항목이 올바르지 않아 건너뛴다: {}", item);
+				continue;
+			}
+			String symbol = item.market().substring(KRW_MARKET_PREFIX.length());
+			if (symbol.isEmpty()) {
+				log.warn("빗썸 ticker 항목의 심볼이 비어 있어 건너뛴다: {}", item.market());
+				continue;
+			}
+			fakeBithumbFeedClient.emitTick(symbol, item.trade_price(), receivedAt);
+		}
+	}
+
+	private static RestClient.Builder applyTimeouts(RestClient.Builder builder, long connectTimeoutMs,
+		long readTimeoutMs) {
+		SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+		requestFactory.setConnectTimeout(Duration.ofMillis(connectTimeoutMs));
+		requestFactory.setReadTimeout(Duration.ofMillis(readTimeoutMs));
+		return builder.requestFactory(requestFactory);
+	}
+
+	// 우리가 쓰는 필드는 market·trade_price 둘뿐이다 (2026-07-31 실제 응답으로 확인).
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	private record BithumbTickerItem(String market, BigDecimal trade_price) {
+	}
+}

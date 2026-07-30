@@ -12,7 +12,7 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 @Component
-@Profile("!prod")
+@Profile("!prod & !crypto-real")
 public class FakeCryptoCandleProvider implements CryptoCandleProvider {
 
 	private final Map<String, List<CryptoCandleDto>> candlesBySymbol = new HashMap<>();

@@ -1,0 +1,20 @@
+# 로컬에서 코인 캔들·현재가를 둘 다 실제 빗썸 데이터로 전환하는 프로필 (이슈 #107).
+# 켜는 방법: SPRING_PROFILES_ACTIVE=local,crypto-real ./gradlew bootRun
+# 켜면 — 캔들은 BithumbRestCandleProvider(실제 빗썸 REST), 현재가는 BithumbRestTickerPoller(실제 ticker REST 3초 폴링).
+#        아래 simulate.enabled=false로 BithumbFeedSimulator 빈 자체가 생성되지 않는다.
+# 안 켜면(기본) — 캔들은 FakeCryptoCandleProvider(빈 배열), 현재가는 BithumbFeedSimulator의 합성 랜덤 틱.
+# 이 프로필 하나로 캔들·현재가가 함께 바뀐다 — 한쪽만 실데이터가 되면 차트와 주문창 현재가의 자릿수가 어긋난다.
+bithumb:
+  feed:
+    simulate:
+      enabled: false
+
+# 이 프로필에서는 BithumbRestTickerPoller가 5번째 @Scheduled 블로킹 작업이 된다(application.yml의 pool size 4는
+# SSE heartbeat·StockPriceStreamService·KisHistoricalCandleCollector·StockReplaySessionScheduler 4개 기준이다).
+# 폴러가 스레드를 못 잡아 3초 주기가 밀리면 PriceStore의 10초 stale 기준을 넘겨 409 PRICE_UNAVAILABLE이 뜬다 —
+# 이 이슈가 없애려던 증상과 같은 모양이라 프로필 안에서 한 칸 올려 닫는다 (기본 프로필에는 영향 없음).
+spring:
+  task:
+    scheduling:
+      pool:
+        size: 5
