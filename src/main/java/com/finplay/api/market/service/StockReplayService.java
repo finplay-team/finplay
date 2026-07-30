@@ -39,25 +39,37 @@ public class StockReplayService {
 
 	@Transactional(readOnly = true)
 	public StockReplayPriceDto getCurrentPrice(Long instrumentId) {
+		return getCurrentPrices(List.of(instrumentId)).get(0);
+	}
+
+	// 계좌(=market) 단위로 여러 종목을 평가할 때 종목과 무관한 전역 상태(현재시각·재생세션·시장상태)를 요청당 1회만 계산하고,
+	// 종목별로 실제로 달라지는 분봉 조회(findRevealedCandle)만 반복한다 (PR #97 리뷰 권장사항 — HoldingValuationService 등이
+	// 보유 종목 N개를 평가할 때 이 전역 상태를 종목 수만큼 중복 조회하던 낭비를 없앤다). 반환 순서는 instrumentIds와 일치한다.
+	@Transactional(readOnly = true)
+	public List<StockReplayPriceDto> getCurrentPrices(List<Long> instrumentIds) {
 		LocalDateTime now = LocalDateTime.now(clock);
 		Optional<StockReplaySession> readySession = findReadySession(now.toLocalDate());
 		StockMarketStatus marketStatus = computeMarketStatus(readySession.isPresent(), now);
 
 		if (readySession.isEmpty()) {
-			return new StockReplayPriceDto(false, marketStatus, null, null, null);
+			return instrumentIds.stream()
+				.map(instrumentId -> new StockReplayPriceDto(false, marketStatus, null, null, null))
+				.toList();
 		}
 
 		LocalDate sourceTradingDate = readySession.get().getSourceTradingDate();
-		Optional<StockCandle> revealedCandle = findRevealedCandle(instrumentId, sourceTradingDate, now.toLocalTime());
-		if (revealedCandle.isEmpty()) {
-			return new StockReplayPriceDto(true, marketStatus, sourceTradingDate, null, null);
-		}
-
-		StockCandle candle = revealedCandle.get();
-		boolean isFirstCandleWindow = isWithinFirstCandleWindow(now.toLocalTime());
-		var price = isFirstCandleWindow ? candle.getOpen() : candle.getClose();
-		LocalDateTime sourceTime = LocalDateTime.of(sourceTradingDate, candle.getCandleTime());
-		return new StockReplayPriceDto(true, marketStatus, sourceTradingDate, price, sourceTime);
+		LocalTime nowTime = now.toLocalTime();
+		boolean isFirstCandleWindow = isWithinFirstCandleWindow(nowTime);
+		return instrumentIds.stream().map(instrumentId -> {
+			Optional<StockCandle> revealedCandle = findRevealedCandle(instrumentId, sourceTradingDate, nowTime);
+			if (revealedCandle.isEmpty()) {
+				return new StockReplayPriceDto(true, marketStatus, sourceTradingDate, null, null);
+			}
+			StockCandle candle = revealedCandle.get();
+			var price = isFirstCandleWindow ? candle.getOpen() : candle.getClose();
+			LocalDateTime sourceTime = LocalDateTime.of(sourceTradingDate, candle.getCandleTime());
+			return new StockReplayPriceDto(true, marketStatus, sourceTradingDate, price, sourceTime);
+		}).toList();
 	}
 
 	// 캔들 API — 아직 마감하지 않은 분봉은 절대 응답에 포함하지 않는다. 09:00~09:00:59(첫 분봉 구간)은 그 첫 분봉조차 아직

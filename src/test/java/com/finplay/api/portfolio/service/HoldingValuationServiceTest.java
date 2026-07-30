@@ -2,6 +2,10 @@
 package com.finplay.api.portfolio.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.finplay.api.account.domain.Account;
@@ -11,8 +15,10 @@ import com.finplay.api.market.service.PriceQueryService;
 import com.finplay.api.market.service.PriceQuoteDto;
 import com.finplay.api.market.service.PriceStatus;
 import com.finplay.api.portfolio.domain.Holding;
+import com.finplay.api.portfolio.repository.HoldingRepository;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
@@ -21,7 +27,8 @@ class HoldingValuationServiceTest {
 	private static final LocalDateTime NOW = LocalDateTime.of(2026, 7, 29, 10, 0, 0);
 
 	private final PriceQueryService priceQueryService = Mockito.mock(PriceQueryService.class);
-	private final HoldingValuationService service = new HoldingValuationService(priceQueryService);
+	private final HoldingRepository holdingRepository = Mockito.mock(HoldingRepository.class);
+	private final HoldingValuationService service = new HoldingValuationService(priceQueryService, holdingRepository);
 
 	@Test
 	void evaluateHoldingReturnsPositivePnlAndReturnRateWhenPriceRoseAboveAveragePrice() {
@@ -39,6 +46,7 @@ class HoldingValuationServiceTest {
 		assertThat(result.evaluationAmount()).isEqualTo(600_000L);
 		assertThat(result.unrealizedPnl()).isEqualTo(100_000L);
 		assertThat(result.returnRate()).isEqualByComparingTo("0.2000");
+		assertThat(result.currentPrice()).isEqualByComparingTo("60000");
 	}
 
 	@Test
@@ -55,6 +63,7 @@ class HoldingValuationServiceTest {
 		assertThat(result.evaluationAmount()).isEqualTo(400_000L);
 		assertThat(result.unrealizedPnl()).isEqualTo(-100_000L);
 		assertThat(result.returnRate()).isEqualByComparingTo("-0.2000");
+		assertThat(result.currentPrice()).isEqualByComparingTo("40000");
 	}
 
 	@Test
@@ -71,6 +80,7 @@ class HoldingValuationServiceTest {
 		assertThat(result.evaluationAmount()).isNull();
 		assertThat(result.unrealizedPnl()).isNull();
 		assertThat(result.returnRate()).isNull();
+		assertThat(result.currentPrice()).isNull();
 	}
 
 	@Test
@@ -110,6 +120,106 @@ class HoldingValuationServiceTest {
 		assertThat(result.evaluationAmount()).isEqualTo(600_000L);
 		assertThat(result.unrealizedPnl()).isEqualTo(600_000L);
 		assertThat(result.returnRate()).isEqualByComparingTo("0");
+	}
+
+	// 이하 evaluateHoldings(List) — 배치 평가 (PR #97 리뷰 권장사항).
+
+	@Test
+	void evaluateHoldingsCallsPriceQueryServiceBatchMethodOnceInsteadOfPerHolding() {
+		Instrument firstInstrument = testInstrument();
+		Instrument secondInstrument = Instrument.create(
+			com.finplay.api.market.domain.Market.STOCK, "000660", "SK하이닉스", new BigDecimal("100"), 0L, true, NOW);
+		Holding firstHolding = testHolding(firstInstrument, new BigDecimal("10"), new BigDecimal("50000"));
+		Holding secondHolding = testHolding(secondInstrument, new BigDecimal("5"), new BigDecimal("100000"));
+		when(priceQueryService.getPriceQuotes(List.of(firstInstrument, secondInstrument)))
+			.thenReturn(List.of(
+				new PriceQuoteDto(new BigDecimal("60000"), NOW, PriceStatus.AVAILABLE, null),
+				new PriceQuoteDto(new BigDecimal("90000"), NOW, PriceStatus.AVAILABLE, null)));
+
+		List<HoldingValuationDto> result = service.evaluateHoldings(List.of(firstHolding, secondHolding));
+
+		assertThat(result).hasSize(2);
+		assertThat(result.get(0).evaluationAmount()).isEqualTo(600_000L);
+		assertThat(result.get(1).evaluationAmount()).isEqualTo(450_000L);
+		// 종목 수(2건)와 무관하게 시세 배치 조회는 요청당 1회만 일어나야 한다(종목별 getPriceQuote 반복 호출 금지).
+		verify(priceQueryService, times(1)).getPriceQuotes(any());
+		verify(priceQueryService, never()).getPriceQuote(any(Instrument.class));
+	}
+
+	@Test
+	void evaluateHoldingsProducesSameResultsAsCallingEvaluateHoldingIndividually() {
+		// 회귀 확인 — 배치 경로(evaluateHoldings)와 건별 경로(evaluateHolding)는 같은 시세 입력에 대해
+		// 완전히 동일한 원가·평가금액·손익·수익률을 계산해야 한다(성능 리팩터링이라 계산 결과가 달라지면 안 됨).
+		Instrument firstInstrument = testInstrument();
+		Instrument secondInstrument = Instrument.create(
+			com.finplay.api.market.domain.Market.CRYPTO, "BTC", "비트코인", new BigDecimal("100"), 0L, true, NOW);
+		Holding firstHolding = testHolding(firstInstrument, new BigDecimal("10"), new BigDecimal("50000"));
+		Holding secondHolding = testHolding(secondInstrument, new BigDecimal("3"), new BigDecimal("200"));
+		PriceQuoteDto firstQuote = new PriceQuoteDto(new BigDecimal("60000"), NOW, PriceStatus.AVAILABLE, null);
+		PriceQuoteDto secondQuote = new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null);
+		when(priceQueryService.getPriceQuotes(List.of(firstInstrument, secondInstrument)))
+			.thenReturn(List.of(firstQuote, secondQuote));
+		when(priceQueryService.getPriceQuote(firstInstrument)).thenReturn(firstQuote);
+		when(priceQueryService.getPriceQuote(secondInstrument)).thenReturn(secondQuote);
+
+		List<HoldingValuationDto> batchResult = service.evaluateHoldings(List.of(firstHolding, secondHolding));
+		HoldingValuationDto individualFirst = service.evaluateHolding(firstHolding);
+		HoldingValuationDto individualSecond = service.evaluateHolding(secondHolding);
+
+		assertThat(batchResult.get(0)).isEqualTo(individualFirst);
+		assertThat(batchResult.get(1)).isEqualTo(individualSecond);
+	}
+
+	@Test
+	void evaluateHoldingsReturnsEmptyListWithoutQueryingPricesWhenHoldingsIsEmpty() {
+		List<HoldingValuationDto> result = service.evaluateHoldings(List.of());
+
+		assertThat(result).isEmpty();
+		verify(priceQueryService, never()).getPriceQuotes(any());
+	}
+
+	@Test
+	void evaluateActiveHoldingsForAccountReturnsEvaluatedListForMixedPriceAvailability() {
+		Long accountId = 1L;
+		Instrument availableInstrument = testInstrument();
+		Instrument unavailableInstrument = Instrument.create(
+			com.finplay.api.market.domain.Market.CRYPTO,
+			"BTC",
+			"비트코인",
+			new BigDecimal("100"),
+			0L,
+			true,
+			NOW);
+		Holding availableHolding = testHolding(availableInstrument, new BigDecimal("10"), new BigDecimal("50000"));
+		Holding unavailableHolding = testHolding(unavailableInstrument, new BigDecimal("5"), new BigDecimal("100"));
+		when(holdingRepository.findAllByAccountIdAndIsActiveTrue(accountId))
+			.thenReturn(List.of(availableHolding, unavailableHolding));
+		// evaluateActiveHoldingsForAccount -> evaluateHoldings는 배치 경로(getPriceQuotes)를 사용한다
+		// (PR #97 리뷰 권장사항 배치화 — 종목별 getPriceQuote가 아닌 리스트 단위 조회로 위임).
+		when(priceQueryService.getPriceQuotes(List.of(availableInstrument, unavailableInstrument)))
+			.thenReturn(List.of(
+				new PriceQuoteDto(new BigDecimal("60000"), NOW, PriceStatus.AVAILABLE, null),
+				new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null)));
+
+		List<HoldingValuationDto> result = service.evaluateActiveHoldingsForAccount(accountId);
+
+		assertThat(result).hasSize(2);
+		assertThat(result.get(0).priceStatus()).isEqualTo(PriceStatus.AVAILABLE);
+		assertThat(result.get(0).evaluationAmount()).isEqualTo(600_000L);
+		assertThat(result.get(0).unrealizedPnl()).isEqualTo(100_000L);
+		assertThat(result.get(1).priceStatus()).isEqualTo(PriceStatus.UNAVAILABLE);
+		assertThat(result.get(1).evaluationAmount()).isNull();
+		assertThat(result.get(1).unrealizedPnl()).isNull();
+	}
+
+	@Test
+	void evaluateActiveHoldingsForAccountReturnsEmptyListWhenNoActiveHoldings() {
+		Long accountId = 2L;
+		when(holdingRepository.findAllByAccountIdAndIsActiveTrue(accountId)).thenReturn(List.of());
+
+		List<HoldingValuationDto> result = service.evaluateActiveHoldingsForAccount(accountId);
+
+		assertThat(result).isEmpty();
 	}
 
 	private static Holding testHolding(Instrument instrument, BigDecimal quantity, BigDecimal price) {

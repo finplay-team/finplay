@@ -9,6 +9,7 @@ public record HoldingValuationDto(
 	BigDecimal averagePrice,
 	long costBasis,
 	PriceStatus priceStatus,
+	BigDecimal currentPrice,
 	Long evaluationAmount,
 	Long unrealizedPnl,
 	BigDecimal returnRate) {

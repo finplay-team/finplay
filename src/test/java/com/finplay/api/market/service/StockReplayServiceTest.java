@@ -3,8 +3,10 @@ package com.finplay.api.market.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -255,6 +257,129 @@ class StockReplayServiceTest {
 		assertThat(dto.price()).isNull();
 		assertThat(dto.sourceTime()).isNull();
 		assertThat(dto.isPriceAvailable()).isFalse();
+	}
+
+	// --- 배치 현재가(getCurrentPrices, PR #97 리뷰 권장사항) ---
+
+	@Test
+	void getCurrentPricesComputesReadySessionAndMarketStatusOnlyOnceForMultipleInstruments() {
+		Long secondInstrumentId = 2L;
+		Long thirdInstrumentId = 3L;
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		StockCandle closedCandle = candle(LocalTime.of(9, 1), BigDecimal.valueOf(1010), BigDecimal.valueOf(1020));
+		when(stockCandleRepository.findFirstByInstrumentIdAndTradingDateAndCandleTimeLessThanEqualOrderByCandleTimeDesc(
+			any(), eq(WEEKDAY), eq(LocalTime.of(9, 1))))
+			.thenReturn(Optional.of(closedCandle));
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(9, 2, 15)));
+
+		List<StockReplayPriceDto> results = service
+			.getCurrentPrices(List.of(INSTRUMENT_ID, secondInstrumentId, thirdInstrumentId));
+
+		assertThat(results).hasSize(3);
+		assertThat(results).allSatisfy(dto -> {
+			assertThat(dto.sessionReady()).isTrue();
+			assertThat(dto.marketStatus()).isEqualTo(StockMarketStatus.OPEN);
+			assertThat(dto.price()).isEqualTo(BigDecimal.valueOf(1020));
+		});
+		// 종목과 무관한 전역 상태(재생세션 조회)는 종목 수(3개)와 무관하게 요청당 1회만 계산되어야 한다.
+		verify(stockReplaySessionRepository, times(1)).findByServiceDate(WEEKDAY);
+		// 반면 종목별로 실제로 달라지는 분봉 조회는 종목 수만큼(3회) 일어나야 한다.
+		verify(stockCandleRepository, times(3))
+			.findFirstByInstrumentIdAndTradingDateAndCandleTimeLessThanEqualOrderByCandleTimeDesc(
+				any(), eq(WEEKDAY), eq(LocalTime.of(9, 1)));
+		verify(stockCandleRepository)
+			.findFirstByInstrumentIdAndTradingDateAndCandleTimeLessThanEqualOrderByCandleTimeDesc(
+				INSTRUMENT_ID, WEEKDAY, LocalTime.of(9, 1));
+		verify(stockCandleRepository)
+			.findFirstByInstrumentIdAndTradingDateAndCandleTimeLessThanEqualOrderByCandleTimeDesc(
+				secondInstrumentId, WEEKDAY, LocalTime.of(9, 1));
+		verify(stockCandleRepository)
+			.findFirstByInstrumentIdAndTradingDateAndCandleTimeLessThanEqualOrderByCandleTimeDesc(
+				thirdInstrumentId, WEEKDAY, LocalTime.of(9, 1));
+	}
+
+	@Test
+	void getCurrentPricesReturnsResultsInSameOrderAsRequestedInstrumentIds() {
+		Long secondInstrumentId = 2L;
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		StockCandle candleForFirst = candle(LocalTime.of(9, 1), BigDecimal.valueOf(100), BigDecimal.valueOf(110));
+		StockCandle candleForSecond = candle(LocalTime.of(9, 1), BigDecimal.valueOf(200), BigDecimal.valueOf(220));
+		when(stockCandleRepository.findFirstByInstrumentIdAndTradingDateAndCandleTimeLessThanEqualOrderByCandleTimeDesc(
+			INSTRUMENT_ID, WEEKDAY, LocalTime.of(9, 1)))
+			.thenReturn(Optional.of(candleForFirst));
+		when(stockCandleRepository.findFirstByInstrumentIdAndTradingDateAndCandleTimeLessThanEqualOrderByCandleTimeDesc(
+			secondInstrumentId, WEEKDAY, LocalTime.of(9, 1)))
+			.thenReturn(Optional.of(candleForSecond));
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(9, 2, 15)));
+
+		List<StockReplayPriceDto> results = service.getCurrentPrices(List.of(INSTRUMENT_ID, secondInstrumentId));
+
+		assertThat(results.get(0).price()).isEqualTo(BigDecimal.valueOf(110));
+		assertThat(results.get(1).price()).isEqualTo(BigDecimal.valueOf(220));
+	}
+
+	@Test
+	void getCurrentPricesReturnsSessionNotReadyForAllInstrumentsWithoutQueryingCandlesWhenNoReadySession() {
+		Long secondInstrumentId = 2L;
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY)).thenReturn(Optional.empty());
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(10, 0)));
+
+		List<StockReplayPriceDto> results = service.getCurrentPrices(List.of(INSTRUMENT_ID, secondInstrumentId));
+
+		assertThat(results).hasSize(2);
+		assertThat(results).allSatisfy(dto -> {
+			assertThat(dto.sessionReady()).isFalse();
+			assertThat(dto.marketStatus()).isEqualTo(StockMarketStatus.CLOSED);
+			assertThat(dto.price()).isNull();
+		});
+		verifyNoInteractions(stockCandleRepository);
+	}
+
+	@Test
+	void getCurrentPricesHandlesMixedCandleAvailabilityAcrossInstruments() {
+		Long missingCandleInstrumentId = 2L;
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		StockCandle closedCandle = candle(LocalTime.of(9, 1), BigDecimal.valueOf(1010), BigDecimal.valueOf(1020));
+		when(stockCandleRepository.findFirstByInstrumentIdAndTradingDateAndCandleTimeLessThanEqualOrderByCandleTimeDesc(
+			INSTRUMENT_ID, WEEKDAY, LocalTime.of(9, 1)))
+			.thenReturn(Optional.of(closedCandle));
+		when(stockCandleRepository.findFirstByInstrumentIdAndTradingDateAndCandleTimeLessThanEqualOrderByCandleTimeDesc(
+			missingCandleInstrumentId, WEEKDAY, LocalTime.of(9, 1)))
+			.thenReturn(Optional.empty());
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(9, 2, 15)));
+
+		List<StockReplayPriceDto> results = service
+			.getCurrentPrices(List.of(INSTRUMENT_ID, missingCandleInstrumentId));
+
+		assertThat(results.get(0).isPriceAvailable()).isTrue();
+		assertThat(results.get(0).price()).isEqualTo(BigDecimal.valueOf(1020));
+		assertThat(results.get(1).isPriceAvailable()).isFalse();
+		assertThat(results.get(1).sessionReady()).isTrue();
+		assertThat(results.get(1).sourceTradingDate()).isEqualTo(WEEKDAY);
+	}
+
+	// 회귀 확인 — 단건 getCurrentPrice(Long)는 getCurrentPrices(List.of(id)).get(0)에 위임하도록 리팩터링됐다
+	// (PR #97 리뷰 권장사항). 배치 메서드를 여러 종목으로 직접 호출한 결과 중 한 종목분과, 그 종목 하나만으로 단건 호출한
+	// 결과가 동일해야 한다 — 위임 과정에서 계산값이 달라지는 회귀가 없는지 고정한다.
+	@Test
+	void getCurrentPriceDelegatesToGetCurrentPricesAndMatchesBatchResultForSameInstrument() {
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		StockCandle closedCandle = candle(LocalTime.of(9, 1), BigDecimal.valueOf(1010), BigDecimal.valueOf(1020));
+		when(stockCandleRepository.findFirstByInstrumentIdAndTradingDateAndCandleTimeLessThanEqualOrderByCandleTimeDesc(
+			INSTRUMENT_ID, WEEKDAY, LocalTime.of(9, 1)))
+			.thenReturn(Optional.of(closedCandle));
+
+		StockReplayPriceDto single = service(fixedClock(WEEKDAY, LocalTime.of(9, 2, 15)))
+			.getCurrentPrice(INSTRUMENT_ID);
+		StockReplayPriceDto batchFirst = service(fixedClock(WEEKDAY, LocalTime.of(9, 2, 15)))
+			.getCurrentPrices(List.of(INSTRUMENT_ID))
+			.get(0);
+
+		assertThat(single).isEqualTo(batchFirst);
 	}
 
 	// --- 캔들 API 공개 컷오프(getRevealedCandles) ---
