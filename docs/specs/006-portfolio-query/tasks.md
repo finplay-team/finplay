@@ -141,7 +141,7 @@
   - `order/dto/response/TradeListResponse.java`(record) 추가 — `content`·`nextCursor`·`hasNext`, 정적 팩토리 `of(...)`, 컴팩트 생성자에서 `content` 방어적 불변화(`CommunityPostListResponse` 전례).
   - `OrderListItemResponse`(#21) 필드와 겹치지 않는지 plan.md "필드 대조표" 기준으로 코드 리뷰 관점에서 스스로 재확인(특히 price·amount·fee·realizedPnl·executedAt이 이 응답에만 있는지).
 
-- [ ] **Service: `TradeService.getMyTrades` (신규 클래스)**
+- [x] **Service: `TradeService.getMyTrades` (신규 클래스)**
   - `order/service/TradeService.java` 신규 — `AccountService`·`TradeRepository` 2개 의존성(`@RequiredArgsConstructor`), `@Transactional(readOnly = true) getMyTrades(Long userId, Market market, String cursor, int limit)` 추가. `OrderService`에는 추가하지 않는다(plan.md "왜 TradeService를 새로 만드는가" 근거).
   - `accountService.getAccountFor(userId, market)`로 소유권+시장 스코프 검증 재사용 → `TradeCursor.parse(cursor)` → `tradeRepository.findByAccountIdWithCursor(accountId, ..., limit + 1)` → `hasNext` 판정 → `TradeListItemResponse.from(...)`/`TradeListResponse.of(...)`로 조립(plan.md 구현 참고).
   - 단위 테스트(`TradeServiceTest`, 신규, Mockito): `limit`건 이하 반환 시 `hasNext=false`·`nextCursor=null`, `limit+1`건 반환 시 `hasNext=true`·`nextCursor`가 페이지 마지막 항목 기준으로 정확히 생성, 매수(`realizedPnl=null`)·매도(`realizedPnl` 값 있음) 매핑 정확성(실제 값으로 검증, mock 응답 객체 금지), 손상된 `cursor` 전달 시 예외 전파, 체결내역 없음 → 빈 목록.
