@@ -132,7 +132,7 @@
   - 기존 `TradeRepository`가 `TradeRepositoryCustom`도 상속하도록 변경(`findByOrderId`는 그대로 유지).
   - `@DataJpaTest` 슬라이스 테스트(`TradeRepositoryTest`, 신규): 다른 계좌 체결 제외, `executedAt` 내림차순·동시각 `id` 내림차순 정렬, 커서로 연속 2회 조회한 결과가 커서 없이 한 번에 조회한 전체 결과와 중복·누락 없이 일치, `instrument` 지연 로딩 예외 없음(`fetchJoin` 확인).
 
-- [ ] **값 객체: `TradeCursor` 파싱·인코딩**
+- [x] **값 객체: `TradeCursor` 파싱·인코딩**
   - `order/service/TradeCursor.java`(record: `executedAt`, `id`) 추가 — `parse(String raw)`(`null`/빈 문자열 → `null`, 손상된 형식 → `BusinessException(VALIDATION_ERROR)`), `encode(Trade lastTrade)`(`DateTimeFormatter.ISO_LOCAL_DATE_TIME` + `"_"` + id, plan.md 근거 참고).
   - 단위 테스트(`TradeCursorTest`, 신규, 순수 JUnit): 정상 파싱, `null`/빈 문자열 처리, 구분자 없음·날짜 파싱 실패·id 파싱 실패 각각 400 예외, `encode` → `parse` 왕복 일치(라운드트립).
 
