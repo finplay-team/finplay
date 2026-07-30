@@ -15,6 +15,7 @@ AI 에이전트는 **docs/ 전체를 순회하지 않는다.** 작업 유형에 
 | 이슈 분할 / 리뷰 지적 처리 | `docs/team-conventions.md` |
 | 하네스/문서 수정 | `AGENTS.md` + `CLAUDE.md` + 이 파일 + `docs/adr/0005-local-agent-orchestration.md` + `docs/adr/0008-four-agent-roster.md` + `docs/adr/0009-codex-local-orchestration.md` + `docs/adr/0010-agent-session-lifecycle.md` |
 | 배포 / CI 구성 / 스모크 | `docs/specs/010-deployment/spec.md` + `docs/conventions.md`(시크릿 절) |
+| 배포 스택 실행 (수동 배포 절차) | `deploy/README.md` (+ `compose.deploy.yaml`·`deploy/nginx.conf`·`Dockerfile`) |
 | 하네스 CI 전환 (미착수) | `docs/harness-roadmap.md` + `docs/adr/0005-local-agent-orchestration.md` |
 | 병렬 작업 / 팀 구성 | `docs/parallel-agents.md` |
 | 과거 실수 확인 | `docs/agent-mistakes.md` (구현 시작 전 1회) |
