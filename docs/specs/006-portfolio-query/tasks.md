@@ -182,7 +182,7 @@
   - 신규 `com.finplay.api.portfolio.controller.PortfolioController` 추가 — `@RequestMapping("/api/portfolio")`, `@GetMapping`, `@AuthenticationPrincipal AuthenticatedUser`에서 `userId`만 얻어 서비스 호출. **`@RequestParam Market market`을 선언하지 않는다** — 이 API는 쿼리 파라미터가 전혀 없다(plan.md "입력 명세" 근거, `#81`·`#52`·`#82`와 다른 점).
   - `@WebMvcTest` 슬라이스 테스트(`PortfolioControllerTest`, 신규, `AccountControllerTest` 패턴 재사용): 200 성공 시 `jsonPath`로 4개 필드 값 검증, 인증 실패 401.
 
-- [ ] **통합 테스트: 시장별 계좌 요약 API와의 합산 일치 시나리오**
+- [x] **통합 테스트: 시장별 계좌 요약 API와의 합산 일치 시나리오**
   - Testcontainers 기반 통합 테스트(신규 `PortfolioSummaryIntegrationTest` 또는 기존 `AccountSummaryIntegrationTest` 인접)에 시나리오 추가: 회원가입 직후 빈 계좌 상태에서 `GET /api/portfolio` → 200, `totalValue = 2 × 초기 시드머니`·`unrealizedPnl=0`·`realizedPnl=0`·`returnRate=0`(spec 완료 조건 "빈 계좌"). `STOCK`만 매수 실행 후 `GET /api/accounts/summary?market=STOCK`·`market=CRYPTO` 각각과 `GET /api/portfolio`를 비교해 4개 필드가 두 시장 요약의 정확한 합인지 검증(spec 완료 조건 "단일 시장 보유"). 양 시장 모두 매수 실행 후 동일하게 비교 검증(spec 완료 조건 "양 시장 보유").
   - 타인 계좌의 매수·보유가 본인 포트폴리오 합산에 섞이지 않는지, 비로그인 401 최소 1건 확인.
 
