@@ -136,7 +136,7 @@
   - `order/service/TradeCursor.java`(record: `executedAt`, `id`) 추가 — `parse(String raw)`(`null`/빈 문자열 → `null`, 손상된 형식 → `BusinessException(VALIDATION_ERROR)`), `encode(Trade lastTrade)`(`DateTimeFormatter.ISO_LOCAL_DATE_TIME` + `"_"` + id, plan.md 근거 참고).
   - 단위 테스트(`TradeCursorTest`, 신규, 순수 JUnit): 정상 파싱, `null`/빈 문자열 처리, 구분자 없음·날짜 파싱 실패·id 파싱 실패 각각 400 예외, `encode` → `parse` 왕복 일치(라운드트립).
 
-- [ ] **응답 DTO: `TradeListItemResponse` · `TradeListResponse`**
+- [x] **응답 DTO: `TradeListItemResponse` · `TradeListResponse`**
   - `order/dto/response/TradeListItemResponse.java`(record) 추가 — `tradeId`·`instrumentId`·`side`·`price`·`quantity`·`amount`·`fee`·`realizedPnl`·`executedAt` 9개 필드, 정적 팩토리 `from(Trade trade)`.
   - `order/dto/response/TradeListResponse.java`(record) 추가 — `content`·`nextCursor`·`hasNext`, 정적 팩토리 `of(...)`, 컴팩트 생성자에서 `content` 방어적 불변화(`CommunityPostListResponse` 전례).
   - `OrderListItemResponse`(#21) 필드와 겹치지 않는지 plan.md "필드 대조표" 기준으로 코드 리뷰 관점에서 스스로 재확인(특히 price·amount·fee·realizedPnl·executedAt이 이 응답에만 있는지).
