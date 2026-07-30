@@ -160,3 +160,33 @@
   - `docs/api-routes.md` 라우트 표에 `GET /api/trades?market=&cursor=&limit=` 행 추가(Spec 컬럼에 `006 PORT-002, Issue #82` 표기).
   - `docs/api-contracts.md`의 `## order` 절에 "내 체결 내역 조회" 표 추가 — 요청(쿼리 `market` 필수, `cursor`·`limit` 선택), 성공 200 예시(매수·매도 각 1건, `nextCursor`·`hasNext` 포함), 오류(400 `VALIDATION_ERROR` — `market`·손상된 `cursor`·`limit` 범위 세 경우 모두, 401 `UNAUTHORIZED`).
   - 같은 커밋에서 두 문서를 함께 갱신(CLAUDE.md 규칙 7).
+
+---
+
+## 이슈 #51: 전체 포트폴리오 합산 요약 API 구현 (ACCT-003)
+
+> 이 섹션은 `spec.md`의 ACCT-003(전체 포트폴리오 합산 요약)만 다룬다. 계산식 자체는 이슈 #81(`AccountService.getAccountSummary`, 병합됨)을 그대로 재사용하며 새 계산식을 만들지 않는다(`plan.md` 이슈 #51 절 참고). #82(체결 내역)에는 의존하지 않는다 — 실현손익은 `AccountSummaryResponse.realizedPnl()`을 그대로 합산한다.
+
+- [x] **응답 DTO: `PortfolioSummaryResponse`**
+  - `portfolio/dto/response/PortfolioSummaryResponse.java` record 추가 — `totalValue`·`returnRate`·`unrealizedPnl`·`realizedPnl` 4개 필드, 정적 팩토리 `of(...)`(plan.md 표 참고).
+  - `AccountSummaryResponse`(#81)의 `cashBalance`·`holdingsValue` 등 중간값은 포함하지 않는지, `market`별 breakdown을 임의로 추가하지 않았는지 코드 리뷰 관점에서 스스로 재확인(plan.md "응답 DTO 설계" 근거 — PRD·spec에 없는 필드를 임의로 넣지 않는다).
+
+- [x] **Service: `PortfolioService` 신규 (portfolio 도메인)**
+  - `com.finplay.api.portfolio.service.PortfolioService` 신규 — `AccountService` 1개만 의존성 주입(`@RequiredArgsConstructor`, `HoldingRepository`·`HoldingValuationService`는 주입하지 않음), `@Transactional(readOnly = true) getPortfolioSummary(Long userId)` 추가.
+  - `accountService.getAccountFor(userId, Market.STOCK)`·`getAccountFor(userId, Market.CRYPTO)`로 시드머니 합계(`Account.getSeedMoney()` 합) 조달 + `accountService.getAccountSummary(userId, Market.STOCK)`·`getAccountSummary(userId, Market.CRYPTO)`로 6개 필드 조회 → `totalValue`·`unrealizedPnl`·`realizedPnl`은 두 시장 합, `returnRate = (totalValue - seedMoneyTotal) / seedMoneyTotal`(scale 4, `RoundingMode.HALF_UP`, `seedMoneyTotal == 0`이면 `BigDecimal.ZERO`) — plan.md 구현 참고.
+  - **시장별 수익률을 더하거나 평균 내지 않는지** — `returnRate`가 반드시 `totalValue`·`seedMoneyTotal` 기준으로 재계산되는지 코드 리뷰 관점에서 스스로 재확인(이슈 #51 명시 요구사항, plan.md "응답 DTO 설계" 표 근거).
+  - **`AccountSummaryResponse`에 `seedMoney` 필드를 추가하지 않는지** 재확인 — #81이 이미 계약화한 "6개 필드 고정"을 이번 이슈에서 깨지 않는다(plan.md "설계 결정 2" 근거).
+  - 단위 테스트(`PortfolioServiceTest`, 신규, Mockito): `AccountService.getAccountFor`·`getAccountSummary`를 stub — 양 시장 모두 보유 있는 정상 케이스(합산·수익률 재계산 정확성, 시장별 수익률 평균/합과 다름을 반증하는 케이스 포함), 한 시장만 보유(0 기여 확인), 양 시장 모두 보유 없음(현금만, `returnRate=0`), `getAccountFor`의 `BusinessException(NOT_FOUND)` 전파(방어적 회귀 확인), `verify`로 두 메서드가 `Market.STOCK`·`Market.CRYPTO` 각각에 정확히 호출되는지 확인. 응답 객체를 mock으로 만들지 않고 실제 값으로 검증.
+
+- [x] **Controller: `GET /api/portfolio`**
+  - 신규 `com.finplay.api.portfolio.controller.PortfolioController` 추가 — `@RequestMapping("/api/portfolio")`, `@GetMapping`, `@AuthenticationPrincipal AuthenticatedUser`에서 `userId`만 얻어 서비스 호출. **`@RequestParam Market market`을 선언하지 않는다** — 이 API는 쿼리 파라미터가 전혀 없다(plan.md "입력 명세" 근거, `#81`·`#52`·`#82`와 다른 점).
+  - `@WebMvcTest` 슬라이스 테스트(`PortfolioControllerTest`, 신규, `AccountControllerTest` 패턴 재사용): 200 성공 시 `jsonPath`로 4개 필드 값 검증, 인증 실패 401.
+
+- [x] **통합 테스트: 시장별 계좌 요약 API와의 합산 일치 시나리오**
+  - Testcontainers 기반 통합 테스트(신규 `PortfolioSummaryIntegrationTest` 또는 기존 `AccountSummaryIntegrationTest` 인접)에 시나리오 추가: 회원가입 직후 빈 계좌 상태에서 `GET /api/portfolio` → 200, `totalValue = 2 × 초기 시드머니`·`unrealizedPnl=0`·`realizedPnl=0`·`returnRate=0`(spec 완료 조건 "빈 계좌"). `STOCK`만 매수 실행 후 `GET /api/accounts/summary?market=STOCK`·`market=CRYPTO` 각각과 `GET /api/portfolio`를 비교해 4개 필드가 두 시장 요약의 정확한 합인지 검증(spec 완료 조건 "단일 시장 보유"). 양 시장 모두 매수 실행 후 동일하게 비교 검증(spec 완료 조건 "양 시장 보유").
+  - 타인 계좌의 매수·보유가 본인 포트폴리오 합산에 섞이지 않는지, 비로그인 401 최소 1건 확인.
+
+- [x] **문서 동기화: `docs/api-routes.md` · `docs/api-contracts.md`**
+  - `docs/api-routes.md` 라우트 표에 `GET /api/portfolio` 행 추가(도메인 컬럼 `portfolio`, Spec 컬럼에 `006 ACCT-003, Issue #51` 표기).
+  - `docs/api-contracts.md`의 기존 `## portfolio` 절(이슈 #52가 신설)에 "전체 포트폴리오 합산 요약 조회" 표 추가 — 요청 없음(쿼리·본문 모두 없음, 인증만), 성공 200 예시(`PortfolioSummaryResponse` 4개 필드), 오류 401 `UNAUTHORIZED`만(400 `market` 케이스가 없음을 명시).
+  - 같은 커밋에서 두 문서를 함께 갱신(CLAUDE.md 규칙 7).

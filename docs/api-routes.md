@@ -39,6 +39,7 @@
 | GET | /api/accounts/summary?market= | account | 인증 사용자 본인의 시장별(`STOCK`\|`CRYPTO`) 계좌 요약(현금잔고·보유평가액·총평가액·실현손익·미실현손익·수익률) 조회. `market` 쿼리 파라미터 필수 | 006 ACCT-002, Issue #81 |
 | GET | /api/holdings?market= | portfolio | 인증 사용자 본인의 시장별(`STOCK`\|`CRYPTO`) 활성 보유 종목 목록(수량·평균단가·현재가·평가금액·미실현손익·수익률·시세 상태 + 종목 표시 정보) 조회. `market` 쿼리 파라미터 필수, 전량 매도 종목은 목록에서 제외 | 006 PORT-001, Issue #52 |
 | GET | /api/trades?market=&cursor=&limit= | order | 인증 사용자 본인의 시장별(`STOCK`\|`CRYPTO`) 체결 내역을 `executedAt` 내림차순(동시각 `id` 내림차순)으로 커서 페이지네이션 조회. `market` 쿼리 파라미터 필수, `cursor`·`limit`(기본 20, 1~100) 선택. 매도 건은 실현손익 포함 | 006 PORT-002, Issue #82 |
+| GET | /api/portfolio | portfolio | 인증 사용자 본인의 `STOCK`·`CRYPTO` 계좌를 합산한 총평가자산·총수익률·평가손익·실현손익 조회. 쿼리 파라미터 없음(항상 두 시장 합산) | 006 ACCT-003, Issue #51 |
 
 ## 시스템 엔드포인트
 
