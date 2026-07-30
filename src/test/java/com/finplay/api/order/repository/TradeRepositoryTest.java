@@ -169,6 +169,35 @@ class TradeRepositoryTest {
 	}
 
 	@Test
+	@DisplayName("동일 executedAt 그룹 안에서 페이지가 나뉘어도 id 내림차순 커서로 중복·누락 없이 이어받는다")
+	void cursorPaginationSplitsWithinSameExecutedAtGroupWithoutDuplicatesOrGaps() {
+		Order order1 = createOrder(owner, ownerAccount, NOW);
+		Trade trade1 = createTrade(order1, ownerAccount, NOW);
+		Order order2 = createOrder(owner, ownerAccount, NOW);
+		Trade trade2 = createTrade(order2, ownerAccount, NOW);
+		Order order3 = createOrder(owner, ownerAccount, NOW);
+		Trade trade3 = createTrade(order3, ownerAccount, NOW);
+		Order order4 = createOrder(owner, ownerAccount, NOW);
+		Trade trade4 = createTrade(order4, ownerAccount, NOW);
+
+		List<Trade> fullResult = tradeRepository.findByAccountIdWithCursor(ownerAccount.getId(), null, null, 10);
+		assertThat(fullResult).extracting(Trade::getId)
+			.containsExactly(trade4.getId(), trade3.getId(), trade2.getId(), trade1.getId());
+
+		List<Trade> firstPage = tradeRepository.findByAccountIdWithCursor(ownerAccount.getId(), null, null, 2);
+		Trade lastOfFirstPage = firstPage.get(firstPage.size() - 1);
+		List<Trade> secondPage = tradeRepository.findByAccountIdWithCursor(
+			ownerAccount.getId(), lastOfFirstPage.getExecutedAt(), lastOfFirstPage.getId(), 2);
+
+		List<Long> pagedIds = new ArrayList<>();
+		firstPage.forEach(trade -> pagedIds.add(trade.getId()));
+		secondPage.forEach(trade -> pagedIds.add(trade.getId()));
+
+		assertThat(pagedIds).hasSize(4).doesNotHaveDuplicates();
+		assertThat(pagedIds).containsExactlyElementsOf(fullResult.stream().map(Trade::getId).toList());
+	}
+
+	@Test
 	@DisplayName("JOIN FETCH로 instrument를 함께 조회해 지연 로딩 예외 없이 접근할 수 있다")
 	void findByAccountIdWithCursorFetchesInstrumentWithoutLazyInitException() {
 		Order order = createOrder(owner, ownerAccount, NOW);
