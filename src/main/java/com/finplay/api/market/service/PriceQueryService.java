@@ -50,13 +50,17 @@ public class PriceQueryService {
 
 	// 계좌(=market) 단위로 여러 종목의 시세를 한 번에 조회한다 — 호출측(HoldingValuationService 등)이 이미 계좌 단위로 종목을
 	// 모아서 넘기므로 instruments는 전부 같은 market이라고 가정한다 (PR #97 리뷰 권장사항, 다음 이슈 #51 착수 전 정리).
-	// 반환 순서는 instruments 순서와 일치한다.
+	// 반환 순서는 instruments 순서와 일치한다. 이 가정이 깨지면(market 혼재) 호출측 버그이므로 방어적으로 예외를 던진다
+	// (#51이 계좌 두 개를 다루기 시작하면 실수로 섞어 넘길 위험이 커지므로 지금 막아둔다).
 	@Transactional(readOnly = true)
 	public List<PriceQuoteDto> getPriceQuotes(List<Instrument> instruments) {
 		if (instruments.isEmpty()) {
 			return List.of();
 		}
 		Market market = instruments.get(0).getMarket();
+		if (instruments.stream().anyMatch(instrument -> instrument.getMarket() != market)) {
+			throw new IllegalArgumentException("getPriceQuotes는 서로 다른 market이 섞인 종목 목록을 받을 수 없습니다.");
+		}
 		return market == Market.STOCK ? getStockPriceQuotes(instruments) : getCryptoPriceQuotes(instruments);
 	}
 

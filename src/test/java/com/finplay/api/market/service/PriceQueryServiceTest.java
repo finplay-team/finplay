@@ -404,6 +404,23 @@ class PriceQueryServiceTest {
 	}
 
 	@Test
+	void getPriceQuotesThrowsIllegalArgumentExceptionWhenMarketsAreMixed() {
+		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
+		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
+		PriceStore priceStore = mock(PriceStore.class);
+		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
+			priceStore);
+		Instrument stock = Instrument.create(Market.STOCK, "005930", "삼성전자", BigDecimal.valueOf(100), 70000L, true,
+			NOW);
+		Instrument crypto = Instrument.create(Market.CRYPTO, "BTC", "비트코인", BigDecimal.valueOf(1000), 5000L, true,
+			NOW);
+
+		assertThatThrownBy(() -> priceQueryService.getPriceQuotes(List.of(stock, crypto)))
+			.isInstanceOf(IllegalArgumentException.class);
+		verifyNoInteractions(stockPriceProvider, priceStore);
+	}
+
+	@Test
 	void assertOrderablePassesWhenStockMarketIsOpen() {
 		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
 		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
