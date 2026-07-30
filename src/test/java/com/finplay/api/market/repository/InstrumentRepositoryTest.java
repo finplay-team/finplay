@@ -63,6 +63,20 @@ class InstrumentRepositoryTest {
 	}
 
 	@Test
+	void findByMarketAndTradableTrueOrderByIdAscExcludesNonTradableInstruments() {
+		jdbcTemplate.update(
+			"insert into instruments"
+				+ "(market, symbol, name, tick_size, min_order_amount, tradable, created_at) "
+				+ "values (?,?,?,?,?,?,?)",
+			"CRYPTO", "DELISTED", "상장폐지코인", 1, 5000, false, LocalDateTime.now());
+
+		List<Instrument> tradableCryptos = repository.findByMarketAndTradableTrueOrderByIdAsc(Market.CRYPTO);
+
+		assertThat(tradableCryptos).hasSize(12);
+		assertThat(tradableCryptos).extracting(Instrument::getSymbol).doesNotContain("DELISTED");
+	}
+
+	@Test
 	void databaseRejectsDuplicateSymbolEvenAcrossDifferentMarkets() {
 		// 005930(삼성전자, STOCK)은 시드에 이미 존재한다. 다른 시장(CRYPTO)에서 같은 symbol을 넣어도
 		// UNIQUE 제약이 market과 무관하게 symbol 단독으로 걸려있는지 검증한다.
