@@ -104,3 +104,39 @@
 
 ## 모니터링 (사람용 요약) (이슈 #104 리뷰)
 - 리뷰(이슈 #104 코인 피드 기동 수정, `fix/104-crypto-feed-startup` vs dev): 차단 0건 / 권장 2건 / 참고 1건 — 이음매(BithumbFeedLifecycle이 BithumbFeedClient 인터페이스만 의존)·SpotBugs exclude 3중 스코프(클래스+필드+패턴)·Decision Gate 명시(코드 주석+tasks.md 일치)·문서 동기화(controller 변경 없어 api-routes/api-contracts 갱신 불필요, 확인함) 모두 이상 없음. 권장: ① `BithumbWebSocketFeedClient.stop()`이 `@PreDestroy`로 자체 등록돼 있어 `BithumbFeedLifecycle.stopFeed()`의 `@PreDestroy`와 종료 시 이중 호출됨(각 필드가 idempotent해 크래시 위험은 낮지만 이음매 설계 의도와 어긋남) — 구현체 쪽 `@PreDestroy` 제거 권장. ② tasks.md ⑨ 항목 텍스트가 폐기된 `src/test/resources/application.yml` 방식을 그대로 서술 중(실제로는 tester 피드백으로 `TestcontainersConfiguration`의 `@DynamicPropertySource`로 교체됨, run-log에는 정확히 기록됨) — tasks.md 텍스트도 최종 방식으로 갱신 권장. 참고: `FakeBithumbFeedClient`의 `emitTick`/`simulateDisconnect`/`simulateReconnect` 메서드 주석이 "테스트 전용"이라 되어 있으나 이번 PR로 `BithumbFeedSimulator`(로컬 데모)도 이 메서드를 호출하게 됨 — 파일 미변경 범위라 이번 PR 책임은 아니나 다음 손댈 때 주석 정정 고려. 머지 가능 판정(권장 2건은 후속 커밋으로도 무방).
+
+## AI 로그 (이슈 #107)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| 2026-07-31 | implementer | `./gradlew compileJava --no-daemon --max-workers=1` | tasks.md "이슈 #107" ⑪(프로필 조건만 교체, Provider 코드 무변경), 기존 `oauth-real` 프로필 선례, ADR-0002, conventions.md |
+
+## 모니터링 (사람용 요약) (이슈 #107)
+- ⑪ 코인 캔들 provider 프로필 전환 — `BithumbRestCandleProvider`를 `@Profile({"prod", "crypto-real"})`로, `FakeCryptoCandleProvider`를 `@Profile("!prod & !crypto-real")`로 바꿔 로컬에서도 `crypto-real` 프로필로 실제 빗썸 캔들을 켤 수 있게 했다. 두 구현이 동시에 등록되지 않도록 조건이 상호 배타적임을 확인했고(기본 프로필=Fake만, `crypto-real`=REST만, `prod`=REST만), Provider 로직·엔티티·마이그레이션·controller 변경은 없어 api-routes.md·api-contracts.md 갱신 대상 없음. `./gradlew compileJava` 통과, 테스트는 tester 담당.
+
+## 외부 스모크 (이슈 #107) — 자동 테스트와 구분 (C-005)
+
+자동 테스트는 외부 네트워크를 호출하지 않는다. 아래는 사람이 `bootRun`으로 직접 실행해 확인한 결과이며 CI에서 재현되지 않는다.
+
+- 실행 조건: `SPRING_PROFILES_ACTIVE=local,crypto-real`, 2026-07-31 01:23 KST, 종목 17(BTC).
+- `GET /api/instruments/17/price` → `200 {"price":91862000,"status":"AVAILABLE"}`
+- `GET /api/instruments/17/candles?interval=1m` → `200`, 200개, 마지막 봉 `2026-07-31T01:23:00`(당시 실제 시각 01:23:36 — 진행 중 분봉), 그 종가 `91862000`
+- 같은 시각 빗썸 실제 `GET /v1/ticker?markets=KRW-BTC` → `trade_price: 91862000`
+
+세 값이 자릿수 수준이 아니라 **정확히 일치**했다 — 차트와 주문창 현재가가 어긋나는 이슈의 출발점이 해소됐음을 뜻한다.
+
+- **미실행**: 프로필을 끈 기본 동작(시뮬레이터 + Fake 캔들)은 `bootRun`으로 수동 확인하지 않았다. `CryptoCandleProviderDefaultProfileContextIntegrationTest`·`BithumbFeedSimulatorDisabledIntegrationTest`·`BithumbRestTickerPollerConditionalTest`의 자동 검증으로만 고정돼 있다.
+
+## AI 로그 (이슈 #107)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| 2026-07-31 | implementer | (Gradle 미실행 — 메인 세션이 단일 패스로 검증) | tasks.md ⑫ BithumbRestTickerPoller, plan.md "로컬 코인 실데이터 전환" 절 |
+| 2026-07-31 | implementer | (Gradle 미실행) | tasks.md ⑬ application-crypto-real.yml + 테스트 격리 |
+| 2026-07-31 | tester | `gradlew test --tests ...` | tasks.md ⑪⑫⑬ 테스트 23건 |
+| 2026-07-31 | 메인 세션 | `gradlew -p <root> spotlessApply build --no-daemon --max-workers=1` | CLAUDE.md 규칙 4 (완료 선언 전 build) |
+
+## 모니터링 (사람용 요약) (이슈 #107 구현 완료)
+- ⑫ `BithumbRestTickerPoller` — `@Profile("!prod & crypto-real")`. 코인 종목 전체를 `KRW-{symbol}` 콤마 결합으로 묶어 ticker REST를 3초마다 1회 호출하고 `trade_price`를 `FakeBithumbFeedClient.emitTick`으로 넣는다. 실패는 회차 skip + 로그만 — 임의값 대체 없음(MKT-004).
+- ⑬ `application-crypto-real.yml` — `bithumb.feed.simulate.enabled=false`. 프로필 하나로 캔들·현재가가 함께 전환되고 한쪽만 켜지는 조합이 없다. 테스트 격리 파일에 `bithumb.feed.ticker.enabled=false`를 추가해 `@ActiveProfiles("crypto-real")` 통합 테스트가 외부 네트워크를 타지 않게 했다.
+- 새 테스트 23건(폴러 단위 12 / 폴러 조건 슬라이스 5 / crypto-real 컨텍스트 3 / 기본 프로필 컨텍스트 1 / 캔들·현재가 독립성 2) 전부 통과, 전체 1160건 통과.
+- **빌드 3회 시도**: 1회차는 이번에 건드리지 않은 `HoldingLotRepositoryTest`·`HoldingRepositoryTest`·`TradeAllocationRepositoryTest` 9건이 `ConnectException`으로 실패 — `docs/agent-mistakes.md`에 두 번 기록된 호스트 리소스 경합 패턴과 동일했고, 코드 수정 없이 재실행에서 통과했다. 2회차는 셸 작업 디렉터리 문제(아래 실수 로그 참조). 3·4회차에서 `BUILD SUCCESSFUL`.
+- controller 변경이 없어 `docs/api-routes.md`·`docs/api-contracts.md` 갱신 대상 없음(확인함).
