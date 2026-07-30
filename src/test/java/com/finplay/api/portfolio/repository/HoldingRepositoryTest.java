@@ -119,4 +119,31 @@ class HoldingRepositoryTest {
 
 		assertThat(result).isEmpty();
 	}
+
+	@Test
+	@DisplayName("PR #97 리뷰 권장사항 1: 삽입 순서와 무관하게 종목 심볼 오름차순으로 반환한다")
+	void returnsHoldingsOrderedBySymbolAscendingRegardlessOfInsertionOrder() {
+		Instrument symbolC = instrumentRepository.saveAndFlush(
+			Instrument.create(Market.STOCK, "TESTC", "테스트종목C", BigDecimal.valueOf(300), 10_000L, true, NOW));
+		Instrument symbolA = instrumentRepository.saveAndFlush(
+			Instrument.create(Market.STOCK, "TESTA", "테스트종목A", BigDecimal.valueOf(100), 10_000L, true, NOW));
+
+		// 삽입 순서를 심볼 오름차순과 반대로 만든다: TEST01(instrument, setUp) > TESTC > TESTA.
+		Holding holdingC = Holding.create(ownerAccount, symbolC, NOW);
+		holdingC.applyBuy(BigDecimal.TEN, new BigDecimal("50000"), NOW);
+		holdingRepository.saveAndFlush(holdingC);
+
+		Holding holdingA = Holding.create(ownerAccount, symbolA, NOW);
+		holdingA.applyBuy(BigDecimal.TEN, new BigDecimal("50000"), NOW);
+		holdingRepository.saveAndFlush(holdingA);
+
+		Holding holdingTest01 = Holding.create(ownerAccount, instrument, NOW);
+		holdingTest01.applyBuy(BigDecimal.TEN, new BigDecimal("50000"), NOW);
+		holdingRepository.saveAndFlush(holdingTest01);
+
+		List<Holding> result = holdingRepository.findAllByAccountIdAndIsActiveTrue(ownerAccount.getId());
+
+		assertThat(result).extracting(h -> h.getInstrument().getSymbol())
+			.containsExactly("TEST01", "TESTA", "TESTC");
+	}
 }

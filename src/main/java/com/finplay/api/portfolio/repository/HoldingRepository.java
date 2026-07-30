@@ -12,7 +12,9 @@ public interface HoldingRepository extends JpaRepository<Holding, Long> {
 
 	Optional<Holding> findByAccountIdAndInstrumentId(Long accountId, Long instrumentId);
 
-	@Query("SELECT h FROM Holding h JOIN FETCH h.instrument WHERE h.account.id = :accountId AND h.isActive = true")
+	// PR #97 리뷰 권장사항 1: ORDER BY 없이는 응답 순서가 DB 임의 순서였다 — 종목 심볼 오름차순으로 고정한다.
+	@Query("SELECT h FROM Holding h JOIN FETCH h.instrument WHERE h.account.id = :accountId AND h.isActive = true "
+		+ "ORDER BY h.instrument.symbol ASC")
 	List<Holding> findAllByAccountIdAndIsActiveTrue(@Param("accountId")
 	Long accountId);
 }

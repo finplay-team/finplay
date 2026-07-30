@@ -21,6 +21,8 @@ import com.finplay.api.market.repository.StockReplaySessionRepository;
 import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.dto.request.OrderCreateRequest;
 import com.finplay.api.order.service.OrderService;
+import com.finplay.api.portfolio.domain.Holding;
+import com.finplay.api.portfolio.repository.HoldingRepository;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -86,6 +88,9 @@ class HoldingIntegrationTest {
 	private StockCandleRepository stockCandleRepository;
 
 	@Autowired
+	private HoldingRepository holdingRepository;
+
+	@Autowired
 	private JwtTokenProvider jwtTokenProvider;
 
 	@BeforeEach
@@ -132,6 +137,50 @@ class HoldingIntegrationTest {
 			.andExpect(jsonPath("$[0].unrealizedPnl").value(100000))
 			.andExpect(jsonPath("$[0].returnRate").value(0.2857))
 			.andExpect(jsonPath("$[0].priceStatus").value("AVAILABLE"));
+	}
+
+	// PR #97 리뷰 권장사항 3: 시세 무효(UNAVAILABLE) 종목의 "4개 필드 null + priceStatus=UNAVAILABLE" 정책이
+	// 통합 레벨에서 한 번도 실행되지 않았다. 매수는 반드시 유효한 시세가 있어야 가능하므로(PriceQueryService),
+	// 분봉을 아예 만들지 않은 종목은 정상 매수 흐름으로는 재현할 수 없다 — 대신 HoldingRepository로 holding을
+	// 직접 심어 "매수 이후 해당 종목의 분봉이 전혀 없는" 상태를 재현한다(StockReplayService.getCurrentPrice는
+	// 분봉이 없으면 세션이 READY여도 UNAVAILABLE을 반환한다).
+	@Test
+	void instrumentWithoutAnyCandleReturnsUnavailableWhileOtherHoldingStaysAvailable() throws Exception {
+		User user = createUser("hld-badpx");
+		Account account = createAccount(user);
+		String accessToken = issueAccessToken(user);
+
+		Instrument available = createStockInstrument("HOLDAVAIL");
+		createCandle(available, FIRST_CANDLE_TIME, new BigDecimal("60000"));
+		orderService.createOrder(user.getId(), "holding-badpx-buy", buyRequest(available.getId(), "10"));
+
+		// 분봉을 전혀 만들지 않은 종목 — 정상 매수는 시세 유효성 검증(PriceQueryService.getPrice)을 통과해야
+		// 하므로 이 종목은 주문 파이프라인을 거치지 않고 holding을 직접 저장해 "매수 이후 시세가 사라진" 상태를 재현한다.
+		Instrument priceless = createStockInstrument("HOLDBADPX");
+		Holding holding = Holding.create(account, priceless, BASE_NOW);
+		holding.applyBuy(BigDecimal.valueOf(7), new BigDecimal("55000"), BASE_NOW);
+		holdingRepository.saveAndFlush(holding);
+
+		mockMvc.perform(get("/api/holdings")
+			.param("market", "STOCK")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.length()").value(2))
+			// ORDER BY symbol ASC: "HOLDAVAIL..." < "HOLDBADPX..." (다섯째 글자 'A' < 'B')
+			.andExpect(jsonPath("$[0].instrumentId").value(available.getId()))
+			.andExpect(jsonPath("$[0].currentPrice").value(60000))
+			.andExpect(jsonPath("$[0].evaluationAmount").value(600000))
+			.andExpect(jsonPath("$[0].unrealizedPnl").value(0))
+			.andExpect(jsonPath("$[0].returnRate").value(0.0000))
+			.andExpect(jsonPath("$[0].priceStatus").value("AVAILABLE"))
+			.andExpect(jsonPath("$[1].instrumentId").value(priceless.getId()))
+			.andExpect(jsonPath("$[1].quantity").value(7))
+			.andExpect(jsonPath("$[1].averagePrice").value(55000))
+			.andExpect(jsonPath("$[1].currentPrice").doesNotExist())
+			.andExpect(jsonPath("$[1].evaluationAmount").doesNotExist())
+			.andExpect(jsonPath("$[1].unrealizedPnl").doesNotExist())
+			.andExpect(jsonPath("$[1].returnRate").doesNotExist())
+			.andExpect(jsonPath("$[1].priceStatus").value("UNAVAILABLE"));
 	}
 
 	@Test
