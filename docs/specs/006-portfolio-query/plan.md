@@ -921,3 +921,177 @@ public class TradeController {
   - 타인 계좌의 체결이 본인 조회에 섞이지 않는지 확인.
   - 손상된 `cursor` 400, `market` 누락 400, 비로그인 401 최소 1건씩 확인(나머지 조합은 슬라이스 테스트가 촘촘히 커버).
   - 체결내역이 없는 신규 계좌 → 200 빈 배열(`content=[]`, `hasNext=false`, `nextCursor=null`).
+
+---
+
+## 이슈 #51: 전체 포트폴리오 합산 요약 API 구현 (ACCT-003)
+
+> **범위 안내**: 이 섹션은 `spec.md`의 ACCT-003(전체 포트폴리오 합산 요약)만 설계한다. 시장별 계좌 요약 계산 자체(현금잔고·보유평가액·총평가액·실현손익·미실현손익·수익률의 계산식과 시세 무효 정책)는 이슈 #81(`AccountService.getAccountSummary`, 병합됨)이 이미 확정했고 이번 이슈는 그 결과를 **재사용만** 한다 — 새 계산식을 만들지 않는다(spec 비즈니스 규칙, 이슈 #51 본문). PORT-002(거래내역, #82, 병합됨)에는 의존하지 않는다 — 실현손익은 체결 원장을 다시 읽지 않고 `AccountSummaryResponse.realizedPnl()`(이미 계좌 원장 값)을 그대로 합산한다.
+
+### 관련 문서
+
+- Spec: `./spec.md` ACCT-003 절
+- PRD 근거: `docs/prd.md` ACCT-003
+- 선행 절: 이 문서의 "이슈 #81" 절 — 특히 "후속: #51(합산 포트폴리오)이 이 이슈의 수익률 계산식(`(총평가액 − 시드머니) ÷ 시드머니`)을 그대로 재사용한다"(관련 문서 항목의 각주)와 "응답 DTO 설계" 표(6개 필드 계약, `AccountSummaryResponse`는 `seedMoney`를 포함하지 않음을 이번 이슈에서 재확인)
+- 관련 ADR: [ADR-0002](../../adr/0002-architecture.md) — 도메인 간 참조는 service 레이어를 통해서만, 다른 도메인의 repository를 직접 주입하지 않는다. 이번 이슈는 `portfolio` 도메인에 신규 서비스를 두고 `account.service.AccountService`의 **공개 메서드만** 호출한다 — `AccountRepository`(account 도메인)를 직접 주입하지 않는다(아래 "설계 결정 1" 근거).
+- 선행 이슈: #12(원장 스키마, 병합됨), #47(평가 계산, 병합됨), #13·#41(매수·매도, 병합됨), #81(계좌 요약, 병합됨 — 계산식·수익률 공식의 원 출처), #52(보유 종목 목록, 병합됨 — `portfolio` 도메인이 `AccountService`를 주입하는 기존 전례)
+- **의존하지 않음**: #82(체결 내역, 병합됨) — 실현손익은 체결 원장을 재계산하지 않고 계좌 원장 값(`AccountSummaryResponse.realizedPnl()`)을 그대로 합산하므로 `TradeRepository`·`TradeService`를 참조할 필요가 없다.
+
+### 기존 구조 확인
+
+| 대상 | 현재 상태 | 이번 변경 |
+|---|---|---|
+| `com.finplay.api.account.service.AccountService` | `getAccountFor(userId, market)`(소유권 검증 포함 `Account` 엔티티 반환, `BusinessException(NOT_FOUND)`), `getAccountSummary(userId, market)`(6개 필드 `AccountSummaryResponse`, #81) 이미 존재 | 변경 없음 — 두 메서드 모두 그대로 재사용(합산 전용 계산식을 새로 만들지 않는다는 이슈 #51 요구사항의 직접 구현) |
+| `com.finplay.api.account.dto.response.AccountSummaryResponse` | `cashBalance`·`holdingsValue`·`totalValue`·`realizedPnl`·`unrealizedPnl`·`returnRate` 6개 필드 고정(`docs/api-contracts.md` `## account` 절 "6개 필드 고정" 표현으로 이미 계약화됨), **`seedMoney` 필드 없음**(직접 코드로 확인, 아래 "설계 결정 2" 참고) | 변경 없음 — 필드를 추가하면 이미 계약화된 "6개 필드 고정"을 깨고 `AccountControllerTest`의 필드 개수 전제에도 영향을 줄 수 있어, 이번 이슈에서 이 DTO를 건드리지 않는다 |
+| `com.finplay.api.account.domain.Account` | `seedMoney`(long, `@Getter`로 `getSeedMoney()` 공개, 생성 시 `INITIAL_SEED_MONEY`=10,000,000 고정, setter 없음) 필드 이미 존재 | 변경 없음 — `getAccountFor`가 반환하는 엔티티에서 그대로 읽는다 |
+| `com.finplay.api.account.service.AccountService.createAccountsFor` | `AuthService`의 이메일 가입(102행)·OAuth 가입(305행) 두 경로 모두에서 회원가입 직후 호출 — `Market.STOCK`·`Market.CRYPTO` 계좌를 **항상 함께** 생성(`accountRepository.saveAll(List.of(Account.create(user, Market.STOCK, now), Account.create(user, Market.CRYPTO, now)))`) | 변경 없음 — 이 사실을 근거로 "이 API에서 두 시장 계좌가 항상 존재한다"고 가정한다(아래 "가정 확인" 근거) |
+| `com.finplay.api.portfolio.controller`, `com.finplay.api.portfolio.service` | `HoldingController`(`/api/holdings`)·`HoldingService`가 이미 `AccountService`를 주입해 사용하는 전례 존재(#52) | 신규 `PortfolioController`(`/api/portfolio`)·`PortfolioService` 추가 — `HoldingService`와 동일하게 `AccountService`만 주입(`HoldingRepository`·`HoldingValuationService`는 필요 없음, 아래 근거) |
+
+### 가정 확인: 두 시장 계좌가 항상 존재하는가
+
+`AccountService.createAccountsFor`가 회원가입 시점(이메일·OAuth 두 경로 모두)에 `Market.STOCK`·`Market.CRYPTO` 계좌를 같은 트랜잭션·같은 시각으로 함께 생성한다(코드 확인 완료, 위 표). 계좌 삭제 기능은 스펙 어디에도 없다. 따라서 **인증된 사용자는 항상 STOCK·CRYPTO 계좌를 모두 보유한다**고 가정해도 안전하다 — `getAccountFor(userId, Market.STOCK)`·`getAccountFor(userId, Market.CRYPTO)`가 `BusinessException(NOT_FOUND)`을 던지는 상황은 정상 흐름에서 발생하지 않는다(계좌가 아니라 "보유 종목"이 시장별로 없을 수 있을 뿐이며, 이는 `AccountSummaryResponse`가 이미 0으로 반환하는 영역이라 이번 이슈가 별도로 처리할 필요가 없다). `NOT_FOUND` 전파는 방어적 코드로만 남기고 별도 200-빈값 처리 분기를 만들지 않는다(spec.md 공통 오류 원칙 — 대상 없음은 예외).
+
+### 설계 결정 1: 도메인·서비스 배치 (ADR-0002 관점)
+
+**채택: `portfolio` 도메인에 신규 `PortfolioController`(`/api/portfolio`)·`PortfolioService` 추가.** `account` 도메인(`AccountController`에 메서드 추가 또는 `AccountService`에 합산 메서드 추가)은 채택하지 않는다.
+
+- **리소스 경로가 다르다**: #81은 `/api/accounts/summary`(단일 계좌 리소스의 하위 액션)이고 이번 API는 `/api/portfolio`(계좌 자체가 아니라 "여러 계좌를 합친 뷰"라는 별개 리소스)다. `AccountController`에 메서드를 추가하면 `@RequestMapping("/api/accounts")` 하위에 있으면서 실제 매핑은 `/api/portfolio`가 되어 컨트롤러의 `@RequestMapping` prefix와 실제 경로가 어긋난다(`@GetMapping("/api/portfolio")`로 prefix를 무시하는 절대경로를 강제로 써야 하는 부자연스러운 구조).
+- **선례가 이미 있다**: `portfolio` 도메인은 이미 "여러 원시 데이터를 조합해 사용자 관점의 합산 뷰를 제공"하는 책임을 갖고 있다(`HoldingService`가 `HoldingRepository`+`HoldingValuationService`+`AccountService`를 조합해 "이 계좌가 보유한 종목들"이라는 합산 뷰를 만듦). 이번 API는 "이 사용자가 가진 모든 계좌"라는 한 단계 더 넓은 합산 뷰이므로 같은 도메인 책임의 연장선이다.
+- **`AccountService`를 비대해지지 않게 유지한다**: `AccountService`는 "계좌 하나(사용자+시장 단위)"를 다루는 책임으로 좁게 유지하고(`getAccountFor`·`getAccountSummary` 모두 `(userId, market)` 시그니처), "여러 계좌를 묶어 보는" 책임은 별도 서비스에 둔다 — `docs/conventions.md` "하나의 service가 여러 도메인을 몰아넣기" 금지 패턴과 "공통화는 책임이 명확할 때만" 원칙에 부합.
+- **ADR-0002 위반 없음**: `PortfolioService`는 `account.service.AccountService`(공개 메서드 `getAccountFor`·`getAccountSummary`)만 주입받는다 — `AccountRepository`(account 도메인 repository)를 직접 참조하지 않는다. `#52`의 `HoldingService → AccountService` 참조와 동일한 패턴(단방향, 순환 없음).
+- **기각안 근거**: `AccountService`에 합산 메서드를 추가하는 안도 기술적으로는 가능하다(같은 서비스 안에서 `getAccountSummary`를 두 번 호출). 그러나 URL 불일치 문제가 남고, `AccountService`가 "단일 계좌 조회"와 "전체 합산"이라는 두 층위의 책임을 동시에 갖게 되어 `#81`이 확정한 좁은 책임 범위(계좌 하나)를 흐린다. `portfolio` 도메인에 별도로 두는 편이 리소스 경로·책임 범위 모두와 더 잘 맞는다.
+
+### 설계 결정 2: 시드머니 합계 조달 방법
+
+**직접 코드 확인 결과**: `AccountSummaryResponse`(#81)에는 `seedMoney` 필드가 없다(위 "기존 구조 확인" 표). 총수익률(`(총평가자산 − 시드머니 합계) ÷ 시드머니 합계`)을 계산하려면 시드머니 합계가 반드시 필요하므로 아래 방법을 검토했다.
+
+1. `AccountSummaryResponse`에 `seedMoney` 필드를 추가한다 — **기각**. `docs/api-contracts.md` `## account` 절이 이미 "`AccountSummaryResponse`, 6개 필드 고정"이라고 계약화했고 `AccountControllerTest`가 이 6개 필드를 전제로 검증한다. 필드를 추가하면 이미 병합·계약화된 #81 응답 계약을 이번 이슈가 임의로 확장하는 것이 되어 영향 범위가 이 이슈 밖(계좌 요약 API 소비자)으로 새어 나간다. `AccountSummaryResponse`는 "계좌 요약 화면"이라는 용도에 맞게 6개로 고정된 채로 두고, `seedMoney`는 이 API(`PortfolioService`)만 필요로 하는 값이므로 여기서 별도로 조달한다.
+2. **(채택)** `AccountService.getAccountFor(userId, market)`를 그대로 재사용해 `Account` 엔티티를 얻고 `account.getSeedMoney()`로 읽는다. `getAccountFor`는 이미 `public`이고 소유권 검증까지 포함된 공개 메서드로, `#52`의 `HoldingService`도 동일한 방식으로 재사용 중이다 — 새 메서드를 `AccountService`에 추가할 필요조차 없다("AccountService에 시드머니를 별도로 노출하는 방법"에 해당하되, 이미 노출돼 있는 기존 메서드로 충분하다).
+- **트레이드오프(의식적으로 수용)**: `PortfolioService`가 시장당 `getAccountFor`(시드머니용)와 `getAccountSummary`(6개 필드용, 내부에서 다시 `getAccountFor`를 호출)를 각각 호출하므로, 시장 하나당 `Account` 조회가 사실상 2회(합계 4회, `user_id`+`market` 고유 인덱스 단건 조회라 비용은 낮음) 발생한다. 이는 `#81` plan.md "후속 검토 사항"이 우려했던 "보유 종목 수에 비례하는" 시세 조회 N+1(이미 88b0fc1 커밋으로 별도 해결됨)과 성격이 다르다 — 계좌 수는 항상 고정 2개(STOCK·CRYPTO)라 요청 규모와 무관하게 상수 회 조회이므로, 이번 이슈에서 별도 배치화·리팩터링을 하지 않는다(YAGNI, `docs/conventions.md` "공통화는 세 번째 중복이 보이고 책임이 명확할 때만 검토").
+
+### API 설계
+
+| Method | URL | 요청 | 응답 | 설명 |
+|---|---|---|---|---|
+| GET | /api/portfolio | 인증만(Access Bearer), 쿼리 파라미터 없음 | `PortfolioSummaryResponse` | 인증 사용자 본인의 `STOCK`·`CRYPTO` 계좌를 합산한 총평가자산·총수익률·평가손익(미실현)·실현손익 반환 |
+
+- 인증: `@AuthenticationPrincipal AuthenticatedUser`에서 `userId`를 얻는다. 경로·쿼리에 계좌 식별자·시장 파라미터를 받지 않는다 — 이 API는 시장을 고르는 게 아니라 **항상 양쪽 다** 합산하므로 `market` 토글 자체가 요구사항에 없다(`#81`·`#52`·`#82`와 달리 `@RequestParam Market market`이 존재하지 않는다 — 이슈 #51 본문·spec.md 확인).
+- 한 시장만 보유(다른 시장은 보유 종목 없이 현금만)하거나 두 시장 모두 보유 종목이 없어도 예외 없이 200과 0을 포함한 합산 결과를 반환한다(spec 완료 조건) — `AccountSummaryResponse`가 이미 이 경우 0으로 채워 반환하므로 별도 분기가 필요 없다.
+
+### 입력 명세
+
+없음. 쿼리 파라미터·경로 변수·요청 본문이 전혀 없다 — 인증된 사용자 본인의 두 시장 계좌를 고정적으로 합산하는 API라 `@RequestParam` 자체를 선언하지 않는다(위 "API 설계" 근거). 유일한 검증은 Spring Security의 인증 여부(미인증 401)뿐이며, 이는 컨트롤러 코드가 아니라 `SecurityConfig`의 기본 보호 경로(`anyRequest().authenticated()`)가 처리한다(`docs/api-routes.md` "인증 규칙" 절 기존 계약, 이 이슈에서 새로 추가하지 않는다).
+
+### 응답 DTO 설계
+
+`com.finplay.api.portfolio.dto.response.PortfolioSummaryResponse` (record, 단건 응답 접미사 `~Response`).
+
+| 필드 | 타입 | 근거 |
+|---|---|---|
+| totalValue | long | `stockSummary.totalValue() + cryptoSummary.totalValue()` — 이슈 #51 "총평가자산" |
+| returnRate | BigDecimal | `(totalValue − seedMoneyTotal) / seedMoneyTotal`, scale 4 `RoundingMode.HALF_UP`, `seedMoneyTotal == 0`이면 `BigDecimal.ZERO`(방어적 — 두 계좌 모두 `INITIAL_SEED_MONEY`로 생성되어 실질적으로 발생하지 않지만 `#81`의 동일 관례를 따른다) — 이슈 #51 "총수익률", **시장별 수익률을 더하거나 평균 내지 않는다**(이슈 #51 명시 요구사항, `#81` 계산식 재사용) |
+| unrealizedPnl | long | `stockSummary.unrealizedPnl() + cryptoSummary.unrealizedPnl()` — 이슈 #51 "평가손익"(미실현손익 합산, `#81`의 시세 무효 폴백 정책이 이미 반영된 값을 그대로 합산) |
+| realizedPnl | long | `stockSummary.realizedPnl() + cryptoSummary.realizedPnl()` — 이슈 #51 "실현손익". **체결 원장을 다시 읽지 않는다** — `AccountSummaryResponse.realizedPnl()`이 이미 계좌 원장(`Account.realizedPnl`) 값이므로 `#82`(체결 내역)에 의존하지 않는다(이슈 #51 명시 요구사항) |
+
+- 정적 팩토리 `PortfolioSummaryResponse.of(long totalValue, BigDecimal returnRate, long unrealizedPnl, long realizedPnl)` — 여러 계산값을 조합하므로 컨벤션의 `of(...)` 규칙(인자 2개 이상 조합)을 따른다.
+- `cashBalance`·`holdingsValue`처럼 `AccountSummaryResponse`에 있는 중간값은 포함하지 않는다 — 이슈 #51 본문이 요구하는 4개 값(총평가자산·총수익률·평가손익·실현손익)에 없고, 시장별 세부값이 필요하면 소비 화면이 `#81`(`/api/accounts/summary?market=`)을 시장별로 각각 호출해 얻을 수 있다(응답 필드 최소화, `#52`의 `costBasis` 제외 결정과 동일 근거).
+- `market`별 세부 breakdown(예: `stock: {...}, crypto: {...}`)은 이슈 #51·spec.md 어디에도 요구되지 않아 포함하지 않는다 — PRD에 명시되지 않은 요구를 임의로 추가하지 않는다(완료 조건 참고).
+
+### Service 설계 (`AccountService` 재사용 방식)
+
+신규 `com.finplay.api.portfolio.service.PortfolioService` — `AccountService`(account 도메인) 하나만 주입받는다(`HoldingRepository`·`HoldingValuationService`는 필요 없음 — 이 API는 보유 종목 단위 데이터를 다루지 않고 이미 계산된 계좌 요약만 합산하므로).
+
+```java
+@Service
+@RequiredArgsConstructor
+public class PortfolioService {
+
+    private static final int RETURN_RATE_SCALE = 4;
+
+    private final AccountService accountService;
+
+    @Transactional(readOnly = true)
+    public PortfolioSummaryResponse getPortfolioSummary(Long userId) {
+        Account stockAccount = accountService.getAccountFor(userId, Market.STOCK);
+        Account cryptoAccount = accountService.getAccountFor(userId, Market.CRYPTO);
+
+        AccountSummaryResponse stockSummary = accountService.getAccountSummary(userId, Market.STOCK);
+        AccountSummaryResponse cryptoSummary = accountService.getAccountSummary(userId, Market.CRYPTO);
+
+        long totalValue = stockSummary.totalValue() + cryptoSummary.totalValue();
+        long unrealizedPnl = stockSummary.unrealizedPnl() + cryptoSummary.unrealizedPnl();
+        long realizedPnl = stockSummary.realizedPnl() + cryptoSummary.realizedPnl();
+        long seedMoneyTotal = stockAccount.getSeedMoney() + cryptoAccount.getSeedMoney();
+
+        BigDecimal returnRate = seedMoneyTotal == 0
+            ? BigDecimal.ZERO
+            : BigDecimal.valueOf(totalValue - seedMoneyTotal)
+                .divide(BigDecimal.valueOf(seedMoneyTotal), RETURN_RATE_SCALE, RoundingMode.HALF_UP);
+
+        return PortfolioSummaryResponse.of(totalValue, returnRate, unrealizedPnl, realizedPnl);
+    }
+}
+```
+
+- 소유권 검증: `getAccountFor`·`getAccountSummary` 둘 다 내부적으로 `findByUserIdAndMarket(userId, market)`로 조회하므로 타인 계좌를 조회할 입력 자체가 없다(`#81`·`#52`와 동일 근거 — 요청에 계좌 식별자가 없어 위반이 발생하지 않는 구조). 계좌가 존재하지 않는 극단적 케이스(위 "가정 확인" 참고, 정상 흐름에서 발생하지 않음)만 기존 로직 그대로 `BusinessException(NOT_FOUND)`이 전파된다.
+- `Market.STOCK`·`Market.CRYPTO`는 하드코딩된 상수로 다룬다(이 서비스가 순회할 시장 목록은 요청이 아니라 "이 애플리케이션이 지원하는 시장 전체"이므로 `Market.values()`를 순회하는 것도 대안이지만, 필드가 정확히 2개뿐이고 `stockSummary`/`cryptoSummary`로 각각 이름 붙여 다루는 편이 가독성이 높아 채택하지 않는다 — `Market`에 세 번째 값이 추가되면 이 서비스도 함께 검토해야 함을 인지하고 있음).
+
+### Controller 설계
+
+```java
+package com.finplay.api.portfolio.controller;
+
+import com.finplay.api.auth.token.AuthenticatedUser;
+import com.finplay.api.portfolio.dto.response.PortfolioSummaryResponse;
+import com.finplay.api.portfolio.service.PortfolioService;
+
+@RestController
+@RequestMapping("/api/portfolio")
+@RequiredArgsConstructor
+public class PortfolioController {
+
+    private final PortfolioService portfolioService;
+
+    @GetMapping
+    public ResponseEntity<PortfolioSummaryResponse> getPortfolioSummary(
+        @AuthenticationPrincipal AuthenticatedUser principal) {
+        return ResponseEntity.ok(portfolioService.getPortfolioSummary(principal.userId()));
+    }
+}
+```
+
+- `@RequestParam`이 전혀 없다 — `market` 토글이 요구사항에 없으므로 `HoldingController`·`AccountController`와 달리 쿼리 파라미터를 선언하지 않는다(위 "입력 명세" 근거).
+- `com.finplay.api.account.domain.Market` import가 이 파일에는 필요 없다(컨트롤러가 `Market` 타입을 다루지 않음 — `PortfolioService` 내부에서만 사용).
+
+### 데이터 모델
+
+없음 — 신규 컬럼·마이그레이션 불필요. 기존 `accounts` 테이블(과 그 하위의 `holdings`, `#81`을 통해 간접 조회)을 조회만 한다. 합산 결과(`totalValue`·`returnRate`·`unrealizedPnl`·`realizedPnl`)는 어디에도 저장하지 않는다(spec 비즈니스 규칙 "합산 결과를 별도 원장으로 저장하지 않는다"의 직접 구현).
+
+### 문서 동기화
+
+같은 커밋에서 갱신(CLAUDE.md 규칙 7 + 이슈 #51 본문 요구):
+
+- `docs/api-routes.md`: 라우트 표에 `GET | /api/portfolio | portfolio | ... | 006 ACCT-003, Issue #51` 행 추가(도메인 컬럼은 `portfolio` — 위 "설계 결정 1" 근거).
+- `docs/api-contracts.md`: 기존 `## portfolio` 절(이슈 #52가 이미 신설)에 "전체 포트폴리오 합산 요약 조회" 표를 추가 — 요청(쿼리 없음, 인증만), 성공 200 예시(`PortfolioSummaryResponse` 4개 필드 값 포함, 한 시장만 보유·양 시장 모두 보유 없음 케이스 문구 포함), 오류(401 `UNAUTHORIZED`만 — `market` 관련 400 없음을 명시).
+- `docs/prd.md`는 이번 이슈에서 갱신하지 않는다 — ACCT-003 요구사항 문구(총평가자산·총수익률·평가손익·실현손익)가 이미 정확하고 `#81`처럼 필드를 새로 추가하는 변경이 아니다(PRD 갱신 불필요, 임의 확장 금지 원칙).
+
+### 테스트 계획 (ADR-0003 기준)
+
+이 API는 신규 리포지터리 메서드가 없다(`AccountService`의 기존 공개 메서드만 재사용) — **`@DataJpaTest` 슬라이스는 이번 이슈의 대상이 아니다**(신규 쿼리가 없으므로 검증할 리포지터리 계층이 없음).
+
+- **단위 — `PortfolioServiceTest`(신규, Mockito)**: `AccountService.getAccountFor`·`getAccountSummary`를 stub.
+  - 양 시장 모두 보유 종목이 있는 정상 케이스: `totalValue`·`unrealizedPnl`·`realizedPnl`이 두 시장 요약의 정확한 합인지, `returnRate`가 `(totalValue − seedMoneyTotal) / seedMoneyTotal`로 정확히 계산되는지(시장별 수익률을 더하거나 평균 낸 값과 다르다는 것을 반증하는 케이스 포함 — 예: 두 시장의 `returnRate`가 우연히 같아도 합산 결과의 `returnRate`는 개별 값의 합/평균이 아님을 실제 수치로 검증) 실제 값으로 검증(mock 응답 객체 금지 컨벤션).
+  - 한 시장만 보유(다른 시장은 `AccountSummaryResponse`가 `holdingsValue=0`·`unrealizedPnl=0`인 케이스): 0인 시장이 합산에 정상적으로(0으로) 기여하는지 검증.
+  - 두 시장 모두 보유 종목 없음(둘 다 현금만): `totalValue = seedMoneyTotal`이 되어 `returnRate = 0`인지 검증.
+  - `getAccountFor`가 `BusinessException(NOT_FOUND)`를 던지면 그대로 전파되는지(위 "가정 확인"의 방어적 케이스, 정상 흐름은 아니지만 회귀 확인 목적).
+  - `verify`로 `getAccountFor`·`getAccountSummary`가 `Market.STOCK`·`Market.CRYPTO` 각각에 대해 정확히 호출되는지 확인(설계 결정 2의 조달 방식이 실제로 구현됐는지 검증).
+- **슬라이스 API — `PortfolioControllerTest`(신규, `@WebMvcTest`)**: `AccountControllerTest` 패턴(`@Import(SecurityConfig.class)`, `MockitoBean JwtTokenProvider`) 재사용.
+  - 200과 `jsonPath`로 4개 필드(`totalValue`·`returnRate`·`unrealizedPnl`·`realizedPnl`) 값 검증(`PortfolioService`를 `@MockitoBean`으로 stub).
+  - 인증 실패(Authorization 헤더 없음) → 401 `UNAUTHORIZED`.
+  - `market` 등 쿼리 파라미터를 붙여 요청해도 무시되고 정상 200이 반환되는지(선택 — 파라미터가 아예 없으므로 Spring이 자동으로 무시함을 확인하는 회귀성 케이스, 필수는 아님).
+- **통합 — Testcontainers(신규 `PortfolioSummaryIntegrationTest` 또는 기존 `AccountSummaryIntegrationTest` 인접)**: spec.md 완료 조건 "빈 계좌·단일 시장 보유·양 시장 보유에서 합산 포트폴리오 값이 시장별 요약의 합과 일치하는 통합 테스트 통과"의 직접 구현.
+  - 회원가입 직후(매수 이력 없음, 양 시장 모두 보유 종목 없음) → `GET /api/portfolio` 호출 → 200, `totalValue = 2 × INITIAL_SEED_MONEY`, `unrealizedPnl=0`·`realizedPnl=0`·`returnRate=0`.
+  - `STOCK` 계좌에서만 매수 실행(`CRYPTO`는 그대로 둠) → `GET /api/accounts/summary?market=STOCK`·`GET /api/accounts/summary?market=CRYPTO` 각각 호출한 결과와 `GET /api/portfolio` 결과를 비교해, `portfolio` 응답의 4개 필드가 두 시장별 요약으로부터 정확히 합산·재계산된 값과 일치하는지 검증(수동으로 다시 계산하지 않고 실제 두 API 응답을 합산해 대조 — 계산 로직 중복 없이 계약만 검증).
+  - 양 시장 모두에서 매수 실행 후 동일하게 비교 검증(양 시장 보유 케이스).
+  - 타인 계좌의 매수·보유가 본인 포트폴리오 합산에 섞이지 않는지 확인.
+  - 비로그인 401 최소 1건 확인.
