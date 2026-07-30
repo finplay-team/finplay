@@ -6,7 +6,6 @@ import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.repository.InstrumentRepository;
 import com.finplay.api.market.store.FeedConnectionStatus;
 import com.finplay.api.market.store.PriceStore;
-import jakarta.annotation.PreDestroy;
 import java.io.IOException;
 import java.net.URI;
 import java.util.List;
@@ -57,8 +56,9 @@ public class BithumbWebSocketFeedClient extends TextWebSocketHandler implements 
 		connect();
 	}
 
+	// BithumbFeedLifecycle이 애플리케이션 종료 시 이 메서드를 호출하는 유일한 지점이다 — 여기 @PreDestroy를
+	// 붙이면 컨테이너가 두 번 호출하게 되어 그 단일 지점 원칙이 깨진다(리뷰 권장사항, 이슈 #104).
 	@Override
-	@PreDestroy
 	public void stop() {
 		running = false;
 		reconnectExecutor.shutdownNow();
