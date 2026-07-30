@@ -13,13 +13,11 @@
 | GET | /api/instruments?market= | 쿼리 market(선택) | `InstrumentResponse[]` | 종목 목록 |
 | GET | /api/instruments/{instrumentId} | - | `InstrumentResponse` | 종목 단건 |
 | GET | /api/instruments/{instrumentId}/price | - | `PriceResponse` (price, sourceTime, status, sourceTradingDate) | 최신 가격. 없으면 409 PRICE_UNAVAILABLE — 이슈 #16 |
-| GET | /api/instruments/{instrumentId}/candles?interval=1m&from=&to= | 쿼리 | `CandleResponse[]` | 주식 1분봉 (`stock_candles` 기반, 공개된 분봉까지만) — 이슈 #17 / 코인 1분봉 (빗썸 공개 캔들 REST 조회, 마감된 분봉까지만) — 이슈 #20 |
+| GET | /api/instruments/{instrumentId}/candles?interval=1m&from=&to= | 쿼리 | `CandleResponse[]` | 주식 1분봉 (`stock_candles` 기반, 공개된 분봉까지만) — 이슈 #17 / 코인 1분봉 (빗썸 공개 캔들 REST 실시간 조회, 진행 중 분봉 포함) — 이슈 #20 |
 | GET | /api/stocks/stream | Header: `Authorization: Bearer <accessToken>` | SSE | 주식 전용 스트림 — 이슈 #19 |
-| GET | /api/cryptos/stream | Header: `Authorization: Bearer <accessToken>` | SSE | 코인 전용 스트림 — 이슈 #98 |
 
-- 주식·코인 스트림을 분리한 이유: 프론트 화면이 시장별 탭으로 나뉘어 있어 각자 필요한 채널만 구독하면 되고, 재생 주기(1분)와 코인 갱신 주기(초 단위)가 달라 하나로 합치면 페이로드 구분 로직이 오히려 늘어난다.
-- **이슈 분할**: 이슈 #18은 두 스트림이 공유할 공통 골격(`SseEmitterRegistry`·SSE 이벤트 DTO 3종·`PriceQueryService`의 예외 없는 조회 경로·`@EnableScheduling`/`request-timeout` 설정)만 다루며 컨트롤러 엔드포인트를 포함하지 않는다 — `./gradlew build`는 컨트롤러 없이도 통과해야 한다. `/api/stocks/stream`은 이슈 #19, `/api/cryptos/stream`은 이슈 #98에서 이 골격 위에 구현한다.
-- **이슈 #20 교체(2026-07-30)**: #20은 원래 `/api/cryptos/stream` SSE였으나 **코인 차트(빗썸 캔들 REST 연동, MKT-008)** 전용으로 교체했고, SSE 스트림은 #98로 옮겼다. 두 이슈는 엔드포인트가 다르고 공유 코드가 없어 병렬 진행할 수 있다. 코인 차트는 SSE 골격(#18)에 의존하지 않는다.
+- **코인은 전용 스트림을 두지 않는다 (2026-07-30 방향 변경).** 코인의 실시간 표출은 캔들 API(위 행, 이슈 #20)의 REST 조회로 충분하다 — 진행 중 분봉을 포함해 반환하므로 프론트가 짧은 주기로 다시 호출하는 것만으로 화면이 갱신된다. `/api/cryptos/stream` 엔드포인트는 만들지 않는다.
+- **이슈 분할**: 이슈 #18은 `/stocks/stream`이 쓸 공통 골격(`SseEmitterRegistry`·SSE 이벤트 DTO 3종·`PriceQueryService`의 예외 없는 조회 경로·`@EnableScheduling`/`request-timeout` 설정)만 다루며 컨트롤러 엔드포인트를 포함하지 않는다 — `./gradlew build`는 컨트롤러 없이도 통과해야 한다. `/api/stocks/stream`은 이슈 #19에서 이 골격 위에 구현한다. `SseEmitterRegistry`·이벤트 DTO는 market을 매개변수로 받는 범용 설계라 코인용 컨트롤러를 만들지 않아도 코드를 되돌릴 필요는 없다.
 
 ### 코인 캔들 설계 (MKT-008, 이슈 #20)
 
@@ -44,7 +42,7 @@
 - **정렬 반전**: 빗썸 내림차순 응답을 시각 오름차순으로 뒤집어 반환한다 (주식 캔들과 동일한 계약).
 - **진행 중 분봉 포함**: 빗썸이 돌려주는 가장 최신 봉은 아직 마감하지 않은 분봉이며, **그것을 그대로 포함해 반환한다** — 그게 지금의 실시간 시세다. 다시 조회하면 그 봉의 고가·저가·종가·거래량이 자란다(정상 동작이며, 캐시하지 않는 이유 중 하나).
   - **주식(MKT-002)은 미마감 봉을 제외하는데 코인은 포함한다 — 의도된 차이다.** 주식의 제외 규칙은 과거 거래일 재생 구조에서 아직 공개되지 않아야 할 분봉이 새는 것을 막고 체결가 계약과 어긋나지 않게 하기 위한 것이다. 코인은 재생이 아니라 실시간이고 주문도 최신 틱으로 체결되므로 가릴 대상이 없다. 잘라내면 차트 오른쪽 끝이 최대 59초 늦게 움직여 실시간성을 해친다. 구현 시 `StockReplayService`의 공개 컷오프 로직을 코인 경로에 재사용하지 않는다.
-  - 분 이하 해상도의 실시간 갱신은 프론트가 이미 구독하는 SSE 틱(#98)으로 마지막 봉을 갱신해 얻는다. **서버는 틱을 분봉으로 집계하지 않고 진행 중 분봉 상태를 메모리에 들고 있지도 않는다** — 코인에는 `KisTickAggregator`에 해당하는 컴포넌트를 만들지 않는다(재시작 시 유실·메모리 관리 부담을 지지 않기 위함).
+  - 분 이하 해상도의 실시간 갱신은 프론트가 이미 구독하는 SSE 틱(#20)으로 마지막 봉을 갱신해 얻는다. **서버는 틱을 분봉으로 집계하지 않고 진행 중 분봉 상태를 메모리에 들고 있지도 않는다** — 코인에는 `KisTickAggregator`에 해당하는 컴포넌트를 만들지 않는다(재시작 시 유실·메모리 관리 부담을 지지 않기 위함).
 - **`from`·`to` → `to`+`count` 변환**: 빗썸은 `from`을 받지 않으므로 우리 쪽에서 변환한다.
 
   | 요청 | 빗썸 호출 |
@@ -62,7 +60,7 @@
 
 ### SSE 계약 (MVP 확정 — 변경하려면 문서와 프론트·백엔드를 함께 수정)
 
-아래 계약은 `/stocks/stream`(#19)·`/cryptos/stream`(#98) 두 엔드포인트에 공통 적용된다. `retry`·heartbeat·emitter 정리는 이슈 #18에서 만드는 `SseEmitterRegistry`가 두 컨트롤러에 공통으로 제공하며, 컨트롤러마다 다시 구현하지 않는다.
+아래 계약은 `/stocks/stream`(#19)에 적용된다. `retry`·heartbeat·emitter 정리는 이슈 #18에서 만드는 `SseEmitterRegistry`가 제공한다. **코인은 전용 SSE 엔드포인트가 없으므로 이 계약 대상이 아니다** — 코인 이벤트 필드 설명(`sourceTradingDate` 미포함 등)은 `SseEmitterRegistry`·이벤트 DTO가 market 매개변수를 받는 범용 설계임을 보여주는 참고용으로만 남겨둔다.
 
 - **인증**: 브라우저 기본 `EventSource`는 커스텀 헤더를 지원하지 않으므로, 프론트는 `fetch()`로 스트림을 요청하며 `Authorization: Bearer <accessToken>` 헤더를 그대로 전달하고 응답 `ReadableStream`을 직접 파싱한다. Access Token을 URL 쿼리 파라미터에 넣지 않는다. 인증 실패는 401.
 - **Content-Type**: `text/event-stream`.
@@ -221,10 +219,10 @@ data:
 | `KisRealtimePriceProvider` | `StockPriceProvider` 구현 — KIS Open API 국내주식 WebSocket 체결 틱 수신, 재연결 처리, 연결상태 기록. **개인 개발·본인 전용 검증(`PRIVATE`)용.** 인터페이스 뒤에 두어 테스트는 `FakeKisRealtimePriceProvider` 사용 (**이슈 #82 — MVP 범위 아님**) |
 | `KisTickAggregator` | KIS 체결 틱을 **서버에서 1분 OHLCV로 집계**한다. 결과는 `KisHistoricalReplayPriceProvider`가 제공하는 것과 같은 분봉 모델이어야 캔들 API·차트가 Provider를 구분하지 않는다. 집계 결과의 영구 보관은 이번 범위 밖 (spec 범위 제외) (**이슈 #82 — MVP 범위 아님**) |
 | `StockFeedConfig` | `STOCK_FEED_PROVIDER`·`SERVICE_EXPOSURE`·`KIS_PUBLIC_DISPLAY_APPROVED`를 읽어 `StockPriceProvider` 빈 하나를 결정한다. 아래 "실행 환경 조합"의 금지 조합이면 **애플리케이션 시작 단계에서 예외를 던져 기동을 실패**시킨다 (fail-fast) |
-| `PriceQueryService` | 주문 도메인과 SSE가 공통으로 소비하는 "유효한 최신 가격" 계약 — 주식은 주입된 `StockPriceProvider`가 제공하는 현재가, 코인은 stale 검사(10초) 통과한 Redis 가격. **두 조회 경로를 제공한다**: 기존 `getPrice`(Long·Instrument)는 유효하지 않으면 `BusinessException(PRICE_UNAVAILABLE)`을 던져 가격 API의 409 계약을 유지하고(이슈 #16 확정, 동작 변경 없음), 새 `getPriceQuote`류 경로는 예외를 던지지 않고 `PriceQuoteDto`의 `status`를 `AVAILABLE`·`UNAVAILABLE`로 채워 반환한다 — SSE(#19·#98)의 snapshot·price 판정처럼 "가격이 없는 상태 자체를 정상 응답으로 표현해야 하는" 소비자를 위한 경로다. `getPrice`는 이 조회 경로를 감싸 `UNAVAILABLE`일 때만 예외로 변환하는 방식으로 구현해 두 경로가 판정 로직을 중복하지 않는다. **어느 주식 Provider가 동작 중인지 알지 못한다** (이슈 #18: 예외를 던지지 않는 조회 경로 추가) |
-| `SseEmitterRegistry` | `STOCK`·`CRYPTO` market별 `SseEmitter` 집합을 관리하는 공통 컴포넌트. `register(market)` 호출 시 `SseEmitter`를 생성해 집합에 추가하고 그 자리에서 `retry: 3000`을 1회 전송한다. `onCompletion`·`onTimeout`·`onError` 콜백에서 해당 emitter를 집합에서 제거한다. `@Scheduled`(`@EnableScheduling` 필요)로 20초마다 등록된 모든 emitter에 heartbeat 주석(`:heartbeat\n\n`)을 전송한다. snapshot·price·status 이벤트의 payload 구성이나 실제 전송 트리거는 담당하지 않는다 — 그건 `StockPriceSseController`/`CryptoPriceSseController`(#19·#98)의 책임이다 (이슈 #18) |
-| SSE 이벤트 DTO (`snapshot`/`price`/`status`) | 3종 이벤트의 직렬화 모델. `sourceTime`(원본 데이터의 실제 시각)·`emittedAt`(서버가 지금 전송한 벽시계 시각)·`sourceTradingDate`(주식에만 포함, 코인 이벤트는 필드 자체를 생략)를 구분해서 담는다. 필드 상세는 아래 "SSE 계약"의 JSON 예시를 따른다 (이슈 #18 — DTO·직렬화만, 실제 컨트롤러 배선은 #19·#98) |
-| `StockPriceSseController` / `CryptoPriceSseController` | `/stocks/stream`(이슈 #19), `/cryptos/stream`(이슈 #98) 구독 엔드포인트. `SseEmitterRegistry.register(market)`로 emitter를 얻고, 구독 직후 `snapshot`(배열 1건)을 전송한 뒤 `price`·`status` 이벤트를 push한다. retry 전송·heartbeat·emitter 정리는 `SseEmitterRegistry`(#18)에 위임한다 |
+| `PriceQueryService` | 주문 도메인과 SSE가 공통으로 소비하는 "유효한 최신 가격" 계약 — 주식은 주입된 `StockPriceProvider`가 제공하는 현재가, 코인은 stale 검사(10초) 통과한 Redis 가격. **두 조회 경로를 제공한다**: 기존 `getPrice`(Long·Instrument)는 유효하지 않으면 `BusinessException(PRICE_UNAVAILABLE)`을 던져 가격 API의 409 계약을 유지하고(이슈 #16 확정, 동작 변경 없음), 새 `getPriceQuote`류 경로는 예외를 던지지 않고 `PriceQuoteDto`의 `status`를 `AVAILABLE`·`UNAVAILABLE`로 채워 반환한다 — SSE(#19·#20)의 snapshot·price 판정처럼 "가격이 없는 상태 자체를 정상 응답으로 표현해야 하는" 소비자를 위한 경로다. `getPrice`는 이 조회 경로를 감싸 `UNAVAILABLE`일 때만 예외로 변환하는 방식으로 구현해 두 경로가 판정 로직을 중복하지 않는다. **어느 주식 Provider가 동작 중인지 알지 못한다** (이슈 #18: 예외를 던지지 않는 조회 경로 추가) |
+| `SseEmitterRegistry` | `STOCK`·`CRYPTO` market별 `SseEmitter` 집합을 관리하는 공통 컴포넌트(코인은 실제로 쓰이지 않지만 market 매개변수를 일반화해 두 시장을 함께 지원할 수 있게 만들어진 기존 구현이다). `register(market)` 호출 시 `SseEmitter`를 생성해 집합에 추가하고 그 자리에서 `retry: 3000`을 1회 전송한다. `onCompletion`·`onTimeout`·`onError` 콜백에서 해당 emitter를 집합에서 제거한다. `@Scheduled`(`@EnableScheduling` 필요)로 20초마다 등록된 모든 emitter에 heartbeat 주석(`:heartbeat\n\n`)을 전송한다. snapshot·price·status 이벤트의 payload 구성이나 실제 전송 트리거는 담당하지 않는다 — 그건 `StockPriceSseController`(#19)의 책임이다 (이슈 #18) |
+| SSE 이벤트 DTO (`snapshot`/`price`/`status`) | 3종 이벤트의 직렬화 모델. `sourceTime`(원본 데이터의 실제 시각)·`emittedAt`(서버가 지금 전송한 벽시계 시각)·`sourceTradingDate`(주식에만 포함, 코인 이벤트는 필드 자체를 생략)를 구분해서 담는다. 필드 상세는 아래 "SSE 계약"의 JSON 예시를 따른다 (이슈 #18 — DTO·직렬화만, 실제 컨트롤러 배선은 #19·#20) |
+| `StockPriceSseController` | `/stocks/stream`(이슈 #19) 구독 엔드포인트. `SseEmitterRegistry.register(STOCK)`로 emitter를 얻고, 구독 직후 `snapshot`(배열 1건)을 전송한 뒤 `price`·`status` 이벤트를 push한다. retry 전송·heartbeat·emitter 정리는 `SseEmitterRegistry`(#18)에 위임한다. **코인은 이에 대응하는 컨트롤러가 없다** — 실시간 표출은 캔들 API(이슈 #20)의 REST 조회로 대신한다 |
 
 **전체 흐름 요약**:
 
@@ -242,11 +240,11 @@ KIS WebSocket 체결 틱 → KisRealtimePriceProvider → KisTickAggregator(1분
 StockFeedConfig가 둘 중 하나를 선택 → StockPriceProvider
    → PriceQueryService → 가격·캔들 API · SSE · 모의 주문 체결 · 보유자산 평가손익
 
-[코인 — 두 경로가 서로 독립이다]
+[코인 — 두 경로가 서로 독립이다. 코인은 전용 SSE 엔드포인트가 없다]
 빗썸 WebSocket 틱 → BithumbFeedClient → PriceStore(Redis) → PriceQueryService
-   → 현재가 API · /cryptos/stream SSE · 모의 주문 체결        (이슈 #98)
+   → 현재가 API(GET .../price) · 모의 주문 체결·주문 가능 판정(MKT-004)   (이슈 #16, 이미 병합)
 빗썸 캔들 REST  → BithumbRestCandleProvider → CandleQueryService
-   → 캔들 API(차트). Redis·MySQL을 거치지 않고 저장도 하지 않는다  (이슈 #20)
+   → 캔들 API(차트, 화면 실시간 표출은 이 경로의 REST 재조회로 충분하다). Redis·MySQL을 거치지 않고 저장도 하지 않는다  (이슈 #20)
 ```
 
 ### 실행 환경 조합 (PRD MKT-007·C-007)
@@ -346,12 +344,12 @@ StockFeedConfig가 둘 중 하나를 선택 → StockPriceProvider
   - **(이슈 #82)** `KisTickAggregator` 1분 OHLCV 집계 — 같은 분의 첫 체결이 open, 최고가 high, 최저가 low, 마지막 체결이 close, 수량 합이 volume. 분 경계에서 새 봉으로 넘어감. 결과 모델이 캔들 API 응답 모델과 동일
   - 화면 가격과 체결가격의 공급자 일치: SSE·가격 API가 반환한 값과 모의 주문 체결가가 같은 `StockPriceProvider` 인스턴스에서 나온다
   - **(이슈 #18)** `SseEmitterRegistry`: `register(market)` 호출 시 해당 market의 emitter 집합에 추가되고 `retry: 3000`이 전송됨, `onCompletion`·`onTimeout`·`onError` 콜백 발생 시 집합에서 제거됨, `STOCK`·`CRYPTO` 집합이 서로 섞이지 않음. SSE 이벤트 DTO 3종 직렬화: `sourceTime`·`emittedAt`·`sourceTradingDate` 필드가 의도한 대로 구분되어 나오는지(코인은 `sourceTradingDate` 생략), snapshot의 `prices` 배열·price/status 이벤트의 단일 종목 필드 구조. `PriceQueryService`의 새 예외 없는 조회 경로: 가격 있음→AVAILABLE 반환, 가격 없음→예외 없이 UNAVAILABLE 반환, 기존 `getPrice`는 여전히 PRICE_UNAVAILABLE에서 예외를 던져 409 계약 유지(회귀 테스트)
-  - **(이슈 #19·#98)** SSE 컨트롤러: 토큰 없음/잘못된 토큰 시 401, price 이벤트에만 id 존재(snapshot·status는 id 없음), snapshot에 주식 16종·코인 12종 전체 포함(가격 없는 종목도 포함), 가격 없는 종목은 price·sourceTime이 null이고 status는 UNAVAILABLE, 가격 변경 시 price 이벤트, 시장·연결상태 변경 시 status 이벤트, `sourceTime`과 `emittedAt` 구분, 주식은 `sourceTradingDate` 포함·코인은 미포함, 장 마감 후 marketStatus=CLOSED이면서 마지막 유효가격 유지(장 마감과 가격 없음 구분), 코인 stale 시 marketStatus는 OPEN 유지·종목 status만 UNAVAILABLE, 재접속 시 snapshot 재전송, 누락 이벤트 전체 재전송 안 함 (retry·heartbeat·emitter 정리 자체는 #18의 `SseEmitterRegistry` 단위 테스트로 이미 커버 — 컨트롤러 테스트에서 재검증하지 않는다)
+  - **(이슈 #19·#20)** SSE 컨트롤러: 토큰 없음/잘못된 토큰 시 401, price 이벤트에만 id 존재(snapshot·status는 id 없음), snapshot에 주식 16종·코인 12종 전체 포함(가격 없는 종목도 포함), 가격 없는 종목은 price·sourceTime이 null이고 status는 UNAVAILABLE, 가격 변경 시 price 이벤트, 시장·연결상태 변경 시 status 이벤트, `sourceTime`과 `emittedAt` 구분, 주식은 `sourceTradingDate` 포함·코인은 미포함, 장 마감 후 marketStatus=CLOSED이면서 마지막 유효가격 유지(장 마감과 가격 없음 구분), 코인 stale 시 marketStatus는 OPEN 유지·종목 status만 UNAVAILABLE, 재접속 시 snapshot 재전송, 누락 이벤트 전체 재전송 안 함 (retry·heartbeat·emitter 정리 자체는 #18의 `SseEmitterRegistry` 단위 테스트로 이미 커버 — 컨트롤러 테스트에서 재검증하지 않는다)
   - **(이슈 #20)** `BithumbRestCandleProvider`: 빗썸 내림차순 응답이 시각 오름차순으로 반전됨, **진행 중인 분봉이 응답에 포함됨**(주식과 반대라는 것을 명시적으로 고정), `candle_acc_trade_volume`(수량)이 `volume`에 매핑되고 `candle_acc_trade_price`(거래대금)와 섞이지 않음, `trade_price`가 `close`에 매핑됨, 심볼 `BTC`→`KRW-BTC` 변환, `from`·`to` 조합별 `to`+`count` 산출(둘 다 생략→count 200, `to`만, `from`만, 둘 다, 200분 초과 시 200으로 캡), 소수 `volume`이 잘리지 않음, 타임아웃·비정상 상태코드·파싱 불가에서 `MARKET_DATA_PROVIDER_ERROR`를 던지고 빈 목록을 반환하지 않음, 응답을 Redis·MySQL에 쓰지 않음
   - **(이슈 #20)** `CandleQueryService` 시장 분기: `STOCK`이면 `StockPriceProvider`, `CRYPTO`면 `CryptoCandleProvider`에 위임하고 코인 요청을 더 이상 400으로 거부하지 않음. 코인 응답에 `sourceTradingDate`가 없음
   - **(이슈 #20)** 코인 캔들 경로와 현재가 경로의 독립성: `PriceStore`가 비어 있거나 연결이 끊긴 상태에서도 캔들 조회 성공, 캔들 Provider가 실패해도 현재가 API·주문은 정상
   - **(이슈 #20)** 주식 캔들 회귀: `volume`을 `BigDecimal`로 넓힌 뒤에도 기존 주식 캔들의 값·정렬·공개 컷오프·재생세션 미준비 시 200 `[]` 계약이 유지됨
-- 슬라이스: `@DataJpaTest` — 종목 시드·UNIQUE(symbol), `stock_candles`/`stock_replay_sessions` UNIQUE 제약. `@WebMvcTest` — 목록·가격·캔들 계약, 404·400·409 매핑, SSE 컨트롤러 계약(#19·#98), 코인 캔들 계약(#20: 401, 코인 200, `interval` 오류 400, 빗썸 실패 502).
+- 슬라이스: `@DataJpaTest` — 종목 시드·UNIQUE(symbol), `stock_candles`/`stock_replay_sessions` UNIQUE 제약. `@WebMvcTest` — 목록·가격·캔들 계약, 404·400·409 매핑, SSE 컨트롤러 계약(#19·#20), 코인 캔들 계약(#20: 401, 코인 200, `interval` 오류 400, 빗썸 실패 502).
 - 통합 (Testcontainers MySQL+Redis, 이슈 #17): 샘플 KIS 응답 데이터 수집→`StockReplaySessionScheduler`가 세션 READY로 전환→재생→가격 조회(첫 분봉 시가, 이후 종가), 서버 재시작 시나리오에서 같은 원본 거래일 유지, DB에 OPEN·CLOSED가 저장되지 않음을 확인, Fake Feed 정상 수신→가격 조회, 끊김→PRICE_UNAVAILABLE, 재연결 새 틱→복귀 시나리오.
 - **(이슈 #83)** 통합: 동일 거래일에 상충하는 수집 결과 재수집을 거부해도 기존 READY 세션·StockCandle이 그대로인 시나리오.
 - 외부 스모크(자동 테스트와 구분 보고): 실제 빗썸 WebSocket 연결, **실제 빗썸 캔들 REST 조회(이슈 #20 — 12종 전체가 200 응답하는지, 필드명이 문서와 일치하는지)**, 실제 KIS Open API 과거 데이터 수집, **실제 KIS Open API WebSocket 연결과 국내주식 체결 틱 수신**. Fake 통과를 실제 연동 성공으로 보고하지 않는다 (PRD C-005).

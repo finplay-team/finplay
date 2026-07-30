@@ -536,9 +536,8 @@ Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conven
 - `GET /api/instruments?market=`
 - `GET /api/instruments/{instrumentId}`
 - `GET /api/instruments/{instrumentId}/price`
-- `GET /api/instruments/{instrumentId}/candles?interval=1m&from=&to=` (주식은 `stock_candles` 재생 분봉, 코인은 빗썸 공개 캔들 API 조회 — MKT-008)
-- `GET /api/stocks/stream` (SSE, 주식 시세 — 시장별 스트림 분리)
-- `GET /api/cryptos/stream` (SSE, 코인 시세)
+- `GET /api/instruments/{instrumentId}/candles?interval=1m&from=&to=` (주식은 `stock_candles` 재생 분봉, 코인은 빗썸 공개 캔들 API 실시간 조회·진행 중 분봉 포함 — MKT-008. 코인의 실시간 화면 표출은 이 엔드포인트의 재조회로 충당하며 전용 스트림을 두지 않는다)
+- `GET /api/stocks/stream` (SSE, 주식 시세)
 
 ### 주문
 

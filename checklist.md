@@ -97,7 +97,16 @@
 - [x] plan 003 갱신 — 코인 캔들 설계 절(외부 엔드포인트·필드 매핑·정렬 반전·진행 중 봉 제외·from/to→to+count 변환·502 처리·캐시 없음), 구성 요소 4종 추가, 테스트 계획
 - [x] tasks 003에 코인 차트 작업 항목 추가 (이슈 #20)
 - [x] api-routes.md·api-contracts.md 캔들 절을 주식·코인 공통으로 갱신
-- [x] 이슈 #20을 코인 차트 전용으로 교체 + `/api/cryptos/stream` SSE를 새 이슈 #98로 분리
+- [x] 이슈 #20 본문에 코인 차트(MKT-008) 범위 추가 — 기존 `/api/cryptos/stream` SSE 범위는 그대로 유지
 - [ ] 이슈 #20 실제 구현 (`CryptoCandleProvider`·`BithumbRestCandleProvider`·`CandleResponse.volume` BigDecimal 확대·`MARKET_DATA_PROVIDER_ERROR` 추가)
 - [ ] 프론트에서 코인 캔들 400 거부를 분기 처리하던 코드가 있으면 정리 (별도 레포 `FinPlay`)
 - [ ] 실제 빗썸 캔들 REST 외부 스모크 (12종 전체 200 응답·필드명 일치 확인)
+
+## 이슈 #20 SSE 축 제거 (2026-07-30, 같은 날 추가 정정)
+- [x] 이슈 #20 본문 재작성 — SSE 절 삭제, 코인 실시간 1분봉 차트 단일 범위로 확정
+- [x] prd.md §5 API 목록에서 `GET /api/cryptos/stream` 제거 (`/stocks/stream`만 유지)
+- [x] spec.md 개요·시나리오에서 `/cryptos/stream` 서술 제거 — "코인은 전용 스트림 없음, 캔들 API 재조회로 충당" 명시
+- [x] plan.md API 표·이슈 분할·SSE 계약·구성요소 표·흐름도에서 `CryptoPriceSseController`·`/cryptos/stream` 관련 서술 정리 (`/stocks/stream`(#19)만 SSE 대상, MKT-003/004 기반 주문 체결 경로는 유지)
+- [x] tasks.md에서 미구현 코인 SSE 태스크 항목 삭제
+- [x] api-contracts.md 캔들 절의 "SSE 틱으로 갱신" 문구를 "짧은 주기 재조회"로 정정
+- [ ] 이슈 #20 실제 구현 착수 (차트만)
