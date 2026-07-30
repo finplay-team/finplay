@@ -45,9 +45,10 @@ oauth:
 kis:
   app-key: ${KIS_APP_KEY:}
   app-secret: ${KIS_APP_SECRET:}
-  # 조회 API(주식일별분봉조회)·토큰 발급 공통 기본 URL. 실전투자 접속 정보이며 환경변수로 덮어쓰지 않는다(과도한 설정화 방지) —
-  # 모의투자로 검증할 때만 로컬에서 이 값을 임시로 바꿔서 확인한다.
-  base-url: https://openapi.koreainvestment.com:9443
+  # 조회 API(주식일별분봉조회)·토큰 발급 공통 기본 URL. 모의투자 도메인 사용은 한국투자증권 고객센터에 문의해 문제없다는
+  # 답변을 받았다(2026-07-30) — 실전투자 앱키를 발급받기 전까지 로컬·배포 공통으로 이 도메인을 쓴다. 실전투자 앱키로
+  # 전환하면 KIS_BASE_URL 값만 바꾸면 된다.
+  base-url: ${KIS_BASE_URL:https://openapivts.koreainvestment.com:29443}
 
 # 빗썸 공개 캔들 REST 조회 타임아웃 (MKT-008). 인증·API Key 불필요한 공개 API — 무한 대기로 요청 스레드를 붙잡지 않도록 짧게 잡는다.
 bithumb:
