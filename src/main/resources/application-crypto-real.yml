@@ -1,0 +1,10 @@
+# 로컬에서 코인 캔들·현재가를 둘 다 실제 빗썸 데이터로 전환하는 프로필 (이슈 #107).
+# 켜는 방법: SPRING_PROFILES_ACTIVE=local,crypto-real ./gradlew bootRun
+# 켜면 — 캔들은 BithumbRestCandleProvider(실제 빗썸 REST), 현재가는 BithumbRestTickerPoller(실제 ticker REST 3초 폴링).
+#        아래 simulate.enabled=false로 BithumbFeedSimulator 빈 자체가 생성되지 않는다.
+# 안 켜면(기본) — 캔들은 FakeCryptoCandleProvider(빈 배열), 현재가는 BithumbFeedSimulator의 합성 랜덤 틱.
+# 이 프로필 하나로 캔들·현재가가 함께 바뀐다 — 한쪽만 실데이터가 되면 차트와 주문창 현재가의 자릿수가 어긋난다.
+bithumb:
+  feed:
+    simulate:
+      enabled: false
