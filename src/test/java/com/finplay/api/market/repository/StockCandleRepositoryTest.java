@@ -261,4 +261,55 @@ class StockCandleRepositoryTest {
 
 		assertThat(candles).isEmpty();
 	}
+
+	// --- StockReplaySessionScheduler 전용 조회(existsByTradingDate) ---
+
+	@Test
+	void existsByTradingDateReturnsTrueWhenAnyInstrumentHasACandleOnThatDate() {
+		stockCandleRepository.save(newCandle(instrumentA, TRADING_DATE, LocalTime.of(9, 0), "71200"));
+
+		assertThat(stockCandleRepository.existsByTradingDate(TRADING_DATE)).isTrue();
+	}
+
+	@Test
+	void existsByTradingDateIsTrueRegardlessOfWhichInstrumentHoldsTheCandle() {
+		// 종목 무관 조회임을 확인 — instrumentB에만 저장된 캔들로도 true여야 한다.
+		stockCandleRepository.save(newCandle(instrumentB, TRADING_DATE, LocalTime.of(9, 0), "90000"));
+
+		assertThat(stockCandleRepository.existsByTradingDate(TRADING_DATE)).isTrue();
+	}
+
+	@Test
+	void existsByTradingDateReturnsFalseWhenNoCandleExistsOnThatDate() {
+		stockCandleRepository.save(newCandle(instrumentA, OTHER_TRADING_DATE, LocalTime.of(9, 0), "80000"));
+
+		assertThat(stockCandleRepository.existsByTradingDate(TRADING_DATE)).isFalse();
+	}
+
+	// --- KisHistoricalCandleCollector 전용 조회(existsByInstrumentIdAndTradingDate) ---
+
+	@Test
+	void existsByInstrumentIdAndTradingDateReturnsTrueWhenThatInstrumentHasACandleOnThatDate() {
+		stockCandleRepository.save(newCandle(instrumentA, TRADING_DATE, LocalTime.of(9, 0), "71200"));
+
+		assertThat(stockCandleRepository.existsByInstrumentIdAndTradingDate(instrumentA.getId(), TRADING_DATE))
+			.isTrue();
+	}
+
+	@Test
+	void existsByInstrumentIdAndTradingDateReturnsFalseWhenOnlyAnotherInstrumentHasACandleOnThatDate() {
+		// 종목 단위 조회임을 확인 — instrumentB에만 저장된 캔들은 instrumentA 조회에 영향을 주면 안 된다.
+		stockCandleRepository.save(newCandle(instrumentB, TRADING_DATE, LocalTime.of(9, 0), "90000"));
+
+		assertThat(stockCandleRepository.existsByInstrumentIdAndTradingDate(instrumentA.getId(), TRADING_DATE))
+			.isFalse();
+	}
+
+	@Test
+	void existsByInstrumentIdAndTradingDateReturnsFalseWhenSameInstrumentHasCandleOnlyOnAnotherDate() {
+		stockCandleRepository.save(newCandle(instrumentA, OTHER_TRADING_DATE, LocalTime.of(9, 0), "80000"));
+
+		assertThat(stockCandleRepository.existsByInstrumentIdAndTradingDate(instrumentA.getId(), TRADING_DATE))
+			.isFalse();
+	}
 }

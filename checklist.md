@@ -88,7 +88,7 @@
 - [x] PRD·spec 003/009/010 문서에서 KRX 관련 기술을 KIS Open API 기준으로 갱신 (`KIS_HISTORICAL`·`KisHistoricalReplayPriceProvider`·`KisHistoricalCandleCollector`)
 - [x] 이슈 #17 본문을 KIS Open API 기준으로 수정 (범위: 캔들 조회 API + 과거 데이터 수집 기본 동작만)
 - [x] 이슈 #82(KIS 실시간 틱 집계), #83(수집 파이프라인 장기운영 방어 로직) 신규 생성 — #17에서 분리
-- [ ] 이미 병합된 이슈 #16 코드(`KrxReplayPriceProvider`·`KRX_REPLAY` enum)의 KIS 네이밍 리네이밍 여부 결정 및 실행 (아직 미착수)
+- [x] 이미 병합된 이슈 #16 코드(`KrxReplayPriceProvider`·`KRX_REPLAY` enum)의 KIS 네이밍 리네이밍 여부 결정 및 실행 — 이슈 #19에서 완료(`KrxReplayPriceProvider`→`KisHistoricalReplayPriceProvider` 리네이밍, `KRX_REPLAY` enum은 `StockFeedProvider` 삭제로 리네이밍 자체가 불필요해짐)
 - [ ] 이슈 #17 실제 구현 (`/feature docs/specs/003-market-data`)
 
 ## 코인 차트 빗썸 연동, MKT-008 신설 (2026-07-30)

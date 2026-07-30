@@ -11,6 +11,15 @@ spring:
       # SSE(/stocks/stream, /cryptos/stream) 연결이 장시간 유지돼야 하므로 컨테이너 async 타임아웃을 두지 않는다.
       # 연결 생존 확인은 SseEmitterRegistry의 20초 heartbeat가 담당한다 (이슈 #18).
       request-timeout: -1
+  task:
+    scheduling:
+      # 기본 pool size 1이면 블로킹 @Scheduled 작업 하나(예: KisHistoricalCandleCollector의 배치 HTTP 호출)가
+      # 스레드를 점유하는 동안 나머지 스케줄(heartbeat, price push, replay 세션 확정)이 전부 밀린다.
+      # 현재 @Scheduled 작업이 4개(SseEmitterRegistry heartbeat, StockPriceStreamService,
+      # KisHistoricalCandleCollector, StockReplaySessionScheduler)이므로 각자 독립 스레드를 쓰도록 4로 상향한다
+      # (PR #90/#94 리뷰, plan.md 참고). 전용 TaskScheduler 분리는 작업 수가 적어 이번 범위에서는 채택하지 않는다.
+      pool:
+        size: 4
 
 # 인증 spec(PRD 태스크 2) 구현 시 사용. 시크릿은 환경변수로만 주입.
 jwt:
@@ -31,11 +40,14 @@ oauth:
     client-secret: ${NAVER_CLIENT_SECRET}
     redirect-uri: ${NAVER_REDIRECT_URI}
 
-# 주식 시세 공급자 실행 환경 설정 (MKT-007, spec.md 실행 환경 조합). KIS 키가 없어도 기본값(KRX_REPLAY)으로 기동이 성공해야 한다.
-stock-feed:
-  provider: ${STOCK_FEED_PROVIDER:KRX_REPLAY}
-  service-exposure: ${SERVICE_EXPOSURE:PUBLIC}
-  kis-public-display-approved: ${KIS_PUBLIC_DISPLAY_APPROVED:false}
+# 한국투자증권(KIS) Open API 키 — 과거 분봉 수집 배치(KisHistoricalCandleCollector)가 사용한다(MKT-005).
+# 값이 없어도 애플리케이션 기동·./gradlew build는 성공하며, 없으면 수집이 실패해 그날 재생세션이 FAILED가 될 뿐이다.
+kis:
+  app-key: ${KIS_APP_KEY:}
+  app-secret: ${KIS_APP_SECRET:}
+  # 조회 API(주식일별분봉조회)·토큰 발급 공통 기본 URL. 실전투자 접속 정보이며 환경변수로 덮어쓰지 않는다(과도한 설정화 방지) —
+  # 모의투자로 검증할 때만 로컬에서 이 값을 임시로 바꿔서 확인한다.
+  base-url: https://openapi.koreainvestment.com:9443
 
 # 빗썸 공개 캔들 REST 조회 타임아웃 (MKT-008). 인증·API Key 불필요한 공개 API — 무한 대기로 요청 스레드를 붙잡지 않도록 짧게 잡는다.
 bithumb:

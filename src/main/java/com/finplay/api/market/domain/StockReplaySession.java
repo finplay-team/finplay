@@ -95,4 +95,39 @@ public class StockReplaySession {
 		return new StockReplaySession(
 			serviceDate, sourceTradingDate, PreparationStatus.FAILED, resolvedAt, failureReason, createdAt);
 	}
+
+	// PREPARING 상태의 세션을 READY로 전환한다 (StockReplaySessionScheduler 전용). PREPARING이 아니면 거부한다 —
+	// 이미 확정된 세션의 원본 거래일을 장중에 바꾸지 않기 위함이다(spec.md MKT-002).
+	public void resolveReady(LocalDate sourceTradingDate, LocalDateTime resolvedAt) {
+		if (this.preparationStatus != PreparationStatus.PREPARING) {
+			throw new IllegalStateException("PREPARING 상태에서만 READY로 전환할 수 있습니다.");
+		}
+		if (sourceTradingDate == null) {
+			throw new IllegalArgumentException("READY 상태에서는 source_trading_date가 필수입니다.");
+		}
+		if (resolvedAt == null) {
+			throw new IllegalArgumentException("READY 상태에서는 resolved_at이 필수입니다.");
+		}
+		this.sourceTradingDate = sourceTradingDate;
+		this.preparationStatus = PreparationStatus.READY;
+		this.resolvedAt = resolvedAt;
+	}
+
+	// PREPARING 상태의 세션을 FAILED로 전환한다 (StockReplaySessionScheduler 전용). sourceTradingDate는 준비할 데이터
+	// 자체를 찾지 못했으면 NULL, 특정 거래일을 준비하다 실패했으면 값을 가질 수 있다 — 둘 다 허용.
+	public void resolveFailed(LocalDate sourceTradingDate, LocalDateTime resolvedAt, String failureReason) {
+		if (this.preparationStatus != PreparationStatus.PREPARING) {
+			throw new IllegalStateException("PREPARING 상태에서만 FAILED로 전환할 수 있습니다.");
+		}
+		if (resolvedAt == null) {
+			throw new IllegalArgumentException("FAILED 상태에서는 resolved_at이 필수입니다.");
+		}
+		if (failureReason == null || failureReason.isBlank()) {
+			throw new IllegalArgumentException("FAILED 상태에서는 failure_reason이 필수입니다.");
+		}
+		this.sourceTradingDate = sourceTradingDate;
+		this.preparationStatus = PreparationStatus.FAILED;
+		this.resolvedAt = resolvedAt;
+		this.failureReason = failureReason;
+	}
 }
