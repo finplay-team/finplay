@@ -137,6 +137,14 @@
 ## 모니터링 (사람용 요약) (이슈 #107 구현 완료)
 - ⑫ `BithumbRestTickerPoller` — `@Profile("!prod & crypto-real")`. 코인 종목 전체를 `KRW-{symbol}` 콤마 결합으로 묶어 ticker REST를 3초마다 1회 호출하고 `trade_price`를 `FakeBithumbFeedClient.emitTick`으로 넣는다. 실패는 회차 skip + 로그만 — 임의값 대체 없음(MKT-004).
 - ⑬ `application-crypto-real.yml` — `bithumb.feed.simulate.enabled=false`. 프로필 하나로 캔들·현재가가 함께 전환되고 한쪽만 켜지는 조합이 없다. 테스트 격리 파일에 `bithumb.feed.ticker.enabled=false`를 추가해 `@ActiveProfiles("crypto-real")` 통합 테스트가 외부 네트워크를 타지 않게 했다.
-- 새 테스트 23건(폴러 단위 12 / 폴러 조건 슬라이스 5 / crypto-real 컨텍스트 3 / 기본 프로필 컨텍스트 1 / 캔들·현재가 독립성 2) 전부 통과, 전체 1160건 통과.
+- 새 테스트 21건(폴러 단위 12 / 폴러 조건 슬라이스 5 / crypto-real 컨텍스트 3 / 기본 프로필 컨텍스트 1) 전부 통과, 전체 1160건 통과.
 - **빌드 3회 시도**: 1회차는 이번에 건드리지 않은 `HoldingLotRepositoryTest`·`HoldingRepositoryTest`·`TradeAllocationRepositoryTest` 9건이 `ConnectException`으로 실패 — `docs/agent-mistakes.md`에 두 번 기록된 호스트 리소스 경합 패턴과 동일했고, 코드 수정 없이 재실행에서 통과했다. 2회차는 셸 작업 디렉터리 문제(아래 실수 로그 참조). 3·4회차에서 `BUILD SUCCESSFUL`.
 - controller 변경이 없어 `docs/api-routes.md`·`docs/api-contracts.md` 갱신 대상 없음(확인함).
+
+## AI 로그 (이슈 #107 리뷰)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| 2026-07-31 | reviewer | `git diff dev...HEAD` (브랜치 `fix/107-crypto-local-real-data`) | `docs/conventions.md`, `docs/adr/0002-architecture.md`, `docs/adr/0003-testing-strategy.md`, `docs/adr/0004-flyway-migrations.md`, `docs/api-routes.md`, `docs/api-contracts.md` |
+
+## 모니터링 (사람용 요약) (이슈 #107 리뷰)
+- 리뷰(이슈 #107 로컬 코인 실데이터, `fix/107-crypto-local-real-data` vs dev): 차단 0건 / 권장 2건 / 참고 3건 — 머지 가능. 프로필 조건은 `prod`/`crypto-real` 4개 조합 모두에서 `CryptoCandleProvider` 구현이 정확히 하나(상호 배타 + 빈틈 없음)이고 폴러는 `!prod & crypto-real`에서만 뜬다. 테스트 격리(`bithumb.feed.ticker.enabled=false`)는 `CryptoRealProfileContextIntegrationTest`가 빈 부재를 직접 단언해 무효화되면 조용히 넘어가지 않고 실패로 드러난다(PR #110의 반복 함정 해소). 실패 처리는 회차 skip + 로그만이라 MKT-004를 지키고 `@Scheduled` 밖으로 예외가 새지 않으며, 손으로 쓴 생성자는 전 필드 직접 대입이라 `EI_EXPOSE_REP2` 위험 없음. `BithumbFeedSimulator.java` 무변경 확인. 권장: ① `bithumb.feed.ticker.*` 타임아웃 키가 `application.yml`의 `bithumb.candle.*` 선례와 달리 선언돼 있지 않다. ② `crypto-real`에서 블로킹 `@Scheduled`가 5개인데 스케줄러 pool size는 4다.

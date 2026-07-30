@@ -55,3 +55,9 @@ bithumb:
   candle:
     connect-timeout-ms: ${BITHUMB_CANDLE_CONNECT_TIMEOUT_MS:2000}
     read-timeout-ms: ${BITHUMB_CANDLE_READ_TIMEOUT_MS:3000}
+  feed:
+    # 빗썸 공개 ticker REST 조회 타임아웃 (이슈 #107). 위 candle과 같은 공개 API·같은 목적이라 형태를 맞춘다.
+    # 이 값을 읽는 BithumbRestTickerPoller는 crypto-real 프로필에서만 생성되므로 기본 실행에는 영향이 없다.
+    ticker:
+      connect-timeout-ms: ${BITHUMB_TICKER_CONNECT_TIMEOUT_MS:2000}
+      read-timeout-ms: ${BITHUMB_TICKER_READ_TIMEOUT_MS:3000}

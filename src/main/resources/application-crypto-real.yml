@@ -8,3 +8,13 @@ bithumb:
   feed:
     simulate:
       enabled: false
+
+# 이 프로필에서는 BithumbRestTickerPoller가 5번째 @Scheduled 블로킹 작업이 된다(application.yml의 pool size 4는
+# SSE heartbeat·StockPriceStreamService·KisHistoricalCandleCollector·StockReplaySessionScheduler 4개 기준이다).
+# 폴러가 스레드를 못 잡아 3초 주기가 밀리면 PriceStore의 10초 stale 기준을 넘겨 409 PRICE_UNAVAILABLE이 뜬다 —
+# 이 이슈가 없애려던 증상과 같은 모양이라 프로필 안에서 한 칸 올려 닫는다 (기본 프로필에는 영향 없음).
+spring:
+  task:
+    scheduling:
+      pool:
+        size: 5
