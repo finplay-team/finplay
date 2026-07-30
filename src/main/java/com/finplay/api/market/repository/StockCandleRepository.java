@@ -31,4 +31,7 @@ public interface StockCandleRepository extends JpaRepository<StockCandle, Long> 
 	// KisHistoricalCandleCollector 전용 — 종목·거래일 단위 멱등 스킵 판정. 이미 수집된 날 최대 390행을 전부 로드하는
 	// findByInstrumentIdAndTradingDateOrderByCandleTimeAsc 대신 존재 여부만 확인한다(PR #94 리뷰 권장사항).
 	boolean existsByInstrumentIdAndTradingDate(Long instrumentId, LocalDate tradingDate);
+
+	// 로컬 실수집 트리거 전용 — 그 거래일에 실제로 수집된 분봉 수를 보고한다(0이면 수집 실패).
+	long countByTradingDateAndDataSource(LocalDate tradingDate, String dataSource);
 }

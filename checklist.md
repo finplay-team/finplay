@@ -110,3 +110,13 @@
 - [x] tasks.md에서 미구현 코인 SSE 태스크 항목 삭제
 - [x] api-contracts.md 캔들 절의 "SSE 틱으로 갱신" 문구를 "짧은 주기 재조회"로 정정
 - [ ] 이슈 #20 실제 구현 착수 (차트만)
+
+## KIS 분봉 수집 속도 제한 대응 (2026-07-30, 이슈 #105)
+- [x] `EGW00201`(초당 거래건수 초과)만 골라 최대 5회 백오프 재시도 — 다른 오류는 즉시 던진다
+- [x] `kis.request-interval-ms` 설정 추가 (기본값 0으로 기존 동작 보존, `application-local.yml`에서 600)
+- [x] 단위 테스트 — 속도 제한은 재시도해 성공, 도메인 불일치(`EGW02004`)는 재시도하지 않음
+- [x] `POST /api/dev/stock-replay-imports` (`@Profile("local")`) — 08:10·08:40 배치 즉시 실행
+- [x] `LocalForcedOpenStockPriceProvider` (`@Primary @Profile("local")`) — `force-market-open=true`일 때만 READY 세션 기준 OPEN 강제, 기본값 false
+- [x] `docs/api-routes.md`·`docs/api-contracts.md` 동시 갱신
+- [x] `./gradlew build` 통과
+- [x] 실측 검증 — 수집 성공률 30%(16종 중 1종) → 100%(5,630건), 소요 1분 20초

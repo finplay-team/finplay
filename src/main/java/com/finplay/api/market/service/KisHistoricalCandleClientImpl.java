@@ -25,6 +25,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.util.UriComponentsBuilder;
 
 // output2의 개별 필드명(stck_cntg_hour·stck_oprc·stck_hgpr·stck_lwpr·stck_prpr·cntg_vol)과 분봉 timestamp 기준(구간
@@ -53,6 +54,10 @@ public class KisHistoricalCandleClientImpl implements KisHistoricalCandleClient 
 	private static final LocalTime MARKET_CLOSE_TIME = LocalTime.of(15, 30);
 	// 09:00~15:30(390분)을 한 번에 최대 120건씩 역방향으로 당겨오면 약 4회면 충분하다 — 이상 응답으로 인한 무한루프를 막는 안전 상한.
 	private static final int MAX_PAGES_PER_SYMBOL = 10;
+	// 초당 호출 제한 응답의 KIS 오류 코드 — 이 코드만 재시도 대상으로 삼는다.
+	private static final String RATE_LIMIT_ERROR_CODE = "EGW00201";
+	private static final int MAX_RATE_LIMIT_RETRIES = 5;
+	private static final long MIN_RATE_LIMIT_BACKOFF_MS = 400L;
 	private static final DateTimeFormatter TRADING_DATE_FORMAT = DateTimeFormatter.BASIC_ISO_DATE;
 	private static final DateTimeFormatter CANDLE_TIME_FORMAT = DateTimeFormatter.ofPattern("HHmmss");
 	private static final DateTimeFormatter TOKEN_EXPIRY_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -107,7 +112,60 @@ public class KisHistoricalCandleClientImpl implements KisHistoricalCandleClient 
 			.toList();
 	}
 
+	// 모의투자 도메인의 초당 호출 제한(EGW00201)을 넘지 않도록 요청 사이에 간격을 둔다. kis.request-interval-ms가
+	// 0이면(기본값) 대기하지 않으므로 실전투자 기준의 기존 동작이 그대로 유지된다.
+	private void throttleBeforeRequest() {
+		long intervalMs = properties.requestIntervalMs();
+		if (intervalMs <= 0) {
+			return;
+		}
+		try {
+			Thread.sleep(intervalMs);
+		} catch (InterruptedException ex) {
+			Thread.currentThread().interrupt();
+			throw new IllegalStateException("KIS 분봉 조회 간격 대기가 중단되었습니다.", ex);
+		}
+	}
+
+	// 초당 호출 제한(EGW00201)은 하드 쿼터가 아니라 간헐적으로 걸린다 — 600ms 간격으로 12회 연속 호출했을 때
+	// 성공률이 약 67%였다(2026-07-30 실측, 2회 성공 후 1회 실패가 반복). 수집기는 페이지 1건만 실패해도 그 종목
+	// 전체를 실패로 처리하므로, 종목당 3~4페이지가 모두 성공할 확률이 0.67^3 ≈ 30%에 그친다. 그래서 이 오류만
+	// 골라 재시도한다. 다른 오류(인증 실패·도메인 불일치 등)는 재시도해도 달라지지 않으므로 그대로 던진다.
 	private List<RawMinuteCandleDto> requestPage(String symbol, LocalDate tradingDate, LocalTime cursor) {
+		RestClientResponseException lastRateLimitError = null;
+		for (int attempt = 0; attempt <= MAX_RATE_LIMIT_RETRIES; attempt++) {
+			throttleBeforeRequest();
+			try {
+				return requestPageOnce(symbol, tradingDate, cursor);
+			} catch (RestClientResponseException ex) {
+				if (!isRateLimited(ex)) {
+					throw ex;
+				}
+				lastRateLimitError = ex;
+				log.debug("KIS 초당 호출 제한에 걸려 재시도합니다 (symbol={}, cursor={}, 시도 {}/{})", symbol, cursor,
+					attempt + 1, MAX_RATE_LIMIT_RETRIES + 1);
+				backOffAfterRateLimit(attempt);
+			}
+		}
+		throw lastRateLimitError;
+	}
+
+	private static boolean isRateLimited(RestClientResponseException ex) {
+		return ex.getResponseBodyAsString().contains(RATE_LIMIT_ERROR_CODE);
+	}
+
+	// 재시도 간 대기는 호출 간격의 배수로 늘린다 — 간격 설정이 0이면 최소 대기값을 쓴다.
+	private void backOffAfterRateLimit(int attempt) {
+		long base = Math.max(properties.requestIntervalMs(), MIN_RATE_LIMIT_BACKOFF_MS);
+		try {
+			Thread.sleep(base * (attempt + 1L));
+		} catch (InterruptedException ex) {
+			Thread.currentThread().interrupt();
+			throw new IllegalStateException("KIS 초당 호출 제한 재시도 대기가 중단되었습니다.", ex);
+		}
+	}
+
+	private List<RawMinuteCandleDto> requestPageOnce(String symbol, LocalDate tradingDate, LocalTime cursor) {
 		String accessToken = ensureAccessToken();
 		String uri = UriComponentsBuilder
 			.fromUriString(properties.baseUrl() + CANDLE_PATH)

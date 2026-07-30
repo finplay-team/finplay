@@ -26,6 +26,7 @@
 | GET | /api/instruments/{instrumentId}/price | market | 인증 사용자의 종목 현재가 조회. 주식은 StockPriceProvider(재생/실시간 공급자 불문), 코인은 PriceStore(Redis)에서 유효한 최신 가격만 반환 | 003 MKT-002/MKT-003/MKT-004, Issue #16 |
 | GET | /api/instruments/{instrumentId}/candles?interval=1m&from=&to= | market | 인증 사용자의 1분봉 조회. 주식은 `stock_candles` 과거 거래일 재생(미마감 분봉 제외, 재생세션 미준비 시 200 빈 배열), 코인은 빗썸 공개 캔들 REST의 실시간 분봉(저장 없음, 최대 200개, **진행 중 분봉 포함**, 조회 실패 시 502) | 003 MKT-002·MKT-008, Issue #17, Issue #20 |
 | GET | /api/stocks/stream | market | 주식 전용 SSE 구독. 구독 직후 16종 전체를 snapshot 1건으로 전송, 이후 매분 새로 공개된 가격을 price로, 개장·마감 전환을 status로 push | 003 MKT-002, Issue #19 |
+| POST | /api/dev/stock-replay-imports | market | **(local 프로필 전용)** 08:10 수집 배치와 08:40 세션 확정 배치를 즉시 한 번 실행해 실제 KIS 분봉을 채운다. 그 시각을 기다리지 않거나 앱이 꺼져 있어 건너뛴 날의 보정용. 요청 본문 없음. `local` 프로필이 아니면 컨트롤러 빈 자체가 없어 404 | 003 MKT-005 (개발 도구, 이슈 없음) |
 | POST | /api/community/posts | community | 인증 사용자의 텍스트 게시물 작성 | 008 COM-001, Issue #23 |
 | GET | /api/community/posts?page=&size= | community | 인증 사용자의 게시물 목록을 최신순 페이지네이션으로 조회 | 008 COM-001, Issue #24 |
 | GET | /api/community/posts/{postId} | community | 인증 사용자의 커뮤니티 게시물 단건 조회 | 008 COM-001, Issue #25 |
@@ -76,4 +77,5 @@ Spring Security는 세션을 만들지 않는 Bearer 인증을 사용한다. 현
 - 인증된 사용자가 권한 없는 리소스에 접근하면 403 `FORBIDDEN`이다.
 - 401·403은 모두 `{"error":{"code":"<UNAUTHORIZED|FORBIDDEN>","message":"<기본 메시지>","requestId":"<요청 ID>"}}` 공통 형식이며 `X-Request-Id` 응답 헤더를 포함한다.
 - `/api/auth/me`는 `SecurityConfig` 공개 목록에 추가하지 않고 기본 보호(`anyRequest().authenticated()`)만으로 인증을 요구한다.
+- `/api/dev/**`(local 전용 개발 엔드포인트)도 `SecurityConfig`에 항목을 추가하지 않는다 — `anyRequest().authenticated()`로 떨어져 평소 쓰는 Access Bearer 토큰으로 호출된다. 개발용 경로를 프로덕션 설정 파일에 `permitAll()`로 적어 두지 않는다.
 - authorize의 조건부 공개는 `AndRequestMatcher`(경로+메서드 매처 + `purpose` 파라미터 람다)로 구현한다. 모르는 `purpose` 값은 공개 대상이 아니므로 기본적으로 인증을 요구한다(안전한 기본값). Spring Security 7에는 `AntPathRequestMatcher`가 없어 `PathPatternRequestMatcher`를 쓴다.

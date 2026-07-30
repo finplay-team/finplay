@@ -236,3 +236,19 @@
   - **건드리지 않은 것**: `MKT-003`·`MKT-004`(빗썸 WebSocket → Redis `PriceStore` → `PriceQueryService`)와 이미 **병합된** 코드(이슈 #16의 `BithumbFeedClient`·`FakeBithumbFeedClient`·`PriceStore`)는 그대로 둔다. 이건 화면에 실시간 값을 "방송"하는 것과는 다른 문제 — **주문 체결가와 `PRICE_UNAVAILABLE`(장애 시 주문 차단) 판정의 근거**로 계속 필요하다. 사용자의 "좀비 코드" 지적은 아직 안 만든 SSE 컨트롤러를 향한 것이지, 이미 merge돼서 주문 도메인이 의존하는 코드를 향한 게 아니라고 판단했다 — 이 판단이 틀렸으면 다시 지적받을 것이다.
   - **결과 구조**: 코인은 여전히 두 독립 경로다. ① 현재가 = 빗썸 WebSocket → Redis → 주문 체결(화면 방송 없음, 기존 `GET .../price` 폴링 API로만 노출). ② 차트 = 빗썸 REST 캔들 → 프론트가 짧은 주기로 재조회(진행 중 봉이 매번 갱신되므로 이것만으로 실시간 표출 충족, 별도 스트림 불필요).
 - **패턴 인식**: 이번 대화에서 "수정하라"는 지시를 두 번 연속 "기존 것 유지 + 새 것 추가"로 잘못 해석했다(이슈 신규 생성 건, SSE 축 유지 건). **"수정"은 교체를 뜻하고, 요청받지 않은 범위를 옆에 나란히 남겨두지 않는다** — 이 패턴은 다른 이슈·스펙 수정 요청에도 그대로 적용해야 한다.
+
+## 2026-07-30 — KIS 분봉 수집 속도 제한 대응 (이슈 #105)
+
+- **문제**: 모의투자 도메인에서 아침 수집이 조용히 실패했다. 16종목 중 1종목만 들어왔고(성공률 30%) 서버는 정상 기동, API는 200을 반환해 아무도 알아채지 못한다. 그날 하루 종일 주식 화면이 빈 상태가 된다 — 재생 방식이라 복구 수단이 없다.
+- **원인은 재시도 부재였다, 속도가 아니다**: `KisHistoricalCandleClientImpl`에 호출 간격도 재시도도 없었다. 600ms 간격으로 12회 연속 호출해 측정하니 `EGW00201`이 **하드 쿼터가 아니라 간헐적**이었다 — 2회 성공 후 1회 실패가 반복되는 패턴(성공률 67%). 수집기는 페이지 1건만 실패해도 그 종목 전체를 버리므로 종목당 3~4페이지가 모두 성공할 확률이 `0.67³ ≈ 30%`, 관측값과 일치했다. **간격만 늘리는 것으로는 못 고친다 — 재시도가 본질이다.**
+- **재시도는 `EGW00201`에만 한정한다**: 자격증명 오류·도메인 불일치는 재시도해도 결과가 같고, 무의미한 대기가 08:10 배치를 08:40 세션 확정 시각 밖으로 밀어낸다. 응답 본문의 오류 코드로 판별한다.
+- **`kis.request-interval-ms` 기본값은 0이다**: 실전투자 도메인 기준의 기존 동작을 바꾸지 않으려는 것이다. `application-local.yml`에서만 600으로 켠다.
+- **앱키 환경과 도메인은 짝이 맞아야 한다 (실측)**: 모의투자 앱키로 실전 도메인을 호출하면 **토큰 발급까지는 성공**하고 업무 API만 `EGW02004`로 거부한다. **토큰 발급 성공을 앱키 종류의 근거로 삼으면 안 된다** — 이 오판으로 도메인을 잘못 바꿨다가 되돌렸다. 토큰 발급은 별도로 1분당 1회 제한(`EGW00133`)이 있어, 진단하려고 수동으로 토큰을 뽑으면 직후 실행되는 수집이 토큰을 못 받는다.
+- **시장상태 게이트는 별도 문제다**: `StockReplayService.computeMarketStatus`는 재생세션 READY **AND** `isBusinessDay` **AND** 벽시계 09:00~15:30을 모두 요구한다(하드 게이트). 장외에 주문 흐름을 시험하려고 `LocalForcedOpenStockPriceProvider`(`@Primary @Profile("local")`)로 `getMarketStatus()`만 덮어썼다 — **프로덕션 클래스는 고치지 않았다.**
+  - **`Clock` 빈을 오프셋하는 대안을 버린 이유**: `Clock`은 `JwtTokenProvider`·`EmailVerificationService`(재발송 제한)·`PriceStore`(10초 stale 판정)·`OrderExecutionService`(`executedAt`) 등 앱 전역이 주입받는다. 폭발 반경이 앱 전체이고 DB 타임스탬프가 `CURRENT_TIMESTAMP(6)` 기본값과 어긋난다.
+  - **데코레이터에 구체 타입(`KisHistoricalReplayPriceProvider`)을 주입한다** — 자신이 `@Primary StockPriceProvider`라 인터페이스로 받으면 자기 참조 순환이 된다.
+  - **거짓 상태가 아니다**: 시장상태를 읽는 모든 소비자(`PriceQueryService.assertOrderable`, SSE `snapshot`·`price`·`status`)가 같은 `getMarketStatus()`를 쓴다. 화면에 OPEN이면 주문도 실제로 통과한다.
+  - 가드는 두 겹이다 — `@Profile("local")` + `force-market-open` 플래그(기본 `false`). 끄면 "데이터는 READY인데 시장은 CLOSED"인 정직한 상태를 그대로 볼 수 있다.
+- **Lombok은 필드의 Spring `@Value`를 생성자 파라미터로 복사하지 않는다 (`javap`로 확인)**: `@RequiredArgsConstructor` + 필드 `@Value`로 짜면 `RuntimeVisibleParameterAnnotations`가 없어 Spring이 `boolean` 타입 빈을 찾다 기동에 실패한다. 손으로 쓴 생성자에 `@Value`를 붙였고, `spotbugsMain` 단독 실행으로 `EI_EXPOSE_REP2`가 나지 않음을 확인했다.
+- **`bootRun`은 어떤 프로필도 기본 활성화하지 않는다 (확인된 사실)**: `build.gradle`·`application.yml`·`.env` 어디에도 `spring.profiles.active` 기본값이 없다. `application-local.yml`은 지금까지 사실상 잠들어 있었다(SQL 디버그 로깅도 미적용). `SPRING_PROFILES_ACTIVE=local`을 직접 켜야 한다. 또한 Spring Boot는 `.env`를 읽지 않으므로 셸에서 기동할 때는 `set -a; . ./.env; set +a`로 먼저 주입해야 한다 — 안 하면 `JWT_SECRET` 미해결로 기동이 실패한다.
+- **합성 분봉 시드는 만들었다가 제거했다**: KIS 키 없이 매매 흐름을 시험하려고 `min_order_amount`를 시작 가격으로 랜덤워크시킨 시드 엔드포인트를 넣었으나, 삼성전자가 7만원대로 나와 **실제 시세로 오해를 일으켰다**(실제 2026-07-29 종가 208,500원). 실데이터 수집이 동작하게 된 뒤 사용자 결정으로 제거했다. 교훈은 **더미 데이터를 실데이터와 구분 불가능한 형태로 화면에 흘려보내지 않는다**는 것이다.
