@@ -43,7 +43,7 @@
 
 ## 후속 이슈 (MVP 범위 아님)
 
-> **KIS 실시간 항목에는 대응 GitHub 이슈가 없다.** 이전 문서가 "이슈 #82"로 적어 왔으나 실제 #82는 「[MVP][포트폴리오] 내 체결 내역 조회 API」이고 KIS 실시간과 무관하다 — 틱 집계 이슈는 만들어진 적이 없다(2026-07-31 이슈 #109에서 확인). 착수할 때 이슈를 새로 만든다. 아래 `이슈 #83` 항목은 실제 이슈와 일치하므로 번호를 그대로 둔다.
+> **KIS 실시간 항목에는 대응 GitHub 이슈가 없다.** 이전 문서가 "이슈 #82"로 적어 왔으나 실제 #82는 「[MVP][포트폴리오] 내 체결 내역 조회 API」이고 KIS 실시간과 무관하다 — 틱 집계 이슈는 만들어진 적이 없다(2026-07-31 이슈 #109에서 확인). 착수할 때 이슈를 새로 만들고, **그 시점에 `prd.md`·`spec.md`·`plan.md`·이 파일에 흩어진 "KIS 실시간 후속"·"후속(KIS 실시간 틱 집계)" 서술을 새 이슈 번호로 일괄 치환한다** — 대상은 `grep -rn "KIS 실시간 후속\|후속(KIS 실시간" docs/`로 찾는다. 아래 `이슈 #83` 항목은 실제 이슈와 일치하므로 번호를 그대로 둔다.
 
 - [ ] **(KIS 실시간 후속) 공급자 전환 구조와 fail-fast 방어 복원 — 실시간 구현체와 반드시 같은 작업에서.** `StockFeedConfig`·`StockFeedProvider`(`KIS_REALTIME`·`KIS_HISTORICAL`)·`ServiceExposure`·`KIS_PUBLIC_DISPLAY_APPROVED`·`application.yml`의 `stock-feed:` 블록·`.env.example` 항목 3종을 되살리고, 허용 조합 4종과 `PUBLIC`+`KIS_REALTIME`+미승인 기동 실패(fail-fast)를 다시 구현한다. 계약 정본은 `plan.md`의 "실행 환경 조합" 절. **구현체만 먼저 들어오고 이 방어가 빠지면 공개 환경에서 무허가 실시간 표출이 가능해진다 (C-007 위반)** — 순서를 뒤집지 않는다. (+ 단위 테스트: 조합별 Provider 선택, 금지 조합 컨텍스트 로드 실패)
 - [ ] **(KIS 실시간 후속)** `KisRealtimePriceProvider` + `FakeKisRealtimePriceProvider` (KIS 국내주식 WebSocket 체결 틱 수신·재연결·연결상태, 끊김 시 가격 무효·재연결 후 복귀. 키는 KIS_REALTIME일 때만 바인딩) (+ 단위 테스트는 Fake로) — 실제 KIS WebSocket 연결은 외부 스모크로 구분 보고. 위 이슈 #19 ①에서 삭제한 코드를 실시간 표출 허용이 확인된 뒤 다시 도입한다

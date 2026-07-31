@@ -87,7 +87,7 @@
 ## 시세 소스 KRX → KIS 전환, 이슈 #17 범위 분리 (2026-07-28)
 - [x] PRD·spec 003/009/010 문서에서 KRX 관련 기술을 KIS Open API 기준으로 갱신 (`KIS_HISTORICAL`·`KisHistoricalReplayPriceProvider`·`KisHistoricalCandleCollector`)
 - [x] 이슈 #17 본문을 KIS Open API 기준으로 수정 (범위: 캔들 조회 API + 과거 데이터 수집 기본 동작만)
-- [x] 이슈 #83(수집 파이프라인 장기운영 방어 로직) 신규 생성 — #17에서 분리. **KIS 실시간 틱 집계는 이슈가 만들어진 적이 없다** — 이 줄이 적어 온 "이슈 #82"는 무관한 「[MVP][포트폴리오] 내 체결 내역 조회 API」이며, 실시간 항목은 `docs/specs/003-market-data/tasks.md`의 후속 항목으로만 남아 있다 (2026-07-31 이슈 #109에서 정정)
+- [x] ~~이슈 #82(KIS 실시간 틱 집계)~~, #83(수집 파이프라인 장기운영 방어 로직) 신규 생성 — #17에서 분리. → **#82는 실제로 만들어지지 않았다** (2026-07-31 이슈 #109에서 확인). 그 번호의 실제 이슈는 무관한 「[MVP][포트폴리오] 내 체결 내역 조회 API」이고, KIS 실시간 틱 집계는 `docs/specs/003-market-data/tasks.md`의 후속 항목으로만 남아 있다
 - [x] 이미 병합된 이슈 #16 코드(`KrxReplayPriceProvider`·`KRX_REPLAY` enum)의 KIS 네이밍 리네이밍 여부 결정 및 실행 — 이슈 #19에서 완료(`KrxReplayPriceProvider`→`KisHistoricalReplayPriceProvider` 리네이밍, `KRX_REPLAY` enum은 `StockFeedProvider` 삭제로 리네이밍 자체가 불필요해짐)
 - [ ] 이슈 #17 실제 구현 (`/feature docs/specs/003-market-data`)
 
@@ -130,3 +130,4 @@
 - [x] 로컬 시드 엔드포인트 이름 확인 — 백엔드 문서는 이미 `POST /api/dev/stock-replay-imports`로 정확해 정정 대상이 없다. `stock-replay-seeds` 오기는 프론트 레포(`FinPlay`) `checklist.md` 몫
 - [x] 고친 문서의 참조 대상 실재 확인 — plan.md 절 제목 4종, 이슈 #19·#83, 엔드포인트 경로, `/api/cryptos/stream` 잔재 없음
 - [x] `./gradlew build` 미실행 — Java 코드 무변경. `docs/specs/010-deployment/spec.md:23` "문서만 바뀐 PR은 Gradle 단계를 건너뛴다" 방침
+- [x] PR #112 리뷰 반영 — `checklist.md:90`을 원문 취소선 + 정정 덧붙이기로 변경(레포 기존 관행 `~~항목~~ → 철회`와 통일), `tasks.md` 후속 이슈 절에 "이슈 생성 시 서술 일괄 치환" 안내와 대상 검색 grep 추가
