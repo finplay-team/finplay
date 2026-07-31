@@ -35,6 +35,8 @@
    ```bash
    docker compose -f compose.deploy.yaml up -d --build
    ```
+   nginx는 `app`이 healthy가 될 때까지 기다렸다가 뜬다(Flyway 마이그레이션이 끝나기 전에 nginx가 떠서
+   첫 요청이 502가 되는 것을 막는다). 그래서 이 명령은 앱 기동이 끝날 때까지 돌아오지 않는다 — 로컬 실측 40초 안팎이다.
 
 4. **확인한다.**
    ```bash

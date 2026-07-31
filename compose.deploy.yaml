@@ -47,6 +47,15 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+    # nginx가 이 조건을 기다린다. 없으면 Flyway 마이그레이션이 끝나기 전에 nginx가 떠서 첫 요청이 502가 된다.
+    # 런타임 이미지(eclipse-temurin:17-jre)는 Ubuntu 기반이라 curl이 이미 들어 있다.
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      # 로컬 실측 기동 시간이 약 40초다. 그 사이 실패는 retries로 세지 않는다.
+      start_period: 90s
     # 호스트에 포트를 열지 않는다 — 외부 진입점은 nginx 하나뿐이다(동일 오리진).
     expose:
       - "8080"
@@ -61,7 +70,8 @@ services:
       # 프론트(finplay-frontend)에서 npm run build로 만든 dist/를 호스트에 올려 두고 그 경로를 가리킨다.
       - ${FRONTEND_DIST_PATH:-./frontend-dist}:/usr/share/nginx/html:ro
     depends_on:
-      - app
+      app:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
