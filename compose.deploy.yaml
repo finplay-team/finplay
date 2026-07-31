@@ -1,0 +1,79 @@
+# 배포용 스택 (EC2 수동 배포). nginx가 프론트 정적 파일과 /api 프록시를 한 오리진에서 서빙한다 — 이슈 #108 A안.
+# 루트 compose.yaml은 로컬 개발 전용(spring-boot-docker-compose가 bootRun에서 자동 기동)이므로 건드리지 않는다.
+# 실행: docker compose -f compose.deploy.yaml up -d --build   (같은 디렉터리의 .env를 읽는다)
+name: finplay-deploy
+
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: finplay
+      # 앱이 쓰는 계정. root는 여기에 쓸 수 없다(mysql 이미지가 거부) — DB_USERNAME은 root가 아닌 값으로 둔다.
+      MYSQL_USER: ${DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # 시크릿·외부 연동 키는 .env에서 그대로 주입한다 (.env.example 참조). 값은 파일에 적지 않는다.
+    env_file:
+      - .env
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      # 아래 3개는 이 compose의 네트워크 구성에서 결정되므로 .env 값보다 우선한다.
+      DB_URL: "jdbc:mysql://mysql:3306/finplay?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8"
+      # application-prod.yml에는 Redis 접속 설정이 없어 기본값 localhost를 보게 된다. 컨테이너 안에서는
+      # localhost가 앱 자신이라 연결되지 않으므로 여기서 주입한다. yml 정리는 별도 이슈다.
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: "6379"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    # nginx가 이 조건을 기다린다. 없으면 Flyway 마이그레이션이 끝나기 전에 nginx가 떠서 첫 요청이 502가 된다.
+    # 런타임 이미지(eclipse-temurin:17-jre)는 Ubuntu 기반이라 curl이 이미 들어 있다.
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      # 로컬 실측 기동 시간이 약 40초다. 그 사이 실패는 retries로 세지 않는다.
+      start_period: 90s
+    # 호스트에 포트를 열지 않는다 — 외부 진입점은 nginx 하나뿐이다(동일 오리진).
+    expose:
+      - "8080"
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # 프론트(finplay-frontend)에서 npm run build로 만든 dist/를 호스트에 올려 두고 그 경로를 가리킨다.
+      - ${FRONTEND_DIST_PATH:-./frontend-dist}:/usr/share/nginx/html:ro
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  mysql-data:
+  redis-data:

@@ -1,0 +1,27 @@
+# 이미지 빌드 컨텍스트에서 제외할 것. 시크릿(.env)과 호스트 빌드 산출물이 이미지에 들어가지 않게 한다.
+.git
+.gitignore
+.gitattributes
+.github
+
+# 호스트에서 만든 Gradle 산출물·캐시 (컨테이너 안에서 다시 빌드한다)
+build/
+.gradle/
+
+# 시크릿
+.env
+
+# 에이전트 하네스·도구 캐시
+.agents/
+.claude/
+.codex/
+.serena/
+
+# 문서 (이미지 실행에 불필요)
+docs/
+*.md
+
+# 배포 리소스 (nginx 컨테이너가 쓰는 파일이라 앱 이미지에는 불필요)
+deploy/
+compose.yaml
+compose.deploy.yaml

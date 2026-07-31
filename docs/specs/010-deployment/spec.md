@@ -29,6 +29,24 @@ CI 워크플로우는 2026-07-24 튜터 피드백("CI는 배포 단계에")으�
 - [ ] 시크릿은 전부 환경변수 또는 AWS Secret으로 주입한다 (`conventions.md` 시크릿 규칙).
 - [ ] 배포는 사람이 수행한다 — 자동 배포·자동 머지는 하지 않는다 (ADR-0005).
 
+### 동일 오리진 서빙 (이슈 #108 — A안)
+
+같은 EC2에서 nginx가 프론트 정적 파일과 `/api` 프록시를 함께 서빙한다. 프론트와 API가 같은 오리진이므로 백엔드에 CORS 설정을 추가하지 않는다. 결정 근거는 이슈 #108에 있다.
+
+- [x] 앱 이미지(`Dockerfile`)와 배포용 스택(`compose.deploy.yaml`: nginx·app·mysql·redis)을 작성한다.
+- [x] nginx가 프론트 빌드 산출물(`npm run build` → `dist/`)을 정적 서빙하고 SPA 폴백(`try_files ... /index.html`)을 적용한다.
+- [x] `/api`를 앱 컨테이너로 프록시하며 SSE가 흐르도록 `proxy_buffering off`·`proxy_cache off`·`proxy_read_timeout 3600s`를 설정한다.
+- [x] 스모크가 호출하는 `/actuator`·`/v3/api-docs`도 프록시한다 — 프록시하지 않으면 SPA 폴백이 `index.html`을 200으로 돌려줘 스모크가 거짓 통과한다.
+- [x] 앱 컨테이너는 호스트 포트를 열지 않고 nginx만 외부에 노출한다.
+
+**배포 시점 체크 (EC2 준비 후 수행 — 설정 파일 작성 단계에서는 검증 불가)**
+
+- [ ] `docker compose -f compose.deploy.yaml up -d --build`로 4개 컨테이너가 모두 기동한다.
+- [ ] 브라우저에서 배포 주소에 접속해 프론트가 뜨고, `/api` 호출이 CORS 오류 없이 성공한다.
+- [ ] 브라우저 개발자도구 Network에서 `/api/stocks/stream`이 실제로 **매분 push**되는 것을 확인한다 — nginx 버퍼링이 살아 있으면 여기서 드러난다.
+- [ ] `/trade` 등 하위 경로에서 새로고침해도 404가 아니라 앱 화면이 뜬다 (SPA 폴백).
+- [ ] HTTPS를 붙이기 전이라면 카카오·네이버 OAuth 로그인이 동작하지 않는 것을 전제로 시연 범위를 잡는다 — `prod` 프로필은 `OAUTH_STATE_COOKIE_SECURE=false`를 거부하고(`OAuthStateCookieFactory` fail-fast, 2026-07-31 실측), 브라우저는 `http://`에서 `Secure` 쿠키를 저장하지 않는다. 이슈 #108이 근거로 든 "HTTP 데모 시 Secure를 내린다"는 현재 코드에서 불가능하다.
+
 ### 주식 시세 공급자 설정 (PRD C-007·MKT-007)
 - [ ] 공개 배포 환경은 `SERVICE_EXPOSURE=PUBLIC` + `STOCK_FEED_PROVIDER=KIS_HISTORICAL`로 기동한다 — **이것이 현재 공개 배포의 기본값이다.**
 - [ ] `KIS_PUBLIC_DISPLAY_APPROVED`는 기본 `false`로 둔다.
@@ -87,4 +105,5 @@ CI 워크플로우는 2026-07-24 튜터 피드백("CI는 배포 단계에")으�
 - [ ] 승인 없는 공개 KIS 조합에서 기동이 실패하는 것을 배포 전 1회 확인한다.
 - [ ] Resend 발신 서브도메인 인증이 완료되고 실제 인증 메일 수신이 1회 확인된다 (수동 외부 스모크).
 - [ ] `scripts/smoke.ps1`이 성공 시 `exit 0`, 실패 시 `exit 1`로 동작한다.
+- [ ] 배포 주소에서 프론트와 `/api`가 같은 오리진으로 동작하고, `/api/stocks/stream`이 브라우저에서 실시간으로 흐른다 (이슈 #108).
 - [ ] 실행한 검증과 미실행 외부 검증을 구분해 보고한다.
