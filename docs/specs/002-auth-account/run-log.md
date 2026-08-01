@@ -1,5 +1,16 @@
 # Run Log: 002-auth-account
 
+## Issue #115
+
+### Task 1: `password_reset_verifications` 스키마·엔티티·리포지터리와 `SOCIAL_ACCOUNT_ONLY`·`PASSWORD_RESET_SECRET` 배선
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| implementer | implementer | `git ls-tree -r origin/dev --name-only -- src/main/resources/db/migration`(V12 미선점 확인) → `JAVA_HOME="C:\Program Files\Java\jdk-17" gradlew.bat -p <root> compileJava --no-daemon --max-workers=1` — `BUILD SUCCESSFUL`, 이어서 `spotlessApply`(신규 Java 파일 줄바꿈 정규화) | issue-115-plan.md D3(`SOCIAL_ACCOUNT_ONLY` 위치·문구)·D6(테이블·NULL 규약·쿼리 2개)·D7(시크릿 배선 3곳), ADR-0004(V12 신규), conventions.md 엔티티·Repository 규칙, agent-mistakes 2026-08-01(Write 도구 LF → `spotlessApply`) |
+
+- 거부 행(`code_hash`·`expires_at`·`last_sent_at` NULL)과 발송 행을 같은 테이블에서 구분하는 D6 규약대로 세 컬럼을 NULL 허용으로 두고, `create`/`createRejected`를 공통 private 생성자 하나로 모았다. `attempt_count` 증가·`consume`은 #116 범위라 추가하지 않았다.
+- 서비스·컨트롤러·DTO(Task 2~3), `SecurityConfig` 공개 경로, PRD·API 문서 동기화(Task 5)는 이번 항목 범위 밖이라 손대지 않았다. controller 변경이 없어 `docs/api-routes.md`·`docs/api-contracts.md`는 갱신하지 않았다.
+
 ## Issue #56
 
 ### Task 1: 엔티티·리포지터리 확장
@@ -404,3 +415,4 @@
 - 03:35 — Issue #54 Task 3: `NicknameUpdateRequest`(nickname만 `@NotBlank`, 재인증 필드 2개는 선택)와 보호된 `PATCH /api/auth/me/nickname`을 TDD로 추가해 `AuthControllerTest` 59/59가 통과했다. 응답 키 집합을 `hasSize(4)`로 고정하고 `currentPassword`·`reauthToken`·`passwordHash` 부재를 명시 검증했다. 인증 없음·Refresh Bearer 케이스는 매핑 추가 전부터 Security 체인이 401로 막아 `SecurityConfig`는 수정하지 않았고, api-routes.md에 라우트·상세 계약·보호 경로를 같은 커밋에서 동기화했다.
 - 05:10 — Issue #54 리뷰 판정: 차단 0건, 권장 2·참고 4. 원자적 소비 쿼리의 소유자 조건, 단일 트랜잭션 롤백, 본인 제외 중복 확인 이중 방어, `MemberResponse` 민감 필드 미노출, `SecurityConfig`·`ErrorCode`·마이그레이션 미변경, api-routes 일치를 확인, 머지 가능.
 - 재검토 — issue-54-plan.md 미확정 1~5번 전부 "유지" 판정. 5번(소비 시 SocialAccount 재조회 없음)은 Issue #53 authorize→callback 경로가 Access JWT 인증된 principal.userId()를 서명된 state에 실어 SocialAccount 소유자 검증까지 마친 뒤에만 reauth_tokens.user_id에 바인딩함을 재확인해, 소비 시점 재조회가 보안상 불필요함을 확인. 코드 변경 없음.
+- Issue #115 Task 1: origin/dev에 V12가 없음을 확인하고 `V12__create_password_reset_verifications_table.sql`(user_id FK 없음, code_hash·expires_at·last_sent_at NULL 허용)·`PasswordResetVerification`(create/createRejected/expire)·`PasswordResetVerificationRepository`(거부 행 포함 집계 + 거부 행 제외 무효화 조회)와 409 `SOCIAL_ACCOUNT_ONLY`, `PASSWORD_RESET_SECRET` 배선(.env.example·build.gradle·deploy/README.md)을 추가해 compileJava 통과. 서비스·컨트롤러·문서 동기화와 @DataJpaTest는 범위 밖.

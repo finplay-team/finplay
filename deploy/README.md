@@ -21,7 +21,7 @@
    다른 경로를 쓰려면 `.env`의 `FRONTEND_DIST_PATH`에 그 경로를 적는다.
 
 2. **`.env`를 만든다.** `.env.example`을 복사해 값을 채운다. 배포에 필요한 값은 다음과 같다.
-   - 시크릿 — `JWT_SECRET`, `OAUTH_STATE_SECRET`, `EMAIL_VERIFICATION_SECRET`
+   - 시크릿 — `JWT_SECRET`, `OAUTH_STATE_SECRET`, `EMAIL_VERIFICATION_SECRET`, `PASSWORD_RESET_SECRET`
    - DB — `DB_USERNAME`(root 불가), `DB_PASSWORD`, `MYSQL_ROOT_PASSWORD`
      (`DB_URL`은 compose가 스택 내부 주소로 덮어쓴다)
    - OAuth — `KAKAO_*`, `NAVER_*`. `*_REDIRECT_URI`는 배포 주소 기준으로 적고 각 콘솔에도 같은 값을 등록한다.

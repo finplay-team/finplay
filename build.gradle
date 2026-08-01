@@ -63,6 +63,7 @@ tasks.withType(Test).configureEach {
 	environment 'EMAIL_VERIFICATION_SECRET', 'test-email-verification-secret'
 	environment 'JWT_SECRET', 'test-jwt-secret-that-is-at-least-32-bytes'
 	environment 'OAUTH_STATE_SECRET', 'test-oauth-state-secret-that-is-at-least-32-bytes'
+	environment 'PASSWORD_RESET_SECRET', 'test-password-reset-secret-that-is-at-least-32-bytes'
 	// BithumbFeedSimulator(이슈 #104, !prod 전용)를 @SpringBootTest 전체 컨텍스트에서 비활성화한다.
 	// @ConditionalOnProperty는 컨텍스트 refresh 중 빈 정의 스캔 단계(ConfigurationClassPostProcessor)에서
 	// 평가되는데, @DynamicPropertySource를 @Import된 설정 클래스에 두면 수집되지 않고(PR #110 리뷰), 대안으로

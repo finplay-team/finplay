@@ -84,7 +84,7 @@ Issue #114는 착수 전 결정 2건을 팀에서 확정하고 시작했다. ①
 
 상세 설계는 `issue-115-plan.md` 참고.
 
-- [ ] `password_reset_verifications` Flyway 마이그레이션(V12, `user_id` FK 없음·`code_hash`/`expires_at`/`last_sent_at` NULL 허용)·`PasswordResetVerification` 엔티티(`create`/`createRejected`/`expire`)·`PasswordResetVerificationRepository`(거부 행 포함 집계, 거부 행 제외 무효화 대상 조회)와 OAuth 전용 회원 거부용 신규 409 `ErrorCode`, `PASSWORD_RESET_SECRET` 환경변수 배선(`.env.example`·`build.gradle` 테스트 환경·`deploy/README.md`) 구현 (+ `@DataJpaTest`) — 신규 `ErrorCode`는 팀 확정대로 `SOCIAL_ACCOUNT_ONLY(HttpStatus.CONFLICT, "소셜 로그인 전용 계정입니다. 카카오 또는 네이버 로그인을 이용해 주세요.")`
+- [x] `password_reset_verifications` Flyway 마이그레이션(V12, `user_id` FK 없음·`code_hash`/`expires_at`/`last_sent_at` NULL 허용)·`PasswordResetVerification` 엔티티(`create`/`createRejected`/`expire`)·`PasswordResetVerificationRepository`(거부 행 포함 집계, 거부 행 제외 무효화 대상 조회)와 OAuth 전용 회원 거부용 신규 409 `ErrorCode`, `PASSWORD_RESET_SECRET` 환경변수 배선(`.env.example`·`build.gradle` 테스트 환경·`deploy/README.md`) 구현 (+ `@DataJpaTest`) — 신규 `ErrorCode`는 팀 확정대로 `SOCIAL_ACCOUNT_ONLY(HttpStatus.CONFLICT, "소셜 로그인 전용 계정입니다. 카카오 또는 네이버 로그인을 이용해 주세요.")`
 - [ ] `PasswordResetService.sendResetCode` — 발송 제한(60초·1시간 5회·하루 10회, 이메일 단위) 429 → 미가입 404 `NOT_FOUND` → 비밀번호 없는 OAuth 전용 회원 409 판정 순서, 거부 요청의 집계 행 기록(`@Transactional(noRollbackFor = BusinessException.class)`), 재발송 시 이전 코드 무효화, 전용 시크릿 HMAC-SHA-256 저장 후 발송 구현 (+ 단위 테스트)
 - [ ] `PasswordResetRequest`·`PasswordResetController`(`POST /api/auth/password-resets`, 202 본문 없음)와 `SecurityConfig.PUBLIC_POST_PATHS` 공개 경로 추가 구현 및 `@WebMvcTest`로 202·400·404/409/429 매핑과 비인증 접근 허용 검증
 - [ ] Fake `EmailSender` + Testcontainers MySQL 통합 테스트(원문 미저장·해시만 저장, 거부 행 커밋 후 후속 요청 429, 발송 실패 시 저장·무효화 동반 롤백, `users`·`accounts`·`refresh_tokens` 불변)·전체 회귀·`./gradlew build`
