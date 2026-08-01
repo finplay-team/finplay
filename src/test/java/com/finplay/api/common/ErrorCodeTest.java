@@ -10,7 +10,7 @@ import org.springframework.http.HttpStatus;
 class ErrorCodeTest {
 
 	@Test
-	void hasExactlyTwentyErrorCodesFromPrdAndOAuthSpec() {
+	void declaresEveryErrorCodeFromPrdAndOAuthSpecWithoutUnlistedOnes() {
 		assertThat(ErrorCode.values()).hasSize(22);
 	}
 
