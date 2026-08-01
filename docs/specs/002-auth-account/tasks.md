@@ -75,7 +75,7 @@ Issue #56은 트랜잭션 롤백 정책(새 예외 서브타입으로 `noRollbac
 상세 설계는 `issue-114-plan.md` 참고.
 
 - [x] `User.changePassword(newPasswordHash, now)`(setter 금지, `passwordHash`·`updatedAt`만 갱신)와 `AuthService.changePassword`(DB의 `social_accounts`로 OAuth 전용 회원 400 거부 → 기존 `verifyCurrentPassword`로 현재 비밀번호 대조 403 → 새 비밀번호 동일 400 → 해시 교체 → 기존 Refresh Token 전체 폐기 → 요청 기기용 새 토큰 쌍 발급을 한 트랜잭션으로 처리) 구현 (+ 단위 테스트, 폐기→발급 순서를 `InOrder`로 고정)
-- [ ] `PasswordChangeRequest`(`currentPassword` 필수·최대 100자, `newPassword` 가입과 동일한 8~100자 정책)와 보호된 `PATCH /api/auth/me/password`(200 `TokenResponse`, 400/401/403 계약, `SecurityConfig` 미변경) 구현 (+ `@WebMvcTest`)
+- [x] `PasswordChangeRequest`(`currentPassword` 필수·최대 100자, `newPassword` 가입과 동일한 8~100자 정책)와 보호된 `PATCH /api/auth/me/password`(200 `TokenResponse`, 400/401/403 계약, `SecurityConfig` 미변경) 구현 (+ `@WebMvcTest`)
 - [ ] 실제 MySQL 통합 검증 — 변경 후 신규 비밀번호 로그인 성공·기존 비밀번호 401, 다른 기기 Refresh Token 폐기와 응답 토큰 유효, 잘못된 현재 비밀번호·동일 새 비밀번호·OAuth 전용 회원 거부 시 무변경 롤백, 이메일·닉네임·계좌 2개·시드머니·잔액 불변
 - [ ] `docs/prd.md` AUTH-005에 비밀번호 변경 항목 추가·`docs/api-routes.md`·`docs/api-contracts.md`·`docs/specs/002-auth-account/tasks.md` 동기화·전체 회귀·`./gradlew build`
 

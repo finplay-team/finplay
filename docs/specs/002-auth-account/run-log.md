@@ -356,8 +356,10 @@
 | 10:20 | reviewer(리뷰) | `git diff origin/dev...HEAD`(커밋 4b7de6a·58ddc1f·f2d5521·58eb78d·62d858c) | issue-55-plan.md D1~D5, conventions.md, ADR-0002·0003·0004, docs/api-routes.md
 | reviewer | reviewer(리뷰) | `git diff dev...HEAD`(커밋 7380c16·18275c4·dad6eeb·ecdf3aa·7f58cb1) | issue-56-plan.md D1~D5, conventions.md, ADR-0002·0003·0004, docs/api-routes.md
 | 19:47 | implementer | `.\gradlew.bat -p <루트> compileJava --no-daemon --max-workers=1` — BUILD SUCCESSFUL | issue-114-plan.md Task 1(D2 OAuth 전용 400·D3 검증 순서·D4 `changePassword`·D5 폐기→발급 순서·D6 단일 트랜잭션·D7 기존 ErrorCode만), conventions.md 엔티티·레이어 규칙, ADR-0002, ADR-0004(마이그레이션 미추가) |
+| 20:05 | implementer | `.\gradlew.bat -p <루트> spotlessApply compileJava --no-daemon --max-workers=1` — BUILD SUCCESSFUL | issue-114-plan.md Task 2(D1 요청 DTO 검증 정책·D8 200 `TokenResponse`·`SecurityConfig` 미변경 확인), conventions.md DTO·API 규칙, CLAUDE.md 규칙 7(api-routes.md·api-contracts.md 동기화) |
 
 ## 모니터링 (사람용 요약)
+- Issue #114 Task 2 — `PasswordChangeRequest`와 보호된 `PATCH /api/auth/me/password`(200 `TokenResponse`) 추가, api-routes·api-contracts 동기화, 컴파일 통과. `SecurityConfig`는 공개 목록이 POST·GET뿐이라 수정 불필요. `@WebMvcTest`는 tester 담당.
 - Issue #114 Task 1 — `User.changePassword`와 `AuthService.changePassword`(OAuth 전용 400 → 현재 비밀번호 403 → 동일 400 → 해시 교체 → 폐기 → 발급) 추가, 컴파일 통과. 단위 테스트는 tester 담당.
 - Issue #56 리뷰 판정: 차단 0건. `noRollbackFor=BusinessException`/`rollbackFor=EmailChangeConflictException` depth 매칭이 설계·실제 통합 테스트(경합 시 소비·토큰폐기 롤백, 5회초과 시 attempt_count 커밋)로 모두 확인됨. 서비스 책임 분리(EmailChangeService=검증/소비, AuthService=이메일변경/토큰폐기/트랜잭션)·순환의존 없음·api-routes.md 일치·기존 AuthServiceTest/OAuthAuthServiceTest mock 추가가 회귀를 깨지 않음을 확인, 머지 가능.
 - Issue #56 Task 1 — `EmailChangeVerification.incrementAttemptCount`·`consume`, `User.changeEmail`, `EmailChangeVerificationRepository.findFirstByUserIdAndNewEmailOrderByCreatedAtDesc`, `RefreshTokenRepository.revokeAllActiveByUserId` 추가. 순수 단위 테스트 2건 + `@DataJpaTest` 신규 케이스 2건 전부 통과, 컴파일 통과. Task 2·3(서비스 연결·Controller)은 범위 밖.

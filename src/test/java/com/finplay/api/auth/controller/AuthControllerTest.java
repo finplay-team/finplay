@@ -1,7 +1,9 @@
 // 회원가입·로그인·토큰 재발급 응답과 입력 검증, 비즈니스 오류 계약을 검증하는 WebMvc 슬라이스 테스트다.
 package com.finplay.api.auth.controller;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.not;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -53,6 +55,7 @@ class AuthControllerTest {
 	private static final String NEW_NICKNAME = "newplayer";
 	private static final String REAUTH_TOKEN = "reauth.raw.token";
 	private static final String PASSWORD = "password123";
+	private static final String NEW_PASSWORD = "new-password456";
 	private static final String SHORT_PASSWORD = "pass123";
 	private static final String SIGNUP_TOKEN = "signup-token";
 	private static final String ACCESS_TOKEN = "access.jwt.token";
@@ -558,6 +561,214 @@ class AuthControllerTest {
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
 		verifyNoInteractions(authService);
+	}
+
+	@Test
+	void updatePasswordReturnsOkWithNewTokenPair() throws Exception {
+		stubValidAccessToken();
+		when(authService.changePassword(USER_ID, PASSWORD, NEW_PASSWORD))
+			.thenReturn(new TokenResponse(
+				"reissued-access-token", "reissued-refresh-token", 3600L, 1_209_600L));
+
+		mockMvc.perform(patch("/api/auth/me/password")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(passwordRequestJson(PASSWORD, NEW_PASSWORD)))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.accessToken").value("reissued-access-token"))
+			.andExpect(jsonPath("$.refreshToken").value("reissued-refresh-token"))
+			.andExpect(jsonPath("$.accessTokenExpiresInSeconds").value(3600))
+			.andExpect(jsonPath("$.refreshTokenExpiresInSeconds").value(1_209_600))
+			// 비밀번호 관련 값이 어떤 이름으로도 새지 않도록 응답 키 집합 자체를 4개로 고정한다.
+			.andExpect(jsonPath("$.*", hasSize(4)))
+			.andExpect(jsonPath("$.currentPassword").doesNotExist())
+			.andExpect(jsonPath("$.newPassword").doesNotExist())
+			.andExpect(jsonPath("$.passwordHash").doesNotExist())
+			.andExpect(content().string(not(containsString(PASSWORD))))
+			.andExpect(content().string(not(containsString(NEW_PASSWORD))));
+
+		verify(authService).changePassword(USER_ID, PASSWORD, NEW_PASSWORD);
+	}
+
+	@ParameterizedTest(name = "{0}")
+	@MethodSource("invalidPasswordChangeRequests")
+	void updatePasswordRejectsInvalidRequestWithoutCallingService(
+		String scenario, String currentPassword, String newPassword) throws Exception {
+		stubValidAccessToken();
+
+		mockMvc.perform(patch("/api/auth/me/password")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(passwordRequestJson(currentPassword, newPassword)))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.message").isNotEmpty())
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(authService);
+	}
+
+	@ParameterizedTest(name = "{0}")
+	@MethodSource("boundaryPasswordChangeRequests")
+	void updatePasswordAcceptsBoundaryLengthsAndPassesThemToService(
+		String scenario, String currentPassword, String newPassword) throws Exception {
+		stubValidAccessToken();
+		when(authService.changePassword(USER_ID, currentPassword, newPassword))
+			.thenReturn(new TokenResponse(
+				"reissued-access-token", "reissued-refresh-token", 3600L, 1_209_600L));
+
+		mockMvc.perform(patch("/api/auth/me/password")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(passwordRequestJson(currentPassword, newPassword)))
+			.andExpect(status().isOk());
+
+		verify(authService).changePassword(USER_ID, currentPassword, newPassword);
+	}
+
+	@Test
+	void updatePasswordPassesShortCurrentPasswordToServiceInsteadOfRejectingItAsBadRequest() throws Exception {
+		// D1 — currentPassword에 min을 두지 않은 것은 의도된 설계다.
+		// min을 붙이면 짧은 입력만 400이 되어 "정책상 존재할 수 없는 비밀번호"라는 정보가 응답 코드로 샌다.
+		stubValidAccessToken();
+		when(authService.changePassword(USER_ID, SHORT_PASSWORD, NEW_PASSWORD))
+			.thenThrow(new BusinessException(ErrorCode.REAUTHENTICATION_FAILED));
+
+		mockMvc.perform(patch("/api/auth/me/password")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(passwordRequestJson(SHORT_PASSWORD, NEW_PASSWORD)))
+			.andExpect(status().isForbidden())
+			.andExpect(jsonPath("$.error.code").value("REAUTHENTICATION_FAILED"));
+
+		verify(authService).changePassword(USER_ID, SHORT_PASSWORD, NEW_PASSWORD);
+	}
+
+	@Test
+	void updatePasswordDoesNotEchoSubmittedPasswordsInValidationErrorResponse() throws Exception {
+		stubValidAccessToken();
+
+		mockMvc.perform(patch("/api/auth/me/password")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(passwordRequestJson(PASSWORD, SHORT_PASSWORD)))
+			.andExpect(status().isBadRequest())
+			.andExpect(content().string(not(containsString(PASSWORD))))
+			.andExpect(content().string(not(containsString(SHORT_PASSWORD))));
+
+		verifyNoInteractions(authService);
+	}
+
+	@ParameterizedTest(name = "{0}")
+	@MethodSource("passwordChangeServiceValidationMessages")
+	void updatePasswordMapsServiceValidationErrorToBadRequest(
+		String scenario, String message) throws Exception {
+		stubValidAccessToken();
+		when(authService.changePassword(USER_ID, PASSWORD, NEW_PASSWORD))
+			.thenThrow(new BusinessException(ErrorCode.VALIDATION_ERROR, message));
+
+		mockMvc.perform(patch("/api/auth/me/password")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(passwordRequestJson(PASSWORD, NEW_PASSWORD)))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.message").value(message))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(authService).changePassword(USER_ID, PASSWORD, NEW_PASSWORD);
+	}
+
+	@ParameterizedTest(name = "{0}")
+	@MethodSource("passwordChangeServiceErrors")
+	void updatePasswordMapsServiceErrorToCommonErrorFormat(
+		String scenario, ErrorCode errorCode, int expectedStatus) throws Exception {
+		stubValidAccessToken();
+		when(authService.changePassword(USER_ID, PASSWORD, NEW_PASSWORD))
+			.thenThrow(new BusinessException(errorCode));
+
+		mockMvc.perform(patch("/api/auth/me/password")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(passwordRequestJson(PASSWORD, NEW_PASSWORD)))
+			.andExpect(status().is(expectedStatus))
+			.andExpect(jsonPath("$.error.code").value(errorCode.name()))
+			.andExpect(jsonPath("$.error.message").value(errorCode.getDefaultMessage()))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(authService).changePassword(USER_ID, PASSWORD, NEW_PASSWORD);
+	}
+
+	@Test
+	void updatePasswordRejectsMissingAccessTokenWithoutCallingService() throws Exception {
+		mockMvc.perform(patch("/api/auth/me/password")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(passwordRequestJson(PASSWORD, NEW_PASSWORD)))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
+			.andExpect(jsonPath("$.error.message").value(ErrorCode.UNAUTHORIZED.getDefaultMessage()))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(authService);
+	}
+
+	@Test
+	void updatePasswordRejectsRefreshBearerWithoutCallingService() throws Exception {
+		when(jwtTokenProvider.parseAccessToken(REFRESH_TOKEN)).thenReturn(Optional.empty());
+
+		mockMvc.perform(patch("/api/auth/me/password")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + REFRESH_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(passwordRequestJson(PASSWORD, NEW_PASSWORD)))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
+			.andExpect(jsonPath("$.error.message").value(ErrorCode.UNAUTHORIZED.getDefaultMessage()))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(authService);
+	}
+
+	private String passwordRequestJson(String currentPassword, String newPassword) throws Exception {
+		Map<String, Object> request = new LinkedHashMap<>();
+		if (currentPassword != null) {
+			request.put("currentPassword", currentPassword);
+		}
+		if (newPassword != null) {
+			request.put("newPassword", newPassword);
+		}
+		return objectMapper.writeValueAsString(request);
+	}
+
+	private static Stream<Arguments> invalidPasswordChangeRequests() {
+		return Stream.of(
+			Arguments.of("currentPassword 누락", null, NEW_PASSWORD),
+			Arguments.of("currentPassword 빈 문자열", "", NEW_PASSWORD),
+			Arguments.of("currentPassword 공백", "   ", NEW_PASSWORD),
+			Arguments.of("currentPassword 101자", "c".repeat(101), NEW_PASSWORD),
+			Arguments.of("newPassword 누락", PASSWORD, null),
+			Arguments.of("newPassword 빈 문자열", PASSWORD, ""),
+			Arguments.of("newPassword 공백", PASSWORD, "       "),
+			Arguments.of("newPassword 7자", PASSWORD, "1234567"),
+			Arguments.of("newPassword 101자", PASSWORD, "n".repeat(101)));
+	}
+
+	private static Stream<Arguments> boundaryPasswordChangeRequests() {
+		return Stream.of(
+			Arguments.of("newPassword 8자", PASSWORD, "12345678"),
+			Arguments.of("newPassword 100자", PASSWORD, "n".repeat(100)),
+			Arguments.of("currentPassword 100자", "c".repeat(100), NEW_PASSWORD));
+	}
+
+	private static Stream<Arguments> passwordChangeServiceValidationMessages() {
+		return Stream.of(
+			Arguments.of("OAuth 전용 회원", "OAuth 전용 회원은 비밀번호를 변경할 수 없습니다."),
+			Arguments.of("새 비밀번호가 현재와 동일", "새 비밀번호는 현재 비밀번호와 달라야 합니다."));
+	}
+
+	private static Stream<Arguments> passwordChangeServiceErrors() {
+		return Stream.of(
+			Arguments.of("현재 비밀번호 불일치 403", ErrorCode.REAUTHENTICATION_FAILED, 403),
+			Arguments.of("주체 미존재 401", ErrorCode.UNAUTHORIZED, 401));
 	}
 
 	private String nicknameRequestJson(

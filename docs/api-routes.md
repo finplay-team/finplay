@@ -17,6 +17,7 @@
 | POST | /api/auth/logout | auth | 본인의 Refresh Token을 폐기하고 로그아웃 (204, 본문 없음) | 002 AUTH-002 |
 | GET | /api/auth/me | auth | 인증 사용자 본인의 id·email·nickname·가입 방식 조회 | 002 AUTH-005, Issue #8 |
 | PATCH | /api/auth/me/nickname | auth | 재인증(현재 비밀번호 또는 reauthToken) 후 본인 닉네임 변경 | 002 AUTH-005, Issue #54 |
+| PATCH | /api/auth/me/password | auth | 현재 비밀번호 확인 후 본인 비밀번호 변경. 기존 Refresh Token 전체 폐기 + 요청 기기용 새 토큰 쌍 발급(200 TokenResponse) | 002 AUTH-005, Issue #114 |
 | POST | /api/auth/email-changes | auth | 인증 사용자의 새 이메일 변경 인증번호 발송 (202, 본문 없음). 재인증 증명·중복 이메일·발송 제한 검사 | 002 AUTH-005, Issue #55 |
 | POST | /api/auth/email-changes/confirm | auth | 새 이메일 인증번호 확인 후 users.email 원자적 변경, 성공 시 기존 Refresh Token 전체 폐기 | 002 AUTH-005, Issue #56 |
 | GET | /api/auth/oauth/{provider}/authorize | auth | 카카오·네이버 OAuth 인가 시작. `purpose` 생략/`login`은 공개 302, `purpose=reauth`는 인증 필요 200 JSON | 002 AUTH-003, Issue #9, Issue #53 |
@@ -69,6 +70,7 @@ Spring Security는 세션을 만들지 않는 Bearer 인증을 사용한다. 현
 | 보호 | POST | `/api/auth/logout` |
 | 보호 | GET | `/api/auth/me` |
 | 보호 | PATCH | `/api/auth/me/nickname` |
+| 보호 | PATCH | `/api/auth/me/password` |
 | 보호 | POST | `/api/auth/email-changes` |
 | 보호 | POST | `/api/auth/email-changes/confirm` |
 | 보호 | 모든 Method | 위 공개 목록을 제외한 모든 경로 (`anyRequest().authenticated()`) |
