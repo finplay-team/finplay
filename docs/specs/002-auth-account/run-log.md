@@ -11,6 +11,16 @@
 - 거부 행(`code_hash`·`expires_at`·`last_sent_at` NULL)과 발송 행을 같은 테이블에서 구분하는 D6 규약대로 세 컬럼을 NULL 허용으로 두고, `create`/`createRejected`를 공통 private 생성자 하나로 모았다. `attempt_count` 증가·`consume`은 #116 범위라 추가하지 않았다.
 - 서비스·컨트롤러·DTO(Task 2~3), `SecurityConfig` 공개 경로, PRD·API 문서 동기화(Task 5)는 이번 항목 범위 밖이라 손대지 않았다. controller 변경이 없어 `docs/api-routes.md`·`docs/api-contracts.md`는 갱신하지 않았다.
 
+### Task 2: `PasswordResetService.sendResetCode` 판정 순서와 트랜잭션 정책
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| implementer | implementer | `JAVA_HOME="C:\Program Files\Java\jdk-17" gradlew.bat -p <root> compileJava --no-daemon --max-workers=1` — `BUILD SUCCESSFUL`; 이어서 `spotlessApply spotbugsMain` — `BUILD SUCCESSFUL`(경고 0) | issue-115-plan.md D4(이메일 단위 집계·거부 행 포함·제한 우선 판정)·D5(검증 순서·`noRollbackFor`·`passwordHash == null` 판별)·D7(`@Value("${PASSWORD_RESET_SECRET}")` 생성자 주입, yml 기본값 없음), conventions.md 레이어·상수·시크릿 규칙, agent-mistakes 2026-07-30(`@Value` 필드에 `@RequiredArgsConstructor` 금지)·2026-07-29(수기 생성자 EI_EXPOSE_REP2) |
+
+- `EmailVerificationService`와 같은 형태로 생성자를 손으로 쓰고 `@Value`를 파라미터에 붙였다(Lombok `@RequiredArgsConstructor`는 `@Value`를 생성자 파라미터로 옮기지 않는다). 수기 생성자라 `spotbugsMain`을 단독 실행해 `EI_EXPOSE_REP2`가 없음을 확인했다.
+- `checkSendRateLimit`·`expirePreviousCodes`·`generateCode`·`hmac`는 계획 D5·U5대로 공통 유틸로 추출하지 않고 새 리포지터리·엔티티에 맞춰 옮겼다(세 번째 중복이지만 이번 이슈에서 3-서비스 리팩터링을 함께 하지 않는다).
+- 컨트롤러·DTO·`SecurityConfig` 공개 경로(Task 3), 통합 테스트(Task 4), 문서 동기화(Task 5)는 범위 밖이라 손대지 않았다. controller 변경이 없어 `docs/api-routes.md`·`docs/api-contracts.md`도 갱신하지 않았다.
+
 ## Issue #56
 
 ### Task 1: 엔티티·리포지터리 확장
@@ -416,3 +426,4 @@
 - 05:10 — Issue #54 리뷰 판정: 차단 0건, 권장 2·참고 4. 원자적 소비 쿼리의 소유자 조건, 단일 트랜잭션 롤백, 본인 제외 중복 확인 이중 방어, `MemberResponse` 민감 필드 미노출, `SecurityConfig`·`ErrorCode`·마이그레이션 미변경, api-routes 일치를 확인, 머지 가능.
 - 재검토 — issue-54-plan.md 미확정 1~5번 전부 "유지" 판정. 5번(소비 시 SocialAccount 재조회 없음)은 Issue #53 authorize→callback 경로가 Access JWT 인증된 principal.userId()를 서명된 state에 실어 SocialAccount 소유자 검증까지 마친 뒤에만 reauth_tokens.user_id에 바인딩함을 재확인해, 소비 시점 재조회가 보안상 불필요함을 확인. 코드 변경 없음.
 - Issue #115 Task 1: origin/dev에 V12가 없음을 확인하고 `V12__create_password_reset_verifications_table.sql`(user_id FK 없음, code_hash·expires_at·last_sent_at NULL 허용)·`PasswordResetVerification`(create/createRejected/expire)·`PasswordResetVerificationRepository`(거부 행 포함 집계 + 거부 행 제외 무효화 조회)와 409 `SOCIAL_ACCOUNT_ONLY`, `PASSWORD_RESET_SECRET` 배선(.env.example·build.gradle·deploy/README.md)을 추가해 compileJava 통과. 서비스·컨트롤러·문서 동기화와 @DataJpaTest는 범위 밖.
+- Issue #115 Task 2: `PasswordResetService.sendResetCode`를 `@Transactional(noRollbackFor = BusinessException.class)`로 구현 — 발송 제한(60초·1시간 5회·하루 10회, 이메일 단위, 거부 행 포함 집계) 429 → 미가입 404 `NOT_FOUND`("가입되지 않은 이메일입니다.") → `passwordHash == null` 409 `SOCIAL_ACCOUNT_ONLY` 순서로 판정하고, 거부 경로는 집계 행만 남긴 뒤 발송하지 않는다. `PASSWORD_RESET_SECRET`을 수기 생성자 파라미터 `@Value`로 주입(첫 사용처)했고 compileJava·spotbugsMain 통과. 컨트롤러·DTO·SecurityConfig·통합 테스트·문서 동기화는 범위 밖.
