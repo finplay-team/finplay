@@ -46,7 +46,7 @@ Java 17, Spring Boot 4.1, Spring Data JPA, MySQL 8.4(Testcontainers), Spring Sec
 2. When `POST /api/auth/password-resets` 호출
 3. Then 202로 요청이 수락되고 해당 이메일로 6자리 인증번호가 발송되며, `password_reset_verifications`에는 HMAC 해시만 남고 원문은 DB에도 로그에도 남지 않는다.
 4. And 가입되지 않은 이메일은 404 `NOT_FOUND`이며 메일이 발송되지 않는다.
-5. And 비밀번호가 없는 OAuth 전용 회원의 이메일은 409(D3의 신규 코드 제안)이며 메일이 발송되지 않는다.
+5. And 비밀번호가 없는 OAuth 전용 회원의 이메일은 409 `SOCIAL_ACCOUNT_ONLY`(D3)이며 메일이 발송되지 않는다.
 6. And 60초 내 재요청, 같은 이메일 1시간 5회·하루 10회 초과는 429 `TOO_MANY_REQUESTS`이며, 거부된 404·409 요청도 이 집계에 포함된다.
 7. And 재발송에 성공하면 같은 이메일의 이전 인증번호는 즉시 무효화되어 유효한 인증번호는 최대 1개다.
 8. And 메일 발송이 실패하면 저장과 이전 코드 무효화가 함께 롤백된다.
@@ -62,7 +62,7 @@ Java 17, Spring Boot 4.1, Spring Data JPA, MySQL 8.4(Testcontainers), Spring Sec
 - `POST /api/auth/password-resets` — 이메일 형식 검증, 발송 제한 판정, 대상 회원·가입 방식 판정, 인증번호 생성·HMAC 저장·발송.
 - `V12__create_password_reset_verifications_table.sql`, `PasswordResetVerification` 엔티티, `PasswordResetVerificationRepository`.
 - `SecurityConfig.PUBLIC_POST_PATHS`에 경로 추가.
-- OAuth 전용 회원 거부용 신규 `ErrorCode` 추가 (D3 — **팀 승인 후 확정**).
+- OAuth 전용 회원 거부용 신규 `ErrorCode` `SOCIAL_ACCOUNT_ONLY`(409) 추가 (D3).
 - `PASSWORD_RESET_SECRET` 신규 환경변수 배선(`.env.example`·`build.gradle` 테스트 환경·`deploy/README.md`).
 - PRD `AUTH-006` 신설과 §5 오류표·엔드포인트 목록 갱신.
 
@@ -93,7 +93,7 @@ Java 17, Spring Boot 4.1, Spring Data JPA, MySQL 8.4(Testcontainers), Spring Sec
 - 근거 2 — D4의 발송 제한이 **같은 이메일 주소에 대한** 반복 조회를 하루 10회로 묶는다.
 - **수용한 대가(명시적으로 기록한다):** 누구나 이메일 주소만으로 (a) FinPlay 가입 여부와 (b) 그 계정이 비밀번호 계정인지 소셜 전용 계정인지를 알아낼 수 있다. 특히 (b)는 기존 엔드포인트로는 알 수 없던 **새로 노출되는 정보**다. 서로 다른 주소를 훑는 광범위 스캔은 이메일 단위 제한으로 막히지 않는다(D4 한계 참고). 이 정보 노출이 문제가 되면 응답을 202로 통일하는 변경은 서비스 계층 한 곳(D5의 분기)만 고치면 되므로 되돌리기 비용은 낮다.
 
-### D3. OAuth 전용 회원 거부용 `ErrorCode` — 신규 코드가 필요하다 (이름·메시지는 **제안**, 팀 확정 대기)
+### D3. OAuth 전용 회원 거부용 `ErrorCode` — 신규 `SOCIAL_ACCOUNT_ONLY`(409) 추가 (2026-08-01 확정)
 
 기존 409 코드 재사용 가능 여부를 먼저 검토했고, 셋 다 의미가 맞지 않는다.
 
@@ -105,18 +105,18 @@ Java 17, Spring Boot 4.1, Spring Data JPA, MySQL 8.4(Testcontainers), Spring Sec
 | `FORBIDDEN` (403) | "접근 권한이 없습니다." | 권한 문제가 아니라 계정 상태 문제이고, 이 엔드포인트는 비인증 공개 경로라 403의 의미와 어긋난다. |
 | `NOT_FOUND` (404) | "대상을 찾을 수 없습니다." | 404로 합치면 D2가 구분하기로 한 두 경우가 다시 하나로 뭉개진다. |
 
-**제안 (구현 전 팀 확정 필요):**
+**확정된 값:**
 
 ```java
 SOCIAL_ACCOUNT_ONLY(HttpStatus.CONFLICT, "소셜 로그인 전용 계정입니다. 카카오 또는 네이버 로그인을 이용해 주세요."),
 ```
 
 - 위치는 `ErrorCode` enum의 409 그룹, `ACCOUNT_LINK_REQUIRED` 바로 다음이다.
-- 대안 이름 후보 — `PASSWORD_LOGIN_UNAVAILABLE`(비밀번호 로그인 수단이 없다는 점을 강조), `OAUTH_ONLY_ACCOUNT`(기존 `OAUTH_` 접두 코드들과의 일관성). 셋 중 무엇을 골라도 HTTP 상태는 409로 같다.
+- 기각된 대안 — `PASSWORD_LOGIN_UNAVAILABLE`(사유를 감춰 프런트 안내가 무뎌진다), `OAUTH_ONLY_ACCOUNT`(기존 `OAUTH_` 접두 코드들은 전부 OAuth 흐름 중에 나는 오류라 일반 재설정 흐름에서 쓰면 묶음이 오해를 부른다). `SOCIAL_ACCOUNT_ONLY`는 코드베이스가 이미 `SignupMethod`·`SocialAccount`로 "소셜"을 쓰고 있어 용어가 일관되고, 향후 비밀번호 최초 설정 같은 다른 지점에서도 재사용할 수 있다.
 - 메시지는 프런트가 그대로 노출할 수 있게 다음 행동(소셜 로그인)을 담았다 — 기존 `ACCOUNT_LINK_REQUIRED`가 안내 문구를 담는 선례를 따른다.
 - 확정되면 PRD §5 공통 오류표에 같은 행을 추가한다.
 
-**미가입 404는 기존 `NOT_FOUND`로 충분하다고 판단했다.** 기본 메시지 "대상을 찾을 수 없습니다."가 다소 밋밋하지만 `BusinessException(ErrorCode, String message)` 생성자가 이미 있어 필요하면 호출부에서 "가입되지 않은 이메일입니다."로 덮어쓸 수 있다. 별도 `USER_NOT_FOUND` 코드를 새로 만들면 PRD §5 표에 도메인별 404 코드가 늘어나기 시작하므로 이번에는 추가하지 않는다. 다만 "메시지를 덮어쓸지, 기본 메시지를 쓸지"도 팀 확정 대상이다(U2).
+**미가입 404는 기존 `NOT_FOUND` 코드를 쓰되 메시지를 덮어쓴다 (2026-08-01 확정).** 호출부에서 `new BusinessException(ErrorCode.NOT_FOUND, "가입되지 않은 이메일입니다.")`로 던진다. 별도 `USER_NOT_FOUND` 코드를 새로 만들면 PRD §5 표에 도메인별 404 코드가 늘어나기 시작하므로 추가하지 않는다. 메시지를 구체화한 근거는 D2에서 이미 404로 가입 여부를 알려주기로 한 이상 문구를 모호하게 둬도 더 안전해지지 않고, 프런트가 별도 문구를 갖지 않아도 되기 때문이다.
 
 ### D4. 발송 제한은 이메일 단위이며 거부된 요청도 함께 집계한다
 
@@ -143,7 +143,7 @@ public void sendResetCode(String email) {
     }
     if (user.getPasswordHash() == null) {
         passwordResetVerificationRepository.save(PasswordResetVerification.createRejected(email, now));
-        throw new BusinessException(ErrorCode.SOCIAL_ACCOUNT_ONLY); // 409 (D3, 이름 확정 대기)
+        throw new BusinessException(ErrorCode.SOCIAL_ACCOUNT_ONLY); // 409 (D3)
     }
 
     expirePreviousCodes(email, now);
@@ -215,7 +215,7 @@ List<PasswordResetVerification> findByEmailAndCodeHashIsNotNullAndConsumedAtIsNu
 
 | 구분 | Method / Path | 인증 | 입력 | 성공 응답 | 오류 응답 |
 |---|---|---|---|---|---|
-| 비밀번호 재설정 인증번호 발송 | POST `/api/auth/password-resets` | **불필요 (공개 경로)** | `{"email":"member@finplay.com"}` (`PasswordResetRequest`) | 202 (본문 없음) | `email` 누락·형식·길이 위반 400 `VALIDATION_ERROR`; 60초 재발송·1시간 5회·하루 10회 초과 429 `TOO_MANY_REQUESTS`; 가입되지 않은 이메일 404 `NOT_FOUND`; 비밀번호가 없는 OAuth 전용 회원 409 `SOCIAL_ACCOUNT_ONLY`(D3 제안, 확정 대기) — 모두 공통 오류 형식 |
+| 비밀번호 재설정 인증번호 발송 | POST `/api/auth/password-resets` | **불필요 (공개 경로)** | `{"email":"member@finplay.com"}` (`PasswordResetRequest`) | 202 (본문 없음) | `email` 누락·형식·길이 위반 400 `VALIDATION_ERROR`; 60초 재발송·1시간 5회·하루 10회 초과 429 `TOO_MANY_REQUESTS`; 가입되지 않은 이메일 404 `NOT_FOUND`; 비밀번호가 없는 OAuth 전용 회원 409 `SOCIAL_ACCOUNT_ONLY`(D3) — 모두 공통 오류 형식 |
 
 - 202를 쓰는 이유는 `POST /api/auth/email-verifications`·`POST /api/auth/email-changes`와 같다 — 리소스를 만들어 반환하지 않고 발송이라는 부수효과만 트리거하며 실제 메일 전달은 외부 인프라에 달려 있다.
 - 오류 우선순위는 400(Bean Validation) → 429 → 404 → 409다 (D4·D5).
@@ -337,7 +337,7 @@ List<PasswordResetVerification> findByEmailAndCodeHashIsNotNullAndConsumedAtIsNu
 - 자동 테스트와 로컬 실행은 Fake 발송기를 사용한다.
 ```
 
-**U2. OAuth 전용 회원 409의 `ErrorCode` 이름·메시지 (D3).** 기존 409 세 개(`DUPLICATE_RESOURCE`·`ACCOUNT_LINK_REQUIRED`·`EMAIL_VERIFICATION_REQUIRED`) 재사용을 검토했고 모두 의미가 맞지 않아 **신규 코드가 필요하다**고 판단했다. 제안은 `SOCIAL_ACCOUNT_ONLY(HttpStatus.CONFLICT, "소셜 로그인 전용 계정입니다. 카카오 또는 네이버 로그인을 이용해 주세요.")`이며, 대안은 `PASSWORD_LOGIN_UNAVAILABLE`·`OAUTH_ONLY_ACCOUNT`다. **팀 확정 전에는 Task 1의 `ErrorCode` 추가를 시작하지 않는다.** 미가입 404는 기존 `NOT_FOUND` 재사용으로 충분하다고 판단했으나, 기본 메시지("대상을 찾을 수 없습니다.")를 그대로 쓸지 "가입되지 않은 이메일입니다."로 덮어쓸지는 함께 확정이 필요하다.
+**U2. ~~OAuth 전용 회원 409의 `ErrorCode` 이름·메시지 (D3).~~ → 2026-08-01 확정, 미확정 아님.** 기존 409 세 개(`DUPLICATE_RESOURCE`·`ACCOUNT_LINK_REQUIRED`·`EMAIL_VERIFICATION_REQUIRED`) 재사용을 검토했고 모두 의미가 맞지 않아 신규 코드를 추가한다. 확정된 값은 `SOCIAL_ACCOUNT_ONLY(HttpStatus.CONFLICT, "소셜 로그인 전용 계정입니다. 카카오 또는 네이버 로그인을 이용해 주세요.")`다 — 코드베이스가 이미 `SignupMethod`·`SocialAccount`로 "소셜"을 쓰고 있어 용어가 일관되고, 향후 비밀번호 최초 설정 같은 다른 지점에서도 재사용할 수 있다는 것이 선택 근거다(대안이던 `PASSWORD_LOGIN_UNAVAILABLE`·`OAUTH_ONLY_ACCOUNT`는 기각). 미가입 404는 기존 `NOT_FOUND` 코드를 쓰되 `BusinessException(ErrorCode, String)`으로 메시지를 **"가입되지 않은 이메일입니다."로 덮어쓴다** — D2에서 이미 404로 가입 여부를 알려주기로 한 이상 메시지를 모호하게 둬도 더 안전해지지 않고, 프론트가 별도 문구를 갖지 않아도 되기 때문이다.
 
 **U3. 거부 요청 행을 같은 테이블에 NULL 컬럼으로 남기는 설계 (D6).** `code_hash`·`expires_at`·`last_sent_at`을 NULL 허용으로 두고 "세 컬럼이 NULL이면 미발송 요청"이라는 규약을 썼다. 대안은 (a) 상태 컬럼(`SENT`/`USER_NOT_FOUND`/`OAUTH_ONLY`)을 명시적으로 두는 것, (b) 발송 이력 테이블을 따로 만들어 인증번호 테이블은 실제 발송 행만 담게 하는 것이다. 이번에는 그 구분을 읽는 코드가 없어 가장 단순한 (규약) 안을 골랐다. 후속 #116이 "발송 이력 조회"나 "거부 사유별 통계"를 요구하면 (a)로 바꾸는 편이 낫다.
 
