@@ -3,6 +3,7 @@ package com.finplay.api.auth.controller;
 
 import com.finplay.api.auth.dto.request.LoginRequest;
 import com.finplay.api.auth.dto.request.NicknameUpdateRequest;
+import com.finplay.api.auth.dto.request.PasswordChangeRequest;
 import com.finplay.api.auth.dto.request.RefreshRequest;
 import com.finplay.api.auth.dto.request.SignupRequest;
 import com.finplay.api.auth.dto.response.MemberResponse;
@@ -82,6 +83,18 @@ public class AuthController {
 			request.nickname(),
 			request.currentPassword(),
 			request.reauthToken());
+		return ResponseEntity.ok(response);
+	}
+
+	@PatchMapping("/me/password")
+	public ResponseEntity<TokenResponse> updatePassword(
+		@AuthenticationPrincipal
+		AuthenticatedUser principal,
+		@Valid @RequestBody
+		PasswordChangeRequest request) {
+		// 기존 Refresh Token이 전부 폐기되므로 요청한 기기가 쓸 새 토큰 쌍을 그대로 반환한다.
+		TokenResponse response = authService.changePassword(
+			principal.userId(), request.currentPassword(), request.newPassword());
 		return ResponseEntity.ok(response);
 	}
 }

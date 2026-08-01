@@ -69,4 +69,10 @@ public class User {
 		this.email = newEmail;
 		this.updatedAt = now;
 	}
+
+	// 파라미터는 원문이 아니라 이미 인코딩된 해시다 — 인코딩은 service 책임이다.
+	public void changePassword(String newPasswordHash, LocalDateTime now) {
+		this.passwordHash = newPasswordHash;
+		this.updatedAt = now;
+	}
 }

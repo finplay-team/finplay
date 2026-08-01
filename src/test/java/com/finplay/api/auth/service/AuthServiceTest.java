@@ -68,6 +68,8 @@ class AuthServiceTest {
 	private static final String VERIFICATION_CODE = "123456";
 	private static final String RAW_REAUTH_TOKEN = "raw-reauth-token";
 	private static final String RAW_PASSWORD = "password123";
+	private static final String NEW_PASSWORD = "new-password456";
+	private static final String OAUTH_ONLY_PASSWORD_SENTINEL = "{oauth-only}";
 	private static final String SIGNUP_TOKEN = "signup-verification-token";
 	private static final String ACCESS_TOKEN = "access.jwt.token";
 	private static final String REFRESH_TOKEN = "refresh.jwt.token";
@@ -874,6 +876,150 @@ class AuthServiceTest {
 	}
 
 	@Test
+	void changePasswordSucceedsAndReissuesTokenPairForEmailUser() {
+		User user = stubEmailUser();
+		String originalHash = user.getPasswordHash();
+		stubSaveAndFlushReturningArgument();
+		stubIssuedRotatedTokenPair();
+
+		var response = authService.changePassword(7L, RAW_PASSWORD, NEW_PASSWORD);
+
+		// 저장되는 값은 원문이 아니라 새 비밀번호로 대조되는 해시여야 한다.
+		assertThat(user.getPasswordHash()).isNotEqualTo(originalHash);
+		assertThat(user.getPasswordHash()).isNotEqualTo(NEW_PASSWORD);
+		assertThat(passwordEncoder.matches(NEW_PASSWORD, user.getPasswordHash())).isTrue();
+		assertThat(passwordEncoder.matches(RAW_PASSWORD, user.getPasswordHash())).isFalse();
+		assertThat(user.getUpdatedAt()).isEqualTo(NOW);
+		assertThat(user.getEmail()).isEqualTo(EMAIL);
+		assertThat(user.getNickname()).isEqualTo(NICKNAME);
+
+		verify(userRepository).saveAndFlush(user);
+		verify(refreshTokenRepository).revokeAllActiveByUserId(7L, NOW);
+
+		ArgumentCaptor<RefreshToken> refreshTokenCaptor = ArgumentCaptor.forClass(RefreshToken.class);
+		verify(refreshTokenRepository).save(refreshTokenCaptor.capture());
+		RefreshToken savedRefreshToken = refreshTokenCaptor.getValue();
+		assertThat(savedRefreshToken.getUser()).isSameAs(user);
+		assertThat(savedRefreshToken.getTokenHash()).isEqualTo(sha256(ROTATED_REFRESH_TOKEN));
+		assertThat(savedRefreshToken.getTokenHash()).isNotEqualTo(ROTATED_REFRESH_TOKEN);
+		assertThat(savedRefreshToken.getExpiresAt()).isEqualTo(NOW.plusDays(14));
+		assertThat(savedRefreshToken.getCreatedAt()).isEqualTo(NOW);
+		assertThat(savedRefreshToken.getRevokedAt()).isNull();
+
+		assertThat(response.accessToken()).isEqualTo(ROTATED_ACCESS_TOKEN);
+		assertThat(response.refreshToken()).isEqualTo(ROTATED_REFRESH_TOKEN);
+		assertThat(response.accessTokenExpiresInSeconds()).isEqualTo(3600L);
+		assertThat(response.refreshTokenExpiresInSeconds()).isEqualTo(1_209_600L);
+
+		verifyNoInteractions(accountService, reauthTokenRepository, emailChangeService);
+	}
+
+	@Test
+	void changePasswordRevokesAllRefreshTokensBeforeIssuingNewPair() {
+		// D5 — RefreshToken은 IDENTITY라 save가 즉시 INSERT된다.
+		// 발급이 먼저면 revokedAt IS NULL 조건에 방금 만든 행까지 걸려 요청 기기도 로그아웃된다.
+		stubEmailUser();
+		stubSaveAndFlushReturningArgument();
+		stubIssuedRotatedTokenPair();
+
+		authService.changePassword(7L, RAW_PASSWORD, NEW_PASSWORD);
+
+		InOrder inOrder = inOrder(refreshTokenRepository);
+		inOrder.verify(refreshTokenRepository).revokeAllActiveByUserId(7L, NOW);
+		inOrder.verify(refreshTokenRepository).save(any(RefreshToken.class));
+		inOrder.verifyNoMoreInteractions();
+	}
+
+	@Test
+	void changePasswordPersistsNewHashBeforeRevokingRefreshTokens() {
+		stubEmailUser();
+		stubSaveAndFlushReturningArgument();
+		stubIssuedRotatedTokenPair();
+
+		authService.changePassword(7L, RAW_PASSWORD, NEW_PASSWORD);
+
+		InOrder inOrder = inOrder(userRepository, refreshTokenRepository);
+		inOrder.verify(userRepository).saveAndFlush(any(User.class));
+		inOrder.verify(refreshTokenRepository).revokeAllActiveByUserId(7L, NOW);
+	}
+
+	@Test
+	void changePasswordFailsWithReauthenticationFailedWhenCurrentPasswordMismatches() {
+		User user = stubEmailUser();
+		String originalHash = user.getPasswordHash();
+
+		assertThat(captureChangePasswordFailure("wrong-password", NEW_PASSWORD).getErrorCode())
+			.isEqualTo(ErrorCode.REAUTHENTICATION_FAILED);
+
+		assertThat(user.getPasswordHash()).isEqualTo(originalHash);
+		verifyChangePasswordChangedNothing();
+	}
+
+	@Test
+	void changePasswordFailsWithReauthenticationFailedWhenWrongCurrentPasswordEqualsNewPassword() {
+		// D3 — 동일 여부 검사가 대조보다 먼저면 현재 비밀번호를 모르는 요청자도 400 분기를 관찰할 수 있다.
+		User user = stubEmailUser();
+		String originalHash = user.getPasswordHash();
+
+		assertThat(captureChangePasswordFailure("wrong-password", "wrong-password").getErrorCode())
+			.isEqualTo(ErrorCode.REAUTHENTICATION_FAILED);
+
+		assertThat(user.getPasswordHash()).isEqualTo(originalHash);
+		verifyChangePasswordChangedNothing();
+	}
+
+	@Test
+	void changePasswordFailsWithValidationErrorWhenNewPasswordEqualsCurrentPassword() {
+		User user = stubEmailUser();
+		String originalHash = user.getPasswordHash();
+
+		BusinessException exception = captureChangePasswordFailure(RAW_PASSWORD, RAW_PASSWORD);
+
+		assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.VALIDATION_ERROR);
+		assertThat(exception.getMessage()).isEqualTo("새 비밀번호는 현재 비밀번호와 달라야 합니다.");
+		assertThat(user.getPasswordHash()).isEqualTo(originalHash);
+		verifyChangePasswordChangedNothing();
+	}
+
+	@Test
+	void changePasswordFailsWithValidationErrorWhenEmailUserOmitsCurrentPassword() {
+		User user = stubEmailUser();
+		String originalHash = user.getPasswordHash();
+
+		assertThat(captureChangePasswordFailure("  ", NEW_PASSWORD).getErrorCode())
+			.isEqualTo(ErrorCode.VALIDATION_ERROR);
+
+		assertThat(user.getPasswordHash()).isEqualTo(originalHash);
+		verifyChangePasswordChangedNothing();
+	}
+
+	@Test
+	void changePasswordFailsWithValidationErrorForOAuthOnlyUserBeforeComparingPassword() {
+		// D2·D3 — sentinel 해시는 어떤 원문과도 일치하지 않는다. 대조가 먼저였다면 403이 나온다.
+		User user = stubOAuthOnlyUser();
+
+		BusinessException exception = captureChangePasswordFailure(RAW_PASSWORD, NEW_PASSWORD);
+
+		assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.VALIDATION_ERROR);
+		assertThat(exception.getMessage()).isEqualTo("OAuth 전용 회원은 비밀번호를 변경할 수 없습니다.");
+		assertThat(user.getPasswordHash()).isEqualTo(OAUTH_ONLY_PASSWORD_SENTINEL);
+		assertThat(user.getUpdatedAt()).isEqualTo(NOW.minusDays(1));
+		verifyChangePasswordChangedNothing();
+		verify(socialAccountRepository, never()).save(any());
+	}
+
+	@Test
+	void changePasswordFailsWithUnauthorizedWhenUserNotFound() {
+		when(userRepository.findById(7L)).thenReturn(Optional.empty());
+
+		assertThat(captureChangePasswordFailure(RAW_PASSWORD, NEW_PASSWORD).getErrorCode())
+			.isEqualTo(ErrorCode.UNAUTHORIZED);
+
+		verifyNoInteractions(socialAccountRepository);
+		verifyChangePasswordChangedNothing();
+	}
+
+	@Test
 	void signupMethodFromProviderMapsEachOAuthProvider() {
 		assertThat(SignupMethod.fromProvider(OAuthProviderName.KAKAO)).isEqualTo(SignupMethod.KAKAO);
 		assertThat(SignupMethod.fromProvider(OAuthProviderName.NAVER)).isEqualTo(SignupMethod.NAVER);
@@ -901,6 +1047,40 @@ class AuthServiceTest {
 		when(socialAccountRepository.findByUserId(7L)).thenReturn(
 			Optional.of(SocialAccount.create(user, provider, "provider-user-id", NOW.minusDays(1))));
 		return user;
+	}
+
+	private User stubOAuthOnlyUser() {
+		User user = existingUser(OAUTH_ONLY_PASSWORD_SENTINEL);
+		when(userRepository.findById(7L)).thenReturn(Optional.of(user));
+		when(socialAccountRepository.findByUserId(7L)).thenReturn(
+			Optional.of(SocialAccount.create(
+				user, OAuthProviderName.KAKAO, "provider-user-id", NOW.minusDays(1))));
+		return user;
+	}
+
+	private void stubSaveAndFlushReturningArgument() {
+		when(userRepository.saveAndFlush(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+	}
+
+	private void stubIssuedRotatedTokenPair() {
+		when(jwtTokenProvider.issue(7L, "USER")).thenReturn(new IssuedTokenPair(
+			ROTATED_ACCESS_TOKEN, ROTATED_REFRESH_TOKEN, NOW.plusDays(14), 3600L, 1_209_600L));
+	}
+
+	private BusinessException captureChangePasswordFailure(String currentPassword, String newPassword) {
+		try {
+			authService.changePassword(7L, currentPassword, newPassword);
+			throw new AssertionError("changePassword가 BusinessException을 던지지 않았다.");
+		} catch (BusinessException ex) {
+			return ex;
+		}
+	}
+
+	private void verifyChangePasswordChangedNothing() {
+		verify(userRepository, never()).saveAndFlush(any());
+		verify(refreshTokenRepository, never()).revokeAllActiveByUserId(any(), any());
+		verify(refreshTokenRepository, never()).save(any());
+		verify(jwtTokenProvider, never()).issue(any(), any());
 	}
 
 	private void assertChangeNicknameFailsWith(
