@@ -357,8 +357,10 @@
 | reviewer | reviewer(리뷰) | `git diff dev...HEAD`(커밋 7380c16·18275c4·dad6eeb·ecdf3aa·7f58cb1) | issue-56-plan.md D1~D5, conventions.md, ADR-0002·0003·0004, docs/api-routes.md
 | 19:47 | implementer | `.\gradlew.bat -p <루트> compileJava --no-daemon --max-workers=1` — BUILD SUCCESSFUL | issue-114-plan.md Task 1(D2 OAuth 전용 400·D3 검증 순서·D4 `changePassword`·D5 폐기→발급 순서·D6 단일 트랜잭션·D7 기존 ErrorCode만), conventions.md 엔티티·레이어 규칙, ADR-0002, ADR-0004(마이그레이션 미추가) |
 | 20:05 | implementer | `.\gradlew.bat -p <루트> spotlessApply compileJava --no-daemon --max-workers=1` — BUILD SUCCESSFUL | issue-114-plan.md Task 2(D1 요청 DTO 검증 정책·D8 200 `TokenResponse`·`SecurityConfig` 미변경 확인), conventions.md DTO·API 규칙, CLAUDE.md 규칙 7(api-routes.md·api-contracts.md 동기화) |
+| reviewer | reviewer(리뷰) | `git diff dev...HEAD`(커밋 1613a86·cdaaec2·f612652·ead50f9·c8577a0) | issue-114-plan.md D1~D8·팀 확정 2건(폐기→발급 순서, OAuth 전용 400), conventions.md 리뷰 체크 질문·DTO·엔티티 규칙, ADR-0002·0003·0004(마이그레이션 미추가 확인), docs/api-routes.md·api-contracts.md·prd.md |
 
 ## 모니터링 (사람용 요약)
+- Issue #114 리뷰 판정: 차단 0건, 권장 1건(tasks.md 4번째 항목 체크박스 미갱신), 참고 3건. 팀 확정 2건(폐기→발급 순서, OAuth 전용 400 선검사)이 코드·단위(InOrder)·통합(실제 벌크 UPDATE 후 활성 토큰 1개) 테스트로 모두 고정됐고 비밀번호·토큰 원문이 응답·로그·DB에 남지 않음을 확인, 머지 가능.
 - Issue #114 Task 2 — `PasswordChangeRequest`와 보호된 `PATCH /api/auth/me/password`(200 `TokenResponse`) 추가, api-routes·api-contracts 동기화, 컴파일 통과. `SecurityConfig`는 공개 목록이 POST·GET뿐이라 수정 불필요. `@WebMvcTest`는 tester 담당.
 - Issue #114 Task 1 — `User.changePassword`와 `AuthService.changePassword`(OAuth 전용 400 → 현재 비밀번호 403 → 동일 400 → 해시 교체 → 폐기 → 발급) 추가, 컴파일 통과. 단위 테스트는 tester 담당.
 - Issue #56 리뷰 판정: 차단 0건. `noRollbackFor=BusinessException`/`rollbackFor=EmailChangeConflictException` depth 매칭이 설계·실제 통합 테스트(경합 시 소비·토큰폐기 롤백, 5회초과 시 attempt_count 커밋)로 모두 확인됨. 서비스 책임 분리(EmailChangeService=검증/소비, AuthService=이메일변경/토큰폐기/트랜잭션)·순환의존 없음·api-routes.md 일치·기존 AuthServiceTest/OAuthAuthServiceTest mock 추가가 회귀를 깨지 않음을 확인, 머지 가능.
