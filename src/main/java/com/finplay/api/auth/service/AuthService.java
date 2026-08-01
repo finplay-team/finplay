@@ -218,6 +218,39 @@ public class AuthService {
 		return MemberResponse.from(user, signupMethod);
 	}
 
+	// 재인증 검증·해시 교체·Refresh Token 전체 폐기·새 토큰 쌍 발급을 한 트랜잭션으로 묶는다 — 실패하면 아무 것도 바뀌지 않는다.
+	@Transactional
+	public TokenResponse changePassword(Long userId, String currentPassword, String newPassword) {
+		LocalDateTime now = LocalDateTime.now(clock);
+		User user = userRepository.findById(userId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED));
+
+		// 클라이언트가 채운 필드가 아니라 DB의 실제 가입 방식으로 분기한다.
+		// OAuth 전용 회원은 바꿀 비밀번호 자체가 없으므로 재인증 실패(403)가 아니라 계정 유형 불일치(400)다.
+		SignupMethod signupMethod = socialAccountRepository.findByUserId(userId)
+			.map(socialAccount -> SignupMethod.fromProvider(socialAccount.getProvider()))
+			.orElse(SignupMethod.EMAIL);
+		if (signupMethod != SignupMethod.EMAIL) {
+			throw new BusinessException(
+				ErrorCode.VALIDATION_ERROR, "OAuth 전용 회원은 비밀번호를 변경할 수 없습니다.");
+		}
+
+		verifyCurrentPassword(user, currentPassword);
+
+		// 대조가 끝난 뒤에 비교한다 — 순서를 뒤집으면 현재 비밀번호를 모르는 요청자에게도 이 분기가 노출된다.
+		if (currentPassword.equals(newPassword)) {
+			throw new BusinessException(
+				ErrorCode.VALIDATION_ERROR, "새 비밀번호는 현재 비밀번호와 달라야 합니다.");
+		}
+
+		user.changePassword(passwordEncoder.encode(newPassword), now);
+		userRepository.saveAndFlush(user);
+
+		// 폐기가 먼저다 — 새 토큰을 먼저 저장하면 revokedAt IS NULL 조건에 그 행까지 걸려 요청 기기도 로그아웃된다.
+		refreshTokenRepository.revokeAllActiveByUserId(userId, now);
+		return issueTokenPair(user, now);
+	}
+
 	@Transactional
 	public TokenResponse refresh(String rawRefreshToken) {
 		AuthenticatedUser authenticatedUser = jwtTokenProvider.parseRefreshToken(rawRefreshToken)
