@@ -291,6 +291,32 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 - And 비밀번호 변경이 성공하면 요청한 기기는 새로 받은 토큰 쌍으로 로그인 상태를 유지하고 다른 기기만 로그아웃된다.
 - And OAuth 전용 회원의 비밀번호 변경 요청은 비밀번호 대조 없이 거부된다.
 
+#### AUTH-006 비밀번호 재설정 (비로그인)
+
+- 비밀번호를 잊은 이메일 회원은 가입 이메일로 6자리 인증번호를 받아 비밀번호를 재설정한다. 요청 경로는 인증이 필요 없는 공개 경로다.
+- 인증번호는 6자리 숫자이며 유효시간은 5분, 입력 시도는 최대 5회다. 5회를 초과하면 해당 인증번호를 즉시 무효화하고 429 `TOO_MANY_REQUESTS`로 응답한다.
+- 재발송은 60초 간격이며, 같은 이메일에 1시간 5회·하루 10회로 제한한다. 초과 시 429 `TOO_MANY_REQUESTS`다.
+- 발송 제한은 **이메일 주소 단위**로 집계하며, 아래 404·409로 거부된 요청도 같은 집계에 포함한다. 거부 응답이 계정 상태를 드러내므로 거부 요청을 세지 않으면 같은 주소를 무제한으로 두드려 상태를 확인할 수 있기 때문이다. 이미 제한을 넘겨 429가 된 요청 자체는 집계에 남기지 않는다 — 남기면 하루 10회 제한이 사실상 영구 차단이 된다.
+- 발송 제한 판정은 회원 존재 확인보다 **먼저** 한다. 순서가 반대면 제한을 초과한 요청자도 계정 상태를 계속 알아낼 수 있다. AUTH-004의 가입 인증 발송(중복 확인 → 발송 제한)과 순서가 의도적으로 반대다.
+- 가입되지 않은 이메일은 404 `NOT_FOUND`, 비밀번호가 없는 소셜 로그인 전용 회원은 409 `SOCIAL_ACCOUNT_ONLY`로 거부하고 인증번호를 발송하지 않는다.
+- 이 응답 구분은 계정 존재 여부와 가입 방식이 드러나는 것을 감수한 결정이다. 근거는 AUTH-004의 가입 인증 요청이 이미 가입 여부를 409 `DUPLICATE_RESOURCE`로 드러내고 있다는 점과, 같은 주소의 반복 조회를 위 발송 제한이 막는다는 점이다. 다만 서로 다른 주소를 한 번씩 훑는 광범위 스캔은 이메일 단위 제한으로 막히지 않으며, IP·디바이스 단위 제한은 1차 범위 밖이다.
+- 재발송하면 이전 인증번호는 즉시 무효화된다 — 유효한 인증번호는 항상 최대 1개다.
+- 인증번호 원문은 저장하지 않고 **전용 시크릿**(`PASSWORD_RESET_SECRET`) 기반 HMAC-SHA-256 해시로만 저장한다. AUTH-004의 가입 인증번호와 시크릿을 공유하지 않는다 — 재설정 인증번호는 탈취 시 기존 계정 탈취로 직결되어 영향 범위가 다르다.
+- 인증번호 확인에 성공하면 `users.password_hash`를 원자적으로 교체하고 기존 Refresh Token을 모두 폐기해 재로그인을 요구한다.
+- 발송 단계에서는 `users`·`accounts`·Refresh Token을 만들거나 바꾸지 않는다.
+- 자동 테스트와 로컬 실행은 Fake 발송기를 사용한다. 실제 발송 검증은 별도 외부 스모크다.
+
+구현 단계: **인증번호 발송까지만 구현돼 있다**(Issue #115). 인증번호 확인, `users.password_hash` 교체, 재설정 완료 시 Refresh Token 폐기는 후속 Issue #116이며 아직 엔드포인트가 없다. 따라서 위 항목 중 "입력 시도 최대 5회"와 "확인 성공 시 교체·폐기"는 #116에서 충족된다.
+
+수용 기준:
+
+- Given 비밀번호로 가입한(`users.password_hash`가 있는) 회원의 이메일
+- When 비밀번호 재설정 인증번호 발송을 요청
+- Then 202로 수락되고 가입 이메일로 6자리 인증번호가 발송되며, 저장소에는 HMAC 해시만 남고 원문은 DB에도 로그에도 남지 않는다.
+- And 가입되지 않은 이메일은 404, 비밀번호가 없는 소셜 전용 회원은 409로 거부되어 메일이 발송되지 않으며, 거부된 두 요청도 발송 제한 집계에 포함된다.
+- And 재발송에 성공하면 같은 이메일의 이전 인증번호는 즉시 무효화된다.
+- And 발송 성공·실패와 무관하게 `users`·`accounts`·`refresh_tokens`는 변하지 않는다.
+
 ### 계좌
 
 #### ACCT-001 시장별 계좌
@@ -521,12 +547,14 @@ Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conven
 
 - `POST /api/auth/email-verifications` (인증번호 발송)
 - `POST /api/auth/email-verifications/confirm` (인증번호 확인 → `signupVerificationToken` 발급)
+- `POST /api/auth/password-resets` (비밀번호 재설정 인증번호 발송 — 공개 경로, AUTH-006. 확인 엔드포인트는 후속 Issue #116)
 - `POST /api/auth/signup`
 - `POST /api/auth/login`
 - `POST /api/auth/refresh`
 - `POST /api/auth/logout`
 - `GET /api/auth/me`
 - `PATCH /api/auth/me/nickname`
+- `PATCH /api/auth/me/password` (현재 비밀번호 확인 기반 비밀번호 변경 — AUTH-005)
 - `POST /api/auth/email-changes` (새 이메일 인증번호 발송)
 - `POST /api/auth/email-changes/confirm` (인증번호 확인과 이메일 변경)
 - `GET /api/auth/oauth/{provider}/authorize?purpose=login|reauth`
@@ -586,6 +614,7 @@ Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conven
 | 409 | DUPLICATE_RESOURCE | 이메일·닉네임·소셜계정 중복, 인증 요청 시 기존 회원 |
 | 409 | EMAIL_VERIFICATION_REQUIRED | 가입 토큰 없음·만료·사용됨·이메일 불일치 |
 | 409 | ACCOUNT_LINK_REQUIRED | 같은 이메일의 일반 회원 존재 — 소셜 자동 연결 불가 |
+| 409 | SOCIAL_ACCOUNT_ONLY | 비밀번호가 없는 소셜 로그인 전용 계정 — 비밀번호 재설정 불가 (AUTH-006) |
 | 409 | INSUFFICIENT_CASH | 매수 가능 현금 부족 |
 | 409 | INSUFFICIENT_QTY | 매도 가능 수량 부족 |
 | 409 | MARKET_CLOSED | 주식 장 종료 |
@@ -615,6 +644,7 @@ Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conven
 - `email_verifications`: 이메일, 인증번호 해시, 시도횟수, 만료시각, 최근발송시각, 확인시각, 가입토큰 해시, 토큰 만료시각, 토큰 소비시각, 생성시각 (가입 전 단계 — 회원 행과 무관)
 - `reauthentications`: 회원, 인증 방식, OAuth 제공자, 재인증 토큰 해시, 만료시각, 소비시각, 생성시각
 - `email_change_verifications`: 회원, 기존 이메일, 새 이메일, 인증번호 해시, 시도횟수, 만료시각, 최근발송시각, 확인시각, 생성시각
+- `password_reset_verifications`: 이메일, 인증번호 해시, 시도횟수, 만료시각, 최근발송시각, 소비시각, 생성시각 (비로그인 단계 — `user_id` 외래키를 두지 않는다. 미가입 이메일 요청도 발송 제한 집계용 행을 남기기 때문이며, 인증번호 해시·만료시각·최근발송시각이 모두 비어 있는 행이 발송하지 않고 거부된 요청이다)
 - `accounts`: 회원·시장별 현금, 시드머니, 실현손익
 - `instruments`: 시장, 심볼, 이름, 호가단위, 최소주문금액, 거래가능
 - `stock_candles`: 종목, 거래일, 분봉시각, 시가·고가·저가·종가·거래량, 데이터출처, 수집시각 (최근 20영업일만 보관, `UNIQUE(instrument_id, trading_date, candle_time)`)
@@ -636,6 +666,7 @@ Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conven
 - `UNIQUE(email_verifications.token_hash)` + `INDEX(email_verifications.email, created_at)` (발송 제한 기간 집계용)
 - `UNIQUE(reauthentications.token_hash)`
 - `INDEX(email_change_verifications.user_id, new_email, created_at)` (유효 요청과 발송 제한 조회용)
+- `INDEX(password_reset_verifications.email, created_at)` (발송 제한 기간 집계용 — 거부된 요청 행도 함께 센다)
 - `UNIQUE(accounts.user_id, accounts.market)`
 - `UNIQUE(instruments.symbol)`
 - `UNIQUE(orders.user_id, orders.idempotency_key)`
