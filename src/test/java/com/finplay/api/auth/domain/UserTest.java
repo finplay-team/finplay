@@ -32,6 +32,40 @@ class UserTest {
 	}
 
 	@Test
+	void hasPasswordIsTrueOnlyForRealPasswordHash() {
+		User emailUser = User.create("email@finplay.com", "encoded-password-hash", "email-user", NOW);
+
+		assertThat(emailUser.hasPassword()).isTrue();
+	}
+
+	@Test
+	void hasPasswordIsFalseForOAuthOnlySentinelBecauseThereIsNoPasswordToReset() {
+		// OAuth 가입자는 password_hash가 NULL이 아니라 자리표시자다 — NULL 검사만으로는 걸러지지 않는다.
+		User oauthUser = User.create(
+			"oauth@finplay.com", User.OAUTH_ONLY_PASSWORD_SENTINEL, "oauth-user", NOW);
+
+		assertThat(oauthUser.getPasswordHash()).isNotNull();
+		assertThat(oauthUser.hasPassword()).isFalse();
+	}
+
+	@Test
+	void hasPasswordIsFalseWhenPasswordHashIsNull() {
+		User user = User.create("null-hash@finplay.com", null, "null-hash-user", NOW);
+
+		assertThat(user.hasPassword()).isFalse();
+	}
+
+	@Test
+	void changePasswordMakesOAuthOnlyUserHavePassword() {
+		User oauthUser = User.create(
+			"oauth-link@finplay.com", User.OAUTH_ONLY_PASSWORD_SENTINEL, "oauth-link-user", NOW);
+
+		oauthUser.changePassword("encoded-password-hash", NOW.plusMinutes(1));
+
+		assertThat(oauthUser.hasPassword()).isTrue();
+	}
+
+	@Test
 	void changePasswordKeepsEveryOtherFieldUnchanged() {
 		User user = User.create("user@finplay.com", "old-password-hash", "user-nickname", NOW);
 

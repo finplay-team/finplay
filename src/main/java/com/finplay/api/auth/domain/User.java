@@ -18,6 +18,10 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class User {
 
+	// OAuth 전용 가입자의 password_hash에 채우는 자리표시자 — 어떤 원문 비밀번호와도 대조되지 않는다.
+	// password_hash 컬럼은 NULL을 허용하지만 실제 생성 경로는 전부 값을 채우므로, 비밀번호 보유 판정은 hasPassword()로 한다.
+	public static final String OAUTH_ONLY_PASSWORD_SENTINEL = "{oauth-only}";
+
 	private static final String DEFAULT_ROLE = "USER";
 	private static final String DEFAULT_STATUS = "ACTIVE";
 
@@ -58,6 +62,11 @@ public class User {
 
 	public static User create(String email, String passwordHash, String nickname, LocalDateTime now) {
 		return new User(email, passwordHash, nickname, now);
+	}
+
+	// 재설정·변경할 비밀번호가 실제로 있는지 — OAuth 전용 가입자는 자리표시자만 갖고 있어 false다.
+	public boolean hasPassword() {
+		return passwordHash != null && !OAUTH_ONLY_PASSWORD_SENTINEL.equals(passwordHash);
 	}
 
 	public void changeNickname(String nickname, LocalDateTime now) {

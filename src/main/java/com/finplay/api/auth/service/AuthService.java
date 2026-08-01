@@ -41,7 +41,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class AuthService {
 
-	private static final String OAUTH_ONLY_PASSWORD_SENTINEL = "{oauth-only}";
 	private static final int MAX_NICKNAME_ATTEMPTS = 5;
 	private static final Duration REAUTH_TOKEN_TTL = Duration.ofMinutes(5);
 
@@ -365,7 +364,7 @@ public class AuthService {
 	private User saveOAuthUser(String email, String nickname, LocalDateTime now) {
 		try {
 			return userRepository.saveAndFlush(
-				User.create(email, OAUTH_ONLY_PASSWORD_SENTINEL, nickname, now));
+				User.create(email, User.OAUTH_ONLY_PASSWORD_SENTINEL, nickname, now));
 		} catch (DataIntegrityViolationException ex) {
 			throw new BusinessException(ErrorCode.DUPLICATE_RESOURCE);
 		}

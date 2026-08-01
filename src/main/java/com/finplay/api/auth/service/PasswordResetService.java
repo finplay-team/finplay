@@ -70,8 +70,9 @@ public class PasswordResetService {
 			passwordResetVerificationRepository.save(PasswordResetVerification.createRejected(email, now));
 			throw new BusinessException(ErrorCode.NOT_FOUND, NOT_FOUND_MESSAGE);
 		}
-		// 재설정할 비밀번호가 있는지를 묻는 판별이므로 social_accounts가 아니라 passwordHash 유무로 본다.
-		if (user.getPasswordHash() == null) {
+		// 재설정할 비밀번호가 있는지를 묻는 판별이므로 social_accounts 연결 여부가 아니라 비밀번호 보유 여부로 본다.
+		// OAuth 전용 가입자는 password_hash에 자리표시자가 채워져 있어 NULL 검사만으로는 걸러지지 않는다.
+		if (!user.hasPassword()) {
 			passwordResetVerificationRepository.save(PasswordResetVerification.createRejected(email, now));
 			throw new BusinessException(ErrorCode.SOCIAL_ACCOUNT_ONLY);
 		}

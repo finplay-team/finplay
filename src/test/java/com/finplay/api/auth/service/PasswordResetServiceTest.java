@@ -126,6 +126,24 @@ class PasswordResetServiceTest {
 	}
 
 	@Test
+	@DisplayName("회귀: password_hash가 자리표시자인 OAuth 가입자는 NULL이 아니어도 409로 거부되고 메일이 나가지 않는다")
+	void rejectsOAuthUserWhosePasswordHashIsSentinelRatherThanNull() {
+		User oauthUser = User.create(EMAIL, User.OAUTH_ONLY_PASSWORD_SENTINEL, "oauth-user", NOW.minusDays(10));
+		// 실제 OAuth 가입자는 password_hash가 채워져 있다 — `passwordHash == null` 판별로는 이 회원을 거르지 못한다.
+		assertThat(oauthUser.getPasswordHash()).isNotNull();
+		when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(oauthUser));
+
+		assertThatThrownBy(() -> service.sendResetCode(EMAIL))
+			.isInstanceOf(BusinessException.class)
+			.extracting(ex -> ((BusinessException)ex).getErrorCode())
+			.isEqualTo(ErrorCode.SOCIAL_ACCOUNT_ONLY);
+
+		// 판별이 NULL 검사로 되돌아가면 여기서 실제 인증번호가 발송되어 실패한다.
+		verify(emailSender, never()).sendVerificationCode(any(), any());
+		assertRejectedRowSaved();
+	}
+
+	@Test
 	@DisplayName("발송 제한을 존재 확인보다 먼저 판정한다 — 미가입 이메일이라도 제한 초과면 404가 아니라 429다")
 	void checksSendRateLimitBeforeLookingUpUserSoEnumerationIsBlocked() {
 		// 미가입 이메일이지만 60초 창에 이미 요청이 있다.
@@ -290,8 +308,10 @@ class PasswordResetServiceTest {
 		return User.create(EMAIL, "stored-password-hash", "reset-user", NOW.minusDays(10));
 	}
 
+	// 프로덕션의 OAuth 가입자는 password_hash가 NULL이 아니라 자리표시자다 (AuthService.saveOAuthUser).
+	// NULL로 만들면 실제로 존재하지 않는 회원 형태라 409 분기가 도달 불가여도 테스트가 통과해 버린다.
 	private static User socialOnlyUser() {
-		return User.create(EMAIL, null, "social-user", NOW.minusDays(10));
+		return User.create(EMAIL, User.OAUTH_ONLY_PASSWORD_SENTINEL, "social-user", NOW.minusDays(10));
 	}
 
 	private static String hmac(String secret, String code) {

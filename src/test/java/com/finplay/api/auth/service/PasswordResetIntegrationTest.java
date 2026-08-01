@@ -13,8 +13,11 @@ import com.finplay.api.auth.domain.PasswordResetVerification;
 import com.finplay.api.auth.domain.RefreshToken;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.email.FakeEmailSender;
+import com.finplay.api.auth.oauth.OAuthProviderName;
+import com.finplay.api.auth.oauth.OAuthUserDto;
 import com.finplay.api.auth.repository.PasswordResetVerificationRepository;
 import com.finplay.api.auth.repository.RefreshTokenRepository;
+import com.finplay.api.auth.repository.SocialAccountRepository;
 import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
@@ -59,6 +62,12 @@ class PasswordResetIntegrationTest {
 
 	@Autowired
 	private AccountService accountService;
+
+	@Autowired
+	private AuthService authService;
+
+	@Autowired
+	private SocialAccountRepository socialAccountRepository;
 
 	@Autowired
 	private PasswordEncoder passwordEncoder;
@@ -134,6 +143,10 @@ class PasswordResetIntegrationTest {
 	void commitsRejectedRowForSocialOnlyAccountAndBlocksFollowUpRequest() {
 		User socialOnly = persistSocialOnlyUser("reset-social");
 
+		// 프로덕션 형태 확인 — password_hash는 NULL이 아니라 자리표시자이고 social_accounts 연결이 있다.
+		assertThat(socialOnly.getPasswordHash()).isEqualTo(User.OAUTH_ONLY_PASSWORD_SENTINEL);
+		assertThat(socialAccountRepository.findByUserId(socialOnly.getId())).isPresent();
+
 		BusinessException conflict = catchThrowableOfType(
 			BusinessException.class, () -> passwordResetService.sendResetCode(socialOnly.getEmail()));
 		assertThat(conflict.getErrorCode()).isEqualTo(ErrorCode.SOCIAL_ACCOUNT_ONLY);
@@ -202,6 +215,10 @@ class PasswordResetIntegrationTest {
 			RefreshToken.create(user, "refresh-token-hash-" + UUID.randomUUID(), now.plusDays(14), now));
 		String storedPasswordHash = user.getPasswordHash();
 
+		// 시나리오에 필요한 회원은 스냅샷 이전에 모두 만들어 둔다 — 이후 증감은 전부 재설정 발송 탓이어야 한다.
+		User socialOnly = persistSocialOnlyUser("reset-invariant-social");
+		User failing = persistEmailUser("reset-invariant-failing");
+
 		long userCount = userRepository.count();
 		long accountCount = countAccountsOf(user.getId());
 		long refreshTokenCount = refreshTokenRepository.count();
@@ -212,20 +229,18 @@ class PasswordResetIntegrationTest {
 		catchThrowableOfType(BusinessException.class,
 			() -> passwordResetService.sendResetCode(uniqueEmail("reset-invariant-unknown")));
 		// 409 경로.
-		User socialOnly = persistSocialOnlyUser("reset-invariant-social");
 		catchThrowableOfType(BusinessException.class,
 			() -> passwordResetService.sendResetCode(socialOnly.getEmail()));
 		// 발송 실패 경로 — 60초 제한을 피하려고 아직 요청이 없는 다른 회원을 쓴다.
-		User failing = persistEmailUser("reset-invariant-failing");
 		doThrow(new IllegalStateException("메일 발송 실패"))
 			.when(fakeEmailSender).sendVerificationCode(any(), any());
 		catchThrowableOfType(IllegalStateException.class,
 			() -> passwordResetService.sendResetCode(failing.getEmail()));
 
-		// 시나리오 중 새로 만든 회원 2명(social-only, failing) 외에는 users가 늘지 않는다.
-		assertThat(userRepository.count()).isEqualTo(userCount + 2);
+		// 네 경로 어디서도 회원·계좌·Refresh Token은 한 행도 늘거나 줄지 않는다.
+		assertThat(userRepository.count()).isEqualTo(userCount);
 		assertThat(countAccountsOf(user.getId())).isEqualTo(accountCount);
-		assertThat(refreshTokenRepository.count()).isEqualTo(refreshTokenCount + 0);
+		assertThat(refreshTokenRepository.count()).isEqualTo(refreshTokenCount);
 
 		User reloaded = userRepository.findById(user.getId()).orElseThrow();
 		assertThat(reloaded.getPasswordHash()).isEqualTo(storedPasswordHash);
@@ -276,13 +291,15 @@ class PasswordResetIntegrationTest {
 		return user;
 	}
 
-	// 비밀번호가 없는 소셜 전용 회원 — 409 SOCIAL_ACCOUNT_ONLY 판정 대상이다.
+	// 소셜 전용 회원은 손으로 만들지 않고 실제 OAuth 가입 경로를 태운다.
+	// 직접 User.create(email, null, ...)로 만들면 프로덕션에 없는 형태(password_hash NULL)가 되어
+	// 409 분기가 도달 불가여도 테스트가 통과한다 — 실제로 그렇게 결함을 놓친 적이 있다.
 	private User persistSocialOnlyUser(String scenario) {
-		LocalDateTime now = LocalDateTime.now(clock);
-		User user = userRepository.saveAndFlush(User.create(
-			uniqueEmail(scenario), null, uniqueNickname(scenario), now));
-		accountService.createAccountsFor(user);
-		return user;
+		OAuthUserDto oauthUser = new OAuthUserDto(
+			"provider-" + scenario + "-" + UUID.randomUUID().toString().replace("-", ""),
+			uniqueEmail(scenario));
+		authService.oauthLogin(OAuthProviderName.KAKAO, oauthUser);
+		return userRepository.findByEmail(oauthUser.email()).orElseThrow();
 	}
 
 	private static String uniqueEmail(String scenario) {
