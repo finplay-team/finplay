@@ -69,3 +69,14 @@ Issue #55은 인증번호 발송까지만 구현한다. 확인·실제 `users.em
 - [x] Testcontainers MySQL 통합 테스트(발송→확인 성공, 재사용·5회초과·만료·재발송무효화·타인요청 격리, 확인 성공 후 기존 Refresh Token 401, 계좌·주문·체결·OAuth 연결 불변, 동시 이메일 경합 409+원자적 롤백)·전체 회귀·`./gradlew build`·`docs/api-routes.md`·`docs/specs/002-auth-account/tasks.md` 동기화
 
 Issue #56은 트랜잭션 롤백 정책(새 예외 서브타입으로 `noRollbackFor`/`rollbackFor` depth 매칭 분리)과 서비스 배치(`EmailChangeService`는 인증번호 검증·소비 전용으로 축소, `users.email` 변경과 Refresh Token 폐기는 `AuthService`가 담당)를 사용자 확인을 받아 확정했다 — 상세 근거는 `issue-56-plan.md`의 "미확정·PRD 불일치" 절 참고.
+
+## Issue #114 현재 비밀번호 확인 기반 비밀번호 변경 작업 항목 (4개)
+
+상세 설계는 `issue-114-plan.md` 참고.
+
+- [ ] `User.changePassword(newPasswordHash, now)`(setter 금지, `passwordHash`·`updatedAt`만 갱신)와 `AuthService.changePassword`(DB의 `social_accounts`로 OAuth 전용 회원 400 거부 → 기존 `verifyCurrentPassword`로 현재 비밀번호 대조 403 → 새 비밀번호 동일 400 → 해시 교체 → 기존 Refresh Token 전체 폐기 → 요청 기기용 새 토큰 쌍 발급을 한 트랜잭션으로 처리) 구현 (+ 단위 테스트, 폐기→발급 순서를 `InOrder`로 고정)
+- [ ] `PasswordChangeRequest`(`currentPassword` 필수·최대 100자, `newPassword` 가입과 동일한 8~100자 정책)와 보호된 `PATCH /api/auth/me/password`(200 `TokenResponse`, 400/401/403 계약, `SecurityConfig` 미변경) 구현 (+ `@WebMvcTest`)
+- [ ] 실제 MySQL 통합 검증 — 변경 후 신규 비밀번호 로그인 성공·기존 비밀번호 401, 다른 기기 Refresh Token 폐기와 응답 토큰 유효, 잘못된 현재 비밀번호·동일 새 비밀번호·OAuth 전용 회원 거부 시 무변경 롤백, 이메일·닉네임·계좌 2개·시드머니·잔액 불변
+- [ ] `docs/prd.md` AUTH-005에 비밀번호 변경 항목 추가·`docs/api-routes.md`·`docs/api-contracts.md`·`docs/specs/002-auth-account/tasks.md` 동기화·전체 회귀·`./gradlew build`
+
+Issue #114는 착수 전 결정 2건을 팀에서 확정하고 시작했다. ① 변경 성공 시 기존 Refresh Token을 전부 폐기하되 요청한 기기용 새 토큰 쌍을 즉시 발급해 **다른 기기만 로그아웃**시킨다(#56의 "전부 폐기 후 재로그인"과 의도적으로 다르다). ② OAuth 전용 회원은 400 `VALIDATION_ERROR` + "OAuth 전용 회원은 비밀번호를 변경할 수 없습니다."로 거부한다(재인증 실패가 아니라 계정 유형 불일치). 근거는 `issue-114-plan.md`의 D2·D5와 "미확정·PRD 불일치" 절 참고. PRD AUTH-005에는 비밀번호 변경 항목이 아직 없어 이번 이슈에서 함께 추가한다. 비밀번호 분실 재설정은 Issue #115·#116, OAuth 전용 회원의 비밀번호 최초 설정은 범위 밖이다.
