@@ -1,6 +1,6 @@
 # Tasks: 프로젝트 기반 잔여 작업
 
-- [x] compose.yaml에 Redis·Kafka 추가 + spring-boot-starter-data-redis 의존성 + Testcontainers Redis 싱글턴 (+ 연결 스모크 통합 테스트) — 이슈 #31
+- [x] compose.yaml에 Redis·Kafka 추가 + spring-boot-starter-data-redis 의존성 + Testcontainers Redis 싱글턴 (+ 연결 스모크 통합 테스트) — 이슈 #31 (→ Kafka는 이슈 #123에서 제거, 현재 compose.yaml에는 MySQL·Redis만 있다)
 - [x] QueryDSL Gradle 설정 (`compileJava` 통과 확인) — 이슈 #31
 - [x] common 오류 체계 — ErrorCode enum(PRD §5 전체) + BusinessException + ErrorResponse + GlobalExceptionHandler + RequestIdFilter (+ @WebMvcTest) — 이슈 #32
 - [x] 주입 가능한 Clock 빈 (Asia/Seoul) + 고정 Clock 테스트 예시 (+ 단위 테스트) — 이슈 #33
