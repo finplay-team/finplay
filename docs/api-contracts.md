@@ -414,7 +414,7 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 | Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|---|
-| GET | /api/ai/post-sell/{tradeId} | Access Bearer 필수 | 경로 변수 `tradeId`만(쿼리·본문 없음) | 200 `{"tradeId":2,"instrumentId":1,"symbol":"005930","name":"삼성전자","buyPrice":70000,"sellPrice":68500,"quantity":10,"fee":205,"realizedPnl":-15205,"returnRate":-0.0217,"holdingMinutes":265,"sameSessionCompleted":true,"holdHighPrice":70800,"holdHighAt":"2026-07-29T11:05:00","holdLowPrice":68100,"holdLowAt":"2026-07-29T14:20:00","sellVsHighRate":-0.0325,"sellVsLowRate":0.0059,"buyToNewsMinutes":105,"priceMoves":[{"id":12,"windowStart":"2026-07-29T11:20:00","windowEnd":"2026-07-29T11:25:00","changeRate":-0.0182,"minutesAfterBuy":110,"minutesBeforeSell":195,"narrative":"...","sources":[...]}],"postSellFlow":{"status":"READY","closePrice":69200,"closeAt":"2026-07-29T15:30:00","sellToCloseRate":0.0102,"postSellHighPrice":69500,"postSellHighAt":"2026-07-29T15:05:00"},"narrative":"09시 30분 매수는 이날 하락 구간(11시 20분)보다 1시간 50분 앞섰습니다. 하락 이후에도 3시간 넘게 보유하다 14시 40분에 68,500원에 매도했습니다. 보유 중 최고가는 11시 5분의 70,800원으로 하락이 시작되기 15분 전이었고, 매도가는 그보다 3.2% 낮습니다.","narrativeStatus":"READY"}` (`PostSellFeedbackResponse`) | Access 인증 실패는 401 `UNAUTHORIZED`. `tradeId` 미존재는 404 `NOT_FOUND`. 타인 체결은 403 `FORBIDDEN`. 매수 체결(`side=BUY`)은 400 `VALIDATION_ERROR` 공통 오류 형식 | 012 FEED-007 |
+| GET | /api/ai/post-sell/{tradeId} | Access Bearer 필수 | 경로 변수 `tradeId`만(쿼리·본문 없음) | 200 `{"tradeId":2,"instrumentId":1,"symbol":"005930","name":"삼성전자","buyPrice":70000,"sellPrice":68500,"quantity":10,"fee":205,"realizedPnl":-15205,"returnRate":-0.0217,"holdingMinutes":265,"sameSessionCompleted":true,"holdHighPrice":70800,"holdHighAt":"2026-07-29T11:05:00","holdLowPrice":68100,"holdLowAt":"2026-07-29T14:20:00","sellVsHighRate":-0.0325,"sellVsLowRate":0.0059,"buyToNewsMinutes":105,"priceMoves":[{"id":12,"windowStart":"2026-07-29T11:20:00","windowEnd":"2026-07-29T11:25:00","changeRate":-0.0182,"minutesAfterBuy":110,"minutesBeforeSell":195,"narrative":"...","sources":[...]}],"postSellFlow":{"status":"READY","closePrice":69200,"closeAt":"2026-07-29T15:30:00","sellToCloseRate":0.0102,"postSellHighPrice":69500,"postSellHighAt":"2026-07-29T15:05:00"},"counterfactuals":{"status":"READY","atClose":{"price":69200,"at":"2026-07-29T15:30:00","returnRate":-0.0110},"atHoldHigh":{"price":70800,"at":"2026-07-29T11:05:00","returnRate":0.0114},"atFirstMoveAfterBuy":{"price":69300,"at":"2026-07-29T11:25:00","returnRate":-0.0096}},"peerComparison":{"status":"READY","holderCount":47,"soldWithin30MinRate":0.38,"medianMinutesToSell":42,"yourMinutesToSell":195},"narrative":"09시 30분 매수는 이날 하락 구간(11시 20분)보다 1시간 50분 앞섰습니다. 하락 이후에도 3시간 넘게 보유하다 14시 40분에 68,500원에 매도했습니다. 보유 중 최고가는 11시 5분의 70,800원으로 하락이 시작되기 15분 전이었고, 매도가는 그보다 3.2% 낮습니다.","narrativeStatus":"READY"}` (`PostSellFeedbackResponse`) | Access 인증 실패는 401 `UNAUTHORIZED`. `tradeId` 미존재는 404 `NOT_FOUND`. 타인 체결은 403 `FORBIDDEN`. 매수 체결(`side=BUY`)은 400 `VALIDATION_ERROR` 공통 오류 형식 | 012 FEED-007 |
 
 조회 대상은 요청에서 받지 않고 Access Token의 인증 사용자 본인 소유 매도 체결로만 결정한다.
 
@@ -435,6 +435,16 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 | `postSellFlow` | 매도 후 같은 거래일 종가까지의 흐름 (아래 참고) |
 
 **`postSellFlow`는 장 마감 이후에만 채워진다.** 14:40에 매도하고 14:41에 조회하면 15:30까지의 가격은 아직 재생되지 않은 미래다. 그걸 보여주면 사용자가 같은 종목을 재매수할 때 답을 아는 상태가 된다. `now() >= 서비스 날짜 15:30`이 아니면 `status="NOT_YET"`이고 가격 필드는 전부 `null`이다. 마감 후 첫 조회에서 `status="READY"`가 되며 이때 서술도 한 번 재생성된다.
+
+**`counterfactuals` — 재생 서비스만 할 수 있는 기능이다.** 같은 수량을 다른 시점에 팔았다면 수익률이 얼마였을지를 세 시나리오로 보여준다(`atClose` 종가까지 보유, `atHoldHigh` 보유 중 최고가, `atFirstMoveAfterBuy` 매수 후 첫 변동 시점). 각 수익률은 **수수료를 다시 계산해** 산출한다 — 매도금액 비례라 가격이 바뀌면 수수료도 바뀐다.
+
+**반사실은 AI 서술에 넣지 않는다.** `"안 팔았다면 -1.10%였습니다"`는 사실이지만 "팔지 말걸"을 암시하고, 문구 제약의 가정법 금지와 부딪힌다. 숫자를 구조화 필드로만 내려보내 화면이 표로 나란히 놓고 해석은 사용자가 한다. 실제 증권사는 오후 가격을 모르므로 이 기능을 그날 안에 제공할 수 없다 — 기존 명세에 `ai/d7`이 있는 이유다.
+
+**`peerComparison` — 모든 회원이 같은 분봉을 보기 때문에 성립한다.** 같은 변동 구간을 겪은 다른 회원들이 어떻게 행동했는지를 익명 집계로 보여준다. `holderCount`가 **5 미만이면 `status="INSUFFICIENT_SAMPLE"`**이고 지표는 전부 `null`이다(기존 명세의 "유사 사례 5건 이상일 때만 노출" 관행). 회원 ID·닉네임·개별 체결은 어떤 형태로도 포함하지 않는다. 집단 비교는 관측된 사실이므로 AI 서술에 포함해도 된다.
+
+**`counterfactuals`와 `peerComparison`도 장 마감 이후에만 채워진다.** 반사실은 아직 재생되지 않은 가격을 쓰므로 미래 정보고, 집단 비교는 장중에 계속 바뀌어 확정 집계가 되지 않는다. 그 전에는 각각 `status="NOT_YET"`이다.
+
+결과적으로 **매도 직후와 장 마감 후에 보이는 내용이 다르다** — 직후에는 수치·파생 사실·뉴스 카드만, 마감 후에 반사실과 집단 비교가 더해진다. 스포일러 차단의 부수 효과이자 의도된 재방문 유도이므로, 화면은 `NOT_YET`일 때 "장 마감 후 다시 확인" 안내를 노출한다.
 
 **`sameSessionCompleted`가 응답 형태를 가른다.** 매수와 매도가 같은 원본 거래일 안에서 완결됐으면 `true`이고 `highestPrice`·`highestPriceAt`·`lowestPrice`·`lowestPriceAt`·`priceMoves`가 채워진다. 여러 재생일에 걸친 매매는 `false`이며 위 파생 필드가 전부 `null`(`priceMoves`는 `[]`)이 된다 — 분봉이 불연속이라 계산이 성립하지 않는다 — 재생일마다 원본 거래일이 달라 가격·뉴스 타임라인이 불연속이므로 억지로 이어 붙이지 않는다. 코인은 실시간이라 항상 `true`다.
 
