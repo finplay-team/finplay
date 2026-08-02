@@ -40,7 +40,17 @@
 - `EmailSender.sendPasswordResetCode(toEmail, code)`를 추가하고 `ResendEmailSender`(제목 `[FinPlay] 비밀번호 재설정 인증번호`, 본문에 용도 명시 + "요청하지 않았다면 무시" + 코드 타인 공유 금지 안내)·`FakeEmailSender`(로그 문구 구분)에 구현했다. 기존 `sendVerificationCode`와 상수·`buildHtml`은 그대로 두어 가입 인증·이메일 변경이 계속 쓴다.
 - `FakeEmailSender.SentEmail` record는 **바꾸지 않았다** — 용도 필드를 넣으면 `FakeEmailSenderTest`의 2인자 생성자 호출 4곳이 컴파일 실패하는데, 용도 검증은 Mockito `verify(emailSender).sendPasswordResetCode(...)`로 이미 가능해 record 변경의 실익이 없다. `getLastSentEmail().code()` 경로도 그대로 유지된다.
 - `PasswordResetService.sendResetCode`는 발송 호출 한 줄만 새 메서드로 바꿨고 판정 순서·트랜잭션·HMAC은 손대지 않았다.
-- **기존 테스트가 깨진다(컴파일은 통과, 실행 실패)** — `PasswordResetServiceTest` 5건(`verify`/`doThrow` 대상이 구 메서드: 81·215·252·273·490행)과 `PasswordResetIntegrationTest` 발송 실패 시나리오 2건(175·236행 `doThrow ... sendVerificationCode`)이 새 메서드로 바뀌어야 한다. `never()` 단정 5곳(113·127·144·163·525행)도 새 메서드 기준으로 옮겨야 검증력이 유지된다.
+- 당시 `PasswordResetServiceTest` 5건·`PasswordResetIntegrationTest` 2건이 구 메서드를 stub·verify해 실행 실패했고 tester가 새 메서드 기준으로 고쳤다(현재 27/27 통과).
+
+### QA 경쟁 조건 수정: 확인 대상 조회에 비관적 쓰기 잠금
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| implementer | implementer | `gradlew.bat -p <root> test --tests "*PasswordResetVerificationRepositoryTest"` — 11/11 통과, 생성 SQL에 `... order by created_at desc limit ? for update` 확인(MySQL 8.4 Testcontainers 실제 기동); `--tests "*PasswordResetConfirmIntegrationTest" --tests "*PasswordResetServiceTest"` — 11/11·27/27 통과 | QA 실측(동시 5건 → `attempt_count` 1), issue-116-plan.md D1(판정 순서·증가 전 값 기준 한도)·D3(`noRollbackFor`로 증가분 커밋), ADR-0002 |
+
+- `findFirstByEmailAndCodeHashIsNotNullOrderByCreatedAtDesc`에 `@Lock(PESSIMISTIC_WRITE)`만 붙였다 — 서비스 로직·판정 순서·오류 코드를 한 줄도 바꾸지 않아 관찰 가능한 동작 4가지(판정 순서, 6번째 시도 429 + `attempt_count` 6, 성공 경로 미증가, 실패 시 증가분 커밋)가 그대로 보존되고 읽기-판정-증가만 행 잠금 안에서 직렬화된다. 원자적 `@Modifying UPDATE` + 재조회 방식은 "증가 전 값으로 한도 판정" 규칙 때문에 분기별 증가 여부를 다시 짜야 해 동작 보존 위험이 더 크다고 보고 채택하지 않았다.
+- 잠금 범위 확인 — 이 쿼리의 유일한 호출자는 `PasswordResetService.validateAndConsumeCode`이고, 그 유일한 호출자인 `AuthService.confirmPasswordReset`이 `@Transactional`이라 잠금이 커밋까지 유지된다. `validateAndConsumeCode`는 여전히 `@Transactional` 미선언이다.
+- `sendResetCode`가 쓰는 `countByEmailAndCreatedAtAfter`·`findByEmail...ExpiresAtAfter`와 `EmailVerificationService`·`EmailChangeService`는 손대지 않았다(#121).
 
 ### 리뷰: PR 전체 코드 리뷰 (Issue #116)
 

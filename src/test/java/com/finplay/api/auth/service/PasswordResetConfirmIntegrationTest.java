@@ -23,9 +23,15 @@ import com.finplay.api.auth.repository.SocialAccountRepository;
 import com.finplay.api.auth.repository.UserRepository;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -38,6 +44,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 // @Transactional을 붙이지 않는다 — 이 테스트의 핵심이 "예외가 나가고도 커밋되는가"라서 롤백시키면 검증 자체가 사라진다.
 @SpringBootTest
@@ -78,6 +87,9 @@ class PasswordResetConfirmIntegrationTest {
 
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
+
+	@Autowired
+	private PlatformTransactionManager transactionManager;
 
 	@Autowired
 	private Clock clock;
@@ -172,6 +184,120 @@ class PasswordResetConfirmIntegrationTest {
 		assertThat(passwordHashOf(user.getId())).isEqualTo(storedHash);
 		login(user.getEmail(), PASSWORD).andExpect(status().isOk());
 		login(user.getEmail(), NEW_PASSWORD).andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	@DisplayName("동시에 들어온 오답 5건이 시도 1회로 뭉개지지 않고 각각 attempt_count에 반영된다")
+	void concurrentWrongCodeAttemptsAreEachCountedInsteadOfCollapsingIntoOne() throws Exception {
+		// 회귀 대상 — 잠금 없이 읽으면 동시 요청이 같은 attempt_count를 읽고 같은 값 + 1을 써서 N건이 1회로 계산된다.
+		// QA는 수정 전 코드에서 이 시나리오의 실측값으로 1을 얻었다. 그러면 5회 제한에 영원히 도달하지 못한다.
+		User user = persistEmailUser("confirm-concurrent-count");
+		String storedHash = passwordHashOf(user.getId());
+		String code = sendCode(user.getEmail());
+		int concurrency = 5;
+
+		List<Integer> statuses = fireConcurrentConfirms(user.getEmail(), wrongCodeFor(code), concurrency);
+
+		// 5건 모두 한도 안이므로 전부 400이고, 유실 없이 정확히 5회로 세어져야 한다.
+		assertThat(statuses).hasSize(concurrency).containsOnly(400);
+		assertThat(attemptCountOf(user.getEmail())).isEqualTo(concurrency);
+		assertThat(consumedAtOf(user.getEmail())).isNull();
+		assertThat(passwordHashOf(user.getId())).isEqualTo(storedHash);
+	}
+
+	@Test
+	@DisplayName("동시 6건을 쏴도 코드를 대조해 보는 요청은 5건뿐이고 6번째는 429와 함께 인증번호를 무효화한다")
+	void concurrentAttemptsCannotOvershootTheFiveAttemptLimit() throws Exception {
+		User user = persistEmailUser("confirm-concurrent-limit");
+		String storedHash = passwordHashOf(user.getId());
+		String code = sendCode(user.getEmail());
+
+		List<Integer> statuses = fireConcurrentConfirms(user.getEmail(), wrongCodeFor(code), 6);
+
+		// 행 잠금으로 직렬화되면 순서는 하나뿐이다 — 1~5번째는 한도 안의 오답이라 400,
+		// 6번째는 attempt_count가 5에 도달해 코드를 대조해 보지도 못하고 429 + 즉시 무효화다.
+		// 잠금이 없으면 6건이 같은 값을 읽어 전부 400이 되고 429가 한 건도 나오지 않는다.
+		assertThat(statuses).filteredOn(status -> status == 400).hasSize(5);
+		assertThat(statuses).filteredOn(status -> status == 429).hasSize(1);
+		assertThat(attemptCountOf(user.getEmail())).isEqualTo(6);
+		assertThat(latestSentRow(user.getEmail()).getExpiresAt()).isBeforeOrEqualTo(LocalDateTime.now(clock));
+
+		// 무효화 이후에는 정답도 통하지 않는다.
+		confirmExpectingError(user.getEmail(), code, NEW_PASSWORD, 400, "EMAIL_VERIFICATION_FAILED");
+		assertThat(passwordHashOf(user.getId())).isEqualTo(storedHash);
+		login(user.getEmail(), PASSWORD).andExpect(status().isOk());
+	}
+
+	@Test
+	@DisplayName("한도를 크게 넘긴 동시 버스트에서도 코드가 무효화된 채로 끝나고 정답이 거부된다")
+	void largeConcurrentBurstStillEndsWithTheCodeInvalidated() throws Exception {
+		// 6건을 넘는 버스트의 꼬리 응답은 429일 수도 400일 수도 있다 — now가 행 잠금을 잡기 전에 찍히기 때문이다.
+		// 그래서 개수 대신 "한도에 도달했고 인증번호가 죽었다"는 최종 상태만 단정한다.
+		User user = persistEmailUser("confirm-concurrent-burst");
+		String storedHash = passwordHashOf(user.getId());
+		String code = sendCode(user.getEmail());
+
+		List<Integer> statuses = fireConcurrentConfirms(user.getEmail(), wrongCodeFor(code), 8);
+
+		// 잠금이 없으면 8건이 시도 1~2회로 뭉개져 한도에 닿지 못하고 429가 하나도 나오지 않는다.
+		assertThat(statuses).contains(429);
+		assertThat(statuses).allMatch(status -> status == 400 || status == 429);
+		assertThat(attemptCountOf(user.getEmail())).isGreaterThanOrEqualTo(6);
+		assertThat(latestSentRow(user.getEmail()).getExpiresAt()).isBeforeOrEqualTo(LocalDateTime.now(clock));
+
+		confirmExpectingError(user.getEmail(), code, NEW_PASSWORD, 400, "EMAIL_VERIFICATION_FAILED");
+		assertThat(passwordHashOf(user.getId())).isEqualTo(storedHash);
+	}
+
+	@Test
+	@DisplayName("확인 대상 조회는 앞선 트랜잭션이 커밋할 때까지 다음 읽기를 막아 읽기-판정-증가를 직렬화한다")
+	void lockedLookupBlocksConcurrentReadUntilTheFirstTransactionCommits() throws Exception {
+		// 위 두 동시성 테스트가 기대는 메커니즘을 직접 관찰한다.
+		// 조회에서 행 잠금이 빠지면 두 번째 읽기가 즉시 끝나 같은 값을 보고, 아래 await 단정이 먼저 깨진다.
+		User user = persistEmailUser("confirm-lock-serializes");
+		sendCode(user.getEmail());
+		String email = user.getEmail();
+
+		CountDownLatch firstHoldsLock = new CountDownLatch(1);
+		CountDownLatch releaseFirst = new CountDownLatch(1);
+		CountDownLatch secondFinishedReading = new CountDownLatch(1);
+		ExecutorService pool = Executors.newFixedThreadPool(2);
+
+		try {
+			Future<?> first = pool.submit(() -> newTransaction().execute(status -> {
+				PasswordResetVerification row = lockedLookup(email);
+				row.incrementAttemptCount();
+				passwordResetVerificationRepository.saveAndFlush(row);
+				firstHoldsLock.countDown();
+				awaitLatch(releaseFirst);
+				return null;
+			}));
+			assertThat(firstHoldsLock.await(30, TimeUnit.SECONDS)).isTrue();
+
+			Future<Integer> second = pool.submit(() -> newTransaction().execute(status -> {
+				PasswordResetVerification row = lockedLookup(email);
+				secondFinishedReading.countDown();
+				int observed = row.getAttemptCount();
+				row.incrementAttemptCount();
+				passwordResetVerificationRepository.saveAndFlush(row);
+				return observed;
+			}));
+
+			// 첫 트랜잭션이 아직 커밋하지 않았으므로 두 번째 읽기는 끝나 있으면 안 된다.
+			assertThat(secondFinishedReading.await(1, TimeUnit.SECONDS))
+				.as("잠금이 없으면 두 번째 트랜잭션이 곧바로 같은 행을 읽어 증가분이 유실된다")
+				.isFalse();
+
+			releaseFirst.countDown();
+			first.get(30, TimeUnit.SECONDS);
+			// 잠금이 풀린 뒤에야 읽으므로 첫 트랜잭션의 결과(1)를 보고 2를 쓴다.
+			assertThat(second.get(30, TimeUnit.SECONDS)).isEqualTo(1);
+		} finally {
+			releaseFirst.countDown();
+			pool.shutdownNow();
+		}
+
+		assertThat(attemptCountOf(email)).isEqualTo(2);
 	}
 
 	@Test
@@ -340,6 +466,58 @@ class PasswordResetConfirmIntegrationTest {
 			.toList();
 		assertThat(sent).isNotEmpty();
 		return sent.get(sent.size() - 1).code();
+	}
+
+	private PasswordResetVerification lockedLookup(String email) {
+		return passwordResetVerificationRepository
+			.findFirstByEmailAndCodeHashIsNotNullOrderByCreatedAtDesc(email)
+			.orElseThrow();
+	}
+
+	private TransactionTemplate newTransaction() {
+		TransactionTemplate template = new TransactionTemplate(transactionManager);
+		template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+		return template;
+	}
+
+	private static void awaitLatch(CountDownLatch latch) {
+		try {
+			latch.await(30, TimeUnit.SECONDS);
+		} catch (InterruptedException ex) {
+			Thread.currentThread().interrupt();
+			throw new IllegalStateException(ex);
+		}
+	}
+
+	// 같은 이메일·같은 코드로 동시에 확인 요청을 쏘고 각 응답 상태를 모은다.
+	// 커넥션 풀 기본값(10)을 넘기지 않도록 동시 요청 수는 여유를 두고 잡는다.
+	private List<Integer> fireConcurrentConfirms(String email, String code, int count) throws Exception {
+		ExecutorService pool = Executors.newFixedThreadPool(count);
+		CountDownLatch startGate = new CountDownLatch(1);
+		try {
+			List<Future<Integer>> futures = new ArrayList<>();
+			for (int i = 0; i < count; i++) {
+				futures.add(pool.submit(() -> {
+					// 모든 스레드가 준비된 뒤 동시에 출발해야 겹침이 최대가 된다.
+					startGate.await();
+					return mockMvc.perform(post(CONFIRM_PATH)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(confirmBody(email, code, NEW_PASSWORD)))
+						.andReturn()
+						.getResponse()
+						.getStatus();
+				}));
+			}
+			startGate.countDown();
+
+			List<Integer> statuses = new ArrayList<>();
+			for (Future<Integer> future : futures) {
+				statuses.add(future.get(60, TimeUnit.SECONDS));
+			}
+			return statuses;
+		} finally {
+			pool.shutdownNow();
+		}
 	}
 
 	private void confirmExpectingNoContent(String email, String code, String newPassword) throws Exception {
