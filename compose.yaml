@@ -15,10 +15,3 @@ services:
     ports:
       # 로컬 Redis(6379)와 충돌하지 않는 포트. spring-boot-docker-compose가 자동 감지한다.
       - "16379:6379"
-
-  # Kafka는 2차(PRD §7) 준비용. 1차 업무 코드는 사용하지 않으며 앱 의존성·기동 조건에서 제외한다.
-  # (spring-kafka 미의존이라 앱은 이 컨테이너에 연결을 시도하지 않는다.)
-  kafka:
-    image: apache/kafka:3.9.1
-    ports:
-      - "19092:9092"

@@ -37,9 +37,9 @@
 - compose.yaml에 `redis:7.4` 서비스 추가. 호스트 포트는 기존 사용 포트(3306·13306·13307·6379 로컬 점유 가능성)와 충돌하지 않게 구현 시 확인 후 지정한다. spring-boot-docker-compose가 매핑 포트를 자동 감지하므로 앱 설정은 불필요.
 - Testcontainers: `TestcontainersConfiguration`에 Redis 컨테이너를 MySQL과 같은 static 싱글턴으로 추가. 이미지 태그 고정 (`redis:7.4`, `latest` 금지 — ADR-0003 준용).
 
-### Kafka (준비만)
+### Kafka
 
-- compose.yaml에 컨테이너 추가하되 앱의 `depends_on`·설정·의존성에서 제외. 1차 업무 코드 미사용 (PRD §7).
+- 1차 범위에서 다루지 않는다. 이슈 #31에서 compose.yaml에 준비용 컨테이너를 넣었으나, 쓰지 않는 컨테이너가 로컬 기동만 느리게 한다는 팀 실측에 따라 **이슈 #123에서 제거**했다. 2차 도입 시 컨테이너와 의존성을 함께 추가한다.
 
 ### QueryDSL
 
