@@ -50,6 +50,7 @@ public class AuthService {
 	private final SocialAccountRepository socialAccountRepository;
 	private final ReauthTokenRepository reauthTokenRepository;
 	private final EmailChangeService emailChangeService;
+	private final PasswordResetService passwordResetService;
 	private final PasswordEncoder passwordEncoder;
 	private final AccountService accountService;
 	private final JwtTokenProvider jwtTokenProvider;
@@ -64,6 +65,7 @@ public class AuthService {
 		SocialAccountRepository socialAccountRepository,
 		ReauthTokenRepository reauthTokenRepository,
 		EmailChangeService emailChangeService,
+		PasswordResetService passwordResetService,
 		PasswordEncoder passwordEncoder,
 		AccountService accountService,
 		JwtTokenProvider jwtTokenProvider,
@@ -76,6 +78,7 @@ public class AuthService {
 		this.socialAccountRepository = socialAccountRepository;
 		this.reauthTokenRepository = reauthTokenRepository;
 		this.emailChangeService = emailChangeService;
+		this.passwordResetService = passwordResetService;
 		this.passwordEncoder = passwordEncoder;
 		this.accountService = accountService;
 		this.jwtTokenProvider = jwtTokenProvider;
@@ -248,6 +251,21 @@ public class AuthService {
 		// 폐기가 먼저다 — 새 토큰을 먼저 저장하면 revokedAt IS NULL 조건에 그 행까지 걸려 요청 기기도 로그아웃된다.
 		refreshTokenRepository.revokeAllActiveByUserId(userId, now);
 		return issueTokenPair(user, now);
+	}
+
+	// 인증번호 검증·소비 → 해시 교체 → Refresh Token 전체 폐기를 한 트랜잭션으로 묶는다.
+	// 검증 실패의 시도 횟수 증가분은 커밋해야 무차별 대입 방지가 유지되므로 BusinessException에 롤백하지 않는다.
+	// 모든 예외 발생 지점이 소비·교체·폐기보다 앞이라 부분 성공 상태가 만들어지지 않는다.
+	@Transactional(noRollbackFor = BusinessException.class)
+	public void confirmPasswordReset(String email, String code, String newPassword) {
+		LocalDateTime now = LocalDateTime.now(clock);
+		User user = passwordResetService.validateAndConsumeCode(email, code);
+
+		user.changePassword(passwordEncoder.encode(newPassword), now);
+		userRepository.saveAndFlush(user);
+
+		// 비로그인 흐름이라 발급할 대상 세션이 없다 — 폐기만 하고 새 토큰 쌍은 만들지 않는다(항상 전 기기 로그아웃).
+		refreshTokenRepository.revokeAllActiveByUserId(user.getId(), now);
 	}
 
 	@Transactional

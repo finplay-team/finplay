@@ -29,7 +29,8 @@ public class SecurityConfig {
 		"/api/auth/refresh",
 		"/api/auth/email-verifications",
 		"/api/auth/email-verifications/confirm",
-		"/api/auth/password-resets"
+		"/api/auth/password-resets",
+		"/api/auth/password-resets/confirm"
 	};
 
 	private static final String[] PUBLIC_GET_PATHS = {

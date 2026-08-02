@@ -20,6 +20,17 @@
 - `MAX_VERIFICATION_ATTEMPTS = 5`만 상수로 추가했고 `hmac`·`generateCode`·`checkSendRateLimit` 등 기존 private 메서드와 `sendResetCode`는 수정하지 않았다(U6대로 4중 중복 공통화는 하지 않음). 클래스 파일 헤더 주석에 "확인 시 검증·소비"를 덧붙인 것이 유일한 부수 변경이다.
 - `AuthService`·컨트롤러·DTO·`SecurityConfig`(Task 3), 통합 테스트(Task 4), 문서 동기화(Task 5)는 범위 밖이라 손대지 않았다. controller 변경이 없어 `docs/api-routes.md`·`docs/api-contracts.md`도 갱신하지 않았다.
 
+### Task 3: `AuthService.confirmPasswordReset`·컨트롤러·공개 경로
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| implementer | implementer | `gradlew.bat -p <root> compileJava spotlessCheck` — `BUILD SUCCESSFUL`(신규 파일 LF라 `spotlessApply` 선행); `compileTestJava` — 기존 `AuthServiceTest`·`OAuthAuthServiceTest`의 `new AuthService(...)` 인자 수 불일치 2건 확인(tester 인계) | issue-116-plan.md D3(`noRollbackFor`만·`saveAndFlush` → `revokeAllActiveByUserId` 순서)·D4(새 토큰 미발급·204)·D5(요청 DTO), Architecture(`SecurityConfig` 경로 정확 일치), CLAUDE.md 규칙 7 |
+
+- `AuthService.confirmPasswordReset`은 `changePassword`(#114)를 베끼지 않고 새로 썼다 — 폐기 후 `issueTokenPair`를 호출하지 않아 항상 전 기기 로그아웃이고, `void` 반환이라 `jwtTokenProvider`를 건드리지 않는다. `rollbackFor` 서브타입(#56의 `EmailChangeConflictException`)은 `password_hash`에 유니크 제약이 없어 만들지 않았다.
+- `PasswordResetConfirmRequest`(email·`\d{6}` code·newPassword 8~100자)와 `PasswordResetController.confirmReset`(`POST /confirm`, 204 본문 없음, `AuthService` 신규 주입)을 추가하고 `PUBLIC_POST_PATHS`에 `/api/auth/password-resets/confirm`을 별도 항목으로 넣었다(접두 매칭이 아니라 정확 일치라 필요).
+- `docs/api-routes.md`(라우트 행 + 공개 경로 행)와 `docs/api-contracts.md`("비밀번호 재설정 확인 및 적용" 절 신설, Access Token 잔존 한계 명시)를 함께 갱신했다. PRD 갱신은 Task 5 범위라 손대지 않았다.
+- **기존 테스트 2개가 컴파일 실패한다** — `AuthService` 생성자에 `PasswordResetService`가 추가되어 `AuthServiceTest:108`·`OAuthAuthServiceTest:71`의 `new AuthService(...)` 인자 목록을 고쳐야 한다. `PasswordResetControllerTest`도 `AuthService` `@MockitoBean` 추가가 필요하다(컴파일은 통과하나 컨텍스트 기동 실패).
+
 ## Issue #115
 
 ### Task 1: `password_reset_verifications` 스키마·엔티티·리포지터리와 `SOCIAL_ACCOUNT_ONLY`·`PASSWORD_RESET_SECRET` 배선
