@@ -77,11 +77,19 @@ tasks.withType(Test).configureEach {
 	// ConfigDataEnvironmentPostProcessor(SpringApplication 부트스트랩, 즉 @SpringBootTest)만 해석하므로
 	// ApplicationContextRunner에는 영향이 없다.
 	systemProperty 'spring.config.additional-location', 'classpath:/bithumb-feed-simulator-disabled-for-tests.yml'
-	// 테스트 DB 커넥션 타임아웃을 Hikari 기본값 30초에서 5초로 줄인다 (이슈 #119 완화책).
+	// 테스트 DB 커넥션 타임아웃을 Hikari 기본값 30초에서 10초로 줄인다 (이슈 #119 완화책).
 	// 공유 Testcontainers MySQL이 실행 중 교체되면 그 전에 만들어진 컨텍스트는 옛 포트를 물고 있어 반드시 실패하는데,
 	// 기본값이면 테스트 1건마다 30초를 헛되이 기다린다 — 실측에서 9건 실패에 4분 30초가 이 대기에만 쓰였다.
-	// 로컬 컨테이너 접속은 수십 ms라 5초도 100배 여유다. 근본 원인 수정은 별도이며 이건 실패 비용만 줄인다.
-	systemProperty 'spring.datasource.hikari.connection-timeout', '5000'
+	//
+	// 처음에 5초로 잡았다가 PR #127 리뷰 지적으로 10초로 올렸다. agent-mistakes.md(2026-07-30)에 같은 실패
+	// 시그니처가 "호스트 리소스 경합으로 지연되다 결국 성공"한 사례로 남아 있고, 이 팀은 여러 워크트리에서
+	// 병렬로 build를 돌린다(docs/parallel-agents.md). 5초는 그런 케이스를 새 오탐 실패로 바꿀 여지가 있다.
+	// 10초는 정상 접속(로컬 컨테이너 수십 ms) 대비 200배 이상 여유이면서 낭비 대기를 3분의 1로 줄인다.
+	//
+	// 경합이 심한 환경에서 오탐이 관찰되면 build.gradle을 고치지 말고 프로퍼티로 올린다:
+	//   ./gradlew test -PtestDbConnectionTimeoutMs=30000
+	systemProperty 'spring.datasource.hikari.connection-timeout',
+		(findProperty('testDbConnectionTimeoutMs') ?: '10000')
 	finalizedBy tasks.jacocoTestReport
 }
 
