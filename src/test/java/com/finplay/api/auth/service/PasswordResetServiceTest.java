@@ -1,4 +1,5 @@
-// 비밀번호 재설정 발송의 판정 순서(제한 → 존재 → 가입 방식)·거부 요청 집계 행·HMAC 저장(원문 미저장)·이전 코드 무효화를 검증하는 단위 테스트 (ADR-0003)
+// 비밀번호 재설정 발송의 판정 순서(제한 → 존재 → 가입 방식)·거부 요청 집계 행·HMAC 저장(원문 미저장)·이전 코드 무효화와
+// 확인의 판정 순서(인증번호 → 계정 상태)·시도 횟수 증가·성공 시에만 소비를 검증하는 단위 테스트 (ADR-0003)
 package com.finplay.api.auth.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -35,6 +36,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
 class PasswordResetServiceTest {
@@ -277,6 +279,239 @@ class PasswordResetServiceTest {
 			assertThat(sentCodes.get(i)).matches("\\d{6}");
 			assertThat(saved.get(i).getCodeHash()).isEqualTo(hmac(SECRET, sentCodes.get(i)));
 		}
+	}
+
+	@Test
+	@DisplayName("확인: 발송 행이 없으면 400 EMAIL_VERIFICATION_FAILED이고 계정 조회조차 하지 않는다")
+	void validateFailsWithVerificationFailedWhenNoSentRowExists() {
+		when(passwordResetVerificationRepository.findFirstByEmailAndCodeHashIsNotNullOrderByCreatedAtDesc(EMAIL))
+			.thenReturn(Optional.empty());
+
+		assertVerificationFailed("123456");
+
+		// 요청 이력이 없다는 사실만으로 계정 상태를 조회하면 계정 열거 오라클이 된다.
+		verify(userRepository, never()).findByEmail(any());
+	}
+
+	@Test
+	@DisplayName("확인: 이미 소비된 인증번호는 400이고 시도 횟수도 오르지 않는다")
+	void validateFailsWhenVerificationAlreadyConsumed() {
+		PasswordResetVerification consumed = validVerification("123456");
+		ReflectionTestUtils.setField(consumed, "consumedAt", NOW.minusMinutes(1));
+		stubLatestVerification(consumed);
+
+		assertVerificationFailed("123456");
+
+		assertThat(consumed.getAttemptCount()).isZero();
+		verify(userRepository, never()).findByEmail(any());
+	}
+
+	@Test
+	@DisplayName("확인: 만료된 인증번호는 400이며 만료 시각이 기준 시각과 같은 경계값도 만료로 본다")
+	void validateFailsWhenVerificationExpiredIncludingExactBoundary() {
+		// expires_at == now — after가 아니므로 이미 만료다.
+		PasswordResetVerification boundary = PasswordResetVerification
+			.create(EMAIL, hmac(SECRET, "123456"), NOW, NOW.minusMinutes(5));
+		stubLatestVerification(boundary);
+
+		assertVerificationFailed("123456");
+
+		assertThat(boundary.getAttemptCount()).isZero();
+		assertThat(boundary.getConsumedAt()).isNull();
+		verify(userRepository, never()).findByEmail(any());
+	}
+
+	@Test
+	@DisplayName("확인: 재발송으로 무효화된 이전 인증번호는 정답이어도 400이다")
+	void validateFailsForPreviousCodeInvalidatedByResend() {
+		PasswordResetVerification previous = validVerification("123456");
+		// 재발송 시 expire(now)로 무효화된 상태를 그대로 재현한다.
+		previous.expire(NOW);
+		stubLatestVerification(previous);
+
+		assertVerificationFailed("123456");
+
+		assertThat(previous.getConsumedAt()).isNull();
+		verify(userRepository, never()).findByEmail(any());
+	}
+
+	@Test
+	@DisplayName("확인: 시도 횟수가 5회에 도달하면 429이고 증가와 함께 인증번호가 즉시 무효화된다")
+	void validateThrowsTooManyRequestsAndExpiresImmediatelyAtFifthAttempt() {
+		PasswordResetVerification verification = validVerification("123456");
+		for (int i = 0; i < 5; i++) {
+			verification.incrementAttemptCount();
+		}
+		stubLatestVerification(verification);
+
+		// 정답을 보내도 5회 한도가 먼저 걸린다.
+		assertThatThrownBy(() -> service.validateAndConsumeCode(EMAIL, "123456"))
+			.isInstanceOf(BusinessException.class)
+			.extracting(ex -> ((BusinessException)ex).getErrorCode())
+			.isEqualTo(ErrorCode.TOO_MANY_REQUESTS);
+
+		assertThat(verification.getAttemptCount()).isEqualTo(6);
+		assertThat(verification.getExpiresAt()).isEqualTo(NOW);
+		assertThat(verification.getConsumedAt()).isNull();
+		verify(userRepository, never()).findByEmail(any());
+	}
+
+	@Test
+	@DisplayName("확인: 5회 초과로 무효화된 뒤에는 같은 인증번호에 정답을 넣어도 400으로 바뀐다")
+	void validateFailsWithVerificationFailedAfterCodeWasInvalidatedByAttemptLimit() {
+		PasswordResetVerification verification = validVerification("123456");
+		for (int i = 0; i < 5; i++) {
+			verification.incrementAttemptCount();
+		}
+		stubLatestVerification(verification);
+
+		assertThatThrownBy(() -> service.validateAndConsumeCode(EMAIL, "123456"))
+			.isInstanceOf(BusinessException.class);
+		// 두 번째 호출은 expire(now)로 만료된 행을 보므로 429가 아니라 400이다.
+		assertVerificationFailed("123456");
+
+		assertThat(verification.getConsumedAt()).isNull();
+	}
+
+	@Test
+	@DisplayName("확인: 시도 횟수가 4회면 아직 한도 아래라 정답이 통과한다 — 경계")
+	void validateSucceedsWhenAttemptCountIsJustBelowLimit() {
+		PasswordResetVerification verification = validVerification("123456");
+		for (int i = 0; i < 4; i++) {
+			verification.incrementAttemptCount();
+		}
+		stubLatestVerification(verification);
+		User user = passwordUser();
+		when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(user));
+
+		User result = service.validateAndConsumeCode(EMAIL, "123456");
+
+		assertThat(result).isSameAs(user);
+		assertThat(verification.getConsumedAt()).isEqualTo(NOW);
+		// 성공은 시도 횟수를 올리지 않는다.
+		assertThat(verification.getAttemptCount()).isEqualTo(4);
+	}
+
+	@Test
+	@DisplayName("확인: 코드가 불일치하면 400이고 시도 횟수만 오른다 — 소비·만료는 그대로다")
+	void validateFailsAndOnlyIncrementsAttemptCountWhenCodeDoesNotMatch() {
+		PasswordResetVerification verification = validVerification("123456");
+		stubLatestVerification(verification);
+
+		assertVerificationFailed("999999");
+
+		assertThat(verification.getAttemptCount()).isEqualTo(1);
+		assertThat(verification.getConsumedAt()).isNull();
+		assertThat(verification.getExpiresAt()).isEqualTo(NOW.plusMinutes(4));
+	}
+
+	@Test
+	@DisplayName("확인: 코드 불일치는 계정 조회보다 먼저 걸린다 — 미가입 이메일에 틀린 코드를 보내도 계정 조회가 없다")
+	void validateRejectsWrongCodeBeforeTouchingUserRepository() {
+		stubLatestVerification(validVerification("123456"));
+
+		assertVerificationFailed("999999");
+
+		// 계정 상태 판정이 코드 검증보다 앞서면 코드를 모르는 요청자도 가입 여부를 알아낼 수 있다 (D2).
+		// 오류 코드는 순서가 뒤집혀도 같을 수 있으므로(미가입도 400) 조회 호출 자체의 부재로 고정한다.
+		verify(userRepository, never()).findByEmail(any());
+	}
+
+	@Test
+	@DisplayName("확인: 정답이지만 미가입 이메일이면 404가 아니라 400 EMAIL_VERIFICATION_FAILED다")
+	void validateFailsWithVerificationFailedNotNotFoundWhenUserIsMissing() {
+		PasswordResetVerification verification = validVerification("123456");
+		stubLatestVerification(verification);
+		when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.empty());
+
+		// 발송 경로(#115)는 같은 상황에서 404지만 확인 경로는 의도적으로 400이다 — 여기엔 발송 제한이 없어
+		// 404로 구분하면 횟수 제한 없는 계정 열거 오라클이 된다 (D2).
+		assertVerificationFailed("123456");
+
+		assertThat(verification.getConsumedAt()).isNull();
+	}
+
+	@Test
+	@DisplayName("확인: 비밀번호가 없는 소셜 전용 계정은 409이며 인증번호는 소비되지 않는다")
+	void validateFailsWithSocialAccountOnlyAndDoesNotConsumeCode() {
+		PasswordResetVerification verification = validVerification("123456");
+		stubLatestVerification(verification);
+		when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(socialOnlyUser()));
+
+		assertThatThrownBy(() -> service.validateAndConsumeCode(EMAIL, "123456"))
+			.isInstanceOf(BusinessException.class)
+			.extracting(ex -> ((BusinessException)ex).getErrorCode())
+			.isEqualTo(ErrorCode.SOCIAL_ACCOUNT_ONLY);
+
+		// 소비는 모든 판정 이후에만 일어난다 — 여기서 소비되면 인증번호가 낭비된다.
+		assertThat(verification.getConsumedAt()).isNull();
+		assertThat(verification.getAttemptCount()).isZero();
+	}
+
+	@Test
+	@DisplayName("확인: 모든 판정을 통과하면 인증번호를 소비하고 대상 회원을 반환한다")
+	void validateConsumesCodeAndReturnsTargetUserOnSuccess() {
+		PasswordResetVerification verification = validVerification("123456");
+		stubLatestVerification(verification);
+		User user = passwordUser();
+		when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(user));
+
+		User result = service.validateAndConsumeCode(EMAIL, "123456");
+
+		assertThat(result).isSameAs(user);
+		assertThat(verification.getConsumedAt()).isEqualTo(NOW);
+		assertThat(verification.getAttemptCount()).isZero();
+		// 소비만 하고 만료를 앞당기지는 않는다 — 재사용 차단은 consumed_at이 담당한다.
+		assertThat(verification.getExpiresAt()).isEqualTo(NOW.plusMinutes(4));
+	}
+
+	@Test
+	@DisplayName("확인: 같은 인증번호를 두 번 쓰면 두 번째는 소비 상태로 걸려 400이다")
+	void validateRejectsSecondUseOfTheSameCode() {
+		PasswordResetVerification verification = validVerification("123456");
+		stubLatestVerification(verification);
+		when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(passwordUser()));
+
+		service.validateAndConsumeCode(EMAIL, "123456");
+
+		assertVerificationFailed("123456");
+	}
+
+	@Test
+	@DisplayName("확인: 발송이 저장한 해시를 그대로 대조한다 — 발송된 코드는 통과하고 다른 시크릿의 해시는 거부된다")
+	void validateMatchesHashProducedBySendUsingTheSameSecret() {
+		when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(passwordUser()));
+		service.sendResetCode(EMAIL);
+
+		ArgumentCaptor<PasswordResetVerification> savedCaptor = ArgumentCaptor
+			.forClass(PasswordResetVerification.class);
+		ArgumentCaptor<String> sentCodeCaptor = ArgumentCaptor.forClass(String.class);
+		verify(passwordResetVerificationRepository).save(savedCaptor.capture());
+		verify(emailSender).sendVerificationCode(eq(EMAIL), sentCodeCaptor.capture());
+
+		PasswordResetVerification sent = savedCaptor.getValue();
+		String sentCode = sentCodeCaptor.getValue();
+		stubLatestVerification(sent);
+
+		assertThat(service.validateAndConsumeCode(EMAIL, sentCode)).isNotNull();
+		assertThat(sent.getCodeHash()).isNotEqualTo(hmac(OTHER_SECRET, sentCode));
+	}
+
+	private void assertVerificationFailed(String code) {
+		assertThatThrownBy(() -> service.validateAndConsumeCode(EMAIL, code))
+			.isInstanceOf(BusinessException.class)
+			.extracting(ex -> ((BusinessException)ex).getErrorCode())
+			.isEqualTo(ErrorCode.EMAIL_VERIFICATION_FAILED);
+	}
+
+	private void stubLatestVerification(PasswordResetVerification verification) {
+		when(passwordResetVerificationRepository.findFirstByEmailAndCodeHashIsNotNullOrderByCreatedAtDesc(EMAIL))
+			.thenReturn(Optional.of(verification));
+	}
+
+	// 기준 시각 기준으로 아직 유효한(만료 4분 남은) 미소비 발송 행.
+	private static PasswordResetVerification validVerification(String code) {
+		return PasswordResetVerification.create(EMAIL, hmac(SECRET, code), NOW.plusMinutes(4), NOW.minusMinutes(1));
 	}
 
 	private void assertTooManyRequestsWithoutAnySideEffect() {

@@ -10,6 +10,16 @@
 
 - `PasswordResetVerification.incrementAttemptCount()`·`consume(now)`를 `EmailChangeVerification`의 동명 메서드와 동일 시그니처로 추가하고, `PasswordResetVerificationRepository.findFirstByEmailAndCodeHashIsNotNullOrderByCreatedAtDesc`를 추가했다. `attempt_count`·`consumed_at`은 V12에 이미 있어 신규 Flyway 마이그레이션은 없다. controller 변경이 없어 `docs/api-routes.md`·`docs/api-contracts.md`는 갱신하지 않았다.
 
+### Task 2: `PasswordResetService.validateAndConsumeCode` 검증·소비
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| implementer | implementer | `gradlew.bat -p <root> compileJava spotlessCheck --console=plain` — 모두 `BUILD SUCCESSFUL` | issue-116-plan.md D1(판정 순서·`MAX_VERIFICATION_ATTEMPTS`·`hmac` 재사용·`@Transactional` 미선언)·D2(계정 상태 판정을 인증번호 검증 뒤로), `EmailChangeService.validateAndConsumeCode` 선례, conventions.md 서비스 트랜잭션 경계 |
+
+- `EmailChangeService.validateAndConsumeCode`와 같은 구조로 트랜잭션 경계 없이 구현하되, 이 이슈 고유의 (5)(6)단계(회원 존재 400 · `hasPassword()` 409 · 최종 `consume`)를 뒤에 붙이고 재설정 대상 `User`를 반환한다 — 미가입은 발송 엔드포인트의 404와 달리 400이고, 5회 초과는 증가+즉시 만료 후 429다.
+- `MAX_VERIFICATION_ATTEMPTS = 5`만 상수로 추가했고 `hmac`·`generateCode`·`checkSendRateLimit` 등 기존 private 메서드와 `sendResetCode`는 수정하지 않았다(U6대로 4중 중복 공통화는 하지 않음). 클래스 파일 헤더 주석에 "확인 시 검증·소비"를 덧붙인 것이 유일한 부수 변경이다.
+- `AuthService`·컨트롤러·DTO·`SecurityConfig`(Task 3), 통합 테스트(Task 4), 문서 동기화(Task 5)는 범위 밖이라 손대지 않았다. controller 변경이 없어 `docs/api-routes.md`·`docs/api-contracts.md`도 갱신하지 않았다.
+
 ## Issue #115
 
 ### Task 1: `password_reset_verifications` 스키마·엔티티·리포지터리와 `SOCIAL_ACCOUNT_ONLY`·`PASSWORD_RESET_SECRET` 배선
