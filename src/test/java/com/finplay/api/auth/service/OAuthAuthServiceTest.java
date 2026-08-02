@@ -182,10 +182,13 @@ class OAuthAuthServiceTest {
 
 	@Test
 	void oauthOnlyPasswordAlwaysFailsRegularLoginAsUnauthorized() {
-		given(users.findByEmail("oauth@example.com"))
-			.willReturn(Optional.of(user("oauth@example.com", "oauth-only")));
+		User oauthOnly = user("oauth@example.com", "oauth-only");
+		given(users.findByEmail("oauth@example.com")).willReturn(Optional.of(oauthOnly));
+		// 자리표시자 값을 테스트가 알 필요 없이, 저장된 값 자체를 원문 비밀번호로 되보낸다.
+		// 자리표시자가 어떤 원문과도 대조되지 않아야 하므로 이 최악의 추측도 실패해야 한다.
+		String guessedRawPassword = oauthOnly.getPasswordHash();
 
-		assertThatThrownBy(() -> service.login("oauth@example.com", "{oauth-only}"))
+		assertThatThrownBy(() -> service.login("oauth@example.com", guessedRawPassword))
 			.isInstanceOfSatisfying(
 				BusinessException.class,
 				ex -> assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.UNAUTHORIZED));
@@ -222,8 +225,9 @@ class OAuthAuthServiceTest {
 				ErrorCode.OAUTH_EMAIL_REQUIRED));
 	}
 
+	// 프로덕션의 OAuth 가입 경로와 같은 팩토리로 만든다 — 자리표시자 값은 User만 안다.
 	private static User user(String email, String nickname) {
-		User user = User.create(email, "{oauth-only}", nickname, NOW.minusDays(1));
+		User user = User.createOAuthOnly(email, nickname, NOW.minusDays(1));
 		ReflectionTestUtils.setField(user, "id", 7L);
 		return user;
 	}

@@ -113,8 +113,9 @@ public class AuthService {
 		// 원인별로 응답이 갈리면 이메일 존재 여부가 노출된다.
 		User user = userRepository.findByEmail(email)
 			.orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED));
-		if (user.getPasswordHash() == null
-			|| !passwordEncoder.matches(password, user.getPasswordHash())) {
+		// 비밀번호 보유 판정은 hasPassword() 하나로만 한다 (이슈 #122) — NULL 검사만 하면 자리표시자를 가진
+		// 소셜 전용 가입자가 걸러지지 않고 뒤쪽 matches()에만 의존하게 된다. 응답은 어느 쪽이든 UNAUTHORIZED다.
+		if (!user.hasPassword() || !passwordEncoder.matches(password, user.getPasswordHash())) {
 			throw new BusinessException(ErrorCode.UNAUTHORIZED);
 		}
 		// 기존 Refresh Token은 폐기하지 않고 행을 추가만 한다 (다중 기기 로그인 유지, 폐기는 재발급·로그아웃 소관).
@@ -381,8 +382,7 @@ public class AuthService {
 
 	private User saveOAuthUser(String email, String nickname, LocalDateTime now) {
 		try {
-			return userRepository.saveAndFlush(
-				User.create(email, User.OAUTH_ONLY_PASSWORD_SENTINEL, nickname, now));
+			return userRepository.saveAndFlush(User.createOAuthOnly(email, nickname, now));
 		} catch (DataIntegrityViolationException ex) {
 			throw new BusinessException(ErrorCode.DUPLICATE_RESOURCE);
 		}

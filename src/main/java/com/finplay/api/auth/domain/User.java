@@ -19,8 +19,10 @@ import lombok.NoArgsConstructor;
 public class User {
 
 	// OAuth 전용 가입자의 password_hash에 채우는 자리표시자 — 어떤 원문 비밀번호와도 대조되지 않는다.
-	// password_hash 컬럼은 NULL을 허용하지만 실제 생성 경로는 전부 값을 채우므로, 비밀번호 보유 판정은 hasPassword()로 한다.
-	public static final String OAUTH_ONLY_PASSWORD_SENTINEL = "{oauth-only}";
+	// 값을 밖으로 노출하지 않는다. 외부에서 직접 비교하면 "NULL이면 비밀번호 없음" 같은 잘못된 판정이 재유입된다
+	// (PR #118에서 실제로 소셜 전용 계정에 재설정 인증번호가 발송된 결함이 났다 — 이슈 #122).
+	// 생성은 createOAuthOnly, 판정은 hasPassword() 하나로만 한다.
+	private static final String OAUTH_ONLY_PASSWORD_SENTINEL = "{oauth-only}";
 
 	private static final String DEFAULT_ROLE = "USER";
 	private static final String DEFAULT_STATUS = "ACTIVE";
@@ -62,6 +64,12 @@ public class User {
 
 	public static User create(String email, String passwordHash, String nickname, LocalDateTime now) {
 		return new User(email, passwordHash, nickname, now);
+	}
+
+	// OAuth 전용 가입자를 만든다 — 비밀번호가 없으므로 자리표시자를 엔티티가 직접 채운다.
+	// 호출부가 자리표시자 값을 알 필요도, 넘길 필요도 없다.
+	public static User createOAuthOnly(String email, String nickname, LocalDateTime now) {
+		return new User(email, OAUTH_ONLY_PASSWORD_SENTINEL, nickname, now);
 	}
 
 	// 재설정·변경할 비밀번호가 실제로 있는지 — OAuth 전용 가입자는 자리표시자만 갖고 있어 false다.
