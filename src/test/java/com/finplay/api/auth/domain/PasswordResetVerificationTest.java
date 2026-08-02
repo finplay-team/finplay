@@ -66,4 +66,63 @@ class PasswordResetVerificationTest {
 		assertThat(verification.getConsumedAt()).isNull();
 		assertThat(verification.getLastSentAt()).isEqualTo(NOW);
 	}
+
+	@Test
+	@DisplayName("incrementAttemptCount는 0에서 1씩 올리며 증가 후의 값을 반환한다")
+	void incrementAttemptCountIncreasesCountFromZeroAndReturnsNewValue() {
+		PasswordResetVerification verification = newSentVerification();
+
+		int firstResult = verification.incrementAttemptCount();
+		int secondResult = verification.incrementAttemptCount();
+
+		assertThat(firstResult).isEqualTo(1);
+		assertThat(secondResult).isEqualTo(2);
+		assertThat(verification.getAttemptCount()).isEqualTo(2);
+	}
+
+	@Test
+	@DisplayName("incrementAttemptCount는 시도 횟수 외의 필드를 건드리지 않는다")
+	void incrementAttemptCountKeepsOtherFieldsUntouched() {
+		PasswordResetVerification verification = newSentVerification();
+
+		verification.incrementAttemptCount();
+
+		assertThat(verification.getEmail()).isEqualTo("attempt@finplay.com");
+		assertThat(verification.getCodeHash()).isEqualTo("code-hash-value");
+		assertThat(verification.getExpiresAt()).isEqualTo(NOW.plusMinutes(5));
+		assertThat(verification.getLastSentAt()).isEqualTo(NOW);
+		assertThat(verification.getCreatedAt()).isEqualTo(NOW);
+		// 시도 횟수 증가만으로 인증번호가 소비되거나 만료되면 안 된다.
+		assertThat(verification.getConsumedAt()).isNull();
+	}
+
+	@Test
+	@DisplayName("consume은 소비 시각을 주어진 시각으로 기록한다")
+	void consumeSetsConsumedAtToGivenTime() {
+		PasswordResetVerification verification = newSentVerification();
+
+		verification.consume(NOW.plusMinutes(1));
+
+		assertThat(verification.getConsumedAt()).isEqualTo(NOW.plusMinutes(1));
+	}
+
+	@Test
+	@DisplayName("consume은 소비 시각 외의 필드를 건드리지 않는다 — 만료를 앞당기거나 시도 횟수를 올리지 않는다")
+	void consumeKeepsOtherFieldsUntouched() {
+		PasswordResetVerification verification = newSentVerification();
+		verification.incrementAttemptCount();
+
+		verification.consume(NOW.plusMinutes(1));
+
+		assertThat(verification.getEmail()).isEqualTo("attempt@finplay.com");
+		assertThat(verification.getCodeHash()).isEqualTo("code-hash-value");
+		assertThat(verification.getAttemptCount()).isEqualTo(1);
+		assertThat(verification.getExpiresAt()).isEqualTo(NOW.plusMinutes(5));
+		assertThat(verification.getLastSentAt()).isEqualTo(NOW);
+		assertThat(verification.getCreatedAt()).isEqualTo(NOW);
+	}
+
+	private static PasswordResetVerification newSentVerification() {
+		return PasswordResetVerification.create("attempt@finplay.com", "code-hash-value", NOW.plusMinutes(5), NOW);
+	}
 }

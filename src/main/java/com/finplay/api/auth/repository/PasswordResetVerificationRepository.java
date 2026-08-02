@@ -4,6 +4,7 @@ package com.finplay.api.auth.repository;
 import com.finplay.api.auth.domain.PasswordResetVerification;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface PasswordResetVerificationRepository extends JpaRepository<PasswordResetVerification, Long> {
@@ -14,4 +15,7 @@ public interface PasswordResetVerificationRepository extends JpaRepository<Passw
 	// 재발송 시 무효화 대상 — 실제로 발송된(code_hash가 있는) 유효·미소비 행만 고른다.
 	List<PasswordResetVerification> findByEmailAndCodeHashIsNotNullAndConsumedAtIsNullAndExpiresAtAfter(
 		String email, LocalDateTime now);
+
+	// 확인 대상 최신 행 조회 — 거부 행(code_hash NULL)은 건너뛰고 실제로 발송된 가장 최근 1건을 찾는다.
+	Optional<PasswordResetVerification> findFirstByEmailAndCodeHashIsNotNullOrderByCreatedAtDesc(String email);
 }

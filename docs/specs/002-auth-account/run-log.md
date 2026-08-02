@@ -1,5 +1,15 @@
 # Run Log: 002-auth-account
 
+## Issue #116
+
+### Task 1: 엔티티·리포지터리 확장
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| implementer | implementer | `gradlew.bat -p <root> compileJava --console=plain` — `BUILD SUCCESSFUL` | issue-116-plan.md Task 1·D2(`AndCodeHashIsNotNull` 필수, 거부 행 NPE 방지), `EmailChangeVerification.incrementAttemptCount`·`consume` 선례, ADR-0002·ADR-0004(신규 마이그레이션 없음) |
+
+- `PasswordResetVerification.incrementAttemptCount()`·`consume(now)`를 `EmailChangeVerification`의 동명 메서드와 동일 시그니처로 추가하고, `PasswordResetVerificationRepository.findFirstByEmailAndCodeHashIsNotNullOrderByCreatedAtDesc`를 추가했다. `attempt_count`·`consumed_at`은 V12에 이미 있어 신규 Flyway 마이그레이션은 없다. controller 변경이 없어 `docs/api-routes.md`·`docs/api-contracts.md`는 갱신하지 않았다.
+
 ## Issue #115
 
 ### Task 1: `password_reset_verifications` 스키마·엔티티·리포지터리와 `SOCIAL_ACCOUNT_ONLY`·`PASSWORD_RESET_SECRET` 배선
