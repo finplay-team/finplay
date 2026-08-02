@@ -31,6 +31,17 @@
 - `docs/api-routes.md`(라우트 행 + 공개 경로 행)와 `docs/api-contracts.md`("비밀번호 재설정 확인 및 적용" 절 신설, Access Token 잔존 한계 명시)를 함께 갱신했다. PRD 갱신은 Task 5 범위라 손대지 않았다.
 - **기존 테스트 2개가 컴파일 실패한다** — `AuthService` 생성자에 `PasswordResetService`가 추가되어 `AuthServiceTest:108`·`OAuthAuthServiceTest:71`의 `new AuthService(...)` 인자 목록을 고쳐야 한다. `PasswordResetControllerTest`도 `AuthService` `@MockitoBean` 추가가 필요하다(컴파일은 통과하나 컨텍스트 기동 실패).
 
+### 리뷰 권장 반영: 재설정 메일 문구를 가입 인증·이메일 변경과 분리
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| implementer | implementer | `gradlew.bat -p <root> compileJava spotlessCheck compileTestJava` — 모두 `BUILD SUCCESSFUL`; `test --tests "*PasswordResetServiceTest"` — 27건 중 5건 실패(구 메서드 stub, tester 인계) | reviewer 권장 지적(수신자가 재설정 시도를 알아챌 신호 없음), PRD `AUTH-006`, conventions.md 어댑터 계약 규칙 |
+
+- `EmailSender.sendPasswordResetCode(toEmail, code)`를 추가하고 `ResendEmailSender`(제목 `[FinPlay] 비밀번호 재설정 인증번호`, 본문에 용도 명시 + "요청하지 않았다면 무시" + 코드 타인 공유 금지 안내)·`FakeEmailSender`(로그 문구 구분)에 구현했다. 기존 `sendVerificationCode`와 상수·`buildHtml`은 그대로 두어 가입 인증·이메일 변경이 계속 쓴다.
+- `FakeEmailSender.SentEmail` record는 **바꾸지 않았다** — 용도 필드를 넣으면 `FakeEmailSenderTest`의 2인자 생성자 호출 4곳이 컴파일 실패하는데, 용도 검증은 Mockito `verify(emailSender).sendPasswordResetCode(...)`로 이미 가능해 record 변경의 실익이 없다. `getLastSentEmail().code()` 경로도 그대로 유지된다.
+- `PasswordResetService.sendResetCode`는 발송 호출 한 줄만 새 메서드로 바꿨고 판정 순서·트랜잭션·HMAC은 손대지 않았다.
+- **기존 테스트가 깨진다(컴파일은 통과, 실행 실패)** — `PasswordResetServiceTest` 5건(`verify`/`doThrow` 대상이 구 메서드: 81·215·252·273·490행)과 `PasswordResetIntegrationTest` 발송 실패 시나리오 2건(175·236행 `doThrow ... sendVerificationCode`)이 새 메서드로 바뀌어야 한다. `never()` 단정 5곳(113·127·144·163·525행)도 새 메서드 기준으로 옮겨야 검증력이 유지된다.
+
 ### 리뷰: PR 전체 코드 리뷰 (Issue #116)
 
 | 시각 | 에이전트 | 실행 명령 | 근거 |

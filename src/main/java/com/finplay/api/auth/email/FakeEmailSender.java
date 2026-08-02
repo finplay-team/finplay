@@ -18,7 +18,13 @@ public class FakeEmailSender implements EmailSender {
 	@Override
 	public void sendVerificationCode(String toEmail, String code) {
 		sentEmails.add(new SentEmail(toEmail, code));
-		log.info("[FakeEmailSender] 인증번호 발송 (실제 발송 안 함) to={} code={}", toEmail, code);
+		log.info("[FakeEmailSender] 이메일 인증번호 발송 (실제 발송 안 함) to={} code={}", toEmail, code);
+	}
+
+	@Override
+	public void sendPasswordResetCode(String toEmail, String code) {
+		sentEmails.add(new SentEmail(toEmail, code));
+		log.info("[FakeEmailSender] 비밀번호 재설정 인증번호 발송 (실제 발송 안 함) to={} code={}", toEmail, code);
 	}
 
 	// 테스트가 마지막으로 발송된 인증번호를 검증할 수 있게 한다.

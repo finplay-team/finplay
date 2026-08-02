@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -78,7 +79,7 @@ class PasswordResetServiceTest {
 			.forClass(PasswordResetVerification.class);
 		ArgumentCaptor<String> sentCodeCaptor = ArgumentCaptor.forClass(String.class);
 		verify(passwordResetVerificationRepository).save(savedCaptor.capture());
-		verify(emailSender).sendVerificationCode(eq(EMAIL), sentCodeCaptor.capture());
+		verify(emailSender).sendPasswordResetCode(eq(EMAIL), sentCodeCaptor.capture());
 
 		String sentCode = sentCodeCaptor.getValue();
 		PasswordResetVerification saved = savedCaptor.getValue();
@@ -110,7 +111,7 @@ class PasswordResetServiceTest {
 			.isEqualTo(ErrorCode.NOT_FOUND);
 
 		assertRejectedRowSaved();
-		verify(emailSender, never()).sendVerificationCode(any(), any());
+		verifyNoInteractions(emailSender);
 	}
 
 	@Test
@@ -124,7 +125,7 @@ class PasswordResetServiceTest {
 			.isEqualTo(ErrorCode.SOCIAL_ACCOUNT_ONLY);
 
 		assertRejectedRowSaved();
-		verify(emailSender, never()).sendVerificationCode(any(), any());
+		verifyNoInteractions(emailSender);
 	}
 
 	@Test
@@ -141,7 +142,7 @@ class PasswordResetServiceTest {
 			.isEqualTo(ErrorCode.SOCIAL_ACCOUNT_ONLY);
 
 		// 판별이 NULL 검사로 되돌아가면 여기서 실제 인증번호가 발송되어 실패한다.
-		verify(emailSender, never()).sendVerificationCode(any(), any());
+		verifyNoInteractions(emailSender);
 		assertRejectedRowSaved();
 	}
 
@@ -160,7 +161,7 @@ class PasswordResetServiceTest {
 		// 존재 여부 조회 자체가 일어나지 않아야 계정 상태가 드러나지 않는다.
 		verify(userRepository, never()).findByEmail(any());
 		verify(passwordResetVerificationRepository, never()).save(any());
-		verify(emailSender, never()).sendVerificationCode(any(), any());
+		verifyNoInteractions(emailSender);
 	}
 
 	@Test
@@ -212,7 +213,7 @@ class PasswordResetServiceTest {
 		service.sendResetCode(EMAIL);
 
 		verify(passwordResetVerificationRepository).save(any());
-		verify(emailSender).sendVerificationCode(eq(EMAIL), any());
+		verify(emailSender).sendPasswordResetCode(eq(EMAIL), any());
 	}
 
 	@Test
@@ -249,7 +250,7 @@ class PasswordResetServiceTest {
 	void propagatesEmailSenderFailure() {
 		when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(passwordUser()));
 		doThrow(new IllegalStateException("메일 발송 실패"))
-			.when(emailSender).sendVerificationCode(eq(EMAIL), any());
+			.when(emailSender).sendPasswordResetCode(eq(EMAIL), any());
 
 		assertThatThrownBy(() -> service.sendResetCode(EMAIL))
 			.isInstanceOf(IllegalStateException.class)
@@ -270,7 +271,7 @@ class PasswordResetServiceTest {
 		ArgumentCaptor<String> sentCodeCaptor = ArgumentCaptor.forClass(String.class);
 		ArgumentCaptor<PasswordResetVerification> savedCaptor = ArgumentCaptor
 			.forClass(PasswordResetVerification.class);
-		verify(emailSender, times(2)).sendVerificationCode(eq(EMAIL), sentCodeCaptor.capture());
+		verify(emailSender, times(2)).sendPasswordResetCode(eq(EMAIL), sentCodeCaptor.capture());
 		verify(passwordResetVerificationRepository, times(2)).save(savedCaptor.capture());
 
 		List<String> sentCodes = sentCodeCaptor.getAllValues();
@@ -487,7 +488,7 @@ class PasswordResetServiceTest {
 			.forClass(PasswordResetVerification.class);
 		ArgumentCaptor<String> sentCodeCaptor = ArgumentCaptor.forClass(String.class);
 		verify(passwordResetVerificationRepository).save(savedCaptor.capture());
-		verify(emailSender).sendVerificationCode(eq(EMAIL), sentCodeCaptor.capture());
+		verify(emailSender).sendPasswordResetCode(eq(EMAIL), sentCodeCaptor.capture());
 
 		PasswordResetVerification sent = savedCaptor.getValue();
 		String sentCode = sentCodeCaptor.getValue();
@@ -522,7 +523,7 @@ class PasswordResetServiceTest {
 
 		// 429는 행을 남기지 않는다 — 남기면 하루 10회 제한이 사실상 영구 차단으로 변한다(D5).
 		verify(passwordResetVerificationRepository, never()).save(any());
-		verify(emailSender, never()).sendVerificationCode(any(), any());
+		verifyNoInteractions(emailSender);
 	}
 
 	private void assertRejectedRowSaved() {

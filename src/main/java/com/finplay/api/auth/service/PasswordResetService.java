@@ -86,7 +86,8 @@ public class PasswordResetService {
 		passwordResetVerificationRepository.save(verification);
 
 		// 발송은 저장 이후에 한다 — 발송 실패 시 저장과 이전 코드 무효화가 함께 롤백된다.
-		emailSender.sendVerificationCode(email, code);
+		// 가입 인증·이메일 변경과 다른 전용 문구로 보낸다 — 수신자가 재설정 시도임을 알아채야 한다.
+		emailSender.sendPasswordResetCode(email, code);
 	}
 
 	// D1: 조회 → 소비 상태·만료 → 시도 횟수 초과 → 코드 일치 → 회원 존재 → 비밀번호 보유 순으로 검증하고 마지막에 소비한다.
