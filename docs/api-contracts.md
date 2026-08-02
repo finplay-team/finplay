@@ -414,7 +414,7 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 | Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|---|
-| GET | /api/ai/post-sell/{tradeId} | Access Bearer 필수 | 경로 변수 `tradeId`만(쿼리·본문 없음) | 200 `{"tradeId":2,"instrumentId":1,"symbol":"005930","name":"삼성전자","buyPrice":70000,"sellPrice":68500,"quantity":10,"fee":205,"realizedPnl":-15205,"returnRate":-0.0217,"holdingMinutes":265,"sameSessionCompleted":true,"highestPrice":70800,"highestPriceAt":"2026-07-29T11:05:00","lowestPrice":68100,"lowestPriceAt":"2026-07-29T14:20:00","priceMoves":[...],"narrative":"70,000원에 매수해 68,500원에 매도했습니다. 수익률은 -2.17%입니다. 보유 중 최고가는 11시 5분의 70,800원이었고, 매도가는 그보다 3.2% 낮습니다.","narrativeStatus":"READY"}` (`PostSellFeedbackResponse`) | Access 인증 실패는 401 `UNAUTHORIZED`. `tradeId` 미존재는 404 `NOT_FOUND`. 타인 체결은 403 `FORBIDDEN`. 매수 체결(`side=BUY`)은 400 `VALIDATION_ERROR` 공통 오류 형식 | 012 FEED-007 |
+| GET | /api/ai/post-sell/{tradeId} | Access Bearer 필수 | 경로 변수 `tradeId`만(쿼리·본문 없음) | 200 `{"tradeId":2,"instrumentId":1,"symbol":"005930","name":"삼성전자","buyPrice":70000,"sellPrice":68500,"quantity":10,"fee":205,"realizedPnl":-15205,"returnRate":-0.0217,"holdingMinutes":265,"sameSessionCompleted":true,"holdHighPrice":70800,"holdHighAt":"2026-07-29T11:05:00","holdLowPrice":68100,"holdLowAt":"2026-07-29T14:20:00","sellVsHighRate":-0.0325,"sellVsLowRate":0.0059,"buyToNewsMinutes":105,"priceMoves":[{"id":12,"windowStart":"2026-07-29T11:20:00","windowEnd":"2026-07-29T11:25:00","changeRate":-0.0182,"minutesAfterBuy":110,"minutesBeforeSell":195,"narrative":"...","sources":[...]}],"postSellFlow":{"status":"READY","closePrice":69200,"closeAt":"2026-07-29T15:30:00","sellToCloseRate":0.0102,"postSellHighPrice":69500,"postSellHighAt":"2026-07-29T15:05:00"},"narrative":"09시 30분 매수는 이날 하락 구간(11시 20분)보다 1시간 50분 앞섰습니다. 하락 이후에도 3시간 넘게 보유하다 14시 40분에 68,500원에 매도했습니다. 보유 중 최고가는 11시 5분의 70,800원으로 하락이 시작되기 15분 전이었고, 매도가는 그보다 3.2% 낮습니다.","narrativeStatus":"READY"}` (`PostSellFeedbackResponse`) | Access 인증 실패는 401 `UNAUTHORIZED`. `tradeId` 미존재는 404 `NOT_FOUND`. 타인 체결은 403 `FORBIDDEN`. 매수 체결(`side=BUY`)은 400 `VALIDATION_ERROR` 공통 오류 형식 | 012 FEED-007 |
 
 조회 대상은 요청에서 받지 않고 Access Token의 인증 사용자 본인 소유 매도 체결로만 결정한다.
 
@@ -424,13 +424,25 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 **수치는 전부 기존 원장에서 가져온다.** `buyPrice`는 `trade_allocations`의 FIFO 배분 가중평균 매수단가, `sellPrice`·`quantity`·`fee`·`realizedPnl`은 `trades` 행 그대로다. `returnRate = realizedPnl ÷ (배분된 매수원가 합 + 배분된 매수수수료 합)`이며 scale 4 `RoundingMode.HALF_UP`이다. **LLM은 이 수치를 계산하지도 수정하지도 않는다** (C-004).
 
-**`sameSessionCompleted`가 응답 형태를 가른다.** 매수와 매도가 같은 원본 거래일 안에서 완결됐으면 `true`이고 `highestPrice`·`highestPriceAt`·`lowestPrice`·`lowestPriceAt`·`priceMoves`가 채워진다. 여러 재생일에 걸친 매매는 `false`이며 이 5개 필드가 각각 `null`·`null`·`null`·`null`·`[]`가 된다 — 재생일마다 원본 거래일이 달라 가격·뉴스 타임라인이 불연속이므로 억지로 이어 붙이지 않는다. 코인은 실시간이라 항상 `true`다.
+**수치를 다시 읽어주는 것은 조회이지 피드백이 아니다.** 매수가·매도가·수익률은 사용자가 거래내역에서 이미 보는 값이다. 그래서 서버가 **사용자가 직접 계산하지 않은 관계**를 함께 내려준다 — 전부 시각 비교와 뺄셈이라 AI 판단이 들어가지 않는다.
+
+| 필드 | 의미 |
+|---|---|
+| `holdHighPrice`·`holdHighAt`·`holdLowPrice`·`holdLowAt` | 보유 구간의 최고가·최저가와 그 시각 |
+| `sellVsHighRate`·`sellVsLowRate` | 매도가가 그 극값에서 얼마나 떨어져 있었는지 |
+| `buyToNewsMinutes` | 매수 시각과 첫 근거 기사 발행시각의 차(분). **양수면 매수가 기사보다 앞섰다는 뜻**, 음수면 기사가 나온 뒤 매수했다는 뜻. 근거 기사가 없으면 `null` |
+| `priceMoves[].minutesAfterBuy`·`minutesBeforeSell` | 그 변동이 매수 몇 분 뒤였고 매도 몇 분 전이었는지 |
+| `postSellFlow` | 매도 후 같은 거래일 종가까지의 흐름 (아래 참고) |
+
+**`postSellFlow`는 장 마감 이후에만 채워진다.** 14:40에 매도하고 14:41에 조회하면 15:30까지의 가격은 아직 재생되지 않은 미래다. 그걸 보여주면 사용자가 같은 종목을 재매수할 때 답을 아는 상태가 된다. `now() >= 서비스 날짜 15:30`이 아니면 `status="NOT_YET"`이고 가격 필드는 전부 `null`이다. 마감 후 첫 조회에서 `status="READY"`가 되며 이때 서술도 한 번 재생성된다.
+
+**`sameSessionCompleted`가 응답 형태를 가른다.** 매수와 매도가 같은 원본 거래일 안에서 완결됐으면 `true`이고 `highestPrice`·`highestPriceAt`·`lowestPrice`·`lowestPriceAt`·`priceMoves`가 채워진다. 여러 재생일에 걸친 매매는 `false`이며 위 파생 필드가 전부 `null`(`priceMoves`는 `[]`)이 된다 — 분봉이 불연속이라 계산이 성립하지 않는다 — 재생일마다 원본 거래일이 달라 가격·뉴스 타임라인이 불연속이므로 억지로 이어 붙이지 않는다. 코인은 실시간이라 항상 `true`다.
 
 **`narrativeStatus`**는 `READY`(서술 생성됨) 또는 `UNAVAILABLE`(LLM 호출 실패·타임아웃)이다. `UNAVAILABLE`이어도 상태코드는 200이고 위 수치 필드는 전부 채워진다 — 서술은 부가 정보이고 수치가 본체이므로 LLM 장애가 조회 자체를 막지 않는다. `UNAVAILABLE`일 때 `narrative`는 `null`이다.
 
 서술은 최초 조회 시 생성해 `trade_feedbacks`에 저장하고 이후 재사용한다(`UNIQUE(trade_id)`). 매도 체결은 불변 원장이므로 서술도 재생성하지 않는다. `UNAVAILABLE`로 끝난 건은 저장하지 않아 다음 조회에서 다시 시도한다.
 
-**문구 제약**: 인과 단정("~때문에"), 투자 권유("매수", "주목"), 가격 예측("오를 것"), 조언·후회 유도("~하세요", "~했으면 좋았을")를 쓰지 않는다. 서버가 LLM 출력을 후검증해 위반 시 템플릿 문장으로 대체한다 (C-004, FEED-003).
+**문구 제약**: 인과 단정("~때문에"), 투자 권유("매수", "주목"), 가격 예측("오를 것"), 조언·후회 유도("~하세요", "~했으면 좋았을"), **판단·훈수("버티셨네요", "놓치셨", "더 기다렸다면")**를 쓰지 않는다. "하락 이후에도 3시간 보유했습니다"는 사실이고 "3시간이나 버티셨네요"는 판단이다 — 파생 사실이 늘어날수록 이 경계를 넘기 쉬워지므로 가정법 어미(`~다면`)까지 막는다. 서버가 LLM 출력을 후검증해 위반 시 템플릿 문장으로 대체한다 (C-004, FEED-003).
 
 ---
 
