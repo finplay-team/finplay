@@ -131,7 +131,7 @@ class PasswordResetServiceTest {
 	@Test
 	@DisplayName("회귀: password_hash가 자리표시자인 OAuth 가입자는 NULL이 아니어도 409로 거부되고 메일이 나가지 않는다")
 	void rejectsOAuthUserWhosePasswordHashIsSentinelRatherThanNull() {
-		User oauthUser = User.create(EMAIL, User.OAUTH_ONLY_PASSWORD_SENTINEL, "oauth-user", NOW.minusDays(10));
+		User oauthUser = User.createOAuthOnly(EMAIL, "oauth-user", NOW.minusDays(10));
 		// 실제 OAuth 가입자는 password_hash가 채워져 있다 — `passwordHash == null` 판별로는 이 회원을 거르지 못한다.
 		assertThat(oauthUser.getPasswordHash()).isNotNull();
 		when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(oauthUser));
@@ -546,8 +546,9 @@ class PasswordResetServiceTest {
 
 	// 프로덕션의 OAuth 가입자는 password_hash가 NULL이 아니라 자리표시자다 (AuthService.saveOAuthUser).
 	// NULL로 만들면 실제로 존재하지 않는 회원 형태라 409 분기가 도달 불가여도 테스트가 통과해 버린다.
+	// 프로덕션과 같은 팩토리를 쓴다 — 자리표시자 값은 User만 안다.
 	private static User socialOnlyUser() {
-		return User.create(EMAIL, User.OAUTH_ONLY_PASSWORD_SENTINEL, "social-user", NOW.minusDays(10));
+		return User.createOAuthOnly(EMAIL, "social-user", NOW.minusDays(10));
 	}
 
 	private static String hmac(String secret, String code) {

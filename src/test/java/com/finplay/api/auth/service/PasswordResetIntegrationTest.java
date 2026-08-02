@@ -143,9 +143,11 @@ class PasswordResetIntegrationTest {
 	void commitsRejectedRowForSocialOnlyAccountAndBlocksFollowUpRequest() {
 		User socialOnly = persistSocialOnlyUser("reset-social");
 
-		// 프로덕션 형태 확인 — password_hash는 NULL이 아니라 자리표시자이고 social_accounts 연결이 있다.
-		assertThat(socialOnly.getPasswordHash()).isEqualTo(User.OAUTH_ONLY_PASSWORD_SENTINEL);
+		// 프로덕션 형태 확인 — 실제 OAuth 가입 경로로 만들어졌고(social_accounts 행 존재),
+		// password_hash는 NULL이 아니지만 재설정할 비밀번호는 없다. 자리표시자 값 자체는 User만 안다.
 		assertThat(socialAccountRepository.findByUserId(socialOnly.getId())).isPresent();
+		assertThat(socialOnly.getPasswordHash()).isNotNull();
+		assertThat(socialOnly.hasPassword()).isFalse();
 
 		BusinessException conflict = catchThrowableOfType(
 			BusinessException.class, () -> passwordResetService.sendResetCode(socialOnly.getEmail()));
