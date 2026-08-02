@@ -91,3 +91,15 @@ Issue #114는 착수 전 결정 2건을 팀에서 확정하고 시작했다. ①
 - [x] `docs/prd.md`에 `AUTH-006` 신설·§5 공통 오류표 신규 409 코드·엔드포인트 목록 추가와 `docs/api-routes.md`·`docs/api-contracts.md`·`docs/specs/002-auth-account/tasks.md` 동기화
 
 Issue #115는 인증번호 발송까지만 구현한다. 확인·실제 `users.password_hash` 교체·Refresh Token 폐기는 후속 이슈 #116이다. `User` 엔티티를 건드리지 않으므로 Issue #114(`User.changePassword`)에 의존하지 않는다. 착수 전 확정된 결정 3건(미가입 404·OAuth 전용 409로 계정 열거 감수, 이메일 단위 발송 제한과 거부 요청 집계 포함, 전용 `PASSWORD_RESET_SECRET`)의 근거와 대가는 `issue-115-plan.md`의 D2·D4·D7에 있다. 미가입 404는 `NOT_FOUND` 코드에 "가입되지 않은 이메일입니다." 메시지를 덮어써 응답한다.
+
+## Issue #116 비밀번호 재설정 확인 및 적용 작업 항목 (5개)
+
+상세 설계는 `issue-116-plan.md` 참고.
+
+- [ ] `PasswordResetVerification.incrementAttemptCount()`·`consume(now)`(#115가 `attempt_count`·`consumed_at`을 미뤄둔 부분)와 `PasswordResetVerificationRepository.findFirstByEmailAndCodeHashIsNotNullOrderByCreatedAtDesc(email)` 추가 (+ `@DataJpaTest`로 최신 발송 행 반환·거부 행(`code_hash` NULL) 건너뜀·다른 이메일 미반환 검증). 신규 Flyway 마이그레이션 없음
+- [ ] `PasswordResetService.validateAndConsumeCode(email, code)` — 요청 이력 없음/소비됨/만료 → 5회 초과(증가+즉시 만료 후 429) → 코드 불일치(증가 후 400) → 미가입 400 → 소셜 전용 409 → 소비 순서 구현, 재설정 대상 `User` 반환. 계정 상태 판정을 인증번호 검증 **뒤에** 두어 확인 경로가 무제한 계정 열거 오라클이 되지 않게 한다(#115 D4의 발송 제한이 이 경로에는 없기 때문). `@Transactional` 미선언 — 호출자 트랜잭션에 편입 (+ 단위 테스트, 실패 경로에서 `consume` 미호출 확인)
+- [ ] `AuthService.confirmPasswordReset(email, code, newPassword)`(`@Transactional(noRollbackFor = BusinessException.class)`) — 검증·소비 → `User.changePassword(encode(newPassword), now)` → `saveAndFlush` → `RefreshTokenRepository.revokeAllActiveByUserId` 순서로 구현하고 **새 토큰 쌍은 발급하지 않는다**(#114와 의도적으로 다른 전 기기 로그아웃). `PasswordResetConfirmRequest`(이메일·6자리 코드·새 비밀번호 8~100자)·`PasswordResetController` `POST /api/auth/password-resets/confirm`(204 본문 없음)·`SecurityConfig.PUBLIC_POST_PATHS` 공개 경로 추가 (+ `InOrder` 단위 테스트, `@WebMvcTest`로 204·400·429·409와 비인증 접근 허용 검증)
+- [ ] Testcontainers MySQL 통합 테스트(발송→확인 성공, 새 비밀번호 로그인 성공·기존 비밀번호 401, 재사용·5회초과 후 정답 거부·만료·재발송 무효화·타인 이메일 격리, 확인 성공 후 기존 Refresh Token으로 `/api/auth/refresh` 401, 검증 실패 시 `attempt_count` 증가 커밋 + `password_hash` 불변, 이메일·닉네임·`social_accounts`·계좌·잔액·주문·체결 불변)·전체 회귀·`./gradlew build`
+- [ ] `docs/prd.md` `AUTH-006` 구현 단계 문구·확인 단계 계약·엔드포인트 목록 갱신과 `docs/api-routes.md`·`docs/api-contracts.md`(다른 기기 Access Token 잔존 한계 명시 포함)·`docs/specs/002-auth-account/tasks.md` 동기화
+
+Issue #116은 착수 전 결정 1건을 팀에서 확정하고 시작한다 — **인증번호와 새 비밀번호를 한 요청으로 받아 즉시 적용하는 (a)안**이며, 별도 `passwordResetToken`을 발급하는 2단계 (b)안은 채택하지 않았다(#56과 같은 패턴, 새 토큰 저장·소비 구현이 불필요). #56과 달리 `rollbackFor`용 예외 서브타입이 필요 없다 — `password_hash`에 유니크 제약이 없어 소비·교체·폐기 이후에 실패할 지점이 존재하지 않는다. 착수 전 확정된 응답 계약 2건이 더 있다(2026-08-02). ① **5회 초과 시도는 429** `TOO_MANY_REQUESTS`다 — PRD `AUTH-006`·#56 선례를 따르며, 이슈 본문 테스트 기준에 429가 빠진 쪽을 Task 5에서 고친다. ② **미가입 이메일은 404가 아니라 400으로 뭉갠다** — 확인 경로에는 발송 제한이 없어 404로 구분하면 횟수 제한 없는 계정 열거 오라클이 되고, #115 D2가 열거를 감수한 근거("하루 10회 제한이 막는다")가 이 경로에서는 성립하지 않기 때문이다. 그 밖의 미확정(204 응답, 기존 비밀번호와 동일 허용, 확인 경로 요청 제한 없음)은 `issue-116-plan.md` U2~U7 참고.
