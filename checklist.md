@@ -131,3 +131,18 @@
 - [x] 고친 문서의 참조 대상 실재 확인 — plan.md 절 제목 4종, 이슈 #19·#83, 엔드포인트 경로, `/api/cryptos/stream` 잔재 없음
 - [x] `./gradlew build` 미실행 — Java 코드 무변경. `docs/specs/010-deployment/spec.md:23` "문서만 바뀐 PR은 Gradle 단계를 건너뛴다" 방침
 - [x] PR #112 리뷰 반영 — `checklist.md:90`을 원문 취소선 + 정정 덧붙이기로 변경(레포 기존 관행 `~~항목~~ → 철회`와 통일), `tasks.md` 후속 이슈 절에 "이슈 생성 시 서술 일괄 치환" 안내와 대상 검색 grep 추가
+
+## 이슈 #119 빌드 1회차 실패 근본 수정 + 빌드 시간 단축 (2026-08-03)
+- [x] 고아 Testcontainers 컨테이너 2개(6시간 방치) 제거 — 관측 오독 방지 (2026-08-02 세션이 남긴 것)
+- [x] `TestcontainersConfiguration` — 컨테이너 `@Bean`(`@ServiceConnection`)을 `JdbcConnectionDetails`·`DataRedisConnectionDetails` 빈으로 교체. Spring이 컨테이너를 stop할 수단을 없앤다
+- [x] Boot 4.1 인터페이스 이름 확인 — Redis 쪽은 `RedisConnectionDetails`가 아니라 `DataRedisConnectionDetails`(`org.springframework.boot.data.redis.autoconfigure`). jar를 `javap`로 확인
+- [x] 교체 전후 동등성 확인 — `@ServiceConnection`이 만들던 값과 대조(바이트코드). JDBC는 `getUsername`·`getPassword`·`getJdbcUrl`, Redis는 `Standalone.of(getHost(), getMappedPort(6379))`로 동일
+- [x] 드러난 후속 문제 해결 — 컨테이너가 살아남자 `Too many connections`가 6/6 결정론적 재현. 실측 `max_connections=151`, 실제 접속 최대 153. 컨테이너에 `--max-connections=1000` 적용
+- [x] 컨테이너 교체 유무 직접 관측 — 0.8초 간격 프로브로 회차마다 등장 컨테이너 2개(MySQL 1 + Redis 1)뿐, 교체 0건
+- [x] 전체 빌드 **16회 연속 1회차 통과** (기준: 수정 전 18회 중 11회 실패). 155개 클래스 1329건, 실패·에러·스킵 0
+- [x] 빌드 시간 측정 — `--profile` 결과 `:test`가 197.2초 중 194.2초(**98.5%**). 나머지 태스크 전부 합쳐 3초라 설정 캐시·검사도구 최적화는 무의미
+- [x] 실험 A(컨텍스트 캐시 `maxSize` 32 → 200) — **효과 없어 되돌림.** 앱 기동 40회 불변. 컨텍스트 40개는 축출 대상이 아니라 실제로 서로 다른 설정
+- [x] 실험 B(MySQL 데이터 디렉터리 tmpfs) — 채택. 컨테이너 기동 20.6→11.2초, 앱 기동 합계 109.1→89.6초, 빌드 중앙값 **3.30→2.80분(−15%)**, 편차 3.1~3.9 → 2.8 고정
+- [x] tmpfs 적용 코드로 재검증 (아래 PR 본문에 회차 기록)
+- [ ] **하지 않음(의도)** — `@MockitoBean` 17곳 통합으로 컨텍스트 40개 줄이기. 테스트가 무엇을 검증하는지를 바꾸는 변경이라 별도 이슈로 분리
+- [ ] **미검증** — PR #127 10초 타임아웃의 병렬 부하 오탐 여부. 동시 빌드 금지 방침이라 병렬 부하 조건을 만들지 않았다 (단독 실행 중 12.7분 걸린 회차도 통과했다는 관찰만 있음)
