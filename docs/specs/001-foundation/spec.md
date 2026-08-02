@@ -17,7 +17,7 @@
 ## 요구사항
 
 - [ ] compose.yaml에 Redis 서비스가 추가되고, 앱이 spring-boot-docker-compose로 자동 연결된다.
-- [ ] compose.yaml에 Kafka 컨테이너가 포함되되, 앱 기동·테스트 성공 조건에서 제외된다 (PRD §7 — 2차 준비용, 1차 업무 코드 미사용).
+- [ ] compose.yaml에는 MySQL·Redis만 둔다. Kafka는 포함하지 않는다 (이슈 #123에서 제거 — 2차 도입 시점에 추가한다).
 - [ ] Testcontainers Redis 컨테이너가 MySQL과 같은 공유 싱글턴 방식으로 제공된다.
 - [ ] QueryDSL이 설정되고 Q클래스가 컴파일된다.
 - [ ] PRD 5장 공통 오류표의 코드 전부가 ErrorCode enum으로 정의된다.
@@ -44,4 +44,4 @@
 - [ ] Redis Testcontainers 연동 통합 테스트가 통과한다.
 - [ ] 존재하지 않는 URL·검증 실패·비즈니스 예외 각각이 공통 오류 포맷으로 응답되는 테스트가 통과한다.
 - [ ] 고정 Clock을 주입한 테스트가 시간 조건 분기를 재현한다.
-- [ ] `./gradlew build` 전체 통과 (Kafka 컨테이너 없이도 통과).
+- [ ] `./gradlew build` 전체 통과.

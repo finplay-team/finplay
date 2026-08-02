@@ -713,7 +713,7 @@ Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conven
 - MySQL
 - Redis
 - Docker Compose
-- Kafka 컨테이너 준비. 1차 업무 코드 미사용
+- Kafka는 1차에서 쓰지 않는다. 2차 도입 시점에 컨테이너와 의존성을 함께 추가한다 (이슈 #123 — 준비용 컨테이너를 미리 두면 로컬 기동만 느려지고 실익이 없다)
 - 이메일 발송은 Resend HTTP API를 `RestClient`로 호출한다 (별도 의존성 추가 없음). 운영 프로필에서만 활성화한다
 - 주식 실시간 시세는 한국투자 KIS Open API 국내주식 WebSocket을 사용한다 (`PRIVATE` 환경 기본, `PUBLIC`은 C-007 조건 충족 시에만)
 - JUnit 5, Testcontainers
@@ -743,8 +743,8 @@ Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conven
 
 ### Docker 로컬 환경
 
-- MySQL과 Redis는 1차 애플리케이션 필수 서비스다.
-- Kafka는 2차 준비용으로 Compose에 포함하지만 1차 애플리케이션 시작과 테스트 성공 조건으로 요구하지 않는다.
+- MySQL과 Redis는 1차 애플리케이션 필수 서비스다. Compose에는 이 둘만 둔다.
+- Kafka는 Compose에 포함하지 않는다. 2차에서 실제로 도입할 때 컨테이너를 추가한다 (이슈 #123).
 - 로컬 설정과 비밀값은 환경변수로 주입한다.
 - OAuth 실키가 없으면 Fake OAuth 프로필로 실행할 수 있어야 한다.
 - 이메일 발송 키(`RESEND_API_KEY`·`EMAIL_FROM`)가 없어도 애플리케이션과 자동 테스트가 정상 기동해야 한다 — 로컬·테스트 프로필은 Fake 발송기를 사용하며 이 값들을 필수로 요구하지 않는다.
