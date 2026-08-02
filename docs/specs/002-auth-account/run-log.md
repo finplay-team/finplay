@@ -31,6 +31,14 @@
 - `docs/api-routes.md`(라우트 행 + 공개 경로 행)와 `docs/api-contracts.md`("비밀번호 재설정 확인 및 적용" 절 신설, Access Token 잔존 한계 명시)를 함께 갱신했다. PRD 갱신은 Task 5 범위라 손대지 않았다.
 - **기존 테스트 2개가 컴파일 실패한다** — `AuthService` 생성자에 `PasswordResetService`가 추가되어 `AuthServiceTest:108`·`OAuthAuthServiceTest:71`의 `new AuthService(...)` 인자 목록을 고쳐야 한다. `PasswordResetControllerTest`도 `AuthService` `@MockitoBean` 추가가 필요하다(컴파일은 통과하나 컨텍스트 기동 실패).
 
+### 리뷰: PR 전체 코드 리뷰 (Issue #116)
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| reviewer(리뷰) | reviewer | `git diff dev...HEAD`(#114·#115·#116 38파일) + `git log --oneline dev..HEAD -- db/migration/V12*`(머지 후 수정 없음 확인) | conventions.md(레이어·DTO·Lombok·엔티티·API·테스트 규칙, 리뷰 체크 질문), ADR-0002·0003·0004, issue-116-plan.md D1~D5·U1~U7, docs/prd.md AUTH-006, docs/api-routes.md, docs/api-contracts.md |
+
+- 차단 0건 / 권장 3건 / 참고 4건 — 머지 가능. 착수 전 확정 결정 3건(단일 요청 즉시 적용·미가입 400·5회 초과 429)과 중점 점검 7항목(새 토큰 미발급, `noRollbackFor`와 원자성 양립, `AndCodeHashIsNotNull` NPE 방지, 원문 미노출, `SecurityConfig` 정확 일치 경로, `AuthService` 순환 참조 없음, PRD·API 문서 일치)이 모두 코드와 일치했다. 권장은 (1) `attempt_count` 증가의 동시성 갱신 손실로 5회 제한이 병렬 요청에 우회 가능(#3·#56과 공유하는 선례라 후속 이슈 권장), (2) 재설정 메일 제목·본문이 가입 인증 메일과 동일해 용도 구분 불가, (3) `changePassword`의 OAuth 전용 판별이 `hasPassword()`와 어긋남(계정 연결 기능 도입 시 버그)이다.
+
 ## Issue #115
 
 ### Task 1: `password_reset_verifications` 스키마·엔티티·리포지터리와 `SOCIAL_ACCOUNT_ONLY`·`PASSWORD_RESET_SECRET` 배선
