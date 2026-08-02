@@ -80,3 +80,14 @@ Issue #56은 트랜잭션 롤백 정책(새 예외 서브타입으로 `noRollbac
 - [x] `docs/prd.md` AUTH-005에 비밀번호 변경 항목 추가·`docs/api-routes.md`·`docs/api-contracts.md`·`docs/specs/002-auth-account/tasks.md` 동기화·전체 회귀·`./gradlew build`
 
 Issue #114는 착수 전 결정 2건을 팀에서 확정하고 시작했다. ① 변경 성공 시 기존 Refresh Token을 전부 폐기하되 요청한 기기용 새 토큰 쌍을 즉시 발급해 **다른 기기만 로그아웃**시킨다(#56의 "전부 폐기 후 재로그인"과 의도적으로 다르다). ② OAuth 전용 회원은 400 `VALIDATION_ERROR` + "OAuth 전용 회원은 비밀번호를 변경할 수 없습니다."로 거부한다(재인증 실패가 아니라 계정 유형 불일치). 근거는 `issue-114-plan.md`의 D2·D5와 "미확정·PRD 불일치" 절 참고. PRD AUTH-005에는 비밀번호 변경 항목이 아직 없어 이번 이슈에서 함께 추가한다. 비밀번호 분실 재설정은 Issue #115·#116, OAuth 전용 회원의 비밀번호 최초 설정은 범위 밖이다.
+## Issue #115 비밀번호 재설정 인증번호 발송 작업 항목 (5개)
+
+상세 설계는 `issue-115-plan.md` 참고.
+
+- [x] `password_reset_verifications` Flyway 마이그레이션(V12, `user_id` FK 없음·`code_hash`/`expires_at`/`last_sent_at` NULL 허용)·`PasswordResetVerification` 엔티티(`create`/`createRejected`/`expire`)·`PasswordResetVerificationRepository`(거부 행 포함 집계, 거부 행 제외 무효화 대상 조회)와 OAuth 전용 회원 거부용 신규 409 `ErrorCode`, `PASSWORD_RESET_SECRET` 환경변수 배선(`.env.example`·`build.gradle` 테스트 환경·`deploy/README.md`) 구현 (+ `@DataJpaTest`) — 신규 `ErrorCode`는 팀 확정대로 `SOCIAL_ACCOUNT_ONLY(HttpStatus.CONFLICT, "소셜 로그인 전용 계정입니다. 카카오 또는 네이버 로그인을 이용해 주세요.")`
+- [x] `PasswordResetService.sendResetCode` — 발송 제한(60초·1시간 5회·하루 10회, 이메일 단위) 429 → 미가입 404 `NOT_FOUND` → 비밀번호 없는 OAuth 전용 회원 409 판정 순서, 거부 요청의 집계 행 기록(`@Transactional(noRollbackFor = BusinessException.class)`), 재발송 시 이전 코드 무효화, 전용 시크릿 HMAC-SHA-256 저장 후 발송 구현 (+ 단위 테스트)
+- [x] `PasswordResetRequest`·`PasswordResetController`(`POST /api/auth/password-resets`, 202 본문 없음)와 `SecurityConfig.PUBLIC_POST_PATHS` 공개 경로 추가 구현 및 `@WebMvcTest`로 202·400·404/409/429 매핑과 비인증 접근 허용 검증
+- [x] Fake `EmailSender` + Testcontainers MySQL 통합 테스트(원문 미저장·해시만 저장, 거부 행 커밋 후 후속 요청 429, 발송 실패 시 저장·무효화 동반 롤백, `users`·`accounts`·`refresh_tokens` 불변)·전체 회귀·`./gradlew build`
+- [x] `docs/prd.md`에 `AUTH-006` 신설·§5 공통 오류표 신규 409 코드·엔드포인트 목록 추가와 `docs/api-routes.md`·`docs/api-contracts.md`·`docs/specs/002-auth-account/tasks.md` 동기화
+
+Issue #115는 인증번호 발송까지만 구현한다. 확인·실제 `users.password_hash` 교체·Refresh Token 폐기는 후속 이슈 #116이다. `User` 엔티티를 건드리지 않으므로 Issue #114(`User.changePassword`)에 의존하지 않는다. 착수 전 확정된 결정 3건(미가입 404·OAuth 전용 409로 계정 열거 감수, 이메일 단위 발송 제한과 거부 요청 집계 포함, 전용 `PASSWORD_RESET_SECRET`)의 근거와 대가는 `issue-115-plan.md`의 D2·D4·D7에 있다. 미가입 404는 `NOT_FOUND` 코드에 "가입되지 않은 이메일입니다." 메시지를 덮어써 응답한다.

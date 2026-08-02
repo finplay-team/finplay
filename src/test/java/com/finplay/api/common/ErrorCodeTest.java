@@ -10,8 +10,8 @@ import org.springframework.http.HttpStatus;
 class ErrorCodeTest {
 
 	@Test
-	void hasExactlyTwentyErrorCodesFromPrdAndOAuthSpec() {
-		assertThat(ErrorCode.values()).hasSize(21);
+	void declaresEveryErrorCodeFromPrdAndOAuthSpecWithoutUnlistedOnes() {
+		assertThat(ErrorCode.values()).hasSize(22);
 	}
 
 	@Test
@@ -28,6 +28,7 @@ class ErrorCodeTest {
 			Map.entry(ErrorCode.DUPLICATE_RESOURCE, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.EMAIL_VERIFICATION_REQUIRED, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.ACCOUNT_LINK_REQUIRED, HttpStatus.CONFLICT),
+			Map.entry(ErrorCode.SOCIAL_ACCOUNT_ONLY, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.INSUFFICIENT_CASH, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.INSUFFICIENT_QTY, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.MARKET_CLOSED, HttpStatus.CONFLICT),

@@ -145,7 +145,8 @@ class SecurityConfigTest {
 		"/api/auth/signup",
 		"/api/auth/login",
 		"/api/auth/email-verifications",
-		"/api/auth/email-verifications/confirm"
+		"/api/auth/email-verifications/confirm",
+		"/api/auth/password-resets"
 	})
 	void allowsPublicAuthPathsWithoutToken(String path) throws Exception {
 		expectPassesSecurityChain(post(path));

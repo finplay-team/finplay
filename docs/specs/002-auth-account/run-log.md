@@ -1,5 +1,48 @@
 # Run Log: 002-auth-account
 
+## Issue #115
+
+### Task 1: `password_reset_verifications` 스키마·엔티티·리포지터리와 `SOCIAL_ACCOUNT_ONLY`·`PASSWORD_RESET_SECRET` 배선
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| implementer | implementer | `git ls-tree -r origin/dev --name-only -- src/main/resources/db/migration`(V12 미선점 확인) → `JAVA_HOME="C:\Program Files\Java\jdk-17" gradlew.bat -p <root> compileJava --no-daemon --max-workers=1` — `BUILD SUCCESSFUL`, 이어서 `spotlessApply`(신규 Java 파일 줄바꿈 정규화) | issue-115-plan.md D3(`SOCIAL_ACCOUNT_ONLY` 위치·문구)·D6(테이블·NULL 규약·쿼리 2개)·D7(시크릿 배선 3곳), ADR-0004(V12 신규), conventions.md 엔티티·Repository 규칙, agent-mistakes 2026-08-01(Write 도구 LF → `spotlessApply`) |
+
+- 거부 행(`code_hash`·`expires_at`·`last_sent_at` NULL)과 발송 행을 같은 테이블에서 구분하는 D6 규약대로 세 컬럼을 NULL 허용으로 두고, `create`/`createRejected`를 공통 private 생성자 하나로 모았다. `attempt_count` 증가·`consume`은 #116 범위라 추가하지 않았다.
+- 서비스·컨트롤러·DTO(Task 2~3), `SecurityConfig` 공개 경로, PRD·API 문서 동기화(Task 5)는 이번 항목 범위 밖이라 손대지 않았다. controller 변경이 없어 `docs/api-routes.md`·`docs/api-contracts.md`는 갱신하지 않았다.
+
+### Task 2: `PasswordResetService.sendResetCode` 판정 순서와 트랜잭션 정책
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| implementer | implementer | `JAVA_HOME="C:\Program Files\Java\jdk-17" gradlew.bat -p <root> compileJava --no-daemon --max-workers=1` — `BUILD SUCCESSFUL`; 이어서 `spotlessApply spotbugsMain` — `BUILD SUCCESSFUL`(경고 0) | issue-115-plan.md D4(이메일 단위 집계·거부 행 포함·제한 우선 판정)·D5(검증 순서·`noRollbackFor`·`passwordHash == null` 판별)·D7(`@Value("${PASSWORD_RESET_SECRET}")` 생성자 주입, yml 기본값 없음), conventions.md 레이어·상수·시크릿 규칙, agent-mistakes 2026-07-30(`@Value` 필드에 `@RequiredArgsConstructor` 금지)·2026-07-29(수기 생성자 EI_EXPOSE_REP2) |
+
+- `EmailVerificationService`와 같은 형태로 생성자를 손으로 쓰고 `@Value`를 파라미터에 붙였다(Lombok `@RequiredArgsConstructor`는 `@Value`를 생성자 파라미터로 옮기지 않는다). 수기 생성자라 `spotbugsMain`을 단독 실행해 `EI_EXPOSE_REP2`가 없음을 확인했다.
+- `checkSendRateLimit`·`expirePreviousCodes`·`generateCode`·`hmac`는 계획 D5·U5대로 공통 유틸로 추출하지 않고 새 리포지터리·엔티티에 맞춰 옮겼다(세 번째 중복이지만 이번 이슈에서 3-서비스 리팩터링을 함께 하지 않는다).
+- 컨트롤러·DTO·`SecurityConfig` 공개 경로(Task 3), 통합 테스트(Task 4), 문서 동기화(Task 5)는 범위 밖이라 손대지 않았다. controller 변경이 없어 `docs/api-routes.md`·`docs/api-contracts.md`도 갱신하지 않았다.
+
+### Task 3: `PasswordResetController`·요청 DTO와 공개 경로
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| implementer | implementer | `JAVA_HOME="C:\Program Files\Java\jdk-17" gradlew.bat -p <root> compileJava spotlessApply spotbugsMain --no-daemon --max-workers=1` — `BUILD SUCCESSFUL`(경고 0) | issue-115-plan.md HTTP 계약(202 본문 없음, 오류 우선순위 400→429→404→409)·Task 3, conventions.md DTO record 검증·레이어 규칙, CLAUDE.md 규칙 7(api-routes.md·api-contracts.md 동반 갱신) |
+
+- `PasswordResetController`는 `EmailVerificationController.sendVerificationCode`와 같은 모양으로 서비스 호출 후 202만 반환한다. `PasswordResetRequest`는 `EmailVerificationRequest`와 동일한 `@NotBlank`·`@Size(max = 255)`·`@Email` 조합이다.
+- `SecurityConfig`는 `PUBLIC_POST_PATHS`에 `/api/auth/password-resets` 한 줄만 추가했다 — 다른 경로의 인증 규칙과 조건부 공개 매처는 건드리지 않았다.
+- `docs/api-routes.md`(라우트 목록 + 인증 규칙 표 공개 경로 행)와 `docs/api-contracts.md`(auth 절에 "비밀번호 재설정 인증번호 발송" 계약 신설)를 함께 갱신했다. PRD `AUTH-006` 신설은 Task 5 범위라 손대지 않았다.
+- `SecurityConfigTest`의 공개 경로 `@ValueSource` 목록에 새 경로가 아직 없다(개수 단정은 없어 기존 테스트는 깨지지 않는다) — 추가는 tester 몫이다.
+
+### 리뷰 차단 반영: OAuth 전용 회원 판별을 `hasPassword()`로 교체
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| implementer | implementer | `JAVA_HOME="C:\Program Files\Java\jdk-17" gradlew.bat -p <root> compileJava spotlessApply spotbugsMain --no-daemon --max-workers=1` — `BUILD SUCCESSFUL`(경고 0); `grep '{oauth-only}' src/main` — 리터럴이 `User` 한 곳만 남음 | reviewer 차단 지적(도달 불가 409 분기), `AuthService.saveOAuthUser`의 실제 저장값, issue-115-plan.md D5(판별 기준은 "재설정할 비밀번호가 있는가"), conventions.md 엔티티 규칙 |
+
+- `PasswordResetService`의 `user.getPasswordHash() == null` 판별은 **도달 불가**였다. OAuth 가입자는 `AuthService.saveOAuthUser`가 `password_hash`에 자리표시자 `{oauth-only}`를 채워 저장하므로 NULL이 아니고, 프로덕션에 `password_hash`를 NULL로 만드는 생성 경로가 없다. 그 결과 소셜 전용 계정 이메일로 요청하면 409가 아니라 202와 함께 실제 인증번호가 발송됐다.
+- 상수 `OAUTH_ONLY_PASSWORD_SENTINEL`을 `AuthService`에서 `User`의 public 상수로 옮기고, `User.hasPassword()`(값이 있고 자리표시자가 아님)를 추가해 `PasswordResetService`가 이를 쓰도록 했다. `AuthService`는 상수 참조 위치만 바뀌었고 로직은 그대로다(#114로 머지된 코드).
+- `socialAccountRepository` 조회 대신 비밀번호 보유 여부로 판정한 이유는 이 엔드포인트가 묻는 것이 "소셜 계정이 연결돼 있는가"가 아니라 "재설정할 비밀번호가 있는가"이기 때문이다 — 향후 "이메일 회원 + 소셜 연결"이 생겨도 판정이 그대로 옳다.
+- 테스트 픽스처(`PasswordResetServiceTest`·`PasswordResetIntegrationTest`가 `User.create(email, null, ...)`로 프로덕션에 없는 형태를 만드는 부분)는 tester 몫이라 손대지 않았다. `docs/api-contracts.md`의 409 기술("비밀번호가 없는 소셜 로그인 전용 회원")은 동작 기준 설명이라 그대로 유효해 수정하지 않았다.
+
 ## Issue #56
 
 ### Task 1: 엔티티·리포지터리 확장
@@ -358,8 +401,12 @@
 | 19:47 | implementer | `.\gradlew.bat -p <루트> compileJava --no-daemon --max-workers=1` — BUILD SUCCESSFUL | issue-114-plan.md Task 1(D2 OAuth 전용 400·D3 검증 순서·D4 `changePassword`·D5 폐기→발급 순서·D6 단일 트랜잭션·D7 기존 ErrorCode만), conventions.md 엔티티·레이어 규칙, ADR-0002, ADR-0004(마이그레이션 미추가) |
 | 20:05 | implementer | `.\gradlew.bat -p <루트> spotlessApply compileJava --no-daemon --max-workers=1` — BUILD SUCCESSFUL | issue-114-plan.md Task 2(D1 요청 DTO 검증 정책·D8 200 `TokenResponse`·`SecurityConfig` 미변경 확인), conventions.md DTO·API 규칙, CLAUDE.md 규칙 7(api-routes.md·api-contracts.md 동기화) |
 | reviewer | reviewer(리뷰) | `git diff dev...HEAD`(커밋 1613a86·cdaaec2·f612652·ead50f9·c8577a0) | issue-114-plan.md D1~D8·팀 확정 2건(폐기→발급 순서, OAuth 전용 400), conventions.md 리뷰 체크 질문·DTO·엔티티 규칙, ADR-0002·0003·0004(마이그레이션 미추가 확인), docs/api-routes.md·api-contracts.md·prd.md |
+| reviewer | reviewer(리뷰) | `git diff dev...HEAD --stat` + Issue #115 프로덕션 6·수정 4·테스트 5·문서 6 파일 원본 확인(`PasswordResetService`·`PasswordResetVerification`·V12·`SecurityConfig`·`ErrorCode`·`AuthService.createOAuthUser`) | issue-115-plan.md D1~D7·팀 확정 3건(404/409 응답 구분, 이메일 단위 집계·제한 우선 판정, 전용 `PASSWORD_RESET_SECRET`), conventions.md 리뷰 체크 질문·엔티티·DTO·테스트 규칙, ADR-0002·0003·0004, docs/prd.md AUTH-006·api-routes.md·api-contracts.md |
+| reviewer | reviewer(재리뷰) | `git diff dev...HEAD`(차단 수정 `1c534a8` 포함 전체) + `User`·`AuthService`·`PasswordResetService`·`Sha256BcryptPasswordEncoder`·`compose.deploy.yaml` 원본과 `grep '{oauth-only}'`·`grep 'User.create('` 전수 확인 | issue-115-plan.md D1~D7·팀 확정 3건, conventions.md 상수·엔티티·레이어·테스트 규칙, ADR-0002·0003·0004, docs/prd.md AUTH-006·api-routes.md·api-contracts.md |
 
 ## 모니터링 (사람용 요약)
+- Issue #115 재리뷰 판정: 차단 0건, 권장 2건, 참고 5건. 직전 차단(도달 불가 409)이 `User.hasPassword()`로 실제 해소됐고 상수 이동은 `AuthService` 동작을 바꾸지 않음(값 동일·참조 위치만 이동, 판별 회귀는 단위 3건+실제 `oauthLogin` 통합 테스트로 고정)을 확인, 머지 가능.
+- Issue #115 리뷰 판정: 차단 1건, 권장 1건, 참고 4건. 발송 제한 우선 판정·거부 행 커밋(`noRollbackFor`)·발송 실패 동반 롤백·전용 시크릿 HMAC·V12/엔티티 일치·공개 경로 1줄 추가는 모두 확정 결정대로였으나, OAuth 전용 회원 판별이 `passwordHash == null`이라 실제 OAuth 가입자(`AuthService`가 `{oauth-only}` 센티넬을 저장)에게 409가 아니라 202로 재설정 코드가 발송된다 — 409 분기가 운영에서 사실상 도달 불가라 머지 전 수정 필요.
 - Issue #114 리뷰 판정: 차단 0건, 권장 1건(tasks.md 4번째 항목 체크박스 미갱신), 참고 3건. 팀 확정 2건(폐기→발급 순서, OAuth 전용 400 선검사)이 코드·단위(InOrder)·통합(실제 벌크 UPDATE 후 활성 토큰 1개) 테스트로 모두 고정됐고 비밀번호·토큰 원문이 응답·로그·DB에 남지 않음을 확인, 머지 가능.
 - Issue #114 Task 2 — `PasswordChangeRequest`와 보호된 `PATCH /api/auth/me/password`(200 `TokenResponse`) 추가, api-routes·api-contracts 동기화, 컴파일 통과. `SecurityConfig`는 공개 목록이 POST·GET뿐이라 수정 불필요. `@WebMvcTest`는 tester 담당.
 - Issue #114 Task 1 — `User.changePassword`와 `AuthService.changePassword`(OAuth 전용 400 → 현재 비밀번호 403 → 동일 400 → 해시 교체 → 폐기 → 발급) 추가, 컴파일 통과. 단위 테스트는 tester 담당.
@@ -404,3 +451,7 @@
 - 03:35 — Issue #54 Task 3: `NicknameUpdateRequest`(nickname만 `@NotBlank`, 재인증 필드 2개는 선택)와 보호된 `PATCH /api/auth/me/nickname`을 TDD로 추가해 `AuthControllerTest` 59/59가 통과했다. 응답 키 집합을 `hasSize(4)`로 고정하고 `currentPassword`·`reauthToken`·`passwordHash` 부재를 명시 검증했다. 인증 없음·Refresh Bearer 케이스는 매핑 추가 전부터 Security 체인이 401로 막아 `SecurityConfig`는 수정하지 않았고, api-routes.md에 라우트·상세 계약·보호 경로를 같은 커밋에서 동기화했다.
 - 05:10 — Issue #54 리뷰 판정: 차단 0건, 권장 2·참고 4. 원자적 소비 쿼리의 소유자 조건, 단일 트랜잭션 롤백, 본인 제외 중복 확인 이중 방어, `MemberResponse` 민감 필드 미노출, `SecurityConfig`·`ErrorCode`·마이그레이션 미변경, api-routes 일치를 확인, 머지 가능.
 - 재검토 — issue-54-plan.md 미확정 1~5번 전부 "유지" 판정. 5번(소비 시 SocialAccount 재조회 없음)은 Issue #53 authorize→callback 경로가 Access JWT 인증된 principal.userId()를 서명된 state에 실어 SocialAccount 소유자 검증까지 마친 뒤에만 reauth_tokens.user_id에 바인딩함을 재확인해, 소비 시점 재조회가 보안상 불필요함을 확인. 코드 변경 없음.
+- Issue #115 Task 1: origin/dev에 V12가 없음을 확인하고 `V12__create_password_reset_verifications_table.sql`(user_id FK 없음, code_hash·expires_at·last_sent_at NULL 허용)·`PasswordResetVerification`(create/createRejected/expire)·`PasswordResetVerificationRepository`(거부 행 포함 집계 + 거부 행 제외 무효화 조회)와 409 `SOCIAL_ACCOUNT_ONLY`, `PASSWORD_RESET_SECRET` 배선(.env.example·build.gradle·deploy/README.md)을 추가해 compileJava 통과. 서비스·컨트롤러·문서 동기화와 @DataJpaTest는 범위 밖.
+- Issue #115 Task 2: `PasswordResetService.sendResetCode`를 `@Transactional(noRollbackFor = BusinessException.class)`로 구현 — 발송 제한(60초·1시간 5회·하루 10회, 이메일 단위, 거부 행 포함 집계) 429 → 미가입 404 `NOT_FOUND`("가입되지 않은 이메일입니다.") → `passwordHash == null` 409 `SOCIAL_ACCOUNT_ONLY` 순서로 판정하고, 거부 경로는 집계 행만 남긴 뒤 발송하지 않는다. `PASSWORD_RESET_SECRET`을 수기 생성자 파라미터 `@Value`로 주입(첫 사용처)했고 compileJava·spotbugsMain 통과. 컨트롤러·DTO·SecurityConfig·통합 테스트·문서 동기화는 범위 밖.
+- Issue #115 Task 3: `PasswordResetRequest`(email 필수·형식·255자)와 `PasswordResetController`(`POST /api/auth/password-resets`, 202 본문 없음)를 추가하고 `SecurityConfig.PUBLIC_POST_PATHS`에 해당 경로 한 줄만 넣어 비인증 호출이 401이 되지 않게 했다. CLAUDE.md 규칙 7대로 api-routes.md(라우트 + 공개 경로 행)·api-contracts.md(계약 절 신설, 판정 순서 400→429→404→409와 거부 행 집계·열거 감수 설계 명시)를 함께 갱신했고 compileJava·spotbugsMain 통과. @WebMvcTest·통합 테스트·PRD 갱신은 범위 밖.
+- Issue #115 리뷰 차단 반영: OAuth 전용 회원의 `password_hash`는 NULL이 아니라 자리표시자 `{oauth-only}`라서 409 `SOCIAL_ACCOUNT_ONLY` 분기가 도달 불가였다(소셜 전용 계정에 실제 인증번호가 발송됨). 상수를 `AuthService`에서 `User`로 옮기고 `User.hasPassword()`를 추가해 `PasswordResetService`가 그것으로 판정하도록 고쳤다 — `AuthService` 로직은 불변(#114 머지 코드), compileJava·spotbugsMain 통과. 테스트 픽스처 수정은 tester 몫.
