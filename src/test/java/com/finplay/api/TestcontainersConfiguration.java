@@ -1,6 +1,7 @@
 // 테스트 전체가 공유하는 MySQL 싱글턴 컨테이너 설정 (컨텍스트마다 재기동 방지, ADR-0003)
 package com.finplay.api;
 
+import java.util.Map;
 import org.springframework.boot.data.redis.autoconfigure.DataRedisConnectionDetails;
 import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -17,7 +18,10 @@ public class TestcontainersConfiguration {
 	// 컨텍스트가 열대여섯 개만 쌓여도 MySQL 기본 한도 151을 넘는다(실측 최대 153 → "Too many connections").
 	// 전에는 컨테이너가 중간에 교체되며 접속이 함께 끊겨 이 한도가 드러나지 않았다.
 	private static final MySQLContainer MYSQL = new MySQLContainer(DockerImageName.parse("mysql:8.4"))
-		.withCommand("mysqld", "--max-connections=1000");
+		.withCommand("mysqld", "--max-connections=1000")
+		// 데이터 디렉터리를 tmpfs(램)에 둔다. 진짜 MySQL 8.4 그대로이고 저장 위치만 바뀌며,
+		// 테스트 DB는 실행이 끝나면 버리므로 잃을 데이터가 없다. 실측 사용량 212MB.
+		.withTmpFs(Map.of("/var/lib/mysql", "rw"));
 
 	// Redis도 MySQL과 같은 static 싱글턴으로 공유한다 (컨텍스트마다 재기동 방지, ADR-0003). 태그 고정.
 	private static final GenericContainer<?> REDIS = new GenericContainer<>(DockerImageName.parse("redis:7.4"))
