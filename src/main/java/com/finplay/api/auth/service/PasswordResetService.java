@@ -1,4 +1,4 @@
-// 비밀번호 재설정 인증번호의 발송 제한 판정·대상 회원 판별·생성·HMAC 저장·이전 코드 무효화·발송을 담당하는 서비스
+// 비밀번호 재설정 인증번호의 발송 제한 판정·대상 회원 판별·생성·HMAC 저장·이전 코드 무효화·발송과 확인 시 검증·소비를 담당하는 서비스
 package com.finplay.api.auth.service;
 
 import com.finplay.api.auth.domain.PasswordResetVerification;
@@ -32,6 +32,7 @@ public class PasswordResetService {
 	private static final int RESEND_INTERVAL_SECONDS = 60;
 	private static final int HOURLY_LIMIT = 5;
 	private static final int DAILY_LIMIT = 10;
+	private static final int MAX_VERIFICATION_ATTEMPTS = 5;
 	private static final String NOT_FOUND_MESSAGE = "가입되지 않은 이메일입니다.";
 
 	private final UserRepository userRepository;
@@ -85,7 +86,46 @@ public class PasswordResetService {
 		passwordResetVerificationRepository.save(verification);
 
 		// 발송은 저장 이후에 한다 — 발송 실패 시 저장과 이전 코드 무효화가 함께 롤백된다.
-		emailSender.sendVerificationCode(email, code);
+		// 가입 인증·이메일 변경과 다른 전용 문구로 보낸다 — 수신자가 재설정 시도임을 알아채야 한다.
+		emailSender.sendPasswordResetCode(email, code);
+	}
+
+	// D1: 조회 → 소비 상태·만료 → 시도 횟수 초과 → 코드 일치 → 회원 존재 → 비밀번호 보유 순으로 검증하고 마지막에 소비한다.
+	// 계정 상태 판정을 인증번호 검증 뒤에 두는 이유(D2) — 이 경로에는 발송 제한이 없어, 순서를 뒤집으면
+	// 아무 이메일로 호출해 404/409만 보고 가입 여부·소셜 전용 여부를 무제한 스캔하는 계정 열거 오라클이 된다.
+	// 트랜잭션 경계는 갖지 않는다 — 호출자인 AuthService.confirmPasswordReset의 트랜잭션 안에서 실행된다.
+	public User validateAndConsumeCode(String email, String code) {
+		LocalDateTime now = LocalDateTime.now(clock);
+		// 실제로 발송된 행 중 최신 1건만 본다 — 거부 행(code_hash NULL)이 더 최신일 수 있어 반드시 걸러낸다.
+		PasswordResetVerification verification = passwordResetVerificationRepository
+			.findFirstByEmailAndCodeHashIsNotNullOrderByCreatedAtDesc(email)
+			.orElseThrow(() -> new BusinessException(ErrorCode.EMAIL_VERIFICATION_FAILED));
+
+		// 자연 만료·재발송 무효화·5회 초과 무효화가 모두 expires_at으로 수렴한다.
+		if (verification.getConsumedAt() != null || !verification.getExpiresAt().isAfter(now)) {
+			throw new BusinessException(ErrorCode.EMAIL_VERIFICATION_FAILED);
+		}
+		if (verification.getAttemptCount() >= MAX_VERIFICATION_ATTEMPTS) {
+			verification.incrementAttemptCount();
+			verification.expire(now);
+			throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS);
+		}
+		if (!verification.getCodeHash().equals(hmac(code))) {
+			verification.incrementAttemptCount();
+			throw new BusinessException(ErrorCode.EMAIL_VERIFICATION_FAILED);
+		}
+
+		// 여기부터는 인증번호를 맞힌 요청자다 — 이제서야 계정 상태를 드러낸다.
+		// 미가입은 404가 아니라 400이다(발송 엔드포인트와 의도적으로 다르다). 발송 후 이메일이 바뀐 경우만 도달하는 방어 분기다.
+		User user = userRepository.findByEmail(email)
+			.orElseThrow(() -> new BusinessException(ErrorCode.EMAIL_VERIFICATION_FAILED));
+		if (!user.hasPassword()) {
+			throw new BusinessException(ErrorCode.SOCIAL_ACCOUNT_ONLY);
+		}
+
+		// 모든 판정을 통과한 뒤에만 소비한다 — 위에서 던지면 인증번호가 낭비되지 않는다.
+		verification.consume(now);
+		return user;
 	}
 
 	// 발송 제한은 이메일 주소 단위이며, 미가입·소셜 전용으로 거부된 요청 행도 함께 집계한다.

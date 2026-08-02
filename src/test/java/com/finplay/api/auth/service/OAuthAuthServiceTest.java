@@ -75,6 +75,7 @@ class OAuthAuthServiceTest {
 			socialAccounts,
 			reauthTokens,
 			mock(EmailChangeService.class),
+			mock(PasswordResetService.class),
 			new Sha256BcryptPasswordEncoder(),
 			accounts,
 			tokens,

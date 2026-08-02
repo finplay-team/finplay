@@ -12,6 +12,7 @@
 | POST | /api/auth/email-verifications | auth | 인증번호 발송 (202, 본문 없음). 발송 제한·중복 이메일 검사 | 002 AUTH-004 |
 | POST | /api/auth/email-verifications/confirm | auth | 인증번호 확인 후 `signupVerificationToken` 발급 | 002 AUTH-004 |
 | POST | /api/auth/password-resets | auth | 비밀번호 재설정 인증번호 발송 (202, 본문 없음). 비인증 공개 경로, 발송 제한·가입 여부·소셜 전용 계정 검사 | 002 AUTH-006, Issue #115 |
+| POST | /api/auth/password-resets/confirm | auth | 인증번호 + 새 비밀번호를 한 요청으로 받아 비밀번호 재설정 (204, 본문 없음). 비인증 공개 경로, 기존 Refresh Token 전체 폐기 + **새 토큰 미발급**(전 기기 로그아웃) | 002 AUTH-006, Issue #116 |
 | POST | /api/auth/signup | auth | 가입 인증 토큰을 소비하는 이메일 회원가입 (201, 토큰 발급) | 002 Issue #4 |
 | POST | /api/auth/login | auth | 이메일·비밀번호 검증 후 Access·Refresh 토큰 발급 | 002 AUTH-002 |
 | POST | /api/auth/refresh | auth | 유효한 Refresh Token을 회전하고 새 Access·Refresh 토큰 발급 | 002 AUTH-002 |
@@ -64,6 +65,7 @@ Spring Security는 세션을 만들지 않는 Bearer 인증을 사용한다. 현
 | 공개 | POST | `/api/auth/email-verifications` |
 | 공개 | POST | `/api/auth/email-verifications/confirm` |
 | 공개 | POST | `/api/auth/password-resets` |
+| 공개 | POST | `/api/auth/password-resets/confirm` |
 | 조건부 공개 | GET | `/api/auth/oauth/*/authorize` — `purpose`가 없거나 공백이거나 대소문자 무관 `login`일 때만 공개. 그 밖의 값(`reauth` 포함)은 `anyRequest().authenticated()`로 떨어져 인증 필요 |
 | 공개 | GET | `/api/auth/oauth/*/callback` |
 | 공개 | GET | `/actuator/health` |

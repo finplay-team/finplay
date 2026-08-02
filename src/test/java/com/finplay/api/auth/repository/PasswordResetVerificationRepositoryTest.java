@@ -4,7 +4,9 @@ package com.finplay.api.auth.repository;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -163,5 +165,107 @@ class PasswordResetVerificationRepositoryTest {
 
 		assertThat(remaining).hasSize(1);
 		assertThat(remaining.get(0).getId()).isEqualTo(renewed.getId());
+	}
+
+	@Test
+	@DisplayName("확인 대상 조회는 재발송으로 여러 발송 행이 쌓였을 때 가장 최근 발송 행만 반환한다")
+	void findFirstByEmailAndCodeHashIsNotNullOrderByCreatedAtDescReturnsLatestSentRow() {
+		String email = "reset-confirm-latest@finplay.com";
+
+		passwordResetVerificationRepository
+			.save(PasswordResetVerification.create(email, "hash-oldest", NOW.plusMinutes(5), NOW.minusMinutes(10)));
+		PasswordResetVerification latest = passwordResetVerificationRepository
+			.save(PasswordResetVerification.create(email, "hash-latest", NOW.plusMinutes(5), NOW));
+		passwordResetVerificationRepository.flush();
+
+		PasswordResetVerification found = passwordResetVerificationRepository
+			.findFirstByEmailAndCodeHashIsNotNullOrderByCreatedAtDesc(email)
+			.orElseThrow();
+
+		assertThat(found.getId()).isEqualTo(latest.getId());
+		assertThat(found.getCodeHash()).isEqualTo("hash-latest");
+	}
+
+	@Test
+	@DisplayName("확인 대상 조회는 거부 행이 발송 행보다 더 최신이어도 건너뛰고 발송 행을 반환한다")
+	void findFirstByEmailAndCodeHashIsNotNullOrderByCreatedAtDescSkipsNewerRejectedRow() {
+		String email = "reset-confirm-skip@finplay.com";
+
+		// 발송 행이 먼저 생기고,
+		PasswordResetVerification sent = passwordResetVerificationRepository
+			.save(PasswordResetVerification.create(email, "hash-sent", NOW.plusMinutes(5), NOW));
+		// 그 뒤에 거부 행 2건이 더 최신 시각으로 쌓인다 (미가입·소셜 전용 거부, #115 D6).
+		passwordResetVerificationRepository.save(PasswordResetVerification.createRejected(email, NOW.plusMinutes(1)));
+		passwordResetVerificationRepository.save(PasswordResetVerification.createRejected(email, NOW.plusMinutes(2)));
+		passwordResetVerificationRepository.flush();
+
+		// 이 테스트가 의미를 가지려면 created_at 최신 행이 반드시 거부 행이어야 한다 — 배치가 어긋나면 여기서 먼저 깨진다.
+		PasswordResetVerification newestRow = passwordResetVerificationRepository.findAll()
+			.stream()
+			.filter(row -> email.equals(row.getEmail()))
+			.max(Comparator.comparing(PasswordResetVerification::getCreatedAt))
+			.orElseThrow();
+		assertThat(newestRow.getCodeHash()).isNull();
+
+		PasswordResetVerification found = passwordResetVerificationRepository
+			.findFirstByEmailAndCodeHashIsNotNullOrderByCreatedAtDesc(email)
+			.orElseThrow();
+
+		assertThat(found.getId()).isEqualTo(sent.getId());
+		// code_hash·expires_at이 NULL인 거부 행을 집으면 후속 검증 단계에서 NPE가 난다 (D2).
+		assertThat(found.getCodeHash()).isEqualTo("hash-sent");
+		assertThat(found.getExpiresAt()).isEqualTo(NOW.plusMinutes(5));
+	}
+
+	@Test
+	@DisplayName("확인 대상 조회는 거부 행만 있으면 빈 값을 반환한다 — 코드 없는 행을 집지 않는다")
+	void findFirstByEmailAndCodeHashIsNotNullOrderByCreatedAtDescReturnsEmptyWhenOnlyRejectedRowsExist() {
+		String email = "reset-confirm-rejected-only@finplay.com";
+
+		passwordResetVerificationRepository.save(PasswordResetVerification.createRejected(email, NOW));
+		passwordResetVerificationRepository.save(PasswordResetVerification.createRejected(email, NOW.plusMinutes(1)));
+		passwordResetVerificationRepository.flush();
+
+		Optional<PasswordResetVerification> found = passwordResetVerificationRepository
+			.findFirstByEmailAndCodeHashIsNotNullOrderByCreatedAtDesc(email);
+
+		assertThat(found).isEmpty();
+	}
+
+	@Test
+	@DisplayName("확인 대상 조회는 다른 이메일의 더 최신 발송 행을 반환하지 않는다")
+	void findFirstByEmailAndCodeHashIsNotNullOrderByCreatedAtDescExcludesOtherEmailRows() {
+		String email = "reset-confirm-owner@finplay.com";
+		String otherEmail = "reset-confirm-stranger@finplay.com";
+
+		passwordResetVerificationRepository
+			.save(
+				PasswordResetVerification.create(otherEmail, "hash-stranger", NOW.plusMinutes(5), NOW.plusMinutes(1)));
+		passwordResetVerificationRepository.flush();
+
+		Optional<PasswordResetVerification> found = passwordResetVerificationRepository
+			.findFirstByEmailAndCodeHashIsNotNullOrderByCreatedAtDesc(email);
+
+		assertThat(found).isEmpty();
+	}
+
+	@Test
+	@DisplayName("확인 대상 조회는 만료·소비된 발송 행도 반환한다 — 판정은 서비스가 하고 쿼리는 거부 행만 거른다")
+	void findFirstByEmailAndCodeHashIsNotNullOrderByCreatedAtDescReturnsExpiredOrConsumedSentRow() {
+		String email = "reset-confirm-consumed@finplay.com";
+
+		PasswordResetVerification consumedAndExpired = PasswordResetVerification
+			.create(email, "hash-consumed", NOW.minusMinutes(1), NOW);
+		ReflectionTestUtils.setField(consumedAndExpired, "consumedAt", NOW);
+		passwordResetVerificationRepository.save(consumedAndExpired);
+		passwordResetVerificationRepository.flush();
+
+		PasswordResetVerification found = passwordResetVerificationRepository
+			.findFirstByEmailAndCodeHashIsNotNullOrderByCreatedAtDesc(email)
+			.orElseThrow();
+
+		assertThat(found.getId()).isEqualTo(consumedAndExpired.getId());
+		assertThat(found.getConsumedAt()).isEqualTo(NOW);
+		assertThat(found.getExpiresAt()).isEqualTo(NOW.minusMinutes(1));
 	}
 }

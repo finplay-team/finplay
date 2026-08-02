@@ -172,7 +172,7 @@ class PasswordResetIntegrationTest {
 		LocalDateTime previousExpiresAt = previous.getExpiresAt();
 
 		doThrow(new IllegalStateException("메일 발송 실패"))
-			.when(fakeEmailSender).sendVerificationCode(any(), any());
+			.when(fakeEmailSender).sendPasswordResetCode(any(), any());
 
 		assertThat(catchThrowableOfType(IllegalStateException.class,
 			() -> passwordResetService.sendResetCode(user.getEmail())))
@@ -233,7 +233,7 @@ class PasswordResetIntegrationTest {
 			() -> passwordResetService.sendResetCode(socialOnly.getEmail()));
 		// 발송 실패 경로 — 60초 제한을 피하려고 아직 요청이 없는 다른 회원을 쓴다.
 		doThrow(new IllegalStateException("메일 발송 실패"))
-			.when(fakeEmailSender).sendVerificationCode(any(), any());
+			.when(fakeEmailSender).sendPasswordResetCode(any(), any());
 		catchThrowableOfType(IllegalStateException.class,
 			() -> passwordResetService.sendResetCode(failing.getEmail()));
 

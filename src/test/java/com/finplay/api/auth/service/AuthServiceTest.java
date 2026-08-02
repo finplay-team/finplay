@@ -84,6 +84,7 @@ class AuthServiceTest {
 	private SocialAccountRepository socialAccountRepository;
 	private ReauthTokenRepository reauthTokenRepository;
 	private EmailChangeService emailChangeService;
+	private PasswordResetService passwordResetService;
 	private OAuthNicknameGenerator oauthNicknameGenerator;
 	private ReauthTokenGenerator reauthTokenGenerator;
 	private AccountService accountService;
@@ -99,6 +100,7 @@ class AuthServiceTest {
 		socialAccountRepository = mock(SocialAccountRepository.class);
 		reauthTokenRepository = mock(ReauthTokenRepository.class);
 		emailChangeService = mock(EmailChangeService.class);
+		passwordResetService = mock(PasswordResetService.class);
 		oauthNicknameGenerator = mock(OAuthNicknameGenerator.class);
 		reauthTokenGenerator = mock(ReauthTokenGenerator.class);
 		accountService = mock(AccountService.class);
@@ -112,6 +114,7 @@ class AuthServiceTest {
 			socialAccountRepository,
 			reauthTokenRepository,
 			emailChangeService,
+			passwordResetService,
 			passwordEncoder,
 			accountService,
 			jwtTokenProvider,
@@ -1020,6 +1023,125 @@ class AuthServiceTest {
 	}
 
 	@Test
+	void confirmPasswordResetReplacesHashAndRevokesAllSessionsWithoutIssuingNewTokens() {
+		User user = stubPasswordResetTarget();
+		String originalHash = user.getPasswordHash();
+		stubSaveAndFlushReturningArgument();
+
+		authService.confirmPasswordReset(EMAIL, VERIFICATION_CODE, NEW_PASSWORD);
+
+		// 저장되는 값은 원문이 아니라 새 비밀번호로 대조되는 해시여야 한다.
+		assertThat(user.getPasswordHash()).isNotEqualTo(originalHash);
+		assertThat(user.getPasswordHash()).isNotEqualTo(NEW_PASSWORD);
+		assertThat(passwordEncoder.matches(NEW_PASSWORD, user.getPasswordHash())).isTrue();
+		assertThat(passwordEncoder.matches(RAW_PASSWORD, user.getPasswordHash())).isFalse();
+		assertThat(user.getUpdatedAt()).isEqualTo(NOW);
+		// 이메일·닉네임은 재설정 대상이 아니다.
+		assertThat(user.getEmail()).isEqualTo(EMAIL);
+		assertThat(user.getNickname()).isEqualTo(NICKNAME);
+
+		verify(passwordResetService).validateAndConsumeCode(EMAIL, VERIFICATION_CODE);
+		verify(userRepository).saveAndFlush(user);
+		verify(refreshTokenRepository).revokeAllActiveByUserId(7L, NOW);
+	}
+
+	@Test
+	void confirmPasswordResetIssuesNoTokenPairSoEveryDeviceIsLoggedOut() {
+		// D4 — #114의 changePassword와 의도적으로 다르다. 비로그인 흐름이라 발급할 대상 세션이 없다.
+		// 누군가 #114를 참고해 issueTokenPair를 끼워 넣으면 여기서 깨져야 한다.
+		stubPasswordResetTarget();
+		stubSaveAndFlushReturningArgument();
+
+		authService.confirmPasswordReset(EMAIL, VERIFICATION_CODE, NEW_PASSWORD);
+
+		verifyNoInteractions(jwtTokenProvider);
+		verify(refreshTokenRepository, never()).save(any());
+		// 폐기 외에는 RefreshToken 저장소를 건드리지 않는다.
+		verify(refreshTokenRepository).revokeAllActiveByUserId(7L, NOW);
+		verifyNoMoreInteractions(refreshTokenRepository);
+	}
+
+	@Test
+	void confirmPasswordResetValidatesConsumesPersistsThenRevokesInThatOrder() {
+		// 소비·교체·폐기 순서가 어긋나면 부분 성공 상태가 만들어질 수 있다 (D3).
+		// saveAndFlush가 revokeAllActiveByUserId(벌크 UPDATE)보다 먼저여야 flush 순서가 모호해지지 않는다.
+		stubPasswordResetTarget();
+		stubSaveAndFlushReturningArgument();
+
+		authService.confirmPasswordReset(EMAIL, VERIFICATION_CODE, NEW_PASSWORD);
+
+		InOrder inOrder = inOrder(passwordResetService, userRepository, refreshTokenRepository);
+		inOrder.verify(passwordResetService).validateAndConsumeCode(EMAIL, VERIFICATION_CODE);
+		inOrder.verify(userRepository).saveAndFlush(any(User.class));
+		inOrder.verify(refreshTokenRepository).revokeAllActiveByUserId(7L, NOW);
+		inOrder.verifyNoMoreInteractions();
+	}
+
+	@Test
+	void confirmPasswordResetChangesHashOnlyAfterValidationSucceeds() {
+		// changePassword가 validateAndConsumeCode보다 먼저 호출되면 검증 실패에도 해시가 바뀐다.
+		User user = existingUser(passwordEncoder.encode(RAW_PASSWORD));
+		String originalHash = user.getPasswordHash();
+		when(passwordResetService.validateAndConsumeCode(EMAIL, VERIFICATION_CODE)).thenAnswer(invocation -> {
+			assertThat(user.getPasswordHash()).isEqualTo(originalHash);
+			assertThat(user.getUpdatedAt()).isEqualTo(NOW.minusDays(1));
+			return user;
+		});
+		stubSaveAndFlushReturningArgument();
+
+		authService.confirmPasswordReset(EMAIL, VERIFICATION_CODE, NEW_PASSWORD);
+
+		assertThat(passwordEncoder.matches(NEW_PASSWORD, user.getPasswordHash())).isTrue();
+	}
+
+	@Test
+	void confirmPasswordResetPropagatesValidationFailureAndChangesNothing() {
+		User user = existingUser(passwordEncoder.encode(RAW_PASSWORD));
+		String originalHash = user.getPasswordHash();
+		when(passwordResetService.validateAndConsumeCode(EMAIL, VERIFICATION_CODE))
+			.thenThrow(new BusinessException(ErrorCode.EMAIL_VERIFICATION_FAILED));
+
+		assertThatThrownBy(() -> authService.confirmPasswordReset(EMAIL, VERIFICATION_CODE, NEW_PASSWORD))
+			.isInstanceOf(BusinessException.class)
+			.extracting(ex -> ((BusinessException)ex).getErrorCode())
+			.isEqualTo(ErrorCode.EMAIL_VERIFICATION_FAILED);
+
+		// 검증이 던지면 그 뒤 단계는 하나도 실행되지 않는다 — 부분 성공이 없다.
+		assertThat(user.getPasswordHash()).isEqualTo(originalHash);
+		verify(userRepository, never()).saveAndFlush(any());
+		verifyNoInteractions(refreshTokenRepository, jwtTokenProvider);
+	}
+
+	@Test
+	void confirmPasswordResetPropagatesTooManyRequestsAndChangesNothing() {
+		when(passwordResetService.validateAndConsumeCode(EMAIL, VERIFICATION_CODE))
+			.thenThrow(new BusinessException(ErrorCode.TOO_MANY_REQUESTS));
+
+		assertThatThrownBy(() -> authService.confirmPasswordReset(EMAIL, VERIFICATION_CODE, NEW_PASSWORD))
+			.isInstanceOf(BusinessException.class)
+			.extracting(ex -> ((BusinessException)ex).getErrorCode())
+			.isEqualTo(ErrorCode.TOO_MANY_REQUESTS);
+
+		verify(userRepository, never()).saveAndFlush(any());
+		verifyNoInteractions(refreshTokenRepository, jwtTokenProvider);
+	}
+
+	@Test
+	void confirmPasswordResetDoesNotLookUpUserItselfOrTouchUnrelatedCollaborators() {
+		// 재설정 대상 회원은 PasswordResetService가 확정해 넘긴다 — AuthService가 다시 조회하지 않는다 (D1).
+		stubPasswordResetTarget();
+		stubSaveAndFlushReturningArgument();
+
+		authService.confirmPasswordReset(EMAIL, VERIFICATION_CODE, NEW_PASSWORD);
+
+		verify(userRepository, never()).findByEmail(any());
+		verify(userRepository, never()).findById(any());
+		verifyNoInteractions(
+			accountService, emailChangeService, emailVerificationRepository, reauthTokenRepository,
+			socialAccountRepository);
+	}
+
+	@Test
 	void signupMethodFromProviderMapsEachOAuthProvider() {
 		assertThat(SignupMethod.fromProvider(OAuthProviderName.KAKAO)).isEqualTo(SignupMethod.KAKAO);
 		assertThat(SignupMethod.fromProvider(OAuthProviderName.NAVER)).isEqualTo(SignupMethod.NAVER);
@@ -1032,6 +1154,13 @@ class AuthServiceTest {
 			Optional.of(SocialAccount.create(user, provider, "provider-user-id", NOW.minusDays(1))));
 
 		return authService.getMe(7L).signupMethod();
+	}
+
+	// 재설정 대상 회원은 PasswordResetService가 확정해 반환한다 — AuthService는 그 결과를 그대로 쓴다.
+	private User stubPasswordResetTarget() {
+		User user = existingUser(passwordEncoder.encode(RAW_PASSWORD));
+		when(passwordResetService.validateAndConsumeCode(EMAIL, VERIFICATION_CODE)).thenReturn(user);
+		return user;
 	}
 
 	private User stubEmailUser() {

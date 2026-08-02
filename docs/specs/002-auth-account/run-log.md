@@ -1,5 +1,65 @@
 # Run Log: 002-auth-account
 
+## Issue #116
+
+### Task 1: 엔티티·리포지터리 확장
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| implementer | implementer | `gradlew.bat -p <root> compileJava --console=plain` — `BUILD SUCCESSFUL` | issue-116-plan.md Task 1·D2(`AndCodeHashIsNotNull` 필수, 거부 행 NPE 방지), `EmailChangeVerification.incrementAttemptCount`·`consume` 선례, ADR-0002·ADR-0004(신규 마이그레이션 없음) |
+
+- `PasswordResetVerification.incrementAttemptCount()`·`consume(now)`를 `EmailChangeVerification`의 동명 메서드와 동일 시그니처로 추가하고, `PasswordResetVerificationRepository.findFirstByEmailAndCodeHashIsNotNullOrderByCreatedAtDesc`를 추가했다. `attempt_count`·`consumed_at`은 V12에 이미 있어 신규 Flyway 마이그레이션은 없다. controller 변경이 없어 `docs/api-routes.md`·`docs/api-contracts.md`는 갱신하지 않았다.
+
+### Task 2: `PasswordResetService.validateAndConsumeCode` 검증·소비
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| implementer | implementer | `gradlew.bat -p <root> compileJava spotlessCheck --console=plain` — 모두 `BUILD SUCCESSFUL` | issue-116-plan.md D1(판정 순서·`MAX_VERIFICATION_ATTEMPTS`·`hmac` 재사용·`@Transactional` 미선언)·D2(계정 상태 판정을 인증번호 검증 뒤로), `EmailChangeService.validateAndConsumeCode` 선례, conventions.md 서비스 트랜잭션 경계 |
+
+- `EmailChangeService.validateAndConsumeCode`와 같은 구조로 트랜잭션 경계 없이 구현하되, 이 이슈 고유의 (5)(6)단계(회원 존재 400 · `hasPassword()` 409 · 최종 `consume`)를 뒤에 붙이고 재설정 대상 `User`를 반환한다 — 미가입은 발송 엔드포인트의 404와 달리 400이고, 5회 초과는 증가+즉시 만료 후 429다.
+- `MAX_VERIFICATION_ATTEMPTS = 5`만 상수로 추가했고 `hmac`·`generateCode`·`checkSendRateLimit` 등 기존 private 메서드와 `sendResetCode`는 수정하지 않았다(U6대로 4중 중복 공통화는 하지 않음). 클래스 파일 헤더 주석에 "확인 시 검증·소비"를 덧붙인 것이 유일한 부수 변경이다.
+- `AuthService`·컨트롤러·DTO·`SecurityConfig`(Task 3), 통합 테스트(Task 4), 문서 동기화(Task 5)는 범위 밖이라 손대지 않았다. controller 변경이 없어 `docs/api-routes.md`·`docs/api-contracts.md`도 갱신하지 않았다.
+
+### Task 3: `AuthService.confirmPasswordReset`·컨트롤러·공개 경로
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| implementer | implementer | `gradlew.bat -p <root> compileJava spotlessCheck` — `BUILD SUCCESSFUL`(신규 파일 LF라 `spotlessApply` 선행); `compileTestJava` — 기존 `AuthServiceTest`·`OAuthAuthServiceTest`의 `new AuthService(...)` 인자 수 불일치 2건 확인(tester 인계) | issue-116-plan.md D3(`noRollbackFor`만·`saveAndFlush` → `revokeAllActiveByUserId` 순서)·D4(새 토큰 미발급·204)·D5(요청 DTO), Architecture(`SecurityConfig` 경로 정확 일치), CLAUDE.md 규칙 7 |
+
+- `AuthService.confirmPasswordReset`은 `changePassword`(#114)를 베끼지 않고 새로 썼다 — 폐기 후 `issueTokenPair`를 호출하지 않아 항상 전 기기 로그아웃이고, `void` 반환이라 `jwtTokenProvider`를 건드리지 않는다. `rollbackFor` 서브타입(#56의 `EmailChangeConflictException`)은 `password_hash`에 유니크 제약이 없어 만들지 않았다.
+- `PasswordResetConfirmRequest`(email·`\d{6}` code·newPassword 8~100자)와 `PasswordResetController.confirmReset`(`POST /confirm`, 204 본문 없음, `AuthService` 신규 주입)을 추가하고 `PUBLIC_POST_PATHS`에 `/api/auth/password-resets/confirm`을 별도 항목으로 넣었다(접두 매칭이 아니라 정확 일치라 필요).
+- `docs/api-routes.md`(라우트 행 + 공개 경로 행)와 `docs/api-contracts.md`("비밀번호 재설정 확인 및 적용" 절 신설, Access Token 잔존 한계 명시)를 함께 갱신했다. PRD 갱신은 Task 5 범위라 손대지 않았다.
+- **기존 테스트 2개가 컴파일 실패한다** — `AuthService` 생성자에 `PasswordResetService`가 추가되어 `AuthServiceTest:108`·`OAuthAuthServiceTest:71`의 `new AuthService(...)` 인자 목록을 고쳐야 한다. `PasswordResetControllerTest`도 `AuthService` `@MockitoBean` 추가가 필요하다(컴파일은 통과하나 컨텍스트 기동 실패).
+
+### 리뷰 권장 반영: 재설정 메일 문구를 가입 인증·이메일 변경과 분리
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| implementer | implementer | `gradlew.bat -p <root> compileJava spotlessCheck compileTestJava` — 모두 `BUILD SUCCESSFUL`; `test --tests "*PasswordResetServiceTest"` — 27건 중 5건 실패(구 메서드 stub, tester 인계) | reviewer 권장 지적(수신자가 재설정 시도를 알아챌 신호 없음), PRD `AUTH-006`, conventions.md 어댑터 계약 규칙 |
+
+- `EmailSender.sendPasswordResetCode(toEmail, code)`를 추가하고 `ResendEmailSender`(제목 `[FinPlay] 비밀번호 재설정 인증번호`, 본문에 용도 명시 + "요청하지 않았다면 무시" + 코드 타인 공유 금지 안내)·`FakeEmailSender`(로그 문구 구분)에 구현했다. 기존 `sendVerificationCode`와 상수·`buildHtml`은 그대로 두어 가입 인증·이메일 변경이 계속 쓴다.
+- `FakeEmailSender.SentEmail` record는 **바꾸지 않았다** — 용도 필드를 넣으면 `FakeEmailSenderTest`의 2인자 생성자 호출 4곳이 컴파일 실패하는데, 용도 검증은 Mockito `verify(emailSender).sendPasswordResetCode(...)`로 이미 가능해 record 변경의 실익이 없다. `getLastSentEmail().code()` 경로도 그대로 유지된다.
+- `PasswordResetService.sendResetCode`는 발송 호출 한 줄만 새 메서드로 바꿨고 판정 순서·트랜잭션·HMAC은 손대지 않았다.
+- 당시 `PasswordResetServiceTest` 5건·`PasswordResetIntegrationTest` 2건이 구 메서드를 stub·verify해 실행 실패했고 tester가 새 메서드 기준으로 고쳤다(현재 27/27 통과).
+
+### QA 경쟁 조건 수정: 확인 대상 조회에 비관적 쓰기 잠금
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| implementer | implementer | `gradlew.bat -p <root> test --tests "*PasswordResetVerificationRepositoryTest"` — 11/11 통과, 생성 SQL에 `... order by created_at desc limit ? for update` 확인(MySQL 8.4 Testcontainers 실제 기동); `--tests "*PasswordResetConfirmIntegrationTest" --tests "*PasswordResetServiceTest"` — 11/11·27/27 통과 | QA 실측(동시 5건 → `attempt_count` 1), issue-116-plan.md D1(판정 순서·증가 전 값 기준 한도)·D3(`noRollbackFor`로 증가분 커밋), ADR-0002 |
+
+- `findFirstByEmailAndCodeHashIsNotNullOrderByCreatedAtDesc`에 `@Lock(PESSIMISTIC_WRITE)`만 붙였다 — 서비스 로직·판정 순서·오류 코드를 한 줄도 바꾸지 않아 관찰 가능한 동작 4가지(판정 순서, 6번째 시도 429 + `attempt_count` 6, 성공 경로 미증가, 실패 시 증가분 커밋)가 그대로 보존되고 읽기-판정-증가만 행 잠금 안에서 직렬화된다. 원자적 `@Modifying UPDATE` + 재조회 방식은 "증가 전 값으로 한도 판정" 규칙 때문에 분기별 증가 여부를 다시 짜야 해 동작 보존 위험이 더 크다고 보고 채택하지 않았다.
+- 잠금 범위 확인 — 이 쿼리의 유일한 호출자는 `PasswordResetService.validateAndConsumeCode`이고, 그 유일한 호출자인 `AuthService.confirmPasswordReset`이 `@Transactional`이라 잠금이 커밋까지 유지된다. `validateAndConsumeCode`는 여전히 `@Transactional` 미선언이다.
+- `sendResetCode`가 쓰는 `countByEmailAndCreatedAtAfter`·`findByEmail...ExpiresAtAfter`와 `EmailVerificationService`·`EmailChangeService`는 손대지 않았다(#121).
+
+### 리뷰: PR 전체 코드 리뷰 (Issue #116)
+
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| reviewer(리뷰) | reviewer | `git diff dev...HEAD`(#114·#115·#116 38파일) + `git log --oneline dev..HEAD -- db/migration/V12*`(머지 후 수정 없음 확인) | conventions.md(레이어·DTO·Lombok·엔티티·API·테스트 규칙, 리뷰 체크 질문), ADR-0002·0003·0004, issue-116-plan.md D1~D5·U1~U7, docs/prd.md AUTH-006, docs/api-routes.md, docs/api-contracts.md |
+
+- 차단 0건 / 권장 3건 / 참고 4건 — 머지 가능. 착수 전 확정 결정 3건(단일 요청 즉시 적용·미가입 400·5회 초과 429)과 중점 점검 7항목(새 토큰 미발급, `noRollbackFor`와 원자성 양립, `AndCodeHashIsNotNull` NPE 방지, 원문 미노출, `SecurityConfig` 정확 일치 경로, `AuthService` 순환 참조 없음, PRD·API 문서 일치)이 모두 코드와 일치했다. 권장은 (1) `attempt_count` 증가의 동시성 갱신 손실로 5회 제한이 병렬 요청에 우회 가능(#3·#56과 공유하는 선례라 후속 이슈 권장), (2) 재설정 메일 제목·본문이 가입 인증 메일과 동일해 용도 구분 불가, (3) `changePassword`의 OAuth 전용 판별이 `hasPassword()`와 어긋남(계정 연결 기능 도입 시 버그)이다.
+
 ## Issue #115
 
 ### Task 1: `password_reset_verifications` 스키마·엔티티·리포지터리와 `SOCIAL_ACCOUNT_ONLY`·`PASSWORD_RESET_SECRET` 배선

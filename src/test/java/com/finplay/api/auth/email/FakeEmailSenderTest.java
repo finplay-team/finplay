@@ -41,6 +41,40 @@ class FakeEmailSenderTest {
 	}
 
 	@Test
+	@DisplayName("sendPasswordResetCode 호출 시에도 대상 이메일과 코드가 마지막 발송 내역으로 기록된다")
+	void sendPasswordResetCodeRecordsRecipientAndCode() {
+		// 재설정 통합 테스트가 이 경로로 코드를 꺼내 쓴다 — 기록되지 않으면 그쪽이 통째로 못 돈다.
+		emailSender.sendPasswordResetCode("reset@example.com", "654321");
+
+		SentEmail last = emailSender.getLastSentEmail();
+		assertThat(last).isNotNull();
+		assertThat(last.toEmail()).isEqualTo("reset@example.com");
+		assertThat(last.code()).isEqualTo("654321");
+	}
+
+	@Test
+	@DisplayName("가입 인증과 재설정 발송이 섞여도 한 이력에 순서대로 누적된다")
+	void verificationAndPasswordResetSendsAccumulateTogetherInOrder() {
+		emailSender.sendVerificationCode("signup@example.com", "111111");
+		emailSender.sendPasswordResetCode("reset@example.com", "222222");
+
+		assertThat(emailSender.getSentEmails())
+			.containsExactly(
+				new SentEmail("signup@example.com", "111111"), new SentEmail("reset@example.com", "222222"));
+		assertThat(emailSender.getLastSentEmail()).isEqualTo(new SentEmail("reset@example.com", "222222"));
+	}
+
+	@Test
+	@DisplayName("clear는 재설정 발송 이력도 함께 비운다")
+	void clearRemovesPasswordResetSendsToo() {
+		emailSender.sendPasswordResetCode("reset@example.com", "654321");
+		emailSender.clear();
+
+		assertThat(emailSender.getSentEmails()).isEmpty();
+		assertThat(emailSender.getLastSentEmail()).isNull();
+	}
+
+	@Test
 	@DisplayName("발송 이력이 없으면 getLastSentEmail은 null, getSentEmails는 빈 리스트를 반환한다")
 	void returnsEmptyStateWhenNothingSent() {
 		assertThat(emailSender.getLastSentEmail()).isNull();
