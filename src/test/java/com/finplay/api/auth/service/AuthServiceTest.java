@@ -1170,23 +1170,19 @@ class AuthServiceTest {
 		return user;
 	}
 
+	// 프로덕션의 OAuth 전용 회원과 같은 팩토리로 만든다 — 자리표시자 값은 User만 안다.
+	// password_hash를 NULL로 두면 프로덕션에 존재하지 않는 형태가 되어, PR #118처럼 결함을 가릴 수 있다.
 	private User stubOAuthUser(OAuthProviderName provider) {
-		User user = existingUser(null);
+		User user = User.createOAuthOnly(EMAIL, NICKNAME, NOW.minusDays(1));
+		ReflectionTestUtils.setField(user, "id", 7L);
 		when(userRepository.findById(7L)).thenReturn(Optional.of(user));
 		when(socialAccountRepository.findByUserId(7L)).thenReturn(
 			Optional.of(SocialAccount.create(user, provider, "provider-user-id", NOW.minusDays(1))));
 		return user;
 	}
 
-	// 프로덕션의 OAuth 전용 회원과 같은 팩토리로 만든다 — 자리표시자 값은 User만 안다.
 	private User stubOAuthOnlyUser() {
-		User user = User.createOAuthOnly(EMAIL, NICKNAME, NOW.minusDays(1));
-		ReflectionTestUtils.setField(user, "id", 7L);
-		when(userRepository.findById(7L)).thenReturn(Optional.of(user));
-		when(socialAccountRepository.findByUserId(7L)).thenReturn(
-			Optional.of(SocialAccount.create(
-				user, OAuthProviderName.KAKAO, "provider-user-id", NOW.minusDays(1))));
-		return user;
+		return stubOAuthUser(OAuthProviderName.KAKAO);
 	}
 
 	private void stubSaveAndFlushReturningArgument() {
