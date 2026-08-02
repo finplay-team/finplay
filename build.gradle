@@ -77,6 +77,11 @@ tasks.withType(Test).configureEach {
 	// ConfigDataEnvironmentPostProcessor(SpringApplication 부트스트랩, 즉 @SpringBootTest)만 해석하므로
 	// ApplicationContextRunner에는 영향이 없다.
 	systemProperty 'spring.config.additional-location', 'classpath:/bithumb-feed-simulator-disabled-for-tests.yml'
+	// 테스트 DB 커넥션 타임아웃을 Hikari 기본값 30초에서 5초로 줄인다 (이슈 #119 완화책).
+	// 공유 Testcontainers MySQL이 실행 중 교체되면 그 전에 만들어진 컨텍스트는 옛 포트를 물고 있어 반드시 실패하는데,
+	// 기본값이면 테스트 1건마다 30초를 헛되이 기다린다 — 실측에서 9건 실패에 4분 30초가 이 대기에만 쓰였다.
+	// 로컬 컨테이너 접속은 수십 ms라 5초도 100배 여유다. 근본 원인 수정은 별도이며 이건 실패 비용만 줄인다.
+	systemProperty 'spring.datasource.hikari.connection-timeout', '5000'
 	finalizedBy tasks.jacocoTestReport
 }
 
