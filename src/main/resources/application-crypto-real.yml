@@ -9,12 +9,7 @@ bithumb:
     simulate:
       enabled: false
 
-# 이 프로필에서는 BithumbRestTickerPoller가 5번째 @Scheduled 블로킹 작업이 된다(application.yml의 pool size 4는
-# SSE heartbeat·StockPriceStreamService·KisHistoricalCandleCollector·StockReplaySessionScheduler 4개 기준이다).
-# 폴러가 스레드를 못 잡아 3초 주기가 밀리면 PriceStore의 10초 stale 기준을 넘겨 409 PRICE_UNAVAILABLE이 뜬다 —
-# 이 이슈가 없애려던 증상과 같은 모양이라 프로필 안에서 한 칸 올려 닫는다 (기본 프로필에는 영향 없음).
-spring:
-  task:
-    scheduling:
-      pool:
-        size: 5
+# 스케줄러 풀 크기는 여기서 따로 올리지 않는다. 이 프로필은 시뮬레이터가 꺼지고 BithumbRestTickerPoller가
+# 켜지므로 @Scheduled 개수가 기본 프로필과 같은 5개이고, application.yml의 pool size 5가 그대로 맞다.
+# (이전에는 기본값이 4였고 이 파일이 5로 올려 닫았는데, 그 4라는 수가 시뮬레이터를 빠뜨린 계산이었다 — 이슈 #125.)
+# 폴러가 스레드를 못 잡아 3초 주기가 밀리면 PriceStore의 10초 stale 기준을 넘겨 409 PRICE_UNAVAILABLE이 뜬다.
