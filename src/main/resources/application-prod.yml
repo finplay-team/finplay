@@ -4,6 +4,13 @@ spring:
     url: ${DB_URL} # 예: jdbc:mysql://<host>:3306/finplay
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
+  data:
+    # Redis도 DB와 같은 fail-fast 규칙을 적용한다 (이슈 #125). 기본값을 두지 않는 이유는 실패 방식 때문이다 —
+    # Spring 기본값 localhost:6379를 그대로 두면 컨테이너 안에서 localhost가 앱 자신이라 연결되지 않는데,
+    # 기동은 성공하고 코인 시세 기능만 런타임에 조용히 죽는다. 값이 없으면 기동 단계에서 드러나게 한다.
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
 
 # 이메일 발송(Resend) — 운영 프로필의 ResendEmailSender만 사용한다. 값은 환경변수로 주입.
 # 이 설정은 prod 프로필에서만 로드되므로 로컬·테스트는 RESEND_API_KEY·EMAIL_FROM 없이 기동한다.

@@ -38,10 +38,11 @@ services:
       SPRING_PROFILES_ACTIVE: prod
       # 아래 3개는 이 compose의 네트워크 구성에서 결정되므로 .env 값보다 우선한다.
       DB_URL: "jdbc:mysql://mysql:3306/finplay?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8"
-      # application-prod.yml에는 Redis 접속 설정이 없어 기본값 localhost를 보게 된다. 컨테이너 안에서는
-      # localhost가 앱 자신이라 연결되지 않으므로 여기서 주입한다. yml 정리는 별도 이슈다.
-      SPRING_DATA_REDIS_HOST: redis
-      SPRING_DATA_REDIS_PORT: "6379"
+      # Redis 주소도 이 compose의 네트워크 구성에서 결정된다. application-prod.yml이 ${REDIS_HOST}·${REDIS_PORT}를
+      # 기본값 없이 참조하므로(이슈 #125), SPRING_DATA_REDIS_* 대신 이 이름으로 주입해야 한다 —
+      # SPRING_DATA_REDIS_HOST로 주면 환경변수가 yml보다 우선해 placeholder가 평가되지 않고 fail-fast가 무력해진다.
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
     depends_on:
       mysql:
         condition: service_healthy
