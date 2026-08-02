@@ -389,3 +389,85 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 조회 대상은 요청에서 받지 않고 Access Token의 인증 사용자 본인 소유의 `STOCK`·`CRYPTO` 계좌 전체를 항상 합산한다(`market` 토글 없음 — 시장 하나만 고르는 것이 아니라 두 시장을 합친 뷰이므로 `## account` 절의 `GET /api/accounts/summary?market=`와 달리 쿼리 파라미터가 존재하지 않는다). 한 시장만 보유 종목이 있거나 두 시장 모두 보유 종목이 없어도 예외 없이 200과 0을 포함한 합산 결과를 반환한다.
 
 응답 4개 필드: `totalValue`(두 시장 `totalValue`의 합) · `returnRate`(`(totalValue − seedMoneyTotal) ÷ seedMoneyTotal`, scale 4 `RoundingMode.HALF_UP` — 시장별 수익률을 더하거나 평균 내지 않고 합산된 총평가액·시드머니 합계로 재계산한 값) · `unrealizedPnl`(두 시장 `unrealizedPnl`의 합, `## account`의 시세 무효 폴백 정책이 이미 반영된 값) · `realizedPnl`(두 시장 `realizedPnl`의 합 — 계좌 원장 값 그대로이며 체결 내역(`## order`의 `GET /api/trades`)을 재계산하지 않는다). `cashBalance`·`holdingsValue` 등 `AccountSummaryResponse`의 중간값과 시장별 breakdown은 포함하지 않는다 — 시장별 세부값이 필요하면 `GET /api/accounts/summary?market=`를 시장별로 호출한다.
+
+---
+
+## 012 AI 피드백 (2차 계획 — 아직 구현하지 않음)
+
+`docs/specs/012-ai-feedback` 착수 시 추가될 계약 초안 4건이다(변동 원인 카드·매도 직후 피드백·종목 뉴스 요약·개장 전 브리핑). 도메인이 `market`·`ai`로 갈리므로 도메인이 아니라 spec 단위로 묶어 둔다. **controller가 아직 없으므로 블랙박스 QA는 이 절을 계약 근거로 사용하지 않는다.** 구현이 병합되는 커밋에서 "계획" 표시를 제거하고 `docs/api-routes.md`의 2차 계획 라우트 절도 함께 정리한다.
+
+### 종목 변동 원인 카드 조회 (계획)
+
+| Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|---|
+| GET | /api/instruments/{instrumentId}/price-moves | Access Bearer 필수 | 경로 변수 `instrumentId`만(쿼리·본문 없음) | 200 `{"originTradeDate":"2026-07-29","moves":[{"id":12,"eventType":"INTRADAY","windowStart":"2026-07-29T11:20:00","windowEnd":"2026-07-29T11:25:00","changeRate":-0.0182,"narrative":"11시 20분부터 5분간 1.82% 하락했습니다. 같은 시간대에 생산 차질을 다룬 기사가 있었습니다.","sources":[{"type":"NEWS","title":"...","publisher":"한국경제","url":"https://...","publishedAt":"2026-07-29T11:15:00"}]}]}` (`PriceMoveListResponse`); 카드가 없으면 200 `{"originTradeDate":"2026-07-29","moves":[]}` | Access 인증 실패는 401 `UNAUTHORIZED`. `instrumentId` 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 012 FEED-006 |
+
+`originTradeDate`는 주식일 때 현재 재생세션의 원본 거래일이고, 코인은 실시간이므로 항상 `null`이다. `eventType`은 `INTRADAY`(장중 변동) 또는 `OPENING_GAP`(시가 갭)이다.
+
+**노출 필터**: 주식은 `revealAt <= 현재 재생 시각`인 카드만 반환한다 — 재생 방식이라 하루치 카드가 08:40에 이미 전부 생성돼 있으므로, 이 필터가 없으면 오후 사건이 오전에 노출되는 스포일러가 된다. `revealAt`은 응답에 포함하지 않는다(서버 내부 판정값). 코인은 `revealAt`이 없고 최근 24시간 카드를 반환한다.
+
+**카드 개수**: 주식은 원본 거래일당 최대 3건이다 — 장중 변동 상위 2건 + 시가 갭 1건. 시가 갭은 직전 거래일 종가가 `stock_candles`에 있고 갭이 임계치를 넘을 때만 생성되므로 없을 수 있다. 코인은 종목당 일일 최대 6건이다.
+
+**`sources`가 빈 배열인 카드는 존재하지 않는다** — 근거가 없으면 카드 자체를 만들지 않는다(FEED-003). `narrative`는 LLM 생성 문장이거나 후검증에 걸려 대체된 템플릿 문장이며, 어느 쪽이든 항상 채워진다.
+
+### 매도 직후 피드백 조회 (계획)
+
+| Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|---|
+| GET | /api/ai/post-sell/{tradeId} | Access Bearer 필수 | 경로 변수 `tradeId`만(쿼리·본문 없음) | 200 `{"tradeId":2,"instrumentId":1,"symbol":"005930","name":"삼성전자","buyPrice":70000,"sellPrice":68500,"quantity":10,"fee":205,"realizedPnl":-15205,"returnRate":-0.0217,"holdingMinutes":265,"sameSessionCompleted":true,"highestPrice":70800,"highestPriceAt":"2026-07-29T11:05:00","lowestPrice":68100,"lowestPriceAt":"2026-07-29T14:20:00","priceMoves":[...],"narrative":"70,000원에 매수해 68,500원에 매도했습니다. 수익률은 -2.17%입니다. 보유 중 최고가는 11시 5분의 70,800원이었고, 매도가는 그보다 3.2% 낮습니다.","narrativeStatus":"READY"}` (`PostSellFeedbackResponse`) | Access 인증 실패는 401 `UNAUTHORIZED`. `tradeId` 미존재는 404 `NOT_FOUND`. 타인 체결은 403 `FORBIDDEN`. 매수 체결(`side=BUY`)은 400 `VALIDATION_ERROR` 공통 오류 형식 | 012 FEED-007 |
+
+조회 대상은 요청에서 받지 않고 Access Token의 인증 사용자 본인 소유 매도 체결로만 결정한다.
+
+이 엔드포인트는 Notion api 명세서 §6의 `GET /ai/post-sell/{id}`(매도 직후 피드백, 계획 대비 실제 2단계)에 대응한다. 기존 명세의 **계획 대조**에 수익률 요약과 뉴스 기반 변동 원인을 합쳐 하나의 응답으로 제공한다. `/api/v1` → `/api` Base URL 규칙만 적용했고 경로 자체는 명세와 같다.
+
+**투자일기에 의존하지 않는다.** Notion 명세 §6은 이 경로에 "계획 대비 실제 대조(2단계)"를 적어 뒀지만, 목표가·손절가를 기록하는 `007-journal`이 아직 없고 다른 팀원 범위이므로 이 계약에서는 다루지 않는다. 투자일기가 생기면 `plan`·`planOutcome` 필드를 **같은 응답에 추가**하면 되고 아래 필드는 그대로 유지되므로 계약이 깨지지 않는다. 투자일기를 쓰지 않고 매수·매도한 건도 정상 200이다.
+
+**수치는 전부 기존 원장에서 가져온다.** `buyPrice`는 `trade_allocations`의 FIFO 배분 가중평균 매수단가, `sellPrice`·`quantity`·`fee`·`realizedPnl`은 `trades` 행 그대로다. `returnRate = realizedPnl ÷ (배분된 매수원가 합 + 배분된 매수수수료 합)`이며 scale 4 `RoundingMode.HALF_UP`이다. **LLM은 이 수치를 계산하지도 수정하지도 않는다** (C-004).
+
+**`sameSessionCompleted`가 응답 형태를 가른다.** 매수와 매도가 같은 원본 거래일 안에서 완결됐으면 `true`이고 `highestPrice`·`highestPriceAt`·`lowestPrice`·`lowestPriceAt`·`priceMoves`가 채워진다. 여러 재생일에 걸친 매매는 `false`이며 이 5개 필드가 각각 `null`·`null`·`null`·`null`·`[]`가 된다 — 재생일마다 원본 거래일이 달라 가격·뉴스 타임라인이 불연속이므로 억지로 이어 붙이지 않는다. 코인은 실시간이라 항상 `true`다.
+
+**`narrativeStatus`**는 `READY`(서술 생성됨) 또는 `UNAVAILABLE`(LLM 호출 실패·타임아웃)이다. `UNAVAILABLE`이어도 상태코드는 200이고 위 수치 필드는 전부 채워진다 — 서술은 부가 정보이고 수치가 본체이므로 LLM 장애가 조회 자체를 막지 않는다. `UNAVAILABLE`일 때 `narrative`는 `null`이다.
+
+서술은 최초 조회 시 생성해 `trade_feedbacks`에 저장하고 이후 재사용한다(`UNIQUE(trade_id)`). 매도 체결은 불변 원장이므로 서술도 재생성하지 않는다. `UNAVAILABLE`로 끝난 건은 저장하지 않아 다음 조회에서 다시 시도한다.
+
+**문구 제약**: 인과 단정("~때문에"), 투자 권유("매수", "주목"), 가격 예측("오를 것"), 조언·후회 유도("~하세요", "~했으면 좋았을")를 쓰지 않는다. 서버가 LLM 출력을 후검증해 위반 시 템플릿 문장으로 대체한다 (C-004, FEED-003).
+
+---
+
+### 종목 뉴스 목록·요약 조회 (계획)
+
+| Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|---|
+| GET | /api/instruments/{instrumentId}/news | Access Bearer 필수 | 경로 변수 `instrumentId`만(쿼리·본문 없음) | 200 `{"originTradeDate":"2026-07-29","summary":"반도체 업황과 관련한 기사가 오전에 집중됐고, 오후에는 생산 차질을 다룬 보도가 이어졌습니다. 같은 날 유상증자 관련 공시가 1건 접수됐습니다.","summaryStatus":"READY","items":[{"type":"NEWS","title":"...","publisher":"한국경제","url":"https://...","publishedAt":"2026-07-29T11:15:00"},{"type":"DISCLOSURE","title":"주요사항보고서(유상증자결정)","publisher":"DART","url":"https://dart.fss.or.kr/...","publishedAt":"2026-07-29T00:00:00"}]}` (`InstrumentNewsResponse`); 기사가 없으면 200 `{"originTradeDate":"2026-07-29","summary":null,"summaryStatus":"EMPTY","items":[]}` | Access 인증 실패는 401 `UNAUTHORIZED`. `instrumentId` 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 012 FEED-008 |
+
+Notion 1차 고도화 목록의 "뉴스 요약" 항목이다. 수집·저장은 변동 원인 카드(FEED-001)가 이미 하므로 이 엔드포인트는 **조회와 요약만** 추가한다.
+
+**주식은 원본 거래일 기사만 반환한다.** 재생 중인 거래일과 기사 날짜가 어긋나면 화면의 가격 방향과 기사 내용이 반대가 되므로, 오늘 기사를 섞지 않는다. `originTradeDate`는 주식일 때 현재 재생세션의 원본 거래일이고 코인은 `null`이다.
+
+**노출 필터**: 주식은 `publishedAt`이 현재 재생 시각을 지난 기사만 반환한다 — 변동 원인 카드의 `revealAt` 필터와 같은 목적이다. 15:00 기사를 09:30에 보여주면 앞으로 무슨 일이 일어날지 미리 알려주는 셈이 된다. 코인은 이 필터 없이 최근 24시간 기사를 반환한다.
+
+**요약은 회원별이 아니다.** `(종목, 원본 거래일)` 단위로 1건만 생성해 전 회원이 공유하며(`UNIQUE(instrument_id, origin_trade_date)`), 주식은 08:40 배치에서 변동 원인 카드와 함께 만든다. 재생 진행에 따라 노출되는 `items`는 늘어나지만 `summary`는 거래일 전체를 대상으로 한 번만 생성된 값이므로 바뀌지 않는다.
+
+**`summaryStatus`**는 `READY`(요약 생성됨) · `EMPTY`(기사 없음) · `UNAVAILABLE`(LLM 호출 실패)이다. `EMPTY`·`UNAVAILABLE`이어도 상태코드는 200이며, `UNAVAILABLE`일 때 `items`는 그대로 채워진다 — 요약이 없어도 기사 목록 자체는 쓸모가 있다.
+
+**저작권**: `items`의 각 항목은 제목·언론사·원문 URL·발행시각만 노출하고 본문은 어떤 형태로도 포함하지 않는다. `summary`는 여러 기사를 종합한 서술이며 특정 기사의 문장을 그대로 옮기지 않는다. 공시(`type=DISCLOSURE`)는 OpenDART가 접수일자만 제공하므로 `publishedAt`의 시각 부분은 항상 `00:00:00`이고, 이 때문에 재생 시각 필터에서 그날 개장 시점부터 노출된다.
+
+**문구 제약**은 변동 원인 카드와 같다 — 인과 단정·투자 권유·가격 예측을 쓰지 않고 서버가 후검증한다 (C-004, FEED-003).
+
+### 개장 전 브리핑 조회 (계획)
+
+| Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|---|
+| GET | /api/market/briefing?market= | Access Bearer 필수 | `market`(필수, `STOCK`\|`CRYPTO` 리터럴만 허용) | 200 `{"market":"STOCK","originTradeDate":"2026-07-29","status":"READY","summary":"간밤 미국 증시에서 반도체 업종이 강세를 보였다는 보도가 있었습니다. 국내에서는 유상증자 결정 공시가 1건 접수됐습니다. 개장 전까지 확인된 소식은 아래와 같습니다.","items":[{"instrumentId":1,"symbol":"005930","name":"삼성전자","type":"NEWS","title":"...","publisher":"한국경제","url":"https://...","publishedAt":"2026-07-28T18:40:00"}]}` (`MarketBriefingResponse`); 09:00 이전이면 200 `{"market":"STOCK","originTradeDate":"2026-07-29","status":"NOT_YET","summary":null,"items":[]}`; 기사가 없거나 재생세션 미준비면 200 `{...,"status":"EMPTY","summary":null,"items":[]}` | `market` 누락 또는 `STOCK`\|`CRYPTO` 외 리터럴은 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 012 FEED-009 |
+
+**변동 원인 카드와 역할이 다르다.** 카드는 가격이 움직인 **뒤에** 원인을 설명하므로 매매 판단에 쓸 수 없다. 브리핑은 개장 시점에 그때까지의 정보를 주므로 **뉴스를 보고 매매하는 사용자의 진입점**이다.
+
+**주식은 직전 거래일 15:30부터 당일 09:00까지의 기사·공시만 담는다. 장중 기사는 어떤 경우에도 포함하지 않는다.** 재생 방식이라 그날 장중 뉴스를 아침에 노출하면 오후에 무엇이 일어날지 미리 알려주는 셈이 된다. 이 범위는 실제 투자자가 아침에 아는 정보와 동일하므로 교육적으로도 올바르다 — 그 시점에 가진 정보만으로 판단하는 연습이 된다. 장중 기사는 `GET /api/instruments/{id}/news`에서 재생 시각을 따라 하나씩 공개된다.
+
+**`status`** 는 `READY`(브리핑 있음) · `NOT_YET`(주식, 아직 09:00 이전) · `EMPTY`(기사 없음 또는 재생세션 미준비) · `UNAVAILABLE`(LLM 호출 실패)이다. 어느 값이든 상태코드는 200이며, `UNAVAILABLE`일 때 `summary`는 `null`이고 `items`는 그대로 채워진다 — 요약이 없어도 기사 목록 자체는 쓸모가 있다.
+
+**코인은 '개장 전'이 없다.** 24시간 거래이므로 최근 24시간 기준으로 생성하며 `originTradeDate`는 `null`, `status`는 `NOT_YET`이 되지 않는다.
+
+**요약은 회원별이 아니다.** `(시장, 원본 거래일)` 단위로 1건만 생성해 전 회원이 공유하며(`UNIQUE(market, origin_trade_date)`), 주식은 08:40 배치에서 변동 원인 카드·뉴스 요약과 함께 만든다. 수집 파이프라인과 시가 갭 구간 데이터를 그대로 재사용하므로 LLM 호출은 하루 1회 추가에 그친다.
+
+`items`는 종목 정보(`instrumentId`·`symbol`·`name`)를 포함해 화면이 추가 조회를 하지 않아도 되게 한다. 기사 본문은 어떤 형태로도 포함하지 않는다. 문구 제약은 변동 원인 카드와 같다 — 인과 단정·투자 권유·가격 예측을 쓰지 않고 서버가 후검증한다 (C-004, FEED-003).
