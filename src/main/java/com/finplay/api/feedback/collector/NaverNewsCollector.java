@@ -167,12 +167,12 @@ public class NaverNewsCollector implements NewsCollector {
 
 	// 저장할 수 없는 항목은 예외 대신 건너뛴다 — 한 건이 망가졌다고 그 종목의 나머지 99건을 버리지 않는다.
 	private static Optional<CollectedNewsDto> toCollectedNews(NaverNewsItem item) {
-		String url = firstUsableUrl(item);
-		if (url == null) {
-			return Optional.empty();
-		}
-		String publisher = toPublisher(url);
-		if (publisher == null) {
+		Optional<SourceLink> source = firstUsableLink(item);
+		if (source.isEmpty()) {
+			// 근거 기사 1건이 카드 생성 여부를 가르므로 버리는 사실을 반드시 남긴다 — 조용히 줄어드는 것이
+			// 이 기능에서 가장 알아채기 어려운 실패다.
+			log.warn("원문·네이버 링크 어느 쪽에서도 언론사를 얻지 못해 이 기사를 건너뜁니다"
+				+ " (originallink={}, link={})", item.originallink(), item.link());
 			return Optional.empty();
 		}
 		String title = cleanTitle(item.title());
@@ -180,24 +180,34 @@ public class NaverNewsCollector implements NewsCollector {
 			return Optional.empty();
 		}
 		return parsePublishedAt(item.pubDate())
-			.map(publishedAt -> new CollectedNewsDto(title, publisher, url, publishedAt));
+			.map(publishedAt -> new CollectedNewsDto(
+				title, source.get().publisher(), source.get().url(), publishedAt));
 	}
 
 	/**
 	 * 원문 URL을 우선한다 — 원문 링크로 트래픽을 언론사에 보내는 구조다(§정책 전제). 네이버가
 	 * {@code originallink}를 비워 보내는 항목이 있어 그때만 네이버 뉴스 링크로 폴백한다.
 	 *
-	 * <p>길이가 컬럼을 넘으면 <b>자르지 않고 건너뛴다.</b> {@code url}은 {@code UNIQUE(instrument_id, url)}의
-	 * 축이라 자르면 쿼리 파라미터만 다른 다른 기사와 같은 값이 되어 근거 기사를 조용히 잡아먹고(§C-8), 잘린
-	 * 링크는 열리지도 않는다.
+	 * <p><b>URL 선택과 언론사 추출을 한 루프에서 함께 판정한다.</b> 둘을 나눠 "URL 먼저 고르고 그다음 호스트
+	 * 파싱"으로 두면, {@code originallink}에 공백·{@code |}·{@code []}가 섞이거나 호스트에 언더스코어가 있어
+	 * 호스트를 못 뽑을 때 <b>멀쩡한 {@code link}가 있는데도 폴백이 타지 않아</b> 기사가 통째로 사라진다.
+	 * {@code publisher}는 {@code NOT NULL}이라 호스트를 못 뽑은 URL은 애초에 쓸 수 없는 후보다.
+	 *
+	 * <p>길이가 컬럼을 넘으면 <b>자르지 않고 다음 후보로 넘어간다.</b> {@code url}은
+	 * {@code UNIQUE(instrument_id, url)}의 축이라 자르면 쿼리 파라미터만 다른 다른 기사와 같은 값이 되어 근거
+	 * 기사를 조용히 잡아먹고(§C-8), 잘린 링크는 열리지도 않는다.
 	 */
-	private static String firstUsableUrl(NaverNewsItem item) {
+	private static Optional<SourceLink> firstUsableLink(NaverNewsItem item) {
 		for (String candidate : new String[] {item.originallink(), item.link()}) {
-			if (candidate != null && !candidate.isBlank() && candidate.length() <= URL_MAX_LENGTH) {
-				return candidate;
+			if (candidate == null || candidate.isBlank() || candidate.length() > URL_MAX_LENGTH) {
+				continue;
+			}
+			String publisher = toPublisher(candidate);
+			if (publisher != null) {
+				return Optional.of(new SourceLink(candidate, publisher));
 			}
 		}
-		return null;
+		return Optional.empty();
 	}
 
 	private static String toPublisher(String url) {
@@ -212,6 +222,10 @@ public class NaverNewsCollector implements NewsCollector {
 		}
 		String publisher = host.startsWith(WWW_PREFIX) ? host.substring(WWW_PREFIX.length()) : host;
 		return publisher.length() > PUBLISHER_MAX_LENGTH ? null : publisher;
+	}
+
+	// 저장 가능한 URL과 거기서 뽑은 언론사는 항상 짝이다 — 따로 들고 다니면 위 폴백이 다시 갈라진다.
+	private record SourceLink(String url, String publisher) {
 	}
 
 	// 태그를 먼저 걷고 그다음 엔티티를 푼다. 순서를 바꾸면 &lt;b&gt;가 태그로 바뀐 뒤 지워진다.

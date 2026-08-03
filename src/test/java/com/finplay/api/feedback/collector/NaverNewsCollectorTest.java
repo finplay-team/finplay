@@ -264,6 +264,65 @@ class NaverNewsCollectorTest {
 		assertThat(collected.get(0).publisher()).isEqualTo("n.news.naver.com");
 	}
 
+	// 회귀 — originallink가 "비어 있는" 경우만이 아니라 "파싱되지 않는" 경우에도 폴백이 타야 한다. 고치기 전에는
+	// URI.create가 던지는 순간 멀쩡한 link가 있는데도 그 기사가 로그 한 줄 없이 사라졌다.
+	// publisher가 네이버 호스트여야 통과한다 — originallink가 정상 파싱됐다면 hankyung.com이 나와 실패한다.
+	@Test
+	@DisplayName("originallink에 공백·| 가 섞여 파싱되지 않아도 네이버 링크로 폴백한다")
+	void fallsBackToNaverLinkWhenOriginallinkCannotBeParsed() {
+		respondWith(items(item(
+			"비트코인 깨진 원문링크 기사",
+			"https://www.hankyung.com/article/2026 08|03",
+			"https://n.news.naver.com/mnews/article/015/0005123456",
+			SNIPPET,
+			"Mon, 03 Aug 2026 09:30:00 +0900")));
+
+		List<CollectedNewsDto> collected = collector.collect(crypto("비트코인"), CRYPTO_NAMES);
+
+		assertThat(collected).hasSize(1);
+		assertThat(collected.get(0).url())
+			.isEqualTo("https://n.news.naver.com/mnews/article/015/0005123456");
+		assertThat(collected.get(0).publisher()).isEqualTo("n.news.naver.com");
+	}
+
+	// 회귀 — URI는 만들어지지만 호스트를 못 뽑는 경우다. 언더스코어가 든 호스트는 getHost()가 null을 준다.
+	// publisher는 NOT NULL이라 호스트를 못 뽑은 URL은 애초에 쓸 수 없는 후보이므로 다음 후보로 넘어가야 한다.
+	@Test
+	@DisplayName("originallink 호스트에 언더스코어가 있어 호스트를 못 뽑아도 네이버 링크로 폴백한다")
+	void fallsBackToNaverLinkWhenOriginallinkHostIsNotExtractable() {
+		respondWith(items(item(
+			"비트코인 언더스코어 호스트 기사",
+			"https://news_site.example.com/article/2026080312345",
+			"https://n.news.naver.com/mnews/article/015/0005123456",
+			SNIPPET,
+			"Mon, 03 Aug 2026 09:40:00 +0900")));
+
+		List<CollectedNewsDto> collected = collector.collect(crypto("비트코인"), CRYPTO_NAMES);
+
+		assertThat(collected).hasSize(1);
+		assertThat(collected.get(0).url())
+			.isEqualTo("https://n.news.naver.com/mnews/article/015/0005123456");
+		assertThat(collected.get(0).publisher()).isEqualTo("n.news.naver.com");
+	}
+
+	// 폴백이 넓어졌다고 쓰레기를 받아들이면 안 된다 — 두 후보 모두에서 언론사를 못 뽑을 때만 버리고,
+	// 그 버림이 같은 응답의 멀쩡한 기사까지 데려가지 않는다.
+	@Test
+	@DisplayName("두 후보 모두 언론사를 못 뽑을 때만 기사를 버리고 나머지는 남긴다")
+	void dropsArticleOnlyWhenBothCandidatesAreUnusable() {
+		respondWith(items(
+			item("비트코인 둘 다 깨진 기사", "https://www.hankyung.com/a b|c",
+				"https://news_site.example.com/9", SNIPPET, "Mon, 03 Aug 2026 09:50:00 +0900"),
+			item("비트코인 멀쩡한 기사", "https://www.hankyung.com/a/10",
+				"https://n.news.naver.com/10", SNIPPET, "Mon, 03 Aug 2026 09:55:00 +0900")));
+
+		List<CollectedNewsDto> collected = collector.collect(crypto("비트코인"), CRYPTO_NAMES);
+
+		assertThat(collected).extracting(CollectedNewsDto::title)
+			.containsExactly("비트코인 멀쩡한 기사");
+		assertThat(collected).extracting(CollectedNewsDto::publisher).containsExactly("hankyung.com");
+	}
+
 	@Test
 	@DisplayName("결과가 없는 응답은 오류가 아니라 빈 목록이다")
 	void returnsEmptyListWhenResponseHasNoItems() {
