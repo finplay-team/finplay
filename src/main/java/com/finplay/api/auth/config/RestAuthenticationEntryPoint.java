@@ -7,7 +7,6 @@ import com.finplay.api.common.RequestIdFilter;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.MDC;
 import org.springframework.http.MediaType;
@@ -31,9 +30,11 @@ public class RestAuthenticationEntryPoint implements AuthenticationEntryPoint {
 			ErrorCode.UNAUTHORIZED,
 			ErrorCode.UNAUTHORIZED.getDefaultMessage(),
 			MDC.get(RequestIdFilter.REQUEST_ID_MDC_KEY));
+		byte[] responseBody = objectMapper.writeValueAsBytes(body);
 		response.setStatus(ErrorCode.UNAUTHORIZED.getHttpStatus().value());
 		response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-		response.setCharacterEncoding(StandardCharsets.UTF_8.name());
-		objectMapper.writeValue(response.getWriter(), body);
+		response.setContentLength(responseBody.length);
+		response.getOutputStream().write(responseBody);
+		response.flushBuffer();
 	}
 }
