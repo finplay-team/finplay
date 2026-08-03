@@ -33,6 +33,8 @@ dependencies {
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.0'
 	implementation 'io.jsonwebtoken:jjwt-api:0.13.0'
 	implementation 'org.springframework.boot:spring-boot-starter-flyway'
+	// Spring AI 2.0.0 이상만 Boot 4.x를 지원한다 (ADR-0011). 1.x는 Boot 3.x 전용이라 컨텍스트가 기동하지 않는다.
+	implementation 'org.springframework.ai:spring-ai-starter-model-openai:2.0.0'
 	implementation 'org.flywaydb:flyway-mysql'
 	implementation 'com.querydsl:querydsl-jpa:5.1.0:jakarta'
 	annotationProcessor 'com.querydsl:querydsl-apt:5.1.0:jakarta'
