@@ -12,9 +12,12 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -145,10 +148,11 @@ public class StockReplayService {
 		LocalDate sourceTradingDateMinusOne = sourceTradingDate.minusDays(1);
 		LocalDate pastEnd = rangeEnd.isBefore(sourceTradingDateMinusOne) ? rangeEnd : sourceTradingDateMinusOne;
 		if (!rangeStart.isAfter(pastEnd)) {
+			LocalDate narrowedRangeStart = narrowRangeStart(instrumentId, interval, rangeStart, pastEnd);
 			minuteCandles.addAll(
 				stockCandleRepository
 					.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
-						instrumentId, rangeStart, pastEnd)
+						instrumentId, narrowedRangeStart, pastEnd)
 					.stream()
 					.map(StockCandleDto::from)
 					.toList());
@@ -189,6 +193,53 @@ public class StockReplayService {
 			case ONE_DAY -> rangeEnd.minusDays(LOOKBACK_FLOOR_DAYS);
 			case ONE_WEEK -> rangeEnd.minusWeeks(LOOKBACK_FLOOR_WEEKS);
 			case ONE_MONTH -> rangeEnd.minusMonths(LOOKBACK_FLOOR_MONTHS);
+			case ONE_MINUTE -> throw new IllegalArgumentException("집계 캔들 전용 메서드입니다: " + interval);
+		};
+	}
+
+	// getRevealedAggregatedCandles 전용(이슈 #155) — lookbackFloor의 고정값이나 호출자가 준 rangeStart를 그대로 쓰면
+	// stock_candles가 쌓일수록(보관정리 배치 MVP 제외) 응답 200개 버킷에 필요한 것보다 훨씬 많은 1분봉을 매 요청마다
+	// 읽게 된다. 여기서는 가벼운 DISTINCT 거래일 조회(하루 최대 391행이 아니라 최대 1행)로 실제 200번째 버킷의
+	// 시작 거래일을 역산해 rangeStart를 그 시점까지만 좁힌다. 조회된 거래일이 200버킷을 채우기에 부족하면(데이터가
+	// 아직 얕거나 fetchLimit 안에서 못 채우면) 원래 rangeStart를 그대로 쓴다 — 이 메서드는 범위를 넓히지 않고 좁히기만
+	// 한다. 유일한 호출부(150행)가 이미 rangeStart<=queryEnd를 보장하므로 그 전제를 여기서 다시 검사하지 않는다.
+	private LocalDate narrowRangeStart(
+		Long instrumentId, CandleInterval interval, LocalDate rangeStart, LocalDate queryEnd) {
+		int fetchLimit = MAX_AGGREGATED_CANDLES * maxTradingDaysPerBucket(interval);
+		List<LocalDate> recentTradingDates = stockCandleRepository
+			.findDistinctTradingDateByInstrumentIdAndTradingDateBetweenOrderByTradingDateDesc(
+				instrumentId, rangeStart, queryEnd, PageRequest.of(0, fetchLimit));
+		if (recentTradingDates.isEmpty()) {
+			return rangeStart;
+		}
+
+		// recentTradingDates는 최신→과거 순이다. 200번째로 새로 마주치는 버킷의 "시작일"(월요일·1일 등, 그 버킷의
+		// 가장 이른 거래일이 아니라 버킷 경계 자체)을 narrowedFloor로 써야 한다 — 마주친 거래일 자체(예: 주봉이면
+		// 금요일)를 쓰면 그 버킷의 앞쪽 거래일(월~목)이 뒤이은 1분봉 쿼리에서 통째로 빠져, 응답의 가장 오래된
+		// 버킷 하나가 반쪽 데이터로 조용히 틀린 OHLC를 갖게 된다(PR #162 리뷰 차단 1 — 실제 재현·확정).
+		Set<LocalDate> bucketsSeen = new HashSet<>();
+		LocalDate narrowedFloor = rangeStart;
+		for (LocalDate tradingDate : recentTradingDates) {
+			LocalDate bucketStart = StockCandleAggregator.resolveBucketStart(tradingDate, interval);
+			narrowedFloor = bucketStart;
+			bucketsSeen.add(bucketStart);
+			if (bucketsSeen.size() >= MAX_AGGREGATED_CANDLES) {
+				break;
+			}
+		}
+		// 버킷 시작일은 rangeStart보다 이를 수 있다(예: interval=1w, rangeStart가 그 주의 수요일이면 버킷
+		// 시작일인 월요일은 rangeStart 이전이다) — 그 경우 rangeStart 밑으로 넓히지 않는다. 이렇게 만들어지는
+		// 선두 partial 버킷은 원본 rangeStart 기준의 기존 필터(182행)가 그대로 걸러낸다.
+		return narrowedFloor.isAfter(rangeStart) ? narrowedFloor : rangeStart;
+	}
+
+	// narrowRangeStart 전용 — DISTINCT 거래일 조회 자체를 과도하게 넓게 하지 않기 위한 버킷당 최대 거래일 수 상한.
+	// 1w=최대 5거래일이지만 공휴일 배치 여유를 감안해 7, 1M=달력상 최대 31일.
+	private static int maxTradingDaysPerBucket(CandleInterval interval) {
+		return switch (interval) {
+			case ONE_DAY -> 1;
+			case ONE_WEEK -> 7;
+			case ONE_MONTH -> 31;
 			case ONE_MINUTE -> throw new IllegalArgumentException("집계 캔들 전용 메서드입니다: " + interval);
 		};
 	}

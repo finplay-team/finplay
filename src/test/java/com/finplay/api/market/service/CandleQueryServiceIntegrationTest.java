@@ -19,11 +19,13 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.transaction.annotation.Transactional;
 
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest
@@ -307,6 +309,88 @@ class CandleQueryServiceIntegrationTest {
 				LocalDateTime.of(td4, LocalTime.of(9, 1)));
 		assertThat(minute.get(0).close()).isEqualByComparingTo("40100");
 		assertThat(minute.get(1).close()).isEqualByComparingTo("40300");
+	}
+
+	// 이슈 #155: 응답은 200개 버킷으로 캡되지만 그걸 만들기 위해 읽는 분봉 수 자체에는 상한이 없던 버그(PR #151
+	// 리뷰에서 분리) — 실제 MySQL에 200개 버킷보다 많은 거래일(210일)을 시드해, 조회 하한을 좁히는 최적화
+	// (StockReplayService.narrowRangeStart)가 실 DB 경로에서도 여전히 정확한 "최신 200개"를 반환하는지 검증한다.
+	// 조회 자체가 실제로 좁혀진 범위만 읽는지는 StockReplayServiceTest의 Mockito 인자 검증(정확한 from 경계값)으로
+	// 고정했으므로, 여기서는 전체 스택(실 MySQL·집계·200 캡)이 그 최적화와 맞물려도 결과가 깨지지 않는지에 집중한다.
+	// @Transactional — 210개 거래일 분봉·종목·재생세션을 커밋하면(이 클래스의 다른 테스트들과 달리 이 테스트만)
+	// 공유 MySQL 컨테이너(ADR-0003)에 실제로 남아 InstrumentRepositoryTest의 "정확히 28건" 단정 등 다른 클래스의
+	// 개수 기반 검증을 깨뜨릴 수 있다(2026-07-30 agent-mistakes.md와 동일 패턴, 실제 재현 확인). 테스트 종료 시
+	// 자동 롤백시켜 격리한다.
+	@Test
+	@Transactional
+	void aggregatedDailyIntervalReturnsCorrectLatestTwoHundredBucketsWhenDataSpansMoreThanTwoHundredTradingDays() {
+		Instrument instrument = saveInstrument("CDL0155");
+		LocalDate firstTradingDate = LocalDate.of(2020, 1, 2);
+		int totalTradingDays = 210;
+		List<LocalDate> tradingDates = new ArrayList<>();
+		for (int i = 0; i < totalTradingDays; i++) {
+			LocalDate tradingDate = firstTradingDate.plusDays(i);
+			tradingDates.add(tradingDate);
+			saveAggCandle(
+				instrument, tradingDate, LocalTime.of(9, 0), "1000", "1010", "990", String.valueOf(1000 + i), 10);
+		}
+		LocalDate sourceTradingDate = tradingDates.get(totalTradingDays - 1);
+		LocalDate aggServiceDate = sourceTradingDate.plusDays(30);
+		stockReplaySessionRepository.save(
+			StockReplaySession.ready(aggServiceDate, sourceTradingDate, LocalDateTime.now(), LocalDateTime.now()));
+
+		CandleQueryService service = candleQueryServiceAt(clockAt(aggServiceDate, LocalTime.of(15, 30)));
+		List<CandleResponse> daily = service.getCandles(instrument.getId(), "1d", null, null);
+
+		assertThat(daily).hasSize(200);
+		// 210일 중 가장 오래된 10일(인덱스 0~9)은 200개 캡에 밀려 빠지고, 인덱스 10부터가 응답의 첫 봉이어야 한다.
+		assertThat(daily.get(0).sourceTime()).isEqualTo(LocalDateTime.of(tradingDates.get(10), LocalTime.MIDNIGHT));
+		assertThat(daily.get(199).sourceTime())
+			.isEqualTo(LocalDateTime.of(sourceTradingDate, LocalTime.MIDNIGHT));
+		assertThat(daily.get(199).close()).isEqualByComparingTo(String.valueOf(1000 + totalTradingDays - 1));
+	}
+
+	// PR #162 리뷰 차단 1(실제 재현·확정) 회귀 — narrowRangeStart가 200번째(가장 오래 살아남는) 버킷의 시작일이
+	// 아니라 그 버킷을 최신순 순회 중 "처음 마주친" 거래일(주봉이면 그 주 금요일)을 조회 하한으로 쓰면, 그 버킷의
+	// 앞쪽 거래일(월요일)이 뒤이은 1분봉 쿼리에서 빠져 open이 조용히 틀린다. 실제로 좁히기가 트리거되도록(200개
+	// 초과) 205주치를 시드하고, 각 주 월·금 이틀치를 서로 다른 값으로 넣어 캡에 걸려 살아남는 가장 오래된 버킷의
+	// open이 월요일 값을 반영하는지(=그 버킷 전체가 조회됐는지)로 실 MySQL·집계·200 캡이 맞물린 전체 스택에서
+	// 이 결함을 검증한다.
+	@Test
+	@Transactional
+	void aggregatedWeeklyIntervalIncludesTheEntireOldestSurvivingBucketWhenNarrowingIsTriggered() {
+		Instrument instrument = saveInstrument("CDL0162");
+		LocalDate firstMonday = LocalDate.of(2020, 1, 6); // 월요일
+		int totalWeeks = 205;
+		List<LocalDate> mondays = new ArrayList<>();
+		for (int i = 0; i < totalWeeks; i++) {
+			LocalDate monday = firstMonday.plusWeeks(i);
+			LocalDate friday = monday.plusDays(4);
+			mondays.add(monday);
+			saveAggCandle(instrument, monday, LocalTime.of(9, 0), "1000", "1005", "995", "1002", 10);
+			saveAggCandle(instrument, friday, LocalTime.of(9, 0), "2000", "2005", "1995", "2002", 20);
+		}
+		LocalDate sourceTradingDate = mondays.get(totalWeeks - 1).plusDays(4); // 마지막 주 금요일
+		LocalDate aggServiceDate = sourceTradingDate.plusDays(30);
+		stockReplaySessionRepository.save(
+			StockReplaySession.ready(aggServiceDate, sourceTradingDate, LocalDateTime.now(), LocalDateTime.now()));
+		// lookbackFloor(200주)가 아니라 narrowRangeStart 자체가 하한을 정하도록, 실제 데이터(205주)보다 훨씬 이른
+		// 명시적 from을 준다.
+		LocalDate explicitFrom = firstMonday.minusYears(3);
+
+		CandleQueryService service = candleQueryServiceAt(clockAt(aggServiceDate, LocalTime.of(15, 30)));
+		List<CandleResponse> weekly = service.getCandles(
+			instrument.getId(), "1w", explicitFrom.atStartOfDay(), null);
+
+		assertThat(weekly).hasSize(200);
+		// 205주 중 가장 오래된 5주(인덱스 0~4)는 200개 캡에 밀려 빠지고, 인덱스 5(그 주 월요일)가 응답의 첫 봉이다.
+		LocalDate oldestSurvivingMonday = mondays.get(5);
+		assertThat(weekly.get(0).sourceTime()).isEqualTo(LocalDateTime.of(oldestSurvivingMonday, LocalTime.MIDNIGHT));
+		// 핵심 단정 — open이 월요일 값(1000)이어야 한다. 버그가 있으면 narrowRangeStart가 이 주의 금요일을 조회
+		// 하한으로 써서 월요일 행이 통째로 빠지고, open이 금요일 값(2000)이 되어 버린다.
+		assertThat(weekly.get(0).open()).isEqualByComparingTo("1000");
+		assertThat(weekly.get(0).close()).isEqualByComparingTo("2002");
+		assertThat(weekly.get(0).high()).isEqualByComparingTo("2005");
+		assertThat(weekly.get(0).low()).isEqualByComparingTo("995");
 	}
 
 	// 이슈 #143(013): 코인 일/주/월봉은 저장 없이 요청 시점에 위임되므로(MKT-008과 동일 원칙), 실제 Bithumb 호출 대신
