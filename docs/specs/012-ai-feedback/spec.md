@@ -252,6 +252,7 @@ feedback/
                NarrativePromptBuilder     파트별 프롬프트 조립 (§LLM 프롬프트)
                NarrativeValidator         후검증 — 적발된 표현 목록 반환 (§후검증)
                NarrativeTemplateBuilder   템플릿 문장 조립 (§템플릿 문장)
+               NewsCollectionService      뉴스·공시 상시 수집 (수집기 호출 → 저장, 크론은 §C-1)
                FeedbackBatchService       개장 전 배치 오케스트레이션
                CryptoFeedbackBatchService 코인 요약·브리핑 갱신 (매시)
                PeerStatsBatchService      장 마감 집단 비교 확정 집계
@@ -330,6 +331,8 @@ feedback:
 ```
 
 **`llm.model` 기본값 근거** (2026-08-03 실호출 2회 실측) — `gpt-5.4-mini`와 `gpt-4.1-mini` 둘 다 §후검증을 통과했고, 추론 토큰 0에 완료 토큰 66·74로 `max-tokens: 512` 안에 들어왔다. `gpt-5.4-mini`가 더 짧고 프롬프트가 준 수치를 그대로 옮겨 기본값으로 잡았다. 폴백 후보는 §튜닝에 있다.
+
+**자격증명 3종은 `feedback.*` 밖 최상위 블록에 둔다** — `naver-search.client-id`·`naver-search.client-secret`·`dart.api-key`. `kis.app-key`와 같은 형태이며 **yml에는 빈 기본값 플레이스홀더만 두고 `@DefaultValue`를 붙이지 않는다**(아래 `KisProperties` 문단과 같은 이유 — 시크릿이라 §튜닝 대상이 아니다). OpenAI 키는 `spring.ai.openai.api-key`에 이미 있다(§외부 API 호출 상세).
 
 **`feedback.*` 블록은 yml과 `@DefaultValue` 양쪽에 값을 둔다** (PR #154 리뷰 권장, 2026-08-03). 뒤 이슈가 `detection`·`news`·`crypto`·`instruments` 블록을 추가할 때도 같은 패턴을 쓴다.
 
