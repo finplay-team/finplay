@@ -50,3 +50,10 @@ PR #151 리뷰(namdongyeob)에서 "일/주/월봉에서도 `to`의 경계 포함
 - **권장 1 (해결)**: `rangeEnd` 클램프 주석을 "방어 규칙"에서 PRD MKT-005 08:40 폴백으로 실제 도달 가능한 경로임을 밝히도록 정정.
 - **권장 2 (해결)**: `StockCandleAggregator`(정렬 전제가 깨지면 조용히 틀린 OHLC를 만드는 순수 클래스)를 `public`에서 package-private으로 좁힘 — 호출부가 `market.service` 패키지 안(`StockReplayService`, 테스트)뿐이라 가능. 순서 역행 가드 대신 이 방식을 택함(코드베이스에 이미 package-private 유틸 클래스 관례가 있고 더 간단함).
 - 컴파일 통과, 기존 `StockReplayServiceTest`·`StockCandleAggregatorTest` 재실행 통과(회귀 없음). `interval=1w`·`1M`에서 `from`이 버킷 중간에 걸치는 실제 케이스 테스트는 tester가 추가 예정.
+
+## 후속 이슈 분리 (2026-08-03)
+
+PR #151 리뷰에서 나온 논의 2건은 이번 PR(작은 루프) 범위를 넘는다고 판단해 큰 루프(새 이슈)로 분리했다.
+
+- [#155](https://github.com/finplay-team/finplay/issues/155) — 캔들 집계 조회에 읽기 상한이 없어 데이터가 쌓일수록 조회 비용 증가
+- [#157](https://github.com/finplay-team/finplay/issues/157) — 빗썸 캔들 `to` 파라미터가 경계 시각을 배제해 오늘 봉이 안 보일 수 있음
