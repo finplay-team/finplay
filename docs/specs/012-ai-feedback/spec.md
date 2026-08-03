@@ -247,8 +247,11 @@ feedback/
                MarketBriefingController, PostSellFeedbackController
   service/     PriceMoveDetector          변동 구간 탐지 (순수 계산, 외부 의존 없음)
                NewsMatcher                이벤트 시각 ↔ 기사 매칭
-               NarrativeGenerator         LLM 호출
-               NarrativeValidator         후검증 + 템플릿 폴백
+               NarrativeService           파트별 서술 확정 경로 (생성 → 검증 → 폴백)
+               NarrativeGenerator         LLM 호출 (완성된 프롬프트 문자열만 받는다)
+               NarrativePromptBuilder     파트별 프롬프트 조립 (§LLM 프롬프트)
+               NarrativeValidator         후검증 — 적발된 표현 목록 반환 (§후검증)
+               NarrativeTemplateBuilder   템플릿 문장 조립 (§템플릿 문장)
                FeedbackBatchService       개장 전 배치 오케스트레이션
                CryptoFeedbackBatchService 코인 요약·브리핑 갱신 (매시)
                PeerStatsBatchService      장 마감 집단 비교 확정 집계
@@ -267,6 +270,12 @@ feedback/
 ```
 
 DTO는 `dto/response/` 하위에 둔다(`docs/conventions.md`, 이 spec에는 요청 DTO가 없다). 응답 DTO 클래스명은 `docs/api-contracts.md`에 이미 박혀 있으므로 그 이름을 쓴다. 엔티티를 컨트롤러 밖으로 노출하지 않는다.
+
+**프롬프트와 템플릿 문장을 `NarrativeGenerator` 밖에 둔다.** `NarrativePromptBuilder`가 시스템 프롬프트 1종 + 파트별 사용자 프롬프트 4종 + 재생성 프롬프트 1종을 조립하고, `NarrativeGenerator`는 **완성된 문자열만 받아 호출**한다. `NarrativeTemplateBuilder`는 §템플릿 문장의 3종(장중 카드·시가 갭·매도 회고)을 수치로 조립한다. 프로바이더를 바꿔도 프롬프트가 딸려 가지 않게 하려는 것이며, ADR-0011의 "교체는 starter 의존성과 `feedback.llm.*` 설정 변경으로 끝난다"와 같은 의도다. 둘 다 외부 의존이 없어 단위 테스트로 문자열을 직접 단정할 수 있다.
+
+**서술 확정 경로는 `NarrativeService` 하나가 담는다.** 위 넷을 주입받아 파트별로 §후검증의 흐름을 실행한다 — 요약·브리핑은 2단계(생성 → 검증 → 적발 시 재생성 1회 → 그래도 걸리면 서술 없음 + `NONE`), 카드·매도 회고는 1단계(생성 → 검증 → 걸리면 템플릿, 재생성 없음)다. **뒤 이슈의 조회·배치 서비스는 이 서비스 하나만 주입하면 되고 생성기·검증기를 직접 알 필요가 없다.**
+
+**이 경로를 `NarrativeValidator`에 두지 않은 이유** — 템플릿 폴백은 이미 만들어 둔 문장을 고르는 국소적 동작이지만 재생성은 프로바이더를 다시 부르는 다른 층위라, 검증기가 `NarrativeGenerator`를 주입받는 순간 "검증만 하는 클래스"가 아니게 된다.
 
 `PriceMoveDetector`는 **분봉 리스트와 직전 거래일 종가를 받아 이벤트 리스트를 반환하는 순수 함수**로 만든다. DB·시계·LLM에 의존하지 않아야 고정 픽스처로 단위 테스트할 수 있다.
 
@@ -313,12 +322,14 @@ feedback:
     stock-count: 16             # V7 시드 기준. 호출량·튜닝 계산의 근거
     crypto-count: 12
   llm:
-    model: claude-haiku-4-5
+    model: gpt-5.4-mini
     timeout-seconds: 20
     max-tokens: 512
     max-regeneration: 1           # 요약·브리핑 후검증 재생성 횟수
     max-narrative-retry: 3        # 매도 회고 서술 재생성 누적 재시도 상한
 ```
+
+**`llm.model` 기본값 근거** (2026-08-03 실호출 2회 실측) — `gpt-5.4-mini`와 `gpt-4.1-mini` 둘 다 §후검증을 통과했고, 추론 토큰 0에 완료 토큰 66·74로 `max-tokens: 512` 안에 들어왔다. `gpt-5.4-mini`가 더 짧고 프롬프트가 준 수치를 그대로 옮겨 기본값으로 잡았다. 폴백 후보는 §튜닝에 있다.
 
 `k`·윈도우·갭 임계치는 **실데이터로 검증한 뒤 조정할 대상**이지만 위 값으로 구현을 시작한다. 검증 방법은 §튜닝에 있다. **값이 미확정이라는 이유로 구현을 멈추지 않는다.**
 
@@ -386,7 +397,7 @@ originTradeDate = occurred_at 의 KST 날짜               (일일 상한 카운
 - [ ] 중복 저장은 `UNIQUE(instrument_id, url)`이 막는다. 중복은 오류가 아니라 무시한다.
 - [ ] 수집 실패는 그날의 카드·요약·브리핑 생성을 건너뛸 뿐, 분봉 수집·재생세션 확정·주식 시장 개장에 영향을 주지 않는다.
 - [ ] 외부 API 키가 없어도 애플리케이션 기동과 자동 테스트가 정상 동작한다 (§실패 처리의 Fake 구현).
-- [ ] **`.env.example`과 `compose.deploy.yaml`에 신설 환경변수 4종을 추가한다** — `NAVER_SEARCH_CLIENT_ID`·`NAVER_SEARCH_CLIENT_SECRET`·`DART_API_KEY`·`ANTHROPIC_API_KEY`. 빠뜨리면 배포에서 조용히 빈 값으로 뜬다.
+- [ ] **`.env.example`과 `compose.deploy.yaml`에 신설 환경변수 4종을 추가한다** — `NAVER_SEARCH_CLIENT_ID`·`NAVER_SEARCH_CLIENT_SECRET`·`DART_API_KEY`·`OPENAI_API_KEY`. 빠뜨리면 배포에서 조용히 빈 값으로 뜬다.
 
 ### FEED-002 변동 구간 탐지 (서버 계산, LLM 미사용)
 
@@ -1002,7 +1013,7 @@ LLM이 실패하거나 후검증에 걸렸을 때 서버가 수치로 조립한�
 | 상황 | 처리 |
 |---|---|
 | 네이버·DART 키 없음 | `Fake*Collector`가 빈 목록 반환. 기동·테스트 정상 |
-| Anthropic 키 없음 | `NarrativeGenerator`가 즉시 실패 반환 → 템플릿 폴백 |
+| OpenAI 키 없음 | `NarrativeGenerator`가 즉시 실패 반환 → 템플릿 폴백 |
 | 뉴스 API 호출 실패 | 그 종목만 건너뛰고 나머지 계속. `WARN` 로그 |
 | DART 호출 실패 | 공시 없이 뉴스만으로 진행 |
 | LLM 타임아웃·오류 | 그 카드만 템플릿. 배치 계속 |
@@ -1031,11 +1042,12 @@ LLM이 실패하거나 후검증에 걸렸을 때 서버가 수치로 조립한�
 | DART 엔드포인트 | `GET https://opendart.fss.or.kr/api/list.json?crtfc_key={키}&corp_code={8자리}&bgn_de={수집일−1}&end_de={수집일}` — `YYYYMMDD`. 전일부터 훑어 접수 지연분을 잡는다 |
 | DART 제약 | `corp_code`는 종목코드가 아님. `corpCode.xml`로 16종목 매핑을 미리 만들어 리소스로 둔다 |
 | DART 시각 | `rcept_dt`는 `YYYYMMDD`. `published_at`은 그 날짜 `00:00:00`으로 저장 |
-| LLM | Spring AI `spring-ai-starter-model-anthropic` **2.0.0 이상** |
+| LLM | Spring AI `spring-ai-starter-model-openai` **2.0.0 이상**. 모델은 §C-7 |
+| LLM 기동 조건 | OpenAI 스타터는 chat 외에 embedding·image·moderation·audio 빈까지 자동 등록하고 그중 audio speech가 **기동 시점에** 키를 요구한다. `spring.ai.model.*`로 안 쓰는 유형을 끄고 `spring.ai.openai.api-key`에 자리표시자 기본값을 둬야 키 없이 컨텍스트가 뜬다 (2026-08-03 실측, 커밋 `d311b87`) |
 
 Spring AI 1.x는 Spring Boot 3.x 전용이라 이 프로젝트(Boot 4.1.0)에서 컨텍스트가 기동하지 않는다. 반드시 2.0.0 이상을 쓴다. 프로바이더 교체·실패 처리·테스트 방침은 **ADR-0011**에 있다 — 이 spec은 그 결정을 전제로 한다.
 
-환경변수는 `NAVER_SEARCH_CLIENT_ID`·`NAVER_SEARCH_CLIENT_SECRET`·`DART_API_KEY`·`ANTHROPIC_API_KEY`이며, **없어도 기동과 테스트가 정상 동작해야 한다** (KIS·Resend 키와 같은 방식).
+환경변수는 `NAVER_SEARCH_CLIENT_ID`·`NAVER_SEARCH_CLIENT_SECRET`·`DART_API_KEY`·`OPENAI_API_KEY`이며, **없어도 기동과 테스트가 정상 동작해야 한다** (KIS·Resend 키와 같은 방식).
 
 ## 데이터 모델
 
@@ -1125,6 +1137,7 @@ trade_feedbacks                매도 직후 서술 (회원별)
 | `crypto.cooldown-minutes`·`daily-limit` | 하루 생성 건수 확인 | 상한에 매일 걸리면 완화 |
 | `crypto.min-sample-count` | 기동 후 카드가 나오기까지 걸린 시간 확인 | 너무 길면 낮춘다 |
 | `llm.model` | `TEMPLATE` 비율 확인 | 30% 넘으면 프롬프트 수정, 그래도 높으면 상위 모델 |
+| `llm.model` (폴백 후보) | 기동·첫 호출에서 `max-tokens` 매핑 확인 | GPT-5 계열은 `max_completion_tokens` 파라미터를 쓴다. Spring AI 2.0의 매핑이 어긋나면 `gpt-4.1-mini`로 내린다 — 2026-08-03 실호출에서 §후검증 통과와 완료 토큰 74를 확인해 둔 후보다 |
 | `llm.model` (요약) | 요약의 `NONE` 비율 확인 | 10% 넘으면 프롬프트 수정 |
 | 코인 질의어 보정 | 근거 기사 목록을 눈으로 훑어 무관 기사 비율 확인 | 높으면 종목별 질의어 오버라이드를 도입한다 |
 
@@ -1267,6 +1280,6 @@ trade_feedbacks                매도 직후 서술 (회원별)
 ### 원장 불변·기동
 
 - [ ] 카드 생성·조회 전후로 주문·체결·계좌·잔액·보유·손익 원장이 변하지 않는다.
-- [ ] 외부 API 키(네이버 검색·DART·Anthropic) 없이 `./gradlew build` 통과.
+- [ ] 외부 API 키(네이버 검색·DART·OpenAI) 없이 `./gradlew build` 통과.
 - [ ] `.env.example`·`compose.deploy.yaml`에 신설 환경변수 4종이 들어 있다.
 - [ ] V13 마이그레이션이 `ddl-auto=validate`를 통과한다 (§C-8의 타입표와 엔티티 일치).
