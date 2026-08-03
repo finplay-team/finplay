@@ -28,6 +28,7 @@
 | 21:40 | reviewer(리뷰) | `git diff dev...HEAD`(PR 브랜치 `feat/147-llm-narrative`, 37파일) + spec.md 4개 수정 자리 정당성 대조(§C-6·§후검증 가정법·§템플릿 문장 부호·§실패 처리 신규 행), `awk`로 §완료 조건 체크박스 절별 전수 카운트(91=16/15/15/9/7/7/7/6/5/4)와 plan.md 8행 배정표(9/3/6/20/16/18/9/9=90+원장불변1) 재검산, `gh issue view 147`로 범위 축소 주석 실재 확인, Spring AI 2.0.0 jar `javap`로 `spring.ai.openai.timeout` 적용 경로·`OpenAiSetup` 키 처리 확인, nullable 필드(holdHigh·holdLow)와 코인 자정 구간을 record 계약에 대입 | spec.md, plan.md, api-contracts.md, ADR-0002·0003·0011, conventions.md, agent-mistakes.md |
 | 21:40 | implementer | `gradlew.bat spotlessApply compileJava spotbugsMain test --tests "com.finplay.api.feedback.*"`(260건) (reviewer 차단 2건 수정) | spec.md §파생 사실 계산 746줄·§C-9 372줄·§C-4, api-contracts.md 459·461줄, ADR-0011 |
 | 21:09 | implementer | `git mv` 후 `gradlew.bat compileJava compileTestJava` + `spotlessCheck` (이슈 #160 tasks 1번 — enum 2종 `feedback/domain/` 이동) | tasks.md 1번, spec.md §C-6 패키지 배치·§C-8, ADR-0002, conventions.md |
+| 21:20 | implementer | `gradlew.bat test --tests OrderLedgerSchemaTest --tests "order.repository.*" --tests MeIntegrationTest` + 임시 프로브로 `information_schema` 덤프(V13 적용·컬럼 타입·`sub_part` NULL 확인 후 삭제) (tasks.md 2번 — V13 일곱 테이블) | spec.md §데이터 모델·§C-8·§C-9, ADR-0004, V10·V11 DDL 관례 |
 
 ## 모니터링 (사람용 요약)
 - 11:40 — 문서 리뷰 완료, 차단 9건(노출 판정 전장 기사 역전, UNIQUE(url) 잔존 모순, 코인 경로 미정의, 장마감 배치 부재, 배치용 전일치 분봉 조회 경로 부재, PRD 수집주기 모순 등) / 권장 12건.
@@ -68,5 +69,7 @@
 - 21:40 — reviewer 차단 2건 수정. ①`postSellPrompt`가 보유 구간 극값 6필드를 null 검사 없이 역참조해 `sameSessionCompleted=false`면 NPE가 생성기 밖에서 터졌다(→ 조회 500, `narrativeStatus` 항상 READY 위반). 두 그룹을 줄 단위로 생략하고 파생 사실 블록을 따로 모아 빈 줄 중복도 없앴다. ②`ChronoUnit.MINUTES.between(LocalTime, LocalTime)`이 코인 자정 횡단에서 음수가 돼 "-1435분간"이 조용히 나갔다(spec §C-9 사례). `PriceMovePromptDto`에 `windowMinutes`를 필드로 추가해 절대 시각을 가진 호출부가 계산하게 했다. **프롬프트 문자열은 분(minutes)을 렌더링하지 않아 골든 마스터 23건과 spec §LLM 프롬프트 예시는 영향 없음.** 테스트 3건 추가(자정 횡단·극값 없는 프롬프트·극값 없는 서비스 경로), 260건 통과.
 
 - 21:09 — 이슈 #160 착수. `NarrativeSource`·`NewsSummaryScope`를 `feedback/service/` → `feedback/domain/`으로 옮겨 `feedback/domain/` 패키지를 열었다. enum 본문은 그대로 두고 참조 6파일에 import만 더했으며, 클래스 주석의 "#2가 재사용한다"만 현재형으로 다듬었다. 컴파일·포맷 검사 통과.
+
+- 21:20 — `V13__create_ai_feedback_tables.sql` 신설(일곱 테이블·유니크 7·인덱스 4·FK 6). 임시 프로브로 실제 MySQL 스키마를 덤프해 §C-8 타입표와 대조했고, `url` 유니크의 `sub_part`가 `NULL`(접두 없음)인 것과 `narrative_finalized`/`regeneration_attempts` 기본값을 확인했다. 원장 테이블 대상 `ALTER`·`DROP` 0줄, 원장 스키마 테스트(`OrderLedgerSchemaTest`)·주문 리포지토리·컨텍스트 기동 통과.
 
 - 22:20 — reviewer 권장 3건·참고 2건 처리. ①`application.yml`의 "블록 없어도 기동한다" 주석이 거짓이었다 — 블록을 실제로 지우고 `@SpringBootTest`를 돌려 `ConfigurationPropertiesBindException` → `DurationStyle` 변환 실패로 기동이 깨지는 것을 확인하고 주석을 사실대로 고쳤다. ②spec §후검증의 "정규식" 표기 2곳을 "부분 문자열"로 맞추고 왜 정규식이 아닌지를 적었다. ③가정법 한계(`샀다면`·`봤다면` 등 축약형은 구조적으로 못 잡는다)를 §후검증에 명시하고 §튜닝 관측 항목으로 넣었다 — 목록은 넓히지 않았다. 참고: `maxRegeneration` 음수 차단, 이슈 #147 완료 조건 문구 동기화.
