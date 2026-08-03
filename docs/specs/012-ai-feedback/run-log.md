@@ -30,6 +30,7 @@
 | 21:09 | implementer | `git mv` 후 `gradlew.bat compileJava compileTestJava` + `spotlessCheck` (이슈 #160 tasks 1번 — enum 2종 `feedback/domain/` 이동) | tasks.md 1번, spec.md §C-6 패키지 배치·§C-8, ADR-0002, conventions.md |
 | 21:20 | implementer | `gradlew.bat test --tests OrderLedgerSchemaTest --tests "order.repository.*" --tests MeIntegrationTest` + 임시 프로브로 `information_schema` 덤프(V13 적용·컬럼 타입·`sub_part` NULL 확인 후 삭제) (tasks.md 2번 — V13 일곱 테이블) | spec.md §데이터 모델·§C-8·§C-9, ADR-0004, V10·V11 DDL 관례 |
 | 21:25 | implementer | `gradlew.bat spotlessApply compileJava spotbugsMain` + `test --tests MeIntegrationTest --tests OrderLedgerSchemaTest`(`ddl-auto=validate` 기동 확인) (tasks.md 3번 — `MarketNewsItem`) | tasks.md 3번, spec.md §데이터 모델·§C-8·§C-3·§정책 전제, conventions.md Entity 규칙, `order/domain/Trade` 선례 |
+| 21:35 | implementer | `gradlew.bat spotlessApply compileJava spotbugsMain` + `test --tests MeIntegrationTest`(`validate` 기동) + 컬럼명 오타 음성 프로브로 새 엔티티가 실제 검증 대상인지 확인 후 원복 (tasks.md 4번 — `PriceMoveEvent`·`PriceMoveEventSource`) | tasks.md 4번, spec.md §C-8·§C-9·§탐지 알고리즘(코인) 648줄·§데이터 모델, conventions.md, `order/domain/Order`의 `columnDefinition` 선례 |
 
 ## 모니터링 (사람용 요약)
 - 11:40 — 문서 리뷰 완료, 차단 9건(노출 판정 전장 기사 역전, UNIQUE(url) 잔존 모순, 코인 경로 미정의, 장마감 배치 부재, 배치용 전일치 분봉 조회 경로 부재, PRD 수집주기 모순 등) / 권장 12건.
@@ -74,5 +75,7 @@
 - 21:20 — `V13__create_ai_feedback_tables.sql` 신설(일곱 테이블·유니크 7·인덱스 4·FK 6). 임시 프로브로 실제 MySQL 스키마를 덤프해 §C-8 타입표와 대조했고, `url` 유니크의 `sub_part`가 `NULL`(접두 없음)인 것과 `narrative_finalized`/`regeneration_attempts` 기본값을 확인했다. 원장 테이블 대상 `ALTER`·`DROP` 0줄, 원장 스키마 테스트(`OrderLedgerSchemaTest`)·주문 리포지토리·컨텍스트 기동 통과.
 
 - 21:25 — `MarketNewsItem` 엔티티·`MarketNewsItemType`(NEWS·DISCLOSURE)·`MarketNewsItemRepository` 신설. 본문 컬럼 없음, `createdAt`은 수집 시각이라는 두 제약을 클래스 주석에 남겼다. 리포지토리는 `JpaRepository` 상속만 두고 조회 메서드를 만들지 않았다(완료 조건 2건은 저장·조회로 검증된다). 테스트는 tester 소유라 작성하지 않았고, `@SpringBootTest` 기동으로 `ddl-auto=validate`가 V13의 `market_news_items`와 매핑이 일치함만 확인했다.
+
+- 21:35 — `PriceMoveEvent`·`PriceMoveEventSource`·`PriceMoveEventType`(INTRADAY·OPENING_GAP)과 리포지토리 2종 신설. 주식·코인이 서로 다른 컬럼을 채우는 것(§C-9)을 정적 팩토리 `createStock`/`createCrypto` 둘로 갈라 형태가 섞이지 않게 했고, `market`은 `market/domain/Market`, `narrative_source`는 1번이 옮긴 `NarrativeSource`를 재사용했다. `narrative`는 `columnDefinition = "TEXT"`로 매핑해야 `validate`가 통과한다(String 기본 매핑은 `varchar(255)`라 `text`와 어긋난다) — 컬럼명 오타 프로브로 새 엔티티가 실제 검증 대상임을 확인한 뒤 원복했다.
 
 - 22:20 — reviewer 권장 3건·참고 2건 처리. ①`application.yml`의 "블록 없어도 기동한다" 주석이 거짓이었다 — 블록을 실제로 지우고 `@SpringBootTest`를 돌려 `ConfigurationPropertiesBindException` → `DurationStyle` 변환 실패로 기동이 깨지는 것을 확인하고 주석을 사실대로 고쳤다. ②spec §후검증의 "정규식" 표기 2곳을 "부분 문자열"로 맞추고 왜 정규식이 아닌지를 적었다. ③가정법 한계(`샀다면`·`봤다면` 등 축약형은 구조적으로 못 잡는다)를 §후검증에 명시하고 §튜닝 관측 항목으로 넣었다 — 목록은 넓히지 않았다. 참고: `maxRegeneration` 음수 차단, 이슈 #147 완료 조건 문구 동기화.

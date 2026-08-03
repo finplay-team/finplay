@@ -47,7 +47,7 @@
     ② **앞 191자가 같고 쿼리 파라미터만 다른 URL 2건이 모두 저장된다** — 접두 유니크였다면 실패한다(§C-8).
     두 조건 모두 실제 MySQL 제약이 대상이라 mock으로는 검증할 수 없다. 반대 방향(같은 종목 + 완전히 같은 `url`이면 유니크 위반)도 함께 단정해 제약이 실제로 걸려 있음을 보인다.
 
-- [ ] **4. `PriceMoveEvent`·`PriceMoveEventSource` 엔티티·리포지토리**
+- [x] **4. `PriceMoveEvent`·`PriceMoveEventSource` 엔티티·리포지토리**
 
   변동 구간 원장과 근거 연결(N:M)을 매핑한다. `event_type`·`market`·`narrative_source`는 `@Enumerated(STRING)`이고, `narrative_source`는 1번이 옮긴 `NarrativeSource`를 **재사용한다**.
   - **주식과 코인이 서로 다른 컬럼을 채운다** — 주식은 `window_start`/`window_end`(TIME)를 채우고 `occurred_at`이 `NULL`, 코인은 반대다(§C-9). 두 형태를 한 테이블이 담으므로 해당 컬럼은 nullable이다.
