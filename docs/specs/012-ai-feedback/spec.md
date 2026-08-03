@@ -252,6 +252,8 @@ feedback/
                NarrativePromptBuilder     파트별 프롬프트 조립 (§LLM 프롬프트)
                NarrativeValidator         후검증 — 적발된 표현 목록 반환 (§후검증)
                NarrativeTemplateBuilder   템플릿 문장 조립 (§템플릿 문장)
+               NewsSearchQueryBuilder     종목별 검색 질의어 조립 (순수 계산, 코인 보정은 FEED-001)
+               NewsTitleFilter            같은 시장 다른 종목명이 든 제목 제외 (순수 계산, FEED-001)
                NewsCollectionService      뉴스·공시 상시 수집 (수집기 호출 → 저장, 크론은 §C-1)
                FeedbackBatchService       개장 전 배치 오케스트레이션
                CryptoFeedbackBatchService 코인 요약·브리핑 갱신 (매시)
@@ -277,6 +279,8 @@ DTO는 `dto/response/` 하위에 둔다(`docs/conventions.md`, 이 spec에는 �
 **서술 확정 경로는 `NarrativeService` 하나가 담는다.** 위 넷을 주입받아 파트별로 §후검증의 흐름을 실행한다 — 요약·브리핑은 2단계(생성 → 검증 → 적발 시 재생성 1회 → 그래도 걸리면 서술 없음 + `NONE`), 카드·매도 회고는 1단계(생성 → 검증 → 걸리면 템플릿, 재생성 없음)다. **뒤 이슈의 조회·배치 서비스는 이 서비스 하나만 주입하면 되고 생성기·검증기를 직접 알 필요가 없다.**
 
 **이 경로를 `NarrativeValidator`에 두지 않은 이유** — 템플릿 폴백은 이미 만들어 둔 문장을 고르는 국소적 동작이지만 재생성은 프로바이더를 다시 부르는 다른 층위라, 검증기가 `NarrativeGenerator`를 주입받는 순간 "검증만 하는 클래스"가 아니게 된다.
+
+**질의어 조립과 제목 필터를 수집기 밖에 둔다.** 둘 다 FEED-001의 규칙이고 외부 의존이 없어 고정 픽스처로 단정할 수 있다 — 수집기 안에 두면 HTTP 응답을 고정해야만 검사할 수 있게 된다. `NaverNewsCollector`가 둘을 주입받아 쓴다. 필터는 **같은 시장의 종목명 목록**만 보므로 시장을 섞지 않는다.
 
 `PriceMoveDetector`는 **분봉 리스트와 직전 거래일 종가를 받아 이벤트 리스트를 반환하는 순수 함수**로 만든다. DB·시계·LLM에 의존하지 않아야 고정 픽스처로 단위 테스트할 수 있다.
 
