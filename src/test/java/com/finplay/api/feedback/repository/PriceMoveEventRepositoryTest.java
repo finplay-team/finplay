@@ -188,8 +188,9 @@ class PriceMoveEventRepositoryTest {
 			REVEAL_TIME,
 			NOW))
 			.isInstanceOf(IllegalArgumentException.class)
-			.hasMessageContaining("CRYPTO")
-			.hasMessageContaining("STOCK");
+			// 두 단어가 들어 있는지만 보면 방향이 고정되지 않는다 — requireMarket이 종목의 시장과 카드 형태를
+			// 뒤바꿔 조립해도 그대로 통과한다. 어느 쪽이 어느 자리에 들어가는지까지 완전 일치로 못 박는다.
+			.hasMessage("종목의 시장(CRYPTO)이 카드 형태(STOCK)와 다릅니다.");
 
 		assertThat(priceMoveEventRepository.count()).isZero();
 	}
@@ -206,8 +207,7 @@ class PriceMoveEventRepositoryTest {
 			NarrativeSource.TEMPLATE,
 			NOW))
 			.isInstanceOf(IllegalArgumentException.class)
-			.hasMessageContaining("STOCK")
-			.hasMessageContaining("CRYPTO");
+			.hasMessage("종목의 시장(STOCK)이 카드 형태(CRYPTO)와 다릅니다.");
 
 		assertThat(priceMoveEventRepository.count()).isZero();
 	}
