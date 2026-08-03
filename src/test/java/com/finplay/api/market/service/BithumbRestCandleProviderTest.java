@@ -29,6 +29,9 @@ import org.springframework.web.client.RestClient;
 class BithumbRestCandleProviderTest {
 
 	private static final String ENDPOINT = "https://api.bithumb.com/v1/candles/minutes/1";
+	private static final String DAY_ENDPOINT = "https://api.bithumb.com/v1/candles/days";
+	private static final String WEEK_ENDPOINT = "https://api.bithumb.com/v1/candles/weeks";
+	private static final String MONTH_ENDPOINT = "https://api.bithumb.com/v1/candles/months";
 	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
 	private MockRestServiceServer server;
@@ -233,6 +236,190 @@ class BithumbRestCandleProviderTest {
 		server.verify();
 	}
 
+	// --- interval별 엔드포인트 분기 ---
+
+	@Test
+	void getCandlesCallsDaysEndpointForOneDayInterval() {
+		BithumbRestCandleProvider provider = providerAt(LocalDateTime.of(2026, 7, 30, 11, 43));
+		server.expect(requestTo(startsWith(DAY_ENDPOINT)))
+			.andExpect(method(HttpMethod.GET))
+			.andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
+
+		provider.getCandles("BTC", CandleInterval.ONE_DAY, null, null);
+
+		server.verify();
+	}
+
+	@Test
+	void getCandlesCallsWeeksEndpointForOneWeekInterval() {
+		BithumbRestCandleProvider provider = providerAt(LocalDateTime.of(2026, 7, 30, 11, 43));
+		server.expect(requestTo(startsWith(WEEK_ENDPOINT)))
+			.andExpect(method(HttpMethod.GET))
+			.andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
+
+		provider.getCandles("BTC", CandleInterval.ONE_WEEK, null, null);
+
+		server.verify();
+	}
+
+	@Test
+	void getCandlesCallsMonthsEndpointForOneMonthInterval() {
+		BithumbRestCandleProvider provider = providerAt(LocalDateTime.of(2026, 7, 30, 11, 43));
+		server.expect(requestTo(startsWith(MONTH_ENDPOINT)))
+			.andExpect(method(HttpMethod.GET))
+			.andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
+
+		provider.getCandles("BTC", CandleInterval.ONE_MONTH, null, null);
+
+		server.verify();
+	}
+
+	// --- count 산출: 주·월봉은 양 끝을 월요일·1일로 정렬 후 단위 차이 + 1 ---
+
+	@Test
+	void getCandlesComputesWeekCountByAligningBothEndsToMondayAcrossWeekBoundary() {
+		BithumbRestCandleProvider provider = providerAt(LocalDateTime.of(2026, 7, 30, 11, 43));
+		// from=수(2026-07-29, 그 주 월요일 2026-07-27) ~ to=수(2026-08-05, 그 주 월요일 2026-08-03)
+		// 월요일 정렬 기준으로 1주 차이 -> count = 1 + 1 = 2
+		LocalDateTime from = LocalDateTime.of(2026, 7, 29, 0, 0);
+		LocalDateTime to = LocalDateTime.of(2026, 8, 5, 0, 0);
+
+		server.expect(requestTo(startsWith(WEEK_ENDPOINT)))
+			.andExpect(queryParam("count", "2"))
+			.andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
+
+		provider.getCandles("BTC", CandleInterval.ONE_WEEK, from, to);
+
+		server.verify();
+	}
+
+	@Test
+	void getCandlesComputesWeekCountAsOneWhenBothEndsFallInSameIsoWeek() {
+		BithumbRestCandleProvider provider = providerAt(LocalDateTime.of(2026, 7, 30, 11, 43));
+		// 2026-07-27(월) ~ 2026-08-02(일)은 같은 ISO 주 -> count = 0 + 1 = 1
+		LocalDateTime from = LocalDateTime.of(2026, 7, 27, 0, 0);
+		LocalDateTime to = LocalDateTime.of(2026, 8, 2, 0, 0);
+
+		server.expect(requestTo(startsWith(WEEK_ENDPOINT)))
+			.andExpect(queryParam("count", "1"))
+			.andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
+
+		provider.getCandles("BTC", CandleInterval.ONE_WEEK, from, to);
+
+		server.verify();
+	}
+
+	@Test
+	void getCandlesComputesMonthCountByAligningBothEndsToFirstDayAcrossMonthBoundary() {
+		BithumbRestCandleProvider provider = providerAt(LocalDateTime.of(2026, 7, 30, 11, 43));
+		// from=2026-07-15(1일 정렬: 2026-07-01) ~ to=2026-09-03(1일 정렬: 2026-09-01) -> 2개월 차이 -> count = 2 + 1 = 3
+		LocalDateTime from = LocalDateTime.of(2026, 7, 15, 0, 0);
+		LocalDateTime to = LocalDateTime.of(2026, 9, 3, 0, 0);
+
+		server.expect(requestTo(startsWith(MONTH_ENDPOINT)))
+			.andExpect(queryParam("count", "3"))
+			.andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
+
+		provider.getCandles("BTC", CandleInterval.ONE_MONTH, from, to);
+
+		server.verify();
+	}
+
+	@Test
+	void getCandlesCapsWeekCountAtTwoHundredWhenRangeExceedsTwoHundredWeeks() {
+		BithumbRestCandleProvider provider = providerAt(LocalDateTime.of(2026, 7, 30, 11, 43));
+		// 2020-01-01 ~ 2026-07-30 : 200주(약 3.8년)를 훌쩍 넘는 범위
+		LocalDateTime from = LocalDateTime.of(2020, 1, 1, 0, 0);
+		LocalDateTime to = LocalDateTime.of(2026, 7, 30, 0, 0);
+
+		server.expect(requestTo(startsWith(WEEK_ENDPOINT)))
+			.andExpect(queryParam("count", "200"))
+			.andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
+
+		provider.getCandles("BTC", CandleInterval.ONE_WEEK, from, to);
+
+		server.verify();
+	}
+
+	@Test
+	void getCandlesCapsMonthCountAtTwoHundredWhenRangeExceedsTwoHundredMonths() {
+		BithumbRestCandleProvider provider = providerAt(LocalDateTime.of(2026, 7, 30, 11, 43));
+		// 2005-01-01 ~ 2026-07-30 : 200개월(약 16.7년)을 훌쩍 넘는 범위
+		LocalDateTime from = LocalDateTime.of(2005, 1, 1, 0, 0);
+		LocalDateTime to = LocalDateTime.of(2026, 7, 30, 0, 0);
+
+		server.expect(requestTo(startsWith(MONTH_ENDPOINT)))
+			.andExpect(queryParam("count", "200"))
+			.andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
+
+		provider.getCandles("BTC", CandleInterval.ONE_MONTH, from, to);
+
+		server.verify();
+	}
+
+	@Test
+	void getCandlesSendsCountTwoHundredForDayIntervalWithoutFromAndTo() {
+		BithumbRestCandleProvider provider = providerAt(LocalDateTime.of(2026, 7, 30, 11, 43));
+		server.expect(requestTo(startsWith(DAY_ENDPOINT)))
+			.andExpect(queryParam("count", "200"))
+			.andExpect(noToParam())
+			.andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
+
+		provider.getCandles("BTC", CandleInterval.ONE_DAY, null, null);
+
+		server.verify();
+	}
+
+	// --- 일/주/월봉 전용 필드가 섞여도 파싱이 깨지지 않고, 그 필드들은 응답에 노출되지 않는다 ---
+
+	@Test
+	void getCandlesParsesDayCandleIgnoringPeriodOnlyFieldsWithoutExposingThem() {
+		BithumbRestCandleProvider provider = providerAt(LocalDateTime.of(2026, 7, 30, 11, 43));
+		String body = """
+			[{
+			  "market": "KRW-BTC",
+			  "candle_date_time_utc": "2026-07-29T15:00:00",
+			  "candle_date_time_kst": "2026-07-30T00:00:00",
+			  "opening_price": 100,
+			  "high_price": 120,
+			  "low_price": 90,
+			  "trade_price": 110,
+			  "timestamp": 1753842180000,
+			  "candle_acc_trade_price": 500000,
+			  "candle_acc_trade_volume": 4.5,
+			  "prev_closing_price": 95,
+			  "change_price": 15,
+			  "change_rate": 0.157,
+			  "first_day_of_period": "2026-07-30"
+			}]
+			""";
+		server.expect(requestTo(startsWith(DAY_ENDPOINT))).andRespond(withSuccess(body, MediaType.APPLICATION_JSON));
+
+		CryptoCandleDto candle = provider.getCandles("BTC", CandleInterval.ONE_DAY, null, null).get(0);
+
+		assertThat(candle.open()).isEqualByComparingTo("100");
+		assertThat(candle.high()).isEqualByComparingTo("120");
+		assertThat(candle.low()).isEqualByComparingTo("90");
+		assertThat(candle.close()).isEqualByComparingTo("110");
+		assertThat(candle.volume()).isEqualByComparingTo("4.5");
+		// candle_date_time_kst를 보정 없이 그대로 sourceTime으로 매핑한다 (일봉 경계를 서버가 재계산하지 않음).
+		assertThat(candle.sourceTime()).isEqualTo(LocalDateTime.of(2026, 7, 30, 0, 0));
+	}
+
+	// --- 저장·캐시 없음: 동일 호출을 반복해도 항상 HTTP로 새로 조회한다 ---
+
+	@Test
+	void getCandlesAlwaysRefetchesFromHttpAcrossRepeatedCallsInsteadOfCaching() {
+		BithumbRestCandleProvider provider = providerAt(LocalDateTime.of(2026, 7, 30, 11, 43));
+		server.expect(requestTo(startsWith(DAY_ENDPOINT))).andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
+		server.expect(requestTo(startsWith(DAY_ENDPOINT))).andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
+
+		provider.getCandles("BTC", CandleInterval.ONE_DAY, null, null);
+		provider.getCandles("BTC", CandleInterval.ONE_DAY, null, null);
+
+		server.verify();
+	}
+
 	// --- 장애 처리: 빈 배열 200으로 위장하지 않고 502 MARKET_DATA_PROVIDER_ERROR ---
 
 	@Test
@@ -316,6 +503,17 @@ class BithumbRestCandleProviderTest {
 			.andRespond(withSuccess("null", MediaType.APPLICATION_JSON));
 
 		assertThatThrownBy(() -> provider.getCandles("BTC", CandleInterval.ONE_MINUTE, null, null))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
+				.isEqualTo(ErrorCode.MARKET_DATA_PROVIDER_ERROR));
+	}
+
+	@Test
+	void getCandlesThrowsProviderErrorOnNonSuccessStatusForWeekIntervalInsteadOfReturningEmptyList() {
+		BithumbRestCandleProvider provider = providerAt(LocalDateTime.of(2026, 7, 30, 11, 43));
+		server.expect(requestTo(startsWith(WEEK_ENDPOINT))).andRespond(withServerError());
+
+		assertThatThrownBy(() -> provider.getCandles("BTC", CandleInterval.ONE_WEEK, null, null))
 			.isInstanceOf(BusinessException.class)
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
 				.isEqualTo(ErrorCode.MARKET_DATA_PROVIDER_ERROR));

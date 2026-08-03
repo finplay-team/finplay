@@ -1,4 +1,4 @@
-// 빗썸 공개 캔들 REST API(GET /v1/candles/minutes/1)를 요청 시점에 호출해 코인 1분봉을 중계하는 CryptoCandleProvider 구현 — 저장·캐시 없음
+// 빗썸 공개 캔들 REST API(GET /v1/candles/{minutes/1|days|weeks|months})를 요청 시점에 호출해 코인 1분·일·주·월봉을 중계하는 CryptoCandleProvider 구현 — 저장·캐시 없음
 package com.finplay.api.market.service;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -7,7 +7,9 @@ import com.finplay.api.common.ErrorCode;
 import java.math.BigDecimal;
 import java.net.URI;
 import java.time.Clock;
+import java.time.DayOfWeek;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
@@ -31,7 +33,10 @@ import org.springframework.web.util.UriComponentsBuilder;
 @Profile({"prod", "crypto-real"})
 public class BithumbRestCandleProvider implements CryptoCandleProvider {
 
-	private static final String CANDLE_ENDPOINT = "https://api.bithumb.com/v1/candles/minutes/1";
+	private static final String MINUTE_CANDLE_ENDPOINT = "https://api.bithumb.com/v1/candles/minutes/1";
+	private static final String DAY_CANDLE_ENDPOINT = "https://api.bithumb.com/v1/candles/days";
+	private static final String WEEK_CANDLE_ENDPOINT = "https://api.bithumb.com/v1/candles/weeks";
+	private static final String MONTH_CANDLE_ENDPOINT = "https://api.bithumb.com/v1/candles/months";
 	private static final String KRW_MARKET_PREFIX = "KRW-";
 	// 빗썸 캔들 API의 count 상한 (MKT-008) — from·to 범위가 이를 넘으면 to 기준 최신 count개로 캡한다.
 	private static final int MAX_COUNT = 200;
@@ -60,31 +65,50 @@ public class BithumbRestCandleProvider implements CryptoCandleProvider {
 	@Override
 	public List<CryptoCandleDto> getCandles(
 		String symbol, CandleInterval interval, LocalDateTime from, LocalDateTime to) {
-		// 이슈 #143(013) 1단계 배관: days·weeks·months 엔드포인트 위임은 아직 없다(항목 ④에서 추가 예정).
-		// 지금은 1m만 기존 경로로 조회하고 그 외 interval은 빈 목록을 반환한다.
-		if (interval.isAggregated()) {
-			return List.of();
-		}
 		String market = KRW_MARKET_PREFIX + symbol;
-		int count = resolveCount(from, to);
+		int count = resolveCount(interval, from, to);
 		String toParam = resolveToParam(to);
 
-		List<BithumbCandleItem> descending = fetchCandles(market, toParam, count);
+		List<BithumbCandleItem> descending = fetchCandles(resolveEndpoint(interval), market, toParam, count);
 		List<BithumbCandleItem> ascending = new ArrayList<>(descending);
 		// 빗썸 응답은 최신→과거 내림차순이므로 시각 오름차순으로 뒤집는다 (주식 캔들과 동일한 정렬 계약).
 		Collections.reverse(ascending);
 		return ascending.stream().map(this::toDto).toList();
 	}
 
+	// interval별 빗썸 캔들 엔드포인트 (1m은 minutes/1을 그대로 유지). 서버는 빗썸 봉의 버킷 경계를 재계산하지 않는다.
+	private static String resolveEndpoint(CandleInterval interval) {
+		return switch (interval) {
+			case ONE_MINUTE -> MINUTE_CANDLE_ENDPOINT;
+			case ONE_DAY -> DAY_CANDLE_ENDPOINT;
+			case ONE_WEEK -> WEEK_CANDLE_ENDPOINT;
+			case ONE_MONTH -> MONTH_CANDLE_ENDPOINT;
+		};
+	}
+
 	// from·to → to+count 변환 (plan.md "코인 캔들 설계" 표). from만 있으면 지금(clock) 기준, 둘 다 있으면 from~to 기준으로
-	// 분 수를 세되 양 끝을 포함하도록 +1 하고 MAX_COUNT로 캡한다.
-	private int resolveCount(LocalDateTime from, LocalDateTime to) {
+	// interval 단위 개수를 세되 양 끝을 포함하도록 +1 하고 MAX_COUNT로 캡한다. 주·월은 각각 그 주 월요일·그 달 1일로
+	// 정렬한 뒤 단위를 센다(빗썸의 주·월봉 버킷 경계와 맞추기 위함, 실제 응답 버킷 자체는 재계산하지 않는다).
+	private int resolveCount(CandleInterval interval, LocalDateTime from, LocalDateTime to) {
 		if (from == null) {
 			return MAX_COUNT;
 		}
 		LocalDateTime rangeEnd = to != null ? to : LocalDateTime.now(clock);
-		long minutes = ChronoUnit.MINUTES.between(from, rangeEnd) + 1;
-		return (int)Math.min(MAX_COUNT, Math.max(1, minutes));
+		long units = switch (interval) {
+			case ONE_MINUTE -> ChronoUnit.MINUTES.between(from, rangeEnd) + 1;
+			case ONE_DAY -> ChronoUnit.DAYS.between(from.toLocalDate(), rangeEnd.toLocalDate()) + 1;
+			case ONE_WEEK -> {
+				LocalDate fromMonday = from.toLocalDate().with(DayOfWeek.MONDAY);
+				LocalDate toMonday = rangeEnd.toLocalDate().with(DayOfWeek.MONDAY);
+				yield ChronoUnit.WEEKS.between(fromMonday, toMonday) + 1;
+			}
+			case ONE_MONTH -> {
+				LocalDate fromFirstDay = from.toLocalDate().withDayOfMonth(1);
+				LocalDate toFirstDay = rangeEnd.toLocalDate().withDayOfMonth(1);
+				yield ChronoUnit.MONTHS.between(fromFirstDay, toFirstDay) + 1;
+			}
+		};
+		return (int)Math.min(MAX_COUNT, Math.max(1, units));
 	}
 
 	// 빗썸 to 파라미터는 UTC 기준이다 — 우리 내부 from·to는 KST LocalDateTime(주식과 같은 표현)이므로 변환한다.
@@ -98,9 +122,9 @@ public class BithumbRestCandleProvider implements CryptoCandleProvider {
 			.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
 	}
 
-	private List<BithumbCandleItem> fetchCandles(String market, String toParam, int count) {
+	private List<BithumbCandleItem> fetchCandles(String endpoint, String market, String toParam, int count) {
 		try {
-			URI uri = UriComponentsBuilder.fromUriString(CANDLE_ENDPOINT)
+			URI uri = UriComponentsBuilder.fromUriString(endpoint)
 				.queryParam("market", market)
 				.queryParam("count", count)
 				.queryParamIfPresent("to", Optional.ofNullable(toParam))
