@@ -349,6 +349,50 @@ class CandleQueryServiceIntegrationTest {
 		assertThat(daily.get(199).close()).isEqualByComparingTo(String.valueOf(1000 + totalTradingDays - 1));
 	}
 
+	// PR #162 리뷰 차단 1(실제 재현·확정) 회귀 — narrowRangeStart가 200번째(가장 오래 살아남는) 버킷의 시작일이
+	// 아니라 그 버킷을 최신순 순회 중 "처음 마주친" 거래일(주봉이면 그 주 금요일)을 조회 하한으로 쓰면, 그 버킷의
+	// 앞쪽 거래일(월요일)이 뒤이은 1분봉 쿼리에서 빠져 open이 조용히 틀린다. 실제로 좁히기가 트리거되도록(200개
+	// 초과) 205주치를 시드하고, 각 주 월·금 이틀치를 서로 다른 값으로 넣어 캡에 걸려 살아남는 가장 오래된 버킷의
+	// open이 월요일 값을 반영하는지(=그 버킷 전체가 조회됐는지)로 실 MySQL·집계·200 캡이 맞물린 전체 스택에서
+	// 이 결함을 검증한다.
+	@Test
+	@Transactional
+	void aggregatedWeeklyIntervalIncludesTheEntireOldestSurvivingBucketWhenNarrowingIsTriggered() {
+		Instrument instrument = saveInstrument("CDL0162");
+		LocalDate firstMonday = LocalDate.of(2020, 1, 6); // 월요일
+		int totalWeeks = 205;
+		List<LocalDate> mondays = new ArrayList<>();
+		for (int i = 0; i < totalWeeks; i++) {
+			LocalDate monday = firstMonday.plusWeeks(i);
+			LocalDate friday = monday.plusDays(4);
+			mondays.add(monday);
+			saveAggCandle(instrument, monday, LocalTime.of(9, 0), "1000", "1005", "995", "1002", 10);
+			saveAggCandle(instrument, friday, LocalTime.of(9, 0), "2000", "2005", "1995", "2002", 20);
+		}
+		LocalDate sourceTradingDate = mondays.get(totalWeeks - 1).plusDays(4); // 마지막 주 금요일
+		LocalDate aggServiceDate = sourceTradingDate.plusDays(30);
+		stockReplaySessionRepository.save(
+			StockReplaySession.ready(aggServiceDate, sourceTradingDate, LocalDateTime.now(), LocalDateTime.now()));
+		// lookbackFloor(200주)가 아니라 narrowRangeStart 자체가 하한을 정하도록, 실제 데이터(205주)보다 훨씬 이른
+		// 명시적 from을 준다.
+		LocalDate explicitFrom = firstMonday.minusYears(3);
+
+		CandleQueryService service = candleQueryServiceAt(clockAt(aggServiceDate, LocalTime.of(15, 30)));
+		List<CandleResponse> weekly = service.getCandles(
+			instrument.getId(), "1w", explicitFrom.atStartOfDay(), null);
+
+		assertThat(weekly).hasSize(200);
+		// 205주 중 가장 오래된 5주(인덱스 0~4)는 200개 캡에 밀려 빠지고, 인덱스 5(그 주 월요일)가 응답의 첫 봉이다.
+		LocalDate oldestSurvivingMonday = mondays.get(5);
+		assertThat(weekly.get(0).sourceTime()).isEqualTo(LocalDateTime.of(oldestSurvivingMonday, LocalTime.MIDNIGHT));
+		// 핵심 단정 — open이 월요일 값(1000)이어야 한다. 버그가 있으면 narrowRangeStart가 이 주의 금요일을 조회
+		// 하한으로 써서 월요일 행이 통째로 빠지고, open이 금요일 값(2000)이 되어 버린다.
+		assertThat(weekly.get(0).open()).isEqualByComparingTo("1000");
+		assertThat(weekly.get(0).close()).isEqualByComparingTo("2002");
+		assertThat(weekly.get(0).high()).isEqualByComparingTo("2005");
+		assertThat(weekly.get(0).low()).isEqualByComparingTo("995");
+	}
+
 	// 이슈 #143(013): 코인 일/주/월봉은 저장 없이 요청 시점에 위임되므로(MKT-008과 동일 원칙), 실제 Bithumb 호출 대신
 	// FakeCryptoCandleProvider에 interval별로 시드한 뒤 CandleQueryService가 시장 분기로 올바른 interval의 시드를
 	// 그대로 돌려주는지 확인한다(자동 테스트는 Fake로, 실제 빗썸 호출은 별도 외부 스모크로 구분 — C-005).

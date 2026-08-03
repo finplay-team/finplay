@@ -202,13 +202,9 @@ public class StockReplayService {
 	// 읽게 된다. 여기서는 가벼운 DISTINCT 거래일 조회(하루 최대 391행이 아니라 최대 1행)로 실제 200번째 버킷의
 	// 시작 거래일을 역산해 rangeStart를 그 시점까지만 좁힌다. 조회된 거래일이 200버킷을 채우기에 부족하면(데이터가
 	// 아직 얕거나 fetchLimit 안에서 못 채우면) 원래 rangeStart를 그대로 쓴다 — 이 메서드는 범위를 넓히지 않고 좁히기만
-	// 한다. narrowedFloor는 항상 실제 존재하는 거래일이므로 leading partial 버킷 필터(rangeStart 기준)를 깨지 않는다.
+	// 한다. 유일한 호출부(150행)가 이미 rangeStart<=queryEnd를 보장하므로 그 전제를 여기서 다시 검사하지 않는다.
 	private LocalDate narrowRangeStart(
 		Long instrumentId, CandleInterval interval, LocalDate rangeStart, LocalDate queryEnd) {
-		if (rangeStart.isAfter(queryEnd)) {
-			return rangeStart;
-		}
-
 		int fetchLimit = MAX_AGGREGATED_CANDLES * maxTradingDaysPerBucket(interval);
 		List<LocalDate> recentTradingDates = stockCandleRepository
 			.findDistinctTradingDateByInstrumentIdAndTradingDateBetweenOrderByTradingDateDesc(
@@ -217,15 +213,23 @@ public class StockReplayService {
 			return rangeStart;
 		}
 
+		// recentTradingDates는 최신→과거 순이다. 200번째로 새로 마주치는 버킷의 "시작일"(월요일·1일 등, 그 버킷의
+		// 가장 이른 거래일이 아니라 버킷 경계 자체)을 narrowedFloor로 써야 한다 — 마주친 거래일 자체(예: 주봉이면
+		// 금요일)를 쓰면 그 버킷의 앞쪽 거래일(월~목)이 뒤이은 1분봉 쿼리에서 통째로 빠져, 응답의 가장 오래된
+		// 버킷 하나가 반쪽 데이터로 조용히 틀린 OHLC를 갖게 된다(PR #162 리뷰 차단 1 — 실제 재현·확정).
 		Set<LocalDate> bucketsSeen = new HashSet<>();
 		LocalDate narrowedFloor = rangeStart;
 		for (LocalDate tradingDate : recentTradingDates) {
-			narrowedFloor = tradingDate;
-			bucketsSeen.add(StockCandleAggregator.resolveBucketStart(tradingDate, interval));
+			LocalDate bucketStart = StockCandleAggregator.resolveBucketStart(tradingDate, interval);
+			narrowedFloor = bucketStart;
+			bucketsSeen.add(bucketStart);
 			if (bucketsSeen.size() >= MAX_AGGREGATED_CANDLES) {
 				break;
 			}
 		}
+		// 버킷 시작일은 rangeStart보다 이를 수 있다(예: interval=1w, rangeStart가 그 주의 수요일이면 버킷
+		// 시작일인 월요일은 rangeStart 이전이다) — 그 경우 rangeStart 밑으로 넓히지 않는다. 이렇게 만들어지는
+		// 선두 partial 버킷은 원본 rangeStart 기준의 기존 필터(182행)가 그대로 걸러낸다.
 		return narrowedFloor.isAfter(rangeStart) ? narrowedFloor : rangeStart;
 	}
 

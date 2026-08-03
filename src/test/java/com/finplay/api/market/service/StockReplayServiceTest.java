@@ -969,6 +969,46 @@ class StockReplayServiceTest {
 	}
 
 	@Test
+	void getRevealedAggregatedCandlesNarrowsWeeklyRangeStartToTheBucketStartDateNotTheFirstEncounteredTradingDate() {
+		// PR #162 리뷰 차단 1(실제 재현·확정) 회귀 — narrowRangeStart는 recentTradingDates를 최신→과거 순으로 훑는다.
+		// 한 주(버킷)에 거래일이 여럿(월·금)이면, 그 버킷을 "처음 마주치는" 날짜는 최신순 순회 특성상 그 주의 가장
+		// 늦은 거래일(금요일)이다. narrowedFloor를 그 마주친 날짜 자체로 정하면(버그) 그 버킷의 앞쪽 거래일(월~목)이
+		// 뒤이은 1분봉 쿼리에서 통째로 빠진다 — narrowedFloor는 반드시 그 버킷의 시작일(월요일)이어야 한다.
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		LocalDate explicitFrom = WEEKDAY.minusYears(10);
+		LocalDate pastEnd = WEEKDAY.minusDays(1);
+		int weekCount = 200;
+		LocalDate mostRecentFriday = LocalDate.of(2026, 7, 24); // pastEnd(2026-07-26) 이전의 가장 최근 금요일
+		List<LocalDate> recentTradingDates = new ArrayList<>();
+		LocalDate friday = mostRecentFriday;
+		for (int i = 0; i < weekCount; i++) {
+			recentTradingDates.add(friday);
+			recentTradingDates.add(friday.minusDays(4)); // 같은 주의 월요일
+			friday = friday.minusWeeks(1);
+		}
+		LocalDate oldestBucketFriday = mostRecentFriday.minusWeeks(weekCount - 1);
+		LocalDate oldestBucketMonday = oldestBucketFriday.minusDays(4);
+		when(stockCandleRepository.findDistinctTradingDateByInstrumentIdAndTradingDateBetweenOrderByTradingDateDesc(
+			INSTRUMENT_ID, explicitFrom, pastEnd, PageRequest.of(0, 1400)))
+			.thenReturn(recentTradingDates);
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+			eq(INSTRUMENT_ID), any(), eq(pastEnd)))
+			.thenReturn(List.of());
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(9, 0, 30)));
+
+		service.getRevealedAggregatedCandles(INSTRUMENT_ID, CandleInterval.ONE_WEEK, explicitFrom, null);
+
+		ArgumentCaptor<LocalDate> fromCaptor = ArgumentCaptor.forClass(LocalDate.class);
+		verify(stockCandleRepository).findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+			eq(INSTRUMENT_ID), fromCaptor.capture(), eq(pastEnd));
+		// 버그가 있었다면 이 값이 oldestBucketFriday(그 버킷을 처음 마주친 날짜)가 되어 oldestBucketMonday의
+		// 분봉이 쿼리 범위에서 빠졌을 것이다.
+		assertThat(fromCaptor.getValue()).isEqualTo(oldestBucketMonday);
+		assertThat(fromCaptor.getValue()).isNotEqualTo(oldestBucketFriday);
+	}
+
+	@Test
 	void getRevealedAggregatedCandlesIncludesMonthBucketWhenFromFallsExactlyOnFirstOfMonth() {
 		// 회귀 확인 — from이 버킷 경계(1일)와 정확히 일치하면 필터가 과하게 잘라내지 않고 그 달 버킷을 그대로 포함해야 한다.
 		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
