@@ -1,0 +1,164 @@
+// 실제 MySQL에서 market_news_items의 UNIQUE(instrument_id, url) 제약과 엔티티 매핑을 검증하는 JPA 슬라이스 테스트다.
+package com.finplay.api.feedback.repository;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.finplay.api.TestcontainersConfiguration;
+import com.finplay.api.feedback.domain.MarketNewsItem;
+import com.finplay.api.feedback.domain.MarketNewsItemType;
+import com.finplay.api.market.domain.Instrument;
+import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.repository.InstrumentRepository;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
+import org.springframework.context.annotation.Import;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.jdbc.core.JdbcTemplate;
+
+@DataJpaTest
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+@Import(TestcontainersConfiguration.class)
+class MarketNewsItemRepositoryTest {
+
+	@Autowired
+	private MarketNewsItemRepository marketNewsItemRepository;
+
+	@Autowired
+	private InstrumentRepository instrumentRepository;
+
+	@Autowired
+	private JdbcTemplate jdbcTemplate;
+
+	private Instrument instrumentA;
+	private Instrument instrumentB;
+
+	private static final String URL = "https://news.example.com/article/1001";
+	private static final LocalDateTime PUBLISHED_AT = LocalDateTime.of(2026, 8, 3, 10, 3, 0);
+	private static final LocalDateTime COLLECTED_AT = LocalDateTime.of(2026, 8, 3, 10, 30, 0);
+
+	/** 앞 191자가 완전히 같고 그 뒤 쿼리 파라미터만 다른 URL 2건 — url(191) 접두 유니크였다면 중복 판정된다 (§C-8). */
+	private static final String PREFIX_191 = buildPrefixOfLength(191);
+
+	private static String buildPrefixOfLength(int length) {
+		String head = "https://news.example.com/article/";
+		return head + "a".repeat(length - head.length());
+	}
+
+	@BeforeEach
+	void setUp() {
+		// V7 시드(005930 등)와 겹치지 않는 테스트 전용 심볼을 사용한다 — UNIQUE(symbol) 충돌 방지.
+		instrumentA = instrumentRepository.save(Instrument.create(
+			Market.STOCK, "NEWS001", "테스트종목A", new BigDecimal("100"), 70000, true, LocalDateTime.now()));
+		instrumentB = instrumentRepository.save(Instrument.create(
+			Market.STOCK, "NEWS002", "테스트종목B", new BigDecimal("100"), 180000, true, LocalDateTime.now()));
+	}
+
+	private MarketNewsItem newItem(Instrument instrument, String url) {
+		return MarketNewsItem.create(
+			instrument, MarketNewsItemType.NEWS, "반도체 업황 둔화", "테스트경제", url, PUBLISHED_AT, COLLECTED_AT);
+	}
+
+	// --- 완료 조건 ① 같은 기사 URL이 두 종목에 각각 저장된다 ---
+
+	@Test
+	@DisplayName("같은 기사 URL이라도 종목이 다르면 두 건 모두 저장된다 (url 단독 유니크였다면 실패)")
+	void sameArticleUrlIsStoredForEachInstrumentSeparately() {
+		marketNewsItemRepository.saveAndFlush(newItem(instrumentA, URL));
+		marketNewsItemRepository.saveAndFlush(newItem(instrumentB, URL));
+
+		List<MarketNewsItem> all = marketNewsItemRepository.findAll();
+
+		assertThat(all).hasSize(2);
+		assertThat(all).extracting(item -> item.getInstrument().getId())
+			.containsExactlyInAnyOrder(instrumentA.getId(), instrumentB.getId());
+		assertThat(all).extracting(MarketNewsItem::getUrl).containsOnly(URL);
+	}
+
+	// --- 완료 조건 ② 앞 191자가 같고 쿼리 파라미터만 다른 URL 2건이 모두 저장된다 ---
+
+	@Test
+	@DisplayName("앞 191자가 같고 쿼리 파라미터만 다른 URL 2건이 같은 종목에 모두 저장된다 (접두 유니크였다면 실패)")
+	void urlsSharingTheFirst191CharactersAreBothStoredForTheSameInstrument() {
+		// 이 테스트의 전제 자체를 먼저 단정한다 — 접두 191자가 실제로 동일해야 접두 유니크를 반증할 수 있다.
+		String urlWithNaverParam = PREFIX_191 + "?utm_source=naver";
+		String urlWithDaumParam = PREFIX_191 + "?utm_source=daum";
+		assertThat(PREFIX_191).hasSize(191);
+		assertThat(urlWithNaverParam).startsWith(PREFIX_191);
+		assertThat(urlWithDaumParam).startsWith(PREFIX_191);
+		assertThat(urlWithNaverParam).isNotEqualTo(urlWithDaumParam);
+
+		marketNewsItemRepository.saveAndFlush(newItem(instrumentA, urlWithNaverParam));
+		marketNewsItemRepository.saveAndFlush(newItem(instrumentA, urlWithDaumParam));
+
+		assertThat(marketNewsItemRepository.count()).isEqualTo(2);
+		assertThat(marketNewsItemRepository.findAll()).extracting(MarketNewsItem::getUrl)
+			.containsExactlyInAnyOrder(urlWithNaverParam, urlWithDaumParam);
+	}
+
+	// --- 반대 방향 — 유니크가 실제로 걸려 있음을 보인다 ---
+
+	@Test
+	@DisplayName("같은 종목에 완전히 같은 URL 2건째는 유니크 제약에 걸린다")
+	void databaseRejectsDuplicateUrlWithinTheSameInstrument() {
+		marketNewsItemRepository.saveAndFlush(newItem(instrumentA, URL));
+
+		MarketNewsItem duplicate = newItem(instrumentA, URL);
+
+		assertThatThrownBy(() -> marketNewsItemRepository.saveAndFlush(duplicate))
+			.isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	@Test
+	@DisplayName("URL의 마지막 한 글자만 달라도 서로 다른 기사로 저장된다 (전체 컬럼 유니크)")
+	void urlsDifferingOnlyInTheLastCharacterAreStoredSeparately() {
+		marketNewsItemRepository.saveAndFlush(newItem(instrumentA, URL));
+		marketNewsItemRepository.saveAndFlush(newItem(instrumentA, URL + "2"));
+
+		assertThat(marketNewsItemRepository.count()).isEqualTo(2);
+	}
+
+	// --- 엔티티 매핑 ---
+
+	@Test
+	@DisplayName("저장한 뉴스를 다시 읽으면 발행 시각과 수집 시각이 각각 보존된다")
+	void savedItemKeepsPublishedAtAndCollectedAtAsDistinctValues() {
+		Long id = marketNewsItemRepository.saveAndFlush(newItem(instrumentA, URL)).getId();
+
+		MarketNewsItem found = marketNewsItemRepository.findById(id).orElseThrow();
+
+		assertThat(found.getInstrument().getId()).isEqualTo(instrumentA.getId());
+		assertThat(found.getType()).isEqualTo(MarketNewsItemType.NEWS);
+		assertThat(found.getTitle()).isEqualTo("반도체 업황 둔화");
+		assertThat(found.getPublisher()).isEqualTo("테스트경제");
+		assertThat(found.getUrl()).isEqualTo(URL);
+		// created_at은 발행 시각이 아니라 수집 시각이다 — 두 컬럼이 서로 다른 값으로 남아야 한다.
+		assertThat(found.getPublishedAt()).isEqualTo(PUBLISHED_AT);
+		assertThat(found.getCreatedAt()).isEqualTo(COLLECTED_AT);
+	}
+
+	@Test
+	@DisplayName("type 컬럼에 enum 이름 문자열이 그대로 저장된다")
+	void typeColumnStoresTheEnumNameAsString() {
+		// ORDINAL로 매핑되면 VARCHAR(20) 컬럼에 "0"이 들어가도 MySQL은 조용히 받아들인다. 실제 저장 문자열을 확인한다.
+		marketNewsItemRepository.saveAndFlush(MarketNewsItem.create(
+			instrumentA,
+			MarketNewsItemType.DISCLOSURE,
+			"주요사항보고서",
+			"금융감독원",
+			URL,
+			PUBLISHED_AT,
+			COLLECTED_AT));
+
+		List<String> types = jdbcTemplate.queryForList("select type from market_news_items", String.class);
+
+		assertThat(types).containsExactly("DISCLOSURE");
+	}
+}

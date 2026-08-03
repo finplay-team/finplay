@@ -1,5 +1,5 @@
 // 뉴스 요약이 다루는 시간 범위 — 프롬프트의 "범위:" 줄이 이 값에 따라 갈린다.
-package com.finplay.api.feedback.service;
+package com.finplay.api.feedback.domain;
 
 /**
  * 세 값이 같은 조립 경로를 타므로 범위를 프롬프트에 넣지 않으면 {@code PRE_MARKET} 생성에 {@code FULL}
@@ -7,7 +7,7 @@ package com.finplay.api.feedback.service;
  * 아래 문자열은 모델에게 주는 자연어라 시각 리터럴을 그대로 적는다 — §C-2 참조 규칙의 의도된 예외다.
  * §C-2를 바꾸면 이 문자열도 함께 고친다.
  *
- * <p>#5의 {@code instrument_news_summaries.scope} 컬럼이 이 열거형을 {@code @Enumerated(STRING)}으로
+ * <p>{@code instrument_news_summaries.scope} 컬럼이 이 열거형을 {@code @Enumerated(STRING)}으로
  * 재사용한다 (§C-8) — {@code NarrativeSource}와 같은 방식이다.
  */
 public enum NewsSummaryScope {

@@ -1,6 +1,8 @@
 // 서술 확정 결과 — 저장할 문장과 그 문장이 무엇으로 만들어졌는지를 함께 담는다.
 package com.finplay.api.feedback.service;
 
+import com.finplay.api.feedback.domain.NarrativeSource;
+
 /**
  * {@code source}가 {@code NONE}이면 {@code narrative}가 {@code null}이다 — 요약·브리핑에만 있는 상태이며
  * 재생성 1회 후에도 후검증에 걸렸거나 생성 호출 자체가 실패한 경우다 (spec §후검증).

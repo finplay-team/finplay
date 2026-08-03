@@ -1,6 +1,7 @@
 // 파트별 LLM 프롬프트 문자열을 조립한다 — 시스템 1종 + 사용자 4종 + 재생성 1종.
 package com.finplay.api.feedback.service;
 
+import com.finplay.api.feedback.domain.NewsSummaryScope;
 import com.finplay.api.market.domain.Market;
 import java.math.BigDecimal;
 import java.math.RoundingMode;

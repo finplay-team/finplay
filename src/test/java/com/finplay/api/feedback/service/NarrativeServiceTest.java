@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finplay.api.feedback.config.FeedbackLlmProperties;
+import com.finplay.api.feedback.domain.NarrativeSource;
+import com.finplay.api.feedback.domain.NewsSummaryScope;
 import com.finplay.api.market.domain.Market;
 import java.math.BigDecimal;
 import java.time.LocalDate;
