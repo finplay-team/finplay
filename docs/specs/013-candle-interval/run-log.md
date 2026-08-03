@@ -8,6 +8,7 @@
 | - | implementer(③) | `./gradlew compileJava compileTestJava` | plan.md 구성요소 5·6, spec.md "공개 상한(reveal bound)" |
 | - | implementer(④) | `./gradlew compileJava compileTestJava` | plan.md 구성요소 8·9, spec.md "코인 — 빗썸 위임" |
 | - | implementer(⑤ 통합 테스트만) | `./gradlew test --tests "com.finplay.api.market.*"` | plan.md "테스트 계획 — 통합", tasks.md ⑤, 기존 `CandleQueryServiceIntegrationTest` 패턴 재사용 |
+| - | reviewer(리뷰) | `git diff origin/dev...HEAD` (013 관련 커밋만, 인증 리팩터링 머지분 제외) | docs/conventions.md, docs/adr/0002·0003·0004, docs/api-routes.md·api-contracts.md, docs/specs/013-candle-interval/{spec,plan,tasks}.md |
 
 ## 모니터링 (사람용 요약)
 - ① interval 4값 배관 완료, 컴파일 통과. 기존 `CandleIntervalTest.fromThrowsValidationErrorWhenValueHasDifferentCase`가 "1M"을 이제 유효값(ONE_MONTH)으로 처리해 회귀 실패 — tester가 spec 반영해 갱신 필요.
@@ -28,3 +29,4 @@
 
 **결론(spec.md 미결 사항 해소)**: spec.md는 "주식과 코인의 버킷 경계 정의가 다를 수 있다"고 방어적으로 열어뒀으나(서버가 강제로 맞추지 않는다는 원칙 자체는 유지), **실측 결과 빗썸의 일/주/월봉 경계는 KST 자정·월요일 시작·매월 1일 시작으로 이번 스펙의 주식 집계 규칙과 사실상 동일하다.** 우연의 일치이며 빗썸이 규칙을 바꾸면 다시 벌어질 수 있으므로, 서버가 이를 전제로 로직을 짜지는 않았다(코인 경로는 여전히 빗썸 값을 그대로 통과시킬 뿐 이 일치를 가정하지 않음) — 다만 **현재 시점 기준으로는 프론트 차트에서 두 시장을 나란히 봐도 어색하지 않다**는 것을 확인했다.
 - **미실행**: 인증이 필요한 우리 API(`GET /api/instruments/{id}/candles`)를 통한 end-to-end 스모크(`SPRING_PROFILES_ACTIVE=local,crypto-real ./gradlew bootRun`)는 수동으로 실행하지 않았다 — 빗썸 응답 자체의 경계값 확인이 목적이었고, 우리 서버가 그 값을 무보정으로 전달한다는 것은 ④의 단위 테스트(`getCandlesParsesDayCandleIgnoringPeriodOnlyFieldsWithoutExposingThem` 등)로 이미 고정되어 있다.
+- 리뷰(013 관련 커밋만) — 차단 0건, 권장 2건(기존 파일 첫줄 주석이 "1분봉"으로 남아 다중 interval 확장을 반영하지 못함), 참고 1건. 공개 상한 유출 방지·대소문자 구분·버킷 경계·빗썸 count 계산·1m 회귀 모두 코드·테스트로 확인, 외부 스모크 기록도 실제 빗썸 호출로 재검증해 일치 확인. 머지 가능.

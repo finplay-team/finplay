@@ -1,4 +1,4 @@
-// 코인 1분봉 조회 공통 계약 — 구현체(BithumbRestCandleProvider·FakeCryptoCandleProvider)가 무엇인지 CandleQueryService에 노출하지 않는다.
+// 코인 캔들(1m·1d·1w·1M) 조회 공통 계약 — 구현체(BithumbRestCandleProvider·FakeCryptoCandleProvider)가 무엇인지 CandleQueryService에 노출하지 않는다.
 package com.finplay.api.market.service;
 
 import java.time.LocalDateTime;

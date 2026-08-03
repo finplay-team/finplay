@@ -1,4 +1,4 @@
-// 주식·코인 종목의 1분봉 캔들 조회 요청을 검증하고 시장에 따라 StockPriceProvider·CryptoCandleProvider에 위임하는 서비스
+// 주식·코인 종목의 캔들(1m·1d·1w·1M) 조회 요청을 검증하고 시장에 따라 StockPriceProvider·CryptoCandleProvider에 위임하는 서비스
 package com.finplay.api.market.service;
 
 import com.finplay.api.common.BusinessException;
