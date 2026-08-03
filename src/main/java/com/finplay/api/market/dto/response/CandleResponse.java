@@ -1,4 +1,4 @@
-// 주식·코인 종목의 1분봉 하나를 표현하는 공통 응답 DTO — volume은 코인의 소수 수량을 표현하기 위해 BigDecimal이다.
+// 주식·코인 종목의 캔들(1m·1d·1w·1M) 하나를 표현하는 공통 응답 DTO — volume은 코인의 소수 수량을 표현하기 위해 BigDecimal이다.
 package com.finplay.api.market.dto.response;
 
 import com.finplay.api.market.service.CryptoCandleDto;

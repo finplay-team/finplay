@@ -27,7 +27,7 @@ class FakeCryptoCandleProviderTest {
 			candleAt(LocalDateTime.of(2026, 7, 30, 9, 1)));
 		provider.setCandles("BTC", candles);
 
-		assertThat(provider.getCandles("BTC", null, null)).isEqualTo(candles);
+		assertThat(provider.getCandles("BTC", CandleInterval.ONE_MINUTE, null, null)).isEqualTo(candles);
 	}
 
 	@Test
@@ -40,7 +40,7 @@ class FakeCryptoCandleProviderTest {
 			candleAt(LocalDateTime.of(2026, 7, 30, 9, 3))));
 
 		List<CryptoCandleDto> result = provider.getCandles(
-			"BTC", LocalDateTime.of(2026, 7, 30, 9, 1), LocalDateTime.of(2026, 7, 30, 9, 2));
+			"BTC", CandleInterval.ONE_MINUTE, LocalDateTime.of(2026, 7, 30, 9, 1), LocalDateTime.of(2026, 7, 30, 9, 2));
 
 		assertThat(result).extracting(CryptoCandleDto::sourceTime)
 			.containsExactly(
@@ -52,7 +52,7 @@ class FakeCryptoCandleProviderTest {
 	void getCandlesReturnsEmptyListForUnknownSymbol() {
 		FakeCryptoCandleProvider provider = new FakeCryptoCandleProvider();
 
-		assertThat(provider.getCandles("ETH", null, null)).isEmpty();
+		assertThat(provider.getCandles("ETH", CandleInterval.ONE_MINUTE, null, null)).isEmpty();
 	}
 
 	@Test
@@ -62,7 +62,7 @@ class FakeCryptoCandleProviderTest {
 
 		provider.simulateFailure();
 
-		assertThatThrownBy(() -> provider.getCandles("BTC", null, null))
+		assertThatThrownBy(() -> provider.getCandles("BTC", CandleInterval.ONE_MINUTE, null, null))
 			.isInstanceOf(BusinessException.class)
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
 				.isEqualTo(ErrorCode.MARKET_DATA_PROVIDER_ERROR));
@@ -76,6 +76,55 @@ class FakeCryptoCandleProviderTest {
 
 		provider.reset();
 
-		assertThat(provider.getCandles("BTC", null, null)).hasSize(1);
+		assertThat(provider.getCandles("BTC", CandleInterval.ONE_MINUTE, null, null)).hasSize(1);
+	}
+
+	// --- 회귀: 기존 setCandles(symbol, candles)는 여전히 1분봉 시드로만 동작한다 ---
+
+	@Test
+	void legacySetCandlesWithoutIntervalSeedsOnlyOneMinuteBucket() {
+		FakeCryptoCandleProvider provider = new FakeCryptoCandleProvider();
+		provider.setCandles("BTC", List.of(candleAt(LocalDateTime.of(2026, 7, 30, 9, 0))));
+
+		assertThat(provider.getCandles("BTC", CandleInterval.ONE_MINUTE, null, null)).hasSize(1);
+		assertThat(provider.getCandles("BTC", CandleInterval.ONE_DAY, null, null)).isEmpty();
+		assertThat(provider.getCandles("BTC", CandleInterval.ONE_WEEK, null, null)).isEmpty();
+		assertThat(provider.getCandles("BTC", CandleInterval.ONE_MONTH, null, null)).isEmpty();
+	}
+
+	// --- interval별 시드가 서로 섞이지 않는다 ---
+
+	@Test
+	void setCandlesWithIntervalKeepsEachIntervalsSeedIndependent() {
+		FakeCryptoCandleProvider provider = new FakeCryptoCandleProvider();
+		List<CryptoCandleDto> minuteCandles = List.of(candleAt(LocalDateTime.of(2026, 7, 30, 9, 0)));
+		List<CryptoCandleDto> dayCandles = List.of(
+			candleAt(LocalDateTime.of(2026, 7, 28, 0, 0)),
+			candleAt(LocalDateTime.of(2026, 7, 29, 0, 0)));
+		List<CryptoCandleDto> weekCandles = List.of(candleAt(LocalDateTime.of(2026, 7, 27, 0, 0)));
+		List<CryptoCandleDto> monthCandles = List.of(candleAt(LocalDateTime.of(2026, 7, 1, 0, 0)));
+
+		provider.setCandles("BTC", CandleInterval.ONE_MINUTE, minuteCandles);
+		provider.setCandles("BTC", CandleInterval.ONE_DAY, dayCandles);
+		provider.setCandles("BTC", CandleInterval.ONE_WEEK, weekCandles);
+		provider.setCandles("BTC", CandleInterval.ONE_MONTH, monthCandles);
+
+		assertThat(provider.getCandles("BTC", CandleInterval.ONE_MINUTE, null, null)).isEqualTo(minuteCandles);
+		assertThat(provider.getCandles("BTC", CandleInterval.ONE_DAY, null, null)).isEqualTo(dayCandles);
+		assertThat(provider.getCandles("BTC", CandleInterval.ONE_WEEK, null, null)).isEqualTo(weekCandles);
+		assertThat(provider.getCandles("BTC", CandleInterval.ONE_MONTH, null, null)).isEqualTo(monthCandles);
+	}
+
+	@Test
+	void setCandlesWithIntervalKeepsSymbolsIndependentWithinSameInterval() {
+		FakeCryptoCandleProvider provider = new FakeCryptoCandleProvider();
+		List<CryptoCandleDto> btcDayCandles = List.of(candleAt(LocalDateTime.of(2026, 7, 30, 0, 0)));
+		List<CryptoCandleDto> ethDayCandles = List.of(candleAt(LocalDateTime.of(2026, 7, 29, 0, 0)));
+
+		provider.setCandles("BTC", CandleInterval.ONE_DAY, btcDayCandles);
+		provider.setCandles("ETH", CandleInterval.ONE_DAY, ethDayCandles);
+
+		assertThat(provider.getCandles("BTC", CandleInterval.ONE_DAY, null, null)).isEqualTo(btcDayCandles);
+		assertThat(provider.getCandles("ETH", CandleInterval.ONE_DAY, null, null)).isEqualTo(ethDayCandles);
 	}
 }

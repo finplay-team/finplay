@@ -23,9 +23,11 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 class StockReplayServiceTest {
 
@@ -60,6 +62,21 @@ class StockReplayServiceTest {
 			LocalDateTime.now());
 		return StockCandle.create(
 			instrument, WEEKDAY, candleTime, open, open, open, close, 100L, "KRX", LocalDateTime.now());
+	}
+
+	// 집계 캔들(getRevealedAggregatedCandles) 테스트 전용 — tradingDate를 임의로 지정하고 OHLC를 서로 다른 값으로
+	// 만들어 max high·min low 산출을 검증할 수 있게 한다.
+	private static StockCandle candle(
+		LocalDate tradingDate, LocalTime candleTime, BigDecimal open, BigDecimal high, BigDecimal low,
+		BigDecimal close, long volume) {
+		Instrument instrument = Instrument.create(Market.STOCK, "005930", "삼성전자", BigDecimal.ONE, 10000L, true,
+			LocalDateTime.now());
+		return StockCandle.create(
+			instrument, tradingDate, candleTime, open, high, low, close, volume, "KRX", LocalDateTime.now());
+	}
+
+	private static BigDecimal bd(long value) {
+		return BigDecimal.valueOf(value);
 	}
 
 	// --- 장 상태(getMarketStatus) ---
@@ -532,5 +549,346 @@ class StockReplayServiceTest {
 		// sourceTradingDate(WEEKDAY)로 조회되었지 from의 날짜(2099-01-01)로는 조회되지 않았다.
 		verify(stockCandleRepository).findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
 			INSTRUMENT_ID, WEEKDAY, LocalTime.of(9, 1), LocalTime.of(9, 4));
+	}
+
+	// --- 집계 캔들 공개 상한(getRevealedAggregatedCandles, 이슈 #143 항목 ③) ---
+
+	@Test
+	void getRevealedAggregatedCandlesReturnsEmptyListWhenNoReadySession() {
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY)).thenReturn(Optional.empty());
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(10, 0)));
+
+		assertThat(service.getRevealedAggregatedCandles(INSTRUMENT_ID, CandleInterval.ONE_DAY, null, null))
+			.isEmpty();
+		assertThat(service.getRevealedAggregatedCandles(INSTRUMENT_ID, CandleInterval.ONE_WEEK, null, null))
+			.isEmpty();
+		assertThat(service.getRevealedAggregatedCandles(INSTRUMENT_ID, CandleInterval.ONE_MONTH, null, null))
+			.isEmpty();
+		verifyNoInteractions(stockCandleRepository);
+	}
+
+	@Test
+	void getRevealedAggregatedCandlesReturnsEmptyListWithoutQueryingCandlesWhenFromDateIsAfterToDate() {
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(10, 0)));
+
+		List<StockCandleDto> result = service.getRevealedAggregatedCandles(
+			INSTRUMENT_ID, CandleInterval.ONE_DAY, WEEKDAY, WEEKDAY.minusDays(1));
+
+		assertThat(result).isEmpty();
+		verifyNoInteractions(stockCandleRepository);
+	}
+
+	@Test
+	void getRevealedAggregatedCandlesOmitsReplayDayBucketBeforeOneMinuteCutoff() {
+		// spec.md "미완성(진행 중) 버킷 처리" 예외 — 09:01 이전에는 재생거래일에 공개된 분봉이 0개이므로
+		// 그 거래일의 봉 자체를 만들지 않는다(0으로 채운 봉을 만들지 않는다).
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		LocalDate priorTradingDate = WEEKDAY.minusDays(3);
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+			INSTRUMENT_ID, priorTradingDate, WEEKDAY.minusDays(1)))
+			.thenReturn(List.of(
+				candle(priorTradingDate, LocalTime.of(9, 0), bd(1000), bd(1005), bd(995), bd(1002), 10)));
+		// 09:00:30 — 첫 분봉 구간, resolveRevealCutoff는 empty를 반환한다.
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(9, 0, 30)));
+
+		List<StockCandleDto> result = service.getRevealedAggregatedCandles(
+			INSTRUMENT_ID, CandleInterval.ONE_DAY, priorTradingDate, WEEKDAY);
+
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).tradingDate()).isEqualTo(priorTradingDate);
+		verify(stockCandleRepository, never())
+			.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+				any(), eq(WEEKDAY), any(), any());
+	}
+
+	@Test
+	void getRevealedAggregatedCandlesRevealsReplayDayFirstMinuteExactlyAtOneMinuteBoundary() {
+		// 09:01:00 정각 — 1분봉 경로(getRevealedCandles)와 동일한 컷오프 경계값을 재사용하는지 확인한다.
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+			INSTRUMENT_ID, WEEKDAY, LocalTime.MIN, LocalTime.of(9, 0)))
+			.thenReturn(List.of(candle(WEEKDAY, LocalTime.of(9, 0), bd(1000), bd(1010), bd(995), bd(1005), 10)));
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(9, 1, 0)));
+
+		List<StockCandleDto> result = service.getRevealedAggregatedCandles(
+			INSTRUMENT_ID, CandleInterval.ONE_DAY, WEEKDAY, WEEKDAY);
+
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).close()).isEqualByComparingTo(bd(1005));
+		verify(stockCandleRepository, never())
+			.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(any(), any(), any());
+	}
+
+	@Test
+	void getRevealedAggregatedCandlesBuildsInProgressReplayDayBucketFromOnlyCutoffRevealedMinutesAfterOneMinuteCutoff() {
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		// now=09:05:00 → 컷오프 09:04(1분봉과 동일 규칙). 09:00·09:01 두 분봉만 공개되었다.
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+			INSTRUMENT_ID, WEEKDAY, LocalTime.MIN, LocalTime.of(9, 4)))
+			.thenReturn(List.of(
+				candle(WEEKDAY, LocalTime.of(9, 0), bd(1000), bd(1010), bd(995), bd(1005), 10),
+				candle(WEEKDAY, LocalTime.of(9, 1), bd(1005), bd(1020), bd(1000), bd(1015), 20)));
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(9, 5, 0)));
+
+		List<StockCandleDto> result = service.getRevealedAggregatedCandles(
+			INSTRUMENT_ID, CandleInterval.ONE_DAY, WEEKDAY, WEEKDAY);
+
+		assertThat(result).hasSize(1);
+		StockCandleDto bucket = result.get(0);
+		assertThat(bucket.tradingDate()).isEqualTo(WEEKDAY);
+		assertThat(bucket.open()).isEqualByComparingTo(bd(1000));
+		assertThat(bucket.high()).isEqualByComparingTo(bd(1020));
+		assertThat(bucket.low()).isEqualByComparingTo(bd(995));
+		assertThat(bucket.close()).isEqualByComparingTo(bd(1015));
+		assertThat(bucket.volume()).isEqualTo(30L);
+		// 아직 마감되지 않은 09:05 분봉까지 포함하는 범위로는 조회하지 않는다 — 진행 중 버킷이 미공개 분봉을 삼키면 안 된다.
+		verify(stockCandleRepository, never())
+			.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+				eq(INSTRUMENT_ID), eq(WEEKDAY), eq(LocalTime.MIN), eq(LocalTime.of(9, 5)));
+		verify(stockCandleRepository, never())
+			.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(any(), any(), any());
+	}
+
+	@Test
+	void getRevealedAggregatedCandlesNeverQueriesTradingDatesAfterSourceTradingDateEvenWhenToDateIsFarInFuture() {
+		// 방어 케이스(spec.md "공개 상한 — 미공개 데이터 유출 금지") — to가 재생거래일보다 훨씬 미래를 가리켜도
+		// 실제 쿼리 상한은 재생거래일(WEEKDAY)을 절대 넘지 않아야 한다. 결과를 사후 필터링하는 게 아니라 애초에
+		// 미래 trading_date를 쿼리 인자로 요청하지 않는지 직접 검증한다.
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		LocalDate farFutureToDate = WEEKDAY.plusDays(30);
+		LocalDate requestedFrom = WEEKDAY.minusDays(10);
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+			eq(INSTRUMENT_ID), eq(requestedFrom), eq(WEEKDAY.minusDays(1))))
+			.thenReturn(List.of());
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+			eq(INSTRUMENT_ID), eq(WEEKDAY), eq(LocalTime.MIN), any()))
+			.thenReturn(List.of());
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(10, 0)));
+
+		service.getRevealedAggregatedCandles(INSTRUMENT_ID, CandleInterval.ONE_DAY, requestedFrom, farFutureToDate);
+
+		ArgumentCaptor<LocalDate> toCaptor = ArgumentCaptor.forClass(LocalDate.class);
+		verify(stockCandleRepository).findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+			eq(INSTRUMENT_ID), eq(requestedFrom), toCaptor.capture());
+		assertThat(toCaptor.getValue()).isEqualTo(WEEKDAY.minusDays(1));
+		assertThat(toCaptor.getValue()).isBefore(WEEKDAY);
+		// 재생거래일 당일 조회는 정확히 WEEKDAY로만 일어나야 한다 — farFutureToDate로는 절대 조회하지 않는다.
+		verify(stockCandleRepository).findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+			eq(INSTRUMENT_ID), eq(WEEKDAY), eq(LocalTime.MIN), any());
+		verify(stockCandleRepository, never())
+			.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+				eq(INSTRUMENT_ID), eq(farFutureToDate), any(), any());
+		verify(stockCandleRepository, never())
+			.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+				eq(INSTRUMENT_ID), eq(requestedFrom), eq(farFutureToDate));
+	}
+
+	@Test
+	void getRevealedAggregatedCandlesKeepsOnlyLatestTwoHundredBucketsWhenMoreThanTwoHundredExist() {
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		LocalDate fromDate = WEEKDAY.minusDays(300);
+		// sourceTradingDate(WEEKDAY) 이전 날짜라 재생거래일 당일 조회는 건드리지 않는다 — 200 캡만 순수하게 검증한다.
+		LocalDate toDate = WEEKDAY.minusDays(50);
+		int totalDays = 205;
+		List<StockCandle> minuteCandles = new ArrayList<>();
+		for (int i = 0; i < totalDays; i++) {
+			LocalDate tradingDate = fromDate.plusDays(i);
+			minuteCandles.add(candle(
+				tradingDate, LocalTime.of(9, 0), bd(1000 + i), bd(1000 + i), bd(1000 + i), bd(1000 + i), 1));
+		}
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+			INSTRUMENT_ID, fromDate, toDate))
+			.thenReturn(minuteCandles);
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(10, 0)));
+
+		List<StockCandleDto> result = service.getRevealedAggregatedCandles(
+			INSTRUMENT_ID, CandleInterval.ONE_DAY, fromDate, toDate);
+
+		assertThat(result).hasSize(200);
+		// 오래된 5개(0~4번째 날)가 잘리고 최신 200개(5~204번째 날)만 남아야 한다.
+		assertThat(result.get(0).tradingDate()).isEqualTo(fromDate.plusDays(5));
+		assertThat(result.get(199).tradingDate()).isEqualTo(fromDate.plusDays(204));
+	}
+
+	@Test
+	void getRevealedAggregatedCandlesAppliesFourHundredDayLookbackFloorForDailyIntervalWhenFromOmitted() {
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+			eq(INSTRUMENT_ID), any(), eq(WEEKDAY.minusDays(1))))
+			.thenReturn(List.of());
+		// 09:00:30(첫 분봉 구간) — cutoff가 empty라 재생거래일 당일 조회 스텁이 필요 없다.
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(9, 0, 30)));
+
+		service.getRevealedAggregatedCandles(INSTRUMENT_ID, CandleInterval.ONE_DAY, null, null);
+
+		ArgumentCaptor<LocalDate> fromCaptor = ArgumentCaptor.forClass(LocalDate.class);
+		verify(stockCandleRepository).findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+			eq(INSTRUMENT_ID), fromCaptor.capture(), eq(WEEKDAY.minusDays(1)));
+		assertThat(fromCaptor.getValue()).isEqualTo(WEEKDAY.minusDays(400));
+	}
+
+	@Test
+	void getRevealedAggregatedCandlesAppliesTwoHundredWeekLookbackFloorForWeeklyIntervalWhenFromOmitted() {
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+			eq(INSTRUMENT_ID), any(), eq(WEEKDAY.minusDays(1))))
+			.thenReturn(List.of());
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(9, 0, 30)));
+
+		service.getRevealedAggregatedCandles(INSTRUMENT_ID, CandleInterval.ONE_WEEK, null, null);
+
+		ArgumentCaptor<LocalDate> fromCaptor = ArgumentCaptor.forClass(LocalDate.class);
+		verify(stockCandleRepository).findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+			eq(INSTRUMENT_ID), fromCaptor.capture(), eq(WEEKDAY.minusDays(1)));
+		assertThat(fromCaptor.getValue()).isEqualTo(WEEKDAY.minusWeeks(200));
+	}
+
+	@Test
+	void getRevealedAggregatedCandlesAppliesTwoHundredMonthLookbackFloorForMonthlyIntervalWhenFromOmitted() {
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+			eq(INSTRUMENT_ID), any(), eq(WEEKDAY.minusDays(1))))
+			.thenReturn(List.of());
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(9, 0, 30)));
+
+		service.getRevealedAggregatedCandles(INSTRUMENT_ID, CandleInterval.ONE_MONTH, null, null);
+
+		ArgumentCaptor<LocalDate> fromCaptor = ArgumentCaptor.forClass(LocalDate.class);
+		verify(stockCandleRepository).findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+			eq(INSTRUMENT_ID), fromCaptor.capture(), eq(WEEKDAY.minusDays(1)));
+		assertThat(fromCaptor.getValue()).isEqualTo(WEEKDAY.minusMonths(200));
+	}
+
+	@Test
+	void getRevealedAggregatedCandlesUsesExplicitFromDateInsteadOfLookbackFloorWhenProvided() {
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		LocalDate explicitFrom = WEEKDAY.minusDays(5);
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+			INSTRUMENT_ID, explicitFrom, WEEKDAY.minusDays(1)))
+			.thenReturn(List.of());
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(9, 0, 30)));
+
+		service.getRevealedAggregatedCandles(INSTRUMENT_ID, CandleInterval.ONE_DAY, explicitFrom, null);
+
+		verify(stockCandleRepository).findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+			INSTRUMENT_ID, explicitFrom, WEEKDAY.minusDays(1));
+		// 400일 lookback floor(WEEKDAY-400)로는 조회되지 않았다 — from이 명시되면 무시되어야 한다.
+		verify(stockCandleRepository, never())
+			.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+				INSTRUMENT_ID, WEEKDAY.minusDays(400), WEEKDAY.minusDays(1));
+	}
+
+	// --- 선두 partial 버킷 제외(PR #151 리뷰 차단 반영) ---
+
+	@Test
+	void getRevealedAggregatedCandlesExcludesLeadingPartialWeekBucketButIncludesNextCompleteWeekWhenFromFallsMidWeek() {
+		// 리뷰어(namdongyeob) PR #151 차단 지적 재현 — interval=1w, from이 그 주의 수요일(버킷 경계인 월요일과
+		// 불일치)이면 그 주의 나머지 분봉(수~금)만 모여 반쪽짜리 주봉이 만들어진다. docs/api-contracts.md 계약대로
+		// 버킷 시작일(월요일)이 rangeStart(from) 이전이면 그 버킷은 응답에서 빠져야 한다. 그 다음 주(완전한 한 주)는
+		// 정상적으로 포함되어야 한다.
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		// 2026-07-08(수) — 그 주 월요일은 2026-07-06. 2026-07-17(금) — 다음 주(2026-07-13 월요일 시작)의 마지막 거래일.
+		LocalDate midWeekFrom = LocalDate.of(2026, 7, 8);
+		LocalDate completeWeekEnd = LocalDate.of(2026, 7, 17);
+		List<StockCandle> minuteCandles = List.of(
+			candle(LocalDate.of(2026, 7, 8), LocalTime.of(9, 0), bd(1000), bd(1010), bd(995), bd(1005), 10),
+			candle(LocalDate.of(2026, 7, 9), LocalTime.of(9, 0), bd(1005), bd(1015), bd(1000), bd(1010), 10),
+			candle(LocalDate.of(2026, 7, 10), LocalTime.of(9, 0), bd(1010), bd(1020), bd(1005), bd(1015), 10),
+			candle(LocalDate.of(2026, 7, 13), LocalTime.of(9, 0), bd(1020), bd(1030), bd(1015), bd(1025), 10),
+			candle(LocalDate.of(2026, 7, 14), LocalTime.of(9, 0), bd(1025), bd(1035), bd(1020), bd(1030), 10),
+			candle(LocalDate.of(2026, 7, 15), LocalTime.of(9, 0), bd(1030), bd(1040), bd(1025), bd(1035), 10),
+			candle(LocalDate.of(2026, 7, 16), LocalTime.of(9, 0), bd(1035), bd(1045), bd(1030), bd(1040), 10),
+			candle(LocalDate.of(2026, 7, 17), LocalTime.of(9, 0), bd(1040), bd(1050), bd(1035), bd(1045), 10));
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+			INSTRUMENT_ID, midWeekFrom, completeWeekEnd))
+			.thenReturn(minuteCandles);
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(10, 0)));
+
+		List<StockCandleDto> result = service.getRevealedAggregatedCandles(
+			INSTRUMENT_ID, CandleInterval.ONE_WEEK, midWeekFrom, completeWeekEnd);
+
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).tradingDate()).isEqualTo(LocalDate.of(2026, 7, 13));
+	}
+
+	@Test
+	void getRevealedAggregatedCandlesIncludesWeekBucketWhenFromFallsExactlyOnBucketMonday() {
+		// 회귀 확인 — from이 버킷 경계(월요일)와 정확히 일치하면 필터가 과하게 잘라내지 않고 그 주 버킷을 그대로 포함해야 한다.
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		LocalDate mondayFrom = LocalDate.of(2026, 7, 13);
+		LocalDate weekEnd = LocalDate.of(2026, 7, 17);
+		List<StockCandle> minuteCandles = List.of(
+			candle(LocalDate.of(2026, 7, 13), LocalTime.of(9, 0), bd(1020), bd(1030), bd(1015), bd(1025), 10),
+			candle(LocalDate.of(2026, 7, 17), LocalTime.of(9, 0), bd(1040), bd(1050), bd(1035), bd(1045), 10));
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+			INSTRUMENT_ID, mondayFrom, weekEnd))
+			.thenReturn(minuteCandles);
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(10, 0)));
+
+		List<StockCandleDto> result = service.getRevealedAggregatedCandles(
+			INSTRUMENT_ID, CandleInterval.ONE_WEEK, mondayFrom, weekEnd);
+
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).tradingDate()).isEqualTo(mondayFrom);
+	}
+
+	@Test
+	void getRevealedAggregatedCandlesExcludesLeadingPartialMonthBucketWhenFromFallsMidMonth() {
+		// interval=1M도 동일한 갭 — from이 그 달의 15일이면 1~14일 분봉이 있어도 그 달(5월) 버킷은 시작일(5/1)이
+		// rangeStart(5/15) 이전이라 제외되어야 한다. 그 다음 달(6월, 완전한 한 달)은 정상적으로 포함되어야 한다.
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		LocalDate midMonthFrom = LocalDate.of(2026, 5, 15);
+		LocalDate completeMonthEnd = LocalDate.of(2026, 6, 30);
+		List<StockCandle> minuteCandles = List.of(
+			candle(LocalDate.of(2026, 5, 15), LocalTime.of(9, 0), bd(1000), bd(1010), bd(995), bd(1005), 10),
+			candle(LocalDate.of(2026, 5, 29), LocalTime.of(9, 0), bd(1005), bd(1015), bd(1000), bd(1010), 10),
+			candle(LocalDate.of(2026, 6, 1), LocalTime.of(9, 0), bd(1020), bd(1030), bd(1015), bd(1025), 10),
+			candle(LocalDate.of(2026, 6, 30), LocalTime.of(9, 0), bd(1040), bd(1050), bd(1035), bd(1045), 10));
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+			INSTRUMENT_ID, midMonthFrom, completeMonthEnd))
+			.thenReturn(minuteCandles);
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(10, 0)));
+
+		List<StockCandleDto> result = service.getRevealedAggregatedCandles(
+			INSTRUMENT_ID, CandleInterval.ONE_MONTH, midMonthFrom, completeMonthEnd);
+
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).tradingDate()).isEqualTo(LocalDate.of(2026, 6, 1));
+	}
+
+	@Test
+	void getRevealedAggregatedCandlesIncludesMonthBucketWhenFromFallsExactlyOnFirstOfMonth() {
+		// 회귀 확인 — from이 버킷 경계(1일)와 정확히 일치하면 필터가 과하게 잘라내지 않고 그 달 버킷을 그대로 포함해야 한다.
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		LocalDate firstOfMonthFrom = LocalDate.of(2026, 6, 1);
+		LocalDate monthEnd = LocalDate.of(2026, 6, 30);
+		List<StockCandle> minuteCandles = List.of(
+			candle(LocalDate.of(2026, 6, 1), LocalTime.of(9, 0), bd(1020), bd(1030), bd(1015), bd(1025), 10),
+			candle(LocalDate.of(2026, 6, 30), LocalTime.of(9, 0), bd(1040), bd(1050), bd(1035), bd(1045), 10));
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+			INSTRUMENT_ID, firstOfMonthFrom, monthEnd))
+			.thenReturn(minuteCandles);
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(10, 0)));
+
+		List<StockCandleDto> result = service.getRevealedAggregatedCandles(
+			INSTRUMENT_ID, CandleInterval.ONE_MONTH, firstOfMonthFrom, monthEnd);
+
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).tradingDate()).isEqualTo(firstOfMonthFrom);
 	}
 }

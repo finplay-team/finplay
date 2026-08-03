@@ -15,5 +15,6 @@ public interface StockPriceProvider {
 	List<StockReplayPriceDto> getCurrentPrices(List<Long> instrumentIds);
 
 	// 아직 마감하지 않은 분봉은 포함하지 않는다 — from·to는 각각 선택이며 null이면 무제한(재생 중인 거래일 전체)으로 취급한다.
-	List<StockCandleDto> getCandles(Long instrumentId, LocalDateTime from, LocalDateTime to);
+	// interval이 1m이면 stock_candles 분봉을 그대로, 그 외(1d·1w·1M)면 거래일·주·월 단위로 집계한 봉을 반환한다(이슈 #143).
+	List<StockCandleDto> getCandles(Long instrumentId, CandleInterval interval, LocalDateTime from, LocalDateTime to);
 }

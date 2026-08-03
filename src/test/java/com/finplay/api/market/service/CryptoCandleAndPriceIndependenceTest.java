@@ -39,7 +39,7 @@ class CryptoCandleAndPriceIndependenceTest {
 		PriceStore priceStore = mock(PriceStore.class);
 		when(priceStore.isPriceAvailable("BTC")).thenReturn(false);
 		CryptoCandleProvider cryptoCandleProvider = mock(CryptoCandleProvider.class);
-		when(cryptoCandleProvider.getCandles("BTC", null, null)).thenReturn(List.of(
+		when(cryptoCandleProvider.getCandles("BTC", CandleInterval.ONE_MINUTE, null, null)).thenReturn(List.of(
 			new CryptoCandleDto(NOW, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE)));
 
 		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
@@ -69,7 +69,7 @@ class CryptoCandleAndPriceIndependenceTest {
 		when(priceStore.getLatestPrice("BTC"))
 			.thenReturn(Optional.of(new CryptoPriceDto("BTC", new BigDecimal("50000000"), NOW)));
 		CryptoCandleProvider cryptoCandleProvider = mock(CryptoCandleProvider.class);
-		when(cryptoCandleProvider.getCandles("BTC", null, null))
+		when(cryptoCandleProvider.getCandles("BTC", CandleInterval.ONE_MINUTE, null, null))
 			.thenThrow(new BusinessException(ErrorCode.MARKET_DATA_PROVIDER_ERROR));
 
 		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,

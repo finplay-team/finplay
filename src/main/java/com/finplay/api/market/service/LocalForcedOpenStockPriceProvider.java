@@ -74,7 +74,8 @@ public class LocalForcedOpenStockPriceProvider implements StockPriceProvider {
 	}
 
 	@Override
-	public List<StockCandleDto> getCandles(Long instrumentId, LocalDateTime from, LocalDateTime to) {
-		return delegate.getCandles(instrumentId, from, to);
+	public List<StockCandleDto> getCandles(
+		Long instrumentId, CandleInterval interval, LocalDateTime from, LocalDateTime to) {
+		return delegate.getCandles(instrumentId, interval, from, to);
 	}
 }

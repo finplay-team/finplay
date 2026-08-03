@@ -25,6 +25,12 @@ public interface StockCandleRepository extends JpaRepository<StockCandle, Long> 
 	List<StockCandle> findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
 		Long instrumentId, LocalDate tradingDate, LocalTime from, LocalTime to);
 
+	// 집계 캔들(1d·1w·1M) API 전용 — 종목·거래일(from~to, 양끝 포함) 범위의 분봉을 거래일 오름차순 →
+	// 그 안에서 분봉시각 오름차순으로 조회한다(이슈 #143). 재생거래일 자체는 이 쿼리로 조회하지 않고
+	// findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc로 컷오프까지만 별도 조회한다.
+	List<StockCandle> findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+		Long instrumentId, LocalDate from, LocalDate to);
+
 	// StockReplaySessionScheduler 전용 — 후보 거래일에 실제로 저장된 분봉이 있는지 확인(종목 무관)
 	boolean existsByTradingDate(LocalDate tradingDate);
 

@@ -11,6 +11,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +25,12 @@ public class StockReplayService {
 	private static final LocalTime MARKET_OPEN_TIME = LocalTime.of(9, 0);
 	private static final LocalTime FIRST_CANDLE_END_TIME = LocalTime.of(9, 1);
 	private static final LocalTime MARKET_CLOSE_TIME = LocalTime.of(15, 30);
+
+	// 집계 캔들(1d·1w·1M)의 from 생략 시 조회 하한과 결과 상한(spec 공통 계약 — 200개 캡, 이슈 #143)
+	private static final int MAX_AGGREGATED_CANDLES = 200;
+	private static final long LOOKBACK_FLOOR_DAYS = 400;
+	private static final long LOOKBACK_FLOOR_WEEKS = 200;
+	private static final long LOOKBACK_FLOOR_MONTHS = 200;
 
 	private final StockReplaySessionRepository stockReplaySessionRepository;
 	private final StockCandleRepository stockCandleRepository;
@@ -103,6 +110,87 @@ public class StockReplayService {
 			.stream()
 			.map(StockCandleDto::from)
 			.toList();
+	}
+
+	// 집계 캔들(1d·1w·1M) API — 공개 상한(reveal bound)을 지키며 1분봉을 조회해 StockCandleAggregator로 묶는다(이슈 #143).
+	// getRevealedCandles(1m 경로)는 이 메서드가 손대지 않는다. 재생세션이 없으면 어떤 interval이든 빈 목록이다
+	// (spec.md "공개 상한" — 재생 준비 전 거래일이 일봉으로 미리 새어 나가는 것을 막는다).
+	@Transactional(readOnly = true)
+	public List<StockCandleDto> getRevealedAggregatedCandles(
+		Long instrumentId, CandleInterval interval, LocalDate fromDate, LocalDate toDate) {
+		LocalDateTime now = LocalDateTime.now(clock);
+		Optional<StockReplaySession> readySession = findReadySession(now.toLocalDate());
+		if (readySession.isEmpty()) {
+			return List.of();
+		}
+
+		LocalDate sourceTradingDate = readySession.get().getSourceTradingDate();
+		LocalDate requestedEnd = toDate != null ? toDate : sourceTradingDate;
+		// 재생거래일을 절대 넘지 않는다 — "방어 규칙"이 아니라 실제로 도달 가능한 경로다. PRD MKT-005의 08:40 폴백
+		// (직전 영업일 데이터가 아직 없으면 그 전 영업일로 폴백) 때문에, 08:10 수집이 거래일 D를 넣었지만 08:40 세션은
+		// D-1로 확정되는 날이 생길 수 있다. 그런 날엔 D의 분봉이 DB에 이미 있어도 미공개이므로, to가 D 이후를
+		// 가리켜도 이 클램프가 유일한 방어선이다(PR #151 리뷰 반영).
+		LocalDate rangeEnd = requestedEnd.isBefore(sourceTradingDate) ? requestedEnd : sourceTradingDate;
+		LocalDate rangeStart = fromDate != null ? fromDate : lookbackFloor(interval, rangeEnd);
+		if (rangeStart.isAfter(rangeEnd)) {
+			return List.of();
+		}
+
+		// 조회를 2회로 분리한다 — 미공개 분봉을 애초에 메모리에 올리지 않기 위해서다(한 번에 읽고 나중에 걸러내면
+		// 필터를 빠뜨렸을 때 그대로 유출된다). (a) 과거 거래일(재생거래일 전부 공개)과 (b) 재생거래일 당일(컷오프까지만
+		// 공개)을 별도 쿼리로 조회해 이어 붙인다 — 둘 다 tradingDate 오름차순이 유지되므로 (a) 다음 (b) 순서가 곧 전체
+		// 오름차순이다.
+		List<StockCandleDto> minuteCandles = new ArrayList<>();
+
+		LocalDate sourceTradingDateMinusOne = sourceTradingDate.minusDays(1);
+		LocalDate pastEnd = rangeEnd.isBefore(sourceTradingDateMinusOne) ? rangeEnd : sourceTradingDateMinusOne;
+		if (!rangeStart.isAfter(pastEnd)) {
+			minuteCandles.addAll(
+				stockCandleRepository
+					.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+						instrumentId, rangeStart, pastEnd)
+					.stream()
+					.map(StockCandleDto::from)
+					.toList());
+		}
+
+		boolean sourceTradingDateInRange = !rangeStart.isAfter(sourceTradingDate)
+			&& !sourceTradingDate.isAfter(rangeEnd);
+		if (sourceTradingDateInRange) {
+			Optional<LocalTime> cutoff = resolveRevealCutoff(now.toLocalTime());
+			if (cutoff.isPresent()) {
+				minuteCandles.addAll(
+					stockCandleRepository
+						.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+							instrumentId, sourceTradingDate, LocalTime.MIN, cutoff.get())
+						.stream()
+						.map(StockCandleDto::from)
+						.toList());
+			}
+		}
+
+		// 버킷 경계(월요일·1일)와 rangeStart가 정확히 일치하지 않으면, rangeStart보다 이른 시작일을 가진 "선두 partial
+		// 버킷"(예: interval=1w, from=수요일이면 그 주 월요일 라벨의 버킷에 수~금 분봉만 모임)이 섞여 나갈 수 있다.
+		// docs/api-contracts.md 계약은 "버킷 시작일이 [from의 날짜, to의 날짜] 안에 있으면 포함"이므로, 시작일이
+		// rangeStart보다 이른 버킷은 반쪽짜리인 채로 완전한 캔들처럼 보이게 되어 제외해야 한다(PR #151 리뷰 차단 반영).
+		// 200개 캡보다 먼저 걸러야 캡이 실제로 응답에 남을 버킷 수를 기준으로 동작한다.
+		List<StockCandleDto> aggregated = StockCandleAggregator.aggregate(minuteCandles, interval).stream()
+			.filter(candle -> !candle.tradingDate().isBefore(rangeStart))
+			.toList();
+		if (aggregated.size() <= MAX_AGGREGATED_CANDLES) {
+			return aggregated;
+		}
+		return aggregated.subList(aggregated.size() - MAX_AGGREGATED_CANDLES, aggregated.size());
+	}
+
+	// getRevealedAggregatedCandles 전용 — from 생략 시 200개 버킷을 채우고도 남는 조회 하한(spec plan.md 확정값).
+	private LocalDate lookbackFloor(CandleInterval interval, LocalDate rangeEnd) {
+		return switch (interval) {
+			case ONE_DAY -> rangeEnd.minusDays(LOOKBACK_FLOOR_DAYS);
+			case ONE_WEEK -> rangeEnd.minusWeeks(LOOKBACK_FLOOR_WEEKS);
+			case ONE_MONTH -> rangeEnd.minusMonths(LOOKBACK_FLOOR_MONTHS);
+			case ONE_MINUTE -> throw new IllegalArgumentException("집계 캔들 전용 메서드입니다: " + interval);
+		};
 	}
 
 	private Optional<StockReplaySession> findReadySession(LocalDate serviceDate) {
