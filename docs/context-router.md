@@ -6,6 +6,7 @@ AI 에이전트는 **docs/ 전체를 순회하지 않는다.** 작업 유형에 
 |---|---|
 | spec 작성 / 1차 범위 판단 | `docs/prd.md` (요구사항 ID·수용 기준·제외 범위) + `docs/specs/README.md` |
 | 기능 구현 | 해당 `docs/specs/NNN-*/` (spec, plan, tasks) + `docs/conventions.md` + `docs/adr/0002-architecture.md` |
+| LLM·AI 기능 구현 | 위 목록 + `docs/adr/0011-llm-provider-integration.md` (프로바이더 추상화, 실패 시 템플릿 폴백, Fake 테스트 방침) |
 | 엔티티/스키마 변경 | 위 + `docs/adr/0004-flyway-migrations.md` |
 | 테스트 작성 | `docs/adr/0003-testing-strategy.md` |
 | 코드 리뷰 | `docs/conventions.md`(리뷰 체크 질문 포함) + `docs/adr/0002-architecture.md` + `docs/adr/0003-testing-strategy.md` + `docs/adr/0004-flyway-migrations.md` + `docs/api-routes.md` + `docs/api-contracts.md` |

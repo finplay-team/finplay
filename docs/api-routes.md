@@ -45,6 +45,31 @@
 | GET | /api/trades?market=&cursor=&limit= | order | 인증 사용자 본인의 시장별(`STOCK`\|`CRYPTO`) 체결 내역을 `executedAt` 내림차순(동시각 `id` 내림차순)으로 커서 페이지네이션 조회. `market` 쿼리 파라미터 필수, `cursor`·`limit`(기본 20, 1~100) 선택. 매도 건은 실현손익 포함 | 006 PORT-002, Issue #82 |
 | GET | /api/portfolio | portfolio | 인증 사용자 본인의 `STOCK`·`CRYPTO` 계좌를 합산한 총평가자산·총수익률·평가손익·실현손익 조회. 쿼리 파라미터 없음(항상 두 시장 합산) | 006 ACCT-003, Issue #51 |
 
+## 2차 계획 라우트 (아직 구현하지 않음)
+
+아래는 `docs/specs/012-ai-feedback` 착수 시 추가될 예정인 라우트다. **controller가 아직 없으므로 위 라우트 목록과 분리해 둔다** — 구현이 병합되는 커밋에서 위 표로 옮긴다. 블랙박스 QA는 이 절을 계약 근거로 사용하지 않는다.
+
+| Method | URL | 도메인 | 요약 | Spec |
+|---|---|---|---|---|
+| GET | /api/instruments/{instrumentId}/price-moves | market | 종목의 변동 원인 카드 목록 조회. 주식은 현재 재생세션 원본 거래일 중 `revealAt`이 지난 카드만(스포일러 차단), 코인은 최근 24시간. **기존 Notion 명세에 없는 신규 엔드포인트** | 012 FEED-006 |
+| GET | /api/ai/post-sell/{tradeId} | ai | 본인 매도 체결 1건의 매도 직후 피드백. 원장의 FIFO 수치 + 보유 구간 변동 원인 카드 + 관찰형 서술. 같은 원본 거래일 안에서 완결된 매매만 카드·최고가·최저가 포함. **투자일기에 의존하지 않는다** | 012 FEED-007 |
+| GET | /api/instruments/{instrumentId}/news | market | 종목의 뉴스·공시 목록과 AI 요약 조회. 주식은 현재 재생세션 원본 거래일 기사 중 발행시각이 재생 시각을 지난 것만, 코인은 최근 24시간. **기존 Notion 명세에 없는 신규 엔드포인트** | 012 FEED-008 |
+| GET | /api/market/briefing?market= | market | 개장 전 브리핑. 주식은 **직전 거래일 15:30~당일 09:00 기사·공시만**(장중 기사 절대 미포함), 09:00 이전에는 `status=NOT_YET`. 코인은 최근 24시간. 뉴스 보고 매매하는 사용자의 진입점. **기존 Notion 명세에 없는 신규 엔드포인트** | 012 FEED-009 |
+
+네 경로 모두 `SecurityConfig` 공개 목록에 추가하지 않는다 — `anyRequest().authenticated()`로 떨어져 Access Bearer 토큰을 요구한다.
+
+**Notion 명세와의 차이 (팀 동기화 필요)**
+
+| 항목 | Notion api 명세서 | 이 레포 | 사유 |
+|---|---|---|---|
+| Base URL | `/api/v1` | `/api` | 버저닝 미사용 (2026-07-23 확정, `docs/conventions.md`) |
+| 매도 직후 피드백 | `GET /ai/post-sell/{id}` | `GET /api/ai/post-sell/{tradeId}` | Base URL 규칙만 적용, 경로는 동일 |
+| `post-sell` 내용 | 계획 대비 실제 대조 (2단계) | 원장 수치 + 뉴스 변동 원인 | 계획 대조는 `007-journal`(다른 팀원 범위)이 선행돼야 한다. 투자일기가 생기면 `plan`·`planOutcome` 필드를 같은 응답에 **추가**하면 되므로 계약이 깨지지 않는다 |
+| AI 엔드포인트 수 | 6개 (`pre-order`·`post-sell`·`d7`·`weekly-report`·`basis-stats`·`similar`) | `post-sell` 1개만 | 나머지 5개는 2차 범위 밖 (`docs/specs/012-ai-feedback` 범위 제외) |
+| 변동 원인 카드 | 없음 | `GET /api/instruments/{id}/price-moves` | 신규 — Notion 명세 DB에 행 추가 필요 |
+| 종목 뉴스 목록·요약 | 없음 | `GET /api/instruments/{id}/news` | 신규 — Notion 1차 고도화 "뉴스 요약" 항목에 대응 |
+| 개장 전 브리핑 | 없음 | `GET /api/market/briefing?market=` | 신규 — 변동 원인 카드는 가격이 움직인 **뒤**를 설명하므로 매매 판단에 쓸 수 없다. 브리핑이 그 공백을 채운다 |
+
 ## 시스템 엔드포인트
 
 | Method | URL | 요약 |
