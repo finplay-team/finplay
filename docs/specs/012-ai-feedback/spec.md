@@ -357,7 +357,7 @@ feedback:
 | 컬럼 | 타입 | NULL | 비고 |
 |---|---|---|---|
 | `title` | `VARCHAR(500)` | N | 네이버 제목에 HTML 엔티티가 섞여 온다 |
-| `publisher` | `VARCHAR(100)` | N | 공시는 `DART` 고정 |
+| `publisher` | `VARCHAR(100)` | N | 공시는 `DART` 고정. **뉴스는 `originallink`의 호스트에서 `www.`만 뗀 도메인**(`https://www.hankyung.com/...` → `hankyung.com`). 네이버 뉴스 검색 응답에 **언론사 이름 필드가 없다** — `items[]`는 `title`·`originallink`·`link`·`description`·`pubDate`가 전부라 언론사를 식별하는 값이 원문 링크 도메인뿐이다. 한글 언론사명 매핑은 후속 이슈 |
 | `url` | `VARCHAR(500)` | N | **접두 길이 없이 전체 컬럼에 유니크.** `mysql:8.4`는 DYNAMIC row format이라 인덱스 키 상한이 3072B이고 `VARCHAR(500)` utf8mb4(2000B)+`BIGINT`(8B)면 들어간다. `url(191)` 접두로 두면 앞 191자가 같고 쿼리 파라미터만 다른 링크를 중복 판정해 **근거 기사를 조용히 버린다** |
 | `published_at` | `DATETIME(6)` | N | 공시는 `00:00:00` |
 | `type`·`event_type`·`scope`·`market`·`narrative_source` | `VARCHAR(20)` | N | `@Enumerated(STRING)` (V10 관례). `market`은 **`market/domain/Market`**을 쓴다 — `account/domain/Market`과 값 이름이 같아 저장 문자열은 동일하지만, 이 컬럼들은 계좌가 아니라 종목·시장 축이다 |
@@ -1067,6 +1067,7 @@ LLM이 실패하거나 후검증에 걸렸을 때 서버가 수치로 조립한�
 | 네이버 엔드포인트 | `GET https://openapi.naver.com/v1/search/news.json?query={종목명}&display=100&sort=date` |
 | 네이버 헤더 | `X-Naver-Client-Id`, `X-Naver-Client-Secret` — 값은 `NAVER_SEARCH_*` 환경변수에서 온다. **`NAVER_CLIENT_ID`·`NAVER_CLIENT_SECRET`는 이미 네이버 OAuth 로그인이 쓰고 있으므로 재사용하지 않는다** (`.env.example`, `application.yml`의 `oauth.naver`). 검색 API용 애플리케이션을 따로 발급받는 순간 둘 중 하나가 깨진다 |
 | 네이버 제약 | **날짜 범위 지정 불가**, `display` 상한 100. 최신순으로 받아 **거르지 않고 그대로 저장**한다 (구간 필터는 조회 시점에만). 종일 30분 간격이라 놓치는 구간이 없다 |
+| 네이버 시각 | `pubDate`는 오프셋이 붙은 RFC 1123 문자열이다. **KST 벽시계로 바꿔 `published_at`에 담는다** — 이 spec의 모든 시각이 KST 시간축이고(§C-2) 근거창·구간 필터가 전부 그 축에서 계산된다. 오프셋을 무시하고 문자열 앞부분만 파싱하면 조용히 최대 9시간 어긋난다 |
 | DART 엔드포인트 | `GET https://opendart.fss.or.kr/api/list.json?crtfc_key={키}&corp_code={8자리}&bgn_de={수집일−1}&end_de={수집일}` — `YYYYMMDD`. 전일부터 훑어 접수 지연분을 잡는다 |
 | DART 제약 | `corp_code`는 종목코드가 아님. `corpCode.xml`로 16종목 매핑을 미리 만들어 리소스로 둔다 |
 | DART 시각 | `rcept_dt`는 `YYYYMMDD`. `published_at`은 그 날짜 `00:00:00`으로 저장 |
