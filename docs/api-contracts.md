@@ -401,13 +401,13 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 ---
 
-## 016 투자 실습 (계획 — 아직 구현하지 않음)
+## 016 투자 실습 (candidate 1 제공, 나머지 계획)
 
-`docs/specs/016-investment-education-policy`의 신규 계약 10건이다. **controller와 schema가 아직 없으므로 블랙박스 QA의 실행 가능 API 근거로 사용하지 않는다.** 각 구현이 병합될 때 해당 계약을 실제 상태로 전환하고 `docs/api-routes.md`의 계획 행도 실제 라우트 목록으로 옮긴다. 모든 경로는 Access Bearer 인증과 공통 오류 body를 사용하며 JSON POST는 `Content-Type: application/json`이다.
+`docs/specs/016-investment-education-policy`의 신규 계약 10건이다. candidate 1 `POST /api/favorites`는 controller와 schema가 구현되어 제공 중이며, 나머지 9건은 아직 계획 상태이므로 블랙박스 QA의 실행 가능 API 근거로 사용하지 않는다. 각 후속 구현이 병합될 때 해당 계약을 실제 상태로 전환하고 `docs/api-routes.md`의 계획 행도 실제 라우트 목록으로 옮긴다. 모든 경로는 Access Bearer 인증과 공통 오류 body를 사용하며 JSON POST는 `Content-Type: application/json`이다.
 
 수량은 양수 `DECIMAL(30,8)` 범위(정수부 최대 22자리·소수부 최대 8자리), 가격은 양수 `DECIMAL(18,8)` 범위(정수부 최대 10자리·소수부 최대 8자리)다. 초과 precision/scale은 반올림하지 않고 400 `VALIDATION_ERROR`로 거부한다. 모든 id는 양의 `Long`이다.
 
-### 즐겨찾기 등록 (계획)
+### 즐겨찾기 등록
 
 | Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|
