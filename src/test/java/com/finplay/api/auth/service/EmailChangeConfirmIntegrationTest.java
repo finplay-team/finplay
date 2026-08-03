@@ -148,9 +148,7 @@ class EmailChangeConfirmIntegrationTest {
 
 		assertThat(failure.getErrorCode()).isEqualTo(ErrorCode.EMAIL_VERIFICATION_FAILED);
 		assertThat(userRepository.findById(user.getId()).orElseThrow().getEmail()).isEqualTo(user.getEmail());
-		EmailChangeVerification verification = emailChangeVerificationRepository
-			.findFirstByUserIdAndNewEmailOrderByCreatedAtDesc(user.getId(), newEmail)
-			.orElseThrow();
+		EmailChangeVerification verification = latestRow(user.getId(), newEmail);
 		assertThat(verification.getAttemptCount()).isEqualTo(1);
 		assertThat(verification.getConsumedAt()).isNull();
 	}
@@ -160,9 +158,7 @@ class EmailChangeConfirmIntegrationTest {
 		User user = persistEmailUser("confirm-expired");
 		String newEmail = uniqueEmail("confirm-expired-target");
 		String code = sendCode(user.getId(), newEmail);
-		EmailChangeVerification stored = emailChangeVerificationRepository
-			.findFirstByUserIdAndNewEmailOrderByCreatedAtDesc(user.getId(), newEmail)
-			.orElseThrow();
+		EmailChangeVerification stored = latestRow(user.getId(), newEmail);
 		jdbcTemplate.update(
 			"update email_change_verifications set expires_at = ? where id = ?",
 			LocalDateTime.now(clock).minusSeconds(1),
@@ -181,9 +177,7 @@ class EmailChangeConfirmIntegrationTest {
 		User user = persistEmailUser("confirm-resend-invalidated");
 		String newEmail = uniqueEmail("confirm-resend-invalidated-target");
 		String firstCode = sendCode(user.getId(), newEmail);
-		EmailChangeVerification firstRow = emailChangeVerificationRepository
-			.findFirstByUserIdAndNewEmailOrderByCreatedAtDesc(user.getId(), newEmail)
-			.orElseThrow();
+		EmailChangeVerification firstRow = latestRow(user.getId(), newEmail);
 		// 60초 재발송 간격 판정은 created_at 기준이므로, 실제 대기 대신 created_at을 뒤로 당겨 창을 지난 것처럼 만든다.
 		jdbcTemplate.update(
 			"update email_change_verifications set created_at = ? where id = ?",
@@ -197,9 +191,7 @@ class EmailChangeConfirmIntegrationTest {
 
 		assertThat(failure.getErrorCode()).isEqualTo(ErrorCode.EMAIL_VERIFICATION_FAILED);
 		assertThat(userRepository.findById(user.getId()).orElseThrow().getEmail()).isEqualTo(user.getEmail());
-		EmailChangeVerification latest = emailChangeVerificationRepository
-			.findFirstByUserIdAndNewEmailOrderByCreatedAtDesc(user.getId(), newEmail)
-			.orElseThrow();
+		EmailChangeVerification latest = latestRow(user.getId(), newEmail);
 		assertThat(latest.getId()).isNotEqualTo(firstRow.getId());
 		assertThat(latest.getConsumedAt()).isNull();
 	}
@@ -243,9 +235,7 @@ class EmailChangeConfirmIntegrationTest {
 			() -> authService.confirmEmailChange(user.getId(), newEmail, code));
 		assertThat(sixthFailure.getErrorCode()).isEqualTo(ErrorCode.TOO_MANY_REQUESTS);
 
-		EmailChangeVerification verification = emailChangeVerificationRepository
-			.findFirstByUserIdAndNewEmailOrderByCreatedAtDesc(user.getId(), newEmail)
-			.orElseThrow();
+		EmailChangeVerification verification = latestRow(user.getId(), newEmail);
 		assertThat(verification.getAttemptCount()).isEqualTo(6);
 		assertThat(verification.getExpiresAt()).isBeforeOrEqualTo(LocalDateTime.now(clock));
 
@@ -283,9 +273,7 @@ class EmailChangeConfirmIntegrationTest {
 		assertThat(reloadedLoser.getEmail()).isEqualTo(loser.getEmail());
 		assertThat(reloadedLoser.getEmail()).isNotEqualTo(targetEmail);
 
-		EmailChangeVerification verification = runInNewTransaction(() -> emailChangeVerificationRepository
-			.findFirstByUserIdAndNewEmailOrderByCreatedAtDesc(loser.getId(), targetEmail)
-			.orElseThrow());
+		EmailChangeVerification verification = latestRow(loser.getId(), targetEmail);
 		assertThat(verification.getConsumedAt()).isNull();
 
 		List<RefreshToken> tokens = runInNewTransaction(
@@ -357,6 +345,18 @@ class EmailChangeConfirmIntegrationTest {
 		assertThat(sentEmail).isNotNull();
 		assertThat(sentEmail.toEmail()).isEqualTo(newEmail);
 		return sentEmail.code();
+	}
+
+	// 확인 대상 최신 행을 상태 단정용으로 읽는다. 확인 경로의 조회 쿼리
+	// (findFirstByUserIdAndNewEmailOrderByCreatedAtDesc)는 @Lock(PESSIMISTIC_WRITE)이라 트랜잭션 밖에서 부르면
+	// MySQL이 read-only 트랜잭션의 SELECT ... FOR UPDATE를 거부한다. 그래서 id는 jdbcTemplate으로 집고
+	// 잠금 없는 findById로 읽는다 (PR #120의 PasswordResetConfirmIntegrationTest와 같은 방식).
+	private EmailChangeVerification latestRow(Long userId, String newEmail) {
+		Long id = jdbcTemplate.queryForObject(
+			"select id from email_change_verifications"
+				+ " where user_id = ? and new_email = ? order by created_at desc, id desc limit 1",
+			Long.class, userId, newEmail);
+		return emailChangeVerificationRepository.findById(id).orElseThrow();
 	}
 
 	private <T> T runInNewTransaction(Supplier<T> action) {

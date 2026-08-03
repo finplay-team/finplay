@@ -8,19 +8,17 @@ import com.finplay.api.auth.repository.EmailChangeVerificationRepository;
 import com.finplay.api.auth.repository.ReauthTokenRepository;
 import com.finplay.api.auth.repository.SocialAccountRepository;
 import com.finplay.api.auth.repository.UserRepository;
+import com.finplay.api.auth.verification.VerificationCodeHasher;
+import com.finplay.api.auth.verification.VerificationCodePolicy;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import java.nio.charset.StandardCharsets;
-import java.security.InvalidKeyException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.HexFormat;
 import java.util.List;
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -30,15 +28,6 @@ import org.springframework.util.StringUtils;
 @Service
 public class EmailChangeService {
 
-	private static final String HMAC_ALGORITHM = "HmacSHA256";
-	private static final int CODE_BOUND = 1_000_000; // 6자리(000000~999999) 난수 상한.
-	private static final String CODE_FORMAT = "%06d";
-	private static final int CODE_TTL_MINUTES = 5;
-	private static final int RESEND_INTERVAL_SECONDS = 60;
-	private static final int HOURLY_LIMIT = 5;
-	private static final int DAILY_LIMIT = 10;
-	private static final int MAX_VERIFICATION_ATTEMPTS = 5;
-
 	private final UserRepository userRepository;
 	private final SocialAccountRepository socialAccountRepository;
 	private final ReauthTokenRepository reauthTokenRepository;
@@ -46,8 +35,8 @@ public class EmailChangeService {
 	private final PasswordEncoder passwordEncoder;
 	private final EmailSender emailSender;
 	private final Clock clock;
-	private final SecureRandom secureRandom = new SecureRandom();
-	private final byte[] hmacKey;
+	private final VerificationCodePolicy codePolicy;
+	private final VerificationCodeHasher codeHasher;
 
 	public EmailChangeService(
 		UserRepository userRepository,
@@ -57,6 +46,7 @@ public class EmailChangeService {
 		PasswordEncoder passwordEncoder,
 		EmailSender emailSender,
 		Clock clock,
+		VerificationCodePolicy codePolicy,
 		@Value("${EMAIL_VERIFICATION_SECRET}")
 		String emailVerificationSecret) {
 		this.userRepository = userRepository;
@@ -66,7 +56,8 @@ public class EmailChangeService {
 		this.passwordEncoder = passwordEncoder;
 		this.emailSender = emailSender;
 		this.clock = clock;
-		this.hmacKey = emailVerificationSecret.getBytes(StandardCharsets.UTF_8);
+		this.codePolicy = codePolicy;
+		this.codeHasher = new VerificationCodeHasher(emailVerificationSecret);
 	}
 
 	// 재인증 증명(비밀번호/reauthToken) → 새 이메일 중복 → 발송 제한 순서로 판정한 뒤 인증번호를 발송한다.
@@ -82,12 +73,14 @@ public class EmailChangeService {
 		}
 
 		LocalDateTime now = LocalDateTime.now(clock);
-		checkSendRateLimit(userId, now);
+		// 발송 제한은 대상 이메일과 무관하게 회원(userId) 단위로 합산한다.
+		codePolicy.checkSendRateLimit(
+			now, since -> emailChangeVerificationRepository.countByUserIdAndCreatedAtAfter(userId, since));
 		expirePreviousCodes(userId, newEmail, now);
 
-		String code = generateCode();
+		String code = codePolicy.generateCode();
 		EmailChangeVerification verification = EmailChangeVerification.create(
-			user, newEmail, hmac(code), now.plusMinutes(CODE_TTL_MINUTES), now);
+			user, newEmail, codeHasher.hmac(code), codePolicy.expiresAt(now), now);
 		emailChangeVerificationRepository.save(verification);
 
 		// 발송은 저장 이후에 한다. 발송 실패 시 트랜잭션이 롤백되어 저장·이전 코드 만료·토큰 소비가 함께 되돌려진다.
@@ -105,12 +98,12 @@ public class EmailChangeService {
 		if (verification.getConsumedAt() != null || !verification.getExpiresAt().isAfter(now)) {
 			throw new BusinessException(ErrorCode.EMAIL_VERIFICATION_FAILED);
 		}
-		if (verification.getAttemptCount() >= MAX_VERIFICATION_ATTEMPTS) {
+		if (codePolicy.isAttemptLimitReached(verification.getAttemptCount())) {
 			verification.incrementAttemptCount();
 			verification.expire(now);
 			throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS);
 		}
-		if (!verification.getCodeHash().equals(hmac(code))) {
+		if (!verification.getCodeHash().equals(codeHasher.hmac(code))) {
 			verification.incrementAttemptCount();
 			throw new BusinessException(ErrorCode.EMAIL_VERIFICATION_FAILED);
 		}
@@ -139,41 +132,12 @@ public class EmailChangeService {
 		}
 	}
 
-	// 발송 제한 판정 — 대상 이메일과 무관하게 회원(userId) 단위로 60초/1시간 5회/하루 10회를 합산한다.
-	private void checkSendRateLimit(Long userId, LocalDateTime now) {
-		if (emailChangeVerificationRepository.countByUserIdAndCreatedAtAfter(
-			userId, now.minusSeconds(RESEND_INTERVAL_SECONDS)) > 0) {
-			throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS);
-		}
-		if (emailChangeVerificationRepository.countByUserIdAndCreatedAtAfter(userId,
-			now.minusHours(1)) >= HOURLY_LIMIT) {
-			throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS);
-		}
-		if (emailChangeVerificationRepository.countByUserIdAndCreatedAtAfter(userId, now.minusDays(1)) >= DAILY_LIMIT) {
-			throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS);
-		}
-	}
-
 	// 재발송 시 같은 회원·같은 새 이메일의 이전 인증번호를 즉시 무효화한다.
 	private void expirePreviousCodes(Long userId, String newEmail, LocalDateTime now) {
 		List<EmailChangeVerification> previous = emailChangeVerificationRepository
 			.findByUserIdAndNewEmailAndConsumedAtIsNullAndExpiresAtAfter(userId, newEmail, now);
 		for (EmailChangeVerification verification : previous) {
 			verification.expire(now);
-		}
-	}
-
-	private String generateCode() {
-		return String.format(CODE_FORMAT, secureRandom.nextInt(CODE_BOUND));
-	}
-
-	private String hmac(String code) {
-		try {
-			Mac mac = Mac.getInstance(HMAC_ALGORITHM);
-			mac.init(new SecretKeySpec(hmacKey, HMAC_ALGORITHM));
-			return HexFormat.of().formatHex(mac.doFinal(code.getBytes(StandardCharsets.UTF_8)));
-		} catch (NoSuchAlgorithmException | InvalidKeyException ex) {
-			throw new IllegalStateException("인증번호 HMAC 계산에 실패했습니다.", ex);
 		}
 	}
 

@@ -18,6 +18,7 @@ import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.email.EmailSender;
 import com.finplay.api.auth.repository.PasswordResetVerificationRepository;
 import com.finplay.api.auth.repository.UserRepository;
+import com.finplay.api.auth.verification.VerificationCodePolicy;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import java.nio.charset.StandardCharsets;
@@ -65,7 +66,8 @@ class PasswordResetServiceTest {
 	void setUp() {
 		Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
 		service = new PasswordResetService(
-			userRepository, passwordResetVerificationRepository, emailSender, clock, SECRET);
+			userRepository, passwordResetVerificationRepository, emailSender, clock, new VerificationCodePolicy(),
+			SECRET);
 	}
 
 	@Test

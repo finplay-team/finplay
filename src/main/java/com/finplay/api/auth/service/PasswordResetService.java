@@ -6,18 +6,13 @@ import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.email.EmailSender;
 import com.finplay.api.auth.repository.PasswordResetVerificationRepository;
 import com.finplay.api.auth.repository.UserRepository;
+import com.finplay.api.auth.verification.VerificationCodeHasher;
+import com.finplay.api.auth.verification.VerificationCodePolicy;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
-import java.nio.charset.StandardCharsets;
-import java.security.InvalidKeyException;
-import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.LocalDateTime;
-import java.util.HexFormat;
 import java.util.List;
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,35 +20,29 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class PasswordResetService {
 
-	private static final String HMAC_ALGORITHM = "HmacSHA256";
-	private static final int CODE_BOUND = 1_000_000; // 6자리(000000~999999) 난수 상한.
-	private static final String CODE_FORMAT = "%06d";
-	private static final int CODE_TTL_MINUTES = 5;
-	private static final int RESEND_INTERVAL_SECONDS = 60;
-	private static final int HOURLY_LIMIT = 5;
-	private static final int DAILY_LIMIT = 10;
-	private static final int MAX_VERIFICATION_ATTEMPTS = 5;
 	private static final String NOT_FOUND_MESSAGE = "가입되지 않은 이메일입니다.";
 
 	private final UserRepository userRepository;
 	private final PasswordResetVerificationRepository passwordResetVerificationRepository;
 	private final EmailSender emailSender;
 	private final Clock clock;
-	private final SecureRandom secureRandom = new SecureRandom();
-	private final byte[] hmacKey;
+	private final VerificationCodePolicy codePolicy;
+	private final VerificationCodeHasher codeHasher;
 
 	public PasswordResetService(
 		UserRepository userRepository,
 		PasswordResetVerificationRepository passwordResetVerificationRepository,
 		EmailSender emailSender,
 		Clock clock,
+		VerificationCodePolicy codePolicy,
 		@Value("${PASSWORD_RESET_SECRET}")
 		String passwordResetSecret) {
 		this.userRepository = userRepository;
 		this.passwordResetVerificationRepository = passwordResetVerificationRepository;
 		this.emailSender = emailSender;
 		this.clock = clock;
-		this.hmacKey = passwordResetSecret.getBytes(StandardCharsets.UTF_8);
+		this.codePolicy = codePolicy;
+		this.codeHasher = new VerificationCodeHasher(passwordResetSecret);
 	}
 
 	// 재설정 인증번호를 생성·저장하고 가입 이메일로 발송한다.
@@ -64,7 +53,9 @@ public class PasswordResetService {
 		LocalDateTime now = LocalDateTime.now(clock);
 		// 발송 제한을 가장 먼저 판정한다 — 존재 여부를 먼저 보면 제한을 초과한 요청자도 계정 상태를 알 수 있다.
 		// 429는 집계 행을 남기지 않는다(남기면 하루 10회 제한이 영구 차단으로 변한다).
-		checkSendRateLimit(email, now);
+		// 집계는 이메일 주소 단위이며, 미가입·소셜 전용으로 거부된 요청 행(code_hash NULL)도 함께 센다.
+		codePolicy.checkSendRateLimit(
+			now, since -> passwordResetVerificationRepository.countByEmailAndCreatedAtAfter(email, since));
 
 		User user = userRepository.findByEmail(email).orElse(null);
 		if (user == null) {
@@ -80,9 +71,9 @@ public class PasswordResetService {
 
 		expirePreviousCodes(email, now);
 
-		String code = generateCode();
+		String code = codePolicy.generateCode();
 		PasswordResetVerification verification = PasswordResetVerification.create(
-			email, hmac(code), now.plusMinutes(CODE_TTL_MINUTES), now);
+			email, codeHasher.hmac(code), codePolicy.expiresAt(now), now);
 		passwordResetVerificationRepository.save(verification);
 
 		// 발송은 저장 이후에 한다 — 발송 실패 시 저장과 이전 코드 무효화가 함께 롤백된다.
@@ -105,12 +96,12 @@ public class PasswordResetService {
 		if (verification.getConsumedAt() != null || !verification.getExpiresAt().isAfter(now)) {
 			throw new BusinessException(ErrorCode.EMAIL_VERIFICATION_FAILED);
 		}
-		if (verification.getAttemptCount() >= MAX_VERIFICATION_ATTEMPTS) {
+		if (codePolicy.isAttemptLimitReached(verification.getAttemptCount())) {
 			verification.incrementAttemptCount();
 			verification.expire(now);
 			throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS);
 		}
-		if (!verification.getCodeHash().equals(hmac(code))) {
+		if (!verification.getCodeHash().equals(codeHasher.hmac(code))) {
 			verification.incrementAttemptCount();
 			throw new BusinessException(ErrorCode.EMAIL_VERIFICATION_FAILED);
 		}
@@ -128,41 +119,12 @@ public class PasswordResetService {
 		return user;
 	}
 
-	// 발송 제한은 이메일 주소 단위이며, 미가입·소셜 전용으로 거부된 요청 행도 함께 집계한다.
-	private void checkSendRateLimit(String email, LocalDateTime now) {
-		if (passwordResetVerificationRepository.countByEmailAndCreatedAtAfter(
-			email, now.minusSeconds(RESEND_INTERVAL_SECONDS)) > 0) {
-			throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS);
-		}
-		if (passwordResetVerificationRepository.countByEmailAndCreatedAtAfter(email,
-			now.minusHours(1)) >= HOURLY_LIMIT) {
-			throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS);
-		}
-		if (passwordResetVerificationRepository.countByEmailAndCreatedAtAfter(email, now.minusDays(1)) >= DAILY_LIMIT) {
-			throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS);
-		}
-	}
-
 	// 재발송 시 같은 이메일의 이전 유효 코드를 무효화한다 — 실제로 발송된 행만 대상이다.
 	private void expirePreviousCodes(String email, LocalDateTime now) {
 		List<PasswordResetVerification> previous = passwordResetVerificationRepository
 			.findByEmailAndCodeHashIsNotNullAndConsumedAtIsNullAndExpiresAtAfter(email, now);
 		for (PasswordResetVerification verification : previous) {
 			verification.expire(now);
-		}
-	}
-
-	private String generateCode() {
-		return String.format(CODE_FORMAT, secureRandom.nextInt(CODE_BOUND));
-	}
-
-	private String hmac(String code) {
-		try {
-			Mac mac = Mac.getInstance(HMAC_ALGORITHM);
-			mac.init(new SecretKeySpec(hmacKey, HMAC_ALGORITHM));
-			return HexFormat.of().formatHex(mac.doFinal(code.getBytes(StandardCharsets.UTF_8)));
-		} catch (NoSuchAlgorithmException | InvalidKeyException ex) {
-			throw new IllegalStateException("비밀번호 재설정 인증번호 HMAC 계산에 실패했습니다.", ex);
 		}
 	}
 }
