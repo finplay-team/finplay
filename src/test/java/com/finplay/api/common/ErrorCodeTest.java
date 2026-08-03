@@ -65,6 +65,12 @@ class ErrorCodeTest {
 	}
 
 	@Test
+	void favoriteNotFoundKeepsPublicDefaultMessage() {
+		assertThat(ErrorCode.FAVORITE_NOT_FOUND.getDefaultMessage())
+			.isEqualTo("즐겨찾기를 찾을 수 없습니다.");
+	}
+
+	@Test
 	void exposesNonBlankDefaultMessageForEveryCode() {
 		for (ErrorCode code : ErrorCode.values()) {
 			assertThat(code.getDefaultMessage())

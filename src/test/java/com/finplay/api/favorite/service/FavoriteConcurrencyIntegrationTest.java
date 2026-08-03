@@ -2,6 +2,7 @@
 package com.finplay.api.favorite.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finplay.api.TestcontainersConfiguration;
 import com.finplay.api.auth.domain.User;
@@ -21,6 +22,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -121,7 +123,8 @@ class FavoriteConcurrencyIntegrationTest {
 					user.getId(), instrument.getId()).orElseThrow().getId();
 			}));
 			assertThat(secondStarted.await(5, TimeUnit.SECONDS)).isTrue();
-			assertThat(second).failsWithin(java.time.Duration.ofMillis(300));
+			assertThatThrownBy(() -> second.get(300, TimeUnit.MILLISECONDS))
+				.isInstanceOf(TimeoutException.class);
 
 			releaseFirst.countDown();
 
@@ -130,6 +133,7 @@ class FavoriteConcurrencyIntegrationTest {
 		} finally {
 			releaseFirst.countDown();
 			executor.shutdownNow();
+			assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
 		}
 	}
 
