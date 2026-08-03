@@ -11,8 +11,6 @@ import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -40,7 +38,6 @@ public class BithumbRestCandleProvider implements CryptoCandleProvider {
 	private static final String KRW_MARKET_PREFIX = "KRW-";
 	// 빗썸 캔들 API의 count 상한 (MKT-008) — from·to 범위가 이를 넘으면 to 기준 최신 count개로 캡한다.
 	private static final int MAX_COUNT = 200;
-	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
 	private final RestClient restClient;
 	private final Clock clock;
@@ -111,15 +108,17 @@ public class BithumbRestCandleProvider implements CryptoCandleProvider {
 		return (int)Math.min(MAX_COUNT, Math.max(1, units));
 	}
 
-	// 빗썸 to 파라미터는 UTC 기준이다 — 우리 내부 from·to는 KST LocalDateTime(주식과 같은 표현)이므로 변환한다.
+	// 빗썸 to 파라미터는 UTC가 아니라 candle_date_time_kst와 그대로 비교되는 KST 값이다(PR #164 리뷰(pcb2002)에서
+	// 실제 빗썸 API로 재현 확인 — KST→UTC로 변환해 보내면 9시간 밀린 엉뚱한 구간이 반환된다). 그래서 변환 없이
+	// 원본 KST LocalDateTime을 그대로 쓴다. 그리고 to는 그 정확한 경계 시각을 배제(exclusive)한다(이슈 #157
+	// 외부 스모크로 실측 확인 — to와 정확히 같은 시각에 시작하는 봉이 응답에서 빠짐). 우리 API의 to는 항상
+	// 포함(inclusive)이므로 1초를 더해 보낸다. 빗썸 최소 봉 간격(1분)보다 훨씬 작은 보정값이라 다음 봉을
+	// 끌어오지 않으면서 경계 봉만 포함시킨다 — interval별 분기가 필요 없다(1m·1d·1w·1M 공통).
 	private String resolveToParam(LocalDateTime to) {
 		if (to == null) {
 			return null;
 		}
-		return to.atZone(KST)
-			.withZoneSameInstant(ZoneOffset.UTC)
-			.toLocalDateTime()
-			.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+		return to.plusSeconds(1).format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
 	}
 
 	private List<BithumbCandleItem> fetchCandles(String endpoint, String market, String toParam, int count) {
