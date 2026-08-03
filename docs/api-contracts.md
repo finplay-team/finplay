@@ -402,13 +402,13 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 |---|---|---|---|---|---|---|
 | GET | /api/instruments/{instrumentId}/price-moves | Access Bearer 필수 | 경로 변수 `instrumentId`만(쿼리·본문 없음) | 200 `{"originTradeDate":"2026-07-29","moves":[{"id":12,"eventType":"INTRADAY","windowStart":"2026-07-29T11:20:00","windowEnd":"2026-07-29T11:25:00","changeRate":-0.0182,"narrative":"11시 20분부터 5분간 1.82% 하락했습니다. 같은 시간대에 생산 차질을 다룬 기사가 있었습니다.","sources":[{"type":"NEWS","title":"...","publisher":"한국경제","url":"https://...","publishedAt":"2026-07-29T11:15:00"}]}]}` (`PriceMoveListResponse`); 카드가 없으면 200 `{"originTradeDate":"2026-07-29","moves":[]}` | Access 인증 실패는 401 `UNAUTHORIZED`. `instrumentId` 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 012 FEED-006 |
 
-`originTradeDate`는 주식일 때 현재 재생세션의 원본 거래일이고, 코인은 실시간이므로 항상 `null`이다. `eventType`은 `INTRADAY`(장중 변동) 또는 `OPENING_GAP`(시가 갭)이다.
+`originTradeDate`는 주식일 때 현재 재생세션의 원본 거래일이고, 코인은 실시간이므로 항상 `null`이다. **재생세션이 `READY`가 아니면 주식도 `originTradeDate=null`·`moves=[]`이며 200이다** (오류가 아니다). `eventType`은 `INTRADAY`(장중 변동) 또는 `OPENING_GAP`(시가 갭)이다.
 
 **노출 필터**: 주식은 `(서비스 날짜 + revealTime) <= now()`인 카드만 반환한다 — 재생 방식이라 하루치 카드가 08:45 배치에서 이미 전부 생성돼 있으므로, 이 필터가 없으면 오후 사건이 오전에 노출되는 스포일러가 된다. `revealTime`은 응답에 포함하지 않는다(서버 내부 판정값). 코인은 `revealTime`이 `NULL`이고 최근 24시간 카드를 반환한다.
 
 `revealTime`은 **날짜가 아니라 `TIME`으로 저장**한다 — 같은 원본 거래일이 두 번 재생될 수 있어(수집이 하루 실패하면 스케줄러가 과거로 거슬러 올라간다) 절대 시각으로 두면 두 번째 재생일에 하루치가 09:00에 전부 열린다. **계산식은 spec §노출 판정이 정본이며 `eventType`에 따라 다르다** — 여기 옮겨 적지 않는다. 요지는 둘이다. 근거 기사가 카드보다 늦게 발행될 수 있으므로 그 시각까지 밀고, 전장 기사는 09:00으로 당긴다.
 
-**카드 개수**: 주식은 원본 거래일당 최대 3건이다 — 장중 변동 상위 2건 + 시가 갭 1건. 시가 갭은 직전 거래일 종가가 `stock_candles`에 있고 갭이 임계치를 넘을 때만 생성되므로 없을 수 있다. 코인은 종목당 일일 최대 6건이다.
+**카드 개수**: 주식은 원본 거래일당 `max-intraday-cards`건 + 시가 갭 1건이다 (§C-7). 시가 갭은 직전 거래일 종가가 `stock_candles`에 있고 갭이 임계치를 넘을 때만 생성되므로 없을 수 있다. 코인은 종목당 `daily-limit`건이다 (§C-7).
 
 **`sources`가 빈 배열인 카드는 존재하지 않는다** — 근거가 없으면 카드 자체를 만들지 않는다(FEED-003). `narrative`는 LLM 생성 문장이거나 후검증에 걸려 대체된 템플릿 문장이며, 어느 쪽이든 항상 채워진다.
 
@@ -416,7 +416,7 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 | Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|---|
-| GET | /api/ai/post-sell/{tradeId} | Access Bearer 필수 | 경로 변수 `tradeId`만(쿼리·본문 없음) | 200 `{"tradeId":2,"instrumentId":1,"symbol":"005930","name":"삼성전자","buyAt":"2026-07-29T09:30:00","sellAt":"2026-07-29T14:40:00","buyPrice":70000,"sellPrice":68500,"quantity":10,"fee":102,"realizedPnl":-15207,"returnRate":-0.0217,"holdingMinutes":310,"sameSessionCompleted":true,"holdHighPrice":70800,"holdHighAt":"2026-07-29T11:05:00","holdLowPrice":68100,"holdLowAt":"2026-07-29T14:20:00","sellVsHighRate":-0.0325,"sellVsLowRate":0.0059,"buyToNewsMinutes":105,"priceMoves":[{"id":12,"windowStart":"2026-07-29T11:20:00","windowEnd":"2026-07-29T11:25:00","changeRate":-0.0182,"minutesAfterBuy":115,"minutesBeforeSell":195,"narrative":"...","sources":[...]}],"postSellFlow":{"status":"READY","closePrice":69200,"closeAt":"2026-07-29T15:30:00","sellToCloseRate":0.0102,"postSellHighPrice":69500,"postSellHighAt":"2026-07-29T15:05:00"},"counterfactuals":{"status":"READY","atClose":{"price":69200,"at":"2026-07-29T15:30:00","returnRate":-0.0117},"atHoldHigh":{"price":70800,"at":"2026-07-29T11:05:00","returnRate":0.0111},"atFirstMoveAfterBuy":{"price":69300,"at":"2026-07-29T11:25:00","returnRate":-0.0103}},"peerComparison":{"status":"READY","priceMoveId":12,"holderCount":47,"soldWithin30MinRate":0.38,"medianMinutesToSell":42,"yourMinutesToSell":195},"narrative":"09시 30분 매수는 이날 하락 구간(11시 20분)보다 1시간 55분 앞섰습니다. 하락 이후에도 3시간 넘게 보유하다 14시 40분에 68,500원에 매도했습니다. 보유 중 최고가는 11시 5분의 70,800원으로 하락이 시작되기 15분 전이었고, 매도가는 그보다 3.25% 낮습니다.","narrativeSource":"LLM","narrativeStatus":"READY"}` (`PostSellFeedbackResponse`) | Access 인증 실패는 401 `UNAUTHORIZED`. `tradeId` 미존재는 404 `NOT_FOUND`. 타인 체결은 403 `FORBIDDEN`. 매수 체결(`side=BUY`)과 **코인 체결(`market=CRYPTO`)**은 400 `VALIDATION_ERROR` 공통 오류 형식 | 012 FEED-007 |
+| GET | /api/ai/post-sell/{tradeId} | Access Bearer 필수 | 경로 변수 `tradeId`만(쿼리·본문 없음) | 200 `{"tradeId":2,"instrumentId":1,"symbol":"005930","name":"삼성전자","buyAt":"2026-07-29T09:30:00","sellAt":"2026-07-29T14:40:00","buyPrice":70000,"sellPrice":68500,"quantity":10,"fee":102,"realizedPnl":-15207,"returnRate":-0.0217,"holdingMinutes":310,"sameSessionCompleted":true,"holdHighPrice":70800,"holdHighAt":"2026-07-29T11:05:00","holdLowPrice":68100,"holdLowAt":"2026-07-29T14:20:00","sellVsHighRate":-0.0325,"sellVsLowRate":0.0059,"buyToNewsMinutes":105,"priceMoves":[{"id":12,"windowStart":"2026-07-29T11:20:00","windowEnd":"2026-07-29T11:25:00","changeRate":-0.0182,"minutesAfterBuy":115,"minutesBeforeSell":195,"narrative":"...","sources":[...]}],"postSellFlow":{"status":"READY","closePrice":69200,"closeAt":"2026-07-29T15:29:00","sellToCloseRate":0.0102,"postSellHighPrice":69500,"postSellHighAt":"2026-07-29T15:05:00"},"counterfactuals":{"status":"READY","atClose":{"price":69200,"at":"2026-07-29T15:29:00","returnRate":-0.0117},"atHoldHigh":{"price":70800,"at":"2026-07-29T11:05:00","returnRate":0.0111},"atFirstMoveAfterBuy":{"price":69300,"at":"2026-07-29T11:25:00","returnRate":-0.0103}},"peerComparison":{"status":"READY","priceMoveId":12,"holderCount":47,"soldWithin30MinRate":0.38,"medianMinutesToSell":42,"yourMinutesToSell":195},"narrative":"09시 30분 매수는 이날 하락 구간(11시 20분)보다 1시간 55분 앞섰습니다. 하락 이후에도 3시간 넘게 보유하다 14시 40분에 68,500원에 매도했습니다. 보유 중 최고가는 11시 5분의 70,800원으로 하락이 시작되기 15분 전이었고, 매도가는 그보다 3.25% 낮습니다.","narrativeSource":"LLM","narrativeStatus":"READY"}` (`PostSellFeedbackResponse`) | Access 인증 실패는 401 `UNAUTHORIZED`. `tradeId` 미존재는 404 `NOT_FOUND`. 타인 체결은 403 `FORBIDDEN`. 매수 체결(`side=BUY`)과 **코인 체결(`market=CRYPTO`)**은 400 `VALIDATION_ERROR` 공통 오류 형식 | 012 FEED-007 |
 
 조회 대상은 요청에서 받지 않고 Access Token의 인증 사용자 본인 소유 매도 체결로만 결정한다.
 
@@ -470,11 +470,11 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 | Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|---|
-| GET | /api/instruments/{instrumentId}/news | Access Bearer 필수 | 경로 변수 `instrumentId`만(쿼리·본문 없음) | 200 (주식, 09:00~15:30) `{"originTradeDate":"2026-07-29","summaryScope":"PRE_MARKET","summaryStatus":"READY","summary":"직전 거래일 장 마감 이후 반도체 업황을 다룬 기사가 있었습니다. 같은 구간에 유상증자 관련 공시가 1건 접수됐습니다.","items":[{"type":"NEWS","title":"...","publisher":"매일경제","url":"https://...","publishedAt":"2026-07-28T18:40:00"},{"type":"DISCLOSURE","title":"주요사항보고서(유상증자결정)","publisher":"DART","url":"https://dart.fss.or.kr/...","publishedAt":"2026-07-28T00:00:00"}]}` (`InstrumentNewsResponse`); 기사가 없으면 200 `{"originTradeDate":"2026-07-29","summary":null,"summaryStatus":"EMPTY","items":[]}` | Access 인증 실패는 401 `UNAUTHORIZED`. `instrumentId` 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 012 FEED-008 |
+| GET | /api/instruments/{instrumentId}/news | Access Bearer 필수 | 경로 변수 `instrumentId`만(쿼리·본문 없음) | 200 (주식, 09:00~15:30) `{"originTradeDate":"2026-07-29","summaryScope":"PRE_MARKET","summaryStatus":"READY","summary":"직전 거래일 장 마감 이후 반도체 업황을 다룬 기사가 있었습니다. 같은 구간에 유상증자 관련 공시가 1건 접수됐습니다.","items":[{"type":"NEWS","title":"...","publisher":"매일경제","url":"https://...","publishedAt":"2026-07-28T18:40:00"},{"type":"DISCLOSURE","title":"주요사항보고서(유상증자결정)","publisher":"DART","url":"https://dart.fss.or.kr/...","publishedAt":"2026-07-28T00:00:00"}]}` (`InstrumentNewsResponse`); 기사가 없으면 200 `{"originTradeDate":"2026-07-29","summaryScope":"PRE_MARKET","summary":null,"summaryStatus":"EMPTY","items":[]}`; 09:00 이전이면 200 `{"originTradeDate":"2026-07-29","summaryScope":null,"summary":null,"summaryStatus":"NOT_YET","items":[]}` | Access 인증 실패는 401 `UNAUTHORIZED`. `instrumentId` 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 012 FEED-008 |
 
 Notion 1차 고도화 목록의 "뉴스 요약" 항목이다. 수집·저장은 변동 원인 카드(FEED-001)가 이미 하므로 이 엔드포인트는 **조회와 요약만** 추가한다.
 
-**주식은 다른 원본 거래일의 기사를 섞지 않는다.** 재생 중인 거래일과 기사 날짜가 어긋나면 화면의 가격 방향과 기사 내용이 반대가 되므로, 오늘 기사를 섞지 않는다. 범위 하한은 직전 거래일 마지막 분봉이다(아래 표). `originTradeDate`는 주식일 때 현재 재생세션의 원본 거래일이고 코인은 `null`이다.
+**주식은 다른 원본 거래일의 기사를 섞지 않는다.** 재생 중인 거래일과 기사 날짜가 어긋나면 화면의 가격 방향과 기사 내용이 반대가 되므로, 오늘 기사를 섞지 않는다. 범위 하한은 요약과 같다 — spec §C-2가 정본이다. `originTradeDate`는 주식일 때 현재 재생세션의 원본 거래일이고 코인은 `null`이다.
 
 **노출 필터**: 주식은 09:00 이전이거나 재생세션이 `READY`가 아니면 `summaryStatus="NOT_YET"`·`summaryScope=null`·`items=[]`이고, 개장 후에는 `publishedAt`이 현재 재생 시각을 지난 기사만 반환한다(전장 기사는 09:00으로 클램프). **`items`의 범위와 `summaryScope` 대응은 spec §C-2가 정본이다** — 여기 옮겨 적지 않는다. 요지는 "하한은 요약과 같고 상한만 재생 시각까지 넓다"이며, 요약이 목록보다 앞서지만 않으면 된다. 공시는 발행시각이 `00:00:00`뿐이라 날짜 조건으로 따로 판정하며 **원본 거래일 당일 접수분은 `FULL`에서만 나온다**(spec §C-3). **09:00 하한은 개장 전 브리핑과 동일하게 맞춘 것이다** — 두 API가 같은 전장 기사군을 다루므로 이쪽에 하한이 없으면 08:41에 조회해 브리핑이 감추는 기사를 먼저 볼 수 있다 — 변동 원인 카드의 `revealTime` 필터와 같은 목적이다. 15:00 기사를 09:30에 보여주면 앞으로 무슨 일이 일어날지 미리 알려주는 셈이 된다. 코인은 이 필터 없이 최근 24시간 기사를 반환한다.
 
@@ -487,7 +487,7 @@ Notion 1차 고도화 목록의 "뉴스 요약" 항목이다. 수집·저장은 
 | STOCK | 15:30 이후 | `FULL` | §C-2의 `FULL` |
 | CRYPTO | 언제나 | `ROLLING_24H` | 최근 24시간 |
 
-마지막 분봉 이후 같은 종목을 다시 조회하면 `summaryScope`가 `FULL`로 바뀌고 요약도 하루 전체를 다룬 문장으로 교체된다 — `{"summaryScope":"FULL","summary":"반도체 업황 기사가 오전에 집중됐고, 오후에는 생산 차질을 다룬 보도가 이어졌습니다. …"}`. **이 문장이 09:00에 나가면 안 되는 것이 이 설계의 요지다.**
+15:30 이후 같은 종목을 다시 조회하면 `summaryScope`가 `FULL`로 바뀌고 요약도 하루 전체를 다룬 문장으로 교체된다 — `{"summaryScope":"FULL","summary":"반도체 업황 기사가 오전에 집중됐고, 오후에는 생산 차질을 다룬 보도가 이어졌습니다. …"}`. **이 문장이 09:00에 나가면 안 되는 것이 이 설계의 요지다.**
 
 **코인은 범위가 하나뿐이다.** 24시간 거래라 '전장'도 '거래일 경계'도 없어 두 범위로 나눌 수 없다. 주식처럼 개장 전에 하루치를 만들어 둘 시점이 없으므로 **매시 05분 코인 배치가 갱신한다**(`feedback.batch.crypto-cron`). 저장은 새 행이 아니라 **같은 행의 갱신(UPSERT)**이며 종목당 하루 1행을 유지한다.
 
@@ -497,7 +497,7 @@ Notion 1차 고도화 목록의 "뉴스 요약" 항목이다. 수집·저장은 
 
 요약은 회원별이 아니다 — `(종목, 원본 거래일, 범위)` 단위로 1건씩 생성해 전 회원이 공유한다.
 
-**`summaryStatus`**는 `READY` · `NOT_YET`(주식, 09:00 이전 또는 재생세션 미준비) · `EMPTY`(기사 없음, **또는 요약 행이 아직 없음** — 배치 미실행·배포 당일) · `UNAVAILABLE`(LLM 호출 실패 **또는 후검증 재생성 1회 후에도 금지 표현이 남음**)이다. **판정 순서는 spec §C-4의 표를 따른다.** **`EMPTY`가 행 없음 때문일 때와 `UNAVAILABLE`일 때는 `items`가 채워진다.** `EMPTY`·`UNAVAILABLE`이어도 상태코드는 200이며, `UNAVAILABLE`일 때 `items`는 그대로 채워진다 — 요약이 없어도 기사 목록 자체는 쓸모가 있다.
+**`summaryStatus`**는 `READY` · `NOT_YET`(주식, 09:00 이전 또는 재생세션 미준비) · `EMPTY`(기사 없음, **또는 요약 행이 아직 없음** — 배치 미실행·배포 당일) · `UNAVAILABLE`(LLM 호출 실패 **또는 후검증 재생성 1회 후에도 금지 표현이 남음**)이다. **판정 순서는 spec §C-4의 표를 따른다.** **`EMPTY`가 행 없음 때문일 때와 `UNAVAILABLE`일 때는 `items`가 채워진다.** `EMPTY`·어느 값이든 상태코드는 200이다.
 
 **저작권**: `items`의 각 항목은 제목·언론사·원문 URL·발행시각만 노출하고 본문은 어떤 형태로도 포함하지 않는다. `summary`는 여러 기사를 종합한 서술이며 특정 기사의 문장을 그대로 옮기지 않는다. 공시(`type=DISCLOSURE`)는 OpenDART가 접수일자만 제공하므로 `publishedAt`의 시각 부분이 항상 `00:00:00`이다. **그래서 구간이 아니라 날짜로 판정한다** — `PRE_MARKET`·브리핑에는 **직전 거래일 접수분만** 넣고 09:00부터 노출하며, **원본 거래일 접수분은 `FULL`에서만** 나온다. 구간으로 거르면 간밤 공시가 빠지고 장중 접수 공시가 아침에 들어온다(spec §C-3).
 
