@@ -71,7 +71,10 @@ C-004의 나머지("숫자와 판정은 서버가 계산하고 AI는 관찰형 �
 
 ### FEED-001 뉴스·공시 수집
 
-- [ ] 주식 16종목에 대해 **원본 거래일 기준** 뉴스와 공시를 수집해 `market_news_items`에 저장한다.
+- [ ] 주식 16종목과 **코인 12종목** 뉴스를 수집해 `market_news_items`에 저장한다. 공시는 주식만 해당한다.
+- [ ] **수집은 재생 시점이 아니라 기사가 나오는 당일에 한다.** `feedback.news.collect-cron` 기본값은 평일 08:00~16:00의 30분 간격이며, 코인은 24시간 거래이므로 `feedback.news.collect-cron-crypto`로 전 시간대 2시간 간격을 따로 둔다. **하루 한 번 몰아서 긁으면 안 된다** — 네이버 API가 날짜 범위 지정을 지원하지 않고 `display` 상한이 100이라, 대형주는 그날 기사만으로 100건을 넘겨 재생 시점에 소급 수집하면 앞부분이 잘린다.
+- [ ] 수집 시각의 기사를 저장하므로, 원본 거래일 D의 기사는 **D 당일에 이미 DB에 있다.** D+1에 D를 재생할 때는 조회만 한다.
+- [ ] 코인은 심볼을 검색어로 쓸 수 없으므로 `instruments.name`(예: `비트코인`)을 질의어로 쓴다. 매핑 규칙은 이 한 줄이 전부이며 별도 테이블을 만들지 않는다.
 - [ ] 뉴스는 네이버 뉴스 검색 API, 공시는 OpenDART 공시검색 API에서 가져온다 (§외부 API 호출 상세).
 - [ ] **기사 본문은 저장하지 않는다** — `title`·`publisher`·`url`·`published_at`만 저장한다.
 - [ ] 같은 원문 URL의 중복 저장을 `UNIQUE(url)`로 막는다. 중복은 오류가 아니라 무시한다.
@@ -99,6 +102,7 @@ C-004의 나머지("숫자와 판정은 서버가 계산하고 AI는 관찰형 �
 ### FEED-004 주식 사전 배치
 
 - [ ] 재생세션이 `READY`로 확정된 직후(기존 08:40 배치 뒤에 이어서) 그 원본 거래일 전체에 대해 FEED-002·003·008·009를 실행한다.
+- [ ] **FEED-001 수집은 이 배치에 포함하지 않는다.** 수집은 기사가 나오는 당일에 상시로 돌고, 이 배치는 이미 저장된 기사를 읽어 카드·요약·브리핑을 만들기만 한다.
 - [ ] 각 카드에 노출 가능 시각 `reveal_at`을 부여한다 (§노출 판정).
 - [ ] 재생세션이 `READY`가 아니면 아무것도 생성하지 않는다.
 - [ ] 같은 서비스 날짜에 배치가 두 번 실행돼도 중복 생성되지 않는다 (`UNIQUE` 제약 + 존재 시 건너뜀).
@@ -139,7 +143,8 @@ C-004의 나머지("숫자와 판정은 서버가 계산하고 AI는 관찰형 �
 - [ ] 주식은 **`published_at`이 현재 재생 시각을 지난 기사만** 노출한다.
 - [ ] **주식은 09:00 이전에 `summaryStatus="NOT_YET"`·`items=[]`로 응답한다.** Part D와 같은 전장(前場) 기사군을 다루므로 하한이 없으면 08:41에 이 API로 조회해 **Part D가 09:00까지 감추는 기사를 20분 먼저 볼 수 있다** — 미래 가격 유출은 아니지만 브리핑 게이트가 무력화된다. 두 API의 하한을 같게 맞춘다.
 - [ ] 코인은 최근 24시간 기사를 반환한다.
-- [ ] 요약은 `(종목, 원본 거래일)` 단위로 1건만 생성해 전 회원이 공유한다.
+- [ ] **요약은 두 개를 만든다** — `PRE_MARKET`(전장 기사만)과 `FULL`(원본 거래일 전체). 각각 `(종목, 원본 거래일, 범위)` 단위로 1건이며 전 회원이 공유한다.
+- [ ] **09:00~15:30에는 `PRE_MARKET` 요약만 반환하고, 15:30 이후에 `FULL`로 바꾼다.** 하루 전체를 요약한 문장은 장중 기사를 언급하므로, 그대로 09:00에 노출하면 **`items`에 하한을 걸어도 요약 한 문장이 그날 오후를 통째로 알려준다**(예: "오후에는 생산 차질 보도가 이어졌습니다"). `items` 게이트보다 유출 폭이 크다.
 - [ ] 요약은 여러 기사를 종합한 **3~5문장**이며 특정 기사의 문장을 그대로 옮기지 않는다.
 - [ ] 기사가 없으면 `summary=null`·`summaryStatus="EMPTY"`·`items=[]`로 200 응답한다.
 - [ ] 각 기사는 제목·언론사·원문 URL·발행시각만 노출하고 본문은 노출하지 않는다.
@@ -172,8 +177,8 @@ C-004의 나머지("숫자와 판정은 서버가 계산하고 AI는 관찰형 �
 
 - [ ] 매도 회고 응답에 `peerComparison`을 포함한다 — 같은 변동 구간을 겪은 다른 회원들의 행동 분포.
 - [ ] 집계 단위는 `(종목, 원본 거래일, 변동 카드)`이며 그 시점에 해당 종목을 보유 중이던 회원이 모집단이다.
-- [ ] 지표는 셋이다 — 모집단 크기, 카드 시점 이후 30분 내 매도한 비율, 매도까지 걸린 시간의 중앙값.
-- [ ] **모집단이 5명 미만이면 `status="INSUFFICIENT_SAMPLE"`로 숨긴다** — 기존 명세의 "유사 사례 5건 이상일 때만 노출" 관행을 따른다.
+- [ ] 모집단 지표는 셋이다 — 모집단 크기, 카드 시점 이후 30분 내 매도한 비율, 매도까지 걸린 시간의 중앙값. 여기에 비교 기준으로 **본인의 매도까지 걸린 시간**(`yourMinutesToSell`)을 함께 내려보낸다.
+- [ ] **모집단이 5명 미만이면 `status="INSUFFICIENT_SAMPLE"`로 모집단 지표 셋을 `null`로 숨긴다** — 기존 명세의 "유사 사례 5건 이상일 때만 노출" 관행을 따른다. 본인 값(`yourMinutesToSell`)은 남긴다.
 - [ ] 개인을 식별할 수 있는 값(회원 ID, 닉네임, 개별 체결)은 어떤 형태로도 포함하지 않는다.
 - [ ] **장 마감 이후에만 채운다** — 장중에는 계속 바뀌는 값이라 확정 집계가 되지 않는다.
 - [ ] 집단 비교는 사실 진술이므로 **AI 서술에 넣어도 된다** (반사실과 다르다).
@@ -215,6 +220,16 @@ feedback/
 
 `PriceMoveDetector`는 **분봉 리스트를 받아 이벤트 리스트를 반환하는 순수 함수**로 만든다. DB·시계·LLM에 의존하지 않아야 고정 픽스처로 단위 테스트할 수 있다.
 
+**다른 도메인 데이터는 서비스를 경유한다** (`docs/conventions.md` — 다른 도메인의 repository를 직접 주입하지 않는다). `feedback`이 필요로 하는 경로는 셋이다.
+
+| 필요한 것 | 경유할 서비스 | 쓰는 곳 |
+|---|---|---|
+| 분봉 (원본 거래일) | `market`의 캔들 조회 서비스 | 변동 탐지, 보유 구간 극값, 반사실 |
+| 매도 체결과 FIFO 배분 | `order`의 체결 조회 서비스 | 매도 회고 수치 |
+| 특정 시점 보유자와 체결 시각 | `order`(또는 `portfolio`)에 **집계 전용 조회 메서드를 신설**해 제공받는다 | 집단 비교 |
+
+집단 비교는 전 회원 체결을 훑는 집계라 `feedback` 안에서 네이티브 쿼리를 짜기 쉬운 자리다. **그렇게 하지 않는다** — 소유 도메인에 집계 메서드를 만들고 결과만 받는다. 반환은 회원 식별자가 없는 집계 값이어야 한다.
+
 ### 설정값
 
 `application.yml`에 기본값을 두고 `application-local.yml`에서 덮어쓴다. **모든 값에 기본값이 있으므로 설정 없이도 기동한다.**
@@ -228,6 +243,8 @@ feedback:
     max-intraday-cards: 2       # 종목·거래일당 장중 카드 수
     opening-gap-threshold: 0.01 # 시가 갭 최소 절댓값 (1%)
   news:
+    collect-cron: "0 0/30 8-16 * * MON-FRI"   # 주식·공시 수집 (기사가 나오는 당일)
+    collect-cron-crypto: "0 0 0/2 * * *"      # 코인 수집 (24시간 거래)
     match-before-minutes: 30    # 이벤트 시각 이전 탐색 범위
     match-after-minutes: 5      # 이벤트 시각 이후 탐색 범위
     max-sources-per-card: 5     # 카드 1건에 붙일 최대 근거 수
@@ -319,11 +336,13 @@ gap  = (open - prevClose) / prevClose
 
 ```
 서비스 날짜 S, 카드의 windowEnd 시각 HH:mm
-  revealAt = S일 HH:mm (KST)
+  revealAt = S일 max(windowEnd, 근거 기사 중 가장 늦은 publishedAt)
 
 조회 시: revealAt <= now() 인 카드만 반환
 코인: revealAt IS NULL → 필터 없이 최근 24시간
 ```
+
+**`windowEnd`가 아니라 근거 기사 시각까지 포함해 최댓값을 쓴다.** 근거 후보 범위가 `[windowEnd − 30분, windowEnd + 5분]`이라 **카드보다 최대 5분 늦게 발행된 기사가 붙을 수 있는데**, `revealAt = windowEnd`로 두면 그 기사를 Part C보다 5분 먼저 보게 된다. Part C는 `publishedAt` 기준으로 거르므로 두 API 사이에 비대칭이 생긴다.
 
 Part C의 기사 노출도 같은 원리다 — `published_at`의 시각 부분을 서비스 날짜에 대응시켜 `now()`와 비교한다. 공시는 `published_at`이 `00:00:00`이라 개장 시점부터 노출된다.
 
@@ -372,8 +391,9 @@ Part C의 기사 노출도 같은 원리다 — `published_at`의 시각 부분�
   시나리오 3개
     atClose             P = 원본 거래일 15:30 종가
     atHoldHigh          P = 보유 구간 최고가 (시각도 함께)
-    atFirstMoveAfterBuy P = 매수 후 첫 변동 카드의 windowEnd 종가
-                          (카드가 없으면 null)
+    atFirstMoveAfterBuy P = 보유 구간(매수~매도) 안의 첫 변동 카드의 windowEnd 종가
+                          보유 구간에 카드가 없으면 null
+                          (매도 이후의 카드는 쓰지 않는다 — 보유하지 않은 구간이다)
 
 [집단 비교]  (종목, 원본 거래일, 변동 카드) 단위
   모집단 = 카드 windowEnd 시점에 그 종목을 보유 중이던 회원
@@ -382,7 +402,13 @@ Part C의 기사 노출도 같은 원리다 — `published_at`의 시각 부분�
   medianMinutesToSell    카드 windowEnd → 매도까지 걸린 시간의 중앙값
                          (장 마감까지 안 판 회원은 중앙값 계산에서 제외)
 
-  holderCount < 5 이면 status = INSUFFICIENT_SAMPLE, 지표는 전부 null
+  yourMinutesToSell      본인의 (매도시각 - 카드 windowEnd) 분
+                         모집단 통계가 아니라 비교 기준값이므로
+                         INSUFFICIENT_SAMPLE 일 때도 채운다
+
+  holderCount < 5 이면 status = INSUFFICIENT_SAMPLE
+                       holderCount·soldWithin30MinRate·medianMinutesToSell 은 null
+                       yourMinutesToSell 만 남긴다
 ```
 
 둘 다 **`now() >= 서비스 날짜 15:30`일 때만 채운다.** 반사실은 아직 재생되지 않은 가격을 쓰므로 미래 정보고, 집단 비교는 장중에 계속 바뀌어 확정 집계가 안 된다.
@@ -418,7 +444,8 @@ Part C의 기사 노출도 같은 원리다 — `published_at`의 시각 부분�
 | 장중 카드 | `[windowEnd − 30분, windowEnd + 5분]` | 뉴스만 |
 | 시가 갭 카드 | 직전 거래일 15:30 ~ 당일 09:00 | 뉴스 + 공시 |
 | 개장 전 브리핑 | 직전 거래일 15:30 ~ 당일 09:00 | 뉴스 + 공시, 전 종목 |
-| 종목 뉴스 요약 | 원본 거래일 00:00 ~ 23:59 | 뉴스 + 공시, 종목별 |
+| 종목 뉴스 요약 `PRE_MARKET` | 직전 거래일 15:30 ~ 당일 09:00 | 뉴스 + 공시, 종목별 |
+| 종목 뉴스 요약 `FULL` | 원본 거래일 00:00 ~ 23:59 | 뉴스 + 공시, 종목별 |
 
 근거가 `max-sources-per-card`를 넘으면 발행시각이 이벤트에 가까운 순으로 자른다.
 
@@ -460,15 +487,15 @@ Part C의 기사 노출도 같은 원리다 — `published_at`의 시각 부분�
 매도: 14:40, 68,500원 10주
 수익률: -2.17% (실현손익 -15,205원)
 
-보유 중 최고가: 11:05의 70,800원 (매도가보다 3.2% 높음)
-보유 중 최저가: 14:20의 68,100원 (매도가보다 0.6% 낮음)
+보유 중 최고가: 11:05의 70,800원 (매도가가 3.25% 낮음)
+보유 중 최저가: 14:20의 68,100원 (매도가가 0.59% 높음)
 매수는 첫 근거 기사(11:15)보다 105분 앞섰습니다.
 
 보유 구간에 걸친 변동:
-- 11:20~11:25 -1.82% (매수 110분 뒤, 매도 195분 전)
+- 11:20~11:25 -1.82% (매수 115분 뒤, 매도 195분 전)
   근거: 삼성전자 반도체 공장 가동 일시 중단 (한국경제, 11:15)
 
-매도 후 흐름: 15:30 종가 69,200원 (매도가보다 1.0% 높음)
+매도 후 흐름: 15:30 종가 69,200원 (매도가보다 1.02% 높음)
 
 위 내용을 2~3문장으로 서술해줘. 수치를 그대로 나열하지 말고,
 매수·매도 시각이 변동·기사와 어떤 순서였는지를 중심으로 써줘.
@@ -550,9 +577,12 @@ Flyway `V13__create_ai_feedback_tables.sql` 하나로 추가한다 (ADR-0004).
 market_news_items              뉴스·공시 통합
   id, instrument_id, type(NEWS|DISCLOSURE), title, publisher, url,
   published_at, created_at
-  UNIQUE(url)
+  UNIQUE(instrument_id, url)
   INDEX(instrument_id, published_at)
   -- 본문 컬럼 없음 (저작권)
+  -- url 단독 유니크로 두면 안 된다. "반도체 업황 둔화" 같은 기사는
+  -- 삼성전자·SK하이닉스 검색 결과에 모두 나오는데, 먼저 저장된 한 종목만
+  -- 남고 나머지는 근거 0건이 되어 카드가 생성되지 않는다.
 
 price_move_events              변동 구간 원장 + 서술
   id, instrument_id, market, event_type(INTRADAY|OPENING_GAP),
@@ -560,15 +590,20 @@ price_move_events              변동 구간 원장 + 서술
   detection_score, narrative, narrative_source(LLM|TEMPLATE),
   reveal_at, created_at
   UNIQUE(instrument_id, origin_trade_date, window_start)
+  -- 코인은 원본 거래일이 없으므로 origin_trade_date에 생성 시점의
+  -- KST 날짜를 채운다. NULL로 두면 MySQL 유니크가 중복을 허용해
+  -- 중복 방지가 무력화되고, FEED-005의 일일 상한을 셀 컬럼도 없어진다.
+  -- 응답에서는 코인의 originTradeDate를 null로 내린다.
 
 price_move_event_sources       이벤트 ↔ 근거 (N:M)
   id, price_move_event_id, market_news_item_id
   UNIQUE(price_move_event_id, market_news_item_id)
 
 instrument_news_summaries      종목·거래일 요약 (전 회원 공유)
-  id, instrument_id, origin_trade_date, summary,
-  narrative_source, generated_at
-  UNIQUE(instrument_id, origin_trade_date)
+  id, instrument_id, origin_trade_date, scope(PRE_MARKET|FULL),
+  summary, narrative_source, generated_at
+  UNIQUE(instrument_id, origin_trade_date, scope)
+  -- 범위별로 2건 생성한다. 09:00~15:30은 PRE_MARKET, 이후 FULL.
 
 market_briefings               시장·거래일 개장 전 브리핑 (전 회원 공유)
   id, market, origin_trade_date, summary,
@@ -628,6 +663,11 @@ trade_feedbacks                매도 직후 서술 (회원별)
 - [ ] `reveal_at`이 지나지 않은 카드가 조회에서 제외되는 통합 테스트 통과 (스포일러 차단).
 - [ ] Part C 기사 목록이 **원본 거래일 기사만** 반환하고 재생 시각을 지난 것만 노출하는 통합 테스트 통과.
 - [ ] **Part C와 Part D의 09:00 하한이 동일한** 통합 테스트 통과 — 08:41에 두 API를 모두 호출해 어느 쪽에서도 전장 기사가 나오지 않음을 확인한다 (게이트 비대칭 회귀 방어).
+- [ ] **Part C 요약이 장중에 장중 기사를 언급하지 않는** 통합 테스트 통과 — 오후 기사를 픽스처에 넣고 11:00에 조회해 `summaryScope="PRE_MARKET"`이며 요약 문자열에 그 기사 내용이 없음을 확인한다. 15:31에 다시 조회하면 `FULL`로 바뀌어야 한다.
+- [ ] **변동 원인 카드의 근거 기사가 Part C보다 먼저 노출되지 않는** 통합 테스트 통과 — `windowEnd`보다 늦게 발행된 근거를 픽스처에 넣고 `revealAt`이 그 기사 시각까지 밀리는지 확인한다.
+- [ ] 같은 기사 URL이 두 종목에 각각 저장되는 단위 테스트 통과 (`UNIQUE(instrument_id, url)`).
+- [ ] 코인 카드가 같은 날 중복 생성되지 않는 통합 테스트 통과 — `origin_trade_date`가 채워져야 유니크 제약이 작동한다.
+- [ ] 수집이 **재생 시점이 아니라 기사 당일**에 이루어지는지 확인하는 테스트 통과 — 원본 거래일 D의 기사가 D+1 배치 시점에 이미 DB에 있어야 한다.
 - [ ] **Part D 브리핑에 장중 기사가 한 건도 포함되지 않는** 통합 테스트 통과 — 장중 기사를 픽스처에 넣고 응답에 없음을 확인한다.
 - [ ] Part D가 09:00 이전에 `status="NOT_YET"`, 재생세션 미준비 시 `status="EMPTY"`로 200 응답하는 테스트 통과.
 - [ ] 같은 서비스 날짜에 배치를 두 번 실행해도 카드·요약·브리핑이 중복 생성되지 않는 통합 테스트 통과.
