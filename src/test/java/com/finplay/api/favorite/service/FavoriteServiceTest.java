@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import com.finplay.api.auth.domain.User;
@@ -13,6 +15,7 @@ import com.finplay.api.auth.service.UserQueryService;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.favorite.domain.Favorite;
+import com.finplay.api.favorite.dto.response.FavoriteListResponse;
 import com.finplay.api.favorite.dto.response.FavoriteResponse;
 import com.finplay.api.favorite.repository.FavoriteRepository;
 import com.finplay.api.market.domain.Instrument;
@@ -22,6 +25,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -41,6 +45,29 @@ class FavoriteServiceTest {
 		userQueryService = mock(UserQueryService.class);
 		favoriteService = new FavoriteService(
 			favoriteRepository, instrumentService, userQueryService, Clock.fixed(NOW, ZoneOffset.UTC));
+	}
+
+	@Test
+	void getFavoritesReturnsActualFieldsWithoutWriting() {
+		Instrument instrument = mock(Instrument.class);
+		Favorite favorite = mock(Favorite.class);
+		when(instrument.getId()).thenReturn(10L);
+		when(instrument.getMarket()).thenReturn(Market.STOCK);
+		when(instrument.getSymbol()).thenReturn("005930");
+		when(instrument.getName()).thenReturn("삼성전자");
+		when(favorite.getId()).thenReturn(99L);
+		when(favorite.getInstrument()).thenReturn(instrument);
+		when(favorite.getCreatedAt()).thenReturn(now());
+		when(favoriteRepository.findAllByUserIdOrderByCreatedAtDescIdDesc(7L))
+			.thenReturn(List.of(favorite));
+
+		FavoriteListResponse result = favoriteService.getFavorites(7L);
+
+		assertThat(result.content()).containsExactly(new FavoriteResponse(
+			99L, 10L, "STOCK", "005930", "삼성전자", now()));
+		verify(favoriteRepository).findAllByUserIdOrderByCreatedAtDescIdDesc(7L);
+		verifyNoMoreInteractions(favoriteRepository);
+		verifyNoInteractions(instrumentService, userQueryService);
 	}
 
 	@Test

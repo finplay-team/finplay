@@ -3,6 +3,7 @@ package com.finplay.api.favorite.controller;
 
 import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.favorite.dto.request.FavoriteCreateRequest;
+import com.finplay.api.favorite.dto.response.FavoriteListResponse;
 import com.finplay.api.favorite.dto.response.FavoriteResponse;
 import com.finplay.api.favorite.service.FavoriteService;
 import jakarta.validation.Valid;
@@ -10,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -21,6 +23,13 @@ import org.springframework.web.bind.annotation.RestController;
 public class FavoriteController {
 
 	private final FavoriteService favoriteService;
+
+	@GetMapping
+	public ResponseEntity<FavoriteListResponse> getFavorites(
+		@AuthenticationPrincipal
+		AuthenticatedUser principal) {
+		return ResponseEntity.ok(favoriteService.getFavorites(principal.userId()));
+	}
 
 	@PostMapping
 	public ResponseEntity<FavoriteResponse> createFavorite(

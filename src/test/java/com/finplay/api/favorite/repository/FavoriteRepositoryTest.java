@@ -11,6 +11,7 @@ import com.finplay.api.favorite.domain.Favorite;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.repository.InstrumentRepository;
+import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -37,6 +38,8 @@ class FavoriteRepositoryTest {
 	private InstrumentRepository instrumentRepository;
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
+	@Autowired
+	private EntityManager entityManager;
 	private User user;
 	private Instrument instrument;
 
@@ -45,6 +48,31 @@ class FavoriteRepositoryTest {
 		user = userRepository.saveAndFlush(User.create("favorite@finplay.com", "hash", "favorite-user", NOW));
 		instrument = instrumentRepository.saveAndFlush(Instrument.create(
 			Market.STOCK, "FAV163", "즐겨찾기 종목", BigDecimal.ONE, 1L, true, NOW));
+	}
+
+	@Test
+	void findAllByUserIdReturnsOnlyOwnedFavoritesNewestFirstWithIdTieBreak() {
+		User otherUser = userRepository.saveAndFlush(User.create(
+			"favorite-other@finplay.com", "hash", "favorite-other", NOW));
+		Instrument olderInstrument = instrumentRepository.saveAndFlush(Instrument.create(
+			Market.STOCK, "FAV168A", "이전 종목", BigDecimal.ONE, 1L, true, NOW));
+		Instrument tiedFirstInstrument = instrumentRepository.saveAndFlush(Instrument.create(
+			Market.CRYPTO, "FAV168B", "동시 첫 종목", BigDecimal.ONE, 1L, true, NOW));
+		Instrument tiedSecondInstrument = instrumentRepository.saveAndFlush(Instrument.create(
+			Market.STOCK, "FAV168C", "동시 둘째 종목", BigDecimal.ONE, 1L, true, NOW));
+		Favorite older = favoriteRepository.saveAndFlush(Favorite.create(user, olderInstrument, NOW.minusMinutes(1)));
+		Favorite tiedFirst = favoriteRepository.saveAndFlush(Favorite.create(user, tiedFirstInstrument, NOW));
+		Favorite tiedSecond = favoriteRepository.saveAndFlush(Favorite.create(user, tiedSecondInstrument, NOW));
+		favoriteRepository.saveAndFlush(Favorite.create(otherUser, instrument, NOW.plusMinutes(1)));
+		entityManager.clear();
+
+		List<Favorite> result = favoriteRepository.findAllByUserIdOrderByCreatedAtDescIdDesc(user.getId());
+
+		assertThat(result).extracting(Favorite::getId)
+			.containsExactly(tiedSecond.getId(), tiedFirst.getId(), older.getId());
+		assertThat(result).extracting(favorite -> favorite.getInstrument().getName())
+			.containsExactly("동시 둘째 종목", "동시 첫 종목", "이전 종목");
+		assertThat(favoriteRepository.count()).isEqualTo(4L);
 	}
 
 	@Test

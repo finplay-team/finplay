@@ -3,6 +3,7 @@ package com.finplay.api.favorite.controller;
 
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -12,9 +13,11 @@ import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.auth.token.JwtTokenProvider;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
+import com.finplay.api.favorite.dto.response.FavoriteListResponse;
 import com.finplay.api.favorite.dto.response.FavoriteResponse;
 import com.finplay.api.favorite.service.FavoriteService;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,6 +41,43 @@ class FavoriteControllerTest {
 	private FavoriteService favoriteService;
 	@MockitoBean
 	private JwtTokenProvider jwtTokenProvider;
+
+	@Test
+	void getFavoritesReturnsEveryActualField() throws Exception {
+		authenticate();
+		when(favoriteService.getFavorites(USER_ID)).thenReturn(new FavoriteListResponse(List.of(
+			new FavoriteResponse(99L, 10L, "STOCK", "005930", "삼성전자",
+				LocalDateTime.of(2026, 8, 3, 10, 0)))));
+
+		mockMvc.perform(get("/api/favorites").header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.content.length()").value(1))
+			.andExpect(jsonPath("$.content[0].favoriteId").value(99))
+			.andExpect(jsonPath("$.content[0].instrumentId").value(10))
+			.andExpect(jsonPath("$.content[0].market").value("STOCK"))
+			.andExpect(jsonPath("$.content[0].symbol").value("005930"))
+			.andExpect(jsonPath("$.content[0].name").value("삼성전자"))
+			.andExpect(jsonPath("$.content[0].createdAt").value("2026-08-03T10:00:00"));
+	}
+
+	@Test
+	void getFavoritesReturnsEmptyContent() throws Exception {
+		authenticate();
+		when(favoriteService.getFavorites(USER_ID)).thenReturn(new FavoriteListResponse(List.of()));
+
+		mockMvc.perform(get("/api/favorites").header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.content").isArray())
+			.andExpect(jsonPath("$.content").isEmpty());
+	}
+
+	@Test
+	void getFavoritesRejectsMissingAuthentication() throws Exception {
+		mockMvc.perform(get("/api/favorites"))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"));
+		verifyNoInteractions(favoriteService);
+	}
 
 	@Test
 	void createFavoriteReturnsCreatedWithEveryField() throws Exception {
