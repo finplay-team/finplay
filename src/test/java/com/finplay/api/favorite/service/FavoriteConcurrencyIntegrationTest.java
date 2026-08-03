@@ -13,17 +13,18 @@ import com.finplay.api.favorite.repository.FavoriteRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.repository.InstrumentRepository;
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
@@ -37,14 +38,26 @@ class FavoriteConcurrencyIntegrationTest {
 	private UserRepository userRepository;
 	@Autowired
 	private InstrumentRepository instrumentRepository;
+	@Autowired
+	private JdbcTemplate jdbcTemplate;
+	private Long createdUserId;
+
+	@AfterEach
+	void cleanUpCreatedUser() {
+		if (createdUserId == null) {
+			return;
+		}
+		jdbcTemplate.update("DELETE FROM favorites WHERE user_id = ?", createdUserId);
+		userRepository.deleteById(createdUserId);
+	}
 
 	@Test
 	void concurrentCreateFavoritePersistsOneRowAndMapsLoserToConflict() throws Exception {
 		LocalDateTime now = LocalDateTime.of(2026, 8, 3, 10, 0);
 		User user = userRepository.saveAndFlush(User.create(
 			"favorite-race-163@finplay.com", "hash", "favorite-race-163", now));
-		Instrument instrument = instrumentRepository.saveAndFlush(Instrument.create(
-			Market.STOCK, "RACE163", "동시 등록 종목", BigDecimal.ONE, 1L, true, now));
+		createdUserId = user.getId();
+		Instrument instrument = instrumentRepository.findByMarketOrderByIdAsc(Market.STOCK).get(0);
 		CountDownLatch ready = new CountDownLatch(2);
 		CountDownLatch start = new CountDownLatch(1);
 		Callable<Object> request = () -> {
@@ -70,6 +83,9 @@ class FavoriteConcurrencyIntegrationTest {
 		} finally {
 			executor.shutdownNow();
 		}
-		assertThat(favoriteRepository.count()).isEqualTo(1L);
+		Long matchingFavoriteCount = jdbcTemplate.queryForObject(
+			"SELECT COUNT(*) FROM favorites WHERE user_id = ? AND instrument_id = ?",
+			Long.class, user.getId(), instrument.getId());
+		assertThat(matchingFavoriteCount).isEqualTo(1L);
 	}
 }
