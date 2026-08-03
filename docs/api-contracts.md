@@ -450,7 +450,7 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 **`peerComparison` — 모든 회원이 같은 분봉을 보기 때문에 성립한다.** 같은 변동 구간을 겪은 다른 회원들이 어떻게 행동했는지를 익명 집계로 보여준다.
 
-**기준 카드는 보유 구간 안의 첫 변동 카드 하나다** (`atFirstMoveAfterBuy`와 같은 카드). 어느 카드인지 알 수 있도록 응답에 `priceMoveId`를 함께 내려보낸다. **보유 구간에 카드가 0건이면 `status="NO_EVENT"`이고 `priceMoveId`를 포함한 모든 필드가 `null`이다** — 카드는 종목·거래일당 장중 최대 2건이고 근거 기사가 없으면 생성되지 않으므로, 카드 0건이 오히려 흔한 경우다. `holderCount`가 **5 미만이면 `status="INSUFFICIENT_SAMPLE"`**이고 모집단 지표 셋(`holderCount`·`soldWithin30MinRate`·`medianMinutesToSell`)이 `null`이 된다(기존 명세의 "유사 사례 5건 이상일 때만 노출" 관행). **`yourMinutesToSell`은 모집단 통계가 아니라 본인 값(`매도시각 − 카드 windowEnd`)이므로 이때도 채워진다.** 회원 ID·닉네임·개별 체결은 어떤 형태로도 포함하지 않는다. 집단 비교는 관측된 사실이므로 AI 서술에 포함해도 된다.
+**기준 카드는 보유 구간 안의 첫 변동 카드 하나다** (`atFirstMoveAfterBuy`와 같은 카드). 어느 카드인지 알 수 있도록 응답에 `priceMoveId`를 함께 내려보낸다. **보유 구간에 카드가 0건이면 `status="NO_EVENT"`이고 `priceMoveId`를 포함한 모든 필드가 `null`이다** — 카드는 종목·거래일당 장중 `max-intraday-cards`건이고(spec §C-7) 근거 기사가 없으면 생성되지 않으므로, 카드 0건이 오히려 흔한 경우다. `holderCount`가 **5 미만이면 `status="INSUFFICIENT_SAMPLE"`**이고 모집단 지표 셋(`holderCount`·`soldWithin30MinRate`·`medianMinutesToSell`)이 `null`이 된다(기존 명세의 "유사 사례 5건 이상일 때만 노출" 관행). **`yourMinutesToSell`은 모집단 통계가 아니라 본인 값(`매도시각 − 카드 windowEnd`)이므로 이때도 채워진다.** 회원 ID·닉네임·개별 체결은 어떤 형태로도 포함하지 않는다. 집단 비교는 관측된 사실이므로 AI 서술에 포함해도 된다.
 
 **`counterfactuals`도 같은 게이트를 쓴다** — 아직 재생되지 않은 가격을 쓰므로 미래 정보다. **`peerComparison`은 시각이 아니라 확정 집계 행의 존재로 판정한다.** 장 마감 배치가 15:32에 돌기 때문에 15:30을 기준으로 두면 그 사이 조회가 게이트만 통과하고 값은 비는 상태가 된다. 그 전에는 각각 `status="NOT_YET"`이다.
 
@@ -483,8 +483,8 @@ Notion 1차 고도화 목록의 "뉴스 요약" 항목이다. 수집·저장은 
 | 시장 | 조회 시각 | `summaryScope` | 요약 범위 |
 |---|---|---|---|
 | STOCK | 09:00 이전 | `null` | `summaryStatus="NOT_YET"`, `items=[]` |
-| STOCK | 09:00 ~ 15:30 | `PRE_MARKET` | §C-2의 `전장` |
-| STOCK | 15:30 이후 | `FULL` | §C-2의 `FULL` |
+| STOCK | 09:00 이상 15:30 미만 | `PRE_MARKET` | §C-2의 `전장` |
+| STOCK | 15:30 이상 | `FULL` | §C-2의 `FULL` |
 | CRYPTO | 언제나 | `ROLLING_24H` | 최근 24시간 |
 
 15:30 이후 같은 종목을 다시 조회하면 `summaryScope`가 `FULL`로 바뀌고 요약도 하루 전체를 다룬 문장으로 교체된다 — `{"summaryScope":"FULL","summary":"반도체 업황 기사가 오전에 집중됐고, 오후에는 생산 차질을 다룬 보도가 이어졌습니다. …"}`. **이 문장이 09:00에 나가면 안 되는 것이 이 설계의 요지다.**
@@ -497,7 +497,7 @@ Notion 1차 고도화 목록의 "뉴스 요약" 항목이다. 수집·저장은 
 
 요약은 회원별이 아니다 — `(종목, 원본 거래일, 범위)` 단위로 1건씩 생성해 전 회원이 공유한다.
 
-**`summaryStatus`**는 `READY` · `NOT_YET`(주식, 09:00 이전 또는 재생세션 미준비) · `EMPTY`(기사 없음, **또는 요약 행이 아직 없음** — 배치 미실행·배포 당일) · `UNAVAILABLE`(LLM 호출 실패 **또는 후검증 재생성 1회 후에도 금지 표현이 남음**)이다. **판정 순서는 spec §C-4의 표를 따른다.** **`EMPTY`가 행 없음 때문일 때와 `UNAVAILABLE`일 때는 `items`가 채워진다.** `EMPTY`·어느 값이든 상태코드는 200이다.
+**`summaryStatus`**는 `READY` · `NOT_YET`(주식, 09:00 이전 또는 재생세션 미준비) · `EMPTY`(기사 없음, **또는 요약 행이 아직 없음** — 배치 미실행·배포 당일) · `UNAVAILABLE`(LLM 호출 실패 **또는 후검증 재생성 1회 후에도 금지 표현이 남음**)이다. **판정 순서는 spec §C-4의 표를 따른다.** 어느 값이든 상태코드는 200이며, **`EMPTY`가 행 없음 때문일 때와 `UNAVAILABLE`일 때는 `items`가 채워진다.**
 
 **저작권**: `items`의 각 항목은 제목·언론사·원문 URL·발행시각만 노출하고 본문은 어떤 형태로도 포함하지 않는다. `summary`는 여러 기사를 종합한 서술이며 특정 기사의 문장을 그대로 옮기지 않는다. 공시(`type=DISCLOSURE`)는 OpenDART가 접수일자만 제공하므로 `publishedAt`의 시각 부분이 항상 `00:00:00`이다. **그래서 구간이 아니라 날짜로 판정한다** — `PRE_MARKET`·브리핑에는 **직전 거래일 접수분만** 넣고 09:00부터 노출하며, **원본 거래일 접수분은 `FULL`에서만** 나온다. 구간으로 거르면 간밤 공시가 빠지고 장중 접수 공시가 아침에 들어온다(spec §C-3).
 

@@ -91,13 +91,13 @@ C-004의 나머지("숫자와 판정은 서버가 계산하고 AI는 관찰형 �
 | `feedback.news.disclosure-cron` | `0 0/30 8-20 * * MON-FRI` | feedback | 공시 수집 |
 | `market.crypto.price-snapshot-cron` | `0 * * * * *` | **market** | 코인 가격 스냅샷 기록 (매 분 정각) |
 
-**`@Scheduled`에 반드시 `zone = "Asia/Seoul"`을 붙인다.**
+**`cron` 기반 `@Scheduled`에 반드시 `zone = "Asia/Seoul"`을 붙인다.** `fixedRate`는 타임존과 무관하므로 대상이 아니다 — 기존 `BithumbFeedSimulator`·`BithumbRestTickerPoller`·`SseEmitterRegistry`가 그렇다.
 
 ```java
 @Scheduled(cron = "${feedback.batch.cron}", zone = "Asia/Seoul")
 ```
 
-기존 스케줄러 3개가 전부 이렇게 돼 있다. `ClockConfig`의 `Clock` 빈은 KST지만 **`@Scheduled`는 그 빈을 쓰지 않고 JVM 기본 타임존을 따른다.** `Dockerfile`·`compose.deploy.yaml`에 `TZ`가 없어 배포 JVM 기본은 UTC이므로, 빠뜨리면 08:45 배치가 **KST 17:45에 돌아 장중 내내 화면이 비고** 예외도 로그도 남지 않는다.
+기존 **cron** 스케줄러 3개(`KisHistoricalCandleCollector`·`StockPriceStreamService`·`StockReplaySessionScheduler`)가 전부 이렇게 돼 있다. `ClockConfig`의 `Clock` 빈은 KST지만 **`@Scheduled`는 그 빈을 쓰지 않고 JVM 기본 타임존을 따른다.** `Dockerfile`·`compose.deploy.yaml`에 `TZ`가 없어 배포 JVM 기본은 UTC이므로, 빠뜨리면 08:45 배치가 **KST 17:45에 돌아 장중 내내 화면이 비고** 예외도 로그도 남지 않는다.
 
 **`spring.task.scheduling.pool.size`를 5 → 12로 올린다.**
 
@@ -121,7 +121,7 @@ C-004의 나머지("숫자와 판정은 서버가 계산하고 AI는 관찰형 �
 | `전장` | `[D-1 15:30, D 09:00]` | 브리핑, `PRE_MARKET` 요약, 시가 갭 근거 |
 | `FULL` | `[D-1 15:30, D 15:30]` | `FULL` 요약 |
 | `ROLLING_24H` | 최근 24시간 | 코인 요약·브리핑·카드 목록 |
-| `근거창(주식 장중)` | `[windowEnd − match-before-minutes, windowEnd + match-after-minutes]` | 장중 카드 근거 |
+| `근거창(주식 장중)` | `[windowEnd − news.match-before-minutes, windowEnd + news.match-after-minutes]` | 장중 카드 근거 |
 | `근거창(코인)` | `[windowEnd − crypto.match-before-minutes, windowEnd]` | 코인 카드 근거 |
 
 **주식 `items` 목록의 하한은 `전장`의 시작과 같고, 상한만 다르다.**
@@ -129,8 +129,8 @@ C-004의 나머지("숫자와 판정은 서버가 계산하고 AI는 관찰형 �
 | 조회 시각 | `summaryScope` | 요약이 다루는 범위 | `items` 범위 |
 |---|---|---|---|
 | 09:00 이전 | `null` | — (`NOT_YET`) | `[]` |
-| 09:00 ~ 15:30 | `PRE_MARKET` | `전장` | `[D-1 15:30, 현재 재생 시각]` |
-| 15:30 이후 | `FULL` | `FULL` | `FULL` |
+| 09:00 이상 15:30 미만 | `PRE_MARKET` | `전장` | `[D-1 15:30, 현재 재생 시각]` |
+| 15:30 이상 | `FULL` | `FULL` | `FULL` |
 
 **"범위가 정확히 같다"가 아니라 "하한이 같다"이다.** 09:00~15:30에는 `items`가 요약보다 넓다 — 장중 기사가 재생 시각을 따라 하나씩 풀리기 때문이다. 요약이 `items`보다 **앞서지만 않으면** 된다. 반대로 `items`를 09:00에서 자르면 "재생 시각을 지난 기사만 노출"이 깨진다.
 
@@ -154,6 +154,7 @@ C-004의 나머지("숫자와 판정은 서버가 계산하고 AI는 관찰형 �
 |---|---|
 | 브리핑 · `PRE_MARKET` 요약 · 시가 갭 근거 | `rcept_dt = D-1` |
 | `FULL` 요약 | `rcept_dt ∈ {D-1, D}` |
+| Part C `items` | 그 시각의 `summaryScope`와 같다 — `PRE_MARKET`이면 `rcept_dt = D-1`, `FULL`이면 `{D-1, D}` |
 | 장중 카드 근거 | 매칭하지 않음 |
 | 코인 | 공시 없음 |
 
@@ -225,11 +226,16 @@ Part C의 1번이 `NOT_YET`이고 Part D가 `EMPTY`인 것은 의도된 차이�
 
 `getFullDayCandles`·`getPreviousTradingDayClose`는 **재생 노출 게이트를 우회한다.** 배치에서 호출하는 것이 기본이고, 조회 경로에서는 **C-5의 게이트를 통과한 뒤에만** 호출한다(반사실은 조회 시 계산하므로 이 예외가 필요하다). 게이트 판정은 호출부 책임이며 메서드 주석에 이 조건을 남긴다.
 
+**`order`에 신설** — `Trade`·`TradeRepository`는 `order` 소유다.
+
+| 메서드 | 쓰는 곳 |
+|---|---|
+| `TradeService`에 매도 체결 단건 + 소유권 검증 조회 | 매도 회고 (현재 `getMyTrades` 목록 조회뿐) |
+
 **`portfolio`에 신설** — FIFO 배분(`trade_allocations`)과 lot(`holding_lots`)은 `order`가 아니라 `portfolio` 소유다.
 
 | 메서드 | 쓰는 곳 |
 |---|---|
-| 매도 체결 단건 + 소유권 검증 조회 | 매도 회고 (현재 `TradeService.getMyTrades` 목록 조회뿐) |
 | 배분·lot 조회 | 매도 회고 수치, 매수 시각 |
 | 특정 시점 보유자 집계 (회원 식별자 없는 반환) | 집단 비교 |
 
@@ -446,7 +452,7 @@ originTradeDate = occurred_at 의 KST 날짜               (일일 상한 카운
 - [ ] **§파생 사실을 서버가 계산해 응답과 LLM 입력에 함께 넣는다.** 수치를 다시 읽어주는 것은 조회일 뿐이며, 사용자가 직접 계산하지 않은 관계를 보여주는 것이 피드백이다.
 - [ ] **매도 후 가격 흐름·반사실의 노출 게이트는 §C-5**다. 그 전에는 `status="NOT_YET"`이며 가격 필드를 비운다 — 매도 직후에 그날 종가를 알려주면 재매수 판단에 미래 정보를 쓰게 된다.
 - [ ] `priceMoves`에도 카드 노출 게이트(§C-5)를 적용한다 — 근거 기사가 `windowEnd` 이후에 발행될 수 있어, 게이트를 빼면 Part A·C보다 먼저 그 기사를 보게 된다.
-- [ ] 서술은 최초 조회 시 생성해 `trade_feedbacks`에 저장하고 이후 재사용한다.
+- [ ] 서술은 최초 조회 시 생성해 `trade_feedbacks`에 저장하고 이후 재사용한다. **회원별 산출물이라 사전 배치 대상이 아니며, `docs/conventions.md`의 "GET은 부수효과 없음"에 대한 이 spec의 유일한 예외다** — 체결 1건당 1회이고 이후에는 조회만 한다. 전 회원이 공유하는 카드·요약·브리핑은 전부 배치가 만든다.
 - [ ] **재생성은 §C-5의 재생성 게이트를 통과한 뒤 첫 조회에서 1회** 한다. 통과 시 `narrative_finalized`를 `TRUE`로 바꾼다.
 - [ ] **재생성이 LLM 실패로 끝나면 기존 서술을 유지하고 `narrative_finalized`를 `FALSE`로 남긴다.** 재시도는 **체결 1건당 누적** `max-narrative-retry`회까지다(`regeneration_attempts`). 날짜 단위로 리셋하지 않는다 — 실패 시 `generated_at`을 갱신하지 않으므로 날짜 기준이 성립하지 않는다.
 - [ ] LLM 실패·후검증 위반 시에도 200이며 **서술은 §템플릿 문장으로 대체된다.** `narrativeStatus`는 항상 `READY`다(§C-4).
@@ -825,7 +831,7 @@ member   "{epochMillis}:{price}"
 
 근거가 `max-sources-per-card`를 넘으면 발행시각이 이벤트에 가까운 순으로 자른다. 목록 응답과 LLM 입력 상한은 §C-7의 `max-items-*`를 따르며 **발행시각 내림차순으로 자른다.**
 
-**코인 근거창에 `+5분`을 두지 않는 이유** — 코인 탐지는 `windowEnd` 시점에 실시간으로 도므로 그 이후 기사는 존재할 수 없다. 게다가 수집이 30분 주기라 마지막 수집 이후 기사는 아직 DB에 없다. `−35분`으로 넓혀 마지막 수집분을 확실히 포함시킨다. 그래도 근거 0건이면 카드를 만들지 않으며(FEED-003), **다음 수집 때 근거가 들어와도 그 카드를 되살리지 않는다** — 지나간 실시간 이벤트를 소급 생성하지 않는 것이 설계 의도다.
+**코인 근거창에 `news.match-after-minutes`를 더하지 않는 이유** — 코인 탐지는 `windowEnd` 시점에 실시간으로 도므로 그 이후 기사는 존재할 수 없다. 게다가 수집이 30분 주기라 마지막 수집 이후 기사는 아직 DB에 없다. `crypto.match-before-minutes`를 더 넓게 잡아 마지막 수집분을 확실히 포함시킨다. 그래도 근거 0건이면 카드를 만들지 않으며(FEED-003), **다음 수집 때 근거가 들어와도 그 카드를 되살리지 않는다** — 지나간 실시간 이벤트를 소급 생성하지 않는 것이 설계 의도다.
 
 ### LLM 프롬프트
 
@@ -879,7 +885,7 @@ member   "{epochMillis}:{price}"
 
 매도 후 흐름: 마감 종가 69,200원 (매도가보다 1.02% 높음)
 
-위 내용을 2~3문장으로 서술해줘. 수치를 그대로 나열하지 말고,
+위 내용을 3~4문장으로 서술해줘. 수치를 그대로 나열하지 말고,
 매수·매도 시각이 변동·기사와 어떤 순서였는지를 중심으로 써줘.
 ```
 
@@ -1205,7 +1211,7 @@ trade_feedbacks                매도 직후 서술 (회원별)
 - [ ] **코인 조회가 `generated_at` 최신 1행을 반환한다** — 00:00~00:05와 배치 실패 시각에도 비지 않는다.
 - [ ] 코인 요약·브리핑이 UPSERT로 하루 1행을 유지한다 — `origin_trade_date`는 배치 실행 시점의 KST 날짜다(§C-9).
 - [ ] **코인 Part C가 `ROLLING_24H` 한 범위만 쓰고 `PRE_MARKET`/`FULL`을 쓰지 않는다.**
-- [ ] **모든 `@Scheduled`에 `zone`이 붙어 있다** — 리플렉션으로 `feedback`·`market` 두 패키지의 `@Scheduled`를 훑어 zone이 비어 있으면 실패시킨다. UTC 컨테이너에서 08:45가 17:45가 되는 사고를 코드로 막는다.
+- [ ] **`cron` 기반 `@Scheduled`에 전부 `zone`이 붙어 있다** — 리플렉션으로 `feedback`·`market` 두 패키지를 훑되 **`fixedRate`는 대상에서 제외**하고, `cron`이 있는데 `zone`이 비어 있으면 실패시킨다. UTC 컨테이너에서 08:45가 17:45가 되는 사고를 코드로 막는다.
 - [ ] `spring.task.scheduling.pool.size`가 등록된 `@Scheduled` 개수 이상이다 (§C-1).
 
 ### 수집 (통합 · `@DataJpaTest`)
