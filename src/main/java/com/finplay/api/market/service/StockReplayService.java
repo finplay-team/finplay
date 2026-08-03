@@ -126,7 +126,10 @@ public class StockReplayService {
 
 		LocalDate sourceTradingDate = readySession.get().getSourceTradingDate();
 		LocalDate requestedEnd = toDate != null ? toDate : sourceTradingDate;
-		// 재생거래일을 절대 넘지 않는다(방어 규칙) — to가 재생거래일 이후를 가리켜도 그 이후 trading_date는 미공개다.
+		// 재생거래일을 절대 넘지 않는다 — "방어 규칙"이 아니라 실제로 도달 가능한 경로다. PRD MKT-005의 08:40 폴백
+		// (직전 영업일 데이터가 아직 없으면 그 전 영업일로 폴백) 때문에, 08:10 수집이 거래일 D를 넣었지만 08:40 세션은
+		// D-1로 확정되는 날이 생길 수 있다. 그런 날엔 D의 분봉이 DB에 이미 있어도 미공개이므로, to가 D 이후를
+		// 가리켜도 이 클램프가 유일한 방어선이다(PR #151 리뷰 반영).
 		LocalDate rangeEnd = requestedEnd.isBefore(sourceTradingDate) ? requestedEnd : sourceTradingDate;
 		LocalDate rangeStart = fromDate != null ? fromDate : lookbackFloor(interval, rangeEnd);
 		if (rangeStart.isAfter(rangeEnd)) {
@@ -166,7 +169,14 @@ public class StockReplayService {
 			}
 		}
 
-		List<StockCandleDto> aggregated = StockCandleAggregator.aggregate(minuteCandles, interval);
+		// 버킷 경계(월요일·1일)와 rangeStart가 정확히 일치하지 않으면, rangeStart보다 이른 시작일을 가진 "선두 partial
+		// 버킷"(예: interval=1w, from=수요일이면 그 주 월요일 라벨의 버킷에 수~금 분봉만 모임)이 섞여 나갈 수 있다.
+		// docs/api-contracts.md 계약은 "버킷 시작일이 [from의 날짜, to의 날짜] 안에 있으면 포함"이므로, 시작일이
+		// rangeStart보다 이른 버킷은 반쪽짜리인 채로 완전한 캔들처럼 보이게 되어 제외해야 한다(PR #151 리뷰 차단 반영).
+		// 200개 캡보다 먼저 걸러야 캡이 실제로 응답에 남을 버킷 수를 기준으로 동작한다.
+		List<StockCandleDto> aggregated = StockCandleAggregator.aggregate(minuteCandles, interval).stream()
+			.filter(candle -> !candle.tradingDate().isBefore(rangeStart))
+			.toList();
 		if (aggregated.size() <= MAX_AGGREGATED_CANDLES) {
 			return aggregated;
 		}

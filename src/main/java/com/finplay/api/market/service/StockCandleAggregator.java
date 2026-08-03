@@ -13,12 +13,15 @@ import java.util.Map;
 // StockReplayService가 공개 상한을 통과시켜 넘겨준 1분봉만 입력받는다 — 이 클래스는 공개 여부를 판단하지 않는다.
 // 입력은 (tradingDate, candleTime) 오름차순이 보장된 목록이어야 하며, 그 순서를 그대로 이용해 버킷을 오름차순으로 만든다
 // (별도 정렬을 하지 않는다 — 버킷 키가 tradingDate에 대해 단조 비감소이므로 LinkedHashMap 삽입 순서가 곧 오름차순이다).
-public final class StockCandleAggregator {
+// PR #151 리뷰 권장사항: 이 정렬 전제가 깨지면 open·close가 조용히 틀려진다. 호출부가 market.service 패키지 안의
+// StockReplayService 하나뿐이므로(테스트도 같은 패키지) public을 열지 않고 package-private으로 좁혀 외부에서
+// 정렬 안 된 입력으로 호출하는 경로 자체를 차단한다.
+final class StockCandleAggregator {
 
 	private StockCandleAggregator() {}
 
 	// 1m은 이 클래스를 거치지 않는다(기존 경로 유지, docs/specs/013-candle-interval/plan.md). 1d·1w·1M만 받는다.
-	public static List<StockCandleDto> aggregate(List<StockCandleDto> minuteCandles, CandleInterval interval) {
+	static List<StockCandleDto> aggregate(List<StockCandleDto> minuteCandles, CandleInterval interval) {
 		if (!interval.isAggregated()) {
 			throw new IllegalArgumentException("StockCandleAggregator는 1m을 집계하지 않습니다: " + interval);
 		}

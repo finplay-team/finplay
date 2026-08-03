@@ -788,4 +788,107 @@ class StockReplayServiceTest {
 			.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
 				INSTRUMENT_ID, WEEKDAY.minusDays(400), WEEKDAY.minusDays(1));
 	}
+
+	// --- 선두 partial 버킷 제외(PR #151 리뷰 차단 반영) ---
+
+	@Test
+	void getRevealedAggregatedCandlesExcludesLeadingPartialWeekBucketButIncludesNextCompleteWeekWhenFromFallsMidWeek() {
+		// 리뷰어(namdongyeob) PR #151 차단 지적 재현 — interval=1w, from이 그 주의 수요일(버킷 경계인 월요일과
+		// 불일치)이면 그 주의 나머지 분봉(수~금)만 모여 반쪽짜리 주봉이 만들어진다. docs/api-contracts.md 계약대로
+		// 버킷 시작일(월요일)이 rangeStart(from) 이전이면 그 버킷은 응답에서 빠져야 한다. 그 다음 주(완전한 한 주)는
+		// 정상적으로 포함되어야 한다.
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		// 2026-07-08(수) — 그 주 월요일은 2026-07-06. 2026-07-17(금) — 다음 주(2026-07-13 월요일 시작)의 마지막 거래일.
+		LocalDate midWeekFrom = LocalDate.of(2026, 7, 8);
+		LocalDate completeWeekEnd = LocalDate.of(2026, 7, 17);
+		List<StockCandle> minuteCandles = List.of(
+			candle(LocalDate.of(2026, 7, 8), LocalTime.of(9, 0), bd(1000), bd(1010), bd(995), bd(1005), 10),
+			candle(LocalDate.of(2026, 7, 9), LocalTime.of(9, 0), bd(1005), bd(1015), bd(1000), bd(1010), 10),
+			candle(LocalDate.of(2026, 7, 10), LocalTime.of(9, 0), bd(1010), bd(1020), bd(1005), bd(1015), 10),
+			candle(LocalDate.of(2026, 7, 13), LocalTime.of(9, 0), bd(1020), bd(1030), bd(1015), bd(1025), 10),
+			candle(LocalDate.of(2026, 7, 14), LocalTime.of(9, 0), bd(1025), bd(1035), bd(1020), bd(1030), 10),
+			candle(LocalDate.of(2026, 7, 15), LocalTime.of(9, 0), bd(1030), bd(1040), bd(1025), bd(1035), 10),
+			candle(LocalDate.of(2026, 7, 16), LocalTime.of(9, 0), bd(1035), bd(1045), bd(1030), bd(1040), 10),
+			candle(LocalDate.of(2026, 7, 17), LocalTime.of(9, 0), bd(1040), bd(1050), bd(1035), bd(1045), 10));
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+			INSTRUMENT_ID, midWeekFrom, completeWeekEnd))
+			.thenReturn(minuteCandles);
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(10, 0)));
+
+		List<StockCandleDto> result = service.getRevealedAggregatedCandles(
+			INSTRUMENT_ID, CandleInterval.ONE_WEEK, midWeekFrom, completeWeekEnd);
+
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).tradingDate()).isEqualTo(LocalDate.of(2026, 7, 13));
+	}
+
+	@Test
+	void getRevealedAggregatedCandlesIncludesWeekBucketWhenFromFallsExactlyOnBucketMonday() {
+		// 회귀 확인 — from이 버킷 경계(월요일)와 정확히 일치하면 필터가 과하게 잘라내지 않고 그 주 버킷을 그대로 포함해야 한다.
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		LocalDate mondayFrom = LocalDate.of(2026, 7, 13);
+		LocalDate weekEnd = LocalDate.of(2026, 7, 17);
+		List<StockCandle> minuteCandles = List.of(
+			candle(LocalDate.of(2026, 7, 13), LocalTime.of(9, 0), bd(1020), bd(1030), bd(1015), bd(1025), 10),
+			candle(LocalDate.of(2026, 7, 17), LocalTime.of(9, 0), bd(1040), bd(1050), bd(1035), bd(1045), 10));
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+			INSTRUMENT_ID, mondayFrom, weekEnd))
+			.thenReturn(minuteCandles);
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(10, 0)));
+
+		List<StockCandleDto> result = service.getRevealedAggregatedCandles(
+			INSTRUMENT_ID, CandleInterval.ONE_WEEK, mondayFrom, weekEnd);
+
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).tradingDate()).isEqualTo(mondayFrom);
+	}
+
+	@Test
+	void getRevealedAggregatedCandlesExcludesLeadingPartialMonthBucketWhenFromFallsMidMonth() {
+		// interval=1M도 동일한 갭 — from이 그 달의 15일이면 1~14일 분봉이 있어도 그 달(5월) 버킷은 시작일(5/1)이
+		// rangeStart(5/15) 이전이라 제외되어야 한다. 그 다음 달(6월, 완전한 한 달)은 정상적으로 포함되어야 한다.
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		LocalDate midMonthFrom = LocalDate.of(2026, 5, 15);
+		LocalDate completeMonthEnd = LocalDate.of(2026, 6, 30);
+		List<StockCandle> minuteCandles = List.of(
+			candle(LocalDate.of(2026, 5, 15), LocalTime.of(9, 0), bd(1000), bd(1010), bd(995), bd(1005), 10),
+			candle(LocalDate.of(2026, 5, 29), LocalTime.of(9, 0), bd(1005), bd(1015), bd(1000), bd(1010), 10),
+			candle(LocalDate.of(2026, 6, 1), LocalTime.of(9, 0), bd(1020), bd(1030), bd(1015), bd(1025), 10),
+			candle(LocalDate.of(2026, 6, 30), LocalTime.of(9, 0), bd(1040), bd(1050), bd(1035), bd(1045), 10));
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+			INSTRUMENT_ID, midMonthFrom, completeMonthEnd))
+			.thenReturn(minuteCandles);
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(10, 0)));
+
+		List<StockCandleDto> result = service.getRevealedAggregatedCandles(
+			INSTRUMENT_ID, CandleInterval.ONE_MONTH, midMonthFrom, completeMonthEnd);
+
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).tradingDate()).isEqualTo(LocalDate.of(2026, 6, 1));
+	}
+
+	@Test
+	void getRevealedAggregatedCandlesIncludesMonthBucketWhenFromFallsExactlyOnFirstOfMonth() {
+		// 회귀 확인 — from이 버킷 경계(1일)와 정확히 일치하면 필터가 과하게 잘라내지 않고 그 달 버킷을 그대로 포함해야 한다.
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		LocalDate firstOfMonthFrom = LocalDate.of(2026, 6, 1);
+		LocalDate monthEnd = LocalDate.of(2026, 6, 30);
+		List<StockCandle> minuteCandles = List.of(
+			candle(LocalDate.of(2026, 6, 1), LocalTime.of(9, 0), bd(1020), bd(1030), bd(1015), bd(1025), 10),
+			candle(LocalDate.of(2026, 6, 30), LocalTime.of(9, 0), bd(1040), bd(1050), bd(1035), bd(1045), 10));
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+			INSTRUMENT_ID, firstOfMonthFrom, monthEnd))
+			.thenReturn(minuteCandles);
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(10, 0)));
+
+		List<StockCandleDto> result = service.getRevealedAggregatedCandles(
+			INSTRUMENT_ID, CandleInterval.ONE_MONTH, firstOfMonthFrom, monthEnd);
+
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).tradingDate()).isEqualTo(firstOfMonthFrom);
+	}
 }
