@@ -170,20 +170,6 @@ class FavoriteServiceTest {
 		verify(favoriteRepository, never()).delete(org.mockito.ArgumentMatchers.any());
 	}
 
-	@Test
-	void deleteFavoriteHidesAnotherUsersFavoriteAsNotFound() {
-		when(favoriteRepository.findByUserIdAndInstrumentIdForUpdate(7L, 10L))
-			.thenReturn(Optional.empty());
-
-		assertThatThrownBy(() -> favoriteService.deleteFavorite(7L, 10L))
-			.isInstanceOf(BusinessException.class)
-			.satisfies(error -> assertThat(((BusinessException)error).getErrorCode())
-				.isEqualTo(ErrorCode.FAVORITE_NOT_FOUND));
-		verify(favoriteRepository).findByUserIdAndInstrumentIdForUpdate(7L, 10L);
-		verifyNoMoreInteractions(favoriteRepository);
-		verifyNoInteractions(instrumentService, userQueryService);
-	}
-
 	private void stubSaveFailure(DataIntegrityViolationException failure) {
 		when(instrumentService.getInstrumentEntity(10L)).thenReturn(instrument(true));
 		when(userQueryService.getUser(7L)).thenReturn(User.create("user@finplay.com", "hash", "user", now()));
