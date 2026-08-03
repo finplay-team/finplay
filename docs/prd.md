@@ -184,7 +184,7 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
   - 주식 OCO 생성·트리거·취소·만료의 잠금 순서는 replay session → holding → plan으로 고정한다. 중복·역순 가격 이벤트는 최초 커밋만 종결하고 후속 이벤트는 skip한다. 기존 시장가 SELL과 일반 지정가 SELL도 공통 예약 원장의 `availableQuantity = totalQuantity - reservedQuantity`만 매도할 수 있다.
   - OCO endpoint 활성화 전 nullable `trades.stock_replay_session_id` FK와 주식 체결 session 기록, 공통 reservation ledger, 기존 `POST /api/orders` MARKET SELL의 `availableQuantity` 검증을 먼저 배포하거나 OCO와 같은 atomic release로 배포한다. 일반 LIMIT SELL도 공통 ledger 없이 활성화하지 않는다.
   - 전체 완료는 복기 저장 트랜잭션의 불변 완료 기록으로 유지한다. 완료 전에는 실제 evidence가 사라지면 재진행이 필요할 수 있지만 완료 뒤 favorite 삭제나 plan 종결로 회귀하지 않는다.
-  - 최초 intention 생성에서 사용자·튜토리얼 공통 `practice_progresses` 행을 atomic insert-or-existing으로 한 번 확보한다. 복기 저장은 이 progress를 가장 먼저 잠그고 `progress → intention → exit plan` 순서로 검증한다. 서로 다른 eligible plan의 동시 요청도 최초 요청만 reflection·completion 각 1행과 progress 완료를 만들고 201을 반환하며 나머지는 답변을 추가 저장하지 않고 409 `PRACTICE_ALREADY_COMPLETED`다. progress·completion의 사용자·튜토리얼 unique와 reflection의 사용자·plan unique를 최종 방어선으로 둔다.
+  - 최초 intention 생성에서 사용자·튜토리얼 공통 `practice_progresses` 행을 atomic insert-or-existing으로 한 번 확보한다. 복기 저장은 이 progress를 가장 먼저 잠그고 `progress → favorite → intention → exit plan` 순서로 검증한다. favorite는 복기 완료 커밋까지 잠가 동시 삭제와 직렬화한다. 서로 다른 eligible plan의 동시 요청도 최초 요청만 reflection·completion 각 1행과 progress 완료를 만들고 201을 반환하며 나머지는 답변을 추가 저장하지 않고 409 `PRACTICE_ALREADY_COMPLETED`다. progress·completion의 사용자·튜토리얼 unique와 reflection의 사용자·plan unique를 최종 방어선으로 둔다.
   - 튜토리얼 완료는 실제 도메인 API 성공·소유권·필드·시각 순서를 서버가 연결해 판정한다. 클라이언트 완료 주장은 받지 않는다. 배지·금전성 보상·LLM·투자 지식 객관식 퀴즈는 이 단계에 포함하지 않는다.
 - 동시성 제어
 - 부하테스트
