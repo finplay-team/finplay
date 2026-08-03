@@ -462,7 +462,7 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 | Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|---|
-| GET | /api/instruments/{instrumentId}/news | Access Bearer 필수 | 경로 변수 `instrumentId`만(쿼리·본문 없음) | 200 `{"originTradeDate":"2026-07-29","summary":"반도체 업황과 관련한 기사가 오전에 집중됐고, 오후에는 생산 차질을 다룬 보도가 이어졌습니다. 같은 날 유상증자 관련 공시가 1건 접수됐습니다.","summaryStatus":"READY","items":[{"type":"NEWS","title":"...","publisher":"한국경제","url":"https://...","publishedAt":"2026-07-29T11:15:00"},{"type":"DISCLOSURE","title":"주요사항보고서(유상증자결정)","publisher":"DART","url":"https://dart.fss.or.kr/...","publishedAt":"2026-07-29T00:00:00"}]}` (`InstrumentNewsResponse`); 기사가 없으면 200 `{"originTradeDate":"2026-07-29","summary":null,"summaryStatus":"EMPTY","items":[]}` | Access 인증 실패는 401 `UNAUTHORIZED`. `instrumentId` 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 012 FEED-008 |
+| GET | /api/instruments/{instrumentId}/news | Access Bearer 필수 | 경로 변수 `instrumentId`만(쿼리·본문 없음) | 200 (주식, 09:00~15:30) `{"originTradeDate":"2026-07-29","summaryScope":"PRE_MARKET","summaryStatus":"READY","summary":"직전 거래일 장 마감 이후 반도체 업황을 다룬 기사가 있었습니다. 같은 구간에 유상증자 관련 공시가 1건 접수됐습니다.","items":[{"type":"NEWS","title":"...","publisher":"한국경제","url":"https://...","publishedAt":"2026-07-29T11:15:00"},{"type":"DISCLOSURE","title":"주요사항보고서(유상증자결정)","publisher":"DART","url":"https://dart.fss.or.kr/...","publishedAt":"2026-07-29T00:00:00"}]}` (`InstrumentNewsResponse`); 기사가 없으면 200 `{"originTradeDate":"2026-07-29","summary":null,"summaryStatus":"EMPTY","items":[]}` | Access 인증 실패는 401 `UNAUTHORIZED`. `instrumentId` 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 012 FEED-008 |
 
 Notion 1차 고도화 목록의 "뉴스 요약" 항목이다. 수집·저장은 변동 원인 카드(FEED-001)가 이미 하므로 이 엔드포인트는 **조회와 요약만** 추가한다.
 
@@ -470,13 +470,18 @@ Notion 1차 고도화 목록의 "뉴스 요약" 항목이다. 수집·저장은 
 
 **노출 필터**: 주식은 09:00 이전이면 `summaryStatus="NOT_YET"`·`items=[]`이고, 개장 후에는 `publishedAt`이 현재 재생 시각을 지난 기사만 반환한다. **09:00 하한은 개장 전 브리핑과 동일하게 맞춘 것이다** — 두 API가 같은 전장 기사군을 다루므로 이쪽에 하한이 없으면 08:41에 조회해 브리핑이 감추는 기사를 먼저 볼 수 있다 — 변동 원인 카드의 `revealAt` 필터와 같은 목적이다. 15:00 기사를 09:30에 보여주면 앞으로 무슨 일이 일어날지 미리 알려주는 셈이 된다. 코인은 이 필터 없이 최근 24시간 기사를 반환한다.
 
-**`summary`는 재생 진행에 따라 두 번 바뀐다.** 08:40 배치에서 범위가 다른 요약 두 개를 만들어 두고 조회 시각에 따라 골라 준다.
+**주식은 `summary`가 재생 진행에 따라 두 번 바뀐다.** 08:40 배치에서 범위가 다른 요약 두 개를 만들어 두고 조회 시각에 따라 골라 준다.
 
-| 조회 시각 | `summaryScope` | 요약 범위 |
-|---|---|---|
-| 09:00 이전 | — | `summaryStatus="NOT_YET"`, `items=[]` |
-| 09:00 ~ 15:30 | `PRE_MARKET` | 직전 거래일 15:30 ~ 당일 09:00 기사만 |
-| 15:30 이후 | `FULL` | 원본 거래일 전체 |
+| 시장 | 조회 시각 | `summaryScope` | 요약 범위 |
+|---|---|---|---|
+| STOCK | 09:00 이전 | `null` | `summaryStatus="NOT_YET"`, `items=[]` |
+| STOCK | 09:00 ~ 15:30 | `PRE_MARKET` | 직전 거래일 15:30 ~ 당일 09:00 기사만 |
+| STOCK | 15:30 이후 | `FULL` | 원본 거래일 전체 |
+| CRYPTO | 언제나 | `ROLLING_24H` | 최근 24시간 |
+
+15:30 이후 같은 종목을 다시 조회하면 `summaryScope`가 `FULL`로 바뀌고 요약도 하루 전체를 다룬 문장으로 교체된다 — `{"summaryScope":"FULL","summary":"반도체 업황 기사가 오전에 집중됐고, 오후에는 생산 차질을 다룬 보도가 이어졌습니다. …"}`. **이 문장이 09:00에 나가면 안 되는 것이 이 설계의 요지다.**
+
+**코인은 범위가 하나뿐이다.** 24시간 거래라 '전장'도 '거래일 경계'도 없어 두 범위로 나눌 수 없다. 사전 배치가 불가능하므로 **조회 시 생성하고 1시간 캐시**한다 — 실시간이라 미래를 모르니 스포일러 위험이 없고, 주식이 사전 배치인 이유가 비용이 아니라 스포일러 차단이었으므로 코인에는 그 제약이 적용되지 않는다.
 
 **하루 전체를 요약한 문장을 09:00에 주면 `items` 게이트가 무의미해진다.** `"오후에는 생산 차질을 다룬 보도가 이어졌습니다"` 한 문장이 그날 오후를 통째로 알려주기 때문이다. 기사 목록은 하나씩 풀리는데 요약만 전부 알고 있으면 앞뒤가 안 맞는다. 요약도 `items`와 같은 진행 속도를 따르게 맞춘 것이다.
 
