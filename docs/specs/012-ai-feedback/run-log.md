@@ -22,6 +22,7 @@
 | 17:35 | implementer | `gradlew.bat test --tests "com.finplay.api.feedback.*"`(25건) + 임시 프로브로 fail-fast 실패 원인 확인 (tester 회귀 수정) | tester 권고 1번, ADR-0003(슬라이스 테스트 경계), conventions.md |
 | 18:20 | implementer | `gradlew.bat spotlessApply compileJava spotbugsMain` + `test --tests "com.finplay.api.feedback.*"`(25건) + 임시 덤프 테스트로 조립 결과를 spec 예시와 대조 (tasks.md 3번 — `NarrativePromptBuilder`) | spec.md §LLM 프롬프트·§후검증·§파생 사실 계산·§C-2·§C-6, api-contracts.md 매도 직후 피드백, conventions.md, agent-mistakes 2026-07-29 |
 | 19:05 | implementer | `gradlew.bat spotlessApply compileJava spotbugsMain` + `test --tests "com.finplay.api.feedback.*"`(48건) + 임시 프로브로 경계 케이스·가정법 어미 실동작 확인 (tasks.md 4번 — `NarrativeValidator`) | spec.md §후검증 표 5줄·§C-4·§C-8, api-contracts.md 문구 제약, ADR-0011, conventions.md |
+| 19:50 | implementer | `gradlew.bat spotlessApply compileJava spotbugsMain` + `test --tests "com.finplay.api.feedback.*"`(163건) + 임시 프로브로 템플릿 3종의 후검증 통과 확인 (spec 가정법 목록 수정 + tasks.md 5번 — `NarrativeTemplateBuilder`) | spec.md §후검증·§템플릿 문장·§파생 사실 계산, api-contracts.md 카드 예시 서술, conventions.md(공통화 기준) |
 
 ## 모니터링 (사람용 요약)
 - 11:40 — 문서 리뷰 완료, 차단 9건(노출 판정 전장 기사 역전, UNIQUE(url) 잔존 모순, 코인 경로 미정의, 장마감 배치 부재, 배치용 전일치 분봉 조회 경로 부재, PRD 수집주기 모순 등) / 권장 12건.
@@ -49,4 +50,6 @@
 
 - 18:20 — `NarrativePromptBuilder`(시스템 1·사용자 4·재생성 1)와 입력 record 7종 신설. 조립 결과가 spec §LLM 프롬프트 예시 4종과 문자 단위로 일치하는 것을 임시 덤프로 확인한 뒤 덤프는 삭제했다. SpotBugs `VA_FORMAT_STRING_USES_NEWLINE` 2건은 `%n`(플랫폼별 CRLF) 대신 개행을 format 문자열 밖으로 빼서 해결했다.
 
-- 19:05 — `NarrativeValidator`(부분 문자열 판정, 5줄 35표현)·`NarrativeValidationDto`·`NarrativeSource` 신설. 정규식 대신 `String.contains`를 쓴 이유는 35개가 전부 리터럴이라 표현력이 같고 어간 일반화 유혹이 구조적으로 닫히기 때문이다. **spec 확인 필요 1건** — `판단·훈수`의 가정법 3종(`았다면`·`었다면`·`였다면`)이 spec 자신의 예시인 "더 기다렸다면"(렸다면)과 "보유했다면"(했다면)을 잡지 못한다. 목록을 넓히지 말라는 조건이 있어 그대로 두고 보고만 한다.
+- 19:05 — `NarrativeValidator`(부분 문자열 판정, 5줄 35표현)·`NarrativeValidationDto`·`NarrativeSource` 신설. 정규식 대신 `String.contains`를 쓴 이유는 35개가 전부 리터럴이라 표현력이 같고 어간 일반화 유혹이 구조적으로 닫히기 때문이다. **spec 확인 필요 1건 → 해소됨(19:50)** — `판단·훈수`의 가정법 3종(`았다면`·`었다면`·`였다면`)이 spec 자신의 예시인 "더 기다렸다면"(렸다면)과 "보유했다면"(했다면)을 잡지 못했다. 사용자 결정으로 spec §후검증 목록에 `했다면`·`렸다면`을 추가해 메웠다.
+
+- 19:50 — spec §후검증 `판단·훈수`에 `했다면`·`렸다면`을 추가해(9→11, 합계 35→37) spec 본문·api-contracts 예시와 목록의 불일치를 메우고 `NarrativeValidator`·`NarrativeValidatorTest`를 함께 맞췄다. 이어 `NarrativeTemplateBuilder`(장중 카드·시가 갭·매도 회고 3종) 신설 — 입력은 3번의 record를 그대로 재사용하고, 조립된 문장 3종이 새 37표현 기준으로도 후검증을 통과하는 것을 확인했다. feedback 테스트 163건 통과.

@@ -44,7 +44,7 @@
   - `narrative_source` 값(`LLM`·`TEMPLATE`·`NONE`)을 표현할 enum을 여기서 정의한다 — #1의 완료 조건이 "서술 없음 + `NONE`"을 단정해야 하는데 엔티티는 #2에 있다. **#2는 이 enum을 `@Enumerated(STRING)`으로 재사용한다**(§C-8).
   - 검증 — 단위 테스트. §완료 조건 문구 1~5번째를 그대로 케이스로 옮긴다. ① 5줄이 파트별 표대로 동작 ② `버티`·`놓치`·`았다면`이 매도 회고에서 적발 ③ 요약의 `기회를`은 통과 ④ 요약의 `하세요`는 적발 ⑤ `매도했습니다`는 통과.
 
-- [ ] **5. `NarrativeTemplateBuilder` — 템플릿 문장 3종**
+- [x] **5. `NarrativeTemplateBuilder` — 템플릿 문장 3종**
 
   §템플릿 문장의 장중 카드·시가 갭·매도 회고 3종을 수치로 조립한다. 입력은 3번이 정의한 record를 재사용하거나 필요한 필드만 받는 자체 record로 하고, **엔티티를 받지 않는다.**
   - **문장을 만들기만 한다.** 언제 템플릿으로 갈아탈지 판정하는 것은 6번의 `NarrativeService`다. 이 클래스는 `NarrativeGenerator`·`NarrativeValidator`를 주입받지 않는다.

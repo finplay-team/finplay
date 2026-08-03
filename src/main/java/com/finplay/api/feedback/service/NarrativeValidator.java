@@ -29,7 +29,11 @@ public class NarrativeValidator {
 
 	private static final List<String> ADVICE = List.of("하세요", "했으면", "좋았을", "아쉽", "권장");
 
-	private static final List<String> JUDGEMENT = List.of("버티", "놓치", "실수", "잘못", "다행", "기회를", "았다면", "었다면", "였다면");
+	// 가정법 어미가 다섯인 이유는 초성 때문이다. `았다면`·`었다면`·`였다면`만으로는 `기다렸다면`(렸다면)과
+	// `보유했다면`(했다면)이 부분 문자열로 겹치지 않아 빠져나간다 — spec §후검증 본문과 api-contracts의 문구
+	// 제약이 둘 다 "더 기다렸다면"을 대표 예로 드는데도 그랬다 (2026-08-03 발견 후 spec에 반영).
+	private static final List<String> JUDGEMENT = List.of("버티", "놓치", "실수", "잘못", "다행", "기회를", "았다면", "었다면", "였다면",
+		"했다면", "렸다면");
 
 	// 뉴스 요약·브리핑에 적용하는 4줄. `판단·훈수`의 `기회를`·`실수`·`잘못`·`다행`은 기사 내용을 서술할 때
 	// 자연스럽게 나오는데, 요약에는 템플릿이 없어 걸리면 기능이 통째로 사라진다. 반면 `조언·후회`는 그대로
@@ -52,7 +56,7 @@ public class NarrativeValidator {
 		return detect(narrative, WITHOUT_JUDGEMENT);
 	}
 
-	// 35개 표현이 전부 리터럴 부분 문자열이라 정규식을 쓰지 않는다 — 메타문자가 하나도 없어 표현력이
+	// 37개 표현이 전부 리터럴 부분 문자열이라 정규식을 쓰지 않는다 — 메타문자가 하나도 없어 표현력이
 	// 같고, 정규식으로 두면 어간으로 일반화(`매도하(세요)?`)하고 싶은 유혹이 구조적으로 열린다.
 	private NarrativeValidationDto detect(String narrative, List<String> rules) {
 		if (!StringUtils.hasText(narrative)) {
