@@ -226,7 +226,7 @@ OCO 요청 fingerprint는 UTF-8 canonical JSON의 SHA-256이다. key 순서는 `
 | 14 | A/B/C·무판정·완료 불변 필수 | 201/404/409·answer 필수 | reflection/completion unique와 favorite lock query 필수 | 전체 흐름·서로 다른 plan 동시 완료; latch/barrier로 DELETE 선행→409·reflection/completion/progress 완료 저장 0, reflection 선행→201 뒤 DELETE 204·완료 불변 |
 | 15 | LIMIT available 계산 필수 | 해당 LIMIT Controller 계약 필수 | ledger 예약 정합성 필수 | LIMIT 예약 대 MARKET/OCO 매도 경합 |
 
-각 Controller 이슈에서 실제 매핑을 만든 뒤에만 API 문서를 동기화한다. 기존 `POST /api/orders` SELL은 OCO 예약분을 지키도록 service·계약·Controller 테스트·API 문서를 함께 바꾸는 명시적 변경 후보며 BUY 계약은 유지한다.
+10개 신규 API의 계획 계약은 #158에서 전역 API 문서의 별도 계획 절에 등록한다. 각 Controller 이슈에서 실제 매핑을 만든 뒤 해당 행·계약을 실제 제공 상태로 전환한다. 기존 `POST /api/orders` SELL은 OCO 예약분을 지키도록 service·계약·Controller 테스트·API 문서를 함께 바꾸는 명시적 변경 후보며 BUY 계약은 유지한다.
 
 ## 배포 의존성
 - 후보 5와 후보 6을 후보 7보다 먼저 배포하거나 세 후보를 하나의 atomic release로 배포한다. prerequisite가 운영 DB·애플리케이션에 모두 적용되기 전 `/api/exit-plans`를 활성화하지 않는다.

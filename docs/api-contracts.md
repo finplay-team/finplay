@@ -401,6 +401,102 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 ---
 
+## 016 투자 실습 (계획 — 아직 구현하지 않음)
+
+`docs/specs/016-investment-education-policy`의 신규 계약 10건이다. **controller와 schema가 아직 없으므로 블랙박스 QA의 실행 가능 API 근거로 사용하지 않는다.** 각 구현이 병합될 때 해당 계약을 실제 상태로 전환하고 `docs/api-routes.md`의 계획 행도 실제 라우트 목록으로 옮긴다. 모든 경로는 Access Bearer 인증과 공통 오류 body를 사용하며 JSON POST는 `Content-Type: application/json`이다.
+
+수량은 양수 `DECIMAL(30,8)` 범위(정수부 최대 22자리·소수부 최대 8자리), 가격은 양수 `DECIMAL(18,8)` 범위(정수부 최대 10자리·소수부 최대 8자리)다. 초과 precision/scale은 반올림하지 않고 400 `VALIDATION_ERROR`로 거부한다. 모든 id는 양의 `Long`이다.
+
+### 즐겨찾기 등록 (계획)
+
+| Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|
+| POST | /api/favorites | `{"instrumentId":1}` (`FavoriteCreateRequest`) | 201 `{"favoriteId":1,"instrumentId":1,"market":"STOCK","symbol":"005930","name":"삼성전자","createdAt":"2026-08-03T10:00:00"}` (`FavoriteResponse`) | 400 `VALIDATION_ERROR`; 404 `NOT_FOUND`(종목); 409 `INSTRUMENT_NOT_TRADABLE`, `DUPLICATE_RESOURCE` | 016 candidate 1 |
+
+같은 사용자의 `(userId, instrumentId)`는 유일하다. 중복 등록은 기존 값을 반환하지 않는다.
+
+### 즐겨찾기 목록 조회 (계획)
+
+| Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|
+| GET | /api/favorites | 추가 입력 없음 | 200 `{"content":[FavoriteResponse...]}`; 없으면 빈 배열 | 인증 공통 오류 | 016 candidate 2 |
+
+`createdAt DESC, favoriteId DESC` 순이며 페이지네이션과 write가 없다.
+
+### 즐겨찾기 해제 (계획)
+
+| Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|
+| DELETE | /api/favorites/{instrumentId} | 양의 `instrumentId` path | 204, 본문 없음 | 400 `VALIDATION_ERROR`; 404 `FAVORITE_NOT_FOUND` | 016 candidate 3 |
+
+타인 소유 행은 존재를 숨겨 404로 처리하며 반복 삭제도 404다.
+
+### 투자 실습 진행 조회 (계획)
+
+| Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|
+| GET | /api/education/practice | 추가 입력 없음 | 200 `InvestmentPracticeResponse` | 인증 공통 오류 | 016 candidate 12 |
+
+응답은 `tutorialKey="INVESTMENT_PRACTICE_V1"`, `status`(`NOT_STARTED|IN_PROGRESS|COMPLETED`), `currentStep`(진행 중 1~3, 완료 시 null), 1~3 순서의 `steps`, `completedAt`(완료 전 null)을 포함한다. 각 step은 `step`, `status`, `locked`, non-null `evidence`를 가진다. evidence는 favorite·intention·buyTrade·exitPlan·observation·reflection 각각의 id와 시각을 쌍으로 노출하며 아직 없는 값은 null이다. observation은 `evidenceType`(`CLOSER_TO_BOUNDARY|TIMED_REPETITION|FINAL_EVENT`)까지 삼쌍으로 null/non-null이다. 조회는 write하지 않고, 최초 완료 기록 이후에는 evidence 삭제·종결에도 `COMPLETED`가 회귀하지 않는다.
+
+### 투자 의도 기록 (계획)
+
+| Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|
+| POST | /api/education/practice/intentions | `{"instrumentId":1,"quantity":10,"stopLoss":65000,"takeProfit":75000}` (`PracticeIntentionCreateRequest`) | 201 `{"intentionId":1,"instrumentId":1,"quantity":10,"stopLoss":65000,"takeProfit":75000,"createdAt":"2026-08-03T10:01:00"}` (`PracticeIntentionResponse`) | 400 `VALIDATION_ERROR`; 404 `NOT_FOUND`(종목); 409 `PRACTICE_STEP_LOCKED`, `PRACTICE_ALREADY_COMPLETED` | 016 candidate 4 |
+
+현재 존재하는 본인 favorite와 같은 종목만 허용한다. 유효 요청마다 새 intention을 만들지만 완료 후에는 저장 없이 409다.
+
+### OCO exit plan 생성 (계획)
+
+| Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|
+| POST | /api/exit-plans | 필수 `Idempotency-Key: <UUID>`; body `{"intentionId":1,"buyTradeId":10,"instrumentId":1,"quantity":10,"stopLoss":65000,"takeProfit":75000}` (`ExitPlanCreateRequest`) | 최초 201, 기존 plan 수렴 200 `ExitPlanResponse` | 400 `VALIDATION_ERROR`; 404 `NOT_FOUND`(요청 종목); 409 `PRACTICE_EVIDENCE_MISSING`, `EXIT_PLAN_INVALID_PRICE_RANGE`, `EXIT_PLAN_SESSION_CLOSED`, `PRICE_UNAVAILABLE`, `INSUFFICIENT_QTY`, `IDEMPOTENCY_CONFLICT` | 016 candidate 7 |
+
+`ExitPlanResponse`는 `exitPlanId`, `intentionId`, `buyTradeId`, `replaySessionId`, `instrumentId`, `quantity`, `entryPrice`, `stopLoss`, `takeProfit`, `baselinePrice`, `baselineObservedAt`, `status`, `reservedAt`, `closedAt`, `triggeredOrderId`를 반환한다. `replaySessionId`는 코인만 null이며 PENDING이면 마지막 두 필드는 null이다. 상태는 `PENDING|FILLED_TAKE_PROFIT|FILLED_STOP_LOSS|CANCELLED|CANCELLED_EXPIRED`다.
+
+본인 favorite → intention → FILLED 시장가 BUY trade → holding의 종목·소유권을 검증하고 `intention.quantity == buyTrade.quantity == request.quantity`, `availableQuantity >= quantity`, `stopLoss < entryPrice < takeProfit`을 요구한다. 서버 유효 현재가를 baseline으로 저장하고 수량은 한 번만 예약한다. UUID는 lowercase canonical 문자열로 저장한다. 같은 key·같은 요청 또는 같은 intention·같은 fingerprint의 새 key는 기존 plan으로 200 수렴하고, 충돌은 409다.
+
+### OCO 예약 목록 조회 (계획)
+
+| Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|
+| GET | /api/exit-plans?status=PENDING | 필수 query `status=PENDING`; 다른 값 불가 | 200 `{"content":[ExitPlanResponse...]}`; 없으면 빈 배열 | 400 `VALIDATION_ERROR` | 016 candidate 8 |
+
+`reservedAt DESC, exitPlanId DESC` 순이며 페이지네이션과 write가 없다.
+
+### OCO 예약 취소 (계획)
+
+| Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|
+| DELETE | /api/exit-plans/{exitPlanId} | 양의 `exitPlanId` path | 204, 본문 없음 | 400 `VALIDATION_ERROR`; 404 `EXIT_PLAN_NOT_FOUND`; 409 `EXIT_PLAN_NOT_PENDING` | 016 candidate 9 |
+
+본인 PENDING plan만 취소한다. 두 조건을 함께 종결하고 예약 수량을 정확히 한 번 반환한다. 타인 plan은 404, 반복 요청과 가격 트리거·만료 경합 패자는 409다.
+
+### 가격 관찰 기록 (계획)
+
+| Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|
+| POST | /api/education/practice/observations | `{"exitPlanId":1}` (`PracticeObservationCreateRequest`) | 201 `{"observationId":1,"exitPlanId":1,"currentPrice":69000,"observedAt":"2026-08-03T10:05:00","closerToBoundary":true,"closerBoundary":"STOP_LOSS","evidenceType":"CLOSER_TO_BOUNDARY"}` (`PracticeObservationResponse`) | 400 `VALIDATION_ERROR`; 404 `EXIT_PLAN_NOT_FOUND`; 409 `EXIT_PLAN_NOT_PENDING`, `PRICE_UNAVAILABLE` | 016 candidate 13 |
+
+본인 PENDING plan만 허용하며 가격·시각·유형은 클라이언트가 보내지 않는다. `closerBoundary`는 `STOP_LOSS|TAKE_PROFIT` 또는 null, `evidenceType`은 `CLOSER_TO_BOUNDARY|TIMED_REPETITION` 또는 아직 미충족이면 null이다. terminal `FINAL_EVENT`는 서버 종결 트랜잭션만 만든다.
+
+### 투자 실습 복기 저장 (계획)
+
+| Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|
+| POST | /api/education/practice/reflections | `{"exitPlanId":1,"answer":"계획한 손절선에 가까워져 팔고 싶었지만 미리 정한 기준을 확인했다."}` (`PracticeReflectionCreateRequest`) | 최초 201 `{"reflectionId":1,"exitPlanId":1,"prompt":"지금 팔고 싶나요? 그렇다면 왜 그런가요? 계획한 손절·익절 라인과 비교해 적어보세요.","answer":"...","createdAt":"2026-08-03T10:10:00"}` (`PracticeReflectionResponse`) | 400 `VALIDATION_ERROR`; 404 `EXIT_PLAN_NOT_FOUND`; 409 `PRACTICE_EVIDENCE_MISSING`, `PRACTICE_ALREADY_COMPLETED` | 016 candidate 14 |
+
+`answer`는 whitespace-only가 아닌 raw Java 문자열 길이 1~2000이며 trim 없이 원문을 저장한다. A(경계에 가까워짐), B(2분 이상 범위의 서버 관찰 3회), C(체결·주식 만료 final event) 중 하나와 전체 owner·instrument·수량 evidence를 재검증한다. 정답·점수·보상은 없다. 사용자·튜토리얼 최초 요청만 reflection·completion을 원자 저장하고 이후 요청은 답변을 추가 저장하지 않은 채 409다.
+
+### 투자 실습 공통 인증·오류 및 DTO 규칙
+
+- 인증 실패는 401 `UNAUTHORIZED`; 예상하지 못한 실패는 500 `INTERNAL_ERROR` 공통 body다.
+- path/body로 직접 지정한 favorite·exit plan이 타인 소유이면 리소스별 404로 존재를 숨긴다. OCO·복기 내부 evidence chain 불일치는 409 `PRACTICE_EVIDENCE_MISSING`이다.
+- 목록 `content`와 진행 조회 `steps`는 항상 non-null이다. 모든 응답 시각은 ISO-8601 `LocalDateTime` 형식이다.
+- `POST /api/exit-plans`만 멱등 API다. 나머지 POST는 중복 규칙으로 보호하며 DELETE 성공 응답에는 body가 없다.
+- 전체 nullable 조합, 진행 상태 계산표, fingerprint canonical JSON과 동시성·잠금 정본은 `docs/specs/016-investment-education-policy/plan.md`를 따른다.
+
 ## 012 AI 피드백 (2차 계획 — 아직 구현하지 않음)
 
 `docs/specs/012-ai-feedback` 착수 시 추가될 계약 초안 4건이다(변동 원인 카드·매도 직후 피드백·종목 뉴스 요약·개장 전 브리핑). 네 경로는 URL 접두사(`instruments`·`ai`·`market`)가 다르지만 소유 도메인은 `feedback` 하나다. spec 단위로 묶어 둔다. **controller가 아직 없으므로 블랙박스 QA는 이 절을 계약 근거로 사용하지 않는다.** 구현이 병합되는 커밋에서 "계획" 표시를 제거하고 `docs/api-routes.md`의 2차 계획 라우트 절도 함께 정리한다.

@@ -1,7 +1,7 @@
 # Tasks: 3단계 투자 실습 튜토리얼
 
 ## 현재 이슈 — 문서 확정
-- [x] #158: PRD 단계 분리와 10개 API 상세 계약, canonical UUID 멱등·새 transaction reconciliation, decimal·답변·evidence·진행 상태, intention/reflection과 favorite DELETE 경합 잠금, 실제 Spring transaction 경계, FK 기준 DDL, 15개 후보의 DAG·migration·transaction·test 소유권을 확정한다. production과 전역 API 문서는 변경하지 않는다.
+- [x] #158: PRD 단계 분리와 10개 API 상세 계약, canonical UUID 멱등·새 transaction reconciliation, decimal·답변·evidence·진행 상태, intention/reflection과 favorite DELETE 경합 잠금, 실제 Spring transaction 경계, FK 기준 DDL, 15개 후보의 DAG·migration·transaction·test 소유권을 확정한다. `docs/api-routes.md`와 `docs/api-contracts.md`에는 구현 예정 계약으로 분리 등록하고 production은 변경하지 않는다.
 
 아래 6개는 현재 이슈의 미완료 작업이 아닌 상위 구현 작업 그룹이다. 실제 이슈 생성 시 `plan.md`의 15개 후보처럼 API 하나 또는 트랜잭션 경계 하나로 나누며 production 구현은 현재 지시하지 않는다.
 
@@ -12,4 +12,4 @@
 - [ ] 유효 가격 이벤트 OCO 체결과 주식 15:30 자동 만료 트랜잭션을 각각 구현한다: 중복·역순 이벤트 최초 승자, 반대 조건 자동 취소, final observation, 코인 GTC, 가격 장애 중 PENDING, 생성·취소·만료 경합 원자성.
 - [ ] 실습 순수 진행 조회와 관찰·복기 API를 구현한다: owner·instrument chain, intention·trade·plan snapshot quantity equality와 저장된 holdingId 검증(현재 holding quantity 제외), PENDING plan 전용 A·B, 서버 종결 전용 C, 최초 완료만 201이고 나머지는 무저장 409.
 
-후속 Controller가 실제 추가·변경되는 각 이슈에서만 `docs/api-routes.md`와 `docs/api-contracts.md`를 실제 매핑 기준으로 동기화한다.
+후속 Controller가 실제 추가·변경되는 각 이슈에서 해당 계획 계약을 실제 매핑 기준으로 전환하고 두 전역 API 문서를 함께 동기화한다.
