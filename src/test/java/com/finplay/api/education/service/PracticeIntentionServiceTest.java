@@ -20,8 +20,7 @@ import com.finplay.api.education.domain.PracticeProgressStatus;
 import com.finplay.api.education.dto.request.PracticeIntentionCreateRequest;
 import com.finplay.api.education.repository.PracticeIntentionRepository;
 import com.finplay.api.education.repository.PracticeProgressRepository;
-import com.finplay.api.favorite.domain.Favorite;
-import com.finplay.api.favorite.repository.FavoriteRepository;
+import com.finplay.api.favorite.service.FavoriteService;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.service.InstrumentService;
 import java.math.BigDecimal;
@@ -41,7 +40,7 @@ class PracticeIntentionServiceTest {
 	private static final Instant NOW = Instant.parse("2026-08-04T01:00:00Z");
 	private PracticeProgressRepository progressRepository;
 	private PracticeIntentionRepository intentionRepository;
-	private FavoriteRepository favoriteRepository;
+	private FavoriteService favoriteService;
 	private UserQueryService userQueryService;
 	private InstrumentService instrumentService;
 	private PracticeIntentionService service;
@@ -50,10 +49,10 @@ class PracticeIntentionServiceTest {
 	void setUp() {
 		progressRepository = mock(PracticeProgressRepository.class);
 		intentionRepository = mock(PracticeIntentionRepository.class);
-		favoriteRepository = mock(FavoriteRepository.class);
+		favoriteService = mock(FavoriteService.class);
 		userQueryService = mock(UserQueryService.class);
 		instrumentService = mock(InstrumentService.class);
-		service = new PracticeIntentionService(progressRepository, intentionRepository, favoriteRepository,
+		service = new PracticeIntentionService(progressRepository, intentionRepository, favoriteService,
 			userQueryService, instrumentService, Clock.fixed(NOW, ZoneOffset.UTC));
 	}
 
@@ -63,13 +62,11 @@ class PracticeIntentionServiceTest {
 		Instrument instrument = mock(Instrument.class);
 		when(instrument.getId()).thenReturn(INSTRUMENT_ID);
 		PracticeProgress progress = progress(PracticeProgressStatus.IN_PROGRESS);
-		Favorite favorite = mock(Favorite.class);
 		when(userQueryService.getUser(USER_ID)).thenReturn(user);
 		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID)).thenReturn(instrument);
 		when(progressRepository.findByUserIdAndTutorialKeyForUpdate(USER_ID,
 			PracticeIntentionService.TUTORIAL_KEY)).thenReturn(Optional.of(progress));
-		when(favoriteRepository.findByUserIdAndInstrumentIdForUpdate(USER_ID, INSTRUMENT_ID))
-			.thenReturn(Optional.of(favorite));
+		when(favoriteService.lockFavoriteIfPresent(USER_ID, INSTRUMENT_ID)).thenReturn(true);
 		when(intentionRepository.save(org.mockito.ArgumentMatchers.any())).thenAnswer(invocation -> {
 			PracticeIntention saved = invocation.getArgument(0);
 			org.springframework.test.util.ReflectionTestUtils.setField(saved, "id", 99L);
@@ -88,12 +85,12 @@ class PracticeIntentionServiceTest {
 		assertThat(second).isEqualTo(first);
 		verify(intentionRepository, org.mockito.Mockito.times(2))
 			.save(org.mockito.ArgumentMatchers.any(PracticeIntention.class));
-		InOrder order = inOrder(progressRepository, favoriteRepository, intentionRepository);
+		InOrder order = inOrder(progressRepository, favoriteService, intentionRepository);
 		order.verify(progressRepository).insertIfAbsent(USER_ID, PracticeIntentionService.TUTORIAL_KEY,
 			LocalDateTime.of(2026, 8, 4, 1, 0));
 		order.verify(progressRepository).findByUserIdAndTutorialKeyForUpdate(USER_ID,
 			PracticeIntentionService.TUTORIAL_KEY);
-		order.verify(favoriteRepository).findByUserIdAndInstrumentIdForUpdate(USER_ID, INSTRUMENT_ID);
+		order.verify(favoriteService).lockFavoriteIfPresent(USER_ID, INSTRUMENT_ID);
 		order.verify(intentionRepository).save(org.mockito.ArgumentMatchers.any());
 	}
 
@@ -113,8 +110,7 @@ class PracticeIntentionServiceTest {
 	@Test
 	void createIntentionFailsWhenFavoriteStepIsLockedWithoutSaving() {
 		stubDependencies(PracticeProgressStatus.IN_PROGRESS);
-		when(favoriteRepository.findByUserIdAndInstrumentIdForUpdate(USER_ID, INSTRUMENT_ID))
-			.thenReturn(Optional.empty());
+		when(favoriteService.lockFavoriteIfPresent(USER_ID, INSTRUMENT_ID)).thenReturn(false);
 
 		assertError(ErrorCode.PRACTICE_STEP_LOCKED);
 
@@ -127,7 +123,7 @@ class PracticeIntentionServiceTest {
 
 		assertError(ErrorCode.PRACTICE_ALREADY_COMPLETED);
 
-		verify(favoriteRepository, never()).findByUserIdAndInstrumentIdForUpdate(USER_ID, INSTRUMENT_ID);
+		verify(favoriteService, never()).lockFavoriteIfPresent(USER_ID, INSTRUMENT_ID);
 		verify(intentionRepository, never()).save(org.mockito.ArgumentMatchers.any());
 	}
 

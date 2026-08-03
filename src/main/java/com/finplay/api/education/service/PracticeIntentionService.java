@@ -12,7 +12,7 @@ import com.finplay.api.education.dto.request.PracticeIntentionCreateRequest;
 import com.finplay.api.education.dto.response.PracticeIntentionResponse;
 import com.finplay.api.education.repository.PracticeIntentionRepository;
 import com.finplay.api.education.repository.PracticeProgressRepository;
-import com.finplay.api.favorite.repository.FavoriteRepository;
+import com.finplay.api.favorite.service.FavoriteService;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.service.InstrumentService;
 import java.time.Clock;
@@ -29,7 +29,7 @@ public class PracticeIntentionService {
 
 	private final PracticeProgressRepository practiceProgressRepository;
 	private final PracticeIntentionRepository practiceIntentionRepository;
-	private final FavoriteRepository favoriteRepository;
+	private final FavoriteService favoriteService;
 	private final UserQueryService userQueryService;
 	private final InstrumentService instrumentService;
 	private final Clock clock;
@@ -50,8 +50,9 @@ public class PracticeIntentionService {
 			throw new BusinessException(ErrorCode.PRACTICE_ALREADY_COMPLETED);
 		}
 
-		favoriteRepository.findByUserIdAndInstrumentIdForUpdate(userId, request.instrumentId())
-			.orElseThrow(() -> new BusinessException(ErrorCode.PRACTICE_STEP_LOCKED));
+		if (!favoriteService.lockFavoriteIfPresent(userId, request.instrumentId())) {
+			throw new BusinessException(ErrorCode.PRACTICE_STEP_LOCKED);
+		}
 
 		PracticeIntention intention = PracticeIntention.create(
 			user,

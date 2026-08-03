@@ -16,6 +16,7 @@ import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -61,6 +62,11 @@ public class FavoriteService {
 		Favorite favorite = favoriteRepository.findByUserIdAndInstrumentIdForUpdate(userId, instrumentId)
 			.orElseThrow(() -> new BusinessException(ErrorCode.FAVORITE_NOT_FOUND));
 		favoriteRepository.delete(favorite);
+	}
+
+	@Transactional(propagation = Propagation.MANDATORY)
+	public boolean lockFavoriteIfPresent(Long userId, Long instrumentId) {
+		return favoriteRepository.findByUserIdAndInstrumentIdForUpdate(userId, instrumentId).isPresent();
 	}
 
 	private boolean isDuplicateFavorite(DataIntegrityViolationException exception) {

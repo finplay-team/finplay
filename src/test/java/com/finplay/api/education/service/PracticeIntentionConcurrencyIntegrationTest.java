@@ -4,16 +4,16 @@ package com.finplay.api.education.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import org.aspectj.lang.ProceedingJoinPoint;
+import org.aspectj.lang.annotation.Around;
+import org.aspectj.lang.annotation.Aspect;
 import com.finplay.api.TestcontainersConfiguration;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
-import com.finplay.api.education.domain.PracticeIntention;
 import com.finplay.api.education.dto.request.PracticeIntentionCreateRequest;
 import com.finplay.api.education.dto.response.PracticeIntentionResponse;
-import com.finplay.api.education.repository.PracticeIntentionRepository;
-import com.finplay.api.education.repository.PracticeProgressRepository;
 import com.finplay.api.favorite.domain.Favorite;
 import com.finplay.api.favorite.repository.FavoriteRepository;
 import com.finplay.api.favorite.service.FavoriteService;
@@ -35,22 +35,20 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @SpringBootTest
-@Import(TestcontainersConfiguration.class)
+@Import({TestcontainersConfiguration.class, PracticeIntentionConcurrencyIntegrationTest.ProbeConfiguration.class})
 class PracticeIntentionConcurrencyIntegrationTest {
 
 	@Autowired
 	private PracticeIntentionService intentionService;
 	@Autowired
 	private FavoriteService favoriteService;
-	@Autowired
-	private PracticeProgressRepository progressRepository;
-	@Autowired
-	private PracticeIntentionRepository intentionRepository;
 	@Autowired
 	private FavoriteRepository favoriteRepository;
 	@Autowired
@@ -61,6 +59,8 @@ class PracticeIntentionConcurrencyIntegrationTest {
 	private JdbcTemplate jdbcTemplate;
 	@Autowired
 	private TransactionTemplate transactionTemplate;
+	@Autowired
+	private FavoriteLockProbe favoriteLockProbe;
 	private User user;
 	private Instrument instrument;
 
@@ -155,25 +155,14 @@ class PracticeIntentionConcurrencyIntegrationTest {
 	@Test
 	void intentionFirstMakesDeleteWaitThenBothCommitInOrder() throws Exception {
 		Favorite favorite = favoriteRepository.saveAndFlush(Favorite.create(user, instrument, LocalDateTime.now()));
-		CountDownLatch intentionPersistedWithFavoriteLock = new CountDownLatch(1);
+		CountDownLatch intentionHasFavoriteLock = new CountDownLatch(1);
 		CountDownLatch releaseIntention = new CountDownLatch(1);
+		favoriteLockProbe.arm(intentionHasFavoriteLock, releaseIntention);
 		var executor = Executors.newFixedThreadPool(2);
 		try {
-			Future<Long> intention = executor.submit(() -> transactionTemplate.execute(status -> {
-				progressRepository.insertIfAbsent(user.getId(), PracticeIntentionService.TUTORIAL_KEY,
-					LocalDateTime.now());
-				progressRepository.findByUserIdAndTutorialKeyForUpdate(
-					user.getId(), PracticeIntentionService.TUTORIAL_KEY).orElseThrow();
-				favoriteRepository.findByUserIdAndInstrumentIdForUpdate(
-					user.getId(), instrument.getId()).orElseThrow();
-				Long id = intentionRepository.saveAndFlush(PracticeIntention.create(
-					user, instrument, request().quantity(), request().stopLoss(), request().takeProfit(),
-					LocalDateTime.now())).getId();
-				intentionPersistedWithFavoriteLock.countDown();
-				await(releaseIntention);
-				return id;
-			}));
-			assertThat(intentionPersistedWithFavoriteLock.await(5, TimeUnit.SECONDS)).isTrue();
+			Future<PracticeIntentionResponse> intention = executor.submit(
+				() -> intentionService.createIntention(user.getId(), request()));
+			assertThat(intentionHasFavoriteLock.await(5, TimeUnit.SECONDS)).isTrue();
 			Future<Void> delete = executor.submit(() -> {
 				favoriteService.deleteFavorite(user.getId(), instrument.getId());
 				return null;
@@ -181,11 +170,12 @@ class PracticeIntentionConcurrencyIntegrationTest {
 			assertThatThrownBy(() -> delete.get(300, TimeUnit.MILLISECONDS))
 				.isInstanceOf(TimeoutException.class);
 			releaseIntention.countDown();
-			assertThat(intention.get(5, TimeUnit.SECONDS)).isPositive();
+			assertThat(intention.get(5, TimeUnit.SECONDS).intentionId()).isPositive();
 			delete.get(5, TimeUnit.SECONDS);
 		} finally {
 			releaseIntention.countDown();
 			shutdownAndAwait(executor);
+			favoriteLockProbe.clear();
 		}
 		assertThat(count("practice_intentions")).isEqualTo(1L);
 		assertThat(favoriteRepository.findById(favorite.getId())).isEmpty();
@@ -221,5 +211,43 @@ class PracticeIntentionConcurrencyIntegrationTest {
 	private void shutdownAndAwait(ExecutorService executor) throws InterruptedException {
 		executor.shutdownNow();
 		assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+	}
+
+	@TestConfiguration
+	static class ProbeConfiguration {
+
+		@Bean
+		FavoriteLockProbe favoriteLockProbe() {
+			return new FavoriteLockProbe();
+		}
+	}
+
+	@Aspect
+	static class FavoriteLockProbe {
+
+		private volatile CountDownLatch locked;
+		private volatile CountDownLatch release;
+
+		void arm(CountDownLatch locked, CountDownLatch release) {
+			this.locked = locked;
+			this.release = release;
+		}
+
+		void clear() {
+			locked = null;
+			release = null;
+		}
+
+		@Around("execution(boolean com.finplay.api.favorite.service.FavoriteService.lockFavoriteIfPresent(..))")
+		Object pauseAfterFavoriteLock(ProceedingJoinPoint joinPoint) throws Throwable {
+			Object result = joinPoint.proceed();
+			CountDownLatch currentLocked = locked;
+			CountDownLatch currentRelease = release;
+			if (currentLocked != null && currentRelease != null) {
+				currentLocked.countDown();
+				currentRelease.await();
+			}
+			return result;
+		}
 	}
 }
