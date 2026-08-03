@@ -3,6 +3,7 @@ package com.finplay.api.feedback.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finplay.api.feedback.domain.NarrativeSource;
 import java.util.List;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;

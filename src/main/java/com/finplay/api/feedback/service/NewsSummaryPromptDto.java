@@ -1,6 +1,7 @@
 // 종목 뉴스 요약 서술 프롬프트의 입력 — 종목·범위와 그 범위의 기사 목록을 담는다.
 package com.finplay.api.feedback.service;
 
+import com.finplay.api.feedback.domain.NewsSummaryScope;
 import java.time.LocalDate;
 import java.util.List;
 

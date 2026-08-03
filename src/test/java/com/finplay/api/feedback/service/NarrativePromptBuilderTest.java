@@ -3,6 +3,7 @@ package com.finplay.api.feedback.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finplay.api.feedback.domain.NewsSummaryScope;
 import com.finplay.api.market.domain.Market;
 import java.math.BigDecimal;
 import java.time.LocalDate;
