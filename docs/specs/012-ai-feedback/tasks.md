@@ -64,7 +64,7 @@
   - UPSERT·재생성 판정 로직은 배치 소유(#5)다. 여기서는 유니크가 그 UPSERT를 성립시키는지까지만 본다.
   - 검증 — `@DataJpaTest`. ① 같은 종목·거래일에 `scope`만 다른 행 2건이 공존한다 ② 같은 `(종목, 거래일, scope)` 2건째는 유니크에 걸린다 ③ 브리핑은 같은 `(시장, 거래일)` 2건째가 유니크에 걸린다 ④ `summary`가 `NULL`이고 `narrative_source`가 `NONE`인 행이 저장된다.
 
-- [ ] **6. `TradeFeedback`·`PriceMovePeerStat` 엔티티·리포지토리 — V13 `validate` 최종 확인**
+- [x] **6. `TradeFeedback`·`PriceMovePeerStat` 엔티티·리포지토리 — V13 `validate` 최종 확인**
 
   매도 직후 서술(회원별)과 카드별 집단 집계를 매핑한다. 일곱 테이블 중 마지막 둘이다.
   - `narrative_finalized`는 기본 `FALSE`, `regeneration_attempts`는 기본 `0`이고 **체결 1건당 누적**이다 — 날짜로 리셋하지 않는다(§데이터 모델·§C-8). 리셋 로직을 여기에 만들지 않는다.
