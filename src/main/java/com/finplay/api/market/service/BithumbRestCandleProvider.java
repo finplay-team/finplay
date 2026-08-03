@@ -111,7 +111,10 @@ public class BithumbRestCandleProvider implements CryptoCandleProvider {
 		return (int)Math.min(MAX_COUNT, Math.max(1, units));
 	}
 
-	// 빗썸 to 파라미터는 UTC 기준이다 — 우리 내부 from·to는 KST LocalDateTime(주식과 같은 표현)이므로 변환한다.
+	// 빗썸 to 파라미터는 UTC 기준이며, 그 정확한 경계 시각을 배제(exclusive)한다(이슈 #157 외부 스모크로 실측
+	// 확인 — to와 정확히 같은 시각에 시작하는 봉이 응답에서 빠짐). 우리 API의 to는 항상 포함(inclusive)이므로
+	// 1초를 더해 빗썸에 보낸다. 빗썸 최소 봉 간격(1분)보다 훨씬 작은 보정값이라 다음 봉을 끌어오지 않으면서
+	// 경계 봉만 포함시킨다 — interval별 분기가 필요 없다(1m·1d·1w·1M 공통).
 	private String resolveToParam(LocalDateTime to) {
 		if (to == null) {
 			return null;
@@ -119,6 +122,7 @@ public class BithumbRestCandleProvider implements CryptoCandleProvider {
 		return to.atZone(KST)
 			.withZoneSameInstant(ZoneOffset.UTC)
 			.toLocalDateTime()
+			.plusSeconds(1)
 			.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
 	}
 
