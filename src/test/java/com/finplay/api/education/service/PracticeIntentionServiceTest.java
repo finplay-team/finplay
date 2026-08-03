@@ -118,6 +118,21 @@ class PracticeIntentionServiceTest {
 	}
 
 	@Test
+	void createIntentionFailsWithInternalErrorWhenProgressRowIsUnexpectedlyMissingAfterInsert() {
+		User user = mock(User.class);
+		Instrument instrument = mock(Instrument.class);
+		when(userQueryService.getUser(USER_ID)).thenReturn(user);
+		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID)).thenReturn(instrument);
+		when(progressRepository.findByUserIdAndTutorialKeyForUpdate(USER_ID,
+			PracticeIntentionService.TUTORIAL_KEY)).thenReturn(Optional.empty());
+
+		assertError(ErrorCode.INTERNAL_ERROR);
+
+		verify(favoriteService, never()).lockFavoriteIfPresent(USER_ID, INSTRUMENT_ID);
+		verify(intentionRepository, never()).save(org.mockito.ArgumentMatchers.any());
+	}
+
+	@Test
 	void createIntentionFailsWhenPracticeAlreadyCompletedWithoutLockingFavoriteOrSaving() {
 		stubDependencies(PracticeProgressStatus.COMPLETED);
 

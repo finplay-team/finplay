@@ -43,9 +43,11 @@ public class PracticeIntentionService {
 		LocalDateTime createdAt = LocalDateTime.now(clock);
 
 		practiceProgressRepository.insertIfAbsent(userId, TUTORIAL_KEY, createdAt);
+		// insertIfAbsent가 같은 트랜잭션에서 행을 보장하므로 이 조회는 항상 성공해야 한다 — 도달하면
+		// 클라이언트에도 컨벤션에 맞는 공통 오류 형식으로 응답한다(원인 불명의 500이지만 형식은 지킨다).
 		PracticeProgress progress = practiceProgressRepository
 			.findByUserIdAndTutorialKeyForUpdate(userId, TUTORIAL_KEY)
-			.orElseThrow(() -> new IllegalStateException("실습 진행 행을 생성한 뒤 조회할 수 없습니다."));
+			.orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_ERROR));
 		if (progress.getStatus() == PracticeProgressStatus.COMPLETED) {
 			throw new BusinessException(ErrorCode.PRACTICE_ALREADY_COMPLETED);
 		}
