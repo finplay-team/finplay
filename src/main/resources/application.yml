@@ -93,6 +93,21 @@ bithumb:
       connect-timeout-ms: ${BITHUMB_TICKER_CONNECT_TIMEOUT_MS:2000}
       read-timeout-ms: ${BITHUMB_TICKER_READ_TIMEOUT_MS:3000}
 
+# 네이버 뉴스 검색 API 키 — 뉴스 수집기(spec 012 FEED-001)가 사용한다. 키 경로의 정본은 spec §C-7이다.
+# kis 블록과 같은 형태로 yml에는 빈 기본값 플레이스홀더만 두고 실제 값은 환경변수로만 주입한다 (conventions.md).
+# 값이 없어도 기동·./gradlew build는 성공한다 — 실제 수집기 대신 Fake가 붙어 빈 목록을 반환할 뿐이다(§실패 처리).
+#
+# 위 oauth.naver가 쓰는 NAVER_CLIENT_ID·NAVER_CLIENT_SECRET과 다른 애플리케이션의 키다. 검색 API용을 따로
+# 발급받으므로 재사용하면 검색과 로그인 중 하나가 조용히 깨진다 (spec §외부 API 호출 상세).
+naver-search:
+  client-id: ${NAVER_SEARCH_CLIENT_ID:}
+  client-secret: ${NAVER_SEARCH_CLIENT_SECRET:}
+
+# OpenDART 공시검색 API 키 — 공시 수집기(spec 012 FEED-001)가 사용한다. 위 naver-search와 같은 방침이며,
+# 값이 없으면 공시 없이 뉴스만으로 진행한다(§실패 처리). 공시는 주식만 해당한다.
+dart:
+  api-key: ${DART_API_KEY:}
+
 # AI 서술 생성(spec 012)의 LLM 호출 설정. 값의 정본은 docs/specs/012-ai-feedback/spec.md §C-7이며 코드에 상수로
 # 박지 않는다 (ADR-0011). 프로바이더 교체는 build.gradle의 starter 의존성과 이 블록 변경으로 끝난다.
 # API 키는 이 블록이 아니라 위 spring.ai.openai.api-key로 주입한다 (시크릿은 yml에 적지 않는다, conventions.md).
@@ -110,3 +125,12 @@ feedback:
     max-tokens: 512
     max-regeneration: 1 # 요약·브리핑 후검증 재생성 횟수
     max-narrative-retry: 3 # 매도 회고 서술 재생성 누적 재시도 상한
+  # 뉴스·공시 상시 수집 크론. 값의 정본은 spec §C-1이고 FeedbackNewsProperties가 같은 값을 @DefaultValue로 갖는다.
+  # @Scheduled는 record가 아니라 Environment에서 읽으므로 실제 스케줄을 결정하는 것은 이 블록이다.
+  # 선언부에 zone = "Asia/Seoul"을 반드시 함께 붙인다 — 배포 JVM 기본 타임존이 UTC라 빠뜨리면 예외도 로그도 없이
+  # 엉뚱한 시각에 돈다(§C-1).
+  news:
+    # 뉴스는 장중이 아니라 종일 돈다. 전장 구간(§C-2)이 약 17.5시간이라 장중만 돌리면 그 대부분이 영영
+    # 수집되지 않고, 저녁·야간 기사가 다음 날 아침 브리핑의 주재료다(FEED-001).
+    collect-cron: "0 0/30 * * * *" # 24시간 30분 간격
+    disclosure-cron: "0 0/30 8-20 * * MON-FRI" # 공시는 주식만
