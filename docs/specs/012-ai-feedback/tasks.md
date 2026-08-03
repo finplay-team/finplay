@@ -53,7 +53,7 @@
   - **Fake와 실제 구현의 선택은 프로필로 가른다** — 실제 구현에 `@Profile("prod")`, Fake에 `@Profile("!prod")`. `ResendEmailSender`/`FakeEmailSender`가 그대로 선례다. 로컬·테스트는 키 없이 Fake로 뜨므로 §실패 처리의 "키 없음 → Fake가 빈 목록. 기동·테스트 정상"을 만족하고, prod에 키가 아직 없는 구간은 같은 표의 "호출 실패 → 그 종목만 건너뜀"으로 흡수된다. **4번도 이 기준을 그대로 쓴다.**
   - 검증 — 단위. HTTP는 `MockRestServiceServer`로 고정한다(`KisHistoricalCandleClientImplTest` 선례). **실제 네이버 API를 부르는 테스트를 만들지 않는다.** ① 고정 응답이 제목·언론사·URL·발행시각으로 매핑되고 본문·스니펫이 어디에도 남지 않는다 ② 발행 시각이 제각각인 응답이 하나도 안 걸러진 채 그대로 나온다 ③ 호출이 실패해도 예외가 밖으로 나가지 않고 그 종목만 비어 돌아온다 ④ `FakeNewsCollector`가 빈 목록을 준다.
 
-- [ ] **4. `DisclosureCollector` 인터페이스와 `FakeDisclosureCollector`·`DartDisclosureCollector`, `corp_code` 매핑 리소스**
+- [x] **4. `DisclosureCollector` 인터페이스와 `FakeDisclosureCollector`·`DartDisclosureCollector`, `corp_code` 매핑 리소스**
 
   공시 수집기 3개와 그것이 요구하는 매핑 리소스를 만든다. **OpenDART는 종목코드가 아니라 `corp_code`를 쓴다**(§외부 API 호출 상세) — 매핑을 미리 리소스로 만들어 두는 것이 `plan.md` §착수 전 확인 항목이다.
   - 매핑 리소스는 `src/main/resources`에 둔다. 형식은 `holidays-2026.txt` 선례처럼 단순 텍스트로 충분하다. **대상 종목 수는 §C-7**이다.
