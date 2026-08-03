@@ -43,7 +43,8 @@ final class StockCandleAggregator {
 	}
 
 	// 버킷 경계는 spec의 확정 규칙을 그대로 옮긴 것이다 — 1d=거래일, 1w=그 주 월요일(ISO-8601), 1M=그 달 1일.
-	private static LocalDate resolveBucketStart(LocalDate tradingDate, CandleInterval interval) {
+	// package-private(이슈 #155) — StockReplayService가 조회 하한을 좁히기 위해 같은 버킷 경계 규칙을 재사용한다.
+	static LocalDate resolveBucketStart(LocalDate tradingDate, CandleInterval interval) {
 		return switch (interval) {
 			case ONE_DAY -> tradingDate;
 			case ONE_WEEK -> tradingDate.with(DayOfWeek.MONDAY);

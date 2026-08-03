@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.data.domain.PageRequest;
 
 class StockReplayServiceTest {
 
@@ -868,6 +869,103 @@ class StockReplayServiceTest {
 
 		assertThat(result).hasSize(1);
 		assertThat(result.get(0).tradingDate()).isEqualTo(LocalDate.of(2026, 6, 1));
+	}
+
+	// --- 조회 하한 좁히기(narrowRangeStart, 이슈 #155) ---
+	// 데이터가 쌓일수록 lookbackFloor(고정 400일·200주·200개월)나 호출자가 준 넓은 from을 그대로 쓰면 응답 200개
+	// 버킷에 필요한 것보다 훨씬 많은 1분봉을 읽게 되는 버그(PR #151 리뷰에서 분리된 이슈)를 고친다. 여기서는 가벼운
+	// DISTINCT 거래일 조회(stockCandleRepository의 findDistinctTradingDateBy...) 결과를 스텁해, 실제 조회에 쓰이는
+	// from이 그 결과로부터 역산한 좁은 값으로 바뀌는지 검증한다. 이 스텁을 두지 않은 위의 기존 테스트들은 Mockito
+	// 기본값(빈 리스트)이 반환되어 narrowRangeStart가 원래 rangeStart를 그대로 반환하므로 영향받지 않는다.
+
+	private static List<LocalDate> consecutiveDaysDescending(LocalDate mostRecentInclusive, int count) {
+		List<LocalDate> dates = new ArrayList<>();
+		for (int i = 0; i < count; i++) {
+			dates.add(mostRecentInclusive.minusDays(i));
+		}
+		return dates;
+	}
+
+	@Test
+	void getRevealedAggregatedCandlesNarrowsDailyLookbackFloorToTheActualTwoHundredthBucketStartDateWhenDataIsDense() {
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		LocalDate pastEnd = WEEKDAY.minusDays(1);
+		LocalDate wideLookbackFloor = WEEKDAY.minusDays(400);
+		// 실제로는 205일치 데이터만 있다 — 200개 버킷에 필요한 것보다 5일 더 있을 뿐, 나머지 195일(400-205)은
+		// 애초에 존재하지 않는다는 것을 재현한다.
+		List<LocalDate> denseRecentDates = consecutiveDaysDescending(pastEnd, 205);
+		when(stockCandleRepository.findDistinctTradingDateByInstrumentIdAndTradingDateBetweenOrderByTradingDateDesc(
+			INSTRUMENT_ID, wideLookbackFloor, pastEnd, PageRequest.of(0, 200)))
+			.thenReturn(denseRecentDates);
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+			eq(INSTRUMENT_ID), any(), eq(pastEnd)))
+			.thenReturn(List.of());
+		// 09:00:30(첫 분봉 구간) — 재생거래일 당일 쿼리는 스텁이 필요 없다.
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(9, 0, 30)));
+
+		service.getRevealedAggregatedCandles(INSTRUMENT_ID, CandleInterval.ONE_DAY, null, null);
+
+		ArgumentCaptor<LocalDate> fromCaptor = ArgumentCaptor.forClass(LocalDate.class);
+		verify(stockCandleRepository).findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+			eq(INSTRUMENT_ID), fromCaptor.capture(), eq(pastEnd));
+		// 200번째로 최신인 날짜(denseRecentDates의 마지막 원소) — 고정 400일 floor보다 훨씬 좁다.
+		assertThat(fromCaptor.getValue()).isEqualTo(denseRecentDates.get(199));
+		assertThat(fromCaptor.getValue()).isAfter(wideLookbackFloor);
+		verify(stockCandleRepository, never())
+			.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+				INSTRUMENT_ID, wideLookbackFloor, pastEnd);
+	}
+
+	@Test
+	void getRevealedAggregatedCandlesNarrowsExplicitWideFromDateWhenActualDataIsShallow() {
+		// 호출자가 실제 데이터보다 훨씬 이른 from을 명시적으로 보내도(from·to 해석 계약은 그대로 유지하면서) 조회
+		// 하한은 실제 존재하는 거래일까지만 좁혀야 한다 — lookbackFloor 기본값 경로뿐 아니라 명시적 from 경로에서도
+		// 같은 버그가 재현되므로 함께 고쳐야 한다(이슈 #155 완료 조건).
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		LocalDate explicitFrom = WEEKDAY.minusDays(1000);
+		LocalDate pastEnd = WEEKDAY.minusDays(1);
+		// 실제 데이터는 5거래일뿐이다(200개 캡에 한참 못 미침) — narrowRangeStart는 원래 rangeStart보다 넓히지
+		// 않고, 존재하는 가장 이른 날짜까지만 좁혀야 한다.
+		List<LocalDate> shallowDates = consecutiveDaysDescending(pastEnd, 5);
+		when(stockCandleRepository.findDistinctTradingDateByInstrumentIdAndTradingDateBetweenOrderByTradingDateDesc(
+			INSTRUMENT_ID, explicitFrom, pastEnd, PageRequest.of(0, 200)))
+			.thenReturn(shallowDates);
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+			eq(INSTRUMENT_ID), any(), eq(pastEnd)))
+			.thenReturn(List.of());
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(9, 0, 30)));
+
+		service.getRevealedAggregatedCandles(INSTRUMENT_ID, CandleInterval.ONE_DAY, explicitFrom, null);
+
+		ArgumentCaptor<LocalDate> fromCaptor = ArgumentCaptor.forClass(LocalDate.class);
+		verify(stockCandleRepository).findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+			eq(INSTRUMENT_ID), fromCaptor.capture(), eq(pastEnd));
+		assertThat(fromCaptor.getValue()).isEqualTo(shallowDates.get(4));
+		assertThat(fromCaptor.getValue()).isAfter(explicitFrom);
+	}
+
+	@Test
+	void getRevealedAggregatedCandlesQueriesDistinctTradingDatesWithIntervalSpecificFetchLimitForWeeklyAndMonthly() {
+		// 1w·1M은 버킷당 최대 거래일 수가 1보다 크므로(최대 7·31일) DISTINCT 거래일 조회 자체의 Pageable 상한도
+		// 그만큼 넓어야 200개 버킷을 놓치지 않는다 — narrowRangeStart가 interval별로 올바른 fetchLimit(200×7,
+		// 200×31)을 실제로 사용하는지 확인한다.
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		LocalDate pastEnd = WEEKDAY.minusDays(1);
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+			eq(INSTRUMENT_ID), any(), eq(pastEnd)))
+			.thenReturn(List.of());
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(9, 0, 30)));
+
+		service.getRevealedAggregatedCandles(INSTRUMENT_ID, CandleInterval.ONE_WEEK, null, null);
+		service.getRevealedAggregatedCandles(INSTRUMENT_ID, CandleInterval.ONE_MONTH, null, null);
+
+		verify(stockCandleRepository).findDistinctTradingDateByInstrumentIdAndTradingDateBetweenOrderByTradingDateDesc(
+			INSTRUMENT_ID, WEEKDAY.minusWeeks(200), pastEnd, PageRequest.of(0, 1400));
+		verify(stockCandleRepository).findDistinctTradingDateByInstrumentIdAndTradingDateBetweenOrderByTradingDateDesc(
+			INSTRUMENT_ID, WEEKDAY.minusMonths(200), pastEnd, PageRequest.of(0, 6200));
 	}
 
 	@Test

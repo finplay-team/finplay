@@ -19,11 +19,13 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.transaction.annotation.Transactional;
 
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest
@@ -307,6 +309,44 @@ class CandleQueryServiceIntegrationTest {
 				LocalDateTime.of(td4, LocalTime.of(9, 1)));
 		assertThat(minute.get(0).close()).isEqualByComparingTo("40100");
 		assertThat(minute.get(1).close()).isEqualByComparingTo("40300");
+	}
+
+	// 이슈 #155: 응답은 200개 버킷으로 캡되지만 그걸 만들기 위해 읽는 분봉 수 자체에는 상한이 없던 버그(PR #151
+	// 리뷰에서 분리) — 실제 MySQL에 200개 버킷보다 많은 거래일(210일)을 시드해, 조회 하한을 좁히는 최적화
+	// (StockReplayService.narrowRangeStart)가 실 DB 경로에서도 여전히 정확한 "최신 200개"를 반환하는지 검증한다.
+	// 조회 자체가 실제로 좁혀진 범위만 읽는지는 StockReplayServiceTest의 Mockito 인자 검증(정확한 from 경계값)으로
+	// 고정했으므로, 여기서는 전체 스택(실 MySQL·집계·200 캡)이 그 최적화와 맞물려도 결과가 깨지지 않는지에 집중한다.
+	// @Transactional — 210개 거래일 분봉·종목·재생세션을 커밋하면(이 클래스의 다른 테스트들과 달리 이 테스트만)
+	// 공유 MySQL 컨테이너(ADR-0003)에 실제로 남아 InstrumentRepositoryTest의 "정확히 28건" 단정 등 다른 클래스의
+	// 개수 기반 검증을 깨뜨릴 수 있다(2026-07-30 agent-mistakes.md와 동일 패턴, 실제 재현 확인). 테스트 종료 시
+	// 자동 롤백시켜 격리한다.
+	@Test
+	@Transactional
+	void aggregatedDailyIntervalReturnsCorrectLatestTwoHundredBucketsWhenDataSpansMoreThanTwoHundredTradingDays() {
+		Instrument instrument = saveInstrument("CDL0155");
+		LocalDate firstTradingDate = LocalDate.of(2020, 1, 2);
+		int totalTradingDays = 210;
+		List<LocalDate> tradingDates = new ArrayList<>();
+		for (int i = 0; i < totalTradingDays; i++) {
+			LocalDate tradingDate = firstTradingDate.plusDays(i);
+			tradingDates.add(tradingDate);
+			saveAggCandle(
+				instrument, tradingDate, LocalTime.of(9, 0), "1000", "1010", "990", String.valueOf(1000 + i), 10);
+		}
+		LocalDate sourceTradingDate = tradingDates.get(totalTradingDays - 1);
+		LocalDate aggServiceDate = sourceTradingDate.plusDays(30);
+		stockReplaySessionRepository.save(
+			StockReplaySession.ready(aggServiceDate, sourceTradingDate, LocalDateTime.now(), LocalDateTime.now()));
+
+		CandleQueryService service = candleQueryServiceAt(clockAt(aggServiceDate, LocalTime.of(15, 30)));
+		List<CandleResponse> daily = service.getCandles(instrument.getId(), "1d", null, null);
+
+		assertThat(daily).hasSize(200);
+		// 210일 중 가장 오래된 10일(인덱스 0~9)은 200개 캡에 밀려 빠지고, 인덱스 10부터가 응답의 첫 봉이어야 한다.
+		assertThat(daily.get(0).sourceTime()).isEqualTo(LocalDateTime.of(tradingDates.get(10), LocalTime.MIDNIGHT));
+		assertThat(daily.get(199).sourceTime())
+			.isEqualTo(LocalDateTime.of(sourceTradingDate, LocalTime.MIDNIGHT));
+		assertThat(daily.get(199).close()).isEqualByComparingTo(String.valueOf(1000 + totalTradingDays - 1));
 	}
 
 	// 이슈 #143(013): 코인 일/주/월봉은 저장 없이 요청 시점에 위임되므로(MKT-008과 동일 원칙), 실제 Bithumb 호출 대신
