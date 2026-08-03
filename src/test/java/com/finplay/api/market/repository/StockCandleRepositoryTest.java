@@ -286,6 +286,76 @@ class StockCandleRepositoryTest {
 		assertThat(stockCandleRepository.existsByTradingDate(TRADING_DATE)).isFalse();
 	}
 
+	// --- 집계 캔들(1d·1w·1M) 전용 거래일 범위 조회(findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc, 이슈 #143) ---
+
+	@Test
+	void findByTradingDateBetweenReturnsCandlesAcrossMultipleTradingDatesOrderedByDateThenTimeAscending() {
+		LocalDate day1 = LocalDate.of(2026, 7, 20);
+		LocalDate day2 = LocalDate.of(2026, 7, 21);
+		LocalDate day3 = LocalDate.of(2026, 7, 22);
+		stockCandleRepository.save(newCandle(instrumentA, day2, LocalTime.of(9, 1), "71300"));
+		stockCandleRepository.save(newCandle(instrumentA, day1, LocalTime.of(9, 0), "71000"));
+		stockCandleRepository.save(newCandle(instrumentA, day3, LocalTime.of(9, 0), "72000"));
+		stockCandleRepository.save(newCandle(instrumentA, day2, LocalTime.of(9, 0), "71200"));
+
+		List<StockCandle> candles = stockCandleRepository
+			.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+				instrumentA.getId(), day1, day3);
+
+		assertThat(candles).hasSize(4);
+		assertThat(candles).extracting(c -> c.getTradingDate() + "T" + c.getCandleTime())
+			.containsExactly(day1 + "T09:00", day2 + "T09:00", day2 + "T09:01", day3 + "T09:00");
+	}
+
+	@Test
+	void findByTradingDateBetweenIsInclusiveOfBothDateEndpoints() {
+		LocalDate from = LocalDate.of(2026, 7, 20);
+		LocalDate to = LocalDate.of(2026, 7, 22);
+		stockCandleRepository.save(newCandle(instrumentA, from, LocalTime.of(9, 0), "71000"));
+		stockCandleRepository.save(newCandle(instrumentA, to, LocalTime.of(9, 0), "72000"));
+
+		List<StockCandle> candles = stockCandleRepository
+			.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(instrumentA.getId(), from, to);
+
+		assertThat(candles).hasSize(2);
+		assertThat(candles).extracting(StockCandle::getTradingDate).containsExactly(from, to);
+	}
+
+	@Test
+	void findByTradingDateBetweenExcludesDatesOutsideRangeIncludingAFutureTradingDateBeyondTo() {
+		// 방어 케이스(spec.md "공개 상한 — 미공개 데이터 유출 금지") — 재생거래일 이후로 잘못 저장된 미래
+		// trading_date 행이 실제로 있어도, to 상한을 넘는 한 이 쿼리는 그 행을 절대 반환하지 않아야 한다.
+		// StockReplayService가 to를 재생거래일로 클램프하는 것과는 별개로 쿼리 자체의 범위 필터링을 실제 MySQL로 검증한다.
+		LocalDate from = LocalDate.of(2026, 7, 20);
+		LocalDate to = LocalDate.of(2026, 7, 22);
+		LocalDate beforeRange = LocalDate.of(2026, 7, 19);
+		LocalDate futureBeyondTo = LocalDate.of(2026, 7, 23);
+		stockCandleRepository.save(newCandle(instrumentA, from, LocalTime.of(9, 0), "71000"));
+		stockCandleRepository.save(newCandle(instrumentA, beforeRange, LocalTime.of(9, 0), "70000"));
+		stockCandleRepository.save(newCandle(instrumentA, futureBeyondTo, LocalTime.of(9, 0), "73000"));
+
+		List<StockCandle> candles = stockCandleRepository
+			.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(instrumentA.getId(), from, to);
+
+		assertThat(candles).hasSize(1);
+		assertThat(candles.get(0).getTradingDate()).isEqualTo(from);
+		assertThat(candles).extracting(StockCandle::getTradingDate).doesNotContain(beforeRange, futureBeyondTo);
+	}
+
+	@Test
+	void findByTradingDateBetweenExcludesOtherInstrumentEvenWithinRange() {
+		LocalDate from = LocalDate.of(2026, 7, 20);
+		LocalDate to = LocalDate.of(2026, 7, 22);
+		stockCandleRepository.save(newCandle(instrumentA, from, LocalTime.of(9, 0), "71000"));
+		stockCandleRepository.save(newCandle(instrumentB, from, LocalTime.of(9, 0), "99000"));
+
+		List<StockCandle> candles = stockCandleRepository
+			.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(instrumentA.getId(), from, to);
+
+		assertThat(candles).hasSize(1);
+		assertThat(candles).allMatch(c -> c.getInstrument().getId().equals(instrumentA.getId()));
+	}
+
 	// --- KisHistoricalCandleCollector 전용 조회(existsByInstrumentIdAndTradingDate) ---
 
 	@Test
