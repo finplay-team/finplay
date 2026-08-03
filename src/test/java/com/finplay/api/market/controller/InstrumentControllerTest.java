@@ -381,6 +381,85 @@ class InstrumentControllerTest {
 	}
 
 	@Test
+	void getCandlesReturnsOkWithEmptyArrayForOneDayIntervalNoLongerRejected() throws Exception {
+		// 이슈 #143(013) 1단계: 1d는 더 이상 400이 아니다. 집계 로직은 아직 배관만 되어 있으므로(항목 ①) 이 시점에는
+		// 빈 목록 200이 맞다 — 실제 집계·위임은 다음 항목(②·③)에서 구현된다.
+		authenticate();
+		when(candleQueryService.getCandles(1L, "1d", null, null)).thenReturn(List.of());
+
+		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}/candles", 1L).param("interval", "1d")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.length()").value(0));
+
+		verify(candleQueryService).getCandles(1L, "1d", null, null);
+	}
+
+	@Test
+	void getCandlesReturnsOkWithEmptyArrayForOneWeekIntervalNoLongerRejected() throws Exception {
+		authenticate();
+		when(candleQueryService.getCandles(1L, "1w", null, null)).thenReturn(List.of());
+
+		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}/candles", 1L).param("interval", "1w")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.length()").value(0));
+
+		verify(candleQueryService).getCandles(1L, "1w", null, null);
+	}
+
+	@Test
+	void getCandlesReturnsOkWithEmptyArrayForUppercaseOneMonthIntervalNoLongerRejected() throws Exception {
+		// "1M"(월봉)이 "1m"(분봉)과 구분되는 별개의 유효 interval로 처리됨을 API 계약 수준에서 고정한다.
+		authenticate();
+		when(candleQueryService.getCandles(1L, "1M", null, null)).thenReturn(List.of());
+
+		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}/candles", 1L).param("interval", "1M")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.length()").value(0));
+
+		verify(candleQueryService).getCandles(1L, "1M", null, null);
+	}
+
+	@Test
+	void getCandlesReturnsCommonValidationErrorForUppercaseDIntervalVariant() throws Exception {
+		// "1D"는 spec상 여전히 400이어야 한다(대소문자 미정규화) — 서비스가 던진 VALIDATION_ERROR를 그대로 매핑하는지 확인한다.
+		authenticate();
+		when(candleQueryService.getCandles(eq(1L), eq("1D"), isNull(), isNull()))
+			.thenThrow(new BusinessException(ErrorCode.VALIDATION_ERROR, "지원하지 않는 캔들 간격입니다."));
+
+		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}/candles", 1L).param("interval", "1D")))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.message").isNotEmpty())
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(candleQueryService).getCandles(1L, "1D", null, null);
+	}
+
+	@Test
+	void getCandlesReturnsCommonValidationErrorForBlankIntervalParam() throws Exception {
+		authenticate();
+		when(candleQueryService.getCandles(eq(1L), eq(""), isNull(), isNull()))
+			.thenThrow(new BusinessException(ErrorCode.VALIDATION_ERROR, "지원하지 않는 캔들 간격입니다."));
+
+		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}/candles", 1L).param("interval", "")))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.message").isNotEmpty())
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+	}
+
+	@Test
+	void getCandlesRejectsMissingAuthenticationForOneDayIntervalWithoutCallingService() throws Exception {
+		// 401 유지 회귀: 새 interval 값에서도 인증 실패가 여전히 서비스 호출 전에 막혀야 한다.
+		mockMvc.perform(get("/api/instruments/{instrumentId}/candles", 1L).param("interval", "1d"))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(candleQueryService);
+	}
+
+	@Test
 	void getCandlesReturnsCommonValidationErrorWhenIntervalParamIsMissing() throws Exception {
 		// interval은 필수 쿼리 파라미터다 — 누락 시 MissingServletRequestParameterException을
 		// GlobalExceptionHandler가 400 VALIDATION_ERROR로 매핑하는지 고정한다.

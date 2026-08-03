@@ -81,16 +81,16 @@ class LocalForcedOpenStockPriceProviderTest {
 		StockReplayPriceDto price = new StockReplayPriceDto(false, StockMarketStatus.CLOSED, null, null, null);
 		when(delegate.getCurrentPrice(INSTRUMENT_ID)).thenReturn(price);
 		when(delegate.getCurrentPrices(List.of(INSTRUMENT_ID))).thenReturn(List.of(price));
-		when(delegate.getCandles(INSTRUMENT_ID, null, null)).thenReturn(List.of());
+		when(delegate.getCandles(INSTRUMENT_ID, CandleInterval.ONE_MINUTE, null, null)).thenReturn(List.of());
 		LocalForcedOpenStockPriceProvider provider = provider(true);
 
 		assertThat(provider.getCurrentPrice(INSTRUMENT_ID)).isSameAs(price);
 		assertThat(provider.getCurrentPrices(List.of(INSTRUMENT_ID))).containsExactly(price);
-		assertThat(provider.getCandles(INSTRUMENT_ID, null, null)).isEmpty();
+		assertThat(provider.getCandles(INSTRUMENT_ID, CandleInterval.ONE_MINUTE, null, null)).isEmpty();
 		// 시세·캔들 경로는 시장상태와 무관하게 그대로 위임되어야 한다 — 데코레이터가 값을 만들어 내지 않는다.
 		verify(delegate).getCurrentPrice(INSTRUMENT_ID);
 		verify(delegate).getCurrentPrices(any());
-		verify(delegate).getCandles(INSTRUMENT_ID, null, null);
+		verify(delegate).getCandles(INSTRUMENT_ID, CandleInterval.ONE_MINUTE, null, null);
 	}
 
 	private LocalForcedOpenStockPriceProvider provider(boolean forceMarketOpen) {

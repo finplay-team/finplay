@@ -20,9 +20,15 @@ public class FakeCryptoCandleProvider implements CryptoCandleProvider {
 	private volatile boolean failing;
 
 	@Override
-	public List<CryptoCandleDto> getCandles(String symbol, LocalDateTime from, LocalDateTime to) {
+	public List<CryptoCandleDto> getCandles(
+		String symbol, CandleInterval interval, LocalDateTime from, LocalDateTime to) {
 		if (failing) {
 			throw new BusinessException(ErrorCode.MARKET_DATA_PROVIDER_ERROR);
+		}
+		// 이슈 #143(013) 1단계 배관: interval별 시드(setCandles 오버로드)는 아직 없다(항목 ④에서 추가 예정).
+		// 지금 시드된 candlesBySymbol은 전부 1m 데이터이므로 그 외 interval은 빈 목록을 반환한다.
+		if (interval.isAggregated()) {
+			return List.of();
 		}
 		List<CryptoCandleDto> candles = candlesBySymbol.getOrDefault(symbol, List.of());
 		return candles.stream()

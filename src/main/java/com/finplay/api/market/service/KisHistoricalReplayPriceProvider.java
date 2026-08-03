@@ -29,7 +29,13 @@ public class KisHistoricalReplayPriceProvider implements StockPriceProvider {
 	}
 
 	@Override
-	public List<StockCandleDto> getCandles(Long instrumentId, LocalDateTime from, LocalDateTime to) {
+	public List<StockCandleDto> getCandles(
+		Long instrumentId, CandleInterval interval, LocalDateTime from, LocalDateTime to) {
+		// 이슈 #143(013) 1단계 배관: 집계(1d·1w·1M) 위임은 아직 없다(항목 ③에서 StockReplayService에 추가 예정).
+		// 지금은 1m만 기존 경로로 조회하고 그 외 interval은 빈 목록을 반환한다 — 조용히 잘못된 값을 섞지 않는다.
+		if (interval.isAggregated()) {
+			return List.of();
+		}
 		return stockReplayService.getRevealedCandles(instrumentId, from, to);
 	}
 }

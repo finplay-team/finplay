@@ -27,7 +27,7 @@ class FakeCryptoCandleProviderTest {
 			candleAt(LocalDateTime.of(2026, 7, 30, 9, 1)));
 		provider.setCandles("BTC", candles);
 
-		assertThat(provider.getCandles("BTC", null, null)).isEqualTo(candles);
+		assertThat(provider.getCandles("BTC", CandleInterval.ONE_MINUTE, null, null)).isEqualTo(candles);
 	}
 
 	@Test
@@ -40,7 +40,7 @@ class FakeCryptoCandleProviderTest {
 			candleAt(LocalDateTime.of(2026, 7, 30, 9, 3))));
 
 		List<CryptoCandleDto> result = provider.getCandles(
-			"BTC", LocalDateTime.of(2026, 7, 30, 9, 1), LocalDateTime.of(2026, 7, 30, 9, 2));
+			"BTC", CandleInterval.ONE_MINUTE, LocalDateTime.of(2026, 7, 30, 9, 1), LocalDateTime.of(2026, 7, 30, 9, 2));
 
 		assertThat(result).extracting(CryptoCandleDto::sourceTime)
 			.containsExactly(
@@ -52,7 +52,7 @@ class FakeCryptoCandleProviderTest {
 	void getCandlesReturnsEmptyListForUnknownSymbol() {
 		FakeCryptoCandleProvider provider = new FakeCryptoCandleProvider();
 
-		assertThat(provider.getCandles("ETH", null, null)).isEmpty();
+		assertThat(provider.getCandles("ETH", CandleInterval.ONE_MINUTE, null, null)).isEmpty();
 	}
 
 	@Test
@@ -62,7 +62,7 @@ class FakeCryptoCandleProviderTest {
 
 		provider.simulateFailure();
 
-		assertThatThrownBy(() -> provider.getCandles("BTC", null, null))
+		assertThatThrownBy(() -> provider.getCandles("BTC", CandleInterval.ONE_MINUTE, null, null))
 			.isInstanceOf(BusinessException.class)
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
 				.isEqualTo(ErrorCode.MARKET_DATA_PROVIDER_ERROR));
@@ -76,6 +76,6 @@ class FakeCryptoCandleProviderTest {
 
 		provider.reset();
 
-		assertThat(provider.getCandles("BTC", null, null)).hasSize(1);
+		assertThat(provider.getCandles("BTC", CandleInterval.ONE_MINUTE, null, null)).hasSize(1);
 	}
 }

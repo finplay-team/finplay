@@ -75,7 +75,7 @@ class BithumbRestCandleProviderTest {
 			.andExpect(queryParam("market", "KRW-BTC"))
 			.andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
 
-		provider.getCandles("BTC", null, null);
+		provider.getCandles("BTC", CandleInterval.ONE_MINUTE, null, null);
 
 		server.verify();
 	}
@@ -92,7 +92,7 @@ class BithumbRestCandleProviderTest {
 			+ "]";
 		server.expect(requestTo(startsWith(ENDPOINT))).andRespond(withSuccess(body, MediaType.APPLICATION_JSON));
 
-		List<CryptoCandleDto> result = provider.getCandles("BTC", null, null);
+		List<CryptoCandleDto> result = provider.getCandles("BTC", CandleInterval.ONE_MINUTE, null, null);
 
 		assertThat(result).extracting(CryptoCandleDto::sourceTime)
 			.containsExactly(
@@ -111,7 +111,7 @@ class BithumbRestCandleProviderTest {
 			+ "]";
 		server.expect(requestTo(startsWith(ENDPOINT))).andRespond(withSuccess(body, MediaType.APPLICATION_JSON));
 
-		List<CryptoCandleDto> result = provider.getCandles("BTC", null, null);
+		List<CryptoCandleDto> result = provider.getCandles("BTC", CandleInterval.ONE_MINUTE, null, null);
 
 		assertThat(result).hasSize(2);
 		assertThat(result.get(result.size() - 1).sourceTime()).isEqualTo(LocalDateTime.of(2026, 7, 30, 11, 43));
@@ -127,7 +127,7 @@ class BithumbRestCandleProviderTest {
 			"0.12345678", "12345678901.23") + "]";
 		server.expect(requestTo(startsWith(ENDPOINT))).andRespond(withSuccess(body, MediaType.APPLICATION_JSON));
 
-		CryptoCandleDto candle = provider.getCandles("BTC", null, null).get(0);
+		CryptoCandleDto candle = provider.getCandles("BTC", CandleInterval.ONE_MINUTE, null, null).get(0);
 
 		assertThat(candle.open()).isEqualByComparingTo("95000000");
 		assertThat(candle.high()).isEqualByComparingTo("95100000");
@@ -146,7 +146,7 @@ class BithumbRestCandleProviderTest {
 			"2026-07-30T11:43:00", "100", "110", "90", "105", "0.26725783", "1000") + "]";
 		server.expect(requestTo(startsWith(ENDPOINT))).andRespond(withSuccess(body, MediaType.APPLICATION_JSON));
 
-		CryptoCandleDto candle = provider.getCandles("BTC", null, null).get(0);
+		CryptoCandleDto candle = provider.getCandles("BTC", CandleInterval.ONE_MINUTE, null, null).get(0);
 
 		assertThat(candle.volume()).isEqualByComparingTo("0.26725783");
 	}
@@ -161,7 +161,7 @@ class BithumbRestCandleProviderTest {
 			.andExpect(noToParam())
 			.andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
 
-		provider.getCandles("BTC", null, null);
+		provider.getCandles("BTC", CandleInterval.ONE_MINUTE, null, null);
 
 		server.verify();
 	}
@@ -177,7 +177,7 @@ class BithumbRestCandleProviderTest {
 			.andExpect(queryParam("to", "2026-07-30T00:30:00"))
 			.andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
 
-		provider.getCandles("BTC", null, to);
+		provider.getCandles("BTC", CandleInterval.ONE_MINUTE, null, to);
 
 		server.verify();
 	}
@@ -194,7 +194,7 @@ class BithumbRestCandleProviderTest {
 			.andExpect(noToParam())
 			.andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
 
-		provider.getCandles("BTC", from, null);
+		provider.getCandles("BTC", CandleInterval.ONE_MINUTE, from, null);
 
 		server.verify();
 	}
@@ -211,7 +211,7 @@ class BithumbRestCandleProviderTest {
 			.andExpect(queryParam("to", "2026-07-30T00:10:00"))
 			.andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
 
-		provider.getCandles("BTC", from, to);
+		provider.getCandles("BTC", CandleInterval.ONE_MINUTE, from, to);
 
 		server.verify();
 	}
@@ -228,7 +228,7 @@ class BithumbRestCandleProviderTest {
 			.andExpect(queryParam("to", "2026-07-30T00:00:00"))
 			.andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
 
-		provider.getCandles("BTC", from, to);
+		provider.getCandles("BTC", CandleInterval.ONE_MINUTE, from, to);
 
 		server.verify();
 	}
@@ -243,7 +243,7 @@ class BithumbRestCandleProviderTest {
 				throw new IOException("connection timed out");
 			});
 
-		assertThatThrownBy(() -> provider.getCandles("BTC", null, null))
+		assertThatThrownBy(() -> provider.getCandles("BTC", CandleInterval.ONE_MINUTE, null, null))
 			.isInstanceOf(BusinessException.class)
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
 				.isEqualTo(ErrorCode.MARKET_DATA_PROVIDER_ERROR));
@@ -254,7 +254,7 @@ class BithumbRestCandleProviderTest {
 		BithumbRestCandleProvider provider = providerAt(LocalDateTime.of(2026, 7, 30, 11, 43));
 		server.expect(requestTo(startsWith(ENDPOINT))).andRespond(withServerError());
 
-		assertThatThrownBy(() -> provider.getCandles("BTC", null, null))
+		assertThatThrownBy(() -> provider.getCandles("BTC", CandleInterval.ONE_MINUTE, null, null))
 			.isInstanceOf(BusinessException.class)
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
 				.isEqualTo(ErrorCode.MARKET_DATA_PROVIDER_ERROR));
@@ -266,7 +266,7 @@ class BithumbRestCandleProviderTest {
 		server.expect(requestTo(startsWith(ENDPOINT)))
 			.andRespond(withStatus(HttpStatus.BAD_REQUEST).body("bad request"));
 
-		assertThatThrownBy(() -> provider.getCandles("BTC", null, null))
+		assertThatThrownBy(() -> provider.getCandles("BTC", CandleInterval.ONE_MINUTE, null, null))
 			.isInstanceOf(BusinessException.class)
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
 				.isEqualTo(ErrorCode.MARKET_DATA_PROVIDER_ERROR));
@@ -278,7 +278,7 @@ class BithumbRestCandleProviderTest {
 		server.expect(requestTo(startsWith(ENDPOINT)))
 			.andRespond(withSuccess("{malformed", MediaType.APPLICATION_JSON));
 
-		assertThatThrownBy(() -> provider.getCandles("BTC", null, null))
+		assertThatThrownBy(() -> provider.getCandles("BTC", CandleInterval.ONE_MINUTE, null, null))
 			.isInstanceOf(BusinessException.class)
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
 				.isEqualTo(ErrorCode.MARKET_DATA_PROVIDER_ERROR));
@@ -303,7 +303,7 @@ class BithumbRestCandleProviderTest {
 		server.expect(requestTo(startsWith(ENDPOINT)))
 			.andRespond(withSuccess(bodyMissingTradePrice, MediaType.APPLICATION_JSON));
 
-		assertThatThrownBy(() -> provider.getCandles("BTC", null, null))
+		assertThatThrownBy(() -> provider.getCandles("BTC", CandleInterval.ONE_MINUTE, null, null))
 			.isInstanceOf(BusinessException.class)
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
 				.isEqualTo(ErrorCode.MARKET_DATA_PROVIDER_ERROR));
@@ -315,7 +315,7 @@ class BithumbRestCandleProviderTest {
 		server.expect(requestTo(startsWith(ENDPOINT)))
 			.andRespond(withSuccess("null", MediaType.APPLICATION_JSON));
 
-		assertThatThrownBy(() -> provider.getCandles("BTC", null, null))
+		assertThatThrownBy(() -> provider.getCandles("BTC", CandleInterval.ONE_MINUTE, null, null))
 			.isInstanceOf(BusinessException.class)
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
 				.isEqualTo(ErrorCode.MARKET_DATA_PROVIDER_ERROR));
