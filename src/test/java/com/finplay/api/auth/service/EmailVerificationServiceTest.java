@@ -13,6 +13,7 @@ import com.finplay.api.auth.domain.EmailVerification;
 import com.finplay.api.auth.email.EmailSender;
 import com.finplay.api.auth.repository.EmailVerificationRepository;
 import com.finplay.api.auth.repository.UserRepository;
+import com.finplay.api.auth.verification.VerificationCodePolicy;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import java.nio.charset.StandardCharsets;
@@ -58,7 +59,7 @@ class EmailVerificationServiceTest {
 	void setUp() {
 		Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
 		service = new EmailVerificationService(
-			userRepository, emailVerificationRepository, emailSender, clock, SECRET);
+			userRepository, emailVerificationRepository, emailSender, clock, new VerificationCodePolicy(), SECRET);
 	}
 
 	@Test

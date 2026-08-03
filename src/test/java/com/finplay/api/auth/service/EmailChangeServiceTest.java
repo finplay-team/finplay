@@ -19,6 +19,7 @@ import com.finplay.api.auth.repository.EmailChangeVerificationRepository;
 import com.finplay.api.auth.repository.ReauthTokenRepository;
 import com.finplay.api.auth.repository.SocialAccountRepository;
 import com.finplay.api.auth.repository.UserRepository;
+import com.finplay.api.auth.verification.VerificationCodePolicy;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import java.nio.charset.StandardCharsets;
@@ -82,7 +83,7 @@ class EmailChangeServiceTest {
 		Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
 		service = new EmailChangeService(
 			userRepository, socialAccountRepository, reauthTokenRepository, emailChangeVerificationRepository,
-			passwordEncoder, emailSender, clock, SECRET);
+			passwordEncoder, emailSender, clock, new VerificationCodePolicy(), SECRET);
 	}
 
 	@Test
