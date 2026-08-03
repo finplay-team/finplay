@@ -11,6 +11,33 @@ spring:
       # SSE(/api/stocks/stream) 연결이 장시간 유지돼야 하므로 컨테이너 async 타임아웃을 두지 않는다.
       # 연결 생존 확인은 SseEmitterRegistry의 20초 heartbeat가 담당한다 (이슈 #18).
       request-timeout: -1
+  ai:
+    # Spring AI 2.0의 OpenAI 스타터는 chat 말고도 embedding·image·moderation·audio 모델 빈을 전부 자동 등록한다.
+    # 이 기능(spec 012)이 쓰는 것은 chat 하나뿐이므로 나머지를 끈다 — 안 쓰는 빈이 줄기도 하지만, 더 중요한 이유는
+    # openAiSdkAudioSpeechModel이 기동 시점에 API 키를 요구해 키 없이는 컨텍스트가 아예 안 뜨기 때문이다
+    # (openai-java-core의 "At least one of apiKey... must be set", 2026-08-03 실측).
+    model:
+      embedding: none
+      image: none
+      moderation: none
+      audio:
+        speech: none
+        transcription: none
+    openai:
+      # 키가 없어도 기동해야 한다 (ADR-0011 — LLM 실패는 정상 경로다). SDK가 빈 문자열을 거부하므로 자리표시자를
+      # 기본값으로 둔다. 실제 호출 여부는 NarrativeGenerator가 키 존재를 보고 판단하며, 없으면 호출하지 않고
+      # 즉시 실패를 반환해 템플릿으로 폴백한다 (spec §실패 처리).
+      api-key: ${OPENAI_API_KEY:not-configured}
+      # LLM 호출 타임아웃. 값의 정본은 feedback.llm.timeout-seconds 하나이고 여기서는 참조만 한다.
+      #
+      # 이 자리에 있는 이유가 있다. Spring AI 2.0에서 타임아웃은 요청 단위 옵션이 아니라 클라이언트 단위 값이다 —
+      # OpenAiChatAutoConfiguration이 이 프로퍼티(OpenAiCommonProperties)로 OpenAIClient를 한 번 만들고,
+      # OpenAiChatModel은 그 클라이언트를 final 필드로 들고 있어 요청마다 준 OpenAiChatOptions.timeout을 보지 않는다.
+      # OpenAiHttpClientBuilderCustomizer로 okhttp 쪽을 덮어써도 SpringAiOpenAiHttpClient.newCall이 요청마다
+      # RequestOptions의 타임아웃으로 다시 덮어쓴다(2026-08-03 바이트코드 확인). 그래서 모델·최대 토큰만
+      # NarrativeGenerator가 요청 단위로 넘기고 타임아웃은 이 경로로 넘긴다.
+      # 참고로 spring.ai.openai.chat.timeout은 바인딩은 되지만 클라이언트 생성에 쓰이지 않아 효과가 없다.
+      timeout: ${feedback.llm.timeout-seconds}s
   task:
     scheduling:
       # 기본 pool size 1이면 블로킹 @Scheduled 작업 하나(예: KisHistoricalCandleCollector의 배치 HTTP 호출)가
@@ -65,3 +92,21 @@ bithumb:
     ticker:
       connect-timeout-ms: ${BITHUMB_TICKER_CONNECT_TIMEOUT_MS:2000}
       read-timeout-ms: ${BITHUMB_TICKER_READ_TIMEOUT_MS:3000}
+
+# AI 서술 생성(spec 012)의 LLM 호출 설정. 값의 정본은 docs/specs/012-ai-feedback/spec.md §C-7이며 코드에 상수로
+# 박지 않는다 (ADR-0011). 프로바이더 교체는 build.gradle의 starter 의존성과 이 블록 변경으로 끝난다.
+# API 키는 이 블록이 아니라 위 spring.ai.openai.api-key로 주입한다 (시크릿은 yml에 적지 않는다, conventions.md).
+#
+# 이 블록은 지우면 안 된다. FeedbackLlmProperties가 같은 값을 @DefaultValue로 갖고 있지만 그것은 바인딩 시점
+# 기본값이지 Environment의 값이 아니라서, 위 spring.ai.openai.timeout의 ${feedback.llm.timeout-seconds}
+# 플레이스홀더(기본값 없음)를 채우지 못한다. 실제로 이 블록을 지우고 @SpringBootTest를 돌리면
+# ConfigurationPropertiesBindException → DurationStyle 변환 실패로 컨텍스트가 기동하지 않는다(2026-08-03 실측).
+# 값이 record와 여기 두 곳에 있는 것은 §C-7이 "application.yml에 기본값을 두고"로 정한 결과이며,
+# 튜닝은 이 블록만 고치면 되도록 한 것이다(§튜닝).
+feedback:
+  llm:
+    model: gpt-5.4-mini
+    timeout-seconds: 20
+    max-tokens: 512
+    max-regeneration: 1 # 요약·브리핑 후검증 재생성 횟수
+    max-narrative-retry: 3 # 매도 회고 서술 재생성 누적 재시도 상한
