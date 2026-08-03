@@ -171,15 +171,17 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 
 ### 2차 MVP — 1차 완료 후 별도 Spec
 
-- 3단계 투자 실습 튜토리얼 (`docs/specs/011-investment-education-policy`)
+- 3단계 투자 실습 튜토리얼 (`docs/specs/016-investment-education-policy`)
   1. 종목 즐겨찾기를 등록하고 본인 목록에서 확인한다. 현재 backend에 즐겨찾기 API가 없으므로 등록·목록·해제 API를 선행 구현한다.
   2. 손절·익절 라인과 수량을 먼저 기록한 뒤 기존 `POST /api/orders` 시장가 매수로 즉시 체결하고, 같은 보유 수량에 손절·익절을 묶은 OCO exit plan 하나를 예약해 목록에서 확인한다. 시장가 진입은 예약 주문이 아니다.
   3. 서버 유효 현재가를 관찰하고 "지금 팔고 싶나요?" 취지의 정답 없는 자유 복기를 저장한다. 복기는 baseline보다 경계에 가까워진 관찰 1회, 최소 2분 범위의 서버 관찰 3회, 익절·손절·주식 만료의 서버 final observation 중 하나가 있으면 허용한다.
   - 클라이언트 관찰 API는 본인 `PENDING` OCO plan에서만 A·B 관찰을 추가할 수 있다. terminal plan은 409이며, 체결·주식 만료의 `FINAL_EVENT`는 서버 종결 트랜잭션만 기록한다. terminal 이후에도 이미 충족한 A·B·C 증거로 복기를 저장할 수 있다.
-  - OCO는 익절 `currentPrice >= takeProfit`, 손절 `currentPrice <= stopLoss`, `stopLoss < entryPrice < takeProfit`을 적용한다. 동일 종목·holding·수량을 plan 한 건에서 한 번만 예약하며 한쪽 체결·전체 취소 시 반대 조건 자동 취소와 수량 소비·반환을 원자 처리한다.
+  - OCO는 익절 `currentPrice >= takeProfit`, 손절 `currentPrice <= stopLoss`, `stopLoss < entryPrice < takeProfit`을 적용한다. plan 한 건에서 수량을 한 번만 예약하며 한쪽 체결·전체 취소 시 반대 조건 자동 취소와 수량 소비·반환을 원자 처리한다.
+  - 이 OCO는 2차 MVP 튜토리얼 전용이다. `intentionId`가 필수이며 step 1 favorite부터 exit plan까지 owner·instrument가 같고 `intention.quantity == buyTrade.quantity == exitPlan.quantity`여야 한다. holding은 owner·instrument와 생성 시 `availableQuantity >= exitPlan.quantity`만 검증하므로 기존·추가 보유로 total quantity가 달라도 정상이다. 복기 시 현재 holding quantity는 재검증하지 않는다. 일반 리스크 관리 OCO는 3차 MVP 후보로 분리한다.
   - 생성 시 서버 유효 현재가를 baseline으로 저장한다. 시세가 없으면 plan·예약 흔적 없이 `PRICE_UNAVAILABLE`로 거부한다. 주식은 매수 체결과 현재 OPEN replay session이 같고 15:30 전일 때만 생성하며 plan에 session을 연결한다.
   - OCO 트리거는 거래 가능한 유효 가격 갱신에서만 평가한다. 가격 장애 중에는 `PENDING`을 유지한다. 주식 미체결 plan은 replay session 15:30에 `CANCELLED_EXPIRED`로 자동 취소하고 예약을 한 번 반환하며, 코인은 GTC다.
   - 주식 OCO 생성·트리거·취소·만료의 잠금 순서는 replay session → holding → plan으로 고정한다. 중복·역순 가격 이벤트는 최초 커밋만 종결하고 후속 이벤트는 skip한다. 기존 시장가 SELL과 일반 지정가 SELL도 공통 예약 원장의 `availableQuantity = totalQuantity - reservedQuantity`만 매도할 수 있다.
+  - OCO endpoint 활성화 전 nullable `trades.stock_replay_session_id` FK와 주식 체결 session 기록, 공통 reservation ledger, 기존 `POST /api/orders` MARKET SELL의 `availableQuantity` 검증을 먼저 배포하거나 OCO와 같은 atomic release로 배포한다. 일반 LIMIT SELL도 공통 ledger 없이 활성화하지 않는다.
   - 전체 완료는 복기 저장 트랜잭션의 불변 완료 기록으로 유지한다. 완료 전에는 실제 evidence가 사라지면 재진행이 필요할 수 있지만 완료 뒤 favorite 삭제나 plan 종결로 회귀하지 않는다.
   - 최초 intention 생성에서 사용자·튜토리얼 공통 `practice_progresses` 행을 atomic insert-or-existing으로 한 번 확보한다. 복기 저장은 이 progress를 가장 먼저 잠그고 `progress → intention → exit plan` 순서로 검증한다. 서로 다른 eligible plan의 동시 요청도 최초 요청만 reflection·completion 각 1행과 progress 완료를 만들고 201을 반환하며 나머지는 답변을 추가 저장하지 않고 409 `PRACTICE_ALREADY_COMPLETED`다. progress·completion의 사용자·튜토리얼 unique와 reflection의 사용자·plan unique를 최종 방어선으로 둔다.
   - 튜토리얼 완료는 실제 도메인 API 성공·소유권·필드·시각 순서를 서버가 연결해 판정한다. 클라이언트 완료 주장은 받지 않는다. 배지·금전성 보상·LLM·투자 지식 객관식 퀴즈는 이 단계에 포함하지 않는다.
@@ -809,7 +811,7 @@ Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conven
 - `stock_replay_sessions`: 서비스 날짜, 원본 거래일, 준비상태(`preparation_status`: PREPARING·READY·FAILED — OPEN·CLOSED는 저장하지 않고 Clock으로 계산), 결과 결정시각(`resolved_at`), 실패사유 (`UNIQUE(service_date)`)
 - `market_data_imports`: 데이터출처, 원본 거래일, 수집시각, 상태(SUCCESS·PARTIAL_SUCCESS·FAILED·SKIPPED_DUPLICATE), 실패사유, 파일 중복식별값
 - `orders`: 멱등키, 계좌, 종목, 구분, 유형, 수량, 체결상태
-- `trades`: 불변 체결 원장, 가격, 수량, 금액, 수수료, 실현손익
+- `trades`: 불변 체결 원장, 가격, 수량, 금액, 수수료, 실현손익, nullable `stock_replay_session_id` FK (주식 fill은 당시 current session, 코인은 null — 2차 tutorial-only OCO 선행 변경)
 - `holdings`: 계좌·종목별 현재 보유수량과 평균단가
 - `holding_lots`: 매수 체결별 최초수량·잔여수량·원가·매수수수료
 - `trade_allocations`: 매도 체결이 소비한 매수 lot과 배분수량·원가
@@ -1005,4 +1007,4 @@ Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conven
 - Java 17과 Spring Boot 4.1.0은 호환되며 Gradle 8.14+ 또는 9.x를 사용한다.
 - 2차 시작 전 동시성 모델, 지정가 체결 트리거·큐 소비 방식(LMT-002 Decision Gate), AI 피드백 접점, 랭킹·알림 계약을 별도 Spec으로 확정한다. AI 피드백 접점은 `docs/specs/012-ai-feedback`로 확정했다 (2026-08-02). 지정가는 배치가 아니라 상시 처리(이벤트 드리븐)로 재확정했으며 (2026-08-03), 큐 구현 세부사항은 `docs/specs/015-limit-order`에서 확정한다. 랭킹은 시장별(STOCK/CRYPTO) 분리·Redis ZSET 메커니즘과 RANK-001(전체 랭킹)·RANK-002(내 랭킹) 정책(공동 순위, limit 기본 10·상한 50, 매도 체결 이력 없는 회원 제외)을 확정했으며 (2026-08-03, 이슈 #139), SSE push는 검토 후 REST 조회로 대체했다 — 체결마다 push할 만큼 긴급한 데이터가 아니고 Notion API 표에도 REST 엔드포인트만 등재돼 있다. 남은 응답 필드·오류 코드·Redis 키 설계(RANK-001 Decision Gate)는 착수 시 `docs/specs/014-ranking`에서 확정한다.
 - **뉴스 출처·저작권 결정을 3차에서 2차로 앞당겼다 (2026-08-02)**: 2차 "AI 피드백"이 뉴스를 근거로 쓰게 되면서 3차를 기다릴 수 없게 됐다. 출처는 네이버 뉴스 검색 API(분 단위 발행시각)와 OpenDART 공시검색 API(일 단위 접수일자)로 확정했고, 저작권 대응은 "본문 미저장, 제목·언론사·원문 URL·발행시각만 저장"이다 (C-004). **갱신주기도 함께 확정했다 (2026-08-03, 2026-08-04 정정)** — 기사가 나오는 당일에 상시 수집한다(~~주식 평일 08:00~16:00 30분 간격, 코인 2시간 간격~~ → **주식·코인 공통 24시간 30분 간격**). 네이버 API가 날짜 범위 지정을 지원하지 않고 `display` 상한이 100이라, 재생 시점에 소급 수집하면 대형주의 앞부분이 잘린다. **장중으로 한정하면 안 된다** — 개장 전 브리핑과 전장 요약의 근거 구간이 "직전 거래일 15:30 ~ 당일 09:00"(약 17.5시간)인데 장중만 돌리면 이 구간이 통째로 비어 브리핑이 매일 빈 값이 된다. 상세는 `docs/specs/012-ai-feedback` FEED-001.
-- 2차 MVP의 3단계 투자 실습 계약은 `docs/specs/011-investment-education-policy`에서 확정한다. 즐겨찾기·OCO exit plan·튜토리얼 연결은 각각 후속 구현 이슈로 진행한다. 8개 투자 지식 과정·배지·RAG 교육 코치는 3차 착수 승인 뒤 별도 구현 spec으로 분리한다. AI 리포트 주기는 3차 시작 전 별도 Spec으로 확정한다. 종목 뉴스 요약은 2차로 이동했으므로 3차에서는 다루지 않는다. ~~뉴스 갱신주기~~는 2026-08-03에 확정했다(위 항목).
+- 2차 MVP의 3단계 투자 실습 계약은 `docs/specs/016-investment-education-policy`에서 확정한다. 즐겨찾기·주식 체결 session FK·공통 예약 원장·OCO exit plan·튜토리얼 연결은 각각 후속 구현 이슈로 진행한다. 이 OCO는 튜토리얼 전용이며 일반 리스크 관리 OCO는 3차 후보로 분리한다. 8개 투자 지식 과정·배지·RAG 교육 코치는 3차 착수 승인 뒤 별도 구현 spec으로 분리한다. AI 리포트 주기는 3차 시작 전 별도 Spec으로 확정한다. 종목 뉴스 요약은 2차로 이동했으므로 3차에서는 다루지 않는다. ~~뉴스 갱신주기~~는 2026-08-03에 확정했다(위 항목).

@@ -25,6 +25,7 @@
 - [ ] EDU-PRACTICE-010: OCO 생성은 서버 유효 현재가를 baseline으로 저장하며 유효 시세가 없으면 plan·예약 흔적 없이 거부한다.
 - [ ] EDU-PRACTICE-011: 전체 완료는 복기 저장 트랜잭션에서 불변 기록으로 확정하고 이후 favorite 삭제나 plan 종결로 회귀하지 않는다.
 - [ ] EDU-PRACTICE-012: 클라이언트 관찰 POST는 본인 `PENDING` exit plan에만 허용하고 terminal plan의 final observation은 서버 종결 트랜잭션만 생성한다.
+- [ ] EDU-PRACTICE-013: favorite부터 OCO까지 같은 사용자·종목 chain과 intention·buyTrade·exitPlan의 수량 snapshot equality를 서버가 검증하고 중간 evidence 누락·불일치를 거부한다.
 
 ## 3단계 정의와 완료 증거
 
@@ -35,10 +36,13 @@
 
 ### 2단계 — 먼저 계획하고 시장가 진입과 OCO 청산을 예약하기
 - 사용자는 매수 전에 `instrumentId`, `quantity`, `stopLoss`, `takeProfit`을 실습 의도로 기록한다.
+- intention의 `instrumentId`는 현재 존재하는 step 1 본인 favorite의 `instrumentId`와 같아야 한다. favorite가 없거나 다른 종목이면 409 `PRACTICE_STEP_LOCKED`로 intention 생성을 거부한다.
 - 최초 intention 생성 트랜잭션은 `(user_id, tutorial_key)`별 `practice_progresses` 행을 원자적 insert-or-existing으로 확보하고 `IN_PROGRESS`로 유지한다. 동시 intention 요청도 progress 한 행으로 수렴한다.
 - 이후 기존 `POST /api/orders`에 `orderType="MARKET"`, `side="BUY"`로 같은 종목·수량을 주문한다. 이 시장가 주문은 기존 계약대로 즉시 `FILLED` 체결되며 예약 상태가 아니다.
 - 서버는 실제 매수 `tradeId`와 체결가 `entryPrice`를 기준으로 `stopLoss < entryPrice < takeProfit`을 검증한다.
-- 사용자는 같은 `instrumentId`, holding, `quantity`에 대해 OCO exit plan 하나를 생성한다. 손절과 익절을 별도 매도 예약 두 건으로 만들 수 없다.
+- 사용자는 같은 `instrumentId`의 holding에서 intention·매수 체결과 정확히 같은 `quantity` snapshot으로 OCO exit plan 하나를 생성한다. 손절과 익절을 별도 매도 예약 두 건으로 만들 수 없다.
+- OCO 생성 시 step 1 favorite가 아직 존재해야 하며 favorite → intention → `buyTradeId` → holding → exit plan의 사용자와 `instrumentId`가 모두 같아야 한다. exact quantity equality는 `intention.quantity == buyTrade.quantity == exitPlan.quantity`에만 적용한다.
+- holding은 생성 시 owner·instrument 일치와 `availableQuantity >= exitPlan.quantity`만 검증한다. 기존 또는 추가 매수로 `holding.totalQuantity`가 snapshot quantity와 달라도 정상이다. favorite 삭제 또는 chain 누락·불일치는 409 `PRACTICE_EVIDENCE_MISSING`이며 plan·예약을 남기지 않는다.
 - 하나의 사전 의도에는 OCO exit plan을 한 건만 연결한다. 같은 의도나 같은 멱등키 재요청이 추가 수량을 예약하지 않도록 서버가 기존 결과로 수렴시킨다.
 - 서버 완료 증거는 사전 의도 기록 시각이 매수 체결보다 앞서고, 같은 값이 실제 체결·보유·OCO plan에 연결된 사실이다. `GET /api/exit-plans` 호출 여부는 완료 증거가 아니며 plan이 본인 목록 응답에 보이는지는 API 테스트와 UX 수용 기준으로 검증한다.
 
@@ -61,12 +65,14 @@
 - 즐겨찾기 등록·목록·해제는 주문·계좌·보유 상태를 변경하지 않는다.
 
 ## OCO exit plan 비즈니스 규칙
+- 2차 MVP의 OCO는 이 튜토리얼에서만 사용한다. `intentionId` 없는 일반 OCO 생성은 지원하지 않으며 일반 리스크 관리 OCO는 3차 MVP 후보 범위다.
 - 생성 입력은 `intentionId`, `buyTradeId`, `instrumentId`, `quantity`, `stopLoss`, `takeProfit`이며 `Idempotency-Key` header가 필수다. 가격·수량은 `BigDecimal` 정밀도를 사용하고 모두 양수다.
 - `buyTradeId`는 인증 사용자 본인의 `FILLED` 시장가 매수 체결이어야 하며 `instrumentId`와 실제 holding이 일치해야 한다.
-- `quantity`는 해당 매수 이후 현재 보유한 같은 종목의 예약 가능 수량 이하여야 한다. plan 하나가 그 수량을 한 번만 예약한다.
+- `exitPlan.quantity`는 intention·buyTrade quantity와 정확히 같고, 생성 시 holding의 `availableQuantity` 이하여야 한다. plan 하나가 그 수량을 한 번만 예약한다.
 - 실제 진입 체결가에 대해 `stopLoss < entryPrice < takeProfit`이어야 한다. 동일 가격이나 역전된 라인은 거부한다.
 - 생성 트랜잭션은 서버의 거래 가능한 유효 현재가를 조회해 `baselinePrice`, `baselineObservedAt`으로 plan에 저장한다. 유효 시세가 없으면 409 `PRICE_UNAVAILABLE`로 거부하고 plan·condition·수량 예약을 하나도 남기지 않는다.
-- 주식은 `buyTradeId`의 replay session과 현재 `OPEN` replay session이 같고 15:30 전일 때만 plan을 생성한다. plan에 `replaySessionId`를 저장한다. 코인은 session 연결 없이 GTC다.
+- `trades.stock_replay_session_id`를 nullable FK로 추가한다. 주식 체결은 체결 당시 현재 replay session id를 반드시 저장하고 코인 체결은 null이다.
+- 주식은 `buyTradeId.stockReplaySessionId`와 현재 `OPEN` replay session이 같고 15:30 전일 때만 plan을 생성한다. plan에 같은 `replaySessionId`를 저장한다. 이 FK migration과 주식 fill 기록 변경은 OCO보다 먼저 배포한다. 코인은 session 연결 없이 GTC다.
 - 익절 조건은 `currentPrice >= takeProfit`, 손절 조건은 `currentPrice <= stopLoss`다. 체결가격은 트리거 시점의 공통 현재가를 사용하는 시장가 청산으로 처리하며 특정 체결가격을 보장하지 않는다.
 - 두 조건은 `PENDING` plan 하나에 속한다. 한쪽 조건을 각각 별도 수량 예약으로 계산하지 않는다.
 - 가격 갱신 시 replay session(주식만) → holding → plan 순서로 비관 잠금한다. 충족된 한 조건으로 전량 시장가 매도 체결을 생성하고 plan을 `FILLED_TAKE_PROFIT` 또는 `FILLED_STOP_LOSS`로 종결한다. 반대 조건은 같은 트랜잭션에서 `CANCELLED_BY_OCO`가 된다.
@@ -84,24 +90,26 @@
 - `GET /api/education/practice`가 실제 즐겨찾기·의도·체결·OCO·관찰·복기 리소스를 서버에서 조회해 단계별 `evidence`와 상태를 계산한다. 모든 GET은 쓰기를 하지 않는다.
 - 1·2단계 완료는 본인 favorite와 연결된 OCO 리소스 존재로 계산한다. favorite·OCO 목록 API 호출 여부 자체는 완료 증거로 삼지 않는다.
 - 전체 완료 전 단계 상태는 현재 실제 evidence 존재로 계산한다. favorite 삭제나 완료 전 OCO 취소로 evidence가 사라지면 해당 단계를 다시 진행해야 할 수 있다.
-- 복기 저장 트랜잭션은 1·2단계의 현재 evidence와 A·B·C 관찰 증거 중 하나를 다시 검증하고 사용자별 불변 practice completion 기록을 최초 한 번 생성한다. 이 기록이 생기면 overall 상태는 영구 `COMPLETED`이며 이후 favorite 삭제, plan 체결·취소·만료에도 회귀하지 않는다. GET은 이 기록을 조회할 뿐 쓰지 않는다.
+- 복기 저장 트랜잭션은 1·2단계의 현재 evidence와 A·B·C 관찰 증거 중 하나를 다시 검증하고 사용자별 불변 practice completion 기록을 최초 한 번 생성한다. 저장된 `holdingId`의 owner·instrument와 original intention·buyTrade·exitPlan quantity snapshot chain은 검증하지만 현재 holding quantity는 재검증하지 않는다. terminal 체결 뒤 0이거나 추가 매수로 달라져도 정상이다. 완료 기록이 생기면 overall 상태는 영구 `COMPLETED`이며 이후 favorite 삭제, plan 체결·취소·만료에도 회귀하지 않는다. GET은 이 기록을 조회할 뿐 쓰지 않는다.
 - 복기 저장은 사용자·튜토리얼 공통 `practice_progresses` 행을 가장 먼저 `FOR UPDATE`로 잠그고, 이어서 선택한 `practice_intention`과 필요한 exit plan을 잠근 뒤 evidence를 검증한다. 잠금 순서는 `progress → intention → exit plan`이다.
 - progress가 이미 `COMPLETED`면 즉시 409 `PRACTICE_ALREADY_COMPLETED`를 반환한다. `IN_PROGRESS`인 최초 요청만 reflection 1행, completion 1행 저장과 progress의 `COMPLETED` 전이를 같은 트랜잭션에서 수행하고 201을 반환한다. 서로 다른 intention·plan의 동시 요청도 공통 progress에서 직렬화되며, 대기 후 완료를 본 요청은 새 답변을 저장하지 않는다.
 - progress와 completion의 `(user_id, tutorial_key)` 유일 제약, reflection의 `(user_id, exit_plan_id)` 유일 제약을 최종 중복 방어선으로 둔다.
 - 실습 전용 쓰기 API는 의도·가격 관찰·복기만 받는다. 단계 완료 boolean, tradeId 조작에 의한 소유권 우회, 클라이언트 제공 현재가는 받지 않는다.
+- `PRACTICE_STEP_LOCKED`는 intention 생성 시 step 1 favorite가 없거나 선택 종목이 favorite와 다를 때 사용한다. `PRACTICE_EVIDENCE_MISSING`는 OCO 생성 또는 복기 저장 시 favorite → intention → trade → holding → OCO의 owner·instrument, intention·trade·plan quantity snapshot, 저장된 holdingId 또는 A·B·C 관찰 증거가 누락·불일치할 때 사용한다.
 
 ## 범위 제외
 - 8개 투자 지식 과정(투자와 위험, 주식과 코인의 차이, 주문과 체결, 시장가와 지정가, 평가손익과 실현손익, 수수료와 수익률, 분산투자, 투자 계획과 복기), 객관식 정답 판정, 과정별 배지, `INVESTMENT_BEGINNER`, RAG 교육 코치 — PRD 3차 MVP.
 - LLM 설명, AI 피드백, 투자 추천, 가격 예측, 예상 수익 생성.
 - 별도 익절 지정가와 손절 주문 두 건에 같은 수량을 각각 예약하는 모델.
 - 실제 증권사 주문, 부분 체결, 슬리피지 보장, OCO 조건 수정·한쪽 취소.
+- intention 없는 일반 리스크 관리 OCO — PRD 3차 MVP 후보.
 - 현재 이슈에서의 production·Controller·DB migration·API 라우트 문서 구현.
 
 ## 완료 조건
 - [ ] PRD가 2차 MVP의 3단계 실습과 3차 MVP의 지식 교육·배지·RAG 코치를 구분한다.
 - [ ] 즐겨찾기 등록·목록·해제 선행 계약이 존재한다.
 - [ ] 시장가 진입이 즉시 체결이고 OCO만 예약이라는 차이가 문서 전체에서 일관된다.
-- [ ] OCO가 동일 종목·보유·수량과 `stopLoss < entryPrice < takeProfit`을 검증하고 한 번만 수량을 예약한다.
+- [ ] OCO가 동일 owner·instrument, intention·trade·plan quantity snapshot equality, holding available capacity와 `stopLoss < entryPrice < takeProfit`을 검증하고 한 번만 수량을 예약한다.
 - [ ] 생성 baseline과 주식 OPEN replay session 귀속을 검증하고 시세 없음·세션 종료 시 흔적 없이 거부한다.
 - [ ] 중복·역순 가격 이벤트, 수동 시장가·지정가 매도, 취소·만료 경합에서 체결 또는 예약 반환이 정확히 한 번만 일어난다.
 - [ ] 서버가 실제 도메인 증거를 연결하고 클라이언트 완료 주장을 받지 않는다.
@@ -112,6 +120,8 @@
 - [ ] terminal plan에 클라이언트 관찰을 추가할 수 없고 서버 종결 트랜잭션만 `FINAL_EVENT`를 만든다.
 - [ ] 동시·재시도 복기 중 최초 요청만 reflection·completion을 만들고 나머지는 409이며 답변 행이 늘지 않는다.
 - [ ] 같은 사용자의 서로 다른 eligible plan에서 동시 복기해도 공통 progress 잠금으로 한 건만 201·저장되고 다른 한 건은 409·무저장이다.
+- [ ] intention·OCO는 step 1 favorite와 같은 instrument chain만 허용하고 snapshot quantity equality와 holding capacity를 구분하며 favorite 삭제·불일치 시 정의된 409로 무흔적 거부한다.
+- [ ] 주식 trade session FK와 공통 예약 원장·MARKET SELL 변경이 OCO endpoint보다 먼저 또는 같은 atomic release로 배포된다.
 - [ ] 3단계 자유 복기에 정답·보상·LLM 판정이 없다.
 - [ ] 현재 이슈에는 production 변경이 없다.
 
