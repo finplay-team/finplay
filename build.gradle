@@ -49,7 +49,9 @@ dependencies {
 	testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
 	testImplementation 'org.springframework.boot:spring-boot-starter-validation-test'
 	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
-	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+	// spring-boot-testcontainers는 @ServiceConnection 전용이었고 이슈 #119에서 그 방식을 버려 미참조가 됐다.
+	// 남겨 두면 컨테이너를 다시 @Bean으로 노출하는 경로가 열려 있어 #119가 재발할 수 있으므로 제거한다
+	// (제거하면 @ServiceConnection 사용 시 컴파일이 실패해 구조적 방어선이 된다).
 	testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
 	testImplementation 'org.testcontainers:testcontainers-mysql'
 	testCompileOnly 'org.projectlombok:lombok'
