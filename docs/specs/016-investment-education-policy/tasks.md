@@ -1,7 +1,7 @@
 # Tasks: 3단계 투자 실습 튜토리얼
 
 ## 현재 이슈 — 문서 확정
-- [x] PRD 2차 MVP의 3단계 실습과 3차 MVP의 투자 지식 교육·배지·RAG 코치를 분리하고 안전한 선행 API·OCO 계약을 확정한다.
+- [x] #158: PRD 단계 분리와 10개 API 상세 계약, canonical UUID 멱등·새 transaction reconciliation, decimal·답변·evidence·진행 상태, intention/reflection과 favorite DELETE 경합 잠금, 실제 Spring transaction 경계, FK 기준 DDL, 15개 후보의 DAG·migration·transaction·test 소유권을 확정한다. production과 전역 API 문서는 변경하지 않는다.
 
 아래 6개는 현재 이슈의 미완료 작업이 아닌 상위 구현 작업 그룹이다. 실제 이슈 생성 시 `plan.md`의 15개 후보처럼 API 하나 또는 트랜잭션 경계 하나로 나누며 production 구현은 현재 지시하지 않는다.
 
