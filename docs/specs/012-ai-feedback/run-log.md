@@ -18,6 +18,8 @@
 | 17:10 | reviewer(리뷰) | `git diff ca5a4e6..85d450f -- docs/specs/012-ai-feedback/plan.md` + spec.md §완료 조건(1147-1272) 절별 bullet 전수 카운트(awk)로 91건 검산표 재계산, `gh issue view 147`로 원장 불변 반영 확인, `gh pr list --search "feat: in:title"`로 후속 이슈용 PR 규모 통계 재검증, `docs/adr/` 실재 파일명·011/003 plan.md의 ADR 링크 관례 대조 | docs/specs/012-ai-feedback/{spec.md,plan.md}, docs/adr/0002·0003·0004·0011, docs/specs/{003-market-data,011-order-ledger-schema}/plan.md, docs/team-conventions.md |
 | 17:45 | reviewer(리뷰) | `git diff 85d450f..18f8227 -- docs/specs/012-ai-feedback/plan.md` + spec.md §완료 조건(1147-1272) 10개 절을 awk로 bullet 전수 재카운트해 91건·8행 배정표(9/3/6/20/16/18/9/9=90+원장불변1)를 처음부터 다시 대조, `docs/adr/` 실재 파일명 확인, `gh pr list --json additions`로 feat: PR 41건 통계(중앙값 1,090·IQR 606~1,563·최대 3,740·500줄초과 34/41) 독립 재계산 | docs/specs/012-ai-feedback/{spec.md,plan.md}, docs/adr/0004-flyway-migrations.md |
 | 16:49 | implementer | `gradlew.bat compileJava` + `spotlessApply` (tasks.md 1번 — `feedback.llm.*` 바인딩) | spec.md §C-7, ADR-0011(값은 프로퍼티로), conventions.md, `market/config/KisProperties` 선례 |
+| 17:15 | implementer | `gradlew.bat compileJava compileTestJava` + `spotbugsMain` + `test --tests MeIntegrationTest`(키 없이 컨텍스트 기동), Spring AI 2.0.0 jar `javap`로 옵션 매핑 확인 (tasks.md 2번 — `NarrativeGenerator`) | ADR-0011(실패는 반환값·Fake 테스트), spec.md §C-6·§실패 처리·§외부 API 호출 상세, conventions.md, agent-mistakes 2026-07-29·07-30 |
+| 17:35 | implementer | `gradlew.bat test --tests "com.finplay.api.feedback.*"`(25건) + 임시 프로브로 fail-fast 실패 원인 확인 (tester 회귀 수정) | tester 권고 1번, ADR-0003(슬라이스 테스트 경계), conventions.md |
 
 ## 모니터링 (사람용 요약)
 - 11:40 — 문서 리뷰 완료, 차단 9건(노출 판정 전장 기사 역전, UNIQUE(url) 잔존 모순, 코인 경로 미정의, 장마감 배치 부재, 배치용 전일치 분봉 조회 경로 부재, PRD 수집주기 모순 등) / 권장 12건.
@@ -38,3 +40,7 @@
 - 17:45 — PR #148 2라운드 정정 커밋(18f8227) 재검토: 지적한 3가지 원인(build-키 조건 이슈1·3 중복 카운트, 상태값 Part C·D 5건→4건 정정, 배치 개장 전 배치 6건→5건 정정) 전부 실제로 고쳐졌고, spec.md 10개 절을 처음부터 다시 세어 총 91건·8행 배정표 합계(90+원장불변1)가 정확히 일치함을 확인(신규 산술 오류 없음). ADR 링크 `0004-flyway-migrations.md` 실재 확인, 후속 이슈 통계는 `gh pr list` 재계산값(41건, median 1,090, 2.18배→"2.2배" 반올림 표기)과 정확히 일치, line 63 "09:00 하한"은 §C-2 참조로 수정됨. 차단 0건 / 권장 0건 / 참고 0건 — 머지 가능.
 
 - 16:49 — `FeedbackLlmProperties`(record + @DefaultValue 5종)와 등록용 `FeedbackLlmConfig` 신설, `application.yml`에 `feedback.llm` 블록 추가. 컴파일 통과.
+
+- 17:15 — `NarrativeGenerator`(반환 `Optional<String>`) + OpenAI 구현 + 테스트용 Fake 신설, `ChatClient` 빈은 `FeedbackLlmConfig`가 등록. 타임아웃은 Spring AI에서 요청 단위가 아니라 클라이언트 단위 값이라 `spring.ai.openai.timeout`이 `feedback.llm.timeout-seconds`를 참조하게 했고, 최대 토큰은 GPT-5 계열 때문에 `maxCompletionTokens`로 넘긴다. 컴파일·SpotBugs·키 없는 컨텍스트 기동 통과.
+
+- 17:35 — 회귀 수정: `narrativeChatClient` 빈을 `NarrativeChatClientConfig`로 분리해 `FeedbackLlmConfig`를 프로퍼티 등록 전용으로 되돌렸다. `feedback` 테스트 25건 전부 통과했고, fail-fast 케이스가 `ChatClient.Builder` 부재가 아니라 `ConfigurationPropertiesBindException`으로 실패하는 것을 임시 프로브로 확인한 뒤 프로브는 삭제했다.

@@ -14,6 +14,11 @@ public record FeedbackLlmProperties(
 	// LLM 호출 1건의 타임아웃(초). 초과하면 실패로 취급해 템플릿으로 폴백한다.
 	@DefaultValue("20")
 	int timeoutSeconds,
+	// 응답 1건의 최대 토큰. OpenAI 구현은 이 값을 OpenAiChatOptions.maxTokens가 아니라 maxCompletionTokens로 넘긴다 —
+	// 둘은 별개 필드이고 각각 요청 본문의 max_tokens·max_completion_tokens로 그대로 나간다(Spring AI 2.0.0
+	// OpenAiChatModel 바이트코드 확인). GPT-5 계열(기본 모델)은 max_tokens를 거부하므로 maxTokens로 넘기면
+	// 전 호출이 실패해 서술이 통째로 템플릿이 된다. max_completion_tokens는 GPT-4.1 계열도 받으므로
+	// §튜닝의 폴백 모델로 내려도 그대로 쓸 수 있다.
 	@DefaultValue("512")
 	int maxTokens,
 	// 요약·브리핑이 후검증에 걸렸을 때 재생성하는 횟수. 카드·매도 회고는 템플릿이 있어 재생성하지 않는다.

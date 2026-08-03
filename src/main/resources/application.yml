@@ -28,6 +28,16 @@ spring:
       # 기본값으로 둔다. 실제 호출 여부는 NarrativeGenerator가 키 존재를 보고 판단하며, 없으면 호출하지 않고
       # 즉시 실패를 반환해 템플릿으로 폴백한다 (spec §실패 처리).
       api-key: ${OPENAI_API_KEY:not-configured}
+      # LLM 호출 타임아웃. 값의 정본은 feedback.llm.timeout-seconds 하나이고 여기서는 참조만 한다.
+      #
+      # 이 자리에 있는 이유가 있다. Spring AI 2.0에서 타임아웃은 요청 단위 옵션이 아니라 클라이언트 단위 값이다 —
+      # OpenAiChatAutoConfiguration이 이 프로퍼티(OpenAiCommonProperties)로 OpenAIClient를 한 번 만들고,
+      # OpenAiChatModel은 그 클라이언트를 final 필드로 들고 있어 요청마다 준 OpenAiChatOptions.timeout을 보지 않는다.
+      # OpenAiHttpClientBuilderCustomizer로 okhttp 쪽을 덮어써도 SpringAiOpenAiHttpClient.newCall이 요청마다
+      # RequestOptions의 타임아웃으로 다시 덮어쓴다(2026-08-03 바이트코드 확인). 그래서 모델·최대 토큰만
+      # NarrativeGenerator가 요청 단위로 넘기고 타임아웃은 이 경로로 넘긴다.
+      # 참고로 spring.ai.openai.chat.timeout은 바인딩은 되지만 클라이언트 생성에 쓰이지 않아 효과가 없다.
+      timeout: ${feedback.llm.timeout-seconds}s
   task:
     scheduling:
       # 기본 pool size 1이면 블로킹 @Scheduled 작업 하나(예: KisHistoricalCandleCollector의 배치 HTTP 호출)가
