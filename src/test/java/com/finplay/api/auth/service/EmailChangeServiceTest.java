@@ -19,6 +19,7 @@ import com.finplay.api.auth.repository.EmailChangeVerificationRepository;
 import com.finplay.api.auth.repository.ReauthTokenRepository;
 import com.finplay.api.auth.repository.SocialAccountRepository;
 import com.finplay.api.auth.repository.UserRepository;
+import com.finplay.api.auth.verification.VerificationCodePolicy;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import java.nio.charset.StandardCharsets;
@@ -82,7 +83,7 @@ class EmailChangeServiceTest {
 		Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
 		service = new EmailChangeService(
 			userRepository, socialAccountRepository, reauthTokenRepository, emailChangeVerificationRepository,
-			passwordEncoder, emailSender, clock, SECRET);
+			passwordEncoder, emailSender, clock, new VerificationCodePolicy(), SECRET);
 	}
 
 	@Test
@@ -239,6 +240,27 @@ class EmailChangeServiceTest {
 
 		verify(emailChangeVerificationRepository, never()).save(any());
 		verifyNoInteractions(emailSender);
+	}
+
+	@Test
+	@DisplayName("각 창이 한도 바로 아래면(1시간 4회·하루 9회) 정상 발송된다 — 경계 통과")
+	void sendsWhenCountsAreJustBelowLimits() {
+		User user = emailMemberUser();
+		when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+		when(socialAccountRepository.findByUserId(USER_ID)).thenReturn(Optional.empty());
+		when(passwordEncoder.matches(CURRENT_PASSWORD, PASSWORD_HASH)).thenReturn(true);
+		when(userRepository.existsByEmail(NEW_EMAIL)).thenReturn(false);
+		when(emailChangeVerificationRepository.countByUserIdAndCreatedAtAfter(USER_ID, NOW.minusSeconds(60)))
+			.thenReturn(0L);
+		when(emailChangeVerificationRepository.countByUserIdAndCreatedAtAfter(USER_ID, NOW.minusHours(1)))
+			.thenReturn(4L);
+		when(emailChangeVerificationRepository.countByUserIdAndCreatedAtAfter(USER_ID, NOW.minusDays(1)))
+			.thenReturn(9L);
+
+		service.requestEmailChange(USER_ID, NEW_EMAIL, CURRENT_PASSWORD, null);
+
+		verify(emailChangeVerificationRepository).save(any());
+		verify(emailSender).sendVerificationCode(eq(NEW_EMAIL), any());
 	}
 
 	@Test
