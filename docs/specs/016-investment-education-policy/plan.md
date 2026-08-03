@@ -13,8 +13,9 @@
 
 ## 도메인 경계
 - `favorite`: 사용자별 관심 종목 등록·목록·해제.
-- `education`: 사용자·튜토리얼 공통 progress, 3단계 의도·관찰·복기 기록과 실제 도메인 증거를 읽어 계산한 진행 상태. favorite·intention chain 검증 service 계약을 제공한다.
-- `order`: 기존 시장가 즉시 체결과 tutorial-only OCO exit plan의 예약·트리거·취소. `order`가 education repository에 직접 의존하지 않고 education service의 소유권·instrument·quantity·시각 검증 계약을 호출하는 orchestration boundary를 둔다.
+- `education`: 사용자·튜토리얼 공통 progress, 3단계 의도·관찰·복기 기록과 실제 도메인 증거를 읽어 계산한 진행 상태. education application orchestration이 favorite·intention을 검증하고 검증 snapshot을 명시적 order application port에 전달한다.
+- `order`: 기존 시장가 즉시 체결과 tutorial-only OCO exit plan의 예약·트리거·취소. order application port는 전달받은 snapshot과 order 소유의 trade·holding만 검증하며 education service나 repository를 호출하지 않는다.
+- 호출 방향은 `education application → order application port` 한 방향만 허용한다. order에서 education으로의 역호출과 양방향 service 참조를 금지해 순환 의존을 막는다.
 - 도메인 간 검증은 service를 통해 수행하고 다른 도메인의 repository를 직접 주입하지 않는다.
 
 ## API 설계
@@ -67,7 +68,8 @@
 - 물리 스키마는 ADR-0004에 따라 새 migration으로 추가하며 기존 migration을 수정하지 않는다.
 
 ## 트랜잭션과 경합
-- OCO 생성 orchestration: education service가 필수 `intentionId`의 본인 favorite → intention chain을 검증해 owner·instrument, intention quantity snapshot, 라인·시각 계약을 order service에 전달한다. order는 education repository를 직접 조회하지 않는다. order service는 buyTrade·holding을 검증한다. exact equality는 intention·buyTrade·exitPlan quantity에만 적용하고 holding은 owner·instrument와 `availableQuantity >= exitPlan.quantity`만 검증한다. 깨지면 `PRACTICE_EVIDENCE_MISSING`으로 전체 롤백한다.
+- OCO 생성 orchestration: education application이 필수 `intentionId`의 본인 favorite → intention chain을 검증해 owner·instrument, intention quantity, 라인·시각을 담은 검증 snapshot을 명시적 order application port에 전달한다. order port 구현은 education을 호출하지 않고 buyTrade·holding을 검증한다. exact equality는 snapshot의 intention quantity·buyTrade·exitPlan quantity에만 적용하고 holding은 owner·instrument와 `availableQuantity >= exitPlan.quantity`만 검증한다. 깨지면 `PRACTICE_EVIDENCE_MISSING`으로 전체 롤백한다.
+- OCO 생성 orchestration 전체가 하나의 최상위 DB 트랜잭션 경계다. education application은 snapshot 검증에 필요한 favorite·intention 행을 잠근 채 order application port를 호출하고, port 구현은 새 트랜잭션을 분리하지 않고 같은 트랜잭션에 참여해 기존 순서대로 replay session(주식) → holding을 잠근 뒤 plan·condition 저장과 수량 예약까지 수행한다. 따라서 전체 잠금 순서는 `favorite → intention → replay session(주식) → holding → plan(신규)`이며, 검증 뒤 evidence가 삭제·변경되는 TOCTOU를 막고 어느 단계든 실패하면 education 검증부터 order 예약·저장까지 전부 롤백한다.
 - OCO 생성 트랜잭션: 주식은 현재 OPEN replay session → holding 순서로 잠그고 `buyTrade.stockReplaySessionId` 일치와 15:30 전을 재검증한다. 코인은 holding만 잠근다. 서버 유효 현재가를 baseline으로 얻은 뒤 예약 가능 수량 검증, plan·두 condition 생성, holding 수량 예약을 한 트랜잭션으로 처리한다. 시세 없음은 409 `PRICE_UNAVAILABLE`로 전체 롤백한다.
 - intention 생성: `(user_id, tutorial_key)` progress를 atomic insert-or-existing으로 확보한 뒤 같은 사용자의 favorite 존재와 `instrumentId` 일치를 검증하고 intention을 저장한다. favorite 없음·불일치는 `PRACTICE_STEP_LOCKED`이며 intention을 남기지 않는다. concurrent insert unique 충돌은 기존 progress를 재조회해 `IN_PROGRESS` 단일 행으로 수렴시키며 완료 progress에는 새 intention을 만들지 않고 409를 반환한다.
 - 가격 트리거: 주식 replay session → holding → plan, 코인 holding → plan 순서로 잠그고 `PENDING` 한 건만 승자로 전이한다. 중복·역순 이벤트는 최초 커밋만 처리하고 terminal plan 후속 이벤트는 no-op/skip한다. 매도 체결·예약 소비·반대 condition 취소·final observation을 한 트랜잭션으로 처리한다.
@@ -87,6 +89,7 @@
 - 통합: 실제 favorite 등록/목록 → 의도 → 기존 시장가 FILLED → baseline 포함 OCO 생성/목록 → A·B·C별 복기 전체 흐름, terminal 관찰 POST 409, 서버 `FINAL_EVENT`, 완료 후 evidence 삭제·종결에도 완료 불변을 검증한다.
 - 복기 경합: 같은 사용자의 같은 plan뿐 아니라 서로 다른 eligible intention·plan 동시 요청도 공통 progress 잠금에서 직렬화되어 한 요청만 reflection·completion 각 1행, progress 완료와 201을 만들고 다른 요청은 409이며 답변 원문이 추가 저장되지 않음을 DB로 검증한다.
 - 경합: 중복·역순 가격 이벤트, 트리거 대 취소·주식 세션 만료·생성, OCO 예약분 포함 시장가·지정가 SELL에서 매도 1회 또는 반환 1회를 DB로 검증한다.
+- evidence 경합: latch/barrier로 favorite 잠금 선점 순서를 고정해 삭제와 OCO 생성의 직렬화를 검증한다. 삭제 선행은 생성 409와 exit plan·condition·holding 예약 무저장을, 생성 선행은 생성 201 커밋 뒤 삭제 204와 생성된 plan·예약 유지를 검증한다.
 - 만료: 주식은 마지막 유효 가격 처리 후 15:30 자동 `CANCELLED_EXPIRED`·예약 반환, 코인은 GTC, 가격 장애 중 `PENDING` 유지를 검증한다.
 
 ## 후속 구현 이슈 후보
@@ -96,7 +99,7 @@
 2. `GET /api/favorites` 순수 목록 API와 실제 리소스 포함 응답 검증.
 3. `DELETE /api/favorites/{instrumentId}` 해제 API.
 4. `POST /api/education/practice/intentions` 공통 progress atomic insert-or-existing과 사전 계획 기록 API.
-5. `POST /api/exit-plans` tutorial-only orchestration, OPEN replay session·baseline 시세 검증과 보유수량 1회 예약 트랜잭션. 후보 10·15 완료 전 endpoint 활성화 금지.
+5. `POST /api/exit-plans`의 education → order application port 단방향 tutorial-only orchestration, OPEN replay session·baseline 시세 검증과 보유수량 1회 예약 트랜잭션. 후보 10·15 완료 전 endpoint 활성화 금지.
 6. `GET /api/exit-plans?status=PENDING` 순수 예약 목록 API와 실제 plan 포함 응답 검증.
 7. `DELETE /api/exit-plans/{exitPlanId}` 취소·반대 조건 종결·예약 1회 반환 트랜잭션.
 8. 유효 가격 이벤트 OCO 트리거·시장가 매도·반대 조건 취소·final observation 트랜잭션.
