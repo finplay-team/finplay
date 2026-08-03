@@ -353,7 +353,7 @@ feedback:
 | `publisher` | `VARCHAR(100)` | N | 공시는 `DART` 고정 |
 | `url` | `VARCHAR(500)` | N | **접두 길이 없이 전체 컬럼에 유니크.** `mysql:8.4`는 DYNAMIC row format이라 인덱스 키 상한이 3072B이고 `VARCHAR(500)` utf8mb4(2000B)+`BIGINT`(8B)면 들어간다. `url(191)` 접두로 두면 앞 191자가 같고 쿼리 파라미터만 다른 링크를 중복 판정해 **근거 기사를 조용히 버린다** |
 | `published_at` | `DATETIME(6)` | N | 공시는 `00:00:00` |
-| `type`·`event_type`·`scope`·`market`·`narrative_source` | `VARCHAR(20)` | N | `@Enumerated(STRING)` (V10 관례) |
+| `type`·`event_type`·`scope`·`market`·`narrative_source` | `VARCHAR(20)` | N | `@Enumerated(STRING)` (V10 관례). `market`은 **`market/domain/Market`**을 쓴다 — `account/domain/Market`과 값 이름이 같아 저장 문자열은 동일하지만, 이 컬럼들은 계좌가 아니라 종목·시장 축이다 |
 | `origin_trade_date` | `DATE` | **N** | 코인도 채운다 (C-9) |
 | `window_start`·`window_end` | `TIME` | **Y** | **주식 전용.** 원본 거래일 시각. 코인은 `NULL` |
 | `occurred_at` | `DATETIME(6)` | Y | **코인 전용.** 탐지 시각(= `windowEnd`). 주식은 `NULL` |
