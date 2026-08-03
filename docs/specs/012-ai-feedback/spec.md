@@ -2,7 +2,7 @@
 
 > 단계: **2차 MVP (팀 회의 표현: 1차 고도화)**. Notion 1차 고도화 목록의 "ai 피드백 (뉴스를 통한 변동 원인 + 수익률 가져와서 피드백)"과 "뉴스 요약"에 대응한다.
 >
-> PRD 근거: C-004(AI 정책), 2차 MVP 범위의 "AI 피드백". 선행: `003-market-data`(분봉·재생세션), `004-order-buy`·`005-order-sell`(체결·FIFO 실현손익), `011-order-ledger-schema`.
+> PRD 근거: C-004(AI 정책), 2차 MVP 범위의 "AI 피드백". ADR 근거: **ADR-0011**(LLM 연동은 Spring AI 추상화 뒤에 두고 프로바이더를 설정으로 교체). 선행: `003-market-data`(분봉·재생세션), `004-order-buy`·`005-order-sell`(체결·FIFO 실현손익), `011-order-ledger-schema`.
 >
 > **투자일기에 의존하지 않는다.** 원장의 확정 수치와 뉴스만으로 피드백을 만든다. 매수 시 기록한 목표가·손절가와 대조하는 "계획 대비 실제"는 `007-journal`(다른 팀원 범위)이 선행되어야 하므로 범위 밖이고, 투자일기 기반 분석은 3차 "AI 주간·월간 리포트"에서 다룬다.
 >
@@ -27,7 +27,9 @@
 
 ## 정책 전제
 
-이 spec은 PRD 운영 정책의 "AI 피드백 — 종목 추천 금지, **외부 시장 정보(뉴스·공시) 미사용**"과 충돌했다. **2026-08-03 팀 결정으로 아래와 같이 개정을 확정했다** (결정자: 남동엽).
+이 spec은 Notion 운영 정책의 "AI 피드백 — 종목 추천 금지, **외부 시장 정보(뉴스·공시) 미사용**"과 충돌했다. **2026-08-03 팀 결정으로 아래와 같이 개정을 확정했다** (결정자: 남동엽).
+
+> **문구 위치를 정확히 적어 둔다** (PR #132 리뷰 [참고] 반영). "외부 시장 정보 미사용"은 **Notion 두 곳**(10 X TEN 운영 정책, api 명세서 §12 설계 원칙)에 있었고 **레포 `prd.md` C-004에는 없었다.** 레포 쪽은 기존 문구를 고친 게 아니라 개정 결과를 **새로 추가**한 것이다. 초기 서술에서 "세 곳"으로 뭉뚱그린 것을 바로잡는다.
 
 | 구분 | 문구 |
 |---|---|
@@ -135,6 +137,7 @@ C-004의 나머지("숫자와 판정은 서버가 계산하고 AI는 관찰형 �
 - [ ] `GET /api/instruments/{instrumentId}/news`로 종목의 기사 목록과 AI 요약을 조회한다.
 - [ ] 주식은 **현재 재생세션의 원본 거래일** 기사만 반환한다.
 - [ ] 주식은 **`published_at`이 현재 재생 시각을 지난 기사만** 노출한다.
+- [ ] **주식은 09:00 이전에 `summaryStatus="NOT_YET"`·`items=[]`로 응답한다.** Part D와 같은 전장(前場) 기사군을 다루므로 하한이 없으면 08:41에 이 API로 조회해 **Part D가 09:00까지 감추는 기사를 20분 먼저 볼 수 있다** — 미래 가격 유출은 아니지만 브리핑 게이트가 무력화된다. 두 API의 하한을 같게 맞춘다.
 - [ ] 코인은 최근 24시간 기사를 반환한다.
 - [ ] 요약은 `(종목, 원본 거래일)` 단위로 1건만 생성해 전 회원이 공유한다.
 - [ ] 요약은 여러 기사를 종합한 **3~5문장**이며 특정 기사의 문장을 그대로 옮기지 않는다.
@@ -201,8 +204,14 @@ feedback/
                DisclosureCollector(interface), DartDisclosureCollector, FakeDisclosureCollector
   domain/      MarketNewsItem, PriceMoveEvent, PriceMoveEventSource,
                InstrumentNewsSummary, MarketBriefing, TradeFeedback
+  dto/         PriceMoveListResponse, InstrumentNewsResponse,
+               MarketBriefingResponse, PostSellFeedbackResponse
+               (+ 중첩 레코드 — PostSellFlow, Counterfactuals, PeerComparison,
+                  NewsItem, PriceMoveItem)
   repository/  각 도메인 JpaRepository
 ```
+
+응답 DTO 클래스명은 `docs/api-contracts.md`의 계약에 이미 박혀 있으므로 그 이름을 그대로 쓴다. 엔티티를 컨트롤러 밖으로 노출하지 않는다 (`docs/conventions.md`).
 
 `PriceMoveDetector`는 **분봉 리스트를 받아 이벤트 리스트를 반환하는 순수 함수**로 만든다. DB·시계·LLM에 의존하지 않아야 고정 픽스처로 단위 테스트할 수 있다.
 
@@ -529,7 +538,7 @@ LLM이 실패하거나 후검증에 걸렸을 때 서버가 수치로 조립한�
 | DART 시각 | `rcept_dt`는 `YYYYMMDD`. `published_at`은 그 날짜 `00:00:00`으로 저장 |
 | LLM | Spring AI `spring-ai-starter-model-anthropic` **2.0.0 이상** |
 
-Spring AI 1.x는 Spring Boot 3.x 전용이라 이 프로젝트(Boot 4.1.0)에서 컨텍스트가 기동하지 않는다. 반드시 2.0.0 이상을 쓴다.
+Spring AI 1.x는 Spring Boot 3.x 전용이라 이 프로젝트(Boot 4.1.0)에서 컨텍스트가 기동하지 않는다. 반드시 2.0.0 이상을 쓴다. 프로바이더 교체·실패 처리·테스트 방침은 **ADR-0011**에 있다 — 이 spec은 그 결정을 전제로 한다.
 
 환경변수는 `NAVER_CLIENT_ID`·`NAVER_CLIENT_SECRET`·`DART_API_KEY`·`ANTHROPIC_API_KEY`이며, **없어도 기동과 테스트가 정상 동작해야 한다** (KIS·Resend 키와 같은 방식).
 
@@ -618,6 +627,7 @@ trade_feedbacks                매도 직후 서술 (회원별)
 - [ ] 후검증 금지 표현 4종(인과·권유·예측·조언)이 각각 템플릿으로 대체되고, "매도했습니다" 같은 서술형은 통과하는 단위 테스트 통과.
 - [ ] `reveal_at`이 지나지 않은 카드가 조회에서 제외되는 통합 테스트 통과 (스포일러 차단).
 - [ ] Part C 기사 목록이 **원본 거래일 기사만** 반환하고 재생 시각을 지난 것만 노출하는 통합 테스트 통과.
+- [ ] **Part C와 Part D의 09:00 하한이 동일한** 통합 테스트 통과 — 08:41에 두 API를 모두 호출해 어느 쪽에서도 전장 기사가 나오지 않음을 확인한다 (게이트 비대칭 회귀 방어).
 - [ ] **Part D 브리핑에 장중 기사가 한 건도 포함되지 않는** 통합 테스트 통과 — 장중 기사를 픽스처에 넣고 응답에 없음을 확인한다.
 - [ ] Part D가 09:00 이전에 `status="NOT_YET"`, 재생세션 미준비 시 `status="EMPTY"`로 200 응답하는 테스트 통과.
 - [ ] 같은 서비스 날짜에 배치를 두 번 실행해도 카드·요약·브리핑이 중복 생성되지 않는 통합 테스트 통과.
