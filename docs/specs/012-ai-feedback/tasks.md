@@ -18,7 +18,7 @@
 
 ## 작업 항목
 
-- [ ] **1. `NarrativeSource`·`NewsSummaryScope`를 `feedback/domain/`으로 이동**
+- [x] **1. `NarrativeSource`·`NewsSummaryScope`를 `feedback/domain/`으로 이동**
 
   두 enum을 `feedback/service/` → `feedback/domain/`으로 옮기고, 참조하는 기존 파일(`NarrativePromptBuilder`·`NarrativeResultDto`·`NarrativeTemplateBuilder`·`NewsSummaryPromptDto`와 각 테스트)의 import를 함께 고친다. **이 항목이 `feedback/domain/` 패키지를 처음 만든다.**
   - **두 개를 한 번에 옮긴다.** 하나만 옮기면 같은 성격의 타입이 두 패키지로 갈린다 (이슈 본문).
@@ -28,7 +28,7 @@
 
   > **왜 독립 항목인가.** 옮기기만 한 커밋이어야 리뷰어가 diff에서 "본문은 안 바뀌었다"를 확인할 수 있다. 엔티티 항목에 합치면 새 엔티티 수백 줄 사이에 enum 이동이 섞여 그 확인이 불가능해지고, 이동이 잘못됐을 때 되돌릴 단위도 사라진다. 뒤 항목 3~6이 전부 이 결과를 import 하므로 순서상으로도 맨 앞이다.
 
-- [ ] **2. `V13__create_ai_feedback_tables.sql` — 일곱 테이블**
+- [x] **2. `V13__create_ai_feedback_tables.sql` — 일곱 테이블**
 
   §데이터 모델의 일곱 테이블을 한 파일로 만든다. 컬럼 타입·NULL은 §C-8, 코인 관련 컬럼의 NULL 허용은 §C-9, 유니크·인덱스는 §데이터 모델의 블록에 적힌 그대로다. FK는 V10 관례를 따른다.
   - `url`은 **접두 길이 없이 전체 컬럼에 유니크**를 건다 — 이유가 §C-8에 있고, 3번의 완료 조건이 이걸 직접 검증한다.
@@ -37,7 +37,7 @@
   - 검증 — `./gradlew test`. Testcontainers를 쓰는 기존 `@DataJpaTest`·`@SpringBootTest`가 **Flyway가 V13까지 적용한 스키마 위에서** 전부 통과하는지 본다. SQL 문법 오류, FK 참조 순서 오류, 인덱스 키 길이 초과가 여기서 잡힌다.
   - 검증 — **완료 조건 "원장 불변"**. ① V13 파일에 기존 원장 테이블(`orders`·`trades`·`accounts`·`balances`·`holdings`·손익)을 대상으로 하는 `ALTER`·`DROP`이 한 줄도 없다 ② 주문·체결·계좌·잔액·보유·손익의 기존 테스트가 그대로 통과한다.
 
-- [ ] **3. `MarketNewsItem` 엔티티·리포지토리 — URL 유니크 제약 검증**
+- [x] **3. `MarketNewsItem` 엔티티·리포지토리 — URL 유니크 제약 검증**
 
   뉴스·공시 통합 테이블을 매핑한다. `type`은 §C-8의 `VARCHAR(20)` + `@Enumerated(STRING)`이고, 이 enum(`NEWS`·`DISCLOSURE`)은 아직 없으므로 **여기서 `feedback/domain/`에 정의한다** (1번이 옮긴 두 개와 같은 자리).
   - 본문 컬럼을 만들지 않는다 — 저작권 때문에 §데이터 모델이 명시적으로 뺐다.
