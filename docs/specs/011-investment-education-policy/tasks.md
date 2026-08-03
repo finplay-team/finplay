@@ -1,28 +1,15 @@
-# Tasks: 투자 교육 정책
+# Tasks: 3단계 투자 실습 튜토리얼
 
-## T1 — 정책 문서 (완료)
-- [x] 8개 과정·필수 퀴즈, 순차 잠금과 상태 전이, 진도·오답·재학습·최초 완료 배지, 복기·LLM/RAG 안전 정책과 `/api/education/**` 7개 계약을 확정한다.
-- [x] 같은 PR에서 `docs/prd.md` C-004와 3차 로드맵을 동기화해 교육 코치의 확정 자료 설명·재서술 허용과 판정·추천·예측·근거 없는 숫자 금지를 반영한다.
+## 현재 이슈 — 문서 확정
+- [x] PRD 2차 MVP의 3단계 실습과 3차 MVP의 투자 지식 교육·배지·RAG 코치를 분리하고 안전한 선행 API·OCO 계약을 확정한다.
 
-아래 T2~T5는 이 문서 작업의 미완료분이 아니라 **2차 MVP 완료와 3차 착수 승인 후 각각 별도 후속 이슈로 생성할 후보**다. 현재 production 구현을 지시하지 않는다.
+아래 6개는 현재 이슈의 미완료 작업이 아닌 상위 구현 작업 그룹이다. 실제 이슈 생성 시 `plan.md`의 14개 후보처럼 API 하나 또는 트랜잭션 경계 하나로 나누며 production 구현은 현재 지시하지 않는다.
 
-## T2 — 교육과정·문항·보상 기준 스키마
-- [ ] `spec.md`의 8개 과정·레슨·문항·선택지·정답·정적 해설·확정 RAG 본문과 배지 기준을 변경 없이 적재하는 새 Flyway migration, 엔티티, Repository를 구현한다.
-- [ ] 최초 `start`에서만 생성되는 사용자 과정 상태, 시도·현재 오답·복기·배지의 유일 제약과 저장소 정합성을 검증한다. 잠금 저장 컬럼이나 가입 시 과정 행은 만들지 않는다.
+- [ ] 즐겨찾기 등록·순수 목록·해제 API와 `(user_id, instrument_id)` 유일 제약을 구현한다. GET은 write 없이 실제 favorite 포함 응답을 검증한다.
+- [ ] 최초 intention의 공통 `practice_progresses` atomic insert-or-existing, 매수 전 손절·익절·수량 기록 API와 실제 시장가 매수 체결의 시각·종목·수량 연결 검증을 구현한다.
+- [ ] 공통 예약 원장과 OCO exit plan 생성 트랜잭션을 구현한다: 서버 baseline 시세, 주식 OPEN replay session 귀속, 고정 잠금 순서, 진입가 범위, 동일 holding·수량, plan 단위 수량 1회 예약, 실패 시 무흔적. 실제 이슈는 plan의 OCO 생성·시장가 SELL·일반 지정가 SELL 후보로 각각 분리한다.
+- [ ] OCO 순수 예약 목록·취소 API를 구현한다: GET 무쓰기와 실제 plan 포함 응답, 취소 시 두 조건 종결·예약 1회 반환.
+- [ ] 유효 가격 이벤트 OCO 체결과 주식 15:30 자동 만료 트랜잭션을 각각 구현한다: 중복·역순 이벤트 최초 승자, 반대 조건 자동 취소, final observation, 코인 GTC, 가격 장애 중 PENDING, 생성·취소·만료 경합 원자성.
+- [ ] 실습 순수 진행 조회와 관찰·복기 API를 구현한다: PENDING plan 전용 A·B 관찰, 서버 종결 전용 C, terminal plan 복기, progress → intention → plan 잠금, 서로 다른 eligible plan 동시 요청도 최초 reflection·completion·progress 완료만 201이고 나머지는 무저장 409, 정답·보상·LLM 없음.
 
-## T3 — 목록·상세 조회
-- [ ] `GET /api/education/courses`, `GET /api/education/courses/{courseKey}`와 record DTO를 구현한다.
-- [ ] 행 없음=`NOT_STARTED`, 선행 완료 기반 잠금 순수 계산, GET DB write 없음, 표시 순서, 잠긴 콘텐츠·정답 비노출과 사용자 격리를 Controller·통합 테스트로 검증한다.
-
-## T4 — 시작·답안·진도·배지
-- [ ] `POST /api/education/courses/{courseKey}/start`, `POST /api/education/courses/{courseKey}/lessons/{lessonKey}/answers`, `GET /api/education/progress`를 구현한다.
-- [ ] 최초 `start` 행은 `(user_id, course_key)` 유일 키의 원자적 insert-or-existing으로 생성해 동시 요청도 단일 행·모두 200으로 수렴시키고, 재요청 멱등, 서버 판정, 오답 무진도·무보상, 선행 완료 기반 다음 과정 즉시 해제, 과정·문항별 전체/오답/완료 후 재학습 집계를 검증한다.
-- [ ] 답안 처리 시 사용자·과정 진도 행 비관 잠금, 과정별 배지와 `INVESTMENT_BEGINNER` 중복 방지, 동시 응답 중 실제 생성자만 `newlyAwarded=true`, DB unique 최종 방어 및 계좌·시드머니 불변을 검증한다.
-
-## T5 — 복기·LLM/RAG
-- [ ] `POST /api/education/courses/{courseKey}/lessons/{lessonKey}/reflections` 저장 계약과 `POST /api/education/coach/explanations`의 8개 확정 본문 RAG 어댑터를 구현한다.
-- [ ] 복기의 퀴즈 독립성, `sourceKeys`·교육 목적 안내, 추천·가격 방향·예상 수익·근거 없는 숫자 차단, 코치 전용 503과 퀴즈·진도 무영향을 검증하고 실제 Controller 매핑으로 `docs/api-routes.md`를 동기화한 뒤 전체 build를 통과시킨다.
-
-## T2+ Decision Gate
-- 2차 MVP 완료, 제품 책임자의 3차 MVP 착수 승인, 본 spec 사용자 확인 전에는 T2~T5 이슈를 착수하지 않는다.
-- 구현 전에는 콘텐츠 저장 기술, 배지 표시 자산, 후속 콘텐츠 버전 승계, 시도·복기 보존 기간, LLM·벡터 저장소·검색·프롬프트·timeout 기술값만 추가 확정한다. T1에서 확정한 콘텐츠 본문, 행 없는 상태·계산 잠금·재학습 집계·동시성·보상·복기·RAG 정책과 7개 API 계약은 미확정 대상이 아니다.
+후속 Controller가 실제 추가·변경되는 각 이슈에서만 `docs/api-routes.md`와 `docs/api-contracts.md`를 실제 매핑 기준으로 동기화한다.

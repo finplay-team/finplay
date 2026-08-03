@@ -1,277 +1,119 @@
-# Spec: 투자 교육 정책
+# Spec: 3단계 투자 실습 튜토리얼
+
+> 상태: spec 확정, production 구현 미착수
 
 ## 개요
-FinPlay 입문자가 앱 조작법이 아니라 투자 판단에 필요한 기초 지식을 단계적으로 학습하는 기능이다. 8개 교육 과정의 학습, 서버 정답 판정, 진도·오답·재학습 기록과 최초 완료 배지를 일관된 정책으로 제공한다.
+1차 고도화(PRD 2차 MVP)의 교육 범위는 사용자가 실제 FinPlay 도메인 API를 사용해 계획·매수·예약·관찰·복기를 경험하는 3단계 실습이다. 서버는 실제 즐겨찾기, 체결, OCO exit plan과 관찰·복기 기록을 연결해 진행 상태를 판정하며 클라이언트의 완료 주장만으로 단계를 완료하지 않는다.
 
-이 기능은 PRD의 3차 MVP 후보인 튜토리얼·보상에 해당한다. 현재는 계약을 준비하는 문서만 작성하며, 2차 완료 후 3차 착수가 승인되기 전에는 production 구현하지 않는다.
-
-PRD C-004의 "AI는 관찰형 문장으로만 변환" 정책은 같은 PR에서 3차 교육 코치에 맞게 좁게 개정했다. 교육 코치는 아래 확정 교육 자료를 초보자에게 설명·재서술할 수 있지만 정답·진도·보상 판정, 투자 추천·가격 예측·예상 수익 또는 근거에 없는 숫자 생성에는 관여할 수 없다.
+기존 8개 투자 지식 과정(투자와 위험, 주식과 코인의 차이, 주문과 체결, 시장가와 지정가, 평가손익과 실현손익, 수수료와 수익률, 분산투자, 투자 계획과 복기)과 객관식 문항·과정별 배지·`INVESTMENT_BEGINNER`·RAG 교육 코치는 2차 고도화(PRD 3차 MVP)로 이동한다. 현재 이슈는 이 spec 확정만 수행하며 production 코드, Controller, 실제 라우트 문서는 변경하지 않는다.
 
 ## 사용자 시나리오
-- 로그인 사용자는 8개 투자 교육 과정과 자신의 완료 상태를 조회할 수 있다.
-- 로그인 사용자는 과정의 문제에 답하고 서버가 판정한 결과와 해설을 확인할 수 있다.
-- 로그인 사용자는 틀린 문제를 오답으로 확인하고 다시 학습할 수 있다.
-- 로그인 사용자는 완료한 과정도 다시 학습할 수 있으며, 재학습 결과가 기존 최초 완료 보상을 중복 지급하지 않음을 확인할 수 있다.
+- 로그인 사용자는 종목을 즐겨찾기에 등록하고 본인 목록에서 확인해 1단계를 완료한다.
+- 로그인 사용자는 손절·익절 라인과 수량을 먼저 기록하고, 같은 종목을 기존 시장가 주문 API로 매수한 뒤 한 번의 OCO exit plan을 예약하고 목록에서 확인해 2단계를 완료한다.
+- 로그인 사용자는 서버 가격 관찰 조건 하나를 충족한 뒤 정답 없는 복기 질문에 답해 3단계를 완료한다. 가격이 계획선에 가까워지지 않아도 일정 시간에 걸친 반복 관찰로 완료할 수 있다.
 
 ## 요구사항
-- [ ] T1-EDU-001: 교육 내용은 앱 화면·주문 API 사용법을 제외한 투자 지식만 다룬다.
-- [ ] T1-EDU-002: 과정은 다음 8개로 고정한다: 투자와 위험, 주식과 코인의 차이, 주문과 체결, 시장가와 지정가, 평가손익과 실현손익, 수수료와 수익률, 분산투자, 투자 계획과 복기.
-- [ ] T1-EDU-003: 사용자는 과정별 진도, 오답, 완료 여부와 재학습 이력을 조회할 수 있다.
-- [ ] T1-EDU-004: 답안의 정답 여부는 서버의 버전 고정 문제·정답 데이터로 판정한다.
-- [ ] T1-EDU-005: LLM은 확정 교육 자료 RAG에 근거한 설명만 생성할 수 있고 정답 판정, 진도, 과정 완료, 잠금 해제, 배지·보상 결정에는 참여하지 않는다.
-- [ ] T1-EDU-006: 각 과정의 최초 완료 시 해당 과정 완료 배지를 한 번만 부여한다.
-- [ ] T1-EDU-007: 8개 과정 전체를 최초 완료한 시점에 `INVESTMENT_BEGINNER` 배지를 한 번만 부여한다.
-- [ ] T1-EDU-008: 답안 재제출, 과정 재학습, 동시 요청에도 같은 과정 배지와 `INVESTMENT_BEGINNER` 배지를 중복 부여하지 않는다.
-- [ ] T1-EDU-009: 교육 완료 또는 배지 획득으로 계좌 현금이나 별도 가상 시드머니를 지급하지 않는다.
-- [ ] T1-EDU-010: 교육 API는 인증 사용자에게 `/api/education/**` 하위 계약으로 제공한다.
-- [ ] T1-EDU-011: 과정은 표시 순서대로 잠금 해제되며 첫 과정만 처음부터 열리고 직전 과정을 완료해야 다음 과정이 열린다.
-- [ ] T1-EDU-012: 사용자는 레슨별 복기 글을 저장할 수 있으며 복기 작성 여부는 퀴즈 진도·완료·배지에 영향을 주지 않는다.
-- [ ] T1-EDU-013: 교육 코치는 확정 교육 자료만 검색 근거로 설명하고 출처 key와 교육 목적 안내를 반환한다.
+- [ ] EDU-PRACTICE-001: 튜토리얼은 아래 3단계만 순서대로 제공한다.
+- [ ] EDU-PRACTICE-002: 1단계는 즐겨찾기 등록 성공과 인증 사용자 본인 목록 포함을 서버가 모두 확인해야 완료한다.
+- [ ] EDU-PRACTICE-003: 2단계는 손절·익절·수량 사전 기록, 이후 시장가 매수 체결, 동일 보유분 OCO exit plan 생성, 예약 목록 포함을 서버가 모두 확인해야 완료한다.
+- [ ] EDU-PRACTICE-004: 기존 `POST /api/orders`의 시장가 주문은 예약 주문이 아니라 요청 시 즉시 체결되는 진입 주문이다.
+- [ ] EDU-PRACTICE-005: OCO exit plan은 하나의 보유 수량에 `currentPrice >= takeProfit` 익절과 `currentPrice <= stopLoss` 손절 조건을 함께 묶는다.
+- [ ] EDU-PRACTICE-006: OCO 한쪽이 체결되거나 사용자가 plan을 취소하면 다른 조건도 원자적으로 취소되고 예약 수량은 정확히 한 번만 체결 또는 반환된다.
+- [ ] EDU-PRACTICE-007: 3단계 복기 질문에는 정답·오답과 보상 판정이 없으며 자유 응답 저장 성공만 서버가 확인한다.
+- [ ] EDU-PRACTICE-008: 클라이언트가 임의로 단계를 완료시키는 API나 `completed=true` 입력을 제공하지 않는다.
+- [ ] EDU-PRACTICE-009: 1차 고도화 실습에는 배지·포인트·가상 시드머니 등 보상과 LLM을 사용하지 않는다.
+- [ ] EDU-PRACTICE-010: OCO 생성은 서버 유효 현재가를 baseline으로 저장하며 유효 시세가 없으면 plan·예약 흔적 없이 거부한다.
+- [ ] EDU-PRACTICE-011: 전체 완료는 복기 저장 트랜잭션에서 불변 기록으로 확정하고 이후 favorite 삭제나 plan 종결로 회귀하지 않는다.
+- [ ] EDU-PRACTICE-012: 클라이언트 관찰 POST는 본인 `PENDING` exit plan에만 허용하고 terminal plan의 final observation은 서버 종결 트랜잭션만 생성한다.
 
-## 비즈니스 규칙
-- 과정·레슨·문제·선택지 식별자는 콘텐츠 문구와 분리된 아래 안정적인 key로 유지하며 8개 과정의 표시 순서는 표의 순서를 따른다.
-- 과정 상태는 `NOT_STARTED`, `IN_PROGRESS`, `COMPLETED` 세 값이다. 잠금 여부는 상태와 별도인 `locked`로 반환한다.
-- 사용자 과정 행이 없어도 상태는 `NOT_STARTED`로 계산한다. 첫 과정은 선행 과정이 없으므로 항상 `locked=false`이고, 이후 과정은 바로 앞 과정의 완료 기록이 있을 때만 `locked=false`다.
-- GET 요청은 과정 상태와 잠금을 순수 조회·계산하며 사용자 과정 행을 생성하거나 갱신하지 않는다. 열린 과정의 최초 `start` POST에서만 사용자 과정 행을 만들고 `IN_PROGRESS`로 전이한다.
-- 잠긴 과정은 목록에서 제목·순서·상태·잠금 여부만 보이고 상세 콘텐츠·레슨·문제·선택지·정답은 노출하지 않는다. 잠긴 과정의 상세·시작·답안 요청은 거부한다.
-- 열린 미시작 과정의 `start` 성공 시 `IN_PROGRESS`가 된다. 최초 동시 요청은 `(user_id, course_key)` 유일 키에 대한 원자적 insert-or-existing 처리 후 같은 행을 조회해 모두 200으로 수렴한다. 같은 과정을 다시 `start`하면 기존 상태와 콘텐츠를 그대로 반환하며 새 진도·회차·보상을 만들지 않는 멱등 동작이다. 완료 과정의 `start`도 `COMPLETED`를 유지한 채 재학습용 콘텐츠만 반환한다.
-- 문제를 제출할 때마다 서버가 정답 여부를 확정하고, 오답이면 해당 사용자·과정·문제의 오답 상태를 기록한다.
-- 오답 제출은 시도·현재 오답만 기록하고 정답 수, 과정 진도, 완료, 잠금 해제, 배지를 변경하지 않는다.
-- 이후 정답 제출 시 해당 문제의 현재 오답 상태는 해소하되, 재학습 이력은 보존한다.
-- 과정 완료는 해당 과정의 필수 문제를 서버 판정으로 모두 정답 처리했을 때 한 번 확정한다. 필수 문제 구성과 콘텐츠 버전 변경 시 기존 완료 유지 정책은 Decision Gate에서 확정한다.
-- 완료한 과정의 재학습은 허용하며 이후 답안 시도를 재학습 이력으로 보존하지만 과정은 `COMPLETED`를 유지하고 최초 완료 시각과 최초 완료 배지 획득 사실은 변경하지 않는다.
-- 과정 배지와 `INVESTMENT_BEGINNER`는 사용자·배지 유형별로 유일해야 한다.
-- 복기 글은 인증 사용자 본인의 과정·레슨에 저장하며 공백 제외 1~2000자다. 여러 번 작성할 수 있고 각 기록은 변경되지 않는 `reflectionKey`와 작성 시각을 가진다. 복기는 정답 판정·진도·완료·배지·잠금 해제의 입력이 아니다.
-- LLM 코치는 해당 과정의 T1 확정 교육 자료를 RAG 검색한 결과만 근거로 설명한다. 응답은 근거의 `sourceKeys`와 "교육 목적 정보이며 투자 추천이 아닙니다." 안내를 항상 포함한다.
-- LLM 코치는 특정 자산의 매수·매도 추천, 가격 방향 예측, 예상 수익·수익률, 서버가 검색 근거로 제공하지 않은 숫자를 생성하지 않는다. 해당 요청에는 안전한 교육 범위 안내만 반환한다.
-- LLM/RAG 응답 실패 여부는 서버 정답 판정, 진도 저장, 완료, 잠금 해제 및 배지 부여 트랜잭션에 영향을 주지 않는다. 코치 장애는 코치 API만 503으로 실패하며 퀴즈 응답을 실패시키지 않는다.
-- 재학습 이력은 과정·문항별 전체 시도 수, 오답 시도 수, 최근 답안 시각과 과정 완료 이후 시도 수·최근 재학습 답안 시각으로 조회한다. 선택한 답안 원문 전체 목록은 반환하지 않는다. 이 집계 계약이면 학습 반복과 오답 추이를 확인할 수 있고 불필요한 원문 노출을 피할 수 있다.
-- 금전성 보상이나 계좌 잔액 변경은 교육 도메인 트랜잭션에 포함하지 않는다.
+## 3단계 정의와 완료 증거
 
-## 과정 및 필수 퀴즈 정의
-아래 8개 문항은 T1에서 확정한 최초 콘텐츠 버전의 필수 객관식 퀴즈다. 모든 과정은 표에 정의된 레슨 한 개와 필수 문항 한 개로 시작하며, 서버는 `correctChoiceKey`로 판정하고 정적 해설을 기본 제공한다. 문항은 개념 이해만 확인하며 특정 종목 추천이나 수익 보장을 포함하지 않는다.
+### 1단계 — 종목을 관심 대상으로 정하기
+- 사용자는 선행 즐겨찾기 API로 거래 가능한 종목 하나를 등록한다.
+- 등록 후 본인 즐겨찾기 목록에서 같은 `instrumentId`를 확인한다.
+- 서버 완료 증거는 같은 사용자의 즐겨찾기 행 존재다. `GET /api/favorites` 호출 여부나 별도 확인 시각은 증거로 저장하지 않는다. 목록 응답에 같은 `instrumentId`가 보이는지는 API 테스트와 UX 수용 기준으로 검증한다.
 
-### 1. 투자와 위험
-- `courseKey`: `INVESTMENT_AND_RISK`
-- `lessonKey`: `RISK_AND_RETURN_BASICS`
-- `questionKey`: `RISK_Q1_LOSS_POSSIBILITY`
-- 질문: 투자에서 위험을 가장 적절하게 설명한 것은 무엇인가?
-- 선택지:
-  - `A`: 기대한 수익과 실제 결과가 달라지거나 원금 손실이 발생할 가능성
-  - `B`: 수익이 반드시 발생하는 데 걸리는 시간
-  - `C`: 투자 앱을 사용하는 데 필요한 기술 수준
-- `correctChoiceKey`: `A`
-- 정적 해설: 투자의 위험은 결과의 불확실성과 손실 가능성을 뜻한다. 높은 기대수익이 손실 가능성을 없애 주지는 않는다.
+### 2단계 — 먼저 계획하고 시장가 진입과 OCO 청산을 예약하기
+- 사용자는 매수 전에 `instrumentId`, `quantity`, `stopLoss`, `takeProfit`을 실습 의도로 기록한다.
+- 최초 intention 생성 트랜잭션은 `(user_id, tutorial_key)`별 `practice_progresses` 행을 원자적 insert-or-existing으로 확보하고 `IN_PROGRESS`로 유지한다. 동시 intention 요청도 progress 한 행으로 수렴한다.
+- 이후 기존 `POST /api/orders`에 `orderType="MARKET"`, `side="BUY"`로 같은 종목·수량을 주문한다. 이 시장가 주문은 기존 계약대로 즉시 `FILLED` 체결되며 예약 상태가 아니다.
+- 서버는 실제 매수 `tradeId`와 체결가 `entryPrice`를 기준으로 `stopLoss < entryPrice < takeProfit`을 검증한다.
+- 사용자는 같은 `instrumentId`, holding, `quantity`에 대해 OCO exit plan 하나를 생성한다. 손절과 익절을 별도 매도 예약 두 건으로 만들 수 없다.
+- 하나의 사전 의도에는 OCO exit plan을 한 건만 연결한다. 같은 의도나 같은 멱등키 재요청이 추가 수량을 예약하지 않도록 서버가 기존 결과로 수렴시킨다.
+- 서버 완료 증거는 사전 의도 기록 시각이 매수 체결보다 앞서고, 같은 값이 실제 체결·보유·OCO plan에 연결된 사실이다. `GET /api/exit-plans` 호출 여부는 완료 증거가 아니며 plan이 본인 목록 응답에 보이는지는 API 테스트와 UX 수용 기준으로 검증한다.
 
-### 2. 주식과 코인의 차이
-- `courseKey`: `STOCKS_AND_CRYPTO_DIFFERENCES`
-- `lessonKey`: `ASSET_CHARACTERISTICS`
-- `questionKey`: `ASSET_Q1_ISSUER_AND_MARKET`
-- 질문: 주식과 코인의 일반적인 차이를 올바르게 설명한 것은 무엇인가?
-- 선택지:
-  - `A`: 주식은 일반적으로 기업에 대한 권리를 나타내지만 코인은 구조와 권리가 프로젝트마다 다를 수 있다.
-  - `B`: 모든 코인은 기업의 지분을 나타낸다.
-  - `C`: 주식과 코인은 거래 시간과 가격 변동 특성이 항상 같다.
-- `correctChoiceKey`: `A`
-- 정적 해설: 주식은 일반적으로 기업 지분과 연결되지만 코인의 발행 구조와 보유 권리는 자산마다 다르므로 개별 특성을 확인해야 한다.
+### 3단계 — 가격 움직임을 견디며 복기하기
+- OCO 생성 트랜잭션은 서버 유효 현재가를 `baselinePrice`, 조회 시각을 `baselineObservedAt`으로 저장한다. 클라이언트 가격은 받지 않는다.
+- 복기를 열어 주는 관찰 증거는 다음 A·B·C 중 하나다.
+  - A: plan 생성 후 서버 유효 현재가가 `baselinePrice`보다 손절선 또는 익절선까지의 절대 거리에서 가까워진 관찰 1회.
+  - B: plan 생성 후 서버 유효 현재가 관찰 3회가 존재하고 첫 관찰과 마지막 관찰이 최소 2분 범위에 있음. 가격이 어느 경계에도 가까워질 필요는 없다.
+  - C: 익절·손절 체결 또는 주식 세션 만료 트랜잭션이 서버의 해당 이벤트 가격·시각을 final observation으로 자동 기록함. 주식 만료에 유효 종료 가격이 없으면 마지막 유효 서버 가격을 사용하며, 그것도 없을 수 없는 이유는 plan 생성 baseline이 필수이기 때문이다.
+- 고정 질문은 `지금 팔고 싶나요? 그렇다면 왜 그런가요? 계획한 손절·익절 라인과 비교해 적어보세요.`다.
+- 답은 공백 제외 1~2000자 자유 텍스트다. 정답, 점수, 배지, 금전성 보상과 LLM 피드백은 없다.
+- A·B·C 중 하나와 그 이후 저장된 복기 답변이 3단계 완료 증거다. plan이 체결·만료된 뒤에도 복기를 저장할 수 있다. 사용자 취소는 자동 final observation을 만들지 않지만 취소 전에 A 또는 B를 충족했다면 복기를 허용한다.
+- `POST /api/education/practice/observations`는 인증 사용자 본인의 `PENDING` plan만 받는다. `CANCELLED`, `FILLED_TAKE_PROFIT`, `FILLED_STOP_LOSS`, `CANCELLED_EXPIRED`에는 409 `EXIT_PLAN_NOT_PENDING`이며 클라이언트가 A·B 관찰을 추가할 수 없다.
+- terminal plan의 `FINAL_EVENT` observation은 익절·손절 체결 또는 주식 만료 서버 트랜잭션만 생성한다. 클라이언트 요청으로 `FINAL_EVENT` 유형이나 가격·시각을 지정할 수 없다.
 
-### 3. 주문과 체결
-- `courseKey`: `ORDERS_AND_EXECUTIONS`
-- `lessonKey`: `ORDER_EXECUTION_BASICS`
-- `questionKey`: `EXECUTION_Q1_ORDER_VS_TRADE`
-- 질문: 주문과 체결의 관계를 올바르게 설명한 것은 무엇인가?
-- 선택지:
-  - `A`: 주문을 제출하면 조건과 무관하게 항상 즉시 체결된다.
-  - `B`: 주문은 거래 의사 표시이고 체결은 매수·매도 조건이 맞아 실제 거래가 성립한 결과다.
-  - `C`: 체결이 먼저 발생한 뒤 주문이 생성된다.
-- `correctChoiceKey`: `B`
-- 정적 해설: 주문 제출만으로 거래가 확정되는 것은 아니다. 시장에서 조건이 맞아 거래가 성립해야 체결이 된다.
+## 선행 즐겨찾기 API 계약
+- `POST /api/favorites`: `{"instrumentId": 1}`을 받아 거래 가능한 종목을 본인 즐겨찾기에 등록하고 201을 반환한다. `(userId, instrumentId)`는 유일하며 재등록은 409 `DUPLICATE_RESOURCE`다.
+- `GET /api/favorites`: 본인 즐겨찾기를 등록 최신순으로 반환한다. 각 항목은 `instrumentId`, `market`, `symbol`, `name`, `createdAt`을 포함한다.
+- `DELETE /api/favorites/{instrumentId}`: 본인 즐겨찾기를 해제하고 204를 반환한다. 없는 종목은 404 `FAVORITE_NOT_FOUND`, 타인 행은 노출하지 않는다.
+- 즐겨찾기 등록·목록·해제는 주문·계좌·보유 상태를 변경하지 않는다.
 
-### 4. 시장가와 지정가
-- `courseKey`: `MARKET_AND_LIMIT_ORDERS`
-- `lessonKey`: `ORDER_TYPE_TRADEOFFS`
-- `questionKey`: `ORDER_TYPE_Q1_PRICE_CONTROL`
-- 질문: 시장가 주문과 지정가 주문의 차이를 올바르게 설명한 것은 무엇인가?
-- 선택지:
-  - `A`: 시장가 주문은 체결 가능성을 우선하고, 지정가 주문은 원하는 가격 조건을 우선한다.
-  - `B`: 지정가 주문은 언제나 즉시 전량 체결된다.
-  - `C`: 시장가 주문은 제출 시점에 최종 체결가격이 항상 확정되어 있다.
-- `correctChoiceKey`: `A`
-- 정적 해설: 시장가 주문은 현재 가능한 가격에서 체결을 우선해 예상과 다른 가격에 체결될 수 있다. 지정가 주문은 가격 조건 때문에 미체결될 수 있다.
+## OCO exit plan 비즈니스 규칙
+- 생성 입력은 `intentionId`, `buyTradeId`, `instrumentId`, `quantity`, `stopLoss`, `takeProfit`이며 `Idempotency-Key` header가 필수다. 가격·수량은 `BigDecimal` 정밀도를 사용하고 모두 양수다.
+- `buyTradeId`는 인증 사용자 본인의 `FILLED` 시장가 매수 체결이어야 하며 `instrumentId`와 실제 holding이 일치해야 한다.
+- `quantity`는 해당 매수 이후 현재 보유한 같은 종목의 예약 가능 수량 이하여야 한다. plan 하나가 그 수량을 한 번만 예약한다.
+- 실제 진입 체결가에 대해 `stopLoss < entryPrice < takeProfit`이어야 한다. 동일 가격이나 역전된 라인은 거부한다.
+- 생성 트랜잭션은 서버의 거래 가능한 유효 현재가를 조회해 `baselinePrice`, `baselineObservedAt`으로 plan에 저장한다. 유효 시세가 없으면 409 `PRICE_UNAVAILABLE`로 거부하고 plan·condition·수량 예약을 하나도 남기지 않는다.
+- 주식은 `buyTradeId`의 replay session과 현재 `OPEN` replay session이 같고 15:30 전일 때만 plan을 생성한다. plan에 `replaySessionId`를 저장한다. 코인은 session 연결 없이 GTC다.
+- 익절 조건은 `currentPrice >= takeProfit`, 손절 조건은 `currentPrice <= stopLoss`다. 체결가격은 트리거 시점의 공통 현재가를 사용하는 시장가 청산으로 처리하며 특정 체결가격을 보장하지 않는다.
+- 두 조건은 `PENDING` plan 하나에 속한다. 한쪽 조건을 각각 별도 수량 예약으로 계산하지 않는다.
+- 가격 갱신 시 replay session(주식만) → holding → plan 순서로 비관 잠금한다. 충족된 한 조건으로 전량 시장가 매도 체결을 생성하고 plan을 `FILLED_TAKE_PROFIT` 또는 `FILLED_STOP_LOSS`로 종결한다. 반대 조건은 같은 트랜잭션에서 `CANCELLED_BY_OCO`가 된다.
+- `stopLoss < takeProfit`이고 단일 가격을 평가하므로 한 이벤트가 두 조건을 동시에 만족할 수 없다. 중복 또는 역순으로 도착한 가격 이벤트가 경합하면 plan 잠금에서 최초 커밋한 이벤트만 종결 승자가 되고 후속 이벤트는 terminal plan을 보고 아무 작업 없이 skip한다.
+- 기존 시장가 SELL과 일반 지정가 SELL도 `totalQuantity`가 아니라 공통 예약 원장에서 계산한 `availableQuantity = totalQuantity - reservedQuantity`를 검증한다. OCO 예약분을 포함한 SELL은 `INSUFFICIENT_QTY`로 거부해 이중 매도를 막는다.
+- plan 취소와 가격 트리거가 경합하면 같은 plan 잠금에서 먼저 커밋한 상태 전이만 성공한다. 취소 승자는 예약 수량을 한 번 반환하고, 체결 승자는 예약을 매도에 한 번 소비한다. 패자는 최신 종결 상태를 확인하고 409 `EXIT_PLAN_NOT_PENDING`을 반환한다.
+- plan 생성·트리거·취소는 `(holding, reservedQuantity)` 정합성을 한 DB 트랜잭션에서 유지한다. 부분 체결, 개별 조건 수정, 조건 한쪽만 취소는 범위 밖이다.
+- `(user_id, intention_id)`와 `(user_id, idempotency_key)`는 유일하다. 동일 요청 재시도는 기존 plan을 반환하고, 같은 키의 다른 요청은 409 `IDEMPOTENCY_CONFLICT`로 거부한다.
+- 트리거 판정은 시장별 가격 공급자가 거래 가능한 값으로 인정한 유효 가격 갱신 이벤트에서만 수행한다. 유효 이벤트가 없거나 가격 공급자가 장애인 동안 plan은 별도 `TRIGGERED` 중간상태 없이 `PENDING`을 유지한다.
+- 주식 plan은 해당 replay session의 마지막 유효 가격 이벤트 처리 후 15:30 세션 종료에 아직 `PENDING`이면 `CANCELLED_EXPIRED`로 자동 종결하고 두 조건을 취소하며 예약 수량을 한 번 반환한다. 코인 plan은 자동 만료 없는 GTC다.
+- 주식 생성·가격 트리거·사용자 취소·세션 만료는 replay session → holding → plan 순서로 잠근다. 생성 시 plan은 아직 없으므로 session과 holding을 잠근 뒤 생성한다. 15:30 만료와 생성이 직렬화되어 만료가 먼저면 생성은 `EXIT_PLAN_SESSION_CLOSED`로 거부되고, 생성이 먼저면 해당 session 만료 scan 대상이 된다. 코인은 holding → plan 순서다.
 
-### 5. 평가손익과 실현손익
-- `courseKey`: `UNREALIZED_AND_REALIZED_PNL`
-- `lessonKey`: `PNL_STATE_DIFFERENCES`
-- `questionKey`: `PNL_Q1_BEFORE_AND_AFTER_SELL`
-- 질문: 평가손익과 실현손익을 올바르게 구분한 것은 무엇인가?
-- 선택지:
-  - `A`: 평가손익은 보유 자산의 현재 평가에 따른 변동이고, 실현손익은 매도 등으로 거래 결과가 확정된 손익이다.
-  - `B`: 평가손익과 실현손익은 언제나 같은 금액이다.
-  - `C`: 실현손익은 자산을 보유하는 동안 매 순간 확정된다.
-- `correctChoiceKey`: `A`
-- 정적 해설: 보유 중 가격 변화는 평가손익으로 변할 수 있고, 매도 등으로 거래가 끝난 부분의 결과가 실현손익이 된다.
-
-### 6. 수수료와 수익률
-- `courseKey`: `FEES_AND_RETURNS`
-- `lessonKey`: `NET_RETURN_BASICS`
-- `questionKey`: `RETURN_Q1_FEE_EFFECT`
-- 질문: 거래 수수료가 투자 결과에 미치는 영향을 올바르게 설명한 것은 무엇인가?
-- 선택지:
-  - `A`: 수수료는 거래 횟수와 무관하게 수익률을 높인다.
-  - `B`: 수수료는 비용이므로 다른 조건이 같다면 수수료 반영 후 순수익률을 낮춘다.
-  - `C`: 매매가격만 알면 수수료를 제외해도 순수익률이 항상 정확하다.
-- `correctChoiceKey`: `B`
-- 정적 해설: 실제 성과를 보려면 매수·매도 과정의 비용을 함께 반영해야 한다. 잦은 거래는 비용 누적에도 주의해야 한다.
-
-### 7. 분산투자
-- `courseKey`: `DIVERSIFICATION`
-- `lessonKey`: `CONCENTRATION_RISK`
-- `questionKey`: `DIVERSIFICATION_Q1_PURPOSE`
-- 질문: 분산투자의 주된 목적을 가장 적절하게 설명한 것은 무엇인가?
-- 선택지:
-  - `A`: 모든 손실 가능성을 완전히 없애는 것
-  - `B`: 여러 자산에 나누어 특정 자산의 부진이 전체에 미치는 영향을 줄이는 것
-  - `C`: 가장 많이 오른 자산 하나에 자금을 집중하는 것
-- `correctChoiceKey`: `B`
-- 정적 해설: 분산은 집중 위험을 낮추는 방법이지만 시장 전체 위험과 모든 손실 가능성을 제거하지는 않는다.
-
-### 8. 투자 계획과 복기
-- `courseKey`: `INVESTMENT_PLAN_AND_REVIEW`
-- `lessonKey`: `PLAN_AND_REVIEW_LOOP`
-- `questionKey`: `PLAN_Q1_REVIEW_PURPOSE`
-- 질문: 투자 계획과 복기를 함께 하는 이유로 가장 적절한 것은 무엇인가?
-- 선택지:
-  - `A`: 결과만 보고 다음 거래의 수익을 확정하기 위해서
-  - `B`: 투자 전 기준과 실제 판단·결과를 비교해 반복할 점과 개선할 점을 찾기 위해서
-  - `C`: 손실 거래 기록을 지워 성과를 높여 보이게 하기 위해서
-- `correctChoiceKey`: `B`
-- 정적 해설: 계획과 복기는 결과뿐 아니라 당시의 근거와 과정을 비교해 의사결정을 개선하기 위한 기록 활동이다.
-
-### 과정 완료 배지 코드
-과정 최초 완료 배지는 아래 안정적인 코드로 한 번만 부여한다. 표시 이미지 등 표현 자산은 코드를 변경하지 않고 후속 구현에서 연결한다.
-
-| courseKey | badgeCode |
-|---|---|
-| `INVESTMENT_AND_RISK` | `EDUCATION_INVESTMENT_AND_RISK` |
-| `STOCKS_AND_CRYPTO_DIFFERENCES` | `EDUCATION_STOCKS_AND_CRYPTO_DIFFERENCES` |
-| `ORDERS_AND_EXECUTIONS` | `EDUCATION_ORDERS_AND_EXECUTIONS` |
-| `MARKET_AND_LIMIT_ORDERS` | `EDUCATION_MARKET_AND_LIMIT_ORDERS` |
-| `UNREALIZED_AND_REALIZED_PNL` | `EDUCATION_UNREALIZED_AND_REALIZED_PNL` |
-| `FEES_AND_RETURNS` | `EDUCATION_FEES_AND_RETURNS` |
-| `DIVERSIFICATION` | `EDUCATION_DIVERSIFICATION` |
-| `INVESTMENT_PLAN_AND_REVIEW` | `EDUCATION_INVESTMENT_PLAN_AND_REVIEW` |
-
-### RAG 자료 source key
-각 레슨의 질문·선택지·정적 해설과 해당 개념 교육 본문은 아래 `sourceKey`의 확정 교육 자료로 색인한다. 코치 응답은 실제 검색에 사용한 key만 `sourceKeys`로 반환한다.
-
-| lessonKey | sourceKey |
-|---|---|
-| `RISK_AND_RETURN_BASICS` | `EDU_SOURCE_RISK_AND_RETURN_BASICS_V1` |
-| `ASSET_CHARACTERISTICS` | `EDU_SOURCE_ASSET_CHARACTERISTICS_V1` |
-| `ORDER_EXECUTION_BASICS` | `EDU_SOURCE_ORDER_EXECUTION_BASICS_V1` |
-| `ORDER_TYPE_TRADEOFFS` | `EDU_SOURCE_ORDER_TYPE_TRADEOFFS_V1` |
-| `PNL_STATE_DIFFERENCES` | `EDU_SOURCE_PNL_STATE_DIFFERENCES_V1` |
-| `NET_RETURN_BASICS` | `EDU_SOURCE_NET_RETURN_BASICS_V1` |
-| `CONCENTRATION_RISK` | `EDU_SOURCE_CONCENTRATION_RISK_V1` |
-| `PLAN_AND_REVIEW_LOOP` | `EDU_SOURCE_PLAN_AND_REVIEW_LOOP_V1` |
-
-## 확정 교육 본문 corpus
-아래 본문은 각 `sourceKey`로 색인할 T1 확정 corpus다. 코치는 이 내용의 범위 안에서 쉬운 표현, 예시 없는 요약, 개념 간 비교로 설명할 수 있다. 특정 자산 추천, 미래 가격 방향, 예상 수익과 본문에 없는 수치를 보충하지 않는다.
-
-### `EDU_SOURCE_RISK_AND_RETURN_BASICS_V1`
-- 투자는 결과가 미리 확정되지 않는다. 기대한 수익과 실제 결과가 달라질 수 있고 원금 손실도 발생할 수 있는데, 이러한 불확실성과 손실 가능성을 위험이라고 한다.
-- 기대수익이 높다는 표현은 실제 수익을 보장한다는 뜻이 아니다. 더 큰 기대수익을 추구하는 선택에는 감당해야 할 불확실성이 함께 있을 수 있다.
-- 투자 판단 전에는 손실이 발생해도 생활과 계획을 해치지 않는지 살펴야 한다. 자신의 목적, 기간, 손실 감내 범위를 먼저 정하는 것이 상품 선택보다 앞선다.
-- 과거 성과나 다른 사람의 성공 사례만으로 미래 결과를 단정할 수 없다. 교육 자료는 위험을 이해하도록 돕지만 특정 투자를 권하지 않는다.
-
-### `EDU_SOURCE_ASSET_CHARACTERISTICS_V1`
-- 주식은 일반적으로 기업의 지분을 나타내며 주주는 기업 가치 변화와 의사결정 구조에 연결된 권리를 가질 수 있다. 구체적인 권리는 주식 종류와 제도에 따라 달라질 수 있다.
-- 코인은 발행 목적, 운영 구조, 보유자가 갖는 권리가 프로젝트마다 다르다. 코인을 보유한다고 해서 항상 기업 지분이나 이익 분배 권리를 갖는 것은 아니다.
-- 두 자산은 거래되는 시장, 거래 가능 시간, 가격 변동 요인과 보호 제도가 서로 다를 수 있다. 같은 방식으로 거래 화면에 표시되더라도 법적·경제적 성격이 같다고 가정해서는 안 된다.
-- 투자 전에는 이름이나 최근 가격 움직임보다 발행 구조, 권리, 거래 조건과 위험을 개별적으로 확인해야 한다.
-
-### `EDU_SOURCE_ORDER_EXECUTION_BASICS_V1`
-- 주문은 얼마만큼 사고팔겠다는 거래 의사와 조건을 시장에 전달하는 행위다. 주문을 냈다는 사실만으로 자산과 현금의 교환이 끝난 것은 아니다.
-- 체결은 매수와 매도 조건이 맞아 실제 거래가 성립한 결과다. 주문은 미체결되거나 일부 조건만 충족될 수 있으므로 주문 상태와 체결 기록을 구분해 확인해야 한다.
-- 투자 기록에서는 주문 시점의 의도와 체결된 가격·수량·비용을 분리해 보는 것이 중요하다. 실제 손익과 보유 상태는 주문 요청이 아니라 체결 결과를 기준으로 변한다.
-- 주문 취소나 변경 가능 여부도 아직 체결되지 않은 부분에 관한 문제다. 이미 체결된 거래를 단순한 주문 취소로 되돌릴 수 있다고 생각해서는 안 된다.
-
-### `EDU_SOURCE_ORDER_TYPE_TRADEOFFS_V1`
-- 시장가 주문은 현재 시장에서 가능한 조건으로 거래 성립 가능성을 우선한다. 주문을 내는 순간 보이는 가격과 실제 체결가격이 다를 수 있다.
-- 지정가 주문은 사용자가 정한 가격 조건을 우선한다. 시장이 그 조건에 도달하지 않거나 상대 주문이 부족하면 체결되지 않을 수 있다.
-- 시장가는 가격을 보장하는 주문이 아니고 지정가는 체결을 보장하는 주문이 아니다. 주문 유형 선택에는 체결 가능성과 가격 통제 사이의 차이가 있다.
-- 어느 주문 유형이 항상 더 낫다고 말할 수 없다. 이 자료는 차이를 설명하며 특정 상황의 매수·매도 결정을 대신하지 않는다.
-
-### `EDU_SOURCE_PNL_STATE_DIFFERENCES_V1`
-- 평가손익은 아직 보유한 자산을 현재 평가 기준으로 보았을 때 원가와 얼마나 차이가 나는지를 나타낸다. 평가 기준 가격이 바뀌면 매도하지 않아도 값이 변할 수 있다.
-- 실현손익은 매도 등으로 거래가 끝난 부분에서 확정된 결과다. 보유 중인 부분의 평가손익과 이미 끝난 거래의 실현손익을 섞으면 성과를 잘못 이해할 수 있다.
-- 일부만 매도한 경우에는 매도된 부분과 남아 있는 부분의 상태가 다르다. 매도된 부분은 실현 결과에, 남은 부분은 평가 결과에 반영된다.
-- 정확한 손익을 보려면 거래 가격뿐 아니라 원가 배분과 수수료 같은 비용도 함께 반영해야 한다.
-
-### `EDU_SOURCE_NET_RETURN_BASICS_V1`
-- 수수료는 거래 과정에서 발생하는 비용이다. 다른 조건이 같다면 비용을 반영한 순수익은 비용을 제외해 본 수익보다 낮다.
-- 수익률을 비교할 때는 어떤 금액을 기준으로 계산했는지, 매수와 매도 비용을 모두 반영했는지 확인해야 한다. 서로 다른 기준의 수익률을 그대로 비교하면 판단이 왜곡될 수 있다.
-- 거래가 반복되면 각 거래의 비용도 누적될 수 있다. 가격 변화만 보고 비용을 빠뜨리면 실제 성과를 과대평가할 수 있다.
-- 본문은 비용 반영 원칙만 설명한다. 특정 수수료율이나 미래 수익률은 서버가 확정 자료로 제공하지 않는 한 코치가 만들어 내지 않는다.
-
-### `EDU_SOURCE_CONCENTRATION_RISK_V1`
-- 한 자산이나 비슷한 위험 요인에 자금이 몰리면 그 대상의 부진이 전체 결과에 큰 영향을 줄 수 있다. 이를 집중 위험으로 볼 수 있다.
-- 분산투자는 성격과 위험 요인이 다른 여러 자산에 나누어 특정 대상의 영향력을 줄이려는 방법이다. 단순히 이름이 다른 자산을 여러 개 보유한다고 충분한 분산이 되는 것은 아니다.
-- 분산은 모든 손실을 막거나 수익을 보장하지 않는다. 시장 전체가 함께 움직이는 위험이나 자산 사이의 연관성은 남을 수 있다.
-- 분산의 목적은 가장 높은 수익을 맞히는 것이 아니라 한 가지 판단이 전체 계획을 무너뜨릴 가능성을 관리하는 데 있다.
-
-### `EDU_SOURCE_PLAN_AND_REVIEW_LOOP_V1`
-- 투자 계획은 거래 전에 목적, 판단 근거, 감당할 위험과 행동 기준을 기록하는 과정이다. 결과를 미리 확정하는 문서가 아니라 충동적인 판단을 줄이는 기준이다.
-- 복기는 계획 당시의 정보와 실제 행동·결과를 비교하는 과정이다. 수익이 났는지만 보지 않고 계획을 지켰는지, 근거가 타당했는지, 다음에 바꿀 점이 있는지를 살핀다.
-- 좋은 결과가 항상 좋은 판단을 뜻하지 않고 손실이 항상 잘못된 판단만을 뜻하지도 않는다. 결과와 의사결정 과정을 분리해 기록해야 반복 가능한 교훈을 얻을 수 있다.
-- 복기는 손실 기록을 숨기거나 다음 수익을 예측하기 위한 기능이 아니다. 자신의 판단 습관을 관찰하고 개선점을 남기는 교육 활동이다.
+## 튜토리얼 판정 규칙
+- 진행 상태는 `NOT_STARTED`, `IN_PROGRESS`, `COMPLETED`이며 세 단계는 순차 잠금한다.
+- `GET /api/education/practice`가 실제 즐겨찾기·의도·체결·OCO·관찰·복기 리소스를 서버에서 조회해 단계별 `evidence`와 상태를 계산한다. 모든 GET은 쓰기를 하지 않는다.
+- 1·2단계 완료는 본인 favorite와 연결된 OCO 리소스 존재로 계산한다. favorite·OCO 목록 API 호출 여부 자체는 완료 증거로 삼지 않는다.
+- 전체 완료 전 단계 상태는 현재 실제 evidence 존재로 계산한다. favorite 삭제나 완료 전 OCO 취소로 evidence가 사라지면 해당 단계를 다시 진행해야 할 수 있다.
+- 복기 저장 트랜잭션은 1·2단계의 현재 evidence와 A·B·C 관찰 증거 중 하나를 다시 검증하고 사용자별 불변 practice completion 기록을 최초 한 번 생성한다. 이 기록이 생기면 overall 상태는 영구 `COMPLETED`이며 이후 favorite 삭제, plan 체결·취소·만료에도 회귀하지 않는다. GET은 이 기록을 조회할 뿐 쓰지 않는다.
+- 복기 저장은 사용자·튜토리얼 공통 `practice_progresses` 행을 가장 먼저 `FOR UPDATE`로 잠그고, 이어서 선택한 `practice_intention`과 필요한 exit plan을 잠근 뒤 evidence를 검증한다. 잠금 순서는 `progress → intention → exit plan`이다.
+- progress가 이미 `COMPLETED`면 즉시 409 `PRACTICE_ALREADY_COMPLETED`를 반환한다. `IN_PROGRESS`인 최초 요청만 reflection 1행, completion 1행 저장과 progress의 `COMPLETED` 전이를 같은 트랜잭션에서 수행하고 201을 반환한다. 서로 다른 intention·plan의 동시 요청도 공통 progress에서 직렬화되며, 대기 후 완료를 본 요청은 새 답변을 저장하지 않는다.
+- progress와 completion의 `(user_id, tutorial_key)` 유일 제약, reflection의 `(user_id, exit_plan_id)` 유일 제약을 최종 중복 방어선으로 둔다.
+- 실습 전용 쓰기 API는 의도·가격 관찰·복기만 받는다. 단계 완료 boolean, tradeId 조작에 의한 소유권 우회, 클라이언트 제공 현재가는 받지 않는다.
 
 ## 범위 제외
-- FinPlay 앱 사용법, 화면 안내, 주문 절차 안내.
-- 특정 종목의 매수·매도 추천, 투자 자문, 수익 보장 표현.
-- 가상 시드머니·계좌 현금·포인트 등 금전성 보상.
-- LLM에 의한 문제 생성, 정답 판정, 과정 완료 판정, 보상 판정.
-- 관리자용 콘텐츠 저작·배포 UI, 다국어 콘텐츠, 소셜 공유, 랭킹·알림.
-- 2차 완료 및 3차 착수 승인 전의 production 코드·스키마·라우트 구현.
-
-## T1 API 계약
-인증 사용자에게 다음 7개 API만 제공한다.
-
-- `GET /api/education/courses`: 8개 과정의 표시 순서, `NOT_STARTED`·`IN_PROGRESS`·`COMPLETED` 상태, `locked`, 진도 요약을 조회한다. 잠긴 과정의 콘텐츠는 포함하지 않는다.
-- `GET /api/education/courses/{courseKey}`: 열린 과정의 레슨·문제·선택지를 조회한다. 정답 key는 반환하지 않으며 잠긴 과정은 `EDUCATION_COURSE_LOCKED`로 거부한다.
-- `POST /api/education/courses/{courseKey}/start`: 열린 과정을 시작하거나 완료 과정을 재학습용으로 연다. 재요청은 상태·진도·보상을 추가 변경하지 않는다.
-- `POST /api/education/courses/{courseKey}/lessons/{lessonKey}/answers`: `questionKey`와 `selectedChoiceKey`를 서버 판정한다. 오답에는 진도·완료·보상이 없고 정답일 때만 아직 인정되지 않은 필수 문제 진도를 반영한다.
-- `GET /api/education/progress`: 전체 과정 상태·계산된 잠금·진도·현재 오답·완료 시각·획득 배지와 재학습 이력을 조회한다. 과정마다 `attemptCount`, `incorrectAttemptCount`, `lastAnsweredAt`, `relearningAttemptCount`, `lastRelearningAnsweredAt`을, 문항마다 같은 다섯 필드와 `currentlyIncorrect`를 반환한다. `relearning*`은 해당 과정 `completedAt` 이후 시도만 집계하며 시도가 없으면 수는 0, 시각은 null이다. 선택 답안 원문 목록은 반환하지 않는다.
-- `POST /api/education/courses/{courseKey}/lessons/{lessonKey}/reflections`: 공백 제외 1~2000자의 `reflectionText`를 본인 복기 이력으로 저장하고 `reflectionKey`, 원문, `createdAt`을 반환한다.
-- `POST /api/education/coach/explanations`: `courseKey`, `lessonKey`, 공백 제외 1~500자의 `question`을 받아 확정 교육 자료 RAG 설명, `sourceKeys`, 교육 목적 안내를 반환한다. 코치/RAG 장애는 `EDUCATION_COACH_UNAVAILABLE` 503이다.
+- 8개 투자 지식 과정(투자와 위험, 주식과 코인의 차이, 주문과 체결, 시장가와 지정가, 평가손익과 실현손익, 수수료와 수익률, 분산투자, 투자 계획과 복기), 객관식 정답 판정, 과정별 배지, `INVESTMENT_BEGINNER`, RAG 교육 코치 — PRD 3차 MVP.
+- LLM 설명, AI 피드백, 투자 추천, 가격 예측, 예상 수익 생성.
+- 별도 익절 지정가와 손절 주문 두 건에 같은 수량을 각각 예약하는 모델.
+- 실제 증권사 주문, 부분 체결, 슬리피지 보장, OCO 조건 수정·한쪽 취소.
+- 현재 이슈에서의 production·Controller·DB migration·API 라우트 문서 구현.
 
 ## 완료 조건
-- [ ] 8개 과정이 고정 식별자와 표시 순서로 조회된다.
-- [ ] 첫 과정만 처음 열리고 직전 과정 완료 시 다음 과정만 열리며 잠긴 콘텐츠와 모든 정답이 노출되지 않는다.
-- [ ] `start` 재요청이 상태·진도·재학습 이력·완료·보상을 중복 변경하지 않는다.
-- [ ] 정답·오답 제출 시 서버 판정 결과와 진도·오답 상태가 일관되게 저장된다.
-- [ ] 오답 제출은 시도 이력 외 진도·완료·잠금·배지를 변경하지 않는다.
-- [ ] 오답을 다시 맞히면 현재 오답 상태가 해소되고 재학습 이력은 유지된다.
-- [ ] 전체 진도 응답에서 과정·문항별 전체 시도, 오답 시도, 최근 답안과 완료 후 재학습 시도·최근 시각을 조회할 수 있다.
-- [ ] 과정별 최초 완료 배지와 전체 최초 완료 `INVESTMENT_BEGINNER`가 정확히 한 번 부여된다.
-- [ ] 반복·동시 제출 및 재학습에도 배지나 금전성 보상이 중복 지급되지 않는다.
-- [ ] LLM을 끄거나 호출이 실패해도 판정·진도·완료·배지 결과가 동일하다.
-- [ ] 복기 저장과 RAG 코치 응답이 계약을 지키며 코치 503이 퀴즈·진도 API에 전파되지 않는다.
-- [ ] 모든 엔드포인트가 `/api/education/**` 하위이고 다른 사용자의 학습 기록에 접근할 수 없다.
-- [ ] 3차 착수 Decision Gate가 승인되기 전 production 변경이 존재하지 않는다.
+- [ ] PRD가 2차 MVP의 3단계 실습과 3차 MVP의 지식 교육·배지·RAG 코치를 구분한다.
+- [ ] 즐겨찾기 등록·목록·해제 선행 계약이 존재한다.
+- [ ] 시장가 진입이 즉시 체결이고 OCO만 예약이라는 차이가 문서 전체에서 일관된다.
+- [ ] OCO가 동일 종목·보유·수량과 `stopLoss < entryPrice < takeProfit`을 검증하고 한 번만 수량을 예약한다.
+- [ ] 생성 baseline과 주식 OPEN replay session 귀속을 검증하고 시세 없음·세션 종료 시 흔적 없이 거부한다.
+- [ ] 중복·역순 가격 이벤트, 수동 시장가·지정가 매도, 취소·만료 경합에서 체결 또는 예약 반환이 정확히 한 번만 일어난다.
+- [ ] 서버가 실제 도메인 증거를 연결하고 클라이언트 완료 주장을 받지 않는다.
+- [ ] favorite·OCO 목록 GET은 순수 조회이며 실제 리소스가 응답에 포함되는지는 API 테스트로 검증한다.
+- [ ] 주식 미체결 OCO는 replay session 15:30에 예약을 한 번 반환하며 만료되고 코인은 GTC를 유지한다.
+- [ ] 유효 가격 이벤트가 없으면 OCO는 중간상태 없이 `PENDING`을 유지한다.
+- [ ] A·B·C 관찰 대안 중 하나로 복기를 저장할 수 있고 완료 후 실제 evidence 변경에도 overall 완료가 회귀하지 않는다.
+- [ ] terminal plan에 클라이언트 관찰을 추가할 수 없고 서버 종결 트랜잭션만 `FINAL_EVENT`를 만든다.
+- [ ] 동시·재시도 복기 중 최초 요청만 reflection·completion을 만들고 나머지는 409이며 답변 행이 늘지 않는다.
+- [ ] 같은 사용자의 서로 다른 eligible plan에서 동시 복기해도 공통 progress 잠금으로 한 건만 201·저장되고 다른 한 건은 409·무저장이다.
+- [ ] 3단계 자유 복기에 정답·보상·LLM 판정이 없다.
+- [ ] 현재 이슈에는 production 변경이 없다.
 
-## T1 확정 사항
-- 8개 과정의 순서와 안정적인 `courseKey`, 각 최초 레슨·필수 문제·선택지·정답·정적 해설.
-- 서버 판정, 현재 오답 해소와 이력 보존, 과정별 최초 완료 배지, 전체 `INVESTMENT_BEGINNER`, 중복·금전성 보상 금지 정책.
-- `/api/education/**`의 과정 목록·상세·시작·답안·전체 진도·복기·RAG 코치 7개 API 계약.
-- 순차 잠금, 세 상태, `start` 멱등, 오답 무진도·무보상, 잠긴 콘텐츠와 정답 비노출 정책.
-- 복기 저장과 RAG 근거·출처·안전 제한·교육 목적 안내·독립 503 정책.
-- 가입·GET 쓰기 없이 선행 완료로 잠금을 계산하고 최초 `start`에서만 사용자 과정 상태를 생성하는 정책.
-- 과정·문항별 누적 시도와 완료 후 재학습 집계 조회 계약. 선택 답안 원문 전체 목록은 조회 범위에서 제외한다.
-
-## T2+ 구현 Decision Gate 및 미확정 사항
-- 착수 조건: 2차 MVP 완료, 제품 책임자의 3차 MVP 착수 승인, 본 spec의 사용자 확인이 모두 충족되어야 한다.
-- 구현 전 확정 필요: 후속 콘텐츠 버전 추가·교체 시 기존 진도와 완료의 승계·보존 방식.
-- 구현 전 확정 필요: 과정별 배지의 표시명·이미지 자산과 기존 공통 배지 모델의 사용 여부. T1에서 확정한 과정·배지 key와 `INVESTMENT_BEGINNER` 코드는 변경하지 않는다.
-- 구현 전 확정 필요: 확정 계약을 만족하는 LLM 모델·벡터 저장소·검색 파라미터·프롬프트의 기술 선택. RAG 근거 제한, 금지 출력, 교육 목적 안내, `sourceKeys`, 독립 503 계약은 T1 확정 사항이다.
-- 게시 전 문서 Gate: 같은 PR에서 `docs/prd.md` C-004와 3차 로드맵을 이 spec의 교육 코치 예외·금지 범위와 동기화했다.
+## 미확정 사항
+- 공통 예약 원장의 물리 테이블·컬럼과 기존 지정가 상태 enum 통합 방식은 구현 전 ADR·migration 검토로 확정한다. 시장가·지정가 SELL의 공통 `availableQuantity` 검증과 OCO 단일 예약 계약은 변경하지 않는다.

@@ -1,131 +1,109 @@
-# Plan: 투자 교육 정책
+# Plan: 3단계 투자 실습 튜토리얼
 
 ## 관련 문서
 - Spec: `./spec.md`
-- PRD: `../../prd.md` — C-001, C-004, 3차 MVP 및 1차 제외 범위, 3차 Decision Gate
-- 관련 ADR: ADR-0002
-- 컨벤션: `../../conventions.md`
+- PRD: `../../prd.md` — C-001, C-003, C-004, 2차·3차 MVP 범위
+- 관련 ADR: ADR-0002, ADR-0003, ADR-0004
+- 기존 시장가 주문: `POST /api/orders`
 
 ## 착수 제한
-- 이 계획은 3차 MVP 후보 계약이며 현재 production 구현 계획의 승인으로 간주하지 않는다.
-- 2차 MVP 완료와 3차 착수 승인, `spec.md`의 T2+ 구현 세부사항 확정 전에는 아래 task를 실행하거나 `src/`, DB migration, `docs/api-routes.md`를 변경하지 않는다.
-- Gate 통과 시에도 실제 구현 전 확정된 계약을 이 문서에 반영하고 사용자 확인을 다시 받는다.
-- 같은 PR에서 PRD C-004를 동기화했다. 3차 교육 코치는 확정 교육 자료를 초보자에게 설명·재서술할 수 있지만 판정·추천·예측·근거 없는 숫자 생성은 금지한다.
+- 현재 #152/PR #153 범위는 spec·PRD 확정뿐이다. production, Controller, migration, `docs/api-routes.md`, `docs/api-contracts.md`를 변경하지 않는다.
+- 아래 API는 후속 구현 이슈의 계약이며 구현 전에는 실제 사용 가능하다고 문서화하지 않는다.
 
-## 컴포넌트 설계
-- `education` 도메인 패키지 안에서 `controller → service → repository` 흐름을 유지한다.
-- 콘텐츠 조회, 서버 판정, 사용자 학습 상태, 배지 부여 책임을 service에서 조합하며 Controller는 인증 사용자와 HTTP 계약만 처리한다.
-- 문제·정답은 `spec.md`의 "과정 및 필수 퀴즈 정의"를 최초 콘텐츠 버전의 정본으로 삼는다. 저장 방식(DB seed 또는 정적 리소스)은 T2 구현 설계에서 결정하되 key·질문·선택지·정답·정적 해설을 바꾸지 않는다.
-- 배지 저장은 동일 사용자·배지 코드 중복을 DB 유일 제약으로 차단하고, 과정 완료와 배지 최초 부여를 한 트랜잭션으로 처리한다.
-- 복기 저장은 교육 진도와 분리하며 복기 생성 성공·실패가 과정 상태나 배지를 바꾸지 않는다.
-- 교육 코치 어댑터는 확정 교육 자료 검색 결과만 LLM에 제공한다. 코치 호출은 퀴즈 트랜잭션과 분리하고 장애 시 코치 API만 503을 반환한다.
+## 도메인 경계
+- `favorite`: 사용자별 관심 종목 등록·목록·해제.
+- `education`: 사용자·튜토리얼 공통 progress, 3단계 의도·관찰·복기 기록과 실제 도메인 증거를 읽어 계산한 진행 상태.
+- `order`: 기존 시장가 즉시 체결과 신규 OCO exit plan의 예약·트리거·취소. 튜토리얼이 주문 완료를 직접 기록하지 않는다.
+- 도메인 간 검증은 service를 통해 수행하고 다른 도메인의 repository를 직접 주입하지 않는다.
 
 ## API 설계
-모든 API는 인증이 필요하며 다른 사용자의 식별자를 요청으로 받지 않는다.
-
 | Method | URL | 요청 | 응답 | 설명 |
 |---|---|---|---|---|
-| GET | `/api/education/courses` | 없음 | `EducationCourseListResponse` | 8개 과정의 순서·상태·잠금·진도 조회. 잠긴 콘텐츠 제외 |
-| GET | `/api/education/courses/{courseKey}` | 없음 | `EducationCourseDetailResponse` | 열린 과정의 레슨·문제·선택지 조회. 정답 제외 |
-| POST | `/api/education/courses/{courseKey}/start` | 없음 | `EducationCourseStartResponse` | 최초 시작 또는 완료 과정 재학습 콘텐츠 반환. 재요청 멱등, 정답 비노출 |
-| POST | `/api/education/courses/{courseKey}/lessons/{lessonKey}/answers` | `EducationAnswerCreateRequest` | `EducationAnswerResponse` | 레슨의 필수 문제 답안 제출, 서버 판정, 진도·오답·완료·신규 배지 결과 반환 |
-| GET | `/api/education/progress` | 없음 | `EducationProgressResponse` | 전체 과정 진도, 현재 오답, 완료 이력, 획득 배지 조회 |
-| POST | `/api/education/courses/{courseKey}/lessons/{lessonKey}/reflections` | `EducationReflectionCreateRequest` | `EducationReflectionResponse` | 본인 레슨 복기 이력 생성 |
-| POST | `/api/education/coach/explanations` | `EducationCoachExplanationCreateRequest` | `EducationCoachExplanationResponse` | 확정 교육 자료 RAG 기반 교육 설명과 출처 반환 |
-
-과정 상태는 `NOT_STARTED`, `IN_PROGRESS`, `COMPLETED`이며 잠금은 저장하지 않고 조회 시 계산한 `locked` 필드다. 사용자 과정 행이 없으면 `NOT_STARTED`이고, 첫 과정은 선행 과정이 없어 열리며 이후 과정은 직전 과정 완료 기록이 있을 때 열린다. GET은 DB write를 하지 않는다. `POST .../start`는 열린 과정의 최초 요청에서 사용자 과정 행을 만들어 `IN_PROGRESS`로 바꾸며 재요청은 기존 상태·진도를 그대로 반환한다. 완료 과정 재요청도 새 회차를 생성하지 않고 재학습용 콘텐츠를 반환한다. `POST .../answers`의 오답은 시도·오답 상태만 기록하며 정답 수·진도·완료·잠금 계산·배지를 변경하지 않는다. 같은 정답을 재제출해도 이미 인정된 진도는 늘지 않고 배지의 `newlyAwarded`는 최초 부여 요청에서만 `true`다.
-
-조회·시작·답안·진도·코치 성공은 200, 복기 생성은 201이다. 답안과 복기는 `start`를 거쳐 `IN_PROGRESS` 또는 `COMPLETED`인 열린 과정에서만 허용한다.
+| POST | `/api/favorites` | `FavoriteCreateRequest` | `FavoriteResponse` | 본인 즐겨찾기 등록 |
+| GET | `/api/favorites` | 없음 | `FavoriteListResponse` | 본인 목록 순수 조회. 확인 시각 등 write 없음 |
+| DELETE | `/api/favorites/{instrumentId}` | 없음 | 없음 | 본인 즐겨찾기 해제 |
+| GET | `/api/education/practice` | 없음 | `InvestmentPracticeResponse` | 실제 증거 기반 3단계 상태·잠금·증거 조회 |
+| POST | `/api/education/practice/intentions` | `PracticeIntentionCreateRequest` | `PracticeIntentionResponse` | 매수 전 손절·익절·수량 기록 |
+| POST | `/api/orders` | 기존 `OrderCreateRequest` | 기존 주문·체결 응답 | `MARKET` 매수 즉시 체결. 예약 아님 |
+| POST | `/api/exit-plans` | `ExitPlanCreateRequest` | `ExitPlanResponse` | 한 보유 수량에 손절·익절 OCO 생성 |
+| GET | `/api/exit-plans?status=PENDING` | 없음 | `ExitPlanListResponse` | 본인 예약 목록 순수 조회. 확인 시각 등 write 없음 |
+| DELETE | `/api/exit-plans/{exitPlanId}` | 없음 | 없음 | PENDING OCO 전체 취소와 예약 1회 반환 |
+| POST | `/api/education/practice/observations` | `PracticeObservationCreateRequest` | `PracticeObservationResponse` | 서버 현재가로 라인 접근 관찰 기록 |
+| POST | `/api/education/practice/reflections` | `PracticeReflectionCreateRequest` | `PracticeReflectionResponse` | 정답 없는 3단계 자유 복기 저장 |
 
 ## 입력 명세
-| 필드 | 필수 | 검증 |
+| 요청 | 필드 | 검증 |
 |---|---|---|
-| `courseKey` | 필수 | `spec.md`에 등록된 8개 과정 key, 미존재 시 `EDUCATION_COURSE_NOT_FOUND` |
-| `lessonKey` | 필수 | 해당 과정에 등록된 레슨 key, 미존재 또는 과정 불일치 시 `EDUCATION_LESSON_NOT_FOUND` |
-| `questionKey` | 필수 | 해당 과정·레슨·현재 콘텐츠 버전의 문제 key, 아니면 `EDUCATION_QUESTION_NOT_FOUND` |
-| `selectedChoiceKey` | 필수 | 해당 문제에 등록된 선택지 key, 아니면 `VALIDATION_ERROR` |
-| `reflectionText` | 필수 | 공백 제외 1~2000자, 위반 시 `VALIDATION_ERROR` |
-| `question` | 필수 | 코치 질문, 공백 제외 1~500자, 위반 시 `VALIDATION_ERROR` |
-
-답안 요청은 `questionKey`, `selectedChoiceKey`만 포함한다. 복기 요청은 `reflectionText`만 포함한다. 코치 요청은 `courseKey`, `lessonKey`, `question`을 포함하며 클라이언트가 RAG 출처나 숫자 근거를 주입할 수 없다.
-
-## 최초 콘텐츠 manifest
-구현은 아래 key 조합으로 `spec.md`의 질문·선택지·정답·정적 해설을 정확히 적재한다.
-
-| 순서 | courseKey | lessonKey | questionKey | correctChoiceKey | badgeCode | sourceKey |
-|---|---|---|---|---|---|---|
-| 1 | `INVESTMENT_AND_RISK` | `RISK_AND_RETURN_BASICS` | `RISK_Q1_LOSS_POSSIBILITY` | `A` | `EDUCATION_INVESTMENT_AND_RISK` | `EDU_SOURCE_RISK_AND_RETURN_BASICS_V1` |
-| 2 | `STOCKS_AND_CRYPTO_DIFFERENCES` | `ASSET_CHARACTERISTICS` | `ASSET_Q1_ISSUER_AND_MARKET` | `A` | `EDUCATION_STOCKS_AND_CRYPTO_DIFFERENCES` | `EDU_SOURCE_ASSET_CHARACTERISTICS_V1` |
-| 3 | `ORDERS_AND_EXECUTIONS` | `ORDER_EXECUTION_BASICS` | `EXECUTION_Q1_ORDER_VS_TRADE` | `B` | `EDUCATION_ORDERS_AND_EXECUTIONS` | `EDU_SOURCE_ORDER_EXECUTION_BASICS_V1` |
-| 4 | `MARKET_AND_LIMIT_ORDERS` | `ORDER_TYPE_TRADEOFFS` | `ORDER_TYPE_Q1_PRICE_CONTROL` | `A` | `EDUCATION_MARKET_AND_LIMIT_ORDERS` | `EDU_SOURCE_ORDER_TYPE_TRADEOFFS_V1` |
-| 5 | `UNREALIZED_AND_REALIZED_PNL` | `PNL_STATE_DIFFERENCES` | `PNL_Q1_BEFORE_AND_AFTER_SELL` | `A` | `EDUCATION_UNREALIZED_AND_REALIZED_PNL` | `EDU_SOURCE_PNL_STATE_DIFFERENCES_V1` |
-| 6 | `FEES_AND_RETURNS` | `NET_RETURN_BASICS` | `RETURN_Q1_FEE_EFFECT` | `B` | `EDUCATION_FEES_AND_RETURNS` | `EDU_SOURCE_NET_RETURN_BASICS_V1` |
-| 7 | `DIVERSIFICATION` | `CONCENTRATION_RISK` | `DIVERSIFICATION_Q1_PURPOSE` | `B` | `EDUCATION_DIVERSIFICATION` | `EDU_SOURCE_CONCENTRATION_RISK_V1` |
-| 8 | `INVESTMENT_PLAN_AND_REVIEW` | `PLAN_AND_REVIEW_LOOP` | `PLAN_Q1_REVIEW_PURPOSE` | `B` | `EDUCATION_INVESTMENT_PLAN_AND_REVIEW` | `EDU_SOURCE_PLAN_AND_REVIEW_LOOP_V1` |
+| Favorite | `instrumentId` | 필수, 거래 가능 종목, 본인 중복 등록 금지 |
+| Intention | `instrumentId`, `quantity`, `stopLoss`, `takeProfit` | 필수·양수. 아직 매수 체결되지 않은 새 의도 |
+| Market order | 기존 `market`, `instrumentId`, `side=BUY`, `orderType=MARKET`, `quantity` | 기존 주문 계약 사용, 즉시 `FILLED` |
+| Exit plan | `Idempotency-Key` header, `intentionId`, `buyTradeId`, `instrumentId`, `quantity`, `stopLoss`, `takeProfit` | 본인 소유, 의도보다 체결이 나중, 모든 종목·수량·라인 동일, `stopLoss < entryPrice < takeProfit`, 의도당 plan 한 건 |
+| Observation | `exitPlanId` | 본인 `PENDING` plan만 허용. 현재가·관찰유형·시각은 요청에서 받지 않고 서버가 결정 |
+| Reflection | `exitPlanId`, `answer` | A·B·C 관찰 증거 중 하나 이후, terminal plan도 허용, 공백 제외 1~2000자 |
 
 ## 핵심 응답 계약
-- 과정 목록: 과정마다 `courseKey`, `title`, `displayOrder`, `status`, `locked`, `correctRequiredQuestions`, `totalRequiredQuestions`, `completedAt`, `courseBadgeAwarded`. 잠긴 항목에는 레슨·문제·선택지를 포함하지 않는다.
-- 과정 상세·시작: `courseKey`, `title`, `displayOrder`, `status`, `locked=false`, `contentVersion`, `lessons`; 레슨과 문제에는 `lessonKey`, `questionKey`, 질문, 선택지만 포함하고 `correctChoiceKey`는 노출하지 않는다.
-- 답안 제출: `questionKey`, `correct`, `explanation`, `progress`, `courseCompleted`, `newlyAwardedBadges`.
-- 전체 진도: 과정별 `status`, 계산된 `locked`, 정답 진도, 현재 오답 key, `completedAt`, 전체 `awardedBadges`와 아래 재학습 집계.
-  - 과정별: `attemptCount`, `incorrectAttemptCount`, `lastAnsweredAt`, `relearningAttemptCount`, `lastRelearningAnsweredAt`.
-  - 문항별: `questionKey`, `currentlyIncorrect`와 과정별과 같은 다섯 집계 필드.
-  - `attemptCount`와 `incorrectAttemptCount`는 전체 시도 누계다. `relearningAttemptCount`와 `lastRelearningAnsweredAt`은 과정 `completedAt` 이후 시도만 집계한다. 해당 시도가 없으면 count는 0, timestamp는 null이다.
-  - 선택한 답안 원문의 전체 목록은 반환하지 않는다. 집계와 현재 오답 상태로 반복 학습을 관찰하되 불필요한 원문 노출과 응답 팽창을 피한다.
-- 복기 저장: 서버 생성 `reflectionKey`, `courseKey`, `lessonKey`, `reflectionText`, `createdAt`. 각 POST는 새 이력을 201로 생성하며 기존 기록을 변경하지 않는다.
-- 코치 설명: `explanation`, 검색 근거의 `sourceKeys`, 고정 `disclaimer="교육 목적 정보이며 투자 추천이 아닙니다."`. 추천·가격 방향·예상 수익·검색 근거에 없는 숫자를 묻는 경우 금지 내용을 생성하지 않고 교육 범위 안내와 사용한 `sourceKeys`만 반환한다.
-- 배지 항목: 안정적인 `badgeCode`, `awardedAt`. 전체 완료 배지 코드는 `INVESTMENT_BEGINNER`다.
-- 정답 선택지 ID 자체는 제출 응답에 반환하지 않는다. `explanation`은 사전 작성 해설을 기본값으로 하며 LLM 사용 여부와 무관하게 판정 결과는 동일하다.
+- `InvestmentPracticeResponse`: `status`, `currentStep`, 단계별 `status`, `locked`, `evidence`를 반환한다. 증거에는 실제 본인 favorite·의도·체결·OCO·관찰·복기 리소스 key와 생성·체결 시각만 포함하고 GET 호출 확인 시각이나 타 사용자 정보는 포함하지 않는다.
+- `ExitPlanResponse`: `exitPlanId`, `buyTradeId`, `replaySessionId`(주식만), `instrumentId`, `quantity`, `entryPrice`, `stopLoss`, `takeProfit`, `baselinePrice`, `baselineObservedAt`, `status`, `reservedAt`, `closedAt`, `triggeredOrderId`.
+- `PracticeObservationResponse`: `observationId`, `exitPlanId`, 서버 `currentPrice`, `observedAt`, `closerToBoundary`, `closerBoundary`(`STOP_LOSS` 또는 `TAKE_PROFIT`, 해당 없으면 null), `evidenceType`(`CLOSER_TO_BOUNDARY`, `TIMED_REPETITION`, 아직 미충족이면 null). `FINAL_EVENT`는 클라이언트 POST 응답으로 생성되지 않는다.
+- `PracticeReflectionResponse`: `reflectionId`, `exitPlanId`, 고정 `prompt`, `answer`, `createdAt`. 정답·점수·보상 필드는 없다.
 
-## 오류 계약
-| HTTP | code | 조건 |
-|---|---|---|
-| 400 | `VALIDATION_ERROR` | 필수값 누락, 과정에 속하지 않은 선택지 |
-| 401 | `UNAUTHORIZED` | 인증 정보 없음·만료 |
-| 403 | `EDUCATION_COURSE_LOCKED` | 선행 과정 미완료인 과정의 상세·시작·답안·복기·코치 요청 |
-| 404 | `EDUCATION_COURSE_NOT_FOUND` | 과정 코드 없음 |
-| 404 | `EDUCATION_LESSON_NOT_FOUND` | 레슨 없음 또는 과정 불일치 |
-| 404 | `EDUCATION_QUESTION_NOT_FOUND` | 문제 없음 또는 과정·콘텐츠 버전 불일치 |
-| 409 | `EDUCATION_COURSE_NOT_STARTED` | `start` 전 답안 또는 복기 요청 |
-| 409 | `EDUCATION_CONTENT_VERSION_CONFLICT` | 조회 후 콘텐츠 버전이 바뀌어 현재 답안을 판정할 수 없음 |
-| 503 | `EDUCATION_COACH_UNAVAILABLE` | LLM 또는 RAG 검색 장애. 다른 교육 API에는 사용하지 않음 |
+## 상태와 오류
+- Exit plan: `PENDING`, `FILLED_TAKE_PROFIT`, `FILLED_STOP_LOSS`, `CANCELLED`, `CANCELLED_EXPIRED`.
+- 내부 조건 상태: 대기 중 두 조건, 종결 시 체결 조건 `TRIGGERED`, 반대쪽 `CANCELLED_BY_OCO`; 사용자 취소 시 둘 다 `CANCELLED`, 주식 세션 만료 시 둘 다 `CANCELLED_EXPIRED`. plan에는 `TRIGGERED` 중간상태를 두지 않는다.
+- 주요 오류: `FAVORITE_NOT_FOUND` 404, `EXIT_PLAN_NOT_FOUND` 404, `PRACTICE_STEP_LOCKED` 409, `PRACTICE_EVIDENCE_MISSING` 409, `PRACTICE_ALREADY_COMPLETED` 409, `EXIT_PLAN_INVALID_PRICE_RANGE` 409, `EXIT_PLAN_SESSION_CLOSED` 409, `EXIT_PLAN_NOT_PENDING` 409, 기존 `INSUFFICIENT_QTY`·`PRICE_UNAVAILABLE` 재사용.
 
 ## 데이터 모델
-구체 테이블명과 컬럼은 Gate 통과 후 기존 배지 모델 조사 결과에 맞춰 확정한다. 필요한 논리 모델은 다음과 같다.
+- `favorites`: `user_id`, `instrument_id`, `created_at`, `UNIQUE(user_id, instrument_id)`.
+- `practice_intentions`: 사용자, 종목, 수량, 손절·익절, 생성시각. 이후 매수·OCO와 연결.
+- `practice_progresses`: 사용자, 고정 `tutorial_key`, `IN_PROGRESS`·`COMPLETED`, 최초 시작·완료시각, `UNIQUE(user_id, tutorial_key)`. 최초 intention 생성에서 atomic insert-or-existing으로 한 행을 확보한다.
+- `exit_plans`: 사용자, 사전 의도, 멱등키, 매수 체결, 주식 `replay_session_id`(코인은 null), holding, 종목, 예약수량, 진입가, 손절·익절, `baseline_price`, `baseline_observed_at`, 상태, 생성·종결시각, 트리거 매도 주문. `(user_id, intention_id)`와 `(user_id, idempotency_key)`는 유일하다.
+- `exit_plan_conditions`: plan, `STOP_LOSS`·`TAKE_PROFIT`, trigger price, 상태. 수량 예약은 condition이 아니라 plan 한 건에만 둔다.
+- `practice_observations`: 사용자, plan, 서버 현재가, 가까워진 경계, `CLOSER_TO_BOUNDARY`·`TIMED_REPETITION`·`FINAL_EVENT` 증거 유형, 관찰시각. 모든 가격은 서버 값이다. 클라이언트 API는 PENDING plan의 앞 두 유형만 만들고 `FINAL_EVENT`는 서버 체결·만료 트랜잭션만 만든다.
+- `practice_reflections`: 사용자, plan, 고정 prompt version, 자유 답변, 생성시각, `UNIQUE(user_id, exit_plan_id)`.
+- `practice_completions`: 사용자, 고정 `tutorial_key`, 최초 완료시각, 완료 reflection, `UNIQUE(user_id, tutorial_key)`. progress의 완료 전이와 함께 생성되며 삭제·상태 회귀하지 않는 완료 정본이다.
+- 공통 holding 예약 원장: OCO와 일반 지정가 SELL 예약을 합산해 `available_quantity = total_quantity - reserved_quantity`를 제공한다. 시장가 SELL도 같은 값을 검증한다.
+- 물리 스키마는 ADR-0004에 따라 새 migration으로 추가하며 기존 migration을 수정하지 않는다.
 
-- 교육 과정/문제/선택지/정답: 안정적인 과정 코드, 콘텐츠 버전, 표시 순서, 필수 여부, 서버 정답과 정적 해설.
-- 사용자 과정 진도: 최초 `start`에서 생성되는 사용자·과정·콘텐츠 버전 행, `IN_PROGRESS`·`COMPLETED`, 최초 시작·완료 시각. 행 없음은 `NOT_STARTED`이며 잠금 컬럼은 두지 않는다.
-- 사용자 문제 시도: 제출 답안, 서버 판정, 시도 시각. 감사 가능한 이력과 현재 오답 상태를 구분한다.
-- 사용자 배지: 사용자, 배지 코드, 최초 획득 시각. `(user_id, badge_code)` 유일 제약으로 중복을 막는다.
-- 사용자 복기: 서버 생성 key, 사용자·과정·레슨, 본문, 생성 시각. 진도·보상 FK 입력으로 사용하지 않는다.
-- 교육 RAG 자료: `sourceKey`, 과정·레슨 key, 확정 자료 본문과 콘텐츠 버전. LLM에는 검색된 자료와 사용자 질문만 전달한다.
-- 교육 모델은 계좌·현금·시드머니 필드를 참조하거나 갱신하지 않는다.
-
-## 트랜잭션 및 동시성
-- 답안 시도 저장, 현재 오답·진도 갱신, 과정 최초 완료, 해당 과정 배지 부여, 전체 완료 검사와 `INVESTMENT_BEGINNER` 부여를 하나의 service 트랜잭션에서 처리한다.
-- 과정 완료 커밋 뒤 다음 GET은 직전 과정 완료 존재 여부로 다음 과정의 `locked=false`를 즉시 계산한다. 다음 과정 행 생성이나 잠금 컬럼 갱신은 하지 않는다.
-- DB 유일 제약을 최종 중복 방어선으로 사용해 반복·동시 제출을 멱등한 배지 결과로 수렴시킨다.
-- `start`는 `(user_id, course_key)` 유일 제약에 MySQL 원자적 `INSERT ... ON DUPLICATE KEY UPDATE id = id`를 사용한 뒤 해당 행을 조회한다. 최초 동시 요청과 재요청 모두 예외 없이 같은 사용자·과정 진도 하나와 200 응답으로 수렴하며 새 회차나 보상을 만들지 않는다.
-- 답안 트랜잭션은 사용자·과정 진도 행을 비관 잠금(`SELECT ... FOR UPDATE`)한 뒤 시도 저장, 진도·완료와 배지를 처리한다. 같은 동시 답안 중 커밋에 성공해 배지를 실제 생성한 응답만 `newlyAwarded=true`이고, 대기 후 상태를 재조회한 응답은 `false`다. `(user_id, badge_code)` DB unique는 최종 방어선이다.
-- 복기 생성과 LLM/RAG 설명 호출은 퀴즈 트랜잭션 밖에서 수행하고 판정·진도·보상 입력으로 사용하지 않는다.
-
-## LLM/RAG 안전 계약
-- 검색 범위는 요청한 과정·레슨의 확정 교육 자료 `sourceKey`로 제한한다.
-- 모델 입력에는 검색된 자료, 사용자 질문, 금지 정책만 전달한다. 시세·계좌·주문 데이터나 임의 외부 검색 결과를 사용하지 않는다.
-- 출력 검증에서 특정 자산 추천, 매수·매도 지시, 가격 방향, 예상 수익·수익률, 검색 자료에 없는 숫자를 차단하고 안전한 교육 범위 문구로 대체한다.
-- 정상 응답은 실제 사용한 `sourceKeys`와 고정 교육 목적 안내를 포함한다. 검색 근거가 없거나 LLM/RAG가 실패하면 추측하지 않고 503을 반환한다.
-- 코치 API 성공·실패는 퀴즈 판정·정적 해설·과정 상태·배지 결과를 변경하지 않는다.
+## 트랜잭션과 경합
+- OCO 생성: 주식은 현재 OPEN replay session → holding 순서로 잠그고 `buyTrade.replaySessionId` 일치와 15:30 전을 재검증한다. 코인은 holding만 잠근다. 서버 유효 현재가를 baseline으로 얻은 뒤 예약 가능 수량 검증, plan·두 condition 생성, holding 수량 예약을 한 트랜잭션으로 처리한다. 시세 없음은 409 `PRICE_UNAVAILABLE`로 전체 롤백한다.
+- intention 생성: `(user_id, tutorial_key)` progress를 atomic insert-or-existing으로 확보한 뒤 intention을 저장한다. concurrent insert unique 충돌은 기존 progress를 재조회해 `IN_PROGRESS` 단일 행으로 수렴시키며 완료 progress에는 새 intention을 만들지 않고 409를 반환한다.
+- 가격 트리거: 주식 replay session → holding → plan, 코인 holding → plan 순서로 잠그고 `PENDING` 한 건만 승자로 전이한다. 중복·역순 이벤트는 최초 커밋만 처리하고 terminal plan 후속 이벤트는 no-op/skip한다. 매도 체결·예약 소비·반대 condition 취소·final observation을 한 트랜잭션으로 처리한다.
+- 트리거 평가 입력: 공통 가격 공급자가 거래 가능하다고 판정한 유효 가격 갱신 이벤트만 사용한다. 유효 이벤트 부재·가격 장애 중에는 아무 상태 전이 없이 `PENDING`을 유지한다.
+- 사용자 취소: 주식 replay session → holding → plan, 코인 holding → plan 순서로 잠근다. `PENDING → CANCELLED`와 예약 반환이 함께 커밋되고 재요청·경합 패자는 409다.
+- 주식 세션 만료: replay session → holding → plan 순서로 잠근다. 마지막 유효 가격 이벤트 처리 뒤 15:30에 남은 `PENDING` plan을 `CANCELLED_EXPIRED`로 바꾸고 두 condition 만료, 예약 수량 1회 반환, 마지막 유효 가격 final observation 저장을 한 트랜잭션으로 처리한다. 생성과 직렬화되어 만료 선행 시 생성 거부, 생성 선행 시 scan 포함이다. 코인은 이 경로가 없는 GTC다.
+- 기존 시장가 SELL과 일반 지정가 SELL: holding 잠금에서 공통 예약 원장의 `availableQuantity`만 검증한다. 이 변경은 기존 `POST /api/orders` SELL service·contract·Controller 테스트와 실제 API 문서, 일반 지정가 SELL 구현을 함께 동기화하는 후속 이슈다.
+- 클라이언트 관찰: 본인 plan을 잠그고 `PENDING`을 재검증한 뒤 서버 유효 현재가로 A·B 관찰만 저장한다. terminal 상태는 409이며 `FINAL_EVENT`는 이 경로에서 만들지 않는다.
+- 복기 완료: `practice_progresses → practice_intention → exit plan` 순서로 비관 잠금한다. progress가 `COMPLETED`면 409다. 아니면 선택 plan과 1·2단계 현재 evidence, A·B·C 중 하나를 검증하고 reflection 1행, completion 1행, progress `COMPLETED` 전이를 한 트랜잭션에서 저장해 201을 반환한다. plan terminal 이후도 허용하며 progress·completion·reflection DB unique가 최종 방어선이다.
+- 튜토리얼 판정: 완료 전에는 실제 evidence 현재 존재로 상태를 계산해 삭제·취소 시 재진행이 필요할 수 있다. completion 행 생성 뒤 overall은 불변 `COMPLETED`다. 교육 service는 존재·소유권·시각 순서·필드 일치를 재검증하며 클라이언트 완료 flag는 받지 않는다. favorite·OCO GET 호출 여부는 판정 입력이 아니다.
+- 조회 API: favorite·OCO 목록과 practice 진행 GET은 DB write를 하지 않는다. 목록에 실제 리소스가 포함되는지는 응답 필드 API 테스트로 검증한다.
 
 ## 테스트 계획
-- 단위: 행 없는 초기 상태·순차 잠금 순수 계산, `start` 멱등, 서버 정답 판정, 오답 무진도·무보상, 과정·전체 완료, 재학습 집계, LLM 결과 배제.
-- 슬라이스: 7개 API의 인증, 잠금, 검증, 정답 비노출, 응답 필드와 오류 코드.
-- 통합: GET 무쓰기, 최초 동시 `start` 두 요청의 단일 행·모두 200 수렴, 8개 과정 순차 최초 완료, 과정별/전체 배지 단 한 번 부여, 비관 잠금 동시 답안 응답의 `newlyAwarded` 단일 true, 재학습 집계, 복기 이력, 사용자 격리, RAG 출처·금지 출력·독립 503, 교육 완료 후 계좌 잔액 불변.
-- 문서: Controller 구현이 승인된 시점에 실제 매핑을 기준으로 `docs/api-routes.md`를 동기화한다.
+- 단위: 3단계 증거 판정, baseline, PENDING 전용 A·B 관찰, 서버 전용 C, 불변 완료, 시장가 즉시 체결과 OCO 예약 구분, 가격 범위, 자유 복기 무판정.
+- 슬라이스: 즐겨찾기 3 API, 실습 조회·의도·관찰·복기, OCO 생성·목록·취소의 인증·소유권·검증·응답과 GET 무쓰기.
+- 통합: 실제 favorite 등록/목록 → 의도 → 기존 시장가 FILLED → baseline 포함 OCO 생성/목록 → A·B·C별 복기 전체 흐름, terminal 관찰 POST 409, 서버 `FINAL_EVENT`, 완료 후 evidence 삭제·종결에도 완료 불변을 검증한다.
+- 복기 경합: 같은 사용자의 같은 plan뿐 아니라 서로 다른 eligible intention·plan 동시 요청도 공통 progress 잠금에서 직렬화되어 한 요청만 reflection·completion 각 1행, progress 완료와 201을 만들고 다른 요청은 409이며 답변 원문이 추가 저장되지 않음을 DB로 검증한다.
+- 경합: 중복·역순 가격 이벤트, 트리거 대 취소·주식 세션 만료·생성, OCO 예약분 포함 시장가·지정가 SELL에서 매도 1회 또는 반환 1회를 DB로 검증한다.
+- 만료: 주식은 마지막 유효 가격 처리 후 15:30 자동 `CANCELLED_EXPIRED`·예약 반환, 코인은 GTC, 가격 장애 중 `PENDING` 유지를 검증한다.
 
-## T1 확정과 T2+ 미확정 설계
-- T1 확정: 최초 콘텐츠 manifest와 재현 가능한 8개 RAG 본문, 행 없는 초기 상태·계산 잠금·멱등·서버 판정·재학습 집계·보상 정책, 7개 API 전체 HTTP 계약, 복기 및 LLM/RAG 안전·장애 계약.
-- T2+ 미확정: 콘텐츠 저장·배포 방식과 후속 콘텐츠 버전 변경 시 기존 진도·완료 승계 규칙.
-- 배지 공통 도메인 신설 여부 및 확정된 8개 과정 배지 코드의 표시 자산 연결 방식.
-- 완료 과정의 `start` 재요청은 별도 회차를 생성하지 않는다. 완료 후 답안 시도를 재학습 이력으로 구분하는 내부 컬럼과 시도·복기 보존 기간은 T2+에서 정한다.
-- 답안 제출 재시도용 별도 멱등키 필요 여부. 인정 진도와 배지는 key 없이도 중복 증가하지 않아야 한다.
-- 확정 RAG 안전·503 계약을 만족하는 모델, 벡터 저장소, 검색 파라미터, 프롬프트와 timeout 값.
+## 후속 구현 이슈 후보
+각 후보는 API 하나 또는 원자적 트랜잭션 경계 하나만 소유한다. 서로 다른 후보를 한 이슈로 합치지 않는다.
+
+1. `POST /api/favorites` 등록 API와 유일 제약.
+2. `GET /api/favorites` 순수 목록 API와 실제 리소스 포함 응답 검증.
+3. `DELETE /api/favorites/{instrumentId}` 해제 API.
+4. `POST /api/education/practice/intentions` 공통 progress atomic insert-or-existing과 사전 계획 기록 API.
+5. `POST /api/exit-plans` OPEN replay session·baseline 시세 검증과 보유수량 1회 예약 트랜잭션.
+6. `GET /api/exit-plans?status=PENDING` 순수 예약 목록 API와 실제 plan 포함 응답 검증.
+7. `DELETE /api/exit-plans/{exitPlanId}` 취소·반대 조건 종결·예약 1회 반환 트랜잭션.
+8. 유효 가격 이벤트 OCO 트리거·시장가 매도·반대 조건 취소·final observation 트랜잭션.
+9. 주식 replay session 15:30 OCO 자동 만료·두 조건 취소·예약 1회 반환 트랜잭션.
+10. 기존 `POST /api/orders` 시장가 SELL의 공통 `availableQuantity` 검증 변경과 service·contract·Controller 테스트·API 문서 동기화.
+11. 일반 지정가 SELL의 공통 예약 원장·`availableQuantity` 검증 트랜잭션.
+12. `GET /api/education/practice` 실제 증거·불변 완료 기반 순수 진행 조회 API.
+13. `POST /api/education/practice/observations` PENDING plan 전용 서버 현재가 A·B 관찰 API.
+14. `POST /api/education/practice/reflections` progress → intention → plan 잠금, A·B·C 검증, 최초 복기·불변 완료 저장과 서로 다른 plan 동시·재요청 409 트랜잭션.
+
+각 Controller 이슈에서 실제 매핑을 만든 뒤에만 API 문서를 동기화한다. 기존 `POST /api/orders` SELL은 OCO 예약분을 지키도록 service·계약·Controller 테스트·API 문서를 함께 바꾸는 명시적 변경 후보며 BUY 계약은 유지한다.
+
+## 미확정 구현 사항
+- 기존 지정가 주문 예약과 공유할 holding 예약 필드·상태 enum의 물리 설계는 migration 작성 전에 확정한다.
