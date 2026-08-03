@@ -39,4 +39,13 @@ public class InstrumentService {
 		return instrumentRepository.findById(instrumentId)
 			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
 	}
+
+	// 위와 같은 이유로 시장 단위 순회도 이 메서드를 거친다 — feedback의 뉴스·공시 수집이 종목 목록을 얻는 경로다
+	// (spec 012 §C-6 "feedback은 다른 도메인의 repository·store를 직접 주입하지 않는다").
+	// getInstruments와 달리 응답 DTO가 아니라 엔티티를 주는 이유는 호출부가 MarketNewsItem의 연관으로 그대로
+	// 써야 하기 때문이다 — DTO로는 ManyToOne을 채울 수 없다.
+	@Transactional(readOnly = true)
+	public List<Instrument> getInstrumentEntities(Market market) {
+		return instrumentRepository.findByMarketOrderByIdAsc(market);
+	}
 }
