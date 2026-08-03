@@ -23,6 +23,8 @@
 | 18:20 | implementer | `gradlew.bat spotlessApply compileJava spotbugsMain` + `test --tests "com.finplay.api.feedback.*"`(25건) + 임시 덤프 테스트로 조립 결과를 spec 예시와 대조 (tasks.md 3번 — `NarrativePromptBuilder`) | spec.md §LLM 프롬프트·§후검증·§파생 사실 계산·§C-2·§C-6, api-contracts.md 매도 직후 피드백, conventions.md, agent-mistakes 2026-07-29 |
 | 19:05 | implementer | `gradlew.bat spotlessApply compileJava spotbugsMain` + `test --tests "com.finplay.api.feedback.*"`(48건) + 임시 프로브로 경계 케이스·가정법 어미 실동작 확인 (tasks.md 4번 — `NarrativeValidator`) | spec.md §후검증 표 5줄·§C-4·§C-8, api-contracts.md 문구 제약, ADR-0011, conventions.md |
 | 19:50 | implementer | `gradlew.bat spotlessApply compileJava spotbugsMain` + `test --tests "com.finplay.api.feedback.*"`(163건) + 임시 프로브로 템플릿 3종의 후검증 통과 확인 (spec 가정법 목록 수정 + tasks.md 5번 — `NarrativeTemplateBuilder`) | spec.md §후검증·§템플릿 문장·§파생 사실 계산, api-contracts.md 카드 예시 서술, conventions.md(공통화 기준) |
+| 20:30 | implementer | `gradlew.bat spotlessApply compileJava spotbugsMain test --tests "com.finplay.api.feedback.*"`(221건) + Fake 생성기로 1단계·2단계 흐름 6종 직접 확인 (tasks.md 6번 — `NarrativeService`) | spec.md §후검증 2단계 흐름·§실패 처리·§C-6·§C-7, ADR-0011, tasks.md 6번 검증 항목 |
+| 20:55 | implementer | `gradlew.bat spotlessApply compileJava spotbugsMain test --tests "com.finplay.api.feedback.*"`(257건) (tester 지적 — `NarrativeResultDto` 불변식 강제) | spec.md §C-4 판정 순서, conventions.md, tester 예고 테스트 |
 
 ## 모니터링 (사람용 요약)
 - 11:40 — 문서 리뷰 완료, 차단 9건(노출 판정 전장 기사 역전, UNIQUE(url) 잔존 모순, 코인 경로 미정의, 장마감 배치 부재, 배치용 전일치 분봉 조회 경로 부재, PRD 수집주기 모순 등) / 권장 12건.
@@ -53,3 +55,7 @@
 - 19:05 — `NarrativeValidator`(부분 문자열 판정, 5줄 35표현)·`NarrativeValidationDto`·`NarrativeSource` 신설. 정규식 대신 `String.contains`를 쓴 이유는 35개가 전부 리터럴이라 표현력이 같고 어간 일반화 유혹이 구조적으로 닫히기 때문이다. **spec 확인 필요 1건 → 해소됨(19:50)** — `판단·훈수`의 가정법 3종(`았다면`·`었다면`·`였다면`)이 spec 자신의 예시인 "더 기다렸다면"(렸다면)과 "보유했다면"(했다면)을 잡지 못했다. 사용자 결정으로 spec §후검증 목록에 `했다면`·`렸다면`을 추가해 메웠다.
 
 - 19:50 — spec §후검증 `판단·훈수`에 `했다면`·`렸다면`을 추가해(9→11, 합계 35→37) spec 본문·api-contracts 예시와 목록의 불일치를 메우고 `NarrativeValidator`·`NarrativeValidatorTest`를 함께 맞췄다. 이어 `NarrativeTemplateBuilder`(장중 카드·시가 갭·매도 회고 3종) 신설 — 입력은 3번의 record를 그대로 재사용하고, 조립된 문장 3종이 새 37표현 기준으로도 후검증을 통과하는 것을 확인했다. feedback 테스트 163건 통과.
+
+- 20:30 — `NarrativeService`(진입점 4개)·`NarrativeResultDto` 신설로 이슈 #147 작업 항목 6개를 마쳤다. 1단계(카드·매도 회고)는 적발·실패가 한 분기로 수렴해 템플릿, 2단계(요약·브리핑)는 적발 표현을 넣어 `max-regeneration`회 재생성 후 `NONE`이다. 호출 횟수가 `max-regeneration + 1`을 넘지 않는 것을 프로퍼티 0·2로 바꿔 가며 확인했다. spec §실패 처리에 "요약·브리핑의 생성 호출 실패는 재생성 횟수를 쓰지 않고 곧바로 NONE" 행을 추가했다.
+
+- 20:55 — `NarrativeResultDto`의 compact 생성자에 불변식 검사 3종(`source` null 금지, `NONE`이면 서술 null, `LLM`·`TEMPLATE`이면 서술 non-blank)을 넣었다. #5가 `NONE` → `summary=NULL` → `UNAVAILABLE` 매핑을 이 짝 위에 얹으므로 정적 팩토리 규율만으로는 부족하다. tester 예고 테스트를 지우지 않고 뒤집고 정상 조합 케이스를 하나 더했다. feedback 257건 통과.
