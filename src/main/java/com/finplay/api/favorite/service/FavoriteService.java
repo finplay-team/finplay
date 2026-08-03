@@ -6,6 +6,7 @@ import com.finplay.api.auth.service.UserQueryService;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.favorite.domain.Favorite;
+import com.finplay.api.favorite.dto.response.FavoriteListResponse;
 import com.finplay.api.favorite.dto.response.FavoriteResponse;
 import com.finplay.api.favorite.repository.FavoriteRepository;
 import com.finplay.api.market.domain.Instrument;
@@ -27,6 +28,11 @@ public class FavoriteService {
 	private final InstrumentService instrumentService;
 	private final UserQueryService userQueryService;
 	private final Clock clock;
+
+	@Transactional(readOnly = true)
+	public FavoriteListResponse getFavorites(Long userId) {
+		return FavoriteListResponse.from(favoriteRepository.findAllByUserIdOrderByCreatedAtDescIdDesc(userId));
+	}
 
 	@Transactional
 	public FavoriteResponse createFavorite(Long userId, Long instrumentId) {
