@@ -20,6 +20,7 @@
 | 16:49 | implementer | `gradlew.bat compileJava` + `spotlessApply` (tasks.md 1번 — `feedback.llm.*` 바인딩) | spec.md §C-7, ADR-0011(값은 프로퍼티로), conventions.md, `market/config/KisProperties` 선례 |
 | 17:15 | implementer | `gradlew.bat compileJava compileTestJava` + `spotbugsMain` + `test --tests MeIntegrationTest`(키 없이 컨텍스트 기동), Spring AI 2.0.0 jar `javap`로 옵션 매핑 확인 (tasks.md 2번 — `NarrativeGenerator`) | ADR-0011(실패는 반환값·Fake 테스트), spec.md §C-6·§실패 처리·§외부 API 호출 상세, conventions.md, agent-mistakes 2026-07-29·07-30 |
 | 17:35 | implementer | `gradlew.bat test --tests "com.finplay.api.feedback.*"`(25건) + 임시 프로브로 fail-fast 실패 원인 확인 (tester 회귀 수정) | tester 권고 1번, ADR-0003(슬라이스 테스트 경계), conventions.md |
+| 18:20 | implementer | `gradlew.bat spotlessApply compileJava spotbugsMain` + `test --tests "com.finplay.api.feedback.*"`(25건) + 임시 덤프 테스트로 조립 결과를 spec 예시와 대조 (tasks.md 3번 — `NarrativePromptBuilder`) | spec.md §LLM 프롬프트·§후검증·§파생 사실 계산·§C-2·§C-6, api-contracts.md 매도 직후 피드백, conventions.md, agent-mistakes 2026-07-29 |
 
 ## 모니터링 (사람용 요약)
 - 11:40 — 문서 리뷰 완료, 차단 9건(노출 판정 전장 기사 역전, UNIQUE(url) 잔존 모순, 코인 경로 미정의, 장마감 배치 부재, 배치용 전일치 분봉 조회 경로 부재, PRD 수집주기 모순 등) / 권장 12건.
@@ -44,3 +45,5 @@
 - 17:15 — `NarrativeGenerator`(반환 `Optional<String>`) + OpenAI 구현 + 테스트용 Fake 신설, `ChatClient` 빈은 `FeedbackLlmConfig`가 등록. 타임아웃은 Spring AI에서 요청 단위가 아니라 클라이언트 단위 값이라 `spring.ai.openai.timeout`이 `feedback.llm.timeout-seconds`를 참조하게 했고, 최대 토큰은 GPT-5 계열 때문에 `maxCompletionTokens`로 넘긴다. 컴파일·SpotBugs·키 없는 컨텍스트 기동 통과.
 
 - 17:35 — 회귀 수정: `narrativeChatClient` 빈을 `NarrativeChatClientConfig`로 분리해 `FeedbackLlmConfig`를 프로퍼티 등록 전용으로 되돌렸다. `feedback` 테스트 25건 전부 통과했고, fail-fast 케이스가 `ChatClient.Builder` 부재가 아니라 `ConfigurationPropertiesBindException`으로 실패하는 것을 임시 프로브로 확인한 뒤 프로브는 삭제했다.
+
+- 18:20 — `NarrativePromptBuilder`(시스템 1·사용자 4·재생성 1)와 입력 record 7종 신설. 조립 결과가 spec §LLM 프롬프트 예시 4종과 문자 단위로 일치하는 것을 임시 덤프로 확인한 뒤 덤프는 삭제했다. SpotBugs `VA_FORMAT_STRING_USES_NEWLINE` 2건은 `%n`(플랫폼별 CRLF) 대신 개행을 format 문자열 밖으로 빼서 해결했다.
