@@ -33,6 +33,8 @@
 | 21:35 | implementer | `gradlew.bat spotlessApply compileJava spotbugsMain` + `test --tests MeIntegrationTest`(`validate` 기동) + 컬럼명 오타 음성 프로브로 새 엔티티가 실제 검증 대상인지 확인 후 원복 (tasks.md 4번 — `PriceMoveEvent`·`PriceMoveEventSource`) | tasks.md 4번, spec.md §C-8·§C-9·§탐지 알고리즘(코인) 648줄·§데이터 모델, conventions.md, `order/domain/Order`의 `columnDefinition` 선례 |
 | 21:50 | implementer | `gradlew.bat spotlessApply compileJava spotbugsMain` + `test --tests MeIntegrationTest`(`validate` 기동) (tasks.md 5번 — `InstrumentNewsSummary`·`MarketBriefing`) | tasks.md 5번, spec.md §데이터 모델·§C-8·§C-9·§C-4, conventions.md, 4번의 `columnDefinition = "TEXT"` 선례 |
 | 22:05 | implementer | `gradlew.bat spotlessApply compileJava spotbugsMain` + `test --tests MeIntegrationTest --tests OrderLedgerSchemaTest`(일곱 엔티티 전부 매핑된 상태의 `validate` 최종 확인) + §C-8 타입표 ↔ 일곱 엔티티 `@Column` 전수 대조 (tasks.md 6번 — `TradeFeedback`·`PriceMovePeerStat`) | tasks.md 6번, spec.md §C-8·§C-9·§데이터 모델·§C-4, conventions.md, ADR-0004 |
+| 22:35 | implementer | `gradlew.bat spotlessApply compileJava compileTestJava spotbugsMain` + `test --tests "feedback.repository.*"`(52건) (reviewer 차단 1건·권장 1건 수정 — `createCrypto`의 `originTradeDate` 파생, 두 팩토리의 시장 일치 검증) | reviewer 지적, spec.md §C-9·§C-8, conventions.md(팩토리는 항상 유효한 상태로 반환) |
+| 22:40 | reviewer(리뷰) | `git diff dev...HEAD`(브랜치 `feat/160-feedback-schema`, 36파일) + V13 ↔ spec §C-8 타입·NULL·유니크·인덱스·FK 전수 대조, 일곱 엔티티 `@Column` ↔ V13 대조, `@DataJpaTest` 7종이 실제로 DB를 태우는 축과 Hibernate에서 멈추는 축 구분 판정, `gh issue view 160` 완료 조건 4건 추적, `db/migration` 기존 파일 미수정·enum 이동 잔존 참조 0건·`gh pr list` 확인 | spec.md §데이터 모델·§C-6·§C-8·§C-9·§완료 조건, tasks.md, conventions.md, ADR-0002·0003·0004, docs/specs/README.md |
 
 ## 모니터링 (사람용 요약)
 - 11:40 — 문서 리뷰 완료, 차단 9건(노출 판정 전장 기사 역전, UNIQUE(url) 잔존 모순, 코인 경로 미정의, 장마감 배치 부재, 배치용 전일치 분봉 조회 경로 부재, PRD 수집주기 모순 등) / 권장 12건.
@@ -84,4 +86,8 @@
 
 - 22:05 — `TradeFeedback`·`PriceMovePeerStat`과 리포지토리 2종을 붙여 **일곱 테이블 전부에 매핑이 생겼다.** 그 상태로 `@SpringBootTest`가 기동해 완료 조건 "V13이 `ddl-auto=validate`를 통과한다"를 최종 확인했다. §C-8 타입표를 일곱 엔티티의 `@Column`과 전수 대조했고 불일치 0건이다 — 다만 **Hibernate `validate`는 NULL 허용 여부와 기본값을 검사하지 않으므로** 그 두 축은 이 수동 대조와 tester의 `@DataJpaTest`가 근거다. `trade_id` 연관에는 cascade를 걸지 않아 원장을 쓰는 경로가 생기지 않는다.
 
+- 22:35 — reviewer 차단 1건 수정: `createCrypto`가 `originTradeDate`를 파라미터로 받아 §C-9의 `originTradeDate = occurredAt의 KST 날짜`가 계약(javadoc)으로만 남아 있었다. 파라미터를 없애고 `occurredAt.toLocalDate()`로 파생하게 바꿨다 — 코인은 `window_start`가 `NULL`이라 유니크가, `validate`는 값 자체를 안 봐서 어긋난 행을 아무도 못 잡고, 이 컬럼이 #8의 일일 상한 카운트 기준이라 자정 직후 카드가 전날 몫으로 세어진다. 픽스처(`8/3` + `8/4 00:03`)가 하필 그 케이스여서 테스트 기대값도 `8/4`로 바로잡았다(자정 넘김 검증 의도는 유지). 권장 1건도 함께 반영 — 두 팩토리가 `instrument.getMarket()`이 카드 형태와 같은지 검증하고 다르면 `IllegalArgumentException`을 던진다. feedback 리포지토리 테스트 52건 통과.
+
 - 22:20 — reviewer 권장 3건·참고 2건 처리. ①`application.yml`의 "블록 없어도 기동한다" 주석이 거짓이었다 — 블록을 실제로 지우고 `@SpringBootTest`를 돌려 `ConfigurationPropertiesBindException` → `DurationStyle` 변환 실패로 기동이 깨지는 것을 확인하고 주석을 사실대로 고쳤다. ②spec §후검증의 "정규식" 표기 2곳을 "부분 문자열"로 맞추고 왜 정규식이 아닌지를 적었다. ③가정법 한계(`샀다면`·`봤다면` 등 축약형은 구조적으로 못 잡는다)를 §후검증에 명시하고 §튜닝 관측 항목으로 넣었다 — 목록은 넓히지 않았다. 참고: `maxRegeneration` 음수 차단, 이슈 #147 완료 조건 문구 동기화.
+
+- 22:40 — PR(이슈 #160) 리뷰: 차단 1건(코인 카드의 `originTradeDate`가 `occurredAt`과 독립 파라미터라 §C-9를 어긴 행을 팩토리가 그대로 만들고, 테스트 픽스처가 실제로 어긋난 조합(8/3 + 8/4 00:03)을 단정한다) / 권장 2건(`market` 컬럼과 `instrument.market` 불일치 무방비, NOT NULL 축 단정이 Hibernate에서 멈춰 V13 컬럼 속성을 검증하지 못함) / 참고 5건. V13 ↔ §C-8·§데이터 모델 대조는 타입·유니크·인덱스·FK 전부 일치, 기존 마이그레이션 미수정·원장 불변 확인.

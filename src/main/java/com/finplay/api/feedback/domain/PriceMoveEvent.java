@@ -120,6 +120,8 @@ public class PriceMoveEvent {
 	/**
 	 * 주식 카드를 만든다 — 시각은 <b>원본 거래일 시간축</b>의 TIME이고 {@code occurredAt}은 채우지 않는다.
 	 *
+	 * @param instrument 주식 종목이어야 한다. {@code market} 컬럼은 이 종목의 시장을 비정규화한 사본이라
+	 *                   어긋나면 어떤 제약도 잡지 못한다
 	 * @param revealTime 이 카드를 노출할 서비스 날짜의 시각 (§노출 판정). 부여는 배치 책임이며 여기서 계산하지 않는다
 	 */
 	public static PriceMoveEvent createStock(
@@ -134,6 +136,7 @@ public class PriceMoveEvent {
 		NarrativeSource narrativeSource,
 		LocalTime revealTime,
 		LocalDateTime now) {
+		requireMarket(instrument, Market.STOCK);
 		return new PriceMoveEvent(
 			instrument,
 			Market.STOCK,
@@ -154,22 +157,29 @@ public class PriceMoveEvent {
 	 * 코인 카드를 만든다 — 실시간이라 {@code revealTime}이 없고(스포일러가 성립하지 않는다) 시각은
 	 * {@code occurredAt} 하나뿐이다. {@code windowStart}는 응답에서 계산한다 (§C-9).
 	 *
-	 * @param originTradeDate {@code occurredAt}의 KST 날짜다. 일일 상한을 세는 컬럼이라 코인도 채운다 (§C-9)
+	 * <p><b>{@code originTradeDate}를 받지 않고 {@code occurredAt}에서 파생한다.</b> §C-9가 두 값의 관계를
+	 * ({@code originTradeDate = occurredAt}의 KST 날짜)로 고정했는데, 따로 받으면 어긋난 행을 아무도 못 잡는다 —
+	 * 코인은 {@code window_start}가 {@code NULL}이라 유니크가 걸리지 않고 {@code validate}도 값은 보지 않는다.
+	 * 이 컬럼은 코인의 <b>일일 상한을 세는 기준</b>이라 어긋나면 자정 직후 카드가 전날 몫으로 세어진다.
+	 *
+	 * @param instrument 코인 종목이어야 한다
+	 * @param occurredAt 탐지 시각(= {@code windowEnd})이며 <b>KST 시간축</b>이다. 이 값의 날짜가 그대로
+	 *                   {@code originTradeDate}가 된다
 	 */
 	public static PriceMoveEvent createCrypto(
 		Instrument instrument,
-		LocalDate originTradeDate,
 		LocalDateTime occurredAt,
 		BigDecimal changeRate,
 		BigDecimal detectionScore,
 		String narrative,
 		NarrativeSource narrativeSource,
 		LocalDateTime now) {
+		requireMarket(instrument, Market.CRYPTO);
 		return new PriceMoveEvent(
 			instrument,
 			Market.CRYPTO,
 			PriceMoveEventType.INTRADAY,
-			originTradeDate,
+			occurredAt.toLocalDate(),
 			null,
 			null,
 			occurredAt,
@@ -179,5 +189,15 @@ public class PriceMoveEvent {
 			narrativeSource,
 			null,
 			now);
+	}
+
+	// market은 instrument.market의 비정규화 사본이라 둘이 어긋나도 FK·유니크·validate 어디에도 걸리지 않는다.
+	// 코인 종목으로 만든 주식 형태 카드는 노출 게이트(주식만 reveal_time을 본다)와 조회 범위(코인만 최근
+	// 24시간이다)가 서로 다른 시장을 가리키게 만들어, 예외 없이 화면에서 사라진다. 여기서 막는 이유다.
+	private static void requireMarket(Instrument instrument, Market expected) {
+		if (instrument.getMarket() != expected) {
+			throw new IllegalArgumentException(
+				"종목의 시장(" + instrument.getMarket() + ")이 카드 형태(" + expected + ")와 다릅니다.");
+		}
 	}
 }

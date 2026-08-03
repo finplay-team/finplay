@@ -79,9 +79,9 @@ class PriceMoveEventRepositoryTest {
 	}
 
 	private PriceMoveEvent newCryptoEvent(LocalDateTime occurredAt) {
+		// origin_trade_date를 넘기지 않는다 — 팩토리가 occurredAt의 날짜로 파생한다 (§C-9).
 		return PriceMoveEvent.createCrypto(
 			crypto,
-			ORIGIN_TRADE_DATE,
 			occurredAt,
 			CHANGE_RATE,
 			DETECTION_SCORE,
@@ -130,7 +130,10 @@ class PriceMoveEventRepositoryTest {
 		assertThat(found.getWindowEnd()).isNull();
 		// 코인은 실시간이라 스포일러가 성립하지 않아 reveal_time이 없다 (FEED-005).
 		assertThat(found.getRevealTime()).isNull();
-		assertThat(found.getOriginTradeDate()).isEqualTo(ORIGIN_TRADE_DATE);
+		// origin_trade_date는 occurred_at의 날짜다 — 자정을 넘겼으므로 구간이 시작된 8/3이 아니라 8/4다 (§C-9).
+		// 이 컬럼이 코인 일일 상한의 카운트 기준이라, 8/3으로 남으면 자정 직후 카드가 전날 몫으로 세어진다.
+		assertThat(found.getOriginTradeDate()).isEqualTo(LocalDate.of(2026, 8, 4));
+		assertThat(found.getOriginTradeDate()).isNotEqualTo(ORIGIN_TRADE_DATE);
 	}
 
 	// --- 팩토리가 §C-9의 형태 불변식을 지키는지 (DB가 막을 수 없는 부분이다) ---
@@ -164,6 +167,49 @@ class PriceMoveEventRepositoryTest {
 		assertThat(row.get("window_end")).isNull();
 		assertThat(row.get("reveal_time")).isNull();
 		assertThat(row.get("occurred_at")).isNotNull();
+	}
+
+	@Test
+	@DisplayName("createStock에 코인 종목을 넘기면 예외로 막힌다 — market 컬럼과 종목의 시장이 어긋난 카드는 만들 수 없다")
+	void createStockRejectsACryptoInstrument() {
+		// market은 instrument.market의 비정규화 사본이라 어긋나도 FK·유니크·validate 어디에도 걸리지 않는다.
+		// 팩토리가 막지 않으면 코인 종목의 주식 형태 카드가 예외 없이 저장되고, 노출 게이트(주식만 reveal_time을
+		// 본다)와 조회 범위(코인만 최근 24시간이다)가 서로 다른 시장을 가리켜 카드가 조용히 사라진다.
+		assertThatThrownBy(() -> PriceMoveEvent.createStock(
+			crypto,
+			PriceMoveEventType.INTRADAY,
+			ORIGIN_TRADE_DATE,
+			WINDOW_START,
+			WINDOW_END,
+			CHANGE_RATE,
+			DETECTION_SCORE,
+			"반도체 업황 우려로 하락했습니다.",
+			NarrativeSource.LLM,
+			REVEAL_TIME,
+			NOW))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("CRYPTO")
+			.hasMessageContaining("STOCK");
+
+		assertThat(priceMoveEventRepository.count()).isZero();
+	}
+
+	@Test
+	@DisplayName("createCrypto에 주식 종목을 넘기면 예외로 막힌다")
+	void createCryptoRejectsAStockInstrument() {
+		assertThatThrownBy(() -> PriceMoveEvent.createCrypto(
+			stock,
+			OCCURRED_AT,
+			CHANGE_RATE,
+			DETECTION_SCORE,
+			"대형 거래소 상장 소식이 있었습니다.",
+			NarrativeSource.TEMPLATE,
+			NOW))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("STOCK")
+			.hasMessageContaining("CRYPTO");
+
+		assertThat(priceMoveEventRepository.count()).isZero();
 	}
 
 	@Test

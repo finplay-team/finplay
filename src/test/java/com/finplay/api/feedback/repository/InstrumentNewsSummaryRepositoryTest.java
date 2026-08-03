@@ -152,8 +152,10 @@ class InstrumentNewsSummaryRepositoryTest {
 	}
 
 	@Test
-	@DisplayName("origin_trade_date를 비우면 저장 자체가 실패한다")
+	@DisplayName("origin_trade_date를 비우면 엔티티 제약에서 저장이 막힌다")
 	void originTradeDateCannotBeNull() {
+		// 이 단정은 엔티티의 @Column(nullable = false)까지만 닿는다 — Hibernate가 flush 전에 던져 SQL이 나가지
+		// 않으므로 V13의 NOT NULL 여부는 여기서 증명되지 않는다. 그 축은 FeedbackSchemaConstraintsTest가 본다.
 		InstrumentNewsSummary withoutDate = InstrumentNewsSummary.create(
 			crypto, null, NewsSummaryScope.ROLLING_24H, SUMMARY, NarrativeSource.LLM, GENERATED_AT);
 
