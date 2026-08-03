@@ -13,7 +13,7 @@
 | GET | /api/instruments?market= | 쿼리 market(선택) | `InstrumentResponse[]` | 종목 목록 |
 | GET | /api/instruments/{instrumentId} | - | `InstrumentResponse` | 종목 단건 |
 | GET | /api/instruments/{instrumentId}/price | - | `PriceResponse` (price, sourceTime, status, sourceTradingDate) | 최신 가격. 없으면 409 PRICE_UNAVAILABLE — 이슈 #16 |
-| GET | /api/instruments/{instrumentId}/candles?interval=1m&from=&to= | 쿼리 | `CandleResponse[]` | 주식 1분봉 (`stock_candles` 기반, 공개된 분봉까지만) — 이슈 #17 / 코인 1분봉 (빗썸 공개 캔들 REST 실시간 조회, 진행 중 분봉 포함) — 이슈 #20 |
+| GET | /api/instruments/{instrumentId}/candles?interval=1m&from=&to= | 쿼리 | `CandleResponse[]` | 주식 1분봉 (`stock_candles` 기반, 공개된 분봉까지만) — 이슈 #17 / 코인 1분봉 (빗썸 공개 캔들 REST 실시간 조회, 진행 중 분봉 포함) — 이슈 #20 *(이력: `interval`은 1차 고도화(이슈 #143, `013-candle-interval`)에서 `1m \| 1d \| 1w \| 1M`으로 확장됨)* |
 | GET | /api/stocks/stream | Header: `Authorization: Bearer <accessToken>` | SSE | 주식 전용 스트림 — 이슈 #19 |
 
 - **코인은 전용 스트림을 두지 않는다 (2026-07-30 방향 변경).** 코인의 실시간 표출은 캔들 API(위 행, 이슈 #20)의 REST 조회로 충분하다 — 진행 중 분봉을 포함해 반환하므로 프론트가 짧은 주기로 다시 호출하는 것만으로 화면이 갱신된다. `/api/cryptos/stream` 엔드포인트는 만들지 않는다.
@@ -190,7 +190,7 @@ data:
 |---|---|---|
 | market (쿼리) | 선택 | STOCK·CRYPTO만. 그 외 400 VALIDATION_ERROR |
 | instrumentId | 필수 | 미존재 시 404 NOT_FOUND |
-| interval | 필수(candles) | 1차는 `1m`만. 그 외 400 VALIDATION_ERROR (주식·코인 공통 — 빗썸이 3·5·10분봉을 지원하더라도 계약을 넓히지 않는다) |
+| interval | 필수(candles) | 1차는 `1m`만. 그 외 400 VALIDATION_ERROR (주식·코인 공통 — 빗썸이 3·5·10분봉을 지원하더라도 계약을 넓히지 않는다) *(이력: 1차 고도화(이슈 #143, `013-candle-interval`)에서 `1d`·`1w`·`1M` 추가. 현재 유효한 검증 규칙은 013 plan.md의 입력 명세다)* |
 | from·to | 선택 | ISO-8601. from > to면 400 VALIDATION_ERROR. 코인은 범위가 200분을 넘으면 `to` 기준 최신 200개로 제한 |
 
 ## 구성 요소 설계
