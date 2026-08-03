@@ -495,7 +495,26 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 - path/body로 직접 지정한 favorite·exit plan이 타인 소유이면 리소스별 404로 존재를 숨긴다. OCO·복기 내부 evidence chain 불일치는 409 `PRACTICE_EVIDENCE_MISSING`이다.
 - 목록 `content`와 진행 조회 `steps`는 항상 non-null이다. 모든 응답 시각은 ISO-8601 `LocalDateTime` 형식이다.
 - `POST /api/exit-plans`만 멱등 API다. 나머지 POST는 중복 규칙으로 보호하며 DELETE 성공 응답에는 body가 없다.
-- 전체 nullable 조합, 진행 상태 계산표, fingerprint canonical JSON과 동시성·잠금 정본은 `docs/specs/016-investment-education-policy/plan.md`를 따른다.
+
+| DTO | 필드 순서와 타입 | nullable 규칙 |
+|---|---|---|
+| `FavoriteCreateRequest` | `Long instrumentId` | non-null |
+| `FavoriteResponse` | `Long favoriteId`, `Long instrumentId`, `String market`, `String symbol`, `String name`, `LocalDateTime createdAt` | 모두 non-null; market은 `STOCK|CRYPTO` |
+| `FavoriteListResponse` | `List<FavoriteResponse> content` | non-null, 빈 배열 허용 |
+| `PracticeIntentionCreateRequest` | `Long instrumentId`, `BigDecimal quantity`, `BigDecimal stopLoss`, `BigDecimal takeProfit` | 모두 non-null |
+| `PracticeIntentionResponse` | `Long intentionId`, `Long instrumentId`, `BigDecimal quantity`, `BigDecimal stopLoss`, `BigDecimal takeProfit`, `LocalDateTime createdAt` | 모두 non-null |
+| `ExitPlanCreateRequest` | `Long intentionId`, `Long buyTradeId`, `Long instrumentId`, `BigDecimal quantity`, `BigDecimal stopLoss`, `BigDecimal takeProfit` | 모두 non-null |
+| `ExitPlanResponse` | `Long exitPlanId`, `Long intentionId`, `Long buyTradeId`, `Long replaySessionId`, `Long instrumentId`, `BigDecimal quantity`, `BigDecimal entryPrice`, `BigDecimal stopLoss`, `BigDecimal takeProfit`, `BigDecimal baselinePrice`, `LocalDateTime baselineObservedAt`, `String status`, `LocalDateTime reservedAt`, `LocalDateTime closedAt`, `Long triggeredOrderId` | `replaySessionId`는 코인만 null; `closedAt`은 PENDING만 null; `triggeredOrderId`는 PENDING·취소·만료에서 null |
+| `ExitPlanListResponse` | `List<ExitPlanResponse> content` | non-null, 빈 배열 허용 |
+| `PracticeObservationCreateRequest` | `Long exitPlanId` | non-null |
+| `PracticeObservationResponse` | `Long observationId`, `Long exitPlanId`, `BigDecimal currentPrice`, `LocalDateTime observedAt`, `Boolean closerToBoundary`, `String closerBoundary`, `String evidenceType` | 앞의 다섯 필드는 non-null; 뒤의 두 필드는 조건 미충족 시 null |
+| `PracticeReflectionCreateRequest` | `Long exitPlanId`, `String answer` | 모두 non-null; answer는 blank 불가, raw 길이 최대 2000 |
+| `PracticeReflectionResponse` | `Long reflectionId`, `Long exitPlanId`, `String prompt`, `String answer`, `LocalDateTime createdAt` | 모두 non-null |
+| `InvestmentPracticeResponse` | `String tutorialKey`, `String status`, `Integer currentStep`, `List<PracticeStepResponse> steps`, `LocalDateTime completedAt` | `currentStep`·`completedAt`은 완료 여부에 따라 null; 나머지는 non-null |
+| `PracticeStepResponse` | `Integer step`, `String status`, `Boolean locked`, `PracticeEvidenceResponse evidence` | 모두 non-null; locked 단계도 빈 evidence 객체 반환 |
+| `PracticeEvidenceResponse` | `Long favoriteId`, `LocalDateTime favoriteCreatedAt`, `Long intentionId`, `LocalDateTime intentionCreatedAt`, `Long buyTradeId`, `LocalDateTime buyTradeExecutedAt`, `Long exitPlanId`, `LocalDateTime exitPlanReservedAt`, `Long observationId`, `LocalDateTime observationObservedAt`, `String evidenceType`, `Long reflectionId`, `LocalDateTime reflectionCreatedAt` | 리소스 id·시각은 쌍으로 null/non-null; observation은 id·시각·type이 함께 null/non-null |
+
+진행 상태의 모든 조합, OCO fingerprint canonical JSON과 동시성·잠금 정본은 `docs/specs/016-investment-education-policy/plan.md`를 따른다.
 
 ## 012 AI 피드백 (2차 계획 — 아직 구현하지 않음)
 
