@@ -55,7 +55,7 @@
   - 탐지·게이트 판정 로직을 엔티티에 넣지 않는다 — `PriceMoveDetector`는 #4 소유이고 순수 계산이다(§C-6).
   - 검증 — `@DataJpaTest`. ① 주식 형태 행(TIME 채움 + `occurred_at` NULL)과 코인 형태 행(그 반대)이 **둘 다 저장되고 다시 읽었을 때 값이 같다** — `LocalTime`/`LocalDateTime` 매핑이 어긋나면 여기서 깨진다 ② 근거 연결이 이벤트·기사 양쪽 FK로 저장되고 같은 쌍을 두 번 넣으면 유니크에 걸린다.
 
-- [ ] **5. `InstrumentNewsSummary`·`MarketBriefing` 엔티티·리포지토리**
+- [x] **5. `InstrumentNewsSummary`·`MarketBriefing` 엔티티·리포지토리**
 
   종목별 요약과 시장별 브리핑을 매핑한다. `scope`는 1번이 옮긴 `NewsSummaryScope`를 **재사용한다**.
   - **`origin_trade_date`는 두 테이블 다 `NOT NULL`이고 유니크 키의 일부다** — 코인 행도 채운다. 이유는 §C-9에 있다(NULL이면 MySQL 유니크가 중복을 허용해 UPSERT가 성립하지 않는다).
