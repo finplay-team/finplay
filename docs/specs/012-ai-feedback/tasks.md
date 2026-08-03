@@ -14,7 +14,7 @@
 
 ## 작업 항목
 
-- [ ] **1. `feedback.llm.*` 프로퍼티 바인딩과 기본값**
+- [x] **1. `feedback.llm.*` 프로퍼티 바인딩과 기본값**
 
   §C-7의 `feedback.llm` 블록 5개 값을 `@ConfigurationProperties(prefix = "feedback.llm")` record로 바인딩하고 `application.yml`에 기본값을 둔다. 위치는 `feedback/config/`, 선례는 `market/config/KisProperties`(record + `@DefaultValue`)다. **§C-7의 나머지 블록(`detection`·`news`·`crypto`·`instruments`)은 뒤 이슈 소유이므로 여기서 만들지 않는다.**
   - 값은 코드에 상수로 박지 않는다 (ADR-0011).

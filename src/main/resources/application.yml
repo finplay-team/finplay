@@ -82,3 +82,15 @@ bithumb:
     ticker:
       connect-timeout-ms: ${BITHUMB_TICKER_CONNECT_TIMEOUT_MS:2000}
       read-timeout-ms: ${BITHUMB_TICKER_READ_TIMEOUT_MS:3000}
+
+# AI 서술 생성(spec 012)의 LLM 호출 설정. 값의 정본은 docs/specs/012-ai-feedback/spec.md §C-7이며 코드에 상수로
+# 박지 않는다 (ADR-0011). 프로바이더 교체는 build.gradle의 starter 의존성과 이 블록 변경으로 끝난다.
+# API 키는 이 블록이 아니라 위 spring.ai.openai.api-key로 주입한다 (시크릿은 yml에 적지 않는다, conventions.md).
+# FeedbackLlmProperties가 같은 값을 @DefaultValue로 갖고 있어 이 블록이 없어도 기동한다.
+feedback:
+  llm:
+    model: gpt-5.4-mini
+    timeout-seconds: 20
+    max-tokens: 512
+    max-regeneration: 1 # 요약·브리핑 후검증 재생성 횟수
+    max-narrative-retry: 3 # 매도 회고 서술 재생성 누적 재시도 상한
