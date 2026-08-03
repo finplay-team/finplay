@@ -25,6 +25,8 @@
 | 19:50 | implementer | `gradlew.bat spotlessApply compileJava spotbugsMain` + `test --tests "com.finplay.api.feedback.*"`(163건) + 임시 프로브로 템플릿 3종의 후검증 통과 확인 (spec 가정법 목록 수정 + tasks.md 5번 — `NarrativeTemplateBuilder`) | spec.md §후검증·§템플릿 문장·§파생 사실 계산, api-contracts.md 카드 예시 서술, conventions.md(공통화 기준) |
 | 20:30 | implementer | `gradlew.bat spotlessApply compileJava spotbugsMain test --tests "com.finplay.api.feedback.*"`(221건) + Fake 생성기로 1단계·2단계 흐름 6종 직접 확인 (tasks.md 6번 — `NarrativeService`) | spec.md §후검증 2단계 흐름·§실패 처리·§C-6·§C-7, ADR-0011, tasks.md 6번 검증 항목 |
 | 20:55 | implementer | `gradlew.bat spotlessApply compileJava spotbugsMain test --tests "com.finplay.api.feedback.*"`(257건) (tester 지적 — `NarrativeResultDto` 불변식 강제) | spec.md §C-4 판정 순서, conventions.md, tester 예고 테스트 |
+| 21:40 | reviewer(리뷰) | `git diff dev...HEAD`(PR 브랜치 `feat/147-llm-narrative`, 37파일) + spec.md 4개 수정 자리 정당성 대조(§C-6·§후검증 가정법·§템플릿 문장 부호·§실패 처리 신규 행), `awk`로 §완료 조건 체크박스 절별 전수 카운트(91=16/15/15/9/7/7/7/6/5/4)와 plan.md 8행 배정표(9/3/6/20/16/18/9/9=90+원장불변1) 재검산, `gh issue view 147`로 범위 축소 주석 실재 확인, Spring AI 2.0.0 jar `javap`로 `spring.ai.openai.timeout` 적용 경로·`OpenAiSetup` 키 처리 확인, nullable 필드(holdHigh·holdLow)와 코인 자정 구간을 record 계약에 대입 | spec.md, plan.md, api-contracts.md, ADR-0002·0003·0011, conventions.md, agent-mistakes.md |
+| 21:40 | implementer | `gradlew.bat spotlessApply compileJava spotbugsMain test --tests "com.finplay.api.feedback.*"`(260건) (reviewer 차단 2건 수정) | spec.md §파생 사실 계산 746줄·§C-9 372줄·§C-4, api-contracts.md 459·461줄, ADR-0011 |
 
 ## 모니터링 (사람용 요약)
 - 11:40 — 문서 리뷰 완료, 차단 9건(노출 판정 전장 기사 역전, UNIQUE(url) 잔존 모순, 코인 경로 미정의, 장마감 배치 부재, 배치용 전일치 분봉 조회 경로 부재, PRD 수집주기 모순 등) / 권장 12건.
@@ -59,3 +61,9 @@
 - 20:30 — `NarrativeService`(진입점 4개)·`NarrativeResultDto` 신설로 이슈 #147 작업 항목 6개를 마쳤다. 1단계(카드·매도 회고)는 적발·실패가 한 분기로 수렴해 템플릿, 2단계(요약·브리핑)는 적발 표현을 넣어 `max-regeneration`회 재생성 후 `NONE`이다. 호출 횟수가 `max-regeneration + 1`을 넘지 않는 것을 프로퍼티 0·2로 바꿔 가며 확인했다. spec §실패 처리에 "요약·브리핑의 생성 호출 실패는 재생성 횟수를 쓰지 않고 곧바로 NONE" 행을 추가했다.
 
 - 20:55 — `NarrativeResultDto`의 compact 생성자에 불변식 검사 3종(`source` null 금지, `NONE`이면 서술 null, `LLM`·`TEMPLATE`이면 서술 non-blank)을 넣었다. #5가 `NONE` → `summary=NULL` → `UNAVAILABLE` 매핑을 이 짝 위에 얹으므로 정적 팩토리 규율만으로는 부족하다. tester 예고 테스트를 지우지 않고 뒤집고 정상 조합 케이스를 하나 더했다. feedback 257건 통과.
+
+- 21:40 — PR(이슈 #147) 리뷰: 차단 2건(매도 회고 프롬프트가 `holdHigh*`·`holdLow*` null에서 NPE — 같은 PR이 템플릿 쪽만 막았고 `sameSessionCompleted=false`에서 조회가 500이 된다 / 코인 자정 구간에서 장중 카드 템플릿 구간 길이가 음수) / 권장 3건(가정법 목록의 축약형 잔여 구멍 `샀다면`·`봤다면` 등, `application.yml` 주석의 "이 블록이 없어도 기동한다"가 `${feedback.llm.timeout-seconds}` 참조 때문에 거짓, spec §후검증 "정규식" 표현 미갱신) / 참고 4건. spec 4개 수정·범위 축소·배정표 91건 검산은 전부 정당함을 재확인.
+
+- 21:40 — reviewer 차단 2건 수정. ①`postSellPrompt`가 보유 구간 극값 6필드를 null 검사 없이 역참조해 `sameSessionCompleted=false`면 NPE가 생성기 밖에서 터졌다(→ 조회 500, `narrativeStatus` 항상 READY 위반). 두 그룹을 줄 단위로 생략하고 파생 사실 블록을 따로 모아 빈 줄 중복도 없앴다. ②`ChronoUnit.MINUTES.between(LocalTime, LocalTime)`이 코인 자정 횡단에서 음수가 돼 "-1435분간"이 조용히 나갔다(spec §C-9 사례). `PriceMovePromptDto`에 `windowMinutes`를 필드로 추가해 절대 시각을 가진 호출부가 계산하게 했다. **프롬프트 문자열은 분(minutes)을 렌더링하지 않아 골든 마스터 23건과 spec §LLM 프롬프트 예시는 영향 없음.** 테스트 3건 추가(자정 횡단·극값 없는 프롬프트·극값 없는 서비스 경로), 260건 통과.
+
+- 22:20 — reviewer 권장 3건·참고 2건 처리. ①`application.yml`의 "블록 없어도 기동한다" 주석이 거짓이었다 — 블록을 실제로 지우고 `@SpringBootTest`를 돌려 `ConfigurationPropertiesBindException` → `DurationStyle` 변환 실패로 기동이 깨지는 것을 확인하고 주석을 사실대로 고쳤다. ②spec §후검증의 "정규식" 표기 2곳을 "부분 문자열"로 맞추고 왜 정규식이 아닌지를 적었다. ③가정법 한계(`샀다면`·`봤다면` 등 축약형은 구조적으로 못 잡는다)를 §후검증에 명시하고 §튜닝 관측 항목으로 넣었다 — 목록은 넓히지 않았다. 참고: `maxRegeneration` 음수 차단, 이슈 #147 완료 조건 문구 동기화.

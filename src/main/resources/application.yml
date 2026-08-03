@@ -96,7 +96,13 @@ bithumb:
 # AI 서술 생성(spec 012)의 LLM 호출 설정. 값의 정본은 docs/specs/012-ai-feedback/spec.md §C-7이며 코드에 상수로
 # 박지 않는다 (ADR-0011). 프로바이더 교체는 build.gradle의 starter 의존성과 이 블록 변경으로 끝난다.
 # API 키는 이 블록이 아니라 위 spring.ai.openai.api-key로 주입한다 (시크릿은 yml에 적지 않는다, conventions.md).
-# FeedbackLlmProperties가 같은 값을 @DefaultValue로 갖고 있어 이 블록이 없어도 기동한다.
+#
+# 이 블록은 지우면 안 된다. FeedbackLlmProperties가 같은 값을 @DefaultValue로 갖고 있지만 그것은 바인딩 시점
+# 기본값이지 Environment의 값이 아니라서, 위 spring.ai.openai.timeout의 ${feedback.llm.timeout-seconds}
+# 플레이스홀더(기본값 없음)를 채우지 못한다. 실제로 이 블록을 지우고 @SpringBootTest를 돌리면
+# ConfigurationPropertiesBindException → DurationStyle 변환 실패로 컨텍스트가 기동하지 않는다(2026-08-03 실측).
+# 값이 record와 여기 두 곳에 있는 것은 §C-7이 "application.yml에 기본값을 두고"로 정한 결과이며,
+# 튜닝은 이 블록만 고치면 되도록 한 것이다(§튜닝).
 feedback:
   llm:
     model: gpt-5.4-mini

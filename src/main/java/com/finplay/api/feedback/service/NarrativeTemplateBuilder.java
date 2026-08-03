@@ -4,7 +4,6 @@ package com.finplay.api.feedback.service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.format.DateTimeFormatter;
-import java.time.temporal.ChronoUnit;
 import java.util.Locale;
 import org.springframework.stereotype.Component;
 
@@ -36,10 +35,12 @@ public class NarrativeTemplateBuilder {
 				input.changeRate().signum() < 0 ? "낮게" : "높게",
 				input.sources().size());
 		}
-		long windowMinutes = ChronoUnit.MINUTES.between(input.windowStart(), input.windowEnd());
+		// 구간 길이를 windowEnd − windowStart로 다시 계산하지 않는다. 둘은 LocalTime이라 코인 카드가 자정을
+		// 넘으면(23:58 ~ 00:03, spec §C-9) 차가 음수가 되어 "-1435분간"이 예외 없이 그대로 나간다.
+		// 절대 시각을 가진 호출부가 계산해 넣은 값을 그대로 쓴다.
 		return "%s부터 %d분간 %s %s했습니다. 같은 시간대에 기사 %d건이 있었습니다.".formatted(
 			input.windowStart().format(TIME),
-			windowMinutes,
+			input.windowMinutes(),
 			absolutePercent(input.changeRate()),
 			input.changeRate().signum() < 0 ? "하락" : "상승",
 			input.sources().size());

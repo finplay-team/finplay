@@ -27,4 +27,13 @@ public record FeedbackLlmProperties(
 	// 매도 회고 서술 재생성의 체결 1건당 누적 재시도 상한. 날짜 단위로 리셋하지 않는다.
 	@DefaultValue("3")
 	int maxNarrativeRetry) {
+
+	// 음수를 막는 이유는 실패 모양이 조용하기 때문이다. maxRegeneration이 음수면 NarrativeService의 재생성
+	// 루프가 0회 돌아 생성기를 한 번도 부르지 않고 NONE을 반환한다 — 예외도 로그도 없이 요약·브리핑이
+	// 전부 사라진다. 0은 정상 동작이므로(재생성 없이 1회 생성) 하한만 본다.
+	public FeedbackLlmProperties {
+		if (maxRegeneration < 0) {
+			throw new IllegalArgumentException("feedback.llm.max-regeneration은 0 이상이어야 합니다.");
+		}
+	}
 }

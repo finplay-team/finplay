@@ -18,6 +18,12 @@ import java.util.List;
  *
  * @param buyAt        배분된 매수 lot 중 가장 이른 체결 시각. 이 값 하나가 아래 분(minutes) 계산의 기준이다
  * @param returnRate   비율 그대로 (-0.0217 → -2.17%)
+ * @param holdHighPrice 보유 구간 극값. <b>{@code holdHighPrice}·{@code holdHighAt}·{@code sellVsHighRate}가
+ *                      한 묶음, {@code holdLowPrice}·{@code holdLowAt}·{@code sellVsLowRate}가 다른 한 묶음이며
+ *                      묶음 단위로 함께 {@code null}이다.</b> {@code sameSessionCompleted=false}(배분된 lot이
+ *                      여러 원본 거래일에 걸친 매매)면 여섯 개가 전부 {@code null}이다 — 분봉이 불연속이라
+ *                      계산이 성립하지 않는다 (spec §파생 사실 계산, api-contracts 매도 직후 피드백).
+ *                      프롬프트와 템플릿 문장 모두 그때는 해당 줄·문장을 통째로 생략한다
  * @param sellVsHighRate 매도가가 보유 중 최고가 대비 얼마나 떨어져 있었는지 (음수면 그만큼 낮다)
  * @param buyToNewsMinutes 첫 근거 기사 발행시각 − 매수시각 (분). 양수면 매수가 기사보다 앞섰다.
  *                         근거 기사가 없으면 {@code null}이고 {@code firstNewsAt}도 함께 {@code null}이다

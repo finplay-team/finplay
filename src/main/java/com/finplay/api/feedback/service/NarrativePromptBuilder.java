@@ -105,24 +105,39 @@ public class NarrativePromptBuilder {
 			.append(signedPercent(input.returnRate()))
 			.append(" (실현손익 ")
 			.append(money(BigDecimal.valueOf(input.realizedPnl())))
-			.append(")\n\n");
+			.append(")\n");
 
-		prompt.append("보유 중 최고가: ")
-			.append(input.holdHighAt().format(TIME))
-			.append("의 ")
-			.append(money(input.holdHighPrice()))
-			.append(" (")
-			.append(sellVersus(input.sellVsHighRate()))
-			.append(")\n");
-		prompt.append("보유 중 최저가: ")
-			.append(input.holdLowAt().format(TIME))
-			.append("의 ")
-			.append(money(input.holdLowPrice()))
-			.append(" (")
-			.append(sellVersus(input.sellVsLowRate()))
-			.append(")\n");
+		// 보유 구간 극값은 sameSessionCompleted=false(여러 재생일에 걸친 매매)면 그룹 전체가 null이다
+		// (spec §파생 사실 계산). 분봉이 불연속이라 계산 자체가 성립하지 않는다. 매도 후 흐름·집단 비교와
+		// 같은 방식으로 줄을 통째로 생략한다 — 여기서 역참조하면 NPE가 생성기 밖에서 터져 Optional 폴백에
+		// 걸리지 않고, 매도 회고 조회가 500이 되어 "narrativeStatus는 항상 READY"가 깨진다.
+		//
+		// 파생 사실 세 줄을 따로 모으는 이유는 앞의 빈 줄 때문이다. 세 줄이 전부 빠지는 경우가 실재하는데
+		// (극값 없음 + 근거 기사 없음) 구분용 빈 줄을 미리 찍어 두면 빈 줄이 둘 연달아 남는다.
+		StringBuilder derivedFacts = new StringBuilder();
+		if (input.holdHighPrice() != null) {
+			derivedFacts.append("보유 중 최고가: ")
+				.append(input.holdHighAt().format(TIME))
+				.append("의 ")
+				.append(money(input.holdHighPrice()))
+				.append(" (")
+				.append(sellVersus(input.sellVsHighRate()))
+				.append(")\n");
+		}
+		if (input.holdLowPrice() != null) {
+			derivedFacts.append("보유 중 최저가: ")
+				.append(input.holdLowAt().format(TIME))
+				.append("의 ")
+				.append(money(input.holdLowPrice()))
+				.append(" (")
+				.append(sellVersus(input.sellVsLowRate()))
+				.append(")\n");
+		}
 		if (input.buyToNewsMinutes() != null) {
-			prompt.append(buyToNewsLine(input)).append('\n');
+			derivedFacts.append(buyToNewsLine(input)).append('\n');
+		}
+		if (!derivedFacts.isEmpty()) {
+			prompt.append('\n').append(derivedFacts);
 		}
 
 		if (!input.priceMoves().isEmpty()) {

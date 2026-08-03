@@ -199,6 +199,27 @@ class NarrativeServiceTest {
 	}
 
 	@Test
+	@DisplayName("sameSessionCompleted=false인 매도 회고도 예외 없이 서술이 나온다 — 생성 성공·실패 양쪽 다")
+	void postSellWithoutHoldExtremesResolvesWithoutException() {
+		// 보유 구간 극값 6필드가 전부 null인 입력이다. 프롬프트 조립은 생성기 밖이라 여기서 NPE가 나면
+		// Optional 폴백에 걸리지 않고 매도 회고 조회가 500이 된다 — "narrativeStatus는 항상 READY"(§C-4)가
+		// 깨지는 자리다. 템플릿 폴백 경로와 LLM 성공 경로를 모두 확인한다.
+		NarrativeResultDto generated = service(new FakeNarrativeGenerator().enqueue("정상 서술입니다."), 1)
+			.resolvePostSellNarrative(multiSessionPostSell());
+
+		assertThat(generated.source()).isEqualTo(NarrativeSource.LLM);
+		assertThat(generated.narrative()).isEqualTo("정상 서술입니다.");
+
+		NarrativeResultDto fallback = service(new FakeNarrativeGenerator().enqueueFailure(), 1)
+			.resolvePostSellNarrative(multiSessionPostSell());
+
+		// 극값이 없으면 템플릿도 셋째 문장을 빼고 두 문장만 만든다 (§템플릿 문장).
+		assertThat(fallback.source()).isEqualTo(NarrativeSource.TEMPLATE);
+		assertThat(fallback.hasNarrative()).isTrue();
+		assertThat(fallback.narrative()).doesNotContain("보유 중 최고가");
+	}
+
+	@Test
 	@DisplayName("카드에서만 걸리는 판단·훈수 표현이 요약이었다면 통과한다 — 파트별 비대칭이 이 경로까지 이어진다")
 	void judgementExpressionIsBlockedOnCardButAllowedOnSummary() {
 		NarrativeResultDto card = service(new FakeNarrativeGenerator().enqueue(CARD_DIRTY), 1)
@@ -443,7 +464,7 @@ class NarrativeServiceTest {
 
 	private PriceMovePromptDto priceMove() {
 		return new PriceMovePromptDto(
-			"삼성전자", false, LocalTime.of(9, 32), LocalTime.of(9, 37), new BigDecimal("0.0210"), TRADING_DATE,
+			"삼성전자", false, LocalTime.of(9, 32), LocalTime.of(9, 37), 5, new BigDecimal("0.0210"), TRADING_DATE,
 			List.of(
 				new NewsSourceDto("반도체 공장 가동 일시 중단", "한국경제", TRADING_DATE.atTime(9, 15), false),
 				new NewsSourceDto("반도체 업황 둔화 우려 확산", "매일경제", TRADING_DATE.atTime(9, 2), false)));
@@ -454,6 +475,16 @@ class NarrativeServiceTest {
 			"삼성전자", LocalTime.of(9, 30), new BigDecimal("70000"), LocalTime.of(14, 40), new BigDecimal("68500"),
 			new BigDecimal("10"), new BigDecimal("-0.0217"), -15207L, new BigDecimal("70800"), LocalTime.of(11, 5),
 			new BigDecimal("-0.0325"), new BigDecimal("68100"), LocalTime.of(14, 20), new BigDecimal("0.0059"),
+			null, null, List.of(), null, null, null, null, null, null);
+	}
+
+	// sameSessionCompleted=false — 보유 구간 극값 6필드가 전부 null이다 (spec §파생 사실 계산).
+	// 위 postSell()이 극값을 항상 채우고 있어 이 경로가 한 번도 돌지 않았다.
+	private PostSellPromptDto multiSessionPostSell() {
+		return new PostSellPromptDto(
+			"삼성전자", LocalTime.of(9, 30), new BigDecimal("70000"), LocalTime.of(14, 40), new BigDecimal("68500"),
+			new BigDecimal("10"), new BigDecimal("-0.0217"), -15207L, null, null,
+			null, null, null, null,
 			null, null, List.of(), null, null, null, null, null, null);
 	}
 

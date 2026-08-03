@@ -15,6 +15,11 @@ import java.util.List;
  * @param windowStart 장중 카드의 구간 시작. 코인은 {@code occurredAt − rolling-window-minutes}이고,
  *                    갭 카드에서는 쓰이지 않으므로 {@code null}이어도 된다
  * @param windowEnd   장중 카드의 구간 끝. 코인은 {@code occurredAt}이다. 갭 카드에서는 쓰이지 않는다
+ * @param windowMinutes 구간 길이(분). <b>{@code windowStart}·{@code windowEnd}의 차로 다시 계산하지 않는다</b> —
+ *                      둘은 {@code LocalTime}이라 코인 카드가 자정을 넘으면(예: {@code 23:58 ~ 00:03}, spec §C-9)
+ *                      차가 음수가 되고 "{@code -1435분간}" 같은 문장이 예외 없이 사용자에게 나간다.
+ *                      절대 시각을 가진 호출부(주식은 원본 거래일, 코인은 {@code occurredAt})가 계산해 넣는다.
+ *                      갭 카드에서는 쓰이지 않는다
  * @param changeRate  비율 그대로 넣는다 (-0.0182 → -1.82%). 서버가 계산한 값이며 모델이 고치지 않는다
  * @param referenceDate 원본 거래일. 근거 기사가 그 전날 것이면 프롬프트에 "전일"을 붙이는 데만 쓴다.
  *                      코인은 탐지 시각의 KST 날짜를 넣는다
@@ -25,6 +30,7 @@ public record PriceMovePromptDto(
 	boolean openingGap,
 	LocalTime windowStart,
 	LocalTime windowEnd,
+	int windowMinutes,
 	BigDecimal changeRate,
 	LocalDate referenceDate,
 	List<NewsSourceDto> sources) {

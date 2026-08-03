@@ -315,6 +315,29 @@ class NarrativePromptBuilderTest {
 	// ---------- nullable 필드 생략 ----------
 
 	@Test
+	@DisplayName("sameSessionCompleted=false면 보유 구간 극값 두 줄이 빠지고 NPE가 나지 않는다")
+	void postSellPromptOmitsHoldExtremesWhenTradeSpansMultipleSessions() {
+		String expected = """
+			종목: 삼성전자
+			매수: 09:30, 70,000원 10주
+			매도: 14:40, 68,500원 10주
+			수익률: -2.17% (실현손익 -15,207원)
+
+			위 내용을 3~4문장으로 서술해줘. 수치를 그대로 나열하지 말고,
+			매수·매도 시각이 변동·기사와 어떤 순서였는지를 중심으로 써줘.""";
+
+		// 여기서 역참조하면 NPE가 생성기 밖에서 터져 Optional 폴백에 걸리지 않고, 매도 회고 조회가 500이 되어
+		// "narrativeStatus는 항상 READY"(§C-4)가 깨진다. 템플릿 쪽(postSellTemplate)과 같은 규칙이어야 한다.
+		String prompt = builder.postSellPrompt(multiSessionPostSell());
+
+		assertThat(prompt).isEqualTo(expected);
+		assertThat(prompt).doesNotContain("보유 중 최고가");
+		assertThat(prompt).doesNotContain("보유 중 최저가");
+		assertThat(prompt).doesNotContain("null");
+		assertThat(prompt).doesNotContain("\n\n\n");
+	}
+
+	@Test
 	@DisplayName("매도 후 흐름·집단 비교·기사 간격·보유 구간 변동이 전부 없으면 그 줄들이 통째로 사라진다")
 	void postSellPromptOmitsWholeLinesWhenNullableFieldsAreAbsent() {
 		String expected = """
@@ -402,7 +425,7 @@ class NarrativePromptBuilderTest {
 
 	private PriceMovePromptDto specIntradayCard() {
 		return new PriceMovePromptDto(
-			"삼성전자", false, LocalTime.of(11, 20), LocalTime.of(11, 25), bd("-0.0182"), TRADING_DATE,
+			"삼성전자", false, LocalTime.of(11, 20), LocalTime.of(11, 25), 5, bd("-0.0182"), TRADING_DATE,
 			List.of(
 				article("삼성전자, 반도체 공장 가동 일시 중단", "한국경제", TRADING_DATE.atTime(11, 15)),
 				article("반도체 업황 둔화 우려 확산", "매일경제", TRADING_DATE.atTime(11, 2))));
@@ -410,7 +433,7 @@ class NarrativePromptBuilderTest {
 
 	private PriceMovePromptDto specGapCard() {
 		return new PriceMovePromptDto(
-			"삼성전자", true, null, null, bd("0.0235"), TRADING_DATE,
+			"삼성전자", true, null, null, 0, bd("0.0235"), TRADING_DATE,
 			List.of(
 				disclosure("삼성전자, 유상증자 결정", PREVIOUS_DATE.atStartOfDay()),
 				article("미국 증시 반도체 업종 강세", "한국경제", PREVIOUS_DATE.atTime(22, 40))));
@@ -432,6 +455,16 @@ class NarrativePromptBuilderTest {
 			"삼성전자", LocalTime.of(9, 30), bd("70000"), LocalTime.of(14, 40), bd("68500"), bd("10"),
 			bd("-0.0217"), -15207L, bd("70800"), LocalTime.of(11, 5), bd("-0.0325"),
 			bd("68100"), LocalTime.of(14, 20), bd("0.0059"), null, null, List.of(),
+			null, null, null, null, null, null);
+	}
+
+	// sameSessionCompleted=false — 배분된 lot이 여러 원본 거래일에 걸쳐 보유 구간 극값 6필드가 전부 null인 매매다
+	// (spec §파생 사실 계산). 위 minimalPostSell은 극값을 채우고 있어 이 경로를 덮지 못한다.
+	private PostSellPromptDto multiSessionPostSell() {
+		return new PostSellPromptDto(
+			"삼성전자", LocalTime.of(9, 30), bd("70000"), LocalTime.of(14, 40), bd("68500"), bd("10"),
+			bd("-0.0217"), -15207L, null, null, null,
+			null, null, null, null, null, List.of(),
 			null, null, null, null, null, null);
 	}
 

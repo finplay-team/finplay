@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -39,6 +40,19 @@ class NarrativeTemplateBuilderTest {
 			card(false, LocalTime.of(9, 32), LocalTime.of(9, 37), rate("0.0210"), 2));
 
 		assertThat(template).isEqualTo("09:32부터 5분간 2.10% 상승했습니다. 같은 시간대에 기사 2건이 있었습니다.");
+	}
+
+	@Test
+	@DisplayName("코인 카드가 자정을 넘어도 구간 길이가 음수가 되지 않는다 — 23:58~00:03은 5분간이다")
+	void intradayCardTemplateHandlesMidnightCrossing() {
+		// spec §C-9가 드는 사례 그대로다. windowStart·windowEnd는 LocalTime이라 둘의 차로 계산하면
+		// -1435분이 되고, 예외 없이 "23:58부터 -1435분간"이 사용자에게 그대로 나간다.
+		// 그래서 구간 길이는 절대 시각을 가진 호출부가 계산해 windowMinutes로 넘긴다.
+		String template = builder.priceMoveTemplate(
+			card(false, LocalTime.of(23, 58), LocalTime.of(0, 3), 5, rate("0.0120"), 1));
+
+		assertThat(template).isEqualTo("23:58부터 5분간 1.20% 상승했습니다. 같은 시간대에 기사 1건이 있었습니다.");
+		assertThat(template).doesNotContain("-1435");
 	}
 
 	@Test
@@ -329,17 +343,29 @@ class NarrativeTemplateBuilderTest {
 		return value == null ? null : new BigDecimal(value);
 	}
 
+	// 자정을 넘지 않는 일반 케이스는 두 시각의 차를 그대로 쓴다. 자정 횡단은 그 계산이 성립하지 않으므로
+	// windowMinutes를 직접 주는 아래 오버로드를 쓴다 — 그것이 이 필드를 record에 둔 이유다.
 	private PriceMovePromptDto card(
 		boolean openingGap, LocalTime windowStart, LocalTime windowEnd, BigDecimal changeRate, int sourceCount) {
-		return new PriceMovePromptDto(
-			"삼성전자", openingGap, windowStart, windowEnd, changeRate, TRADING_DATE, sources(sourceCount));
+		int windowMinutes = openingGap
+			? 0
+			: (int)ChronoUnit.MINUTES.between(windowStart, windowEnd);
+		return card(openingGap, windowStart, windowEnd, windowMinutes, changeRate, sourceCount);
+	}
+
+	private PriceMovePromptDto card(boolean openingGap, LocalTime windowStart, LocalTime windowEnd,
+		int windowMinutes, BigDecimal changeRate, int sourceCount) {
+		return new PriceMovePromptDto("삼성전자", openingGap, windowStart, windowEnd, windowMinutes, changeRate,
+			TRADING_DATE, sources(sourceCount));
 	}
 
 	private static PriceMovePromptDto fixtureCard(
 		boolean openingGap, LocalTime windowStart, LocalTime windowEnd, String changeRate, int sourceCount) {
-		return new PriceMovePromptDto(
-			"삼성전자", openingGap, windowStart, windowEnd, new BigDecimal(changeRate), TRADING_DATE,
-			sources(sourceCount));
+		int windowMinutes = openingGap
+			? 0
+			: (int)ChronoUnit.MINUTES.between(windowStart, windowEnd);
+		return new PriceMovePromptDto("삼성전자", openingGap, windowStart, windowEnd, windowMinutes,
+			new BigDecimal(changeRate), TRADING_DATE, sources(sourceCount));
 	}
 
 	private static List<NewsSourceDto> sources(int count) {
