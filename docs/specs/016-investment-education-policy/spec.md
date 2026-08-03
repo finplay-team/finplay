@@ -88,6 +88,7 @@
 ## 튜토리얼 판정 규칙
 - 진행 상태는 `NOT_STARTED`, `IN_PROGRESS`, `COMPLETED`이며 세 단계는 순차 잠금한다.
 - `GET /api/education/practice`가 실제 즐겨찾기·의도·체결·OCO·관찰·복기 리소스를 서버에서 조회해 단계별 `evidence`와 상태를 계산한다. 모든 GET은 쓰기를 하지 않는다.
+- 완료 전 복수 chain은 qualifying observation이 있는 유효 chain을 우선하고 그 안에서 `exitPlan.reservedAt ASC, exitPlan.id ASC` 첫 chain을 선택한다. 그런 chain이 없으면 전체 유효 chain에서 같은 정렬의 첫 chain, 유효 chain 자체가 없으면 `favorite.createdAt ASC, favorite.id ASC` 첫 favorite를 선택한다. 단계별 evidence는 선택한 한 chain 안에서만 구성한다.
 - 1단계 완료는 본인 favorite 존재만으로 계산한다. 2단계 완료는 그 favorite의 사용자·종목에 연결되고 시각·수량 규칙을 만족하는 intention → buyTrade → exitPlan chain 존재로 계산한다. favorite·OCO 목록 API 호출 여부 자체는 어느 단계의 완료 증거도 아니다.
 - 전체 완료 전 단계 상태는 현재 실제 evidence 존재로 계산한다. favorite 삭제나 완료 전 OCO 취소로 evidence가 사라지면 해당 단계를 다시 진행해야 할 수 있다.
 - 복기 저장 트랜잭션은 1·2단계의 현재 evidence와 A·B·C 관찰 증거 중 하나를 다시 검증하고 사용자별 불변 practice completion 기록을 최초 한 번 생성한다. 저장된 `holdingId`의 owner·instrument와 original intention·buyTrade·exitPlan quantity snapshot chain은 검증하지만 현재 holding quantity는 재검증하지 않는다. terminal 체결 뒤 0이거나 추가 매수로 달라져도 정상이다. 완료 기록이 생기면 overall 상태는 영구 `COMPLETED`이며 이후 favorite 삭제, plan 체결·취소·만료에도 회귀하지 않는다. GET은 이 기록을 조회할 뿐 쓰지 않는다.

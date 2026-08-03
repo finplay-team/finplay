@@ -437,7 +437,7 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 |---|---|---|---|---|---|
 | GET | /api/education/practice | 추가 입력 없음 | 200 `InvestmentPracticeResponse` | 인증 공통 오류 | 016 candidate 12 |
 
-응답은 `tutorialKey="INVESTMENT_PRACTICE_V1"`, `status`(`NOT_STARTED|IN_PROGRESS|COMPLETED`), `currentStep`(진행 중 1~3, 완료 시 null), 1~3 순서의 `steps`, `completedAt`(완료 전 null)을 포함한다. 각 step은 `step`, `status`, `locked`, non-null `evidence`를 가진다. evidence는 favorite·intention·buyTrade·exitPlan·observation·reflection 각각의 id와 시각을 쌍으로 노출하며 아직 없는 값은 null이다. observation은 `evidenceType`(`CLOSER_TO_BOUNDARY|TIMED_REPETITION|FINAL_EVENT`)까지 삼쌍으로 null/non-null이다. 조회는 write하지 않고, 최초 완료 기록 이후에는 evidence 삭제·종결에도 `COMPLETED`가 회귀하지 않는다.
+응답은 `tutorialKey="INVESTMENT_PRACTICE_V1"`, `status`(`NOT_STARTED|IN_PROGRESS|COMPLETED`), `currentStep`(진행 중 1~3, 완료 시 null), 1~3 순서의 `steps`, `completedAt`(완료 전 null)을 포함한다. 각 step은 `step`, `status`, `locked`, non-null `evidence`를 가진다. evidence는 favorite·intention·buyTrade·exitPlan·observation·reflection 각각의 id와 시각을 쌍으로 노출하며 아직 없는 값은 null이다. observation은 `evidenceType`(`CLOSER_TO_BOUNDARY|TIMED_REPETITION|FINAL_EVENT`)까지 삼쌍으로 null/non-null이다. 완료 전에는 qualifying observation이 있는 유효 chain을 우선해 `exitPlan.reservedAt ASC, exitPlan.id ASC` 첫 chain을 선택하고, 없으면 전체 유효 chain에서 같은 정렬의 첫 chain을 선택한다. 유효 chain도 없으면 `favorite.createdAt ASC, favorite.id ASC` 첫 favorite를 사용한다. 단계별 evidence와 observation은 선택한 한 chain 안에서만 구성한다. 조회는 write하지 않고, 최초 완료 기록 이후에는 evidence 삭제·종결에도 `COMPLETED`가 회귀하지 않는다.
 
 ### 투자 의도 기록 (계획)
 
@@ -461,7 +461,7 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 | Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|
-| GET | /api/exit-plans?status=PENDING | 필수 query `status=PENDING`; 다른 값 불가 | 200 `{"content":[ExitPlanResponse...]}`; 없으면 빈 배열 | 400 `VALIDATION_ERROR` | 016 candidate 8 |
+| GET | /api/exit-plans?status= | 선택 query `status`; 생략 시 `PENDING`, 명시할 때도 현재는 `PENDING`만 허용 | 200 `{"content":[ExitPlanResponse...]}`; 없으면 빈 배열 | `PENDING` 외 값은 400 `VALIDATION_ERROR` | 016 candidate 8 |
 
 `reservedAt DESC, exitPlanId DESC` 순이며 페이지네이션과 write가 없다.
 
@@ -487,7 +487,7 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 |---|---|---|---|---|---|
 | POST | /api/education/practice/reflections | `{"exitPlanId":1,"answer":"계획한 손절선에 가까워져 팔고 싶었지만 미리 정한 기준을 확인했다."}` (`PracticeReflectionCreateRequest`) | 최초 201 `{"reflectionId":1,"exitPlanId":1,"prompt":"지금 팔고 싶나요? 그렇다면 왜 그런가요? 계획한 손절·익절 라인과 비교해 적어보세요.","answer":"...","createdAt":"2026-08-03T10:10:00"}` (`PracticeReflectionResponse`) | 400 `VALIDATION_ERROR`; 404 `EXIT_PLAN_NOT_FOUND`; 409 `PRACTICE_EVIDENCE_MISSING`, `PRACTICE_ALREADY_COMPLETED` | 016 candidate 14 |
 
-`answer`는 whitespace-only가 아닌 raw Java 문자열 길이 1~2000이며 trim 없이 원문을 저장한다. A(경계에 가까워짐), B(2분 이상 범위의 서버 관찰 3회), C(체결·주식 만료 final event) 중 하나와 전체 owner·instrument·수량 evidence를 재검증한다. 정답·점수·보상은 없다. 사용자·튜토리얼 최초 요청만 reflection·completion을 원자 저장하고 이후 요청은 답변을 추가 저장하지 않은 채 409다.
+`answer`는 whitespace-only가 아닌 raw Java 문자열 길이 1~2000이며 trim 없이 `VARCHAR(2000) NOT NULL`에 원문을 저장한다. A(경계에 가까워짐), B(2분 이상 범위의 서버 관찰 3회), C(체결·주식 만료 final event) 중 하나와 전체 owner·instrument·수량 evidence를 재검증한다. 정답·점수·보상은 없다. 사용자·튜토리얼 최초 요청만 reflection·completion을 원자 저장하고 이후 요청은 답변을 추가 저장하지 않은 채 409다.
 
 ### 투자 실습 공통 인증·오류 및 DTO 규칙
 

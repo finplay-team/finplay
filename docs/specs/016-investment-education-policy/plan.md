@@ -28,7 +28,7 @@
 | POST | `/api/education/practice/intentions` | `PracticeIntentionCreateRequest` | `PracticeIntentionResponse` | 매수 전 손절·익절·수량 기록 |
 | POST | `/api/orders` | 기존 `OrderCreateRequest` | 기존 주문·체결 응답 | `MARKET` 매수 즉시 체결. 예약 아님 |
 | POST | `/api/exit-plans` | `ExitPlanCreateRequest` | `ExitPlanResponse` | 한 보유 수량에 손절·익절 OCO 생성 |
-| GET | `/api/exit-plans?status=PENDING` | 없음 | `ExitPlanListResponse` | 본인 예약 목록 순수 조회. 확인 시각 등 write 없음 |
+| GET | `/api/exit-plans?status=` | 선택 `status` | `ExitPlanListResponse` | 본인 예약 목록 순수 조회. 생략 시 `PENDING`, 확인 시각 등 write 없음 |
 | DELETE | `/api/exit-plans/{exitPlanId}` | 없음 | 없음 | PENDING OCO 전체 취소와 예약 1회 반환 |
 | POST | `/api/education/practice/observations` | `PracticeObservationCreateRequest` | `PracticeObservationResponse` | 서버 현재가로 라인 접근 관찰 기록 |
 | POST | `/api/education/practice/reflections` | `PracticeReflectionCreateRequest` | `PracticeReflectionResponse` | 정답 없는 3단계 자유 복기 저장 |
@@ -45,7 +45,7 @@
 | `GET /api/education/practice` | 추가 입력 없음 | 200 `InvestmentPracticeResponse` | 단일 튜토리얼 조회, pagination·write 없음 | 인증 공통 오류만 |
 | `POST /api/education/practice/intentions` | body `instrumentId`, `quantity`, `stopLoss`, `takeProfit` | 201 `PracticeIntentionResponse` | 유효 요청마다 새 intention; 완료 뒤 409 | 404 `NOT_FOUND`는 요청 `instrumentId` 종목 자체가 없을 때만 사용; favorite 부재·타인 favorite·종목 불일치는 409 `PRACTICE_STEP_LOCKED`; 완료는 409 `PRACTICE_ALREADY_COMPLETED` |
 | `POST /api/exit-plans` | UUID `Idempotency-Key`; body `intentionId`, `buyTradeId`, `instrumentId`, `quantity`, `stopLoss`, `takeProfit` | 최초 201, 기존 plan 수렴은 200 `ExitPlanResponse` | 아래 fingerprint 수렴 규칙 적용 | 요청 `instrumentId` 종목 자체의 미존재만 404 `NOT_FOUND`; 내부 favorite·intention·trade·holding의 부재·타인 소유·종목·수량 chain 불일치는 409 `PRACTICE_EVIDENCE_MISSING`; 그 밖에 409 `EXIT_PLAN_INVALID_PRICE_RANGE`, `EXIT_PLAN_SESSION_CLOSED`, `PRICE_UNAVAILABLE`, `INSUFFICIENT_QTY`, `IDEMPOTENCY_CONFLICT` |
-| `GET /api/exit-plans?status=PENDING` | 필수 enum query `status`; 이 버전은 `PENDING`만 허용 | 200 `{"content":[ExitPlanResponse...]}` | `reservedAt DESC, exitPlanId DESC`, pagination 없음, write 없음 | 400 `VALIDATION_ERROR` |
+| `GET /api/exit-plans?status=` | 선택 enum query `status`; 생략 시 `PENDING`, 명시할 때도 이 버전은 `PENDING`만 허용 | 200 `{"content":[ExitPlanResponse...]}` | `reservedAt DESC, exitPlanId DESC`, pagination 없음, write 없음 | `PENDING` 외 값은 400 `VALIDATION_ERROR` |
 | `DELETE /api/exit-plans/{exitPlanId}` | 양의 `Long` path | 204 | PENDING만 취소; 반복·경합 패자는 409 | 404 `EXIT_PLAN_NOT_FOUND`, 409 `EXIT_PLAN_NOT_PENDING` |
 | `POST /api/education/practice/observations` | body `{"exitPlanId":1}` | 201 `PracticeObservationResponse` | 호출마다 서버 관찰 1행; PENDING만 허용 | 404 `EXIT_PLAN_NOT_FOUND`, 409 `EXIT_PLAN_NOT_PENDING`, `PRICE_UNAVAILABLE` |
 | `POST /api/education/practice/reflections` | body `exitPlanId`, `answer` | 최초 201 `PracticeReflectionResponse` | 사용자·튜토리얼 최초 완료만 저장; 모든 재시도 409·무저장 | 직접 지정한 plan이 없거나 타인 소유면 404 `EXIT_PLAN_NOT_FOUND`; 본인 plan의 연결 evidence 누락·불일치는 409 `PRACTICE_EVIDENCE_MISSING`; 완료는 409 `PRACTICE_ALREADY_COMPLETED` |
@@ -84,11 +84,13 @@ OCO 요청 fingerprint는 UTF-8 canonical JSON의 SHA-256이다. key 순서는 `
 - `PracticeReflectionResponse(Long reflectionId, Long exitPlanId, String prompt, String answer, LocalDateTime createdAt)`: 모두 non-null.
 - `InvestmentPracticeResponse(String tutorialKey, String status, Integer currentStep, List<PracticeStepResponse> steps, LocalDateTime completedAt)`: `tutorialKey=INVESTMENT_PRACTICE_V1`, `status` 허용값은 `NOT_STARTED|IN_PROGRESS|COMPLETED`; `currentStep`은 완료 시 null, 그 외 1~3; `completedAt`은 완료 전 null. `steps`는 항상 1,2,3 순서의 세 항목이다.
 - `PracticeStepResponse(Integer step, String status, Boolean locked, PracticeEvidenceResponse evidence)`: 모두 non-null. `status`는 `NOT_STARTED|IN_PROGRESS|COMPLETED`; 잠긴 단계의 evidence도 null 대신 모든 nullable 필드가 null인 객체다.
-- `PracticeEvidenceResponse(Long favoriteId, LocalDateTime favoriteCreatedAt, Long intentionId, LocalDateTime intentionCreatedAt, Long buyTradeId, LocalDateTime buyTradeExecutedAt, Long exitPlanId, LocalDateTime exitPlanReservedAt, Long observationId, LocalDateTime observationObservedAt, String evidenceType, Long reflectionId, LocalDateTime reflectionCreatedAt)`: 각 리소스 id와 대응 시각은 함께 null 또는 함께 non-null이다. observation의 id·시각·`evidenceType`은 삼쌍으로 null/non-null이며 type 허용값은 `CLOSER_TO_BOUNDARY|TIMED_REPETITION|FINAL_EVENT`다. 복수 증거가 충족되면 `observedAt ASC, observationId ASC`의 최초 qualifying observation을 선택한다. 1단계는 favorite 쌍만, 2단계는 favorite·intention·buyTrade·exitPlan 쌍, 3단계 reflection 전에는 앞 단계와 qualifying observation 삼쌍만, reflection 저장 뒤에는 reflection 쌍까지 채운다. 아직 확보되지 않은 이후 리소스는 null이고 단일 합성 `evidencedAt`은 두지 않는다.
+- `PracticeEvidenceResponse(Long favoriteId, LocalDateTime favoriteCreatedAt, Long intentionId, LocalDateTime intentionCreatedAt, Long buyTradeId, LocalDateTime buyTradeExecutedAt, Long exitPlanId, LocalDateTime exitPlanReservedAt, Long observationId, LocalDateTime observationObservedAt, String evidenceType, Long reflectionId, LocalDateTime reflectionCreatedAt)`: 각 리소스 id와 대응 시각은 함께 null 또는 함께 non-null이다. observation의 id·시각·`evidenceType`은 삼쌍으로 null/non-null이며 type 허용값은 `CLOSER_TO_BOUNDARY|TIMED_REPETITION|FINAL_EVENT`다. 선택된 chain에서 복수 관찰 증거가 충족되면 `observedAt ASC, observationId ASC`의 최초 qualifying observation을 선택한다. 1단계는 favorite 쌍만, 2단계는 favorite·intention·buyTrade·exitPlan 쌍, 3단계 reflection 전에는 앞 단계와 qualifying observation 삼쌍만, reflection 저장 뒤에는 reflection 쌍까지 채운다. 아직 확보되지 않은 이후 리소스는 null이고 단일 합성 `evidencedAt`은 두지 않는다.
 
 ### Candidate 12 진행 상태 정본
 
 `GET /api/education/practice`는 아래 표대로 계산한다. `unlocked`는 `locked=false`를 뜻한다. locked 단계의 `PracticeEvidenceResponse`는 객체 자체는 non-null이고 모든 필드가 null이다. unlocked 단계는 현재까지 실제로 확인된 리소스만 위 DTO 채움 규칙대로 반환한다.
+
+완료 전 단수 evidence 선택은 다음 우선순위로 고정한다. ① qualifying observation이 있는 유효 favorite → intention → buyTrade → exitPlan chain이 하나 이상이면 그 집합에서 `exitPlan.reservedAt ASC, exitPlan.id ASC` 첫 chain, ② 없으면 전체 유효 chain에서 같은 정렬의 첫 chain, ③ 유효 chain이 없으면 현재 favorite 중 `favorite.createdAt ASC, favorite.id ASC` 첫 행을 선택한다. chain을 선택하면 step 1~3은 반드시 그 chain의 favorite·intention·trade·plan만 사용하고 observation도 그 plan 안에서 고른다. immutable completion은 저장된 completion → reflection → plan 관계를 사용하므로 이 선택 규칙을 다시 적용하지 않는다.
 
 | 정본 evidence | overall `status` | `currentStep` | step 1 | step 2 | step 3 | `completedAt` |
 |---|---|---:|---|---|---|---|
@@ -119,7 +121,7 @@ OCO 요청 fingerprint는 UTF-8 canonical JSON의 SHA-256이다. key 순서는 `
 ## 상태와 오류
 - Exit plan: `PENDING`, `FILLED_TAKE_PROFIT`, `FILLED_STOP_LOSS`, `CANCELLED`, `CANCELLED_EXPIRED`.
 - 내부 조건 상태: 대기 중 두 조건, 종결 시 체결 조건 `TRIGGERED`, 반대쪽 `CANCELLED_BY_OCO`; 사용자 취소 시 둘 다 `CANCELLED`, 주식 세션 만료 시 둘 다 `CANCELLED_EXPIRED`. plan에는 `TRIGGERED` 중간상태를 두지 않는다.
-- 주요 오류: `FAVORITE_NOT_FOUND` 404, `EXIT_PLAN_NOT_FOUND` 404, `PRACTICE_STEP_LOCKED` 409(intention 전 favorite 없음·종목 불일치), `PRACTICE_EVIDENCE_MISSING` 409(OCO·reflection의 owner·instrument chain, intention·trade·plan quantity snapshot, 저장된 holdingId 또는 A·B·C 누락·불일치), `PRACTICE_ALREADY_COMPLETED` 409, `EXIT_PLAN_INVALID_PRICE_RANGE` 409, `EXIT_PLAN_SESSION_CLOSED` 409, `EXIT_PLAN_NOT_PENDING` 409, 기존 `INSUFFICIENT_QTY`·`PRICE_UNAVAILABLE` 재사용.
+- 주요 오류: `FAVORITE_NOT_FOUND` 404, `EXIT_PLAN_NOT_FOUND` 404, `PRACTICE_STEP_LOCKED` 409(intention 전 favorite 없음·종목 불일치), `PRACTICE_EVIDENCE_MISSING` 409(OCO·reflection의 owner·instrument chain, intention·trade·plan quantity snapshot, 저장된 holdingId 또는 A·B·C 누락·불일치), `PRACTICE_ALREADY_COMPLETED` 409, `EXIT_PLAN_INVALID_PRICE_RANGE` 409, `EXIT_PLAN_SESSION_CLOSED` 409, `EXIT_PLAN_NOT_PENDING` 409. 기존 `DUPLICATE_RESOURCE`·`INSUFFICIENT_QTY`·`PRICE_UNAVAILABLE`·`IDEMPOTENCY_CONFLICT`는 재사용한다.
 
 ## 데이터 모델
 - `favorites`: 새 Flyway migration으로 `id BIGINT NOT NULL AUTO_INCREMENT`, `user_id BIGINT NOT NULL`, `instrument_id BIGINT NOT NULL`, `created_at DATETIME(6) NOT NULL`, PK `id`, `UNIQUE(user_id, instrument_id)`, 목록용 `INDEX(user_id, created_at, id)`, FK `user_id → users(id)`, `instrument_id → instruments(id)`를 만든다. 기존 migration처럼 `ON DELETE` 절을 쓰지 않아 MySQL `RESTRICT/NO ACTION`으로 회원·종목 삭제를 차단한다. V2의 `users.id BIGINT`, V7의 `instruments.id BIGINT`와 타입을 일치시키며 머지된 migration은 수정하지 않는다.
@@ -130,7 +132,7 @@ OCO 요청 fingerprint는 UTF-8 canonical JSON의 SHA-256이다. key 순서는 `
 - `exit_plan_idempotency_keys`: 후보 7 migration이 `id BIGINT NOT NULL AUTO_INCREMENT`, `user_id BIGINT NOT NULL`, `idempotency_key VARCHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL`, `request_hash CHAR(64) NOT NULL`, `exit_plan_id BIGINT NOT NULL`, `created_at DATETIME(6) NOT NULL`, PK `id`, `UNIQUE(user_id, idempotency_key)`, FK `user_id → users(id)`, `exit_plan_id → exit_plans(id)`로 만든다. key는 항상 `UUID.toString()` lowercase canonical 값이라 DB 기본 collation의 대소문자 동등성에 의존하지 않는다. original key와 이후 동일 요청으로 관측된 새 key를 모두 저장한다. 기존 migration의 FK 정책처럼 `ON DELETE`를 쓰지 않아 `RESTRICT/NO ACTION`이며 plan이나 user 삭제로 key 기억이 유실되지 않게 한다.
 - `exit_plan_conditions`: plan, `STOP_LOSS`·`TAKE_PROFIT`, `trigger_price DECIMAL(18,8)`, 상태. plan의 quantity는 `DECIMAL(30,8)`, entry/baseline/stop/take price는 `DECIMAL(18,8)`이며 수량 예약은 condition이 아니라 plan 한 건에만 둔다.
 - `practice_observations`: 사용자, plan, 서버 `current_price DECIMAL(18,8)`, 가까워진 경계, `CLOSER_TO_BOUNDARY`·`TIMED_REPETITION`·`FINAL_EVENT` 증거 유형, 관찰시각. 모든 가격은 서버 값이다. 클라이언트 API는 PENDING plan의 앞 두 유형만 만들고 `FINAL_EVENT`는 서버 체결·만료 트랜잭션만 만든다.
-- `practice_reflections`: 사용자, plan, 고정 prompt version, 자유 답변, 생성시각, `UNIQUE(user_id, exit_plan_id)`.
+- `practice_reflections`: 사용자, plan, 고정 prompt version, 원문 자유 답변 `answer VARCHAR(2000) NOT NULL`, 생성시각, `UNIQUE(user_id, exit_plan_id)`. 애플리케이션의 raw `String.length()` 최대 2000 검증과 같은 문자 수 경계를 사용하며 trim하지 않는다.
 - `practice_completions`: 사용자, 고정 `tutorial_key`, 최초 완료시각, 완료 reflection, `UNIQUE(user_id, tutorial_key)`. progress의 완료 전이와 함께 생성되며 삭제·상태 회귀하지 않는 완료 정본이다.
 - 공통 holding 예약 원장: OCO와 일반 지정가 SELL 예약을 합산해 `available_quantity = total_quantity - reserved_quantity`를 제공한다. 시장가 SELL도 같은 값을 검증한다.
 - 물리 스키마는 ADR-0004에 따라 새 migration으로 추가하며 기존 migration을 수정하지 않는다.
@@ -173,7 +175,7 @@ OCO 요청 fingerprint는 UTF-8 canonical JSON의 SHA-256이다. key 순서는 `
 5. **주식 체결 세션 FK** — nullable `trades.stock_replay_session_id` migration과 주식 fill current session 기록·코인 null 유지. 기존 replay session·order fill 선행.
 6. **공통 매도 예약 원장** — reservation ledger migration과 기존 `POST /api/orders` MARKET SELL의 `availableQuantity` service·contract·Controller 테스트·API 문서 동기화. 기존 holding·order 선행.
 7. **튜토리얼 OCO 생성** — `POST /api/exit-plans`, education → order port 단방향 orchestration, OPEN session·baseline·1회 예약. 후보 4·5·6 선행.
-8. **OCO 예약 목록** — `GET /api/exit-plans?status=PENDING`, 순수 목록과 실제 plan 포함 응답. 후보 7 선행.
+8. **OCO 예약 목록** — `GET /api/exit-plans?status=`, 생략 시 `PENDING`인 순수 목록과 실제 plan 포함 응답. 후보 7 선행.
 9. **OCO 사용자 취소** — `DELETE /api/exit-plans/{exitPlanId}`, 두 조건 종결·예약 1회 반환. 후보 7 선행.
 10. **OCO 가격 트리거** — 유효 가격 이벤트, 시장가 매도·반대 조건 취소·final observation 원자 트랜잭션. 후보 7·13 선행.
 11. **주식 OCO 세션 만료** — 15:30 자동 만료·두 조건 취소·예약 1회 반환·final observation. 후보 7·10 선행.
@@ -217,7 +219,7 @@ OCO 요청 fingerprint는 UTF-8 canonical JSON의 SHA-256이다. key 순서는 `
 | 5 | session 선택 규칙 필수 | 해당 없음 | FK·주식 non-null/코인 null 필수 | 실제 주식/코인 fill 기록 |
 | 6 | available 계산 필수 | 기존 orders SELL 400/409 회귀 필수 | ledger 정합성 필수 | MARKET SELL 대 예약 경합 |
 | 7 | chain·가격·fingerprint·UUID canonical·비트랜잭션 coordinator 분기 필수 | 201/200/400/404/409·header 필수 | plan/condition/key mapping FK·ascii_bin alias unique·실패 attempt 부분 저장 0 필수 | 별도 proxy/TransactionTemplate의 새 tx 확인; unique loser rollback 후 alias+200/409; alias 재경합 final read |
-| 8 | status filter·정렬 필수 | 200/400·auth·필드 필수 | PENDING query 필수 | GET 무쓰기 |
+| 8 | status 기본값·filter·정렬 필수 | query 생략/PENDING 200, 그 외 400·auth·필드 필수 | PENDING query 필수 | GET 무쓰기 |
 | 9 | terminal/소유권 필수 | 204/404/409 필수 | 상태 전이·예약 반환 필수 | 취소 대 trigger/expiry |
 | 10 | 경계 판정·중복 이벤트 필수 | 해당 없음 | FINAL_EVENT·매도/예약 소비 필수 | 중복·역순 trigger 최초 승자 |
 | 11 | STOCK expiry·CRYPTO GTC 필수 | 해당 없음 | 만료·반환·FINAL_EVENT 필수 | 15:30 trigger/생성 경합 |
@@ -234,4 +236,4 @@ OCO 요청 fingerprint는 UTF-8 canonical JSON의 SHA-256이다. key 순서는 `
 
 ## 확정 경계와 잔여 위험
 - 공통 reservation ledger의 물리 모델은 후보 6이 소유하며 후보 7·15의 선행 gate다. 이 문서는 `availableQuantity = totalQuantity - reservedQuantity`, 단일 예약·소비·반환 원자성까지만 정본으로 고정하고 별도 구조를 선행 발명하지 않는다.
-- 현재 저장소에는 위 신규 오류 코드가 아직 없으므로 각 최초 사용 후보가 `ErrorCode`와 예외 매핑 테스트를 함께 추가한다. 이는 계약 미확정이 아니라 구현 작업이다.
+- 현재 저장소에 이미 있는 `DUPLICATE_RESOURCE`, `INSUFFICIENT_QTY`, `PRICE_UNAVAILABLE`, `IDEMPOTENCY_CONFLICT`는 그대로 재사용한다. 나머지 신규 오류 코드만 각 최초 사용 후보가 `ErrorCode`와 예외 매핑 테스트를 함께 추가한다. 이는 계약 미확정이 아니라 구현 작업이다.

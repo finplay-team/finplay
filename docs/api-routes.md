@@ -57,7 +57,7 @@
 | GET | /api/education/practice | education | 실제 증거로 계산한 3단계 실습 진행 상태 순수 조회 | 016 EDU-PRACTICE-001~003·008·011, candidate 12 |
 | POST | /api/education/practice/intentions | education | 매수 전에 종목·수량·손절선·익절선 기록 | 016 EDU-PRACTICE-003·013, candidate 4 |
 | POST | /api/exit-plans | order | 시장가 매수 체결분의 tutorial-only OCO 청산 예약 | 016 EDU-PRACTICE-003·005·006·010·013, candidate 7 |
-| GET | /api/exit-plans?status=PENDING | order | 본인의 PENDING OCO 예약 목록 순수 조회 | 016 EDU-PRACTICE-003, candidate 8 |
+| GET | /api/exit-plans?status= | order | 본인의 OCO 예약 목록 순수 조회. status 생략 시 PENDING, 현재는 PENDING만 허용 | 016 EDU-PRACTICE-003, candidate 8 |
 | DELETE | /api/exit-plans/{exitPlanId} | order | PENDING OCO 전체 취소와 예약 수량 1회 반환 | 016 EDU-PRACTICE-006, candidate 9 |
 | POST | /api/education/practice/observations | education | PENDING plan의 서버 현재가 관찰 기록 | 016 EDU-PRACTICE-012, candidate 13 |
 | POST | /api/education/practice/reflections | education | 관찰 증거 이후 자유 복기 저장과 최초 불변 완료 | 016 EDU-PRACTICE-007·011·013, candidate 14 |
