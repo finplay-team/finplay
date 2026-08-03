@@ -152,10 +152,10 @@ class InstrumentNewsSummaryRepositoryTest {
 	}
 
 	@Test
-	@DisplayName("origin_trade_date를 비우면 엔티티 제약에서 저장이 막힌다")
+	@DisplayName("origin_trade_date를 비우면 저장 자체가 실패한다")
 	void originTradeDateCannotBeNull() {
-		// 이 단정은 엔티티의 @Column(nullable = false)까지만 닿는다 — Hibernate가 flush 전에 던져 SQL이 나가지
-		// 않으므로 V13의 NOT NULL 여부는 여기서 증명되지 않는다. 그 축은 FeedbackSchemaConstraintsTest가 본다.
+		// INSERT가 실제로 DB까지 나가 MySQL의 NOT NULL에 걸린다 — spring-boot-starter-validation이 있어
+		// Hibernate가 check_nullability를 끄기 때문이다. 이 단정은 V13의 컬럼 속성까지 닿는다.
 		InstrumentNewsSummary withoutDate = InstrumentNewsSummary.create(
 			crypto, null, NewsSummaryScope.ROLLING_24H, SUMMARY, NarrativeSource.LLM, GENERATED_AT);
 

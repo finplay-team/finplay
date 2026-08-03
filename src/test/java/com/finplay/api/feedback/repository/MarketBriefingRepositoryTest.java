@@ -137,10 +137,10 @@ class MarketBriefingRepositoryTest {
 	}
 
 	@Test
-	@DisplayName("origin_trade_date를 비우면 엔티티 제약에서 저장이 막힌다")
+	@DisplayName("origin_trade_date를 비우면 저장 자체가 실패한다")
 	void originTradeDateCannotBeNull() {
-		// 엔티티의 @Column(nullable = false)까지만 닿는다 (SQL이 나가지 않는다). V13의 NOT NULL 여부는
-		// FeedbackSchemaConstraintsTest가 information_schema로 직접 확인한다.
+		// INSERT가 실제로 DB까지 나가 MySQL의 NOT NULL에 걸린다 — spring-boot-starter-validation이 있어
+		// Hibernate가 check_nullability를 끄기 때문이다. 이 단정은 V13의 컬럼 속성까지 닿는다.
 		MarketBriefing withoutDate = MarketBriefing.create(
 			Market.CRYPTO, null, SUMMARY, NarrativeSource.LLM, GENERATED_AT);
 

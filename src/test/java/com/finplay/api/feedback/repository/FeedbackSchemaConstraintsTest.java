@@ -16,12 +16,14 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
  * <b>왜 엔티티가 아니라 스키마를 보는가.</b> {@code ddl-auto=validate}는 컬럼 존재와 타입만 검사하고 <b>NULL 허용
- * 여부와 기본값은 보지 않는다.</b> 그리고 엔티티에 {@code @Column(nullable = false)}가 있으면 Hibernate가 flush
- * 전에 {@code PropertyValueException}을 던져 <b>SQL이 아예 나가지 않으므로</b>, 저장을 시도하는 테스트는 V13이 그
- * 컬럼을 NULL 허용으로 적었더라도 그대로 통과한다. 그 축을 여기서만 실제 DDL로 고정한다.
+ * 여부와 기본값은 보지 않는다.</b> 저장을 시도하는 리포지토리 테스트가 NULL 축을 실제로 검증하기는 하지만
+ * (INSERT가 DB까지 나간다 — {@code spring-boot-starter-validation}이 있어 Hibernate가
+ * {@code check_nullability}를 끈다) 컬럼마다 다 만들지는 않는다. <b>일곱 테이블 전 컬럼</b>을 한자리에서 고정하는
+ * 것이 이 클래스의 몫이다. DDL 기본값은 JPA가 INSERT에 컬럼을 항상 명시해 저장 경로로는 확인할 수 없어 더욱 그렇다.
  *
- * <p>기대값은 spec §C-8 타입표와 V13이 정본이다. 컬럼을 추가·변경하면 이 테스트가 먼저 깨지도록 <b>맵 전체를
- * 비교</b>한다 — 새 컬럼이 조용히 섞여 들어오는 것을 막는 것이 목적이라 부분 비교로 느슨하게 두지 않는다.
+ * <p>기대값의 정본은 spec §C-8 타입표다 (V13은 이 테스트의 검증 대상이라 정본이 될 수 없다). 컬럼을 추가·변경하면
+ * 이 테스트가 먼저 깨지도록 <b>맵 전체를 비교</b>한다 — 새 컬럼이 조용히 섞여 들어오는 것을 막는 것이 목적이라
+ * 부분 비교로 느슨하게 두지 않는다.
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
