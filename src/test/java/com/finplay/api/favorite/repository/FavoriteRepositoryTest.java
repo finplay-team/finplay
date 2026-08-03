@@ -13,6 +13,7 @@ import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.repository.InstrumentRepository;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -48,32 +49,38 @@ class FavoriteRepositoryTest {
 
 	@Test
 	void favoritesTableHasRequiredColumnsForeignKeysUniqueConstraintAndIndex() {
-		Integer columnCount = jdbcTemplate.queryForObject("""
-			SELECT COUNT(*) FROM information_schema.columns
+		List<String> columns = jdbcTemplate.queryForList("""
+			SELECT column_name FROM information_schema.columns
 			WHERE table_schema = DATABASE() AND table_name = 'favorites'
-			  AND column_name IN ('id', 'user_id', 'instrument_id', 'created_at')
-			""", Integer.class);
-		Integer foreignKeyCount = jdbcTemplate.queryForObject("""
-			SELECT COUNT(*) FROM information_schema.referential_constraints
+			ORDER BY ordinal_position
+			""", String.class);
+		List<String> foreignKeys = jdbcTemplate.query("""
+			SELECT constraint_name, referenced_table_name, referenced_column_name
+			FROM information_schema.key_column_usage
 			WHERE constraint_schema = DATABASE() AND table_name = 'favorites'
 			  AND constraint_name IN ('fk_favorites_user', 'fk_favorites_instrument')
-			""", Integer.class);
-		Integer uniqueColumnCount = jdbcTemplate.queryForObject("""
-			SELECT COUNT(*) FROM information_schema.statistics
+			ORDER BY constraint_name
+			""", (resultSet, rowNumber) -> String.join("->",
+			resultSet.getString("constraint_name"), resultSet.getString("referenced_table_name"),
+			resultSet.getString("referenced_column_name")));
+		List<String> uniqueColumns = jdbcTemplate.queryForList("""
+			SELECT column_name FROM information_schema.statistics
 			WHERE table_schema = DATABASE() AND table_name = 'favorites'
 			  AND index_name = 'uk_favorites_user_instrument' AND non_unique = 0
-			""", Integer.class);
-		Integer orderedIndexColumns = jdbcTemplate.queryForObject("""
-			SELECT COUNT(*) FROM information_schema.statistics
+			ORDER BY seq_in_index
+			""", String.class);
+		List<String> orderedIndexColumns = jdbcTemplate.queryForList("""
+			SELECT column_name FROM information_schema.statistics
 			WHERE table_schema = DATABASE() AND table_name = 'favorites'
 			  AND index_name = 'idx_favorites_user_created_id'
-			  AND column_name IN ('user_id', 'created_at', 'id')
-			""", Integer.class);
+			ORDER BY seq_in_index
+			""", String.class);
 
-		assertThat(columnCount).isEqualTo(4);
-		assertThat(foreignKeyCount).isEqualTo(2);
-		assertThat(uniqueColumnCount).isEqualTo(2);
-		assertThat(orderedIndexColumns).isEqualTo(3);
+		assertThat(columns).containsExactly("id", "user_id", "instrument_id", "created_at");
+		assertThat(foreignKeys).containsExactly(
+			"fk_favorites_instrument->instruments->id", "fk_favorites_user->users->id");
+		assertThat(uniqueColumns).containsExactly("user_id", "instrument_id");
+		assertThat(orderedIndexColumns).containsExactly("user_id", "created_at", "id");
 	}
 
 	@Test
