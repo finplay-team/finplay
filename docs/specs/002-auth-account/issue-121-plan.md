@@ -311,7 +311,8 @@ Task 3·4(공통화) 이후에도 이 동시성 테스트가 통과하는지 다
 ### Test files
 
 - `EmailVerificationConcurrencyIntegrationTest`(신규 또는 `EmailVerificationTransactionIntegrationTest`에 케이스 추가) — D7의 시나리오 1·2·3.
-- `EmailChangeConfirmIntegrationTest`(기존 파일) — D7의 시나리오 1·2·3 추가 + **D4의 호출부 6곳 교정**(152·164·185·201·247·287행) + jdbcTemplate 기반 상태 헬퍼 추가.
+- `EmailChangeConfirmIntegrationTest`(기존 파일) — ~~D7의 시나리오 1·2·3 추가~~ + **D4의 호출부 6곳 교정**(152·164·185·201·247·287행) + jdbcTemplate 기반 상태 헬퍼 추가.
+- `EmailChangeConcurrencyIntegrationTest`(신규) — **실제 구현은 계획과 다르게 갔다.** D7은 이 시나리오를 `EmailChangeConfirmIntegrationTest`에 추가하고 `authService.confirmEmailChange`를 직접 호출하도록 설계했으나, 신규 파일 + MockMvc + 실제 가입·로그인·Bearer 플로우로 작성했다. 이유는 픽스처를 **프로덕션에 실제로 존재하는 형태**로 만들기 위해서다 — #115에서 픽스처가 프로덕션에 없는 형태여서 테스트 48건이 통과하는데도 결함이 살아 있었다(`context-notes.md` 2026-08-02). Bearer 경로를 그대로 태우면 Security 필터·컨트롤러·`@Valid`·예외 매핑까지 함께 지난다. PR #120의 `PasswordResetConfirmIntegrationTest`와 같은 모양이다.
 - `VerificationCodePolicyTest`(신규, 순수 단위) — 6자리 형식·`expiresAt`·`isAttemptLimitReached` 경계(4/5/6)·`checkSendRateLimit` 3창 경계와 판정 순서(60초 `> 0`, 1시간·하루 `>= LIMIT`).
 - `VerificationCodeHasherTest`(신규, 순수 단위) — 같은 코드·같은 시크릿이면 같은 해시, **다른 시크릿이면 다른 해시**, 알고리즘·인코딩(HMAC-SHA-256 hex)이 기존 결과와 바이트 단위로 동일한지(회귀 방지용 고정값 1건).
 - 시크릿 분리 가드 — 한쪽 시크릿으로 만든 코드가 다른 쪽 확인 경로에서 통하지 않음 (D8).
@@ -335,7 +336,7 @@ Task 3·4(공통화) 이후에도 이 동시성 테스트가 통과하는지 다
 
 ## Task 2: 이메일 변경 확인 경로 원자성 — `EmailChangeVerificationRepository`에 행 잠금 + 기존 호출부 교정
 
-- [ ] D7의 시나리오 1·2·3 동시성 테스트를 `EmailChangeConfirmIntegrationTest`에 **먼저** 추가하고 `@Lock` 없이 실행해 **실패를 실측한다**(`authService.confirmEmailChange` 직접 호출, Bearer 불필요).
+- [x] D7의 시나리오 1·2·3 동시성 테스트를 **먼저** 작성하고 `@Lock` 없이 실행해 **실패를 실측한다.** ~~`EmailChangeConfirmIntegrationTest`에 추가, `authService.confirmEmailChange` 직접 호출, Bearer 불필요~~ → 신규 `EmailChangeConcurrencyIntegrationTest` + MockMvc + Bearer로 변경(사유는 위 File Map 참고).
 - [ ] `findFirstByUserIdAndNewEmailOrderByCreatedAtDesc`에 `@Lock(LockModeType.PESSIMISTIC_WRITE)`와 이유 주석을 추가한다. **`EmailChangeService`·`AuthService` 본문은 바꾸지 않으며, `validateAndConsumeCode`에 `@Transactional`을 새로 붙이지 않는다** (D2).
 - [ ] 같은 커밋에서 D4의 호출부 6곳(152·164·185·201·247·287행)을 jdbcTemplate 기반 헬퍼 또는 쓰기 트랜잭션 안으로 옮긴다.
 - [ ] 생성 SQL을 확인한다 — `... for update`가 붙는지, 그리고 **`users`로의 조인이 생기지 않는지**(D3). 조인이 생기면 `@Query`로 `v.user.id` 조건을 명시해 없앤 뒤 다시 확인한다.
@@ -386,6 +387,10 @@ Task 3·4(공통화) 이후에도 이 동시성 테스트가 통과하는지 다
 - [ ] `./gradlew build`가 통과한다.
 
 ---
+
+## 후속 검토 (PR #145 리뷰 참고 2)
+
+`VerificationCodePolicy`가 판정(`isAttemptLimitReached`, boolean 반환)과 강제(`checkSendRateLimit`, `BusinessException` throw) 두 스타일을 섞는다. 이번 PR에서 정리하지 않은 이유는 예외 발생 지점이 옮겨져 "동작 불변" 조건을 위협하기 때문이다. 정리한다면 이름으로 구분하는 선(`is~` / `require~`)이 적절하다. 리뷰어도 보류 판단이 타당하다고 확인했다.
 
 ## 미확정·PRD 불일치 (임의로 정하지 않고 보고하는 항목)
 
