@@ -1,10 +1,13 @@
 // 즐겨찾기 등록 API의 인증, 검증, 응답과 오류 계약을 검증하는 WebMvc 슬라이스 테스트다.
 package com.finplay.api.favorite.controller;
 
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -135,6 +138,57 @@ class FavoriteControllerTest {
 	@Test
 	void createFavoriteMapsNonTradableInstrumentToConflict() throws Exception {
 		assertBusinessError(ErrorCode.INSTRUMENT_NOT_TRADABLE, "INSTRUMENT_NOT_TRADABLE", 409);
+	}
+
+	@Test
+	void deleteFavoriteReturnsNoContentWithEmptyBody() throws Exception {
+		authenticate();
+
+		mockMvc.perform(delete("/api/favorites/10")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN))
+			.andExpect(status().isNoContent())
+			.andExpect(content().string(""));
+
+		org.mockito.Mockito.verify(favoriteService).deleteFavorite(USER_ID, 10L);
+	}
+
+	@Test
+	void deleteFavoriteRejectsZeroInstrumentId() throws Exception {
+		assertInvalidDeletePath(0L);
+	}
+
+	@Test
+	void deleteFavoriteRejectsNegativeInstrumentId() throws Exception {
+		assertInvalidDeletePath(-1L);
+	}
+
+	@Test
+	void deleteFavoriteRejectsMissingAuthentication() throws Exception {
+		mockMvc.perform(delete("/api/favorites/10"))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"));
+		verifyNoInteractions(favoriteService);
+	}
+
+	@Test
+	void deleteFavoriteHidesMissingOrUnownedFavoriteAsNotFound() throws Exception {
+		authenticate();
+		doThrow(new BusinessException(ErrorCode.FAVORITE_NOT_FOUND))
+			.when(favoriteService).deleteFavorite(USER_ID, 10L);
+
+		mockMvc.perform(delete("/api/favorites/10")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.error.code").value("FAVORITE_NOT_FOUND"));
+	}
+
+	private void assertInvalidDeletePath(long instrumentId) throws Exception {
+		authenticate();
+		mockMvc.perform(delete("/api/favorites/{instrumentId}", instrumentId)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
+		verifyNoInteractions(favoriteService);
 	}
 
 	private void assertBusinessError(ErrorCode errorCode, String code, int status) throws Exception {

@@ -13,6 +13,7 @@ public enum ErrorCode {
 	FORBIDDEN(HttpStatus.FORBIDDEN, "접근 권한이 없습니다."),
 	REAUTHENTICATION_FAILED(HttpStatus.FORBIDDEN, "재인증에 실패했습니다."),
 	NOT_FOUND(HttpStatus.NOT_FOUND, "대상을 찾을 수 없습니다."),
+	FAVORITE_NOT_FOUND(HttpStatus.NOT_FOUND, "즐겨찾기를 찾을 수 없습니다."),
 	DUPLICATE_RESOURCE(HttpStatus.CONFLICT, "이미 존재하는 리소스입니다."),
 	INSTRUMENT_NOT_TRADABLE(HttpStatus.CONFLICT, "거래할 수 없는 종목입니다."),
 	EMAIL_VERIFICATION_REQUIRED(HttpStatus.CONFLICT, "이메일 인증이 필요합니다."),

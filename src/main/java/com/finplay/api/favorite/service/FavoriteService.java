@@ -1,4 +1,4 @@
-// 인증 사용자의 거래 가능 종목 즐겨찾기 등록을 처리하는 서비스
+// 인증 사용자의 거래 가능 종목 즐겨찾기 조회·등록·해제를 처리하는 서비스
 package com.finplay.api.favorite.service;
 
 import com.finplay.api.auth.domain.User;
@@ -54,6 +54,13 @@ public class FavoriteService {
 			}
 			throw exception;
 		}
+	}
+
+	@Transactional
+	public void deleteFavorite(Long userId, Long instrumentId) {
+		Favorite favorite = favoriteRepository.findByUserIdAndInstrumentIdForUpdate(userId, instrumentId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.FAVORITE_NOT_FOUND));
+		favoriteRepository.delete(favorite);
 	}
 
 	private boolean isDuplicateFavorite(DataIntegrityViolationException exception) {
