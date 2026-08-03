@@ -62,7 +62,9 @@ public class EmailVerificationService {
 		}
 
 		LocalDateTime now = LocalDateTime.now(clock);
-		checkSendRateLimit(email, now);
+		// 발송 제한은 대상 이메일 주소 단위로 집계한다.
+		codePolicy.checkSendRateLimit(
+			now, since -> emailVerificationRepository.countByEmailAndCreatedAtAfter(email, since));
 		expirePreviousCodes(email, now);
 
 		String code = codePolicy.generateCode();
@@ -101,21 +103,6 @@ public class EmailVerificationService {
 			sha256(signupVerificationToken),
 			now.plusMinutes(SIGNUP_TOKEN_TTL_MINUTES));
 		return new SignupTokenResponse(signupVerificationToken, SIGNUP_TOKEN_TTL_MINUTES * 60L);
-	}
-
-	private void checkSendRateLimit(String email, LocalDateTime now) {
-		if (emailVerificationRepository.countByEmailAndCreatedAtAfter(
-			email, now.minusSeconds(VerificationCodePolicy.RESEND_INTERVAL_SECONDS)) > 0) {
-			throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS);
-		}
-		if (emailVerificationRepository.countByEmailAndCreatedAtAfter(email,
-			now.minusHours(1)) >= VerificationCodePolicy.HOURLY_LIMIT) {
-			throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS);
-		}
-		if (emailVerificationRepository.countByEmailAndCreatedAtAfter(email,
-			now.minusDays(1)) >= VerificationCodePolicy.DAILY_LIMIT) {
-			throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS);
-		}
 	}
 
 	private void expirePreviousCodes(String email, LocalDateTime now) {

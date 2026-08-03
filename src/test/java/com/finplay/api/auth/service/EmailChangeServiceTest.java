@@ -243,6 +243,27 @@ class EmailChangeServiceTest {
 	}
 
 	@Test
+	@DisplayName("각 창이 한도 바로 아래면(1시간 4회·하루 9회) 정상 발송된다 — 경계 통과")
+	void sendsWhenCountsAreJustBelowLimits() {
+		User user = emailMemberUser();
+		when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+		when(socialAccountRepository.findByUserId(USER_ID)).thenReturn(Optional.empty());
+		when(passwordEncoder.matches(CURRENT_PASSWORD, PASSWORD_HASH)).thenReturn(true);
+		when(userRepository.existsByEmail(NEW_EMAIL)).thenReturn(false);
+		when(emailChangeVerificationRepository.countByUserIdAndCreatedAtAfter(USER_ID, NOW.minusSeconds(60)))
+			.thenReturn(0L);
+		when(emailChangeVerificationRepository.countByUserIdAndCreatedAtAfter(USER_ID, NOW.minusHours(1)))
+			.thenReturn(4L);
+		when(emailChangeVerificationRepository.countByUserIdAndCreatedAtAfter(USER_ID, NOW.minusDays(1)))
+			.thenReturn(9L);
+
+		service.requestEmailChange(USER_ID, NEW_EMAIL, CURRENT_PASSWORD, null);
+
+		verify(emailChangeVerificationRepository).save(any());
+		verify(emailSender).sendVerificationCode(eq(NEW_EMAIL), any());
+	}
+
+	@Test
 	@DisplayName("재발송 시 같은 회원·같은 새 이메일의 이전 미소비·유효 인증번호는 즉시 무효화된다")
 	void expiresPreviousCodeForSameUserAndNewEmailOnResend() {
 		User user = emailMemberUser();

@@ -53,7 +53,9 @@ public class PasswordResetService {
 		LocalDateTime now = LocalDateTime.now(clock);
 		// 발송 제한을 가장 먼저 판정한다 — 존재 여부를 먼저 보면 제한을 초과한 요청자도 계정 상태를 알 수 있다.
 		// 429는 집계 행을 남기지 않는다(남기면 하루 10회 제한이 영구 차단으로 변한다).
-		checkSendRateLimit(email, now);
+		// 집계는 이메일 주소 단위이며, 미가입·소셜 전용으로 거부된 요청 행(code_hash NULL)도 함께 센다.
+		codePolicy.checkSendRateLimit(
+			now, since -> passwordResetVerificationRepository.countByEmailAndCreatedAtAfter(email, since));
 
 		User user = userRepository.findByEmail(email).orElse(null);
 		if (user == null) {
@@ -115,22 +117,6 @@ public class PasswordResetService {
 		// 모든 판정을 통과한 뒤에만 소비한다 — 위에서 던지면 인증번호가 낭비되지 않는다.
 		verification.consume(now);
 		return user;
-	}
-
-	// 발송 제한은 이메일 주소 단위이며, 미가입·소셜 전용으로 거부된 요청 행도 함께 집계한다.
-	private void checkSendRateLimit(String email, LocalDateTime now) {
-		if (passwordResetVerificationRepository.countByEmailAndCreatedAtAfter(
-			email, now.minusSeconds(VerificationCodePolicy.RESEND_INTERVAL_SECONDS)) > 0) {
-			throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS);
-		}
-		if (passwordResetVerificationRepository.countByEmailAndCreatedAtAfter(email,
-			now.minusHours(1)) >= VerificationCodePolicy.HOURLY_LIMIT) {
-			throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS);
-		}
-		if (passwordResetVerificationRepository.countByEmailAndCreatedAtAfter(email,
-			now.minusDays(1)) >= VerificationCodePolicy.DAILY_LIMIT) {
-			throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS);
-		}
 	}
 
 	// 재발송 시 같은 이메일의 이전 유효 코드를 무효화한다 — 실제로 발송된 행만 대상이다.

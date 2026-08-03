@@ -73,7 +73,9 @@ public class EmailChangeService {
 		}
 
 		LocalDateTime now = LocalDateTime.now(clock);
-		checkSendRateLimit(userId, now);
+		// 발송 제한은 대상 이메일과 무관하게 회원(userId) 단위로 합산한다.
+		codePolicy.checkSendRateLimit(
+			now, since -> emailChangeVerificationRepository.countByUserIdAndCreatedAtAfter(userId, since));
 		expirePreviousCodes(userId, newEmail, now);
 
 		String code = codePolicy.generateCode();
@@ -127,22 +129,6 @@ public class EmailChangeService {
 		int consumed = reauthTokenRepository.consumeIfValidForUser(sha256(reauthToken), user.getId(), now);
 		if (consumed != 1) {
 			throw new BusinessException(ErrorCode.REAUTHENTICATION_FAILED);
-		}
-	}
-
-	// 발송 제한 판정 — 대상 이메일과 무관하게 회원(userId) 단위로 60초/1시간 5회/하루 10회를 합산한다.
-	private void checkSendRateLimit(Long userId, LocalDateTime now) {
-		if (emailChangeVerificationRepository.countByUserIdAndCreatedAtAfter(
-			userId, now.minusSeconds(VerificationCodePolicy.RESEND_INTERVAL_SECONDS)) > 0) {
-			throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS);
-		}
-		if (emailChangeVerificationRepository.countByUserIdAndCreatedAtAfter(userId,
-			now.minusHours(1)) >= VerificationCodePolicy.HOURLY_LIMIT) {
-			throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS);
-		}
-		if (emailChangeVerificationRepository.countByUserIdAndCreatedAtAfter(userId,
-			now.minusDays(1)) >= VerificationCodePolicy.DAILY_LIMIT) {
-			throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS);
 		}
 	}
 
