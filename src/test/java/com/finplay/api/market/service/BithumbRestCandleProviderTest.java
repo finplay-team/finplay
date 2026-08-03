@@ -176,8 +176,8 @@ class BithumbRestCandleProviderTest {
 
 		server.expect(requestTo(startsWith(ENDPOINT)))
 			.andExpect(queryParam("count", "200"))
-			// KST 09:30 -> UTC 00:30, 빗썸의 to 경계 배제(exclusive)를 상쇄하기 위해 +1초
-			.andExpect(queryParam("to", "2026-07-30T00:30:01"))
+			// 빗썸 to는 변환 없이 KST 그대로 비교되는 값이다. 경계 배제(exclusive)를 상쇄하기 위해 +1초.
+			.andExpect(queryParam("to", "2026-07-30T09:30:01"))
 			.andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
 
 		provider.getCandles("BTC", CandleInterval.ONE_MINUTE, null, to);
@@ -211,8 +211,8 @@ class BithumbRestCandleProviderTest {
 		server.expect(requestTo(startsWith(ENDPOINT)))
 			// from~to 10분 + 1 = 11
 			.andExpect(queryParam("count", "11"))
-			// 경계 배제 상쇄를 위한 +1초
-			.andExpect(queryParam("to", "2026-07-30T00:10:01"))
+			// 빗썸 to는 변환 없이 KST 그대로. 경계 배제 상쇄를 위한 +1초
+			.andExpect(queryParam("to", "2026-07-30T09:10:01"))
 			.andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
 
 		provider.getCandles("BTC", CandleInterval.ONE_MINUTE, from, to);
@@ -229,8 +229,8 @@ class BithumbRestCandleProviderTest {
 
 		server.expect(requestTo(startsWith(ENDPOINT)))
 			.andExpect(queryParam("count", "200"))
-			// 경계 배제 상쇄를 위한 +1초
-			.andExpect(queryParam("to", "2026-07-30T00:00:01"))
+			// 빗썸 to는 변환 없이 KST 그대로. 경계 배제 상쇄를 위한 +1초
+			.andExpect(queryParam("to", "2026-07-30T09:00:01"))
 			.andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
 
 		provider.getCandles("BTC", CandleInterval.ONE_MINUTE, from, to);
@@ -378,12 +378,11 @@ class BithumbRestCandleProviderTest {
 	void getCandlesShiftsToParamByOneSecondForDayIntervalToIncludeTodaysBoundaryCandle() {
 		BithumbRestCandleProvider provider = providerAt(LocalDateTime.of(2026, 8, 3, 11, 43));
 		// to=2026-08-03T00:00:00(오늘 일봉의 시작 시각과 정확히 같음)을 그대로 보내면 빗썸이 오늘 봉을 배제한다.
-		// resolveToParam이 +1초를 더해 "2026-08-02T15:00:01"(UTC)로 보내야 오늘 봉이 응답에 남는다.
+		// 빗썸 to는 변환 없이 KST 그대로 비교되는 값이므로, resolveToParam이 +1초만 더해 그대로 보낸다.
 		LocalDateTime to = LocalDateTime.of(2026, 8, 3, 0, 0);
 
 		server.expect(requestTo(startsWith(DAY_ENDPOINT)))
-			// KST 2026-08-03T00:00:00 -> UTC 2026-08-02T15:00:00, +1초 보정
-			.andExpect(queryParam("to", "2026-08-02T15:00:01"))
+			.andExpect(queryParam("to", "2026-08-03T00:00:01"))
 			.andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
 
 		provider.getCandles("BTC", CandleInterval.ONE_DAY, null, to);
@@ -397,7 +396,7 @@ class BithumbRestCandleProviderTest {
 		LocalDateTime to = LocalDateTime.of(2026, 8, 3, 0, 0);
 
 		server.expect(requestTo(startsWith(WEEK_ENDPOINT)))
-			.andExpect(queryParam("to", "2026-08-02T15:00:01"))
+			.andExpect(queryParam("to", "2026-08-03T00:00:01"))
 			.andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
 
 		provider.getCandles("BTC", CandleInterval.ONE_WEEK, null, to);
@@ -411,7 +410,7 @@ class BithumbRestCandleProviderTest {
 		LocalDateTime to = LocalDateTime.of(2026, 8, 3, 0, 0);
 
 		server.expect(requestTo(startsWith(MONTH_ENDPOINT)))
-			.andExpect(queryParam("to", "2026-08-02T15:00:01"))
+			.andExpect(queryParam("to", "2026-08-03T00:00:01"))
 			.andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
 
 		provider.getCandles("BTC", CandleInterval.ONE_MONTH, null, to);
