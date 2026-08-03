@@ -51,10 +51,10 @@
 
 | Method | URL | 도메인 | 요약 | Spec |
 |---|---|---|---|---|
-| GET | /api/instruments/{instrumentId}/price-moves | market | 종목의 변동 원인 카드 목록 조회. 주식은 현재 재생세션 원본 거래일 중 `revealAt`이 지난 카드만(스포일러 차단), 코인은 최근 24시간. **기존 Notion 명세에 없는 신규 엔드포인트** | 012 FEED-006 |
-| GET | /api/ai/post-sell/{tradeId} | ai | 본인 매도 체결 1건의 매도 직후 피드백. 원장의 FIFO 수치 + 보유 구간 변동 원인 카드 + 관찰형 서술. 같은 원본 거래일 안에서 완결된 매매만 카드·최고가·최저가 포함. **투자일기에 의존하지 않는다** | 012 FEED-007 |
-| GET | /api/instruments/{instrumentId}/news | market | 종목의 뉴스·공시 목록과 AI 요약 조회. 주식은 현재 재생세션 원본 거래일 기사 중 발행시각이 재생 시각을 지난 것만, 코인은 최근 24시간. **기존 Notion 명세에 없는 신규 엔드포인트** | 012 FEED-008 |
-| GET | /api/market/briefing?market= | market | 개장 전 브리핑. 주식은 **직전 거래일 15:30~당일 09:00 기사·공시만**(장중 기사 절대 미포함), 09:00 이전에는 `status=NOT_YET`. 코인은 최근 24시간. 뉴스 보고 매매하는 사용자의 진입점. **기존 Notion 명세에 없는 신규 엔드포인트** | 012 FEED-009 |
+| GET | /api/instruments/{instrumentId}/price-moves | feedback | 종목의 변동 원인 카드 목록 조회. 주식은 현재 재생세션 원본 거래일 중 `revealTime`이 지난 카드만(스포일러 차단), 코인은 최근 24시간. **기존 Notion 명세에 없는 신규 엔드포인트** | 012 FEED-006 |
+| GET | /api/ai/post-sell/{tradeId} | feedback | 본인 매도 체결 1건의 매도 직후 피드백. 원장의 FIFO 수치 + 보유 구간 변동 원인 카드 + 관찰형 서술. 같은 원본 거래일 안에서 완결된 매매만 카드·최고가·최저가 포함. **2차는 주식 전용 — 코인 체결은 400**. **투자일기에 의존하지 않는다** | 012 FEED-007 |
+| GET | /api/instruments/{instrumentId}/news | feedback | 종목의 뉴스·공시 목록과 AI 요약 조회. 주식은 09:00 이후에만 노출하며 발행시각이 재생 시각을 지난 것만, 코인은 최근 24시간. 요약은 배치가 미리 만들어 두므로 이 경로는 순수 조회다. **기존 Notion 명세에 없는 신규 엔드포인트** | 012 FEED-008 |
+| GET | /api/market/briefing?market= | feedback | 개장 전 브리핑. 주식은 **직전 거래일 15:30~당일 09:00 기사·공시만**(장중 기사 절대 미포함), 09:00 이전에는 `status=NOT_YET`. 코인은 최근 24시간. 뉴스 보고 매매하는 사용자의 진입점. **기존 Notion 명세에 없는 신규 엔드포인트** | 012 FEED-009 |
 
 네 경로 모두 `SecurityConfig` 공개 목록에 추가하지 않는다 — `anyRequest().authenticated()`로 떨어져 Access Bearer 토큰을 요구한다.
 
