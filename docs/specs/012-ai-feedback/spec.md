@@ -270,8 +270,8 @@ feedback/
                InstrumentNewsSummary, MarketBriefing, TradeFeedback, PriceMovePeerStat
   dto/response/  PriceMoveListResponse, InstrumentNewsResponse,
                  MarketBriefingResponse, PostSellFeedbackResponse
-                 (+ 중첩 레코드 — PostSellFlow, Counterfactuals, PeerComparison,
-                    NewsItem, PriceMoveItem)
+                 (+ 응답 안에 중첩되는 레코드 — PostSellFlow, Counterfactuals, PeerComparison)
+                 (+ NewsItem, PriceMoveItem — 여러 응답이 공유하므로 최상위 record)
   repository/  각 도메인 JpaRepository
 ```
 

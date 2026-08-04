@@ -71,7 +71,7 @@ public class PriceMoveQueryService {
 		// 게이트 (§C-5) — reveal_time이 TIME이라 오늘 벽시계 시각과 비교하는 것이 곧 "서비스 날짜 + reveal_time".
 		// 재생이 1배속이라 원본 거래일 시각과 서비스 날짜의 벽시계 시각이 1:1로 대응하며, 별도 오프셋이 없다.
 		List<PriceMoveEvent> events = priceMoveEventRepository
-			.findByInstrumentIdAndOriginTradeDateAndRevealTimeLessThanEqualOrderByWindowStartAsc(
+			.findByInstrumentIdAndOriginTradeDateAndRevealTimeLessThanEqualOrderByWindowStartAscIdAsc(
 				instrumentId, session.sourceTradingDate(), LocalTime.now(clock));
 		if (events.isEmpty()) {
 			return PriceMoveListResponse.of(session.sourceTradingDate(), List.of());

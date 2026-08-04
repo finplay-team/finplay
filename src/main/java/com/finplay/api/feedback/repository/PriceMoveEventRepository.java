@@ -42,7 +42,17 @@ public interface PriceMoveEventRepository extends JpaRepository<PriceMoveEvent, 
 	 *
 	 * <p>코인 카드는 {@code reveal_time}이 {@code NULL}이라 이 비교에서 자연히 빠지지만, 그것에 기대지 않는다 —
 	 * 코인은 원본 거래일이 아니라 최근 24시간으로 조회하므로 애초에 다른 질의가 필요하다({@code plan.md} 8번).
+	 *
+	 * <p><b>{@code window_start}만으로는 순서가 정해지지 않는다.</b> 첫 분봉이 09:00인 날 시가 갭 카드
+	 * ({@code window_start} = 첫 분봉 시각)와 장중 첫 후보({@code t − W})가 <b>정확히 같은 값</b>을 갖는다 —
+	 * 위 유니크에 {@code event_type}을 넣은 이유로 든 바로 그 상황이다. 2차 키가 없으면 그 두 카드의 순서가
+	 * DB 임의 순서가 되어 화면 순서가 실행마다 달라진다.
+	 *
+	 * <p>2차 키를 {@code event_type}이 아니라 <b>{@code id}</b>로 둔 이유는 둘이다. ① {@code id} 순서는 곧
+	 * <b>생성 순서</b>라 §C-6의 배치 단계(3. 시가 갭 → 4. 장중)를 그대로 따르며, 개장 → 장중이라는 읽는
+	 * 순서와도 같다. ② {@code event_type}으로 가르면 갭이 먼저인지 장중이 먼저인지가 <b>enum 선언 순서</b>에
+	 * 묶여, 다른 이유로 값 순서를 바꾸는 순간 응답 순서가 함께 뒤집히는데 그 연결이 코드 어디에도 보이지 않는다.
 	 */
-	List<PriceMoveEvent> findByInstrumentIdAndOriginTradeDateAndRevealTimeLessThanEqualOrderByWindowStartAsc(
+	List<PriceMoveEvent> findByInstrumentIdAndOriginTradeDateAndRevealTimeLessThanEqualOrderByWindowStartAscIdAsc(
 		Long instrumentId, LocalDate originTradeDate, LocalTime revealTime);
 }

@@ -118,15 +118,20 @@ class PriceMoveQueryGateIntegrationTest {
 	}
 
 	private PriceMoveEvent saveCard(LocalTime windowStart, LocalTime windowEnd, LocalTime revealTime) {
+		return saveCard(PriceMoveEventType.INTRADAY, windowStart, windowEnd, revealTime);
+	}
+
+	private PriceMoveEvent saveCard(
+		PriceMoveEventType eventType, LocalTime windowStart, LocalTime windowEnd, LocalTime revealTime) {
 		return priceMoveEventRepository.save(PriceMoveEvent.createStock(
 			instrument,
-			PriceMoveEventType.INTRADAY,
+			eventType,
 			ORIGIN_TRADE_DATE,
 			windowStart,
 			windowEnd,
 			new BigDecimal("-0.018200"),
 			new BigDecimal("3.2500"),
-			windowStart + " 카드",
+			eventType + " " + windowStart + " 카드",
 			NarrativeSource.LLM,
 			revealTime,
 			INITIAL_NOW));
@@ -328,6 +333,49 @@ class PriceMoveQueryGateIntegrationTest {
 	}
 
 	// --- 순서 (계약에 명시가 없어 회귀 방지용) ---
+
+	// 첫 분봉이 09:00인 날에는 갭 카드의 windowStart(= 첫 분봉 시각)와 장중 첫 후보의 windowStart(= t − W)가
+	// 정확히 같아진다. 유니크 제약에 event_type을 넣은 이유로 §데이터 모델이 든 바로 그 상황이며, 2차 정렬 키가
+	// 없으면 그날 응답 순서가 DB 임의 순서라 화면이 실행마다 달라진다.
+	//
+	// 서로 다른 windowStart만 쓰는 다른 정렬 테스트로는 이 자리가 검증되지 않는다 — 2차 키가 없어도 전부 통과한다.
+	@Test
+	@DisplayName("windowStart가 똑같이 09:00인 갭·장중 카드가 저장 순서(id)대로 내려온다")
+	void breaksWindowStartTiesByIdWhichIsCreationOrder() {
+		saveReadySession(SECOND_REPLAY_DATE);
+		// 배치는 §C-6의 3단계(갭) → 4단계(장중) 순으로 돌므로 갭 카드가 먼저 저장된다.
+		PriceMoveEvent gap = saveCard(PriceMoveEventType.OPENING_GAP, LocalTime.of(9, 0), LocalTime.of(9, 0),
+			LocalTime.of(9, 0));
+		PriceMoveEvent intraday = saveCard(PriceMoveEventType.INTRADAY, LocalTime.of(9, 0), LocalTime.of(9, 5),
+			LocalTime.of(9, 6));
+		// 픽스처 전제 — 두 windowStart가 실제로 같은 값이어야 2차 키를 검증한다.
+		assertThat(gap.getWindowStart()).isEqualTo(intraday.getWindowStart()).isEqualTo(LocalTime.of(9, 0));
+		assertThat(gap.getId()).isLessThan(intraday.getId());
+		mutableClock.set(LocalDateTime.of(SECOND_REPLAY_DATE, LocalTime.of(15, 0)));
+
+		assertThat(queryMoves())
+			.extracting(PriceMoveItem::eventType)
+			.containsExactly(PriceMoveEventType.OPENING_GAP, PriceMoveEventType.INTRADAY);
+	}
+
+	// 대조군 — 2차 키가 id(= 생성 순서)이므로 저장 순서를 뒤집으면 응답 순서도 뒤집힌다. event_type으로 가르는
+	// 구현이었다면 저장 순서와 무관하게 항상 같은 순서가 나오므로(문자열 정렬로 INTRADAY < OPENING_GAP) 위
+	// 테스트와 이 테스트를 동시에 만족시킬 수 없다.
+	@Test
+	@DisplayName("저장 순서를 뒤집으면 응답 순서도 뒤집힌다 — 2차 키가 event_type이 아니라 id다")
+	void tieOrderFollowsInsertionOrderNotEventType() {
+		saveReadySession(SECOND_REPLAY_DATE);
+		PriceMoveEvent intraday = saveCard(PriceMoveEventType.INTRADAY, LocalTime.of(9, 0), LocalTime.of(9, 5),
+			LocalTime.of(9, 6));
+		PriceMoveEvent gap = saveCard(PriceMoveEventType.OPENING_GAP, LocalTime.of(9, 0), LocalTime.of(9, 0),
+			LocalTime.of(9, 0));
+		assertThat(intraday.getId()).isLessThan(gap.getId());
+		mutableClock.set(LocalDateTime.of(SECOND_REPLAY_DATE, LocalTime.of(15, 0)));
+
+		assertThat(queryMoves())
+			.extracting(PriceMoveItem::eventType)
+			.containsExactly(PriceMoveEventType.INTRADAY, PriceMoveEventType.OPENING_GAP);
+	}
 
 	@Test
 	@DisplayName("카드는 windowStart 오름차순이고 근거는 발행시각 내림차순이다")
