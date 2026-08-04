@@ -189,7 +189,7 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 | AI 피드백 — 뉴스·공시 수집 | FEED-001 | **완료** | PR #174 |
 | AI 피드백 — 변동 원인 카드 | FEED-002~007 계열 | **완료** | PR #185 (`GET /api/instruments/{id}/price-moves`) |
 | AI 피드백 — 종목 뉴스 요약·개장 전 브리핑 | FEED-008 | **완료** | PR #194 (`GET .../news`, `GET /api/market/briefing`) |
-| AI 피드백 — 매도 직후 피드백 | FEED-009 | **완료** | `012` plan의 이슈 6 (Issue #208, `GET /api/ai/post-sell/{tradeId}`). 원장 수치·파생 사실·보유 구간 카드·매도 후 흐름·반사실 가격·AI 서술까지. **반사실 `returnRate`와 집단 비교 지표는 아래 FEED-010·011 행이다** |
+| AI 피드백 — 매도 직후 피드백 | FEED-007 | **완료** | `012` plan의 이슈 6 (Issue #208, `GET /api/ai/post-sell/{tradeId}`). 원장 수치·파생 사실·보유 구간 카드·매도 후 흐름·반사실 가격·AI 서술까지. **반사실 `returnRate`와 집단 비교 지표는 아래 FEED-010·011 행이다** |
 | AI 피드백 — 반사실 시뮬레이션·집단 비교 | FEED-010·011 | **미착수** | `012` plan의 이슈 7 미생성 |
 | AI 피드백 — 코인 변동 감시 | — | **미착수** | `012` plan의 이슈 8 미생성 |
 | 투자일기 — 매수 회고 작성 | JOUR-001 | **완료** | PR #181 |
@@ -959,7 +959,7 @@ Flyway 마이그레이션은 V1~V21까지 적용돼 있다. 아래는 2차에서
 - `instrument_news_summaries`: 종목·거래일·요약 범위(`PRE_MARKET`·`FULL`·`ROLLING_24H`) — `UNIQUE(instrument_id, origin_trade_date, scope)`
 - `market_briefings`: 시장·원본 거래일 개장 전 브리핑 — `UNIQUE(market, origin_trade_date)`
 - `price_move_peer_stats`: 카드별 집단 행동 집계 (**회원 식별자 없이 집계만**) — `UNIQUE(price_move_event_id, service_date)`
-- `trade_feedbacks`: 매도 직후 AI 서술 — `UNIQUE(trade_id)`. 조회 엔드포인트(FEED-009, `GET /api/ai/post-sell/{tradeId}`)가 최초 조회 시 서술을 생성해 이 테이블에 저장하고 이후 재사용한다 (Issue #208)
+- `trade_feedbacks`: 매도 직후 AI 서술 — `UNIQUE(trade_id)`. 조회 엔드포인트(FEED-007, `GET /api/ai/post-sell/{tradeId}`)가 최초 조회 시 서술을 생성해 이 테이블에 저장하고 이후 재사용한다 (Issue #208)
 
 **투자일기 (V15·V17·V18·V21, `docs/specs/007-journal`)**
 

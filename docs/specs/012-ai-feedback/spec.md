@@ -281,6 +281,11 @@ feedback/
                  (+ BriefingNewsItem — Part D 전용 최상위 record. 공유용이 아니다)
                  (+ HeldPriceMoveItem — Part B 전용 최상위 record. 공유용이 아니다)
   repository/  각 도메인 JpaRepository
+
+  (트랜잭션 경계 전용 내부 컴포넌트 — 위 목록의 서비스가 진입점이고 이들은 경계만 나눈다)
+    PriceMoveCardWriter        카드 저장 (#180)
+    PostSellFeedbackReader     매도 회고 읽기 (readOnly), TradeFeedbackWriter 서술 저장 (#208)
+    portfolio/service/SellAllocationQueryService  배분·lot 요약 (#208. portfolio 소유)
 ```
 
 DTO는 `dto/response/` 하위에 둔다(`docs/conventions.md`, 이 spec에는 요청 DTO가 없다). 응답 DTO 클래스명은 `docs/api-contracts.md`에 이미 박혀 있으므로 그 이름을 쓴다. 엔티티를 컨트롤러 밖으로 노출하지 않는다.
