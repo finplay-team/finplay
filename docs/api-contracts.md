@@ -482,6 +482,14 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 현재 존재하는 본인 favorite와 같은 종목만 허용한다. 서비스는 `(user_id, tutorial_key)` 유일 제약의 `practice_progresses`를 atomic insert-if-absent 한 뒤 진행 행과 favorite를 잠가 검증한다. 완료 상태면 저장 없이 409 `PRACTICE_ALREADY_COMPLETED`, favorite가 없으면 저장 없이 409 `PRACTICE_STEP_LOCKED`다. 유효 요청마다 `practice_intentions`에 새 행을 만들며 중복 intention을 금지하는 유일 제약은 없다. DB에는 사용자·종목 FK와 함께 `quantity DECIMAL(30,8)`, `stop_loss DECIMAL(18,8)`, `take_profit DECIMAL(18,8)`, `created_at DATETIME(6)`로 저장한다. 이 API는 의도만 기록하며 실제 시장가 매수 체결은 기존 `POST /api/orders`의 별도 요청이다.
 
+### 튜토리얼 합성 시세 조회
+
+| Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|
+| GET | /api/education/practice/synthetic-prices/{instrumentId} | Access Bearer 필수. 양의 `Long` path `instrumentId` | 200 `{"title":"삼성전자","tickSeconds":3,"prices":[69000,69200,...]}` (`SyntheticPriceSeriesResponse`, `prices` 100개) | 400 `VALIDATION_ERROR`(양수 아님); Access 인증 실패는 401 `UNAUTHORIZED`; 404 `NOT_FOUND`(종목 없음) | 016 candidate 4 후속(#193 tasks 항목4) |
+
+`InstrumentService.getInstrumentEntity`로 종목 존재만 확인하고 `instrument.isTradable()`은 검증하지 않는다(비거래 종목도 순수 참고용 차트로 허용). `title`은 `Instrument.name`(예: `"삼성전자"`)이고 `tickSeconds`는 항상 3, `prices`는 100개(5분/3초, 시작가 포함) `BigDecimal` 정수 배열이다. 시작가는 `PriceQueryService.getPriceQuote`로 조회한 실제 현재가를 사용하고, 가격이 없으면(PRICE_UNAVAILABLE 등) 고정 fallback 상수(10,000)를 시작가로 쓴다. 각 틱은 이전 값 대비 -1%~+1% 균등분포로 변동하며 시작가의 50% 미만으로는 떨어지지 않게 clamp한다. 요청마다 새로 계산하며 어떤 저장소에도 남기지 않고, 잠금·트랜잭션도 없다(읽기 전용 조회).
+
 ### OCO exit plan 생성 (계획)
 
 | Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |

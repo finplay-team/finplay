@@ -51,6 +51,7 @@
 | GET | /api/favorites | education | 본인 즐겨찾기를 등록 최신순으로 순수 조회 | 016 EDU-PRACTICE-002, candidate 2, Issue #168 |
 | DELETE | /api/favorites/{instrumentId} | education | 본인 즐겨찾기 해제 | 016 EDU-PRACTICE-002, candidate 3, Issue #172 |
 | POST | /api/education/practice/intentions | education | favorite로 선행 확인한 종목의 매수 전 수량·손절가·익절가 기록 | 016 EDU-PRACTICE-003·013, candidate 4, Issue #175 |
+| GET | /api/education/practice/synthetic-prices/{instrumentId} | education | 튜토리얼 전용 서버 생성 랜덤워크 시계열(제목·틱초·가격 100틱) 조회. 실제 시세·evidence와 무관, 저장소 없음 | 016 EDU-PRACTICE-003(#193), Issue #193 tasks 항목4 |
 | GET | /api/instruments/{instrumentId}/price-moves | feedback | 종목의 변동 원인 카드 목록 조회. 주식은 현재 재생세션 원본 거래일 중 `revealTime`이 지난 카드만(스포일러 차단) `windowStart` 오름차순, 각 카드의 근거는 발행시각 내림차순. 카드 0건·재생세션 미준비 모두 200(후자는 `originTradeDate=null`) | 012 FEED-006, Issue #180 |
 
 ## 투자 실습 계획 라우트 (아직 구현하지 않음)
