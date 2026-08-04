@@ -5,7 +5,9 @@
 |---|---|---|---|
 | 항목1 | implementer | `./gradlew compileJava` | plan.md §데이터 모델(V14 DDL), V10 `holding_lots.buy_trade_id` 선례, ADR-0004 |
 | 항목2 | implementer | `./gradlew compileJava` | plan.md §`TradeService`에 추가할 조회, ADR-0002(도메인 간 참조는 service 경유), `CommunityPostRepository` `@EntityGraph` 선례 |
+| 항목3 | implementer | `./gradlew compileJava` | plan.md §`JournalService`(1~5단계), `CommunityPostService`/`OrderService`의 `Clock`·`DataIntegrityViolationException` 변환 선례 |
 
 ## 모니터링 (사람용 요약)
 - 항목1 — `V14__create_buy_trade_journals.sql` + `BuyTradeJournal` 엔티티 + `BuyTradeJournalRepository` 추가, compileJava 통과.
 - 항목2 — `TradeService.getOwnedTrade` 추가(404/403), `TradeRepository.findById`에 `@EntityGraph(account, account.user)` 오버라이드로 지연 로딩 우회, compileJava 통과.
+- 항목3 — `JournalService.createBuyJournal`(존재→소유→매수여부→중복 순 검증, saveAndFlush 후 DataIntegrityViolationException→409 변환) + `BuyJournalResponse` 추가, compileJava 통과.
