@@ -259,7 +259,7 @@
   - `docs/specs/007-journal/` `spec.md`·`plan.md`·`tasks.md` — 4차 착수(JOUR-002) 범위·요구사항·비즈니스 규칙·완료 조건·설계·작업 항목 추가, 범위 제외에서 JOUR-002 제거.
   - 검증 — 문서만 바뀌므로 빌드 불필요. `JOURNAL_LOCKED`·"잠금" 언급이 남은 위치를 grep으로 확인해 모순이 없는지 본다.
 
-- [ ] **B1. 마이그레이션 + 엔티티 `updatedAt` 필드·수정 메서드 + 리포지토리 조회 메서드**
+- [x] **B1. 마이그레이션 + 엔티티 `updatedAt` 필드·수정 메서드 + 리포지토리 조회 메서드**
 
   `plan.md` §JOUR-002 §데이터 모델의 3단계 DDL(nullable 추가 → `created_at`으로 백필 → `NOT NULL`로 좁히기)대로 `buy_trade_journals.updated_at`을 추가한다. `BuyTradeJournal`에 `updatedAt` 필드, `of(...)` 내부에서 `updatedAt`도 `now`로 채우는 변경, `updateContent(String content, LocalDateTime updatedAt)` 메서드(setter 아님)를 추가한다. `BuyTradeJournalRepository`에 `findByBuyTradeId`를 추가한다.
   - 착수 시점 `dev`의 마이그레이션 최신 번호를 **먼저 확인**한다 (`ls src/main/resources/db/migration | sort -V | tail`).
