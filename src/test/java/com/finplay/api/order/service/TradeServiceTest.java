@@ -183,7 +183,8 @@ class TradeServiceTest {
 			owner, ownerAccount, stockInstrument(), OrderSide.BUY, OrderType.MARKET, new BigDecimal("3"),
 			"idem-key", "h".repeat(64), NOW);
 		Trade trade = Trade.of(
-			order, ownerAccount, stockInstrument(), OrderSide.BUY, new BigDecimal("100"),
+			order, ownerAccount, stockInstrument(), stockSession(),
+			OrderSide.BUY, new BigDecimal("100"),
 			new BigDecimal("3"), 300L, 1L, null, executedAt, NOW);
 		ReflectionTestUtils.setField(trade, "id", tradeId);
 		return trade;
@@ -192,7 +193,8 @@ class TradeServiceTest {
 	private static Trade buyTrade(Long id, LocalDateTime executedAt) {
 		Order order = order();
 		Trade trade = Trade.of(
-			order, order.getAccount(), stockInstrument(), OrderSide.BUY, new BigDecimal("100"),
+			order, order.getAccount(), stockInstrument(), stockSession(),
+			OrderSide.BUY, new BigDecimal("100"),
 			new BigDecimal("3"), 300L, 1L, null, executedAt, NOW);
 		ReflectionTestUtils.setField(trade, "id", id);
 		return trade;
@@ -201,7 +203,8 @@ class TradeServiceTest {
 	private static Trade sellTrade(Long id, LocalDateTime executedAt, long realizedPnl) {
 		Order order = order();
 		Trade trade = Trade.of(
-			order, order.getAccount(), stockInstrument(), OrderSide.SELL, new BigDecimal("110"),
+			order, order.getAccount(), stockInstrument(), stockSession(),
+			OrderSide.SELL, new BigDecimal("110"),
 			new BigDecimal("3"), 330L, 1L, realizedPnl, executedAt, NOW);
 		ReflectionTestUtils.setField(trade, "id", id);
 		return trade;
@@ -218,6 +221,11 @@ class TradeServiceTest {
 			"idem-key",
 			"h".repeat(64),
 			NOW);
+	}
+
+	private static com.finplay.api.market.domain.StockReplaySession stockSession() {
+		return com.finplay.api.market.domain.StockReplaySession.ready(
+			NOW.toLocalDate(), NOW.toLocalDate(), NOW, NOW);
 	}
 
 	private static com.finplay.api.market.domain.Instrument stockInstrument() {

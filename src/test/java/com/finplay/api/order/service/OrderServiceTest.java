@@ -73,7 +73,9 @@ class OrderServiceTest {
 			NOW);
 		ReflectionTestUtils.setField(existingOrder, "id", 100L);
 		Trade existingTrade = Trade.of(
-			existingOrder, existingOrder.getAccount(), instrument, OrderSide.BUY, new BigDecimal("100"),
+			existingOrder, existingOrder.getAccount(), instrument,
+			com.finplay.api.market.domain.StockReplaySession.ready(NOW.toLocalDate(), NOW.toLocalDate(), NOW, NOW),
+			OrderSide.BUY, new BigDecimal("100"),
 			new BigDecimal("3"), 300L, 1L, null, NOW, NOW);
 		when(orderRepository.findByUserIdAndIdempotencyKey(USER_ID, IDEMPOTENCY_KEY))
 			.thenReturn(Optional.of(existingOrder));
@@ -140,7 +142,9 @@ class OrderServiceTest {
 			NOW);
 		ReflectionTestUtils.setField(existingOrder, "id", 100L);
 		Trade existingTrade = Trade.of(
-			existingOrder, existingOrder.getAccount(), instrument, OrderSide.BUY, new BigDecimal("100"),
+			existingOrder, existingOrder.getAccount(), instrument,
+			com.finplay.api.market.domain.StockReplaySession.ready(NOW.toLocalDate(), NOW.toLocalDate(), NOW, NOW),
+			OrderSide.BUY, new BigDecimal("100"),
 			new BigDecimal("3"), 300L, 1L, null, NOW, NOW);
 		when(orderRepository.findByUserIdAndIdempotencyKey(USER_ID, IDEMPOTENCY_KEY))
 			.thenReturn(Optional.empty(), Optional.of(existingOrder));

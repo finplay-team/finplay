@@ -9,6 +9,7 @@ import com.finplay.api.account.domain.Market;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -31,12 +32,14 @@ class AccountRepositoryTest {
 	private AccountRepository accountRepository;
 
 	private User user;
+	private Account stockAccount;
+	private Account cryptoAccount;
 
 	@BeforeEach
 	void setUp() {
 		user = userRepository.saveAndFlush(User.create("trader@finplay.com", "password-hash", "trader", NOW));
-		accountRepository.saveAndFlush(Account.create(user, Market.STOCK, NOW));
-		accountRepository.saveAndFlush(Account.create(user, Market.CRYPTO, NOW));
+		stockAccount = accountRepository.saveAndFlush(Account.create(user, Market.STOCK, NOW));
+		cryptoAccount = accountRepository.saveAndFlush(Account.create(user, Market.CRYPTO, NOW));
 	}
 
 	@Test
@@ -61,5 +64,21 @@ class AccountRepositoryTest {
 		Optional<Account> result = accountRepository.findByUserIdAndMarket(999_999L, Market.STOCK);
 
 		assertThat(result).isEmpty();
+	}
+
+	@Test
+	void findAllByIdInFetchUserReturnsAccountsWithUserFetchedForRequestedIdsOnly() {
+		User otherUser = userRepository.saveAndFlush(
+			User.create("other@finplay.com", "password-hash", "other", NOW));
+		accountRepository.saveAndFlush(Account.create(otherUser, Market.STOCK, NOW));
+
+		List<Account> result = accountRepository
+			.findAllByIdInFetchUser(List.of(stockAccount.getId(), cryptoAccount.getId()));
+
+		assertThat(result).hasSize(2);
+		assertThat(result)
+			.extracting(Account::getId)
+			.containsExactlyInAnyOrder(stockAccount.getId(), cryptoAccount.getId());
+		assertThat(result).allSatisfy(account -> assertThat(account.getUser().getId()).isEqualTo(user.getId()));
 	}
 }

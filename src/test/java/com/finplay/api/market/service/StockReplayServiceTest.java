@@ -277,14 +277,35 @@ class StockReplayServiceTest {
 		assertThat(dto.isPriceAvailable()).isFalse();
 	}
 
+	@Test
+	void getCurrentPriceReturnsTheReadySessionUsedToComputeThePrice() {
+		StockReplaySession session = readySession(WEEKDAY, WEEKDAY);
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY)).thenReturn(Optional.of(session));
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(9, 0, 30)));
+
+		StockReplayPriceDto dto = service.getCurrentPrice(INSTRUMENT_ID);
+
+		assertThat(dto.replaySession()).isSameAs(session);
+	}
+
+	@Test
+	void getCurrentPriceReturnsNullReplaySessionWhenNoReadySession() {
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY)).thenReturn(Optional.empty());
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(10, 0)));
+
+		StockReplayPriceDto dto = service.getCurrentPrice(INSTRUMENT_ID);
+
+		assertThat(dto.replaySession()).isNull();
+	}
+
 	// --- 배치 현재가(getCurrentPrices, PR #97 리뷰 권장사항) ---
 
 	@Test
 	void getCurrentPricesComputesReadySessionAndMarketStatusOnlyOnceForMultipleInstruments() {
 		Long secondInstrumentId = 2L;
 		Long thirdInstrumentId = 3L;
-		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
-			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		StockReplaySession session = readySession(WEEKDAY, WEEKDAY);
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY)).thenReturn(Optional.of(session));
 		StockCandle closedCandle = candle(LocalTime.of(9, 1), BigDecimal.valueOf(1010), BigDecimal.valueOf(1020));
 		when(stockCandleRepository.findFirstByInstrumentIdAndTradingDateAndCandleTimeLessThanEqualOrderByCandleTimeDesc(
 			any(), eq(WEEKDAY), eq(LocalTime.of(9, 1))))
@@ -299,6 +320,7 @@ class StockReplayServiceTest {
 			assertThat(dto.sessionReady()).isTrue();
 			assertThat(dto.marketStatus()).isEqualTo(StockMarketStatus.OPEN);
 			assertThat(dto.price()).isEqualTo(BigDecimal.valueOf(1020));
+			assertThat(dto.replaySession()).isSameAs(session);
 		});
 		// 종목과 무관한 전역 상태(재생세션 조회)는 종목 수(3개)와 무관하게 요청당 1회만 계산되어야 한다.
 		verify(stockReplaySessionRepository, times(1)).findByServiceDate(WEEKDAY);
@@ -351,6 +373,7 @@ class StockReplayServiceTest {
 			assertThat(dto.sessionReady()).isFalse();
 			assertThat(dto.marketStatus()).isEqualTo(StockMarketStatus.CLOSED);
 			assertThat(dto.price()).isNull();
+			assertThat(dto.replaySession()).isNull();
 		});
 		verifyNoInteractions(stockCandleRepository);
 	}

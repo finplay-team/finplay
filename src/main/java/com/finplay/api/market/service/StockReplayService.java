@@ -64,22 +64,23 @@ public class StockReplayService {
 
 		if (readySession.isEmpty()) {
 			return instrumentIds.stream()
-				.map(instrumentId -> new StockReplayPriceDto(false, marketStatus, null, null, null))
+				.map(instrumentId -> new StockReplayPriceDto(false, marketStatus, null, null, null, null))
 				.toList();
 		}
 
-		LocalDate sourceTradingDate = readySession.get().getSourceTradingDate();
+		StockReplaySession replaySession = readySession.get();
+		LocalDate sourceTradingDate = replaySession.getSourceTradingDate();
 		LocalTime nowTime = now.toLocalTime();
 		boolean isFirstCandleWindow = isWithinFirstCandleWindow(nowTime);
 		return instrumentIds.stream().map(instrumentId -> {
 			Optional<StockCandle> revealedCandle = findRevealedCandle(instrumentId, sourceTradingDate, nowTime);
 			if (revealedCandle.isEmpty()) {
-				return new StockReplayPriceDto(true, marketStatus, sourceTradingDate, null, null);
+				return new StockReplayPriceDto(true, marketStatus, sourceTradingDate, null, null, replaySession);
 			}
 			StockCandle candle = revealedCandle.get();
 			var price = isFirstCandleWindow ? candle.getOpen() : candle.getClose();
 			LocalDateTime sourceTime = LocalDateTime.of(sourceTradingDate, candle.getCandleTime());
-			return new StockReplayPriceDto(true, marketStatus, sourceTradingDate, price, sourceTime);
+			return new StockReplayPriceDto(true, marketStatus, sourceTradingDate, price, sourceTime, replaySession);
 		}).toList();
 	}
 

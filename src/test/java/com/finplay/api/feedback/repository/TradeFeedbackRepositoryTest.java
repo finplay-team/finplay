@@ -13,7 +13,9 @@ import com.finplay.api.feedback.domain.NarrativeSource;
 import com.finplay.api.feedback.domain.TradeFeedback;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.domain.StockReplaySession;
 import com.finplay.api.market.repository.InstrumentRepository;
+import com.finplay.api.market.repository.StockReplaySessionRepository;
 import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.domain.OrderType;
@@ -57,6 +59,9 @@ class TradeFeedbackRepositoryTest {
 	private TradeRepository tradeRepository;
 
 	@Autowired
+	private StockReplaySessionRepository stockReplaySessionRepository;
+
+	@Autowired
 	private JdbcTemplate jdbcTemplate;
 
 	private static final LocalDateTime NOW = LocalDateTime.of(2026, 8, 3, 10, 0, 0);
@@ -67,6 +72,7 @@ class TradeFeedbackRepositoryTest {
 	private Account account;
 	private Instrument instrument;
 	private Trade trade;
+	private StockReplaySession session;
 	private int sequence = 0;
 
 	@BeforeEach
@@ -77,6 +83,8 @@ class TradeFeedbackRepositoryTest {
 		// V7 시드(005930 등)와 겹치지 않는 테스트 전용 심볼을 사용한다 — UNIQUE(symbol) 충돌 방지.
 		instrument = instrumentRepository.saveAndFlush(
 			Instrument.create(Market.STOCK, "FB001", "테스트종목", BigDecimal.valueOf(100), 10_000L, true, NOW));
+		session = stockReplaySessionRepository.saveAndFlush(
+			StockReplaySession.ready(NOW.toLocalDate().plusYears(30), NOW.toLocalDate(), NOW, NOW));
 		trade = createSellTrade();
 	}
 
@@ -96,6 +104,7 @@ class TradeFeedbackRepositoryTest {
 			order,
 			account,
 			instrument,
+			session,
 			OrderSide.SELL,
 			BigDecimal.valueOf(100),
 			BigDecimal.valueOf(10),

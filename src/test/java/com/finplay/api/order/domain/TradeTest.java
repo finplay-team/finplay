@@ -8,6 +8,7 @@ import com.finplay.api.account.domain.Account;
 import com.finplay.api.account.domain.Market;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.market.domain.Instrument;
+import com.finplay.api.market.domain.StockReplaySession;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.Test;
@@ -35,6 +36,41 @@ class TradeTest {
 		assertThat(trade.getRealizedPnl()).isEqualTo(49_900L);
 	}
 
+	@Test
+	void createsStockTradeWithReplaySession() {
+		TradeFixture fixture = fixture(com.finplay.api.market.domain.Market.STOCK);
+		StockReplaySession session = readySession();
+
+		Trade trade = createTrade(fixture, session);
+
+		assertThat(trade.getStockReplaySession()).isSameAs(session);
+	}
+
+	@Test
+	void createsCryptoTradeWithoutReplaySession() {
+		Trade trade = createTrade(fixture(com.finplay.api.market.domain.Market.CRYPTO), null);
+
+		assertThat(trade.getStockReplaySession()).isNull();
+	}
+
+	@Test
+	void rejectsStockTradeWithoutReplaySession() {
+		TradeFixture fixture = fixture(com.finplay.api.market.domain.Market.STOCK);
+
+		assertThatThrownBy(() -> createTrade(fixture, null))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("주식 체결에는 재생세션이 필수입니다.");
+	}
+
+	@Test
+	void rejectsCryptoTradeWithReplaySession() {
+		TradeFixture fixture = fixture(com.finplay.api.market.domain.Market.CRYPTO);
+
+		assertThatThrownBy(() -> createTrade(fixture, readySession()))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("코인 체결에는 재생세션을 지정할 수 없습니다.");
+	}
+
 	private static Trade sellTradeWithNullRealizedPnl() {
 		User user = User.create("trader@finplay.com", "password-hash", "trader", NOW);
 		Account account = Account.create(user, Market.STOCK, NOW);
@@ -45,8 +81,34 @@ class TradeTest {
 			user, account, instrument, OrderSide.SELL, OrderType.MARKET,
 			BigDecimal.valueOf(10), "idem-key", "a".repeat(64), NOW);
 		return Trade.of(
-			order, account, instrument, OrderSide.SELL,
+			order, account, instrument, readySession(), OrderSide.SELL,
 			BigDecimal.valueOf(75000), BigDecimal.valueOf(10),
 			750_000L, 100L, null, NOW, NOW);
+	}
+
+	private static TradeFixture fixture(com.finplay.api.market.domain.Market market) {
+		User user = User.create("fixture@finplay.com", "password-hash", "fixture", NOW);
+		Market accountMarket = Market.valueOf(market.name());
+		Account account = Account.create(user, accountMarket, NOW);
+		Instrument instrument = Instrument.create(
+			market, market == com.finplay.api.market.domain.Market.STOCK ? "STOCK1" : "BTC", "종목",
+			BigDecimal.ONE, 0L, true, NOW);
+		Order order = Order.create(
+			user, account, instrument, OrderSide.BUY, OrderType.MARKET,
+			BigDecimal.ONE, "fixture-idem", "b".repeat(64), NOW);
+		return new TradeFixture(order, account, instrument);
+	}
+
+	private static Trade createTrade(TradeFixture fixture, StockReplaySession session) {
+		return Trade.of(
+			fixture.order(), fixture.account(), fixture.instrument(), session, OrderSide.BUY,
+			BigDecimal.valueOf(100), BigDecimal.ONE, 100L, 0L, null, NOW, NOW);
+	}
+
+	private static StockReplaySession readySession() {
+		return StockReplaySession.ready(NOW.toLocalDate(), NOW.toLocalDate().minusDays(1), NOW, NOW);
+	}
+
+	private record TradeFixture(Order order, Account account, Instrument instrument) {
 	}
 }
