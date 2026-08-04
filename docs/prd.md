@@ -1,8 +1,10 @@
-# 📘 FinPlay 통합 PRD — 1차 MVP Spec
+# 📘 FinPlay 통합 PRD — 1차 MVP + 2차 MVP(1차 고도화)
 
-> 상태: 1차 MVP 구현 기준 확정본
+> 상태: **1차 MVP 구현 완료. 2차 MVP(1차 고도화) 진행 중** (최종 갱신 2026-08-04)
 >
-> 목적: 팀이 Notion에서 확정한 제품 범위를 사람과 AI 구현자가 같은 요구사항으로 읽고, 1차 범위를 넘지 않으며, 테스트 근거를 남기면서 구현하도록 만든 저장소 구현 기준 문서다.
+> 목적: 팀이 Notion에서 확정한 제품 범위를 사람과 AI 구현자가 같은 요구사항으로 읽고, **현재 차수의 범위**를 넘지 않으며, 테스트 근거를 남기면서 구현하도록 만든 저장소 구현 기준 문서다.
+>
+> **이 문서는 1차 MVP 전용이 아니다.** 최초 반입 시점에는 1차 MVP만 담았으나 이후 2차 MVP(1차 고도화) 요구사항이 차수 표시와 함께 계속 추가됐다 — 지정가(LMT-001~004), 알림(NOTI-001~005), 투자일기(JOUR-001~006), 랭킹(RANK-001~002), 캔들 기간 확장(MKT-009), 3단계 투자 실습(`docs/specs/016-investment-education-policy`), AI 피드백(`docs/specs/012-ai-feedback`). **§4·§5·§6의 제목에 남은 "1차"는 그 절이 1차 내용만 담는다는 뜻이 아니다** — 각 요구사항 ID와 절마다 붙은 차수 표시를 기준으로 읽는다. 지금 무엇이 실제로 구현됐는지는 **§3의 "구현 현황"** 표를 정본으로 본다.
 
 > **정본 안내 (2026-07-24 개정)**
 > - 팀이 확정하는 **제품 범위·API 단계·담당자는 [Notion 10 X TEN](https://www.notion.so/10-X-TEN-d3ab1fddfba9833d99f38105b2295b08)이 정본**이다.
@@ -80,6 +82,8 @@
 - 뉴스·공시는 **시간적 동시 발생 서술에만** 사용하고 인과를 단정하지 않는다. 기존 문구는 "외부 시장 정보(뉴스·공시) 미사용"이었으나, 2차 "AI 피드백"의 범위가 "뉴스를 통한 변동 원인 + 수익률 피드백"으로 확정되면서 개정했다 (`docs/specs/012-ai-feedback`). 위 세 줄은 그대로 유지된다 — 변동률·시각·구간 판정은 여전히 서버 몫이고 AI는 서술만 담당한다.
 - 뉴스 기사 본문은 저장하지 않는다. **제목·언론사·원문 URL·발행시각만 저장하고 화면에도 그 범위까지만 노출한다.** 본문은 AI 입력으로만 사용한 뒤 폐기하며, 검색 API가 제공하는 요약 스니펫도 노출하지 않는다 (2026-08-03 확정, C-006과 같은 취지).
 - 근거가 없으면 서술을 만들지 않는다 — 가격 변동에 대응하는 뉴스·공시가 없으면 그 구간은 카드 없이 둔다.
+- **LLM 연동은 Spring AI 추상화 뒤에 둔다 (ADR-0011, 2026-08-03 승인·PR #154 구현 완료).** 서비스 로직은 `NarrativeGenerator`만 알고 어떤 모델·프로바이더인지 모르며, 프로바이더 교체는 `build.gradle` starter 의존성과 `feedback.llm.*` 설정 변경으로 끝난다. 기본 프로바이더는 OpenAI다.
+- **LLM 실패는 기능 실패로 이어지지 않는다.** 키가 없거나 호출이 실패·타임아웃이면 서버가 수치로 조립한 템플릿 문장으로 대체하고, 서술의 출처를 `narrative_source`(LLM·TEMPLATE·NONE)로 구분해 남긴다. **어떤 LLM 실패도 주식 개장·주문·체결을 막지 않는다** — AI 서술은 부가 정보이고 매매 원장은 LLM에 의존하지 않는다.
 
 ### C-005 검증과 완료 주장
 
@@ -118,7 +122,9 @@
 
 ## 2. 제품 개요
 
-FinPlay는 주식과 코인을 가상 자산으로 매매하고, 거래 결과를 확인하며 다른 사용자와 경험을 나누는 교육형 모의투자 플랫폼이다. 1차 MVP의 목표는 회원이 가입해 두 시장의 계좌를 받고, 시세를 보며 시장가로 매매하고, 주문 목록과 실제 체결 결과를 구분해 확인하며, 게시판을 사용할 수 있는 최소 서비스 루프를 완성하는 것이다.
+FinPlay는 주식과 코인을 가상 자산으로 매매하고, 거래 결과를 확인하며 다른 사용자와 경험을 나누는 교육형 모의투자 플랫폼이다. 1차 MVP의 목표는 회원이 가입해 두 시장의 계좌를 받고, 시세를 보며 시장가로 매매하고, 주문 목록과 실제 체결 결과를 구분해 확인하며, 게시판을 사용할 수 있는 최소 서비스 루프를 완성하는 것이었다 — **완료됐다.**
+
+**2차 MVP(1차 고도화)의 목표는 그 루프 위에 "왜 이렇게 됐는지 돌아보게 하는" 층을 얹는 것이다** — 가격이 왜 움직였는지 뉴스로 설명하고(AI 피드백), 매매를 기록·회고하게 하고(투자일기), 다른 회원과 견주게 하고(랭킹), 계획을 먼저 세우고 지키는 경험을 시키는 것(3단계 투자 실습)이다. **재생 방식이라야 성립하는 기능**(모든 회원이 같은 분봉을 보므로 가능한 반사실 시뮬레이션·집단 비교)을 차별점으로 둔다. 진행 상황은 §3 구현 현황을 본다.
 
 ### 핵심 사용자
 
@@ -170,10 +176,44 @@ FinPlay는 주식과 코인을 가상 자산으로 매매하고, 거래 결과�
 
 C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 
-### 2차 MVP — 1차 완료 후 별도 Spec
+### 구현 현황 (2026-08-04 기준)
 
-- 3단계 투자 실습 튜토리얼 (`docs/specs/016-investment-education-policy`)
-  1. 종목 즐겨찾기를 등록하고 본인 목록에서 확인한다. 현재 backend에 즐겨찾기 API가 없으므로 등록·목록·해제 API를 선행 구현한다.
+**이 표가 "무엇이 실제로 동작하는가"의 정본이다.** 아래 요구사항 절들은 차수별 계약 정의이므로 그 절에 요구사항이 적혀 있다는 사실이 구현 완료를 뜻하지 않는다. 실제 엔드포인트 목록은 `docs/api-routes.md`, 요청·응답 계약은 `docs/api-contracts.md`가 정본이다.
+
+| 기능 | 요구사항 ID | 상태 | 근거 |
+|---|---|---|---|
+| 1차 MVP 전체 (인증·계좌·시세·시장가 매매·조회·커뮤니티·배포) | AUTH-001~006, ACCT-001~003, MKT-001~008, ORD-001~006, PORT-001~002, COM-001~003 | **완료** | 1차 태스크 1~10 (`docs/specs/001`~`010`) |
+| 캔들 기간 확장 — 일봉·주봉·월봉 | MKT-009 | **완료** | `013-candle-interval`, PR #151. `interval`은 `1m·1d·1w·1M` 4종 |
+| 주문 목록 `market` 필수·커서 페이지네이션 | PORT-003 | **완료** | `018-order-list-pagination`, PR #184 |
+| AI 피드백 — LLM 서술 생성·후검증·템플릿 폴백 | ADR-0011 | **완료** | PR #154 (`NarrativeGenerator`, Spring AI) |
+| AI 피드백 — 뉴스·공시 수집 | FEED-001 | **완료** | PR #174 |
+| AI 피드백 — 변동 원인 카드 | FEED-002~007 계열 | **완료** | PR #185 (`GET /api/instruments/{id}/price-moves`) |
+| AI 피드백 — 종목 뉴스 요약·개장 전 브리핑 | FEED-008 | **완료** | PR #194 (`GET .../news`, `GET /api/market/briefing`) |
+| AI 피드백 — 매도 직후 피드백 | FEED-009 | **미착수** | `012` plan의 이슈 6 미생성. `/api/ai/post-sell/{tradeId}` 컨트롤러 없음 |
+| AI 피드백 — 반사실 시뮬레이션·집단 비교 | FEED-010·011 | **미착수** | `012` plan의 이슈 7 미생성 |
+| AI 피드백 — 코인 변동 감시 | — | **미착수** | `012` plan의 이슈 8 미생성 |
+| 투자일기 — 매수 회고 작성 | JOUR-001 | **완료** | PR #181 |
+| 투자일기 — 매도 회고 작성 | JOUR-003 | **완료** | PR #189 |
+| 투자일기 — 매도 회고 수정 | JOUR-004 | **완료** | PR #192 |
+| 투자일기 — 매수 회고 수정 | JOUR-002 | **완료** | PR #201 (이슈 #197). 수정 잠금 없음으로 확정 |
+| 투자일기 — 상세·목록 조회 | JOUR-005·006 | **미착수** | 컨트롤러 없음 |
+| 랭킹 — 전체 랭킹 조회 | RANK-001 | **완료** | `014-ranking`, PR #196 (`GET /api/rankings`, Redis ZSET) |
+| 랭킹 — 내 랭킹 조회 | RANK-002 | **미착수** | `GET /api/rankings/me` 없음 |
+| 투자 실습 — 즐겨찾기 등록·목록·해제 | EDU-PRACTICE-002 | **완료** | PR #165·#171·#173. **ADR-0012로 인메모리 저장** |
+| 투자 실습 — 매수 전 사전 의도 기록 | EDU-PRACTICE-003 일부 | **완료** | PR #176. **ADR-0012로 인메모리 저장** |
+| 투자 실습 — 튜토리얼 전용 합성 시세 | — | **완료** | PR #195 (`GET /api/education/practice/synthetic-prices/{id}`) |
+| 투자 실습 — 주식 체결 재생 세션 FK (OCO 선행) | — | **완료** | PR #191 (`trades.stock_replay_session_id`, V20) |
+| 투자 실습 — OCO exit plan 생성·목록·취소·트리거 | EDU-PRACTICE-005·006·010·013 | **미착수** | 계약만 확정(`016`·`019`). 공통 예약 원장·`/api/exit-plans` 없음 |
+| 투자 실습 — 진행 조회·가격 관찰·복기 | EDU-PRACTICE-001·007·011·012 | **미착수** | 컨트롤러 없음 (`practice_progresses` 테이블만 존재) |
+| OCO 손절·익절 가격·퍼센트 입력 정책 | — | **문서 확정** | `019-exit-price-policy`, PR #200. production 미착수 |
+| 지정가 주문·상시 체결 | LMT-001~004 | **미착수** | `OrderType` enum은 `MARKET`만. spec 폴더 미생성 |
+| 지정가 체결 알림 | NOTI-001~005 | **미착수** | `notification` 패키지·테이블 없음. spec 폴더 미생성 |
+| 동시성 제어·부하테스트 | — | **미착수** | Kafka·분산락 의존성 없음 |
+
+### 2차 MVP — 남은 범위와 계약 정의
+
+- 3단계 투자 실습 튜토리얼 (`docs/specs/016-investment-education-policy`) — **일부 완료** (즐겨찾기·사전 의도·합성 시세·체결 세션 FK 완료 / OCO·진행 조회·관찰·복기 미착수, §3 구현 현황 참고)
+  1. 종목 즐겨찾기를 등록하고 본인 목록에서 확인한다. 등록·목록·해제 API를 선행 구현한다 — **구현 완료**(PR #165·#171·#173). **ADR-0012에 따라 즐겨찾기는 DB 테이블이 아니라 서버 힙 메모리에 저장한다**(`favorites` 테이블은 V19에서 DROP). 재시작 시 유실되며 API 계약은 바뀌지 않는다.
   2. 절대 가격 또는 실제 시장가 매수 체결가 대비 퍼센트로 손절·익절 기준과 수량을 먼저 기록한 뒤 기존 `POST /api/orders` 시장가 매수로 즉시 체결하고, 같은 보유 수량에 손절·익절을 묶은 OCO exit plan 하나를 예약해 목록에서 확인한다. 퍼센트는 OCO 생성 시 절대 가격선으로 snapshot하며 시장가 진입은 예약 주문이 아니다.
   3. 서버 유효 현재가를 관찰하고 "지금 팔고 싶나요?" 취지의 정답 없는 자유 복기를 저장한다. 복기는 baseline보다 경계에 가까워진 관찰 1회, 최소 2분 범위의 서버 관찰 3회, 익절·손절·주식 만료의 서버 final observation 중 하나가 있으면 허용한다.
   - 클라이언트 관찰 API는 본인 `PENDING` OCO plan에서만 A·B 관찰을 추가할 수 있다. terminal plan은 409이며, 체결·주식 만료의 `FINAL_EVENT`는 서버 종결 트랜잭션만 기록한다. terminal 이후에도 이미 충족한 A·B·C 증거로 복기를 저장할 수 있다.
@@ -184,18 +224,19 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
   - 주식 OCO 생성·트리거·취소·만료의 잠금 순서는 replay session → holding → plan으로 고정한다. 중복·역순 가격 이벤트는 최초 커밋만 종결하고 후속 이벤트는 skip한다. 기존 시장가 SELL과 일반 지정가 SELL도 공통 예약 원장의 `availableQuantity = totalQuantity - reservedQuantity`만 매도할 수 있다.
   - OCO endpoint 활성화 전 nullable `trades.stock_replay_session_id` FK와 주식 체결 session 기록, 공통 reservation ledger, 기존 `POST /api/orders` MARKET SELL의 `availableQuantity` 검증을 먼저 배포하거나 OCO와 같은 atomic release로 배포한다. 일반 LIMIT SELL도 공통 ledger 없이 활성화하지 않는다.
   - 전체 완료는 복기 저장 트랜잭션의 불변 완료 기록으로 유지한다. 완료 전에는 실제 evidence가 사라지면 재진행이 필요할 수 있지만 완료 뒤 favorite 삭제나 plan 종결로 회귀하지 않는다.
-  - 최초 intention 생성에서 사용자·튜토리얼 공통 `practice_progresses` 행을 atomic insert-or-existing으로 한 번 확보한다. 복기 저장은 이 progress를 가장 먼저 잠그고 `progress → favorite → intention → exit plan` 순서로 검증한다. favorite는 복기 완료 커밋까지 잠가 동시 삭제와 직렬화한다. 서로 다른 eligible plan의 동시 요청도 최초 요청만 reflection·completion 각 1행과 progress 완료를 만들고 201을 반환하며 나머지는 답변을 추가 저장하지 않고 409 `PRACTICE_ALREADY_COMPLETED`다. progress·completion의 사용자·튜토리얼 unique와 reflection의 사용자·plan unique를 최종 방어선으로 둔다.
+  - 최초 intention 생성에서 사용자·튜토리얼 공통 `practice_progresses` 행을 atomic insert-or-existing으로 한 번 확보한다. **`practice_progresses`는 완료 여부를 담는 영구 기록이라 ADR-0012에서도 DB 테이블로 유지한다** — 인메모리로 옮긴 것은 즐겨찾기와 사전 의도(`practice_intentions`, V19에서 DROP)뿐이다. 복기 저장은 이 progress를 가장 먼저 잠그고 `progress → favorite → intention → exit plan` 순서로 검증한다. **favorite·intention은 DB 행이 아니므로 그 잠금은 `SELECT ... FOR UPDATE`가 아니라 사용자 단위 in-process 잠금이다**(ADR-0012). favorite는 복기 완료 커밋까지 잠가 동시 삭제와 직렬화한다. 서로 다른 eligible plan의 동시 요청도 최초 요청만 reflection·completion 각 1행과 progress 완료를 만들고 201을 반환하며 나머지는 답변을 추가 저장하지 않고 409 `PRACTICE_ALREADY_COMPLETED`다. progress·completion의 사용자·튜토리얼 unique와 reflection의 사용자·plan unique를 최종 방어선으로 둔다.
   - 튜토리얼 완료는 실제 도메인 API 성공·소유권·필드·시각 순서를 서버가 연결해 판정한다. 클라이언트 완료 주장은 받지 않는다. 배지·금전성 보상·LLM·투자 지식 객관식 퀴즈는 이 단계에 포함하지 않는다.
-- 동시성 제어
-- 부하테스트
-- AI 피드백 — 뉴스 기반 변동 원인 카드, 매도 직후 피드백, 종목 뉴스 요약, 개장 전 브리핑 (`docs/specs/012-ai-feedback`). 뉴스·공시 사용은 C-004 개정으로 허용된다. **종목 뉴스 요약은 3차 → 2차로 앞당겼다** — 변동 원인 카드가 수집 파이프라인을 이미 만들어 3차까지 미루면 같은 코드를 두 번 건드리게 된다
+- 동시성 제어 — **미착수**
+- 부하테스트 — **미착수**
+- AI 피드백 — 뉴스 기반 변동 원인 카드, 매도 직후 피드백, 종목 뉴스 요약, 개장 전 브리핑 (`docs/specs/012-ai-feedback`) — **일부 완료** (수집·변동 원인 카드·뉴스 요약·개장 전 브리핑 완료 / 매도 직후 피드백·반사실·집단 비교·코인 변동 감시 미착수). 뉴스·공시 사용은 C-004 개정으로 허용된다. **종목 뉴스 요약은 3차 → 2차로 앞당겼다** — 변동 원인 카드가 수집 파이프라인을 이미 만들어 3차까지 미루면 같은 코드를 두 번 건드리게 된다
+  - **LLM 연동은 Spring AI 추상화를 거친다 (ADR-0011, 구현 완료 PR #154)** — 서비스 로직은 `NarrativeGenerator`만 알고 어떤 모델·프로바이더인지 모른다. 기본 프로바이더는 OpenAI(팀 크레딧)이고 Spring AI는 2.0.0 이상을 쓴다(1.x는 Boot 3.x 전용). **키가 없거나 호출이 실패·타임아웃이면 서버가 수치로 조립한 템플릿 문장으로 대체하며, 어떤 LLM 실패도 주식 개장·주문·체결을 막지 않는다.**
   - **반사실 시뮬레이션과 집단 비교를 2차 범위에 추가한다 (2026-08-04)** — 매도 회고에 "다른 시점에 팔았다면"의 수익률 3종과 "같은 구간을 겪은 다른 회원의 행동 분포"를 붙인다(FEED-010·011). 둘 다 **재생 방식이라야 성립하는 기능**이라 차별점이 되고, 매도 회고 응답에 필드를 더하는 형태여서 새 엔드포인트가 생기지 않는다. 집단 비교는 집계 테이블 1개(`price_move_peer_stats`)를 추가한다
   - **매도 회고 계열(매도 직후 피드백·반사실·집단 비교)은 2차에서 주식 전용이다 (2026-08-04)** — 장 마감·종가·확정 집계 시점이 전부 재생 시간축에 묶여 있어 24시간 거래인 코인에는 대응 개념이 없다. 코인 매도 회고는 3차로 미룬다
-- 실시간 실현손익 랭킹 — "실시간"은 체결 즉시 score 반영을 뜻하며 클라이언트 push를 뜻하지 않음 (RANK-001~002, 시장별(STOCK/CRYPTO) 분리 집계, Redis ZSET으로 순위 관리, REST 조회 — SSE push는 검토 후 제외, 2026-08-03) (`docs/specs/014-ranking`)
-- 지정가 체결 알림 — 지정가 매수·매도 체결 시에만 발생(시장가는 즉시 응답으로 확인되므로 제외), SSE 실시간 push 포함 (NOTI-001~005, 2026-08-04, 이슈 #140)
-- 지정가 주문과 상시 체결 (LMT-001~004, 2026-08-03 이벤트 드리븐 상시 처리로 재변경 — 배치 아님)
-- 매수·매도 회고 작성·수정·상세·목록 (JOUR-001~006, 2026-07-28 Notion 확인 — 작성도 2차로 이동)
-- 캔들 조회 기간 확장 — 일봉/주봉/월봉 (MKT-009)
+- 실시간 실현손익 랭킹 — "실시간"은 체결 즉시 score 반영을 뜻하며 클라이언트 push를 뜻하지 않음 (RANK-001~002, 시장별(STOCK/CRYPTO) 분리 집계, Redis ZSET으로 순위 관리, REST 조회 — SSE push는 검토 후 제외, 2026-08-03) (`docs/specs/014-ranking`) — **일부 완료**: RANK-001 전체 랭킹 완료(PR #196), RANK-002 내 랭킹 미착수
+- 지정가 체결 알림 — 지정가 매수·매도 체결 시에만 발생(시장가는 즉시 응답으로 확인되므로 제외), SSE 실시간 push 포함 (NOTI-001~005, 2026-08-04, 이슈 #140) — **미착수** (지정가 체결 트리거 LMT-002가 선행)
+- 지정가 주문과 상시 체결 (LMT-001~004, 2026-08-03 이벤트 드리븐 상시 처리로 재변경 — 배치 아님) — **미착수**
+- 매수·매도 회고 작성·수정·상세·목록 (JOUR-001~006, 2026-07-28 Notion 확인 — 작성도 2차로 이동) — **일부 완료**: JOUR-001 매수 작성(PR #181)·JOUR-003 매도 작성(PR #189)·JOUR-004 매도 수정(PR #192)·JOUR-002 매수 수정(PR #201) 완료, JOUR-005 상세·JOUR-006 목록 미착수
+- 캔들 조회 기간 확장 — 일봉/주봉/월봉 (MKT-009) — **완료** (`docs/specs/013-candle-interval`, PR #151)
 
 ### 3차 MVP — 2차 완료 후 별도 Spec
 
@@ -205,23 +246,30 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 
 ### 1차 명시적 제외 범위
 
-- 지정가·예약·부분 체결·슬리피지
-- 실시간 랭킹
-- AI 피드백·AI 챗봇·그래프 DB
-- 알림
+> **이 목록은 1차 MVP 당시의 범위 결정 기록이다 — "지금도 없다"는 뜻이 아니다.** 아래 항목 중 실시간 랭킹·AI 피드백·튜토리얼·뉴스 요약·투자일기는 2차 MVP에서 일부 또는 전부 구현됐다(§3 구현 현황 참고). 반면 **관리자 기능, 수익 인증·좋아요·신고·대댓글, 회원 탈퇴·프로필 이미지·파일 업로드, 소셜 계정 연결, 알림, 지정가, 분산락·Kafka·부하테스트는 2026-08-04 현재도 구현되지 않았다.**
+
+- 지정가·예약·부분 체결·슬리피지 (2차 LMT-001~004로 정의됨, 미착수)
+- 실시간 랭킹 (→ 2차 RANK-001 구현 완료)
+- AI 피드백·AI 챗봇·그래프 DB (→ 2차 AI 피드백 일부 구현 완료. AI 챗봇·그래프 DB는 여전히 범위 밖)
+- 알림 (2차 NOTI-001~005로 정의됨, 미착수)
 - 수익 인증 게시물·좋아요·신고·대댓글
 - 관리자 기능
-- 튜토리얼과 보상
-- 뉴스 검색·요약
+- 튜토리얼과 보상 (→ 2차 3단계 투자 실습 일부 구현 완료. **보상·배지는 2차에서도 제외** — C-004)
+- 뉴스 검색·요약 (→ 2차 FEED-001·008 구현 완료)
 - 분산락·Kafka 업무 이벤트·부하테스트
 - 회원 탈퇴·프로필 이미지·파일 업로드
 - 소셜 계정 연결 (기존 회원에 카카오·네이버를 명시적으로 추가 연결하는 기능)
 - 만료된 이메일 인증 데이터 정리 배치
-- 투자일기 작성·수정·목록·상세, 매도 회고, AI 복기
+- 투자일기 작성·수정·목록·상세, 매도 회고, AI 복기 (→ 2차 JOUR-001·002·003·004 구현 완료. JOUR-005 상세·JOUR-006 목록과 AI 복기는 미착수)
 
 ---
 
-## 4. 1차 기능 요구사항과 수용 기준
+## 4. 기능 요구사항과 수용 기준
+
+> 이 절은 1차 MVP 요구사항으로 시작해 2차 MVP 요구사항이 차수 표시와 함께 추가됐다. **각 요구사항 ID의 차수는 그 절의 머리말과 제목의 "(2차 MVP)" 표기로 판정한다** — 표기가 없는 것이 1차다. 2차 요구사항 중 실제 구현된 것과 미착수인 것은 §3 구현 현황 표를 본다.
+>
+> - 1차: AUTH-001~006, ACCT-001~003, MKT-001~008, ORD-001~006, PORT-001~002, COM-001~003
+> - 2차: MKT-009, PORT-003, LMT-001~004, NOTI-001~005, JOUR-001~006, RANK-001~002 (3단계 투자 실습 EDU-PRACTICE-*와 AI 피드백 FEED-*는 이 문서에 요구사항 절을 두지 않고 각각 `docs/specs/016-investment-education-policy`·`docs/specs/012-ai-feedback`이 정본이다)
 
 ### 인증과 회원
 
@@ -487,7 +535,8 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 - **주식**: 정본인 1분봉(`stock_candles`, MKT-002)을 거래일·주·월 단위로 집계해 제공한다. 신규 저장 테이블을 두지 않는다.
 - **코인**: 빗썸 공개 캔들 REST의 일/주/월봉 엔드포인트(`/v1/candles/days`·`/weeks`·`/months`)에 위임한다 — 기존 1분봉(MKT-008)과 동일하게 저장 없이 요청 시점에 조회해 중계한다.
 - 응답은 기존 `CandleResponse`(시가·고가·저가·종가·거래량) 필드 구조를 그대로 유지한다. 집계 경계(주·월의 시작 기준), 미마감 봉 처리, 오류 코드 등 세부 계약은 착수 시 spec에서 확정한다.
-- 범위: 2차 MVP(1차 고도화). 1차 MVP API 계약(`interval=1m`)에는 포함하지 않는다.
+- 범위: 2차 MVP(1차 고도화). 1차 MVP API 계약(`interval=1m`)에는 포함하지 않았다.
+- **구현 완료 (2026-08-04, `docs/specs/013-candle-interval`, PR #151)** — `interval`은 현재 `1m·1d·1w·1M` 4종을 받는다. 미지원 값은 400 `VALIDATION_ERROR`다. 주식은 `stock_candles` 1분봉을 일·주(월요일 시작)·월(1일 시작) 버킷으로 집계하고, 코인은 빗썸 `days`·`weeks`·`months` 엔드포인트에 위임한다. 아래 §5의 "1차 API 계약은 `interval=1m`만 포함한다"는 서술은 1차 시점 기준이며 현재 계약이 아니다 — 실제 계약은 `docs/api-contracts.md`가 정본이다.
 
 ### 시장가 주문·체결
 
@@ -577,7 +626,7 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 
 **계좌·보유 조회 계약 영향(Decision Gate)**: 예약(에스크로)이 도입되면 `cashBalance`(ACCT-002, 계좌 원장 값 그대로)와 실제 "주문 가능 금액"이 갈라지고, 보유수량(PORT-001)도 "총 보유"와 "주문 가능 수량"이 갈라진다. `AccountSummaryResponse`·`HoldingListItemResponse`에 예약분을 노출할지, 어떤 필드명으로 할지는 착수 시 확정한다 — 이번 범위는 지정가 자체의 요구사항만 다루고 기존 응답 필드 추가는 포함하지 않는다.
 
-상세 계약(요청·응답 필드, 전체 오류 코드)은 2차 착수 시 `docs/specs/015-limit-order/spec.md`에서 확정한다.
+상세 계약(요청·응답 필드, 전체 오류 코드)은 2차 착수 시 `docs/specs/015-limit-order/spec.md`에서 확정한다. **이 폴더는 아직 만들지 않았다**(2026-08-04 현재 `015`는 비어 있으며 지정가용으로 예약된 상태다). 현재 `OrderType` enum에는 `MARKET`만 있어 지정가 경로는 코드에 존재하지 않는다.
 
 ### 알림
 
@@ -616,9 +665,9 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 - `DELETE /api/notifications/{id}`로 알림 하나를 삭제한다.
 - 다른 회원의 알림은 삭제할 수 없다.
 
-**Decision Gate**: SSE 연결·인증 스코프·재연결 처리, 알림 페이로드·응답 필드, 알림 저장 스키마, 전체 오류 코드, `docs/api-routes.md`·`docs/api-contracts.md` 갱신은 착수 시 `docs/specs/013-notification`에서 확정한다.
+**Decision Gate**: SSE 연결·인증 스코프·재연결 처리, 알림 페이로드·응답 필드, 알림 저장 스키마, 전체 오류 코드, `docs/api-routes.md`·`docs/api-contracts.md` 갱신은 착수 시 알림 spec에서 확정한다.
 
-상세 계약은 2차 착수 시 `docs/specs/013-notification/spec.md`에서 확정한다.
+상세 계약은 2차 착수 시 알림 spec에서 확정한다. **알림 spec 폴더는 아직 만들지 않았고 번호도 배정되지 않았다** — 이전 서술이 가리킨 `docs/specs/013-notification`은 존재하지 않으며 `013`은 캔들 기간 확장(`013-candle-interval`)이 이미 점유하고 있다(2026-08-04 정정). 착수 시점에 비어 있는 번호(현재 `015`는 지정가용으로 참조 중이므로 `017` 이상)를 실제 폴더 목록으로 재확인해 배정한다 — 번호를 미리 지어내지 않는다.
 
 ### 보유자산과 거래내역
 
@@ -749,9 +798,11 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 
 ---
 
-## 5. 1차 API 계약
+## 5. API 계약 (1차 MVP 기준 목록)
 
 Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conventions.md`). 아래 목록은 클라이언트가 호출하는 **실제 외부 경로를 그대로** 적는다 — 문서마다 `/auth/...`와 `/api/auth/...`가 섞이지 않게 한다.
+
+> **이 목록은 1차 MVP 시점의 경로 집합이며 현재 제공 중인 전체 경로가 아니다.** 2차에서 추가·구현된 경로(`GET /api/rankings`, `GET /api/instruments/{id}/price-moves`, `GET /api/instruments/{id}/news`, `GET /api/market/briefing`, `POST /api/trades/{id}/journal`, `POST·PATCH /api/trades/{id}/sell-journal`, `GET·POST·DELETE /api/favorites`, `POST /api/education/practice/intentions`, `GET /api/education/practice/synthetic-prices/{id}`)는 여기 반영하지 않는다. **실제 라우트 전수는 `docs/api-routes.md`, 요청·응답·오류 계약은 `docs/api-contracts.md`가 정본이다** — 이 두 문서는 controller 변경과 같은 커밋에서 갱신된다(CLAUDE.md 규칙 7). 아래 목록은 1차 완료 범위를 확인하는 용도로만 유지한다.
 
 ### 인증
 
@@ -820,11 +871,16 @@ Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conven
 | 400 | VALIDATION_ERROR | 형식·수량·최소금액 오류 |
 | 400 | EMAIL_VERIFICATION_FAILED | 인증번호 불일치·만료·미발급 |
 | 400 | OAUTH_EMAIL_REQUIRED | 제공자가 이메일을 제공하지 않음 |
+| 400 | OAUTH_AUTHORIZATION_FAILED | OAuth 인가 코드·state 검증 실패 |
 | 401 | UNAUTHORIZED | 인증 없음·만료 |
 | 403 | FORBIDDEN | 소유권·권한 없음 |
 | 403 | REAUTHENTICATION_FAILED | 현재 비밀번호 또는 연결된 OAuth 제공자 재인증 실패 |
 | 404 | NOT_FOUND | 대상 없음 |
+| 404 | FAVORITE_NOT_FOUND | 즐겨찾기 없음 (타인 소유도 존재를 숨겨 404 — 2차) |
 | 409 | DUPLICATE_RESOURCE | 이메일·닉네임·소셜계정 중복, 인증 요청 시 기존 회원 |
+| 409 | INSTRUMENT_NOT_TRADABLE | 거래 불가 종목의 즐겨찾기 등록 (2차) |
+| 409 | PRACTICE_STEP_LOCKED | 투자 실습 선행 단계 미충족 — favorite 부재·종목 불일치 (2차) |
+| 409 | PRACTICE_ALREADY_COMPLETED | 투자 실습을 이미 완료함 (2차) |
 | 409 | EMAIL_VERIFICATION_REQUIRED | 가입 토큰 없음·만료·사용됨·이메일 불일치 |
 | 409 | ACCOUNT_LINK_REQUIRED | 같은 이메일의 일반 회원 존재 — 소셜 자동 연결 불가 |
 | 409 | SOCIAL_ACCOUNT_ONLY | 비밀번호가 없는 소셜 로그인 전용 계정 — 비밀번호 재설정 불가 (AUTH-006) |
@@ -833,11 +889,13 @@ Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conven
 | 409 | MARKET_CLOSED | 주식 장 종료 |
 | 409 | PRICE_UNAVAILABLE | 최신 시세 없음 |
 | 409 | IDEMPOTENCY_CONFLICT | 같은 키의 다른 요청 |
-| 422 | UNSUPPORTED_ORDER_TYPE | 1차에서 지원하지 않는 지정가 |
+| 422 | UNSUPPORTED_ORDER_TYPE | `POST /api/orders`(시장가 전용)에 `orderType="LIMIT"` 요청. **2차에 지정가가 추가돼도 이 거부는 유지된다** — 지정가는 `POST /api/orders/limit` 별도 경로다 (LMT-001) |
 | 429 | TOO_MANY_REQUESTS | 인증번호 발송·입력 시도 제한 초과 |
 | 500 | INTERNAL_ERROR | 서버 내부 오류 |
 | 502 | OAUTH_PROVIDER_ERROR | OAuth 공급자 장애·타임아웃·비정상 응답 |
 | 502 | MARKET_DATA_PROVIDER_ERROR | 외부 시세 공급자 조회 실패 (빗썸 캔들 REST 장애·타임아웃·파싱 불가 — MKT-008) |
+
+위 표는 **2026-08-04 기준 `com.finplay.api.common.ErrorCode` enum 전체(26개)와 1:1로 일치한다.** 코드가 정본이며, 새 오류 코드를 추가하면 이 표도 같은 커밋에서 갱신한다. 엔드포인트별로 어떤 코드가 나오는지는 `docs/api-contracts.md`가 정본이다.
 
 오류 형식:
 
@@ -847,22 +905,22 @@ Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conven
 
 ---
 
-## 6. 1차 데이터 모델
+## 6. 데이터 모델
 
-### 핵심 테이블
+### 1차 MVP 핵심 테이블
 
 - `users`: 이메일, 비밀번호 해시, 닉네임, 역할, 상태
 - `social_accounts`: 제공자, 제공자 회원ID, 연결 회원
 - `refresh_tokens`: 토큰 해시, 만료시각, 폐기시각, 회원
 - `email_verifications`: 이메일, 인증번호 해시, 시도횟수, 만료시각, 최근발송시각, 확인시각, 가입토큰 해시, 토큰 만료시각, 토큰 소비시각, 생성시각 (가입 전 단계 — 회원 행과 무관)
-- `reauthentications`: 회원, 인증 방식, OAuth 제공자, 재인증 토큰 해시, 만료시각, 소비시각, 생성시각
+- `reauth_tokens`: 회원, 인증 방식, OAuth 제공자, 재인증 토큰 해시, 만료시각, 소비시각, 생성시각 (V5 — 이전 서술의 `reauthentications`는 실제 테이블명이 아니었다, 2026-08-04 정정)
 - `email_change_verifications`: 회원, 기존 이메일, 새 이메일, 인증번호 해시, 시도횟수, 만료시각, 최근발송시각, 확인시각, 생성시각
 - `password_reset_verifications`: 이메일, 인증번호 해시, 시도횟수, 만료시각, 최근발송시각, 소비시각, 생성시각 (비로그인 단계 — `user_id` 외래키를 두지 않는다. 미가입 이메일 요청도 발송 제한 집계용 행을 남기기 때문이며, 인증번호 해시·만료시각·최근발송시각이 모두 비어 있는 행이 발송하지 않고 거부된 요청이다)
 - `accounts`: 회원·시장별 현금, 시드머니, 실현손익
 - `instruments`: 시장, 심볼, 이름, 호가단위, 최소주문금액, 거래가능
 - `stock_candles`: 종목, 거래일, 분봉시각, 시가·고가·저가·종가·거래량, 데이터출처, 수집시각 (최근 20영업일만 보관, `UNIQUE(instrument_id, trading_date, candle_time)`)
 - `stock_replay_sessions`: 서비스 날짜, 원본 거래일, 준비상태(`preparation_status`: PREPARING·READY·FAILED — OPEN·CLOSED는 저장하지 않고 Clock으로 계산), 결과 결정시각(`resolved_at`), 실패사유 (`UNIQUE(service_date)`)
-- `market_data_imports`: 데이터출처, 원본 거래일, 수집시각, 상태(SUCCESS·PARTIAL_SUCCESS·FAILED·SKIPPED_DUPLICATE), 실패사유, 파일 중복식별값
+- `market_data_imports`: 데이터출처, 원본 거래일, 수집시각, 상태(SUCCESS·PARTIAL_SUCCESS·FAILED·SKIPPED_DUPLICATE), 실패사유 (V11. **"파일 중복식별값" 컬럼은 실제로 만들지 않았다** — MKT-005의 동일 거래일 재수집 판정을 후속 이슈로 미루면서 함께 빠졌고, 기본 멱등성은 `UNIQUE(instrument_id, trading_date, candle_time)`이 담당한다, 2026-08-04 정정)
 - `orders`: 멱등키, 계좌, 종목, 구분, 유형, 수량, 체결상태
 - `trades`: 불변 체결 원장, 가격, 수량, 금액, 수수료, 실현손익, nullable `stock_replay_session_id` FK (주식 fill은 당시 current session, 코인은 null — 2차 tutorial-only OCO 선행 변경)
 - `holdings`: 계좌·종목별 현재 보유수량과 평균단가
@@ -877,7 +935,7 @@ Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conven
 - `UNIQUE(users.nickname)`
 - `UNIQUE(social_accounts.provider, provider_user_id)`
 - `UNIQUE(email_verifications.token_hash)` + `INDEX(email_verifications.email, created_at)` (발송 제한 기간 집계용)
-- `UNIQUE(reauthentications.token_hash)`
+- `UNIQUE(reauth_tokens.token_hash)`
 - `INDEX(email_change_verifications.user_id, new_email, created_at)` (유효 요청과 발송 제한 조회용)
 - `INDEX(password_reset_verifications.email, created_at)` (발송 제한 기간 집계용 — 거부된 요청 행도 함께 센다)
 - `UNIQUE(accounts.user_id, accounts.market)`
@@ -886,12 +944,42 @@ Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conven
 - `UNIQUE(holdings.account_id, holdings.instrument_id)`
 - `UNIQUE(stock_candles.instrument_id, stock_candles.trading_date, stock_candles.candle_time)`
 - `UNIQUE(stock_replay_sessions.service_date)`
+- `UNIQUE(trades.order_id)`, `UNIQUE(holding_lots.buy_trade_id)` (1차 주문은 즉시 전량 체결이라 주문 1건에 체결 1건, 매수 체결 1건에 lot 1건)
 - 체결·lot·배분은 외래키로 주문·계좌·종목·회원 소유권을 추적한다.
+
+### 2차 MVP에서 추가된 테이블 (2026-08-04 기준 실제 마이그레이션)
+
+Flyway 마이그레이션은 V1~V20까지 적용돼 있다. 아래는 2차에서 추가·변경된 것만 적는다 — 정본은 `src/main/resources/db/migration/`이며 스키마 변경은 항상 새 번호 마이그레이션으로만 한다(ADR-0004).
+
+**AI 피드백 (V13, `docs/specs/012-ai-feedback`)**
+
+- `market_news_items`: 종목, 제목, 언론사, 원문 URL, 발행시각 — **본문은 저장하지 않는다**(C-004). `UNIQUE(instrument_id, url)` (한 기사가 두 종목에 붙을 수 있어 URL 단독 unique가 아니다)
+- `price_move_events`: 종목, 원본 거래일, 이벤트 유형, 변동 구간, 서술 — `UNIQUE(instrument_id, origin_trade_date, event_type, window_start)`
+- `price_move_event_sources`: 변동 이벤트 ↔ 기사 N:M — `UNIQUE(price_move_event_id, market_news_item_id)`
+- `instrument_news_summaries`: 종목·거래일·요약 범위(`PRE_MARKET`·`FULL`·`ROLLING_24H`) — `UNIQUE(instrument_id, origin_trade_date, scope)`
+- `market_briefings`: 시장·원본 거래일 개장 전 브리핑 — `UNIQUE(market, origin_trade_date)`
+- `price_move_peer_stats`: 카드별 집단 행동 집계 (**회원 식별자 없이 집계만**) — `UNIQUE(price_move_event_id, service_date)`
+- `trade_feedbacks`: 매도 직후 AI 서술 — `UNIQUE(trade_id)`. **테이블은 있으나 조회 엔드포인트(FEED-009)는 미착수다**
+
+**투자일기 (V15·V17·V18, `docs/specs/007-journal`)**
+
+- `buy_trade_journals`: 매수 체결별 회고 1건 + `updated_at`(V21) — `UNIQUE(buy_trade_id)` (JOUR-001·002)
+- `sell_trade_journals`: 매도 체결별 회고 1건 + `updated_at`(V18) — `UNIQUE(sell_trade_id)` (JOUR-003·004)
+
+**투자 실습 (V16·V19, `docs/specs/016-investment-education-policy` + ADR-0012)**
+
+- `practice_progresses`: 회원·튜토리얼별 진행 상태 — `UNIQUE(user_id, tutorial_key)`. **완료 여부는 영구 기록이라 DB에 유지한다**
+- ~~`favorites`(V14)~~·~~`practice_intentions`(V16)~~ → **V19에서 DROP.** ADR-0012에 따라 서버 힙 메모리(`ConcurrentHashMap`) 저장으로 전환했다. 재시작·다중 인스턴스 시 유실을 감수하며 API 계약은 바뀌지 않는다. `favoriteId`·`intentionId`는 프로세스 기동마다 1부터 재채번된다
+
+**주문 원장 (V20)**
+
+- `trades.stock_replay_session_id`: nullable FK 추가 — 주식 체결은 당시 current replay session, 코인은 null. **STOCK ⇒ non-null 불변식은 신규 행에만 성립한다**(기존 행은 백필하지 않았다). 2차 tutorial-only OCO의 선행 변경 (PR #191)
 
 ### Redis 키 책임
 
-- 코인 실시간 시세만 대상이다 — 주식 1분봉은 MySQL(`stock_candles`)이 정본이다.
-- 최신 시세, 시세 수신시각, 연결상태만 저장한다. **코인 1분봉(MKT-008)은 요청 시점에 빗썸에서 조회해 중계하므로 Redis에도 MySQL에도 저장하지 않는다** — 캔들 캐시 키를 추가하지 않는다.
+- **코인 실시간 시세와 랭킹 순위 두 가지가 대상이다.** 주식 1분봉은 MySQL(`stock_candles`)이 정본이다.
+- 코인 시세(`price:crypto:<symbol>` Hash, `feed:crypto:status` String): 최신 시세, 시세 수신시각, 연결상태만 저장한다. **코인 1분봉(MKT-008)은 요청 시점에 빗썸에서 조회해 중계하므로 Redis에도 MySQL에도 저장하지 않는다** — 캔들 캐시 키를 추가하지 않는다.
+- 랭킹(`ranking:<market>` ZSET, RANK-001·2026-08-04 추가): 시장별 실현손익 순위. **정본은 MySQL `accounts.realized_pnl`이고 ZSET은 조회 성능용 파생 데이터다** — 유실 시 MySQL 원장으로 재구성한다. 매도 체결 커밋 이후(after-commit)에만 갱신한다.
 - 회원·잔고·체결·보유·게시물 원장은 Redis에 저장하지 않는다.
 - Redis 유실 시 MySQL 원장은 보존되며, 새 시세 수신 전 주문은 차단한다.
 
@@ -901,30 +989,50 @@ Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conven
 
 ### 기술 스택
 
-- Java 17
+> **2026-08-04 기준 `build.gradle` 실측값이다.** 이전 목록은 실제 의존성과 어긋나 있었다 — `OAuth2 Client`를 쓴다고 적었으나 실제로는 추가하지 않았고(OAuth는 `RestClient`로 직접 호출한다), Flyway·springdoc·jjwt·Spring AI·정적 분석 도구가 빠져 있었다.
+
+- Java 17 (toolchain)
 - Spring Boot 4.1.0
-- Gradle 8.14 이상 또는 9.x
-- Spring Web, Validation, Security, OAuth2 Client, Data JPA
-- QueryDSL
-- MySQL
-- Redis
-- Docker Compose
-- Kafka는 1차에서 쓰지 않는다. 2차 도입 시점에 컨테이너와 의존성을 함께 추가한다 (이슈 #123 — 준비용 컨테이너를 미리 두면 로컬 기동만 느려지고 실익이 없다)
+- Gradle 9.5.1 (wrapper)
+- Spring Web MVC, Validation, Security, Data JPA, Data Redis, WebSocket, Actuator
+- **`spring-boot-starter-oauth2-client`는 쓰지 않는다** — 카카오·네이버는 공통 어댑터에서 `RestClient`로 직접 호출한다 (AUTH-003)
+- 인증 토큰: jjwt 0.13.0 (api·impl·jackson), `spring-security-crypto`
+- Flyway (`spring-boot-starter-flyway` + `flyway-mysql`), `ddl-auto=validate` — 스키마 변경은 마이그레이션으로만 (ADR-0004)
+- QueryDSL 5.1.0 (jakarta) — 목록 조회
+- springdoc-openapi 3.0.0 (Swagger UI 라이브 문서)
+- MySQL (mysql-connector-j), Redis
+- **Spring AI `spring-ai-starter-model-openai` 2.0.0** — AI 피드백 서술 생성 (ADR-0011). 기본 프로바이더는 OpenAI이고 1.x는 Boot 3.x 전용이라 쓸 수 없다. 서비스 로직은 `NarrativeGenerator`만 알고 프로바이더를 모른다
+- Docker Compose (`spring-boot-docker-compose` developmentOnly)
+- Lombok
+- 품질 게이트: Spotless(NAVER eclipse 설정), SpotBugs 6.5.9(main만), JaCoCo(라인 커버리지 40% 게이트). `./gradlew build`에 포함된다
+- Kafka는 1차에서 쓰지 않는다. 2026-08-04 현재도 의존성·컨테이너 모두 없다. 2차 동시성 제어 도입 시점에 함께 추가한다 (이슈 #123 — 준비용 컨테이너를 미리 두면 로컬 기동만 느려지고 실익이 없다)
 - 이메일 발송은 Resend HTTP API를 `RestClient`로 호출한다 (별도 의존성 추가 없음). 운영 프로필에서만 활성화한다
-- 주식 실시간 시세는 한국투자 KIS Open API 국내주식 WebSocket을 사용한다 (`PRIVATE` 환경 기본, `PUBLIC`은 C-007 조건 충족 시에만)
-- JUnit 5, Testcontainers
+- 주식 실시간 시세는 한국투자 KIS Open API 국내주식 WebSocket을 사용한다 (`PRIVATE` 환경 기본, `PUBLIC`은 C-007 조건 충족 시에만). **1차·2차 모두 실시간 구현체는 만들지 않았다** (MKT-007)
+- JUnit 5, Testcontainers (MySQL만 — Redis 컨테이너는 쓰지 않는다)
 
 ### 구조
 
 기능별 모듈형 모놀리스로 구성한다. 패키지는 `com.finplay.api.<도메인>` (ADR-0002 도메인 패키지 구조와 동일).
 
+1차 MVP 도메인:
+
 - `auth`: 회원·이메일 인증·JWT·OAuth·재인증·내 정보 조회·수정·Refresh Token
 - `account`: 두 계좌 생성·잔고·요약
-- `market`: 종목·주식 시세 공급자(`StockPriceProvider` — KIS 과거 데이터 재생·KIS 실시간)·빗썸·Redis 시세
+- `market`: 종목·주식 시세 공급자(`StockPriceProvider` — KIS 과거 데이터 재생·KIS 실시간)·빗썸·Redis 시세·캔들
 - `order`: 시장가 검증·체결·멱등성·수수료
 - `portfolio`: 보유·FIFO lot·거래내역·평가손익·합산 요약
 - `community`: 게시물·댓글·소유권
 - `common`: 오류 응답, 시간, 인증 사용자. 범용 Manager 금지
+
+2차 MVP에서 추가된 도메인 (2026-08-04 기준 실제 패키지):
+
+- `feedback`: 뉴스·공시 수집, 변동 원인 카드, 종목 뉴스 요약, 개장 전 브리핑, LLM 서술 생성(`NarrativeGenerator`)·후검증·템플릿 폴백
+- `journal`: 매수·매도 회고 작성·수정
+- `ranking`: 실현손익 랭킹 (Redis ZSET 저장소 + 체결 커밋 이후 이벤트 리스너)
+- `favorite`: 즐겨찾기 (ADR-0012에 따라 DB가 아닌 인메모리 저장)
+- `education`: 3단계 투자 실습 — 사전 의도(인메모리)·진행 상태(DB)·튜토리얼 전용 합성 시세(`education.synthetic`)
+
+**도메인 간 호출은 service를 경유하고 다른 도메인의 repository를 직접 주입하지 않는다** (`docs/conventions.md`). 투자 실습 OCO는 `education application → order application port` 한 방향만 허용한다.
 
 ### 트랜잭션 경계
 
@@ -935,7 +1043,10 @@ Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conven
 - 닉네임 변경: 재인증 검증+중복 확인+회원 닉네임 변경 원자 처리
 - 이메일 변경 확인: 인증번호 소비+회원 이메일 변경+기존 Refresh Token 전체 폐기 원자 처리
 - 1차는 단일 애플리케이션 인스턴스의 DB 트랜잭션 정합성을 보장한다.
-- 비관락·분산락·다중 인스턴스 경합 검증은 2차 범위다.
+- 비관락·분산락·다중 인스턴스 경합 검증은 2차 범위다. **분산락은 2026-08-04 현재도 도입하지 않았다.**
+- **2차 추가 (ADR-0012)**: 즐겨찾기·사전 의도는 DB 행이 아니라 서버 힙 메모리에 있어 `SELECT ... FOR UPDATE`를 걸 수 없다. 그 직렬화는 **사용자 단위 in-process 잠금**(`ReentrantLock`)으로 대체하며, 호출부는 이미 DB 트랜잭션·행 잠금을 잡은 상태에서만 이 락을 빌린다(`progress(DB) → favorite 락(in-memory)` 순서). in-process 잠금은 JVM 안에서만 유효해 다중 인스턴스 경계를 넘지 못한다.
+- **2차 추가 (RANK-001)**: Redis는 MySQL 트랜잭션에 참여하지 않으므로 랭킹 ZSET 갱신은 **체결 커밋 이후(after-commit)** 에만 수행한다. 커밋 전에 갱신하면 롤백 시 Redis에만 반영이 남는다.
+- **2차 추가 (ADR-0012 감수 위험)**: `@Transactional` 롤백이 인메모리 쓰기를 되돌리지 않는다 — DB 트랜잭션 안에서 메모리에 저장한 뒤 커밋이 실패하면 메모리 쪽만 남을 수 있다. 튜토리얼 상태에 한정된 감수 사항이며 매매 원장에는 적용되지 않는다.
 
 ### Docker 로컬 환경
 
@@ -948,7 +1059,9 @@ Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conven
 
 ---
 
-## 8. 구현 태스크 순서
+## 8. 구현 태스크 순서 (1차 MVP)
+
+> **이 절은 1차 MVP의 태스크 분해이며 전부 완료됐다.** 2차 MVP는 태스크 번호가 아니라 spec 폴더 단위로 진행한다 — `012-ai-feedback`, `013-candle-interval`, `014-ranking`, `016-investment-education-policy`, `018-order-list-pagination`, `019-exit-price-policy`. 2차 spec 번호는 1차 태스크 번호(1~10)와 대응하지 않는다.
 
 각 태스크는 실패 테스트 작성, 최소 구현, 대상 테스트, 전체 테스트, 문서 정합성 확인 순서로 완료한다. 태스크 1개당 `docs/specs/NNN-*/` spec 폴더 1개를 만들어 `/feature`로 진행한다.
 
@@ -975,7 +1088,7 @@ Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conven
 6. 조회
    - 계좌 요약·보유자산·평가손익·주문 목록·거래내역
    - QueryDSL 목록 조회
-7. ~~매수 투자일기~~ — 2026-07-28 Notion 확인 결과 1차 MVP가 아니라 2차(1차 고도화) 범위로 이동. `007-journal` spec은 착수하지 않고 2차 착수 시점에 확정한다. (번호 결번은 유지 — 아래 태스크는 8·9·10 그대로)
+7. ~~매수 투자일기~~ — 2026-07-28 Notion 확인 결과 1차 MVP가 아니라 2차(1차 고도화) 범위로 이동. (번호 결번은 유지 — 아래 태스크는 8·9·10 그대로) **2차에서 `007-journal` spec으로 착수해 JOUR-001 매수 작성(PR #181)·JOUR-003 매도 작성(PR #189)·JOUR-004 매도 수정(PR #192)·JOUR-002 매수 수정(PR #201)까지 구현 완료했다.**
 8. 커뮤니티
    - 게시물 CRUD·페이지네이션
    - 평면 댓글 작성·조회·본인 삭제
@@ -1057,12 +1170,12 @@ Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conven
 - 주식 과거 데이터는 한국투자증권(KIS) Open API로 이용한다 (C-006) — 한국투자증권 문의 결과 공공데이터로 확인되어 제3자 표출에 별도 서면 허가가 필요하지 않다. 수집은 KIS Open API 호출로 이루어지며, 재생·주문 로직은 API 응답 형식이 확정되기 전에도 샘플 데이터로 먼저 설계·검증한다.
 - **Decision Gate (한국투자 서면 답변, 실시간 한정)**: 공개 환경(`PUBLIC`)의 시세 공급자를 `KIS_REALTIME`으로 전환하는 것은 한국투자증권의 서면 허용 또는 계약 완료가 확인된 뒤에만 판단한다. 답변 전까지 공개 배포는 `KIS_HISTORICAL`로 진행하며, 아직 받지 않은 답변 내용을 문서·코드·설정 기본값에 반영하지 않는다 (C-007). 과거 데이터는 이미 공공데이터로 확인되어 이 게이트 대상이 아니다. **개인 개발 환경의 KIS 실시간 구현은 1차 MVP에서 진행하지 않고 후속(KIS 실시간 틱 집계)으로 미룬다** — 이 게이트(공개 전환)와는 별개의 범위 결정이며, 게이트 자체는 그대로 유효하다.
 - **Decision Gate (KIS 과거 데이터 응답 세부사항)**: 수집 엔드포인트와 배치 실행시각은 조사·확인으로 **확정됐다**(MKT-005 참조). 다음 항목만 실제 응답을 확인하기 전까지 확정하지 않는다 — 분봉 응답의 개별 필드명, 분봉 timestamp가 구간 시작·종료 중 무엇을 의미하는지, 거래 없는 분을 상품이 어떻게 표현하는지, 정상 분봉 개수 판단 기준(임시 숫자 포함). 응답 파싱을 격리된 한 지점에 두어 외부 스모크 후 그 지점만 교정한다. 재생기·주문 로직·수집 골격(전체 응답 오류 검증)은 샘플 데이터로 먼저 설계·테스트할 수 있다.
-- Java 17과 Spring Boot 4.1.0은 호환되며 Gradle 8.14+ 또는 9.x를 사용한다.
-- 2차 시작 전 동시성 모델, 지정가 체결 트리거·큐 소비 방식(LMT-002 Decision Gate), AI 피드백 접점, 랭킹·알림 계약을 별도 Spec으로 확정한다. AI 피드백 접점은 `docs/specs/012-ai-feedback`로 확정했다 (2026-08-02).
+- Java 17과 Spring Boot 4.1.0은 호환되며 현재 Gradle wrapper는 9.5.1이다.
+- 2차 시작 전 동시성 모델, 지정가 체결 트리거·큐 소비 방식(LMT-002 Decision Gate), AI 피드백 접점, 랭킹·알림 계약을 별도 Spec으로 확정한다. AI 피드백 접점은 `docs/specs/012-ai-feedback`로 확정했다 (2026-08-02). **랭킹은 `014-ranking`으로 확정·구현까지 완료했다 (RANK-001, PR #196).** 동시성 모델·지정가·알림은 2026-08-04 현재 미확정·미착수다.
 - 지정가는 배치가 아니라 상시 처리(이벤트 드리븐)로 재확정했으며 (2026-08-03), 큐 구현 세부사항은 `docs/specs/015-limit-order`에서 확정한다.
 - 랭킹은 시장별(STOCK/CRYPTO) 분리·Redis ZSET 메커니즘과 RANK-001(전체 랭킹)·RANK-002(내 랭킹) 정책(공동 순위, limit 기본 10·상한 50, 매도 체결 이력 없는 회원 제외)을 확정했으며 (2026-08-03, 이슈 #139), SSE push는 검토 후 REST 조회로 대체했다 — 체결마다 push할 만큼 긴급한 데이터가 아니고 Notion API 표에도 REST 엔드포인트만 등재돼 있다.
-- 남은 응답 필드·오류 코드·Redis 키 설계(RANK-001 Decision Gate)는 착수 시 `docs/specs/014-ranking`에서 확정한다.
-- 알림은 지정가 매수·매도 체결 알림으로 범위를 한정하고 SSE 실시간 push를 포함하는 것으로 확정했으며(2026-08-04, NOTI-001~005, 이슈 #140), SSE 연결·인증 스코프·알림 페이로드 필드 등 세부 계약은 착수 시 `docs/specs/013-notification`에서 확정한다.
+- 남은 응답 필드·오류 코드·Redis 키 설계(RANK-001 Decision Gate)는 `docs/specs/014-ranking`에서 확정했고 **`GET /api/rankings`까지 구현 완료했다 (PR #196)** — Redis 키는 `ranking:<market>` ZSET이고 공동 순위는 애플리케이션 계층에서 보정한다. **RANK-002 내 랭킹(`GET /api/rankings/me`)은 아직 구현하지 않았다.**
+- 알림은 지정가 매수·매도 체결 알림으로 범위를 한정하고 SSE 실시간 push를 포함하는 것으로 확정했으며(2026-08-04, NOTI-001~005, 이슈 #140), SSE 연결·인증 스코프·알림 페이로드 필드 등 세부 계약은 착수 시 알림 spec에서 확정한다 — **spec 폴더는 미생성이고 번호 미배정이다**(`013`은 캔들 기간 확장이 점유). 알림은 지정가 체결 트리거(LMT-002)가 선행되어야 하므로 LMT보다 먼저 착수하지 않는다.
 - 주문 목록(`GET /api/orders`)은 `market` 필수·`cursor`·`limit` 페이지네이션 도입으로 확정했다(2026-08-04, PORT-003, 이슈 #177) — 실제 구현은 이슈 #182에서 완료했다.
 - **뉴스 출처·저작권 결정을 3차에서 2차로 앞당겼다 (2026-08-02)**: 2차 "AI 피드백"이 뉴스를 근거로 쓰게 되면서 3차를 기다릴 수 없게 됐다. 출처는 네이버 뉴스 검색 API(분 단위 발행시각)와 OpenDART 공시검색 API(일 단위 접수일자)로 확정했고, 저작권 대응은 "본문 미저장, 제목·언론사·원문 URL·발행시각만 저장"이다 (C-004). **갱신주기도 함께 확정했다 (2026-08-03, 2026-08-04 정정)** — 기사가 나오는 당일에 상시 수집한다(~~주식 평일 08:00~16:00 30분 간격, 코인 2시간 간격~~ → **주식·코인 공통 24시간 30분 간격**). 네이버 API가 날짜 범위 지정을 지원하지 않고 `display` 상한이 100이라, 재생 시점에 소급 수집하면 대형주의 앞부분이 잘린다. **장중으로 한정하면 안 된다** — 개장 전 브리핑과 전장 요약의 근거 구간이 "직전 거래일 15:30 ~ 당일 09:00"(약 17.5시간)인데 장중만 돌리면 이 구간이 통째로 비어 브리핑이 매일 빈 값이 된다. 상세는 `docs/specs/012-ai-feedback` FEED-001.
-- 2차 MVP의 3단계 투자 실습 계약은 `docs/specs/016-investment-education-policy`에서 확정한다. 즐겨찾기·주식 체결 session FK·공통 예약 원장·OCO exit plan·튜토리얼 연결은 각각 후속 구현 이슈로 진행한다. 이 OCO는 튜토리얼 전용이며 일반 리스크 관리 OCO는 3차 후보로 분리한다. 8개 투자 지식 과정·배지·RAG 교육 코치는 3차 착수 승인 뒤 별도 구현 spec으로 분리한다. AI 리포트 주기는 3차 시작 전 별도 Spec으로 확정한다. 종목 뉴스 요약은 2차로 이동했으므로 3차에서는 다루지 않는다. ~~뉴스 갱신주기~~는 2026-08-03에 확정했다(위 항목).
+- 2차 MVP의 3단계 투자 실습 계약은 `docs/specs/016-investment-education-policy`에서 확정한다. 즐겨찾기·주식 체결 session FK·공통 예약 원장·OCO exit plan·튜토리얼 연결은 각각 후속 구현 이슈로 진행한다. **2026-08-04 기준 즐겨찾기(PR #165·#171·#173)·사전 의도(PR #176)·합성 시세(PR #195)·체결 session FK(PR #191)까지 완료했고, 공통 예약 원장·OCO·진행 조회·관찰·복기는 미착수다.** 즐겨찾기·사전 의도는 ADR-0012에 따라 DB가 아닌 인메모리 저장이며 OCO 가격·퍼센트 입력 정책은 `019-exit-price-policy`가 정본이다. 이 OCO는 튜토리얼 전용이며 일반 리스크 관리 OCO는 3차 후보로 분리한다. 8개 투자 지식 과정·배지·RAG 교육 코치는 3차 착수 승인 뒤 별도 구현 spec으로 분리한다. AI 리포트 주기는 3차 시작 전 별도 Spec으로 확정한다. 종목 뉴스 요약은 2차로 이동했으므로 3차에서는 다루지 않는다. ~~뉴스 갱신주기~~는 2026-08-03에 확정했다(위 항목).
