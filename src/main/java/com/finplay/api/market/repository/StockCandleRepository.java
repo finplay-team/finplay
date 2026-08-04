@@ -24,6 +24,12 @@ public interface StockCandleRepository extends JpaRepository<StockCandle, Long> 
 	Optional<StockCandle> findFirstByInstrumentIdAndTradingDateAndCandleTimeLessThanEqualOrderByCandleTimeDesc(
 		Long instrumentId, LocalDate tradingDate, LocalTime candleTime);
 
+	// StockReplayService.getPreviousTradingDayClose 전용 — 그 거래일의 "마지막" 분봉 1건. 리터럴 15:30으로 찾으면
+	// 그 시각 분봉이 없는 날 null이 되고 예외도 나지 않는다(spec 012 §C-2-1). 하루치를 전부 읽어 마지막을 고르는
+	// 대신 desc 정렬 1행만 읽는다.
+	Optional<StockCandle> findFirstByInstrumentIdAndTradingDateOrderByCandleTimeDesc(
+		Long instrumentId, LocalDate tradingDate);
+
 	// 캔들 API — 종목·거래일·분봉시각(from~to, 양끝 포함) 범위 조회
 	List<StockCandle> findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
 		Long instrumentId, LocalDate tradingDate, LocalTime from, LocalTime to);

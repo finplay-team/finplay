@@ -6,6 +6,7 @@ import com.finplay.api.market.domain.StockCandle;
 import com.finplay.api.market.domain.StockReplaySession;
 import com.finplay.api.market.repository.StockCandleRepository;
 import com.finplay.api.market.repository.StockReplaySessionRepository;
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -185,6 +186,79 @@ public class StockReplayService {
 			return aggregated;
 		}
 		return aggregated.subList(aggregated.size() - MAX_AGGREGATED_CANDLES, aggregated.size());
+	}
+
+	/**
+	 * 현재 서비스 날짜의 재생세션이 준비됐는지와 그 원본 거래일을 함께 돌려준다 (spec 012 §C-6).
+	 *
+	 * <p>{@code getMarketStatus()}는 개장·폐장만 주고 원본 거래일을 알려 주지 않으며 {@code findReadySession}은
+	 * private이라, 재생 중인 거래일 기준으로 콘텐츠를 만드는 호출부에는 조회 경로가 없었다. <b>노출 게이트를
+	 * 우회하지 않는다</b> — 준비되지 않았으면 {@code ready=false}이고 거래일은 {@code null}이다.
+	 */
+	@Transactional(readOnly = true)
+	public StockReplaySessionDto getCurrentReplaySession() {
+		return findReadySession(LocalDate.now(clock))
+			.map(session -> new StockReplaySessionDto(true, session.getSourceTradingDate()))
+			.orElseGet(() -> new StockReplaySessionDto(false, null));
+	}
+
+	/**
+	 * 서비스 날짜를 그날 재생한 원본 거래일로 바꾼다 — <b>과거 서비스 날짜도 조회할 수 있다</b> (spec 012 §C-6).
+	 *
+	 * <p>지난 체결·카드를 그때 재생 중이던 거래일 기준으로 다시 읽어야 하는 경로가 쓴다. {@code READY}로 확정된
+	 * 세션만 본다 — {@code PREPARING}·{@code FAILED}의 {@code source_trading_date}는 후보 값이거나 준비하다
+	 * 실패한 날짜라, 실제로 재생하지 않은 거래일을 그날의 정답처럼 돌려주게 된다.
+	 *
+	 * @return 그 서비스 날짜에 확정된 원본 거래일. 세션이 없거나 {@code READY}가 아니면 {@code Optional.empty()}
+	 */
+	@Transactional(readOnly = true)
+	public Optional<LocalDate> getSourceTradingDate(LocalDate serviceDate) {
+		return findReadySession(serviceDate).map(StockReplaySession::getSourceTradingDate);
+	}
+
+	/**
+	 * 그 거래일의 <b>하루치 분봉 전부</b>를 돌려준다 — 현재 재생 시각과 무관하다.
+	 *
+	 * <p><b>재생 노출 게이트를 우회한다</b> (spec 012 §C-6). 개장 전 배치에서 호출하는 것이 기본이고, 조회 경로
+	 * 에서는 §C-5의 게이트를 통과한 뒤에만 부른다 — <b>판정은 호출부 책임이며 이 메서드는 아무것도 감추지
+	 * 않는다.</b> 사용자 응답에 그대로 실으면 그날 오후가 오전에 통째로 새어 나간다.
+	 *
+	 * <p>기존 {@code getRevealedCandles}로 대체할 수 없다. 그쪽은 {@code resolveRevealCutoff}로 현재 재생
+	 * 시각까지만 주므로 08:45 배치가 부르면 <b>예외 없이 항상 빈 목록</b>이고, 그 상태는 정상 응답이라 카드가
+	 * 매일 0건이 되어도 로그조차 남지 않는다.
+	 */
+	@Transactional(readOnly = true)
+	public List<StockCandleDto> getFullDayCandles(Long instrumentId, LocalDate tradingDate) {
+		return stockCandleRepository
+			.findByInstrumentIdAndTradingDateOrderByCandleTimeAsc(instrumentId, tradingDate)
+			.stream()
+			.map(StockCandleDto::from)
+			.toList();
+	}
+
+	/**
+	 * 직전 거래일 <b>마지막 분봉</b>의 종가를 돌려준다 (spec 012 §C-6). 시가 갭 판정의 기준값이다.
+	 *
+	 * <p><b>이 메서드도 재생 노출 게이트를 우회한다</b> — 위 {@code getFullDayCandles}와 같은 호출 조건이다.
+	 * 배치에서 부르는 것이 기본이고, 조회 경로에서는 §C-5의 게이트를 통과한 뒤에만 부른다.
+	 *
+	 * <p>직전 거래일 날짜는 {@link BusinessDayCalendar#previousBusinessDay}로 구한다 — 시장 단위 {@code D-1}을
+	 * 얻는 유일한 경로다(§C-6). <b>"그 종목의 가장 최근 분봉"으로 대체하지 않는다</b> — 수집이 며칠 빈 종목에서
+	 * 일주일 전 종가를 직전 종가로 읽어 <b>있지도 않은 큰 갭 카드</b>를 만들어 낸다. 값이 오래된 것보다 없는 쪽이
+	 * 안전하며, 직전 거래일 분봉이 없으면 갭 카드를 만들지 않는 것이 spec의 정상 동작이다(§FEED-002, 오류 아님).
+	 *
+	 * <p>"마지막 분봉"을 리터럴 15:30으로 찾지 않는 이유는 §C-2-1에 있다 — 15:30 분봉은 보장되지 않아
+	 * 리터럴로 찾으면 갭 카드가 매일 영구히 0건이 된다.
+	 *
+	 * @param tradingDate 기준 원본 거래일 {@code D}. 반환은 {@code D-1}의 마지막 분봉 종가다
+	 * @return 직전 거래일 마지막 분봉의 종가. 그 거래일 분봉이 없으면 {@code Optional.empty()} (오류 아님)
+	 */
+	@Transactional(readOnly = true)
+	public Optional<BigDecimal> getPreviousTradingDayClose(Long instrumentId, LocalDate tradingDate) {
+		LocalDate previousTradingDate = businessDayCalendar.previousBusinessDay(tradingDate);
+		return stockCandleRepository
+			.findFirstByInstrumentIdAndTradingDateOrderByCandleTimeDesc(instrumentId, previousTradingDate)
+			.map(StockCandle::getClose);
 	}
 
 	// getRevealedAggregatedCandles 전용 — from 생략 시 200개 버킷을 채우고도 남는 조회 하한(spec plan.md 확정값).

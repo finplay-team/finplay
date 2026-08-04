@@ -48,6 +48,7 @@
 | 10:10 | 메인 세션 | 외부 키 4종 발급 후 **실호출 검증** — 네이버 `삼성전자` 질의 HTTP 200·`items` 100건, DART `삼성전자` 4건·`카카오` 1건 `status=000`(`corp_name` 일치 확인), `corpCode.xml`에서 16/16 매핑 확보. 네이버 검색이 NAVER API HUB로 이전돼 호스트·헤더를 정정하고 spec §외부 API 호출 상세에 플랫폼 행 신설. 코인 질의어 실측 7종 완료. `gradlew.bat build`(1,901건, 실패 0) (커밋 `c76744c`) | 실호출 응답, spec §외부 API 호출 상세·§튜닝, `plan.md` §착수 전 확인 |
 | 10:40 | 메인 세션 | `gradlew.bat test --tests DartCorpCodeRegistryTest` — 재리뷰 [참고] 반영. 시드 종목 목록을 프로젝트 루트 상대경로(`Path.of`) 대신 클래스패스로 읽어 작업 디렉터리 의존을 없앴다. 이 표에 `6875ab2`·`c76744c` 행 추가([권장] 반영) | PR #174 2차 리뷰 [권장] 1·[참고] 1, `docs/specs/README.md` 기록 형식 |
 | 11:20 | implementer | `gradlew.bat compileJava` + `spotlessApply` + `spotbugsMain` (이슈 #180 tasks 1번 — `feedback.detection` 설정 블록·`PriceMoveDetector`) | tasks.md #180 1번, spec.md §탐지 알고리즘(주식)·§C-2-1·§C-6·§C-7·§C-8·FEED-002, conventions.md(레이어·DTO record·Lombok), ADR-0002, `FeedbackLlmProperties`/`FeedbackLlmConfig`·`NewsTitleFilter` 선례 |
+| 11:50 | implementer | `gradlew.bat compileJava spotlessApply spotbugsMain` + `test --tests "*StockCandleRepositoryTest*"`(파생 쿼리 이름이 실제 부트스트랩되는지 확인) (이슈 #180 tasks 2번 — `market` 조회 메서드 4종) | tasks.md #180 2번, spec.md §C-6 표·§C-2-1·§코드 배치와 설정·FEED-002·FEED-004, conventions.md(레이어·DTO record), ADR-0002, agent-mistakes.md 2026-08-03(파생 쿼리) |
 
 ## 모니터링 (사람용 요약)
 - 11:40 — 문서 리뷰 완료, 차단 9건(노출 판정 전장 기사 역전, UNIQUE(url) 잔존 모순, 코인 경로 미정의, 장마감 배치 부재, 배치용 전일치 분봉 조회 경로 부재, PRD 수집주기 모순 등) / 권장 12건.
@@ -145,3 +146,5 @@
     - **판단 — 이 이슈에서 고치지 않는다.** §튜닝의 조정 기준이 "높으면 종목별 질의어 오버라이드를 도입한다"인데, 실측이 보여주는 것은 질의어만의 문제가 아니라 **필터 방향까지 걸린 규칙 문제**다(FEED-001). 규칙을 바꾸려면 spec을 먼저 고쳐야 하고, 이슈 #167의 완료 조건("보정이 붙고, 같은 시장 다른 종목명이 든 제목이 제외된다")은 규칙대로 구현·검증돼 있다. **별도 이슈로 낸다** — 후보는 ①제목에 자기 종목명이 있을 것을 통과 조건에 추가(오탐 차단) ②시세 브리핑류를 살리기 위해 제외 규칙을 "다른 종목명만 있고 자기 이름이 없을 때"로 완화 ③종목별 질의어 오버라이드. 셋 다 카드 생성량에 직접 영향을 주므로 한 번에 정하지 말고 이 표를 기준선으로 삼아 비교한다.
 
 - 11:20 — 이슈 #180 착수. `feedback.detection` 5키(yml + `@DefaultValue`)와 `PriceMoveDetector`(순수 계산) 신설 — 인덱싱을 전부 `TreeMap<LocalTime, 분봉>` 시각 조회로 두어 결측 구간에서는 그 표본·후보를 제외하고, 시가·첫 분봉을 리터럴이 아니라 "가장 이른 분봉"으로 찾는다. 스키마·컨트롤러 무변경. 컴파일·SpotBugs 통과.
+
+- 11:50 — `market`에 조회 4종 신설(`getCurrentReplaySession`·`getSourceTradingDate`·`getFullDayCandles`·`getPreviousTradingDayClose`). 게이트를 우회하는 뒤 두 개에는 "배치에서 부르는 것이 기본, 조회 경로는 §C-5 통과 후"를 주석으로 남겼다. 직전 종가는 `BusinessDayCalendar.previousBusinessDay`로 D-1을 구해 그 날의 마지막 분봉을 읽는다 — "그 종목의 가장 최근 분봉"으로 하면 수집이 빈 종목에서 일주일 전 종가로 없는 갭을 만든다. `StockReplaySessionScheduler`는 건드리지 않았고 `feedback` 쪽 변경도 없다.
