@@ -3,6 +3,7 @@ package com.finplay.api.feedback.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -82,6 +83,9 @@ class FeedbackBatchServiceTest {
 		new BigDecimal("0.043956"),
 		new BigDecimal("3.5463"));
 
+	// 이슈 #198의 계측 수집기. 스코프가 실제로 닫혔는지 보려면 배치가 쓴 것과 같은 인스턴스여야 한다.
+	private final LlmCallStats llmCallStats = new LlmCallStats();
+
 	private FeedbackBatchService service;
 
 	private static Instrument stock(Long id, String symbol, String name) {
@@ -103,7 +107,7 @@ class FeedbackBatchServiceTest {
 			priceMoveCardService,
 			marketBriefingService,
 			instrumentNewsSummaryService,
-			new LlmCallStats()));
+			llmCallStats));
 	}
 
 	private void givenReadySessionWithTwoStocks() {
@@ -421,6 +425,22 @@ class FeedbackBatchServiceTest {
 
 			assertThatCode(() -> service.runPreMarketBatch()).doesNotThrowAnyException();
 		}
+	}
+
+	// 이슈 #198 · PR #202 리뷰 권장 ① — 단계별 격리를 뚫고 나온 실패에서도 계측 스코프는 닫혀야 한다.
+	// 열린 채로 나가면 스케줄 풀의 그 워커 스레드에 스코프가 다음 배치까지 남는다.
+	@Test
+	@DisplayName("단계 격리를 뚫고 나온 실패에도 LLM 계측 스코프가 닫힌다")
+	void closesTheLlmScopeEvenWhenAFailureEscapesTheStepIsolation() {
+		givenReadySessionWithTwoStocks();
+		// 단계별 catch가 RuntimeException만 잡으므로 Error는 배치 밖으로 나간다 — 스코프가 열린 채 나가는 경로다.
+		when(stockReplayService.getFullDayCandles(anyLong(), any())).thenThrow(new StackOverflowError("boom"));
+
+		assertThatThrownBy(() -> service.runPreMarketBatch()).isInstanceOf(StackOverflowError.class);
+
+		// 스코프가 남아 있었다면 이 record()가 집계돼 1건이 된다. 닫혔으면 스코프 밖 호출이라 무시된다.
+		llmCallStats.record(5_000_000L);
+		assertThat(llmCallStats.finishScope().count()).isZero();
 	}
 
 	// 배치가 서비스 날짜를 스스로 계산하지 않는다 — 원본 거래일은 세션이 준 값 하나뿐이다.
