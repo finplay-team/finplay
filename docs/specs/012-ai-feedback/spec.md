@@ -272,17 +272,22 @@ feedback/
   domain/      MarketNewsItem, PriceMoveEvent, PriceMoveEventSource,
                InstrumentNewsSummary, MarketBriefing, TradeFeedback, PriceMovePeerStat
                FeedbackContentStatus      Part C·D 상태값 (§C-4. 저장 컬럼이 아니라 조회 시 판정한다)
+               PostSellFeedbackStatus     Part B 상태값 (§C-4. 저장 컬럼이 아니라 조회 시 판정한다)
   dto/response/  PriceMoveListResponse, InstrumentNewsResponse,
                  MarketBriefingResponse, PostSellFeedbackResponse
-                 (+ 응답 안에 중첩되는 레코드 — PostSellFlow, Counterfactuals, PeerComparison)
+                 (+ 응답 안에 중첩되는 레코드 — PostSellFlow, Counterfactuals,
+                    CounterfactualScenario, PeerComparison)
                  (+ NewsItem, PriceMoveItem — 여러 응답이 공유하므로 최상위 record)
                  (+ BriefingNewsItem — Part D 전용 최상위 record. 공유용이 아니다)
+                 (+ HeldPriceMoveItem — Part B 전용 최상위 record. 공유용이 아니다)
   repository/  각 도메인 JpaRepository
 ```
 
 DTO는 `dto/response/` 하위에 둔다(`docs/conventions.md`, 이 spec에는 요청 DTO가 없다). 응답 DTO 클래스명은 `docs/api-contracts.md`에 이미 박혀 있으므로 그 이름을 쓴다. 엔티티를 컨트롤러 밖으로 노출하지 않는다.
 
 **`BriefingNewsItem`을 `NewsItem`과 따로 둔다** (2026-08-04 추가). Part D `items`는 계약상 `instrumentId`·`symbol`·`name`을 **평평하게** 포함하는데(`docs/api-contracts.md`의 개장 전 브리핑 행) `NewsItem`은 다섯 값뿐이다 — 시장 전체가 대상이라 어느 종목 소식인지가 항목마다 붙어야 한다. **`NewsItem`을 중첩 필드로 감싸면 JSON 모양이 계약과 달라지므로** 여덟 값을 평평하게 갖는 별도 최상위 record로 둔다. Part C는 종목이 경로에 있어 그 세 값이 필요 없으므로 `NewsItem`을 그대로 쓴다 — 두 항목 record가 공존하는 것이 의도된 형태이며 한쪽으로 합치지 않는다.
+
+**`HeldPriceMoveItem`을 `PriceMoveItem`과 따로 둔다** (2026-08-04 추가, 이슈 #208). 매도 회고의 `priceMoves[]`는 계약상 `minutesAfterBuy`·`minutesBeforeSell`을 포함하고 `eventType`을 포함하지 않는다 — Part A 카드 목록과 **JSON 필드 집합 자체가 다르므로** 한쪽을 다른 쪽으로 대체하면 계약이 깨진다. `BriefingNewsItem`을 `NewsItem`과 따로 둔 것과 같은 판단이며, 반대로 각 카드의 `sources`는 다섯 값이 그대로라 `NewsItem`을 재사용한다(중첩으로 복제하지 않는다). **`CounterfactualScenario`도 같은 자리에 둔다** — `counterfactuals`의 세 시나리오가 `price`·`at`·`returnRate` 같은 형태라 한 record를 세 번 쓴다.
 
 **이름에 `~ListItemResponse`를 붙이지 않는다.** `docs/conventions.md`의 DTO 표 각주(2026-08-04 확정)가 spec 012 항목 record의 이름을 이 절에 위임했으므로, 같은 응답군에서 `NewsItem`과 접미사가 붙은 이름이 섞이면 그 위임이 무의미해진다. `BriefingNewsItem`은 **여러 응답이 공유하는 record가 아니라 Part D 전용**이지만, 이름 규칙은 응답군 단위로 일관되게 간다.
 
@@ -305,6 +310,8 @@ DTO는 `dto/response/` 하위에 둔다(`docs/conventions.md`, 이 spec에는 �
 **요약은 생성과 조회를 나누고 브리핑은 나누지 않는다** (2026-08-04 추가 — 이 비대칭은 의도된 것이다). 종목 뉴스 요약은 `InstrumentNewsSummaryService`가 확정(구간 질의 → 절단 → `NarrativeService` → 저장)하고 `InstrumentNewsQueryService`가 조회한다 — 종목 수만큼 반복되고 범위가 둘(`PRE_MARKET`·`FULL`)이라 확정 경로만으로 한 클래스가 찬다. `PriceMoveCardService`를 배치에서 뺀 것과 같은 이유다. 반면 **브리핑은 `(시장, 원본 거래일)` 단위로 하루 1건**이라 `MarketBriefingService` 하나가 생성과 조회를 함께 갖는다 — 쪼갤 만한 크기가 아니고, 나누면 `items`를 조회 시 다시 만드는 규칙(FEED-009)이 두 클래스에 걸쳐 흩어진다. **클래스 수를 맞추려고 브리핑을 쪼개지 않는다.**
 
 **Part C·D의 상태값 열거형은 `FeedbackContentStatus` 하나뿐이다** (2026-08-04 추가). §C-4가 Part C의 `summaryStatus`와 Part D의 `status`를 **"같은 4종"**으로 못박았으므로 열거형을 둘로 나누지 않는다 — 나누면 §C-4의 판정 순서 표가 두 곳에 복사되고, 그중 하나만 고치는 사고가 이 spec이 §확정값 절을 만든 이유다. **저장 컬럼이 아니라 조회 시 판정하는 값**이라 `@Enumerated` 대상이 아니다(§C-8의 `VARCHAR(20)` 열거 컬럼 목록에 없다). Part C의 1번 조건이 `NOT_YET`이고 Part D가 `EMPTY`인 **값의 차이는 판정 로직에 있고 타입에 있지 않다.**
+
+**Part B의 상태값 열거형도 `PostSellFeedbackStatus` 하나뿐이다** (2026-08-04 추가, 이슈 #208). `postSellFlow.status`·`counterfactuals.status`·`peerComparison.status`·`narrativeStatus` 넷이 이 하나를 함께 쓴다 — **자리마다 나올 수 있는 값의 범위가 다른 것은 §C-4의 판정 로직 차이이고 타입의 차이가 아니다**(`FeedbackContentStatus`와 같은 판단). 값은 `READY`·`NOT_YET`·`INSUFFICIENT_SAMPLE`·`NO_EVENT` 넷이고 **`FeedbackContentStatus`를 재사용하지 않는다** — 그쪽에는 뒤 두 값이 없고, 반대로 이쪽에는 `EMPTY`·`UNAVAILABLE`이 없다(매도 회고는 템플릿 문장이 있어 서술이 비지 않는다). 역시 저장 컬럼이 아니라 조회 시 판정하는 값이라 §C-8의 열거 컬럼 목록에 없다.
 
 **절단 규칙은 `NewsItemTruncator` 한 곳에 둔다.** §뉴스 매칭 범위의 "공시를 먼저 채우고 남은 자리를 뉴스 최신순으로"는 **호출부가 넷**이다 — 요약과 브리핑의 LLM 입력, 그리고 Part C·D의 `items`다. 규칙을 각 서비스에 복사하면 그중 하나만 고치는 순간 **같은 목록이 API마다 다르게 잘리는데 예외도 로그도 남지 않는다.** 빈이 아니어도 되는 순수 계산이라 고정 픽스처로 단정할 수 있고, `NewsSearchQueryBuilder`·`NewsTitleFilter`를 수집기 밖에 둔 것과 같은 판단이다.
 

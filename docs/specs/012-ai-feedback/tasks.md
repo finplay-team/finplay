@@ -50,7 +50,7 @@
 
 ## 작업 항목
 
-- [ ] **1. 체결 검증과 수치 요약 — 컨트롤러·조회 서비스 골격**
+- [x] **1. 체결 검증과 수치 요약 — 컨트롤러·조회 서비스 골격**
 
   본인 매도 체결 1건의 **원장 수치만** 돌려주는 최소 응답을 세운다. **spec 012의 네 번째 컨트롤러이고, 뒤 항목 전부가 이 서비스에 필드를 채워 넣는다.**
   - 경로·응답 필드·오류 형식·수치 산출식은 `docs/api-contracts.md`의 "매도 직후 피드백 조회" 소절과 FEED-007이 정본이다. 클래스 이름은 §C-6(`PostSellFeedbackController`·`PostSellFeedbackService`·`PostSellFeedbackResponse`)이다.
