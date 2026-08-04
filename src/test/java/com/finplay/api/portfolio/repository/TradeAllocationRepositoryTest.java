@@ -10,7 +10,9 @@ import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.domain.StockReplaySession;
 import com.finplay.api.market.repository.InstrumentRepository;
+import com.finplay.api.market.repository.StockReplaySessionRepository;
 import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.domain.OrderType;
@@ -61,8 +63,12 @@ class TradeAllocationRepositoryTest {
 	@Autowired
 	private TradeAllocationRepository tradeAllocationRepository;
 
+	@Autowired
+	private StockReplaySessionRepository stockReplaySessionRepository;
+
 	private Account account;
 	private Instrument instrument;
+	private StockReplaySession session;
 
 	@BeforeEach
 	void setUp() {
@@ -71,6 +77,8 @@ class TradeAllocationRepositoryTest {
 			Account.create(user, com.finplay.api.account.domain.Market.STOCK, NOW));
 		instrument = instrumentRepository.saveAndFlush(
 			Instrument.create(Market.STOCK, "TEST01", "테스트종목", BigDecimal.valueOf(100), 10_000L, true, NOW));
+		session = stockReplaySessionRepository.saveAndFlush(
+			StockReplaySession.ready(NOW.toLocalDate().plusYears(33), NOW.toLocalDate(), NOW, NOW));
 	}
 
 	@Test
@@ -104,7 +112,7 @@ class TradeAllocationRepositoryTest {
 			account.getUser(), account, instrument, OrderSide.BUY, OrderType.MARKET,
 			quantity, "idem-" + System.nanoTime(), "a".repeat(64), NOW));
 		Trade buyTrade = tradeRepository.saveAndFlush(Trade.of(
-			order, account, instrument, OrderSide.BUY,
+			order, account, instrument, session, OrderSide.BUY,
 			BigDecimal.valueOf(70000), quantity,
 			70000L * quantity.longValueExact(), 100L, null, NOW, NOW));
 		return holdingLotRepository.saveAndFlush(
@@ -116,7 +124,7 @@ class TradeAllocationRepositoryTest {
 			account.getUser(), account, instrument, OrderSide.SELL, OrderType.MARKET,
 			quantity, "idem-sell-" + System.nanoTime(), "b".repeat(64), NOW));
 		return tradeRepository.saveAndFlush(Trade.of(
-			sellOrder, account, instrument, OrderSide.SELL,
+			sellOrder, account, instrument, session, OrderSide.SELL,
 			BigDecimal.valueOf(75000), quantity,
 			75000L * quantity.longValueExact(), 100L, 49_900L, NOW, NOW));
 	}

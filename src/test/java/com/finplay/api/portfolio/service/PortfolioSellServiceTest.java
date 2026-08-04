@@ -338,6 +338,10 @@ class PortfolioSellServiceTest {
 			"idem-key-" + side + executedAt,
 			"a".repeat(64),
 			executedAt);
-		return Trade.of(order, account, instrument, side, price, quantity, amount, fee, null, executedAt, executedAt);
+		return Trade.of(order, account, instrument,
+			com.finplay.api.market.domain.StockReplaySession.ready(executedAt.toLocalDate(), executedAt.toLocalDate(),
+				executedAt, executedAt),
+			side, price, quantity,
+			amount, fee, null, executedAt, executedAt);
 	}
 }

@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 import com.finplay.api.market.domain.PreparationStatus;
 import com.finplay.api.market.domain.StockReplaySession;
 import com.finplay.api.market.repository.StockReplaySessionRepository;
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -91,6 +92,92 @@ class LocalForcedOpenStockPriceProviderTest {
 		verify(delegate).getCurrentPrice(INSTRUMENT_ID);
 		verify(delegate).getCurrentPrices(any());
 		verify(delegate).getCandles(INSTRUMENT_ID, CandleInterval.ONE_MINUTE, null, null);
+	}
+
+	@Test
+	void getCurrentPriceForcesOpenAndPreservesPriceAndSessionWhenReadyQuoteIsClosed() {
+		StockReplaySession session = readySession();
+		StockReplayPriceDto quote = new StockReplayPriceDto(
+			true, StockMarketStatus.CLOSED, session.getSourceTradingDate(), new BigDecimal("71000"),
+			AFTER_HOURS, session);
+		when(delegate.getCurrentPrice(INSTRUMENT_ID)).thenReturn(quote);
+
+		StockReplayPriceDto result = provider(true).getCurrentPrice(INSTRUMENT_ID);
+
+		assertThat(result.marketStatus()).isEqualTo(StockMarketStatus.OPEN);
+		assertThat(result.price()).isEqualByComparingTo("71000");
+		assertThat(result.replaySession()).isSameAs(session);
+	}
+
+	@Test
+	void getCurrentPriceKeepsClosedQuoteAndSameSessionWhenForceFlagIsOff() {
+		StockReplaySession session = readySession();
+		StockReplayPriceDto quote = new StockReplayPriceDto(
+			true, StockMarketStatus.CLOSED, session.getSourceTradingDate(), new BigDecimal("71000"),
+			AFTER_HOURS, session);
+		when(delegate.getCurrentPrice(INSTRUMENT_ID)).thenReturn(quote);
+
+		StockReplayPriceDto result = provider(false).getCurrentPrice(INSTRUMENT_ID);
+
+		assertThat(result).isSameAs(quote);
+		assertThat(result.marketStatus()).isEqualTo(StockMarketStatus.CLOSED);
+		assertThat(result.replaySession()).isSameAs(session);
+	}
+
+	@Test
+	void getCurrentPricesForcesOnlyReadyClosedQuotesOpenAndPreservesOrderAndPayload() {
+		StockReplaySession firstSession = readySession();
+		StockReplaySession secondSession = StockReplaySession.ready(
+			SERVICE_DATE.plusDays(1), SERVICE_DATE.minusDays(2), AFTER_HOURS.plusDays(1), AFTER_HOURS);
+		LocalDateTime firstSourceTime = AFTER_HOURS.minusHours(7);
+		StockReplayPriceDto readyClosed = new StockReplayPriceDto(
+			true, StockMarketStatus.CLOSED, firstSession.getSourceTradingDate(), new BigDecimal("71000"),
+			firstSourceTime, firstSession);
+		StockReplayPriceDto readyOpen = new StockReplayPriceDto(
+			true, StockMarketStatus.OPEN, secondSession.getSourceTradingDate(), new BigDecimal("82000"),
+			AFTER_HOURS.minusHours(6), secondSession);
+		StockReplayPriceDto notReadyClosed = new StockReplayPriceDto(
+			false, StockMarketStatus.CLOSED, null, null, null, null);
+		List<Long> instrumentIds = List.of(1L, 2L, 3L);
+		when(delegate.getCurrentPrices(instrumentIds))
+			.thenReturn(List.of(readyClosed, readyOpen, notReadyClosed));
+
+		List<StockReplayPriceDto> results = provider(true).getCurrentPrices(instrumentIds);
+
+		assertThat(results).hasSize(3);
+		StockReplayPriceDto forced = results.get(0);
+		assertThat(forced.marketStatus()).isEqualTo(StockMarketStatus.OPEN);
+		assertThat(forced.price()).isEqualByComparingTo("71000");
+		assertThat(forced.sourceTradingDate()).isEqualTo(firstSession.getSourceTradingDate());
+		assertThat(forced.sourceTime()).isEqualTo(firstSourceTime);
+		assertThat(forced.replaySession()).isSameAs(firstSession);
+		assertThat(results.get(1)).isSameAs(readyOpen);
+		assertThat(results.get(2)).isSameAs(notReadyClosed);
+		verify(delegate).getCurrentPrices(instrumentIds);
+	}
+
+	@Test
+	void getCurrentPricesKeepsClosedQuotesAndPayloadUnchangedWhenForceFlagIsOff() {
+		StockReplaySession firstSession = readySession();
+		StockReplaySession secondSession = StockReplaySession.ready(
+			SERVICE_DATE.plusDays(1), SERVICE_DATE.minusDays(2), AFTER_HOURS.plusDays(1), AFTER_HOURS);
+		StockReplayPriceDto first = new StockReplayPriceDto(
+			true, StockMarketStatus.CLOSED, firstSession.getSourceTradingDate(), new BigDecimal("71000"),
+			AFTER_HOURS.minusHours(7), firstSession);
+		StockReplayPriceDto second = new StockReplayPriceDto(
+			true, StockMarketStatus.CLOSED, secondSession.getSourceTradingDate(), new BigDecimal("82000"),
+			AFTER_HOURS.minusHours(6), secondSession);
+		List<Long> instrumentIds = List.of(1L, 2L);
+		when(delegate.getCurrentPrices(instrumentIds)).thenReturn(List.of(first, second));
+
+		List<StockReplayPriceDto> results = provider(false).getCurrentPrices(instrumentIds);
+
+		assertThat(results).containsExactly(first, second);
+		assertThat(results.get(0)).isSameAs(first);
+		assertThat(results.get(1)).isSameAs(second);
+		assertThat(results).extracting(StockReplayPriceDto::marketStatus)
+			.containsExactly(StockMarketStatus.CLOSED, StockMarketStatus.CLOSED);
+		verify(delegate).getCurrentPrices(instrumentIds);
 	}
 
 	private LocalForcedOpenStockPriceProvider provider(boolean forceMarketOpen) {

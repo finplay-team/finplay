@@ -11,6 +11,7 @@ import com.finplay.api.common.ErrorCode;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.InstrumentService;
+import com.finplay.api.market.service.OrderExecutionPriceDto;
 import com.finplay.api.market.service.PriceQueryService;
 import com.finplay.api.market.service.PriceQuoteDto;
 import com.finplay.api.order.domain.Order;
@@ -73,7 +74,7 @@ public class OrderExecutionService {
 		Account account) {
 		BigDecimal quantity = request.quantity();
 
-		// 설계 노트 2: 매수 최소구현 견본 — assertOrderable→getPrice→최소금액→amount/fee 계산(공유)
+		// 설계 노트 2: 매수 최소구현 견본 — marketStatus·가격·세션 단일 관측→최소금액→amount/fee 계산(공유)
 		OrderPricing pricing = priceOrder(request.market(), instrument, quantity);
 		long cashRequired = pricing.amount() + pricing.fee();
 		if (account.getCashBalance() < cashRequired) {
@@ -96,7 +97,8 @@ public class OrderExecutionService {
 		orderRepository.save(order);
 
 		Trade trade = Trade.of(
-			order, account, instrument, request.side(), pricing.price(), quantity, pricing.amount(), pricing.fee(),
+			order, account, instrument, pricing.stockReplaySession(), request.side(), pricing.price(), quantity,
+			pricing.amount(), pricing.fee(),
 			null, now, now);
 		tradeRepository.save(trade);
 
@@ -134,7 +136,8 @@ public class OrderExecutionService {
 
 		// 실현손익은 lot 배분이 끝난 뒤에만 계산 가능하므로 최초 저장 시 null.
 		Trade trade = Trade.of(
-			order, account, instrument, request.side(), pricing.price(), quantity, pricing.amount(), pricing.fee(),
+			order, account, instrument, pricing.stockReplaySession(), request.side(), pricing.price(), quantity,
+			pricing.amount(), pricing.fee(),
 			null, now, now);
 		tradeRepository.save(trade);
 
@@ -187,10 +190,11 @@ public class OrderExecutionService {
 		return accountService.getAccountFor(userId, accountMarket);
 	}
 
-	// 설계 노트 1: assertOrderable→getPrice→최소주문금액 검증→amount/fee 계산(FLOOR)을 매수·매도가 공유한다.
+	// 설계 노트 1: getOrderExecutionPrice 한 관측에서 marketStatus·가격·세션을 확정한 뒤 최소주문금액 검증과
+	// amount/fee 계산(FLOOR)을 매수·매도가 공유한다.
 	private OrderPricing priceOrder(Market market, Instrument instrument, BigDecimal quantity) {
-		priceQueryService.assertOrderable(instrument);
-		PriceQuoteDto priceQuote = priceQueryService.getPrice(instrument);
+		OrderExecutionPriceDto executionPrice = priceQueryService.getOrderExecutionPrice(instrument);
+		PriceQuoteDto priceQuote = executionPrice.priceQuote();
 		BigDecimal price = priceQuote.price();
 		BigDecimal rawAmount = price.multiply(quantity);
 
@@ -199,7 +203,7 @@ public class OrderExecutionService {
 		long amount = rawAmount.setScale(0, RoundingMode.FLOOR).longValueExact();
 		BigDecimal feeRate = market == Market.STOCK ? STOCK_FEE_RATE : CRYPTO_FEE_RATE;
 		long fee = BigDecimal.valueOf(amount).multiply(feeRate).setScale(0, RoundingMode.FLOOR).longValueExact();
-		return new OrderPricing(price, amount, fee);
+		return new OrderPricing(price, amount, fee, executionPrice.stockReplaySession());
 	}
 
 	// 설계 노트 1: 코인 최소주문금액 검증(내림 전 금액으로 비교). 매수·매도 공유 — 사람 확인 결과 대칭 적용 확정.
@@ -211,6 +215,10 @@ public class OrderExecutionService {
 	}
 
 	// 가격조회 결과(체결가·확정금액·수수료)를 매수·매도 분기에 함께 전달하는 내부 값 객체
-	private record OrderPricing(BigDecimal price, long amount, long fee) {
+	private record OrderPricing(
+		BigDecimal price,
+		long amount,
+		long fee,
+		com.finplay.api.market.domain.StockReplaySession stockReplaySession) {
 	}
 }

@@ -71,7 +71,9 @@ class TradeListItemResponseTest {
 			user, account, instrument, side, OrderType.MARKET,
 			quantity, "idem-key-" + id, "a".repeat(64), NOW);
 		Trade trade = Trade.of(
-			order, account, instrument, side, price, quantity, amount, fee, realizedPnl, executedAt, NOW);
+			order, account, instrument,
+			com.finplay.api.market.domain.StockReplaySession.ready(NOW.toLocalDate(), NOW.toLocalDate(), NOW, NOW),
+			side, price, quantity, amount, fee, realizedPnl, executedAt, NOW);
 		ReflectionTestUtils.setField(trade, "id", id);
 		ReflectionTestUtils.setField(instrument, "id", id + 1000);
 		return trade;
