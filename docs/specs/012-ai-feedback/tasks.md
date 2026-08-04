@@ -25,7 +25,7 @@
 
 ## 작업 항목
 
-- [ ] **1. `feedback.news` 목록 상한 3종과 개장 시각 상수 정리**
+- [x] **1. `feedback.news` 목록 상한 3종과 개장 시각 상수 정리**
 
   뒤 항목 전부가 읽을 값과 상수를 먼저 한 곳에 세운다. **이 항목은 완료 조건을 단독으로 소유하지 않지만 게이트 ⑧과 5·6번의 전제다.**
   - `max-items-per-news-list`·`max-items-per-briefing`·`max-items-per-summary` 세 키를 §C-7의 방침대로 **yml과 record `@DefaultValue` 양쪽**에 둔다. 값은 §C-7이 정본이며 여기서 정하지 않는다. `FeedbackNewsProperties`에 이미 같은 형태의 검증 생성자가 있으므로 상한이 1 미만이면 거부하는 규칙을 같은 자리에 붙인다 — 0이면 목록이 통째로 비는데 예외도 로그도 남지 않는다.

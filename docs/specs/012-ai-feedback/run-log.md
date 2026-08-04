@@ -56,6 +56,8 @@
 
 | 13:40 | reviewer(리뷰) | `git diff dev...HEAD`(48파일) + `gh issue view 180`(완료 조건 21건) 대조, `@Scheduled` 전수 세기(기본 8·prod 7·crypto-real 8)·spring-tx 7.0.8 `AnnotationTransactionAttributeSource(false)` 확인으로 패키지 전용 `@Transactional` 유효성 검증, `gradlew.bat compileJava compileTestJava` | conventions.md, ADR-0002·0003·0004·0011, spec.md §C-1·C-2·C-2-1·C-3·C-5·C-6·C-7·C-8·§탐지 알고리즘(주식)·§노출 판정·§뉴스 매칭 범위·§실패 처리, tasks.md #180 완료 조건 소유표, api-contracts.md, agent-mistakes.md |
 
+| 14:20 | implementer | `gradlew.bat compileJava compileTestJava spotlessApply` + `test --tests NewsMatcherTest --tests NewsCollectionPropertiesTest --tests FeedbackDetectionPropertiesYamlTest`(상수 이동 후 기존 단정 유지 확인) (이슈 #188 tasks 1번 — 목록 상한 3종·`MarketSessionTimes`) | tasks.md #188 1번, spec.md §C-2·§C-2-1·§C-6·§C-7·§뉴스 매칭 범위, ADR-0002·0004(스키마 무변경), conventions.md, `FeedbackDetectionProperties`·`StockCandleAggregator` 선례 |
+
 ## 모니터링 (사람용 요약)
 - 11:40 — 문서 리뷰 완료, 차단 9건(노출 판정 전장 기사 역전, UNIQUE(url) 잔존 모순, 코인 경로 미정의, 장마감 배치 부재, 배치용 전일치 분봉 조회 경로 부재, PRD 수집주기 모순 등) / 권장 12건.
 - 12:20 — Part D(개장 전 브리핑) 정밀 리뷰: 차단 8건(08:40 잔존 모순, 크론 zone 누락, 스케줄러 풀 미증설, 09:00 전 배치 미완료, 브리핑 행 부재 상태 미정의, NOT_YET/EMPTY 우선순위 충돌, 재생세션 조회 경로 부재, 공시 00:00:00 구간 역전) / 권장 9건 — 머지 불가.
@@ -164,3 +166,5 @@
 - 13:10 — spec 012의 첫 컨트롤러(`PriceMoveController`)와 `PriceMoveQueryService`·응답 DTO 3종 신설. 게이트는 `reveal_time <= LocalTime.now(clock)` 한 줄인데 그것이 곧 §C-5의 `(서비스 날짜 + reveal_time) <= now()`다 — `TIME`으로 저장한 덕분에 재재생 날에도 그대로 성립한다. 재생세션 미준비·카드 0건·코인 종목은 전부 200이고, 코인만 `originTradeDate=null`·빈 배열로 두고 분기 자리를 주석으로 남겼다(plan.md 8번). 근거는 `JOIN FETCH` 일괄 조회로 N+1을 접었고 응답에는 제목·언론사·URL·발행시각만 싣는다. `revealTime`은 응답에 없다. 인증은 `anyRequest().authenticated()`가 이미 걸어 SecurityConfig 변경이 없다. **문서 동기화(api-routes·api-contracts)는 planner 몫으로 남겼다 — 계약과 어긋나는 자리는 없었다.** 리뷰 [권장] 반영으로 카드 정렬에 2차 키 `id`를 붙였다(첫 분봉이 09:00인 날 갭 카드와 장중 첫 후보의 `window_start`가 같아 순서가 실행마다 달라진다). `id`는 생성 순서라 §C-6의 3→4단계를 그대로 따르고, `event_type`으로 가르면 순서가 enum 선언 순서에 묶인다 — `api-contracts.md`의 "상대 순서를 보장하지 않는다" 문장도 함께 고쳤다.
 
 - 13:40 — 리뷰 완료, **차단 0건 / 권장 3건 / 참고 3건 — 머지 가능.** 완료 조건 21건 전부 대응 테스트 확인, 트랜잭션 경계·풀 크기 8·§C-6 생성 순서·게이트 TIME 저장 모두 의도대로. 권장은 `application-crypto-real.yml` 주석의 옛 개수(5), 카드 목록 정렬 2차 키 부재(같은 `window_start`), §C-6 "중첩 레코드" 표기 정정.
+
+- 14:20 — 이슈 #188 착수. `feedback.news`에 목록 상한 3종(`max-items-per-news-list`·`max-items-per-briefing`·`max-items-per-summary`)을 yml + `@DefaultValue` 양쪽에 더하고 1 미만이면 기동을 막았다 — 0이면 `items`가 통째로 비고 요약 프롬프트에 기사가 안 실리는데 상태값은 그대로 `READY`라 예외도 로그도 없이 화면만 빈다. 개장·장 마감 벽시계 상수를 `MarketSessionTimes` 하나로 모아 `PriceMoveCardService.MARKET_OPEN_TIME`과 `NewsMatcher.PRE_MARKET_FROM/TO_TIME`의 독립 선언 3개를 없앴다(§C-6, 곧 Part C·D가 세 번째·네 번째 사용처다). **동작을 바꾸지 않는 이동이라 새 단정을 만들지 않았고**, 기존 테스트 3곳의 생성자 호출만 인자 3개 추가로 기계적으로 맞췄다. 스키마·컨트롤러 무변경이라 마이그레이션과 문서 동기화 대상이 없다.

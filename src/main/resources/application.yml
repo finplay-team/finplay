@@ -161,3 +161,8 @@ feedback:
     match-before-minutes: 30 # 주식 장중 카드 근거 탐색 (이전)
     match-after-minutes: 5 # 주식 장중 카드 근거 탐색 (이후)
     max-sources-per-card: 5 # 카드 1건에 붙일 최대 근거 수
+    # 목록 상한 3종. 정본은 §C-7이고 절단 규칙은 §뉴스 매칭 범위다. 1 미만이면 기동이 실패한다 —
+    # 0이면 items가 통째로 비고 요약 프롬프트에 기사가 안 실리는데 상태값은 READY라 화면만 조용히 빈다.
+    max-items-per-news-list: 50 # Part C 목록 응답 상한
+    max-items-per-briefing: 30 # Part D 목록 응답 상한
+    max-items-per-summary: 30 # 요약·브리핑 LLM 입력 기사 수 상한

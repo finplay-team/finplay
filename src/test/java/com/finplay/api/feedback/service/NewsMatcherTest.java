@@ -54,8 +54,16 @@ class NewsMatcherTest {
 	private NewsMatcher matcher(int beforeMinutes, int afterMinutes, int maxSources) {
 		return new NewsMatcher(
 			marketNewsItemRepository,
+			// 뒤 세 값은 §C-7의 목록 상한 3종이다 — 근거 매칭과 무관해 이 테스트는 쓰지 않는다.
 			new FeedbackNewsProperties(
-				"0 0/30 * * * *", "0 0/30 8-20 * * MON-FRI", beforeMinutes, afterMinutes, maxSources),
+				"0 0/30 * * * *",
+				"0 0/30 8-20 * * MON-FRI",
+				beforeMinutes,
+				afterMinutes,
+				maxSources,
+				50,
+				30,
+				30),
 			new BusinessDayCalendar());
 	}
 
