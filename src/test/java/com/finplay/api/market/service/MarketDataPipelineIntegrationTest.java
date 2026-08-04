@@ -16,6 +16,7 @@ import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.domain.MarketDataImport;
 import com.finplay.api.market.domain.PreparationStatus;
+import com.finplay.api.market.domain.StockCandle;
 import com.finplay.api.market.domain.StockReplaySession;
 import com.finplay.api.market.dto.sse.MarketSnapshotEvent;
 import com.finplay.api.market.repository.InstrumentRepository;
@@ -25,7 +26,11 @@ import com.finplay.api.market.repository.StockReplaySessionRepository;
 import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.dto.request.OrderCreateRequest;
 import com.finplay.api.order.dto.response.OrderResponse;
+import com.finplay.api.order.repository.OrderRepository;
+import com.finplay.api.order.repository.TradeRepository;
 import com.finplay.api.order.service.OrderService;
+import com.finplay.api.portfolio.repository.HoldingLotRepository;
+import com.finplay.api.portfolio.repository.HoldingRepository;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -35,6 +40,7 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -46,7 +52,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 @SpringBootTest
 @Import({TestcontainersConfiguration.class, MarketDataPipelineIntegrationTest.FixedClockTestConfig.class})
-@Transactional
 class MarketDataPipelineIntegrationTest {
 
 	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
@@ -128,8 +133,72 @@ class MarketDataPipelineIntegrationTest {
 	@Autowired
 	private AccountRepository accountRepository;
 
+	@Autowired
+	private HoldingLotRepository holdingLotRepository;
+
+	@Autowired
+	private HoldingRepository holdingRepository;
+
+	@Autowired
+	private TradeRepository tradeRepository;
+
+	@Autowired
+	private OrderRepository orderRepository;
+
+	private Long pipelineUserId;
+
 	private void setClock(LocalDate date, LocalTime time) {
 		((MutableClock)clock).set(LocalDateTime.of(date, time));
+	}
+
+	// 이 테스트가 실제 종목에 남긴 분봉·재생세션·수집 이력을 정리한다 — 종목 자체는 만들지도 지우지도 않으므로 여기서는
+	// 다루지 않는다. 다른 어떤 기존 테스트도 이 세 저장소에 전역 카운트(findAll·count) 단정을 걸지 않는 것을 확인했지만,
+	// 반복 실행 시 데이터가 무한히 쌓이지 않도록 정리한다.
+	@AfterEach
+	@Transactional
+	void cleanUpDataCreatedByThisTest() {
+		if (pipelineUserId != null) {
+			User user = userRepository.findById(pipelineUserId).orElseThrow();
+			List<Account> accounts = accountRepository.findAll().stream()
+				.filter(account -> account.getUser().getId().equals(pipelineUserId)).toList();
+			for (Account account : accounts) {
+				var holdings = holdingRepository.findAll().stream()
+					.filter(holding -> holding.getAccount().getId().equals(account.getId())).toList();
+				for (var holding : holdings) {
+					holdingLotRepository.deleteAll(holdingLotRepository.findAll().stream()
+						.filter(lot -> lot.getHolding().getId().equals(holding.getId())).toList());
+				}
+				holdingRepository.deleteAll(holdings);
+				var orders = orderRepository.findAll().stream()
+					.filter(order -> order.getAccount().getId().equals(account.getId())).toList();
+				for (var order : orders) {
+					tradeRepository.findByOrderId(order.getId()).ifPresent(tradeRepository::delete);
+				}
+				orderRepository.deleteAll(orders);
+			}
+			accountRepository.deleteAll(accounts);
+			userRepository.delete(user);
+			pipelineUserId = null;
+		}
+		for (Instrument instrument : realStockInstruments()) {
+			for (LocalDate tradingDate : List.of(TD_A, TD_D, TD_E)) {
+				List<StockCandle> candles = stockCandleRepository
+					.findByInstrumentIdAndTradingDateOrderByCandleTimeAsc(instrument.getId(), tradingDate);
+				if (!candles.isEmpty()) {
+					stockCandleRepository.deleteAll(candles);
+				}
+			}
+		}
+		for (LocalDate serviceDate : List.of(SD_A, SD_D, SD_E)) {
+			stockReplaySessionRepository.findByServiceDate(serviceDate).ifPresent(stockReplaySessionRepository::delete);
+		}
+		for (LocalDate tradingDate : List.of(TD_A, TD_D, TD_E)) {
+			List<MarketDataImport> imports = marketDataImportRepository
+				.findBySourceTradingDateOrderByCollectedAtDesc(tradingDate);
+			if (!imports.isEmpty()) {
+				marketDataImportRepository.deleteAll(imports);
+			}
+		}
 	}
 
 	private static RawMinuteCandleDto candle(LocalTime time, String open, String high, String low, String close) {
@@ -241,6 +310,7 @@ class MarketDataPipelineIntegrationTest {
 		// 화면 가격(가격 API·SSE)과 모의 주문 체결가가 같은 Provider(KisHistoricalReplayPriceProvider)에서 나오는지 확인 — 같은
 		// 시각에 조회한 가격과 그 시각에 체결된 주문의 체결가가 동일해야 한다.
 		User user = createUser("pipeline");
+		pipelineUserId = user.getId();
 		createAccount(user);
 		OrderResponse orderResponse = orderService.createOrder(
 			user.getId(), "idem-pipeline-1", buyRequest(instrument.getId()));
