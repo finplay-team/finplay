@@ -74,7 +74,7 @@
   - **`spring.task.scheduling.pool.size`를 이 이슈가 더하는 스케줄 수(1개)만큼 올리고 `application.yml` 주석의 개수 계산도 같은 커밋에서 갱신한다**(§C-1). 풀은 앱 전역 단일 풀이라 소유 도메인과 무관하게 전부 센다.
   - 검증 — 고정 `Clock` + Testcontainers 통합. **완료 조건 6건이 이 항목 소유다.** 배치 ①(개장 전 시각의 고정 `Clock`으로 돌려 **카드가 1건 이상** 생성된다 — 0건이면서 예외가 없는 상태를 통과로 읽지 않는다), ②(분리된 크론이고 세션이 `READY`가 아니면 아무것도 하지 않는다), ③(생성 순서가 §C-6과 같다 — 브리핑 자리가 가장 먼저 호출된다), ④(호출 하나가 실패해도 나머지가 계속된다), ⑤(두 번 실행해도 중복이 없다), 그리고 **8개 이슈 공통 조건인 원장 불변**(배치 실행 전후로 주문·체결·계좌·잔액·보유·손익 테이블의 행이 변하지 않고, 쓰기가 `price_move_events`·`price_move_event_sources` 밖으로 나가지 않는다).
 
-- [ ] **6. 카드 조회 API — `PriceMoveController`·`PriceMoveQueryService`**
+- [x] **6. 카드 조회 API — `PriceMoveController`·`PriceMoveQueryService`**
 
   만들어 둔 카드를 종목별로 돌려준다. **spec 012의 첫 컨트롤러다.**
   - 경로·응답 필드·오류 형식은 **`docs/api-contracts.md`의 해당 행**과 FEED-006이 정본이다. 클래스 이름은 §C-6이고 DTO는 `dto/response/` 하위다. **엔티티를 컨트롤러 밖으로 노출하지 않는다.**
