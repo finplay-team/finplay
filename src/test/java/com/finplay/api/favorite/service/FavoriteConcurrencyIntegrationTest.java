@@ -1,4 +1,4 @@
-// 동일 즐겨찾기 동시 등록이 실제 MySQL 유일 제약에서 한 행과 한 409로 수렴하는지 검증한다.
+// 즐겨찾기 동시 등록, 빈 행 갭 락 회피와 기존 행 비관 잠금 직렬화를 실제 MySQL에서 검증한다.
 package com.finplay.api.favorite.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -94,6 +94,38 @@ class FavoriteConcurrencyIntegrationTest {
 			"SELECT COUNT(*) FROM favorites WHERE user_id = ? AND instrument_id = ?",
 			Long.class, user.getId(), instrument.getId());
 		assertThat(matchingFavoriteCount).isEqualTo(1L);
+	}
+
+	@Test
+	void missingFavoriteCheckDoesNotGapLockConcurrentCreate() throws Exception {
+		LocalDateTime now = LocalDateTime.of(2026, 8, 4, 9, 0);
+		User user = userRepository.saveAndFlush(User.create(
+			"favorite-gap-race-173@finplay.com", "hash", "favorite-gap-race-173", now));
+		createdUserId = user.getId();
+		Instrument instrument = instrumentRepository.findByMarketOrderByIdAsc(Market.STOCK).get(0);
+		CountDownLatch missingCheckFinished = new CountDownLatch(1);
+		CountDownLatch releaseMissingTransaction = new CountDownLatch(1);
+		var executor = Executors.newFixedThreadPool(2);
+		try {
+			Future<Boolean> missingLookup = executor.submit(() -> transactionTemplate.execute(status -> {
+				boolean exists = favoriteService.lockFavoriteIfPresent(user.getId(), instrument.getId());
+				missingCheckFinished.countDown();
+				await(releaseMissingTransaction);
+				return exists;
+			}));
+			assertThat(missingCheckFinished.await(5, TimeUnit.SECONDS)).isTrue();
+
+			Future<FavoriteResponse> create = executor.submit(
+				() -> favoriteService.createFavorite(user.getId(), instrument.getId()));
+
+			assertThat(create.get(5, TimeUnit.SECONDS).instrumentId()).isEqualTo(instrument.getId());
+			releaseMissingTransaction.countDown();
+			assertThat(missingLookup.get(5, TimeUnit.SECONDS)).isFalse();
+		} finally {
+			releaseMissingTransaction.countDown();
+			executor.shutdownNow();
+			assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+		}
 	}
 
 	@Test

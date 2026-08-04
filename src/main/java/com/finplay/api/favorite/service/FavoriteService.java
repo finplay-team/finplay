@@ -59,6 +59,9 @@ public class FavoriteService {
 
 	@Transactional
 	public void deleteFavorite(Long userId, Long instrumentId) {
+		if (!favoriteRepository.existsByUserIdAndInstrumentId(userId, instrumentId)) {
+			throw new BusinessException(ErrorCode.FAVORITE_NOT_FOUND);
+		}
 		Favorite favorite = favoriteRepository.findByUserIdAndInstrumentIdForUpdate(userId, instrumentId)
 			.orElseThrow(() -> new BusinessException(ErrorCode.FAVORITE_NOT_FOUND));
 		favoriteRepository.delete(favorite);
@@ -66,6 +69,9 @@ public class FavoriteService {
 
 	@Transactional(propagation = Propagation.MANDATORY)
 	public boolean lockFavoriteIfPresent(Long userId, Long instrumentId) {
+		if (!favoriteRepository.existsByUserIdAndInstrumentId(userId, instrumentId)) {
+			return false;
+		}
 		return favoriteRepository.findByUserIdAndInstrumentIdForUpdate(userId, instrumentId).isPresent();
 	}
 
