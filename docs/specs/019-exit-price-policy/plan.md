@@ -84,7 +84,7 @@ takeProfitPrice = entryPrice.multiply(ONE.add(normalizedTakeRate))
 
 ### `exit_plans`
 
-- candidate 7 최초 migration에서 표시 snapshot `intention_id`, 내부 `intention_instance_key CHAR(36) CHARACTER SET ascii COLLATE ascii_bin`, `exit_price_type`, 원본 nullable rate 둘, non-null `stop_loss_price`, `take_profit_price`, `entry_price`를 저장한다.
+- candidate 7 최초 migration에서 표시 snapshot `intention_id`, 내부 `intention_instance_key CHAR(36) CHARACTER SET ascii COLLATE ascii_bin`, `exit_price_type`, 원본 nullable `stop_loss_rate DECIMAL(7,4)`, `take_profit_rate DECIMAL(8,4)`(intention 요청 검증과 동일 precision·scale), non-null `stop_loss_price`, `take_profit_price`, `entry_price`를 저장한다.
 - `UNIQUE(user_id, intention_instance_key)`를 두고 `intention_id`에는 FK·unique를 두지 않는다. UUID는 lowercase canonical 문자열로 저장한다.
 - PRICE 원본은 intention에서 추적 가능하므로 별도 중복 가격 컬럼 없이 실행 snapshot 두 필드를 정본으로 사용한다.
 - PERCENT 원본 rate는 실행 결과 설명과 감사 가능성을 위해 plan에도 snapshot한다.

@@ -80,8 +80,8 @@ OCO 요청 fingerprint는 UTF-8 canonical JSON의 SHA-256이다. key 순서는 `
 - `FavoriteCreateRequest(Long instrumentId)`: non-null·양수.
 - `FavoriteResponse(Long favoriteId, Long instrumentId, String market, String symbol, String name, LocalDateTime createdAt)`: 모두 non-null, `market` 허용값은 `STOCK|CRYPTO`.
 - `FavoriteListResponse(List<FavoriteResponse> content)`: non-null, 없으면 빈 배열.
-- `PracticeIntentionCreateRequest`: 공통 `instrumentId`, `quantity`, 선택 `exitPriceType`; PRICE는 `stopLoss`, `takeProfit`, PERCENT는 `stopLossRate`, `takeProfitRate`만 허용한다. 기존 타입 생략+가격 둘은 PRICE다. 정밀도·nullable 조합은 `docs/specs/019-exit-price-policy`를 따른다.
-- `PracticeIntentionResponse`: 공통 식별자·수량·`exitPriceType`·생성시각, PRICE에서만 non-null인 가격 둘과 PERCENT에서만 non-null인 rate 둘을 반환한다.
+- `PracticeIntentionCreateRequest`: 공통 `instrumentId`, `quantity`, 선택 `exitPriceType`; PRICE는 `stopLoss`, `takeProfit`, PERCENT는 `stopLossRate`, `takeProfitRate`만 허용한다. 기존 타입 생략+가격 둘은 PRICE다. 정밀도·nullable 조합은 `docs/specs/019-exit-price-policy`를 따른다. **PERCENT는 019 구현 전까지 production에 없다 — 그 전까지는 PRICE(또는 타입 생략)만 실제로 제공한다.**
+- `PracticeIntentionResponse`: 공통 식별자·수량·`exitPriceType`·생성시각, PRICE에서만 non-null인 가격 둘과 PERCENT에서만 non-null인 rate 둘을 반환한다. (PERCENT 필드는 019 구현 전까지 항상 null이다.)
 - `ExitPlanCreateRequest(Long intentionId, Long buyTradeId, Long instrumentId, BigDecimal quantity)`: 모두 non-null·양수; ids는 positive `Long`, quantity는 `@Digits(integer=22, fraction=8)`.
 - `ExitPlanResponse`: 기존 식별자·수량·entry/baseline/status/시각에 `exitPriceType`, PERCENT에서만 non-null인 원본 rate 둘, 항상 non-null인 `stopLossPrice`, `takeProfitPrice`를 반환한다. `replaySessionId`는 코인만 null이고 terminal nullable 규칙은 유지한다.
 - `ExitPlanListResponse(List<ExitPlanResponse> content)`: non-null, 없으면 빈 배열.
@@ -116,7 +116,7 @@ OCO 요청 fingerprint는 UTF-8 canonical JSON의 SHA-256이다. key 순서는 `
 | Favorite | `instrumentId` | 필수, 거래 가능 종목, 본인 중복 등록 금지 |
 | Intention | `instrumentId`, `quantity`, PRICE 가격 둘 또는 PERCENT rate 둘 | tagged union과 구형 PRICE 호환은 019 spec을 따름. 현재 존재하는 step 1 본인 favorite와 같은 instrument. 없거나 불일치하면 `PRACTICE_STEP_LOCKED` |
 | Market order | 기존 `market`, `instrumentId`, `side=BUY`, `orderType=MARKET`, `quantity` | 기존 주문 계약 사용, 즉시 `FILLED` |
-| Exit plan | `Idempotency-Key` header, 필수 `intentionId`, `buyTradeId`, `instrumentId`, `quantity` | tutorial-only, 가격·rate는 잠근 intention 사용, owner·instrument chain 동일, `intention.quantity == buyTrade.quantity == exitPlan.quantity`, holding은 owner·instrument와 `availableQuantity >= exitPlan.quantity`, 의도보다 체결이 나중, 가격 범위 유효, 의도당 plan 한 건 |
+| Exit plan | `Idempotency-Key` header, 필수 `intentionId`, `buyTradeId`, `instrumentId`, `quantity` | tutorial-only, 가격·rate는 잠근 intention 사용, owner·instrument chain 동일, `intention.quantity == buyTrade.quantity == exitPlan.quantity`, holding은 owner·instrument와 `availableQuantity >= exitPlan.quantity`, 의도보다 체결이 나중, 가격 범위 유효, **intention instance당 plan 한 건**(unique가 `(user_id, intention_instance_key)`이므로 사용자가 보는 숫자 `intentionId` 기준이 아니다 — 재시작 뒤 같은 숫자 ID가 새 instance로 재사용되면 같은 `buyTradeId`에 두 번째 plan 생성을 막지 않는다. 이는 기존 `(user_id, intention_id)` unique에도 있던 선존재 문제이며 019가 새로 만들지 않는다) |
 | Observation | `exitPlanId` | 본인 `PENDING` plan만 허용. 현재가·관찰유형·시각은 요청에서 받지 않고 서버가 결정 |
 | Reflection | `exitPlanId`, `answer` | A·B·C 관찰 증거 중 하나 이후, terminal plan도 허용. answer는 `@NotBlank @Size(max=2000)`, whitespace-only 거부, raw 길이 최대 2000, 원문 저장 |
 | Synthetic price | `instrumentId`(path) | 필수·양수, 종목 존재만 확인(거래 가능 여부 불문). evidence·판정에 영향 없음 |

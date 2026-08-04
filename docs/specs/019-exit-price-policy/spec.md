@@ -85,6 +85,20 @@ takeProfitPrice = entryPrice × (1 + takeProfitRate / 100)
 - 현재 프로세스의 인메모리 `practice_intentions`가 사용자의 매수 전 원본 의도 정본이고, 영속 `exit_plans`가 실제 BUY 체결가에 결합된 실행 가격선 snapshot 정본이다.
 - ADR-0012에 따라 intention은 재시작 시 유실되고 숫자 `intentionId`가 재사용될 수 있다. 각 intention에 API로 노출하지 않는 UUID `intentionInstanceKey`를 함께 생성하고 exit plan에 저장해 `(userId, intentionInstanceKey)`로 영속 identity를 구분한다. `intentionId`는 응답·evidence용 snapshot일 뿐 DB FK나 영속 unique identity로 사용하지 않는다.
 
+## 멱등 재현과 intention instance 판정
+
+- idempotency key mapping을 현재 in-memory intention보다 먼저 조회하는 key-first 규칙을 쓴다. key 존재 여부와 request hash 일치 여부만으로 재현·충돌을 가르며, 그 판정에서는 현재 intention instance를 비교하지 않는다. instance 비교는 key miss 분기에서만 수행한다.
+
+| key 상태 | 현재 intention 상태 | instance plan 존재 | 결과 |
+|---|---|---|---|
+| hit, hash 일치 | 무관(유실·재사용·정상 모두) | 무관 | 200, 과거 plan 그대로 재현(instance 비교 없음) |
+| hit, hash 불일치 | 무관 | 무관 | 409 `IDEMPOTENCY_CONFLICT` |
+| miss | 현재 instance로 해석 가능 | 같은 instance plan 존재 | 200, 기존 instance plan 반환 + 새 key mapping 저장 |
+| miss | 현재 instance로 해석 가능 | 없음 | 201, 신규 plan 생성 + key mapping 저장 |
+| miss | 유실(재시작으로 조회 실패) 또는 chain 불일치 | 해당 없음 | 409 `PRACTICE_EVIDENCE_MISSING` |
+
+- **fingerprint에서 가격·rate를 뺀 결과 생기는 안전망 후퇴를 감수한다.** 이전에는 가격이 fingerprint에 있어, 재시작으로 숫자 `intentionId`가 다른 intention(예: 이전 PRICE 65000/75000 → 새 PERCENT 5/10)에 재사용된 상태에서 같은 key와 같은 4필드 body(`intentionId`·`buyTradeId`·`instrumentId`·`quantity`)를 보내면 409 `IDEMPOTENCY_CONFLICT`로 막혔다. 이 정책에서는 key hit + hash 일치 조건만으로 과거 plan을 200 재현하므로 그 안전망이 사라진다. 이는 알고 감수하는 트레이드오프이며, **클라이언트는 서버가 재시작되었을 수 있는 세션에서 이전에 사용한 `Idempotency-Key`를 재사용하지 않아야 한다**(새 OCO 생성 시도마다 새 UUID key를 발급한다).
+
 ## 일반 지정가와의 구분
 
 - PRICE 입력의 `stopLoss`·`takeProfit`은 일반 지정가 주문의 `limitPrice`가 아니다.
