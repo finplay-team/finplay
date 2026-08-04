@@ -257,6 +257,7 @@ feedback/
                NewsSearchQueryBuilder     종목별 검색 질의어 조립 (순수 계산, 코인 보정은 FEED-001)
                NewsTitleFilter            같은 시장 다른 종목명이 든 제목 제외 (순수 계산, FEED-001)
                NewsCollectionService      뉴스·공시 상시 수집 (수집기 호출 → 저장, 크론은 §C-1)
+               PriceMoveCardService       카드 확정 (근거 매칭 → 서술 → reveal_time → 저장)
                FeedbackBatchService       개장 전 배치 오케스트레이션
                CryptoFeedbackBatchService 코인 요약·브리핑 갱신 (매시)
                PeerStatsBatchService      장 마감 집단 비교 확정 집계
@@ -283,6 +284,8 @@ DTO는 `dto/response/` 하위에 둔다(`docs/conventions.md`, 이 spec에는 �
 **이 경로를 `NarrativeValidator`에 두지 않은 이유** — 템플릿 폴백은 이미 만들어 둔 문장을 고르는 국소적 동작이지만 재생성은 프로바이더를 다시 부르는 다른 층위라, 검증기가 `NarrativeGenerator`를 주입받는 순간 "검증만 하는 클래스"가 아니게 된다.
 
 **질의어 조립과 제목 필터를 수집기 밖에 둔다.** 둘 다 FEED-001의 규칙이고 외부 의존이 없어 고정 픽스처로 단정할 수 있다 — 수집기 안에 두면 HTTP 응답을 고정해야만 검사할 수 있게 된다. `NaverNewsCollector`가 둘을 주입받아 쓴다. 필터는 **같은 시장의 종목명 목록**만 보므로 시장을 섞지 않는다.
+
+**카드 확정을 `FeedbackBatchService`에 두지 않는다.** 탐지 결과 하나를 카드로 만드는 데 근거 매칭·서술 확정·`reveal_time` 계산·저장 넷이 필요한데, 이것을 배치에 두면 그 클래스가 **브리핑·요약(이슈 5번)까지 얹히면서** 오케스트레이션과 도메인 로직을 함께 갖게 된다. `PriceMoveCardService`는 **카드 1건을 확정하는 책임만** 지고, 배치는 그것을 순서대로 부르기만 한다. 코인 감시(`CryptoPriceMoveWatcher`, 이슈 8번)도 같은 확정 경로가 필요하므로 배치 안에 있으면 재사용할 수 없다. `NewsCollectionService`를 수집기 밖에 둔 것(수집기는 목록만 반환하고 저장 주체가 따로 있다)과 같은 이유다.
 
 `PriceMoveDetector`는 **분봉 리스트와 직전 거래일 종가를 받아 이벤트 리스트를 반환하는 순수 함수**로 만든다. DB·시계·LLM에 의존하지 않아야 고정 픽스처로 단위 테스트할 수 있다.
 
