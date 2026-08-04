@@ -1066,8 +1066,9 @@ LLM이 실패하거나 후검증에 걸렸을 때 서버가 수치로 조립한�
 
 | 항목 | 값 |
 |---|---|
-| 네이버 엔드포인트 | `GET https://openapi.naver.com/v1/search/news.json?query={종목명}&display=100&sort=date` |
-| 네이버 헤더 | `X-Naver-Client-Id`, `X-Naver-Client-Secret` — 값은 `NAVER_SEARCH_*` 환경변수에서 온다. **`NAVER_CLIENT_ID`·`NAVER_CLIENT_SECRET`는 이미 네이버 OAuth 로그인이 쓰고 있으므로 재사용하지 않는다** (`.env.example`, `application.yml`의 `oauth.naver`). 검색 API용 애플리케이션을 따로 발급받는 순간 둘 중 하나가 깨진다 |
+| 네이버 엔드포인트 | `GET https://naverapihub.apigw.ntruss.com/search/v1/news?query={종목명}&display=100&sort=date` |
+| 네이버 헤더 | `X-NCP-APIGW-API-KEY-ID`, `X-NCP-APIGW-API-KEY` — 값은 `NAVER_SEARCH_*` 환경변수에서 온다. **`NAVER_CLIENT_ID`·`NAVER_CLIENT_SECRET`는 네이버 OAuth 로그인 몫이므로 재사용하지 않는다** (`.env.example`, `application.yml`의 `oauth.naver`) — 애초에 발급처가 다르다 |
+| 네이버 플랫폼 (2026-08-04 확인) | 검색 API는 **NAVER API HUB**(네이버 클라우드 플랫폼이 중개 운영)에서 발급받는다. `developers.naver.com`의 일반 애플리케이션 등록 화면에는 `검색`이 없다. **콘솔이 값을 "Client ID/Secret"이라 부르지만 실제 헤더는 위의 API Gateway 규격이며**, 구 `openapi.naver.com` + `X-Naver-Client-*` 조합으로 부르면 이 키는 인증되지 않는다. 응답 본문 필드(`title`·`originallink`·`link`·`description`·`pubDate`)는 구 API와 같다. 한도는 하루 25,000회·월 775,000회이고 이 spec의 사용량은 종목 28 × 하루 48회 = 1,344회다 |
 | 네이버 제약 | **날짜 범위 지정 불가**, `display` 상한 100. 최신순으로 받아 **거르지 않고 그대로 저장**한다 (구간 필터는 조회 시점에만). 종일 30분 간격이라 놓치는 구간이 없다 |
 | 네이버 시각 | `pubDate`는 오프셋이 붙은 RFC 1123 문자열이다. **KST 벽시계로 바꿔 `published_at`에 담는다** — 이 spec의 모든 시각이 KST 시간축이고(§C-2) 근거창·구간 필터가 전부 그 축에서 계산된다. 오프셋을 무시하고 문자열 앞부분만 파싱하면 조용히 최대 9시간 어긋난다 |
 | DART 엔드포인트 | `GET https://opendart.fss.or.kr/api/list.json?crtfc_key={키}&corp_code={8자리}&bgn_de={수집일−1}&end_de={수집일}` — `YYYYMMDD`. 전일부터 훑어 접수 지연분을 잡는다 |

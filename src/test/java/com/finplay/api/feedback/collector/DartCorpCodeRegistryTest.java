@@ -6,22 +6,28 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-// 이 테스트는 tasks.md 4번의 검증 ④("매핑 리소스가 §C-7의 주식 종목 전부를 덮는다")를 단정하지 않는다.
-// corp_code의 정본은 DART_API_KEY로만 받을 수 있는 corpCode.xml이고 그 키가 아직 없어, 지금 ④를 통과시키려면
-// 추측값을 넣거나 기대 종목 수를 낮춰 잡아야 한다 — 둘 다 완료 조건을 없애는 것이라 하지 않는다.
-// 대신 여기서는 매핑이 채워졌을 때도 그대로 성립해야 하는 성질만 단정한다. 파일이 채워지면 이 테스트는
-// 그대로 통과하고, ④는 별도 테스트로 그때 추가한다.
+// tasks.md 4번의 검증 ④("매핑 리소스가 §C-7의 주식 종목 전부를 덮는다")는 2026-08-04 DART_API_KEY 발급 후
+// corpCode.xml에서 16종목을 받아 채우면서 닫혔다 — 아래 coversEveryStockInTheV7Seed가 그 조건이다.
+// 기대 종목 목록을 이 파일에 박지 않고 V7 시드에서 읽는다. 상수로 두면 시드에 종목이 늘어도 테스트가
+// 그대로 통과해, 새 종목의 공시만 조용히 0건이 되는 상태를 아무도 못 본다.
 class DartCorpCodeRegistryTest {
 
 	private static final String RESOURCE_PATH = "/dart-corp-codes.txt";
 
 	// 파일 머리말이 정한 형식 — symbol 6자리, corp_code 8자리 숫자.
 	private static final Pattern DATA_LINE = Pattern.compile("\\d{6}=\\d{8}");
+
+	// V7 시드의 주식 행에서 종목코드를 뽑는다 — ('STOCK', '005930', '삼성전자', ...
+	private static final Pattern SEED_STOCK = Pattern.compile("\\('STOCK',\\s*'(\\d{6})'");
 
 	private final DartCorpCodeRegistry registry = new DartCorpCodeRegistry();
 
@@ -49,6 +55,30 @@ class DartCorpCodeRegistryTest {
 				.as("리소스에 적힌 %s가 조회되지 않는다", parts[0])
 				.contains(parts[1]);
 		}
+	}
+
+	// tasks.md 4번 검증 ④. 시드에 있는데 매핑에 없는 종목은 예외 없이 건너뛰어져 그 종목의 공시만 영원히
+	// 0건이 되므로, 빠진 종목을 여기서 이름까지 짚어 실패시킨다.
+	@Test
+	@DisplayName("매핑이 V7 시드의 주식 전 종목을 덮는다")
+	void coversEveryStockInTheV7Seed() throws IOException {
+		List<String> seedSymbols = readSeedStockSymbols();
+
+		assertThat(seedSymbols).as("V7 시드에서 주식 종목을 한 건도 읽지 못하면 이 테스트는 공허하다").isNotEmpty();
+		assertThat(seedSymbols).allSatisfy(symbol -> assertThat(registry.findCorpCode(symbol))
+			.as("V7 시드의 %s가 dart-corp-codes.txt에 없다 — 이 종목만 공시가 0건이 된다", symbol)
+			.isPresent());
+	}
+
+	// 기대값의 출처는 V7 마이그레이션이다. 시드가 정본이므로 목록을 테스트에 복사하지 않는다.
+	private static List<String> readSeedStockSymbols() throws IOException {
+		Path seed = Path.of("src/main/resources/db/migration/V7__create_instruments.sql");
+		Matcher matcher = SEED_STOCK.matcher(Files.readString(seed, StandardCharsets.UTF_8));
+		List<String> symbols = new ArrayList<>();
+		while (matcher.find()) {
+			symbols.add(matcher.group(1));
+		}
+		return symbols;
 	}
 
 	// FEED-001 — 매핑에 없는 종목은 오류가 아니라 건너뛴다. 예외를 던지면 그 종목 하나가 수집 전체를 멈춘다.

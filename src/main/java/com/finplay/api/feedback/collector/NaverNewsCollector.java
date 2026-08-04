@@ -57,14 +57,16 @@ import org.springframework.web.util.HtmlUtils;
 @Profile("prod")
 public class NaverNewsCollector implements NewsCollector {
 
-	// spec §외부 API 호출 상세의 엔드포인트.
-	private static final String NAVER_OPENAPI_BASE_URL = "https://openapi.naver.com";
-	private static final String SEARCH_PATH = "/v1/search/news.json";
+	// spec §외부 API 호출 상세의 엔드포인트. 검색 API가 NAVER API HUB(네이버 클라우드 플랫폼 중개)로 옮겨가
+	// 구 openapi.naver.com 호스트와 X-Naver-Client-* 헤더를 쓰지 않는다 — 2026-08-04 키 발급 시 확인.
+	private static final String NAVER_API_HUB_BASE_URL = "https://naverapihub.apigw.ntruss.com";
+	private static final String SEARCH_PATH = "/search/v1/news";
 	// spec §외부 API 호출 상세 — display 상한이 100이고 최신순(date)으로 받는다.
 	private static final int DISPLAY = 100;
 	private static final String SORT_BY_DATE = "date";
-	private static final String HEADER_CLIENT_ID = "X-Naver-Client-Id";
-	private static final String HEADER_CLIENT_SECRET = "X-Naver-Client-Secret";
+	// 콘솔은 "Client ID/Secret"으로 부르지만 실제 헤더 이름은 API Gateway 규격이다.
+	private static final String HEADER_CLIENT_ID = "X-NCP-APIGW-API-KEY-ID";
+	private static final String HEADER_CLIENT_SECRET = "X-NCP-APIGW-API-KEY";
 	// §C-8의 컬럼 길이. 넘치면 저장 시점이 아니라 여기서 정리한다.
 	private static final int TITLE_MAX_LENGTH = 500;
 	private static final int URL_MAX_LENGTH = 500;
@@ -102,7 +104,7 @@ public class NaverNewsCollector implements NewsCollector {
 		NaverSearchProperties properties,
 		NewsSearchQueryBuilder queryBuilder,
 		NewsTitleFilter titleFilter) {
-		this(applyTimeouts(builder).baseUrl(NAVER_OPENAPI_BASE_URL).build(), properties, queryBuilder, titleFilter);
+		this(applyTimeouts(builder).baseUrl(NAVER_API_HUB_BASE_URL).build(), properties, queryBuilder, titleFilter);
 	}
 
 	// 테스트 전용: MockRestServiceServer로 이미 구성된 RestClient를 직접 주입한다 (타임아웃 팩토리를 거치지 않는다).

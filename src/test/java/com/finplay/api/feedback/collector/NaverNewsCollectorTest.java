@@ -41,8 +41,8 @@ import org.springframework.web.client.RestClient;
 class NaverNewsCollectorTest {
 
 	// §외부 API 호출 상세의 엔드포인트
-	private static final String BASE_URL = "https://openapi.naver.com";
-	private static final String SEARCH_PATH = "/v1/search/news.json";
+	private static final String BASE_URL = "https://naverapihub.apigw.ntruss.com";
+	private static final String SEARCH_PATH = "/search/v1/news";
 	private static final String CLIENT_ID = "test-search-client-id";
 	private static final String CLIENT_SECRET = "test-search-client-secret";
 
@@ -123,8 +123,8 @@ class NaverNewsCollectorTest {
 			.andExpect(decodedQueryContains("query=비트코인 코인"))
 			.andExpect(decodedQueryContains("display=100"))
 			.andExpect(decodedQueryContains("sort=date"))
-			.andExpect(header("X-Naver-Client-Id", CLIENT_ID))
-			.andExpect(header("X-Naver-Client-Secret", CLIENT_SECRET))
+			.andExpect(header("X-NCP-APIGW-API-KEY-ID", CLIENT_ID))
+			.andExpect(header("X-NCP-APIGW-API-KEY", CLIENT_SECRET))
 			.andRespond(withSuccess(items(), MediaType.APPLICATION_JSON));
 
 		collector.collect(crypto("비트코인"), CRYPTO_NAMES);
@@ -343,7 +343,7 @@ class NaverNewsCollectorTest {
 	private static RequestMatcher naverSearchRequest() {
 		return request -> {
 			assertThat(request.getURI().getScheme()).isEqualTo("https");
-			assertThat(request.getURI().getHost()).isEqualTo("openapi.naver.com");
+			assertThat(request.getURI().getHost()).isEqualTo("naverapihub.apigw.ntruss.com");
 			assertThat(request.getURI().getPath()).isEqualTo(SEARCH_PATH);
 		};
 	}
