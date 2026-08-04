@@ -4,7 +4,7 @@ AI 에이전트는 **docs/ 전체를 순회하지 않는다.** 작업 유형에 
 
 | 작업 유형 | 반드시 읽을 문서 |
 |---|---|
-| spec 작성 / 1차 범위 판단 | `docs/prd.md` (요구사항 ID·수용 기준·제외 범위) + `docs/specs/README.md` |
+| spec 작성 / 차수 범위 판단 | `docs/prd.md` (요구사항 ID·수용 기준·제외 범위 + §3 구현 현황) + `docs/specs/README.md` |
 | 기능 구현 | 해당 `docs/specs/NNN-*/` (spec, plan, tasks) + `docs/conventions.md` + `docs/adr/0002-architecture.md` |
 | LLM·AI 기능 구현 | 위 목록 + `docs/adr/0011-llm-provider-integration.md` (프로바이더 추상화, 실패 시 템플릿 폴백, Fake 테스트 방침) |
 | 엔티티/스키마 변경 | 위 + `docs/adr/0004-flyway-migrations.md` |

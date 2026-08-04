@@ -52,7 +52,7 @@ FinPlay 백엔드 API 서버. Spring Boot 4.1 / Java 17 / Gradle (`build.gradle`
 | 문서 | 용도 |
 |---|---|
 | `docs/context-router.md` | 작업 유형별 읽을 문서 지정 (여기부터 시작) |
-| `docs/prd.md` | 1차 MVP 제품 요구사항 정본 (모든 spec의 상위 문서) |
+| `docs/prd.md` | 제품 요구사항 정본 — 1차 MVP + 2차 MVP(1차 고도화) (모든 spec의 상위 문서). §3 "구현 현황"이 무엇이 실제로 동작하는지의 정본 |
 | `docs/agent-mistakes.md` | 재현·확인된 AI 실수 로그 |
 | `docs/adr/` | 아키텍처 결정 기록 (왜) |
 | `docs/specs/` | 기능 명세 spec → plan → tasks (무엇을) |
