@@ -60,10 +60,17 @@ class FeedbackBatchPropertiesTest {
 	}
 
 	// @Scheduled는 record가 아니라 Environment에서 읽으므로, 두 곳이 갈리면 운영 크론만 조용히 바뀐다.
+	//
+	// spring.config.additional-location을 비워 두고 돌린다. build.gradle이 test 태스크 전체에 이 시스템
+	// 프로퍼티를 걸어 feedback-schedules-disabled-for-tests.yml을 얹는데(테스트 중 배치 스케줄이 실제로
+	// 등록되는 것을 막는다), ConfigDataApplicationContextInitializer는 그 프로퍼티를 @SpringBootTest와 똑같이
+	// 해석하므로 여기서도 크론이 "-"로 덮여 보인다(실측). 이 테스트가 보려는 것은 application.yml에 적힌 값
+	// 자체다 — withSystemProperties는 run() 동안만 적용하고 끝나면 원래 값을 되돌린다.
 	@Test
 	@DisplayName("application.yml에 feedback.batch.cron이 §C-1 값으로 실제 존재한다")
 	void applicationYmlDeclaresTheBatchCronKey() {
 		new ApplicationContextRunner()
+			.withSystemProperties("spring.config.additional-location=")
 			.withInitializer(new ConfigDataApplicationContextInitializer())
 			.withUserConfiguration(FeedbackBatchConfig.class)
 			.run(context -> {

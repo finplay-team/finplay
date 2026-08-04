@@ -34,11 +34,11 @@
   - **값의 성격은 §C-2-1이 벽시계로 못박았다** — 기사 구간 경계와 노출 게이트에 쓰는 값이고 **분봉을 찾는 값이 아니므로 "첫/마지막 분봉"으로 바꾸지 않는다.** 그 근거를 상수 주석에 남긴다. 값 자체는 §C-2가 정본이며 여기서 다시 적지 않는다.
   - 검증 — 설정 드리프트 2종 + 기존 `NewsMatcherMatchingWindowTest`·`PriceMoveCardServiceTest`가 상수 이동 후에도 그대로 통과하는지. **상수 이동은 동작을 바꾸지 않는 변경이므로 새 단정을 만들지 않는다.**
 
-- [ ] **2. 테스트 설정에서 배치 크론 비활성화**
+- [x] **2. 테스트 설정에서 배치 크론 비활성화**
 
   `@SpringBootTest`가 컨텍스트를 통째로 띄우므로 **테스트 실행 중 스케줄이 실제로 등록된다.** 평일 배치 시각에 전체 빌드가 돌면 공유 Testcontainers에 실제 데이터가 생기고, 7번이 매시 05분 코인 배치를 더하면서 노출 빈도가 뛴다. 이 항목은 **완료 조건을 소유하지 않고 뒤 항목의 실행 환경을 고정한다.**
   - 대상은 `feedback.batch.*`와 `feedback.news.*`의 크론 전부다. 키 경로는 §C-1이 정본이고 **여기서 크론 값을 새로 정하는 것이 아니라 테스트에서만 무력화하는 것**이다.
-  - 적재 경로는 `build.gradle`의 `spring.config.additional-location`이 이미 열어 둔 형태를 본뜬다 — 그 시스템 프로퍼티는 `ConfigDataEnvironmentPostProcessor`(즉 `@SpringBootTest`)만 해석하므로 `ApplicationContextRunner` 슬라이스 테스트에는 영향이 없다. 그 이유가 `bithumb-feed-simulator-disabled-for-tests.yml` 주석과 `build.gradle`에 적혀 있다.
+  - 적재 경로는 `build.gradle`의 `spring.config.additional-location`이 이미 열어 둔 형태를 본뜬다. **~~그 시스템 프로퍼티는 `@SpringBootTest`만 해석하므로 슬라이스 테스트에는 영향이 없다~~ — 이 전제는 틀렸다** (2026-08-04 재현 확인, `docs/agent-mistakes.md`). `ConfigDataApplicationContextInitializer`는 이름 그대로 ConfigData 처리를 그대로 돌려 이 프로퍼티를 `@SpringBootTest`와 **똑같이** 해석하므로, 그 초기화자를 쓰는 드리프트 테스트가 `expected: "0 45 8 * * MON-FRI" but was: "-"`로 깨진다. 영향이 없는 것은 **초기화자 없이 도는 순수 슬라이스**뿐이다(`BithumbFeedSimulatorConditionalTest`). 해결은 해당 runner에 `.withSystemProperties("spring.config.additional-location=")`를 붙여 그 실행 동안만 덮어쓰기를 걷는 것이다 — `run()` 종료 시 자동 복원된다. **드리프트 단정을 지우는 방향으로 가지 않는다.**
   - **충돌 하나를 먼저 확인한다.** `NewsCollectionPropertiesIntegrationTest`가 `@SpringBootTest`의 `Environment`에서 `feedback.news.collect-cron`·`disclosure-cron` 값을 §C-1과 대조한다 — 테스트에서 크론을 덮어쓰면 이 단정이 함께 깨진다. **드리프트 단정을 없애지 말고** 1번이 쓰는 yml 전용 형태(`ConfigDataApplicationContextInitializer`)로 옮겨 같은 축을 유지한다.
   - **배치 로직 테스트는 메서드를 직접 호출한다.** 크론이 꺼져도 `FeedbackBatchIntegrationTest`·`FeedbackBatchServiceTest`는 그대로 돌아야 한다.
   - `FeedbackBatchScheduleTest`·`NewsCollectionScheduleTest`는 **애노테이션 문자열과 `pool.size`를 리플렉션으로 읽으므로** 이 변경에 영향받지 않는다. 그대로 통과하는지 확인만 한다.
