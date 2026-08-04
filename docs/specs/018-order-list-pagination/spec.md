@@ -54,13 +54,13 @@
 
 ## 완료 조건
 
-- [ ] `market` 누락·미지원 리터럴이 400 `VALIDATION_ERROR`로 거부되는 테스트 통과.
-- [ ] `limit`이 1~100 범위 밖(클램핑 없음)이면 400 `VALIDATION_ERROR`로 거부되는 테스트 통과.
-- [ ] `cursor` 형식 파싱 실패가 400 `VALIDATION_ERROR`로 거부되는 테스트 통과.
-- [ ] 다른 사용자 소유이거나 존재하지 않는 계좌의 `market`으로 조회하면 거부되는 테스트 통과(계좌 소유권 검증).
-- [ ] 커서 없이 요청하면 최신순 첫 페이지를 반환하고, 응답의 `nextCursor`로 이어 조회하면 중복·누락 없이 이전 페이지 끝에서 이어지는 테스트 통과. 마지막 페이지는 `hasNext=false`·`nextCursor=null`인 테스트 통과.
-- [ ] 기존 8개 응답 필드(`orderId`·`market`·`instrumentId`·`side`·`orderType`·`status`·`quantity`·`requestedAt`)에 회귀가 없는 테스트 통과.
-- [ ] `docs/api-routes.md`·`docs/api-contracts.md`의 `GET /api/orders` 계약이 새 시그니처·응답 형태로 갱신됨(컨트롤러 변경과 같은 커밋).
-- [ ] `docs/specs/006-portfolio-query/spec.md`에 이력 각주가 추가되고 본문은 보존됨(003→013 선례와 동일한 패턴).
-- [ ] `OrderControllerTest`·`OrderServiceTest`·`OrderRepositoryTest`·`OrderListIntegrationTest` 4종이 갱신·추가됨(`docs/adr/0003-testing-strategy.md` 기준).
-- [ ] `./gradlew build` 통과.
+- [x] `market` 누락·미지원 리터럴이 400 `VALIDATION_ERROR`로 거부되는 테스트 통과. (`OrderControllerTest#getMyOrdersRejectsMissingMarketWithoutCallingService`, `#getMyOrdersRejectsInvalidMarketLiteralWithoutCallingService`)
+- [x] `limit`이 1~100 범위 밖(클램핑 없음)이면 400 `VALIDATION_ERROR`로 거부되는 테스트 통과. (`OrderControllerTest#getMyOrdersRejectsLimitBelowMinimumWithoutCallingService`, `#getMyOrdersRejectsLimitAboveMaximumWithoutCallingService`)
+- [x] `cursor` 형식 파싱 실패가 400 `VALIDATION_ERROR`로 거부되는 테스트 통과. (`OrderCursorTest`의 파싱 실패 케이스 + `OrderControllerTest#getMyOrdersReturnsBadRequestWhenServiceRejectsMalformedCursor` + `OrderServiceTest#getMyOrdersPropagatesExceptionThrownByCorruptedCursorWithoutQueryingRepository`)
+- [x] 다른 사용자 소유이거나 존재하지 않는 계좌의 `market`으로 조회하면 거부되는 테스트 통과(계좌 소유권 검증). (`OrderListIntegrationTest#getMyOrdersRejectsWhenAccountForRequestedMarketDoesNotExist`)
+- [x] 커서 없이 요청하면 최신순 첫 페이지를 반환하고, 응답의 `nextCursor`로 이어 조회하면 중복·누락 없이 이전 페이지 끝에서 이어지는 테스트 통과. 마지막 페이지는 `hasNext=false`·`nextCursor=null`인 테스트 통과. (`OrderRepositoryTest`의 커서 경계 테스트 3건 + `OrderListIntegrationTest#cursorPaginationAcrossPagesMatchesSinglePageFetchInSetAndOrderAndLastPageHasNoNext`)
+- [x] 기존 8개 응답 필드(`orderId`·`market`·`instrumentId`·`side`·`orderType`·`status`·`quantity`·`requestedAt`)에 회귀가 없는 테스트 통과. (`OrderControllerTest#getMyOrdersReturnsOkWithEveryFieldWhenMarketIsStock`, `OrderListIntegrationTest#getMyOrdersReturnsOwnOrdersNewestFirstWithFieldContractAndExcludesOtherUsers`)
+- [x] `docs/api-routes.md`·`docs/api-contracts.md`의 `GET /api/orders` 계약이 새 시그니처·응답 형태로 갱신됨(컨트롤러 변경과 같은 커밋, 커밋 `3bd1cb8`).
+- [x] `docs/specs/006-portfolio-query/spec.md`에 이력 각주가 추가되고 본문은 보존됨(003→013 선례와 동일한 패턴, 커밋 `411877f`).
+- [x] `OrderControllerTest`·`OrderServiceTest`·`OrderRepositoryTest`·`OrderListIntegrationTest` 4종이 갱신·추가됨(`docs/adr/0003-testing-strategy.md` 기준. `OrderCursorTest`도 신규 추가).
+- [x] `./gradlew build` 통과. (죽은 코드 정리 후 최종 확인 완료)
