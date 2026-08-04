@@ -665,6 +665,8 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 **`sameSessionCompleted`가 응답 형태를 가른다.** 매수와 매도가 같은 원본 거래일 안에서 완결됐으면 `true`이고 `holdHighPrice`·`holdHighAt`·`holdLowPrice`·`holdLowAt`·`sellVsHighRate`·`sellVsLowRate`·`buyToNewsMinutes`·`priceMoves`·`postSellFlow`·`counterfactuals`·`peerComparison`이 채워진다. 여러 재생일에 걸친 매매는 `false`이며 이 필드가 전부 `null`(`priceMoves`는 `[]`)이 된다 — 재생일마다 원본 거래일이 달라 분봉이 불연속이라 계산 자체가 성립하지 않는다. **한 매도가 여러 매수 lot에 배분됐고 그 lot들이 서로 다른 원본 거래일에 걸쳐 있어도 `false`다** — 가장 이른 lot 하나만 보고 판정하지 않는다.
 
+**`holdingMinutes`는 위 nullable 목록에 없다 — 원본 거래일이 역전된 경우에만 `null`이다** (2026-08-04, 이슈 #208). `buyAt`·`sellAt`이 서로 다른 원본 거래일 축에 놓일 수 있고, 같은 원본 거래일을 여러 서비스 날짜에 재생할 수 있어 **매도의 원본 거래일이 매수 lot의 것보다 앞선 조합(`sellAt < buyAt`)이 성립한다.** 그때만 `null`이며 음수를 0으로 clamp하거나 서비스 벽시계 경과분으로 대체하지 않는다 — 둘 다 같은 응답의 `buyAt`·`sellAt`과 산술이 어긋난다. **원본 거래일이 순방향인 정상 cross-session 매매(`sameSessionCompleted=false`)에서는 그대로 채운다.** 규칙은 spec §파생 사실 계산이 정본이다.
+
 **`narrativeStatus`는 항상 `READY`다.** 매도 회고에는 §템플릿 문장이 있어 LLM이 실패하거나 후검증에 걸려도 서버가 수치로 조립한 문장으로 대체하므로, 서술이 비는 경우가 없다. 어느 쪽으로 만들어졌는지는 `narrativeSource`(`LLM`|`TEMPLATE`)로 구분한다. **`UNAVAILABLE`은 이 엔드포인트에 존재하지 않는다** — 템플릿이 없는 뉴스 요약·브리핑에만 있는 상태다.
 
 서술은 최초 조회 시 생성해 `trade_feedbacks`에 저장하고 이후 재사용한다(`UNIQUE(trade_id)`). **예외는 하나다** — `postSellFlow`가 `READY`이고 `peerComparison`이 `NOT_YET`이 아닌 상태(`READY`·`INSUFFICIENT_SAMPLE`·`NO_EVENT` 모두 확정으로 친다)가 된 뒤 **첫 조회에서 1회 재생성한다.** 매도 후 흐름과 집단 비교가 그때 채워지므로 그 내용을 반영해야 한다. **매도 후 흐름만 보고 재생성하면 안 된다** — 15:30~15:32에 조회한 사용자는 집단 비교가 빠진 문장으로 굳는다. **반사실은 반영하지 않는다** — 구조화 필드로만 나가야 하고, 서술에 넣으면 가정법 금지 후검증에 걸린다. 그 밖에는 매도 체결이 불변 원장이므로 재생성하지 않는다.

@@ -14,9 +14,12 @@ import com.finplay.api.auth.domain.User;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.feedback.dto.response.PostSellFeedbackResponse;
+import com.finplay.api.feedback.repository.PriceMoveEventRepository;
+import com.finplay.api.feedback.repository.PriceMoveEventSourceRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.domain.StockReplaySession;
+import com.finplay.api.market.service.StockReplayService;
 import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.domain.OrderType;
@@ -25,9 +28,12 @@ import com.finplay.api.order.service.TradeService;
 import com.finplay.api.portfolio.service.SellAllocationQueryService;
 import com.finplay.api.portfolio.service.SellAllocationSummaryDto;
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -41,6 +47,8 @@ import org.springframework.test.util.ReflectionTestUtils;
 // 픽스처의 수치는 계약 예시 그대로다(매수원가 700,000 + 매수수수료 105, 매도 685,000 − 수수료 102,
 // realizedPnl −15,207). 계약이 "값이 안 맞으면 예시가 아니라 구현이 틀린 것"이라고 적어 둔 자리다.
 class PostSellFeedbackServiceTest {
+
+	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
 	private static final Long USER_ID = 1L;
 	private static final Long SELL_TRADE_ID = 2L;
@@ -60,8 +68,23 @@ class PostSellFeedbackServiceTest {
 
 	private final SellAllocationQueryService sellAllocationQueryService = mock(SellAllocationQueryService.class);
 
+	private final StockReplayService stockReplayService = mock(StockReplayService.class);
+
+	private final PriceMoveEventRepository priceMoveEventRepository = mock(PriceMoveEventRepository.class);
+
+	private final PriceMoveEventSourceRepository priceMoveEventSourceRepository = mock(
+		PriceMoveEventSourceRepository.class);
+
+	// 파생 사실(2번 항목)이 카드 노출 게이트에 그 체결의 서비스 날짜를 쓰므로 시계가 필요하다. 이 파일이 보는
+	// 완료 조건은 게이트가 아니라 검증 순서·수치·buyAt·sameSessionCompleted라, 매도 서비스 날짜의 장중 시각으로
+	// 고정해 게이트가 판정을 가리지 않게 둔다 — 게이트 자체(⑮)는 통합 테스트가 고정 Clock으로 본다.
 	private final PostSellFeedbackService postSellFeedbackService = new PostSellFeedbackService(
-		tradeService, sellAllocationQueryService);
+		tradeService,
+		sellAllocationQueryService,
+		stockReplayService,
+		priceMoveEventRepository,
+		priceMoveEventSourceRepository,
+		Clock.fixed(SELL_SERVICE_DATE.atTime(SELL_TIME).atZone(KST).toInstant(), KST));
 
 	// --- 원장 수치 ---
 
@@ -142,6 +165,41 @@ class PostSellFeedbackServiceTest {
 		assertThat(response.holdingMinutes()).isEqualTo(310);
 		// 나중 lot(10:30)을 기준으로 잰 구현이 내는 답 — 두 답이 갈리는 픽스처임을 남긴다.
 		assertThat(response.holdingMinutes()).isNotEqualTo(250);
+	}
+
+	// 2026-08-04 결정 — 원본 거래일이 역전되면 holdingMinutes가 null이다(§파생 사실 계산). 같은 원본 거래일을
+	// 여러 서비스 날짜에 재생할 수 있어 매도의 원본 거래일이 매수 lot보다 앞선 조합이 실제로 성립하고, 그때 음수가
+	// 예외도 로그도 없이 나갔다. 아래 두 테스트는 짝이다 — 역전만 재현하면 "sameSessionCompleted=false면 전부
+	// null"로 잘못 구현한 코드도 초록이기 때문이다.
+	@Test
+	@DisplayName("매도의 원본 거래일이 매수 lot보다 앞서면 holdingMinutes가 null이다 — 음수를 내지 않는다")
+	void holdingMinutesIsNullWhenTheOriginTradeDatesAreReversed() {
+		LocalDate laterOriginTradeDate = ORIGIN_TRADE_DATE.plusDays(1);
+		givenOwnedSellTrade(sellTrade(ORIGIN_TRADE_DATE));
+		givenAllocation(twoLotSummary(laterOriginTradeDate, laterOriginTradeDate));
+
+		PostSellFeedbackResponse response = postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
+
+		// 픽스처 자기검증 — 응답의 두 시각이 실제로 역전돼 있어야 이 규칙을 검증한다. 그대로 뺀 구현이 내는
+		// 답이 음수이므로 두 구현이 갈린다(0으로 clamp한 구현도 이 단정에서 빨개진다).
+		assertThat(response.sellAt()).isBefore(response.buyAt());
+		assertThat(Duration.between(response.buyAt(), response.sellAt()).toMinutes()).isNegative();
+		assertThat(response.holdingMinutes()).isNull();
+	}
+
+	@Test
+	@DisplayName("원본 거래일이 순방향이면 sameSessionCompleted=false여도 holdingMinutes는 채워진다")
+	void holdingMinutesStaysFilledForAForwardCrossSessionSell() {
+		LocalDate earlierOriginTradeDate = ORIGIN_TRADE_DATE.minusDays(1);
+		givenOwnedSellTrade(sellTrade(ORIGIN_TRADE_DATE));
+		givenAllocation(twoLotSummary(earlierOriginTradeDate, earlierOriginTradeDate));
+
+		PostSellFeedbackResponse response = postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
+
+		// 계약의 sameSessionCompleted=false nullable 목록에 holdingMinutes는 없다 — 조건은 역전뿐이다.
+		assertThat(response.sameSessionCompleted()).isFalse();
+		assertThat(response.buyAt()).isEqualTo(LocalDateTime.of(earlierOriginTradeDate, EARLIEST_BUY_TIME));
+		assertThat(response.holdingMinutes()).isEqualTo(1750);
 	}
 
 	// --- sameSessionCompleted ---

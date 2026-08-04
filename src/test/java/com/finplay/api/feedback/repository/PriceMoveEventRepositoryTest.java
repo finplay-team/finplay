@@ -78,6 +78,23 @@ class PriceMoveEventRepositoryTest {
 			NOW);
 	}
 
+	// 보유 구간 파인더용 — windowEnd·revealTime을 케이스마다 따로 줘야 구간 좁히기와 게이트를 가른다.
+	private PriceMoveEvent newStockEvent(
+		PriceMoveEventType eventType, LocalTime windowStart, LocalTime windowEnd, LocalTime revealTime) {
+		return PriceMoveEvent.createStock(
+			stock,
+			eventType,
+			ORIGIN_TRADE_DATE,
+			windowStart,
+			windowEnd,
+			CHANGE_RATE,
+			DETECTION_SCORE,
+			windowStart + " 카드",
+			NarrativeSource.LLM,
+			revealTime,
+			NOW);
+	}
+
 	private PriceMoveEvent newCryptoEvent(LocalDateTime occurredAt) {
 		// origin_trade_date를 넘기지 않는다 — 팩토리가 occurredAt의 날짜로 파생한다 (§C-9).
 		return PriceMoveEvent.createCrypto(
@@ -296,5 +313,142 @@ class PriceMoveEventRepositoryTest {
 		priceMoveEventRepository.saveAndFlush(newCryptoEvent(OCCURRED_AT.plusMinutes(1)));
 
 		assertThat(priceMoveEventRepository.count()).isEqualTo(2);
+	}
+
+	// --- 매도 회고의 보유 구간 카드 파인더 (spec FEED-007, 이슈 #208 2번 항목) ---
+	//
+	// 보유 구간은 09:30 매수 ~ 14:40 매도로 고정하고 케이스마다 카드의 windowEnd·revealTime만 바꾼다.
+	// 상한(revealTime)은 호출부가 그 체결의 서비스 날짜로 계산해 넘긴다 — 이 파인더는 받은 값만 적용한다.
+
+	private static final LocalTime HOLD_FROM = LocalTime.of(9, 30);
+	private static final LocalTime HOLD_TO = LocalTime.of(14, 40);
+
+	// "그날 끝" 상한. LocalTime.MAX를 쓰면 안 되는 이유는 아래 전용 테스트에 있다.
+	private static final LocalTime END_OF_DAY = LocalTime.of(23, 59, 59);
+
+	private List<PriceMoveEvent> findHeldCards(LocalTime revealCutoff) {
+		return priceMoveEventRepository
+			.findByInstrumentIdAndOriginTradeDateAndWindowEndBetweenAndRevealTimeLessThanEqualOrderByWindowStartAscIdAsc(
+				stock.getId(), ORIGIN_TRADE_DATE, HOLD_FROM, HOLD_TO, revealCutoff);
+	}
+
+	// windowStart로 좁힌 구현이면 두 단정이 동시에 깨진다 — 09:25 카드가 빠지고 14:35 카드가 들어온다.
+	// 후자는 매도 뒤에 끝난 카드라 minutesBeforeSell이 −5가 되고, 3번 항목의 반사실 기준 카드로도 못 쓴다.
+	@Test
+	@DisplayName("보유 구간 파인더는 window_start가 아니라 window_end로 좁힌다")
+	void heldPeriodFinderNarrowsByWindowEndNotWindowStart() {
+		// 매수 전에 시작해 보유 구간 안에서 끝난 카드 — 포함된다.
+		PriceMoveEvent startedBeforeBuy = priceMoveEventRepository.saveAndFlush(
+			newStockEvent(PriceMoveEventType.INTRADAY, LocalTime.of(9, 25), LocalTime.of(9, 31), LocalTime.MIN));
+		// 보유 구간 안에서 시작해 매도 뒤에 끝난 카드 — 빠진다.
+		priceMoveEventRepository.saveAndFlush(
+			newStockEvent(PriceMoveEventType.INTRADAY, LocalTime.of(14, 35), LocalTime.of(14, 45), LocalTime.MIN));
+		PriceMoveEvent inside = priceMoveEventRepository.saveAndFlush(
+			newStockEvent(PriceMoveEventType.INTRADAY, LocalTime.of(11, 20), LocalTime.of(11, 25), LocalTime.MIN));
+
+		assertThat(findHeldCards(END_OF_DAY))
+			.extracting(PriceMoveEvent::getId)
+			.containsExactly(startedBeforeBuy.getId(), inside.getId());
+	}
+
+	// BETWEEN이 양 끝을 포함한다 — 부등호가 하나라도 배타로 바뀌면 매수·매도 분에 끝난 카드가 조용히 사라진다.
+	@Test
+	@DisplayName("window_end가 매수 시각·매도 시각과 같은 카드도 포함된다")
+	void heldPeriodFinderIncludesCardsEndingExactlyAtTheBoundaries() {
+		PriceMoveEvent atBuy = priceMoveEventRepository.saveAndFlush(
+			newStockEvent(PriceMoveEventType.INTRADAY, LocalTime.of(9, 25), HOLD_FROM, LocalTime.MIN));
+		PriceMoveEvent atSell = priceMoveEventRepository.saveAndFlush(
+			newStockEvent(PriceMoveEventType.INTRADAY, LocalTime.of(14, 35), HOLD_TO, LocalTime.MIN));
+		// 경계 밖 1분 — 대조군이다.
+		priceMoveEventRepository.saveAndFlush(
+			newStockEvent(PriceMoveEventType.INTRADAY, LocalTime.of(9, 20), HOLD_FROM.minusMinutes(1), LocalTime.MIN));
+		priceMoveEventRepository.saveAndFlush(
+			newStockEvent(PriceMoveEventType.INTRADAY, LocalTime.of(14, 41), HOLD_TO.plusMinutes(1), LocalTime.MIN));
+
+		assertThat(findHeldCards(END_OF_DAY))
+			.extracting(PriceMoveEvent::getId)
+			.containsExactly(atBuy.getId(), atSell.getId());
+	}
+
+	// 게이트 ⑮ — 보유 구간이 이미 지난 시각이라도 근거 기사는 windowEnd 이후에 발행된 것이 붙으므로 게이트가 걸린다.
+	@Test
+	@DisplayName("보유 구간 안이어도 reveal_time이 상한을 넘은 카드는 빠지고, 상한을 올리면 나온다")
+	void heldPeriodFinderAppliesTheRevealCutoff() {
+		PriceMoveEvent revealed = priceMoveEventRepository.saveAndFlush(
+			newStockEvent(PriceMoveEventType.INTRADAY, LocalTime.of(11, 20), LocalTime.of(11, 25),
+				LocalTime.of(11, 26)));
+		PriceMoveEvent hidden = priceMoveEventRepository.saveAndFlush(
+			newStockEvent(PriceMoveEventType.INTRADAY, LocalTime.of(14, 5), LocalTime.of(14, 10),
+				LocalTime.of(14, 41)));
+
+		// 상한이 11:30인 조회 — 오후 카드는 아직 닫혀 있다.
+		assertThat(findHeldCards(LocalTime.of(11, 30)))
+			.extracting(PriceMoveEvent::getId)
+			.containsExactly(revealed.getId());
+		// 경계가 <= 이므로 정각에 열린다.
+		assertThat(findHeldCards(LocalTime.of(11, 26)))
+			.extracting(PriceMoveEvent::getId)
+			.containsExactly(revealed.getId());
+		assertThat(findHeldCards(LocalTime.of(11, 25, 59))).isEmpty();
+		// 과거 서비스 날짜의 체결이면 그날 카드가 전부 열려 있어야 한다 — 호출부가 넘기는 "그날 끝" 상한이다.
+		assertThat(findHeldCards(END_OF_DAY))
+			.extracting(PriceMoveEvent::getId)
+			.containsExactly(revealed.getId(), hidden.getId());
+	}
+
+	// "그날 끝" 상한을 LocalTime.MAX로 표현하면 카드가 예외도 로그도 없이 0건이 된다. Connector/J가
+	// 23:59:59.999999999를 TIME으로 보내면서 MySQL이 소수 초를 올림해 00:00:00으로 접기 때문이다 —
+	// 그러면 reveal_time <= 00:00:00이 되어 자정 카드만 남는다. 상한은 초 단위(23:59:59)로 만든다.
+	@Test
+	@DisplayName("상한을 LocalTime.MAX로 넘기면 MySQL이 00:00:00으로 접어 카드가 0건이 된다 — 이 값을 상한으로 쓰지 않는다")
+	void localTimeMaxCollapsesToMidnightAndMatchesNoCard() {
+		priceMoveEventRepository.saveAndFlush(
+			newStockEvent(PriceMoveEventType.INTRADAY, LocalTime.of(11, 20), LocalTime.of(11, 25),
+				LocalTime.of(11, 26)));
+
+		// 드라이버가 실제로 무엇을 보내는지 — 값이 접히는 자리를 눈에 보이게 남긴다.
+		assertThat(jdbcTemplate.queryForObject("select cast(? as char)", String.class, LocalTime.MAX))
+			.isEqualTo("00:00:00");
+		assertThat(jdbcTemplate.queryForObject("select cast(? as char)", String.class, END_OF_DAY))
+			.isEqualTo("23:59:59");
+
+		assertThat(findHeldCards(LocalTime.MAX)).isEmpty();
+		assertThat(findHeldCards(END_OF_DAY)).hasSize(1);
+	}
+
+	// 이 응답에서는 카드 순서가 화면 순서만이 아니라 3번 항목의 반사실 기준 카드(보유 구간의 첫 카드)까지 정한다.
+	//
+	// 2차 키(id)를 지운 회귀는 이 단정으로 반드시 잡히지 않는다 — InnoDB가 흔히 PK 순서로 돌려주어 우연히
+	// 통과한다. 보호는 파인더 이름과 계약 문장 양쪽에 남아 있다.
+	@Test
+	@DisplayName("보유 구간 카드는 window_start 오름차순 + id 오름차순이고 다른 종목·거래일은 섞이지 않는다")
+	void heldPeriodFinderOrdersByWindowStartThenIdAndIsScopedToInstrumentAndTradeDate() {
+		// 첫 분봉이 09:00인 날 갭 카드와 장중 첫 후보의 window_start가 정확히 같아진다 (§데이터 모델).
+		PriceMoveEvent gap = priceMoveEventRepository.saveAndFlush(
+			newStockEvent(PriceMoveEventType.OPENING_GAP, LocalTime.of(10, 0), LocalTime.of(10, 0), LocalTime.MIN));
+		PriceMoveEvent intraday = priceMoveEventRepository.saveAndFlush(
+			newStockEvent(PriceMoveEventType.INTRADAY, LocalTime.of(10, 0), LocalTime.of(10, 5), LocalTime.MIN));
+		PriceMoveEvent earlier = priceMoveEventRepository.saveAndFlush(
+			newStockEvent(PriceMoveEventType.INTRADAY, LocalTime.of(9, 30), LocalTime.of(9, 35), LocalTime.MIN));
+		// 다른 원본 거래일 — 같은 시각이어도 섞이지 않는다.
+		priceMoveEventRepository.saveAndFlush(PriceMoveEvent.createStock(
+			stock, PriceMoveEventType.INTRADAY, ORIGIN_TRADE_DATE.plusDays(1), LocalTime.of(11, 20),
+			LocalTime.of(11, 25), CHANGE_RATE, DETECTION_SCORE, "다른 거래일", NarrativeSource.LLM, LocalTime.MIN, NOW));
+		// 다른 종목 — 같은 거래일·시각이어도 섞이지 않는다.
+		Instrument otherStock = instrumentRepository.save(Instrument.create(
+			Market.STOCK, "MOVE002", "테스트종목B", new BigDecimal("100"), 70000, true, NOW));
+		priceMoveEventRepository.saveAndFlush(PriceMoveEvent.createStock(
+			otherStock, PriceMoveEventType.INTRADAY, ORIGIN_TRADE_DATE, LocalTime.of(11, 20), LocalTime.of(11, 25),
+			CHANGE_RATE, DETECTION_SCORE, "다른 종목", NarrativeSource.LLM, LocalTime.MIN, NOW));
+
+		// 픽스처 전제 — 두 window_start가 실제로 같고 저장 순서가 갭 → 장중이다.
+		assertThat(gap.getWindowStart()).isEqualTo(intraday.getWindowStart());
+		assertThat(gap.getId()).isLessThan(intraday.getId());
+		// 가장 이른 카드를 마지막에 저장했다 — window_start 정렬을 잃은 구현이면 순서가 어긋난다.
+		assertThat(earlier.getId()).isGreaterThan(intraday.getId());
+
+		assertThat(findHeldCards(END_OF_DAY))
+			.extracting(PriceMoveEvent::getId)
+			.containsExactly(earlier.getId(), gap.getId(), intraday.getId());
 	}
 }
