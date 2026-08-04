@@ -71,7 +71,7 @@ public class OrderExecutionService {
 		Account account) {
 		BigDecimal quantity = request.quantity();
 
-		// 설계 노트 2: 매수 최소구현 견본 — assertOrderable→getPrice→최소금액→amount/fee 계산(공유)
+		// 설계 노트 2: 매수 최소구현 견본 — marketStatus·가격·세션 단일 관측→최소금액→amount/fee 계산(공유)
 		OrderPricing pricing = priceOrder(request.market(), instrument, quantity);
 		long cashRequired = pricing.amount() + pricing.fee();
 		if (account.getCashBalance() < cashRequired) {
@@ -184,7 +184,8 @@ public class OrderExecutionService {
 		return accountService.getAccountFor(userId, accountMarket);
 	}
 
-	// 설계 노트 1: assertOrderable→getPrice→최소주문금액 검증→amount/fee 계산(FLOOR)을 매수·매도가 공유한다.
+	// 설계 노트 1: getOrderExecutionPrice 한 관측에서 marketStatus·가격·세션을 확정한 뒤 최소주문금액 검증과
+	// amount/fee 계산(FLOOR)을 매수·매도가 공유한다.
 	private OrderPricing priceOrder(Market market, Instrument instrument, BigDecimal quantity) {
 		OrderExecutionPriceDto executionPrice = priceQueryService.getOrderExecutionPrice(instrument);
 		PriceQuoteDto priceQuote = executionPrice.priceQuote();
