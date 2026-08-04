@@ -150,6 +150,9 @@ class PracticeIntentionConcurrencyIntegrationTest {
 			shutdownAndAwait(executor);
 		}
 		assertThat(count("practice_intentions")).isZero();
+		// insertIfAbsent가 같은 트랜잭션에서 progress 행을 만들지만 favorite 잠금 실패로 트랜잭션 전체가
+		// 롤백되어 progress 행도 남지 않아야 한다 — "저장 없이 409" 계약의 핵심.
+		assertThat(count("practice_progresses")).isZero();
 	}
 
 	@Test

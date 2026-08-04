@@ -18,9 +18,11 @@ import com.finplay.api.market.service.InstrumentService;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class PracticeIntentionService {
@@ -44,10 +46,15 @@ public class PracticeIntentionService {
 
 		practiceProgressRepository.insertIfAbsent(userId, TUTORIAL_KEY, createdAt);
 		// insertIfAbsent가 같은 트랜잭션에서 행을 보장하므로 이 조회는 항상 성공해야 한다 — 도달하면
-		// 클라이언트에도 컨벤션에 맞는 공통 오류 형식으로 응답한다(원인 불명의 500이지만 형식은 지킨다).
+		// 클라이언트에도 컨벤션에 맞는 공통 오류 형식으로 응답하되(원인 불명의 500이지만 형식은 지킨다),
+		// GlobalExceptionHandler.handleBusinessException은 로깅하지 않으므로 여기서 직접 남긴다.
 		PracticeProgress progress = practiceProgressRepository
 			.findByUserIdAndTutorialKeyForUpdate(userId, TUTORIAL_KEY)
-			.orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_ERROR));
+			.orElseThrow(() -> {
+				log.error("practice_progresses 행을 insertIfAbsent 직후 조회하지 못함 (userId={}, tutorialKey={})",
+					userId, TUTORIAL_KEY);
+				return new BusinessException(ErrorCode.INTERNAL_ERROR);
+			});
 		if (progress.getStatus() == PracticeProgressStatus.COMPLETED) {
 			throw new BusinessException(ErrorCode.PRACTICE_ALREADY_COMPLETED);
 		}

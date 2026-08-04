@@ -67,9 +67,10 @@ class PracticeIntentionServiceTest {
 		when(progressRepository.findByUserIdAndTutorialKeyForUpdate(USER_ID,
 			PracticeIntentionService.TUTORIAL_KEY)).thenReturn(Optional.of(progress));
 		when(favoriteService.lockFavoriteIfPresent(USER_ID, INSTRUMENT_ID)).thenReturn(true);
+		java.util.concurrent.atomic.AtomicLong nextId = new java.util.concurrent.atomic.AtomicLong(99L);
 		when(intentionRepository.save(org.mockito.ArgumentMatchers.any())).thenAnswer(invocation -> {
 			PracticeIntention saved = invocation.getArgument(0);
-			org.springframework.test.util.ReflectionTestUtils.setField(saved, "id", 99L);
+			org.springframework.test.util.ReflectionTestUtils.setField(saved, "id", nextId.getAndIncrement());
 			return saved;
 		});
 
@@ -82,7 +83,7 @@ class PracticeIntentionServiceTest {
 		assertThat(first.stopLoss()).isEqualByComparingTo("90.00000000");
 		assertThat(first.takeProfit()).isEqualByComparingTo("120.00000000");
 		assertThat(first.createdAt()).isEqualTo(LocalDateTime.of(2026, 8, 4, 1, 0));
-		assertThat(second).isEqualTo(first);
+		assertThat(second.intentionId()).isEqualTo(100L);
 		verify(intentionRepository, org.mockito.Mockito.times(2))
 			.save(org.mockito.ArgumentMatchers.any(PracticeIntention.class));
 		InOrder order = inOrder(progressRepository, favoriteService, intentionRepository);
