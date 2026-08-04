@@ -1,5 +1,5 @@
 // 튜토리얼 합성 시세 조회 API의 인증, 검증, 응답과 오류 계약을 검증하는 WebMvc 슬라이스 테스트다.
-package com.finplay.api.education.controller;
+package com.finplay.api.education.synthetic.controller;
 
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -12,8 +12,8 @@ import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.auth.token.JwtTokenProvider;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
-import com.finplay.api.education.dto.response.SyntheticPriceSeriesResponse;
-import com.finplay.api.education.service.SyntheticPriceService;
+import com.finplay.api.education.synthetic.dto.response.SyntheticPriceSeriesResponse;
+import com.finplay.api.education.synthetic.service.SyntheticPriceService;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;

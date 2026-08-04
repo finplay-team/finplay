@@ -169,7 +169,7 @@ OCO 요청 fingerprint는 UTF-8 canonical JSON의 SHA-256이다. key 순서는 `
 - 잠금 순서에는 cycle이 없다. intention 생성은 `progress(DB) → favorite 락(in-memory)`, reflection은 `progress(DB) → favorite 락(in-memory) → intention(in-memory) → plan(DB)`, OCO 생성은 `favorite 락(in-memory) → intention 락(in-memory) → replay session(주식, DB) → holding(DB) → plan(DB)`, favorite DELETE는 `favorite 락(in-memory)`만 잠근다. 두 개 이상 공통 자원을 잠그는 경로가 favorite/intention/plan을 역순으로 취득하지 않으며 reflection은 replay session·holding을 잠그지 않는다. in-memory 락과 DB 락을 섞어 잡을 때도 항상 이 순서(도메인 in-memory 락을 먼저 획득하고 그 안에서 DB 트랜잭션/락을 연다)를 지켜 교착을 피한다.
 - 튜토리얼 판정: 완료 전에는 실제 evidence 현재 존재로 상태를 계산해 삭제·취소 시 재진행이 필요할 수 있다. completion 행 생성 뒤 overall은 불변 `COMPLETED`다. 교육 service는 존재·소유권·시각 순서·필드 일치를 재검증하며 클라이언트 완료 flag는 받지 않는다. favorite·OCO GET 호출 여부는 판정 입력이 아니다.
 - 조회 API: favorite 목록은 in-memory 저장소를, OCO 목록과 practice 진행 GET은 DB를 읽기만 하며 어느 쪽도 상태를 쓰지 않는다. 목록에 실제 리소스가 포함되는지는 응답 필드 API 테스트로 검증한다.
-- 합성 시세 조회(`GET /api/education/practice/synthetic-prices/{instrumentId}`)는 잠금·트랜잭션이 없는 순수 계산이다. 요청마다 새 랜덤워크를 생성해 반환하며 어떤 저장소에도 쓰지 않고, 위 favorite/intention/plan 잠금 순서와 무관하다.
+- 합성 시세 조회(`GET /api/education/practice/synthetic-prices/{instrumentId}`)는 비즈니스 락이 없는 순수 계산이다(내부 조회를 위한 읽기 전용 트랜잭션만 사용). 요청마다 새 랜덤워크를 생성해 반환하며 어떤 저장소에도 쓰지 않고, 위 favorite/intention/plan 잠금 순서와 무관하다.
 
 ## 테스트 계획
 - 단위: 3단계 증거 판정, baseline, PENDING 전용 A·B 관찰, 서버 전용 C, 불변 완료, 시장가 즉시 체결과 OCO 예약 구분, 가격 범위, 자유 복기 무판정.

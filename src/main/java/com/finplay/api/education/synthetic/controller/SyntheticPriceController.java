@@ -1,9 +1,9 @@
 // 인증 사용자의 튜토리얼 전용 합성 시세 조회 요청을 처리하는 컨트롤러
-package com.finplay.api.education.controller;
+package com.finplay.api.education.synthetic.controller;
 
 import com.finplay.api.auth.token.AuthenticatedUser;
-import com.finplay.api.education.dto.response.SyntheticPriceSeriesResponse;
-import com.finplay.api.education.service.SyntheticPriceService;
+import com.finplay.api.education.synthetic.dto.response.SyntheticPriceSeriesResponse;
+import com.finplay.api.education.synthetic.service.SyntheticPriceService;
 import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;

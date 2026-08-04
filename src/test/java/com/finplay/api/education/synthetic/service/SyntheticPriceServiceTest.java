@@ -1,5 +1,5 @@
 // 튜토리얼 합성 시세 생성의 성공 경로(틱 수·변동폭·clamp)와 가격 조회 실패 시 fallback 시작가 사용을 검증하는 단위 테스트다.
-package com.finplay.api.education.service;
+package com.finplay.api.education.synthetic.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -8,7 +8,7 @@ import static org.mockito.Mockito.when;
 
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
-import com.finplay.api.education.dto.response.SyntheticPriceSeriesResponse;
+import com.finplay.api.education.synthetic.dto.response.SyntheticPriceSeriesResponse;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.InstrumentService;

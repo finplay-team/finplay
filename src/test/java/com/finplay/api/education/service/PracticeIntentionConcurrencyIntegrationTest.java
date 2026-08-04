@@ -110,6 +110,18 @@ class PracticeIntentionConcurrencyIntegrationTest {
 		assertThat(intentionRepository.findByUserId(user.getId())).isEmpty();
 	}
 
+	@Test
+	void missingFavoriteFailsWithPracticeStepLockedAndLeavesNoProgressRowBehind() {
+		// favorite을 등록하지 않은 채 최초 intention을 시도한다 — insertIfAbsent가 같은 트랜잭션 안에서
+		// progress 행을 만들지만, favorite 확인 실패로 트랜잭션 전체가 롤백돼 실제 DB에 행이 남지 않아야 한다.
+		assertThatThrownBy(() -> intentionService.createIntention(user.getId(), request()))
+			.isInstanceOfSatisfying(BusinessException.class,
+				exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.PRACTICE_STEP_LOCKED));
+
+		assertThat(countProgress()).isZero();
+		assertThat(intentionRepository.findByUserId(user.getId())).isEmpty();
+	}
+
 	private long countProgress() {
 		return jdbcTemplate.queryForObject("SELECT COUNT(*) FROM practice_progresses WHERE user_id = ?",
 			Long.class, user.getId());

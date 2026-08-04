@@ -1,5 +1,5 @@
 // 튜토리얼 전용 합성 시세 시계열 응답
-package com.finplay.api.education.dto.response;
+package com.finplay.api.education.synthetic.dto.response;
 
 import java.math.BigDecimal;
 import java.util.List;

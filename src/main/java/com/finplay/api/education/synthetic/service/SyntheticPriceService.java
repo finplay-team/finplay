@@ -1,7 +1,7 @@
 // 튜토리얼 참고용 합성 랜덤워크 시세를 요청마다 즉석 생성하는 서비스(저장소 없음)
-package com.finplay.api.education.service;
+package com.finplay.api.education.synthetic.service;
 
-import com.finplay.api.education.dto.response.SyntheticPriceSeriesResponse;
+import com.finplay.api.education.synthetic.dto.response.SyntheticPriceSeriesResponse;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.service.InstrumentService;
 import com.finplay.api.market.service.PriceQueryService;
