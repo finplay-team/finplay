@@ -339,7 +339,7 @@
 
 ## 작업 항목
 
-- [ ] **L1. 커서 값 객체 + 두 리포지토리의 QueryDSL 커서 조회**
+- [x] **L1. 커서 값 객체 + 두 리포지토리의 QueryDSL 커서 조회**
 
   `plan.md` §커서 인코딩 형식대로 `JournalCursor(LocalDateTime createdAt, Long tradeId)`를 `journal.service` 패키지에 만든다(`TradeCursor`·`OrderCursor`와 같은 모양의 `parse`/`encode`). `plan.md` §데이터 접근 설계의 QueryDSL 쿼리 그대로 `BuyTradeJournalRepositoryCustom`/`Impl`, `SellTradeJournalRepositoryCustom`/`Impl`을 추가하고 기존 리포지토리 인터페이스가 이를 상속하게 한다.
   - `journal.buyTrade.account.id.eq(accountId)`(매도 쪽은 `sellTrade.account.id`) 조건 하나로 `market` 필터와 소유권 검증을 동시에 처리한다 — 별도 소유권 조건을 추가하지 않는다.

@@ -19,6 +19,7 @@
 | B1 | implementer | `./gradlew compileJava` | plan.md §JOUR-002 §데이터 모델(3단계 DDL, `of`/`updateContent` 설계), tasks.md B1, V18(`sell_trade_journals`) 선례 그대로 미러링, ADR-0004 |
 | B2 | implementer | `./gradlew compileJava`, `./gradlew test --tests "*JournalServiceTest*"` | plan.md §JOUR-002 §구성요소 설계(`updateBuyJournal` 1~5단계), tasks.md B2, `updateSellJournal` 선례(존재→소유→매수여부→회고존재 순, 잠금 판정 단계 없음, `HoldingLotRepository`·`TradeAllocationRepository` 미주입), ADR-0002 |
 | B3 | implementer | `./gradlew compileJava`, `./gradlew compileTestJava` | plan.md §JOUR-002 §API 설계·§컨트롤러(`PATCH .../journal`, 200, DTO 2개), tasks.md B3, `updateSellJournal` 컨트롤러 메서드 선례, CLAUDE.md 규칙 7 |
+| L1 | implementer | `./gradlew compileJava` | plan.md §JOUR-006 §커서 인코딩 형식·§데이터 접근 설계(코드 스니펫), tasks.md L1, `TradeCursor`·`TradeRepositoryCustom`/`Impl`(`order/`) 선례 그대로 미러링, ADR-0002 |
 
 ## 모니터링 (사람용 요약)
 - 항목1 — `V14__create_buy_trade_journals.sql` + `BuyTradeJournal` 엔티티 + `BuyTradeJournalRepository` 추가, compileJava 통과. (이후 `dev`에 먼저 병합된 `V14__create_favorites.sql`과 번호가 겹쳐 `V15__create_buy_trade_journals.sql`로 재번호화됨 — plan.md §데이터 모델 참고)
@@ -39,3 +40,4 @@
 - PR 리뷰 후 재확인 — `dev`에 `V20__add_stock_replay_session_to_trades.sql`(#191)까지 먼저 병합돼 방금 붙인 V20과 다시 충돌. `dev` 재병합 후 `V21__add_updated_at_to_buy_trade_journals.sql`로 재번호화, `./gradlew build` 재검증.
 - B2 — `JournalService.updateBuyJournal` 추가(존재→소유→매수여부→회고존재 순 검증, 잠금 판정 단계·`HoldingLotRepository`/`TradeAllocationRepository` 미주입, `updateSellJournal`과 단계 구성 동일) + `BuyJournalUpdateResponse`(5필드 응답 DTO, `from`) 추가, `JournalServiceTest`에 대칭 단위 테스트 14건(정상 수정·404×2 구분·403·400·연속 2회 수정) 작성해 28건 전부 통과, 컨트롤러·요청 DTO는 B3 범위라 미착수, compileJava 통과.
 - B3 — `JournalController`에 `PATCH /api/trades/{buyTradeId}/journal` 추가(기존 매수·매도 작성·수정 메서드 리팩터링 없음, 200 반환) + `BuyJournalUpdateRequest`(`@NotBlank`+`@Size(max=5000)`) 추가, `docs/api-routes.md`(journal 행 1개)·`docs/api-contracts.md`(## journal 절에 매수 회고 수정 소절 추가, 잠금 없음 명시) 같은 커밋 대상으로 갱신, 테스트는 tester 담당이라 미작성(기존 JournalControllerTest·JournalServiceTest 등 compileTestJava로 무영향 확인), compileJava 통과.
+- L1 — `JournalCursor`(`journal.service`, `TradeCursor`와 동형이나 `encode(createdAt, tradeId)`가 값 2개를 직접 받음) + `BuyTradeJournalRepositoryCustom`/`Impl`·`SellTradeJournalRepositoryCustom`/`Impl`(각각 `buyTrade.account.id`/`sellTrade.account.id` 단일 조건으로 market+소유권 결합, `fetchJoin`, `createdAt.desc()`+체결ID `desc()` 정렬) 추가, 기존 두 `~Repository`가 각각 Custom 인터페이스 상속하도록 수정, `QBuyTradeJournal`/`QSellTradeJournal`은 어노테이션 프로세서가 자동 생성(별도 조치 불필요 확인), `JournalService`·컨트롤러·DTO·마이그레이션은 범위 밖이라 미착수, compileJava 통과.
