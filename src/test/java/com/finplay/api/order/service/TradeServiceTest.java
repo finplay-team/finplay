@@ -30,6 +30,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -140,6 +141,52 @@ class TradeServiceTest {
 		assertThat(response.content()).isEmpty();
 		assertThat(response.hasNext()).isFalse();
 		assertThat(response.nextCursor()).isNull();
+	}
+
+	@Test
+	void getOwnedTradeReturnsTradeWhenCallerIsOwner() {
+		Trade trade = tradeOwnedBy(5L, USER_ID, NOW);
+		when(tradeRepository.findById(5L)).thenReturn(Optional.of(trade));
+
+		Trade result = tradeService.getOwnedTrade(USER_ID, 5L);
+
+		assertThat(result).isSameAs(trade);
+	}
+
+	@Test
+	void getOwnedTradeThrowsNotFoundWhenTradeDoesNotExist() {
+		when(tradeRepository.findById(99L)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> tradeService.getOwnedTrade(USER_ID, 99L))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(exception -> assertThat(((BusinessException)exception).getErrorCode())
+				.isEqualTo(ErrorCode.NOT_FOUND));
+	}
+
+	@Test
+	void getOwnedTradeThrowsForbiddenWhenTradeOwnedByAnotherUser() {
+		Trade trade = tradeOwnedBy(6L, 999L, NOW);
+		when(tradeRepository.findById(6L)).thenReturn(Optional.of(trade));
+
+		assertThatThrownBy(() -> tradeService.getOwnedTrade(USER_ID, 6L))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(exception -> assertThat(((BusinessException)exception).getErrorCode())
+				.isEqualTo(ErrorCode.FORBIDDEN));
+	}
+
+	// getOwnedTrade 전용 — 소유자(user.id)를 직접 지정해 본인/타인 판정을 검증하기 위한 체결을 만든다.
+	private static Trade tradeOwnedBy(Long tradeId, Long ownerUserId, LocalDateTime executedAt) {
+		User owner = testUser();
+		ReflectionTestUtils.setField(owner, "id", ownerUserId);
+		Account ownerAccount = Account.create(owner, Market.STOCK, NOW);
+		Order order = Order.create(
+			owner, ownerAccount, stockInstrument(), OrderSide.BUY, OrderType.MARKET, new BigDecimal("3"),
+			"idem-key", "h".repeat(64), NOW);
+		Trade trade = Trade.of(
+			order, ownerAccount, stockInstrument(), OrderSide.BUY, new BigDecimal("100"),
+			new BigDecimal("3"), 300L, 1L, null, executedAt, NOW);
+		ReflectionTestUtils.setField(trade, "id", tradeId);
+		return trade;
 	}
 
 	private static Trade buyTrade(Long id, LocalDateTime executedAt) {

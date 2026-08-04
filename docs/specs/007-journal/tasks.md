@@ -20,7 +20,7 @@
   - 검증 — `@DataJpaTest`: 같은 `buy_trade_id` 2건째 유니크 위반, 서로 다른 체결 2건 공존, `existsByBuyTradeId` false→true, 없는 체결 참조 시 FK 위반.
   - 검증 — `./gradlew test`로 기존 `@SpringBootTest`가 `ddl-auto=validate`를 통과하는지 본다.
 
-- [ ] **2. `TradeService.getOwnedTrade` — 체결 조회·소유권 판정**
+- [x] **2. `TradeService.getOwnedTrade` — 체결 조회·소유권 판정**
 
   order 도메인에 본인 체결 조회 메서드를 추가한다(없으면 404, 타인이면 403). journal은 이것만 호출한다.
   - `side` 판정을 여기 넣지 않는다 — 투자일기 쪽 규칙이고 JOUR-003이 반대 조건으로 재사용한다.
