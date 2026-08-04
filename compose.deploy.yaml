@@ -32,6 +32,9 @@ services:
       context: .
       dockerfile: Dockerfile
     # 시크릿·외부 연동 키는 .env에서 그대로 주입한다 (.env.example 참조). 값은 파일에 적지 않는다.
+    # 뉴스·공시 수집과 AI 서술이 쓰는 NAVER_SEARCH_CLIENT_ID·NAVER_SEARCH_CLIENT_SECRET·DART_API_KEY·
+    # OPENAI_API_KEY도 이 경로로만 들어온다 (spec 012 FEED-001). 아래 environment 블록에 다시 적지 않는다 —
+    # environment가 env_file보다 우선하므로 여기 이름을 적으면 .env 값이 무시된다.
     env_file:
       - .env
     environment:

@@ -108,6 +108,8 @@ C-004의 나머지("숫자와 판정은 서버가 계산하고 AI는 관찰형 �
 합계 12
 ```
 
+**12는 스케줄 7개가 전부 들어온 뒤의 값이다. 이슈별로 자기 몫만큼 올린다** — 이슈 하나가 스케줄 2개를 더하면 그 시점의 값은 `기존 + 2`이고, 마지막 이슈가 12에 도달한다. 아직 없는 스케줄 몫까지 먼저 올리면 그 스레드는 계속 놀고, "풀 크기 = 등록된 `@Scheduled` 수"라는 불변식이 그동안 깨져 있어 실제 부족을 아무도 못 본다. **올릴 때마다 그 시점의 개수를 다시 센다.**
+
 `application.yml` 주석이 "기본 프로필의 `@Scheduled` 작업은 5개다 … 각자 독립 스레드를 쓰도록 5로 맞춘다"라는 불변식을 적어 두었으므로 **주석의 개수 계산도 함께 갱신한다.** 풀은 앱 전역 단일 풀이라 소유 도메인과 무관하게 전부 센다 — `price-snapshot-cron`이 `market` 소유라고 빼면 안 된다. 풀이 부족하면 08:45 배치가 스레드를 길게 점유해 **SSE heartbeat와 매분 가격 push가 개장 시간대에 밀린다.** 이슈 #125가 정확히 이 개수를 잘못 센 사고였다.
 
 **`crypto-watch-cron`을 30초로 오프셋한 이유** — `price-snapshot-cron`과 같은 시각이면 실행 순서가 보장되지 않아 감시가 그 분의 스냅샷을 못 볼 수 있다.
@@ -252,6 +254,9 @@ feedback/
                NarrativePromptBuilder     파트별 프롬프트 조립 (§LLM 프롬프트)
                NarrativeValidator         후검증 — 적발된 표현 목록 반환 (§후검증)
                NarrativeTemplateBuilder   템플릿 문장 조립 (§템플릿 문장)
+               NewsSearchQueryBuilder     종목별 검색 질의어 조립 (순수 계산, 코인 보정은 FEED-001)
+               NewsTitleFilter            같은 시장 다른 종목명이 든 제목 제외 (순수 계산, FEED-001)
+               NewsCollectionService      뉴스·공시 상시 수집 (수집기 호출 → 저장, 크론은 §C-1)
                FeedbackBatchService       개장 전 배치 오케스트레이션
                CryptoFeedbackBatchService 코인 요약·브리핑 갱신 (매시)
                PeerStatsBatchService      장 마감 집단 비교 확정 집계
@@ -276,6 +281,8 @@ DTO는 `dto/response/` 하위에 둔다(`docs/conventions.md`, 이 spec에는 �
 **서술 확정 경로는 `NarrativeService` 하나가 담는다.** 위 넷을 주입받아 파트별로 §후검증의 흐름을 실행한다 — 요약·브리핑은 2단계(생성 → 검증 → 적발 시 재생성 1회 → 그래도 걸리면 서술 없음 + `NONE`), 카드·매도 회고는 1단계(생성 → 검증 → 걸리면 템플릿, 재생성 없음)다. **뒤 이슈의 조회·배치 서비스는 이 서비스 하나만 주입하면 되고 생성기·검증기를 직접 알 필요가 없다.**
 
 **이 경로를 `NarrativeValidator`에 두지 않은 이유** — 템플릿 폴백은 이미 만들어 둔 문장을 고르는 국소적 동작이지만 재생성은 프로바이더를 다시 부르는 다른 층위라, 검증기가 `NarrativeGenerator`를 주입받는 순간 "검증만 하는 클래스"가 아니게 된다.
+
+**질의어 조립과 제목 필터를 수집기 밖에 둔다.** 둘 다 FEED-001의 규칙이고 외부 의존이 없어 고정 픽스처로 단정할 수 있다 — 수집기 안에 두면 HTTP 응답을 고정해야만 검사할 수 있게 된다. `NaverNewsCollector`가 둘을 주입받아 쓴다. 필터는 **같은 시장의 종목명 목록**만 보므로 시장을 섞지 않는다.
 
 `PriceMoveDetector`는 **분봉 리스트와 직전 거래일 종가를 받아 이벤트 리스트를 반환하는 순수 함수**로 만든다. DB·시계·LLM에 의존하지 않아야 고정 픽스처로 단위 테스트할 수 있다.
 
@@ -331,6 +338,8 @@ feedback:
 
 **`llm.model` 기본값 근거** (2026-08-03 실호출 2회 실측) — `gpt-5.4-mini`와 `gpt-4.1-mini` 둘 다 §후검증을 통과했고, 추론 토큰 0에 완료 토큰 66·74로 `max-tokens: 512` 안에 들어왔다. `gpt-5.4-mini`가 더 짧고 프롬프트가 준 수치를 그대로 옮겨 기본값으로 잡았다. 폴백 후보는 §튜닝에 있다.
 
+**자격증명 3종은 `feedback.*` 밖 최상위 블록에 둔다** — `naver-search.client-id`·`naver-search.client-secret`·`dart.api-key`. `kis.app-key`와 같은 형태이며 **yml에는 빈 기본값 플레이스홀더만 두고 `@DefaultValue`를 붙이지 않는다**(아래 `KisProperties` 문단과 같은 이유 — 시크릿이라 §튜닝 대상이 아니다). OpenAI 키는 `spring.ai.openai.api-key`에 이미 있다(§외부 API 호출 상세).
+
 **`feedback.*` 블록은 yml과 `@DefaultValue` 양쪽에 값을 둔다** (PR #154 리뷰 권장, 2026-08-03). 뒤 이슈가 `detection`·`news`·`crypto`·`instruments` 블록을 추가할 때도 같은 패턴을 쓴다.
 
 - 위 첫 줄의 "설정 없이도 기동한다"를 실제로 보장하는 것은 **record의 `@DefaultValue`**다. yml만 두면 파일이 비거나 키가 오타 나는 순간 기동이 깨진다.
@@ -350,7 +359,7 @@ feedback:
 | 컬럼 | 타입 | NULL | 비고 |
 |---|---|---|---|
 | `title` | `VARCHAR(500)` | N | 네이버 제목에 HTML 엔티티가 섞여 온다 |
-| `publisher` | `VARCHAR(100)` | N | 공시는 `DART` 고정 |
+| `publisher` | `VARCHAR(100)` | N | 공시는 `DART` 고정. **뉴스는 `originallink`의 호스트에서 `www.`만 뗀 도메인**(`https://www.hankyung.com/...` → `hankyung.com`). 네이버 뉴스 검색 응답에 **언론사 이름 필드가 없다** — `items[]`는 `title`·`originallink`·`link`·`description`·`pubDate`가 전부라 언론사를 식별하는 값이 원문 링크 도메인뿐이다. 한글 언론사명 매핑은 후속 이슈 |
 | `url` | `VARCHAR(500)` | N | **접두 길이 없이 전체 컬럼에 유니크.** `mysql:8.4`는 DYNAMIC row format이라 인덱스 키 상한이 3072B이고 `VARCHAR(500)` utf8mb4(2000B)+`BIGINT`(8B)면 들어간다. `url(191)` 접두로 두면 앞 191자가 같고 쿼리 파라미터만 다른 링크를 중복 판정해 **근거 기사를 조용히 버린다** |
 | `published_at` | `DATETIME(6)` | N | 공시는 `00:00:00` |
 | `type`·`event_type`·`scope`·`market`·`narrative_source` | `VARCHAR(20)` | N | `@Enumerated(STRING)` (V10 관례). `market`은 **`market/domain/Market`**을 쓴다 — `account/domain/Market`과 값 이름이 같아 저장 문자열은 동일하지만, 이 컬럼들은 계좌가 아니라 종목·시장 축이다 |
@@ -1057,9 +1066,11 @@ LLM이 실패하거나 후검증에 걸렸을 때 서버가 수치로 조립한�
 
 | 항목 | 값 |
 |---|---|
-| 네이버 엔드포인트 | `GET https://openapi.naver.com/v1/search/news.json?query={종목명}&display=100&sort=date` |
-| 네이버 헤더 | `X-Naver-Client-Id`, `X-Naver-Client-Secret` — 값은 `NAVER_SEARCH_*` 환경변수에서 온다. **`NAVER_CLIENT_ID`·`NAVER_CLIENT_SECRET`는 이미 네이버 OAuth 로그인이 쓰고 있으므로 재사용하지 않는다** (`.env.example`, `application.yml`의 `oauth.naver`). 검색 API용 애플리케이션을 따로 발급받는 순간 둘 중 하나가 깨진다 |
+| 네이버 엔드포인트 | `GET https://naverapihub.apigw.ntruss.com/search/v1/news?query={종목명}&display=100&sort=date` |
+| 네이버 헤더 | `X-NCP-APIGW-API-KEY-ID`, `X-NCP-APIGW-API-KEY` — 값은 `NAVER_SEARCH_*` 환경변수에서 온다. **`NAVER_CLIENT_ID`·`NAVER_CLIENT_SECRET`는 네이버 OAuth 로그인 몫이므로 재사용하지 않는다** (`.env.example`, `application.yml`의 `oauth.naver`) — 애초에 발급처가 다르다 |
+| 네이버 플랫폼 (2026-08-04 확인) | 검색 API는 **NAVER API HUB**(네이버 클라우드 플랫폼이 중개 운영)에서 발급받는다. `developers.naver.com`의 일반 애플리케이션 등록 화면에는 `검색`이 없다. **콘솔이 값을 "Client ID/Secret"이라 부르지만 실제 헤더는 위의 API Gateway 규격이며**, 구 `openapi.naver.com` + `X-Naver-Client-*` 조합으로 부르면 이 키는 인증되지 않는다. 응답 본문 필드(`title`·`originallink`·`link`·`description`·`pubDate`)는 구 API와 같다. 한도는 하루 25,000회·월 775,000회이고 이 spec의 사용량은 종목 28 × 하루 48회 = 1,344회다 |
 | 네이버 제약 | **날짜 범위 지정 불가**, `display` 상한 100. 최신순으로 받아 **거르지 않고 그대로 저장**한다 (구간 필터는 조회 시점에만). 종일 30분 간격이라 놓치는 구간이 없다 |
+| 네이버 시각 | `pubDate`는 오프셋이 붙은 RFC 1123 문자열이다. **KST 벽시계로 바꿔 `published_at`에 담는다** — 이 spec의 모든 시각이 KST 시간축이고(§C-2) 근거창·구간 필터가 전부 그 축에서 계산된다. 오프셋을 무시하고 문자열 앞부분만 파싱하면 조용히 최대 9시간 어긋난다 |
 | DART 엔드포인트 | `GET https://opendart.fss.or.kr/api/list.json?crtfc_key={키}&corp_code={8자리}&bgn_de={수집일−1}&end_de={수집일}` — `YYYYMMDD`. 전일부터 훑어 접수 지연분을 잡는다 |
 | DART 제약 | `corp_code`는 종목코드가 아님. `corpCode.xml`로 16종목 매핑을 미리 만들어 리소스로 둔다 |
 | DART 시각 | `rcept_dt`는 `YYYYMMDD`. `published_at`은 그 날짜 `00:00:00`으로 저장 |
