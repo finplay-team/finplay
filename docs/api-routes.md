@@ -50,6 +50,7 @@
 | DELETE | /api/favorites/{instrumentId} | education | 본인 즐겨찾기 해제 | 016 EDU-PRACTICE-002, candidate 3, Issue #172 |
 | POST | /api/education/practice/intentions | education | favorite로 선행 확인한 종목의 매수 전 수량·손절가·익절가 기록 | 016 EDU-PRACTICE-003·013, candidate 4, Issue #175 |
 | GET | /api/instruments/{instrumentId}/price-moves | feedback | 종목의 변동 원인 카드 목록 조회. 주식은 현재 재생세션 원본 거래일 중 `revealTime`이 지난 카드만(스포일러 차단) `windowStart` 오름차순, 각 카드의 근거는 발행시각 내림차순. 카드 0건·재생세션 미준비 모두 200(후자는 `originTradeDate=null`) | 012 FEED-006, Issue #180 |
+| GET | /api/rankings?market=&limit= | ranking | 시장별(`STOCK`\|`CRYPTO`) 실현손익 상위 랭킹 조회. `market` 쿼리 파라미터 필수(누락·미지원 리터럴은 400 `VALIDATION_ERROR`). `limit`은 선택이며 **컨트롤러가 거부하지 않고** 서비스가 클램핑(생략·0 이하→10, 51 이상→50) — `GET /api/trades`·`GET /api/orders`의 범위 밖 400과 의도적으로 다름. 매도 체결 이력이 없는 회원은 제외, 동점자는 공동 순위 | 014 RANK-001, Issue #187 |
 
 ## 투자 실습 계획 라우트 (아직 구현하지 않음)
 

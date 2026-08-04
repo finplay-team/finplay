@@ -1,4 +1,4 @@
-// 시장별 랭킹 목록 응답 wrapper (최소 스텁 — 다음 작업 항목에서 정식화)
+// 시장별 랭킹 목록 응답 wrapper
 package com.finplay.api.ranking.dto.response;
 
 import java.util.List;

@@ -420,6 +420,26 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 ---
 
+## ranking
+
+### 전체 랭킹 조회
+
+| Method | URL | 인증 | 쿼리 파라미터 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|---|
+| GET | /api/rankings | Access Bearer 필수 | `market`(필수, `STOCK`\|`CRYPTO` 리터럴만 허용), `limit`(선택, 기본 10, 상한 50 — 범위 밖이어도 오류 없이 클램핑) | 200 `{"market":"STOCK","content":[{"rank":1,"nickname":"투자왕","realizedPnl":500000},{"rank":1,"nickname":"차트요정","realizedPnl":500000},{"rank":3,"nickname":"존버맨","realizedPnl":120000}]}` (`RankingListResponse`); 매도 체결 이력이 있는 회원이 한 명도 없으면 200 `{"market":"STOCK","content":[]}` | `market` 누락 또는 `STOCK`\|`CRYPTO` 외 리터럴(예: `FOREX`)은 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 014 RANK-001, Issue #187 |
+
+**`limit`은 이 API에서만 400이 아니라 클램핑된다 — `GET /api/trades`·`GET /api/orders`와 의도적으로 다른 정책이다.** `limit`이 생략되거나 0 이하면 컨트롤러가 거부하지 않고 그대로 `RankingService`로 전달되어 서비스가 10으로 클램핑하고, 51 이상이면 50으로 클램핑한다. `market`만 컨트롤러 검증(누락·미지원 리터럴 400) 대상이다.
+
+조회 대상은 요청에서 받지 않고 `market` 쿼리로 지정한 시장 전체 회원 중 **매도 체결 이력이 한 번도 없는 회원은 제외**한다(실현손익이 정확히 0이어도 매도 이력이 있으면 포함). 정렬은 실현손익 내림차순이며, `nickname`은 마스킹 없이 전체 노출한다. `userId`는 응답에 포함하지 않는다 — 응답은 인증 사용자로 스코프되지 않는 전체 랭킹이다(다른 회원의 항목도 그대로 보인다).
+
+**동점자는 공동 순위를 받고, 다음 순위는 동점자 수만큼 건너뛴다.** 위 예시처럼 공동 1위가 2명이면 다음 회원은 2위가 아니라 3위다(`rank = 해당 score보다 엄격히 큰 회원 수 + 1`). Redis ZSET 기본 순위 커맨드는 동점이어도 멤버 문자열 사전순으로 순차 배정해 이 규칙과 다르게 동작하므로, 애플리케이션 계층(`RankingService`)에서 별도로 보정한다.
+
+응답 2단 구조: wrapper(`RankingListResponse`)에 `market`(요청한 시장, 항목마다 반복하지 않음) · `content`(항목 배열). 항목(`RankingListItemResponse`)은 `rank`·`nickname`·`realizedPnl` 3개 필드로 고정이다.
+
+**score의 정본은 MySQL이다.** 실현손익 값은 매 조회마다 `trades`를 재집계하지 않고, 매도 체결로 `accounts.realized_pnl`이 갱신된 뒤 **커밋 이후(after-commit)**에만 Redis ZSET에 반영된 값을 그대로 읽는다 — 커밋 전 갱신·롤백 시 Redis 오염이 없다. Redis 갱신이 재시도 후에도 실패하면 로그만 남기고 매도 체결 자체(주문·체결·계좌 갱신)에는 영향이 없다.
+
+---
+
 ## 016 투자 실습 (candidate 1·2·3 제공, 나머지 계획)
 
 `docs/specs/016-investment-education-policy`의 신규 계약 10건이다. candidate 1 `POST /api/favorites`, candidate 2 `GET /api/favorites`, candidate 3 `DELETE /api/favorites/{instrumentId}`는 controller가 구현되어 제공 중이며, 나머지 7건은 아직 계획 상태이므로 블랙박스 QA의 실행 가능 API 근거로 사용하지 않는다. 각 후속 구현이 병합될 때 해당 계약을 실제 상태로 전환하고 `docs/api-routes.md`의 계획 행도 실제 라우트 목록으로 옮긴다. 모든 경로는 Access Bearer 인증과 공통 오류 body를 사용하며 JSON POST는 `Content-Type: application/json`이다.
