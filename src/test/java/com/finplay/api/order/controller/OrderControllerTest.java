@@ -3,6 +3,7 @@ package com.finplay.api.order.controller;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -11,6 +12,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.finplay.api.account.domain.Market;
 import com.finplay.api.auth.config.SecurityConfig;
 import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.auth.token.JwtTokenProvider;
@@ -18,6 +20,7 @@ import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.order.dto.request.OrderCreateRequest;
 import com.finplay.api.order.dto.response.OrderListItemResponse;
+import com.finplay.api.order.dto.response.OrderListResponse;
 import com.finplay.api.order.dto.response.OrderResponse;
 import com.finplay.api.order.service.OrderService;
 import java.math.BigDecimal;
@@ -296,38 +299,163 @@ class OrderControllerTest {
 		verifyNoInteractions(orderService);
 	}
 
-	@Test
-	void getMyOrdersReturnsOkWithEveryFieldAndNoTradeOnlyField() throws Exception {
+	private void stubAuthenticatedUser() {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(java.util.Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+	}
+
+	@Test
+	void getMyOrdersReturnsOkWithEveryFieldWhenMarketIsStock() throws Exception {
+		stubAuthenticatedUser();
 		LocalDateTime requestedAt = LocalDateTime.of(2026, 7, 29, 9, 0);
 		OrderListItemResponse item = new OrderListItemResponse(
 			1L, "STOCK", 1L, "BUY", "MARKET", "FILLED", new BigDecimal("10"), requestedAt);
-		when(orderService.getMyOrders(USER_ID)).thenReturn(List.of(item));
+		OrderListResponse response = OrderListResponse.of(List.of(item), "2026-07-29T09:00:00_1", true);
+		when(orderService.getMyOrders(USER_ID, Market.STOCK, null, 20)).thenReturn(response);
+
+		mockMvc.perform(get("/api/orders")
+			.param("market", "STOCK")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.content[0].orderId").value(1))
+			.andExpect(jsonPath("$.content[0].market").value("STOCK"))
+			.andExpect(jsonPath("$.content[0].instrumentId").value(1))
+			.andExpect(jsonPath("$.content[0].side").value("BUY"))
+			.andExpect(jsonPath("$.content[0].orderType").value("MARKET"))
+			.andExpect(jsonPath("$.content[0].status").value("FILLED"))
+			.andExpect(jsonPath("$.content[0].quantity").value(10))
+			.andExpect(jsonPath("$.content[0].requestedAt").value("2026-07-29T09:00:00"))
+			.andExpect(jsonPath("$.nextCursor").value("2026-07-29T09:00:00_1"))
+			.andExpect(jsonPath("$.hasNext").value(true));
+
+		verify(orderService).getMyOrders(USER_ID, Market.STOCK, null, 20);
+	}
+
+	@Test
+	void getMyOrdersReturnsOkWithEmptyContentWhenMarketIsCrypto() throws Exception {
+		stubAuthenticatedUser();
+		OrderListResponse response = OrderListResponse.of(List.of(), null, false);
+		when(orderService.getMyOrders(USER_ID, Market.CRYPTO, null, 20)).thenReturn(response);
+
+		mockMvc.perform(get("/api/orders")
+			.param("market", "CRYPTO")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.content").isEmpty())
+			.andExpect(jsonPath("$.nextCursor").doesNotExist())
+			.andExpect(jsonPath("$.hasNext").value(false));
+
+		verify(orderService).getMyOrders(USER_ID, Market.CRYPTO, null, 20);
+	}
+
+	@Test
+	void getMyOrdersUsesDefaultLimitWhenLimitIsOmitted() throws Exception {
+		stubAuthenticatedUser();
+		when(orderService.getMyOrders(eq(USER_ID), eq(Market.STOCK), isNull(), eq(20)))
+			.thenReturn(OrderListResponse.of(List.of(), null, false));
+
+		mockMvc.perform(get("/api/orders")
+			.param("market", "STOCK")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk());
+
+		verify(orderService).getMyOrders(USER_ID, Market.STOCK, null, 20);
+	}
+
+	@Test
+	void getMyOrdersPassesCursorAndLimitToService() throws Exception {
+		stubAuthenticatedUser();
+		when(orderService.getMyOrders(eq(USER_ID), eq(Market.STOCK), any(), eq(10)))
+			.thenReturn(OrderListResponse.of(List.of(), null, false));
+
+		mockMvc.perform(get("/api/orders")
+			.param("market", "STOCK")
+			.param("cursor", "2026-07-29T09:00:00_1")
+			.param("limit", "10")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk());
+
+		verify(orderService).getMyOrders(USER_ID, Market.STOCK, "2026-07-29T09:00:00_1", 10);
+	}
+
+	@Test
+	void getMyOrdersRejectsMissingMarketWithoutCallingService() throws Exception {
+		stubAuthenticatedUser();
 
 		mockMvc.perform(get("/api/orders")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
-			.andExpect(status().isOk())
-			.andExpect(jsonPath("$[0].orderId").value(1))
-			.andExpect(jsonPath("$[0].market").value("STOCK"))
-			.andExpect(jsonPath("$[0].instrumentId").value(1))
-			.andExpect(jsonPath("$[0].side").value("BUY"))
-			.andExpect(jsonPath("$[0].orderType").value("MARKET"))
-			.andExpect(jsonPath("$[0].status").value("FILLED"))
-			.andExpect(jsonPath("$[0].quantity").value(10))
-			.andExpect(jsonPath("$[0].requestedAt").value("2026-07-29T09:00:00"))
-			.andExpect(jsonPath("$[0].tradeId").doesNotExist())
-			.andExpect(jsonPath("$[0].price").doesNotExist())
-			.andExpect(jsonPath("$[0].amount").doesNotExist())
-			.andExpect(jsonPath("$[0].fee").doesNotExist())
-			.andExpect(jsonPath("$[0].executedAt").doesNotExist());
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
-		verify(orderService).getMyOrders(USER_ID);
+		verifyNoInteractions(orderService);
+	}
+
+	@Test
+	void getMyOrdersRejectsInvalidMarketLiteralWithoutCallingService() throws Exception {
+		stubAuthenticatedUser();
+
+		mockMvc.perform(get("/api/orders")
+			.param("market", "FOREX")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(orderService);
+	}
+
+	@Test
+	void getMyOrdersRejectsLimitBelowMinimumWithoutCallingService() throws Exception {
+		stubAuthenticatedUser();
+
+		mockMvc.perform(get("/api/orders")
+			.param("market", "STOCK")
+			.param("limit", "0")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(orderService);
+	}
+
+	@Test
+	void getMyOrdersRejectsLimitAboveMaximumWithoutCallingService() throws Exception {
+		stubAuthenticatedUser();
+
+		mockMvc.perform(get("/api/orders")
+			.param("market", "STOCK")
+			.param("limit", "101")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(orderService);
+	}
+
+	@Test
+	void getMyOrdersReturnsBadRequestWhenServiceRejectsMalformedCursor() throws Exception {
+		stubAuthenticatedUser();
+		when(orderService.getMyOrders(eq(USER_ID), eq(Market.STOCK), eq("garbage"), eq(20)))
+			.thenThrow(new BusinessException(ErrorCode.VALIDATION_ERROR, "cursor 형식이 올바르지 않습니다."));
+
+		mockMvc.perform(get("/api/orders")
+			.param("market", "STOCK")
+			.param("cursor", "garbage")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(orderService).getMyOrders(USER_ID, Market.STOCK, "garbage", 20);
 	}
 
 	@Test
 	void getMyOrdersRejectsMissingAuthenticationWithoutCallingService() throws Exception {
-		mockMvc.perform(get("/api/orders"))
+		mockMvc.perform(get("/api/orders")
+			.param("market", "STOCK"))
 			.andExpect(status().isUnauthorized())
 			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
