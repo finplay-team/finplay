@@ -110,4 +110,26 @@ public interface MarketNewsItemRepository extends JpaRepository<MarketNewsItem, 
 	Market market, @Param("fromInclusive")
 	LocalDateTime fromInclusive, @Param("toExclusive")
 	LocalDateTime toExclusive);
+
+	/**
+	 * 그 종목에 <b>{@code since} 이후 수집된</b> 기사가 있는지 본다 — 코인 요약의 재생성 판정이다(FEED-008).
+	 *
+	 * <p><b>{@code created_at}(수집 시각)으로 비교한다. {@code published_at}으로 비교하면 안 된다.</b>
+	 * 수집이 30분 주기라 10:03 발행 기사가 10:30에 저장되는데, 10:05 배치가 남긴 {@code generated_at}과
+	 * <b>발행시각</b>을 비교하면 그 기사는 영원히 요약에 들어가지 못한다 — 다음 배치에서도 "직전 생성보다
+	 * 이르게 발행된 기사"로 판정되기 때문이다. 저장 시각으로 비교하면 그런 기사도 정확히 한 번 잡힌다.
+	 */
+	boolean existsByInstrumentIdAndCreatedAtAfter(Long instrumentId, LocalDateTime since);
+
+	/**
+	 * 그 시장 전체에 <b>{@code since} 이후 수집된</b> 기사가 있는지 본다 — 코인 브리핑의 재생성 판정이다.
+	 *
+	 * <p>{@code created_at}으로 비교하는 이유는 위 {@link #existsByInstrumentIdAndCreatedAtAfter}와 같다.
+	 * 시장 조건이 연관 엔티티에 있어 파생 쿼리 이름 대신 {@code @Query}로 조인을 명시한다.
+	 */
+	@Query("SELECT COUNT(n) > 0 FROM MarketNewsItem n "
+		+ "WHERE n.instrument.market = :market AND n.createdAt > :since")
+	boolean existsCollectedAfter(@Param("market")
+	Market market, @Param("since")
+	LocalDateTime since);
 }

@@ -553,11 +553,13 @@ class MarketBriefingServiceTest {
 
 		// --- 그 밖 ---
 
-		// 코인 규칙 자체는 별도 이슈 소유다. 주식 규칙에 오염되지 않았는지만 본다.
+		// 코인은 재생세션·개장 시각과 무관하다 — 주식 규칙을 태우면 24시간 거래 시장이 매일 09:00까지
+		// NOT_YET이 된다. 03:00은 주식이라면 개장 전이라 그 회귀가 드러나는 시각이다.
 		@Test
-		@DisplayName("코인 시장은 주식 게이트를 타지 않고 EMPTY와 빈 배열을 돌려준다")
+		@DisplayName("코인 시장은 주식 게이트를 타지 않고 기사가 0건이면 EMPTY다")
 		void returnsEmptyForCryptoWithoutApplyingTheStockGate() {
 			at(LocalTime.of(3, 0));
+			givenMarketNews(List.of());
 
 			MarketBriefingResponse response = queryService.getBriefing(Market.CRYPTO);
 
@@ -566,6 +568,64 @@ class MarketBriefingServiceTest {
 			assertThat(response.originTradeDate()).isNull();
 			assertThat(response.items()).isEmpty();
 			verifyNoInteractions(stockReplayService);
+		}
+
+		// 위 단정만 있으면 "기사도 행도 없는" 상태에서만 통과한다 — 실제로 만들어진 브리핑이 있는 상태의
+		// 자리가 비어 있었다. 배치 ⑪(generated_at 최신 1행)이 조회에서 성립하는지가 여기서 갈린다.
+		@Test
+		@DisplayName("코인 조회는 최근 24시간 창으로 묻고 generated_at 최신 1행의 문장을 준다")
+		void returnsTheLatestGeneratedCryptoBriefingWithinTheRollingWindow() {
+			at(LocalTime.of(3, 0));
+			givenMarketNews(List.of(news(1L, "비트코인", LocalTime.of(2, 0))));
+			when(marketBriefingRepository.findFirstByMarketOrderByGeneratedAtDescIdDesc(Market.CRYPTO))
+				.thenReturn(Optional.of(MarketBriefing.create(
+					Market.CRYPTO, LocalDate.of(2026, 8, 5), "최근 24시간 기사가 이어졌습니다.",
+					NarrativeSource.LLM, LocalDateTime.of(2026, 8, 5, 23, 5))));
+
+			MarketBriefingResponse response = queryService.getBriefing(Market.CRYPTO);
+
+			assertThat(response.status()).isEqualTo(FeedbackContentStatus.READY);
+			assertThat(response.summary()).isEqualTo("최근 24시간 기사가 이어졌습니다.");
+			assertThat(response.items()).hasSize(1);
+			// 저장된 행의 origin_trade_date는 배치 실행 날짜라 응답에 내리지 않는다 (§C-9).
+			assertThat(response.originTradeDate()).isNull();
+			LocalDateTime now = LocalDateTime.of(SERVICE_DATE, LocalTime.of(3, 0));
+			verify(marketNewsItemRepository)
+				.findMarketNewsPublishedBetween(Market.CRYPTO, now.minusHours(24), now);
+			// 주식 경로의 "오늘 날짜 행" 조회로 되돌아가면 자정 직후와 배치 실패 시각마다 화면이 빈다.
+			verify(marketBriefingRepository, never()).findByMarketAndOriginTradeDate(eq(Market.CRYPTO), any());
+		}
+
+		// 배치 ⑪ — 오늘 행이 없어도 직전에 만들어 둔 브리핑은 여전히 유효하다. "오늘 날짜 행"으로 찾으면
+		// 매일 00:00~00:05와 배치 실패 시각마다 화면이 빈다.
+		@Test
+		@DisplayName("자정 직후에 오늘 행이 없어도 어제 만든 브리핑이 그대로 나온다")
+		void keepsServingYesterdaysBriefingRightAfterMidnight() {
+			at(LocalTime.of(0, 3));
+			givenMarketNews(List.of(news(1L, "비트코인", LocalTime.of(0, 1))));
+			when(marketBriefingRepository.findFirstByMarketOrderByGeneratedAtDescIdDesc(Market.CRYPTO))
+				.thenReturn(Optional.of(MarketBriefing.create(
+					Market.CRYPTO, SERVICE_DATE.minusDays(1), "어제 23시 05분 기준 요약입니다.",
+					NarrativeSource.LLM, LocalDateTime.of(SERVICE_DATE.minusDays(1), LocalTime.of(23, 5)))));
+
+			MarketBriefingResponse response = queryService.getBriefing(Market.CRYPTO);
+
+			assertThat(response.status()).isEqualTo(FeedbackContentStatus.READY);
+			assertThat(response.summary()).isEqualTo("어제 23시 05분 기준 요약입니다.");
+		}
+
+		@Test
+		@DisplayName("코인 행이 없고 기사가 있으면 EMPTY이고 items는 채운다")
+		void returnsEmptyWithFilledItemsWhenTheCryptoRowIsMissing() {
+			at(LocalTime.of(3, 0));
+			givenMarketNews(List.of(news(1L, "비트코인", LocalTime.of(2, 0))));
+			when(marketBriefingRepository.findFirstByMarketOrderByGeneratedAtDescIdDesc(Market.CRYPTO))
+				.thenReturn(Optional.empty());
+
+			MarketBriefingResponse response = queryService.getBriefing(Market.CRYPTO);
+
+			assertThat(response.status()).isEqualTo(FeedbackContentStatus.EMPTY);
+			assertThat(response.items()).hasSize(1);
 		}
 
 		// 조회는 쓰지 않는다 (FEED-009 — GET은 LLM을 호출하지도 DB에 쓰지도 않는다).
@@ -582,6 +642,150 @@ class MarketBriefingServiceTest {
 
 			verify(marketBriefingRepository, never()).save(any());
 			verifyNoInteractions(narrativeService);
+		}
+	}
+
+	// 코인 브리핑 갱신은 주식과 규칙이 셋 다르다 — 한 범위(최근 24시간)·UPSERT·created_at 기준 재생성
+	// 판정이다(§C-2·§C-9·FEED-009). UPSERT가 실제로 하루 1행을 유지하는지는 실 DB가 필요해
+	// CryptoFeedbackBatchIntegrationTest가 맡고, 여기서는 판정과 저장 인자를 본다.
+	@Nested
+	@DisplayName("코인 갱신 (배치 ⑩·⑫·§C-9)")
+	class CryptoRefresh {
+
+		private final MutableClock clock = new MutableClock(
+			LocalDateTime.of(SERVICE_DATE, LocalTime.of(10, 5)).atZone(KST).toInstant());
+
+		private final MarketBriefingService cryptoService = new MarketBriefingService(
+			marketNewsItemRepository,
+			marketBriefingRepository,
+			stockReplayService,
+			narrativeService,
+			new BusinessDayCalendar(),
+			properties,
+			clock);
+
+		private final LocalDateTime batchAt = LocalDateTime.of(SERVICE_DATE, LocalTime.of(10, 5));
+
+		private MarketBriefing previousRow(LocalDateTime generatedAt) {
+			return MarketBriefing.create(
+				Market.CRYPTO, generatedAt.toLocalDate(), "직전 요약", NarrativeSource.LLM, generatedAt);
+		}
+
+		private void givenNoPreviousRow() {
+			when(marketBriefingRepository.findFirstByMarketOrderByGeneratedAtDescIdDesc(Market.CRYPTO))
+				.thenReturn(Optional.empty());
+			when(marketBriefingRepository.findByMarketAndOriginTradeDate(any(), any()))
+				.thenReturn(Optional.empty());
+			when(narrativeService.resolveMarketBriefingNarrative(any()))
+				.thenReturn(NarrativeResultDto.llm("최근 24시간 코인 기사가 이어졌습니다."));
+			when(marketBriefingRepository.save(any())).thenAnswer(call -> call.getArgument(0));
+		}
+
+		private MarketBriefing capturedSaved() {
+			ArgumentCaptor<MarketBriefing> captor = ArgumentCaptor.forClass(MarketBriefing.class);
+			verify(marketBriefingRepository).save(captor.capture());
+			return captor.getValue();
+		}
+
+		// 배치 ⑩ — 직전 생성 이후 수집된 코인 기사가 없으면 LLM을 부르지 않는다. 기준은 created_at이다.
+		@Test
+		@DisplayName("직전 생성 이후 수집된 기사가 없으면 LLM을 부르지 않고 저장도 하지 않는다")
+		void skipsWithoutCallingTheLlmWhenNothingWasCollectedSinceTheLastGeneration() {
+			LocalDateTime lastGeneratedAt = batchAt.minusHours(1);
+			when(marketBriefingRepository.findFirstByMarketOrderByGeneratedAtDescIdDesc(Market.CRYPTO))
+				.thenReturn(Optional.of(previousRow(lastGeneratedAt)));
+			when(marketNewsItemRepository.existsCollectedAfter(Market.CRYPTO, lastGeneratedAt))
+				.thenReturn(false);
+
+			assertThat(cryptoService.refreshCryptoBriefing()).isEmpty();
+
+			verifyNoInteractions(narrativeService);
+			verify(marketBriefingRepository, never()).save(any());
+		}
+
+		@Test
+		@DisplayName("직전 생성 행이 없으면 재생성 판정 없이 만든다")
+		void generatesWithoutTheRegenerationCheckOnTheFirstRun() {
+			givenNoPreviousRow();
+			givenMarketNews(List.of(news(1L, "비트코인", LocalTime.of(9, 0))));
+
+			assertThat(cryptoService.refreshCryptoBriefing()).isPresent();
+
+			verify(marketNewsItemRepository, never()).existsCollectedAfter(any(), any());
+		}
+
+		// 코인은 '전장'도 '거래일 경계'도 없다 — 주식 구간을 쓰면 재생 시간축이 없는 시장에 원본 거래일
+		// 구간이 붙어 매일 0건이 된다.
+		@Test
+		@DisplayName("최근 24시간 창의 코인 뉴스만 모으고 공시·주식 구간을 쓰지 않는다")
+		void collectsOnlyCryptoNewsFromTheRollingWindow() {
+			givenNoPreviousRow();
+			givenMarketNews(List.of(news(1L, "비트코인", LocalTime.of(9, 0))));
+
+			cryptoService.refreshCryptoBriefing();
+
+			verify(marketNewsItemRepository)
+				.findMarketNewsPublishedBetween(Market.CRYPTO, batchAt.minusHours(24), batchAt);
+			// 코인은 공시가 없다 (§C-3).
+			verify(marketNewsItemRepository, never()).findMarketDisclosuresReceivedOn(any(), any(), any());
+		}
+
+		// §C-9 — origin_trade_date는 배치 실행 시점의 KST 날짜다. 비우면 유니크가 중복을 허용해
+		// UPSERT가 매시 새 행을 쌓는다.
+		@Test
+		@DisplayName("origin_trade_date가 배치 실행 시점의 KST 날짜이고 시장이 CRYPTO다")
+		void storesTheBatchRunDateAndCryptoMarket() {
+			givenNoPreviousRow();
+			givenMarketNews(List.of(news(1L, "비트코인", LocalTime.of(9, 0))));
+
+			cryptoService.refreshCryptoBriefing();
+
+			MarketBriefing saved = capturedSaved();
+			assertThat(saved.getMarket()).isEqualTo(Market.CRYPTO);
+			assertThat(saved.getOriginTradeDate()).isEqualTo(SERVICE_DATE);
+			assertThat(saved.getGeneratedAt()).isEqualTo(batchAt);
+		}
+
+		// §C-9 — 같은 날 두 번째 실행은 새 행이 아니라 같은 행의 갱신이다. 새 행을 만들면 유니크에 걸려
+		// 그 시각 갱신이 통째로 실패한다.
+		@Test
+		@DisplayName("같은 날 행이 이미 있으면 새 행을 만들지 않고 그 행을 갱신한다")
+		void updatesTheExistingRowOfTheSameDayInsteadOfInsertingANewOne() {
+			LocalDateTime lastGeneratedAt = batchAt.minusHours(1);
+			MarketBriefing existing = previousRow(lastGeneratedAt);
+			when(marketBriefingRepository.findFirstByMarketOrderByGeneratedAtDescIdDesc(Market.CRYPTO))
+				.thenReturn(Optional.of(existing));
+			when(marketNewsItemRepository.existsCollectedAfter(any(), any())).thenReturn(true);
+			when(marketBriefingRepository.findByMarketAndOriginTradeDate(Market.CRYPTO, SERVICE_DATE))
+				.thenReturn(Optional.of(existing));
+			when(narrativeService.resolveMarketBriefingNarrative(any()))
+				.thenReturn(NarrativeResultDto.llm("새 브리핑입니다."));
+			when(marketBriefingRepository.save(any())).thenAnswer(call -> call.getArgument(0));
+			givenMarketNews(List.of(news(1L, "비트코인", LocalTime.of(9, 0))));
+
+			cryptoService.refreshCryptoBriefing();
+
+			MarketBriefing saved = capturedSaved();
+			assertThat(saved).isSameAs(existing);
+			assertThat(saved.getSummary()).isEqualTo("새 브리핑입니다.");
+			assertThat(saved.getGeneratedAt()).isEqualTo(batchAt);
+			// 유니크 축은 건드리지 않는다.
+			assertThat(saved.getMarket()).isEqualTo(Market.CRYPTO);
+			assertThat(saved.getOriginTradeDate()).isEqualTo(lastGeneratedAt.toLocalDate());
+		}
+
+		// 주식 경로가 refreshNarrative를 쓰면 같은 서비스 날짜의 두 번째 실행이 기존 행을 갈아 끼워
+		// 배치 ⑤가 "덮어쓴다"로 조용히 바뀐다.
+		@Test
+		@DisplayName("주식 생성 경로는 기존 행이 있어도 갱신하지 않고 건너뛴다")
+		void neverRefreshesAnExistingRowOnTheStockPath() {
+			when(marketBriefingRepository.existsByMarketAndOriginTradeDate(Market.STOCK, ORIGIN_TRADE_DATE))
+				.thenReturn(true);
+
+			cryptoService.generateStockBriefing(ORIGIN_TRADE_DATE);
+
+			verify(marketBriefingRepository, never()).save(any());
+			verify(marketBriefingRepository, never()).findFirstByMarketOrderByGeneratedAtDescIdDesc(any());
 		}
 	}
 

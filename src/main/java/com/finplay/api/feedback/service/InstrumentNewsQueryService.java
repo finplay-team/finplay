@@ -76,13 +76,8 @@ public class InstrumentNewsQueryService {
 	@Transactional(readOnly = true)
 	public InstrumentNewsResponse getInstrumentNews(Long instrumentId) {
 		Instrument instrument = instrumentService.getInstrumentEntity(instrumentId);
-		// 코인은 범위가 ROLLING_24H 하나뿐이고 재생세션·개장 시각과 무관하며 조회도 generated_at 최신 1행이다
-		// (§C-2·FEED-008). 그 분기는 코인 배치와 함께 별도 이슈가 이 자리에 더한다 — 지금은 코인 요약을
-		// 만드는 배치가 없어 행도 기사 게이트도 없으므로 "아직 아무것도 없다"가 정확한 답이고, 여기서 주식
-		// 규칙(개장 시각·재생세션)을 태우면 24시간 거래 종목이 매일 09:00까지 NOT_YET이 된다.
 		if (instrument.getMarket() == Market.CRYPTO) {
-			return InstrumentNewsResponse.of(
-				null, null, FeedbackContentStatus.EMPTY, null, List.of());
+			return getCryptoNews(instrumentId);
 		}
 
 		// 1번 — 원본 거래일 자체가 확정되지 않은 상태라 날짜를 지어낼 수 없다.
@@ -128,6 +123,53 @@ public class InstrumentNewsQueryService {
 		return InstrumentNewsResponse.of(
 			originTradeDate,
 			scope,
+			text == null ? FeedbackContentStatus.UNAVAILABLE : FeedbackContentStatus.READY,
+			text,
+			items);
+	}
+
+	/**
+	 * 코인 종목 조회 — 최근 24시간 기사와 {@code generated_at} 최신 1행이다 (FEED-008).
+	 *
+	 * <p><b>주식의 게이트·판정 순서를 타지 않는다.</b> 코인은 재생세션과 무관하고 '개장 전'이라는 시점이 없어
+	 * §C-4의 1·2번이 성립하지 않는다 — {@code NOT_YET}이 되지 않는다. 3~6번은 그대로 쓴다.
+	 *
+	 * <p><b>{@code summaryScope}는 언제나 {@code ROLLING_24H}이고 {@code originTradeDate}는 {@code null}이다</b>
+	 * (§C-2·§C-9). 저장된 행의 {@code origin_trade_date}에는 값이 있지만 그것은 유니크 축을 성립시키려고 채운
+	 * <b>배치 실행 날짜</b>이지 거래일이 아니다.
+	 *
+	 * <p><b>{@code items}의 24시간 창은 조회 시각 기준이고 요약은 마지막 배치 기준이라 최대 65분 어긋난다 —
+	 * 허용된 동작이다</b>(FEED-008). 맞추려고 조회 시 생성으로 되돌아가지 않는다.
+	 *
+	 * <p>코인은 공시가 없어 뉴스만 모은다(§C-3). 노출 게이트도 없다 — 실시간이라 스포일러가 성립하지 않는다(§C-5).
+	 */
+	private InstrumentNewsResponse getCryptoNews(Long instrumentId) {
+		LocalDateTime now = LocalDateTime.now(clock);
+		List<NewsItem> items = NewsItemTruncator
+			.truncateAndSort(
+				marketNewsItemRepository.findByInstrumentIdAndTypeAndPublishedAtBetweenOrderByPublishedAtAsc(
+					instrumentId, MarketNewsItemType.NEWS, now.minusHours(24), now),
+				properties.maxItemsPerNewsList())
+			.stream()
+			.map(NewsItem::from)
+			.toList();
+		if (items.isEmpty()) {
+			return InstrumentNewsResponse.of(
+				null, NewsSummaryScope.ROLLING_24H, FeedbackContentStatus.EMPTY, null, List.of());
+		}
+
+		Optional<InstrumentNewsSummary> summary = instrumentNewsSummaryRepository
+			.findFirstByInstrumentIdAndScopeOrderByGeneratedAtDescIdDesc(
+				instrumentId, NewsSummaryScope.ROLLING_24H);
+		if (summary.isEmpty()) {
+			return InstrumentNewsResponse.of(
+				null, NewsSummaryScope.ROLLING_24H, FeedbackContentStatus.EMPTY, null, items);
+		}
+
+		String text = summary.get().getSummary();
+		return InstrumentNewsResponse.of(
+			null,
+			NewsSummaryScope.ROLLING_24H,
 			text == null ? FeedbackContentStatus.UNAVAILABLE : FeedbackContentStatus.READY,
 			text,
 			items);

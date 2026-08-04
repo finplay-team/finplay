@@ -353,6 +353,91 @@ class MarketNewsItemRepositoryTest {
 			.isEqualTo("테스트종목A");
 	}
 
+	// --- 코인 재생성 판정 파인더 (이슈 #188 항목 7 — 배치 ⑩) ---
+	//
+	// 두 파인더 모두 created_at(수집 시각)으로 비교한다. published_at으로 비교하면 수집 주기 때문에 늦게
+	// 저장된 기사가 영원히 요약에 못 들어간다(FEED-008) — 그 구분은 두 시각이 어긋난 행에서만 드러나므로
+	// 아래 픽스처는 발행이 이른데 수집이 늦은 기사를 심는다.
+
+	private void saveWithCollectedAt(
+		Instrument instrument, String title, LocalDateTime publishedAt, LocalDateTime collectedAt) {
+		marketNewsItemRepository.save(MarketNewsItem.create(
+			instrument,
+			MarketNewsItemType.NEWS,
+			title,
+			"테스트경제",
+			"https://news.example.com/collected/" + instrument.getSymbol() + "/" + title,
+			publishedAt,
+			collectedAt));
+	}
+
+	@Test
+	@DisplayName("existsByInstrumentIdAndCreatedAtAfter는 수집 시각으로 판정한다 — 발행이 일러도 잡힌다")
+	void existsByCreatedAtAfterJudgesByCollectionTimeNotPublicationTime() {
+		LocalDateTime lastGeneratedAt = LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(10, 5));
+		// 10:03 발행인데 10:30에 수집됐다 — published_at으로 비교하면 이 기사는 영원히 못 들어간다.
+		saveWithCollectedAt(instrumentA, "늦게 수집된 기사",
+			LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(10, 3)),
+			LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(10, 30)));
+
+		assertThat(marketNewsItemRepository
+			.existsByInstrumentIdAndCreatedAtAfter(instrumentA.getId(), lastGeneratedAt)).isTrue();
+	}
+
+	@Test
+	@DisplayName("existsByInstrumentIdAndCreatedAtAfter는 직전 생성 이전 수집분과 다른 종목을 제외한다")
+	void existsByCreatedAtAfterExcludesOlderCollectionsAndOtherInstruments() {
+		LocalDateTime lastGeneratedAt = LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(10, 5));
+		saveWithCollectedAt(instrumentA, "직전 생성 이전 수집",
+			LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(9, 0)),
+			LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(9, 30)));
+		saveWithCollectedAt(instrumentB, "다른 종목의 새 기사",
+			LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(10, 10)),
+			LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(10, 30)));
+
+		assertThat(marketNewsItemRepository
+			.existsByInstrumentIdAndCreatedAtAfter(instrumentA.getId(), lastGeneratedAt)).isFalse();
+	}
+
+	// 경계는 초과(>)다 — 같으면 직전 배치가 방금 본 기사를 새 기사로 다시 세어 매시 LLM을 부른다.
+	@Test
+	@DisplayName("existsByInstrumentIdAndCreatedAtAfter는 수집 시각이 기준과 같으면 false다")
+	void existsByCreatedAtAfterIsStrictlyAfter() {
+		LocalDateTime lastGeneratedAt = LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(10, 5));
+		saveWithCollectedAt(instrumentA, "기준 정각 수집",
+			LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(10, 0)), lastGeneratedAt);
+
+		assertThat(marketNewsItemRepository
+			.existsByInstrumentIdAndCreatedAtAfter(instrumentA.getId(), lastGeneratedAt)).isFalse();
+	}
+
+	// JPQL에 SELECT COUNT(n) > 0과 연관 조인을 쓰므로 부트스트랩만으로는 결과가 맞는지 알 수 없다.
+	@Test
+	@DisplayName("existsCollectedAfter는 그 시장에 기준 이후 수집된 기사가 있으면 참이다")
+	void existsCollectedAfterFindsNewlyCollectedArticlesOfThatMarket() {
+		LocalDateTime lastGeneratedAt = LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(10, 5));
+		Instrument coin = savedCrypto();
+		saveWithCollectedAt(coin, "코인 새 기사",
+			LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(10, 3)),
+			LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(10, 30)));
+
+		assertThat(marketNewsItemRepository.existsCollectedAfter(Market.CRYPTO, lastGeneratedAt)).isTrue();
+		// 시장 조건이 빠지면 주식 기사 하나로 코인 브리핑이 매시 다시 만들어진다.
+		assertThat(marketNewsItemRepository.existsCollectedAfter(Market.STOCK, lastGeneratedAt)).isFalse();
+	}
+
+	@Test
+	@DisplayName("existsCollectedAfter는 기준 이후 수집분이 없으면 거짓이다")
+	void existsCollectedAfterIsFalseWhenNothingWasCollectedSince() {
+		LocalDateTime lastGeneratedAt = LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(10, 5));
+		Instrument coin = savedCrypto();
+		saveWithCollectedAt(coin, "직전 생성 이전 수집",
+			LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(9, 50)),
+			LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(10, 0)));
+
+		assertThat(marketNewsItemRepository.existsCollectedAfter(Market.CRYPTO, lastGeneratedAt)).isFalse();
+	}
+
 	@Test
 	@DisplayName("findMarketDisclosuresReceivedOn은 그날 접수된 주식 공시만 주고 뉴스·코인을 제외한다")
 	void findMarketDisclosuresReceivedOnReturnsOnlyStockDisclosuresOfThatReceiptDate() {

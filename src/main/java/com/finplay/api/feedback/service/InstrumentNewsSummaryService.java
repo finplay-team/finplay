@@ -103,6 +103,72 @@ public class InstrumentNewsSummaryService {
 	}
 
 	/**
+	 * 코인 종목 1건의 요약을 갱신한다 — 매시 코인 배치가 부른다 (FEED-008).
+	 *
+	 * <p><b>주식과 규칙이 셋 다르다.</b>
+	 *
+	 * <ul>
+	 * <li><b>범위가 {@code ROLLING_24H} 하나뿐</b>이다(§C-2). 24시간 거래라 '전장'도 '거래일 경계'도 없어
+	 * {@code PRE_MARKET}/{@code FULL} 구분이 성립하지 않는다. 창은 <b>배치 실행 시각 기준 최근 24시간</b>이다.</li>
+	 * <li><b>저장이 UPSERT다</b>(§C-9). 같은 {@code (종목, 그날 KST 날짜, ROLLING_24H)} 행을 매시 갱신해
+	 * 하루 1행을 유지한다 — 주식의 "존재 시 건너뜀"과 반대다. {@code origin_trade_date}는 원본 거래일이 아니라
+	 * <b>배치 실행 시점의 KST 날짜</b>이며, 이 행에는 {@code occurred_at}이 없어 카드와 규칙이 다르다.</li>
+	 * <li><b>직전 생성 이후 새 기사가 없으면 LLM을 부르지 않는다.</b> 기준은 {@code created_at}이다.</li>
+	 * </ul>
+	 *
+	 * <p><b>"직전 생성"은 오늘 행이 아니라 {@code generated_at} 최신 행이다.</b> 오늘 행으로 잡으면 매일 자정
+	 * 직후에 새 기사가 없어도 한 번씩 LLM을 부르게 된다 — 날짜가 바뀌었을 뿐 내용이 같은 요약을 다시 만드는 것이다.
+	 * 그때 오늘 행이 안 생기는 것은 문제가 되지 않는다. 조회가 "오늘 날짜 행"이 아니라 {@code generated_at}
+	 * 최신 1행을 보기 때문이며, 그 두 규칙은 짝이다.
+	 *
+	 * @return 저장·갱신된 요약. <b>새 기사가 없거나 창 안 기사가 0건이면 {@code Optional.empty()}</b>이며 오류가 아니다
+	 */
+	public Optional<InstrumentNewsSummary> refreshCryptoSummary(Instrument instrument) {
+		LocalDateTime now = LocalDateTime.now(clock);
+		Optional<InstrumentNewsSummary> latest = instrumentNewsSummaryRepository
+			.findFirstByInstrumentIdAndScopeOrderByGeneratedAtDescIdDesc(
+				instrument.getId(), NewsSummaryScope.ROLLING_24H);
+		if (latest.isPresent() && !marketNewsItemRepository.existsByInstrumentIdAndCreatedAtAfter(
+			instrument.getId(), latest.get().getGeneratedAt())) {
+			log.debug("직전 생성 이후 수집된 기사가 없어 요약을 다시 만들지 않는다. 종목={} 직전생성={}",
+				instrument.getId(), latest.get().getGeneratedAt());
+			return Optional.empty();
+		}
+
+		List<MarketNewsItem> items = NewsItemTruncator.truncateAndSort(
+			marketNewsItemRepository.findByInstrumentIdAndTypeAndPublishedAtBetweenOrderByPublishedAtAsc(
+				instrument.getId(), MarketNewsItemType.NEWS, now.minusHours(24), now),
+			properties.maxItemsPerSummary());
+		if (items.isEmpty()) {
+			log.debug("최근 24시간 기사가 없어 요약을 만들지 않는다. 종목={}", instrument.getId());
+			return Optional.empty();
+		}
+
+		LocalDate batchDate = now.toLocalDate();
+		NarrativeResultDto narrative = narrativeService.resolveNewsSummaryNarrative(
+			new NewsSummaryPromptDto(
+				instrument.getName(),
+				NewsSummaryScope.ROLLING_24H,
+				batchDate,
+				items.stream().map(InstrumentNewsSummaryService::toSource).toList()));
+		return Optional.of(instrumentNewsSummaryRepository.save(
+			instrumentNewsSummaryRepository
+				.findByInstrumentIdAndOriginTradeDateAndScope(
+					instrument.getId(), batchDate, NewsSummaryScope.ROLLING_24H)
+				.map(row -> {
+					row.refreshNarrative(narrative.narrative(), narrative.source(), now);
+					return row;
+				})
+				.orElseGet(() -> InstrumentNewsSummary.create(
+					instrument,
+					batchDate,
+					NewsSummaryScope.ROLLING_24H,
+					narrative.narrative(),
+					narrative.source(),
+					now))));
+	}
+
+	/**
 	 * 그 범위의 기사·공시를 모은다 (§C-2의 구간, §C-3의 공시 날짜 판정).
 	 *
 	 * <pre>

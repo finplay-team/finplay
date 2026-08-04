@@ -14,6 +14,7 @@ import com.finplay.api.market.repository.InstrumentRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -114,6 +115,62 @@ class InstrumentNewsSummaryRepositoryTest {
 			stock.getId(), NEXT_TRADE_DATE, NewsSummaryScope.PRE_MARKET)).isFalse();
 		assertThat(instrumentNewsSummaryRepository.existsByInstrumentIdAndOriginTradeDateAndScope(
 			crypto.getId(), ORIGIN_TRADE_DATE, NewsSummaryScope.PRE_MARKET)).isFalse();
+	}
+
+	// --- 코인 조회·재생성 판정 파인더 (이슈 #188 항목 7 — 배치 ⑪) ---
+	//
+	// "오늘 날짜 행"으로 찾으면 매일 00:00~00:05와 배치 실패 시각마다 화면이 빈다. 그래서 generated_at
+	// 최신 1행이며, 그 규칙이 실제 정렬로 성립하는지는 날짜가 갈린 행 위에서만 드러난다.
+	@Test
+	@DisplayName("findFirstBy…OrderByGeneratedAtDesc가 날짜가 달라도 generated_at 최신 행을 준다")
+	void findsTheLatestGeneratedRowAcrossDates() {
+		instrumentNewsSummaryRepository.saveAndFlush(InstrumentNewsSummary.create(
+			crypto, ORIGIN_TRADE_DATE, NewsSummaryScope.ROLLING_24H, "어제 23시 05분 요약",
+			NarrativeSource.LLM, LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(23, 5))));
+		instrumentNewsSummaryRepository.saveAndFlush(InstrumentNewsSummary.create(
+			crypto, NEXT_TRADE_DATE, NewsSummaryScope.ROLLING_24H, "오늘 00시 05분 요약",
+			NarrativeSource.LLM, LocalDateTime.of(NEXT_TRADE_DATE, LocalTime.of(0, 5))));
+
+		assertThat(instrumentNewsSummaryRepository
+			.findFirstByInstrumentIdAndScopeOrderByGeneratedAtDescIdDesc(
+				crypto.getId(), NewsSummaryScope.ROLLING_24H))
+			.get()
+			.extracting(InstrumentNewsSummary::getSummary)
+			.isEqualTo("오늘 00시 05분 요약");
+	}
+
+	@Test
+	@DisplayName("findFirstBy…는 다른 종목·다른 범위의 행을 주지 않는다")
+	void latestRowFinderFiltersByInstrumentAndScope() {
+		instrumentNewsSummaryRepository.saveAndFlush(
+			newSummary(stock, ORIGIN_TRADE_DATE, NewsSummaryScope.ROLLING_24H));
+		instrumentNewsSummaryRepository.saveAndFlush(
+			newSummary(crypto, ORIGIN_TRADE_DATE, NewsSummaryScope.PRE_MARKET));
+
+		assertThat(instrumentNewsSummaryRepository
+			.findFirstByInstrumentIdAndScopeOrderByGeneratedAtDescIdDesc(
+				crypto.getId(), NewsSummaryScope.ROLLING_24H))
+			.isEmpty();
+	}
+
+	// generated_at 동률은 배치가 같은 초에 두 번 도는 드문 경우지만, 2차 키가 없으면 결과가 비결정적이라
+	// 조회가 실행마다 다른 문장을 준다.
+	@Test
+	@DisplayName("generated_at이 같으면 id 내림차순으로 갈라 결과가 결정적이다")
+	void breaksGeneratedAtTiesByIdDescending() {
+		instrumentNewsSummaryRepository.saveAndFlush(InstrumentNewsSummary.create(
+			crypto, ORIGIN_TRADE_DATE, NewsSummaryScope.ROLLING_24H, "먼저 저장", NarrativeSource.LLM,
+			GENERATED_AT));
+		Long laterId = instrumentNewsSummaryRepository.saveAndFlush(InstrumentNewsSummary.create(
+			crypto, NEXT_TRADE_DATE, NewsSummaryScope.ROLLING_24H, "나중 저장", NarrativeSource.LLM,
+			GENERATED_AT)).getId();
+
+		assertThat(instrumentNewsSummaryRepository
+			.findFirstByInstrumentIdAndScopeOrderByGeneratedAtDescIdDesc(
+				crypto.getId(), NewsSummaryScope.ROLLING_24H))
+			.get()
+			.extracting(InstrumentNewsSummary::getId)
+			.isEqualTo(laterId);
 	}
 
 	@Test

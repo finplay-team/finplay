@@ -37,4 +37,19 @@ public interface InstrumentNewsSummaryRepository extends JpaRepository<Instrumen
 	 */
 	Optional<InstrumentNewsSummary> findByInstrumentIdAndOriginTradeDateAndScope(
 		Long instrumentId, LocalDate originTradeDate, NewsSummaryScope scope);
+
+	/**
+	 * 그 종목·범위의 <b>{@code generated_at}이 가장 최신인 행 1건</b>을 가져온다 — 코인 조회 경로다.
+	 *
+	 * <p><b>"오늘 날짜 행"으로 찾으면 안 된다</b>(FEED-008). 매일 00:00~00:05와 배치가 실패한 시각마다
+	 * 오늘 행이 없어 화면이 비는데, 그 순간에도 <b>직전에 만들어 둔 요약은 여전히 유효하다.</b> 코인은
+	 * '거래일 경계'가 없으므로 날짜로 자를 이유 자체가 없다.
+	 *
+	 * <p>배치의 재생성 판정도 이 행의 {@code generated_at}을 기준으로 삼는다 — "직전 생성" 시각이다.
+	 *
+	 * <p>{@code generated_at} 동률은 {@code id} 내림차순으로 갈라 결과를 결정적으로 만든다. 인덱스는 V13의
+	 * {@code INDEX(instrument_id, scope, generated_at)}가 이미 있다(§데이터 모델).
+	 */
+	Optional<InstrumentNewsSummary> findFirstByInstrumentIdAndScopeOrderByGeneratedAtDescIdDesc(
+		Long instrumentId, NewsSummaryScope scope);
 }

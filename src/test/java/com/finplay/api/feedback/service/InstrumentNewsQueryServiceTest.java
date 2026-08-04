@@ -391,11 +391,12 @@ class InstrumentNewsQueryServiceTest {
 		}
 	}
 
-	// 코인 규칙 자체(ROLLING_24H·generated_at 최신 1행)는 별도 이슈 소유다. 여기서는 현재 상태가 주식 규칙에
-	// 오염되지 않았는지, 그리고 §C-4 3번(기사 0건 → EMPTY·items=[])과 어긋나지 않는지만 본다.
+	// 코인 규칙 전반(ROLLING_24H 창·generated_at 최신 1행·재생성 판정)은 코인 경로 이슈가 세운다. 여기서는
+	// 주식 규칙에 오염되지 않았는지와 §C-4 3번(기사 0건 → EMPTY·items=[])만 본다 — 새벽 03:00은 주식이라면
+	// 개장 전이라 NOT_YET이 되는 시각이다.
 	@Test
-	@DisplayName("코인 종목은 주식 게이트를 타지 않고 EMPTY와 빈 배열을 돌려준다")
-	void returnsEmptyForCryptoWithoutApplyingTheStockGate() {
+	@DisplayName("코인 종목은 주식 게이트를 타지 않고 ROLLING_24H 범위로 응답한다")
+	void returnsRollingScopeForCryptoWithoutApplyingTheStockGate() {
 		when(instrumentService.getInstrumentEntity(CRYPTO_ID))
 			.thenReturn(instrument(Market.CRYPTO, CRYPTO_ID, "QRYBTC"));
 		at(LocalTime.of(3, 0));
@@ -405,8 +406,9 @@ class InstrumentNewsQueryServiceTest {
 		// 24시간 거래 종목이라 NOT_YET이 존재하지 않는다 (FEED-008).
 		assertThat(response.summaryStatus()).isEqualTo(FeedbackContentStatus.EMPTY);
 		assertThat(response.items()).isEmpty();
+		// 저장된 행의 origin_trade_date는 배치 실행 날짜라 응답에는 내리지 않는다 (§C-9).
 		assertThat(response.originTradeDate()).isNull();
-		assertThat(response.summaryScope()).isNull();
+		assertThat(response.summaryScope()).isEqualTo(NewsSummaryScope.ROLLING_24H);
 		verifyNoInteractions(stockReplayService);
 	}
 

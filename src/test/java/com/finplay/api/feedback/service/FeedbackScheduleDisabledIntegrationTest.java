@@ -33,11 +33,15 @@ import org.springframework.scheduling.config.ScheduledTaskHolder;
 @SpringBootTest
 class FeedbackScheduleDisabledIntegrationTest {
 
-	// 크론이 꺼진 것이 확인돼야 하는 세 스케줄 (§C-1 — 개장 전 배치 1종 + 수집 2종).
+	// 크론이 꺼진 것이 확인돼야 하는 네 스케줄 (§C-1 — 개장 전 배치 1종 + 수집 2종 + 코인 배치 1종).
+	//
+	// 코인 배치가 넷째다. 매시 05분이라 전체 빌드가 한 시간에 한 번은 반드시 그 시각을 지나므로, 여기 빠져
+	// 있으면 다른 셋보다 훨씬 자주 공유 컨테이너에 요약·브리핑 행이 실제로 쌓인다.
 	private static final List<String> FEEDBACK_SCHEDULES = List.of(
 		scheduledMethodName(FeedbackBatchService.class, "runPreMarketBatch"),
 		scheduledMethodName(NewsCollectionService.class, "collectNews"),
-		scheduledMethodName(NewsCollectionService.class, "collectDisclosures"));
+		scheduledMethodName(NewsCollectionService.class, "collectDisclosures"),
+		scheduledMethodName(CryptoFeedbackBatchService.class, "refreshCryptoFeedback"));
 
 	// 아래 단정이 "스케줄링 자체가 꺼진 컨텍스트"에서 헛되이 통과하지 않도록 두는 대조군이다. 크론을 코드에
 	// 박아 둔 기존 스케줄이라 이 파일의 영향을 받을 이유가 없다.
@@ -46,7 +50,7 @@ class FeedbackScheduleDisabledIntegrationTest {
 
 	// §C-1의 실제 크론 값. 어떤 경로로든 이 표현식이 트리거로 살아 있으면 안 된다.
 	private static final List<String> SPEC_CRONS = List.of("0 45 8 * * MON-FRI", "0 0/30 * * * *",
-		"0 0/30 8-20 * * MON-FRI");
+		"0 0/30 8-20 * * MON-FRI", "0 5 * * * *");
 
 	private final ScheduledTaskHolder scheduledTaskHolder;
 
@@ -61,9 +65,11 @@ class FeedbackScheduleDisabledIntegrationTest {
 
 	// 아래 두 단정의 전제다. 이 파일이 로드되지 않으면 크론은 §C-1 값 그대로이고, 그때는 트리거가 등록된다.
 	@Test
-	@DisplayName("테스트 컨텍스트에서 feedback 배치·수집 크론 3키가 Scheduled.CRON_DISABLED로 덮여 있다")
+	@DisplayName("테스트 컨텍스트에서 feedback 배치·수집 크론 4키가 Scheduled.CRON_DISABLED로 덮여 있다")
 	void testContextOverridesEveryFeedbackCronWithCronDisabled() {
 		assertThat(environment.getProperty("feedback.batch.cron"))
+			.isEqualTo(Scheduled.CRON_DISABLED);
+		assertThat(environment.getProperty("feedback.batch.crypto-cron"))
 			.isEqualTo(Scheduled.CRON_DISABLED);
 		assertThat(environment.getProperty("feedback.news.collect-cron"))
 			.isEqualTo(Scheduled.CRON_DISABLED);

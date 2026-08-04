@@ -31,4 +31,13 @@ public interface MarketBriefingRepository extends JpaRepository<MarketBriefing, 
 	 * (5번)이며 <b>두 경우 모두 {@code items}는 채운다.</b>
 	 */
 	Optional<MarketBriefing> findByMarketAndOriginTradeDate(Market market, LocalDate originTradeDate);
+
+	/**
+	 * 그 시장의 <b>{@code generated_at}이 가장 최신인 행 1건</b>을 가져온다 — 코인 조회 경로다.
+	 *
+	 * <p>"오늘 날짜 행"으로 찾으면 안 되는 이유는
+	 * {@code InstrumentNewsSummaryRepository.findFirstByInstrumentIdAndScopeOrderByGeneratedAtDescIdDesc}와
+	 * 같다. 인덱스는 V13의 {@code INDEX(market, generated_at)}가 이미 있다(§데이터 모델).
+	 */
+	Optional<MarketBriefing> findFirstByMarketOrderByGeneratedAtDescIdDesc(Market market);
 }

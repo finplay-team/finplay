@@ -103,6 +103,47 @@ public class MarketBriefingService {
 	}
 
 	/**
+	 * 코인 시장 브리핑을 갱신한다 — 매시 코인 배치가 부른다 (FEED-009).
+	 *
+	 * <p>주식과 다른 셋(한 범위·UPSERT·{@code created_at} 기준 재생성 판정)과 "직전 생성"을 오늘 행이 아니라
+	 * {@code generated_at} 최신 행으로 잡는 이유는 {@code InstrumentNewsSummaryService.refreshCryptoSummary}와
+	 * 같다. 코인은 '개장 전'이 없어 주기 갱신이 그 자리를 대신한다.
+	 *
+	 * @return 저장·갱신된 브리핑. <b>새 기사가 없거나 창 안 기사가 0건이면 {@code Optional.empty()}</b>다
+	 */
+	public Optional<MarketBriefing> refreshCryptoBriefing() {
+		LocalDateTime now = LocalDateTime.now(clock);
+		Optional<MarketBriefing> latest = marketBriefingRepository
+			.findFirstByMarketOrderByGeneratedAtDescIdDesc(Market.CRYPTO);
+		if (latest.isPresent()
+			&& !marketNewsItemRepository.existsCollectedAfter(Market.CRYPTO, latest.get().getGeneratedAt())) {
+			log.debug("직전 생성 이후 수집된 코인 기사가 없어 브리핑을 다시 만들지 않는다. 직전생성={}",
+				latest.get().getGeneratedAt());
+			return Optional.empty();
+		}
+
+		List<MarketNewsItem> items = NewsItemTruncator.truncateAndSort(
+			collectRollingItems(now), properties.maxItemsPerSummary());
+		if (items.isEmpty()) {
+			log.debug("최근 24시간 코인 기사가 없어 브리핑을 만들지 않는다.");
+			return Optional.empty();
+		}
+
+		LocalDate batchDate = now.toLocalDate();
+		NarrativeResultDto narrative = narrativeService.resolveMarketBriefingNarrative(
+			new MarketBriefingPromptDto(
+				Market.CRYPTO, batchDate, items.stream().map(MarketBriefingService::toPromptItem).toList()));
+		return Optional.of(marketBriefingRepository.save(
+			marketBriefingRepository.findByMarketAndOriginTradeDate(Market.CRYPTO, batchDate)
+				.map(row -> {
+					row.refreshNarrative(narrative.narrative(), narrative.source(), now);
+					return row;
+				})
+				.orElseGet(() -> MarketBriefing.create(
+					Market.CRYPTO, batchDate, narrative.narrative(), narrative.source(), now))));
+	}
+
+	/**
 	 * 시장 단위 브리핑을 조회한다. 계약은 {@code docs/api-contracts.md}의 "개장 전 브리핑 조회" 행이다.
 	 *
 	 * <p><b>판정 순서는 §C-4의 표 그대로다.</b> 1번이 {@code EMPTY}이고 2번이 {@code NOT_YET}인 것이
@@ -127,12 +168,8 @@ public class MarketBriefingService {
 	 */
 	@Transactional(readOnly = true)
 	public MarketBriefingResponse getBriefing(Market market) {
-		// 코인은 '개장 전'도 '거래일 경계'도 없어 범위가 최근 24시간 하나뿐이고 재생세션과 무관하며, 조회도
-		// generated_at 최신 1행이다 (FEED-009). 그 분기는 코인 배치와 함께 별도 이슈가 이 자리에 더한다 —
-		// 지금은 코인 브리핑을 만드는 배치가 없어 행도 대상 기사도 없으므로 "아직 아무것도 없다"가 정확한
-		// 답이고, 여기서 주식 규칙(개장 시각·재생세션)을 태우면 24시간 거래 시장이 매일 09:00까지 NOT_YET이 된다.
 		if (market == Market.CRYPTO) {
-			return MarketBriefingResponse.withoutItems(market, null, FeedbackContentStatus.EMPTY);
+			return getCryptoBriefing();
 		}
 
 		// 1번 — 원본 거래일 자체가 확정되지 않아 날짜를 지어낼 수 없다. NOT_YET이 아니라 EMPTY다.
@@ -180,6 +217,59 @@ public class MarketBriefingService {
 			text == null ? FeedbackContentStatus.UNAVAILABLE : FeedbackContentStatus.READY,
 			text,
 			items);
+	}
+
+	/**
+	 * 코인 브리핑 조회 — 최근 24시간 기사와 {@code generated_at} 최신 1행이다 (FEED-009).
+	 *
+	 * <p><b>주식의 게이트·판정 순서를 타지 않는다.</b> 코인은 재생세션과 무관하고 '개장 전'이라는 시점이 없어
+	 * §C-4의 1·2번(미준비·개장 전)이 성립하지 않는다 — {@code NOT_YET}이 되지 않는다. 3~6번은 그대로 쓴다.
+	 *
+	 * <pre>
+	 * 3. 기사 0건       → EMPTY,   items=[]
+	 * 4. 브리핑 행 없음 → EMPTY,   items 채움
+	 * 5. summary가 null → UNAVAILABLE, items 채움
+	 * 6. 그 외          → READY
+	 * </pre>
+	 *
+	 * <p><b>{@code originTradeDate}는 {@code null}로 내린다</b>(§C-9·§데이터 모델). 저장된 행에는 값이 있지만
+	 * 그것은 유니크 축을 성립시키려고 채운 <b>배치 실행 날짜</b>이지 거래일이 아니라, 그대로 노출하면 화면이
+	 * 재생 거래일로 오해한다.
+	 *
+	 * <p><b>{@code items}의 24시간 창은 조회 시각 기준이고 요약은 마지막 배치 기준이라 최대 65분 어긋난다 —
+	 * 허용된 동작이다</b>(FEED-008). 코인은 실시간이라 미래 정보가 아니므로 스포일러가 아니고, 맞추려면 조회 시
+	 * 생성으로 되돌아가야 한다.
+	 */
+	private MarketBriefingResponse getCryptoBriefing() {
+		List<BriefingNewsItem> items = NewsItemTruncator
+			.truncateAndSort(collectRollingItems(LocalDateTime.now(clock)), properties.maxItemsPerBriefing())
+			.stream()
+			.map(BriefingNewsItem::from)
+			.toList();
+		if (items.isEmpty()) {
+			return MarketBriefingResponse.withoutItems(Market.CRYPTO, null, FeedbackContentStatus.EMPTY);
+		}
+
+		Optional<MarketBriefing> briefing = marketBriefingRepository
+			.findFirstByMarketOrderByGeneratedAtDescIdDesc(Market.CRYPTO);
+		if (briefing.isEmpty()) {
+			return MarketBriefingResponse.of(
+				Market.CRYPTO, null, FeedbackContentStatus.EMPTY, null, items);
+		}
+
+		String text = briefing.get().getSummary();
+		return MarketBriefingResponse.of(
+			Market.CRYPTO,
+			null,
+			text == null ? FeedbackContentStatus.UNAVAILABLE : FeedbackContentStatus.READY,
+			text,
+			items);
+	}
+
+	/** 최근 24시간 코인 기사 (§C-2의 {@code ROLLING_24H}). 코인은 공시가 없어 뉴스만 모은다. */
+	private List<MarketNewsItem> collectRollingItems(LocalDateTime now) {
+		return marketNewsItemRepository.findMarketNewsPublishedBetween(
+			Market.CRYPTO, now.minusHours(24), now);
 	}
 
 	/**

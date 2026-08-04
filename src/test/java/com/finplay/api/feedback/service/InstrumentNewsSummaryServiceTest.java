@@ -347,5 +347,193 @@ class InstrumentNewsSummaryServiceTest {
 			assertThat(saved.getNarrativeSource()).isEqualTo(NarrativeSource.LLM);
 			assertThat(saved.getGeneratedAt()).isEqualTo(GENERATED_AT);
 		}
+
+		// refreshNarrative는 코인 전용이다. 주식이 쓰면 같은 서비스 날짜의 두 번째 실행이 기존 행을 갈아
+		// 끼워 배치 ⑤("두 번 실행해도 중복 생성되지 않는다")가 "덮어쓴다"로 조용히 바뀐다.
+		@Test
+		@DisplayName("주식 경로는 기존 행이 있어도 갱신하지 않고 건너뛴다 — refreshNarrative는 코인 전용이다")
+		void neverRefreshesAnExistingRowOnTheStockPath() {
+			when(instrumentNewsSummaryRepository.existsByInstrumentIdAndOriginTradeDateAndScope(
+				any(), any(), any())).thenReturn(true);
+
+			service.generateStockSummary(instrument, ORIGIN_TRADE_DATE, NewsSummaryScope.PRE_MARKET);
+
+			verify(instrumentNewsSummaryRepository, never()).save(any());
+			// 코인 조회 파인더도 주식 경로에는 없어야 한다 — 있으면 "직전 생성" 판정이 주식에 새어 든다.
+			verify(instrumentNewsSummaryRepository, never())
+				.findFirstByInstrumentIdAndScopeOrderByGeneratedAtDescIdDesc(any(), any());
+		}
+	}
+
+	// 코인 갱신은 주식과 규칙이 셋 다르다 — 한 범위(ROLLING_24H)·UPSERT·created_at 기준 재생성 판정이다
+	// (§C-2·§C-9·FEED-008). 실제 UPSERT가 하루 1행을 유지하는지는 실 DB가 필요해
+	// CryptoFeedbackBatchIntegrationTest가 맡고, 여기서는 판정과 저장 인자를 본다.
+	@Nested
+	@DisplayName("코인 갱신 (배치 ⑩·⑬·§C-9)")
+	class CryptoRefresh {
+
+		private final Instrument coin = crypto();
+
+		private static Instrument crypto() {
+			Instrument created = Instrument.create(
+				Market.CRYPTO, "SUMBTC", "비트코인", BigDecimal.ONE, 5000L, true, LocalDateTime.now());
+			ReflectionTestUtils.setField(created, "id", 9L);
+			return created;
+		}
+
+		private void givenNoPreviousRow() {
+			when(instrumentNewsSummaryRepository.findFirstByInstrumentIdAndScopeOrderByGeneratedAtDescIdDesc(
+				any(), any())).thenReturn(Optional.empty());
+			when(instrumentNewsSummaryRepository.findByInstrumentIdAndOriginTradeDateAndScope(
+				any(), any(), any())).thenReturn(Optional.empty());
+			when(narrativeService.resolveNewsSummaryNarrative(any()))
+				.thenReturn(NarrativeResultDto.llm("최근 24시간 기사가 이어졌습니다."));
+			when(instrumentNewsSummaryRepository.save(any())).thenAnswer(call -> call.getArgument(0));
+		}
+
+		private InstrumentNewsSummary previousRow(LocalDateTime generatedAt) {
+			return InstrumentNewsSummary.create(
+				coin, generatedAt.toLocalDate(), NewsSummaryScope.ROLLING_24H, "직전 요약",
+				NarrativeSource.LLM, generatedAt);
+		}
+
+		// 배치 ⑩ — 직전 생성 이후 수집된 기사가 없으면 LLM을 부르지 않는다. 판정 기준은 created_at이고,
+		// 그 시각은 "직전 생성" 행의 generated_at이다.
+		@Test
+		@DisplayName("직전 생성 이후 수집된 기사가 없으면 LLM을 부르지 않고 저장도 하지 않는다")
+		void skipsWithoutCallingTheLlmWhenNothingWasCollectedSinceTheLastGeneration() {
+			LocalDateTime lastGeneratedAt = GENERATED_AT.minusHours(1);
+			when(instrumentNewsSummaryRepository.findFirstByInstrumentIdAndScopeOrderByGeneratedAtDescIdDesc(
+				coin.getId(), NewsSummaryScope.ROLLING_24H))
+				.thenReturn(Optional.of(previousRow(lastGeneratedAt)));
+			when(marketNewsItemRepository.existsByInstrumentIdAndCreatedAtAfter(
+				coin.getId(), lastGeneratedAt)).thenReturn(false);
+
+			assertThat(service.refreshCryptoSummary(coin)).isEmpty();
+
+			verifyNoInteractions(narrativeService);
+			verify(instrumentNewsSummaryRepository, never()).save(any());
+		}
+
+		// published_at으로 비교하면 수집이 30분 주기라 늦게 저장된 기사가 영원히 요약에 못 들어간다
+		// (FEED-008). 어떤 파인더를 어떤 인자로 부르는지가 그 축을 고정한다.
+		@Test
+		@DisplayName("재생성 판정을 created_at 기준 파인더로 한다 — 직전 생성 시각을 그대로 넘긴다")
+		void decidesRegenerationByCollectedAtNotPublishedAt() {
+			LocalDateTime lastGeneratedAt = GENERATED_AT.minusHours(1);
+			when(instrumentNewsSummaryRepository.findFirstByInstrumentIdAndScopeOrderByGeneratedAtDescIdDesc(
+				any(), any())).thenReturn(Optional.of(previousRow(lastGeneratedAt)));
+			when(marketNewsItemRepository.existsByInstrumentIdAndCreatedAtAfter(any(), any()))
+				.thenReturn(true);
+			when(instrumentNewsSummaryRepository.findByInstrumentIdAndOriginTradeDateAndScope(
+				any(), any(), any())).thenReturn(Optional.empty());
+			when(narrativeService.resolveNewsSummaryNarrative(any()))
+				.thenReturn(NarrativeResultDto.llm("최근 24시간 기사가 이어졌습니다."));
+			when(instrumentNewsSummaryRepository.save(any())).thenAnswer(call -> call.getArgument(0));
+			givenNews(List.of(news(1L, LocalTime.of(18, 0))));
+
+			service.refreshCryptoSummary(coin);
+
+			verify(marketNewsItemRepository)
+				.existsByInstrumentIdAndCreatedAtAfter(coin.getId(), lastGeneratedAt);
+		}
+
+		// 첫 실행에는 비교 대상이 없다 — 판정 없이 만들어야 코인 요약이 영원히 생기지 않는 상태를 피한다.
+		@Test
+		@DisplayName("직전 생성 행이 없으면 재생성 판정 없이 만든다")
+		void generatesWithoutTheRegenerationCheckOnTheFirstRun() {
+			givenNoPreviousRow();
+			givenNews(List.of(news(1L, LocalTime.of(18, 0))));
+
+			assertThat(service.refreshCryptoSummary(coin)).isPresent();
+
+			verify(marketNewsItemRepository, never())
+				.existsByInstrumentIdAndCreatedAtAfter(any(), any());
+		}
+
+		// 배치 ⑬ — 코인은 한 범위만 쓴다. 주식의 두 범위를 쓰면 조회가 보는 행(ROLLING_24H)과 어긋난다.
+		@Test
+		@DisplayName("범위가 ROLLING_24H 하나뿐이고 공시를 묻지 않는다")
+		void usesOnlyTheRollingScopeAndNeverAsksForDisclosures() {
+			givenNoPreviousRow();
+			givenNews(List.of(news(1L, LocalTime.of(18, 0))));
+
+			service.refreshCryptoSummary(coin);
+
+			InstrumentNewsSummary saved = capturedSavedSummary();
+			assertThat(saved.getScope()).isEqualTo(NewsSummaryScope.ROLLING_24H);
+			// 코인은 공시가 없다 (§C-3).
+			verify(marketNewsItemRepository, never()).findDisclosuresReceivedOn(any(), any(), any());
+		}
+
+		// 창은 배치 실행 시각 기준 최근 24시간이다 (§C-2). 주식의 전장 구간을 쓰면 재생 시간축이 없는
+		// 종목에 원본 거래일 구간이 붙어 매일 0건이 된다.
+		@Test
+		@DisplayName("최근 24시간 창으로 기사를 모은다")
+		void collectsArticlesFromTheLastTwentyFourHours() {
+			givenNoPreviousRow();
+			givenNews(List.of(news(1L, LocalTime.of(18, 0))));
+
+			service.refreshCryptoSummary(coin);
+
+			verify(marketNewsItemRepository).findByInstrumentIdAndTypeAndPublishedAtBetweenOrderByPublishedAtAsc(
+				coin.getId(), MarketNewsItemType.NEWS, GENERATED_AT.minusHours(24), GENERATED_AT);
+		}
+
+		// §C-9 — origin_trade_date는 원본 거래일이 아니라 배치 실행 시점의 KST 날짜다. 비우면 유니크가
+		// 중복을 허용해 UPSERT가 매시 새 행을 쌓는다.
+		@Test
+		@DisplayName("origin_trade_date가 배치 실행 시점의 KST 날짜다")
+		void storesTheBatchRunDateAsOriginTradeDate() {
+			givenNoPreviousRow();
+			givenNews(List.of(news(1L, LocalTime.of(18, 0))));
+
+			service.refreshCryptoSummary(coin);
+
+			assertThat(capturedSavedSummary().getOriginTradeDate())
+				.isEqualTo(GENERATED_AT.toLocalDate());
+		}
+
+		// §C-9 — 같은 날 두 번째 실행은 새 행이 아니라 같은 행의 갱신이다. 새 행을 만들면 유니크에 걸려
+		// 그 시각 갱신이 통째로 실패한다.
+		@Test
+		@DisplayName("같은 날 행이 이미 있으면 새 행을 만들지 않고 그 행을 갱신한다")
+		void updatesTheExistingRowOfTheSameDayInsteadOfInsertingANewOne() {
+			LocalDateTime lastGeneratedAt = GENERATED_AT.minusHours(1);
+			InstrumentNewsSummary existing = previousRow(lastGeneratedAt);
+			when(instrumentNewsSummaryRepository.findFirstByInstrumentIdAndScopeOrderByGeneratedAtDescIdDesc(
+				any(), any())).thenReturn(Optional.of(existing));
+			when(marketNewsItemRepository.existsByInstrumentIdAndCreatedAtAfter(any(), any()))
+				.thenReturn(true);
+			when(instrumentNewsSummaryRepository.findByInstrumentIdAndOriginTradeDateAndScope(
+				coin.getId(), GENERATED_AT.toLocalDate(), NewsSummaryScope.ROLLING_24H))
+				.thenReturn(Optional.of(existing));
+			when(narrativeService.resolveNewsSummaryNarrative(any()))
+				.thenReturn(NarrativeResultDto.llm("새 요약입니다."));
+			when(instrumentNewsSummaryRepository.save(any())).thenAnswer(call -> call.getArgument(0));
+			givenNews(List.of(news(1L, LocalTime.of(18, 0))));
+
+			service.refreshCryptoSummary(coin);
+
+			InstrumentNewsSummary saved = capturedSavedSummary();
+			assertThat(saved).isSameAs(existing);
+			assertThat(saved.getSummary()).isEqualTo("새 요약입니다.");
+			assertThat(saved.getGeneratedAt()).isEqualTo(GENERATED_AT);
+			// 유니크 축은 건드리지 않는다 — 바꾸면 갱신이 아니라 다른 행이 된다.
+			assertThat(saved.getOriginTradeDate()).isEqualTo(lastGeneratedAt.toLocalDate());
+			assertThat(saved.getScope()).isEqualTo(NewsSummaryScope.ROLLING_24H);
+		}
+
+		@Test
+		@DisplayName("최근 24시간 기사가 0건이면 LLM을 부르지 않고 행도 만들지 않는다")
+		void createsNoRowWhenTheRollingWindowIsEmpty() {
+			givenNoPreviousRow();
+			givenNews(List.of());
+
+			assertThat(service.refreshCryptoSummary(coin)).isEmpty();
+
+			verifyNoInteractions(narrativeService);
+			verify(instrumentNewsSummaryRepository, never()).save(any());
+		}
 	}
 }

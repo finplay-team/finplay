@@ -25,6 +25,9 @@ class FeedbackBatchPropertiesTest {
 	// §C-1 개장 전 배치 크론
 	private static final String SPEC_BATCH_CRON = "0 45 8 * * MON-FRI";
 
+	// §C-1 코인 요약·브리핑 갱신 크론 (매시 05분)
+	private static final String SPEC_CRYPTO_CRON = "0 5 * * * *";
+
 	private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
 		.withUserConfiguration(FeedbackBatchConfig.class);
 
@@ -78,6 +81,64 @@ class FeedbackBatchPropertiesTest {
 				assertThat(environment.getProperty("feedback.batch.cron")).isEqualTo(SPEC_BATCH_CRON);
 				assertThat(context.getBean(FeedbackBatchProperties.class).cron())
 					.isEqualTo(SPEC_BATCH_CRON);
+			});
+	}
+
+	// --- 코인 배치 크론 (이슈 #188 항목 7) ---
+
+	@Test
+	@DisplayName("feedback.batch 설정을 주지 않아도 §C-1 코인 크론으로 바인딩된다")
+	void bindsSpecCryptoCronDefaultWhenNoFeedbackBatchPropertyIsGiven() {
+		contextRunner.run(context -> {
+			assertThat(context).hasNotFailed();
+			assertThat(context.getBean(FeedbackBatchProperties.class).cryptoCron())
+				.isEqualTo(SPEC_CRYPTO_CRON);
+		});
+	}
+
+	@Test
+	@DisplayName("feedback.batch.crypto-cron 케밥케이스 키를 주면 덮어써지고 주식 크론은 그대로다")
+	void bindsCryptoCronFromKebabCaseKey() {
+		contextRunner
+			.withPropertyValues("feedback.batch.crypto-cron=0 15 * * * *")
+			.run(context -> {
+				assertThat(context).hasNotFailed();
+
+				FeedbackBatchProperties properties = context.getBean(FeedbackBatchProperties.class);
+				assertThat(properties.cryptoCron()).isEqualTo("0 15 * * * *");
+				assertThat(properties.cron()).isEqualTo(SPEC_BATCH_CRON);
+			});
+	}
+
+	// 매시 크론이라 오타가 나면 어긋남이 눈에 덜 띈다 — 파싱 가능성을 먼저 확정한다.
+	@Test
+	@DisplayName("§C-1 코인 크론 기본값이 실제로 파싱 가능하고 매시 05분에 돈다")
+	void specCryptoCronRunsAtFiveMinutesPastEveryHour() {
+		contextRunner.run(context -> {
+			String cryptoCron = context.getBean(FeedbackBatchProperties.class).cryptoCron();
+			assertThatCode(() -> CronExpression.parse(cryptoCron)).doesNotThrowAnyException();
+
+			java.time.LocalDateTime from = java.time.LocalDateTime.of(2026, 8, 5, 10, 0);
+			java.time.LocalDateTime next = CronExpression.parse(cryptoCron).next(from);
+			assertThat(next).isEqualTo(java.time.LocalDateTime.of(2026, 8, 5, 10, 5));
+			// 매시라 다음 실행은 정확히 한 시간 뒤다 — 하루 1회로 좁아지는 회귀가 여기서 걸린다.
+			assertThat(CronExpression.parse(cryptoCron).next(next))
+				.isEqualTo(java.time.LocalDateTime.of(2026, 8, 5, 11, 5));
+		});
+	}
+
+	@Test
+	@DisplayName("application.yml에 feedback.batch.crypto-cron이 §C-1 값으로 실제 존재한다")
+	void applicationYmlDeclaresTheCryptoCronKey() {
+		new ApplicationContextRunner()
+			.withSystemProperties("spring.config.additional-location=")
+			.withInitializer(new ConfigDataApplicationContextInitializer())
+			.withUserConfiguration(FeedbackBatchConfig.class)
+			.run(context -> {
+				Environment environment = context.getEnvironment();
+				assertThat(environment.getProperty("feedback.batch.crypto-cron")).isEqualTo(SPEC_CRYPTO_CRON);
+				assertThat(context.getBean(FeedbackBatchProperties.class).cryptoCron())
+					.isEqualTo(SPEC_CRYPTO_CRON);
 			});
 	}
 }
