@@ -56,7 +56,7 @@
 ## 계산 정책
 
 - order 도메인에 `ExitPricePolicy` 같은 명시적 역할의 순수 계산기를 둔다. education entity나 request DTO에 의존하지 않고 내부 snapshot DTO를 입력받는다.
-- PRICE는 OCO 생성 시 legacy/명시 여부와 무관하게 `stopLoss < entryPrice < takeProfit` 검증 후 scale 8 snapshot을 반환한다.
+- PRICE는 OCO 생성 시 legacy/명시 여부와 무관하게 `0 < stopLossPrice < entryPrice < takeProfitPrice` 검증 후 scale 8 snapshot을 반환한다.
 - PERCENT는 아래 순서로 한 번 계산한다.
 
 ```text

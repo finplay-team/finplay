@@ -18,7 +18,7 @@
 
 - [ ] EXIT-PRICE-001: intention 입력 방식은 `PRICE`와 `PERCENT` 두 가지이며 한 요청에서 정확히 하나만 선택한다.
 - [ ] EXIT-PRICE-002: 기존 요청처럼 `exitPriceType` 없이 양수 `stopLoss`·`takeProfit`만 보내면 `PRICE`로 처리한다.
-- [ ] EXIT-PRICE-003: `PERCENT`는 `stopLossRate`·`takeProfitRate`를 퍼센트포인트 단위로 받으며 `5`는 5%를 뜻한다.
+- [ ] EXIT-PRICE-003: `PERCENT`는 `stopLossRate`·`takeProfitRate`를 퍼센트 단위(백분율 값)로 받으며 `5`는 5%를 뜻한다.
 - [ ] EXIT-PRICE-004: 퍼센트 가격선의 기준은 intention 생성 시 현재가가 아니라 연결된 실제 시장가 BUY의 `entryPrice`다.
 - [ ] EXIT-PRICE-005: OCO 생성은 intention 원본 기준과 계산된 `stopLossPrice`·`takeProfitPrice` snapshot을 함께 저장한다.
 - [ ] EXIT-PRICE-006: PRICE와 PERCENT 모두 확정된 가격선에 대해 `currentPrice <= stopLossPrice`, `currentPrice >= takeProfitPrice`를 평가한다.
@@ -101,8 +101,8 @@ takeProfitPrice = entryPrice × (1 + takeProfitRate / 100)
 
 ## 일반 지정가와의 구분
 
-- PRICE 입력의 `stopLoss`·`takeProfit`은 일반 지정가 주문의 `limitPrice`가 아니다.
-- 일반 LIMIT는 단일 BUY/SELL 주문 자체가 `limitPrice`에 전량 체결된다.
+- PRICE 입력의 `stopLoss`·`takeProfit`은 일반 지정가(목표가) 주문의 필드가 아니다. `docs/specs/015-limit-order`가 아직 없어 그 필드명이 확정되지 않았으므로 여기서 `limitPrice`라는 이름을 선점하지 않는다.
+- 일반 LIMIT는 단일 BUY/SELL 주문 자체가 지정가(목표가)에 전량 체결된다.
 - OCO는 기존 보유분에 두 임계값을 묶고, 한쪽 도달 시 트리거 현재가로 시장가 SELL을 만들며 반대 조건을 취소한다.
 - 두 기능은 공통 가격 이벤트와 holding 예약 원장을 사용할 수 있지만 API, 상태, 체결가 정책과 트랜잭션은 분리한다.
 
