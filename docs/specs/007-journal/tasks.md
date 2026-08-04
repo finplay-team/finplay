@@ -121,7 +121,7 @@
   - **같은 커밋에서** `docs/api-routes.md`·`docs/api-contracts.md`를 갱신한다 (CLAUDE.md 규칙 7).
   - 검증 — `@WebMvcTest`: 201 본문 `jsonPath` 4필드, 공백·누락·상한 초과 400, 숫자 아닌 `sellTradeId` 400, 미인증 401, 서비스 예외의 403·404·409 매핑.
 
-- [ ] **S4. 통합 테스트 + 빌드**
+- [x] **S4. 통합 테스트 + 빌드**
 
   Testcontainers `@SpringBootTest`로 spec의 2차 완료 조건을 한 번에 확인한다.
   - 본인 매도 체결 작성 201 (매수 → 매도 순으로 체결을 만들어 매도 체결을 확보한다).

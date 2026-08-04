@@ -13,6 +13,7 @@ import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.auth.token.JwtTokenProvider;
 import com.finplay.api.journal.repository.BuyTradeJournalRepository;
+import com.finplay.api.journal.repository.SellTradeJournalRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.domain.StockCandle;
@@ -118,6 +119,9 @@ class JournalIntegrationTest {
 	private BuyTradeJournalRepository buyTradeJournalRepository;
 
 	@Autowired
+	private SellTradeJournalRepository sellTradeJournalRepository;
+
+	@Autowired
 	private JwtTokenProvider jwtTokenProvider;
 
 	@Autowired
@@ -142,8 +146,9 @@ class JournalIntegrationTest {
 
 	@AfterEach
 	void tearDown() {
-		// 1. buy_trade_journals — 이 통합 테스트 클래스만 실제로 커밋하는 테이블이라 통째로 비워도 안전하다.
+		// 1. buy_trade_journals·sell_trade_journals — 이 통합 테스트 클래스만 실제로 커밋하는 테이블이라 통째로 비워도 안전하다.
 		jdbcTemplate.update("delete from buy_trade_journals");
+		jdbcTemplate.update("delete from sell_trade_journals");
 
 		// 2. 이 테스트가 만든 종목에 딸린 원장 행을 FK 자식→부모 순서로 지운 뒤 종목·분봉을 지운다.
 		//    (trade_allocations → holding_lots → holdings → trades → orders → stock_candles → instruments)
@@ -302,6 +307,158 @@ class JournalIntegrationTest {
 		assertThat(captureLedger(account.getId())).isEqualTo(before);
 	}
 
+	@Test
+	void createSellJournalReturns201AndPersistsExactlyOneRowWithoutTouchingLedger() throws Exception {
+		User user = createUser("sjour-success");
+		Account account = createAccount(user);
+		String accessToken = issueAccessToken(user);
+		Long sellTradeId = createBuyThenSellTradePair(user, "SJSUC").sellTradeId();
+
+		LedgerSnapshot before = captureLedger(account.getId());
+
+		mockMvc.perform(postSellJournal(sellTradeId, accessToken, "목표가 도달해서 전량 매도. 다음엔 분할 매도 시도."))
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.journalId").isNumber())
+			.andExpect(jsonPath("$.sellTradeId").value(sellTradeId))
+			.andExpect(jsonPath("$.content").value("목표가 도달해서 전량 매도. 다음엔 분할 매도 시도."))
+			.andExpect(jsonPath("$.createdAt").value("2026-07-29T10:01:00"));
+
+		assertThat(sellJournalCountFor(sellTradeId)).isEqualTo(1L);
+		assertThat(captureLedger(account.getId())).isEqualTo(before);
+	}
+
+	@Test
+	void sequentialDuplicateSellJournalWriteFailsOnSecondAttemptAndKeepsSingleRow() throws Exception {
+		User user = createUser("sjour-seq-dup");
+		Account account = createAccount(user);
+		String accessToken = issueAccessToken(user);
+		Long sellTradeId = createBuyThenSellTradePair(user, "SJSEQ").sellTradeId();
+
+		LedgerSnapshot before = captureLedger(account.getId());
+
+		mockMvc.perform(postSellJournal(sellTradeId, accessToken, "첫 작성"))
+			.andExpect(status().isCreated());
+		mockMvc.perform(postSellJournal(sellTradeId, accessToken, "두 번째 시도"))
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.error.code").value("DUPLICATE_RESOURCE"));
+
+		assertThat(sellJournalCountFor(sellTradeId)).isEqualTo(1L);
+		assertThat(captureLedger(account.getId())).isEqualTo(before);
+	}
+
+	@Test
+	void concurrentDuplicateSellJournalWritesLetExactlyOneRequestSucceedAndKeepSingleRow() throws Exception {
+		User user = createUser("sjour-con-dup");
+		Account account = createAccount(user);
+		String accessToken = issueAccessToken(user);
+		Long sellTradeId = createBuyThenSellTradePair(user, "SJCON").sellTradeId();
+
+		LedgerSnapshot before = captureLedger(account.getId());
+
+		List<Integer> statuses = fireConcurrentSellJournalRequests(sellTradeId, accessToken, 2);
+
+		// 잠금이 없으면 두 요청 모두 existsBySellTradeId=false를 보고 둘 다 저장을 시도하는데,
+		// UNIQUE(sell_trade_id) 제약이 한 건만 통과시키고 나머지는 DataIntegrityViolationException → 409로 변환된다.
+		assertThat(statuses).hasSize(2).containsExactlyInAnyOrder(201, 409);
+		assertThat(sellJournalCountFor(sellTradeId)).isEqualTo(1L);
+		assertThat(captureLedger(account.getId())).isEqualTo(before);
+	}
+
+	@Test
+	void missingSellTradeReturns404AndLeavesLedgerAndJournalTableUnchanged() throws Exception {
+		User user = createUser("sjour-missing");
+		Account account = createAccount(user);
+		String accessToken = issueAccessToken(user);
+
+		LedgerSnapshot before = captureLedger(account.getId());
+		long journalCountBefore = totalSellJournalCount();
+
+		mockMvc.perform(postSellJournal(MISSING_TRADE_ID, accessToken, "없는 체결에 대한 작성 시도"))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.error.code").value("NOT_FOUND"));
+
+		assertThat(totalSellJournalCount()).isEqualTo(journalCountBefore);
+		assertThat(captureLedger(account.getId())).isEqualTo(before);
+	}
+
+	@Test
+	void buyTradeReturns400ForSellJournalAndLeavesLedgerAndJournalTableUnchanged() throws Exception {
+		User user = createUser("sjour-buy");
+		Account account = createAccount(user);
+		String accessToken = issueAccessToken(user);
+		Long buyTradeId = createBuyThenSellTradePair(user, "SJBUY").buyTradeId();
+
+		LedgerSnapshot before = captureLedger(account.getId());
+
+		mockMvc.perform(postSellJournal(buyTradeId, accessToken, "매수 체결에 대한 매도 회고 작성 시도"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
+
+		assertThat(sellJournalCountFor(buyTradeId)).isEqualTo(0L);
+		assertThat(captureLedger(account.getId())).isEqualTo(before);
+	}
+
+	@Test
+	void otherUsersSellTradeReturns403AndLeavesLedgerAndJournalTableUnchanged() throws Exception {
+		User owner = createUser("sjour-owner");
+		Account ownerAccount = createAccount(owner);
+		Long ownerSellTradeId = createBuyThenSellTradePair(owner, "SJOWN").sellTradeId();
+
+		User intruder = createUser("sjour-intruder");
+		createAccount(intruder);
+		String intruderAccessToken = issueAccessToken(intruder);
+
+		LedgerSnapshot before = captureLedger(ownerAccount.getId());
+
+		mockMvc.perform(postSellJournal(ownerSellTradeId, intruderAccessToken, "타인 체결에 대한 작성 시도"))
+			.andExpect(status().isForbidden())
+			.andExpect(jsonPath("$.error.code").value("FORBIDDEN"));
+
+		assertThat(sellJournalCountFor(ownerSellTradeId)).isEqualTo(0L);
+		assertThat(captureLedger(ownerAccount.getId())).isEqualTo(before);
+	}
+
+	@Test
+	void blankContentReturns400ForSellJournalAndLeavesLedgerAndJournalTableUnchanged() throws Exception {
+		User user = createUser("sjour-blank");
+		Account account = createAccount(user);
+		String accessToken = issueAccessToken(user);
+		Long sellTradeId = createBuyThenSellTradePair(user, "SJBLK").sellTradeId();
+
+		LedgerSnapshot before = captureLedger(account.getId());
+
+		mockMvc.perform(post("/api/trades/{sellTradeId}/sell-journal", sellTradeId)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(journalBody("   ")))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
+
+		assertThat(sellJournalCountFor(sellTradeId)).isEqualTo(0L);
+		assertThat(captureLedger(account.getId())).isEqualTo(before);
+	}
+
+	@Test
+	void buyAndSellJournalsForSameInstrumentTradesAreIndependentAndBothReturn201() throws Exception {
+		User user = createUser("jour-both");
+		Account account = createAccount(user);
+		String accessToken = issueAccessToken(user);
+		TradePair pair = createBuyThenSellTradePair(user, "JRBOTH");
+
+		LedgerSnapshot before = captureLedger(account.getId());
+
+		mockMvc.perform(postJournal(pair.buyTradeId(), accessToken, "매수 회고"))
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.buyTradeId").value(pair.buyTradeId()));
+		mockMvc.perform(postSellJournal(pair.sellTradeId(), accessToken, "매도 회고"))
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.sellTradeId").value(pair.sellTradeId()));
+
+		assertThat(journalCountFor(pair.buyTradeId())).isEqualTo(1L);
+		assertThat(sellJournalCountFor(pair.sellTradeId())).isEqualTo(1L);
+		assertThat(captureLedger(account.getId())).isEqualTo(before);
+	}
+
 	// 같은 체결에 동시에 투자일기 작성 요청을 쏘고 각 응답 상태를 모은다 (EmailChangeConcurrencyIntegrationTest 선례).
 	private List<Integer> fireConcurrentJournalRequests(Long buyTradeId, String accessToken, int count)
 		throws Exception {
@@ -335,9 +492,50 @@ class JournalIntegrationTest {
 		}
 	}
 
+	// 같은 체결에 동시에 매도 회고 작성 요청을 쏘고 각 응답 상태를 모은다 (fireConcurrentJournalRequests와 대칭).
+	private List<Integer> fireConcurrentSellJournalRequests(Long sellTradeId, String accessToken, int count)
+		throws Exception {
+
+		ExecutorService pool = Executors.newFixedThreadPool(count);
+		CountDownLatch allThreadsReady = new CountDownLatch(count);
+		CountDownLatch startGate = new CountDownLatch(1);
+		try {
+			List<Future<Integer>> futures = new ArrayList<>();
+			for (int i = 0; i < count; i++) {
+				int index = i;
+				futures.add(pool.submit(() -> {
+					allThreadsReady.countDown();
+					startGate.await();
+					return mockMvc.perform(postSellJournal(sellTradeId, accessToken, "동시 작성 시도 " + index))
+						.andReturn()
+						.getResponse()
+						.getStatus();
+				}));
+			}
+			assertThat(allThreadsReady.await(30, TimeUnit.SECONDS)).isTrue();
+			startGate.countDown();
+
+			List<Integer> statuses = new ArrayList<>();
+			for (Future<Integer> future : futures) {
+				statuses.add(future.get(60, TimeUnit.SECONDS));
+			}
+			return statuses;
+		} finally {
+			pool.shutdownNow();
+		}
+	}
+
 	private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder postJournal(
 		Long buyTradeId, String accessToken, String content) {
 		return post("/api/trades/{buyTradeId}/journal", buyTradeId)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(journalBody(content));
+	}
+
+	private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder postSellJournal(
+		Long sellTradeId, String accessToken, String content) {
+		return post("/api/trades/{sellTradeId}/sell-journal", sellTradeId)
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
 			.contentType(MediaType.APPLICATION_JSON)
 			.content(journalBody(content));
@@ -370,6 +568,26 @@ class JournalIntegrationTest {
 			user.getId(), "idem-" + instrumentPrefix + "-sell-" + UUID.randomUUID(),
 			sellRequest(instrument.getId(), "5"));
 		return sell.tradeId();
+	}
+
+	// createBuyThenSellTrade와 같은 매수 → 매도 파이프라인을 태우되, 교차 검증(매수 체결에 sell-journal,
+	// 한 종목의 매수·매도 각각에 회고 작성)에 필요한 매수 체결 id도 함께 반환한다.
+	private TradePair createBuyThenSellTradePair(User user, String instrumentPrefix) {
+		Instrument instrument = createStockInstrument(instrumentPrefix);
+		createCandle(instrument, FIRST_CANDLE_TIME, new BigDecimal("60000"));
+		createCandle(instrument, SECOND_CANDLE_TIME, new BigDecimal("80000"));
+
+		OrderResponse buy = orderService.createOrder(
+			user.getId(), "idem-" + instrumentPrefix + "-buy-" + UUID.randomUUID(),
+			buyRequest(instrument.getId(), "10"));
+		((MutableClock)clock).set(BASE_NOW.plusMinutes(1));
+		OrderResponse sell = orderService.createOrder(
+			user.getId(), "idem-" + instrumentPrefix + "-sell-" + UUID.randomUUID(),
+			sellRequest(instrument.getId(), "5"));
+		return new TradePair(buy.tradeId(), sell.tradeId());
+	}
+
+	private record TradePair(Long buyTradeId, Long sellTradeId) {
 	}
 
 	private OrderCreateRequest buyRequest(Long instrumentId, String quantity) {
@@ -425,6 +643,18 @@ class JournalIntegrationTest {
 
 	private long totalJournalCount() {
 		Long count = jdbcTemplate.queryForObject("select count(*) from buy_trade_journals", Long.class);
+		return count == null ? 0L : count;
+	}
+
+	// sell_trade_journals에서 특정 체결에 실제 저장된 행 수를 잰다 (journalCountFor와 대칭).
+	private long sellJournalCountFor(Long sellTradeId) {
+		Long count = jdbcTemplate.queryForObject(
+			"select count(*) from sell_trade_journals where sell_trade_id = ?", Long.class, sellTradeId);
+		return count == null ? 0L : count;
+	}
+
+	private long totalSellJournalCount() {
+		Long count = jdbcTemplate.queryForObject("select count(*) from sell_trade_journals", Long.class);
 		return count == null ? 0L : count;
 	}
 
