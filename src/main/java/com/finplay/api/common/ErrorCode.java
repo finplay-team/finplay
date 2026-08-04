@@ -15,6 +15,8 @@ public enum ErrorCode {
 	NOT_FOUND(HttpStatus.NOT_FOUND, "대상을 찾을 수 없습니다."),
 	FAVORITE_NOT_FOUND(HttpStatus.NOT_FOUND, "즐겨찾기를 찾을 수 없습니다."),
 	DUPLICATE_RESOURCE(HttpStatus.CONFLICT, "이미 존재하는 리소스입니다."),
+	PRACTICE_STEP_LOCKED(HttpStatus.CONFLICT, "선행 실습 단계를 완료해야 합니다."),
+	PRACTICE_ALREADY_COMPLETED(HttpStatus.CONFLICT, "이미 완료한 실습입니다."),
 	INSTRUMENT_NOT_TRADABLE(HttpStatus.CONFLICT, "거래할 수 없는 종목입니다."),
 	EMAIL_VERIFICATION_REQUIRED(HttpStatus.CONFLICT, "이메일 인증이 필요합니다."),
 	ACCOUNT_LINK_REQUIRED(HttpStatus.CONFLICT, "같은 이메일의 일반 회원이 있어 계정 연결이 필요합니다."),
