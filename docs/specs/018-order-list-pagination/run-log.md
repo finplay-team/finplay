@@ -3,11 +3,11 @@
 ## AI 로그 (에이전트 참조용)
 | 시각 | 에이전트 | 실행 명령 | 근거 |
 |---|---|---|---|
-| implementer | `./gradlew compileJava compileTestJava` | plan.md Trade→Order 대응표(TradeCursor), CLAUDE.md 규칙 6 |
+| 12:03 | implementer | `./gradlew compileJava compileTestJava` | plan.md Trade→Order 대응표(TradeCursor), CLAUDE.md 규칙 6 |
 | 12:10 | implementer | `./gradlew compileJava compileTestJava --no-daemon` | plan.md Trade→Order 대응표(TradeRepositoryCustom/Impl), tasks.md 2번 |
-| implementer | `./gradlew compileJava compileTestJava` | plan.md Trade→Order 대응표(TradeService/TradeListResponse/TradeServiceTest), tasks.md 3번 |
-| implementer | `./gradlew compileJava compileTestJava --console=plain` | plan.md Trade→Order 대응표(TradeController/TradeControllerTest), tasks.md 4번 |
-| implementer | `./gradlew compileJava compileTestJava` | plan.md 테스트 계획(TradeIntegrationTest 대응 패턴), tasks.md 5번(마지막 항목) |
+| 12:15 | implementer | `./gradlew compileJava compileTestJava` | plan.md Trade→Order 대응표(TradeService/TradeListResponse/TradeServiceTest), tasks.md 3번 |
+| 12:22 | implementer | `./gradlew compileJava compileTestJava --console=plain` | plan.md Trade→Order 대응표(TradeController/TradeControllerTest), tasks.md 4번 |
+| 12:33 | implementer | `./gradlew compileJava compileTestJava` | plan.md 테스트 계획(TradeIntegrationTest 대응 패턴), tasks.md 5번(마지막 항목) |
 
 ## 모니터링 (사람용 요약)
 - OrderCursor·OrderCursorTest 신설(TradeCursor 이식), 컴파일 통과.
