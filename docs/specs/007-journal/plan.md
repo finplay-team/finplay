@@ -583,7 +583,7 @@ JOUR-004 §"응답 DTO를 분리하는 이유"와 **같은 판단을 그대로 �
 
 #### 마이그레이션 — `buy_trade_journals`에 `updated_at` 추가
 
-**조사 시점(2026-08-04) `dev`의 최신 마이그레이션은 `V18__add_updated_at_to_sell_trade_journals.sql`이므로 다음 번호는 `V19`다.** 파일명은 `V19__add_updated_at_to_buy_trade_journals.sql`. **구현 착수 직전에 `ls src/main/resources/db/migration | sort -V | tail`로 한 번 더 대조한다** — 이 spec은 이미 V14→V15 재번호화(ADR-0004, `docs/agent-mistakes.md` 2026-08-03)와 V16→V17 재확인을 겪었다.
+**조사 시점(2026-08-04) `dev`의 최신 마이그레이션은 `V18__add_updated_at_to_sell_trade_journals.sql`이므로 다음 번호는 `V19`로 예상했으나, 구현 중 `dev`에 `V19__drop_favorites_and_practice_intentions.sql`(#193 튜토리얼 인메모리 전환)이 먼저 병합돼 번호가 충돌해 `V20`으로 재번호화했다.** 파일명은 `V20__add_updated_at_to_buy_trade_journals.sql`. 이 spec은 이미 V14→V15, V16→V17 재확인에 이어 이번이 세 번째 재번호화다(ADR-0004, `docs/agent-mistakes.md` 2026-08-03 패턴과 동일 — 착수 시점에 확인한 번호도 PR 머지 전에 다시 한번 대조해야 한다).
 
 DDL은 **JOUR-004의 `V18`과 같은 3단계**다(테이블명만 다르다). 기존 행에 `NOT NULL` 컬럼을 추가할 때 상수 `DEFAULT`로는 "행마다 다른 값"(그 행의 `created_at`)을 채울 수 없으므로 한 파일 안에서 순서대로 실행한다.
 
