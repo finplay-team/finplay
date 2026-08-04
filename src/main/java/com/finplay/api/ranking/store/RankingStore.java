@@ -1,0 +1,84 @@
+// 시장별 실현손익 랭킹 ZSET을 Redis에 저장·조회하는 전용 창구 (key 문자열은 이 클래스에서만 조립)
+package com.finplay.api.ranking.store;
+
+import com.finplay.api.account.domain.Market;
+import com.finplay.api.ranking.dto.RankingEntryDto;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ZSetOperations;
+import org.springframework.stereotype.Component;
+
+@Component
+@RequiredArgsConstructor
+@Slf4j
+public class RankingStore {
+
+	private static final String KEY_PREFIX = "ranking:";
+	private static final int MAX_ATTEMPTS = 3;
+	private static final long[] BACKOFF_MILLIS = {50, 150, 450};
+
+	private final StringRedisTemplate redisTemplate;
+
+	// Redis 갱신 실패 시(1차 정책, spec.md): 재시도(backoff) 후에도 실패하면 로그만 남기고 예외를 삼킨다.
+	// 매도 체결(주문·체결·계좌 갱신)은 이 메서드의 실패 영향을 받지 않아야 한다 — 예외를 던지지 않는다.
+	public void addScoreWithRetry(Market market, Long accountId, long score) {
+		String key = key(market);
+		String member = String.valueOf(accountId);
+		for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+			try {
+				redisTemplate.opsForZSet().add(key, member, (double)score);
+				return;
+			} catch (Exception e) {
+				if (attempt == MAX_ATTEMPTS) {
+					log.error("랭킹 ZSET 갱신 실패(재시도 소진). accountId={}, market={}", accountId, market, e);
+					return;
+				}
+				sleepBackoff(BACKOFF_MILLIS[attempt - 1]);
+			}
+		}
+	}
+
+	// score desc 상위 limit개를 (accountId, score)로 반환한다. 동점자 내부 정렬·공동 순위 보정은 RankingService 책임이다.
+	public List<RankingEntryDto> topN(Market market, int limit) {
+		Set<ZSetOperations.TypedTuple<String>> window = redisTemplate.opsForZSet().reverseRangeWithScores(key(market),
+			0, limit - 1);
+		if (window == null) {
+			return List.of();
+		}
+		List<RankingEntryDto> entries = new ArrayList<>();
+		for (ZSetOperations.TypedTuple<String> tuple : window) {
+			String member = tuple.getValue();
+			Double score = tuple.getScore();
+			if (member == null || score == null) {
+				continue;
+			}
+			entries.add(new RankingEntryDto(Long.valueOf(member), Math.round(score)));
+		}
+		return entries;
+	}
+
+	// score보다 엄격히 큰 멤버 수 — 공동 순위 계산(rank = countStrictlyGreater + 1)에 쓰인다.
+	// plan.md는 Range.rightUnbounded(Range.Bound.exclusive(score))를 스케치했지만, 현재 spring-data-redis(3.5.6)
+	// ZSetOperations에는 Range<Double>를 받는 count 오버로드가 없다(count(K, double, double)만 존재).
+	// score(accounts.realized_pnl)는 항상 정수(long)이므로 하한을 score+1로 잡아도 "엄격히 큼"과 동치다.
+	public long countStrictlyGreater(Market market, long score) {
+		Long count = redisTemplate.opsForZSet().count(key(market), score + 1, Double.POSITIVE_INFINITY);
+		return count == null ? 0 : count;
+	}
+
+	private void sleepBackoff(long millis) {
+		try {
+			Thread.sleep(millis);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+		}
+	}
+
+	private String key(Market market) {
+		return KEY_PREFIX + market.name();
+	}
+}

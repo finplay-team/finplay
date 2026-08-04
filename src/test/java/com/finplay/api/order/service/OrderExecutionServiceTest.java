@@ -13,6 +13,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.finplay.api.account.domain.Account;
+import com.finplay.api.account.event.RealizedPnlUpdatedEvent;
 import com.finplay.api.account.service.AccountService;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.service.UserQueryService;
@@ -61,6 +62,8 @@ class OrderExecutionServiceTest {
 	private final OrderRepository orderRepository = mock(OrderRepository.class);
 	private final TradeRepository tradeRepository = mock(TradeRepository.class);
 	private final Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
+	private final org.springframework.context.ApplicationEventPublisher eventPublisher = mock(
+		org.springframework.context.ApplicationEventPublisher.class);
 
 	private OrderExecutionService orderExecutionService;
 
@@ -75,7 +78,8 @@ class OrderExecutionServiceTest {
 			portfolioSellService,
 			orderRepository,
 			tradeRepository,
-			clock);
+			clock,
+			eventPublisher);
 	}
 
 	@Test
@@ -278,6 +282,41 @@ class OrderExecutionServiceTest {
 		verify(portfolioSellService).getHoldingOrThrow(account, instrument, quantity);
 		verify(portfolioSellService).applySellTrade(holding, savedTrade, quantity, NOW);
 		verifyNoInteractions(portfolioBuyService);
+	}
+
+	@Test
+	void createOrderSellPublishesRealizedPnlUpdatedEventAfterAddingRealizedPnl() {
+		// 랭킹 갱신(after-commit 리스너)이 반응할 수 있도록 SELL 체결 시 이벤트가 정확히 1회 발행되는지 검증한다.
+		Instrument instrument = stockInstrument();
+		Account account = account(com.finplay.api.account.domain.Market.STOCK);
+		Holding holding = mock(Holding.class);
+		User user = testUser();
+		BigDecimal quantity = new BigDecimal("3");
+		stubSellHappyPath(instrument, account, user, new BigDecimal("10000"));
+		when(portfolioSellService.getHoldingOrThrow(account, instrument, quantity)).thenReturn(holding);
+		when(portfolioSellService.applySellTrade(eq(holding), any(Trade.class), eq(quantity), eq(NOW)))
+			.thenReturn(new SellAllocationDto(20_000L, 3L));
+		OrderCreateRequest request = sellRequest(Market.STOCK, instrument.getId(), "3");
+
+		orderExecutionService.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, request);
+
+		ArgumentCaptor<RealizedPnlUpdatedEvent> eventCaptor = ArgumentCaptor.forClass(RealizedPnlUpdatedEvent.class);
+		verify(eventPublisher).publishEvent(eventCaptor.capture());
+		assertThat(eventCaptor.getValue().accountId()).isEqualTo(account.getId());
+	}
+
+	@Test
+	void createOrderBuyDoesNotPublishRealizedPnlUpdatedEvent() {
+		// 매수는 realizedPnl을 갱신하지 않으므로 랭킹 갱신 이벤트를 발행하지 않아야 한다.
+		Instrument instrument = stockInstrument();
+		Account account = account(com.finplay.api.account.domain.Market.STOCK);
+		User user = testUser();
+		stubHappyPath(instrument, account, user, new BigDecimal("10000.33"));
+		OrderCreateRequest request = buyRequest(Market.STOCK, instrument.getId(), "3");
+
+		orderExecutionService.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, request);
+
+		verifyNoInteractions(eventPublisher);
 	}
 
 	@Test

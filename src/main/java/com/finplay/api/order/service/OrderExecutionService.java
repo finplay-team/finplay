@@ -2,6 +2,7 @@
 package com.finplay.api.order.service;
 
 import com.finplay.api.account.domain.Account;
+import com.finplay.api.account.event.RealizedPnlUpdatedEvent;
 import com.finplay.api.account.service.AccountService;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.service.UserQueryService;
@@ -29,6 +30,7 @@ import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -50,6 +52,7 @@ public class OrderExecutionService {
 	private final OrderRepository orderRepository;
 	private final TradeRepository tradeRepository;
 	private final Clock clock;
+	private final ApplicationEventPublisher eventPublisher;
 
 	@Transactional
 	public OrderResponse execute(
@@ -144,6 +147,9 @@ public class OrderExecutionService {
 
 		account.addCash(pricing.amount() - pricing.fee());
 		account.addRealizedPnl(realizedPnl);
+		// 커밋 이후(after-commit)에만 랭킹에 반영되도록 이벤트만 발행한다 — 손익값을 싣지 않고 이벤트 처리 시점에
+		// DB에서 최신 realizedPnl을 다시 조회한다(동시성 경합 Decision Gate, plan.md).
+		eventPublisher.publishEvent(new RealizedPnlUpdatedEvent(account.getId()));
 
 		return OrderResponse.of(order, trade);
 	}
