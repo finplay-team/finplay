@@ -661,6 +661,11 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 **`counterfactuals`도 같은 게이트를 쓴다** — 아직 재생되지 않은 가격을 쓰므로 미래 정보다. **`peerComparison`은 시각이 아니라 확정 집계 행의 존재로 판정한다**(§C-5). 장 마감 배치가 게이트 시각보다 늦게 돌기 때문에, 시각으로 두면 그 사이 조회가 게이트만 통과하고 값은 비는 상태가 된다. 그 전에는 각각 `status="NOT_YET"`이다.
 
+> **현재 구현 범위 (이슈 #208 머지 시점, 2026-08-05).** 위 예시 JSON은 완성 형태이고 아래 두 자리는 아직 그 값이 나오지 않는다 — **값 누락이 아니라 이슈 경계다.**
+>
+> - **`counterfactuals` 3종의 `returnRate`가 `null`이다.** `status`와 세 시나리오의 `price`·`at`은 채워진다. 수수료를 다시 계산하는 수익률은 `plan.md` 7번(반사실 수익률·집단 비교)이 채우며, 그 이슈가 이 문장을 걷어낸다.
+> - **`peerComparison.status`가 항상 `NOT_YET`이고 지표 전부(`priceMoveId` 포함)가 `null`이다.** 확정 집계 행 기준 판정(`NO_EVENT` 1순위 → `holderCount < 5`면 `INSUFFICIENT_SAMPLE`)과 지표 계산도 7번이다. 따라서 **서술 재생성 게이트(아래 참고)는 7번 머지 전까지 열리지 않는다.**
+
 결과적으로 **매도 직후와 장 마감 후에 보이는 내용이 다르다** — 직후에는 수치·파생 사실·뉴스 카드만, 마감 후에 반사실과 집단 비교가 더해진다. 스포일러 차단의 부수 효과이자 의도된 재방문 유도이므로, 화면은 `NOT_YET`일 때 "장 마감 후 다시 확인" 안내를 노출한다.
 
 **`sameSessionCompleted`가 응답 형태를 가른다.** 매수와 매도가 같은 원본 거래일 안에서 완결됐으면 `true`이고 `holdHighPrice`·`holdHighAt`·`holdLowPrice`·`holdLowAt`·`sellVsHighRate`·`sellVsLowRate`·`buyToNewsMinutes`·`priceMoves`·`postSellFlow`·`counterfactuals`·`peerComparison`이 채워진다. 여러 재생일에 걸친 매매는 `false`이며 이 필드가 전부 `null`(`priceMoves`는 `[]`)이 된다 — 재생일마다 원본 거래일이 달라 분봉이 불연속이라 계산 자체가 성립하지 않는다. **한 매도가 여러 매수 lot에 배분됐고 그 lot들이 서로 다른 원본 거래일에 걸쳐 있어도 `false`다** — 가장 이른 lot 하나만 보고 판정하지 않는다.

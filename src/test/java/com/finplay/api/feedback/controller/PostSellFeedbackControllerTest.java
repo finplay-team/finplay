@@ -14,7 +14,15 @@ import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.auth.token.JwtTokenProvider;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
+import com.finplay.api.feedback.domain.MarketNewsItemType;
+import com.finplay.api.feedback.domain.PostSellFeedbackStatus;
+import com.finplay.api.feedback.dto.response.CounterfactualScenario;
+import com.finplay.api.feedback.dto.response.Counterfactuals;
+import com.finplay.api.feedback.dto.response.HeldPriceMoveItem;
+import com.finplay.api.feedback.dto.response.NewsItem;
+import com.finplay.api.feedback.dto.response.PeerComparison;
 import com.finplay.api.feedback.dto.response.PostSellFeedbackResponse;
+import com.finplay.api.feedback.dto.response.PostSellFlow;
 import com.finplay.api.feedback.service.PostSellFeedbackService;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -227,11 +235,101 @@ class PostSellFeedbackControllerTest {
 			.andExpect(jsonPath("$.length()").value(CONTRACT_FIELD_COUNT));
 	}
 
+	// --- 계약 필드 집합 (완료 조건 18번) ---
+
+	// 중첩 객체까지 필드 수를 못박는다 — 뒤 항목이 값을 채워도 이 수는 바뀌지 않는다. 값이 null이면 사라지는
+	// 직렬화 설정이 들어오면 화면이 "필드 유무"로 분기하다 계약이 바뀐 것처럼 보인다.
+	@Test
+	@DisplayName("매도 후 흐름·반사실·집단 비교가 계약 필드 집합대로 직렬화된다 — priceMoveId·narrativeSource·buyAt·sellAt 포함")
+	void serializesEveryContractFieldIncludingTheNestedBlocks() throws Exception {
+		authenticate();
+		when(postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID)).thenReturn(marketClosedResponse());
+
+		mockMvc.perform(authorized(get(PATH, SELL_TRADE_ID)))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.length()").value(CONTRACT_FIELD_COUNT))
+			.andExpect(jsonPath("$.buyAt").value("2026-07-29T09:30:00"))
+			.andExpect(jsonPath("$.sellAt").value("2026-07-29T14:40:00"))
+			// 매도 후 흐름 — 상태 + 가격 5값.
+			.andExpect(jsonPath("$.postSellFlow.length()").value(6))
+			.andExpect(jsonPath("$.postSellFlow.status").value("READY"))
+			.andExpect(jsonPath("$.postSellFlow.closeAt").value("2026-07-29T15:27:00"))
+			.andExpect(jsonPath("$.postSellFlow.postSellHighAt").value("2026-07-29T15:05:00"))
+			// 반사실 — 상태 + 시나리오 3종, 각 시나리오는 price·at·returnRate 세 필드다.
+			.andExpect(jsonPath("$.counterfactuals.length()").value(4))
+			.andExpect(jsonPath("$.counterfactuals.status").value("READY"))
+			.andExpect(jsonPath("$.counterfactuals.atClose.length()").value(3))
+			.andExpect(jsonPath("$.counterfactuals.atClose.at").value("2026-07-29T15:27:00"))
+			// 7번 머지 전까지 returnRate는 null이다 — 필드는 남아 있다.
+			.andExpect(jsonPath("$.counterfactuals.atClose.returnRate").isEmpty())
+			.andExpect(jsonPath("$.counterfactuals.atHoldHigh.returnRate").isEmpty())
+			.andExpect(jsonPath("$.counterfactuals.atFirstMoveAfterBuy.returnRate").isEmpty())
+			// 집단 비교 — status만 값이고 priceMoveId를 포함한 지표 5개가 null이다.
+			.andExpect(jsonPath("$.peerComparison.length()").value(6))
+			.andExpect(jsonPath("$.peerComparison.status").value("NOT_YET"))
+			.andExpect(jsonPath("$.peerComparison.priceMoveId").isEmpty())
+			.andExpect(jsonPath("$.peerComparison.holderCount").isEmpty())
+			.andExpect(jsonPath("$.peerComparison.soldWithin30MinRate").isEmpty())
+			.andExpect(jsonPath("$.peerComparison.medianMinutesToSell").isEmpty())
+			.andExpect(jsonPath("$.peerComparison.yourMinutesToSell").isEmpty())
+			// 보유 구간 카드 — id·구간 두 값·변동률·간격 두 값·서술·근거.
+			.andExpect(jsonPath("$.priceMoves.length()").value(1))
+			.andExpect(jsonPath("$.priceMoves[0].length()").value(8))
+			.andExpect(jsonPath("$.priceMoves[0].id").value(12))
+			.andExpect(jsonPath("$.priceMoves[0].windowEnd").value("2026-07-29T11:25:00"))
+			.andExpect(jsonPath("$.priceMoves[0].minutesAfterBuy").value(115))
+			.andExpect(jsonPath("$.priceMoves[0].minutesBeforeSell").value(195))
+			.andExpect(jsonPath("$.priceMoves[0].sources.length()").value(1))
+			.andExpect(jsonPath("$.priceMoves[0].sources[0].length()").value(5))
+			// 4번 항목 몫이라 아직 null이지만 필드는 계약 집합에 남아 있다.
+			.andExpect(jsonPath("$.narrative").isEmpty())
+			.andExpect(jsonPath("$.narrativeSource").isEmpty())
+			.andExpect(jsonPath("$.narrativeStatus").isEmpty());
+	}
+
+	// scale이 있는 파생 비율도 정수로 접히지 않는지 본문 문자열로 확인한다.
+	@Test
+	@DisplayName("매도 후 흐름·극값의 비율이 scale 4 그대로 직렬화된다")
+	void serializesDerivedRatesWithScaleFourIntact() throws Exception {
+		authenticate();
+		when(postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID)).thenReturn(marketClosedResponse());
+
+		String body = mockMvc.perform(authorized(get(PATH, SELL_TRADE_ID)))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString(StandardCharsets.UTF_8);
+
+		assertThat(body).contains("\"sellToCloseRate\":0.0102");
+		assertThat(body).contains("\"sellVsHighRate\":-0.0325");
+		assertThat(body).contains("\"sellVsLowRate\":0.0059");
+	}
+
+	// 껍데기(status만 담은 객체)를 내리지 않는다 — 세 블록이 자기 자신이 null이다.
+	@Test
+	@DisplayName("sameSessionCompleted=false면 세 블록이 null로 직렬화되고 필드 수는 그대로다")
+	void serializesThePostSellBlocksAsNullWhenTheSessionIsNotCompleted() throws Exception {
+		authenticate();
+		when(postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID))
+			.thenReturn(ledgerOnlyResponse(false));
+
+		mockMvc.perform(authorized(get(PATH, SELL_TRADE_ID)))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.length()").value(CONTRACT_FIELD_COUNT))
+			.andExpect(jsonPath("$.sameSessionCompleted").value(false))
+			.andExpect(jsonPath("$.postSellFlow").isEmpty())
+			.andExpect(jsonPath("$.counterfactuals").isEmpty())
+			.andExpect(jsonPath("$.peerComparison").isEmpty())
+			.andExpect(jsonPath("$.postSellFlow.status").doesNotExist())
+			.andExpect(jsonPath("$.counterfactuals.status").doesNotExist())
+			.andExpect(jsonPath("$.peerComparison.status").doesNotExist());
+	}
+
 	/**
-	 * 1번 항목이 실제로 돌려주는 형태 — 원장 수치와 {@code sameSessionCompleted}만 채우고 나머지는
-	 * {@code null}·{@code []}다. 수치는 계약 예시 그대로다.
+	 * 장 마감 게이트가 열린 뒤 3번 항목이 돌려주는 형태 — 매도 후 흐름·반사실 가격이 채워지고 반사실
+	 * {@code returnRate}와 집단 비교는 {@code plan.md} 7번 몫으로 {@code null}이다. 값은 계약 예시 그대로다.
 	 */
-	private static PostSellFeedbackResponse ledgerOnlyResponse() {
+	private static PostSellFeedbackResponse marketClosedResponse() {
 		return new PostSellFeedbackResponse(
 			SELL_TRADE_ID,
 			1L,
@@ -247,6 +345,73 @@ class PostSellFeedbackControllerTest {
 			new BigDecimal("-0.0217"),
 			310,
 			true,
+			new BigDecimal("70800"),
+			LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(11, 5)),
+			new BigDecimal("68100"),
+			LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(14, 20)),
+			new BigDecimal("-0.0325"),
+			new BigDecimal("0.0059"),
+			105,
+			List.of(new HeldPriceMoveItem(
+				12L,
+				LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(11, 20)),
+				LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(11, 25)),
+				new BigDecimal("-0.018200"),
+				115,
+				195,
+				"11시 20분부터 5분간 1.82% 하락했습니다.",
+				List.of(new NewsItem(
+					MarketNewsItemType.NEWS,
+					"생산 차질",
+					"hankyung.com",
+					"https://news.example.test/1",
+					LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(11, 15)))))),
+			new PostSellFlow(
+				PostSellFeedbackStatus.READY,
+				new BigDecimal("69200"),
+				LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(15, 27)),
+				new BigDecimal("0.0102"),
+				new BigDecimal("69500"),
+				LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(15, 5))),
+			new Counterfactuals(
+				PostSellFeedbackStatus.READY,
+				new CounterfactualScenario(
+					new BigDecimal("69200"), LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(15, 27)), null),
+				new CounterfactualScenario(
+					new BigDecimal("70800"), LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(11, 5)), null),
+				new CounterfactualScenario(
+					new BigDecimal("69300"), LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(11, 25)), null)),
+			new PeerComparison(PostSellFeedbackStatus.NOT_YET, null, null, null, null, null),
+			null,
+			null,
+			null);
+	}
+
+	/**
+	 * 1번 항목이 실제로 돌려주는 형태 — 원장 수치와 {@code sameSessionCompleted}만 채우고 나머지는
+	 * {@code null}·{@code []}다. 수치는 계약 예시 그대로다. {@code sameSessionCompleted=false}일 때의 형태와도
+	 * 같아서(세 블록이 자기 자신이 {@code null}이다) 그 케이스가 이 객체를 함께 쓴다.
+	 */
+	private static PostSellFeedbackResponse ledgerOnlyResponse() {
+		return ledgerOnlyResponse(true);
+	}
+
+	private static PostSellFeedbackResponse ledgerOnlyResponse(boolean sameSessionCompleted) {
+		return new PostSellFeedbackResponse(
+			SELL_TRADE_ID,
+			1L,
+			"005930",
+			"삼성전자",
+			LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(9, 30)),
+			LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(14, 40)),
+			new BigDecimal("70000.00000000"),
+			new BigDecimal("68500"),
+			new BigDecimal("10"),
+			102L,
+			-15_207L,
+			new BigDecimal("-0.0217"),
+			310,
+			sameSessionCompleted,
 			null,
 			null,
 			null,

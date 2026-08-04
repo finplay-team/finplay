@@ -5,9 +5,14 @@ import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.feedback.domain.PriceMoveEvent;
 import com.finplay.api.feedback.domain.PriceMoveEventSource;
+import com.finplay.api.feedback.domain.PostSellFeedbackStatus;
+import com.finplay.api.feedback.dto.response.CounterfactualScenario;
+import com.finplay.api.feedback.dto.response.Counterfactuals;
 import com.finplay.api.feedback.dto.response.HeldPriceMoveItem;
 import com.finplay.api.feedback.dto.response.NewsItem;
+import com.finplay.api.feedback.dto.response.PeerComparison;
 import com.finplay.api.feedback.dto.response.PostSellFeedbackResponse;
+import com.finplay.api.feedback.dto.response.PostSellFlow;
 import com.finplay.api.feedback.repository.PriceMoveEventRepository;
 import com.finplay.api.feedback.repository.PriceMoveEventSourceRepository;
 import com.finplay.api.market.domain.Market;
@@ -123,9 +128,19 @@ public class PostSellFeedbackService {
 		List<HeldPriceMoveItem> priceMoves = sameSessionCompleted
 			? findHeldPriceMoves(trade, sellSourceTradingDate, buyAt, sellAt)
 			: List.of();
+
+		// 분봉은 한 번만 읽고 극값(보유 구간)과 매도 후 흐름·반사실(장 마감 뒤)이 나눠 쓴다. getFullDayCandles는
+		// 게이트를 우회해 하루치를 그대로 주므로(§C-6) 노출을 가르는 것은 조회 횟수가 아니라 "어디까지 잘라
+		// 쓰는가"다 — 극값은 매도 시각까지 자르고, 매도 이후 구간은 아래 marketClosed가 참일 때만 읽는다.
+		List<StockCandleDto> fullDayCandles = sameSessionCompleted
+			? stockReplayService.getFullDayCandles(trade.getInstrument().getId(), sellSourceTradingDate)
+			: List.of();
 		HoldExtremes extremes = sameSessionCompleted
-			? findHoldExtremes(trade, sellSourceTradingDate, buyAt, sellAt)
+			? findHoldExtremes(fullDayCandles, trade.getPrice(), sellSourceTradingDate, buyAt, sellAt)
 			: HoldExtremes.absent();
+
+		// §C-5의 장 마감 게이트. "오늘 15:30"이 아니라 "그 매도 체결의 서비스 날짜 15:30"이다.
+		boolean marketClosed = isAfterMarketClose(serviceDateOf(trade));
 
 		return new PostSellFeedbackResponse(
 			trade.getId(),
@@ -151,10 +166,35 @@ public class PostSellFeedbackService {
 			extremes.sellVsLowRate(),
 			sameSessionCompleted ? buyToNewsMinutes(buyAt, priceMoves) : null,
 			priceMoves,
-			// 매도 후 흐름·반사실·집단 비교 — 3번 항목이 §C-5 게이트 판정과 함께 채운다.
-			null,
-			null,
-			null,
+			// 매도 후 흐름·반사실·집단 비교. sameSessionCompleted=false면 세 필드 모두 자기 자신이 null이고
+			// status만 담은 껍데기를 내리지 않는다 — 계약이 정한 형태이며 postSellFlow도 그 nullable 목록에 있다
+			// (§파생 사실 계산의 "위 전부"에 [매도 후 흐름] 블록이 포함된다).
+			//
+			// ─── plan.md 7번(반사실 수익률·집단 비교)이 끼울 자리 ────────────────────────────────
+			// 아래 두 자리는 구현 누락이 아니라 이슈 #208과 7번의 경계다. 7번이 여기를 "빠뜨린 값"으로
+			// 읽고 경계를 다시 정하지 않도록 규칙까지 적어 둔다.
+			//
+			//  · counterfactuals 3종의 returnRate — 이 이슈는 price·at까지만 채우고 returnRate를 null로
+			//    둔다. 7번이 시나리오 가격 P마다 매도수수료를 다시 계산해(FLOOR(P × 수량 × 0.00015),
+			//    OrderExecutionService와 같은 식·같은 원 미만 내림) 실현손익 ÷ (배분 매수원가 + 배분
+			//    매수수수료)로 채운다(§반사실·집단 비교 계산). 가격이 바뀌면 수수료도 바뀌므로 본체
+			//    returnRate를 재사용할 수 없다.
+			//  · peerComparison — 이 이슈는 status를 상수 NOT_YET으로 두고 지표 전부를 null로 둔다.
+			//    7번이 price_move_peer_stats의 "그 체결의 서비스 날짜" 행으로 판정한다(NO_EVENT 1순위 →
+			//    holderCount < 5면 INSUFFICIENT_SAMPLE → 그 외 READY, §C-4). 여기서 NO_EVENT·
+			//    INSUFFICIENT_SAMPLE을 임의로 판정하지 않는다 — 기준 카드가 없으면 집계 행이 애초에
+			//    생기지 않아 이 단계에는 두 값을 가를 근거가 없고, 지어내면 7번의 1순위 판정과 충돌한다.
+			//  · 그 결과 5번 항목의 서술 재생성 게이트(postSellFlow READY + peerComparison != NOT_YET,
+			//    §C-5)는 7번 머지 전까지 구조적으로 열리지 않는다. 게이트 조건을 이 이슈 형편에 맞춰
+			//    느슨하게 고치지 않는다 — 5번 항목의 명시된 제약이다.
+			// ────────────────────────────────────────────────────────────────────────────────────
+			sameSessionCompleted
+				? buildPostSellFlow(marketClosed, fullDayCandles, trade.getPrice(), sellSourceTradingDate, sellAt)
+				: null,
+			sameSessionCompleted
+				? buildCounterfactuals(marketClosed, fullDayCandles, sellSourceTradingDate, extremes, priceMoves)
+				: null,
+			sameSessionCompleted ? peerComparisonNotYet() : null,
 			// AI 서술 — 4·5번 항목이 생성·저장·재사용·재생성과 함께 채운다. narrativeStatus는 항상 READY이고
 			// 이 엔드포인트에 UNAVAILABLE이 존재하지 않는다(§C-4).
 			null,
@@ -211,24 +251,26 @@ public class PostSellFeedbackService {
 	 * 올리기 때문에, 여기서 한 번 틀리면 실현 불가능한 수익률로 후회를 유도하는 표가 나간다. 컴파일도 되고
 	 * 예외도 없어 <b>세 값이 같은 픽스처에서는 두 구현이 같은 답을 낸다.</b>
 	 *
-	 * <p><b>{@code getFullDayCandles}는 재생 노출 게이트를 우회한다</b>(§C-6) — 판정은 호출부 책임이다. 여기서
-	 * 그것을 지키는 방법은 <b>매도 시각까지로 잘라내는 것</b>이다. 재생이 1배속이라 원본 거래일 시각과 서비스
-	 * 날짜의 벽시계 시각이 1:1로 대응하므로 이미 체결된 매도 시각까지는 반드시 재생이 끝난 구간이다.
-	 * <b>매도 이후 구간은 이 항목이 건드리지 않는다</b> — {@code postSellFlow}·반사실이 §C-5의 장 마감 게이트를
-	 * 쓰며 3번 항목 소유다.
+	 * <p><b>{@code fullDayCandles}는 하루치 전부라 재생 노출 게이트를 우회한 원본이다</b>(§C-6) — 판정은 호출부
+	 * 책임이다. 여기서 그것을 지키는 방법은 <b>매도 시각까지로 잘라내는 것</b>이다. 재생이 1배속이라 원본 거래일
+	 * 시각과 서비스 날짜의 벽시계 시각이 1:1로 대응하므로 이미 체결된 매도 시각까지는 반드시 재생이 끝난 구간이다.
+	 * <b>매도 이후 구간을 이 메서드가 보지 않는다</b> — {@code postSellFlow}·반사실이 §C-5의 장 마감 게이트를 통과한
+	 * 뒤에만 그 구간을 읽는다.
 	 *
 	 * <p>극값이 동률이면 <b>이른 분봉</b>을 고른다. 화면이 "하락이 시작되기 몇 분 전"처럼 극값 시각을 서술의
 	 * 근거로 쓰므로, 같은 종가가 여러 번 나온 날 뒤쪽 시각을 고르면 그 서술이 실행마다 달라진다.
 	 *
 	 * @return 그 구간에 분봉이 없으면 {@link HoldExtremes#absent()} — 조회는 200이고 극값만 {@code null}이다
 	 */
-	private HoldExtremes findHoldExtremes(
-		Trade trade, LocalDate sourceTradingDate, LocalDateTime buyAt, LocalDateTime sellAt) {
+	private static HoldExtremes findHoldExtremes(
+		List<StockCandleDto> fullDayCandles,
+		BigDecimal sellPrice,
+		LocalDate sourceTradingDate,
+		LocalDateTime buyAt,
+		LocalDateTime sellAt) {
 		LocalTime from = buyAt.toLocalTime();
 		LocalTime to = sellAt.toLocalTime();
-		List<StockCandleDto> candles = stockReplayService
-			.getFullDayCandles(trade.getInstrument().getId(), sourceTradingDate)
-			.stream()
+		List<StockCandleDto> candles = fullDayCandles.stream()
 			.filter(candle -> !candle.candleTime().isBefore(from) && !candle.candleTime().isAfter(to))
 			.toList();
 		if (candles.isEmpty()) {
@@ -246,7 +288,6 @@ public class PostSellFeedbackService {
 			}
 		}
 
-		BigDecimal sellPrice = trade.getPrice();
 		return new HoldExtremes(
 			high.close(),
 			LocalDateTime.of(sourceTradingDate, high.candleTime()),
@@ -256,12 +297,191 @@ public class PostSellFeedbackService {
 			rateAgainst(sellPrice, low.close()));
 	}
 
-	/** {@code (매도가 − 기준가) ÷ 기준가} (§파생 사실 계산). 기준가가 0인 분봉은 원장에 없지만 500을 내지 않는다. */
-	private static BigDecimal rateAgainst(BigDecimal sellPrice, BigDecimal basePrice) {
+	/**
+	 * {@code (price − basePrice) ÷ basePrice}, scale 4 {@code HALF_UP} (§파생 사실 계산).
+	 *
+	 * <p>세 곳이 쓴다 — {@code sellVsHighRate}·{@code sellVsLowRate}는 {@code (매도가 − 극값)}이고
+	 * {@code sellToCloseRate}는 {@code (종가 − 매도가)}로 <b>기준가 자리가 뒤바뀐다.</b> 인자 순서를 헷갈리면
+	 * 부호만 반대인 값이 나가는데 예외도 로그도 없으므로, 호출부마다 어느 쪽이 기준인지 주석으로 남긴다.
+	 *
+	 * @return 기준가가 0이면 {@code null} — 원장에 없는 분봉이지만 {@code ArithmeticException}으로 조회 전체가
+	 *     500이 되는 것보다 낫다
+	 */
+	private static BigDecimal rateAgainst(BigDecimal price, BigDecimal basePrice) {
 		if (basePrice.signum() == 0) {
 			return null;
 		}
-		return sellPrice.subtract(basePrice).divide(basePrice, DERIVED_RATE_SCALE, RoundingMode.HALF_UP);
+		return price.subtract(basePrice).divide(basePrice, DERIVED_RATE_SCALE, RoundingMode.HALF_UP);
+	}
+
+	/**
+	 * §C-5의 장 마감 게이트 — {@code now() >= (그 매도 체결의 서비스 날짜) 15:30}이다.
+	 *
+	 * <p><b>"오늘 15:30"이 아니다.</b> 오늘로 잡으면 어제 판 체결을 오늘 오전에 열었을 때 {@code READY}였던 값이
+	 * {@code NOT_YET}으로 되돌아간다(게이트 ⑭). <b>같은 날 조회만 재현하면 두 구현이 같은 답을 내므로</b> 날짜를
+	 * 하루 넘긴 조회가 이 분기의 유일한 검증 수단이다.
+	 *
+	 * <p>기준 날짜는 {@link #serviceDateOf}({@code Trade.stockReplaySession.serviceDate})이고 15:30은
+	 * {@link MarketSessionTimes#MARKET_CLOSE_TIME}이다 — <b>상수를 새로 선언하지 않는다</b>(§C-6). 이 값의 성격은
+	 * §C-2-1이 <b>벽시계</b>로 못박았다: 분봉 존재 여부와 무관한 게이트이므로 "마지막 분봉 시각"으로 바꾸면 안
+	 * 된다. 가격 조회 쪽만 분봉 표현을 쓴다.
+	 *
+	 * @return 서비스 날짜를 모르면 {@code false} — 기준이 없는데 열면 재생되지 않은 미래 가격이 나간다
+	 */
+	private boolean isAfterMarketClose(LocalDate serviceDate) {
+		if (serviceDate == null) {
+			return false;
+		}
+		return !LocalDateTime.now(clock)
+			.isBefore(LocalDateTime.of(serviceDate, MarketSessionTimes.MARKET_CLOSE_TIME));
+	}
+
+	/**
+	 * 매도 이후 그 거래일 마지막 분봉까지의 흐름 (§파생 사실 계산의 {@code [매도 후 흐름]}).
+	 *
+	 * <p><b>게이트 전에는 {@code status = NOT_YET}이고 가격 필드가 전부 {@code null}이다</b> — 14:40에 매도하고
+	 * 14:41에 조회하면 장 마감까지의 가격은 아직 재생되지 않은 미래이고, 그걸 보여주면 같은 종목을 재매수할 때
+	 * 답을 아는 상태가 된다. 그래서 <b>{@code fullDayCandles}의 매도 이후 구간을 여기서 처음 읽는다.</b>
+	 *
+	 * <p><b>{@code status}는 게이트만 반영하고 데이터 유무를 반영하지 않는다</b>(§C-4는 두 값을 게이트로만
+	 * 정의한다). 게이트가 열렸는데 분봉이 없으면 {@code READY}에 값만 {@code null}이다 — 그 조합은 재생된 거래일
+	 * 에서는 성립하지 않지만, 없는 데이터를 {@code NOT_YET}으로 감추면 장 마감 뒤에도 영원히 "아직"으로 보인다.
+	 */
+	private static PostSellFlow buildPostSellFlow(
+		boolean marketClosed,
+		List<StockCandleDto> fullDayCandles,
+		BigDecimal sellPrice,
+		LocalDate sourceTradingDate,
+		LocalDateTime sellAt) {
+		if (!marketClosed) {
+			return new PostSellFlow(PostSellFeedbackStatus.NOT_YET, null, null, null, null, null);
+		}
+
+		StockCandleDto lastCandle = lastCandle(fullDayCandles);
+		StockCandleDto postSellHigh = highestCloseAfter(fullDayCandles, sellAt.toLocalTime());
+		return new PostSellFlow(
+			PostSellFeedbackStatus.READY,
+			lastCandle == null ? null : lastCandle.close(),
+			lastCandle == null ? null : LocalDateTime.of(sourceTradingDate, lastCandle.candleTime()),
+			// sellToCloseRate = (종가 − 매도가) ÷ 매도가. 극값 두 비율과 기준가 자리가 뒤바뀐다.
+			lastCandle == null ? null : rateAgainst(lastCandle.close(), sellPrice),
+			postSellHigh == null ? null : postSellHigh.close(),
+			postSellHigh == null ? null : LocalDateTime.of(sourceTradingDate, postSellHigh.candleTime()));
+	}
+
+	/**
+	 * 같은 수량을 다른 시점에 팔았다면 어땠을지 (§반사실·집단 비교 계산). 게이트는 {@code postSellFlow}와 같다 —
+	 * 아직 재생되지 않은 가격을 쓰므로 미래 정보다.
+	 *
+	 * <p><b>세 시나리오의 {@code returnRate}는 여기서 채우지 않는다</b> — 조립 지점 주석의 경계표대로
+	 * {@code plan.md} 7번이 수수료를 재계산해 채운다.
+	 */
+	private static Counterfactuals buildCounterfactuals(
+		boolean marketClosed,
+		List<StockCandleDto> fullDayCandles,
+		LocalDate sourceTradingDate,
+		HoldExtremes extremes,
+		List<HeldPriceMoveItem> priceMoves) {
+		if (!marketClosed) {
+			return new Counterfactuals(PostSellFeedbackStatus.NOT_YET, null, null, null);
+		}
+		return new Counterfactuals(
+			PostSellFeedbackStatus.READY,
+			scenarioAtClose(fullDayCandles, sourceTradingDate),
+			scenarioAtHoldHigh(extremes),
+			scenarioAtFirstMoveAfterBuy(fullDayCandles, priceMoves));
+	}
+
+	/** {@code atClose} — 그 거래일 <b>마지막 분봉</b>의 close와 그 시각이다 (§C-2-1, 리터럴 15:30이 아니다). */
+	private static CounterfactualScenario scenarioAtClose(
+		List<StockCandleDto> fullDayCandles, LocalDate sourceTradingDate) {
+		StockCandleDto lastCandle = lastCandle(fullDayCandles);
+		return lastCandle == null
+			? null
+			: new CounterfactualScenario(
+				lastCandle.close(), LocalDateTime.of(sourceTradingDate, lastCandle.candleTime()), null);
+	}
+
+	/** {@code atHoldHigh} — 보유 구간 최고가와 그 시각. 극값이 없으면(구간에 분봉이 없으면) {@code null}이다. */
+	private static CounterfactualScenario scenarioAtHoldHigh(HoldExtremes extremes) {
+		return extremes.holdHighPrice() == null
+			? null
+			: new CounterfactualScenario(extremes.holdHighPrice(), extremes.holdHighAt(), null);
+	}
+
+	/**
+	 * {@code atFirstMoveAfterBuy} — <b>보유 구간(매수~매도) 안의 첫 변동 카드</b> {@code windowEnd}의 종가다.
+	 *
+	 * <p>기준 카드는 {@code priceMoves.get(0)}이고 그 순서를 고정하는 것이 파인더의 정렬 두 키
+	 * ({@code windowStart} 오름차순 + {@code id} 오름차순)다 — 2차 키가 없으면 <b>같은 체결의 반사실 값이 조회마다
+	 * 달라진다.</b> 파인더가 {@code windowEnd}를 보유 구간으로 좁히므로 <b>매도 이후의 카드는 애초에 목록에
+	 * 없다</b>(보유하지 않은 구간이라 반사실 기준이 될 수 없다).
+	 *
+	 * @return 보유 구간에 카드가 0건이면 {@code null}. 카드는 종목·거래일당 {@code max-intraday-cards}건이고
+	 *     근거 기사가 없으면 생성되지 않으므로 <b>0건이 오히려 흔한 경우다</b>. 그 카드의 {@code windowEnd} 분봉이
+	 *     없어도 {@code null}이다 — 가격을 지어내지 않는다
+	 */
+	private static CounterfactualScenario scenarioAtFirstMoveAfterBuy(
+		List<StockCandleDto> fullDayCandles, List<HeldPriceMoveItem> priceMoves) {
+		if (priceMoves.isEmpty()) {
+			return null;
+		}
+		LocalDateTime windowEnd = priceMoves.get(0).windowEnd();
+		return fullDayCandles.stream()
+			.filter(candle -> candle.candleTime().equals(windowEnd.toLocalTime()))
+			.findFirst()
+			.map(candle -> new CounterfactualScenario(candle.close(), windowEnd, null))
+			.orElse(null);
+	}
+
+	/**
+	 * 그 거래일 <b>마지막 분봉</b>이다 — {@code getFullDayCandles}가 {@code candleTime} 오름차순으로 주므로 마지막
+	 * 원소가 그것이다.
+	 *
+	 * <p><b>{@code 15:30}을 리터럴 시각으로 찾지 않는다</b>(§C-2-1). 수집기가 {@code 09:00~15:30}을 허용하지만
+	 * 15:30 분봉이 오는 것은 보장되지 않아 그날 마지막 분봉이 15:29일 수 있다 — 리터럴로 찾으면 <b>없는 날
+	 * {@code null}이 되고 예외는 안 난다.</b> {@code closePrice}·{@code atClose}가 조용히 비는 자리다.
+	 * {@code StockReplayService.getPreviousTradingDayClose}가 시가 갭 판정에서 같은 이유로 같은 방식을 쓴다.
+	 */
+	private static StockCandleDto lastCandle(List<StockCandleDto> fullDayCandles) {
+		return fullDayCandles.isEmpty() ? null : fullDayCandles.get(fullDayCandles.size() - 1);
+	}
+
+	/**
+	 * 매도 시각 <b>이후</b> 분봉 중 {@code close} 최댓값 ({@code postSellHighPrice}·{@code postSellHighAt}).
+	 *
+	 * <p>경계를 <b>배타</b>로 둔 것은 보유 구간 극값이 매도 분봉을 <b>포함</b>하기 때문이다(§파생 사실 계산이
+	 * "양 끝 포함"으로 정했다) — 같은 분봉이 "보유 중 최고가"와 "매도 후 최고가"에 동시에 잡히면 화면이 두 값을
+	 * 나란히 놓는 의미가 없어진다. 여기서도 {@code high}가 아니라 {@code close}만 쓴다.
+	 *
+	 * <p>동률이면 이른 분봉을 고른다 — 극값과 같은 규칙이다.
+	 *
+	 * @return 매도 이후 분봉이 없으면(마지막 분봉에 매도했으면) {@code null}
+	 */
+	private static StockCandleDto highestCloseAfter(List<StockCandleDto> fullDayCandles, LocalTime sellTime) {
+		StockCandleDto highest = null;
+		for (StockCandleDto candle : fullDayCandles) {
+			if (!candle.candleTime().isAfter(sellTime)) {
+				continue;
+			}
+			if (highest == null || candle.close().compareTo(highest.close()) > 0) {
+				highest = candle;
+			}
+		}
+		return highest;
+	}
+
+	/**
+	 * 집단 비교는 이 이슈에서 <b>항상 {@code NOT_YET}</b>이고 지표가 전부 {@code null}이다 — 조립 지점 주석의
+	 * 경계표대로 확정 집계 행 기준 판정({@code NO_EVENT} 1순위)과 지표 계산은 {@code plan.md} 7번이다.
+	 *
+	 * <p><b>{@code priceMoveId}조차 채우지 않는다.</b> 기준 카드는 이미 알고 있지만(반사실
+	 * {@code atFirstMoveAfterBuy}와 같은 카드다) 계약이 {@code NO_EVENT}에서 {@code priceMoveId}를 포함한 전
+	 * 필드를 {@code null}로 정했고, {@code NOT_YET}에서만 그 값을 채우면 <b>7번이 판정을 붙이는 순간 같은 체결의
+	 * {@code priceMoveId}가 값 → {@code null}로 사라지는 조합</b>이 생긴다.
+	 */
+	private static PeerComparison peerComparisonNotYet() {
+		return new PeerComparison(PostSellFeedbackStatus.NOT_YET, null, null, null, null, null);
 	}
 
 	/**

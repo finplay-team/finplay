@@ -12,6 +12,7 @@ import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.feedback.domain.MarketNewsItem;
 import com.finplay.api.feedback.domain.MarketNewsItemType;
 import com.finplay.api.feedback.domain.NarrativeSource;
+import com.finplay.api.feedback.domain.PostSellFeedbackStatus;
 import com.finplay.api.feedback.domain.PriceMoveEvent;
 import com.finplay.api.feedback.domain.PriceMoveEventSource;
 import com.finplay.api.feedback.domain.PriceMoveEventType;
@@ -80,6 +81,8 @@ class PostSellFeedbackGateIntegrationTest {
 
 	private static final LocalTime BUY_TIME = LocalTime.of(9, 30);
 	private static final LocalTime SELL_TIME = LocalTime.of(11, 30);
+	// 그날 마지막 분봉 — 15:30이 아니다(§C-2-1). 리터럴 15:30으로 찾는 구현이면 closePrice·atClose가 빈다.
+	private static final LocalTime LAST_CANDLE_TIME = LocalTime.of(15, 27);
 
 	// 매도 직후(같은 서비스 날짜)와 다음 날 오전의 두 조회 시각.
 	private static final LocalDateTime SAME_DAY_VIEW = LocalDateTime.of(TRADE_SERVICE_DATE, LocalTime.of(11, 40));
@@ -328,7 +331,103 @@ class PostSellFeedbackGateIntegrationTest {
 		assertThat(response.holdingMinutes()).isEqualTo(120);
 	}
 
+	// --- 장 마감 게이트 ⑬·⑭ (완료 조건 13·14번) ---
+
+	// 15:30 분봉이 없는 날로 만든다 — 리터럴 15:30으로 마지막 분봉을 찾는 구현이면 closePrice·atClose가 예외도
+	// 없이 빈다(§C-2-1).
+	@Test
+	@DisplayName("게이트 직전 15:29:59에는 매도 후 흐름·반사실이 NOT_YET이고 매도 이후 분봉 값이 새지 않는다")
+	void leavesPostSellBlocksNotYetJustBeforeMarketClose() {
+		saveFullDayCandles();
+		mutableClock.set(LocalDateTime.of(TRADE_SERVICE_DATE, LocalTime.of(15, 29, 59)));
+
+		PostSellFeedbackResponse response = getPostSellFeedback();
+
+		assertThat(response.postSellFlow().status()).isEqualTo(PostSellFeedbackStatus.NOT_YET);
+		assertThat(response.postSellFlow().closePrice()).isNull();
+		assertThat(response.postSellFlow().closeAt()).isNull();
+		assertThat(response.postSellFlow().sellToCloseRate()).isNull();
+		assertThat(response.postSellFlow().postSellHighPrice()).isNull();
+		assertThat(response.postSellFlow().postSellHighAt()).isNull();
+		assertThat(response.counterfactuals().status()).isEqualTo(PostSellFeedbackStatus.NOT_YET);
+		assertThat(response.counterfactuals().atClose()).isNull();
+		assertThat(response.counterfactuals().atHoldHigh()).isNull();
+		assertThat(response.counterfactuals().atFirstMoveAfterBuy()).isNull();
+		// 보유 구간 극값은 게이트와 무관하게 나간다 — 매도 시각까지는 이미 재생이 끝난 구간이다.
+		assertThat(response.holdHighPrice()).isEqualByComparingTo("70800");
+	}
+
+	@Test
+	@DisplayName("게이트 정각 15:30에 열리고 closePrice·atClose가 마지막 분봉 15:27이다")
+	void opensAtMarketCloseAndUsesTheLastCandleOfTheDay() {
+		saveFullDayCandles();
+		mutableClock.set(LocalDateTime.of(TRADE_SERVICE_DATE, LocalTime.of(15, 30)));
+
+		PostSellFeedbackResponse response = getPostSellFeedback();
+
+		assertThat(response.postSellFlow().status()).isEqualTo(PostSellFeedbackStatus.READY);
+		assertThat(response.postSellFlow().closePrice()).isEqualByComparingTo("69200");
+		assertThat(response.postSellFlow().closeAt())
+			.isEqualTo(LocalDateTime.of(ORIGIN_TRADE_DATE, LAST_CANDLE_TIME));
+		// (69,200 − 68,500) ÷ 68,500 = 0.0102. 극값 비율과 기준가 자리가 뒤바뀐다.
+		assertThat(response.postSellFlow().sellToCloseRate()).isEqualTo(new BigDecimal("0.0102"));
+		assertThat(response.postSellFlow().postSellHighPrice()).isEqualByComparingTo("69500");
+		assertThat(response.postSellFlow().postSellHighAt())
+			.isEqualTo(LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(15, 5)));
+		assertThat(response.counterfactuals().status()).isEqualTo(PostSellFeedbackStatus.READY);
+		assertThat(response.counterfactuals().atClose().at())
+			.isEqualTo(LocalDateTime.of(ORIGIN_TRADE_DATE, LAST_CANDLE_TIME));
+		assertThat(response.counterfactuals().atClose().returnRate()).isNull();
+		assertThat(response.peerComparison().status()).isEqualTo(PostSellFeedbackStatus.NOT_YET);
+		assertThat(response.peerComparison().priceMoveId()).isNull();
+	}
+
+	// 게이트 ⑭ — "오늘 15:30"으로 잡은 구현이면 다음 날 10:00은 아직 마감 전이라 어제 READY였던 값이 NOT_YET으로
+	// 되돌아간다. 같은 날 조회만 재현하면 두 구현이 같은 답을 낸다.
+	@Test
+	@DisplayName("전날 매도 건을 다음 날 오전 10:00에 조회해도 READY를 유지한다")
+	void keepsPostSellFlowReadyForAYesterdayTradeViewedTheNextMorning() {
+		saveFullDayCandles();
+		mutableClock.set(NEXT_DAY_VIEW);
+
+		PostSellFeedbackResponse response = getPostSellFeedback();
+
+		// 픽스처 자기검증 — 조회 시각이 그날 15:30 이전이고 날짜는 하루 넘었다.
+		assertThat(NEXT_DAY_VIEW.toLocalTime()).isBefore(LocalTime.of(15, 30));
+		assertThat(NEXT_DAY_VIEW.toLocalDate()).isAfter(TRADE_SERVICE_DATE);
+
+		assertThat(response.postSellFlow().status()).isEqualTo(PostSellFeedbackStatus.READY);
+		assertThat(response.postSellFlow().closePrice()).isEqualByComparingTo("69200");
+		assertThat(response.counterfactuals().status()).isEqualTo(PostSellFeedbackStatus.READY);
+	}
+
+	// 게이트가 열렸는데 분봉이 없는 경우 — status는 게이트만 반영하므로 READY에 값만 null이다. 바로 위
+	// 테스트(분봉이 있는 경우)와 짝이며, 한쪽만 재현하면 status를 데이터 유무로 판정한 구현이 걸리지 않는다.
+	@Test
+	@DisplayName("게이트가 열렸고 분봉이 0건이면 status는 READY이고 값만 null이다")
+	void reportsReadyWithNullValuesWhenTheGateIsOpenWithoutCandles() {
+		mutableClock.set(LocalDateTime.of(TRADE_SERVICE_DATE, LocalTime.of(15, 30)));
+
+		PostSellFeedbackResponse response = getPostSellFeedback();
+
+		assertThat(response.postSellFlow().status()).isEqualTo(PostSellFeedbackStatus.READY);
+		assertThat(response.postSellFlow().closePrice()).isNull();
+		assertThat(response.postSellFlow().postSellHighPrice()).isNull();
+		assertThat(response.counterfactuals().status()).isEqualTo(PostSellFeedbackStatus.READY);
+		assertThat(response.counterfactuals().atClose()).isNull();
+		assertThat(response.counterfactuals().atHoldHigh()).isNull();
+	}
+
 	// --- 픽스처 ---
+
+	/** 매도(11:30) 전후를 함께 담은 하루치 분봉. <b>마지막 분봉이 15:27이고 15:30 분봉은 없다.</b> */
+	private void saveFullDayCandles() {
+		saveCandle(BUY_TIME, "69500", "70000", "69000");
+		saveCandle(LocalTime.of(11, 5), "70800", "71500", "70700");
+		saveCandle(SELL_TIME, "68500", "68600", "68000");
+		saveCandle(LocalTime.of(15, 5), "69500", "99000", "69000");
+		saveCandle(LAST_CANDLE_TIME, "69200", "69300", "69100");
+	}
 
 	private PostSellFeedbackResponse getPostSellFeedback() {
 		return postSellFeedbackService.getPostSellFeedback(owner.getId(), sellTrade.getId());

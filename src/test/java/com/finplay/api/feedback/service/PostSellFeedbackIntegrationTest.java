@@ -156,9 +156,12 @@ class PostSellFeedbackIntegrationTest {
 			.andExpect(jsonPath("$.holdingMinutes").value(310))
 			.andExpect(jsonPath("$.sameSessionCompleted").value(true))
 			.andExpect(jsonPath("$.priceMoves.length()").value(0))
-			.andExpect(jsonPath("$.postSellFlow").isEmpty())
-			.andExpect(jsonPath("$.counterfactuals").isEmpty())
-			.andExpect(jsonPath("$.peerComparison").isEmpty())
+			// 매도 후 흐름·반사실·집단 비교는 3번 항목이 채웠고 그 값이 장 마감 게이트에 걸린다. 이 클래스는
+			// 실제 시계를 쓰므로 조회 시각에 따라 NOT_YET·READY가 갈린다 — 게이트 단정은 고정 Clock을 쓰는
+			// PostSellFeedbackGateIntegrationTest가 맡고, 여기서는 필드가 존재하는지만 본다.
+			.andExpect(jsonPath("$.postSellFlow.status").isNotEmpty())
+			.andExpect(jsonPath("$.counterfactuals.status").isNotEmpty())
+			.andExpect(jsonPath("$.peerComparison.status").value("NOT_YET"))
 			.andExpect(jsonPath("$.narrative").isEmpty())
 			.andReturn()
 			.getResponse()

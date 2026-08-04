@@ -13,6 +13,7 @@ import com.finplay.api.account.domain.Account;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
+import com.finplay.api.feedback.domain.PostSellFeedbackStatus;
 import com.finplay.api.feedback.dto.response.PostSellFeedbackResponse;
 import com.finplay.api.feedback.repository.PriceMoveEventRepository;
 import com.finplay.api.feedback.repository.PriceMoveEventSourceRepository;
@@ -240,7 +241,7 @@ class PostSellFeedbackServiceTest {
 	// --- 아직 채우지 않는 필드 ---
 
 	@Test
-	@DisplayName("1번 항목이 채우지 않는 필드는 계약의 필드 집합을 유지한 채 null·[]이다")
+	@DisplayName("아직 채우지 않는 필드는 계약의 필드 집합을 유지한 채 null·[]이다")
 	void leavesFieldsOwnedByLaterItemsAsNullOrEmptyList() {
 		givenOwnedSellTrade(sellTrade(ORIGIN_TRADE_DATE));
 		givenAllocation(twoLotSummary(ORIGIN_TRADE_DATE, ORIGIN_TRADE_DATE));
@@ -255,9 +256,12 @@ class PostSellFeedbackServiceTest {
 		assertThat(response.sellVsLowRate()).isNull();
 		assertThat(response.buyToNewsMinutes()).isNull();
 		assertThat(response.priceMoves()).isEmpty();
-		assertThat(response.postSellFlow()).isNull();
-		assertThat(response.counterfactuals()).isNull();
-		assertThat(response.peerComparison()).isNull();
+		// 매도 후 흐름·반사실·집단 비교는 3번 항목이 채웠다 — 이 픽스처는 장 마감 전(14:40) 조회라 게이트가
+		// 닫혀 있어 세 블록이 NOT_YET 껍데기다. 게이트 자체는 PostSellFeedbackPostSellFlowTest가 본다.
+		assertThat(response.postSellFlow().status()).isEqualTo(PostSellFeedbackStatus.NOT_YET);
+		assertThat(response.counterfactuals().status()).isEqualTo(PostSellFeedbackStatus.NOT_YET);
+		assertThat(response.peerComparison().status()).isEqualTo(PostSellFeedbackStatus.NOT_YET);
+		// 남은 것은 4번 항목(AI 서술) 몫이다.
 		assertThat(response.narrative()).isNull();
 		assertThat(response.narrativeSource()).isNull();
 		assertThat(response.narrativeStatus()).isNull();
