@@ -1,11 +1,16 @@
 // 주문 생성 요청을 받아 멱등성 판정 후 체결을 위임하고, 주문 목록 조회를 담당하는 오케스트레이터 서비스
 package com.finplay.api.order.service;
 
+import com.finplay.api.account.domain.Account;
+import com.finplay.api.account.domain.Market;
+import com.finplay.api.account.service.AccountService;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
+import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.Trade;
 import com.finplay.api.order.dto.request.OrderCreateRequest;
 import com.finplay.api.order.dto.response.OrderListItemResponse;
+import com.finplay.api.order.dto.response.OrderListResponse;
 import com.finplay.api.order.dto.response.OrderResponse;
 import com.finplay.api.order.repository.OrderRepository;
 import com.finplay.api.order.repository.TradeRepository;
@@ -34,6 +39,7 @@ public class OrderService {
 	private final OrderExecutionService orderExecutionService;
 	private final OrderRepository orderRepository;
 	private final TradeRepository tradeRepository;
+	private final AccountService accountService;
 
 	// 이슈 #22: 선제 조회로 재요청을 재현하고, 동시 경합은 유니크 제약 위반 캐치로 폴백한다(plan.md 확정 로직).
 	public OrderResponse createOrder(Long userId, String idempotencyKey, OrderCreateRequest request) {
@@ -79,10 +85,22 @@ public class OrderService {
 	}
 
 	@Transactional(readOnly = true)
-	public List<OrderListItemResponse> getMyOrders(Long userId) {
-		return orderRepository.findAllByUserIdOrderByRequestedAtDescIdDesc(userId).stream()
-			.map(OrderListItemResponse::from)
-			.toList();
+	public OrderListResponse getMyOrders(Long userId, Market market, String cursor, int limit) {
+		Account account = accountService.getAccountFor(userId, market);
+		OrderCursor parsedCursor = OrderCursor.parse(cursor);
+
+		List<Order> fetched = orderRepository.findByAccountIdWithCursor(
+			account.getId(),
+			parsedCursor == null ? null : parsedCursor.requestedAt(),
+			parsedCursor == null ? null : parsedCursor.id(),
+			limit + 1);
+
+		boolean hasNext = fetched.size() > limit;
+		List<Order> page = hasNext ? fetched.subList(0, limit) : fetched;
+		String nextCursor = hasNext ? OrderCursor.encode(page.get(page.size() - 1)) : null;
+
+		List<OrderListItemResponse> content = page.stream().map(OrderListItemResponse::from).toList();
+		return OrderListResponse.of(content, nextCursor, hasNext);
 	}
 
 	// 설계 노트 8: market:instrumentId:side:orderType:quantity 형식 문자열을 SHA-256 hex로 해시한다.

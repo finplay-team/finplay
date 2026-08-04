@@ -4,14 +4,19 @@ package com.finplay.api.order.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.finplay.api.account.domain.Account;
+import com.finplay.api.account.service.AccountService;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
@@ -23,6 +28,7 @@ import com.finplay.api.order.domain.OrderType;
 import com.finplay.api.order.domain.Trade;
 import com.finplay.api.order.dto.request.OrderCreateRequest;
 import com.finplay.api.order.dto.response.OrderListItemResponse;
+import com.finplay.api.order.dto.response.OrderListResponse;
 import com.finplay.api.order.dto.response.OrderResponse;
 import com.finplay.api.order.repository.OrderRepository;
 import com.finplay.api.order.repository.TradeRepository;
@@ -46,9 +52,10 @@ class OrderServiceTest {
 	private final OrderExecutionService orderExecutionService = mock(OrderExecutionService.class);
 	private final OrderRepository orderRepository = mock(OrderRepository.class);
 	private final TradeRepository tradeRepository = mock(TradeRepository.class);
+	private final AccountService accountService = mock(AccountService.class);
 
 	private final OrderService orderService = new OrderService(
-		orderExecutionService, orderRepository, tradeRepository);
+		orderExecutionService, orderRepository, tradeRepository, accountService);
 
 	@Test
 	void createOrderReturnsReconstructedResponseWhenSameKeyAndSameBodyIsReplayed() {
@@ -179,6 +186,129 @@ class OrderServiceTest {
 
 	@Test
 	void getMyOrdersMapsRepositoryOrdersToOrderListItemResponseFields() {
+		Account account = account(com.finplay.api.account.domain.Market.STOCK);
+		ReflectionTestUtils.setField(account, "id", 10L);
+		when(accountService.getAccountFor(USER_ID, com.finplay.api.account.domain.Market.STOCK)).thenReturn(account);
+
+		Instrument instrument = stockInstrument();
+		ReflectionTestUtils.setField(instrument, "id", 42L);
+		Order order = Order.create(
+			testUser(),
+			account,
+			instrument,
+			OrderSide.BUY,
+			OrderType.MARKET,
+			new BigDecimal("3"),
+			IDEMPOTENCY_KEY,
+			"h".repeat(64),
+			NOW);
+		ReflectionTestUtils.setField(order, "id", 100L);
+		when(orderRepository.findByAccountIdWithCursor(eq(10L), isNull(), isNull(), eq(21)))
+			.thenReturn(List.of(order));
+
+		OrderListResponse response = orderService.getMyOrders(
+			USER_ID, com.finplay.api.account.domain.Market.STOCK, null, 20);
+
+		assertThat(response.content()).hasSize(1);
+		OrderListItemResponse itemResponse = response.content().get(0);
+		assertThat(itemResponse.orderId()).isEqualTo(100L);
+		assertThat(itemResponse.market()).isEqualTo("STOCK");
+		assertThat(itemResponse.instrumentId()).isEqualTo(42L);
+		assertThat(itemResponse.side()).isEqualTo("BUY");
+		assertThat(itemResponse.orderType()).isEqualTo("MARKET");
+		assertThat(itemResponse.status()).isEqualTo("FILLED");
+		assertThat(itemResponse.quantity()).isEqualByComparingTo(new BigDecimal("3"));
+		assertThat(itemResponse.requestedAt()).isEqualTo(NOW);
+		assertThat(response.hasNext()).isFalse();
+		assertThat(response.nextCursor()).isNull();
+	}
+
+	@Test
+	void getMyOrdersReturnsEmptyContentWhenAccountHasNoOrders() {
+		Account account = account(com.finplay.api.account.domain.Market.STOCK);
+		ReflectionTestUtils.setField(account, "id", 10L);
+		when(accountService.getAccountFor(USER_ID, com.finplay.api.account.domain.Market.STOCK)).thenReturn(account);
+		when(orderRepository.findByAccountIdWithCursor(eq(10L), isNull(), isNull(), eq(21)))
+			.thenReturn(List.of());
+
+		OrderListResponse response = orderService.getMyOrders(
+			USER_ID, com.finplay.api.account.domain.Market.STOCK, null, 20);
+
+		assertThat(response.content()).isEmpty();
+		assertThat(response.hasNext()).isFalse();
+		assertThat(response.nextCursor()).isNull();
+	}
+
+	@Test
+	void getMyOrdersReturnsNoNextPageWhenFetchedCountIsAtMostLimit() {
+		Account account = account(com.finplay.api.account.domain.Market.STOCK);
+		ReflectionTestUtils.setField(account, "id", 10L);
+		when(accountService.getAccountFor(USER_ID, com.finplay.api.account.domain.Market.STOCK)).thenReturn(account);
+
+		Order order1 = order(3L, NOW.minusMinutes(1));
+		Order order2 = order(2L, NOW.minusMinutes(2));
+		when(orderRepository.findByAccountIdWithCursor(eq(10L), isNull(), isNull(), eq(3)))
+			.thenReturn(List.of(order1, order2));
+
+		OrderListResponse response = orderService.getMyOrders(
+			USER_ID, com.finplay.api.account.domain.Market.STOCK, null, 2);
+
+		assertThat(response.hasNext()).isFalse();
+		assertThat(response.nextCursor()).isNull();
+		assertThat(response.content()).hasSize(2);
+	}
+
+	@Test
+	void getMyOrdersSetsNextCursorFromLimitthItemWhenFetchedCountExceedsLimit() {
+		Account account = account(com.finplay.api.account.domain.Market.STOCK);
+		ReflectionTestUtils.setField(account, "id", 10L);
+		when(accountService.getAccountFor(USER_ID, com.finplay.api.account.domain.Market.STOCK)).thenReturn(account);
+
+		Order order1 = order(30L, NOW.minusMinutes(1));
+		Order order2 = order(20L, NOW.minusMinutes(2));
+		Order order3 = order(10L, NOW.minusMinutes(3));
+		int limit = 2;
+		when(orderRepository.findByAccountIdWithCursor(eq(10L), isNull(), isNull(), eq(limit + 1)))
+			.thenReturn(List.of(order1, order2, order3));
+
+		OrderListResponse response = orderService.getMyOrders(
+			USER_ID, com.finplay.api.account.domain.Market.STOCK, null, limit);
+
+		assertThat(response.hasNext()).isTrue();
+		// 다음 페이지 있음(3건 조회) 시 nextCursor는 반환 페이지(limit=2건)의 마지막 항목인 order2 기준이어야 한다 — 초과 조회된 order3 기준이면 버그.
+		assertThat(response.nextCursor()).isEqualTo(OrderCursor.encode(order2));
+		assertThat(response.content()).hasSize(2);
+	}
+
+	@Test
+	void getMyOrdersDelegatesOwnershipAndMarketScopeValidationToAccountService() {
+		Account account = account(com.finplay.api.account.domain.Market.STOCK);
+		ReflectionTestUtils.setField(account, "id", 10L);
+		when(accountService.getAccountFor(USER_ID, com.finplay.api.account.domain.Market.STOCK)).thenReturn(account);
+		when(orderRepository.findByAccountIdWithCursor(eq(10L), isNull(), isNull(), eq(21)))
+			.thenReturn(List.of());
+
+		orderService.getMyOrders(USER_ID, com.finplay.api.account.domain.Market.STOCK, null, 20);
+
+		verify(accountService).getAccountFor(USER_ID, com.finplay.api.account.domain.Market.STOCK);
+	}
+
+	@Test
+	void getMyOrdersPropagatesExceptionThrownByCorruptedCursorWithoutQueryingRepository() {
+		Account account = account(com.finplay.api.account.domain.Market.STOCK);
+		ReflectionTestUtils.setField(account, "id", 10L);
+		when(accountService.getAccountFor(USER_ID, com.finplay.api.account.domain.Market.STOCK)).thenReturn(account);
+
+		assertThatThrownBy(() -> orderService.getMyOrders(
+			USER_ID, com.finplay.api.account.domain.Market.STOCK, "garbage", 20))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(exception -> assertThat(((BusinessException)exception).getErrorCode())
+				.isEqualTo(ErrorCode.VALIDATION_ERROR));
+
+		verify(orderRepository, never()).findByAccountIdWithCursor(any(), any(), any(), anyInt());
+	}
+
+	private static Order order(Long id, LocalDateTime requestedAt) {
 		Instrument instrument = stockInstrument();
 		ReflectionTestUtils.setField(instrument, "id", 42L);
 		Order order = Order.create(
@@ -188,33 +318,11 @@ class OrderServiceTest {
 			OrderSide.BUY,
 			OrderType.MARKET,
 			new BigDecimal("3"),
-			IDEMPOTENCY_KEY,
+			"idem-key-" + id,
 			"h".repeat(64),
-			NOW);
-		ReflectionTestUtils.setField(order, "id", 100L);
-		when(orderRepository.findAllByUserIdOrderByRequestedAtDescIdDesc(USER_ID)).thenReturn(List.of(order));
-
-		List<OrderListItemResponse> responses = orderService.getMyOrders(USER_ID);
-
-		assertThat(responses).hasSize(1);
-		OrderListItemResponse response = responses.get(0);
-		assertThat(response.orderId()).isEqualTo(100L);
-		assertThat(response.market()).isEqualTo("STOCK");
-		assertThat(response.instrumentId()).isEqualTo(42L);
-		assertThat(response.side()).isEqualTo("BUY");
-		assertThat(response.orderType()).isEqualTo("MARKET");
-		assertThat(response.status()).isEqualTo("FILLED");
-		assertThat(response.quantity()).isEqualByComparingTo(new BigDecimal("3"));
-		assertThat(response.requestedAt()).isEqualTo(NOW);
-	}
-
-	@Test
-	void getMyOrdersReturnsEmptyListWhenUserHasNoOrders() {
-		when(orderRepository.findAllByUserIdOrderByRequestedAtDescIdDesc(USER_ID)).thenReturn(List.of());
-
-		List<OrderListItemResponse> responses = orderService.getMyOrders(USER_ID);
-
-		assertThat(responses).isEmpty();
+			requestedAt);
+		ReflectionTestUtils.setField(order, "id", id);
+		return order;
 	}
 
 	private static Instrument stockInstrument() {
