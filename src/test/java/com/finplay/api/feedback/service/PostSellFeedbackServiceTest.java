@@ -6,12 +6,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
+import com.finplay.api.feedback.config.FeedbackLlmProperties;
 import com.finplay.api.feedback.domain.MarketNewsItemType;
 import com.finplay.api.feedback.domain.NarrativeSource;
 import com.finplay.api.feedback.domain.PostSellFeedbackStatus;
@@ -67,9 +69,13 @@ class PostSellFeedbackServiceTest {
 
 	private final TradeFeedbackRepository tradeFeedbackRepository = mock(TradeFeedbackRepository.class);
 
+	// 재생성 누적 상한만 쓰이므로 나머지는 application.yml 기본값과 같은 값으로 둔다(§C-7).
+	private static final FeedbackLlmProperties LLM_PROPERTIES = new FeedbackLlmProperties("gpt-5.4-mini", 20, 512, 1,
+		3);
+
 	private final PostSellFeedbackService postSellFeedbackService = new PostSellFeedbackService(
 		postSellFeedbackReader, narrativeService, tradeFeedbackWriter, tradeFeedbackRepository,
-		Clock.fixed(NOW.atZone(KST).toInstant(), KST));
+		LLM_PROPERTIES, Clock.fixed(NOW.atZone(KST).toInstant(), KST));
 
 	// --- 최초 생성 ---
 
@@ -275,6 +281,162 @@ class PostSellFeedbackServiceTest {
 		assertThat(captor.getValue().priceMoves()).isEmpty();
 	}
 
+	// --- 재생성 게이트 (완료 조건 8·10번) ---
+
+	// 게이트가 열린 뒤 첫 조회에서 1회 갈아 끼운다. 성공하면 narrative_finalized가 닫히므로 두 번째 조회는
+	// 재생성하지 않는다 — 아래 두 테스트가 짝이다.
+	@Test
+	@DisplayName("게이트가 열리면 첫 조회에서 재생성하고 성공 저장을 부른다")
+	void regeneratesOnceWhenTheGateIsOpen() {
+		givenFacts(gateOpenFacts(PostSellFeedbackStatus.READY));
+		givenStored(pendingFeedback(0));
+		givenGenerated(NarrativeResultDto.llm("재생성된 문장입니다."));
+
+		PostSellFeedbackResponse response = postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
+
+		assertThat(response.narrative()).isEqualTo("재생성된 문장입니다.");
+		assertThat(response.narrativeSource()).isEqualTo(NarrativeSource.LLM);
+		assertThat(response.narrativeStatus()).isEqualTo(PostSellFeedbackStatus.READY);
+		verify(tradeFeedbackWriter).applyRegenerated(eq(SELL_TRADE_ID), any(), eq(NOW));
+		verify(tradeFeedbackWriter, never()).recordFailedRegeneration(any());
+		verify(tradeFeedbackWriter, never()).create(any(), any(), any(), any());
+	}
+
+	@Test
+	@DisplayName("확정된 서술은 게이트가 열려 있어도 재생성하지 않는다")
+	void neverRegeneratesAnAlreadyFinalizedNarrative() {
+		givenFacts(gateOpenFacts(PostSellFeedbackStatus.READY));
+		givenStored(finalizedFeedback());
+
+		PostSellFeedbackResponse response = postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
+
+		assertThat(response.narrative()).isEqualTo("확정된 문장입니다.");
+		verifyNoInteractions(narrativeService, tradeFeedbackWriter);
+	}
+
+	// 완료 조건 10번 — 카드 0건이면 price_move_peer_stats 행이 애초에 생기지 않는다. 게이트를 "확정 집계 행
+	// 존재"로 판정한 구현은 이 경우에 영원히 재생성하지 않는데, 운영에서 가장 흔한 경우다.
+	@Test
+	@DisplayName("집단 비교가 NO_EVENT·INSUFFICIENT_SAMPLE이어도 확정으로 쳐서 재생성한다")
+	void treatsNoEventAndInsufficientSampleAsSettled() {
+		for (PostSellFeedbackStatus settled : List.of(
+			PostSellFeedbackStatus.NO_EVENT, PostSellFeedbackStatus.INSUFFICIENT_SAMPLE,
+			PostSellFeedbackStatus.READY)) {
+			PostSellFeedbackService service = newService();
+			givenFacts(gateOpenFacts(settled));
+			givenStored(pendingFeedback(0));
+			givenGenerated(NarrativeResultDto.llm("재생성된 문장입니다."));
+
+			PostSellFeedbackResponse response = service.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
+
+			assertThat(response.narrative())
+				.as("peerComparison.status=%s는 확정이므로 게이트가 열린다", settled)
+				.isEqualTo("재생성된 문장입니다.");
+		}
+	}
+
+	@Test
+	@DisplayName("집단 비교가 NOT_YET이면 매도 후 흐름이 READY여도 재생성하지 않는다")
+	void keepsTheGateClosedWhilePeerComparisonIsNotYet() {
+		givenFacts(gateOpenFacts(PostSellFeedbackStatus.NOT_YET));
+		givenStored(pendingFeedback(0));
+
+		postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
+
+		verifyNoInteractions(narrativeService, tradeFeedbackWriter);
+	}
+
+	// 매도 후 흐름만 보고 열면 15:30~집계 사이에 조회한 사용자가 집단 비교 없는 문장으로 굳는다 — 재생성이
+	// 1회뿐이라 되돌릴 기회가 없다.
+	@Test
+	@DisplayName("매도 후 흐름이 NOT_YET이면 집단 비교가 확정이어도 재생성하지 않는다")
+	void keepsTheGateClosedWhilePostSellFlowIsNotYet() {
+		givenFacts(factsWithoutNarrative(
+			true, PostSellFeedbackStatus.NOT_YET, PostSellFeedbackStatus.NO_EVENT));
+		givenStored(pendingFeedback(0));
+
+		postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
+
+		verifyNoInteractions(narrativeService, tradeFeedbackWriter);
+	}
+
+	// --- 재생성 실패와 누적 상한 (완료 조건 9번) ---
+
+	// 템플릿 폴백을 실패로 취급한다 — 템플릿 문장에는 매도 후 흐름·집단 비교가 없어 덮으면 서술이 빈약해진다.
+	@Test
+	@DisplayName("재생성이 템플릿으로 폴백하면 기존 서술을 유지하고 실패만 누적한다")
+	void keepsTheStoredNarrativeWhenRegenerationFallsBackToTheTemplate() {
+		givenFacts(gateOpenFacts(PostSellFeedbackStatus.NO_EVENT));
+		givenStored(pendingFeedback(0));
+		givenGenerated(NarrativeResultDto.template("템플릿 문장입니다."));
+
+		PostSellFeedbackResponse response = postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
+
+		// 기존 서술이 그대로 나간다 — 템플릿으로 덮지 않는다.
+		assertThat(response.narrative()).isEqualTo(LLM_NARRATIVE);
+		assertThat(response.narrativeSource()).isEqualTo(NarrativeSource.LLM);
+		assertThat(response.narrativeStatus()).isEqualTo(PostSellFeedbackStatus.READY);
+		verify(tradeFeedbackWriter).recordFailedRegeneration(SELL_TRADE_ID);
+		verify(tradeFeedbackWriter, never()).applyRegenerated(any(), any(), any());
+	}
+
+	@Test
+	@DisplayName("누적 시도가 상한 미만이면 다시 시도한다")
+	void retriesWhileTheCumulativeCountIsBelowTheLimit() {
+		givenFacts(gateOpenFacts(PostSellFeedbackStatus.NO_EVENT));
+		givenStored(pendingFeedback(LLM_PROPERTIES.maxNarrativeRetry() - 1));
+		givenGenerated(NarrativeResultDto.template("템플릿 문장입니다."));
+
+		postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
+
+		verify(narrativeService).resolvePostSellNarrative(any());
+		verify(tradeFeedbackWriter).recordFailedRegeneration(SELL_TRADE_ID);
+	}
+
+	// 상한에 도달하면 게이트가 열려 있어도 LLM을 부르지 않는다 — 여기서 부르면 실패하는 체결 하나가 조회마다
+	// LLM을 호출하는데 응답은 정상 200이라 아무 신호도 남지 않는다. 바로 위 테스트와 짝이다.
+	@Test
+	@DisplayName("누적 시도가 상한에 도달하면 LLM을 부르지 않는다")
+	void stopsRetryingWhenTheCumulativeLimitIsReached() {
+		givenFacts(gateOpenFacts(PostSellFeedbackStatus.NO_EVENT));
+		givenStored(pendingFeedback(LLM_PROPERTIES.maxNarrativeRetry()));
+
+		PostSellFeedbackResponse response = postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
+
+		assertThat(response.narrative()).isEqualTo(LLM_NARRATIVE);
+		verifyNoInteractions(narrativeService, tradeFeedbackWriter);
+	}
+
+	// 판정 순서가 narrativeFinalized → 누적 상한 → 게이트다. 상한을 게이트 뒤에 두면 상한을 넘긴 체결이
+	// 게이트가 열린 동안 계속 LLM을 부른다.
+	@Test
+	@DisplayName("누적 시도가 상한을 넘었으면 게이트 계산 전에 멈춘다")
+	void checksTheCumulativeLimitBeforeTheGate() {
+		givenFacts(gateOpenFacts(PostSellFeedbackStatus.READY));
+		givenStored(pendingFeedback(LLM_PROPERTIES.maxNarrativeRetry() + 1));
+
+		postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
+
+		verifyNoInteractions(narrativeService, tradeFeedbackWriter);
+	}
+
+	// 게이트가 열렸으면 프롬프트에 매도 후 흐름 줄이 붙는다 — 매핑을 따로 만들면 그 줄이 빠진 프롬프트로
+	// 재생성해 게이트가 무의미해진다.
+	@Test
+	@DisplayName("재생성 프롬프트에 매도 후 흐름 값이 실린다")
+	void feedsThePostSellFlowIntoTheRegenerationPrompt() {
+		givenFacts(gateOpenFacts(PostSellFeedbackStatus.NO_EVENT));
+		givenStored(pendingFeedback(0));
+		givenGenerated(NarrativeResultDto.llm("재생성된 문장입니다."));
+
+		postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
+
+		ArgumentCaptor<PostSellPromptDto> captor = ArgumentCaptor.forClass(PostSellPromptDto.class);
+		verify(narrativeService).resolvePostSellNarrative(captor.capture());
+		assertThat(captor.getValue().closePrice()).isEqualByComparingTo("69200");
+		assertThat(captor.getValue().sellToCloseRate()).isEqualByComparingTo("0.0102");
+	}
+
 	// --- 트랜잭션 경계 (구조 단정) ---
 
 	// LLM 호출이 중앙값 2.5초라 여기에 트랜잭션을 걸면 그 시간 동안 커넥션을 쥔다. 편의로 애노테이션을 붙이는
@@ -305,6 +467,32 @@ class PostSellFeedbackServiceTest {
 		when(narrativeService.resolvePostSellNarrative(any())).thenReturn(resolved);
 	}
 
+	private PostSellFeedbackService newService() {
+		return new PostSellFeedbackService(
+			postSellFeedbackReader, narrativeService, tradeFeedbackWriter, tradeFeedbackRepository,
+			LLM_PROPERTIES, Clock.fixed(NOW.atZone(KST).toInstant(), KST));
+	}
+
+	private void givenStored(TradeFeedback feedback) {
+		when(tradeFeedbackRepository.findByTradeId(SELL_TRADE_ID)).thenReturn(Optional.of(feedback));
+	}
+
+	/** 아직 확정되지 않은 행 — 실패를 {@code attempts}회 누적한 상태를 실제 전이 메서드로 만든다. */
+	private static TradeFeedback pendingFeedback(int attempts) {
+		TradeFeedback feedback = storedFeedback(LLM_NARRATIVE, NarrativeSource.LLM);
+		for (int i = 0; i < attempts; i++) {
+			feedback.recordFailedRegeneration();
+		}
+		return feedback;
+	}
+
+	/** 재생성 게이트를 이미 통과해 확정된 행. */
+	private static TradeFeedback finalizedFeedback() {
+		TradeFeedback feedback = storedFeedback(LLM_NARRATIVE, NarrativeSource.LLM);
+		feedback.applyRegeneratedNarrative("확정된 문장입니다.", NarrativeSource.LLM, NOW.minusMinutes(10));
+		return feedback;
+	}
+
 	// 엔티티를 mock으로 만들지 않는다 — 실제 팩토리로 만들어 값이 담긴 객체를 쓴다(docs/conventions.md).
 	// 이 경로는 서술 두 값만 읽으므로 연관 체결은 필요하지 않다.
 	private static TradeFeedback storedFeedback(String narrative, NarrativeSource source) {
@@ -315,11 +503,22 @@ class PostSellFeedbackServiceTest {
 		return factsWithoutNarrative(true);
 	}
 
+	private static PostSellFeedbackResponse factsWithoutNarrative(boolean withCard) {
+		return factsWithoutNarrative(withCard, PostSellFeedbackStatus.READY, PostSellFeedbackStatus.NOT_YET);
+	}
+
+	/** 재생성 게이트를 여는 픽스처 — 매도 후 흐름은 READY이고 집단 비교가 확정 상태다(§C-5). */
+	private static PostSellFeedbackResponse gateOpenFacts(PostSellFeedbackStatus peerStatus) {
+		return factsWithoutNarrative(true, PostSellFeedbackStatus.READY, peerStatus);
+	}
+
 	/**
 	 * reader가 돌려주는 형태 — 서술 세 값이 {@code null}이고 나머지는 계약 예시 그대로다. 게이트가 열린 뒤라
 	 * 매도 후 흐름·반사실이 채워져 있고 집단 비교는 {@code NOT_YET}이다.
 	 */
-	private static PostSellFeedbackResponse factsWithoutNarrative(boolean withCard) {
+	private static PostSellFeedbackResponse factsWithoutNarrative(
+		boolean withCard, PostSellFeedbackStatus flowStatus, PostSellFeedbackStatus peerStatus) {
+		boolean marketClosed = flowStatus == PostSellFeedbackStatus.READY;
 		return new PostSellFeedbackResponse(
 			SELL_TRADE_ID,
 			1L,
@@ -343,13 +542,15 @@ class PostSellFeedbackServiceTest {
 			new BigDecimal("0.0059"),
 			withCard ? 105 : null,
 			withCard ? List.of(sampleCard()) : List.of(),
-			new PostSellFlow(
-				PostSellFeedbackStatus.READY,
-				new BigDecimal("69200"),
-				LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(15, 27)),
-				new BigDecimal("0.0102"),
-				new BigDecimal("69500"),
-				LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(15, 5))),
+			marketClosed
+				? new PostSellFlow(
+					PostSellFeedbackStatus.READY,
+					new BigDecimal("69200"),
+					LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(15, 27)),
+					new BigDecimal("0.0102"),
+					new BigDecimal("69500"),
+					LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(15, 5)))
+				: new PostSellFlow(PostSellFeedbackStatus.NOT_YET, null, null, null, null, null),
 			new Counterfactuals(
 				PostSellFeedbackStatus.READY,
 				new CounterfactualScenario(
@@ -357,7 +558,7 @@ class PostSellFeedbackServiceTest {
 				new CounterfactualScenario(
 					new BigDecimal("70800"), LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(11, 5)), null),
 				null),
-			new PeerComparison(PostSellFeedbackStatus.NOT_YET, null, null, null, null, null),
+			new PeerComparison(peerStatus, null, null, null, null, null),
 			null,
 			null,
 			null);

@@ -105,9 +105,12 @@ class TradeFeedbackWriterTest {
 	@Test
 	@DisplayName("서술 저장 경로가 이 컴포넌트뿐이라 리포지터리 의존이 trade_feedbacks 하나다")
 	void dependsOnlyOnTheTradeFeedbackRepository() {
+		// @Slf4j가 만드는 Logger 같은 부수 필드는 제외하고 리포지터리 의존만 본다 — 규칙은 "쓰기 경로가
+		// trade_feedbacks 하나"이지 필드 수가 아니다.
 		assertThat(TradeFeedbackWriter.class.getDeclaredFields())
 			.extracting(field -> field.getType().getSimpleName())
-			.containsExactlyInAnyOrder("TradeService", "TradeFeedbackRepository");
+			.filteredOn(type -> type.endsWith("Repository"))
+			.containsExactly("TradeFeedbackRepository");
 	}
 
 	private static Trade sellTrade() {

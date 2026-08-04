@@ -7,6 +7,7 @@ import com.finplay.api.order.domain.Trade;
 import com.finplay.api.order.service.TradeService;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,9 +23,9 @@ import org.springframework.transaction.annotation.Transactional;
 // 공통 조건인 "원장 불변"이 조회 경로에서 취하는 형태다. 주입된 리포지터리도 그 하나뿐이라 주문·체결·계좌·
 // 잔액·보유·손익 테이블에 닿는 경로가 애초에 없다.
 //
-// 이슈 #208 5번(서술 재생성)이 이 클래스에 전이 메서드를 하나 더 얹는다 — 기존 행의 서술을 갈아 끼우고
-// narrative_finalized·regeneration_attempts를 바꾸는 저장이며, LLM 재호출이 트랜잭션 밖이어야 하는 이유가
-// 같으므로 새 경계 컴포넌트를 만들지 않는다.
+// 재생성(§C-5)도 같은 경계를 쓴다 — LLM 재호출이 트랜잭션 밖이어야 하는 이유가 최초 생성과 같으므로 새 경계
+// 컴포넌트를 만들지 않는다. 아래 세 메서드가 이 spec의 회원별 쓰기 전부다.
+@Slf4j
 @Component
 @RequiredArgsConstructor
 class TradeFeedbackWriter {
@@ -49,5 +50,38 @@ class TradeFeedbackWriter {
 		Trade trade = tradeService.getOwnedTrade(userId, tradeId);
 		return tradeFeedbackRepository.save(
 			TradeFeedback.create(trade, narrative.narrative(), narrative.source(), generatedAt));
+	}
+
+	/**
+	 * 재생성 <b>성공</b>을 저장한다 — 서술을 갈아 끼우고 {@code narrative_finalized}를 {@code TRUE}로 바꾼다.
+	 *
+	 * <p><b>행을 이 트랜잭션 안에서 다시 읽는다.</b> 호출부가 판정에 쓴 엔티티는 읽기 트랜잭션이 끝나 detached
+	 * 이므로 거기에 전이 메서드를 부르면 <b>더티 체킹 대상이 아니라 아무 일도 일어나지 않는다</b> — 예외도 로그도
+	 * 없이 재생성이 매 조회마다 반복되고 상한도 오르지 않는다. {@code create}가 {@code Trade}를 다시 읽는 것과
+	 * 같은 이유다.
+	 *
+	 * @param narrative {@code LLM}이어야 한다 — 템플릿 폴백은 실패로 취급해 {@link #recordFailedRegeneration}으로
+	 *     간다. 판정은 게이트를 가진 {@code PostSellFeedbackService}가 한다
+	 */
+	@Transactional
+	void applyRegenerated(Long tradeId, NarrativeResultDto narrative, LocalDateTime generatedAt) {
+		tradeFeedbackRepository.findByTradeId(tradeId).ifPresentOrElse(
+			feedback -> feedback.applyRegeneratedNarrative(
+				narrative.narrative(), narrative.source(), generatedAt),
+			() -> log.debug("재생성 대상 회고 행이 사라져 저장을 건너뛴다. tradeId={}", tradeId));
+	}
+
+	/**
+	 * 재생성 <b>실패</b>를 저장한다 — 기존 서술과 {@code narrative_finalized=false}를 유지하고
+	 * {@code regeneration_attempts}만 누적한다 (FEED-007·§C-7).
+	 *
+	 * <p><b>이 저장을 빠뜨리면 상한이 성립하지 않는다.</b> 횟수가 오르지 않아 게이트가 계속 열려 있고, 실패하는
+	 * 체결 하나가 <b>조회마다 LLM을 부르는데</b> 응답은 정상 200이라 아무 신호도 남지 않는다.
+	 */
+	@Transactional
+	void recordFailedRegeneration(Long tradeId) {
+		tradeFeedbackRepository.findByTradeId(tradeId).ifPresentOrElse(
+			TradeFeedback::recordFailedRegeneration,
+			() -> log.debug("재생성 대상 회고 행이 사라져 재시도 횟수 누적을 건너뛴다. tradeId={}", tradeId));
 	}
 }

@@ -1,7 +1,9 @@
 // 매도 직후 피드백 조회의 진입점 — 읽기·LLM 호출·저장을 서로 다른 트랜잭션 경계로 갈라 순서대로 엮는다.
 package com.finplay.api.feedback.service;
 
+import com.finplay.api.feedback.config.FeedbackLlmProperties;
 import com.finplay.api.feedback.domain.MarketNewsItemType;
+import com.finplay.api.feedback.domain.NarrativeSource;
 import com.finplay.api.feedback.domain.PostSellFeedbackStatus;
 import com.finplay.api.feedback.domain.TradeFeedback;
 import com.finplay.api.feedback.dto.response.HeldPriceMoveItem;
@@ -40,8 +42,10 @@ import org.springframework.stereotype.Service;
  * </pre>
  *
  * <p><b>서술은 최초 조회에서 만들어 저장하고 이후 재사용한다</b>(FEED-007, {@code UNIQUE(trade_id)}).
- * <b>재생성은 이 이슈가 하지 않는다</b> — 매도 후 흐름과 집단 비교가 확정된 뒤 1회 갈아 끼우는 경로와
- * {@code narrative_finalized}·누적 상한은 이슈 #208의 5번 항목이 이 흐름 위에 얹는다(§C-5의 재생성 게이트).
+ * <b>예외는 하나다</b> — 매도 후 흐름과 집단 비교가 확정된 뒤 첫 조회에서 <b>1회</b> 갈아 끼운다
+ * ({@link #isRegenerationGateOpen}). 성공하면 {@code narrative_finalized=TRUE}로 닫히고, 템플릿으로 폴백하면
+ * 기존 서술을 유지한 채 {@code regeneration_attempts}만 누적해 <b>체결 1건당</b> {@code max-narrative-retry}회까지
+ * 다시 시도한다. 그 밖에는 매도 체결이 불변 원장이므로 재생성하지 않는다.
  *
  * <p><b>{@code narrativeStatus}는 항상 {@code READY}다</b>(§C-4) — 매도 회고에는 §템플릿 문장이 있어 LLM이
  * 실패하거나 후검증에 걸려도 서버가 수치로 조립한 문장으로 대체하므로 서술이 비지 않는다. 어느 쪽으로
@@ -62,6 +66,8 @@ public class PostSellFeedbackService {
 
 	private final TradeFeedbackRepository tradeFeedbackRepository;
 
+	private final FeedbackLlmProperties feedbackLlmProperties;
+
 	private final Clock clock;
 
 	/**
@@ -79,11 +85,11 @@ public class PostSellFeedbackService {
 	}
 
 	/**
-	 * 기존 서술이 있으면 그대로 쓰고, 없으면 만들어 저장한다.
+	 * 기존 서술이 없으면 만들어 저장하고, 있으면 재사용한다 — <b>유일한 예외가 재생성 1회</b>다(§C-5).
 	 *
 	 * <p><b>기존 행 조회를 빠뜨리면 조회마다 LLM을 다시 부른다</b> — 호출량이 조회 수에 비례하고 같은 체결의
 	 * 문장이 매번 달라지는데 예외도 로그도 없다. 체결은 불변 원장이라 수치가 바뀌지 않으므로 재사용이 정확한
-	 * 동작이며, 유일한 예외인 재생성은 5번 항목이 이 분기 안쪽에 얹는다(§C-5).
+	 * 동작이다.
 	 *
 	 * <p><b>LLM 실패가 응답을 막지 않는다.</b> 실패·타임아웃·OpenAI 키 없음은 {@code NarrativeService}가 템플릿
 	 * 문장으로 흡수하므로(§실패 처리) 여기에 예외 처리가 없는 것이 정상이다 — 수치 요약과 파생 사실은 그대로
@@ -92,11 +98,19 @@ public class PostSellFeedbackService {
 	 */
 	private NarrativeResultDto resolveNarrative(
 		Long userId, Long tradeId, PostSellFeedbackResponse facts) {
-		Optional<TradeFeedback> existing = tradeFeedbackRepository.findByTradeId(tradeId);
-		if (existing.isPresent()) {
-			return new NarrativeResultDto(existing.get().getNarrative(), existing.get().getNarrativeSource());
+		Optional<TradeFeedback> found = tradeFeedbackRepository.findByTradeId(tradeId);
+		if (found.isEmpty()) {
+			return createNarrative(userId, tradeId, facts);
 		}
 
+		TradeFeedback existing = found.get();
+		NarrativeResultDto stored = new NarrativeResultDto(existing.getNarrative(), existing.getNarrativeSource());
+		return shouldRegenerate(existing, facts) ? regenerateNarrative(tradeId, facts, stored) : stored;
+	}
+
+	/** 최초 조회 — 생성해 저장한다 ({@code UNIQUE(trade_id)}가 체결 1건당 1행을 강제한다). */
+	private NarrativeResultDto createNarrative(
+		Long userId, Long tradeId, PostSellFeedbackResponse facts) {
 		NarrativeResultDto resolved = narrativeService.resolvePostSellNarrative(toPromptInput(facts));
 		try {
 			tradeFeedbackWriter.create(userId, tradeId, resolved, LocalDateTime.now(clock));
@@ -107,6 +121,85 @@ public class PostSellFeedbackService {
 			// 않고, 여기서 500을 내면 조회가 실패한다(§실패 처리의 "UNIQUE 제약으로 무시, 기존 데이터 유지").
 			log.debug("매도 회고 서술이 이미 저장돼 있어 이번 저장은 건너뛴다. tradeId={}", tradeId);
 		}
+		return resolved;
+	}
+
+	/**
+	 * 재생성 여부 — <b>확정 전 + 누적 상한 안 + §C-5의 재생성 게이트 통과</b> 셋을 모두 만족해야 한다.
+	 *
+	 * <p>순서에 이유가 있다. {@code narrativeFinalized}와 상한은 <b>DB 값만 보는 판정</b>이라 먼저 걸러야
+	 * 게이트 계산이 헛돌지 않고, 무엇보다 상한을 게이트보다 뒤에 두면 상한을 넘긴 체결이 게이트가 열린 동안
+	 * 계속 LLM을 부른다.
+	 *
+	 * <p><b>누적 상한은 {@code max-narrative-retry}이고 날짜로 리셋하지 않는다</b>(FEED-007·§C-7). 실패 시
+	 * {@code generatedAt}을 갱신하지 않으므로 날짜 기준 자체가 성립하지 않으며, {@code regeneration_attempts}가
+	 * 체결 1건당 누적으로 오른다. <b>상한 이하만 재현하는 테스트는 리셋 버그를 잡지 못한다</b> — 실패를 상한 + 1회
+	 * 재현해 마지막 호출이 실제로 일어나지 않는지 봐야 한다.
+	 */
+	private boolean shouldRegenerate(TradeFeedback existing, PostSellFeedbackResponse facts) {
+		if (existing.isNarrativeFinalized()) {
+			return false;
+		}
+		if (existing.getRegenerationAttempts() >= feedbackLlmProperties.maxNarrativeRetry()) {
+			return false;
+		}
+		return isRegenerationGateOpen(facts);
+	}
+
+	/**
+	 * §C-5의 재생성 게이트 — {@code postSellFlow}가 {@code READY}이고 <b>{@code peerComparison.status}가
+	 * {@code NOT_YET}이 아니다.</b>
+	 *
+	 * <p><b>{@code NO_EVENT}·{@code INSUFFICIENT_SAMPLE}도 확정으로 친다.</b> 게이트를 "확정 집계 행이 있다"로
+	 * 두면 <b>보유 구간 카드가 0건인 체결에서 매도 후 흐름이 반영된 서술이 영원히 만들어지지 않는다</b> — 카드가
+	 * 없으면 {@code price_move_peer_stats} 행이 애초에 생기지 않고, 카드는 종목·거래일당
+	 * {@code max-intraday-cards}건에 근거 기사가 없으면 생성되지 않으므로 <b>0건이 오히려 흔한 경우다.</b>
+	 * 그 상태는 예외도 로그도 없이 일어난다. 그래서 판정을 행 존재가 아니라 <b>상태값</b>으로 둔다.
+	 *
+	 * <p><b>매도 후 흐름만 보고 열지 않는다.</b> 그러면 15:30~장 마감 집계 사이에 조회한 사용자는 집단 비교가
+	 * 빠진 문장으로 굳는다 — 재생성이 1회뿐이라 되돌릴 기회가 없다(계약).
+	 *
+	 * <p><b>이 게이트는 이슈 #208 범위에서 구조적으로 열리지 않는다.</b> 3번 항목이 {@code peerComparison.status}를
+	 * 상수 {@code NOT_YET}으로 두었기 때문이다({@code PostSellFeedbackReader}의 조립 지점 주석에 그 경계표가 있다).
+	 * <b>7번이 확정 집계 행 기준 판정을 붙이는 순간 아무 수정 없이 열린다</b> — 조건을 이 이슈 형편에 맞춰
+	 * 느슨하게 고치지 않는다. 그것이 이 항목의 명시된 제약이고, 지금 안 열린다는 이유로
+	 * {@code postSellFlow}만 보게 바꾸면 위 두 단락의 실패가 그대로 들어온다.
+	 *
+	 * <p>{@code sameSessionCompleted=false}면 두 필드가 모두 {@code null}이라 자연히 닫힌다 — 여러 재생일에 걸친
+	 * 매매에는 반영할 매도 후 흐름이 애초에 없다.
+	 */
+	private static boolean isRegenerationGateOpen(PostSellFeedbackResponse facts) {
+		PostSellFlow flow = facts.postSellFlow();
+		PeerComparison peer = facts.peerComparison();
+		return flow != null
+			&& flow.status() == PostSellFeedbackStatus.READY
+			&& peer != null
+			&& peer.status() != PostSellFeedbackStatus.NOT_YET;
+	}
+
+	/**
+	 * 게이트를 통과한 뒤 <b>1회</b> 갈아 끼운다. 재생성도 <b>1단계 경로</b>다 — 생성 → 후검증 → 걸리면 템플릿이며
+	 * §후검증의 요약·브리핑용 2단계(적발 시 재생성)와 다른 것이다.
+	 *
+	 * <p>프롬프트 입력이 최초 생성과 <b>같은 매핑</b>인 것이 요점이다. 게이트가 열렸으므로 이번에는
+	 * {@code closePrice}·{@code sellToCloseRate}와 집단 비교 지표가 채워져 프롬프트에 줄이 붙는다 — 그래서
+	 * 다른 문장이 나온다. <b>매핑을 따로 만들면 그 줄이 빠진 프롬프트로 재생성해 게이트가 무의미해진다.</b>
+	 *
+	 * <p><b>템플릿으로 폴백했으면 실패로 취급한다.</b> 템플릿 문장에는 매도 후 흐름·집단 비교가 없으므로 기존
+	 * 문장을 그것으로 덮으면 재생성할수록 서술이 빈약해진다. 기존 서술을 유지하고 {@code narrative_finalized}를
+	 * {@code false}로 남겨 다음 조회에서 상한 안이면 다시 시도한다.
+	 *
+	 * @param stored 실패 시 그대로 응답에 실리는 기존 서술
+	 */
+	private NarrativeResultDto regenerateNarrative(
+		Long tradeId, PostSellFeedbackResponse facts, NarrativeResultDto stored) {
+		NarrativeResultDto resolved = narrativeService.resolvePostSellNarrative(toPromptInput(facts));
+		if (resolved.source() != NarrativeSource.LLM) {
+			log.debug("매도 회고 서술 재생성이 템플릿으로 폴백해 기존 서술을 유지한다. tradeId={}", tradeId);
+			tradeFeedbackWriter.recordFailedRegeneration(tradeId);
+			return stored;
+		}
+		tradeFeedbackWriter.applyRegenerated(tradeId, resolved, LocalDateTime.now(clock));
 		return resolved;
 	}
 
