@@ -42,5 +42,8 @@ out/
 ### Serena (도구 캐시) ###
 .serena/
 
+### graphify (코드 지식 그래프 산출물 — graph.json이 20MB대라 커밋하지 않는다) ###
+graphify-out/
+
 ### 배포 스택 (nginx가 서빙할 프론트 빌드 산출물 — finplay-frontend에서 복사해 온다) ###
 /frontend-dist/
