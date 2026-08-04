@@ -1,151 +1,165 @@
-# Tasks: 012 AI 피드백 — 이슈 #188 (종목 뉴스 요약·개장 전 브리핑 조회 API)
+# Tasks: 012 AI 피드백 — 이슈 #208 (매도 직후 피드백 조회 API)
 
-> **이 문서는 이슈 #188의 범위만 담는다.** spec 012 전체(이슈 8개)의 분할은 `./plan.md`가 정본이고, 값·규칙은 `./spec.md` §확정값이 정본이다. 여기에 값을 다시 적지 않는다 — 크론·타임존·스레드 풀은 §C-1, 구간과 `items` 범위 대응은 §C-2, 벽시계와 분봉의 구분은 §C-2-1, 공시 날짜 판정은 §C-3, 상태값과 판정 순서는 §C-4, 노출 게이트는 §C-5, 패키지 배치와 클래스 이름·배치 생성 순서는 §C-6, 설정 방침과 상한 값은 §C-7, 컬럼 타입은 §C-8, 코인의 시각 처리는 §C-9, 목록 상한·정렬·절단은 §뉴스 매칭 범위, 클램프는 §노출 판정, 실패 시 대응은 §실패 처리, 응답 필드는 `docs/api-contracts.md`다.
+> **이 문서는 이슈 #208의 범위만 담는다.** spec 012 전체(이슈 8개)의 분할은 `./plan.md`가 정본이고, 값·규칙은 `./spec.md` §확정값이 정본이다. 여기에 값을 다시 적지 않는다 — 벽시계와 분봉의 구분은 §C-2-1, 상태값은 §C-4, 노출 게이트와 재생성 게이트는 §C-5, 패키지 배치와 클래스 이름은 §C-6, 설정 방침과 `max-narrative-retry`는 §C-7, 컬럼 타입은 §C-8, 파생 사실 계산식은 §파생 사실 계산, 반사실 가격의 정의는 §반사실·집단 비교 계산, 후검증 목록은 §후검증, 템플릿 문장은 §템플릿 문장, 실패 시 대응은 §실패 처리, 응답 필드·수치 산출·예시 값은 `docs/api-contracts.md`의 "매도 직후 피드백 조회" 소절이다.
 >
-> 항목 하나 = implementer 1회 투입 = 커밋 1개. 테스트 레벨은 ADR-0003을 따른다 — 상태값 판정·구간 계산은 단위, 리포지토리 파인더와 유니크 축은 `@DataJpaTest`, 컨트롤러 계약은 `@WebMvcTest`, 노출 게이트와 배치 종단은 고정 `Clock` + Testcontainers 통합이다. **설정 드리프트만은 통합이 아니라 `FeedbackDetectionPropertiesYamlTest` 형태**(`ConfigDataApplicationContextInitializer`)를 따른다 — `@SpringBootTest` + Testcontainers를 쓰면 Docker 없는 환경에서 드리프트를 못 본다.
+> 항목 하나 = implementer 1회 투입 = 커밋 1개 (`docs/specs/README.md`의 굵기 가이드). 테스트 레벨은 ADR-0003을 따른다 — 수치·파생 사실 계산은 단위, 리포지토리 파인더와 유니크 축은 `@DataJpaTest`, 컨트롤러 계약은 `@WebMvcTest`, 노출 게이트와 재생성 종단은 고정 `Clock` + Testcontainers 통합이다.
 >
-> **이 이슈는 spec 012의 두 번째·세 번째 컨트롤러를 만든다.** `docs/api-routes.md`·`docs/api-contracts.md` 갱신은 각 컨트롤러 커밋에서 함께 하고(CLAUDE.md 규칙 7), 마지막에 /feature 마무리의 planner(동기화 모드)가 실제 매핑과 두 문서를 대조한다. 8번 항목이 그 자리다.
+> **이 이슈는 spec 012의 네 번째(마지막) 컨트롤러를 만든다.** `docs/api-routes.md`·`docs/api-contracts.md` 갱신은 컨트롤러가 생기는 1번 커밋에서 함께 하고(CLAUDE.md 규칙 7), 마지막에 /feature 마무리의 planner(동기화 모드)가 실제 매핑과 두 문서를 대조한다. 6번 항목이 그 자리다.
 
 ## 이 이슈 전체에 걸리는 제약
 
-- **여기서 값을 새로 정하지 않는다.** 상한·크론·구간·상태값·클래스명이 필요하면 위 참조를 읽는다. spec에 없는 값·이름이 필요해 보이면 코드가 아니라 `spec.md`를 먼저 고친다 (CLAUDE.md 규칙 1·2). #167이 `NewsCollectionService`를 §C-6에 추가한 것이 선례다. **이 이슈에서 그렇게 처리한 자리가 둘이고 이미 §C-6에 들어갔다** — `MarketSessionTimes`(개장 시각 상수)와 `BriefingNewsItem`(Part D `items` 요소)이며 2026-08-04에 확정됐다. 그 밖에 이름이 없는 자리를 만나면 같은 절차를 따른다.
-- **새 마이그레이션을 내지 않는 것이 기본이다.** V13이 `instrument_news_summaries`(`UNIQUE(instrument_id, origin_trade_date, scope)` + `generated_at` 인덱스)와 `market_briefings`(`UNIQUE(market, origin_trade_date)` + `generated_at` 인덱스)를 **코인 UPSERT와 최신 1행 조회까지 감안해** 이미 만들어 두었다(2026-08-04 확인). 컬럼을 더할 근거를 발견하면 머지된 V13을 고치지 말고 §C-8·§데이터 모델을 확인한 뒤 **새 번호(V17)**로 제안한다 (ADR-0004). 컬럼이 바뀌면 `FeedbackSchemaConstraintsTest`의 기대 맵이 먼저 깨진다(의도된 설계).
-- **`FeedbackBatchService`는 빈 자리 두 곳의 본문만 채운다.** `generateMarketBriefing`·`generateNewsSummaries`의 **호출 위치·시그니처·호출 순서를 바꾸지 않는다** — 그 순서(§C-6)가 #180의 완료 조건 배치 ③이고 `FeedbackBatchServiceTest`가 `InOrder`로 단정한다. 요약 쪽은 범위를 인자로 받아 두 자리에서 호출되므로 **분기를 새로 만들 필요가 없다.**
-- **배치 실패 격리를 종목 단위로 내린다.** 지금은 호출부 `try/catch`라 단계 단위까지만 보장된다 — 요약을 종목 루프로 채우면 **한 종목이 터질 때 나머지가 함께 날아가도 현재 테스트는 전부 초록이다.** 검증은 메서드 경계를 `doThrow`로 갈아끼우지 말고 **본문이 부르는 협력자를 mock으로 두고 특정 종목에서만 던지게** 한다. `FeedbackBatchServiceTest`의 `continuesWithOtherInstrumentsWhenDetectionThrows`가 그대로 본뜰 형태다.
-- **`NarrativeService` 하나만 주입한다**(§C-6). 요약·브리핑은 2단계 경로다 — 생성 → 후검증 → 적발 시 재생성 1회 → 그래도 걸리면 서술 없음 + `NONE`이며, 그 흐름은 이미 `resolveNewsSummaryNarrative`·`resolveMarketBriefingNarrative`에 있다. 생성기·검증기·프롬프트 조립기를 직접 알 필요가 없다.
-- **`NewsItem`은 `dto/response/`의 최상위 record다. 재사용하고 중첩으로 복제하지 않는다**(§C-6). Part C `items`가 그대로 이 record다.
-- **#180이 만든 `NewsMatcher`와 `MarketNewsItemRepository` 구간 파인더가 이미 있다. 없는 것만 더한다.** 요약·브리핑·`items`가 쓸 질의는 이 이슈 소유이지만, `findByInstrumentIdAndTypeAndPublishedAtBetweenOrderByPublishedAtAsc`·`findDisclosuresReceivedOn`을 같은 뜻으로 다시 만들지 않는다. 파생 쿼리 이름 대신 `@Query`를 쓰는 이유가 기존 파인더 주석에 있다 — 단일 필드 프로젝션은 컴파일을 통과하고 슬라이스 테스트 전까지 드러나지 않는다.
-- **`feedback`은 다른 도메인의 repository·store를 직접 주입하지 않는다**(§C-6). `market`의 조회는 #180이 연 `StockReplayService` 경로를 쓴다. **게이트를 우회하는 메서드는 §C-5의 게이트를 통과한 뒤에만** 부른다 — 판정은 호출부 책임이다.
-- **정렬 동률 타이브레이커는 `id` 내림차순이고, 정렬·절단은 `NewsItemTruncator` 소유다.** Part C·D 목록은 §뉴스 매칭 범위대로 발행시각 내림차순인데 공시는 발행시각이 전부 `00:00:00`이라 동률이 흔하다. **2차 키를 지우는 회귀는 테스트가 반드시 잡지 못한다** — InnoDB가 흔히 PK 순서로 돌려주어 우연히 일치한다. 그래서 보호를 **세 곳에 나눠 남긴다** — `NewsItemTruncator`라는 클래스 이름, 그 테스트의 동률 단정, `docs/api-contracts.md`의 계약 문장이다(#180이 카드 정렬에서 같은 지적을 받았다). **파인더 이름에 정렬 키를 드러내는 방식은 쓰지 않는다** — 항목 3의 판정으로 절단이 공시 우선이 되면서 정렬 보장이 리포지토리를 떠났고, 기존 ASC 파인더를 재사용하라는 위 제약과 충돌하기 때문이다.
-- **조회는 쓰지 않는다.** GET이 LLM을 호출하지도 DB에 쓰지도 않는다 (`docs/conventions.md` — GET은 부수효과 없음, FEED-008). 요약·브리핑은 전 회원이 공유하는 배치 산출물이다.
-- **`RestClient` 빈을 새로 정의하지 않는다.** 필드 `@Qualifier`가 Lombok 생성자에 복사되지 않아 실효가 없고, 두 번째 빈이 생기는 순간 `NoUniqueBeanDefinitionException`으로 앱 전체가 죽는다 (`docs/agent-mistakes.md` 2026-08-04). 필요하면 `RestClient.Builder`를 받는다. **이 이슈는 새 외부 HTTP 호출을 만들지 않으므로 애초에 해당 자리가 없어야 한다.**
+- **여기서 값을 새로 정하지 않는다.** 임계값·시각·범위·상태값·클래스명이 필요하면 위 참조를 읽는다. spec에 없는 값·이름이 필요해 보이면 코드가 아니라 `spec.md`를 먼저 고치고 오케스트레이터에게 보고한다 (CLAUDE.md 규칙 1·2). #167이 `NewsCollectionService`를, #188이 `MarketSessionTimes`·`BriefingNewsItem`을 §C-6에 추가한 것이 선례다.
+- **6·7번 경계를 아래 표대로 고정한다** (2026-08-04 확정, 이슈 #208 본문 §6·7번 경계). 두 이슈가 같은 `PostSellFeedbackResponse`에 필드를 더하므로 동시에 진행하지 않고, **7번이 끼울 자리를 코드 주석으로 남긴다** (3번 항목이 그 자리다).
+
+  | 필드 | 6번 (이 이슈) | 7번 |
+  |---|---|---|
+  | `postSellFlow` | 게이트 판정 + 값 전체 | — |
+  | `counterfactuals.status` | 게이트 판정 (§C-5) | — |
+  | `counterfactuals` 3종의 `price`·`at` | **채운다** | — |
+  | `counterfactuals` 3종의 `returnRate` | `null` | 수수료 재계산해 채운다 |
+  | `peerComparison.status` | 항상 `NOT_YET` | 확정 집계 행 기준 판정 (`NO_EVENT` 1순위) |
+  | `peerComparison` 지표 | `null` | 전부 |
+
+  `sameSessionCompleted=false`면 `counterfactuals`·`peerComparison`은 **필드 자체가 `null`**이고 `priceMoves`는 `[]`다 — `docs/api-contracts.md`가 이미 정했으므로 **여기서 다시 정의하지 않는다.**
+- **이미 있는 것을 다시 만들지 않는다.** 아래는 앞 이슈에서 머지된 것이고, 같은 뜻의 두 번째 경로를 만들면 규칙이 갈리는데 예외도 로그도 남지 않는다.
+
+  | 이미 있는 것 | 이 이슈가 할 일 |
+  |---|---|
+  | `TradeService.getOwnedTrade` — 체결 단건 + 소유권 검증 (404 `NOT_FOUND` → 403 `FORBIDDEN` 순서까지 구현돼 있다) | 주입해 쓴다. `order`에 조회를 새로 더하지 않는다 |
+  | `trade_feedbacks` 테이블 (V13) + `TradeFeedback` 엔티티 + `TradeFeedbackRepository` | **머지된 마이그레이션을 고치지 않는다** (ADR-0004). 컬럼을 더할 근거를 발견하면 §C-8·§데이터 모델을 확인한 뒤 **dev 기준 다음 번호(현재 V22)**로 제안한다. 리포지토리에 조회 메서드가 아직 없고, 엔티티에도 재생성·확정 상태를 바꾸는 메서드가 없다 — **이 이슈가 자기 완료 조건과 함께 더하는 것이 원래 설계다**(두 파일 주석에 그렇게 적혀 있다) |
+  | `NarrativeService.resolvePostSellNarrative` + `PostSellPromptDto`·`HeldPriceMoveDto`·`NewsSourceDto` + `NarrativeTemplateBuilder.postSellTemplate` | `NarrativeService` **하나만 주입한다**(§C-6). 매도 회고는 **1단계 경로**다 — 생성 → 후검증 → 걸리면 템플릿, **재생성 없음.** 생성기·검증기·프롬프트 조립기·템플릿 조립기를 직접 알 필요가 없다 |
+  | `MarketSessionTimes` — 개장·장 마감의 벽시계 경계 (§C-6, #188 신설) | §C-5의 게이트가 쓰는 15:30이 여기 있다. **상수를 새로 선언하지 않는다.** 값의 성격은 §C-2-1이 벽시계로 못박았다 — **분봉을 찾는 값이 아니다** |
+  | `NewsItem`(최상위 record)·`NewsItemTruncator`(목록 정렬·절단) | `priceMoves[].sources`가 그대로 `NewsItem`이다. **중첩으로 복제하지 않는다.** 목록을 자를 일이 있으면 규칙을 복사하지 않고 `NewsItemTruncator`를 쓴다 |
+  | `StockReplayService.getFullDayCandles`·`getPreviousTradingDayClose` (#180이 열었다) | **재생 노출 게이트를 우회한다.** §C-5 게이트를 통과한 뒤에만 부르고 **판정은 호출부 책임**이다 — 메서드 주석에 그 조건이 적혀 있다 |
+  | `portfolio`의 `TradeAllocationRepository`·`HoldingLotRepository` | **필요한 조회만 더한다.** `feedback`은 다른 도메인의 repository·store를 직접 주입하지 않고 **서비스를 경유한다**(§C-6·`docs/conventions.md`) |
+  | `Trade.stockReplaySession` (V20) — 주식 체결이 발생한 재생세션. `serviceDate`와 `sourceTradingDate`를 갖고 코인 체결은 `NULL`이다 | `sameSessionCompleted` 판정과 §C-5 게이트의 "그 체결의 서비스 날짜"가 이 값으로 결정된다. 별도 변환 경로를 만들지 않는다 |
+  | `feedback.llm.max-narrative-retry` — yml·record `@DefaultValue`·드리프트 테스트 2종이 전부 있다 | 읽어 쓰기만 한다. **설정 항목을 새로 세울 필요가 없다** |
+
+- **LLM 호출을 트랜잭션 안에 넣지 않는다.** #180이 정확히 이 자리에서 한 번 되돌렸고 `PriceMoveCardService` → `PriceMoveCardWriter`가 그 결과다 — 읽기·LLM 호출은 트랜잭션 밖, **저장만 별도 `@Transactional` 컴포넌트**에 둔다. **자기호출은 프록시를 타지 않으므로 같은 클래스의 private 메서드에 애노테이션을 붙이면 무효이고, 정확히 막으려던 상태가 조용히 된다.** 이것은 독립 항목이 아니라 **서술을 저장하는 항목(4·5번)의 제약**이다 — 경계만 옮기는 커밋을 따로 내면 그 사이 커밋이 경계 없이 도는 상태로 남는다.
+- **조회 경로에 LLM이 들어오는 첫 이슈다.** 지금까지 조회 3종은 배치 산출물을 읽기만 해서 호출이 0건이었다. **spec이 정한 동작이므로 바꾸지 않되**(FEED-007 — `docs/conventions.md`의 "GET은 부수효과 없음"에 대한 이 spec의 유일한 예외, 체결 1건당 1회) 타임아웃 처리 경로를 확인한다.
+- **`LlmCallStats`는 배치 스코프 전용이고 조회 호출을 세지 않는다**(#198, 의도된 동작). 조회 쪽 계측이 필요하다고 판단되면 **이 이슈에서 하지 않고 별도 이슈를 제안한다.**
+- **소요 시간을 잴 일이 생기면 `System.nanoTime()`을 쓴다.** 이 저장소는 시각을 `Clock`으로 주입받고 테스트가 고정 `Clock`으로 바꾸므로, `Clock`으로 재면 **통합 테스트에서 항상 0이 나오면서 통과한다**(#198이 회귀 테스트까지 남겼다).
+- **정렬에 2차 키를 두고 이름과 계약 문장에 남긴다.** `priceMoves`는 `windowStart` 오름차순 + `id` 오름차순, 각 카드의 `sources`는 `publishedAt` 내림차순이다(`docs/api-contracts.md`). **2차 키를 지우는 회귀는 테스트가 반드시 잡지 못한다** — InnoDB가 흔히 PK 순서로 돌려주어 우연히 일치한다. 그래서 보호를 **파인더 이름·계약 문장 양쪽에** 남긴다 (#180이 카드 정렬에서 같은 지적을 받았다).
+- **픽스처가 틀린 구현을 실제로 잡는지 먼저 확인한다.** 이 spec은 **예외도 로그도 없이 조용히 0건이 되는 실패**가 많아 통과 여부만 보는 단정은 의미가 없을 때가 있다 — 특히 `sameSessionCompleted`, 카드 0건 재생성, 게이트 3건이 그렇다. #180에서 "결측 구간 점수" 조건이 **픽스처를 잘못 잡으면 맞는 구현과 틀린 구현이 같은 답을 내는 것**을 발견했다. **각 항목의 검증 문구에 "이 픽스처로 규칙을 지운 구현이 실제로 빨간지 확인한다"를 함께 적었고, 확인 없이 초록만 보고 넘기지 않는다.**
+- **컬럼을 더하면 `FeedbackSchemaConstraintsTest`의 기대 맵이 함께 바뀐다** — 일곱 테이블의 컬럼 → NULL 허용 맵을 통째로 비교하는 **의도된 설계**다. 기대 맵을 지우는 방향으로 가지 않는다.
+- **설정 테스트를 새로 만들면 `docs/agent-mistakes.md` 2026-08-04 행의 `spring.config.additional-location` / `ConfigDataApplicationContextInitializer` 함정을 먼저 읽는다.** 그 프로퍼티는 `@SpringBootTest`와 **똑같이** 해석되므로 초기화자를 쓰는 드리프트 테스트가 크론 값 단정에서 깨진다. **이 이슈는 새 설정 키를 세우지 않으므로 애초에 그 자리가 없어야 한다.**
+- **`RestClient` 빈을 새로 정의하지 않는다.** 필드 `@Qualifier`가 Lombok 생성자에 복사되지 않아 실효가 없고, 두 번째 빈이 생기는 순간 `NoUniqueBeanDefinitionException`으로 앱 전체가 죽는다 (`docs/agent-mistakes.md` 2026-08-04). **이 이슈는 새 외부 HTTP 호출을 만들지 않으므로 애초에 해당 자리가 없어야 한다.**
 - **외부 API 키가 없어도 기동과 `./gradlew build`가 통과해야 한다** (ADR-0011, §실패 처리). **실제 외부 API를 호출하는 자동 테스트를 만들지 않는다** (PRD C-005).
-- **원장에 쓰지 않는다.** 배치와 조회 경로가 `instrument_news_summaries`·`market_briefings` 밖의 테이블에 INSERT·UPDATE 하지 않는다. `instruments`·`market_news_items`·`stock_replay_sessions`는 **읽기만** 한다. 8개 이슈 공통 조건인 "원장 불변"이 이 이슈에서 취하는 형태이며, "GET이 LLM을 호출하지도 DB에 쓰지도 않는다"와 같은 뿌리다.
-- **이 이슈의 코인 작업은 요약·브리핑뿐이다.** 코인 변동 탐지·실시간 감시·가격 스냅샷은 `plan.md` 8번 소유이고, FEED-006의 코인 조회 분기도 8번이다.
+- **원장에 쓰지 않는다.** 이 이슈가 쓰는 테이블은 `trade_feedbacks` 하나뿐이고 수치는 원장에서 **읽기만** 한다. 8개 이슈 공통 조건인 "원장 불변"이 이 이슈에서 취하는 형태이며, **회원별 쓰기가 처음 생기는 이슈라 특히 위험하다.**
+- **배치를 건드리지 않는다.** 이 이슈는 조회 경로만 만든다 — `FeedbackBatchService`·`CryptoFeedbackBatchService`의 호출 순서·시그니처에 손대지 않는다.
 
 ## 작업 항목
 
-- [x] **1. `feedback.news` 목록 상한 3종과 개장 시각 상수 정리**
+- [ ] **1. 체결 검증과 수치 요약 — 컨트롤러·조회 서비스 골격**
 
-  뒤 항목 전부가 읽을 값과 상수를 먼저 한 곳에 세운다. **이 항목은 완료 조건을 단독으로 소유하지 않지만 게이트 ⑧과 5·6번의 전제다.**
-  - `max-items-per-news-list`·`max-items-per-briefing`·`max-items-per-summary` 세 키를 §C-7의 방침대로 **yml과 record `@DefaultValue` 양쪽**에 둔다. 값은 §C-7이 정본이며 여기서 정하지 않는다. `FeedbackNewsProperties`에 이미 같은 형태의 검증 생성자가 있으므로 상한이 1 미만이면 거부하는 규칙을 같은 자리에 붙인다 — 0이면 목록이 통째로 비는데 예외도 로그도 남지 않는다.
-  - 드리프트 테스트는 **record 기본값**(`FeedbackDetectionPropertiesTest` 형태)과 **yml 키 경로**(`FeedbackDetectionPropertiesYamlTest` 형태) 두 축이다. 후자에 `@SpringBootTest`를 쓰지 않는 이유가 그 파일 주석에 있다.
-  - **개장 시각 상수를 `MarketSessionTimes` 하나로 모은다** (§C-6, 2026-08-04 확정). 지금 `PriceMoveCardService`의 `MARKET_OPEN_TIME`과 `NewsMatcher`의 `PRE_MARKET_FROM_TIME`·`PRE_MARKET_TO_TIME`이 독립 선언이고, 이번에 Part C의 `summaryScope` 판정과 Part D의 하한이 **세 번째·네 번째 사용처**가 된다. 위치는 `feedback/service/`이고 **빈이 아니라 상수만 갖는 최소 타입**이다 — `config/`에 두지 않는 이유가 §C-6에 있다.
-  - **값의 성격은 §C-2-1이 벽시계로 못박았다** — 기사 구간 경계와 노출 게이트에 쓰는 값이고 **분봉을 찾는 값이 아니므로 "첫/마지막 분봉"으로 바꾸지 않는다.** 그 근거를 상수 주석에 남긴다. 값 자체는 §C-2가 정본이며 여기서 다시 적지 않는다.
-  - 검증 — 설정 드리프트 2종 + 기존 `NewsMatcherMatchingWindowTest`·`PriceMoveCardServiceTest`가 상수 이동 후에도 그대로 통과하는지. **상수 이동은 동작을 바꾸지 않는 변경이므로 새 단정을 만들지 않는다.**
+  본인 매도 체결 1건의 **원장 수치만** 돌려주는 최소 응답을 세운다. **spec 012의 네 번째 컨트롤러이고, 뒤 항목 전부가 이 서비스에 필드를 채워 넣는다.**
+  - 경로·응답 필드·오류 형식·수치 산출식은 `docs/api-contracts.md`의 "매도 직후 피드백 조회" 소절과 FEED-007이 정본이다. 클래스 이름은 §C-6(`PostSellFeedbackController`·`PostSellFeedbackService`·`PostSellFeedbackResponse`)이다.
+  - **검증 순서는 `getOwnedTrade`가 이미 정한 `존재(404) → 소유(403)`를 그대로 타고, 그 뒤에 `side != SELL` → 400, `market = CRYPTO` → 400이다.** 코인은 **빈 값을 채운 200을 돌려주지 않는다** — 2차 범위 밖이다(FEED-007 각주). 매도 회고 투자일기(`/sell-journal`, 007)가 같은 순서를 이미 쓰고 있으므로 형태를 본뜬다.
+  - **수치는 원장에서 그대로 읽는다.** `buyPrice`는 `trade_allocations`의 FIFO 배분 가중평균 매수단가, `sellPrice`·`quantity`·`fee`·`realizedPnl`은 `trades` 행 그대로, `returnRate`는 계약이 정한 식과 scale·라운딩이다. **재계산하거나 LLM에게 계산시키지 않는다**(PRD C-004). `api-contracts.md`의 예시 값이 실제로 재현되므로 **픽스처를 그 예시로 만들어도 된다 — 값이 안 맞으면 예시가 아니라 구현이 틀린 것이다.**
+  - **`buyAt`은 배분된 lot 중 가장 이른 `executed_at`이다**(FEED-007). 한 매도가 여러 lot에 배분되므로 "매수 시각"이 단일하지 않고, **이 값 하나가 `holdingMinutes`·`buyToNewsMinutes`·`minutesAfterBuy`·보유 구간 극값·반사실의 기준을 전부 결정한다.** 구현자가 고르게 두지 않는다.
+  - **`sameSessionCompleted`는 배분된 lot 전부를 본다.** 각 lot의 매수 체결과 이 매도 체결의 `stockReplaySession.sourceTradingDate`를 대조하고, **하나라도 다르면 `false`다** — 가장 이른 lot 하나만 보고 판정하지 않는다.
+  - `portfolio`에 **배분·lot 조회 메서드를 필요한 만큼만 더한다.** `feedback`은 repository를 직접 주입하지 않고 서비스를 경유한다(§C-6). 7번의 모집단 재구성도 같은 패키지에 조회를 더하므로 **없는 것만 더한다.**
+  - **아직 채우지 않는 필드는 계약의 필드 집합을 유지한 채 `null`·`[]`로 둔다** — 2·3번이 각자 완료 조건과 함께 채운다. 필드를 나중에 더하면 그 사이 계약이 깨진 상태로 머지된다.
+  - 컨트롤러가 생기므로 **같은 커밋에서 `api-contracts.md`의 매도 회고 소절 제목에서 `(계획)`을 걷고 `api-routes.md`의 2차 계획 라우트 절에서 그 행을 실제 라우트 표로 옮긴다** (CLAUDE.md 규칙 7). **표시가 남은 소절만 블랙박스 QA 근거에서 제외되므로** 남기면 이 API가 QA 대상에서 빠진다.
+  - 검증 — `@WebMvcTest`(계약·401·404·403·400 넷) + 단위(수치 산출·`buyAt` 선정·`sameSessionCompleted` 판정) + `@DataJpaTest`(배분·lot 파인더). **완료 조건 5건이 이 항목 소유다.** 코인 400, 여러 lot의 `buyAt`(**2개 lot 픽스처**), 서로 다른 원본 거래일이면 `false`, 투자일기 없이 200, API 계약의 404·403·400이다. 401은 배정 건수에 넣지 않지만 이 엔드포인트에 적용한다. **`sameSessionCompleted` 픽스처는 "가장 이른 lot만 보는 구현"에서 실제로 빨간지 확인한다** — 두 lot의 원본 거래일이 같은 픽스처로는 두 구현이 같은 답을 낸다.
 
-- [x] **2. 테스트 설정에서 배치 크론 비활성화**
+- [ ] **2. 파생 사실 — 보유 구간 극값·뉴스 대비 타이밍·보유 구간 카드**
 
-  `@SpringBootTest`가 컨텍스트를 통째로 띄우므로 **테스트 실행 중 스케줄이 실제로 등록된다.** 평일 배치 시각에 전체 빌드가 돌면 공유 Testcontainers에 실제 데이터가 생기고, 7번이 매시 05분 코인 배치를 더하면서 노출 빈도가 뛴다. 이 항목은 **완료 조건을 소유하지 않고 뒤 항목의 실행 환경을 고정한다.**
-  - 대상은 `feedback.batch.*`와 `feedback.news.*`의 크론 전부다. 키 경로는 §C-1이 정본이고 **여기서 크론 값을 새로 정하는 것이 아니라 테스트에서만 무력화하는 것**이다.
-  - 적재 경로는 `build.gradle`의 `spring.config.additional-location`이 이미 열어 둔 형태를 본뜬다. **~~그 시스템 프로퍼티는 `@SpringBootTest`만 해석하므로 슬라이스 테스트에는 영향이 없다~~ — 이 전제는 틀렸다** (2026-08-04 재현 확인, `docs/agent-mistakes.md`). `ConfigDataApplicationContextInitializer`는 이름 그대로 ConfigData 처리를 그대로 돌려 이 프로퍼티를 `@SpringBootTest`와 **똑같이** 해석하므로, 그 초기화자를 쓰는 드리프트 테스트가 `expected: "0 45 8 * * MON-FRI" but was: "-"`로 깨진다. 영향이 없는 것은 **초기화자 없이 도는 순수 슬라이스**뿐이다(`BithumbFeedSimulatorConditionalTest`). 해결은 해당 runner에 `.withSystemProperties("spring.config.additional-location=")`를 붙여 그 실행 동안만 덮어쓰기를 걷는 것이다 — `run()` 종료 시 자동 복원된다. **드리프트 단정을 지우는 방향으로 가지 않는다.**
-  - **충돌 하나를 먼저 확인한다.** `NewsCollectionPropertiesIntegrationTest`가 `@SpringBootTest`의 `Environment`에서 `feedback.news.collect-cron`·`disclosure-cron` 값을 §C-1과 대조한다 — 테스트에서 크론을 덮어쓰면 이 단정이 함께 깨진다. **드리프트 단정을 없애지 말고** 1번이 쓰는 yml 전용 형태(`ConfigDataApplicationContextInitializer`)로 옮겨 같은 축을 유지한다.
-  - **배치 로직 테스트는 메서드를 직접 호출한다.** 크론이 꺼져도 `FeedbackBatchIntegrationTest`·`FeedbackBatchServiceTest`는 그대로 돌아야 한다.
-  - `FeedbackBatchScheduleTest`·`NewsCollectionScheduleTest`는 **애노테이션 문자열과 `pool.size`를 리플렉션으로 읽으므로** 이 변경에 영향받지 않는다. 그대로 통과하는지 확인만 한다.
-  - 검증 — 위 두 스케줄 테스트와 드리프트 테스트가 전부 통과하고, `@SpringBootTest` 컨텍스트에 등록된 크론 트리거가 실제로 비는지 단정한다.
+  수치를 다시 읽어주는 것은 조회일 뿐이므로 **사용자가 직접 계산하지 않은 관계**를 서버가 계산해 응답에 넣는다(FEED-007).
+  - 계산식은 §파생 사실 계산이 정본이다 — 보유 구간 극값과 `sellVsHighRate`·`sellVsLowRate`, `buyToNewsMinutes`, 카드별 `minutesAfterBuy`·`minutesBeforeSell`이다. **여기서 식을 다시 적지 않는다.**
+  - **극값은 분봉 `close`만 쓴다. `high`/`low` 컬럼을 쓰지 않는다.** 이 서비스의 시장가 체결은 직전 완료 분봉의 종가로만 이루어지므로 `high`로 잡으면 **사용자가 애초에 얻을 수 없었던 가격**이 되고, 3번이 그 값을 반사실 표에 올리면 실현 불가능한 수익률로 후회를 유도하는 셈이 된다.
+  - **`buyToNewsMinutes`의 부호를 뒤집지 않는다** — 매수가 기사보다 앞이면 **양수**다. 근거 기사가 없으면 `null`이고 프롬프트의 `firstNewsAt`도 함께 `null`이다(`PostSellPromptDto` 주석).
+  - **`priceMoves`에도 카드 노출 게이트가 걸린다**(§C-5). 근거 기사가 `windowEnd` 이후에 발행될 수 있어 게이트를 빼면 **Part A·C보다 먼저 그 기사를 보게 된다.** #180의 `PriceMoveQueryService`가 같은 게이트를 이미 쓰고 있으므로 판정 방식을 본뜨되, **보유 구간(`buyAt` ~ `sellAt`)으로 좁히는 파인더는 이 항목이 더한다** — 정렬 두 키를 파인더 이름에 드러낸다.
+  - 분봉은 `StockReplayService.getFullDayCandles`로 읽는다. **게이트를 우회하는 메서드이므로 §C-5 판정 뒤에 부르는 것이 호출부 책임이고**, 보유 구간 극값은 매도 시각까지만 보므로 이미 재생된 구간이다 — **매도 이후 구간을 여기서 건드리지 않는다**(3번 소유).
+  - **`sameSessionCompleted=false`면 이 항목이 계산하는 전부를 `null`로 두고 `priceMoves`는 `[]`다** — 분봉이 불연속이라 계산이 성립하지 않는다. 계약이 이미 정한 형태다.
+  - 검증 — 단위(극값·부호·간격) + 고정 `Clock` + Testcontainers 통합(카드 게이트). **완료 조건 3건 + 공유 1건이 이 항목 소유다.** 파생 사실 정확 계산, 극값이 `close` 기준, 게이트 ⑮(`priceMoves` 카드 게이트)이고 `sameSessionCompleted=false` 조건의 파생 사실·`priceMoves` 절반이다. **극값 픽스처는 `high`/`low`가 `close`와 다른 봉을 반드시 포함한다** — 세 값이 같은 픽스처는 `high`를 쓴 구현에도 초록이다.
 
-- [x] **3. (확인 — 완료) Part C `items` 상한에서 `D-1` 접수 공시가 먼저 잘리는지 판정**
+- [ ] **3. 매도 후 흐름·반사실 가격과 시각 게이트 — 7번이 끼울 자리 남기기**
 
-  **판정 완료 (2026-08-04, planner). 재현된다 — spec을 고쳤으므로 이 항목에 남은 구현 작업은 없다.**
-  - **결론** — 공시는 `published_at`이 `00:00:00`이고 같은 목록의 뉴스는 전부 `D-1 15:30` 이후라, **발행시각 내림차순 목록에서 예외 없이 최하위**다. 상한을 넘으면 확률이 아니라 순서상 구조로 항상 먼저 잘린다. #180의 카드 근거 절단(이벤트에 가까운 순)과 **정렬 기준이 정반대인데 공시가 잘리는 결과는 같다.**
-  - **세 자리에 걸린다** — Part C `items`(상한 50, 종목 1개 17.5~24시간이라 **종목에 따라 갈린다**), Part D `items`(상한 30, **전 종목 합산 단일 목록이라 종목당 2건만 쌓여도 초과 — 사실상 상시 전멸**), 요약·브리핑의 LLM 입력(상한 30, 같은 규칙).
-  - **완료 조건 두 개가 충돌했다** — 게이트 ⑧(상한·정렬)을 지키면 게이트 ⑫(`D-1` 공시가 브리핑·전장 요약·`items` 셋 모두에 노출)가 깨진다. `api-contracts.md`의 Part C·D 예시 문장("공시가 1건 접수됐습니다")도 재현 불가능해진다.
-  - **조치** — `spec.md` §뉴스 매칭 범위의 **절단 규칙만** 고쳤다(2026-08-04 승인). **정렬은 그대로**이고, 절단은 **공시를 먼저 채우고 남은 자리를 뉴스 최신순으로** 채운다. 총 상한은 유지되므로 응답 크기 보장이 풀리지 않는다. **공시 몫 상한 키는 두지 않았다** — 아직 일어나지 않은 문제를 대비하는 설정이라 speculative이며, 관측되면 그때 더한다는 확인 항목을 §튜닝에 남겼다.
-  - **5·6번은 이제 착수 가능하다.** 두 항목의 검증 문구에 이 규칙이 반영돼 있다.
+  장 마감 뒤에만 열리는 세 묶음을 채운다. **6·7번 경계표가 이 항목에서 실제 코드가 된다.**
+  - 게이트는 §C-5다 — **"오늘 15:30"이 아니라 "그 매도 체결의 서비스 날짜 15:30"이다.** 오늘로 잡으면 **어제 판 체결을 오늘 오전에 열었을 때 `READY`였던 값이 `NOT_YET`으로 되돌아간다.** 서비스 날짜는 `Trade.stockReplaySession.serviceDate`이고 15:30은 `MarketSessionTimes`다.
+  - `postSellFlow`는 **게이트 판정과 값 전체가 6번**이다 — `closePrice`·`closeAt`·`sellToCloseRate`·`postSellHighPrice`·`postSellHighAt`이며 계산식은 §파생 사실 계산이다. 게이트 전에는 `status="NOT_YET"`이고 **가격 필드가 전부 `null`**이다.
+  - `counterfactuals`는 **`status`와 3종의 `price`·`at`까지가 6번, `returnRate`는 `null`로 두고 7번이 수수료를 재계산해 채운다.** 가격 정의는 §반사실·집단 비교 계산이다 — `atClose`·`atHoldHigh`·`atFirstMoveAfterBuy`이며 **보유 구간에 카드가 없으면 `atFirstMoveAfterBuy`가 `null`이고, 매도 이후의 카드는 쓰지 않는다**(보유하지 않은 구간이다).
+  - `peerComparison`은 **`status`를 항상 `NOT_YET`으로 두고 지표 전부를 `null`로 둔다.** 확정 집계 행 기준 판정(`NO_EVENT` 1순위)과 지표 계산은 7번이다 — **여기서 `NO_EVENT`나 `INSUFFICIENT_SAMPLE`을 임의로 판정하지 않는다.**
+  - **7번이 끼울 자리를 코드 주석으로 남긴다** (이슈 #208 본문이 요구한다). `returnRate`가 `null`인 이유, `peerComparison.status`가 상수 `NOT_YET`인 이유, 그 둘을 7번이 어느 규칙으로 채우는지를 응답 조립 지점에 적는다. **주석이 없으면 7번이 이 자리를 "구현 누락"으로 읽고 경계를 다시 정한다.**
+  - **`atClose`·`closePrice`는 "그 거래일 마지막 분봉"의 close다** — `15:30`을 리터럴 시각으로 찾으면 **없는 날 `null`이 되고 예외는 안 난다**(§C-2-1). 수집기가 `09:00~15:30`을 허용하지만 15:30 분봉이 오는 것은 보장되지 않는다.
+  - **`sameSessionCompleted=false`면 `counterfactuals`·`peerComparison`은 필드 자체가 `null`이다** — `status`만 담은 껍데기를 내리지 않는다. 계약이 이미 정한 형태다.
+  - `api-contracts.md`의 매도 회고 소절에 **7번 머지 전까지 `returnRate`가 `null`이라는 것을 명시한다.** 7번이 그 문장을 걷어낸다.
+  - 검증 — 고정 `Clock` + Testcontainers 통합(게이트 직전·직후 두 시각, 날짜를 하루 넘긴 조회) + `@WebMvcTest`(직렬화) + 단위(반사실 가격 선정). **완료 조건 4건 + 공유 1건이 이 항목 소유다.** `atClose`·`closePrice`가 마지막 분봉, 게이트 ⑬(게이트 전 `NOT_YET`·가격 필드 빔), 게이트 ⑭(전날 매도 건이 다음 날 장중에도 `READY`), 응답 직렬화가 계약 필드 집합과 일치(`priceMoveId`·`narrativeSource`·`buyAt`·`sellAt` 포함)이고 `sameSessionCompleted=false` 조건의 반사실·집단 비교 절반이다. **마지막 분봉 픽스처는 15:30 분봉이 없는 날로 만든다** — 15:30 봉이 있는 픽스처는 리터럴 구현에도 초록이다. **게이트 픽스처는 "오늘 15:30"으로 잡은 구현이 실제로 빨간지 확인한다** — 같은 날 조회만 재현하면 두 구현이 같은 답을 낸다.
 
-- [x] **4. 주식 요약·브리핑 생성 — `FeedbackBatchService` 빈 자리 두 곳 채우기**
+- [ ] **4. AI 서술 — 최초 조회 생성·저장·재사용과 템플릿 폴백**
 
-  개장 전 배치가 하루치 요약·브리핑을 실제로 만들게 한다. **#180이 세운 골격 위에 얹으며 호출 위치·순서를 바꾸지 않는다.**
-  - 소유 클래스는 §C-6의 `MarketBriefingService`와 종목 뉴스 요약 쪽 서비스다. 배치는 그것을 부르기만 하고, 카드 확정을 `PriceMoveCardService`로 뺀 것과 같은 이유다(§C-6 마지막 문단).
-  - **주식 요약은 `(종목, 원본 거래일, 범위)` 단위로 두 건**이다 — `PRE_MARKET`과 `FULL`. 범위는 §C-2, 공시 조건은 §C-3, LLM 입력 기사 수 상한은 §C-7의 `max-items-per-summary`이며 **자르는 것은 호출부 책임**이라고 `NewsSummaryPromptDto` 주석에 적혀 있다.
-  - **브리핑은 `(시장, 원본 거래일)` 단위로 1건**이고 `items`는 저장하지 않는다(FEED-009). 프롬프트 입력은 `MarketBriefingPromptDto`·`BriefingNewsItemDto`가 이미 있으므로 새로 만들지 않는다 — 브리핑은 시장 단일 질의라 기사마다 종목명을 붙인다.
-  - **저장은 UPSERT가 아니라 존재 시 건너뜀이다** — 주식은 같은 서비스 날짜에 두 번 실행돼도 중복이 생기지 않아야 하고(배치 ⑤, #180 소유) 유니크 축이 V13에 이미 있다. 코인의 UPSERT는 7번 소유이며 규칙이 다르다(§C-9).
-  - **서술이 `NONE`이면 `summary`가 `NULL`인 행을 남긴다**(§C-4·§C-8). 행을 만들지 않으면 `EMPTY`와 `UNAVAILABLE`이 구분되지 않는다 — 그 구분이 5·6번의 완료 조건이다.
-  - **종목 단위 격리를 본문에 넣는다.** 위 제약대로 협력자 mock으로 특정 종목에서만 던지게 해 나머지 종목이 계속되는지 단정한다.
-  - 검증 — 단위(격리·상한·구간) + `@DataJpaTest`(유니크 축) + 고정 `Clock` + Testcontainers 통합. **8개 이슈 공통 조건인 원장 불변이 이 항목 소유다** — 배치 전후로 주문·체결·계좌·잔액·보유·손익 테이블의 행이 변하지 않고 쓰기가 요약·브리핑 두 테이블 밖으로 나가지 않는다. 기존 `FeedbackBatchIntegrationTest`가 카드에 대해 같은 형태를 이미 갖고 있다.
+  1~3번이 모은 수치·파생 사실을 근거로 회고 문장을 만들어 `trade_feedbacks`에 저장하고 이후 재사용한다.
+  - `NarrativeService.resolvePostSellNarrative` **하나만 주입한다**(§C-6). 매도 회고는 **1단계 경로**다 — 생성 → 후검증 → 걸리면 템플릿, **재생성 없음.** 프롬프트 입력 `PostSellPromptDto`와 템플릿 조립은 #147이 이미 만들어 뒀으므로 **값을 채워 넘기기만 한다.**
+  - **반사실을 프롬프트에 넣지 않는다** — `PostSellPromptDto`에 그 필드가 애초에 없고, 그 이유가 주석에 있다(§왜 반사실은 AI 문장에 넣지 않는가). **필드를 추가하고 싶으면 spec을 먼저 고친다.** 반대로 집단 비교는 관측된 사실이라 서술에 넣어도 되며 그 자리는 이미 nullable로 열려 있다.
+  - **LLM 호출을 트랜잭션 안에 넣지 않는다.** 읽기·프롬프트 조립·LLM 호출을 끝낸 뒤 **저장만 별도 `@Transactional` 컴포넌트**(`PriceMoveCardWriter`와 같은 형태·같은 이유)에 넘긴다. **자기호출은 프록시를 타지 않으므로 같은 클래스의 private 메서드 애노테이션은 무효다** — 별도 클래스여야 한다. 저장 후 조회는 `UNIQUE(trade_id)`가 체결 1건당 1행을 강제한다.
+  - `TradeFeedbackRepository`에 **체결 1건의 기존 서술 조회**를 더한다. 리포지토리 주석이 이 이슈 몫이라고 적어 둔 자리다.
+  - **`narrativeStatus`는 항상 `READY`다** — 이 엔드포인트에 `UNAVAILABLE`이 **존재하지 않는다**(§C-4). LLM 실패·후검증 위반이면 `narrativeSource="TEMPLATE"`이고 서술이 비지 않는다. **보유 구간 극값이 없으면(`sameSessionCompleted=false`) 템플릿의 셋째 문장을 뺀다** — 앞 두 문장은 원장 수치라 그때도 성립하고 그래서 `READY` 보장이 유지된다(§템플릿 문장).
+  - **LLM 실패가 응답을 막지 않는다.** 수치 요약과 파생 사실은 200으로 그대로 나가고, 타임아웃 처리 경로가 응답을 삼키지 않는지 확인한다(§실패 처리 — OpenAI 키 없음도 이 경로다).
+  - 검증 — 단위(폴백 분기·프롬프트 입력 조립) + 고정 `Clock` + Testcontainers 통합(최초 조회 생성 → 재조회 시 재사용, 호출 횟수 단정). **완료 조건 2건 + 공통 1건이 이 항목 소유다.** 상태값 ⑤(LLM 실패에도 `READY`·`TEMPLATE`), LLM 실패에도 수치·파생 사실 200, 그리고 **8개 이슈 공통 조건인 원장 불변** — 회고 생성·조회 전후로 주문·체결·계좌·잔액·보유·손익 테이블의 행이 변하지 않고 쓰기가 `trade_feedbacks` 밖으로 나가지 않는다. 기존 `FeedbackBatchIntegrationTest`가 카드에 대해 같은 형태를 갖고 있다. **트랜잭션 경계는 "LLM이 느린 동안 커넥션을 쥐지 않는다"를 단정으로 옮기기 어려우므로 구조(별도 컴포넌트·`@Transactional` 위치)를 리뷰에서 보이게 남긴다.**
 
-- [x] **5. Part C 조회 API — 종목 뉴스 목록·요약 (주식)**
+- [ ] **5. 서술 재생성 — 재생성 게이트 통과 후 1회와 누적 재시도 상한**
 
-  만들어 둔 요약과 그 시점의 기사 목록을 종목별로 돌려준다. **spec 012의 두 번째 컨트롤러다.**
-  - 경로·응답 필드·오류 형식은 `docs/api-contracts.md`의 "종목 뉴스 목록·요약 조회" 행과 FEED-008이 정본이다. 클래스 이름은 §C-6(`InstrumentNewsController`·`InstrumentNewsQueryService`·`InstrumentNewsResponse`)이고 `items`는 **`NewsItem` 재사용**이다.
-  - 상태값과 **판정 순서는 §C-4의 표 그대로**다. 순서를 바꾸면 두 조건이 동시에 성립하는 구간(세션 미준비 + 09:00 이전)에서 값이 갈린다.
-  - `items` 범위와 `summaryScope` 대응은 §C-2, 공시는 §C-3, 재생 시각 게이트와 클램프는 §C-5·§노출 판정이다. **하한은 요약과 같고 상한만 재생 시각까지 넓다** — 09:00에서 자르면 "재생 시각을 지난 기사만 노출"이 깨진다.
-  - 목록 상한은 `max-items-per-news-list`, 정렬은 **발행시각 내림차순 + `id` 내림차순**, 절단은 **공시를 먼저 채우고 남은 자리를 뉴스 최신순으로**다(§뉴스 매칭 범위, 2026-08-04 확정). **정렬과 절단을 모두 `NewsItemTruncator`가 갖고 파인더는 기존 ASC 것을 그대로 쓴다** — 같은 뜻의 DESC 파인더를 새로 만들지 않는다(문서 상단 제약). 공시가 목록 아래쪽에 오는 것은 계약대로다.
-  - **2차 키를 지키는 보호가 파인더 이름에서 세 곳으로 옮겨 갔다.** 원래 이 항목은 "파인더 이름에 두 정렬 키를 드러내라"였는데, 절단 규칙이 바뀌면서 정렬 보장 자체가 리포지토리를 떠났다. **보호가 사라진 것이 아니라 자리를 옮긴 것이다** — ① `NewsItemTruncator`라는 클래스 이름, ② `NewsItemTruncatorTest`의 동률 타이브레이커 단정, ③ `api-contracts.md`의 계약 문장 셋이다. **셋을 함께 남긴다.** 하나라도 빠지면 2차 키를 지우는 회귀를 아무도 못 잡는다 — InnoDB가 흔히 PK 순서로 돌려주어 우연히 일치한다.
-  - **`NewsItemTruncator`를 "불필요한 간접층"으로 보고 지우지 않는다.** 호출부가 넷이고(요약·브리핑의 LLM 입력, Part C·D `items`) 규칙을 복사하면 같은 목록이 API마다 다르게 잘리는데 예외도 로그도 남지 않는다(§C-6).
-  - **픽스처를 상한 위로 잡아야 절단 규칙이 검증된다** — 상한 아래 픽스처는 절단 자체가 일어나지 않아 규칙의 유무를 구분하지 못하고, 규칙을 지운 회귀에도 초록이다.
-  - `MarketNewsItemRepository`·`InstrumentNewsSummaryRepository`에 **이 조회가 요구하는 파인더만** 더한다.
-  - **코인 분기는 7번 소유다.** 이 항목은 주식 경로만 만들고, 코인 종목으로 호출됐을 때의 동작을 임의로 정하지 않는다 — 7번이 `ROLLING_24H`와 최신 1행 조회를 더한다.
-  - 컨트롤러가 생기므로 **같은 커밋에서 `api-contracts.md`의 해당 소절에서 `(계획)`을 걷고 `api-routes.md`의 2차 계획 절에서 그 행을 실제 라우트 표로 옮긴다** (CLAUDE.md 규칙 7).
-  - 검증 — `@WebMvcTest`(계약·401) + 단위(상태값 판정) + 고정 `Clock` + Testcontainers 통합(게이트·범위). **완료 조건 5건이 이 항목 소유다.** 게이트 ⑧의 Part C 절반, 게이트 ⑨(범위 — 다른 원본 거래일 기사가 섞이지 않는다), 게이트 ⑩(장중 조회에서 `summaryScope`가 전장 범위이고 요약에 오후 기사 내용이 없다, 장 마감 이후 재조회하면 `FULL`), 상태값 ②(세션 미준비 시 `NOT_YET`), 상태값 ③(행 없음 + 기사 있음 → `EMPTY`이고 `items` 채움), 상태값 ④(행 있고 `summary`가 `NULL` → `UNAVAILABLE`이고 `items` 채움). 401은 배정 건수에 넣지 않지만 이 엔드포인트에 적용한다.
+  매도 후 흐름과 집단 비교가 확정된 뒤 그 내용을 반영한 서술로 **1회** 갈아 끼운다.
+  - 재생성 게이트는 §C-5다 — `postSellFlow`가 `READY`이고 **`peerComparison.status != NOT_YET`**이다. **`NO_EVENT`·`INSUFFICIENT_SAMPLE`도 확정으로 친다** — 보유 구간 카드가 0건이면 `price_move_peer_stats` 행이 애초에 안 생기는데 게이트를 "행 존재"로만 두면 **그 흔한 경우에 매도 후 흐름이 반영된 서술이 영원히 만들어지지 않는다.** 카드 0건은 예외도 로그도 없이 조용히 일어난다.
+  - **`peerComparison.status`가 3번에서 상수 `NOT_YET`인 동안 이 게이트는 구조적으로 열리지 않는다.** 게이트 판정 로직과 그 테스트는 이 항목이 세우고, 7번이 실제 판정을 붙이면 열린다 — **게이트 조건을 6번 형편에 맞춰 느슨하게 고치지 않는다.** 테스트는 판정 협력자를 대체해 확정 상태를 재현한다.
+  - 통과 시 **`narrative_finalized`를 `TRUE`로 바꾼다.** 그 뒤 조회에서는 재생성하지 않는다.
+  - **재생성이 LLM 실패로 끝나면 기존 서술을 유지하고 `narrative_finalized`를 `FALSE`로 남긴다.** 재시도는 **체결 1건당 누적** `max-narrative-retry`회까지이며(`regeneration_attempts`) **날짜 단위로 리셋하지 않는다** — 실패 시 `generated_at`을 갱신하지 않아 날짜 기준이 애초에 성립하지 않는다(FEED-007·§C-7).
+  - 상태 전이 메서드를 `TradeFeedback` 엔티티에 더한다 — 지금은 `create`만 있고 재생성·확정을 바꾸는 메서드가 없다. **저장은 4번이 세운 트랜잭션 경계 컴포넌트를 그대로 쓴다** — LLM 재호출이 트랜잭션 밖이어야 하는 이유가 같다.
+  - 검증 — 고정 `Clock` + Testcontainers 통합(게이트 통과 후 첫 조회에서 재생성, 두 번째 조회에서 미재생성, 카드 0건 경로, 누적 상한). **완료 조건 3건이 이 항목 소유다.** 재생성 게이트 통과 후 1회, 누적 상한 초과 없음, 카드 0건인 매도도 재생성이 일어남이다. **카드 0건 픽스처가 이 항목의 핵심이다** — 카드가 있는 픽스처만 쓰면 "행 존재"로만 판정한 구현도 초록이고, 운영에서 가장 흔한 경우가 조용히 빠진다. **누적 상한은 실패를 상한 횟수 + 1회 재현해 마지막 호출이 실제로 일어나지 않는지 단정한다** — 상한 이하만 재현하면 리셋 버그를 잡지 못한다.
 
-- [x] **6. Part D 조회 API — 개장 전 브리핑 (주식) + 두 API 대칭 검증**
+- [ ] **6. 문서 동기화 — `api-routes.md`·`api-contracts.md` 대조**
 
-  시장 단위 브리핑을 돌려주고 **Part C와 하한이 같은지를 여기서 닫는다.** 두 API가 모두 존재해야 성립하는 조건이라 마지막 조회 항목이 소유한다.
-  - 경로·응답 필드·오류 형식은 `docs/api-contracts.md`의 "개장 전 브리핑 조회" 행과 FEED-009가 정본이다. 클래스 이름은 §C-6(`MarketBriefingController`·`MarketBriefingService`·`MarketBriefingResponse`)이다.
-  - **`items`는 저장하지 않고 조회 시 같은 구간 질의로 다시 만든다**(FEED-009). 상한 `max-items-per-briefing`과 정렬·절단은 **질의가 아니라 `NewsItemTruncator`가 갖는다** — 5번이 세운 그 클래스를 재사용하고 같은 규칙을 여기에 복사하지 않는다. 파인더는 기존 ASC 것을 그대로 쓰고 같은 뜻의 DESC 파인더를 만들지 않는다.
-  - **절단은 공시 우선이다**(§뉴스 매칭 범위, 2026-08-04 확정) — 공시를 먼저 채우고 남은 자리를 뉴스 최신순으로 채운다. **Part D가 이 규칙이 가장 세게 걸리는 자리다** — 전 종목 합산 단일 목록이라 종목당 2건만 쌓여도 상한을 넘어, 규칙이 없으면 공시가 상시 전멸하고 게이트 ⑫가 구조적으로 깨진다. **픽스처를 상한 위로 잡아야 검증된다** — 상한 아래 픽스처는 규칙의 유무를 구분하지 못한다.
-  - **저장된 행만으로는 `EMPTY`와 `UNAVAILABLE`이 구분되지 않는다**(둘 다 `summary=NULL`). 조회 시 행 존재와 `items` 개수로 §C-4의 순서대로 판정한다.
-  - **Part D `items` 요소는 `dto/response/`의 최상위 record `BriefingNewsItem`이다** (§C-6, 2026-08-04 확정). 계약이 `NewsItem`의 다섯 값에 `instrumentId`·`symbol`·`name`을 **평평하게** 더한 여덟 값을 요구하므로 `NewsItem` 재사용으로는 계약을 만족할 수 없고, **중첩 필드로 감싸면 JSON 모양이 계약과 달라진다.** `NewsItem`은 그대로 두고 Part C가 계속 쓴다 — 두 항목 record의 공존이 의도된 형태다.
-  - **이름에 `~ListItemResponse`를 붙이지 않는다.** `docs/conventions.md` DTO 표 각주가 spec 012 항목 record의 이름을 §C-6에 위임했고, 같은 응답군에서 접미사가 섞이면 그 위임이 무의미해진다.
-  - `MarketBriefingRepository`에 이 조회가 요구하는 파인더만 더한다.
-  - **코인 분기는 7번 소유다.** 주식 경로만 만든다.
-  - 같은 커밋에서 `api-contracts.md`의 `(계획)`을 걷고 `api-routes.md`의 행을 옮긴다 (CLAUDE.md 규칙 7).
-  - 검증 — `@WebMvcTest`(계약·401·`market` 파라미터) + 고정 `Clock` + Testcontainers 통합(게이트·상태값). **완료 조건 5건이 이 항목 소유다.** 게이트 ⑦(**개장 전 한 시각에 두 API를 모두 호출**해 어느 쪽에서도 전장 기사가 나오지 않는다), 게이트 ⑧의 Part D 절반, 게이트 ⑪(브리핑에 장중 기사가 한 건도 없다), 게이트 ⑫(`D` 접수 공시가 개장 직후 조회에 나오지 않고 `FULL`에서만 나오며, `D-1` 접수 공시는 개장 시각에 브리핑·전장 요약·`items` 셋 모두에 나온다 — 5번이 `items` 절반을 선확인하고 여기서 확정한다), 상태값 ①(6단계 판정, 특히 **세션 미준비 시각의 조회가 `EMPTY`·`originTradeDate=null`**이고 `NOT_YET`이 아니다), API 계약(`market`이 없거나 허용 값 밖이면 400). 401은 배정 건수에 넣지 않지만 이 엔드포인트에 적용한다.
-
-- [x] **7. 코인 경로 — 매시 배치 생성과 두 조회의 코인 분기**
-
-  코인은 '개장 전'도 '거래일 경계'도 없어 한 범위만 쓰고 재생세션과 무관하다. **이 항목의 코인 작업은 요약·브리핑뿐이다** — 탐지·감시는 `plan.md` 8번이다.
-  - 진입점은 §C-6의 `CryptoFeedbackBatchService`이고 크론 키·값·`zone`은 §C-1이다. **`cron` 기반 `@Scheduled`에는 `zone`을 붙인다** — 빠뜨리면 배포 JVM 기본이 UTC라 예외도 로그도 없이 엉뚱한 시각에 돈다.
-  - **`spring.task.scheduling.pool.size`를 이 이슈가 더하는 스케줄 수(1개)만큼 올린다**(§C-1). 현재 값은 8이고 기본 프로필의 실제 활성 `@Scheduled`도 8개(기존 5 + 수집 2 + 개장 전 배치 1)이므로 이번에 9다. **갱신할 자리가 둘이다** — `application.yml` 주석의 개수 계산과 `application-crypto-real.yml` 주석. 한쪽만 고치면 다음 이슈가 어느 쪽을 근거로 셀지 갈린다(이슈 #125가 그 사고다).
-  - **범위는 `ROLLING_24H` 하나뿐**이고 `PRE_MARKET`/`FULL`을 쓰지 않는다(§C-2·FEED-008). 저장은 **UPSERT로 하루 1행**이며 `origin_trade_date`는 **배치 실행 시점의 KST 날짜**다(§C-9) — 이 행에는 `occurred_at`이 없어 카드와 규칙이 다르다.
-  - **직전 생성 이후 새 기사가 없으면 LLM을 부르지 않는다.** 판정 기준은 `market_news_items.created_at`이며 **`published_at`으로 비교하면 안 된다** — 수집 주기 때문에 늦게 저장된 기사가 영원히 요약에 못 들어간다(FEED-008).
-  - **조회는 `generated_at` 최신 1행**이다. "오늘 날짜 행"으로 찾으면 자정 직후와 배치 실패 시각마다 빈다. 5·6번이 만든 두 조회 서비스에 이 분기를 더하고 **주식 경로의 게이트·판정 순서를 건드리지 않는다.**
-  - 코인 `items`의 24시간 창은 조회 시각 기준이고 요약은 마지막 배치 기준이라 최대 65분 어긋난다 — **이 어긋남은 허용된 동작이다**(FEED-008). 맞추려고 조회 시 생성으로 되돌아가지 않는다.
-  - 검증 — 단위(재생성 판정·범위) + `@DataJpaTest`(UPSERT 축·최신 1행) + 고정 `Clock` + Testcontainers 통합. **완료 조건 5건이 이 항목 소유다.** 배치 ⑨(조회를 반복해도 LLM 호출이 늘지 않는다), ⑩(새 기사 없으면 미호출, 기준은 `created_at`), ⑪(`generated_at` 최신 1행 — 자정 직후와 배치 실패 시각에도 비지 않는다), ⑫(UPSERT로 하루 1행, `origin_trade_date`는 실행 시점), ⑬(한 범위만 쓴다). 원장 불변은 4번이 소유하되 **코인 배치에서도 쓰기가 두 테이블 밖으로 나가지 않는지 여기서 재확인한다.**
-
-- [x] **8. 문서 동기화 — `api-routes.md`·`api-contracts.md` 대조**
-
-  /feature 마무리의 planner(동기화 모드)가 **실제 컨트롤러 매핑을 근거로** 두 문서를 맞춘다 (CLAUDE.md 규칙 7). 5·6번이 각자 커밋에서 자기 소절을 이미 갱신했으므로 여기서는 대조와 잔여 정리다.
-  - `api-routes.md`의 **2차 계획 라우트 절에 `post-sell` 한 행만 남아야** 한다. 절 머리말의 "아래 3개 경로"도 함께 고친다 — 개수를 고치지 않으면 다음 이슈가 그 문장을 근거로 센다.
-  - `api-contracts.md`의 Part C·D 소절 제목에서 `(계획)`이 걷혔는지, 정렬 타이브레이커 문장이 두 소절에 모두 들어갔는지 확인한다. **표시가 남은 소절만 블랙박스 QA 근거에서 제외되므로** 남으면 두 API가 QA 대상에서 빠진다.
+  /feature 마무리의 planner(**동기화 모드**)가 **실제 컨트롤러 매핑을 근거로** 두 문서를 맞춘다 (CLAUDE.md 규칙 7). 1·3번이 각자 커밋에서 자기 소절을 이미 갱신했으므로 여기서는 대조와 잔여 정리다.
+  - `api-contracts.md`의 매도 회고 소절 제목에서 **`(계획)`이 걷혔는지** 확인한다. **표시가 남은 소절만 블랙박스 QA 근거에서 제외되므로** 남으면 이 API가 QA 대상에서 빠진다.
+  - `api-contracts.md`에 **7번 머지 전까지 `counterfactuals`의 `returnRate`가 `null`이고 `peerComparison`이 항상 `NOT_YET`이라는 것**이 명시됐는지 확인한다. 계약 예시 JSON은 완성 형태이므로 **현재 동작과 어긋나는 자리를 문장으로 적어 두지 않으면 QA가 값 누락을 결함으로 올린다.**
+  - `api-routes.md`의 **2차 계획 라우트 절이 비게 된다** — spec 012의 네 경로가 모두 구현되므로 그 절과 머리말("아래 1개 경로 …")을 정리한다. **개수를 고치지 않으면 다음 이슈가 그 문장을 근거로 센다**(#188이 같은 자리를 이미 한 번 고쳤다).
+  - `priceMoves`·`sources`의 정렬 2차 키 문장이 계약에 남아 있는지 확인한다.
   - 두 문서는 **항상 같은 커밋에서 함께 맞춘다.**
 
 ## 완료 조건 소유
 
-이슈 #188에 배정된 16건과 8개 이슈 공통 조건 1건이 어디서 검증되는지다 (`plan.md` §완료 조건 배정의 5번 행). **합계 17건이고 아래 표의 행 수와 같다.**
+이슈 #208에 배정된 18건과 8개 이슈 공통 조건 1건이 어디서 검증되는지다 (`plan.md` §완료 조건 배정의 **6번 행** — 매도 회고 12 + 노출 게이트 ⑬~⑮ 3 + 상태값 ⑤ 1 + API 계약 2). **합계 19건이고 아래 표의 행 수와 같다.**
 
 | # | 완료 조건 (`spec.md` §완료 조건) | 항목 |
 |---|---|---|
-| 1 | (게이트 ⑦) Part C와 Part D의 전장 하한이 같다 — 개장 전 한 시각에 두 API 호출 | **6** |
-| 2 | (게이트 ⑧) Part C·D 목록에 `max-items-*` 상한과 발행시각 내림차순 정렬 | **5**(Part C) + **6**(Part D), 상한 값은 1번이 세운다 |
-| 3 | (게이트 ⑨) Part C `items`가 §C-2 범위대로이고 다른 원본 거래일 기사가 안 섞인다 | **5** |
-| 4 | (게이트 ⑩) Part C 요약이 장중에 장중 기사를 언급하지 않고 장 마감 후 `FULL`로 바뀐다 | **5** (요약 두 건은 4번이 만든다) |
-| 5 | (게이트 ⑪) Part D 브리핑에 장중 기사가 한 건도 없다 | **6** |
-| 6 | (게이트 ⑫) `D` 접수 공시는 `FULL`만, `D-1` 접수 공시는 개장 시각에 셋 모두 | 5에서 `items` 선확인, **6에서 확정** |
-| 7 | (상태값 ①) Part D 6단계 판정 — 세션 미준비는 `EMPTY`·`originTradeDate=null` | **6** |
-| 8 | (상태값 ②) Part C는 세션 미준비 시 `NOT_YET` (의도된 차이) | **5** |
-| 9 | (상태값 ③) 행 없음 + 기사 있음 → `EMPTY`이고 `items` 채움 | **5** |
-| 10 | (상태값 ④) 행 있고 `summary`가 `NULL` → `UNAVAILABLE`이고 `items` 채움 | **5** (`NULL` 행을 남기는 것은 4번) |
-| 11 | (배치 ⑨) 코인 요약·브리핑이 배치에서만 생성된다 | **7** |
-| 12 | (배치 ⑩) 직전 생성 이후 수집된 기사가 없으면 LLM 미호출 (`created_at` 기준) | **7** |
-| 13 | (배치 ⑪) 코인 조회가 `generated_at` 최신 1행을 반환한다 | **7** |
-| 14 | (배치 ⑫) 코인 UPSERT로 하루 1행, `origin_trade_date`는 실행 시점 | **7** |
-| 15 | (배치 ⑬) 코인 Part C가 한 범위만 쓰고 주식의 두 범위를 쓰지 않는다 | **7** |
-| 16 | (API 계약) `market` 파라미터가 없거나 허용 값 밖이면 400 | **6** |
-| 17 | (공통) 원장 불변 — 요약·브리핑 두 테이블 밖에 쓰지 않고 GET은 LLM·DB를 건드리지 않는다 | **4** (7에서 코인 배치 재확인, 5·6은 읽기 전용) |
+| 1 | (매도 회고) 코인 매도 체결로 조회하면 400 — 빈 값 200을 돌려주지 않는다 | **1** |
+| 2 | (매도 회고) 여러 lot에 배분된 매도의 매수 시각이 가장 이른 `executed_at`이다 (2개 lot 픽스처) | **1** |
+| 3 | (매도 회고) 배분 lot이 서로 다른 원본 거래일이면 `sameSessionCompleted=false` | **1** |
+| 4 | (매도 회고) `sameSessionCompleted=false`일 때 파생 사실·반사실·집단 비교가 전부 `null` | **2**(파생 사실·`priceMoves`) + **3**(`counterfactuals`·`peerComparison` 필드 자체) |
+| 5 | (매도 회고) 파생 사실 정확 계산 — 극값, `buyToNewsMinutes` 부호, `minutesAfterBuy`·`minutesBeforeSell` | **2** |
+| 6 | (매도 회고) 보유 구간 극값이 분봉 `close` 기준 (`high`/`low` 금지) | **2** |
+| 7 | (매도 회고) `atClose`·`closePrice`가 그 거래일 "마지막 분봉"의 close | **3** |
+| 8 | (매도 회고) `narrative_finalized=false` 서술이 재생성 게이트 통과 후 첫 조회에서 재생성, 두 번째는 안 함 | **5** |
+| 9 | (매도 회고) 재생성 실패가 체결 1건당 누적 `max-narrative-retry`회를 넘지 않는다 | **5** |
+| 10 | (매도 회고) 카드 0건인 매도도 재생성이 일어난다 | **5** |
+| 11 | (매도 회고) LLM 호출이 실패해도 수치 요약과 파생 사실이 200 | **4** |
+| 12 | (매도 회고) 투자일기 없이 매수·매도한 건도 정상 200 | **1** |
+| 13 | (게이트 ⑬) 매도 후 흐름·반사실이 게이트 전에는 `NOT_YET`이고 가격 필드가 빈다 (직전·직후 두 시각) | **3** |
+| 14 | (게이트 ⑭) 전날 매도 건을 다음 날 장중에 조회해도 `READY`를 유지한다 | **3** |
+| 15 | (게이트 ⑮) `priceMoves`에도 카드 게이트가 걸린다 | **2** |
+| 16 | (상태값 ⑤) `narrativeStatus`가 LLM 실패 시에도 `READY`이고 `narrativeSource="TEMPLATE"` — `UNAVAILABLE` 없음 | **4** |
+| 17 | (API 계약) `tradeId` 미존재는 404, 타인 체결은 403, 매수·코인 체결은 400 | **1** |
+| 18 | (API 계약) 응답 직렬화가 계약 필드 집합과 일치 — `priceMoveId`·`narrativeSource`·`buyAt`·`sellAt` 포함 | **3** |
+| 19 | (공통) 원장 불변 — `trade_feedbacks` 밖에 쓰지 않고 수치는 원장에서 읽기만 한다 | **4** |
 
-항목별 소유 건수는 **4번 1건 · 5번 5건 · 6번 6건 · 7번 5건 = 17건**이다. 1·2·3·8번은 단독 소유가 없다 — 1번은 값과 상수를 세우고, 2번은 실행 환경을 고정하며, 3번은 판정만 하고, 8번은 문서 대조다.
+항목별 소유 건수는 **1번 5건 · 2번 3건 · 3번 4건 · 4번 3건 · 5번 3건 = 18건**이고, 여기에 2·3번이 나눠 갖는 4번 조건 1건을 더해 **19건**이다. 6번은 단독 소유가 없다 — 문서 대조다.
 
-**인증 없이 호출하면 401**은 네 엔드포인트 공통이며 이 이슈가 만드는 두 엔드포인트에도 적용하되 **배정 건수에 넣지 않는다**(#180과 같은 형태).
+> **17번 조건의 문구 주의.** `spec.md` §완료 조건 API 계약 절의 원문은 "`instrumentId` 미존재는 404, 타인 체결은 403, 매수·코인 체결은 400"이라 **한 bullet이 두 엔드포인트에 걸쳐 있다.** `post-sell`에는 `instrumentId` 경로 변수가 없고 `tradeId`뿐이므로 **이 엔드포인트에서는 `tradeId` 미존재 404로 읽는다** — `docs/api-contracts.md`가 "`tradeId` 미존재는 404 `NOT_FOUND`"로 적어 둔 그대로다. **조건을 새로 만들거나 쪼개지 않는다.**
+
+**인증 없이 호출하면 401**은 네 엔드포인트 공통이며 이 이슈가 만드는 엔드포인트에도 적용하되 **배정 건수에 넣지 않는다**(#180·#188과 같은 형태).
 
 ## 이 이슈에서 하지 않는 것
 
+- **반사실 `returnRate` 수수료 재계산 · 반사실이 서술에 미포함 검증 · 모집단 재구성(`@DataJpaTest`) · 회원 식별자 없음** (`plan.md` 7번). **상태값 ⑥⑦**(`NO_EVENT`·`INSUFFICIENT_SAMPLE`)과 **장 마감 집계 배치**(배치 ⑥~⑧)도 7번이다. 경계는 위 §제약의 표대로 가른다
 - **LLM 서술 생성·후검증·템플릿 폴백** (#147, 머지됨). `NarrativeService`를 **주입해 쓰기만** 한다
 - **V13·엔티티·리포지토리 골격** (#160, 머지됨). **머지된 마이그레이션을 수정하지 않는다** (ADR-0004)
-- **뉴스·공시 수집 파이프라인** (#167, 머지됨). **이미 저장된 기사를 읽기만** 하고 수집기·수집 크론·질의어·제목 필터를 건드리지 않는다
-- **주식 변동 탐지·근거 매칭·개장 전 배치 골격·카드 조회 API** (#180, 머지됨). **배치 골격의 호출 순서와 시그니처를 바꾸지 않는다** — 빈 자리의 본문만 채운다
+- **뉴스·공시 수집 파이프라인** (#167, 머지됨). **이미 저장된 기사를 읽기만** 한다
+- **주식 변동 탐지·개장 전 배치·카드 조회 API** (#180, 머지됨). **`FeedbackBatchService`를 건드리지 않는다** — 이 이슈는 조회 경로만 만든다
+- **종목 뉴스 요약·개장 전 브리핑 조회 API** (#188, 머지됨). `MarketSessionTimes`·`NewsItem`·`NewsItemTruncator`를 **재사용하고 다시 만들지 않는다**
+- **코인 매도 회고** — FEED-007 각주가 3차로 미뤘다. **코인 체결을 400으로 거부하는 것만** 이 이슈다
+- **코인 변동 탐지·실시간 감시·가격 스냅샷** (`plan.md` 8번). FEED-006의 코인 조회 분기도 8번이다
 - **코인 질의어·제목 필터 개선** (#179). 수집 품질 문제다
-- **매도 직후 피드백 조회 API** (`plan.md` 6번), **반사실 시뮬레이션·집단 비교와 장 마감 집계 배치** (`plan.md` 7번)
-- **코인 변동 탐지·실시간 감시·가격 스냅샷** (`plan.md` 8번). FEED-006의 코인 조회 분기도 8번 소유다
-- **노출 게이트 ①~⑥·⑬~⑮, 배치 ①~⑧·⑭⑮, 상태값 ⑤~⑦, 매도 회고 16건, 문구 9건, 탐지 14건** — 배정은 `plan.md` §완료 조건 배정이 정본이다
+- **조회 경로 LLM 호출량 계측.** `LlmCallStats`는 배치 스코프 전용이고 조회 호출을 세지 않는 것이 **의도된 동작**이다(#198). 필요하다고 판단되면 **별도 이슈로 제안한다**
+- **투자일기 연계("계획 대비 실제 대조")** — FEED-007 각주가 범위 밖으로 뒀다. 나중에 `plan`·`planOutcome`을 **같은 응답에 추가**하면 되고 기존 필드는 유지되므로 계약이 깨지지 않는다
+- **노출 게이트 ①~⑫, 배치 15건, 상태값 ①~④·⑥⑦, 매도 회고 4건, 문구 9건, 탐지 14건, 수집 6건** — 배정은 `plan.md` §완료 조건 배정이 정본이다
