@@ -13,7 +13,9 @@ import com.finplay.api.market.service.InstrumentService;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -102,13 +104,22 @@ public class NewsCollectionService {
 	 * <b>중복은 오류가 아니라 무시한다</b>(FEED-001). 같은 기사가 30분마다 다시 조회되는 것이 정상 동작이라
 	 * 이미 있으면 조용히 건너뛴다.
 	 *
+	 * <p>이미 저장된 URL을 <b>종목당 한 번에</b> 조회해 메모리에서 대조한다. 그 집합에 이번에 저장한 URL도 함께
+	 * 넣으므로 <b>같은 응답 안에 같은 기사가 두 번 들어 있어도</b> 두 번째가 걸린다 — 건별로 묻던 방식은 앞선
+	 * {@code save}가 이미 커밋돼 있어 그 경우가 저절로 막혔지만, 한 번에 묻는 방식에서는 여기서 막아야 한다.
+	 *
 	 * @return 실제로 새로 저장한 건수
 	 */
 	private int save(
 		Instrument instrument, MarketNewsItemType type, List<CollectedNewsDto> collected, LocalDateTime collectedAt) {
+		if (collected.isEmpty()) {
+			return 0;
+		}
+		Set<String> seen = new HashSet<>(marketNewsItemRepository.findExistingUrls(
+			instrument.getId(), collected.stream().map(CollectedNewsDto::url).toList()));
 		int saved = 0;
 		for (CollectedNewsDto item : collected) {
-			if (marketNewsItemRepository.existsByInstrumentIdAndUrl(instrument.getId(), item.url())) {
+			if (!seen.add(item.url())) {
 				continue;
 			}
 			marketNewsItemRepository.save(MarketNewsItem.create(

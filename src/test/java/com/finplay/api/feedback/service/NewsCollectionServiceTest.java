@@ -4,7 +4,6 @@ package com.finplay.api.feedback.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -116,12 +115,26 @@ class NewsCollectionServiceTest {
 		when(newsCollector.collect(eq(samsung), any())).thenReturn(
 			List.of(news("이미 있는 기사", "hankyung.com", "https://hankyung.com/a/dup",
 				LocalDateTime.of(2026, 8, 5, 9, 0))));
-		when(marketNewsItemRepository.existsByInstrumentIdAndUrl(1L, "https://hankyung.com/a/dup"))
-			.thenReturn(true);
+		when(marketNewsItemRepository.findExistingUrls(1L, List.of("https://hankyung.com/a/dup")))
+			.thenReturn(List.of("https://hankyung.com/a/dup"));
 
 		service.collectNews();
 
 		verify(marketNewsItemRepository, never()).save(any());
+	}
+
+	// 종목당 한 번에 묻는 방식에서는 같은 응답 안의 중복을 코드가 직접 막아야 한다 — 건별로 물을 때는 앞선 save가
+	// 이미 커밋돼 있어 저절로 막혔다. 유니크 위반으로 터지는 자리라 회귀하면 그 종목의 수집이 통째로 죽는다.
+	@Test
+	@DisplayName("같은 응답 안에 같은 URL이 두 번 있으면 한 건만 저장한다")
+	void savesOnlyOnceWhenTheSameUrlAppearsTwiceInOneResponse() {
+		CollectedNewsDto duplicated = news("같은 기사가 두 번", "hankyung.com", "https://hankyung.com/a/same",
+			LocalDateTime.of(2026, 8, 5, 9, 0));
+		when(newsCollector.collect(eq(samsung), any())).thenReturn(List.of(duplicated, duplicated));
+
+		service.collectNews();
+
+		verify(marketNewsItemRepository).save(any());
 	}
 
 	// 중복 판정 축은 url 단독이 아니라 (종목, url)이다 — 같은 기사가 두 종목의 검색 결과에 모두 나오기 때문이다.
@@ -134,7 +147,7 @@ class NewsCollectionServiceTest {
 
 		service.collectNews();
 
-		verify(marketNewsItemRepository).existsByInstrumentIdAndUrl(1L, "https://hankyung.com/a/2");
+		verify(marketNewsItemRepository).findExistingUrls(1L, List.of("https://hankyung.com/a/2"));
 	}
 
 	// FEED-001 — 뉴스는 주식·코인 전 종목이고, 제목 필터가 시장을 섞지 않도록 같은 시장 종목명만 넘긴다.
@@ -170,7 +183,7 @@ class NewsCollectionServiceTest {
 		service.collectDisclosures();
 
 		verify(marketNewsItemRepository, never()).save(any());
-		verify(marketNewsItemRepository, never()).existsByInstrumentIdAndUrl(anyLong(), anyString());
+		verify(marketNewsItemRepository, never()).findExistingUrls(anyLong(), any());
 	}
 
 	// ④ 원장 불변의 구조적 형태 — 저장 경로가 market_news_items 밖의 리포지토리를 아예 들고 있지 않다.
