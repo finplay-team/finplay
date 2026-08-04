@@ -434,6 +434,14 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 작성(위 절)과 같은 리소스 경로를 PATCH로 재사용한다. **차이는 상태 200(생성이 아니므로 201 아님), 응답이 `updatedAt`을 더한 5필드(`SellJournalUpdateResponse`, 작성 응답 `SellJournalResponse`는 4필드 그대로 유지), 회고가 아직 없으면 404로 거부(새 회고를 만들지 않음, upsert 아님)라는 점, 검증 순서 마지막 단계가 `중복(409)`에서 `회고 존재(404)`로 바뀌어 **이 엔드포인트에는 409가 없다**는 점이다. 검증 순서는 `체결 존재(404) → 소유(403) → 매도 여부(400) → 회고 존재(404)`로 고정이며, 타인의 매수 체결이면 회고 존재 여부를 확인하기 전에 403이 먼저다. `sellTradeId`·`journalId`·`createdAt`은 요청으로 지정할 수 없고 응답에서도 원본 값 그대로다 — 수정은 본문 교체다. 수정 횟수 제한이나 잠금 조건은 없다(연속 수정 모두 허용, 마지막 본문만 남고 이력은 보관하지 않는다).
 
+### 매수 체결 투자일기 수정
+
+| Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|---|
+| PATCH | /api/trades/{buyTradeId}/journal | Access Bearer 필수 | 경로 변수 `buyTradeId`(숫자) + 본문 `{"content":"돌아보니 실적 발표 전 매수 타이밍이 조금 일렀다."}`(`BuyJournalUpdateRequest`, `content`는 작성과 같은 `@NotBlank` + `@Size(max=5000)`) | 200 `{"journalId":1,"buyTradeId":12,"content":"돌아보니 실적 발표 전 매수 타이밍이 조금 일렀다.","createdAt":"2026-08-04T10:12:33","updatedAt":"2026-08-05T09:03:12"}` (`BuyJournalUpdateResponse`, 5개 필드 고정) | `content` 누락·공백·5000자 초과, `buyTradeId` 타입 불일치는 400 `VALIDATION_ERROR`. 대상 체결의 `side`가 `BUY`가 아님(매도 체결)도 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED`. 타인 소유 체결은 403 `FORBIDDEN`. `buyTradeId`에 해당하는 체결 없음은 404 `NOT_FOUND`. 체결은 있으나 투자일기가 아직 없으면(upsert 아님) 404 `NOT_FOUND` | 007 JOUR-002, Issue #197 |
+
+매도 회고 수정(위 절)과 유스케이스가 대칭이다 — 상태 200, 응답이 `updatedAt`을 더한 5필드(`BuyJournalUpdateResponse`, 작성 응답 `BuyJournalResponse`는 4필드 그대로 유지), 일기가 아직 없으면 404로 거부(upsert 아님), 이 엔드포인트에는 409가 없다는 점, `buyTradeId`·`journalId`·`createdAt`은 요청으로 지정할 수 없고 응답에서도 원본 값 그대로라는 점(수정은 본문 교체)이 모두 동일하다. **검증 순서는 `체결 존재(404) → 소유(403) → 매수 여부(400) → 회고 존재(404)`로 고정**이며, 타인의 매도 체결이면 일기 존재 여부를 확인하기 전에 403이 먼저다. **잠금 없음** — 해당 매수 체결의 일부 또는 전부가 이미 매도되어 `trade_allocations`에 배분이 생겼든, 전량 매도됐든 관계없이 항상 수정할 수 있다. 매도 배분·`holding_lots` 여부를 판정에 쓰지 않는다(2026-08-04 이슈 #197 확정 — `005-order-sell` spec.md가 규정했던 "첫 매도 배분 발생 시 잠금"은 이 결정으로 대체됐다). 수정 횟수 제한이나 수정 이력 보관도 없다(연속 수정 모두 허용, 마지막 본문만 남는다).
+
 ---
 
 ## ranking

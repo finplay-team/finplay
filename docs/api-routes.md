@@ -47,6 +47,7 @@
 | POST | /api/trades/{buyTradeId}/journal | journal | 본인 소유 매수 체결 1건에 투자일기(자유 텍스트 `content`) 1건 작성 (201). 매수 체결이 아니거나 이미 일기가 있으면 실패 | 007 JOUR-001, Issue #159 |
 | POST | /api/trades/{sellTradeId}/sell-journal | journal | 본인 소유 매도 체결 1건에 매도 회고(자유 텍스트 `content`) 1건 작성 (201). 매도 체결이 아니거나 이미 회고가 있으면 실패 | 007 JOUR-003, Issue #183 |
 | PATCH | /api/trades/{sellTradeId}/sell-journal | journal | 본인 소유 매도 체결 1건에 이미 작성된 매도 회고의 본문을 교체 (200). 매도 체결이 아니거나 회고가 아직 없으면 실패, 잠금 없음(횟수 제한 없이 수정 가능) | 007 JOUR-004, Issue #190 |
+| PATCH | /api/trades/{buyTradeId}/journal | journal | 본인 소유 매수 체결 1건에 이미 작성된 투자일기의 본문을 교체 (200). 매수 체결이 아니거나 일기가 아직 없으면 실패, 잠금 없음(매도 배분 여부와 무관하게 항상 수정 가능) | 007 JOUR-002, Issue #197 |
 | POST | /api/favorites | education | 거래 가능한 종목을 본인 즐겨찾기에 등록 | 016 EDU-PRACTICE-002, candidate 1, Issue #163 |
 | GET | /api/favorites | education | 본인 즐겨찾기를 등록 최신순으로 순수 조회 | 016 EDU-PRACTICE-002, candidate 2, Issue #168 |
 | DELETE | /api/favorites/{instrumentId} | education | 본인 즐겨찾기 해제 | 016 EDU-PRACTICE-002, candidate 3, Issue #172 |

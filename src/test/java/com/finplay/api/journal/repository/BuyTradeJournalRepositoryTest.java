@@ -32,6 +32,7 @@ import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -64,6 +65,9 @@ class BuyTradeJournalRepositoryTest {
 
 	@Autowired
 	private EntityManager entityManager;
+
+	@Autowired
+	private JdbcTemplate jdbcTemplate;
 
 	private User user;
 	private Account account;
@@ -162,6 +166,70 @@ class BuyTradeJournalRepositoryTest {
 		BuyTradeJournal journal = BuyTradeJournal.of(danglingReference, CONTENT, NOW);
 
 		assertThatThrownBy(() -> buyTradeJournalRepository.saveAndFlush(journal))
+			.isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	// --- ⑤ findByBuyTradeId가 부재 시 empty, 존재 시 값을 반환 ---
+
+	@Test
+	@DisplayName("매수 투자일기가 없는 체결은 findByBuyTradeId가 empty를 반환한다")
+	void findByBuyTradeIdReturnsEmptyWhenJournalDoesNotExist() {
+		Trade buyTrade = createBuyTrade();
+
+		assertThat(buyTradeJournalRepository.findByBuyTradeId(buyTrade.getId())).isEmpty();
+	}
+
+	@Test
+	@DisplayName("매수 투자일기가 있는 체결은 findByBuyTradeId가 값을 반환한다")
+	void findByBuyTradeIdReturnsJournalWhenItExists() {
+		Trade buyTrade = createBuyTrade();
+		BuyTradeJournal saved = buyTradeJournalRepository.saveAndFlush(BuyTradeJournal.of(buyTrade, CONTENT, NOW));
+
+		assertThat(buyTradeJournalRepository.findByBuyTradeId(buyTrade.getId()))
+			.isPresent()
+			.get()
+			.extracting(BuyTradeJournal::getId)
+			.isEqualTo(saved.getId());
+	}
+
+	// --- ⑥ updateContent 후 flush하면 content·updated_at만 바뀌고 나머지는 그대로 ---
+
+	@Test
+	@DisplayName("updateContent 호출 후 flush하면 content와 updated_at만 바뀌고 created_at·buy_trade_id·id는 그대로다")
+	void updateContentChangesOnlyContentAndUpdatedAt() {
+		Trade buyTrade = createBuyTrade();
+		BuyTradeJournal saved = buyTradeJournalRepository.saveAndFlush(BuyTradeJournal.of(buyTrade, CONTENT, NOW));
+		entityManager.clear();
+
+		LocalDateTime updatedAt = NOW.plusDays(1);
+		String newContent = "수정된 회고 내용. 매수 타이밍을 더 신중히 잡아야겠다.";
+
+		BuyTradeJournal toUpdate = buyTradeJournalRepository.findById(saved.getId()).orElseThrow();
+		toUpdate.updateContent(newContent, updatedAt);
+		buyTradeJournalRepository.saveAndFlush(toUpdate);
+		entityManager.clear();
+
+		BuyTradeJournal reloaded = buyTradeJournalRepository.findById(saved.getId()).orElseThrow();
+		assertThat(reloaded.getId()).isEqualTo(saved.getId());
+		assertThat(reloaded.getBuyTrade().getId()).isEqualTo(buyTrade.getId());
+		assertThat(reloaded.getContent()).isEqualTo(newContent);
+		assertThat(reloaded.getUpdatedAt()).isEqualTo(updatedAt);
+		assertThat(reloaded.getCreatedAt()).isEqualTo(NOW);
+	}
+
+	// --- ⑦ updated_at 컬럼의 NOT NULL 제약 ---
+
+	@Test
+	@DisplayName("updated_at을 null로 저장하려는 시도는 NOT NULL 제약에 걸린다")
+	void databaseRejectsNullUpdatedAt() {
+		Trade buyTrade = createBuyTrade();
+
+		assertThatThrownBy(() -> jdbcTemplate.update(
+			"insert into buy_trade_journals (buy_trade_id, content, created_at, updated_at) "
+				+ "values (?, ?, ?, null)",
+			buyTrade.getId(),
+			CONTENT,
+			NOW))
 			.isInstanceOf(DataIntegrityViolationException.class);
 	}
 }
