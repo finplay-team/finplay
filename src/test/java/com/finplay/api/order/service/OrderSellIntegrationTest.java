@@ -51,9 +51,11 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.transaction.annotation.Transactional;
 
 @SpringBootTest
 @Import({TestcontainersConfiguration.class, OrderSellIntegrationTest.FixedClockTestConfig.class})
+@Transactional
 class OrderSellIntegrationTest {
 
 	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
@@ -224,7 +226,7 @@ class OrderSellIntegrationTest {
 		long cashBefore = accountRepository.findById(account.getId()).orElseThrow().getCashBalance();
 		long ordersBefore = orderRepository.count();
 		long tradesBefore = tradeRepository.count();
-		((MutableClock)clock).set(BASE_NOW.plusDays(1));
+		((MutableClock)clock).set(LocalDateTime.of(2099, 1, 5, 10, 0));
 
 		assertThatThrownBy(() -> orderService.createOrder(
 			user.getId(), "stock-sell-no-session", sellRequest(instrument.getId(), "1")))

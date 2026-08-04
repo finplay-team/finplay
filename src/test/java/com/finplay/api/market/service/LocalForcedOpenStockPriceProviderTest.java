@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 import com.finplay.api.market.domain.PreparationStatus;
 import com.finplay.api.market.domain.StockReplaySession;
 import com.finplay.api.market.repository.StockReplaySessionRepository;
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -91,6 +92,36 @@ class LocalForcedOpenStockPriceProviderTest {
 		verify(delegate).getCurrentPrice(INSTRUMENT_ID);
 		verify(delegate).getCurrentPrices(any());
 		verify(delegate).getCandles(INSTRUMENT_ID, CandleInterval.ONE_MINUTE, null, null);
+	}
+
+	@Test
+	void getCurrentPriceForcesOpenAndPreservesPriceAndSessionWhenReadyQuoteIsClosed() {
+		StockReplaySession session = readySession();
+		StockReplayPriceDto quote = new StockReplayPriceDto(
+			true, StockMarketStatus.CLOSED, session.getSourceTradingDate(), new BigDecimal("71000"),
+			AFTER_HOURS, session);
+		when(delegate.getCurrentPrice(INSTRUMENT_ID)).thenReturn(quote);
+
+		StockReplayPriceDto result = provider(true).getCurrentPrice(INSTRUMENT_ID);
+
+		assertThat(result.marketStatus()).isEqualTo(StockMarketStatus.OPEN);
+		assertThat(result.price()).isEqualByComparingTo("71000");
+		assertThat(result.replaySession()).isSameAs(session);
+	}
+
+	@Test
+	void getCurrentPriceKeepsClosedQuoteAndSameSessionWhenForceFlagIsOff() {
+		StockReplaySession session = readySession();
+		StockReplayPriceDto quote = new StockReplayPriceDto(
+			true, StockMarketStatus.CLOSED, session.getSourceTradingDate(), new BigDecimal("71000"),
+			AFTER_HOURS, session);
+		when(delegate.getCurrentPrice(INSTRUMENT_ID)).thenReturn(quote);
+
+		StockReplayPriceDto result = provider(false).getCurrentPrice(INSTRUMENT_ID);
+
+		assertThat(result).isSameAs(quote);
+		assertThat(result.marketStatus()).isEqualTo(StockMarketStatus.CLOSED);
+		assertThat(result.replaySession()).isSameAs(session);
 	}
 
 	private LocalForcedOpenStockPriceProvider provider(boolean forceMarketOpen) {

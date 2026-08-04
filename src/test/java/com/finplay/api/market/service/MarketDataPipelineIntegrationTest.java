@@ -16,7 +16,6 @@ import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.domain.MarketDataImport;
 import com.finplay.api.market.domain.PreparationStatus;
-import com.finplay.api.market.domain.StockCandle;
 import com.finplay.api.market.domain.StockReplaySession;
 import com.finplay.api.market.dto.sse.MarketSnapshotEvent;
 import com.finplay.api.market.repository.InstrumentRepository;
@@ -36,7 +35,6 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -44,9 +42,11 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.transaction.annotation.Transactional;
 
 @SpringBootTest
 @Import({TestcontainersConfiguration.class, MarketDataPipelineIntegrationTest.FixedClockTestConfig.class})
+@Transactional
 class MarketDataPipelineIntegrationTest {
 
 	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
@@ -130,32 +130,6 @@ class MarketDataPipelineIntegrationTest {
 
 	private void setClock(LocalDate date, LocalTime time) {
 		((MutableClock)clock).set(LocalDateTime.of(date, time));
-	}
-
-	// 이 테스트가 실제 종목에 남긴 분봉·재생세션·수집 이력을 정리한다 — 종목 자체는 만들지도 지우지도 않으므로 여기서는
-	// 다루지 않는다. 다른 어떤 기존 테스트도 이 세 저장소에 전역 카운트(findAll·count) 단정을 걸지 않는 것을 확인했지만,
-	// 반복 실행 시 데이터가 무한히 쌓이지 않도록 정리한다.
-	@AfterEach
-	void cleanUpDataCreatedByThisTest() {
-		for (Instrument instrument : realStockInstruments()) {
-			for (LocalDate tradingDate : List.of(TD_A, TD_D, TD_E)) {
-				List<StockCandle> candles = stockCandleRepository
-					.findByInstrumentIdAndTradingDateOrderByCandleTimeAsc(instrument.getId(), tradingDate);
-				if (!candles.isEmpty()) {
-					stockCandleRepository.deleteAll(candles);
-				}
-			}
-		}
-		for (LocalDate serviceDate : List.of(SD_A, SD_D, SD_E)) {
-			stockReplaySessionRepository.findByServiceDate(serviceDate).ifPresent(stockReplaySessionRepository::delete);
-		}
-		for (LocalDate tradingDate : List.of(TD_A, TD_D, TD_E)) {
-			List<MarketDataImport> imports = marketDataImportRepository
-				.findBySourceTradingDateOrderByCollectedAtDesc(tradingDate);
-			if (!imports.isEmpty()) {
-				marketDataImportRepository.deleteAll(imports);
-			}
-		}
 	}
 
 	private static RawMinuteCandleDto candle(LocalTime time, String open, String high, String low, String close) {

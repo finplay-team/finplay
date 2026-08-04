@@ -48,9 +48,11 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.transaction.annotation.Transactional;
 
 @SpringBootTest
 @Import({TestcontainersConfiguration.class, OrderBuyIntegrationTest.FixedClockTestConfig.class})
+@Transactional
 class OrderBuyIntegrationTest {
 
 	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
@@ -179,7 +181,7 @@ class OrderBuyIntegrationTest {
 		Account account = createAccount(user);
 		Instrument instrument = createStockInstrument("NOSESS");
 		createCandle(instrument, FIRST_CANDLE_TIME, new BigDecimal("70000"));
-		((MutableClock)clock).set(BASE_NOW.plusDays(1));
+		((MutableClock)clock).set(LocalDateTime.of(2099, 1, 5, 10, 0));
 		long ordersBefore = orderRepository.count();
 		long tradesBefore = tradeRepository.count();
 		long holdingsBefore = holdingRepository.count();
