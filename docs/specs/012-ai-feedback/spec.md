@@ -249,6 +249,7 @@ feedback/
                MarketBriefingController, PostSellFeedbackController
   service/     PriceMoveDetector          변동 구간 탐지 (순수 계산, 외부 의존 없음)
                NewsMatcher                이벤트 시각 ↔ 기사 매칭
+               NewsItemTruncator          목록·LLM 입력 절단 (공시 우선, §뉴스 매칭 범위. 빈이 아니다)
                NarrativeService           파트별 서술 확정 경로 (생성 → 검증 → 폴백)
                NarrativeGenerator         LLM 호출 (완성된 프롬프트 문자열만 받는다)
                NarrativePromptBuilder     파트별 프롬프트 조립 (§LLM 프롬프트)
@@ -258,6 +259,7 @@ feedback/
                NewsTitleFilter            같은 시장 다른 종목명이 든 제목 제외 (순수 계산, FEED-001)
                NewsCollectionService      뉴스·공시 상시 수집 (수집기 호출 → 저장, 크론은 §C-1)
                PriceMoveCardService       카드 확정 (근거 매칭 → 서술 → reveal_time → 저장)
+               InstrumentNewsSummaryService 종목 뉴스 요약 확정 (구간 질의 → 절단 → 서술 → 저장)
                FeedbackBatchService       개장 전 배치 오케스트레이션
                CryptoFeedbackBatchService 코인 요약·브리핑 갱신 (매시)
                PeerStatsBatchService      장 마감 집단 비교 확정 집계
@@ -298,6 +300,10 @@ DTO는 `dto/response/` 하위에 둔다(`docs/conventions.md`, 이 spec에는 �
 **질의어 조립과 제목 필터를 수집기 밖에 둔다.** 둘 다 FEED-001의 규칙이고 외부 의존이 없어 고정 픽스처로 단정할 수 있다 — 수집기 안에 두면 HTTP 응답을 고정해야만 검사할 수 있게 된다. `NaverNewsCollector`가 둘을 주입받아 쓴다. 필터는 **같은 시장의 종목명 목록**만 보므로 시장을 섞지 않는다.
 
 **카드 확정을 `FeedbackBatchService`에 두지 않는다.** 탐지 결과 하나를 카드로 만드는 데 근거 매칭·서술 확정·`reveal_time` 계산·저장 넷이 필요한데, 이것을 배치에 두면 그 클래스가 **브리핑·요약(이슈 5번)까지 얹히면서** 오케스트레이션과 도메인 로직을 함께 갖게 된다. `PriceMoveCardService`는 **카드 1건을 확정하는 책임만** 지고, 배치는 그것을 순서대로 부르기만 한다. 코인 감시(`CryptoPriceMoveWatcher`, 이슈 8번)도 같은 확정 경로가 필요하므로 배치 안에 있으면 재사용할 수 없다. `NewsCollectionService`를 수집기 밖에 둔 것(수집기는 목록만 반환하고 저장 주체가 따로 있다)과 같은 이유다.
+
+**요약은 생성과 조회를 나누고 브리핑은 나누지 않는다** (2026-08-04 추가 — 이 비대칭은 의도된 것이다). 종목 뉴스 요약은 `InstrumentNewsSummaryService`가 확정(구간 질의 → 절단 → `NarrativeService` → 저장)하고 `InstrumentNewsQueryService`가 조회한다 — 종목 수만큼 반복되고 범위가 둘(`PRE_MARKET`·`FULL`)이라 확정 경로만으로 한 클래스가 찬다. `PriceMoveCardService`를 배치에서 뺀 것과 같은 이유다. 반면 **브리핑은 `(시장, 원본 거래일)` 단위로 하루 1건**이라 `MarketBriefingService` 하나가 생성과 조회를 함께 갖는다 — 쪼갤 만한 크기가 아니고, 나누면 `items`를 조회 시 다시 만드는 규칙(FEED-009)이 두 클래스에 걸쳐 흩어진다. **클래스 수를 맞추려고 브리핑을 쪼개지 않는다.**
+
+**절단 규칙은 `NewsItemTruncator` 한 곳에 둔다.** §뉴스 매칭 범위의 "공시를 먼저 채우고 남은 자리를 뉴스 최신순으로"는 **호출부가 넷**이다 — 요약과 브리핑의 LLM 입력, 그리고 Part C·D의 `items`다. 규칙을 각 서비스에 복사하면 그중 하나만 고치는 순간 **같은 목록이 API마다 다르게 잘리는데 예외도 로그도 남지 않는다.** 빈이 아니어도 되는 순수 계산이라 고정 픽스처로 단정할 수 있고, `NewsSearchQueryBuilder`·`NewsTitleFilter`를 수집기 밖에 둔 것과 같은 판단이다.
 
 `PriceMoveDetector`는 **분봉 리스트와 직전 거래일 종가를 받아 이벤트 리스트를 반환하는 순수 함수**로 만든다. DB·시계·LLM에 의존하지 않아야 고정 픽스처로 단위 테스트할 수 있다.
 

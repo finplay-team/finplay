@@ -3,6 +3,7 @@ package com.finplay.api.feedback.repository;
 
 import com.finplay.api.feedback.domain.MarketNewsItem;
 import com.finplay.api.feedback.domain.MarketNewsItemType;
+import com.finplay.api.market.domain.Market;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
@@ -71,6 +72,42 @@ public interface MarketNewsItemRepository extends JpaRepository<MarketNewsItem, 
 		+ "ORDER BY n.publishedAt ASC")
 	List<MarketNewsItem> findDisclosuresReceivedOn(@Param("instrumentId")
 	Long instrumentId, @Param("fromInclusive")
+	LocalDateTime fromInclusive, @Param("toExclusive")
+	LocalDateTime toExclusive);
+
+	/**
+	 * <b>시장 전체</b>의 뉴스를 발행시각 구간(양끝 포함)으로 조회한다 — 개장 전 브리핑의 근거 질의다.
+	 *
+	 * <p><b>종목별로 나눠 묻지 않고 시장 단일 질의다</b>(§C-2-1). 브리핑은 시장 단위 산출물이라 구간의 하한이
+	 * 종목별 분봉 시각이 아니라 벽시계이며({@link com.finplay.api.feedback.service.MarketSessionTimes}),
+	 * 상한을 시장 전체 목록에 걸어야 §뉴스 매칭 범위의 절단이 의도대로 작동한다 — 종목별로 잘라 합치면 종목당
+	 * 상한이 되어 전체 상한을 넘긴다.
+	 *
+	 * <p><b>{@code JOIN FETCH}로 종목을 함께 가져온다.</b> 브리핑 프롬프트는 기사마다 종목명을 붙이므로
+	 * (기사가 어느 종목 소식인지 모델이 알 수 없다) 지연 로딩으로 두면 기사 수만큼 추가 질의가 나간다.
+	 */
+	@Query("SELECT n FROM MarketNewsItem n JOIN FETCH n.instrument i "
+		+ "WHERE i.market = :market "
+		+ "AND n.type = com.finplay.api.feedback.domain.MarketNewsItemType.NEWS "
+		+ "AND n.publishedAt >= :fromInclusive AND n.publishedAt <= :toInclusive")
+	List<MarketNewsItem> findMarketNewsPublishedBetween(@Param("market")
+	Market market, @Param("fromInclusive")
+	LocalDateTime fromInclusive, @Param("toInclusive")
+	LocalDateTime toInclusive);
+
+	/**
+	 * <b>시장 전체</b>의 공시를 그 접수일자 하루로 조회한다 (§C-3).
+	 *
+	 * <p>뉴스와 같은 질의로 합치지 않는 이유는 {@link #findDisclosuresReceivedOn}과 같다 — 공시를 같은
+	 * datetime 구간에 태우면 {@code D-1} 접수분은 전장 시작보다 일러 <b>빠지고</b> {@code D} 접수분은 장중
+	 * 접수분까지 끌고 <b>들어온다.</b> 경계를 반열림으로 두는 이유도 같다.
+	 */
+	@Query("SELECT n FROM MarketNewsItem n JOIN FETCH n.instrument i "
+		+ "WHERE i.market = :market "
+		+ "AND n.type = com.finplay.api.feedback.domain.MarketNewsItemType.DISCLOSURE "
+		+ "AND n.publishedAt >= :fromInclusive AND n.publishedAt < :toExclusive")
+	List<MarketNewsItem> findMarketDisclosuresReceivedOn(@Param("market")
+	Market market, @Param("fromInclusive")
 	LocalDateTime fromInclusive, @Param("toExclusive")
 	LocalDateTime toExclusive);
 }

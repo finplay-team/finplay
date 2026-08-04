@@ -285,4 +285,88 @@ class MarketNewsItemRepositoryTest {
 			instrumentA.getId(), PREVIOUS_TRADE_DATE.atStartOfDay(), ORIGIN_TRADE_DATE.atStartOfDay()))
 			.isEmpty();
 	}
+
+	// --- 시장 단위 파인더 (이슈 #188 항목 4 — 개장 전 브리핑의 근거 질의) ---
+	//
+	// 브리핑은 시장 단일 질의라 종목별 파인더로 대체할 수 없다(§C-2-1). 두 질의 모두 JPQL에 FQN enum
+	// 리터럴과 JOIN FETCH를 쓰므로 부트스트랩만 통과하고 결과가 틀릴 수 있다 — 실제로 돌려 단정한다.
+
+	private Instrument savedCrypto() {
+		return instrumentRepository.save(Instrument.create(
+			Market.CRYPTO, "NEWSBTC", "테스트코인", new BigDecimal("1"), 5000, true, LocalDateTime.now()));
+	}
+
+	@Test
+	@DisplayName("findMarketNewsPublishedBetween은 시장 전체 뉴스를 주고 공시·코인·구간 밖을 제외한다")
+	void findMarketNewsPublishedBetweenReturnsEveryStockNewsInTheWindow() {
+		LocalDateTime from = LocalDateTime.of(PREVIOUS_TRADE_DATE, LocalTime.of(15, 30));
+		LocalDateTime to = LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(9, 0));
+		save(instrumentA, MarketNewsItemType.NEWS, "A 전장 뉴스",
+			LocalDateTime.of(PREVIOUS_TRADE_DATE, LocalTime.of(18, 0)));
+		save(instrumentB, MarketNewsItemType.NEWS, "B 전장 뉴스",
+			LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(8, 30)));
+		// 아래 셋은 전부 빠져야 한다 — 장중 기사가 한 건이라도 섞이면 게이트 ⑪이 깨진다.
+		save(instrumentA, MarketNewsItemType.NEWS, "A 장중 뉴스",
+			LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(10, 0)));
+		save(instrumentA, MarketNewsItemType.DISCLOSURE, "A 공시", PREVIOUS_TRADE_DATE.atStartOfDay());
+		save(savedCrypto(), MarketNewsItemType.NEWS, "코인 뉴스",
+			LocalDateTime.of(PREVIOUS_TRADE_DATE, LocalTime.of(18, 0)));
+
+		List<MarketNewsItem> found = marketNewsItemRepository.findMarketNewsPublishedBetween(Market.STOCK, from, to);
+
+		assertThat(found).extracting(MarketNewsItem::getTitle)
+			.containsExactlyInAnyOrder("A 전장 뉴스", "B 전장 뉴스");
+	}
+
+	// 경계는 양끝 포함이다. 상한을 배제로 바꾸면 09:00 정각 기사가 브리핑과 요약 양쪽에서 사라지는데,
+	// 그 시각 기사는 드물어 운영에서 알아채기 어렵다.
+	@Test
+	@DisplayName("findMarketNewsPublishedBetween은 구간 양끝을 포함한다")
+	void findMarketNewsPublishedBetweenIncludesBothBounds() {
+		LocalDateTime from = LocalDateTime.of(PREVIOUS_TRADE_DATE, LocalTime.of(15, 30));
+		LocalDateTime to = LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(9, 0));
+		save(instrumentA, MarketNewsItemType.NEWS, "하한 정각", from);
+		save(instrumentA, MarketNewsItemType.NEWS, "상한 정각", to);
+		save(instrumentA, MarketNewsItemType.NEWS, "하한 1분 전", from.minusMinutes(1));
+		save(instrumentA, MarketNewsItemType.NEWS, "상한 1분 후", to.plusMinutes(1));
+
+		List<MarketNewsItem> found = marketNewsItemRepository.findMarketNewsPublishedBetween(Market.STOCK, from, to);
+
+		assertThat(found).extracting(MarketNewsItem::getTitle)
+			.containsExactlyInAnyOrder("하한 정각", "상한 정각");
+	}
+
+	// 브리핑 프롬프트는 기사마다 종목명을 붙인다 — 지연 로딩이면 기사 수만큼 추가 질의가 나간다.
+	// 영속성 컨텍스트를 비운 뒤에도 종목명이 읽히면 JOIN FETCH가 실제로 걸린 것이다.
+	@Test
+	@DisplayName("findMarketNewsPublishedBetween이 종목을 함께 가져온다")
+	void findMarketNewsPublishedBetweenFetchesTheInstrument() {
+		LocalDateTime from = LocalDateTime.of(PREVIOUS_TRADE_DATE, LocalTime.of(15, 30));
+		LocalDateTime to = LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(9, 0));
+		save(instrumentA, MarketNewsItemType.NEWS, "A 전장 뉴스",
+			LocalDateTime.of(PREVIOUS_TRADE_DATE, LocalTime.of(18, 0)));
+
+		List<MarketNewsItem> found = marketNewsItemRepository.findMarketNewsPublishedBetween(Market.STOCK, from, to);
+
+		assertThat(found).singleElement()
+			.extracting(item -> item.getInstrument().getName())
+			.isEqualTo("테스트종목A");
+	}
+
+	@Test
+	@DisplayName("findMarketDisclosuresReceivedOn은 그날 접수된 주식 공시만 주고 뉴스·코인을 제외한다")
+	void findMarketDisclosuresReceivedOnReturnsOnlyStockDisclosuresOfThatReceiptDate() {
+		save(instrumentA, MarketNewsItemType.DISCLOSURE, "A D-1 공시", PREVIOUS_TRADE_DATE.atStartOfDay());
+		save(instrumentB, MarketNewsItemType.DISCLOSURE, "B D-1 공시", PREVIOUS_TRADE_DATE.atStartOfDay());
+		save(instrumentA, MarketNewsItemType.DISCLOSURE, "A D 공시", ORIGIN_TRADE_DATE.atStartOfDay());
+		save(instrumentA, MarketNewsItemType.NEWS, "D-1 뉴스",
+			LocalDateTime.of(PREVIOUS_TRADE_DATE, LocalTime.of(18, 0)));
+		save(savedCrypto(), MarketNewsItemType.DISCLOSURE, "코인 공시", PREVIOUS_TRADE_DATE.atStartOfDay());
+
+		List<MarketNewsItem> found = marketNewsItemRepository.findMarketDisclosuresReceivedOn(
+			Market.STOCK, PREVIOUS_TRADE_DATE.atStartOfDay(), ORIGIN_TRADE_DATE.atStartOfDay());
+
+		assertThat(found).extracting(MarketNewsItem::getTitle)
+			.containsExactlyInAnyOrder("A D-1 공시", "B D-1 공시");
+	}
 }

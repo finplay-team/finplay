@@ -93,6 +93,29 @@ class InstrumentNewsSummaryRepositoryTest {
 			.isInstanceOf(DataIntegrityViolationException.class);
 	}
 
+	// --- 생성 쪽 중복 판정 (이슈 #188 항목 4) ---
+	//
+	// 주식은 UPSERT가 아니라 "존재 시 건너뜀"이라 이 파인더가 배치 ⑤의 앞선 방어선이다. 세 축 중 하나라도
+	// 빠지면 PRE_MARKET을 만든 뒤 FULL이 "이미 있다"로 접혀 전장 요약이 영영 생기지 않는데, 예외도 로그도
+	// 남지 않고 조회만 EMPTY로 보인다.
+	@Test
+	@DisplayName("existsByInstrumentIdAndOriginTradeDateAndScope가 유니크와 같은 세 축으로만 참이 된다")
+	void existsByInstrumentTradeDateAndScopeMatchesTheUniqueAxis() {
+		instrumentNewsSummaryRepository.saveAndFlush(
+			newSummary(stock, ORIGIN_TRADE_DATE, NewsSummaryScope.PRE_MARKET));
+
+		assertThat(instrumentNewsSummaryRepository.existsByInstrumentIdAndOriginTradeDateAndScope(
+			stock.getId(), ORIGIN_TRADE_DATE, NewsSummaryScope.PRE_MARKET)).isTrue();
+		assertThat(instrumentNewsSummaryRepository.existsByInstrumentIdAndOriginTradeDateAndScope(
+			stock.getId(), ORIGIN_TRADE_DATE, NewsSummaryScope.FULL))
+			.as("범위가 다르면 별개 행이다 — 참이면 FULL 요약이 영영 생기지 않는다")
+			.isFalse();
+		assertThat(instrumentNewsSummaryRepository.existsByInstrumentIdAndOriginTradeDateAndScope(
+			stock.getId(), NEXT_TRADE_DATE, NewsSummaryScope.PRE_MARKET)).isFalse();
+		assertThat(instrumentNewsSummaryRepository.existsByInstrumentIdAndOriginTradeDateAndScope(
+			crypto.getId(), ORIGIN_TRADE_DATE, NewsSummaryScope.PRE_MARKET)).isFalse();
+	}
+
 	@Test
 	@DisplayName("거래일이 다르면 같은 종목·scope 요약이 날짜별로 쌓인다")
 	void sameInstrumentAndScopeCoexistAcrossDifferentTradeDates() {
