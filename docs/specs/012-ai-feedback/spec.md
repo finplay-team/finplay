@@ -264,6 +264,7 @@ feedback/
                CryptoPriceMoveWatcher     코인 변동 감시
                PriceMoveQueryService, InstrumentNewsQueryService,
                MarketBriefingService, PostSellFeedbackService
+               MarketSessionTimes         개장·장 마감의 벽시계 경계 상수 (§C-2-1, 빈이 아니다)
   collector/   NewsCollector(interface), NaverNewsCollector, FakeNewsCollector
                DisclosureCollector(interface), DartDisclosureCollector, FakeDisclosureCollector
   domain/      MarketNewsItem, PriceMoveEvent, PriceMoveEventSource,
@@ -272,10 +273,21 @@ feedback/
                  MarketBriefingResponse, PostSellFeedbackResponse
                  (+ 응답 안에 중첩되는 레코드 — PostSellFlow, Counterfactuals, PeerComparison)
                  (+ NewsItem, PriceMoveItem — 여러 응답이 공유하므로 최상위 record)
+                 (+ BriefingNewsItem — Part D 전용 최상위 record. 공유용이 아니다)
   repository/  각 도메인 JpaRepository
 ```
 
 DTO는 `dto/response/` 하위에 둔다(`docs/conventions.md`, 이 spec에는 요청 DTO가 없다). 응답 DTO 클래스명은 `docs/api-contracts.md`에 이미 박혀 있으므로 그 이름을 쓴다. 엔티티를 컨트롤러 밖으로 노출하지 않는다.
+
+**`BriefingNewsItem`을 `NewsItem`과 따로 둔다** (2026-08-04 추가). Part D `items`는 계약상 `instrumentId`·`symbol`·`name`을 **평평하게** 포함하는데(`docs/api-contracts.md`의 개장 전 브리핑 행) `NewsItem`은 다섯 값뿐이다 — 시장 전체가 대상이라 어느 종목 소식인지가 항목마다 붙어야 한다. **`NewsItem`을 중첩 필드로 감싸면 JSON 모양이 계약과 달라지므로** 여덟 값을 평평하게 갖는 별도 최상위 record로 둔다. Part C는 종목이 경로에 있어 그 세 값이 필요 없으므로 `NewsItem`을 그대로 쓴다 — 두 항목 record가 공존하는 것이 의도된 형태이며 한쪽으로 합치지 않는다.
+
+**이름에 `~ListItemResponse`를 붙이지 않는다.** `docs/conventions.md`의 DTO 표 각주(2026-08-04 확정)가 spec 012 항목 record의 이름을 이 절에 위임했으므로, 같은 응답군에서 `NewsItem`과 접미사가 붙은 이름이 섞이면 그 위임이 무의미해진다. `BriefingNewsItem`은 **여러 응답이 공유하는 record가 아니라 Part D 전용**이지만, 이름 규칙은 응답군 단위로 일관되게 간다.
+
+**개장·장 마감의 벽시계 경계를 `MarketSessionTimes` 하나에 둔다** (2026-08-04 추가). `feedback/service/` 아래에 두되 빈이 아니라 상수만 갖는 최소 타입이다 — `feedback.*` 설정 블록(§C-7)은 §튜닝으로 조정하는 수치를 담지만 **이 두 값은 조정 대상이 아니라 시장 규칙**이라 `config/`에 두지 않는다.
+
+- 지금 `PriceMoveCardService`의 클램프 기준(09:00)과 `NewsMatcher`의 전장 구간 경계(15:30·09:00)가 독립 선언이고, **Part C의 `summaryScope` 판정과 Part D의 하한이 세 번째·네 번째 사용처**다. `postSellFlow`·`counterfactuals`의 게이트(§C-5)가 같은 15:30을 쓰므로 다섯 번째도 예정돼 있다.
+- `NewsMatcher`의 상수를 공개해 단일 출처로 삼는 방법도 검토했지만 **조회 서비스가 근거 매칭과 무관한 클래스를 이름으로 참조하게 된다.** 서비스 하나가 상수 보관소를 겸하면 뒤 이슈가 계속 그 클래스를 가리키므로 중립적인 자리를 만든다.
+- **값의 성격은 §C-2-1이 벽시계로 못박았다.** 기사·공시 구간 경계와 노출 게이트에 쓰는 값이며 **분봉을 찾는 값이 아니다** — "첫/마지막 분봉"으로 바꾸면 안 된다. 가격 조회 쪽 규칙은 여전히 분봉 표현을 쓰며 이 상수와 무관하다.
 
 **프롬프트와 템플릿 문장을 `NarrativeGenerator` 밖에 둔다.** `NarrativePromptBuilder`가 시스템 프롬프트 1종 + 파트별 사용자 프롬프트 4종 + 재생성 프롬프트 1종을 조립하고, `NarrativeGenerator`는 **완성된 문자열만 받아 호출**한다. `NarrativeTemplateBuilder`는 §템플릿 문장의 3종(장중 카드·시가 갭·매도 회고)을 수치로 조립한다. 프로바이더를 바꿔도 프롬프트가 딸려 가지 않게 하려는 것이며, ADR-0011의 "교체는 starter 의존성과 `feedback.llm.*` 설정 변경으로 끝난다"와 같은 의도다. 둘 다 외부 의존이 없어 단위 테스트로 문자열을 직접 단정할 수 있다.
 
