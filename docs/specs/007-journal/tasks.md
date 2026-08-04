@@ -33,7 +33,7 @@
   - 선제 조회와 유니크 위반 변환을 **둘 다** 둔다. 제약 위반을 잡은 뒤에는 추가 DB 작업 없이 즉시 409를 던진다.
   - 검증 — 단위 테스트: 정상 작성(고정 `Clock` 시각·저장 인자), 404·403·400·409 각 경로, **타인의 매도 체결이 403**(400 아님), `DataIntegrityViolationException` → 409 변환.
 
-- [ ] **4. `JournalController` + 요청·응답 DTO**
+- [x] **4. `JournalController` + 요청·응답 DTO**
 
   `POST /api/trades/{buyTradeId}/journal`을 열고 record DTO 2개를 만든다. 응답 필드는 4개 고정이다.
   - 컨트롤러에 비즈니스 판단·repository 호출·try-catch를 두지 않는다.
