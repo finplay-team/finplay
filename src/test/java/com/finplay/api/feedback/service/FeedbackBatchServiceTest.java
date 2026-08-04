@@ -102,7 +102,8 @@ class FeedbackBatchServiceTest {
 			priceMoveDetector,
 			priceMoveCardService,
 			marketBriefingService,
-			instrumentNewsSummaryService));
+			instrumentNewsSummaryService,
+			new LlmCallStats()));
 	}
 
 	private void givenReadySessionWithTwoStocks() {
