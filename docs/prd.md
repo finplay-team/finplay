@@ -196,7 +196,7 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 | 투자일기 — 매도 회고 작성 | JOUR-003 | **완료** | PR #189 |
 | 투자일기 — 매도 회고 수정 | JOUR-004 | **완료** | PR #192 |
 | 투자일기 — 매수 회고 수정 | JOUR-002 | **완료** | PR #201 (이슈 #197). 수정 잠금 없음으로 확정 |
-| 투자일기 — 상세·목록 조회 | JOUR-005·006 | **미착수** | 컨트롤러 없음 |
+| 투자일기 — 상세·목록 조회 | JOUR-005·006 | **미착수** | 조회 엔드포인트 없음 (`JournalController`는 작성·수정만) |
 | 랭킹 — 전체 랭킹 조회 | RANK-001 | **완료** | `014-ranking`, PR #196 (`GET /api/rankings`, Redis ZSET) |
 | 랭킹 — 내 랭킹 조회 | RANK-002 | **미착수** | `GET /api/rankings/me` 없음 |
 | 투자 실습 — 즐겨찾기 등록·목록·해제 | EDU-PRACTICE-002 | **완료** | PR #165·#171·#173. **ADR-0012로 인메모리 저장** |
@@ -244,7 +244,7 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 - 8개 투자 지식 과정(투자와 위험, 주식과 코인의 차이, 주문과 체결, 시장가와 지정가, 평가손익과 실현손익, 수수료와 수익률, 분산투자, 투자 계획과 복기)과 객관식 문항, 과정별 최초 완료 배지와 전체 `INVESTMENT_BEGINNER`, 확정 교육 자료 기반 RAG 코치 설명. 2차 MVP의 3단계 실제 API 실습과 분리한다
 - AI 주간·월간 리포트 — 투자일기를 1주~1개월 모아 분석한다. 2차 AI 피드백은 투자일기에 의존하지 않으므로, 계획 대비 실제 대조(목표가·손절가)도 여기서 함께 다룬다
 
-### 1차 명시적 제외 범위
+### 1차 명시적 제외 범위 (2026-07 결정 시점 기록)
 
 > **이 목록은 1차 MVP 당시의 범위 결정 기록이다 — "지금도 없다"는 뜻이 아니다.** 아래 항목 중 실시간 랭킹·AI 피드백·튜토리얼·뉴스 요약·투자일기는 2차 MVP에서 일부 또는 전부 구현됐다(§3 구현 현황 참고). 반면 **관리자 기능, 수익 인증·좋아요·신고·대댓글, 회원 탈퇴·프로필 이미지·파일 업로드, 소셜 계정 연결, 알림, 지정가, 분산락·Kafka·부하테스트는 2026-08-04 현재도 구현되지 않았다.**
 
@@ -802,7 +802,7 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 
 Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conventions.md`). 아래 목록은 클라이언트가 호출하는 **실제 외부 경로를 그대로** 적는다 — 문서마다 `/auth/...`와 `/api/auth/...`가 섞이지 않게 한다.
 
-> **이 목록은 1차 MVP 시점의 경로 집합이며 현재 제공 중인 전체 경로가 아니다.** 2차에서 추가·구현된 경로(`GET /api/rankings`, `GET /api/instruments/{id}/price-moves`, `GET /api/instruments/{id}/news`, `GET /api/market/briefing`, `POST /api/trades/{id}/journal`, `POST·PATCH /api/trades/{id}/sell-journal`, `GET·POST·DELETE /api/favorites`, `POST /api/education/practice/intentions`, `GET /api/education/practice/synthetic-prices/{id}`)는 여기 반영하지 않는다. **실제 라우트 전수는 `docs/api-routes.md`, 요청·응답·오류 계약은 `docs/api-contracts.md`가 정본이다** — 이 두 문서는 controller 변경과 같은 커밋에서 갱신된다(CLAUDE.md 규칙 7). 아래 목록은 1차 완료 범위를 확인하는 용도로만 유지한다.
+> **이 목록은 1차 MVP 시점의 경로 집합이며 현재 제공 중인 전체 경로가 아니다.** 2차에서 추가·구현된 경로(`GET /api/rankings`, `GET /api/instruments/{id}/price-moves`, `GET /api/instruments/{id}/news`, `GET /api/market/briefing`, `POST·PATCH /api/trades/{id}/journal`, `POST·PATCH /api/trades/{id}/sell-journal`, `GET·POST·DELETE /api/favorites`, `POST /api/education/practice/intentions`, `GET /api/education/practice/synthetic-prices/{id}`)는 여기 반영하지 않는다. **실제 라우트 전수는 `docs/api-routes.md`, 요청·응답·오류 계약은 `docs/api-contracts.md`가 정본이다** — 이 두 문서는 controller 변경과 같은 커밋에서 갱신된다(CLAUDE.md 규칙 7). 아래 목록은 1차 완료 범위를 확인하는 용도로만 유지한다.
 
 ### 인증
 
@@ -949,7 +949,7 @@ Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conven
 
 ### 2차 MVP에서 추가된 테이블 (2026-08-04 기준 실제 마이그레이션)
 
-Flyway 마이그레이션은 V1~V20까지 적용돼 있다. 아래는 2차에서 추가·변경된 것만 적는다 — 정본은 `src/main/resources/db/migration/`이며 스키마 변경은 항상 새 번호 마이그레이션으로만 한다(ADR-0004).
+Flyway 마이그레이션은 V1~V21까지 적용돼 있다. 아래는 2차에서 추가·변경된 것만 적는다 — 정본은 `src/main/resources/db/migration/`이며 스키마 변경은 항상 새 번호 마이그레이션으로만 한다(ADR-0004).
 
 **AI 피드백 (V13, `docs/specs/012-ai-feedback`)**
 
@@ -961,7 +961,7 @@ Flyway 마이그레이션은 V1~V20까지 적용돼 있다. 아래는 2차에서
 - `price_move_peer_stats`: 카드별 집단 행동 집계 (**회원 식별자 없이 집계만**) — `UNIQUE(price_move_event_id, service_date)`
 - `trade_feedbacks`: 매도 직후 AI 서술 — `UNIQUE(trade_id)`. **테이블은 있으나 조회 엔드포인트(FEED-009)는 미착수다**
 
-**투자일기 (V15·V17·V18, `docs/specs/007-journal`)**
+**투자일기 (V15·V17·V18·V21, `docs/specs/007-journal`)**
 
 - `buy_trade_journals`: 매수 체결별 회고 1건 + `updated_at`(V21) — `UNIQUE(buy_trade_id)` (JOUR-001·002)
 - `sell_trade_journals`: 매도 체결별 회고 1건 + `updated_at`(V18) — `UNIQUE(sell_trade_id)` (JOUR-003·004)
