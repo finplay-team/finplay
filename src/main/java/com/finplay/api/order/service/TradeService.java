@@ -4,6 +4,8 @@ package com.finplay.api.order.service;
 import com.finplay.api.account.domain.Account;
 import com.finplay.api.account.domain.Market;
 import com.finplay.api.account.service.AccountService;
+import com.finplay.api.common.BusinessException;
+import com.finplay.api.common.ErrorCode;
 import com.finplay.api.order.domain.Trade;
 import com.finplay.api.order.dto.response.TradeListItemResponse;
 import com.finplay.api.order.dto.response.TradeListResponse;
@@ -37,5 +39,14 @@ public class TradeService {
 
 		List<TradeListItemResponse> content = page.stream().map(TradeListItemResponse::from).toList();
 		return TradeListResponse.of(content, nextCursor, hasNext);
+	}
+
+	@Transactional(readOnly = true)
+	public Trade getOwnedTrade(Long userId, Long tradeId) {
+		Trade trade = tradeRepository.findById(tradeId).orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+		if (!trade.getAccount().getUser().getId().equals(userId)) {
+			throw new BusinessException(ErrorCode.FORBIDDEN);
+		}
+		return trade;
 	}
 }

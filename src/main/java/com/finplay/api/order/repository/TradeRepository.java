@@ -3,9 +3,14 @@ package com.finplay.api.order.repository;
 
 import com.finplay.api.order.domain.Trade;
 import java.util.Optional;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface TradeRepository extends JpaRepository<Trade, Long>, TradeRepositoryCustom {
 
 	Optional<Trade> findByOrderId(Long orderId);
+
+	@Override
+	@EntityGraph(attributePaths = {"account", "account.user"})
+	Optional<Trade> findById(Long id);
 }
