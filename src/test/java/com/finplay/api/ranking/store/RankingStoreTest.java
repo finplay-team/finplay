@@ -1,6 +1,7 @@
 // mock Redis(StringRedisTemplate)로 RankingStore.addScoreWithRetry의 재시도·예외 억제를 검증하는 단위 테스트다.
 package com.finplay.api.ranking.store;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
@@ -48,5 +49,17 @@ class RankingStoreTest {
 
 		verify(zSetOperations, times(1)).add("ranking:CRYPTO", "2", 500.0);
 		verify(zSetOperations, times(1)).add(any(), any(), anyDouble());
+	}
+
+	@Test
+	void countStrictlyGreaterClampsLowerBoundWhenScoreIsLongMaxValueToAvoidOverflow() {
+		RankingStore rankingStore = rankingStore();
+		when(zSetOperations.count("ranking:STOCK", (double)Long.MAX_VALUE, Double.POSITIVE_INFINITY))
+			.thenReturn(0L);
+
+		long count = rankingStore.countStrictlyGreater(Market.STOCK, Long.MAX_VALUE);
+
+		assertThat(count).isZero();
+		verify(zSetOperations).count("ranking:STOCK", (double)Long.MAX_VALUE, Double.POSITIVE_INFINITY);
 	}
 }

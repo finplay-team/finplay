@@ -66,7 +66,9 @@ public class RankingStore {
 	// ZSetOperations에는 Range<Double>를 받는 count 오버로드가 없다(count(K, double, double)만 존재).
 	// score(accounts.realized_pnl)는 항상 정수(long)이므로 하한을 score+1로 잡아도 "엄격히 큼"과 동치다.
 	public long countStrictlyGreater(Market market, long score) {
-		Long count = redisTemplate.opsForZSet().count(key(market), score + 1, Double.POSITIVE_INFINITY);
+		// score == Long.MAX_VALUE면 score+1이 오버플로해 Long.MIN_VALUE가 되므로 하한을 클램핑한다.
+		long lowerBound = Math.min(score, Long.MAX_VALUE - 1) + 1;
+		Long count = redisTemplate.opsForZSet().count(key(market), lowerBound, Double.POSITIVE_INFINITY);
 		return count == null ? 0 : count;
 	}
 

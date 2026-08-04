@@ -89,6 +89,55 @@ class AccountServiceTest {
 	}
 
 	@Test
+	void findByIdOrEmptyReturnsAccountWhenRepositoryFindsIt() {
+		AccountRepository accountRepository = mock(AccountRepository.class);
+		HoldingValuationService holdingValuationService = mock(HoldingValuationService.class);
+		Clock fixedClock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
+		AccountService accountService = new AccountService(accountRepository, holdingValuationService, fixedClock);
+		User user = User.create("user@finplay.com", "password-hash", "finplayer",
+			LocalDateTime.ofInstant(FIXED_INSTANT, ZoneOffset.UTC));
+		Account account = Account.create(user, Market.STOCK,
+			LocalDateTime.ofInstant(FIXED_INSTANT, ZoneOffset.UTC));
+		when(accountRepository.findById(1L)).thenReturn(Optional.of(account));
+
+		Optional<Account> result = accountService.findByIdOrEmpty(1L);
+
+		assertThat(result).containsSame(account);
+	}
+
+	@Test
+	void findByIdOrEmptyReturnsEmptyWhenAccountDoesNotExist() {
+		AccountRepository accountRepository = mock(AccountRepository.class);
+		HoldingValuationService holdingValuationService = mock(HoldingValuationService.class);
+		Clock fixedClock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
+		AccountService accountService = new AccountService(accountRepository, holdingValuationService, fixedClock);
+		when(accountRepository.findById(999L)).thenReturn(Optional.empty());
+
+		Optional<Account> result = accountService.findByIdOrEmpty(999L);
+
+		assertThat(result).isEmpty();
+	}
+
+	@Test
+	void findAllByIdInFetchUserDelegatesToRepositoryAndReturnsItsResult() {
+		AccountRepository accountRepository = mock(AccountRepository.class);
+		HoldingValuationService holdingValuationService = mock(HoldingValuationService.class);
+		Clock fixedClock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
+		AccountService accountService = new AccountService(accountRepository, holdingValuationService, fixedClock);
+		User user = User.create("user@finplay.com", "password-hash", "finplayer",
+			LocalDateTime.ofInstant(FIXED_INSTANT, ZoneOffset.UTC));
+		Account account = Account.create(user, Market.STOCK,
+			LocalDateTime.ofInstant(FIXED_INSTANT, ZoneOffset.UTC));
+		List<Long> ids = List.of(1L, 2L);
+		when(accountRepository.findAllByIdInFetchUser(ids)).thenReturn(List.of(account));
+
+		List<Account> result = accountService.findAllByIdInFetchUser(ids);
+
+		assertThat(result).containsExactly(account);
+		verify(accountRepository).findAllByIdInFetchUser(ids);
+	}
+
+	@Test
 	void getAccountSummarySumsOnlyAvailablePricedHoldingsAndComputesReturnRate() {
 		AccountRepository accountRepository = mock(AccountRepository.class);
 		HoldingValuationService holdingValuationService = mock(HoldingValuationService.class);
