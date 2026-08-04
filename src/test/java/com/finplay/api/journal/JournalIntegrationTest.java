@@ -44,6 +44,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -122,13 +123,49 @@ class JournalIntegrationTest {
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
 
+	// 이 테스트 인스턴스(JUnit5 기본 PER_METHOD라 메서드마다 새 인스턴스)가 실제로 커밋한 종목 id와
+	// stock_replay_sessions 신규 생성 여부를 추적한다 — @AfterEach에서 이 테스트가 만든 것만 지우기 위함이다.
+	// @Transactional로 통째 롤백하지 못하는 이유는 동시 중복 시나리오가 여러 스레드의 실제 커밋 결과를 봐야 하기
+	// 때문이다(주석 위 설명). 대신 데이터를 남기지 않도록 명시적으로 정리한다(agent-mistakes.md 2026-07-30 재발 방지).
+	private final List<Long> createdInstrumentIds = new ArrayList<>();
+	private boolean createdReplaySessionByThisTest = false;
+
 	@BeforeEach
 	void setUp() {
 		((MutableClock)clock).set(BASE_NOW);
-		stockReplaySessionRepository
-			.findByServiceDate(TRADING_DATE)
-			.orElseGet(() -> stockReplaySessionRepository.saveAndFlush(
-				StockReplaySession.ready(TRADING_DATE, TRADING_DATE, BASE_NOW, BASE_NOW)));
+		if (stockReplaySessionRepository.findByServiceDate(TRADING_DATE).isEmpty()) {
+			stockReplaySessionRepository.saveAndFlush(
+				StockReplaySession.ready(TRADING_DATE, TRADING_DATE, BASE_NOW, BASE_NOW));
+			createdReplaySessionByThisTest = true;
+		}
+	}
+
+	@AfterEach
+	void tearDown() {
+		// 1. buy_trade_journals — 이 통합 테스트 클래스만 실제로 커밋하는 테이블이라 통째로 비워도 안전하다.
+		jdbcTemplate.update("delete from buy_trade_journals");
+
+		// 2. 이 테스트가 만든 종목에 딸린 원장 행을 FK 자식→부모 순서로 지운 뒤 종목·분봉을 지운다.
+		//    (trade_allocations → holding_lots → holdings → trades → orders → stock_candles → instruments)
+		for (Long instrumentId : createdInstrumentIds) {
+			jdbcTemplate.update(
+				"delete from trade_allocations where sell_trade_id in (select id from trades where instrument_id = ?)",
+				instrumentId);
+			jdbcTemplate.update(
+				"delete from holding_lots where holding_id in (select id from holdings where instrument_id = ?)",
+				instrumentId);
+			jdbcTemplate.update("delete from holdings where instrument_id = ?", instrumentId);
+			jdbcTemplate.update("delete from trades where instrument_id = ?", instrumentId);
+			jdbcTemplate.update("delete from orders where instrument_id = ?", instrumentId);
+			jdbcTemplate.update("delete from stock_candles where instrument_id = ?", instrumentId);
+			jdbcTemplate.update("delete from instruments where id = ?", instrumentId);
+		}
+
+		// 3. stock_replay_sessions — 이 테스트가 새로 만든 경우에만 지운다. 이미 있어 재사용한 세션은
+		//    다른 스위트가 쓸 수 있으므로 건드리지 않는다.
+		if (createdReplaySessionByThisTest) {
+			jdbcTemplate.update("delete from stock_replay_sessions where service_date = ?", TRADING_DATE);
+		}
 	}
 
 	@Test
@@ -359,8 +396,10 @@ class JournalIntegrationTest {
 
 	private Instrument createStockInstrument(String symbolPrefix) {
 		String symbol = symbolPrefix + UUID.randomUUID().toString().substring(0, 6);
-		return instrumentRepository.saveAndFlush(
+		Instrument instrument = instrumentRepository.saveAndFlush(
 			Instrument.create(Market.STOCK, symbol, symbolPrefix + "종목", BigDecimal.ONE, 0L, true, BASE_NOW));
+		createdInstrumentIds.add(instrument.getId());
+		return instrument;
 	}
 
 	private void createCandle(Instrument instrument, LocalTime candleTime, BigDecimal price) {
