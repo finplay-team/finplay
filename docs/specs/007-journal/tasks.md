@@ -98,7 +98,7 @@
 
 ## 작업 항목
 
-- [ ] **S1. 신규 마이그레이션 + `SellTradeJournal` 엔티티 + 리포지토리**
+- [x] **S1. 신규 마이그레이션 + `SellTradeJournal` 엔티티 + 리포지토리**
 
   `plan.md` §JOUR-003 §데이터 모델의 DDL대로 `sell_trade_journals`를 만들고 엔티티·리포지토리(`existsBySellTradeId`)를 붙인다.
   - 착수 시점 `dev`의 마이그레이션 최신 번호를 **먼저 확인**한다 (V14→V15 재번호화 전례).
