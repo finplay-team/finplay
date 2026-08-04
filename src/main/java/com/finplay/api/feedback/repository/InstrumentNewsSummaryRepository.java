@@ -4,6 +4,7 @@ package com.finplay.api.feedback.repository;
 import com.finplay.api.feedback.domain.InstrumentNewsSummary;
 import com.finplay.api.feedback.domain.NewsSummaryScope;
 import java.time.LocalDate;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 /**
@@ -24,5 +25,16 @@ public interface InstrumentNewsSummaryRepository extends JpaRepository<Instrumen
 	 * 중복 확인과 같은 형태다.
 	 */
 	boolean existsByInstrumentIdAndOriginTradeDateAndScope(
+		Long instrumentId, LocalDate originTradeDate, NewsSummaryScope scope);
+
+	/**
+	 * 조회 시각이 보는 요약 1건을 가져온다 — 축은 위 {@code exists}와 같은 유니크 키다.
+	 *
+	 * <p><b>없는 것이 정상 상태다</b> — 배치가 아직 안 돌았거나 배포 당일이면 행이 없고, 그때 조회는
+	 * §C-4 판정 순서 4번({@code EMPTY})으로 읽되 <b>{@code items}는 채운다.</b> 행이 있는데
+	 * {@code summary}가 {@code null}인 경우(5번, {@code UNAVAILABLE})와 구분해야 하므로 존재 여부가 아니라
+	 * 행 자체를 받아야 한다.
+	 */
+	Optional<InstrumentNewsSummary> findByInstrumentIdAndOriginTradeDateAndScope(
 		Long instrumentId, LocalDate originTradeDate, NewsSummaryScope scope);
 }

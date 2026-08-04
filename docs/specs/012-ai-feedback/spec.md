@@ -271,6 +271,7 @@ feedback/
                DisclosureCollector(interface), DartDisclosureCollector, FakeDisclosureCollector
   domain/      MarketNewsItem, PriceMoveEvent, PriceMoveEventSource,
                InstrumentNewsSummary, MarketBriefing, TradeFeedback, PriceMovePeerStat
+               FeedbackContentStatus      Part C·D 상태값 (§C-4. 저장 컬럼이 아니라 조회 시 판정한다)
   dto/response/  PriceMoveListResponse, InstrumentNewsResponse,
                  MarketBriefingResponse, PostSellFeedbackResponse
                  (+ 응답 안에 중첩되는 레코드 — PostSellFlow, Counterfactuals, PeerComparison)
@@ -302,6 +303,8 @@ DTO는 `dto/response/` 하위에 둔다(`docs/conventions.md`, 이 spec에는 �
 **카드 확정을 `FeedbackBatchService`에 두지 않는다.** 탐지 결과 하나를 카드로 만드는 데 근거 매칭·서술 확정·`reveal_time` 계산·저장 넷이 필요한데, 이것을 배치에 두면 그 클래스가 **브리핑·요약(이슈 5번)까지 얹히면서** 오케스트레이션과 도메인 로직을 함께 갖게 된다. `PriceMoveCardService`는 **카드 1건을 확정하는 책임만** 지고, 배치는 그것을 순서대로 부르기만 한다. 코인 감시(`CryptoPriceMoveWatcher`, 이슈 8번)도 같은 확정 경로가 필요하므로 배치 안에 있으면 재사용할 수 없다. `NewsCollectionService`를 수집기 밖에 둔 것(수집기는 목록만 반환하고 저장 주체가 따로 있다)과 같은 이유다.
 
 **요약은 생성과 조회를 나누고 브리핑은 나누지 않는다** (2026-08-04 추가 — 이 비대칭은 의도된 것이다). 종목 뉴스 요약은 `InstrumentNewsSummaryService`가 확정(구간 질의 → 절단 → `NarrativeService` → 저장)하고 `InstrumentNewsQueryService`가 조회한다 — 종목 수만큼 반복되고 범위가 둘(`PRE_MARKET`·`FULL`)이라 확정 경로만으로 한 클래스가 찬다. `PriceMoveCardService`를 배치에서 뺀 것과 같은 이유다. 반면 **브리핑은 `(시장, 원본 거래일)` 단위로 하루 1건**이라 `MarketBriefingService` 하나가 생성과 조회를 함께 갖는다 — 쪼갤 만한 크기가 아니고, 나누면 `items`를 조회 시 다시 만드는 규칙(FEED-009)이 두 클래스에 걸쳐 흩어진다. **클래스 수를 맞추려고 브리핑을 쪼개지 않는다.**
+
+**Part C·D의 상태값 열거형은 `FeedbackContentStatus` 하나뿐이다** (2026-08-04 추가). §C-4가 Part C의 `summaryStatus`와 Part D의 `status`를 **"같은 4종"**으로 못박았으므로 열거형을 둘로 나누지 않는다 — 나누면 §C-4의 판정 순서 표가 두 곳에 복사되고, 그중 하나만 고치는 사고가 이 spec이 §확정값 절을 만든 이유다. **저장 컬럼이 아니라 조회 시 판정하는 값**이라 `@Enumerated` 대상이 아니다(§C-8의 `VARCHAR(20)` 열거 컬럼 목록에 없다). Part C의 1번 조건이 `NOT_YET`이고 Part D가 `EMPTY`인 **값의 차이는 판정 로직에 있고 타입에 있지 않다.**
 
 **절단 규칙은 `NewsItemTruncator` 한 곳에 둔다.** §뉴스 매칭 범위의 "공시를 먼저 채우고 남은 자리를 뉴스 최신순으로"는 **호출부가 넷**이다 — 요약과 브리핑의 LLM 입력, 그리고 Part C·D의 `items`다. 규칙을 각 서비스에 복사하면 그중 하나만 고치는 순간 **같은 목록이 API마다 다르게 잘리는데 예외도 로그도 남지 않는다.** 빈이 아니어도 되는 순수 계산이라 고정 픽스처로 단정할 수 있고, `NewsSearchQueryBuilder`·`NewsTitleFilter`를 수집기 밖에 둔 것과 같은 판단이다.
 
