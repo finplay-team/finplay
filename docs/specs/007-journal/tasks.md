@@ -107,7 +107,7 @@
   - 검증 — `@DataJpaTest`: 같은 `sell_trade_id` 2건째 유니크 위반, 서로 다른 체결 2건 공존, `existsBySellTradeId` false→true, 없는 체결 참조 시 FK 위반.
   - 검증 — `./gradlew test`로 기존 `@SpringBootTest`의 `ddl-auto=validate` 통과 확인.
 
-- [ ] **S2. `JournalService.createSellJournal` — 작성 유스케이스**
+- [x] **S2. `JournalService.createSellJournal` — 작성 유스케이스**
 
   검증 순서 `존재 → 소유 → 매도 여부 → 중복`과 트랜잭션 경계가 핵심이다. `tradeService.getOwnedTrade`를 재사용한다.
   - 선제 조회(`existsBySellTradeId`)와 유니크 위반 변환(`DataIntegrityViolationException` → 409)을 **둘 다** 둔다. 제약 위반을 잡은 뒤 추가 DB 작업 없이 즉시 던진다.

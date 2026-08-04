@@ -1,4 +1,4 @@
-// JournalService.createBuyJournal의 검증 순서·저장 인자·예외 변환을 검증하는 단위 테스트다.
+// JournalService.createBuyJournal·createSellJournal의 검증 순서·저장 인자·예외 변환을 검증하는 단위 테스트다.
 package com.finplay.api.journal.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -15,8 +15,11 @@ import com.finplay.api.auth.domain.User;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.journal.domain.BuyTradeJournal;
+import com.finplay.api.journal.domain.SellTradeJournal;
 import com.finplay.api.journal.dto.response.BuyJournalResponse;
+import com.finplay.api.journal.dto.response.SellJournalResponse;
 import com.finplay.api.journal.repository.BuyTradeJournalRepository;
+import com.finplay.api.journal.repository.SellTradeJournalRepository;
 import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.domain.OrderType;
@@ -36,15 +39,17 @@ class JournalServiceTest {
 
 	private static final Long USER_ID = 1L;
 	private static final Long BUY_TRADE_ID = 5L;
+	private static final Long SELL_TRADE_ID = 6L;
 	private static final Instant FIXED_INSTANT = Instant.parse("2026-08-04T10:00:00Z");
 	private static final Clock FIXED_CLOCK = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
 	private static final LocalDateTime NOW = LocalDateTime.ofInstant(FIXED_INSTANT, ZoneOffset.UTC);
 
 	private final TradeService tradeService = mock(TradeService.class);
 	private final BuyTradeJournalRepository buyTradeJournalRepository = mock(BuyTradeJournalRepository.class);
+	private final SellTradeJournalRepository sellTradeJournalRepository = mock(SellTradeJournalRepository.class);
 
 	private final JournalService journalService = new JournalService(tradeService, buyTradeJournalRepository,
-		FIXED_CLOCK);
+		sellTradeJournalRepository, FIXED_CLOCK);
 
 	@Test
 	void createBuyJournalSavesJournalWithFixedClockAndReturnsAllFields() {
@@ -148,6 +153,116 @@ class JournalServiceTest {
 			.thenThrow(new DataIntegrityViolationException("duplicate key"));
 
 		assertThatThrownBy(() -> journalService.createBuyJournal(USER_ID, BUY_TRADE_ID, "내용"))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(exception -> assertThat(((BusinessException)exception).getErrorCode())
+				.isEqualTo(ErrorCode.DUPLICATE_RESOURCE));
+	}
+
+	@Test
+	void createSellJournalSavesJournalWithFixedClockAndReturnsAllFields() {
+		Trade trade = sellTrade(SELL_TRADE_ID);
+		when(tradeService.getOwnedTrade(USER_ID, SELL_TRADE_ID)).thenReturn(trade);
+		when(sellTradeJournalRepository.existsBySellTradeId(SELL_TRADE_ID)).thenReturn(false);
+		when(sellTradeJournalRepository.saveAndFlush(any(SellTradeJournal.class))).thenAnswer(invocation -> {
+			SellTradeJournal saved = invocation.getArgument(0);
+			ReflectionTestUtils.setField(saved, "id", 200L);
+			return saved;
+		});
+
+		SellJournalResponse response = journalService.createSellJournal(USER_ID, SELL_TRADE_ID, "익절 복기");
+
+		ArgumentCaptor<SellTradeJournal> captor = ArgumentCaptor.forClass(SellTradeJournal.class);
+		verify(sellTradeJournalRepository).saveAndFlush(captor.capture());
+		SellTradeJournal savedArg = captor.getValue();
+		assertThat(savedArg.getSellTrade()).isSameAs(trade);
+		assertThat(savedArg.getContent()).isEqualTo("익절 복기");
+		assertThat(savedArg.getCreatedAt()).isEqualTo(NOW);
+
+		assertThat(response.journalId()).isEqualTo(200L);
+		assertThat(response.sellTradeId()).isEqualTo(SELL_TRADE_ID);
+		assertThat(response.content()).isEqualTo("익절 복기");
+		assertThat(response.createdAt()).isEqualTo(NOW);
+	}
+
+	@Test
+	void createSellJournalPropagatesNotFoundWhenTradeDoesNotExist() {
+		when(tradeService.getOwnedTrade(USER_ID, SELL_TRADE_ID))
+			.thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
+
+		assertThatThrownBy(() -> journalService.createSellJournal(USER_ID, SELL_TRADE_ID, "내용"))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(exception -> assertThat(((BusinessException)exception).getErrorCode())
+				.isEqualTo(ErrorCode.NOT_FOUND));
+
+		verify(sellTradeJournalRepository, never()).existsBySellTradeId(any());
+		verify(sellTradeJournalRepository, never()).saveAndFlush(any());
+	}
+
+	@Test
+	void createSellJournalPropagatesForbiddenWhenTradeOwnedByAnotherUser() {
+		when(tradeService.getOwnedTrade(USER_ID, SELL_TRADE_ID))
+			.thenThrow(new BusinessException(ErrorCode.FORBIDDEN));
+
+		assertThatThrownBy(() -> journalService.createSellJournal(USER_ID, SELL_TRADE_ID, "내용"))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(exception -> assertThat(((BusinessException)exception).getErrorCode())
+				.isEqualTo(ErrorCode.FORBIDDEN));
+
+		verify(sellTradeJournalRepository, never()).existsBySellTradeId(any());
+		verify(sellTradeJournalRepository, never()).saveAndFlush(any());
+	}
+
+	@Test
+	void createSellJournalThrowsValidationErrorWhenTradeIsNotSellSide() {
+		Trade buyTrade = buyTrade(SELL_TRADE_ID);
+		when(tradeService.getOwnedTrade(USER_ID, SELL_TRADE_ID)).thenReturn(buyTrade);
+
+		assertThatThrownBy(() -> journalService.createSellJournal(USER_ID, SELL_TRADE_ID, "내용"))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(exception -> assertThat(((BusinessException)exception).getErrorCode())
+				.isEqualTo(ErrorCode.VALIDATION_ERROR));
+
+		verify(sellTradeJournalRepository, never()).existsBySellTradeId(any());
+		verify(sellTradeJournalRepository, never()).saveAndFlush(any());
+	}
+
+	@Test
+	void createSellJournalThrowsDuplicateResourceWhenJournalAlreadyExists() {
+		Trade trade = sellTrade(SELL_TRADE_ID);
+		when(tradeService.getOwnedTrade(USER_ID, SELL_TRADE_ID)).thenReturn(trade);
+		when(sellTradeJournalRepository.existsBySellTradeId(SELL_TRADE_ID)).thenReturn(true);
+
+		assertThatThrownBy(() -> journalService.createSellJournal(USER_ID, SELL_TRADE_ID, "내용"))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(exception -> assertThat(((BusinessException)exception).getErrorCode())
+				.isEqualTo(ErrorCode.DUPLICATE_RESOURCE));
+
+		verify(sellTradeJournalRepository, never()).saveAndFlush(any());
+	}
+
+	// 검증 순서 확인 — 타인 소유의 매수 체결은 getOwnedTrade 단계에서 403으로 끝나야 한다.
+	// side 검사(400)까지 도달하면 이 테스트가 실패해 검증 순서 위반을 드러낸다.
+	@Test
+	void createSellJournalReturnsForbiddenNotValidationErrorForOtherUsersBuyTrade() {
+		when(tradeService.getOwnedTrade(USER_ID, SELL_TRADE_ID))
+			.thenThrow(new BusinessException(ErrorCode.FORBIDDEN));
+
+		assertThatThrownBy(() -> journalService.createSellJournal(USER_ID, SELL_TRADE_ID, "내용"))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(exception -> assertThat(((BusinessException)exception).getErrorCode())
+				.isEqualTo(ErrorCode.FORBIDDEN)
+				.isNotEqualTo(ErrorCode.VALIDATION_ERROR));
+	}
+
+	@Test
+	void createSellJournalConvertsDataIntegrityViolationToDuplicateResource() {
+		Trade trade = sellTrade(SELL_TRADE_ID);
+		when(tradeService.getOwnedTrade(USER_ID, SELL_TRADE_ID)).thenReturn(trade);
+		when(sellTradeJournalRepository.existsBySellTradeId(SELL_TRADE_ID)).thenReturn(false);
+		when(sellTradeJournalRepository.saveAndFlush(any(SellTradeJournal.class)))
+			.thenThrow(new DataIntegrityViolationException("duplicate key"));
+
+		assertThatThrownBy(() -> journalService.createSellJournal(USER_ID, SELL_TRADE_ID, "내용"))
 			.isInstanceOf(BusinessException.class)
 			.satisfies(exception -> assertThat(((BusinessException)exception).getErrorCode())
 				.isEqualTo(ErrorCode.DUPLICATE_RESOURCE));
