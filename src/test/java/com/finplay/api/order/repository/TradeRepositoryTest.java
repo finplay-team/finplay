@@ -65,6 +65,7 @@ class TradeRepositoryTest {
 	private User owner;
 	private Account ownerAccount;
 	private Instrument instrument;
+	private StockReplaySession session;
 	private int idempotencySequence = 0;
 
 	private Order createOrder(User user, Account account, LocalDateTime requestedAt) {
@@ -78,7 +79,7 @@ class TradeRepositoryTest {
 
 	private Trade createTrade(Order order, Account account, LocalDateTime executedAt) {
 		return tradeRepository.saveAndFlush(Trade.of(
-			order, account, instrument, OrderSide.BUY,
+			order, account, instrument, session, OrderSide.BUY,
 			BigDecimal.valueOf(100), BigDecimal.valueOf(10), 1_000L, 1L, null, executedAt, executedAt));
 	}
 
@@ -89,6 +90,8 @@ class TradeRepositoryTest {
 			Account.create(owner, com.finplay.api.account.domain.Market.STOCK, NOW));
 		instrument = instrumentRepository.saveAndFlush(
 			Instrument.create(Market.STOCK, "TRD01", "테스트종목", BigDecimal.valueOf(100), 10_000L, true, NOW));
+		session = stockReplaySessionRepository.saveAndFlush(
+			StockReplaySession.ready(NOW.toLocalDate().plusYears(20), NOW.toLocalDate(), NOW, NOW));
 	}
 
 	@Test
@@ -98,7 +101,7 @@ class TradeRepositoryTest {
 			owner, ownerAccount, instrument, OrderSide.BUY, OrderType.MARKET,
 			BigDecimal.valueOf(10), "trade-idem-1", "j".repeat(64), NOW));
 		Trade trade = tradeRepository.saveAndFlush(Trade.of(
-			order, ownerAccount, instrument, OrderSide.BUY,
+			order, ownerAccount, instrument, session, OrderSide.BUY,
 			BigDecimal.valueOf(100), BigDecimal.valueOf(10), 1_000L, 1L, null, NOW, NOW));
 
 		var result = tradeRepository.findByOrderId(order.getId());

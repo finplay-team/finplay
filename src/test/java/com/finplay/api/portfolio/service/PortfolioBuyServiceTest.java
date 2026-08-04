@@ -154,6 +154,8 @@ class PortfolioBuyServiceTest {
 			NOW);
 		long amount = price.multiply(quantity).longValue();
 		return Trade.of(
-			order, account, instrument, OrderSide.BUY, price, quantity, amount, 0L, null, NOW, NOW);
+			order, account, instrument,
+			com.finplay.api.market.domain.StockReplaySession.ready(NOW.toLocalDate(), NOW.toLocalDate(), NOW, NOW),
+			OrderSide.BUY, price, quantity, amount, 0L, null, NOW, NOW);
 	}
 }

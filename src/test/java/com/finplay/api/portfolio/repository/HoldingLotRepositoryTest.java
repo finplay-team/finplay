@@ -10,7 +10,9 @@ import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.domain.StockReplaySession;
 import com.finplay.api.market.repository.InstrumentRepository;
+import com.finplay.api.market.repository.StockReplaySessionRepository;
 import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.domain.OrderType;
@@ -58,7 +60,11 @@ class HoldingLotRepositoryTest {
 	@Autowired
 	private HoldingLotRepository holdingLotRepository;
 
+	@Autowired
+	private StockReplaySessionRepository stockReplaySessionRepository;
+
 	private Holding holding;
+	private StockReplaySession session;
 
 	@BeforeEach
 	void setUp() {
@@ -68,6 +74,8 @@ class HoldingLotRepositoryTest {
 		Instrument instrument = instrumentRepository.saveAndFlush(
 			Instrument.create(Market.STOCK, "TEST01", "테스트종목", BigDecimal.valueOf(100), 10_000L, true, BASE));
 		holding = holdingRepository.saveAndFlush(Holding.create(account, instrument, BASE));
+		session = stockReplaySessionRepository.saveAndFlush(
+			StockReplaySession.ready(BASE.toLocalDate().plusYears(32), BASE.toLocalDate(), BASE, BASE));
 	}
 
 	@Test
@@ -109,7 +117,7 @@ class HoldingLotRepositoryTest {
 			OrderSide.BUY, OrderType.MARKET, quantity,
 			"idem-" + System.nanoTime(), "a".repeat(64), executedAt));
 		Trade buyTrade = tradeRepository.saveAndFlush(Trade.of(
-			order, holding.getAccount(), holding.getInstrument(), OrderSide.BUY,
+			order, holding.getAccount(), holding.getInstrument(), session, OrderSide.BUY,
 			BigDecimal.valueOf(70000), quantity,
 			70000L * quantity.longValueExact(), 100L, null, executedAt, executedAt));
 		return holdingLotRepository.saveAndFlush(HoldingLot.create(

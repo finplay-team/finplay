@@ -3,6 +3,7 @@ package com.finplay.api.order.domain;
 
 import com.finplay.api.account.domain.Account;
 import com.finplay.api.market.domain.Instrument;
+import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.domain.StockReplaySession;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -103,22 +104,6 @@ public class Trade {
 		Order order,
 		Account account,
 		Instrument instrument,
-		OrderSide side,
-		BigDecimal price,
-		BigDecimal quantity,
-		long amount,
-		long fee,
-		Long realizedPnl,
-		LocalDateTime executedAt,
-		LocalDateTime now) {
-		return of(
-			order, account, instrument, null, side, price, quantity, amount, fee, realizedPnl, executedAt, now);
-	}
-
-	public static Trade of(
-		Order order,
-		Account account,
-		Instrument instrument,
 		StockReplaySession stockReplaySession,
 		OrderSide side,
 		BigDecimal price,
@@ -128,9 +113,20 @@ public class Trade {
 		Long realizedPnl,
 		LocalDateTime executedAt,
 		LocalDateTime now) {
+		validateStockReplaySession(instrument, stockReplaySession);
 		return new Trade(
 			order, account, instrument, stockReplaySession, side, price, quantity, amount, fee, realizedPnl, executedAt,
 			now);
+	}
+
+	private static void validateStockReplaySession(
+		Instrument instrument, StockReplaySession stockReplaySession) {
+		if (instrument.getMarket() == Market.STOCK && stockReplaySession == null) {
+			throw new IllegalArgumentException("주식 체결에는 재생세션이 필수입니다.");
+		}
+		if (instrument.getMarket() == Market.CRYPTO && stockReplaySession != null) {
+			throw new IllegalArgumentException("코인 체결에는 재생세션을 지정할 수 없습니다.");
+		}
 	}
 
 	public void fillRealizedPnl(long realizedPnl) {
