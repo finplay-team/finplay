@@ -156,4 +156,52 @@ class SellTradeJournalRepositoryTest {
 		assertThatThrownBy(() -> sellTradeJournalRepository.saveAndFlush(journal))
 			.isInstanceOf(DataIntegrityViolationException.class);
 	}
+
+	// --- ⑤ findBySellTradeId가 부재 시 empty, 존재 시 값을 반환 ---
+
+	@Test
+	@DisplayName("매도 회고가 없는 체결은 findBySellTradeId가 empty를 반환한다")
+	void findBySellTradeIdReturnsEmptyWhenJournalDoesNotExist() {
+		Trade sellTrade = createSellTrade();
+
+		assertThat(sellTradeJournalRepository.findBySellTradeId(sellTrade.getId())).isEmpty();
+	}
+
+	@Test
+	@DisplayName("매도 회고가 있는 체결은 findBySellTradeId가 값을 반환한다")
+	void findBySellTradeIdReturnsJournalWhenItExists() {
+		Trade sellTrade = createSellTrade();
+		SellTradeJournal saved = sellTradeJournalRepository.saveAndFlush(SellTradeJournal.of(sellTrade, CONTENT, NOW));
+
+		assertThat(sellTradeJournalRepository.findBySellTradeId(sellTrade.getId()))
+			.isPresent()
+			.get()
+			.extracting(SellTradeJournal::getId)
+			.isEqualTo(saved.getId());
+	}
+
+	// --- ⑥ updateContent 후 flush하면 content·updated_at만 바뀌고 나머지는 그대로 ---
+
+	@Test
+	@DisplayName("updateContent 호출 후 flush하면 content와 updated_at만 바뀌고 created_at·sell_trade_id·id는 그대로다")
+	void updateContentChangesOnlyContentAndUpdatedAt() {
+		Trade sellTrade = createSellTrade();
+		SellTradeJournal saved = sellTradeJournalRepository.saveAndFlush(SellTradeJournal.of(sellTrade, CONTENT, NOW));
+		entityManager.clear();
+
+		LocalDateTime updatedAt = NOW.plusDays(1);
+		String newContent = "수정된 회고 내용. 손절 기준을 더 명확히 세워야겠다.";
+
+		SellTradeJournal toUpdate = sellTradeJournalRepository.findById(saved.getId()).orElseThrow();
+		toUpdate.updateContent(newContent, updatedAt);
+		sellTradeJournalRepository.saveAndFlush(toUpdate);
+		entityManager.clear();
+
+		SellTradeJournal reloaded = sellTradeJournalRepository.findById(saved.getId()).orElseThrow();
+		assertThat(reloaded.getId()).isEqualTo(saved.getId());
+		assertThat(reloaded.getSellTrade().getId()).isEqualTo(sellTrade.getId());
+		assertThat(reloaded.getContent()).isEqualTo(newContent);
+		assertThat(reloaded.getUpdatedAt()).isEqualTo(updatedAt);
+		assertThat(reloaded.getCreatedAt()).isEqualTo(NOW);
+	}
 }

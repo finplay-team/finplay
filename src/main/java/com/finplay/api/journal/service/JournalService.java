@@ -7,6 +7,7 @@ import com.finplay.api.journal.domain.BuyTradeJournal;
 import com.finplay.api.journal.domain.SellTradeJournal;
 import com.finplay.api.journal.dto.response.BuyJournalResponse;
 import com.finplay.api.journal.dto.response.SellJournalResponse;
+import com.finplay.api.journal.dto.response.SellJournalUpdateResponse;
 import com.finplay.api.journal.repository.BuyTradeJournalRepository;
 import com.finplay.api.journal.repository.SellTradeJournalRepository;
 import com.finplay.api.order.domain.OrderSide;
@@ -62,5 +63,19 @@ public class JournalService {
 		} catch (DataIntegrityViolationException concurrentDuplicate) {
 			throw new BusinessException(ErrorCode.DUPLICATE_RESOURCE);
 		}
+	}
+
+	@Transactional
+	public SellJournalUpdateResponse updateSellJournal(Long userId, Long sellTradeId, String content) {
+		Trade trade = tradeService.getOwnedTrade(userId, sellTradeId);
+		if (trade.getSide() != OrderSide.SELL) {
+			throw new BusinessException(ErrorCode.VALIDATION_ERROR);
+		}
+		SellTradeJournal journal = sellTradeJournalRepository
+			.findBySellTradeId(sellTradeId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+
+		journal.updateContent(content, LocalDateTime.now(clock));
+		return SellJournalUpdateResponse.from(journal);
 	}
 }

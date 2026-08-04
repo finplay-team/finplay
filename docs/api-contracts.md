@@ -426,6 +426,14 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 매수 회고(위 절)와 유스케이스가 대칭이다 — 인증 사용자 결정, 201·`Location` 헤더 미포함, 본문 검증이 경로 검증보다 먼저인 점(없는 체결 + 공백 본문 = 400), 검증 순서(`존재(404) → 소유(403) → 매도 여부(400) → 중복(409)`, 타인의 매수 체결이면 403이 먼저), `content` 트림 없이 원문 저장, 선제 조회 + 유니크 위반(`sell_trade_journals.sell_trade_id` UNIQUE) 변환은 모두 동일하다. **차이는 경로(`/sell-journal`), 대상 체결 구분 검증(`side != SELL`), 응답의 체결 ID 필드명(`sellTradeId`) 세 가지뿐이다.** 매도 회고 응답에는 실현손익·배분된 매수 lot 등 매도 결과 정보를 포함하지 않는다(`GET /api/trades`가 이미 제공한다).
 
+### 매도 체결 투자일기(매도 회고) 수정
+
+| Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|---|
+| PATCH | /api/trades/{sellTradeId}/sell-journal | Access Bearer 필수 | 경로 변수 `sellTradeId`(숫자) + 본문 `{"content":"돌아보니 목표가 도달 전에 일부 익절했어야 했다."}`(`SellJournalUpdateRequest`, `content`는 작성과 같은 `@NotBlank` + `@Size(max=5000)`) | 200 `{"journalId":1,"sellTradeId":34,"content":"돌아보니 목표가 도달 전에 일부 익절했어야 했다.","createdAt":"2026-08-04T15:20:41","updatedAt":"2026-08-05T09:03:12"}` (`SellJournalUpdateResponse`, 5개 필드 고정) | `content` 누락·공백·5000자 초과, `sellTradeId` 타입 불일치는 400 `VALIDATION_ERROR`. 대상 체결의 `side`가 `SELL`이 아님(매수 체결)도 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED`. 타인 소유 체결은 403 `FORBIDDEN`. `sellTradeId`에 해당하는 체결 없음은 404 `NOT_FOUND`. 체결은 있으나 매도 회고가 아직 없으면(upsert 아님) 404 `NOT_FOUND` | 007 JOUR-004, Issue #190 |
+
+작성(위 절)과 같은 리소스 경로를 PATCH로 재사용한다. **차이는 상태 200(생성이 아니므로 201 아님), 응답이 `updatedAt`을 더한 5필드(`SellJournalUpdateResponse`, 작성 응답 `SellJournalResponse`는 4필드 그대로 유지), 회고가 아직 없으면 404로 거부(새 회고를 만들지 않음, upsert 아님)라는 점, 검증 순서 마지막 단계가 `중복(409)`에서 `회고 존재(404)`로 바뀌어 **이 엔드포인트에는 409가 없다**는 점이다. 검증 순서는 `체결 존재(404) → 소유(403) → 매도 여부(400) → 회고 존재(404)`로 고정이며, 타인의 매수 체결이면 회고 존재 여부를 확인하기 전에 403이 먼저다. `sellTradeId`·`journalId`·`createdAt`은 요청으로 지정할 수 없고 응답에서도 원본 값 그대로다 — 수정은 본문 교체다. 수정 횟수 제한이나 잠금 조건은 없다(연속 수정 모두 허용, 마지막 본문만 남고 이력은 보관하지 않는다).
+
 ---
 
 ## 016 투자 실습 (candidate 1·2·3 제공, 나머지 계획)

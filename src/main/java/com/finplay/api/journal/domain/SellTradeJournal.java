@@ -36,13 +36,22 @@ public class SellTradeJournal {
 	@Column(name = "created_at", nullable = false)
 	private LocalDateTime createdAt;
 
-	private SellTradeJournal(Trade sellTrade, String content, LocalDateTime createdAt) {
+	@Column(name = "updated_at", nullable = false)
+	private LocalDateTime updatedAt;
+
+	private SellTradeJournal(Trade sellTrade, String content, LocalDateTime createdAt, LocalDateTime updatedAt) {
 		this.sellTrade = sellTrade;
 		this.content = content;
 		this.createdAt = createdAt;
+		this.updatedAt = updatedAt;
 	}
 
 	public static SellTradeJournal of(Trade sellTrade, String content, LocalDateTime now) {
-		return new SellTradeJournal(sellTrade, content, now);
+		return new SellTradeJournal(sellTrade, content, now, now);
+	}
+
+	public void updateContent(String content, LocalDateTime updatedAt) {
+		this.content = content;
+		this.updatedAt = updatedAt;
 	}
 }
