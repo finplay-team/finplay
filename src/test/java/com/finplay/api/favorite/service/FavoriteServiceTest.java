@@ -1,8 +1,9 @@
-// 즐겨찾기 등록의 성공과 비즈니스·유일 제약 실패 분기를 검증하는 단위 테스트다.
+// 즐겨찾기 조회·등록·해제의 성공과 비즈니스·유일 제약 실패 분기를 검증하는 단위 테스트다.
 package com.finplay.api.favorite.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -81,7 +82,7 @@ class FavoriteServiceTest {
 		when(saved.getId()).thenReturn(99L);
 		when(saved.getInstrument()).thenReturn(instrument);
 		when(saved.getCreatedAt()).thenReturn(now());
-		when(favoriteRepository.saveAndFlush(org.mockito.ArgumentMatchers.any(Favorite.class))).thenReturn(saved);
+		when(favoriteRepository.saveAndFlush(any(Favorite.class))).thenReturn(saved);
 
 		FavoriteResponse result = favoriteService.createFavorite(7L, 10L);
 
@@ -98,7 +99,7 @@ class FavoriteServiceTest {
 		when(instrumentService.getInstrumentEntity(10L)).thenThrow(notFound);
 
 		assertThatThrownBy(() -> favoriteService.createFavorite(7L, 10L)).isSameAs(notFound);
-		verify(favoriteRepository, never()).saveAndFlush(org.mockito.ArgumentMatchers.any());
+		verify(favoriteRepository, never()).saveAndFlush(any());
 	}
 
 	@Test
@@ -147,11 +148,13 @@ class FavoriteServiceTest {
 	@Test
 	void deleteFavoriteDeletesOnlyOwnedFavorite() {
 		Favorite favorite = mock(Favorite.class);
+		when(favoriteRepository.existsByUserIdAndInstrumentId(7L, 10L)).thenReturn(true);
 		when(favoriteRepository.findByUserIdAndInstrumentIdForUpdate(7L, 10L))
 			.thenReturn(Optional.of(favorite));
 
 		favoriteService.deleteFavorite(7L, 10L);
 
+		verify(favoriteRepository).existsByUserIdAndInstrumentId(7L, 10L);
 		verify(favoriteRepository).findByUserIdAndInstrumentIdForUpdate(7L, 10L);
 		verify(favoriteRepository).delete(favorite);
 		verifyNoMoreInteractions(favoriteRepository);
@@ -160,20 +163,19 @@ class FavoriteServiceTest {
 
 	@Test
 	void deleteFavoriteFailsWithFavoriteNotFoundWhenFavoriteDoesNotExist() {
-		when(favoriteRepository.findByUserIdAndInstrumentIdForUpdate(7L, 10L))
-			.thenReturn(Optional.empty());
-
 		assertThatThrownBy(() -> favoriteService.deleteFavorite(7L, 10L))
 			.isInstanceOf(BusinessException.class)
 			.satisfies(error -> assertThat(((BusinessException)error).getErrorCode())
 				.isEqualTo(ErrorCode.FAVORITE_NOT_FOUND));
-		verify(favoriteRepository, never()).delete(org.mockito.ArgumentMatchers.any());
+		verify(favoriteRepository).existsByUserIdAndInstrumentId(7L, 10L);
+		verify(favoriteRepository, never()).findByUserIdAndInstrumentIdForUpdate(7L, 10L);
+		verify(favoriteRepository, never()).delete(any());
 	}
 
 	private void stubSaveFailure(DataIntegrityViolationException failure) {
 		when(instrumentService.getInstrumentEntity(10L)).thenReturn(instrument(true));
 		when(userQueryService.getUser(7L)).thenReturn(User.create("user@finplay.com", "hash", "user", now()));
-		when(favoriteRepository.saveAndFlush(org.mockito.ArgumentMatchers.any(Favorite.class))).thenThrow(failure);
+		when(favoriteRepository.saveAndFlush(any(Favorite.class))).thenThrow(failure);
 	}
 
 	private Instrument instrument(boolean tradable) {

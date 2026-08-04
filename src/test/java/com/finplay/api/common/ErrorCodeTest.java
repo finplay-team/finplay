@@ -11,7 +11,7 @@ class ErrorCodeTest {
 
 	@Test
 	void declaresEveryErrorCodeFromPrdAndOAuthSpecWithoutUnlistedOnes() {
-		assertThat(ErrorCode.values()).hasSize(24);
+		assertThat(ErrorCode.values()).hasSize(26);
 	}
 
 	@Test
@@ -27,6 +27,8 @@ class ErrorCodeTest {
 			Map.entry(ErrorCode.NOT_FOUND, HttpStatus.NOT_FOUND),
 			Map.entry(ErrorCode.FAVORITE_NOT_FOUND, HttpStatus.NOT_FOUND),
 			Map.entry(ErrorCode.DUPLICATE_RESOURCE, HttpStatus.CONFLICT),
+			Map.entry(ErrorCode.PRACTICE_STEP_LOCKED, HttpStatus.CONFLICT),
+			Map.entry(ErrorCode.PRACTICE_ALREADY_COMPLETED, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.INSTRUMENT_NOT_TRADABLE, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.EMAIL_VERIFICATION_REQUIRED, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.ACCOUNT_LINK_REQUIRED, HttpStatus.CONFLICT),
@@ -68,6 +70,14 @@ class ErrorCodeTest {
 	void favoriteNotFoundKeepsPublicDefaultMessage() {
 		assertThat(ErrorCode.FAVORITE_NOT_FOUND.getDefaultMessage())
 			.isEqualTo("즐겨찾기를 찾을 수 없습니다.");
+	}
+
+	@Test
+	void practiceErrorsKeepPublicDefaultMessages() {
+		assertThat(ErrorCode.PRACTICE_STEP_LOCKED.getDefaultMessage())
+			.isEqualTo("선행 실습 단계를 완료해야 합니다.");
+		assertThat(ErrorCode.PRACTICE_ALREADY_COMPLETED.getDefaultMessage())
+			.isEqualTo("이미 완료한 실습입니다.");
 	}
 
 	@Test

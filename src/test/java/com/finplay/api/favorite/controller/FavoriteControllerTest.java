@@ -1,7 +1,8 @@
-// 즐겨찾기 등록 API의 인증, 검증, 응답과 오류 계약을 검증하는 WebMvc 슬라이스 테스트다.
+// 즐겨찾기 조회·등록·해제 API의 인증, 검증, 응답과 오류 계약을 검증하는 WebMvc 슬라이스 테스트다.
 package com.finplay.api.favorite.controller;
 
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -149,7 +150,7 @@ class FavoriteControllerTest {
 			.andExpect(status().isNoContent())
 			.andExpect(content().string(""));
 
-		org.mockito.Mockito.verify(favoriteService).deleteFavorite(USER_ID, 10L);
+		verify(favoriteService).deleteFavorite(USER_ID, 10L);
 	}
 
 	@Test
