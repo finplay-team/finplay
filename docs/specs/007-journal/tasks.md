@@ -171,7 +171,7 @@
 
 ## 작업 항목
 
-- [ ] **U1. 마이그레이션 + 엔티티 `updatedAt` 필드·수정 메서드 + 리포지토리 조회 메서드**
+- [x] **U1. 마이그레이션 + 엔티티 `updatedAt` 필드·수정 메서드 + 리포지토리 조회 메서드**
 
   `plan.md` §데이터 모델의 3단계 DDL(nullable 추가 → `created_at`으로 백필 → `NOT NULL`로 좁히기)대로 `sell_trade_journals.updated_at`을 추가한다. `SellTradeJournal` 엔티티에 `updatedAt` 필드, `of(...)` 내부에서 `updatedAt`도 `now`로 채우는 변경, `updateContent(String content, LocalDateTime updatedAt)` 메서드(setter 아님)를 추가한다. `SellTradeJournalRepository`에 `findBySellTradeId`를 추가한다.
   - 착수 시점 `dev`의 마이그레이션 최신 번호를 **먼저 확인**한다.

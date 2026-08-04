@@ -12,6 +12,7 @@
 | S2 | implementer | `./gradlew compileJava` | plan.md §JOUR-003 §구성요소 설계(`createSellJournal` 1~5단계), `createBuyJournal` 선례(존재→소유→매도여부→중복 순, saveAndFlush 후 DataIntegrityViolationException→409 변환), ADR-0002 |
 | S3 | implementer | `./gradlew compileJava` | plan.md §JOUR-003 §구성요소 설계·§API 설계·§오류 매핑, `JournalController.createBuyJournal` 선례, CLAUDE.md 규칙 7 |
 | 리뷰(S) | reviewer(리뷰) | `git diff dev...HEAD`, `./gradlew compileJava compileTestJava spotlessCheck -q` | conventions.md, ADR-0002, ADR-0003, ADR-0004, spec.md, plan.md, tasks.md |
+| U1 | implementer | `./gradlew compileJava` | plan.md §JOUR-004 §데이터 모델(3단계 DDL, `of`/`updateContent` 설계), tasks.md U1, ADR-0004 |
 
 ## 모니터링 (사람용 요약)
 - 항목1 — `V14__create_buy_trade_journals.sql` + `BuyTradeJournal` 엔티티 + `BuyTradeJournalRepository` 추가, compileJava 통과. (이후 `dev`에 먼저 병합된 `V14__create_favorites.sql`과 번호가 겹쳐 `V15__create_buy_trade_journals.sql`로 재번호화됨 — plan.md §데이터 모델 참고)
@@ -23,3 +24,4 @@
 - S2 — `JournalService.createSellJournal` 추가(`tradeService.getOwnedTrade` 재사용, `side != SELL` 400, 선제 조회+`saveAndFlush` 유니크 위반 409 변환), 서비스 반환 타입 컴파일에 필요해 `SellJournalResponse`(4필드 응답 DTO, `from`)만 함께 추가, `TradeService`·매수 경로는 변경 없음, compileJava 통과.
 - S3 — `JournalController`에 `POST /api/trades/{sellTradeId}/sell-journal` 추가(기존 매수 메서드 리팩터링 없음) + `SellJournalCreateRequest`(`@NotBlank`+`@Size(max=5000)`) 추가, `docs/api-routes.md`(journal 행 1개)·`docs/api-contracts.md`(## journal 절, 매도 회고 계약) 같은 커밋 대상으로 갱신, compileJava 통과.
 - 리뷰(S) — 차단 0건 / 권장 1건(S4 커밋에 run-log 미기록) / 참고 1건. JOUR-003 코드·테스트·문서·마이그레이션 번호(V17) 모두 conventions/ADR 부합, JOUR-001 기존 코드·테스트 무변경 확인. 머지 가능.
+- U1 — `dev` 최신 번호(V17) 확인 후 `V18__add_updated_at_to_sell_trade_journals.sql`(nullable 추가→백필→NOT NULL 3단계) + `SellTradeJournal.updatedAt`·`updateContent(content, updatedAt)`(`of`는 시그니처 유지, 내부에서 `updatedAt`도 `now`로 채움) + `SellTradeJournalRepository.findBySellTradeId` 추가, 테스트는 tester 담당이라 미작성, compileJava 통과.
