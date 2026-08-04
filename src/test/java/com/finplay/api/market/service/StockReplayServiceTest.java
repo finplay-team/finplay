@@ -1029,4 +1029,179 @@ class StockReplayServiceTest {
 		assertThat(result).hasSize(1);
 		assertThat(result.get(0).tradingDate()).isEqualTo(firstOfMonthFrom);
 	}
+
+	// --- spec 012 §C-6 조회 4종 (이슈 #180 항목 2) ---
+	//
+	// 여기서는 "어떤 날짜·어떤 상태를 보는가"만 단정한다. 실제 분봉으로 값을 보는 대비
+	// (getFullDayCandles ↔ getRevealedCandles, 직전 거래일 마지막 분봉 종가)는
+	// StockReplayServiceFullDayQueryTest가 실제 MySQL 픽스처로 맡는다.
+
+	// 2026-08-18(화) — 직전 영업일이 08-17(월, 공휴일)·08-16(일)·08-15(토, 공휴일)을 건너뛰어 08-14(금)이다.
+	private static final LocalDate TUESDAY_AFTER_HOLIDAY = LocalDate.of(2026, 8, 18);
+	private static final LocalDate FRIDAY_BEFORE_HOLIDAY = LocalDate.of(2026, 8, 14);
+	// WEEKDAY(2026-07-27 월)의 직전 영업일 — 주말 2일을 건너뛴 2026-07-24(금)
+	private static final LocalDate FRIDAY_BEFORE_WEEKDAY = LocalDate.of(2026, 7, 24);
+
+	@Test
+	void getCurrentReplaySessionReturnsReadyWithSourceTradingDateOfTodayServiceDate() {
+		LocalDate sourceTradingDate = LocalDate.of(2026, 7, 24);
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, sourceTradingDate)));
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(8, 45)));
+
+		StockReplaySessionDto session = service.getCurrentReplaySession();
+
+		assertThat(session.ready()).isTrue();
+		assertThat(session.sourceTradingDate()).isEqualTo(sourceTradingDate);
+	}
+
+	@Test
+	void getCurrentReplaySessionReturnsNotReadyWithoutTradingDateWhenNoSessionRowExists() {
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY)).thenReturn(Optional.empty());
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(8, 45)));
+
+		StockReplaySessionDto session = service.getCurrentReplaySession();
+
+		assertThat(session.ready()).isFalse();
+		assertThat(session.sourceTradingDate()).isNull();
+	}
+
+	// 단정 지점은 "예외가 아니다"가 아니라 후보 거래일이 새어 나가지 않는다는 것이다 — PREPARING의
+	// source_trading_date는 확정 전 값이라 그대로 돌려주면 아직 재생하지 않을 날짜를 노출한다.
+	@Test
+	void getCurrentReplaySessionDoesNotLeakCandidateTradingDateOfPreparingSession() {
+		LocalDate candidate = LocalDate.of(2026, 7, 24);
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY)).thenReturn(Optional.of(
+			StockReplaySession.preparing(WEEKDAY, candidate, LocalDateTime.of(WEEKDAY, LocalTime.of(8, 0)))));
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(8, 45)));
+
+		StockReplaySessionDto session = service.getCurrentReplaySession();
+
+		assertThat(session.ready()).isFalse();
+		assertThat(session.sourceTradingDate()).isNull();
+	}
+
+	@Test
+	void getCurrentReplaySessionDoesNotLeakTradingDateOfFailedSession() {
+		LocalDate attempted = LocalDate.of(2026, 7, 24);
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY)).thenReturn(Optional.of(
+			StockReplaySession.failed(WEEKDAY, attempted, LocalDateTime.of(WEEKDAY, LocalTime.of(8, 30)),
+				"NO_DATA", LocalDateTime.of(WEEKDAY, LocalTime.of(8, 0)))));
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(8, 45)));
+
+		StockReplaySessionDto session = service.getCurrentReplaySession();
+
+		assertThat(session.ready()).isFalse();
+		assertThat(session.sourceTradingDate()).isNull();
+	}
+
+	@Test
+	void getSourceTradingDateReturnsSourceTradingDateOfReadySession() {
+		LocalDate sourceTradingDate = LocalDate.of(2026, 7, 24);
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, sourceTradingDate)));
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(10, 0)));
+
+		assertThat(service.getSourceTradingDate(WEEKDAY)).contains(sourceTradingDate);
+	}
+
+	@Test
+	void getSourceTradingDateReturnsEmptyForPreparingSessionThatAlreadyHasCandidateDate() {
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY)).thenReturn(Optional.of(
+			StockReplaySession.preparing(WEEKDAY, LocalDate.of(2026, 7, 24),
+				LocalDateTime.of(WEEKDAY, LocalTime.of(8, 0)))));
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(10, 0)));
+
+		assertThat(service.getSourceTradingDate(WEEKDAY)).isEmpty();
+	}
+
+	@Test
+	void getSourceTradingDateReturnsEmptyForFailedSessionThatHasSourceTradingDate() {
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY)).thenReturn(Optional.of(
+			StockReplaySession.failed(WEEKDAY, LocalDate.of(2026, 7, 24),
+				LocalDateTime.of(WEEKDAY, LocalTime.of(8, 30)), "NO_DATA",
+				LocalDateTime.of(WEEKDAY, LocalTime.of(8, 0)))));
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(10, 0)));
+
+		assertThat(service.getSourceTradingDate(WEEKDAY)).isEmpty();
+	}
+
+	// §C-6 — 과거 서비스 날짜도 조회할 수 있어야 한다. 인자를 무시하고 오늘로 조회하면 지난 체결·카드를
+	// 그때 재생 중이던 거래일로 되읽을 수 없다.
+	@Test
+	void getSourceTradingDateLooksUpTheGivenServiceDateNotToday() {
+		LocalDate today = LocalDate.of(2026, 7, 30);
+		LocalDate pastServiceDate = WEEKDAY;
+		LocalDate pastSourceTradingDate = LocalDate.of(2026, 7, 24);
+		when(stockReplaySessionRepository.findByServiceDate(pastServiceDate))
+			.thenReturn(Optional.of(readySession(pastServiceDate, pastSourceTradingDate)));
+		StockReplayService service = service(fixedClock(today, LocalTime.of(10, 0)));
+
+		assertThat(service.getSourceTradingDate(pastServiceDate)).contains(pastSourceTradingDate);
+		verify(stockReplaySessionRepository).findByServiceDate(pastServiceDate);
+		verify(stockReplaySessionRepository, never()).findByServiceDate(today);
+	}
+
+	// 게이트 우회가 의도된 계약이다(§C-6) — 세션 행이 없어도, 상태가 무엇이어도 분봉을 그대로 준다.
+	// 세션 리포지토리를 아예 건드리지 않는 것이 그 계약의 형태다.
+	@Test
+	void getFullDayCandlesDoesNotConsultTheReplaySessionAtAll() {
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateOrderByCandleTimeAsc(INSTRUMENT_ID, WEEKDAY))
+			.thenReturn(List.of(
+				candle(LocalTime.of(9, 0), bd(1000), bd(1010)),
+				candle(LocalTime.of(15, 27), bd(1020), bd(1030))));
+		// 개장 전 시각이고 세션 조회 스텁도 없다 — 세션을 본다면 여기서 빈 목록이 나오거나 NPE가 난다.
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(8, 45)));
+
+		List<StockCandleDto> candles = service.getFullDayCandles(INSTRUMENT_ID, WEEKDAY);
+
+		assertThat(candles).extracting(StockCandleDto::candleTime)
+			.containsExactly(LocalTime.of(9, 0), LocalTime.of(15, 27));
+		verifyNoInteractions(stockReplaySessionRepository);
+	}
+
+	// §C-6 — 직전 거래일은 BusinessDayCalendar.previousBusinessDay가 가리키는 날짜 하나뿐이다.
+	// tradingDate.minusDays(1)로 짜면 월요일에 일요일을 조회해 매주 월요일 갭 카드가 사라진다.
+	@Test
+	void getPreviousTradingDayCloseSkipsTheWeekendWhenResolvingPreviousBusinessDay() {
+		when(stockCandleRepository.findFirstByInstrumentIdAndTradingDateOrderByCandleTimeDesc(
+			INSTRUMENT_ID, FRIDAY_BEFORE_WEEKDAY))
+			.thenReturn(Optional.of(candle(FRIDAY_BEFORE_WEEKDAY, LocalTime.of(15, 27),
+				bd(1000), bd(1010), bd(990), bd(1005), 10)));
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(8, 45)));
+
+		assertThat(service.getPreviousTradingDayClose(INSTRUMENT_ID, WEEKDAY))
+			.contains(BigDecimal.valueOf(1005));
+		ArgumentCaptor<LocalDate> dateCaptor = ArgumentCaptor.forClass(LocalDate.class);
+		verify(stockCandleRepository).findFirstByInstrumentIdAndTradingDateOrderByCandleTimeDesc(
+			eq(INSTRUMENT_ID), dateCaptor.capture());
+		assertThat(dateCaptor.getValue()).isEqualTo(FRIDAY_BEFORE_WEEKDAY);
+		assertThat(dateCaptor.getValue()).isNotEqualTo(WEEKDAY.minusDays(1));
+	}
+
+	@Test
+	void getPreviousTradingDayCloseSkipsHolidaysAsWellAsTheWeekend() {
+		when(stockCandleRepository.findFirstByInstrumentIdAndTradingDateOrderByCandleTimeDesc(
+			INSTRUMENT_ID, FRIDAY_BEFORE_HOLIDAY))
+			.thenReturn(Optional.of(candle(FRIDAY_BEFORE_HOLIDAY, LocalTime.of(15, 29),
+				bd(2000), bd(2010), bd(1990), bd(2007), 10)));
+		StockReplayService service = service(fixedClock(TUESDAY_AFTER_HOLIDAY, LocalTime.of(8, 45)));
+
+		assertThat(service.getPreviousTradingDayClose(INSTRUMENT_ID, TUESDAY_AFTER_HOLIDAY))
+			.contains(BigDecimal.valueOf(2007));
+		verify(stockCandleRepository).findFirstByInstrumentIdAndTradingDateOrderByCandleTimeDesc(
+			INSTRUMENT_ID, FRIDAY_BEFORE_HOLIDAY);
+	}
+
+	// §FEED-002 — 직전 거래일 분봉이 없으면 갭 카드를 만들지 않는 것이 정상이고 오류가 아니다.
+	@Test
+	void getPreviousTradingDayCloseReturnsEmptyWhenPreviousBusinessDayHasNoCandle() {
+		when(stockCandleRepository.findFirstByInstrumentIdAndTradingDateOrderByCandleTimeDesc(
+			INSTRUMENT_ID, FRIDAY_BEFORE_WEEKDAY))
+			.thenReturn(Optional.empty());
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(8, 45)));
+
+		assertThat(service.getPreviousTradingDayClose(INSTRUMENT_ID, WEEKDAY)).isEmpty();
+		verifyNoInteractions(stockReplaySessionRepository);
+	}
 }

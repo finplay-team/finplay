@@ -131,6 +131,12 @@ class NewsCollectionScheduleTest {
 
 	// ①의 뒷면 — "재생 시점이 아니라 기사 당일에 수집한다"는 재생 경로가 수집을 부르지 않아야 성립한다.
 	// 수집 진입점은 @Scheduled 2종뿐이고 다른 어떤 코드도 이 서비스를 부르지 않는다는 것을 소스에서 직접 본다.
+	//
+	// 주석은 검사 대상에서 뺀다(이슈 #180). 파일 전체를 문자열로 훑으면 "수집은 이 배치가 하지 않는다"처럼
+	// 그 클래스를 언급하는 설명 주석만으로 실패해 문서화를 막는데, 지키려는 것은 코드가 이 서비스를 부르지
+	// 않는다는 것이므로 주석은 애초에 대상이 아니다. 문자열 리터럴은 그대로 둔다 — 코드가 아니지만 남겨 두는
+	// 쪽이 안전한 방향이고(거짓 양성은 눈에 띄고 거짓 음성은 안 띈다), 리터럴 안의 //로 뒤 코드가 잘려
+	// 실제 호출을 놓치는 일도 없어야 하기 때문이다.
 	@Test
 	@DisplayName("수집 서비스를 부르는 코드가 스케줄 진입점 외에 없다 — 재생 경로가 수집을 부르지 않는다")
 	void noOtherSourceFileTriggersCollection() throws IOException {
@@ -140,13 +146,93 @@ class NewsCollectionScheduleTest {
 			List<Path> callers = sources
 				.filter(path -> path.toString().endsWith(".java"))
 				.filter(path -> !path.equals(serviceFile))
-				.filter(path -> readString(path).contains("NewsCollectionService"))
+				.filter(path -> stripComments(readString(path)).contains("NewsCollectionService"))
 				.toList();
 
 			assertThat(callers)
 				.as("수집을 부르는 다른 경로가 생기면 '기사 당일 수집'이 재생 시점 수집으로 바뀔 수 있다")
 				.isEmpty();
 		}
+	}
+
+	// 위 스캔이 약해지지 않았는지를 직접 단정한다 — 주석만 빠지고 코드 형태는 전부 남아야 한다.
+	@Test
+	@DisplayName("주석 제거가 코드 참조는 남기고 설명 주석만 지운다")
+	void stripCommentsRemovesOnlyCommentsAndKeepsEveryCodeReference() {
+		// 주석 3종 — 이 형태들만으로는 스캔에 걸리지 않아야 한다.
+		assertThat(stripComments("// 수집은 NewsCollectionService가 맡는다\nclass A {}"))
+			.doesNotContain("NewsCollectionService");
+		assertThat(stripComments("/* NewsCollectionService 참고 */\nclass A {}"))
+			.doesNotContain("NewsCollectionService");
+		assertThat(stripComments("/** {@link NewsCollectionService} */\nclass A {}"))
+			.doesNotContain("NewsCollectionService");
+
+		// 코드 형태 — 전부 그대로 남아야 한다.
+		assertThat(stripComments("import com.finplay.api.feedback.service.NewsCollectionService;"))
+			.contains("NewsCollectionService");
+		assertThat(stripComments("private final NewsCollectionService collector;"))
+			.contains("NewsCollectionService");
+		assertThat(stripComments("void f(NewsCollectionService s) { s.collectNews(); }"))
+			.contains("NewsCollectionService");
+
+		// 리터럴 안의 //가 뒤 코드를 삼키면 실제 호출을 놓친다. 삼키지 않아야 한다.
+		assertThat(stripComments("String u = \"http://x\"; NewsCollectionService s;"))
+			.contains("NewsCollectionService");
+		// 텍스트 블록도 같다 — src/main에 실제로 쓰이는 형태다(@Query JPQL).
+		assertThat(stripComments("String q = \"\"\"\n  a // b\n  \"\"\"; NewsCollectionService s;"))
+			.contains("NewsCollectionService");
+		// 주석 안의 따옴표가 이후 코드를 문자열로 잘못 물면 안 된다.
+		assertThat(stripComments("// 그 서비스는 \"수집\"만 한다\nNewsCollectionService s;"))
+			.contains("NewsCollectionService");
+	}
+
+	/**
+	 * 자바 소스에서 주석만 지우고 나머지는 그대로 둔다. 문자열·문자·텍스트 블록 리터럴 안의 {@code //}를
+	 * 주석 시작으로 잘못 읽으면 그 줄의 실제 코드가 통째로 사라져 스캔이 조용히 약해지므로 리터럴 경계를
+	 * 함께 추적한다.
+	 */
+	static String stripComments(String source) {
+		StringBuilder out = new StringBuilder(source.length());
+		int index = 0;
+		while (index < source.length()) {
+			char current = source.charAt(index);
+			if (source.startsWith("//", index)) {
+				while (index < source.length() && source.charAt(index) != '\n') {
+					index++;
+				}
+			} else if (source.startsWith("/*", index)) {
+				int end = source.indexOf("*/", index + 2);
+				index = end < 0 ? source.length() : end + 2;
+			} else if (source.startsWith("\"\"\"", index)) {
+				int end = source.indexOf("\"\"\"", index + 3);
+				int stop = end < 0 ? source.length() : end + 3;
+				out.append(source, index, stop);
+				index = stop;
+			} else if (current == '"' || current == '\'') {
+				index = appendLiteral(source, index, current, out);
+			} else {
+				out.append(current);
+				index++;
+			}
+		}
+		return out.toString();
+	}
+
+	private static int appendLiteral(String source, int start, char quote, StringBuilder out) {
+		out.append(quote);
+		int index = start + 1;
+		while (index < source.length()) {
+			char current = source.charAt(index);
+			out.append(current);
+			index++;
+			if (current == '\\' && index < source.length()) {
+				out.append(source.charAt(index));
+				index++;
+			} else if (current == quote) {
+				break;
+			}
+		}
+		return index;
 	}
 
 	private static String readString(Path path) {

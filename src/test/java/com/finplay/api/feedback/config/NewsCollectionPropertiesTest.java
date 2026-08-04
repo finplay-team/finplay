@@ -81,6 +81,70 @@ class NewsCollectionPropertiesTest {
 		});
 	}
 
+	// --- 근거 매칭 3키 (이슈 #180 항목 3) — §C-2 근거창·§뉴스 매칭 범위 상한 ---
+
+	@Test
+	@DisplayName("feedback.news 설정을 하나도 주지 않아도 §C-7 근거 매칭 3키가 기본값으로 바인딩된다")
+	void bindsSpecMatchingDefaultsWhenNoFeedbackNewsPropertyIsGiven() {
+		contextRunner.run(context -> {
+			assertThat(context).hasNotFailed();
+
+			FeedbackNewsProperties properties = context.getBean(FeedbackNewsProperties.class);
+			assertThat(properties.matchBeforeMinutes()).isEqualTo(30);
+			assertThat(properties.matchAfterMinutes()).isEqualTo(5);
+			assertThat(properties.maxSourcesPerCard()).isEqualTo(5);
+		});
+	}
+
+	@Test
+	@DisplayName("근거 매칭 3키를 케밥케이스로 주면 모두 덮어써지고 크론은 그대로다")
+	void bindsEveryMatchingPropertyFromKebabCaseKeys() {
+		contextRunner
+			.withPropertyValues(
+				"feedback.news.match-before-minutes=45",
+				"feedback.news.match-after-minutes=10",
+				"feedback.news.max-sources-per-card=3")
+			.run(context -> {
+				assertThat(context).hasNotFailed();
+
+				FeedbackNewsProperties properties = context.getBean(FeedbackNewsProperties.class);
+				assertThat(properties.matchBeforeMinutes()).isEqualTo(45);
+				assertThat(properties.matchAfterMinutes()).isEqualTo(10);
+				assertThat(properties.maxSourcesPerCard()).isEqualTo(3);
+				assertThat(properties.collectCron()).isEqualTo(SPEC_COLLECT_CRON);
+				assertThat(properties.disclosureCron()).isEqualTo(SPEC_DISCLOSURE_CRON);
+			});
+	}
+
+	// 잘못된 값이 예외도 로그도 없이 "근거 0건 → 카드 미생성"으로 나타나므로 기동 시점에 막는다(FEED-003).
+	@Test
+	@DisplayName("근거창 폭이 음수이면 기동이 실패한다 — 근거창이 항상 비는 상태로 굳지 않는다")
+	void failsWhenMatchWindowWidthIsNegative() {
+		contextRunner
+			.withPropertyValues("feedback.news.match-before-minutes=-1")
+			.run(context -> assertThat(context)
+				.hasFailed()
+				.getFailure()
+				.rootCause()
+				.isInstanceOf(IllegalArgumentException.class));
+		contextRunner
+			.withPropertyValues("feedback.news.match-after-minutes=-1")
+			.run(context -> assertThat(context).hasFailed());
+	}
+
+	@Test
+	@DisplayName("max-sources-per-card가 1 미만이면 기동이 실패한다")
+	void failsWhenMaxSourcesPerCardIsBelowOne() {
+		contextRunner
+			.withPropertyValues("feedback.news.max-sources-per-card=0")
+			.run(context -> assertThat(context)
+				.hasFailed()
+				.getFailure()
+				.rootCause()
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("max-sources-per-card"));
+	}
+
 	// §C-7 — 자격증명 3종은 시크릿이라 @DefaultValue를 붙이지 않는다. 코드에 값이 박히면 이 테스트가 깨진다.
 	@Test
 	@DisplayName("자격증명 3종은 설정이 없으면 비어 있다 — 시크릿 기본값이 코드에 박히지 않는다")

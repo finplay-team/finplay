@@ -201,6 +201,48 @@ class StockCandleRepositoryTest {
 		assertThat(exact.get().getCandleTime()).isEqualTo(LocalTime.of(9, 1));
 	}
 
+	// --- 직전 거래일 마지막 분봉 조회(findFirstByInstrumentIdAndTradingDateOrderByCandleTimeDesc, 이슈 #180) ---
+
+	// 마지막 분봉을 15:30이 아닌 시각에 둔다 — 리터럴 15:30으로 찾는 구현이 통과하지 못하게 하는 것이
+	// 이 파인더를 신설한 이유다(spec 012 §C-2-1).
+	@Test
+	void findFirstByCandleTimeDescReturnsTheLastCandleOfTheDayEvenWhenItIsNotAtHalfPastThree() {
+		stockCandleRepository.save(newCandle(instrumentA, TRADING_DATE, LocalTime.of(9, 0), "71200"));
+		stockCandleRepository.save(newCandle(instrumentA, TRADING_DATE, LocalTime.of(15, 27), "73000"));
+		stockCandleRepository.save(newCandle(instrumentA, TRADING_DATE, LocalTime.of(12, 0), "72000"));
+
+		Optional<StockCandle> last = stockCandleRepository
+			.findFirstByInstrumentIdAndTradingDateOrderByCandleTimeDesc(instrumentA.getId(), TRADING_DATE);
+
+		assertThat(last).isPresent();
+		assertThat(last.get().getCandleTime()).isEqualTo(LocalTime.of(15, 27));
+		assertThat(last.get().getClose()).isEqualByComparingTo("73000");
+	}
+
+	@Test
+	void findFirstByCandleTimeDescReturnsEmptyWhenThatInstrumentHasNoCandleOnThatDate() {
+		stockCandleRepository.save(newCandle(instrumentA, OTHER_TRADING_DATE, LocalTime.of(15, 27), "73000"));
+		stockCandleRepository.save(newCandle(instrumentB, TRADING_DATE, LocalTime.of(15, 27), "99000"));
+
+		Optional<StockCandle> last = stockCandleRepository
+			.findFirstByInstrumentIdAndTradingDateOrderByCandleTimeDesc(instrumentA.getId(), TRADING_DATE);
+
+		assertThat(last).isEmpty();
+	}
+
+	@Test
+	void findFirstByCandleTimeDescDoesNotLookAtOtherInstrumentsLaterCandle() {
+		stockCandleRepository.save(newCandle(instrumentA, TRADING_DATE, LocalTime.of(9, 0), "71200"));
+		// 다른 종목이 더 늦은 분봉을 갖고 있어도 instrumentA의 마지막 분봉이 나와야 한다.
+		stockCandleRepository.save(newCandle(instrumentB, TRADING_DATE, LocalTime.of(15, 29), "99000"));
+
+		Optional<StockCandle> last = stockCandleRepository
+			.findFirstByInstrumentIdAndTradingDateOrderByCandleTimeDesc(instrumentA.getId(), TRADING_DATE);
+
+		assertThat(last).isPresent();
+		assertThat(last.get().getCandleTime()).isEqualTo(LocalTime.of(9, 0));
+	}
+
 	// --- 캔들 API 시각 범위 조회(findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc) ---
 
 	@Test

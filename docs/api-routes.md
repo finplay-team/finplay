@@ -49,6 +49,7 @@
 | GET | /api/favorites | education | 본인 즐겨찾기를 등록 최신순으로 순수 조회 | 016 EDU-PRACTICE-002, candidate 2, Issue #168 |
 | DELETE | /api/favorites/{instrumentId} | education | 본인 즐겨찾기 해제 | 016 EDU-PRACTICE-002, candidate 3, Issue #172 |
 | POST | /api/education/practice/intentions | education | favorite로 선행 확인한 종목의 매수 전 수량·손절가·익절가 기록 | 016 EDU-PRACTICE-003·013, candidate 4, Issue #175 |
+| GET | /api/instruments/{instrumentId}/price-moves | feedback | 종목의 변동 원인 카드 목록 조회. 주식은 현재 재생세션 원본 거래일 중 `revealTime`이 지난 카드만(스포일러 차단) `windowStart` 오름차순, 각 카드의 근거는 발행시각 내림차순. 카드 0건·재생세션 미준비 모두 200(후자는 `originTradeDate=null`) | 012 FEED-006, Issue #180 |
 
 ## 투자 실습 계획 라우트 (아직 구현하지 않음)
 
@@ -67,16 +68,15 @@ candidate 1·2·3·4와 나머지 6개 계획 경로 모두 공개 경로에 추
 
 ## 2차 계획 라우트 (아직 구현하지 않음)
 
-아래는 `docs/specs/012-ai-feedback` 착수 시 추가될 예정인 라우트다. **controller가 아직 없으므로 위 라우트 목록과 분리해 둔다** — 구현이 병합되는 커밋에서 위 표로 옮긴다. 블랙박스 QA는 이 절을 계약 근거로 사용하지 않는다.
+`docs/specs/012-ai-feedback`의 `GET /api/instruments/{instrumentId}/price-moves`(FEED-006)는 구현되어 위 실제 라우트 목록에 반영했다. 아래 3개 경로는 계약만 확정했으며 아직 controller가 없다. **위 실제 라우트 목록과 분리하며 블랙박스 QA의 실행 가능 API 근거로 사용하지 않는다.** 각 구현이 병합되는 커밋에서 해당 행을 위 표로 옮기고 `docs/api-contracts.md`의 계획 표시를 제거한다.
 
 | Method | URL | 도메인 | 요약 | Spec |
 |---|---|---|---|---|
-| GET | /api/instruments/{instrumentId}/price-moves | feedback | 종목의 변동 원인 카드 목록 조회. 주식은 현재 재생세션 원본 거래일 중 `revealTime`이 지난 카드만(스포일러 차단), 코인은 최근 24시간. **기존 Notion 명세에 없는 신규 엔드포인트** | 012 FEED-006 |
 | GET | /api/ai/post-sell/{tradeId} | feedback | 본인 매도 체결 1건의 매도 직후 피드백. 원장의 FIFO 수치 + 보유 구간 변동 원인 카드 + 관찰형 서술. 같은 원본 거래일 안에서 완결된 매매만 카드·최고가·최저가 포함. **2차는 주식 전용 — 코인 체결은 400**. **투자일기에 의존하지 않는다** | 012 FEED-007 |
 | GET | /api/instruments/{instrumentId}/news | feedback | 종목의 뉴스·공시 목록과 AI 요약 조회. 주식은 09:00 이후에만 노출하며 발행시각이 재생 시각을 지난 것만, 코인은 최근 24시간. 요약은 배치가 미리 만들어 두므로 이 경로는 순수 조회다. **기존 Notion 명세에 없는 신규 엔드포인트** | 012 FEED-008 |
 | GET | /api/market/briefing?market= | feedback | 개장 전 브리핑. 주식은 **spec §C-2의 `전장` 구간 기사·공시만**(장중 기사 절대 미포함), 09:00 이전에는 `status=NOT_YET`. 코인은 최근 24시간. 뉴스 보고 매매하는 사용자의 진입점. **기존 Notion 명세에 없는 신규 엔드포인트** | 012 FEED-009 |
 
-네 경로 모두 `SecurityConfig` 공개 목록에 추가하지 않는다 — `anyRequest().authenticated()`로 떨어져 Access Bearer 토큰을 요구한다.
+구현된 `price-moves`와 위 3개 계획 경로 모두 `SecurityConfig` 공개 목록에 추가하지 않는다 — `anyRequest().authenticated()`로 떨어져 Access Bearer 토큰을 요구한다.
 
 **Notion 명세와의 차이 (팀 동기화 필요)**
 
