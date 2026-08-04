@@ -243,7 +243,7 @@
 
 - **잠금 로직을 만들지 않는다.** `spec.md`가 "매수 회고 수정 잠금 없음"으로 확정했다(이 결정이 `005-order-sell/spec.md`의 잠금 규정을 대체한다). `JOURNAL_LOCKED` 등 새 오류 코드를 추가하지 않고, 수정 횟수·기간 제한을 넣지 않으며, **`HoldingLotRepository`·`TradeAllocationRepository`를 journal 쪽에 주입하지 않는다.** `updateBuyJournal`의 단계 구성이 `updateSellJournal`과 같아야 한다 — 달라졌다면 잠금이 새어 들어온 것이다.
 - **원장을 건드리지 않는다.** 마이그레이션은 `buy_trade_journals`의 `updated_at` 컬럼 추가·백필뿐이고, 원장 테이블(`orders`·`trades`·`accounts`·`holdings`·`holding_lots`·`trade_allocations`)에는 `ALTER`·`DROP`이 없다. 코드는 `trades`를 읽기만 한다.
-- **마이그레이션은 신규 번호 파일 1개**다 (ADR-0004). 착수 시점 `dev`의 최신 번호를 **실제로 재확인**해 그 다음을 쓴다. 조사 시점 최신은 `V18`이라 `V19`로 만들었으나, 구현 중 `dev`에 `V19__drop_favorites_and_practice_intentions.sql`(#193)이 먼저 병합돼 **`V20`으로 재번호화했다** — 병합 순서에 따라 번호가 바뀔 수 있다는 이 문서의 경고가 실제로 발생한 사례다(V14→V15 재번호화 전례와 같은 패턴). 머지된 파일은 수정하지 않는다.
+- **마이그레이션은 신규 번호 파일 1개**다 (ADR-0004). 착수 시점 `dev`의 최신 번호를 **실제로 재확인**해 그 다음을 쓴다. 조사 시점 최신은 `V18`이라 `V19`로 만들었으나, PR 리뷰 중 `dev`에 `V19__drop_favorites_and_practice_intentions.sql`(#193)이 먼저 병합돼 `V20`으로 재번호화했고, 이후 `dev`에 `V20__add_stock_replay_session_to_trades.sql`(#191)까지 먼저 병합돼 **최종적으로 `V21`로 재번호화했다** — 병합 순서에 따라 번호가 바뀔 수 있다는 이 문서의 경고가 같은 이슈 안에서 두 번 실제로 발생한 사례다(V14→V15 재번호화 전례와 같은 패턴). 머지된 파일은 수정하지 않는다.
 - **`TradeService`를 변경하지 않는다.** `getOwnedTrade(userId, tradeId)`를 그대로 재사용한다. journal이 `TradeRepository`를 직접 주입하지 않는 규칙(ADR-0002)은 그대로다.
 - **기존 작성·수정 경로(JOUR-001·003·004)를 리팩터링하지 않는다.** `BuyTradeJournal.of(...)`가 내부적으로 `updatedAt`을 함께 채우는 것 외에는 기존 동작·계약을 바꾸지 않는다. 네 유스케이스의 공통 추상화도 만들지 않는다.
 - **작성 응답 계약(`BuyJournalResponse`, 4필드)을 바꾸지 않는다.** 수정 응답은 새 레코드 `BuyJournalUpdateResponse`(5필드)로 분리한다.
@@ -266,7 +266,7 @@
   - 백필 대상은 기존 행의 `created_at` 값이다 — 상수 `DEFAULT`를 쓰지 않는다.
   - `of(...)`의 시그니처는 바꾸지 않는다 — 호출부(`createBuyJournal`)를 수정할 필요가 없어야 한다.
   - `V18`(매도 회고)과 같은 형태이므로 참고하되, **복사하면서 테이블·컬럼명을 매수 쪽으로 바꾸는 것을 빠뜨리지 않는다.**
-  - **실제 결과: `V20`.** 착수 시점엔 `V19`로 만들었으나, PR 리뷰 중 `dev`에 `V19__drop_favorites_and_practice_intentions.sql`(#193)이 먼저 병합된 것이 확인돼 `V20__add_updated_at_to_buy_trade_journals.sql`로 재번호화했다 — PR을 올린 뒤에도 병합 직전에 `dev`를 한 번 더 대조해야 한다는 근거 사례다.
+  - **실제 결과: `V21`.** 착수 시점엔 `V19`로 만들었으나, PR 리뷰 중 `dev`에 `V19__drop_favorites_and_practice_intentions.sql`(#193)이 먼저 병합돼 `V20`으로, 그 뒤 `dev`에 `V20__add_stock_replay_session_to_trades.sql`(#191)까지 먼저 병합돼 다시 `V21__add_updated_at_to_buy_trade_journals.sql`로 재번호화했다 — PR을 올린 뒤에도 병합 대기 중에는 `dev`를 계속 다시 대조해야 한다는 근거 사례다.
   - 검증 — `@DataJpaTest`(`BuyTradeJournalRepositoryTest`): ① `findByBuyTradeId` 존재/부재 각각 값 있음/`empty()` ② `updateContent` 후 flush하면 `content`·`updated_at`만 바뀌고 `created_at`·`buy_trade_id`·`id`는 그대로 ③ 신규 컬럼의 `NOT NULL` 제약.
   - 검증 — `./gradlew test`로 기존 `@SpringBootTest`의 `ddl-auto=validate` 통과 확인.
 
