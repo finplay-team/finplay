@@ -65,7 +65,10 @@ public class LocalForcedOpenStockPriceProvider implements StockPriceProvider {
 
 	@Override
 	public StockReplayPriceDto getCurrentPrice(Long instrumentId) {
-		StockReplayPriceDto quote = delegate.getCurrentPrice(instrumentId);
+		return forceOpenWhenReady(delegate.getCurrentPrice(instrumentId));
+	}
+
+	private StockReplayPriceDto forceOpenWhenReady(StockReplayPriceDto quote) {
 		if (!forceMarketOpen || quote.marketStatus() == StockMarketStatus.OPEN || !quote.sessionReady()) {
 			return quote;
 		}
@@ -76,7 +79,7 @@ public class LocalForcedOpenStockPriceProvider implements StockPriceProvider {
 
 	@Override
 	public List<StockReplayPriceDto> getCurrentPrices(List<Long> instrumentIds) {
-		return delegate.getCurrentPrices(instrumentIds);
+		return delegate.getCurrentPrices(instrumentIds).stream().map(this::forceOpenWhenReady).toList();
 	}
 
 	@Override
