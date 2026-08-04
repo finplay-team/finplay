@@ -144,6 +144,35 @@ class MarketNewsItemRepositoryTest {
 		assertThat(found.getCreatedAt()).isEqualTo(COLLECTED_AT);
 	}
 
+	// 수집이 중복을 거르는 유일한 경로다. 단일 필드(url)만 뽑는 조회라 파생 쿼리 이름으로 선언하면 컴파일은
+	// 통과하고 실행에서 변환 실패로 죽는다(docs/agent-mistakes.md 2026-08-03) — 실제 MySQL에서 한 번 태운다.
+	@Test
+	@DisplayName("findExistingUrls는 그 종목에 이미 저장된 URL만 돌려준다")
+	void findExistingUrlsReturnsOnlyTheUrlsAlreadyStoredForThatInstrument() {
+		String storedForA = "https://news.example.com/article/2001";
+		String storedForB = "https://news.example.com/article/2002";
+		String neverStored = "https://news.example.com/article/2003";
+		marketNewsItemRepository.saveAndFlush(newsItem(instrumentA, storedForA));
+		marketNewsItemRepository.saveAndFlush(newsItem(instrumentB, storedForB));
+
+		List<String> existing = marketNewsItemRepository.findExistingUrls(
+			instrumentA.getId(), List.of(storedForA, storedForB, neverStored));
+
+		// storedForB는 다른 종목 것이라 빠진다 — 축이 url 단독이 아니라 (종목, url)이다.
+		assertThat(existing).containsExactly(storedForA);
+	}
+
+	@Test
+	@DisplayName("findExistingUrls는 저장된 것이 없으면 빈 목록을 준다")
+	void findExistingUrlsReturnsEmptyWhenNothingWasStoredYet() {
+		assertThat(marketNewsItemRepository.findExistingUrls(instrumentA.getId(), List.of(URL))).isEmpty();
+	}
+
+	private MarketNewsItem newsItem(Instrument instrument, String url) {
+		return MarketNewsItem.create(
+			instrument, MarketNewsItemType.NEWS, "반도체 업황 둔화", "테스트경제", url, PUBLISHED_AT, COLLECTED_AT);
+	}
+
 	@Test
 	@DisplayName("type 컬럼에 enum 이름 문자열이 그대로 저장된다")
 	void typeColumnStoresTheEnumNameAsString() {

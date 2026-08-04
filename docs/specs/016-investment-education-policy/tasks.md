@@ -2,6 +2,8 @@
 
 ## 현재 이슈 — 문서 확정
 - [x] #158: PRD 단계 분리와 10개 API 상세 계약, canonical UUID 멱등·새 transaction reconciliation, decimal·답변·evidence·진행 상태, intention/reflection과 favorite DELETE 경합 잠금, 실제 Spring transaction 경계, FK 기준 DDL, 15개 후보의 DAG·migration·transaction·test 소유권을 확정한다. `docs/api-routes.md`와 `docs/api-contracts.md`에는 구현 예정 계약으로 분리 등록하고 production은 변경하지 않는다.
+- [x] #163 (candidate 1): 거래 가능한 종목의 즐겨찾기 등록 API `POST /api/favorites`와 `(user_id, instrument_id)` 유일 제약을 구현한다.
+- [x] #168 (candidate 2): 본인 즐겨찾기를 등록 최신순으로 순수 조회하는 `GET /api/favorites`를 구현한다.
 
 아래 6개는 현재 이슈의 미완료 작업이 아닌 상위 구현 작업 그룹이다. 실제 이슈 생성 시 `plan.md`의 15개 후보처럼 API 하나 또는 트랜잭션 경계 하나로 나누며 production 구현은 현재 지시하지 않는다.
 

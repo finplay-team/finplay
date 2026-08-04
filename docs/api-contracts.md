@@ -420,13 +420,13 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 ---
 
-## 016 투자 실습 (계획 — 아직 구현하지 않음)
+## 016 투자 실습 (candidate 1·2 제공, 나머지 계획)
 
-`docs/specs/016-investment-education-policy`의 신규 계약 10건이다. **controller와 schema가 아직 없으므로 블랙박스 QA의 실행 가능 API 근거로 사용하지 않는다.** 각 구현이 병합될 때 해당 계약을 실제 상태로 전환하고 `docs/api-routes.md`의 계획 행도 실제 라우트 목록으로 옮긴다. 모든 경로는 Access Bearer 인증과 공통 오류 body를 사용하며 JSON POST는 `Content-Type: application/json`이다.
+`docs/specs/016-investment-education-policy`의 신규 계약 10건이다. candidate 1 `POST /api/favorites`와 candidate 2 `GET /api/favorites`는 controller가 구현되어 제공 중이며, 나머지 8건은 아직 계획 상태이므로 블랙박스 QA의 실행 가능 API 근거로 사용하지 않는다. 각 후속 구현이 병합될 때 해당 계약을 실제 상태로 전환하고 `docs/api-routes.md`의 계획 행도 실제 라우트 목록으로 옮긴다. 모든 경로는 Access Bearer 인증과 공통 오류 body를 사용하며 JSON POST는 `Content-Type: application/json`이다.
 
 수량은 양수 `DECIMAL(30,8)` 범위(정수부 최대 22자리·소수부 최대 8자리), 가격은 양수 `DECIMAL(18,8)` 범위(정수부 최대 10자리·소수부 최대 8자리)다. 초과 precision/scale은 반올림하지 않고 400 `VALIDATION_ERROR`로 거부한다. 모든 id는 양의 `Long`이다.
 
-### 즐겨찾기 등록 (계획)
+### 즐겨찾기 등록
 
 | Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|
@@ -434,7 +434,7 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 같은 사용자의 `(userId, instrumentId)`는 유일하다. 중복 등록은 기존 값을 반환하지 않는다.
 
-### 즐겨찾기 목록 조회 (계획)
+### 즐겨찾기 목록 조회
 
 | Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|
@@ -539,11 +539,13 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 `docs/specs/012-ai-feedback` 착수 시 추가될 계약 초안 4건이다(변동 원인 카드·매도 직후 피드백·종목 뉴스 요약·개장 전 브리핑). 네 경로는 URL 접두사(`instruments`·`ai`·`market`)가 다르지만 소유 도메인은 `feedback` 하나다. spec 단위로 묶어 둔다. **controller가 아직 없으므로 블랙박스 QA는 이 절을 계약 근거로 사용하지 않는다.** 구현이 병합되는 커밋에서 "계획" 표시를 제거하고 `docs/api-routes.md`의 2차 계획 라우트 절도 함께 정리한다.
 
+**아래 예시의 `publisher`가 뉴스에서 `hankyung.com`처럼 도메인인 것은 오타가 아니다.** 네이버 뉴스 검색 응답에 언론사 이름 필드가 없어(`title`·`originallink`·`link`·`description`·`pubDate`가 전부) `originallink` 호스트에서 `www.`만 뗀 값을 저장하며, 정본은 spec §C-8이다. 한글 언론사명 매핑은 후속 이슈로 분리했다(`docs/specs/012-ai-feedback/plan.md` §후속으로 낼 이슈). 공시(`type=DISCLOSURE`)의 `publisher`는 `DART` 고정이다.
+
 ### 종목 변동 원인 카드 조회 (계획)
 
 | Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|---|
-| GET | /api/instruments/{instrumentId}/price-moves | Access Bearer 필수 | 경로 변수 `instrumentId`만(쿼리·본문 없음) | 200 `{"originTradeDate":"2026-07-29","moves":[{"id":12,"eventType":"INTRADAY","windowStart":"2026-07-29T11:20:00","windowEnd":"2026-07-29T11:25:00","changeRate":-0.0182,"narrative":"11시 20분부터 5분간 1.82% 하락했습니다. 같은 시간대에 생산 차질을 다룬 기사가 있었습니다.","sources":[{"type":"NEWS","title":"...","publisher":"한국경제","url":"https://...","publishedAt":"2026-07-29T11:15:00"}]}]}` (`PriceMoveListResponse`); 카드가 없으면 200 `{"originTradeDate":"2026-07-29","moves":[]}` | Access 인증 실패는 401 `UNAUTHORIZED`. `instrumentId` 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 012 FEED-006 |
+| GET | /api/instruments/{instrumentId}/price-moves | Access Bearer 필수 | 경로 변수 `instrumentId`만(쿼리·본문 없음) | 200 `{"originTradeDate":"2026-07-29","moves":[{"id":12,"eventType":"INTRADAY","windowStart":"2026-07-29T11:20:00","windowEnd":"2026-07-29T11:25:00","changeRate":-0.0182,"narrative":"11시 20분부터 5분간 1.82% 하락했습니다. 같은 시간대에 생산 차질을 다룬 기사가 있었습니다.","sources":[{"type":"NEWS","title":"...","publisher":"hankyung.com","url":"https://...","publishedAt":"2026-07-29T11:15:00"}]}]}` (`PriceMoveListResponse`); 카드가 없으면 200 `{"originTradeDate":"2026-07-29","moves":[]}` | Access 인증 실패는 401 `UNAUTHORIZED`. `instrumentId` 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 012 FEED-006 |
 
 `originTradeDate`는 주식일 때 현재 재생세션의 원본 거래일이고, 코인은 실시간이므로 항상 `null`이다. **재생세션이 `READY`가 아니면 주식도 `originTradeDate=null`·`moves=[]`이며 200이다** (오류가 아니다). `eventType`은 `INTRADAY`(장중 변동) 또는 `OPENING_GAP`(시가 갭)이다.
 
@@ -613,7 +615,7 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 | Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|---|
-| GET | /api/instruments/{instrumentId}/news | Access Bearer 필수 | 경로 변수 `instrumentId`만(쿼리·본문 없음) | 200 (주식, 09:00~15:30) `{"originTradeDate":"2026-07-29","summaryScope":"PRE_MARKET","summaryStatus":"READY","summary":"직전 거래일 장 마감 이후 반도체 업황을 다룬 기사가 있었습니다. 같은 구간에 유상증자 관련 공시가 1건 접수됐습니다.","items":[{"type":"NEWS","title":"...","publisher":"매일경제","url":"https://...","publishedAt":"2026-07-28T18:40:00"},{"type":"DISCLOSURE","title":"주요사항보고서(유상증자결정)","publisher":"DART","url":"https://dart.fss.or.kr/...","publishedAt":"2026-07-28T00:00:00"}]}` (`InstrumentNewsResponse`); 기사가 없으면 200 `{"originTradeDate":"2026-07-29","summaryScope":"PRE_MARKET","summary":null,"summaryStatus":"EMPTY","items":[]}`; 09:00 이전이면 200 `{"originTradeDate":"2026-07-29","summaryScope":null,"summary":null,"summaryStatus":"NOT_YET","items":[]}` | Access 인증 실패는 401 `UNAUTHORIZED`. `instrumentId` 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 012 FEED-008 |
+| GET | /api/instruments/{instrumentId}/news | Access Bearer 필수 | 경로 변수 `instrumentId`만(쿼리·본문 없음) | 200 (주식, 09:00~15:30) `{"originTradeDate":"2026-07-29","summaryScope":"PRE_MARKET","summaryStatus":"READY","summary":"직전 거래일 장 마감 이후 반도체 업황을 다룬 기사가 있었습니다. 같은 구간에 유상증자 관련 공시가 1건 접수됐습니다.","items":[{"type":"NEWS","title":"...","publisher":"hankyung.com","url":"https://...","publishedAt":"2026-07-28T18:40:00"},{"type":"DISCLOSURE","title":"주요사항보고서(유상증자결정)","publisher":"DART","url":"https://dart.fss.or.kr/...","publishedAt":"2026-07-28T00:00:00"}]}` (`InstrumentNewsResponse`); 기사가 없으면 200 `{"originTradeDate":"2026-07-29","summaryScope":"PRE_MARKET","summary":null,"summaryStatus":"EMPTY","items":[]}`; 09:00 이전이면 200 `{"originTradeDate":"2026-07-29","summaryScope":null,"summary":null,"summaryStatus":"NOT_YET","items":[]}` | Access 인증 실패는 401 `UNAUTHORIZED`. `instrumentId` 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 012 FEED-008 |
 
 Notion 1차 고도화 목록의 "뉴스 요약" 항목이다. 수집·저장은 변동 원인 카드(FEED-001)가 이미 하므로 이 엔드포인트는 **조회와 요약만** 추가한다.
 
@@ -642,7 +644,7 @@ Notion 1차 고도화 목록의 "뉴스 요약" 항목이다. 수집·저장은 
 
 **`summaryStatus`**는 `READY` · `NOT_YET`(주식, 09:00 이전 또는 재생세션 미준비) · `EMPTY`(기사 없음, **또는 요약 행이 아직 없음** — 배치 미실행·배포 당일) · `UNAVAILABLE`(LLM 호출 실패 **또는 후검증 재생성 1회 후에도 금지 표현이 남음**)이다. **판정 순서는 spec §C-4의 표를 따른다.** 어느 값이든 상태코드는 200이며, **`EMPTY`가 행 없음 때문일 때와 `UNAVAILABLE`일 때는 `items`가 채워진다.**
 
-**저작권**: `items`의 각 항목은 제목·언론사·원문 URL·발행시각만 노출하고 본문은 어떤 형태로도 포함하지 않는다. `summary`는 여러 기사를 종합한 서술이며 특정 기사의 문장을 그대로 옮기지 않는다. 공시(`type=DISCLOSURE`)는 OpenDART가 접수일자만 제공하므로 `publishedAt`의 시각 부분이 항상 `00:00:00`이다. **그래서 구간이 아니라 날짜로 판정한다** — `PRE_MARKET`·브리핑에는 **직전 거래일 접수분만** 넣고 09:00부터 노출하며, **원본 거래일 접수분은 `FULL`에서만** 나온다. 구간으로 거르면 간밤 공시가 빠지고 장중 접수 공시가 아침에 들어온다(spec §C-3).
+**저작권**: `items`의 각 항목은 제목·언론사(뉴스는 원문 링크 도메인)·원문 URL·발행시각만 노출하고 본문은 어떤 형태로도 포함하지 않는다. `summary`는 여러 기사를 종합한 서술이며 특정 기사의 문장을 그대로 옮기지 않는다. 공시(`type=DISCLOSURE`)는 OpenDART가 접수일자만 제공하므로 `publishedAt`의 시각 부분이 항상 `00:00:00`이다. **그래서 구간이 아니라 날짜로 판정한다** — `PRE_MARKET`·브리핑에는 **직전 거래일 접수분만** 넣고 09:00부터 노출하며, **원본 거래일 접수분은 `FULL`에서만** 나온다. 구간으로 거르면 간밤 공시가 빠지고 장중 접수 공시가 아침에 들어온다(spec §C-3).
 
 **문구 제약**은 변동 원인 카드와 같다 — 인과 단정·투자 권유·가격 예측을 쓰지 않고 서버가 후검증한다 (C-004, FEED-003).
 
@@ -650,7 +652,7 @@ Notion 1차 고도화 목록의 "뉴스 요약" 항목이다. 수집·저장은 
 
 | Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|---|
-| GET | /api/market/briefing?market= | Access Bearer 필수 | `market`(필수, `STOCK`\|`CRYPTO` 리터럴만 허용) | 200 `{"market":"STOCK","originTradeDate":"2026-07-29","status":"READY","summary":"간밤 미국 증시에서 반도체 업종이 강세를 보였다는 보도가 있었습니다. 국내에서는 유상증자 결정 공시가 1건 접수됐습니다. 개장 전까지 확인된 소식은 아래와 같습니다.","items":[{"instrumentId":1,"symbol":"005930","name":"삼성전자","type":"NEWS","title":"...","publisher":"한국경제","url":"https://...","publishedAt":"2026-07-28T18:40:00"}]}` (`MarketBriefingResponse`); 09:00 이전이면 200 `{"market":"STOCK","originTradeDate":"2026-07-29","status":"NOT_YET","summary":null,"items":[]}`; 기사가 없거나 재생세션 미준비면 200 `{...,"status":"EMPTY","summary":null,"items":[]}` | `market` 누락 또는 `STOCK`\|`CRYPTO` 외 리터럴은 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 012 FEED-009 |
+| GET | /api/market/briefing?market= | Access Bearer 필수 | `market`(필수, `STOCK`\|`CRYPTO` 리터럴만 허용) | 200 `{"market":"STOCK","originTradeDate":"2026-07-29","status":"READY","summary":"간밤 미국 증시에서 반도체 업종이 강세를 보였다는 보도가 있었습니다. 국내에서는 유상증자 결정 공시가 1건 접수됐습니다. 개장 전까지 확인된 소식은 아래와 같습니다.","items":[{"instrumentId":1,"symbol":"005930","name":"삼성전자","type":"NEWS","title":"...","publisher":"hankyung.com","url":"https://...","publishedAt":"2026-07-28T18:40:00"}]}` (`MarketBriefingResponse`); 09:00 이전이면 200 `{"market":"STOCK","originTradeDate":"2026-07-29","status":"NOT_YET","summary":null,"items":[]}`; 기사가 없거나 재생세션 미준비면 200 `{...,"status":"EMPTY","summary":null,"items":[]}` | `market` 누락 또는 `STOCK`\|`CRYPTO` 외 리터럴은 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 012 FEED-009 |
 
 **변동 원인 카드와 역할이 다르다.** 카드는 가격이 움직인 **뒤에** 원인을 설명하므로 매매 판단에 쓸 수 없다. 브리핑은 개장 시점에 그때까지의 정보를 주므로 **뉴스를 보고 매매하는 사용자의 진입점**이다.
 

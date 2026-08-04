@@ -82,7 +82,7 @@ CREATE TABLE buy_trade_journals (
 );
 ```
 
-**마이그레이션 파일: `V14__create_buy_trade_journals.sql`.** 조사 시점(2026-08-04) `dev`의 최신 버전이 `V13__create_ai_feedback_tables.sql`이므로 다음 번호는 14다. **착수 시점에 `src/main/resources/db/migration/`을 다시 확인해** 그 사이 병합된 파일이 있으면 그 다음 번호로 올린다(ADR-0004 — 머지된 파일은 절대 수정하지 않는다).
+**마이그레이션 파일: `V15__create_buy_trade_journals.sql`.** 조사 시점(2026-08-04) 착수 당시 `dev`의 최신 버전은 `V13__create_ai_feedback_tables.sql`이라 처음엔 V14로 만들었으나, PR #181 병합 전 `dev`에 `V14__create_favorites.sql`(#163·#168)이 먼저 병합돼 번호가 충돌해 V15로 재번호화했다(ADR-0004 — 이미 만든 V14 파일은 수정하지 않고 새 번호로 대체, `docs/agent-mistakes.md` 2026-08-03 행과 같은 패턴).
 
 FK 대상은 **실측**한 값이다.
 
