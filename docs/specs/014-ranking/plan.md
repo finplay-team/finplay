@@ -6,7 +6,7 @@
 - PRD: `docs/prd.md` RANK-001(2026-08-03 확정, 이슈 #139)
 - 이슈: #187(`gh issue view 187`), 선행 이슈 #139(완료, 정책 확정)
 - 관련 ADR
-  - **ADR-0002 (레이어드 아키텍처)** — `controller → service → repository/store`. 도메인 간 참조는 service를 통해서만 한다. 이 기능은 `ranking` 도메인이 `account` 도메인의 이벤트 타입 하나만 참조하고, 그 외에는 자체 `AccountRepository` 조회로 데이터를 가져온다(다른 도메인의 service를 주입하지 않음).
+  - **ADR-0002 (레이어드 아키텍처)** — `controller → service → repository/store`. 도메인 간 참조는 service를 통해서만 한다. 다른 도메인의 repository를 직접 주입하지 않는다. 이 기능은 `ranking` 도메인이 `account` 도메인의 이벤트 타입 하나를 참조하는 것과 별개로, `RankingService`가 `account` 데이터를 조회할 때는 `AccountRepository`가 아니라 `AccountService`(신규 조회 메서드 `findByIdOrEmpty`/`findAllByIdInFetchUser`)를 주입해 사용한다(리뷰 반영, PR #187).
   - **ADR-0003 (테스트 전략)** — 서비스 로직 단위, `@DataJpaTest`/`@WebMvcTest` 슬라이스, 핵심 시나리오 Testcontainers 통합.
   - **ADR-0004 (Flyway)** — **이번 작업은 스키마 변경이 없다.** `accounts.realized_pnl`을 그대로 읽기만 하며, 신규 컬럼·테이블·마이그레이션이 필요 없다.
 - 코드 컨벤션: `docs/conventions.md`(Redis key는 전용 component 한 곳에서만 조립, DTO record 규칙, 레이어 규칙)
@@ -84,7 +84,7 @@ public class RankingEventListener {
 
 - `phase = AFTER_COMMIT`을 명시한다(기본값이 `AFTER_COMMIT`이지만 의도를 코드로 드러내기 위해 명시 — 리뷰 시 "왜 이 phase인지" 질문이 나오지 않게 한다).
 - 이 리스너는 **기본적으로 이벤트를 발행한 스레드에서 동기 실행**된다(`@Async` 미적용) — 별도 스레드풀·`@EnableAsync` 설정을 추가하지 않는다. 재시도 backoff를 포함해도 매도 응답 지연이 수백 ms 이내로 bounded되도록 아래 4)의 백오프 값을 짧게 잡는다. 지연이 실제로 문제가 되면 `@Async` 도입은 후속 고도화(과설계 금지 원칙).
-- **리스너 메서드 본문 전체를 try/catch로 감싼다 — `RankingStore.addScoreWithRetry` 내부의 try/catch만으로는 부족하다.** Spring 트랜잭션 매니저는 `AFTER_COMMIT` 동기화 콜백에서 던진 예외를 삼키지 않고 `commit()` 호출부까지, 결국 `@Transactional` 프록시를 거쳐 원래 호출 스레드(매도 요청을 처리 중인 HTTP 스레드)까지 전파시킨다(DB 롤백은 안 되지만 응답은 500이 나갈 수 있음). `RankingStore.addScoreWithRetry`는 Redis 호출만 감싸므로, 그 앞단인 `RankingService.refreshScore`의 `accountRepository.findById(accountId)`가 던지는 예외(예: DB 커넥션 풀 고갈로 인한 `SQLTransientConnectionException`, 순간적 DB 장애로 인한 `DataAccessResourceFailureException` — 둘 다 재현 전례 있음, `docs/agent-mistakes.md` 2026-07-30)는 그 try/catch로 못 막는다. 그래서 리스너 메서드 최상위에서 한 번 더 감싸 **어떤 예외가 나든** 로그만 남기고 절대 밖으로 전파하지 않게 한다(완료 조건 "매도 체결 자체는 정상 성공" 보장의 실질적 구현 지점 — `RankingStore`의 내부 try/catch가 아니라 이 리스너 레벨의 try/catch다).
+- **리스너 메서드 본문 전체를 try/catch로 감싼다 — `RankingStore.addScoreWithRetry` 내부의 try/catch만으로는 부족하다.** Spring 트랜잭션 매니저는 `AFTER_COMMIT` 동기화 콜백에서 던진 예외를 삼키지 않고 `commit()` 호출부까지, 결국 `@Transactional` 프록시를 거쳐 원래 호출 스레드(매도 요청을 처리 중인 HTTP 스레드)까지 전파시킨다(DB 롤백은 안 되지만 응답은 500이 나갈 수 있음). `RankingStore.addScoreWithRetry`는 Redis 호출만 감싸므로, 그 앞단인 `RankingService.refreshScore`의 `accountService.findByIdOrEmpty(accountId)`가 던지는 예외(예: DB 커넥션 풀 고갈로 인한 `SQLTransientConnectionException`, 순간적 DB 장애로 인한 `DataAccessResourceFailureException` — 둘 다 재현 전례 있음, `docs/agent-mistakes.md` 2026-07-30)는 그 try/catch로 못 막는다. 그래서 리스너 메서드 최상위에서 한 번 더 감싸 **어떤 예외가 나든** 로그만 남기고 절대 밖으로 전파하지 않게 한다(완료 조건 "매도 체결 자체는 정상 성공" 보장의 실질적 구현 지점 — `RankingStore`의 내부 try/catch가 아니라 이 리스너 레벨의 try/catch다).
 
 ### 4) `RankingStore` (신규, `com.finplay.api.ranking.store`) — Redis 전용 창구
 
@@ -101,7 +101,8 @@ public class RankingStore {
     private static final long[] BACKOFF_MILLIS = {50, 150, 450};
 
     private final StringRedisTemplate redisTemplate;
-    private final AccountRepository accountRepository; // refreshScore에서 사용 (RankingService로 옮길 수도 있음 — 아래 설계는 RankingService가 조회하고 RankingStore는 순수 Redis 연산만 담당하는 쪽으로 확정)
+    // (초기 스케치에서는 여기서 AccountRepository를 썼으나, 최종 설계는 RankingService가 AccountService를 통해 조회하고
+    // RankingStore는 순수 Redis 연산만 담당하는 쪽으로 확정했다 — 아래 두 문단 참고, 리뷰 반영 PR #187)
 
     public void addScoreWithRetry(Market market, Long accountId, long score) {
         String key = key(market);
@@ -137,7 +138,7 @@ public class RankingStore {
 }
 ```
 
-- `RankingStore`는 DB를 몰라야 하는가? 재검토 결과 **`RankingStore`에서 `AccountRepository`를 직접 쓰지 않는다** — 위 코드 스케치의 주석대로, 최종 설계는 `RankingService.refreshScore(accountId)`가 `AccountRepository.findById`로 `Account`를 조회하고, 그 결과(`market`, `realizedPnl`)만 `RankingStore.addScoreWithRetry(market, accountId, realizedPnl)`에 넘긴다. `RankingStore`는 순수 Redis 연산 컴포넌트로 유지한다(컨벤션의 "인프라 연동 위치" 표 — Redis는 전용 component, MySQL/JPA는 repository, 이 둘을 한 클래스에 섞지 않는다).
+- `RankingStore`는 DB를 몰라야 하는가? 재검토 결과 **`RankingStore`에서 `AccountRepository`를 직접 쓰지 않는다** — 위 코드 스케치의 주석대로, 최종 설계는 `RankingService.refreshScore(accountId)`가 `AccountService.findByIdOrEmpty(accountId)`로 `Account`를 조회하고, 그 결과(`market`, `realizedPnl`)만 `RankingStore.addScoreWithRetry(market, accountId, realizedPnl)`에 넘긴다. `RankingStore`는 순수 Redis 연산 컴포넌트로 유지한다(컨벤션의 "인프라 연동 위치" 표 — Redis는 전용 component, MySQL/JPA는 repository, 이 둘을 한 클래스에 섞지 않는다). **또한 `RankingService`는 `AccountRepository`를 직접 주입하지 않고 `AccountService`를 통해 조회한다** — ADR-0002가 금지하는 "다른 도메인 repository 직접 주입"에 해당하기 때문이다(리뷰 반영, PR #187). `AccountService`에는 이를 위해 `findByIdOrEmpty(Long accountId)`와 `findAllByIdInFetchUser(List<Long> accountIds)` 위임 메서드를 추가한다.
 - `Range.rightUnbounded(Range.Bound.exclusive(score))`는 Spring Data Redis `ZSetOperations.count`가 받는 `Range<Double>` 표현이다(정확한 API는 구현 시 Spring Data Redis 버전 문서로 재확인 — 여기서는 "score보다 엄격히 큰 멤버 수"라는 의미만 확정).
 
 ### 5) `RankingService` (신규, `com.finplay.api.ranking.service`)
@@ -152,11 +153,11 @@ public class RankingService {
     private static final int MAX_LIMIT = 50;
 
     private final RankingStore rankingStore;
-    private final AccountRepository accountRepository;
+    private final AccountService accountService; // AccountRepository 직접 주입 금지(ADR-0002) — AccountService 위임 메서드로 조회
 
     @Transactional
     public void refreshScore(Long accountId) {
-        accountRepository.findById(accountId).ifPresentOrElse(
+        accountService.findByIdOrEmpty(accountId).ifPresentOrElse(
             account -> rankingStore.addScoreWithRetry(account.getMarket(), accountId, account.getRealizedPnl()),
             () -> log.warn("랭킹 갱신 대상 계좌를 찾을 수 없음. accountId={}", accountId));
     }
@@ -168,7 +169,7 @@ public class RankingService {
             return RankingListResponse.of(market, List.of());
         }
         // accountId → (userId, nickname) 배치 조회
-        List<Account> accounts = accountRepository.findAllByIdInFetchUser(
+        List<Account> accounts = accountService.findAllByIdInFetchUser(
             window.stream().map(RankingEntryDto::accountId).toList());
         Map<Long, Account> accountById = accounts.stream()
             .collect(Collectors.toMap(Account::getId, a -> a));
@@ -248,6 +249,10 @@ com.finplay.api.account.event
 com.finplay.api.account.repository.AccountRepository (기존 파일 — 메서드 추가)
 └── findAllByIdInFetchUser(List<Long> ids)  # JOIN FETCH a.user, 랭킹 목록의 닉네임 배치 조회용 (N+1 방지)
 
+com.finplay.api.account.service.AccountService (기존 파일 — 메서드 추가, 리뷰 반영 PR #187)
+├── findByIdOrEmpty(Long accountId)          # RankingService.refreshScore 위임 대상 (AccountRepository 직접 주입 대체)
+└── findAllByIdInFetchUser(List<Long> accountIds)  # RankingService.getRankings 위임 대상
+
 com.finplay.api.order.service.OrderExecutionService (기존 파일 — 수정)
 └── createSellOrder()에서 account.addRealizedPnl(...) 직후 eventPublisher.publishEvent(new RealizedPnlUpdatedEvent(account.getId()))
 ```
@@ -255,8 +260,8 @@ com.finplay.api.order.service.OrderExecutionService (기존 파일 — 수정)
 ## 테스트 계획
 
 - **단위 (`RankingStoreTest`, Redis mock)**: `addScoreWithRetry`가 `StringRedisTemplate`(mock)에서 예외를 던지도록 stub했을 때 3회 재시도 후 예외를 삼키고 반환하는지(호출 스레드로 예외가 전파되지 않음), 성공 시 1회만 ZADD 호출하는지.
-- **단위 (`RankingServiceTest`, `RankingStore`/`AccountRepository` mock)**: `refreshScore`가 존재하지 않는 accountId에 대해 예외 없이 로그만 남기는지, `getRankings`가 limit 클램핑(0·음수→10, 51 이상→50, null→10)을 올바르게 적용하는지, 동점 그룹이 있을 때 `countStrictlyGreater` 캐시로 동일 score에 대해 Redis 호출이 1회만 발생하는지, 공동 순위 계산이 "1,1,3" 패턴을 만드는지(단위 테스트에서 mock 반환값으로 검증), 동점자 내부 정렬이 userId 오름차순인지.
-- **단위 (`RankingEventListenerTest`, `RankingService` mock, 신규)**: `rankingService.refreshScore(...)`가 `DataAccessException`(DB 재조회 실패 시뮬레이션 — `RankingStore` 내부가 아니라 그 앞단인 `AccountRepository.findById` 실패를 재현)을 던지도록 stub했을 때, `onRealizedPnlUpdated` 호출이 예외를 밖으로 전파하지 않고 정상 반환하는지 확인한다. 이 테스트가 "리스너 레벨 try/catch"의 존재 근거를 검증하는 유일한 테스트이므로 빠지면 안 된다.
+- **단위 (`RankingServiceTest`, `RankingStore`/`AccountService` mock)**: `refreshScore`가 존재하지 않는 accountId에 대해 예외 없이 로그만 남기는지, `getRankings`가 limit 클램핑(0·음수→10, 51 이상→50, null→10)을 올바르게 적용하는지, 동점 그룹이 있을 때 `countStrictlyGreater` 캐시로 동일 score에 대해 Redis 호출이 1회만 발생하는지, 공동 순위 계산이 "1,1,3" 패턴을 만드는지(단위 테스트에서 mock 반환값으로 검증), 동점자 내부 정렬이 userId 오름차순인지.
+- **단위 (`RankingEventListenerTest`, `RankingService` mock, 신규)**: `rankingService.refreshScore(...)`가 `DataAccessException`(DB 재조회 실패 시뮬레이션 — `RankingStore` 내부가 아니라 그 앞단인 `AccountService.findByIdOrEmpty` 실패를 재현)을 던지도록 stub했을 때, `onRealizedPnlUpdated` 호출이 예외를 밖으로 전파하지 않고 정상 반환하는지 확인한다. 이 테스트가 "리스너 레벨 try/catch"의 존재 근거를 검증하는 유일한 테스트이므로 빠지면 안 된다.
 - **슬라이스 (`@WebMvcTest RankingControllerTest`)**: `market` 누락·미지원 리터럴 400, `limit` 0·음수·51 이상도 200(클램핑되어 서비스 호출, 400 아님— `GET /api/trades`와의 차이를 명시적으로 검증), 정상 요청 200과 `rank`/`nickname`/`realizedPnl`/`market` 필드 계약, 인증 없이 요청 시 401.
 - **슬라이스 (`@DataJpaTest`, `AccountRepositoryTest` 기존 파일 갱신)**: `findAllByIdInFetchUser`가 요청한 id 목록의 `Account`+`User`를 N+1 없이 정확히 반환하는지.
 - **통합 (`RankingIntegrationTest` 신규, Testcontainers MySQL+Redis — `TestcontainersConfiguration`의 기존 정적 싱글턴 재사용, `@ServiceConnection` 사용 금지)**:

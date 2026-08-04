@@ -1,4 +1,4 @@
-// mock RankingStore/AccountRepository로 RankingService의 limit 클램핑·공동 순위 보정을 검증하는 단위 테스트다.
+// mock RankingStore/AccountService로 RankingService의 limit 클램핑·공동 순위 보정을 검증하는 단위 테스트다.
 package com.finplay.api.ranking.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -14,7 +14,7 @@ import static org.mockito.Mockito.when;
 
 import com.finplay.api.account.domain.Account;
 import com.finplay.api.account.domain.Market;
-import com.finplay.api.account.repository.AccountRepository;
+import com.finplay.api.account.service.AccountService;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.ranking.dto.RankingEntryDto;
 import com.finplay.api.ranking.dto.response.RankingListItemResponse;
@@ -31,13 +31,13 @@ class RankingServiceTest {
 	private static final LocalDateTime NOW = LocalDateTime.of(2026, 8, 4, 0, 0);
 
 	private final RankingStore rankingStore = mock(RankingStore.class);
-	private final AccountRepository accountRepository = mock(AccountRepository.class);
+	private final AccountService accountService = mock(AccountService.class);
 
-	private final RankingService rankingService = new RankingService(rankingStore, accountRepository);
+	private final RankingService rankingService = new RankingService(rankingStore, accountService);
 
 	@Test
 	void refreshScoreDoesNothingWhenAccountNotFound() {
-		when(accountRepository.findById(999L)).thenReturn(Optional.empty());
+		when(accountService.findByIdOrEmpty(999L)).thenReturn(Optional.empty());
 
 		assertThatCode(() -> rankingService.refreshScore(999L)).doesNotThrowAnyException();
 
@@ -47,7 +47,7 @@ class RankingServiceTest {
 	@Test
 	void refreshScoreAddsScoreWhenAccountFound() {
 		Account account = account(1L, market(), 5_000L, 10L, "trader");
-		when(accountRepository.findById(1L)).thenReturn(Optional.of(account));
+		when(accountService.findByIdOrEmpty(1L)).thenReturn(Optional.of(account));
 
 		rankingService.refreshScore(1L);
 
@@ -111,7 +111,7 @@ class RankingServiceTest {
 			new RankingEntryDto(1L, 100L),
 			new RankingEntryDto(2L, 100L),
 			new RankingEntryDto(3L, 50L)));
-		when(accountRepository.findAllByIdInFetchUser(List.of(1L, 2L, 3L)))
+		when(accountService.findAllByIdInFetchUser(List.of(1L, 2L, 3L)))
 			.thenReturn(List.of(tiedLowUserId, tiedHighUserId, thirdPlace));
 		when(rankingStore.countStrictlyGreater(Market.STOCK, 100L)).thenReturn(0L);
 		when(rankingStore.countStrictlyGreater(Market.STOCK, 50L)).thenReturn(2L);

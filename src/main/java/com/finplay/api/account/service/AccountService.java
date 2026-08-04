@@ -16,6 +16,7 @@ import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,6 +44,18 @@ public class AccountService {
 		return accountRepository
 			.findByUserIdAndMarket(userId, market)
 			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+	}
+
+	// 랭킹 점수 갱신(RankingService.refreshScore)이 존재하지 않을 수도 있는 accountId를 조회할 때 쓴다.
+	@Transactional(readOnly = true)
+	public Optional<Account> findByIdOrEmpty(Long accountId) {
+		return accountRepository.findById(accountId);
+	}
+
+	// 랭킹 목록(RankingService.getRankings)이 accountId 목록으로 Account+User를 N+1 없이 배치 조회할 때 쓴다.
+	@Transactional(readOnly = true)
+	public List<Account> findAllByIdInFetchUser(List<Long> accountIds) {
+		return accountRepository.findAllByIdInFetchUser(accountIds);
 	}
 
 	@Transactional(readOnly = true)

@@ -3,7 +3,7 @@ package com.finplay.api.ranking.service;
 
 import com.finplay.api.account.domain.Account;
 import com.finplay.api.account.domain.Market;
-import com.finplay.api.account.repository.AccountRepository;
+import com.finplay.api.account.service.AccountService;
 import com.finplay.api.ranking.dto.RankingEntryDto;
 import com.finplay.api.ranking.dto.response.RankingListItemResponse;
 import com.finplay.api.ranking.dto.response.RankingListResponse;
@@ -29,7 +29,7 @@ public class RankingService {
 	private static final int MAX_LIMIT = 50;
 
 	private final RankingStore rankingStore;
-	private final AccountRepository accountRepository;
+	private final AccountService accountService;
 
 	// after-commit 이벤트 처리 시점에 DB에서 최신 realized_pnl을 다시 조회해 절댓값으로 ZADD한다.
 	// 이벤트 도착 순서가 뒤바뀌어도 최종 수렴한다(spec.md 동시성 경합 Decision Gate).
@@ -37,7 +37,7 @@ public class RankingService {
 	// — 별도의 "매도 이력 있음" 플래그 없이 쓰기 경로 설계로 랭킹 대상 제외가 해결된다(plan.md 7절).
 	@Transactional
 	public void refreshScore(Long accountId) {
-		accountRepository.findById(accountId).ifPresentOrElse(
+		accountService.findByIdOrEmpty(accountId).ifPresentOrElse(
 			account -> rankingStore.addScoreWithRetry(account.getMarket(), accountId, account.getRealizedPnl()),
 			() -> log.warn("랭킹 갱신 대상 계좌를 찾을 수 없음. accountId={}", accountId));
 	}
@@ -49,7 +49,7 @@ public class RankingService {
 			return new RankingListResponse(market.name(), List.of());
 		}
 
-		Map<Long, Account> accountById = accountRepository
+		Map<Long, Account> accountById = accountService
 			.findAllByIdInFetchUser(window.stream().map(RankingEntryDto::accountId).toList())
 			.stream()
 			.collect(Collectors.toMap(Account::getId, account -> account));
