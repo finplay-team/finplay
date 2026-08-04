@@ -55,7 +55,7 @@ public class RankingService {
 		}
 
 		Map<Long, Account> accountById = accountService
-			.findAllByIdInFetchUser(window.stream().map(RankingEntryDto::accountId).toList())
+			.getAccountsWithUser(window.stream().map(RankingEntryDto::accountId).toList())
 			.stream()
 			.collect(Collectors.toMap(Account::getId, account -> account));
 

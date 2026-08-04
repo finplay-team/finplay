@@ -54,7 +54,7 @@ public class AccountService {
 
 	// 랭킹 목록(RankingService.getRankings)이 accountId 목록으로 Account+User를 N+1 없이 배치 조회할 때 쓴다.
 	@Transactional(readOnly = true)
-	public List<Account> findAllByIdInFetchUser(List<Long> accountIds) {
+	public List<Account> getAccountsWithUser(List<Long> accountIds) {
 		return accountRepository.findAllByIdInFetchUser(accountIds);
 	}
 

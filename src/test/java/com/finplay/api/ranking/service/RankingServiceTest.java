@@ -113,7 +113,7 @@ class RankingServiceTest {
 			new RankingEntryDto(1L, 100L),
 			new RankingEntryDto(2L, 100L),
 			new RankingEntryDto(3L, 50L)));
-		when(accountService.findAllByIdInFetchUser(List.of(1L, 2L, 3L)))
+		when(accountService.getAccountsWithUser(List.of(1L, 2L, 3L)))
 			.thenReturn(List.of(tiedLowUserId, tiedHighUserId, thirdPlace));
 		when(rankingStore.countStrictlyGreater(Market.STOCK, 100L)).thenReturn(0L);
 		when(rankingStore.countStrictlyGreater(Market.STOCK, 50L)).thenReturn(2L);
@@ -145,7 +145,7 @@ class RankingServiceTest {
 		when(rankingStore.findAllAtScore(Market.STOCK, 100L)).thenReturn(List.of(
 			new RankingEntryDto(2L, 100L),
 			new RankingEntryDto(1L, 100L)));
-		when(accountService.findAllByIdInFetchUser(any()))
+		when(accountService.getAccountsWithUser(any()))
 			.thenReturn(List.of(higherUserId, lowerUserId));
 		when(rankingStore.countStrictlyGreater(Market.STOCK, 100L)).thenReturn(0L);
 
@@ -165,7 +165,7 @@ class RankingServiceTest {
 		when(rankingStore.topN(Market.STOCK, 2)).thenReturn(List.of(
 			new RankingEntryDto(1L, 200L),
 			new RankingEntryDto(2L, 100L)));
-		when(accountService.findAllByIdInFetchUser(any())).thenReturn(List.of(first, second));
+		when(accountService.getAccountsWithUser(any())).thenReturn(List.of(first, second));
 		when(rankingStore.countStrictlyGreater(Market.STOCK, 200L)).thenReturn(0L);
 
 		RankingListResponse response = rankingService.getRankings(Market.STOCK, 1);
@@ -183,7 +183,7 @@ class RankingServiceTest {
 		when(rankingStore.topN(Market.STOCK, 11)).thenReturn(List.of(
 			new RankingEntryDto(1L, 100L),
 			new RankingEntryDto(999L, 80L))); // 999는 DB에 없는 유령 accountId
-		when(accountService.findAllByIdInFetchUser(List.of(1L, 999L)))
+		when(accountService.getAccountsWithUser(List.of(1L, 999L)))
 			.thenReturn(List.of(existing));
 		when(rankingStore.countStrictlyGreater(Market.STOCK, 100L)).thenReturn(0L);
 
@@ -205,7 +205,7 @@ class RankingServiceTest {
 			new RankingEntryDto(1L, 100L),
 			new RankingEntryDto(999L, 90L), // 999는 DB에 없는 유령 accountId — 경계(2번째)에 위치
 			new RankingEntryDto(3L, 80L)));
-		when(accountService.findAllByIdInFetchUser(any())).thenReturn(List.of(alice, carol));
+		when(accountService.getAccountsWithUser(any())).thenReturn(List.of(alice, carol));
 		when(rankingStore.countStrictlyGreater(Market.STOCK, 100L)).thenReturn(0L);
 		// 유령(990점)은 필터링으로 응답에는 안 나오지만 실제 Redis ZSET에는 여전히 남아있어
 		// countStrictlyGreater(80)에는 alice(100)·유령(90) 둘 다 카운트된다(기존에 문서화된 별개의 한계).

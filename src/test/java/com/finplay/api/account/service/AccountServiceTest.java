@@ -119,7 +119,7 @@ class AccountServiceTest {
 	}
 
 	@Test
-	void findAllByIdInFetchUserDelegatesToRepositoryAndReturnsItsResult() {
+	void getAccountsWithUserDelegatesToRepositoryAndReturnsItsResult() {
 		AccountRepository accountRepository = mock(AccountRepository.class);
 		HoldingValuationService holdingValuationService = mock(HoldingValuationService.class);
 		Clock fixedClock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
@@ -131,7 +131,7 @@ class AccountServiceTest {
 		List<Long> ids = List.of(1L, 2L);
 		when(accountRepository.findAllByIdInFetchUser(ids)).thenReturn(List.of(account));
 
-		List<Account> result = accountService.findAllByIdInFetchUser(ids);
+		List<Account> result = accountService.getAccountsWithUser(ids);
 
 		assertThat(result).containsExactly(account);
 		verify(accountRepository).findAllByIdInFetchUser(ids);

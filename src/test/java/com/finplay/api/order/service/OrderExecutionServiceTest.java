@@ -44,6 +44,7 @@ import java.time.ZoneOffset;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class OrderExecutionServiceTest {
 
@@ -289,6 +290,7 @@ class OrderExecutionServiceTest {
 		// 랭킹 갱신(after-commit 리스너)이 반응할 수 있도록 SELL 체결 시 이벤트가 정확히 1회 발행되는지 검증한다.
 		Instrument instrument = stockInstrument();
 		Account account = account(com.finplay.api.account.domain.Market.STOCK);
+		ReflectionTestUtils.setField(account, "id", 42L); // id 미설정 시 기대값·실제값 모두 null이라 단정이 무의미해짐(PR #196 리뷰 지적)
 		Holding holding = mock(Holding.class);
 		User user = testUser();
 		BigDecimal quantity = new BigDecimal("3");
@@ -302,7 +304,7 @@ class OrderExecutionServiceTest {
 
 		ArgumentCaptor<RealizedPnlUpdatedEvent> eventCaptor = ArgumentCaptor.forClass(RealizedPnlUpdatedEvent.class);
 		verify(eventPublisher).publishEvent(eventCaptor.capture());
-		assertThat(eventCaptor.getValue().accountId()).isEqualTo(account.getId());
+		assertThat(eventCaptor.getValue().accountId()).isEqualTo(42L);
 	}
 
 	@Test

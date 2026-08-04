@@ -426,7 +426,7 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 | Method | URL | 인증 | 쿼리 파라미터 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|---|
-| GET | /api/rankings | Access Bearer 필수 | `market`(필수, `STOCK`\|`CRYPTO` 리터럴만 허용), `limit`(선택, 기본 10, 상한 50 — 범위 밖이어도 오류 없이 클램핑) | 200 `{"market":"STOCK","content":[{"rank":1,"nickname":"투자왕","realizedPnl":500000},{"rank":1,"nickname":"차트요정","realizedPnl":500000},{"rank":3,"nickname":"존버맨","realizedPnl":120000}]}` (`RankingListResponse`); 매도 체결 이력이 있는 회원이 한 명도 없으면 200 `{"market":"STOCK","content":[]}` | `market` 누락 또는 `STOCK`\|`CRYPTO` 외 리터럴(예: `FOREX`)은 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 014 RANK-001, Issue #187 |
+| GET | /api/rankings | Access Bearer 필수 | `market`(필수, `STOCK`\|`CRYPTO` 리터럴만 허용), `limit`(선택, 기본 10, 상한 50 — 범위 밖이어도 오류 없이 클램핑) | 200 `{"market":"STOCK","content":[{"rank":1,"nickname":"투자왕","realizedPnl":500000},{"rank":1,"nickname":"차트요정","realizedPnl":500000},{"rank":3,"nickname":"존버맨","realizedPnl":120000}]}` (`RankingListResponse`); 매도 체결 이력이 있는 회원이 한 명도 없으면 200 `{"market":"STOCK","content":[]}` | `market` 누락 또는 `STOCK`\|`CRYPTO` 외 리터럴(예: `FOREX`)은 400 `VALIDATION_ERROR`. `limit`이 정수로 파싱 불가능한 값(예: `abc`)이면 값 범위와 무관하게 400 `VALIDATION_ERROR`(클램핑은 파싱된 정수에만 적용). Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 014 RANK-001, Issue #187 |
 
 **`limit`은 이 API에서만 400이 아니라 클램핑된다 — `GET /api/trades`·`GET /api/orders`와 의도적으로 다른 정책이다.** `limit`이 생략되거나 0 이하면 컨트롤러가 거부하지 않고 그대로 `RankingService`로 전달되어 서비스가 10으로 클램핑하고, 51 이상이면 50으로 클램핑한다. `market`만 컨트롤러 검증(누락·미지원 리터럴 400) 대상이다.
 
