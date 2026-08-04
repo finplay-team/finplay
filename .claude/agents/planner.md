@@ -25,8 +25,10 @@ description: 기능 요청을 받아 docs/specs/NNN-*/의 spec.md·plan.md·task
 1. `git diff dev --name-only` (또는 지시받은 범위)에서 `*Controller.java` 변경을 찾는다. 없으면 "변경 없음"으로 종료.
 2. 변경된 controller 파일을 읽고 실제 매핑(`@GetMapping` 등)에서 Method/URL/요약을 추출한다.
 3. `docs/api-routes.md`의 라우트 표를 실제 코드와 일치하게 갱신한다 (추가/수정/삭제 모두). 이어서 `docs/api-contracts.md`의 해당 도메인 절에 요청·응답·오류 계약을 갱신한다 — 두 문서는 항상 같은 커밋에서 함께 맞춘다. 관련 spec 링크는 커밋 브랜치명이나 지시받은 spec 폴더로 채운다.
+4. 이번 변경이 요구사항 ID를 완료로 만들었으면 `docs/prd.md` §3 "구현 현황"의 해당 행이 갱신됐는지 확인하고, 누락됐으면 채운다 (CLAUDE.md 규칙 10). 보통 implementer가 이미 채웠으므로 여기서는 최종 정합 확인이다. 기능 제공 범위가 그대로면 대상이 아니다.
 
 ### 반환 형식
 
 - 동기화된 라우트: [추가 N, 수정 N, 삭제 N — 각 항목 나열]
+- `prd.md` §3: [갱신한 행 / 이미 반영됨 / 대상 아님]
 - 또는 "변경 없음"
