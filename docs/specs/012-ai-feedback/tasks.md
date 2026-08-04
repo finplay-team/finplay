@@ -25,7 +25,7 @@
 
 ## 작업 항목
 
-- [ ] **1. `feedback.detection` 설정 블록과 `PriceMoveDetector` (순수 계산)**
+- [x] **1. `feedback.detection` 설정 블록과 `PriceMoveDetector` (순수 계산)**
 
   탐지 수식과 그것이 읽을 설정을 한 덩어리로 세운다. 뒤 항목 전부가 이 산출물을 입력으로 받으므로 순서상 맨 앞이다.
   - 설정 블록의 **키 경로와 값은 §C-7**이 정본이고, 바인딩 형태도 §C-7의 확정 방침이다 — record + `@DefaultValue` + yml 양쪽, 그리고 드리프트 테스트. `FeedbackLlmPropertiesTest`(record 기본값)와 `FeedbackLlmPropertiesIntegrationTest`(기동 컨텍스트의 `Environment` 키 경로) 쌍을 그대로 본뜬다. **이 블록은 시크릿이 아니므로 `@DefaultValue` 예외에 해당하지 않는다.**

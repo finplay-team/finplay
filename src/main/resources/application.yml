@@ -131,6 +131,15 @@ feedback:
     max-tokens: 512
     max-regeneration: 1 # 요약·브리핑 후검증 재생성 횟수
     max-narrative-retry: 3 # 매도 회고 서술 재생성 누적 재시도 상한
+  # 변동 구간 탐지(PriceMoveDetector)의 임계치·구간. 값의 정본은 spec §C-7이고 FeedbackDetectionProperties가
+  # 같은 값을 @DefaultValue로 갖는다. 실데이터로 검증한 뒤 조정할 대상이며(§튜닝) 조정은 이 블록만 고친다 —
+  # 코드에는 상수가 없다. 두 곳이 갈리면 드리프트 테스트가 잡는다.
+  detection:
+    z-score-k: 2.5 # 후보 판정 계수. score = |cum| / (σ * √W)가 이 값 이상이면 후보다
+    window-minutes: 5 # 누적 수익률 구간 W
+    merge-window-minutes: 5 # 피크 병합 반경. 같은 급변이 인접 분마다 후보로 잡히는 것을 접는다
+    max-intraday-cards: 2 # 종목·거래일당 장중 카드 수
+    opening-gap-threshold: 0.01 # 시가 갭 최소 절댓값(1%). detectionScore의 분모이기도 하다
   # 뉴스·공시 상시 수집 크론. 값의 정본은 spec §C-1이고 FeedbackNewsProperties가 같은 값을 @DefaultValue로 갖는다.
   # @Scheduled는 record가 아니라 Environment에서 읽으므로 실제 스케줄을 결정하는 것은 이 블록이다.
   # 선언부에 zone = "Asia/Seoul"을 반드시 함께 붙인다 — 배포 JVM 기본 타임존이 UTC라 빠뜨리면 예외도 로그도 없이
