@@ -71,6 +71,10 @@ class PostSellFeedbackDerivedFactsTest {
 	private static final LocalDate PAST_SERVICE_DATE = LocalDate.of(2026, 8, 3);
 
 	private static final LocalTime BUY_TIME = LocalTime.of(9, 30);
+	// 운영의 체결 시각 모양 — DATETIME(6)에 소수 초까지 찍힌다. 매도 초를 매수 초보다 작게 둬야
+	// holdingMinutes에서도 절삭 유무가 갈린다(310 vs 309).
+	private static final LocalTime SUB_SECOND_BUY_TIME = LocalTime.of(9, 30, 17, 400_000_000);
+	private static final LocalTime SUB_SECOND_SELL_TIME = LocalTime.of(14, 40, 5);
 	private static final LocalTime SELL_TIME = LocalTime.of(14, 40);
 	private static final LocalTime NOW_TIME = LocalTime.of(15, 0);
 
@@ -363,6 +367,85 @@ class PostSellFeedbackDerivedFactsTest {
 		assertThat(response.buyToNewsMinutes()).isEqualTo(105);
 	}
 
+	// --- 소수 초 체결시각 (2026-08-05 reviewer 차단 지적) ---
+	//
+	// 운영에서 trades.executed_at은 DATETIME(6)이고 OrderExecutionService가 LocalDateTime.now(clock)으로 찍어
+	// 09:30:17.4xxxxx 꼴이다. 반면 candle_time·window_end는 정시다. 그래서 경계를 체결시각 그대로 쓰면
+	// 하한만 매수 분봉을 탈락시키고 상한은 매도 분봉을 포함하는 비대칭이 생기고, Duration.toMinutes()의 0 방향
+	// 절삭이 분 단위 값을 한 칸 줄인다. **정시 픽스처로는 맞는 구현과 틀린 구현이 같은 답을 낸다.**
+
+	@Test
+	@DisplayName("초가 붙은 체결시각에서도 계약 예시의 분 단위 값 넷이 그대로 나온다")
+	void reproducesContractMinuteValuesFromSubSecondExecutionTimes() {
+		givenSubSecondSell();
+		givenCandles(List.of(
+			candle(LocalTime.of(9, 30), "69500"),
+			candle(LocalTime.of(11, 5), "70800"),
+			candle(SELL_TIME, "68500")));
+		PriceMoveEvent card = givenCards(card(12L, LocalTime.of(11, 20), LocalTime.of(11, 25)));
+		givenSources(card, news("생산 차질", LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(11, 15))));
+
+		PostSellFeedbackResponse response = getPostSellFeedback();
+
+		// 픽스처 자기검증 — 체결 시각에 초·소수 초가 실제로 붙어 있어야 두 구현이 갈린다.
+		assertThat(response.buyAt().getNano()).isNotZero();
+		assertThat(response.sellAt().getSecond()).isNotZero();
+		// 응답의 buyAt·sellAt은 계약이 정한 체결 시각이라 초를 그대로 싣는다 — 내리는 것은 비교용 경계뿐이다.
+		assertThat(response.buyAt()).isEqualTo(LocalDateTime.of(ORIGIN_TRADE_DATE, SUB_SECOND_BUY_TIME));
+		assertThat(response.sellAt()).isEqualTo(LocalDateTime.of(ORIGIN_TRADE_DATE, SUB_SECOND_SELL_TIME));
+
+		// 계약 예시 그대로다. 괄호 안은 Duration.between(...).toMinutes()를 쓴 구현이 내는 답이다.
+		assertThat(response.holdingMinutes()).isEqualTo(310).isNotEqualTo(309);
+		assertThat(response.priceMoves()).singleElement().satisfies(move -> {
+			assertThat(move.minutesAfterBuy()).isEqualTo(115).isNotEqualTo(114);
+			assertThat(move.minutesBeforeSell()).isEqualTo(195);
+		});
+		assertThat(response.buyToNewsMinutes()).isEqualTo(105).isNotEqualTo(104);
+	}
+
+	// 경계를 분으로 내리지 않은 구현은 09:30 분봉을 하한에서 탈락시켜 극값이 한 봉 밀린다 — 그러면 3번 항목의
+	// 반사실 atHoldHigh까지 함께 틀린다.
+	@Test
+	@DisplayName("매수 분봉이 보유 구간 최고가면 초가 붙은 체결시각에도 그 봉이 잡힌다")
+	void keepsTheBuyMinuteCandleAsHoldHighWithSubSecondExecutionTimes() {
+		givenSubSecondSell();
+		givenCandles(List.of(
+			// 매수 분봉이 그날 보유 구간 최고 종가다.
+			candle(LocalTime.of(9, 30), "70800"),
+			candle(LocalTime.of(9, 31), "69000"),
+			candle(LocalTime.of(11, 5), "69500"),
+			candle(SELL_TIME, "68100")));
+		givenCards();
+
+		PostSellFeedbackResponse response = getPostSellFeedback();
+
+		assertThat(response.holdHighAt()).isEqualTo(LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(9, 30)));
+		assertThat(response.holdHighPrice()).isEqualByComparingTo("70800");
+		// 하한을 내리지 않은 구현이 내는 답 — 09:30 봉이 빠져 09:31 이후에서 최고가를 고른다.
+		assertThat(response.holdHighAt()).isNotEqualTo(LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(11, 5)));
+		assertThat(response.holdHighPrice()).isNotEqualByComparingTo("69500");
+		// 매도 분봉은 포함이므로 최저가가 그 봉이다 — 상한·하한이 같은 규칙으로 내려간다는 확인이다.
+		assertThat(response.holdLowAt()).isEqualTo(LocalDateTime.of(ORIGIN_TRADE_DATE, SELL_TIME));
+		assertThat(response.sellVsHighRate()).isEqualTo(new BigDecimal("-0.0325"));
+	}
+
+	// 0 방향 절삭은 부호에 따라 방향이 뒤집힌다 — 음수에서는 값을 키운다. 양수 케이스만 보면 이 자리를 못 잡는다.
+	@Test
+	@DisplayName("기사가 매수보다 이르면 초가 붙은 체결시각에도 분 수가 절삭 방향에 흔들리지 않는다")
+	void keepsNegativeBuyToNewsMinutesExactWithSubSecondExecutionTimes() {
+		givenSubSecondSell();
+		givenCandles(List.of());
+		PriceMoveEvent card = givenCards(card(12L, LocalTime.of(11, 20), LocalTime.of(11, 25)));
+		// 08:59:50 기사 → 09:30 매수. 분으로 내리면 08:59 → 09:30이라 −31분이다.
+		givenSources(card, news("장 전 기사", LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(8, 59, 50))));
+
+		PostSellFeedbackResponse response = getPostSellFeedback();
+
+		assertThat(response.buyToNewsMinutes()).isEqualTo(-31);
+		// Duration.between(09:30:17.4, 08:59:50) = −30분 27.4초 → 0 방향 절삭으로 −30이 되는 구현이 내는 답.
+		assertThat(response.buyToNewsMinutes()).isNotEqualTo(-30);
+	}
+
 	// --- 게이트 상한 (게이트 ⑮의 기준 날짜) ---
 
 	// PriceMoveQueryService를 그대로 본떠 LocalTime.now(clock)을 넘기면, 어제 판 체결을 오늘 오전에 조회할 때
@@ -449,6 +532,14 @@ class PostSellFeedbackDerivedFactsTest {
 		return captor.getValue();
 	}
 
+	/** 초·소수 초가 붙은 체결시각 픽스처 — 원본 거래일은 매도와 같아 sameSessionCompleted가 참이다. */
+	private void givenSubSecondSell() {
+		when(tradeService.getOwnedTrade(USER_ID, SELL_TRADE_ID))
+			.thenReturn(subSecondSellTrade());
+		when(sellAllocationQueryService.getSellAllocationSummary(any()))
+			.thenReturn(subSecondAllocation());
+	}
+
 	private void givenSameSessionSell() {
 		givenSameSessionSell(TODAY);
 	}
@@ -483,6 +574,12 @@ class PostSellFeedbackDerivedFactsTest {
 
 	private static PriceMoveEventSource source(PriceMoveEvent card, MarketNewsItem newsItem) {
 		return PriceMoveEventSource.of(card, newsItem);
+	}
+
+	private static StockCandleDto candle(LocalTime candleTime, String close) {
+		BigDecimal price = new BigDecimal(close);
+		return candle(candleTime, close, price.add(new BigDecimal("300")).toPlainString(),
+			price.subtract(new BigDecimal("300")).toPlainString());
 	}
 
 	private static StockCandleDto candle(LocalTime candleTime, String close, String high, String low) {
@@ -534,11 +631,30 @@ class PostSellFeedbackDerivedFactsTest {
 			dates);
 	}
 
+	private static Trade subSecondSellTrade() {
+		return sellTrade(TODAY, ORIGIN_TRADE_DATE, SUB_SECOND_SELL_TIME);
+	}
+
+	private static SellAllocationSummaryDto subSecondAllocation() {
+		return new SellAllocationSummaryDto(
+			new BigDecimal("70000.00000000"),
+			LocalDateTime.of(PAST_SERVICE_DATE, SUB_SECOND_BUY_TIME),
+			ORIGIN_TRADE_DATE,
+			700_000L,
+			105L,
+			new BigDecimal("10"),
+			List.of(ORIGIN_TRADE_DATE));
+	}
+
 	private static Trade sellTrade(LocalDate serviceDate, LocalDate originTradeDate) {
+		return sellTrade(serviceDate, originTradeDate, SELL_TIME);
+	}
+
+	private static Trade sellTrade(LocalDate serviceDate, LocalDate originTradeDate, LocalTime executedTime) {
 		Instrument instrument = stockInstrument();
 		LocalDateTime resolvedAt = LocalDateTime.of(serviceDate, LocalTime.of(8, 40));
 		StockReplaySession session = StockReplaySession.ready(serviceDate, originTradeDate, resolvedAt, resolvedAt);
-		LocalDateTime executedAt = LocalDateTime.of(serviceDate, SELL_TIME);
+		LocalDateTime executedAt = LocalDateTime.of(serviceDate, executedTime);
 		User user = User.create("trader@finplay.com", "password-hash", "trader", executedAt);
 		Account account = Account.create(user, com.finplay.api.account.domain.Market.STOCK, executedAt);
 		Order order = Order.create(

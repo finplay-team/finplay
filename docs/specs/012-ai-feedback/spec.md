@@ -795,16 +795,23 @@ member   "{epochMillis}:{price}"
 
 `sameSessionCompleted=false`(여러 재생일에 걸친 매매)이면 위 전부를 `null`로 둔다 — 분봉이 불연속이라 계산이 성립하지 않는다.
 
-**`holdingMinutes`는 원본 거래일이 역전되면 `null`이다** (2026-08-04 추가, 이슈 #208).
+**시각이 역전된 조합은 `sameSessionCompleted=false`이고 `holdingMinutes`도 `null`이다** (2026-08-04 추가 · 2026-08-05 개정, 이슈 #208).
 
 ```
-holdingMinutes = (매도시각 - 매수시각) 분      두 값 모두 원본 거래일 축이다
-  sellAt < buyAt (매도의 원본 거래일이 매수 lot의 것보다 앞섬) → null
+역전 = sellAt < buyAt                        두 값 모두 원본 거래일 축이다
+  → sameSessionCompleted = false            위 파생 사실·반사실·집단 비교가 전부 null
+  → holdingMinutes       = null             (아래 단독 조건)
 ```
 
-같은 원본 거래일을 **여러 서비스 날짜에 재생할 수 있어** 그 조합이 실제로 성립하고, 그러면 뺄셈이 음수가 되는데 예외도 로그도 남지 않는다. **음수를 0으로 clamp하거나 서비스 벽시계 경과분으로 대체하지 않는다** — 둘 다 같은 응답의 `buyAt`·`sellAt`과 산술이 어긋나 화면이 "표시된 두 시각의 차"를 복원할 수 없게 된다. **틀린 사실 대신 없음을 낸다.** 그 조합은 이미 `sameSessionCompleted=false`이고 위 파생 사실·반사실·집단 비교가 전부 `null`이라 결이 같다.
+**같은 원본 거래일을 여러 서비스 날짜에 재생할 수 있어** 첫 재생일 오후에 매수하고 다음 재생일 오전에 매도하는 조합이 성립한다 — **원본 거래일은 같은 채로 시각만 역전된다.** 날짜만 대조하면 `sameSessionCompleted=true`가 되는데 보유 구간이 빈 구간이라 극값·카드·반사실이 전부 비어서 계약의 "`true`면 채워진다"와 어긋난다. 그래서 **역전 자체를 `false` 조건으로 둔다** — 사실상 같은 장에서 완결된 거래가 아니고, 계약이 이미 `false`에서 그 값들을 `null`로 정해 뒀으므로 계약을 고치지 않고 약속과 실제가 맞는다.
 
-**조건은 "역전"뿐이고 `sameSessionCompleted=false` 전체가 아니다.** 원본 거래일이 순방향인 정상 cross-session 매매에서는 값이 의미가 있고, `docs/api-contracts.md`의 `sameSessionCompleted=false` nullable 목록에도 `holdingMinutes`가 없다.
+**따라서 위 단락의 "`sameSessionCompleted=false`면 전부 `null`"이 역전 조합에도 그대로 적용된다.** 원본 거래일이 달라서가 아니라 **역전이 그 자체로 `false` 조건이기 때문**이다 — 재재생 조합은 원본 거래일이 *같으므로* 날짜 대조만으로는 걸리지 않는다.
+
+`holdingMinutes`는 **음수를 0으로 clamp하거나 서비스 벽시계 경과분으로 대체하지 않는다** — 둘 다 같은 응답의 `buyAt`·`sellAt`과 산술이 어긋나 화면이 "표시된 두 시각의 차"를 복원할 수 없게 된다. **틀린 사실 대신 없음을 낸다.**
+
+**`holdingMinutes`의 조건은 역전뿐이고 `sameSessionCompleted=false` 전체가 아니다.** 원본 거래일이 순방향인 정상 cross-session 매매에서는 값이 의미가 있고, `docs/api-contracts.md`의 `sameSessionCompleted=false` nullable 목록에도 `holdingMinutes`가 없다 — **역전 ⇒ 두 값 모두, 그 역은 성립하지 않는다.**
+
+**분 단위 값은 두 끝점을 분으로 내린 뒤 뺀다** (2026-08-05 추가, 이슈 #208). `holdingMinutes`·`minutesAfterBuy`·`minutesBeforeSell`·`buyToNewsMinutes` 넷 다 해당한다. `trades.executed_at`이 `DATETIME(6)`이라 운영 값에 소수 초가 붙는데, 그대로 빼면 0 방향 절삭이 **양수에서는 값을 줄이고 음수에서는 키운다** — `09:30:17.4 → 11:25`가 `114`가 되어 `docs/api-contracts.md`의 `minutesAfterBuy: 115`가 재현되지 않는다. **응답에 싣는 `buyAt`·`sellAt`은 체결 시각이므로 초를 그대로 유지한다** — 내리는 것은 분봉·카드 구간 판정과 분 단위 값의 계산에 쓰는 경계뿐이다.
 
 **매도 후 흐름의 노출 게이트가 중요하다.** 14:40에 매도하고 14:41에 조회하면 장 마감까지의 가격은 아직 재생되지 않은 미래다. 그걸 보여주면 사용자가 같은 종목을 재매수할 때 답을 아는 상태가 된다. §C-5의 게이트를 통과했을 때만 채운다. **기준 날짜가 "오늘"이 아니라 그 체결의 서비스 날짜라는 점**이 핵심이다 — 오늘로 잡으면 어제 판 체결을 오늘 오전에 열었을 때 `READY`였던 값이 `NOT_YET`으로 되돌아간다.
 

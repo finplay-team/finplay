@@ -672,7 +672,11 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 **`sameSessionCompleted`가 응답 형태를 가른다.** 매수와 매도가 같은 원본 거래일 안에서 완결됐으면 `true`이고 `holdHighPrice`·`holdHighAt`·`holdLowPrice`·`holdLowAt`·`sellVsHighRate`·`sellVsLowRate`·`buyToNewsMinutes`·`priceMoves`·`postSellFlow`·`counterfactuals`·`peerComparison`이 채워진다. 여러 재생일에 걸친 매매는 `false`이며 이 필드가 전부 `null`(`priceMoves`는 `[]`)이 된다 — 재생일마다 원본 거래일이 달라 분봉이 불연속이라 계산 자체가 성립하지 않는다. **한 매도가 여러 매수 lot에 배분됐고 그 lot들이 서로 다른 원본 거래일에 걸쳐 있어도 `false`다** — 가장 이른 lot 하나만 보고 판정하지 않는다.
 
-**`holdingMinutes`는 위 nullable 목록에 없다 — 원본 거래일이 역전된 경우에만 `null`이다** (2026-08-04, 이슈 #208). `buyAt`·`sellAt`이 서로 다른 원본 거래일 축에 놓일 수 있고, 같은 원본 거래일을 여러 서비스 날짜에 재생할 수 있어 **매도의 원본 거래일이 매수 lot의 것보다 앞선 조합(`sellAt < buyAt`)이 성립한다.** 그때만 `null`이며 음수를 0으로 clamp하거나 서비스 벽시계 경과분으로 대체하지 않는다 — 둘 다 같은 응답의 `buyAt`·`sellAt`과 산술이 어긋난다. **원본 거래일이 순방향인 정상 cross-session 매매(`sameSessionCompleted=false`)에서는 그대로 채운다.** 규칙은 spec §파생 사실 계산이 정본이다.
+**시각이 역전된 조합(`sellAt < buyAt`)도 `sameSessionCompleted=false`다** (2026-08-04 · 2026-08-05 개정, 이슈 #208). 같은 원본 거래일을 여러 서비스 날짜에 재생할 수 있어 **첫 재생일 오후에 매수하고 다음 재생일 오전에 매도하는 조합**이 성립하는데, 그때는 원본 거래일이 같으므로 날짜 대조만으로는 `false`가 되지 않는다. 보유 구간이 빈 구간이라 위 필드가 전부 비므로 **역전 자체를 `false` 조건으로 둔다** — 위 nullable 목록과 규칙은 그대로이고 그 목록에 들어오는 경우가 하나 늘어난 것이다.
+
+**`holdingMinutes`는 그 nullable 목록에 없다 — 역전된 경우에만 `null`이다.** 즉 **역전이면 `sameSessionCompleted=false`이면서 `holdingMinutes`도 `null`이지만, `sameSessionCompleted=false`라고 `holdingMinutes`가 `null`이 되는 것은 아니다** — 원본 거래일이 순방향인 정상 cross-session 매매에서는 그대로 채운다. 음수를 0으로 clamp하거나 서비스 벽시계 경과분으로 대체하지 않는다(같은 응답의 `buyAt`·`sellAt`과 산술이 어긋난다). 규칙은 spec §파생 사실 계산이 정본이다.
+
+**분 단위 값(`holdingMinutes`·`priceMoves[].minutesAfterBuy`·`minutesBeforeSell`·`buyToNewsMinutes`)은 두 끝점을 분으로 내린 뒤 뺀 값이다.** `executed_at`이 `DATETIME(6)`이라 체결 시각에 소수 초가 붙는데 분봉·카드 시각은 정시이므로, 분 축에서 재야 위 예시(`holdingMinutes: 310`, `minutesAfterBuy: 115`, `buyToNewsMinutes: 105`)가 재현된다. **`buyAt`·`sellAt` 자체는 체결 시각이므로 초를 그대로 싣는다.**
 
 **`narrativeStatus`는 항상 `READY`다.** 매도 회고에는 §템플릿 문장이 있어 LLM이 실패하거나 후검증에 걸려도 서버가 수치로 조립한 문장으로 대체하므로, 서술이 비는 경우가 없다. 어느 쪽으로 만들어졌는지는 `narrativeSource`(`LLM`|`TEMPLATE`)로 구분한다. **`UNAVAILABLE`은 이 엔드포인트에 존재하지 않는다** — 템플릿이 없는 뉴스 요약·브리핑에만 있는 상태다.
 

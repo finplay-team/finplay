@@ -115,13 +115,39 @@ public class PostSellFeedbackService {
 		try {
 			tradeFeedbackWriter.create(userId, tradeId, resolved, LocalDateTime.now(clock));
 		} catch (DataIntegrityViolationException e) {
-			// UNIQUE(trade_id) 충돌 — 같은 체결을 동시에 두 번 조회하면(화면 이중 요청, 새로고침 연타) 둘 다
-			// "기존 행 없음"을 보고 각자 생성한다. 먼저 커밋한 쪽의 행을 그대로 두고 이번 응답은 방금 만든
-			// 문장으로 내린다 — 두 문장 모두 같은 수치에서 나온 관찰형 서술이라 사용자가 보는 내용이 어긋나지
-			// 않고, 여기서 500을 내면 조회가 실패한다(§실패 처리의 "UNIQUE 제약으로 무시, 기존 데이터 유지").
-			log.debug("매도 회고 서술이 이미 저장돼 있어 이번 저장은 건너뛴다. tradeId={}", tradeId);
+			absorbOnlyDuplicateRow(tradeId, e);
 		}
 		return resolved;
+	}
+
+	/**
+	 * {@code UNIQUE(trade_id)} 충돌만 삼키고, <b>그 밖의 무결성 위반은 {@code WARN}으로 남긴다.</b>
+	 *
+	 * <p>삼켜도 되는 경우는 하나다 — 같은 체결을 동시에 두 번 조회하면(화면 이중 요청, 새로고침 연타) 둘 다
+	 * "기존 행 없음"을 보고 각자 생성한다. 먼저 커밋한 쪽의 행을 그대로 두고 이번 응답은 방금 만든 문장으로
+	 * 내린다 — 두 문장 모두 같은 수치에서 나온 관찰형 서술이라 사용자가 보는 내용이 어긋나지 않고, 여기서
+	 * 500을 내면 조회가 실패한다(§실패 처리의 "UNIQUE 제약으로 무시, 기존 데이터 유지").
+	 *
+	 * <p><b>판정을 예외 타입이 아니라 "행이 실제로 있는가"로 한다.</b> {@code DuplicateKeyException}으로 좁히는
+	 * 방법도 있지만 그 매핑에 기댈 수 없다 — Hibernate가 던지는 {@code ConstraintViolationException}은
+	 * {@code HibernateJpaDialect}가 <b>기반 타입인 {@code DataIntegrityViolationException}으로</b> 번역하고,
+	 * {@code DuplicateKeyException}은 JDBC 에러코드 번역 경로에서 붙는 하위 타입이다. 좁혔다가 매핑이 예상과
+	 * 다르면 <b>정상 경합이 500이 된다</b>. 이 환경에서는 MySQL 없이 실제 번역 타입을 확인할 수 없으므로
+	 * 기억으로 타입을 고르지 않는다({@code docs/agent-mistakes.md}의 반복 패턴이다).
+	 *
+	 * <p>행 재조회는 <b>번역 타입과 무관하게 성립하고</b> 원래 막으려던 상태를 정확히 가른다. FK·NOT NULL 위반은
+	 * 행이 안 생기므로 {@code WARN}으로 드러난다 — 조용히 넘기면 그 체결은 <b>조회마다 LLM을 다시 부르는데</b>
+	 * 응답이 정상 200이라 아무 신호도 남지 않는다.
+	 */
+	private void absorbOnlyDuplicateRow(Long tradeId, DataIntegrityViolationException e) {
+		if (tradeFeedbackRepository.findByTradeId(tradeId).isPresent()) {
+			log.debug("매도 회고 서술이 이미 저장돼 있어 이번 저장은 건너뛴다. tradeId={}", tradeId);
+			return;
+		}
+		log.warn(
+			"매도 회고 서술 저장이 무결성 위반으로 실패했고 행도 없다. 이 체결은 조회마다 서술을 다시 만든다. tradeId={}",
+			tradeId,
+			e);
 	}
 
 	/**

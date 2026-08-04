@@ -27,10 +27,10 @@ import com.finplay.api.portfolio.service.SellAllocationSummaryDto;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
-import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -136,7 +136,7 @@ class PostSellFeedbackReader {
 
 		// 파생 사실은 sameSessionCompleted가 참일 때만 성립한다 — 여러 재생일에 걸친 매매는 분봉이 불연속이라
 		// 극값·간격 계산의 정의 자체가 없다(§파생 사실 계산). 계약이 정한 형태는 전부 null, priceMoves는 []다.
-		boolean sameSessionCompleted = isSameSessionCompleted(sellSourceTradingDate, allocation);
+		boolean sameSessionCompleted = isSameSessionCompleted(sellSourceTradingDate, allocation, buyAt, sellAt);
 		List<HeldPriceMoveItem> priceMoves = sameSessionCompleted
 			? findHeldPriceMoves(trade, sellSourceTradingDate, buyAt, sellAt)
 			: List.of();
@@ -230,28 +230,37 @@ class PostSellFeedbackReader {
 	}
 
 	/**
-	 * {@code sellAt − buyAt} (분). <b>원본 거래일이 역전되면 {@code null}이다</b> (§파생 사실 계산,
+	 * {@code sellAt − buyAt} (분). <b>{@link #isReversed} 조합이면 {@code null}이다</b> (§파생 사실 계산,
 	 * 2026-08-04 결정 · 이슈 #208).
-	 *
-	 * <p>두 값은 서로 다른 원본 거래일 축에 놓일 수 있다 — {@code buyAt}은 가장 이른 배분 lot의 원본 거래일이고
-	 * {@code sellAt}은 이 매도 체결의 원본 거래일인데, <b>같은 원본 거래일을 여러 서비스 날짜에 재생할 수 있어</b>
-	 * 매도의 원본 거래일이 매수 lot의 것보다 앞선 조합이 실제로 성립한다. 그러면 뺄셈이 음수가 되고 예외도 로그도
-	 * 남지 않는다.
 	 *
 	 * <p><b>음수를 0으로 clamp하거나 서비스 벽시계 경과분으로 대체하지 않는다.</b> 둘 다 같은 응답의
 	 * {@code buyAt}·{@code sellAt}과 산술이 어긋나 화면이 "표시된 두 시각의 차"를 복원할 수 없게 된다 — <b>틀린
-	 * 사실 대신 없음을 낸다.</b> 이 조합은 이미 {@code sameSessionCompleted=false}이고 파생 사실·반사실·집단
-	 * 비교가 전부 {@code null}이라 결이 같다.
+	 * 사실 대신 없음을 낸다.</b>
 	 *
-	 * <p><b>조건은 "역전"뿐이고 {@code sameSessionCompleted=false} 전체가 아니다.</b> 원본 거래일이 순방향인
-	 * 정상 cross-session 매매에서는 값이 의미가 있고, 계약의 {@code sameSessionCompleted=false} nullable 목록에도
-	 * {@code holdingMinutes}가 없다.
+	 * <p><b>조건은 역전뿐이고 {@code sameSessionCompleted=false} 전체가 아니다.</b> 원본 거래일이 순방향인 정상
+	 * cross-session 매매에서는 값이 의미가 있고, 계약의 {@code sameSessionCompleted=false} nullable 목록에도
+	 * {@code holdingMinutes}가 없다. 역전이면 {@code sameSessionCompleted}도 함께 {@code false}가 되지만
+	 * <b>그 역은 성립하지 않는다</b>는 것이 이 자리의 요점이다.
 	 */
 	private static Integer holdingMinutes(LocalDateTime buyAt, LocalDateTime sellAt) {
-		if (sellAt.isBefore(buyAt)) {
-			return null;
-		}
-		return (int)Duration.between(buyAt, sellAt).toMinutes();
+		return isReversed(buyAt, sellAt) ? null : minutesBetween(buyAt, sellAt);
+	}
+
+	/**
+	 * 원본 거래일 시간축에서 <b>매도가 매수보다 앞선</b> 조합 — {@code holdingMinutes}의 {@code null} 조건과
+	 * {@link #isSameSessionCompleted}의 실패 조건이 <b>같은 이 판정 하나</b>를 가리킨다.
+	 *
+	 * <p>두 값은 서로 다른 원본 거래일 축에 놓일 수 있다 — {@code buyAt}은 가장 이른 배분 lot의 원본 거래일이고
+	 * {@code sellAt}은 이 매도 체결의 원본 거래일이다. <b>같은 원본 거래일을 여러 서비스 날짜에 재생할 수 있어</b>
+	 * (첫 재생일 오후에 매수, 다음 재생일 오전에 매도) 원본 거래일이 <b>같은 채로 시각만 역전되는</b> 조합이
+	 * 실제로 성립한다. 그러면 분 계산이 음수가 되고 보유 구간이 <b>빈 구간</b>이 되는데 예외도 로그도 남지 않는다.
+	 *
+	 * <p>비교를 분으로 내리지 않고 <b>체결 시각 그대로</b> 한다. 이 판정이 막는 것은 "응답에 실린 두 시각이 순서가
+	 * 뒤집혀 있다"이고, 분으로 내리면 같은 분 안의 역전을 놓친다 — FIFO가 같은 세션 안의 역전을 이미 막으므로
+	 * 실제로 도달하지 않는 자리지만, 판정을 느슨하게 둘 이유가 없다.
+	 */
+	private static boolean isReversed(LocalDateTime buyAt, LocalDateTime sellAt) {
+		return sellAt.isBefore(buyAt);
 	}
 
 	/**
@@ -280,8 +289,8 @@ class PostSellFeedbackReader {
 		LocalDate sourceTradingDate,
 		LocalDateTime buyAt,
 		LocalDateTime sellAt) {
-		LocalTime from = buyAt.toLocalTime();
-		LocalTime to = sellAt.toLocalTime();
+		LocalTime from = candleBoundary(buyAt);
+		LocalTime to = candleBoundary(sellAt);
 		List<StockCandleDto> candles = fullDayCandles.stream()
 			.filter(candle -> !candle.candleTime().isBefore(from) && !candle.candleTime().isAfter(to))
 			.toList();
@@ -370,7 +379,7 @@ class PostSellFeedbackReader {
 		}
 
 		StockCandleDto lastCandle = lastCandle(fullDayCandles);
-		StockCandleDto postSellHigh = highestCloseAfter(fullDayCandles, sellAt.toLocalTime());
+		StockCandleDto postSellHigh = highestCloseAfter(fullDayCandles, candleBoundary(sellAt));
 		return new PostSellFlow(
 			PostSellFeedbackStatus.READY,
 			lastCandle == null ? null : lastCandle.close(),
@@ -460,6 +469,65 @@ class PostSellFeedbackReader {
 	}
 
 	/**
+	 * 체결 시각을 <b>분봉·카드 구간 판정에 쓸 경계</b>로 내린다 — 초·소수 초를 버린다.
+	 *
+	 * <p><b>{@code toLocalTime()}을 그대로 쓰면 안 된다.</b> {@code executed_at}은 {@code DATETIME(6)}
+	 * ({@code V10__create_order_ledger_tables.sql})이고 값은 {@code OrderExecutionService}가
+	 * {@code LocalDateTime.now(clock)}으로 찍으므로 <b>운영에서는 항상 {@code 09:30:17.4xxxxx} 꼴</b>이다. 반대로
+	 * 분봉의 {@code candle_time}과 카드의 {@code window_end}는 <b>소수 초가 없는 정시 값</b>이다.
+	 *
+	 * <p>그대로 비교하면 경계가 <b>비대칭으로</b> 어긋난다. 하한은 {@code !candleTime.isBefore(09:30:17.4)}가
+	 * <b>09:30 분봉을 탈락시켜</b> §파생 사실 계산의 "양 끝 포함"이 깨지는데, 상한은
+	 * {@code !candleTime.isAfter(14:40:35)}로 14:40 분봉을 그대로 포함한다. 결과는 <b>극값이 매수 분봉일 때
+	 * {@code holdHighPrice}·{@code holdHighAt}·{@code sellVsHighRate}(와 그 값을 그대로 올리는 반사실
+	 * {@code atHoldHigh})가 한 봉 밀린 채 조용히 틀리는 것</b>이다 — 예외도 로그도 없고 화면 문장만
+	 * "보유 중 최고가는 09시 31분…"으로 바뀐다. 카드 파인더의 {@code window_end} 하한도 같은 이유로 밀려
+	 * <b>매수 분과 같은 분에 끝난 카드가 빠진다.</b>
+	 *
+	 * <p>소수 초가 {@code .5s} 이상이면 한 번 더 움직인다 — {@code window_end} 비교는 DB에서 일어나고
+	 * Connector/J·MySQL이 소수 초 없는 {@code TIME} 파라미터로 보내며 <b>0.5초 이상을 1초 올림</b>하기 때문이다
+	 * ({@code PAST_SERVICE_DATE_CUTOFF}의 {@code LocalTime.MAX} 트랩과 같은 부류다).
+	 *
+	 * <p><b>정시 픽스처로는 이 회귀가 잡히지 않는다.</b> 테스트가 {@code 09:30:00}으로 체결을 만들면 truncate가
+	 * 있든 없든 같은 답이 나오므로, 픽스처의 체결 시각에 초·소수 초를 붙여야 이 자리가 실제로 검증된다.
+	 *
+	 * <p><b>응답에 싣는 {@code buyAt}·{@code sellAt} 자체는 내리지 않는다</b> — 계약이 "원본 거래일 기준 체결
+	 * 시각"으로 정한 값이라 초를 버리면 실제 체결 시각과 어긋난다. 여기서 만드는 것은 <b>비교용 경계</b>뿐이다.
+	 */
+	private static LocalTime candleBoundary(LocalDateTime executedAtOnOriginTradeDate) {
+		return onMinuteBoundary(executedAtOnOriginTradeDate).toLocalTime();
+	}
+
+	/**
+	 * 계약이 <b>분 단위</b>로 정한 값들의 차를 잰다 — {@code holdingMinutes}·{@code minutesAfterBuy}·
+	 * {@code minutesBeforeSell}·{@code buyToNewsMinutes}가 전부 이것을 쓴다 (§파생 사실 계산).
+	 *
+	 * <p><b>{@code Duration.between(...).toMinutes()}를 그대로 쓰면 안 된다.</b> 위 {@link #candleBoundary}와 같은
+	 * 이유로 체결 시각에는 소수 초가 붙어 있고, {@code toMinutes()}는 <b>0 방향으로 절삭</b>한다. 그래서
+	 * {@code 09:30:17.4 → 11:25:00}이 {@code 114분 42.6초}가 되어 <b>114</b>가 나오는데
+	 * {@code docs/api-contracts.md}의 예시는 {@code minutesAfterBuy: 115}다. <b>계약 예시가 재현되지 않으면 예시가
+	 * 아니라 구현이 틀린 것이다</b>({@code tasks.md} 1번).
+	 *
+	 * <p><b>0 방향 절삭은 부호에 따라 방향이 뒤집힌다.</b> {@code buyToNewsMinutes}는 기사가 매수보다 이르면
+	 * 음수인데, 그때는 절삭이 값을 <b>키운다</b>({@code -104.7 → -104}) — 양수에서 줄이던 것과 반대다. 두 끝점을
+	 * 먼저 분으로 내리면 남은 차가 정확한 분 수이므로 <b>양쪽 부호에서 같은 규칙</b>이 된다.
+	 *
+	 * <p>응답에 싣는 {@code buyAt}·{@code sellAt}이 초를 그대로 유지하는 것과 어긋나지 않는다 — 계약이 그 둘은
+	 * <b>체결 시각</b>으로, 이 값들은 <b>분</b>으로 정했다. 분 단위 값은 같은 응답의 분봉·카드 시각(전부 정시)과
+	 * 맞아야 하므로 분 축에서 재는 것이 맞고, 체결 시각은 실제로 언제 체결됐는지라 내리면 사실이 바뀐다.
+	 */
+	private static int minutesBetween(LocalDateTime from, LocalDateTime to) {
+		return (int)ChronoUnit.MINUTES.between(onMinuteBoundary(from), onMinuteBoundary(to));
+	}
+
+	// 분 경계로 내리는 규칙의 단일 출처 — candleBoundary(분봉·카드 구간)와 minutesBetween(분 단위 값)이 함께 쓴다.
+	// 두 곳이 서로 다른 규칙으로 내리면 "카드가 보유 구간에 들어왔는데 minutesAfterBuy가 음수"처럼 한 응답 안에서
+	// 앞뒤가 안 맞는 조합이 생긴다.
+	private static LocalDateTime onMinuteBoundary(LocalDateTime executedAtOnOriginTradeDate) {
+		return executedAtOnOriginTradeDate.truncatedTo(ChronoUnit.MINUTES);
+	}
+
+	/**
 	 * 매도 시각 <b>이후</b> 분봉 중 {@code close} 최댓값 ({@code postSellHighPrice}·{@code postSellHighAt}).
 	 *
 	 * <p>경계를 <b>배타</b>로 둔 것은 보유 구간 극값이 매도 분봉을 <b>포함</b>하기 때문이다(§파생 사실 계산이
@@ -501,6 +569,10 @@ class PostSellFeedbackReader {
 	 *
 	 * <p>파인더가 구간 좁히기·게이트·정렬 두 키를 전부 담고 있으며 이 메서드는 <b>게이트 상한을 그 체결의
 	 * 서비스 날짜로 계산해 넘기는 것</b>과 응답 조립만 한다. 상한 계산은 {@link #revealCutoff}에 있다.
+	 *
+	 * <p>보유 구간 두 경계는 {@link #candleBoundary}로 분 단위로 내려 넘긴다 — {@code window_end}가 소수 초 없는
+	 * {@code TIME}인데 체결 시각에는 소수 초가 붙어, 그대로 넘기면 <b>매수 분과 같은 분에 끝난 카드가 하한 밖으로
+	 * 밀린다.</b> 이유는 그 메서드에 있다.
 	 */
 	private List<HeldPriceMoveItem> findHeldPriceMoves(
 		Trade trade, LocalDate sourceTradingDate, LocalDateTime buyAt, LocalDateTime sellAt) {
@@ -513,8 +585,8 @@ class PostSellFeedbackReader {
 			.findByInstrumentIdAndOriginTradeDateAndWindowEndBetweenAndRevealTimeLessThanEqualOrderByWindowStartAscIdAsc(
 				trade.getInstrument().getId(),
 				sourceTradingDate,
-				buyAt.toLocalTime(),
-				sellAt.toLocalTime(),
+				candleBoundary(buyAt),
+				candleBoundary(sellAt),
 				revealCutoff);
 		if (events.isEmpty()) {
 			return List.of();
@@ -551,7 +623,10 @@ class PostSellFeedbackReader {
 		if (serviceDate.isAfter(today)) {
 			return null;
 		}
-		return LocalTime.now(clock);
+		// 오늘 분기도 나노초를 버린다 — 위 PAST_SERVICE_DATE_CUTOFF와 같은 트랩이다. 23:59:59.5~.999에 조회하면
+		// MySQL이 TIME 파라미터의 소수 초를 올림해 00:00:00으로 접고, 그 순간 상한이 자정이 되어 그날 카드가
+		// 전부 사라진다. 창이 하루 0.5초뿐이라 재현이 사실상 불가능하고 예외도 로그도 없으므로, 값으로 막는다.
+		return LocalTime.now(clock).withNano(0);
 	}
 
 	/**
@@ -571,8 +646,8 @@ class PostSellFeedbackReader {
 			windowStart,
 			windowEnd,
 			event.getChangeRate(),
-			(int)Duration.between(buyAt, windowEnd).toMinutes(),
-			(int)Duration.between(windowEnd, sellAt).toMinutes(),
+			minutesBetween(buyAt, windowEnd),
+			minutesBetween(windowEnd, sellAt),
 			event.getNarrative(),
 			sources);
 	}
@@ -595,7 +670,7 @@ class PostSellFeedbackReader {
 			.flatMap(move -> move.sources().stream())
 			.map(NewsItem::publishedAt)
 			.min(Comparator.naturalOrder())
-			.map(firstNewsAt -> (int)Duration.between(buyAt, firstNewsAt).toMinutes())
+			.map(firstNewsAt -> minutesBetween(buyAt, firstNewsAt))
 			.orElse(null);
 	}
 
@@ -626,10 +701,27 @@ class PostSellFeedbackReader {
 	 *
 	 * <p>매도 체결의 원본 거래일을 모르면 {@code false}다 — 대조 기준이 없는데 {@code true}로 두면 위와 같은
 	 * 상태가 된다.
+	 *
+	 * <p><b>원본 거래일이 같아도 {@link #isReversed} 조합이면 {@code false}다</b> (2026-08-05 결정 · 이슈 #208).
+	 * 같은 원본 거래일을 두 서비스 날짜에 재생하면 첫 재생일 오후에 매수하고 다음 재생일 오전에 매도할 수 있어,
+	 * <b>원본 거래일은 같은 채로 시각만 역전되는</b> 조합이 성립한다. 날짜만 보면 {@code true}가 되는데 보유 구간이
+	 * 빈 구간이라 극값·카드·반사실이 전부 {@code null}·{@code []}로 나가서 <b>계약의 "{@code true}면 채워진다"와
+	 * 정면으로 어긋난다.</b> 사실상 같은 장에서 완결된 거래가 아니고, 계약이 이미 {@code false}에서 그 값들을 전부
+	 * {@code null}로 정해 뒀으므로 <b>계약을 고치지 않고 약속과 실제가 맞는다.</b>
+	 *
+	 * <p>판정을 {@code isReversed} 하나로 모은 것이 요점이다 — {@code holdingMinutes}의 {@code null} 조건이 같은
+	 * 함수를 쓴다. 두 곳에 따로 쓰면 한쪽만 고치는 순간 "{@code sameSessionCompleted=true}인데
+	 * {@code holdingMinutes}가 {@code null}" 같은 조합이 응답에 나간다.
 	 */
 	private boolean isSameSessionCompleted(
-		LocalDate sellSourceTradingDate, SellAllocationSummaryDto allocation) {
+		LocalDate sellSourceTradingDate,
+		SellAllocationSummaryDto allocation,
+		LocalDateTime buyAt,
+		LocalDateTime sellAt) {
 		if (sellSourceTradingDate == null) {
+			return false;
+		}
+		if (isReversed(buyAt, sellAt)) {
 			return false;
 		}
 		return allocation.buySourceTradingDates().stream().allMatch(sellSourceTradingDate::equals);

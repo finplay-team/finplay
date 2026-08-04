@@ -238,6 +238,40 @@ class PostSellFeedbackReaderTest {
 		assertThat(response.sameSessionCompleted()).isFalse();
 	}
 
+	// 2026-08-05 결정 — 같은 원본 거래일을 두 서비스 날짜에 재생하면 첫 재생일 오후에 매수하고 다음 재생일
+	// 오전에 매도할 수 있어 **원본 거래일은 같은 채로 시각만 역전되는** 조합이 성립한다. 날짜만 대조하는 구현은
+	// true를 내는데 보유 구간이 빈 구간이라 파생 사실이 전부 null로 나가 계약의 "true면 채워진다"와 어긋난다.
+	@Test
+	@DisplayName("원본 거래일이 같아도 시각이 역전되면 sameSessionCompleted=false이고 파생 사실이 전부 빈다")
+	void sameSessionCompletedIsFalseWhenTheTimesAreReversedWithinTheSameOriginTradeDate() {
+		givenOwnedSellTrade(sellTrade(ORIGIN_TRADE_DATE));
+		SellAllocationSummaryDto allocation = reversedSameDateSummary();
+		givenAllocation(allocation);
+
+		PostSellFeedbackResponse response = postSellFeedbackReader.read(USER_ID, SELL_TRADE_ID);
+
+		// 틀린 구현이 내는 답을 재현한다 — lot 원본 거래일이 전부 매도와 같아 날짜 대조만으로는 true다.
+		boolean dateOnlyVerdict = allocation.buySourceTradingDates().stream().allMatch(ORIGIN_TRADE_DATE::equals);
+		assertThat(dateOnlyVerdict).isTrue();
+		assertThat(response.sellAt()).isBefore(response.buyAt());
+
+		assertThat(response.sameSessionCompleted()).isFalse();
+		assertThat(response.holdingMinutes()).isNull();
+		assertThat(response.holdHighPrice()).isNull();
+		assertThat(response.holdHighAt()).isNull();
+		assertThat(response.holdLowPrice()).isNull();
+		assertThat(response.holdLowAt()).isNull();
+		assertThat(response.sellVsHighRate()).isNull();
+		assertThat(response.sellVsLowRate()).isNull();
+		assertThat(response.buyToNewsMinutes()).isNull();
+		assertThat(response.priceMoves()).isEmpty();
+		assertThat(response.postSellFlow()).isNull();
+		assertThat(response.counterfactuals()).isNull();
+		assertThat(response.peerComparison()).isNull();
+		// 계산이 성립하지 않는 조합이라 분봉·카드를 읽지도 않는다.
+		verifyNoInteractions(stockReplayService, priceMoveEventRepository, priceMoveEventSourceRepository);
+	}
+
 	// --- 아직 채우지 않는 필드 ---
 
 	@Test
@@ -373,6 +407,21 @@ class PostSellFeedbackReaderTest {
 			105L,
 			new BigDecimal("10"),
 			List.of(earliestLotOriginTradeDate, laterLotOriginTradeDate));
+	}
+
+	/**
+	 * 원본 거래일은 매도와 같지만 매수 시각이 매도보다 <b>늦은</b> 배분 요약 — 같은 원본 거래일을 두 서비스
+	 * 날짜에 재생했을 때 성립하는 조합이다(첫 재생일 15:10 매수 → 다음 재생일 14:40 매도).
+	 */
+	private static SellAllocationSummaryDto reversedSameDateSummary() {
+		return new SellAllocationSummaryDto(
+			new BigDecimal("70000.00000000"),
+			LocalDateTime.of(EARLIEST_BUY_SERVICE_DATE, LocalTime.of(15, 10)),
+			ORIGIN_TRADE_DATE,
+			700_000L,
+			105L,
+			new BigDecimal("10"),
+			List.of(ORIGIN_TRADE_DATE, ORIGIN_TRADE_DATE));
 	}
 
 	private static Trade sellTrade(LocalDate originTradeDate) {
