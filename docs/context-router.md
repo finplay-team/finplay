@@ -5,11 +5,11 @@ AI 에이전트는 **docs/ 전체를 순회하지 않는다.** 작업 유형에 
 | 작업 유형 | 반드시 읽을 문서 |
 |---|---|
 | spec 작성 / 차수 범위 판단 | `docs/prd.md` (요구사항 ID·수용 기준·제외 범위 + §3 구현 현황) + `docs/specs/README.md` |
-| 기능 구현 | 해당 `docs/specs/NNN-*/` (spec, plan, tasks) + `docs/conventions.md` + `docs/adr/0002-architecture.md` |
+| 기능 구현 | 해당 `docs/specs/NNN-*/` (spec, plan, tasks) + `docs/conventions.md` + `docs/adr/0002-architecture.md`. **요구사항 ID의 구현 상태가 바뀌면 `docs/prd.md` §3 "구현 현황" 행도 같은 커밋에서 갱신한다** (CLAUDE.md 규칙 10) — PRD 전체가 아니라 그 절만 읽으면 된다 |
 | LLM·AI 기능 구현 | 위 목록 + `docs/adr/0011-llm-provider-integration.md` (프로바이더 추상화, 실패 시 템플릿 폴백, Fake 테스트 방침) |
 | 엔티티/스키마 변경 | 위 + `docs/adr/0004-flyway-migrations.md` |
 | 테스트 작성 | `docs/adr/0003-testing-strategy.md` |
-| 코드 리뷰 | `docs/conventions.md`(리뷰 체크 질문 포함) + `docs/adr/0002-architecture.md` + `docs/adr/0003-testing-strategy.md` + `docs/adr/0004-flyway-migrations.md` + `docs/api-routes.md` + `docs/api-contracts.md` |
+| 코드 리뷰 | `docs/conventions.md`(리뷰 체크 질문 포함) + `docs/adr/0002-architecture.md` + `docs/adr/0003-testing-strategy.md` + `docs/adr/0004-flyway-migrations.md` + `docs/api-routes.md` + `docs/api-contracts.md`. 새 엔드포인트·요구사항 완료가 있으면 `docs/prd.md` §3 갱신 여부도 본다 (CLAUDE.md 규칙 10) |
 | 블랙박스 QA | 해당 spec의 `spec.md` + `docs/api-contracts.md` — **구현 코드(src/main) 금지** |
 | API 문서 갱신 | `docs/api-routes.md`(라우트 목록) + `docs/api-contracts.md`(계약 상세) — 둘을 같은 커밋에서 갱신 |
 | 브랜치 생성 / 커밋 / PR 작성 | `docs/git-conventions.md` |
