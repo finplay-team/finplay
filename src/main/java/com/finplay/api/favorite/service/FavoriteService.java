@@ -32,9 +32,10 @@ import org.springframework.stereotype.Service;
  *   <li>{@link #withFavoriteLock(Long, Long, Supplier)} — 사용자 단위 {@link ReentrantLock}을 획득한 채
  *       {@code action}을 실행하고 결과를 반환한 뒤 락을 해제한다(finally). 락 범위는 사용자 단위이며
  *       instrumentId는 API 형태를 {@code plan.md}의 설계와 맞추기 위해 받되 현재 락 세분화 단위에는
- *       사용하지 않는다. 다른 서비스가 이 락 안에서 DB 트랜잭션을 열고 커밋/롤백까지 마친 뒤 반환하면
- *       "락을 먼저 잡고 그 안에서 DB 트랜잭션을 연다"는 plan.md의 잠금 순서(예: intention 생성의
- *       {@code progress(DB) → favorite 락(in-memory)})를 그대로 구현할 수 있다.
+ *       사용하지 않는다. 호출부는 <b>이미 DB 트랜잭션·행 잠금을 잡은 상태에서만</b> 이 락을 빌려야 한다 —
+ *       plan.md의 잠금 순서(예: intention 생성의 {@code progress(DB) → favorite 락(in-memory)})는
+ *       "DB 락을 먼저 잡고 그 트랜잭션 안에서 이 in-memory 락을 이어 잡는다"는 뜻이며, 반대로 이 락을 먼저
+ *       잡고 그 안에서 새 DB 트랜잭션을 열면 지금은 없는 역순 잠금 경로가 생겨 교착 위험이 생긴다.
  *   <li>{@link #isFavorited(Long, Long)} — 락 없이 존재 여부만 확인한다. 호출부가 이미
  *       {@link #withFavoriteLock}의 {@code action} 안에서 호출해야 TOCTOU 없이 존재 확인과 후속 작업이
  *       원자적으로 이어진다.

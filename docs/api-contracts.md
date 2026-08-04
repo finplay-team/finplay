@@ -448,7 +448,7 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 |---|---|---|---|---|---|
 | POST | /api/favorites | `{"instrumentId":1}` (`FavoriteCreateRequest`) | 201 `{"favoriteId":1,"instrumentId":1,"market":"STOCK","symbol":"005930","name":"삼성전자","createdAt":"2026-08-03T10:00:00"}` (`FavoriteResponse`) | 400 `VALIDATION_ERROR`; 404 `NOT_FOUND`(종목); 409 `INSTRUMENT_NOT_TRADABLE`, `DUPLICATE_RESOURCE` | 016 candidate 1 |
 
-같은 사용자의 `(userId, instrumentId)`는 유일하다. 중복 등록은 기존 값을 반환하지 않는다.
+같은 사용자의 `(userId, instrumentId)`는 유일하다. 중복 등록은 기존 값을 반환하지 않는다. `#193`(ADR-0012)부터 DB가 아닌 서버 힙 메모리(인스턴스 단위 `ConcurrentHashMap`)에 저장하며, `favoriteId`는 프로세스 기동마다 1부터 재채번된다. 서버 재시작 시 등록된 즐겨찾기는 모두 유실된다(재등록 필요).
 
 ### 즐겨찾기 목록 조회
 
@@ -464,7 +464,7 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 |---|---|---|---|---|---|
 | DELETE | /api/favorites/{instrumentId} | 양의 `instrumentId` path | 204, 본문 없음 | 400 `VALIDATION_ERROR`; 404 `FAVORITE_NOT_FOUND` | 016 candidate 3 |
 
-타인 소유 행은 존재를 숨겨 404로 처리하며 반복 삭제도 404다.
+타인 소유 행은 존재를 숨겨 404로 처리하며 반복 삭제도 404다. 즐겨찾기가 서버 힙 메모리 저장이므로(위 등록 절 참고) 재시작 후에는 삭제 대상도 사라져 있어 항상 404다.
 
 ### 투자 실습 진행 조회 (계획)
 
@@ -478,9 +478,9 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 | Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|
-| POST | /api/education/practice/intentions | Access Bearer 필수. `{"instrumentId":1,"quantity":10,"stopLoss":65000,"takeProfit":75000}` (`PracticeIntentionCreateRequest`). 네 필드 모두 필수·양수이며 `quantity`는 정수부 22자리/소수부 8자리 이하, `stopLoss`·`takeProfit`은 각각 정수부 10자리/소수부 8자리 이하 | 201 `{"intentionId":1,"instrumentId":1,"quantity":10,"stopLoss":65000,"takeProfit":75000,"createdAt":"2026-08-03T10:01:00"}` (`PracticeIntentionResponse`) | 400 `VALIDATION_ERROR`; Access 인증 실패는 401 `UNAUTHORIZED`; 404 `NOT_FOUND`(사용자 또는 종목); 409 `PRACTICE_STEP_LOCKED`, `PRACTICE_ALREADY_COMPLETED` 공통 오류 형식 | 016 candidate 4, Issue #175 |
+| POST | /api/education/practice/intentions | Access Bearer 필수. `{"instrumentId":1,"quantity":10,"stopLoss":65000,"takeProfit":75000}` (`PracticeIntentionCreateRequest`). 네 필드 모두 필수·양수이며 `quantity`는 정수부 22자리/소수부 8자리 이하, `stopLoss`·`takeProfit`은 각각 정수부 10자리/소수부 8자리 이하 | 201 `{"intentionId":1,"instrumentId":1,"quantity":10,"stopLoss":65000,"takeProfit":75000,"createdAt":"2026-08-03T10:01:00"}` (`PracticeIntentionResponse`) | 400 `VALIDATION_ERROR`; Access 인증 실패는 401 `UNAUTHORIZED`; 404 `NOT_FOUND`(종목); 409 `PRACTICE_STEP_LOCKED`, `PRACTICE_ALREADY_COMPLETED` 공통 오류 형식 | 016 candidate 4, Issue #175 |
 
-현재 존재하는 본인 favorite와 같은 종목만 허용한다. 서비스는 `(user_id, tutorial_key)` 유일 제약의 `practice_progresses`를 atomic insert-if-absent 한 뒤 진행 행과 favorite를 잠가 검증한다. 완료 상태면 저장 없이 409 `PRACTICE_ALREADY_COMPLETED`, favorite가 없으면 저장 없이 409 `PRACTICE_STEP_LOCKED`다. 유효 요청마다 `practice_intentions`에 새 행을 만들며 중복 intention을 금지하는 유일 제약은 없다. DB에는 사용자·종목 FK와 함께 `quantity DECIMAL(30,8)`, `stop_loss DECIMAL(18,8)`, `take_profit DECIMAL(18,8)`, `created_at DATETIME(6)`로 저장한다. 이 API는 의도만 기록하며 실제 시장가 매수 체결은 기존 `POST /api/orders`의 별도 요청이다.
+현재 존재하는 본인 favorite와 같은 종목만 허용한다. 서비스는 `(user_id, tutorial_key)` 유일 제약의 `practice_progresses`를 atomic insert-if-absent 한 뒤 진행 행과 favorite를 잠가 검증한다. 완료 상태면 저장 없이 409 `PRACTICE_ALREADY_COMPLETED`, favorite가 없으면 저장 없이 409 `PRACTICE_STEP_LOCKED`다. `#193`(ADR-0012)부터 `practice_intentions` 테이블은 DROP되어 있으며, 유효 요청마다 서버 힙 메모리(인스턴스 단위, 사용자별 리스트)에 새 레코드를 추가한다(중복 intention을 금지하는 유일 제약은 없음). 필드는 기존과 동일한 `intentionId`(프로세스 기동마다 1부터 재채번), `instrumentId`, `quantity`, `stopLoss`, `takeProfit`, `createdAt`이며, 서버 재시작 시 모두 유실된다. 이 API는 의도만 기록하며 실제 시장가 매수 체결은 기존 `POST /api/orders`의 별도 요청이다.
 
 ### 튜토리얼 합성 시세 조회
 
