@@ -3,7 +3,7 @@
 ## 관련 문서
 - Spec: `./spec.md`
 - PRD: `../../prd.md` — C-001, C-003, C-004, 2차·3차 MVP 범위
-- 관련 ADR: ADR-0002, ADR-0003, ADR-0004
+- 관련 ADR: ADR-0002, ADR-0003, ADR-0004, ADR-0012(#193, 즐겨찾기·사전 의도 인메모리화)
 - 기존 시장가 주문: `POST /api/orders`
 - Spec 번호: 011은 order-ledger가 점유하고 013은 원격 `feat/143-candle-interval`에서 사용하며 014 ranking·015 limit가 예약되어 있어 016을 사용한다.
 
@@ -17,6 +17,7 @@
 - `order`: 기존 시장가 즉시 체결과 tutorial-only OCO exit plan의 예약·트리거·취소. order application port는 전달받은 snapshot과 order 소유의 trade·holding만 검증하며 education service나 repository를 호출하지 않는다.
 - 호출 방향은 `education application → order application port` 한 방향만 허용한다. order에서 education으로의 역호출과 양방향 service 참조를 금지해 순환 의존을 막는다.
 - 도메인 간 검증은 service를 통해 수행하고 다른 도메인의 repository를 직접 주입하지 않는다.
+- 튜토리얼 전용 합성 시세(#193)는 `market` 도메인이 아니라 `education` 도메인에 둔다. `market`은 KIS 재생·빗썸 실제 시세를 다루는 정본 공급자(`StockReplayService`, price provider 등)를 소유하며, 이 값은 holding 평가·주문 체결·OCO 트리거 등 실제 판정에 쓰인다. 합성 시세는 서버가 즉석에서 만드는 가짜 랜덤워크이고 어떤 실제 판정에도 쓰이지 않으므로, `market` 패키지에 두면 "실제 시세 공급자"라는 기존 불변식을 읽는 사람이 오해하기 쉽다(예: 나중에 누군가 이 값을 holding 평가나 OCO 트리거에 연결하는 실수). `education` 아래 `com.finplay.api.education.synthetic`(가칭) 패키지에 두어 "튜토리얼 UI 참고용"이라는 용도를 패키지 경계로 드러낸다.
 
 ## API 설계
 | Method | URL | 요청 | 응답 | 설명 |
@@ -32,6 +33,7 @@
 | DELETE | `/api/exit-plans/{exitPlanId}` | 없음 | 없음 | PENDING OCO 전체 취소와 예약 1회 반환 |
 | POST | `/api/education/practice/observations` | `PracticeObservationCreateRequest` | `PracticeObservationResponse` | 서버 현재가로 라인 접근 관찰 기록 |
 | POST | `/api/education/practice/reflections` | `PracticeReflectionCreateRequest` | `PracticeReflectionResponse` | 정답 없는 3단계 자유 복기 저장 |
+| GET | `/api/education/practice/synthetic-prices/{instrumentId}` | 없음 | `SyntheticPriceSeriesResponse` | 튜토리얼 전용 서버 생성 랜덤워크 시계열 조회. 실제 시세·evidence와 무관 |
 
 모든 10개 신규 API는 `Authorization: Bearer <access-token>`을 요구한다. 인증 누락·실패는 공통 401이다. path/body의 id로 직접 조회·조작하는 favorite 또는 exit plan이 타인 소유이면 존재를 숨겨 해당 리소스의 404로 응답한다. 단, OCO 생성이 내부에서 검증하는 favorite → intention → trade → holding chain의 존재·소유자·종목·수량 불일치는 409 `PRACTICE_EVIDENCE_MISSING`이고, intention 생성의 favorite 부재·종목 불일치는 409 `PRACTICE_STEP_LOCKED`다. JSON 요청은 `Content-Type: application/json`이다. `POST /api/exit-plans`만 `Idempotency-Key` UUID header가 필수이고, 나머지 POST는 멱등하지 않으며 각각 중복 규칙으로 보호한다. DELETE는 성공 시 body 없는 204다. 어느 API에서든 예상하지 못한 내부 오류는 PRD 공통 계약의 500 `INTERNAL_ERROR` body로 응답한다.
 
@@ -49,6 +51,7 @@
 | `DELETE /api/exit-plans/{exitPlanId}` | 양의 `Long` path | 204 | PENDING만 취소; 반복·경합 패자는 409 | 404 `EXIT_PLAN_NOT_FOUND`, 409 `EXIT_PLAN_NOT_PENDING` |
 | `POST /api/education/practice/observations` | body `{"exitPlanId":1}` | 201 `PracticeObservationResponse` | 호출마다 서버 관찰 1행; PENDING만 허용 | 404 `EXIT_PLAN_NOT_FOUND`, 409 `EXIT_PLAN_NOT_PENDING`, `PRICE_UNAVAILABLE` |
 | `POST /api/education/practice/reflections` | body `exitPlanId`, `answer` | 최초 201 `PracticeReflectionResponse` | 사용자·튜토리얼 최초 완료만 저장; 모든 재시도 409·무저장 | 직접 지정한 plan이 없거나 타인 소유면 404 `EXIT_PLAN_NOT_FOUND`; 본인 plan의 연결 evidence 누락·불일치는 409 `PRACTICE_EVIDENCE_MISSING`; 완료는 409 `PRACTICE_ALREADY_COMPLETED` |
+| `GET /api/education/practice/synthetic-prices/{instrumentId}` | 양의 `Long` path | 200 `SyntheticPriceSeriesResponse` | 매 호출마다 서버가 새로 생성; 저장·재현성 없음; write 없음 | 요청 종목 자체가 없으면 404 `NOT_FOUND`; 거래 불가 종목도 허용(순수 참고용 차트라 `INSTRUMENT_NOT_TRADABLE` 검증 없음) |
 
 OCO 요청 fingerprint는 UTF-8 canonical JSON의 SHA-256이다. key 순서는 `intentionId`, `buyTradeId`, `instrumentId`, `quantity`, `stopLoss`, `takeProfit`으로 고정하고 불필요한 whitespace를 넣지 않는다. 세 `BigDecimal`은 양수 검증 후 `stripTrailingZeros().toPlainString()` 결과를 JSON number token으로 사용해 `1.0`과 `1.00`을 같게 만든다. key·intention 조회 알고리즘은 다음으로 고정한다.
 
@@ -68,6 +71,12 @@ OCO 요청 fingerprint는 UTF-8 canonical JSON의 SHA-256이다. key 순서는 `
 
 수량은 실제 order schema와 같은 `DECIMAL(30,8)`로 정수부 최대 22자리·소수부 최대 8자리이며 request에 `@Positive @Digits(integer=22, fraction=8)`를 적용한다. `quantity`, holding 예약·가용 수량과 모든 quantity 응답에 동일 정밀도를 사용한다. 가격은 `DECIMAL(18,8)`로 정수부 최대 10자리·소수부 최대 8자리이며 request의 `stopLoss`, `takeProfit`에 `@Positive @Digits(integer=10, fraction=8)`를 적용한다. `entryPrice`, `baselinePrice`, `currentPrice`, condition trigger price와 모든 가격 응답·저장 컬럼에도 동일 정밀도를 사용한다. 초과 scale/precision은 반올림하지 않고 400 `VALIDATION_ERROR`다. 모든 request/path의 `instrumentId`, `intentionId`, `buyTradeId`, `exitPlanId`는 positive `Long`이다.
 
+### 합성 시세 생성 규칙(#193, 확정 — `SyntheticPriceService` 구현값)
+- `GET /api/education/practice/synthetic-prices/{instrumentId}`는 `InstrumentService.getInstrumentEntity`로 종목 존재만 확인한다(`instrument.isTradable()` 검증 없음 — 참고용 차트라 비거래 종목도 허용). 존재하지 않으면 404 `NOT_FOUND`.
+- 랜덤워크 파라미터: 시작가는 `PriceQueryService.getPriceQuote(instrument)`로 조회한 실제 유효 현재가를 사용한다. 조회 결과가 `PriceStatus.AVAILABLE`이 아니면(가격 미가용 등) 고정 fallback 상수 `10,000`을 시작가로 쓴다 — 해당 종목의 "마지막 유효 종가"를 별도로 저장·조회하는 저장소가 없고, 합성 시세 자체가 실제 판정에 쓰이지 않는 튜토리얼 참고용 차트이므로 임의의 고정 기본값을 선택했다. 각 틱은 이전 값에 `±1%`(균등분포, `ThreadLocalRandom.nextDouble(-0.01, 0.01)`) 변동을 곱해 다음 값을 만들고, 결과가 시작가의 50% 미만이면 시작가의 50%(`floor`)로 clamp해 음수·0을 방지한다.
+- `prices.size()`는 100으로 고정한다(시작가를 첫 틱으로 포함, `TICK_COUNT=100`, `TICK_SECONDS=3`).
+- 모든 가격은 `BigDecimal` 정수(소수부 0자리, `RoundingMode.HALF_UP`)로 반환해 프론트 차트 렌더링을 단순하게 유지한다. 응답은 요청마다 새로 계산하고 어떤 저장소에도 남기지 않는다.
+
 ### DTO 필드와 nullable
 
 - `FavoriteCreateRequest(Long instrumentId)`: non-null·양수.
@@ -82,6 +91,7 @@ OCO 요청 fingerprint는 UTF-8 canonical JSON의 SHA-256이다. key 순서는 `
 - `PracticeObservationResponse(Long observationId, Long exitPlanId, BigDecimal currentPrice, LocalDateTime observedAt, Boolean closerToBoundary, String closerBoundary, String evidenceType)`: 앞의 다섯 필드는 non-null이고 `currentPrice`는 `(18,8)` 범위다. `closerBoundary` 허용값은 `STOP_LOSS|TAKE_PROFIT`이며 가까워진 경계가 없으면 null, `evidenceType` 허용값은 `CLOSER_TO_BOUNDARY|TIMED_REPETITION`이며 A·B가 아직 충족되지 않으면 null. 서버 내부 관찰의 `FINAL_EVENT`는 이 POST 응답 값이 아니다.
 - `PracticeReflectionCreateRequest(Long exitPlanId, String answer)`: id는 non-null·양수이고 answer는 `@NotBlank @Size(max=2000)`이다. whitespace-only는 거부하고 raw Java `String.length()`가 2000 이하여야 하며 trim·공백 제거 없이 원문을 저장한다.
 - `PracticeReflectionResponse(Long reflectionId, Long exitPlanId, String prompt, String answer, LocalDateTime createdAt)`: 모두 non-null.
+- `SyntheticPriceSeriesResponse(String title, Integer tickSeconds, List<BigDecimal> prices)`: 모두 non-null. `title`은 `Instrument.name`(예: `"삼성전자"`, 종목코드 접두 없음), `tickSeconds=3` 고정, `prices`는 정확히 100개(시작가 포함) 원소를 가진 `BigDecimal` 정수(소수부 0자리) 배열이며 응답마다 새로 생성돼 재현되지 않는다.
 - `InvestmentPracticeResponse(String tutorialKey, String status, Integer currentStep, List<PracticeStepResponse> steps, LocalDateTime completedAt)`: `tutorialKey=INVESTMENT_PRACTICE_V1`, `status` 허용값은 `NOT_STARTED|IN_PROGRESS|COMPLETED`; `currentStep`은 완료 시 null, 그 외 1~3; `completedAt`은 완료 전 null. `steps`는 항상 1,2,3 순서의 세 항목이다.
 - `PracticeStepResponse(Integer step, String status, Boolean locked, PracticeEvidenceResponse evidence)`: 모두 non-null. `status`는 `NOT_STARTED|IN_PROGRESS|COMPLETED`; 잠긴 단계의 evidence도 null 대신 모든 nullable 필드가 null인 객체다.
 - `PracticeEvidenceResponse(Long favoriteId, LocalDateTime favoriteCreatedAt, Long intentionId, LocalDateTime intentionCreatedAt, Long buyTradeId, LocalDateTime buyTradeExecutedAt, Long exitPlanId, LocalDateTime exitPlanReservedAt, Long observationId, LocalDateTime observationObservedAt, String evidenceType, Long reflectionId, LocalDateTime reflectionCreatedAt)`: 각 리소스 id와 대응 시각은 함께 null 또는 함께 non-null이다. observation의 id·시각·`evidenceType`은 삼쌍으로 null/non-null이며 type 허용값은 `CLOSER_TO_BOUNDARY|TIMED_REPETITION|FINAL_EVENT`다. 선택된 chain에서 복수 관찰 증거가 충족되면 `observedAt ASC, observationId ASC`의 최초 qualifying observation을 선택한다. 1단계는 favorite 쌍만, 2단계는 favorite·intention·buyTrade·exitPlan 쌍, 3단계 reflection 전에는 앞 단계와 qualifying observation 삼쌍만, reflection 저장 뒤에는 reflection 쌍까지 채운다. 아직 확보되지 않은 이후 리소스는 null이고 단일 합성 `evidencedAt`은 두지 않는다.
@@ -111,6 +121,7 @@ OCO 요청 fingerprint는 UTF-8 canonical JSON의 SHA-256이다. key 순서는 `
 | Exit plan | `Idempotency-Key` header, 필수 `intentionId`, `buyTradeId`, `instrumentId`, `quantity`, `stopLoss`, `takeProfit` | tutorial-only, owner·instrument chain 동일, `intention.quantity == buyTrade.quantity == exitPlan.quantity`, holding은 owner·instrument와 `availableQuantity >= exitPlan.quantity`, 의도보다 체결이 나중, 가격 범위 유효, 의도당 plan 한 건 |
 | Observation | `exitPlanId` | 본인 `PENDING` plan만 허용. 현재가·관찰유형·시각은 요청에서 받지 않고 서버가 결정 |
 | Reflection | `exitPlanId`, `answer` | A·B·C 관찰 증거 중 하나 이후, terminal plan도 허용. answer는 `@NotBlank @Size(max=2000)`, whitespace-only 거부, raw 길이 최대 2000, 원문 저장 |
+| Synthetic price | `instrumentId`(path) | 필수·양수, 종목 존재만 확인(거래 가능 여부 불문). evidence·판정에 영향 없음 |
 
 ## 핵심 응답 계약
 - `InvestmentPracticeResponse`: `status`, `currentStep`, 단계별 `status`, `locked`, `evidence`를 반환한다. 증거에는 실제 본인 favorite·의도·체결·OCO·관찰·복기 리소스 key와 생성·체결 시각만 포함하고 GET 호출 확인 시각이나 타 사용자 정보는 포함하지 않는다.
@@ -124,9 +135,12 @@ OCO 요청 fingerprint는 UTF-8 canonical JSON의 SHA-256이다. key 순서는 `
 - 주요 오류: `FAVORITE_NOT_FOUND` 404, `EXIT_PLAN_NOT_FOUND` 404, `PRACTICE_STEP_LOCKED` 409(intention 전 favorite 없음·종목 불일치), `PRACTICE_EVIDENCE_MISSING` 409(OCO·reflection의 owner·instrument chain, intention·trade·plan quantity snapshot, 저장된 holdingId 또는 A·B·C 누락·불일치), `PRACTICE_ALREADY_COMPLETED` 409, `EXIT_PLAN_INVALID_PRICE_RANGE` 409, `EXIT_PLAN_SESSION_CLOSED` 409, `EXIT_PLAN_NOT_PENDING` 409. 기존 `DUPLICATE_RESOURCE`·`INSUFFICIENT_QTY`·`PRICE_UNAVAILABLE`·`IDEMPOTENCY_CONFLICT`는 재사용한다.
 
 ## 데이터 모델
-- `favorites`: 새 Flyway migration으로 `id BIGINT NOT NULL AUTO_INCREMENT`, `user_id BIGINT NOT NULL`, `instrument_id BIGINT NOT NULL`, `created_at DATETIME(6) NOT NULL`, PK `id`, `UNIQUE(user_id, instrument_id)`, 목록용 `INDEX(user_id, created_at, id)`, FK `user_id → users(id)`, `instrument_id → instruments(id)`를 만든다. 기존 migration처럼 `ON DELETE` 절을 쓰지 않아 MySQL `RESTRICT/NO ACTION`으로 회원·종목 삭제를 차단한다. V2의 `users.id BIGINT`, V7의 `instruments.id BIGINT`와 타입을 일치시키며 머지된 migration은 수정하지 않는다.
-- `practice_intentions`: 사용자, 종목, `quantity DECIMAL(30,8)`, `stop_loss DECIMAL(18,8)`, `take_profit DECIMAL(18,8)`, 생성시각. 이후 매수·OCO와 연결.
-- `practice_progresses`: 사용자, 고정 `tutorial_key`, `IN_PROGRESS`·`COMPLETED`, 최초 시작·완료시각, `UNIQUE(user_id, tutorial_key)`. 최초 intention 생성에서 atomic insert-or-existing으로 한 행을 확보한다.
+
+> Issue #193(ADR-0012)에서 `favorites`·`practice_intentions`는 DB 테이블에서 서버 힙 메모리 저장으로 전환한다. 아래 두 항목은 물리 스키마가 아니라 인메모리 구조 설계다. 나머지(`practice_progresses` 이하)는 기존대로 DB 테이블이다.
+
+- `favorites`(인메모리): `FavoriteService` `@Service` 싱글턴 빈 내부 `ConcurrentHashMap<Long userId, ConcurrentHashMap<Long instrumentId, FavoriteRecord>>` 또는 이와 동등한 사용자별 하위 맵 구조. `FavoriteRecord(Long favoriteId, Long instrumentId, LocalDateTime createdAt)`이며 `favoriteId`는 `AtomicLong` 전역 시퀀스로 채번한다(재시작 시 0부터 재시작해도 사용자 노출 계약과 무관). 목록 조회는 해당 사용자 하위 맵 값을 `createdAt DESC, favoriteId DESC`로 정렬해 반환한다. `V19__drop_favorites_and_practice_intentions.sql`로 기존 `favorites` 테이블을 DROP한다.
+- `practice_intentions`(인메모리): `PracticeIntentionRepository`(`@Repository`, JPA 아님) 내부 `ConcurrentHashMap<Long userId, List<IntentionRecord>>`(또는 `CopyOnWriteArrayList` 값) 형태로 사용자별로 여러 건 누적한다. `PracticeIntentionService`는 이 repository를 통해서만 저장소에 접근해 ADR-0002의 레이어 경계를 유지한다. 기존 스키마와 동일한 필드(`intentionId`, `instrumentId`, `quantity`, `stopLoss`, `takeProfit`, `createdAt`)를 순수 Java 레코드로 표현하며 JPA 엔티티가 아니다. `V19` migration이 같은 커밋에서 `practice_intentions` 테이블도 DROP한다. 삭제 경로가 없어 사용자가 반복 등록할수록 리스트가 무한히 누적된다(ADR-0012 결과 참고).
+- `practice_progresses`: 사용자, 고정 `tutorial_key`, `IN_PROGRESS`·`COMPLETED`, 최초 시작·완료시각, `UNIQUE(user_id, tutorial_key)`. 최초 intention 생성에서 atomic insert-or-existing으로 한 행을 확보한다. 이 테이블은 ADR-0012에서도 유지 대상이다 — 완료 여부는 재시작에도 유실되면 안 되는 영구 사실이기 때문이다.
 - `trades.stock_replay_session_id`: nullable FK. 주식 fill은 당시 current replay session id를 저장하고 코인 fill은 null을 유지한다. 별도 migration·order fill 변경 이슈가 소유한다.
 - `exit_plans`: 사용자, 사전 의도, 위 여섯 요청 필드의 SHA-256 `request_hash CHAR(64)`, 매수 체결, 주식 `replay_session_id`(코인은 null), holding, 종목, 예약수량, 진입가, 손절·익절, `baseline_price`, `baseline_observed_at`, 상태, 생성·종결시각, 트리거 매도 주문. `UNIQUE(user_id, intention_id)`이며 idempotency key 자체는 중복 저장하지 않는다.
 - `exit_plan_idempotency_keys`: 후보 7 migration이 `id BIGINT NOT NULL AUTO_INCREMENT`, `user_id BIGINT NOT NULL`, `idempotency_key VARCHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL`, `request_hash CHAR(64) NOT NULL`, `exit_plan_id BIGINT NOT NULL`, `created_at DATETIME(6) NOT NULL`, PK `id`, `UNIQUE(user_id, idempotency_key)`, FK `user_id → users(id)`, `exit_plan_id → exit_plans(id)`로 만든다. key는 항상 `UUID.toString()` lowercase canonical 값이라 DB 기본 collation의 대소문자 동등성에 의존하지 않는다. original key와 이후 동일 요청으로 관측된 새 key를 모두 저장한다. 기존 migration의 FK 정책처럼 `ON DELETE`를 쓰지 않아 `RESTRICT/NO ACTION`이며 plan이나 user 삭제로 key 기억이 유실되지 않게 한다.
@@ -138,20 +152,24 @@ OCO 요청 fingerprint는 UTF-8 canonical JSON의 SHA-256이다. key 순서는 `
 - 물리 스키마는 ADR-0004에 따라 새 migration으로 추가하며 기존 migration을 수정하지 않는다.
 
 ## 트랜잭션과 경합
+
+> Issue #193(ADR-0012) 이후 `favorite`·`practice_intention`은 DB 행이 아니므로 `SELECT ... FOR UPDATE` 비관 잠금을 걸 수 없다. 이 잠금 순서 설명에서 "favorite 잠금"·"intention 잠금"은 모두 **사용자 단위 in-process 잠금**(`FavoriteService`·`PracticeIntentionService` 내부의 `ConcurrentHashMap<Long userId, ReentrantLock>`, 이하 "favorite 락"·"intention 락")으로 대체됐다는 뜻으로 읽는다. 같은 userId의 favorite 락은 `FavoriteService`가 소유하고, favorite를 참조하는 다른 서비스(`PracticeIntentionService` 등)는 `FavoriteService`가 제공하는 `withFavoriteLock(Long userId, Long instrumentId, Supplier<T> action)` 형태의 메서드로 락을 빌려 쓰며 다른 도메인의 락 객체를 직접 다루지 않는다(ADR-0002의 "다른 도메인 repository 직접 주입 금지"와 동일한 원칙을 락에도 적용). in-memory 락은 아래에서 여전히 DB 트랜잭션인 `progress`/`replay session`/`holding`/`plan`/`exit_plans` 등의 잠금과 같은 순서로 "포함"되어야 하며, 즉 DB 트랜잭션이 열려 있는 동안 in-memory 락을 계속 보유한 채로 있어야 순서 보장이 깨지지 않는다. 실제로는 `progress` DB 락 획득(진입) → favorite/intention in-memory 락 획득 → 나머지 DB 락 획득 → 커밋 → in-memory 락 해제(finally) 순서로 구현한다. in-memory 락은 JVM 프로세스 내부에서만 유효하므로 다중 인스턴스 배포에서는 이 직렬화가 인스턴스 경계를 넘지 못한다(스펙의 다중 인스턴스 범위 제외와 연결).
+
 - OCO 생성 orchestration: education application이 필수 `intentionId`의 본인 favorite → intention chain을 검증해 owner·instrument, intention quantity, 라인·시각을 담은 검증 snapshot을 명시적 order application port에 전달한다. order port 구현은 education을 호출하지 않고 buyTrade·holding을 검증한다. exact equality는 snapshot의 intention quantity·buyTrade·exitPlan quantity에만 적용하고 holding은 owner·instrument와 `availableQuantity >= exitPlan.quantity`만 검증한다. 깨지면 `PRACTICE_EVIDENCE_MISSING`으로 전체 롤백한다.
-- OCO 생성 orchestration 전체가 하나의 최상위 DB 트랜잭션 경계다. education application은 snapshot 검증에 필요한 favorite·intention 행을 잠근 채 order application port를 호출하고, port 구현은 새 트랜잭션을 분리하지 않고 같은 트랜잭션에 참여해 기존 순서대로 replay session(주식) → holding을 잠근 뒤 plan·condition 저장과 수량 예약까지 수행한다. 따라서 전체 잠금 순서는 `favorite → intention → replay session(주식) → holding → plan(신규)`이며, 검증 뒤 evidence가 삭제·변경되는 TOCTOU를 막고 어느 단계든 실패하면 education 검증부터 order 예약·저장까지 전부 롤백한다.
+- OCO 생성 orchestration 전체가 하나의 최상위 DB 트랜잭션 경계이며, favorite·intention in-memory 락은 그 DB 트랜잭션 시작 전에 획득해 커밋/롤백 이후까지 유지한다. education application은 snapshot 검증에 필요한 favorite·intention in-memory 락을 잡은 채 DB 트랜잭션을 열고 order application port를 호출하고, port 구현은 새 트랜잭션을 분리하지 않고 같은 트랜잭션에 참여해 기존 순서대로 replay session(주식) → holding을 잠근 뒤 plan·condition 저장과 수량 예약까지 수행한다. 따라서 전체 잠금 순서는 `favorite 락 → intention 락 → replay session(주식, DB) → holding(DB) → plan(DB, 신규)`이며, 검증 뒤 evidence가 삭제·변경되는 TOCTOU를 막고 어느 단계든 실패하면 education 검증부터 order 예약·저장까지 전부 롤백한 뒤 in-memory 락을 해제한다.
 - OCO 생성 트랜잭션: 주식은 현재 OPEN replay session → holding 순서로 잠그고 `buyTrade.stockReplaySessionId` 일치와 15:30 전을 재검증한다. 코인은 holding만 잠근다. 서버 유효 현재가를 baseline으로 얻은 뒤 예약 가능 수량 검증, plan·두 condition 생성, holding 수량 예약을 한 트랜잭션으로 처리한다. 시세 없음은 409 `PRICE_UNAVAILABLE`로 전체 롤백한다.
-- intention 생성: `(user_id, tutorial_key)` progress는 native `INSERT ... ON DUPLICATE KEY UPDATE id = id`처럼 기존 상태·시각을 바꾸지 않고 unique 예외도 내지 않는 MySQL 원자 upsert로 확보한다. 같은 트랜잭션에서 해당 progress를 `SELECT ... FOR UPDATE`로 재조회·잠근 뒤 대상 `(user_id,instrument_id)` favorite 행을 비관 잠금한다. 잠긴 favorite의 존재·종목을 검증하고 intention 저장까지 유지한다. 완료 progress는 upsert로 덮어쓰지 않고 잠금 재조회 뒤 409 `PRACTICE_ALREADY_COMPLETED`를 반환한다. favorite 없음·불일치는 `PRACTICE_STEP_LOCKED`이며 intention을 남기지 않는다. 동시 최초 요청은 예외나 rollback-only 전환 없이 progress 한 행에서 직렬화된다. 후보 3 DELETE도 같은 favorite 행을 잠근 뒤 삭제하므로 삭제 선행이면 intention은 409·무저장, intention 선행이면 201 커밋 뒤 DELETE가 204로 직렬화된다.
+- intention 생성: 먼저 대상 `(userId,instrumentId)`의 favorite in-memory 락을 획득한다. 그 상태로 `(user_id, tutorial_key)` progress는 native `INSERT ... ON DUPLICATE KEY UPDATE id = id`처럼 기존 상태·시각을 바꾸지 않고 unique 예외도 내지 않는 MySQL 원자 upsert로 확보하고, 같은 DB 트랜잭션에서 해당 progress를 `SELECT ... FOR UPDATE`로 재조회·잠근다. favorite in-memory 저장소에서 해당 favorite의 존재·종목을 검증하고 intention을 인메모리에 저장한 뒤 DB 트랜잭션을 커밋하고 마지막에 favorite 락을 해제한다. 완료 progress는 upsert로 덮어쓰지 않고 잠금 재조회 뒤 409 `PRACTICE_ALREADY_COMPLETED`를 반환한다. favorite 없음·불일치는 `PRACTICE_STEP_LOCKED`이며 intention을 남기지 않는다. 동시 최초 요청은 예외나 rollback-only 전환 없이 progress 한 행(DB)과 favorite 락(in-memory) 양쪽에서 직렬화된다. 후보 3 DELETE도 같은 favorite in-memory 락을 잡은 뒤 삭제하므로 삭제 선행이면 intention은 409·무저장, intention 선행이면 커밋 뒤 DELETE가 직렬화된다.
 - 가격 트리거: 주식 replay session → holding → plan, 코인 holding → plan 순서로 잠그고 `PENDING` 한 건만 승자로 전이한다. 중복·역순 이벤트는 최초 커밋만 처리하고 terminal plan 후속 이벤트는 no-op/skip한다. 매도 체결·예약 소비·반대 condition 취소·final observation을 한 트랜잭션으로 처리한다.
 - 트리거 평가 입력: 공통 가격 공급자가 거래 가능하다고 판정한 유효 가격 갱신 이벤트만 사용한다. 유효 이벤트 부재·가격 장애 중에는 아무 상태 전이 없이 `PENDING`을 유지한다.
 - 사용자 취소: 주식 replay session → holding → plan, 코인 holding → plan 순서로 잠근다. `PENDING → CANCELLED`와 예약 반환이 함께 커밋되고 재요청·경합 패자는 409다.
 - 주식 세션 만료: replay session → holding → plan 순서로 잠근다. 마지막 유효 가격 이벤트 처리 뒤 15:30에 남은 `PENDING` plan을 `CANCELLED_EXPIRED`로 바꾸고 두 condition 만료, 예약 수량 1회 반환, 마지막 유효 가격 final observation 저장을 한 트랜잭션으로 처리한다. 생성과 직렬화되어 만료 선행 시 생성 거부, 생성 선행 시 scan 포함이다. 코인은 이 경로가 없는 GTC다.
 - 기존 시장가 SELL과 일반 지정가 SELL: holding 잠금에서 공통 예약 원장의 `availableQuantity`만 검증한다. 이 변경은 기존 `POST /api/orders` SELL service·contract·Controller 테스트와 실제 API 문서, 일반 지정가 SELL 구현을 함께 동기화하는 후속 이슈다.
 - 클라이언트 관찰: 본인 plan을 잠그고 `PENDING`을 재검증한 뒤 서버 유효 현재가로 A·B 관찰만 저장한다. terminal 상태는 409이며 `FINAL_EVENT`는 이 경로에서 만들지 않는다.
-- 복기 완료: `practice_progresses → favorite → practice_intention → exit plan` 순서로 비관 잠금한다. progress가 `COMPLETED`면 409다. 아니면 현재 favorite 존재·owner·instrument를 잠근 상태로 intention → trade → 저장된 holdingId → OCO의 owner·instrument, original intention·buyTrade·exitPlan quantity snapshot과 A·B·C 중 하나를 검증하고 reflection/completion/progress 완료 커밋까지 잠금을 유지한다. 현재 holding quantity는 terminal 체결·추가 매수로 달라질 수 있어 재검증하지 않는다. 누락·불일치는 `PRACTICE_EVIDENCE_MISSING`으로 전체 롤백한다. 후보 3 DELETE도 같은 favorite를 잠그므로 삭제 선행은 reflection 409와 reflection·completion·progress 완료 무저장, reflection 선행은 201 완료 커밋 뒤 DELETE 204이며 immutable completion은 삭제 후에도 유지된다.
-- 잠금 순서에는 cycle이 없다. intention은 `progress → favorite`, reflection은 `progress → favorite → intention → plan`, OCO 생성은 `favorite → intention → replay session(주식) → holding → plan`, favorite DELETE는 `favorite`만 잠근다. 두 개 이상 공통 행을 잠그는 경로가 favorite/intention/plan을 역순으로 취득하지 않으며 reflection은 replay session·holding을 잠그지 않는다.
+- 복기 완료: `practice_progresses(DB) → favorite 락(in-memory) → practice_intention(in-memory, 락 범위 안에서 조회만) → exit plan(DB)` 순서로 잠근다. progress가 `COMPLETED`면 409다. 아니면 favorite in-memory 락을 잡은 상태로 현재 favorite 존재·owner·instrument를 확인하고 intention(in-memory) → trade → 저장된 holdingId → OCO(DB)의 owner·instrument, original intention·buyTrade·exitPlan quantity snapshot과 A·B·C 중 하나를 검증하고 reflection/completion/progress 완료 커밋까지 favorite 락과 DB 트랜잭션을 함께 유지한다. 현재 holding quantity는 terminal 체결·추가 매수로 달라질 수 있어 재검증하지 않는다. 누락·불일치는 `PRACTICE_EVIDENCE_MISSING`으로 전체 롤백한다. 후보 3 DELETE도 같은 favorite in-memory 락을 잡으므로 삭제 선행은 reflection 409와 reflection·completion·progress 완료 무저장, reflection 선행은 완료 커밋 뒤 DELETE가 직렬화되며 immutable completion은 삭제 후에도 유지된다.
+- 잠금 순서에는 cycle이 없다. intention 생성은 `progress(DB) → favorite 락(in-memory)`, reflection은 `progress(DB) → favorite 락(in-memory) → intention(in-memory) → plan(DB)`, OCO 생성은 `favorite 락(in-memory) → intention 락(in-memory) → replay session(주식, DB) → holding(DB) → plan(DB)`, favorite DELETE는 `favorite 락(in-memory)`만 잠근다. 두 개 이상 공통 자원을 잠그는 경로가 favorite/intention/plan을 역순으로 취득하지 않으며 reflection은 replay session·holding을 잠그지 않는다. in-memory 락과 DB 락을 섞어 잡을 때도 항상 이 순서(도메인 in-memory 락을 먼저 획득하고 그 안에서 DB 트랜잭션/락을 연다)를 지켜 교착을 피한다.
 - 튜토리얼 판정: 완료 전에는 실제 evidence 현재 존재로 상태를 계산해 삭제·취소 시 재진행이 필요할 수 있다. completion 행 생성 뒤 overall은 불변 `COMPLETED`다. 교육 service는 존재·소유권·시각 순서·필드 일치를 재검증하며 클라이언트 완료 flag는 받지 않는다. favorite·OCO GET 호출 여부는 판정 입력이 아니다.
-- 조회 API: favorite·OCO 목록과 practice 진행 GET은 DB write를 하지 않는다. 목록에 실제 리소스가 포함되는지는 응답 필드 API 테스트로 검증한다.
+- 조회 API: favorite 목록은 in-memory 저장소를, OCO 목록과 practice 진행 GET은 DB를 읽기만 하며 어느 쪽도 상태를 쓰지 않는다. 목록에 실제 리소스가 포함되는지는 응답 필드 API 테스트로 검증한다.
+- 합성 시세 조회(`GET /api/education/practice/synthetic-prices/{instrumentId}`)는 비즈니스 락이 없는 순수 계산이다(내부 조회를 위한 읽기 전용 트랜잭션만 사용). 요청마다 새 랜덤워크를 생성해 반환하며 어떤 저장소에도 쓰지 않고, 위 favorite/intention/plan 잠금 순서와 무관하다.
 
 ## 테스트 계획
 - 단위: 3단계 증거 판정, baseline, PENDING 전용 A·B 관찰, 서버 전용 C, 불변 완료, 시장가 즉시 체결과 OCO 예약 구분, 가격 범위, 자유 복기 무판정.
@@ -162,6 +180,8 @@ OCO 요청 fingerprint는 UTF-8 canonical JSON의 SHA-256이다. key 순서는 `
 - 경합: 중복·역순 가격 이벤트, 트리거 대 취소·주식 세션 만료·생성, OCO 예약분 포함 시장가·지정가 SELL에서 매도 1회 또는 반환 1회를 DB로 검증한다.
 - evidence 경합: latch/barrier로 favorite 잠금 선점 순서를 고정해 삭제와 OCO 생성의 직렬화를 검증한다. 삭제 선행은 생성 409와 exit plan·condition·holding 예약 무저장을, 생성 선행은 생성 201 커밋 뒤 삭제 204와 생성된 plan·예약 유지를 검증한다.
 - 만료: 주식은 마지막 유효 가격 처리 후 15:30 자동 `CANCELLED_EXPIRED`·예약 반환, 코인은 GTC, 가격 장애 중 `PENDING` 유지를 검증한다.
+- 인메모리 동시성(#193): 같은 사용자의 동시 즐겨찾기 등록·해제가 `ConcurrentHashMap`에서 정확히 한 번만 성공하고 나머지는 정의된 409/404가 되는지, 여러 스레드의 intention 생성이 favorite 락 아래에서 직렬화되는지 latch/`ExecutorService` 기반 단위 테스트로 검증한다. 서버 재시작을 흉내 내는 케이스(새 서비스 인스턴스 생성)로 즐겨찾기·의도가 초기화되고 `practice_progresses`는 남아 있는지도 검증한다.
+- 합성 시세(#193): 응답이 `tickSeconds=3`, `prices` 크기 약 100, 모든 가격이 양수인지, 존재하지 않는 종목은 404인지, 같은 종목을 연속 호출해도 매번 새 시계열인지(값이 항상 동일하지 않음을 확률적으로 확인) `@WebMvcTest`/단위 테스트로 검증한다.
 
 ## 후속 구현 이슈 후보
 각 후보는 API 하나 또는 원자적 트랜잭션 경계 하나만 소유한다. 번호는 권장 착수 순서일 뿐이며 실제 착수 가능 여부는 각 항목에 적은 선행 후보 DAG로 판단한다. 이슈는 미리 일괄 생성하지 않고 선행 gate를 만족해 실제 착수할 후보 하나만 생성한다. Controller를 실제 변경한 후보만 같은 커밋에서 `docs/api-routes.md`와 `docs/api-contracts.md`를 동기화한다.
@@ -188,10 +208,11 @@ OCO 요청 fingerprint는 UTF-8 canonical JSON의 SHA-256이다. key 순서는 `
 
 | 후보 | 소유 schema/migration | 소유 원자 경계 |
 |---|---|---|
-| 1 | `favorites` | favorite 등록과 unique 충돌 매핑 |
-| 2 | 없음 | read-only 목록 |
-| 3 | 없음 | 대상 favorite 비관 잠금 + 본인 favorite 단건 삭제 |
-| 4 | `practice_intentions`, `practice_progresses` | progress 무변경 MySQL upsert + 잠금 재조회 + favorite 비관 잠금·검증 + intention 저장 |
+| 1 | ~~`favorites`~~ → #193에서 in-memory로 전환, `V19`이 테이블 DROP | favorite 등록과 unique 충돌 매핑(in-memory 저장소의 사용자별 unique 매핑으로 대체) |
+| 2 | 없음 | read-only 목록(in-memory 조회) |
+| 3 | 없음 | 대상 favorite in-memory 락 + 본인 favorite 단건 삭제 |
+| 4 | ~~`practice_intentions`~~ → #193에서 in-memory로 전환, `V19`이 테이블 DROP; `practice_progresses`는 DB 유지 | progress 무변경 MySQL upsert + 잠금 재조회 + favorite in-memory 락·검증 + intention in-memory 저장 |
+| #193 | `V19__drop_favorites_and_practice_intentions.sql`; 새 교육 schema 없음(합성 시세는 저장하지 않음) | favorite/intention in-memory 저장소 전환 + 사용자 단위 in-process 락 + 합성 시세 무상태 생성 |
 | 5 | nullable `trades.stock_replay_session_id` FK | 주식 fill과 current session 기록; 코인 null |
 | 6 | 공통 reservation ledger | MARKET SELL available 검증·체결/ledger 정합성 |
 | 7 | `exit_plans`, `exit_plan_conditions`, canonical UUID `exit_plan_idempotency_keys`와 intention/key unique | 각 attempt의 plan·key mapping·예약 전체 원자성; 실패 tx 전체 rollback 후 바깥 coordinator의 새 tx reconciliation |
@@ -201,7 +222,7 @@ OCO 요청 fingerprint는 UTF-8 canonical JSON의 SHA-256이다. key 순서는 `
 | 11 | 없음 | 주식 expiry + condition 만료 + 예약 반환 + `FINAL_EVENT` |
 | 12 | 없음 | read-only evidence/progress 계산 |
 | 13 | `practice_observations` | PENDING 재검증 + 서버 가격 A·B 관찰 저장 |
-| 14 | `practice_reflections`, `practice_completions`; 후보 4의 progress와 후보 1의 favorite 사용 | progress → favorite → intention → plan 잠금 유지 + evidence 검증 + reflection/completion/progress 완료 |
+| 14 | `practice_reflections`, `practice_completions`; 후보 4의 progress(DB)와 후보 1의 favorite(#193 이후 in-memory) 사용 | progress(DB) → favorite 락(in-memory) → intention(in-memory) → plan(DB) 잠금 유지 + evidence 검증 + reflection/completion/progress 완료 |
 | 15 | 후보 6 ledger 재사용, 새 교육 schema 없음 | LIMIT SELL 예약·available 검증 |
 
 후보 10이 후보 13 schema에 `FINAL_EVENT`를 저장하므로 후보 10의 실제 선행 후보는 7·13이고, 후보 11의 실제 선행 후보는 7·10이다. 이 DAG가 위 권장 번호보다 우선한다.

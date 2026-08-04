@@ -14,11 +14,11 @@ public record FavoriteResponse(
 
 	public static FavoriteResponse from(Favorite favorite) {
 		return new FavoriteResponse(
-			favorite.getId(),
-			favorite.getInstrument().getId(),
-			favorite.getInstrument().getMarket().name(),
-			favorite.getInstrument().getSymbol(),
-			favorite.getInstrument().getName(),
-			favorite.getCreatedAt());
+			favorite.favoriteId(),
+			favorite.instrumentId(),
+			favorite.market(),
+			favorite.symbol(),
+			favorite.name(),
+			favorite.createdAt());
 	}
 }

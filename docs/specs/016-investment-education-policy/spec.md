@@ -1,6 +1,6 @@
 # Spec: 3단계 투자 실습 튜토리얼
 
-> 상태: spec·계획 API 계약 확정, candidate 1은 #163에서 구현, 나머지 production 구현 미착수
+> 상태: spec·계획 API 계약 확정, candidate 1~4는 구현됐고 #193에서 즐겨찾기·사전 의도 저장을 인메모리로 전환·튜토리얼 합성 시세를 추가 완료, 나머지 production 구현 미착수
 
 ## 개요
 1차 고도화(PRD 2차 MVP)의 교육 범위는 사용자가 실제 FinPlay 도메인 API를 사용해 계획·매수·예약·관찰·복기를 경험하는 3단계 실습이다. 서버는 실제 즐겨찾기, 체결, OCO exit plan과 관찰·복기 기록을 연결해 진행 상태를 판정하며 클라이언트의 완료 주장만으로 단계를 완료하지 않는다.
@@ -58,6 +58,17 @@
 - `POST /api/education/practice/observations`는 인증 사용자 본인의 `PENDING` plan만 받는다. `CANCELLED`, `FILLED_TAKE_PROFIT`, `FILLED_STOP_LOSS`, `CANCELLED_EXPIRED`에는 409 `EXIT_PLAN_NOT_PENDING`이며 클라이언트가 A·B 관찰을 추가할 수 없다.
 - terminal plan의 `FINAL_EVENT` observation은 익절·손절 체결 또는 주식 만료 서버 트랜잭션만 생성한다. 클라이언트 요청으로 `FINAL_EVENT` 유형이나 가격·시각을 지정할 수 없다.
 
+## 즐겨찾기·사전 의도 상태 정책(Issue #193)
+- 1단계 즐겨찾기와 2단계 사전 의도(`practice_intentions`)는 서버 인스턴스의 메모리에만 보관한다(ADR-0012). API 경로·요청/응답 형식·오류 코드는 바뀌지 않는다.
+- 서버 재시작 또는 배포 시 진행 중이던 즐겨찾기·사전 의도가 사라질 수 있다. 사용자는 즐겨찾기 재등록부터 다시 시작해야 하며, 이는 사용자와 합의된 감수 사항이다.
+- `practice_progresses`(완료 여부만 담는 진행 상태)와 `practice_completions`(불변 완료 기록)는 계속 DB에 남는다. 즐겨찾기·의도가 재시작으로 사라져도 이미 완료된 튜토리얼의 `COMPLETED` 상태는 회귀하지 않는다 — 다만 완료 전에 재시작이 일어나면 사용자는 evidence가 사라진 단계부터 다시 진행해야 한다(기존 "완료 전 evidence 삭제 시 재진행" 규칙과 동일하게 취급한다).
+- 다중 인스턴스 배포에서는 인스턴스별로 메모리 상태가 분리된다. 이 spec은 단일 인스턴스 배포를 전제로 하며, sticky session 없는 다중 인스턴스 환경에서의 동작은 범위 밖이다(범위 제외 참고).
+
+## 튜토리얼 전용 합성 시세(Issue #193)
+- 사용자는 2단계에서 사전 의도를 기록하거나 매수 전후로, 화면에서 참고용으로 움직이는 차트를 본다. 이 차트는 실제 시세(KIS 재생·빗썸)와 무관한 서버 생성 랜덤워크이며 실제 주문 체결가·평가손익 계산에는 쓰이지 않는다.
+- 사용자는 종목별로 합성 시세 시계열 조회를 요청하면, 3초 간격 틱으로 5분 분량(약 100틱)의 가격 배열을 즉시 받는다. 같은 요청을 다시 보내면 새로 생성된 다른 시계열을 받을 수 있다 — 서버는 특정 시드나 이전 응답과의 연속성을 보장하지 않는다.
+- 이 합성 시세는 튜토리얼 진행 판정(evidence)에 사용하지 않는다. 3단계 관찰(A·B·C)과 OCO 트리거는 여전히 실제 시장 가격 공급자만 사용한다.
+
 ## 선행 즐겨찾기 API 계약
 - `POST /api/favorites`: `{"instrumentId": 1}`을 받아 거래 가능한 종목을 본인 즐겨찾기에 등록하고 201을 반환한다. `(userId, instrumentId)`는 유일하며 재등록은 409 `DUPLICATE_RESOURCE`다.
 - `GET /api/favorites`: 본인 즐겨찾기를 등록 최신순으로 반환한다. 각 항목은 `instrumentId`, `market`, `symbol`, `name`, `createdAt`을 포함한다.
@@ -99,6 +110,8 @@
 - `PRACTICE_STEP_LOCKED`는 intention 생성 시 step 1 favorite가 없거나 선택 종목이 favorite와 다를 때 사용한다. `PRACTICE_EVIDENCE_MISSING`는 OCO 생성 또는 복기 저장 시 favorite → intention → trade → holding → OCO의 owner·instrument, intention·trade·plan quantity snapshot, 저장된 holdingId 또는 A·B·C 관찰 증거가 누락·불일치할 때 사용한다.
 
 ## 범위 제외
+- 인메모리 즐겨찾기·사전 의도 상태의 다중 인스턴스 동기화(sticky session, 분산 캐시, 세션 클러스터링). 단일 인스턴스 배포를 전제로 한다.
+- 튜토리얼 전용 합성 시세의 재현성·시드 고정, 다른 사용자와의 시계열 공유, 실제 시세 데이터 연동.
 - 8개 투자 지식 과정(투자와 위험, 주식과 코인의 차이, 주문과 체결, 시장가와 지정가, 평가손익과 실현손익, 수수료와 수익률, 분산투자, 투자 계획과 복기), 객관식 정답 판정, 과정별 배지, `INVESTMENT_BEGINNER`, RAG 교육 코치 — PRD 3차 MVP.
 - LLM 설명, AI 피드백, 투자 추천, 가격 예측, 예상 수익 생성.
 - 별도 익절 지정가와 손절 주문 두 건에 같은 수량을 각각 예약하는 모델.

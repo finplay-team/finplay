@@ -15,11 +15,11 @@ public record PracticeIntentionResponse(
 
 	public static PracticeIntentionResponse from(PracticeIntention intention) {
 		return new PracticeIntentionResponse(
-			intention.getId(),
-			intention.getInstrument().getId(),
-			intention.getQuantity(),
-			intention.getStopLoss(),
-			intention.getTakeProfit(),
-			intention.getCreatedAt());
+			intention.intentionId(),
+			intention.instrumentId(),
+			intention.quantity(),
+			intention.stopLoss(),
+			intention.takeProfit(),
+			intention.createdAt());
 	}
 }
