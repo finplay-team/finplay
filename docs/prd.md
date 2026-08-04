@@ -785,9 +785,9 @@ Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conven
 
 ### 주문
 
-- `GET /api/orders?market=&cursor=&limit=` (`market` 필수 — 생략 시 통합 조회는 지원하지 않는다. `cursor`·`limit`은 `GET /api/trades`와 동일한 페이지네이션 방식 — 2026-08-04 확정, 이슈 #177. 실제 구현은 별도 이슈에서 진행한다)
+- `GET /api/orders?market=&cursor=&limit=` (`market` 필수 — 생략 시 통합 조회는 지원하지 않는다. `cursor`·`limit`은 `GET /api/trades`와 동일한 페이지네이션 방식 — 2026-08-04 확정, 이슈 #177. 실제 구현은 이슈 #182(`docs/specs/018-order-list-pagination`)에서 완료했다)
   - 인증 사용자의 주문을 최신 요청순으로 시장별로 반환한다.
-  - 응답 항목: `orderId`, `market`, `instrumentId`, `symbol`, `side`, `orderType`, `requestedQuantity`, `status`, `requestedAt`
+  - 응답 항목: `orderId`, `market`, `instrumentId`, `side`, `orderType`, `status`, `quantity`, `requestedAt` (`docs/api-contracts.md` 정본 기준 — `symbol` 없음, `quantity`)
   - 체결가격·체결금액·수수료·실현손익·체결시각은 포함하지 않고 `GET /api/trades`에서 조회한다.
 - `POST /api/orders`
 - 요청 예시: `{"market":"STOCK","instrumentId":1,"side":"BUY","orderType":"MARKET","quantity":"10"}`
@@ -1056,6 +1056,6 @@ Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conven
 - 랭킹은 시장별(STOCK/CRYPTO) 분리·Redis ZSET 메커니즘과 RANK-001(전체 랭킹)·RANK-002(내 랭킹) 정책(공동 순위, limit 기본 10·상한 50, 매도 체결 이력 없는 회원 제외)을 확정했으며 (2026-08-03, 이슈 #139), SSE push는 검토 후 REST 조회로 대체했다 — 체결마다 push할 만큼 긴급한 데이터가 아니고 Notion API 표에도 REST 엔드포인트만 등재돼 있다.
 - 남은 응답 필드·오류 코드·Redis 키 설계(RANK-001 Decision Gate)는 착수 시 `docs/specs/014-ranking`에서 확정한다.
 - 알림은 지정가 매수·매도 체결 알림으로 범위를 한정하고 SSE 실시간 push를 포함하는 것으로 확정했으며(2026-08-04, NOTI-001~005, 이슈 #140), SSE 연결·인증 스코프·알림 페이로드 필드 등 세부 계약은 착수 시 `docs/specs/013-notification`에서 확정한다.
-- 주문 목록(`GET /api/orders`)은 `market` 필수·`cursor`·`limit` 페이지네이션 도입으로 확정했다(2026-08-04, PORT-003, 이슈 #177) — 실제 구현은 별도 이슈에서 진행한다.
+- 주문 목록(`GET /api/orders`)은 `market` 필수·`cursor`·`limit` 페이지네이션 도입으로 확정했다(2026-08-04, PORT-003, 이슈 #177) — 실제 구현은 이슈 #182에서 완료했다.
 - **뉴스 출처·저작권 결정을 3차에서 2차로 앞당겼다 (2026-08-02)**: 2차 "AI 피드백"이 뉴스를 근거로 쓰게 되면서 3차를 기다릴 수 없게 됐다. 출처는 네이버 뉴스 검색 API(분 단위 발행시각)와 OpenDART 공시검색 API(일 단위 접수일자)로 확정했고, 저작권 대응은 "본문 미저장, 제목·언론사·원문 URL·발행시각만 저장"이다 (C-004). **갱신주기도 함께 확정했다 (2026-08-03, 2026-08-04 정정)** — 기사가 나오는 당일에 상시 수집한다(~~주식 평일 08:00~16:00 30분 간격, 코인 2시간 간격~~ → **주식·코인 공통 24시간 30분 간격**). 네이버 API가 날짜 범위 지정을 지원하지 않고 `display` 상한이 100이라, 재생 시점에 소급 수집하면 대형주의 앞부분이 잘린다. **장중으로 한정하면 안 된다** — 개장 전 브리핑과 전장 요약의 근거 구간이 "직전 거래일 15:30 ~ 당일 09:00"(약 17.5시간)인데 장중만 돌리면 이 구간이 통째로 비어 브리핑이 매일 빈 값이 된다. 상세는 `docs/specs/012-ai-feedback` FEED-001.
 - 2차 MVP의 3단계 투자 실습 계약은 `docs/specs/016-investment-education-policy`에서 확정한다. 즐겨찾기·주식 체결 session FK·공통 예약 원장·OCO exit plan·튜토리얼 연결은 각각 후속 구현 이슈로 진행한다. 이 OCO는 튜토리얼 전용이며 일반 리스크 관리 OCO는 3차 후보로 분리한다. 8개 투자 지식 과정·배지·RAG 교육 코치는 3차 착수 승인 뒤 별도 구현 spec으로 분리한다. AI 리포트 주기는 3차 시작 전 별도 Spec으로 확정한다. 종목 뉴스 요약은 2차로 이동했으므로 3차에서는 다루지 않는다. ~~뉴스 갱신주기~~는 2026-08-03에 확정했다(위 항목).
