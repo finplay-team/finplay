@@ -49,6 +49,9 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
 
 // after-commit(AFTER_COMMIT) 리스너가 실제로 커밋된 뒤에만 동작하는지를 검증해야 하므로, 이 테스트 클래스는
@@ -102,6 +105,9 @@ class RankingIntegrationTest {
 
 	@Autowired
 	private ObjectMapper objectMapper;
+
+	@Autowired
+	private PlatformTransactionManager transactionManager;
 
 	@BeforeEach
 	void setUp() {
@@ -167,6 +173,49 @@ class RankingIntegrationTest {
 
 		assertThat(finalRealizedPnl).isEqualTo(150L);
 		assertThat(scoreOf("CRYPTO", account.getId())).isEqualTo(150.0);
+	}
+
+	// 시나리오 2-1(PR #196 리뷰 지적, 권장이지만 핵심 설계 오류): 위 시나리오는 리스너를 트랜잭션 없는 테스트
+	// 스레드에서 직접 호출해 refreshScore(REQUIRED)가 항상 새 트랜잭션을 여니 이 문제를 잡아내지 못한다.
+	// AFTER_COMMIT 콜백은 원래 매도 트랜잭션의 EntityManager가 아직 스레드에 바인딩된 시점에 실행되므로,
+	// refreshScore를 "이미 활성 트랜잭션이 있고 그 트랜잭션의 영속성 컨텍스트가 계좌를 옛 값으로 캐시해 둔"
+	// 상태에서 호출해 재현한다. REQUIRED였다면 그 1차 캐시의 옛 값을 그대로 반환해 이 테스트가 실패했을 것이다.
+	@Test
+	void refreshScoreReadsLatestDbValueEvenWhenCallerHasStalePersistenceContext() {
+		User user = createUser("rank-stale-pc");
+		Account account = createAccount(user);
+		addRealizedPnlAndCommit(account.getId(), 100L);
+
+		TransactionTemplate outerTx = new TransactionTemplate(transactionManager);
+		outerTx.executeWithoutResult(status -> {
+			// 바깥 트랜잭션의 영속성 컨텍스트에 realizedPnl=100인 계좌를 먼저 적재해 1차 캐시에 남긴다.
+			Account cached = accountRepository.findById(account.getId()).orElseThrow();
+			assertThat(cached.getRealizedPnl()).isEqualTo(100L);
+
+			// 완전히 별도(REQUIRES_NEW)의 트랜잭션에서 DB 값을 200으로 갱신하고 즉시 커밋한다 — 바깥 트랜잭션의
+			// 1차 캐시는 이 변경을 모른 채 여전히 realizedPnl=100인 엔티티를 들고 있다.
+			updateRealizedPnlInNewTransactionAndCommit(account.getId(), 200L);
+
+			// 바깥 트랜잭션이 아직 스레드에 바인딩된 채로 refreshScore를 호출한다 — AFTER_COMMIT 리스너가 원래
+			// 매도 트랜잭션에 참여하는 상황과 동일한 조건이다. REQUIRES_NEW라면 이 바깥 트랜잭션과 무관하게
+			// 새 영속성 컨텍스트로 DB를 다시 읽어 최신값(200)을 가져온다.
+			rankingService.refreshScore(account.getId());
+		});
+
+		assertThat(scoreOf("CRYPTO", account.getId())).isEqualTo(200.0);
+	}
+
+	// account.addRealizedPnl(...)을 완전히 새로운(REQUIRES_NEW) 트랜잭션에서 커밋한다 — 호출한 쪽의 바깥
+	// 트랜잭션(및 그 1차 캐시)과 격리된 별도 갱신을 재현하기 위한 헬퍼다.
+	private void updateRealizedPnlInNewTransactionAndCommit(Long accountId, long newRealizedPnl) {
+		TransactionTemplate newTx = new TransactionTemplate(transactionManager);
+		newTx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+		newTx.executeWithoutResult(status -> {
+			Account account = accountRepository.findById(accountId).orElseThrow();
+			long delta = newRealizedPnl - account.getRealizedPnl();
+			account.addRealizedPnl(delta);
+			accountRepository.saveAndFlush(account);
+		});
 	}
 
 	// 시나리오 3: 매도 요청이 검증 실패(보유수량 부족)로 커밋되지 않으면 ranking:{market} ZSET에 해당 계좌가

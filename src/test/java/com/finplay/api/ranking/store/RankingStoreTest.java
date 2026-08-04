@@ -13,6 +13,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.finplay.api.account.domain.Market;
+import com.finplay.api.ranking.dto.RankingEntryDto;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
@@ -49,6 +53,31 @@ class RankingStoreTest {
 
 		verify(zSetOperations, times(1)).add("ranking:CRYPTO", "2", 500.0);
 		verify(zSetOperations, times(1)).add(any(), any(), anyDouble());
+	}
+
+	// PR #196 리뷰 지적(차단 2): limit 경계에 동점 그룹이 걸쳐 있을 때 그 score의 전체 멤버를 다시 조회하기 위한
+	// findAllAtScore가 ZRANGEBYSCORE score score와 동치인 정확한 구간 조회를 수행하는지 확인한다.
+	@Test
+	void findAllAtScoreReturnsAllMembersWithExactScore() {
+		RankingStore rankingStore = rankingStore();
+		Set<String> members = new LinkedHashSet<>(List.of("1", "2"));
+		when(zSetOperations.rangeByScore("ranking:STOCK", 100.0, 100.0)).thenReturn(members);
+
+		List<RankingEntryDto> entries = rankingStore.findAllAtScore(Market.STOCK, 100L);
+
+		assertThat(entries).containsExactlyInAnyOrder(
+			new RankingEntryDto(1L, 100L),
+			new RankingEntryDto(2L, 100L));
+	}
+
+	@Test
+	void findAllAtScoreReturnsEmptyListWhenNoMemberMatches() {
+		RankingStore rankingStore = rankingStore();
+		when(zSetOperations.rangeByScore("ranking:CRYPTO", 100.0, 100.0)).thenReturn(Set.of());
+
+		List<RankingEntryDto> entries = rankingStore.findAllAtScore(Market.CRYPTO, 100L);
+
+		assertThat(entries).isEmpty();
 	}
 
 	@Test

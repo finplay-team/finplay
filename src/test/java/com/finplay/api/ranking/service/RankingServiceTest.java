@@ -56,43 +56,44 @@ class RankingServiceTest {
 
 	@Test
 	void getRankingsClampsBelowMinimumLimitToTen() {
-		when(rankingStore.topN(eq(Market.STOCK), eq(10))).thenReturn(List.of());
+		when(rankingStore.topN(eq(Market.STOCK), eq(11))).thenReturn(List.of());
 
 		rankingService.getRankings(Market.STOCK, 0);
 
-		verify(rankingStore, times(1)).topN(Market.STOCK, 10);
+		// limit 10으로 클램핑된 뒤, 경계 동점 확인을 위해 limit+1(11)개를 요청한다.
+		verify(rankingStore, times(1)).topN(Market.STOCK, 11);
 	}
 
 	@Test
 	void getRankingsClampsNegativeLimitToTen() {
-		when(rankingStore.topN(eq(Market.STOCK), eq(10))).thenReturn(List.of());
+		when(rankingStore.topN(eq(Market.STOCK), eq(11))).thenReturn(List.of());
 
 		rankingService.getRankings(Market.STOCK, -1);
 
-		verify(rankingStore, times(1)).topN(Market.STOCK, 10);
+		verify(rankingStore, times(1)).topN(Market.STOCK, 11);
 	}
 
 	@Test
 	void getRankingsClampsNullLimitToTen() {
-		when(rankingStore.topN(eq(Market.STOCK), eq(10))).thenReturn(List.of());
+		when(rankingStore.topN(eq(Market.STOCK), eq(11))).thenReturn(List.of());
 
 		rankingService.getRankings(Market.STOCK, null);
 
-		verify(rankingStore, times(1)).topN(Market.STOCK, 10);
+		verify(rankingStore, times(1)).topN(Market.STOCK, 11);
 	}
 
 	@Test
 	void getRankingsClampsAboveMaximumLimitToFifty() {
-		when(rankingStore.topN(eq(Market.STOCK), eq(50))).thenReturn(List.of());
+		when(rankingStore.topN(eq(Market.STOCK), eq(51))).thenReturn(List.of());
 
 		rankingService.getRankings(Market.STOCK, 51);
 
-		verify(rankingStore, times(1)).topN(Market.STOCK, 50);
+		verify(rankingStore, times(1)).topN(Market.STOCK, 51);
 	}
 
 	@Test
 	void getRankingsReturnsEmptyContentWhenWindowIsEmpty() {
-		when(rankingStore.topN(Market.STOCK, 10)).thenReturn(List.of());
+		when(rankingStore.topN(Market.STOCK, 11)).thenReturn(List.of());
 
 		RankingListResponse response = rankingService.getRankings(Market.STOCK, null);
 
@@ -103,11 +104,12 @@ class RankingServiceTest {
 	@Test
 	void getRankingsProducesCoRankPatternAndCachesCountStrictlyGreaterPerUniqueScore() {
 		// 동점 그룹(score=100)의 두 계좌: userId가 낮은 쪽(10)이 먼저 나와야 한다.
+		// window 크기(3) <= limit(10)이라 경계 동점 병합 경로는 타지 않는다.
 		Account tiedLowUserId = account(1L, Market.STOCK, 100L, 10L, "alice");
 		Account tiedHighUserId = account(2L, Market.STOCK, 100L, 20L, "bob");
 		Account thirdPlace = account(3L, Market.STOCK, 50L, 5L, "carol");
 
-		when(rankingStore.topN(Market.STOCK, 10)).thenReturn(List.of(
+		when(rankingStore.topN(Market.STOCK, 11)).thenReturn(List.of(
 			new RankingEntryDto(1L, 100L),
 			new RankingEntryDto(2L, 100L),
 			new RankingEntryDto(3L, 50L)));
@@ -126,6 +128,68 @@ class RankingServiceTest {
 
 		verify(rankingStore, times(1)).countStrictlyGreater(Market.STOCK, 100L);
 		verify(rankingStore, times(1)).countStrictlyGreater(Market.STOCK, 50L);
+		verify(rankingStore, never()).findAllAtScore(any(), anyLong());
+	}
+
+	// PR #196 리뷰 지적(차단 2): topN(limit)만 가져오면 경계에 걸친 동점자가 Redis 멤버 문자열 사전순으로
+	// 잘려 정책(userId 오름차순)과 다른 사람이 노출될 수 있다. limit=1인데 동점 2명이 있는 경계 상황을 재현한다.
+	@Test
+	void getRankingsMergesFullTieGroupWhenBoundaryScoreIsTiedAcrossWindowEdge() {
+		// Redis 자체 사전순(문자열 tie-break)이라면 accountId=2(userId=99)가 먼저 나왔을 상황을 시뮬레이션한다.
+		Account higherUserId = account(2L, Market.STOCK, 100L, 99L, "bob");
+		Account lowerUserId = account(1L, Market.STOCK, 100L, 1L, "alice");
+
+		when(rankingStore.topN(Market.STOCK, 2)).thenReturn(List.of(
+			new RankingEntryDto(2L, 100L),
+			new RankingEntryDto(1L, 100L)));
+		when(rankingStore.findAllAtScore(Market.STOCK, 100L)).thenReturn(List.of(
+			new RankingEntryDto(2L, 100L),
+			new RankingEntryDto(1L, 100L)));
+		when(accountService.findAllByIdInFetchUser(any()))
+			.thenReturn(List.of(higherUserId, lowerUserId));
+		when(rankingStore.countStrictlyGreater(Market.STOCK, 100L)).thenReturn(0L);
+
+		RankingListResponse response = rankingService.getRankings(Market.STOCK, 1);
+
+		// 정책(userId 오름차순)에 따라 alice(userId=1)가 limit=1 안에 남아야 한다.
+		assertThat(response.content()).containsExactly(new RankingListItemResponse(1, "alice", 100L));
+		verify(rankingStore, times(1)).findAllAtScore(Market.STOCK, 100L);
+	}
+
+	// 경계에 동점이 없으면 findAllAtScore를 호출하지 않아야 한다(불필요한 Redis 호출 방지, 리뷰 지적 최적화 요구).
+	@Test
+	void getRankingsDoesNotCallFindAllAtScoreWhenNoBoundaryTie() {
+		Account first = account(1L, Market.STOCK, 200L, 1L, "alice");
+		Account second = account(2L, Market.STOCK, 100L, 2L, "bob");
+
+		when(rankingStore.topN(Market.STOCK, 2)).thenReturn(List.of(
+			new RankingEntryDto(1L, 200L),
+			new RankingEntryDto(2L, 100L)));
+		when(accountService.findAllByIdInFetchUser(any())).thenReturn(List.of(first, second));
+		when(rankingStore.countStrictlyGreater(Market.STOCK, 200L)).thenReturn(0L);
+
+		RankingListResponse response = rankingService.getRankings(Market.STOCK, 1);
+
+		assertThat(response.content()).containsExactly(new RankingListItemResponse(1, "alice", 200L));
+		verify(rankingStore, never()).findAllAtScore(any(), anyLong());
+	}
+
+	// PR #196 리뷰 지적(차단 1): Redis window의 accountId가 DB accountById 배치 조회 결과에 없으면(파생 데이터
+	// 어긋남) NPE로 500이 나던 부분을 확인한다 — 걸러내고 나머지 항목은 정상 계산돼야 한다.
+	@Test
+	void getRankingsExcludesEntryWithoutMatchingDbAccountInsteadOfThrowing() {
+		Account existing = account(1L, Market.STOCK, 100L, 1L, "alice");
+
+		when(rankingStore.topN(Market.STOCK, 11)).thenReturn(List.of(
+			new RankingEntryDto(1L, 100L),
+			new RankingEntryDto(999L, 80L))); // 999는 DB에 없는 유령 accountId
+		when(accountService.findAllByIdInFetchUser(List.of(1L, 999L)))
+			.thenReturn(List.of(existing));
+		when(rankingStore.countStrictlyGreater(Market.STOCK, 100L)).thenReturn(0L);
+
+		RankingListResponse response = rankingService.getRankings(Market.STOCK, null);
+
+		assertThat(response.content()).containsExactly(new RankingListItemResponse(1, "alice", 100L));
 	}
 
 	private Market market() {

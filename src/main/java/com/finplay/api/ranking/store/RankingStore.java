@@ -61,6 +61,22 @@ public class RankingStore {
 		return entries;
 	}
 
+	// 정확히 score인 멤버 전체를 가져온다 — limit 경계에 동점 그룹이 걸쳐 있을 때(RankingService의 boundary tie
+	// 병합) 그 score의 전체 멤버를 다시 가져오기 위한 조회다. ZRANGEBYSCORE score score와 동치(정확한 구간 조회,
+	// 스코어 근사 없음). 이 메서드가 반환하는 개수는 동점자 수에 비례하므로(수백 명까지 있을 수 있음) 경계에
+	// 동점이 확인된 경우에만 호출한다.
+	public List<RankingEntryDto> findAllAtScore(Market market, long score) {
+		Set<String> members = redisTemplate.opsForZSet().rangeByScore(key(market), (double)score, (double)score);
+		if (members == null || members.isEmpty()) {
+			return List.of();
+		}
+		List<RankingEntryDto> entries = new ArrayList<>();
+		for (String member : members) {
+			entries.add(new RankingEntryDto(Long.valueOf(member), score));
+		}
+		return entries;
+	}
+
 	// score보다 엄격히 큰 멤버 수 — 공동 순위 계산(rank = countStrictlyGreater + 1)에 쓰인다.
 	// plan.md는 Range.rightUnbounded(Range.Bound.exclusive(score))를 스케치했지만, 현재 spring-data-redis(3.5.6)
 	// ZSetOperations에는 Range<Double>를 받는 count 오버로드가 없다(count(K, double, double)만 존재).

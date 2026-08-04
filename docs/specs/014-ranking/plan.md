@@ -195,7 +195,7 @@ public class RankingService {
 
 ### 6) 순위 보정 흐름 (공동 순위 계산, RANK-002도 재사용 가능한 형태로 분리)
 
-1. `RankingStore.topN(market, limit)`으로 최대 `limit`개 (accountId, score) window를 score desc로 가져온다.
+1. `RankingStore.topN(market, limit)`으로 최대 `limit`개 (accountId, score) window를 score desc로 가져온다. **(PR #196 리뷰 반영으로 변경 — 아래 8-2절 참고: 실제로는 `limit`이 아니라 경계 동점 확인을 위해 `limit + 1`개를 가져온다.)**
 2. window 안의 **고유 score 값마다 1회만** `RankingStore.countStrictlyGreater(market, score)`를 호출해 해시맵에 캐시한다(같은 score를 가진 동점자가 여러 명이어도 Redis 호출은 1번).
 3. `rank(score) = countStrictlyGreater(score) + 1`.
 4. window를 `(score desc, userId asc)`로 재정렬해 최종 노출 순서를 만든다.
@@ -206,6 +206,31 @@ public class RankingService {
 ### 7) 랭킹 대상 제외가 "쓰기 시점"에 자연스럽게 해결됨
 
 매도 이력이 한 번도 없는 계좌는 `RealizedPnlUpdatedEvent`가 발행된 적이 없으므로 `ranking:{market}` ZSET에 **member 자체가 존재하지 않는다.** 별도의 "매도 이력 있음" 플래그·조회를 추가하지 않고도 완료 조건("매도 이력 없는 회원 제외")이 쓰기 경로 설계로 자동 충족된다 — 이 점을 구현 시 주석으로 남긴다.
+
+### 8) PR #196 리뷰 반영 (구현 이후 설계 변경 — 차단 2건 + 권장 1건)
+
+최초 구현(PR #196) 리뷰에서 지적된 아래 3건을 반영해 위 5)·6) 설계를 다음과 같이 수정했다.
+
+**8-1. Redis window에 DB 계좌가 없는 accountId 필터링 (차단)**
+
+`accountService.findAllByIdInFetchUser(...)`로 배치 조회한 `accountById` 맵에 window의 accountId가 없으면(Redis가 MySQL 트랜잭션 밖의 파생 데이터라 DB 리셋·복원 등으로 언제든 어긋날 수 있음 — 정상 상황으로 취급) `calculateRanks` 진입 시 그 항목을 걸러내고 `log.warn`만 남긴다. 필터링 후 남은 항목이 없으면 예외 없이 빈 `content`를 반환한다. 걸러낸 accountId가 여전히 Redis ZSET 자체에는 남아 있을 수 있어 `countStrictlyGreater`(ZCOUNT)가 그 유령 멤버의 score를 계속 카운트할 수 있다는 미세한 부정확성이 남는데, 이번 수정의 핵심(NPE로 인한 500 방지)만 해결하고 이 부분은 과설계하지 않기로 했다(코드 주석으로 남김).
+
+**8-2. limit 경계 동점자 처리 (차단)**
+
+`RankingStore.topN(market, limit)`만으로는 "어떤 동점자가 window에 들어갈지"가 Redis 멤버 문자열의 사전순으로 결정돼 정책(동점자는 userId 오름차순)과 다르게 잘릴 수 있었다. `RankingService.fetchWindowResolvingBoundaryTies`로 다음과 같이 바꿨다.
+
+1. `RankingStore.topN(market, limit + 1)`로 1개 더 가져온다.
+2. `limit`번째(0-indexed `limit-1`)와 `limit+1`번째(0-indexed `limit`) 항목의 score가 다르면 경계에 동점이 없다는 뜻이므로 추가 Redis 호출 없이 그대로 `limit`개로 절단한다(가장 흔한 경우의 성능 최적화).
+3. 두 score가 같으면 경계에 동점 그룹이 걸쳐 있다는 뜻이므로, `RankingStore.findAllAtScore(market, score)`(신규 메서드, `ZRANGEBYSCORE key score score`로 정확한 score 구간 조회)로 그 score의 전체 멤버를 가져와 window의 해당 score 항목을 통째로 교체(accountId 기준 중복 제거 병합)한다.
+4. 병합된 리스트는 `calculateRanks`에서 `(score desc, userId asc)`로 정렬한 뒤 정확히 `limit`개로 절단한다(`Stream.limit(limit)`).
+
+동점자가 수백 명 규모로 많은 경우도 이 흐름으로 처리된다(3번에서 병합 대상이 커질 뿐, 로직은 동일). 단위 테스트(`RankingServiceTest`)에 `limit=1`·동점 2명 경계 시나리오, 경계에 동점이 없을 때 `findAllAtScore` 미호출(최적화) 검증을 추가했다.
+
+**8-3. `refreshScore` 트랜잭션 전파 (권장이지만 핵심 설계 오류)**
+
+`@TransactionalEventListener(AFTER_COMMIT)` 콜백은 원래 매도 트랜잭션의 EntityManager가 아직 스레드에 바인딩된 시점에 실행된다. `refreshScore`가 `@Transactional`(기본 REQUIRED)이면 그 기존 영속성 컨텍스트에 참여해 1차 캐시의 계좌 객체를 그대로 반환하므로, "이벤트 처리 시점에 DB에서 최신값을 다시 조회한다"(5절·spec.md 동시성 경합 Decision Gate의 전제)가 실제로는 지켜지지 않았다. `@Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)`로 바꿔 항상 새 트랜잭션·새 영속성 컨텍스트를 열도록 수정했다.
+
+`RankingIntegrationTest`에 이 문제를 실제로 잡아내는 테스트(`refreshScoreReadsLatestDbValueEvenWhenCallerHasStalePersistenceContext`)를 추가했다 — `TransactionTemplate`으로 바깥 트랜잭션에서 계좌를 먼저 로드해 1차 캐시에 옛 값을 남긴 뒤, 완전히 별도(REQUIRES_NEW)의 트랜잭션에서 DB 값을 갱신·커밋하고, 그 바깥 트랜잭션이 아직 활성인 채로 `refreshScore`를 호출해 AFTER_COMMIT 콜백과 동일한 조건을 재현한다. `REQUIRED`로 되돌려 실행하면 이 테스트가 실패하는 것을 확인해 회귀 테스트로서의 유효성을 검증했다. 기존 `eventOrderReversalStillConvergesToLatestDbRealizedPnl`(트랜잭션 없는 테스트 스레드에서 리스너를 직접 호출)은 "최종 수렴" 자체는 여전히 유효하게 검증하므로 유지하되, 이 전파 버그는 잡아내지 못한다는 한계를 새 테스트로 보완했다.
 
 ## API 설계
 
