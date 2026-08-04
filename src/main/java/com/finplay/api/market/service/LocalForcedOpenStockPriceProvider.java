@@ -65,7 +65,13 @@ public class LocalForcedOpenStockPriceProvider implements StockPriceProvider {
 
 	@Override
 	public StockReplayPriceDto getCurrentPrice(Long instrumentId) {
-		return delegate.getCurrentPrice(instrumentId);
+		StockReplayPriceDto quote = delegate.getCurrentPrice(instrumentId);
+		if (!forceMarketOpen || quote.marketStatus() == StockMarketStatus.OPEN || !quote.sessionReady()) {
+			return quote;
+		}
+		return new StockReplayPriceDto(
+			quote.sessionReady(), StockMarketStatus.OPEN, quote.sourceTradingDate(), quote.price(), quote.sourceTime(),
+			quote.replaySession());
 	}
 
 	@Override

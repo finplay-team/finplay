@@ -15,6 +15,7 @@ import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.domain.StockReplaySession;
 import com.finplay.api.market.repository.InstrumentRepository;
 import com.finplay.api.market.store.CryptoPriceDto;
 import com.finplay.api.market.store.PriceStore;
@@ -29,6 +30,56 @@ import org.junit.jupiter.api.Test;
 class PriceQueryServiceTest {
 
 	private static final LocalDateTime NOW = LocalDateTime.of(2026, 7, 28, 10, 0, 0);
+
+	@Test
+	void getOrderExecutionPriceReturnsStockQuoteWithSameReplaySession() {
+		Instrument instrument = Instrument.create(
+			Market.STOCK, "005930", "삼성전자", BigDecimal.ONE, 0L, true, NOW);
+		StockReplaySession session = StockReplaySession.ready(
+			NOW.toLocalDate(), NOW.toLocalDate().minusDays(1), NOW, NOW);
+		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
+		when(stockPriceProvider.getCurrentPrice(any())).thenReturn(new StockReplayPriceDto(
+			true, StockMarketStatus.OPEN, session.getSourceTradingDate(), new BigDecimal("71000"), NOW, session));
+		PriceQueryService service = new PriceQueryService(
+			mock(InstrumentRepository.class), stockPriceProvider, mock(PriceStore.class));
+
+		OrderExecutionPriceDto result = service.getOrderExecutionPrice(instrument);
+
+		assertThat(result.priceQuote().price()).isEqualByComparingTo("71000");
+		assertThat(result.stockReplaySession()).isSameAs(session);
+	}
+
+	@Test
+	void getOrderExecutionPriceReturnsCryptoQuoteWithoutReplaySession() {
+		Instrument instrument = Instrument.create(
+			Market.CRYPTO, "BTC", "비트코인", new BigDecimal("0.00000001"), 5000L, true, NOW);
+		PriceStore priceStore = mock(PriceStore.class);
+		when(priceStore.isPriceAvailable("BTC")).thenReturn(true);
+		when(priceStore.getLatestPrice("BTC"))
+			.thenReturn(Optional.of(new CryptoPriceDto("BTC", new BigDecimal("50000000"), NOW)));
+		PriceQueryService service = new PriceQueryService(
+			mock(InstrumentRepository.class), mock(StockPriceProvider.class), priceStore);
+
+		OrderExecutionPriceDto result = service.getOrderExecutionPrice(instrument);
+
+		assertThat(result.priceQuote().price()).isEqualByComparingTo("50000000");
+		assertThat(result.stockReplaySession()).isNull();
+	}
+
+	@Test
+	void getOrderExecutionPriceFailsWhenOpenStockQuoteHasNoReplaySession() {
+		Instrument instrument = Instrument.create(
+			Market.STOCK, "005930", "삼성전자", BigDecimal.ONE, 0L, true, NOW);
+		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
+		when(stockPriceProvider.getCurrentPrice(any())).thenReturn(new StockReplayPriceDto(
+			true, StockMarketStatus.OPEN, NOW.toLocalDate(), new BigDecimal("71000"), NOW, null));
+		PriceQueryService service = new PriceQueryService(
+			mock(InstrumentRepository.class), stockPriceProvider, mock(PriceStore.class));
+
+		assertThatThrownBy(() -> service.getOrderExecutionPrice(instrument))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode()).isEqualTo(ErrorCode.MARKET_CLOSED));
+	}
 
 	@Test
 	void getPriceReturnsAvailableQuoteWhenStockProviderHasPrice() {

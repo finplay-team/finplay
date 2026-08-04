@@ -33,6 +33,28 @@ public class PriceQueryService {
 		return requireAvailable(getPriceQuote(instrument));
 	}
 
+	// 주문 체결 전용 — 주식의 주문 가능 상태·가격·재생세션을 공급자의 같은 관측 결과로 확정한다.
+	@Transactional(readOnly = true)
+	public OrderExecutionPriceDto getOrderExecutionPrice(Instrument instrument) {
+		if (instrument.getMarket() == Market.CRYPTO) {
+			return new OrderExecutionPriceDto(requireAvailable(getCryptoPriceQuote(instrument)), null);
+		}
+
+		StockReplayPriceDto stockQuote = stockPriceProvider.getCurrentPrice(instrument.getId());
+		if (stockQuote.marketStatus() == StockMarketStatus.CLOSED) {
+			throw new BusinessException(ErrorCode.MARKET_CLOSED);
+		}
+		if (stockQuote.replaySession() == null) {
+			throw new BusinessException(ErrorCode.MARKET_CLOSED);
+		}
+		PriceQuoteDto priceQuote = stockQuote.isPriceAvailable()
+			? new PriceQuoteDto(
+				stockQuote.price(), stockQuote.sourceTime(), PriceStatus.AVAILABLE,
+				stockQuote.sourceTradingDate())
+			: new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, stockQuote.sourceTradingDate());
+		return new OrderExecutionPriceDto(requireAvailable(priceQuote), stockQuote.replaySession());
+	}
+
 	// 가격이 없어도 예외를 던지지 않고 status=UNAVAILABLE로 표현한다 — SSE snapshot·price처럼 "가격 없음"도 정상 응답인 소비자를 위한 경로 (이슈 #18).
 	@Transactional(readOnly = true)
 	public PriceQuoteDto getPriceQuote(Long instrumentId) {

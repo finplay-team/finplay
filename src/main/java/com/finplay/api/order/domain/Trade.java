@@ -3,6 +3,7 @@ package com.finplay.api.order.domain;
 
 import com.finplay.api.account.domain.Account;
 import com.finplay.api.market.domain.Instrument;
+import com.finplay.api.market.domain.StockReplaySession;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -42,6 +43,10 @@ public class Trade {
 	@JoinColumn(name = "instrument_id", nullable = false)
 	private Instrument instrument;
 
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "stock_replay_session_id")
+	private StockReplaySession stockReplaySession;
+
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false, length = 10)
 	private OrderSide side;
@@ -71,6 +76,7 @@ public class Trade {
 		Order order,
 		Account account,
 		Instrument instrument,
+		StockReplaySession stockReplaySession,
 		OrderSide side,
 		BigDecimal price,
 		BigDecimal quantity,
@@ -82,6 +88,7 @@ public class Trade {
 		this.order = order;
 		this.account = account;
 		this.instrument = instrument;
+		this.stockReplaySession = stockReplaySession;
 		this.side = side;
 		this.price = price;
 		this.quantity = quantity;
@@ -104,8 +111,26 @@ public class Trade {
 		Long realizedPnl,
 		LocalDateTime executedAt,
 		LocalDateTime now) {
+		return of(
+			order, account, instrument, null, side, price, quantity, amount, fee, realizedPnl, executedAt, now);
+	}
+
+	public static Trade of(
+		Order order,
+		Account account,
+		Instrument instrument,
+		StockReplaySession stockReplaySession,
+		OrderSide side,
+		BigDecimal price,
+		BigDecimal quantity,
+		long amount,
+		long fee,
+		Long realizedPnl,
+		LocalDateTime executedAt,
+		LocalDateTime now) {
 		return new Trade(
-			order, account, instrument, side, price, quantity, amount, fee, realizedPnl, executedAt, now);
+			order, account, instrument, stockReplaySession, side, price, quantity, amount, fee, realizedPnl, executedAt,
+			now);
 	}
 
 	public void fillRealizedPnl(long realizedPnl) {

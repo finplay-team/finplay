@@ -18,6 +18,8 @@ import com.finplay.api.market.domain.StockReplaySession;
 import com.finplay.api.market.repository.InstrumentRepository;
 import com.finplay.api.market.repository.StockCandleRepository;
 import com.finplay.api.market.repository.StockReplaySessionRepository;
+import com.finplay.api.market.store.FeedConnectionStatus;
+import com.finplay.api.market.store.PriceStore;
 import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.dto.request.OrderCreateRequest;
 import com.finplay.api.order.dto.response.OrderResponse;
@@ -37,6 +39,7 @@ import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -44,6 +47,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.data.redis.core.StringRedisTemplate;
 
 @SpringBootTest
 @Import({TestcontainersConfiguration.class, OrderBuyIntegrationTest.FixedClockTestConfig.class})
@@ -89,6 +93,14 @@ class OrderBuyIntegrationTest {
 	@Autowired
 	private HoldingLotRepository holdingLotRepository;
 
+	@Autowired
+	private PriceStore priceStore;
+
+	@Autowired
+	private StringRedisTemplate redisTemplate;
+
+	private String cryptoPriceKeyToCleanUp;
+
 	@BeforeEach
 	void setUp() {
 		((MutableClock)clock).set(BASE_NOW);
@@ -96,6 +108,14 @@ class OrderBuyIntegrationTest {
 			.findByServiceDate(TRADING_DATE)
 			.orElseGet(() -> stockReplaySessionRepository.saveAndFlush(
 				StockReplaySession.ready(TRADING_DATE, TRADING_DATE, BASE_NOW, BASE_NOW)));
+	}
+
+	@AfterEach
+	void tearDown() {
+		priceStore.saveConnectionStatus(FeedConnectionStatus.CONNECTED);
+		if (cryptoPriceKeyToCleanUp != null) {
+			redisTemplate.delete(cryptoPriceKeyToCleanUp);
+		}
 	}
 
 	@Test
@@ -117,6 +137,8 @@ class OrderBuyIntegrationTest {
 
 		assertThat(orderRepository.findById(response.orderId())).isPresent();
 		assertThat(tradeRepository.findById(response.tradeId())).isPresent();
+		assertThat(tradeRepository.findById(response.tradeId()).orElseThrow().getStockReplaySession().getId())
+			.isEqualTo(stockReplaySessionRepository.findByServiceDate(TRADING_DATE).orElseThrow().getId());
 
 		Holding holding = holdingRepository
 			.findByAccountIdAndInstrumentId(account.getId(), instrument.getId())
@@ -130,6 +152,48 @@ class OrderBuyIntegrationTest {
 		assertThat(lots.get(0).getOriginalQuantity()).isEqualByComparingTo("10");
 		assertThat(lots.get(0).getRemainingQuantity()).isEqualByComparingTo("10");
 		assertThat(lots.get(0).getUnitCost()).isEqualByComparingTo("70000");
+	}
+
+	@Test
+	void cryptoBuyPersistsTradeWithoutReplaySession() {
+		User user = createUser("cb-null");
+		Account account = accountRepository.saveAndFlush(
+			Account.create(user, com.finplay.api.account.domain.Market.CRYPTO, BASE_NOW));
+		String symbol = "CB" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+		Instrument instrument = instrumentRepository.saveAndFlush(
+			Instrument.create(Market.CRYPTO, symbol, "코인", new BigDecimal("0.00000001"), 5000L, true, BASE_NOW));
+		priceStore.saveConnectionStatus(FeedConnectionStatus.CONNECTED);
+		priceStore.saveTick(symbol, new BigDecimal("100000"), BASE_NOW);
+		cryptoPriceKeyToCleanUp = "price:crypto:" + symbol;
+
+		OrderResponse response = orderService.createOrder(user.getId(), "crypto-buy-null-session",
+			new OrderCreateRequest(Market.CRYPTO, instrument.getId(), OrderSide.BUY, "MARKET", new BigDecimal("0.1")));
+
+		assertThat(tradeRepository.findById(response.tradeId()).orElseThrow().getStockReplaySession()).isNull();
+		assertThat(accountRepository.findById(account.getId()).orElseThrow().getCashBalance()).isLessThan(10_000_000L);
+	}
+
+	@Test
+	void stockBuyWithoutCurrentSessionFailsAndRollsBackOrderTradeAccountAndHolding() {
+		User user = createUser("no-session");
+		Account account = createAccount(user);
+		Instrument instrument = createStockInstrument("NOSESS");
+		createCandle(instrument, FIRST_CANDLE_TIME, new BigDecimal("70000"));
+		((MutableClock)clock).set(BASE_NOW.plusDays(1));
+		long ordersBefore = orderRepository.count();
+		long tradesBefore = tradeRepository.count();
+		long holdingsBefore = holdingRepository.count();
+
+		assertThatThrownBy(() -> orderService.createOrder(
+			user.getId(), "stock-buy-no-session", buyRequest(instrument.getId(), "1")))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode()).isEqualTo(ErrorCode.MARKET_CLOSED));
+
+		assertThat(orderRepository.count()).isEqualTo(ordersBefore);
+		assertThat(tradeRepository.count()).isEqualTo(tradesBefore);
+		assertThat(holdingRepository.count()).isEqualTo(holdingsBefore);
+		assertThat(accountRepository.findById(account.getId()).orElseThrow().getCashBalance()).isEqualTo(10_000_000L);
+		assertThat(holdingRepository.findByAccountIdAndInstrumentId(account.getId(), instrument.getId())).isEmpty();
 	}
 
 	@Test

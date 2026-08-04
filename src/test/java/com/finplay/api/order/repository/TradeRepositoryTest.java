@@ -10,7 +10,9 @@ import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.domain.StockReplaySession;
 import com.finplay.api.market.repository.InstrumentRepository;
+import com.finplay.api.market.repository.StockReplaySessionRepository;
 import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.domain.OrderType;
@@ -27,6 +29,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -52,6 +55,12 @@ class TradeRepositoryTest {
 
 	@Autowired
 	private EntityManager entityManager;
+
+	@Autowired
+	private StockReplaySessionRepository stockReplaySessionRepository;
+
+	@Autowired
+	private JdbcTemplate jdbcTemplate;
 
 	private User owner;
 	private Account ownerAccount;
@@ -208,5 +217,52 @@ class TradeRepositoryTest {
 
 		assertThat(result).extracting(trade -> trade.getInstrument().getSymbol())
 			.containsExactly(instrument.getSymbol());
+	}
+
+	@Test
+	void stockReplaySessionColumnIsNullableAndHasForeignKeyInMySql() {
+		String nullable = jdbcTemplate.queryForObject("""
+			SELECT IS_NULLABLE
+			FROM information_schema.COLUMNS
+			WHERE TABLE_SCHEMA = DATABASE()
+			  AND TABLE_NAME = 'trades'
+			  AND COLUMN_NAME = 'stock_replay_session_id'
+			""", String.class);
+		Integer foreignKeyCount = jdbcTemplate.queryForObject("""
+			SELECT COUNT(*)
+			FROM information_schema.KEY_COLUMN_USAGE
+			WHERE TABLE_SCHEMA = DATABASE()
+			  AND TABLE_NAME = 'trades'
+			  AND COLUMN_NAME = 'stock_replay_session_id'
+			  AND REFERENCED_TABLE_NAME = 'stock_replay_sessions'
+			  AND REFERENCED_COLUMN_NAME = 'id'
+			""", Integer.class);
+
+		assertThat(nullable).isEqualTo("YES");
+		assertThat(foreignKeyCount).isEqualTo(1);
+	}
+
+	@Test
+	void persistsStockTradeWithReplaySessionAndCryptoTradeWithoutSession() {
+		StockReplaySession session = stockReplaySessionRepository.saveAndFlush(
+			StockReplaySession.ready(NOW.toLocalDate().plusYears(10), NOW.toLocalDate().minusDays(1), NOW, NOW));
+		Order stockOrder = createOrder(owner, ownerAccount, NOW);
+		Trade stockTrade = tradeRepository.saveAndFlush(Trade.of(
+			stockOrder, ownerAccount, instrument, session, OrderSide.BUY,
+			BigDecimal.valueOf(100), BigDecimal.ONE, 100L, 0L, null, NOW, NOW));
+
+		Instrument crypto = instrumentRepository.saveAndFlush(
+			Instrument.create(Market.CRYPTO, "BTC-T", "테스트코인", new BigDecimal("0.00000001"), 5000L, true, NOW));
+		Order cryptoOrder = orderRepository.saveAndFlush(Order.create(
+			owner, ownerAccount, crypto, OrderSide.BUY, OrderType.MARKET, BigDecimal.ONE,
+			"crypto-session-null", "z".repeat(64), NOW));
+		Trade cryptoTrade = tradeRepository.saveAndFlush(Trade.of(
+			cryptoOrder, ownerAccount, crypto, null, OrderSide.BUY,
+			BigDecimal.valueOf(100), BigDecimal.ONE, 100L, 0L, null, NOW, NOW));
+		entityManager.clear();
+
+		assertThat(tradeRepository.findById(stockTrade.getId()).orElseThrow().getStockReplaySession().getId())
+			.isEqualTo(session.getId());
+		assertThat(tradeRepository.findById(cryptoTrade.getId()).orElseThrow().getStockReplaySession()).isNull();
 	}
 }
