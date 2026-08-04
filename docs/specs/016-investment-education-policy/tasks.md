@@ -22,7 +22,7 @@
 
 `plan.md`의 "Issue #193 설계 결정"(트랜잭션과 경합 섹션 상단, 데이터 모델, 합성 시세 생성 규칙)과 ADR-0012를 따른다. 커밋 단위는 아래 항목 굵기를 기준으로 하되, 2·3번은 서로 강하게 얽혀 있어 한 커밋으로 묶어도 된다.
 
-- [x] 1. `V18__drop_favorites_and_practice_intentions.sql` migration을 추가해 `favorites`, `practice_intentions` 테이블을 DROP한다. `practice_progresses`는 건드리지 않는다. V14·V16 파일은 수정하지 않는다(ADR-0004).
+- [x] 1. `V19__drop_favorites_and_practice_intentions.sql` migration을 추가해 `favorites`, `practice_intentions` 테이블을 DROP한다. `practice_progresses`는 건드리지 않는다. V14·V16 파일은 수정하지 않는다(ADR-0004).
 - [x] 2. `Favorite`(`@Entity`)·`FavoriteRepository`(JPA)를 제거하고 `FavoriteService`를 `ConcurrentHashMap` 기반 인메모리 저장 + 사용자 단위 `ReentrantLock`으로 재작성한다. `AtomicLong`으로 `favoriteId`를 채번한다. `PracticeIntentionService`가 사용할 `withFavoriteLock(userId, instrumentId, action)` 같은 락 대여 메서드를 함께 제공한다. `FavoriteController`의 요청/응답 계약(경로·DTO·오류 코드)은 바꾸지 않는다.
 - [x] 3. `PracticeIntention`(`@Entity`)·`PracticeIntentionRepository`(JPA)를 제거하고 `PracticeIntentionService`를 인메모리 저장(사용자별 리스트)으로 재작성한다. `practice_progresses`의 기존 `INSERT ... ON DUPLICATE KEY UPDATE` upsert + `SELECT ... FOR UPDATE` 잠금은 그대로 유지하고, 그 안에서 `FavoriteService`가 제공하는 in-memory 락을 사용하도록 잠금 순서를 `progress(DB) → favorite 락(in-memory)`로 맞춘다. `PracticeIntentionController`의 계약은 바꾸지 않는다.
 - [x] 4. 튜토리얼 전용 합성 시세 서비스+컨트롤러를 `com.finplay.api.education` 아래 신규 패키지로 추가한다: `GET /api/education/practice/synthetic-prices/{instrumentId}` → `SyntheticPriceSeriesResponse(title, tickSeconds, prices)`. `plan.md`의 생성 규칙(랜덤워크 파라미터, 틱 수, clamp)을 따르고 저장소는 두지 않는다.

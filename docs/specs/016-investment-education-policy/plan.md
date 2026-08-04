@@ -138,7 +138,7 @@ OCO 요청 fingerprint는 UTF-8 canonical JSON의 SHA-256이다. key 순서는 `
 
 > Issue #193(ADR-0012)에서 `favorites`·`practice_intentions`는 DB 테이블에서 서버 힙 메모리 저장으로 전환한다. 아래 두 항목은 물리 스키마가 아니라 인메모리 구조 설계다. 나머지(`practice_progresses` 이하)는 기존대로 DB 테이블이다.
 
-- `favorites`(인메모리): `FavoriteService` `@Service` 싱글턴 빈 내부 `ConcurrentHashMap<Long userId, ConcurrentHashMap<Long instrumentId, FavoriteRecord>>` 또는 이와 동등한 사용자별 하위 맵 구조. `FavoriteRecord(Long favoriteId, Long instrumentId, LocalDateTime createdAt)`이며 `favoriteId`는 `AtomicLong` 전역 시퀀스로 채번한다(재시작 시 0부터 재시작해도 사용자 노출 계약과 무관). 목록 조회는 해당 사용자 하위 맵 값을 `createdAt DESC, favoriteId DESC`로 정렬해 반환한다. `V18__drop_favorites_and_practice_intentions.sql`로 기존 `favorites` 테이블을 DROP한다.
+- `favorites`(인메모리): `FavoriteService` `@Service` 싱글턴 빈 내부 `ConcurrentHashMap<Long userId, ConcurrentHashMap<Long instrumentId, FavoriteRecord>>` 또는 이와 동등한 사용자별 하위 맵 구조. `FavoriteRecord(Long favoriteId, Long instrumentId, LocalDateTime createdAt)`이며 `favoriteId`는 `AtomicLong` 전역 시퀀스로 채번한다(재시작 시 0부터 재시작해도 사용자 노출 계약과 무관). 목록 조회는 해당 사용자 하위 맵 값을 `createdAt DESC, favoriteId DESC`로 정렬해 반환한다. `V19__drop_favorites_and_practice_intentions.sql`로 기존 `favorites` 테이블을 DROP한다.
 - `practice_intentions`(인메모리): `PracticeIntentionService` 내부 `ConcurrentHashMap<Long userId, List<IntentionRecord>>`(또는 `CopyOnWriteArrayList` 값) 형태로 사용자별로 여러 건 누적한다. 기존 스키마와 동일한 필드(`intentionId`, `instrumentId`, `quantity`, `stopLoss`, `takeProfit`, `createdAt`)를 순수 Java 레코드로 표현하며 JPA 엔티티가 아니다. `V18` migration이 같은 커밋에서 `practice_intentions` 테이블도 DROP한다.
 - `practice_progresses`: 사용자, 고정 `tutorial_key`, `IN_PROGRESS`·`COMPLETED`, 최초 시작·완료시각, `UNIQUE(user_id, tutorial_key)`. 최초 intention 생성에서 atomic insert-or-existing으로 한 행을 확보한다. 이 테이블은 ADR-0012에서도 유지 대상이다 — 완료 여부는 재시작에도 유실되면 안 되는 영구 사실이기 때문이다.
 - `trades.stock_replay_session_id`: nullable FK. 주식 fill은 당시 current replay session id를 저장하고 코인 fill은 null을 유지한다. 별도 migration·order fill 변경 이슈가 소유한다.
@@ -212,7 +212,7 @@ OCO 요청 fingerprint는 UTF-8 canonical JSON의 SHA-256이다. key 순서는 `
 | 2 | 없음 | read-only 목록(in-memory 조회) |
 | 3 | 없음 | 대상 favorite in-memory 락 + 본인 favorite 단건 삭제 |
 | 4 | ~~`practice_intentions`~~ → #193에서 in-memory로 전환, `V18`이 테이블 DROP; `practice_progresses`는 DB 유지 | progress 무변경 MySQL upsert + 잠금 재조회 + favorite in-memory 락·검증 + intention in-memory 저장 |
-| #193 | `V18__drop_favorites_and_practice_intentions.sql`; 새 교육 schema 없음(합성 시세는 저장하지 않음) | favorite/intention in-memory 저장소 전환 + 사용자 단위 in-process 락 + 합성 시세 무상태 생성 |
+| #193 | `V19__drop_favorites_and_practice_intentions.sql`; 새 교육 schema 없음(합성 시세는 저장하지 않음) | favorite/intention in-memory 저장소 전환 + 사용자 단위 in-process 락 + 합성 시세 무상태 생성 |
 | 5 | nullable `trades.stock_replay_session_id` FK | 주식 fill과 current session 기록; 코인 null |
 | 6 | 공통 reservation ledger | MARKET SELL available 검증·체결/ledger 정합성 |
 | 7 | `exit_plans`, `exit_plan_conditions`, canonical UUID `exit_plan_idempotency_keys`와 intention/key unique | 각 attempt의 plan·key mapping·예약 전체 원자성; 실패 tx 전체 rollback 후 바깥 coordinator의 새 tx reconciliation |

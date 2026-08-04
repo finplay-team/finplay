@@ -6,7 +6,7 @@
 | 02:19 | reviewer(리뷰) | `git diff dev...HEAD` (PR #173, feat/172-favorite-delete) | conventions.md, ADR-0002, ADR-0003, spec.md candidate 3 |
 | 03:40 | reviewer(리뷰) | `git diff 5d6cb00863f18d00b60982b476b60e96b6bd0b02...HEAD` (PR #176, feat/175-practice-intention, candidate 4 고유분만) | conventions.md, ADR-0002, ADR-0003, ADR-0004, spec.md candidate 4 |
 | 04:10 | reviewer(리뷰, 후속) | `git diff HEAD` (작업트리, PR #176 후속 수정) | conventions.md, ADR-0002, ADR-0003, ADR-0004 — 03:40 권장 1건 재검증 |
-| 05:00 | implementer(#193 항목1) | `V18__drop_favorites_and_practice_intentions.sql` 신규 작성, `.\gradlew.bat compileJava` | tasks.md #193 항목1, ADR-0004, ADR-0012 |
+| 05:00 | implementer(#193 항목1) | `V19__drop_favorites_and_practice_intentions.sql` 신규 작성, `.\gradlew.bat compileJava` | tasks.md #193 항목1, ADR-0004, ADR-0012 |
 | 05:40 | implementer(#193 항목2) | `Favorite`를 record POJO로, `FavoriteRepository` 삭제, `FavoriteService`를 ConcurrentHashMap+ReentrantLock 인메모리로 재작성, `.\gradlew.bat compileJava` | tasks.md #193 항목2, plan.md 데이터 모델·트랜잭션과 경합, ADR-0012 |
 | 06:20 | implementer(#193 항목3) | `PracticeIntention`을 record로, `PracticeIntentionRepository`를 JPA→ConcurrentHashMap 인메모리로, `PracticeIntentionService` 재작성(progress DB 락 → favorite in-memory 락 순서 유지, `withFavoriteLock`+`isFavorited` 사용), `FavoriteService.lockFavoriteIfPresent` 제거·`isFavorited` 추가, `.\gradlew.bat compileJava` | tasks.md #193 항목3, plan.md 트랜잭션과 경합(progress→favorite 잠금 순서), ADR-0012 |
 | 07:00 | implementer(#193 항목4) | `SyntheticPriceController`/`SyntheticPriceService`/`SyntheticPriceSeriesResponse` 신규 작성(저장소 없음), `docs/api-routes.md`·`docs/api-contracts.md` 신규 라우트·계약 추가, `.\gradlew.bat compileJava` | tasks.md #193 항목4, plan.md "합성 시세 생성 규칙", 오케스트레이터 확정값(제목=Instrument.name, 100틱, ±1%, PriceQueryService 기반 시작가) |
