@@ -83,6 +83,33 @@ class FeedbackBatchScheduleTest {
 		assertThat(next.getDayOfWeek().getValue()).isEqualTo(1);
 	}
 
+	// --- 코인 배치 (이슈 #188 항목 7) ---
+	//
+	// zone을 빠뜨리면 매시 크론이라 어긋남이 눈에 덜 띄는 만큼 더 위험하다 — origin_trade_date가 KST 날짜라
+	// 자정 부근에서 하루가 밀린 행이 생긴다. 붙어 있는지는 애노테이션을 읽어야만 알 수 있다.
+	@Test
+	@DisplayName("코인 배치에 zone = \"Asia/Seoul\"이 붙어 있다")
+	void cryptoBatchDeclaresSeoulZone() throws NoSuchMethodException {
+		assertThat(cryptoBatchSchedule().zone()).isEqualTo("Asia/Seoul");
+	}
+
+	@Test
+	@DisplayName("코인 배치가 크론 값을 코드에 박지 않고 feedback.batch.crypto-cron을 참조한다")
+	void cryptoBatchReferencesTheConfiguredCronProperty() throws NoSuchMethodException {
+		assertThat(cryptoBatchSchedule().cron()).isEqualTo("${feedback.batch.crypto-cron}");
+	}
+
+	// 주식 배치와 같은 키를 참조하면 코인이 평일 08:45에만 돌고 매시 갱신이 사라진다 — 그래도 예외는 없다.
+	@Test
+	@DisplayName("코인 배치가 주식 배치와 다른 크론 키를 참조한다")
+	void cryptoBatchUsesItsOwnCronProperty() throws NoSuchMethodException {
+		assertThat(cryptoBatchSchedule().cron()).isNotEqualTo(batchSchedule().cron());
+	}
+
+	private static Scheduled cryptoBatchSchedule() throws NoSuchMethodException {
+		return schedule(CryptoFeedbackBatchService.class, "refreshCryptoFeedback");
+	}
+
 	private static Scheduled batchSchedule() throws NoSuchMethodException {
 		return schedule(FeedbackBatchService.class, "runPreMarketBatch");
 	}

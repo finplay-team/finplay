@@ -79,4 +79,15 @@ public class MarketBriefing {
 		LocalDateTime generatedAt) {
 		return new MarketBriefing(market, originTradeDate, summary, narrativeSource, generatedAt);
 	}
+
+	/**
+	 * 같은 행의 서술을 갈아 끼운다 — <b>코인 전용</b>이며 이유는
+	 * {@link InstrumentNewsSummary#refreshNarrative}와 같다. 유니크 축({@code market}·
+	 * {@code origin_trade_date})은 건드리지 않는다.
+	 */
+	public void refreshNarrative(String summary, NarrativeSource narrativeSource, LocalDateTime generatedAt) {
+		this.summary = summary;
+		this.narrativeSource = narrativeSource;
+		this.generatedAt = generatedAt;
+	}
 }

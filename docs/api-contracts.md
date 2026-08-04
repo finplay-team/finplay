@@ -456,7 +456,7 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 |---|---|---|---|---|---|
 | POST | /api/favorites | `{"instrumentId":1}` (`FavoriteCreateRequest`) | 201 `{"favoriteId":1,"instrumentId":1,"market":"STOCK","symbol":"005930","name":"삼성전자","createdAt":"2026-08-03T10:00:00"}` (`FavoriteResponse`) | 400 `VALIDATION_ERROR`; 404 `NOT_FOUND`(종목); 409 `INSTRUMENT_NOT_TRADABLE`, `DUPLICATE_RESOURCE` | 016 candidate 1 |
 
-같은 사용자의 `(userId, instrumentId)`는 유일하다. 중복 등록은 기존 값을 반환하지 않는다.
+같은 사용자의 `(userId, instrumentId)`는 유일하다. 중복 등록은 기존 값을 반환하지 않는다. `#193`(ADR-0012)부터 DB가 아닌 서버 힙 메모리(인스턴스 단위 `ConcurrentHashMap`)에 저장하며, `favoriteId`는 프로세스 기동마다 1부터 재채번된다. 서버 재시작 시 등록된 즐겨찾기는 모두 유실된다(재등록 필요).
 
 ### 즐겨찾기 목록 조회
 
@@ -472,7 +472,7 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 |---|---|---|---|---|---|
 | DELETE | /api/favorites/{instrumentId} | 양의 `instrumentId` path | 204, 본문 없음 | 400 `VALIDATION_ERROR`; 404 `FAVORITE_NOT_FOUND` | 016 candidate 3 |
 
-타인 소유 행은 존재를 숨겨 404로 처리하며 반복 삭제도 404다.
+타인 소유 행은 존재를 숨겨 404로 처리하며 반복 삭제도 404다. 즐겨찾기가 서버 힙 메모리 저장이므로(위 등록 절 참고) 재시작 후에는 삭제 대상도 사라져 있어 항상 404다.
 
 ### 투자 실습 진행 조회 (계획)
 
@@ -486,9 +486,17 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 | Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|
-| POST | /api/education/practice/intentions | Access Bearer 필수. `{"instrumentId":1,"quantity":10,"stopLoss":65000,"takeProfit":75000}` (`PracticeIntentionCreateRequest`). 네 필드 모두 필수·양수이며 `quantity`는 정수부 22자리/소수부 8자리 이하, `stopLoss`·`takeProfit`은 각각 정수부 10자리/소수부 8자리 이하 | 201 `{"intentionId":1,"instrumentId":1,"quantity":10,"stopLoss":65000,"takeProfit":75000,"createdAt":"2026-08-03T10:01:00"}` (`PracticeIntentionResponse`) | 400 `VALIDATION_ERROR`; Access 인증 실패는 401 `UNAUTHORIZED`; 404 `NOT_FOUND`(사용자 또는 종목); 409 `PRACTICE_STEP_LOCKED`, `PRACTICE_ALREADY_COMPLETED` 공통 오류 형식 | 016 candidate 4, Issue #175 |
+| POST | /api/education/practice/intentions | Access Bearer 필수. `{"instrumentId":1,"quantity":10,"stopLoss":65000,"takeProfit":75000}` (`PracticeIntentionCreateRequest`). 네 필드 모두 필수·양수이며 `quantity`는 정수부 22자리/소수부 8자리 이하, `stopLoss`·`takeProfit`은 각각 정수부 10자리/소수부 8자리 이하 | 201 `{"intentionId":1,"instrumentId":1,"quantity":10,"stopLoss":65000,"takeProfit":75000,"createdAt":"2026-08-03T10:01:00"}` (`PracticeIntentionResponse`) | 400 `VALIDATION_ERROR`; Access 인증 실패는 401 `UNAUTHORIZED`; 404 `NOT_FOUND`(종목); 409 `PRACTICE_STEP_LOCKED`, `PRACTICE_ALREADY_COMPLETED` 공통 오류 형식 | 016 candidate 4, Issue #175 |
 
-현재 존재하는 본인 favorite와 같은 종목만 허용한다. 서비스는 `(user_id, tutorial_key)` 유일 제약의 `practice_progresses`를 atomic insert-if-absent 한 뒤 진행 행과 favorite를 잠가 검증한다. 완료 상태면 저장 없이 409 `PRACTICE_ALREADY_COMPLETED`, favorite가 없으면 저장 없이 409 `PRACTICE_STEP_LOCKED`다. 유효 요청마다 `practice_intentions`에 새 행을 만들며 중복 intention을 금지하는 유일 제약은 없다. DB에는 사용자·종목 FK와 함께 `quantity DECIMAL(30,8)`, `stop_loss DECIMAL(18,8)`, `take_profit DECIMAL(18,8)`, `created_at DATETIME(6)`로 저장한다. 이 API는 의도만 기록하며 실제 시장가 매수 체결은 기존 `POST /api/orders`의 별도 요청이다.
+현재 존재하는 본인 favorite와 같은 종목만 허용한다. 서비스는 `(user_id, tutorial_key)` 유일 제약의 `practice_progresses`를 atomic insert-if-absent 한 뒤 진행 행과 favorite를 잠가 검증한다. 완료 상태면 저장 없이 409 `PRACTICE_ALREADY_COMPLETED`, favorite가 없으면 저장 없이 409 `PRACTICE_STEP_LOCKED`다. `#193`(ADR-0012)부터 `practice_intentions` 테이블은 DROP되어 있으며, 유효 요청마다 서버 힙 메모리(인스턴스 단위, 사용자별 리스트)에 새 레코드를 추가한다(중복 intention을 금지하는 유일 제약은 없음). 필드는 기존과 동일한 `intentionId`(프로세스 기동마다 1부터 재채번), `instrumentId`, `quantity`, `stopLoss`, `takeProfit`, `createdAt`이며, 서버 재시작 시 모두 유실된다. 이 API는 의도만 기록하며 실제 시장가 매수 체결은 기존 `POST /api/orders`의 별도 요청이다.
+
+### 튜토리얼 합성 시세 조회
+
+| Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|
+| GET | /api/education/practice/synthetic-prices/{instrumentId} | Access Bearer 필수. 양의 `Long` path `instrumentId` | 200 `{"title":"삼성전자","tickSeconds":3,"prices":[69000,69200,...]}` (`SyntheticPriceSeriesResponse`, `prices` 100개) | 400 `VALIDATION_ERROR`(양수 아님); Access 인증 실패는 401 `UNAUTHORIZED`; 404 `NOT_FOUND`(종목 없음) | 016 candidate 4 후속(#193 tasks 항목4) |
+
+`InstrumentService.getInstrumentEntity`로 종목 존재만 확인하고 `instrument.isTradable()`은 검증하지 않는다(비거래 종목도 순수 참고용 차트로 허용). `title`은 `Instrument.name`(예: `"삼성전자"`)이고 `tickSeconds`는 항상 3, `prices`는 100개(5분/3초, 시작가 포함) `BigDecimal` 정수 배열이다. 시작가는 `PriceQueryService.getPriceQuote`로 조회한 실제 현재가를 사용하고, 가격이 없으면(PRICE_UNAVAILABLE 등) 고정 fallback 상수(10,000)를 시작가로 쓴다. 각 틱은 이전 값 대비 -1%~+1% 균등분포로 변동하며 시작가의 50% 미만으로는 떨어지지 않게 clamp한다. 요청마다 새로 계산하며 어떤 저장소에도 남기지 않고, 비즈니스 락은 없다(`InstrumentService`/`PriceQueryService` 조회를 위한 읽기 전용 트랜잭션만 사용).
 
 ### OCO exit plan 생성 (계획)
 
@@ -641,7 +649,7 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 ---
 
-### 종목 뉴스 목록·요약 조회 (계획)
+### 종목 뉴스 목록·요약 조회
 
 | Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|---|
@@ -651,7 +659,7 @@ Notion 1차 고도화 목록의 "뉴스 요약" 항목이다. 수집·저장은 
 
 **주식은 다른 원본 거래일의 기사를 섞지 않는다.** 재생 중인 거래일과 기사 날짜가 어긋나면 화면의 가격 방향과 기사 내용이 반대가 되므로, 오늘 기사를 섞지 않는다. 범위 하한은 요약과 같다 — spec §C-2가 정본이다. `originTradeDate`는 주식일 때 현재 재생세션의 원본 거래일이고 코인은 `null`이다.
 
-**노출 필터**: 주식은 09:00 이전이거나 재생세션이 `READY`가 아니면 `summaryStatus="NOT_YET"`·`summaryScope=null`·`items=[]`이고, 개장 후에는 `publishedAt`이 현재 재생 시각을 지난 기사만 반환한다(전장 기사는 09:00으로 클램프). **`items`의 범위와 `summaryScope` 대응은 spec §C-2가 정본이다** — 여기 옮겨 적지 않는다. 요지는 "하한은 요약과 같고 상한만 재생 시각까지 넓다"이며, 요약이 목록보다 앞서지만 않으면 된다. 공시는 발행시각이 `00:00:00`뿐이라 날짜 조건으로 따로 판정하며 **원본 거래일 당일 접수분은 `FULL`에서만 나온다**(spec §C-3). **09:00 하한은 개장 전 브리핑과 동일하게 맞춘 것이다** — 두 API가 같은 전장 기사군을 다루므로 이쪽에 하한이 없으면 08:41에 조회해 브리핑이 감추는 기사를 먼저 볼 수 있다 — 변동 원인 카드의 `revealTime` 필터와 같은 목적이다. 15:00 기사를 09:30에 보여주면 앞으로 무슨 일이 일어날지 미리 알려주는 셈이 된다. 코인은 이 필터 없이 최근 24시간 기사를 반환한다.
+**노출 필터**: 주식은 09:00 이전이거나 재생세션이 `READY`가 아니면 `summaryStatus="NOT_YET"`·`summaryScope=null`·`items=[]`이고(**재생세션 미준비일 때는 `originTradeDate`까지 `null`이다** — 어떤 거래일을 재생 중인지 자체가 확정되지 않은 상태라 날짜를 지어낼 수 없다. 개장 전은 날짜를 채운다. spec §C-4 판정 순서 1·2번), 개장 후에는 `publishedAt`이 현재 재생 시각을 지난 기사만 반환한다(전장 기사는 09:00으로 클램프). **`items`의 범위와 `summaryScope` 대응은 spec §C-2가 정본이다** — 여기 옮겨 적지 않는다. 요지는 "하한은 요약과 같고 상한만 재생 시각까지 넓다"이며, 요약이 목록보다 앞서지만 않으면 된다. 공시는 발행시각이 `00:00:00`뿐이라 날짜 조건으로 따로 판정하며 **원본 거래일 당일 접수분은 `FULL`에서만 나온다**(spec §C-3). **09:00 하한은 개장 전 브리핑과 동일하게 맞춘 것이다** — 두 API가 같은 전장 기사군을 다루므로 이쪽에 하한이 없으면 08:41에 조회해 브리핑이 감추는 기사를 먼저 볼 수 있다 — 변동 원인 카드의 `revealTime` 필터와 같은 목적이다. 15:00 기사를 09:30에 보여주면 앞으로 무슨 일이 일어날지 미리 알려주는 셈이 된다. 코인은 이 필터 없이 최근 24시간 기사를 반환한다.
 
 **주식은 `summary`가 재생 진행에 따라 두 번 바뀐다.** 08:45 배치에서 범위가 다른 요약 두 개를 만들어 두고 조회 시각에 따라 골라 준다.
 
@@ -664,6 +672,8 @@ Notion 1차 고도화 목록의 "뉴스 요약" 항목이다. 수집·저장은 
 
 15:30 이후 같은 종목을 다시 조회하면 `summaryScope`가 `FULL`로 바뀌고 요약도 하루 전체를 다룬 문장으로 교체된다 — `{"summaryScope":"FULL","summary":"반도체 업황 기사가 오전에 집중됐고, 오후에는 생산 차질을 다룬 보도가 이어졌습니다. …"}`. **이 문장이 09:00에 나가면 안 되는 것이 이 설계의 요지다.**
 
+**코인 경로는 구현돼 있으며 주식과 함께 블랙박스 QA 근거다 (Issue #188).** 코인 종목으로 호출하면 재생세션과 무관하게 `originTradeDate=null`·`summaryScope="ROLLING_24H"`로 내려가고 **`summaryStatus`가 `NOT_YET`이 되지 않는다** — '개장 전'도 재생 거래일도 없어 spec §C-4 판정 순서의 1·2번이 성립하지 않고 3~6번만 쓴다. 저장된 행의 `origin_trade_date`에는 값이 있지만 그것은 유니크 축을 성립시키려고 채운 **배치 실행 날짜**이지 거래일이 아니라 응답에 싣지 않는다(spec §C-9). `items`는 **조회 시각 기준 최근 24시간**의 뉴스뿐이고 노출 게이트가 없다 — 코인은 공시가 없고, 실시간이라 스포일러가 성립하지 않는다. 요약은 **`generated_at` 최신 1행**을 본다("오늘 날짜 행"으로 찾으면 자정 직후와 배치 실패 시각마다 빈다). `items`의 24시간 창은 조회 시각 기준이고 요약은 마지막 배치 기준이라 **최대 65분 어긋나는데 허용된 동작이다** — 맞추려고 조회 시 생성으로 되돌아가지 않는다.
+
 **코인은 범위가 하나뿐이다.** 24시간 거래라 '전장'도 '거래일 경계'도 없어 두 범위로 나눌 수 없다. 주식처럼 개장 전에 하루치를 만들어 둘 시점이 없으므로 **매시 05분 코인 배치가 갱신한다**(`feedback.batch.crypto-cron`). 저장은 새 행이 아니라 **같은 행의 갱신(UPSERT)**이며 종목당 하루 1행을 유지한다.
 
 **조회 시 생성하지 않는다.** GET이 외부 LLM을 호출하고 DB에 쓰면 `docs/conventions.md`의 "GET은 부수효과 없음"을 어기고, 배치 갱신 직후 동시 요청이 전부 LLM을 호출하며, 그 순간의 첫 사용자가 최대 40초(20초 × 재생성 1회)를 기다린다. 배치로 옮기면 이 경로는 순수 조회가 되고 호출량도 사용자 수와 무관하게 고정된다. 코인은 실시간이라 미래를 모르므로 미리 만들어 두어도 스포일러 위험이 없다 — 주식이 사전 배치인 이유가 비용이 아니라 스포일러 차단이었던 것과 대비된다.
@@ -672,13 +682,15 @@ Notion 1차 고도화 목록의 "뉴스 요약" 항목이다. 수집·저장은 
 
 요약은 회원별이 아니다 — `(종목, 원본 거래일, 범위)` 단위로 1건씩 생성해 전 회원이 공유한다.
 
+**`items`의 정렬과 상한.** 정렬은 **발행시각 내림차순이고 동률은 `id` 내림차순**이다. 2차 키를 명시하는 이유는 공시의 발행시각이 전부 `00:00:00`이라 동률이 흔하기 때문이다 — 2차 키를 지우는 회귀는 테스트가 반드시 잡지 못한다(InnoDB가 흔히 PK 순서로 돌려주어 우연히 일치한다). 상한은 `feedback.news.max-items-per-news-list`이며 **요약 프롬프트에 넣는 기사 수 상한(`max-items-per-summary`)과는 다른 값이다** — 전자는 화면에 실리는 목록, 후자는 LLM 입력이다. 상한을 넘으면 **공시를 먼저 채우고 남은 자리를 뉴스 최신순으로 채운다**(spec §뉴스 매칭 범위). 공시가 없으면 잘리는 것이 아니라 구조상 **항상 먼저** 잘리기 때문이며, 그대로 두면 "`D-1` 접수 공시가 `PRE_MARKET` 요약·`items`에 나온다"는 이 절의 규칙과 상한 규칙이 서로 모순된다. **절단과 정렬은 별개다** — 살아남은 항목의 순서는 위 정렬 그대로이고 공시는 목록 아래쪽에 온다.
+
 **`summaryStatus`**는 `READY` · `NOT_YET`(주식, 09:00 이전 또는 재생세션 미준비) · `EMPTY`(기사 없음, **또는 요약 행이 아직 없음** — 배치 미실행·배포 당일) · `UNAVAILABLE`(LLM 호출 실패 **또는 후검증 재생성 1회 후에도 금지 표현이 남음**)이다. **판정 순서는 spec §C-4의 표를 따른다.** 어느 값이든 상태코드는 200이며, **`EMPTY`가 행 없음 때문일 때와 `UNAVAILABLE`일 때는 `items`가 채워진다.**
 
 **저작권**: `items`의 각 항목은 제목·언론사(뉴스는 원문 링크 도메인)·원문 URL·발행시각만 노출하고 본문은 어떤 형태로도 포함하지 않는다. `summary`는 여러 기사를 종합한 서술이며 특정 기사의 문장을 그대로 옮기지 않는다. 공시(`type=DISCLOSURE`)는 OpenDART가 접수일자만 제공하므로 `publishedAt`의 시각 부분이 항상 `00:00:00`이다. **그래서 구간이 아니라 날짜로 판정한다** — `PRE_MARKET`·브리핑에는 **직전 거래일 접수분만** 넣고 09:00부터 노출하며, **원본 거래일 접수분은 `FULL`에서만** 나온다. 구간으로 거르면 간밤 공시가 빠지고 장중 접수 공시가 아침에 들어온다(spec §C-3).
 
 **문구 제약**은 변동 원인 카드와 같다 — 인과 단정·투자 권유·가격 예측을 쓰지 않고 서버가 후검증한다 (C-004, FEED-003).
 
-### 개장 전 브리핑 조회 (계획)
+### 개장 전 브리핑 조회
 
 | Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|---|
@@ -689,6 +701,10 @@ Notion 1차 고도화 목록의 "뉴스 요약" 항목이다. 수집·저장은 
 **주식은 spec §C-2의 `전장` 구간 기사·공시만 담는다. 장중 기사는 어떤 경우에도 포함하지 않는다.** 재생 방식이라 그날 장중 뉴스를 아침에 노출하면 오후에 무엇이 일어날지 미리 알려주는 셈이 된다. 이 범위는 실제 투자자가 아침에 아는 정보와 동일하므로 교육적으로도 올바르다 — 그 시점에 가진 정보만으로 판단하는 연습이 된다. 장중 기사는 `GET /api/instruments/{id}/news`에서 재생 시각을 따라 하나씩 공개된다.
 
 **`status`** 는 `READY` · `NOT_YET`(주식, 세션은 준비됐고 09:00 이전) · `EMPTY`(기사 없음, 재생세션 미준비, **또는 브리핑 행이 아직 없음**) · `UNAVAILABLE`(LLM 호출 실패 **또는 후검증 재생성 1회 후에도 금지 표현이 남음**)이다. **판정 순서는 spec §C-4의 표를 따른다** — 00:00~08:40처럼 두 조건이 동시에 성립하는 구간이 있다. 어느 값이든 상태코드는 200이며, **`EMPTY`가 행 없음 때문일 때와 `UNAVAILABLE`일 때는 `items`가 채워진다** — 요약이 없어도 기사 목록 자체는 쓸모가 있다.
+
+**`items`의 정렬과 상한.** 정렬은 **발행시각 내림차순이고 동률은 `id` 내림차순**이며, 상한은 `feedback.news.max-items-per-briefing`이다 — **브리핑 프롬프트에 넣는 기사 수 상한(`max-items-per-summary`)과는 다른 값이다.** 상한을 넘으면 **공시를 먼저 채우고 남은 자리를 뉴스 최신순으로 채운다**(spec §뉴스 매칭 범위). **이 규칙이 가장 세게 걸리는 자리가 브리핑이다** — 전 종목 합산 단일 목록이라 종목당 2건만 쌓여도 상한을 넘고, 공시는 발행시각이 `00:00:00`이라 내림차순 목록의 최하위여서 규칙이 없으면 **상시 전멸한다.** 그러면 아래 "`D-1` 접수 공시는 개장 시각에 브리핑·전장 요약·`items` 셋 모두에 나온다"가 구조적으로 깨진다. **절단과 정렬은 별개다** — 살아남은 항목의 순서는 위 정렬 그대로이고 공시는 목록 아래쪽에 온다.
+
+**코인 경로는 구현돼 있으며 주식과 함께 블랙박스 QA 근거다 (Issue #188).** `market=CRYPTO`는 허용 리터럴이라 400이 아니고, 재생세션과 무관하게 `originTradeDate=null`로 내려가며 **`status`가 `NOT_YET`이 되지 않는다** — '개장 전'도 재생 거래일도 없어 spec §C-4 판정 순서의 1·2번이 성립하지 않고 3~6번만 쓴다. `items`는 **조회 시각 기준 최근 24시간**의 코인 뉴스뿐이고 노출 게이트가 없다(코인은 공시가 없다). 브리핑은 **`generated_at` 최신 1행**을 본다 — 자정 직후와 배치 실패 시각마다 비지 않게 하려는 것이며, 저장 행의 `origin_trade_date`는 유니크 축을 성립시키려고 채운 **배치 실행 날짜**라 응답에 싣지 않는다(spec §C-9).
 
 **코인은 '개장 전'이 없다.** 24시간 거래이므로 최근 24시간 기준으로 생성하며 `originTradeDate`는 `null`, `status`는 `NOT_YET`이 되지 않는다. **생성 주체도 다르다** — 주식은 08:45 개장 전 배치이고 코인은 **매시 05분 코인 배치**다(`feedback.batch.crypto-cron`, 종목 뉴스 요약의 코인 경로와 같다). 24시간 거래라 "개장 전에 미리 만들어 둘 시점"이 없기 때문이며, 조회 시 생성하지 않으므로 이 경로도 순수 조회다. 코인은 재생세션 상태와 무관하므로 `READY`가 아니어도 `EMPTY`가 되지 않는다.
 

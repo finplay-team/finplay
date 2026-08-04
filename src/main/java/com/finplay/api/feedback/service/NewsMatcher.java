@@ -30,15 +30,11 @@ import org.springframework.transaction.annotation.Transactional;
  * <p><b>장중 카드와 시가 갭이 서로 다른 범위를 쓴다</b>(§C-2). 장중은 {@code windowEnd} 앞뒤의 분 단위
  * 근거창이고, 시가 갭은 전장 {@code [D-1 15:30, D 09:00]}이다. 전장의 경계 {@code 15:30}·{@code 09:00}은
  * <b>벽시계</b>다 — 기사 필터일 뿐 분봉을 찾지 않으므로 "마지막 분봉"으로 바꾸면 안 된다 (§C-2-1).
+ * 그 두 값은 {@link MarketSessionTimes}가 단일 출처로 갖는다 (§C-6).
  */
 @Component
 @RequiredArgsConstructor
 public class NewsMatcher {
-
-	// 전장 구간의 경계 (§C-2). 분봉 시각이 아니라 벽시계다 (§C-2-1).
-	private static final LocalTime PRE_MARKET_FROM_TIME = LocalTime.of(15, 30);
-
-	private static final LocalTime PRE_MARKET_TO_TIME = LocalTime.of(9, 0);
 
 	private final MarketNewsItemRepository marketNewsItemRepository;
 
@@ -97,8 +93,8 @@ public class NewsMatcher {
 			marketNewsItemRepository.findByInstrumentIdAndTypeAndPublishedAtBetweenOrderByPublishedAtAsc(
 				instrumentId,
 				MarketNewsItemType.NEWS,
-				LocalDateTime.of(previousTradingDate, PRE_MARKET_FROM_TIME),
-				LocalDateTime.of(originTradeDate, PRE_MARKET_TO_TIME)));
+				LocalDateTime.of(previousTradingDate, MarketSessionTimes.MARKET_CLOSE_TIME),
+				LocalDateTime.of(originTradeDate, MarketSessionTimes.MARKET_OPEN_TIME)));
 		candidates.addAll(marketNewsItemRepository.findDisclosuresReceivedOn(
 			instrumentId,
 			previousTradingDate.atStartOfDay(),

@@ -17,3 +17,18 @@
 - [ ] 실습 순수 진행 조회와 관찰·복기 API를 구현한다: owner·instrument chain, intention·trade·plan snapshot quantity equality와 저장된 holdingId 검증(현재 holding quantity 제외), PENDING plan 전용 A·B, 서버 종결 전용 C, 최초 완료만 201이고 나머지는 무저장 409.
 
 후속 Controller가 실제 추가·변경되는 각 이슈에서 해당 계획 계약을 실제 매핑 기준으로 전환하고 두 전역 API 문서를 함께 동기화한다.
+
+## Issue #193 — 즐겨찾기·사전 의도 인메모리 전환 + 튜토리얼 합성 시세
+
+`plan.md`의 "Issue #193 설계 결정"(트랜잭션과 경합 섹션 상단, 데이터 모델, 합성 시세 생성 규칙)과 ADR-0012를 따른다. 커밋 단위는 아래 항목 굵기를 기준으로 하되, 2·3번은 서로 강하게 얽혀 있어 한 커밋으로 묶어도 된다.
+
+- [x] 1. `V19__drop_favorites_and_practice_intentions.sql` migration을 추가해 `favorites`, `practice_intentions` 테이블을 DROP한다. `practice_progresses`는 건드리지 않는다. V14·V16 파일은 수정하지 않는다(ADR-0004).
+- [x] 2. `Favorite`(`@Entity`)·`FavoriteRepository`(JPA)를 제거하고 `FavoriteService`를 `ConcurrentHashMap` 기반 인메모리 저장 + 사용자 단위 `ReentrantLock`으로 재작성한다. `AtomicLong`으로 `favoriteId`를 채번한다. `PracticeIntentionService`가 사용할 `withFavoriteLock(userId, instrumentId, action)` 같은 락 대여 메서드를 함께 제공한다. `FavoriteController`의 요청/응답 계약(경로·DTO·오류 코드)은 바꾸지 않는다.
+- [x] 3. `PracticeIntention`(`@Entity`)·`PracticeIntentionRepository`(JPA)를 제거하고 `PracticeIntentionService`를 인메모리 저장(사용자별 리스트)으로 재작성한다. `practice_progresses`의 기존 `INSERT ... ON DUPLICATE KEY UPDATE` upsert + `SELECT ... FOR UPDATE` 잠금은 그대로 유지하고, 그 안에서 `FavoriteService`가 제공하는 in-memory 락을 사용하도록 잠금 순서를 `progress(DB) → favorite 락(in-memory)`로 맞춘다. `PracticeIntentionController`의 계약은 바꾸지 않는다.
+- [x] 4. 튜토리얼 전용 합성 시세 서비스+컨트롤러를 `com.finplay.api.education` 아래 신규 패키지로 추가한다: `GET /api/education/practice/synthetic-prices/{instrumentId}` → `SyntheticPriceSeriesResponse(title, tickSeconds, prices)`. `plan.md`의 생성 규칙(랜덤워크 파라미터, 틱 수, clamp)을 따르고 저장소는 두지 않는다.
+- [x] 5. 기존 DB/Testcontainers 기반 테스트를 재작성·삭제한다: `FavoriteRepositoryTest`(삭제 — JPA repository 자체가 없어짐), `FavoriteConcurrencyIntegrationTest`(인메모리 동시성 단위 테스트로 재작성), `FavoriteServiceTest`·`FavoriteControllerTest`(인메모리 저장소 기준으로 갱신), `PracticeRepositoryTest`의 practice_intentions 관련 부분(삭제 또는 재작성), `PracticeIntentionServiceTest`·`PracticeIntentionControllerTest`·`PracticeIntentionConcurrencyIntegrationTest`(인메모리 favorite 락 기준으로 갱신). 새 합성 시세 컨트롤러의 `@WebMvcTest`·서비스 단위 테스트를 추가한다.
+- [x] 6. 문서 동기화: 이 spec의 candidate 1~4 관련 서술과 실제 코드 일치 확인, `docs/api-routes.md`·`docs/api-contracts.md`에 신규 합성 시세 라우트·계약 추가(FavoriteController·PracticeIntentionController 자체의 경로는 안 바뀌므로 그 두 문서의 기존 favorite/intention 행은 변경 불필요 — 신규 합성 시세 행만 추가), `docs/agent-mistakes.md`에 인메모리 전환 중 실제로 재현된 실수가 있으면 기록한다.
+
+### 미확정 사항 — 최종 확정값
+- 인메모리 상태 스코프: `@Service` 싱글턴 빈 내부 필드로 확정(별도 컴포넌트로 분리하지 않음). 근거는 ADR-0012. `FavoriteService`·`PracticeIntentionService` 구현이 이 결정대로다.
+- 합성 시세 틱 수는 100(시작가를 첫 틱으로 포함, 101이 아님)으로 확정했다. 시작가는 `PriceQueryService.getPriceQuote`로 조회한 실제 유효 현재가를 쓰고, 조회 실패(`PriceStatus.AVAILABLE`이 아님)일 때만 고정 fallback `10,000`을 쓴다(임의 난수 시작가 아님). `SyntheticPriceService`, `docs/specs/016-investment-education-policy/plan.md`의 "합성 시세 생성 규칙(#193, 확정)" 절에 반영했다. PRD에는 이 기능 자체가 없어(합성 시세는 이번 확정 배경에서 처음 도입) 상위 요구사항 ID가 없다는 점도 참고한다.

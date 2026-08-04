@@ -23,7 +23,9 @@ import org.springframework.scheduling.support.CronExpression;
 // 저장 테스트로는 이 축이 절대 드러나지 않는다. 장중만 도는 크론이어도 "Fake가 준 기사가 저장된다"는 통과하고,
 // 운영에서만 전장 구간이 통째로 빈다 — 그래서 표현식 자체를 직접 단정한다.
 //
-// yml과 이 상수의 일치는 NewsCollectionPropertiesIntegrationTest(항목 1)가 Environment로 이미 대조한다.
+// yml과 이 상수의 일치는 NewsCollectionPropertiesYamlTest가 Environment로 이미 대조한다. @SpringBootTest 쪽이
+// 아니라 그 yml 전용 테스트인 이유는, 테스트 컨텍스트에서는 크론이 "-"로 덮여 있기 때문이다
+// (build.gradle의 feedback-schedules-disabled-for-tests.yml). 이 파일은 애노테이션 문자열만 읽으므로 무관하다.
 class NewsCollectionScheduleTest {
 
 	// §C-1 뉴스 수집 크론 (24시간 30분 간격)

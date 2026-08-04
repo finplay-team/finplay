@@ -4,10 +4,15 @@ package com.finplay.api.feedback.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finplay.api.TestcontainersConfiguration;
+import com.finplay.api.feedback.domain.InstrumentNewsSummary;
+import com.finplay.api.feedback.domain.MarketBriefing;
 import com.finplay.api.feedback.domain.MarketNewsItem;
 import com.finplay.api.feedback.domain.MarketNewsItemType;
+import com.finplay.api.feedback.domain.NewsSummaryScope;
 import com.finplay.api.feedback.domain.PriceMoveEvent;
 import com.finplay.api.feedback.domain.PriceMoveEventType;
+import com.finplay.api.feedback.repository.InstrumentNewsSummaryRepository;
+import com.finplay.api.feedback.repository.MarketBriefingRepository;
 import com.finplay.api.feedback.repository.MarketNewsItemRepository;
 import com.finplay.api.feedback.repository.PriceMoveEventRepository;
 import com.finplay.api.feedback.repository.PriceMoveEventSourceRepository;
@@ -79,6 +84,14 @@ class FeedbackBatchIntegrationTest {
 	private static final List<String> READ_ONLY_TABLES = List.of("instruments", "stock_candles", "market_news_items",
 		"stock_replay_sessions");
 
+	// 이 배치가 쓰는 것이 정당한 네 테이블 — 카드 2종 + 요약·브리핑. 요약·브리핑이 붙으면서 둘에서 넷이 됐다.
+	private static final List<String> BATCH_OUTPUT_TABLES = List.of("price_move_events", "price_move_event_sources",
+		"instrument_news_summaries", "market_briefings");
+
+	// 같은 feedback 도메인이지만 이 배치의 산출물이 아닌 테이블 — 매도 회고와 집단 비교는 다른 이슈 소유다.
+	// 원장만 보면 "쓰기가 네 테이블 밖으로 나가지 않는다"의 절반만 확인된다.
+	private static final List<String> OTHER_FEEDBACK_TABLES = List.of("trade_feedbacks", "price_move_peer_stats");
+
 	@Autowired
 	private FeedbackBatchService feedbackBatchService;
 
@@ -102,6 +115,12 @@ class FeedbackBatchIntegrationTest {
 
 	@Autowired
 	private PriceMoveEventSourceRepository priceMoveEventSourceRepository;
+
+	@Autowired
+	private InstrumentNewsSummaryRepository instrumentNewsSummaryRepository;
+
+	@Autowired
+	private MarketBriefingRepository marketBriefingRepository;
 
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
@@ -217,20 +236,72 @@ class FeedbackBatchIntegrationTest {
 		assertThat(priceMoveEventSourceRepository.count()).isZero();
 	}
 
-	// 8개 이슈 공통 조건 — 쓰기가 price_move_events·price_move_event_sources 밖으로 나가지 않는다.
+	// 8개 이슈 공통 조건(원장 불변) — 쓰기가 카드 2종 + 요약·브리핑 네 테이블 밖으로 나가지 않는다.
+	// 요약·브리핑이 붙으면서 정당한 쓰기 대상이 둘에서 넷이 됐고, 그만큼 "밖"의 범위도 넓혀 확인한다.
 	@Test
-	@DisplayName("배치 실행 전후로 원장 테이블과 읽기 전용 테이블의 행이 변하지 않는다")
-	void neverWritesOutsideTheTwoCardTables() {
+	@DisplayName("배치가 네 산출물 테이블에만 쓰고 원장·읽기 전용·다른 피드백 테이블은 그대로다")
+	void neverWritesOutsideTheFourBatchOutputTables() {
 		givenReadyReplaySession();
 		Map<String, Long> ledgerBefore = rowCounts(LEDGER_TABLES);
 		Map<String, Long> readOnlyBefore = rowCounts(READ_ONLY_TABLES);
+		Map<String, Long> otherFeedbackBefore = rowCounts(OTHER_FEEDBACK_TABLES);
+		Map<String, Long> outputBefore = rowCounts(BATCH_OUTPUT_TABLES);
 
 		feedbackBatchService.runPreMarketBatch();
 
-		// 배치가 실제로 쓰기를 했는데도 나머지가 그대로여야 의미가 있다.
+		// 배치가 실제로 쓰기를 했는데도 나머지가 그대로여야 의미가 있다 — 네 테이블 전부가 늘어야 한다.
 		assertThat(cardsForFixture()).isNotEmpty();
+		assertThat(rowCounts(BATCH_OUTPUT_TABLES))
+			.allSatisfy((table, after) -> assertThat(after).as("%s에 행이 생기지 않으면 이 단정이 헛돈다", table)
+				.isGreaterThan(outputBefore.get(table)));
 		assertThat(rowCounts(LEDGER_TABLES)).isEqualTo(ledgerBefore);
 		assertThat(rowCounts(READ_ONLY_TABLES)).isEqualTo(readOnlyBefore);
+		assertThat(rowCounts(OTHER_FEEDBACK_TABLES)).isEqualTo(otherFeedbackBefore);
+	}
+
+	// 요약·브리핑이 실제로 생기는지를 종단에서 본다. 단위 테스트는 mock 리포지터리에 save가 갔는지까지만 보므로
+	// 구간 질의가 실제 MySQL에서 0건을 주는 형태여도 초록이다.
+	@Test
+	@DisplayName("개장 전 배치가 PRE_MARKET·FULL 요약 2건과 브리핑 1건을 실제로 만든다")
+	void createsBothSummaryScopesAndTheBriefing() {
+		givenReadyReplaySession();
+
+		feedbackBatchService.runPreMarketBatch();
+
+		assertThat(summariesForFixture())
+			.extracting(InstrumentNewsSummary::getScope)
+			.containsExactlyInAnyOrder(NewsSummaryScope.PRE_MARKET, NewsSummaryScope.FULL);
+		assertThat(marketBriefingRepository.findAll())
+			.filteredOn(briefing -> ORIGIN_TRADE_DATE.equals(briefing.getOriginTradeDate()))
+			.singleElement()
+			.extracting(MarketBriefing::getMarket)
+			.isEqualTo(Market.STOCK);
+	}
+
+	// 배치 ⑤의 요약·브리핑 절반 — 선판정과 유니크가 종단에서 실제로 작동하는지 본다.
+	@Test
+	@DisplayName("같은 서비스 날짜에 두 번 실행해도 요약·브리핑이 중복 생성되지 않는다")
+	void doesNotDuplicateSummariesOrBriefingsWhenRunTwice() {
+		givenReadyReplaySession();
+
+		feedbackBatchService.runPreMarketBatch();
+		List<Long> firstRunSummaryIds = summariesForFixture().stream().map(InstrumentNewsSummary::getId).sorted()
+			.toList();
+		long briefingsAfterFirstRun = marketBriefingRepository.count();
+		assertThat(firstRunSummaryIds).hasSize(2);
+
+		feedbackBatchService.runPreMarketBatch();
+
+		assertThat(summariesForFixture().stream().map(InstrumentNewsSummary::getId).sorted().toList())
+			.isEqualTo(firstRunSummaryIds);
+		assertThat(marketBriefingRepository.count()).isEqualTo(briefingsAfterFirstRun);
+	}
+
+	private List<InstrumentNewsSummary> summariesForFixture() {
+		return instrumentNewsSummaryRepository.findAll().stream()
+			.filter(summary -> ORIGIN_TRADE_DATE.equals(summary.getOriginTradeDate()))
+			.filter(summary -> summary.getInstrument().getId().equals(instrument.getId()))
+			.toList();
 	}
 
 	private List<PriceMoveEvent> cardsForFixture() {
