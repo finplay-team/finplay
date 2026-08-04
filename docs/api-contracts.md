@@ -512,15 +512,17 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 `InstrumentService.getInstrumentEntity`로 종목 존재만 확인하고 `instrument.isTradable()`은 검증하지 않는다(비거래 종목도 순수 참고용 차트로 허용). `title`은 `Instrument.name`(예: `"삼성전자"`)이고 `tickSeconds`는 항상 3, `prices`는 100개(5분/3초, 시작가 포함) `BigDecimal` 정수 배열이다. 시작가는 `PriceQueryService.getPriceQuote`로 조회한 실제 현재가를 사용하고, 가격이 없으면(PRICE_UNAVAILABLE 등) 고정 fallback 상수(10,000)를 시작가로 쓴다. 각 틱은 이전 값 대비 -1%~+1% 균등분포로 변동하며 시작가의 50% 미만으로는 떨어지지 않게 clamp한다. 요청마다 새로 계산하며 어떤 저장소에도 남기지 않고, 비즈니스 락은 없다(`InstrumentService`/`PriceQueryService` 조회를 위한 읽기 전용 트랜잭션만 사용).
 
+**후속 확장 계획(#199, 아직 미구현):** 기존 타입 생략+`stopLoss`·`takeProfit` 요청은 PRICE로 호환하면서 `exitPriceType=PRICE|PERCENT`를 추가한다. PERCENT는 퍼센트포인트 단위의 `stopLossRate`·`takeProfitRate`만 받고 실제 시장가 BUY `entryPrice`를 기준으로 OCO 생성 시 scale 8 절대 가격선을 계산한다. intention은 ADR-0012대로 인메모리를 유지하고 내부 UUID instance key로 영속 exit plan과 숫자 ID 재사용을 구분한다. tagged union, rate 범위·반올림·저장 정책은 `docs/specs/019-exit-price-policy`가 정본이며, 구현 전까지 위 현재 요청·응답만 실제 호출 가능하다.
+
 ### OCO exit plan 생성 (계획)
 
 | Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|
-| POST | /api/exit-plans | 필수 `Idempotency-Key: <UUID>`; body `{"intentionId":1,"buyTradeId":10,"instrumentId":1,"quantity":10,"stopLoss":65000,"takeProfit":75000}` (`ExitPlanCreateRequest`) | 최초 201, 기존 plan 수렴 200 `ExitPlanResponse` | 400 `VALIDATION_ERROR`; 404 `NOT_FOUND`(요청 종목); 409 `PRACTICE_EVIDENCE_MISSING`, `EXIT_PLAN_INVALID_PRICE_RANGE`, `EXIT_PLAN_SESSION_CLOSED`, `PRICE_UNAVAILABLE`, `INSUFFICIENT_QTY`, `IDEMPOTENCY_CONFLICT` | 016 candidate 7 |
+| POST | /api/exit-plans | 필수 `Idempotency-Key: <UUID>`; body `{"intentionId":1,"buyTradeId":10,"instrumentId":1,"quantity":10}` (`ExitPlanCreateRequest`). 가격·rate는 잠근 intention 정본 사용 | 최초 201, 기존 plan 수렴 200 `ExitPlanResponse` | 400 `VALIDATION_ERROR`; 404 `NOT_FOUND`(요청 종목); 409 `PRACTICE_EVIDENCE_MISSING`, `EXIT_PLAN_INVALID_PRICE_RANGE`, `EXIT_PLAN_SESSION_CLOSED`, `PRICE_UNAVAILABLE`, `INSUFFICIENT_QTY`, `IDEMPOTENCY_CONFLICT` | 016 candidate 7, 019 |
 
-`ExitPlanResponse`는 `exitPlanId`, `intentionId`, `buyTradeId`, `replaySessionId`, `instrumentId`, `quantity`, `entryPrice`, `stopLoss`, `takeProfit`, `baselinePrice`, `baselineObservedAt`, `status`, `reservedAt`, `closedAt`, `triggeredOrderId`를 반환한다. `replaySessionId`는 코인만 null이며 PENDING이면 마지막 두 필드는 null이다. 상태는 `PENDING|FILLED_TAKE_PROFIT|FILLED_STOP_LOSS|CANCELLED|CANCELLED_EXPIRED`다.
+`ExitPlanResponse`는 기존 식별자·수량·entry/baseline/status/시각과 `exitPriceType`, PERCENT에서만 non-null인 `stopLossRate`·`takeProfitRate`, 항상 non-null인 `stopLossPrice`·`takeProfitPrice`를 반환한다. `replaySessionId`는 코인만 null이며 PENDING이면 `closedAt`·`triggeredOrderId`가 null이다. 상태는 `PENDING|FILLED_TAKE_PROFIT|FILLED_STOP_LOSS|CANCELLED|CANCELLED_EXPIRED`다.
 
-본인 favorite → intention → FILLED 시장가 BUY trade → holding의 종목·소유권을 검증하고 `intention.quantity == buyTrade.quantity == request.quantity`, `availableQuantity >= quantity`, `stopLoss < entryPrice < takeProfit`을 요구한다. 서버 유효 현재가를 baseline으로 저장하고 수량은 한 번만 예약한다. UUID는 lowercase canonical 문자열로 저장한다. 같은 key·같은 요청 또는 같은 intention·같은 fingerprint의 새 key는 기존 plan으로 200 수렴하고, 충돌은 409다.
+본인 favorite → 현재 process intention → FILLED 시장가 BUY trade → holding의 종목·소유권을 검증하고 `intention.quantity == buyTrade.quantity == request.quantity`, `availableQuantity >= quantity`, `0 < stopLossPrice < entryPrice < takeProfitPrice`를 요구한다. PRICE는 intention 가격을 복사하고 PERCENT는 실제 `entryPrice`로 계산하며 클라이언트가 OCO 생성 시 값을 덮어쓰지 못한다. 계산 가격이 `DECIMAL(18,8)`을 초과하거나 범위가 깨지면 409 `EXIT_PLAN_INVALID_PRICE_RANGE`로 plan·예약 없이 거부한다. 서버 유효 현재가를 baseline으로 저장하고 수량은 한 번만 예약한다. idempotency key와 내부 intention instance UUID는 lowercase canonical 문자열로 저장한다. key hit는 현재 intention보다 먼저 영속 mapping을 조회해 같은 hash면 재시작 후에도 과거 plan을 200으로 재현한다. key miss에서만 현재 intention instance를 해석하며 같은 instance·같은 fingerprint의 새 key는 기존 plan으로 200 수렴하고 충돌은 409다.
 
 ### OCO 예약 목록 조회 (계획)
 
@@ -568,8 +570,8 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 | `FavoriteListResponse` | `List<FavoriteResponse> content` | non-null, 빈 배열 허용 |
 | `PracticeIntentionCreateRequest` | `Long instrumentId`, `BigDecimal quantity`, `BigDecimal stopLoss`, `BigDecimal takeProfit` | 모두 non-null |
 | `PracticeIntentionResponse` | `Long intentionId`, `Long instrumentId`, `BigDecimal quantity`, `BigDecimal stopLoss`, `BigDecimal takeProfit`, `LocalDateTime createdAt` | 모두 non-null |
-| `ExitPlanCreateRequest` | `Long intentionId`, `Long buyTradeId`, `Long instrumentId`, `BigDecimal quantity`, `BigDecimal stopLoss`, `BigDecimal takeProfit` | 모두 non-null |
-| `ExitPlanResponse` | `Long exitPlanId`, `Long intentionId`, `Long buyTradeId`, `Long replaySessionId`, `Long instrumentId`, `BigDecimal quantity`, `BigDecimal entryPrice`, `BigDecimal stopLoss`, `BigDecimal takeProfit`, `BigDecimal baselinePrice`, `LocalDateTime baselineObservedAt`, `String status`, `LocalDateTime reservedAt`, `LocalDateTime closedAt`, `Long triggeredOrderId` | `replaySessionId`는 코인만 null; `closedAt`은 PENDING만 null; `triggeredOrderId`는 PENDING·취소·만료에서 null |
+| `ExitPlanCreateRequest` (계획) | `Long intentionId`, `Long buyTradeId`, `Long instrumentId`, `BigDecimal quantity` | 모두 non-null; 가격·rate 입력 없음 |
+| `ExitPlanResponse` (계획) | 기존 식별자·수량·entry/baseline/status/시각 + `String exitPriceType`, `BigDecimal stopLossRate`, `BigDecimal takeProfitRate`, `BigDecimal stopLossPrice`, `BigDecimal takeProfitPrice` | rate 둘은 PERCENT만 non-null; 확정 가격 둘은 항상 non-null; 기존 replay/terminal nullable 규칙 유지 |
 | `ExitPlanListResponse` | `List<ExitPlanResponse> content` | non-null, 빈 배열 허용 |
 | `PracticeObservationCreateRequest` | `Long exitPlanId` | non-null |
 | `PracticeObservationResponse` | `Long observationId`, `Long exitPlanId`, `BigDecimal currentPrice`, `LocalDateTime observedAt`, `Boolean closerToBoundary`, `String closerBoundary`, `String evidenceType` | 앞의 다섯 필드는 non-null; 뒤의 두 필드는 조건 미충족 시 null |
