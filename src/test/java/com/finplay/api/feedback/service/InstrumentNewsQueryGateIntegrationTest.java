@@ -4,6 +4,7 @@ package com.finplay.api.feedback.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finplay.api.TestcontainersConfiguration;
+import com.finplay.api.feedback.config.FeedbackNewsProperties;
 import com.finplay.api.feedback.domain.FeedbackContentStatus;
 import com.finplay.api.feedback.domain.InstrumentNewsSummary;
 import com.finplay.api.feedback.domain.MarketNewsItem;
@@ -62,9 +63,8 @@ class InstrumentNewsQueryGateIntegrationTest {
 
 	private static final String STOCK_SYMBOL = "005930";
 
-	// application.yml의 feedback.news.max-items-per-news-list (§C-7). 픽스처를 이 값 위로 잡아야 절단이
-	// 실제로 일어난다 — 상한 아래면 "공시 우선" 규칙을 통째로 지워도 초록이다 (§뉴스 매칭 범위).
-	private static final int MAX_ITEMS_PER_NEWS_LIST = 50;
+	// 상한 위로 얼마나 더 심을지. 공시 2건이 전부 살아남고도 뉴스가 잘리려면 3건이면 충분하다.
+	private static final int FIXTURE_MARGIN = 3;
 
 	@Autowired
 	private InstrumentNewsQueryService instrumentNewsQueryService;
@@ -80,6 +80,12 @@ class InstrumentNewsQueryGateIntegrationTest {
 
 	@Autowired
 	private InstrumentNewsSummaryRepository instrumentNewsSummaryRepository;
+
+	// 상한을 상수로 옮겨 적지 않고 빈에서 읽는다. 옮겨 적으면 §튜닝으로 값을 올렸을 때 픽스처가 상한 아래로
+	// 내려가 절단이 조용히 사라지는데, 그때도 테스트는 전부 초록이다 — spec §뉴스 매칭 범위가 경고한 형태다.
+	// 드리프트 테스트 2축은 값 자체는 잡지만 "픽스처가 상한 위"라는 성질은 잡지 못한다.
+	@Autowired
+	private FeedbackNewsProperties properties;
 
 	@Autowired
 	private Clock clock;
@@ -137,13 +143,17 @@ class InstrumentNewsQueryGateIntegrationTest {
 
 	// --- 게이트 ⑧(Part C 절반) 상한과 정렬 ---
 
-	// 픽스처를 상한(50) 위로 잡는다. 전장 구간에 뉴스 51건 + D-1 접수 공시 2건 = 53건이고, 공시는
-	// published_at이 00:00:00이라 내림차순 목록의 최하위다 — "공시 우선"이 없으면 둘 다 먼저 잘린다.
+	// 픽스처 개수를 실제 상한에서 계산한다 — 뉴스 (상한 + 3)건 + D-1 접수 공시 2건이라 §튜닝으로 상한을
+	// 어떻게 조정해도 항상 상한 위다. 공시는 published_at이 00:00:00이라 내림차순 목록의 최하위이고,
+	// "공시 우선"이 없으면 상한을 넘는 순간 둘 다 먼저 잘린다.
 	@Test
-	@DisplayName("items가 상한 50건으로 잘리고 공시 2건은 남으며 발행시각 내림차순이다")
+	@DisplayName("items가 max-items-per-news-list로 잘리고 공시 2건은 남으며 발행시각 내림차순이다")
 	void truncatesToTheConfiguredLimitKeepingDisclosuresAndSortingByPublishedAtDescending() {
 		givenReadySession();
-		for (int index = 0; index < 51; index++) {
+		int limit = properties.maxItemsPerNewsList();
+		int newsCount = limit + FIXTURE_MARGIN;
+		// 1분 간격이라 마지막 기사도 전장 구간 [D-1 15:30, D 09:00] 안에 있다.
+		for (int index = 0; index < newsCount; index++) {
 			saveItem(MarketNewsItemType.NEWS, "전장 뉴스 " + index,
 				LocalDateTime.of(PREVIOUS_TRADE_DATE, LocalTime.of(15, 31)).plusMinutes(index));
 		}
@@ -152,7 +162,7 @@ class InstrumentNewsQueryGateIntegrationTest {
 
 		InstrumentNewsResponse response = query();
 
-		assertThat(response.items()).hasSize(MAX_ITEMS_PER_NEWS_LIST);
+		assertThat(response.items()).hasSize(limit);
 		assertThat(response.items())
 			.filteredOn(item -> item.type() == MarketNewsItemType.DISCLOSURE)
 			.as("공시는 목록 최하위라 규칙이 없으면 상한을 넘는 순간 항상 먼저 잘린다 (게이트 ⑫의 전제)")
@@ -161,8 +171,10 @@ class InstrumentNewsQueryGateIntegrationTest {
 		assertThat(response.items())
 			.extracting(NewsItem::publishedAt)
 			.isSortedAccordingTo(java.util.Comparator.reverseOrder());
-		// 남은 48자리는 가장 늦게 발행된 뉴스다 — 가장 이른 "전장 뉴스 0"은 잘려 나간다.
-		assertThat(titles(response)).contains("전장 뉴스 50").doesNotContain("전장 뉴스 0");
+		// 남은 자리는 가장 늦게 발행된 뉴스다 — 가장 이른 "전장 뉴스 0"은 잘려 나간다.
+		assertThat(titles(response))
+			.contains("전장 뉴스 " + (newsCount - 1))
+			.doesNotContain("전장 뉴스 0");
 	}
 
 	// --- 게이트 ⑨ 범위 — 다른 원본 거래일 기사가 섞이지 않는다 ---

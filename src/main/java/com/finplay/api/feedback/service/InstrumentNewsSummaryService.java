@@ -137,7 +137,10 @@ public class InstrumentNewsSummaryService {
 
 		List<MarketNewsItem> items = NewsItemTruncator.truncateAndSort(
 			marketNewsItemRepository.findByInstrumentIdAndTypeAndPublishedAtBetweenOrderByPublishedAtAsc(
-				instrument.getId(), MarketNewsItemType.NEWS, now.minusHours(24), now),
+				instrument.getId(),
+				MarketNewsItemType.NEWS,
+				now.minus(MarketSessionTimes.ROLLING_WINDOW),
+				now),
 			properties.maxItemsPerSummary());
 		if (items.isEmpty()) {
 			log.debug("최근 24시간 기사가 없어 요약을 만들지 않는다. 종목={}", instrument.getId());

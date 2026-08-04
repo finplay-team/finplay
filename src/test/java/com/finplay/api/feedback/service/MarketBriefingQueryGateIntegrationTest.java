@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 import com.finplay.api.TestcontainersConfiguration;
+import com.finplay.api.feedback.config.FeedbackNewsProperties;
 import com.finplay.api.feedback.domain.FeedbackContentStatus;
 import com.finplay.api.feedback.domain.MarketBriefing;
 import com.finplay.api.feedback.domain.MarketNewsItem;
@@ -68,9 +69,8 @@ class MarketBriefingQueryGateIntegrationTest {
 
 	private static final LocalDateTime INITIAL_NOW = LocalDateTime.of(SERVICE_DATE, LocalTime.of(10, 0));
 
-	// application.yml의 feedback.news.max-items-per-briefing (§C-7). 픽스처를 이 값 위로 잡아야 절단이
-	// 실제로 일어난다 — 브리핑은 전 종목 합산이라 공시 우선 규칙이 가장 세게 걸리는 자리다.
-	private static final int MAX_ITEMS_PER_BRIEFING = 30;
+	// 상한 위로 얼마나 더 심을지. 공시 2건이 전부 살아남고도 뉴스가 잘리려면 3건이면 충분하다.
+	private static final int FIXTURE_MARGIN = 3;
 
 	@Autowired
 	private MarketBriefingService marketBriefingService;
@@ -92,6 +92,11 @@ class MarketBriefingQueryGateIntegrationTest {
 
 	@Autowired
 	private MarketBriefingRepository marketBriefingRepository;
+
+	// 상한을 상수로 옮겨 적지 않고 빈에서 읽는다. 옮겨 적으면 §튜닝으로 값을 올렸을 때 픽스처가 상한 아래로
+	// 내려가 절단이 조용히 사라지는데, 그때도 테스트는 전부 초록이다 — spec §뉴스 매칭 범위가 경고한 형태다.
+	@Autowired
+	private FeedbackNewsProperties properties;
 
 	@MockitoBean
 	private NarrativeService narrativeService;
@@ -224,13 +229,17 @@ class MarketBriefingQueryGateIntegrationTest {
 
 	// --- 게이트 ⑧ (Part D 절반) 상한과 정렬 ---
 
-	// 픽스처를 상한(30) 위로 잡는다. 전 종목 합산이라 종목당 2건만 쌓여도 넘는 자리이며, 공시는
+	// 픽스처 개수를 실제 상한에서 계산한다 — 뉴스 (상한 + 3)건 + D-1 접수 공시 2건이라 §튜닝으로 상한을
+	// 어떻게 조정해도 항상 상한 위다. 전 종목 합산이라 종목당 2건만 쌓여도 넘는 자리이며, 공시는
 	// published_at이 00:00:00이라 내림차순 목록의 최하위다 — "공시 우선"이 없으면 둘 다 먼저 잘린다.
 	@Test
-	@DisplayName("items가 상한 30건으로 잘리고 공시 2건은 남으며 발행시각 내림차순이다")
+	@DisplayName("items가 max-items-per-briefing으로 잘리고 공시 2건은 남으며 발행시각 내림차순이다")
 	void truncatesToTheBriefingLimitKeepingDisclosuresAndSortingByPublishedAtDescending() {
 		givenReadySession();
-		for (int index = 0; index < 31; index++) {
+		int limit = properties.maxItemsPerBriefing();
+		int newsCount = limit + FIXTURE_MARGIN;
+		// 1분 간격이라 마지막 기사도 전장 구간 [D-1 15:30, D 09:00] 안에 있다.
+		for (int index = 0; index < newsCount; index++) {
 			Instrument owner = index % 2 == 0 ? samsung : hynix;
 			saveItem(owner, MarketNewsItemType.NEWS, "전장 뉴스 " + index,
 				LocalDateTime.of(PREVIOUS_TRADE_DATE, LocalTime.of(15, 31)).plusMinutes(index));
@@ -241,7 +250,7 @@ class MarketBriefingQueryGateIntegrationTest {
 
 		MarketBriefingResponse response = briefing();
 
-		assertThat(response.items()).hasSize(MAX_ITEMS_PER_BRIEFING);
+		assertThat(response.items()).hasSize(limit);
 		assertThat(response.items())
 			.filteredOn(item -> item.type() == MarketNewsItemType.DISCLOSURE)
 			.as("브리핑은 전 종목 합산이라 규칙이 없으면 공시가 사실상 상시 전멸한다")
@@ -250,7 +259,9 @@ class MarketBriefingQueryGateIntegrationTest {
 		assertThat(response.items())
 			.extracting(BriefingNewsItem::publishedAt)
 			.isSortedAccordingTo(java.util.Comparator.reverseOrder());
-		assertThat(briefingTitles(response)).contains("전장 뉴스 30").doesNotContain("전장 뉴스 0");
+		assertThat(briefingTitles(response))
+			.contains("전장 뉴스 " + (newsCount - 1))
+			.doesNotContain("전장 뉴스 0");
 	}
 
 	// 시장 단일 목록이라 종목이 섞인다 — 항목마다 종목을 붙이지 않으면 어느 종목 소식인지 알 수 없다.

@@ -266,10 +266,15 @@ public class MarketBriefingService {
 			items);
 	}
 
-	/** 최근 24시간 코인 기사 (§C-2의 {@code ROLLING_24H}). 코인은 공시가 없어 뉴스만 모은다. */
+	/**
+	 * 최근 24시간 코인 기사 (§C-2의 {@code ROLLING_24H}). 코인은 공시가 없어 뉴스만 모은다.
+	 *
+	 * <p>창 길이는 {@link MarketSessionTimes#ROLLING_WINDOW}다 — 생성과 조회가 같은 값을 봐야 요약이 다루는
+	 * 창과 화면 목록의 창이 갈리지 않는다.
+	 */
 	private List<MarketNewsItem> collectRollingItems(LocalDateTime now) {
 		return marketNewsItemRepository.findMarketNewsPublishedBetween(
-			Market.CRYPTO, now.minusHours(24), now);
+			Market.CRYPTO, now.minus(MarketSessionTimes.ROLLING_WINDOW), now);
 	}
 
 	/**

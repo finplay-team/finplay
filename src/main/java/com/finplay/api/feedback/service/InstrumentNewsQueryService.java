@@ -148,7 +148,10 @@ public class InstrumentNewsQueryService {
 		List<NewsItem> items = NewsItemTruncator
 			.truncateAndSort(
 				marketNewsItemRepository.findByInstrumentIdAndTypeAndPublishedAtBetweenOrderByPublishedAtAsc(
-					instrumentId, MarketNewsItemType.NEWS, now.minusHours(24), now),
+					instrumentId,
+					MarketNewsItemType.NEWS,
+					now.minus(MarketSessionTimes.ROLLING_WINDOW),
+					now),
 				properties.maxItemsPerNewsList())
 			.stream()
 			.map(NewsItem::from)
