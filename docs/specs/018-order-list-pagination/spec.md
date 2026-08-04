@@ -50,7 +50,7 @@
 - `GET /api/orders/pending`(LMT-004, 미체결 지정가 목록) 구현 — 별도 스펙·이슈.
 - 프론트엔드(FinPlay 레포) 쪽 대응 변경 — 별도 조율·별도 작업.
 - 스키마 변경·신규 Flyway 마이그레이션 — `Order` 엔티티에 이미 `account` 연관관계가 있어 필요 없다.
-- `docs/prd.md` "API 계약" 섹션(790행 근처)의 `symbol`·`requestedQuantity` 필드 서술과 실제 코드(`quantity`, `symbol` 없음)의 드리프트 — 이번 이슈 이전부터 있던 것이며, 이 spec은 실제 코드·`docs/api-contracts.md` 정본 기준(`quantity`, `symbol` 없음)을 그대로 따른다. PRD 문구 정정은 이 spec의 범위가 아니다.
+- `docs/prd.md` "API 계약" 섹션(790행 근처)의 `symbol`·`requestedQuantity` 필드 서술과 실제 코드(`quantity`, `symbol` 없음)의 드리프트 — 이번 이슈 이전부터 있던 것이며, 이 spec은 실제 코드·`docs/api-contracts.md` 정본 기준(`quantity`, `symbol` 없음)을 그대로 따른다. (당초 별도 이슈로 미룰 계획이었으나, 단순 문구 정정이라 이 PR에서 `docs/prd.md`도 함께 고쳤다.)
 
 ## 완료 조건
 

@@ -787,7 +787,7 @@ Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conven
 
 - `GET /api/orders?market=&cursor=&limit=` (`market` 필수 — 생략 시 통합 조회는 지원하지 않는다. `cursor`·`limit`은 `GET /api/trades`와 동일한 페이지네이션 방식 — 2026-08-04 확정, 이슈 #177. 실제 구현은 별도 이슈에서 진행한다)
   - 인증 사용자의 주문을 최신 요청순으로 시장별로 반환한다.
-  - 응답 항목: `orderId`, `market`, `instrumentId`, `symbol`, `side`, `orderType`, `requestedQuantity`, `status`, `requestedAt`
+  - 응답 항목: `orderId`, `market`, `instrumentId`, `side`, `orderType`, `status`, `quantity`, `requestedAt` (`docs/api-contracts.md` 정본 기준 — `symbol` 없음, `quantity`)
   - 체결가격·체결금액·수수료·실현손익·체결시각은 포함하지 않고 `GET /api/trades`에서 조회한다.
 - `POST /api/orders`
 - 요청 예시: `{"market":"STOCK","instrumentId":1,"side":"BUY","orderType":"MARKET","quantity":"10"}`
