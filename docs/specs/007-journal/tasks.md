@@ -269,7 +269,7 @@
   - 검증 — `@DataJpaTest`(`BuyTradeJournalRepositoryTest`): ① `findByBuyTradeId` 존재/부재 각각 값 있음/`empty()` ② `updateContent` 후 flush하면 `content`·`updated_at`만 바뀌고 `created_at`·`buy_trade_id`·`id`는 그대로 ③ 신규 컬럼의 `NOT NULL` 제약.
   - 검증 — `./gradlew test`로 기존 `@SpringBootTest`의 `ddl-auto=validate` 통과 확인.
 
-- [ ] **B2. `JournalService.updateBuyJournal` — 수정 유스케이스 (단위 테스트 포함)**
+- [x] **B2. `JournalService.updateBuyJournal` — 수정 유스케이스 (단위 테스트 포함)**
 
   `plan.md` §구성요소 설계의 1~5단계를 구현한다. 검증 순서 `체결 존재(404) → 소유(403) → 매수 여부(400) → 회고 존재(404)`와 트랜잭션 경계가 핵심이다. `tradeService.getOwnedTrade`를 재사용한다.
   - 회고가 없으면 `findByBuyTradeId`의 빈 `Optional`을 404로 변환한다 — 새 회고를 만들지 않는다(upsert 금지).

@@ -6,6 +6,7 @@ import com.finplay.api.common.ErrorCode;
 import com.finplay.api.journal.domain.BuyTradeJournal;
 import com.finplay.api.journal.domain.SellTradeJournal;
 import com.finplay.api.journal.dto.response.BuyJournalResponse;
+import com.finplay.api.journal.dto.response.BuyJournalUpdateResponse;
 import com.finplay.api.journal.dto.response.SellJournalResponse;
 import com.finplay.api.journal.dto.response.SellJournalUpdateResponse;
 import com.finplay.api.journal.repository.BuyTradeJournalRepository;
@@ -77,5 +78,19 @@ public class JournalService {
 
 		journal.updateContent(content, LocalDateTime.now(clock));
 		return SellJournalUpdateResponse.from(journal);
+	}
+
+	@Transactional
+	public BuyJournalUpdateResponse updateBuyJournal(Long userId, Long buyTradeId, String content) {
+		Trade trade = tradeService.getOwnedTrade(userId, buyTradeId);
+		if (trade.getSide() != OrderSide.BUY) {
+			throw new BusinessException(ErrorCode.VALIDATION_ERROR);
+		}
+		BuyTradeJournal journal = buyTradeJournalRepository
+			.findByBuyTradeId(buyTradeId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+
+		journal.updateContent(content, LocalDateTime.now(clock));
+		return BuyJournalUpdateResponse.from(journal);
 	}
 }
