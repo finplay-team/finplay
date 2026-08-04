@@ -44,6 +44,8 @@ com.finplay.api
 | 목록 응답 / 목록 항목 | `~ListResponse` / `~ListItemResponse` | `TradeListResponse` |
 | service 간 내부 전달 | `~Dto` | `OAuthUserDto` — controller와 직접 통신하는 DTO에는 `Dto` 접미사 금지 |
 
+> **예외 — 여러 응답이 공유하는 항목 record에는 `~ListItemResponse`를 붙이지 않는다** (2026-08-04 확정, PR #185 리뷰 [권장]). 항목 하나가 두 개 이상의 응답에 실리면 특정 목록 응답에 속하지 않으므로 이름에 소속을 박지 않고 `dto/response/` 최상위에 도메인 용어 그대로 둔다 — `NewsItem`·`PriceMoveItem`이 그 형태이며 spec 012의 네 응답이 함께 쓴다. **이 이름들의 단일 출처는 `docs/specs/012-ai-feedback/spec.md` §C-6이고 여기서 다시 정하지 않는다.** 이미 머지된 두 record는 개명하지 않는다. 컨테이너 응답은 이 예외와 무관하게 위 표대로 `~Response`다.
+
 - 요청 DTO 검증 규칙.
   - record 컴포넌트에 Bean Validation 애노테이션을 직접 붙인다 — 필수 `@NotNull`(객체)/`@NotBlank`(문자열), 문자열엔 `@Size(max = N)` 항상 명시, 범위 `@Min`/`@Max`, 형식 `@Email`/`@Pattern`.
   - 필드는 Wrapper 타입(`Long`, `Integer`, `Boolean`)을 쓴다 — primitive는 null 검증이 우회된다.

@@ -80,7 +80,14 @@ tasks.withType(Test).configureEach {
 	// spring.config.additional-location으로 이 프로퍼티 하나만 담은 별도 파일을 가리킨다 — 이 위치는
 	// ConfigDataEnvironmentPostProcessor(SpringApplication 부트스트랩, 즉 @SpringBootTest)만 해석하므로
 	// ApplicationContextRunner에는 영향이 없다.
-	systemProperty 'spring.config.additional-location', 'classpath:/bithumb-feed-simulator-disabled-for-tests.yml'
+	//
+	// 같은 경로에 spec 012의 배치·수집 크론을 끄는 파일을 하나 더 얹는다(쉼표로 나열하면 순서대로 적재된다).
+	// @SpringBootTest가 컨텍스트를 통째로 띄우는 동안 스케줄이 실제로 등록되므로, 평일 배치·수집 시각에 전체
+	// 빌드가 걸치면 공유 Testcontainers MySQL에 의도하지 않은 데이터가 생긴다. 파일을 합치지 않고 나눈 것은
+	// 끄는 이유가 다르기 때문이다 — 위는 외부 호출·합성 틱, 아래는 시각에 묶인 배치다.
+	systemProperty 'spring.config.additional-location',
+		'classpath:/bithumb-feed-simulator-disabled-for-tests.yml,' +
+			'classpath:/feedback-schedules-disabled-for-tests.yml'
 	// 테스트 DB 커넥션 타임아웃을 Hikari 기본값 30초에서 10초로 줄인다 (이슈 #119 완화책).
 	// 공유 Testcontainers MySQL이 실행 중 교체되면 그 전에 만들어진 컨텍스트는 옛 포트를 물고 있어 반드시 실패하는데,
 	// 기본값이면 테스트 1건마다 30초를 헛되이 기다린다 — 실측에서 9건 실패에 4분 30초가 이 대기에만 쓰였다.
