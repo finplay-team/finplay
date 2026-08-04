@@ -1,14 +1,15 @@
-# Plan: 체결별 투자일기 작성·수정 (JOUR-001 · JOUR-003 · JOUR-004)
+# Plan: 체결별 투자일기 작성·수정 (JOUR-001 · JOUR-003 · JOUR-004 · JOUR-002)
 
 > 요구사항·규칙의 정본은 `./spec.md`이고 PRD가 그 상위다. 여기서 새 규칙을 만들지 않는다.
 >
 > | 절 | 범위 | 이슈 | 상태 |
 > |---|---|---|---|
-> | §JOUR-001 ~ §이 spec에서 하지 않는 것 앞까지 | 매수 회고 작성 엔드포인트 1개 | [#159](https://github.com/finplay-team/finplay/issues/159) | 구현 완료 (기록 보존용, 변경하지 않는다) |
+> | §JOUR-001 ~ §JOUR-003 앞까지 | 매수 회고 작성 엔드포인트 1개 | [#159](https://github.com/finplay-team/finplay/issues/159) | 구현 완료 (기록 보존용, 변경하지 않는다) |
 > | §JOUR-003 매도 회고 작성 설계 | 매도 회고 작성 엔드포인트 1개 | [#183](https://github.com/finplay-team/finplay/issues/183) | 구현 완료 (기록 보존용, 변경하지 않는다) |
-> | **§JOUR-004 매도 회고 수정 설계** | 매도 회고 수정 엔드포인트 1개 | [#190](https://github.com/finplay-team/finplay/issues/190) | **이번 착수** |
+> | §JOUR-004 매도 회고 수정 설계 | 매도 회고 수정 엔드포인트 1개 | [#190](https://github.com/finplay-team/finplay/issues/190) | 구현 완료 (기록 보존용, 변경하지 않는다) |
+> | **§JOUR-002 매수 회고 수정 설계** | 매수 회고 수정 엔드포인트 1개 | [#197](https://github.com/finplay-team/finplay/issues/197) | **이번 착수** |
 >
-> 아래 §관련 문서부터 §이 spec에서 하지 않는 것 직전까지는 **JOUR-001 설계**, 이어지는 §JOUR-003 절은 **JOUR-003 설계**다. 둘 다 구현 완료된 기록이며 이번 착수에서 손대지 않는다. JOUR-004 설계는 §JOUR-003 절 뒤, §이 spec에서 하지 않는 것 앞에 있는 새 절이다.
+> 아래 §관련 문서부터 §JOUR-003 절 직전까지는 **JOUR-001 설계**, 이어지는 §JOUR-003·§JOUR-004 절은 각각 그 요구사항의 설계다. 셋 다 구현 완료된 기록이며 이번 착수에서 손대지 않는다. JOUR-002 설계는 §JOUR-004 절 뒤, §이 spec에서 하지 않는 것 앞에 있는 새 절이다.
 
 ## JOUR-001 매수 회고 작성 설계 (이슈 #159, 구현 완료)
 
@@ -18,7 +19,7 @@
 |---|---|
 | `./spec.md` | 요구사항·비즈니스 규칙·완료 조건 (정본) |
 | `./tasks.md` | 커밋 단위 작업 분해 |
-| `docs/prd.md` JOUR-001 | 상위 요구사항. JOUR-002·005의 Decision Gate 서술도 여기 |
+| `docs/prd.md` JOUR-001 | 상위 요구사항. JOUR-005의 Decision Gate 서술도 여기 (JOUR-002의 게이트는 2026-08-04 이슈 #197에서 해제) |
 | `docs/api-routes.md` · `docs/api-contracts.md` | JOUR-001 반영 완료 (2026-08-04). **JOUR-003는 미반영** — 컨트롤러 커밋과 같은 커밋에서 반영한다 |
 | [ADR-0002](../../adr/0002-architecture.md) | `controller → service → repository`, 도메인 패키지. **도메인 간 참조는 service 경유** — journal이 `TradeRepository`를 직접 주입하지 않는 근거 |
 | [ADR-0003](../../adr/0003-testing-strategy.md) | 서비스 로직=단위, 쿼리·제약=`@DataJpaTest`, API 계약=`@WebMvcTest`, 핵심 시나리오=Testcontainers 통합 |
@@ -324,7 +325,7 @@ com.finplay.api.journal
 - `docs/api-contracts.md` `## journal` 절 — 요청·응답·오류 계약 행 추가. 매수 회고 행 아래에 두고, 두 회고의 차이(경로, 체결 구분 검증 대상, 응답 체결 ID 필드명)를 본문에 한 줄로 적는다.
 - 컨트롤러 변경과 **같은 커밋**에서 갱신한다.
 
-## JOUR-004 매도 회고 수정 설계 (이슈 #190, 이번 착수)
+## JOUR-004 매도 회고 수정 설계 (이슈 #190, 구현 완료)
 
 > 요구사항·비즈니스 규칙의 정본은 `./spec.md` JOUR-004 절이다. 특히 "매도 회고 수정 잠금 없음" 결정과 그 근거 3가지는 `spec.md`가 이미 확정했으므로 여기서 재논의하지 않는다. 이 절은 위 §JOUR-003 설계와 **같은 항목**(응답 필드 고정, 오류 본문 공통 포맷, `Clock` 주입, 트랜잭션 경계, 원장 읽기 전용, `TradeService` 재사용)을 반복하지 않고 **다른 점만** 적는다.
 
@@ -522,8 +523,195 @@ public SellJournalUpdateResponse updateSellJournal(Long userId, Long sellTradeId
 - 컨트롤러 변경과 **같은 커밋**에서 갱신한다(이 항목은 tasks.md에서 컨트롤러 커밋에 포함한다).
 - 이 갱신은 planner의 동기화 모드가 실제 controller 코드를 보고 확정하며, 여기 적은 문구는 설계 의도이지 최종 표현이 아니다.
 
+## JOUR-002 매수 회고 수정 설계 (이슈 #197, 이번 착수)
+
+> 요구사항·비즈니스 규칙의 정본은 `./spec.md` JOUR-002 절이다. 특히 "매수 회고 수정 잠금 없음" 결정과 그 근거는 `spec.md`가 이미 확정했으므로 여기서 재논의하지 않는다.
+>
+> **이 절은 위 §JOUR-004 매도 회고 수정 설계의 매수 체결 판(版)이다.** 구조·계약·트랜잭션 경계·테스트 구성이 전부 대칭이므로, JOUR-004 절과 **같은 항목은 반복하지 않고 "JOUR-004와 동일"로 참조**하고 **다른 점만** 적는다. 다른 점은 실질적으로 넷이다 — ① 대상 테이블·엔티티가 `buy_trade_journals`/`BuyTradeJournal` ② `side` 검증 조건이 `BUY` ③ 경로가 `/journal` ④ **매도 배분이 일어난 lot도 수정 가능하다는 잠금 없음 회귀 테스트가 추가된다.**
+
+### API 설계
+
+| Method | URL | 요청 | 성공 응답 | 설명 |
+|---|---|---|---|---|
+| PATCH | `/api/trades/{buyTradeId}/journal` | `BuyJournalUpdateRequest` (JSON 본문) | **200** `BuyJournalUpdateResponse` | 본인 소유 매수 체결 1건에 이미 작성된 매수 회고의 본문을 교체 |
+
+- 작성(JOUR-001)과 **동일한 리소스 경로**를 PATCH로 재사용한다. 별도 하위 경로(`/journal/edit` 등)를 만들지 않는다 — JOUR-004가 `POST`·`PATCH .../sell-journal`로 같은 처리를 했다.
+- 200인 이유는 컨벤션 API 규칙("수정 200") — 생성이 아니므로 201이 아니다.
+- 경로 변수명은 작성과 동일하게 `buyTradeId`다. 회고 자체의 PK(`journalId`)를 경로에 노출하지 않는다 — 상세 조회(JOUR-005) 식별자 체계 Decision Gate를 앞당기지 않기 위해서다.
+
+#### 요청 예시
+
+```json
+{ "content": "실적 발표 전 분할 매수였다. 진입 근거를 더 좁게 적었어야 했다." }
+```
+
+#### 응답 예시 (200)
+
+```json
+{ "journalId": 1, "buyTradeId": 12, "content": "실적 발표 전 분할 매수였다. 진입 근거를 더 좁게 적었어야 했다.", "createdAt": "2026-08-04T10:12:33", "updatedAt": "2026-08-05T09:41:07" }
+```
+
+응답 필드는 **5개로 고정**이다 — `journalId`·`buyTradeId`·`content`·`createdAt`·`updatedAt`. PRD·spec.md JOUR-002의 "투자일기 ID, 매수 체결 ID, 본문, 작성시각, 수정시각"과 1:1이다. **매도 배분·실현손익 등 후속 원장 정보는 넣지 않는다** — 잠금이 없어 그 값을 판정에 쓰지도 않고, `GET /api/trades`가 이미 제공한다.
+
+### 응답 DTO를 분리하는 이유
+
+JOUR-004 §"응답 DTO를 분리하는 이유"와 **같은 판단을 그대로 적용한다.** `BuyJournalResponse`(작성, 4필드)는 PR #181로 이미 배포됐으므로 필드를 늘리지 않고, 수정 응답은 새 레코드 `BuyJournalUpdateResponse`(5필드)로 만든다. 두 회고가 같은 패턴을 쓰게 되어 프론트엔드가 예측하기 쉬워진다는 점이 이번에 추가되는 이유다.
+
+### 입력 명세
+
+| 필드 | 위치 | 필수 | 검증 |
+|---|---|---|---|
+| `buyTradeId` | path | 필수 | 숫자(`Long`). 파싱 불가 400 `VALIDATION_ERROR`, 없으면 404 `NOT_FOUND`, 타인 소유면 403 `FORBIDDEN`, `side != BUY`면 400 `VALIDATION_ERROR`, 매수 회고가 아직 없으면 404 `NOT_FOUND` |
+| `content` | body | 필수 | `@NotBlank` + `@Size(max = 5000)` — 작성(JOUR-001)과 **같은 상한**. 네 계약(매수·매도 × 작성·수정)이 모두 같은 값을 쓴다 |
+
+- 본문 검증이 경로 검증보다 먼저 일어나는 순서(없는 체결 + 공백 본문 = 400), 트림 없이 원문 저장, `~UpdateRequest` 별도 레코드 분리는 모두 JOUR-004와 동일하다.
+
+### 오류 매핑
+
+| 상황 | 상태 | 코드 |
+|---|---|---|
+| `content` 누락·공백·5000자 초과, `buyTradeId` 타입 불일치 | 400 | `VALIDATION_ERROR` |
+| 대상 체결의 `side`가 `BUY`가 아님(=매도 체결) | 400 | `VALIDATION_ERROR` |
+| Access 인증 실패·미첨부 | 401 | `UNAUTHORIZED` |
+| 타인 소유 체결 | 403 | `FORBIDDEN` |
+| `buyTradeId`에 해당하는 체결 없음 | 404 | `NOT_FOUND` |
+| 체결은 있으나 그 체결에 매수 회고가 아직 없음 | 404 | `NOT_FOUND` |
+
+**검증 순서는 `체결 존재(404) → 소유(403) → 매수 여부(400) → 회고 존재(404)`로 고정한다** (spec.md JOUR-002). **409는 이 계약에 없다** — 수정은 새 행을 만들지 않아 유니크 제약을 위반할 경로가 없다. **`JOURNAL_LOCKED`를 포함해 새 `ErrorCode` 상수를 추가하지 않는다** — 위 5개는 모두 기존 enum에 있고, 잠금 상태(423/409 등)에 해당하는 응답은 이 계약에 존재하지 않는다.
+
+### 데이터 모델
+
+#### 마이그레이션 — `buy_trade_journals`에 `updated_at` 추가
+
+**조사 시점(2026-08-04) `dev`의 최신 마이그레이션은 `V18__add_updated_at_to_sell_trade_journals.sql`이므로 다음 번호는 `V19`다.** 파일명은 `V19__add_updated_at_to_buy_trade_journals.sql`. **구현 착수 직전에 `ls src/main/resources/db/migration | sort -V | tail`로 한 번 더 대조한다** — 이 spec은 이미 V14→V15 재번호화(ADR-0004, `docs/agent-mistakes.md` 2026-08-03)와 V16→V17 재확인을 겪었다.
+
+DDL은 **JOUR-004의 `V18`과 같은 3단계**다(테이블명만 다르다). 기존 행에 `NOT NULL` 컬럼을 추가할 때 상수 `DEFAULT`로는 "행마다 다른 값"(그 행의 `created_at`)을 채울 수 없으므로 한 파일 안에서 순서대로 실행한다.
+
+```sql
+ALTER TABLE buy_trade_journals
+    ADD COLUMN updated_at DATETIME(6) NULL;
+
+UPDATE buy_trade_journals
+    SET updated_at = created_at
+    WHERE updated_at IS NULL;
+
+ALTER TABLE buy_trade_journals
+    MODIFY COLUMN updated_at DATETIME(6) NOT NULL;
+```
+
+**작성 직후(아직 수정하지 않은) 회고의 `updated_at`은 `created_at`과 같은 값으로 둔다** — 근거 3가지(컬럼을 `NOT NULL`로 유지 / "수정 여부"를 널 여부로 판단하는 코드가 생기지 않음 / 백필 단순화)는 JOUR-004 §데이터 모델과 동일하다. **두 회고 테이블이 같은 규칙을 쓰는 것이 이번 착수의 추가 근거다** — 한쪽만 `NULL` 허용이면 JOUR-005·006이 두 테이블을 합쳐 조회할 때 분기가 생긴다.
+
+- 이 컬럼이 유일한 스키마 변경이다. **원장 테이블(`orders`·`trades`·`accounts`·`holdings`·`holding_lots`·`trade_allocations`)에는 `ALTER`·`DROP`이 없다.**
+- 잠금이 없으므로 `buy_trade_journals`에 `locked_at`·`locked` 같은 컬럼이나 `trade_allocations` 참조 인덱스를 만들지 않는다.
+
+#### 엔티티 `BuyTradeJournal` — 필드·수정 메서드 추가
+
+현재 엔티티(`src/main/java/com/finplay/api/journal/domain/BuyTradeJournal.java`)는 `id`·`buyTrade`·`content`·`createdAt`만 있고 정적 팩토리 `of(Trade, String, LocalDateTime)`로만 생성된다. **`SellTradeJournal`이 JOUR-004에서 받은 변경과 같은 형태**로 바꾼다.
+
+```java
+@Column(name = "updated_at", nullable = false)
+private LocalDateTime updatedAt;
+```
+
+- `of(Trade buyTrade, String content, LocalDateTime now)`는 **`updatedAt`도 같은 `now`로 채운다** — 시그니처는 바꾸지 않으므로 호출부(`JournalService.createBuyJournal`)를 수정할 필요가 없다. `SellTradeJournal.of(...)`가 이미 같은 방식이다.
+- 수정은 setter가 아니라 의도가 드러나는 `updateContent(String content, LocalDateTime updatedAt)`로 한다(컨벤션 Entity 규칙, `SellTradeJournal.updateContent` 선례).
+- `buyTrade`·`createdAt`·`id`를 바꾸는 메서드는 만들지 않는다.
+- 저장은 JPA 변경 감지(dirty checking)에 맡긴다 — `updateSellJournal`이 이미 그렇게 동작하며, 같은 관례를 따른다.
+- **두 엔티티의 공통 상위 클래스(`@MappedSuperclass`)는 이번에도 만들지 않는다.** 필드 4개가 같아졌지만 테이블 통합 여부가 JOUR-005 게이트에 걸려 있어, 상속을 넣으면 게이트 결정 때 두 번 푼다(JOUR-003 §엔티티 절의 판단을 유지한다).
+
+#### `BuyTradeJournalRepository` — 조회 메서드 추가
+
+```java
+Optional<BuyTradeJournal> findByBuyTradeId(Long buyTradeId);
+```
+
+- 기존 `existsByBuyTradeId`(작성에서 씀)는 그대로 둔다. 용도가 다르다 — 작성은 boolean만, 수정은 엔티티를 로드해 dirty checking 대상으로 삼아야 한다. `SellTradeJournalRepository`가 `existsBySellTradeId` + `findBySellTradeId` 둘을 갖는 것과 같은 구성이다.
+- `uk_buy_trade_journals_buy_trade` 유니크 제약이 결과 최대 1건을 스키마로 보장하므로 `Optional` 단건 반환이 맞다. QueryDSL을 쓰지 않는다.
+
+### 구성요소 설계
+
+기존 `com.finplay.api.journal` 패키지에 **추가**한다. 새 도메인 패키지·새 컨트롤러 클래스를 만들지 않는다.
+
+```
+com.finplay.api.journal
+├── controller/JournalController.java              (기존 — PATCH 메서드 1개 추가)
+├── service/JournalService.java                    (기존 — updateBuyJournal 1개 추가)
+├── repository/BuyTradeJournalRepository.java      (기존 — findByBuyTradeId 1개 추가)
+├── domain/BuyTradeJournal.java                    (기존 — updatedAt 필드 + updateContent 메서드 추가)
+└── dto/
+    ├── request/BuyJournalUpdateRequest.java       (신규)
+    └── response/BuyJournalUpdateResponse.java     (신규)
+```
+
+#### `JournalController`
+
+- `@PatchMapping("/{buyTradeId}/journal")` 메서드를 추가한다. 기존 `@RequestMapping("/api/trades")`와 나머지 3개 메서드는 그대로 둔다.
+- `@AuthenticationPrincipal AuthenticatedUser principal`, `@PathVariable Long buyTradeId`, `@Valid @RequestBody BuyJournalUpdateRequest request`를 받아 서비스에 위임하고 `ResponseEntity.ok(...)`(200)를 반환한다. `updateSellJournal` 메서드와 형태가 같다.
+- 컨트롤러에 비즈니스 판단·repository 호출·try-catch를 두지 않는다.
+
+#### `JournalService`
+
+```java
+@Transactional
+public BuyJournalUpdateResponse updateBuyJournal(Long userId, Long buyTradeId, String content)
+```
+
+1. `Trade trade = tradeService.getOwnedTrade(userId, buyTradeId);` — 없으면 404 `NOT_FOUND`, 타인 소유면 403 `FORBIDDEN`. **`TradeService`는 변경하지 않는다.**
+2. `trade.getSide() != OrderSide.BUY`면 400 `VALIDATION_ERROR`.
+3. `BuyTradeJournal journal = buyTradeJournalRepository.findByBuyTradeId(buyTradeId).orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));` — 회고가 없으면 404. **여기서 새 회고를 만들지 않는다(upsert 금지).**
+4. `journal.updateContent(content, LocalDateTime.now(clock));` — 기존 `Clock` 필드를 그대로 쓴다.
+5. `return BuyJournalUpdateResponse.from(journal);`
+
+- **잠금 판정 단계가 없다는 것이 이 설계의 핵심이다.** 2단계와 3단계 사이에 "이 매수 lot에 배분이 있는지" 같은 조회를 넣지 않는다 — `HoldingLotRepository`·`TradeAllocationRepository`를 주입하지 않고, `updateSellJournal`과 단계 수가 정확히 같다. 리뷰에서 이 대칭이 깨졌다면 잠금 로직이 새어 들어온 것이다.
+- 트랜잭션 경계는 이 메서드 하나다. 낙관적 락(`@Version`)을 두지 않는다(last-write-wins, spec.md). 유니크 위반 변환(`DataIntegrityViolationException` → 409)도 없다 — `UPDATE`라 해당 경로가 없다.
+- 이 메서드가 `buy_trade_journals` 외에 쓰는 테이블은 없다. 원장은 1단계에서 읽기만 한다.
+
+#### DTO 2개
+
+- `BuyJournalUpdateRequest(content)` — `BuyJournalCreateRequest`와 검증 애노테이션은 같지만 별도 record(컨벤션 `~UpdateRequest`).
+- `BuyJournalUpdateResponse(journalId, buyTradeId, content, createdAt, updatedAt)` + `from(BuyTradeJournal)` 정적 팩토리. record로 만든다.
+
+#### 기존 코드 변경 범위
+
+- **작성 경로(`createBuyJournal`, `BuyJournalResponse`, `BuyJournalCreateRequest`)를 리팩터링하지 않는다.** `BuyTradeJournal.of(...)`가 내부적으로 `updatedAt`도 채우는 것 외에는 동작·계약이 그대로다.
+- **매도 회고 경로(JOUR-003·004)는 전혀 건드리지 않는다.**
+- **`TradeService`·`OrderService`·FIFO 배분 코드를 변경하지 않는다.**
+- **매수·매도 네 유스케이스의 공통 추상화를 지금 만들지 않는다** (spec.md 범위 제외). 이번 PR의 diff는 추가 위주다.
+
+### 테스트 계획 (ADR-0003)
+
+JOUR-004 테스트와 **대칭**으로 만들되, 잠금 없음을 고정하는 통합 케이스가 추가된다.
+
+- **단위** (`JournalServiceTest`, Mockito)
+  - 정상 수정 시 `updateContent` 호출 인자(새 본문·고정 `Clock` 시각)와 반환 DTO 5필드(`createdAt`은 원본 유지, `updatedAt`만 갱신).
+  - 없는 체결 → 404, 타인 체결 → 403, **매도 체결 → 400**, 회고 미작성 → 404.
+  - **검증 순서**: 타인 소유의 매도 체결이 403이고 400이 아니며, 회고가 없어도 소유·매수 여부 판정이 먼저다.
+  - 체결 없음 404와 회고 없음 404를 **별도 테스트로 구분**한다(같은 `ErrorCode`지만 트리거 지점이 달라 회귀 시 어느 단계가 깨졌는지 알 수 있어야 한다).
+  - 연속 2회 수정 시 두 번째 `updatedAt`이 더 이후이고 `content`는 두 번째 값만 남는다.
+- **슬라이스**
+  - `@DataJpaTest`(`BuyTradeJournalRepositoryTest`) — ① `findByBuyTradeId`가 존재/부재에서 값 있음/`empty()` ② `updateContent` 후 flush하면 `content`·`updated_at`만 바뀌고 `created_at`·`buy_trade_id`·`id`는 그대로 ③ 신규 컬럼의 `NOT NULL` 제약.
+  - `@WebMvcTest`(`JournalControllerTest`) — 200 본문 `jsonPath` 5필드, 공백·누락·5000자 초과 400, 숫자 아닌 `buyTradeId` 400, 미인증 401, 서비스 예외의 400·403·404 매핑(**409 케이스 없음**).
+- **통합** (`@SpringBootTest` + Testcontainers, 기존 `JournalIntegrationTest`에 추가)
+  - 매수 체결 → 회고 작성 → PATCH 수정 → 200, DB 여전히 1행, `content` 갱신, `updatedAt > createdAt`(`Clock`을 진행시켜 두 값이 다름을 보장).
+  - **잠금 없음 회귀 (이 착수의 핵심)** — ① 매도한 적 없는 매수 체결 ② **부분 매도로 `trade_allocations` 행이 생긴** 매수 체결 ③ **전량 매도된** 매수 체결, 세 경우 모두 수정이 200이다. ②·③은 `005-order-sell` 경로를 실제로 태워 배분을 만든 뒤 수정한다 — 잠금 규정이 코드로 되살아나면 이 테스트가 먼저 깨진다.
+  - **연속 2회 수정** 모두 200이고 마지막 본문만 남는다.
+  - 없는 체결 404 · **회고 미작성 404** · 타인 소유 403 · 매도 체결 400 · 공백 본문 400.
+  - **upsert 아님 확인** — 회고 미작성 상태에서 PATCH가 404로 실패한 뒤 `buy_trade_journals` 행 수가 0이다.
+  - 매수 회고 작성(`POST .../journal`)·매도 회고 작성·수정(`POST`·`PATCH .../sell-journal`) 기존 테스트가 그대로 통과.
+  - **원장 불변** — 성공·실패 각 경로 전후로 `orders`·`trades`·`accounts`·`holdings`·`holding_lots`·`trade_allocations`가 동일하다. 특히 **배분이 있는 lot을 수정한 뒤에도 `trade_allocations`·`holding_lots`가 그대로**임을 확인한다.
+  - 신규 마이그레이션 적용 후 `ddl-auto=validate` 기동 통과.
+
+### 문서 갱신 (CLAUDE.md 규칙 7)
+
+- `docs/api-routes.md` — `journal` 도메인에 `PATCH /api/trades/{buyTradeId}/journal` 행 추가 (근거 열: `007 JOUR-002, Issue #197`).
+- `docs/api-contracts.md` `## journal` 절 — 매수 회고 작성 절 아래에 "매수 체결 투자일기 수정" 소절을 추가한다. 매도 회고 수정 절과의 대칭(메서드 PATCH, 상태 200, 응답 5필드, 회고 없으면 404, 409 없음)과 **잠금 없음(매도 배분 여부와 무관하게 항상 수정 가능)**을 본문에 적는다.
+- **`docs/prd.md` JOUR-002·`docs/specs/005-order-sell/spec.md`의 잠금 규정 갱신은 이번 착수의 문서 커밋에서 이미 완료했다** (2026-08-04) — 구현 커밋에서 다시 손대지 않는다.
+- 컨트롤러 변경과 **같은 커밋**에서 API 문서 2개를 갱신한다.
+
 ## 이 spec에서 하지 않는 것
 
 `./spec.md` §범위 제외가 정본이다. 특히 **JOUR-002(수정)·JOUR-005(상세)는 PRD가 Decision Gate 미해결로 표시**했으므로, 그 계약을 미리 반영한 컬럼·필드·URL을 이번 구현에 넣지 않는다. 매도 회고 수정(JOUR-004)은 이번 이슈 다음의 별도 이슈이며, 그 때문에 `sell_trade_journals`에 `updated_at`을 미리 만들지 않는다.
 
 > **2026-08-04 갱신**: 위 문단은 JOUR-003 착수 시점(이슈 #183)의 기록이며 그 시점 기준으로는 여전히 맞다("다음 별도 이슈" = 지금 이 JOUR-004). JOUR-004는 이제 이번 spec의 착수 범위이고, 실제 설계는 위 §JOUR-004 매도 회고 수정 설계를 따른다. 매수 회고 수정(JOUR-002)·투자일기 상세(JOUR-005)는 여전히 Decision Gate 미해결로 범위 밖이다.
+>
+> **2026-08-04 재갱신 (이슈 #197)**: **JOUR-002의 Decision Gate는 해제됐다** — 잠금을 두지 않기로 확정했고(`./spec.md` §비즈니스 규칙 "매수 회고 수정 잠금 없음", `docs/prd.md` JOUR-002), 설계는 위 §JOUR-002 매수 회고 수정 설계를 따른다. 따라서 `buy_trade_journals`의 `updated_at`을 이번 착수에서 추가한다. **투자일기 상세(JOUR-005)의 식별자 체계 게이트만 남았고**, 목록(JOUR-006)과 함께 여전히 범위 밖이다.
