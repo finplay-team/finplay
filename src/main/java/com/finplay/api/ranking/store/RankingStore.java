@@ -19,7 +19,8 @@ public class RankingStore {
 
 	private static final String KEY_PREFIX = "ranking:";
 	private static final int MAX_ATTEMPTS = 3;
-	private static final long[] BACKOFF_MILLIS = {50, 150, 450};
+	// MAX_ATTEMPTS번째 시도는 실패해도 sleep 없이 즉시 포기하므로, 배열 길이는 MAX_ATTEMPTS-1이어야 한다.
+	private static final long[] BACKOFF_MILLIS = {50, 150};
 
 	private final StringRedisTemplate redisTemplate;
 
@@ -83,6 +84,8 @@ public class RankingStore {
 	// score(accounts.realized_pnl)는 항상 정수(long)이므로 하한을 score+1로 잡아도 "엄격히 큼"과 동치다.
 	public long countStrictlyGreater(Market market, long score) {
 		// score == Long.MAX_VALUE면 score+1이 오버플로해 Long.MIN_VALUE가 되므로 하한을 클램핑한다.
+		// 클램핑된 경우 lowerBound == score라 자기 자신도 포함돼 "엄격히 큼"이 정확히는 아니지만,
+		// KRW 실현손익 규모에서 이 값에 도달할 수 없어 더 정교하게 고치지 않는다(PR #196 리뷰 참고).
 		long lowerBound = Math.min(score, Long.MAX_VALUE - 1) + 1;
 		Long count = redisTemplate.opsForZSet().count(key(market), lowerBound, Double.POSITIVE_INFINITY);
 		return count == null ? 0 : count;
