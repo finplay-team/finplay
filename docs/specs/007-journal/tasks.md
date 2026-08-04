@@ -348,7 +348,7 @@
   - 검증 — 단위 테스트(`JournalCursorTest`): 정상 파싱, `null`/빈 문자열 → `null`, 파싱 실패 400, `encode` 형식.
   - 검증 — `@DataJpaTest`(기존 `BuyTradeJournalRepositoryTest`·`SellTradeJournalRepositoryTest`에 케이스 추가): 다른 계좌 회고 미포함, 커서 이전 항목만 반환, `createdAt` 동점 시 체결 ID 내림차순, `fetchSize` 준수.
 
-- [ ] **L2. `JournalService.getMyJournalEntries` — 병합·정렬 유스케이스 (단위 테스트 포함)**
+- [x] **L2. `JournalService.getMyJournalEntries` — 병합·정렬 유스케이스 (단위 테스트 포함)**
 
   `plan.md` §`JournalService.getMyJournalEntries`의 1~7단계를 구현한다. `AccountService`를 새로 주입받는다.
   - 계좌 없음 → 404(`AccountService.getAccountFor`가 던지는 예외 그대로 전파, 별도 catch 없음).
