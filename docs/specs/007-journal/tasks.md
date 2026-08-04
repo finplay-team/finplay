@@ -188,7 +188,7 @@
   - `updatedAt`은 주입받은 `Clock`으로 만든다(기존 필드 재사용, 추가 주입 없음).
   - 검증 — 단위 테스트: 정상 수정(고정 시각·`updateContent` 호출 인자·반환 DTO 5필드), 404(체결 없음)·403·400(매수 체결)·404(회고 미작성) 각 경로, **타인의 매수 체결이 403**(400 아님), **체결 없음 404와 회고 없음 404를 별도 테스트로 구분**, 연속 2회 수정 시 두 번째 `updatedAt`이 더 이후이고 마지막 본문만 남음.
 
-- [ ] **U3. `JournalController` PATCH 엔드포인트 + DTO 2개 + 문서 갱신**
+- [x] **U3. `JournalController` PATCH 엔드포인트 + DTO 2개 + 문서 갱신**
 
   `PATCH /api/trades/{sellTradeId}/sell-journal`을 기존 컨트롤러에 추가하고 record DTO 2개(`SellJournalUpdateRequest`, `SellJournalUpdateResponse`)를 만든다. 응답 필드는 `journalId`·`sellTradeId`·`content`·`createdAt`·`updatedAt` 5개 고정이다. 성공 상태는 200이다(생성이 아니므로 201 아님).
   - 컨트롤러에 비즈니스 판단·repository 호출·try-catch를 두지 않는다.
