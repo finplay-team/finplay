@@ -126,4 +126,38 @@ class FavoriteRepositoryTest {
 		assertThat(favoriteRepository.existsByUserIdAndInstrumentId(user.getId(), instrument.getId())).isTrue();
 		assertThat(favoriteRepository.existsByUserIdAndInstrumentId(user.getId(), instrument.getId() + 1)).isFalse();
 	}
+
+	@Test
+	void findByOwnerAndInstrumentForUpdateReturnsOnlyOwnersFavorite() {
+		User otherUser = userRepository.saveAndFlush(User.create(
+			"favorite-delete-other@finplay.com", "hash", "favorite-delete-other", NOW));
+		Favorite favorite = favoriteRepository.saveAndFlush(Favorite.create(user, instrument, NOW));
+		entityManager.clear();
+
+		assertThat(favoriteRepository.findByUserIdAndInstrumentIdForUpdate(user.getId(), instrument.getId()))
+			.map(Favorite::getId).contains(favorite.getId());
+		assertThat(favoriteRepository.findByUserIdAndInstrumentIdForUpdate(otherUser.getId(), instrument.getId()))
+			.isEmpty();
+	}
+
+	@Test
+	void deleteRemovesOwnedFavoriteAndRepeatedLookupIsEmptyWithoutAffectingOtherUser() {
+		User otherUser = userRepository.saveAndFlush(User.create(
+			"favorite-delete-isolated@finplay.com", "hash", "favorite-delete-isolated", NOW));
+		Instrument otherInstrument = instrumentRepository.saveAndFlush(Instrument.create(
+			Market.STOCK, "FAV172B", "타인 즐겨찾기 종목", BigDecimal.ONE, 1L, true, NOW));
+		Favorite owned = favoriteRepository.saveAndFlush(Favorite.create(user, instrument, NOW));
+		Favorite other = favoriteRepository.saveAndFlush(Favorite.create(otherUser, otherInstrument, NOW));
+
+		favoriteRepository.delete(favoriteRepository
+			.findByUserIdAndInstrumentIdForUpdate(user.getId(), instrument.getId()).orElseThrow());
+		favoriteRepository.flush();
+		entityManager.clear();
+
+		assertThat(favoriteRepository.findByUserIdAndInstrumentIdForUpdate(user.getId(), instrument.getId()))
+			.isEmpty();
+		assertThat(favoriteRepository.findByUserIdAndInstrumentIdForUpdate(otherUser.getId(), otherInstrument.getId()))
+			.map(Favorite::getId).contains(other.getId());
+		assertThat(favoriteRepository.findById(owned.getId())).isEmpty();
+	}
 }

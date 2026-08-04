@@ -4,10 +4,11 @@
 - [x] #158: PRD 단계 분리와 10개 API 상세 계약, canonical UUID 멱등·새 transaction reconciliation, decimal·답변·evidence·진행 상태, intention/reflection과 favorite DELETE 경합 잠금, 실제 Spring transaction 경계, FK 기준 DDL, 15개 후보의 DAG·migration·transaction·test 소유권을 확정한다. `docs/api-routes.md`와 `docs/api-contracts.md`에는 구현 예정 계약으로 분리 등록하고 production은 변경하지 않는다.
 - [x] #163 (candidate 1): 거래 가능한 종목의 즐겨찾기 등록 API `POST /api/favorites`와 `(user_id, instrument_id)` 유일 제약을 구현한다.
 - [x] #168 (candidate 2): 본인 즐겨찾기를 등록 최신순으로 순수 조회하는 `GET /api/favorites`를 구현한다.
+- [x] #172 (candidate 3): 본인 즐겨찾기를 해제하는 `DELETE /api/favorites/{instrumentId}`를 구현한다.
 
 아래 6개는 현재 이슈의 미완료 작업이 아닌 상위 구현 작업 그룹이다. 실제 이슈 생성 시 `plan.md`의 15개 후보처럼 API 하나 또는 트랜잭션 경계 하나로 나누며 production 구현은 현재 지시하지 않는다.
 
-- [ ] 즐겨찾기 등록·순수 목록·해제 API와 `(user_id, instrument_id)` 유일 제약을 구현한다. GET은 write 없이 실제 favorite 포함 응답을 검증한다.
+- [x] 즐겨찾기 등록·순수 목록·해제 API와 `(user_id, instrument_id)` 유일 제약을 구현한다. GET은 write 없이 실제 favorite 포함 응답을 검증한다.
 - [ ] 최초 intention의 공통 `practice_progresses` atomic insert-or-existing, step 1 favorite와 같은 instrument 검증, 매수 전 손절·익절·수량 기록 API와 실제 시장가 매수 체결 chain을 구현한다.
 - [ ] nullable `trades.stock_replay_session_id`와 주식 fill session 기록, 공통 reservation ledger, 기존 MARKET SELL `availableQuantity` 변경을 OCO보다 먼저 또는 같은 atomic release로 배포한 뒤 tutorial-only OCO 생성 orchestration을 활성화한다. 일반 LIMIT SELL도 ledger 선행 전 활성화하지 않으며 order는 education repository에 직접 의존하지 않는다.
 - [ ] OCO 순수 예약 목록·취소 API를 구현한다: GET 무쓰기와 실제 plan 포함 응답, 취소 시 두 조건 종결·예약 1회 반환.
