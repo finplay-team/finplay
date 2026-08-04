@@ -14,6 +14,7 @@
 | 08:20 | reviewer(리뷰) | `git diff dev...HEAD` (worktree feat/193-tutorial-in-memory, HEAD 84d9013) | conventions.md, ADR-0002, ADR-0003, ADR-0004, ADR-0012, docs/specs/010-deployment/spec.md |
 | 18:25 | implementer(#193 리뷰 권장 반영) | `SyntheticPrice*`를 `education.synthetic` 서브패키지로 이동, `PracticeIntentionConcurrencyIntegrationTest`에 progress 롤백 실증 테스트 추가, `.\gradlew.bat compileJava` | 08:20 리뷰 권장 2건 |
 | 18:30 | implementer(#193 마이그레이션 번호 조정) | dev의 `V18__add_updated_at_to_sell_trade_journals.sql`과 충돌 회피 위해 `V19__drop_favorites_and_practice_intentions.sql`로 변경, `./gradlew build` 통과(HEAD 40260bd) | dev 선점 V18, CLAUDE.md 규칙 4 |
+| 15:37 | implementer/tester (candidate 5) | 주식 체결 세션 FK·기록 구현 및 대상 테스트, `.\gradlew.bat build` | HEAD `478c337`; 전체 build 성공 (9분) |
 
 ## 모니터링 (사람용 요약)
 - 02:19 — PR #173(candidate 3 즐겨찾기 해제) 리뷰 완료, 차단 0건 — 권장 2건, 머지 가능.
@@ -27,3 +28,4 @@
 - 08:20 — #193(즐겨찾기·사전 의도 인메모리 전환 + 합성 시세) 리뷰 완료. 동시성(ReentrantLock 재진입·잠금 순서 progress→favorite)·V19 마이그레이션·랜덤워크 로직 정확, 배포 spec과 충돌 없음(단일 인스턴스). 차단 0건 — 권장 2건(진행률 행 롤백 실증 테스트 공백, plan/tasks가 명시한 신규 서브패키지 미적용) / 참고 2건, 머지 가능.
 - 18:25 — 08:20 리뷰 권장 2건 반영: `SyntheticPrice*`를 `education.synthetic` 서브패키지로 이동, `PracticeIntentionConcurrencyIntegrationTest`에 progress 롤백 실증 테스트 추가.
 - 18:30 — dev에 먼저 병합된 `V18__add_updated_at_to_sell_trade_journals.sql`(무관 도메인)과 마이그레이션 번호가 충돌해 `V19__drop_favorites_and_practice_intentions.sql`로 변경. `./gradlew build` 통과(HEAD 40260bd).
+- 15:37 — #186(candidate 5) 완료: nullable `trades.stock_replay_session_id` FK와 주식 체결의 현재 replay session 기록, 코인 null 유지를 구현·테스트했다. HEAD `478c337`에서 전체 build 성공(9분)을 확인했다. Controller와 외부 JSON 계약 변경은 없어 계획 API 계약은 actual로 전환하지 않았다.
