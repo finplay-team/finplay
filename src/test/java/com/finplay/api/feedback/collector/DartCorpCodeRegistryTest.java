@@ -6,8 +6,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -22,6 +20,8 @@ import org.junit.jupiter.api.Test;
 class DartCorpCodeRegistryTest {
 
 	private static final String RESOURCE_PATH = "/dart-corp-codes.txt";
+
+	private static final String SEED_MIGRATION_PATH = "/db/migration/V7__create_instruments.sql";
 
 	// 파일 머리말이 정한 형식 — symbol 6자리, corp_code 8자리 숫자.
 	private static final Pattern DATA_LINE = Pattern.compile("\\d{6}=\\d{8}");
@@ -71,14 +71,19 @@ class DartCorpCodeRegistryTest {
 	}
 
 	// 기대값의 출처는 V7 마이그레이션이다. 시드가 정본이므로 목록을 테스트에 복사하지 않는다.
+	//
+	// 파일 경로가 아니라 클래스패스로 읽는다 — Path.of("src/main/resources/...")는 작업 디렉터리가
+	// 프로젝트 루트일 때만 맞아서 IDE 실행 구성에 따라 깨진다 (PR #174 리뷰 [참고]).
 	private static List<String> readSeedStockSymbols() throws IOException {
-		Path seed = Path.of("src/main/resources/db/migration/V7__create_instruments.sql");
-		Matcher matcher = SEED_STOCK.matcher(Files.readString(seed, StandardCharsets.UTF_8));
-		List<String> symbols = new ArrayList<>();
-		while (matcher.find()) {
-			symbols.add(matcher.group(1));
+		try (InputStream inputStream = DartCorpCodeRegistry.class.getResourceAsStream(SEED_MIGRATION_PATH)) {
+			assertThat(inputStream).as("%s가 클래스패스에 없다", SEED_MIGRATION_PATH).isNotNull();
+			Matcher matcher = SEED_STOCK.matcher(new String(inputStream.readAllBytes(), StandardCharsets.UTF_8));
+			List<String> symbols = new ArrayList<>();
+			while (matcher.find()) {
+				symbols.add(matcher.group(1));
+			}
+			return symbols;
 		}
-		return symbols;
 	}
 
 	// FEED-001 — 매핑에 없는 종목은 오류가 아니라 건너뛴다. 예외를 던지면 그 종목 하나가 수집 전체를 멈춘다.
