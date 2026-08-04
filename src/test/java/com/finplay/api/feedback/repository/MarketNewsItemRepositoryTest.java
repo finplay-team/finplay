@@ -11,7 +11,9 @@ import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.repository.InstrumentRepository;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -189,5 +191,98 @@ class MarketNewsItemRepositoryTest {
 		List<String> types = jdbcTemplate.queryForList("select type from market_news_items", String.class);
 
 		assertThat(types).containsExactly("DISCLOSURE");
+	}
+
+	// --- 근거 매칭 파인더 2종 (이슈 #180 항목 3) ---
+
+	private static final LocalDate ORIGIN_TRADE_DATE = LocalDate.of(2026, 7, 28);
+	private static final LocalDate PREVIOUS_TRADE_DATE = LocalDate.of(2026, 7, 27);
+
+	private void save(Instrument instrument, MarketNewsItemType type, String title, LocalDateTime publishedAt) {
+		marketNewsItemRepository.save(MarketNewsItem.create(
+			instrument,
+			type,
+			title,
+			"테스트경제",
+			"https://news.example.com/" + instrument.getSymbol() + "/" + title,
+			publishedAt,
+			publishedAt.plusMinutes(30)));
+	}
+
+	// 근거창은 양끝 포함이다(§C-2). BETWEEN이 실제로 양끝을 포함하는지는 실 쿼리로만 확인된다.
+	@Test
+	@DisplayName("발행시각 구간 조회는 양끝을 포함하고 밖의 1분은 제외한다")
+	void findByPublishedAtBetweenIncludesBothEndpointsAndExcludesTheMinutesOutside() {
+		save(instrumentA, MarketNewsItemType.NEWS, "09:29", LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(9, 29)));
+		save(instrumentA, MarketNewsItemType.NEWS, "09:30", LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(9, 30)));
+		save(instrumentA, MarketNewsItemType.NEWS, "10:05", LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(10, 5)));
+		save(instrumentA, MarketNewsItemType.NEWS, "10:06", LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(10, 6)));
+
+		List<MarketNewsItem> found = marketNewsItemRepository
+			.findByInstrumentIdAndTypeAndPublishedAtBetweenOrderByPublishedAtAsc(
+				instrumentA.getId(),
+				MarketNewsItemType.NEWS,
+				LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(9, 30)),
+				LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(10, 5)));
+
+		assertThat(found).extracting(MarketNewsItem::getTitle).containsExactly("09:30", "10:05");
+	}
+
+	@Test
+	@DisplayName("발행시각 구간 조회는 종류가 다른 항목과 다른 종목을 제외한다")
+	void findByPublishedAtBetweenFiltersByTypeAndInstrument() {
+		LocalDateTime insideWindow = LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(9, 58));
+		save(instrumentA, MarketNewsItemType.NEWS, "A 뉴스", insideWindow);
+		save(instrumentA, MarketNewsItemType.DISCLOSURE, "A 공시", insideWindow);
+		save(instrumentB, MarketNewsItemType.NEWS, "B 뉴스", insideWindow);
+
+		List<MarketNewsItem> found = marketNewsItemRepository
+			.findByInstrumentIdAndTypeAndPublishedAtBetweenOrderByPublishedAtAsc(
+				instrumentA.getId(),
+				MarketNewsItemType.NEWS,
+				LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(9, 30)),
+				LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(10, 5)));
+
+		assertThat(found).extracting(MarketNewsItem::getTitle).containsExactly("A 뉴스");
+	}
+
+	// JPQL에 FQN enum 리터럴(com.finplay.api...MarketNewsItemType.DISCLOSURE)을 쓰므로 부트스트랩만
+	// 통과하고 결과가 틀릴 수 있다. 같은 날 NEWS를 함께 심어 종류 필터가 실제로 걸리는지 단정한다.
+	@Test
+	@DisplayName("findDisclosuresReceivedOn은 그날 접수된 공시만 주고 같은 날 뉴스는 제외한다")
+	void findDisclosuresReceivedOnReturnsOnlyDisclosuresOfThatReceiptDate() {
+		save(instrumentA, MarketNewsItemType.DISCLOSURE, "D-1 접수 공시", PREVIOUS_TRADE_DATE.atStartOfDay());
+		save(instrumentA, MarketNewsItemType.NEWS, "D-1 뉴스",
+			LocalDateTime.of(PREVIOUS_TRADE_DATE, LocalTime.of(18, 0)));
+
+		List<MarketNewsItem> found = marketNewsItemRepository.findDisclosuresReceivedOn(
+			instrumentA.getId(), PREVIOUS_TRADE_DATE.atStartOfDay(), ORIGIN_TRADE_DATE.atStartOfDay());
+
+		assertThat(found).extracting(MarketNewsItem::getTitle).containsExactly("D-1 접수 공시");
+	}
+
+	// 경계는 [fromInclusive, toExclusive) 반열림이다 — 하루의 끝을 23:59:59로 적지 않기 위한 형태다.
+	@Test
+	@DisplayName("findDisclosuresReceivedOn은 from 정각을 포함하고 to 정각을 제외한다")
+	void findDisclosuresReceivedOnIsHalfOpen() {
+		save(instrumentA, MarketNewsItemType.DISCLOSURE, "from 정각", PREVIOUS_TRADE_DATE.atStartOfDay());
+		save(instrumentA, MarketNewsItemType.DISCLOSURE, "구간 끝 직전",
+			LocalDateTime.of(PREVIOUS_TRADE_DATE, LocalTime.of(23, 59)));
+		save(instrumentA, MarketNewsItemType.DISCLOSURE, "to 정각", ORIGIN_TRADE_DATE.atStartOfDay());
+
+		List<MarketNewsItem> found = marketNewsItemRepository.findDisclosuresReceivedOn(
+			instrumentA.getId(), PREVIOUS_TRADE_DATE.atStartOfDay(), ORIGIN_TRADE_DATE.atStartOfDay());
+
+		assertThat(found).extracting(MarketNewsItem::getTitle).containsExactly("from 정각", "구간 끝 직전");
+	}
+
+	@Test
+	@DisplayName("findDisclosuresReceivedOn은 다른 종목의 공시를 제외하고 없으면 빈 목록이다")
+	void findDisclosuresReceivedOnFiltersByInstrumentAndReturnsEmptyWhenThereIsNone() {
+		save(instrumentB, MarketNewsItemType.DISCLOSURE, "B 공시", PREVIOUS_TRADE_DATE.atStartOfDay());
+
+		assertThat(marketNewsItemRepository.findDisclosuresReceivedOn(
+			instrumentA.getId(), PREVIOUS_TRADE_DATE.atStartOfDay(), ORIGIN_TRADE_DATE.atStartOfDay()))
+			.isEmpty();
 	}
 }

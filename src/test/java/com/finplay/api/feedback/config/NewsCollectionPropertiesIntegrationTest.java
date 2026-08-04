@@ -63,6 +63,24 @@ class NewsCollectionPropertiesIntegrationTest {
 			.isEqualTo(SPEC_DISCLOSURE_CRON);
 	}
 
+	// 근거 매칭 3키(이슈 #180 항목 3)는 크론과 달리 Environment가 아니라 record 빈으로 읽지만, §C-7이
+	// "yml과 @DefaultValue 양쪽에 값을 둔다"로 정했으므로 두 곳이 갈리지 않는지 여기서 대조한다.
+	@Test
+	@DisplayName("application.yml에 feedback.news 근거 매칭 3키가 §C-7 값으로 실제 존재한다")
+	void applicationYmlDeclaresEveryFeedbackNewsMatchingKey() {
+		assertThat(environment.getProperty("feedback.news.match-before-minutes")).isEqualTo("30");
+		assertThat(environment.getProperty("feedback.news.match-after-minutes")).isEqualTo("5");
+		assertThat(environment.getProperty("feedback.news.max-sources-per-card")).isEqualTo("5");
+	}
+
+	@Test
+	@DisplayName("기동한 컨텍스트의 FeedbackNewsProperties 빈이 §C-7 근거 매칭 값을 갖는다")
+	void feedbackNewsPropertiesBeanHoldsSpecMatchingValues() {
+		assertThat(newsProperties.matchBeforeMinutes()).isEqualTo(30);
+		assertThat(newsProperties.matchAfterMinutes()).isEqualTo(5);
+		assertThat(newsProperties.maxSourcesPerCard()).isEqualTo(5);
+	}
+
 	// 시크릿이라 값 자체는 단정하지 않는다(환경마다 다르다). 대신 §C-7이 확정한 키 경로가 Environment에
 	// 실제 존재하고, record 빈이 그 경로에서 값을 받아 오는지를 본다 — 키 경로가 갈리면 여기서 깨진다.
 	@Test

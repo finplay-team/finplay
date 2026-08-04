@@ -22,5 +22,27 @@ public record FeedbackNewsProperties(
 	String collectCron,
 	// 공시 수집. 공시는 주식만이고 OpenDART 접수 시간대에만 새 건이 생긴다(FEED-001).
 	@DefaultValue("0 0/30 8-20 * * MON-FRI")
-	String disclosureCron) {
+	String disclosureCron,
+	// 주식 장중 카드 근거창의 이전 방향 폭(분). 근거창은 [windowEnd - 이 값, windowEnd + match-after-minutes]다(§C-2).
+	@DefaultValue("30")
+	int matchBeforeMinutes,
+	// 같은 근거창의 이후 방향 폭(분). 기사가 가격 움직임보다 늦게 뜨는 경우가 있어 뒤쪽도 연다.
+	@DefaultValue("5")
+	int matchAfterMinutes,
+	// 카드 1건에 붙일 최대 근거 수. 넘으면 발행시각이 이벤트에 가까운 순으로 자른다(§뉴스 매칭 범위).
+	@DefaultValue("5")
+	int maxSourcesPerCard) {
+
+	// 이 셋만 막는다 — 잘못된 값이 예외도 로그도 없이 "근거 0건 → 카드 미생성"으로 나타나기 때문이다(FEED-003).
+	// 크론은 문자열이라 여기서 검증하지 않는다(파싱 가능성은 NewsCollectionPropertiesTest가 확정한다).
+	public FeedbackNewsProperties {
+		if (matchBeforeMinutes < 0 || matchAfterMinutes < 0) {
+			// 음수면 근거창의 시작이 끝보다 늦어 BETWEEN이 항상 빈 결과다 — 카드가 매일 0건이 된다.
+			throw new IllegalArgumentException("feedback.news의 근거창 폭은 0 이상이어야 합니다.");
+		}
+		if (maxSourcesPerCard < 1) {
+			// 0이면 근거를 전부 잘라 내고, 근거 0건인 카드는 만들지 않으므로 카드가 하나도 생기지 않는다.
+			throw new IllegalArgumentException("feedback.news.max-sources-per-card는 1 이상이어야 합니다.");
+		}
+	}
 }

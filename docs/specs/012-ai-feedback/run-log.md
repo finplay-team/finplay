@@ -49,6 +49,7 @@
 | 10:40 | 메인 세션 | `gradlew.bat test --tests DartCorpCodeRegistryTest` — 재리뷰 [참고] 반영. 시드 종목 목록을 프로젝트 루트 상대경로(`Path.of`) 대신 클래스패스로 읽어 작업 디렉터리 의존을 없앴다. 이 표에 `6875ab2`·`c76744c` 행 추가([권장] 반영) | PR #174 2차 리뷰 [권장] 1·[참고] 1, `docs/specs/README.md` 기록 형식 |
 | 11:20 | implementer | `gradlew.bat compileJava` + `spotlessApply` + `spotbugsMain` (이슈 #180 tasks 1번 — `feedback.detection` 설정 블록·`PriceMoveDetector`) | tasks.md #180 1번, spec.md §탐지 알고리즘(주식)·§C-2-1·§C-6·§C-7·§C-8·FEED-002, conventions.md(레이어·DTO record·Lombok), ADR-0002, `FeedbackLlmProperties`/`FeedbackLlmConfig`·`NewsTitleFilter` 선례 |
 | 11:50 | implementer | `gradlew.bat compileJava spotlessApply spotbugsMain` + `test --tests "*StockCandleRepositoryTest*"`(파생 쿼리 이름이 실제 부트스트랩되는지 확인) (이슈 #180 tasks 2번 — `market` 조회 메서드 4종) | tasks.md #180 2번, spec.md §C-6 표·§C-2-1·§코드 배치와 설정·FEED-002·FEED-004, conventions.md(레이어·DTO record), ADR-0002, agent-mistakes.md 2026-08-03(파생 쿼리) |
+| 12:05 | implementer | `gradlew.bat compileJava spotlessApply spotbugsMain` + `test --tests "*MarketNewsItemRepositoryTest*" --tests "*NewsCollectionPropertiesTest*"`(새 파인더 2종 부트스트랩·record 재바인딩 확인) (이슈 #180 tasks 3번 — `NewsMatcher`) | tasks.md #180 3번, spec.md §C-2·§C-2-1·§C-3·§C-6·§C-7·§뉴스 매칭 범위·FEED-003, conventions.md, agent-mistakes.md 2026-08-03(파생 쿼리) |
 
 ## 모니터링 (사람용 요약)
 - 11:40 — 문서 리뷰 완료, 차단 9건(노출 판정 전장 기사 역전, UNIQUE(url) 잔존 모순, 코인 경로 미정의, 장마감 배치 부재, 배치용 전일치 분봉 조회 경로 부재, PRD 수집주기 모순 등) / 권장 12건.
@@ -148,3 +149,5 @@
 - 11:20 — 이슈 #180 착수. `feedback.detection` 5키(yml + `@DefaultValue`)와 `PriceMoveDetector`(순수 계산) 신설 — 인덱싱을 전부 `TreeMap<LocalTime, 분봉>` 시각 조회로 두어 결측 구간에서는 그 표본·후보를 제외하고, 시가·첫 분봉을 리터럴이 아니라 "가장 이른 분봉"으로 찾는다. 스키마·컨트롤러 무변경. 컴파일·SpotBugs 통과.
 
 - 11:50 — `market`에 조회 4종 신설(`getCurrentReplaySession`·`getSourceTradingDate`·`getFullDayCandles`·`getPreviousTradingDayClose`). 게이트를 우회하는 뒤 두 개에는 "배치에서 부르는 것이 기본, 조회 경로는 §C-5 통과 후"를 주석으로 남겼다. 직전 종가는 `BusinessDayCalendar.previousBusinessDay`로 D-1을 구해 그 날의 마지막 분봉을 읽는다 — "그 종목의 가장 최근 분봉"으로 하면 수집이 빈 종목에서 일주일 전 종가로 없는 갭을 만든다. `StockReplaySessionScheduler`는 건드리지 않았고 `feedback` 쪽 변경도 없다.
+
+- 12:05 — `NewsMatcher` 신설(장중=`[windowEnd±근거창]`의 뉴스만, 시가 갭=전장 뉴스 + `rcept_dt=D-1` 공시). **공시를 뉴스와 같은 datetime 구간에 태우지 않는 것이 이 항목의 핵심**이다 — 그러면 D-1 접수분은 전장 시작보다 일러 빠지고 D 접수분은 장중 접수분까지 끌고 들어온다(§C-3). 그래서 파인더를 둘로 나눴다(뉴스=시각 구간 파생 쿼리, 공시=반열림 날짜 `@Query`). `feedback.news`에 `match-before-minutes`·`match-after-minutes`·`max-sources-per-card` 3키를 §C-7 방침대로 yml+`@DefaultValue` 양쪽에 더했다(이 이슈가 안 쓰는 상한·코인 키는 더하지 않았다).

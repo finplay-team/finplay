@@ -149,3 +149,8 @@ feedback:
     # 수집되지 않고, 저녁·야간 기사가 다음 날 아침 브리핑의 주재료다(FEED-001).
     collect-cron: "0 0/30 * * * *" # 24시간 30분 간격
     disclosure-cron: "0 0/30 8-20 * * MON-FRI" # 공시는 주식만
+    # 근거 매칭(NewsMatcher)이 쓰는 값. 정본은 spec §C-2(근거창)·§뉴스 매칭 범위(상한·절단)이고 크론과 달리
+    # Environment가 아니라 record 빈으로 읽는다 — 그래도 §C-7 방침대로 양쪽에 값을 둔다.
+    match-before-minutes: 30 # 주식 장중 카드 근거 탐색 (이전)
+    match-after-minutes: 5 # 주식 장중 카드 근거 탐색 (이후)
+    max-sources-per-card: 5 # 카드 1건에 붙일 최대 근거 수
