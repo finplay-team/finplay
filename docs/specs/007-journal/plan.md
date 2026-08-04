@@ -10,7 +10,7 @@
 | `./spec.md` | 요구사항·비즈니스 규칙·완료 조건 (정본) |
 | `./tasks.md` | 커밋 단위 작업 분해 |
 | `docs/prd.md` JOUR-001 | 상위 요구사항. JOUR-002·005의 Decision Gate 서술도 여기 |
-| `docs/api-routes.md` · `docs/api-contracts.md` | **아직 미반영.** 이 spec의 마지막 작업에서 같은 커밋으로 반영한다 (CLAUDE.md 규칙 7) |
+| `docs/api-routes.md` · `docs/api-contracts.md` | 반영 완료 (2026-08-04) |
 | [ADR-0002](../../adr/0002-architecture.md) | `controller → service → repository`, 도메인 패키지. **도메인 간 참조는 service 경유** — journal이 `TradeRepository`를 직접 주입하지 않는 근거 |
 | [ADR-0003](../../adr/0003-testing-strategy.md) | 서비스 로직=단위, 쿼리·제약=`@DataJpaTest`, API 계약=`@WebMvcTest`, 핵심 시나리오=Testcontainers 통합 |
 | [ADR-0004](../../adr/0004-flyway-migrations.md) | 스키마는 마이그레이션으로만. `ddl-auto=validate`, 머지된 파일 수정 금지 |

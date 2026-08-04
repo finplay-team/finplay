@@ -44,6 +44,7 @@
 | GET | /api/holdings?market= | portfolio | 인증 사용자 본인의 시장별(`STOCK`\|`CRYPTO`) 활성 보유 종목 목록(수량·평균단가·현재가·평가금액·미실현손익·수익률·시세 상태 + 종목 표시 정보) 조회. `market` 쿼리 파라미터 필수, 전량 매도 종목은 목록에서 제외 | 006 PORT-001, Issue #52 |
 | GET | /api/trades?market=&cursor=&limit= | order | 인증 사용자 본인의 시장별(`STOCK`\|`CRYPTO`) 체결 내역을 `executedAt` 내림차순(동시각 `id` 내림차순)으로 커서 페이지네이션 조회. `market` 쿼리 파라미터 필수, `cursor`·`limit`(기본 20, 1~100) 선택. 매도 건은 실현손익 포함 | 006 PORT-002, Issue #82 |
 | GET | /api/portfolio | portfolio | 인증 사용자 본인의 `STOCK`·`CRYPTO` 계좌를 합산한 총평가자산·총수익률·평가손익·실현손익 조회. 쿼리 파라미터 없음(항상 두 시장 합산) | 006 ACCT-003, Issue #51 |
+| POST | /api/trades/{buyTradeId}/journal | journal | 본인 소유 매수 체결 1건에 투자일기(자유 텍스트 `content`) 1건 작성 (201). 매수 체결이 아니거나 이미 일기가 있으면 실패 | 007 JOUR-001, Issue #159 |
 
 ## 투자 실습 계획 라우트 (아직 구현하지 않음)
 
@@ -83,7 +84,7 @@
 |---|---|---|---|
 | Base URL | `/api/v1` | `/api` | 버저닝 미사용 (2026-07-23 확정, `docs/conventions.md`) |
 | 매도 직후 피드백 | `GET /ai/post-sell/{id}` | `GET /api/ai/post-sell/{tradeId}` | Base URL 규칙만 적용, 경로는 동일 |
-| `post-sell` 내용 | 계획 대비 실제 대조 (2단계) | 원장 수치 + 뉴스 변동 원인 | 계획 대조는 `007-journal`(다른 팀원 범위)이 선행돼야 한다. 투자일기가 생기면 `plan`·`planOutcome` 필드를 같은 응답에 **추가**하면 되므로 계약이 깨지지 않는다 |
+| `post-sell` 내용 | 계획 대비 실제 대조 (2단계) | 원장 수치 + 뉴스 변동 원인 | 계획 대조에는 목표가·손절가 등 구조화 필드가 필요하다. `007-journal`(다른 팀원 범위)은 JOUR-001(자유 텍스트 `content` 작성 API)만 구현됐고, 그 구조화 필드(`plan`·`planOutcome`)는 아직 없다. 생기면 같은 응답에 **추가**하면 되므로 계약이 깨지지 않는다 |
 | AI 엔드포인트 수 | 6개 (`pre-order`·`post-sell`·`d7`·`weekly-report`·`basis-stats`·`similar`) | `post-sell` 1개만 | 나머지 5개는 2차 범위 밖 (`docs/specs/012-ai-feedback` 범위 제외) |
 | 변동 원인 카드 | 없음 | `GET /api/instruments/{id}/price-moves` | 신규 — Notion 명세 DB에 행 추가 필요 |
 | 종목 뉴스 목록·요약 | 없음 | `GET /api/instruments/{id}/news` | 신규 — Notion 1차 고도화 "뉴스 요약" 항목에 대응 |

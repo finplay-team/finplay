@@ -6,7 +6,7 @@
 
 블랙박스 QA는 구현 코드(`src/main`)를 읽지 않고 이 문서와 spec만을 계약 근거로 사용한다 (`docs/context-router.md`).
 
-순서는 도메인 기준이다 — auth → market → community → order → account → portfolio.
+순서는 도메인 기준이다 — auth → market → community → order → account → portfolio → journal.
 
 ---
 
@@ -402,6 +402,24 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 ---
 
+## journal
+
+### 매수 체결 투자일기 작성
+
+| Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|---|
+| POST | /api/trades/{buyTradeId}/journal | Access Bearer 필수 | 경로 변수 `buyTradeId`(숫자) + 본문 `{"content":"실적 발표 전 분할 매수. 5% 빠지면 손절 계획."}`(`BuyJournalCreateRequest`, `content`는 `@NotBlank` + `@Size(max=5000)`) | 201 `{"journalId":1,"buyTradeId":12,"content":"실적 발표 전 분할 매수. 5% 빠지면 손절 계획.","createdAt":"2026-08-04T10:12:33"}` (`BuyJournalResponse`, 4개 필드 고정) | `content` 누락·공백·5000자 초과, `buyTradeId` 타입 불일치(숫자 파싱 실패), 대상 체결의 `side`가 `BUY`가 아님(매도 체결)은 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED`. 타인 소유 체결은 403 `FORBIDDEN`. `buyTradeId`에 해당하는 체결 없음은 404 `NOT_FOUND`. 해당 매수 체결에 투자일기가 이미 존재(선제 조회 또는 유니크 위반)하면 409 `DUPLICATE_RESOURCE` 공통 오류 형식 | 007 JOUR-001, Issue #159 |
+
+작성자는 요청 본문이 아니라 Access Token의 인증 사용자(`AuthenticatedUser#userId`)로 결정한다. 응답 필드는 `journalId`·`buyTradeId`·`content`·`createdAt` 4개로 고정이며, 종목·가격·수량 등 체결 정보는 포함하지 않는다(`GET /api/trades`가 이미 제공한다). 목표가·손절가·예상보유기간 등 구조화 필드는 이번 범위가 아니다. `Location` 헤더는 포함하지 않는다 — 단건 조회(JOUR-005)가 아직 없어 가리킬 URL이 없다.
+
+**본문 검증이 경로 검증보다 먼저 일어난다.** `@Valid`는 컨트롤러 메서드 진입 전에 평가되므로, 없는 체결 + 공백 본문 요청은 404가 아니라 **400**이다.
+
+**검증 순서는 `존재(404) → 소유(403) → 매수 여부(400) → 중복(409)`으로 고정한다.** 타인의 매도 체결이면 403이 먼저다 — 소유하지 않은 체결의 속성(매수/매도)을 오류 코드로 흘리지 않기 위해서다.
+
+`content`는 앞뒤 공백을 트림하지 않고 원문 그대로 저장한다(검증만 `@NotBlank`). 대상 매수 체결에 이미 투자일기가 있으면(`buy_trade_journals.buy_trade_id` `UNIQUE`) 애플리케이션 선제 조회로 대부분 409를 반환하고, 동시 요청 경합으로 유니크 제약을 직접 위반해도 같은 409 `DUPLICATE_RESOURCE`로 변환한다.
+
+---
+
 ## 016 투자 실습 (계획 — 아직 구현하지 않음)
 
 `docs/specs/016-investment-education-policy`의 신규 계약 10건이다. **controller와 schema가 아직 없으므로 블랙박스 QA의 실행 가능 API 근거로 사용하지 않는다.** 각 구현이 병합될 때 해당 계약을 실제 상태로 전환하고 `docs/api-routes.md`의 계획 행도 실제 라우트 목록으로 옮긴다. 모든 경로는 Access Bearer 인증과 공통 오류 body를 사용하며 JSON POST는 `Content-Type: application/json`이다.
@@ -551,7 +569,7 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 이 엔드포인트는 Notion api 명세서 §6의 `GET /ai/post-sell/{id}`(매도 직후 피드백, 계획 대비 실제 2단계)에 대응한다. 기존 명세의 **계획 대조**에 수익률 요약과 뉴스 기반 변동 원인을 합쳐 하나의 응답으로 제공한다. `/api/v1` → `/api` Base URL 규칙만 적용했고 경로 자체는 명세와 같다.
 
-**투자일기에 의존하지 않는다.** Notion 명세 §6은 이 경로에 "계획 대비 실제 대조(2단계)"를 적어 뒀지만, 목표가·손절가를 기록하는 `007-journal`이 아직 없고 다른 팀원 범위이므로 이 계약에서는 다루지 않는다. 투자일기가 생기면 `plan`·`planOutcome` 필드를 **같은 응답에 추가**하면 되고 아래 필드는 그대로 유지되므로 계약이 깨지지 않는다. 투자일기를 쓰지 않고 매수·매도한 건도 정상 200이다.
+**투자일기에 의존하지 않는다.** Notion 명세 §6은 이 경로에 "계획 대비 실제 대조(2단계)"를 적어 뒀지만, 그 대조에 쓸 목표가·손절가 등 구조화 필드는 아직 없다. `007-journal`(다른 팀원 범위)은 JOUR-001(`POST /api/trades/{buyTradeId}/journal`, 자유 텍스트 `content` 작성)만 구현됐고, 구조화 필드(`plan`·`planOutcome`에 대응하는 목표가·손절가)는 Decision Gate 미해결로 아직 없다. 그 필드가 생기면 **같은 응답에 추가**하면 되고 아래 필드는 그대로 유지되므로 계약이 깨지지 않는다. 투자일기를 쓰지 않고 매수·매도한 건도 정상 200이다.
 
 **위 예시는 실제 계산이 재현되는 값이다.** 수수료율(주식 0.015% / 코인 0.05%, `## order` 절)과 원 미만 내림을 적용하면 — 이 엔드포인트는 주식 전용이므로 0.015%다 — 매수수수료 `FLOOR(700,000×0.00015)=105`, 매수원가 합 700,105, 매도수수료 `FLOOR(685,000×0.00015)=102`, 실현손익 `685,000−102−700,105=−15,207`이다. 반사실 3종도 같은 식으로 시나리오 가격마다 수수료를 다시 계산한 값이다. **테스트 픽스처를 이 예시로 만들어도 된다** — 값이 안 맞으면 그건 예시가 아니라 구현이 틀린 것이다.
 
