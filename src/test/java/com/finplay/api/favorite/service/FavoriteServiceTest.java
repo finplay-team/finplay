@@ -26,6 +26,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -141,6 +142,32 @@ class FavoriteServiceTest {
 		stubSaveFailure(failure);
 
 		assertThatThrownBy(() -> favoriteService.createFavorite(7L, 10L)).isSameAs(failure);
+	}
+
+	@Test
+	void deleteFavoriteDeletesOnlyOwnedFavorite() {
+		Favorite favorite = mock(Favorite.class);
+		when(favoriteRepository.findByUserIdAndInstrumentIdForUpdate(7L, 10L))
+			.thenReturn(Optional.of(favorite));
+
+		favoriteService.deleteFavorite(7L, 10L);
+
+		verify(favoriteRepository).findByUserIdAndInstrumentIdForUpdate(7L, 10L);
+		verify(favoriteRepository).delete(favorite);
+		verifyNoMoreInteractions(favoriteRepository);
+		verifyNoInteractions(instrumentService, userQueryService);
+	}
+
+	@Test
+	void deleteFavoriteFailsWithFavoriteNotFoundWhenFavoriteDoesNotExist() {
+		when(favoriteRepository.findByUserIdAndInstrumentIdForUpdate(7L, 10L))
+			.thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> favoriteService.deleteFavorite(7L, 10L))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(error -> assertThat(((BusinessException)error).getErrorCode())
+				.isEqualTo(ErrorCode.FAVORITE_NOT_FOUND));
+		verify(favoriteRepository, never()).delete(org.mockito.ArgumentMatchers.any());
 	}
 
 	private void stubSaveFailure(DataIntegrityViolationException failure) {

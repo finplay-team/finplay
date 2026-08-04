@@ -2,12 +2,14 @@
 package com.finplay.api.favorite.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finplay.api.TestcontainersConfiguration;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
+import com.finplay.api.favorite.domain.Favorite;
 import com.finplay.api.favorite.dto.response.FavoriteResponse;
 import com.finplay.api.favorite.repository.FavoriteRepository;
 import com.finplay.api.market.domain.Instrument;
@@ -19,12 +21,15 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
@@ -40,6 +45,8 @@ class FavoriteConcurrencyIntegrationTest {
 	private InstrumentRepository instrumentRepository;
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
+	@Autowired
+	private TransactionTemplate transactionTemplate;
 	private Long createdUserId;
 
 	@AfterEach
@@ -87,5 +94,55 @@ class FavoriteConcurrencyIntegrationTest {
 			"SELECT COUNT(*) FROM favorites WHERE user_id = ? AND instrument_id = ?",
 			Long.class, user.getId(), instrument.getId());
 		assertThat(matchingFavoriteCount).isEqualTo(1L);
+	}
+
+	@Test
+	void pessimisticWriteSerializesConcurrentLookupOfSameFavorite() throws Exception {
+		LocalDateTime now = LocalDateTime.of(2026, 8, 4, 10, 0);
+		User user = userRepository.saveAndFlush(User.create(
+			"favorite-delete-race-172@finplay.com", "hash", "favorite-delete-race-172", now));
+		createdUserId = user.getId();
+		Instrument instrument = instrumentRepository.findByMarketOrderByIdAsc(Market.STOCK).get(0);
+		Favorite favorite = favoriteRepository.saveAndFlush(Favorite.create(user, instrument, now));
+		CountDownLatch firstHasLock = new CountDownLatch(1);
+		CountDownLatch releaseFirst = new CountDownLatch(1);
+		CountDownLatch secondStarted = new CountDownLatch(1);
+		var executor = Executors.newFixedThreadPool(2);
+		try {
+			Future<Long> first = executor.submit(() -> transactionTemplate.execute(status -> {
+				Long id = favoriteRepository.findByUserIdAndInstrumentIdForUpdate(
+					user.getId(), instrument.getId()).orElseThrow().getId();
+				firstHasLock.countDown();
+				await(releaseFirst);
+				return id;
+			}));
+			assertThat(firstHasLock.await(5, TimeUnit.SECONDS)).isTrue();
+			Future<Long> second = executor.submit(() -> transactionTemplate.execute(status -> {
+				secondStarted.countDown();
+				return favoriteRepository.findByUserIdAndInstrumentIdForUpdate(
+					user.getId(), instrument.getId()).orElseThrow().getId();
+			}));
+			assertThat(secondStarted.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThatThrownBy(() -> second.get(300, TimeUnit.MILLISECONDS))
+				.isInstanceOf(TimeoutException.class);
+
+			releaseFirst.countDown();
+
+			assertThat(first.get(5, TimeUnit.SECONDS)).isEqualTo(favorite.getId());
+			assertThat(second.get(5, TimeUnit.SECONDS)).isEqualTo(favorite.getId());
+		} finally {
+			releaseFirst.countDown();
+			executor.shutdownNow();
+			assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+		}
+	}
+
+	private void await(CountDownLatch latch) {
+		try {
+			latch.await();
+		} catch (InterruptedException exception) {
+			Thread.currentThread().interrupt();
+			throw new IllegalStateException(exception);
+		}
 	}
 }
