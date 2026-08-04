@@ -45,11 +45,16 @@
 | GET | /api/trades?market=&cursor=&limit= | order | 인증 사용자 본인의 시장별(`STOCK`\|`CRYPTO`) 체결 내역을 `executedAt` 내림차순(동시각 `id` 내림차순)으로 커서 페이지네이션 조회. `market` 쿼리 파라미터 필수, `cursor`·`limit`(기본 20, 1~100) 선택. 매도 건은 실현손익 포함 | 006 PORT-002, Issue #82 |
 | GET | /api/portfolio | portfolio | 인증 사용자 본인의 `STOCK`·`CRYPTO` 계좌를 합산한 총평가자산·총수익률·평가손익·실현손익 조회. 쿼리 파라미터 없음(항상 두 시장 합산) | 006 ACCT-003, Issue #51 |
 | POST | /api/trades/{buyTradeId}/journal | journal | 본인 소유 매수 체결 1건에 투자일기(자유 텍스트 `content`) 1건 작성 (201). 매수 체결이 아니거나 이미 일기가 있으면 실패 | 007 JOUR-001, Issue #159 |
+| POST | /api/trades/{sellTradeId}/sell-journal | journal | 본인 소유 매도 체결 1건에 매도 회고(자유 텍스트 `content`) 1건 작성 (201). 매도 체결이 아니거나 이미 회고가 있으면 실패 | 007 JOUR-003, Issue #183 |
+| PATCH | /api/trades/{sellTradeId}/sell-journal | journal | 본인 소유 매도 체결 1건에 이미 작성된 매도 회고의 본문을 교체 (200). 매도 체결이 아니거나 회고가 아직 없으면 실패, 잠금 없음(횟수 제한 없이 수정 가능) | 007 JOUR-004, Issue #190 |
 | POST | /api/favorites | education | 거래 가능한 종목을 본인 즐겨찾기에 등록 | 016 EDU-PRACTICE-002, candidate 1, Issue #163 |
 | GET | /api/favorites | education | 본인 즐겨찾기를 등록 최신순으로 순수 조회 | 016 EDU-PRACTICE-002, candidate 2, Issue #168 |
 | DELETE | /api/favorites/{instrumentId} | education | 본인 즐겨찾기 해제 | 016 EDU-PRACTICE-002, candidate 3, Issue #172 |
 | POST | /api/education/practice/intentions | education | favorite로 선행 확인한 종목의 매수 전 수량·손절가·익절가 기록 | 016 EDU-PRACTICE-003·013, candidate 4, Issue #175 |
+| GET | /api/education/practice/synthetic-prices/{instrumentId} | education | 튜토리얼 전용 서버 생성 랜덤워크 시계열(제목·틱초·가격 100틱) 조회. 실제 시세·evidence와 무관, 저장소 없음 | 016 EDU-PRACTICE-003(#193), Issue #193 tasks 항목4 |
 | GET | /api/instruments/{instrumentId}/price-moves | feedback | 종목의 변동 원인 카드 목록 조회. 주식은 현재 재생세션 원본 거래일 중 `revealTime`이 지난 카드만(스포일러 차단) `windowStart` 오름차순, 각 카드의 근거는 발행시각 내림차순. 카드 0건·재생세션 미준비 모두 200(후자는 `originTradeDate=null`) | 012 FEED-006, Issue #180 |
+| GET | /api/instruments/{instrumentId}/news | feedback | 종목의 뉴스·공시 목록과 AI 요약 순수 조회. 주식은 09:00 이후에만 열리고 발행시각이 재생 시각을 지난 것만 노출하며, `summaryScope`가 15:30 전후로 `PRE_MARKET`→`FULL`로 바뀐다. 목록은 발행시각 내림차순 + `id` 내림차순이고 상한 초과 시 공시를 먼저 채운다. 코인은 재생세션·개장 게이트와 무관하게 조회 시각 기준 최근 24시간 뉴스와 `ROLLING_24H` 요약 `generated_at` 최신 1행을 돌려주고 `originTradeDate`는 `null`이다. 개장 전·재생세션 미준비·기사 0건·요약 행 없음·서술 실패가 전부 200(상태값은 spec §C-4) | 012 FEED-008, Issue #188 |
+| GET | /api/market/briefing?market= | feedback | 시장 단위 개장 전 브리핑 순수 조회. 주식은 **spec §C-2의 `전장` 구간 기사·공시만**(장중 기사 절대 미포함)이고 Part C와 09:00 하한이 같다. `items`는 저장하지 않고 조회 시 같은 구간 질의로 다시 만들며 상한은 `max-items-per-briefing`. 재생세션 미준비는 `EMPTY`·`originTradeDate=null`, 개장 전은 `NOT_YET`(Part C와 의도된 차이, spec §C-4). 코인은 재생세션과 무관하게 최근 24시간 코인 뉴스와 `generated_at` 최신 1행을 돌려주며 `originTradeDate=null`이고 `NOT_YET`이 되지 않는다. `market` 누락·허용 값 밖은 400 | 012 FEED-009, Issue #188 |
 | GET | /api/rankings?market=&limit= | ranking | 시장별(`STOCK`\|`CRYPTO`) 실현손익 상위 랭킹 조회. `market` 쿼리 파라미터 필수(누락·미지원 리터럴은 400 `VALIDATION_ERROR`). `limit`은 선택이며 **컨트롤러가 거부하지 않고** 서비스가 클램핑(생략·0 이하→10, 51 이상→50) — `GET /api/trades`·`GET /api/orders`의 범위 밖 400과 의도적으로 다름. 매도 체결 이력이 없는 회원은 제외, 동점자는 공동 순위 | 014 RANK-001, Issue #187 |
 
 ## 투자 실습 계획 라우트 (아직 구현하지 않음)
@@ -69,15 +74,13 @@ candidate 1·2·3·4와 나머지 6개 계획 경로 모두 공개 경로에 추
 
 ## 2차 계획 라우트 (아직 구현하지 않음)
 
-`docs/specs/012-ai-feedback`의 `GET /api/instruments/{instrumentId}/price-moves`(FEED-006)는 구현되어 위 실제 라우트 목록에 반영했다. 아래 3개 경로는 계약만 확정했으며 아직 controller가 없다. **위 실제 라우트 목록과 분리하며 블랙박스 QA의 실행 가능 API 근거로 사용하지 않는다.** 각 구현이 병합되는 커밋에서 해당 행을 위 표로 옮기고 `docs/api-contracts.md`의 계획 표시를 제거한다.
+`docs/specs/012-ai-feedback`의 `GET /api/instruments/{instrumentId}/price-moves`(FEED-006)·`GET /api/instruments/{instrumentId}/news`(FEED-008)·`GET /api/market/briefing`(FEED-009)은 구현되어 위 실제 라우트 목록에 반영했다. 아래 1개 경로는 계약만 확정했으며 아직 controller가 없다. **위 실제 라우트 목록과 분리하며 블랙박스 QA의 실행 가능 API 근거로 사용하지 않는다.** 각 구현이 병합되는 커밋에서 해당 행을 위 표로 옮기고 `docs/api-contracts.md`의 계획 표시를 제거한다.
 
 | Method | URL | 도메인 | 요약 | Spec |
 |---|---|---|---|---|
 | GET | /api/ai/post-sell/{tradeId} | feedback | 본인 매도 체결 1건의 매도 직후 피드백. 원장의 FIFO 수치 + 보유 구간 변동 원인 카드 + 관찰형 서술. 같은 원본 거래일 안에서 완결된 매매만 카드·최고가·최저가 포함. **2차는 주식 전용 — 코인 체결은 400**. **투자일기에 의존하지 않는다** | 012 FEED-007 |
-| GET | /api/instruments/{instrumentId}/news | feedback | 종목의 뉴스·공시 목록과 AI 요약 조회. 주식은 09:00 이후에만 노출하며 발행시각이 재생 시각을 지난 것만, 코인은 최근 24시간. 요약은 배치가 미리 만들어 두므로 이 경로는 순수 조회다. **기존 Notion 명세에 없는 신규 엔드포인트** | 012 FEED-008 |
-| GET | /api/market/briefing?market= | feedback | 개장 전 브리핑. 주식은 **spec §C-2의 `전장` 구간 기사·공시만**(장중 기사 절대 미포함), 09:00 이전에는 `status=NOT_YET`. 코인은 최근 24시간. 뉴스 보고 매매하는 사용자의 진입점. **기존 Notion 명세에 없는 신규 엔드포인트** | 012 FEED-009 |
 
-구현된 `price-moves`와 위 3개 계획 경로 모두 `SecurityConfig` 공개 목록에 추가하지 않는다 — `anyRequest().authenticated()`로 떨어져 Access Bearer 토큰을 요구한다.
+구현된 `price-moves`·`news`·`briefing`과 위 1개 계획 경로 모두 `SecurityConfig` 공개 목록에 추가하지 않는다 — `anyRequest().authenticated()`로 떨어져 Access Bearer 토큰을 요구한다.
 
 **Notion 명세와의 차이 (팀 동기화 필요)**
 

@@ -58,6 +58,12 @@ class FeedbackBatchServiceTest {
 
 	private final PriceMoveCardService priceMoveCardService = mock(PriceMoveCardService.class);
 
+	// 두 빈 자리의 본문이 부르는 협력자다. 여기서는 순서·격리만 보므로 기본 stub(Optional.empty())으로 둔다 —
+	// 실제 생성 규칙은 각 서비스의 단위 테스트와 배치 통합 테스트가 맡는다.
+	private final MarketBriefingService marketBriefingService = mock(MarketBriefingService.class);
+
+	private final InstrumentNewsSummaryService instrumentNewsSummaryService = mock(InstrumentNewsSummaryService.class);
+
 	private final Instrument instrumentA = stock(1L, "005930", "삼성전자");
 
 	private final Instrument instrumentB = stock(2L, "000660", "SK하이닉스");
@@ -91,7 +97,12 @@ class FeedbackBatchServiceTest {
 		// spy여야 package-private 빈 자리 두 개의 호출 순서를 볼 수 있다. Mockito spy는 프록시가 this이므로
 		// runPreMarketBatch 안의 자기호출도 그대로 잡힌다.
 		service = spy(new FeedbackBatchService(
-			stockReplayService, instrumentService, priceMoveDetector, priceMoveCardService));
+			stockReplayService,
+			instrumentService,
+			priceMoveDetector,
+			priceMoveCardService,
+			marketBriefingService,
+			instrumentNewsSummaryService));
 	}
 
 	private void givenReadySessionWithTwoStocks() {
@@ -311,6 +322,59 @@ class FeedbackBatchServiceTest {
 
 			verify(priceMoveCardService).confirmStockCard(instrumentA, ORIGIN_TRADE_DATE, gap);
 			verify(priceMoveCardService).confirmStockCard(instrumentB, ORIGIN_TRADE_DATE, intraday);
+		}
+
+		// 위 둘은 메서드 경계를 spy로 갈아끼운 형태라 "본문이 종목마다 접는가"를 볼 수 없다. 아래 둘은 본문이
+		// 실제로 부르는 협력자를 특정 종목에서만 던지게 한다 — continuesWithOtherInstrumentsWhenDetectionThrows와
+		// 같은 형태이며, 격리를 호출부 try/catch에만 두면 여기서 깨진다.
+		@Test
+		@DisplayName("한 종목의 요약 생성이 예외를 던져도 나머지 종목의 요약이 만들어진다")
+		void continuesWithOtherInstrumentsWhenOneSummaryThrows() {
+			givenReadySessionWithTwoStocks();
+			when(instrumentNewsSummaryService
+				.generateStockSummary(instrumentA, ORIGIN_TRADE_DATE, NewsSummaryScope.PRE_MARKET))
+				.thenThrow(new IllegalStateException("요약 LLM 호출 실패"));
+
+			assertThatCode(() -> service.runPreMarketBatch()).doesNotThrowAnyException();
+
+			verify(instrumentNewsSummaryService)
+				.generateStockSummary(instrumentB, ORIGIN_TRADE_DATE, NewsSummaryScope.PRE_MARKET);
+		}
+
+		// 한 종목의 요약이 터진 날 그 뒤 단계가 통째로 날아가면 그날 카드가 전부 사라진다 — PRE_MARKET 요약이
+		// 카드보다 앞이라 그렇다. 예외도 없이 조용히 비므로 단정으로만 고정된다.
+		@Test
+		@DisplayName("한 종목의 요약이 실패해도 카드와 FULL 요약까지 계속된다")
+		void continuesThroughCardsAndFullSummariesWhenOneSummaryThrows() {
+			givenReadySessionWithTwoStocks();
+			when(instrumentNewsSummaryService
+				.generateStockSummary(instrumentA, ORIGIN_TRADE_DATE, NewsSummaryScope.PRE_MARKET))
+				.thenThrow(new IllegalStateException("요약 LLM 호출 실패"));
+
+			assertThatCode(() -> service.runPreMarketBatch()).doesNotThrowAnyException();
+
+			verify(priceMoveCardService).confirmStockCard(instrumentA, ORIGIN_TRADE_DATE, gap);
+			verify(priceMoveCardService).confirmStockCard(instrumentB, ORIGIN_TRADE_DATE, intraday);
+			verify(instrumentNewsSummaryService)
+				.generateStockSummary(instrumentA, ORIGIN_TRADE_DATE, NewsSummaryScope.FULL);
+			verify(instrumentNewsSummaryService)
+				.generateStockSummary(instrumentB, ORIGIN_TRADE_DATE, NewsSummaryScope.FULL);
+		}
+
+		// 브리핑은 호출 1건이라 본문에 추가 격리가 없다 — 단계 단위 try/catch가 유일한 방어선이므로 협력자가
+		// 실제로 던졌을 때 뒤 단계가 사는지를 여기서 본다.
+		@Test
+		@DisplayName("브리핑 협력자가 예외를 던져도 요약과 카드가 계속된다")
+		void continuesWithSummariesAndCardsWhenTheBriefingCollaboratorThrows() {
+			givenReadySessionWithTwoStocks();
+			when(marketBriefingService.generateStockBriefing(ORIGIN_TRADE_DATE))
+				.thenThrow(new IllegalStateException("브리핑 LLM 호출 실패"));
+
+			assertThatCode(() -> service.runPreMarketBatch()).doesNotThrowAnyException();
+
+			verify(instrumentNewsSummaryService)
+				.generateStockSummary(instrumentA, ORIGIN_TRADE_DATE, NewsSummaryScope.PRE_MARKET);
+			verify(priceMoveCardService).confirmStockCard(instrumentA, ORIGIN_TRADE_DATE, gap);
 		}
 
 		@Test

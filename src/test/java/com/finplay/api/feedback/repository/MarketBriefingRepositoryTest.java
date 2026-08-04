@@ -10,6 +10,7 @@ import com.finplay.api.feedback.domain.NarrativeSource;
 import com.finplay.api.market.domain.Market;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
@@ -52,6 +53,53 @@ class MarketBriefingRepositoryTest {
 
 		assertThatThrownBy(() -> marketBriefingRepository.saveAndFlush(duplicate))
 			.isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	// --- 생성 쪽 중복 판정 (이슈 #188 항목 4) ---
+	//
+	// 주식은 UPSERT가 아니라 "존재 시 건너뜀"이라 이 파인더가 배치 ⑤의 앞선 방어선이다. 축이 유니크와
+	// 어긋나면 재실행 때마다 LLM을 다시 부르고 결과를 유니크가 버린다 — 조용히 비용만 늘고 행은 그대로다.
+	@Test
+	@DisplayName("existsByMarketAndOriginTradeDate가 유니크와 같은 두 축으로만 참이 된다")
+	void existsByMarketAndOriginTradeDateMatchesTheUniqueAxis() {
+		marketBriefingRepository.saveAndFlush(newBriefing(Market.STOCK, ORIGIN_TRADE_DATE));
+
+		assertThat(marketBriefingRepository.existsByMarketAndOriginTradeDate(Market.STOCK, ORIGIN_TRADE_DATE))
+			.isTrue();
+		assertThat(marketBriefingRepository.existsByMarketAndOriginTradeDate(Market.STOCK, NEXT_TRADE_DATE))
+			.as("거래일이 다르면 매일 새 브리핑이 만들어져야 한다")
+			.isFalse();
+		assertThat(marketBriefingRepository.existsByMarketAndOriginTradeDate(Market.CRYPTO, ORIGIN_TRADE_DATE))
+			.as("시장이 다르면 별개 행이다 — 여기가 참이면 코인 브리핑이 영영 생기지 않는다")
+			.isFalse();
+	}
+
+	// --- 코인 조회 파인더 (이슈 #188 항목 7 — 배치 ⑪) ---
+
+	@Test
+	@DisplayName("findFirstByMarketOrderByGeneratedAtDesc가 날짜가 달라도 최신 행을 준다")
+	void findsTheLatestGeneratedBriefingAcrossDates() {
+		marketBriefingRepository.saveAndFlush(MarketBriefing.create(
+			Market.CRYPTO, ORIGIN_TRADE_DATE, "어제 23시 05분 브리핑", NarrativeSource.LLM,
+			LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(23, 5))));
+		marketBriefingRepository.saveAndFlush(MarketBriefing.create(
+			Market.CRYPTO, NEXT_TRADE_DATE, "오늘 00시 05분 브리핑", NarrativeSource.LLM,
+			LocalDateTime.of(NEXT_TRADE_DATE, LocalTime.of(0, 5))));
+
+		assertThat(marketBriefingRepository.findFirstByMarketOrderByGeneratedAtDescIdDesc(Market.CRYPTO))
+			.get()
+			.extracting(MarketBriefing::getSummary)
+			.isEqualTo("오늘 00시 05분 브리핑");
+	}
+
+	// 시장 조건이 빠지면 코인 조회가 주식 브리핑 문장을 그대로 내려 준다.
+	@Test
+	@DisplayName("findFirstByMarket…은 다른 시장의 행을 주지 않는다")
+	void latestBriefingFinderFiltersByMarket() {
+		marketBriefingRepository.saveAndFlush(newBriefing(Market.STOCK, ORIGIN_TRADE_DATE));
+
+		assertThat(marketBriefingRepository.findFirstByMarketOrderByGeneratedAtDescIdDesc(Market.CRYPTO))
+			.isEmpty();
 	}
 
 	@Test

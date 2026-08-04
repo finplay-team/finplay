@@ -249,6 +249,7 @@ feedback/
                MarketBriefingController, PostSellFeedbackController
   service/     PriceMoveDetector          변동 구간 탐지 (순수 계산, 외부 의존 없음)
                NewsMatcher                이벤트 시각 ↔ 기사 매칭
+               NewsItemTruncator          목록·LLM 입력 절단 (공시 우선, §뉴스 매칭 범위. 빈이 아니다)
                NarrativeService           파트별 서술 확정 경로 (생성 → 검증 → 폴백)
                NarrativeGenerator         LLM 호출 (완성된 프롬프트 문자열만 받는다)
                NarrativePromptBuilder     파트별 프롬프트 조립 (§LLM 프롬프트)
@@ -258,24 +259,38 @@ feedback/
                NewsTitleFilter            같은 시장 다른 종목명이 든 제목 제외 (순수 계산, FEED-001)
                NewsCollectionService      뉴스·공시 상시 수집 (수집기 호출 → 저장, 크론은 §C-1)
                PriceMoveCardService       카드 확정 (근거 매칭 → 서술 → reveal_time → 저장)
+               InstrumentNewsSummaryService 종목 뉴스 요약 확정 (구간 질의 → 절단 → 서술 → 저장)
                FeedbackBatchService       개장 전 배치 오케스트레이션
                CryptoFeedbackBatchService 코인 요약·브리핑 갱신 (매시)
                PeerStatsBatchService      장 마감 집단 비교 확정 집계
                CryptoPriceMoveWatcher     코인 변동 감시
                PriceMoveQueryService, InstrumentNewsQueryService,
                MarketBriefingService, PostSellFeedbackService
+               MarketSessionTimes         개장·장 마감의 벽시계 경계 상수 (§C-2-1, 빈이 아니다)
   collector/   NewsCollector(interface), NaverNewsCollector, FakeNewsCollector
                DisclosureCollector(interface), DartDisclosureCollector, FakeDisclosureCollector
   domain/      MarketNewsItem, PriceMoveEvent, PriceMoveEventSource,
                InstrumentNewsSummary, MarketBriefing, TradeFeedback, PriceMovePeerStat
+               FeedbackContentStatus      Part C·D 상태값 (§C-4. 저장 컬럼이 아니라 조회 시 판정한다)
   dto/response/  PriceMoveListResponse, InstrumentNewsResponse,
                  MarketBriefingResponse, PostSellFeedbackResponse
                  (+ 응답 안에 중첩되는 레코드 — PostSellFlow, Counterfactuals, PeerComparison)
                  (+ NewsItem, PriceMoveItem — 여러 응답이 공유하므로 최상위 record)
+                 (+ BriefingNewsItem — Part D 전용 최상위 record. 공유용이 아니다)
   repository/  각 도메인 JpaRepository
 ```
 
 DTO는 `dto/response/` 하위에 둔다(`docs/conventions.md`, 이 spec에는 요청 DTO가 없다). 응답 DTO 클래스명은 `docs/api-contracts.md`에 이미 박혀 있으므로 그 이름을 쓴다. 엔티티를 컨트롤러 밖으로 노출하지 않는다.
+
+**`BriefingNewsItem`을 `NewsItem`과 따로 둔다** (2026-08-04 추가). Part D `items`는 계약상 `instrumentId`·`symbol`·`name`을 **평평하게** 포함하는데(`docs/api-contracts.md`의 개장 전 브리핑 행) `NewsItem`은 다섯 값뿐이다 — 시장 전체가 대상이라 어느 종목 소식인지가 항목마다 붙어야 한다. **`NewsItem`을 중첩 필드로 감싸면 JSON 모양이 계약과 달라지므로** 여덟 값을 평평하게 갖는 별도 최상위 record로 둔다. Part C는 종목이 경로에 있어 그 세 값이 필요 없으므로 `NewsItem`을 그대로 쓴다 — 두 항목 record가 공존하는 것이 의도된 형태이며 한쪽으로 합치지 않는다.
+
+**이름에 `~ListItemResponse`를 붙이지 않는다.** `docs/conventions.md`의 DTO 표 각주(2026-08-04 확정)가 spec 012 항목 record의 이름을 이 절에 위임했으므로, 같은 응답군에서 `NewsItem`과 접미사가 붙은 이름이 섞이면 그 위임이 무의미해진다. `BriefingNewsItem`은 **여러 응답이 공유하는 record가 아니라 Part D 전용**이지만, 이름 규칙은 응답군 단위로 일관되게 간다.
+
+**개장·장 마감의 벽시계 경계를 `MarketSessionTimes` 하나에 둔다** (2026-08-04 추가). `feedback/service/` 아래에 두되 빈이 아니라 상수만 갖는 최소 타입이다 — `feedback.*` 설정 블록(§C-7)은 §튜닝으로 조정하는 수치를 담지만 **이 두 값은 조정 대상이 아니라 시장 규칙**이라 `config/`에 두지 않는다.
+
+- 지금 `PriceMoveCardService`의 클램프 기준(09:00)과 `NewsMatcher`의 전장 구간 경계(15:30·09:00)가 독립 선언이고, **Part C의 `summaryScope` 판정과 Part D의 하한이 세 번째·네 번째 사용처**다. `postSellFlow`·`counterfactuals`의 게이트(§C-5)가 같은 15:30을 쓰므로 다섯 번째도 예정돼 있다.
+- `NewsMatcher`의 상수를 공개해 단일 출처로 삼는 방법도 검토했지만 **조회 서비스가 근거 매칭과 무관한 클래스를 이름으로 참조하게 된다.** 서비스 하나가 상수 보관소를 겸하면 뒤 이슈가 계속 그 클래스를 가리키므로 중립적인 자리를 만든다.
+- **값의 성격은 §C-2-1이 벽시계로 못박았다.** 기사·공시 구간 경계와 노출 게이트에 쓰는 값이며 **분봉을 찾는 값이 아니다** — "첫/마지막 분봉"으로 바꾸면 안 된다. 가격 조회 쪽 규칙은 여전히 분봉 표현을 쓰며 이 상수와 무관하다.
 
 **프롬프트와 템플릿 문장을 `NarrativeGenerator` 밖에 둔다.** `NarrativePromptBuilder`가 시스템 프롬프트 1종 + 파트별 사용자 프롬프트 4종 + 재생성 프롬프트 1종을 조립하고, `NarrativeGenerator`는 **완성된 문자열만 받아 호출**한다. `NarrativeTemplateBuilder`는 §템플릿 문장의 3종(장중 카드·시가 갭·매도 회고)을 수치로 조립한다. 프로바이더를 바꿔도 프롬프트가 딸려 가지 않게 하려는 것이며, ADR-0011의 "교체는 starter 의존성과 `feedback.llm.*` 설정 변경으로 끝난다"와 같은 의도다. 둘 다 외부 의존이 없어 단위 테스트로 문자열을 직접 단정할 수 있다.
 
@@ -286,6 +301,12 @@ DTO는 `dto/response/` 하위에 둔다(`docs/conventions.md`, 이 spec에는 �
 **질의어 조립과 제목 필터를 수집기 밖에 둔다.** 둘 다 FEED-001의 규칙이고 외부 의존이 없어 고정 픽스처로 단정할 수 있다 — 수집기 안에 두면 HTTP 응답을 고정해야만 검사할 수 있게 된다. `NaverNewsCollector`가 둘을 주입받아 쓴다. 필터는 **같은 시장의 종목명 목록**만 보므로 시장을 섞지 않는다.
 
 **카드 확정을 `FeedbackBatchService`에 두지 않는다.** 탐지 결과 하나를 카드로 만드는 데 근거 매칭·서술 확정·`reveal_time` 계산·저장 넷이 필요한데, 이것을 배치에 두면 그 클래스가 **브리핑·요약(이슈 5번)까지 얹히면서** 오케스트레이션과 도메인 로직을 함께 갖게 된다. `PriceMoveCardService`는 **카드 1건을 확정하는 책임만** 지고, 배치는 그것을 순서대로 부르기만 한다. 코인 감시(`CryptoPriceMoveWatcher`, 이슈 8번)도 같은 확정 경로가 필요하므로 배치 안에 있으면 재사용할 수 없다. `NewsCollectionService`를 수집기 밖에 둔 것(수집기는 목록만 반환하고 저장 주체가 따로 있다)과 같은 이유다.
+
+**요약은 생성과 조회를 나누고 브리핑은 나누지 않는다** (2026-08-04 추가 — 이 비대칭은 의도된 것이다). 종목 뉴스 요약은 `InstrumentNewsSummaryService`가 확정(구간 질의 → 절단 → `NarrativeService` → 저장)하고 `InstrumentNewsQueryService`가 조회한다 — 종목 수만큼 반복되고 범위가 둘(`PRE_MARKET`·`FULL`)이라 확정 경로만으로 한 클래스가 찬다. `PriceMoveCardService`를 배치에서 뺀 것과 같은 이유다. 반면 **브리핑은 `(시장, 원본 거래일)` 단위로 하루 1건**이라 `MarketBriefingService` 하나가 생성과 조회를 함께 갖는다 — 쪼갤 만한 크기가 아니고, 나누면 `items`를 조회 시 다시 만드는 규칙(FEED-009)이 두 클래스에 걸쳐 흩어진다. **클래스 수를 맞추려고 브리핑을 쪼개지 않는다.**
+
+**Part C·D의 상태값 열거형은 `FeedbackContentStatus` 하나뿐이다** (2026-08-04 추가). §C-4가 Part C의 `summaryStatus`와 Part D의 `status`를 **"같은 4종"**으로 못박았으므로 열거형을 둘로 나누지 않는다 — 나누면 §C-4의 판정 순서 표가 두 곳에 복사되고, 그중 하나만 고치는 사고가 이 spec이 §확정값 절을 만든 이유다. **저장 컬럼이 아니라 조회 시 판정하는 값**이라 `@Enumerated` 대상이 아니다(§C-8의 `VARCHAR(20)` 열거 컬럼 목록에 없다). Part C의 1번 조건이 `NOT_YET`이고 Part D가 `EMPTY`인 **값의 차이는 판정 로직에 있고 타입에 있지 않다.**
+
+**절단 규칙은 `NewsItemTruncator` 한 곳에 둔다.** §뉴스 매칭 범위의 "공시를 먼저 채우고 남은 자리를 뉴스 최신순으로"는 **호출부가 넷**이다 — 요약과 브리핑의 LLM 입력, 그리고 Part C·D의 `items`다. 규칙을 각 서비스에 복사하면 그중 하나만 고치는 순간 **같은 목록이 API마다 다르게 잘리는데 예외도 로그도 남지 않는다.** 빈이 아니어도 되는 순수 계산이라 고정 픽스처로 단정할 수 있고, `NewsSearchQueryBuilder`·`NewsTitleFilter`를 수집기 밖에 둔 것과 같은 판단이다.
 
 `PriceMoveDetector`는 **분봉 리스트와 직전 거래일 종가를 받아 이벤트 리스트를 반환하는 순수 함수**로 만든다. DB·시계·LLM에 의존하지 않아야 고정 픽스처로 단위 테스트할 수 있다.
 
@@ -862,7 +883,13 @@ member   "{epochMillis}:{price}"
 
 구간 정의는 **§C-2**, 공시의 날짜 판정은 **§C-3**에 있다. 여기서 다시 적지 않는다.
 
-근거가 `max-sources-per-card`를 넘으면 발행시각이 이벤트에 가까운 순으로 자른다. 목록 응답과 LLM 입력 상한은 §C-7의 `max-items-*`를 따르며 **발행시각 내림차순으로 자른다.**
+근거가 `max-sources-per-card`를 넘으면 발행시각이 이벤트에 가까운 순으로 자른다.
+
+목록 응답과 LLM 입력 상한은 §C-7의 `max-items-*`를 따른다. **정렬은 발행시각 내림차순이고 동률은 `id` 내림차순이다.** 상한을 넘으면 **공시를 먼저 채우고 남은 자리를 뉴스 최신순으로 채운다** (2026-08-04 확정). 이 절단 규칙은 **Part C `items`·Part D `items`·요약과 브리핑의 LLM 입력 세 자리 모두**에 걸린다. **정렬과 절단은 별개다** — 절단으로 살아남은 항목을 응답에 실을 때의 순서는 위 정렬 그대로이며, 공시가 목록 아래쪽에 오는 것은 계약대로다.
+
+**공시를 먼저 채우는 이유** — 공시는 `rcept_dt`만 있어 `published_at`이 그 날짜 `00:00:00`이다(§C-3·§C-8). 같은 목록의 뉴스는 전부 `D-1 15:30` 이후이므로 **공시는 내림차순 목록에서 예외 없이 최하위**이고, 상한을 넘는 순간 확률이 아니라 순서상 구조로 **항상 먼저 잘린다.** 그대로 두면 §완료 조건의 노출 게이트 ⑧(상한·정렬 적용)과 ⑫(`D-1` 접수 공시가 브리핑·`PRE_MARKET` 요약·`items` 셋 모두에 나온다)이 **서로 모순된다** — ⑧을 지키면 ⑫가 깨진다. 특히 Part D는 전 종목 합산 단일 목록이라 종목당 2건만 쌓여도 상한을 넘어 **공시가 사실상 상시 전멸한다.** §C-3이 공시를 datetime 구간이 아니라 날짜 조건으로 따로 합류시킨 공들인 판정이 절단 단계에서 통째로 무효화되는 자리다.
+
+**이 규칙을 "불필요한 복잡도"로 보고 되돌리지 않는다.** 되돌려도 테스트는 초록일 수 있다 — **픽스처의 기사 수가 상한 아래이면 절단 자체가 일어나지 않아 규칙의 유무를 구분하지 못한다.** 운영에서만, 그것도 기사가 많은 종목과 브리핑에서만 공시가 조용히 사라진다. 검증하려면 **픽스처를 상한 위로 잡아야 한다.**
 
 **코인 근거창에 `news.match-after-minutes`를 더하지 않는 이유** — 코인 탐지는 `windowEnd` 시점에 실시간으로 도므로 그 이후 기사는 존재할 수 없다. 게다가 수집이 30분 주기라 마지막 수집 이후 기사는 아직 DB에 없다. `crypto.match-before-minutes`를 더 넓게 잡아 마지막 수집분을 확실히 포함시킨다. 그래도 근거 0건이면 카드를 만들지 않으며(FEED-003), **다음 수집 때 근거가 들어와도 그 카드를 되살리지 않는다** — 지나간 실시간 이벤트를 소급 생성하지 않는 것이 설계 의도다.
 
@@ -1169,6 +1196,7 @@ trade_feedbacks                매도 직후 서술 (회원별)
 | `detection.window-minutes` | 카드의 `changeRate` 분포 확인 | 대부분 0.5% 미만이면 늘린다 |
 | `detection.opening-gap-threshold` | 갭 분포 확인 | 매일 전 종목이 걸리면 높인다 |
 | `news.match-before/after-minutes` | 카드당 근거 수 확인 | 평균 0건에 가까우면 넓힌다 |
+| `news.max-items-per-news-list`·`max-items-per-briefing` (공시 몫) | §뉴스 매칭 범위의 절단이 **공시를 먼저 채운 뒤 뉴스가 눈에 띄게 밀리는 날**이 있는지 확인한다 — 목록의 공시 비율을 센다 | 관측되면 **공시 몫 상한 키 신설을 검토한다.** 지금 두지 않은 것은 아직 일어나지 않은 문제를 대비하는 설정이기 때문이다(2026-08-04 판단). 종목 16개 기준으로는 공시가 상한을 다 먹는 날이 예외적이다 |
 | `crypto.cooldown-minutes`·`daily-limit` | 하루 생성 건수 확인 | 상한에 매일 걸리면 완화 |
 | `crypto.min-sample-count` | 기동 후 카드가 나오기까지 걸린 시간 확인 | 너무 길면 낮춘다 |
 | `llm.model` | `TEMPLATE` 비율 확인 | 30% 넘으면 프롬프트 수정, 그래도 높으면 상위 모델 |

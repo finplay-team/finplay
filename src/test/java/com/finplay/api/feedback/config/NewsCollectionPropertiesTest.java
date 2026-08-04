@@ -20,6 +20,13 @@ class NewsCollectionPropertiesTest {
 	// §C-1 공시 수집 크론
 	private static final String SPEC_DISCLOSURE_CRON = "0 0/30 8-20 * * MON-FRI";
 
+	// §C-7 목록 상한 3종. Part C와 Part D의 값이 다른 것이 정상이다 — 브리핑은 시장 전체가 대상이다.
+	private static final int SPEC_MAX_ITEMS_PER_NEWS_LIST = 50;
+
+	private static final int SPEC_MAX_ITEMS_PER_BRIEFING = 30;
+
+	private static final int SPEC_MAX_ITEMS_PER_SUMMARY = 30;
+
 	private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
 		.withUserConfiguration(NewsCollectionPropertiesConfig.class);
 
@@ -143,6 +150,88 @@ class NewsCollectionPropertiesTest {
 				.rootCause()
 				.isInstanceOf(IllegalArgumentException.class)
 				.hasMessageContaining("max-sources-per-card"));
+	}
+
+	// --- 목록 상한 3키 (이슈 #188 항목 1) — §C-7 feedback.news 블록 ---
+	//
+	// 이 축은 record의 @DefaultValue만 본다. yml 쪽 키 경로는 NewsCollectionPropertiesYamlTest가 맡는다.
+	// 두 축이 모두 있어야 "record와 yml이 함께 틀어지는" 드리프트와 "yml 키만 잘못된 경로에 들어간"
+	// 드리프트가 각각 잡힌다.
+
+	@Test
+	@DisplayName("feedback.news 설정을 하나도 주지 않아도 §C-7 목록 상한 3키가 기본값으로 바인딩된다")
+	void bindsSpecItemLimitDefaultsWhenNoFeedbackNewsPropertyIsGiven() {
+		contextRunner.run(context -> {
+			assertThat(context).hasNotFailed();
+
+			FeedbackNewsProperties properties = context.getBean(FeedbackNewsProperties.class);
+			assertThat(properties.maxItemsPerNewsList()).isEqualTo(SPEC_MAX_ITEMS_PER_NEWS_LIST);
+			assertThat(properties.maxItemsPerBriefing()).isEqualTo(SPEC_MAX_ITEMS_PER_BRIEFING);
+			assertThat(properties.maxItemsPerSummary()).isEqualTo(SPEC_MAX_ITEMS_PER_SUMMARY);
+		});
+	}
+
+	@Test
+	@DisplayName("목록 상한 3키를 케밥케이스로 주면 모두 덮어써지고 근거 매칭 3키는 그대로다")
+	void bindsEveryItemLimitPropertyFromKebabCaseKeys() {
+		contextRunner
+			.withPropertyValues(
+				"feedback.news.max-items-per-news-list=11",
+				"feedback.news.max-items-per-briefing=12",
+				"feedback.news.max-items-per-summary=13")
+			.run(context -> {
+				assertThat(context).hasNotFailed();
+
+				FeedbackNewsProperties properties = context.getBean(FeedbackNewsProperties.class);
+				assertThat(properties.maxItemsPerNewsList()).isEqualTo(11);
+				assertThat(properties.maxItemsPerBriefing()).isEqualTo(12);
+				assertThat(properties.maxItemsPerSummary()).isEqualTo(13);
+				assertThat(properties.matchBeforeMinutes()).isEqualTo(30);
+				assertThat(properties.matchAfterMinutes()).isEqualTo(5);
+				assertThat(properties.maxSourcesPerCard()).isEqualTo(5);
+			});
+	}
+
+	// 세 값 모두 0이면 목록이 통째로 비거나 요약 프롬프트에 기사가 하나도 실리지 않는데, 상태값은 그대로
+	// READY라 예외도 로그도 남지 않고 화면만 조용히 빈다(FEED-008). 그래서 기동 시점에 막는다.
+	// 메시지에 키 이름이 들어가야 세 값 중 어느 것이 걸렸는지 로그만 보고 알 수 있다.
+	@Test
+	@DisplayName("max-items-per-news-list가 1 미만이면 기동이 실패한다")
+	void failsWhenMaxItemsPerNewsListIsBelowOne() {
+		contextRunner
+			.withPropertyValues("feedback.news.max-items-per-news-list=0")
+			.run(context -> assertThat(context)
+				.hasFailed()
+				.getFailure()
+				.rootCause()
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("max-items-per-news-list"));
+	}
+
+	@Test
+	@DisplayName("max-items-per-briefing이 1 미만이면 기동이 실패한다")
+	void failsWhenMaxItemsPerBriefingIsBelowOne() {
+		contextRunner
+			.withPropertyValues("feedback.news.max-items-per-briefing=0")
+			.run(context -> assertThat(context)
+				.hasFailed()
+				.getFailure()
+				.rootCause()
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("max-items-per-briefing"));
+	}
+
+	@Test
+	@DisplayName("max-items-per-summary가 1 미만이면 기동이 실패한다")
+	void failsWhenMaxItemsPerSummaryIsBelowOne() {
+		contextRunner
+			.withPropertyValues("feedback.news.max-items-per-summary=-1")
+			.run(context -> assertThat(context)
+				.hasFailed()
+				.getFailure()
+				.rootCause()
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("max-items-per-summary"));
 	}
 
 	// §C-7 — 자격증명 3종은 시크릿이라 @DefaultValue를 붙이지 않는다. 코드에 값이 박히면 이 테스트가 깨진다.

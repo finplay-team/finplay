@@ -1,4 +1,5 @@
-// 실습 진행·의도 스키마와 MySQL upsert 및 JPA 영속화를 검증하는 슬라이스 테스트다.
+// 실습 진행(practice_progresses) 스키마와 MySQL upsert를 검증하는 슬라이스 테스트다.
+// practice_intentions은 #193(ADR-0012)에 따라 인메모리로 전환되고 테이블 자체가 V19 마이그레이션으로 삭제되어 제외한다.
 package com.finplay.api.education.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -6,16 +7,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.finplay.api.TestcontainersConfiguration;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
-import com.finplay.api.education.domain.PracticeIntention;
 import com.finplay.api.education.service.PracticeIntentionService;
-import com.finplay.api.market.domain.Instrument;
-import com.finplay.api.market.domain.Market;
-import com.finplay.api.market.repository.InstrumentRepository;
-import jakarta.persistence.EntityManager;
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,39 +29,25 @@ class PracticeRepositoryTest {
 	@Autowired
 	private PracticeProgressRepository progressRepository;
 	@Autowired
-	private PracticeIntentionRepository intentionRepository;
-	@Autowired
 	private UserRepository userRepository;
-	@Autowired
-	private InstrumentRepository instrumentRepository;
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
 	@Autowired
 	private EntityManager entityManager;
 	private User user;
-	private Instrument instrument;
 
 	@BeforeEach
 	void setUp() {
 		user = userRepository.saveAndFlush(User.create("practice-repo@finplay.com", "hash", "practice-repo", NOW));
-		instrument = instrumentRepository.saveAndFlush(Instrument.create(
-			Market.STOCK, "EDU175", "실습 종목", BigDecimal.ONE, 1L, true, NOW));
 	}
 
 	@Test
-	void v15CreatesRequiredColumnsForeignKeysUniqueAndDecimalDefinitions() {
+	void v15CreatesRequiredColumnsForeignKeyAndUniqueConstraint() {
 		assertThat(columns("practice_progresses")).containsExactly(
 			"id:bigint:19:0", "user_id:bigint:19:0", "tutorial_key:varchar:50:0",
 			"status:varchar:20:0", "started_at:datetime:0:6", "completed_at:datetime:0:6");
-		assertThat(columns("practice_intentions")).containsExactly(
-			"id:bigint:19:0", "user_id:bigint:19:0", "instrument_id:bigint:19:0",
-			"quantity:decimal:30:8", "stop_loss:decimal:18:8", "take_profit:decimal:18:8",
-			"created_at:datetime:0:6");
 		assertThat(foreignKeys("practice_progresses"))
 			.containsExactly("fk_practice_progresses_user->users->id");
-		assertThat(foreignKeys("practice_intentions")).containsExactly(
-			"fk_practice_intentions_instrument->instruments->id",
-			"fk_practice_intentions_user->users->id");
 		assertThat(indexColumns("practice_progresses", "uk_practice_progresses_user_tutorial"))
 			.containsExactly("user_id", "tutorial_key");
 	}
@@ -89,23 +71,6 @@ class PracticeRepositoryTest {
 		assertThat(row.get("status")).isEqualTo("COMPLETED");
 		assertThat(row.get("started_at")).isEqualTo(NOW.minusDays(1));
 		assertThat(row.get("completed_at")).isEqualTo(NOW.minusHours(1));
-	}
-
-	@Test
-	void intentionPersistsExactDecimalValuesAndAssociations() {
-		PracticeIntention saved = intentionRepository.saveAndFlush(PracticeIntention.create(
-			user, instrument, new BigDecimal("1234567890123456789012.12345678"),
-			new BigDecimal("1234567890.12345678"), new BigDecimal("9999999999.99999999"), NOW));
-		entityManager.clear();
-
-		PracticeIntention found = intentionRepository.findById(saved.getId()).orElseThrow();
-
-		assertThat(found.getUser().getId()).isEqualTo(user.getId());
-		assertThat(found.getInstrument().getId()).isEqualTo(instrument.getId());
-		assertThat(found.getQuantity()).isEqualByComparingTo("1234567890123456789012.12345678");
-		assertThat(found.getStopLoss()).isEqualByComparingTo("1234567890.12345678");
-		assertThat(found.getTakeProfit()).isEqualByComparingTo("9999999999.99999999");
-		assertThat(found.getCreatedAt()).isEqualTo(NOW);
 	}
 
 	private List<String> columns(String table) {

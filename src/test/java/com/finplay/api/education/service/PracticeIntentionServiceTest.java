@@ -1,17 +1,16 @@
-// 실습 의도 생성의 잠금 순서와 성공·실패 분기를 검증하는 단위 테스트다.
+// 실습 의도 생성의 잠금 순서(progress DB → favorite in-memory)와 성공·실패 분기를 검증하는 단위 테스트다.
 package com.finplay.api.education.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.finplay.api.auth.domain.User;
-import com.finplay.api.auth.service.UserQueryService;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.education.domain.PracticeIntention;
@@ -29,6 +28,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Optional;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
@@ -41,7 +41,6 @@ class PracticeIntentionServiceTest {
 	private PracticeProgressRepository progressRepository;
 	private PracticeIntentionRepository intentionRepository;
 	private FavoriteService favoriteService;
-	private UserQueryService userQueryService;
 	private InstrumentService instrumentService;
 	private PracticeIntentionService service;
 
@@ -50,87 +49,78 @@ class PracticeIntentionServiceTest {
 		progressRepository = mock(PracticeProgressRepository.class);
 		intentionRepository = mock(PracticeIntentionRepository.class);
 		favoriteService = mock(FavoriteService.class);
-		userQueryService = mock(UserQueryService.class);
 		instrumentService = mock(InstrumentService.class);
-		service = new PracticeIntentionService(progressRepository, intentionRepository, favoriteService,
-			userQueryService, instrumentService, Clock.fixed(NOW, ZoneOffset.UTC));
+		service = new PracticeIntentionService(
+			progressRepository, intentionRepository, favoriteService, instrumentService,
+			Clock.fixed(NOW, ZoneOffset.UTC));
 	}
 
 	@Test
-	void createIntentionCreatesMultipleIntentionsAndLocksProgressBeforeFavorite() {
-		User user = mock(User.class);
+	void createIntentionLocksProgressBeforeFavoriteAndSavesWhenFavorited() {
+		stubWithFavoriteLockInvokesAction();
 		Instrument instrument = mock(Instrument.class);
-		when(instrument.getId()).thenReturn(INSTRUMENT_ID);
 		PracticeProgress progress = progress(PracticeProgressStatus.IN_PROGRESS);
-		when(userQueryService.getUser(USER_ID)).thenReturn(user);
 		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID)).thenReturn(instrument);
 		when(progressRepository.findByUserIdAndTutorialKeyForUpdate(USER_ID,
 			PracticeIntentionService.TUTORIAL_KEY)).thenReturn(Optional.of(progress));
-		when(favoriteService.lockFavoriteIfPresent(USER_ID, INSTRUMENT_ID)).thenReturn(true);
-		java.util.concurrent.atomic.AtomicLong nextId = new java.util.concurrent.atomic.AtomicLong(99L);
-		when(intentionRepository.save(org.mockito.ArgumentMatchers.any())).thenAnswer(invocation -> {
-			PracticeIntention saved = invocation.getArgument(0);
-			org.springframework.test.util.ReflectionTestUtils.setField(saved, "id", nextId.getAndIncrement());
-			return saved;
+		when(favoriteService.isFavorited(USER_ID, INSTRUMENT_ID)).thenReturn(true);
+		when(intentionRepository.save(any())).thenAnswer(invocation -> {
+			PracticeIntention withoutId = invocation.getArgument(0);
+			return new PracticeIntention(99L, withoutId.userId(), withoutId.instrumentId(),
+				withoutId.quantity(), withoutId.stopLoss(), withoutId.takeProfit(), withoutId.createdAt());
 		});
 
-		var first = service.createIntention(USER_ID, request());
-		var second = service.createIntention(USER_ID, request());
+		var result = service.createIntention(USER_ID, request());
 
-		assertThat(first.intentionId()).isEqualTo(99L);
-		assertThat(first.instrumentId()).isEqualTo(INSTRUMENT_ID);
-		assertThat(first.quantity()).isEqualByComparingTo("2.50000000");
-		assertThat(first.stopLoss()).isEqualByComparingTo("90.00000000");
-		assertThat(first.takeProfit()).isEqualByComparingTo("120.00000000");
-		assertThat(first.createdAt()).isEqualTo(LocalDateTime.of(2026, 8, 4, 1, 0));
-		assertThat(second.intentionId()).isEqualTo(100L);
-		verify(intentionRepository, org.mockito.Mockito.times(2))
-			.save(org.mockito.ArgumentMatchers.any(PracticeIntention.class));
-		InOrder order = inOrder(progressRepository, favoriteService, intentionRepository);
+		assertThat(result.intentionId()).isEqualTo(99L);
+		assertThat(result.instrumentId()).isEqualTo(INSTRUMENT_ID);
+		assertThat(result.quantity()).isEqualByComparingTo("2.50000000");
+		assertThat(result.stopLoss()).isEqualByComparingTo("90.00000000");
+		assertThat(result.takeProfit()).isEqualByComparingTo("120.00000000");
+		assertThat(result.createdAt()).isEqualTo(LocalDateTime.of(2026, 8, 4, 1, 0));
+		verify(intentionRepository).save(any(PracticeIntention.class));
+		InOrder order = inOrder(instrumentService, progressRepository, favoriteService);
+		order.verify(instrumentService).getInstrumentEntity(INSTRUMENT_ID);
 		order.verify(progressRepository).insertIfAbsent(USER_ID, PracticeIntentionService.TUTORIAL_KEY,
 			LocalDateTime.of(2026, 8, 4, 1, 0));
 		order.verify(progressRepository).findByUserIdAndTutorialKeyForUpdate(USER_ID,
 			PracticeIntentionService.TUTORIAL_KEY);
-		order.verify(favoriteService).lockFavoriteIfPresent(USER_ID, INSTRUMENT_ID);
-		order.verify(intentionRepository).save(org.mockito.ArgumentMatchers.any());
+		order.verify(favoriteService).withFavoriteLock(anyLong(), anyLong(), any());
 	}
 
 	@Test
-	void createIntentionPropagatesMissingUserAndInstrument() {
-		when(userQueryService.getUser(USER_ID)).thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
-		assertError(ErrorCode.NOT_FOUND);
-		verify(progressRepository, never()).insertIfAbsent(org.mockito.ArgumentMatchers.any(),
-			org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
-
-		doReturn(mock(User.class)).when(userQueryService).getUser(USER_ID);
+	void createIntentionPropagatesMissingInstrumentBeforeTouchingProgress() {
 		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID))
 			.thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
+
 		assertError(ErrorCode.NOT_FOUND);
+
+		verify(progressRepository, never()).insertIfAbsent(any(), any(), any());
+		verify(favoriteService, never()).withFavoriteLock(anyLong(), anyLong(), any());
 	}
 
 	@Test
 	void createIntentionFailsWhenFavoriteStepIsLockedWithoutSaving() {
+		stubWithFavoriteLockInvokesAction();
 		stubDependencies(PracticeProgressStatus.IN_PROGRESS);
-		when(favoriteService.lockFavoriteIfPresent(USER_ID, INSTRUMENT_ID)).thenReturn(false);
+		when(favoriteService.isFavorited(USER_ID, INSTRUMENT_ID)).thenReturn(false);
 
 		assertError(ErrorCode.PRACTICE_STEP_LOCKED);
 
-		verify(intentionRepository, never()).save(org.mockito.ArgumentMatchers.any());
+		verify(intentionRepository, never()).save(any());
 	}
 
 	@Test
 	void createIntentionFailsWithInternalErrorWhenProgressRowIsUnexpectedlyMissingAfterInsert() {
-		User user = mock(User.class);
 		Instrument instrument = mock(Instrument.class);
-		when(userQueryService.getUser(USER_ID)).thenReturn(user);
 		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID)).thenReturn(instrument);
 		when(progressRepository.findByUserIdAndTutorialKeyForUpdate(USER_ID,
 			PracticeIntentionService.TUTORIAL_KEY)).thenReturn(Optional.empty());
 
 		assertError(ErrorCode.INTERNAL_ERROR);
 
-		verify(favoriteService, never()).lockFavoriteIfPresent(USER_ID, INSTRUMENT_ID);
-		verify(intentionRepository, never()).save(org.mockito.ArgumentMatchers.any());
+		verify(favoriteService, never()).withFavoriteLock(anyLong(), anyLong(), any());
+		verify(intentionRepository, never()).save(any());
 	}
 
 	@Test
@@ -139,15 +129,19 @@ class PracticeIntentionServiceTest {
 
 		assertError(ErrorCode.PRACTICE_ALREADY_COMPLETED);
 
-		verify(favoriteService, never()).lockFavoriteIfPresent(USER_ID, INSTRUMENT_ID);
-		verify(intentionRepository, never()).save(org.mockito.ArgumentMatchers.any());
+		verify(favoriteService, never()).withFavoriteLock(anyLong(), anyLong(), any());
+		verify(intentionRepository, never()).save(any());
+	}
+
+	@SuppressWarnings("unchecked")
+	private void stubWithFavoriteLockInvokesAction() {
+		when(favoriteService.withFavoriteLock(anyLong(), anyLong(), any())).thenAnswer(
+			invocation -> ((Supplier<Object>)invocation.getArgument(2)).get());
 	}
 
 	private void stubDependencies(PracticeProgressStatus status) {
-		User user = mock(User.class);
 		Instrument instrument = mock(Instrument.class);
 		PracticeProgress progress = progress(status);
-		when(userQueryService.getUser(USER_ID)).thenReturn(user);
 		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID)).thenReturn(instrument);
 		when(progressRepository.findByUserIdAndTutorialKeyForUpdate(USER_ID,
 			PracticeIntentionService.TUTORIAL_KEY)).thenReturn(Optional.of(progress));
