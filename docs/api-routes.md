@@ -64,13 +64,15 @@
 | Method | URL | 도메인 | 요약 | Spec |
 |---|---|---|---|---|
 | GET | /api/education/practice | education | 실제 증거로 계산한 3단계 실습 진행 상태 순수 조회 | 016 EDU-PRACTICE-001~003·008·011, candidate 12 |
-| POST | /api/exit-plans | order | 시장가 매수 체결분의 tutorial-only OCO 청산 예약 | 016 EDU-PRACTICE-003·005·006·010·013, candidate 7 |
+| POST | /api/exit-plans | order | 시장가 매수 체결분의 tutorial-only OCO 청산 예약 | 016 EDU-PRACTICE-003·005·006·010·013, candidate 7, 019 |
 | GET | /api/exit-plans?status= | order | 본인의 OCO 예약 목록 순수 조회. status 생략 시 PENDING, 현재는 PENDING만 허용 | 016 EDU-PRACTICE-003, candidate 8 |
 | DELETE | /api/exit-plans/{exitPlanId} | order | PENDING OCO 전체 취소와 예약 수량 1회 반환 | 016 EDU-PRACTICE-006, candidate 9 |
 | POST | /api/education/practice/observations | education | PENDING plan의 서버 현재가 관찰 기록 | 016 EDU-PRACTICE-012, candidate 13 |
 | POST | /api/education/practice/reflections | education | 관찰 증거 이후 자유 복기 저장과 최초 불변 완료 | 016 EDU-PRACTICE-007·011·013, candidate 14 |
 
 candidate 1·2·3·4와 나머지 6개 계획 경로 모두 공개 경로에 추가하지 않으며 Access Bearer 인증을 요구한다. `POST /api/orders` 시장가 매수는 이미 제공 중인 기존 API를 그대로 사용하므로 계획 라우트에 중복 기재하지 않는다.
+
+#199의 PRICE/PERCENT intention 확장은 아직 실제 라우트 계약이 아니다. 구현 시 기존 타입 생략+가격 요청을 PRICE로 호환하고, OCO 계획 라우트는 가격·rate를 다시 받지 않고 intention 정본에서 확정한다. 상세 계약은 `docs/specs/019-exit-price-policy`를 따른다.
 
 ## 2차 계획 라우트 (아직 구현하지 않음)
 

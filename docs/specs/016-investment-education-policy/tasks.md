@@ -7,6 +7,7 @@
 - [x] #172 (candidate 3): 본인 즐겨찾기를 해제하는 `DELETE /api/favorites/{instrumentId}`를 구현한다.
 - [x] #175 (candidate 4): 공통 `practice_progresses`를 atomic insert-or-existing하고 진행 상태·favorite를 잠가 검증한 뒤, 매수 전 수량·손절가·익절가를 새 intention으로 기록하는 `POST /api/education/practice/intentions`를 구현한다.
 - [x] #186 (candidate 5): nullable `trades.stock_replay_session_id` FK를 추가하고 주식 체결에는 현재 replay session id를 기록하며 코인 체결은 null을 유지한다.
+- [x] #199 (후속 문서): 기존 절대 가격 intention 호환을 유지하면서 PRICE/PERCENT 입력, 실제 BUY 체결가 기준 퍼센트 계산과 OCO 실행 가격선 snapshot 계약을 `docs/specs/019-exit-price-policy`로 확정한다. production 확장은 019 tasks의 후속 이슈다.
 
 아래 6개는 현재 이슈의 미완료 작업이 아닌 상위 구현 작업 그룹이다. 실제 이슈 생성 시 `plan.md`의 15개 후보처럼 API 하나 또는 트랜잭션 경계 하나로 나누며 production 구현은 현재 지시하지 않는다.
 
