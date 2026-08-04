@@ -18,6 +18,7 @@
 | 리뷰(U) | reviewer(리뷰) | `git diff dev...feat/190-sell-journal-update`, `./gradlew compileJava compileTestJava spotlessCheck -q` | conventions.md, ADR-0002, ADR-0003, ADR-0004, spec.md JOUR-004, plan.md §JOUR-004, tasks.md §JOUR-004 |
 | B1 | implementer | `./gradlew compileJava` | plan.md §JOUR-002 §데이터 모델(3단계 DDL, `of`/`updateContent` 설계), tasks.md B1, V18(`sell_trade_journals`) 선례 그대로 미러링, ADR-0004 |
 | B2 | implementer | `./gradlew compileJava`, `./gradlew test --tests "*JournalServiceTest*"` | plan.md §JOUR-002 §구성요소 설계(`updateBuyJournal` 1~5단계), tasks.md B2, `updateSellJournal` 선례(존재→소유→매수여부→회고존재 순, 잠금 판정 단계 없음, `HoldingLotRepository`·`TradeAllocationRepository` 미주입), ADR-0002 |
+| B3 | implementer | `./gradlew compileJava`, `./gradlew compileTestJava` | plan.md §JOUR-002 §API 설계·§컨트롤러(`PATCH .../journal`, 200, DTO 2개), tasks.md B3, `updateSellJournal` 컨트롤러 메서드 선례, CLAUDE.md 규칙 7 |
 
 ## 모니터링 (사람용 요약)
 - 항목1 — `V14__create_buy_trade_journals.sql` + `BuyTradeJournal` 엔티티 + `BuyTradeJournalRepository` 추가, compileJava 통과. (이후 `dev`에 먼저 병합된 `V14__create_favorites.sql`과 번호가 겹쳐 `V15__create_buy_trade_journals.sql`로 재번호화됨 — plan.md §데이터 모델 참고)
@@ -35,3 +36,4 @@
 - 리뷰(U) — 차단 0건. 검증 순서(404→403→400→404) 코드·테스트 일치, JOUR-001·JOUR-003 계약·코드 무변경 확인, V18 마이그레이션은 원장 미접촉·번호 충돌 없음, 컨트롤러에 비즈니스 로직 없음, 새 ErrorCode 미추가, 테스트 전부 의미있는 assertion. 머지 가능.
 - B1 — `dev` 최신 번호(V18) 확인 후 `V19__add_updated_at_to_buy_trade_journals.sql`(nullable 추가→백필→NOT NULL 3단계) + `BuyTradeJournal.updatedAt`·`updateContent(content, updatedAt)`(`of`는 시그니처 유지, 내부에서 `updatedAt`도 `now`로 채움) + `BuyTradeJournalRepository.findByBuyTradeId` 추가, 기존 `BuyTradeJournalRepositoryTest`(`of` 시그니처 무변경이라 영향 없음) 확인, 테스트는 tester 담당이라 신규 작성 없음, compileJava 통과.
 - B2 — `JournalService.updateBuyJournal` 추가(존재→소유→매수여부→회고존재 순 검증, 잠금 판정 단계·`HoldingLotRepository`/`TradeAllocationRepository` 미주입, `updateSellJournal`과 단계 구성 동일) + `BuyJournalUpdateResponse`(5필드 응답 DTO, `from`) 추가, `JournalServiceTest`에 대칭 단위 테스트 14건(정상 수정·404×2 구분·403·400·연속 2회 수정) 작성해 28건 전부 통과, 컨트롤러·요청 DTO는 B3 범위라 미착수, compileJava 통과.
+- B3 — `JournalController`에 `PATCH /api/trades/{buyTradeId}/journal` 추가(기존 매수·매도 작성·수정 메서드 리팩터링 없음, 200 반환) + `BuyJournalUpdateRequest`(`@NotBlank`+`@Size(max=5000)`) 추가, `docs/api-routes.md`(journal 행 1개)·`docs/api-contracts.md`(## journal 절에 매수 회고 수정 소절 추가, 잠금 없음 명시) 같은 커밋 대상으로 갱신, 테스트는 tester 담당이라 미작성(기존 JournalControllerTest·JournalServiceTest 등 compileTestJava로 무영향 확인), compileJava 통과.

@@ -17,6 +17,7 @@ import com.finplay.api.auth.token.JwtTokenProvider;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.journal.dto.response.BuyJournalResponse;
+import com.finplay.api.journal.dto.response.BuyJournalUpdateResponse;
 import com.finplay.api.journal.dto.response.SellJournalResponse;
 import com.finplay.api.journal.dto.response.SellJournalUpdateResponse;
 import com.finplay.api.journal.service.JournalService;
@@ -47,6 +48,9 @@ class JournalControllerTest {
 		""";
 	private static final String VALID_UPDATE_BODY = """
 		{"content":"돌아보니 목표가 도달 전에 일부 익절했어야 했다."}
+		""";
+	private static final String VALID_BUY_UPDATE_BODY = """
+		{"content":"돌아보니 분할 매수 비중을 더 늘렸어야 했다."}
 		""";
 
 	@Autowired
@@ -558,5 +562,172 @@ class JournalControllerTest {
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
 		verify(journalService).updateSellJournal(eq(USER_ID), eq(SELL_TRADE_ID), any());
+	}
+
+	@Test
+	void updateBuyJournalReturnsOkWithEveryResponseField() throws Exception {
+		stubAuthenticatedUser();
+		LocalDateTime createdAt = LocalDateTime.of(2026, 8, 4, 10, 12, 33);
+		LocalDateTime updatedAt = LocalDateTime.of(2026, 8, 5, 8, 47, 5);
+		BuyJournalUpdateResponse response = new BuyJournalUpdateResponse(
+			1L, BUY_TRADE_ID, "돌아보니 분할 매수 비중을 더 늘렸어야 했다.", createdAt, updatedAt);
+		when(journalService.updateBuyJournal(eq(USER_ID), eq(BUY_TRADE_ID), any()))
+			.thenReturn(response);
+
+		mockMvc.perform(patch("/api/trades/{buyTradeId}/journal", BUY_TRADE_ID)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(VALID_BUY_UPDATE_BODY))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.journalId").value(1))
+			.andExpect(jsonPath("$.buyTradeId").value(BUY_TRADE_ID))
+			.andExpect(jsonPath("$.content").value("돌아보니 분할 매수 비중을 더 늘렸어야 했다."))
+			.andExpect(jsonPath("$.createdAt").value("2026-08-04T10:12:33"))
+			.andExpect(jsonPath("$.updatedAt").value("2026-08-05T08:47:05"));
+
+		verify(journalService).updateBuyJournal(eq(USER_ID), eq(BUY_TRADE_ID), any());
+	}
+
+	@Test
+	void updateBuyJournalRejectsBlankContentWithoutCallingService() throws Exception {
+		stubAuthenticatedUser();
+
+		mockMvc.perform(patch("/api/trades/{buyTradeId}/journal", BUY_TRADE_ID)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("""
+				{"content":"   "}
+				"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(journalService);
+	}
+
+	@Test
+	void updateBuyJournalRejectsMissingContentWithoutCallingService() throws Exception {
+		stubAuthenticatedUser();
+
+		mockMvc.perform(patch("/api/trades/{buyTradeId}/journal", BUY_TRADE_ID)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("{}"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(journalService);
+	}
+
+	@Test
+	void updateBuyJournalRejectsContentOverMaxLengthWithoutCallingService() throws Exception {
+		stubAuthenticatedUser();
+		String overLimitContent = "a".repeat(5001);
+
+		mockMvc.perform(patch("/api/trades/{buyTradeId}/journal", BUY_TRADE_ID)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("{\"content\":\"" + overLimitContent + "\"}"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(journalService);
+	}
+
+	@Test
+	void updateBuyJournalRejectsNonNumericBuyTradeIdWithoutCallingService() throws Exception {
+		stubAuthenticatedUser();
+
+		mockMvc.perform(patch("/api/trades/{buyTradeId}/journal", "abc")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(VALID_BUY_UPDATE_BODY))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(journalService);
+	}
+
+	@Test
+	void updateBuyJournalRejectsMissingAuthenticationWithoutCallingService() throws Exception {
+		mockMvc.perform(patch("/api/trades/{buyTradeId}/journal", BUY_TRADE_ID)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(VALID_BUY_UPDATE_BODY))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(journalService);
+	}
+
+	@Test
+	void updateBuyJournalReturnsForbiddenWhenServiceRejectsOwnership() throws Exception {
+		stubAuthenticatedUser();
+		when(journalService.updateBuyJournal(eq(USER_ID), eq(BUY_TRADE_ID), any()))
+			.thenThrow(new BusinessException(ErrorCode.FORBIDDEN));
+
+		mockMvc.perform(patch("/api/trades/{buyTradeId}/journal", BUY_TRADE_ID)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(VALID_BUY_UPDATE_BODY))
+			.andExpect(status().isForbidden())
+			.andExpect(jsonPath("$.error.code").value("FORBIDDEN"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(journalService).updateBuyJournal(eq(USER_ID), eq(BUY_TRADE_ID), any());
+	}
+
+	@Test
+	void updateBuyJournalReturnsNotFoundWhenServiceRejectsMissingTrade() throws Exception {
+		stubAuthenticatedUser();
+		when(journalService.updateBuyJournal(eq(USER_ID), eq(BUY_TRADE_ID), any()))
+			.thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
+
+		mockMvc.perform(patch("/api/trades/{buyTradeId}/journal", BUY_TRADE_ID)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(VALID_BUY_UPDATE_BODY))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.error.code").value("NOT_FOUND"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(journalService).updateBuyJournal(eq(USER_ID), eq(BUY_TRADE_ID), any());
+	}
+
+	@Test
+	void updateBuyJournalReturnsNotFoundWhenServiceRejectsMissingJournal() throws Exception {
+		stubAuthenticatedUser();
+		when(journalService.updateBuyJournal(eq(USER_ID), eq(BUY_TRADE_ID), any()))
+			.thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
+
+		mockMvc.perform(patch("/api/trades/{buyTradeId}/journal", BUY_TRADE_ID)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(VALID_BUY_UPDATE_BODY))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.error.code").value("NOT_FOUND"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(journalService).updateBuyJournal(eq(USER_ID), eq(BUY_TRADE_ID), any());
+	}
+
+	@Test
+	void updateBuyJournalReturnsBadRequestWhenServiceRejectsNonBuyTrade() throws Exception {
+		stubAuthenticatedUser();
+		when(journalService.updateBuyJournal(eq(USER_ID), eq(BUY_TRADE_ID), any()))
+			.thenThrow(new BusinessException(ErrorCode.VALIDATION_ERROR));
+
+		mockMvc.perform(patch("/api/trades/{buyTradeId}/journal", BUY_TRADE_ID)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(VALID_BUY_UPDATE_BODY))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(journalService).updateBuyJournal(eq(USER_ID), eq(BUY_TRADE_ID), any());
 	}
 }

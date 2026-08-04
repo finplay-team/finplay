@@ -3,9 +3,11 @@ package com.finplay.api.journal.controller;
 
 import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.journal.dto.request.BuyJournalCreateRequest;
+import com.finplay.api.journal.dto.request.BuyJournalUpdateRequest;
 import com.finplay.api.journal.dto.request.SellJournalCreateRequest;
 import com.finplay.api.journal.dto.request.SellJournalUpdateRequest;
 import com.finplay.api.journal.dto.response.BuyJournalResponse;
+import com.finplay.api.journal.dto.response.BuyJournalUpdateResponse;
 import com.finplay.api.journal.dto.response.SellJournalResponse;
 import com.finplay.api.journal.dto.response.SellJournalUpdateResponse;
 import com.finplay.api.journal.service.JournalService;
@@ -64,6 +66,19 @@ public class JournalController {
 		SellJournalUpdateRequest request) {
 		SellJournalUpdateResponse response = journalService.updateSellJournal(
 			principal.userId(), sellTradeId, request.content());
+		return ResponseEntity.ok(response);
+	}
+
+	@PatchMapping("/{buyTradeId}/journal")
+	public ResponseEntity<BuyJournalUpdateResponse> updateBuyJournal(
+		@AuthenticationPrincipal
+		AuthenticatedUser principal,
+		@PathVariable
+		Long buyTradeId,
+		@Valid @RequestBody
+		BuyJournalUpdateRequest request) {
+		BuyJournalUpdateResponse response = journalService.updateBuyJournal(
+			principal.userId(), buyTradeId, request.content());
 		return ResponseEntity.ok(response);
 	}
 }
