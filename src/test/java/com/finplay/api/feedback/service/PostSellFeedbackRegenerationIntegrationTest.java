@@ -74,7 +74,11 @@ class PostSellFeedbackRegenerationIntegrationTest {
 	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
 	private static final LocalDate ORIGIN_TRADE_DATE = LocalDate.of(2026, 7, 29);
-	private static final LocalDate TRADE_SERVICE_DATE = LocalDate.of(2026, 8, 4);
+	// 서비스 날짜는 stock_replay_sessions의 UNIQUE(service_date)에 걸린다. 공유 Testcontainer에 트랜잭션 없이
+	// 커밋하는 테스트(CandleQueryServiceIntegrationTest가 2026-08-04·08-05를 커밋한다)와 같은 날짜를 쓰면
+	// 단독 실행은 통과하고 `./gradlew build` 전체에서만 Duplicate entry로 깨진다 — 그래서 이 파일 전용
+	// 연도(2031)를 쓴다. 원본 거래일은 UNIQUE 대상이 아니라 그대로 둔다.
+	private static final LocalDate TRADE_SERVICE_DATE = LocalDate.of(2031, 8, 4);
 	private static final LocalTime SELL_TIME = LocalTime.of(14, 40);
 	private static final LocalDateTime VIEW_AT = LocalDateTime.of(TRADE_SERVICE_DATE, LocalTime.of(16, 0));
 
