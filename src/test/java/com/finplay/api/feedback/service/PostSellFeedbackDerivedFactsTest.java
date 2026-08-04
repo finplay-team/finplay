@@ -90,7 +90,7 @@ class PostSellFeedbackDerivedFactsTest {
 	// 기본 픽스처는 "그 체결의 서비스 날짜 = 오늘"이라 게이트 상한이 현재 시각(15:00)이다.
 	private final Clock clock = Clock.fixed(TODAY.atTime(NOW_TIME).atZone(KST).toInstant(), KST);
 
-	private final PostSellFeedbackService postSellFeedbackService = new PostSellFeedbackService(
+	private final PostSellFeedbackReader postSellFeedbackReader = new PostSellFeedbackReader(
 		tradeService, sellAllocationQueryService, stockReplayService, priceMoveEventRepository,
 		priceMoveEventSourceRepository, clock);
 
@@ -438,7 +438,7 @@ class PostSellFeedbackDerivedFactsTest {
 	// --- 픽스처 ---
 
 	private PostSellFeedbackResponse getPostSellFeedback() {
-		return postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
+		return postSellFeedbackReader.read(USER_ID, SELL_TRADE_ID);
 	}
 
 	private LocalTime capturedRevealCutoff() {

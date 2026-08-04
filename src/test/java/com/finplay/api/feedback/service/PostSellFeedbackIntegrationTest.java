@@ -162,7 +162,11 @@ class PostSellFeedbackIntegrationTest {
 			.andExpect(jsonPath("$.postSellFlow.status").isNotEmpty())
 			.andExpect(jsonPath("$.counterfactuals.status").isNotEmpty())
 			.andExpect(jsonPath("$.peerComparison.status").value("NOT_YET"))
-			.andExpect(jsonPath("$.narrative").isEmpty())
+			// 서술은 4번 항목이 채웠다. 이 클래스에는 대역 생성기가 없어 api-key가 `not-configured`인 실제
+			// 생성기가 실패를 돌려주고 §템플릿 문장으로 폴백한다 — 외부 호출 없이도 서술이 비지 않는다.
+			.andExpect(jsonPath("$.narrative").isNotEmpty())
+			.andExpect(jsonPath("$.narrativeSource").value("TEMPLATE"))
+			.andExpect(jsonPath("$.narrativeStatus").value("READY"))
 			.andReturn()
 			.getResponse()
 			.getContentAsString(StandardCharsets.UTF_8);

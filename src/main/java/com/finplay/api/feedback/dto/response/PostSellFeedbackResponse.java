@@ -78,4 +78,50 @@ public record PostSellFeedbackResponse(
 	public PostSellFeedbackResponse {
 		priceMoves = List.copyOf(priceMoves);
 	}
+
+	/**
+	 * 서술 세 필드만 채운 사본이다. 나머지 25개는 그대로다.
+	 *
+	 * <p><b>정적 팩토리를 두지 않는다는 위 방침과 어긋나지 않는다</b> — 엔티티를 응답으로 옮기는 매핑이 아니라
+	 * <b>같은 조립의 마지막 한 걸음</b>이다. 이 메서드가 필요한 이유는 트랜잭션 경계다: 원장 수치·파생 사실은
+	 * 읽기 트랜잭션 안에서 조립되고 서술은 <b>그 트랜잭션이 끝난 뒤</b> 외부 LLM 호출로 만들어지므로
+	 * (spec FEED-007 — 조회 경로에 LLM이 들어오는 유일한 자리), 한 번에 28개를 채울 수 있는 지점이 없다.
+	 * 조립 지점을 둘로 쪼개는 대신 <b>여기 한 곳에서 사본을 만든다</b> — 호출부가 25개를 다시 나열하면
+	 * 필드가 늘 때마다 그 목록이 조용히 뒤처진다.
+	 *
+	 * @param narrativeStatus <b>항상 {@code READY}다</b>(§C-4). 인자로 받는 것은 열거형 값을 이 record가 아는
+	 *     자리를 늘리지 않으려는 것뿐이고, {@code UNAVAILABLE}은 이 엔드포인트에 존재하지 않는다
+	 */
+	public PostSellFeedbackResponse withNarrative(
+		String narrative, NarrativeSource narrativeSource, PostSellFeedbackStatus narrativeStatus) {
+		return new PostSellFeedbackResponse(
+			tradeId,
+			instrumentId,
+			symbol,
+			name,
+			buyAt,
+			sellAt,
+			buyPrice,
+			sellPrice,
+			quantity,
+			fee,
+			realizedPnl,
+			returnRate,
+			holdingMinutes,
+			sameSessionCompleted,
+			holdHighPrice,
+			holdHighAt,
+			holdLowPrice,
+			holdLowAt,
+			sellVsHighRate,
+			sellVsLowRate,
+			buyToNewsMinutes,
+			priceMoves,
+			postSellFlow,
+			counterfactuals,
+			peerComparison,
+			narrative,
+			narrativeSource,
+			narrativeStatus);
+	}
 }

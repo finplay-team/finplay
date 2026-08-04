@@ -1,457 +1,382 @@
-// 매도 직후 피드백 조회의 검증 순서·원장 수치 산출·buyAt 선정·sameSessionCompleted 판정을 검증하는 단위 테스트다.
+// 매도 회고 서술의 최초 생성·재사용·템플릿 폴백과 저장 경계 오케스트레이션을 검증하는 단위 테스트다.
 package com.finplay.api.feedback.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import com.finplay.api.account.domain.Account;
-import com.finplay.api.auth.domain.User;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
+import com.finplay.api.feedback.domain.MarketNewsItemType;
+import com.finplay.api.feedback.domain.NarrativeSource;
 import com.finplay.api.feedback.domain.PostSellFeedbackStatus;
+import com.finplay.api.feedback.domain.TradeFeedback;
+import com.finplay.api.feedback.dto.response.Counterfactuals;
+import com.finplay.api.feedback.dto.response.CounterfactualScenario;
+import com.finplay.api.feedback.dto.response.HeldPriceMoveItem;
+import com.finplay.api.feedback.dto.response.NewsItem;
+import com.finplay.api.feedback.dto.response.PeerComparison;
 import com.finplay.api.feedback.dto.response.PostSellFeedbackResponse;
-import com.finplay.api.feedback.repository.PriceMoveEventRepository;
-import com.finplay.api.feedback.repository.PriceMoveEventSourceRepository;
-import com.finplay.api.market.domain.Instrument;
-import com.finplay.api.market.domain.Market;
-import com.finplay.api.market.domain.StockReplaySession;
-import com.finplay.api.market.service.StockReplayService;
-import com.finplay.api.order.domain.Order;
-import com.finplay.api.order.domain.OrderSide;
-import com.finplay.api.order.domain.OrderType;
-import com.finplay.api.order.domain.Trade;
-import com.finplay.api.order.service.TradeService;
-import com.finplay.api.portfolio.service.SellAllocationQueryService;
-import com.finplay.api.portfolio.service.SellAllocationSummaryDto;
+import com.finplay.api.feedback.dto.response.PostSellFlow;
+import com.finplay.api.feedback.repository.TradeFeedbackRepository;
+import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.time.Clock;
-import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.test.util.ReflectionTestUtils;
+import org.mockito.ArgumentCaptor;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.transaction.annotation.Transactional;
 
-// 정본은 docs/api-contracts.md의 "매도 직후 피드백 조회" 소절과 spec 012 FEED-007이고, 이 파일이 보는 것은
-// 이슈 #208 1번 항목이 소유한 완료 조건 다섯 중 셋이다 — 코인 400, 여러 lot의 buyAt, 서로 다른 원본 거래일이면
-// sameSessionCompleted=false. 401·404·403·400의 HTTP 매핑은 PostSellFeedbackControllerTest가, 배분 요약의
-// 실제 쿼리·가중평균은 SellAllocationQueryServiceTest가, 종단은 PostSellFeedbackIntegrationTest가 맡는다.
+// 이슈 #208 4번 항목이 소유한 완료 조건이다 — 상태값 ⑤(LLM 실패에도 READY·TEMPLATE)와 "LLM 실패에도 수치·
+// 파생 사실이 200". 종단(최초 생성 → 재사용, 원장 불변)은 PostSellFeedbackNarrativeIntegrationTest가 실제
+// 대역 생성기와 실 DB로 맡고, 수치·파생 사실·게이트 자체는 reader 쪽 세 파일이 맡는다.
 //
-// 픽스처의 수치는 계약 예시 그대로다(매수원가 700,000 + 매수수수료 105, 매도 685,000 − 수수료 102,
-// realizedPnl −15,207). 계약이 "값이 안 맞으면 예시가 아니라 구현이 틀린 것"이라고 적어 둔 자리다.
+// narrativeStatus는 상수 READY라 그것만 보는 단정은 공허하다 — 그래서 이 파일은 "서술이 실제로 채워지는가"와
+// "LLM을 몇 번 부르는가"를 함께 본다. 폴백 문장 자체는 NarrativeService의 책임이라 여기서는 그 결과를 대역으로
+// 고정한다(실제 외부 API를 부르지 않는다, ADR-0011).
 class PostSellFeedbackServiceTest {
 
 	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
 	private static final Long USER_ID = 1L;
 	private static final Long SELL_TRADE_ID = 2L;
-	private static final Long INSTRUMENT_ID = 7L;
 
-	// 원본 거래일과 서비스 날짜를 다르게 둔다 — buyAt·sellAt을 trades.executed_at(서비스 벽시계) 그대로 쓴
-	// 구현이면 날짜가 어긋나 여기서 빨개진다(계약 — "원본 거래일 기준 체결 시각").
 	private static final LocalDate ORIGIN_TRADE_DATE = LocalDate.of(2026, 7, 29);
-	private static final LocalDate SELL_SERVICE_DATE = LocalDate.of(2026, 8, 5);
-	private static final LocalDate EARLIEST_BUY_SERVICE_DATE = LocalDate.of(2026, 8, 3);
+	private static final LocalDateTime NOW = LocalDateTime.of(2026, 8, 5, 16, 0);
 
-	private static final LocalTime EARLIEST_BUY_TIME = LocalTime.of(9, 30);
-	private static final LocalTime LATER_BUY_TIME = LocalTime.of(10, 30);
-	private static final LocalTime SELL_TIME = LocalTime.of(14, 40);
+	private static final String LLM_NARRATIVE = "09시 30분 매수는 이날 하락 구간보다 1시간 55분 앞섰습니다.";
+	private static final String TEMPLATE_NARRATIVE = "09시 30분에 70,000원에 매수해 14시 40분에 68,500원에 매도했습니다.";
 
-	private final TradeService tradeService = mock(TradeService.class);
+	private final PostSellFeedbackReader postSellFeedbackReader = mock(PostSellFeedbackReader.class);
 
-	private final SellAllocationQueryService sellAllocationQueryService = mock(SellAllocationQueryService.class);
+	private final NarrativeService narrativeService = mock(NarrativeService.class);
 
-	private final StockReplayService stockReplayService = mock(StockReplayService.class);
+	private final TradeFeedbackWriter tradeFeedbackWriter = mock(TradeFeedbackWriter.class);
 
-	private final PriceMoveEventRepository priceMoveEventRepository = mock(PriceMoveEventRepository.class);
+	private final TradeFeedbackRepository tradeFeedbackRepository = mock(TradeFeedbackRepository.class);
 
-	private final PriceMoveEventSourceRepository priceMoveEventSourceRepository = mock(
-		PriceMoveEventSourceRepository.class);
-
-	// 파생 사실(2번 항목)이 카드 노출 게이트에 그 체결의 서비스 날짜를 쓰므로 시계가 필요하다. 이 파일이 보는
-	// 완료 조건은 게이트가 아니라 검증 순서·수치·buyAt·sameSessionCompleted라, 매도 서비스 날짜의 장중 시각으로
-	// 고정해 게이트가 판정을 가리지 않게 둔다 — 게이트 자체(⑮)는 통합 테스트가 고정 Clock으로 본다.
 	private final PostSellFeedbackService postSellFeedbackService = new PostSellFeedbackService(
-		tradeService,
-		sellAllocationQueryService,
-		stockReplayService,
-		priceMoveEventRepository,
-		priceMoveEventSourceRepository,
-		Clock.fixed(SELL_SERVICE_DATE.atTime(SELL_TIME).atZone(KST).toInstant(), KST));
+		postSellFeedbackReader, narrativeService, tradeFeedbackWriter, tradeFeedbackRepository,
+		Clock.fixed(NOW.atZone(KST).toInstant(), KST));
 
-	// --- 원장 수치 ---
+	// --- 최초 생성 ---
 
 	@Test
-	@DisplayName("원장 수치를 계약 예시 그대로 돌려준다 — returnRate는 scale 4 HALF_UP이다")
-	void returnsLedgerNumbersExactlyAsTheContractExample() {
-		givenOwnedSellTrade(sellTrade(ORIGIN_TRADE_DATE));
-		givenAllocation(twoLotSummary(ORIGIN_TRADE_DATE, ORIGIN_TRADE_DATE));
+	@DisplayName("기존 서술이 없으면 만들어 저장하고 응답에 실는다 — narrativeStatus는 READY다")
+	void createsAndStoresTheNarrativeOnTheFirstQuery() {
+		givenFacts(factsWithoutNarrative());
+		givenNoStoredNarrative();
+		givenGenerated(NarrativeResultDto.llm(LLM_NARRATIVE));
 
 		PostSellFeedbackResponse response = postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
 
-		assertThat(response.tradeId()).isEqualTo(SELL_TRADE_ID);
-		assertThat(response.instrumentId()).isEqualTo(INSTRUMENT_ID);
-		assertThat(response.symbol()).isEqualTo("005930");
-		assertThat(response.name()).isEqualTo("삼성전자");
-		assertThat(response.buyPrice()).isEqualByComparingTo("70000");
-		assertThat(response.sellPrice()).isEqualByComparingTo("68500");
-		assertThat(response.quantity()).isEqualByComparingTo("10");
-		assertThat(response.fee()).isEqualTo(102L);
-		assertThat(response.realizedPnl()).isEqualTo(-15_207L);
-		// −15,207 ÷ (700,000 + 105) = −0.02172102… → scale 4 HALF_UP. scale까지 고정한다.
-		assertThat(response.returnRate()).isEqualTo(new BigDecimal("-0.0217"));
+		assertThat(response.narrative()).isEqualTo(LLM_NARRATIVE);
+		assertThat(response.narrativeSource()).isEqualTo(NarrativeSource.LLM);
+		assertThat(response.narrativeStatus()).isEqualTo(PostSellFeedbackStatus.READY);
+		// 저장은 그 회원·그 체결로만 나가고 생성 시각은 주입된 시계다.
+		verify(tradeFeedbackWriter).create(
+			eq(USER_ID), eq(SELL_TRADE_ID), eq(NarrativeResultDto.llm(LLM_NARRATIVE)), eq(NOW));
 	}
 
-	// 배분 원가 합만 쓰고 매수수수료를 분모에서 빼먹으면 −15,207 ÷ 700,000 = −0.0217(같은 값)이 되어 이 단정만
-	// 으로는 안 잡힌다. 그래서 수수료가 분모에 실제로 들어가는지를 값이 갈리는 픽스처로 따로 본다.
+	// --- 재사용 (최초 1회만 부른다) ---
+
 	@Test
-	@DisplayName("returnRate 분모에 배분된 매수수수료가 들어간다")
-	void returnRateDenominatorIncludesAllocatedBuyFee() {
-		givenOwnedSellTrade(sellTrade(ORIGIN_TRADE_DATE, -10_000L));
-		// 원가 100,000 + 수수료 10,000 = 110,000. 수수료를 빼먹으면 −0.1000이 되고 포함하면 −0.0909다.
-		givenAllocation(new SellAllocationSummaryDto(
-			new BigDecimal("10000.00000000"),
-			LocalDateTime.of(EARLIEST_BUY_SERVICE_DATE, EARLIEST_BUY_TIME),
-			ORIGIN_TRADE_DATE,
-			100_000L,
-			10_000L,
-			new BigDecimal("10"),
-			List.of(ORIGIN_TRADE_DATE)));
+	@DisplayName("기존 서술이 있으면 그것을 쓰고 LLM을 부르지 않으며 저장하지도 않는다")
+	void reusesTheStoredNarrativeWithoutCallingTheLlmAgain() {
+		givenFacts(factsWithoutNarrative());
+		when(tradeFeedbackRepository.findByTradeId(SELL_TRADE_ID))
+			.thenReturn(Optional.of(storedFeedback(TEMPLATE_NARRATIVE, NarrativeSource.TEMPLATE)));
 
 		PostSellFeedbackResponse response = postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
 
-		assertThat(response.returnRate()).isEqualTo(new BigDecimal("-0.0909"));
-		// 수수료를 분모에서 빼먹은 구현이 내는 답 — 두 답이 갈리는 픽스처임을 남긴다.
-		assertThat(response.returnRate()).isNotEqualTo(new BigDecimal("-0.1000"));
+		assertThat(response.narrative()).isEqualTo(TEMPLATE_NARRATIVE);
+		assertThat(response.narrativeSource()).isEqualTo(NarrativeSource.TEMPLATE);
+		assertThat(response.narrativeStatus()).isEqualTo(PostSellFeedbackStatus.READY);
+		verifyNoInteractions(narrativeService, tradeFeedbackWriter);
 	}
 
-	// --- buyAt·sellAt·holdingMinutes ---
-
+	// 두 번째 조회에서 또 부르면 사용자가 매번 2.5초를 기다리고 같은 체결의 문장이 조회마다 달라진다.
 	@Test
-	@DisplayName("buyAt은 배분된 두 lot 중 가장 이른 시각이고 날짜는 원본 거래일이다")
-	void buyAtIsTheEarliestAllocatedLotOnTheOriginTradeDateAxis() {
-		givenOwnedSellTrade(sellTrade(ORIGIN_TRADE_DATE));
-		SellAllocationSummaryDto allocation = twoLotSummary(ORIGIN_TRADE_DATE, ORIGIN_TRADE_DATE);
-		givenAllocation(allocation);
+	@DisplayName("같은 체결을 두 번 조회하면 LLM 호출이 정확히 1회이고 두 응답의 문장이 같다")
+	void callsTheLlmExactlyOnceAcrossTwoQueriesOfTheSameTrade() {
+		givenFacts(factsWithoutNarrative());
+		givenGenerated(NarrativeResultDto.llm(LLM_NARRATIVE));
+		// 첫 조회는 기존 행이 없고, 두 번째 조회는 방금 저장된 행을 본다.
+		when(tradeFeedbackRepository.findByTradeId(SELL_TRADE_ID))
+			.thenReturn(Optional.empty())
+			.thenReturn(Optional.of(storedFeedback(LLM_NARRATIVE, NarrativeSource.LLM)));
+
+		PostSellFeedbackResponse first = postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
+		PostSellFeedbackResponse second = postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
+
+		verify(narrativeService).resolvePostSellNarrative(any());
+		verify(tradeFeedbackWriter).create(any(), any(), any(), any());
+		assertThat(second.narrative()).isEqualTo(first.narrative());
+		assertThat(second.narrativeSource()).isEqualTo(first.narrativeSource());
+	}
+
+	// --- 상태값 ⑤ · LLM 실패 ---
+
+	// narrativeStatus는 상수라 무조건 통과한다 — 그래서 이 테스트의 값은 "실패해도 문장이 비지 않는다"와
+	// "source가 TEMPLATE로 구분된다"에 있다. UNAVAILABLE은 이 엔드포인트에 존재하지 않는다(§C-4).
+	@Test
+	@DisplayName("LLM이 실패해 템플릿으로 대체돼도 narrativeStatus가 READY이고 서술이 비지 않는다")
+	void keepsReadyWithTemplateSourceWhenTheLlmFails() {
+		givenFacts(factsWithoutNarrative());
+		givenNoStoredNarrative();
+		givenGenerated(NarrativeResultDto.template(TEMPLATE_NARRATIVE));
 
 		PostSellFeedbackResponse response = postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
 
-		// 픽스처 자기검증 — lot이 둘이고 시각이 다르므로 "나중 lot을 쓴 구현"은 10:30이 되어 이 단정에서 빨개진다.
-		assertThat(allocation.buySourceTradingDates()).hasSize(2);
-		assertThat(LATER_BUY_TIME).isNotEqualTo(EARLIEST_BUY_TIME);
-
-		assertThat(response.buyAt()).isEqualTo(LocalDateTime.of(ORIGIN_TRADE_DATE, EARLIEST_BUY_TIME));
-		// 서비스 벽시계를 그대로 쓴 구현이 내는 답 — 실제 응답이 그것과 달라야 한다.
-		assertThat(response.buyAt()).isNotEqualTo(allocation.earliestBuyAt());
-		assertThat(response.sellAt()).isEqualTo(LocalDateTime.of(ORIGIN_TRADE_DATE, SELL_TIME));
-		assertThat(response.sellAt()).isNotEqualTo(LocalDateTime.of(SELL_SERVICE_DATE, SELL_TIME));
+		assertThat(response.narrativeStatus()).isEqualTo(PostSellFeedbackStatus.READY);
+		assertThat(response.narrativeSource()).isEqualTo(NarrativeSource.TEMPLATE);
+		assertThat(response.narrative()).isNotBlank();
+		assertThat(response.narrativeStatus()).isNotIn(
+			PostSellFeedbackStatus.NOT_YET, PostSellFeedbackStatus.NO_EVENT,
+			PostSellFeedbackStatus.INSUFFICIENT_SAMPLE);
 	}
 
 	@Test
-	@DisplayName("holdingMinutes는 응답의 buyAt~sellAt 사이다 — 09:30~14:40이면 310분이다")
-	void holdingMinutesSpansTheTwoTimestampsInTheResponse() {
-		givenOwnedSellTrade(sellTrade(ORIGIN_TRADE_DATE));
-		givenAllocation(twoLotSummary(ORIGIN_TRADE_DATE, ORIGIN_TRADE_DATE));
+	@DisplayName("템플릿으로 대체돼도 수치 요약·파생 사실·매도 후 흐름이 그대로 응답에 남는다")
+	void keepsEveryNumberAndDerivedFactWhenTheNarrativeFallsBackToTheTemplate() {
+		PostSellFeedbackResponse facts = factsWithoutNarrative();
+		givenFacts(facts);
+		givenNoStoredNarrative();
+		givenGenerated(NarrativeResultDto.template(TEMPLATE_NARRATIVE));
 
 		PostSellFeedbackResponse response = postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
 
-		assertThat(response.holdingMinutes()).isEqualTo(310);
-		// 나중 lot(10:30)을 기준으로 잰 구현이 내는 답 — 두 답이 갈리는 픽스처임을 남긴다.
-		assertThat(response.holdingMinutes()).isNotEqualTo(250);
+		assertThat(response.buyPrice()).isEqualByComparingTo(facts.buyPrice());
+		assertThat(response.sellPrice()).isEqualByComparingTo(facts.sellPrice());
+		assertThat(response.returnRate()).isEqualByComparingTo(facts.returnRate());
+		assertThat(response.holdingMinutes()).isEqualTo(facts.holdingMinutes());
+		assertThat(response.holdHighPrice()).isEqualByComparingTo(facts.holdHighPrice());
+		assertThat(response.sellVsHighRate()).isEqualByComparingTo(facts.sellVsHighRate());
+		assertThat(response.buyToNewsMinutes()).isEqualTo(facts.buyToNewsMinutes());
+		assertThat(response.priceMoves()).isEqualTo(facts.priceMoves());
+		assertThat(response.postSellFlow()).isEqualTo(facts.postSellFlow());
+		assertThat(response.counterfactuals()).isEqualTo(facts.counterfactuals());
+		assertThat(response.peerComparison()).isEqualTo(facts.peerComparison());
 	}
 
-	// 2026-08-04 결정 — 원본 거래일이 역전되면 holdingMinutes가 null이다(§파생 사실 계산). 같은 원본 거래일을
-	// 여러 서비스 날짜에 재생할 수 있어 매도의 원본 거래일이 매수 lot보다 앞선 조합이 실제로 성립하고, 그때 음수가
-	// 예외도 로그도 없이 나갔다. 아래 두 테스트는 짝이다 — 역전만 재현하면 "sameSessionCompleted=false면 전부
-	// null"로 잘못 구현한 코드도 초록이기 때문이다.
+	// --- UNIQUE(trade_id) 동시 삽입 ---
+
+	// 새로고침 연타면 두 요청이 각자 "기존 행 없음"을 보고 저장을 시도한다. 흡수하지 않으면 GET이 500이 된다.
 	@Test
-	@DisplayName("매도의 원본 거래일이 매수 lot보다 앞서면 holdingMinutes가 null이다 — 음수를 내지 않는다")
-	void holdingMinutesIsNullWhenTheOriginTradeDatesAreReversed() {
-		LocalDate laterOriginTradeDate = ORIGIN_TRADE_DATE.plusDays(1);
-		givenOwnedSellTrade(sellTrade(ORIGIN_TRADE_DATE));
-		givenAllocation(twoLotSummary(laterOriginTradeDate, laterOriginTradeDate));
+	@DisplayName("동시 삽입으로 UNIQUE(trade_id)가 충돌해도 500이 아니라 방금 만든 문장으로 200이다")
+	void absorbsTheUniqueViolationRaisedByAConcurrentInsert() {
+		givenFacts(factsWithoutNarrative());
+		givenNoStoredNarrative();
+		givenGenerated(NarrativeResultDto.llm(LLM_NARRATIVE));
+		when(tradeFeedbackWriter.create(any(), any(), any(), any()))
+			.thenThrow(new DataIntegrityViolationException("Duplicate entry for key 'uk_trade_feedbacks_trade_id'"));
 
 		PostSellFeedbackResponse response = postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
 
-		// 픽스처 자기검증 — 응답의 두 시각이 실제로 역전돼 있어야 이 규칙을 검증한다. 그대로 뺀 구현이 내는
-		// 답이 음수이므로 두 구현이 갈린다(0으로 clamp한 구현도 이 단정에서 빨개진다).
-		assertThat(response.sellAt()).isBefore(response.buyAt());
-		assertThat(Duration.between(response.buyAt(), response.sellAt()).toMinutes()).isNegative();
-		assertThat(response.holdingMinutes()).isNull();
+		assertThat(response.narrative()).isEqualTo(LLM_NARRATIVE);
+		assertThat(response.narrativeSource()).isEqualTo(NarrativeSource.LLM);
+		assertThat(response.narrativeStatus()).isEqualTo(PostSellFeedbackStatus.READY);
 	}
 
+	// 유니크 충돌만 흡수한다 — 다른 DB 오류를 함께 삼키면 저장이 조용히 안 되는 상태가 로그도 없이 굳는다.
 	@Test
-	@DisplayName("원본 거래일이 순방향이면 sameSessionCompleted=false여도 holdingMinutes는 채워진다")
-	void holdingMinutesStaysFilledForAForwardCrossSessionSell() {
-		LocalDate earlierOriginTradeDate = ORIGIN_TRADE_DATE.minusDays(1);
-		givenOwnedSellTrade(sellTrade(ORIGIN_TRADE_DATE));
-		givenAllocation(twoLotSummary(earlierOriginTradeDate, earlierOriginTradeDate));
-
-		PostSellFeedbackResponse response = postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
-
-		// 계약의 sameSessionCompleted=false nullable 목록에 holdingMinutes는 없다 — 조건은 역전뿐이다.
-		assertThat(response.sameSessionCompleted()).isFalse();
-		assertThat(response.buyAt()).isEqualTo(LocalDateTime.of(earlierOriginTradeDate, EARLIEST_BUY_TIME));
-		assertThat(response.holdingMinutes()).isEqualTo(1750);
-	}
-
-	// --- sameSessionCompleted ---
-
-	@Test
-	@DisplayName("배분 lot이 전부 매도와 같은 원본 거래일이면 sameSessionCompleted=true다")
-	void sameSessionCompletedIsTrueWhenEveryAllocatedLotSharesTheSellOriginTradeDate() {
-		givenOwnedSellTrade(sellTrade(ORIGIN_TRADE_DATE));
-		givenAllocation(twoLotSummary(ORIGIN_TRADE_DATE, ORIGIN_TRADE_DATE));
-
-		PostSellFeedbackResponse response = postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
-
-		assertThat(response.sameSessionCompleted()).isTrue();
-	}
-
-	// 완료 조건 3번. 픽스처가 "가장 이른 lot만 보는 구현"에서 실제로 빨간지가 이 테스트의 핵심이다 —
-	// 가장 이른 lot의 원본 거래일을 매도와 같게 두고, 나중 lot만 다른 거래일로 둔다. 두 lot이 같은 거래일인
-	// 픽스처로는 두 구현이 같은 답을 내므로 회귀를 못 잡는다(tasks.md 1번).
-	@Test
-	@DisplayName("나중 lot만 원본 거래일이 다르면 sameSessionCompleted=false다 — 가장 이른 lot만 보는 구현은 여기서 true를 낸다")
-	void sameSessionCompletedIsFalseWhenOnlyALaterLotHasADifferentOriginTradeDate() {
-		LocalDate otherOriginTradeDate = LocalDate.of(2026, 7, 30);
-		givenOwnedSellTrade(sellTrade(ORIGIN_TRADE_DATE));
-		SellAllocationSummaryDto allocation = twoLotSummary(ORIGIN_TRADE_DATE, otherOriginTradeDate);
-		givenAllocation(allocation);
-
-		PostSellFeedbackResponse response = postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
-
-		// 틀린 구현이 내는 답을 테스트 안에서 재현한다 — 가장 이른 lot만 대조하면 true다.
-		boolean earliestLotOnlyVerdict = ORIGIN_TRADE_DATE.equals(allocation.earliestBuySourceTradingDate());
-		assertThat(earliestLotOnlyVerdict).isTrue();
-		assertThat(allocation.buySourceTradingDates()).contains(otherOriginTradeDate);
-
-		// 올바른 구현은 배분된 lot 전부를 보므로 false다.
-		assertThat(response.sameSessionCompleted()).isFalse();
-	}
-
-	// --- 아직 채우지 않는 필드 ---
-
-	@Test
-	@DisplayName("아직 채우지 않는 필드는 계약의 필드 집합을 유지한 채 null·[]이다")
-	void leavesFieldsOwnedByLaterItemsAsNullOrEmptyList() {
-		givenOwnedSellTrade(sellTrade(ORIGIN_TRADE_DATE));
-		givenAllocation(twoLotSummary(ORIGIN_TRADE_DATE, ORIGIN_TRADE_DATE));
-
-		PostSellFeedbackResponse response = postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
-
-		assertThat(response.holdHighPrice()).isNull();
-		assertThat(response.holdHighAt()).isNull();
-		assertThat(response.holdLowPrice()).isNull();
-		assertThat(response.holdLowAt()).isNull();
-		assertThat(response.sellVsHighRate()).isNull();
-		assertThat(response.sellVsLowRate()).isNull();
-		assertThat(response.buyToNewsMinutes()).isNull();
-		assertThat(response.priceMoves()).isEmpty();
-		// 매도 후 흐름·반사실·집단 비교는 3번 항목이 채웠다 — 이 픽스처는 장 마감 전(14:40) 조회라 게이트가
-		// 닫혀 있어 세 블록이 NOT_YET 껍데기다. 게이트 자체는 PostSellFeedbackPostSellFlowTest가 본다.
-		assertThat(response.postSellFlow().status()).isEqualTo(PostSellFeedbackStatus.NOT_YET);
-		assertThat(response.counterfactuals().status()).isEqualTo(PostSellFeedbackStatus.NOT_YET);
-		assertThat(response.peerComparison().status()).isEqualTo(PostSellFeedbackStatus.NOT_YET);
-		// 남은 것은 4번 항목(AI 서술) 몫이다.
-		assertThat(response.narrative()).isNull();
-		assertThat(response.narrativeSource()).isNull();
-		assertThat(response.narrativeStatus()).isNull();
-	}
-
-	// --- 검증 순서 ---
-
-	@Test
-	@DisplayName("매수 체결이면 400 VALIDATION_ERROR이고 배분을 읽지 않는다")
-	void rejectsBuyTradeWithValidationErrorWithoutReadingAllocations() {
-		givenOwnedSellTrade(buyTrade());
+	@DisplayName("유니크 충돌이 아닌 저장 실패는 삼키지 않는다")
+	void doesNotSwallowOtherPersistenceFailures() {
+		givenFacts(factsWithoutNarrative());
+		givenNoStoredNarrative();
+		givenGenerated(NarrativeResultDto.llm(LLM_NARRATIVE));
+		when(tradeFeedbackWriter.create(any(), any(), any(), any()))
+			.thenThrow(new IllegalStateException("커넥션 없음"));
 
 		assertThatThrownBy(() -> postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID))
-			.isInstanceOf(BusinessException.class)
-			.satisfies(exception -> assertThat(((BusinessException)exception).getErrorCode())
-				.isEqualTo(ErrorCode.VALIDATION_ERROR));
-
-		verifyNoInteractions(sellAllocationQueryService);
+			.isInstanceOf(IllegalStateException.class);
 	}
 
-	// 완료 조건 1번 — 코인 매도 체결은 빈 값을 채운 200이 아니라 400이다(FEED-007 각주).
-	@Test
-	@DisplayName("코인 매도 체결이면 400 VALIDATION_ERROR이고 빈 값 200을 돌려주지 않는다")
-	void rejectsCryptoSellTradeWithValidationErrorInsteadOfEmptyOkResponse() {
-		givenOwnedSellTrade(cryptoSellTrade());
-
-		assertThatThrownBy(() -> postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID))
-			.isInstanceOf(BusinessException.class)
-			.satisfies(exception -> assertThat(((BusinessException)exception).getErrorCode())
-				.isEqualTo(ErrorCode.VALIDATION_ERROR));
-
-		verifyNoInteractions(sellAllocationQueryService);
-	}
+	// --- 검증 순서 (서술 생성보다 먼저다) ---
 
 	@Test
-	@DisplayName("체결이 없으면 404 NOT_FOUND가 그대로 전파되고 배분을 읽지 않는다")
-	void propagatesNotFoundWithoutReadingAllocations() {
-		when(tradeService.getOwnedTrade(USER_ID, SELL_TRADE_ID)).thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
-
-		assertThatThrownBy(() -> postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID))
-			.isInstanceOf(BusinessException.class)
-			.satisfies(exception -> assertThat(((BusinessException)exception).getErrorCode())
-				.isEqualTo(ErrorCode.NOT_FOUND));
-
-		verifyNoInteractions(sellAllocationQueryService);
-	}
-
-	@Test
-	@DisplayName("타인 체결이면 403 FORBIDDEN이 그대로 전파되고 배분을 읽지 않는다")
-	void propagatesForbiddenWithoutReadingAllocations() {
-		when(tradeService.getOwnedTrade(USER_ID, SELL_TRADE_ID)).thenThrow(new BusinessException(ErrorCode.FORBIDDEN));
+	@DisplayName("reader가 404·403·400으로 거부하면 LLM을 부르지 않고 저장도 하지 않는다")
+	void neverGeneratesANarrativeWhenTheReaderRejectsTheRequest() {
+		when(postSellFeedbackReader.read(USER_ID, SELL_TRADE_ID))
+			.thenThrow(new BusinessException(ErrorCode.FORBIDDEN));
 
 		assertThatThrownBy(() -> postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID))
 			.isInstanceOf(BusinessException.class)
 			.satisfies(exception -> assertThat(((BusinessException)exception).getErrorCode())
 				.isEqualTo(ErrorCode.FORBIDDEN));
 
-		verifyNoInteractions(sellAllocationQueryService);
+		verifyNoInteractions(narrativeService, tradeFeedbackWriter, tradeFeedbackRepository);
 	}
 
-	// 검증 순서 확인 — 타인 소유의 코인 매수 체결은 getOwnedTrade 단계에서 403으로 끝난다. side·market 검사(400)에
-	// 먼저 닿는 구현이면 400이 나와 이 테스트가 순서 위반을 드러낸다.
-	@Test
-	@DisplayName("타인 소유의 코인 매수 체결은 400이 아니라 403이다")
-	void returnsForbiddenNotValidationErrorForOtherUsersCryptoBuyTrade() {
-		when(tradeService.getOwnedTrade(USER_ID, SELL_TRADE_ID)).thenThrow(new BusinessException(ErrorCode.FORBIDDEN));
-
-		assertThatThrownBy(() -> postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID))
-			.isInstanceOf(BusinessException.class)
-			.satisfies(exception -> assertThat(((BusinessException)exception).getErrorCode())
-				.isEqualTo(ErrorCode.FORBIDDEN)
-				.isNotEqualTo(ErrorCode.VALIDATION_ERROR));
-	}
+	// --- 프롬프트 입력 조립 ---
 
 	@Test
-	@DisplayName("배분은 그 매도 체결 id로만 조회한다")
-	void readsAllocationsOfTheRequestedSellTradeOnly() {
-		givenOwnedSellTrade(sellTrade(ORIGIN_TRADE_DATE));
-		givenAllocation(twoLotSummary(ORIGIN_TRADE_DATE, ORIGIN_TRADE_DATE));
+	@DisplayName("프롬프트에 수치·파생 사실·카드가 실리고 반사실은 애초에 자리가 없으며 집단 비교는 null이다")
+	void mapsFactsIntoThePromptInputWithoutCounterfactuals() {
+		givenFacts(factsWithoutNarrative());
+		givenNoStoredNarrative();
+		givenGenerated(NarrativeResultDto.llm(LLM_NARRATIVE));
 
 		postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
 
-		verify(tradeService).getOwnedTrade(USER_ID, SELL_TRADE_ID);
-		verify(sellAllocationQueryService).getSellAllocationSummary(SELL_TRADE_ID);
+		ArgumentCaptor<PostSellPromptDto> captor = ArgumentCaptor.forClass(PostSellPromptDto.class);
+		verify(narrativeService).resolvePostSellNarrative(captor.capture());
+		PostSellPromptDto prompt = captor.getValue();
+		// 시각은 HH:mm만 쓴다 — 원본 거래일 날짜는 문장에 등장하지 않는다.
+		assertThat(prompt.buyAt()).isEqualTo(LocalTime.of(9, 30));
+		assertThat(prompt.sellAt()).isEqualTo(LocalTime.of(14, 40));
+		assertThat(prompt.buyPrice()).isEqualByComparingTo("70000");
+		assertThat(prompt.sellPrice()).isEqualByComparingTo("68500");
+		assertThat(prompt.realizedPnl()).isEqualTo(-15_207L);
+		assertThat(prompt.holdHighPrice()).isEqualByComparingTo("70800");
+		assertThat(prompt.buyToNewsMinutes()).isEqualTo(105);
+		// buyToNewsMinutes와 firstNewsAt은 같은 근거 기사 하나에서 나온다 — 한쪽만 채우면 기준 시각이 사라진다.
+		assertThat(prompt.firstNewsAt()).isEqualTo(LocalTime.of(11, 15));
+		assertThat(prompt.priceMoves()).singleElement().satisfies(move -> {
+			assertThat(move.windowEnd()).isEqualTo(LocalTime.of(11, 25));
+			assertThat(move.minutesAfterBuy()).isEqualTo(115);
+			assertThat(move.sources()).singleElement()
+				.satisfies(source -> assertThat(source.disclosure()).isFalse());
+		});
+		assertThat(prompt.closePrice()).isEqualByComparingTo("69200");
+		assertThat(prompt.sellToCloseRate()).isEqualByComparingTo("0.0102");
+		// 집단 비교는 항상 NOT_YET이라 넘길 값이 없는 것이 정상 상태다 — 7번이 판정을 붙이면 값이 흘러 들어온다.
+		assertThat(prompt.holderCount()).isNull();
+		assertThat(prompt.soldWithin30MinRate()).isNull();
+		assertThat(prompt.medianMinutesToSell()).isNull();
+		assertThat(prompt.yourMinutesToSell()).isNull();
+	}
+
+	@Test
+	@DisplayName("근거 기사가 없으면 buyToNewsMinutes와 firstNewsAt이 함께 null이다")
+	void leavesBothNewsFieldsNullWhenThereIsNoSource() {
+		givenFacts(factsWithoutNarrative(false));
+		givenNoStoredNarrative();
+		givenGenerated(NarrativeResultDto.template(TEMPLATE_NARRATIVE));
+
+		postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
+
+		ArgumentCaptor<PostSellPromptDto> captor = ArgumentCaptor.forClass(PostSellPromptDto.class);
+		verify(narrativeService).resolvePostSellNarrative(captor.capture());
+		assertThat(captor.getValue().buyToNewsMinutes()).isNull();
+		assertThat(captor.getValue().firstNewsAt()).isNull();
+		assertThat(captor.getValue().priceMoves()).isEmpty();
+	}
+
+	// --- 트랜잭션 경계 (구조 단정) ---
+
+	// LLM 호출이 중앙값 2.5초라 여기에 트랜잭션을 걸면 그 시간 동안 커넥션을 쥔다. 편의로 애노테이션을 붙이는
+	// 회귀는 동작으로 드러나지 않으므로(느려지기만 한다) 구조를 단정으로 고정한다.
+	@Test
+	@DisplayName("PostSellFeedbackService에는 클래스·메서드 어디에도 @Transactional이 없다")
+	void neverWrapsTheOrchestrationInATransaction() throws Exception {
+		assertThat(PostSellFeedbackService.class.getAnnotation(Transactional.class)).isNull();
+		assertThat(PostSellFeedbackService.class.getAnnotation(jakarta.transaction.Transactional.class)).isNull();
+
+		Method entryPoint = PostSellFeedbackService.class.getMethod(
+			"getPostSellFeedback", Long.class, Long.class);
+		assertThat(entryPoint.getAnnotation(Transactional.class)).isNull();
+		assertThat(entryPoint.getAnnotation(jakarta.transaction.Transactional.class)).isNull();
 	}
 
 	// --- 픽스처 ---
 
-	private void givenOwnedSellTrade(Trade trade) {
-		when(tradeService.getOwnedTrade(USER_ID, SELL_TRADE_ID)).thenReturn(trade);
+	private void givenFacts(PostSellFeedbackResponse facts) {
+		when(postSellFeedbackReader.read(USER_ID, SELL_TRADE_ID)).thenReturn(facts);
 	}
 
-	private void givenAllocation(SellAllocationSummaryDto allocation) {
-		when(sellAllocationQueryService.getSellAllocationSummary(any())).thenReturn(allocation);
+	private void givenNoStoredNarrative() {
+		when(tradeFeedbackRepository.findByTradeId(SELL_TRADE_ID)).thenReturn(Optional.empty());
+	}
+
+	private void givenGenerated(NarrativeResultDto resolved) {
+		when(narrativeService.resolvePostSellNarrative(any())).thenReturn(resolved);
+	}
+
+	// 엔티티를 mock으로 만들지 않는다 — 실제 팩토리로 만들어 값이 담긴 객체를 쓴다(docs/conventions.md).
+	// 이 경로는 서술 두 값만 읽으므로 연관 체결은 필요하지 않다.
+	private static TradeFeedback storedFeedback(String narrative, NarrativeSource source) {
+		return TradeFeedback.create(null, narrative, source, NOW.minusMinutes(30));
+	}
+
+	private static PostSellFeedbackResponse factsWithoutNarrative() {
+		return factsWithoutNarrative(true);
 	}
 
 	/**
-	 * 계약 예시의 배분 요약. lot이 <b>둘</b>이고(완료 조건 2번이 요구한다) 가장 이른 lot은 09:30, 나중 lot은
-	 * 10:30이다. 가장 이른 lot의 벽시계 날짜를 매도의 서비스 날짜와 다르게 둬서, 그 값을 그대로 buyAt으로 쓴
-	 * 구현이 드러나게 한다.
+	 * reader가 돌려주는 형태 — 서술 세 값이 {@code null}이고 나머지는 계약 예시 그대로다. 게이트가 열린 뒤라
+	 * 매도 후 흐름·반사실이 채워져 있고 집단 비교는 {@code NOT_YET}이다.
 	 */
-	private static SellAllocationSummaryDto twoLotSummary(
-		LocalDate earliestLotOriginTradeDate, LocalDate laterLotOriginTradeDate) {
-		return new SellAllocationSummaryDto(
+	private static PostSellFeedbackResponse factsWithoutNarrative(boolean withCard) {
+		return new PostSellFeedbackResponse(
+			SELL_TRADE_ID,
+			1L,
+			"005930",
+			"삼성전자",
+			LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(9, 30)),
+			LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(14, 40)),
 			new BigDecimal("70000.00000000"),
-			LocalDateTime.of(EARLIEST_BUY_SERVICE_DATE, EARLIEST_BUY_TIME),
-			earliestLotOriginTradeDate,
-			700_000L,
-			105L,
-			new BigDecimal("10"),
-			List.of(earliestLotOriginTradeDate, laterLotOriginTradeDate));
-	}
-
-	private static Trade sellTrade(LocalDate originTradeDate) {
-		return sellTrade(originTradeDate, -15_207L);
-	}
-
-	private static Trade sellTrade(LocalDate originTradeDate, Long realizedPnl) {
-		Instrument instrument = stockInstrument();
-		return trade(
-			instrument,
-			session(SELL_SERVICE_DATE, originTradeDate),
-			OrderSide.SELL,
 			new BigDecimal("68500"),
-			685_000L,
+			new BigDecimal("10"),
 			102L,
-			realizedPnl,
-			LocalDateTime.of(SELL_SERVICE_DATE, SELL_TIME));
-	}
-
-	private static Trade buyTrade() {
-		Instrument instrument = stockInstrument();
-		return trade(
-			instrument,
-			session(SELL_SERVICE_DATE, ORIGIN_TRADE_DATE),
-			OrderSide.BUY,
-			new BigDecimal("70000"),
-			700_000L,
-			105L,
+			-15_207L,
+			new BigDecimal("-0.0217"),
+			310,
+			true,
+			new BigDecimal("70800"),
+			LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(11, 5)),
+			new BigDecimal("68100"),
+			LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(14, 20)),
+			new BigDecimal("-0.0325"),
+			new BigDecimal("0.0059"),
+			withCard ? 105 : null,
+			withCard ? List.of(sampleCard()) : List.of(),
+			new PostSellFlow(
+				PostSellFeedbackStatus.READY,
+				new BigDecimal("69200"),
+				LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(15, 27)),
+				new BigDecimal("0.0102"),
+				new BigDecimal("69500"),
+				LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(15, 5))),
+			new Counterfactuals(
+				PostSellFeedbackStatus.READY,
+				new CounterfactualScenario(
+					new BigDecimal("69200"), LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(15, 27)), null),
+				new CounterfactualScenario(
+					new BigDecimal("70800"), LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(11, 5)), null),
+				null),
+			new PeerComparison(PostSellFeedbackStatus.NOT_YET, null, null, null, null, null),
 			null,
-			LocalDateTime.of(SELL_SERVICE_DATE, EARLIEST_BUY_TIME));
-	}
-
-	// 코인 체결에는 재생세션이 없다 (Trade가 그것을 강제한다).
-	private static Trade cryptoSellTrade() {
-		Instrument instrument = Instrument.create(
-			Market.CRYPTO, "BTC", "비트코인", new BigDecimal("1"), 5_000L, true,
-			LocalDateTime.of(SELL_SERVICE_DATE, SELL_TIME));
-		return trade(
-			instrument,
 			null,
-			OrderSide.SELL,
-			new BigDecimal("100000000"),
-			100_000_000L,
-			50_000L,
-			1_000L,
-			LocalDateTime.of(SELL_SERVICE_DATE, SELL_TIME));
+			null);
 	}
 
-	private static Trade trade(
-		Instrument instrument,
-		StockReplaySession session,
-		OrderSide side,
-		BigDecimal price,
-		long amount,
-		long fee,
-		Long realizedPnl,
-		LocalDateTime executedAt) {
-		User user = User.create("trader@finplay.com", "password-hash", "trader", executedAt);
-		Account account = Account.create(user, com.finplay.api.account.domain.Market.STOCK, executedAt);
-		Order order = Order.create(
-			user, account, instrument, side, OrderType.MARKET, new BigDecimal("10"), "idem-key", "h".repeat(64),
-			executedAt);
-		Trade trade = Trade.of(
-			order, account, instrument, session, side, price, new BigDecimal("10"), amount, fee, realizedPnl,
-			executedAt, executedAt);
-		ReflectionTestUtils.setField(trade, "id", SELL_TRADE_ID);
-		return trade;
-	}
-
-	private static Instrument stockInstrument() {
-		Instrument instrument = Instrument.create(
-			Market.STOCK, "005930", "삼성전자", new BigDecimal("100"), 0L, true,
-			LocalDateTime.of(SELL_SERVICE_DATE, SELL_TIME));
-		ReflectionTestUtils.setField(instrument, "id", INSTRUMENT_ID);
-		return instrument;
-	}
-
-	private static StockReplaySession session(LocalDate serviceDate, LocalDate sourceTradingDate) {
-		LocalDateTime resolvedAt = LocalDateTime.of(serviceDate, LocalTime.of(8, 40));
-		return StockReplaySession.ready(serviceDate, sourceTradingDate, resolvedAt, resolvedAt);
+	private static HeldPriceMoveItem sampleCard() {
+		return new HeldPriceMoveItem(
+			12L,
+			LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(11, 20)),
+			LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(11, 25)),
+			new BigDecimal("-0.018200"),
+			115,
+			195,
+			"11시 20분부터 5분간 1.82% 하락했습니다.",
+			List.of(new NewsItem(
+				MarketNewsItemType.NEWS,
+				"생산 차질",
+				"hankyung.com",
+				"https://news.example.test/1",
+				LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(11, 15)))));
 	}
 }

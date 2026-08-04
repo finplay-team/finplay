@@ -398,10 +398,10 @@ class PostSellFeedbackPostSellFlowTest {
 	// --- 픽스처 ---
 
 	private PostSellFeedbackResponse getPostSellFeedbackAt(LocalDateTime now) {
-		PostSellFeedbackService service = new PostSellFeedbackService(
+		PostSellFeedbackReader service = new PostSellFeedbackReader(
 			tradeService, sellAllocationQueryService, stockReplayService, priceMoveEventRepository,
 			priceMoveEventSourceRepository, Clock.fixed(now.atZone(KST).toInstant(), KST));
-		return service.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
+		return service.read(USER_ID, SELL_TRADE_ID);
 	}
 
 	/** 계약 예시를 그대로 재현하는 하루치 분봉. 마지막 분봉이 15:27이고 15:30 분봉은 없다. */
