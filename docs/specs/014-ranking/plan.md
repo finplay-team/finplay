@@ -232,6 +232,12 @@ public class RankingService {
 
 `RankingIntegrationTest`에 이 문제를 실제로 잡아내는 테스트(`refreshScoreReadsLatestDbValueEvenWhenCallerHasStalePersistenceContext`)를 추가했다 — `TransactionTemplate`으로 바깥 트랜잭션에서 계좌를 먼저 로드해 1차 캐시에 옛 값을 남긴 뒤, 완전히 별도(REQUIRES_NEW)의 트랜잭션에서 DB 값을 갱신·커밋하고, 그 바깥 트랜잭션이 아직 활성인 채로 `refreshScore`를 호출해 AFTER_COMMIT 콜백과 동일한 조건을 재현한다. `REQUIRED`로 되돌려 실행하면 이 테스트가 실패하는 것을 확인해 회귀 테스트로서의 유효성을 검증했다. 기존 `eventOrderReversalStillConvergesToLatestDbRealizedPnl`(트랜잭션 없는 테스트 스레드에서 리스너를 직접 호출)은 "최종 수렴" 자체는 여전히 유효하게 검증하므로 유지하되, 이 전파 버그는 잡아내지 못한다는 한계를 새 테스트로 보완했다.
 
+**8-4. 동점 없는 경계 경로에서 유령 계좌 필터링 후 결과가 limit보다 적어지는 문제 (독립 reviewer 검증 중 발견, 권장)**
+
+8-2의 "경계에 동점이 없으면 그대로 `limit`개로 절단한다"(당시 `window.subList(0, limit)`)가, 8-1의 유령 필터링과 조합되면 문제가 됐다. 예: `limit=2`, `topN(3)` = `[alice(100,정상), 유령(90), carol(80,정상)]`에서 미리 `limit`개로 잘라버리면 `[alice, 유령]`만 남고, 유령을 걸러내면 `alice` 1건만 응답에 남는다 — 원래는 3번째 `carol`이 채워질 수 있었는데 이미 잘려나가 후보에도 못 든다.
+
+**수정**: `fetchWindowResolvingBoundaryTies`의 "동점 없음" 분기가 더는 `limit`개로 미리 자르지 않고 `limit+1`개(fetch한 전체)를 그대로 반환한다. 최종 `limit`개 절단은 이미 `calculateRanks`가 유령 필터링 **이후**에 수행하므로(`.limit(limit)`), 자연스럽게 "+1"로 확보해둔 여유분이 유령 자리를 보충한다. 2개 이상의 유령이 그 "+1" 범위 안에 동시에 있는 경우까지는 완전히 해결하지 못하지만(이미 Redis/DB가 어긋난 비정상 상황에서만 나타나는 조건이라 과설계하지 않기로 함), 리뷰가 지적한 단일 유령 시나리오는 완전히 해결된다. `RankingServiceTest`에 이 정확한 시나리오를 재현하는 회귀 테스트(`getRankingsBackfillsFromSpareEntryWhenBoundaryWindowContainsGhostAccount`)를 추가했다.
+
 ## API 설계
 
 | Method | URL | 요청 | 응답 | 설명 |

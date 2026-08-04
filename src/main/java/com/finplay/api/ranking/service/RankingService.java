@@ -76,8 +76,12 @@ public class RankingService {
 		long boundaryScore = window.get(limit - 1).score();
 		long justPastBoundaryScore = window.get(limit).score();
 		if (boundaryScore != justPastBoundaryScore) {
-			// 경계에 동점이 없는(가장 흔한) 경우 — 추가 Redis 호출 없이 그대로 절단한다.
-			return window.subList(0, limit);
+			// 경계에 동점이 없는(가장 흔한) 경우 — 추가 Redis 호출 없이 그대로 반환한다.
+			// 여기서 limit개로 미리 자르지 않는다: window에 유령 accountId(PR #196 차단 1)가 섞여 있으면
+			// calculateRanks의 필터링으로 유효 항목이 limit보다 줄어드는데, 미리 잘라두면 "+1"로 확보해둔
+			// 여유분까지 함께 잘려나가 보충할 데이터가 없어진다(PR #196 리뷰 후속 발견). 최종 limit개 절단은
+			// calculateRanks가 유령 필터링 이후에 수행하므로 그쪽에 맡긴다.
+			return window;
 		}
 
 		// 경계에 동점 그룹이 걸쳐 있다 — 그 score를 가진 전체 멤버를 가져와 window의 경계 score 항목을 교체한다.

@@ -192,6 +192,33 @@ class RankingServiceTest {
 		assertThat(response.content()).containsExactly(new RankingListItemResponse(1, "alice", 100L));
 	}
 
+	// 독립 reviewer 세션이 발견한 잔여 결함(PR #196 검증 중): 동점이 없는 경계 경로에서 window 안의 유령
+	// accountId를 걸러내고 나면 유효 항목이 limit보다 적어질 수 있는데, 그 자리를 이미 "+1"로 확보해둔
+	// 여유분(3번째 항목)이 보충해야 한다. limit=2, topN(3)=[alice(100), 유령(90), carol(80)]에서
+	// 2번째가 유령이면 3번째 carol이 살아나 2건이 채워져야 한다(수정 전에는 1건만 남았다).
+	@Test
+	void getRankingsBackfillsFromSpareEntryWhenBoundaryWindowContainsGhostAccount() {
+		Account alice = account(1L, Market.STOCK, 100L, 1L, "alice");
+		Account carol = account(3L, Market.STOCK, 80L, 3L, "carol");
+
+		when(rankingStore.topN(Market.STOCK, 3)).thenReturn(List.of(
+			new RankingEntryDto(1L, 100L),
+			new RankingEntryDto(999L, 90L), // 999는 DB에 없는 유령 accountId — 경계(2번째)에 위치
+			new RankingEntryDto(3L, 80L)));
+		when(accountService.findAllByIdInFetchUser(any())).thenReturn(List.of(alice, carol));
+		when(rankingStore.countStrictlyGreater(Market.STOCK, 100L)).thenReturn(0L);
+		// 유령(990점)은 필터링으로 응답에는 안 나오지만 실제 Redis ZSET에는 여전히 남아있어
+		// countStrictlyGreater(80)에는 alice(100)·유령(90) 둘 다 카운트된다(기존에 문서화된 별개의 한계).
+		when(rankingStore.countStrictlyGreater(Market.STOCK, 80L)).thenReturn(2L);
+
+		RankingListResponse response = rankingService.getRankings(Market.STOCK, 2);
+
+		assertThat(response.content()).containsExactly(
+			new RankingListItemResponse(1, "alice", 100L),
+			new RankingListItemResponse(3, "carol", 80L));
+		verify(rankingStore, never()).findAllAtScore(any(), anyLong());
+	}
+
 	private Market market() {
 		return Market.STOCK;
 	}
