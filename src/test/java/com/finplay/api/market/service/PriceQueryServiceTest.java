@@ -15,6 +15,7 @@ import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.domain.StockReplaySession;
 import com.finplay.api.market.repository.InstrumentRepository;
 import com.finplay.api.market.store.CryptoPriceDto;
 import com.finplay.api.market.store.PriceStore;
@@ -29,6 +30,56 @@ import org.junit.jupiter.api.Test;
 class PriceQueryServiceTest {
 
 	private static final LocalDateTime NOW = LocalDateTime.of(2026, 7, 28, 10, 0, 0);
+
+	@Test
+	void getOrderExecutionPriceReturnsStockQuoteWithSameReplaySession() {
+		Instrument instrument = Instrument.create(
+			Market.STOCK, "005930", "삼성전자", BigDecimal.ONE, 0L, true, NOW);
+		StockReplaySession session = StockReplaySession.ready(
+			NOW.toLocalDate(), NOW.toLocalDate().minusDays(1), NOW, NOW);
+		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
+		when(stockPriceProvider.getCurrentPrice(any())).thenReturn(new StockReplayPriceDto(
+			true, StockMarketStatus.OPEN, session.getSourceTradingDate(), new BigDecimal("71000"), NOW, session));
+		PriceQueryService service = new PriceQueryService(
+			mock(InstrumentRepository.class), stockPriceProvider, mock(PriceStore.class));
+
+		OrderExecutionPriceDto result = service.getOrderExecutionPrice(instrument);
+
+		assertThat(result.priceQuote().price()).isEqualByComparingTo("71000");
+		assertThat(result.stockReplaySession()).isSameAs(session);
+	}
+
+	@Test
+	void getOrderExecutionPriceReturnsCryptoQuoteWithoutReplaySession() {
+		Instrument instrument = Instrument.create(
+			Market.CRYPTO, "BTC", "비트코인", new BigDecimal("0.00000001"), 5000L, true, NOW);
+		PriceStore priceStore = mock(PriceStore.class);
+		when(priceStore.isPriceAvailable("BTC")).thenReturn(true);
+		when(priceStore.getLatestPrice("BTC"))
+			.thenReturn(Optional.of(new CryptoPriceDto("BTC", new BigDecimal("50000000"), NOW)));
+		PriceQueryService service = new PriceQueryService(
+			mock(InstrumentRepository.class), mock(StockPriceProvider.class), priceStore);
+
+		OrderExecutionPriceDto result = service.getOrderExecutionPrice(instrument);
+
+		assertThat(result.priceQuote().price()).isEqualByComparingTo("50000000");
+		assertThat(result.stockReplaySession()).isNull();
+	}
+
+	@Test
+	void getOrderExecutionPriceFailsWhenOpenStockQuoteHasNoReplaySession() {
+		Instrument instrument = Instrument.create(
+			Market.STOCK, "005930", "삼성전자", BigDecimal.ONE, 0L, true, NOW);
+		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
+		when(stockPriceProvider.getCurrentPrice(any())).thenReturn(new StockReplayPriceDto(
+			true, StockMarketStatus.OPEN, NOW.toLocalDate(), new BigDecimal("71000"), NOW, null));
+		PriceQueryService service = new PriceQueryService(
+			mock(InstrumentRepository.class), stockPriceProvider, mock(PriceStore.class));
+
+		assertThatThrownBy(() -> service.getOrderExecutionPrice(instrument))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode()).isEqualTo(ErrorCode.MARKET_CLOSED));
+	}
 
 	@Test
 	void getPriceReturnsAvailableQuoteWhenStockProviderHasPrice() {
@@ -70,47 +121,6 @@ class PriceQueryServiceTest {
 		assertThatThrownBy(() -> priceQueryService.getPrice(1L))
 			.isInstanceOf(BusinessException.class)
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode()).isEqualTo(ErrorCode.PRICE_UNAVAILABLE));
-	}
-
-	// KIS_HISTORICAL 스타일: 재생 세션 기반이라 과거 거래일(sourceTradingDate)이 채워진 채로 종가를 돌려주는 구현을 흉내낸다.
-	@Test
-	void getPriceMapsSameContractForKisHistoricalReplayStyleProvider() {
-		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
-		Instrument instrument = Instrument.create(
-			Market.STOCK, "005930", "삼성전자", BigDecimal.valueOf(100), 70000L, true, NOW);
-		StockReplayPriceDto quote = new StockReplayPriceDto(
-			true, StockMarketStatus.CLOSED, LocalDate.of(2026, 7, 27), new BigDecimal("71000"),
-			LocalDateTime.of(2026, 7, 27, 15, 30));
-		when(stockPriceProvider.getCurrentPrice(any())).thenReturn(quote);
-		PriceQueryService priceQueryService = new PriceQueryService(
-			mock(InstrumentRepository.class), stockPriceProvider, mock(PriceStore.class));
-
-		PriceQuoteDto result = priceQueryService.getPrice(instrument);
-
-		assertThat(result.price()).isEqualTo(quote.price());
-		assertThat(result.sourceTime()).isEqualTo(quote.sourceTime());
-		assertThat(result.sourceTradingDate()).isEqualTo(quote.sourceTradingDate());
-		assertThat(result.status()).isEqualTo(PriceStatus.AVAILABLE);
-	}
-
-	// KIS_REALTIME 스타일: 실시간 체결 틱 기반이라 재생 거래일 개념이 없어 sourceTradingDate를 null로 돌려주는 구현을 흉내낸다.
-	@Test
-	void getPriceMapsSameContractForKisRealtimeStyleProvider() {
-		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
-		Instrument instrument = Instrument.create(
-			Market.STOCK, "005930", "삼성전자", BigDecimal.valueOf(100), 70000L, true, NOW);
-		StockReplayPriceDto quote = new StockReplayPriceDto(
-			true, StockMarketStatus.OPEN, null, new BigDecimal("71500"), LocalDateTime.of(2026, 7, 28, 10, 0));
-		when(stockPriceProvider.getCurrentPrice(any())).thenReturn(quote);
-		PriceQueryService priceQueryService = new PriceQueryService(
-			mock(InstrumentRepository.class), stockPriceProvider, mock(PriceStore.class));
-
-		PriceQuoteDto result = priceQueryService.getPrice(instrument);
-
-		assertThat(result.price()).isEqualTo(quote.price());
-		assertThat(result.sourceTime()).isEqualTo(quote.sourceTime());
-		assertThat(result.sourceTradingDate()).isNull();
-		assertThat(result.status()).isEqualTo(PriceStatus.AVAILABLE);
 	}
 
 	@Test
@@ -420,50 +430,4 @@ class PriceQueryServiceTest {
 		verifyNoInteractions(stockPriceProvider, priceStore);
 	}
 
-	@Test
-	void assertOrderablePassesWhenStockMarketIsOpen() {
-		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
-		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
-		PriceStore priceStore = mock(PriceStore.class);
-		Instrument instrument = Instrument.create(
-			Market.STOCK, "005930", "삼성전자", BigDecimal.valueOf(100), 70000L, true, NOW);
-		when(stockPriceProvider.getMarketStatus()).thenReturn(StockMarketStatus.OPEN);
-		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
-			priceStore);
-
-		priceQueryService.assertOrderable(instrument);
-
-		verifyNoInteractions(priceStore);
-	}
-
-	@Test
-	void assertOrderableThrowsMarketClosedWhenStockMarketIsClosed() {
-		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
-		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
-		PriceStore priceStore = mock(PriceStore.class);
-		Instrument instrument = Instrument.create(
-			Market.STOCK, "005930", "삼성전자", BigDecimal.valueOf(100), 70000L, true, NOW);
-		when(stockPriceProvider.getMarketStatus()).thenReturn(StockMarketStatus.CLOSED);
-		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
-			priceStore);
-
-		assertThatThrownBy(() -> priceQueryService.assertOrderable(instrument))
-			.isInstanceOf(BusinessException.class)
-			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode()).isEqualTo(ErrorCode.MARKET_CLOSED));
-	}
-
-	@Test
-	void assertOrderableAlwaysPassesForCryptoRegardlessOfStockMarketStatus() {
-		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
-		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
-		PriceStore priceStore = mock(PriceStore.class);
-		Instrument instrument = Instrument.create(Market.CRYPTO, "BTC", "비트코인", BigDecimal.valueOf(1000), 5000L, true,
-			NOW);
-		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
-			priceStore);
-
-		priceQueryService.assertOrderable(instrument);
-
-		verifyNoInteractions(stockPriceProvider, priceStore);
-	}
 }

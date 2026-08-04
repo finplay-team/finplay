@@ -12,7 +12,9 @@ import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.domain.StockReplaySession;
 import com.finplay.api.market.repository.InstrumentRepository;
+import com.finplay.api.market.repository.StockReplaySessionRepository;
 import com.finplay.api.order.repository.OrderRepository;
 import com.finplay.api.order.repository.TradeRepository;
 import com.finplay.api.portfolio.domain.Holding;
@@ -55,6 +57,9 @@ class OrderLedgerSchemaTest {
 	private TradeRepository tradeRepository;
 
 	@Autowired
+	private StockReplaySessionRepository stockReplaySessionRepository;
+
+	@Autowired
 	private HoldingRepository holdingRepository;
 
 	@Autowired
@@ -66,6 +71,7 @@ class OrderLedgerSchemaTest {
 	private User user;
 	private Account account;
 	private Instrument instrument;
+	private StockReplaySession session;
 
 	@BeforeEach
 	void setUp() {
@@ -74,6 +80,8 @@ class OrderLedgerSchemaTest {
 			Account.create(user, com.finplay.api.account.domain.Market.STOCK, NOW));
 		instrument = instrumentRepository.saveAndFlush(
 			Instrument.create(Market.STOCK, "TEST01", "테스트종목", BigDecimal.valueOf(100), 10_000L, true, NOW));
+		session = stockReplaySessionRepository.saveAndFlush(
+			StockReplaySession.ready(NOW.toLocalDate().plusYears(34), NOW.toLocalDate(), NOW, NOW));
 	}
 
 	@Test
@@ -120,7 +128,7 @@ class OrderLedgerSchemaTest {
 			BigDecimal.valueOf(10), "trade-idem-1", "c".repeat(64), NOW));
 
 		Trade saved = tradeRepository.saveAndFlush(Trade.of(
-			order, account, instrument, OrderSide.BUY,
+			order, account, instrument, session, OrderSide.BUY,
 			BigDecimal.valueOf(70000), BigDecimal.valueOf(10),
 			700_000L, 100L, null, NOW, NOW));
 
@@ -146,12 +154,12 @@ class OrderLedgerSchemaTest {
 			user, account, instrument, OrderSide.BUY, OrderType.MARKET,
 			BigDecimal.valueOf(10), "trade-uk-idem-1", "g".repeat(64), NOW));
 		tradeRepository.saveAndFlush(Trade.of(
-			order, account, instrument, OrderSide.BUY,
+			order, account, instrument, session, OrderSide.BUY,
 			BigDecimal.valueOf(70000), BigDecimal.valueOf(10),
 			700_000L, 100L, null, NOW, NOW));
 
 		Trade duplicate = Trade.of(
-			order, account, instrument, OrderSide.BUY,
+			order, account, instrument, session, OrderSide.BUY,
 			BigDecimal.valueOf(71000), BigDecimal.valueOf(5),
 			355_000L, 50L, null, NOW, NOW);
 
@@ -193,7 +201,7 @@ class OrderLedgerSchemaTest {
 			user, account, instrument, OrderSide.BUY, OrderType.MARKET,
 			BigDecimal.valueOf(10), "lot-idem-1", "d".repeat(64), NOW));
 		Trade buyTrade = tradeRepository.saveAndFlush(Trade.of(
-			order, account, instrument, OrderSide.BUY,
+			order, account, instrument, session, OrderSide.BUY,
 			BigDecimal.valueOf(70000), BigDecimal.valueOf(10),
 			700_000L, 100L, null, NOW, NOW));
 		Holding holding = holdingRepository.saveAndFlush(Holding.create(account, instrument, NOW));
@@ -220,7 +228,7 @@ class OrderLedgerSchemaTest {
 			user, account, instrument, OrderSide.BUY, OrderType.MARKET,
 			BigDecimal.valueOf(10), "lot-uk-idem-1", "h".repeat(64), NOW));
 		Trade buyTrade = tradeRepository.saveAndFlush(Trade.of(
-			order, account, instrument, OrderSide.BUY,
+			order, account, instrument, session, OrderSide.BUY,
 			BigDecimal.valueOf(70000), BigDecimal.valueOf(10),
 			700_000L, 100L, null, NOW, NOW));
 		Holding holding = holdingRepository.saveAndFlush(Holding.create(account, instrument, NOW));
@@ -241,7 +249,7 @@ class OrderLedgerSchemaTest {
 			user, account, instrument, OrderSide.BUY, OrderType.MARKET,
 			BigDecimal.valueOf(10), "alloc-buy-idem", "e".repeat(64), NOW));
 		Trade buyTrade = tradeRepository.saveAndFlush(Trade.of(
-			buyOrder, account, instrument, OrderSide.BUY,
+			buyOrder, account, instrument, session, OrderSide.BUY,
 			BigDecimal.valueOf(70000), BigDecimal.valueOf(10),
 			700_000L, 100L, null, NOW, NOW));
 		Holding holding = holdingRepository.saveAndFlush(Holding.create(account, instrument, NOW));
@@ -252,7 +260,7 @@ class OrderLedgerSchemaTest {
 			user, account, instrument, OrderSide.SELL, OrderType.MARKET,
 			BigDecimal.valueOf(10), "alloc-sell-idem", "f".repeat(64), NOW));
 		Trade sellTrade = tradeRepository.saveAndFlush(Trade.of(
-			sellOrder, account, instrument, OrderSide.SELL,
+			sellOrder, account, instrument, session, OrderSide.SELL,
 			BigDecimal.valueOf(75000), BigDecimal.valueOf(10),
 			750_000L, 100L, 49_900L, NOW, NOW));
 

@@ -89,7 +89,9 @@ class TradeCursorTest {
 			user, account, instrument, OrderSide.BUY, OrderType.MARKET,
 			BigDecimal.valueOf(10), "idem-key", "a".repeat(64), NOW);
 		Trade trade = Trade.of(
-			order, account, instrument, OrderSide.BUY,
+			order, account, instrument,
+			com.finplay.api.market.domain.StockReplaySession.ready(NOW.toLocalDate(), NOW.toLocalDate(), NOW, NOW),
+			OrderSide.BUY,
 			BigDecimal.valueOf(75000), BigDecimal.valueOf(10),
 			750_000L, 100L, null, executedAt, NOW);
 		ReflectionTestUtils.setField(trade, "id", id);

@@ -444,6 +444,28 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 ---
 
+## ranking
+
+### 전체 랭킹 조회
+
+| Method | URL | 인증 | 쿼리 파라미터 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|---|
+| GET | /api/rankings | Access Bearer 필수 | `market`(필수, `STOCK`\|`CRYPTO` 리터럴만 허용), `limit`(선택, 기본 10, 상한 50 — 범위 밖이어도 오류 없이 클램핑) | 200 `{"market":"STOCK","content":[{"rank":1,"nickname":"투자왕","realizedPnl":500000},{"rank":1,"nickname":"차트요정","realizedPnl":500000},{"rank":3,"nickname":"존버맨","realizedPnl":120000}]}` (`RankingListResponse`); 매도 체결 이력이 있는 회원이 한 명도 없으면 200 `{"market":"STOCK","content":[]}` | `market` 누락 또는 `STOCK`\|`CRYPTO` 외 리터럴(예: `FOREX`)은 400 `VALIDATION_ERROR`. `limit`이 정수로 파싱 불가능한 값(예: `abc`)이면 값 범위와 무관하게 400 `VALIDATION_ERROR`(클램핑은 파싱된 정수에만 적용). Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 014 RANK-001, Issue #187 |
+
+**`limit`은 이 API에서만 400이 아니라 클램핑된다 — `GET /api/trades`·`GET /api/orders`와 의도적으로 다른 정책이다.** `limit`이 생략되거나 0 이하면 컨트롤러가 거부하지 않고 그대로 `RankingService`로 전달되어 서비스가 10으로 클램핑하고, 51 이상이면 50으로 클램핑한다. `market`만 컨트롤러 검증(누락·미지원 리터럴 400) 대상이다.
+
+**Redis 장애 시**: 쓰기 경로(랭킹 갱신)는 재시도 후 실패를 삼키지만, 조회 경로(`topN`/`countStrictlyGreater`)는 예외를 그대로 던져 500 `INTERNAL_ERROR`가 된다. 별도 장애 응답 정책은 아직 없다(PR #196 리뷰 참고).
+
+조회 대상은 요청에서 받지 않고 `market` 쿼리로 지정한 시장 전체 회원 중 **매도 체결 이력이 한 번도 없는 회원은 제외**한다(실현손익이 정확히 0이어도 매도 이력이 있으면 포함). 정렬은 실현손익 내림차순이며, `nickname`은 마스킹 없이 전체 노출한다. `userId`는 응답에 포함하지 않는다 — 응답은 인증 사용자로 스코프되지 않는 전체 랭킹이다(다른 회원의 항목도 그대로 보인다).
+
+**동점자는 공동 순위를 받고, 다음 순위는 동점자 수만큼 건너뛴다.** 위 예시처럼 공동 1위가 2명이면 다음 회원은 2위가 아니라 3위다(`rank = 해당 score보다 엄격히 큰 회원 수 + 1`). Redis ZSET 기본 순위 커맨드는 동점이어도 멤버 문자열 사전순으로 순차 배정해 이 규칙과 다르게 동작하므로, 애플리케이션 계층(`RankingService`)에서 별도로 보정한다.
+
+응답 2단 구조: wrapper(`RankingListResponse`)에 `market`(요청한 시장, 항목마다 반복하지 않음) · `content`(항목 배열). 항목(`RankingListItemResponse`)은 `rank`·`nickname`·`realizedPnl` 3개 필드로 고정이다.
+
+**score의 정본은 MySQL이다.** 실현손익 값은 매 조회마다 `trades`를 재집계하지 않고, 매도 체결로 `accounts.realized_pnl`이 갱신된 뒤 **커밋 이후(after-commit)**에만 Redis ZSET에 반영된 값을 그대로 읽는다 — 커밋 전 갱신·롤백 시 Redis 오염이 없다. Redis 갱신이 재시도 후에도 실패하면 로그만 남기고 매도 체결 자체(주문·체결·계좌 갱신)에는 영향이 없다.
+
+---
+
 ## 016 투자 실습 (candidate 1·2·3 제공, 나머지 계획)
 
 `docs/specs/016-investment-education-policy`의 신규 계약 10건이다. candidate 1 `POST /api/favorites`, candidate 2 `GET /api/favorites`, candidate 3 `DELETE /api/favorites/{instrumentId}`는 controller가 구현되어 제공 중이며, 나머지 7건은 아직 계획 상태이므로 블랙박스 QA의 실행 가능 API 근거로 사용하지 않는다. 각 후속 구현이 병합될 때 해당 계약을 실제 상태로 전환하고 `docs/api-routes.md`의 계획 행도 실제 라우트 목록으로 옮긴다. 모든 경로는 Access Bearer 인증과 공통 오류 body를 사용하며 JSON POST는 `Content-Type: application/json`이다.
@@ -490,6 +512,8 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 현재 존재하는 본인 favorite와 같은 종목만 허용한다. 서비스는 `(user_id, tutorial_key)` 유일 제약의 `practice_progresses`를 atomic insert-if-absent 한 뒤 진행 행과 favorite를 잠가 검증한다. 완료 상태면 저장 없이 409 `PRACTICE_ALREADY_COMPLETED`, favorite가 없으면 저장 없이 409 `PRACTICE_STEP_LOCKED`다. `#193`(ADR-0012)부터 `practice_intentions` 테이블은 DROP되어 있으며, 유효 요청마다 서버 힙 메모리(인스턴스 단위, 사용자별 리스트)에 새 레코드를 추가한다(중복 intention을 금지하는 유일 제약은 없음). 필드는 기존과 동일한 `intentionId`(프로세스 기동마다 1부터 재채번), `instrumentId`, `quantity`, `stopLoss`, `takeProfit`, `createdAt`이며, 서버 재시작 시 모두 유실된다. 이 API는 의도만 기록하며 실제 시장가 매수 체결은 기존 `POST /api/orders`의 별도 요청이다.
 
+**후속 확장 계획(#199, 아직 미구현):** 기존 타입 생략+`stopLoss`·`takeProfit` 요청은 PRICE로 호환하면서 `exitPriceType=PRICE|PERCENT`를 추가한다. PERCENT는 퍼센트 단위(백분율 값, `5`=5%)의 `stopLossRate`·`takeProfitRate`만 받고 실제 시장가 BUY `entryPrice`를 기준으로 OCO 생성 시 scale 8 절대 가격선을 계산한다. intention은 ADR-0012대로 인메모리를 유지하고 내부 UUID instance key로 영속 exit plan과 숫자 ID 재사용을 구분한다. tagged union, rate 범위·반올림·저장 정책은 `docs/specs/019-exit-price-policy`가 정본이며, 구현 전까지 위 현재 요청·응답만 실제 호출 가능하다.
+
 ### 튜토리얼 합성 시세 조회
 
 | Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
@@ -502,11 +526,11 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 | Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|
-| POST | /api/exit-plans | 필수 `Idempotency-Key: <UUID>`; body `{"intentionId":1,"buyTradeId":10,"instrumentId":1,"quantity":10,"stopLoss":65000,"takeProfit":75000}` (`ExitPlanCreateRequest`) | 최초 201, 기존 plan 수렴 200 `ExitPlanResponse` | 400 `VALIDATION_ERROR`; 404 `NOT_FOUND`(요청 종목); 409 `PRACTICE_EVIDENCE_MISSING`, `EXIT_PLAN_INVALID_PRICE_RANGE`, `EXIT_PLAN_SESSION_CLOSED`, `PRICE_UNAVAILABLE`, `INSUFFICIENT_QTY`, `IDEMPOTENCY_CONFLICT` | 016 candidate 7 |
+| POST | /api/exit-plans | 필수 `Idempotency-Key: <UUID>`; body `{"intentionId":1,"buyTradeId":10,"instrumentId":1,"quantity":10}` (`ExitPlanCreateRequest`). 가격·rate는 잠근 intention 정본 사용 | 최초 201, 기존 plan 수렴 200 `ExitPlanResponse` | 400 `VALIDATION_ERROR`; 404 `NOT_FOUND`(요청 종목); 409 `PRACTICE_EVIDENCE_MISSING`, `EXIT_PLAN_INVALID_PRICE_RANGE`, `EXIT_PLAN_SESSION_CLOSED`, `PRICE_UNAVAILABLE`, `INSUFFICIENT_QTY`, `IDEMPOTENCY_CONFLICT` | 016 candidate 7, 019 |
 
-`ExitPlanResponse`는 `exitPlanId`, `intentionId`, `buyTradeId`, `replaySessionId`, `instrumentId`, `quantity`, `entryPrice`, `stopLoss`, `takeProfit`, `baselinePrice`, `baselineObservedAt`, `status`, `reservedAt`, `closedAt`, `triggeredOrderId`를 반환한다. `replaySessionId`는 코인만 null이며 PENDING이면 마지막 두 필드는 null이다. 상태는 `PENDING|FILLED_TAKE_PROFIT|FILLED_STOP_LOSS|CANCELLED|CANCELLED_EXPIRED`다.
+`ExitPlanResponse`는 기존 식별자·수량·entry/baseline/status/시각과 `exitPriceType`, PERCENT에서만 non-null인 `stopLossRate`·`takeProfitRate`, 항상 non-null인 `stopLossPrice`·`takeProfitPrice`를 반환한다. `replaySessionId`는 코인만 null이며 PENDING이면 `closedAt`·`triggeredOrderId`가 null이다. 상태는 `PENDING|FILLED_TAKE_PROFIT|FILLED_STOP_LOSS|CANCELLED|CANCELLED_EXPIRED`다.
 
-본인 favorite → intention → FILLED 시장가 BUY trade → holding의 종목·소유권을 검증하고 `intention.quantity == buyTrade.quantity == request.quantity`, `availableQuantity >= quantity`, `stopLoss < entryPrice < takeProfit`을 요구한다. 서버 유효 현재가를 baseline으로 저장하고 수량은 한 번만 예약한다. UUID는 lowercase canonical 문자열로 저장한다. 같은 key·같은 요청 또는 같은 intention·같은 fingerprint의 새 key는 기존 plan으로 200 수렴하고, 충돌은 409다.
+본인 favorite → 현재 process intention → FILLED 시장가 BUY trade → holding의 종목·소유권을 검증하고 `intention.quantity == buyTrade.quantity == request.quantity`, `availableQuantity >= quantity`, `0 < stopLossPrice < entryPrice < takeProfitPrice`를 요구한다. PRICE는 intention 가격을 복사하고 PERCENT는 실제 `entryPrice`로 계산하며 클라이언트가 OCO 생성 시 값을 덮어쓰지 못한다. 계산 가격이 `DECIMAL(18,8)`을 초과하거나 범위가 깨지면 409 `EXIT_PLAN_INVALID_PRICE_RANGE`로 plan·예약 없이 거부한다. 서버 유효 현재가를 baseline으로 저장하고 수량은 한 번만 예약한다. idempotency key와 내부 intention instance UUID는 lowercase canonical 문자열로 저장한다. key hit는 현재 intention보다 먼저 영속 mapping을 조회해 같은 hash면 재시작 후에도 과거 plan을 200으로 재현한다. key miss에서만 현재 intention instance를 해석하며 같은 instance·같은 fingerprint의 새 key는 기존 plan으로 200 수렴하고 충돌은 409다.
 
 ### OCO 예약 목록 조회 (계획)
 
@@ -554,8 +578,8 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 | `FavoriteListResponse` | `List<FavoriteResponse> content` | non-null, 빈 배열 허용 |
 | `PracticeIntentionCreateRequest` | `Long instrumentId`, `BigDecimal quantity`, `BigDecimal stopLoss`, `BigDecimal takeProfit` | 모두 non-null |
 | `PracticeIntentionResponse` | `Long intentionId`, `Long instrumentId`, `BigDecimal quantity`, `BigDecimal stopLoss`, `BigDecimal takeProfit`, `LocalDateTime createdAt` | 모두 non-null |
-| `ExitPlanCreateRequest` | `Long intentionId`, `Long buyTradeId`, `Long instrumentId`, `BigDecimal quantity`, `BigDecimal stopLoss`, `BigDecimal takeProfit` | 모두 non-null |
-| `ExitPlanResponse` | `Long exitPlanId`, `Long intentionId`, `Long buyTradeId`, `Long replaySessionId`, `Long instrumentId`, `BigDecimal quantity`, `BigDecimal entryPrice`, `BigDecimal stopLoss`, `BigDecimal takeProfit`, `BigDecimal baselinePrice`, `LocalDateTime baselineObservedAt`, `String status`, `LocalDateTime reservedAt`, `LocalDateTime closedAt`, `Long triggeredOrderId` | `replaySessionId`는 코인만 null; `closedAt`은 PENDING만 null; `triggeredOrderId`는 PENDING·취소·만료에서 null |
+| `ExitPlanCreateRequest` (계획) | `Long intentionId`, `Long buyTradeId`, `Long instrumentId`, `BigDecimal quantity` | 모두 non-null; 가격·rate 입력 없음 |
+| `ExitPlanResponse` (계획) | 기존 식별자·수량·entry/baseline/status/시각 + `String exitPriceType`, `BigDecimal stopLossRate`, `BigDecimal takeProfitRate`, `BigDecimal stopLossPrice`, `BigDecimal takeProfitPrice` | rate 둘은 PERCENT만 non-null; 확정 가격 둘은 항상 non-null; 기존 replay/terminal nullable 규칙 유지 |
 | `ExitPlanListResponse` | `List<ExitPlanResponse> content` | non-null, 빈 배열 허용 |
 | `PracticeObservationCreateRequest` | `Long exitPlanId` | non-null |
 | `PracticeObservationResponse` | `Long observationId`, `Long exitPlanId`, `BigDecimal currentPrice`, `LocalDateTime observedAt`, `Boolean closerToBoundary`, `String closerBoundary`, `String evidenceType` | 앞의 다섯 필드는 non-null; 뒤의 두 필드는 조건 미충족 시 null |

@@ -510,7 +510,8 @@ class JournalServiceTest {
 	private static Trade buyTrade(Long id) {
 		Order order = order();
 		Trade trade = Trade.of(
-			order, order.getAccount(), stockInstrument(), OrderSide.BUY, new BigDecimal("100"),
+			order, order.getAccount(), stockInstrument(), stockSession(),
+			OrderSide.BUY, new BigDecimal("100"),
 			new BigDecimal("3"), 300L, 1L, null, NOW.minusMinutes(1), NOW);
 		ReflectionTestUtils.setField(trade, "id", id);
 		return trade;
@@ -519,7 +520,8 @@ class JournalServiceTest {
 	private static Trade sellTrade(Long id) {
 		Order order = order();
 		Trade trade = Trade.of(
-			order, order.getAccount(), stockInstrument(), OrderSide.SELL, new BigDecimal("110"),
+			order, order.getAccount(), stockInstrument(), stockSession(),
+			OrderSide.SELL, new BigDecimal("110"),
 			new BigDecimal("3"), 330L, 1L, 5_000L, NOW.minusMinutes(1), NOW);
 		ReflectionTestUtils.setField(trade, "id", id);
 		return trade;
@@ -536,6 +538,11 @@ class JournalServiceTest {
 			"idem-key",
 			"h".repeat(64),
 			NOW);
+	}
+
+	private static com.finplay.api.market.domain.StockReplaySession stockSession() {
+		return com.finplay.api.market.domain.StockReplaySession.ready(
+			NOW.toLocalDate(), NOW.toLocalDate(), NOW, NOW);
 	}
 
 	private static com.finplay.api.market.domain.Instrument stockInstrument() {

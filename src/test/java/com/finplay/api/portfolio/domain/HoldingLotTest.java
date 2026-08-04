@@ -59,7 +59,9 @@ class HoldingLotTest {
 			user, account, instrument, OrderSide.BUY, OrderType.MARKET,
 			quantity, "idem-key", "a".repeat(64), NOW);
 		Trade buyTrade = Trade.of(
-			order, account, instrument, OrderSide.BUY,
+			order, account, instrument,
+			com.finplay.api.market.domain.StockReplaySession.ready(NOW.toLocalDate(), NOW.toLocalDate(), NOW, NOW),
+			OrderSide.BUY,
 			BigDecimal.valueOf(70000), quantity,
 			70000L * quantity.longValueExact(), 100L, null, NOW, NOW);
 		return HoldingLot.create(holding, buyTrade, quantity, BigDecimal.valueOf(70000), 100L, NOW, NOW);

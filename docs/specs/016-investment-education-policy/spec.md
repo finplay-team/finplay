@@ -17,7 +17,7 @@
 - [ ] EDU-PRACTICE-002: 1단계는 즐겨찾기 등록 성공과 인증 사용자 본인 목록 포함을 서버가 모두 확인해야 완료한다.
 - [ ] EDU-PRACTICE-003: 2단계는 손절·익절·수량 사전 기록, 이후 시장가 매수 체결, 동일 보유분 OCO exit plan 생성, 예약 목록 포함을 서버가 모두 확인해야 완료한다.
 - [ ] EDU-PRACTICE-004: 기존 `POST /api/orders`의 시장가 주문은 예약 주문이 아니라 요청 시 즉시 체결되는 진입 주문이다.
-- [ ] EDU-PRACTICE-005: OCO exit plan은 하나의 보유 수량에 `currentPrice >= takeProfit` 익절과 `currentPrice <= stopLoss` 손절 조건을 함께 묶는다.
+- [ ] EDU-PRACTICE-005: OCO exit plan은 PRICE 또는 PERCENT intention에서 확정한 하나의 보유 수량에 `currentPrice >= takeProfitPrice` 익절과 `currentPrice <= stopLossPrice` 손절 조건을 함께 묶는다.
 - [ ] EDU-PRACTICE-006: OCO 한쪽이 체결되거나 사용자가 plan을 취소하면 다른 조건도 원자적으로 취소되고 예약 수량은 정확히 한 번만 체결 또는 반환된다.
 - [ ] EDU-PRACTICE-007: 3단계 복기 질문에는 정답·오답과 보상 판정이 없으며 자유 응답 저장 성공만 서버가 확인한다.
 - [ ] EDU-PRACTICE-008: 클라이언트가 임의로 단계를 완료시키는 API나 `completed=true` 입력을 제공하지 않는다.
@@ -35,11 +35,11 @@
 - 서버 완료 증거는 같은 사용자의 즐겨찾기 행 존재다. `GET /api/favorites` 호출 여부나 별도 확인 시각은 증거로 저장하지 않는다. 목록 응답에 같은 `instrumentId`가 보이는지는 API 테스트와 UX 수용 기준으로 검증한다.
 
 ### 2단계 — 먼저 계획하고 시장가 진입과 OCO 청산을 예약하기
-- 사용자는 매수 전에 `instrumentId`, `quantity`, `stopLoss`, `takeProfit`을 실습 의도로 기록한다.
+- 사용자는 매수 전에 `instrumentId`, `quantity`와 PRICE 방식의 `stopLoss`·`takeProfit` 또는 PERCENT 방식의 `stopLossRate`·`takeProfitRate`를 실습 의도로 기록한다. 기존 타입 생략+가격 요청은 PRICE로 호환하며 상세 tagged union은 `docs/specs/019-exit-price-policy`를 따른다. **PERCENT는 019 구현 전까지 production에 없으며 현재는 PRICE(또는 타입 생략) 요청만 실제로 받을 수 있다.**
 - intention의 `instrumentId`는 현재 존재하는 step 1 본인 favorite의 `instrumentId`와 같아야 한다. favorite가 없거나 다른 종목이면 409 `PRACTICE_STEP_LOCKED`로 intention 생성을 거부한다.
-- 최초 intention 생성 트랜잭션은 `(user_id, tutorial_key)`별 `practice_progresses` 행을 상태를 덮어쓰지 않는 MySQL 원자 upsert로 확보한 뒤 재조회·잠그고, 대상 favorite 행도 비관 잠금한 뒤 intention 저장까지 유지한다. upsert는 unique 예외를 발생시키지 않고 이미 완료된 progress도 변경하지 않는다. favorite DELETE도 같은 행을 잠가 직렬화하며, 삭제 선행은 409 `PRACTICE_STEP_LOCKED`·intention 무저장, intention 선행은 201 뒤 DELETE 204다. 동시 intention 요청도 progress 한 행으로 수렴한다.
+- 최초 intention 생성 트랜잭션은 `(user_id, tutorial_key)`별 `practice_progresses` 행을 상태를 덮어쓰지 않는 MySQL 원자 upsert로 확보한 뒤 재조회·잠그고, 대상 favorite의 사용자 단위 in-memory 락을 이어서 획득해 intention 저장까지 유지한다. upsert는 unique 예외를 발생시키지 않고 이미 완료된 progress도 변경하지 않는다. favorite DELETE도 같은 in-memory 락을 사용해 직렬화하며, 삭제 선행은 409 `PRACTICE_STEP_LOCKED`·intention 무저장, intention 선행은 201 뒤 DELETE 204다. 동시 intention 요청도 progress 한 행으로 수렴한다.
 - 이후 기존 `POST /api/orders`에 `orderType="MARKET"`, `side="BUY"`로 같은 종목·수량을 주문한다. 이 시장가 주문은 기존 계약대로 즉시 `FILLED` 체결되며 예약 상태가 아니다.
-- 서버는 실제 매수 `tradeId`와 체결가 `entryPrice`를 기준으로 `stopLoss < entryPrice < takeProfit`을 검증한다.
+- 서버는 실제 매수 `tradeId`와 체결가 `entryPrice`를 기준으로 PRICE 값을 복사하거나 PERCENT 값을 계산해 `0 < stopLossPrice < entryPrice < takeProfitPrice`을 검증한다.
 - 사용자는 같은 `instrumentId`의 holding에서 intention·매수 체결과 정확히 같은 `quantity` snapshot으로 OCO exit plan 하나를 생성한다. 손절과 익절을 별도 매도 예약 두 건으로 만들 수 없다.
 - OCO 생성 시 step 1 favorite가 아직 존재해야 하며 favorite → intention → `buyTradeId` → holding → exit plan의 사용자와 `instrumentId`가 모두 같아야 한다. exact quantity equality는 `intention.quantity == buyTrade.quantity == exitPlan.quantity`에만 적용한다.
 - holding은 생성 시 owner·instrument 일치와 `availableQuantity >= exitPlan.quantity`만 검증한다. 기존 또는 추가 매수로 `holding.totalQuantity`가 snapshot quantity와 달라도 정상이다. favorite 삭제 또는 chain 누락·불일치는 409 `PRACTICE_EVIDENCE_MISSING`이며 plan·예약을 남기지 않는다.
@@ -77,21 +77,21 @@
 
 ## OCO exit plan 비즈니스 규칙
 - 2차 MVP의 OCO는 이 튜토리얼에서만 사용한다. `intentionId` 없는 일반 OCO 생성은 지원하지 않으며 일반 리스크 관리 OCO는 3차 MVP 후보 범위다.
-- 생성 입력은 positive `Long`의 `intentionId`, `buyTradeId`, `instrumentId`, `DECIMAL(30,8)` 범위의 양수 `quantity`, `DECIMAL(18,8)` 범위의 양수 `stopLoss`, `takeProfit`이며 `Idempotency-Key` header가 필수다. 수량은 정수부 최대 22·소수부 최대 8자리, 가격은 정수부 최대 10·소수부 최대 8자리이고 초과 precision/scale은 반올림 없이 400 `VALIDATION_ERROR`다.
+- 생성 입력은 positive `Long`의 `intentionId`, `buyTradeId`, `instrumentId`, `DECIMAL(30,8)` 범위의 양수 `quantity`이며 `Idempotency-Key` header가 필수다. 가격·rate는 다시 받지 않고 사용자 단위 in-process 락 안에서 조회한 intention에서 읽는다.
 - `buyTradeId`는 인증 사용자 본인의 `FILLED` 시장가 매수 체결이어야 하며 `instrumentId`와 실제 holding이 일치해야 한다.
 - `exitPlan.quantity`는 intention·buyTrade quantity와 정확히 같고, 생성 시 holding의 `availableQuantity` 이하여야 한다. plan 하나가 그 수량을 한 번만 예약한다.
-- 실제 진입 체결가에 대해 `stopLoss < entryPrice < takeProfit`이어야 한다. 동일 가격이나 역전된 라인은 거부한다.
+- PRICE는 intention의 가격에 대해, PERCENT는 실제 진입 체결가로 계산한 scale 8 가격에 대해 `0 < stopLossPrice < entryPrice < takeProfitPrice`여야 한다. 계산·반올림과 입력 조합은 `docs/specs/019-exit-price-policy`를 따르며 범위가 깨지면 거부한다.
 - 생성 트랜잭션은 서버의 거래 가능한 유효 현재가를 조회해 `baselinePrice`, `baselineObservedAt`으로 plan에 저장한다. 유효 시세가 없으면 409 `PRICE_UNAVAILABLE`로 거부하고 plan·condition·수량 예약을 하나도 남기지 않는다.
 - `trades.stock_replay_session_id`를 nullable FK로 추가한다. 주식 체결은 체결 당시 현재 replay session id를 반드시 저장하고 코인 체결은 null이다.
 - 주식은 `buyTradeId.stockReplaySessionId`와 현재 `OPEN` replay session이 같고 15:30 전일 때만 plan을 생성한다. plan에 같은 `replaySessionId`를 저장한다. 이 FK migration과 주식 fill 기록 변경은 OCO보다 먼저 배포한다. 코인은 session 연결 없이 GTC다.
-- 익절 조건은 `currentPrice >= takeProfit`, 손절 조건은 `currentPrice <= stopLoss`다. 체결가격은 트리거 시점의 공통 현재가를 사용하는 시장가 청산으로 처리하며 특정 체결가격을 보장하지 않는다.
+- 익절 조건은 `currentPrice >= takeProfitPrice`, 손절 조건은 `currentPrice <= stopLossPrice`다. 체결가격은 트리거 시점의 공통 현재가를 사용하는 시장가 청산으로 처리하며 특정 체결가격을 보장하지 않는다.
 - 두 조건은 `PENDING` plan 하나에 속한다. 한쪽 조건을 각각 별도 수량 예약으로 계산하지 않는다.
 - 가격 갱신 시 replay session(주식만) → holding → plan 순서로 비관 잠금한다. 충족된 한 조건으로 전량 시장가 매도 체결을 생성하고 plan을 `FILLED_TAKE_PROFIT` 또는 `FILLED_STOP_LOSS`로 종결한다. 반대 조건은 같은 트랜잭션에서 `CANCELLED_BY_OCO`가 된다.
-- `stopLoss < takeProfit`이고 단일 가격을 평가하므로 한 이벤트가 두 조건을 동시에 만족할 수 없다. 중복 또는 역순으로 도착한 가격 이벤트가 경합하면 plan 잠금에서 최초 커밋한 이벤트만 종결 승자가 되고 후속 이벤트는 terminal plan을 보고 아무 작업 없이 skip한다.
+- `stopLossPrice < takeProfitPrice`이고 단일 가격을 평가하므로 한 이벤트가 두 조건을 동시에 만족할 수 없다. 중복 또는 역순으로 도착한 가격 이벤트가 경합하면 plan 잠금에서 최초 커밋한 이벤트만 종결 승자가 되고 후속 이벤트는 terminal plan을 보고 아무 작업 없이 skip한다.
 - 기존 시장가 SELL과 일반 지정가 SELL도 `totalQuantity`가 아니라 공통 예약 원장에서 계산한 `availableQuantity = totalQuantity - reservedQuantity`를 검증한다. OCO 예약분을 포함한 SELL은 `INSUFFICIENT_QTY`로 거부해 이중 매도를 막는다.
 - plan 취소와 가격 트리거가 경합하면 같은 plan 잠금에서 먼저 커밋한 상태 전이만 성공한다. 취소 승자는 예약 수량을 한 번 반환하고, 체결 승자는 예약을 매도에 한 번 소비한다. 패자는 최신 종결 상태를 확인하고 409 `EXIT_PLAN_NOT_PENDING`을 반환한다.
 - plan 생성·트리거·취소는 `(holding, reservedQuantity)` 정합성을 한 DB 트랜잭션에서 유지한다. 부분 체결, 개별 조건 수정, 조건 한쪽만 취소는 범위 밖이다.
-- `exit_plans`의 `(user_id, intention_id)`와 별도 `exit_plan_idempotency_keys`의 `(user_id, idempotency_key)`는 유일하다. key는 `UUID.fromString` 성공 후 `UUID.toString()` 36자 lowercase canonical 값으로 normalize해 저장하며 fingerprint에는 포함하지 않는다. 최초 plan과 original key mapping, 동일 intention·fingerprint의 새 key mapping은 각각 후보 7의 한 transactional attempt에서 원자 저장한다. unique loser attempt는 부분 저장 없이 전체 rollback하고, 바깥 coordinator가 winner commit 뒤 새 transaction에서 양쪽 정본을 재조회해 동일 hash면 필요한 alias 저장+200, 다른 plan/hash면 409 `IDEMPOTENCY_CONFLICT`로 수렴한다. 실패 transaction은 재사용하지 않는다.
+- `exit_plans`의 `(user_id, intention_instance_key)`와 별도 `exit_plan_idempotency_keys`의 `(user_id, idempotency_key)`는 유일하다. `intention_instance_key`는 ADR-0012의 재시작별 숫자 ID 재사용과 영속 plan 충돌을 막는 내부 UUID이며 응답용 `intentionId`와 다르다. key는 `UUID.fromString` 성공 후 `UUID.toString()` 36자 lowercase canonical 값으로 normalize해 저장하며 fingerprint에는 포함하지 않는다. idempotency key mapping을 현재 intention보다 먼저 조회하는 key-first 판정을 쓴다: key hit이고 request hash가 같으면 재시작으로 intention이 유실됐거나 숫자 ID가 다른 instance에 재사용돼도 instance를 비교하지 않고 과거 plan을 그대로 200으로 재현하며, key hit인데 hash가 다르면 즉시 409 `IDEMPOTENCY_CONFLICT`다. key miss일 때만 현재 intention을 instance key로 해석해 instance plan을 조회·생성한다. 최초 plan과 original key mapping, 동일 intention instance·fingerprint의 새 key mapping은 각각 후보 7의 한 transactional attempt에서 원자 저장한다. unique loser attempt는 부분 저장 없이 전체 rollback하고, 바깥 coordinator가 winner commit 뒤 새 transaction에서 key mapping을 재조회해 위 key-first 규칙으로 200/409를 수렴한다. 실패 transaction은 재사용하지 않는다.
 - 트리거 판정은 시장별 가격 공급자가 거래 가능한 값으로 인정한 유효 가격 갱신 이벤트에서만 수행한다. 유효 이벤트가 없거나 가격 공급자가 장애인 동안 plan은 별도 `TRIGGERED` 중간상태 없이 `PENDING`을 유지한다.
 - 주식 plan은 해당 replay session의 마지막 유효 가격 이벤트 처리 후 15:30 세션 종료에 아직 `PENDING`이면 `CANCELLED_EXPIRED`로 자동 종결하고 두 조건을 취소하며 예약 수량을 한 번 반환한다. 코인 plan은 자동 만료 없는 GTC다.
 - 주식 생성·가격 트리거·사용자 취소·세션 만료는 replay session → holding → plan 순서로 잠근다. 생성 시 plan은 아직 없으므로 session과 holding을 잠근 뒤 생성한다. 15:30 만료와 생성이 직렬화되어 만료가 먼저면 생성은 `EXIT_PLAN_SESSION_CLOSED`로 거부되고, 생성이 먼저면 해당 session 만료 scan 대상이 된다. 코인은 holding → plan 순서다.
@@ -136,7 +136,7 @@
 - [x] #152·#158에는 production 변경이 없다.
 
 ## 후속 production 완료 조건
-- [ ] OCO가 동일 owner·instrument, intention·trade·plan quantity snapshot equality, holding available capacity와 `stopLoss < entryPrice < takeProfit`을 검증하고 한 번만 수량을 예약한다.
+- [ ] OCO가 동일 owner·instrument, intention·trade·plan quantity snapshot equality, holding available capacity와 `0 < stopLossPrice < entryPrice < takeProfitPrice`을 검증하고 한 번만 수량을 예약한다.
 - [ ] 생성 baseline과 주식 OPEN replay session 귀속을 검증하고 시세 없음·세션 종료 시 흔적 없이 거부한다.
 - [ ] 중복·역순 가격 이벤트, 수동 시장가·지정가 매도, 취소·만료 경합에서 체결 또는 예약 반환이 정확히 한 번만 일어난다.
 - [ ] favorite·OCO 목록 GET은 순수 조회이며 실제 리소스가 응답에 포함되는지는 API 테스트로 검증한다.

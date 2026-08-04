@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -13,6 +12,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.finplay.api.account.domain.Account;
+import com.finplay.api.account.event.RealizedPnlUpdatedEvent;
 import com.finplay.api.account.service.AccountService;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.service.UserQueryService;
@@ -20,7 +20,9 @@ import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.domain.StockReplaySession;
 import com.finplay.api.market.service.InstrumentService;
+import com.finplay.api.market.service.OrderExecutionPriceDto;
 import com.finplay.api.market.service.PriceQueryService;
 import com.finplay.api.market.service.PriceQuoteDto;
 import com.finplay.api.market.service.PriceStatus;
@@ -43,6 +45,7 @@ import java.time.ZoneOffset;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class OrderExecutionServiceTest {
 
@@ -61,6 +64,8 @@ class OrderExecutionServiceTest {
 	private final OrderRepository orderRepository = mock(OrderRepository.class);
 	private final TradeRepository tradeRepository = mock(TradeRepository.class);
 	private final Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
+	private final org.springframework.context.ApplicationEventPublisher eventPublisher = mock(
+		org.springframework.context.ApplicationEventPublisher.class);
 
 	private OrderExecutionService orderExecutionService;
 
@@ -75,7 +80,8 @@ class OrderExecutionServiceTest {
 			portfolioSellService,
 			orderRepository,
 			tradeRepository,
-			clock);
+			clock,
+			eventPublisher);
 	}
 
 	@Test
@@ -98,6 +104,7 @@ class OrderExecutionServiceTest {
 		Trade savedTrade = tradeCaptor.getValue();
 		assertThat(savedTrade.getAmount()).isEqualTo(30000L);
 		assertThat(savedTrade.getFee()).isEqualTo(4L);
+		assertThat(savedTrade.getStockReplaySession()).isNotNull();
 		verify(orderRepository).save(any(Order.class));
 		verify(portfolioBuyService)
 			.applyBuyTrade(account, instrument, savedTrade, new BigDecimal("3"), new BigDecimal("10000.33"), 4L, NOW);
@@ -118,6 +125,9 @@ class OrderExecutionServiceTest {
 		assertThat(response.amount()).isEqualTo(13333L);
 		assertThat(response.fee()).isEqualTo(6L);
 		assertThat(account.getCashBalance()).isEqualTo(10_000_000L - 13339L);
+		ArgumentCaptor<Trade> tradeCaptor = ArgumentCaptor.forClass(Trade.class);
+		verify(tradeRepository).save(tradeCaptor.capture());
+		assertThat(tradeCaptor.getValue().getStockReplaySession()).isNull();
 	}
 
 	@Test
@@ -184,8 +194,8 @@ class OrderExecutionServiceTest {
 		Instrument instrument = cryptoInstrument(5_000L);
 		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
 		// rawAmount = 40000 * 0.1 = 4000 < 5000 최소 주문금액
-		when(priceQueryService.getPrice(instrument))
-			.thenReturn(new PriceQuoteDto(new BigDecimal("40000"), NOW, PriceStatus.AVAILABLE, null));
+		when(priceQueryService.getOrderExecutionPrice(instrument))
+			.thenReturn(executionPrice(new BigDecimal("40000"), null));
 		OrderCreateRequest request = buyRequest(Market.CRYPTO, instrument.getId(), "0.1");
 
 		assertBusinessExceptionAndNoSideEffects(request, ErrorCode.VALIDATION_ERROR);
@@ -205,8 +215,8 @@ class OrderExecutionServiceTest {
 	void createOrderThrowsMarketClosedWhenStockMarketIsClosed() {
 		Instrument instrument = stockInstrument();
 		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
-		doThrow(new BusinessException(ErrorCode.MARKET_CLOSED))
-			.when(priceQueryService).assertOrderable(instrument);
+		when(priceQueryService.getOrderExecutionPrice(instrument))
+			.thenThrow(new BusinessException(ErrorCode.MARKET_CLOSED));
 		OrderCreateRequest request = buyRequest(Market.STOCK, instrument.getId(), "1");
 
 		assertBusinessExceptionAndNoSideEffects(request, ErrorCode.MARKET_CLOSED);
@@ -216,7 +226,8 @@ class OrderExecutionServiceTest {
 	void createOrderThrowsPriceUnavailableWhenStockPriceIsInvalid() {
 		Instrument instrument = stockInstrument();
 		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
-		when(priceQueryService.getPrice(instrument)).thenThrow(new BusinessException(ErrorCode.PRICE_UNAVAILABLE));
+		when(priceQueryService.getOrderExecutionPrice(instrument))
+			.thenThrow(new BusinessException(ErrorCode.PRICE_UNAVAILABLE));
 		OrderCreateRequest request = buyRequest(Market.STOCK, instrument.getId(), "1");
 
 		assertBusinessExceptionAndNoSideEffects(request, ErrorCode.PRICE_UNAVAILABLE);
@@ -226,7 +237,8 @@ class OrderExecutionServiceTest {
 	void createOrderThrowsPriceUnavailableWhenCryptoPriceIsInvalid() {
 		Instrument instrument = cryptoInstrument(5_000L);
 		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
-		when(priceQueryService.getPrice(instrument)).thenThrow(new BusinessException(ErrorCode.PRICE_UNAVAILABLE));
+		when(priceQueryService.getOrderExecutionPrice(instrument))
+			.thenThrow(new BusinessException(ErrorCode.PRICE_UNAVAILABLE));
 		OrderCreateRequest request = buyRequest(Market.CRYPTO, instrument.getId(), "0.1");
 
 		assertBusinessExceptionAndNoSideEffects(request, ErrorCode.PRICE_UNAVAILABLE);
@@ -238,8 +250,8 @@ class OrderExecutionServiceTest {
 		Account account = account(com.finplay.api.account.domain.Market.STOCK);
 		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
 		// amount = 50,000,000 * 1 > 계좌 기본 현금 10,000,000
-		when(priceQueryService.getPrice(instrument))
-			.thenReturn(new PriceQuoteDto(new BigDecimal("50000000"), NOW, PriceStatus.AVAILABLE, null));
+		when(priceQueryService.getOrderExecutionPrice(instrument))
+			.thenReturn(executionPrice(new BigDecimal("50000000"), mock(StockReplaySession.class)));
 		when(accountService.getAccountFor(USER_ID, com.finplay.api.account.domain.Market.STOCK))
 			.thenReturn(account);
 		OrderCreateRequest request = buyRequest(Market.STOCK, instrument.getId(), "1");
@@ -278,6 +290,42 @@ class OrderExecutionServiceTest {
 		verify(portfolioSellService).getHoldingOrThrow(account, instrument, quantity);
 		verify(portfolioSellService).applySellTrade(holding, savedTrade, quantity, NOW);
 		verifyNoInteractions(portfolioBuyService);
+	}
+
+	@Test
+	void createOrderSellPublishesRealizedPnlUpdatedEventAfterAddingRealizedPnl() {
+		// 랭킹 갱신(after-commit 리스너)이 반응할 수 있도록 SELL 체결 시 이벤트가 정확히 1회 발행되는지 검증한다.
+		Instrument instrument = stockInstrument();
+		Account account = account(com.finplay.api.account.domain.Market.STOCK);
+		ReflectionTestUtils.setField(account, "id", 42L); // id 미설정 시 기대값·실제값 모두 null이라 단정이 무의미해짐(PR #196 리뷰 지적)
+		Holding holding = mock(Holding.class);
+		User user = testUser();
+		BigDecimal quantity = new BigDecimal("3");
+		stubSellHappyPath(instrument, account, user, new BigDecimal("10000"));
+		when(portfolioSellService.getHoldingOrThrow(account, instrument, quantity)).thenReturn(holding);
+		when(portfolioSellService.applySellTrade(eq(holding), any(Trade.class), eq(quantity), eq(NOW)))
+			.thenReturn(new SellAllocationDto(20_000L, 3L));
+		OrderCreateRequest request = sellRequest(Market.STOCK, instrument.getId(), "3");
+
+		orderExecutionService.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, request);
+
+		ArgumentCaptor<RealizedPnlUpdatedEvent> eventCaptor = ArgumentCaptor.forClass(RealizedPnlUpdatedEvent.class);
+		verify(eventPublisher).publishEvent(eventCaptor.capture());
+		assertThat(eventCaptor.getValue().accountId()).isEqualTo(42L);
+	}
+
+	@Test
+	void createOrderBuyDoesNotPublishRealizedPnlUpdatedEvent() {
+		// 매수는 realizedPnl을 갱신하지 않으므로 랭킹 갱신 이벤트를 발행하지 않아야 한다.
+		Instrument instrument = stockInstrument();
+		Account account = account(com.finplay.api.account.domain.Market.STOCK);
+		User user = testUser();
+		stubHappyPath(instrument, account, user, new BigDecimal("10000.33"));
+		OrderCreateRequest request = buyRequest(Market.STOCK, instrument.getId(), "3");
+
+		orderExecutionService.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, request);
+
+		verifyNoInteractions(eventPublisher);
 	}
 
 	@Test
@@ -340,8 +388,8 @@ class OrderExecutionServiceTest {
 			.thenReturn(account);
 		when(portfolioSellService.getHoldingOrThrow(account, instrument, quantity)).thenReturn(holding);
 		// rawAmount = 40000 * 0.1 = 4000 < 5000 최소 주문금액
-		when(priceQueryService.getPrice(instrument))
-			.thenReturn(new PriceQuoteDto(new BigDecimal("40000"), NOW, PriceStatus.AVAILABLE, null));
+		when(priceQueryService.getOrderExecutionPrice(instrument))
+			.thenReturn(executionPrice(new BigDecimal("40000"), null));
 		OrderCreateRequest request = sellRequest(Market.CRYPTO, instrument.getId(), "0.1");
 
 		assertThatThrownBy(() -> orderExecutionService.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, request))
@@ -415,8 +463,8 @@ class OrderExecutionServiceTest {
 
 	private void stubHappyPath(Instrument instrument, Account account, User user, BigDecimal price) {
 		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
-		when(priceQueryService.getPrice(instrument))
-			.thenReturn(new PriceQuoteDto(price, NOW, PriceStatus.AVAILABLE, null));
+		StockReplaySession session = instrument.getMarket() == Market.STOCK ? mock(StockReplaySession.class) : null;
+		when(priceQueryService.getOrderExecutionPrice(instrument)).thenReturn(executionPrice(price, session));
 		com.finplay.api.account.domain.Market accountMarket = com.finplay.api.account.domain.Market
 			.valueOf(instrument.getMarket().name());
 		when(accountService.getAccountFor(USER_ID, accountMarket)).thenReturn(account);
@@ -425,6 +473,10 @@ class OrderExecutionServiceTest {
 
 	private void stubSellHappyPath(Instrument instrument, Account account, User user, BigDecimal price) {
 		stubHappyPath(instrument, account, user, price);
+	}
+
+	private static OrderExecutionPriceDto executionPrice(BigDecimal price, StockReplaySession session) {
+		return new OrderExecutionPriceDto(new PriceQuoteDto(price, NOW, PriceStatus.AVAILABLE, null), session);
 	}
 
 	private static OrderCreateRequest buyRequest(Market market, Long instrumentId, String quantity) {
