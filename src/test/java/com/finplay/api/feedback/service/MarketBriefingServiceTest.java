@@ -4,6 +4,7 @@ package com.finplay.api.feedback.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -11,17 +12,23 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.finplay.api.feedback.config.FeedbackNewsProperties;
+import com.finplay.api.feedback.domain.FeedbackContentStatus;
 import com.finplay.api.feedback.domain.MarketBriefing;
 import com.finplay.api.feedback.domain.MarketNewsItem;
 import com.finplay.api.feedback.domain.MarketNewsItemType;
 import com.finplay.api.feedback.domain.NarrativeSource;
+import com.finplay.api.feedback.dto.response.BriefingNewsItem;
+import com.finplay.api.feedback.dto.response.MarketBriefingResponse;
 import com.finplay.api.feedback.repository.MarketBriefingRepository;
 import com.finplay.api.feedback.repository.MarketNewsItemRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.BusinessDayCalendar;
+import com.finplay.api.market.service.StockReplayService;
+import com.finplay.api.market.service.StockReplaySessionDto;
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -30,17 +37,21 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 
 // 값의 정본은 spec.md다 — 구간은 §C-2(전장 [D-1 15:30, D 09:00]), 공시는 §C-3(rcept_dt = D-1),
-// 상한은 §C-7의 max-items-per-summary(프롬프트 입력이라 응답 상한이 아니다), 절단은 §뉴스 매칭 범위다.
+// 상한은 §C-7(생성은 max-items-per-summary, 조회는 max-items-per-briefing), 절단은 §뉴스 매칭 범위,
+// 조회 상태값과 판정 순서는 §C-4다.
 class MarketBriefingServiceTest {
 
 	private static final LocalDate ORIGIN_TRADE_DATE = LocalDate.of(2026, 8, 5);
 
 	private static final LocalDate PREVIOUS_TRADE_DATE = LocalDate.of(2026, 8, 4);
+
+	private static final LocalDate SERVICE_DATE = LocalDate.of(2026, 8, 6);
 
 	private static final LocalDateTime GENERATED_AT = LocalDateTime.of(2026, 8, 6, 8, 45);
 
@@ -49,8 +60,13 @@ class MarketBriefingServiceTest {
 	private static final LocalDateTime PRE_MARKET_FROM = LocalDateTime.of(PREVIOUS_TRADE_DATE, LocalTime.of(15, 30));
 	private static final LocalDateTime PRE_MARKET_TO = LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(9, 0));
 
-	// 상한을 5로 낮춰 픽스처를 그 위로 잡는다 — 상한 아래면 절단 규칙의 유무가 구분되지 않는다.
+	// 상한을 낮춰 픽스처를 그 위로 잡는다 — 상한 아래면 절단 규칙의 유무가 구분되지 않는다.
+	//
+	// 두 값을 일부러 다르게 준다. 이 클래스 안에 생성(LLM 입력)과 조회(응답 items)의 상한이 공존하는데
+	// (§C-7), 같은 값이면 두 자리를 바꿔 써도 테스트가 전부 초록이다. 값이 갈려야 뒤바뀜이 드러난다.
 	private static final int MAX_ITEMS_PER_SUMMARY = 5;
+
+	private static final int MAX_ITEMS_PER_BRIEFING = 3;
 
 	private final MarketNewsItemRepository marketNewsItemRepository = mock(MarketNewsItemRepository.class);
 
@@ -58,13 +74,20 @@ class MarketBriefingServiceTest {
 
 	private final NarrativeService narrativeService = mock(NarrativeService.class);
 
+	private final StockReplayService stockReplayService = mock(StockReplayService.class);
+
+	// 뒤 세 값이 §C-7의 목록 상한 3종이고, 이 클래스가 쓰는 것은 briefing(조회)과 summary(생성) 둘이다.
+	private final FeedbackNewsProperties properties = new FeedbackNewsProperties(
+		"0 0/30 * * * *", "0 0/30 8-20 * * MON-FRI", 30, 5, 5, 50, MAX_ITEMS_PER_BRIEFING,
+		MAX_ITEMS_PER_SUMMARY);
+
 	private final MarketBriefingService service = new MarketBriefingService(
 		marketNewsItemRepository,
 		marketBriefingRepository,
+		stockReplayService,
 		narrativeService,
 		new BusinessDayCalendar(),
-		new FeedbackNewsProperties(
-			"0 0/30 * * * *", "0 0/30 8-20 * * MON-FRI", 30, 5, 5, 50, 30, MAX_ITEMS_PER_SUMMARY),
+		properties,
 		Clock.fixed(GENERATED_AT.atZone(KST).toInstant(), KST));
 
 	private static Instrument stock(String symbol, String name) {
@@ -245,5 +268,349 @@ class MarketBriefingServiceTest {
 		assertThat(captor.getValue().getMarket()).isEqualTo(Market.STOCK);
 		assertThat(captor.getValue().getOriginTradeDate()).isEqualTo(ORIGIN_TRADE_DATE);
 		assertThat(captor.getValue().getGeneratedAt()).isEqualTo(GENERATED_AT);
+	}
+
+	// 조회 경로는 생성과 같은 클래스에 있지만 판정도 상한도 다르다. 시각을 옮겨야 §C-4의 1·2번 경계를 볼 수
+	// 있어 여기서만 MutableClock을 쓴 별도 인스턴스를 만든다 — 바깥 인스턴스의 고정 Clock(08:45)은
+	// generatedAt 단정이 의존하고 있어 바꿀 수 없다.
+	@Nested
+	@DisplayName("조회 (§C-4 판정 순서·§C-7 응답 상한)")
+	class Query {
+
+		private final MutableClock clock = new MutableClock(
+			LocalDateTime.of(SERVICE_DATE, LocalTime.of(10, 0)).atZone(KST).toInstant());
+
+		private final MarketBriefingService queryService = new MarketBriefingService(
+			marketNewsItemRepository,
+			marketBriefingRepository,
+			stockReplayService,
+			narrativeService,
+			new BusinessDayCalendar(),
+			properties,
+			clock);
+
+		private void givenReadySession() {
+			when(stockReplayService.getCurrentReplaySession())
+				.thenReturn(new StockReplaySessionDto(true, ORIGIN_TRADE_DATE));
+		}
+
+		private void givenNotReadySession() {
+			when(stockReplayService.getCurrentReplaySession())
+				.thenReturn(new StockReplaySessionDto(false, null));
+		}
+
+		private void givenBriefingRow(Optional<MarketBriefing> row) {
+			when(marketBriefingRepository.findByMarketAndOriginTradeDate(any(), any())).thenReturn(row);
+		}
+
+		private MarketBriefing briefingRow(String text) {
+			return MarketBriefing.create(
+				Market.STOCK,
+				ORIGIN_TRADE_DATE,
+				text,
+				text == null ? NarrativeSource.NONE : NarrativeSource.LLM,
+				GENERATED_AT);
+		}
+
+		private void at(LocalTime time) {
+			clock.set(LocalDateTime.of(SERVICE_DATE, time));
+		}
+
+		// --- §C-4 판정 순서 ---
+
+		// 1번이 EMPTY이고 2번이 NOT_YET인 것이 Part C와 갈리는 자리다. 08:00은 두 조건이 함께 성립하는
+		// 시각이라 순서가 뒤바뀌면 여기서만 갈린다 — 2번이 먼저면 NOT_YET에 확정되지도 않은 날짜가 붙는다.
+		@Test
+		@DisplayName("세션 미준비 + 개장 전이면 EMPTY이고 originTradeDate까지 null이다 — 1번이 2번보다 앞")
+		void putsSessionNotReadyBeforeTheBeforeOpenCheck() {
+			givenNotReadySession();
+			at(LocalTime.of(8, 0));
+
+			MarketBriefingResponse response = queryService.getBriefing(Market.STOCK);
+
+			assertThat(response.status()).isEqualTo(FeedbackContentStatus.EMPTY);
+			assertThat(response.originTradeDate()).isNull();
+			assertThat(response.items()).isEmpty();
+			verifyNoInteractions(marketNewsItemRepository);
+			verify(marketBriefingRepository, never()).findByMarketAndOriginTradeDate(any(), any());
+		}
+
+		// 상태값 ① — Part C는 같은 상황에서 NOT_YET이다. 의도된 차이라 값이 붙어 다니는지 고정한다.
+		@Test
+		@DisplayName("세션 미준비면 장중 시각이어도 EMPTY이고 NOT_YET이 아니다")
+		void returnsEmptyNotNotYetWhenTheSessionIsNotReadyDuringTradingHours() {
+			givenNotReadySession();
+			at(LocalTime.of(11, 0));
+
+			assertThat(queryService.getBriefing(Market.STOCK).status())
+				.isEqualTo(FeedbackContentStatus.EMPTY);
+		}
+
+		@Test
+		@DisplayName("세션은 READY이고 09:00 이전이면 NOT_YET이고 originTradeDate는 채워진다 — 2번")
+		void returnsNotYetWithTheTradeDateBeforeMarketOpen() {
+			givenReadySession();
+			at(LocalTime.of(8, 59, 59));
+
+			MarketBriefingResponse response = queryService.getBriefing(Market.STOCK);
+
+			assertThat(response.status()).isEqualTo(FeedbackContentStatus.NOT_YET);
+			assertThat(response.originTradeDate()).isEqualTo(ORIGIN_TRADE_DATE);
+			assertThat(response.items()).isEmpty();
+		}
+
+		// 09:00 하한이 Part C와 같아야 게이트 ⑦이 성립한다. 부등호가 <= 로 바뀌면 개장 정각이 닫힌다.
+		@Test
+		@DisplayName("09:00 정각에는 더 이상 NOT_YET이 아니다")
+		void opensExactlyAtMarketOpen() {
+			givenReadySession();
+			givenMarketNews(List.of());
+			givenMarketDisclosures(List.of());
+			at(LocalTime.of(9, 0));
+
+			assertThat(queryService.getBriefing(Market.STOCK).status())
+				.isNotEqualTo(FeedbackContentStatus.NOT_YET);
+		}
+
+		// 3번이 4·5번보다 앞이다. 기사 0건 + summary가 null인 행이 두 조건이 겹치는 자리다 — 순서가
+		// 뒤바뀌면 "기사도 없고 서술도 없는" 날이 UNAVAILABLE로 보인다.
+		@Test
+		@DisplayName("기사 0건이면 summary가 null인 행이 있어도 EMPTY다 — 3번이 5번보다 앞")
+		void putsTheEmptyItemsCheckBeforeTheBriefingRowLookup() {
+			givenReadySession();
+			givenMarketNews(List.of());
+			givenMarketDisclosures(List.of());
+			givenBriefingRow(Optional.of(briefingRow(null)));
+			at(LocalTime.of(10, 0));
+
+			MarketBriefingResponse response = queryService.getBriefing(Market.STOCK);
+
+			assertThat(response.status()).isEqualTo(FeedbackContentStatus.EMPTY);
+			assertThat(response.items()).isEmpty();
+			assertThat(response.summary()).isNull();
+		}
+
+		@Test
+		@DisplayName("기사 0건이면 서술이 있는 행이 있어도 READY가 아니라 EMPTY다 — 3번이 6번보다 앞")
+		void neverReturnsReadyWhenThereIsNoArticleEvenWithANarrative() {
+			givenReadySession();
+			givenMarketNews(List.of());
+			givenMarketDisclosures(List.of());
+			givenBriefingRow(Optional.of(briefingRow("간밤 기사가 이어졌습니다.")));
+			at(LocalTime.of(10, 0));
+
+			MarketBriefingResponse response = queryService.getBriefing(Market.STOCK);
+
+			assertThat(response.status()).isEqualTo(FeedbackContentStatus.EMPTY);
+			assertThat(response.summary()).isNull();
+		}
+
+		// 4번과 5번은 items가 같고 상태값으로만 갈린다. 저장된 행은 둘 다 summary가 NULL이라
+		// existsBy로는 구분되지 않는다 — findBy(Optional)를 쓰는 이유가 이 한 쌍이다.
+		@Test
+		@DisplayName("브리핑 행이 없고 기사가 있으면 EMPTY이고 items는 채운다 — 4번")
+		void returnsEmptyWithFilledItemsWhenTheBriefingRowIsMissing() {
+			givenReadySession();
+			givenMarketNews(List.of(news(1L, "테스트종목A", LocalTime.of(18, 0))));
+			givenMarketDisclosures(List.of());
+			givenBriefingRow(Optional.empty());
+			at(LocalTime.of(10, 0));
+
+			MarketBriefingResponse response = queryService.getBriefing(Market.STOCK);
+
+			assertThat(response.status()).isEqualTo(FeedbackContentStatus.EMPTY);
+			assertThat(response.items()).hasSize(1);
+			assertThat(response.summary()).isNull();
+		}
+
+		@Test
+		@DisplayName("행이 있고 summary가 null이면 UNAVAILABLE이고 items는 채운다 — 5번")
+		void returnsUnavailableWithFilledItemsWhenTheRowHasNoNarrative() {
+			givenReadySession();
+			givenMarketNews(List.of(news(1L, "테스트종목A", LocalTime.of(18, 0))));
+			givenMarketDisclosures(List.of());
+			givenBriefingRow(Optional.of(briefingRow(null)));
+			at(LocalTime.of(10, 0));
+
+			MarketBriefingResponse response = queryService.getBriefing(Market.STOCK);
+
+			assertThat(response.status()).isEqualTo(FeedbackContentStatus.UNAVAILABLE);
+			assertThat(response.items()).hasSize(1);
+			assertThat(response.summary()).isNull();
+		}
+
+		@Test
+		@DisplayName("행이 있고 서술이 있으면 READY이고 문장이 실린다 — 6번")
+		void returnsReadyWithTheNarrative() {
+			givenReadySession();
+			givenMarketNews(List.of(news(1L, "테스트종목A", LocalTime.of(18, 0))));
+			givenMarketDisclosures(List.of());
+			givenBriefingRow(Optional.of(briefingRow("간밤 기사가 이어졌습니다.")));
+			at(LocalTime.of(10, 0));
+
+			MarketBriefingResponse response = queryService.getBriefing(Market.STOCK);
+
+			assertThat(response.status()).isEqualTo(FeedbackContentStatus.READY);
+			assertThat(response.summary()).isEqualTo("간밤 기사가 이어졌습니다.");
+			assertThat(response.market()).isEqualTo(Market.STOCK);
+			assertThat(response.originTradeDate()).isEqualTo(ORIGIN_TRADE_DATE);
+		}
+
+		// --- 응답 상한 (§C-7) ---
+
+		// 이 클래스 안에 상한이 둘 있다 — 생성은 max-items-per-summary(5), 조회는 max-items-per-briefing(3).
+		// 두 값을 다르게 준 픽스처라야 바꿔 쓴 구현이 드러난다. 같은 값이면 뒤바꿔도 전부 초록이다.
+		@Test
+		@DisplayName("조회 items는 max-items-per-briefing으로 자른다 — 생성의 LLM 입력 상한이 아니다")
+		void truncatesResponseItemsWithTheBriefingLimitNotTheSummaryLimit() {
+			givenReadySession();
+			List<MarketNewsItem> newsItems = new ArrayList<>();
+			for (int index = 0; index < 10; index++) {
+				newsItems.add(news(index + 1L, "테스트종목" + index, LocalTime.of(16, 0).plusMinutes(index * 10L)));
+			}
+			givenMarketNews(newsItems);
+			givenMarketDisclosures(List.of());
+			givenBriefingRow(Optional.of(briefingRow("간밤 기사가 이어졌습니다.")));
+			at(LocalTime.of(10, 0));
+
+			assertThat(queryService.getBriefing(Market.STOCK).items())
+				.as("생성 상한(%d)으로 잘리면 두 자리를 바꿔 쓴 것이다", MAX_ITEMS_PER_SUMMARY)
+				.hasSize(MAX_ITEMS_PER_BRIEFING);
+		}
+
+		// 브리핑은 전 종목 합산 단일 목록이라 공시가 상시 전멸하는 자리다 (§뉴스 매칭 범위, 항목 3 판정).
+		@Test
+		@DisplayName("상한을 넘어도 공시가 items에 남는다")
+		void keepsDisclosuresInTheResponseItemsWhenOverTheLimit() {
+			givenReadySession();
+			List<MarketNewsItem> newsItems = new ArrayList<>();
+			for (int index = 0; index < 10; index++) {
+				newsItems.add(news(index + 1L, "테스트종목" + index, LocalTime.of(16, 0).plusMinutes(index * 10L)));
+			}
+			givenMarketNews(newsItems);
+			givenMarketDisclosures(List.of(disclosure(101L, "공시종목A"), disclosure(102L, "공시종목B")));
+			givenBriefingRow(Optional.of(briefingRow("간밤 기사가 이어졌습니다.")));
+			at(LocalTime.of(10, 0));
+
+			List<BriefingNewsItem> items = queryService.getBriefing(Market.STOCK).items();
+
+			assertThat(items).hasSize(MAX_ITEMS_PER_BRIEFING);
+			assertThat(items).filteredOn(item -> item.type() == MarketNewsItemType.DISCLOSURE).hasSize(2);
+			assertThat(items).extracting(BriefingNewsItem::publishedAt)
+				.isSortedAccordingTo(java.util.Comparator.reverseOrder());
+		}
+
+		// 화면이 추가 조회를 하지 않아도 되도록 종목 3값을 평평하게 담는다 (§C-6).
+		@Test
+		@DisplayName("items 항목이 종목 id·심볼·이름을 함께 담는다")
+		void putsTheInstrumentIdentityIntoEveryItem() {
+			givenReadySession();
+			givenMarketNews(List.of(news(1L, "테스트종목A", LocalTime.of(18, 0))));
+			givenMarketDisclosures(List.of());
+			givenBriefingRow(Optional.of(briefingRow("간밤 기사가 이어졌습니다.")));
+			at(LocalTime.of(10, 0));
+
+			assertThat(queryService.getBriefing(Market.STOCK).items())
+				.singleElement()
+				.satisfies(item -> {
+					assertThat(item.instrumentId()).isNotNull();
+					assertThat(item.symbol()).isNotBlank();
+					assertThat(item.name()).isEqualTo("테스트종목A");
+				});
+		}
+
+		// --- 구간 (게이트 ⑪) ---
+
+		// 브리핑은 조회 시각이 언제든 전장만 담는다 — Part C처럼 상한이 재생 시각을 따라 넓어지면
+		// 장중 기사가 아침 브리핑에 들어간다 (FEED-009).
+		@Test
+		@DisplayName("장중에 조회해도 구간 상한이 09:00에서 넓어지지 않는다")
+		void neverWidensTheWindowBeyondMarketOpenDuringTradingHours() {
+			givenReadySession();
+			givenMarketNews(List.of());
+			givenMarketDisclosures(List.of());
+			at(LocalTime.of(14, 0));
+
+			queryService.getBriefing(Market.STOCK);
+
+			verify(marketNewsItemRepository, atLeastOnce())
+				.findMarketNewsPublishedBetween(Market.STOCK, PRE_MARKET_FROM, PRE_MARKET_TO);
+		}
+
+		@Test
+		@DisplayName("장 마감 이후에 조회해도 D 접수 공시를 묻지 않는다")
+		void neverAsksForOriginDayDisclosuresAfterTheClose() {
+			givenReadySession();
+			givenMarketNews(List.of());
+			givenMarketDisclosures(List.of());
+			at(LocalTime.of(18, 0));
+
+			queryService.getBriefing(Market.STOCK);
+
+			verify(marketNewsItemRepository, never()).findMarketDisclosuresReceivedOn(
+				any(), eq(ORIGIN_TRADE_DATE.atStartOfDay()), any());
+		}
+
+		// --- 그 밖 ---
+
+		// 코인 규칙 자체는 별도 이슈 소유다. 주식 규칙에 오염되지 않았는지만 본다.
+		@Test
+		@DisplayName("코인 시장은 주식 게이트를 타지 않고 EMPTY와 빈 배열을 돌려준다")
+		void returnsEmptyForCryptoWithoutApplyingTheStockGate() {
+			at(LocalTime.of(3, 0));
+
+			MarketBriefingResponse response = queryService.getBriefing(Market.CRYPTO);
+
+			assertThat(response.status()).isEqualTo(FeedbackContentStatus.EMPTY);
+			assertThat(response.market()).isEqualTo(Market.CRYPTO);
+			assertThat(response.originTradeDate()).isNull();
+			assertThat(response.items()).isEmpty();
+			verifyNoInteractions(stockReplayService);
+		}
+
+		// 조회는 쓰지 않는다 (FEED-009 — GET은 LLM을 호출하지도 DB에 쓰지도 않는다).
+		@Test
+		@DisplayName("조회 경로가 브리핑을 저장하지도 LLM을 부르지도 않는다")
+		void neverWritesOrCallsTheLlmWhileQuerying() {
+			givenReadySession();
+			givenMarketNews(List.of(news(1L, "테스트종목A", LocalTime.of(18, 0))));
+			givenMarketDisclosures(List.of());
+			givenBriefingRow(Optional.empty());
+			at(LocalTime.of(10, 0));
+
+			queryService.getBriefing(Market.STOCK);
+
+			verify(marketBriefingRepository, never()).save(any());
+			verifyNoInteractions(narrativeService);
+		}
+	}
+
+	// 같은 픽스처를 여러 시각에서 조회해야 §C-4의 1·2번 경계를 볼 수 있다.
+	private static final class MutableClock extends Clock {
+
+		private volatile Instant instant;
+
+		private MutableClock(Instant instant) {
+			this.instant = instant;
+		}
+
+		void set(LocalDateTime localDateTime) {
+			this.instant = localDateTime.atZone(KST).toInstant();
+		}
+
+		@Override
+		public ZoneId getZone() {
+			return KST;
+		}
+
+		@Override
+		public Clock withZone(ZoneId zone) {
+			return this;
+		}
+
+		@Override
+		public Instant instant() {
+			return instant;
+		}
 	}
 }

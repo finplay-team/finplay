@@ -79,7 +79,7 @@
   - 컨트롤러가 생기므로 **같은 커밋에서 `api-contracts.md`의 해당 소절에서 `(계획)`을 걷고 `api-routes.md`의 2차 계획 절에서 그 행을 실제 라우트 표로 옮긴다** (CLAUDE.md 규칙 7).
   - 검증 — `@WebMvcTest`(계약·401) + 단위(상태값 판정) + 고정 `Clock` + Testcontainers 통합(게이트·범위). **완료 조건 5건이 이 항목 소유다.** 게이트 ⑧의 Part C 절반, 게이트 ⑨(범위 — 다른 원본 거래일 기사가 섞이지 않는다), 게이트 ⑩(장중 조회에서 `summaryScope`가 전장 범위이고 요약에 오후 기사 내용이 없다, 장 마감 이후 재조회하면 `FULL`), 상태값 ②(세션 미준비 시 `NOT_YET`), 상태값 ③(행 없음 + 기사 있음 → `EMPTY`이고 `items` 채움), 상태값 ④(행 있고 `summary`가 `NULL` → `UNAVAILABLE`이고 `items` 채움). 401은 배정 건수에 넣지 않지만 이 엔드포인트에 적용한다.
 
-- [ ] **6. Part D 조회 API — 개장 전 브리핑 (주식) + 두 API 대칭 검증**
+- [x] **6. Part D 조회 API — 개장 전 브리핑 (주식) + 두 API 대칭 검증**
 
   시장 단위 브리핑을 돌려주고 **Part C와 하한이 같은지를 여기서 닫는다.** 두 API가 모두 존재해야 성립하는 조건이라 마지막 조회 항목이 소유한다.
   - 경로·응답 필드·오류 형식은 `docs/api-contracts.md`의 "개장 전 브리핑 조회" 행과 FEED-009가 정본이다. 클래스 이름은 §C-6(`MarketBriefingController`·`MarketBriefingService`·`MarketBriefingResponse`)이다.

@@ -1,38 +1,52 @@
-// 개장 전 브리핑 1건을 확정하는 서비스 — 시장 단위 구간 조회 → 절단 → 서술 → 저장까지가 이 클래스의 전부다.
+// 개장 전 브리핑의 생성(배치)과 조회(API)를 함께 갖는 서비스 — 둘이 같은 구간 질의를 공유한다.
 package com.finplay.api.feedback.service;
 
 import com.finplay.api.feedback.config.FeedbackNewsProperties;
+import com.finplay.api.feedback.domain.FeedbackContentStatus;
 import com.finplay.api.feedback.domain.MarketBriefing;
 import com.finplay.api.feedback.domain.MarketNewsItem;
 import com.finplay.api.feedback.domain.MarketNewsItemType;
+import com.finplay.api.feedback.dto.response.BriefingNewsItem;
+import com.finplay.api.feedback.dto.response.MarketBriefingResponse;
 import com.finplay.api.feedback.repository.MarketBriefingRepository;
 import com.finplay.api.feedback.repository.MarketNewsItemRepository;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.BusinessDayCalendar;
+import com.finplay.api.market.service.StockReplayService;
+import com.finplay.api.market.service.StockReplaySessionDto;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
- * <b>브리핑 1건을 확정하는 책임만 진다</b>(spec §C-6). 배치는 이것을 부르기만 한다 —
- * {@code InstrumentNewsSummaryService}·{@code PriceMoveCardService}와 같은 형태·같은 이유다.
+ * <b>생성과 조회를 한 클래스가 갖는다</b>(spec §C-6, 명문화됨). 종목 뉴스 요약이 생성
+ * ({@code InstrumentNewsSummaryService})과 조회({@code InstrumentNewsQueryService})로 나뉜 것과 비대칭이지만,
+ * 브리핑은 <b>두 경로가 같은 구간 질의를 공유</b>해서 나누면 그 질의가 두 벌이 된다 — {@code items}를 저장하지
+ * 않고 조회 시 다시 만들기 때문이다(FEED-009·§데이터 모델). 배치는 생성 메서드를 부르기만 한다.
  *
- * <p><b>{@code items}를 저장하지 않는다</b>(FEED-009·§데이터 모델). 저장하는 것은 문장과 그 출처뿐이고, 목록은
- * 조회 시 같은 구간 질의로 다시 만든다. 그래서 이 클래스가 모으는 기사 목록은 <b>프롬프트 입력 전용</b>이며
- * 상한도 응답 상한({@code max-items-per-briefing})이 아니라 <b>LLM 입력 상한
- * ({@code max-items-per-summary})</b>을 쓴다 (§C-7).
+ * <p><b>상한 두 개가 이 클래스 안에 공존한다</b>(§C-7). 같은 목록을 서로 다른 값으로 자른다.
+ *
+ * <pre>
+ * 생성(LLM 입력)  max-items-per-summary
+ * 조회(응답 items) max-items-per-briefing
+ * </pre>
+ *
+ * <b>바꿔 쓰면 조용히 틀린다</b> — 예외도 로그도 없이 프롬프트에 실리는 기사 수나 화면 목록 길이만 달라진다.
  *
  * <p><b>장중 기사를 절대 담지 않는다</b>(FEED-009). 구간이 §C-2의 {@code 전장} {@code [D-1 15:30, D 09:00]}이고
- * 공시는 {@code rcept_dt = D-1}이다(§C-3) — 이 범위가 실제 투자자가 아침에 아는 정보와 같다.
+ * 공시는 {@code rcept_dt = D-1}이다(§C-3) — 이 범위가 실제 투자자가 아침에 아는 정보와 같다. 조회 시각이
+ * 언제든 이 구간이므로 Part C처럼 상한이 재생 시각을 따라 넓어지지 않는다.
  *
- * <p>트랜잭션을 열지 않는 이유와 쓰기 범위({@code market_briefings} 하나뿐)는
- * {@code InstrumentNewsSummaryService}와 같다.
+ * <p>생성 경로가 트랜잭션을 열지 않는 이유와 쓰기 범위({@code market_briefings} 하나뿐)는
+ * {@code InstrumentNewsSummaryService}와 같다. <b>조회 경로는 아무것도 쓰지 않는다.</b>
  */
 @Slf4j
 @Service
@@ -42,6 +56,8 @@ public class MarketBriefingService {
 	private final MarketNewsItemRepository marketNewsItemRepository;
 
 	private final MarketBriefingRepository marketBriefingRepository;
+
+	private final StockReplayService stockReplayService;
 
 	private final NarrativeService narrativeService;
 
@@ -87,7 +103,91 @@ public class MarketBriefingService {
 	}
 
 	/**
+	 * 시장 단위 브리핑을 조회한다. 계약은 {@code docs/api-contracts.md}의 "개장 전 브리핑 조회" 행이다.
+	 *
+	 * <p><b>판정 순서는 §C-4의 표 그대로다.</b> 1번이 {@code EMPTY}이고 2번이 {@code NOT_YET}인 것이
+	 * Part C와 갈리는 자리이며 <b>의도된 차이다</b> — Part D는 "브리핑이 아예 없는 날"이 정상이고, Part C는
+	 * "아직 열리지 않았다"가 맞다. 두 조건이 동시에 성립하는 구간(00:00~08:40)이 있으므로 순서를 바꾸면 값이 갈린다.
+	 *
+	 * <pre>
+	 * 1. 재생세션 미준비 → EMPTY,   originTradeDate=null
+	 * 2. 09:00 이전     → NOT_YET, originTradeDate 채움
+	 * 3. 기사 0건       → EMPTY,   items=[]
+	 * 4. 브리핑 행 없음 → EMPTY,   items 채움
+	 * 5. 행은 있고 summary가 null → UNAVAILABLE, items 채움
+	 * 6. 그 외          → READY
+	 * </pre>
+	 *
+	 * <p><b>09:00 하한을 Part C와 같게 맞춘다</b>(FEED-008·FEED-009). 두 API가 같은 전장 기사군을 다루므로
+	 * 한쪽에만 하한이 있으면 08:41에 그쪽으로 조회해 다른 쪽이 09:00까지 감추는 기사를 먼저 볼 수 있다.
+	 * 두 경로 모두 {@link MarketSessionTimes}의 같은 상수를 본다.
+	 *
+	 * <p><b>이 경로는 쓰지 않는다</b> — 브리핑은 배치 산출물이고 GET은 LLM을 호출하지도 DB에 쓰지도 않는다
+	 * ({@code docs/conventions.md}, FEED-009).
+	 */
+	@Transactional(readOnly = true)
+	public MarketBriefingResponse getBriefing(Market market) {
+		// 코인은 '개장 전'도 '거래일 경계'도 없어 범위가 최근 24시간 하나뿐이고 재생세션과 무관하며, 조회도
+		// generated_at 최신 1행이다 (FEED-009). 그 분기는 코인 배치와 함께 별도 이슈가 이 자리에 더한다 —
+		// 지금은 코인 브리핑을 만드는 배치가 없어 행도 대상 기사도 없으므로 "아직 아무것도 없다"가 정확한
+		// 답이고, 여기서 주식 규칙(개장 시각·재생세션)을 태우면 24시간 거래 시장이 매일 09:00까지 NOT_YET이 된다.
+		if (market == Market.CRYPTO) {
+			return MarketBriefingResponse.withoutItems(market, null, FeedbackContentStatus.EMPTY);
+		}
+
+		// 1번 — 원본 거래일 자체가 확정되지 않아 날짜를 지어낼 수 없다. NOT_YET이 아니라 EMPTY다.
+		StockReplaySessionDto session = stockReplayService.getCurrentReplaySession();
+		if (!session.ready()) {
+			return MarketBriefingResponse.withoutItems(market, null, FeedbackContentStatus.EMPTY);
+		}
+
+		// 2번 — 세션은 준비됐고 개장 전이다. 여기서만 원본 거래일을 채운다.
+		LocalDate originTradeDate = session.sourceTradingDate();
+		if (LocalTime.now(clock).isBefore(MarketSessionTimes.MARKET_OPEN_TIME)) {
+			return MarketBriefingResponse.withoutItems(
+				market, originTradeDate, FeedbackContentStatus.NOT_YET);
+		}
+
+		// items는 저장하지 않으므로 생성 때와 같은 구간 질의로 다시 만든다 (FEED-009).
+		// 상한만 다르다 — 여기는 응답 목록이라 max-items-per-briefing이고, 위 생성 경로는 LLM 입력이라
+		// max-items-per-summary다. 두 값이 이 클래스 안에 공존하므로 바꿔 쓰지 않도록 주의한다(§C-7).
+		List<BriefingNewsItem> items = NewsItemTruncator
+			.truncateAndSort(collectPreMarketItems(originTradeDate), properties.maxItemsPerBriefing())
+			.stream()
+			.map(BriefingNewsItem::from)
+			.toList();
+
+		// 3번 — 기사가 0건이면 행이 있든 없든 EMPTY다. 행 조회보다 앞이라 순서를 바꾸면
+		// "기사도 없고 서술도 없는" 날이 UNAVAILABLE로 보인다.
+		if (items.isEmpty()) {
+			return MarketBriefingResponse.withoutItems(
+				market, originTradeDate, FeedbackContentStatus.EMPTY);
+		}
+
+		Optional<MarketBriefing> briefing = marketBriefingRepository
+			.findByMarketAndOriginTradeDate(market, originTradeDate);
+		// 4번 — 행이 아직 없다(배치 미실행·배포 당일). 기사는 있으므로 items를 채운다.
+		if (briefing.isEmpty()) {
+			return MarketBriefingResponse.of(
+				market, originTradeDate, FeedbackContentStatus.EMPTY, null, items);
+		}
+
+		// 5번 — 행은 있는데 서술이 없다(narrative_source=NONE). 6번 — 그 외는 READY.
+		String text = briefing.get().getSummary();
+		return MarketBriefingResponse.of(
+			market,
+			originTradeDate,
+			text == null ? FeedbackContentStatus.UNAVAILABLE : FeedbackContentStatus.READY,
+			text,
+			items);
+	}
+
+	/**
 	 * {@code 전장} 구간의 기사와 {@code rcept_dt = D-1} 공시를 시장 전체에서 모은다 (§C-2·§C-3).
+	 *
+	 * <p><b>생성과 조회가 같은 구간을 쓴다.</b> 브리핑은 언제 조회해도 {@code 전장}만 담으므로(FEED-009 —
+	 * 장중 기사를 절대 포함하지 않는다) Part C처럼 상한이 재생 시각을 따라 넓어지지 않는다. 두 호출부의
+	 * 차이는 <b>절단 상한뿐</b>이다.
 	 *
 	 * <p><b>종목별로 나눠 묻지 않는다</b>(§C-2-1). 상한을 시장 전체 목록에 걸어야 §뉴스 매칭 범위의 절단이
 	 * 의도대로 작동한다 — 종목별로 자른 뒤 합치면 종목당 상한이 되어 전체가 상한의 몇 배로 불어난다.

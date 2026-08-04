@@ -4,6 +4,7 @@ package com.finplay.api.feedback.repository;
 import com.finplay.api.feedback.domain.MarketBriefing;
 import com.finplay.api.market.domain.Market;
 import java.time.LocalDate;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 /**
@@ -20,4 +21,14 @@ public interface MarketBriefingRepository extends JpaRepository<MarketBriefing, 
 	 * {@code InstrumentNewsSummaryRepository.existsByInstrumentIdAndOriginTradeDateAndScope}와 같다.
 	 */
 	boolean existsByMarketAndOriginTradeDate(Market market, LocalDate originTradeDate);
+
+	/**
+	 * 그 {@code (시장, 원본 거래일)} 브리핑 행을 가져온다 — 축은 위 {@code exists}와 같은 유니크 키다.
+	 *
+	 * <p><b>존재 여부가 아니라 행 자체를 받아야 한다.</b> 저장된 행만으로는 {@code EMPTY}와
+	 * {@code UNAVAILABLE}이 구분되지 않는다 — 둘 다 {@code summary}가 {@code NULL}이다(§C-4). 행이 없으면
+	 * {@code EMPTY}(판정 순서 4번), 행은 있는데 {@code summary}가 {@code null}이면 {@code UNAVAILABLE}
+	 * (5번)이며 <b>두 경우 모두 {@code items}는 채운다.</b>
+	 */
+	Optional<MarketBriefing> findByMarketAndOriginTradeDate(Market market, LocalDate originTradeDate);
 }
