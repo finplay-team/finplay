@@ -12,7 +12,9 @@ import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.journal.domain.SellTradeJournal;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.domain.StockReplaySession;
 import com.finplay.api.market.repository.InstrumentRepository;
+import com.finplay.api.market.repository.StockReplaySessionRepository;
 import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.domain.OrderType;
@@ -58,11 +60,15 @@ class SellTradeJournalRepositoryTest {
 	private SellTradeJournalRepository sellTradeJournalRepository;
 
 	@Autowired
+	private StockReplaySessionRepository stockReplaySessionRepository;
+
+	@Autowired
 	private EntityManager entityManager;
 
 	private User user;
 	private Account account;
 	private Instrument instrument;
+	private StockReplaySession session;
 	private int sequence = 0;
 
 	@BeforeEach
@@ -74,6 +80,8 @@ class SellTradeJournalRepositoryTest {
 		// V7 시드와 겹치지 않는 테스트 전용 심볼을 사용한다 — UNIQUE(symbol) 충돌 방지.
 		instrument = instrumentRepository.saveAndFlush(
 			Instrument.create(Market.STOCK, "SJR01", "테스트종목", BigDecimal.valueOf(100), 10_000L, true, NOW));
+		session = stockReplaySessionRepository.saveAndFlush(
+			StockReplaySession.ready(NOW.toLocalDate().plusYears(20), NOW.toLocalDate(), NOW, NOW));
 	}
 
 	private Trade createSellTrade() {
@@ -92,6 +100,7 @@ class SellTradeJournalRepositoryTest {
 			order,
 			account,
 			instrument,
+			session,
 			OrderSide.SELL,
 			BigDecimal.valueOf(100),
 			BigDecimal.valueOf(10),

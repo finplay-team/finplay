@@ -28,11 +28,6 @@ public class PriceQueryService {
 		return requireAvailable(getPriceQuote(instrumentId));
 	}
 
-	@Transactional(readOnly = true)
-	public PriceQuoteDto getPrice(Instrument instrument) {
-		return requireAvailable(getPriceQuote(instrument));
-	}
-
 	// 주문 체결 전용 — 주식의 주문 가능 상태·가격·재생세션을 공급자의 같은 관측 결과로 확정한다.
 	@Transactional(readOnly = true)
 	public OrderExecutionPriceDto getOrderExecutionPrice(Instrument instrument) {
@@ -113,15 +108,6 @@ public class PriceQueryService {
 			throw new BusinessException(ErrorCode.PRICE_UNAVAILABLE);
 		}
 		return quote;
-	}
-
-	// 주식 장외는 MARKET_CLOSED, 그 외(코인·주식 장중)는 통과시킨다. 주문 서비스는 이 메서드로만 주문 가능 여부를 판단해야 한다.
-	@Transactional(readOnly = true)
-	public void assertOrderable(Instrument instrument) {
-		if (instrument.getMarket() == Market.STOCK
-			&& stockPriceProvider.getMarketStatus() == StockMarketStatus.CLOSED) {
-			throw new BusinessException(ErrorCode.MARKET_CLOSED);
-		}
 	}
 
 	// 어느 StockPriceProvider 구현체(MVP는 KisHistoricalReplayPriceProvider 하나뿐)가 동작 중인지 알지 못한 채 인터페이스로만 위임한다.

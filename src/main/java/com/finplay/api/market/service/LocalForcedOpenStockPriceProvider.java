@@ -18,9 +18,10 @@ import org.springframework.transaction.annotation.Transactional;
 // 개발 플래그로 분기하는 대신 인터페이스를 감싸는 방식을 택했다: StockReplayService·PriceQueryService·SSE 서비스는
 // 아무 변경 없이 그대로 두고, local 프로필에서만 존재하는 이 빈이 시장상태만 덮어쓴다.
 //
-// 주문은 getCurrentPrice를 통한 getOrderExecutionPrice quote를 사용하고 SSE snapshot은 getCurrentPrices를 사용한다.
-// 단건·다건 quote 모두 같은 강제 OPEN 변환을 적용하며 status 이벤트의 getMarketStatus와도 일치시킨다 — 화면에
-// OPEN으로 보이는 동안 주문도 실제로 통과한다.
+// 주문은 getCurrentPrice를 통한 getOrderExecutionPrice quote를 사용하고 SSE snapshot도 단건 getCurrentPrice(단건
+// getPriceQuote 경유)를 사용한다. 다건 getCurrentPrices는 HoldingValuationService의 평가손익 조회가 유일 소비자이며
+// marketStatus는 읽지 않고 가격만 꺼내 쓴다. 단건·다건 quote 모두 같은 강제 OPEN 변환을 적용하며 status 이벤트의
+// getMarketStatus와도 일치시킨다 — 화면에 OPEN으로 보이는 동안 주문도 실제로 통과한다.
 @Service
 @Primary
 @Profile("local")

@@ -51,11 +51,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 @SpringBootTest
 @Import({TestcontainersConfiguration.class, OrderSellIntegrationTest.FixedClockTestConfig.class})
-@Transactional
 class OrderSellIntegrationTest {
 
 	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
@@ -108,7 +107,15 @@ class OrderSellIntegrationTest {
 	@Autowired
 	private StringRedisTemplate redisTemplate;
 
+	@Autowired
+	private JdbcTemplate jdbcTemplate;
+
 	private String cryptoPriceKeyToCleanUp;
+
+	private Long stockReplaySessionIdOf(Long tradeId) {
+		return jdbcTemplate.queryForObject(
+			"SELECT stock_replay_session_id FROM trades WHERE id = ?", Long.class, tradeId);
+	}
 
 	@BeforeEach
 	void setUp() {
@@ -161,7 +168,7 @@ class OrderSellIntegrationTest {
 		// 배분원가=60000*5=300000, 배분매수수수료=floor(90*5/10)=45 (매수1 fee=floor(600000*0.00015)=90)
 		// realizedPnl = (500000-75) - (300000+45) = 199880
 		assertThat(response.realizedPnl()).isEqualTo(199_880L);
-		assertThat(tradeRepository.findById(response.tradeId()).orElseThrow().getStockReplaySession().getId())
+		assertThat(stockReplaySessionIdOf(response.tradeId()))
 			.isEqualTo(stockReplaySessionRepository.findByServiceDate(TRADING_DATE).orElseThrow().getId());
 
 		HoldingLot reloadedEarliestLot = holdingLotRepository.findById(earliestLot.getId()).orElseThrow();
@@ -208,8 +215,8 @@ class OrderSellIntegrationTest {
 		OrderResponse sell = orderService.createOrder(user.getId(), "crypto-sell-null-session",
 			new OrderCreateRequest(Market.CRYPTO, instrument.getId(), OrderSide.SELL, "MARKET", new BigDecimal("0.1")));
 
-		assertThat(tradeRepository.findById(buy.tradeId()).orElseThrow().getStockReplaySession()).isNull();
-		assertThat(tradeRepository.findById(sell.tradeId()).orElseThrow().getStockReplaySession()).isNull();
+		assertThat(stockReplaySessionIdOf(buy.tradeId())).isNull();
+		assertThat(stockReplaySessionIdOf(sell.tradeId())).isNull();
 		assertThat(holdingRepository.findByAccountIdAndInstrumentId(account.getId(), instrument.getId())
 			.orElseThrow().getQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
 	}

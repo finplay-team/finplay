@@ -48,11 +48,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 @SpringBootTest
 @Import({TestcontainersConfiguration.class, OrderBuyIntegrationTest.FixedClockTestConfig.class})
-@Transactional
 class OrderBuyIntegrationTest {
 
 	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
@@ -101,7 +100,15 @@ class OrderBuyIntegrationTest {
 	@Autowired
 	private StringRedisTemplate redisTemplate;
 
+	@Autowired
+	private JdbcTemplate jdbcTemplate;
+
 	private String cryptoPriceKeyToCleanUp;
+
+	private Long stockReplaySessionIdOf(Long tradeId) {
+		return jdbcTemplate.queryForObject(
+			"SELECT stock_replay_session_id FROM trades WHERE id = ?", Long.class, tradeId);
+	}
 
 	@BeforeEach
 	void setUp() {
@@ -139,7 +146,7 @@ class OrderBuyIntegrationTest {
 
 		assertThat(orderRepository.findById(response.orderId())).isPresent();
 		assertThat(tradeRepository.findById(response.tradeId())).isPresent();
-		assertThat(tradeRepository.findById(response.tradeId()).orElseThrow().getStockReplaySession().getId())
+		assertThat(stockReplaySessionIdOf(response.tradeId()))
 			.isEqualTo(stockReplaySessionRepository.findByServiceDate(TRADING_DATE).orElseThrow().getId());
 
 		Holding holding = holdingRepository
@@ -171,7 +178,7 @@ class OrderBuyIntegrationTest {
 		OrderResponse response = orderService.createOrder(user.getId(), "crypto-buy-null-session",
 			new OrderCreateRequest(Market.CRYPTO, instrument.getId(), OrderSide.BUY, "MARKET", new BigDecimal("0.1")));
 
-		assertThat(tradeRepository.findById(response.tradeId()).orElseThrow().getStockReplaySession()).isNull();
+		assertThat(stockReplaySessionIdOf(response.tradeId())).isNull();
 		assertThat(accountRepository.findById(account.getId()).orElseThrow().getCashBalance()).isLessThan(10_000_000L);
 	}
 
