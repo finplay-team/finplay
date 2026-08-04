@@ -78,7 +78,7 @@ candidate 1·2·3·4와 나머지 6개 계획 경로 모두 공개 경로에 추
 
 ## 2차 라우트 (구현 완료)
 
-`docs/specs/012-ai-feedback`의 네 경로 — `GET /api/instruments/{instrumentId}/price-moves`(FEED-006)·`GET /api/instruments/{instrumentId}/news`(FEED-008)·`GET /api/market/briefing`(FEED-009)·`GET /api/ai/post-sell/{tradeId}`(FEED-007) — 는 **전부 구현되어 위 실제 라우트 목록에 반영했다. 계획 라우트로 남은 2차 경로는 없다.**
+`docs/specs/012-ai-feedback`의 네 경로 — `GET /api/instruments/{instrumentId}/price-moves`(FEED-006)·`GET /api/instruments/{instrumentId}/news`(FEED-008)·`GET /api/market/briefing`(FEED-009)·`GET /api/ai/post-sell/{tradeId}`(FEED-007) — 는 **전부 구현되어 위 실제 라우트 목록에 반영했다. 계획 라우트로 남은 2차 경로는 없고 네 경로 모두 블랙박스 QA 근거다.** spec 012의 남은 이슈(`docs/specs/012-ai-feedback/plan.md` 7·8번 — 반사실 수익률·집단 비교, 코인 변동 감시)는 **이 네 경로의 응답 필드와 분기를 채우며 새 엔드포인트를 만들지 않는다** — 이 절을 계획 라우트 표로 되돌리지 않는다.
 
 네 경로 모두 `SecurityConfig` 공개 목록에 추가하지 않는다 — `anyRequest().authenticated()`로 떨어져 Access Bearer 토큰을 요구한다.
 
