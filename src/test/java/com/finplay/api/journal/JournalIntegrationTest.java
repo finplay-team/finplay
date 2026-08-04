@@ -618,6 +618,222 @@ class JournalIntegrationTest {
 		assertThat(captureLedger(account.getId())).isEqualTo(before);
 	}
 
+	@Test
+	void updateBuyJournalReturns200AndUpdatesContentAndUpdatedAtWithoutTouchingLedger() throws Exception {
+		User user = createUser("ubjour-success");
+		Account account = createAccount(user);
+		String accessToken = issueAccessToken(user);
+		Long buyTradeId = createBuyTrade(user, "UBJSC");
+
+		mockMvc.perform(postJournal(buyTradeId, accessToken, "최초 작성 본문"))
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.createdAt").value("2026-07-29T10:00:00"));
+
+		LedgerSnapshot before = captureLedger(account.getId());
+		((MutableClock)clock).set(BASE_NOW.plusMinutes(2));
+
+		mockMvc.perform(patchJournal(buyTradeId, accessToken, "수정된 본문"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.journalId").isNumber())
+			.andExpect(jsonPath("$.buyTradeId").value(buyTradeId))
+			.andExpect(jsonPath("$.content").value("수정된 본문"))
+			.andExpect(jsonPath("$.createdAt").value("2026-07-29T10:00:00"))
+			.andExpect(jsonPath("$.updatedAt").value("2026-07-29T10:02:00"));
+
+		assertThat(journalCountFor(buyTradeId)).isEqualTo(1L);
+		assertThat(journalContentFor(buyTradeId)).isEqualTo("수정된 본문");
+		LocalDateTime[] timestamps = journalTimestampsFor(buyTradeId);
+		assertThat(timestamps[1]).isAfter(timestamps[0]);
+		assertThat(captureLedger(account.getId())).isEqualTo(before);
+	}
+
+	@Test
+	void consecutiveUpdatesToBuyJournalBothReturn200AndOnlyLastContentRemains() throws Exception {
+		User user = createUser("ubjour-consec");
+		Account account = createAccount(user);
+		String accessToken = issueAccessToken(user);
+		Long buyTradeId = createBuyTrade(user, "UBJCN");
+
+		mockMvc.perform(postJournal(buyTradeId, accessToken, "최초 작성 본문"))
+			.andExpect(status().isCreated());
+
+		LedgerSnapshot before = captureLedger(account.getId());
+		((MutableClock)clock).set(BASE_NOW.plusMinutes(2));
+
+		mockMvc.perform(patchJournal(buyTradeId, accessToken, "첫 번째 수정"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.content").value("첫 번째 수정"));
+
+		((MutableClock)clock).set(BASE_NOW.plusMinutes(3));
+
+		mockMvc.perform(patchJournal(buyTradeId, accessToken, "두 번째 수정"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.content").value("두 번째 수정"))
+			.andExpect(jsonPath("$.updatedAt").value("2026-07-29T10:03:00"));
+
+		assertThat(journalCountFor(buyTradeId)).isEqualTo(1L);
+		assertThat(journalContentFor(buyTradeId)).isEqualTo("두 번째 수정");
+		assertThat(captureLedger(account.getId())).isEqualTo(before);
+	}
+
+	@Test
+	void updateMissingBuyTradeReturns404AndLeavesLedgerAndJournalTableUnchanged() throws Exception {
+		User user = createUser("ubjour-missing");
+		Account account = createAccount(user);
+		String accessToken = issueAccessToken(user);
+
+		LedgerSnapshot before = captureLedger(account.getId());
+		long journalCountBefore = totalJournalCount();
+
+		mockMvc.perform(patchJournal(MISSING_TRADE_ID, accessToken, "없는 체결에 대한 수정 시도"))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.error.code").value("NOT_FOUND"));
+
+		assertThat(totalJournalCount()).isEqualTo(journalCountBefore);
+		assertThat(captureLedger(account.getId())).isEqualTo(before);
+	}
+
+	// 아직 매수 회고를 쓰지 않은 매수 체결에 PATCH를 보내면 upsert로 새 회고를 만들지 않고 404여야 한다
+	// (spec.md "수정 요청으로 새 회고를 만들지 않는다(upsert 금지)").
+	@Test
+	void updateUnwrittenBuyJournalReturns404AndDoesNotCreateRowUpsert() throws Exception {
+		User user = createUser("ubjour-unwritten");
+		Account account = createAccount(user);
+		String accessToken = issueAccessToken(user);
+		Long buyTradeId = createBuyTrade(user, "UBJUW");
+
+		LedgerSnapshot before = captureLedger(account.getId());
+
+		mockMvc.perform(patchJournal(buyTradeId, accessToken, "아직 작성 안 된 회고에 대한 수정 시도"))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.error.code").value("NOT_FOUND"));
+
+		assertThat(journalCountFor(buyTradeId)).isEqualTo(0L);
+		assertThat(captureLedger(account.getId())).isEqualTo(before);
+	}
+
+	@Test
+	void updateOtherUsersBuyJournalReturns403AndLeavesLedgerAndJournalTableUnchanged() throws Exception {
+		User owner = createUser("ubjour-owner");
+		Account ownerAccount = createAccount(owner);
+		String ownerAccessToken = issueAccessToken(owner);
+		Long ownerBuyTradeId = createBuyTrade(owner, "UBJOW");
+
+		mockMvc.perform(postJournal(ownerBuyTradeId, ownerAccessToken, "소유자가 작성한 회고"))
+			.andExpect(status().isCreated());
+
+		User intruder = createUser("ubjour-intruder");
+		createAccount(intruder);
+		String intruderAccessToken = issueAccessToken(intruder);
+
+		LedgerSnapshot before = captureLedger(ownerAccount.getId());
+
+		mockMvc.perform(patchJournal(ownerBuyTradeId, intruderAccessToken, "타인 회고에 대한 수정 시도"))
+			.andExpect(status().isForbidden())
+			.andExpect(jsonPath("$.error.code").value("FORBIDDEN"));
+
+		assertThat(journalContentFor(ownerBuyTradeId)).isEqualTo("소유자가 작성한 회고");
+		assertThat(captureLedger(ownerAccount.getId())).isEqualTo(before);
+	}
+
+	@Test
+	void updateSellTradeReturns400ForBuyJournalAndLeavesLedgerAndJournalTableUnchanged() throws Exception {
+		User user = createUser("ubjour-sell");
+		Account account = createAccount(user);
+		String accessToken = issueAccessToken(user);
+		Long sellTradeId = createBuyThenSellTradePair(user, "UBJSL").sellTradeId();
+
+		LedgerSnapshot before = captureLedger(account.getId());
+
+		mockMvc.perform(patchJournal(sellTradeId, accessToken, "매도 체결에 대한 매수 회고 수정 시도"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
+
+		assertThat(journalCountFor(sellTradeId)).isEqualTo(0L);
+		assertThat(captureLedger(account.getId())).isEqualTo(before);
+	}
+
+	@Test
+	void updateBlankContentReturns400ForBuyJournalAndLeavesContentAndLedgerUnchanged() throws Exception {
+		User user = createUser("ubjour-blank");
+		Account account = createAccount(user);
+		String accessToken = issueAccessToken(user);
+		Long buyTradeId = createBuyTrade(user, "UBJBK");
+
+		mockMvc.perform(postJournal(buyTradeId, accessToken, "원본 본문"))
+			.andExpect(status().isCreated());
+
+		LedgerSnapshot before = captureLedger(account.getId());
+
+		mockMvc.perform(patch("/api/trades/{buyTradeId}/journal", buyTradeId)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(journalBody("   ")))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
+
+		assertThat(journalContentFor(buyTradeId)).isEqualTo("원본 본문");
+		assertThat(captureLedger(account.getId())).isEqualTo(before);
+	}
+
+	// 잠금 없음 회귀 ① 매도한 적 없는 매수 체결은 위 updateBuyJournalReturns200... 테스트가 이미 검증한다.
+	// 아래 두 테스트는 잠금 없음 회귀 ②·③ — 005-order-sell 매도 경로를 실제로 태워 만든 배분·전량 매도 lot에
+	// 대해서도 매수 회고 수정이 여전히 200임을 확인한다 (005-order-sell spec의 "첫 매도 배분 발생 시 잠금" 규칙이
+	// 2026-08-04 이슈 #197로 철회됐다는 것을 고정하는 회귀 방어선. holding_lots·trade_allocations 값도 그대로임을 함께 본다).
+	@Test
+	void updateBuyJournalSucceedsWhenLotHasPartialSellAllocationRegressionNoLock() throws Exception {
+		User user = createUser("ubjour-partial");
+		Account account = createAccount(user);
+		String accessToken = issueAccessToken(user);
+		Long buyTradeId = createBuyThenSellTradePair(user, "UBJPT").buyTradeId();
+
+		mockMvc.perform(postJournal(buyTradeId, accessToken, "부분 매도 전 매수 회고"))
+			.andExpect(status().isCreated());
+
+		assertThat(allocationCountForBuyTrade(buyTradeId)).isEqualTo(1L);
+		BigDecimal remainingBefore = remainingQuantityForBuyTrade(buyTradeId);
+		BigDecimal allocatedBefore = totalAllocatedQuantityForBuyTrade(buyTradeId);
+		LedgerSnapshot before = captureLedger(account.getId());
+		((MutableClock)clock).set(BASE_NOW.plusMinutes(2));
+
+		mockMvc.perform(patchJournal(buyTradeId, accessToken, "부분 매도된 lot에 대한 수정"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.content").value("부분 매도된 lot에 대한 수정"));
+
+		assertThat(journalCountFor(buyTradeId)).isEqualTo(1L);
+		assertThat(journalContentFor(buyTradeId)).isEqualTo("부분 매도된 lot에 대한 수정");
+		assertThat(remainingQuantityForBuyTrade(buyTradeId)).isEqualByComparingTo(remainingBefore);
+		assertThat(totalAllocatedQuantityForBuyTrade(buyTradeId)).isEqualByComparingTo(allocatedBefore);
+		assertThat(allocationCountForBuyTrade(buyTradeId)).isEqualTo(1L);
+		assertThat(captureLedger(account.getId())).isEqualTo(before);
+	}
+
+	@Test
+	void updateBuyJournalSucceedsWhenLotIsFullySoldRegressionNoLock() throws Exception {
+		User user = createUser("ubjour-fullsold");
+		Account account = createAccount(user);
+		String accessToken = issueAccessToken(user);
+		Long buyTradeId = createBuyThenFullySellTradePair(user, "UBJFS").buyTradeId();
+
+		mockMvc.perform(postJournal(buyTradeId, accessToken, "전량 매도 전 매수 회고"))
+			.andExpect(status().isCreated());
+
+		assertThat(remainingQuantityForBuyTrade(buyTradeId)).isEqualByComparingTo(BigDecimal.ZERO);
+		BigDecimal allocatedBefore = totalAllocatedQuantityForBuyTrade(buyTradeId);
+		LedgerSnapshot before = captureLedger(account.getId());
+		((MutableClock)clock).set(BASE_NOW.plusMinutes(2));
+
+		mockMvc.perform(patchJournal(buyTradeId, accessToken, "전량 매도된 lot에 대한 수정"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.content").value("전량 매도된 lot에 대한 수정"));
+
+		assertThat(journalCountFor(buyTradeId)).isEqualTo(1L);
+		assertThat(journalContentFor(buyTradeId)).isEqualTo("전량 매도된 lot에 대한 수정");
+		assertThat(remainingQuantityForBuyTrade(buyTradeId)).isEqualByComparingTo(BigDecimal.ZERO);
+		assertThat(totalAllocatedQuantityForBuyTrade(buyTradeId)).isEqualByComparingTo(allocatedBefore);
+		assertThat(captureLedger(account.getId())).isEqualTo(before);
+	}
+
 	// 같은 체결에 동시에 투자일기 작성 요청을 쏘고 각 응답 상태를 모은다 (EmailChangeConcurrencyIntegrationTest 선례).
 	private List<Integer> fireConcurrentJournalRequests(Long buyTradeId, String accessToken, int count)
 		throws Exception {
@@ -708,6 +924,14 @@ class JournalIntegrationTest {
 			.content(journalBody(content));
 	}
 
+	private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder patchJournal(
+		Long buyTradeId, String accessToken, String content) {
+		return patch("/api/trades/{buyTradeId}/journal", buyTradeId)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(journalBody(content));
+	}
+
 	private String journalBody(String content) {
 		return "{\"content\":\"" + content + "\"}";
 	}
@@ -751,6 +975,23 @@ class JournalIntegrationTest {
 		OrderResponse sell = orderService.createOrder(
 			user.getId(), "idem-" + instrumentPrefix + "-sell-" + UUID.randomUUID(),
 			sellRequest(instrument.getId(), "5"));
+		return new TradePair(buy.tradeId(), sell.tradeId());
+	}
+
+	// createBuyThenSellTradePair와 같은 매수 → 매도 파이프라인을 태우되, 매수 수량 전부를 매도해 잠금 없음 회귀
+	// 테스트(③ 전량 매도된 매수 체결)에서 remaining_quantity=0인 lot을 만든다.
+	private TradePair createBuyThenFullySellTradePair(User user, String instrumentPrefix) {
+		Instrument instrument = createStockInstrument(instrumentPrefix);
+		createCandle(instrument, FIRST_CANDLE_TIME, new BigDecimal("60000"));
+		createCandle(instrument, SECOND_CANDLE_TIME, new BigDecimal("80000"));
+
+		OrderResponse buy = orderService.createOrder(
+			user.getId(), "idem-" + instrumentPrefix + "-buy-" + UUID.randomUUID(),
+			buyRequest(instrument.getId(), "10"));
+		((MutableClock)clock).set(BASE_NOW.plusMinutes(1));
+		OrderResponse sell = orderService.createOrder(
+			user.getId(), "idem-" + instrumentPrefix + "-sell-" + UUID.randomUUID(),
+			sellRequest(instrument.getId(), "10"));
 		return new TradePair(buy.tradeId(), sell.tradeId());
 	}
 
@@ -810,6 +1051,47 @@ class JournalIntegrationTest {
 
 	private long totalJournalCount() {
 		Long count = jdbcTemplate.queryForObject("select count(*) from buy_trade_journals", Long.class);
+		return count == null ? 0L : count;
+	}
+
+	// buy_trade_journals에 실제 저장된 본문을 읽는다 (수정 성공·거부 후 본문이 의도대로 바뀌었는지/그대로인지 확인용).
+	private String journalContentFor(Long buyTradeId) {
+		return jdbcTemplate.queryForObject(
+			"select content from buy_trade_journals where buy_trade_id = ?", String.class, buyTradeId);
+	}
+
+	// buy_trade_journals에 실제 저장된 [created_at, updated_at]을 읽는다 (수정 후 updated_at이 created_at보다
+	// 이후인지 DB 값으로 직접 확인하기 위함 — 응답 JSON만으로는 같은 클록 소스를 재확인하는 셈이라 DB 값도 함께 본다).
+	private LocalDateTime[] journalTimestampsFor(Long buyTradeId) {
+		return jdbcTemplate.queryForObject(
+			"select created_at, updated_at from buy_trade_journals where buy_trade_id = ?",
+			(rs, rowNum) -> new LocalDateTime[] {
+				rs.getObject("created_at", LocalDateTime.class), rs.getObject("updated_at", LocalDateTime.class)},
+			buyTradeId);
+	}
+
+	// 특정 매수 체결이 만든 holding_lot의 remaining_quantity를 읽는다 — 매수 회고 수정이 잠금 없이도 lot을
+	// 건드리지 않는지 확인하는 회귀 검증용 (spec.md "holding_lots·trade_allocations를 읽지도 않는다").
+	private BigDecimal remainingQuantityForBuyTrade(Long buyTradeId) {
+		return jdbcTemplate.queryForObject(
+			"select remaining_quantity from holding_lots where buy_trade_id = ?", BigDecimal.class, buyTradeId);
+	}
+
+	// 특정 매수 체결이 만든 holding_lot에 걸린 trade_allocations의 배분 수량 합을 읽는다 (위와 같은 회귀 검증용).
+	private BigDecimal totalAllocatedQuantityForBuyTrade(Long buyTradeId) {
+		BigDecimal sum = jdbcTemplate.queryForObject(
+			"select coalesce(sum(ta.allocated_quantity), 0) from trade_allocations ta "
+				+ "join holding_lots hl on ta.holding_lot_id = hl.id where hl.buy_trade_id = ?",
+			BigDecimal.class, buyTradeId);
+		return sum == null ? BigDecimal.ZERO : sum;
+	}
+
+	// 특정 매수 체결이 만든 holding_lot에 걸린 trade_allocations 행 수를 잰다 (위와 같은 회귀 검증용).
+	private long allocationCountForBuyTrade(Long buyTradeId) {
+		Long count = jdbcTemplate.queryForObject(
+			"select count(*) from trade_allocations ta join holding_lots hl on ta.holding_lot_id = hl.id "
+				+ "where hl.buy_trade_id = ?",
+			Long.class, buyTradeId);
 		return count == null ? 0L : count;
 	}
 

@@ -284,7 +284,7 @@
   - **같은 커밋에서** `docs/api-routes.md`·`docs/api-contracts.md`를 갱신한다 (CLAUDE.md 규칙 7, plan.md §문서 갱신). 계약 본문에 **잠금 없음(매도 배분 여부와 무관하게 항상 수정 가능)**을 명시한다.
   - 검증 — `@WebMvcTest`: 200 본문 `jsonPath` 5필드, 공백·누락·상한 초과 400, 숫자 아닌 `buyTradeId` 400, 미인증 401, 서비스 예외의 400·403·404 매핑(409 케이스 없음).
 
-- [ ] **B4. 통합 테스트 (잠금 없음 회귀 포함) + 빌드**
+- [x] **B4. 통합 테스트 (잠금 없음 회귀 포함) + 빌드**
 
   Testcontainers `@SpringBootTest`로 spec의 4차 완료 조건을 한 번에 확인한다.
   - 매수 체결 → 회고 작성 → PATCH 수정 → 200, DB 여전히 1행, `content` 갱신, `updatedAt`이 `createdAt`보다 이후.
