@@ -114,7 +114,7 @@
   - `createdAt`은 주입받은 `Clock`으로 만든다.
   - 검증 — 단위 테스트: 정상 작성(고정 시각·저장 인자), 404·403·400·409 각 경로, **타인의 매수 체결이 403**(400 아님), 예외 변환.
 
-- [ ] **S3. `JournalController` 엔드포인트 + DTO 2개 + 문서 갱신**
+- [x] **S3. `JournalController` 엔드포인트 + DTO 2개 + 문서 갱신**
 
   `POST /api/trades/{sellTradeId}/sell-journal`을 기존 컨트롤러에 추가하고 record DTO 2개를 만든다. 응답 필드는 `journalId`·`sellTradeId`·`content`·`createdAt` 4개 고정이다.
   - 컨트롤러에 비즈니스 판단·repository 호출·try-catch를 두지 않는다.

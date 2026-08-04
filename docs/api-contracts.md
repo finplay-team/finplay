@@ -418,6 +418,14 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 `content`는 앞뒤 공백을 트림하지 않고 원문 그대로 저장한다(검증만 `@NotBlank`). 대상 매수 체결에 이미 투자일기가 있으면(`buy_trade_journals.buy_trade_id` `UNIQUE`) 애플리케이션 선제 조회로 대부분 409를 반환하고, 동시 요청 경합으로 유니크 제약을 직접 위반해도 같은 409 `DUPLICATE_RESOURCE`로 변환한다.
 
+### 매도 체결 투자일기(매도 회고) 작성
+
+| Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|---|
+| POST | /api/trades/{sellTradeId}/sell-journal | Access Bearer 필수 | 경로 변수 `sellTradeId`(숫자) + 본문 `{"content":"목표가 도달해서 전량 매도. 다음엔 분할 매도 시도."}`(`SellJournalCreateRequest`, `content`는 `@NotBlank` + `@Size(max=5000)`) | 201 `{"journalId":1,"sellTradeId":34,"content":"목표가 도달해서 전량 매도. 다음엔 분할 매도 시도.","createdAt":"2026-08-04T15:20:41"}` (`SellJournalResponse`, 4개 필드 고정) | `content` 누락·공백·5000자 초과, `sellTradeId` 타입 불일치(숫자 파싱 실패), 대상 체결의 `side`가 `SELL`이 아님(매수 체결)은 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED`. 타인 소유 체결은 403 `FORBIDDEN`. `sellTradeId`에 해당하는 체결 없음은 404 `NOT_FOUND`. 해당 매도 체결에 매도 회고가 이미 존재(선제 조회 또는 유니크 위반)하면 409 `DUPLICATE_RESOURCE` 공통 오류 형식 | 007 JOUR-003, Issue #183 |
+
+매수 회고(위 절)와 유스케이스가 대칭이다 — 인증 사용자 결정, 201·`Location` 헤더 미포함, 본문 검증이 경로 검증보다 먼저인 점(없는 체결 + 공백 본문 = 400), 검증 순서(`존재(404) → 소유(403) → 매도 여부(400) → 중복(409)`, 타인의 매수 체결이면 403이 먼저), `content` 트림 없이 원문 저장, 선제 조회 + 유니크 위반(`sell_trade_journals.sell_trade_id` UNIQUE) 변환은 모두 동일하다. **차이는 경로(`/sell-journal`), 대상 체결 구분 검증(`side != SELL`), 응답의 체결 ID 필드명(`sellTradeId`) 세 가지뿐이다.** 매도 회고 응답에는 실현손익·배분된 매수 lot 등 매도 결과 정보를 포함하지 않는다(`GET /api/trades`가 이미 제공한다).
+
 ---
 
 ## 016 투자 실습 (candidate 1·2·3 제공, 나머지 계획)

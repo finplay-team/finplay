@@ -3,7 +3,9 @@ package com.finplay.api.journal.controller;
 
 import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.journal.dto.request.BuyJournalCreateRequest;
+import com.finplay.api.journal.dto.request.SellJournalCreateRequest;
 import com.finplay.api.journal.dto.response.BuyJournalResponse;
+import com.finplay.api.journal.dto.response.SellJournalResponse;
 import com.finplay.api.journal.service.JournalService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -33,6 +35,19 @@ public class JournalController {
 		BuyJournalCreateRequest request) {
 		BuyJournalResponse response = journalService.createBuyJournal(
 			principal.userId(), buyTradeId, request.content());
+		return ResponseEntity.status(HttpStatus.CREATED).body(response);
+	}
+
+	@PostMapping("/{sellTradeId}/sell-journal")
+	public ResponseEntity<SellJournalResponse> createSellJournal(
+		@AuthenticationPrincipal
+		AuthenticatedUser principal,
+		@PathVariable
+		Long sellTradeId,
+		@Valid @RequestBody
+		SellJournalCreateRequest request) {
+		SellJournalResponse response = journalService.createSellJournal(
+			principal.userId(), sellTradeId, request.content());
 		return ResponseEntity.status(HttpStatus.CREATED).body(response);
 	}
 }
