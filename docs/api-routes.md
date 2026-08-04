@@ -39,22 +39,23 @@
 | POST | /api/community/posts/{postId}/comments | community | 인증 사용자의 평면 댓글 작성 | 008 COM-002, Issue #28 |
 | DELETE | /api/community/comments/{commentId} | community | 본인 소유 댓글 삭제 (204, 본문 없음) | 008 COM-002, Issue #30 |
 | POST | /api/orders | order | 인증 사용자의 시장가 매수·매도 주문을 검증·즉시 전량 체결하고 주문+체결 결과 반환 (201, 매도는 FIFO lot 배분·실현손익 포함). `Idempotency-Key` 헤더 필수 — 동일 키+동일 본문 재요청은 최초 응답 재현(재체결 없음), 동일 키+다른 본문 또는 재현 실패 시 409 `IDEMPOTENCY_CONFLICT` | 004 ORD-001~004·006, 005 ORD-001~006(매도), Issue #13, Issue #41, Issue #22 |
-| GET | /api/orders | order | 인증 사용자 본인의 주문 목록을 최신순(동시각 `id` 내림차순)으로 조회. 체결 전용 필드는 노출하지 않음 | 006 PORT-003, Issue #21 |
+| GET | /api/orders?market=&cursor=&limit= | order | 인증 사용자 본인의 시장별(`STOCK`\|`CRYPTO`) 주문 목록을 최신순(동시각 `id` 내림차순)으로 커서 페이지네이션 조회. `market` 쿼리 파라미터 필수, `cursor`·`limit`(기본 20, 1~100) 선택. 체결 전용 필드는 노출하지 않음 | 006 PORT-003, 018 PORT-003(1차 고도화), Issue #21, Issue #182 |
 | GET | /api/accounts/summary?market= | account | 인증 사용자 본인의 시장별(`STOCK`\|`CRYPTO`) 계좌 요약(현금잔고·보유평가액·총평가액·실현손익·미실현손익·수익률) 조회. `market` 쿼리 파라미터 필수 | 006 ACCT-002, Issue #81 |
 | GET | /api/holdings?market= | portfolio | 인증 사용자 본인의 시장별(`STOCK`\|`CRYPTO`) 활성 보유 종목 목록(수량·평균단가·현재가·평가금액·미실현손익·수익률·시세 상태 + 종목 표시 정보) 조회. `market` 쿼리 파라미터 필수, 전량 매도 종목은 목록에서 제외 | 006 PORT-001, Issue #52 |
 | GET | /api/trades?market=&cursor=&limit= | order | 인증 사용자 본인의 시장별(`STOCK`\|`CRYPTO`) 체결 내역을 `executedAt` 내림차순(동시각 `id` 내림차순)으로 커서 페이지네이션 조회. `market` 쿼리 파라미터 필수, `cursor`·`limit`(기본 20, 1~100) 선택. 매도 건은 실현손익 포함 | 006 PORT-002, Issue #82 |
 | GET | /api/portfolio | portfolio | 인증 사용자 본인의 `STOCK`·`CRYPTO` 계좌를 합산한 총평가자산·총수익률·평가손익·실현손익 조회. 쿼리 파라미터 없음(항상 두 시장 합산) | 006 ACCT-003, Issue #51 |
+| POST | /api/trades/{buyTradeId}/journal | journal | 본인 소유 매수 체결 1건에 투자일기(자유 텍스트 `content`) 1건 작성 (201). 매수 체결이 아니거나 이미 일기가 있으면 실패 | 007 JOUR-001, Issue #159 |
 | POST | /api/favorites | education | 거래 가능한 종목을 본인 즐겨찾기에 등록 | 016 EDU-PRACTICE-002, candidate 1, Issue #163 |
 | GET | /api/favorites | education | 본인 즐겨찾기를 등록 최신순으로 순수 조회 | 016 EDU-PRACTICE-002, candidate 2, Issue #168 |
+| DELETE | /api/favorites/{instrumentId} | education | 본인 즐겨찾기 해제 | 016 EDU-PRACTICE-002, candidate 3, Issue #172 |
 | GET | /api/instruments/{instrumentId}/price-moves | feedback | 종목의 변동 원인 카드 목록 조회. 주식은 현재 재생세션 원본 거래일 중 `revealTime`이 지난 카드만(스포일러 차단) `windowStart` 오름차순, 각 카드의 근거는 발행시각 내림차순. 카드 0건·재생세션 미준비 모두 200(후자는 `originTradeDate=null`) | 012 FEED-006, Issue #180 |
 
 ## 투자 실습 계획 라우트 (아직 구현하지 않음)
 
-`docs/specs/016-investment-education-policy`의 candidate 1 `POST /api/favorites`와 candidate 2 `GET /api/favorites`는 구현되어 위 실제 라우트 목록에 반영했다. 아래 8개 경로는 계약만 확정했으며 아직 controller가 없다. **위 실제 라우트 목록과 분리하며 블랙박스 QA의 실행 가능 API 근거로 사용하지 않는다.** 각 구현이 병합되는 커밋에서 해당 행을 위 표로 옮기고 `docs/api-contracts.md`의 계획 표시를 제거한다.
+`docs/specs/016-investment-education-policy`의 candidate 1 `POST /api/favorites`, candidate 2 `GET /api/favorites`, candidate 3 `DELETE /api/favorites/{instrumentId}`는 구현되어 위 실제 라우트 목록에 반영했다. 아래 7개 경로는 계약만 확정했으며 아직 controller가 없다. **위 실제 라우트 목록과 분리하며 블랙박스 QA의 실행 가능 API 근거로 사용하지 않는다.** 각 구현이 병합되는 커밋에서 해당 행을 위 표로 옮기고 `docs/api-contracts.md`의 계획 표시를 제거한다.
 
 | Method | URL | 도메인 | 요약 | Spec |
 |---|---|---|---|---|
-| DELETE | /api/favorites/{instrumentId} | education | 본인 즐겨찾기 해제 | 016 EDU-PRACTICE-002, candidate 3 |
 | GET | /api/education/practice | education | 실제 증거로 계산한 3단계 실습 진행 상태 순수 조회 | 016 EDU-PRACTICE-001~003·008·011, candidate 12 |
 | POST | /api/education/practice/intentions | education | 매수 전에 종목·수량·손절선·익절선 기록 | 016 EDU-PRACTICE-003·013, candidate 4 |
 | POST | /api/exit-plans | order | 시장가 매수 체결분의 tutorial-only OCO 청산 예약 | 016 EDU-PRACTICE-003·005·006·010·013, candidate 7 |
@@ -63,7 +64,7 @@
 | POST | /api/education/practice/observations | education | PENDING plan의 서버 현재가 관찰 기록 | 016 EDU-PRACTICE-012, candidate 13 |
 | POST | /api/education/practice/reflections | education | 관찰 증거 이후 자유 복기 저장과 최초 불변 완료 | 016 EDU-PRACTICE-007·011·013, candidate 14 |
 
-candidate 1·2와 나머지 8개 계획 경로 모두 공개 경로에 추가하지 않으며 Access Bearer 인증을 요구한다. `POST /api/orders` 시장가 매수는 이미 제공 중인 기존 API를 그대로 사용하므로 계획 라우트에 중복 기재하지 않는다.
+candidate 1·2·3과 나머지 7개 계획 경로 모두 공개 경로에 추가하지 않으며 Access Bearer 인증을 요구한다. `POST /api/orders` 시장가 매수는 이미 제공 중인 기존 API를 그대로 사용하므로 계획 라우트에 중복 기재하지 않는다.
 
 ## 2차 계획 라우트 (아직 구현하지 않음)
 
@@ -83,7 +84,7 @@ candidate 1·2와 나머지 8개 계획 경로 모두 공개 경로에 추가하
 |---|---|---|---|
 | Base URL | `/api/v1` | `/api` | 버저닝 미사용 (2026-07-23 확정, `docs/conventions.md`) |
 | 매도 직후 피드백 | `GET /ai/post-sell/{id}` | `GET /api/ai/post-sell/{tradeId}` | Base URL 규칙만 적용, 경로는 동일 |
-| `post-sell` 내용 | 계획 대비 실제 대조 (2단계) | 원장 수치 + 뉴스 변동 원인 | 계획 대조는 `007-journal`(다른 팀원 범위)이 선행돼야 한다. 투자일기가 생기면 `plan`·`planOutcome` 필드를 같은 응답에 **추가**하면 되므로 계약이 깨지지 않는다 |
+| `post-sell` 내용 | 계획 대비 실제 대조 (2단계) | 원장 수치 + 뉴스 변동 원인 | 계획 대조에는 목표가·손절가 등 구조화 필드가 필요하다. `007-journal`(다른 팀원 범위)은 JOUR-001(자유 텍스트 `content` 작성 API)만 구현됐고, 그 구조화 필드(`plan`·`planOutcome`)는 아직 없다. 생기면 같은 응답에 **추가**하면 되므로 계약이 깨지지 않는다 |
 | AI 엔드포인트 수 | 6개 (`pre-order`·`post-sell`·`d7`·`weekly-report`·`basis-stats`·`similar`) | `post-sell` 1개만 | 나머지 5개는 2차 범위 밖 (`docs/specs/012-ai-feedback` 범위 제외) |
 | 변동 원인 카드 | 없음 | `GET /api/instruments/{id}/price-moves` | 신규 — Notion 명세 DB에 행 추가 필요 |
 | 종목 뉴스 목록·요약 | 없음 | `GET /api/instruments/{id}/news` | 신규 — Notion 1차 고도화 "뉴스 요약" 항목에 대응 |
