@@ -18,6 +18,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import org.hibernate.SessionFactory;
 import org.hibernate.stat.Statistics;
@@ -57,6 +58,7 @@ class OrderRepositoryTest {
 	private User owner;
 	private Account ownerAccount;
 	private Instrument instrument;
+	private int idempotencySequence = 0;
 
 	@BeforeEach
 	void setUp() {
@@ -65,6 +67,15 @@ class OrderRepositoryTest {
 			Account.create(owner, com.finplay.api.account.domain.Market.STOCK, NOW));
 		instrument = instrumentRepository.saveAndFlush(
 			Instrument.create(Market.STOCK, "TEST01", "테스트종목", BigDecimal.valueOf(100), 10_000L, true, NOW));
+	}
+
+	private Order createOrder(User user, Account account, LocalDateTime requestedAt) {
+		idempotencySequence++;
+		char hashChar = (char)('a' + idempotencySequence);
+		return orderRepository.saveAndFlush(Order.create(
+			user, account, instrument, OrderSide.BUY, OrderType.MARKET,
+			BigDecimal.valueOf(10), "cursor-order-idem-" + idempotencySequence,
+			String.valueOf(hashChar).repeat(64), requestedAt));
 	}
 
 	@Test
@@ -172,5 +183,94 @@ class OrderRepositoryTest {
 		var result = orderRepository.findByUserIdAndIdempotencyKey(owner.getId(), "shared-idem");
 
 		assertThat(result).isEmpty();
+	}
+
+	@Test
+	@DisplayName("다른 계좌의 주문은 제외하고 계좌 단위로 커서 조회한다")
+	void findByAccountIdWithCursorExcludesOtherAccountOrders() {
+		User other = userRepository.saveAndFlush(User.create("cursor-other@finplay.com", "hash", "cursorother", NOW));
+		Account otherAccount = accountRepository.saveAndFlush(
+			Account.create(other, com.finplay.api.account.domain.Market.STOCK, NOW));
+
+		Order ownerOrder = createOrder(owner, ownerAccount, NOW);
+		createOrder(other, otherAccount, NOW);
+
+		List<Order> result = orderRepository.findByAccountIdWithCursor(ownerAccount.getId(), null, null, 10);
+
+		assertThat(result).extracting(Order::getId).containsExactly(ownerOrder.getId());
+	}
+
+	@Test
+	@DisplayName("requestedAt 내림차순, 동시각이면 id 내림차순으로 정렬해 커서 조회한다")
+	void findByAccountIdWithCursorSortedByRequestedAtThenIdDescending() {
+		Order older = createOrder(owner, ownerAccount, NOW.minusMinutes(10));
+		Order sameTimeFirst = createOrder(owner, ownerAccount, NOW);
+		Order sameTimeSecond = createOrder(owner, ownerAccount, NOW);
+
+		List<Order> result = orderRepository.findByAccountIdWithCursor(ownerAccount.getId(), null, null, 10);
+
+		assertThat(result).extracting(Order::getId)
+			.containsExactly(sameTimeSecond.getId(), sameTimeFirst.getId(), older.getId());
+	}
+
+	@Test
+	@DisplayName("커서로 연속 조회한 결과가 커서 없이 한 번에 조회한 전체 결과와 중복·누락 없이 일치한다")
+	void cursorPaginationMatchesFullResultWithoutDuplicatesOrGaps() {
+		List<Order> created = new ArrayList<>();
+		for (int i = 0; i < 5; i++) {
+			created.add(createOrder(owner, ownerAccount, NOW.minusMinutes(i)));
+		}
+
+		List<Order> fullResult = orderRepository.findByAccountIdWithCursor(ownerAccount.getId(), null, null, 10);
+		assertThat(fullResult).hasSize(5);
+
+		List<Order> firstPage = orderRepository.findByAccountIdWithCursor(ownerAccount.getId(), null, null, 3);
+		Order lastOfFirstPage = firstPage.get(firstPage.size() - 1);
+		List<Order> secondPage = orderRepository.findByAccountIdWithCursor(
+			ownerAccount.getId(), lastOfFirstPage.getRequestedAt(), lastOfFirstPage.getId(), 3);
+
+		List<Long> pagedIds = new ArrayList<>();
+		firstPage.forEach(order -> pagedIds.add(order.getId()));
+		secondPage.forEach(order -> pagedIds.add(order.getId()));
+
+		assertThat(pagedIds).hasSize(5).doesNotHaveDuplicates();
+		assertThat(pagedIds).containsExactlyElementsOf(fullResult.stream().map(Order::getId).toList());
+	}
+
+	@Test
+	@DisplayName("동일 requestedAt 그룹 안에서 페이지가 나뉘어도 id 내림차순 커서로 중복·누락 없이 이어받는다")
+	void cursorPaginationSplitsWithinSameRequestedAtGroupWithoutDuplicatesOrGaps() {
+		Order order1 = createOrder(owner, ownerAccount, NOW);
+		Order order2 = createOrder(owner, ownerAccount, NOW);
+		Order order3 = createOrder(owner, ownerAccount, NOW);
+		Order order4 = createOrder(owner, ownerAccount, NOW);
+
+		List<Order> fullResult = orderRepository.findByAccountIdWithCursor(ownerAccount.getId(), null, null, 10);
+		assertThat(fullResult).extracting(Order::getId)
+			.containsExactly(order4.getId(), order3.getId(), order2.getId(), order1.getId());
+
+		List<Order> firstPage = orderRepository.findByAccountIdWithCursor(ownerAccount.getId(), null, null, 2);
+		Order lastOfFirstPage = firstPage.get(firstPage.size() - 1);
+		List<Order> secondPage = orderRepository.findByAccountIdWithCursor(
+			ownerAccount.getId(), lastOfFirstPage.getRequestedAt(), lastOfFirstPage.getId(), 2);
+
+		List<Long> pagedIds = new ArrayList<>();
+		firstPage.forEach(order -> pagedIds.add(order.getId()));
+		secondPage.forEach(order -> pagedIds.add(order.getId()));
+
+		assertThat(pagedIds).hasSize(4).doesNotHaveDuplicates();
+		assertThat(pagedIds).containsExactlyElementsOf(fullResult.stream().map(Order::getId).toList());
+	}
+
+	@Test
+	@DisplayName("JOIN FETCH로 instrument를 함께 조회해 지연 로딩 예외 없이 접근할 수 있다")
+	void findByAccountIdWithCursorFetchesInstrumentWithoutLazyInitException() {
+		createOrder(owner, ownerAccount, NOW);
+		entityManager.clear();
+
+		List<Order> result = orderRepository.findByAccountIdWithCursor(ownerAccount.getId(), null, null, 10);
+
+		assertThat(result).extracting(order -> order.getInstrument().getSymbol())
+			.containsExactly(instrument.getSymbol());
 	}
 }
