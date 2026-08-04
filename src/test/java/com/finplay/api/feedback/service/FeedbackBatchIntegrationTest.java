@@ -3,6 +3,10 @@ package com.finplay.api.feedback.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.finplay.api.TestcontainersConfiguration;
 import com.finplay.api.feedback.domain.InstrumentNewsSummary;
 import com.finplay.api.feedback.domain.MarketBriefing;
@@ -33,9 +37,12 @@ import java.time.ZoneId;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -295,6 +302,52 @@ class FeedbackBatchIntegrationTest {
 		assertThat(summariesForFixture().stream().map(InstrumentNewsSummary::getId).sorted().toList())
 			.isEqualTo(firstRunSummaryIds);
 		assertThat(marketBriefingRepository.count()).isEqualTo(briefingsAfterFirstRun);
+	}
+
+	// 이슈 #198 — 이 파일이 고정 Clock(08:45)을 쓰기 때문에 여기가 회귀를 잡는 자리다. 소요 시간을 Clock으로
+	// 재면 시작·종료 시각이 같아 항상 0ms가 찍히는데, 그래도 다른 단정은 전부 통과해 아무도 눈치채지 못한다.
+	@Test
+	@DisplayName("고정 Clock 아래에서도 배치 소요 시간이 0이 아니게 찍히고 단계별 시간과 LLM 호출 수가 함께 남는다")
+	void logsNonZeroElapsedTimeEvenUnderAFixedClock() {
+		givenReadyReplaySession();
+
+		List<String> logs = runBatchCapturingLogs();
+
+		String completion = logs.stream()
+			.filter(message -> message.startsWith("개장 전 배치를 마쳤다."))
+			.findFirst()
+			.orElseThrow(() -> new AssertionError("종료 로그가 없다. 남은 로그=" + logs));
+		Matcher elapsed = Pattern.compile("소요=(\\d+)ms").matcher(completion);
+		assertThat(elapsed.find()).as("종료 로그에 소요 시간이 없다: %s", completion).isTrue();
+		assertThat(Long.parseLong(elapsed.group(1)))
+			.as("고정 Clock으로 잰 구현이면 여기가 0이다: %s", completion)
+			.isPositive();
+		// 배치 1회분의 실제 호출 수 — 이 실행은 키가 not-configured라 호출 자체가 나가지 않아 0건이 정답이다.
+		assertThat(completion).contains("LLM호출=0건");
+
+		// 어느 단계에서 시간이 가는지는 총 시간이 아니라 이 여섯 줄에만 있다.
+		assertThat(logs)
+			.filteredOn(message -> message.startsWith("개장 전 배치 단계를 마쳤다."))
+			.extracting(message -> message.replaceAll(".*단계=(.+) 소요=.*", "$1"))
+			.containsExactly("브리핑", "전장 요약", "탐지", "시가 갭 카드", "장중 카드", "종일 요약");
+	}
+
+	// 소요 시간의 유일한 외부 관찰점이 로그라 배치 로거에 임시 appender를 붙인다 (DartDisclosureCollectorTest 선례).
+	private List<String> runBatchCapturingLogs() {
+		Logger logger = (Logger)LoggerFactory.getLogger(FeedbackBatchService.class);
+		ListAppender<ILoggingEvent> appender = new ListAppender<>();
+		appender.start();
+		Level originalLevel = logger.getLevel();
+		logger.setLevel(Level.INFO);
+		logger.addAppender(appender);
+		try {
+			feedbackBatchService.runPreMarketBatch();
+			return appender.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
+		} finally {
+			logger.detachAppender(appender);
+			logger.setLevel(originalLevel);
+			appender.stop();
+		}
 	}
 
 	private List<InstrumentNewsSummary> summariesForFixture() {

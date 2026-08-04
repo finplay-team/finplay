@@ -55,6 +55,8 @@ public class FeedbackBatchService {
 
 	private final InstrumentNewsSummaryService instrumentNewsSummaryService;
 
+	private final LlmCallStats llmCallStats;
+
 	/**
 	 * 개장 전 배치 진입점. 순서는 §C-6의 5단계 그대로다.
 	 *
@@ -87,33 +89,80 @@ public class FeedbackBatchService {
 		List<Instrument> instruments = instrumentService.getInstrumentEntities(Market.STOCK);
 		log.info("개장 전 배치를 시작한다. 원본 거래일={} 종목={}건", originTradeDate, instruments.size());
 
-		// 단계 하나가 실패해도 다음 단계로 넘어간다 (FEED-004·§실패 처리). 특히 PRE_MARKET 요약은 카드보다
-		// 앞이라, 격리하지 않으면 요약 LLM이 한 번 터지는 날 그날 카드가 전부 만들어지지 않는다.
+		// 소요 시간은 전부 System.nanoTime()으로 잰다 — 이 저장소는 시각을 Clock으로 주입받고 테스트가 그것을
+		// 고정 Clock으로 바꾸므로, Clock으로 재면 통합 테스트에서 항상 0이 나오면서 테스트는 통과한다(이슈 #198).
+		long batchStartedNanos = System.nanoTime();
+		llmCallStats.startScope();
 		try {
-			generateMarketBriefing(originTradeDate);
-		} catch (RuntimeException ex) {
-			log.warn("개장 전 브리핑 생성에 실패해 이 단계를 건너뛴다. 원본 거래일={}", originTradeDate, ex);
-		}
-		try {
-			generateNewsSummaries(instruments, originTradeDate, NewsSummaryScope.PRE_MARKET);
-		} catch (RuntimeException ex) {
-			log.warn("종목 뉴스 요약 생성에 실패해 이 단계를 건너뛴다. 원본 거래일={} 범위={}",
-				originTradeDate, NewsSummaryScope.PRE_MARKET, ex);
-		}
+			// 단계 하나가 실패해도 다음 단계로 넘어간다 (FEED-004·§실패 처리). 특히 PRE_MARKET 요약은 카드보다
+			// 앞이라, 격리하지 않으면 요약 LLM이 한 번 터지는 날 그날 카드가 전부 만들어지지 않는다.
+			long stepStartedNanos = System.nanoTime();
+			try {
+				generateMarketBriefing(originTradeDate);
+			} catch (RuntimeException ex) {
+				log.warn("개장 전 브리핑 생성에 실패해 이 단계를 건너뛴다. 원본 거래일={}", originTradeDate, ex);
+			}
+			// 실패로 건너뛴 단계도 시간을 쓴다 — 측정은 성공 여부와 무관하게 단계마다 남긴다.
+			logStepElapsed("브리핑", stepStartedNanos);
 
-		// 탐지는 §C-6의 5단계에 없다 — LLM을 부르지 않는 서버 계산이며 3·4단계의 입력을 만드는 준비 작업이다.
-		// 종목마다 두 번 탐지하지 않으려고 여기서 한 번에 계산해 두 단계가 나눠 쓴다.
-		List<InstrumentDetections> detections = detectAll(instruments, originTradeDate);
-		confirmCards(detections, originTradeDate, PriceMoveEventType.OPENING_GAP);
-		confirmCards(detections, originTradeDate, PriceMoveEventType.INTRADAY);
+			stepStartedNanos = System.nanoTime();
+			try {
+				generateNewsSummaries(instruments, originTradeDate, NewsSummaryScope.PRE_MARKET);
+			} catch (RuntimeException ex) {
+				log.warn("종목 뉴스 요약 생성에 실패해 이 단계를 건너뛴다. 원본 거래일={} 범위={}",
+					originTradeDate, NewsSummaryScope.PRE_MARKET, ex);
+			}
+			logStepElapsed("전장 요약", stepStartedNanos);
 
-		try {
-			generateNewsSummaries(instruments, originTradeDate, NewsSummaryScope.FULL);
-		} catch (RuntimeException ex) {
-			log.warn("종목 뉴스 요약 생성에 실패해 이 단계를 건너뛴다. 원본 거래일={} 범위={}",
-				originTradeDate, NewsSummaryScope.FULL, ex);
+			// 탐지는 §C-6의 5단계에 없다 — LLM을 부르지 않는 서버 계산이며 3·4단계의 입력을 만드는 준비 작업이다.
+			// 종목마다 두 번 탐지하지 않으려고 여기서 한 번에 계산해 두 단계가 나눠 쓴다.
+			stepStartedNanos = System.nanoTime();
+			List<InstrumentDetections> detections = detectAll(instruments, originTradeDate);
+			// LLM을 부르지 않는 단계라 여기가 길면 원인이 다른 곳(분봉 조회)이다 — 그래서 카드와 나눠 잰다.
+			logStepElapsed("탐지", stepStartedNanos);
+
+			stepStartedNanos = System.nanoTime();
+			confirmCards(detections, originTradeDate, PriceMoveEventType.OPENING_GAP);
+			logStepElapsed("시가 갭 카드", stepStartedNanos);
+
+			stepStartedNanos = System.nanoTime();
+			confirmCards(detections, originTradeDate, PriceMoveEventType.INTRADAY);
+			logStepElapsed("장중 카드", stepStartedNanos);
+
+			stepStartedNanos = System.nanoTime();
+			try {
+				generateNewsSummaries(instruments, originTradeDate, NewsSummaryScope.FULL);
+			} catch (RuntimeException ex) {
+				log.warn("종목 뉴스 요약 생성에 실패해 이 단계를 건너뛴다. 원본 거래일={} 범위={}",
+					originTradeDate, NewsSummaryScope.FULL, ex);
+			}
+			logStepElapsed("종일 요약", stepStartedNanos);
+
+			LlmCallStats.Snapshot llmCalls = llmCallStats.finishScope();
+			log.info("개장 전 배치를 마쳤다. 원본 거래일={} 소요={}ms LLM호출={}건 LLM소요합={}ms",
+				originTradeDate, elapsedMillis(batchStartedNanos), llmCalls.count(), llmCalls.totalMillis());
+		} finally {
+			// 정상 종료면 위에서 이미 닫혀 여기 호출은 빈 스냅샷이다. 단계별 격리를 뚫고 나온 실패(현재는 Error
+			// 계열뿐이지만 그 격리가 뒤에 바뀔 수 있다)에서만 실제로 닫는다 — 스코프를 연 채 빠져나가면 그 워커
+			// 스레드에 다음 배치까지 남는다 (PR #202 리뷰 권장 ①).
+			// 종료 로그를 여기로 옮기지 않는 이유는 "마쳤다"가 중단된 실행에도 찍히면 안 되기 때문이다.
+			llmCallStats.finishScope();
 		}
-		log.info("개장 전 배치를 마쳤다. 원본 거래일={}", originTradeDate);
+	}
+
+	/**
+	 * 단계 하나의 소요 시간을 남긴다. 08:45 배치가 09:00 마감을 지키는지는 총 시간만으로는 알 수 없고, 넘겼을 때
+	 * <b>어디를 손봐야 하는지</b>는 단계별 시간에만 있다(이슈 #198).
+	 *
+	 * <p>{@code System.nanoTime()} 뺄셈과 로깅뿐이라 이 메서드는 예외를 던질 수 없다 — 측정이 배치를 멈추지
+	 * 않는다는 조건을 {@code try/catch}가 아니라 이 형태로 지킨다.
+	 */
+	private void logStepElapsed(String step, long stepStartedNanos) {
+		log.info("개장 전 배치 단계를 마쳤다. 단계={} 소요={}ms", step, elapsedMillis(stepStartedNanos));
+	}
+
+	private long elapsedMillis(long startedNanos) {
+		return (System.nanoTime() - startedNanos) / 1_000_000L;
 	}
 
 	/**

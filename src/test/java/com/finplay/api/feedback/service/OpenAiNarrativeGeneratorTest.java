@@ -50,7 +50,7 @@ class OpenAiNarrativeGeneratorTest {
 	@DisplayName("키가 자리표시자면 ChatClient를 한 번도 건드리지 않고 실패를 반환한다")
 	void returnsFailureWithoutTouchingChatClientWhenApiKeyIsPlaceholder() {
 		ChatClient chatClient = mock(ChatClient.class);
-		OpenAiNarrativeGenerator generator = new OpenAiNarrativeGenerator(chatClient, PROPERTIES,
+		OpenAiNarrativeGenerator generator = new OpenAiNarrativeGenerator(chatClient, PROPERTIES, new LlmCallStats(),
 			OpenAiNarrativeGenerator.NOT_CONFIGURED_API_KEY);
 
 		Optional<String> result = generator.generate(SYSTEM_PROMPT, USER_PROMPT);
@@ -67,7 +67,8 @@ class OpenAiNarrativeGeneratorTest {
 	@DisplayName("키가 없거나 공백뿐이면 ChatClient 호출 0회로 실패를 반환한다")
 	void returnsFailureWithZeroChatClientCallsWhenApiKeyIsAbsent(String apiKey) {
 		ChatClient chatClient = mock(ChatClient.class);
-		OpenAiNarrativeGenerator generator = new OpenAiNarrativeGenerator(chatClient, PROPERTIES, apiKey);
+		OpenAiNarrativeGenerator generator = new OpenAiNarrativeGenerator(chatClient, PROPERTIES, new LlmCallStats(),
+			apiKey);
 
 		Optional<String> result = generator.generate(SYSTEM_PROMPT, USER_PROMPT);
 
@@ -138,8 +139,8 @@ class OpenAiNarrativeGeneratorTest {
 	@DisplayName("키 없음·예외·빈 응답이 전부 구별 불가능한 하나의 실패 표현으로 수렴한다")
 	void everyFailureModeConvergesToTheSameValue() {
 		List<Supplier<Optional<String>>> failureModes = List.of(
-			() -> new OpenAiNarrativeGenerator(
-				mock(ChatClient.class), PROPERTIES, OpenAiNarrativeGenerator.NOT_CONFIGURED_API_KEY)
+			() -> new OpenAiNarrativeGenerator(mock(ChatClient.class), PROPERTIES, new LlmCallStats(),
+				OpenAiNarrativeGenerator.NOT_CONFIGURED_API_KEY)
 				.generate(SYSTEM_PROMPT, USER_PROMPT),
 			() -> generatorWithKey(chatClientThrowingAt(Stage.PROMPT, new RuntimeException("boom")))
 				.generate(SYSTEM_PROMPT, USER_PROMPT),
@@ -158,6 +159,37 @@ class OpenAiNarrativeGeneratorTest {
 		assertThat(results).containsExactly(Optional.<String>empty());
 	}
 
+	// 이슈 #198 — 배치가 "이번에 LLM을 몇 번 불렀는지"를 아는 유일한 근거가 이 기록이다.
+	@Test
+	@DisplayName("성공이든 실패든 실제로 나간 호출은 전부 횟수와 소요 시간에 기록된다")
+	void recordsEveryAttemptThatActuallyLeftTheProcess() {
+		LlmCallStats llmCallStats = new LlmCallStats();
+		llmCallStats.startScope();
+
+		generatorWithKey(chatClientReturning("서술"), llmCallStats).generate(SYSTEM_PROMPT, USER_PROMPT);
+		generatorWithKey(chatClientThrowingAt(Stage.CALL, new RuntimeException("timeout")), llmCallStats)
+			.generate(SYSTEM_PROMPT, USER_PROMPT);
+		generatorWithKey(chatClientReturning("   "), llmCallStats).generate(SYSTEM_PROMPT, USER_PROMPT);
+
+		LlmCallStats.Snapshot snapshot = llmCallStats.finishScope();
+		// 타임아웃은 20초를 통째로 쓰고도 실패한다 — 실패를 빼고 세면 마감을 넘긴 날의 원인이 통계에서 사라진다.
+		assertThat(snapshot.count()).isEqualTo(3);
+		assertThat(snapshot.totalNanos()).isPositive();
+	}
+
+	@Test
+	@DisplayName("키가 없어 건너뛴 경로는 호출로 세지 않는다")
+	void doesNotCountTheSkippedPathAsACall() {
+		LlmCallStats llmCallStats = new LlmCallStats();
+		llmCallStats.startScope();
+
+		new OpenAiNarrativeGenerator(mock(ChatClient.class), PROPERTIES, llmCallStats,
+			OpenAiNarrativeGenerator.NOT_CONFIGURED_API_KEY)
+			.generate(SYSTEM_PROMPT, USER_PROMPT);
+
+		assertThat(llmCallStats.finishScope().count()).isZero();
+	}
+
 	@Test
 	@DisplayName("application.yml의 api-key 자리표시자 기본값이 코드 상수와 같다 — 키 없음 판정의 정의는 한 곳뿐이다")
 	void applicationYmlPlaceholderMatchesTheSingleNotConfiguredConstant() throws IOException {
@@ -174,7 +206,11 @@ class OpenAiNarrativeGeneratorTest {
 	}
 
 	private OpenAiNarrativeGenerator generatorWithKey(ChatClient chatClient) {
-		return new OpenAiNarrativeGenerator(chatClient, PROPERTIES, "sk-test-not-a-real-key");
+		return generatorWithKey(chatClient, new LlmCallStats());
+	}
+
+	private OpenAiNarrativeGenerator generatorWithKey(ChatClient chatClient, LlmCallStats llmCallStats) {
+		return new OpenAiNarrativeGenerator(chatClient, PROPERTIES, llmCallStats, "sk-test-not-a-real-key");
 	}
 
 	private ChatClient chatClientReturning(String content) {

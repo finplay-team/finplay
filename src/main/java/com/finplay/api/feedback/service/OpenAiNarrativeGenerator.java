@@ -21,15 +21,18 @@ public class OpenAiNarrativeGenerator implements NarrativeGenerator {
 
 	private final ChatClient chatClient;
 	private final FeedbackLlmProperties properties;
+	private final LlmCallStats llmCallStats;
 	private final boolean apiKeyConfigured;
 
 	// @Value 주입 필드가 있으므로 @RequiredArgsConstructor를 쓰지 않고 생성자를 손으로 쓴다 — Lombok은 필드의 @Value를
 	// 생성자 파라미터로 옮기지 않아 컨텍스트가 기동하지 않는다 (docs/agent-mistakes.md 2026-07-30).
 	public OpenAiNarrativeGenerator(ChatClient narrativeChatClient, FeedbackLlmProperties properties,
+		LlmCallStats llmCallStats,
 		@Value("${spring.ai.openai.api-key:}")
 		String apiKey) {
 		this.chatClient = narrativeChatClient;
 		this.properties = properties;
+		this.llmCallStats = llmCallStats;
 		this.apiKeyConfigured = StringUtils.hasText(apiKey) && !NOT_CONFIGURED_API_KEY.equals(apiKey);
 	}
 
@@ -40,6 +43,10 @@ public class OpenAiNarrativeGenerator implements NarrativeGenerator {
 			log.debug("OpenAI API 키가 없어 LLM 호출을 건너뛴다. 서술은 템플릿으로 대체된다.");
 			return Optional.empty();
 		}
+		// 실제로 원격 호출이 나가는 구간만 잰다 — 키가 없어 건너뛴 위 경로는 호출이 아니므로 세지 않는다.
+		// 성공·빈 응답·예외를 가리지 않고 finally에서 한 번 기록한다. 타임아웃도 시간을 쓴 호출이고, 개장 전
+		// 배치가 마감을 넘기는지 보려면 실패한 호출의 시간이야말로 빠지면 안 된다 (이슈 #198).
+		long startedNanos = System.nanoTime();
 		try {
 			// 모델·최대 토큰은 요청마다 feedback.llm.*에서 받는다. 타임아웃만 클라이언트 단위 값이라 이 경로로 넘길 수
 			// 없고 application.yml의 spring.ai.openai.timeout이 맡는다. maxTokens가 아니라 maxCompletionTokens를
@@ -62,6 +69,10 @@ public class OpenAiNarrativeGenerator implements NarrativeGenerator {
 			// 예외를 위로 던지면 배치 한 건의 실패가 배치 전체를 죽인다 (ADR-0011).
 			log.warn("LLM 호출이 실패했다. model={}", properties.model(), e);
 			return Optional.empty();
+		} finally {
+			long elapsedNanos = System.nanoTime() - startedNanos;
+			llmCallStats.record(elapsedNanos);
+			log.info("LLM 호출을 마쳤다. model={} 소요={}ms", properties.model(), elapsedNanos / 1_000_000L);
 		}
 	}
 }
