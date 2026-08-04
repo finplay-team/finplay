@@ -94,4 +94,23 @@ public class InstrumentNewsSummary {
 		LocalDateTime generatedAt) {
 		return new InstrumentNewsSummary(instrument, originTradeDate, scope, summary, narrativeSource, generatedAt);
 	}
+
+	/**
+	 * 같은 행의 서술을 갈아 끼운다 — <b>코인 전용</b>이다.
+	 *
+	 * <p>코인은 같은 {@code (종목, 그날 KST 날짜, ROLLING_24H)} 행을 매시 갱신해 하루 1행을 유지한다(§C-9).
+	 * <b>주식은 이 경로를 쓰지 않는다</b> — 같은 서비스 날짜에 배치가 두 번 돌아도 중복이 생기지 않아야 하고
+	 * (배치 ⑤) 이미 만든 요약을 다시 만들 이유가 없어 "존재 시 건너뜀"이다.
+	 *
+	 * <p>유니크 축({@code instrument_id}·{@code origin_trade_date}·{@code scope})은 건드리지 않는다 —
+	 * 바꾸면 갱신이 아니라 다른 행이 된다.
+	 *
+	 * @param summary 후검증 재생성 후에도 걸렸으면 {@code null}이고, 그때 {@code narrativeSource}가
+	 *     {@code NONE}이다 (§C-4)
+	 */
+	public void refreshNarrative(String summary, NarrativeSource narrativeSource, LocalDateTime generatedAt) {
+		this.summary = summary;
+		this.narrativeSource = narrativeSource;
+		this.generatedAt = generatedAt;
+	}
 }

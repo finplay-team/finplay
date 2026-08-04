@@ -13,19 +13,16 @@ import org.springframework.context.annotation.Import;
 import org.springframework.core.env.Environment;
 
 // 단위 테스트(NewsCollectionPropertiesTest)는 record의 @DefaultValue만 확인하므로, application.yml의 키가
-// 잘못된 위치·이름으로 들어가도 기본값에 가려 통과한다. @Scheduled(cron = "${feedback.news.collect-cron}")는
-// record가 아니라 Environment에서 값을 읽으므로(§C-1 선언 예시) 두 값이 갈리면 운영 크론만 조용히 바뀐다.
-// 여기서는 기동 컨텍스트의 Environment에 키가 그 경로로 실제 존재하는지까지 단정한다 —
-// FeedbackLlmPropertiesIntegrationTest와 같은 의도다.
+// 잘못된 위치·이름으로 들어가도 기본값에 가려 통과한다. 여기서는 기동 컨텍스트의 Environment에 키가 그
+// 경로로 실제 존재하는지까지 단정한다 — FeedbackLlmPropertiesIntegrationTest와 같은 의도다.
+//
+// 다만 크론 2종은 여기서 보지 않는다. build.gradle의 spring.config.additional-location이 얹는
+// feedback-schedules-disabled-for-tests.yml이 @SpringBootTest 컨텍스트에서 크론을 "-"로 덮기 때문이다 —
+// 테스트 실행 중 배치·수집 스케줄이 실제로 등록되는 것을 막으려는 것이고, 그 대신 §C-1 드리프트 단정은
+// 그 파일이 닿지 않는 NewsCollectionPropertiesYamlTest로 옮겼다. 단정을 없앤 것이 아니라 축을 옮긴 것이다.
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest
 class NewsCollectionPropertiesIntegrationTest {
-
-	// §C-1 뉴스 수집 크론 (24시간 30분 간격)
-	private static final String SPEC_COLLECT_CRON = "0 0/30 * * * *";
-
-	// §C-1 공시 수집 크론
-	private static final String SPEC_DISCLOSURE_CRON = "0 0/30 8-20 * * MON-FRI";
 
 	private final FeedbackNewsProperties newsProperties;
 
@@ -45,22 +42,6 @@ class NewsCollectionPropertiesIntegrationTest {
 		this.naverSearchProperties = naverSearchProperties;
 		this.dartProperties = dartProperties;
 		this.environment = environment;
-	}
-
-	@Test
-	@DisplayName("기동한 컨텍스트의 FeedbackNewsProperties 빈이 §C-1 크론 값을 갖는다")
-	void feedbackNewsPropertiesBeanHoldsSpecCronValues() {
-		assertThat(newsProperties.collectCron()).isEqualTo(SPEC_COLLECT_CRON);
-		assertThat(newsProperties.disclosureCron()).isEqualTo(SPEC_DISCLOSURE_CRON);
-	}
-
-	@Test
-	@DisplayName("application.yml에 feedback.news 두 크론 키가 §C-1 값으로 실제 존재한다")
-	void applicationYmlDeclaresEveryFeedbackNewsCronKey() {
-		assertThat(environment.getProperty("feedback.news.collect-cron"))
-			.isEqualTo(SPEC_COLLECT_CRON);
-		assertThat(environment.getProperty("feedback.news.disclosure-cron"))
-			.isEqualTo(SPEC_DISCLOSURE_CRON);
 	}
 
 	// 근거 매칭 3키(이슈 #180 항목 3)는 크론과 달리 Environment가 아니라 record 빈으로 읽지만, §C-7이

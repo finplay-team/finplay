@@ -36,10 +36,6 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class PriceMoveCardService {
 
-	// 클램프 기준이자 시가 갭 카드의 노출 시각 (§노출 판정). 기사 노출 판정에 쓰는 벽시계 09:00이며 분봉을
-	// 찾는 값이 아니다 (§C-2-1) — "첫 분봉"으로 바꾸면 첫 분봉이 09:03인 날 갭 카드가 3분 늦게 열린다.
-	private static final LocalTime MARKET_OPEN_TIME = LocalTime.of(9, 0);
-
 	private final PriceMoveEventRepository priceMoveEventRepository;
 
 	private final PriceMoveCardWriter priceMoveCardWriter;
@@ -137,11 +133,16 @@ public class PriceMoveCardService {
 	 *
 	 * <p>공시는 §C-3의 날짜 규칙을 {@code NewsMatcher}가 먼저 적용하므로 여기 오는 공시는 전부 {@code D-1}
 	 * 접수분이고, {@code published_at}이 {@code D-1 00:00:00}이라 항상 09:00이 된다.
+	 *
+	 * <p>기준 09:00은 {@link MarketSessionTimes#MARKET_OPEN_TIME}이다 (§C-6의 단일 출처). 기사 노출 판정에
+	 * 쓰는 <b>벽시계</b>이며 분봉을 찾는 값이 아니다 (§C-2-1) — "첫 분봉"으로 바꾸면 첫 분봉이 09:03인 날
+	 * 갭 카드가 3분 늦게 열린다.
 	 */
 	private static LocalTime clamp(LocalDateTime publishedAt, LocalDate originTradeDate) {
-		return publishedAt.isBefore(LocalDateTime.of(originTradeDate, MARKET_OPEN_TIME))
-			? MARKET_OPEN_TIME
-			: publishedAt.toLocalTime();
+		return publishedAt.isBefore(
+			LocalDateTime.of(originTradeDate, MarketSessionTimes.MARKET_OPEN_TIME))
+				? MarketSessionTimes.MARKET_OPEN_TIME
+				: publishedAt.toLocalTime();
 	}
 
 	// 근거가 0건이면 이 메서드에 닿기 전에 카드 생성을 접으므로 빈 목록이 들어올 수 없다.

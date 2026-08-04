@@ -78,12 +78,16 @@ class NewsMatcherMatchingWindowTest {
 			Market.STOCK, "MATCH02", "테스트종목B", new BigDecimal("100"), 80000, true, LocalDateTime.now()));
 		matcher = new NewsMatcher(
 			marketNewsItemRepository,
+			// 뒤 세 값은 §C-7의 목록 상한 3종이다 — 근거 매칭과 무관해 이 테스트는 쓰지 않는다.
 			new FeedbackNewsProperties(
 				"0 0/30 * * * *",
 				"0 0/30 8-20 * * MON-FRI",
 				SPEC_MATCH_BEFORE_MINUTES,
 				SPEC_MATCH_AFTER_MINUTES,
-				SPEC_MAX_SOURCES_PER_CARD),
+				SPEC_MAX_SOURCES_PER_CARD,
+				50,
+				30,
+				30),
 			new BusinessDayCalendar());
 	}
 

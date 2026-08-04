@@ -51,6 +51,10 @@ public class FeedbackBatchService {
 
 	private final PriceMoveCardService priceMoveCardService;
 
+	private final MarketBriefingService marketBriefingService;
+
+	private final InstrumentNewsSummaryService instrumentNewsSummaryService;
+
 	/**
 	 * 개장 전 배치 진입점. 순서는 §C-6의 5단계 그대로다.
 	 *
@@ -113,36 +117,49 @@ public class FeedbackBatchService {
 	}
 
 	/**
-	 * <b>1단계 — 개장 전 브리핑.</b> 내용 생성은 {@code plan.md} 5번(FEED-009) 소유이므로 이 이슈는 순서상의
-	 * 자리만 세운다.
+	 * <b>1단계 — 개장 전 브리핑.</b> 확정은 {@code MarketBriefingService}가 하고 여기서는 부르기만 한다(§C-6).
 	 *
-	 * <p>5번은 {@code MarketBriefingService}를 주입해 이 메서드의 본문을 채우면 되고 호출 위치는 건드리지
-	 * 않는다. 자리를 <b>메서드로</b> 남긴 이유는 순서가 이 이슈의 완료 조건(배치 ③)이기 때문이다 — 주석으로
-	 * 남기면 단정할 대상이 없어 순서가 뒤에 조용히 바뀐다.
+	 * <p>자리를 <b>메서드로</b> 둔 이유는 순서가 완료 조건(배치 ③)이기 때문이다 — 주석으로 남기면 단정할 대상이
+	 * 없어 순서가 뒤에 조용히 바뀐다. 호출 위치·시그니처는 바꾸지 않는다.
 	 *
-	 * <p>호출부가 이 단계를 {@code try/catch}로 감싸 두었으므로 <b>여기서 던져도 뒤 단계는 계속된다.</b>
-	 * 그것은 단계 단위 방어선이라, 본문을 채울 때 {@code detectAll}·{@code confirmCards}처럼 <b>더 작은 단위</b>
-	 * (브리핑은 호출 1건, 요약은 종목 1건)의 격리가 필요하면 본문 안에 함께 넣는다.
+	 * <p><b>브리핑은 호출 1건이라 본문에 추가 격리를 두지 않는다.</b> 호출부가 이 단계를 {@code try/catch}로
+	 * 감싸 두었으므로 여기서 던져도 뒤 단계는 계속된다 — 종목 루프가 있는 요약과 달리 여기서 더 쪼갤 단위가 없다.
 	 */
 	void generateMarketBriefing(LocalDate originTradeDate) {
-		log.debug("개장 전 브리핑 생성은 아직 구현되지 않았다 (plan.md 5번). 원본 거래일={}", originTradeDate);
+		// 비어 있는 결과는 오류가 아니다 — 이미 있거나(재실행) 전장 기사가 0건인 날이다(FEED-009).
+		boolean created = marketBriefingService.generateStockBriefing(originTradeDate).isPresent();
+		log.info("개장 전 브리핑 단계를 마쳤다. 원본 거래일={} 생성={}", originTradeDate, created);
 	}
 
 	/**
-	 * <b>2·5단계 — 종목 뉴스 요약.</b> 내용 생성은 {@code plan.md} 5번(FEED-008) 소유다.
+	 * <b>2·5단계 — 종목 뉴스 요약.</b> 확정은 {@code InstrumentNewsSummaryService}가 종목 1건씩 한다(§C-6).
 	 *
 	 * <p><b>{@code PRE_MARKET}과 {@code FULL}을 한 메서드로 받되 호출은 두 자리로 나뉜다</b> — 범위가 다른
 	 * 두 요약을 같은 시점에 만들면 순서를 정한 의미가 없다. {@code FULL}은 15:30 이후에만 쓰이므로 마지막이고,
-	 * 09:00에 노출되면 <b>요약 한 문장이 그날 오후를 통째로 알려준다</b>(FEED-008).
+	 * 09:00에 노출되면 <b>요약 한 문장이 그날 오후를 통째로 알려준다</b>(FEED-008). 범위를 인자로 받으므로
+	 * 본문에 분기를 두지 않는다.
 	 *
-	 * <p>두 호출 자리 모두 호출부가 {@code try/catch}로 감싸 두었다 — {@code PRE_MARKET}이 카드보다 앞이라
-	 * 격리가 없으면 요약 하나가 터지는 날 <b>그날 카드가 전부 만들어지지 않는다.</b> 본문을 채울 때 종목 단위
-	 * 격리가 필요하면 {@code detectAll}처럼 본문 안에 함께 넣는다.
+	 * <p><b>격리를 종목 단위로 내린다.</b> 호출부의 {@code try/catch}는 단계 단위 방어선이라, 한 종목이 터지면
+	 * <b>그 범위의 나머지 종목이 통째로 날아간다</b> — 그것도 예외 없이 조용히, 로그 한 줄만 남기고. 개장 전
+	 * 시간대에 종목 하나의 LLM 호출이 실패하는 것은 드문 일이 아니므로 여기서 종목마다 접는다
+	 * ({@code detectAll}·{@code confirmCards}와 같은 형태).
 	 */
 	void generateNewsSummaries(
 		List<Instrument> instruments, LocalDate originTradeDate, NewsSummaryScope scope) {
-		log.debug("종목 뉴스 요약 생성은 아직 구현되지 않았다 (plan.md 5번). 원본 거래일={} 범위={} 종목={}건",
-			originTradeDate, scope, instruments.size());
+		int created = 0;
+		for (Instrument instrument : instruments) {
+			try {
+				if (instrumentNewsSummaryService
+					.generateStockSummary(instrument, originTradeDate, scope)
+					.isPresent()) {
+					created++;
+				}
+			} catch (RuntimeException ex) {
+				log.warn("요약 생성에 실패해 이 종목을 건너뛴다. 종목={} 원본 거래일={} 범위={}",
+					instrument.getId(), originTradeDate, scope, ex);
+			}
+		}
+		log.info("{} 요약 {}건을 생성했다. 원본 거래일={}", scope, created, originTradeDate);
 	}
 
 	/**
