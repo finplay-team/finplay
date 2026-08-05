@@ -12,12 +12,11 @@
 현재(ADR-0005, ADR-0009)는 사람이 Claude Code 또는 Codex 로컬 세션에서 `feature`, `review-pr`을 실행하는 반자동이다. 다음 단계는 GitHub Actions 러너에서 에이전트가 실행되는 완전 자동 흐름이다.
 
 ```
-① 이슈 등록 + 라벨(agent:plan) 부착
+① 이슈 등록 + 라벨(agent) 부착
    → Actions 러너에서 에이전트 실행
    → 이슈 내용 기반 수정/개발 방향 2~3안을 이슈 코멘트로 제시
 ② 사용자가 코멘트로 방향 선택 (예: "@claude 2안으로 구현해줘")
-   → 러너 재실행, 선택된 방향으로 구현
-   → 브랜치 생성 + 커밋 + PR 오픈 (PR 본문에 Closes #이슈번호)
+   → 러너 재실행, 브랜치 생성 → 선택된 방향으로 구현 → 커밋 → PR 오픈 (PR 본문에 Closes #이슈번호)
 ③ 사람이 PR 검토 → 머지 결정 (자동 머지 금지 — ADR-0005의 원칙 유지)
 ```
 
@@ -25,14 +24,14 @@
 
 ## 구현 단계 (착수 시 체크)
 
-- [ ] 이슈→구현 자동화 ADR 작성 — 인증 방식 결정 포함 (아래 "인증 트레이드오프". Codex 키로는 Claude 하네스 실행 불가 — ADR-0007 폐기 기록 참조. PR 자동 리뷰 재도입 여부도 이때 함께 판단)
-- [ ] `claude-code-action` 워크플로우 추가 (`.github/workflows/agent.yml`)
-  - 트리거 1: 이슈에 `agent:plan` 라벨 → 방향 제시 코멘트만 작성 (코드 수정 금지 프롬프트)
-  - 트리거 2: 이슈/PR 코멘트의 `@claude` 멘션 → 구현 + PR 오픈
+- [x] 이슈→구현 자동화 ADR 작성 — 인증 방식 결정 포함 → [ADR-0013](adr/0013-issue-triggered-agent-harness.md) (`CLAUDE_CODE_OAUTH_TOKEN`, 팀장 개인 Max 구독)
+- [x] `claude-code-action` 워크플로우 추가 (`.github/workflows/agent.yml`, PR #232)
+  - 트리거 1: 이슈에 `agent` 라벨 → 방향 제시 코멘트만 작성 (코드 수정 금지 프롬프트)
+  - 트리거 2: 이슈 댓글(PR 댓글 제외)의 `@claude` 멘션 — 멘션한 사람과 이슈를 연 사람 둘 다 팀 멤버일 때만 → 구현 + PR 오픈 + 자체 리뷰 후 조건부 승인
 - [ ] 러너 환경 확인 — `ubuntu-latest`는 Docker 기본 제공이라 Testcontainers 빌드 가능. 명령은 `./gradlew` (Windows 표기 `.\gradlew.bat` 아님)
 - [ ] 이슈 템플릿에 라벨 안내 추가
 - [ ] 지표 수집 스크립트 추가 (아래 "지표") + 주 1회 실행 (수동 또는 cron 워크플로우)
-- [ ] 테스트 이슈 1건으로 전체 흐름 검증 (①→②→③)
+- [ ] 테스트 이슈 1건으로 전체 흐름 검증 (①→②→③) — 조건부 승인이 실제로 붙는지, PR 작성자가 `claude[bot]`로 찍히는지(Claude GitHub App 설치 확인, PR #232 리뷰) 함께 확인한다
 
 ### 인증 트레이드오프 (ADR-0007에서 결정)
 
