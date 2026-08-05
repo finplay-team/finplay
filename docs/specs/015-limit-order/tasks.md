@@ -31,7 +31,7 @@
 - [x] 9. **`DELETE /api/orders/{orderId}` 취소 API**
   `LimitOrderCancelService`(`order.service`, plan.md "취소 흐름" 그대로 — `orderRepository.findByIdForUpdate`로 락+존재 확인 → 소유 확인 → 상태 확인 → `accountService.getAccountByIdForUpdate` → BUY는 `releaseReservedCash`, SELL은 `portfolioSellService.getHoldingForUpdate` + `releaseReservedQuantity` → `order.cancel()`). 검증 순서는 반드시 존재(404 `NOT_FOUND`) → 소유(403 `FORBIDDEN`) → 상태(409 `ORDER_NOT_PENDING`)여야 한다. `OrderController`에 `@DeleteMapping("/{orderId}")` 추가(`Idempotency-Key` 헤더 없음, 204 응답). 서비스 단위 테스트(`LimitOrderCancelServiceTest`: BUY 취소 시 `releaseReservedCash` 호출값, SELL 취소 시 `releaseReservedQuantity` 호출값, 주문 없음 404, 타인 소유 403, 이미 `FILLED` 409, 이미 `CANCELLED` 409, 검증 순서 준수) + `@WebMvcTest`(204 응답 바디 없음·404/403/409 오류 매핑, 인증 없으면 401).
 
-- [ ] 10. **동시성 경합 테스트(취소 vs 체결)**
+- [x] 10. **동시성 경합 테스트(취소 vs 체결)**
   `LimitOrderConcurrencyIntegrationTest`에 plan.md "동시성 테스트 시나리오 추가" 그대로 2개 메서드 추가 — 기존 `runConcurrently`(ready/start `CountDownLatch`) 헬퍼를 그대로 재사용한다: (a) BUY `PENDING` 주문에 `cancelOrder`와 `fillIfPending`을 동시 호출해 정확히 한쪽만 성공(체결 승리 시 취소는 `ORDER_NOT_PENDING` 예외, 취소 승리 시 체결은 no-op)하고 `reservedCash`·`cashBalance`가 이중 반환·이중 소비 없이 일관됨을 검증, (b) 같은 패턴을 SELL(`reservedQuantity`·`quantity` 버전)로 1개 더 추가.
 
 - [ ] 11. **문서 동기화**

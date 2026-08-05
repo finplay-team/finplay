@@ -3,6 +3,9 @@
 // 체결과 시장가 SELL이 동시에 실행돼도 ABBA 데드락이 없음(이 spec의 핵심 증명 대상), (c) 매수 지정가 현금 예약·
 // 부족 거부, (d) 매도 지정가 예약이 시장가·다른 지정가의 초과 매도를 막음. 단일 체결 end-to-end 배선은
 // LimitOrderFillIntegrationTest(항목4)가 이미 검증하므로 여기서는 다루지 않는다(중복 방지).
+// LMT-003(이슈 #218) 추가: plan.md "동시성 테스트 시나리오 추가"(tasks.md 항목10) — 취소(cancelOrder)와
+// 체결(fillIfPending)이 같은 PENDING 주문에 동시에 경합할 때 정확히 한쪽만 성공하고 reservedCash/reservedQuantity가
+// 이중 반환·이중 소비 없이 일관되는지 BUY·SELL 각 1개씩 검증한다.
 package com.finplay.api.order;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -25,7 +28,9 @@ import com.finplay.api.order.domain.OrderStatus;
 import com.finplay.api.order.dto.request.LimitOrderCreateRequest;
 import com.finplay.api.order.dto.request.OrderCreateRequest;
 import com.finplay.api.order.dto.response.LimitOrderResponse;
+import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.repository.OrderRepository;
+import com.finplay.api.order.service.LimitOrderCancelService;
 import com.finplay.api.order.service.LimitOrderFillService;
 import com.finplay.api.order.service.LimitOrderService;
 import com.finplay.api.order.service.OrderService;
@@ -41,6 +46,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -76,6 +82,9 @@ class LimitOrderConcurrencyIntegrationTest {
 
 	@Autowired
 	private LimitOrderFillService limitOrderFillService;
+
+	@Autowired
+	private LimitOrderCancelService limitOrderCancelService;
 
 	@Autowired
 	private OrderService orderService;
@@ -252,6 +261,123 @@ class LimitOrderConcurrencyIntegrationTest {
 			.orElseThrow();
 		assertThat(holdingAfterRejections.getQuantity()).isEqualByComparingTo("10");
 		assertThat(holdingAfterRejections.getReservedQuantity()).isEqualByComparingTo("7");
+	}
+
+	// 시나리오 12 (BUY): 같은 PENDING 지정가 매수 주문에 cancelOrder와 fillIfPending을 동시에 호출한다. 둘 다
+	// order → account 순으로 잠그므로 order row lock에서 직렬화되고, 정확히 한쪽만 성공해야 한다(plan.md
+	// "동시성 테스트 시나리오 추가" 1번). 어느 쪽이 이길지는 스케줄링에 좌우되므로 두 결과 분기를 모두 검증한다.
+	@Test
+	void cancelAndFillRaceForPendingBuyOrderResultInExactlyOneWinnerWithConsistentCashLedger() throws Exception {
+		User user = createUser("cancel-fill-buy");
+		Account account = createAccount(user);
+		Instrument instrument = createCryptoInstrument("CXFBUY");
+
+		BigDecimal quantity = new BigDecimal("0.1");
+		BigDecimal limitPrice = new BigDecimal("10000000");
+		LimitOrderResponse created = limitOrderService.createLimitOrder(
+			user.getId(), "idem-cxf-buy",
+			new LimitOrderCreateRequest(Market.CRYPTO, instrument.getId(), OrderSide.BUY, quantity, limitPrice));
+		Long orderId = created.orderId();
+
+		Account reservedAccount = accountRepository.findById(account.getId()).orElseThrow();
+		long reservedCashBefore = reservedAccount.getReservedCash();
+		long cashBefore = reservedAccount.getCashBalance();
+		assertThat(reservedCashBefore).isGreaterThan(0L);
+
+		// cancelOrder는 지는 쪽이면 ORDER_NOT_PENDING을 던지는 게 정상 동작이므로, 그 예외를 runConcurrently 밖으로
+		// 전파시키지 않고 캡처해서 이후 분기 검증에 쓴다. fillIfPending은 지는 쪽이어도 예외 없이 no-op해야 하므로
+		// 그대로 둔다 — 만약 여기서 예외가 나면 그 자체가 구현 버그이므로 테스트가 실패해야 맞다.
+		AtomicReference<Exception> cancelException = new AtomicReference<>();
+		runConcurrently(
+			() -> {
+				try {
+					limitOrderCancelService.cancelOrder(user.getId(), orderId);
+				} catch (Exception ex) {
+					cancelException.set(ex);
+				}
+			},
+			() -> limitOrderFillService.fillIfPending(orderId));
+
+		Order finalOrder = orderRepository.findById(orderId).orElseThrow();
+		Account accountAfter = accountRepository.findById(account.getId()).orElseThrow();
+
+		if (finalOrder.getStatus() == OrderStatus.FILLED) {
+			// 체결이 이겼다 — 취소는 ORDER_NOT_PENDING 예외로 실패해야 하고, 예약분은 정확히 한 번만 실제 지출로 전환된다.
+			assertThat(cancelException.get()).isInstanceOf(BusinessException.class)
+				.satisfies(
+					ex -> assertThat(((BusinessException)ex).getErrorCode()).isEqualTo(ErrorCode.ORDER_NOT_PENDING));
+			assertThat(countTradesForOrder(orderId)).isEqualTo(1L);
+			assertThat(accountAfter.getReservedCash()).isZero();
+			assertThat(cashBefore - accountAfter.getCashBalance()).isEqualTo(reservedCashBefore);
+		} else {
+			// 취소가 이겼다 — 체결은 예외 없이 조용히 no-op해야 하고, 예약분은 지출 없이 그대로 반환된다.
+			assertThat(finalOrder.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+			assertThat(cancelException.get()).isNull();
+			assertThat(countTradesForOrder(orderId)).isEqualTo(0L);
+			assertThat(accountAfter.getReservedCash()).isZero();
+			assertThat(accountAfter.getCashBalance()).isEqualTo(cashBefore);
+		}
+	}
+
+	// 시나리오 12 (SELL): BUY와 대칭 패턴 — assert 대상만 계좌(reservedCash/cashBalance) 대신 holding
+	// (reservedQuantity/quantity)으로 바꾼다(plan.md "동시성 테스트 시나리오 추가" 2번).
+	@Test
+	void cancelAndFillRaceForPendingSellOrderResultInExactlyOneWinnerWithConsistentHoldingLedger() throws Exception {
+		User user = createUser("cancel-fill-sell");
+		Account account = createAccount(user);
+		Instrument instrument = createCryptoInstrument("CXFSEL");
+
+		BigDecimal buyQuantity = new BigDecimal("5");
+		BigDecimal price = new BigDecimal("100000");
+		priceStore.saveTick(instrument.getSymbol(), price, LocalDateTime.now(clock));
+		orderService.createOrder(user.getId(), "idem-cxf-sell-buy",
+			new OrderCreateRequest(Market.CRYPTO, instrument.getId(), OrderSide.BUY, "MARKET", buyQuantity));
+
+		BigDecimal sellQuantity = new BigDecimal("3");
+		LimitOrderResponse created = limitOrderService.createLimitOrder(
+			user.getId(), "idem-cxf-sell",
+			new LimitOrderCreateRequest(Market.CRYPTO, instrument.getId(), OrderSide.SELL, sellQuantity, price));
+		Long orderId = created.orderId();
+
+		Holding reservedHolding = holdingRepository
+			.findByAccountIdAndInstrumentId(account.getId(), instrument.getId())
+			.orElseThrow();
+		BigDecimal reservedQuantityBefore = reservedHolding.getReservedQuantity();
+		BigDecimal quantityBefore = reservedHolding.getQuantity();
+		assertThat(reservedQuantityBefore).isEqualByComparingTo(sellQuantity);
+
+		AtomicReference<Exception> cancelException = new AtomicReference<>();
+		runConcurrently(
+			() -> {
+				try {
+					limitOrderCancelService.cancelOrder(user.getId(), orderId);
+				} catch (Exception ex) {
+					cancelException.set(ex);
+				}
+			},
+			() -> limitOrderFillService.fillIfPending(orderId));
+
+		Order finalOrder = orderRepository.findById(orderId).orElseThrow();
+		Holding holdingAfter = holdingRepository
+			.findByAccountIdAndInstrumentId(account.getId(), instrument.getId())
+			.orElseThrow();
+
+		if (finalOrder.getStatus() == OrderStatus.FILLED) {
+			// 체결이 이겼다 — 취소는 ORDER_NOT_PENDING 예외로 실패해야 하고, 예약 수량은 실제 매도로 정확히 한 번만 소비된다.
+			assertThat(cancelException.get()).isInstanceOf(BusinessException.class)
+				.satisfies(
+					ex -> assertThat(((BusinessException)ex).getErrorCode()).isEqualTo(ErrorCode.ORDER_NOT_PENDING));
+			assertThat(countTradesForOrder(orderId)).isEqualTo(1L);
+			assertThat(holdingAfter.getReservedQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
+			assertThat(quantityBefore.subtract(holdingAfter.getQuantity())).isEqualByComparingTo(sellQuantity);
+		} else {
+			// 취소가 이겼다 — 체결은 예외 없이 조용히 no-op해야 하고, 예약 수량은 매도 없이 그대로 반환된다.
+			assertThat(finalOrder.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+			assertThat(cancelException.get()).isNull();
+			assertThat(countTradesForOrder(orderId)).isEqualTo(0L);
+			assertThat(holdingAfter.getReservedQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
+			assertThat(holdingAfter.getQuantity()).isEqualByComparingTo(quantityBefore);
+		}
 	}
 
 	// PracticeIntentionConcurrencyIntegrationTest와 동일한 ready/start CountDownLatch 관례를 재사용한다 —
