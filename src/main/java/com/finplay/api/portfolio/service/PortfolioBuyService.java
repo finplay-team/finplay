@@ -20,6 +20,9 @@ public class PortfolioBuyService {
 	private final HoldingRepository holdingRepository;
 	private final HoldingLotRepository holdingLotRepository;
 
+	// holdings row를 잠근 뒤 갱신한다(시장가·지정가 매수 체결 공통 호출부, 이슈 #224) — 신규 종목 첫 매수(row 없음)는
+	// 호출부가 이미 잡은 account 락만으로 동시 생성 경합을 막는다(spec.md 확정된 설계 결정 10번, 방어적 유니크
+	// 제약 catch 없음).
 	public void applyBuyTrade(
 		Account account,
 		Instrument instrument,
@@ -29,7 +32,7 @@ public class PortfolioBuyService {
 		long fee,
 		LocalDateTime now) {
 		Holding holding = holdingRepository
-			.findByAccountIdAndInstrumentId(account.getId(), instrument.getId())
+			.findByAccountIdAndInstrumentIdForUpdate(account.getId(), instrument.getId())
 			.orElseGet(() -> Holding.create(account, instrument, now));
 		holding.applyBuy(quantity, price, now);
 		holdingRepository.save(holding);

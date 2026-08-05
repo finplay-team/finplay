@@ -20,7 +20,8 @@ public interface HoldingRepository extends JpaRepository<Holding, Long> {
 	List<Holding> findAllByAccountIdAndIsActiveTrue(@Param("accountId")
 	Long accountId);
 
-	// 지정가 매도 생성·체결 시 holding 락(015-limit-order LMT-001·LMT-002)
+	// 지정가 매도 생성·체결(015-limit-order LMT-001·LMT-002) + 시장가·지정가 매수 체결 공통(PortfolioBuyService.
+	// applyBuyTrade, 이슈 #224) holding 락
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("SELECT h FROM Holding h WHERE h.account.id = :accountId AND h.instrument.id = :instrumentId")
 	Optional<Holding> findByAccountIdAndInstrumentIdForUpdate(@Param("accountId")
