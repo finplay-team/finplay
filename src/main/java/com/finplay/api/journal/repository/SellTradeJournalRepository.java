@@ -5,7 +5,8 @@ import com.finplay.api.journal.domain.SellTradeJournal;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-public interface SellTradeJournalRepository extends JpaRepository<SellTradeJournal, Long> {
+public interface SellTradeJournalRepository
+	extends JpaRepository<SellTradeJournal, Long>, SellTradeJournalRepositoryCustom {
 
 	boolean existsBySellTradeId(Long sellTradeId);
 

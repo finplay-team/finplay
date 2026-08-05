@@ -24,6 +24,8 @@ import com.finplay.api.order.repository.TradeRepository;
 import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -99,6 +101,33 @@ class SellTradeJournalRepositoryTest {
 		return tradeRepository.saveAndFlush(Trade.of(
 			order,
 			account,
+			instrument,
+			session,
+			OrderSide.SELL,
+			BigDecimal.valueOf(100),
+			BigDecimal.valueOf(10),
+			1_000L,
+			1L,
+			null,
+			NOW,
+			NOW));
+	}
+
+	private Trade createSellTradeFor(User tradeUser, Account tradeAccount) {
+		sequence++;
+		Order order = orderRepository.saveAndFlush(Order.create(
+			tradeUser,
+			tradeAccount,
+			instrument,
+			OrderSide.SELL,
+			OrderType.MARKET,
+			BigDecimal.valueOf(10),
+			"sell-journal-idem-" + sequence,
+			String.valueOf((char)('a' + sequence)).repeat(64),
+			NOW));
+		return tradeRepository.saveAndFlush(Trade.of(
+			order,
+			tradeAccount,
 			instrument,
 			session,
 			OrderSide.SELL,
@@ -212,5 +241,82 @@ class SellTradeJournalRepositoryTest {
 		assertThat(reloaded.getContent()).isEqualTo(newContent);
 		assertThat(reloaded.getUpdatedAt()).isEqualTo(updatedAt);
 		assertThat(reloaded.getCreatedAt()).isEqualTo(NOW);
+	}
+
+	// --- ⑦ findByAccountIdWithCursor: 다른 계좌 회고 미포함 ---
+
+	@Test
+	@DisplayName("커서 조회는 다른 계좌의 매도 회고를 포함하지 않는다")
+	void findByAccountIdWithCursorExcludesOtherAccountJournals() {
+		Trade ownerTrade = createSellTrade();
+		SellTradeJournal ownerJournal = sellTradeJournalRepository.saveAndFlush(
+			SellTradeJournal.of(ownerTrade, CONTENT, NOW));
+
+		User other = userRepository
+			.saveAndFlush(User.create("sell-journal-other@finplay.com", "hash", "selljournalother", NOW));
+		Account otherAccount = accountRepository.saveAndFlush(
+			Account.create(other, com.finplay.api.account.domain.Market.STOCK, NOW));
+		Trade otherTrade = createSellTradeFor(other, otherAccount);
+		sellTradeJournalRepository.saveAndFlush(SellTradeJournal.of(otherTrade, CONTENT, NOW));
+
+		List<SellTradeJournal> result = sellTradeJournalRepository.findByAccountIdWithCursor(account.getId(), null,
+			null, 10);
+
+		assertThat(result).extracting(SellTradeJournal::getId).containsExactly(ownerJournal.getId());
+	}
+
+	// --- ⑧ 커서 이전 항목만 반환 + createdAt 동점 시 체결 ID 내림차순 ---
+
+	@Test
+	@DisplayName("커서보다 이전(createdAt이 더 작거나 같은 createdAt에서 체결 ID가 더 작은) 항목만 반환한다")
+	void findByAccountIdWithCursorReturnsOnlyItemsBeforeCursor() {
+		Trade olderTrade = createSellTrade();
+		SellTradeJournal older = sellTradeJournalRepository
+			.saveAndFlush(SellTradeJournal.of(olderTrade, CONTENT, NOW.minusMinutes(10)));
+		Trade newerTrade = createSellTrade();
+		SellTradeJournal newer = sellTradeJournalRepository.saveAndFlush(SellTradeJournal.of(newerTrade, CONTENT, NOW));
+
+		List<SellTradeJournal> result = sellTradeJournalRepository.findByAccountIdWithCursor(
+			account.getId(), newer.getCreatedAt(), newerTrade.getId(), 10);
+
+		assertThat(result).extracting(SellTradeJournal::getId).containsExactly(older.getId());
+	}
+
+	@Test
+	@DisplayName("createdAt이 같으면 체결 ID 내림차순으로 정렬해 반환한다")
+	void findByAccountIdWithCursorSortedByCreatedAtThenTradeIdDescendingOnTie() {
+		Trade firstTrade = createSellTrade();
+		SellTradeJournal first = sellTradeJournalRepository.saveAndFlush(SellTradeJournal.of(firstTrade, CONTENT, NOW));
+		Trade secondTrade = createSellTrade();
+		SellTradeJournal second = sellTradeJournalRepository
+			.saveAndFlush(SellTradeJournal.of(secondTrade, CONTENT, NOW));
+		Trade thirdTrade = createSellTrade();
+		SellTradeJournal third = sellTradeJournalRepository.saveAndFlush(SellTradeJournal.of(thirdTrade, CONTENT, NOW));
+
+		List<SellTradeJournal> result = sellTradeJournalRepository.findByAccountIdWithCursor(account.getId(), null,
+			null, 10);
+
+		assertThat(result).extracting(SellTradeJournal::getId)
+			.containsExactly(third.getId(), second.getId(), first.getId());
+	}
+
+	// --- ⑨ fetchSize(limit) 준수 ---
+
+	@Test
+	@DisplayName("fetchSize로 지정한 개수만큼만 반환한다")
+	void findByAccountIdWithCursorRespectsFetchSize() {
+		List<SellTradeJournal> saved = new ArrayList<>();
+		for (int i = 0; i < 5; i++) {
+			Trade trade = createSellTrade();
+			saved.add(sellTradeJournalRepository.saveAndFlush(
+				SellTradeJournal.of(trade, CONTENT, NOW.minusMinutes(i))));
+		}
+
+		List<SellTradeJournal> result = sellTradeJournalRepository.findByAccountIdWithCursor(account.getId(), null,
+			null, 3);
+
+		assertThat(result).hasSize(3);
+		assertThat(result).extracting(SellTradeJournal::getId)
+			.containsExactly(saved.get(0).getId(), saved.get(1).getId(), saved.get(2).getId());
 	}
 }
