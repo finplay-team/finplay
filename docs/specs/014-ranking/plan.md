@@ -342,13 +342,14 @@ public MyRankingResponse getMyRanking(Long userId, Market market) {
     Integer rank = score == null
         ? null
         : (int)(rankingStore.countStrictlyGreater(market, score) + 1); // RANK-001과 동일한 보정 공식 재사용
+    long realizedPnl = score == null ? 0L : score; // rank와 같은 출처(ZSET)에서 뽑는다 — PR #234 리뷰 차단 반영
     return new MyRankingResponse(
-        market.name(), rank, account.getUser().getNickname(), account.getRealizedPnl());
+        market.name(), rank, account.getUser().getNickname(), realizedPnl);
 }
 ```
 
 - **`accountService.getAccountFor`가 `NOT_FOUND`를 던질 수 있는가**: ACCT-001에 따라 회원가입 시 STOCK·CRYPTO 계좌가 함께 생성되므로, 인증된 사용자 + 유효한 `market` 조합에서는 정상적으로 발생하지 않는다. `TradeService.getMyTrades`가 이미 같은 패턴(같은 메서드, 같은 전제)을 쓰고 있으므로 신규 오류 처리를 추가하지 않는다(방어적 경로로만 존재, 신규 오류 코드 불필요).
-- **`nickname`·`realizedPnl`은 매도 이력과 무관하게 항상 채운다** — `account`는 `getAccountFor`로 항상 조회되고, `realizedPnl`은 이력이 없어도 DB 기본값 0으로 항상 존재한다. null이 되는 것은 `rank`뿐이다(spec.md "비즈니스 규칙" 참고).
+- **`nickname`·`realizedPnl`은 매도 이력과 무관하게 항상 채운다.** `nickname`은 `account`(`getAccountFor`로 항상 조회됨)에서 채운다. **`realizedPnl`은 DB `account.getRealizedPnl()`이 아니라 `rank` 계산에 쓴 것과 같은 `score`(ZSET)에서 채운다** — 최초 설계는 DB 값을 그대로 썼으나, `rank`는 ZSET 기준으로 계산하면서 `realizedPnl`만 DB를 그대로 노출하면 after-commit 반영 지연·Redis 재시도 소진 등으로 두 값이 어긋난 계좌에서 "이 손익, 이 순위"가 응답 안에서 서로 대응하지 않는 차단 사유가 된다(PR #234 리뷰 반영). `score`가 `null`(매도 이력 없음)이면 0을 쓴다 — 이 경우 DB `realized_pnl`도 항상 0이라(이력 없는 계좌는 `refreshScore`가 호출된 적이 없다) 값이 갈리지 않는다. null이 되는 것은 `rank`뿐이다(spec.md "비즈니스 규칙" 참고).
 - **다른 사용자 조회 방지**: 파라미터로 accountId·userId를 받지 않고 인증 컨텍스트의 `userId`만 쓰므로, `TradeService.getOwnedTrade`류의 별도 소유권 검증(`FORBIDDEN`)이 구조적으로 불필요하다.
 
 ### `MyRankingResponse` (신규, `ranking/dto/response`)

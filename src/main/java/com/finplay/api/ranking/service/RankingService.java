@@ -68,8 +68,12 @@ public class RankingService {
 	// 안에 들지 않아도 항상 정확한 보정 순위를 반환한다. 순위 산정의 score는 항상 Redis ZSET(RankingStore.score)
 	// 기준이다 — DB accounts.realized_pnl을 직접 재사용하지 않는다. RANK-001 목록 조회와 동일한 ZSET 상태를
 	// 기준으로 계산해야 두 엔드포인트가 서로 다른 순위를 보여주는 불일치가 생기지 않기 때문이다(plan.md
-	// "RANK-002 설계" 참고). TradeService.getMyTrades와 동일한 패턴으로 @Transactional(readOnly=true)로 감싸
-	// account.getUser() 지연로딩을 같은 트랜잭션(세션) 안에서 안전하게 접근한다.
+	// "RANK-002 설계" 참고). realizedPnl도 이 score를 그대로 노출한다(PR #234 리뷰 차단) — rank를 계산한 값과
+	// 다른 값(DB accounts.realized_pnl)을 응답에 함께 실으면, after-commit 반영 지연·재시도 소진 등으로 두 값이
+	// 어긋난 계좌에서 "이 손익, 이 순위"가 서로 대응하지 않는 응답이 나간다. score가 null(매도 이력 없음)이면
+	// DB realized_pnl도 항상 0이므로(이력 없는 계좌는 갱신된 적이 없다) 0을 그대로 써도 값이 갈리지 않는다.
+	// TradeService.getMyTrades와 동일한 패턴으로 @Transactional(readOnly=true)로 감싸 account.getUser() 지연로딩을
+	// 같은 트랜잭션(세션) 안에서 안전하게 접근한다.
 	@Transactional(readOnly = true)
 	public MyRankingResponse getMyRanking(Long userId, Market market) {
 		Account account = accountService.getAccountFor(userId, market);
@@ -79,7 +83,8 @@ public class RankingService {
 			// RANK-001과 동일한 공동 순위 보정 공식(countStrictlyGreater + 1)을 재사용한다 — 별도의 새 보정
 			// 공식을 만들지 않는다.
 			: (int)(rankingStore.countStrictlyGreater(market, score) + 1);
-		return new MyRankingResponse(market.name(), rank, account.getUser().getNickname(), account.getRealizedPnl());
+		long realizedPnl = score == null ? 0L : score;
+		return new MyRankingResponse(market.name(), rank, account.getUser().getNickname(), realizedPnl);
 	}
 
 	// PR #196 리뷰 지적(차단 2): topN(limit)만 가져오면 "어떤 동점자가 window에 들어갈지"가 Redis 멤버 문자열의

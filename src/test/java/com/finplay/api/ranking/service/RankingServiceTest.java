@@ -248,6 +248,22 @@ class RankingServiceTest {
 		assertThat(response).isEqualTo(new MyRankingResponse("STOCK", 3, "alice", 5_000L));
 	}
 
+	// PR #234 리뷰 차단 반영: DB accounts.realized_pnl과 Redis ZSET score가 어긋난 경우(after-commit 반영 지연·
+	// 재시도 소진 등), rank 계산에 쓴 score와 다른 값(DB 값)을 realizedPnl로 내보내면 한 응답 안에서 "이 손익,
+	// 이 순위"가 서로 대응하지 않게 된다. realizedPnl도 rank와 같은 출처(ZSET score)에서 나와야 한다.
+	@Test
+	void getMyRankingUsesZsetScoreNotDbRealizedPnlWhenTheyDiverge() {
+		Account account = account(1L, Market.STOCK, 120_000L, 10L, "alice"); // DB는 120,000이지만
+		when(accountService.getAccountFor(10L, Market.STOCK)).thenReturn(account);
+		when(rankingStore.score(Market.STOCK, 1L)).thenReturn(50_000L); // ZSET score는 50,000으로 갈라진 상태
+		when(rankingStore.countStrictlyGreater(Market.STOCK, 50_000L)).thenReturn(2L);
+
+		MyRankingResponse response = rankingService.getMyRanking(10L, Market.STOCK);
+
+		// rank(3)를 계산한 근거인 50,000이 realizedPnl에도 그대로 나와야 한다 — DB의 120,000이 아니다.
+		assertThat(response).isEqualTo(new MyRankingResponse("STOCK", 3, "alice", 50_000L));
+	}
+
 	private Market market() {
 		return Market.STOCK;
 	}
