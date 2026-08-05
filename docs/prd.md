@@ -199,7 +199,7 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 | 투자일기 — 매도 회고 수정 | JOUR-004 | **완료** | PR #192 |
 | 투자일기 — 매수 회고 수정 | JOUR-002 | **완료** | PR #201 (이슈 #197). 수정 잠금 없음으로 확정 |
 | 투자일기 — 목록 조회 | JOUR-006 | **완료** | PR [#213](https://github.com/finplay-team/finplay/pull/213) (이슈 #203). `GET /api/journal`, 매수·매도 병합·커서 페이지네이션. 통합 `journalId` 미노출 |
-| 투자일기 — 상세 조회 | JOUR-005 | **완료** | 이슈 [#217](https://github.com/finplay-team/finplay/issues/217). `GET /api/journal/buy/{buyTradeId}`·`GET /api/journal/sell/{sellTradeId}` 타입별 경로 분리. PR 번호는 병합 후 갱신 |
+| 투자일기 — 상세 조회 | JOUR-005 | **완료** | PR [#219](https://github.com/finplay-team/finplay/pull/219) (이슈 #217). `GET /api/journal/buy/{buyTradeId}`·`GET /api/journal/sell/{sellTradeId}` 타입별 경로 분리 |
 | 랭킹 — 전체 랭킹 조회 | RANK-001 | **완료** | `014-ranking`, PR #196 (`GET /api/rankings`, Redis ZSET) |
 | 랭킹 — 내 랭킹 조회 | RANK-002 | **미착수** | `GET /api/rankings/me` 없음 |
 | 투자 실습 — 즐겨찾기 등록·목록·해제 | EDU-PRACTICE-002 | **완료** | PR #165·#171·#173. **ADR-0012로 인메모리 저장** |

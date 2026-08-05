@@ -11,7 +11,7 @@
 > | 3차 | JOUR-004 매도 회고 수정 | [#190](https://github.com/finplay-team/finplay/issues/190) (PR #192) | 구현 완료 |
 > | 4차 | JOUR-002 매수 회고 수정 | [#197](https://github.com/finplay-team/finplay/issues/197) (PR #201) | 구현 완료 |
 > | 5차 | JOUR-006 투자일기 목록 조회 | [#203](https://github.com/finplay-team/finplay/issues/203) (PR [#213](https://github.com/finplay-team/finplay/pull/213)) | 구현 완료 |
-> | 6차 | JOUR-005 투자일기 상세 조회 | [#217](https://github.com/finplay-team/finplay/issues/217) (PR 병합 후 번호 갱신) | 구현 완료 |
+> | 6차 | JOUR-005 투자일기 상세 조회 | [#217](https://github.com/finplay-team/finplay/issues/217) (PR [#219](https://github.com/finplay-team/finplay/pull/219)) | 구현 완료 |
 >
 > 6차 착수 범위는 **JOUR-005(투자일기 상세 조회) 1건뿐**이었고, 이로써 이 spec의 여섯 요구사항이 모두 닫혔다. **JOUR-005의 식별자 체계 Decision Gate는 2026-08-05 이슈 #217에서 "타입별 경로 분리"로 해제됐다** — 매수 회고와 매도 회고를 각각 `GET /api/journal/buy/{buyTradeId}`·`GET /api/journal/sell/{sellTradeId}`로 조회한다. 근거는 아래 §비즈니스 규칙 "상세 조회는 타입별 경로로 분리한다"에 있다.
 >
