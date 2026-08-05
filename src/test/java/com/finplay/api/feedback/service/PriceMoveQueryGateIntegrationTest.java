@@ -8,17 +8,20 @@ import com.finplay.api.feedback.domain.MarketNewsItem;
 import com.finplay.api.feedback.domain.MarketNewsItemType;
 import com.finplay.api.feedback.domain.NarrativeSource;
 import com.finplay.api.feedback.domain.PriceMoveEvent;
+import com.finplay.api.feedback.domain.PriceMoveEventSource;
 import com.finplay.api.feedback.domain.PriceMoveEventType;
 import com.finplay.api.feedback.dto.response.NewsItem;
 import com.finplay.api.feedback.dto.response.PriceMoveItem;
 import com.finplay.api.feedback.dto.response.PriceMoveListResponse;
 import com.finplay.api.feedback.repository.MarketNewsItemRepository;
 import com.finplay.api.feedback.repository.PriceMoveEventRepository;
+import com.finplay.api.feedback.repository.PriceMoveEventSourceRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.domain.StockReplaySession;
 import com.finplay.api.market.repository.StockReplaySessionRepository;
 import com.finplay.api.market.service.InstrumentService;
+import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -26,7 +29,9 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -86,7 +91,13 @@ class PriceMoveQueryGateIntegrationTest {
 	private MarketNewsItemRepository marketNewsItemRepository;
 
 	@Autowired
+	private PriceMoveEventSourceRepository priceMoveEventSourceRepository;
+
+	@Autowired
 	private JdbcTemplate jdbcTemplate;
+
+	@Autowired
+	private EntityManager entityManager;
 
 	@Autowired
 	private Clock clock;
@@ -330,6 +341,49 @@ class PriceMoveQueryGateIntegrationTest {
 
 		assertThat(priceMoveQueryService.getPriceMoves(crypto.getId()))
 			.isEqualTo(PriceMoveListResponse.empty());
+	}
+
+	// --- 8개 이슈 공통 조건: 원장 불변 (코인 분기, tasks.md 5번 항목) ---
+
+	// 다른 원장 불변 테스트(CryptoPriceMoveWatcherIntegrationTest·PostSellFeedbackNarrativeIntegrationTest)와
+	// 같은 테이블 목록이다. 이 조회는 애초에 원장 테이블을 읽지도 않으므로(PriceMoveQueryService는 instrument·
+	// price_move_events·price_move_event_sources만 본다) UPDATE로 값만 바뀌는 경로 자체가 없다 — 행 수 비교로
+	// 충분하다(docs/agent-mistakes.md 2026-08-04 "원장 불변" 행의 값 비교 요구는 UPDATE가 가능한 경로에 해당한다).
+	private static final List<String> LEDGER_TABLES = List.of("orders", "trades", "accounts", "holdings",
+		"holding_lots", "trade_allocations");
+
+	@Test
+	@DisplayName("코인 분기 조회는 카드·근거가 있어도 원장 테이블을 전혀 건드리지 않는다")
+	void neverWritesLedgerTablesWhenQueryingCryptoPriceMoves() {
+		Instrument crypto = instrumentService.getInstrumentEntities(Market.CRYPTO).stream()
+			.filter(each -> CRYPTO_SYMBOL.equals(each.getSymbol()))
+			.findFirst()
+			.orElseThrow();
+		LocalDateTime occurredAt = INITIAL_NOW.minusHours(1);
+		PriceMoveEvent card = priceMoveEventRepository.save(PriceMoveEvent.createCrypto(
+			crypto, occurredAt, new BigDecimal("0.031000"), new BigDecimal("3.4000"),
+			"대형 거래소 상장 소식이 있었습니다.", NarrativeSource.TEMPLATE, INITIAL_NOW));
+		MarketNewsItem news = marketNewsItemRepository.save(MarketNewsItem.create(
+			crypto, MarketNewsItemType.NEWS, "코인 원장 불변 기사", "coindesk.com",
+			"https://news.example.test/ledger-invariance", occurredAt.minusMinutes(10), INITIAL_NOW));
+		priceMoveEventSourceRepository.save(PriceMoveEventSource.of(card, news));
+
+		Map<String, Long> ledgerBefore = rowCounts(LEDGER_TABLES);
+
+		PriceMoveListResponse response = priceMoveQueryService.getPriceMoves(crypto.getId());
+
+		// 실제로 카드·근거를 읽었는데도(대역이 아니라) 원장은 그대로여야 의미가 있다.
+		assertThat(response.moves()).hasSize(1);
+		assertThat(rowCounts(LEDGER_TABLES)).isEqualTo(ledgerBefore);
+	}
+
+	private Map<String, Long> rowCounts(List<String> tables) {
+		entityManager.flush();
+		Map<String, Long> counts = new LinkedHashMap<>();
+		for (String table : tables) {
+			counts.put(table, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM " + table, Long.class));
+		}
+		return counts;
 	}
 
 	// --- 순서 (계약에 명시가 없어 회귀 방지용) ---
