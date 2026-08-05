@@ -138,10 +138,11 @@ jobs:
         if: success() && steps.pr.outputs.number != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # report는 LLM이 diff 내용을 보고 생성한 텍스트라 신뢰할 수 없다.
+          # ${{ }}로 run: 스크립트에 직접 이어붙이면 GitHub Actions 스크립트 인젝션이 된다 — env로만 전달한다.
+          REVIEW_REPORT: ${{ fromJSON(steps.review.outputs.structured_output).report }}
         run: |
-          cat > /tmp/review-body.md <<'REVIEW_EOF_9f3a'
-          ${{ fromJSON(steps.review.outputs.structured_output).report }}
-          REVIEW_EOF_9f3a
+          printf '%s\n' "$REVIEW_REPORT" > /tmp/review-body.md
           gh pr comment "${{ steps.pr.outputs.number }}" --body-file /tmp/review-body.md
 
       - name: 조건부 승인 — 차단·권장 0건일 때만 (ADR-0013, 머지는 사람이 진행)
