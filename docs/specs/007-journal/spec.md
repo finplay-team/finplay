@@ -10,7 +10,7 @@
 > | 2차 | JOUR-003 매도 회고 작성 | [#183](https://github.com/finplay-team/finplay/issues/183) (PR #189) | 구현 완료 |
 > | 3차 | JOUR-004 매도 회고 수정 | [#190](https://github.com/finplay-team/finplay/issues/190) (PR #192) | 구현 완료 |
 > | 4차 | JOUR-002 매수 회고 수정 | [#197](https://github.com/finplay-team/finplay/issues/197) (PR #201) | 구현 완료 |
-> | 5차 | JOUR-006 투자일기 목록 조회 | [#203](https://github.com/finplay-team/finplay/issues/203) | **이번 범위** |
+> | 5차 | JOUR-006 투자일기 목록 조회 | [#203](https://github.com/finplay-team/finplay/issues/203) | 구현 완료 |
 >
 > 이번 착수 범위는 **JOUR-006(투자일기 목록 조회) 1건뿐**이다. JOUR-005(상세 조회)는 식별자 체계 Decision Gate가 아직 열려 있어 아래 §범위 제외에 남긴다. **JOUR-006은 그 게이트와 무관하게 착수한다** — 목록 항목을 `journalType` + 원래 체결 ID로만 식별하고 통합 `journalId`를 노출하지 않으면 JOUR-005가 어떤 식별자 체계를 택하든 이 응답 계약과 충돌하지 않는다(아래 §비즈니스 규칙 "JOUR-005 식별자 게이트를 선점하지 않는다").
 >
@@ -85,18 +85,18 @@
 - [x] 수정 시각을 기록하고, 성공 시 투자일기 ID, 매수 체결 ID, 본문, 작성시각, 수정시각을 반환한다.
 - [x] 수정 성공·실패는 매도 회고(JOUR-003·004) 계약과 데이터에 영향을 주지 않는다.
 
-### JOUR-006 투자일기 목록 조회 (이번 착수 범위, 이슈 #203)
+### JOUR-006 투자일기 목록 조회 (5차 착수, 구현 완료, 이슈 #203)
 
-- [ ] `GET /api/journal?market=&cursor=&limit=`로 인증 사용자 본인의 투자일기 목록을 조회한다.
-- [ ] 매수 회고(`buy_trade_journals`)와 매도 회고(`sell_trade_journals`)를 **한 목록에 섞어** 반환한다. 두 종류를 따로 조회하는 엔드포인트를 만들지 않는다.
-- [ ] `market`은 **필수** 파라미터다. `STOCK`|`CRYPTO` 리터럴만 허용하며, 두 시장을 합친 통합 조회는 이번 범위에 없다 (PORT-002 `GET /api/trades`·PORT-003 `GET /api/orders`와 동일).
-- [ ] **커서 기반 페이지네이션**을 쓰고 최신순으로 정렬한다. `cursor`·`limit`은 선택이며 `limit` 기본 20, 1~100 범위를 벗어나면 클램핑 없이 400 `VALIDATION_ERROR`로 거부한다 (형제 API와 동일 규칙).
-- [ ] **정렬 기준은 `createdAt`(회고를 처음 쓴 시점) 내림차순**이며, 동시각 동점은 체결 ID 내림차순으로 끊는다. `updatedAt` 기준으로 정렬하지 않는다 — 방금 수정한 오래된 회고가 목록 맨 위로 튀어 "최신순"의 의미가 흔들린다.
-- [ ] 각 항목은 회고 종류(`journalType`: `BUY`|`SELL`)와 **원래 체결 ID**(`buyTradeId` 또는 `sellTradeId` 중 해당하는 쪽)로 식별한다. **통합 `journalId`를 노출하지 않는다** — JOUR-005의 식별자 체계를 선점하지 않기 위해서다.
-- [ ] **항목 필드는 `journalType`·`buyTradeId`·`sellTradeId`·`content`·`createdAt`·`updatedAt` 6개 고정**이다. 매수 항목은 `sellTradeId`가, 매도 항목은 `buyTradeId`가 `null`이다. 종목·가격·수량·실현손익 등 체결 정보는 넣지 않는다(`GET /api/trades`가 정본). wrapper는 형제 API와 같은 `content`·`nextCursor`·`hasNext` 3필드다.
-- [ ] 다른 사용자의 투자일기는 목록에 섞이지 않는다. 조회 대상은 요청 파라미터가 아니라 Access Token의 인증 사용자로 결정한다.
-- [ ] 투자일기가 하나도 없으면 오류가 아니라 빈 목록(`content: []`, `nextCursor: null`, `hasNext: false`)을 반환한다.
-- [ ] 조회는 **읽기 전용**이다. 주문·체결·계좌·잔액·보유·FIFO lot·실현손익 원장은 물론 투자일기 자체도 변경하지 않는다.
+- [x] `GET /api/journal?market=&cursor=&limit=`로 인증 사용자 본인의 투자일기 목록을 조회한다.
+- [x] 매수 회고(`buy_trade_journals`)와 매도 회고(`sell_trade_journals`)를 **한 목록에 섞어** 반환한다. 두 종류를 따로 조회하는 엔드포인트를 만들지 않는다.
+- [x] `market`은 **필수** 파라미터다. `STOCK`|`CRYPTO` 리터럴만 허용하며, 두 시장을 합친 통합 조회는 이번 범위에 없다 (PORT-002 `GET /api/trades`·PORT-003 `GET /api/orders`와 동일).
+- [x] **커서 기반 페이지네이션**을 쓰고 최신순으로 정렬한다. `cursor`·`limit`은 선택이며 `limit` 기본 20, 1~100 범위를 벗어나면 클램핑 없이 400 `VALIDATION_ERROR`로 거부한다 (형제 API와 동일 규칙).
+- [x] **정렬 기준은 `createdAt`(회고를 처음 쓴 시점) 내림차순**이며, 동시각 동점은 체결 ID 내림차순으로 끊는다. `updatedAt` 기준으로 정렬하지 않는다 — 방금 수정한 오래된 회고가 목록 맨 위로 튀어 "최신순"의 의미가 흔들린다.
+- [x] 각 항목은 회고 종류(`journalType`: `BUY`|`SELL`)와 **원래 체결 ID**(`buyTradeId` 또는 `sellTradeId` 중 해당하는 쪽)로 식별한다. **통합 `journalId`를 노출하지 않는다** — JOUR-005의 식별자 체계를 선점하지 않기 위해서다.
+- [x] **항목 필드는 `journalType`·`buyTradeId`·`sellTradeId`·`content`·`createdAt`·`updatedAt` 6개 고정**이다. 매수 항목은 `sellTradeId`가, 매도 항목은 `buyTradeId`가 `null`이다. 종목·가격·수량·실현손익 등 체결 정보는 넣지 않는다(`GET /api/trades`가 정본). wrapper는 형제 API와 같은 `content`·`nextCursor`·`hasNext` 3필드다.
+- [x] 다른 사용자의 투자일기는 목록에 섞이지 않는다. 조회 대상은 요청 파라미터가 아니라 Access Token의 인증 사용자로 결정한다.
+- [x] 투자일기가 하나도 없으면 오류가 아니라 빈 목록(`content: []`, `nextCursor: null`, `hasNext: false`)을 반환한다.
+- [x] 조회는 **읽기 전용**이다. 주문·체결·계좌·잔액·보유·FIFO lot·실현손익 원장은 물론 투자일기 자체도 변경하지 않는다.
 
 ## 비즈니스 규칙
 
@@ -221,16 +221,16 @@
 - [x] **`docs/prd.md` JOUR-002의 Decision Gate 문구와 `docs/specs/005-order-sell/spec.md`의 잠금 규정을 이번 결정으로 갱신한다** (2026-08-04 반영 완료 — 문서 커밋).
 - [x] `./gradlew build` 통과 (PR [#201](https://github.com/finplay-team/finplay/pull/201) 머지).
 
-### 5차 착수 (JOUR-006, 이슈 #203) — 이번 범위
+### 5차 착수 (JOUR-006, 이슈 #203) — 완료
 
-- [ ] 본인 매수·매도 회고가 **섞인 목록이 `createdAt` 내림차순(동시각은 체결 ID 내림차순)으로** 조회되는 통합 테스트 통과. 항목마다 `journalType`이 맞게 붙고 해당하지 않는 체결 ID 필드는 `null`이다.
-- [ ] **`market` 필터가 매수·매도 두 회고 타입 모두에 적용되는 테스트 통과** — 같은 사용자의 다른 시장(`CRYPTO`) 회고가 `market=STOCK` 조회 결과에 섞이지 않는다.
-- [ ] **커서 페이지네이션 테스트 통과** — 첫 페이지의 `nextCursor`로 다음 페이지를 이어 받아 중복·누락이 없고, 마지막 페이지는 `nextCursor: null`·`hasNext: false`다. **매수·매도 회고가 `createdAt` 동시각으로 경계에 걸치는 경우**를 포함한다(체결 ID tie-break가 실제로 동작하는지 고정하는 회귀 테스트).
-- [ ] **`limit` 범위 밖(0·101) 400 `VALIDATION_ERROR`**(클램핑 없음) · `market` 누락·미지원 리터럴 400 · 커서 파싱 실패 400 · 미인증 401 거부 테스트 통과.
-- [ ] 다른 사용자의 투자일기가 목록에 섞이지 않는 테스트 통과.
-- [ ] 투자일기가 하나도 없는 사용자가 200 빈 목록(`content: []`·`nextCursor: null`·`hasNext: false`)을 받는 테스트 통과.
-- [ ] **응답에 통합 `journalId`가 없음을 고정하는 계약 테스트 통과** — JOUR-005 식별자 체계를 선점하지 않았다는 근거다 (§비즈니스 규칙 "JOUR-005 식별자 게이트를 선점하지 않는다").
-- [ ] 조회 전후 투자일기·주문·체결·계좌·잔액·보유·손익 데이터가 전혀 변하지 않음을 확인한다(읽기 전용).
-- [ ] 기존 4개 계약(`POST`·`PATCH .../journal`, `POST`·`PATCH .../sell-journal`)과 그 테스트가 그대로 통과한다. **신규 Flyway 마이그레이션이 없다** — 이번 착수는 스키마를 바꾸지 않는다.
-- [ ] **`docs/api-routes.md`·`docs/api-contracts.md`에 신규 엔드포인트를 같은 커밋에서 반영한다** (CLAUDE.md 규칙 7).
-- [ ] `./gradlew build` 통과.
+- [x] 본인 매수·매도 회고가 **섞인 목록이 `createdAt` 내림차순(동시각은 체결 ID 내림차순)으로** 조회되는 통합 테스트 통과. 항목마다 `journalType`이 맞게 붙고 해당하지 않는 체결 ID 필드는 `null`이다.
+- [x] **`market` 필터가 매수·매도 두 회고 타입 모두에 적용되는 테스트 통과** — 같은 사용자의 다른 시장(`CRYPTO`) 회고가 `market=STOCK` 조회 결과에 섞이지 않는다.
+- [x] **커서 페이지네이션 테스트 통과** — 첫 페이지의 `nextCursor`로 다음 페이지를 이어 받아 중복·누락이 없고, 마지막 페이지는 `nextCursor: null`·`hasNext: false`다. **매수·매도 회고가 `createdAt` 동시각으로 경계에 걸치는 경우**를 포함한다(체결 ID tie-break가 실제로 동작하는지 고정하는 회귀 테스트).
+- [x] **`limit` 범위 밖(0·101) 400 `VALIDATION_ERROR`**(클램핑 없음) · `market` 누락·미지원 리터럴 400 · 커서 파싱 실패 400 · 미인증 401 거부 테스트 통과.
+- [x] 다른 사용자의 투자일기가 목록에 섞이지 않는 테스트 통과.
+- [x] 투자일기가 하나도 없는 사용자가 200 빈 목록(`content: []`·`nextCursor: null`·`hasNext: false`)을 받는 테스트 통과.
+- [x] **응답에 통합 `journalId`가 없음을 고정하는 계약 테스트 통과** — JOUR-005 식별자 체계를 선점하지 않았다는 근거다 (§비즈니스 규칙 "JOUR-005 식별자 게이트를 선점하지 않는다").
+- [x] 조회 전후 투자일기·주문·체결·계좌·잔액·보유·손익 데이터가 전혀 변하지 않음을 확인한다(읽기 전용).
+- [x] 기존 4개 계약(`POST`·`PATCH .../journal`, `POST`·`PATCH .../sell-journal`)과 그 테스트가 그대로 통과한다. **신규 Flyway 마이그레이션이 없다** — 이번 착수는 스키마를 바꾸지 않는다.
+- [x] **`docs/api-routes.md`·`docs/api-contracts.md`에 신규 엔드포인트를 같은 커밋에서 반영한다** (CLAUDE.md 규칙 7).
+- [x] `./gradlew build` 통과.

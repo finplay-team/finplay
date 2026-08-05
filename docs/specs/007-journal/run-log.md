@@ -22,6 +22,7 @@
 | L1 | implementer | `./gradlew compileJava` | plan.md §JOUR-006 §커서 인코딩 형식·§데이터 접근 설계(코드 스니펫), tasks.md L1, `TradeCursor`·`TradeRepositoryCustom`/`Impl`(`order/`) 선례 그대로 미러링, ADR-0002 |
 | L2 | implementer | `./gradlew compileJava` | plan.md §`JournalService.getMyJournalEntries`(1~7단계), tasks.md L2, `TradeService.getMyTrades` 선례(`limit+1` 페치→hasNext 판정→커서 인코딩), ADR-0002 |
 | L3 | implementer | `./gradlew compileJava` | plan.md §`JournalListController`, tasks.md L3, `TradeController.getMyTrades` 선례(검증·레이어 규칙 그대로 복제), CLAUDE.md 규칙 7 |
+| 리뷰(L) | reviewer(리뷰) | `git diff dev...HEAD`, `./gradlew compileJava compileTestJava spotlessCheck -q` | conventions.md, ADR-0002, ADR-0003, ADR-0004, spec.md JOUR-006, plan.md §JOUR-006, tasks.md §JOUR-006 |
 
 ## 모니터링 (사람용 요약)
 - 항목1 — `V14__create_buy_trade_journals.sql` + `BuyTradeJournal` 엔티티 + `BuyTradeJournalRepository` 추가, compileJava 통과. (이후 `dev`에 먼저 병합된 `V14__create_favorites.sql`과 번호가 겹쳐 `V15__create_buy_trade_journals.sql`로 재번호화됨 — plan.md §데이터 모델 참고)
@@ -45,3 +46,4 @@
 - L1 — `JournalCursor`(`journal.service`, `TradeCursor`와 동형이나 `encode(createdAt, tradeId)`가 값 2개를 직접 받음) + `BuyTradeJournalRepositoryCustom`/`Impl`·`SellTradeJournalRepositoryCustom`/`Impl`(각각 `buyTrade.account.id`/`sellTrade.account.id` 단일 조건으로 market+소유권 결합, `fetchJoin`, `createdAt.desc()`+체결ID `desc()` 정렬) 추가, 기존 두 `~Repository`가 각각 Custom 인터페이스 상속하도록 수정, `QBuyTradeJournal`/`QSellTradeJournal`은 어노테이션 프로세서가 자동 생성(별도 조치 불필요 확인), `JournalService`·컨트롤러·DTO·마이그레이션은 범위 밖이라 미착수, compileJava 통과.
 - L2 — `JournalService.getMyJournalEntries` 추가(`AccountService` 신규 주입, 두 리포지토리에 동일 커서 값 전달, 스트림 병합·`(createdAt, 체결ID)` 내림차순 정렬 후 `limit+1`건 자름→`hasNext`→`nextCursor` 인코딩) + `JournalListItemResponse`(6필드, `from(BuyTradeJournal)`/`from(SellTradeJournal)` 오버로드)·`JournalListResponse`(`TradeListResponse`와 동형) 최소 추가, 컨트롤러(`JournalListController`)는 L3 범위라 미착수, 테스트는 tester 담당이라 미작성, compileJava 통과.
 - L3 — `JournalListController`(`GET /api/journal`) 추가(`TradeController.getMyTrades` 그대로 복제, 비즈니스 로직 없음), DTO 2개는 L2에서 이미 만들어져 신규 파일 없음, `docs/api-routes.md`(journal 행 1개)·`docs/api-contracts.md`(## journal 절에 목록 조회 소절 추가, 기존 `JournalController` 4개 엔드포인트 무변경) 같은 커밋 대상으로 갱신, 테스트는 tester 담당이라 미작성, compileJava 통과.
+- 리뷰(L) — 차단 0건. `journalId` 미노출·`createdAt` 정렬·market+소유권 결합 조건·병합 로직(limit+1 페치→병합→슬라이스→hasNext/nextCursor)·기존 4개 계약 무변경·신규 마이그레이션 없음·문서 동기화 모두 spec.md·plan.md와 일치 확인. 테스트(단위·슬라이스·통합) 전부 실질적 assertion 보유, 페이지 경계 tie-break 통합 테스트로 고정됨. 머지 가능.
