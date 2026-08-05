@@ -5,6 +5,7 @@ import com.finplay.api.account.domain.Account;
 import com.finplay.api.account.domain.Market;
 import com.finplay.api.account.service.AccountService;
 import com.finplay.api.ranking.dto.RankingEntryDto;
+import com.finplay.api.ranking.dto.response.MyRankingResponse;
 import com.finplay.api.ranking.dto.response.RankingListItemResponse;
 import com.finplay.api.ranking.dto.response.RankingListResponse;
 import com.finplay.api.ranking.store.RankingStore;
@@ -61,6 +62,30 @@ public class RankingService {
 
 		List<RankingListItemResponse> content = calculateRanks(window, market, accountById, limit);
 		return new RankingListResponse(market.name(), content);
+	}
+
+	// 인증 사용자 본인의 시장별 순위를 단건으로 계산한다(RANK-002). RANK-001의 topN 목록과 달리 상위 limit건
+	// 안에 들지 않아도 항상 정확한 보정 순위를 반환한다. 순위 산정의 score는 항상 Redis ZSET(RankingStore.score)
+	// 기준이다 — DB accounts.realized_pnl을 직접 재사용하지 않는다. RANK-001 목록 조회와 동일한 ZSET 상태를
+	// 기준으로 계산해야 두 엔드포인트가 서로 다른 순위를 보여주는 불일치가 생기지 않기 때문이다(plan.md
+	// "RANK-002 설계" 참고). realizedPnl도 이 score를 그대로 노출한다(PR #234 리뷰 차단) — rank를 계산한 값과
+	// 다른 값(DB accounts.realized_pnl)을 응답에 함께 실으면, after-commit 반영 지연·재시도 소진 등으로 두 값이
+	// 어긋난 계좌에서 "이 손익, 이 순위"가 서로 대응하지 않는 응답이 나간다. score가 null(매도 이력 없음)이면
+	// DB realized_pnl도 항상 0이므로(이력 없는 계좌는 갱신된 적이 없다) 0을 그대로 써도 값이 갈리지 않는다.
+	// 형제 메서드 getRankings와 동일한 패턴(PR #234 리뷰 권장 반영): 이 메서드 자체는 트랜잭션으로 감싸지 않는다
+	// — accountService.getAccountForWithUser가 User를 fetch join으로 미리 로딩해 자신의 트랜잭션 안에서 끝내므로,
+	// 이후 account.getUser().getNickname() 접근과 Redis 왕복 2회가 전부 트랜잭션 밖에서 일어나 DB 커넥션을
+	// 점유하지 않는다.
+	public MyRankingResponse getMyRanking(Long userId, Market market) {
+		Account account = accountService.getAccountForWithUser(userId, market);
+		Long score = rankingStore.score(market, account.getId());
+		Integer rank = score == null
+			? null
+			// RANK-001과 동일한 공동 순위 보정 공식(countStrictlyGreater + 1)을 재사용한다 — 별도의 새 보정
+			// 공식을 만들지 않는다.
+			: (int)(rankingStore.countStrictlyGreater(market, score) + 1);
+		long realizedPnl = score == null ? 0L : score;
+		return new MyRankingResponse(market.name(), rank, account.getUser().getNickname(), realizedPnl);
 	}
 
 	// PR #196 리뷰 지적(차단 2): topN(limit)만 가져오면 "어떤 동점자가 window에 들어갈지"가 Redis 멤버 문자열의

@@ -67,6 +67,23 @@ class AccountRepositoryTest {
 	}
 
 	@Test
+	void findByUserIdAndMarketFetchUserReturnsTheMatchingMarketAccountWithUserFetched() {
+		Optional<Account> result = accountRepository.findByUserIdAndMarketFetchUser(user.getId(), Market.STOCK);
+
+		assertThat(result).isPresent();
+		assertThat(result.get().getId()).isEqualTo(stockAccount.getId());
+		assertThat(result.get().getUser().getId()).isEqualTo(user.getId());
+		assertThat(result.get().getUser().getNickname()).isEqualTo(user.getNickname());
+	}
+
+	@Test
+	void findByUserIdAndMarketFetchUserReturnsEmptyWhenNoMatchingAccount() {
+		Optional<Account> result = accountRepository.findByUserIdAndMarketFetchUser(999_999L, Market.STOCK);
+
+		assertThat(result).isEmpty();
+	}
+
+	@Test
 	void findAllByIdInFetchUserReturnsAccountsWithUserFetchedForRequestedIdsOnly() {
 		User otherUser = userRepository.saveAndFlush(
 			User.create("other@finplay.com", "password-hash", "other", NOW));

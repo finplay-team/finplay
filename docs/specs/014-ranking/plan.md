@@ -301,3 +301,117 @@ com.finplay.api.order.service.OrderExecutionService (기존 파일 — 수정)
   - 매도 요청이 검증 실패로 커밋되지 않는 경우(예: 보유수량 부족) `ranking:{market}` ZSET에 해당 계좌가 추가되지 않는지(커밋 전 반영 없음 확인).
   - Redis 컨테이너를 일시 정지시키거나 `RankingStore`를 실패하도록 구성한 상태에서 매도 체결 API를 호출해도 주문·체결·계좌 갱신이 정상 200으로 성공하는지(랭킹 갱신 실패가 체결에 영향 없음).
   - 매도 이력이 없는 계좌는 `GET /api/rankings` 목록·순위 산정에 나타나지 않는지, 동점자 공동 순위(공동 1위 2명 다음 3위)가 실제 Redis 데이터로 검증되는지.
+
+## RANK-002 설계 (`GET /api/rankings/me`, 이슈 #233)
+
+### 관련 문서
+
+- Spec: `./spec.md` "RANK-002 내 랭킹 조회"
+- PRD: `docs/prd.md` "RANK-002 내 랭킹 조회"(2026-08-05 확정)
+- ADR-0002(레이어드 아키텍처) — 이번에도 `RankingService`가 `AccountRepository`를 직접 주입하지 않고 `AccountService`를 통해 계좌를 조회한다. 최초 설계는 기존 `getAccountFor(userId, market)`를 재사용했으나(신규 repository 메서드 불필요), PR #234 리뷰 권장 반영으로 fetch join 전용 신규 메서드 `getAccountForWithUser(userId, market)`(내부적으로 `AccountRepository.findByUserIdAndMarketFetchUser` 신규 쿼리 사용)로 바꿨다 — 아래 "계좌 하나의 score를 얻는 방법" 다음 절 참고.
+- **코드 확인 결과 (구현 착수 전 필수 확인)**: 실제 `RankingStore`/`RankingService`(`src/main/java/com/finplay/api/ranking/`)를 읽어 아래를 확인했다 — plan.md 위쪽 6절의 최초 스케치(`Range.rightUnbounded(...)`)는 실제로는 쓰이지 않았고, `countStrictlyGreater(Market, long score)`(score는 `long`, `count(key, lowerBound, +INF)` 오버로드 사용)로 구현돼 있다(PR #196 리뷰 반영, 위 8절 참고). RANK-002는 이 **실제 시그니처**(`long` 파라미터)를 그대로 재사용한다. 6절이 예고한 "`calculateRanks`를 private으로 분리해 재사용" 방식은 그대로는 재사용하지 않는다 — `calculateRanks`는 "여러 accountId의 window를 한 번에 정렬·매핑"하는 목록 전용 로직이라 단건 조회에 맞지 않는다. 대신 `calculateRanks`가 이미 쓰고 있는 원자 연산 `RankingStore.countStrictlyGreater(market, score)`를 그대로 재사용하고, "이 계좌의 score를 어떻게 얻는가"만 새로 설계한다(아래).
+
+### 계좌 하나의 score를 얻는 방법 — 핵심 결정
+
+RANK-001의 window 조회(`topN`)는 여러 accountId를 한 번에 가져오지만, RANK-002는 **로그인한 사용자 한 명의 계좌 하나**의 score만 있으면 된다. 두 가지 후보를 검토했다:
+
+1. **(채택) Redis ZSET에서 `ZSCORE`로 직접 조회한다.** `RankingStore`에 신규 메서드 `Long score(Market market, Long accountId)`를 추가한다 — `member`가 ZSET에 없으면 `null`을 반환한다(스프링 데이터 레디스 `ZSetOperations.score(key, member)`가 이미 이 시맨틱을 제공). 이 `null` 여부가 곧 "매도 이력 있음/없음" 판정이다(RANK-001이 "ZSET에 member가 없으면 매도 이력 없음"으로 취급하는 것과 완전히 같은 원칙, PRD 2026-08-05 확정 문구가 명시).
+2. **(기각) DB `accounts.realized_pnl`을 그대로 읽어 `countStrictlyGreater`에 넘긴다.** 이러면 "매도 이력 있음/없음" 판정을 위해 결국 별도로 ZSET 멤버십을 확인해야 하므로(realized_pnl은 이력이 없어도 항상 0으로 존재해 그 값만으로는 이력 유무를 알 수 없다) Redis 호출이 어차피 필요해진다. 게다가 RANK-001의 `topN` 목록은 ZSET 상태를 기준으로 산정되므로, 순위 계산에 쓰는 score가 DB 값(잠재적으로 after-commit 이벤트 처리 지연으로 ZSET과 순간적으로 어긋날 수 있음, 위 Decision Gate 참고)이면 같은 화면(랭킹)에 대해 RANK-001 목록과 RANK-002 단건 조회가 서로 다른 순위를 보여줄 가능성이 생긴다. **채택안은 이 불일치 가능성을 원천적으로 없앤다** — 순위 계산의 입력값 출처를 항상 ZSET 하나로 통일한다.
+
+이 결정에 따라 **신규 Redis 키·자료구조는 필요 없다** — 기존 `ranking:{market}` ZSET에 대해 조회 커맨드(`ZSCORE`)를 하나 더 쓰는 것뿐이다(오케스트레이터가 제시한 가설을 코드 확인으로 확정함).
+
+```java
+// RankingStore (기존 파일 — 메서드 추가)
+// 계좌 하나의 score를 조회한다. ZSET에 member가 없으면(매도 이력 없음) null을 반환한다.
+public Long score(Market market, Long accountId) {
+    Double raw = redisTemplate.opsForZSet().score(key(market), String.valueOf(accountId));
+    return raw == null ? null : Math.round(raw); // topN()과 동일하게 정수 score로 취급
+}
+```
+
+### `RankingService.getMyRanking(Long userId, Market market)` (신규)
+
+```java
+// 형제 메서드 getRankings와 동일한 패턴(PR #234 리뷰 권장 반영) — 이 메서드는 트랜잭션으로 감싸지 않는다.
+// accountService.getAccountForWithUser가 User를 fetch join으로 미리 로딩해 자신의 트랜잭션 안에서 끝내므로,
+// account.getUser() 접근과 Redis 왕복 2회(score, countStrictlyGreater)가 전부 트랜잭션 밖에서 일어나 그동안
+// DB 커넥션을 점유하지 않는다. 최초 설계(TradeService.getMyTrades와 동일한 패턴, @Transactional(readOnly=true)로
+// 이 메서드 전체를 감싸는 방식)는 Redis 왕복 두 번이 끝날 때까지 DB 커넥션을 쥐고 있는 문제가 있었다.
+public MyRankingResponse getMyRanking(Long userId, Market market) {
+    Account account = accountService.getAccountForWithUser(userId, market);
+    Long score = rankingStore.score(market, account.getId());
+    Integer rank = score == null
+        ? null
+        : (int)(rankingStore.countStrictlyGreater(market, score) + 1); // RANK-001과 동일한 보정 공식 재사용
+    long realizedPnl = score == null ? 0L : score; // rank와 같은 출처(ZSET)에서 뽑는다 — PR #234 리뷰 차단 반영
+    return new MyRankingResponse(
+        market.name(), rank, account.getUser().getNickname(), realizedPnl);
+}
+```
+
+- **`accountService.getAccountForWithUser`가 `NOT_FOUND`를 던질 수 있는가**: ACCT-001에 따라 회원가입 시 STOCK·CRYPTO 계좌가 함께 생성되므로, 인증된 사용자 + 유효한 `market` 조합에서는 정상적으로 발생하지 않는다(방어적 경로로만 존재, 신규 오류 코드 불필요).
+- **`nickname`·`realizedPnl`은 매도 이력과 무관하게 항상 채운다.** `nickname`은 `account`(`getAccountForWithUser`로 항상 조회됨)에서 채운다. **`realizedPnl`은 DB `account.getRealizedPnl()`이 아니라 `rank` 계산에 쓴 것과 같은 `score`(ZSET)에서 채운다** — 최초 설계는 DB 값을 그대로 썼으나, `rank`는 ZSET 기준으로 계산하면서 `realizedPnl`만 DB를 그대로 노출하면 after-commit 반영 지연·Redis 재시도 소진 등으로 두 값이 어긋난 계좌에서 "이 손익, 이 순위"가 응답 안에서 서로 대응하지 않는 차단 사유가 된다(PR #234 리뷰 반영). `score`가 `null`(매도 이력 없음)이면 0을 쓴다 — 이 경우 DB `realized_pnl`도 항상 0이라(이력 없는 계좌는 `refreshScore`가 호출된 적이 없다) 값이 갈리지 않는다. null이 되는 것은 `rank`뿐이다(spec.md "비즈니스 규칙" 참고).
+- **다른 사용자 조회 방지**: 파라미터로 accountId·userId를 받지 않고 인증 컨텍스트의 `userId`만 쓰므로, `TradeService.getOwnedTrade`류의 별도 소유권 검증(`FORBIDDEN`)이 구조적으로 불필요하다.
+
+### `MyRankingResponse` (신규, `ranking/dto/response`)
+
+```java
+public record MyRankingResponse(String market, Integer rank, String nickname, long realizedPnl) {
+}
+```
+
+- `rank`는 `Integer`(boxed) — `RankingListItemResponse.rank`(`int`, 항상 값 있음)와 달리 이 응답은 "매도 이력 없음"을 JSON `null`로 표현해야 하므로 boxing이 필수다.
+- `market`을 항목에 다시 포함하는 이유: 이 응답은 `RankingListResponse`처럼 여러 항목을 감싸는 wrapper가 아니라 단건이라, market을 wrapper에만 두는 RANK-001 규칙(41행)이 적용되지 않는다 — 단건 응답이므로 필드로 직접 포함하는 것이 자연스럽다.
+
+### `RankingController` (기존 파일 — 엔드포인트 추가)
+
+```java
+// AccountController.getAccountSummary와 동일한 인증 패턴: @AuthenticationPrincipal AuthenticatedUser + principal.userId()
+@GetMapping("/me")
+public ResponseEntity<MyRankingResponse> getMyRanking(
+    @AuthenticationPrincipal
+    AuthenticatedUser principal,
+    @RequestParam
+    Market market) {
+    return ResponseEntity.ok(rankingService.getMyRanking(principal.userId(), market));
+}
+```
+
+- `/api/rankings/me`는 기존 `@RequestMapping("/api/rankings")` 아래 하위 경로라 라우팅 충돌이 없다(루트 `GET /api/rankings`와 별개 매핑).
+- 인증 보호: 다른 인증 필요 GET과 동일하게 `SecurityConfig`의 `anyRequest().authenticated()`로 이미 보호된다. `PUBLIC_GET_PATHS`에 추가하지 않는다(RANK-001과 동일 원칙, plan.md 245행).
+
+## API 설계 (RANK-002 추가)
+
+| Method | URL | 요청 | 응답 | 설명 |
+|---|---|---|---|---|
+| GET | `/api/rankings/me?market=` | `market`(필수) | `MyRankingResponse` | 인증 사용자 본인의 시장별 실현손익 순위 단건 조회. 인증 필요, 대상은 항상 요청자 본인(파라미터로 다른 사용자 지정 불가) |
+
+## 입력 명세 (RANK-002 추가)
+
+| 필드 | 필수 | 검증 |
+|---|---|---|
+| `market` | 필수 | RANK-001과 동일한 처리 경로 — `Market`(`STOCK`\|`CRYPTO`) 바인딩, 누락·미지원 리터럴은 400 `VALIDATION_ERROR` |
+
+## 구성요소 설계 요약 추가분 (RANK-002, 기존 `com.finplay.api.ranking` 패키지에 추가)
+
+```
+com.finplay.api.ranking
+├── controller/RankingController.java      # (기존 파일 수정) GET /api/rankings/me 추가
+├── service/RankingService.java            # (기존 파일 수정) getMyRanking(userId, market) 추가
+├── store/RankingStore.java                # (기존 파일 수정) score(market, accountId) 추가 — ZSCORE 단건 조회, null=매도 이력 없음
+└── dto/response/MyRankingResponse.java    # (신규) record(String market, Integer rank, String nickname, long realizedPnl)
+
+com.finplay.api.account                    # PR #234 리뷰 권장 반영 — 애초 계획엔 없었으나 트랜잭션·Redis 왕복 분리를 위해 추가
+├── repository/AccountRepository.java      # (기존 파일 수정) findByUserIdAndMarketFetchUser(userId, market) 추가
+└── service/AccountService.java            # (기존 파일 수정) getAccountForWithUser(userId, market) 추가
+```
+
+신규 컬럼·마이그레이션 없음(Flyway 대상 아님, ADR-0004). 신규 파일은 `MyRankingResponse` 하나이고, `account` 도메인은 기존 `Account`/`User` 엔티티 변경 없이 조회 메서드만 추가한다(PR #234 리뷰 권장 반영, 아래 "RankingService.getMyRanking" 절 참고).
+
+## 테스트 계획 (RANK-002 추가)
+
+- **단위 (`RankingStoreTest` 확장)**: `score(market, accountId)`가 ZSET에 멤버가 있으면 정수 score를, 없으면 `null`을 반환하는지(Redis mock으로 `ZSetOperations.score` stub).
+- **단위 (`RankingServiceTest` 확장, `RankingStore`/`AccountService` mock)**: `getMyRanking`이 (a) 매도 이력 없음(`score`가 null) → `rank`만 null이고 `nickname`·`realizedPnl`(0 포함)은 정상 반환, (b) 매도 이력 있음 → `countStrictlyGreater` 반환값 + 1이 `rank`로 매핑되는지, (c) 동점자가 있는 케이스에서 RANK-001과 동일한 보정 공식이 적용되는지(RANK-001의 경계 동점 처리 자체는 목록 전용이라 재검증하지 않는다 — `countStrictlyGreater` 호출 위임만 검증), (d) DB `realized_pnl`과 ZSET `score`가 어긋나도 응답은 항상 `score` 값을 쓰는지(PR #234 리뷰 차단 회귀 테스트).
+- **단위 (`AccountServiceTest`/`AccountRepositoryTest` 확장, PR #234 리뷰 권장 반영)**: `getAccountForWithUser`/`findByUserIdAndMarketFetchUser`가 `findByUserIdAndMarket`과 동일하게 계좌를 찾되 `User`까지 fetch join으로 채워 반환하는지, 미존재 시 각각 `NOT_FOUND`/빈 `Optional`을 반환하는지.
+- **슬라이스 (`@WebMvcTest RankingControllerTest` 확장)**: `market` 누락·미지원 리터럴 400, 인증 없이 요청 401, 매도 이력 없는 사용자 200(`rank: null` JSON 필드 계약), 매도 이력 있는 사용자 200(`rank`/`nickname`/`realizedPnl`/`market` 필드 계약).
+- **통합 (`RankingIntegrationTest` 확장, PR #234 리뷰 권장 반영)**: 최초 계획은 "RANK-001이 이미 검증한 ZSET 쓰기·이벤트 흐름을 그대로 재사용하므로 신규 통합 테스트 불필요"였다. 하지만 그 근거는 **쓰기 경로**만 커버하고, RANK-002가 RANK-001과 별개로 존재하는 이유인 "상위 `limit`(기본 10) 밖에서도 정확한 보정 순위를 반환한다"는 **읽기 경로**의 핵심 성질은 어떤 테스트로도 검증되지 않고 있었다(`RankingServiceTest`의 단위 테스트는 `countStrictlyGreater`를 stub해 `+1` 산술만 확인할 뿐, 실제 Redis ZSET에서 limit 밖 순위가 맞게 나오는지는 확인하지 못한다). 시나리오 5·6과 픽스처를 재사용해, 기본 limit(10)보다 많은 계좌를 커밋하고 그중 순위가 10위 밖인 계좌로 `GET /api/rankings/me`를 호출해 정확한 순위가 나오는지 확인하는 시나리오 7을 추가한다.

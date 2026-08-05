@@ -17,6 +17,7 @@ import com.finplay.api.account.domain.Market;
 import com.finplay.api.account.service.AccountService;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.ranking.dto.RankingEntryDto;
+import com.finplay.api.ranking.dto.response.MyRankingResponse;
 import com.finplay.api.ranking.dto.response.RankingListItemResponse;
 import com.finplay.api.ranking.dto.response.RankingListResponse;
 import com.finplay.api.ranking.store.RankingStore;
@@ -217,6 +218,50 @@ class RankingServiceTest {
 			new RankingListItemResponse(1, "alice", 100L),
 			new RankingListItemResponse(3, "carol", 80L));
 		verify(rankingStore, never()).findAllAtScore(any(), anyLong());
+	}
+
+	// RANK-002: 매도 이력이 없으면(RankingStore.score가 null) rank만 null이고 닉네임·실현손익(0 포함)은
+	// 정상 값을 반환한다 — 오류가 아니다(spec.md "비즈니스 규칙").
+	@Test
+	void getMyRankingReturnsNullRankWithNormalNicknameAndRealizedPnlWhenNoSellHistory() {
+		Account account = account(1L, Market.STOCK, 0L, 10L, "alice");
+		when(accountService.getAccountForWithUser(10L, Market.STOCK)).thenReturn(account);
+		when(rankingStore.score(Market.STOCK, 1L)).thenReturn(null);
+
+		MyRankingResponse response = rankingService.getMyRanking(10L, Market.STOCK);
+
+		assertThat(response).isEqualTo(new MyRankingResponse("STOCK", null, "alice", 0L));
+		verify(rankingStore, never()).countStrictlyGreater(any(), anyLong());
+	}
+
+	// RANK-002: 매도 이력이 있으면(score가 not null) RANK-001과 동일한 보정 공식(countStrictlyGreater + 1)으로
+	// rank를 계산한다 — 별도의 새 보정 공식을 만들지 않는다.
+	@Test
+	void getMyRankingMapsToCorrectedRankWhenSellHistoryExists() {
+		Account account = account(1L, Market.STOCK, 5_000L, 10L, "alice");
+		when(accountService.getAccountForWithUser(10L, Market.STOCK)).thenReturn(account);
+		when(rankingStore.score(Market.STOCK, 1L)).thenReturn(5_000L);
+		when(rankingStore.countStrictlyGreater(Market.STOCK, 5_000L)).thenReturn(2L);
+
+		MyRankingResponse response = rankingService.getMyRanking(10L, Market.STOCK);
+
+		assertThat(response).isEqualTo(new MyRankingResponse("STOCK", 3, "alice", 5_000L));
+	}
+
+	// PR #234 리뷰 차단 반영: DB accounts.realized_pnl과 Redis ZSET score가 어긋난 경우(after-commit 반영 지연·
+	// 재시도 소진 등), rank 계산에 쓴 score와 다른 값(DB 값)을 realizedPnl로 내보내면 한 응답 안에서 "이 손익,
+	// 이 순위"가 서로 대응하지 않게 된다. realizedPnl도 rank와 같은 출처(ZSET score)에서 나와야 한다.
+	@Test
+	void getMyRankingUsesZsetScoreNotDbRealizedPnlWhenTheyDiverge() {
+		Account account = account(1L, Market.STOCK, 120_000L, 10L, "alice"); // DB는 120,000이지만
+		when(accountService.getAccountForWithUser(10L, Market.STOCK)).thenReturn(account);
+		when(rankingStore.score(Market.STOCK, 1L)).thenReturn(50_000L); // ZSET score는 50,000으로 갈라진 상태
+		when(rankingStore.countStrictlyGreater(Market.STOCK, 50_000L)).thenReturn(2L);
+
+		MyRankingResponse response = rankingService.getMyRanking(10L, Market.STOCK);
+
+		// rank(3)를 계산한 근거인 50,000이 realizedPnl에도 그대로 나와야 한다 — DB의 120,000이 아니다.
+		assertThat(response).isEqualTo(new MyRankingResponse("STOCK", 3, "alice", 50_000L));
 	}
 
 	private Market market() {

@@ -5,6 +5,8 @@
 > PRD 근거: **RANK-001**(`docs/prd.md` "랭킹" 절, 2026-08-03 정책 확정 이슈 [#139](https://github.com/finplay-team/finplay/issues/139) — 완료). RANK-002(`GET /api/rankings/me`, 내 랭킹 조회)는 이 spec이 만드는 인프라·보정 로직을 재사용하는 후속 이슈에서 같은 spec 파일에 이어서 기록한다(이번 착수 범위 아님).
 >
 > **문서 동기화 상태**: 이 spec 확정 시점에 아직 컨트롤러가 없다. 구현 착수 시 `docs/api-routes.md`·`docs/api-contracts.md`에 `GET /api/rankings` 계약을 같은 커밋에서 추가한다(CLAUDE.md 규칙 7).
+>
+> **RANK-002 착수 (2026-08-05, 이슈 [#233](https://github.com/finplay-team/finplay/issues/233))**: 아래 "RANK-002 내 랭킹 조회" 절에 요구사항·완료 조건을 이어서 기록한다. RANK-002도 착수 시점에 아직 컨트롤러가 없다 — 구현 착수 시 `docs/api-routes.md`·`docs/api-contracts.md`에 `GET /api/rankings/me` 계약을 같은 커밋에서 추가한다.
 
 ## 개요
 
@@ -75,4 +77,54 @@
 - [ ] `docs/api-routes.md`·`docs/api-contracts.md`에 `GET /api/rankings` 계약이 추가된다(컨트롤러 변경과 같은 커밋, CLAUDE.md 규칙 7)
 - [ ] 신규 `docs/specs/014-ranking/spec.md`를 작성해 RANK-001 요구사항 및 Decision Gate 확정 결과를 정식 spec으로 기록한다(RANK-002는 후속 이슈에서 같은 spec에 이어서 기록)
 - [ ] 단위(서비스 로직, Redis mock)·슬라이스(`@DataJpaTest`/`@WebMvcTest`)·통합(Testcontainers MySQL + Redis, 매도 체결→커밋→ZSET 반영 전체 흐름) 테스트를 작성한다(`docs/adr/0003-testing-strategy.md` 기준)
+- [ ] `./gradlew build` 통과
+
+## RANK-002 내 랭킹 조회 (2차 MVP)
+
+> 이슈 [#233](https://github.com/finplay-team/finplay/issues/233). PRD 근거: `docs/prd.md` "RANK-002 내 랭킹 조회" 절(2026-08-05 정책 확정). 아래 요구사항·완료 조건은 위 RANK-001이 만든 Redis ZSET(`ranking:{market}`)·공동 순위 보정 로직(`countStrictlyGreater`)을 재사용한다 — 새 Redis 키·자료구조를 만들지 않는다(근거는 `plan.md` "RANK-002 설계").
+
+### 개요
+
+인증 사용자 본인의 시장별 실현손익 순위를 단건으로 조회하는 기능이다. RANK-001의 전체 랭킹 목록과 달리 상위 `limit`건 안에 들지 않아도 본인 순위는 항상 계산·반환된다.
+
+### 사용자 시나리오
+
+- 사용자는 `market=STOCK` 또는 `market=CRYPTO`로 본인의 실현손익 순위를 조회한다.
+- 사용자가 RANK-001 전체 랭킹의 상위 노출 구간(예: 기본 10건) 안에 들지 않아도, 본인 순위는 정확한 보정값으로 반환된다.
+- 사용자가 한 번도 매도 체결을 한 적이 없으면, 순위 필드가 null인 응답을 받는다 — 오류가 아니며 닉네임·실현손익(0)은 정상적으로 채워진다.
+- 사용자는 자신의 순위만 조회할 수 있다. 다른 회원의 accountId·userId를 지정해 조회하는 기능은 없다.
+
+### 요구사항
+
+- [ ] `GET /api/rankings/me?market=`가 `market`(필수, RANK-001과 동일)을 받는다. 대상 사용자는 인증 토큰의 본인으로 고정되며, 다른 사용자를 지정하는 파라미터는 받지 않는다.
+- [ ] `market` 누락·미지원 리터럴은 RANK-001과 동일하게 400 `VALIDATION_ERROR`로 거부된다.
+- [ ] 인증되지 않은 요청은 401로 거부된다(다른 인증 필요 GET과 동일, `SecurityConfig` 기본 보호 재사용 — 별도 설정 추가 없음).
+- [ ] 상위 `limit`건 안에 들지 않아도 본인의 정확한 보정 순위를 반환한다(순위표 노출 여부와 무관하게 계산).
+- [ ] 순위는 RANK-001과 동일한 공동 순위 보정(`countStrictlyGreater` 기반)을 재사용해 계산한다 — 별도의 새 보정 공식을 만들지 않는다.
+- [ ] 매도 체결 이력이 없는 사용자는 전용 상태값·오류 코드를 새로 만들지 않고 순위 필드만 null로 반환한다. 닉네임·실현손익은 매도 이력 유무와 무관하게 정상 값을 반환한다(근거는 아래 "비즈니스 규칙").
+- [ ] 응답의 닉네임은 RANK-001과 동일하게 마스킹 없이 노출한다.
+
+### 비즈니스 규칙
+
+- **본인만 조회 가능하다.** 인증 토큰의 userId만 사용하고 요청 파라미터로 대상 사용자를 지정하지 않는다 — 구조적으로 타인 조회가 불가능하다(별도 권한 검사 로직 불필요).
+- **순위 산정은 RANK-001과 동일하게 ZSET 상태를 기준으로 한다.** 매도 이력 유무 판정과 순위 계산에 쓰는 score는 모두 Redis ZSET에서 조회한 값을 쓴다 — DB `accounts.realized_pnl`을 직접 재사용하지 않는다. 근거: RANK-001 목록 조회와 동일한 순간의 ZSET 상태를 기준으로 계산해야 두 엔드포인트가 서로 다른 순위를 보여주는 불일치가 생기지 않는다(세부는 `plan.md`).
+- **닉네임·실현손익 필드는 매도 이력과 무관하게 항상 채운다.** 닉네임은 회원 정보에서 채운다. **실현손익은 위 순위 산정과 같은 출처(ZSET score)에서 채운다** — DB `accounts.realized_pnl`을 그대로 노출하면 rank가 근거로 삼은 값과 응답 안에서 서로 어긋날 수 있기 때문이다(PR #234 리뷰 반영, 세부는 `plan.md`). 매도 이력이 없으면 두 값(ZSET score·DB realized_pnl) 모두 0이므로 이 경우엔 값이 갈리지 않는다. "랭킹 목록 대상에서 제외됨"(RANK-001)과 "본인 조회 응답에 참고 정보가 없음"은 다른 개념이다 — null이 되는 것은 순위(rank) 필드뿐이다.
+
+### 범위 제외
+
+- Redis 유실 시 MySQL 원장으로부터의 재구성 배치 — 이슈 #233이 명시적으로 제외했다. RANK-001에도 동일하게 남아 있는 미해결 Decision Gate로, 별도 이슈로 남긴다.
+- 신규 오류 코드 — 기존 `VALIDATION_ERROR`(market 검증)·401(미인증)을 재사용한다. 추가 코드 없음(`NOT_FOUND`는 정상 가입 사용자라면 발생하지 않는 방어적 경로 — 아래 `plan.md` 참고).
+- 신규 Redis 키·자료구조 — RANK-001의 `ranking:{market}` ZSET을 그대로 재사용한다. 새 키 설계는 이 이슈의 범위가 아니다.
+
+### 완료 조건
+
+- [ ] `GET /api/rankings/me?market=`가 `market`(필수)을 받고, 인증 사용자 본인의 순위만 반환한다
+- [ ] `market` 누락·미지원 리터럴은 400 `VALIDATION_ERROR`로 거부된다
+- [ ] 인증 없이 요청하면 401로 거부된다
+- [ ] 상위 limit건에 들지 않아도 정확한 보정 순위를 반환한다(RANK-001의 `countStrictlyGreater` 로직 재사용, 세부는 `plan.md`)
+- [ ] 매도 체결 이력이 없는 사용자는 순위 필드만 null이고, 닉네임·실현손익(0)은 정상 값을 반환한다(오류가 아님)
+- [ ] 닉네임은 마스킹 없이 노출한다
+- [ ] `docs/api-routes.md`·`docs/api-contracts.md`에 `GET /api/rankings/me` 계약이 추가된다(컨트롤러 변경과 같은 커밋, CLAUDE.md 규칙 7)
+- [ ] `docs/prd.md` §3 구현 현황의 "랭킹 — 내 랭킹 조회(RANK-002)" 행이 완료로 갱신된다(근거는 이 PR 번호, CLAUDE.md 규칙 10)
+- [x] 단위(`RankingStoreTest`/`RankingServiceTest`, Redis·AccountService mock)·슬라이스(`@WebMvcTest RankingControllerTest`) 테스트를 작성한다. 이 기능이 재사용하는 ZSET 쓰기·이벤트 흐름 자체는 RANK-001 통합 테스트가 이미 검증했지만, "상위 `limit` 밖에서도 정확한 순위를 반환한다"는 RANK-002 고유의 읽기 경로는 그 재사용 범위 밖이라 `RankingIntegrationTest`에 시나리오를 하나 추가했다(PR #234 리뷰 권장 반영, 근거는 `plan.md` "테스트 계획")
 - [ ] `./gradlew build` 통과

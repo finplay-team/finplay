@@ -89,6 +89,36 @@ class AccountServiceTest {
 	}
 
 	@Test
+	void getAccountForWithUserReturnsAccountWhenRepositoryFindsIt() {
+		AccountRepository accountRepository = mock(AccountRepository.class);
+		HoldingValuationService holdingValuationService = mock(HoldingValuationService.class);
+		Clock fixedClock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
+		AccountService accountService = new AccountService(accountRepository, holdingValuationService, fixedClock);
+		User user = User.create("user@finplay.com", "password-hash", "finplayer",
+			LocalDateTime.ofInstant(FIXED_INSTANT, ZoneOffset.UTC));
+		Account account = Account.create(user, Market.STOCK,
+			LocalDateTime.ofInstant(FIXED_INSTANT, ZoneOffset.UTC));
+		when(accountRepository.findByUserIdAndMarketFetchUser(1L, Market.STOCK)).thenReturn(Optional.of(account));
+
+		Account result = accountService.getAccountForWithUser(1L, Market.STOCK);
+
+		assertThat(result).isSameAs(account);
+	}
+
+	@Test
+	void getAccountForWithUserThrowsNotFoundWhenNoAccountExistsForUserAndMarket() {
+		AccountRepository accountRepository = mock(AccountRepository.class);
+		HoldingValuationService holdingValuationService = mock(HoldingValuationService.class);
+		Clock fixedClock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
+		AccountService accountService = new AccountService(accountRepository, holdingValuationService, fixedClock);
+		when(accountRepository.findByUserIdAndMarketFetchUser(1L, Market.STOCK)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> accountService.getAccountForWithUser(1L, Market.STOCK))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode()).isEqualTo(ErrorCode.NOT_FOUND));
+	}
+
+	@Test
 	void findByIdOrEmptyReturnsAccountWhenRepositoryFindsIt() {
 		AccountRepository accountRepository = mock(AccountRepository.class);
 		HoldingValuationService holdingValuationService = mock(HoldingValuationService.class);

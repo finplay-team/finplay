@@ -17,6 +17,13 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
 
 	Optional<Account> findByUserIdAndMarket(Long userId, Market market);
 
+	// 내 랭킹 조회(RankingService.getMyRanking)용 — findByUserIdAndMarket과 달리 User를 fetch join으로
+	// 함께 가져와 트랜잭션 밖에서도 account.getUser().getNickname()이 안전하다(PR #234 리뷰 권장 반영).
+	@Query("SELECT a FROM Account a JOIN FETCH a.user WHERE a.user.id = :userId AND a.market = :market")
+	Optional<Account> findByUserIdAndMarketFetchUser(@Param("userId")
+	Long userId, @Param("market")
+	Market market);
+
 	// 랭킹 목록의 닉네임 배치 조회용 — accountId 목록으로 Account+User를 N+1 없이 조회한다.
 	@Query("SELECT a FROM Account a JOIN FETCH a.user WHERE a.id IN :ids")
 	List<Account> findAllByIdInFetchUser(@Param("ids")

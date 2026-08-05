@@ -507,6 +507,18 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 **score의 정본은 MySQL이다.** 실현손익 값은 매 조회마다 `trades`를 재집계하지 않고, 매도 체결로 `accounts.realized_pnl`이 갱신된 뒤 **커밋 이후(after-commit)**에만 Redis ZSET에 반영된 값을 그대로 읽는다 — 커밋 전 갱신·롤백 시 Redis 오염이 없다. Redis 갱신이 재시도 후에도 실패하면 로그만 남기고 매도 체결 자체(주문·체결·계좌 갱신)에는 영향이 없다.
 
+### 내 랭킹 조회
+
+| Method | URL | 인증 | 쿼리 파라미터 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|---|
+| GET | /api/rankings/me | Access Bearer 필수 | `market`(필수, `STOCK`\|`CRYPTO` 리터럴만 허용) | 200 `{"market":"STOCK","rank":3,"nickname":"존버맨","realizedPnl":120000}` (`MyRankingResponse`); 매도 체결 이력이 없으면 200 `{"market":"STOCK","rank":null,"nickname":"투자왕","realizedPnl":0}`(오류 아님) | `market` 누락 또는 `STOCK`\|`CRYPTO` 외 리터럴(예: `FOREX`)은 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 014 RANK-002, Issue #233 |
+
+대상은 항상 인증 토큰의 본인이다 — 요청 파라미터로 다른 사용자의 accountId·userId를 지정하는 기능은 없다(구조적으로 타인 조회 불가, 별도 소유권 검증 로직 불필요). 상위 노출 구간(`GET /api/rankings`의 `limit`)에 들지 않아도 본인의 정확한 보정 순위를 반환한다 — 목록 노출 여부와 무관하게 항상 계산된다.
+
+**순위 계산은 RANK-001과 동일한 ZSET 상태·보정 공식(`countStrictlyGreater(score) + 1`)을 재사용한다** — 별도의 새 보정 공식을 만들지 않는다. 매도 이력 유무 판정도 DB `accounts.realized_pnl`이 아니라 항상 Redis ZSET(`RankingStore.score`)을 기준으로 한다 — 두 엔드포인트가 서로 다른 순간의 데이터를 봐서 순위가 불일치하는 상황을 원천적으로 없앤다. **응답의 `realizedPnl`도 이 `score`를 그대로 노출한다** — DB `accounts.realized_pnl`을 별도로 재조회하지 않는다. `rank`와 `realizedPnl`을 서로 다른 저장소에서 읽으면(after-commit 반영 지연·Redis 재시도 소진 등으로 두 값이 순간적으로 어긋날 때) 한 응답 안에서 "이 손익, 이 순위"가 서로 대응하지 않게 되기 때문이다(PR #234 리뷰 반영). 매도 이력이 없어 `score`가 없으면 `realizedPnl`은 0이다(이 경우 DB 값도 항상 0이라 결과가 같다).
+
+**매도 체결 이력이 없는 사용자는 `rank`만 `null`이다.** 전용 상태값·오류 코드를 새로 만들지 않는다 — `nickname`·`realizedPnl`(0 포함)은 매도 이력과 무관하게 항상 정상 값으로 채워진다("랭킹 목록 대상에서 제외됨"(RANK-001)과 "본인 조회 응답에 참고 정보가 없음"은 다른 개념이다). `nickname`은 RANK-001과 동일하게 마스킹 없이 노출한다.
+
 ---
 
 ## 016 투자 실습 (candidate 1·2·3 제공, 나머지 계획)
