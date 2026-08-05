@@ -65,7 +65,7 @@
   - **함정 — 표본을 못 만드는 것과 σ=0인 것을 구분한다.** 기동 직후(표본 < `min-sample-count`)와 가격이 전혀 안 변한 구간(σ24=0)은 둘 다 "카드 없음"이지만 원인이 다르다 — 둘 다 예외 없이 조용히 종료해야 한다.
   - 검증 — 단위(σ 표본 겹치지 않음, lookback 경계, min-sample-count 미달, 쿨다운·일일 상한, 자정 케이스) + `FeedbackBatchScheduleTest` 계열에 이 스케줄의 `zone`·프로퍼티 참조 테스트 추가.
 
-- [ ] **4. `feedback`: `PriceMoveQueryService`의 코인 분기를 실제 "최근 24시간 카드 조회"로 교체 (FEED-006)**
+- [x] **4. `feedback`: `PriceMoveQueryService`의 코인 분기를 실제 "최근 24시간 카드 조회"로 교체 (FEED-006)**
 
   현재 `Market.CRYPTO`면 `PriceMoveListResponse.empty()`를 반환하는 임시 분기(주석에 "plan.md 8번이 이 자리에 더한다")를 실제 조회로 바꾼다.
   - 범위는 §C-2의 `ROLLING_24H`(최근 24시간)다. 노출 게이트가 없다(§C-5 "카드(코인) — 없음") — `reveal_time`을 보지 않는다.

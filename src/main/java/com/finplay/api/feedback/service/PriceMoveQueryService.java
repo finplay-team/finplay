@@ -1,6 +1,7 @@
 // 종목별 변동 원인 카드 목록을 노출 게이트에 맞춰 조회하는 읽기 전용 서비스.
 package com.finplay.api.feedback.service;
 
+import com.finplay.api.feedback.config.FeedbackCryptoProperties;
 import com.finplay.api.feedback.domain.PriceMoveEvent;
 import com.finplay.api.feedback.domain.PriceMoveEventSource;
 import com.finplay.api.feedback.dto.response.NewsItem;
@@ -14,6 +15,7 @@ import com.finplay.api.market.service.InstrumentService;
 import com.finplay.api.market.service.StockReplayService;
 import com.finplay.api.market.service.StockReplaySessionDto;
 import java.time.Clock;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -44,6 +46,8 @@ public class PriceMoveQueryService {
 
 	private final PriceMoveEventSourceRepository priceMoveEventSourceRepository;
 
+	private final FeedbackCryptoProperties cryptoProperties;
+
 	private final Clock clock;
 
 	/**
@@ -57,10 +61,8 @@ public class PriceMoveQueryService {
 	public PriceMoveListResponse getPriceMoves(Long instrumentId) {
 		Instrument instrument = instrumentService.getInstrumentEntity(instrumentId);
 		// 코인은 재생 시간축이 없어 원본 거래일이 아니라 "최근 24시간"으로 조회하고 노출 게이트도 없다(§C-2·§C-5).
-		// 그 분기는 코인 탐지·감시와 함께 plan.md 8번이 이 자리에 더한다 — 지금은 카드가 생성되지 않으므로 빈
-		// 목록이 정확한 답이고, 여기서 예외를 던지면 코인 종목 상세 화면이 통째로 오류가 된다.
 		if (instrument.getMarket() == Market.CRYPTO) {
-			return PriceMoveListResponse.empty();
+			return getCryptoPriceMoves(instrument);
 		}
 
 		StockReplaySessionDto session = stockReplayService.getCurrentReplaySession();
@@ -83,6 +85,32 @@ public class PriceMoveQueryService {
 				event, sourcesByEventId.getOrDefault(event.getId(), List.of())))
 			.toList();
 		return PriceMoveListResponse.of(session.sourceTradingDate(), moves);
+	}
+
+	/**
+	 * 코인의 "최근 24시간" 카드 조회 (§C-2 {@code ROLLING_24H}). 노출 게이트가 없다(§C-5 "카드(코인) — 없음") —
+	 * {@code reveal_time}을 보지 않는다.
+	 *
+	 * @return {@code originTradeDate}는 <b>항상 {@code null}</b>이다(§C-2) — 코인은 실시간이라 원본 거래일
+	 *     개념이 없다
+	 */
+	private PriceMoveListResponse getCryptoPriceMoves(Instrument instrument) {
+		LocalDateTime now = LocalDateTime.now(clock);
+		List<PriceMoveEvent> events = priceMoveEventRepository
+			.findByInstrumentIdAndMarketAndOccurredAtBetweenOrderByOccurredAtAscIdAsc(
+				instrument.getId(), Market.CRYPTO, now.minusHours(24), now);
+		if (events.isEmpty()) {
+			return PriceMoveListResponse.of(null, List.of());
+		}
+
+		Map<Long, List<NewsItem>> sourcesByEventId = findSources(events);
+		List<PriceMoveItem> moves = events.stream()
+			.map(event -> PriceMoveItem.ofCrypto(
+				event,
+				sourcesByEventId.getOrDefault(event.getId(), List.of()),
+				cryptoProperties.rollingWindowMinutes()))
+			.toList();
+		return PriceMoveListResponse.of(null, moves);
 	}
 
 	// 카드마다 따로 묻지 않고 한 번에 읽어 카드 id로 묶는다. 쿼리가 발행시각 내림차순이라 각 목록의 순서도

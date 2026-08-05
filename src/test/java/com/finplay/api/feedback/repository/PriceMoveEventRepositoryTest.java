@@ -533,4 +533,78 @@ class PriceMoveEventRepositoryTest {
 		assertThat(priceMoveEventRepository.countByInstrumentIdAndMarketAndOriginTradeDate(
 			crypto.getId(), Market.CRYPTO, LocalDate.of(2026, 8, 4))).isEqualTo(1);
 	}
+
+	// --- 코인 "최근 24시간" 카드 조회 (FEED-006, §C-2 ROLLING_24H, 이슈 #225 항목 4) ---
+
+	private static final LocalDateTime QUERY_NOW = LocalDateTime.of(2026, 8, 5, 15, 0, 0);
+
+	private List<PriceMoveEvent> findRecent24Hours() {
+		return priceMoveEventRepository
+			.findByInstrumentIdAndMarketAndOccurredAtBetweenOrderByOccurredAtAscIdAsc(
+				crypto.getId(), Market.CRYPTO, QUERY_NOW.minusHours(24), QUERY_NOW);
+	}
+
+	// BETWEEN이 양 끝을 포함한다 — 부등호가 하나라도 배타로 바뀌면 정확히 24시간 전/후 경계의 카드가 조용히
+	// 사라진다.
+	@Test
+	@DisplayName("정확히 24시간 전 카드와 지금(now) 카드가 둘 다 포함된다")
+	void includesCardsExactlyAtTheTwentyFourHourBoundary() {
+		PriceMoveEvent exactlyTwentyFourHoursAgo = priceMoveEventRepository.saveAndFlush(
+			newCryptoEvent(QUERY_NOW.minusHours(24)));
+		PriceMoveEvent exactlyNow = priceMoveEventRepository.saveAndFlush(newCryptoEvent(QUERY_NOW));
+
+		assertThat(findRecent24Hours())
+			.extracting(PriceMoveEvent::getId)
+			.containsExactly(exactlyTwentyFourHoursAgo.getId(), exactlyNow.getId());
+	}
+
+	// 경계 밖 1초 — 대조군이다. 24시간 하고도 1초 더 지난 카드와, now보다 1초 뒤(미래) 카드는 빠진다.
+	@Test
+	@DisplayName("24시간보다 1초라도 이전이거나 now보다 1초라도 이후인 카드는 빠진다")
+	void excludesCardsJustOutsideTheTwentyFourHourWindow() {
+		priceMoveEventRepository.saveAndFlush(newCryptoEvent(QUERY_NOW.minusHours(24).minusSeconds(1)));
+		priceMoveEventRepository.saveAndFlush(newCryptoEvent(QUERY_NOW.plusSeconds(1)));
+		PriceMoveEvent inside = priceMoveEventRepository.saveAndFlush(newCryptoEvent(QUERY_NOW.minusHours(1)));
+
+		assertThat(findRecent24Hours())
+			.extracting(PriceMoveEvent::getId)
+			.containsExactly(inside.getId());
+	}
+
+	@Test
+	@DisplayName("다른 종목·다른 시장(STOCK) 카드는 24시간 창 안에 있어도 섞이지 않는다")
+	void excludesOtherInstrumentAndOtherMarketWithinTheWindow() {
+		priceMoveEventRepository.saveAndFlush(newStockEvent(PriceMoveEventType.INTRADAY, WINDOW_START));
+		Instrument otherCrypto = instrumentRepository.save(Instrument.create(
+			Market.CRYPTO, "MOVEETH2", "테스트코인C", new BigDecimal("1"), 5000, true, NOW));
+		priceMoveEventRepository.saveAndFlush(PriceMoveEvent.createCrypto(
+			otherCrypto, QUERY_NOW.minusHours(1), CHANGE_RATE, DETECTION_SCORE, "다른 종목",
+			NarrativeSource.TEMPLATE, NOW));
+
+		assertThat(findRecent24Hours()).isEmpty();
+	}
+
+	// 2차 키(id)가 없으면 같은 occurredAt을 가진 카드의 순서가 DB 임의 순서가 된다 — 위 주식 파인더들과 같은 이유.
+	@Test
+	@DisplayName("occurredAt이 같으면 저장 순서(id) 오름차순으로 2차 정렬된다")
+	void ordersByOccurredAtAscThenByIdAscOnTies() {
+		LocalDateTime sameInstant = QUERY_NOW.minusHours(2);
+		PriceMoveEvent first = priceMoveEventRepository.saveAndFlush(newCryptoEvent(sameInstant));
+		PriceMoveEvent second = priceMoveEventRepository.saveAndFlush(newCryptoEvent(sameInstant));
+		PriceMoveEvent earlier = priceMoveEventRepository.saveAndFlush(newCryptoEvent(QUERY_NOW.minusHours(3)));
+
+		assertThat(findRecent24Hours())
+			.extracting(PriceMoveEvent::getId)
+			.containsExactly(earlier.getId(), first.getId(), second.getId());
+	}
+
+	// §C-5 "카드(코인) — 없음" — 이 파인더 자체가 reveal_time을 조건에 넣지 않는다. 카드는 생성되는 즉시(occurred_at이
+	// 창 안에 들어오는 즉시) 노출 대상이며, 주식처럼 별도 시각까지 기다리지 않는다.
+	@Test
+	@DisplayName("방금 생성된 카드도 노출 게이트 없이 즉시 조회된다")
+	void includesJustCreatedCardWithoutAnyRevealGate() {
+		PriceMoveEvent justCreated = priceMoveEventRepository.saveAndFlush(newCryptoEvent(QUERY_NOW));
+
+		assertThat(findRecent24Hours()).extracting(PriceMoveEvent::getId).containsExactly(justCreated.getId());
+	}
 }

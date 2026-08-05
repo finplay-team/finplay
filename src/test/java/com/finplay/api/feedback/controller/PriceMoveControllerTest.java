@@ -113,6 +113,59 @@ class PriceMoveControllerTest {
 			.andExpect(jsonPath("$.moves.length()").value(0));
 	}
 
+	// --- FEED-006 코인 분기 — 실제 조회 결과 형태(§C-2 ROLLING_24H)가 계약대로 직렬화되는지 ---
+
+	private static final long CRYPTO_INSTRUMENT_ID = 2L;
+
+	// 코인은 실시간이라 원본 거래일 개념이 없다 — PriceMoveQueryService의 실제 코인 분기가 카드 0건일 때
+	// 돌려주는 형태가 PriceMoveListResponse.of(null, List.of())다(재생세션 미준비의 .empty()와 값은 같지만
+	// 만들어지는 경로가 다르다).
+	@Test
+	@DisplayName("코인 instrumentId로 호출해 카드가 0건이면 originTradeDate=null·moves=[]이고 200이다")
+	void returnsNullOriginTradeDateAndEmptyMovesForCryptoInstrumentWithNoCards() throws Exception {
+		authenticate();
+		when(priceMoveQueryService.getPriceMoves(CRYPTO_INSTRUMENT_ID))
+			.thenReturn(PriceMoveListResponse.of(null, List.of()));
+
+		mockMvc.perform(authorized(get(PATH, CRYPTO_INSTRUMENT_ID)))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.originTradeDate").doesNotExist())
+			.andExpect(jsonPath("$.moves").isArray())
+			.andExpect(jsonPath("$.moves.length()").value(0));
+
+		verify(priceMoveQueryService).getPriceMoves(CRYPTO_INSTRUMENT_ID);
+	}
+
+	@Test
+	@DisplayName("코인 instrumentId로 호출해 카드가 있으면 originTradeDate=null이고 카드는 계약대로 직렬화된다")
+	void returnsNullOriginTradeDateWithSerializedCardsForCryptoInstrument() throws Exception {
+		authenticate();
+		LocalDateTime occurredAt = LocalDateTime.of(2026, 8, 5, 14, 30, 0);
+		PriceMoveItem cryptoCard = new PriceMoveItem(
+			99L,
+			PriceMoveEventType.INTRADAY,
+			occurredAt.minusMinutes(5),
+			occurredAt,
+			new BigDecimal("0.031000"),
+			"5분간 3.1% 상승했습니다.",
+			List.of(new NewsItem(
+				MarketNewsItemType.NEWS,
+				"대형 거래소 상장",
+				"coindesk.com",
+				"https://news.example.test/crypto/1",
+				occurredAt.minusMinutes(10))));
+		when(priceMoveQueryService.getPriceMoves(CRYPTO_INSTRUMENT_ID))
+			.thenReturn(PriceMoveListResponse.of(null, List.of(cryptoCard)));
+
+		mockMvc.perform(authorized(get(PATH, CRYPTO_INSTRUMENT_ID)))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.originTradeDate").doesNotExist())
+			.andExpect(jsonPath("$.moves.length()").value(1))
+			.andExpect(jsonPath("$.moves[0].windowStart").value("2026-08-05T14:25:00"))
+			.andExpect(jsonPath("$.moves[0].windowEnd").value("2026-08-05T14:30:00"))
+			.andExpect(jsonPath("$.moves[0].sources[0].title").value("대형 거래소 상장"));
+	}
+
 	// --- 응답 형태 ---
 
 	@Test
