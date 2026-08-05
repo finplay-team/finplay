@@ -340,6 +340,18 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 검증·시세·현금·보유수량 부족 등 모든 실패 경로는 주문·체결·계좌·보유·lot·배분 테이블에 어떤 흔적도 남기지 않는다(하나의 `@Transactional` 롤백).
 
+### 코인 지정가 매수·매도 주문 생성 (LMT-001)
+
+| Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|---|
+| POST | /api/orders/limit | Access Bearer 필수, Header `Idempotency-Key` 필수(`LimitOrderCreateRequest`와 별도) | 매수 `{"market":"CRYPTO","instrumentId":1,"side":"BUY","quantity":"0.1","limitPrice":"70000000"}`, 매도 `{"market":"CRYPTO","instrumentId":1,"side":"SELL","quantity":"0.1","limitPrice":"70000000"}` (`market`은 `CRYPTO`만 허용, `side`는 `BUY`\|`SELL` 리터럴만 파싱 성공, `quantity`·`limitPrice`는 문자열 숫자, 둘 다 필수) | 매수·매도 공통 201 `{"orderId":1,"market":"CRYPTO","instrumentId":1,"side":"BUY","orderType":"LIMIT","status":"PENDING","quantity":0.1,"limitPrice":70000000,"requestedAt":"2026-08-05T09:00:00"}` (`LimitOrderResponse`) — `orderType`은 항상 `"LIMIT"`, `status`는 항상 `"PENDING"`(생성 시점에 체결하지 않으므로 `Trade`가 없다). 즉시체결 조건(매수 지정가≥현재가, 매도 지정가≤현재가)을 충족해도 생성 시점에 거부하지 않는다 — 체결은 `PriceStore` 가격 갱신 트리거(LMT-002)에서만 발생. 동일 `Idempotency-Key`+동일 요청 본문으로 재요청하면 새로 예약하지 않고 최초 응답을 그대로 재구성해 동일하게 201로 반환한다 | `Idempotency-Key` 누락, `market != "CRYPTO"`("코인 종목만 지정가 주문을 지원합니다."), `side` 미지원 리터럴(Jackson 파싱 실패), 수량 형식 위반(코인 8자리 초과·0 이하), 지정가 0 이하, 코인 최소주문금액(5,000원, `수량×지정가` 기준) 미달, 요청 시장≠종목 시장은 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED`. `instrumentId` 미존재는 404 `NOT_FOUND`. 예약 가능 현금(`cashBalance-reservedCash`) 부족(BUY)은 409 `INSUFFICIENT_CASH`, 예약 가능 수량(`quantity-reservedQuantity`) 부족 또는 보유 없음(SELL)은 409 `INSUFFICIENT_QTY`, 동일 `Idempotency-Key`로 다른 요청 본문을 보내거나 동시 요청 경합 시 최초 응답 재구성마저 실패하면 409 `IDEMPOTENCY_CONFLICT` | 015 LMT-001, Issue #210 |
+
+`POST /api/orders`(시장가 전용)의 `orderType="LIMIT"` 422 `UNSUPPORTED_ORDER_TYPE` 거부는 이 엔드포인트 추가와 무관하게 그대로 유지된다 — 두 경로가 영구히 공존한다.
+
+`LimitOrderService.createLimitOrder`는 `POST /api/orders`(`OrderService.createOrder`)와 동일한 멱등성 패턴을 재사용한다 — 요청 해시 계산 → `(userId, idempotencyKey)` 선제 조회(있고 해시 일치 시 `Order`만으로 응답 재구성, 불일치 시 즉시 409) → 신규 생성 경로(`LimitOrderCreationService.execute`) → 유니크 제약(`uk_orders_user_idempotency`) 경합 시 저장 직후 재조회 폴백.
+
+예약(에스크로) 로직은 매수·매도가 다른 자원만 잠근다(plan.md 잠금 순서 표) — **BUY**는 계좌만 잠그고(`AccountService.getAccountForUpdate`) `cashRequired = FLOOR(수량×지정가) + FLOOR(FLOOR(수량×지정가)×0.05%)`를 `availableCash`와 비교해 부족하면 저장 전 거부, 통과하면 `Account.reserveCash`로 예약만 하고(`cashBalance`는 불변) `Order.createLimitPending`을 저장한다. **SELL**은 계좌 락 없이 holding만 잠그고(`PortfolioSellService.getHoldingForUpdateOrThrow`, `availableQuantity` 기준 검증) `Holding.reserveQuantity`로 수량만 예약한다(계좌 현금은 건드리지 않음). 두 경로 모두 실패 시 아무것도 예약·저장하지 않는다(하나의 `@Transactional` 롤백).
+
 ### 내 주문 목록 조회
 
 | Method | URL | 인증 | 쿼리 파라미터 | 성공 응답 | 오류 응답 | Spec |
@@ -403,6 +415,16 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 ---
 
 ## journal
+
+### 투자일기 목록 조회
+
+| Method | URL | 인증 | 쿼리 파라미터 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|---|
+| GET | /api/journal | Access Bearer 필수 | `market`(필수, `STOCK`\|`CRYPTO` 리터럴만 허용), `cursor`(선택, `{createdAt}_{tradeId}` 형식 문자열, 생략 시 첫 페이지), `limit`(선택, 기본 20, 1~100) | 200 `{"content":[{"journalType":"SELL","buyTradeId":null,"sellTradeId":34,"content":"목표가 도달해서 전량 매도.","createdAt":"2026-08-04T15:20:41","updatedAt":"2026-08-04T15:20:41"},{"journalType":"BUY","buyTradeId":12,"sellTradeId":null,"content":"실적 발표 전 분할 매수.","createdAt":"2026-08-04T10:12:33","updatedAt":"2026-08-05T09:03:12"}],"nextCursor":"2026-08-04T10:12:33_12","hasNext":true}` (`JournalListResponse`); 회고가 없으면 200 `{"content":[],"nextCursor":null,"hasNext":false}` | `market` 누락 또는 `STOCK`\|`CRYPTO` 외 리터럴(예: `FOREX`), `limit`이 1~100 범위 밖(클램핑 없음), `cursor`가 `{ISO_LOCAL_DATE_TIME}_{id}` 형식으로 파싱 실패(구분자 없음·날짜 파싱 실패·id 파싱 실패)는 모두 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED`. 요청 시장의 계좌가 없으면 404 `NOT_FOUND` 공통 오류 형식 | 007 JOUR-006, Issue #203 |
+
+조회 대상은 요청에서 받지 않고 Access Token의 인증 사용자 본인 소유의 해당 시장 계좌(`AccountService.getAccountFor`로 소유권+시장 스코프 검증)가 쓴 매수 회고(`buy_trade_journals`)와 매도 회고(`sell_trade_journals`)를 **한 목록에 섞어** 반환한다 — 두 종류를 따로 조회하는 엔드포인트는 없다. 정렬 기준은 **회고를 처음 쓴 시점(`createdAt`) 내림차순**이며 동시각은 체결 ID 내림차순으로 끊는다(`updatedAt` 기준 정렬 아님 — 방금 수정한 오래된 회고가 목록 맨 위로 튀지 않도록). 커서는 "이전 페이지 마지막 행보다 이 시각 이전이거나(동시각이면 이 체결 ID보다 작은)" 조건으로 다음 페이지를 이어받아 페이지 경계에서 중복·누락이 없다.
+
+응답 항목 필드는 `journalType`(`"BUY"`\|`"SELL"`)·`buyTradeId`·`sellTradeId`·`content`·`createdAt`·`updatedAt` 6개로 고정이다. 매수 항목은 `sellTradeId`가, 매도 항목은 `buyTradeId`가 `null`이다. **통합 `journalId`는 노출하지 않는다** — JOUR-005(상세 조회, 아직 미구현)의 식별자 체계를 선점하지 않기 위해서다. 종목·가격·수량·실현손익 등 체결 정보는 포함하지 않는다(`GET /api/trades`가 정본). wrapper는 형제 API(`GET /api/trades`·`GET /api/orders`)와 같은 `content`·`nextCursor`·`hasNext` 3필드다.
 
 ### 매수 체결 투자일기 작성
 

@@ -1,4 +1,4 @@
-# Tasks: 체결별 투자일기 작성·수정 (JOUR-001 · JOUR-003 · JOUR-004 · JOUR-002)
+# Tasks: 체결별 투자일기 작성·수정·목록 조회 (JOUR-001 · JOUR-003 · JOUR-004 · JOUR-002 · JOUR-006)
 
 > 항목 하나 = implementer 1회 투입 = 커밋 1개. 값·규칙은 `./spec.md`, 설계는 `./plan.md`가 정본이다 — 여기에 값을 다시 정의하지 않는다.
 > 테스트 레벨은 ADR-0003을 따른다.
@@ -8,7 +8,8 @@
 > | §JOUR-001 매수 회고 작성 | 항목 1~6 | [#159](https://github.com/finplay-team/finplay/issues/159) | 완료 (기록 보존용) |
 > | §JOUR-003 매도 회고 작성 | 항목 S1~S4 | [#183](https://github.com/finplay-team/finplay/issues/183) | 완료 (기록 보존용) |
 > | §JOUR-004 매도 회고 수정 | 항목 U1~U4 | [#190](https://github.com/finplay-team/finplay/issues/190) | 완료 (기록 보존용) |
-> | **§JOUR-002 매수 회고 수정** | 항목 B0~B4 | [#197](https://github.com/finplay-team/finplay/issues/197) | **이번 착수** |
+> | §JOUR-002 매수 회고 수정 | 항목 B0~B4 | [#197](https://github.com/finplay-team/finplay/issues/197) | 완료 (기록 보존용) |
+> | **§JOUR-006 투자일기 목록 조회** | 항목 L1~L5 | [#203](https://github.com/finplay-team/finplay/issues/203) | **이번 착수** |
 
 # JOUR-001 매수 회고 작성 (이슈 #159, 완료)
 
@@ -321,3 +322,90 @@
 - 매수 회고 응답에 매도 배분·실현손익 등 후속 원장 정보 추가.
 - 목표가·손절가·예상보유기간 등 구조화 필드.
 - 투자일기 기반 AI 피드백·복기 (spec 012 범위).
+
+---
+
+# JOUR-006 투자일기 목록 조회 (이슈 #203, 이번 착수)
+
+> 설계 정본은 `./plan.md` §JOUR-006 투자일기 목록 조회 설계다. API 계약·데이터 접근·컴포넌트 구조·오류 매핑을 여기서 다시 정의하지 않는다.
+
+## 이 이슈 전체에 걸리는 제약
+
+- **원장·투자일기 어느 테이블에도 쓰지 않는다.** `@Transactional(readOnly = true)`이고, 신규 Flyway 마이그레이션이 없다(spec.md — 기존 두 테이블을 읽기만 한다).
+- **테이블 병합은 애플리케이션 계층에서 한다** — 각 리포지토리가 QueryDSL로 `limit + 1`건씩 커서 조회하고, `JournalService`가 병합·정렬한다(plan.md 결정 ①). 네이티브 `UNION ALL`을 쓰지 않는다.
+- **통합 `journalId`를 노출하지 않는다.** 항목 식별은 `journalType` + 원래 체결 ID(`buyTradeId`/`sellTradeId`)뿐이다(JOUR-005 식별자 게이트 비선점).
+- **기존 4개 계약(작성·수정 ×2)을 리팩터링하지 않는다.** `JournalController`·`BuyTradeJournal`·`SellTradeJournal`·`TradeService`를 변경하지 않는다. 이번 PR의 diff는 추가 위주다.
+- 새 `ErrorCode` 상수를 추가하지 않는다. 필요한 4개(`VALIDATION_ERROR`·`UNAUTHORIZED`·`NOT_FOUND`, 200은 오류 아님)는 이미 있다.
+
+## 작업 항목
+
+- [x] **L1. 커서 값 객체 + 두 리포지토리의 QueryDSL 커서 조회**
+
+  `plan.md` §커서 인코딩 형식대로 `JournalCursor(LocalDateTime createdAt, Long tradeId)`를 `journal.service` 패키지에 만든다(`TradeCursor`·`OrderCursor`와 같은 모양의 `parse`/`encode`). `plan.md` §데이터 접근 설계의 QueryDSL 쿼리 그대로 `BuyTradeJournalRepositoryCustom`/`Impl`, `SellTradeJournalRepositoryCustom`/`Impl`을 추가하고 기존 리포지토리 인터페이스가 이를 상속하게 한다.
+  - `journal.buyTrade.account.id.eq(accountId)`(매도 쪽은 `sellTrade.account.id`) 조건 하나로 `market` 필터와 소유권 검증을 동시에 처리한다 — 별도 소유권 조건을 추가하지 않는다.
+  - `.join(...).fetchJoin()`으로 N+1을 막는다(`TradeRepositoryImpl` 선례).
+  - 정렬은 `createdAt.desc()`, 체결 ID `desc()` 두 키다. `updatedAt` 기준으로 정렬하지 않는다.
+  - 검증 — 단위 테스트(`JournalCursorTest`): 정상 파싱, `null`/빈 문자열 → `null`, 파싱 실패 400, `encode` 형식.
+  - 검증 — `@DataJpaTest`(기존 `BuyTradeJournalRepositoryTest`·`SellTradeJournalRepositoryTest`에 케이스 추가): 다른 계좌 회고 미포함, 커서 이전 항목만 반환, `createdAt` 동점 시 체결 ID 내림차순, `fetchSize` 준수.
+
+- [x] **L2. `JournalService.getMyJournalEntries` — 병합·정렬 유스케이스 (단위 테스트 포함)**
+
+  `plan.md` §`JournalService.getMyJournalEntries`의 1~7단계를 구현한다. `AccountService`를 새로 주입받는다.
+  - 계좌 없음 → 404(`AccountService.getAccountFor`가 던지는 예외 그대로 전파, 별도 catch 없음).
+  - 두 리포지토리에 **같은 커서 값**(`createdAt`·`tradeId`)을 넘긴다 — 페이지 경계가 어긋나지 않아야 한다.
+  - 병합 후 `(createdAt, 체결 ID)` 내림차순 정렬 → 상위 `limit + 1`건 → `hasNext` 판정 → `limit`건으로 자르기 → `nextCursor` 인코딩(마지막 항목의 `journalType`에 맞는 체결 ID 사용) 순서를 지킨다.
+  - 검증 — 단위 테스트(Mockito, 기존 `JournalServiceTest`에 추가): 계좌 없음 404, 매수·매도 혼합 정렬 순서, **동시각 tie-break**(체결 ID 큰 쪽 우선), `hasNext`·`nextCursor` 경계값(`limit`건 이하/초과), 빈 목록(양쪽 리포지토리 빈 리스트), 두 리포지토리 호출에 전달되는 커서 인자가 동일한지.
+
+- [x] **L3. `JournalListController` + 응답 DTO 2개 + 문서 갱신**
+
+  `GET /api/journal`을 새 컨트롤러 `JournalListController`(`@RequestMapping("/api/journal")`)에 연다. `JournalListResponse`(`content`·`nextCursor`·`hasNext`)와 `JournalListItemResponse`(`journalType`·`buyTradeId`·`sellTradeId`·`content`·`createdAt`·`updatedAt`, `from(BuyTradeJournal)`/`from(SellTradeJournal)` 오버로드) record 2개를 만든다. `limit` 검증은 `TradeController.validateLimit`을 그대로 복제한다.
+  - `journalType`은 `order.domain.OrderSide`를 재사용하지 않고 리터럴 `"BUY"`/`"SELL"` 문자열을 직접 쓴다.
+  - 컨트롤러에 비즈니스 판단·repository 호출·try-catch를 두지 않는다.
+  - **같은 커밋에서** `docs/api-routes.md`·`docs/api-contracts.md`를 갱신한다 (CLAUDE.md 규칙 7, plan.md §문서 갱신).
+  - 검증 — `@WebMvcTest`(`JournalListControllerTest`, 신규): 200 본문 `jsonPath` 6필드 + `journalId` 필드 **부재** 확인, `market` 누락·미지원 리터럴 400, `limit` 0·101 400, `cursor` 파싱 실패 400, 미인증 401, 서비스 404(계좌 없음) 매핑.
+
+- [x] **L4. 통합 테스트 — 혼합 목록·market 필터·커서 경계·격리 + 빌드**
+
+  Testcontainers `@SpringBootTest`로 spec의 5차 완료 조건을 한 번에 확인한다(기존 `JournalIntegrationTest`에 추가하거나 신규 `JournalListIntegrationTest`).
+  - 매수·매도 회고가 섞인 목록이 `createdAt` 내림차순(동시각은 체결 ID 내림차순)으로 조회되고, 항목마다 `journalType`과 해당 없는 체결 ID `null`이 맞다.
+  - **`market` 필터** — 같은 사용자의 다른 시장(`CRYPTO`) 회고가 `market=STOCK` 결과에 섞이지 않는다.
+  - **커서 페이지네이션** — 첫 페이지 `nextCursor`로 다음 페이지를 이어 받아 중복·누락 없음, 마지막 페이지는 `nextCursor: null`·`hasNext: false`. **매수·매도 회고가 `createdAt` 동시각으로 페이지 경계에 걸치는 픽스처**로 체결 ID tie-break가 실제로 동작하는지 고정한다.
+  - `limit` 0·101 400(클램핑 없음), `market` 누락·미지원 리터럴 400, `cursor` 파싱 실패 400, 미인증 401.
+  - 다른 사용자의 투자일기가 섞이지 않는다.
+  - 회고가 하나도 없는 사용자 → 200 빈 목록(`content: []`·`nextCursor: null`·`hasNext: false`).
+  - **`journalId` 미노출 계약** — 응답 JSON에 `journalId` 키가 없음을 고정하는 테스트.
+  - **원장·투자일기 불변** — 조회 전후 `buy_trade_journals`·`sell_trade_journals`·`orders`·`trades`·`accounts`·`holdings`·`holding_lots`·`trade_allocations`가 전혀 변하지 않는다.
+  - 기존 4개 계약(`POST`·`PATCH .../journal`, `POST`·`PATCH .../sell-journal`) 기존 테스트가 그대로 통과.
+  - `./gradlew spotlessApply` 후 **`./gradlew build` 통과**를 확인한다.
+
+- [x] **L5. 문서 최종 확인 + 빌드**
+
+  `docs/api-routes.md`·`docs/api-contracts.md`가 실제 컨트롤러(`JournalListController`)와 일치하는지 최종 대조한다(원래는 L3에서 컨트롤러 커밋과 같은 커밋이 원칙이므로, L3에서 함께 반영했다면 이 항목은 누락분 확인으로 끝낸다).
+  - `plan.md` §관련 문서·§JOUR-006 절의 "미반영" 표기가 있다면 반영 완료로 바꾼다.
+  - `./gradlew spotlessApply` 후 **`./gradlew build` 통과**를 다시 확인한다.
+
+## 완료 조건 매핑 (이슈 #203)
+
+| 이슈 완료 조건 (`spec.md` §완료 조건 5차 착수) | 항목 |
+|---|---|
+| 매수·매도 회고 혼합 목록이 `createdAt` 내림차순(동점 체결 ID 내림차순)으로 조회, `journalType`·null 필드 정확 | **L4** (단위는 **L2**) |
+| `market` 필터가 매수·매도 두 타입 모두에 적용 | **L4** (쿼리 조건은 **L1**) |
+| 커서 페이지네이션(중복·누락 없음, 마지막 페이지 `nextCursor: null`), 동시각 경계 tie-break | **L4** (단위는 **L2**) |
+| `limit` 범위 밖 400(클램핑 없음)·`market` 누락·미지원 400·커서 파싱 실패 400·미인증 401 | **L4** (계약은 **L3**) |
+| 다른 사용자의 투자일기가 섞이지 않음 | **L4** (쿼리 조건은 **L1**) |
+| 회고 0건 사용자가 200 빈 목록 | **L4** (단위는 **L2**) |
+| 통합 `journalId` 미노출 계약 테스트 | **L4** (계약은 **L3**) |
+| 조회 전후 투자일기·원장 데이터 불변 | **L4** |
+| 기존 4개 계약과 그 테스트가 그대로 통과, 신규 마이그레이션 없음 | **L4** (경로 무변경은 **L1**·**L2**·**L3**) |
+| `docs/api-routes.md`·`docs/api-contracts.md` 반영 | **L3** (최종 확인 **L5**) |
+| `./gradlew build` 통과 | **L4**·**L5** |
+
+## 이 이슈에서 하지 않는 것
+
+- 투자일기 **상세 조회**(JOUR-005) — 식별자 체계 Decision Gate 미해결. 이 목록이 그 게이트를 선점하지 않도록 통합 `journalId`를 노출하지 않는다.
+- **매수·매도 회고 테이블 통합(스키마 변경)** — 기존 두 테이블을 읽기만 한다. 신규 마이그레이션 없음.
+- 목록 조회의 통합(전 시장) 축·기간/종목/회고종류 필터·정렬 옵션·키워드 검색 — `market` 축과 최신순 정렬 하나뿐이다.
+- 투자일기 삭제, 수정 이력·버전 보관.
+- 목표가·손절가·예상보유기간 등 구조화 필드.
+- 매수·매도 회고 작성·수정 경로의 공통 추상화 리팩터링(`JournalCursor`를 `TradeCursor`·`OrderCursor`와 묶는 제네릭화 포함).
+- 투자일기 기반 AI 피드백·가격 알림·주간 회고 (spec 012 범위).

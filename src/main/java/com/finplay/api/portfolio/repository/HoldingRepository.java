@@ -2,9 +2,11 @@
 package com.finplay.api.portfolio.repository;
 
 import com.finplay.api.portfolio.domain.Holding;
+import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -17,4 +19,11 @@ public interface HoldingRepository extends JpaRepository<Holding, Long> {
 		+ "ORDER BY h.instrument.symbol ASC")
 	List<Holding> findAllByAccountIdAndIsActiveTrue(@Param("accountId")
 	Long accountId);
+
+	// 지정가 매도 생성·체결 시 holding 락(015-limit-order LMT-001·LMT-002)
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("SELECT h FROM Holding h WHERE h.account.id = :accountId AND h.instrument.id = :instrumentId")
+	Optional<Holding> findByAccountIdAndInstrumentIdForUpdate(@Param("accountId")
+	Long accountId, @Param("instrumentId")
+	Long instrumentId);
 }

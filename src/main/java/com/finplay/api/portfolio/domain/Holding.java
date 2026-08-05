@@ -40,6 +40,9 @@ public class Holding {
 	@Column(nullable = false, precision = 30, scale = 8)
 	private BigDecimal quantity;
 
+	@Column(name = "reserved_quantity", nullable = false, precision = 30, scale = 8)
+	private BigDecimal reservedQuantity;
+
 	@Column(name = "average_price", nullable = false, precision = 18, scale = 8)
 	private BigDecimal averagePrice;
 
@@ -56,6 +59,7 @@ public class Holding {
 		this.account = account;
 		this.instrument = instrument;
 		this.quantity = BigDecimal.ZERO;
+		this.reservedQuantity = BigDecimal.ZERO;
 		this.averagePrice = BigDecimal.ZERO;
 		this.isActive = false;
 		this.createdAt = now;
@@ -85,5 +89,23 @@ public class Holding {
 			this.isActive = false;
 		}
 		this.updatedAt = now;
+	}
+
+	public BigDecimal getAvailableQuantity() {
+		return this.quantity.subtract(this.reservedQuantity);
+	}
+
+	public void reserveQuantity(BigDecimal qty) {
+		if (qty.compareTo(getAvailableQuantity()) > 0) {
+			throw new IllegalStateException("예약 가능한 수량보다 큰 수량을 예약할 수 없습니다.");
+		}
+		this.reservedQuantity = this.reservedQuantity.add(qty);
+	}
+
+	public void releaseReservedQuantity(BigDecimal qty) {
+		if (qty.compareTo(this.reservedQuantity) > 0) {
+			throw new IllegalStateException("예약된 수량보다 큰 수량을 해제할 수 없습니다.");
+		}
+		this.reservedQuantity = this.reservedQuantity.subtract(qty);
 	}
 }

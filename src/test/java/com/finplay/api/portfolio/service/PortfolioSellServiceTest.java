@@ -43,46 +43,97 @@ class PortfolioSellServiceTest {
 	private final PortfolioSellService service = new PortfolioSellService(holdingRepository, holdingLotRepository,
 		tradeAllocationRepository);
 
+	// getHoldingOrThrow(availableQuantity 미검증 구버전)는 015-limit-order 항목5에서 유일 호출부(시장가 매도)가
+	// getHoldingForUpdateOrThrow로 대체되며 프로덕션 코드에서 완전히 제거됐다 — 이 테스트들도 함께 제거한다.
+
 	@Test
-	void getHoldingOrThrowThrowsInsufficientQtyWhenHoldingDoesNotExist() {
+	void getHoldingForUpdateOrThrowThrowsInsufficientQtyWhenHoldingDoesNotExist() {
 		Account account = testAccount();
 		Instrument instrument = testInstrument();
-		when(holdingRepository.findByAccountIdAndInstrumentId(account.getId(), instrument.getId()))
+		when(holdingRepository.findByAccountIdAndInstrumentIdForUpdate(account.getId(), instrument.getId()))
 			.thenReturn(Optional.empty());
 
-		assertThatThrownBy(() -> service.getHoldingOrThrow(account, instrument, new BigDecimal("1")))
+		assertThatThrownBy(() -> service.getHoldingForUpdateOrThrow(account, instrument, new BigDecimal("1")))
 			.isInstanceOf(BusinessException.class)
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
 				.isEqualTo(ErrorCode.INSUFFICIENT_QTY));
 	}
 
 	@Test
-	void getHoldingOrThrowThrowsInsufficientQtyWhenQuantityIsLessThanRequired() {
+	void getHoldingForUpdateOrThrowThrowsInsufficientQtyWhenAvailableQuantityIsLessThanRequired() {
+		// 다른 지정가 매도로 이미 일부가 예약된 경우(availableQuantity = quantity - reservedQuantity)를 검증한다
+		// (spec.md: 기존 시장가 SELL도 예약 원장을 반영해 예약된 수량을 중복 매도할 수 없다).
 		Account account = testAccount();
 		Instrument instrument = testInstrument();
 		Holding holding = Holding.create(account, instrument, EARLIER);
 		holding.applyBuy(new BigDecimal("5"), new BigDecimal("100"), EARLIER);
-		when(holdingRepository.findByAccountIdAndInstrumentId(account.getId(), instrument.getId()))
+		holding.reserveQuantity(new BigDecimal("4"));
+		when(holdingRepository.findByAccountIdAndInstrumentIdForUpdate(account.getId(), instrument.getId()))
 			.thenReturn(Optional.of(holding));
 
-		assertThatThrownBy(() -> service.getHoldingOrThrow(account, instrument, new BigDecimal("10")))
+		// availableQuantity = 5 - 4 = 1 < 요청 2
+		assertThatThrownBy(() -> service.getHoldingForUpdateOrThrow(account, instrument, new BigDecimal("2")))
 			.isInstanceOf(BusinessException.class)
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
 				.isEqualTo(ErrorCode.INSUFFICIENT_QTY));
 	}
 
 	@Test
-	void getHoldingOrThrowReturnsHoldingWhenQuantityIsSufficient() {
+	void getHoldingForUpdateOrThrowReturnsHoldingWhenAvailableQuantityIsSufficient() {
 		Account account = testAccount();
 		Instrument instrument = testInstrument();
 		Holding holding = Holding.create(account, instrument, EARLIER);
 		holding.applyBuy(new BigDecimal("5"), new BigDecimal("100"), EARLIER);
-		when(holdingRepository.findByAccountIdAndInstrumentId(account.getId(), instrument.getId()))
+		when(holdingRepository.findByAccountIdAndInstrumentIdForUpdate(account.getId(), instrument.getId()))
 			.thenReturn(Optional.of(holding));
 
-		Holding result = service.getHoldingOrThrow(account, instrument, new BigDecimal("5"));
+		Holding result = service.getHoldingForUpdateOrThrow(account, instrument, new BigDecimal("5"));
 
 		assertThat(result).isSameAs(holding);
+	}
+
+	@Test
+	void getHoldingForUpdateReturnsHoldingWhenFound() {
+		Account account = testAccount();
+		Instrument instrument = testInstrument();
+		Holding holding = Holding.create(account, instrument, EARLIER);
+		when(holdingRepository.findByAccountIdAndInstrumentIdForUpdate(account.getId(), instrument.getId()))
+			.thenReturn(Optional.of(holding));
+
+		Holding result = service.getHoldingForUpdate(account, instrument);
+
+		assertThat(result).isSameAs(holding);
+	}
+
+	@Test
+	void getHoldingForUpdateThrowsIllegalStateExceptionWhenHoldingNotFound() {
+		// 015-limit-order LMT-002: 예약된 holding이 없는 상태는 원장 불변식 위반이라 방어적으로 예외를 던진다.
+		Account account = testAccount();
+		Instrument instrument = testInstrument();
+		when(holdingRepository.findByAccountIdAndInstrumentIdForUpdate(account.getId(), instrument.getId()))
+			.thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> service.getHoldingForUpdate(account, instrument))
+			.isInstanceOf(IllegalStateException.class);
+	}
+
+	@Test
+	void finalizeSellRealizedPnlComputesRealizedPnlAndUpdatesTradeAndAccount() {
+		Account account = testAccount();
+		Instrument instrument = testInstrument();
+		Trade sellTrade = testTrade(account, instrument, OrderSide.SELL, new BigDecimal("150"),
+			new BigDecimal("10"), 1500L, 4L, NOW);
+		SellAllocationDto allocation = new SellAllocationDto(1000L, 30L);
+		long cashBeforeSell = account.getCashBalance();
+		long realizedPnlBeforeSell = account.getRealizedPnl();
+
+		long realizedPnl = service.finalizeSellRealizedPnl(account, sellTrade, 1500L, 4L, allocation);
+
+		// realizedPnl = (매도금액 - 매도수수료) - (배분원가 + 배분매수수수료) = (1500-4) - (1000+30) = 466
+		assertThat(realizedPnl).isEqualTo(466L);
+		assertThat(sellTrade.getRealizedPnl()).isEqualTo(466L);
+		assertThat(account.getCashBalance()).isEqualTo(cashBeforeSell + 1500L - 4L);
+		assertThat(account.getRealizedPnl()).isEqualTo(realizedPnlBeforeSell + 466L);
 	}
 
 	@Test

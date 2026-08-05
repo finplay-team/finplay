@@ -3,9 +3,11 @@ package com.finplay.api.account.repository;
 
 import com.finplay.api.account.domain.Account;
 import com.finplay.api.account.domain.Market;
+import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -19,4 +21,17 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
 	@Query("SELECT a FROM Account a JOIN FETCH a.user WHERE a.id IN :ids")
 	List<Account> findAllByIdInFetchUser(@Param("ids")
 	List<Long> ids);
+
+	// 지정가 매수 생성 시 계좌 락(015-limit-order LMT-001)
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("SELECT a FROM Account a WHERE a.user.id = :userId AND a.market = :market")
+	Optional<Account> findByUserIdAndMarketForUpdate(@Param("userId")
+	Long userId, @Param("market")
+	Market market);
+
+	// 지정가 체결(015-limit-order LMT-002)·시장가 매도 락 순서 조정용 계좌 락
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("SELECT a FROM Account a WHERE a.id = :id")
+	Optional<Account> findByIdForUpdate(@Param("id")
+	Long id);
 }

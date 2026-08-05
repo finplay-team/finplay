@@ -58,6 +58,9 @@ public class Order {
 	@Column(nullable = false, precision = 30, scale = 8)
 	private BigDecimal quantity;
 
+	@Column(name = "limit_price", precision = 18, scale = 8)
+	private BigDecimal limitPrice;
+
 	@Column(name = "idempotency_key", nullable = false, length = 100)
 	private String idempotencyKey;
 
@@ -73,7 +76,9 @@ public class Order {
 		Instrument instrument,
 		OrderSide side,
 		OrderType orderType,
+		OrderStatus status,
 		BigDecimal quantity,
+		BigDecimal limitPrice,
 		String idempotencyKey,
 		String requestHash,
 		LocalDateTime requestedAt) {
@@ -82,8 +87,9 @@ public class Order {
 		this.instrument = instrument;
 		this.side = side;
 		this.orderType = orderType;
-		this.status = OrderStatus.FILLED;
+		this.status = status;
 		this.quantity = quantity;
+		this.limitPrice = limitPrice;
 		this.idempotencyKey = idempotencyKey;
 		this.requestHash = requestHash;
 		this.requestedAt = requestedAt;
@@ -100,6 +106,47 @@ public class Order {
 		String requestHash,
 		LocalDateTime requestedAt) {
 		return new Order(
-			user, account, instrument, side, orderType, quantity, idempotencyKey, requestHash, requestedAt);
+			user,
+			account,
+			instrument,
+			side,
+			orderType,
+			OrderStatus.FILLED,
+			quantity,
+			null,
+			idempotencyKey,
+			requestHash,
+			requestedAt);
+	}
+
+	public static Order createLimitPending(
+		User user,
+		Account account,
+		Instrument instrument,
+		OrderSide side,
+		BigDecimal quantity,
+		BigDecimal limitPrice,
+		String idempotencyKey,
+		String requestHash,
+		LocalDateTime requestedAt) {
+		return new Order(
+			user,
+			account,
+			instrument,
+			side,
+			OrderType.LIMIT,
+			OrderStatus.PENDING,
+			quantity,
+			limitPrice,
+			idempotencyKey,
+			requestHash,
+			requestedAt);
+	}
+
+	public void markFilled() {
+		if (this.status != OrderStatus.PENDING) {
+			throw new IllegalStateException("PENDING 상태의 주문만 체결 확정할 수 있습니다.");
+		}
+		this.status = OrderStatus.FILLED;
 	}
 }

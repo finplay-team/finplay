@@ -48,6 +48,55 @@ class HoldingTest {
 		assertThat(holding.getQuantity()).isEqualByComparingTo(BigDecimal.valueOf(10));
 	}
 
+	@Test
+	void getAvailableQuantityReturnsQuantityMinusReservedQuantity() {
+		Holding holding = holdingWithQuantityAndPrice(BigDecimal.valueOf(10), BigDecimal.valueOf(70000));
+
+		holding.reserveQuantity(BigDecimal.valueOf(4));
+
+		assertThat(holding.getAvailableQuantity()).isEqualByComparingTo(BigDecimal.valueOf(6));
+	}
+
+	@Test
+	void reserveQuantityIncreasesReservedQuantityWithoutChangingQuantity() {
+		Holding holding = holdingWithQuantityAndPrice(BigDecimal.valueOf(10), BigDecimal.valueOf(70000));
+
+		holding.reserveQuantity(BigDecimal.valueOf(4));
+
+		assertThat(holding.getReservedQuantity()).isEqualByComparingTo(BigDecimal.valueOf(4));
+		assertThat(holding.getQuantity()).isEqualByComparingTo(BigDecimal.valueOf(10));
+	}
+
+	@Test
+	void reserveQuantityThrowsIllegalStateExceptionWhenExceedsAvailableQuantity() {
+		Holding holding = holdingWithQuantityAndPrice(BigDecimal.valueOf(10), BigDecimal.valueOf(70000));
+
+		assertThatThrownBy(() -> holding.reserveQuantity(BigDecimal.valueOf(11)))
+			.isInstanceOf(IllegalStateException.class);
+		assertThat(holding.getReservedQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
+	}
+
+	@Test
+	void releaseReservedQuantityDecreasesReservedQuantity() {
+		Holding holding = holdingWithQuantityAndPrice(BigDecimal.valueOf(10), BigDecimal.valueOf(70000));
+		holding.reserveQuantity(BigDecimal.valueOf(4));
+
+		holding.releaseReservedQuantity(BigDecimal.valueOf(4));
+
+		assertThat(holding.getReservedQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
+		assertThat(holding.getQuantity()).isEqualByComparingTo(BigDecimal.valueOf(10));
+	}
+
+	@Test
+	void releaseReservedQuantityThrowsIllegalStateExceptionWhenExceedsReservedQuantity() {
+		Holding holding = holdingWithQuantityAndPrice(BigDecimal.valueOf(10), BigDecimal.valueOf(70000));
+		holding.reserveQuantity(BigDecimal.valueOf(4));
+
+		assertThatThrownBy(() -> holding.releaseReservedQuantity(BigDecimal.valueOf(5)))
+			.isInstanceOf(IllegalStateException.class);
+		assertThat(holding.getReservedQuantity()).isEqualByComparingTo(BigDecimal.valueOf(4));
+	}
+
 	private static Holding holdingWithQuantityAndPrice(BigDecimal quantity, BigDecimal price) {
 		User user = User.create("trader@finplay.com", "password-hash", "trader", NOW);
 		Account account = Account.create(user, Market.STOCK, NOW);

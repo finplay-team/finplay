@@ -41,6 +41,9 @@ public class Account {
 	@Column(name = "cash_balance", nullable = false)
 	private long cashBalance;
 
+	@Column(name = "reserved_cash", nullable = false)
+	private long reservedCash;
+
 	@Column(name = "seed_money", nullable = false)
 	private long seedMoney;
 
@@ -57,6 +60,7 @@ public class Account {
 		this.user = user;
 		this.market = market;
 		this.cashBalance = INITIAL_SEED_MONEY;
+		this.reservedCash = 0L;
 		this.seedMoney = INITIAL_SEED_MONEY;
 		this.realizedPnl = 0L;
 		this.createdAt = now;
@@ -80,5 +84,24 @@ public class Account {
 
 	public void addRealizedPnl(long amount) {
 		this.realizedPnl += amount;
+	}
+
+	public long getAvailableCash() {
+		return this.cashBalance - this.reservedCash;
+	}
+
+	public void reserveCash(long amount) {
+		if (amount > getAvailableCash()) {
+			throw new IllegalStateException("예약 가능한 현금보다 큰 금액을 예약할 수 없습니다.");
+		}
+		this.reservedCash += amount;
+	}
+
+	public void confirmReservedCash(long amount) {
+		if (amount > this.reservedCash) {
+			throw new IllegalStateException("예약된 금액보다 큰 금액을 확정할 수 없습니다.");
+		}
+		this.reservedCash -= amount;
+		this.cashBalance -= amount;
 	}
 }

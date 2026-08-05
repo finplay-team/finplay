@@ -1,4 +1,4 @@
-# Plan: 체결별 투자일기 작성·수정 (JOUR-001 · JOUR-003 · JOUR-004 · JOUR-002)
+# Plan: 체결별 투자일기 작성·수정·목록 조회 (JOUR-001 · JOUR-003 · JOUR-004 · JOUR-002 · JOUR-006)
 
 > 요구사항·규칙의 정본은 `./spec.md`이고 PRD가 그 상위다. 여기서 새 규칙을 만들지 않는다.
 >
@@ -7,9 +7,10 @@
 > | §JOUR-001 ~ §JOUR-003 앞까지 | 매수 회고 작성 엔드포인트 1개 | [#159](https://github.com/finplay-team/finplay/issues/159) | 구현 완료 (기록 보존용, 변경하지 않는다) |
 > | §JOUR-003 매도 회고 작성 설계 | 매도 회고 작성 엔드포인트 1개 | [#183](https://github.com/finplay-team/finplay/issues/183) | 구현 완료 (기록 보존용, 변경하지 않는다) |
 > | §JOUR-004 매도 회고 수정 설계 | 매도 회고 수정 엔드포인트 1개 | [#190](https://github.com/finplay-team/finplay/issues/190) | 구현 완료 (기록 보존용, 변경하지 않는다) |
-> | **§JOUR-002 매수 회고 수정 설계** | 매수 회고 수정 엔드포인트 1개 | [#197](https://github.com/finplay-team/finplay/issues/197) | **이번 착수** |
+> | §JOUR-002 매수 회고 수정 설계 | 매수 회고 수정 엔드포인트 1개 | [#197](https://github.com/finplay-team/finplay/issues/197) | 구현 완료 (기록 보존용, 변경하지 않는다) |
+> | **§JOUR-006 투자일기 목록 조회 설계** | 목록 조회 엔드포인트 1개 | [#203](https://github.com/finplay-team/finplay/issues/203) | **이번 착수** |
 >
-> 아래 §관련 문서부터 §JOUR-003 절 직전까지는 **JOUR-001 설계**, 이어지는 §JOUR-003·§JOUR-004 절은 각각 그 요구사항의 설계다. 셋 다 구현 완료된 기록이며 이번 착수에서 손대지 않는다. JOUR-002 설계는 §JOUR-004 절 뒤, §이 spec에서 하지 않는 것 앞에 있는 새 절이다.
+> 아래 §관련 문서부터 §JOUR-003 절 직전까지는 **JOUR-001 설계**, 이어지는 §JOUR-003·§JOUR-004·§JOUR-002 절은 각각 그 요구사항의 설계다. 넷 다 구현 완료된 기록이며 이번 착수에서 손대지 않는다. JOUR-006 설계는 §JOUR-002 절 뒤, §이 spec에서 하지 않는 것 앞에 있는 새 절이다.
 
 ## JOUR-001 매수 회고 작성 설계 (이슈 #159, 구현 완료)
 
@@ -708,6 +709,256 @@ JOUR-004 테스트와 **대칭**으로 만들되, 잠금 없음을 고정하는 
 - **`docs/prd.md` JOUR-002·`docs/specs/005-order-sell/spec.md`의 잠금 규정 갱신은 이번 착수의 문서 커밋에서 이미 완료했다** (2026-08-04) — 구현 커밋에서 다시 손대지 않는다.
 - 컨트롤러 변경과 **같은 커밋**에서 API 문서 2개를 갱신한다.
 
+## JOUR-006 투자일기 목록 조회 설계 (이슈 #203, 이번 착수)
+
+> 요구사항·비즈니스 규칙·완료 조건의 정본은 `./spec.md` JOUR-006 절이다. 특히 식별자 게이트 비선점, 정렬·커서 키, `market`·소유권 결합 조건, 404/200 빈 목록 구분은 `spec.md`가 이미 확정했으므로 여기서 재논의하지 않는다. 이 절은 `spec.md`가 `plan.md`로 넘긴 세 가지(① 테이블 병합 방식 ② 컨트롤러 배치 ③ 응답 DTO)를 확정한다.
+
+### API 설계
+
+| Method | URL | 요청 | 성공 응답 | 설명 |
+|---|---|---|---|---|
+| GET | `/api/journal?market=&cursor=&limit=` | 쿼리 파라미터 | **200** `JournalListResponse` | 인증 사용자 본인의 매수·매도 회고를 `createdAt` 내림차순(동점은 체결 ID 내림차순)으로 섞어 커서 페이지네이션 조회 |
+
+- 인증: Access Bearer 필수. 조회 대상은 쿼리 파라미터가 아니라 Access Token의 인증 사용자(`AuthenticatedUser#userId`)로 결정한다(spec.md).
+- URL에 버전 프리픽스를 쓰지 않는다(컨벤션). `market`·`cursor`·`limit` 세 파라미터 이름과 의미는 `GET /api/trades`(PORT-002)·`GET /api/orders`(PORT-003)와 동일하다 — 새 이름을 만들지 않는다.
+
+#### 응답 예시 (200)
+
+```json
+{
+  "content": [
+    { "journalType": "SELL", "buyTradeId": null, "sellTradeId": 34, "content": "목표가 도달해서 전량 매도.", "createdAt": "2026-08-05T09:03:12", "updatedAt": "2026-08-05T09:03:12" },
+    { "journalType": "BUY", "buyTradeId": 12, "sellTradeId": null, "content": "실적 발표 전 분할 매수.", "createdAt": "2026-08-04T10:12:33", "updatedAt": "2026-08-04T10:12:33" }
+  ],
+  "nextCursor": "2026-08-04T10:12:33_12",
+  "hasNext": false
+}
+```
+
+항목 필드는 **6개로 고정**이다 — `journalType`·`buyTradeId`·`sellTradeId`·`content`·`createdAt`·`updatedAt` (spec.md). wrapper는 `content`·`nextCursor`·`hasNext` 3필드로 `TradeListResponse`·`OrderListResponse`와 동일 형태다. **통합 `journalId`는 노출하지 않는다**(spec.md "JOUR-005 식별자 게이트를 선점하지 않는다").
+
+### 입력 명세
+
+| 필드 | 위치 | 필수 | 검증 |
+|---|---|---|---|
+| `market` | query | **필수** | `STOCK`\|`CRYPTO` 리터럴(`account.domain.Market` enum). 누락 시 `MissingServletRequestParameterException`, 미지원 리터럴은 `MethodArgumentTypeMismatchException` — 둘 다 전역 핸들러가 400 `VALIDATION_ERROR`로 매핑(`TradeController`·`OrderController`와 동일 경로, 컨트롤러에 별도 분기 없음) |
+| `cursor` | query | 선택 | 미지정 시 첫 페이지. 지정 시 `{createdAt}_{tradeId}` 형식 — 파싱 실패(구분자 없음·`LocalDateTime`/`Long` 파싱 불가)는 400 `VALIDATION_ERROR` |
+| `limit` | query | 선택, 기본 20 | 1~100. 범위를 벗어나면 **클램핑 없이** 400 `VALIDATION_ERROR`(`TradeController.validateLimit`과 동일한 수동 검증 — `@Min`/`@Max`를 DTO에 못 붙이는 이유도 같다: 쿼리 파라미터라 요청 DTO가 없다) |
+
+- 세 파라미터의 필수 여부·기본값·오류 매핑은 `TradeController.getMyTrades`·`OrderController.getMyOrders`를 그대로 복제한다. 새 검증 로직을 만들지 않는다.
+
+### 오류 매핑
+
+| 상황 | 상태 | 코드 |
+|---|---|---|
+| `market` 누락·미지원 리터럴 | 400 | `VALIDATION_ERROR` |
+| `limit` 범위 밖(1~100 벗어남) | 400 | `VALIDATION_ERROR` |
+| `cursor` 형식 파싱 실패 | 400 | `VALIDATION_ERROR` |
+| Access 인증 실패·미첨부 | 401 | `UNAUTHORIZED` |
+| 인증 사용자의 해당 `market` 계좌 없음 | 404 | `NOT_FOUND` |
+| 계좌는 있으나 회고 0건 | 200 | 빈 목록(`content: []`·`nextCursor: null`·`hasNext: false`) |
+
+**새 `ErrorCode` 상수를 추가하지 않는다** — 4개 모두 기존 enum에 있다. 404는 `AccountService.getAccountFor`가 이미 던지는 예외를 그대로 전파한다(신규 분기 없음).
+
+### 데이터 접근 설계 — 두 테이블 병합 방식 (spec.md가 plan.md로 넘긴 결정 ①)
+
+**결정: 각 리포지토리에서 QueryDSL로 `limit + 1`건씩 커서 조건 조회 → `JournalService`가 애플리케이션 계층에서 병합·정렬한다.** 네이티브 `UNION ALL`은 채택하지 않는다.
+
+근거는 넷이다.
+
+1. **기존 커서 페이지네이션 관례가 이미 이 모양이다.** `TradeService.getMyTrades`(`order/service/TradeService.java`)가 `limit + 1`건 페치 → `hasNext` 판정 → `nextCursor` 인코딩의 3단계를 쓰고, `TradeRepositoryImpl.findByAccountIdWithCursor`(QueryDSL)가 단일 테이블 커서 조회를 맡는다. JOUR-006은 이 관례를 테이블 2개로 확장한 것뿐이다 — 새 패턴을 도입하지 않는다.
+2. **`UNION ALL`은 이 코드베이스에 선례가 없고 QueryDSL의 엔티티 타입 안전성을 잃는다.** `BuyTradeJournal`과 `SellTradeJournal`은 컬럼 이름(`buy_trade_id`/`sell_trade_id`)과 엔티티 타입이 다르므로, `UNION ALL`로 합치려면 네이티브 SQL + 수동 `ResultSetMapping`(또는 DTO 프로젝션)이 필요하다. 컨벤션의 QueryDSL 사용 기준("동적 조건·커서 페이지네이션·다중 조인 목록 조회에 QueryDSL을 쓴다")과 맞지 않고, 두 테이블의 스키마가 갈라질 때(JOUR-005 게이트 이후) 마이그레이션 비용이 더 크다.
+3. **정확성이 간단히 증명된다.** 병합 후 필요한 상위 `limit + 1`건은 어느 한쪽에서 전부 나오는 극단적인 경우에도 그 한쪽의 `limit + 1`건 페치로 이미 커버된다 — 그래서 "각 테이블에서 `limit + 1`건씩"이면 병합 결과의 상위 `limit + 1`건을 놓치지 않는다. 두 리스트를 합쳐 `(createdAt, tradeId)` 내림차순으로 정렬해 앞의 `limit + 1`건만 취하면 된다.
+4. **ADR-0002 위반이 없다.** 두 쿼리 모두 journal 자체 테이블(`buy_trade_journals`/`sell_trade_journals`)만 읽고, 계좌 스코프 조건은 이미 엔티티에 걸린 `@ManyToOne Trade`(→`Account`) 관계를 JPQL/QueryDSL 조인으로 타는 것이다. `TradeRepository`를 journal이 직접 주입하는 것이 아니다 — `BuyTradeJournal.buyTrade`·`SellTradeJournal.sellTrade` 필드 자체가 이미 JOUR-001·003에서 `order.domain.Trade`를 참조하도록 확정된 관계이고(엔티티 레벨 참조는 이미 있는 설계), 이번에 새로 주입하는 건 `order` 패키지의 **repository**가 아니라 그 관계를 타는 journal 자신의 QueryDSL 쿼리다.
+
+**알려진 트레이드오프**: 병합·정렬을 서비스 계층에서 하므로 DB가 아니라 애플리케이션 메모리에서 정렬한다. 한 요청당 최대 `2 × (limit + 1)`건(기본 42건, 최대 202건)만 로드하므로 이번 규모에서는 무시할 수준이다. 두 테이블이 훨씬 커지고 `limit`이 커지면 이 트레이드오프를 재평가한다 — 지금은 실측 없이 최적화하지 않는다.
+
+### 커서 인코딩 형식
+
+`spec.md`가 고정한 `{createdAt}_{tradeId}` 형식을 그대로 구현한다 — `TradeCursor`(`order/service/TradeCursor.java`)·`OrderCursor`(`order/service/OrderCursor.java`)와 완전히 같은 모양(`DateTimeFormatter.ISO_LOCAL_DATE_TIME` + `_` + `Long`)의 새 값 객체 `JournalCursor(LocalDateTime createdAt, Long tradeId)`를 `com.finplay.api.journal.service`에 만든다.
+
+- **기존 `TradeCursor`를 재사용하지 않고 새로 만드는 이유.** `OrderCursor`가 `TradeCursor`와 필드 의미(`requestedAt` vs `executedAt`)가 달라 이미 별도 값 객체로 중복돼 있다 — 이 코드베이스는 커서 값 객체를 엔티티/유스케이스 단위로 두고 조기 추상화하지 않는 관례다(컨벤션 "공통화는 세 번째 중복이 보이고 책임이 명확할 때만 검토"). `JournalCursor`는 세 번째 사례이지만, 지금 셋을 묶는 제네릭 커서로 추상화하면 이번 PR의 diff가 추가 위주가 아니게 되고 기존 두 값 객체의 리팩터링까지 끌고 들어온다 — 이번 범위(spec.md 범위 제외 "네 유스케이스의 공통 추상화를 지금 만들지 않는다"와 같은 판단)에서 하지 않는다.
+- `JournalCursor.parse(String raw)`: `null`/빈 문자열은 `null`(첫 페이지). 구분자 없음·파싱 실패는 `BusinessException(ErrorCode.VALIDATION_ERROR, "cursor 형식이 올바르지 않습니다.")`.
+- `JournalCursor.encode(LocalDateTime createdAt, Long tradeId)`: 커서를 만들 항목이 `BuyTradeJournal`·`SellTradeJournal` 어느 쪽이든 될 수 있으므로, `TradeCursor.encode(Trade)`처럼 엔티티를 받지 않고 **값 두 개를 직접 받는다** — 병합된 마지막 항목에서 `journalType`에 따라 `buyTradeId` 또는 `sellTradeId` 중 채워진 쪽을 골라 넘긴다.
+
+### 구성요소 설계 — 컨트롤러 배치 (spec.md가 plan.md로 넘긴 결정 ②)
+
+**결정: 기존 `JournalController`(`@RequestMapping("/api/trades")`)를 재사용하지 않고, 같은 `journal` 패키지에 새 컨트롤러 `JournalListController`(`@RequestMapping("/api/journal")`)를 추가한다.**
+
+근거: `order` 도메인이 `OrderController`(`/api/orders`)와 `TradeController`(`/api/trades`)를 같은 패키지 안에서 리소스 경로별로 분리한 선례가 이미 있다. `journal` 도메인도 같은 방식으로 쓰기 리소스(`/api/trades/{tradeId}/journal`·`/sell-journal`, 기존 `JournalController`)와 읽기 리소스(`/api/journal`, 신규 `JournalListController`)를 분리한다. 기존 `JournalController`에 클래스 레벨 매핑이 다른 메서드를 억지로 끼워 넣지 않는다(`@RequestMapping` 클래스 레벨과 무관한 `@GetMapping("/api/journal")` 절대경로를 기존 클래스에 추가하는 대안은, `TradeController`/`OrderController` 선례와 다른 새 패턴이라 배제한다).
+
+```
+com.finplay.api.journal
+├── controller
+│   ├── JournalController.java                    (기존, 변경 없음)
+│   └── JournalListController.java                (신규 — GET /api/journal)
+├── service
+│   ├── JournalService.java                       (기존 — getMyJournalEntries 메서드 추가)
+│   └── JournalCursor.java                        (신규 — 커서 파싱/인코딩 값 객체)
+├── repository
+│   ├── BuyTradeJournalRepository.java             (기존 — BuyTradeJournalRepositoryCustom 상속 추가)
+│   ├── BuyTradeJournalRepositoryCustom.java       (신규)
+│   ├── BuyTradeJournalRepositoryImpl.java         (신규 — QueryDSL)
+│   ├── SellTradeJournalRepository.java            (기존 — SellTradeJournalRepositoryCustom 상속 추가)
+│   ├── SellTradeJournalRepositoryCustom.java      (신규)
+│   └── SellTradeJournalRepositoryImpl.java        (신규 — QueryDSL)
+└── dto/response
+    ├── JournalListResponse.java                   (신규)
+    └── JournalListItemResponse.java               (신규)
+```
+
+#### `BuyTradeJournalRepositoryCustom` / `BuyTradeJournalRepositoryImpl`
+
+`TradeRepositoryCustom`/`TradeRepositoryImpl`(`order/repository/`)과 완전히 같은 모양이다.
+
+```java
+public interface BuyTradeJournalRepositoryCustom {
+    List<BuyTradeJournal> findByAccountIdWithCursor(
+        Long accountId, LocalDateTime cursorCreatedAt, Long cursorTradeId, int fetchSize);
+}
+```
+
+```java
+public List<BuyTradeJournal> findByAccountIdWithCursor(
+    Long accountId, LocalDateTime cursorCreatedAt, Long cursorTradeId, int fetchSize) {
+    QBuyTradeJournal journal = QBuyTradeJournal.buyTradeJournal;
+
+    BooleanBuilder condition = new BooleanBuilder(journal.buyTrade.account.id.eq(accountId));
+    if (cursorCreatedAt != null && cursorTradeId != null) {
+        condition.and(
+            journal.createdAt.lt(cursorCreatedAt)
+                .or(journal.createdAt.eq(cursorCreatedAt).and(journal.buyTrade.id.lt(cursorTradeId))));
+    }
+
+    return queryFactory
+        .selectFrom(journal)
+        .join(journal.buyTrade).fetchJoin()
+        .where(condition)
+        .orderBy(journal.createdAt.desc(), journal.buyTrade.id.desc())
+        .limit(fetchSize)
+        .fetch();
+}
+```
+
+- `journal.buyTrade.account.id.eq(accountId)` 한 조건이 spec.md의 "`market` 필터와 소유권 검증을 같은 조건 하나로 처리"를 그대로 구현한다 — `accountId`는 이미 `AccountService.getAccountFor(userId, market)`로 시장·소유자가 모두 확정된 값이다.
+- `.join(journal.buyTrade).fetchJoin()`은 `TradeRepositoryImpl`이 `.join(trade.instrument).fetchJoin()`을 쓰는 것과 같은 이유(N+1 방지) — 응답 DTO가 `buyTrade.getId()`를 읽는다.
+- `SellTradeJournalRepositoryCustom`/`Impl`은 `sell_trade_id`/`sellTrade` 기준으로 완전히 대칭이다(필드명만 다르다) — 반복해서 적지 않는다.
+
+#### `JournalService.getMyJournalEntries`
+
+```java
+@Transactional(readOnly = true)
+public JournalListResponse getMyJournalEntries(Long userId, Market market, String cursor, int limit)
+```
+
+1. `Account account = accountService.getAccountFor(userId, market);` — 계좌가 없으면 404 `NOT_FOUND`(spec.md). `JournalService`가 `AccountService`를 새로 주입받는다.
+2. `JournalCursor parsedCursor = JournalCursor.parse(cursor);` — 형식 오류면 400.
+3. `List<BuyTradeJournal> buyPage = buyTradeJournalRepository.findByAccountIdWithCursor(account.getId(), createdAt, tradeId, limit + 1);`
+4. `List<SellTradeJournal> sellPage = sellTradeJournalRepository.findByAccountIdWithCursor(account.getId(), createdAt, tradeId, limit + 1);` — 같은 커서 값을 두 리포지토리에 그대로 넘긴다(두 쿼리의 정렬 키가 같으므로 커서 의미가 동일하다).
+5. 두 리스트를 `JournalListItemResponse`로 매핑(각각 `from(BuyTradeJournal)`/`from(SellTradeJournal)`)한 뒤 하나로 합치고, `(createdAt, 체결 ID)` 내림차순으로 정렬해 상위 `limit + 1`건만 남긴다. 체결 ID는 `journalType`에 따라 `buyTradeId` 또는 `sellTradeId` 중 null이 아닌 쪽이다.
+6. `hasNext = merged.size() > limit;` → `limit`건으로 자른다. `hasNext`면 마지막 항목의 `(createdAt, 체결ID)`로 `JournalCursor.encode(...)`해 `nextCursor`를 만든다.
+7. `return JournalListResponse.of(content, nextCursor, hasNext);`
+
+- **트랜잭션은 `readOnly = true`다**(spec.md "조회는 읽기 전용"). 어떤 테이블에도 쓰지 않는다.
+- 5단계의 정렬·슬라이스는 두 리스트(각 최대 `limit + 1`건, 기본 21건)를 합친 뒤 `Comparator.comparing(createdAt).reversed().thenComparing(tradeId, reverseOrder())`로 스트림 정렬한다 — 두 소스가 각각 이미 정렬돼 있어 병합 정렬(merge)로 더 최적화할 수도 있지만, 이 크기(최대 202건)에서는 단순 정렬로 충분하고 코드가 더 읽힌다.
+- `TradeService.getOwnedTrade`처럼 order 도메인 메서드를 호출하지 않는다 — 이번 조회는 journal 자신의 테이블만 읽고, 계좌 조회는 이미 `AccountService`(account 도메인, journal이 지금까지도 간접적으로 의존해 온 `Trade → Account` 관계와 다르지 않은 층)를 거친다.
+
+#### DTO 2개
+
+- `JournalListResponse(List<JournalListItemResponse> content, String nextCursor, boolean hasNext)` — `TradeListResponse`와 완전히 같은 모양(컴팩트 생성자에서 `List.copyOf`), 정적 팩토리 `of(...)`.
+- `JournalListItemResponse(String journalType, Long buyTradeId, Long sellTradeId, String content, LocalDateTime createdAt, LocalDateTime updatedAt)` — 정적 팩토리 오버로드 2개.
+
+```java
+public static JournalListItemResponse from(BuyTradeJournal journal) {
+    return new JournalListItemResponse(
+        "BUY", journal.getBuyTrade().getId(), null,
+        journal.getContent(), journal.getCreatedAt(), journal.getUpdatedAt());
+}
+
+public static JournalListItemResponse from(SellTradeJournal journal) {
+    return new JournalListItemResponse(
+        "SELL", null, journal.getSellTrade().getId(),
+        journal.getContent(), journal.getCreatedAt(), journal.getUpdatedAt());
+}
+```
+
+- `journalType`은 `order.domain.OrderSide`를 재사용하지 않고 리터럴 문자열 `"BUY"`/`"SELL"`을 직접 쓴다(값은 같지만) — 투자일기의 "회고 종류"는 체결의 "매매 방향"과 개념적으로 다르고, `TradeListItemResponse.side`도 `OrderSide`를 그대로 노출하지 않고 `trade.getSide().name()`으로 문자열화하는 같은 선례를 따른다. journal DTO가 order 도메인 enum 타입에 직접 의존하지 않는다.
+- 접미사는 컨벤션 표의 "목록 응답 / 목록 항목" 행(`~ListResponse`/`~ListItemResponse`, 예시가 정확히 `TradeListResponse`)을 그대로 따른다 — 이 항목은 `JournalListResponse` 하나에만 실리므로 "여러 응답이 공유하는 항목" 예외(컨벤션 DTO 규칙 문단)에 해당하지 않는다.
+
+#### `JournalListController`
+
+```java
+@RestController
+@RequestMapping("/api/journal")
+@RequiredArgsConstructor
+public class JournalListController {
+
+    private static final int DEFAULT_LIMIT = 20;
+    private static final int MIN_LIMIT = 1;
+    private static final int MAX_LIMIT = 100;
+
+    private final JournalService journalService;
+
+    @GetMapping
+    public ResponseEntity<JournalListResponse> getMyJournalEntries(
+        @AuthenticationPrincipal AuthenticatedUser principal,
+        @RequestParam Market market,
+        @RequestParam(required = false) String cursor,
+        @RequestParam(defaultValue = "" + DEFAULT_LIMIT) int limit) {
+        validateLimit(limit);
+        return ResponseEntity.ok(journalService.getMyJournalEntries(principal.userId(), market, cursor, limit));
+    }
+
+    private void validateLimit(int limit) {
+        if (limit < MIN_LIMIT || limit > MAX_LIMIT) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "limit은 1~100 사이여야 합니다.");
+        }
+    }
+}
+```
+
+- `TradeController.getMyTrades`를 그대로 복제한 형태다 — 새 검증 패턴을 만들지 않는다.
+- 비즈니스 판단·repository 호출·try-catch를 두지 않는다(컨벤션 레이어 규칙).
+
+#### 기존 코드 변경 범위
+
+- **기존 `JournalController`(작성·수정 4개 엔드포인트)를 전혀 건드리지 않는다.**
+- **`BuyTradeJournal`·`SellTradeJournal` 엔티티를 변경하지 않는다.** 이번 조회에 필요한 필드(`content`·`createdAt`·`updatedAt`·연관 `Trade`)는 이미 있다.
+- **`TradeService`·`AccountService`를 변경하지 않는다.** `AccountService.getAccountFor`를 그대로 호출만 한다.
+- **신규 Flyway 마이그레이션이 없다** — 기존 두 테이블을 읽기만 한다(spec.md).
+
+### 테스트 계획 (ADR-0003)
+
+- **단위** (`JournalCursorTest`)
+  - `parse`: 정상 문자열 → 필드 2개, `null`/빈 문자열 → `null`, 구분자 없음·`LocalDateTime`/`Long` 파싱 실패 → 400 `VALIDATION_ERROR`.
+  - `encode`: `{ISO_LOCAL_DATE_TIME}_{id}` 형식으로 정확히 조립.
+- **단위** (`JournalServiceTest`, Mockito — 기존 파일에 메서드 추가)
+  - 계좌 없음 → 404. `AccountService.getAccountFor`가 던지는 예외를 그대로 전파하는지.
+  - 매수·매도 항목이 섞였을 때 `(createdAt, 체결 ID)` 내림차순 병합이 맞는지 — 두 리포지토리 mock에 각각 픽스처를 주고 병합 결과 순서를 검증.
+  - **동시각 tie-break** — 매수·매도 항목이 같은 `createdAt`일 때 체결 ID가 더 큰 쪽이 먼저 오는지.
+  - `limit + 1`건 초과 시 `hasNext=true`·`nextCursor`가 마지막 항목의 `(createdAt, 체결ID)`로 인코딩되는지, 이하일 때 `hasNext=false`·`nextCursor=null`.
+  - 빈 목록(양쪽 리포지토리 모두 빈 리스트) → `content: []`·`hasNext=false`.
+  - `buyTradeJournalRepository`·`sellTradeJournalRepository`에 넘기는 커서 인자가 두 호출에서 동일한지(같은 페이지 경계를 공유해야 한다).
+- **슬라이스**
+  - `@DataJpaTest`(`BuyTradeJournalRepositoryTest`·`SellTradeJournalRepositoryTest`, 기존 파일에 케이스 추가) — `findByAccountIdWithCursor`: ① 다른 계좌의 회고가 섞이지 않음 ② 커서보다 이전 항목만 반환 ③ `createdAt` 동일 시 체결 ID 내림차순 ④ `fetchSize`만큼만 반환.
+  - `@WebMvcTest`(`JournalListControllerTest`, 신규 파일) — 200 응답 `jsonPath`(6필드, `journalId` 필드 **부재** 확인), `market` 누락·미지원 리터럴 400, `limit` 0·101 400, `cursor` 파싱 실패 400, 미인증 401, 계좌 없음(서비스 404 매핑) 404.
+- **통합** (`@SpringBootTest` + Testcontainers, 기존 `JournalIntegrationTest`에 추가하거나 신규 `JournalListIntegrationTest`)
+  - 매수·매도 회고를 섞어 작성한 뒤 목록 조회 → `createdAt` 내림차순, `journalType`·해당 없는 체결 ID `null` 확인.
+  - **`market` 필터** — 같은 사용자의 `CRYPTO` 계좌 회고가 `market=STOCK` 결과에 섞이지 않음.
+  - **커서 페이지네이션** — 첫 페이지 `nextCursor`로 다음 페이지 이어받기, 중복·누락 없음. **매수·매도 회고가 같은 `createdAt`으로 경계에 걸치는 픽스처**를 포함해 체결 ID tie-break가 실제로 페이지 경계를 가르는지 확인.
+  - `limit` 0·101 400, `market` 누락·미지원 리터럴 400, `cursor` 파싱 실패 400, 미인증 401.
+  - 다른 사용자의 회고가 섞이지 않음.
+  - 회고가 하나도 없는 사용자 → 200 빈 목록.
+  - **`journalId` 미노출 계약** — 응답 JSON에 `journalId` 키 자체가 없음을 확인(문자열 매칭 또는 `jsonPath("$.content[0].journalId").doesNotExist()`).
+  - **원장·투자일기 불변** — 조회 전후 `buy_trade_journals`·`sell_trade_journals`·`orders`·`trades`·`accounts`·`holdings`·`holding_lots`·`trade_allocations`가 전혀 변하지 않음.
+  - 기존 4개 계약(`POST`·`PATCH .../journal`, `POST`·`PATCH .../sell-journal`) 기존 테스트가 그대로 통과.
+
+### 문서 갱신 (CLAUDE.md 규칙 7)
+
+- `docs/api-routes.md` — `journal` 도메인에 `GET /api/journal` 행 추가 (근거 열: `007 JOUR-006, Issue #203`).
+- `docs/api-contracts.md` `## journal` 절 — 기존 4개 계약 아래에 "투자일기 목록 조회" 소절을 추가해 요청(쿼리 파라미터 3개)·응답(wrapper 3필드 + 항목 6필드)·오류(400×3·401·404·200 빈 목록) 계약을 적는다. `journalId` 미노출과 `market`+소유권 결합 조건을 본문에 한 줄로 요약한다.
+- 컨트롤러 변경과 **같은 커밋**에서 갱신한다. 이 갱신은 planner의 동기화 모드가 실제 controller 코드를 보고 확정하며, 여기 적은 문구는 설계 의도이지 최종 표현이 아니다.
+
 ## 이 spec에서 하지 않는 것
 
 `./spec.md` §범위 제외가 정본이다. 특히 **JOUR-002(수정)·JOUR-005(상세)는 PRD가 Decision Gate 미해결로 표시**했으므로, 그 계약을 미리 반영한 컬럼·필드·URL을 이번 구현에 넣지 않는다. 매도 회고 수정(JOUR-004)은 이번 이슈 다음의 별도 이슈이며, 그 때문에 `sell_trade_journals`에 `updated_at`을 미리 만들지 않는다.
@@ -715,3 +966,5 @@ JOUR-004 테스트와 **대칭**으로 만들되, 잠금 없음을 고정하는 
 > **2026-08-04 갱신**: 위 문단은 JOUR-003 착수 시점(이슈 #183)의 기록이며 그 시점 기준으로는 여전히 맞다("다음 별도 이슈" = 지금 이 JOUR-004). JOUR-004는 이제 이번 spec의 착수 범위이고, 실제 설계는 위 §JOUR-004 매도 회고 수정 설계를 따른다. 매수 회고 수정(JOUR-002)·투자일기 상세(JOUR-005)는 여전히 Decision Gate 미해결로 범위 밖이다.
 >
 > **2026-08-04 재갱신 (이슈 #197)**: **JOUR-002의 Decision Gate는 해제됐다** — 잠금을 두지 않기로 확정했고(`./spec.md` §비즈니스 규칙 "매수 회고 수정 잠금 없음", `docs/prd.md` JOUR-002), 설계는 위 §JOUR-002 매수 회고 수정 설계를 따른다. 따라서 `buy_trade_journals`의 `updated_at`을 이번 착수에서 추가한다. **투자일기 상세(JOUR-005)의 식별자 체계 게이트만 남았고**, 목록(JOUR-006)과 함께 여전히 범위 밖이다.
+>
+> **2026-08-04 재갱신 (이슈 #203)**: **목록 조회(JOUR-006)는 이제 이번 spec의 착수 범위**이고, 실제 설계는 위 §JOUR-006 투자일기 목록 조회 설계를 따른다. JOUR-006은 식별자 게이트와 무관하게 착수했다(spec.md §비즈니스 규칙 "JOUR-005 식별자 게이트를 선점하지 않는다"). **투자일기 상세(JOUR-005)의 식별자 체계 게이트만 여전히 미해결이며 범위 밖이다.**

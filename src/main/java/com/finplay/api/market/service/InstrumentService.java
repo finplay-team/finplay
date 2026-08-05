@@ -8,6 +8,7 @@ import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.dto.response.InstrumentResponse;
 import com.finplay.api.market.repository.InstrumentRepository;
 import java.util.List;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,5 +48,12 @@ public class InstrumentService {
 	@Transactional(readOnly = true)
 	public List<Instrument> getInstrumentEntities(Market market) {
 		return instrumentRepository.findByMarketOrderByIdAsc(market);
+	}
+
+	// 지정가 체결 리스너(order 도메인)가 가격 갱신 이벤트의 심볼로 종목을 조회할 때 이 메서드만 거치게 한다
+	// (ADR-0002, 015-limit-order LMT-002). 목록에 없는 심볼일 수 있으므로 예외 대신 빈 Optional로 관용 처리한다.
+	@Transactional(readOnly = true)
+	public Optional<Instrument> findEntityByMarketAndSymbol(Market market, String symbol) {
+		return instrumentRepository.findByMarketAndSymbol(market, symbol);
 	}
 }

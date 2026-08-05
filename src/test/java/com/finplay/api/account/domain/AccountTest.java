@@ -66,6 +66,66 @@ class AccountTest {
 		assertThat(account.getRealizedPnl()).isEqualTo(-20_000L);
 	}
 
+	@Test
+	void getAvailableCashReturnsCashBalanceMinusReservedCash() {
+		Account account = Account.create(testUser(), Market.CRYPTO, NOW);
+
+		account.reserveCash(3_000_000L);
+
+		assertThat(account.getAvailableCash()).isEqualTo(7_000_000L);
+	}
+
+	@Test
+	void reserveCashIncreasesReservedCashWithoutChangingCashBalance() {
+		Account account = Account.create(testUser(), Market.CRYPTO, NOW);
+
+		account.reserveCash(2_000_000L);
+
+		assertThat(account.getReservedCash()).isEqualTo(2_000_000L);
+		assertThat(account.getCashBalance()).isEqualTo(10_000_000L);
+	}
+
+	@Test
+	void reserveCashThrowsIllegalStateExceptionWhenAmountExceedsAvailableCash() {
+		Account account = Account.create(testUser(), Market.CRYPTO, NOW);
+
+		assertThatThrownBy(() -> account.reserveCash(10_000_001L))
+			.isInstanceOf(IllegalStateException.class);
+		assertThat(account.getReservedCash()).isZero();
+	}
+
+	@Test
+	void reserveCashThrowsIllegalStateExceptionWhenExceedingAlreadyReservedAvailableCash() {
+		Account account = Account.create(testUser(), Market.CRYPTO, NOW);
+		account.reserveCash(9_000_000L);
+
+		assertThatThrownBy(() -> account.reserveCash(1_000_001L))
+			.isInstanceOf(IllegalStateException.class);
+		assertThat(account.getReservedCash()).isEqualTo(9_000_000L);
+	}
+
+	@Test
+	void confirmReservedCashDecreasesBothReservedCashAndCashBalance() {
+		Account account = Account.create(testUser(), Market.CRYPTO, NOW);
+		account.reserveCash(3_000_000L);
+
+		account.confirmReservedCash(3_000_000L);
+
+		assertThat(account.getReservedCash()).isZero();
+		assertThat(account.getCashBalance()).isEqualTo(7_000_000L);
+	}
+
+	@Test
+	void confirmReservedCashThrowsIllegalStateExceptionWhenAmountExceedsReservedCash() {
+		Account account = Account.create(testUser(), Market.CRYPTO, NOW);
+		account.reserveCash(1_000_000L);
+
+		assertThatThrownBy(() -> account.confirmReservedCash(1_000_001L))
+			.isInstanceOf(IllegalStateException.class);
+		assertThat(account.getReservedCash()).isEqualTo(1_000_000L);
+		assertThat(account.getCashBalance()).isEqualTo(10_000_000L);
+	}
+
 	private static User testUser() {
 		return User.create("trader@finplay.com", "password-hash", "trader", NOW);
 	}

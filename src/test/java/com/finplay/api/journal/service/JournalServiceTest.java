@@ -4,6 +4,9 @@ package com.finplay.api.journal.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
@@ -12,6 +15,7 @@ import static org.mockito.Mockito.when;
 
 import com.finplay.api.account.domain.Account;
 import com.finplay.api.account.domain.Market;
+import com.finplay.api.account.service.AccountService;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
@@ -19,6 +23,8 @@ import com.finplay.api.journal.domain.BuyTradeJournal;
 import com.finplay.api.journal.domain.SellTradeJournal;
 import com.finplay.api.journal.dto.response.BuyJournalResponse;
 import com.finplay.api.journal.dto.response.BuyJournalUpdateResponse;
+import com.finplay.api.journal.dto.response.JournalListItemResponse;
+import com.finplay.api.journal.dto.response.JournalListResponse;
 import com.finplay.api.journal.dto.response.SellJournalResponse;
 import com.finplay.api.journal.dto.response.SellJournalUpdateResponse;
 import com.finplay.api.journal.repository.BuyTradeJournalRepository;
@@ -33,6 +39,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -44,16 +51,18 @@ class JournalServiceTest {
 	private static final Long USER_ID = 1L;
 	private static final Long BUY_TRADE_ID = 5L;
 	private static final Long SELL_TRADE_ID = 6L;
+	private static final Long ACCOUNT_ID = 10L;
 	private static final Instant FIXED_INSTANT = Instant.parse("2026-08-04T10:00:00Z");
 	private static final Clock FIXED_CLOCK = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
 	private static final LocalDateTime NOW = LocalDateTime.ofInstant(FIXED_INSTANT, ZoneOffset.UTC);
 
 	private final TradeService tradeService = mock(TradeService.class);
+	private final AccountService accountService = mock(AccountService.class);
 	private final BuyTradeJournalRepository buyTradeJournalRepository = mock(BuyTradeJournalRepository.class);
 	private final SellTradeJournalRepository sellTradeJournalRepository = mock(SellTradeJournalRepository.class);
 
-	private final JournalService journalService = new JournalService(tradeService, buyTradeJournalRepository,
-		sellTradeJournalRepository, FIXED_CLOCK);
+	private final JournalService journalService = new JournalService(tradeService, accountService,
+		buyTradeJournalRepository, sellTradeJournalRepository, FIXED_CLOCK);
 
 	@Test
 	void createBuyJournalSavesJournalWithFixedClockAndReturnsAllFields() {
@@ -377,9 +386,9 @@ class JournalServiceTest {
 		Clock firstEditClock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
 		Clock secondEditClock = Clock.fixed(FIXED_INSTANT.plusSeconds(3600), ZoneOffset.UTC);
 		JournalService firstEditService = new JournalService(
-			tradeService, buyTradeJournalRepository, sellTradeJournalRepository, firstEditClock);
+			tradeService, accountService, buyTradeJournalRepository, sellTradeJournalRepository, firstEditClock);
 		JournalService secondEditService = new JournalService(
-			tradeService, buyTradeJournalRepository, sellTradeJournalRepository, secondEditClock);
+			tradeService, accountService, buyTradeJournalRepository, sellTradeJournalRepository, secondEditClock);
 
 		SellJournalUpdateResponse firstResponse = firstEditService.updateSellJournal(USER_ID, SELL_TRADE_ID, "첫 수정 내용");
 		SellJournalUpdateResponse secondResponse = secondEditService.updateSellJournal(USER_ID, SELL_TRADE_ID,
@@ -493,9 +502,9 @@ class JournalServiceTest {
 		Clock firstEditClock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
 		Clock secondEditClock = Clock.fixed(FIXED_INSTANT.plusSeconds(3600), ZoneOffset.UTC);
 		JournalService firstEditService = new JournalService(
-			tradeService, buyTradeJournalRepository, sellTradeJournalRepository, firstEditClock);
+			tradeService, accountService, buyTradeJournalRepository, sellTradeJournalRepository, firstEditClock);
 		JournalService secondEditService = new JournalService(
-			tradeService, buyTradeJournalRepository, sellTradeJournalRepository, secondEditClock);
+			tradeService, accountService, buyTradeJournalRepository, sellTradeJournalRepository, secondEditClock);
 
 		BuyJournalUpdateResponse firstResponse = firstEditService.updateBuyJournal(USER_ID, BUY_TRADE_ID, "첫 수정 내용");
 		BuyJournalUpdateResponse secondResponse = secondEditService.updateBuyJournal(USER_ID, BUY_TRADE_ID,
@@ -505,6 +514,155 @@ class JournalServiceTest {
 		assertThat(secondResponse.content()).isEqualTo("두 번째 수정 내용");
 		assertThat(journal.getContent()).isEqualTo("두 번째 수정 내용");
 		assertThat(journal.getUpdatedAt()).isEqualTo(secondResponse.updatedAt());
+	}
+
+	@Test
+	void getMyJournalEntriesPropagatesNotFoundWhenAccountDoesNotExist() {
+		when(accountService.getAccountFor(USER_ID, Market.STOCK)).thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
+
+		assertThatThrownBy(() -> journalService.getMyJournalEntries(USER_ID, Market.STOCK, null, 20))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(exception -> assertThat(((BusinessException)exception).getErrorCode())
+				.isEqualTo(ErrorCode.NOT_FOUND));
+
+		verify(buyTradeJournalRepository, never()).findByAccountIdWithCursor(any(), any(), any(), anyInt());
+		verify(sellTradeJournalRepository, never()).findByAccountIdWithCursor(any(), any(), any(), anyInt());
+	}
+
+	@Test
+	void getMyJournalEntriesReturnsMixedListSortedByCreatedAtDescending() {
+		Account account = accountWithId(ACCOUNT_ID);
+		when(accountService.getAccountFor(USER_ID, Market.STOCK)).thenReturn(account);
+
+		BuyTradeJournal oldBuy = BuyTradeJournal.of(buyTrade(1L), "오래된 매수 회고", NOW.minusDays(2));
+		SellTradeJournal midSell = SellTradeJournal.of(sellTrade(2L), "중간 매도 회고", NOW.minusDays(1));
+		BuyTradeJournal newBuy = BuyTradeJournal.of(buyTrade(3L), "최신 매수 회고", NOW);
+
+		when(buyTradeJournalRepository.findByAccountIdWithCursor(eq(ACCOUNT_ID), isNull(), isNull(), eq(21)))
+			.thenReturn(List.of(oldBuy, newBuy));
+		when(sellTradeJournalRepository.findByAccountIdWithCursor(eq(ACCOUNT_ID), isNull(), isNull(), eq(21)))
+			.thenReturn(List.of(midSell));
+
+		JournalListResponse response = journalService.getMyJournalEntries(USER_ID, Market.STOCK, null, 20);
+
+		assertThat(response.content()).extracting(JournalListItemResponse::content)
+			.containsExactly("최신 매수 회고", "중간 매도 회고", "오래된 매수 회고");
+		assertThat(response.hasNext()).isFalse();
+		assertThat(response.nextCursor()).isNull();
+	}
+
+	@Test
+	void getMyJournalEntriesTieBreaksBySameCreatedAtByLargerTradeIdFirst() {
+		Account account = accountWithId(ACCOUNT_ID);
+		when(accountService.getAccountFor(USER_ID, Market.STOCK)).thenReturn(account);
+
+		// 매수(체결 ID 5)와 매도(체결 ID 7)가 같은 시각에 작성됨 — 체결 ID가 더 큰 매도가 먼저 와야 한다.
+		BuyTradeJournal buyAtSameInstant = BuyTradeJournal.of(buyTrade(5L), "매수 회고", NOW);
+		SellTradeJournal sellAtSameInstant = SellTradeJournal.of(sellTrade(7L), "매도 회고", NOW);
+
+		when(buyTradeJournalRepository.findByAccountIdWithCursor(eq(ACCOUNT_ID), isNull(), isNull(), eq(21)))
+			.thenReturn(List.of(buyAtSameInstant));
+		when(sellTradeJournalRepository.findByAccountIdWithCursor(eq(ACCOUNT_ID), isNull(), isNull(), eq(21)))
+			.thenReturn(List.of(sellAtSameInstant));
+
+		JournalListResponse response = journalService.getMyJournalEntries(USER_ID, Market.STOCK, null, 20);
+
+		assertThat(response.content()).extracting(JournalListItemResponse::content)
+			.containsExactly("매도 회고", "매수 회고");
+	}
+
+	@Test
+	void getMyJournalEntriesReturnsNoNextPageWhenMergedResultExactlyMatchesLimit() {
+		Account account = accountWithId(ACCOUNT_ID);
+		when(accountService.getAccountFor(USER_ID, Market.STOCK)).thenReturn(account);
+
+		BuyTradeJournal first = BuyTradeJournal.of(buyTrade(1L), "회고1", NOW.minusMinutes(3));
+		BuyTradeJournal second = BuyTradeJournal.of(buyTrade(2L), "회고2", NOW.minusMinutes(2));
+		BuyTradeJournal third = BuyTradeJournal.of(buyTrade(3L), "회고3", NOW.minusMinutes(1));
+
+		when(buyTradeJournalRepository.findByAccountIdWithCursor(eq(ACCOUNT_ID), isNull(), isNull(), eq(4)))
+			.thenReturn(List.of(first, second, third));
+		when(sellTradeJournalRepository.findByAccountIdWithCursor(eq(ACCOUNT_ID), isNull(), isNull(), eq(4)))
+			.thenReturn(List.of());
+
+		JournalListResponse response = journalService.getMyJournalEntries(USER_ID, Market.STOCK, null, 3);
+
+		assertThat(response.content()).hasSize(3);
+		assertThat(response.hasNext()).isFalse();
+		assertThat(response.nextCursor()).isNull();
+	}
+
+	@Test
+	void getMyJournalEntriesReturnsNextPageWhenMergedResultExceedsLimit() {
+		Account account = accountWithId(ACCOUNT_ID);
+		when(accountService.getAccountFor(USER_ID, Market.STOCK)).thenReturn(account);
+
+		BuyTradeJournal first = BuyTradeJournal.of(buyTrade(1L), "회고1", NOW.minusMinutes(3));
+		BuyTradeJournal second = BuyTradeJournal.of(buyTrade(2L), "회고2", NOW.minusMinutes(2));
+		BuyTradeJournal third = BuyTradeJournal.of(buyTrade(3L), "회고3", NOW.minusMinutes(1));
+
+		when(buyTradeJournalRepository.findByAccountIdWithCursor(eq(ACCOUNT_ID), isNull(), isNull(), eq(3)))
+			.thenReturn(List.of(first, second, third));
+		when(sellTradeJournalRepository.findByAccountIdWithCursor(eq(ACCOUNT_ID), isNull(), isNull(), eq(3)))
+			.thenReturn(List.of());
+
+		JournalListResponse response = journalService.getMyJournalEntries(USER_ID, Market.STOCK, null, 2);
+
+		assertThat(response.content()).hasSize(2);
+		assertThat(response.content()).extracting(JournalListItemResponse::content)
+			.containsExactly("회고3", "회고2");
+		assertThat(response.hasNext()).isTrue();
+		assertThat(response.nextCursor()).isEqualTo(JournalCursor.encode(NOW.minusMinutes(2), 2L));
+	}
+
+	@Test
+	void getMyJournalEntriesReturnsEmptyContentWhenBothRepositoriesAreEmpty() {
+		Account account = accountWithId(ACCOUNT_ID);
+		when(accountService.getAccountFor(USER_ID, Market.STOCK)).thenReturn(account);
+		when(buyTradeJournalRepository.findByAccountIdWithCursor(eq(ACCOUNT_ID), isNull(), isNull(), eq(21)))
+			.thenReturn(List.of());
+		when(sellTradeJournalRepository.findByAccountIdWithCursor(eq(ACCOUNT_ID), isNull(), isNull(), eq(21)))
+			.thenReturn(List.of());
+
+		JournalListResponse response = journalService.getMyJournalEntries(USER_ID, Market.STOCK, null, 20);
+
+		assertThat(response.content()).isEmpty();
+		assertThat(response.hasNext()).isFalse();
+		assertThat(response.nextCursor()).isNull();
+	}
+
+	@Test
+	void getMyJournalEntriesPassesSameCursorArgumentsToBothRepositories() {
+		Account account = accountWithId(ACCOUNT_ID);
+		when(accountService.getAccountFor(USER_ID, Market.STOCK)).thenReturn(account);
+		String cursor = JournalCursor.encode(NOW.minusDays(1), 42L);
+		when(buyTradeJournalRepository.findByAccountIdWithCursor(any(), any(), any(), anyInt())).thenReturn(List.of());
+		when(sellTradeJournalRepository.findByAccountIdWithCursor(any(), any(), any(), anyInt())).thenReturn(List.of());
+
+		journalService.getMyJournalEntries(USER_ID, Market.STOCK, cursor, 15);
+
+		ArgumentCaptor<LocalDateTime> buyCreatedAtCaptor = ArgumentCaptor.forClass(LocalDateTime.class);
+		ArgumentCaptor<Long> buyTradeIdCaptor = ArgumentCaptor.forClass(Long.class);
+		verify(buyTradeJournalRepository)
+			.findByAccountIdWithCursor(eq(ACCOUNT_ID), buyCreatedAtCaptor.capture(), buyTradeIdCaptor.capture(),
+				eq(16));
+
+		ArgumentCaptor<LocalDateTime> sellCreatedAtCaptor = ArgumentCaptor.forClass(LocalDateTime.class);
+		ArgumentCaptor<Long> sellTradeIdCaptor = ArgumentCaptor.forClass(Long.class);
+		verify(sellTradeJournalRepository)
+			.findByAccountIdWithCursor(eq(ACCOUNT_ID), sellCreatedAtCaptor.capture(), sellTradeIdCaptor.capture(),
+				eq(16));
+
+		assertThat(buyCreatedAtCaptor.getValue()).isEqualTo(NOW.minusDays(1));
+		assertThat(buyTradeIdCaptor.getValue()).isEqualTo(42L);
+		assertThat(buyCreatedAtCaptor.getValue()).isEqualTo(sellCreatedAtCaptor.getValue());
+		assertThat(buyTradeIdCaptor.getValue()).isEqualTo(sellTradeIdCaptor.getValue());
+	}
+
+	private static Account accountWithId(Long id) {
+		Account account = account();
+		ReflectionTestUtils.setField(account, "id", id);
+		return account;
 	}
 
 	private static Trade buyTrade(Long id) {
