@@ -225,7 +225,7 @@ class RankingServiceTest {
 	@Test
 	void getMyRankingReturnsNullRankWithNormalNicknameAndRealizedPnlWhenNoSellHistory() {
 		Account account = account(1L, Market.STOCK, 0L, 10L, "alice");
-		when(accountService.getAccountFor(10L, Market.STOCK)).thenReturn(account);
+		when(accountService.getAccountForWithUser(10L, Market.STOCK)).thenReturn(account);
 		when(rankingStore.score(Market.STOCK, 1L)).thenReturn(null);
 
 		MyRankingResponse response = rankingService.getMyRanking(10L, Market.STOCK);
@@ -239,7 +239,7 @@ class RankingServiceTest {
 	@Test
 	void getMyRankingMapsToCorrectedRankWhenSellHistoryExists() {
 		Account account = account(1L, Market.STOCK, 5_000L, 10L, "alice");
-		when(accountService.getAccountFor(10L, Market.STOCK)).thenReturn(account);
+		when(accountService.getAccountForWithUser(10L, Market.STOCK)).thenReturn(account);
 		when(rankingStore.score(Market.STOCK, 1L)).thenReturn(5_000L);
 		when(rankingStore.countStrictlyGreater(Market.STOCK, 5_000L)).thenReturn(2L);
 
@@ -254,7 +254,7 @@ class RankingServiceTest {
 	@Test
 	void getMyRankingUsesZsetScoreNotDbRealizedPnlWhenTheyDiverge() {
 		Account account = account(1L, Market.STOCK, 120_000L, 10L, "alice"); // DB는 120,000이지만
-		when(accountService.getAccountFor(10L, Market.STOCK)).thenReturn(account);
+		when(accountService.getAccountForWithUser(10L, Market.STOCK)).thenReturn(account);
 		when(rankingStore.score(Market.STOCK, 1L)).thenReturn(50_000L); // ZSET score는 50,000으로 갈라진 상태
 		when(rankingStore.countStrictlyGreater(Market.STOCK, 50_000L)).thenReturn(2L);
 

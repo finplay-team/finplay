@@ -26,6 +26,7 @@ import com.finplay.api.market.store.PriceStore;
 import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.dto.request.OrderCreateRequest;
 import com.finplay.api.order.dto.response.OrderResponse;
+import com.finplay.api.ranking.dto.response.MyRankingResponse;
 import com.finplay.api.ranking.dto.response.RankingListItemResponse;
 import com.finplay.api.ranking.dto.response.RankingListResponse;
 import com.finplay.api.ranking.listener.RankingEventListener;
@@ -303,6 +304,42 @@ class RankingIntegrationTest {
 		assertThat(rankOf(rankings, userA.getNickname())).isEqualTo(1);
 		assertThat(rankOf(rankings, userB.getNickname())).isEqualTo(1);
 		assertThat(rankOf(rankings, userC.getNickname())).isEqualTo(3);
+	}
+
+	// 시나리오 7(PR #234 리뷰 권장 반영): RANK-002는 RANK-001의 topN(limit)과 달리 상위 노출 구간 밖에 있어도
+	// 항상 정확한 보정 순위를 반환해야 한다 — 그 성질이 실제 Redis ZSET으로 검증된 적이 없었다(RankingServiceTest의
+	// 단위 테스트는 countStrictlyGreater를 stub해 "+1" 산술만 확인할 뿐, 실제 limit 밖 순위 계산은 확인하지 못한다).
+	// 기본 limit(10)보다 많은 계좌(11개)를 커밋해, 그중 순위가 11위(10위 밖)인 계좌로 GET /api/rankings/me를 호출한다.
+	@Test
+	void getMyRankingReturnsAccurateRankEvenOutsideDefaultListLimit() throws Exception {
+		User lowestRankedUser = null;
+		String lowestRankedAccessToken = null;
+		for (int i = 1; i <= 11; i++) {
+			User user = createUser("rank-outside-" + i);
+			Account account = createAccount(user);
+			long realizedPnl = (12 - i) * 100_000L; // i=1 → 1,100,000(1위) ... i=11 → 100,000(11위, limit 10 밖)
+			addRealizedPnlAndCommit(account.getId(), realizedPnl);
+			rankingService.refreshScore(account.getId());
+			if (i == 11) {
+				lowestRankedUser = user;
+				lowestRankedAccessToken = issueAccessToken(user);
+			}
+		}
+
+		MyRankingResponse response = getMyRanking(lowestRankedAccessToken, "CRYPTO");
+
+		assertThat(response.rank()).isEqualTo(11);
+		assertThat(response.realizedPnl()).isEqualTo(100_000L);
+		assertThat(response.nickname()).isEqualTo(lowestRankedUser.getNickname());
+	}
+
+	private MyRankingResponse getMyRanking(String accessToken, String market) throws Exception {
+		String body = mockMvc.perform(get("/api/rankings/me")
+				.param("market", market)
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+			.andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString();
+		return objectMapper.readValue(body, MyRankingResponse.class);
 	}
 
 	private int rankOf(RankingListResponse rankings, String nickname) {

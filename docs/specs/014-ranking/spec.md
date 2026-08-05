@@ -126,5 +126,5 @@
 - [ ] 닉네임은 마스킹 없이 노출한다
 - [ ] `docs/api-routes.md`·`docs/api-contracts.md`에 `GET /api/rankings/me` 계약이 추가된다(컨트롤러 변경과 같은 커밋, CLAUDE.md 규칙 7)
 - [ ] `docs/prd.md` §3 구현 현황의 "랭킹 — 내 랭킹 조회(RANK-002)" 행이 완료로 갱신된다(근거는 이 PR 번호, CLAUDE.md 규칙 10)
-- [ ] 단위(`RankingStoreTest`/`RankingServiceTest`, Redis·AccountService mock)·슬라이스(`@WebMvcTest RankingControllerTest`) 테스트를 작성한다 — 이 기능이 재사용하는 ZSET 쓰기·이벤트 흐름 자체는 RANK-001 통합 테스트가 이미 검증했으므로, 신규 Testcontainers 통합 테스트 추가는 필수로 요구하지 않는다(근거는 `plan.md` "테스트 계획")
+- [x] 단위(`RankingStoreTest`/`RankingServiceTest`, Redis·AccountService mock)·슬라이스(`@WebMvcTest RankingControllerTest`) 테스트를 작성한다. 이 기능이 재사용하는 ZSET 쓰기·이벤트 흐름 자체는 RANK-001 통합 테스트가 이미 검증했지만, "상위 `limit` 밖에서도 정확한 순위를 반환한다"는 RANK-002 고유의 읽기 경로는 그 재사용 범위 밖이라 `RankingIntegrationTest`에 시나리오를 하나 추가했다(PR #234 리뷰 권장 반영, 근거는 `plan.md` "테스트 계획")
 - [ ] `./gradlew build` 통과

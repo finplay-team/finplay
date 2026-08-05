@@ -46,6 +46,16 @@ public class AccountService {
 			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
 	}
 
+	// 내 랭킹 조회(RankingService.getMyRanking)용 — User를 fetch join으로 함께 로딩해, 트랜잭션이 끝난 뒤에도
+	// account.getUser().getNickname()에 안전하게 접근할 수 있게 한다(PR #234 리뷰 권장 반영). getAccountFor와
+	// 달리 이 트랜잭션 안에서 Redis 호출을 하지 않는다 — DB 커넥션 점유 시간을 fetch join 조회 자체로 한정한다.
+	@Transactional(readOnly = true)
+	public Account getAccountForWithUser(Long userId, Market market) {
+		return accountRepository
+			.findByUserIdAndMarketFetchUser(userId, market)
+			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+	}
+
 	// 지정가 매수 생성 시 계좌를 잠가 동시 현금 예약 경합을 막는다(015-limit-order LMT-001).
 	// 다른 도메인 서비스가 AccountRepository를 직접 주입하지 않도록 이 메서드만 거치게 한다(ADR-0002).
 	@Transactional

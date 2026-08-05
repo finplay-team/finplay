@@ -72,11 +72,12 @@ public class RankingService {
 	// 다른 값(DB accounts.realized_pnl)을 응답에 함께 실으면, after-commit 반영 지연·재시도 소진 등으로 두 값이
 	// 어긋난 계좌에서 "이 손익, 이 순위"가 서로 대응하지 않는 응답이 나간다. score가 null(매도 이력 없음)이면
 	// DB realized_pnl도 항상 0이므로(이력 없는 계좌는 갱신된 적이 없다) 0을 그대로 써도 값이 갈리지 않는다.
-	// TradeService.getMyTrades와 동일한 패턴으로 @Transactional(readOnly=true)로 감싸 account.getUser() 지연로딩을
-	// 같은 트랜잭션(세션) 안에서 안전하게 접근한다.
-	@Transactional(readOnly = true)
+	// 형제 메서드 getRankings와 동일한 패턴(PR #234 리뷰 권장 반영): 이 메서드 자체는 트랜잭션으로 감싸지 않는다
+	// — accountService.getAccountForWithUser가 User를 fetch join으로 미리 로딩해 자신의 트랜잭션 안에서 끝내므로,
+	// 이후 account.getUser().getNickname() 접근과 Redis 왕복 2회가 전부 트랜잭션 밖에서 일어나 DB 커넥션을
+	// 점유하지 않는다.
 	public MyRankingResponse getMyRanking(Long userId, Market market) {
-		Account account = accountService.getAccountFor(userId, market);
+		Account account = accountService.getAccountForWithUser(userId, market);
 		Long score = rankingStore.score(market, account.getId());
 		Integer rank = score == null
 			? null
