@@ -13,6 +13,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
@@ -25,6 +26,9 @@ class PriceStoreIntegrationTest {
 
 	@Autowired
 	private StringRedisTemplate redisTemplate;
+
+	@Autowired
+	private ApplicationEventPublisher eventPublisher;
 
 	// BithumbFeedLifecycle이 ApplicationReadyEvent에서 STATUS_KEY를 CONNECTED로 1회 설정하므로(이슈 #104), 공유
 	// 컨텍스트에서 이 클래스의 테스트가 먼저 실행되면 fail-closed 기본값(DISCONNECTED) 전제가 흔들릴 수 있다 —
@@ -49,7 +53,7 @@ class PriceStoreIntegrationTest {
 
 	private PriceStore priceStoreAt(LocalDateTime now) {
 		Clock fixedClock = Clock.fixed(now.toInstant(ZoneOffset.UTC), ZoneOffset.UTC);
-		return new PriceStore(redisTemplate, fixedClock);
+		return new PriceStore(redisTemplate, fixedClock, eventPublisher);
 	}
 
 	@Test

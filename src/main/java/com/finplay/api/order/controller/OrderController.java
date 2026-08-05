@@ -5,9 +5,12 @@ import com.finplay.api.account.domain.Market;
 import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
+import com.finplay.api.order.dto.request.LimitOrderCreateRequest;
 import com.finplay.api.order.dto.request.OrderCreateRequest;
+import com.finplay.api.order.dto.response.LimitOrderResponse;
 import com.finplay.api.order.dto.response.OrderListResponse;
 import com.finplay.api.order.dto.response.OrderResponse;
+import com.finplay.api.order.service.LimitOrderService;
 import com.finplay.api.order.service.OrderService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -36,6 +39,7 @@ public class OrderController {
 	private static final int MAX_LIMIT = 100;
 
 	private final OrderService orderService;
+	private final LimitOrderService limitOrderService;
 
 	@PostMapping
 	public ResponseEntity<OrderResponse> createOrder(
@@ -46,6 +50,18 @@ public class OrderController {
 		@Valid @RequestBody
 		OrderCreateRequest request) {
 		OrderResponse response = orderService.createOrder(principal.userId(), idempotencyKey, request);
+		return ResponseEntity.status(HttpStatus.CREATED).body(response);
+	}
+
+	@PostMapping("/limit")
+	public ResponseEntity<LimitOrderResponse> createLimitOrder(
+		@AuthenticationPrincipal
+		AuthenticatedUser principal,
+		@RequestHeader("Idempotency-Key") @NotBlank @Size(max = 100)
+		String idempotencyKey,
+		@Valid @RequestBody
+		LimitOrderCreateRequest request) {
+		LimitOrderResponse response = limitOrderService.createLimitOrder(principal.userId(), idempotencyKey, request);
 		return ResponseEntity.status(HttpStatus.CREATED).body(response);
 	}
 

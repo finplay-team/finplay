@@ -77,6 +77,29 @@ class InstrumentRepositoryTest {
 	}
 
 	@Test
+	void findByMarketAndSymbolReturnsMatchingInstrument() {
+		var result = repository.findByMarketAndSymbol(Market.CRYPTO, "BTC");
+
+		assertThat(result).isPresent();
+		assertThat(result.get().getSymbol()).isEqualTo("BTC");
+		assertThat(result.get().getMarket()).isEqualTo(Market.CRYPTO);
+	}
+
+	@Test
+	void findByMarketAndSymbolReturnsEmptyWhenSymbolExistsInOtherMarketOnly() {
+		var result = repository.findByMarketAndSymbol(Market.STOCK, "BTC");
+
+		assertThat(result).isEmpty();
+	}
+
+	@Test
+	void findByMarketAndSymbolReturnsEmptyWhenSymbolDoesNotExist() {
+		var result = repository.findByMarketAndSymbol(Market.CRYPTO, "NO_SUCH_SYMBOL");
+
+		assertThat(result).isEmpty();
+	}
+
+	@Test
 	void databaseRejectsDuplicateSymbolEvenAcrossDifferentMarkets() {
 		// 005930(삼성전자, STOCK)은 시드에 이미 존재한다. 다른 시장(CRYPTO)에서 같은 symbol을 넣어도
 		// UNIQUE 제약이 market과 무관하게 symbol 단독으로 걸려있는지 검증한다.

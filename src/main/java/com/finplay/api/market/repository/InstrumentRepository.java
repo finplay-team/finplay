@@ -4,6 +4,7 @@ package com.finplay.api.market.repository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface InstrumentRepository extends JpaRepository<Instrument, Long> {
@@ -13,4 +14,7 @@ public interface InstrumentRepository extends JpaRepository<Instrument, Long> {
 	List<Instrument> findByMarketOrderByIdAsc(Market market);
 
 	List<Instrument> findByMarketAndTradableTrueOrderByIdAsc(Market market);
+
+	// 지정가 체결 리스너의 가격 갱신 이벤트에서 심볼로 종목을 조회한다(015-limit-order LMT-002)
+	Optional<Instrument> findByMarketAndSymbol(Market market, String symbol);
 }

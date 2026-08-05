@@ -269,7 +269,7 @@ class OrderExecutionServiceTest {
 		BigDecimal quantity = new BigDecimal("3");
 		// price 10000 * 3 = amount 30000, fee = floor(30000*0.00015)=4
 		stubSellHappyPath(instrument, account, user, new BigDecimal("10000"));
-		when(portfolioSellService.getHoldingOrThrow(account, instrument, quantity)).thenReturn(holding);
+		when(portfolioSellService.getHoldingForUpdateOrThrow(account, instrument, quantity)).thenReturn(holding);
 		when(portfolioSellService.applySellTrade(eq(holding), any(Trade.class), eq(quantity), eq(NOW)))
 			.thenReturn(new SellAllocationDto(20_000L, 3L));
 		OrderCreateRequest request = sellRequest(Market.STOCK, instrument.getId(), "3");
@@ -287,7 +287,7 @@ class OrderExecutionServiceTest {
 		Trade savedTrade = tradeCaptor.getValue();
 		assertThat(savedTrade.getRealizedPnl()).isEqualTo(9993L);
 		verify(orderRepository).save(any(Order.class));
-		verify(portfolioSellService).getHoldingOrThrow(account, instrument, quantity);
+		verify(portfolioSellService).getHoldingForUpdateOrThrow(account, instrument, quantity);
 		verify(portfolioSellService).applySellTrade(holding, savedTrade, quantity, NOW);
 		verifyNoInteractions(portfolioBuyService);
 	}
@@ -302,7 +302,7 @@ class OrderExecutionServiceTest {
 		User user = testUser();
 		BigDecimal quantity = new BigDecimal("3");
 		stubSellHappyPath(instrument, account, user, new BigDecimal("10000"));
-		when(portfolioSellService.getHoldingOrThrow(account, instrument, quantity)).thenReturn(holding);
+		when(portfolioSellService.getHoldingForUpdateOrThrow(account, instrument, quantity)).thenReturn(holding);
 		when(portfolioSellService.applySellTrade(eq(holding), any(Trade.class), eq(quantity), eq(NOW)))
 			.thenReturn(new SellAllocationDto(20_000L, 3L));
 		OrderCreateRequest request = sellRequest(Market.STOCK, instrument.getId(), "3");
@@ -338,7 +338,7 @@ class OrderExecutionServiceTest {
 		User user = testUser();
 		BigDecimal quantity = new BigDecimal("8");
 		stubSellHappyPath(instrument, account, user, new BigDecimal("300"));
-		when(portfolioSellService.getHoldingOrThrow(account, instrument, quantity)).thenReturn(holding);
+		when(portfolioSellService.getHoldingForUpdateOrThrow(account, instrument, quantity)).thenReturn(holding);
 		// lot1 전량(500원가+15수수료) + lot2 부분(600원가+18수수료) 합산 결과라고 가정
 		when(portfolioSellService.applySellTrade(eq(holding), any(Trade.class), eq(quantity), eq(NOW)))
 			.thenReturn(new SellAllocationDto(500L + 600L, 15L + 18L));
@@ -363,7 +363,7 @@ class OrderExecutionServiceTest {
 		BigDecimal quantity = new BigDecimal("0.1");
 		// price 133330 * 0.1 = 13333.0, fee = floor(13333*0.0005)=6
 		stubSellHappyPath(instrument, account, user, new BigDecimal("133330"));
-		when(portfolioSellService.getHoldingOrThrow(account, instrument, quantity)).thenReturn(holding);
+		when(portfolioSellService.getHoldingForUpdateOrThrow(account, instrument, quantity)).thenReturn(holding);
 		when(portfolioSellService.applySellTrade(eq(holding), any(Trade.class), eq(quantity), eq(NOW)))
 			.thenReturn(new SellAllocationDto(10_001L, 7L));
 		OrderCreateRequest request = sellRequest(Market.CRYPTO, instrument.getId(), "0.1");
@@ -384,9 +384,9 @@ class OrderExecutionServiceTest {
 		Holding holding = mock(Holding.class);
 		BigDecimal quantity = new BigDecimal("0.1");
 		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
-		when(accountService.getAccountFor(USER_ID, com.finplay.api.account.domain.Market.CRYPTO))
+		when(accountService.getAccountForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO))
 			.thenReturn(account);
-		when(portfolioSellService.getHoldingOrThrow(account, instrument, quantity)).thenReturn(holding);
+		when(portfolioSellService.getHoldingForUpdateOrThrow(account, instrument, quantity)).thenReturn(holding);
 		// rawAmount = 40000 * 0.1 = 4000 < 5000 최소 주문금액
 		when(priceQueryService.getOrderExecutionPrice(instrument))
 			.thenReturn(executionPrice(new BigDecimal("40000"), null));
@@ -405,9 +405,9 @@ class OrderExecutionServiceTest {
 		Instrument instrument = stockInstrument();
 		Account account = account(com.finplay.api.account.domain.Market.STOCK);
 		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
-		when(accountService.getAccountFor(USER_ID, com.finplay.api.account.domain.Market.STOCK))
+		when(accountService.getAccountForUpdate(USER_ID, com.finplay.api.account.domain.Market.STOCK))
 			.thenReturn(account);
-		when(portfolioSellService.getHoldingOrThrow(account, instrument, new BigDecimal("5")))
+		when(portfolioSellService.getHoldingForUpdateOrThrow(account, instrument, new BigDecimal("5")))
 			.thenThrow(new BusinessException(ErrorCode.INSUFFICIENT_QTY));
 		OrderCreateRequest request = sellRequest(Market.STOCK, instrument.getId(), "5");
 
@@ -415,13 +415,38 @@ class OrderExecutionServiceTest {
 			.isInstanceOf(BusinessException.class)
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode()).isEqualTo(ErrorCode.INSUFFICIENT_QTY));
 
-		// 설계 노트 2: 보유수량 검증은 가격조회보다 먼저 일어나므로 시세 조회조차 발생하지 않는다.
+		// 설계 노트 2: 계좌 락 이후 보유수량 검증이 가격조회보다 먼저 일어나므로 시세 조회조차 발생하지 않는다.
 		verifyNoInteractions(priceQueryService, userQueryService, orderRepository, tradeRepository,
 			portfolioBuyService);
 		verify(portfolioSellService, never())
 			.applySellTrade(any(), any(), any(), any());
 		assertThat(account.getCashBalance()).isEqualTo(10_000_000L);
 		assertThat(account.getRealizedPnl()).isEqualTo(0L);
+	}
+
+	@Test
+	void createOrderSellRejectsOverSellWhenReservedQuantityMakesAvailableQuantityInsufficient() {
+		// spec.md: 지정가로 예약된 수량은 시장가 매도로 초과 매도할 수 없다. availableQuantity(=quantity-reservedQuantity)
+		// 기준 검증 자체는 PortfolioSellServiceTest.getHoldingForUpdateOrThrow...가 실물 Holding으로 증명한다 —
+		// 여기서는 그 결과(INSUFFICIENT_QTY)를 OrderExecutionService가 그대로 전파하며 가격조회·저장을 하지 않는지 확인한다.
+		Instrument instrument = stockInstrument();
+		Account account = account(com.finplay.api.account.domain.Market.STOCK);
+		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
+		when(accountService.getAccountForUpdate(USER_ID, com.finplay.api.account.domain.Market.STOCK))
+			.thenReturn(account);
+		// 보유 5주 중 3주가 다른 지정가 매도로 이미 예약된 상태(availableQuantity=2) — 3주 시장가 매도는 거부돼야 한다.
+		when(portfolioSellService.getHoldingForUpdateOrThrow(account, instrument, new BigDecimal("3")))
+			.thenThrow(new BusinessException(ErrorCode.INSUFFICIENT_QTY));
+		OrderCreateRequest request = sellRequest(Market.STOCK, instrument.getId(), "3");
+
+		assertThatThrownBy(() -> orderExecutionService.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, request))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode()).isEqualTo(ErrorCode.INSUFFICIENT_QTY));
+
+		verifyNoInteractions(priceQueryService, userQueryService, orderRepository, tradeRepository,
+			portfolioBuyService);
+		verify(portfolioSellService, never()).applySellTrade(any(), any(), any(), any());
+		assertThat(account.getCashBalance()).isEqualTo(10_000_000L);
 	}
 
 	@Test
@@ -435,7 +460,7 @@ class OrderExecutionServiceTest {
 		User user = testUser();
 		BigDecimal quantity = new BigDecimal("3");
 		stubSellHappyPath(instrument, account, user, new BigDecimal("150"));
-		when(portfolioSellService.getHoldingOrThrow(account, instrument, quantity)).thenReturn(holding);
+		when(portfolioSellService.getHoldingForUpdateOrThrow(account, instrument, quantity)).thenReturn(holding);
 		when(portfolioSellService.applySellTrade(eq(holding), any(Trade.class), eq(quantity), eq(NOW)))
 			.thenAnswer(invocation -> {
 				holding.applySell(quantity, NOW);
@@ -472,7 +497,14 @@ class OrderExecutionServiceTest {
 	}
 
 	private void stubSellHappyPath(Instrument instrument, Account account, User user, BigDecimal price) {
-		stubHappyPath(instrument, account, user, price);
+		// 매도는 계좌를 락으로 조회한다(015-limit-order 항목5) — stubHappyPath(getAccountFor)와 독립적으로 스텁한다.
+		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
+		StockReplaySession session = instrument.getMarket() == Market.STOCK ? mock(StockReplaySession.class) : null;
+		when(priceQueryService.getOrderExecutionPrice(instrument)).thenReturn(executionPrice(price, session));
+		com.finplay.api.account.domain.Market accountMarket = com.finplay.api.account.domain.Market
+			.valueOf(instrument.getMarket().name());
+		when(accountService.getAccountForUpdate(USER_ID, accountMarket)).thenReturn(account);
+		when(userQueryService.getUser(USER_ID)).thenReturn(user);
 	}
 
 	private static OrderExecutionPriceDto executionPrice(BigDecimal price, StockReplaySession session) {
