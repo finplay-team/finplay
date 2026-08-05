@@ -53,5 +53,5 @@
 - [x] 15. **동시성 통합 테스트**
   `LimitOrderConcurrencyIntegrationTest`에 plan.md "동시성 테스트 시나리오" 3개(spec.md 시나리오 13·14·15)를 기존 `runConcurrently`(ready/start `CountDownLatch`, `ExecutorService` 2스레드) 헬퍼로 추가: (a) 시장가 매수 vs 지정가 매수 생성 계좌 경합(합산 소비액이 잔액을 초과하도록 설계, 한쪽만 성공하거나 직렬화되어 `availableCash` 불변식 유지), (b) 시장가 매수 vs 지정가 매수 체결 holdings lost-update 방지(최종 수량이 두 매수 합과 정확히 일치, `HoldingLot` 2건), (c) 조정된 시장가 매수와 기존 시장가 매도·지정가 체결 간 ABBA 데드락 회귀(타임아웃·데드락 예외 없이 완료).
 
-- [ ] 16. **spec 완료조건 확정 및 최종 빌드**
+- [x] 16. **spec 완료조건 확정 및 최종 빌드**
   `docs/specs/015-limit-order/spec.md` "시장가 매수 경로 락 보강 완료 조건 (이슈 #224)" 체크박스를 구현·테스트 통과 확인 후 `[x]`로 갱신. `./gradlew build` 전체 통과 확인(실패 시 수정 후 재실행). 이 커밋에는 `docs/api-routes.md`·`docs/api-contracts.md`·`docs/prd.md` §3 변경이 없어야 정상이다(controller·기능 제공 범위 변경 없음).

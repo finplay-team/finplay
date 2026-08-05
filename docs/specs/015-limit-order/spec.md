@@ -83,12 +83,14 @@
 
 **시장가 매수 경로 락 보강 완료 조건 (이슈 #224)**
 
-- [ ] `OrderExecutionService.createBuyOrder`가 계좌를 비관적 락(`getAccountForUpdateFor`/`accountService.getAccountForUpdate` 재사용)으로 잠근 뒤 현금을 확인·차감한다.
-- [ ] `PortfolioBuyService.applyBuyTrade`가 holdings row를 비관적 락(`HoldingRepository.findByAccountIdAndInstrumentIdForUpdate` 재사용)으로 잠근 뒤 수량·평균단가를 갱신한다 — 시장가 매수 체결과 지정가 매수 체결(`LimitOrderFillService.fillBuy`) 양쪽 호출부 모두 이 변경 하나로 보호된다.
-- [ ] 지정가 매수 체결(가격 피드 스레드)·시장가 매수(HTTP 스레드)가 동시에 같은 계좌·holding을 대상으로 실행돼도 lost update 없이 안전하게 직렬화됨을 통합 테스트로 증명한다(경합 재현 테스트 포함, 시나리오 13·14).
-- [ ] 전역 잠금 순서(account가 holding보다 항상 먼저)가 시장가 매수 경로에도 일관되게 적용되어, 기존 매도·지정가 체결 경로와 반대 순서로 잠그는 ABBA 데드락 회귀가 없다(시나리오 15).
-- [ ] 신규 종목 첫 매수 동시 생성 경합이 방어적 catch·재조회 로직 없이 account 락만으로 방지됨을 재확인한다("확정된 설계 결정" 10번, 기존 LMT-002 BUY 체결 전제와 동일).
-- [ ] `./gradlew build` 통과.
+- [x] `OrderExecutionService.createBuyOrder`가 계좌를 비관적 락(`getAccountForUpdateFor`/`accountService.getAccountForUpdate` 재사용)으로 잠근 뒤 현금을 확인·차감한다.
+- [x] `PortfolioBuyService.applyBuyTrade`가 holdings row를 비관적 락(`HoldingRepository.findByAccountIdAndInstrumentIdForUpdate` 재사용)으로 잠근 뒤 수량·평균단가를 갱신한다 — 시장가 매수 체결과 지정가 매수 체결(`LimitOrderFillService.fillBuy`) 양쪽 호출부 모두 이 변경 하나로 보호된다.
+- [x] 지정가 매수 체결(가격 피드 스레드)·시장가 매수(HTTP 스레드)가 동시에 같은 계좌·holding을 대상으로 실행돼도 lost update 없이 안전하게 직렬화됨을 통합 테스트로 증명한다(경합 재현 테스트 포함, 시나리오 13·14).
+- [x] 전역 잠금 순서(account가 holding보다 항상 먼저)가 시장가 매수 경로에도 일관되게 적용되어, 기존 매도·지정가 체결 경로와 반대 순서로 잠그는 ABBA 데드락 회귀가 없다(시나리오 15).
+- [x] 신규 종목 첫 매수 동시 생성 경합이 방어적 catch·재조회 로직 없이 account 락만으로 방지됨을 재확인한다("확정된 설계 결정" 10번, 기존 LMT-002 BUY 체결 전제와 동일).
+- [x] `./gradlew build` 통과.
+
+**추가로 발견·수정한 결함(계획 범위 밖, 시나리오 13 테스트 작성 중 재현)**: 계좌 락만으로는 "매수 합산 소비액이 잔액을 초과할 수 없다"는 불변식이 지켜지지 않았다 — `OrderExecutionService.createBuyOrder`의 현금 부족 검증이 `cashBalance`만 보고 `reservedCash`(지정가 매수 예약분)를 무시했기 때문이다(지정가 생성 경로는 이미 `getAvailableCash()` 기준). 검증식을 `getAvailableCash()` 기준으로 통일해 락과 검증 기준을 일치시켰다.
 
 ## 시나리오
 
