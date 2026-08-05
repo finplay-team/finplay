@@ -10,7 +10,7 @@
 > | 2차 | JOUR-003 매도 회고 작성 | [#183](https://github.com/finplay-team/finplay/issues/183) (PR #189) | 구현 완료 |
 > | 3차 | JOUR-004 매도 회고 수정 | [#190](https://github.com/finplay-team/finplay/issues/190) (PR #192) | 구현 완료 |
 > | 4차 | JOUR-002 매수 회고 수정 | [#197](https://github.com/finplay-team/finplay/issues/197) (PR #201) | 구현 완료 |
-> | 5차 | JOUR-006 투자일기 목록 조회 | [#203](https://github.com/finplay-team/finplay/issues/203) | 구현 완료 |
+> | 5차 | JOUR-006 투자일기 목록 조회 | [#203](https://github.com/finplay-team/finplay/issues/203) (PR [#213](https://github.com/finplay-team/finplay/pull/213)) | 구현 완료 |
 >
 > 이번 착수 범위는 **JOUR-006(투자일기 목록 조회) 1건뿐**이다. JOUR-005(상세 조회)는 식별자 체계 Decision Gate가 아직 열려 있어 아래 §범위 제외에 남긴다. **JOUR-006은 그 게이트와 무관하게 착수한다** — 목록 항목을 `journalType` + 원래 체결 ID로만 식별하고 통합 `journalId`를 노출하지 않으면 JOUR-005가 어떤 식별자 체계를 택하든 이 응답 계약과 충돌하지 않는다(아래 §비즈니스 규칙 "JOUR-005 식별자 게이트를 선점하지 않는다").
 >
