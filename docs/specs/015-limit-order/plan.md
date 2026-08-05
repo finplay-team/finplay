@@ -422,3 +422,80 @@ public ResponseEntity<Void> cancelLimitOrder(
    - 두 경우 모두 `cashBalance`는 시작값(체결이 이긴 경우만 실제 지출로 감소, 취소가 이긴 경우는 불변)과 정확히 일치해 예약 이중 반환·이중 소비가 없음을 확인한다.
 2. 매도 지정가에 대해서도 같은 패턴으로 1개 더 추가한다(`holding.reservedQuantity`/`quantity` 버전) — BUY 시나리오와 대칭이므로 assert 대상만 계좌 대신 holding으로 바꾼다.
 3. **정상 취소 단위 테스트**(`LimitOrderCancelServiceTest`, `@ExtendWith(MockitoExtension.class)` 단위): BUY 취소 시 `releaseReservedCash` 호출값 검증, SELL 취소 시 `releaseReservedQuantity` 호출값 검증, 존재하지 않는 주문 404, 타인 소유 403, 이미 `FILLED`/이미 `CANCELLED` 409(두 상태 모두 개별 케이스), 검증 순서(존재→소유→상태) 순서 준수 여부(모킹으로 호출 순서 확인 또는 각 실패 케이스가 이후 단계 호출을 하지 않음을 검증).
+
+---
+
+# 시장가 매수 경로 락 보강 — 구현 계획 (이슈 #224)
+
+## 관련 문서
+
+- Spec: `./spec.md` "시장가 매수 경로 락 보강 (이슈 #224)" 절, "확정된 설계 결정" 10번.
+- 이 절이 조정하는 두 클래스는 위 LMT-001~002 계획이 이미 도입한 잠금 인프라(§ "Repository 추가 메서드", "잠금 순서 요약")를 그대로 재사용한다 — 신규 repository·서비스 메서드가 필요 없다.
+
+## 기존 코드 확인 결과 (착수 전 직접 확인한 사실)
+
+- **`OrderExecutionService.createBuyOrder`**(현재 76행)는 `Account account = getAccountFor(userId, request.market());`로 **락 없이** 계좌를 조회한다. 같은 클라이언트 안에 이미 `getAccountForUpdateFor(userId, market)`(200~204행, `accountService.getAccountForUpdate` 위임)라는 **락 버전 private 메서드가 존재**하고 `createSellOrder`가 이미 이 메서드를 쓰고 있다 — BUY 경로도 이 메서드 하나로 교체하면 끝난다. 새 `AccountService` 메서드는 필요 없다.
+- **`PortfolioBuyService.applyBuyTrade`**(23~40행)는 `holdingRepository.findByAccountIdAndInstrumentId(account.getId(), instrument.getId())`로 **락 없이** holding을 조회한 뒤 `orElseGet(() -> Holding.create(...))`으로 신규 생성 분기를 탄다. `HoldingRepository`에는 이미 SELL 경로(LMT-001/002)가 쓰는 `findByAccountIdAndInstrumentIdForUpdate(accountId, instrumentId)`(`@Lock(PESSIMISTIC_WRITE)`, 반환 타입 `Optional<Holding>` 동일)가 존재한다 — **메서드 이름만 바꾸면 나머지 `orElseGet` 로직은 그대로 컴파일된다.** 신규 repository 메서드도 필요 없다.
+- **`applyBuyTrade` 호출부는 정확히 2곳**: (1) `OrderExecutionService.createBuyOrder` 108행(시장가 매수, HTTP 스레드), (2) `LimitOrderFillService.fillBuy` 81행(지정가 매수 체결, 가격 피드 스레드). (2)는 이미 `fillIfPending`에서 `accountService.getAccountByIdForUpdate(...)`로 account 락을 잡은 뒤 `fillBuy`에 진입하므로, `applyBuyTrade` 한 곳만 고치면 (1)·(2) 양쪽 호출부가 동시에 holdings 락으로 보호된다. (1)은 이번 변경으로 account 락을 추가하면 마찬가지로 "account 먼저 → applyBuyTrade(holding 락)" 순서가 자동으로 성립한다.
+- 결론: **신규 repository/서비스 메서드가 전혀 필요 없다.** 기존 메서드 참조를 두 줄 교체하는 것만으로 완료조건을 충족한다. 이슈 원문이 예시로 든 "`getOrPrepareHoldingForUpdate` 같은 감싸는 신규 메서드"는 필요하지 않다고 판단한다 — `PortfolioBuyService`가 이미 같은 portfolio 도메인의 `HoldingRepository`를 직접 주입해 두고 있어(ADR-0002 위반 아님), 래퍼 없이 호출 메서드만 바꾸는 편이 더 적은 변경이다.
+
+## 변경 지점
+
+### 1. `OrderExecutionService.createBuyOrder`
+
+```java
+// 변경 전 (75~76행)
+// 매수 경로는 이번에 변경하지 않는다(spec.md "알려진 한계") — 계좌 락 없이 그대로 조회한다.
+Account account = getAccountFor(userId, request.market());
+
+// 변경 후
+// 매수도 매도와 동일하게 계좌를 먼저 잠근다(spec.md "시장가 매수 경로 락 보강", 이슈 #224).
+Account account = getAccountForUpdateFor(userId, request.market());
+```
+
+- `getAccountFor(Long, Market)` private 메서드는 이제 어떤 호출부도 쓰지 않게 된다(SELL은 이미 `getAccountForUpdateFor`, BUY도 이번에 전환) — 구현 시 실제로 다른 호출부가 없는지 확인 후 제거하거나, 향후 락 없는 조회가 필요해질 가능성을 남겨 유지할지는 구현자가 grep으로 확인해 판단한다(둘 다 허용, 컨벤션 위반 아님 — 죽은 코드면 제거가 원칙).
+- `getAccountForUpdateFor` 메서드 위 주석("시장가 매도만 계좌를 잠가 조회한다")을 "시장가 매수·매도 모두 계좌를 잠가 조회한다"로 갱신한다.
+- `execute()`의 계좌 선조회 제거 주석(66행)은 이미 "매수·매도가 서로 다른 락 전략을 쓰므로"라고 적어뒀는데, 이번 변경 후에는 두 전략이 "둘 다 계좌를 잠근다"는 점에서 동일해진다 — 주석을 "매수·매도 모두 각자 계좌를 잠가 조회한다(호출 시점·인자만 다름)"로 정정한다.
+
+### 2. `PortfolioBuyService.applyBuyTrade`
+
+```java
+// 변경 전 (31~33행)
+Holding holding = holdingRepository
+    .findByAccountIdAndInstrumentId(account.getId(), instrument.getId())
+    .orElseGet(() -> Holding.create(account, instrument, now));
+
+// 변경 후
+Holding holding = holdingRepository
+    .findByAccountIdAndInstrumentIdForUpdate(account.getId(), instrument.getId())
+    .orElseGet(() -> Holding.create(account, instrument, now));
+```
+
+- 클래스 상단 주석("매수 체결 결과를 보유(holding)·매수 lot에 반영하는 서비스")과 메서드 위에, 이 조회가 이제 비관적 락임을 명시하는 한 줄 추가: "holdings row를 잠근 뒤 갱신한다(시장가·지정가 매수 체결 공통 호출부, 이슈 #224) — 신규 종목 첫 매수(row 없음)는 호출부가 이미 잡은 account 락만으로 동시 생성 경합을 막는다(spec.md 확정된 설계 결정 10번, 방어적 유니크 제약 catch 없음)."
+- `findByAccountIdAndInstrumentId`(락 없는 원본 메서드)의 다른 호출부가 남아있는지 구현 시 grep으로 확인한다(있으면 유지, 없으면 죽은 메서드로 제거 검토 — 이 plan 작성 시점 확인으로는 `PortfolioBuyService`가 유일한 호출부였다).
+
+## 잠금 순서 요약 (갱신)
+
+| 흐름 | 순서 |
+|---|---|
+| LMT-001 BUY 생성 | account |
+| LMT-001 SELL 생성 | holding |
+| LMT-002 BUY 체결 | order → account → holding(있으면) |
+| LMT-002 SELL 체결 | order → account → holding |
+| 시장가 SELL 체결(LMT 조정) | account → holding |
+| **시장가 BUY 체결(이슈 #224 조정)** | **account → holding(있으면)** |
+
+모든 흐름이 "account가 holding보다 항상 먼저"를 지키므로 ABBA 사이클이 생기지 않는다. LMT-002 BUY 체결의 "holding(있으면)"은 이번 변경 후 `findByAccountIdAndInstrumentIdForUpdate`가 항상 실행되지만, 매칭되는 row가 없으면 잠글 대상 자체가 없다는 뜻이다(신규 종목 첫 매수는 account 락만으로 방지, 확정된 설계 결정 10번).
+
+## 동시성 테스트 시나리오 (`LimitOrderConcurrencyIntegrationTest`에 추가, 기존 `runConcurrently` 헬퍼 재사용)
+
+spec.md 시나리오 13·14·15에 대응한다.
+
+1. **계좌 경합(시나리오 13)**: 계좌에 초기 현금을 준비한다. 스레드 A는 `orderExecutionService.execute(...)`(시장가 매수, 현금 대부분 소비), 스레드 B는 `limitOrderService.createLimitOrder(...)`(지정가 매수 생성, 남은 현금 대부분 예약)를 동시에 호출한다 — 두 요청을 합친 소비액이 원래 잔액을 초과하도록 금액을 설계한다. 검증: 정확히 한쪽만 성공하고 다른 한쪽은 409 `INSUFFICIENT_CASH`로 거부되거나, 직렬화된 순서에 따라 뒤에 처리된 쪽이 앞선 갱신을 반영한 `availableCash`로 정확히 검증됨(무엇이 이기든 `cashBalance - reservedCash`가 음수가 되지 않음을 최종 상태로 확인). 데드락·타임아웃 없이 완료돼야 한다.
+2. **holdings lost-update 경합(시나리오 14)**: 이미 수량 Q0을 보유한 holding을 준비한다. 스레드 A는 `orderExecutionService.execute(...)`(시장가 매수, 수량 qA), 스레드 B는 이미 `PENDING`인 지정가 매수 주문에 대해 `limitOrderFillService.fillIfPending(orderId)`(수량 qB)를 동시에 호출한다. 검증: 최종 `holding.quantity == Q0 + qA + qB`(둘 다 반영, 하나가 유실되지 않음), `HoldingLot`이 2건 모두 생성됨, 평균단가가 두 매수 가격을 모두 반영해 계산됨.
+3. **ABBA 데드락 회귀(시나리오 15)**: 스레드 A는 조정된 시장가 매수(`OrderExecutionService.createBuyOrder`, account→holding), 스레드 B는 기존 시장가 매도 또는 지정가 SELL 체결(이미 account→holding)을 서로 다른 주문으로 같은 계좌·holding에 대해 동시에 실행한다. 둘 다 타임아웃 없이 완료됨을 검증한다(반대 순서로 잠그는 흐름이 없으므로 데드락 예외가 나면 회귀).
+
+## Decision Gate (spec.md 확정된 설계 결정 10번 재확인, 변경 없음)
+
+- 신규 종목 첫 매수 동시 생성 경합은 account 락만으로 방지한다 — `holdings.uk_holdings_account_instrument` 유니크 제약 위반에 대한 방어적 catch·재조회 로직은 추가하지 않는다(일어날 수 없는 시나리오에 방어 코드를 넣지 않는다는 컨벤션과 일치).
+- 마이그레이션·API 계약 변경 없음 — 락 순서 조정은 서비스 레이어 내부 구현이라 `docs/api-routes.md`·`docs/api-contracts.md`·`docs/prd.md` §3 갱신 대상이 아니다(CLAUDE.md 규칙7은 controller 변경 시에만 적용, 규칙10은 기능 제공 범위가 그대로인 변경이라 갱신 비대상).
