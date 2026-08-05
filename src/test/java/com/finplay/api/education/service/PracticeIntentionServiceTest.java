@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -21,6 +22,7 @@ import com.finplay.api.education.repository.PracticeIntentionRepository;
 import com.finplay.api.education.repository.PracticeProgressRepository;
 import com.finplay.api.favorite.service.FavoriteService;
 import com.finplay.api.market.domain.Instrument;
+import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.InstrumentService;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -59,6 +61,7 @@ class PracticeIntentionServiceTest {
 	void createIntentionLocksProgressBeforeFavoriteAndSavesWhenFavorited() {
 		stubWithFavoriteLockInvokesAction();
 		Instrument instrument = mock(Instrument.class);
+		when(instrument.getMarket()).thenReturn(Market.STOCK);
 		PracticeProgress progress = progress(PracticeProgressStatus.IN_PROGRESS);
 		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID)).thenReturn(instrument);
 		when(progressRepository.findByUserIdAndTutorialKeyForUpdate(USER_ID,
@@ -113,6 +116,7 @@ class PracticeIntentionServiceTest {
 	@Test
 	void createIntentionFailsWithInternalErrorWhenProgressRowIsUnexpectedlyMissingAfterInsert() {
 		Instrument instrument = mock(Instrument.class);
+		when(instrument.getMarket()).thenReturn(Market.STOCK);
 		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID)).thenReturn(instrument);
 		when(progressRepository.findByUserIdAndTutorialKeyForUpdate(USER_ID,
 			PracticeIntentionService.TUTORIAL_KEY)).thenReturn(Optional.empty());
@@ -133,6 +137,53 @@ class PracticeIntentionServiceTest {
 		verify(intentionRepository, never()).save(any());
 	}
 
+	@Test
+	void createIntentionForCryptoInstrumentUsesCoinTutorialKeyAndSavesWhenFavorited() {
+		stubWithFavoriteLockInvokesAction();
+		Instrument instrument = mock(Instrument.class);
+		when(instrument.getMarket()).thenReturn(Market.CRYPTO);
+		PracticeProgress progress = progress(PracticeProgressStatus.IN_PROGRESS);
+		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID)).thenReturn(instrument);
+		when(progressRepository.findByUserIdAndTutorialKeyForUpdate(USER_ID,
+			PracticeIntentionService.COIN_TUTORIAL_KEY)).thenReturn(Optional.of(progress));
+		when(favoriteService.isFavorited(USER_ID, INSTRUMENT_ID)).thenReturn(true);
+		when(intentionRepository.save(any())).thenAnswer(invocation -> {
+			PracticeIntention withoutId = invocation.getArgument(0);
+			return new PracticeIntention(99L, withoutId.userId(), withoutId.instrumentId(),
+				withoutId.quantity(), withoutId.stopLoss(), withoutId.takeProfit(), withoutId.createdAt());
+		});
+
+		var result = service.createIntention(USER_ID, request());
+
+		assertThat(result.intentionId()).isEqualTo(99L);
+		verify(intentionRepository).save(any(PracticeIntention.class));
+		verify(progressRepository).insertIfAbsent(USER_ID, PracticeIntentionService.COIN_TUTORIAL_KEY,
+			LocalDateTime.of(2026, 8, 4, 1, 0));
+		verify(progressRepository, never()).insertIfAbsent(eq(USER_ID), eq(PracticeIntentionService.TUTORIAL_KEY),
+			any());
+	}
+
+	@Test
+	void createIntentionFailsWhenCoinFavoriteStepIsLockedWithoutSaving() {
+		stubWithFavoriteLockInvokesAction();
+		stubDependencies(PracticeProgressStatus.IN_PROGRESS, Market.CRYPTO, PracticeIntentionService.COIN_TUTORIAL_KEY);
+		when(favoriteService.isFavorited(USER_ID, INSTRUMENT_ID)).thenReturn(false);
+
+		assertError(ErrorCode.PRACTICE_STEP_LOCKED);
+
+		verify(intentionRepository, never()).save(any());
+	}
+
+	@Test
+	void createIntentionFailsWhenCoinPracticeAlreadyCompletedWithoutLockingFavoriteOrSaving() {
+		stubDependencies(PracticeProgressStatus.COMPLETED, Market.CRYPTO, PracticeIntentionService.COIN_TUTORIAL_KEY);
+
+		assertError(ErrorCode.PRACTICE_ALREADY_COMPLETED);
+
+		verify(favoriteService, never()).withFavoriteLock(anyLong(), anyLong(), any());
+		verify(intentionRepository, never()).save(any());
+	}
+
 	@SuppressWarnings("unchecked")
 	private void stubWithFavoriteLockInvokesAction() {
 		when(favoriteService.withFavoriteLock(anyLong(), anyLong(), any())).thenAnswer(
@@ -140,11 +191,16 @@ class PracticeIntentionServiceTest {
 	}
 
 	private void stubDependencies(PracticeProgressStatus status) {
+		stubDependencies(status, Market.STOCK, PracticeIntentionService.TUTORIAL_KEY);
+	}
+
+	private void stubDependencies(PracticeProgressStatus status, Market market, String tutorialKey) {
 		Instrument instrument = mock(Instrument.class);
+		when(instrument.getMarket()).thenReturn(market);
 		PracticeProgress progress = progress(status);
 		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID)).thenReturn(instrument);
-		when(progressRepository.findByUserIdAndTutorialKeyForUpdate(USER_ID,
-			PracticeIntentionService.TUTORIAL_KEY)).thenReturn(Optional.of(progress));
+		when(progressRepository.findByUserIdAndTutorialKeyForUpdate(USER_ID, tutorialKey))
+			.thenReturn(Optional.of(progress));
 	}
 
 	private PracticeProgress progress(PracticeProgressStatus status) {

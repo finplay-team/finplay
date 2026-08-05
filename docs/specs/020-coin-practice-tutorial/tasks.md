@@ -8,7 +8,7 @@
 
 ## 후속 production (착수 시 한 건씩 이슈 생성)
 
-- [ ] **tutorial key market 분기** — `PracticeIntentionService`의 단일 상수를 종목 market 해석으로 바꾸고 `COIN_PRACTICE_V1` progress 확보·잠금을 구현한다. migration 없음. 기존 행 백필 없음. 두 key가 사용자당 독립 행으로 공존함을 `@DataJpaTest`로 검증한다.
+- [x] **tutorial key market 분기** — `PracticeIntentionService`의 단일 상수를 종목 market 해석으로 바꾸고 `COIN_PRACTICE_V1` progress 확보·잠금을 구현한다. migration 없음. 기존 행 백필 없음. 두 key가 사용자당 독립 행으로 공존함을 `@DataJpaTest`로 검증한다. (이슈 #226)
 - [ ] **코인 favorite chain 검증** — 코인 실습 chain의 market 일관성(favorite·intention·buyTrade·holding·exitPlan 전부 `CRYPTO` 동일 종목)을 검증하고 불일치를 정의된 409로 무흔적 거부한다.
 - [ ] **소수 수량 비교 정책** — 3자 snapshot equality를 `compareTo` 기반으로 구현하고 멱등 fingerprint 수량 정규화를 함께 적용한다. 단위 테스트로 `0.1` vs `0.10000000` 경계를 고정한다.
 - [ ] **코인 OCO 생성·취소 분기** — 세션 검증·15:30 조건 없이 `holding → plan` 잠금으로 생성·취소하고 `replaySessionId` null을 저장한다. 코인 상태 머신에 만료 전이를 만들지 않는다. `016` candidate 7과 같은 이슈에서 처리할 수 있다.
