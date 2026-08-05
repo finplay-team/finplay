@@ -28,6 +28,7 @@ import com.finplay.api.portfolio.repository.TradeAllocationRepository;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -177,6 +178,38 @@ class HolderPopulationQueryServiceTest {
 			"countHoldersAtTime", Long.class, LocalDateTime.class);
 
 		assertThat(method.getReturnType()).isEqualTo(int.class);
+	}
+
+	@Test
+	@DisplayName("populationSnapshotAtTime의 holderCount·minutesToSell이 개별 메서드 호출 결과와 일치한다")
+	void populationSnapshotMatchesSeparateCalls() {
+		// 포함 — 30분 내 매도
+		Holding soldWithin30Min = createHolding();
+		HoldingLot lotA = createBuyLot(soldWithin30Min, BigDecimal.valueOf(10), T.minusHours(1));
+		allocate(createSellTrade(soldWithin30Min.getAccount(), BigDecimal.valueOf(10), T.plusMinutes(10)),
+			lotA, BigDecimal.valueOf(10));
+
+		// 포함 — 30분 후 매도
+		Holding soldAfter30Min = createHolding();
+		HoldingLot lotB = createBuyLot(soldAfter30Min, BigDecimal.valueOf(5), T.minusHours(1));
+		allocate(createSellTrade(soldAfter30Min.getAccount(), BigDecimal.valueOf(5), T.plusHours(2)),
+			lotB, BigDecimal.valueOf(5));
+
+		// 포함 — 미매도
+		Holding notSold = createHolding();
+		createBuyLot(notSold, BigDecimal.valueOf(3), T.minusHours(1));
+
+		int expectedHolderCount = holderPopulationQueryService.countHoldersAtTime(instrument.getId(), T);
+		List<Integer> expectedMinutesToSell = holderPopulationQueryService
+			.minutesToSellForHoldersAtTime(instrument.getId(), T);
+
+		HolderPopulationQueryService.PopulationSnapshot snapshot = holderPopulationQueryService
+			.populationSnapshotAtTime(instrument.getId(), T);
+
+		assertThat(snapshot.holderCount()).isEqualTo(expectedHolderCount).isEqualTo(3);
+		assertThat(snapshot.minutesToSell())
+			.containsExactlyInAnyOrderElementsOf(expectedMinutesToSell)
+			.containsExactlyInAnyOrder(10, 120);
 	}
 
 	private Holding createHolding() {

@@ -20,8 +20,9 @@ import java.math.BigDecimal;
  * <p><b>{@code sameSessionCompleted=false}이면 이 record 자체가 {@code null}이다</b> — {@code status}만 담은
  * 껍데기를 내리지 않는다(계약이 이미 정한 형태).
  *
- * <p>이슈 #208은 {@code status}를 상수 {@code NOT_YET}으로 두고 지표 전부를 {@code null}로 둔다(3번 항목).
- * 확정 집계 행 기준 판정({@code NO_EVENT} 1순위)과 지표 계산은 {@code plan.md} 7번이다.
+ * <p>{@code status}는 확정 집계 행 기준으로 판정한다 — {@code NO_EVENT}가 1순위(기준 카드 자체가 없음),
+ * 그다음 행이 없으면 {@code NOT_YET}, 행이 있고 {@code holderCount < 5}면 {@code INSUFFICIENT_SAMPLE}
+ * (모집단 지표 3종 {@code null}, {@code yourMinutesToSell}만 채움), 그 외 {@code READY}다(§C-4).
  */
 public record PeerComparison(
 	PostSellFeedbackStatus status,

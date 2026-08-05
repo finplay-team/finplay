@@ -13,8 +13,9 @@ import java.time.LocalDateTime;
  * 수 없었던 가격이 되고(시장가 체결이 직전 완료 분봉의 종가로만 이루어진다) 실현 불가능한 수익률로 후회를
  * 유도하는 셈이 된다(§파생 사실 계산).
  *
- * <p><b>{@code returnRate}는 수수료를 다시 계산해 산출한다</b> — 매도금액 비례라 가격이 바뀌면 수수료도 바뀐다.
- * 그 재계산은 이슈 #208의 범위가 아니라 {@code plan.md} 7번 몫이고, 그때까지 이 필드는 {@code null}이다.
+ * <p><b>{@code returnRate}는 수수료를 다시 계산해 산출한다</b> — 매도금액 비례라 가격이 바뀌면 수수료도 바뀐다
+ * ({@code FLOOR(매도금액 × 시장별 요율)}, {@code OrderExecutionService}와 같은 식). {@code price}가 {@code null}인
+ * 시나리오(보유 구간에 카드가 없는 {@code atFirstMoveAfterBuy})는 {@code returnRate}도 {@code null}이다.
  *
  * <p><b>이 값은 AI 서술에 넣지 않는다</b> — {@code PostSellPromptDto}에 해당 필드가 없는 이유이며
  * §왜 반사실은 AI 문장에 넣지 않는가에 근거가 있다. 구조화 필드로만 내려보내고 화면이 표로 그린다.

@@ -64,13 +64,46 @@ public class HolderPopulationQueryService {
 	 * 회원은 "매도까지 걸린 시간"이 정의되지 않으므로 목록에서 빠진다 — 호출부가 이 목록의 크기와 모집단
 	 * 크기의 차이로 미매도 인원을 유추하지 않는다(그 목적이라면 {@code countHoldersAtTime}과 별도로 판단한다).
 	 *
+	 * <p><b>모집단 크기도 함께 필요하면 {@code countHoldersAtTime}을 따로 부르지 말고
+	 * {@link #populationSnapshotAtTime}을 써라</b> — 둘을 각각 부르면 {@code holderIdsAtTime}이 두 번 계산된다.
+	 *
 	 * @param instrumentId 종목 id
 	 * @param at 카드 {@code windowEnd}를 그 카드가 재생된 서비스 날짜에 붙인 절대 시각 T
 	 * @return 매도까지 걸린 분의 목록 (순서는 의미가 없다). 모집단이 비거나 아무도 T 뒤에 팔지 않았으면 빈 목록
 	 */
 	@Transactional(readOnly = true)
 	public List<Integer> minutesToSellForHoldersAtTime(Long instrumentId, LocalDateTime at) {
+		return minutesToSellForHolderIds(instrumentId, at, holderIdsAtTime(instrumentId, at));
+	}
+
+	/**
+	 * 모집단 크기와 매도까지 걸린 분 목록을 <b>한 번의 홀더 판정으로</b> 함께 반환한다.
+	 *
+	 * <p>{@code PeerStatsBatchService}처럼 카드 1건에 두 값이 모두 필요한 호출부를 위한 것이다.
+	 * {@code countHoldersAtTime}과 {@code minutesToSellForHoldersAtTime}을 각각 부르면
+	 * {@code holderIdsAtTime}(쿼리 2개)이 두 번 계산돼 카드당 쿼리가 5개가 된다 — 이 메서드는 그 계산을 한 번만
+	 * 하고 매도 시각 조회(쿼리 1개)를 더해 카드당 3개로 줄인다.
+	 *
+	 * @param instrumentId 종목 id
+	 * @param at 카드 {@code windowEnd}를 그 카드가 재생된 서비스 날짜에 붙인 절대 시각 T
+	 */
+	@Transactional(readOnly = true)
+	public PopulationSnapshot populationSnapshotAtTime(Long instrumentId, LocalDateTime at) {
 		Set<Long> holderIds = holderIdsAtTime(instrumentId, at);
+		return new PopulationSnapshot(holderIds.size(), minutesToSellForHolderIds(instrumentId, at, holderIds));
+	}
+
+	/** {@link #populationSnapshotAtTime}의 반환 묶음 — 회원 식별자·holding id는 담지 않는다. */
+	public record PopulationSnapshot(int holderCount, List<Integer> minutesToSell) {
+
+		// 컬렉션 필드를 가진 record는 방어적 복사가 없으면 spotbugsMain이 EI_EXPOSE_REP(2)으로 잡는다
+		// (docs/agent-mistakes.md 2026-07-29).
+		public PopulationSnapshot {
+			minutesToSell = List.copyOf(minutesToSell);
+		}
+	}
+
+	private List<Integer> minutesToSellForHolderIds(Long instrumentId, LocalDateTime at, Set<Long> holderIds) {
 		if (holderIds.isEmpty()) {
 			return List.of();
 		}
@@ -85,8 +118,8 @@ public class HolderPopulationQueryService {
 		return minutesToSell;
 	}
 
-	// 시점 at에 종목을 보유 중이던 holding id 집합을 계산한다 — countHoldersAtTime·minutesToSellForHoldersAtTime이
-	// 공유하는 계산이다. holding id는 이 서비스 밖으로 나가지 않는다.
+	// 시점 at에 종목을 보유 중이던 holding id 집합을 계산한다 — countHoldersAtTime·minutesToSellForHoldersAtTime·
+	// populationSnapshotAtTime이 공유하는 계산이다. holding id는 이 서비스 밖으로 나가지 않는다.
 	private Set<Long> holderIdsAtTime(Long instrumentId, LocalDateTime at) {
 		Map<Long, BigDecimal> boughtByHoldingId = new HashMap<>();
 		for (HoldingQuantitySum sum : holdingLotRepository

@@ -109,8 +109,13 @@ public class PeerStatsBatchService {
 		LocalDateTime at = LocalDateTime.of(serviceDate, card.getWindowEnd());
 		Long instrumentId = card.getInstrument().getId();
 
-		int holderCount = holderPopulationQueryService.countHoldersAtTime(instrumentId, at);
-		List<Integer> minutesToSell = holderPopulationQueryService.minutesToSellForHoldersAtTime(instrumentId, at);
+		// countHoldersAtTime·minutesToSellForHoldersAtTime을 각각 부르지 않는다 — 둘 다 내부적으로
+		// holderIdsAtTime을 다시 계산해 카드당 쿼리가 5개가 된다. populationSnapshotAtTime이 한 번만 계산해
+		// 3개로 줄인다(PR #216 리뷰 권장).
+		HolderPopulationQueryService.PopulationSnapshot snapshot = holderPopulationQueryService
+			.populationSnapshotAtTime(instrumentId, at);
+		int holderCount = snapshot.holderCount();
+		List<Integer> minutesToSell = snapshot.minutesToSell();
 
 		int soldWithin30MinCount = (int)minutesToSell.stream().filter(minutes -> minutes <= 30).count();
 		Integer medianMinutesToSell = median(minutesToSell);
