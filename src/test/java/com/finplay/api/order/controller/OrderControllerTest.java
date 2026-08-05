@@ -710,18 +710,33 @@ class OrderControllerTest {
 	}
 
 	@Test
-	void cancelLimitOrderReturnsOrderNotPendingWhenAlreadyFilledOrCancelled() throws Exception {
+	void cancelLimitOrderReturnsOrderAlreadyFilledWhenAlreadyFilled() throws Exception {
 		stubAuthenticatedUser();
-		org.mockito.Mockito.doThrow(new BusinessException(ErrorCode.ORDER_NOT_PENDING))
+		org.mockito.Mockito.doThrow(new BusinessException(ErrorCode.ORDER_ALREADY_FILLED))
 			.when(limitOrderCancelService).cancelOrder(USER_ID, 3L);
 
 		mockMvc.perform(delete("/api/orders/{orderId}", 3L)
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
 			.andExpect(status().isConflict())
-			.andExpect(jsonPath("$.error.code").value("ORDER_NOT_PENDING"))
+			.andExpect(jsonPath("$.error.code").value("ORDER_ALREADY_FILLED"))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
 		verify(limitOrderCancelService).cancelOrder(USER_ID, 3L);
+	}
+
+	@Test
+	void cancelLimitOrderReturnsOrderAlreadyCancelledWhenAlreadyCancelled() throws Exception {
+		stubAuthenticatedUser();
+		org.mockito.Mockito.doThrow(new BusinessException(ErrorCode.ORDER_ALREADY_CANCELLED))
+			.when(limitOrderCancelService).cancelOrder(USER_ID, 4L);
+
+		mockMvc.perform(delete("/api/orders/{orderId}", 4L)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.error.code").value("ORDER_ALREADY_CANCELLED"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(limitOrderCancelService).cancelOrder(USER_ID, 4L);
 	}
 
 	@Test

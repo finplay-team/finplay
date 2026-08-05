@@ -113,7 +113,7 @@ class LimitOrderCancelServiceTest {
 	}
 
 	@Test
-	void cancelOrderThrowsOrderNotPendingWhenAlreadyFilled() {
+	void cancelOrderThrowsOrderAlreadyFilledWhenAlreadyFilled() {
 		Instrument instrument = cryptoInstrument();
 		Account account = account();
 		Order order = limitPendingOrder(owner(), account, instrument, OrderSide.BUY, "0.1", "1000000");
@@ -123,13 +123,13 @@ class LimitOrderCancelServiceTest {
 		assertThatThrownBy(() -> service.cancelOrder(OWNER_USER_ID, ORDER_ID))
 			.isInstanceOf(BusinessException.class)
 			.extracting(ex -> ((BusinessException)ex).getErrorCode())
-			.isEqualTo(ErrorCode.ORDER_NOT_PENDING);
+			.isEqualTo(ErrorCode.ORDER_ALREADY_FILLED);
 
 		verifyNoInteractions(accountService, portfolioSellService);
 	}
 
 	@Test
-	void cancelOrderThrowsOrderNotPendingWhenAlreadyCancelled() {
+	void cancelOrderThrowsOrderAlreadyCancelledWhenAlreadyCancelled() {
 		Instrument instrument = cryptoInstrument();
 		Account account = account();
 		Order order = limitPendingOrder(owner(), account, instrument, OrderSide.BUY, "0.1", "1000000");
@@ -139,7 +139,7 @@ class LimitOrderCancelServiceTest {
 		assertThatThrownBy(() -> service.cancelOrder(OWNER_USER_ID, ORDER_ID))
 			.isInstanceOf(BusinessException.class)
 			.extracting(ex -> ((BusinessException)ex).getErrorCode())
-			.isEqualTo(ErrorCode.ORDER_NOT_PENDING);
+			.isEqualTo(ErrorCode.ORDER_ALREADY_CANCELLED);
 
 		verifyNoInteractions(accountService, portfolioSellService);
 	}
@@ -147,7 +147,7 @@ class LimitOrderCancelServiceTest {
 	@Test
 	void cancelOrderChecksOwnershipBeforeStatusSoNonOwnerOfAlreadyCancelledOrderGetsForbidden() {
 		// 검증 순서(존재→소유→상태) 준수 확인: 이미 CANCELLED된 주문이라도 소유자가 아니면
-		// ORDER_NOT_PENDING이 아니라 FORBIDDEN이 먼저 나와야 한다(spec.md "검증 순서" — 상태를 오류 코드로 흘리지 않음).
+		// ORDER_ALREADY_CANCELLED가 아니라 FORBIDDEN이 먼저 나와야 한다(spec.md "검증 순서" — 상태를 오류 코드로 흘리지 않음).
 		Instrument instrument = cryptoInstrument();
 		Account account = account();
 		Order order = limitPendingOrder(owner(), account, instrument, OrderSide.BUY, "0.1", "1000000");

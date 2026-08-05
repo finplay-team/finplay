@@ -39,8 +39,11 @@ public class LimitOrderCancelService {
 			throw new BusinessException(ErrorCode.FORBIDDEN);
 		}
 
-		if (order.getStatus() != OrderStatus.PENDING) {
-			throw new BusinessException(ErrorCode.ORDER_NOT_PENDING);
+		if (order.getStatus() == OrderStatus.FILLED) {
+			throw new BusinessException(ErrorCode.ORDER_ALREADY_FILLED);
+		}
+		if (order.getStatus() == OrderStatus.CANCELLED) {
+			throw new BusinessException(ErrorCode.ORDER_ALREADY_CANCELLED);
 		}
 
 		Account account = accountService.getAccountByIdForUpdate(order.getAccount().getId());

@@ -68,9 +68,9 @@
 - 검증 순서는 **존재(404) → 소유(403) → 상태(409)**로 고정한다(기존 investment journal 엔드포인트 패턴 재사용, `docs/api-contracts.md` 439행 "검증 순서는 존재(404) → 소유(403) → ... → 중복(409)로 고정" 참고. `DELETE /api/exit-plans/{exitPlanId}`의 404 통일 방식(`docs/api-contracts.md` 569행)은 아직 미구현 candidate 9라 따르지 않는다 — 실제 구현된 코드 컨벤션을 우선한다).
   - 대상 `orderId`가 없으면 404 `NOT_FOUND`(기존 order 도메인이 이미 쓰는 공용 코드 재사용 — LMT-001 plan.md의 instrumentId·계좌 404와 동일 원칙).
   - 존재하지만 본인 소유가 아니면(요청자 ≠ 주문의 `user`) 403 `FORBIDDEN`(공용 코드 재사용, journal 403과 동일 원칙 — 소유하지 않은 주문의 상태·시장가/지정가 여부를 오류 코드로 흘리지 않는다).
-  - 본인 소유이지만 `status`가 `PENDING`이 아니면(이미 `FILLED` 또는 이미 `CANCELLED`) 409 `ORDER_NOT_PENDING`(신규 코드 — spec.md "완료 조건" 아래 신설). 시장가 주문(`orderType=MARKET`)은 생성 즉시 `FILLED`이므로 이 분기로 자연히 걸러진다(별도 `orderType` 검증 불필요).
+  - 본인 소유이지만 `status`가 `PENDING`이 아니면 상태별로 나눠 거부한다(2026-08-05 사용자 확인 — 신규 코드 2개): 이미 `FILLED`면 409 `ORDER_ALREADY_FILLED`, 이미 `CANCELLED`면 409 `ORDER_ALREADY_CANCELLED`. 시장가 주문(`orderType=MARKET`)은 생성 즉시 `FILLED`이므로 취소 시도 시 `ORDER_ALREADY_FILLED`로 자연히 걸러진다(별도 `orderType` 검증 불필요).
 - 취소 판정·잠금 순서는 LMT-002 체결과 동일한 `order → account → holding`을 그대로 재사용한다(SELL만 holding까지, BUY는 order → account) — "확정된 설계 결정" 7번에서 이미 이 순서를 LMT-003이 따르도록 확정해뒀다(재논의하지 않는다).
-- 체결 트리거(LMT-002)와 취소 요청이 동시에 도착해도 안전하다: 두 흐름 모두 order를 가장 먼저 잠그므로, 먼저 락을 획득한 쪽이 끝까지 처리되고 나중 쪽은 락 대기 후 `status != PENDING`을 보고 자기 작업을 거부/no-op한다(체결이 먼저면 취소는 409 `ORDER_NOT_PENDING`, 취소가 먼저면 체결 리스너는 `fillIfPending` 내부에서 `status != PENDING`으로 조용히 반환).
+- 체결 트리거(LMT-002)와 취소 요청이 동시에 도착해도 안전하다: 두 흐름 모두 order를 가장 먼저 잠그므로, 먼저 락을 획득한 쪽이 끝까지 처리되고 나중 쪽은 락 대기 후 `status != PENDING`을 보고 자기 작업을 거부/no-op한다(체결이 먼저면 취소는 409 `ORDER_ALREADY_FILLED`, 취소가 먼저면 체결 리스너는 `fillIfPending` 내부에서 `status != PENDING`으로 조용히 반환).
 
 ## 시나리오
 
@@ -84,7 +84,7 @@
 8. **매수 지정가 취소**: 사용자가 아직 `PENDING`인 BTC 매수 지정가 주문을 취소한다. 204로 응답받고, 계좌의 `reservedCash`가 해당 주문이 예약했던 만큼 정확히 줄어들며 `cashBalance`는 변하지 않는다. 주문 `status`는 `CANCELLED`가 된다.
 9. **매도 지정가 취소**: 사용자가 아직 `PENDING`인 ETH 매도 지정가 주문을 취소한다. 204로 응답받고, holding의 `reservedQuantity`가 해당 주문이 예약했던 만큼 정확히 줄어들며 `quantity`(총 보유수량)는 변하지 않는다.
 10. **타인 소유 주문 취소 거부**: 다른 사용자의 지정가 주문 `orderId`로 취소를 요청하면 403 `FORBIDDEN`으로 거부되고 아무 예약도 반환되지 않는다.
-11. **이미 처리된 주문 재취소 거부**: 이미 `FILLED`된 주문이나 이미 `CANCELLED`된 주문을 다시 취소 요청하면 409 `ORDER_NOT_PENDING`으로 거부되고 예약이 이중으로 반환되지 않는다.
+11. **이미 처리된 주문 재취소 거부**: 이미 `FILLED`된 주문을 다시 취소 요청하면 409 `ORDER_ALREADY_FILLED`로, 이미 `CANCELLED`된 주문을 다시 취소 요청하면 409 `ORDER_ALREADY_CANCELLED`로 각각 거부되고 예약이 이중으로 반환되지 않는다.
 12. **취소-대-체결 동시 경합**: 같은 `PENDING` 주문에 취소 요청과 가격 갱신에 의한 체결 트리거가 거의 동시에 도착해도, 정확히 한쪽만 성공한다 — 체결이 이기면 주문은 `FILLED`로 확정되고 취소 요청은 409로 거부되며, 취소가 이기면 주문은 `CANCELLED`로 확정되고 체결 트리거는 조용히 아무 것도 하지 않는다. 어느 경우에도 예약이 이중으로 반환되거나 이중으로 소비되지 않는다.
 
 ## 비즈니스 규칙
@@ -114,7 +114,7 @@
 
 - [x] `DELETE /api/orders/{orderId}`가 본인 소유의 `PENDING` 지정가 주문을 취소하고 `status`를 `CANCELLED`로 변경하며 204(본문 없음)를 응답한다.
 - [x] 취소 시 매수는 예약 현금을(`reservedCash` 감소, `cashBalance` 불변), 매도는 예약 수량을(`reservedQuantity` 감소, `quantity` 불변) 정확히 반환한다.
-- [x] 이미 `FILLED`이거나 이미 `CANCELLED`인 주문의 취소 요청은 409 `ORDER_NOT_PENDING`으로 거부되고 예약이 이중 반환되지 않는다.
+- [x] 이미 `FILLED`인 주문의 취소 요청은 409 `ORDER_ALREADY_FILLED`로, 이미 `CANCELLED`인 주문의 취소 요청은 409 `ORDER_ALREADY_CANCELLED`로 각각 거부되고 예약이 이중 반환되지 않는다.
 - [x] 본인 소유가 아닌 주문의 취소 요청은 403 `FORBIDDEN`으로 거부된다. 검증 순서는 존재(404 `NOT_FOUND`) → 소유(403) → 상태(409)로 고정된다.
 - [x] 체결 트리거(LMT-002)와 취소 요청이 동시에 도착해도 `order → account → holding` 잠금 순서로 예약 이중 반환이나 "체결 후 취소" 같은 경합 없이 안전하게 처리된다(경합 재현 테스트 포함 — 시나리오 12).
 - [x] `docs/api-routes.md`·`docs/api-contracts.md`에 신규 엔드포인트(`DELETE /api/orders/{orderId}`)가 반영된다.
@@ -132,7 +132,8 @@
 5. **동시 체결 처리 단위**: 한 가격 이벤트에서 조건을 충족하는 `PENDING` 주문이 여러 건이면 주문별로 독립된 트랜잭션에서 `requestedAt` 오름차순(동시각은 `id` 오름차순)으로 순차 처리한다.
 6. **Idempotency-Key**: `POST /api/orders/limit`도 `Idempotency-Key` 헤더를 필수로 받고, 기존 `POST /api/orders`의 재조회·409 `IDEMPOTENCY_CONFLICT` 패턴을 그대로 재사용한다.
 7. **체결 잠금 순서 정정(2026-08-05, 항목4 구현·검증 중 확인)**: 이슈 원문·본 문서 초안은 "`account → holding → order`"로 적었으나, 실제로는 `order → account → holding`(holding 없으면 `order → account`)으로 구현·검증되었고 이 문서도 이에 맞춰 정정한다. order 락은 같은 주문에 대한 중복 이벤트(및 후속 LMT-003 취소 요청)만 배제하는 용도라 그 주문 자신의 row 외에는 경쟁하지 않으므로 가장 먼저 잡아도 안전하다 — 오히려 이미 `FILLED`인 주문에 대해 account·holding 락을 불필요하게 잡는 낭비를 막는다. 실제로 여러 트랜잭션이 경합하는 자원은 account·holding뿐이며 이 순서(account 먼저)는 모든 흐름에서 불변이므로 ABBA 위험은 없다(tester가 코드 대조로 확인). LMT-003(취소)도 대상 주문을 먼저 잠그는 동일 순서를 따르면 취소-대-체결 경합도 같은 방식으로 안전하게 직렬화된다.
-8. **LMT-003 취소 정책(2026-08-05, 사용자 확인, 이슈 #218)**: (a) 성공 응답은 204·본문 없음(`DELETE /api/community/posts/{postId}`·`DELETE /api/community/comments/{commentId}` 컨벤션 재사용). (b) 타인 소유 주문 취소 시도는 403 `FORBIDDEN`. (c) 검증 순서는 존재(404) → 소유(403) → 상태(409)로 고정, journal 엔드포인트 패턴(`docs/api-contracts.md` 439행)을 재사용하고 아직 미구현인 `DELETE /api/exit-plans/{exitPlanId}`(016 candidate 9, 404 통일 방식)는 따르지 않는다 — 실제 구현된 코드 컨벤션을 우선한다. (d) 404·403은 기존 `ErrorCode.NOT_FOUND`·`ErrorCode.FORBIDDEN`을 재사용하고(주문 도메인 전용 접두 코드를 신설하지 않는다 — LMT-001/002 plan.md가 이미 "404 NOT_FOUND"로 order 도메인 404를 통일해뒀다), 이미 `FILLED`/`CANCELLED`인 주문에 대한 409만 신규 코드 `ORDER_NOT_PENDING`을 추가한다(미구현 candidate `EXIT_PLAN_NOT_PENDING`과 동일한 `_NOT_PENDING` 명명 관례를 재사용). (e) 잠금 순서는 LMT-002와 동일하게 `order → account → holding`(SELL만 holding)을 그대로 재사용한다(위 7번 결정을 재적용, 재논의하지 않는다).
+8. **LMT-003 취소 정책(2026-08-05, 사용자 확인, 이슈 #218)**: (a) 성공 응답은 204·본문 없음(`DELETE /api/community/posts/{postId}`·`DELETE /api/community/comments/{commentId}` 컨벤션 재사용). (b) 타인 소유 주문 취소 시도는 403 `FORBIDDEN`. (c) 검증 순서는 존재(404) → 소유(403) → 상태(409)로 고정, journal 엔드포인트 패턴(`docs/api-contracts.md` 439행)을 재사용하고 아직 미구현인 `DELETE /api/exit-plans/{exitPlanId}`(016 candidate 9, 404 통일 방식)는 따르지 않는다 — 실제 구현된 코드 컨벤션을 우선한다. (d) 404·403은 기존 `ErrorCode.NOT_FOUND`·`ErrorCode.FORBIDDEN`을 재사용하고(주문 도메인 전용 접두 코드를 신설하지 않는다 — LMT-001/002 plan.md가 이미 "404 NOT_FOUND"로 order 도메인 404를 통일해뒀다), 이미 `FILLED`/`CANCELLED`인 주문에 대한 409 코드는 아래 9번 결정으로 대체됐다. (e) 잠금 순서는 LMT-002와 동일하게 `order → account → holding`(SELL만 holding)을 그대로 재사용한다(위 7번 결정을 재적용, 재논의하지 않는다).
+9. **LMT-003 상태(409) 오류 코드 분리(2026-08-05, 사용자 확인, 이슈 #218 후속)**: 위 8번(d)가 도입한 단일 `ORDER_NOT_PENDING`을 폐기하고 `ORDER_ALREADY_FILLED`(이미 `FILLED`)·`ORDER_ALREADY_CANCELLED`(이미 `CANCELLED`)로 분리한다 — 클라이언트가 두 사유를 구분해 다른 안내를 보여줄 수 있어야 한다는 사용자 판단. `DELETE /api/orders/{orderId}` 응답 계약·`LimitOrderCancelService`의 상태 분기·관련 테스트(`LimitOrderCancelServiceTest`·`OrderControllerTest`·`LimitOrderConcurrencyIntegrationTest`·`ErrorCodeTest`)·`docs/api-contracts.md`를 모두 이 분리에 맞춰 갱신했다.
 
 ## 부수 효과(요구사항은 아니지만 확인 필요)
 

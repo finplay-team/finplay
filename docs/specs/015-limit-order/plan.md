@@ -332,9 +332,10 @@ Holding holding = portfolioSellService.getHoldingOrThrow(account, instrument, qu
 |---|---|---|
 | 404 | NOT_FOUND | `orderId`에 해당하는 주문 없음(기존 order 도메인 404 재사용 — 신규 코드 아님) |
 | 403 | FORBIDDEN | 주문의 `user` ≠ 요청자(기존 공용 코드 재사용) |
-| 409 | ORDER_NOT_PENDING | 주문의 `status`가 `PENDING`이 아님(이미 `FILLED` 또는 이미 `CANCELLED`) — **신규 코드** |
+| 409 | ORDER_ALREADY_FILLED | 주문의 `status`가 이미 `FILLED` — **신규 코드** |
+| 409 | ORDER_ALREADY_CANCELLED | 주문의 `status`가 이미 `CANCELLED` — **신규 코드** |
 
-`ErrorCode`에 `ORDER_NOT_PENDING(HttpStatus.CONFLICT, "이미 체결되었거나 취소된 주문입니다.")`를 추가한다(`IDEMPOTENCY_CONFLICT`·`UNSUPPORTED_ORDER_TYPE` 근처, order 도메인 오류들과 같은 블록에 배치). 미구현 candidate `EXIT_PLAN_NOT_PENDING`(`docs/api-contracts.md` 569행)과 동일한 `_NOT_PENDING` 명명 관례를 재사용한다.
+`ErrorCode`에 `ORDER_ALREADY_FILLED(HttpStatus.CONFLICT, "이미 체결된 주문입니다.")`·`ORDER_ALREADY_CANCELLED(HttpStatus.CONFLICT, "이미 취소된 주문입니다.")`를 추가한다(`IDEMPOTENCY_CONFLICT`·`UNSUPPORTED_ORDER_TYPE` 근처, order 도메인 오류들과 같은 블록에 배치). 2026-08-05 사용자 확인(spec.md "확정된 설계 결정" 9번) — 클라이언트가 두 사유를 구분해 다른 안내를 보여줄 수 있도록 단일 `ORDER_NOT_PENDING`(초안)에서 분리했다.
 
 ## 데이터 모델
 
@@ -363,7 +364,7 @@ public void cancel() {
 }
 ```
 
-서비스 계층은 `markFilled()`/`reserveCash()` 호출부와 동일한 관례로 **entity 메서드 호출 전에** `order.getStatus() != PENDING`을 확인해 `BusinessException(ORDER_NOT_PENDING)`을 던진다(entity의 `IllegalStateException`은 방어적 이중 체크, 정상 흐름에서는 도달하지 않는다).
+서비스 계층은 `markFilled()`/`reserveCash()` 호출부와 동일한 관례로 **entity 메서드 호출 전에** `order.getStatus()`를 확인해 `FILLED`면 `BusinessException(ORDER_ALREADY_FILLED)`, `CANCELLED`면 `BusinessException(ORDER_ALREADY_CANCELLED)`를 던진다(entity의 `IllegalStateException`은 방어적 이중 체크, 정상 흐름에서는 도달하지 않는다).
 
 **`Account`**: 예약 취소 메서드 추가(`Holding.releaseReservedQuantity`와 대칭 구조).
 
@@ -402,7 +403,7 @@ public ResponseEntity<Void> cancelLimitOrder(
 
 1. `order = orderRepository.findByIdForUpdate(orderId).orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND))` — **주문 락 + 존재(404) 검증을 한 번에 수행**(LMT-002 `fillIfPending`과 같은 지점, 값만 예외로 다름 — 체결 리스너는 방어적 `IllegalStateException`을 쓰지만 이쪽은 사용자 입력에서 오는 404이므로 `BusinessException`).
 2. `!order.getUser().getId().equals(userId)`면 `BusinessException(ErrorCode.FORBIDDEN)` — **소유(403) 검증**. order 락은 이미 잡은 상태지만, 소유자가 아니면 이후 account/holding 락은 잡지 않고 즉시 반환한다(트랜잭션 롤백으로 order 락도 해제).
-3. `order.getStatus() != OrderStatus.PENDING`이면 `BusinessException(ErrorCode.ORDER_NOT_PENDING)` — **상태(409) 검증**.
+3. `order.getStatus() == OrderStatus.FILLED`면 `BusinessException(ErrorCode.ORDER_ALREADY_FILLED)`, `order.getStatus() == OrderStatus.CANCELLED`면 `BusinessException(ErrorCode.ORDER_ALREADY_CANCELLED)` — **상태(409) 검증**(`PENDING`·`FILLED`·`CANCELLED` 3값뿐이라 이 두 분기로 배타적).
 4. `account = accountService.getAccountByIdForUpdate(order.getAccount().getId())` — **계좌 락**(LMT-002와 동일한 두 번째 단계).
 5. `amount = FLOOR(quantity × limitPrice)`, `fee = FLOOR(amount × CRYPTO_FEE_RATE)`(생성·체결과 동일 계산 재사용 — `LimitOrderCreationService.calculateCashRequired`·`LimitOrderFillService.fillIfPending`이 이미 각각 사설 메서드로 중복해온 것과 같은 패턴으로, 이 클래스도 사설 메서드로 한 번 더 중복한다. 011 plan.md 전례처럼 규모가 작아 공용 추출보다 복제가 낫다고 판단).
 6. **BUY**: `account.releaseReservedCash(amount + fee)`.
@@ -416,7 +417,7 @@ public ResponseEntity<Void> cancelLimitOrder(
 기존 파일의 `runConcurrently`(ready/start `CountDownLatch` 2단계, `ExecutorService` 2스레드, `Future.get`으로 예외 전파)를 그대로 재사용해 새 테스트 메서드를 추가한다 — 새 유틸리티를 만들지 않는다.
 
 1. **취소-대-체결 경합(시나리오 12)**: `PENDING` 지정가 매수 주문 1건을 만든 뒤, 스레드 A는 `limitOrderCancelService.cancelOrder(userId, orderId)`, 스레드 B는 `limitOrderFillService.fillIfPending(orderId)`를 동시에 호출한다. 두 결과 조합 중 정확히 하나만 성립함을 검증한다:
-   - **체결이 이겼다면**: `orderRepository.findById(orderId)`가 `FILLED`, `cancelOrder` 호출은 `BusinessException(ORDER_NOT_PENDING)`을 던짐, `Trade` 1건 생성, `reservedCash`는 0(체결로 소비).
+   - **체결이 이겼다면**: `orderRepository.findById(orderId)`가 `FILLED`, `cancelOrder` 호출은 `BusinessException(ORDER_ALREADY_FILLED)`를 던짐, `Trade` 1건 생성, `reservedCash`는 0(체결로 소비).
    - **취소가 이겼다면**: `orderRepository.findById(orderId)`가 `CANCELLED`, `fillIfPending` 호출은 예외 없이 조용히 반환(no-op), `Trade` 0건, `reservedCash`는 0(취소로 반환).
    - 두 경우 모두 `cashBalance`는 시작값(체결이 이긴 경우만 실제 지출로 감소, 취소가 이긴 경우는 불변)과 정확히 일치해 예약 이중 반환·이중 소비가 없음을 확인한다.
 2. 매도 지정가에 대해서도 같은 패턴으로 1개 더 추가한다(`holding.reservedQuantity`/`quantity` 버전) — BUY 시나리오와 대칭이므로 assert 대상만 계좌 대신 holding으로 바꾼다.

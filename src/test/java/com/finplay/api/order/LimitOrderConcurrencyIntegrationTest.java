@@ -284,7 +284,7 @@ class LimitOrderConcurrencyIntegrationTest {
 		long cashBefore = reservedAccount.getCashBalance();
 		assertThat(reservedCashBefore).isGreaterThan(0L);
 
-		// cancelOrder는 지는 쪽이면 ORDER_NOT_PENDING을 던지는 게 정상 동작이므로, 그 예외를 runConcurrently 밖으로
+		// cancelOrder는 지는 쪽이면 ORDER_ALREADY_FILLED를 던지는 게 정상 동작이므로, 그 예외를 runConcurrently 밖으로
 		// 전파시키지 않고 캡처해서 이후 분기 검증에 쓴다. fillIfPending은 지는 쪽이어도 예외 없이 no-op해야 하므로
 		// 그대로 둔다 — 만약 여기서 예외가 나면 그 자체가 구현 버그이므로 테스트가 실패해야 맞다.
 		AtomicReference<Exception> cancelException = new AtomicReference<>();
@@ -302,10 +302,11 @@ class LimitOrderConcurrencyIntegrationTest {
 		Account accountAfter = accountRepository.findById(account.getId()).orElseThrow();
 
 		if (finalOrder.getStatus() == OrderStatus.FILLED) {
-			// 체결이 이겼다 — 취소는 ORDER_NOT_PENDING 예외로 실패해야 하고, 예약분은 정확히 한 번만 실제 지출로 전환된다.
+			// 체결이 이겼다 — 취소는 ORDER_ALREADY_FILLED 예외로 실패해야 하고, 예약분은 정확히 한 번만 실제 지출로 전환된다.
 			assertThat(cancelException.get()).isInstanceOf(BusinessException.class)
 				.satisfies(
-					ex -> assertThat(((BusinessException)ex).getErrorCode()).isEqualTo(ErrorCode.ORDER_NOT_PENDING));
+					ex -> assertThat(((BusinessException)ex).getErrorCode())
+						.isEqualTo(ErrorCode.ORDER_ALREADY_FILLED));
 			assertThat(countTradesForOrder(orderId)).isEqualTo(1L);
 			assertThat(accountAfter.getReservedCash()).isZero();
 			assertThat(cashBefore - accountAfter.getCashBalance()).isEqualTo(reservedCashBefore);
@@ -363,10 +364,11 @@ class LimitOrderConcurrencyIntegrationTest {
 			.orElseThrow();
 
 		if (finalOrder.getStatus() == OrderStatus.FILLED) {
-			// 체결이 이겼다 — 취소는 ORDER_NOT_PENDING 예외로 실패해야 하고, 예약 수량은 실제 매도로 정확히 한 번만 소비된다.
+			// 체결이 이겼다 — 취소는 ORDER_ALREADY_FILLED 예외로 실패해야 하고, 예약 수량은 실제 매도로 정확히 한 번만 소비된다.
 			assertThat(cancelException.get()).isInstanceOf(BusinessException.class)
 				.satisfies(
-					ex -> assertThat(((BusinessException)ex).getErrorCode()).isEqualTo(ErrorCode.ORDER_NOT_PENDING));
+					ex -> assertThat(((BusinessException)ex).getErrorCode())
+						.isEqualTo(ErrorCode.ORDER_ALREADY_FILLED));
 			assertThat(countTradesForOrder(orderId)).isEqualTo(1L);
 			assertThat(holdingAfter.getReservedQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
 			assertThat(quantityBefore.subtract(holdingAfter.getQuantity())).isEqualByComparingTo(sellQuantity);
