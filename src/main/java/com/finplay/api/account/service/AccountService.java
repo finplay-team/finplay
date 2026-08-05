@@ -55,6 +55,16 @@ public class AccountService {
 			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
 	}
 
+	// 지정가 체결 시 계좌를 잠근다(015-limit-order LMT-002, 잠금 순서 account → holding → order의 첫 단계).
+	// 주문에 연결된 계좌는 FK로 항상 존재해야 하므로 없으면 원장 불변식 위반으로 보고 방어적으로 예외를 던진다
+	// (호출부 리스너가 건별 catch로 흡수한다). 다른 도메인 서비스가 AccountRepository를 직접 주입하지 않게 한다(ADR-0002).
+	@Transactional
+	public Account getAccountByIdForUpdate(Long accountId) {
+		return accountRepository
+			.findByIdForUpdate(accountId)
+			.orElseThrow(() -> new IllegalStateException("체결 대상 계좌를 찾을 수 없습니다. accountId=" + accountId));
+	}
+
 	// 랭킹 점수 갱신(RankingService.refreshScore)이 존재하지 않을 수도 있는 accountId를 조회할 때 쓴다.
 	@Transactional(readOnly = true)
 	public Optional<Account> findByIdOrEmpty(Long accountId) {

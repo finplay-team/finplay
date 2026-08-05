@@ -144,6 +144,8 @@ public class OrderExecutionService {
 		SellAllocationDto allocation = portfolioSellService.applySellTrade(holding, trade, quantity, now);
 
 		// 설계 노트 4: realizedPnl = (매도금액 - 매도수수료) - (배분된 매수원가 합 + 배분된 매수수수료 합)
+		// (이 공식은 PortfolioSellService.finalizeSellRealizedPnl로도 추출돼 015-limit-order LMT-002 지정가 체결이
+		// 재사용한다 — 여기 시장가 경로는 기존 동작·테스트를 그대로 보존하기 위해 인라인 계산을 유지한다.)
 		long realizedPnl = (pricing.amount() - pricing.fee())
 			- (allocation.totalAllocatedCost() + allocation.totalAllocatedBuyFee());
 		trade.fillRealizedPnl(realizedPnl);

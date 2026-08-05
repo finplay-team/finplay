@@ -11,7 +11,7 @@
 - [x] 3. **가격 갱신 이벤트 발행**
   `CryptoPriceUpdatedEvent`. `PriceStore.saveTick`에 `ApplicationEventPublisher` 주입 — 과거 틱 무시 분기를 통과해 실제로 갱신했을 때만 publish. 단위 테스트(신규 틱은 publish, 과거/동시각 틱은 미publish — 기존 MKT-003 테스트에 회귀 없는지 함께 확인).
 
-- [ ] 4. **체결 리스너·체결 서비스**
+- [x] 4. **체결 리스너·체결 서비스**
   `LimitOrderTriggerListener`(`@EventListener`, `findByMarketAndSymbol`로 종목 조회 실패 시 관용 처리, `findPendingLimitOrdersToFill`로 후보 조회, 건별 try/catch로 `limitOrderFillService.fillIfPending` 호출). `LimitOrderFillService.fillIfPending`(`@Transactional`, order→account→holding 락, BUY/SELL 체결 로직, SELL은 `RealizedPnlUpdatedEvent` 재발행). 단위 테스트(BUY 체결, SELL 체결+실현손익, 이미 FILLED인 주문은 no-op, holding 없는 신규 종목 첫 매수 체결).
 
 - [ ] 5. **기존 시장가 매도 락 순서 조정**

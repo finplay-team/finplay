@@ -49,6 +49,27 @@ public class PortfolioSellService {
 		return holding;
 	}
 
+	// 지정가 매도 체결 시 holding을 잠근다(015-limit-order LMT-002). 체결 대상 수량은 생성 시점에 이미
+	// reserveQuantity로 예약이 확인된 값이라 availableQuantity 재검증은 하지 않는다 — 예약된 holding이 없는
+	// 상태는 원장 불변식 위반이므로 방어적으로 IllegalStateException을 던진다(호출부 리스너가 건별 catch로 흡수).
+	public Holding getHoldingForUpdate(Account account, Instrument instrument) {
+		return holdingRepository
+			.findByAccountIdAndInstrumentIdForUpdate(account.getId(), instrument.getId())
+			.orElseThrow(() -> new IllegalStateException(
+				"체결 대상 holding을 찾을 수 없습니다. accountId=" + account.getId() + ", instrumentId=" + instrument.getId()));
+	}
+
+	// 매도 체결의 실현손익 계산·반영(시장가·지정가 공통, ORD-005 공식 그대로 재사용) — Trade.realizedPnl 확정 +
+	// Account 현금·실현손익 갱신까지 원자적으로 수행한다. 이벤트 발행은 호출부 책임으로 남긴다.
+	public long finalizeSellRealizedPnl(
+		Account account, Trade sellTrade, long amount, long fee, SellAllocationDto allocation) {
+		long realizedPnl = (amount - fee) - (allocation.totalAllocatedCost() + allocation.totalAllocatedBuyFee());
+		sellTrade.fillRealizedPnl(realizedPnl);
+		account.addCash(amount - fee);
+		account.addRealizedPnl(realizedPnl);
+		return realizedPnl;
+	}
+
 	public SellAllocationDto applySellTrade(
 		Holding holding, Trade sellTrade, BigDecimal sellQuantity, LocalDateTime now) {
 		List<HoldingLot> lots = holdingLotRepository
