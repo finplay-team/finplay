@@ -67,7 +67,7 @@
   - 완료 조건(2번 항목과 공유) — "집단 비교 응답에 회원 식별자가 어떤 형태로도 포함되지 않는다." 이 항목은 `PriceMovePeerStat` 엔티티 자체가 회원 식별자를 안 가지므로 구조적으로 성립하지만, 응답 DTO 매핑에서 새 필드를 추가하며 실수로 식별자를 끼워 넣지 않았는지 확인한다.
   - 검증 — 단위(판정 순서 4가지 분기, 5명/4명 경계) + `@DataJpaTest`(조회 메서드가 서비스 날짜로 정확히 걸러지는지, 같은 이벤트의 다른 서비스 날짜 행을 섞어 확인) + `@WebMvcTest`(직렬화).
 
-- [ ] **5. 재생성 게이트 테스트를 실제 `price_move_peer_stats` 픽스처로 전환**
+- [x] **5. 재생성 게이트 테스트를 실제 `price_move_peer_stats` 픽스처로 전환**
 
   `PostSellFeedbackRegenerationIntegrationTest`가 지금 `@MockitoBean PostSellFeedbackReader`로 `peerComparison.status`를 확정 상태로 대역 처리하고 있다(파일 주석에 "3번 항목이 그 값을 상수 `NOT_YET`으로 두어 이 이슈 범위에서는 구조적으로 열리지 않는다"고 적혀 있다 — 그 "3번 항목"이 #208의 3번이고 지금은 이 이슈 4번이 실제 판정을 붙였다). **mock을 걷어내고 실제 `price_move_peer_stats` 행으로 게이트를 연다.**
   - `@MockitoBean private PostSellFeedbackReader postSellFeedbackReader;`와 그 스텁 설정을 제거한다. 대신 각 테스트가 필요로 하는 `peerComparison` 확정 상태(`NO_EVENT`·`INSUFFICIENT_SAMPLE`·`READY`)를 4번 항목이 만든 실제 판정 경로로 재현한다 — 카드 0건 테스트는 카드를 안 만들면 되고, `INSUFFICIENT_SAMPLE` 테스트는 `PriceMovePeerStatRepository`에 `holderCount < 5`인 행을 직접 저장해 재현한다(3번 항목의 배치 전체를 다시 돌릴 필요는 없다).
