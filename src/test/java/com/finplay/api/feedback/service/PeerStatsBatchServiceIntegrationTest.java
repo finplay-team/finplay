@@ -35,13 +35,17 @@ import com.finplay.api.portfolio.repository.HoldingLotRepository;
 import com.finplay.api.portfolio.repository.HoldingRepository;
 import com.finplay.api.portfolio.repository.TradeAllocationRepository;
 import com.finplay.api.portfolio.service.HolderPopulationQueryService;
+import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -51,10 +55,12 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
 // tasks.md 3번 항목의 완료 조건 4개(저장·중복 없음·재재생 서비스 날짜 분리·READY 게이트) + 세 지표(모집단·매도비율·
-// 중앙값)의 손 계산 대조가 이 파일의 목표다. 원장 불변(항목 6 전담)은 여기서 다루지 않는다.
+// 중앙값)의 손 계산 대조와, tasks.md 6번 항목의 원장 불변(8개 이슈 공통 조건 중 이 배치가 맡는 절반)이 이 파일의
+// 목표다. 매도 회고 조회 쪽 절반은 PostSellFeedbackNarrativeIntegrationTest가 맡는다.
 //
 // LLM은 부르지 않는다 — 이 배치는 애초에 새 LLM 호출을 추가하지 않는다(spec 012 이슈 #212 제약).
 @SpringBootTest
@@ -74,6 +80,14 @@ class PeerStatsBatchServiceIntegrationTest {
 	// 카드 windowEnd. T = SERVICE_DATE + 09:10.
 	private static final LocalTime WINDOW_END = LocalTime.of(9, 10);
 	private static final LocalDateTime T = LocalDateTime.of(SERVICE_DATE, WINDOW_END);
+
+	// 배치 실행 전후로 행이 변하면 안 되는 원장 테이블 (FeedbackBatchIntegrationTest와 같은 목록이다)
+	private static final List<String> LEDGER_TABLES = List.of("orders", "trades", "accounts", "holdings",
+		"holding_lots", "trade_allocations");
+
+	// 이 배치가 읽기만 해야 하는 테이블 — 카드는 참조만 하고 갱신하지 않는다.
+	private static final List<String> READ_ONLY_TABLES = List.of("instruments", "price_move_events",
+		"stock_replay_sessions");
 
 	@Autowired
 	private PeerStatsBatchService peerStatsBatchService;
@@ -122,6 +136,12 @@ class PeerStatsBatchServiceIntegrationTest {
 
 	@Autowired
 	private PriceMovePeerStatRepository priceMovePeerStatRepository;
+
+	@Autowired
+	private JdbcTemplate jdbcTemplate;
+
+	@Autowired
+	private EntityManager entityManager;
 
 	private Instrument instrument;
 
@@ -239,6 +259,54 @@ class PeerStatsBatchServiceIntegrationTest {
 		assertThat(stats).hasSize(2);
 		assertThat(stats).extracting(PriceMovePeerStat::getServiceDate)
 			.containsExactlyInAnyOrder(day1, day2);
+	}
+
+	// 8개 이슈 공통 조건(원장 불변, tasks.md 6번 항목) — 이 배치의 유일한 쓰기 대상은 price_move_peer_stats다.
+	// 행 수만 보면 값이 바뀐 UPDATE(계좌 잔액·lot 잔여수량)를 놓치므로 값 비교를 더한다
+	// (docs/agent-mistakes.md 2026-08-04 "원장 불변 행 수 스냅샷" 행).
+	@Test
+	@DisplayName("배치가 price_move_peer_stats에만 쓰고 원장·읽기 전용 테이블은 그대로다")
+	void neverWritesOutsideThePriceMovePeerStatsTable() {
+		givenReadySession(SERVICE_DATE, ORIGIN_TRADE_DATE);
+		givenCard();
+		givenHolderWhoSellsAfter(10);
+		givenHolderWhoNeverSells();
+
+		Map<String, Long> ledgerBefore = rowCounts(LEDGER_TABLES);
+		Map<String, Long> readOnlyBefore = rowCounts(READ_ONLY_TABLES);
+		List<Map<String, Object>> mutableLedgerBefore = mutableLedgerValues();
+		long statsBefore = priceMovePeerStatRepository.count();
+
+		peerStatsBatchService.runPeerStatsBatch();
+
+		// 실제로 쓰기가 일어났는데도 나머지가 그대로여야 의미가 있다.
+		assertThat(priceMovePeerStatRepository.count()).isGreaterThan(statsBefore);
+		assertThat(rowCounts(LEDGER_TABLES)).isEqualTo(ledgerBefore);
+		assertThat(rowCounts(READ_ONLY_TABLES)).isEqualTo(readOnlyBefore);
+		assertThat(mutableLedgerValues()).isEqualTo(mutableLedgerBefore);
+	}
+
+	/**
+	 * 원장에서 값이 바뀔 수 있는 자리 — 계좌 잔액과 lot 잔여수량이다. 행 수 비교로는 UPDATE가 잡히지 않는다.
+	 *
+	 * <p>{@code flush()}가 이 단정의 전제다 — 이 클래스는 트랜잭션 안에서 raw JDBC로 읽으므로 flush 없이는 보류된
+	 * UPDATE가 보이지 않아 원장을 건드린 구현도 초록이 된다(PostSellFeedbackNarrativeIntegrationTest와 같은 패턴).
+	 */
+	private List<Map<String, Object>> mutableLedgerValues() {
+		entityManager.flush();
+		List<Map<String, Object>> rows = new ArrayList<>(
+			jdbcTemplate.queryForList("SELECT id, cash_balance FROM accounts ORDER BY id"));
+		rows.addAll(jdbcTemplate.queryForList("SELECT id, remaining_quantity FROM holding_lots ORDER BY id"));
+		return rows;
+	}
+
+	private Map<String, Long> rowCounts(List<String> tables) {
+		entityManager.flush();
+		Map<String, Long> counts = new LinkedHashMap<>();
+		for (String table : tables) {
+			counts.put(table, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM " + table, Long.class));
+		}
+		return counts;
 	}
 
 	// day의 15:32를 "현재 시각"으로 보는 StockReplayService·PeerStatsBatchService를 그 자리에서만 만들어 돌린다 —
