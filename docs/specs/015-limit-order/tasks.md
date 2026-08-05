@@ -34,5 +34,5 @@
 - [x] 10. **동시성 경합 테스트(취소 vs 체결)**
   `LimitOrderConcurrencyIntegrationTest`에 plan.md "동시성 테스트 시나리오 추가" 그대로 2개 메서드 추가 — 기존 `runConcurrently`(ready/start `CountDownLatch`) 헬퍼를 그대로 재사용한다: (a) BUY `PENDING` 주문에 `cancelOrder`와 `fillIfPending`을 동시 호출해 정확히 한쪽만 성공(체결 승리 시 취소는 `ORDER_NOT_PENDING` 예외, 취소 승리 시 체결은 no-op)하고 `reservedCash`·`cashBalance`가 이중 반환·이중 소비 없이 일관됨을 검증, (b) 같은 패턴을 SELL(`reservedQuantity`·`quantity` 버전)로 1개 더 추가.
 
-- [ ] 11. **문서 동기화**
-  `docs/api-routes.md`·`docs/api-contracts.md`에 `DELETE /api/orders/{orderId}` 추가(요청 없음·204 본문 없음 응답·404/403/409 오류 계약, 신규 코드 `ORDER_NOT_PENDING` 설명 포함). `docs/prd.md` §3 구현 현황 "지정가 주문·상시 체결(LMT-001~004)" 행을 "일부 완료(LMT-001~003)"로 갱신, 근거에 이 PR 번호 기입, LMT-004는 범위 밖임을 명시. `./gradlew build` 통과 확인.
+- [x] 11. **문서 동기화**
+  `docs/api-routes.md`·`docs/api-contracts.md`에 `DELETE /api/orders/{orderId}` 추가(요청 없음·204 본문 없음 응답·404/403/409 오류 계약, 신규 코드 `ORDER_NOT_PENDING` 설명 포함) — 항목9 컨트롤러 커밋에서 이미 반영되어 있었고 실제 구현과 재대조해 일치 확인함. `docs/prd.md` §3 구현 현황 "지정가 주문·상시 체결(LMT-001~004)" 행을 "일부 완료(LMT-001~003)"로 갱신, LMT-004는 범위 밖임을 명시 — **근거는 PR 미생성으로 "이슈 #218(PR 생성 후 번호 갱신 필요)" 임시 기입, PR 생성 후 실제 번호로 교체 필요**. `./gradlew build`는 오케스트레이터가 `ErrorCodeTest`의 stale 카운트(26→27)·매핑 누락(`ORDER_NOT_PENDING`)을 직접 수정한 뒤 재실행해 통과 확인.

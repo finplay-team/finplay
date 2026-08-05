@@ -11,7 +11,7 @@ class ErrorCodeTest {
 
 	@Test
 	void declaresEveryErrorCodeFromPrdAndOAuthSpecWithoutUnlistedOnes() {
-		assertThat(ErrorCode.values()).hasSize(26);
+		assertThat(ErrorCode.values()).hasSize(27);
 	}
 
 	@Test
@@ -38,6 +38,7 @@ class ErrorCodeTest {
 			Map.entry(ErrorCode.MARKET_CLOSED, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.PRICE_UNAVAILABLE, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.IDEMPOTENCY_CONFLICT, HttpStatus.CONFLICT),
+			Map.entry(ErrorCode.ORDER_NOT_PENDING, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.UNSUPPORTED_ORDER_TYPE, HttpStatus.UNPROCESSABLE_CONTENT),
 			Map.entry(ErrorCode.TOO_MANY_REQUESTS, HttpStatus.TOO_MANY_REQUESTS),
 			Map.entry(ErrorCode.INTERNAL_ERROR, HttpStatus.INTERNAL_SERVER_ERROR),

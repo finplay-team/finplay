@@ -112,14 +112,14 @@
 
 ### LMT-003 완료 조건 (이슈 #218)
 
-- [ ] `DELETE /api/orders/{orderId}`가 본인 소유의 `PENDING` 지정가 주문을 취소하고 `status`를 `CANCELLED`로 변경하며 204(본문 없음)를 응답한다.
-- [ ] 취소 시 매수는 예약 현금을(`reservedCash` 감소, `cashBalance` 불변), 매도는 예약 수량을(`reservedQuantity` 감소, `quantity` 불변) 정확히 반환한다.
-- [ ] 이미 `FILLED`이거나 이미 `CANCELLED`인 주문의 취소 요청은 409 `ORDER_NOT_PENDING`으로 거부되고 예약이 이중 반환되지 않는다.
-- [ ] 본인 소유가 아닌 주문의 취소 요청은 403 `FORBIDDEN`으로 거부된다. 검증 순서는 존재(404 `NOT_FOUND`) → 소유(403) → 상태(409)로 고정된다.
-- [ ] 체결 트리거(LMT-002)와 취소 요청이 동시에 도착해도 `order → account → holding` 잠금 순서로 예약 이중 반환이나 "체결 후 취소" 같은 경합 없이 안전하게 처리된다(경합 재현 테스트 포함 — 시나리오 12).
-- [ ] `docs/api-routes.md`·`docs/api-contracts.md`에 신규 엔드포인트(`DELETE /api/orders/{orderId}`)가 반영된다.
-- [ ] `docs/prd.md` §3 구현 현황의 "지정가 주문·상시 체결(LMT-001~004)" 행을 이 PR 번호를 근거로 "일부 완료"(LMT-001~003)로 갱신한다 — 목록조회(LMT-004)는 이번 PR 범위가 아니라고 명시한다.
-- [ ] `./gradlew build` 통과.
+- [x] `DELETE /api/orders/{orderId}`가 본인 소유의 `PENDING` 지정가 주문을 취소하고 `status`를 `CANCELLED`로 변경하며 204(본문 없음)를 응답한다.
+- [x] 취소 시 매수는 예약 현금을(`reservedCash` 감소, `cashBalance` 불변), 매도는 예약 수량을(`reservedQuantity` 감소, `quantity` 불변) 정확히 반환한다.
+- [x] 이미 `FILLED`이거나 이미 `CANCELLED`인 주문의 취소 요청은 409 `ORDER_NOT_PENDING`으로 거부되고 예약이 이중 반환되지 않는다.
+- [x] 본인 소유가 아닌 주문의 취소 요청은 403 `FORBIDDEN`으로 거부된다. 검증 순서는 존재(404 `NOT_FOUND`) → 소유(403) → 상태(409)로 고정된다.
+- [x] 체결 트리거(LMT-002)와 취소 요청이 동시에 도착해도 `order → account → holding` 잠금 순서로 예약 이중 반환이나 "체결 후 취소" 같은 경합 없이 안전하게 처리된다(경합 재현 테스트 포함 — 시나리오 12).
+- [x] `docs/api-routes.md`·`docs/api-contracts.md`에 신규 엔드포인트(`DELETE /api/orders/{orderId}`)가 반영된다.
+- [x] `docs/prd.md` §3 구현 현황의 "지정가 주문·상시 체결(LMT-001~004)" 행을 이 PR 번호를 근거로 "일부 완료"(LMT-001~003)로 갱신한다 — 목록조회(LMT-004)는 이번 PR 범위가 아니라고 명시한다. (PR 생성 전이라 근거 칸은 "이슈 #218(PR 생성 후 번호 갱신 필요)"로 임시 기입 — PR 생성 후 번호로 교체 필요)
+- [x] `./gradlew build` 통과. `ErrorCodeTest`의 stale 카운트(26→27)·매핑 누락(`ORDER_NOT_PENDING`)을 오케스트레이터가 직접 수정 후 전체 `./gradlew build` 재실행으로 확인.
 
 ## 확정된 설계 결정 (2026-08-05, 사용자 확인)
 
