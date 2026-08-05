@@ -437,7 +437,7 @@
   - **`docs/api-routes.md`·`docs/api-contracts.md`는 이 커밋에서 건드리지 않는다** — 아직 없는 엔드포인트를 라우트 지도에 먼저 올리면 그 문서가 "실제 컨트롤러와 동기화된 지도"라는 성질을 잃는다. D3(컨트롤러 커밋)에서 함께 반영한다(CLAUDE.md 규칙 7).
   - 검증 — 문서만 바뀌므로 빌드 불필요. "Decision Gate"·"미해결"·"식별자 체계" 언급이 남은 위치를 grep으로 확인해 모순이 없는지 본다.
 
-- [ ] **D1. `JournalService.getBuyJournal`·`getSellJournal` — 조회 유스케이스 2개 (단위 테스트 포함)**
+- [x] **D1. `JournalService.getBuyJournal`·`getSellJournal` — 조회 유스케이스 2개 (단위 테스트 포함)**
 
   `plan.md` §`JournalService` — 조회 유스케이스 2개의 1~4단계를 매수·매도 각각 구현한다. `tradeService.getOwnedTrade`와 기존 리포지토리 조회 메서드를 재사용한다.
   - 두 메서드 모두 `@Transactional(readOnly = true)`다. `Clock`을 쓰지 않고, `updateContent`·`save`를 호출하지 않는다.
