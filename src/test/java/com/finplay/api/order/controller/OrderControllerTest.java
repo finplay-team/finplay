@@ -7,8 +7,10 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -24,6 +26,7 @@ import com.finplay.api.order.dto.response.LimitOrderResponse;
 import com.finplay.api.order.dto.response.OrderListItemResponse;
 import com.finplay.api.order.dto.response.OrderListResponse;
 import com.finplay.api.order.dto.response.OrderResponse;
+import com.finplay.api.order.service.LimitOrderCancelService;
 import com.finplay.api.order.service.LimitOrderService;
 import com.finplay.api.order.service.OrderService;
 import java.math.BigDecimal;
@@ -60,6 +63,9 @@ class OrderControllerTest {
 
 	@MockitoBean
 	private LimitOrderService limitOrderService;
+
+	@MockitoBean
+	private LimitOrderCancelService limitOrderCancelService;
 
 	@MockitoBean
 	private JwtTokenProvider jwtTokenProvider;
@@ -659,5 +665,87 @@ class OrderControllerTest {
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
 		verifyNoInteractions(orderService);
+	}
+
+	@Test
+	void cancelLimitOrderReturnsNoContentWithEmptyBody() throws Exception {
+		stubAuthenticatedUser();
+
+		mockMvc.perform(delete("/api/orders/{orderId}", 1L)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isNoContent())
+			.andExpect(content().string(""));
+
+		verify(limitOrderCancelService).cancelOrder(USER_ID, 1L);
+	}
+
+	@Test
+	void cancelLimitOrderReturnsNotFoundWhenOrderDoesNotExist() throws Exception {
+		stubAuthenticatedUser();
+		org.mockito.Mockito.doThrow(new BusinessException(ErrorCode.NOT_FOUND))
+			.when(limitOrderCancelService).cancelOrder(USER_ID, 999L);
+
+		mockMvc.perform(delete("/api/orders/{orderId}", 999L)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.error.code").value("NOT_FOUND"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(limitOrderCancelService).cancelOrder(USER_ID, 999L);
+	}
+
+	@Test
+	void cancelLimitOrderReturnsForbiddenWhenNotOwner() throws Exception {
+		stubAuthenticatedUser();
+		org.mockito.Mockito.doThrow(new BusinessException(ErrorCode.FORBIDDEN))
+			.when(limitOrderCancelService).cancelOrder(USER_ID, 2L);
+
+		mockMvc.perform(delete("/api/orders/{orderId}", 2L)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isForbidden())
+			.andExpect(jsonPath("$.error.code").value("FORBIDDEN"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(limitOrderCancelService).cancelOrder(USER_ID, 2L);
+	}
+
+	@Test
+	void cancelLimitOrderReturnsOrderAlreadyFilledWhenAlreadyFilled() throws Exception {
+		stubAuthenticatedUser();
+		org.mockito.Mockito.doThrow(new BusinessException(ErrorCode.ORDER_ALREADY_FILLED))
+			.when(limitOrderCancelService).cancelOrder(USER_ID, 3L);
+
+		mockMvc.perform(delete("/api/orders/{orderId}", 3L)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.error.code").value("ORDER_ALREADY_FILLED"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(limitOrderCancelService).cancelOrder(USER_ID, 3L);
+	}
+
+	@Test
+	void cancelLimitOrderReturnsOrderAlreadyCancelledWhenAlreadyCancelled() throws Exception {
+		stubAuthenticatedUser();
+		org.mockito.Mockito.doThrow(new BusinessException(ErrorCode.ORDER_ALREADY_CANCELLED))
+			.when(limitOrderCancelService).cancelOrder(USER_ID, 4L);
+
+		mockMvc.perform(delete("/api/orders/{orderId}", 4L)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.error.code").value("ORDER_ALREADY_CANCELLED"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(limitOrderCancelService).cancelOrder(USER_ID, 4L);
+	}
+
+	@Test
+	void cancelLimitOrderRejectsMissingAuthenticationWithoutCallingService() throws Exception {
+		mockMvc.perform(delete("/api/orders/{orderId}", 1L))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(limitOrderCancelService);
 	}
 }

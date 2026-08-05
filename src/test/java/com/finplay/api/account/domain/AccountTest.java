@@ -126,6 +126,28 @@ class AccountTest {
 		assertThat(account.getCashBalance()).isEqualTo(10_000_000L);
 	}
 
+	@Test
+	void releaseReservedCashDecreasesReservedCashWithoutChangingCashBalance() {
+		Account account = Account.create(testUser(), Market.CRYPTO, NOW);
+		account.reserveCash(3_000_000L);
+
+		account.releaseReservedCash(3_000_000L);
+
+		assertThat(account.getReservedCash()).isZero();
+		assertThat(account.getCashBalance()).isEqualTo(10_000_000L);
+	}
+
+	@Test
+	void releaseReservedCashThrowsIllegalStateExceptionWhenAmountExceedsReservedCash() {
+		Account account = Account.create(testUser(), Market.CRYPTO, NOW);
+		account.reserveCash(1_000_000L);
+
+		assertThatThrownBy(() -> account.releaseReservedCash(1_000_001L))
+			.isInstanceOf(IllegalStateException.class);
+		assertThat(account.getReservedCash()).isEqualTo(1_000_000L);
+		assertThat(account.getCashBalance()).isEqualTo(10_000_000L);
+	}
+
 	private static User testUser() {
 		return User.create("trader@finplay.com", "password-hash", "trader", NOW);
 	}

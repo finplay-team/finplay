@@ -149,4 +149,11 @@ public class Order {
 		}
 		this.status = OrderStatus.FILLED;
 	}
+
+	public void cancel() {
+		if (this.status != OrderStatus.PENDING) {
+			throw new IllegalStateException("PENDING 상태의 주문만 취소할 수 있습니다.");
+		}
+		this.status = OrderStatus.CANCELLED;
+	}
 }

@@ -40,6 +40,7 @@
 | DELETE | /api/community/comments/{commentId} | community | 본인 소유 댓글 삭제 (204, 본문 없음) | 008 COM-002, Issue #30 |
 | POST | /api/orders | order | 인증 사용자의 시장가 매수·매도 주문을 검증·즉시 전량 체결하고 주문+체결 결과 반환 (201, 매도는 FIFO lot 배분·실현손익 포함). `Idempotency-Key` 헤더 필수 — 동일 키+동일 본문 재요청은 최초 응답 재현(재체결 없음), 동일 키+다른 본문 또는 재현 실패 시 409 `IDEMPOTENCY_CONFLICT` | 004 ORD-001~004·006, 005 ORD-001~006(매도), Issue #13, Issue #41, Issue #22 |
 | POST | /api/orders/limit | order | 인증 사용자의 코인(CRYPTO) 전용 지정가 매수·매도 주문을 검증·예약(매수는 현금, 매도는 수량)하고 `PENDING` 상태로 생성 (201). 즉시체결 조건을 충족해도 생성 시점에 거부하지 않음 — 체결은 LMT-002 가격 갱신 트리거에서만 발생. `Idempotency-Key` 헤더 필수, 재요청·경합 처리는 `POST /api/orders`와 동일 패턴 | 015 LMT-001, Issue #210 |
+| DELETE | /api/orders/{orderId} | order | 인증 사용자 본인 소유의 `PENDING` 코인 지정가 주문을 취소하고 예약 현금(매수)·예약 수량(매도)을 반환 (204, 본문 없음). 검증 순서는 존재(404)→소유(403)→상태(409) 고정. `Idempotency-Key` 헤더 불필요 | 015 LMT-003, Issue #218 |
 | GET | /api/orders?market=&cursor=&limit= | order | 인증 사용자 본인의 시장별(`STOCK`\|`CRYPTO`) 주문 목록을 최신순(동시각 `id` 내림차순)으로 커서 페이지네이션 조회. `market` 쿼리 파라미터 필수, `cursor`·`limit`(기본 20, 1~100) 선택. 체결 전용 필드는 노출하지 않음 | 006 PORT-003, 018 PORT-003(1차 고도화), Issue #21, Issue #182 |
 | GET | /api/accounts/summary?market= | account | 인증 사용자 본인의 시장별(`STOCK`\|`CRYPTO`) 계좌 요약(현금잔고·보유평가액·총평가액·실현손익·미실현손익·수익률) 조회. `market` 쿼리 파라미터 필수 | 006 ACCT-002, Issue #81 |
 | GET | /api/holdings?market= | portfolio | 인증 사용자 본인의 시장별(`STOCK`\|`CRYPTO`) 활성 보유 종목 목록(수량·평균단가·현재가·평가금액·미실현손익·수익률·시세 상태 + 종목 표시 정보) 조회. `market` 쿼리 파라미터 필수, 전량 매도 종목은 목록에서 제외 | 006 PORT-001, Issue #52 |

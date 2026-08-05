@@ -104,4 +104,11 @@ public class Account {
 		this.reservedCash -= amount;
 		this.cashBalance -= amount;
 	}
+
+	public void releaseReservedCash(long amount) {
+		if (amount > this.reservedCash) {
+			throw new IllegalStateException("예약된 금액보다 큰 금액을 해제할 수 없습니다.");
+		}
+		this.reservedCash -= amount;
+	}
 }
