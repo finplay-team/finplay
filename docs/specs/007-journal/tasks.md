@@ -356,7 +356,7 @@
   - 병합 후 `(createdAt, 체결 ID)` 내림차순 정렬 → 상위 `limit + 1`건 → `hasNext` 판정 → `limit`건으로 자르기 → `nextCursor` 인코딩(마지막 항목의 `journalType`에 맞는 체결 ID 사용) 순서를 지킨다.
   - 검증 — 단위 테스트(Mockito, 기존 `JournalServiceTest`에 추가): 계좌 없음 404, 매수·매도 혼합 정렬 순서, **동시각 tie-break**(체결 ID 큰 쪽 우선), `hasNext`·`nextCursor` 경계값(`limit`건 이하/초과), 빈 목록(양쪽 리포지토리 빈 리스트), 두 리포지토리 호출에 전달되는 커서 인자가 동일한지.
 
-- [ ] **L3. `JournalListController` + 응답 DTO 2개 + 문서 갱신**
+- [x] **L3. `JournalListController` + 응답 DTO 2개 + 문서 갱신**
 
   `GET /api/journal`을 새 컨트롤러 `JournalListController`(`@RequestMapping("/api/journal")`)에 연다. `JournalListResponse`(`content`·`nextCursor`·`hasNext`)와 `JournalListItemResponse`(`journalType`·`buyTradeId`·`sellTradeId`·`content`·`createdAt`·`updatedAt`, `from(BuyTradeJournal)`/`from(SellTradeJournal)` 오버로드) record 2개를 만든다. `limit` 검증은 `TradeController.validateLimit`을 그대로 복제한다.
   - `journalType`은 `order.domain.OrderSide`를 재사용하지 않고 리터럴 `"BUY"`/`"SELL"` 문자열을 직접 쓴다.

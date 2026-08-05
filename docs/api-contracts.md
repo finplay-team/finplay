@@ -404,6 +404,16 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 ## journal
 
+### 투자일기 목록 조회
+
+| Method | URL | 인증 | 쿼리 파라미터 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|---|
+| GET | /api/journal | Access Bearer 필수 | `market`(필수, `STOCK`\|`CRYPTO` 리터럴만 허용), `cursor`(선택, `{createdAt}_{tradeId}` 형식 문자열, 생략 시 첫 페이지), `limit`(선택, 기본 20, 1~100) | 200 `{"content":[{"journalType":"SELL","buyTradeId":null,"sellTradeId":34,"content":"목표가 도달해서 전량 매도.","createdAt":"2026-08-04T15:20:41","updatedAt":"2026-08-04T15:20:41"},{"journalType":"BUY","buyTradeId":12,"sellTradeId":null,"content":"실적 발표 전 분할 매수.","createdAt":"2026-08-04T10:12:33","updatedAt":"2026-08-05T09:03:12"}],"nextCursor":"2026-08-04T10:12:33_12","hasNext":true}` (`JournalListResponse`); 회고가 없으면 200 `{"content":[],"nextCursor":null,"hasNext":false}` | `market` 누락 또는 `STOCK`\|`CRYPTO` 외 리터럴(예: `FOREX`), `limit`이 1~100 범위 밖(클램핑 없음), `cursor`가 `{ISO_LOCAL_DATE_TIME}_{id}` 형식으로 파싱 실패(구분자 없음·날짜 파싱 실패·id 파싱 실패)는 모두 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED`. 요청 시장의 계좌가 없으면 404 `NOT_FOUND` 공통 오류 형식 | 007 JOUR-006, Issue #203 |
+
+조회 대상은 요청에서 받지 않고 Access Token의 인증 사용자 본인 소유의 해당 시장 계좌(`AccountService.getAccountFor`로 소유권+시장 스코프 검증)가 쓴 매수 회고(`buy_trade_journals`)와 매도 회고(`sell_trade_journals`)를 **한 목록에 섞어** 반환한다 — 두 종류를 따로 조회하는 엔드포인트는 없다. 정렬 기준은 **회고를 처음 쓴 시점(`createdAt`) 내림차순**이며 동시각은 체결 ID 내림차순으로 끊는다(`updatedAt` 기준 정렬 아님 — 방금 수정한 오래된 회고가 목록 맨 위로 튀지 않도록). 커서는 "이전 페이지 마지막 행보다 이 시각 이전이거나(동시각이면 이 체결 ID보다 작은)" 조건으로 다음 페이지를 이어받아 페이지 경계에서 중복·누락이 없다.
+
+응답 항목 필드는 `journalType`(`"BUY"`\|`"SELL"`)·`buyTradeId`·`sellTradeId`·`content`·`createdAt`·`updatedAt` 6개로 고정이다. 매수 항목은 `sellTradeId`가, 매도 항목은 `buyTradeId`가 `null`이다. **통합 `journalId`는 노출하지 않는다** — JOUR-005(상세 조회, 아직 미구현)의 식별자 체계를 선점하지 않기 위해서다. 종목·가격·수량·실현손익 등 체결 정보는 포함하지 않는다(`GET /api/trades`가 정본). wrapper는 형제 API(`GET /api/trades`·`GET /api/orders`)와 같은 `content`·`nextCursor`·`hasNext` 3필드다.
+
 ### 매수 체결 투자일기 작성
 
 | Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
