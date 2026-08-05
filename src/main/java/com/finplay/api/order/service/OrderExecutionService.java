@@ -63,7 +63,7 @@ public class OrderExecutionService {
 		Instrument instrument = getValidatedInstrument(request.market(), request.instrumentId());
 		validateQuantityFormat(request.market(), request.quantity());
 
-		// 계좌 선조회를 제거했다 — 매수·매도가 서로 다른 락 전략을 쓰므로 각자 계좌를 가져온다(015-limit-order 항목5).
+		// 계좌 선조회를 제거했다 — 매수·매도 모두 각자 계좌를 잠가 조회한다(호출 시점·인자만 다름, 이슈 #224).
 		return request.side() == OrderSide.SELL
 			? createSellOrder(userId, idempotencyKey, requestHash, request, instrument)
 			: createBuyOrder(userId, idempotencyKey, requestHash, request, instrument);
@@ -72,13 +72,13 @@ public class OrderExecutionService {
 	private OrderResponse createBuyOrder(
 		Long userId, String idempotencyKey, String requestHash, OrderCreateRequest request, Instrument instrument) {
 		BigDecimal quantity = request.quantity();
-		// 매수 경로는 이번에 변경하지 않는다(spec.md "알려진 한계") — 계좌 락 없이 그대로 조회한다.
-		Account account = getAccountFor(userId, request.market());
+		// 매수도 매도와 동일하게 계좌를 먼저 잠근다(spec.md "시장가 매수 경로 락 보강", 이슈 #224).
+		Account account = getAccountForUpdateFor(userId, request.market());
 
 		// 설계 노트 2: 매수 최소구현 견본 — marketStatus·가격·세션 단일 관측→최소금액→amount/fee 계산(공유)
 		OrderPricing pricing = priceOrder(request.market(), instrument, quantity);
 		long cashRequired = pricing.amount() + pricing.fee();
-		if (account.getCashBalance() < cashRequired) {
+		if (account.getAvailableCash() < cashRequired) {
 			throw new BusinessException(ErrorCode.INSUFFICIENT_CASH);
 		}
 
@@ -188,15 +188,8 @@ public class OrderExecutionService {
 		}
 	}
 
-	// 설계 노트 1: 계좌 조회 시에만 두 Market enum 사이를 값 기반으로 변환한다.
-	private Account getAccountFor(Long userId, Market market) {
-		com.finplay.api.account.domain.Market accountMarket = com.finplay.api.account.domain.Market
-			.valueOf(market.name());
-		return accountService.getAccountFor(userId, accountMarket);
-	}
-
-	// 시장가 매도만 계좌를 잠가 조회한다(015-limit-order 항목5) — 지정가 체결(LimitOrderFillService)과
-	// account→holding 잠금 순서를 맞춰 ABBA 데드락을 막는다.
+	// 시장가 매수·매도 모두 계좌를 잠가 조회한다(015-limit-order 항목5, 이슈 #224) — 지정가 체결
+	// (LimitOrderFillService)과 account→holding 잠금 순서를 맞춰 ABBA 데드락을 막는다.
 	private Account getAccountForUpdateFor(Long userId, Market market) {
 		com.finplay.api.account.domain.Market accountMarket = com.finplay.api.account.domain.Market
 			.valueOf(market.name());

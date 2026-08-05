@@ -37,7 +37,7 @@ class PortfolioBuyServiceTest {
 		Account account = testAccount();
 		Instrument instrument = testInstrument();
 		Trade trade = testTrade(account, instrument, new BigDecimal("50000"), new BigDecimal("10"));
-		when(holdingRepository.findByAccountIdAndInstrumentId(account.getId(), instrument.getId()))
+		when(holdingRepository.findByAccountIdAndInstrumentIdForUpdate(account.getId(), instrument.getId()))
 			.thenReturn(Optional.empty());
 
 		service.applyBuyTrade(
@@ -58,7 +58,7 @@ class PortfolioBuyServiceTest {
 		Instrument instrument = testInstrument();
 		Holding existingHolding = Holding.create(account, instrument, EARLIER);
 		existingHolding.applyBuy(new BigDecimal("1"), new BigDecimal("1"), EARLIER);
-		when(holdingRepository.findByAccountIdAndInstrumentId(account.getId(), instrument.getId()))
+		when(holdingRepository.findByAccountIdAndInstrumentIdForUpdate(account.getId(), instrument.getId()))
 			.thenReturn(Optional.of(existingHolding));
 		Trade trade = testTrade(account, instrument, new BigDecimal("2"), new BigDecimal("2"));
 
@@ -80,7 +80,7 @@ class PortfolioBuyServiceTest {
 		Account account = testAccount();
 		Instrument instrument = testInstrument();
 		Trade trade = testTrade(account, instrument, new BigDecimal("30000"), new BigDecimal("3.12345678"));
-		when(holdingRepository.findByAccountIdAndInstrumentId(account.getId(), instrument.getId()))
+		when(holdingRepository.findByAccountIdAndInstrumentIdForUpdate(account.getId(), instrument.getId()))
 			.thenReturn(Optional.empty());
 
 		service.applyBuyTrade(
@@ -110,7 +110,7 @@ class PortfolioBuyServiceTest {
 		Instrument instrument = testInstrument();
 		Holding existingHolding = Holding.create(account, instrument, EARLIER);
 		existingHolding.applyBuy(new BigDecimal("5"), new BigDecimal("100"), EARLIER);
-		when(holdingRepository.findByAccountIdAndInstrumentId(account.getId(), instrument.getId()))
+		when(holdingRepository.findByAccountIdAndInstrumentIdForUpdate(account.getId(), instrument.getId()))
 			.thenReturn(Optional.of(existingHolding));
 		Trade trade = testTrade(account, instrument, new BigDecimal("200"), new BigDecimal("2"));
 

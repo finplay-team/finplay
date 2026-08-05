@@ -88,7 +88,8 @@ public class LimitOrderFillService {
 		LocalDateTime now) {
 		Instrument instrument = order.getInstrument();
 
-		// SELL만 holding을 잠근다(잠금 순서 account → holding). BUY는 holding을 잠그지 않는다(plan.md).
+		// SELL은 여기서 직접 holding을 잠근다(잠금 순서 account → holding). BUY도 이제 holding을 잠근다 —
+		// applyBuyTrade(PortfolioBuyService)가 내부에서 findByAccountIdAndInstrumentIdForUpdate로 잠근다(이슈 #224).
 		Holding holding = portfolioSellService.getHoldingForUpdate(account, instrument);
 		holding.releaseReservedQuantity(quantity);
 

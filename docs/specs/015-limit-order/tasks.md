@@ -39,3 +39,19 @@
 
 - [x] 12. **취소 상태(409) 오류 코드 분리(이슈 #218 후속, 2026-08-05 사용자 확인)**
   단일 `ErrorCode.ORDER_NOT_PENDING`을 `ORDER_ALREADY_FILLED`·`ORDER_ALREADY_CANCELLED`로 분리(spec.md "확정된 설계 결정" 9번). `LimitOrderCancelService.cancelOrder`의 상태 검증 분기를 `FILLED`/`CANCELLED`로 나눠 각각 다른 코드를 던지도록 수정. `ErrorCodeTest`(카운트 27→28, 매핑 엔트리 교체), `LimitOrderCancelServiceTest`·`OrderControllerTest`·`LimitOrderConcurrencyIntegrationTest`의 관련 케이스를 두 코드로 분리. `docs/api-contracts.md`·spec.md·plan.md의 `ORDER_NOT_PENDING` 서술을 모두 갱신.
+
+## 시장가 매수 경로 락 보강 (이슈 #224)
+
+이 절은 controller 변경이 없다 — `docs/api-routes.md`·`docs/api-contracts.md` 갱신 대상 아님(CLAUDE.md 규칙7은 controller 변경 시에만 적용). `docs/prd.md` §3 구현 현황도 갱신 대상 아님(CLAUDE.md 규칙10 "갱신 비대상" — 서비스 레이어 내부 락 순서 조정이라 기능 제공 범위가 그대로다). 신규 마이그레이션·신규 repository 메서드·신규 서비스 메서드가 전혀 없다(plan.md "기존 코드 확인 결과" — 기존 LMT-001/002 잠금 인프라를 호출부 교체만으로 재사용).
+
+- [x] 13. **시장가 매수 계좌 락 조정**
+  `OrderExecutionService.createBuyOrder`의 `Account account = getAccountFor(userId, request.market());`를 `getAccountForUpdateFor(userId, request.market())`로 교체(plan.md "변경 지점 1", 신규 메서드 없음 — SELL이 이미 쓰는 private 메서드 재사용). `getAccountForUpdateFor` 위 주석·`execute()`의 계좌 선조회 제거 주석을 "매수·매도 모두 계좌를 잠근다"로 갱신. `getAccountFor(Long, Market)`의 다른 호출부가 남아있는지 grep으로 확인 후 죽은 코드면 제거. 기존 `OrderExecutionService` 단위·슬라이스 테스트 회귀 확인(현금 부족 409 등 기존 케이스가 락 도입 후에도 그대로 통과하는지).
+
+- [x] 14. **holdings 락 조정 (`PortfolioBuyService.applyBuyTrade`)**
+  `holdingRepository.findByAccountIdAndInstrumentId(...)`를 `findByAccountIdAndInstrumentIdForUpdate(...)`로 교체(plan.md "변경 지점 2", 반환 타입 동일이라 `orElseGet` 로직 불변, 신규 repository 메서드 없음 — SELL이 이미 쓰는 락 쿼리 재사용). 메서드 위에 holdings 락·신규 종목 첫 매수는 account 락만으로 방지한다는 주석 추가(spec.md "확정된 설계 결정" 10번 인용). 락 없는 원본 `findByAccountIdAndInstrumentId`의 다른 호출부가 남아있는지 grep으로 확인. 기존 `PortfolioBuyService`·`OrderExecutionService`·`LimitOrderFillService` 단위 테스트 회귀 확인(신규 종목 첫 매수 시 holding 신규 생성 케이스 포함).
+
+- [x] 15. **동시성 통합 테스트**
+  `LimitOrderConcurrencyIntegrationTest`에 plan.md "동시성 테스트 시나리오" 3개(spec.md 시나리오 13·14·15)를 기존 `runConcurrently`(ready/start `CountDownLatch`, `ExecutorService` 2스레드) 헬퍼로 추가: (a) 시장가 매수 vs 지정가 매수 생성 계좌 경합(합산 소비액이 잔액을 초과하도록 설계, 한쪽만 성공하거나 직렬화되어 `availableCash` 불변식 유지), (b) 시장가 매수 vs 지정가 매수 체결 holdings lost-update 방지(최종 수량이 두 매수 합과 정확히 일치, `HoldingLot` 2건), (c) 조정된 시장가 매수와 기존 시장가 매도·지정가 체결 간 ABBA 데드락 회귀(타임아웃·데드락 예외 없이 완료).
+
+- [x] 16. **spec 완료조건 확정 및 최종 빌드**
+  `docs/specs/015-limit-order/spec.md` "시장가 매수 경로 락 보강 완료 조건 (이슈 #224)" 체크박스를 구현·테스트 통과 확인 후 `[x]`로 갱신. `./gradlew build` 전체 통과 확인(실패 시 수정 후 재실행). 이 커밋에는 `docs/api-routes.md`·`docs/api-contracts.md`·`docs/prd.md` §3 변경이 없어야 정상이다(controller·기능 제공 범위 변경 없음).

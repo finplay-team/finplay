@@ -252,7 +252,27 @@ class OrderExecutionServiceTest {
 		// amount = 50,000,000 * 1 > 계좌 기본 현금 10,000,000
 		when(priceQueryService.getOrderExecutionPrice(instrument))
 			.thenReturn(executionPrice(new BigDecimal("50000000"), mock(StockReplaySession.class)));
-		when(accountService.getAccountFor(USER_ID, com.finplay.api.account.domain.Market.STOCK))
+		when(accountService.getAccountForUpdate(USER_ID, com.finplay.api.account.domain.Market.STOCK))
+			.thenReturn(account);
+		OrderCreateRequest request = buyRequest(Market.STOCK, instrument.getId(), "1");
+
+		assertBusinessExceptionAndNoSideEffects(request, ErrorCode.INSUFFICIENT_CASH);
+		assertThat(account.getCashBalance()).isEqualTo(10_000_000L);
+	}
+
+	@Test
+	void createOrderThrowsInsufficientCashWhenAvailableCashBelowAmountPlusFeeEvenIfCashBalanceSuffices() {
+		// 이슈 #224 회귀 테스트 — 현금 검증이 cashBalance만 보고 지정가 매수 예약분(reservedCash)을
+		// 반영하지 않으면, cashBalance는 충분한데 availableCash는 부족한 이 케이스에서 거부에 실패한다.
+		Instrument instrument = stockInstrument();
+		Account account = account(com.finplay.api.account.domain.Market.STOCK);
+		account.reserveCash(9_950_000L);
+		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
+		// amount = 100000 * 1 = 100000, 수수료 floor(100000*0.00015)=15 → cashRequired=100115
+		// cashBalance(10,000,000) >= cashRequired지만 availableCash(10,000,000-9,950,000=50,000) < cashRequired
+		when(priceQueryService.getOrderExecutionPrice(instrument))
+			.thenReturn(executionPrice(new BigDecimal("100000"), mock(StockReplaySession.class)));
+		when(accountService.getAccountForUpdate(USER_ID, com.finplay.api.account.domain.Market.STOCK))
 			.thenReturn(account);
 		OrderCreateRequest request = buyRequest(Market.STOCK, instrument.getId(), "1");
 
@@ -487,17 +507,19 @@ class OrderExecutionServiceTest {
 	}
 
 	private void stubHappyPath(Instrument instrument, Account account, User user, BigDecimal price) {
+		// 매수도 매도와 동일하게 계좌를 락으로 조회한다(015-limit-order 시장가 매수 경로 락 보강, 이슈 #224).
 		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
 		StockReplaySession session = instrument.getMarket() == Market.STOCK ? mock(StockReplaySession.class) : null;
 		when(priceQueryService.getOrderExecutionPrice(instrument)).thenReturn(executionPrice(price, session));
 		com.finplay.api.account.domain.Market accountMarket = com.finplay.api.account.domain.Market
 			.valueOf(instrument.getMarket().name());
-		when(accountService.getAccountFor(USER_ID, accountMarket)).thenReturn(account);
+		when(accountService.getAccountForUpdate(USER_ID, accountMarket)).thenReturn(account);
 		when(userQueryService.getUser(USER_ID)).thenReturn(user);
 	}
 
 	private void stubSellHappyPath(Instrument instrument, Account account, User user, BigDecimal price) {
-		// 매도는 계좌를 락으로 조회한다(015-limit-order 항목5) — stubHappyPath(getAccountFor)와 독립적으로 스텁한다.
+		// 매도·매수 모두 계좌를 락으로 조회한다(015-limit-order 항목5·이슈 #224) — stubHappyPath와 별도 메서드로
+		// 유지하는 이유는 SELL 전용 파라미터(holding 스텁 등) 확장 여지 때문이며, 스텁 대상 메서드 자체는 동일하다.
 		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
 		StockReplaySession session = instrument.getMarket() == Market.STOCK ? mock(StockReplaySession.class) : null;
 		when(priceQueryService.getOrderExecutionPrice(instrument)).thenReturn(executionPrice(price, session));
