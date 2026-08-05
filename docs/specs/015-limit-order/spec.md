@@ -78,17 +78,17 @@
 
 ## 완료 조건
 
-- [ ] `POST /api/orders/limit`이 매수·매도 지정가 주문을 `PENDING`으로 생성하고, 매수는 현금(수량 × 지정가 + 예상 수수료)을, 매도는 수량을 예약한다.
-- [ ] 예약 가능한 현금·수량이 부족하면 거부한다(기존 시장가 ORD-003 오류 원칙 재사용).
-- [ ] 매수 지정가가 현재가 이상이거나 매도 지정가가 현재가 이하로 즉시 체결 조건을 충족해도 생성 시점에 거부하지 않는다.
-- [ ] `POST /api/orders`(시장가 전용)의 `orderType="LIMIT"` 422 `UNSUPPORTED_ORDER_TYPE` 거부가 그대로 유지된다(회귀 없음).
-- [ ] holding 예약 원장(`availableQuantity = totalQuantity - reservedQuantity`)이 도입되고, 기존 시장가 SELL(`OrderExecutionService`)도 이 원장을 반영해 예약된 수량을 중복 매도할 수 없다.
-- [ ] 빗썸 웹소켓 가격 갱신 시 `PENDING` 지정가 주문의 체결 조건이 평가되고, 충족 시 목표가로 고정 체결되어 예약이 실제 현금·보유수량 이동으로 확정되며 `status`가 `FILLED`로 바뀐다.
-- [ ] 동시 체결 경합(가격 갱신 이벤트 중복 도착)이 `order → account → holding` 잠금 순서의 비관적 락으로 제어되어 예약 이중 반환이나 중복 체결이 재현되지 않는다(신규 종목 첫 매수는 `order → account`).
-- [ ] 기존 시장가 매도 체결 경로가 account를 먼저 잠그도록 조정되어, 실제로 경합하는 account·holding 두 자원에 대해 지정가 체결과 반대 순서로 락을 시도하지 않는다(ABBA 데드락 회귀 테스트 포함).
-- [ ] `docs/api-routes.md`·`docs/api-contracts.md`에 신규 엔드포인트(`POST /api/orders/limit`)가 반영된다.
-- [ ] `docs/prd.md` §3 구현 현황의 "지정가 주문·상시 체결(LMT-001~004)" 행을 이 PR 번호를 근거로 "일부 완료"(LMT-001~002)로 갱신한다 — 취소(LMT-003)·목록조회(LMT-004)는 이번 PR 범위가 아니라고 명시한다.
-- [ ] `./gradlew build` 통과.
+- [x] `POST /api/orders/limit`이 매수·매도 지정가 주문을 `PENDING`으로 생성하고, 매수는 현금(수량 × 지정가 + 예상 수수료)을, 매도는 수량을 예약한다.
+- [x] 예약 가능한 현금·수량이 부족하면 거부한다(기존 시장가 ORD-003 오류 원칙 재사용).
+- [x] 매수 지정가가 현재가 이상이거나 매도 지정가가 현재가 이하로 즉시 체결 조건을 충족해도 생성 시점에 거부하지 않는다.
+- [x] `POST /api/orders`(시장가 전용)의 `orderType="LIMIT"` 422 `UNSUPPORTED_ORDER_TYPE` 거부가 그대로 유지된다(회귀 없음).
+- [x] holding 예약 원장(`availableQuantity = totalQuantity - reservedQuantity`)이 도입되고, 기존 시장가 SELL(`OrderExecutionService`)도 이 원장을 반영해 예약된 수량을 중복 매도할 수 없다.
+- [x] 빗썸 웹소켓 가격 갱신 시 `PENDING` 지정가 주문의 체결 조건이 평가되고, 충족 시 목표가로 고정 체결되어 예약이 실제 현금·보유수량 이동으로 확정되며 `status`가 `FILLED`로 바뀐다.
+- [x] 동시 체결 경합(가격 갱신 이벤트 중복 도착)이 `order → account → holding` 잠금 순서의 비관적 락으로 제어되어 예약 이중 반환이나 중복 체결이 재현되지 않는다(신규 종목 첫 매수는 `order → account`).
+- [x] 기존 시장가 매도 체결 경로가 account를 먼저 잠그도록 조정되어, 실제로 경합하는 account·holding 두 자원에 대해 지정가 체결과 반대 순서로 락을 시도하지 않는다(ABBA 데드락 회귀 테스트 포함).
+- [x] `docs/api-routes.md`·`docs/api-contracts.md`에 신규 엔드포인트(`POST /api/orders/limit`)가 반영된다.
+- [x] `docs/prd.md` §3 구현 현황의 "지정가 주문·상시 체결(LMT-001~004)" 행을 이 PR 번호를 근거로 "일부 완료"(LMT-001~002)로 갱신한다 — 취소(LMT-003)·목록조회(LMT-004)는 이번 PR 범위가 아니라고 명시한다.
+- [x] `./gradlew build` 통과.
 
 ## 확정된 설계 결정 (2026-08-05, 사용자 확인)
 
