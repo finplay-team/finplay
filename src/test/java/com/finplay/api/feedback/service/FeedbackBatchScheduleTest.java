@@ -125,6 +125,34 @@ class FeedbackBatchScheduleTest {
 		assertThat(priceSnapshotSchedule().cron()).isEqualTo("${market.crypto.price-snapshot-cron}");
 	}
 
+	// --- 코인 변동 감시 배치 (CryptoPriceMoveWatcher, spec 012 §탐지 알고리즘(코인), 이슈 #225 항목 3) ---
+	//
+	// zone을 빠뜨리면 매 분 도는 크론이라 어긋남이 눈에 덜 띈다 — origin_trade_date가 KST 날짜라 자정 부근에서
+	// 하루가 밀린 행이 생긴다. 붙어 있는지는 애노테이션을 읽어야만 알 수 있다.
+	@Test
+	@DisplayName("코인 변동 감시 배치에 zone = \"Asia/Seoul\"이 붙어 있다")
+	void cryptoWatchScheduleDeclaresSeoulZone() throws NoSuchMethodException {
+		assertThat(cryptoWatchSchedule().zone()).isEqualTo("Asia/Seoul");
+	}
+
+	@Test
+	@DisplayName("코인 변동 감시 배치가 크론 값을 코드에 박지 않고 feedback.batch.crypto-watch-cron을 참조한다")
+	void cryptoWatchScheduleReferencesTheConfiguredCronProperty() throws NoSuchMethodException {
+		assertThat(cryptoWatchSchedule().cron()).isEqualTo("${feedback.batch.crypto-watch-cron}");
+	}
+
+	// 같은 시각이면 실행 순서가 보장되지 않아 감시가 그 분의 스냅샷을 못 볼 수 있다(§C-1) — 두 배치가 서로
+	// 다른 크론 키를 참조하는지를 못박는다.
+	@Test
+	@DisplayName("코인 변동 감시 배치가 코인 가격 스냅샷 배치와 다른 크론 키를 참조한다")
+	void cryptoWatchScheduleUsesItsOwnCronPropertyDistinctFromThePriceSnapshotSchedule() throws NoSuchMethodException {
+		assertThat(cryptoWatchSchedule().cron()).isNotEqualTo(priceSnapshotSchedule().cron());
+	}
+
+	private static Scheduled cryptoWatchSchedule() throws NoSuchMethodException {
+		return schedule(CryptoPriceMoveWatcher.class, "watch");
+	}
+
 	private static Scheduled priceSnapshotSchedule() throws NoSuchMethodException {
 		return schedule(CryptoPriceSnapshotService.class, "recordSnapshots");
 	}

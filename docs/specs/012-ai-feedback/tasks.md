@@ -52,7 +52,7 @@
   - 완료 조건에 직접 대응하지 않지만, 다음 항목(감시)이 "근거 기사 0건이면 종료"를 검증하려면 이 매칭이 먼저 있어야 한다.
   - 검증 — 단위(근거창 경계, 공시 미매칭, 상한 절단)와 드리프트 테스트(`FeedbackCryptoProperties`의 yml·`@DefaultValue` 일치, 기존 `FeedbackDetectionProperties`류 테스트와 같은 형태).
 
-- [ ] **3. `feedback`: `CryptoPriceMoveWatcher` 신설 — 코인 변동 탐지·카드 확정**
+- [x] **3. `feedback`: `CryptoPriceMoveWatcher` 신설 — 코인 변동 탐지·카드 확정**
 
   §탐지 알고리즘(코인)의 의사코드를 그대로 구현한다. 매 분 실행해 임계치를 넘는 변동을 카드로 만든다.
   - 순서는 의사코드 그대로다 — `p_now`/`p_past` 조회(1번 항목의 `CryptoPriceSnapshotService.getSnapshots`) → 표본 부족·σ=0 종료 → `|r5|/σ24 < k` 종료(`k`는 `feedback.detection.z-score-k`, 위 제약 참조) → **쿨다운** → **일일 상한** → **근거 매칭**(2번 항목, 0건이면 종료) → 서술(`NarrativeService.resolvePriceMoveNarrative`, `PriceMovePromptDto`) → `PriceMoveEvent.createCrypto(...)` → 저장(`PriceMoveCardWriter` 재사용).

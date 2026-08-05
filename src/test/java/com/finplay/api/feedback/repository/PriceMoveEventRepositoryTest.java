@@ -451,4 +451,86 @@ class PriceMoveEventRepositoryTest {
 			.extracting(PriceMoveEvent::getId)
 			.containsExactly(earlier.getId(), gap.getId(), intraday.getId());
 	}
+
+	// --- 코인 쿨다운·일일 상한 조회 (spec 012 §탐지 알고리즘(코인), 이슈 #225 항목 3) ---
+
+	@Test
+	@DisplayName("findFirst는 이 종목·시장의 occurred_at 최댓값(가장 최근 카드)만 돌려준다")
+	void findFirstByInstrumentIdAndMarketReturnsTheMostRecentCryptoCardOnly() {
+		priceMoveEventRepository.saveAndFlush(newCryptoEvent(OCCURRED_AT.minusMinutes(10)));
+		PriceMoveEvent latest = priceMoveEventRepository.saveAndFlush(newCryptoEvent(OCCURRED_AT));
+		priceMoveEventRepository.saveAndFlush(newCryptoEvent(OCCURRED_AT.minusMinutes(5)));
+
+		PriceMoveEvent found = priceMoveEventRepository
+			.findFirstByInstrumentIdAndMarketOrderByOccurredAtDesc(crypto.getId(), Market.CRYPTO)
+			.orElseThrow();
+
+		assertThat(found.getId()).isEqualTo(latest.getId());
+		assertThat(found.getOccurredAt()).isEqualTo(OCCURRED_AT);
+	}
+
+	@Test
+	@DisplayName("findFirst는 다른 종목·다른 시장(STOCK) 카드를 섞지 않는다")
+	void findFirstByInstrumentIdAndMarketIsScopedToInstrumentAndMarket() {
+		// 주식 종목의 STOCK 카드 — market이 다르므로 후보가 아니다.
+		priceMoveEventRepository.saveAndFlush(PriceMoveEvent.createStock(
+			stock, PriceMoveEventType.INTRADAY, ORIGIN_TRADE_DATE,
+			WINDOW_START, WINDOW_END, CHANGE_RATE, DETECTION_SCORE, "다른 시장", NarrativeSource.LLM, REVEAL_TIME, NOW));
+		// 다른 코인 종목 — 시장은 같지만 종목이 다르므로 후보가 아니다.
+		Instrument otherCrypto = instrumentRepository.save(Instrument.create(
+			Market.CRYPTO, "MOVEETH", "테스트코인B", new BigDecimal("1"), 5000, true, NOW));
+		priceMoveEventRepository.saveAndFlush(PriceMoveEvent.createCrypto(
+			otherCrypto, OCCURRED_AT, CHANGE_RATE, DETECTION_SCORE, "다른 종목", NarrativeSource.TEMPLATE, NOW));
+
+		assertThat(priceMoveEventRepository
+			.findFirstByInstrumentIdAndMarketOrderByOccurredAtDesc(crypto.getId(), Market.CRYPTO))
+			.isEmpty();
+	}
+
+	@Test
+	@DisplayName("이 종목·시장의 카드가 하나도 없으면 findFirst는 빈 Optional이다 — 쿨다운 없음으로 판정된다")
+	void findFirstReturnsEmptyWhenNoCryptoCardExistsYet() {
+		assertThat(priceMoveEventRepository
+			.findFirstByInstrumentIdAndMarketOrderByOccurredAtDesc(crypto.getId(), Market.CRYPTO))
+			.isEmpty();
+	}
+
+	@Test
+	@DisplayName("countBy는 이 종목·시장·origin_trade_date(KST)가 모두 일치하는 카드만 센다")
+	void countByInstrumentIdAndMarketAndOriginTradeDateCountsOnlyExactMatches() {
+		LocalDate tradeDate = LocalDate.of(2026, 8, 4);
+		priceMoveEventRepository.saveAndFlush(newCryptoEvent(LocalDateTime.of(tradeDate, LocalTime.of(10, 0))));
+		priceMoveEventRepository.saveAndFlush(newCryptoEvent(LocalDateTime.of(tradeDate, LocalTime.of(14, 0))));
+		// 다른 날짜 — 세지 않는다.
+		priceMoveEventRepository
+			.saveAndFlush(newCryptoEvent(LocalDateTime.of(tradeDate.plusDays(1), LocalTime.of(1, 0))));
+		// 같은 날짜의 STOCK 카드 — market이 다르므로 세지 않는다.
+		priceMoveEventRepository.saveAndFlush(newStockEvent(PriceMoveEventType.INTRADAY, WINDOW_START));
+
+		long count = priceMoveEventRepository.countByInstrumentIdAndMarketAndOriginTradeDate(
+			crypto.getId(), Market.CRYPTO, tradeDate);
+
+		assertThat(count).isEqualTo(2);
+	}
+
+	// 함정 재현 — 자정을 넘긴 카드(23:58 생성)와 그 직후(00:03 생성) 카드는 origin_trade_date가 다른 날이라
+	// 일일 상한 카운트가 서로 섞이면 안 된다(§C-9). 카운트 기준이 occurred_at 자체가 아니라 origin_trade_date라는
+	// 것을 이 테스트가 못박는다.
+	@Test
+	@DisplayName("자정을 넘긴 카드는 origin_trade_date가 다음 날로 갈려 전날 일일 상한 카운트에 섞이지 않는다")
+	void dailyLimitCountDoesNotLeakAcrossMidnightBecauseOriginTradeDateSplits() {
+		LocalDateTime beforeMidnight = LocalDateTime.of(2026, 8, 3, 23, 58);
+		LocalDateTime afterMidnight = LocalDateTime.of(2026, 8, 4, 0, 3);
+		PriceMoveEvent late = priceMoveEventRepository.saveAndFlush(newCryptoEvent(beforeMidnight));
+		PriceMoveEvent early = priceMoveEventRepository.saveAndFlush(newCryptoEvent(afterMidnight));
+
+		// 팩토리가 파생한 origin_trade_date 자체가 이미 다른 날이어야 이 테스트의 전제가 성립한다.
+		assertThat(late.getOriginTradeDate()).isEqualTo(LocalDate.of(2026, 8, 3));
+		assertThat(early.getOriginTradeDate()).isEqualTo(LocalDate.of(2026, 8, 4));
+
+		assertThat(priceMoveEventRepository.countByInstrumentIdAndMarketAndOriginTradeDate(
+			crypto.getId(), Market.CRYPTO, LocalDate.of(2026, 8, 3))).isEqualTo(1);
+		assertThat(priceMoveEventRepository.countByInstrumentIdAndMarketAndOriginTradeDate(
+			crypto.getId(), Market.CRYPTO, LocalDate.of(2026, 8, 4))).isEqualTo(1);
+	}
 }
