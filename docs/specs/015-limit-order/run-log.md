@@ -62,6 +62,7 @@
 | 16:13 | 오케스트레이터 | `ErrorCodeTest` 26→27 카운트·`ORDER_NOT_PENDING` 매핑 직접 수정 후 `./gradlew test --tests ErrorCodeTest` | planner가 보고한 stale 테스트 실패 해소 |
 | 16:16 | 오케스트레이터 | `./gradlew build` | 전체 게이트 재검증, HEAD `0977ba3` 기준 BUILD SUCCESSFUL |
 | 16:19 | 오케스트레이터 | reviewer 리뷰 권장사항(import 정렬) 반영 후 `./gradlew spotlessApply spotlessCheck compileTestJava`, 이어 `./gradlew build` | HEAD `2c52c10` 기준 BUILD SUCCESSFUL(최종 빌드 검증 SHA) |
+| 16:41 | 오케스트레이터 | 사용자 확인 후 `ORDER_NOT_PENDING`을 `ORDER_ALREADY_FILLED`/`ORDER_ALREADY_CANCELLED`로 분리(항목12), 관련 테스트 4개 파일·문서 3개 파일 갱신, `./gradlew build` 재검증 | HEAD `7ef573a` 기준 BUILD SUCCESSFUL(신규 최종 빌드 검증 SHA) |
 
 ## 모니터링 (사람용 요약)
 - 10:39~10:46 implementer — V22 마이그레이션·OrderType.LIMIT/OrderStatus.PENDING·Order/Account/Holding 예약 메서드·4개 리포지토리 락 쿼리 추가, compileJava·compileTestJava·spotlessCheck 통과. Docker 미가용 환경이라 @DataJpaTest는 미실행(컴파일만 확인).
@@ -88,3 +89,4 @@
 - 16:13 오케스트레이터 — planner가 보고한 `ErrorCodeTest` stale assertion(14행 `hasSize(26)`→`27`, `mapsEveryErrorCodeToPrdHttpStatus`에 `ORDER_NOT_PENDING` 엔트리 추가)을 직접 수정, `./gradlew test --tests ErrorCodeTest` 통과 확인.
 - 16:16 오케스트레이터 — `spec.md`·`tasks.md`의 "미충족" 기록을 해결 완료로 갱신, `./gradlew build` 전체 게이트 재검증(BUILD SUCCESSFUL), HEAD `0977ba3`로 커밋(문서 갱신+테스트 수정 통합).
 - 16:19 오케스트레이터 — reviewer(새 세션, 리뷰 모드) 투입 결과 차단 0건, 참고 1건(`LimitOrderConcurrencyIntegrationTest`의 `Order` import 알파벳 순서 이탈, 빌드 영향 없음). 직접 정렬 수정 후 `spotlessApply`·`spotlessCheck`·`compileTestJava`·전체 `./gradlew build` 재실행(BUILD SUCCESSFUL), HEAD `2c52c10`로 커밋 — 이 SHA가 PR 빌드 검증 SHA.
+- 16:41 오케스트레이터(항목12, 이슈 #218 후속) — 사용자가 취소 시 이미 `FILLED`/`CANCELLED` 상태를 단일 `ORDER_NOT_PENDING`이 아니라 `ORDER_ALREADY_FILLED`/`ORDER_ALREADY_CANCELLED`로 나눌지 직접 확인(권장안 채택). `ErrorCode`에 두 코드 추가, `LimitOrderCancelService`의 상태 검증 분기를 `FILLED`/`CANCELLED` 개별 분기로 교체. 영향받는 테스트 4개 파일(`ErrorCodeTest` 카운트 27→28·매핑 교체, `LimitOrderCancelServiceTest`·`OrderControllerTest`의 관련 케이스 2개로 분리, `LimitOrderConcurrencyIntegrationTest`의 체결 승리 분기 assertion 갱신)을 함께 수정하고 `./gradlew test`로 개별 실행 확인 후 `LimitOrderConcurrencyIntegrationTest`를 3회 재실행해 flaky 없음 확인. `docs/api-contracts.md`·spec.md(시나리오 11, LMT-003 완료 조건, "확정된 설계 결정" 8번 정정+9번 신설)·plan.md(오류 코드표·엔티티 변경·취소 흐름·동시성 시나리오 서술)·tasks.md(항목8·9·10·11 서술 갱신, 항목12 신설)까지 전부 갱신. 전체 `./gradlew build` 재검증(BUILD SUCCESSFUL), HEAD `7ef573a`로 커밋.
