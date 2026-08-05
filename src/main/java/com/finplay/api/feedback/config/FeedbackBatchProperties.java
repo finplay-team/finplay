@@ -8,7 +8,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 // (§C-7 — yml과 @DefaultValue 양쪽에 값을 두고 드리프트 테스트로 대조), 실제로 스케줄을 결정하는 것은
 // @Scheduled가 읽는 application.yml 쪽이고 여기 @DefaultValue는 바닥값이다.
 //
-// §C-1의 나머지 크론 2종(peer-stats·crypto-watch)은 그 스케줄을 실제로 더하는 이슈가 함께 추가한다 —
+// §C-1의 나머지 크론 1종(crypto-watch)은 그 스케줄을 실제로 더하는 이슈가 함께 추가한다 —
 // 지금 넣어 두면 아무 데서도 읽지 않는 키가 되고, 풀 크기 계산("풀 크기 = 등록된 @Scheduled 수")도 흐려진다.
 //
 // zone은 여기 없다. cron 기반 @Scheduled에 zone = "Asia/Seoul"을 붙이는 것은 스케줄 선언부의 책임이다(§C-1).
@@ -22,5 +22,9 @@ public record FeedbackBatchProperties(
 	// 주기 갱신으로 대신한다 (FEED-008·FEED-009). 정각이 아니라 05분인 것은 매시 정각에 몰리는 다른
 	// 작업과 겹치지 않게 하려는 것이며 §C-1의 확정값이다.
 	@DefaultValue("0 5 * * * *")
-	String cryptoCron) {
+	String cryptoCron,
+	// 장 마감 집단 비교 확정 집계 (FEED-010·011, 이슈 #212). 15:30 장 마감보다 뒤인 15:32에 둬 그 시각의
+	// 마지막 분봉·체결이 반영될 여유를 준다.
+	@DefaultValue("0 32 15 * * MON-FRI")
+	String peerStatsCron) {
 }

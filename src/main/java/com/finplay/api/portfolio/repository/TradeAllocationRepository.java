@@ -58,4 +58,22 @@ public interface TradeAllocationRepository extends JpaRepository<TradeAllocation
 		@Param("instrumentId")
 		Long instrumentId, @Param("at")
 		LocalDateTime at);
+
+	/**
+	 * 특정 종목의 배분을 holding 단위로 묶어, <b>그 배분이 속한 매도 체결</b>의 {@code executed_at}이 시점
+	 * {@code at} 뒤(초과)인 것 중 가장 이른 시각을 계산한다 (spec 012 §반사실·집단 비교 계산 [집단 비교]).
+	 *
+	 * <p>{@code HolderPopulationQueryService}가 이 값을 T 시점 모집단(위 두 조회로 계산)과 교차해 "매도까지
+	 * 걸린 분"을 구한다. T 이전(포함)에 판 매도는 모집단 계산이 이미 순보유수량에서 뺐으므로, 여기서는
+	 * {@code at} <b>초과</b>만 본다 — 같은 시각이 두 조회에서 겹쳐 이중으로 잡히지 않는다.
+	 */
+	@Query("select new com.finplay.api.portfolio.repository.HoldingSellTime("
+		+ "a.holdingLot.holding.id, min(a.sellTrade.executedAt)) "
+		+ "from TradeAllocation a "
+		+ "where a.holdingLot.holding.instrument.id = :instrumentId and a.sellTrade.executedAt > :at "
+		+ "group by a.holdingLot.holding.id")
+	List<HoldingSellTime> findFirstSellExecutedAtByHoldingForInstrumentAfter(
+		@Param("instrumentId")
+		Long instrumentId, @Param("at")
+		LocalDateTime at);
 }

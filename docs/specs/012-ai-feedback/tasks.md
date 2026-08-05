@@ -45,7 +45,7 @@
   - **함정 — 전량 매도 회원 픽스처가 빠지면 오탐.** 보유 중인 회원만 픽스처에 넣으면 `holdings`를 그대로 조회한 구현과 lot·배분으로 재구성한 구현이 **같은 답을 낸다.** 반드시 "T 시점에는 보유했지만 그 뒤(집계 시점 전에) 전부 팔아 지금은 `holdings`에 없는" 회원을 픽스처에 포함하고, 그 회원이 모집단 크기에 잡히는지로 구분한다.
   - 검증 — `@DataJpaTest` 하나로 위 함정 픽스처를 고정한다. 정렬·상한은 이 조회에 없다(개인 목록이 아니라 집계 하나다).
 
-- [ ] **3. `PeerStatsBatchService` 신설 — 장 마감 집단 비교 확정 집계**
+- [x] **3. `PeerStatsBatchService` 신설 — 장 마감 집단 비교 확정 집계**
 
   §C-6이 이름을 못박아 둔 신설 서비스다. 카드별로 2번 항목의 모집단 조회를 부르고 §반사실·집단 비교 계산의 세 지표(모집단 크기·30분 내 매도 비율·매도까지 걸린 시간의 중앙값)를 계산해 `price_move_peer_stats`에 저장한다.
   - 크론은 §C-1 `feedback.batch.peer-stats-cron`이다. `FeedbackBatchProperties`(record)에 새 필드를 추가하고 yml·`@DefaultValue` 양쪽에 값을 두는 기존 방침(§C-7)을 따른다 — `FeedbackBatchProperties`의 주석이 "그 스케줄을 실제로 더하는 이슈가 함께 추가한다"고 이 이슈를 가리키고 있다. `@Scheduled`에 `zone = "Asia/Seoul"`을 반드시 붙인다(§C-1).
