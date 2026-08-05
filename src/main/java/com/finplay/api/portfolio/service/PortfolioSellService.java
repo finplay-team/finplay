@@ -37,6 +37,18 @@ public class PortfolioSellService {
 		return holding;
 	}
 
+	// 지정가 매도 생성 시 holding을 잠그고 availableQuantity(=quantity-reservedQuantity) 기준으로 검증한다
+	// (015-limit-order LMT-001). 다른 도메인 서비스가 HoldingRepository를 직접 주입하지 않게 한다(ADR-0002).
+	public Holding getHoldingForUpdateOrThrow(Account account, Instrument instrument, BigDecimal requiredQuantity) {
+		Holding holding = holdingRepository
+			.findByAccountIdAndInstrumentIdForUpdate(account.getId(), instrument.getId())
+			.orElseThrow(() -> new BusinessException(ErrorCode.INSUFFICIENT_QTY));
+		if (holding.getAvailableQuantity().compareTo(requiredQuantity) < 0) {
+			throw new BusinessException(ErrorCode.INSUFFICIENT_QTY);
+		}
+		return holding;
+	}
+
 	public SellAllocationDto applySellTrade(
 		Holding holding, Trade sellTrade, BigDecimal sellQuantity, LocalDateTime now) {
 		List<HoldingLot> lots = holdingLotRepository

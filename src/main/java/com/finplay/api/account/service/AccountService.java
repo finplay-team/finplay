@@ -46,6 +46,15 @@ public class AccountService {
 			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
 	}
 
+	// 지정가 매수 생성 시 계좌를 잠가 동시 현금 예약 경합을 막는다(015-limit-order LMT-001).
+	// 다른 도메인 서비스가 AccountRepository를 직접 주입하지 않도록 이 메서드만 거치게 한다(ADR-0002).
+	@Transactional
+	public Account getAccountForUpdate(Long userId, Market market) {
+		return accountRepository
+			.findByUserIdAndMarketForUpdate(userId, market)
+			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+	}
+
 	// 랭킹 점수 갱신(RankingService.refreshScore)이 존재하지 않을 수도 있는 accountId를 조회할 때 쓴다.
 	@Transactional(readOnly = true)
 	public Optional<Account> findByIdOrEmpty(Long accountId) {

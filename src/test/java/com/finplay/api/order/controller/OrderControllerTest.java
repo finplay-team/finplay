@@ -18,10 +18,13 @@ import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.auth.token.JwtTokenProvider;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
+import com.finplay.api.order.dto.request.LimitOrderCreateRequest;
 import com.finplay.api.order.dto.request.OrderCreateRequest;
+import com.finplay.api.order.dto.response.LimitOrderResponse;
 import com.finplay.api.order.dto.response.OrderListItemResponse;
 import com.finplay.api.order.dto.response.OrderListResponse;
 import com.finplay.api.order.dto.response.OrderResponse;
+import com.finplay.api.order.service.LimitOrderService;
 import com.finplay.api.order.service.OrderService;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -45,12 +48,18 @@ class OrderControllerTest {
 	private static final String VALID_BODY = """
 		{"market":"STOCK","instrumentId":1,"side":"BUY","orderType":"MARKET","quantity":"10"}
 		""";
+	private static final String VALID_LIMIT_BODY = """
+		{"market":"CRYPTO","instrumentId":1,"side":"BUY","quantity":"1","limitPrice":"70000000"}
+		""";
 
 	@Autowired
 	private MockMvc mockMvc;
 
 	@MockitoBean
 	private OrderService orderService;
+
+	@MockitoBean
+	private LimitOrderService limitOrderService;
 
 	@MockitoBean
 	private JwtTokenProvider jwtTokenProvider;
@@ -302,6 +311,195 @@ class OrderControllerTest {
 	private void stubAuthenticatedUser() {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(java.util.Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+	}
+
+	@Test
+	void createLimitOrderReturnsCreatedWithEveryResponseField() throws Exception {
+		stubAuthenticatedUser();
+		LocalDateTime now = LocalDateTime.of(2026, 8, 5, 9, 0);
+		LimitOrderResponse response = new LimitOrderResponse(
+			1L, "CRYPTO", 1L, "BUY", "LIMIT", "PENDING", new BigDecimal("1"), new BigDecimal("70000000"), now);
+		when(limitOrderService.createLimitOrder(eq(USER_ID), eq(IDEMPOTENCY_KEY), any(LimitOrderCreateRequest.class)))
+			.thenReturn(response);
+
+		mockMvc.perform(post("/api/orders/limit")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.header("Idempotency-Key", IDEMPOTENCY_KEY)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(VALID_LIMIT_BODY))
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.orderId").value(1))
+			.andExpect(jsonPath("$.market").value("CRYPTO"))
+			.andExpect(jsonPath("$.instrumentId").value(1))
+			.andExpect(jsonPath("$.side").value("BUY"))
+			.andExpect(jsonPath("$.orderType").value("LIMIT"))
+			.andExpect(jsonPath("$.status").value("PENDING"))
+			.andExpect(jsonPath("$.quantity").value(1))
+			.andExpect(jsonPath("$.limitPrice").value(70000000))
+			.andExpect(jsonPath("$.requestedAt").value("2026-08-05T09:00:00"));
+
+		verify(limitOrderService).createLimitOrder(eq(USER_ID), eq(IDEMPOTENCY_KEY),
+			any(LimitOrderCreateRequest.class));
+	}
+
+	@Test
+	void createLimitOrderRejectsMissingIdempotencyKeyWithoutCallingService() throws Exception {
+		stubAuthenticatedUser();
+
+		mockMvc.perform(post("/api/orders/limit")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(VALID_LIMIT_BODY))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(limitOrderService);
+	}
+
+	@Test
+	void createLimitOrderRejectsMissingLimitPriceWithoutCallingService() throws Exception {
+		stubAuthenticatedUser();
+
+		mockMvc.perform(post("/api/orders/limit")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.header("Idempotency-Key", IDEMPOTENCY_KEY)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("""
+				{"market":"CRYPTO","instrumentId":1,"side":"BUY","quantity":"1"}
+				"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(limitOrderService);
+	}
+
+	@Test
+	void createLimitOrderRejectsMissingQuantityWithoutCallingService() throws Exception {
+		stubAuthenticatedUser();
+
+		mockMvc.perform(post("/api/orders/limit")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.header("Idempotency-Key", IDEMPOTENCY_KEY)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("""
+				{"market":"CRYPTO","instrumentId":1,"side":"BUY","limitPrice":"70000000"}
+				"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(limitOrderService);
+	}
+
+	@Test
+	void createLimitOrderRejectsInvalidMarketLiteralWithoutCallingService() throws Exception {
+		stubAuthenticatedUser();
+
+		mockMvc.perform(post("/api/orders/limit")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.header("Idempotency-Key", IDEMPOTENCY_KEY)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("""
+				{"market":"FOREX","instrumentId":1,"side":"BUY","quantity":"1","limitPrice":"70000000"}
+				"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(limitOrderService);
+	}
+
+	@Test
+	void createLimitOrderReturnsValidationErrorWhenServiceRejectsStockMarket() throws Exception {
+		stubAuthenticatedUser();
+		when(limitOrderService.createLimitOrder(eq(USER_ID), eq(IDEMPOTENCY_KEY), any(LimitOrderCreateRequest.class)))
+			.thenThrow(new BusinessException(ErrorCode.VALIDATION_ERROR, "코인 종목만 지정가 주문을 지원합니다."));
+
+		mockMvc.perform(post("/api/orders/limit")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.header("Idempotency-Key", IDEMPOTENCY_KEY)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(VALID_LIMIT_BODY))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(limitOrderService).createLimitOrder(eq(USER_ID), eq(IDEMPOTENCY_KEY),
+			any(LimitOrderCreateRequest.class));
+	}
+
+	@Test
+	void createLimitOrderReturnsInsufficientCashWhenServiceRejectsCashShortage() throws Exception {
+		stubAuthenticatedUser();
+		when(limitOrderService.createLimitOrder(eq(USER_ID), eq(IDEMPOTENCY_KEY), any(LimitOrderCreateRequest.class)))
+			.thenThrow(new BusinessException(ErrorCode.INSUFFICIENT_CASH));
+
+		mockMvc.perform(post("/api/orders/limit")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.header("Idempotency-Key", IDEMPOTENCY_KEY)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(VALID_LIMIT_BODY))
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.error.code").value("INSUFFICIENT_CASH"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(limitOrderService).createLimitOrder(eq(USER_ID), eq(IDEMPOTENCY_KEY),
+			any(LimitOrderCreateRequest.class));
+	}
+
+	@Test
+	void createLimitOrderReturnsInsufficientQtyWhenServiceRejectsQuantityShortage() throws Exception {
+		stubAuthenticatedUser();
+		when(limitOrderService.createLimitOrder(eq(USER_ID), eq(IDEMPOTENCY_KEY), any(LimitOrderCreateRequest.class)))
+			.thenThrow(new BusinessException(ErrorCode.INSUFFICIENT_QTY));
+
+		mockMvc.perform(post("/api/orders/limit")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.header("Idempotency-Key", IDEMPOTENCY_KEY)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("""
+				{"market":"CRYPTO","instrumentId":1,"side":"SELL","quantity":"1","limitPrice":"70000000"}
+				"""))
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.error.code").value("INSUFFICIENT_QTY"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(limitOrderService).createLimitOrder(eq(USER_ID), eq(IDEMPOTENCY_KEY),
+			any(LimitOrderCreateRequest.class));
+	}
+
+	@Test
+	void createLimitOrderReturnsIdempotencyConflictWhenServiceRejectsConflictingReplay() throws Exception {
+		stubAuthenticatedUser();
+		when(limitOrderService.createLimitOrder(eq(USER_ID), eq(IDEMPOTENCY_KEY), any(LimitOrderCreateRequest.class)))
+			.thenThrow(new BusinessException(ErrorCode.IDEMPOTENCY_CONFLICT));
+
+		mockMvc.perform(post("/api/orders/limit")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.header("Idempotency-Key", IDEMPOTENCY_KEY)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(VALID_LIMIT_BODY))
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.error.code").value("IDEMPOTENCY_CONFLICT"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(limitOrderService).createLimitOrder(eq(USER_ID), eq(IDEMPOTENCY_KEY),
+			any(LimitOrderCreateRequest.class));
+	}
+
+	@Test
+	void createLimitOrderRejectsMissingAuthenticationWithoutCallingService() throws Exception {
+		mockMvc.perform(post("/api/orders/limit")
+			.header("Idempotency-Key", IDEMPOTENCY_KEY)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(VALID_LIMIT_BODY))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(limitOrderService);
 	}
 
 	@Test

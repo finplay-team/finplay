@@ -5,7 +5,7 @@
 - [x] 1. **엔티티·마이그레이션·잠금 인프라**
   `db/migration/V22__add_limit_order_reservation_ledger.sql`(plan.md SQL 그대로: `accounts.reserved_cash`, `holdings.reserved_quantity`, `orders.limit_price`, `idx_orders_limit_fill`). `OrderType.LIMIT`·`OrderStatus.PENDING` 추가. `Order`에 `limitPrice` 필드·`createLimitPending` 팩토리·`markFilled()` 추가(기존 `create` 시그니처·동작 불변). `Account`에 `reservedCash`·`getAvailableCash()`·`reserveCash()`·`confirmReservedCash()` 추가. `Holding`에 `reservedQuantity`·`getAvailableQuantity()`·`reserveQuantity()`·`releaseReservedQuantity()` 추가. `AccountRepository`(`findByUserIdAndMarketForUpdate`·`findByIdForUpdate`)·`HoldingRepository`(`findByAccountIdAndInstrumentIdForUpdate`)·`OrderRepository`(`findByIdForUpdate`·`findPendingLimitOrdersToFill`)·`InstrumentRepository`(`findByMarketAndSymbol`) 추가. 단위 테스트(엔티티 불변식: 예약 초과 시 `IllegalStateException`, `markFilled` 이중 호출 방지) + `@DataJpaTest`(락 쿼리가 실제로 실행되고 값이 맞는지, Testcontainers MySQL).
 
-- [ ] 2. **`POST /api/orders/limit` 생성 API**
+- [x] 2. **`POST /api/orders/limit` 생성 API**
   `LimitOrderCreateRequest`·`LimitOrderResponse` DTO. `LimitOrderCreationService`(plan.md "지정가 생성 흐름" — BUY는 account 락만, SELL은 holding 락만). `LimitOrderService`(`OrderService` 패턴 재사용 — 선제 조회·실행·`DataIntegrityViolationException` 캐치·재조회 폴백). `OrderController`에 `POST /limit` 추가(`Idempotency-Key` 필수). 서비스 단위 테스트(현금·수량 부족 거부, 즉시체결 조건이어도 PENDING 생성, market≠CRYPTO 거부) + `@WebMvcTest`(요청 검증·직렬화·오류 매핑).
 
 - [ ] 3. **가격 갱신 이벤트 발행**
