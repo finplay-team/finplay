@@ -2,7 +2,7 @@
 
 각 항목 = 커밋 1개. `plan.md`의 설계를 그대로 따른다. 순서대로 구현한다(뒤 항목이 앞 항목의 산출물에 의존).
 
-- [ ] 1. **엔티티·마이그레이션·잠금 인프라**
+- [x] 1. **엔티티·마이그레이션·잠금 인프라**
   `db/migration/V22__add_limit_order_reservation_ledger.sql`(plan.md SQL 그대로: `accounts.reserved_cash`, `holdings.reserved_quantity`, `orders.limit_price`, `idx_orders_limit_fill`). `OrderType.LIMIT`·`OrderStatus.PENDING` 추가. `Order`에 `limitPrice` 필드·`createLimitPending` 팩토리·`markFilled()` 추가(기존 `create` 시그니처·동작 불변). `Account`에 `reservedCash`·`getAvailableCash()`·`reserveCash()`·`confirmReservedCash()` 추가. `Holding`에 `reservedQuantity`·`getAvailableQuantity()`·`reserveQuantity()`·`releaseReservedQuantity()` 추가. `AccountRepository`(`findByUserIdAndMarketForUpdate`·`findByIdForUpdate`)·`HoldingRepository`(`findByAccountIdAndInstrumentIdForUpdate`)·`OrderRepository`(`findByIdForUpdate`·`findPendingLimitOrdersToFill`)·`InstrumentRepository`(`findByMarketAndSymbol`) 추가. 단위 테스트(엔티티 불변식: 예약 초과 시 `IllegalStateException`, `markFilled` 이중 호출 방지) + `@DataJpaTest`(락 쿼리가 실제로 실행되고 값이 맞는지, Testcontainers MySQL).
 
 - [ ] 2. **`POST /api/orders/limit` 생성 API**

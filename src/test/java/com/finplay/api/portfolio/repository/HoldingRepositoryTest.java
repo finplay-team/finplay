@@ -146,4 +146,26 @@ class HoldingRepositoryTest {
 		assertThat(result).extracting(h -> h.getInstrument().getSymbol())
 			.containsExactly("TEST01", "TESTA", "TESTC");
 	}
+
+	@Test
+	@DisplayName("계좌·종목 조합으로 락 조회하면 해당 보유가 반환된다 (015-limit-order LMT-001·LMT-002)")
+	void findByAccountIdAndInstrumentIdForUpdateReturnsMatchingHolding() {
+		Holding holding = Holding.create(ownerAccount, instrument, NOW);
+		holding.applyBuy(BigDecimal.TEN, new BigDecimal("50000"), NOW);
+		holdingRepository.saveAndFlush(holding);
+
+		var result = holdingRepository.findByAccountIdAndInstrumentIdForUpdate(ownerAccount.getId(),
+			instrument.getId());
+
+		assertThat(result).isPresent();
+		assertThat(result.get().getId()).isEqualTo(holding.getId());
+	}
+
+	@Test
+	@DisplayName("계좌·종목 조합이 없으면 빈 값을 반환한다")
+	void findByAccountIdAndInstrumentIdForUpdateReturnsEmptyWhenNotFound() {
+		var result = holdingRepository.findByAccountIdAndInstrumentIdForUpdate(ownerAccount.getId(), 999_999L);
+
+		assertThat(result).isEmpty();
+	}
 }

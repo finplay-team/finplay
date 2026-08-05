@@ -197,4 +197,97 @@ class OrderRepositoryTest {
 		assertThat(result).extracting(order -> order.getInstrument().getSymbol())
 			.containsExactly(instrument.getSymbol());
 	}
+
+	@Test
+	@DisplayName("id로 락 조회하면 해당 주문이 반환된다 (015-limit-order LMT-002)")
+	void findByIdForUpdateReturnsTheOrderById() {
+		Order order = createOrder(owner, ownerAccount, NOW);
+
+		var result = orderRepository.findByIdForUpdate(order.getId());
+
+		assertThat(result).isPresent();
+		assertThat(result.get().getId()).isEqualTo(order.getId());
+	}
+
+	@Test
+	@DisplayName("존재하지 않는 id로 락 조회하면 빈 값을 반환한다")
+	void findByIdForUpdateReturnsEmptyWhenNotFound() {
+		var result = orderRepository.findByIdForUpdate(999_999L);
+
+		assertThat(result).isEmpty();
+	}
+
+	@Test
+	@DisplayName("BUY 지정가는 limitPrice <= 현재가일 때 체결 후보로 반환된다")
+	void findPendingLimitOrdersToFillReturnsBuyOrderWhenLimitPriceLessThanOrEqualToCurrentPrice() {
+		Order buyOrder = orderRepository.saveAndFlush(Order.createLimitPending(
+			owner, ownerAccount, instrument, OrderSide.BUY,
+			BigDecimal.valueOf(1), BigDecimal.valueOf(70_000), "limit-buy-1", "j".repeat(64), NOW));
+
+		List<Order> result = orderRepository
+			.findPendingLimitOrdersToFill(instrument.getId(), BigDecimal.valueOf(70_000));
+
+		assertThat(result).extracting(Order::getId).containsExactly(buyOrder.getId());
+	}
+
+	@Test
+	@DisplayName("BUY 지정가는 limitPrice가 현재가보다 낮으면 체결 후보에서 제외된다")
+	void findPendingLimitOrdersToFillExcludesBuyOrderWhenLimitPriceBelowCurrentPrice() {
+		orderRepository.saveAndFlush(Order.createLimitPending(
+			owner, ownerAccount, instrument, OrderSide.BUY,
+			BigDecimal.valueOf(1), BigDecimal.valueOf(69_000), "limit-buy-2", "k".repeat(64), NOW));
+
+		List<Order> result = orderRepository
+			.findPendingLimitOrdersToFill(instrument.getId(), BigDecimal.valueOf(70_000));
+
+		assertThat(result).isEmpty();
+	}
+
+	@Test
+	@DisplayName("SELL 지정가는 limitPrice >= 현재가일 때 체결 후보로 반환된다")
+	void findPendingLimitOrdersToFillReturnsSellOrderWhenLimitPriceGreaterThanOrEqualToCurrentPrice() {
+		Order sellOrder = orderRepository.saveAndFlush(Order.createLimitPending(
+			owner, ownerAccount, instrument, OrderSide.SELL,
+			BigDecimal.valueOf(1), BigDecimal.valueOf(70_000), "limit-sell-1", "l".repeat(64), NOW));
+
+		List<Order> result = orderRepository
+			.findPendingLimitOrdersToFill(instrument.getId(), BigDecimal.valueOf(70_000));
+
+		assertThat(result).extracting(Order::getId).containsExactly(sellOrder.getId());
+	}
+
+	@Test
+	@DisplayName("이미 FILLED된 지정가 주문은 체결 후보에서 제외된다")
+	void findPendingLimitOrdersToFillExcludesAlreadyFilledOrder() {
+		Order filledOrder = orderRepository.saveAndFlush(Order.createLimitPending(
+			owner, ownerAccount, instrument, OrderSide.BUY,
+			BigDecimal.valueOf(1), BigDecimal.valueOf(70_000), "limit-buy-3", "m".repeat(64), NOW));
+		filledOrder.markFilled();
+		orderRepository.saveAndFlush(filledOrder);
+
+		List<Order> result = orderRepository
+			.findPendingLimitOrdersToFill(instrument.getId(), BigDecimal.valueOf(70_000));
+
+		assertThat(result).isEmpty();
+	}
+
+	@Test
+	@DisplayName("requestedAt 오름차순, 동시각이면 id 오름차순으로 정렬된다")
+	void findPendingLimitOrdersToFillSortedByRequestedAtThenIdAscending() {
+		Order older = orderRepository.saveAndFlush(Order.createLimitPending(
+			owner, ownerAccount, instrument, OrderSide.BUY,
+			BigDecimal.valueOf(1), BigDecimal.valueOf(70_000), "limit-buy-4", "n".repeat(64), NOW.minusMinutes(10)));
+		Order sameTimeFirst = orderRepository.saveAndFlush(Order.createLimitPending(
+			owner, ownerAccount, instrument, OrderSide.BUY,
+			BigDecimal.valueOf(1), BigDecimal.valueOf(70_000), "limit-buy-5", "o".repeat(64), NOW));
+		Order sameTimeSecond = orderRepository.saveAndFlush(Order.createLimitPending(
+			owner, ownerAccount, instrument, OrderSide.BUY,
+			BigDecimal.valueOf(1), BigDecimal.valueOf(70_000), "limit-buy-6", "p".repeat(64), NOW));
+
+		List<Order> result = orderRepository
+			.findPendingLimitOrdersToFill(instrument.getId(), BigDecimal.valueOf(70_000));
+
+		assertThat(result).extracting(Order::getId)
+			.containsExactly(older.getId(), sameTimeFirst.getId(), sameTimeSecond.getId());
+	}
 }

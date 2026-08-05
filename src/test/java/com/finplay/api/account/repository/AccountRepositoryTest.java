@@ -81,4 +81,34 @@ class AccountRepositoryTest {
 			.containsExactlyInAnyOrder(stockAccount.getId(), cryptoAccount.getId());
 		assertThat(result).allSatisfy(account -> assertThat(account.getUser().getId()).isEqualTo(user.getId()));
 	}
+
+	@Test
+	void findByUserIdAndMarketForUpdateReturnsTheMatchingMarketAccount() {
+		Optional<Account> result = accountRepository.findByUserIdAndMarketForUpdate(user.getId(), Market.CRYPTO);
+
+		assertThat(result).isPresent();
+		assertThat(result.get().getId()).isEqualTo(cryptoAccount.getId());
+	}
+
+	@Test
+	void findByUserIdAndMarketForUpdateReturnsEmptyWhenNoMatchingAccount() {
+		Optional<Account> result = accountRepository.findByUserIdAndMarketForUpdate(999_999L, Market.CRYPTO);
+
+		assertThat(result).isEmpty();
+	}
+
+	@Test
+	void findByIdForUpdateReturnsTheAccountById() {
+		Optional<Account> result = accountRepository.findByIdForUpdate(cryptoAccount.getId());
+
+		assertThat(result).isPresent();
+		assertThat(result.get().getMarket()).isEqualTo(Market.CRYPTO);
+	}
+
+	@Test
+	void findByIdForUpdateReturnsEmptyWhenIdDoesNotExist() {
+		Optional<Account> result = accountRepository.findByIdForUpdate(999_999L);
+
+		assertThat(result).isEmpty();
+	}
 }
