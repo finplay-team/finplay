@@ -335,8 +335,8 @@ class RankingIntegrationTest {
 
 	private MyRankingResponse getMyRanking(String accessToken, String market) throws Exception {
 		String body = mockMvc.perform(get("/api/rankings/me")
-				.param("market", market)
-				.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+			.param("market", market)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
 			.andExpect(status().isOk())
 			.andReturn().getResponse().getContentAsString();
 		return objectMapper.readValue(body, MyRankingResponse.class);
