@@ -23,6 +23,7 @@ import com.finplay.api.feedback.dto.response.NewsItem;
 import com.finplay.api.feedback.dto.response.PostSellFeedbackResponse;
 import com.finplay.api.feedback.repository.PriceMoveEventRepository;
 import com.finplay.api.feedback.repository.PriceMoveEventSourceRepository;
+import com.finplay.api.feedback.repository.PriceMovePeerStatRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.domain.StockReplaySession;
@@ -91,12 +92,15 @@ class PostSellFeedbackDerivedFactsTest {
 	private final PriceMoveEventSourceRepository priceMoveEventSourceRepository = mock(
 		PriceMoveEventSourceRepository.class);
 
+	// 이 파일은 파생 사실(극값 등)만 본다 — 집단 비교는 stub하지 않고 Mockito 기본값(Optional.empty())으로 둔다.
+	private final PriceMovePeerStatRepository priceMovePeerStatRepository = mock(PriceMovePeerStatRepository.class);
+
 	// 기본 픽스처는 "그 체결의 서비스 날짜 = 오늘"이라 게이트 상한이 현재 시각(15:00)이다.
 	private final Clock clock = Clock.fixed(TODAY.atTime(NOW_TIME).atZone(KST).toInstant(), KST);
 
 	private final PostSellFeedbackReader postSellFeedbackReader = new PostSellFeedbackReader(
 		tradeService, sellAllocationQueryService, stockReplayService, priceMoveEventRepository,
-		priceMoveEventSourceRepository, clock);
+		priceMoveEventSourceRepository, priceMovePeerStatRepository, clock);
 
 	// --- 보유 구간 극값 (완료 조건 6번 — close 기준) ---
 

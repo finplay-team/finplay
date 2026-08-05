@@ -160,12 +160,14 @@ class PostSellFeedbackIntegrationTest {
 			.andExpect(jsonPath("$.holdingMinutes").value(310))
 			.andExpect(jsonPath("$.sameSessionCompleted").value(true))
 			.andExpect(jsonPath("$.priceMoves.length()").value(0))
-			// 매도 후 흐름·반사실·집단 비교는 3번 항목이 채웠고 그 값이 장 마감 게이트에 걸린다. 이 클래스는
-			// 실제 시계를 쓰므로 조회 시각에 따라 NOT_YET·READY가 갈린다 — 게이트 단정은 고정 Clock을 쓰는
+			// 매도 후 흐름·반사실은 3번 항목이 채웠고 그 값이 장 마감 게이트에 걸린다. 이 클래스는 실제 시계를
+			// 쓰므로 조회 시각에 따라 NOT_YET·READY가 갈린다 — 게이트 단정은 고정 Clock을 쓰는
 			// PostSellFeedbackGateIntegrationTest가 맡고, 여기서는 필드가 존재하는지만 본다.
 			.andExpect(jsonPath("$.postSellFlow.status").isNotEmpty())
 			.andExpect(jsonPath("$.counterfactuals.status").isNotEmpty())
-			.andExpect(jsonPath("$.peerComparison.status").value("NOT_YET"))
+			// 집단 비교는 4번 항목부터 게이트가 아니라 확정 집계 행 존재로 판정한다(§C-4) — priceMoves가
+			// 0건(위 단정)이므로 NO_EVENT가 1순위다.
+			.andExpect(jsonPath("$.peerComparison.status").value("NO_EVENT"))
 			// 서술은 4번 항목이 채웠다. 이 클래스에는 대역 생성기가 없어 api-key가 `not-configured`인 실제
 			// 생성기가 실패를 돌려주고 §템플릿 문장으로 폴백한다 — 외부 호출 없이도 서술이 비지 않는다.
 			.andExpect(jsonPath("$.narrative").isNotEmpty())

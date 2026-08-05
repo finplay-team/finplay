@@ -20,6 +20,7 @@ import com.finplay.api.feedback.dto.response.PostSellFeedbackResponse;
 import com.finplay.api.feedback.dto.response.PostSellFlow;
 import com.finplay.api.feedback.repository.PriceMoveEventRepository;
 import com.finplay.api.feedback.repository.PriceMoveEventSourceRepository;
+import com.finplay.api.feedback.repository.PriceMovePeerStatRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.domain.StockReplaySession;
@@ -86,6 +87,9 @@ class PostSellFeedbackPostSellFlowTest {
 
 	private final PriceMoveEventSourceRepository priceMoveEventSourceRepository = mock(
 		PriceMoveEventSourceRepository.class);
+
+	// 이 파일은 매도 후 흐름 게이트만 본다 — 집단 비교는 stub하지 않고 Mockito 기본값(Optional.empty())으로 둔다.
+	private final PriceMovePeerStatRepository priceMovePeerStatRepository = mock(PriceMovePeerStatRepository.class);
 
 	// --- 게이트 ⑬ 직전·직후 (완료 조건 13번) ---
 
@@ -407,7 +411,8 @@ class PostSellFeedbackPostSellFlowTest {
 	private PostSellFeedbackResponse getPostSellFeedbackAt(LocalDateTime now) {
 		PostSellFeedbackReader service = new PostSellFeedbackReader(
 			tradeService, sellAllocationQueryService, stockReplayService, priceMoveEventRepository,
-			priceMoveEventSourceRepository, Clock.fixed(now.atZone(KST).toInstant(), KST));
+			priceMoveEventSourceRepository, priceMovePeerStatRepository,
+			Clock.fixed(now.atZone(KST).toInstant(), KST));
 		return service.read(USER_ID, SELL_TRADE_ID);
 	}
 

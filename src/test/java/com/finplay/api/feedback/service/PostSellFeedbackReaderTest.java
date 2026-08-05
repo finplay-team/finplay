@@ -17,6 +17,7 @@ import com.finplay.api.feedback.domain.PostSellFeedbackStatus;
 import com.finplay.api.feedback.dto.response.PostSellFeedbackResponse;
 import com.finplay.api.feedback.repository.PriceMoveEventRepository;
 import com.finplay.api.feedback.repository.PriceMoveEventSourceRepository;
+import com.finplay.api.feedback.repository.PriceMovePeerStatRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.domain.StockReplaySession;
@@ -76,6 +77,11 @@ class PostSellFeedbackReaderTest {
 	private final PriceMoveEventSourceRepository priceMoveEventSourceRepository = mock(
 		PriceMoveEventSourceRepository.class);
 
+	// 4번 항목(peerComparison 상태 판정)은 PostSellFeedbackPeerComparisonTest가 전담한다 — 이 파일은 이전 항목의
+	// 완료 조건(검증 순서·수치·buyAt·sameSessionCompleted)만 보므로 stub하지 않고 Mockito 기본값
+	// (Optional.empty(), 곧 NOT_YET)으로 둔다.
+	private final PriceMovePeerStatRepository priceMovePeerStatRepository = mock(PriceMovePeerStatRepository.class);
+
 	// 파생 사실(2번 항목)이 카드 노출 게이트에 그 체결의 서비스 날짜를 쓰므로 시계가 필요하다. 이 파일이 보는
 	// 완료 조건은 게이트가 아니라 검증 순서·수치·buyAt·sameSessionCompleted라, 매도 서비스 날짜의 장중 시각으로
 	// 고정해 게이트가 판정을 가리지 않게 둔다 — 게이트 자체(⑮)는 통합 테스트가 고정 Clock으로 본다.
@@ -85,6 +91,7 @@ class PostSellFeedbackReaderTest {
 		stockReplayService,
 		priceMoveEventRepository,
 		priceMoveEventSourceRepository,
+		priceMovePeerStatRepository,
 		Clock.fixed(SELL_SERVICE_DATE.atTime(SELL_TIME).atZone(KST).toInstant(), KST));
 
 	// --- 원장 수치 ---
@@ -290,11 +297,13 @@ class PostSellFeedbackReaderTest {
 		assertThat(response.sellVsLowRate()).isNull();
 		assertThat(response.buyToNewsMinutes()).isNull();
 		assertThat(response.priceMoves()).isEmpty();
-		// 매도 후 흐름·반사실·집단 비교는 3번 항목이 채웠다 — 이 픽스처는 장 마감 전(14:40) 조회라 게이트가
-		// 닫혀 있어 세 블록이 NOT_YET 껍데기다. 게이트 자체는 PostSellFeedbackPostSellFlowTest가 본다.
+		// 매도 후 흐름·반사실은 이 픽스처가 장 마감 전(14:40) 조회라 게이트가 닫혀 있어 NOT_YET 껍데기다.
+		// 게이트 자체는 PostSellFeedbackPostSellFlowTest가 본다. 집단 비교는 4번 항목부터 마감 게이트가 아니라
+		// 확정 집계 행 존재로 판정한다(§C-4) — priceMoveEventRepository를 stub하지 않아 보유 구간 카드가
+		// 0건이므로 NO_EVENT가 1순위로 판정된다. 상태값 4가지 분기는 PostSellFeedbackPeerComparisonTest가 본다.
 		assertThat(response.postSellFlow().status()).isEqualTo(PostSellFeedbackStatus.NOT_YET);
 		assertThat(response.counterfactuals().status()).isEqualTo(PostSellFeedbackStatus.NOT_YET);
-		assertThat(response.peerComparison().status()).isEqualTo(PostSellFeedbackStatus.NOT_YET);
+		assertThat(response.peerComparison().status()).isEqualTo(PostSellFeedbackStatus.NO_EVENT);
 		// 남은 것은 4번 항목(AI 서술) 몫이다.
 		assertThat(response.narrative()).isNull();
 		assertThat(response.narrativeSource()).isNull();

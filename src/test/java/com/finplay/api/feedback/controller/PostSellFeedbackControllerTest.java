@@ -387,6 +387,84 @@ class PostSellFeedbackControllerTest {
 			null);
 	}
 
+	// --- 이슈 #212 4번 항목 — peerComparison 상태별 직렬화 ---
+
+	@Test
+	@DisplayName("peerComparison.status=NO_EVENT면 priceMoveId를 포함한 전 필드가 null로 직렬화된다")
+	void serializesPeerComparisonAsNoEventWithEveryFieldNull() throws Exception {
+		authenticate();
+		when(postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID))
+			.thenReturn(
+				withPeerComparison(new PeerComparison(PostSellFeedbackStatus.NO_EVENT, null, null, null, null, null)));
+
+		mockMvc.perform(authorized(get(PATH, SELL_TRADE_ID)))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.peerComparison.length()").value(6))
+			.andExpect(jsonPath("$.peerComparison.status").value("NO_EVENT"))
+			.andExpect(jsonPath("$.peerComparison.priceMoveId").isEmpty())
+			.andExpect(jsonPath("$.peerComparison.holderCount").isEmpty())
+			.andExpect(jsonPath("$.peerComparison.soldWithin30MinRate").isEmpty())
+			.andExpect(jsonPath("$.peerComparison.medianMinutesToSell").isEmpty())
+			.andExpect(jsonPath("$.peerComparison.yourMinutesToSell").isEmpty());
+	}
+
+	@Test
+	@DisplayName("peerComparison.status=INSUFFICIENT_SAMPLE이면 모집단 지표 3종은 null이고 priceMoveId·yourMinutesToSell만 채워진다")
+	void serializesPeerComparisonAsInsufficientSampleWithOnlyYourMinutesToSellFilled() throws Exception {
+		authenticate();
+		when(postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID)).thenReturn(withPeerComparison(
+			new PeerComparison(PostSellFeedbackStatus.INSUFFICIENT_SAMPLE, 12L, null, null, null, 290)));
+
+		mockMvc.perform(authorized(get(PATH, SELL_TRADE_ID)))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.peerComparison.status").value("INSUFFICIENT_SAMPLE"))
+			.andExpect(jsonPath("$.peerComparison.priceMoveId").value(12))
+			.andExpect(jsonPath("$.peerComparison.holderCount").isEmpty())
+			.andExpect(jsonPath("$.peerComparison.soldWithin30MinRate").isEmpty())
+			.andExpect(jsonPath("$.peerComparison.medianMinutesToSell").isEmpty())
+			.andExpect(jsonPath("$.peerComparison.yourMinutesToSell").value(290));
+	}
+
+	@Test
+	@DisplayName("peerComparison.status=READY면 모집단 지표 3종·priceMoveId·yourMinutesToSell이 모두 채워지고 회원 식별자는 없다")
+	void serializesPeerComparisonAsReadyWithEveryMetricFilledAndNoMemberIdentifier() throws Exception {
+		authenticate();
+		when(postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID)).thenReturn(withPeerComparison(
+			new PeerComparison(
+				PostSellFeedbackStatus.READY, 12L, 7, new BigDecimal("0.2857"), 12, 290)));
+
+		String body = mockMvc.perform(authorized(get(PATH, SELL_TRADE_ID)))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.peerComparison.length()").value(6))
+			.andExpect(jsonPath("$.peerComparison.status").value("READY"))
+			.andExpect(jsonPath("$.peerComparison.priceMoveId").value(12))
+			.andExpect(jsonPath("$.peerComparison.holderCount").value(7))
+			.andExpect(jsonPath("$.peerComparison.medianMinutesToSell").value(12))
+			.andExpect(jsonPath("$.peerComparison.yourMinutesToSell").value(290))
+			.andReturn()
+			.getResponse()
+			.getContentAsString(StandardCharsets.UTF_8);
+
+		// scale 4가 정수로 접히지 않는지, 그리고 회원 식별자(user·member·account·nickname)가 어디에도 없는지 본다.
+		assertThat(body).contains("\"soldWithin30MinRate\":0.2857");
+		assertThat(body.toLowerCase()).doesNotContain("userid").doesNotContain("memberid").doesNotContain("nickname");
+	}
+
+	/**
+	 * {@link #marketClosedResponse()}에서 {@code peerComparison}만 갈아 끼운다 — 4번 항목이 실제로 만드는 세
+	 * 확정 상태(NO_EVENT·INSUFFICIENT_SAMPLE·READY)의 직렬화를 다른 필드를 건드리지 않고 본다.
+	 */
+	private static PostSellFeedbackResponse withPeerComparison(PeerComparison peerComparison) {
+		PostSellFeedbackResponse base = marketClosedResponse();
+		return new PostSellFeedbackResponse(
+			base.tradeId(), base.instrumentId(), base.symbol(), base.name(), base.buyAt(), base.sellAt(),
+			base.buyPrice(), base.sellPrice(), base.quantity(), base.fee(), base.realizedPnl(), base.returnRate(),
+			base.holdingMinutes(), base.sameSessionCompleted(), base.holdHighPrice(), base.holdHighAt(),
+			base.holdLowPrice(), base.holdLowAt(), base.sellVsHighRate(), base.sellVsLowRate(),
+			base.buyToNewsMinutes(), base.priceMoves(), base.postSellFlow(), base.counterfactuals(), peerComparison,
+			base.narrative(), base.narrativeSource(), base.narrativeStatus());
+	}
+
 	/**
 	 * 1번 항목이 실제로 돌려주는 형태 — 원장 수치와 {@code sameSessionCompleted}만 채우고 나머지는
 	 * {@code null}·{@code []}다. 수치는 계약 예시 그대로다. {@code sameSessionCompleted=false}일 때의 형태와도

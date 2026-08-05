@@ -11,7 +11,10 @@ import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.feedback.domain.NarrativeSource;
 import com.finplay.api.feedback.domain.PostSellFeedbackStatus;
+import com.finplay.api.feedback.domain.PriceMoveEvent;
+import com.finplay.api.feedback.domain.PriceMoveEventType;
 import com.finplay.api.feedback.dto.response.PostSellFeedbackResponse;
+import com.finplay.api.feedback.repository.PriceMoveEventRepository;
 import com.finplay.api.feedback.repository.TradeFeedbackRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
@@ -142,6 +145,9 @@ class PostSellFeedbackNarrativeIntegrationTest {
 	private StockCandleRepository stockCandleRepository;
 
 	@Autowired
+	private PriceMoveEventRepository priceMoveEventRepository;
+
+	@Autowired
 	private JdbcTemplate jdbcTemplate;
 
 	@Autowired
@@ -184,9 +190,18 @@ class PostSellFeedbackNarrativeIntegrationTest {
 	@Test
 	@DisplayName("최초 조회에서 서술을 만들어 저장하고 재조회에서는 LLM을 다시 부르지 않는다")
 	void generatesOnFirstQueryAndReusesTheStoredNarrativeAfterwards() {
+		// 이슈 #212 4번 항목 이후 peerComparison은 실제 판정을 탄다 — 카드가 0건이면 NO_EVENT로 판정되어
+		// (postSellFlow가 이미 READY인 이 픽스처에서) 재생성 게이트가 열려 이 테스트의 "재사용" 의도와 부딪힌다.
+		// 카드를 하나 심어 확정 집계 행이 없는 NOT_YET으로 두고 게이트를 닫아, 이 테스트가 보려던 순수 재사용
+		// 경로만 남긴다. 게이트가 실제로 열리는 경로는 PostSellFeedbackPeerComparisonGateIntegrationTest가 본다.
+		priceMoveEventRepository.saveAndFlush(PriceMoveEvent.createStock(
+			stock, PriceMoveEventType.INTRADAY, ORIGIN_TRADE_DATE, LocalTime.of(9, 45), LocalTime.of(9, 50),
+			new BigDecimal("-0.018200"), new BigDecimal("3.2500"), "09시 45분부터 하락했습니다.",
+			NarrativeSource.LLM, LocalTime.of(9, 51), VIEW_AT));
 		fakeNarrativeGenerator.enqueue(LLM_NARRATIVE);
 
 		PostSellFeedbackResponse first = getPostSellFeedback();
+		assertThat(first.peerComparison().status()).isEqualTo(PostSellFeedbackStatus.NOT_YET);
 		PostSellFeedbackResponse second = getPostSellFeedback();
 
 		assertThat(fakeNarrativeGenerator.callCount()).isEqualTo(1);

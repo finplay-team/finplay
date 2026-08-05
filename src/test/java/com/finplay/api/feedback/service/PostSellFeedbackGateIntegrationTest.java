@@ -384,7 +384,9 @@ class PostSellFeedbackGateIntegrationTest {
 		// 이슈 #212 1번 — buyBasis 700,105(=700,000+105), quantity 10. (69,200×10 − FLOOR(692,000×0.00015)) −
 		// 700,105 = 691,897 − 700,105 = −8,208 → −8,208÷700,105 → −0.0117(api-contracts.md 예시와 같다).
 		assertThat(response.counterfactuals().atClose().returnRate()).isEqualTo(new BigDecimal("-0.0117"));
-		assertThat(response.peerComparison().status()).isEqualTo(PostSellFeedbackStatus.NOT_YET);
+		// 이 픽스처는 카드를 저장하지 않는다(saveFullDayCandles는 분봉만 심는다) — 보유 구간에 카드가 0건이라
+		// 4번 항목의 판정 순서상 NO_EVENT가 1순위다(§C-4). NOT_YET은 카드는 있는데 확정 집계 행이 없을 때다.
+		assertThat(response.peerComparison().status()).isEqualTo(PostSellFeedbackStatus.NO_EVENT);
 		assertThat(response.peerComparison().priceMoveId()).isNull();
 	}
 

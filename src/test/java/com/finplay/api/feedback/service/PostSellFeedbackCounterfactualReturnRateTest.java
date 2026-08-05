@@ -15,6 +15,7 @@ import com.finplay.api.feedback.dto.response.Counterfactuals;
 import com.finplay.api.feedback.dto.response.PostSellFeedbackResponse;
 import com.finplay.api.feedback.repository.PriceMoveEventRepository;
 import com.finplay.api.feedback.repository.PriceMoveEventSourceRepository;
+import com.finplay.api.feedback.repository.PriceMovePeerStatRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.domain.StockReplaySession;
@@ -90,6 +91,9 @@ class PostSellFeedbackCounterfactualReturnRateTest {
 	private final PriceMoveEventSourceRepository priceMoveEventSourceRepository = mock(
 		PriceMoveEventSourceRepository.class);
 
+	// 이 파일은 반사실 returnRate만 본다 — 집단 비교는 stub하지 않고 Mockito 기본값(Optional.empty())으로 둔다.
+	private final PriceMovePeerStatRepository priceMovePeerStatRepository = mock(PriceMovePeerStatRepository.class);
+
 	@Test
 	@DisplayName("반사실 3종의 returnRate가 FLOOR 수수료로 산출된다 — HALF_UP으로 반올림하면 셋 다 0.0001씩 어긋난다")
 	void computesCounterfactualReturnRatesWithFlooredFeesNotRoundedFees() {
@@ -133,7 +137,8 @@ class PostSellFeedbackCounterfactualReturnRateTest {
 	private PostSellFeedbackResponse getPostSellFeedbackAt(LocalDateTime now) {
 		PostSellFeedbackReader reader = new PostSellFeedbackReader(
 			tradeService, sellAllocationQueryService, stockReplayService, priceMoveEventRepository,
-			priceMoveEventSourceRepository, Clock.fixed(now.atZone(KST).toInstant(), KST));
+			priceMoveEventSourceRepository, priceMovePeerStatRepository,
+			Clock.fixed(now.atZone(KST).toInstant(), KST));
 		return reader.read(USER_ID, SELL_TRADE_ID);
 	}
 

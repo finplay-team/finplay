@@ -56,7 +56,7 @@
   - **함정 — 재재생 픽스처 없이는 서비스 날짜 분리를 검증할 수 없다.** 같은 카드를 한 서비스 날짜에서만 집계하는 픽스처로는 `UNIQUE(price_move_event_id)` 단독(서비스 날짜 없이)로 잘못 짠 구현도 초록이다. **같은 원본 거래일을 두 서비스 날짜에 재생하는 픽스처**로 두 행이 각각 쌓이는지 확인한다.
   - 검증 — 고정 `Clock` + Testcontainers 통합(장 마감 시각에 배치 실행 → 행 생성, 두 번 실행 → 중복 없음, 재재생 두 서비스 날짜 → 행 2개).
 
-- [ ] **4. `peerComparison` 상태 판정 — `PriceMovePeerStatRepository` 조회와 응답 채우기**
+- [x] **4. `peerComparison` 상태 판정 — `PriceMovePeerStatRepository` 조회와 응답 채우기**
 
   `PostSellFeedbackReader`의 "7번이 끼울 자리" 주석이 적어 둔 순서대로 `peerComparison`을 완성한다. **이 항목이 끝나면 서술 재생성 게이트가 코드 수정 없이 열린다** — 게이트 조건 자체는 손대지 않는다(위 §제약).
   - `PriceMovePeerStatRepository`에 "그 체결의 서비스 날짜 행만" 보는 조회 메서드를 더한다(§C-9). 지금은 조회 메서드가 없다.
