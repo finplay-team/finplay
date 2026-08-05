@@ -1,4 +1,4 @@
-# Plan: 코인 지정가 매매 — 생성·체결 (LMT-001~002)
+# Plan: 코인 지정가 매매 — 생성·체결·취소 (LMT-001~003)
 
 ## 관련 문서
 
@@ -303,3 +303,121 @@ Holding holding = portfolioSellService.getHoldingOrThrow(account, instrument, qu
 ## 알려진 한계 (spec.md와 동일, 재확인)
 
 - 시장가 매수 경로에는 계좌 락을 추가하지 않는다 — 지정가 매수 생성과 시장가 매수 체결 간 경합은 이번 PR로 완전히 막히지 않는다. 후속 이슈로 남긴다.
+
+---
+
+# LMT-003 지정가 주문 취소 — 구현 계획 (이슈 #218)
+
+## 기존 코드 현황 (구현 전 확인한 사실)
+
+- LMT-001~002가 도입한 잠금 인프라를 그대로 재사용할 수 있다. 신규 repository 메서드는 필요 없다.
+  - `OrderRepository.findByIdForUpdate(Long id)` — order 락(존재 확인 겸용).
+  - `AccountService.getAccountByIdForUpdate(Long accountId)` — account 락(`LimitOrderFillService.fillIfPending`이 이미 쓰는 메서드 그대로).
+  - `PortfolioSellService.getHoldingForUpdate(Account account, Instrument instrument)` — holding 락(SELL만, `LimitOrderFillService.fillSell`이 이미 쓰는 메서드 그대로). 예약된 holding이 없으면 원장 불변식 위반으로 보고 `IllegalStateException`을 던지는 기존 동작을 그대로 이용한다 — SELL 취소 대상은 생성 시 이미 `reserveQuantity`로 holding이 존재함을 보장했으므로 정상 흐름에서 없을 수 없다.
+- `Order` 엔티티에 취소 상태·메서드가 없다 — `OrderStatus.CANCELLED` 추가, `Order.cancel()` 추가 필요.
+- `Account`에 예약 취소용 메서드가 없다 — LMT-001 plan.md가 이미 "`releaseReservedCash`(취소용)는 이번 PR에서 쓰이지 않으므로 추가하지 않는다 — LMT-003에서 추가한다"로 예고해둔 자리다.
+- `Holding.releaseReservedQuantity(BigDecimal qty)`는 이미 존재한다(`LimitOrderFillService.fillSell`이 체결 확정 시 예약 해제 용도로 이미 쓰고 있음). 취소는 이 메서드를 "확정 없이 해제만" 하는 용도로 그대로 재사용한다 — 추가 구현 불필요.
+- `orders.status`는 이미 `VARCHAR(10)`이다. `"CANCELLED"`는 9자로 컬럼 변경 없이 저장 가능 — **이번 절에는 신규 Flyway 마이그레이션이 없다.**
+
+## API 설계
+
+### `DELETE /api/orders/{orderId}`
+
+- 인증 필요. `Idempotency-Key` 헤더 불필요(DELETE는 멱등이며, 재호출은 이미 `CANCELLED`/`FILLED` 상태를 보고 409로 자연히 거부된다 — 기존 `DELETE /api/community/posts/{postId}` 등 이 코드베이스의 다른 DELETE 엔드포인트도 이 헤더를 쓰지 않는다).
+- 성공 204, 본문 없음("확정된 설계 결정" 8번).
+
+**오류 코드**
+
+| HTTP | 코드 | 조건 |
+|---|---|---|
+| 404 | NOT_FOUND | `orderId`에 해당하는 주문 없음(기존 order 도메인 404 재사용 — 신규 코드 아님) |
+| 403 | FORBIDDEN | 주문의 `user` ≠ 요청자(기존 공용 코드 재사용) |
+| 409 | ORDER_NOT_PENDING | 주문의 `status`가 `PENDING`이 아님(이미 `FILLED` 또는 이미 `CANCELLED`) — **신규 코드** |
+
+`ErrorCode`에 `ORDER_NOT_PENDING(HttpStatus.CONFLICT, "이미 체결되었거나 취소된 주문입니다.")`를 추가한다(`IDEMPOTENCY_CONFLICT`·`UNSUPPORTED_ORDER_TYPE` 근처, order 도메인 오류들과 같은 블록에 배치). 미구현 candidate `EXIT_PLAN_NOT_PENDING`(`docs/api-contracts.md` 569행)과 동일한 `_NOT_PENDING` 명명 관례를 재사용한다.
+
+## 데이터 모델
+
+마이그레이션 없음(위 "기존 코드 현황" 참고). `orders.status` 컬럼에 새 값 `"CANCELLED"`가 추가될 뿐 스키마는 불변이다.
+
+### 엔티티 변경
+
+**`OrderStatus`**: `CANCELLED` 추가.
+
+```java
+public enum OrderStatus {
+    FILLED,
+    PENDING,
+    CANCELLED
+}
+```
+
+**`Order`**: 취소 확정 메서드 추가(`markFilled()`와 대칭 구조).
+
+```java
+public void cancel() {
+    if (this.status != OrderStatus.PENDING) {
+        throw new IllegalStateException("PENDING 상태의 주문만 취소할 수 있습니다.");
+    }
+    this.status = OrderStatus.CANCELLED;
+}
+```
+
+서비스 계층은 `markFilled()`/`reserveCash()` 호출부와 동일한 관례로 **entity 메서드 호출 전에** `order.getStatus() != PENDING`을 확인해 `BusinessException(ORDER_NOT_PENDING)`을 던진다(entity의 `IllegalStateException`은 방어적 이중 체크, 정상 흐름에서는 도달하지 않는다).
+
+**`Account`**: 예약 취소 메서드 추가(`Holding.releaseReservedQuantity`와 대칭 구조).
+
+```java
+public void releaseReservedCash(long amount) {
+    if (amount > this.reservedCash) {
+        throw new IllegalStateException("예약된 금액보다 큰 금액을 해제할 수 없습니다.");
+    }
+    this.reservedCash -= amount;
+}
+```
+
+`Holding`은 변경 없음 — `releaseReservedQuantity`를 그대로 재사용한다.
+
+## 패키지·클래스 설계
+
+| 클래스 | 패키지 | 역할 |
+|---|---|---|
+| `LimitOrderCancelService` | `order.service` | 취소 1건 처리(`LimitOrderFillService`와 병렬 클래스 — 같은 잠금 순서, 반대 방향 연산) |
+
+`OrderController`(기존 파일)에 `@DeleteMapping("/{orderId}")` 메서드를 추가한다 — 새 컨트롤러를 만들지 않는다.
+
+```java
+@DeleteMapping("/{orderId}")
+public ResponseEntity<Void> cancelLimitOrder(
+    @AuthenticationPrincipal AuthenticatedUser principal,
+    @PathVariable Long orderId) {
+    limitOrderCancelService.cancelOrder(principal.userId(), orderId);
+    return ResponseEntity.noContent().build();
+}
+```
+
+## 취소 흐름 (LMT-003)
+
+`LimitOrderCancelService.cancelOrder(Long userId, Long orderId)`(`@Transactional`):
+
+1. `order = orderRepository.findByIdForUpdate(orderId).orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND))` — **주문 락 + 존재(404) 검증을 한 번에 수행**(LMT-002 `fillIfPending`과 같은 지점, 값만 예외로 다름 — 체결 리스너는 방어적 `IllegalStateException`을 쓰지만 이쪽은 사용자 입력에서 오는 404이므로 `BusinessException`).
+2. `!order.getUser().getId().equals(userId)`면 `BusinessException(ErrorCode.FORBIDDEN)` — **소유(403) 검증**. order 락은 이미 잡은 상태지만, 소유자가 아니면 이후 account/holding 락은 잡지 않고 즉시 반환한다(트랜잭션 롤백으로 order 락도 해제).
+3. `order.getStatus() != OrderStatus.PENDING`이면 `BusinessException(ErrorCode.ORDER_NOT_PENDING)` — **상태(409) 검증**.
+4. `account = accountService.getAccountByIdForUpdate(order.getAccount().getId())` — **계좌 락**(LMT-002와 동일한 두 번째 단계).
+5. `amount = FLOOR(quantity × limitPrice)`, `fee = FLOOR(amount × CRYPTO_FEE_RATE)`(생성·체결과 동일 계산 재사용 — `LimitOrderCreationService.calculateCashRequired`·`LimitOrderFillService.fillIfPending`이 이미 각각 사설 메서드로 중복해온 것과 같은 패턴으로, 이 클래스도 사설 메서드로 한 번 더 중복한다. 011 plan.md 전례처럼 규모가 작아 공용 추출보다 복제가 낫다고 판단).
+6. **BUY**: `account.releaseReservedCash(amount + fee)`.
+7. **SELL**: `holding = portfolioSellService.getHoldingForUpdate(account, order.getInstrument())` — **holding 락**(세 번째 단계, SELL만) → `holding.releaseReservedQuantity(quantity)`.
+8. `order.cancel()`.
+
+**잠금 순서**(LMT-002와 동일, "확정된 설계 결정" 7·8번 재확인): `order → account → (SELL만 holding)`.
+
+## 동시성 테스트 시나리오 추가 (`LimitOrderConcurrencyIntegrationTest`, 기존 `runConcurrently` 헬퍼 재사용)
+
+기존 파일의 `runConcurrently`(ready/start `CountDownLatch` 2단계, `ExecutorService` 2스레드, `Future.get`으로 예외 전파)를 그대로 재사용해 새 테스트 메서드를 추가한다 — 새 유틸리티를 만들지 않는다.
+
+1. **취소-대-체결 경합(시나리오 12)**: `PENDING` 지정가 매수 주문 1건을 만든 뒤, 스레드 A는 `limitOrderCancelService.cancelOrder(userId, orderId)`, 스레드 B는 `limitOrderFillService.fillIfPending(orderId)`를 동시에 호출한다. 두 결과 조합 중 정확히 하나만 성립함을 검증한다:
+   - **체결이 이겼다면**: `orderRepository.findById(orderId)`가 `FILLED`, `cancelOrder` 호출은 `BusinessException(ORDER_NOT_PENDING)`을 던짐, `Trade` 1건 생성, `reservedCash`는 0(체결로 소비).
+   - **취소가 이겼다면**: `orderRepository.findById(orderId)`가 `CANCELLED`, `fillIfPending` 호출은 예외 없이 조용히 반환(no-op), `Trade` 0건, `reservedCash`는 0(취소로 반환).
+   - 두 경우 모두 `cashBalance`는 시작값(체결이 이긴 경우만 실제 지출로 감소, 취소가 이긴 경우는 불변)과 정확히 일치해 예약 이중 반환·이중 소비가 없음을 확인한다.
+2. 매도 지정가에 대해서도 같은 패턴으로 1개 더 추가한다(`holding.reservedQuantity`/`quantity` 버전) — BUY 시나리오와 대칭이므로 assert 대상만 계좌 대신 holding으로 바꾼다.
+3. **정상 취소 단위 테스트**(`LimitOrderCancelServiceTest`, `@ExtendWith(MockitoExtension.class)` 단위): BUY 취소 시 `releaseReservedCash` 호출값 검증, SELL 취소 시 `releaseReservedQuantity` 호출값 검증, 존재하지 않는 주문 404, 타인 소유 403, 이미 `FILLED`/이미 `CANCELLED` 409(두 상태 모두 개별 케이스), 검증 순서(존재→소유→상태) 순서 준수 여부(모킹으로 호출 순서 확인 또는 각 실패 케이스가 이후 단계 호출을 하지 않음을 검증).
