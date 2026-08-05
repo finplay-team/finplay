@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -196,7 +197,37 @@ class PostSellFeedbackServiceTest {
 		assertThat(response.narrativeStatus()).isEqualTo(PostSellFeedbackStatus.READY);
 	}
 
+	// 위 테스트의 짝 — 같은 catch절에 들어오지만 행이 안 생긴 경우다. 무결성 위반이 중복이 아니면(FK·NOT NULL)
+	// 재조회가 빈 결과이므로 저장은 실패로 남지만, 그렇다고 조회를 500으로 떨어뜨리지는 않는다. 판정을 예외 타입이
+	// 아니라 "행이 실제로 있는가"로 하기 때문에 이 경로가 존재한다 — 재조회가 일어나는지까지 함께 고정한다.
+	// 로그 문구는 단정하지 않는다(이 저장소에 로그 단정 관례가 없다). 행동으로 고정한다.
+	@Test
+	@DisplayName("중복이 아닌 무결성 위반으로 저장이 실패하고 행도 없으면 예외를 내보내지 않고 정상 응답을 준다")
+	void stillReturnsTheResponseWhenANonDuplicateIntegrityViolationLeavesNoRow() {
+		PostSellFeedbackResponse facts = factsWithoutNarrative();
+		givenFacts(facts);
+		// 최초 조회와 저장 실패 후 재조회가 모두 빈 결과다 — 중복이 아니므로 행이 생기지 않았다.
+		givenNoStoredNarrative();
+		givenGenerated(NarrativeResultDto.llm(LLM_NARRATIVE));
+		when(tradeFeedbackWriter.create(any(), any(), any(), any()))
+			.thenThrow(new DataIntegrityViolationException(
+				"Cannot add or update a child row: a foreign key constraint fails (`fk_trade_feedbacks_trade`)"));
+
+		PostSellFeedbackResponse response = postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
+
+		// 예외가 밖으로 나가지 않고 방금 만든 문장과 수치가 그대로 200으로 나간다.
+		assertThat(response.narrative()).isEqualTo(LLM_NARRATIVE);
+		assertThat(response.narrativeSource()).isEqualTo(NarrativeSource.LLM);
+		assertThat(response.narrativeStatus()).isEqualTo(PostSellFeedbackStatus.READY);
+		assertThat(response.returnRate()).isEqualByComparingTo(facts.returnRate());
+		assertThat(response.priceMoves()).isEqualTo(facts.priceMoves());
+		// 그 경로를 실제로 밟았다 — 저장을 시도했고 실패 후 행을 다시 읽었다(최초 조회 + 재조회 = 2회).
+		verify(tradeFeedbackWriter).create(eq(USER_ID), eq(SELL_TRADE_ID), any(), eq(NOW));
+		verify(tradeFeedbackRepository, times(2)).findByTradeId(SELL_TRADE_ID);
+	}
+
 	// 유니크 충돌만 흡수한다 — 다른 DB 오류를 함께 삼키면 저장이 조용히 안 되는 상태가 로그도 없이 굳는다.
+	// 위 두 테스트가 catch절 안쪽을 보고, 이 테스트는 catch 폭 밖의 예외가 그대로 전파되는지를 본다.
 	@Test
 	@DisplayName("유니크 충돌이 아닌 저장 실패는 삼키지 않는다")
 	void doesNotSwallowOtherPersistenceFailures() {
