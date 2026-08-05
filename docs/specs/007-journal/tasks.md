@@ -464,7 +464,7 @@
   - 기존 5개 계약(`POST`·`PATCH .../journal`, `POST`·`PATCH .../sell-journal`, `GET /api/journal`)의 기존 테스트가 그대로 통과한다. **목록 응답에 `journalId`가 여전히 없는지**도 함께 확인한다(계약 무변경).
   - `./gradlew spotlessApply` 후 **`./gradlew build` 통과**를 확인한다.
 
-- [ ] **D4. PRD 구현 현황 갱신 + 문서 최종 확인 + 빌드**
+- [x] **D4. PRD 구현 현황 갱신 + 문서 최종 확인 + 빌드**
 
   `docs/prd.md` §3 "구현 현황"의 투자일기 상세 조회 행을 **완료**로 바꾸고 근거에 이번 PR 번호를 적는다 (CLAUDE.md 규칙 10).
   - `docs/api-routes.md`·`docs/api-contracts.md`가 실제 컨트롤러(`JournalDetailController`)와 일치하는지 최종 대조한다(D2에서 함께 반영했다면 누락분 확인으로 끝낸다).
