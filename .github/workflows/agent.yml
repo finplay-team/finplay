@@ -44,14 +44,16 @@ jobs:
             --disallowedTools "Edit,Write,NotebookEdit,Bash(git commit:*),Bash(git push:*),Bash(gh pr create:*)"
 
   implement-and-open-pr:
-    # 이슈 댓글에서 @claude 멘션이 트리거 — PR 댓글은 제외하고, 팀 멤버(OWNER/MEMBER/COLLABORATOR)만 허용한다.
-    # 공개 레포라 외부 방문자의 댓글로 팀장 개인 구독 토큰이 소모되는 것을 막기 위한 가드다.
+    # 이슈 댓글에서 @claude 멘션이 트리거 — PR 댓글은 제외하고, 멘션한 사람과 이슈를 연 사람 둘 다 팀 멤버여야 한다.
+    # 공개 레포라 외부인이 이슈를 열고, 그 이슈를 팀원이 정상적으로 처리(라벨→@claude)하는 흐름에서도
+    # 구현 스텝이 신뢰 못 할 이슈 본문을 그대로 읽는다 — 이슈 작성자 검증 없이 댓글 작성자만 보면 이 정상 흐름에서 게이트가 뚫린다 (PR #232 리뷰).
     if: >
       github.event_name == 'issue_comment' &&
       github.event.action == 'created' &&
       !github.event.issue.pull_request &&
       contains(github.event.comment.body, '@claude') &&
-      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association) &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.issue.author_association)
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -66,6 +68,11 @@ jobs:
         run: |
           git config user.name "claude[bot]"
           git config user.email "41898282+claude[bot]@users.noreply.github.com"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
 
       - uses: anthropics/claude-code-action@v1
         with:
@@ -89,14 +96,21 @@ jobs:
           claude_args: |
             --allowedTools "Read,Grep,Glob,Edit,Write,Bash"
 
-      - name: 방금 연 PR 번호 조회
-        id: pr
+      - name: 빌드 검증 (러너가 직접 실행 — 에이전트 자기 보고 아님)
+        id: build
         if: success()
+        run: ./gradlew build
+
+      - name: 방금 연 PR 번호 조회
+        # 워크스페이스에 이미 구현 스텝이 만든 브랜치가 체크아웃돼 있으므로 그 브랜치로 정확히 찾는다.
+        # 이슈번호 패턴으로 전체 open PR을 뒤지면 같은 이슈의 예전 PR을 잘못 집을 수 있다 (PR #232 리뷰).
+        id: pr
+        if: success() && steps.build.outcome == 'success'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          NUMBER=$(gh pr list --state open --json number,headRefName \
-            --jq '[.[] | select(.headRefName | test("/${{ github.event.issue.number }}-"))][0].number // empty')
+          BRANCH=$(git branch --show-current)
+          NUMBER=$(gh pr list --state open --head "$BRANCH" --json number --jq '.[0].number // empty')
           echo "number=$NUMBER" >> "$GITHUB_OUTPUT"
 
       - name: 코드 리뷰 (.claude/agents/reviewer.md 리뷰 모드 기준)
@@ -135,7 +149,9 @@ jobs:
             --json-schema '{"type":"object","properties":{"blocking_count":{"type":"integer"},"recommended_count":{"type":"integer"},"reference_count":{"type":"integer"},"report":{"type":"string"}},"required":["blocking_count","recommended_count","reference_count","report"]}'
 
       - name: 리뷰 결과를 PR에 게시
-        if: success() && steps.pr.outputs.number != ''
+        # 리뷰 에이전트가 스키마 도구를 호출하지 않고 끝나면 structured_output이 빈 문자열이 되고
+        # fromJSON('')이 표현식 평가 자체를 실패시켜 스텝이 죽는다 — 빈 값이면 건너뛴다 (PR #232 리뷰).
+        if: success() && steps.pr.outputs.number != '' && steps.review.outputs.structured_output != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # report는 LLM이 diff 내용을 보고 생성한 텍스트라 신뢰할 수 없다.
@@ -146,8 +162,11 @@ jobs:
           gh pr comment "${{ steps.pr.outputs.number }}" --body-file /tmp/review-body.md
 
       - name: 조건부 승인 — 차단·권장 0건일 때만 (ADR-0013, 머지는 사람이 진행)
+        # PR 작성자가 claude[bot](Claude GitHub App 설치됨)이 아니라 github-actions[bot]로 폴백된 경우
+        # 이 승인 계정과 작성자가 같아져 GitHub이 422로 거부한다 — 테스트 이슈 검증 시 App 설치 여부를 함께 확인한다 (PR #232 리뷰).
         if: >
           success() && steps.pr.outputs.number != '' &&
+          steps.review.outputs.structured_output != '' &&
           fromJSON(steps.review.outputs.structured_output).blocking_count == 0 &&
           fromJSON(steps.review.outputs.structured_output).recommended_count == 0
         env:
