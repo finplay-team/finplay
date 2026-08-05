@@ -378,7 +378,7 @@
   - 기존 4개 계약(`POST`·`PATCH .../journal`, `POST`·`PATCH .../sell-journal`) 기존 테스트가 그대로 통과.
   - `./gradlew spotlessApply` 후 **`./gradlew build` 통과**를 확인한다.
 
-- [ ] **L5. 문서 최종 확인 + 빌드**
+- [x] **L5. 문서 최종 확인 + 빌드**
 
   `docs/api-routes.md`·`docs/api-contracts.md`가 실제 컨트롤러(`JournalListController`)와 일치하는지 최종 대조한다(원래는 L3에서 컨트롤러 커밋과 같은 커밋이 원칙이므로, L3에서 함께 반영했다면 이 항목은 누락분 확인으로 끝낸다).
   - `plan.md` §관련 문서·§JOUR-006 절의 "미반영" 표기가 있다면 반영 완료로 바꾼다.
