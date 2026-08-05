@@ -50,7 +50,7 @@
 - [x] 14. **holdings 락 조정 (`PortfolioBuyService.applyBuyTrade`)**
   `holdingRepository.findByAccountIdAndInstrumentId(...)`를 `findByAccountIdAndInstrumentIdForUpdate(...)`로 교체(plan.md "변경 지점 2", 반환 타입 동일이라 `orElseGet` 로직 불변, 신규 repository 메서드 없음 — SELL이 이미 쓰는 락 쿼리 재사용). 메서드 위에 holdings 락·신규 종목 첫 매수는 account 락만으로 방지한다는 주석 추가(spec.md "확정된 설계 결정" 10번 인용). 락 없는 원본 `findByAccountIdAndInstrumentId`의 다른 호출부가 남아있는지 grep으로 확인. 기존 `PortfolioBuyService`·`OrderExecutionService`·`LimitOrderFillService` 단위 테스트 회귀 확인(신규 종목 첫 매수 시 holding 신규 생성 케이스 포함).
 
-- [ ] 15. **동시성 통합 테스트**
+- [x] 15. **동시성 통합 테스트**
   `LimitOrderConcurrencyIntegrationTest`에 plan.md "동시성 테스트 시나리오" 3개(spec.md 시나리오 13·14·15)를 기존 `runConcurrently`(ready/start `CountDownLatch`, `ExecutorService` 2스레드) 헬퍼로 추가: (a) 시장가 매수 vs 지정가 매수 생성 계좌 경합(합산 소비액이 잔액을 초과하도록 설계, 한쪽만 성공하거나 직렬화되어 `availableCash` 불변식 유지), (b) 시장가 매수 vs 지정가 매수 체결 holdings lost-update 방지(최종 수량이 두 매수 합과 정확히 일치, `HoldingLot` 2건), (c) 조정된 시장가 매수와 기존 시장가 매도·지정가 체결 간 ABBA 데드락 회귀(타임아웃·데드락 예외 없이 완료).
 
 - [ ] 16. **spec 완료조건 확정 및 최종 빌드**

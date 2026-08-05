@@ -78,7 +78,7 @@ public class OrderExecutionService {
 		// 설계 노트 2: 매수 최소구현 견본 — marketStatus·가격·세션 단일 관측→최소금액→amount/fee 계산(공유)
 		OrderPricing pricing = priceOrder(request.market(), instrument, quantity);
 		long cashRequired = pricing.amount() + pricing.fee();
-		if (account.getCashBalance() < cashRequired) {
+		if (account.getAvailableCash() < cashRequired) {
 			throw new BusinessException(ErrorCode.INSUFFICIENT_CASH);
 		}
 

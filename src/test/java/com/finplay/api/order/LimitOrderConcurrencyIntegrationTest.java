@@ -6,6 +6,9 @@
 // LMT-003(이슈 #218) 추가: plan.md "동시성 테스트 시나리오 추가"(tasks.md 항목10) — 취소(cancelOrder)와
 // 체결(fillIfPending)이 같은 PENDING 주문에 동시에 경합할 때 정확히 한쪽만 성공하고 reservedCash/reservedQuantity가
 // 이중 반환·이중 소비 없이 일관되는지 BUY·SELL 각 1개씩 검증한다.
+// 시장가 매수 경로 락 보강(이슈 #224) 추가: plan.md "동시성 테스트 시나리오"(tasks.md 항목15, spec.md 시나리오
+// 13~15) — (a) 시장가 매수 대 지정가 매수 생성의 계좌 경합, (b) 시장가 매수 대 지정가 매수 체결의 holdings
+// lost-update 방지, (c) 조정된 시장가 매수와 기존 시장가 매도 간 ABBA 데드락 회귀.
 package com.finplay.api.order;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -382,6 +385,152 @@ class LimitOrderConcurrencyIntegrationTest {
 		}
 	}
 
+	// 시나리오 13: 시장가 매수(현금 즉시 차감)와 지정가 매수 생성(현금 예약)이 같은 계좌에 거의 동시에 도착한다.
+	// account 비관적 락으로 두 요청이 직렬화되므로, 두 요청을 합친 소비액이 원래 잔액을 초과하도록 설계해도
+	// availableCash(=cashBalance-reservedCash)가 항상 0 이상으로 유지돼야 한다(plan.md "동시성 테스트 시나리오"
+	// 1번, spec.md 시나리오 13). 어느 쪽이 이길지는 스케줄링에 좌우되므로 승자를 특정하지 않고 불변식만 검증한다.
+	@Test
+	void marketBuyAndLimitBuyCreationRaceOnSameAccountKeepAvailableCashNonNegative() throws Exception {
+		User user = createUser("acct-race");
+		Account account = createAccount(user);
+		Instrument instrument = createCryptoInstrument("ACCTRC");
+
+		BigDecimal price = new BigDecimal("1000000");
+		priceStore.saveTick(instrument.getSymbol(), price, LocalDateTime.now(clock));
+
+		// 시장가 매수: amount = 5 * 1,000,000 = 5,000,000, fee = 2,500 → cashRequired = 5,002,500
+		BigDecimal marketBuyQuantity = new BigDecimal("5");
+		// 지정가 매수 생성 예약: amount = 0.5 * 12,000,000 = 6,000,000, fee = 3,000 → cashRequired = 6,003,000
+		// 두 요청을 합치면 11,005,500으로 계좌 초기 잔액(10,000,000)을 초과하도록 설계했다 — account 락이
+		// 없거나 검증이 availableCash를 반영하지 않으면 둘 다 통과해 availableCash가 음수가 될 수 있다.
+		BigDecimal limitQuantity = new BigDecimal("0.5");
+		BigDecimal limitPrice = new BigDecimal("12000000");
+
+		AtomicReference<Exception> marketBuyException = new AtomicReference<>();
+		AtomicReference<Exception> limitCreateException = new AtomicReference<>();
+		runConcurrently(
+			() -> {
+				try {
+					orderService.createOrder(user.getId(), "idem-acctrc-market",
+						new OrderCreateRequest(
+							Market.CRYPTO, instrument.getId(), OrderSide.BUY, "MARKET", marketBuyQuantity));
+				} catch (Exception ex) {
+					marketBuyException.set(ex);
+				}
+			},
+			() -> {
+				try {
+					limitOrderService.createLimitOrder(user.getId(), "idem-acctrc-limit",
+						new LimitOrderCreateRequest(
+							Market.CRYPTO, instrument.getId(), OrderSide.BUY, limitQuantity, limitPrice));
+				} catch (Exception ex) {
+					limitCreateException.set(ex);
+				}
+			});
+
+		Account accountAfter = accountRepository.findById(account.getId()).orElseThrow();
+		long availableCashAfter = accountAfter.getCashBalance() - accountAfter.getReservedCash();
+
+		boolean marketBuySucceeded = marketBuyException.get() == null;
+		boolean limitCreateSucceeded = limitCreateException.get() == null;
+		// 설계상 최소 한쪽은 개별적으로 감당 가능한 금액이므로 둘 다 거부되는 일은 없어야 한다.
+		assertThat(marketBuySucceeded || limitCreateSucceeded).isTrue();
+
+		// 핵심 불변식 — 합산 소비액이 잔액을 초과하도록 설계했으므로, account 락이 올바르게 요청을 직렬화하고
+		// 검증이 매 요청 시점의 availableCash를 정확히 반영한다면 최소 한쪽은 거부되어 이 값이 음수가 될 수 없다.
+		assertThat(availableCashAfter).isGreaterThanOrEqualTo(0L);
+	}
+
+	// 시나리오 14: 이미 보유 중인 종목에 대해 시장가 매수(HTTP 스레드)와 지정가 매수 체결(가격 피드 스레드)이
+	// 거의 동시에 같은 holding row를 갱신한다. holdings 비관적 락(findByAccountIdAndInstrumentIdForUpdate)으로
+	// 두 갱신이 직렬화되어 최종 수량에 두 매수가 모두 반영되고(lost update 없음), HoldingLot도 두 매수 각각의
+	// 몫으로 2건 모두 생성돼야 한다(plan.md "동시성 테스트 시나리오" 2번, spec.md 시나리오 14).
+	@Test
+	void marketBuyAndLimitFillRaceOnSameHoldingBothApplyWithoutLostUpdate() throws Exception {
+		User user = createUser("holding-race");
+		Account account = createAccount(user);
+		Instrument instrument = createCryptoInstrument("HOLDRC");
+
+		BigDecimal initialPrice = new BigDecimal("100000");
+		priceStore.saveTick(instrument.getSymbol(), initialPrice, LocalDateTime.now(clock));
+		BigDecimal initialQuantity = new BigDecimal("5");
+		orderService.createOrder(user.getId(), "idem-holdrc-initial",
+			new OrderCreateRequest(Market.CRYPTO, instrument.getId(), OrderSide.BUY, "MARKET", initialQuantity));
+
+		// 지정가 매수 주문을 미리 PENDING으로 만들어둔다. fillIfPending을 직접 호출하므로 현재가 도달 여부는
+		// 무관하다(기존 concurrentFillEventsForSameOrder... 테스트와 동일 관례).
+		BigDecimal limitPrice = new BigDecimal("150000");
+		BigDecimal limitQuantity = new BigDecimal("2");
+		LimitOrderResponse limitBuy = limitOrderService.createLimitOrder(user.getId(), "idem-holdrc-limit",
+			new LimitOrderCreateRequest(Market.CRYPTO, instrument.getId(), OrderSide.BUY, limitQuantity, limitPrice));
+		Long limitOrderId = limitBuy.orderId();
+
+		// 시장가 매수가 쓸 현재가를 지정가보다 높게 갱신한다 — 리스너가 이 가격 갱신으로 지정가 주문을
+		// 우연히 미리 체결시키지 않도록 하기 위함이다(BUY 체결 조건은 현재가 <= 지정가).
+		BigDecimal marketPrice = new BigDecimal("200000");
+		priceStore.saveTick(instrument.getSymbol(), marketPrice, LocalDateTime.now(clock));
+
+		Holding holdingBefore = holdingRepository
+			.findByAccountIdAndInstrumentId(account.getId(), instrument.getId())
+			.orElseThrow();
+		long lotCountBefore = countHoldingLots(holdingBefore.getId());
+
+		BigDecimal marketBuyQuantity = new BigDecimal("3");
+		runConcurrently(
+			() -> orderService.createOrder(user.getId(), "idem-holdrc-market",
+				new OrderCreateRequest(
+					Market.CRYPTO, instrument.getId(), OrderSide.BUY, "MARKET", marketBuyQuantity)),
+			() -> limitOrderFillService.fillIfPending(limitOrderId));
+
+		Holding holdingAfter = holdingRepository
+			.findByAccountIdAndInstrumentId(account.getId(), instrument.getId())
+			.orElseThrow();
+		assertThat(holdingAfter.getQuantity())
+			.isEqualByComparingTo(initialQuantity.add(marketBuyQuantity).add(limitQuantity));
+
+		long lotCountAfter = countHoldingLots(holdingAfter.getId());
+		assertThat(lotCountAfter - lotCountBefore).isEqualTo(2L);
+
+		Order filledLimitOrder = orderRepository.findById(limitOrderId).orElseThrow();
+		assertThat(filledLimitOrder.getStatus()).isEqualTo(OrderStatus.FILLED);
+	}
+
+	// 시나리오 15: 조정된 시장가 매수(account→holding)와 기존 시장가 매도(이미 account→holding 순서로 잠그는
+	// 흐름)가 서로 다른 주문으로 같은 계좌·holding을 동시에 대상으로 실행돼도, 반대 순서로 잠그는 흐름이 없으므로
+	// 데드락 없이 완료돼야 한다(plan.md "동시성 테스트 시나리오" 3번, spec.md 시나리오 15). 데드락이면 MySQL이
+	// Deadlock found 예외를 던지거나 락 대기 타임아웃으로 실패한다 — runConcurrently가 그대로 전파한다.
+	@Test
+	void adjustedMarketBuyAndExistingMarketSellExecuteConcurrentlyOnSameAccountAndHoldingWithoutDeadlock()
+		throws Exception {
+		User user = createUser("buy-sell-abba");
+		Account account = createAccount(user);
+		Instrument instrument = createCryptoInstrument("BSABBA");
+
+		BigDecimal price = new BigDecimal("100000");
+		priceStore.saveTick(instrument.getSymbol(), price, LocalDateTime.now(clock));
+		BigDecimal initialQuantity = new BigDecimal("10");
+		orderService.createOrder(user.getId(), "idem-bsabba-initial",
+			new OrderCreateRequest(Market.CRYPTO, instrument.getId(), OrderSide.BUY, "MARKET", initialQuantity));
+
+		BigDecimal marketBuyQuantity = new BigDecimal("2");
+		BigDecimal marketSellQuantity = new BigDecimal("3");
+
+		runConcurrently(
+			() -> orderService.createOrder(user.getId(), "idem-bsabba-buy",
+				new OrderCreateRequest(
+					Market.CRYPTO, instrument.getId(), OrderSide.BUY, "MARKET", marketBuyQuantity)),
+			() -> orderService.createOrder(user.getId(), "idem-bsabba-sell",
+				new OrderCreateRequest(
+					Market.CRYPTO, instrument.getId(), OrderSide.SELL, "MARKET", marketSellQuantity)));
+
+		Holding holdingAfter = holdingRepository
+			.findByAccountIdAndInstrumentId(account.getId(), instrument.getId())
+			.orElseThrow();
+		assertThat(holdingAfter.getQuantity())
+			.isEqualByComparingTo(initialQuantity.add(marketBuyQuantity).subtract(marketSellQuantity));
+		assertThat(holdingAfter.getReservedQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
+	}
+
 	// PracticeIntentionConcurrencyIntegrationTest와 동일한 ready/start CountDownLatch 관례를 재사용한다 —
 	// 두 액션을 준비 완료(ready) 후 동시에 출발(start)시켜 실제 락 경합을 재현하고, 어느 한쪽이라도 예외(데드락 등)를
 	// 던지면 그대로 테스트 실패로 전파한다.
@@ -419,6 +568,12 @@ class LimitOrderConcurrencyIntegrationTest {
 
 	private long countTradesForOrder(Long orderId) {
 		Long count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM trades WHERE order_id = ?", Long.class, orderId);
+		return count == null ? 0L : count;
+	}
+
+	private long countHoldingLots(Long holdingId) {
+		Long count = jdbcTemplate
+			.queryForObject("SELECT COUNT(*) FROM holding_lots WHERE holding_id = ?", Long.class, holdingId);
 		return count == null ? 0L : count;
 	}
 
