@@ -99,6 +99,13 @@ public class RankingStore {
 		}
 	}
 
+	// 계좌 하나의 score를 조회한다(RANK-002 내 랭킹 조회). ZSET에 member가 없으면(매도 이력 없음) null을 반환한다
+	// — RankingService.getMyRanking이 이 null 여부로 매도 이력 유무를 판정한다(plan.md "RANK-002 설계" 참고).
+	public Long score(Market market, Long accountId) {
+		Double raw = redisTemplate.opsForZSet().score(key(market), String.valueOf(accountId));
+		return raw == null ? null : Math.round(raw);
+	}
+
 	private String key(Market market) {
 		return KEY_PREFIX + market.name();
 	}

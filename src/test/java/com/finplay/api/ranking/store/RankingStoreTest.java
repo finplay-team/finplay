@@ -91,4 +91,27 @@ class RankingStoreTest {
 		assertThat(count).isZero();
 		verify(zSetOperations).count("ranking:STOCK", (double)Long.MAX_VALUE, Double.POSITIVE_INFINITY);
 	}
+
+	// RANK-002: 계좌 하나의 score를 ZSCORE로 단건 조회한다 — member가 있으면 정수 score를 반환한다.
+	@Test
+	void scoreReturnsRoundedScoreWhenMemberExists() {
+		RankingStore rankingStore = rankingStore();
+		when(zSetOperations.score("ranking:STOCK", "1")).thenReturn(5_000.0);
+
+		Long score = rankingStore.score(Market.STOCK, 1L);
+
+		assertThat(score).isEqualTo(5_000L);
+	}
+
+	// RANK-002: member가 ZSET에 없으면(매도 이력 없음) null을 반환한다 — RankingService.getMyRanking이 이
+	// null 여부로 매도 이력 유무를 판정한다.
+	@Test
+	void scoreReturnsNullWhenMemberDoesNotExist() {
+		RankingStore rankingStore = rankingStore();
+		when(zSetOperations.score("ranking:CRYPTO", "999")).thenReturn(null);
+
+		Long score = rankingStore.score(Market.CRYPTO, 999L);
+
+		assertThat(score).isNull();
+	}
 }

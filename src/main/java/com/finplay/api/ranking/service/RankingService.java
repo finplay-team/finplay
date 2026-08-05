@@ -5,6 +5,7 @@ import com.finplay.api.account.domain.Account;
 import com.finplay.api.account.domain.Market;
 import com.finplay.api.account.service.AccountService;
 import com.finplay.api.ranking.dto.RankingEntryDto;
+import com.finplay.api.ranking.dto.response.MyRankingResponse;
 import com.finplay.api.ranking.dto.response.RankingListItemResponse;
 import com.finplay.api.ranking.dto.response.RankingListResponse;
 import com.finplay.api.ranking.store.RankingStore;
@@ -61,6 +62,24 @@ public class RankingService {
 
 		List<RankingListItemResponse> content = calculateRanks(window, market, accountById, limit);
 		return new RankingListResponse(market.name(), content);
+	}
+
+	// 인증 사용자 본인의 시장별 순위를 단건으로 계산한다(RANK-002). RANK-001의 topN 목록과 달리 상위 limit건
+	// 안에 들지 않아도 항상 정확한 보정 순위를 반환한다. 순위 산정의 score는 항상 Redis ZSET(RankingStore.score)
+	// 기준이다 — DB accounts.realized_pnl을 직접 재사용하지 않는다. RANK-001 목록 조회와 동일한 ZSET 상태를
+	// 기준으로 계산해야 두 엔드포인트가 서로 다른 순위를 보여주는 불일치가 생기지 않기 때문이다(plan.md
+	// "RANK-002 설계" 참고). TradeService.getMyTrades와 동일한 패턴으로 @Transactional(readOnly=true)로 감싸
+	// account.getUser() 지연로딩을 같은 트랜잭션(세션) 안에서 안전하게 접근한다.
+	@Transactional(readOnly = true)
+	public MyRankingResponse getMyRanking(Long userId, Market market) {
+		Account account = accountService.getAccountFor(userId, market);
+		Long score = rankingStore.score(market, account.getId());
+		Integer rank = score == null
+			? null
+			// RANK-001과 동일한 공동 순위 보정 공식(countStrictlyGreater + 1)을 재사용한다 — 별도의 새 보정
+			// 공식을 만들지 않는다.
+			: (int)(rankingStore.countStrictlyGreater(market, score) + 1);
+		return new MyRankingResponse(market.name(), rank, account.getUser().getNickname(), account.getRealizedPnl());
 	}
 
 	// PR #196 리뷰 지적(차단 2): topN(limit)만 가져오면 "어떤 동점자가 window에 들어갈지"가 Redis 멤버 문자열의

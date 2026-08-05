@@ -17,6 +17,7 @@ import com.finplay.api.account.domain.Market;
 import com.finplay.api.account.service.AccountService;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.ranking.dto.RankingEntryDto;
+import com.finplay.api.ranking.dto.response.MyRankingResponse;
 import com.finplay.api.ranking.dto.response.RankingListItemResponse;
 import com.finplay.api.ranking.dto.response.RankingListResponse;
 import com.finplay.api.ranking.store.RankingStore;
@@ -217,6 +218,34 @@ class RankingServiceTest {
 			new RankingListItemResponse(1, "alice", 100L),
 			new RankingListItemResponse(3, "carol", 80L));
 		verify(rankingStore, never()).findAllAtScore(any(), anyLong());
+	}
+
+	// RANK-002: 매도 이력이 없으면(RankingStore.score가 null) rank만 null이고 닉네임·실현손익(0 포함)은
+	// 정상 값을 반환한다 — 오류가 아니다(spec.md "비즈니스 규칙").
+	@Test
+	void getMyRankingReturnsNullRankWithNormalNicknameAndRealizedPnlWhenNoSellHistory() {
+		Account account = account(1L, Market.STOCK, 0L, 10L, "alice");
+		when(accountService.getAccountFor(10L, Market.STOCK)).thenReturn(account);
+		when(rankingStore.score(Market.STOCK, 1L)).thenReturn(null);
+
+		MyRankingResponse response = rankingService.getMyRanking(10L, Market.STOCK);
+
+		assertThat(response).isEqualTo(new MyRankingResponse("STOCK", null, "alice", 0L));
+		verify(rankingStore, never()).countStrictlyGreater(any(), anyLong());
+	}
+
+	// RANK-002: 매도 이력이 있으면(score가 not null) RANK-001과 동일한 보정 공식(countStrictlyGreater + 1)으로
+	// rank를 계산한다 — 별도의 새 보정 공식을 만들지 않는다.
+	@Test
+	void getMyRankingMapsToCorrectedRankWhenSellHistoryExists() {
+		Account account = account(1L, Market.STOCK, 5_000L, 10L, "alice");
+		when(accountService.getAccountFor(10L, Market.STOCK)).thenReturn(account);
+		when(rankingStore.score(Market.STOCK, 1L)).thenReturn(5_000L);
+		when(rankingStore.countStrictlyGreater(Market.STOCK, 5_000L)).thenReturn(2L);
+
+		MyRankingResponse response = rankingService.getMyRanking(10L, Market.STOCK);
+
+		assertThat(response).isEqualTo(new MyRankingResponse("STOCK", 3, "alice", 5_000L));
 	}
 
 	private Market market() {
