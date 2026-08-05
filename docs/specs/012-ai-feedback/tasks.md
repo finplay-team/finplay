@@ -30,7 +30,7 @@
 
 ## 작업 항목
 
-- [ ] **1. `market`: `CryptoPriceSnapshotService` 신설 — 가격 스냅샷 기록·조회**
+- [x] **1. `market`: `CryptoPriceSnapshotService` 신설 — 가격 스냅샷 기록·조회**
 
   §코인 가격 스냅샷이 정본이다. 매 분 코인 전 종목의 가격을 Redis Sorted Set에 적재하고, `feedback`이 구간 조회할 수 있게 한다.
   - **Redis 키 조립은 `PriceStore` 안에서만 한다**(`docs/conventions.md`, §코인 가격 스냅샷). `PriceStore`(`market/store`)에 스냅샷 기록·구간 조회 메서드를 추가한다 — 키는 `price:crypto:{symbol}:snapshots`(Sorted Set), score는 기록 시각의 epoch millis, member는 `"{epochMillis}:{price}"`다.

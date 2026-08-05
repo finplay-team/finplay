@@ -3,6 +3,7 @@ package com.finplay.api.feedback.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finplay.api.market.service.CryptoPriceSnapshotService;
 import com.finplay.api.market.service.StockReplaySessionScheduler;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -104,6 +105,28 @@ class FeedbackBatchScheduleTest {
 	@DisplayName("코인 배치가 주식 배치와 다른 크론 키를 참조한다")
 	void cryptoBatchUsesItsOwnCronProperty() throws NoSuchMethodException {
 		assertThat(cryptoBatchSchedule().cron()).isNotEqualTo(batchSchedule().cron());
+	}
+
+	// --- 코인 가격 스냅샷 배치 (market 소유, spec 012 §코인 가격 스냅샷, 이슈 #225 항목 1) ---
+	//
+	// market 소유 스케줄이라 이 클래스(feedback)가 직접 다룰 배치는 아니지만, tasks.md 항목 1의 검증 지시가
+	// "FeedbackBatchScheduleTest 계열에" 추가하라고 명시했다 — 이 파일이 이미 zone·프로퍼티 참조를
+	// CronExpression으로 단정하는 유일한 장소이기 때문이다.
+
+	@Test
+	@DisplayName("코인 가격 스냅샷 배치에 zone = \"Asia/Seoul\"이 붙어 있다")
+	void priceSnapshotScheduleDeclaresSeoulZone() throws NoSuchMethodException {
+		assertThat(priceSnapshotSchedule().zone()).isEqualTo("Asia/Seoul");
+	}
+
+	@Test
+	@DisplayName("코인 가격 스냅샷 배치가 크론 값을 코드에 박지 않고 market.crypto.price-snapshot-cron을 참조한다")
+	void priceSnapshotScheduleReferencesTheConfiguredCronProperty() throws NoSuchMethodException {
+		assertThat(priceSnapshotSchedule().cron()).isEqualTo("${market.crypto.price-snapshot-cron}");
+	}
+
+	private static Scheduled priceSnapshotSchedule() throws NoSuchMethodException {
+		return schedule(CryptoPriceSnapshotService.class, "recordSnapshots");
 	}
 
 	private static Scheduled cryptoBatchSchedule() throws NoSuchMethodException {
