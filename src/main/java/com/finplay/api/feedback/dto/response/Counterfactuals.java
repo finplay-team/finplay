@@ -14,8 +14,8 @@ import com.finplay.api.feedback.domain.PostSellFeedbackStatus;
  * <p><b>{@code sameSessionCompleted=false}이면 이 record 자체가 {@code null}이다</b> — {@code status}만 담은
  * 껍데기를 내리지 않는다(계약이 이미 정한 형태). 분봉이 불연속이라 계산이 성립하지 않는다.
  *
- * <p>판정과 세 시나리오의 {@code price}·{@code at}을 채우는 것은 이 이슈의 3번 항목이고, 각 시나리오의
- * {@code returnRate}는 {@code plan.md} 7번이 수수료를 재계산해 채운다.
+ * <p>판정과 세 시나리오의 {@code price}·{@code at}·{@code returnRate}가 전부 채워진다 — {@code returnRate}는
+ * 수수료를 재계산해 산출한다({@link CounterfactualScenario} 참고).
  */
 public record Counterfactuals(
 	PostSellFeedbackStatus status,

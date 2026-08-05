@@ -20,6 +20,7 @@ import com.finplay.api.feedback.dto.response.PostSellFeedbackResponse;
 import com.finplay.api.feedback.dto.response.PostSellFlow;
 import com.finplay.api.feedback.repository.PriceMoveEventRepository;
 import com.finplay.api.feedback.repository.PriceMoveEventSourceRepository;
+import com.finplay.api.feedback.repository.PriceMovePeerStatRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.domain.StockReplaySession;
@@ -86,6 +87,9 @@ class PostSellFeedbackPostSellFlowTest {
 
 	private final PriceMoveEventSourceRepository priceMoveEventSourceRepository = mock(
 		PriceMoveEventSourceRepository.class);
+
+	// 이 파일은 매도 후 흐름 게이트만 본다 — 집단 비교는 stub하지 않고 Mockito 기본값(Optional.empty())으로 둔다.
+	private final PriceMovePeerStatRepository priceMovePeerStatRepository = mock(PriceMovePeerStatRepository.class);
 
 	// --- 게이트 ⑬ 직전·직후 (완료 조건 13번) ---
 
@@ -351,11 +355,16 @@ class PostSellFeedbackPostSellFlowTest {
 		assertThat(counterfactuals.atFirstMoveAfterBuy()).isNull();
 	}
 
-	// --- 7번이 끼울 자리 (이 이슈에서는 이것이 정상 상태다) ---
+	// --- 이슈 #212 1번이 채운 반사실 returnRate — peerComparison은 여전히 4번 항목이 끼울 자리다 ---
 
+	// 이 파일의 픽스처(contractExampleCandles·card)는 docs/api-contracts.md 예시와 값이 같다 — atClose 69,200,
+	// atHoldHigh 70,800, atFirstMoveAfterBuy 69,300, buyBasis 700,105(=700,000+105), quantity 10. 값이 예시와
+	// 일치하는지는 여기서 보고, FLOOR와 HALF_UP이 실제로 갈리는 함정 픽스처는
+	// PostSellFeedbackCounterfactualReturnRateTest가 따로 본다(이 픽스처의 buyBasis는 수수료 1원 차를 4번째
+	// 소수점까지 못 밀어 올려 그 함정을 못 잡는다).
 	@Test
-	@DisplayName("반사실 3종의 returnRate가 전부 null이고 peerComparison은 priceMoveId까지 null인 NOT_YET이다")
-	void leavesReturnRatesAndPeerComparisonForTheNextIssue() {
+	@DisplayName("반사실 3종의 returnRate가 수수료를 다시 계산해 api-contracts.md 예시 값 그대로 나온다 — peerComparison은 여전히 NOT_YET이다")
+	void computesCounterfactualReturnRatesMatchingTheContractExampleWhilePeerComparisonStaysForTheNextItem() {
 		givenSameSessionSell();
 		givenCandles(contractExampleCandles());
 		PriceMoveEvent card = givenCards(card(12L, LocalTime.of(11, 20), LocalTime.of(11, 25)));
@@ -363,11 +372,13 @@ class PostSellFeedbackPostSellFlowTest {
 
 		PostSellFeedbackResponse response = getPostSellFeedbackAt(EXACTLY_AT_GATE);
 
-		assertThat(response.counterfactuals().atClose().returnRate()).isNull();
-		assertThat(response.counterfactuals().atHoldHigh().returnRate()).isNull();
-		assertThat(response.counterfactuals().atFirstMoveAfterBuy().returnRate()).isNull();
-		// 기준 카드를 이미 알고 있어도(반사실 atFirstMoveAfterBuy와 같은 카드다) priceMoveId를 채우지 않는다 —
-		// 7번이 판정을 붙이는 순간 값 → null로 사라지는 조합이 생기지 않게 한다.
+		// (69,200×10 − FLOOR(69,200×10×0.00015)) − 700,105 = 691,897 − 700,105 = −8,208 → −8,208÷700,105 → −0.0117.
+		assertThat(response.counterfactuals().atClose().returnRate()).isEqualTo(new BigDecimal("-0.0117"));
+		assertThat(response.counterfactuals().atHoldHigh().returnRate()).isEqualTo(new BigDecimal("0.0111"));
+		assertThat(response.counterfactuals().atFirstMoveAfterBuy().returnRate()).isEqualTo(new BigDecimal("-0.0103"));
+		// peerComparison은 이 이슈(#212)의 4번 항목 몫이라 여기서는 여전히 NOT_YET 상수 껍데기다. 기준 카드를 이미
+		// 알고 있어도(반사실 atFirstMoveAfterBuy와 같은 카드다) priceMoveId를 채우지 않는다 — 4번이 판정을 붙이는
+		// 순간 값 → null로 사라지는 조합이 생기지 않게 한다.
 		assertThat(response.peerComparison().status()).isEqualTo(PostSellFeedbackStatus.NOT_YET);
 		assertThat(response.peerComparison().priceMoveId()).isNull();
 		assertThat(response.peerComparison().holderCount()).isNull();
@@ -400,7 +411,8 @@ class PostSellFeedbackPostSellFlowTest {
 	private PostSellFeedbackResponse getPostSellFeedbackAt(LocalDateTime now) {
 		PostSellFeedbackReader service = new PostSellFeedbackReader(
 			tradeService, sellAllocationQueryService, stockReplayService, priceMoveEventRepository,
-			priceMoveEventSourceRepository, Clock.fixed(now.atZone(KST).toInstant(), KST));
+			priceMoveEventSourceRepository, priceMovePeerStatRepository,
+			Clock.fixed(now.atZone(KST).toInstant(), KST));
 		return service.read(USER_ID, SELL_TRADE_ID);
 	}
 

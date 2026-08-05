@@ -11,7 +11,12 @@ import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.feedback.domain.NarrativeSource;
 import com.finplay.api.feedback.domain.PostSellFeedbackStatus;
+import com.finplay.api.feedback.domain.PriceMoveEvent;
+import com.finplay.api.feedback.domain.PriceMoveEventType;
+import com.finplay.api.feedback.domain.PriceMovePeerStat;
 import com.finplay.api.feedback.dto.response.PostSellFeedbackResponse;
+import com.finplay.api.feedback.repository.PriceMoveEventRepository;
+import com.finplay.api.feedback.repository.PriceMovePeerStatRepository;
 import com.finplay.api.feedback.repository.TradeFeedbackRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
@@ -142,6 +147,12 @@ class PostSellFeedbackNarrativeIntegrationTest {
 	private StockCandleRepository stockCandleRepository;
 
 	@Autowired
+	private PriceMoveEventRepository priceMoveEventRepository;
+
+	@Autowired
+	private PriceMovePeerStatRepository priceMovePeerStatRepository;
+
+	@Autowired
 	private JdbcTemplate jdbcTemplate;
 
 	@Autowired
@@ -184,9 +195,18 @@ class PostSellFeedbackNarrativeIntegrationTest {
 	@Test
 	@DisplayName("최초 조회에서 서술을 만들어 저장하고 재조회에서는 LLM을 다시 부르지 않는다")
 	void generatesOnFirstQueryAndReusesTheStoredNarrativeAfterwards() {
+		// 이슈 #212 4번 항목 이후 peerComparison은 실제 판정을 탄다 — 카드가 0건이면 NO_EVENT로 판정되어
+		// (postSellFlow가 이미 READY인 이 픽스처에서) 재생성 게이트가 열려 이 테스트의 "재사용" 의도와 부딪힌다.
+		// 카드를 하나 심어 확정 집계 행이 없는 NOT_YET으로 두고 게이트를 닫아, 이 테스트가 보려던 순수 재사용
+		// 경로만 남긴다. 게이트가 실제로 열리는 경로는 PostSellFeedbackPeerComparisonGateIntegrationTest가 본다.
+		priceMoveEventRepository.saveAndFlush(PriceMoveEvent.createStock(
+			stock, PriceMoveEventType.INTRADAY, ORIGIN_TRADE_DATE, LocalTime.of(9, 45), LocalTime.of(9, 50),
+			new BigDecimal("-0.018200"), new BigDecimal("3.2500"), "09시 45분부터 하락했습니다.",
+			NarrativeSource.LLM, LocalTime.of(9, 51), VIEW_AT));
 		fakeNarrativeGenerator.enqueue(LLM_NARRATIVE);
 
 		PostSellFeedbackResponse first = getPostSellFeedback();
+		assertThat(first.peerComparison().status()).isEqualTo(PostSellFeedbackStatus.NOT_YET);
 		PostSellFeedbackResponse second = getPostSellFeedback();
 
 		assertThat(fakeNarrativeGenerator.callCount()).isEqualTo(1);
@@ -273,6 +293,43 @@ class PostSellFeedbackNarrativeIntegrationTest {
 	}
 
 	// --- 8개 이슈 공통 조건: 원장 불변 ---
+
+	// tasks.md 6번 항목 — peerComparison이 실제 판정(READY)을 타는 조회도 같은 보장이 성립해야 한다. 확정 집계
+	// 행이 존재하면 PostSellFeedbackReader.buildPeerComparison이 PriceMovePeerStatRepository를 읽어 응답을
+	// 채우는데, 그 경로도 트랜잭션(readOnly)이 끝나기 전까지 원장·피드백 테이블에 아무것도 쓰지 않아야 한다 —
+	// 2번 항목의 모집단 재구성 조회(HolderPopulationQueryService)는 배치(PeerStatsBatchService)에서만 불리고
+	// 이 조회 경로에서는 호출되지 않지만, 이 테스트는 peerComparison이 실제로 채워지는 상태에서도 조회 전체가
+	// 읽기 전용임을 종단으로 확인한다.
+	@Test
+	@DisplayName("peerComparison이 READY인 조회도 trade_feedbacks에만 1행을 쓰고 나머지는 그대로다")
+	void neverWritesOutsideTradeFeedbacksWhenPeerComparisonIsReady() {
+		fakeNarrativeGenerator.enqueue(LLM_NARRATIVE);
+		PriceMoveEvent card = priceMoveEventRepository.saveAndFlush(PriceMoveEvent.createStock(
+			stock, PriceMoveEventType.INTRADAY, ORIGIN_TRADE_DATE, LocalTime.of(9, 45), LocalTime.of(9, 50),
+			new BigDecimal("-0.018200"), new BigDecimal("3.2500"), "09시 45분부터 하락했습니다.",
+			NarrativeSource.LLM, LocalTime.of(9, 51), VIEW_AT));
+		// holderCount=5 — INSUFFICIENT_SAMPLE 경계(<5)를 넘겨 READY로 판정되게 한다(§C-4).
+		priceMovePeerStatRepository.saveAndFlush(
+			PriceMovePeerStat.create(card, TRADE_SERVICE_DATE, 5, 2, 20, VIEW_AT));
+
+		Map<String, Long> ledgerBefore = rowCounts(LEDGER_TABLES);
+		Map<String, Long> readOnlyBefore = rowCounts(READ_ONLY_TABLES);
+		Map<String, Long> otherFeedbackBefore = rowCounts(OTHER_FEEDBACK_TABLES);
+		List<Map<String, Object>> mutableLedgerBefore = mutableLedgerValues();
+		long feedbacksBefore = feedbackRowCount();
+
+		PostSellFeedbackResponse response = getPostSellFeedback();
+
+		// peerComparison이 실제로 채워졌는데도(대역 상수가 아니라) 나머지 단정이 성립해야 의미가 있다.
+		assertThat(response.peerComparison().status()).isEqualTo(PostSellFeedbackStatus.READY);
+		assertThat(response.peerComparison().holderCount()).isEqualTo(5);
+		assertThat(feedbackRowCount()).isEqualTo(feedbacksBefore + 1);
+		assertThat(rowCounts(LEDGER_TABLES)).isEqualTo(ledgerBefore);
+		assertThat(rowCounts(READ_ONLY_TABLES)).isEqualTo(readOnlyBefore);
+		assertThat(rowCounts(OTHER_FEEDBACK_TABLES)).isEqualTo(otherFeedbackBefore);
+		// 행 수만 보면 값이 바뀐 UPDATE를 놓친다 — 계좌 잔액·lot 잔여수량을 값으로 비교한다.
+		assertThat(mutableLedgerValues()).isEqualTo(mutableLedgerBefore);
+	}
 
 	@Test
 	@DisplayName("회고 조회는 trade_feedbacks에만 1행을 쓰고 원장·읽기 전용·다른 피드백 테이블은 그대로다")

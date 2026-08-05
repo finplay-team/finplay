@@ -5,6 +5,7 @@ import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.feedback.domain.PriceMoveEvent;
 import com.finplay.api.feedback.domain.PriceMoveEventSource;
+import com.finplay.api.feedback.domain.PriceMovePeerStat;
 import com.finplay.api.feedback.domain.PostSellFeedbackStatus;
 import com.finplay.api.feedback.dto.response.CounterfactualScenario;
 import com.finplay.api.feedback.dto.response.Counterfactuals;
@@ -15,6 +16,7 @@ import com.finplay.api.feedback.dto.response.PostSellFeedbackResponse;
 import com.finplay.api.feedback.dto.response.PostSellFlow;
 import com.finplay.api.feedback.repository.PriceMoveEventRepository;
 import com.finplay.api.feedback.repository.PriceMoveEventSourceRepository;
+import com.finplay.api.feedback.repository.PriceMovePeerStatRepository;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.domain.StockReplaySession;
 import com.finplay.api.market.service.StockCandleDto;
@@ -77,10 +79,19 @@ class PostSellFeedbackReader {
 	// 계약이 정한 수익률 scale·라운딩. PortfolioService·HoldingValuationService와 같은 값이다.
 	private static final int RETURN_RATE_SCALE = 4;
 
+	// 반사실 시나리오의 매도수수료율 — OrderExecutionService.STOCK_FEE_RATE와 같은 값이다(§반사실·집단 비교
+	// 계산). 그 필드는 private이고 주문 실행이라는 다른 트랜잭션 경계에 있어 상수를 공개해 의존을 만들지 않고
+	// 값만 재사용한다. 2차는 주식 전용이라 STOCK 요율만 있다.
+	private static final BigDecimal STOCK_FEE_RATE = new BigDecimal("0.00015");
+
 	// 파생 사실 비율(sellVsHighRate·sellVsLowRate)의 scale. 계약 예시(-0.0325·0.0059)가 소수 4자리다.
 	// returnRate와 값은 같지만 근거가 다르다 — 그쪽은 계약이 식과 함께 못박은 값이고 이쪽은 §파생 사실 계산의
 	// 뺄셈·나눗셈이라, 한쪽 정밀도를 바꿀 이유가 생겼을 때 다른 쪽이 딸려 가지 않게 따로 둔다.
 	private static final int DERIVED_RATE_SCALE = 4;
+
+	// 집단 비교 soldWithin30MinRate의 scale — 위 두 상수와 같은 이유로 독립해 둔다. §반사실·집단 비교 계산은
+	// 이 비율의 scale을 못박지 않아 나머지 파생 비율(scale 4 HALF_UP)과 같은 정밀도를 따른다.
+	private static final int PEER_RATE_SCALE = 4;
 
 	/**
 	 * 과거 서비스 날짜의 카드 노출 게이트 상한 — 그날 카드는 이미 전부 노출된 상태라 "그날의 가장 늦은 시각"이다.
@@ -107,6 +118,8 @@ class PostSellFeedbackReader {
 	private final PriceMoveEventRepository priceMoveEventRepository;
 
 	private final PriceMoveEventSourceRepository priceMoveEventSourceRepository;
+
+	private final PriceMovePeerStatRepository priceMovePeerStatRepository;
 
 	private final Clock clock;
 
@@ -181,32 +194,15 @@ class PostSellFeedbackReader {
 			// 매도 후 흐름·반사실·집단 비교. sameSessionCompleted=false면 세 필드 모두 자기 자신이 null이고
 			// status만 담은 껍데기를 내리지 않는다 — 계약이 정한 형태이며 postSellFlow도 그 nullable 목록에 있다
 			// (§파생 사실 계산의 "위 전부"에 [매도 후 흐름] 블록이 포함된다).
-			//
-			// ─── plan.md 7번(반사실 수익률·집단 비교)이 끼울 자리 ────────────────────────────────
-			// 아래 두 자리는 구현 누락이 아니라 이슈 #208과 7번의 경계다. 7번이 여기를 "빠뜨린 값"으로
-			// 읽고 경계를 다시 정하지 않도록 규칙까지 적어 둔다.
-			//
-			//  · counterfactuals 3종의 returnRate — 이 이슈는 price·at까지만 채우고 returnRate를 null로
-			//    둔다. 7번이 시나리오 가격 P마다 매도수수료를 다시 계산해(FLOOR(P × 수량 × 0.00015),
-			//    OrderExecutionService와 같은 식·같은 원 미만 내림) 실현손익 ÷ (배분 매수원가 + 배분
-			//    매수수수료)로 채운다(§반사실·집단 비교 계산). 가격이 바뀌면 수수료도 바뀌므로 본체
-			//    returnRate를 재사용할 수 없다.
-			//  · peerComparison — 이 이슈는 status를 상수 NOT_YET으로 두고 지표 전부를 null로 둔다.
-			//    7번이 price_move_peer_stats의 "그 체결의 서비스 날짜" 행으로 판정한다(NO_EVENT 1순위 →
-			//    holderCount < 5면 INSUFFICIENT_SAMPLE → 그 외 READY, §C-4). 여기서 NO_EVENT·
-			//    INSUFFICIENT_SAMPLE을 임의로 판정하지 않는다 — 기준 카드가 없으면 집계 행이 애초에
-			//    생기지 않아 이 단계에는 두 값을 가를 근거가 없고, 지어내면 7번의 1순위 판정과 충돌한다.
-			//  · 그 결과 5번 항목의 서술 재생성 게이트(postSellFlow READY + peerComparison != NOT_YET,
-			//    §C-5)는 7번 머지 전까지 구조적으로 열리지 않는다. 게이트 조건을 이 이슈 형편에 맞춰
-			//    느슨하게 고치지 않는다 — 5번 항목의 명시된 제약이다.
-			// ────────────────────────────────────────────────────────────────────────────────────
 			sameSessionCompleted
 				? buildPostSellFlow(marketClosed, fullDayCandles, trade.getPrice(), sellSourceTradingDate, sellAt)
 				: null,
 			sameSessionCompleted
-				? buildCounterfactuals(marketClosed, fullDayCandles, sellSourceTradingDate, extremes, priceMoves)
+				? buildCounterfactuals(
+					marketClosed, fullDayCandles, sellSourceTradingDate, extremes, priceMoves,
+					trade.getQuantity(), allocation.allocatedCost() + allocation.allocatedBuyFee())
 				: null,
-			sameSessionCompleted ? peerComparisonNotYet() : null,
+			sameSessionCompleted ? buildPeerComparison(priceMoves, serviceDateOf(trade)) : null,
 			// AI 서술 셋은 이 클래스가 채우지 않는다 — LLM 호출을 이 트랜잭션 안에 넣지 않기 위해서다.
 			// PostSellFeedbackService가 트랜잭션이 끝난 뒤 withNarrative로 얹는다.
 			null,
@@ -394,40 +390,48 @@ class PostSellFeedbackReader {
 	 * 같은 수량을 다른 시점에 팔았다면 어땠을지 (§반사실·집단 비교 계산). 게이트는 {@code postSellFlow}와 같다 —
 	 * 아직 재생되지 않은 가격을 쓰므로 미래 정보다.
 	 *
-	 * <p><b>세 시나리오의 {@code returnRate}는 여기서 채우지 않는다</b> — 조립 지점 주석의 경계표대로
-	 * {@code plan.md} 7번이 수수료를 재계산해 채운다.
+	 * <p>세 시나리오의 {@code returnRate}는 {@link #counterfactualReturnRate}가 채운다 — 시나리오 가격마다
+	 * 매도수수료를 다시 계산하므로(가격이 바뀌면 수수료도 바뀐다) 본체 {@link #returnRate}를 재사용할 수 없다.
+	 *
+	 * @param quantity 매도 수량 — 세 시나리오가 전부 같은 수량을 판다고 가정한다(§반사실·집단 비교 계산)
+	 * @param buyBasis 배분 매수원가 + 배분 매수수수료. 세 시나리오가 공유하는 분모다
 	 */
 	private static Counterfactuals buildCounterfactuals(
 		boolean marketClosed,
 		List<StockCandleDto> fullDayCandles,
 		LocalDate sourceTradingDate,
 		HoldExtremes extremes,
-		List<HeldPriceMoveItem> priceMoves) {
+		List<HeldPriceMoveItem> priceMoves,
+		BigDecimal quantity,
+		long buyBasis) {
 		if (!marketClosed) {
 			return new Counterfactuals(PostSellFeedbackStatus.NOT_YET, null, null, null);
 		}
 		return new Counterfactuals(
 			PostSellFeedbackStatus.READY,
-			scenarioAtClose(fullDayCandles, sourceTradingDate),
-			scenarioAtHoldHigh(extremes),
-			scenarioAtFirstMoveAfterBuy(fullDayCandles, priceMoves));
+			scenarioAtClose(fullDayCandles, sourceTradingDate, quantity, buyBasis),
+			scenarioAtHoldHigh(extremes, quantity, buyBasis),
+			scenarioAtFirstMoveAfterBuy(fullDayCandles, priceMoves, quantity, buyBasis));
 	}
 
 	/** {@code atClose} — 그 거래일 <b>마지막 분봉</b>의 close와 그 시각이다 (§C-2-1, 리터럴 15:30이 아니다). */
 	private static CounterfactualScenario scenarioAtClose(
-		List<StockCandleDto> fullDayCandles, LocalDate sourceTradingDate) {
+		List<StockCandleDto> fullDayCandles, LocalDate sourceTradingDate, BigDecimal quantity, long buyBasis) {
 		StockCandleDto lastCandle = lastCandle(fullDayCandles);
 		return lastCandle == null
 			? null
 			: new CounterfactualScenario(
-				lastCandle.close(), LocalDateTime.of(sourceTradingDate, lastCandle.candleTime()), null);
+				lastCandle.close(), LocalDateTime.of(sourceTradingDate, lastCandle.candleTime()),
+				counterfactualReturnRate(lastCandle.close(), quantity, buyBasis));
 	}
 
 	/** {@code atHoldHigh} — 보유 구간 최고가와 그 시각. 극값이 없으면(구간에 분봉이 없으면) {@code null}이다. */
-	private static CounterfactualScenario scenarioAtHoldHigh(HoldExtremes extremes) {
+	private static CounterfactualScenario scenarioAtHoldHigh(
+		HoldExtremes extremes, BigDecimal quantity, long buyBasis) {
 		return extremes.holdHighPrice() == null
 			? null
-			: new CounterfactualScenario(extremes.holdHighPrice(), extremes.holdHighAt(), null);
+			: new CounterfactualScenario(extremes.holdHighPrice(), extremes.holdHighAt(),
+				counterfactualReturnRate(extremes.holdHighPrice(), quantity, buyBasis));
 	}
 
 	/**
@@ -443,7 +447,7 @@ class PostSellFeedbackReader {
 	 *     없어도 {@code null}이다 — 가격을 지어내지 않는다
 	 */
 	private static CounterfactualScenario scenarioAtFirstMoveAfterBuy(
-		List<StockCandleDto> fullDayCandles, List<HeldPriceMoveItem> priceMoves) {
+		List<StockCandleDto> fullDayCandles, List<HeldPriceMoveItem> priceMoves, BigDecimal quantity, long buyBasis) {
 		if (priceMoves.isEmpty()) {
 			return null;
 		}
@@ -451,8 +455,34 @@ class PostSellFeedbackReader {
 		return fullDayCandles.stream()
 			.filter(candle -> candle.candleTime().equals(windowEnd.toLocalTime()))
 			.findFirst()
-			.map(candle -> new CounterfactualScenario(candle.close(), windowEnd, null))
+			.map(candle -> new CounterfactualScenario(
+				candle.close(), windowEnd, counterfactualReturnRate(candle.close(), quantity, buyBasis)))
 			.orElse(null);
+	}
+
+	/**
+	 * 반사실 시나리오 가격 {@code price}로 팔았다면의 수익률 (§반사실·집단 비교 계산).
+	 *
+	 * <p><b>매도금액·수수료를 시나리오 가격으로 다시 계산한다</b> — {@code OrderExecutionService.priceOrder}와
+	 * 같은 식·같은 라운딩이다. 매도금액을 원 단위로 {@code FLOOR}한 뒤 그 금액에 {@link #STOCK_FEE_RATE}를 곱해
+	 * 다시 {@code FLOOR}한다. 가격이 바뀌면 수수료도 바뀌므로 본체 {@code fee}·{@link #returnRate}를 그대로 쓸 수
+	 * 없다.
+	 *
+	 * @param buyBasis 배분 매수원가 + 배분 매수수수료. 0이면 {@link #returnRate}와 같은 이유로 {@code ZERO} —
+	 *     {@code ArithmeticException}으로 조회 전체가 500이 되는 것보다 낫다
+	 */
+	private static BigDecimal counterfactualReturnRate(BigDecimal price, BigDecimal quantity, long buyBasis) {
+		long amount = price.multiply(quantity).setScale(0, RoundingMode.FLOOR).longValueExact();
+		long fee = BigDecimal.valueOf(amount)
+			.multiply(STOCK_FEE_RATE)
+			.setScale(0, RoundingMode.FLOOR)
+			.longValueExact();
+		if (buyBasis == 0L) {
+			return BigDecimal.ZERO;
+		}
+		long realizedPnl = (amount - fee) - buyBasis;
+		return BigDecimal.valueOf(realizedPnl)
+			.divide(BigDecimal.valueOf(buyBasis), RETURN_RATE_SCALE, RoundingMode.HALF_UP);
 	}
 
 	/**
@@ -552,13 +582,64 @@ class PostSellFeedbackReader {
 	}
 
 	/**
-	 * 집단 비교는 이 이슈에서 <b>항상 {@code NOT_YET}</b>이고 지표가 전부 {@code null}이다 — 조립 지점 주석의
-	 * 경계표대로 확정 집계 행 기준 판정({@code NO_EVENT} 1순위)과 지표 계산은 {@code plan.md} 7번이다.
+	 * 집단 비교 상태 판정 (§C-4·§반사실·집단 비교 계산). 판정 순서는 {@code NO_EVENT}가 1순위다 — 기준 카드
+	 * 자체가 없으면 {@code price_move_peer_stats} 확정 집계 행이 애초에 생기지 않으므로, 행 존재만 보면 이 흔한
+	 * 경우가 영원히 {@link #peerComparisonNotYet()}이 된다.
 	 *
-	 * <p><b>{@code priceMoveId}조차 채우지 않는다.</b> 기준 카드는 이미 알고 있지만(반사실
-	 * {@code atFirstMoveAfterBuy}와 같은 카드다) 계약이 {@code NO_EVENT}에서 {@code priceMoveId}를 포함한 전
-	 * 필드를 {@code null}로 정했고, {@code NOT_YET}에서만 그 값을 채우면 <b>7번이 판정을 붙이는 순간 같은 체결의
-	 * {@code priceMoveId}가 값 → {@code null}로 사라지는 조합</b>이 생긴다.
+	 * <p>기준 카드는 {@code priceMoves.get(0)}이다 — 반사실 {@code atFirstMoveAfterBuy}와 같은 카드고, 정렬 두 키
+	 * ({@code windowStart} 오름차순 + {@code id} 오름차순)가 그 순서를 고정한다. 조회는 <b>그 매도 체결의 서비스
+	 * 날짜</b> 행만 본다(§C-9) — 같은 카드가 재재생으로 다른 서비스 날짜에도 행을 가질 수 있어 날짜를 넘기지 않으면
+	 * 남의 재생일 통계가 섞인다.
+	 *
+	 * @param sellServiceDate 조회 중인 매도 체결의 서비스 날짜 ({@link #serviceDateOf})
+	 */
+	private PeerComparison buildPeerComparison(List<HeldPriceMoveItem> priceMoves, LocalDate sellServiceDate) {
+		if (priceMoves.isEmpty()) {
+			return new PeerComparison(PostSellFeedbackStatus.NO_EVENT, null, null, null, null, null);
+		}
+
+		HeldPriceMoveItem card = priceMoves.get(0);
+		// yourMinutesToSell = 매도시각 − 카드 windowEnd (분). card.minutesBeforeSell()이 이미 같은 계산
+		// (toHeldPriceMoveItem의 minutesBetween(windowEnd, sellAt))이라 다시 계산하지 않고 그대로 쓴다.
+		Integer yourMinutesToSell = card.minutesBeforeSell();
+		return priceMovePeerStatRepository
+			.findByPriceMoveEventIdAndServiceDate(card.id(), sellServiceDate)
+			.map(stat -> toPeerComparison(stat, card.id(), yourMinutesToSell))
+			.orElseGet(PostSellFeedbackReader::peerComparisonNotYet);
+	}
+
+	/**
+	 * 확정 집계 행이 있을 때의 나머지 판정 — {@code holderCount < 5}면 {@code INSUFFICIENT_SAMPLE}(모집단 지표
+	 * 3종 {@code null}, {@code yourMinutesToSell}만 채움), 그 외 {@code READY}다 (§C-4).
+	 */
+	private static PeerComparison toPeerComparison(
+		PriceMovePeerStat stat, Long priceMoveId, Integer yourMinutesToSell) {
+		if (stat.getHolderCount() < 5) {
+			return new PeerComparison(
+				PostSellFeedbackStatus.INSUFFICIENT_SAMPLE, priceMoveId, null, null, null, yourMinutesToSell);
+		}
+		return new PeerComparison(
+			PostSellFeedbackStatus.READY,
+			priceMoveId,
+			stat.getHolderCount(),
+			soldWithin30MinRate(stat),
+			stat.getMedianMinutesToSell(),
+			yourMinutesToSell);
+	}
+
+	/** {@code soldWithin30MinCount ÷ holderCount}, scale 4 {@code HALF_UP}. 배치는 개수만 저장했다(3번 항목). */
+	private static BigDecimal soldWithin30MinRate(PriceMovePeerStat stat) {
+		return BigDecimal.valueOf(stat.getSoldWithin30MinCount())
+			.divide(BigDecimal.valueOf(stat.getHolderCount()), PEER_RATE_SCALE, RoundingMode.HALF_UP);
+	}
+
+	/**
+	 * 확정 집계 행이 아직 없을 때(배치 전)의 기본값 — {@code NOT_YET}이고 지표가 전부 {@code null}이다.
+	 *
+	 * <p><b>{@code priceMoveId}조차 채우지 않는다.</b> 기준 카드는 알고 있지만(반사실 {@code atFirstMoveAfterBuy}와
+	 * 같은 카드다) 계약이 {@code NO_EVENT}에서 {@code priceMoveId}를 포함한 전 필드를 {@code null}로 정했고,
+	 * {@code NOT_YET}에서만 그 값을 채우면 <b>배치가 돌아 판정이 바뀌는 순간 같은 체결의 {@code priceMoveId}가
+	 * 값 → {@code null}로 사라지는 조합</b>이 생긴다.
 	 */
 	private static PeerComparison peerComparisonNotYet() {
 		return new PeerComparison(PostSellFeedbackStatus.NOT_YET, null, null, null, null, null);

@@ -42,25 +42,26 @@ spring:
     scheduling:
       # 기본 pool size 1이면 블로킹 @Scheduled 작업 하나(예: KisHistoricalCandleCollector의 배치 HTTP 호출)가
       # 스레드를 점유하는 동안 나머지 스케줄(heartbeat, price push, replay 세션 확정)이 전부 밀린다.
-      # 기본 프로필의 @Scheduled 작업은 9개다 — 기존 5개에 뉴스·공시 수집 2개, 개장 전 배치 1개,
-      # 코인 요약·브리핑 배치 1개가 더해졌다.
+      # 기본 프로필의 @Scheduled 작업은 10개다 — 기존 5개에 뉴스·공시 수집 2개, 개장 전 배치 1개,
+      # 코인 요약·브리핑 배치 1개, 장 마감 집단 비교 배치 1개가 더해졌다.
       #   기존 5   SseEmitterRegistry heartbeat · StockPriceStreamService · KisHistoricalCandleCollector
       #            StockReplaySessionScheduler · BithumbFeedSimulator
       #   신설 2   NewsCollectionService.collectNews · NewsCollectionService.collectDisclosures (spec 012 FEED-001)
       #   신설 1   FeedbackBatchService.runPreMarketBatch (spec 012 FEED-004)
       #   신설 1   CryptoFeedbackBatchService.refreshCryptoFeedback (spec 012 FEED-008·009)
-      #   합계 9
+      #   신설 1   PeerStatsBatchService.runPeerStatsBatch (spec 012 FEED-010·011, 이슈 #212)
+      #   합계 10
       # 시뮬레이터는 @Profile("!prod") + matchIfMissing=true라 별도 설정 없이 기본 활성이며, 이전 주석은 이걸
-      # 빠뜨리고 4로 세고 있었다 (이슈 #125). 각자 독립 스레드를 쓰도록 9로 맞춘다.
-      # crypto-real 프로필은 시뮬레이터가 꺼지고 BithumbRestTickerPoller가 켜져 개수가 그대로 9다.
-      # prod는 시뮬레이터가 없어 8개지만 스레드 하나가 더 있는 것은 무해하다.
+      # 빠뜨리고 4로 세고 있었다 (이슈 #125). 각자 독립 스레드를 쓰도록 10으로 맞춘다.
+      # crypto-real 프로필은 시뮬레이터가 꺼지고 BithumbRestTickerPoller가 켜져 개수가 그대로 10이다.
+      # prod는 시뮬레이터가 없어 9개지만 스레드 하나가 더 있는 것은 무해하다.
       # 풀은 앱 전역 단일 풀이라 소유 도메인과 무관하게 전부 센다. spec 012는 스케줄 7개를 신설하므로 그 이슈가
-      # 전부 들어오면 최종 12가 된다(spec §C-1) — 남은 3개(peer-stats·crypto-watch·price-snapshot)는 각 이슈가
+      # 전부 들어오면 최종 12가 된다(spec §C-1) — 남은 2개(crypto-watch·price-snapshot)는 각 이슈가
       # 자기 몫만큼 이 값을 올리며 그때 이 계산도 함께 갱신한다. 풀이 부족하면 개장 시간대에 SSE heartbeat와
       # 매분 가격 push가 밀린다.
       # 전용 TaskScheduler 분리는 작업 수가 적어 이번 범위에서는 채택하지 않는다 (PR #90/#94 리뷰, plan.md 참고).
       pool:
-        size: 9
+        size: 10
 
 # 인증 spec(PRD 태스크 2) 구현 시 사용. 시크릿은 환경변수로만 주입.
 jwt:
@@ -138,6 +139,9 @@ feedback:
     # 코인 요약·브리핑 갱신. 코인은 24시간 거래라 '개장 전'이라는 고정 시점이 없어 매시 갱신으로 대신한다
     # (FEED-008·FEED-009). 이 선언부에도 zone = "Asia/Seoul"이 붙는다.
     crypto-cron: "0 5 * * * *" # 매시 05분
+    # 장 마감 집단 비교 확정 집계 (FEED-010·011, 이슈 #212). 15:30 장 마감보다 2분 뒤라 그 시각의 마지막
+    # 체결이 반영될 여유를 준다. 이 선언부에도 zone = "Asia/Seoul"이 붙는다.
+    peer-stats-cron: "0 32 15 * * MON-FRI" # 장 마감 15:32
   llm:
     model: gpt-5.4-mini
     timeout-seconds: 20

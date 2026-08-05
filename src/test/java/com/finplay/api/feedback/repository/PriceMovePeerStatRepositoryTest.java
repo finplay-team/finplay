@@ -18,6 +18,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -110,6 +111,54 @@ class PriceMovePeerStatRepositoryTest {
 
 		assertThatThrownBy(() -> priceMovePeerStatRepository.saveAndFlush(duplicate))
 			.isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	// --- findByPriceMoveEventIdAndServiceDate (이슈 #212 4번 항목) ---
+
+	// tasks.md 4번의 함정 — 같은 카드를 한 서비스 날짜에서만 집계하는 픽스처로는 서비스 날짜 없이
+	// UNIQUE(price_move_event_id) 단독으로 잘못 짠 조회도 초록이다. §C-9 재재생 시나리오대로 같은 카드에 두
+	// 서비스 날짜 행을 함께 넣고, 조회가 그 체결의 서비스 날짜 행만 돌려주는지 본다.
+	@Test
+	@DisplayName("같은 카드가 두 서비스 날짜에 행을 가져도 조회는 그 서비스 날짜 행만 돌려준다")
+	void findsOnlyTheStatRowForTheRequestedServiceDateWhenTheSameCardHasRowsOnTwoServiceDates() {
+		priceMovePeerStatRepository.saveAndFlush(newStat(event, FIRST_SERVICE_DATE, 18));
+		priceMovePeerStatRepository.saveAndFlush(newStat(event, SECOND_SERVICE_DATE, 24));
+
+		PriceMovePeerStat found = priceMovePeerStatRepository
+			.findByPriceMoveEventIdAndServiceDate(event.getId(), SECOND_SERVICE_DATE)
+			.orElseThrow();
+
+		assertThat(found.getServiceDate()).isEqualTo(SECOND_SERVICE_DATE);
+		assertThat(found.getMedianMinutesToSell()).isEqualTo(24);
+		// 서비스 날짜를 무시하는 조회(findByPriceMoveEventId 첫 행)였다면 첫날 값(18)이 새어 나왔을 것이다 —
+		// 두 값이 실제로 다른 픽스처라 이 뮤테이션이 걸린다.
+		assertThat(found.getMedianMinutesToSell()).isNotEqualTo(18);
+	}
+
+	@Test
+	@DisplayName("그 서비스 날짜에 확정 집계 행이 없으면(다른 날짜에는 있어도) 빈 Optional이다")
+	void findsNothingForAServiceDateWithoutAConfirmedRowEvenWhenAnotherServiceDateHasOne() {
+		priceMovePeerStatRepository.saveAndFlush(newStat(event, FIRST_SERVICE_DATE, 18));
+
+		Optional<PriceMovePeerStat> found = priceMovePeerStatRepository
+			.findByPriceMoveEventIdAndServiceDate(event.getId(), SECOND_SERVICE_DATE);
+
+		assertThat(found).isEmpty();
+	}
+
+	@Test
+	@DisplayName("카드가 다르면 같은 서비스 날짜여도 그 카드의 행만 돌려준다")
+	void findsOnlyTheRequestedCardsRowEvenWhenAnotherCardSharesTheServiceDate() {
+		PriceMoveEvent anotherEvent = priceMoveEventRepository.save(newEvent(LocalTime.of(10, 0)));
+		priceMovePeerStatRepository.saveAndFlush(newStat(event, FIRST_SERVICE_DATE, 18));
+		priceMovePeerStatRepository.saveAndFlush(newStat(anotherEvent, FIRST_SERVICE_DATE, 22));
+
+		PriceMovePeerStat found = priceMovePeerStatRepository
+			.findByPriceMoveEventIdAndServiceDate(event.getId(), FIRST_SERVICE_DATE)
+			.orElseThrow();
+
+		assertThat(found.getPriceMoveEvent().getId()).isEqualTo(event.getId());
+		assertThat(found.getMedianMinutesToSell()).isEqualTo(18);
 	}
 
 	@Test

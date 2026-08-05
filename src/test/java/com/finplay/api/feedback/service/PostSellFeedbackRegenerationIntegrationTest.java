@@ -9,20 +9,20 @@ import com.finplay.api.account.repository.AccountRepository;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.feedback.config.FeedbackLlmProperties;
-import com.finplay.api.feedback.domain.MarketNewsItemType;
 import com.finplay.api.feedback.domain.NarrativeSource;
 import com.finplay.api.feedback.domain.PostSellFeedbackStatus;
-import com.finplay.api.feedback.dto.response.Counterfactuals;
-import com.finplay.api.feedback.dto.response.CounterfactualScenario;
-import com.finplay.api.feedback.dto.response.HeldPriceMoveItem;
-import com.finplay.api.feedback.dto.response.NewsItem;
-import com.finplay.api.feedback.dto.response.PeerComparison;
+import com.finplay.api.feedback.domain.PriceMoveEvent;
+import com.finplay.api.feedback.domain.PriceMoveEventType;
+import com.finplay.api.feedback.domain.PriceMovePeerStat;
 import com.finplay.api.feedback.dto.response.PostSellFeedbackResponse;
-import com.finplay.api.feedback.dto.response.PostSellFlow;
+import com.finplay.api.feedback.repository.PriceMoveEventRepository;
+import com.finplay.api.feedback.repository.PriceMovePeerStatRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.domain.StockCandle;
 import com.finplay.api.market.domain.StockReplaySession;
 import com.finplay.api.market.repository.InstrumentRepository;
+import com.finplay.api.market.repository.StockCandleRepository;
 import com.finplay.api.market.repository.StockReplaySessionRepository;
 import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderSide;
@@ -30,6 +30,12 @@ import com.finplay.api.order.domain.OrderType;
 import com.finplay.api.order.domain.Trade;
 import com.finplay.api.order.repository.OrderRepository;
 import com.finplay.api.order.repository.TradeRepository;
+import com.finplay.api.portfolio.domain.Holding;
+import com.finplay.api.portfolio.domain.HoldingLot;
+import com.finplay.api.portfolio.domain.TradeAllocation;
+import com.finplay.api.portfolio.repository.HoldingLotRepository;
+import com.finplay.api.portfolio.repository.HoldingRepository;
+import com.finplay.api.portfolio.repository.TradeAllocationRepository;
 import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -37,7 +43,6 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
-import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -49,16 +54,17 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
 
 // 이슈 #208 5번 항목의 완료 조건 셋이 목표다 — 게이트 통과 후 1회, 누적 상한 초과 없음, 카드 0건인 매도도
 // 재생성이 일어남.
 //
-// **PostSellFeedbackReader를 mock으로 대체한다.** 재생성 게이트는 peerComparison.status가 NOT_YET이 아니어야
-// 열리는데 3번 항목이 그 값을 상수 NOT_YET으로 두어 이 이슈 범위에서는 구조적으로 열리지 않는다(설계다 —
-// 7번이 실제 판정을 붙이면 한 줄도 안 고치고 열린다). 게이트 조건을 느슨하게 고치는 대신 reader가 확정 상태를
-// 돌려주게 만든다.
+// **peerComparison.status는 이슈 #212 4번 항목의 실제 판정 경로(PostSellFeedbackReader.buildPeerComparison)로
+// 재현한다.** 카드가 0건이면 NO_EVENT, 카드는 있지만 price_move_peer_stats 확정 집계 행이 없으면 NOT_YET,
+// holderCount < 5인 행을 직접 저장하면 INSUFFICIENT_SAMPLE이다 — 배치(3번 항목) 전체를 다시 돌릴 필요는 없다.
+// 이전에는 PostSellFeedbackReader를 @MockitoBean으로 대체해 이 값을 대역 처리했지만, 그 이유(게이트가
+// peerComparison.status == NOT_YET일 때만 닫히는데 4번 항목 전에는 그 값이 상수 NOT_YET이라 구조적으로 열리지
+// 않음)가 4번 항목으로 해소돼 실제 판정 경로로 전환했다.
 //
 // **DB 값을 확인하는 것이 이 파일의 핵심이다.** writer의 두 전이 메서드가 행을 자기 트랜잭션에서 다시 읽는데,
 // 이것을 "호출부가 넘긴 detached 엔티티에 전이 메서드 호출"로 바꾸면 예외도 로그도 없이 아무 일도 일어나지
@@ -79,7 +85,9 @@ class PostSellFeedbackRegenerationIntegrationTest {
 	// 단독 실행은 통과하고 `./gradlew build` 전체에서만 Duplicate entry로 깨진다 — 그래서 이 파일 전용
 	// 연도(2031)를 쓴다. 원본 거래일은 UNIQUE 대상이 아니라 그대로 둔다.
 	private static final LocalDate TRADE_SERVICE_DATE = LocalDate.of(2031, 8, 4);
+	private static final LocalTime BUY_TIME = LocalTime.of(9, 30);
 	private static final LocalTime SELL_TIME = LocalTime.of(14, 40);
+	private static final LocalTime LAST_CANDLE_TIME = LocalTime.of(15, 27);
 	private static final LocalDateTime VIEW_AT = LocalDateTime.of(TRADE_SERVICE_DATE, LocalTime.of(16, 0));
 
 	// 후검증 5줄을 통과하는 관찰형 문장 두 개 — 최초 생성과 재생성을 구분한다.
@@ -94,10 +102,6 @@ class PostSellFeedbackRegenerationIntegrationTest {
 
 	@Autowired
 	private FeedbackLlmProperties feedbackLlmProperties;
-
-	// 게이트를 열려면 peerComparison.status가 확정 상태여야 한다 — 3번 항목이 상수 NOT_YET으로 둔 자리다.
-	@MockitoBean
-	private PostSellFeedbackReader postSellFeedbackReader;
 
 	@Autowired
 	private UserRepository userRepository;
@@ -115,7 +119,25 @@ class PostSellFeedbackRegenerationIntegrationTest {
 	private TradeRepository tradeRepository;
 
 	@Autowired
+	private HoldingRepository holdingRepository;
+
+	@Autowired
+	private HoldingLotRepository holdingLotRepository;
+
+	@Autowired
+	private TradeAllocationRepository tradeAllocationRepository;
+
+	@Autowired
 	private StockReplaySessionRepository stockReplaySessionRepository;
+
+	@Autowired
+	private StockCandleRepository stockCandleRepository;
+
+	@Autowired
+	private PriceMoveEventRepository priceMoveEventRepository;
+
+	@Autowired
+	private PriceMovePeerStatRepository priceMovePeerStatRepository;
 
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
@@ -124,6 +146,9 @@ class PostSellFeedbackRegenerationIntegrationTest {
 	private EntityManager entityManager;
 
 	private User owner;
+	private Account account;
+	private Instrument stock;
+	private StockReplaySession tradeSession;
 	private Trade sellTrade;
 
 	@BeforeEach
@@ -131,23 +156,35 @@ class PostSellFeedbackRegenerationIntegrationTest {
 		fakeNarrativeGenerator.reset();
 
 		owner = userRepository.saveAndFlush(User.create("post-sell-regen@finplay.com", "hash", "regen208", VIEW_AT));
-		Account account = accountRepository.saveAndFlush(
+		account = accountRepository.saveAndFlush(
 			Account.create(owner, com.finplay.api.account.domain.Market.STOCK, VIEW_AT));
 		// V7 시드 심볼과 겹치지 않는 테스트 전용 심볼 — UNIQUE(symbol) 충돌 방지.
-		Instrument stock = instrumentRepository.saveAndFlush(
+		stock = instrumentRepository.saveAndFlush(
 			Instrument.create(Market.STOCK, "TEST208R", "테스트종목208R", BigDecimal.valueOf(100), 10_000L, true,
 				VIEW_AT));
+		Holding holding = holdingRepository.saveAndFlush(Holding.create(account, stock, VIEW_AT));
 		LocalDateTime resolvedAt = LocalDateTime.of(TRADE_SERVICE_DATE, LocalTime.of(8, 40));
-		StockReplaySession session = stockReplaySessionRepository.saveAndFlush(
+		tradeSession = stockReplaySessionRepository.saveAndFlush(
 			StockReplaySession.ready(TRADE_SERVICE_DATE, ORIGIN_TRADE_DATE, resolvedAt, resolvedAt));
 
-		LocalDateTime executedAt = LocalDateTime.of(TRADE_SERVICE_DATE, SELL_TIME);
-		Order order = orderRepository.saveAndFlush(Order.create(
-			owner, account, stock, OrderSide.SELL, OrderType.MARKET, new BigDecimal("10"),
-			"idem-" + System.nanoTime(), "a".repeat(64), executedAt));
-		sellTrade = tradeRepository.saveAndFlush(Trade.of(
-			order, account, stock, session, OrderSide.SELL, new BigDecimal("68500"), new BigDecimal("10"),
-			685_000L, 102L, -15_207L, executedAt, executedAt));
+		// 매도 후 흐름의 closePrice(69,200원 · 15:27)를 실제로 재현한다 — 재생성 프롬프트 단정이 이 값을 그대로
+		// 문자열로 확인한다.
+		saveCandle(BUY_TIME, "69500");
+		saveCandle(LocalTime.of(11, 5), "70800");
+		saveCandle(SELL_TIME, "68500");
+		saveCandle(LocalTime.of(15, 5), "69500");
+		saveCandle(LAST_CANDLE_TIME, "69200");
+
+		LocalDateTime buyExecutedAt = LocalDateTime.of(TRADE_SERVICE_DATE, BUY_TIME);
+		Trade buyTrade = saveTrade(OrderSide.BUY, new BigDecimal("10"), new BigDecimal("70000"), null, buyExecutedAt);
+		HoldingLot lot = holdingLotRepository.saveAndFlush(HoldingLot.create(
+			holding, buyTrade, new BigDecimal("10"), new BigDecimal("70000"), 105L, buyExecutedAt, VIEW_AT));
+
+		LocalDateTime sellExecutedAt = LocalDateTime.of(TRADE_SERVICE_DATE, SELL_TIME);
+		sellTrade = saveTrade(
+			OrderSide.SELL, new BigDecimal("10"), new BigDecimal("68500"), -15_207L, sellExecutedAt);
+		tradeAllocationRepository.saveAndFlush(
+			TradeAllocation.create(sellTrade, lot, new BigDecimal("10"), 700_000L, 105L, VIEW_AT));
 	}
 
 	// --- 게이트 통과 후 1회 (완료 조건 8번) ---
@@ -157,11 +194,12 @@ class PostSellFeedbackRegenerationIntegrationTest {
 	@Test
 	@DisplayName("카드 0건(NO_EVENT)이어도 게이트 통과 후 첫 조회에서 재생성되고 두 번째 조회에서는 재생성되지 않는다")
 	void regeneratesOnceAfterTheGateOpensEvenWithoutAnyCard() {
-		givenFacts(PostSellFeedbackStatus.NO_EVENT, false);
+		// 카드를 저장하지 않는다 — 보유 구간(09:30~14:40)에 카드가 0건이라 peerComparison=NO_EVENT다.
 		fakeNarrativeGenerator.enqueue(FIRST_NARRATIVE).enqueue(REGENERATED_NARRATIVE);
 
 		// 1회차 — 최초 생성. 게이트는 열려 있지만 기존 행이 없으므로 생성 경로다.
 		PostSellFeedbackResponse created = getPostSellFeedback();
+		assertThat(created.peerComparison().status()).isEqualTo(PostSellFeedbackStatus.NO_EVENT);
 		assertThat(created.narrative()).isEqualTo(FIRST_NARRATIVE);
 		assertThat(feedbackRow()).containsEntry("narrative_finalized", false);
 
@@ -189,10 +227,12 @@ class PostSellFeedbackRegenerationIntegrationTest {
 	@Test
 	@DisplayName("집단 비교가 INSUFFICIENT_SAMPLE이어도 확정으로 쳐서 재생성한다")
 	void regeneratesWhenThePeerSampleIsInsufficient() {
-		givenFacts(PostSellFeedbackStatus.INSUFFICIENT_SAMPLE, true);
+		PriceMoveEvent card = saveCard(LocalTime.of(9, 45), LocalTime.of(9, 50));
+		savePeerStat(card, 4);
 		fakeNarrativeGenerator.enqueue(FIRST_NARRATIVE).enqueue(REGENERATED_NARRATIVE);
 
-		getPostSellFeedback();
+		PostSellFeedbackResponse created = getPostSellFeedback();
+		assertThat(created.peerComparison().status()).isEqualTo(PostSellFeedbackStatus.INSUFFICIENT_SAMPLE);
 		PostSellFeedbackResponse regenerated = getPostSellFeedback();
 
 		assertThat(regenerated.narrative()).isEqualTo(REGENERATED_NARRATIVE);
@@ -204,7 +244,7 @@ class PostSellFeedbackRegenerationIntegrationTest {
 	@Test
 	@DisplayName("재생성 프롬프트에 매도 후 흐름 줄이 실제로 들어간다")
 	void putsThePostSellFlowLineIntoTheRegenerationPrompt() {
-		givenFacts(PostSellFeedbackStatus.NO_EVENT, true);
+		// 카드를 저장하지 않는다 — peerComparison=NO_EVENT로도 게이트가 열린다는 것이 이 항목의 요점이다.
 		fakeNarrativeGenerator.enqueue(FIRST_NARRATIVE).enqueue(REGENERATED_NARRATIVE);
 
 		getPostSellFeedback();
@@ -224,7 +264,6 @@ class PostSellFeedbackRegenerationIntegrationTest {
 	@DisplayName("재생성 실패가 누적 상한을 넘지 않고 기존 서술과 narrative_finalized=false가 유지된다")
 	void neverExceedsTheCumulativeRetryLimit() {
 		int limit = feedbackLlmProperties.maxNarrativeRetry();
-		givenFacts(PostSellFeedbackStatus.NO_EVENT, true);
 		// 최초 생성 1회만 성공시키고 이후 재생성은 전부 실패(템플릿 폴백)로 만든다.
 		fakeNarrativeGenerator.enqueue(FIRST_NARRATIVE);
 
@@ -263,10 +302,12 @@ class PostSellFeedbackRegenerationIntegrationTest {
 	@Test
 	@DisplayName("집단 비교가 NOT_YET이면 재생성하지 않고 최초 서술을 그대로 재사용한다")
 	void neverRegeneratesWhilePeerComparisonIsNotYet() {
-		givenFacts(PostSellFeedbackStatus.NOT_YET, true);
+		// 카드는 있지만 price_move_peer_stats 확정 집계 행을 저장하지 않는다 — 배치가 아직 안 돈 상태다.
+		saveCard(LocalTime.of(9, 45), LocalTime.of(9, 50));
 		fakeNarrativeGenerator.enqueue(FIRST_NARRATIVE).enqueue(REGENERATED_NARRATIVE);
 
-		getPostSellFeedback();
+		PostSellFeedbackResponse first = getPostSellFeedback();
+		assertThat(first.peerComparison().status()).isEqualTo(PostSellFeedbackStatus.NOT_YET);
 		PostSellFeedbackResponse second = getPostSellFeedback();
 
 		assertThat(second.narrative()).isEqualTo(FIRST_NARRATIVE);
@@ -291,72 +332,44 @@ class PostSellFeedbackRegenerationIntegrationTest {
 			sellTrade.getId());
 	}
 
-	private void givenFacts(PostSellFeedbackStatus peerStatus, boolean withCard) {
-		org.mockito.Mockito.when(postSellFeedbackReader.read(owner.getId(), sellTrade.getId()))
-			.thenAnswer(call -> facts(peerStatus, withCard));
-	}
-
-	/** 장 마감 게이트가 열린 뒤의 조립 결과 — {@code postSellFlow}가 {@code READY}다. */
-	private PostSellFeedbackResponse facts(PostSellFeedbackStatus peerStatus, boolean withCard) {
-		return new PostSellFeedbackResponse(
-			sellTrade.getId(),
-			sellTrade.getInstrument().getId(),
-			"TEST208R",
-			"테스트종목208R",
-			LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(9, 30)),
-			LocalDateTime.of(ORIGIN_TRADE_DATE, SELL_TIME),
-			new BigDecimal("70000.00000000"),
-			new BigDecimal("68500"),
-			new BigDecimal("10"),
-			102L,
-			-15_207L,
-			new BigDecimal("-0.0217"),
-			310,
-			true,
-			new BigDecimal("70800"),
-			LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(11, 5)),
-			new BigDecimal("68100"),
-			LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(14, 20)),
-			new BigDecimal("-0.0325"),
-			new BigDecimal("0.0059"),
-			withCard ? 105 : null,
-			withCard ? List.of(sampleCard()) : List.of(),
-			new PostSellFlow(
-				PostSellFeedbackStatus.READY,
-				new BigDecimal("69200"),
-				LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(15, 27)),
-				new BigDecimal("0.0102"),
-				new BigDecimal("69500"),
-				LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(15, 5))),
-			new Counterfactuals(
-				PostSellFeedbackStatus.READY,
-				new CounterfactualScenario(
-					new BigDecimal("69200"), LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(15, 27)), null),
-				new CounterfactualScenario(
-					new BigDecimal("70800"), LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(11, 5)), null),
-				null),
-			// 지표는 7번 몫이라 전부 null이고 status만 확정 상태다 — 게이트가 보는 값이 그것뿐이다.
-			new PeerComparison(peerStatus, null, null, null, null, null),
-			null,
-			null,
-			null);
-	}
-
-	private static HeldPriceMoveItem sampleCard() {
-		return new HeldPriceMoveItem(
-			12L,
-			LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(11, 20)),
-			LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(11, 25)),
+	/** 보유 구간(09:30~14:40) 안의 변동 카드 1건 — {@code peerComparison}의 기준 카드가 된다. */
+	private PriceMoveEvent saveCard(LocalTime windowStart, LocalTime windowEnd) {
+		return priceMoveEventRepository.saveAndFlush(PriceMoveEvent.createStock(
+			stock,
+			PriceMoveEventType.INTRADAY,
+			ORIGIN_TRADE_DATE,
+			windowStart,
+			windowEnd,
 			new BigDecimal("-0.018200"),
-			115,
-			195,
-			"11시 20분부터 5분간 1.82% 하락했습니다.",
-			List.of(new NewsItem(
-				MarketNewsItemType.NEWS,
-				"생산 차질",
-				"hankyung.com",
-				"https://news.example.test/regen",
-				LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(11, 15)))));
+			new BigDecimal("3.2500"),
+			"테스트 카드",
+			NarrativeSource.LLM,
+			windowEnd.plusMinutes(1),
+			VIEW_AT));
+	}
+
+	/** {@code (card, TRADE_SERVICE_DATE)} 축의 확정 집계 행 — 배치(3번 항목) 전체를 다시 돌리지 않고 직접 저장한다. */
+	private void savePeerStat(PriceMoveEvent card, int holderCount) {
+		priceMovePeerStatRepository.saveAndFlush(PriceMovePeerStat.create(
+			card, TRADE_SERVICE_DATE, holderCount, 1, 15, VIEW_AT));
+	}
+
+	private void saveCandle(LocalTime candleTime, String close) {
+		BigDecimal price = new BigDecimal(close);
+		stockCandleRepository.saveAndFlush(StockCandle.create(
+			stock, ORIGIN_TRADE_DATE, candleTime, price, price.add(new BigDecimal("300")),
+			price.subtract(new BigDecimal("300")), price, 1_000L, "TEST", VIEW_AT));
+	}
+
+	private Trade saveTrade(
+		OrderSide side, BigDecimal quantity, BigDecimal price, Long realizedPnl, LocalDateTime executedAt) {
+		Order order = orderRepository.saveAndFlush(Order.create(
+			owner, account, stock, side, OrderType.MARKET, quantity,
+			"idem-" + System.nanoTime(), "a".repeat(64), executedAt));
+		return tradeRepository.saveAndFlush(Trade.of(
+			order, account, stock, tradeSession, side, price, quantity,
+			price.multiply(quantity).longValueExact(), side == OrderSide.BUY ? 105L : 102L, realizedPnl, executedAt,
+			executedAt));
 	}
 
 	@TestConfiguration

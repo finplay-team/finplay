@@ -3,6 +3,7 @@ package com.finplay.api.feedback.repository;
 
 import com.finplay.api.feedback.domain.PriceMoveEvent;
 import com.finplay.api.feedback.domain.PriceMoveEventType;
+import com.finplay.api.market.domain.Market;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
@@ -90,4 +91,14 @@ public interface PriceMoveEventRepository extends JpaRepository<PriceMoveEvent, 
 		LocalTime windowEndFrom,
 		LocalTime windowEndTo,
 		LocalTime revealTime);
+
+	/**
+	 * 원본 거래일의 특정 시장 카드 전체를 <b>노출 게이트 없이</b> 조회한다 (spec 012 §C-6
+	 * {@code PeerStatsBatchService}).
+	 *
+	 * <p>장 마감 집단 비교 배치는 사용자에게 아직 노출되지 않은 카드도 확정 집계 대상으로 삼는다 — 노출 게이트
+	 * (§C-5)는 <b>조회 시점</b>의 판정이고 이 배치는 <b>저장 시점</b>의 판정이라 서로 다른 관심사다. 정렬은
+	 * 완료 조건에 없어 응답 순서를 정하지 않는다.
+	 */
+	List<PriceMoveEvent> findByMarketAndOriginTradeDate(Market market, LocalDate originTradeDate);
 }

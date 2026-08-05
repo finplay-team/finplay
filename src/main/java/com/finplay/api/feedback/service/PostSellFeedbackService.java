@@ -185,11 +185,8 @@ public class PostSellFeedbackService {
 	 * <p><b>매도 후 흐름만 보고 열지 않는다.</b> 그러면 15:30~장 마감 집계 사이에 조회한 사용자는 집단 비교가
 	 * 빠진 문장으로 굳는다 — 재생성이 1회뿐이라 되돌릴 기회가 없다(계약).
 	 *
-	 * <p><b>이 게이트는 이슈 #208 범위에서 구조적으로 열리지 않는다.</b> 3번 항목이 {@code peerComparison.status}를
-	 * 상수 {@code NOT_YET}으로 두었기 때문이다({@code PostSellFeedbackReader}의 조립 지점 주석에 그 경계표가 있다).
-	 * <b>7번이 확정 집계 행 기준 판정을 붙이는 순간 아무 수정 없이 열린다</b> — 조건을 이 이슈 형편에 맞춰
-	 * 느슨하게 고치지 않는다. 그것이 이 항목의 명시된 제약이고, 지금 안 열린다는 이유로
-	 * {@code postSellFlow}만 보게 바꾸면 위 두 단락의 실패가 그대로 들어온다.
+	 * <p>이슈 #212 4번이 {@code peerComparison.status}에 확정 집계 행 기준 실제 판정을 붙였다
+	 * ({@code PostSellFeedbackReader.buildPeerComparison}) — 이 게이트 조건은 그 순간 아무 수정 없이 열렸다.
 	 *
 	 * <p>{@code sameSessionCompleted=false}면 두 필드가 모두 {@code null}이라 자연히 닫힌다 — 여러 재생일에 걸친
 	 * 매매에는 반영할 매도 후 흐름이 애초에 없다.
@@ -238,8 +235,9 @@ public class PostSellFeedbackService {
 	 * 고친다.</b>
 	 *
 	 * <p>반대로 <b>집단 비교는 관측된 사실이라 서술에 넣어도 된다</b>(FEED-011)  자리가 nullable로 열려 있다.
-	 * 다만 {@code peerComparison}은 이 이슈에서 항상 {@code NOT_YET}이고 지표가 전부 {@code null}이므로
-	 * <b>넘길 값이 없는 것이 정상 상태다</b> — 7번이 판정을 붙이면 같은 매핑으로 값이 흘러 들어간다.
+	 * {@code peerComparison}이 {@code NOT_YET}·{@code NO_EVENT}면 지표가 전부 {@code null}이므로 넘길 값이 없는
+	 * 것이 정상 상태고, {@code READY}·{@code INSUFFICIENT_SAMPLE}이면 이슈 #212 4번이 채운 값이 같은 매핑으로
+	 * 흘러 들어간다.
 	 *
 	 * <p>시각은 프롬프트가 {@code HH:mm}만 쓰므로 {@code LocalTime}으로 좁힌다. 원본 거래일 축의 날짜는 문장에
 	 * 등장하지 않고, 넘기면 모델이 날짜를 서술에 끌어들일 자리만 생긴다.
