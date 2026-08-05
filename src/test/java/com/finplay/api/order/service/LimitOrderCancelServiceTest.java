@@ -164,7 +164,7 @@ class LimitOrderCancelServiceTest {
 
 	@Test
 	void cancelOrderDoesNotLockAccountWhenOwnershipCheckFailsBeforeStatusCheck() {
-		// existsBy 순서 확인 — 소유 검증 실패 시 이후 단계(account 락)를 아예 시도하지 않는다.
+		// 검증 순서 확인 — 소유 검증 실패 시 이후 단계(account 락)를 아예 시도하지 않는다.
 		Instrument instrument = cryptoInstrument();
 		Account account = account();
 		Order order = limitPendingOrder(owner(), account, instrument, OrderSide.BUY, "0.1", "1000000");
