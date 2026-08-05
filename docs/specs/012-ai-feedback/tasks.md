@@ -82,7 +82,7 @@
   - `peerComparison`이 포함된 매도 회고 조회 전후로도 같은 테이블들이 변하지 않는다 — 2번 항목의 모집단 재구성 조회는 읽기 전용이어야 한다.
   - 검증 — 고정 `Clock` + Testcontainers 통합. 기존 원장 불변 테스트의 스냅샷 대조 패턴을 재사용한다.
 
-- [ ] **7. 문서 동기화 — `api-contracts.md` 인용 블록 제거·`prd.md` §3 갱신**
+- [x] **7. 문서 동기화 — `api-contracts.md` 인용 블록 제거·`prd.md` §3 갱신**
 
   `docs/api-routes.md`는 **대상이 아니다** — 이 이슈는 새 컨트롤러를 만들지 않고 기존 `GET /api/ai/post-sell/{tradeId}` 응답의 필드를 채우기만 한다.
   - `docs/api-contracts.md` 매도 회고 소절의 "**현재 구현 범위 (이슈 #208 머지 시점)**" 인용 블록을 통째로 걷어낸다(이슈 #212 본문·spec.md 6·7번 경계표가 이 이슈에서 걷어내라고 명시했다). 예시 JSON의 `returnRate`·`peerComparison`이 이제 실제로 채워지는 값이라는 것과 어긋나지 않는지 확인한다.

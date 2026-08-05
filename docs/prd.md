@@ -192,7 +192,7 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 | AI 피드백 — 변동 원인 카드 | FEED-002~007 계열 | **완료** | PR #185 (`GET /api/instruments/{id}/price-moves`) |
 | AI 피드백 — 종목 뉴스 요약·개장 전 브리핑 | FEED-008 | **완료** | PR #194 (`GET .../news`, `GET /api/market/briefing`) |
 | AI 피드백 — 매도 직후 피드백 | FEED-007 | **완료** | `012` plan의 이슈 6 (Issue #208, `GET /api/ai/post-sell/{tradeId}`). 원장 수치·파생 사실·보유 구간 카드·매도 후 흐름·반사실 가격·AI 서술까지. **반사실 `returnRate`와 집단 비교 지표는 아래 FEED-010·011 행이다** |
-| AI 피드백 — 반사실 시뮬레이션·집단 비교 | FEED-010·011 | **미착수** | `012` plan의 이슈 7 미생성 |
+| AI 피드백 — 반사실 시뮬레이션·집단 비교 | FEED-010·011 | **완료** | `012` plan의 이슈 7 (Issue #212). 반사실 3종 `returnRate` 수수료 재계산, `peerComparison`의 `NO_EVENT`·`INSUFFICIENT_SAMPLE`·`READY` 판정, 장 마감 배치(`PeerStatsBatchService`)의 `price_move_peer_stats` 확정 집계 |
 | AI 피드백 — 코인 변동 감시 | — | **미착수** | `012` plan의 이슈 8 미생성 |
 | 투자일기 — 매수 회고 작성 | JOUR-001 | **완료** | PR #181 |
 | 투자일기 — 매도 회고 작성 | JOUR-003 | **완료** | PR #189 |
