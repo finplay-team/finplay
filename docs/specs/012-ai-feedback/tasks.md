@@ -43,7 +43,7 @@
   - **함정 — 수익률이 아니라 가격+시각을 저장해야 한다.** 수익률만 저장하면 나중에 "5분 전 가격"을 꺼낼 수 없고, 기록하는 쪽도 5분 전 가격을 모른다(`PriceStore`엔 최신 틱 하나뿐).
   - 검증 — 단위(기록·조회, 가지치기, `isPriceAvailable=false`일 때 스킵) + `@SpringBootTest`(Redis에 실제로 적재·조회되는지) + `FeedbackBatchScheduleTest` 계열에 이 스케줄의 `zone`·프로퍼티 참조 테스트를 추가.
 
-- [ ] **2. `feedback`: `feedback.crypto.*` 설정 블록 신설 + `NewsMatcher` 코인 근거 매칭**
+- [x] **2. `feedback`: `feedback.crypto.*` 설정 블록 신설 + `NewsMatcher` 코인 근거 매칭**
 
   §C-7의 6개 키를 `FeedbackCryptoProperties`(신설, `FeedbackDetectionProperties`와 같은 형태 — yml + `@DefaultValue` 양쪽에 값)로 바인딩하고, `NewsMatcher`에 코인 근거창 매칭을 더한다.
   - `NewsMatcher`에 코인 전용 매칭 메서드를 추가한다 — 근거창은 §C-2의 `근거창(코인)`: `[occurredAt − match-before-minutes, occurredAt]`(이후는 0). 기존 `match(...)`(주식, `eventType` 분기)와는 **별도 메서드**다 — 코인은 이미 절대 시각(`occurredAt`)이라 원본 거래일과 결합할 필요가 없고, 갭 카드 분기도 없다.

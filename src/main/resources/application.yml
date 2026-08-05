@@ -187,3 +187,15 @@ feedback:
     max-items-per-news-list: 50 # Part C 목록 응답 상한
     max-items-per-briefing: 30 # Part D 목록 응답 상한
     max-items-per-summary: 30 # 요약·브리핑 LLM 입력 기사 수 상한
+  # 코인 변동 감시(CryptoPriceMoveWatcher, 이슈 #225)의 임계치·구간·근거창. 값의 정본은 spec §C-7이고
+  # FeedbackCryptoProperties가 같은 값을 @DefaultValue로 갖는다. z-score-k는 여기 두지 않고
+  # feedback.detection.z-score-k를 그대로 쓴다 — 주식·코인이 같은 계수를 공유하는 것이 §C-7의 확정 방침이다.
+  crypto:
+    cooldown-minutes: 30 # 종목당 카드 생성 후 다음 카드까지의 최소 간격
+    daily-limit: 6 # 종목·거래일(KST)당 카드 수 상한
+    rolling-window-minutes: 5 # σ 표본 구간 폭(분). 겹치지 않는 구간으로 자른다(§탐지 알고리즘(코인))
+    # σ 계산 조회 창(시간). market.crypto.sigma-lookback-hours와 항상 같은 값을 유지한다 — 어긋나면 조회
+    # 창과 Redis 보관 창이 갈려 표본이 조용히 달라진다.
+    sigma-lookback-hours: 24
+    min-sample-count: 100 # σ 계산 최소 표본. 미만이면 카드 미생성
+    match-before-minutes: 35 # 코인 카드 근거 탐색(이전). 이후는 0 — §뉴스 매칭 범위
