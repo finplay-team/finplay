@@ -11,6 +11,8 @@ import com.finplay.api.education.dto.response.PracticeIntentionResponse;
 import com.finplay.api.education.repository.PracticeIntentionRepository;
 import com.finplay.api.education.repository.PracticeProgressRepository;
 import com.finplay.api.favorite.service.FavoriteService;
+import com.finplay.api.market.domain.Instrument;
+import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.InstrumentService;
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -31,6 +33,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class PracticeIntentionService {
 
 	public static final String TUTORIAL_KEY = "INVESTMENT_PRACTICE_V1";
+	public static final String COIN_TUTORIAL_KEY = "COIN_PRACTICE_V1";
 
 	private final PracticeProgressRepository practiceProgressRepository;
 	private final PracticeIntentionRepository practiceIntentionRepository;
@@ -42,19 +45,20 @@ public class PracticeIntentionService {
 	public PracticeIntentionResponse createIntention(
 		Long userId,
 		PracticeIntentionCreateRequest request) {
-		// 종목 존재 확인만 목적이며 인메모리 모델은 instrumentId만 보관한다.
-		instrumentService.getInstrumentEntity(request.instrumentId());
+		// 인메모리 모델은 instrumentId만 보관하지만, tutorial key 해석에는 종목의 market이 필요하다.
+		Instrument instrument = instrumentService.getInstrumentEntity(request.instrumentId());
+		String tutorialKey = resolveTutorialKey(instrument.getMarket());
 		LocalDateTime createdAt = LocalDateTime.now(clock);
 
-		practiceProgressRepository.insertIfAbsent(userId, TUTORIAL_KEY, createdAt);
+		practiceProgressRepository.insertIfAbsent(userId, tutorialKey, createdAt);
 		// insertIfAbsent가 같은 트랜잭션에서 행을 보장하므로 이 조회는 항상 성공해야 한다 — 도달하면
 		// 클라이언트에도 컨벤션에 맞는 공통 오류 형식으로 응답하되(원인 불명의 500이지만 형식은 지킨다),
 		// GlobalExceptionHandler.handleBusinessException은 로깅하지 않으므로 여기서 직접 남긴다.
 		PracticeProgress progress = practiceProgressRepository
-			.findByUserIdAndTutorialKeyForUpdate(userId, TUTORIAL_KEY)
+			.findByUserIdAndTutorialKeyForUpdate(userId, tutorialKey)
 			.orElseThrow(() -> {
 				log.error("practice_progresses 행을 insertIfAbsent 직후 조회하지 못함 (userId={}, tutorialKey={})",
-					userId, TUTORIAL_KEY);
+					userId, tutorialKey);
 				return new BusinessException(ErrorCode.INTERNAL_ERROR);
 			});
 		if (progress.getStatus() == PracticeProgressStatus.COMPLETED) {
@@ -77,5 +81,14 @@ public class PracticeIntentionService {
 				createdAt);
 			return PracticeIntentionResponse.from(practiceIntentionRepository.save(intention));
 		});
+	}
+
+	// docs/specs/020 "tutorial key 해석": market이 STOCK이면 기존 주식 실습 key, CRYPTO면 코인 실습 key로
+	// 분기한다. 기존 INVESTMENT_PRACTICE_V1 행은 재분류하지 않고 신규 생성 경로만 이 규칙을 따른다.
+	private String resolveTutorialKey(Market market) {
+		return switch (market) {
+			case STOCK -> TUTORIAL_KEY;
+			case CRYPTO -> COIN_TUTORIAL_KEY;
+		};
 	}
 }

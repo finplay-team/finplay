@@ -9,6 +9,7 @@ import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.education.service.PracticeIntentionService;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import jakarta.persistence.EntityManager;
@@ -71,6 +72,32 @@ class PracticeRepositoryTest {
 		assertThat(row.get("status")).isEqualTo("COMPLETED");
 		assertThat(row.get("started_at")).isEqualTo(NOW.minusDays(1));
 		assertThat(row.get("completed_at")).isEqualTo(NOW.minusHours(1));
+	}
+
+	@Test
+	void insertIfAbsentForStockAndCoinKeysCreatesTwoIndependentRowsForSameUser() {
+		progressRepository.insertIfAbsent(user.getId(), PracticeIntentionService.TUTORIAL_KEY, NOW);
+		progressRepository.insertIfAbsent(user.getId(), PracticeIntentionService.COIN_TUTORIAL_KEY, NOW);
+		jdbcTemplate.update("""
+			UPDATE practice_progresses SET status = 'COMPLETED', completed_at = ?
+			WHERE user_id = ? AND tutorial_key = ?
+			""", NOW, user.getId(), PracticeIntentionService.TUTORIAL_KEY);
+		entityManager.flush();
+		entityManager.clear();
+
+		List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+			SELECT tutorial_key, status FROM practice_progresses WHERE user_id = ? ORDER BY tutorial_key
+			""", user.getId());
+
+		assertThat(rows).hasSize(2);
+		assertThat(rows).extracting(row -> row.get("tutorial_key"))
+			.containsExactlyInAnyOrder(PracticeIntentionService.TUTORIAL_KEY,
+				PracticeIntentionService.COIN_TUTORIAL_KEY);
+		// 주식 key만 COMPLETED로 갱신했으므로 코인 key 행은 독립적으로 IN_PROGRESS를 유지해야 한다(회귀 없음).
+		Map<String, String> statusByKey = new HashMap<>();
+		rows.forEach(row -> statusByKey.put((String)row.get("tutorial_key"), (String)row.get("status")));
+		assertThat(statusByKey.get(PracticeIntentionService.TUTORIAL_KEY)).isEqualTo("COMPLETED");
+		assertThat(statusByKey.get(PracticeIntentionService.COIN_TUTORIAL_KEY)).isEqualTo("IN_PROGRESS");
 	}
 
 	private List<String> columns(String table) {
