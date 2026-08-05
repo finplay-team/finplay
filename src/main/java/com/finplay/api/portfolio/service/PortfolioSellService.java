@@ -29,6 +29,9 @@ public class PortfolioSellService {
 
 	// 지정가 매도 생성 시 holding을 잠그고 availableQuantity(=quantity-reservedQuantity) 기준으로 검증한다
 	// (015-limit-order LMT-001). 다른 도메인 서비스가 HoldingRepository를 직접 주입하지 않게 한다(ADR-0002).
+	// 016-investment-education-policy candidate 6: 기존 MARKET SELL(OrderExecutionService)도 이 메서드로
+	// availableQuantity를 검증하므로, holding.getQuantity()(총 보유수량) 단일 값으로 매도 가능 여부를 판정하는
+	// 지점은 이 서비스 안에 남아 있지 않다.
 	public Holding getHoldingForUpdateOrThrow(Account account, Instrument instrument, BigDecimal requiredQuantity) {
 		Holding holding = holdingRepository
 			.findByAccountIdAndInstrumentIdForUpdate(account.getId(), instrument.getId())
