@@ -28,7 +28,7 @@
 - [x] 8. **엔티티·에러코드 확장**
   `OrderStatus.CANCELLED` 추가. `Order.cancel()` 추가(`markFilled()`와 대칭 — `PENDING` 아니면 `IllegalStateException`). `Account.releaseReservedCash(long amount)` 추가(`reservedCash` 초과 시 `IllegalStateException`, `Holding.releaseReservedQuantity`와 대칭). `ErrorCode.ORDER_NOT_PENDING(HttpStatus.CONFLICT, "이미 체결되었거나 취소된 주문입니다.")` 추가(`IDEMPOTENCY_CONFLICT`·`UNSUPPORTED_ORDER_TYPE` 근처에 배치). 마이그레이션 불필요(plan.md "기존 코드 현황" — `orders.status`는 이미 `VARCHAR(10)`이라 `"CANCELLED"`(9자)를 그대로 저장 가능). 단위 테스트: `OrderTest`에 `cancel()` 정상 전이·이중 취소 시 예외, `AccountTest`(또는 기존 테스트 파일)에 `releaseReservedCash` 정상 감소·초과 해제 시 예외.
 
-- [ ] 9. **`DELETE /api/orders/{orderId}` 취소 API**
+- [x] 9. **`DELETE /api/orders/{orderId}` 취소 API**
   `LimitOrderCancelService`(`order.service`, plan.md "취소 흐름" 그대로 — `orderRepository.findByIdForUpdate`로 락+존재 확인 → 소유 확인 → 상태 확인 → `accountService.getAccountByIdForUpdate` → BUY는 `releaseReservedCash`, SELL은 `portfolioSellService.getHoldingForUpdate` + `releaseReservedQuantity` → `order.cancel()`). 검증 순서는 반드시 존재(404 `NOT_FOUND`) → 소유(403 `FORBIDDEN`) → 상태(409 `ORDER_NOT_PENDING`)여야 한다. `OrderController`에 `@DeleteMapping("/{orderId}")` 추가(`Idempotency-Key` 헤더 없음, 204 응답). 서비스 단위 테스트(`LimitOrderCancelServiceTest`: BUY 취소 시 `releaseReservedCash` 호출값, SELL 취소 시 `releaseReservedQuantity` 호출값, 주문 없음 404, 타인 소유 403, 이미 `FILLED` 409, 이미 `CANCELLED` 409, 검증 순서 준수) + `@WebMvcTest`(204 응답 바디 없음·404/403/409 오류 매핑, 인증 없으면 401).
 
 - [ ] 10. **동시성 경합 테스트(취소 vs 체결)**

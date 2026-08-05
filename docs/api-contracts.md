@@ -352,6 +352,14 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 예약(에스크로) 로직은 매수·매도가 다른 자원만 잠근다(plan.md 잠금 순서 표) — **BUY**는 계좌만 잠그고(`AccountService.getAccountForUpdate`) `cashRequired = FLOOR(수량×지정가) + FLOOR(FLOOR(수량×지정가)×0.05%)`를 `availableCash`와 비교해 부족하면 저장 전 거부, 통과하면 `Account.reserveCash`로 예약만 하고(`cashBalance`는 불변) `Order.createLimitPending`을 저장한다. **SELL**은 계좌 락 없이 holding만 잠그고(`PortfolioSellService.getHoldingForUpdateOrThrow`, `availableQuantity` 기준 검증) `Holding.reserveQuantity`로 수량만 예약한다(계좌 현금은 건드리지 않음). 두 경로 모두 실패 시 아무것도 예약·저장하지 않는다(하나의 `@Transactional` 롤백).
 
+### 코인 지정가 주문 취소 (LMT-003)
+
+| Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|---|
+| DELETE | /api/orders/{orderId} | Access Bearer 필수, `Idempotency-Key` 헤더 불필요(DELETE는 멱등, 재호출은 상태 검증으로 자연히 409 거부) | 없음(경로 변수 `orderId`만) | 204, 본문 없음(`DELETE /api/community/posts/{postId}`·`DELETE /api/community/comments/{commentId}` 컨벤션 재사용) — 매수 취소는 `accounts.reserved_cash`가 해당 주문이 예약했던 만큼 정확히 감소(`cashBalance` 불변), 매도 취소는 `holdings.reserved_quantity`가 정확히 감소(`quantity` 불변), 주문 `status`는 `CANCELLED`로 변경 | `orderId`에 해당하는 주문 없음은 404 `NOT_FOUND`. 존재하지만 요청자 소유가 아니면 403 `FORBIDDEN`(소유하지 않은 주문의 상태·시장가/지정가 여부를 흘리지 않음). 본인 소유이지만 `status`가 `PENDING`이 아님(이미 `FILLED` 또는 이미 `CANCELLED`)은 409 `ORDER_NOT_PENDING`(신규 코드). 검증 순서는 존재(404)→소유(403)→상태(409) 고정. Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 015 LMT-003, Issue #218 |
+
+시장가 주문(`orderType=MARKET`)은 생성 즉시 `FILLED`이므로 이 엔드포인트로 취소를 시도하면 상태 검증(409 `ORDER_NOT_PENDING`)에서 자연히 걸러진다 — 별도 `orderType` 분기 없이 상태만으로 시장가 주문을 배제한다. `LimitOrderCancelService.cancelOrder`는 `orderRepository.findByIdForUpdate`로 주문 락+존재 확인을 동시에 수행한 뒤(LMT-002 `fillIfPending`과 같은 지점) 소유·상태를 순서대로 검증하고, `accountService.getAccountByIdForUpdate`로 계좌를 잠근다(잠금 순서는 LMT-002 체결과 동일한 `order → account → (SELL만) holding`). BUY는 `Account.releaseReservedCash`, SELL은 `PortfolioSellService.getHoldingForUpdate` + `Holding.releaseReservedQuantity`로 예약만 되돌리고 실제 `cashBalance`·`quantity`는 건드리지 않는다(애초에 체결되지 않았으므로). 체결 트리거(LMT-002)와 취소가 동시에 도착해도 두 흐름 모두 order를 가장 먼저 잠그므로, 먼저 락을 획득한 쪽이 끝까지 처리되고 나중 쪽은 락 대기 후 `status != PENDING`을 보고 자기 작업을 거부/no-op한다 — 예약이 이중으로 반환되거나 이중으로 소비되지 않는다.
+
 ### 내 주문 목록 조회
 
 | Method | URL | 인증 | 쿼리 파라미터 | 성공 응답 | 오류 응답 | Spec |
