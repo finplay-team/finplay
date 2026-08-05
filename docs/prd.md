@@ -205,9 +205,10 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 | 투자 실습 — 즐겨찾기 등록·목록·해제 | EDU-PRACTICE-002 | **완료** | PR #165·#171·#173. **ADR-0012로 인메모리 저장** |
 | 투자 실습 — 매수 전 사전 의도 기록 | EDU-PRACTICE-003 일부 | **완료** | PR #176. **ADR-0012로 인메모리 저장** |
 | 투자 실습 — 튜토리얼 전용 합성 시세 | — | **완료** | PR #195 (`GET /api/education/practice/synthetic-prices/{id}`) |
-| 투자 실습 — 주식 체결 재생 세션 FK (OCO 선행) | — | **완료** | PR #191 (`trades.stock_replay_session_id`, V20) |
-| 투자 실습 — OCO exit plan 생성·목록·취소·트리거 | EDU-PRACTICE-005·006·010·013 | **미착수** | 계약만 확정(`016`·`019`). 공통 예약 원장·`/api/exit-plans` 없음 |
-| 투자 실습 — 진행 조회·가격 관찰·복기 | EDU-PRACTICE-001·007·011·012 | **미착수** | 컨트롤러 없음 (`practice_progresses` 테이블만 존재) |
+| 투자 실습 — 주식 체결 재생 세션 FK (주식 OCO 선행, 3차 MVP 완성분) | — | **완료** | PR #191 (`trades.stock_replay_session_id`, V20). 이미 완료된 인프라라 차수 재분류와 무관하게 유지 |
+| 투자 실습 — OCO exit plan 생성·목록·취소·트리거 | EDU-PRACTICE-005·006·010·013 | **미착수** | 계약만 확정(`016`·`019`·`020`). 공통 예약 원장·`/api/exit-plans` 없음. **2026-08-05: 2차 MVP는 코인(GTC) 경로를 우선 구현하고, 주식 세션 귀속·만료 완성은 3차 MVP로 이동** |
+| 투자 실습 — 진행 조회·가격 관찰·복기 | EDU-PRACTICE-001·007·011·012 | **미착수** | 컨트롤러 없음 (`practice_progresses` 테이블만 존재). **2026-08-05: 2차 MVP는 `COIN_PRACTICE_V1` 완료를 목표로 하고, 주식 세션 만료 관찰(evidence C)·완성은 3차 MVP로 이동** |
+| 투자 실습 — 코인 튜토리얼 정책 확정 (2차 MVP 활성 트랙) | — | **문서 확정** | `020-coin-practice-tutorial`, 이슈 #222. `COIN_PRACTICE_V1` 분리, GTC 수명, 세션 없는 잠금 순서 확정. production 미착수 |
 | OCO 손절·익절 가격·퍼센트 입력 정책 | — | **문서 확정** | `019-exit-price-policy`, PR #200. production 미착수 |
 | 지정가 주문·상시 체결 | LMT-001~004 | **일부 완료** | LMT-001(생성)·LMT-002(체결 트리거) 완료 — PR #215(`docs/specs/015-limit-order`, 코인 전용). LMT-003(취소)·LMT-004(미체결 목록조회)는 범위 밖, 후속 이슈. 주식 지정가는 추후 처리(2026-08-05 확정) |
 | 지정가 체결 알림 | NOTI-001~005 | **미착수** | `notification` 패키지·테이블 없음. spec 폴더 미생성 |
@@ -215,19 +216,19 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 
 ### 2차 MVP — 남은 범위와 계약 정의
 
-- 3단계 투자 실습 튜토리얼 (`docs/specs/016-investment-education-policy`) — **일부 완료** (즐겨찾기·사전 의도·합성 시세·체결 세션 FK 완료 / OCO·진행 조회·관찰·복기 미착수, §3 구현 현황 참고)
-  1. 종목 즐겨찾기를 등록하고 본인 목록에서 확인한다. 등록·목록·해제 API를 선행 구현한다 — **구현 완료**(PR #165·#171·#173). **ADR-0012에 따라 즐겨찾기는 DB 테이블이 아니라 서버 힙 메모리에 저장한다**(`favorites` 테이블은 V19에서 DROP). 재시작 시 유실되며 API 계약은 바뀌지 않는다.
+- 3단계 투자 실습 튜토리얼 — **코인이 2차 MVP(1차 고도화)의 활성 트랙이다 (2026-08-05 재확정)**. 주식 튜토리얼의 세션 귀속·15:30 자동 만료를 포함한 나머지 완성(OCO·진행조회·관찰·복기)은 3차 MVP(2차 고도화)로 이동한다 — 아래 "3차 MVP" 절 참고. 이미 구현된 공통 인프라(즐겨찾기·사전 의도·합성 시세·주식 체결 세션 FK)는 차수 재분류와 무관하게 완료로 유지된다. 코인 경로 정본은 `docs/specs/020-coin-practice-tutorial`(이슈 #222)이고, 아래 절차·규칙은 공통 뼈대이며 시장별 delta는 그 문서를 따른다.
+  1. 종목(주식 또는 코인) 즐겨찾기를 등록하고 본인 목록에서 확인한다. 등록·목록·해제 API — **구현 완료**(PR #165·#171·#173). **ADR-0012에 따라 즐겨찾기는 DB 테이블이 아니라 서버 힙 메모리에 저장한다**(`favorites` 테이블은 V19에서 DROP). 재시작 시 유실되며 API 계약은 바뀌지 않는다.
   2. 절대 가격 또는 실제 시장가 매수 체결가 대비 퍼센트로 손절·익절 기준과 수량을 먼저 기록한 뒤 기존 `POST /api/orders` 시장가 매수로 즉시 체결하고, 같은 보유 수량에 손절·익절을 묶은 OCO exit plan 하나를 예약해 목록에서 확인한다. 퍼센트는 OCO 생성 시 절대 가격선으로 snapshot하며 시장가 진입은 예약 주문이 아니다.
-  3. 서버 유효 현재가를 관찰하고 "지금 팔고 싶나요?" 취지의 정답 없는 자유 복기를 저장한다. 복기는 baseline보다 경계에 가까워진 관찰 1회, 최소 2분 범위의 서버 관찰 3회, 익절·손절·주식 만료의 서버 final observation 중 하나가 있으면 허용한다.
-  - 클라이언트 관찰 API는 본인 `PENDING` OCO plan에서만 A·B 관찰을 추가할 수 있다. terminal plan은 409이며, 체결·주식 만료의 `FINAL_EVENT`는 서버 종결 트랜잭션만 기록한다. terminal 이후에도 이미 충족한 A·B·C 증거로 복기를 저장할 수 있다.
+  3. 서버 유효 현재가를 관찰하고 "지금 팔고 싶나요?" 취지의 정답 없는 자유 복기를 저장한다. 복기는 baseline보다 경계에 가까워진 관찰 1회, 최소 2분 범위의 서버 관찰 3회, 익절·손절의 서버 final observation 중 하나가 있으면 허용한다(코인은 세션 만료 final observation이 없다 — `020` 참고).
+  - 클라이언트 관찰 API는 본인 `PENDING` OCO plan에서만 A·B 관찰을 추가할 수 있다. terminal plan은 409이며, 체결의 `FINAL_EVENT`는 서버 종결 트랜잭션만 기록한다. terminal 이후에도 이미 충족한 A·B·C 증거로 복기를 저장할 수 있다.
   - OCO는 PRICE/PERCENT 입력을 확정한 `takeProfitPrice`·`stopLossPrice`로 익절 `currentPrice >= takeProfitPrice`, 손절 `currentPrice <= stopLossPrice`, `0 < stopLossPrice < entryPrice < takeProfitPrice`을 적용한다. 상세 입력·계산 정책은 `docs/specs/019-exit-price-policy`를 따르며 plan 한 건에서 수량을 한 번만 예약하고 한쪽 체결·전체 취소 시 반대 조건 자동 취소와 수량 소비·반환을 원자 처리한다.
-  - 이 OCO는 2차 MVP 튜토리얼 전용이다. `intentionId`가 필수이며 step 1 favorite부터 exit plan까지 owner·instrument가 같고 `intention.quantity == buyTrade.quantity == exitPlan.quantity`여야 한다. holding은 owner·instrument와 생성 시 `availableQuantity >= exitPlan.quantity`만 검증하므로 기존·추가 보유로 total quantity가 달라도 정상이다. 복기 시 현재 holding quantity는 재검증하지 않는다. 일반 리스크 관리 OCO는 3차 MVP 후보로 분리한다.
-  - 생성 시 서버 유효 현재가를 baseline으로 저장한다. 시세가 없으면 plan·예약 흔적 없이 `PRICE_UNAVAILABLE`로 거부한다. 주식은 매수 체결과 현재 OPEN replay session이 같고 15:30 전일 때만 생성하며 plan에 session을 연결한다.
-  - OCO 트리거는 거래 가능한 유효 가격 갱신에서만 평가한다. 가격 장애 중에는 `PENDING`을 유지한다. 주식 미체결 plan은 replay session 15:30에 `CANCELLED_EXPIRED`로 자동 취소하고 예약을 한 번 반환하며, 코인은 GTC다.
-  - 주식 OCO 생성·트리거·취소·만료의 잠금 순서는 replay session → holding → plan으로 고정한다. 중복·역순 가격 이벤트는 최초 커밋만 종결하고 후속 이벤트는 skip한다. 기존 시장가 SELL도 공통 예약 원장의 `availableQuantity = totalQuantity - reservedQuantity`만 매도할 수 있다. **2차 지정가(LMT-001~004)는 코인 전용으로 시작하므로(2026-08-05 확정) 이 주식 OCO와 시장·종목이 겹치지 않는다** — 주식 지정가를 다루게 되면 그 시점에 이 잠금 순서·예약 원장에 어떻게 편입할지 별도로 정의한다.
-  - OCO endpoint 활성화 전 nullable `trades.stock_replay_session_id` FK와 주식 체결 session 기록, 공통 reservation ledger, 기존 `POST /api/orders` MARKET SELL의 `availableQuantity` 검증을 먼저 배포하거나 OCO와 같은 atomic release로 배포한다.
+  - 이 OCO는 2차 MVP 튜토리얼 전용이다. `intentionId`가 필수이며 step 1 favorite부터 exit plan까지 owner·instrument·market이 같고 `intention.quantity == buyTrade.quantity == exitPlan.quantity`여야 한다(코인은 scale 무관 수치 비교, `020` 참고). holding은 owner·instrument와 생성 시 `availableQuantity >= exitPlan.quantity`만 검증하므로 기존·추가 보유로 total quantity가 달라도 정상이다. 복기 시 현재 holding quantity는 재검증하지 않는다. 일반 리스크 관리 OCO는 3차 MVP 후보로 분리한다.
+  - 생성 시 서버 유효 현재가를 baseline으로 저장한다. 시세가 없으면 plan·예약 흔적 없이 `PRICE_UNAVAILABLE`로 거부한다. **코인은 세션 조건 없이 언제든 생성한다(2차 MVP 활성 경로).** 주식의 OPEN replay session 일치·15:30 이전 조건은 3차 MVP 완성분이다.
+  - OCO 트리거는 거래 가능한 유효 가격 갱신에서만 평가한다. 가격 장애 중에는 `PENDING`을 유지한다. **코인은 자동 만료 없는 GTC이며 종결은 익절·손절 체결과 사용자 취소 세 가지뿐이다(2차 MVP 활성 경로, 수명 상한 미도입 — `020` 트레이드오프 참고).** 주식의 replay session 15:30 자동 `CANCELLED_EXPIRED`는 3차 MVP 완성분이다.
+  - **코인 OCO 생성·트리거·취소의 잠금 순서는 `holding → plan`이다(2차 MVP 활성 경로).** 주식의 `replay session → holding → plan` 순서와 세션 만료 잠금은 3차 MVP 완성분이다. 중복·역순 가격 이벤트는 최초 커밋만 종결하고 후속 이벤트는 skip한다. 기존 시장가 SELL도 공통 예약 원장의 `availableQuantity = totalQuantity - reservedQuantity`만 매도할 수 있다. **2차 지정가(LMT-001~004)는 코인 전용으로 시작하므로(2026-08-05 확정) 이 코인 OCO와 시장·종목이 겹치지 않는다** — 주식 지정가·주식 OCO 완성을 다루게 되면 그 시점에 이 잠금 순서·예약 원장에 어떻게 편입할지 별도로 정의한다.
+  - OCO endpoint 활성화 전 공통 reservation ledger와 기존 `POST /api/orders` MARKET SELL의 `availableQuantity` 검증을 먼저 배포하거나 OCO와 같은 atomic release로 배포한다.
   - 전체 완료는 복기 저장 트랜잭션의 불변 완료 기록으로 유지한다. 완료 전에는 실제 evidence가 사라지면 재진행이 필요할 수 있지만 완료 뒤 favorite 삭제나 plan 종결로 회귀하지 않는다.
-  - 최초 intention 생성에서 사용자·튜토리얼 공통 `practice_progresses` 행을 atomic insert-or-existing으로 한 번 확보한다. **`practice_progresses`는 완료 여부를 담는 영구 기록이라 ADR-0012에서도 DB 테이블로 유지한다** — 인메모리로 옮긴 것은 즐겨찾기와 사전 의도(`practice_intentions`, V19에서 DROP)뿐이다. 복기 저장은 이 progress를 가장 먼저 잠그고 `progress → favorite → intention → exit plan` 순서로 검증한다. **favorite·intention은 DB 행이 아니므로 그 잠금은 `SELECT ... FOR UPDATE`가 아니라 사용자 단위 in-process 잠금이다**(ADR-0012). favorite는 복기 완료 커밋까지 잠가 동시 삭제와 직렬화한다. 서로 다른 eligible plan의 동시 요청도 최초 요청만 reflection·completion 각 1행과 progress 완료를 만들고 201을 반환하며 나머지는 답변을 추가 저장하지 않고 409 `PRACTICE_ALREADY_COMPLETED`다. progress·completion의 사용자·튜토리얼 unique와 reflection의 사용자·plan unique를 최종 방어선으로 둔다.
+  - 최초 intention 생성에서 사용자·튜토리얼 공통 `practice_progresses` 행을 atomic insert-or-existing으로 한 번 확보한다. **튜토리얼 key는 대상 종목의 market으로 갈린다 — 주식은 `INVESTMENT_PRACTICE_V1`, 코인은 `COIN_PRACTICE_V1`이며 사용자당 완료 상태가 독립이다(`020`, migration 불필요, 기존 행 비백필).** `practice_progresses`는 완료 여부를 담는 영구 기록이라 ADR-0012에서도 DB 테이블로 유지한다 — 인메모리로 옮긴 것은 즐겨찾기와 사전 의도(`practice_intentions`, V19에서 DROP)뿐이다. 복기 저장은 이 progress를 가장 먼저 잠그고 `progress → favorite → intention → exit plan` 순서로 검증한다. **favorite·intention은 DB 행이 아니므로 그 잠금은 `SELECT ... FOR UPDATE`가 아니라 사용자 단위 in-process 잠금이다**(ADR-0012). favorite는 복기 완료 커밋까지 잠가 동시 삭제와 직렬화한다. 서로 다른 eligible plan의 동시 요청도 최초 요청만 reflection·completion 각 1행과 progress 완료를 만들고 201을 반환하며 나머지는 답변을 추가 저장하지 않고 409 `PRACTICE_ALREADY_COMPLETED`다. progress·completion의 사용자·튜토리얼 unique와 reflection의 사용자·plan unique를 최종 방어선으로 둔다.
   - 튜토리얼 완료는 실제 도메인 API 성공·소유권·필드·시각 순서를 서버가 연결해 판정한다. 클라이언트 완료 주장은 받지 않는다. 배지·금전성 보상·LLM·투자 지식 객관식 퀴즈는 이 단계에 포함하지 않는다.
 - 동시성 제어 — **미착수**
 - 부하테스트 — **미착수**
@@ -243,6 +244,7 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 
 ### 3차 MVP — 2차 완료 후 별도 Spec
 
+- **주식 3단계 투자 실습 튜토리얼 완성 (2026-08-05, 2차 → 3차 이동)** — 체결 재생 세션 귀속(`buyTrade.stockReplaySessionId`와 `OPEN` session 일치·15:30 이전 생성)과 15:30 자동 `CANCELLED_EXPIRED` 만료를 포함한 나머지 OCO 세션 로직·진행조회·관찰(evidence C의 세션 만료 경로)·복기 완성(`docs/specs/016-investment-education-policy`). 이미 완료된 즐겨찾기·사전 의도·합성 시세·주식 체결 세션 FK(PR #165·#171·#173·#176·#191·#195)는 2차 MVP 완료로 계속 유지된다. 코인 경로(`docs/specs/020-coin-practice-tutorial`)가 2차 MVP(1차 고도화)의 활성 트랙이며, 공통 OCO 인프라(예약 원장·`/api/exit-plans`)는 코인 우선으로 구현하되 주식 분기를 함께 얹을 수 있으면 같은 이슈에서 처리해도 된다 — 다만 주식의 세션 특화 완성(만료 scan·evidence C 세션 분기)은 이 항목이 별도로 완료 판정한다.
 - ~~종목 뉴스 요약~~ → **2차로 이동** (2026-08-03, `docs/specs/012-ai-feedback` FEED-008)
 - 8개 투자 지식 과정(투자와 위험, 주식과 코인의 차이, 주문과 체결, 시장가와 지정가, 평가손익과 실현손익, 수수료와 수익률, 분산투자, 투자 계획과 복기)과 객관식 문항, 과정별 최초 완료 배지와 전체 `INVESTMENT_BEGINNER`, 확정 교육 자료 기반 RAG 코치 설명. 2차 MVP의 3단계 실제 API 실습과 분리한다
 - AI 주간·월간 리포트 — 투자일기를 1주~1개월 모아 분석한다. 2차 AI 피드백은 투자일기에 의존하지 않으므로, 계획 대비 실제 대조(목표가·손절가)도 여기서 함께 다룬다
