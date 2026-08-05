@@ -8,10 +8,12 @@ import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.journal.domain.BuyTradeJournal;
 import com.finplay.api.journal.domain.SellTradeJournal;
+import com.finplay.api.journal.dto.response.BuyJournalDetailResponse;
 import com.finplay.api.journal.dto.response.BuyJournalResponse;
 import com.finplay.api.journal.dto.response.BuyJournalUpdateResponse;
 import com.finplay.api.journal.dto.response.JournalListItemResponse;
 import com.finplay.api.journal.dto.response.JournalListResponse;
+import com.finplay.api.journal.dto.response.SellJournalDetailResponse;
 import com.finplay.api.journal.dto.response.SellJournalResponse;
 import com.finplay.api.journal.dto.response.SellJournalUpdateResponse;
 import com.finplay.api.journal.repository.BuyTradeJournalRepository;
@@ -101,6 +103,32 @@ public class JournalService {
 
 		journal.updateContent(content, LocalDateTime.now(clock));
 		return BuyJournalUpdateResponse.from(journal);
+	}
+
+	@Transactional(readOnly = true)
+	public BuyJournalDetailResponse getBuyJournal(Long userId, Long buyTradeId) {
+		Trade trade = tradeService.getOwnedTrade(userId, buyTradeId);
+		if (trade.getSide() != OrderSide.BUY) {
+			throw new BusinessException(ErrorCode.VALIDATION_ERROR);
+		}
+		BuyTradeJournal journal = buyTradeJournalRepository
+			.findByBuyTradeId(buyTradeId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+
+		return BuyJournalDetailResponse.from(journal);
+	}
+
+	@Transactional(readOnly = true)
+	public SellJournalDetailResponse getSellJournal(Long userId, Long sellTradeId) {
+		Trade trade = tradeService.getOwnedTrade(userId, sellTradeId);
+		if (trade.getSide() != OrderSide.SELL) {
+			throw new BusinessException(ErrorCode.VALIDATION_ERROR);
+		}
+		SellTradeJournal journal = sellTradeJournalRepository
+			.findBySellTradeId(sellTradeId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+
+		return SellJournalDetailResponse.from(journal);
 	}
 
 	@Transactional(readOnly = true)
