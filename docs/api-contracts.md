@@ -424,7 +424,20 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 조회 대상은 요청에서 받지 않고 Access Token의 인증 사용자 본인 소유의 해당 시장 계좌(`AccountService.getAccountFor`로 소유권+시장 스코프 검증)가 쓴 매수 회고(`buy_trade_journals`)와 매도 회고(`sell_trade_journals`)를 **한 목록에 섞어** 반환한다 — 두 종류를 따로 조회하는 엔드포인트는 없다. 정렬 기준은 **회고를 처음 쓴 시점(`createdAt`) 내림차순**이며 동시각은 체결 ID 내림차순으로 끊는다(`updatedAt` 기준 정렬 아님 — 방금 수정한 오래된 회고가 목록 맨 위로 튀지 않도록). 커서는 "이전 페이지 마지막 행보다 이 시각 이전이거나(동시각이면 이 체결 ID보다 작은)" 조건으로 다음 페이지를 이어받아 페이지 경계에서 중복·누락이 없다.
 
-응답 항목 필드는 `journalType`(`"BUY"`\|`"SELL"`)·`buyTradeId`·`sellTradeId`·`content`·`createdAt`·`updatedAt` 6개로 고정이다. 매수 항목은 `sellTradeId`가, 매도 항목은 `buyTradeId`가 `null`이다. **통합 `journalId`는 노출하지 않는다** — JOUR-005(상세 조회, 아직 미구현)의 식별자 체계를 선점하지 않기 위해서다. 종목·가격·수량·실현손익 등 체결 정보는 포함하지 않는다(`GET /api/trades`가 정본). wrapper는 형제 API(`GET /api/trades`·`GET /api/orders`)와 같은 `content`·`nextCursor`·`hasNext` 3필드다.
+응답 항목 필드는 `journalType`(`"BUY"`\|`"SELL"`)·`buyTradeId`·`sellTradeId`·`content`·`createdAt`·`updatedAt` 6개로 고정이다. 매수 항목은 `sellTradeId`가, 매도 항목은 `buyTradeId`가 `null`이다. **통합 `journalId`는 노출하지 않는다** — 아래 "투자일기 상세 조회(매수·매도)" 절이 확정한 JOUR-005 식별자 체계(타입별 경로 분리)를 선점하지 않기 위해서다. 종목·가격·수량·실현손익 등 체결 정보는 포함하지 않는다(`GET /api/trades`가 정본). wrapper는 형제 API(`GET /api/trades`·`GET /api/orders`)와 같은 `content`·`nextCursor`·`hasNext` 3필드다.
+
+### 투자일기 상세 조회(매수·매도)
+
+| Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|---|
+| GET | /api/journal/buy/{buyTradeId} | Access Bearer 필수 | 경로 변수 `buyTradeId`(숫자), 본문 없음 | 200 `{"journalId":1,"buyTradeId":12,"content":"실적 발표 전 분할 매수. 5% 빠지면 손절 계획.","createdAt":"2026-08-04T10:12:33","updatedAt":"2026-08-05T09:03:12"}` (`BuyJournalDetailResponse`, 5개 필드 고정) | `buyTradeId` 타입 불일치(숫자 파싱 실패)는 400 `VALIDATION_ERROR`. 대상 체결의 `side`가 `BUY`가 아님(매도 체결)도 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED`. 타인 소유 체결은 403 `FORBIDDEN`. `buyTradeId`에 해당하는 체결 없음은 404 `NOT_FOUND`. 체결은 있으나 매수 회고가 아직 없으면 404 `NOT_FOUND` | 007 JOUR-005, Issue #217 |
+| GET | /api/journal/sell/{sellTradeId} | Access Bearer 필수 | 경로 변수 `sellTradeId`(숫자), 본문 없음 | 200 `{"journalId":1,"sellTradeId":34,"content":"목표가 도달해서 전량 매도. 다음엔 분할 매도 시도.","createdAt":"2026-08-04T15:20:41","updatedAt":"2026-08-04T15:20:41"}` (`SellJournalDetailResponse`, 5개 필드 고정) | `sellTradeId` 타입 불일치는 400 `VALIDATION_ERROR`. 대상 체결의 `side`가 `SELL`이 아님(매수 체결)도 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED`. 타인 소유 체결은 403 `FORBIDDEN`. `sellTradeId`에 해당하는 체결 없음은 404 `NOT_FOUND`. 체결은 있으나 매도 회고가 아직 없으면 404 `NOT_FOUND` | 007 JOUR-005, Issue #217 |
+
+**경로를 타입별로 분리한다** — 단일 경로 `GET /api/journal/{journalId}`는 만들지 않는다(2026-08-05 이슈 #217 확정, JOUR-005 식별자 체계 Decision Gate 해제). `buy_trade_journals.id`·`sell_trade_journals.id`는 서로 다른 AUTO_INCREMENT 시퀀스라 **같은 값이 두 테이블에 겹칠 수 있고**, 숫자 하나만으로는 어느 테이블인지 정해지지 않는다. 경로 변수는 회고 자체의 PK가 아니라 **그 회고가 달린 체결 ID**(`buyTradeId`/`sellTradeId`)다 — 작성·수정 계약 4개와 목록 항목이 이미 쓰는 식별자를 그대로 재사용한다. `journalId`는 응답 본문에만 남는다.
+
+**검증 순서는 수정 계약(JOUR-002·004)과 같다** — `체결 존재(404) → 소유(403) → 체결 구분(400) → 회고 존재(404)`. 타인 체결이면 그 체결의 매수·매도 속성과 회고 존재 여부를 흘리기 전에 403이 먼저다. 경로와 체결 구분이 어긋나면(매수 경로에 매도 체결 ID, 매도 경로에 매수 체결 ID) **404가 아니라 400**이다 — 리소스가 없는 게 아니라 클라이언트가 경로를 잘못 고른 것으로 취급한다. **이 엔드포인트에 409는 없다**(새 행을 만들지 않는다).
+
+응답은 같은 회고의 수정 응답(`BuyJournalUpdateResponse`·`SellJournalUpdateResponse`)과 필드 구성이 1:1로 같은 5개 고정(`journalId`·`buyTradeId` 또는 `sellTradeId`·`content`·`createdAt`·`updatedAt`)이다. **두 응답의 `journalId`는 서로 다른 테이블의 시퀀스에서 채번되므로 값이 겹칠 수 있다** — 같은 `journalId`가 매수 응답과 매도 응답에 동시에 나타나도 서로 다른 회고를 가리킨다. 종목·가격·수량·실현손익 등 체결 정보는 포함하지 않는다(`GET /api/trades`가 정본). 조회는 읽기 전용이며(`@Transactional(readOnly = true)`), 신규 Flyway 마이그레이션 없이 기존 `findByBuyTradeId`·`findBySellTradeId`를 그대로 재사용한다 — 스키마 변경이 없다.
 
 ### 매수 체결 투자일기 작성
 
@@ -432,7 +445,7 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 |---|---|---|---|---|---|---|
 | POST | /api/trades/{buyTradeId}/journal | Access Bearer 필수 | 경로 변수 `buyTradeId`(숫자) + 본문 `{"content":"실적 발표 전 분할 매수. 5% 빠지면 손절 계획."}`(`BuyJournalCreateRequest`, `content`는 `@NotBlank` + `@Size(max=5000)`) | 201 `{"journalId":1,"buyTradeId":12,"content":"실적 발표 전 분할 매수. 5% 빠지면 손절 계획.","createdAt":"2026-08-04T10:12:33"}` (`BuyJournalResponse`, 4개 필드 고정) | `content` 누락·공백·5000자 초과, `buyTradeId` 타입 불일치(숫자 파싱 실패), 대상 체결의 `side`가 `BUY`가 아님(매도 체결)은 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED`. 타인 소유 체결은 403 `FORBIDDEN`. `buyTradeId`에 해당하는 체결 없음은 404 `NOT_FOUND`. 해당 매수 체결에 투자일기가 이미 존재(선제 조회 또는 유니크 위반)하면 409 `DUPLICATE_RESOURCE` 공통 오류 형식 | 007 JOUR-001, Issue #159 |
 
-작성자는 요청 본문이 아니라 Access Token의 인증 사용자(`AuthenticatedUser#userId`)로 결정한다. 응답 필드는 `journalId`·`buyTradeId`·`content`·`createdAt` 4개로 고정이며, 종목·가격·수량 등 체결 정보는 포함하지 않는다(`GET /api/trades`가 이미 제공한다). 목표가·손절가·예상보유기간 등 구조화 필드는 이번 범위가 아니다. `Location` 헤더는 포함하지 않는다 — 단건 조회(JOUR-005)가 아직 없어 가리킬 URL이 없다.
+작성자는 요청 본문이 아니라 Access Token의 인증 사용자(`AuthenticatedUser#userId`)로 결정한다. 응답 필드는 `journalId`·`buyTradeId`·`content`·`createdAt` 4개로 고정이며, 종목·가격·수량 등 체결 정보는 포함하지 않는다(`GET /api/trades`가 이미 제공한다). 목표가·손절가·예상보유기간 등 구조화 필드는 이번 범위가 아니다. `Location` 헤더는 포함하지 않는다 — 단건 조회는 위 "투자일기 상세 조회(매수·매도)" 절이 담당하며 별도 URL로 가리킨다.
 
 **본문 검증이 경로 검증보다 먼저 일어난다.** `@Valid`는 컨트롤러 메서드 진입 전에 평가되므로, 없는 체결 + 공백 본문 요청은 404가 아니라 **400**이다.
 

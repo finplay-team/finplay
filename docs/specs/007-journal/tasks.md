@@ -446,7 +446,7 @@
   - 응답 DTO 2개(`BuyJournalDetailResponse`·`SellJournalDetailResponse`)는 서비스 반환 타입 컴파일에 필요하므로 이 항목에서 함께 만든다(`~UpdateResponse` 재사용 아님).
   - 검증 — 단위 테스트(기존 `JournalServiceTest`에 추가): 정상 조회(반환 DTO 5필드·`updateContent`/`save` 미호출), 404(체결 없음)·403·400(반대 side)·404(회고 없음) 각 경로 ×2, **타인 소유의 반대 side 체결이 403**(400 아님), **체결 없음 404와 회고 없음 404를 별도 테스트로 구분**.
 
-- [ ] **D2. `JournalDetailController` + API 문서 갱신**
+- [x] **D2. `JournalDetailController` + API 문서 갱신**
 
   `GET /api/journal/buy/{buyTradeId}`·`GET /api/journal/sell/{sellTradeId}`를 신규 컨트롤러 `JournalDetailController`(`@RequestMapping("/api/journal")`)에 연다. 기존 두 컨트롤러는 건드리지 않는다.
   - 컨트롤러에 비즈니스 판단·repository 호출·try-catch를 두지 않는다. 요청 본문·쿼리 파라미터가 없다.
