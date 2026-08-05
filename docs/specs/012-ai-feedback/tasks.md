@@ -26,7 +26,7 @@
 
 ## 작업 항목
 
-- [ ] **1. 반사실 수익률 — `counterfactuals` 3종의 수수료 재계산**
+- [x] **1. 반사실 수익률 — `counterfactuals` 3종의 수수료 재계산**
 
   `PostSellFeedbackReader.buildCounterfactuals`가 채워 둔 `price`·`at`은 그대로 두고 `returnRate`만 계산해 넣는다. 6·7번 경계표가 정확히 이 필드에서 갈린다.
   - 완료 조건(§완료 조건 "매도 회고" 절) — "반사실 3개 시나리오의 수익률이 **수수료를 다시 계산해** 산출된다. 수수료는 `FLOOR(매도금액 × 시장별 요율)`이며, 반올림하면 `api-contracts.md`의 예시 값과 어긋난다." 시나리오 3종의 정의·수익률 산출식은 spec.md §반사실·집단 비교 계산이 정본이다.

@@ -77,6 +77,11 @@ class PostSellFeedbackReader {
 	// 계약이 정한 수익률 scale·라운딩. PortfolioService·HoldingValuationService와 같은 값이다.
 	private static final int RETURN_RATE_SCALE = 4;
 
+	// 반사실 시나리오의 매도수수료율 — OrderExecutionService.STOCK_FEE_RATE와 같은 값이다(§반사실·집단 비교
+	// 계산). 그 필드는 private이고 주문 실행이라는 다른 트랜잭션 경계에 있어 상수를 공개해 의존을 만들지 않고
+	// 값만 재사용한다. 2차는 주식 전용이라 STOCK 요율만 있다.
+	private static final BigDecimal STOCK_FEE_RATE = new BigDecimal("0.00015");
+
 	// 파생 사실 비율(sellVsHighRate·sellVsLowRate)의 scale. 계약 예시(-0.0325·0.0059)가 소수 4자리다.
 	// returnRate와 값은 같지만 근거가 다르다 — 그쪽은 계약이 식과 함께 못박은 값이고 이쪽은 §파생 사실 계산의
 	// 뺄셈·나눗셈이라, 한쪽 정밀도를 바꿀 이유가 생겼을 때 다른 쪽이 딸려 가지 않게 따로 둔다.
@@ -183,14 +188,9 @@ class PostSellFeedbackReader {
 			// (§파생 사실 계산의 "위 전부"에 [매도 후 흐름] 블록이 포함된다).
 			//
 			// ─── plan.md 7번(반사실 수익률·집단 비교)이 끼울 자리 ────────────────────────────────
-			// 아래 두 자리는 구현 누락이 아니라 이슈 #208과 7번의 경계다. 7번이 여기를 "빠뜨린 값"으로
-			// 읽고 경계를 다시 정하지 않도록 규칙까지 적어 둔다.
+			// counterfactuals 3종의 returnRate는 이슈 #212 1번이 채웠다(buildCounterfactuals ·
+			// counterfactualReturnRate). 아래 한 자리는 여전히 구현 누락이 아니라 이슈 #208과 7번의 경계다.
 			//
-			//  · counterfactuals 3종의 returnRate — 이 이슈는 price·at까지만 채우고 returnRate를 null로
-			//    둔다. 7번이 시나리오 가격 P마다 매도수수료를 다시 계산해(FLOOR(P × 수량 × 0.00015),
-			//    OrderExecutionService와 같은 식·같은 원 미만 내림) 실현손익 ÷ (배분 매수원가 + 배분
-			//    매수수수료)로 채운다(§반사실·집단 비교 계산). 가격이 바뀌면 수수료도 바뀌므로 본체
-			//    returnRate를 재사용할 수 없다.
 			//  · peerComparison — 이 이슈는 status를 상수 NOT_YET으로 두고 지표 전부를 null로 둔다.
 			//    7번이 price_move_peer_stats의 "그 체결의 서비스 날짜" 행으로 판정한다(NO_EVENT 1순위 →
 			//    holderCount < 5면 INSUFFICIENT_SAMPLE → 그 외 READY, §C-4). 여기서 NO_EVENT·
@@ -204,7 +204,9 @@ class PostSellFeedbackReader {
 				? buildPostSellFlow(marketClosed, fullDayCandles, trade.getPrice(), sellSourceTradingDate, sellAt)
 				: null,
 			sameSessionCompleted
-				? buildCounterfactuals(marketClosed, fullDayCandles, sellSourceTradingDate, extremes, priceMoves)
+				? buildCounterfactuals(
+					marketClosed, fullDayCandles, sellSourceTradingDate, extremes, priceMoves,
+					trade.getQuantity(), allocation.allocatedCost() + allocation.allocatedBuyFee())
 				: null,
 			sameSessionCompleted ? peerComparisonNotYet() : null,
 			// AI 서술 셋은 이 클래스가 채우지 않는다 — LLM 호출을 이 트랜잭션 안에 넣지 않기 위해서다.
@@ -394,40 +396,48 @@ class PostSellFeedbackReader {
 	 * 같은 수량을 다른 시점에 팔았다면 어땠을지 (§반사실·집단 비교 계산). 게이트는 {@code postSellFlow}와 같다 —
 	 * 아직 재생되지 않은 가격을 쓰므로 미래 정보다.
 	 *
-	 * <p><b>세 시나리오의 {@code returnRate}는 여기서 채우지 않는다</b> — 조립 지점 주석의 경계표대로
-	 * {@code plan.md} 7번이 수수료를 재계산해 채운다.
+	 * <p>세 시나리오의 {@code returnRate}는 {@link #counterfactualReturnRate}가 채운다 — 시나리오 가격마다
+	 * 매도수수료를 다시 계산하므로(가격이 바뀌면 수수료도 바뀐다) 본체 {@link #returnRate}를 재사용할 수 없다.
+	 *
+	 * @param quantity 매도 수량 — 세 시나리오가 전부 같은 수량을 판다고 가정한다(§반사실·집단 비교 계산)
+	 * @param buyBasis 배분 매수원가 + 배분 매수수수료. 세 시나리오가 공유하는 분모다
 	 */
 	private static Counterfactuals buildCounterfactuals(
 		boolean marketClosed,
 		List<StockCandleDto> fullDayCandles,
 		LocalDate sourceTradingDate,
 		HoldExtremes extremes,
-		List<HeldPriceMoveItem> priceMoves) {
+		List<HeldPriceMoveItem> priceMoves,
+		BigDecimal quantity,
+		long buyBasis) {
 		if (!marketClosed) {
 			return new Counterfactuals(PostSellFeedbackStatus.NOT_YET, null, null, null);
 		}
 		return new Counterfactuals(
 			PostSellFeedbackStatus.READY,
-			scenarioAtClose(fullDayCandles, sourceTradingDate),
-			scenarioAtHoldHigh(extremes),
-			scenarioAtFirstMoveAfterBuy(fullDayCandles, priceMoves));
+			scenarioAtClose(fullDayCandles, sourceTradingDate, quantity, buyBasis),
+			scenarioAtHoldHigh(extremes, quantity, buyBasis),
+			scenarioAtFirstMoveAfterBuy(fullDayCandles, priceMoves, quantity, buyBasis));
 	}
 
 	/** {@code atClose} — 그 거래일 <b>마지막 분봉</b>의 close와 그 시각이다 (§C-2-1, 리터럴 15:30이 아니다). */
 	private static CounterfactualScenario scenarioAtClose(
-		List<StockCandleDto> fullDayCandles, LocalDate sourceTradingDate) {
+		List<StockCandleDto> fullDayCandles, LocalDate sourceTradingDate, BigDecimal quantity, long buyBasis) {
 		StockCandleDto lastCandle = lastCandle(fullDayCandles);
 		return lastCandle == null
 			? null
 			: new CounterfactualScenario(
-				lastCandle.close(), LocalDateTime.of(sourceTradingDate, lastCandle.candleTime()), null);
+				lastCandle.close(), LocalDateTime.of(sourceTradingDate, lastCandle.candleTime()),
+				counterfactualReturnRate(lastCandle.close(), quantity, buyBasis));
 	}
 
 	/** {@code atHoldHigh} — 보유 구간 최고가와 그 시각. 극값이 없으면(구간에 분봉이 없으면) {@code null}이다. */
-	private static CounterfactualScenario scenarioAtHoldHigh(HoldExtremes extremes) {
+	private static CounterfactualScenario scenarioAtHoldHigh(
+		HoldExtremes extremes, BigDecimal quantity, long buyBasis) {
 		return extremes.holdHighPrice() == null
 			? null
-			: new CounterfactualScenario(extremes.holdHighPrice(), extremes.holdHighAt(), null);
+			: new CounterfactualScenario(extremes.holdHighPrice(), extremes.holdHighAt(),
+				counterfactualReturnRate(extremes.holdHighPrice(), quantity, buyBasis));
 	}
 
 	/**
@@ -443,7 +453,7 @@ class PostSellFeedbackReader {
 	 *     없어도 {@code null}이다 — 가격을 지어내지 않는다
 	 */
 	private static CounterfactualScenario scenarioAtFirstMoveAfterBuy(
-		List<StockCandleDto> fullDayCandles, List<HeldPriceMoveItem> priceMoves) {
+		List<StockCandleDto> fullDayCandles, List<HeldPriceMoveItem> priceMoves, BigDecimal quantity, long buyBasis) {
 		if (priceMoves.isEmpty()) {
 			return null;
 		}
@@ -451,8 +461,34 @@ class PostSellFeedbackReader {
 		return fullDayCandles.stream()
 			.filter(candle -> candle.candleTime().equals(windowEnd.toLocalTime()))
 			.findFirst()
-			.map(candle -> new CounterfactualScenario(candle.close(), windowEnd, null))
+			.map(candle -> new CounterfactualScenario(
+				candle.close(), windowEnd, counterfactualReturnRate(candle.close(), quantity, buyBasis)))
 			.orElse(null);
+	}
+
+	/**
+	 * 반사실 시나리오 가격 {@code price}로 팔았다면의 수익률 (§반사실·집단 비교 계산).
+	 *
+	 * <p><b>매도금액·수수료를 시나리오 가격으로 다시 계산한다</b> — {@code OrderExecutionService.priceOrder}와
+	 * 같은 식·같은 라운딩이다. 매도금액을 원 단위로 {@code FLOOR}한 뒤 그 금액에 {@link #STOCK_FEE_RATE}를 곱해
+	 * 다시 {@code FLOOR}한다. 가격이 바뀌면 수수료도 바뀌므로 본체 {@code fee}·{@link #returnRate}를 그대로 쓸 수
+	 * 없다.
+	 *
+	 * @param buyBasis 배분 매수원가 + 배분 매수수수료. 0이면 {@link #returnRate}와 같은 이유로 {@code ZERO} —
+	 *     {@code ArithmeticException}으로 조회 전체가 500이 되는 것보다 낫다
+	 */
+	private static BigDecimal counterfactualReturnRate(BigDecimal price, BigDecimal quantity, long buyBasis) {
+		long amount = price.multiply(quantity).setScale(0, RoundingMode.FLOOR).longValueExact();
+		long fee = BigDecimal.valueOf(amount)
+			.multiply(STOCK_FEE_RATE)
+			.setScale(0, RoundingMode.FLOOR)
+			.longValueExact();
+		if (buyBasis == 0L) {
+			return BigDecimal.ZERO;
+		}
+		long realizedPnl = (amount - fee) - buyBasis;
+		return BigDecimal.valueOf(realizedPnl)
+			.divide(BigDecimal.valueOf(buyBasis), RETURN_RATE_SCALE, RoundingMode.HALF_UP);
 	}
 
 	/**

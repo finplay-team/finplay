@@ -582,12 +582,16 @@ class PostSellFeedbackServiceTest {
 					new BigDecimal("69500"),
 					LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(15, 5)))
 				: new PostSellFlow(PostSellFeedbackStatus.NOT_YET, null, null, null, null, null),
+			// returnRate를 채워 둔다(이슈 #212 1번) — 값이 있어도 PostSellPromptDto에 실릴 자리가 애초에 없다는
+			// 것을 이 파일의 mapsFactsIntoThePromptInputWithoutCounterfactuals가 확인한다.
 			new Counterfactuals(
 				PostSellFeedbackStatus.READY,
 				new CounterfactualScenario(
-					new BigDecimal("69200"), LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(15, 27)), null),
+					new BigDecimal("69200"), LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(15, 27)),
+					new BigDecimal("-0.0117")),
 				new CounterfactualScenario(
-					new BigDecimal("70800"), LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(11, 5)), null),
+					new BigDecimal("70800"), LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(11, 5)),
+					new BigDecimal("0.0111")),
 				null),
 			new PeerComparison(peerStatus, null, null, null, null, null),
 			null,

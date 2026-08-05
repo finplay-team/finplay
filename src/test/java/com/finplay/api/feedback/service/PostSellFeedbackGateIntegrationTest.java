@@ -381,7 +381,9 @@ class PostSellFeedbackGateIntegrationTest {
 		assertThat(response.counterfactuals().status()).isEqualTo(PostSellFeedbackStatus.READY);
 		assertThat(response.counterfactuals().atClose().at())
 			.isEqualTo(LocalDateTime.of(ORIGIN_TRADE_DATE, LAST_CANDLE_TIME));
-		assertThat(response.counterfactuals().atClose().returnRate()).isNull();
+		// 이슈 #212 1번 — buyBasis 700,105(=700,000+105), quantity 10. (69,200×10 − FLOOR(692,000×0.00015)) −
+		// 700,105 = 691,897 − 700,105 = −8,208 → −8,208÷700,105 → −0.0117(api-contracts.md 예시와 같다).
+		assertThat(response.counterfactuals().atClose().returnRate()).isEqualTo(new BigDecimal("-0.0117"));
 		assertThat(response.peerComparison().status()).isEqualTo(PostSellFeedbackStatus.NOT_YET);
 		assertThat(response.peerComparison().priceMoveId()).isNull();
 	}
