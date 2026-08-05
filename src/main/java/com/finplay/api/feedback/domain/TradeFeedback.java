@@ -30,7 +30,9 @@ import lombok.NoArgsConstructor;
  * {@code regenerationAttempts}는 <b>체결 1건당 누적</b> 재시도 횟수이며 날짜로 리셋하지 않는다 — 재생성이
  * 실패하면 {@code generatedAt}을 갱신하지 않아 날짜 기준 자체가 성립하지 않는다 (§데이터 모델·§C-8).
  *
- * <p>재생성 판정과 그에 따른 상태 변경은 조회 서비스 소유다. 여기서 리셋·증가 로직을 만들지 않는다.
+ * <p><b>재생성 게이트 판정은 조회 서비스 소유다</b>({@code PostSellFeedbackService}) — 이 엔티티는 판정 결과에
+ * 따른 <b>전이</b>만 갖는다. 게이트는 응답의 {@code postSellFlow}·{@code peerComparison} 상태를 보는데, 그 둘은
+ * 저장 컬럼이 아니라 조회 시 계산하는 값이라 엔티티가 알 수 있는 정보가 아니다.
  */
 @Entity
 @Table(name = "trade_feedbacks")
@@ -87,5 +89,42 @@ public class TradeFeedback {
 	public static TradeFeedback create(
 		Trade trade, String narrative, NarrativeSource narrativeSource, LocalDateTime generatedAt) {
 		return new TradeFeedback(trade, narrative, narrativeSource, false, 0, generatedAt);
+	}
+
+	/**
+	 * 재생성 <b>성공</b> — 매도 후 흐름·집단 비교가 반영된 서술로 갈아 끼우고 <b>확정</b>한다 (§C-5의 재생성 게이트).
+	 *
+	 * <p>{@code narrativeFinalized = true}가 곧 "그 뒤 조회에서는 재생성하지 않는다"이다. 이 값을 안 바꾸면
+	 * 게이트가 계속 열려 있어 <b>조회마다 LLM을 다시 부르면서 매번 다른 문장이 나가는데 예외도 로그도 없다.</b>
+	 *
+	 * <p>{@code regenerationAttempts}는 성공에서도 <b>증가한다</b> — 컬럼이 세는 것은 "재생성을 몇 번 시도했는가"
+	 * 이고, 성공만 빼면 그 수가 실제 LLM 재호출 횟수와 어긋난다. 상한 판정에는 영향이 없다(성공하면
+	 * {@code narrativeFinalized}가 게이트를 먼저 닫는다).
+	 *
+	 * @param generatedAt 성공에서만 갱신한다. 실패에서 갱신하지 않는 것이 <b>누적 상한을 날짜로 리셋할 수 없는
+	 *     이유</b>다 (FEED-007·§C-7)
+	 */
+	public void applyRegeneratedNarrative(
+		String narrative, NarrativeSource narrativeSource, LocalDateTime generatedAt) {
+		this.narrative = narrative;
+		this.narrativeSource = narrativeSource;
+		this.narrativeFinalized = true;
+		this.regenerationAttempts++;
+		this.generatedAt = generatedAt;
+	}
+
+	/**
+	 * 재생성 <b>실패</b> — 기존 서술을 그대로 두고 재시도 횟수만 누적한다 (FEED-007).
+	 *
+	 * <p><b>서술을 건드리지 않는 것이 핵심이다.</b> 재생성이 실패하면 {@code NarrativeService}가 템플릿 문장을
+	 * 돌려주는데, 그 문장은 매도 후 흐름·집단 비교를 담지 않으므로 기존 문장을 그것으로 덮으면 <b>재생성을
+	 * 시도할수록 서술이 빈약해진다.</b>
+	 *
+	 * <p><b>{@code narrativeFinalized}를 {@code false}로 남기고 {@code generatedAt}도 갱신하지 않는다.</b> 다음
+	 * 조회에서 상한 안이면 다시 시도해야 하고, 시각을 갱신하면 "날짜가 바뀌었으니 리셋"이라는 잘못된 규칙이
+	 * 성립할 여지가 생긴다 — 상한은 <b>체결 1건당 누적</b>이며 날짜로 리셋하지 않는다 (§C-7).
+	 */
+	public void recordFailedRegeneration() {
+		this.regenerationAttempts++;
 	}
 }

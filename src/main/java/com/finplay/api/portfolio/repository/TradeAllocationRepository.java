@@ -2,11 +2,33 @@
 package com.finplay.api.portfolio.repository;
 
 import com.finplay.api.portfolio.domain.TradeAllocation;
+import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface TradeAllocationRepository extends JpaRepository<TradeAllocation, Long> {
+
+	/**
+	 * 매도 체결 1건이 소비한 배분을 lot의 체결시각 오름차순 + lot id 오름차순으로 읽는다 — 배분 시점의 FIFO
+	 * 순서({@code PortfolioSellService})와 같은 정렬이다.
+	 *
+	 * <p><b>2차 키({@code lot.id})를 지우지 않는다.</b> 같은 시각에 체결된 lot이 둘 이상이면 정렬이 실행마다
+	 * 달라지는데, InnoDB가 흔히 PK 순서로 돌려주어 테스트가 우연히 통과한다. 첫 행의 {@code executedAt}이
+	 * 매도 회고의 {@code buyAt}(배분된 lot 중 <b>가장 이른</b> 체결 시각, spec FEED-007)이 되므로 순서가 곧
+	 * 값이다.
+	 *
+	 * <p>lot과 그 매수 체결·재생세션을 함께 읽는다 — 호출부가 lot별 원본 거래일을 봐야 해서(매도 회고의
+	 * {@code sameSessionCompleted} 판정) 지연 로딩으로 두면 배분 수만큼 쿼리가 늘어난다.
+	 */
+	@Query("select a from TradeAllocation a "
+		+ "join fetch a.holdingLot lot "
+		+ "join fetch lot.buyTrade buyTrade "
+		+ "left join fetch buyTrade.stockReplaySession "
+		+ "where a.sellTrade.id = :sellTradeId "
+		+ "order by lot.executedAt asc, lot.id asc")
+	List<TradeAllocation> findAllBySellTradeIdOrderByLotExecutedAtAscLotIdAsc(@Param("sellTradeId")
+	Long sellTradeId);
 
 	@Query("select coalesce(sum(a.allocatedCost), 0) from TradeAllocation a where a.holdingLot.id = :holdingLotId")
 	long sumAllocatedCostByHoldingLotId(@Param("holdingLotId")

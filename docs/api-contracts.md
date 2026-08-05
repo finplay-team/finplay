@@ -593,7 +593,7 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 ## 012 AI 피드백
 
-`docs/specs/012-ai-feedback`의 계약 4건이다(변동 원인 카드·매도 직후 피드백·종목 뉴스 요약·개장 전 브리핑). 네 경로는 URL 접두사(`instruments`·`ai`·`market`)가 다르지만 소유 도메인은 `feedback` 하나다. spec 단위로 묶어 둔다. **제목에 "(계획)"이 남아 있는 절은 controller가 아직 없으므로 블랙박스 QA가 계약 근거로 사용하지 않는다** — 표시가 없는 절은 구현돼 있으며 QA 근거다. 각 구현이 병합되는 커밋에서 그 절의 "계획" 표시를 제거하고 `docs/api-routes.md`의 2차 계획 라우트 절도 함께 정리한다.
+`docs/specs/012-ai-feedback`의 계약 4건이다(변동 원인 카드·매도 직후 피드백·종목 뉴스 요약·개장 전 브리핑). 네 경로는 URL 접두사(`instruments`·`ai`·`market`)가 다르지만 소유 도메인은 `feedback` 하나다. spec 단위로 묶어 둔다. **네 절 모두 제목에 "(계획)" 표시가 없다 — controller가 전부 있으므로 네 절이 전부 블랙박스 QA 근거다** (매도 직후 피드백이 마지막이며 이슈 #208에서 걷었다). `docs/api-routes.md`도 같은 상태이며 계획 라우트로 남은 2차 경로는 없다. **`plan.md`의 남은 이슈 7·8번은 이 네 절에 필드·분기를 더하고 새 엔드포인트를 만들지 않는다** — 계획 절을 다시 세우지 않는다.
 
 **아래 예시의 `publisher`가 뉴스에서 `hankyung.com`처럼 도메인인 것은 오타가 아니다.** 네이버 뉴스 검색 응답에 언론사 이름 필드가 없어(`title`·`originallink`·`link`·`description`·`pubDate`가 전부) `originallink` 호스트에서 `www.`만 뗀 값을 저장하며, 정본은 spec §C-8이다. 한글 언론사명 매핑은 후속 이슈로 분리했다(`docs/specs/012-ai-feedback/plan.md` §후속으로 낼 이슈). 공시(`type=DISCLOSURE`)의 `publisher`는 `DART` 고정이다.
 
@@ -619,7 +619,7 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 `windowStart`·`windowEnd`는 원본 거래일 날짜가 붙은 `LocalDateTime`(`"2026-07-29T11:20:00"`)이다 — **조회한 날짜가 아니라 `originTradeDate`의 날짜**다. 저장은 시각(`TIME`)뿐이고(§C-8) 날짜는 응답 조립에서 붙인다.
 
-### 매도 직후 피드백 조회 (계획)
+### 매도 직후 피드백 조회
 
 | Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|---|
@@ -649,6 +649,8 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 | `priceMoves[].minutesAfterBuy`·`minutesBeforeSell` | 그 변동이 매수 몇 분 뒤였고 매도 몇 분 전이었는지 |
 | `postSellFlow` | 매도 후 같은 거래일 종가까지의 흐름 (아래 참고) |
 
+**`priceMoves`의 정렬**: `windowStart` 오름차순이고 **같은 `windowStart`는 `id` 오름차순으로 가른다** — 첫 분봉이 09:00인 날 시가 갭 카드와 장중 첫 카드의 `windowStart`가 정확히 같아지므로(위 변동 원인 카드 절과 같은 이유) 2차 키가 없으면 그 둘의 순서가 실행마다 달라진다. 각 카드의 `sources`는 **`publishedAt` 내림차순이고 동률은 연결 행 저장 순서(`price_move_event_sources.id` 오름차순)로 가른다.** **2차 키를 지우는 회귀는 테스트가 반드시 잡지 못한다** — InnoDB가 흔히 PK 순서로 돌려주어 우연히 일치한다. 그래서 보호를 파인더 이름(`...OrderByWindowStartAscIdAsc`)과 이 계약 문장 양쪽에 남긴다.
+
 **`postSellFlow`는 장 마감 이후에만 채워진다.** 14:40에 매도하고 14:41에 조회하면 15:30까지의 가격은 아직 재생되지 않은 미래다. 그걸 보여주면 사용자가 같은 종목을 재매수할 때 답을 아는 상태가 된다. **게이트는 spec §C-5가 정본이다** — 여기 옮겨 적지 않는다. 요지는 기준 날짜가 "오늘"이 아니라 **그 체결의 서비스 날짜**라는 것이다. 오늘로 잡으면 어제 판 체결을 오늘 오전에 열었을 때 `READY`였던 값이 `NOT_YET`으로 되돌아간다. 게이트 전에는 `status="NOT_YET"`이고 가격 필드가 전부 `null`이다. 마감 후 첫 조회에서 `status="READY"`가 된다. **서술 재생성은 여기가 아니라 집단 비교까지 확정된 뒤다**(아래 참고).
 
 **`counterfactuals` — 재생 서비스만 할 수 있는 기능이다.** 같은 수량을 다른 시점에 팔았다면 수익률이 얼마였을지를 세 시나리오로 보여준다(`atClose` 종가까지 보유, `atHoldHigh` 보유 중 최고가, `atFirstMoveAfterBuy` 매수 후 첫 변동 시점). 각 수익률은 **수수료를 다시 계산해** 산출한다 — 매도금액 비례라 가격이 바뀌면 수수료도 바뀐다.
@@ -661,9 +663,20 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 **`counterfactuals`도 같은 게이트를 쓴다** — 아직 재생되지 않은 가격을 쓰므로 미래 정보다. **`peerComparison`은 시각이 아니라 확정 집계 행의 존재로 판정한다**(§C-5). 장 마감 배치가 게이트 시각보다 늦게 돌기 때문에, 시각으로 두면 그 사이 조회가 게이트만 통과하고 값은 비는 상태가 된다. 그 전에는 각각 `status="NOT_YET"`이다.
 
+> **현재 구현 범위 (이슈 #208 머지 시점, 2026-08-05).** 위 예시 JSON은 완성 형태이고 아래 두 자리는 아직 그 값이 나오지 않는다 — **값 누락이 아니라 이슈 경계다.** **`plan.md` 7번(반사실 수익률·집단 비교)이 머지될 때 이 인용 블록을 통째로 걷어낸다.**
+>
+> - **`counterfactuals` 3종의 `returnRate`가 `null`이다.** `status`와 세 시나리오의 `price`·`at`은 채워진다. 수수료를 다시 계산하는 수익률은 `plan.md` 7번(반사실 수익률·집단 비교)이 채우며, 그 이슈가 이 문장을 걷어낸다.
+> - **`peerComparison.status`가 항상 `NOT_YET`이고 지표 전부(`priceMoveId` 포함)가 `null`이다.** 확정 집계 행 기준 판정(`NO_EVENT` 1순위 → `holderCount < 5`면 `INSUFFICIENT_SAMPLE`)과 지표 계산도 7번이다. 따라서 **서술 재생성 게이트(아래 참고)는 7번 머지 전까지 열리지 않는다.**
+
 결과적으로 **매도 직후와 장 마감 후에 보이는 내용이 다르다** — 직후에는 수치·파생 사실·뉴스 카드만, 마감 후에 반사실과 집단 비교가 더해진다. 스포일러 차단의 부수 효과이자 의도된 재방문 유도이므로, 화면은 `NOT_YET`일 때 "장 마감 후 다시 확인" 안내를 노출한다.
 
 **`sameSessionCompleted`가 응답 형태를 가른다.** 매수와 매도가 같은 원본 거래일 안에서 완결됐으면 `true`이고 `holdHighPrice`·`holdHighAt`·`holdLowPrice`·`holdLowAt`·`sellVsHighRate`·`sellVsLowRate`·`buyToNewsMinutes`·`priceMoves`·`postSellFlow`·`counterfactuals`·`peerComparison`이 채워진다. 여러 재생일에 걸친 매매는 `false`이며 이 필드가 전부 `null`(`priceMoves`는 `[]`)이 된다 — 재생일마다 원본 거래일이 달라 분봉이 불연속이라 계산 자체가 성립하지 않는다. **한 매도가 여러 매수 lot에 배분됐고 그 lot들이 서로 다른 원본 거래일에 걸쳐 있어도 `false`다** — 가장 이른 lot 하나만 보고 판정하지 않는다.
+
+**시각이 역전된 조합(`sellAt < buyAt`)도 `sameSessionCompleted=false`다** (2026-08-04 · 2026-08-05 개정, 이슈 #208). 같은 원본 거래일을 여러 서비스 날짜에 재생할 수 있어 **첫 재생일 오후에 매수하고 다음 재생일 오전에 매도하는 조합**이 성립하는데, 그때는 원본 거래일이 같으므로 날짜 대조만으로는 `false`가 되지 않는다. 보유 구간이 빈 구간이라 위 필드가 전부 비므로 **역전 자체를 `false` 조건으로 둔다** — 위 nullable 목록과 규칙은 그대로이고 그 목록에 들어오는 경우가 하나 늘어난 것이다.
+
+**`holdingMinutes`는 그 nullable 목록에 없다 — 역전된 경우에만 `null`이다.** 즉 **역전이면 `sameSessionCompleted=false`이면서 `holdingMinutes`도 `null`이지만, `sameSessionCompleted=false`라고 `holdingMinutes`가 `null`이 되는 것은 아니다** — 원본 거래일이 순방향인 정상 cross-session 매매에서는 그대로 채운다. 음수를 0으로 clamp하거나 서비스 벽시계 경과분으로 대체하지 않는다(같은 응답의 `buyAt`·`sellAt`과 산술이 어긋난다). 규칙은 spec §파생 사실 계산이 정본이다.
+
+**분 단위 값(`holdingMinutes`·`priceMoves[].minutesAfterBuy`·`minutesBeforeSell`·`buyToNewsMinutes`)은 두 끝점을 분으로 내린 뒤 뺀 값이다.** `executed_at`이 `DATETIME(6)`이라 체결 시각에 소수 초가 붙는데 분봉·카드 시각은 정시이므로, 분 축에서 재야 위 예시(`holdingMinutes: 310`, `minutesAfterBuy: 115`, `buyToNewsMinutes: 105`)가 재현된다. **`buyAt`·`sellAt` 자체는 체결 시각이므로 초를 그대로 싣는다.**
 
 **`narrativeStatus`는 항상 `READY`다.** 매도 회고에는 §템플릿 문장이 있어 LLM이 실패하거나 후검증에 걸려도 서버가 수치로 조립한 문장으로 대체하므로, 서술이 비는 경우가 없다. 어느 쪽으로 만들어졌는지는 `narrativeSource`(`LLM`|`TEMPLATE`)로 구분한다. **`UNAVAILABLE`은 이 엔드포인트에 존재하지 않는다** — 템플릿이 없는 뉴스 요약·브리핑에만 있는 상태다.
 

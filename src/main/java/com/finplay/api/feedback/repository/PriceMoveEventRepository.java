@@ -55,4 +55,39 @@ public interface PriceMoveEventRepository extends JpaRepository<PriceMoveEvent, 
 	 */
 	List<PriceMoveEvent> findByInstrumentIdAndOriginTradeDateAndRevealTimeLessThanEqualOrderByWindowStartAscIdAsc(
 		Long instrumentId, LocalDate originTradeDate, LocalTime revealTime);
+
+	/**
+	 * 매도 회고의 <b>보유 구간({@code buyAt} ~ {@code sellAt})에 걸친 주식 카드</b>를 노출 게이트까지 적용해
+	 * 조회한다 (spec FEED-007·§파생 사실 계산, §C-5의 카드 게이트).
+	 *
+	 * <p><b>{@code windowEnd}로 구간을 좁힌다.</b> {@code minutesAfterBuy}·{@code minutesBeforeSell}과 반사실의
+	 * {@code atFirstMoveAfterBuy}가 전부 {@code windowEnd}의 종가·시각을 기준으로 정의돼 있어(§파생 사실 계산·
+	 * §반사실·집단 비교 계산), {@code windowStart}로 좁히면 <b>매도 뒤에 끝난 카드가 보유 구간 카드로 섞이고</b>
+	 * {@code minutesBeforeSell}이 음수가 된다 — 보유하지 않은 구간이라 반사실 기준으로도 쓸 수 없는 카드다.
+	 *
+	 * <p><b>이 조회에도 노출 게이트가 걸린다</b>(게이트 ⑮). 카드의 근거 기사는 {@code windowEnd} 이후
+	 * {@code news.match-after-minutes}까지 발행된 것도 붙으므로, 게이트를 빼면 Part A 카드 목록·Part C 기사 목록
+	 * 보다 <b>먼저 그 기사를 매도 회고에서 보게 된다.</b> 매도 회고는 보유 구간이 이미 지난 시각이라 안전하다고
+	 * 넘기기 쉬운 자리다.
+	 *
+	 * <p><b>호출부가 {@code revealTime} 상한을 그 체결의 서비스 날짜로 계산한다.</b> {@code reveal_time}이
+	 * {@code TIME}이라 {@code LocalTime.now(clock)}을 그대로 넘기는 것은 <b>서비스 날짜가 오늘일 때만</b> §C-5의
+	 * {@code (서비스 날짜 + reveal_time) <= now()}와 같다 — 어제 판 체결을 오늘 오전에 조회하면 그날 오후 카드가
+	 * 다시 감춰진다(게이트 ⑭이 매도 후 흐름에 대해 막는 것과 같은 되돌림이다). 그래서 판정은
+	 * {@code PostSellFeedbackService}가 하고 이 메서드는 받은 상한만 적용한다.
+	 *
+	 * <p>코인 카드는 {@code window_end}가 {@code NULL}이라 {@code BETWEEN}에서 자연히 빠지지만 그것에 기대지
+	 * 않는다 — 매도 회고 자체가 2차에서 주식 전용이고 코인 체결은 400이다.
+	 *
+	 * <p>정렬 2차 키 {@code id}는 위 메서드와 같은 이유다 — 첫 분봉이 09:00인 날 시가 갭 카드와 장중 첫 후보의
+	 * {@code window_start}가 같아 2차 키가 없으면 순서가 DB 임의 순서가 된다. <b>이 응답에서는 그 순서가
+	 * 화면 순서만이 아니라 반사실의 기준 카드까지 정한다</b> — {@code atFirstMoveAfterBuy}와 집단 비교의 기준
+	 * 카드가 "보유 구간의 첫 카드"이므로, 순서가 흔들리면 <b>같은 체결의 반사실 값이 조회마다 달라진다.</b>
+	 */
+	List<PriceMoveEvent> findByInstrumentIdAndOriginTradeDateAndWindowEndBetweenAndRevealTimeLessThanEqualOrderByWindowStartAscIdAsc(
+		Long instrumentId,
+		LocalDate originTradeDate,
+		LocalTime windowEndFrom,
+		LocalTime windowEndTo,
+		LocalTime revealTime);
 }

@@ -56,6 +56,7 @@
 | GET | /api/instruments/{instrumentId}/price-moves | feedback | 종목의 변동 원인 카드 목록 조회. 주식은 현재 재생세션 원본 거래일 중 `revealTime`이 지난 카드만(스포일러 차단) `windowStart` 오름차순, 각 카드의 근거는 발행시각 내림차순. 카드 0건·재생세션 미준비 모두 200(후자는 `originTradeDate=null`) | 012 FEED-006, Issue #180 |
 | GET | /api/instruments/{instrumentId}/news | feedback | 종목의 뉴스·공시 목록과 AI 요약 순수 조회. 주식은 09:00 이후에만 열리고 발행시각이 재생 시각을 지난 것만 노출하며, `summaryScope`가 15:30 전후로 `PRE_MARKET`→`FULL`로 바뀐다. 목록은 발행시각 내림차순 + `id` 내림차순이고 상한 초과 시 공시를 먼저 채운다. 코인은 재생세션·개장 게이트와 무관하게 조회 시각 기준 최근 24시간 뉴스와 `ROLLING_24H` 요약 `generated_at` 최신 1행을 돌려주고 `originTradeDate`는 `null`이다. 개장 전·재생세션 미준비·기사 0건·요약 행 없음·서술 실패가 전부 200(상태값은 spec §C-4) | 012 FEED-008, Issue #188 |
 | GET | /api/market/briefing?market= | feedback | 시장 단위 개장 전 브리핑 순수 조회. 주식은 **spec §C-2의 `전장` 구간 기사·공시만**(장중 기사 절대 미포함)이고 Part C와 09:00 하한이 같다. `items`는 저장하지 않고 조회 시 같은 구간 질의로 다시 만들며 상한은 `max-items-per-briefing`. 재생세션 미준비는 `EMPTY`·`originTradeDate=null`, 개장 전은 `NOT_YET`(Part C와 의도된 차이, spec §C-4). 코인은 재생세션과 무관하게 최근 24시간 코인 뉴스와 `generated_at` 최신 1행을 돌려주며 `originTradeDate=null`이고 `NOT_YET`이 되지 않는다. `market` 누락·허용 값 밖은 400 | 012 FEED-009, Issue #188 |
+| GET | /api/ai/post-sell/{tradeId} | feedback | 본인 매도 체결 1건의 매도 직후 피드백. 원장의 FIFO 수치(배분 가중평균 매수단가·매도가·수량·수수료·실현손익·수익률·보유기간) + 보유 구간 변동 원인 카드 + 관찰형 서술. `buyAt`은 배분된 lot 중 가장 이른 체결 시각이고 `buyAt`·`sellAt`은 원본 거래일 축이다. 같은 원본 거래일 안에서 완결된 매매만(`sameSessionCompleted=true`) 카드·극값·반사실·집단 비교 포함. 매도 후 흐름·반사실은 **그 체결의 서비스 날짜 15:30** 이후에만 열린다(spec §C-5). **2차는 주식 전용 — 코인 체결은 400**. **투자일기에 의존하지 않는다** | 012 FEED-007, Issue #208 |
 | GET | /api/rankings?market=&limit= | ranking | 시장별(`STOCK`\|`CRYPTO`) 실현손익 상위 랭킹 조회. `market` 쿼리 파라미터 필수(누락·미지원 리터럴은 400 `VALIDATION_ERROR`). `limit`은 선택이며 **컨트롤러가 거부하지 않고** 서비스가 클램핑(생략·0 이하→10, 51 이상→50) — `GET /api/trades`·`GET /api/orders`의 범위 밖 400과 의도적으로 다름. 매도 체결 이력이 없는 회원은 제외, 동점자는 공동 순위 | 014 RANK-001, Issue #187 |
 
 ## 투자 실습 계획 라우트 (아직 구현하지 않음)
@@ -75,15 +76,11 @@ candidate 1·2·3·4와 나머지 6개 계획 경로 모두 공개 경로에 추
 
 #199의 PRICE/PERCENT intention 확장은 아직 실제 라우트 계약이 아니다. 구현 시 기존 타입 생략+가격 요청을 PRICE로 호환하고, OCO 계획 라우트는 가격·rate를 다시 받지 않고 intention 정본에서 확정한다. 상세 계약은 `docs/specs/019-exit-price-policy`를 따른다.
 
-## 2차 계획 라우트 (아직 구현하지 않음)
+## 2차 라우트 (구현 완료)
 
-`docs/specs/012-ai-feedback`의 `GET /api/instruments/{instrumentId}/price-moves`(FEED-006)·`GET /api/instruments/{instrumentId}/news`(FEED-008)·`GET /api/market/briefing`(FEED-009)은 구현되어 위 실제 라우트 목록에 반영했다. 아래 1개 경로는 계약만 확정했으며 아직 controller가 없다. **위 실제 라우트 목록과 분리하며 블랙박스 QA의 실행 가능 API 근거로 사용하지 않는다.** 각 구현이 병합되는 커밋에서 해당 행을 위 표로 옮기고 `docs/api-contracts.md`의 계획 표시를 제거한다.
+`docs/specs/012-ai-feedback`의 네 경로 — `GET /api/instruments/{instrumentId}/price-moves`(FEED-006)·`GET /api/instruments/{instrumentId}/news`(FEED-008)·`GET /api/market/briefing`(FEED-009)·`GET /api/ai/post-sell/{tradeId}`(FEED-007) — 는 **전부 구현되어 위 실제 라우트 목록에 반영했다. 계획 라우트로 남은 2차 경로는 없고 네 경로 모두 블랙박스 QA 근거다.** spec 012의 남은 이슈(`docs/specs/012-ai-feedback/plan.md` 7·8번 — 반사실 수익률·집단 비교, 코인 변동 감시)는 **이 네 경로의 응답 필드와 분기를 채우며 새 엔드포인트를 만들지 않는다** — 이 절을 계획 라우트 표로 되돌리지 않는다.
 
-| Method | URL | 도메인 | 요약 | Spec |
-|---|---|---|---|---|
-| GET | /api/ai/post-sell/{tradeId} | feedback | 본인 매도 체결 1건의 매도 직후 피드백. 원장의 FIFO 수치 + 보유 구간 변동 원인 카드 + 관찰형 서술. 같은 원본 거래일 안에서 완결된 매매만 카드·최고가·최저가 포함. **2차는 주식 전용 — 코인 체결은 400**. **투자일기에 의존하지 않는다** | 012 FEED-007 |
-
-구현된 `price-moves`·`news`·`briefing`과 위 1개 계획 경로 모두 `SecurityConfig` 공개 목록에 추가하지 않는다 — `anyRequest().authenticated()`로 떨어져 Access Bearer 토큰을 요구한다.
+네 경로 모두 `SecurityConfig` 공개 목록에 추가하지 않는다 — `anyRequest().authenticated()`로 떨어져 Access Bearer 토큰을 요구한다.
 
 **Notion 명세와의 차이 (팀 동기화 필요)**
 

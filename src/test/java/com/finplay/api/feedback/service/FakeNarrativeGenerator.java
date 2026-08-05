@@ -28,6 +28,13 @@ public class FakeNarrativeGenerator implements NarrativeGenerator {
 		return this;
 	}
 
+	// 스프링 빈으로 얹어 쓰는 통합 테스트가 테스트마다 상태를 비운다 — 싱글턴이라 응답 큐·호출 기록이 누적된다.
+	public void reset() {
+		this.responses.clear();
+		this.systemPrompts.clear();
+		this.userPrompts.clear();
+	}
+
 	public int callCount() {
 		return this.userPrompts.size();
 	}
