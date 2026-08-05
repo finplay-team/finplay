@@ -331,9 +331,31 @@ class JournalListIntegrationTest {
 		createAccount(user, com.finplay.api.account.domain.Market.STOCK);
 		String accessToken = issueAccessToken(user);
 
+		// 구분자 없음 — JournalCursor.parse의 separatorIndex <= 0 분기.
 		mockMvc.perform(getJournalList(accessToken, "STOCK", "garbage", null))
 			.andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
+
+		// 날짜부 파싱 실패 — 구분자는 있으나 createdAt 자리가 ISO_LOCAL_DATE_TIME이 아님.
+		mockMvc.perform(getJournalList(accessToken, "STOCK", "not-a-date_5", null))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
+
+		// tradeId부 파싱 실패 — 날짜부는 유효하나 tradeId 자리가 Long이 아님.
+		mockMvc.perform(getJournalList(accessToken, "STOCK", "2026-08-04T10:12:33_notanumber", null))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
+	}
+
+	@Test
+	void accountNotFoundForRequestedMarketReturns404() throws Exception {
+		User user = createUser("lst-noacct");
+		// STOCK 계좌를 만들지 않는다 — AccountService.getAccountFor가 실제 DB 조회로 404를 던지는지 확인한다.
+		String accessToken = issueAccessToken(user);
+
+		mockMvc.perform(getJournalList(accessToken, "STOCK", null, null))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.error.code").value("NOT_FOUND"));
 	}
 
 	@Test

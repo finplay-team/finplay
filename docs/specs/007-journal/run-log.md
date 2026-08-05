@@ -23,6 +23,8 @@
 | L2 | implementer | `./gradlew compileJava` | plan.md §`JournalService.getMyJournalEntries`(1~7단계), tasks.md L2, `TradeService.getMyTrades` 선례(`limit+1` 페치→hasNext 판정→커서 인코딩), ADR-0002 |
 | L3 | implementer | `./gradlew compileJava` | plan.md §`JournalListController`, tasks.md L3, `TradeController.getMyTrades` 선례(검증·레이어 규칙 그대로 복제), CLAUDE.md 규칙 7 |
 | 리뷰(L) | reviewer(리뷰) | `git diff dev...HEAD`, `./gradlew compileJava compileTestJava spotlessCheck -q` | conventions.md, ADR-0002, ADR-0003, ADR-0004, spec.md JOUR-006, plan.md §JOUR-006, tasks.md §JOUR-006 |
+| PR #213 리뷰(pcb2002) | (사람 리뷰) | 격리 worktree `./gradlew.bat build` | 리뷰 모드 차단 0·권장 1(메모리 정렬 트레이드오프, 재검토는 향후 limit 상한 조정 시), QA 커버리지 갭 2건(계좌 없음 404 통합 테스트 부재, cursor 파싱 실패 3유형 중 1유형만 검증) |
+| 권장 반영 | (메인 세션) | `./gradlew test --tests "*JournalListIntegrationTest*"`, `./gradlew build` | PR #213 리뷰의 QA 커버리지 갭 2건 |
 
 ## 모니터링 (사람용 요약)
 - 항목1 — `V14__create_buy_trade_journals.sql` + `BuyTradeJournal` 엔티티 + `BuyTradeJournalRepository` 추가, compileJava 통과. (이후 `dev`에 먼저 병합된 `V14__create_favorites.sql`과 번호가 겹쳐 `V15__create_buy_trade_journals.sql`로 재번호화됨 — plan.md §데이터 모델 참고)
@@ -47,3 +49,5 @@
 - L2 — `JournalService.getMyJournalEntries` 추가(`AccountService` 신규 주입, 두 리포지토리에 동일 커서 값 전달, 스트림 병합·`(createdAt, 체결ID)` 내림차순 정렬 후 `limit+1`건 자름→`hasNext`→`nextCursor` 인코딩) + `JournalListItemResponse`(6필드, `from(BuyTradeJournal)`/`from(SellTradeJournal)` 오버로드)·`JournalListResponse`(`TradeListResponse`와 동형) 최소 추가, 컨트롤러(`JournalListController`)는 L3 범위라 미착수, 테스트는 tester 담당이라 미작성, compileJava 통과.
 - L3 — `JournalListController`(`GET /api/journal`) 추가(`TradeController.getMyTrades` 그대로 복제, 비즈니스 로직 없음), DTO 2개는 L2에서 이미 만들어져 신규 파일 없음, `docs/api-routes.md`(journal 행 1개)·`docs/api-contracts.md`(## journal 절에 목록 조회 소절 추가, 기존 `JournalController` 4개 엔드포인트 무변경) 같은 커밋 대상으로 갱신, 테스트는 tester 담당이라 미작성, compileJava 통과.
 - 리뷰(L) — 차단 0건. `journalId` 미노출·`createdAt` 정렬·market+소유권 결합 조건·병합 로직(limit+1 페치→병합→슬라이스→hasNext/nextCursor)·기존 4개 계약 무변경·신규 마이그레이션 없음·문서 동기화 모두 spec.md·plan.md와 일치 확인. 테스트(단위·슬라이스·통합) 전부 실질적 assertion 보유, 페이지 경계 tie-break 통합 테스트로 고정됨. 머지 가능.
+- PR #213 리뷰(pcb2002) — 승인(LGTM). 격리 worktree에서 직접 빌드 재검증 통과. [권장] `JournalService.getMyJournalEntries`의 애플리케이션 계층 메모리 정렬(최대 202건)은 plan.md에 트레이드오프가 이미 기록돼 있어 지금은 문제 아니며, `limit` 상한을 올릴 때 재검토 권장(즉시 코드 변경 요구 아님). QA 커버리지 갭 2건(기능 결함 아님): ① "요청 시장의 계좌가 없으면 404"가 컨트롤러 mock 테스트에만 있고 통합 테스트로 실제 서비스·DB 검증이 없음, ② cursor 파싱 실패 3유형(구분자 없음·날짜 파싱 실패·id 파싱 실패) 중 구분자 없음 1유형만 통합 테스트에 있음.
+- 권장 반영 — `JournalListIntegrationTest`에 `accountNotFoundForRequestedMarketReturns404`(STOCK 계좌를 만들지 않은 사용자가 `market=STOCK` 조회 시 404 `NOT_FOUND`) 신규 추가, `corruptedCursorReturns400`을 날짜부 파싱 실패(`not-a-date_5`)·tradeId부 파싱 실패(`..._notanumber`) 두 케이스로 확장(기존 "구분자 없음" 유지). 메모리 정렬 트레이드오프는 plan.md 기록 그대로 유지하고 코드 변경하지 않음(향후 limit 상한 조정 시 재검토 — 지금 대응할 결함이 아님). `./gradlew test --tests "*JournalListIntegrationTest*"` 13/13 통과(기존 12 + 신규 1), `./gradlew build` 통과.
