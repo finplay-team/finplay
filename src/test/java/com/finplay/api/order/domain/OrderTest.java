@@ -58,6 +58,33 @@ class OrderTest {
 		assertThat(order.getStatus()).isEqualTo(OrderStatus.FILLED);
 	}
 
+	@Test
+	void cancelTransitionsPendingOrderToCancelled() {
+		Order order = limitPendingOrder(BigDecimal.valueOf(70_000_000));
+
+		order.cancel();
+
+		assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+	}
+
+	@Test
+	void cancelThrowsIllegalStateExceptionWhenOrderAlreadyCancelled() {
+		Order order = limitPendingOrder(BigDecimal.valueOf(70_000_000));
+		order.cancel();
+
+		assertThatThrownBy(order::cancel).isInstanceOf(IllegalStateException.class);
+		assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+	}
+
+	@Test
+	void cancelThrowsIllegalStateExceptionWhenOrderAlreadyFilled() {
+		Order order = limitPendingOrder(BigDecimal.valueOf(70_000_000));
+		order.markFilled();
+
+		assertThatThrownBy(order::cancel).isInstanceOf(IllegalStateException.class);
+		assertThat(order.getStatus()).isEqualTo(OrderStatus.FILLED);
+	}
+
 	private static Order limitPendingOrder(BigDecimal limitPrice) {
 		User user = testUser();
 		Account account = Account.create(user, Market.CRYPTO, NOW);

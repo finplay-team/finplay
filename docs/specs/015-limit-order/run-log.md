@@ -55,6 +55,7 @@
 | 12:28 | tester(항목6) | spec.md 완료조건 1~8 vs 테스트 커버리지 전수 대조 | 항목1~6 전체 누적 커버리지 최종 점검(문서 동기화 9·10번은 항목7 범위 제외) |
 | 12:29 | tester(항목6) | `./gradlew build` | 전체 게이트(spotless·SpotBugs·JaCoCo·회귀) 확인, PR 빌드 검증 SHA 확정용 — HEAD `b6ede95` 기준 BUILD SUCCESSFUL(1m 47s) |
 | 12:31 | 오케스트레이터 | `AccountService.java` 58행 주석을 실제 순서(order→account→holding)로 정정 | tester가 발견한 주석-코드 불일치(동작 영향 없음) 수정 |
+| 09:10 | implementer(항목8) | `JAVA_HOME=corretto-17 ./gradlew compileJava` | plan.md LMT-003 절 "엔티티 변경"·"ErrorCode" 설계, tasks.md 항목8 |
 
 ## 모니터링 (사람용 요약)
 - 10:39~10:46 implementer — V22 마이그레이션·OrderType.LIMIT/OrderStatus.PENDING·Order/Account/Holding 예약 메서드·4개 리포지토리 락 쿼리 추가, compileJava·compileTestJava·spotlessCheck 통과. Docker 미가용 환경이라 @DataJpaTest는 미실행(컴파일만 확인).
@@ -74,3 +75,4 @@
 - 12:15~12:29 tester — `LimitOrderConcurrencyIntegrationTest` 3회 연속 실행(45s/22s/1m56s) 모두 4/4 통과, flaky 없음. 시나리오(b)가 `CountDownLatch`(ready/start)로 진짜 동시 스레드를 만들고 실제 `SELECT...FOR UPDATE`(Testcontainers MySQL)로 같은 account·holding row를 대상으로 함을 코드 대조로 확인. 락 순서를 임시로 반대로 바꿔 "실패하는지" 뮤테이션 검증을 시도했으나 하네스가 src/main 수정 후 테스트 실행을 차단해 즉시 원복(src/main clean 재확인) — 이 검증은 정적 코드 대조로 대체. 시나리오(a)도 실제 동시 호출 확인, (c)(d)는 plan.md 원설계대로 순차 시나리오임을 확인(동시성 부재가 결함 아님). spec.md 완료조건 1~8 전부를 테스트와 전수 대조해 커버리지 공백 없음 확인, 보완한 테스트 없음. `AccountService.java` 58행 주석도 `LimitOrderFillService`와 같은 오기(동작 무관) 발견. `./gradlew build` 전체(spotless·SpotBugs·JaCoCo·회귀) HEAD `b6ede95` 기준 BUILD SUCCESSFUL(1m 47s).
 - 12:31 오케스트레이터 — `AccountService.java` 58행 주석을 `order → account → holding`으로 정정.
 - 12:39 오케스트레이터 — 항목1~6 완료 후 `./gradlew build` 최종 재검증, HEAD `cdce8c7` 기준 BUILD SUCCESSFUL(7s, 대부분 UP-TO-DATE). `docs/api-routes.md`·`docs/api-contracts.md`는 항목2에서 이미 반영·grep으로 재확인 완료. `docs/prd.md` §3 "지정가 주문·상시 체결" 행 갱신은 근거로 PR 번호가 필요해 PR 생성 이후로 보류(tasks.md 항목7 부분 완료).
+- 09:10 implementer(항목8, 이슈 #218) — `OrderStatus.CANCELLED` 추가, `Order.cancel()`(markFilled와 대칭), `Account.releaseReservedCash(long)`(releaseReservedQuantity와 대칭), `ErrorCode.ORDER_NOT_PENDING`(409) 추가. 마이그레이션 없음(orders.status VARCHAR(10)에 "CANCELLED" 저장 가능, plan.md 확인). 단위 테스트는 tester 담당이라 미작성. compileJava 통과(JAVA_HOME 없어 corretto-17 명시 지정, 하네스가 macOS라 gradlew.bat 대신 gradlew 사용).

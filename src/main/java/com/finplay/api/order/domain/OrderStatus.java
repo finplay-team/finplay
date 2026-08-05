@@ -3,5 +3,6 @@ package com.finplay.api.order.domain;
 
 public enum OrderStatus {
 	FILLED,
-	PENDING
+	PENDING,
+	CANCELLED
 }
