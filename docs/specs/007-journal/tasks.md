@@ -453,7 +453,7 @@
   - **같은 커밋에서** `docs/api-routes.md`(2행)·`docs/api-contracts.md`(`## journal` 절에 상세 조회 소절)를 갱신한다 (CLAUDE.md 규칙 7, plan.md §문서 갱신).
   - 검증 — `@WebMvcTest`(`JournalDetailControllerTest`, 신규): 두 경로 각각 200 본문 `jsonPath` 5필드, 숫자 아닌 경로 변수 400, 미인증 401, 서비스 예외의 400·403·404 매핑(409 없음), 매수 응답에 `sellTradeId` 키 부재·매도 응답에 `buyTradeId` 키 부재.
 
-- [ ] **D3. 통합 테스트 — PK 충돌 픽스처·교차 경로·읽기 전용 + 빌드**
+- [x] **D3. 통합 테스트 — PK 충돌 픽스처·교차 경로·읽기 전용 + 빌드**
 
   Testcontainers `@SpringBootTest`로 spec의 6차 완료 조건을 한 번에 확인한다(기존 `JournalIntegrationTest`에 추가하거나 신규 `JournalDetailIntegrationTest`).
   - 매수 체결 → 회고 작성 → 상세 조회 200, 응답 5필드가 저장값과 일치. 매도도 같은 흐름으로 200.
