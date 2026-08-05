@@ -2,6 +2,7 @@
 package com.finplay.api.portfolio.repository;
 
 import com.finplay.api.portfolio.domain.TradeAllocation;
+import java.time.LocalDateTime;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -37,4 +38,24 @@ public interface TradeAllocationRepository extends JpaRepository<TradeAllocation
 	@Query("select coalesce(sum(a.allocatedBuyFee), 0) from TradeAllocation a where a.holdingLot.id = :holdingLotId")
 	long sumAllocatedBuyFeeByHoldingLotId(@Param("holdingLotId")
 	Long holdingLotId);
+
+	/**
+	 * 특정 종목의 배분을 holding 단위로 묶어, <b>그 배분이 속한 매도 체결</b>의 {@code executed_at}이 시점
+	 * {@code at} 이전(포함)인 {@code allocated_quantity} 합을 계산한다 (spec 012 §반사실·집단 비교 계산
+	 * [집단 비교]).
+	 *
+	 * <p>매도 시각의 정본은 {@code trade_allocations.created_at}이 아니라 <b>그 배분이 속한 매도 체결의
+	 * {@code executed_at}</b>이다 — {@code holderPopulationQueryService}가 이 합을
+	 * {@link HoldingLotRepository#sumOriginalQuantityByHoldingForInstrumentAtOrBefore}의 매수 합에서 빼서 시점
+	 * {@code at}의 순보유수량을 구한다.
+	 */
+	@Query("select new com.finplay.api.portfolio.repository.HoldingQuantitySum("
+		+ "a.holdingLot.holding.id, sum(a.allocatedQuantity)) "
+		+ "from TradeAllocation a "
+		+ "where a.holdingLot.holding.instrument.id = :instrumentId and a.sellTrade.executedAt <= :at "
+		+ "group by a.holdingLot.holding.id")
+	List<HoldingQuantitySum> sumAllocatedQuantityByHoldingForInstrumentAtOrBefore(
+		@Param("instrumentId")
+		Long instrumentId, @Param("at")
+		LocalDateTime at);
 }

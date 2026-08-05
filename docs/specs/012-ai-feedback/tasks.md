@@ -35,7 +35,7 @@
   - `atFirstMoveAfterBuy`처럼 `price`가 `null`인 시나리오(보유 구간에 카드가 없음)는 `returnRate`도 `null`이다 — 이미 있는 `null` 전파를 반사실 계산에서 다시 깨지 않는다.
   - 검증 — 단위(3개 시나리오 수익률 산출, `FLOOR` 경계, `price=null`이면 `returnRate=null`) + `@WebMvcTest` 또는 서비스 단위(AI 서술에 반사실 수치 문자열이 없음을 단정).
 
-- [ ] **2. 모집단 재구성 — `portfolio` 조회 메서드 신설**
+- [x] **2. 모집단 재구성 — `portfolio` 조회 메서드 신설**
 
   카드 `windowEnd`를 서비스 날짜에 붙인 절대 시각 `T` 기준으로 "그 시점에 해당 종목을 보유 중이던 회원" 집합을 lot·배분으로 복원한다. §C-6이 이 조회를 `portfolio` 소유로 못박아 뒀다("특정 시점 보유자 집계 (회원 식별자 없는 반환)").
   - 계산식은 spec.md §반사실·집단 비교 계산의 `[집단 비교]` 블록이 정본이다 — `holding_lots.original_quantity`(불변) 합에서 `trade_allocations.allocated_quantity`(그 배분이 속한 매도 체결의 `executed_at <= T`인 것만) 합을 뺀 값이 회원별로 양수인지를 본다. `remaining_quantity`(가변)를 쓰면 안 된다 — 현재 상태로 되돌아가 `holdings` 문제가 그대로 재현된다.
