@@ -17,7 +17,7 @@
 - [x] 5. **기존 시장가 매도 락 순서 조정**
   `OrderExecutionService`: `execute()`에서 계좌 선조회 제거, `createSellOrder`가 `accountService.getAccountForUpdate` → `portfolioSellService.getHoldingForUpdateOrThrow` 순으로 락(매수 경로는 변경 없음). `PortfolioSellService`에 `getHoldingForUpdateOrThrow`(availableQuantity 기준) 추가, 기존 `getHoldingOrThrow` 호출부 정리(유일 호출부였는지 확인 후 제거 또는 유지 판단). 기존 시장가 매도 단위·슬라이스 테스트 회귀 확인, "예약된 수량은 시장가로 초과 매도 불가" 신규 테스트 추가.
 
-- [ ] 6. **동시성 통합 테스트**
+- [x] 6. **동시성 통합 테스트**
   Testcontainers 기반 `@SpringBootTest`: (a) 동일 주문에 체결 이벤트 2회 동시 도착 시 1회만 체결, (b) 지정가 SELL 체결과 시장가 SELL 체결이 동시에 실행돼도 데드락 없음(ABBA 회귀), (c) 매수 지정가 생성 시 현금 부족 거부와 무예약 확인, (d) 매도 지정가로 예약된 수량을 시장가/다른 지정가로 초과 매도 시 거부. plan.md "동시성 테스트 시나리오" 4개 그대로 구현.
 
 - [ ] 7. **문서 동기화**
