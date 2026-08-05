@@ -12,6 +12,7 @@
 | 19:54 | implementer | `./gradlew test --tests "com.finplay.api.ranking.*"` | PR #196 리뷰(차단 2건+권장 1건), plan.md 8절(신규) |
 | 20:36 | implementer | `./gradlew test --tests RankingServiceTest` | 독립 리뷰어 재검토 지적(경계 동점 없음+유령 조합 시 backfill 누락), plan.md 8-4절(신규) |
 | (RANK-002 1번) implementer | `./gradlew compileJava compileTestJava` + `./gradlew test --tests RankingStoreTest --tests RankingServiceTest` | tasks.md "RANK-002" 1번, plan.md "RANK-002 설계"(score·getMyRanking 코드 스케치) |
+| (RANK-002 2번) implementer | `./gradlew compileJava compileTestJava` + `./gradlew test --tests "com.finplay.api.ranking.*"` | tasks.md "RANK-002" 2번, plan.md "RANK-002 설계"(`RankingController` 코드 스케치, `AccountController.getAccountSummary` 패턴), CLAUDE.md 규칙 7·10 |
 
 ## 모니터링 (사람용 요약)
 - 15:53 — RealizedPnlUpdatedEvent·RankingStore·RankingEventListener·RankingService(스텁) 신설, OrderExecutionService 이벤트 발행 추가, 컴파일 통과.
@@ -24,3 +25,4 @@
 - 19:54 — PR #196 리뷰 차단 2건+권장 1건 반영: calculateRanks가 DB에 없는 accountId를 필터링(NPE→500 방지), RankingStore.findAllAtScore 신설+fetchWindowResolvingBoundaryTies로 limit 경계 동점자를 userId 오름차순 정책대로 병합, refreshScore를 REQUIRES_NEW(+readOnly)로 전환해 AFTER_COMMIT 콜백의 stale 1차 캐시 문제 해결. RankingIntegrationTest에 REQUIRED로 되돌리면 실패하는 것을 확인한 회귀 테스트 추가. ranking 패키지 전체 34/34 통과(RankingServiceTest 11·RankingStoreTest 5·RankingIntegrationTest 7·RankingControllerTest 10·RankingEventListenerTest 1).
 - 20:36 — 독립 리뷰어 재검토에서 나온 잔여 문제(동점 없는 경계에서 유령 계좌를 필터링하면 결과가 limit보다 적어짐) 반영: fetchWindowResolvingBoundaryTies가 해당 분기에서 limit개로 미리 자르지 않고 limit+1개를 그대로 반환, calculateRanks의 사후 필터링이 여유분으로 보충. plan.md 8-4절 신설. ranking 패키지 35/35 통과.
 - (RANK-002 1번) — RankingStore.score(Market, Long) 신설(ZSCORE 단건 조회, member 없으면 null), RankingService.getMyRanking(userId, market) 신설(@Transactional(readOnly=true), AccountService.getAccountFor + RankingStore.score/countStrictlyGreater 재사용) + MyRankingResponse record 선행 추가. 컨트롤러·라우트는 이번 항목 범위 아님(다음 항목). RankingStoreTest·RankingServiceTest 확장 4건 통과, compileJava/compileTestJava 통과.
+- (RANK-002 2번) — RankingController에 GET /api/rankings/me 추가(@AuthenticationPrincipal + principal.userId(), AccountController.getAccountSummary와 동일 패턴). docs/api-routes.md·docs/api-contracts.md에 계약 추가, docs/prd.md §3 "랭킹 — 내 랭킹 조회(RANK-002)" 행을 완료로 갱신(근거는 이슈 #233, PR 번호는 오케스트레이터가 후속 반영)+본문 내 잔여 미착수 서술 2곳 정정. RankingControllerTest 확장(market 누락 400·인증없음 401·매도이력없음 rank:null 200·정상 200 필드계약) 6건 추가. ranking 패키지 전체(store 7·service 14·controller 15·integration 7) 통과, compileJava/compileTestJava 통과.

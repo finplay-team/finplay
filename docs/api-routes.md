@@ -63,6 +63,7 @@
 | GET | /api/market/briefing?market= | feedback | 시장 단위 개장 전 브리핑 순수 조회. 주식은 **spec §C-2의 `전장` 구간 기사·공시만**(장중 기사 절대 미포함)이고 Part C와 09:00 하한이 같다. `items`는 저장하지 않고 조회 시 같은 구간 질의로 다시 만들며 상한은 `max-items-per-briefing`. 재생세션 미준비는 `EMPTY`·`originTradeDate=null`, 개장 전은 `NOT_YET`(Part C와 의도된 차이, spec §C-4). 코인은 재생세션과 무관하게 최근 24시간 코인 뉴스와 `generated_at` 최신 1행을 돌려주며 `originTradeDate=null`이고 `NOT_YET`이 되지 않는다. `market` 누락·허용 값 밖은 400 | 012 FEED-009, Issue #188 |
 | GET | /api/ai/post-sell/{tradeId} | feedback | 본인 매도 체결 1건의 매도 직후 피드백. 원장의 FIFO 수치(배분 가중평균 매수단가·매도가·수량·수수료·실현손익·수익률·보유기간) + 보유 구간 변동 원인 카드 + 관찰형 서술. `buyAt`은 배분된 lot 중 가장 이른 체결 시각이고 `buyAt`·`sellAt`은 원본 거래일 축이다. 같은 원본 거래일 안에서 완결된 매매만(`sameSessionCompleted=true`) 카드·극값·반사실·집단 비교 포함. 매도 후 흐름·반사실은 **그 체결의 서비스 날짜 15:30** 이후에만 열린다(spec §C-5). **2차는 주식 전용 — 코인 체결은 400**. **투자일기에 의존하지 않는다** | 012 FEED-007, Issue #208 |
 | GET | /api/rankings?market=&limit= | ranking | 시장별(`STOCK`\|`CRYPTO`) 실현손익 상위 랭킹 조회. `market` 쿼리 파라미터 필수(누락·미지원 리터럴은 400 `VALIDATION_ERROR`). `limit`은 선택이며 **컨트롤러가 거부하지 않고** 서비스가 클램핑(생략·0 이하→10, 51 이상→50) — `GET /api/trades`·`GET /api/orders`의 범위 밖 400과 의도적으로 다름. 매도 체결 이력이 없는 회원은 제외, 동점자는 공동 순위 | 014 RANK-001, Issue #187 |
+| GET | /api/rankings/me?market= | ranking | 인증 사용자 본인의 시장별 실현손익 순위 단건 조회. 대상은 인증 토큰의 본인으로 고정(다른 사용자 지정 불가). `market` 필수(누락·미지원 리터럴은 400 `VALIDATION_ERROR`). 상위 노출 구간(`GET /api/rankings`의 limit)과 무관하게 항상 정확한 보정 순위를 반환하고, 매도 체결 이력이 없으면 `rank`만 `null`(오류 아님) | 014 RANK-002, Issue #233 |
 
 ## 투자 실습 계획 라우트 (아직 구현하지 않음)
 

@@ -2,10 +2,13 @@
 package com.finplay.api.ranking.controller;
 
 import com.finplay.api.account.domain.Market;
+import com.finplay.api.auth.token.AuthenticatedUser;
+import com.finplay.api.ranking.dto.response.MyRankingResponse;
 import com.finplay.api.ranking.dto.response.RankingListResponse;
 import com.finplay.api.ranking.service.RankingService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -27,5 +30,16 @@ public class RankingController {
 		@RequestParam(required = false)
 		Integer limit) {
 		return ResponseEntity.ok(rankingService.getRankings(market, limit));
+	}
+
+	// 인증 사용자 본인의 시장별 순위만 반환한다(RANK-002) — 다른 사용자를 지정하는 파라미터는 받지 않는다.
+	// AccountController.getAccountSummary와 동일한 인증 패턴: @AuthenticationPrincipal + principal.userId().
+	@GetMapping("/me")
+	public ResponseEntity<MyRankingResponse> getMyRanking(
+		@AuthenticationPrincipal
+		AuthenticatedUser principal,
+		@RequestParam
+		Market market) {
+		return ResponseEntity.ok(rankingService.getMyRanking(principal.userId(), market));
 	}
 }

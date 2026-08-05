@@ -14,6 +14,7 @@ import com.finplay.api.account.domain.Market;
 import com.finplay.api.auth.config.SecurityConfig;
 import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.auth.token.JwtTokenProvider;
+import com.finplay.api.ranking.dto.response.MyRankingResponse;
 import com.finplay.api.ranking.dto.response.RankingListItemResponse;
 import com.finplay.api.ranking.dto.response.RankingListResponse;
 import com.finplay.api.ranking.service.RankingService;
@@ -196,6 +197,82 @@ class RankingControllerTest {
 	@Test
 	void getRankingsRejectsMissingAuthenticationWithoutCallingService() throws Exception {
 		mockMvc.perform(get("/api/rankings")
+			.param("market", "STOCK"))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(rankingService);
+	}
+
+	// RANK-002: 매도 이력이 없으면 rank가 null인 200 응답 필드 계약을 검증한다 — 오류가 아니다.
+	@Test
+	void getMyRankingReturnsOkWithNullRankWhenNoSellHistory() throws Exception {
+		stubAuthenticatedUser();
+		when(rankingService.getMyRanking(USER_ID, Market.STOCK))
+			.thenReturn(new MyRankingResponse("STOCK", null, "투자왕", 0L));
+
+		mockMvc.perform(get("/api/rankings/me")
+			.param("market", "STOCK")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.market").value("STOCK"))
+			.andExpect(jsonPath("$.rank").doesNotExist())
+			.andExpect(jsonPath("$.nickname").value("투자왕"))
+			.andExpect(jsonPath("$.realizedPnl").value(0));
+
+		verify(rankingService).getMyRanking(USER_ID, Market.STOCK);
+	}
+
+	// RANK-002: 매도 이력이 있으면 rank·nickname·realizedPnl·market 필드 계약을 정상 값으로 검증한다.
+	@Test
+	void getMyRankingReturnsOkWithEveryResponseFieldWhenSellHistoryExists() throws Exception {
+		stubAuthenticatedUser();
+		when(rankingService.getMyRanking(USER_ID, Market.CRYPTO))
+			.thenReturn(new MyRankingResponse("CRYPTO", 3, "존버맨", 120_000L));
+
+		mockMvc.perform(get("/api/rankings/me")
+			.param("market", "CRYPTO")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.market").value("CRYPTO"))
+			.andExpect(jsonPath("$.rank").value(3))
+			.andExpect(jsonPath("$.nickname").value("존버맨"))
+			.andExpect(jsonPath("$.realizedPnl").value(120000));
+
+		verify(rankingService).getMyRanking(USER_ID, Market.CRYPTO);
+	}
+
+	@Test
+	void getMyRankingRejectsMissingMarketWithoutCallingService() throws Exception {
+		stubAuthenticatedUser();
+
+		mockMvc.perform(get("/api/rankings/me")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(rankingService);
+	}
+
+	@Test
+	void getMyRankingRejectsUnsupportedMarketLiteralWithoutCallingService() throws Exception {
+		stubAuthenticatedUser();
+
+		mockMvc.perform(get("/api/rankings/me")
+			.param("market", "FOREX")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(rankingService);
+	}
+
+	@Test
+	void getMyRankingRejectsMissingAuthenticationWithoutCallingService() throws Exception {
+		mockMvc.perform(get("/api/rankings/me")
 			.param("market", "STOCK"))
 			.andExpect(status().isUnauthorized())
 			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
