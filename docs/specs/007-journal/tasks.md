@@ -364,7 +364,7 @@
   - **같은 커밋에서** `docs/api-routes.md`·`docs/api-contracts.md`를 갱신한다 (CLAUDE.md 규칙 7, plan.md §문서 갱신).
   - 검증 — `@WebMvcTest`(`JournalListControllerTest`, 신규): 200 본문 `jsonPath` 6필드 + `journalId` 필드 **부재** 확인, `market` 누락·미지원 리터럴 400, `limit` 0·101 400, `cursor` 파싱 실패 400, 미인증 401, 서비스 404(계좌 없음) 매핑.
 
-- [ ] **L4. 통합 테스트 — 혼합 목록·market 필터·커서 경계·격리 + 빌드**
+- [x] **L4. 통합 테스트 — 혼합 목록·market 필터·커서 경계·격리 + 빌드**
 
   Testcontainers `@SpringBootTest`로 spec의 5차 완료 조건을 한 번에 확인한다(기존 `JournalIntegrationTest`에 추가하거나 신규 `JournalListIntegrationTest`).
   - 매수·매도 회고가 섞인 목록이 `createdAt` 내림차순(동시각은 체결 ID 내림차순)으로 조회되고, 항목마다 `journalType`과 해당 없는 체결 ID `null`이 맞다.
