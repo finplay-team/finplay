@@ -62,17 +62,18 @@ public class OrderExecutionService {
 
 		Instrument instrument = getValidatedInstrument(request.market(), request.instrumentId());
 		validateQuantityFormat(request.market(), request.quantity());
-		Account account = getAccountFor(userId, request.market());
 
+		// 계좌 선조회를 제거했다 — 매수·매도가 서로 다른 락 전략을 쓰므로 각자 계좌를 가져온다(015-limit-order 항목5).
 		return request.side() == OrderSide.SELL
-			? createSellOrder(userId, idempotencyKey, requestHash, request, instrument, account)
-			: createBuyOrder(userId, idempotencyKey, requestHash, request, instrument, account);
+			? createSellOrder(userId, idempotencyKey, requestHash, request, instrument)
+			: createBuyOrder(userId, idempotencyKey, requestHash, request, instrument);
 	}
 
 	private OrderResponse createBuyOrder(
-		Long userId, String idempotencyKey, String requestHash, OrderCreateRequest request, Instrument instrument,
-		Account account) {
+		Long userId, String idempotencyKey, String requestHash, OrderCreateRequest request, Instrument instrument) {
 		BigDecimal quantity = request.quantity();
+		// 매수 경로는 이번에 변경하지 않는다(spec.md "알려진 한계") — 계좌 락 없이 그대로 조회한다.
+		Account account = getAccountFor(userId, request.market());
 
 		// 설계 노트 2: 매수 최소구현 견본 — marketStatus·가격·세션 단일 관측→최소금액→amount/fee 계산(공유)
 		OrderPricing pricing = priceOrder(request.market(), instrument, quantity);
@@ -110,12 +111,14 @@ public class OrderExecutionService {
 	}
 
 	private OrderResponse createSellOrder(
-		Long userId, String idempotencyKey, String requestHash, OrderCreateRequest request, Instrument instrument,
-		Account account) {
+		Long userId, String idempotencyKey, String requestHash, OrderCreateRequest request, Instrument instrument) {
 		BigDecimal quantity = request.quantity();
 
-		// 설계 노트 2: 가격조회 전에 보유수량부터 검증해 불필요한 시세 조회를 피한다.
-		Holding holding = portfolioSellService.getHoldingOrThrow(account, instrument, quantity);
+		// 잠금 순서를 지정가 체결(LimitOrderFillService)과 맞춘다 — 실제로 경합하는 두 자원인 account·holding에
+		// 대해 항상 account를 먼저 잠그고 holding을 잠근다(spec.md 완료조건, 015-limit-order 항목5).
+		// 설계 노트 2: 가격조회 전에 계좌·보유수량부터 검증해 불필요한 시세 조회를 피한다.
+		Account account = getAccountForUpdateFor(userId, request.market());
+		Holding holding = portfolioSellService.getHoldingForUpdateOrThrow(account, instrument, quantity);
 
 		OrderPricing pricing = priceOrder(request.market(), instrument, quantity);
 
@@ -190,6 +193,14 @@ public class OrderExecutionService {
 		com.finplay.api.account.domain.Market accountMarket = com.finplay.api.account.domain.Market
 			.valueOf(market.name());
 		return accountService.getAccountFor(userId, accountMarket);
+	}
+
+	// 시장가 매도만 계좌를 잠가 조회한다(015-limit-order 항목5) — 지정가 체결(LimitOrderFillService)과
+	// account→holding 잠금 순서를 맞춰 ABBA 데드락을 막는다.
+	private Account getAccountForUpdateFor(Long userId, Market market) {
+		com.finplay.api.account.domain.Market accountMarket = com.finplay.api.account.domain.Market
+			.valueOf(market.name());
+		return accountService.getAccountForUpdate(userId, accountMarket);
 	}
 
 	// 설계 노트 1: getOrderExecutionPrice 한 관측에서 marketStatus·가격·세션을 확정한 뒤 최소주문금액 검증과

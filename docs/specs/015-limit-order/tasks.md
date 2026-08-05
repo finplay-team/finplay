@@ -14,7 +14,7 @@
 - [x] 4. **체결 리스너·체결 서비스**
   `LimitOrderTriggerListener`(`@EventListener`, `findByMarketAndSymbol`로 종목 조회 실패 시 관용 처리, `findPendingLimitOrdersToFill`로 후보 조회, 건별 try/catch로 `limitOrderFillService.fillIfPending` 호출). `LimitOrderFillService.fillIfPending`(`@Transactional`, order→account→holding 락, BUY/SELL 체결 로직, SELL은 `RealizedPnlUpdatedEvent` 재발행). 단위 테스트(BUY 체결, SELL 체결+실현손익, 이미 FILLED인 주문은 no-op, holding 없는 신규 종목 첫 매수 체결).
 
-- [ ] 5. **기존 시장가 매도 락 순서 조정**
+- [x] 5. **기존 시장가 매도 락 순서 조정**
   `OrderExecutionService`: `execute()`에서 계좌 선조회 제거, `createSellOrder`가 `accountService.getAccountForUpdate` → `portfolioSellService.getHoldingForUpdateOrThrow` 순으로 락(매수 경로는 변경 없음). `PortfolioSellService`에 `getHoldingForUpdateOrThrow`(availableQuantity 기준) 추가, 기존 `getHoldingOrThrow` 호출부 정리(유일 호출부였는지 확인 후 제거 또는 유지 판단). 기존 시장가 매도 단위·슬라이스 테스트 회귀 확인, "예약된 수량은 시장가로 초과 매도 불가" 신규 테스트 추가.
 
 - [ ] 6. **동시성 통합 테스트**

@@ -1,4 +1,4 @@
-// 지정가 주문 1건을 목표가로 체결(예약 확정)하는 서비스 — 잠금 순서 account → holding → order(plan.md)
+// 지정가 주문 1건을 목표가로 체결(예약 확정)하는 서비스 — 잠금 순서 order → account → holding(plan.md)
 package com.finplay.api.order.service;
 
 import com.finplay.api.account.domain.Account;
