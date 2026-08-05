@@ -11,6 +11,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.finplay.api.market.event.CryptoPriceUpdatedEvent;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -18,6 +19,8 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
@@ -33,11 +36,12 @@ class PriceStoreTest {
 	private final ValueOperations<String, String> valueOperations = mock(ValueOperations.class);
 	@SuppressWarnings("unchecked")
 	private final HashOperations<String, String, String> hashOperations = mock(HashOperations.class);
+	private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
 
 	private PriceStore priceStore() {
 		when(redisTemplate.opsForValue()).thenReturn(valueOperations);
 		when(redisTemplate.<String, String>opsForHash()).thenReturn(hashOperations);
-		return spy(new PriceStore(redisTemplate, FIXED_CLOCK));
+		return spy(new PriceStore(redisTemplate, FIXED_CLOCK, eventPublisher));
 	}
 
 	private void stubTick(String symbol, BigDecimal price, LocalDateTime receivedAt) {
@@ -100,5 +104,86 @@ class PriceStoreTest {
 		Map<String, CryptoPriceDto> result = priceStore.getLatestPrices(List.of("UNKNOWN"));
 
 		assertThat(result).isEmpty();
+	}
+
+	// 아래부터는 015-limit-order LMT-002 트리거(CryptoPriceUpdatedEvent publish) 검증이다.
+
+	@Test
+	void saveTickPublishesEventWhenNoExistingTickForSymbol() {
+		PriceStore priceStore = priceStore();
+		when(hashOperations.get("price:crypto:NEW_SYMBOL", "receivedAt")).thenReturn(null);
+		LocalDateTime receivedAt = NOW.minusSeconds(1);
+
+		priceStore.saveTick("NEW_SYMBOL", new BigDecimal("100"), receivedAt);
+
+		ArgumentCaptor<CryptoPriceUpdatedEvent> eventCaptor = ArgumentCaptor.forClass(CryptoPriceUpdatedEvent.class);
+		verify(eventPublisher).publishEvent(eventCaptor.capture());
+		CryptoPriceUpdatedEvent event = eventCaptor.getValue();
+		assertThat(event.symbol()).isEqualTo("NEW_SYMBOL");
+		assertThat(event.price()).isEqualByComparingTo("100");
+		assertThat(event.receivedAt()).isEqualTo(receivedAt);
+	}
+
+	@Test
+	void saveTickPublishesEventWhenNewerTickReplacesExistingValue() {
+		PriceStore priceStore = priceStore();
+		LocalDateTime existing = NOW.minusSeconds(5);
+		LocalDateTime newer = NOW.minusSeconds(1);
+		stubTick("REPLACE", new BigDecimal("100"), existing);
+
+		priceStore.saveTick("REPLACE", new BigDecimal("200"), newer);
+
+		verify(eventPublisher).publishEvent(any(CryptoPriceUpdatedEvent.class));
+	}
+
+	@Test
+	void saveTickDoesNotPublishEventWhenTickIsOlderThanExistingValue() {
+		PriceStore priceStore = priceStore();
+		LocalDateTime existing = NOW.minusSeconds(1);
+		LocalDateTime older = existing.minusSeconds(5);
+		stubTick("OLDER", new BigDecimal("100"), existing);
+
+		priceStore.saveTick("OLDER", new BigDecimal("999"), older);
+
+		verify(eventPublisher, never()).publishEvent(any());
+		verify(hashOperations, never()).putAll(eq("price:crypto:OLDER"), any());
+	}
+
+	@Test
+	void saveTickDoesNotPublishEventWhenTickIsSameInstantAsExistingValue() {
+		PriceStore priceStore = priceStore();
+		LocalDateTime same = NOW.minusSeconds(1);
+		stubTick("SAME_INSTANT", new BigDecimal("100"), same);
+
+		priceStore.saveTick("SAME_INSTANT", new BigDecimal("999"), same);
+
+		verify(eventPublisher, never()).publishEvent(any());
+		verify(hashOperations, never()).putAll(eq("price:crypto:SAME_INSTANT"), any());
+	}
+
+	@Test
+	void saveTickPublishesOneEventPerSymbolWithItsOwnPayloadWhenMultipleSymbolsUpdateTogether() {
+		PriceStore priceStore = priceStore();
+		when(hashOperations.get("price:crypto:BTC", "receivedAt")).thenReturn(null);
+		when(hashOperations.get("price:crypto:ETH", "receivedAt")).thenReturn(null);
+		LocalDateTime btcReceivedAt = NOW.minusSeconds(2);
+		LocalDateTime ethReceivedAt = NOW.minusSeconds(1);
+
+		priceStore.saveTick("BTC", new BigDecimal("50000000"), btcReceivedAt);
+		priceStore.saveTick("ETH", new BigDecimal("3000000"), ethReceivedAt);
+
+		ArgumentCaptor<CryptoPriceUpdatedEvent> eventCaptor = ArgumentCaptor.forClass(CryptoPriceUpdatedEvent.class);
+		verify(eventPublisher, times(2)).publishEvent(eventCaptor.capture());
+		List<CryptoPriceUpdatedEvent> events = eventCaptor.getAllValues();
+
+		CryptoPriceUpdatedEvent btcEvent = events.stream().filter(e -> e.symbol().equals("BTC")).findFirst()
+			.orElseThrow();
+		assertThat(btcEvent.price()).isEqualByComparingTo("50000000");
+		assertThat(btcEvent.receivedAt()).isEqualTo(btcReceivedAt);
+
+		CryptoPriceUpdatedEvent ethEvent = events.stream().filter(e -> e.symbol().equals("ETH")).findFirst()
+			.orElseThrow();
+		assertThat(ethEvent.price()).isEqualByComparingTo("3000000");
+		assertThat(ethEvent.receivedAt()).isEqualTo(ethReceivedAt);
 	}
 }

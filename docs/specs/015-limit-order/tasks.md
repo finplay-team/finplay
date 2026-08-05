@@ -8,7 +8,7 @@
 - [x] 2. **`POST /api/orders/limit` 생성 API**
   `LimitOrderCreateRequest`·`LimitOrderResponse` DTO. `LimitOrderCreationService`(plan.md "지정가 생성 흐름" — BUY는 account 락만, SELL은 holding 락만). `LimitOrderService`(`OrderService` 패턴 재사용 — 선제 조회·실행·`DataIntegrityViolationException` 캐치·재조회 폴백). `OrderController`에 `POST /limit` 추가(`Idempotency-Key` 필수). 서비스 단위 테스트(현금·수량 부족 거부, 즉시체결 조건이어도 PENDING 생성, market≠CRYPTO 거부) + `@WebMvcTest`(요청 검증·직렬화·오류 매핑).
 
-- [ ] 3. **가격 갱신 이벤트 발행**
+- [x] 3. **가격 갱신 이벤트 발행**
   `CryptoPriceUpdatedEvent`. `PriceStore.saveTick`에 `ApplicationEventPublisher` 주입 — 과거 틱 무시 분기를 통과해 실제로 갱신했을 때만 publish. 단위 테스트(신규 틱은 publish, 과거/동시각 틱은 미publish — 기존 MKT-003 테스트에 회귀 없는지 함께 확인).
 
 - [ ] 4. **체결 리스너·체결 서비스**

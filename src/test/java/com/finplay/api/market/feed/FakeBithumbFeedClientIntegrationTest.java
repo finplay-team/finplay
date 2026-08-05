@@ -15,6 +15,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
@@ -28,6 +29,9 @@ class FakeBithumbFeedClientIntegrationTest {
 	@Autowired
 	private StringRedisTemplate redisTemplate;
 
+	@Autowired
+	private ApplicationEventPublisher eventPublisher;
+
 	@AfterEach
 	void cleanUpRedis() {
 		redisTemplate.delete(STATUS_KEY);
@@ -38,7 +42,7 @@ class FakeBithumbFeedClientIntegrationTest {
 
 	private PriceStore priceStoreAt(LocalDateTime now) {
 		Clock fixedClock = Clock.fixed(now.toInstant(ZoneOffset.UTC), ZoneOffset.UTC);
-		return new PriceStore(redisTemplate, fixedClock);
+		return new PriceStore(redisTemplate, fixedClock, eventPublisher);
 	}
 
 	@Test

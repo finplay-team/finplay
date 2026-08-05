@@ -1,6 +1,7 @@
 // 코인 최신 시세·수신시각·빗썸 연결상태를 Redis에 저장·조회하는 단일 창구 (key 문자열은 이 클래스에서만 조립)
 package com.finplay.api.market.store;
 
+import com.finplay.api.market.event.CryptoPriceUpdatedEvent;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;
@@ -10,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
@@ -26,8 +28,11 @@ public class PriceStore {
 
 	private final StringRedisTemplate redisTemplate;
 	private final Clock clock;
+	private final ApplicationEventPublisher eventPublisher;
 
 	// 동일 심볼의 과거 틱(수신시각이 현재 저장된 값보다 이전 또는 같음)은 최신 틱을 덮어쓰지 못한다 (spec.md MKT-003).
+	// 이 분기를 통과해 실제로 최신값을 갱신했을 때만 CryptoPriceUpdatedEvent를 publish한다 (015-limit-order LMT-002 트리거,
+	// spec.md 확정된 설계 결정 3번). 일반 ApplicationEvent다 — 가격 수신이 DB 트랜잭션이 아니므로 AFTER_COMMIT 대상이 없다.
 	public void saveTick(String symbol, BigDecimal price, LocalDateTime receivedAt) {
 		HashOperations<String, String, String> hashOps = redisTemplate.opsForHash();
 		String key = priceKey(symbol);
@@ -39,6 +44,7 @@ public class PriceStore {
 		fields.put(FIELD_PRICE, price.toPlainString());
 		fields.put(FIELD_RECEIVED_AT, receivedAt.toString());
 		hashOps.putAll(key, fields);
+		eventPublisher.publishEvent(new CryptoPriceUpdatedEvent(symbol, price, receivedAt));
 	}
 
 	public Optional<CryptoPriceDto> getLatestPrice(String symbol) {
