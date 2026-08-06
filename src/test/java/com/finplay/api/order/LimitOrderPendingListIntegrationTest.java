@@ -109,7 +109,7 @@ class LimitOrderPendingListIntegrationTest {
 	@Test
 	void pendingListReturnsOnlyOwnPendingOrdersNewestFirstAndExcludesOtherUsers() {
 		User owner = createUser("pending-owner");
-		Account ownerAccount = createAccount(owner);
+		createAccount(owner);
 		User other = createUser("pending-other");
 		createAccount(other);
 		Instrument instrument = createCryptoInstrument("PENDOWN");
@@ -144,8 +144,6 @@ class LimitOrderPendingListIntegrationTest {
 			com.finplay.api.account.domain.Market.CRYPTO, null, 100);
 		assertThat(otherResponse.content()).extracting(OrderListItemResponse::orderId)
 			.containsExactly(otherOrder.orderId());
-
-		assertThat(ownerAccount.getId()).isNotNull(); // 계좌가 실제로 생성됐는지(가독성 보조 단정).
 	}
 
 	// 시나리오 17: 목록에 있던 주문이 체결되거나 취소되면 이후 조회에서 더 이상 나타나지 않는다.
@@ -238,7 +236,7 @@ class LimitOrderPendingListIntegrationTest {
 	@Test
 	void holdingsReservedQuantityReflectsReservationAndReturnsToZeroAfterFill() {
 		User user = createUser("reserved-qty");
-		Account account = createAccount(user);
+		createAccount(user);
 		Instrument instrument = createCryptoInstrument("RESVQTY");
 
 		priceStore.saveTick(instrument.getSymbol(), new BigDecimal("100000"), LocalDateTime.now(clock));
@@ -270,8 +268,6 @@ class LimitOrderPendingListIntegrationTest {
 			assertThat(h.reservedQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
 			assertThat(h.quantity()).isEqualByComparingTo(initialQuantity.subtract(sellQuantity));
 		});
-
-		assertThat(account.getId()).isNotNull(); // 계좌가 실제로 생성됐는지(가독성 보조 단정).
 	}
 
 	// nextCursor를 따라 끝까지 페이지를 넘기며 orderId를 최신순 그대로 수집한다(OrderListIntegrationTest와 동일 관례).
