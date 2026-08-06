@@ -4,4 +4,4 @@
 - [x] `ErrorCode.WATCHLIST_ITEM_NOT_FOUND` 추가 + `WatchlistService`(등록/조회/해제, 중복 등록 예외 변환) + 단위 테스트
 - [x] `WatchlistController` + `WatchlistItemCreateRequest`/`WatchlistItemResponse`/`WatchlistItemListResponse` (+ `@WebMvcTest`)
 - [x] 통합 테스트 (등록 → 목록 조회 → 해제 → 목록 제외 확인, Testcontainers)
-- [ ] 문서 갱신 — `docs/api-routes.md`·`docs/api-contracts.md`에 `/api/watchlist-items` 3개 라우트 반영 (동기화 모드 planner 또는 같은 커밋에서)
+- [x] 문서 갱신 — `docs/api-routes.md`·`docs/api-contracts.md`에 `/api/watchlist-items` 3개 라우트 반영 (동기화 모드 planner 또는 같은 커밋에서)
