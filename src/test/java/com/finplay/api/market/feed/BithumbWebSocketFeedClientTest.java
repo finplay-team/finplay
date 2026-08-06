@@ -15,12 +15,15 @@ import static org.mockito.Mockito.when;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.repository.InstrumentRepository;
+import com.finplay.api.market.store.CryptoCandleStore;
 import com.finplay.api.market.store.FeedConnectionStatus;
 import com.finplay.api.market.store.PriceStore;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.net.URI;
+import java.time.Clock;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ScheduledExecutorService;
@@ -49,7 +52,13 @@ class BithumbWebSocketFeedClientTest {
 	private PriceStore priceStore;
 
 	@Mock
+	private CryptoCandleStore candleStore;
+
+	@Mock
 	private WebSocketSession session;
+
+	private final Clock clock = Clock.fixed(
+		LocalDateTime.of(2026, 8, 6, 15, 37, 0).atZone(ZoneId.of("Asia/Seoul")).toInstant(), ZoneId.of("Asia/Seoul"));
 
 	// 재연결 경로(끊김→DISCONNECTED→재연결 예약, MKT-004)를 목으로 검증하기 위해 생성자로 주입한다(PR #110 리뷰
 	// 권장사항 — 필드 초기화자 하드코딩이면 이 경로를 mock으로 검증할 수 없었다). start()를 호출하지 않는 테스트에서는
@@ -67,12 +76,13 @@ class BithumbWebSocketFeedClientTest {
 		// 실제 운영 코드가 쓰는 것과 동일한 Jackson 3(tools.jackson) 계열 ObjectMapper를 그대로 사용한다 — 구독 메시지 직렬화·ticker
 		// 메시지 역직렬화 모두 실제 동작으로 검증하기 위함(mock ObjectMapper stubbing으로 대체하지 않음).
 		client = new BithumbWebSocketFeedClient(
-			instrumentRepository, priceStore, new ObjectMapper(), webSocketClient, reconnectExecutor);
+			instrumentRepository, priceStore, candleStore, new ObjectMapper(), webSocketClient, reconnectExecutor,
+			clock);
 	}
 
 	@Test
-	@DisplayName("연결 성공 시 PriceStore에 CONNECTED 상태를 저장하고 시딩된 종목으로 구독 메시지를 전송한다")
-	void afterConnectionEstablishedSavesConnectedStatusAndSubscribes() throws Exception {
+	@DisplayName("연결 성공 시 PriceStore에 CONNECTED 상태를 저장하고 ticker·transaction 두 구독 메시지를 전송하며 since 워터마크를 심는다")
+	void afterConnectionEstablishedSavesConnectedStatusAndSubscribesBothChannels() throws Exception {
 		when(instrumentRepository.findByMarketAndTradableTrueOrderByIdAsc(Market.CRYPTO))
 			.thenReturn(List.of(
 				Instrument.create(Market.CRYPTO, "BTC", "비트코인", BigDecimal.ONE, 1000, true, LocalDateTime.now())));
@@ -80,7 +90,25 @@ class BithumbWebSocketFeedClientTest {
 		client.afterConnectionEstablished(session);
 
 		verify(priceStore, times(1)).saveConnectionStatus(FeedConnectionStatus.CONNECTED);
-		verify(session, times(1)).sendMessage(any(TextMessage.class));
+		// ticker + transaction 두 건 — 연결을 추가로 열지 않고 같은 세션에 순서대로 보낸다(이슈 #242 실측).
+		verify(session, times(2)).sendMessage(any(TextMessage.class));
+		verify(candleStore, times(1)).touchSince("BTC", LocalDateTime.now(clock));
+	}
+
+	@Test
+	@DisplayName("구독 메시지 중 첫 번째는 ticker, 두 번째는 transaction 타입이며 tickTypes가 없다")
+	void subscribeSendsTickerThenTransactionWithDistinctPayloadShapes() throws Exception {
+		when(instrumentRepository.findByMarketAndTradableTrueOrderByIdAsc(Market.CRYPTO))
+			.thenReturn(List.of(
+				Instrument.create(Market.CRYPTO, "BTC", "비트코인", BigDecimal.ONE, 1000, true, LocalDateTime.now())));
+		ArgumentCaptor<TextMessage> messageCaptor = ArgumentCaptor.forClass(TextMessage.class);
+
+		client.afterConnectionEstablished(session);
+
+		verify(session, times(2)).sendMessage(messageCaptor.capture());
+		List<TextMessage> sent = messageCaptor.getAllValues();
+		assertThat(sent.get(0).getPayload()).contains("\"type\":\"ticker\"").contains("\"tickTypes\"");
+		assertThat(sent.get(1).getPayload()).contains("\"type\":\"transaction\"").doesNotContain("tickTypes");
 	}
 
 	@Test
@@ -113,7 +141,50 @@ class BithumbWebSocketFeedClientTest {
 	}
 
 	@Test
-	@DisplayName("구독 확인 등 ticker가 아닌 메시지는 saveTick을 호출하지 않는다")
+	@DisplayName("정상 transaction 페이로드 수신 시 CryptoCandleStore.recordTrade와 PriceStore.saveTick이 함께 호출된다")
+	void handleTextMessageRecordsTradeAndSavesTickForValidTransactionPayload() {
+		String payload = """
+			{
+			  "type": "transaction",
+			  "content": {
+			    "list": [
+			      {"symbol": "BTC_KRW", "contPrice": "91839000", "contQty": "0.00016332", "contDtm": "2026-08-06 15:37:00.000000"}
+			    ]
+			  }
+			}
+			""";
+
+		client.handleTextMessage(session, new TextMessage(payload));
+
+		LocalDateTime tradedAt = LocalDateTime.of(2026, 8, 6, 15, 37, 0);
+		verify(candleStore, times(1)).recordTrade("BTC", tradedAt, new BigDecimal("91839000"),
+			new BigDecimal("0.00016332"));
+		verify(priceStore, times(1)).saveTick("BTC", new BigDecimal("91839000"), tradedAt);
+	}
+
+	@Test
+	@DisplayName("list에 체결이 여러 건이면 전부 recordTrade·saveTick이 호출된다")
+	void handleTextMessageProcessesEveryTradeInList() {
+		String payload = """
+			{
+			  "type": "transaction",
+			  "content": {
+			    "list": [
+			      {"symbol": "BTC_KRW", "contPrice": "91839000", "contQty": "0.001", "contDtm": "2026-08-06 15:37:00.000000"},
+			      {"symbol": "BTC_KRW", "contPrice": "91840000", "contQty": "0.002", "contDtm": "2026-08-06 15:37:01.000000"}
+			    ]
+			  }
+			}
+			""";
+
+		client.handleTextMessage(session, new TextMessage(payload));
+
+		verify(candleStore, times(2)).recordTrade(eq("BTC"), any(), any(), any());
+		verify(priceStore, times(2)).saveTick(eq("BTC"), any(), any());
+	}
+
+	@Test
+	@DisplayName("구독 확인 등 ticker·transaction이 아닌 메시지는 saveTick·recordTrade 어느 것도 호출하지 않는다")
 	void handleTextMessageIgnoresNonTickerPayload() {
 		String subscribeAck = """
 			{ "status": "0000", "resmsg": "Filter Registered Successfully" }
@@ -122,6 +193,7 @@ class BithumbWebSocketFeedClientTest {
 		client.handleTextMessage(session, new TextMessage(subscribeAck));
 
 		verify(priceStore, never()).saveTick(any(), any(), any());
+		verify(candleStore, never()).recordTrade(any(), any(), any(), any());
 	}
 
 	@Test
