@@ -176,7 +176,7 @@
 - [x] `AccountSummaryResponse`에 `reservedCash` 필드가 추가되고, `Account.reservedCash` 원장 값을 그대로 노출한다(계산식 변경 없음).
 - [x] `HoldingListItemResponse`에 `reservedQuantity` 필드가 추가되고, `Holding.reservedQuantity` 원장 값을 그대로 노출한다(계산식 변경 없음).
 - [x] `docs/api-routes.md`·`docs/api-contracts.md`에 신규 엔드포인트(`GET /api/orders/pending`)와 `AccountSummaryResponse`·`HoldingListItemResponse`의 필드 추가가 같은 커밋에서 반영된다.
-- [x] `docs/prd.md` §3 구현 현황의 "지정가 주문·상시 체결(LMT-001~004)" 행을 이 PR 번호를 근거로 "완료"로 갱신하고, "계좌·보유 조회 계약 영향(Decision Gate)"이 해소됐음을 반영한다(근거: 이슈 #235, PR 생성 후 번호 갱신 필요).
+- [x] `docs/prd.md` §3 구현 현황의 "지정가 주문·상시 체결(LMT-001~004)" 행을 이 PR 번호를 근거로 "완료"로 갱신하고, "계좌·보유 조회 계약 영향(Decision Gate)"이 해소됐음을 반영한다(근거: PR #237).
 - [x] `./gradlew build` 통과.
 
 ## 확정된 설계 결정 (2026-08-05, 사용자 확인)

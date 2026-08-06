@@ -210,7 +210,7 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 | 투자 실습 — 진행 조회·가격 관찰·복기 | EDU-PRACTICE-001·007·011·012 | **미착수** | 컨트롤러 없음 (`practice_progresses` 테이블만 존재). **2026-08-05: 2차 MVP는 `COIN_PRACTICE_V1` 완료를 목표로 하고, 주식 세션 만료 관찰(evidence C)·완성은 3차 MVP로 이동** |
 | 투자 실습 — 코인 튜토리얼 정책 확정 (2차 MVP 활성 트랙) | — | **문서 확정** | `020-coin-practice-tutorial`, PR #223. `COIN_PRACTICE_V1` 분리, GTC 수명, 세션 없는 잠금 순서 확정. production 미착수 |
 | OCO 손절·익절 가격·퍼센트 입력 정책 | — | **문서 확정** | `019-exit-price-policy`, PR #200. production 미착수 |
-| 지정가 주문·상시 체결 | LMT-001~004 | **완료** | LMT-001(생성)·LMT-002(체결 트리거) 완료 — PR #215(`docs/specs/015-limit-order`, 코인 전용). LMT-003(취소) 완료 — PR #220(이슈 #218). LMT-004(미체결 목록조회, `GET /api/orders/pending`) + 계좌·보유 조회 계약 영향(Decision Gate, `reservedCash`/`reservedQuantity` 노출) 완료 — 이슈 #235(PR 생성 후 번호 갱신 필요). 주식 지정가는 추후 처리(2026-08-05 확정) |
+| 지정가 주문·상시 체결 | LMT-001~004 | **완료** | LMT-001(생성)·LMT-002(체결 트리거) 완료 — PR #215(`docs/specs/015-limit-order`, 코인 전용). LMT-003(취소) 완료 — PR #220(이슈 #218). LMT-004(미체결 목록조회, `GET /api/orders/pending`) + 계좌·보유 조회 계약 영향(Decision Gate, `reservedCash`/`reservedQuantity` 노출) 완료 — PR #237(이슈 #235). 주식 지정가는 추후 처리(2026-08-05 확정) |
 | 지정가 체결 알림 | NOTI-001~005 | **미착수** | `notification` 패키지·테이블 없음. spec 폴더 미생성 |
 | 동시성 제어·부하테스트 | — | **미착수** | Kafka·분산락 의존성 없음 |
 
