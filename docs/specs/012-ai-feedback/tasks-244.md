@@ -39,7 +39,7 @@
   - Redis 자체가 예외를 던지면(장애) 획득 실패로 처리한다 — 호출부(`CryptoPriceMoveWatcher`)가 "얻지 못함"과 동일하게 취급하도록, 이 컴포넌트가 예외를 삼키고 빈 결과를 반환할지 예외를 던져 호출부가 잡을지는 구현자가 정하되 **어느 쪽이든 그 종목의 이번 틱은 건너뛰고 배치 전체는 죽지 않아야 한다**(§실패 처리).
   - 검증 — 단위(획득 성공/실패, 토큰 불일치 시 미해제, TTL 경과 후 자동 해제) + `@SpringBootTest`(실제 Redis에 락이 걸리고 풀리는지, 다른 토큰으로 해제 시도 시 안 풀리는지).
 
-- [ ] **3. `CryptoPriceMoveWatcher.watchOne()`에 락 통합**
+- [x] **3. `CryptoPriceMoveWatcher.watchOne()`에 락 통합**
 
   z-score 게이트(`score < detectionProperties.zScoreK()`) 통과 직후, `isWithinCooldown` 호출 전에 `CryptoWatchLock.tryLock(instrument.getId())`을 호출한다. 실패하면 그 종목의 이번 틱을 종료(`return false`)한다 — 로그 레벨은 §실패 처리의 다른 "정상 종료" 케이스들과 같은 `DEBUG`가 적절하다(오류가 아니다).
   - 락 범위는 쿨다운 확인 → 일일 상한 확인 → 근거 매칭 → LLM 호출 → 저장(`priceMoveCardWriter.persist`)까지 전부를 감싼다(ADR-0014). `try { ... } finally { cryptoWatchLock.unlock(...) }`로 어떤 경로로 빠져나가도(정상 종료·예외) 해제되도록 한다.

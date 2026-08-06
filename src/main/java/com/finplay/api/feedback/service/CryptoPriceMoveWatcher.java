@@ -66,6 +66,8 @@ public class CryptoPriceMoveWatcher {
 
 	private final PriceMoveCardWriter priceMoveCardWriter;
 
+	private final CryptoWatchLock cryptoWatchLock;
+
 	private final NewsMatcher newsMatcher;
 
 	private final NarrativeService narrativeService;
@@ -103,7 +105,9 @@ public class CryptoPriceMoveWatcher {
 	}
 
 	// 의사코드 순서를 그대로 따른다 (§탐지 알고리즘(코인)) — p_now/p_past 조회 → 표본 부족·σ=0 종료 →
-	// |r5|/σ24 < k 종료 → 쿨다운 → 일일 상한 → 근거 매칭(0건이면 종료) → 서술 → 저장.
+	// |r5|/σ24 < k 종료 → 종목 단위 Redis 락 획득(ADR-0014) → 쿨다운 → 일일 상한 → 근거 매칭(0건이면 종료) →
+	// 서술 → 저장. 락은 z-score 게이트 통과 직후(쿨다운 확인 전)부터 저장까지 전부 감싼다 — 다른 인스턴스가
+	// 이미 이 종목을 처리 중이면 대기하지 않고 이번 틱을 건너뛴다(오류가 아니다, DEBUG).
 	private boolean watchOne(Instrument instrument, LocalDateTime now) {
 		int rollingWindowMinutes = cryptoProperties.rollingWindowMinutes();
 		LocalDateTime lookbackStart = now.minusHours(cryptoProperties.sigmaLookbackHours());
@@ -133,24 +137,35 @@ public class CryptoPriceMoveWatcher {
 			return false;
 		}
 
-		if (isWithinCooldown(instrument.getId(), now) || reachedDailyLimit(instrument.getId(), now)) {
+		Optional<String> lockToken = cryptoWatchLock.tryLock(instrument.getId());
+		if (lockToken.isEmpty()) {
+			log.debug(
+				"코인 감시 락 획득 실패 - 다른 인스턴스가 이미 이 종목을 처리 중이라 이번 틱을 건너뛴다. 종목={}",
+				instrument.getId());
 			return false;
 		}
+		try {
+			if (isWithinCooldown(instrument.getId(), now) || reachedDailyLimit(instrument.getId(), now)) {
+				return false;
+			}
 
-		List<MarketNewsItem> sources = newsMatcher.matchCrypto(instrument.getId(), now);
-		// 근거가 하나도 없으면 카드를 생성하지 않는다 (FEED-003과 동일 규칙).
-		if (sources.isEmpty()) {
-			return false;
+			List<MarketNewsItem> sources = newsMatcher.matchCrypto(instrument.getId(), now);
+			// 근거가 하나도 없으면 카드를 생성하지 않는다 (FEED-003과 동일 규칙).
+			if (sources.isEmpty()) {
+				return false;
+			}
+
+			BigDecimal changeRate = scaled(Math.expm1(r5), CHANGE_RATE_SCALE);
+			BigDecimal detectionScore = scaled(score, DETECTION_SCORE_SCALE);
+			NarrativeResultDto narrative = narrativeService.resolvePriceMoveNarrative(
+				toPrompt(instrument, now, rollingWindowMinutes, changeRate, sources));
+			PriceMoveEvent card = PriceMoveEvent.createCrypto(
+				instrument, now, changeRate, detectionScore, narrative.narrative(), narrative.source(), now);
+			priceMoveCardWriter.persist(card, sources);
+			return true;
+		} finally {
+			cryptoWatchLock.unlock(instrument.getId(), lockToken.get());
 		}
-
-		BigDecimal changeRate = scaled(Math.expm1(r5), CHANGE_RATE_SCALE);
-		BigDecimal detectionScore = scaled(score, DETECTION_SCORE_SCALE);
-		NarrativeResultDto narrative = narrativeService.resolvePriceMoveNarrative(
-			toPrompt(instrument, now, rollingWindowMinutes, changeRate, sources));
-		PriceMoveEvent card = PriceMoveEvent.createCrypto(
-			instrument, now, changeRate, detectionScore, narrative.narrative(), narrative.source(), now);
-		priceMoveCardWriter.persist(card, sources);
-		return true;
 	}
 
 	private boolean isWithinCooldown(Long instrumentId, LocalDateTime now) {

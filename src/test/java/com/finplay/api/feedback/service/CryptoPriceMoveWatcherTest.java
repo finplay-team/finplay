@@ -58,6 +58,17 @@ class CryptoPriceMoveWatcherTest {
 
 	private final NarrativeService narrativeService = mock(NarrativeService.class);
 
+	// 이 클래스는 락 통합(이슈 #244) 자체를 검증 대상으로 삼지 않는다 — 항상 획득에 성공하도록 고정해 기존
+	// 오케스트레이션·σ 계산 시나리오가 락 유무와 무관하게 그대로 성립함을 유지한다. 락 자체의 동작은
+	// CryptoWatchLockTest·전용 동시성 통합 테스트가 다룬다.
+	private final CryptoWatchLock cryptoWatchLock = alwaysSucceedingLock();
+
+	private static CryptoWatchLock alwaysSucceedingLock() {
+		CryptoWatchLock lock = mock(CryptoWatchLock.class);
+		when(lock.tryLock(any())).thenReturn(Optional.of("test-lock-token"));
+		return lock;
+	}
+
 	private static Instrument crypto(Long id, String symbol) {
 		Instrument instrument = Instrument.create(
 			Market.CRYPTO, symbol, "테스트코인", BigDecimal.ONE, 5000L, true, LocalDateTime.now());
@@ -98,7 +109,7 @@ class CryptoPriceMoveWatcherTest {
 		FeedbackCryptoProperties cryptoProperties, FeedbackDetectionProperties detectionProps, Clock clock) {
 		return new CryptoPriceMoveWatcher(
 			instrumentService, cryptoPriceSnapshotService, priceMoveEventRepository, priceMoveCardWriter,
-			newsMatcher, narrativeService, cryptoProperties, detectionProps, clock);
+			cryptoWatchLock, newsMatcher, narrativeService, cryptoProperties, detectionProps, clock);
 	}
 
 	// 기본 배선 — 카드 생성을 막지 않는 협력자 응답. 각 테스트가 필요한 부분만 덮어쓴다.
@@ -447,6 +458,38 @@ class CryptoPriceMoveWatcherTest {
 			watcher(properties(30, 6, 5, 1, 12, 35), detectionProperties(2.5), fixedClockAt(NOW)).watch();
 
 			verify(priceMoveCardWriter).persist(any(), eq(matched));
+		}
+	}
+
+	// --- 코인 감시 락 획득 실패 — 근거 매칭·서술·저장 전부 스킵 (ADR-0014, tasks-244.md 항목 3) ---
+
+	@Nested
+	@DisplayName("코인 감시 락 획득 실패")
+	class WatchLockAcquisitionFailure {
+
+		@Test
+		@DisplayName("락 획득에 실패하면 쿨다운·일일상한 조회부터 근거 매칭·서술·저장까지 전부 건너뛴다")
+		void skipsCooldownEvidenceNarrativeAndPersistWhenLockAcquisitionFails() {
+			List<PriceSnapshotDto> fixture = new ArrayList<>();
+			for (int agoMinutes = 0; agoMinutes <= 60; agoMinutes++) {
+				fixture.add(snapshot(NOW.minusMinutes(agoMinutes), agoMinutes < 5 ? 100.0 * Math.exp(0.12) : 100.0));
+			}
+			when(cryptoPriceSnapshotService.getSnapshots(eq("BTC"), any(), any())).thenReturn(fixture);
+			givenInstruments(INSTRUMENT);
+			// 다른 인스턴스가 이미 이 종목을 처리 중인 상황을 흉내낸다 — z-score 게이트는 통과했지만 락을 못 얻는다.
+			when(cryptoWatchLock.tryLock(INSTRUMENT.getId())).thenReturn(Optional.empty());
+
+			watcher(properties(30, 6, 5, 1, 12, 35), detectionProperties(2.5), fixedClockAt(NOW)).watch();
+
+			verify(priceMoveEventRepository, never())
+				.findFirstByInstrumentIdAndMarketOrderByOccurredAtDesc(any(), any());
+			verify(priceMoveEventRepository, never())
+				.countByInstrumentIdAndMarketAndOriginTradeDate(any(), any(), any());
+			verify(newsMatcher, never()).matchCrypto(any(), any());
+			verify(narrativeService, never()).resolvePriceMoveNarrative(any());
+			verify(priceMoveCardWriter, never()).persist(any(), any());
+			// 획득하지 못한 락은 해제할 대상이 없다 — unlock이 호출되면 안 된다.
+			verify(cryptoWatchLock, never()).unlock(any(), any());
 		}
 	}
 
