@@ -156,4 +156,12 @@ public class Order {
 		}
 		this.status = OrderStatus.CANCELLED;
 	}
+
+	public void modify(BigDecimal quantity, BigDecimal limitPrice) {
+		if (this.status != OrderStatus.PENDING) {
+			throw new IllegalStateException("PENDING 상태의 주문만 수정할 수 있습니다.");
+		}
+		this.quantity = quantity;
+		this.limitPrice = limitPrice;
+	}
 }

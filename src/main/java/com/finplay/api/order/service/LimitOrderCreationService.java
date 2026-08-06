@@ -18,7 +18,6 @@ import com.finplay.api.order.repository.OrderRepository;
 import com.finplay.api.portfolio.domain.Holding;
 import com.finplay.api.portfolio.service.PortfolioSellService;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
@@ -28,9 +27,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class LimitOrderCreationService {
-
-	// 매직 넘버 금지 컨벤션 — spec.md 비즈니스 규칙(기존 코인 수수료율 ORD-004와 동일 재사용)
-	private static final BigDecimal CRYPTO_FEE_RATE = new BigDecimal("0.0005");
 
 	private final UserQueryService userQueryService;
 	private final AccountService accountService;
@@ -63,7 +59,7 @@ public class LimitOrderCreationService {
 		// LMT-001 BUY: account 락만 잡는다(holding은 건드리지 않는다).
 		Account account = accountService.getAccountForUpdate(userId, toAccountMarket(request.market()));
 
-		long cashRequired = calculateCashRequired(quantity, limitPrice);
+		long cashRequired = LimitOrderFeeCalculator.calculate(quantity, limitPrice).total();
 		if (account.getAvailableCash() < cashRequired) {
 			throw new BusinessException(ErrorCode.INSUFFICIENT_CASH);
 		}
@@ -100,14 +96,6 @@ public class LimitOrderCreationService {
 			user, account, instrument, request.side(), quantity, limitPrice, idempotencyKey, requestHash, now);
 		orderRepository.save(order);
 		return order;
-	}
-
-	// spec.md 비즈니스 규칙: 매수 예약현금 = FLOOR(수량×지정가) + FLOOR(FLOOR(수량×지정가)×0.05%)
-	private long calculateCashRequired(BigDecimal quantity, BigDecimal limitPrice) {
-		long amount = quantity.multiply(limitPrice).setScale(0, RoundingMode.FLOOR).longValueExact();
-		long fee = BigDecimal.valueOf(amount).multiply(CRYPTO_FEE_RATE).setScale(0, RoundingMode.FLOOR)
-			.longValueExact();
-		return amount + fee;
 	}
 
 	private void validateMarketIsCrypto(Market market) {

@@ -85,6 +85,38 @@ class OrderTest {
 		assertThat(order.getStatus()).isEqualTo(OrderStatus.FILLED);
 	}
 
+	@Test
+	void modifyUpdatesQuantityAndLimitPriceWhenOrderIsPending() {
+		Order order = limitPendingOrder(BigDecimal.valueOf(70_000_000));
+
+		order.modify(BigDecimal.valueOf(2), BigDecimal.valueOf(80_000_000));
+
+		assertThat(order.getQuantity()).isEqualByComparingTo(BigDecimal.valueOf(2));
+		assertThat(order.getLimitPrice()).isEqualByComparingTo(BigDecimal.valueOf(80_000_000));
+		assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING); // 상태는 그대로 유지된다
+	}
+
+	@Test
+	void modifyThrowsIllegalStateExceptionWhenOrderAlreadyFilled() {
+		Order order = limitPendingOrder(BigDecimal.valueOf(70_000_000));
+		order.markFilled();
+
+		assertThatThrownBy(() -> order.modify(BigDecimal.valueOf(2), BigDecimal.valueOf(80_000_000)))
+			.isInstanceOf(IllegalStateException.class);
+		assertThat(order.getQuantity()).isEqualByComparingTo(BigDecimal.valueOf(1)); // 값이 바뀌지 않는다
+		assertThat(order.getLimitPrice()).isEqualByComparingTo(BigDecimal.valueOf(70_000_000));
+	}
+
+	@Test
+	void modifyThrowsIllegalStateExceptionWhenOrderAlreadyCancelled() {
+		Order order = limitPendingOrder(BigDecimal.valueOf(70_000_000));
+		order.cancel();
+
+		assertThatThrownBy(() -> order.modify(BigDecimal.valueOf(2), BigDecimal.valueOf(80_000_000)))
+			.isInstanceOf(IllegalStateException.class);
+		assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+	}
+
 	private static Order limitPendingOrder(BigDecimal limitPrice) {
 		User user = testUser();
 		Account account = Account.create(user, Market.CRYPTO, NOW);

@@ -72,7 +72,7 @@
 
 ## LMT-005 지정가 주문 수정 (이슈 #239)
 
-- [ ] 21. **수수료 계산 공통화 + 엔티티 확장**
+- [x] 21. **수수료 계산 공통화 + 엔티티 확장**
   `order.service`에 `LimitOrderFeeCalculator`(정적 유틸리티, `CRYPTO_FEE_RATE`·`calculate(quantity, limitPrice)` → `Reservation(amount, fee)` record, plan.md "수수료 계산 공통화 결정" 그대로) 신설. `LimitOrderCreationService`·`LimitOrderCancelService`·`LimitOrderFillService` 세 파일의 개별 `CRYPTO_FEE_RATE` 상수·인라인 계산을 이 유틸리티 호출로 교체(같은 커밋 — 다섯 번째 중복 경로를 열어두지 않는다). `Order`에 `modify(BigDecimal quantity, BigDecimal limitPrice)` 추가(`cancel()`/`markFilled()`와 대칭 — `PENDING` 아니면 `IllegalStateException`). 단위 테스트: `LimitOrderFeeCalculatorTest`(신규, 기존 3개 서비스가 쓰던 값과 동일한 결과 회귀 확인 + FLOOR 경계값), `OrderTest`(`modify()` 정상 전이·비-`PENDING` 상태 예외), 리팩터링한 세 서비스의 기존 테스트 전체 회귀 확인(계산 결과가 바뀌지 않았는지).
 
 - [ ] 22. **`PATCH /api/orders/{orderId}` 수정 API**
