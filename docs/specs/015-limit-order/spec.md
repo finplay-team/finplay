@@ -202,18 +202,18 @@
 
 ### LMT-005 완료 조건 (이슈 #239)
 
-- [ ] `PATCH /api/orders/{orderId}`가 본인 소유의 `PENDING` 코인 지정가 주문의 `limitPrice`·`quantity`를 변경한다. 둘 다 보내는 경우와 한쪽만 보내는 부분 갱신이 모두 동작하고, 둘 다 생략하면 400 `VALIDATION_ERROR`로 거부한다.
-- [ ] 같은 `orderId`의 `orders` 행을 갱신하며 새 주문을 만들지 않는다. `requestedAt`도 유지되어 `GET /api/orders/pending`(LMT-004)에서 정렬 위치가 바뀌지 않는다.
-- [ ] 매수는 변경 전 예약(`수량 × 지정가 + 예상 수수료`)을 해제하고 변경 후 값으로 재예약한다. 매도는 변경 전 예약 수량을 해제하고 변경 후 수량으로 재예약한다.
-- [ ] **예약 가능한 현금·수량이 부족하면 409 `INSUFFICIENT_CASH`·`INSUFFICIENT_QTY`로 거부하고 주문·계좌·보유가 변경 전 상태 그대로 DB에 남는다** — 한 트랜잭션에서 처리되어 부분 반영이 남지 않는다는 것을 통합 테스트로 확인한다(서비스 예외만 확인하는 얕은 검증으로 끝내지 않고, 거부 이후 실제 DB 값을 재조회해 대조한다).
-- [ ] 검증 순서가 존재(404 `NOT_FOUND`) → 소유(403 `FORBIDDEN`) → 상태(409)로 고정된다. 이미 체결된 주문은 `ORDER_ALREADY_FILLED`, 이미 취소된 주문은 `ORDER_ALREADY_CANCELLED`로 거부한다(LMT-003과 동일한 코드 재사용, 신규 오류 코드 없음).
-- [ ] `Idempotency-Key` 헤더를 요구하지 않는다 — 같은 요청을 두 번 보내도 결과가 같다.
-- [ ] 잠금 순서 `order → account → (SELL만) holding`을 지킨다. 수정-대-체결, 수정-대-취소 동시 도착 경합에서 예약 이중 반환·이중 소비가 발생하지 않음을 `LimitOrderConcurrencyIntegrationTest`에 실제 멀티스레드 시나리오로 추가해 확인한다.
-- [ ] 수정 결과가 즉시 체결 조건을 충족하는 값이어도 생성(LMT-001)과 동일하게 거부하지 않는다.
-- [ ] 시장가 주문(`orderType=MARKET`)과 타인 주문은 상태·소유 검증만으로 자연히 배제된다(별도 분기 없음).
-- [ ] `docs/api-routes.md`·`docs/api-contracts.md`에 `PATCH /api/orders/{orderId}`를 반영한다.
-- [ ] `docs/prd.md` §3 "지정가 주문·상시 체결" 행을 이 PR 번호를 근거로 갱신한다 — LMT-005 완료로 판정을 갱신한다.
-- [ ] `./gradlew build` 통과.
+- [x] `PATCH /api/orders/{orderId}`가 본인 소유의 `PENDING` 코인 지정가 주문의 `limitPrice`·`quantity`를 변경한다. 둘 다 보내는 경우와 한쪽만 보내는 부분 갱신이 모두 동작하고, 둘 다 생략하면 400 `VALIDATION_ERROR`로 거부한다.
+- [x] 같은 `orderId`의 `orders` 행을 갱신하며 새 주문을 만들지 않는다. `requestedAt`도 유지되어 `GET /api/orders/pending`(LMT-004)에서 정렬 위치가 바뀌지 않는다.
+- [x] 매수는 변경 전 예약(`수량 × 지정가 + 예상 수수료`)을 해제하고 변경 후 값으로 재예약한다. 매도는 변경 전 예약 수량을 해제하고 변경 후 수량으로 재예약한다.
+- [x] **예약 가능한 현금·수량이 부족하면 409 `INSUFFICIENT_CASH`·`INSUFFICIENT_QTY`로 거부하고 주문·계좌·보유가 변경 전 상태 그대로 DB에 남는다** — 한 트랜잭션에서 처리되어 부분 반영이 남지 않는다는 것을 통합 테스트로 확인한다(서비스 예외만 확인하는 얕은 검증으로 끝내지 않고, 거부 이후 실제 DB 값을 재조회해 대조한다).
+- [x] 검증 순서가 존재(404 `NOT_FOUND`) → 소유(403 `FORBIDDEN`) → 상태(409)로 고정된다. 이미 체결된 주문은 `ORDER_ALREADY_FILLED`, 이미 취소된 주문은 `ORDER_ALREADY_CANCELLED`로 거부한다(LMT-003과 동일한 코드 재사용, 신규 오류 코드 없음).
+- [x] `Idempotency-Key` 헤더를 요구하지 않는다 — 같은 요청을 두 번 보내도 결과가 같다.
+- [x] 잠금 순서 `order → account → (SELL만) holding`을 지킨다. 수정-대-체결, 수정-대-취소 동시 도착 경합에서 예약 이중 반환·이중 소비가 발생하지 않음을 `LimitOrderConcurrencyIntegrationTest`에 실제 멀티스레드 시나리오로 추가해 확인한다.
+- [x] 수정 결과가 즉시 체결 조건을 충족하는 값이어도 생성(LMT-001)과 동일하게 거부하지 않는다.
+- [x] 시장가 주문(`orderType=MARKET`)과 타인 주문은 상태·소유 검증만으로 자연히 배제된다(별도 분기 없음).
+- [x] `docs/api-routes.md`·`docs/api-contracts.md`에 `PATCH /api/orders/{orderId}`를 반영한다.
+- [x] `docs/prd.md` §3 "지정가 주문·상시 체결" 행을 이 PR 번호를 근거로 갱신한다 — LMT-005 완료로 판정을 갱신한다.
+- [x] `./gradlew build` 통과.
 
 ## 확정된 설계 결정 (2026-08-05, 사용자 확인)
 

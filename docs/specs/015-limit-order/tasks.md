@@ -81,5 +81,5 @@
 - [x] 23. **원자성·동시성 통합 테스트**
   `LimitOrderConcurrencyIntegrationTest`에 plan.md "동시성 테스트 시나리오" 2~4번(spec.md 시나리오 23·24) 추가 — 기존 `runConcurrently`(ready/start `CountDownLatch`) 헬퍼 재사용. (a, 이 기능의 핵심 증명) 예약 가능 현금·수량을 초과하는 `PATCH` 요청이 409로 거부된 **후** 주문·계좌·보유를 DB에서 재조회해 요청 전 값과 완전히 동일함을 확인(서비스 예외 타입만 보는 얕은 검증 금지, 매수·매도 각 1개). (b) 수정-대-체결 동시 경합(체결 승리·수정 승리 두 경로 모두 예약 일관성 확인). (c) 수정-대-취소 동시 경합(취소 승리·수정 승리 두 경로 모두 확인).
 
-- [ ] 24. **문서 동기화 및 최종 빌드**
+- [x] 24. **문서 동기화 및 최종 빌드**
   `docs/api-routes.md`에 `PATCH /api/orders/{orderId}` 행 추가(`DELETE /api/orders/{orderId}` 행 근처). `docs/api-contracts.md`의 `## order` 절에 "지정가 주문 수정" 표 추가(요청·응답·오류 계약, 전부 기존 코드 재사용임을 명시). `docs/prd.md` §3 구현 현황 "지정가 주문·상시 체결(LMT-001~005)" 행을 이 PR 번호를 근거로 "완료"로 갱신(LMT-001~005 전부 완료). `docs/specs/015-limit-order/spec.md` "LMT-005 완료 조건 (이슈 #239)" 체크박스를 구현·테스트 통과 확인 후 `[x]`로 갱신. `./gradlew build` 전체 통과 확인(실패 시 수정 후 재실행).
