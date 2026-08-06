@@ -158,9 +158,15 @@ public class FeedbackQueryCache {
 			return loader.get();
 		}
 		String key = KEY_PREFIX + suffix;
-		Optional<T> cached = read(key, decoder);
-		if (cached.isPresent()) {
-			return cached.get();
+		CacheRead<T> cached = read(key, decoder);
+		if (cached.value().isPresent()) {
+			return cached.value().get();
+		}
+		// Redis가 응답하지 못하는 상태면 락도 대기도 순수한 낭비다 — 아무도 캐시를 채울 수 없으므로 기다려 봐야
+		// wait-millis를 통째로 태운 뒤 어차피 여기로 온다. 장애를 캐시 미스로 취급하되(ADR-0015 §6) 미스 중에서도
+		// "곧 채워질 미스"와 구분해 즉시 원본으로 내려간다.
+		if (!cached.redisHealthy()) {
+			return loader.get();
 		}
 		Optional<String> token = redisLock.tryLock(
 			LOCK_KEY_PREFIX + suffix, Duration.ofMillis(properties.lockTtlMillis()));
@@ -196,21 +202,27 @@ public class FeedbackQueryCache {
 				Thread.currentThread().interrupt();
 				return Optional.empty();
 			}
-			Optional<T> cached = read(key, decoder);
-			if (cached.isPresent()) {
-				return cached;
+			CacheRead<T> cached = read(key, decoder);
+			if (cached.value().isPresent()) {
+				return cached.value();
+			}
+			// 대기 도중 Redis가 죽었으면 더 기다려도 채워지지 않는다.
+			if (!cached.redisHealthy()) {
+				return Optional.empty();
 			}
 		}
 		return Optional.empty();
 	}
 
-	private <T> Optional<T> read(String key, Function<String, Optional<T>> decoder) {
+	// 값 없음(진짜 미스)과 Redis 불건전을 구분해 돌려준다 — 둘 다 캐시 미스로 취급하지만 후자는 대기가 무의미하다.
+	// 역직렬화 실패는 "건전한 미스"다(형식이 바뀐 옛 값). Redis는 멀쩡하므로 락을 쥔 요청이 새 값으로 덮어쓴다.
+	private <T> CacheRead<T> read(String key, Function<String, Optional<T>> decoder) {
 		try {
 			String value = redisTemplate.opsForValue().get(key);
-			return value == null ? Optional.empty() : decoder.apply(value);
+			return CacheRead.healthy(value == null ? Optional.empty() : decoder.apply(value));
 		} catch (RuntimeException ex) {
 			log.warn("조회 캐시 읽기 실패(Redis 장애) - key={}", key, ex);
-			return Optional.empty();
+			return CacheRead.unhealthy();
 		}
 	}
 
@@ -284,5 +296,17 @@ public class FeedbackQueryCache {
 		LocalDateTime now = LocalDateTime.now(clock);
 		LocalDateTime candidate = now.truncatedTo(ChronoUnit.HOURS).plusMinutes(CRYPTO_BATCH_MINUTE);
 		return candidate.isAfter(now) ? candidate : candidate.plusHours(1);
+	}
+
+	/** 캐시 읽기 한 번의 결과. {@code redisHealthy=false}면 값이 없는 이유가 "아직 안 채워짐"이 아니라 장애다. */
+	private record CacheRead<T>(Optional<T> value, boolean redisHealthy) {
+
+		private static <T> CacheRead<T> healthy(Optional<T> value) {
+			return new CacheRead<>(value, true);
+		}
+
+		private static <T> CacheRead<T> unhealthy() {
+			return new CacheRead<>(Optional.empty(), false);
+		}
 	}
 }
