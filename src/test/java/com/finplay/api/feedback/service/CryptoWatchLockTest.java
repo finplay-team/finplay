@@ -10,11 +10,16 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.finplay.api.feedback.config.FeedbackCryptoProperties;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.data.redis.core.script.RedisScript;
@@ -28,9 +33,10 @@ class CryptoWatchLockTest {
 	private static final Long INSTRUMENT_ID = 1L;
 	private static final String LOCK_KEY = "feedback:crypto-watch:lock:1";
 
-	// TTL이 관심사인 테스트는 tryLockPassesConfiguredWatchLockTtlSecondsAsTheExpirationDuration 하나뿐이고
-	// 그 테스트만 자체 값을 쓴다. 나머지는 TTL이 무엇이든 결과가 같으므로 이 상수를 쓴다 — §C-7 기본값(45)과
-	// 다른 것은 의도적이며, 여기서 기본값을 다시 단정하지 않는다(그건 FeedbackCryptoPropertiesTest 몫이다).
+	// TTL 값 자체를 단정하는 테스트는 tryLockPassesConfiguredWatchLockTtlSecondsAsTheExpirationDuration
+	// 하나뿐이고 그 테스트만 자체 값을 쓴다. 나머지는 TTL을 매처에 걸지 않으므로(any(Duration.class)) 이 값이
+	// 무엇이든 결과가 같다 — §C-7 기본값(45)과 다른 것은 의도적이며, 여기서 기본값을 다시 단정하지 않는다
+	// (그건 FeedbackCryptoPropertiesTest 몫이다).
 	private static final int IRRELEVANT_WATCH_LOCK_TTL_SECONDS = 30;
 
 	private final StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
@@ -49,8 +55,7 @@ class CryptoWatchLockTest {
 	@Test
 	void tryLockReturnsTokenWhenSetIfAbsentSucceeds() {
 		CryptoWatchLock lock = cryptoWatchLock(defaultTtlProperties);
-		when(valueOperations.setIfAbsent(
-			eq(LOCK_KEY), any(), eq(Duration.ofSeconds(IRRELEVANT_WATCH_LOCK_TTL_SECONDS)))).thenReturn(true);
+		when(valueOperations.setIfAbsent(eq(LOCK_KEY), any(), any(Duration.class))).thenReturn(true);
 
 		Optional<String> token = lock.tryLock(INSTRUMENT_ID);
 
@@ -115,6 +120,52 @@ class CryptoWatchLockTest {
 		lock.unlock(INSTRUMENT_ID, token);
 
 		verify(redisTemplate).execute((RedisScript<Long>)any(RedisScript.class), eq(List.of(LOCK_KEY)), eq(token));
+	}
+
+	// 반환값 null — Redis 응답이 비었거나 드라이버가 값을 못 옮긴 경우다. `unlock`의 `deleted == null` 가드가
+	// 지켜지는지 보는 테스트인데, **"예외를 던지지 않는다"로는 그 가드를 지킬 수 없다.** 가드를 지우면
+	// `deleted != 1L`에서 Long 언박싱 NPE가 나지만 그 NPE도 catch(RuntimeException)에 잡혀 삼켜지므로,
+	// 밖에서 보면 가드가 있으나 없으나 "예외 없이 끝난다"가 똑같다 — 맞는 구현과 틀린 구현이 같은 답을 내는
+	// 테스트가 된다. 실제로 가드를 임시로 지우고 돌려 그 사실을 확인했다 (PR #254 4라운드 리뷰 [권장 1]).
+	//
+	// 두 경우를 가르는 유일한 외부 관찰점이 로그 메시지라, DartDisclosureCollectorTest와 같은 방식으로
+	// 임시 appender를 붙여 "지우지 못했다" 경고가 뜨는지 본다. 가드가 없으면 NPE가 "Redis 장애" 경고로
+	// 잘못 분류돼 이 단정이 깨진다.
+	@Test
+	@SuppressWarnings("unchecked")
+	void unlockWarnsThatNothingWasDeletedWhenScriptReturnsNullInsteadOfFailingOnUnboxing() {
+		CryptoWatchLock lock = cryptoWatchLock(defaultTtlProperties);
+		when(redisTemplate.execute((RedisScript<Long>)any(RedisScript.class), anyList(), any())).thenReturn(null);
+
+		List<ILoggingEvent> logs = capturingLogs(() -> lock.unlock(INSTRUMENT_ID, "some-token"));
+
+		assertThat(logs).singleElement().satisfies(event -> {
+			assertThat(event.getLevel()).isEqualTo(Level.WARN);
+			assertThat(event.getFormattedMessage()).contains("지우지 못했다");
+			// 가드가 사라지면 NPE가 catch로 떨어져 "Redis 장애"로 잘못 기록된다 — 그 오분류를 못박는다.
+			assertThat(event.getFormattedMessage()).doesNotContain("Redis 장애");
+			assertThat(event.getThrowableProxy()).isNull();
+		});
+		verify(redisTemplate)
+			.execute((RedisScript<Long>)any(RedisScript.class), eq(List.of(LOCK_KEY)), eq("some-token"));
+	}
+
+	// 로그가 두 분기의 유일한 외부 관찰점이라 로거에 임시 appender를 붙인다 (DartDisclosureCollectorTest와 같은 방식).
+	private static List<ILoggingEvent> capturingLogs(Runnable action) {
+		Logger logger = (Logger)LoggerFactory.getLogger(CryptoWatchLock.class);
+		ListAppender<ILoggingEvent> appender = new ListAppender<>();
+		appender.start();
+		Level originalLevel = logger.getLevel();
+		logger.setLevel(Level.DEBUG);
+		logger.addAppender(appender);
+		try {
+			action.run();
+			return List.copyOf(appender.list);
+		} finally {
+			logger.detachAppender(appender);
+			logger.setLevel(originalLevel);
+			appender.stop();
+		}
 	}
 
 	// 토큰 불일치(0L) — 이미 TTL이 만료돼 다른 인스턴스가 락을 새로 잡은 경우다. 스크립트가 아무 것도 지우지

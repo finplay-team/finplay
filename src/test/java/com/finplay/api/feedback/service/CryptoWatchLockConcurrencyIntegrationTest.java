@@ -172,8 +172,8 @@ class CryptoWatchLockConcurrencyIntegrationTest {
 			"https://news.example.com/lock-race", NOW.minusMinutes(5), NOW));
 	}
 
-	// 공유 Testcontainers MySQL에 다른 테스트가 남긴 코인 종목이 섞여도 이 테스트의 종목만 세도록 좁힌다.
-	// 기준은 setUp()이 쓰는 것과 같은 상수다.
+	// 공유 Testcontainers MySQL에 다른 테스트가 남긴 코인 종목이 섞여도 이 테스트의 종목만 세도록 좁힌다
+	// (PR #254 리뷰 [참고 4]). 기준은 setUp()이 쓰는 것과 같은 상수다.
 	private static boolean isThisTestsInstrument(PriceMovePromptDto prompt) {
 		return prompt.instrumentName().equals(INSTRUMENT_NAME);
 	}
