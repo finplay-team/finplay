@@ -1,11 +1,11 @@
-# Spec: 코인 지정가 매매 — 생성·체결·취소 (LMT-001~003)
+# Spec: 코인 지정가 매매 — 생성·체결·취소·미체결 목록 조회 (LMT-001~004)
 
 ## 배경
 
-- 이슈: #210 `[1차 고도화][매매] 코인 지정가 매매 구현`(LMT-001~002), #218 `[1차 고도화][매매] 지정가 주문 취소`(LMT-003), #224(시장가 매수 경로에 계좌·holdings 비관적 락 보강)
-- 선행: #138(완료, PR #209 — `docs/prd.md`에 지정가·알림 정책 반입), #210(완료, PR #215 — LMT-001~002), #218(완료, PR #220 — LMT-003)
-- PRD 근거: `docs/prd.md` 591~615행 (§4 "지정가 주문·체결" 중 LMT-001~003), §3 구현 현황 211행
-- 이 spec 폴더는 PRD 631행이 예약해둔 자리다. LMT-001(생성)·LMT-002(체결 트리거)는 PR #215로, LMT-003(취소)은 PR #220으로 완료됐다. **이번 절은 이슈 #224 — 시장가 매수 경로(계좌·holdings)에 비관적 락을 보강하는 작업을 같은 폴더에 이어 붙인다.** 이 gap은 위 "알려진 한계" 절과 "후속 이슈" 절에 이미 예고돼 있었다. 미체결 목록조회(LMT-004)는 여전히 후속 이슈다.
+- 이슈: #210 `[1차 고도화][매매] 코인 지정가 매매 구현`(LMT-001~002), #218 `[1차 고도화][매매] 지정가 주문 취소`(LMT-003), #224(시장가 매수 경로에 계좌·holdings 비관적 락 보강), #235 `[1차 고도화][매매] 코인 지정가 미체결 주문 목록 조회 구현`(LMT-004)
+- 선행: #138(완료, PR #209 — `docs/prd.md`에 지정가·알림 정책 반입), #210(완료, PR #215 — LMT-001~002), #218(완료, PR #220 — LMT-003), #224(완료 — 시장가 매수 경로 락 보강)
+- PRD 근거: `docs/prd.md` 591~634행 (§4 "지정가 주문·체결" 중 LMT-001~004 + "계좌·보유 조회 계약 영향(Decision Gate)"), §3 구현 현황 213행
+- 이 spec 폴더는 PRD 631행이 예약해둔 자리다. LMT-001(생성)·LMT-002(체결 트리거)는 PR #215로, LMT-003(취소)은 PR #220으로 완료됐다. 이슈 #224 — 시장가 매수 경로(계좌·holdings)에 비관적 락을 보강하는 작업도 완료됐다(아래 "알려진 한계" 절 참고). **이번 절은 이슈 #235 — 미체결 지정가 목록 조회(LMT-004)와, 같은 이슈가 함께 해소하는 "계좌·보유 조회 계약 영향(Decision Gate)"을 이 spec 폴더에 이어 붙인다.** 정책은 PRD에 이미 확정돼 있고(코인 전용, `market` 필수, 커서 페이지네이션, 최신순, 필드명 `reservedCash`/`reservedQuantity`), 이 절에서 새로 정하는 정책은 없다.
 - 대상은 **코인(CRYPTO) 전용**이다. 주식 지정가는 PRD 593행의 사유(재생 데이터 기반이라 "이 가격 도달 시" 조건이 성립하기 어려움)로 이번 범위에서 제외한다.
 
 ## 목적
@@ -22,14 +22,15 @@
 - 동시 체결 경합 제어를 위한 비관적 락(`SELECT ... FOR UPDATE`) 도입 — 이 기능은 주문 원장 전체에 처음 도입되는 비관적 락이다(아래 "알려진 한계·확정된 설계 결정" 참고)
 - 기존 시장가 매도 체결(`OrderExecutionService`)의 락 순서를 이번에 정한 전역 순서(account가 holding보다 항상 먼저)에 맞추는 조정
 - `DELETE /api/orders/{orderId}` — 본인 소유 `PENDING` 지정가 주문을 취소하고 예약 현금(매수)·예약 수량(매도)을 반환 (LMT-003, 이슈 #218)
+- `GET /api/orders/pending?market=&cursor=&limit=` — 본인 소유의 `PENDING` 상태 지정가 주문만 최신순 커서 페이지네이션으로 조회 (LMT-004, 이슈 #235)
+- `AccountSummaryResponse`에 `reservedCash`, `HoldingListItemResponse`에 `reservedQuantity` 필드를 추가해 예약분을 노출 — "계좌·보유 조회 계약 영향(Decision Gate)" 해소 (이슈 #235)
 
 **제외 (이슈 원문 그대로)**
 
 - 주식 지정가 — 재생 데이터 기반이라 "이 가격 도달 시" 조건 자체가 성립하기 어려워 추후 별도로 다룬다
-- 미체결 지정가 목록조회(LMT-004, `GET /api/orders/pending`) — 후속 이슈
 - 주식 지정가 취소, 시장가 주문 취소 — 이번 취소 기능은 코인 지정가(`orderType=LIMIT`) 전용이다(시장가는 생성 즉시 `FILLED`라 애초에 `PENDING` 상태를 갖지 않으므로 취소 대상이 될 수 없다 — 별도 분기 없이 상태 검증만으로 자연히 배제된다)
+- 주문 수정(가격·수량 변경) — 취소 후 재생성으로 대체한다. 필요성이 확정되면 별도 이슈로 다룬다(이슈 #235 원문)
 - 지정가 체결 알림(NOTI-001~005) — LMT-002 체결 트리거가 선행되어야 하므로 별도 이슈
-- `AccountSummaryResponse`·`HoldingListItemResponse`에 예약분(availableCash/availableQuantity) 노출 — 계약 변경은 Decision Gate, 착수 시 필요성이 확인되면 별도 이슈
 - 부분체결·슬리피지 허용 — 전량 목표가 체결만 다룬다
 - 외부 메시지 큐(Redis/Kafka) 도입 — 인메모리 `ApplicationEvent`로 처리하고 리스너 경계만 열어둔다
 
@@ -92,6 +93,22 @@
 
 **추가로 발견·수정한 결함(계획 범위 밖, 시나리오 13 테스트 작성 중 재현)**: 계좌 락만으로는 "매수 합산 소비액이 잔액을 초과할 수 없다"는 불변식이 지켜지지 않았다 — `OrderExecutionService.createBuyOrder`의 현금 부족 검증이 `cashBalance`만 보고 `reservedCash`(지정가 매수 예약분)를 무시했기 때문이다(지정가 생성 경로는 이미 `getAvailableCash()` 기준). 검증식을 `getAvailableCash()` 기준으로 통일해 락과 검증 기준을 일치시켰다.
 
+### LMT-004 미체결 주문 목록 조회 (코인 전용, 이슈 #235)
+
+- `GET /api/orders/pending?market=&cursor=&limit=`로 본인 소유의 `PENDING` 상태 지정가 주문만 조회한다.
+- `market`은 `PORT-002`(거래내역 조회) 규칙과 동일하게 필수 파라미터다. `market`으로 조회한 계좌가 존재하지 않거나 타인 소유면 조회할 수 없다.
+- 다른 사용자의 미체결 주문은 조회할 수 없다 — 본인 계좌에 속한 주문만 대상이다.
+- 커서 기반 페이지네이션을 사용하며 최신순으로 정렬한다.
+- 이 목록은 취소(LMT-003)·체결(LMT-002)로 상태가 바뀐 주문은 더 이상 포함하지 않는다 — 조회 시점의 `status`를 그대로 반영하는 실시간 목록이다(별도 스냅샷·캐시 없음).
+
+### 계좌·보유 조회 계약 영향 해소 (Decision Gate, PRD 634행, 이슈 #235)
+
+- LMT-001~003이 배포된 시점부터 `cashBalance`(ACCT-002)·보유수량(PORT-001) 응답과 실제 "주문 가능" 값이 갈라지는 문제가 존재해왔다(지정가 주문이 현금·수량을 예약하기 때문). 이 이슈에서 예약분을 응답에 노출해 해소한다.
+- `AccountSummaryResponse`에 `reservedCash` 필드를 추가해 해당 계좌의 예약 현금(지정가 매수로 묶인 금액)을 노출한다.
+- `HoldingListItemResponse`에 `reservedQuantity` 필드를 추가해 해당 보유 종목의 예약 수량(지정가 매도로 묶인 수량)을 노출한다.
+- 두 필드 모두 이미 원장에 존재하는 값(`accounts.reserved_cash`, `holdings.reserved_quantity`, V22)을 그대로 노출하는 것이며, 새로운 계산·집계를 도입하지 않는다.
+- 기존 `cashBalance`·`quantity`·`totalValue`·`holdingsValue` 등 다른 필드의 계산식은 이 변경으로 바뀌지 않는다 — 예약분은 원장 값과 나란히 추가로만 노출된다("주문 가능 금액"·"주문 가능 수량" 같은 파생값 필드는 추가하지 않는다. 클라이언트가 필요하면 두 필드로 직접 계산한다).
+
 ## 시나리오
 
 1. **매수 지정가 생성 → 대기 → 체결**: 사용자가 BTC를 지정가로 매수 주문한다. 현금이 예약되고 `PENDING`으로 응답받는다. 이후 빗썸 시세가 지정가 이하로 내려오면, 다음 가격 갱신 이벤트에서 예약된 현금이 실제 차감되고 보유수량이 생기며 `status`가 `FILLED`로 바뀐다.
@@ -109,6 +126,11 @@
 13. **시장가 매수 대 지정가 매수 생성 — 계좌 경합**: 같은 계좌에 시장가 매수(현금 즉시 차감)와 지정가 매수 생성(현금 예약)이 거의 동시에 도착한다. account 비관적 락으로 두 요청이 직렬화되어, 뒤에 처리되는 쪽은 항상 앞선 요청이 반영된 최신 `cashBalance`/`reservedCash`를 보고 `availableCash`를 검증한다 — 두 요청을 합친 소비액이 원래 잔액을 초과하는데도 둘 다 통과하는 일이 없다.
 14. **시장가 매수 대 지정가 매수 체결 — holdings 경합(lost update 방지)**: 이미 보유 중인 종목에 대해 시장가 매수(HTTP 스레드)와 지정가 매수 체결(가격 피드 스레드)이 거의 동시에 같은 holding row를 갱신한다. holdings 비관적 락으로 두 갱신이 직렬화되어, 최종 `quantity`·평균단가에 두 매수 수량이 모두 반영된다(하나가 유실되지 않는다).
 15. **ABBA 데드락 회귀 방지**: 조정된 시장가 매수(account→holding)가 기존 시장가 매도·지정가 체결(이미 account→holding 순서로 잠그는 흐름)과 서로 다른 주문으로 같은 계좌·holding을 동시에 대상으로 실행돼도, 반대 순서로 잠그는 흐름이 없어 데드락이 발생하지 않는다.
+16. **미체결 목록 조회 — 기본 흐름**: 사용자가 코인 지정가 매수·매도 주문을 여러 건 낸 뒤 `GET /api/orders/pending?market=CRYPTO`를 호출하면, 아직 체결·취소되지 않은 `PENDING` 주문만 최신 요청순으로 응답받는다.
+17. **미체결 목록 조회 — 상태 변화 반영**: 미체결 목록에 있던 주문이 체결(LMT-002)되거나 취소(LMT-003)되면, 이후 같은 목록을 다시 조회했을 때 더 이상 나타나지 않는다.
+18. **미체결 목록 조회 — 페이지네이션**: 미체결 주문이 `limit`보다 많으면 `nextCursor`로 다음 페이지를 이어받아 누락·중복 없이 전체를 순회할 수 있다.
+19. **미체결 목록 조회 — 타인 계좌 차단**: 다른 사용자의 미체결 주문은 본인 목록 조회에 섞이지 않는다. `market`으로 조회한 계좌가 존재하지 않으면 목록을 조회할 수 없다.
+20. **계좌 요약·보유 목록에서 예약분 확인**: 코인 지정가 매수 주문 생성 직후 `GET /api/accounts/summary?market=CRYPTO`를 조회하면 `reservedCash`가 해당 주문이 예약한 금액만큼 증가해 있다. 코인 지정가 매도 주문 생성 직후 `GET /api/holdings?market=CRYPTO`를 조회하면 해당 종목의 `reservedQuantity`가 예약한 수량만큼 증가해 있다. 두 값 모두 주문이 체결되거나 취소되면 원래 값(0 또는 그만큼 감소한 값)으로 돌아온다.
 
 ## 비즈니스 규칙
 
@@ -144,6 +166,19 @@
 - [x] `docs/prd.md` §3 구현 현황의 "지정가 주문·상시 체결(LMT-001~004)" 행을 이 PR 번호를 근거로 "일부 완료"(LMT-001~003)로 갱신한다 — 목록조회(LMT-004)는 이번 PR 범위가 아니라고 명시한다. (근거: PR #220)
 - [x] `./gradlew build` 통과. `ErrorCodeTest`의 stale 카운트(26→27)·매핑 누락(`ORDER_NOT_PENDING`)을 오케스트레이터가 직접 수정 후 전체 `./gradlew build` 재실행으로 확인.
 
+### LMT-004 완료 조건 (이슈 #235)
+
+- [ ] `GET /api/orders/pending?market=&cursor=&limit=`가 본인 소유의 `PENDING` 상태 지정가 주문만 최신순 커서 페이지네이션으로 반환한다.
+- [ ] `market`이 누락되거나 `STOCK`\|`CRYPTO`가 아니면 400으로 거부한다(`PORT-002`와 동일 규칙).
+- [ ] 커서가 손상되었으면(형식 불일치) 400으로 거부한다. `limit`이 1~100 범위를 벗어나면 400으로 거부한다.
+- [ ] 다른 사용자의 미체결 주문은 응답에 나타나지 않는다. `market`으로 조회한 계좌가 존재하지 않으면 조회할 수 없다.
+- [ ] 체결(LMT-002)·취소(LMT-003)로 상태가 바뀐 주문은 이후 조회에서 제외된다.
+- [ ] `AccountSummaryResponse`에 `reservedCash` 필드가 추가되고, `Account.reservedCash` 원장 값을 그대로 노출한다(계산식 변경 없음).
+- [ ] `HoldingListItemResponse`에 `reservedQuantity` 필드가 추가되고, `Holding.reservedQuantity` 원장 값을 그대로 노출한다(계산식 변경 없음).
+- [ ] `docs/api-routes.md`·`docs/api-contracts.md`에 신규 엔드포인트(`GET /api/orders/pending`)와 `AccountSummaryResponse`·`HoldingListItemResponse`의 필드 추가가 같은 커밋에서 반영된다.
+- [ ] `docs/prd.md` §3 구현 현황의 "지정가 주문·상시 체결(LMT-001~004)" 행을 이 PR 번호를 근거로 "완료"로 갱신하고, "계좌·보유 조회 계약 영향(Decision Gate)"이 해소됐음을 반영한다.
+- [ ] `./gradlew build` 통과.
+
 ## 확정된 설계 결정 (2026-08-05, 사용자 확인)
 
 이후 구현·리뷰에서 다시 논의하지 않는다. 근거가 필요하면 이 절을 인용한다.
@@ -158,13 +193,15 @@
 8. **LMT-003 취소 정책(2026-08-05, 사용자 확인, 이슈 #218)**: (a) 성공 응답은 204·본문 없음(`DELETE /api/community/posts/{postId}`·`DELETE /api/community/comments/{commentId}` 컨벤션 재사용). (b) 타인 소유 주문 취소 시도는 403 `FORBIDDEN`. (c) 검증 순서는 존재(404) → 소유(403) → 상태(409)로 고정, journal 엔드포인트 패턴(`docs/api-contracts.md` 439행)을 재사용하고 아직 미구현인 `DELETE /api/exit-plans/{exitPlanId}`(016 candidate 9, 404 통일 방식)는 따르지 않는다 — 실제 구현된 코드 컨벤션을 우선한다. (d) 404·403은 기존 `ErrorCode.NOT_FOUND`·`ErrorCode.FORBIDDEN`을 재사용하고(주문 도메인 전용 접두 코드를 신설하지 않는다 — LMT-001/002 plan.md가 이미 "404 NOT_FOUND"로 order 도메인 404를 통일해뒀다), 이미 `FILLED`/`CANCELLED`인 주문에 대한 409 코드는 아래 9번 결정으로 대체됐다. (e) 잠금 순서는 LMT-002와 동일하게 `order → account → holding`(SELL만 holding)을 그대로 재사용한다(위 7번 결정을 재적용, 재논의하지 않는다).
 9. **LMT-003 상태(409) 오류 코드 분리(2026-08-05, 사용자 확인, 이슈 #218 후속)**: 위 8번(d)가 도입한 단일 `ORDER_NOT_PENDING`을 폐기하고 `ORDER_ALREADY_FILLED`(이미 `FILLED`)·`ORDER_ALREADY_CANCELLED`(이미 `CANCELLED`)로 분리한다 — 클라이언트가 두 사유를 구분해 다른 안내를 보여줄 수 있어야 한다는 사용자 판단. `DELETE /api/orders/{orderId}` 응답 계약·`LimitOrderCancelService`의 상태 분기·관련 테스트(`LimitOrderCancelServiceTest`·`OrderControllerTest`·`LimitOrderConcurrencyIntegrationTest`·`ErrorCodeTest`)·`docs/api-contracts.md`를 모두 이 분리에 맞춰 갱신했다.
 10. **신규 종목 첫 매수 동시 생성 경합 방지 정책(2026-08-05, 사용자 확인, 이슈 #224)**: "계좌 락만으로 충분" 방식을 채택한다. account 락을 먼저 잡으면 같은 계좌를 건드리는 모든 매수 경로(시장가·지정가 체결)가 자동으로 직렬화되므로, `holdings.uk_holdings_account_instrument`(마이그레이션 `V10__create_order_ledger_tables.sql` 53행) 유니크 제약 위반에 대한 방어적 catch·재조회 로직은 추가하지 않는다. 기존 LMT-002 BUY 체결 경로가 이미 이 전제(신규 종목 첫 매수는 order→account만 잠그고 holding 단계는 건너뜀, 위 7번 결정)로 설계돼 있어 이번 작업도 동일 전제를 따른다. 이 원칙은 코드베이스가 일어날 수 없는 시나리오에 방어 코드를 넣지 않는다는 관례(`docs/conventions.md`)와도 일치한다.
+11. **LMT-004 응답 필드명 확정(2026-08-06, 이슈 #235 본문 확정)**: `AccountSummaryResponse.reservedCash`(long)·`HoldingListItemResponse.reservedQuantity`(BigDecimal)로 확정한다. "주문 가능 금액"·"주문 가능 수량" 같은 파생값 필드(`availableCash`/`availableQuantity`)는 추가하지 않는다 — 클라이언트가 이미 노출된 `cashBalance - reservedCash`, `quantity - reservedQuantity`로 직접 계산할 수 있고, 이는 엔티티의 `Account.getAvailableCash()`/`Holding.getAvailableQuantity()`와 동일한 계산식이라 서버가 같은 값을 필드로 중복 노출할 이유가 없다.
 
 ## 부수 효과(요구사항은 아니지만 확인 필요)
 
-- 기존 `GET /api/orders?market=`(PORT-003)은 `Order` 엔티티를 그대로 투영하는 일반 목록이라, 이번에 생성되는 `PENDING` 지정가 주문도 자동으로 이 목록에 섞여 나온다(코드 변경 없이 발생하는 자연스러운 결과 — `OrderListItemResponse`는 `Trade`를 참조하지 않는다). LMT-004(`GET /api/orders/pending`)는 이와 별개로 `PENDING`만 필터링하는 전용 엔드포인트이며 이번 범위가 아니다.
+- 기존 `GET /api/orders?market=`(PORT-003)은 `Order` 엔티티를 그대로 투영하는 일반 목록이라, 지정가 `PENDING` 주문도 자동으로 이 목록에 섞여 나온다(코드 변경 없이 발생하는 자연스러운 결과 — `OrderListItemResponse`는 `Trade`를 참조하지 않는다). `GET /api/orders/pending`(LMT-004)은 이와 별개로 `PENDING`만 필터링하는 전용 엔드포인트다.
 
 ## 후속 이슈
 
-- LMT-004 미체결 지정가 목록 조회(`GET /api/orders/pending`) — 이 spec 폴더에 이어 붙인다.
 - NOTI-001~005 지정가 체결 알림 — 이 이슈의 체결 트리거(LMT-002)를 소비한다. LMT-003 취소가 확정된 주문은 체결되지 않으므로 알림 대상이 아니다.
 - ~~시장가 매수 경로 락 추가(계좌 락 + holdings 락)~~ — 이슈 #224로 닫혔다(위 "시장가 매수 경로 락 보강 (이슈 #224)" 절 참고).
+- ~~미체결 지정가 목록 조회, 계좌·보유 조회 계약 영향(Decision Gate)~~ — 이슈 #235로 닫혔다(위 "LMT-004 미체결 주문 목록 조회"·"계좌·보유 조회 계약 영향 해소" 절 참고).
+- 주문 수정(가격·수량 변경) — 이슈 #235 범위 밖. 필요성이 확정되면 별도 이슈로 다룬다.

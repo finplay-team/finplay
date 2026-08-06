@@ -24,6 +24,7 @@ import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderSide;
+import com.finplay.api.order.domain.OrderStatus;
 import com.finplay.api.order.domain.OrderType;
 import com.finplay.api.order.domain.Trade;
 import com.finplay.api.order.dto.request.OrderCreateRequest;
@@ -310,6 +311,152 @@ class OrderServiceTest {
 				.isEqualTo(ErrorCode.VALIDATION_ERROR));
 
 		verify(orderRepository, never()).findByAccountIdWithCursor(any(), any(), any(), anyInt());
+	}
+
+	@Test
+	void getMyPendingOrdersMapsRepositoryOrdersToOrderListItemResponseFieldsWithPendingStatus() {
+		Account account = account(com.finplay.api.account.domain.Market.CRYPTO);
+		ReflectionTestUtils.setField(account, "id", 10L);
+		when(accountService.getAccountFor(USER_ID, com.finplay.api.account.domain.Market.CRYPTO)).thenReturn(account);
+
+		Instrument instrument = cryptoInstrument();
+		ReflectionTestUtils.setField(instrument, "id", 42L);
+		Order order = Order.createLimitPending(
+			testUser(),
+			account,
+			instrument,
+			OrderSide.BUY,
+			new BigDecimal("1"),
+			new BigDecimal("70000000"),
+			IDEMPOTENCY_KEY,
+			"h".repeat(64),
+			NOW);
+		ReflectionTestUtils.setField(order, "id", 100L);
+		when(orderRepository.findByAccountIdAndStatusWithCursor(
+			eq(10L), eq(OrderStatus.PENDING), isNull(), isNull(), eq(21)))
+			.thenReturn(List.of(order));
+
+		OrderListResponse response = orderService.getMyPendingOrders(
+			USER_ID, com.finplay.api.account.domain.Market.CRYPTO, null, 20);
+
+		assertThat(response.content()).hasSize(1);
+		OrderListItemResponse itemResponse = response.content().get(0);
+		assertThat(itemResponse.orderId()).isEqualTo(100L);
+		assertThat(itemResponse.market()).isEqualTo("CRYPTO");
+		assertThat(itemResponse.instrumentId()).isEqualTo(42L);
+		assertThat(itemResponse.side()).isEqualTo("BUY");
+		assertThat(itemResponse.orderType()).isEqualTo("LIMIT");
+		assertThat(itemResponse.status()).isEqualTo("PENDING");
+		assertThat(itemResponse.quantity()).isEqualByComparingTo(new BigDecimal("1"));
+		assertThat(itemResponse.requestedAt()).isEqualTo(NOW);
+		assertThat(response.hasNext()).isFalse();
+		assertThat(response.nextCursor()).isNull();
+	}
+
+	@Test
+	void getMyPendingOrdersQueriesRepositoryWithPendingStatusFilter() {
+		Account account = account(com.finplay.api.account.domain.Market.CRYPTO);
+		ReflectionTestUtils.setField(account, "id", 10L);
+		when(accountService.getAccountFor(USER_ID, com.finplay.api.account.domain.Market.CRYPTO)).thenReturn(account);
+		when(orderRepository.findByAccountIdAndStatusWithCursor(
+			eq(10L), eq(OrderStatus.PENDING), isNull(), isNull(), eq(21)))
+			.thenReturn(List.of());
+
+		orderService.getMyPendingOrders(USER_ID, com.finplay.api.account.domain.Market.CRYPTO, null, 20);
+
+		// PENDING 고정 필터로 리포지토리가 호출됐는지 검증 — 다른 상태값이 전달되면 목록에 체결·취소 주문이 섞인다.
+		verify(orderRepository).findByAccountIdAndStatusWithCursor(10L, OrderStatus.PENDING, null, null, 21);
+	}
+
+	@Test
+	void getMyPendingOrdersReturnsEmptyContentWhenAccountHasNoPendingOrders() {
+		Account account = account(com.finplay.api.account.domain.Market.CRYPTO);
+		ReflectionTestUtils.setField(account, "id", 10L);
+		when(accountService.getAccountFor(USER_ID, com.finplay.api.account.domain.Market.CRYPTO)).thenReturn(account);
+		when(orderRepository.findByAccountIdAndStatusWithCursor(
+			eq(10L), eq(OrderStatus.PENDING), isNull(), isNull(), eq(21)))
+			.thenReturn(List.of());
+
+		OrderListResponse response = orderService.getMyPendingOrders(
+			USER_ID, com.finplay.api.account.domain.Market.CRYPTO, null, 20);
+
+		assertThat(response.content()).isEmpty();
+		assertThat(response.hasNext()).isFalse();
+		assertThat(response.nextCursor()).isNull();
+	}
+
+	@Test
+	void getMyPendingOrdersSetsNextCursorFromLimitthItemWhenFetchedCountExceedsLimit() {
+		Account account = account(com.finplay.api.account.domain.Market.CRYPTO);
+		ReflectionTestUtils.setField(account, "id", 10L);
+		when(accountService.getAccountFor(USER_ID, com.finplay.api.account.domain.Market.CRYPTO)).thenReturn(account);
+
+		Order order1 = pendingOrder(30L, NOW.minusMinutes(1));
+		Order order2 = pendingOrder(20L, NOW.minusMinutes(2));
+		Order order3 = pendingOrder(10L, NOW.minusMinutes(3));
+		int limit = 2;
+		when(orderRepository.findByAccountIdAndStatusWithCursor(
+			eq(10L), eq(OrderStatus.PENDING), isNull(), isNull(), eq(limit + 1)))
+			.thenReturn(List.of(order1, order2, order3));
+
+		OrderListResponse response = orderService.getMyPendingOrders(
+			USER_ID, com.finplay.api.account.domain.Market.CRYPTO, null, limit);
+
+		assertThat(response.hasNext()).isTrue();
+		// 다음 페이지 있음(3건 조회) 시 nextCursor는 반환 페이지(limit=2건)의 마지막 항목인 order2 기준이어야 한다.
+		assertThat(response.nextCursor()).isEqualTo(OrderCursor.encode(order2));
+		assertThat(response.content()).hasSize(2);
+	}
+
+	@Test
+	void getMyPendingOrdersDelegatesOwnershipAndMarketScopeValidationToAccountService() {
+		Account account = account(com.finplay.api.account.domain.Market.CRYPTO);
+		ReflectionTestUtils.setField(account, "id", 10L);
+		when(accountService.getAccountFor(USER_ID, com.finplay.api.account.domain.Market.CRYPTO)).thenReturn(account);
+		when(orderRepository.findByAccountIdAndStatusWithCursor(
+			eq(10L), eq(OrderStatus.PENDING), isNull(), isNull(), eq(21)))
+			.thenReturn(List.of());
+
+		orderService.getMyPendingOrders(USER_ID, com.finplay.api.account.domain.Market.CRYPTO, null, 20);
+
+		verify(accountService).getAccountFor(USER_ID, com.finplay.api.account.domain.Market.CRYPTO);
+	}
+
+	@Test
+	void getMyPendingOrdersPropagatesExceptionThrownByCorruptedCursorWithoutQueryingRepository() {
+		Account account = account(com.finplay.api.account.domain.Market.CRYPTO);
+		ReflectionTestUtils.setField(account, "id", 10L);
+		when(accountService.getAccountFor(USER_ID, com.finplay.api.account.domain.Market.CRYPTO)).thenReturn(account);
+
+		assertThatThrownBy(() -> orderService.getMyPendingOrders(
+			USER_ID, com.finplay.api.account.domain.Market.CRYPTO, "garbage", 20))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(exception -> assertThat(((BusinessException)exception).getErrorCode())
+				.isEqualTo(ErrorCode.VALIDATION_ERROR));
+
+		verify(orderRepository, never())
+			.findByAccountIdAndStatusWithCursor(any(), any(), any(), any(), anyInt());
+	}
+
+	private static Order pendingOrder(Long id, LocalDateTime requestedAt) {
+		Instrument instrument = cryptoInstrument();
+		ReflectionTestUtils.setField(instrument, "id", 42L);
+		Order order = Order.createLimitPending(
+			testUser(),
+			account(com.finplay.api.account.domain.Market.CRYPTO),
+			instrument,
+			OrderSide.BUY,
+			new BigDecimal("1"),
+			new BigDecimal("70000000"),
+			"idem-key-pending-" + id,
+			"h".repeat(64),
+			requestedAt);
+		ReflectionTestUtils.setField(order, "id", id);
+		return order;
+	}
+
+	private static Instrument cryptoInstrument() {
+		return Instrument.create(Market.CRYPTO, "BTC", "비트코인", new BigDecimal("70000000"), 5_000L, true, NOW);
 	}
 
 	private static Order order(Long id, LocalDateTime requestedAt) {

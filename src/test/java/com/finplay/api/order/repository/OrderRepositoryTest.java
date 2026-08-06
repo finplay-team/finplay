@@ -72,6 +72,23 @@ class OrderRepositoryTest {
 			String.valueOf(hashChar).repeat(64), requestedAt));
 	}
 
+	// LMT-004(이슈 #235): 미체결(PENDING) 지정가 주문을 생성한다.
+	private Order createPendingOrder(User user, Account account, LocalDateTime requestedAt) {
+		idempotencySequence++;
+		char hashChar = (char)('a' + idempotencySequence);
+		return orderRepository.saveAndFlush(Order.createLimitPending(
+			user, account, instrument, OrderSide.BUY,
+			BigDecimal.valueOf(1), BigDecimal.valueOf(70_000),
+			"cursor-pending-idem-" + idempotencySequence,
+			String.valueOf(hashChar).repeat(64), requestedAt));
+	}
+
+	private Order createCancelledOrder(User user, Account account, LocalDateTime requestedAt) {
+		Order order = createPendingOrder(user, account, requestedAt);
+		order.cancel();
+		return orderRepository.saveAndFlush(order);
+	}
+
 	@Test
 	@DisplayName("동일 사용자·동일 idempotencyKey의 주문을 조회한다 (이슈 #22)")
 	void findsOrderByUserIdAndIdempotencyKeyWhenExists() {
@@ -289,5 +306,94 @@ class OrderRepositoryTest {
 
 		assertThat(result).extracting(Order::getId)
 			.containsExactly(older.getId(), sameTimeFirst.getId(), sameTimeSecond.getId());
+	}
+
+	@Test
+	@DisplayName("PENDING 상태로만 필터링해 FILLED·CANCELLED 주문을 제외한다 (LMT-004, 이슈 #235)")
+	void findByAccountIdAndStatusWithCursorFiltersOnlyMatchingStatus() {
+		Order pendingOrder = createPendingOrder(owner, ownerAccount, NOW);
+		createOrder(owner, ownerAccount, NOW.minusMinutes(1)); // FILLED
+		createCancelledOrder(owner, ownerAccount, NOW.minusMinutes(2)); // CANCELLED
+
+		List<Order> result = orderRepository.findByAccountIdAndStatusWithCursor(
+			ownerAccount.getId(), com.finplay.api.order.domain.OrderStatus.PENDING, null, null, 10);
+
+		assertThat(result).extracting(Order::getId).containsExactly(pendingOrder.getId());
+		assertThat(result).extracting(Order::getStatus)
+			.containsOnly(com.finplay.api.order.domain.OrderStatus.PENDING);
+	}
+
+	@Test
+	@DisplayName("다른 계좌의 PENDING 주문은 제외하고 계좌 단위로 조회한다 (LMT-004, 이슈 #235)")
+	void findByAccountIdAndStatusWithCursorExcludesOtherAccountOrders() {
+		User other = userRepository.saveAndFlush(
+			User.create("status-cursor-other@finplay.com", "hash", "statuscursorother", NOW));
+		Account otherAccount = accountRepository.saveAndFlush(
+			Account.create(other, com.finplay.api.account.domain.Market.STOCK, NOW));
+
+		Order ownerPending = createPendingOrder(owner, ownerAccount, NOW);
+		createPendingOrder(other, otherAccount, NOW);
+
+		List<Order> result = orderRepository.findByAccountIdAndStatusWithCursor(
+			ownerAccount.getId(), com.finplay.api.order.domain.OrderStatus.PENDING, null, null, 10);
+
+		assertThat(result).extracting(Order::getId).containsExactly(ownerPending.getId());
+	}
+
+	@Test
+	@DisplayName("requestedAt 내림차순, 동시각이면 id 내림차순으로 PENDING 주문을 정렬한다 (LMT-004, 이슈 #235)")
+	void findByAccountIdAndStatusWithCursorSortedByRequestedAtThenIdDescending() {
+		Order older = createPendingOrder(owner, ownerAccount, NOW.minusMinutes(10));
+		Order sameTimeFirst = createPendingOrder(owner, ownerAccount, NOW);
+		Order sameTimeSecond = createPendingOrder(owner, ownerAccount, NOW);
+
+		List<Order> result = orderRepository.findByAccountIdAndStatusWithCursor(
+			ownerAccount.getId(), com.finplay.api.order.domain.OrderStatus.PENDING, null, null, 10);
+
+		assertThat(result).extracting(Order::getId)
+			.containsExactly(sameTimeSecond.getId(), sameTimeFirst.getId(), older.getId());
+	}
+
+	@Test
+	@DisplayName("커서로 연속 조회한 PENDING 결과가 커서 없이 조회한 전체 결과와 중복·누락 없이 일치한다 (LMT-004, 이슈 #235)")
+	void findByAccountIdAndStatusWithCursorPaginatesWithoutDuplicatesOrGaps() {
+		List<Order> created = new ArrayList<>();
+		for (int i = 0; i < 5; i++) {
+			created.add(createPendingOrder(owner, ownerAccount, NOW.minusMinutes(i)));
+		}
+		// 미체결 목록에 섞이면 안 되는 FILLED·CANCELLED 주문도 함께 만든다.
+		createOrder(owner, ownerAccount, NOW);
+		createCancelledOrder(owner, ownerAccount, NOW);
+
+		List<Order> fullResult = orderRepository.findByAccountIdAndStatusWithCursor(
+			ownerAccount.getId(), com.finplay.api.order.domain.OrderStatus.PENDING, null, null, 10);
+		assertThat(fullResult).hasSize(5);
+
+		List<Order> firstPage = orderRepository.findByAccountIdAndStatusWithCursor(
+			ownerAccount.getId(), com.finplay.api.order.domain.OrderStatus.PENDING, null, null, 3);
+		Order lastOfFirstPage = firstPage.get(firstPage.size() - 1);
+		List<Order> secondPage = orderRepository.findByAccountIdAndStatusWithCursor(
+			ownerAccount.getId(), com.finplay.api.order.domain.OrderStatus.PENDING,
+			lastOfFirstPage.getRequestedAt(), lastOfFirstPage.getId(), 3);
+
+		List<Long> pagedIds = new ArrayList<>();
+		firstPage.forEach(order -> pagedIds.add(order.getId()));
+		secondPage.forEach(order -> pagedIds.add(order.getId()));
+
+		assertThat(pagedIds).hasSize(5).doesNotHaveDuplicates();
+		assertThat(pagedIds).containsExactlyElementsOf(fullResult.stream().map(Order::getId).toList());
+	}
+
+	@Test
+	@DisplayName("JOIN FETCH로 instrument를 함께 조회해 지연 로딩 예외 없이 접근할 수 있다 (LMT-004, 이슈 #235)")
+	void findByAccountIdAndStatusWithCursorFetchesInstrumentWithoutLazyInitException() {
+		createPendingOrder(owner, ownerAccount, NOW);
+		entityManager.clear();
+
+		List<Order> result = orderRepository.findByAccountIdAndStatusWithCursor(
+			ownerAccount.getId(), com.finplay.api.order.domain.OrderStatus.PENDING, null, null, 10);
+
+		assertThat(result).extracting(order -> order.getInstrument().getSymbol())
+			.containsExactly(instrument.getSymbol());
 	}
 }

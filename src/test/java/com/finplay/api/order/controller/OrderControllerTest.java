@@ -668,6 +668,165 @@ class OrderControllerTest {
 	}
 
 	@Test
+	void getMyPendingOrdersReturnsOkWithEveryFieldWhenMarketIsCrypto() throws Exception {
+		stubAuthenticatedUser();
+		LocalDateTime requestedAt = LocalDateTime.of(2026, 8, 6, 9, 0);
+		OrderListItemResponse item = new OrderListItemResponse(
+			1L, "CRYPTO", 1L, "BUY", "LIMIT", "PENDING", new BigDecimal("1"), requestedAt);
+		OrderListResponse response = OrderListResponse.of(List.of(item), "2026-08-06T09:00:00_1", true);
+		when(orderService.getMyPendingOrders(USER_ID, Market.CRYPTO, null, 20)).thenReturn(response);
+
+		mockMvc.perform(get("/api/orders/pending")
+			.param("market", "CRYPTO")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.content[0].orderId").value(1))
+			.andExpect(jsonPath("$.content[0].market").value("CRYPTO"))
+			.andExpect(jsonPath("$.content[0].instrumentId").value(1))
+			.andExpect(jsonPath("$.content[0].side").value("BUY"))
+			.andExpect(jsonPath("$.content[0].orderType").value("LIMIT"))
+			.andExpect(jsonPath("$.content[0].status").value("PENDING"))
+			.andExpect(jsonPath("$.content[0].quantity").value(1))
+			.andExpect(jsonPath("$.content[0].requestedAt").value("2026-08-06T09:00:00"))
+			.andExpect(jsonPath("$.nextCursor").value("2026-08-06T09:00:00_1"))
+			.andExpect(jsonPath("$.hasNext").value(true));
+
+		verify(orderService).getMyPendingOrders(USER_ID, Market.CRYPTO, null, 20);
+	}
+
+	@Test
+	void getMyPendingOrdersReturnsOkWithEmptyContentWhenNoPendingOrders() throws Exception {
+		stubAuthenticatedUser();
+		OrderListResponse response = OrderListResponse.of(List.of(), null, false);
+		when(orderService.getMyPendingOrders(USER_ID, Market.CRYPTO, null, 20)).thenReturn(response);
+
+		mockMvc.perform(get("/api/orders/pending")
+			.param("market", "CRYPTO")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.content").isEmpty())
+			.andExpect(jsonPath("$.nextCursor").doesNotExist())
+			.andExpect(jsonPath("$.hasNext").value(false));
+
+		verify(orderService).getMyPendingOrders(USER_ID, Market.CRYPTO, null, 20);
+	}
+
+	@Test
+	void getMyPendingOrdersUsesDefaultLimitWhenLimitIsOmitted() throws Exception {
+		stubAuthenticatedUser();
+		when(orderService.getMyPendingOrders(eq(USER_ID), eq(Market.CRYPTO), isNull(), eq(20)))
+			.thenReturn(OrderListResponse.of(List.of(), null, false));
+
+		mockMvc.perform(get("/api/orders/pending")
+			.param("market", "CRYPTO")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk());
+
+		verify(orderService).getMyPendingOrders(USER_ID, Market.CRYPTO, null, 20);
+	}
+
+	@Test
+	void getMyPendingOrdersPassesCursorAndLimitToService() throws Exception {
+		stubAuthenticatedUser();
+		when(orderService.getMyPendingOrders(eq(USER_ID), eq(Market.CRYPTO), any(), eq(10)))
+			.thenReturn(OrderListResponse.of(List.of(), null, false));
+
+		mockMvc.perform(get("/api/orders/pending")
+			.param("market", "CRYPTO")
+			.param("cursor", "2026-08-06T09:00:00_1")
+			.param("limit", "10")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk());
+
+		verify(orderService).getMyPendingOrders(USER_ID, Market.CRYPTO, "2026-08-06T09:00:00_1", 10);
+	}
+
+	@Test
+	void getMyPendingOrdersRejectsMissingMarketWithoutCallingService() throws Exception {
+		stubAuthenticatedUser();
+
+		mockMvc.perform(get("/api/orders/pending")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(orderService);
+	}
+
+	@Test
+	void getMyPendingOrdersRejectsInvalidMarketLiteralWithoutCallingService() throws Exception {
+		stubAuthenticatedUser();
+
+		mockMvc.perform(get("/api/orders/pending")
+			.param("market", "FOREX")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(orderService);
+	}
+
+	@Test
+	void getMyPendingOrdersRejectsLimitBelowMinimumWithoutCallingService() throws Exception {
+		stubAuthenticatedUser();
+
+		mockMvc.perform(get("/api/orders/pending")
+			.param("market", "CRYPTO")
+			.param("limit", "0")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(orderService);
+	}
+
+	@Test
+	void getMyPendingOrdersRejectsLimitAboveMaximumWithoutCallingService() throws Exception {
+		stubAuthenticatedUser();
+
+		mockMvc.perform(get("/api/orders/pending")
+			.param("market", "CRYPTO")
+			.param("limit", "101")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(orderService);
+	}
+
+	@Test
+	void getMyPendingOrdersReturnsBadRequestWhenServiceRejectsMalformedCursor() throws Exception {
+		stubAuthenticatedUser();
+		when(orderService.getMyPendingOrders(eq(USER_ID), eq(Market.CRYPTO), eq("garbage"), eq(20)))
+			.thenThrow(new BusinessException(ErrorCode.VALIDATION_ERROR, "cursor 형식이 올바르지 않습니다."));
+
+		mockMvc.perform(get("/api/orders/pending")
+			.param("market", "CRYPTO")
+			.param("cursor", "garbage")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(orderService).getMyPendingOrders(USER_ID, Market.CRYPTO, "garbage", 20);
+	}
+
+	@Test
+	void getMyPendingOrdersRejectsMissingAuthenticationWithoutCallingService() throws Exception {
+		mockMvc.perform(get("/api/orders/pending")
+			.param("market", "CRYPTO"))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(orderService);
+	}
+
+	@Test
 	void cancelLimitOrderReturnsNoContentWithEmptyBody() throws Exception {
 		stubAuthenticatedUser();
 
