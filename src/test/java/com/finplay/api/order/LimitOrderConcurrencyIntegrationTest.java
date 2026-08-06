@@ -13,6 +13,8 @@
 // 기능의 핵심 증명) 예약 가능 현금·수량을 초과하는 PATCH 요청이 409로 거부된 후 주문·계좌·보유를 DB에서
 // 재조회해 요청 전 값과 완전히 동일함을 확인(매수·매도 각 1개), (b) 수정-대-체결 동시 경합(체결·수정 두 경로
 // 모두 예약 이중 반환·이중 소비 없음), (c) 수정-대-취소 동시 경합(동일).
+// PR #240 리뷰 권장사항 3번 반영: 시나리오 24(수정-대-체결/수정-대-취소)는 BUY만 있었다 — holding 락까지
+// 얽히는 SELL 변형을 각각 추가해 기존 LMT-003 시나리오 12(취소-대-체결)의 BUY/SELL 대칭 검증 전례를 따른다.
 package com.finplay.api.order;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -34,7 +36,7 @@ import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.domain.OrderStatus;
 import com.finplay.api.order.dto.request.LimitOrderCreateRequest;
-import com.finplay.api.order.dto.request.LimitOrderModifyRequest;
+import com.finplay.api.order.dto.request.LimitOrderUpdateRequest;
 import com.finplay.api.order.dto.request.OrderCreateRequest;
 import com.finplay.api.order.dto.response.LimitOrderResponse;
 import com.finplay.api.order.repository.OrderRepository;
@@ -570,7 +572,7 @@ class LimitOrderConcurrencyIntegrationTest {
 		// 지정가를 120,000,000으로 올리면 amount = 0.1 * 120,000,000 = 12,000,000, fee = 6,000 → total =
 		// 12,006,000. 옛 예약을 해제해도 availableCash는 잔액 전체(10,000,000)로 돌아올 뿐이라 여전히 부족하다.
 		assertThatThrownBy(() -> limitOrderModifyService.modifyOrder(
-			user.getId(), orderId, new LimitOrderModifyRequest(new BigDecimal("120000000"), null)))
+			user.getId(), orderId, new LimitOrderUpdateRequest(new BigDecimal("120000000"), null)))
 			.isInstanceOf(BusinessException.class)
 			.satisfies(
 				ex -> assertThat(((BusinessException)ex).getErrorCode()).isEqualTo(ErrorCode.INSUFFICIENT_CASH));
@@ -619,7 +621,7 @@ class LimitOrderConcurrencyIntegrationTest {
 		// 보유수량(10)을 초과하는 15로 올리면 옛 예약(4)을 해제해도 availableQuantity는 보유수량 전체(10)로
 		// 돌아올 뿐이라 여전히 부족하다.
 		assertThatThrownBy(() -> limitOrderModifyService.modifyOrder(
-			user.getId(), orderId, new LimitOrderModifyRequest(null, new BigDecimal("15"))))
+			user.getId(), orderId, new LimitOrderUpdateRequest(null, new BigDecimal("15"))))
 			.isInstanceOf(BusinessException.class)
 			.satisfies(
 				ex -> assertThat(((BusinessException)ex).getErrorCode()).isEqualTo(ErrorCode.INSUFFICIENT_QTY));
@@ -669,7 +671,7 @@ class LimitOrderConcurrencyIntegrationTest {
 			() -> {
 				try {
 					modifyResult.set(limitOrderModifyService.modifyOrder(
-						user.getId(), orderId, new LimitOrderModifyRequest(newLimitPrice, null)));
+						user.getId(), orderId, new LimitOrderUpdateRequest(newLimitPrice, null)));
 				} catch (Exception ex) {
 					modifyException.set(ex);
 				}
@@ -731,7 +733,7 @@ class LimitOrderConcurrencyIntegrationTest {
 			() -> {
 				try {
 					modifyResult.set(limitOrderModifyService.modifyOrder(
-						user.getId(), orderId, new LimitOrderModifyRequest(newLimitPrice, null)));
+						user.getId(), orderId, new LimitOrderUpdateRequest(newLimitPrice, null)));
 				} catch (Exception ex) {
 					modifyException.set(ex);
 				}
@@ -767,6 +769,155 @@ class LimitOrderConcurrencyIntegrationTest {
 			// (limitPrice=20,000,000) 기준으로 재예약분을 그대로 반환한다.
 			assertThat(modifyResult.get()).isNotNull();
 			assertThat(finalOrder.getLimitPrice()).isEqualByComparingTo(newLimitPrice);
+		}
+	}
+
+	// 시나리오 24 (SELL, 수정-대-체결): BUY 버전과 대칭 패턴 — holding을 거쳐 잠그는 SELL 경로를 검증한다(PR #240
+	// 리뷰 권장사항 3번). 원래 예약(3)을 수량 5로 올리는 수정과 체결이 경합한다. 둘 다 order를 먼저 잠그므로
+	// 순서가 정해지면 나중 트랜잭션은 갱신된 상태를 본다 — 체결이 먼저 커밋되면 원래 수량(3)으로 확정되고 뒤이은
+	// 수정은 ORDER_ALREADY_FILLED로 거부되며, 수정이 먼저 커밋되면 재예약(3 해제→5 재예약)을 마친 뒤 체결이 변경된
+	// 수량(5) 기준으로 확정된다. 두 경로 모두 holding.reservedQuantity가 이중 반환·이중 소비 없이 0으로 수렴해야
+	// 한다.
+	@Test
+	void modifyAndFillRaceForPendingSellOrderApplyReservationExactlyOnceRegardlessOfWinner() throws Exception {
+		User user = createUser("modify-fill-race-sell");
+		Account account = createAccount(user);
+		Instrument instrument = createCryptoInstrument("MFILSL");
+
+		BigDecimal buyQuantity = new BigDecimal("10");
+		BigDecimal price = new BigDecimal("100000");
+		priceStore.saveTick(instrument.getSymbol(), price, LocalDateTime.now(clock));
+		orderService.createOrder(user.getId(), "idem-mfilsl-buy",
+			new OrderCreateRequest(Market.CRYPTO, instrument.getId(), OrderSide.BUY, "MARKET", buyQuantity));
+
+		BigDecimal sellQuantity = new BigDecimal("3");
+		LimitOrderResponse created = limitOrderService.createLimitOrder(user.getId(), "idem-mfilsl-sell",
+			new LimitOrderCreateRequest(Market.CRYPTO, instrument.getId(), OrderSide.SELL, sellQuantity, price));
+		Long orderId = created.orderId();
+
+		Holding holdingBefore = holdingRepository
+			.findByAccountIdAndInstrumentId(account.getId(), instrument.getId())
+			.orElseThrow();
+		BigDecimal quantityBefore = holdingBefore.getQuantity();
+		assertThat(holdingBefore.getReservedQuantity()).isEqualByComparingTo(sellQuantity);
+
+		// 수정 후 예약 수량: 3 → 5(보유수량 10 대비 여전히 감당 가능).
+		BigDecimal newQuantity = new BigDecimal("5");
+
+		AtomicReference<Exception> modifyException = new AtomicReference<>();
+		AtomicReference<LimitOrderResponse> modifyResult = new AtomicReference<>();
+		runConcurrently(
+			() -> {
+				try {
+					modifyResult.set(limitOrderModifyService.modifyOrder(
+						user.getId(), orderId, new LimitOrderUpdateRequest(null, newQuantity)));
+				} catch (Exception ex) {
+					modifyException.set(ex);
+				}
+			},
+			() -> limitOrderFillService.fillIfPending(orderId));
+
+		Order finalOrder = orderRepository.findById(orderId).orElseThrow();
+		Holding holdingAfter = holdingRepository
+			.findByAccountIdAndInstrumentId(account.getId(), instrument.getId())
+			.orElseThrow();
+		assertThat(finalOrder.getStatus()).isEqualTo(OrderStatus.FILLED);
+		assertThat(countTradesForOrder(orderId)).isEqualTo(1L);
+		assertThat(holdingAfter.getReservedQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
+
+		if (modifyException.get() != null) {
+			// 체결이 이겼다 — 수정은 ORDER_ALREADY_FILLED로 거부되고, 체결은 원래 수량(3) 기준으로 확정돼
+			// 예약분이 정확히 한 번만 실제 매도로 소비된다.
+			assertThat(modifyException.get()).isInstanceOf(BusinessException.class)
+				.satisfies(
+					ex -> assertThat(((BusinessException)ex).getErrorCode())
+						.isEqualTo(ErrorCode.ORDER_ALREADY_FILLED));
+			assertThat(finalOrder.getQuantity()).isEqualByComparingTo(sellQuantity);
+			assertThat(quantityBefore.subtract(holdingAfter.getQuantity())).isEqualByComparingTo(sellQuantity);
+		} else {
+			// 수정이 이겼다 — 수정이 재예약(3 해제 → 5 재예약)을 마친 뒤 체결이 변경된 수량(5) 기준으로
+			// 확정돼 예약분이 정확히 한 번만 실제 매도로 소비된다.
+			assertThat(modifyResult.get()).isNotNull();
+			assertThat(finalOrder.getQuantity()).isEqualByComparingTo(newQuantity);
+			assertThat(quantityBefore.subtract(holdingAfter.getQuantity())).isEqualByComparingTo(newQuantity);
+		}
+	}
+
+	// 시나리오 24 (SELL, 수정-대-취소): 같은 패턴으로 스레드 A는 modifyOrder, 스레드 B는 cancelOrder를 동시
+	// 호출한다. 취소가 먼저 커밋되면 원래 예약(3)을 그대로 반환하고 뒤이은 수정은 ORDER_ALREADY_CANCELLED로
+	// 거부되며, 수정이 먼저 커밋되면 재예약(3 해제 → 5 재예약)을 마친 뒤 취소가 변경된 수량(5) 기준으로
+	// 재예약분을 반환한다. 두 경로 모두 holding.reservedQuantity가 이중 반환 없이 0으로 수렴하고, 실제 매도가
+	// 없었으므로 holding.quantity는 항상 시작값 그대로여야 한다.
+	@Test
+	void modifyAndCancelRaceForPendingSellOrderReleaseReservationExactlyOnceRegardlessOfWinner() throws Exception {
+		User user = createUser("modify-cancel-race-sell");
+		Account account = createAccount(user);
+		Instrument instrument = createCryptoInstrument("MCXLSL");
+
+		BigDecimal buyQuantity = new BigDecimal("10");
+		BigDecimal price = new BigDecimal("100000");
+		priceStore.saveTick(instrument.getSymbol(), price, LocalDateTime.now(clock));
+		orderService.createOrder(user.getId(), "idem-mcxlsl-buy",
+			new OrderCreateRequest(Market.CRYPTO, instrument.getId(), OrderSide.BUY, "MARKET", buyQuantity));
+
+		BigDecimal sellQuantity = new BigDecimal("3");
+		LimitOrderResponse created = limitOrderService.createLimitOrder(user.getId(), "idem-mcxlsl-sell",
+			new LimitOrderCreateRequest(Market.CRYPTO, instrument.getId(), OrderSide.SELL, sellQuantity, price));
+		Long orderId = created.orderId();
+
+		Holding holdingBefore = holdingRepository
+			.findByAccountIdAndInstrumentId(account.getId(), instrument.getId())
+			.orElseThrow();
+		BigDecimal quantityBefore = holdingBefore.getQuantity();
+
+		// 수정 후 예약 수량: 3 → 5(보유수량 10 대비 여전히 감당 가능).
+		BigDecimal newQuantity = new BigDecimal("5");
+
+		AtomicReference<Exception> modifyException = new AtomicReference<>();
+		AtomicReference<Exception> cancelException = new AtomicReference<>();
+		AtomicReference<LimitOrderResponse> modifyResult = new AtomicReference<>();
+		runConcurrently(
+			() -> {
+				try {
+					modifyResult.set(limitOrderModifyService.modifyOrder(
+						user.getId(), orderId, new LimitOrderUpdateRequest(null, newQuantity)));
+				} catch (Exception ex) {
+					modifyException.set(ex);
+				}
+			},
+			() -> {
+				try {
+					limitOrderCancelService.cancelOrder(user.getId(), orderId);
+				} catch (Exception ex) {
+					cancelException.set(ex);
+				}
+			});
+
+		Order finalOrder = orderRepository.findById(orderId).orElseThrow();
+		Holding holdingAfter = holdingRepository
+			.findByAccountIdAndInstrumentId(account.getId(), instrument.getId())
+			.orElseThrow();
+		assertThat(finalOrder.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+		assertThat(holdingAfter.getReservedQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
+		// 어느 쪽이 이겨도 실제 매도가 없었으므로 quantity는 항상 시작값과 같다(이중 반환·이중 소비 모두 없음).
+		assertThat(holdingAfter.getQuantity()).isEqualByComparingTo(quantityBefore);
+		// cancelOrder는 지는 쪽이어도 예외 없이 성공해야 한다(취소는 order가 PENDING이기만 하면 항상 성공 —
+		// 수정이 이겼더라도 상태는 여전히 PENDING이므로 뒤이은 취소는 변경된 값 기준으로 정상 처리된다).
+		assertThat(cancelException.get()).isNull();
+
+		if (modifyException.get() != null) {
+			// 취소가 이겼다 — 수정은 ORDER_ALREADY_CANCELLED로 거부되고, 취소는 원래 예약(3)을 그대로
+			// 반환한다.
+			assertThat(modifyException.get()).isInstanceOf(BusinessException.class)
+				.satisfies(
+					ex -> assertThat(((BusinessException)ex).getErrorCode())
+						.isEqualTo(ErrorCode.ORDER_ALREADY_CANCELLED));
+			assertThat(finalOrder.getQuantity()).isEqualByComparingTo(sellQuantity);
+		} else {
+			// 수정이 이겼다 — 수정이 재예약(3 해제 → 5 재예약)을 마친 뒤, 취소가 변경된 수량(5) 기준으로
+			// 재예약분을 그대로 반환한다.
+			assertThat(modifyResult.get()).isNotNull();
+			assertThat(finalOrder.getQuantity()).isEqualByComparingTo(newQuantity);
 		}
 	}
 
