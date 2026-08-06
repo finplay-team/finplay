@@ -6,7 +6,7 @@ import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.order.dto.request.LimitOrderCreateRequest;
-import com.finplay.api.order.dto.request.LimitOrderModifyRequest;
+import com.finplay.api.order.dto.request.LimitOrderUpdateRequest;
 import com.finplay.api.order.dto.request.OrderCreateRequest;
 import com.finplay.api.order.dto.response.LimitOrderResponse;
 import com.finplay.api.order.dto.response.OrderListResponse;
@@ -89,8 +89,8 @@ public class OrderController {
 		AuthenticatedUser principal,
 		@PathVariable
 		Long orderId,
-		@RequestBody
-		LimitOrderModifyRequest request) {
+		@Valid @RequestBody
+		LimitOrderUpdateRequest request) {
 		LimitOrderResponse response = limitOrderModifyService.modifyOrder(principal.userId(), orderId, request);
 		return ResponseEntity.ok(response);
 	}

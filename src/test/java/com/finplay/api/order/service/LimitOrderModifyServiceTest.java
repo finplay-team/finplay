@@ -20,7 +20,7 @@ import com.finplay.api.common.ErrorCode;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderSide;
-import com.finplay.api.order.dto.request.LimitOrderModifyRequest;
+import com.finplay.api.order.dto.request.LimitOrderUpdateRequest;
 import com.finplay.api.order.dto.response.LimitOrderResponse;
 import com.finplay.api.order.repository.OrderRepository;
 import com.finplay.api.portfolio.domain.Holding;
@@ -59,7 +59,7 @@ class LimitOrderModifyServiceTest {
 		Order order = limitPendingOrder(owner(), account, instrument, OrderSide.BUY, "0.1", "1000000");
 		when(orderRepository.findByIdForUpdate(ORDER_ID)).thenReturn(Optional.of(order));
 		when(accountService.getAccountByIdForUpdate(ACCOUNT_ID)).thenReturn(account);
-		LimitOrderModifyRequest request = new LimitOrderModifyRequest(new BigDecimal("2000000"), new BigDecimal("0.2"));
+		LimitOrderUpdateRequest request = new LimitOrderUpdateRequest(new BigDecimal("2000000"), new BigDecimal("0.2"));
 
 		service.modifyOrder(OWNER_USER_ID, ORDER_ID, request);
 
@@ -81,7 +81,7 @@ class LimitOrderModifyServiceTest {
 		when(orderRepository.findByIdForUpdate(ORDER_ID)).thenReturn(Optional.of(order));
 		when(accountService.getAccountByIdForUpdate(ACCOUNT_ID)).thenReturn(account);
 		when(portfolioSellService.getHoldingForUpdate(account, instrument)).thenReturn(holding);
-		LimitOrderModifyRequest request = new LimitOrderModifyRequest(new BigDecimal("1200000"), new BigDecimal("0.5"));
+		LimitOrderUpdateRequest request = new LimitOrderUpdateRequest(new BigDecimal("1200000"), new BigDecimal("0.5"));
 
 		service.modifyOrder(OWNER_USER_ID, ORDER_ID, request);
 
@@ -99,7 +99,7 @@ class LimitOrderModifyServiceTest {
 		Order order = limitPendingOrder(owner(), account, instrument, OrderSide.BUY, "0.1", "1000000");
 		when(orderRepository.findByIdForUpdate(ORDER_ID)).thenReturn(Optional.of(order));
 		when(accountService.getAccountByIdForUpdate(ACCOUNT_ID)).thenReturn(account);
-		LimitOrderModifyRequest request = new LimitOrderModifyRequest(new BigDecimal("2000000"), null);
+		LimitOrderUpdateRequest request = new LimitOrderUpdateRequest(new BigDecimal("2000000"), null);
 
 		LimitOrderResponse response = service.modifyOrder(OWNER_USER_ID, ORDER_ID, request);
 
@@ -122,7 +122,7 @@ class LimitOrderModifyServiceTest {
 		Order order = limitPendingOrder(owner(), account, instrument, OrderSide.BUY, "0.1", "1000000");
 		when(orderRepository.findByIdForUpdate(ORDER_ID)).thenReturn(Optional.of(order));
 		when(accountService.getAccountByIdForUpdate(ACCOUNT_ID)).thenReturn(account);
-		LimitOrderModifyRequest request = new LimitOrderModifyRequest(null, new BigDecimal("0.3"));
+		LimitOrderUpdateRequest request = new LimitOrderUpdateRequest(null, new BigDecimal("0.3"));
 
 		LimitOrderResponse response = service.modifyOrder(OWNER_USER_ID, ORDER_ID, request);
 
@@ -145,7 +145,7 @@ class LimitOrderModifyServiceTest {
 		when(orderRepository.findByIdForUpdate(ORDER_ID)).thenReturn(Optional.of(order));
 		when(accountService.getAccountByIdForUpdate(ACCOUNT_ID)).thenReturn(account);
 		when(portfolioSellService.getHoldingForUpdate(account, instrument)).thenReturn(holding);
-		LimitOrderModifyRequest request = new LimitOrderModifyRequest(null, new BigDecimal("0.4"));
+		LimitOrderUpdateRequest request = new LimitOrderUpdateRequest(null, new BigDecimal("0.4"));
 
 		LimitOrderResponse response = service.modifyOrder(OWNER_USER_ID, ORDER_ID, request);
 
@@ -158,7 +158,7 @@ class LimitOrderModifyServiceTest {
 
 	@Test
 	void modifyOrderThrowsValidationErrorWhenBothQuantityAndLimitPriceAreNull() {
-		LimitOrderModifyRequest request = new LimitOrderModifyRequest(null, null);
+		LimitOrderUpdateRequest request = new LimitOrderUpdateRequest(null, null);
 
 		assertThatThrownBy(() -> service.modifyOrder(OWNER_USER_ID, ORDER_ID, request))
 			.isInstanceOf(BusinessException.class)
@@ -171,7 +171,7 @@ class LimitOrderModifyServiceTest {
 	@Test
 	void modifyOrderThrowsNotFoundWhenOrderDoesNotExist() {
 		when(orderRepository.findByIdForUpdate(ORDER_ID)).thenReturn(Optional.empty());
-		LimitOrderModifyRequest request = new LimitOrderModifyRequest(new BigDecimal("1000000"), null);
+		LimitOrderUpdateRequest request = new LimitOrderUpdateRequest(new BigDecimal("1000000"), null);
 
 		assertThatThrownBy(() -> service.modifyOrder(OWNER_USER_ID, ORDER_ID, request))
 			.isInstanceOf(BusinessException.class)
@@ -187,7 +187,7 @@ class LimitOrderModifyServiceTest {
 		Account account = account();
 		Order order = limitPendingOrder(owner(), account, instrument, OrderSide.BUY, "0.1", "1000000");
 		when(orderRepository.findByIdForUpdate(ORDER_ID)).thenReturn(Optional.of(order));
-		LimitOrderModifyRequest request = new LimitOrderModifyRequest(new BigDecimal("2000000"), null);
+		LimitOrderUpdateRequest request = new LimitOrderUpdateRequest(new BigDecimal("2000000"), null);
 
 		assertThatThrownBy(() -> service.modifyOrder(OTHER_USER_ID, ORDER_ID, request))
 			.isInstanceOf(BusinessException.class)
@@ -205,7 +205,7 @@ class LimitOrderModifyServiceTest {
 		Order order = limitPendingOrder(owner(), account, instrument, OrderSide.BUY, "0.1", "1000000");
 		order.markFilled();
 		when(orderRepository.findByIdForUpdate(ORDER_ID)).thenReturn(Optional.of(order));
-		LimitOrderModifyRequest request = new LimitOrderModifyRequest(new BigDecimal("2000000"), null);
+		LimitOrderUpdateRequest request = new LimitOrderUpdateRequest(new BigDecimal("2000000"), null);
 
 		assertThatThrownBy(() -> service.modifyOrder(OWNER_USER_ID, ORDER_ID, request))
 			.isInstanceOf(BusinessException.class)
@@ -222,7 +222,7 @@ class LimitOrderModifyServiceTest {
 		Order order = limitPendingOrder(owner(), account, instrument, OrderSide.BUY, "0.1", "1000000");
 		order.cancel();
 		when(orderRepository.findByIdForUpdate(ORDER_ID)).thenReturn(Optional.of(order));
-		LimitOrderModifyRequest request = new LimitOrderModifyRequest(new BigDecimal("2000000"), null);
+		LimitOrderUpdateRequest request = new LimitOrderUpdateRequest(new BigDecimal("2000000"), null);
 
 		assertThatThrownBy(() -> service.modifyOrder(OWNER_USER_ID, ORDER_ID, request))
 			.isInstanceOf(BusinessException.class)
@@ -241,7 +241,7 @@ class LimitOrderModifyServiceTest {
 		Order order = limitPendingOrder(owner(), account, instrument, OrderSide.BUY, "0.1", "1000000");
 		order.cancel();
 		when(orderRepository.findByIdForUpdate(ORDER_ID)).thenReturn(Optional.of(order));
-		LimitOrderModifyRequest request = new LimitOrderModifyRequest(new BigDecimal("2000000"), null);
+		LimitOrderUpdateRequest request = new LimitOrderUpdateRequest(new BigDecimal("2000000"), null);
 
 		assertThatThrownBy(() -> service.modifyOrder(OTHER_USER_ID, ORDER_ID, request))
 			.isInstanceOf(BusinessException.class)
@@ -260,7 +260,7 @@ class LimitOrderModifyServiceTest {
 		Order order = limitPendingOrder(owner(), account, instrument, OrderSide.BUY, "0.1", "1000000");
 		order.markFilled();
 		when(orderRepository.findByIdForUpdate(ORDER_ID)).thenReturn(Optional.of(order));
-		LimitOrderModifyRequest request = new LimitOrderModifyRequest(null, new BigDecimal("-1"));
+		LimitOrderUpdateRequest request = new LimitOrderUpdateRequest(null, new BigDecimal("-1"));
 
 		assertThatThrownBy(() -> service.modifyOrder(OWNER_USER_ID, ORDER_ID, request))
 			.isInstanceOf(BusinessException.class)
@@ -276,7 +276,7 @@ class LimitOrderModifyServiceTest {
 		Account account = account();
 		Order order = limitPendingOrder(owner(), account, instrument, OrderSide.BUY, "0.1", "1000000");
 		when(orderRepository.findByIdForUpdate(ORDER_ID)).thenReturn(Optional.of(order));
-		LimitOrderModifyRequest request = new LimitOrderModifyRequest(null, BigDecimal.ZERO);
+		LimitOrderUpdateRequest request = new LimitOrderUpdateRequest(null, BigDecimal.ZERO);
 
 		assertThatThrownBy(() -> service.modifyOrder(OWNER_USER_ID, ORDER_ID, request))
 			.isInstanceOf(BusinessException.class)
@@ -292,7 +292,7 @@ class LimitOrderModifyServiceTest {
 		Account account = account();
 		Order order = limitPendingOrder(owner(), account, instrument, OrderSide.BUY, "0.1", "1000000");
 		when(orderRepository.findByIdForUpdate(ORDER_ID)).thenReturn(Optional.of(order));
-		LimitOrderModifyRequest request = new LimitOrderModifyRequest(null, new BigDecimal("0.123456789"));
+		LimitOrderUpdateRequest request = new LimitOrderUpdateRequest(null, new BigDecimal("0.123456789"));
 
 		assertThatThrownBy(() -> service.modifyOrder(OWNER_USER_ID, ORDER_ID, request))
 			.isInstanceOf(BusinessException.class)
@@ -308,7 +308,7 @@ class LimitOrderModifyServiceTest {
 		Account account = account();
 		Order order = limitPendingOrder(owner(), account, instrument, OrderSide.BUY, "0.1", "1000000");
 		when(orderRepository.findByIdForUpdate(ORDER_ID)).thenReturn(Optional.of(order));
-		LimitOrderModifyRequest request = new LimitOrderModifyRequest(BigDecimal.ZERO, null);
+		LimitOrderUpdateRequest request = new LimitOrderUpdateRequest(BigDecimal.ZERO, null);
 
 		assertThatThrownBy(() -> service.modifyOrder(OWNER_USER_ID, ORDER_ID, request))
 			.isInstanceOf(BusinessException.class)
@@ -325,7 +325,7 @@ class LimitOrderModifyServiceTest {
 		Order order = limitPendingOrder(owner(), account, instrument, OrderSide.BUY, "0.1", "1000000");
 		when(orderRepository.findByIdForUpdate(ORDER_ID)).thenReturn(Optional.of(order));
 		// 0.001 * 1,000 = 1 < 5,000
-		LimitOrderModifyRequest request = new LimitOrderModifyRequest(new BigDecimal("1000"), new BigDecimal("0.001"));
+		LimitOrderUpdateRequest request = new LimitOrderUpdateRequest(new BigDecimal("1000"), new BigDecimal("0.001"));
 
 		assertThatThrownBy(() -> service.modifyOrder(OWNER_USER_ID, ORDER_ID, request))
 			.isInstanceOf(BusinessException.class)
@@ -344,7 +344,7 @@ class LimitOrderModifyServiceTest {
 		Order order = limitPendingOrder(owner(), account, instrument, OrderSide.BUY, "0.1", "1000000");
 		when(orderRepository.findByIdForUpdate(ORDER_ID)).thenReturn(Optional.of(order));
 		when(accountService.getAccountByIdForUpdate(ACCOUNT_ID)).thenReturn(account);
-		LimitOrderModifyRequest request = new LimitOrderModifyRequest(new BigDecimal("2000000"), new BigDecimal("0.2"));
+		LimitOrderUpdateRequest request = new LimitOrderUpdateRequest(new BigDecimal("2000000"), new BigDecimal("0.2"));
 
 		assertThatThrownBy(() -> service.modifyOrder(OWNER_USER_ID, ORDER_ID, request))
 			.isInstanceOf(BusinessException.class)
@@ -365,7 +365,7 @@ class LimitOrderModifyServiceTest {
 		when(orderRepository.findByIdForUpdate(ORDER_ID)).thenReturn(Optional.of(order));
 		when(accountService.getAccountByIdForUpdate(ACCOUNT_ID)).thenReturn(account);
 		when(portfolioSellService.getHoldingForUpdate(account, instrument)).thenReturn(holding);
-		LimitOrderModifyRequest request = new LimitOrderModifyRequest(new BigDecimal("1200000"), new BigDecimal("0.5"));
+		LimitOrderUpdateRequest request = new LimitOrderUpdateRequest(new BigDecimal("1200000"), new BigDecimal("0.5"));
 
 		assertThatThrownBy(() -> service.modifyOrder(OWNER_USER_ID, ORDER_ID, request))
 			.isInstanceOf(BusinessException.class)

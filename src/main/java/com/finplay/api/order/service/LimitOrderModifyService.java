@@ -9,7 +9,7 @@ import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.domain.OrderStatus;
-import com.finplay.api.order.dto.request.LimitOrderModifyRequest;
+import com.finplay.api.order.dto.request.LimitOrderUpdateRequest;
 import com.finplay.api.order.dto.response.LimitOrderResponse;
 import com.finplay.api.order.repository.OrderRepository;
 import com.finplay.api.portfolio.domain.Holding;
@@ -31,7 +31,7 @@ public class LimitOrderModifyService {
 	// → 4.최종값 합성 → 5.형식·최소주문금액 재검증 → 6.account 락
 	// → 7~9.BUY/SELL 해제→재예약(재예약 실패 시 트랜잭션 롤백으로 해제도 취소됨) → 10.order.modify() → 11.응답.
 	@Transactional
-	public LimitOrderResponse modifyOrder(Long userId, Long orderId, LimitOrderModifyRequest request) {
+	public LimitOrderResponse modifyOrder(Long userId, Long orderId, LimitOrderUpdateRequest request) {
 		if (request.limitPrice() == null && request.quantity() == null) {
 			throw new BusinessException(ErrorCode.VALIDATION_ERROR, "변경할 값이 없습니다.");
 		}
@@ -59,11 +59,6 @@ public class LimitOrderModifyService {
 
 		Account account = accountService.getAccountByIdForUpdate(order.getAccount().getId());
 
-		LimitOrderFeeCalculator.Reservation oldReservation = LimitOrderFeeCalculator.calculate(order.getQuantity(),
-			order.getLimitPrice());
-		LimitOrderFeeCalculator.Reservation newReservation = LimitOrderFeeCalculator.calculate(finalQuantity,
-			finalLimitPrice);
-
 		if (order.getSide() == OrderSide.SELL) {
 			// SELL만 holding을 잠근다(잠금 순서 order → account → holding). BUY는 holding을 잠그지 않는다(plan.md).
 			Holding holding = portfolioSellService.getHoldingForUpdate(account, order.getInstrument());
@@ -73,6 +68,10 @@ public class LimitOrderModifyService {
 			}
 			holding.reserveQuantity(finalQuantity);
 		} else {
+			LimitOrderFeeCalculator.Reservation oldReservation = LimitOrderFeeCalculator.calculate(
+				order.getQuantity(), order.getLimitPrice());
+			LimitOrderFeeCalculator.Reservation newReservation = LimitOrderFeeCalculator.calculate(
+				finalQuantity, finalLimitPrice);
 			account.releaseReservedCash(oldReservation.total());
 			if (account.getAvailableCash() < newReservation.total()) {
 				throw new BusinessException(ErrorCode.INSUFFICIENT_CASH);

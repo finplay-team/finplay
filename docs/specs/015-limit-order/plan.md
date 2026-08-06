@@ -808,7 +808,7 @@ public final class LimitOrderFeeCalculator {
 - 인증 필요. `Idempotency-Key` 헤더 불필요(LMT-003과 동일 이유 — 절대값 지정이라 자연 멱등).
 - 성공 200, `LimitOrderResponse`(LMT-001 생성 응답과 동일 DTO 재사용 — 신규 DTO 아님, 갱신된 `orderId`·`quantity`·`limitPrice`·`status`(항상 `PENDING`)·`requestedAt`(불변)을 담아 반환).
 
-**요청 (`LimitOrderModifyRequest`, 신규 DTO)**
+**요청 (`LimitOrderUpdateRequest`, 신규 DTO)**
 
 | 필드 | 타입 | 필수 | 검증 |
 |---|---|---|---|
@@ -859,7 +859,7 @@ public void modify(BigDecimal quantity, BigDecimal limitPrice) {
 
 | 클래스 | 패키지 | 역할 |
 |---|---|---|
-| `LimitOrderModifyRequest` | `order.dto.request` | 요청 DTO(`limitPrice`·`quantity` 둘 다 nullable) |
+| `LimitOrderUpdateRequest` | `order.dto.request` | 요청 DTO(`limitPrice`·`quantity` 둘 다 nullable) |
 | `LimitOrderFeeCalculator` | `order.service` | 예약·체결 금액(원금+수수료) 계산 공용 유틸리티(신규, 위 "수수료 계산 공통화 결정") |
 | `LimitOrderModifyService` | `order.service` | 수정 1건 처리(`LimitOrderCancelService`와 병렬 클래스 — 같은 잠금 순서·검증 순서, "해제 후 재예약"이 추가) |
 
@@ -870,14 +870,14 @@ public void modify(BigDecimal quantity, BigDecimal limitPrice) {
 public ResponseEntity<LimitOrderResponse> modifyLimitOrder(
     @AuthenticationPrincipal AuthenticatedUser principal,
     @PathVariable Long orderId,
-    @RequestBody LimitOrderModifyRequest request) {
+    @RequestBody LimitOrderUpdateRequest request) {
     return ResponseEntity.ok(limitOrderModifyService.modifyOrder(principal.userId(), orderId, request));
 }
 ```
 
 ## 수정 흐름 (LMT-005)
 
-`LimitOrderModifyService.modifyOrder(Long userId, Long orderId, LimitOrderModifyRequest request)`(`@Transactional`):
+`LimitOrderModifyService.modifyOrder(Long userId, Long orderId, LimitOrderUpdateRequest request)`(`@Transactional`):
 
 0. `request.limitPrice() == null && request.quantity() == null`이면 `BusinessException(VALIDATION_ERROR)` — DB 조회 이전, 요청 형식 검증.
 1. `order = orderRepository.findByIdForUpdate(orderId).orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND))` — **주문 락 + 존재(404) 검증**(LMT-003 `cancelOrder`와 동일 지점).
@@ -931,7 +931,7 @@ spec.md 시나리오 21~25에 대응한다.
 같은 커밋에서 갱신(CLAUDE.md 규칙 7 + 규칙 10):
 
 - `docs/api-routes.md`: 라우트 표에 `PATCH | /api/orders/{orderId} | order | ... | 015 LMT-005, Issue #239` 행 추가(기존 `DELETE /api/orders/{orderId}` 행 근처).
-- `docs/api-contracts.md`: `## order` 절에 "지정가 주문 수정" 표 추가(요청 `LimitOrderModifyRequest`, 응답 `LimitOrderResponse` 재사용 명시, 오류 400/401/403/404/409 계약 — `INSUFFICIENT_CASH`/`INSUFFICIENT_QTY`/`ORDER_ALREADY_FILLED`/`ORDER_ALREADY_CANCELLED` 전부 기존 코드 재사용임을 명시).
+- `docs/api-contracts.md`: `## order` 절에 "지정가 주문 수정" 표 추가(요청 `LimitOrderUpdateRequest`, 응답 `LimitOrderResponse` 재사용 명시, 오류 400/401/403/404/409 계약 — `INSUFFICIENT_CASH`/`INSUFFICIENT_QTY`/`ORDER_ALREADY_FILLED`/`ORDER_ALREADY_CANCELLED` 전부 기존 코드 재사용임을 명시).
 - `docs/prd.md` §3 구현 현황 "지정가 주문·상시 체결(LMT-001~005)" 행을 이 PR 번호를 근거로 "완료"로 갱신한다 — LMT-001~005 전부 완료됨을 명시.
 
 ## 테스트 계획 (ADR-0003 기준)

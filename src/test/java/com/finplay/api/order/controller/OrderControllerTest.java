@@ -23,7 +23,7 @@ import com.finplay.api.auth.token.JwtTokenProvider;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.order.dto.request.LimitOrderCreateRequest;
-import com.finplay.api.order.dto.request.LimitOrderModifyRequest;
+import com.finplay.api.order.dto.request.LimitOrderUpdateRequest;
 import com.finplay.api.order.dto.request.OrderCreateRequest;
 import com.finplay.api.order.dto.response.LimitOrderResponse;
 import com.finplay.api.order.dto.response.OrderListItemResponse;
@@ -927,7 +927,7 @@ class OrderControllerTest {
 		LimitOrderResponse response = new LimitOrderResponse(
 			1L, "CRYPTO", 1L, "BUY", "LIMIT", "PENDING", new BigDecimal("0.5"), new BigDecimal("75000000"),
 			requestedAt);
-		when(limitOrderModifyService.modifyOrder(eq(USER_ID), eq(1L), any(LimitOrderModifyRequest.class)))
+		when(limitOrderModifyService.modifyOrder(eq(USER_ID), eq(1L), any(LimitOrderUpdateRequest.class)))
 			.thenReturn(response);
 
 		mockMvc.perform(patch("/api/orders/{orderId}", 1L)
@@ -947,7 +947,7 @@ class OrderControllerTest {
 			.andExpect(jsonPath("$.limitPrice").value(75000000))
 			.andExpect(jsonPath("$.requestedAt").value("2026-08-06T09:00:00"));
 
-		verify(limitOrderModifyService).modifyOrder(eq(USER_ID), eq(1L), any(LimitOrderModifyRequest.class));
+		verify(limitOrderModifyService).modifyOrder(eq(USER_ID), eq(1L), any(LimitOrderUpdateRequest.class));
 	}
 
 	@Test
@@ -957,7 +957,7 @@ class OrderControllerTest {
 		LimitOrderResponse response = new LimitOrderResponse(
 			1L, "CRYPTO", 1L, "SELL", "LIMIT", "PENDING", new BigDecimal("0.2"), new BigDecimal("70000000"),
 			requestedAt);
-		when(limitOrderModifyService.modifyOrder(eq(USER_ID), eq(1L), any(LimitOrderModifyRequest.class)))
+		when(limitOrderModifyService.modifyOrder(eq(USER_ID), eq(1L), any(LimitOrderUpdateRequest.class)))
 			.thenReturn(response);
 
 		mockMvc.perform(patch("/api/orders/{orderId}", 1L)
@@ -970,13 +970,13 @@ class OrderControllerTest {
 			.andExpect(jsonPath("$.quantity").value(0.2))
 			.andExpect(jsonPath("$.limitPrice").value(70000000));
 
-		verify(limitOrderModifyService).modifyOrder(eq(USER_ID), eq(1L), any(LimitOrderModifyRequest.class));
+		verify(limitOrderModifyService).modifyOrder(eq(USER_ID), eq(1L), any(LimitOrderUpdateRequest.class));
 	}
 
 	@Test
 	void modifyLimitOrderReturnsValidationErrorWhenBodyHasNeitherField() throws Exception {
 		stubAuthenticatedUser();
-		when(limitOrderModifyService.modifyOrder(eq(USER_ID), eq(1L), any(LimitOrderModifyRequest.class)))
+		when(limitOrderModifyService.modifyOrder(eq(USER_ID), eq(1L), any(LimitOrderUpdateRequest.class)))
 			.thenThrow(new BusinessException(ErrorCode.VALIDATION_ERROR, "변경할 값이 없습니다."));
 
 		mockMvc.perform(patch("/api/orders/{orderId}", 1L)
@@ -987,13 +987,45 @@ class OrderControllerTest {
 			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
-		verify(limitOrderModifyService).modifyOrder(eq(USER_ID), eq(1L), any(LimitOrderModifyRequest.class));
+		verify(limitOrderModifyService).modifyOrder(eq(USER_ID), eq(1L), any(LimitOrderUpdateRequest.class));
+	}
+
+	@Test
+	void modifyLimitOrderReturnsValidationErrorWhenLimitPriceIsZeroWithoutCallingService() throws Exception {
+		stubAuthenticatedUser();
+
+		mockMvc.perform(patch("/api/orders/{orderId}", 1L)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("""
+				{"limitPrice":"0"}
+				"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
+
+		verifyNoInteractions(limitOrderModifyService);
+	}
+
+	@Test
+	void modifyLimitOrderReturnsValidationErrorWhenQuantityIsNegativeWithoutCallingService() throws Exception {
+		stubAuthenticatedUser();
+
+		mockMvc.perform(patch("/api/orders/{orderId}", 1L)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("""
+				{"quantity":"-1"}
+				"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
+
+		verifyNoInteractions(limitOrderModifyService);
 	}
 
 	@Test
 	void modifyLimitOrderReturnsNotFoundWhenOrderDoesNotExist() throws Exception {
 		stubAuthenticatedUser();
-		when(limitOrderModifyService.modifyOrder(eq(USER_ID), eq(999L), any(LimitOrderModifyRequest.class)))
+		when(limitOrderModifyService.modifyOrder(eq(USER_ID), eq(999L), any(LimitOrderUpdateRequest.class)))
 			.thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
 
 		mockMvc.perform(patch("/api/orders/{orderId}", 999L)
@@ -1006,13 +1038,13 @@ class OrderControllerTest {
 			.andExpect(jsonPath("$.error.code").value("NOT_FOUND"))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
-		verify(limitOrderModifyService).modifyOrder(eq(USER_ID), eq(999L), any(LimitOrderModifyRequest.class));
+		verify(limitOrderModifyService).modifyOrder(eq(USER_ID), eq(999L), any(LimitOrderUpdateRequest.class));
 	}
 
 	@Test
 	void modifyLimitOrderReturnsForbiddenWhenNotOwner() throws Exception {
 		stubAuthenticatedUser();
-		when(limitOrderModifyService.modifyOrder(eq(USER_ID), eq(2L), any(LimitOrderModifyRequest.class)))
+		when(limitOrderModifyService.modifyOrder(eq(USER_ID), eq(2L), any(LimitOrderUpdateRequest.class)))
 			.thenThrow(new BusinessException(ErrorCode.FORBIDDEN));
 
 		mockMvc.perform(patch("/api/orders/{orderId}", 2L)
@@ -1025,13 +1057,13 @@ class OrderControllerTest {
 			.andExpect(jsonPath("$.error.code").value("FORBIDDEN"))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
-		verify(limitOrderModifyService).modifyOrder(eq(USER_ID), eq(2L), any(LimitOrderModifyRequest.class));
+		verify(limitOrderModifyService).modifyOrder(eq(USER_ID), eq(2L), any(LimitOrderUpdateRequest.class));
 	}
 
 	@Test
 	void modifyLimitOrderReturnsOrderAlreadyFilledWhenAlreadyFilled() throws Exception {
 		stubAuthenticatedUser();
-		when(limitOrderModifyService.modifyOrder(eq(USER_ID), eq(3L), any(LimitOrderModifyRequest.class)))
+		when(limitOrderModifyService.modifyOrder(eq(USER_ID), eq(3L), any(LimitOrderUpdateRequest.class)))
 			.thenThrow(new BusinessException(ErrorCode.ORDER_ALREADY_FILLED));
 
 		mockMvc.perform(patch("/api/orders/{orderId}", 3L)
@@ -1044,13 +1076,13 @@ class OrderControllerTest {
 			.andExpect(jsonPath("$.error.code").value("ORDER_ALREADY_FILLED"))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
-		verify(limitOrderModifyService).modifyOrder(eq(USER_ID), eq(3L), any(LimitOrderModifyRequest.class));
+		verify(limitOrderModifyService).modifyOrder(eq(USER_ID), eq(3L), any(LimitOrderUpdateRequest.class));
 	}
 
 	@Test
 	void modifyLimitOrderReturnsOrderAlreadyCancelledWhenAlreadyCancelled() throws Exception {
 		stubAuthenticatedUser();
-		when(limitOrderModifyService.modifyOrder(eq(USER_ID), eq(4L), any(LimitOrderModifyRequest.class)))
+		when(limitOrderModifyService.modifyOrder(eq(USER_ID), eq(4L), any(LimitOrderUpdateRequest.class)))
 			.thenThrow(new BusinessException(ErrorCode.ORDER_ALREADY_CANCELLED));
 
 		mockMvc.perform(patch("/api/orders/{orderId}", 4L)
@@ -1063,13 +1095,13 @@ class OrderControllerTest {
 			.andExpect(jsonPath("$.error.code").value("ORDER_ALREADY_CANCELLED"))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
-		verify(limitOrderModifyService).modifyOrder(eq(USER_ID), eq(4L), any(LimitOrderModifyRequest.class));
+		verify(limitOrderModifyService).modifyOrder(eq(USER_ID), eq(4L), any(LimitOrderUpdateRequest.class));
 	}
 
 	@Test
 	void modifyLimitOrderReturnsInsufficientCashWhenServiceRejectsCashShortage() throws Exception {
 		stubAuthenticatedUser();
-		when(limitOrderModifyService.modifyOrder(eq(USER_ID), eq(5L), any(LimitOrderModifyRequest.class)))
+		when(limitOrderModifyService.modifyOrder(eq(USER_ID), eq(5L), any(LimitOrderUpdateRequest.class)))
 			.thenThrow(new BusinessException(ErrorCode.INSUFFICIENT_CASH));
 
 		mockMvc.perform(patch("/api/orders/{orderId}", 5L)
@@ -1082,13 +1114,13 @@ class OrderControllerTest {
 			.andExpect(jsonPath("$.error.code").value("INSUFFICIENT_CASH"))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
-		verify(limitOrderModifyService).modifyOrder(eq(USER_ID), eq(5L), any(LimitOrderModifyRequest.class));
+		verify(limitOrderModifyService).modifyOrder(eq(USER_ID), eq(5L), any(LimitOrderUpdateRequest.class));
 	}
 
 	@Test
 	void modifyLimitOrderReturnsInsufficientQtyWhenServiceRejectsQuantityShortage() throws Exception {
 		stubAuthenticatedUser();
-		when(limitOrderModifyService.modifyOrder(eq(USER_ID), eq(6L), any(LimitOrderModifyRequest.class)))
+		when(limitOrderModifyService.modifyOrder(eq(USER_ID), eq(6L), any(LimitOrderUpdateRequest.class)))
 			.thenThrow(new BusinessException(ErrorCode.INSUFFICIENT_QTY));
 
 		mockMvc.perform(patch("/api/orders/{orderId}", 6L)
@@ -1101,7 +1133,7 @@ class OrderControllerTest {
 			.andExpect(jsonPath("$.error.code").value("INSUFFICIENT_QTY"))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
-		verify(limitOrderModifyService).modifyOrder(eq(USER_ID), eq(6L), any(LimitOrderModifyRequest.class));
+		verify(limitOrderModifyService).modifyOrder(eq(USER_ID), eq(6L), any(LimitOrderUpdateRequest.class));
 	}
 
 	@Test
