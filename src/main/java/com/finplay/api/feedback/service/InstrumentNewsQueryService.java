@@ -11,6 +11,7 @@ import com.finplay.api.feedback.dto.response.InstrumentNewsResponse;
 import com.finplay.api.feedback.dto.response.NewsItem;
 import com.finplay.api.feedback.repository.InstrumentNewsSummaryRepository;
 import com.finplay.api.feedback.repository.MarketNewsItemRepository;
+import com.finplay.api.feedback.store.FeedbackQueryCache;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.BusinessDayCalendar;
@@ -24,6 +25,7 @@ import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -51,6 +53,10 @@ public class InstrumentNewsQueryService {
 	private final InstrumentNewsSummaryRepository instrumentNewsSummaryRepository;
 
 	private final BusinessDayCalendar businessDayCalendar;
+
+	// 요약 텍스트만 이 캐시를 거친다. items 수집(collectVisibleItems·코인 24시간 창)은 §C-5 노출 게이트의
+	// 구현이라 캐시하지 않는다 — 캐시하면 게이트가 늦게 열린다(ADR-0015 §1).
+	private final FeedbackQueryCache feedbackQueryCache;
 
 	private final FeedbackNewsProperties properties;
 
@@ -109,22 +115,30 @@ public class InstrumentNewsQueryService {
 				originTradeDate, scope, FeedbackContentStatus.EMPTY, null, List.of());
 		}
 
-		Optional<InstrumentNewsSummary> summary = instrumentNewsSummaryRepository
-			.findByInstrumentIdAndOriginTradeDateAndScope(instrumentId, originTradeDate, scope);
-		// 4번 — 요약 행이 아직 없다(배치 미실행·배포 당일). 기사는 있으므로 items를 채운다.
-		if (summary.isEmpty()) {
+		// 4·5·6번 — 요약 텍스트만 캐시를 거친다(ADR-0015 §1). items는 위에서 이미 매 요청 DB로 모았다.
+		AtomicBoolean summaryRowFound = new AtomicBoolean();
+		Optional<String> text = feedbackQueryCache.getOrLoadStockSummaryText(
+			instrumentId, originTradeDate, scope,
+			() -> {
+				Optional<InstrumentNewsSummary> summary = instrumentNewsSummaryRepository
+					.findByInstrumentIdAndOriginTradeDateAndScope(instrumentId, originTradeDate, scope);
+				summaryRowFound.set(summary.isPresent());
+				return summary.map(InstrumentNewsSummary::getSummary);
+			});
+		// 캐시는 서술이 있는 값(READY)만 담으므로 적중은 곧 6번이다.
+		if (text.isPresent()) {
 			return InstrumentNewsResponse.of(
-				originTradeDate, scope, FeedbackContentStatus.EMPTY, null, items);
+				originTradeDate, scope, FeedbackContentStatus.READY, text.get(), items);
 		}
 
-		// 5번 — 행은 있는데 서술이 없다(narrative_source=NONE). 6번 — 그 외는 READY.
-		// 저장된 행만으로는 EMPTY와 구분되지 않으므로(둘 다 summary가 NULL) 행 존재 여부와 함께 갈라야 한다.
-		String text = summary.get().getSummary();
+		// 미적중이면 위 로더가 반드시 실행됐다(캐시는 값이 없으면 항상 로더를 부른다). 그 DB 결과로 4·5번을
+		// 지금 로직 그대로 가른다 — 저장된 행만으로는 둘이 구분되지 않으므로(둘 다 summary가 NULL) 행 존재
+		// 여부와 함께 갈라야 한다. 판정 순서는 §C-4 그대로다.
 		return InstrumentNewsResponse.of(
 			originTradeDate,
 			scope,
-			text == null ? FeedbackContentStatus.UNAVAILABLE : FeedbackContentStatus.READY,
-			text,
+			summaryRowFound.get() ? FeedbackContentStatus.UNAVAILABLE : FeedbackContentStatus.EMPTY,
+			null,
 			items);
 	}
 
@@ -161,20 +175,25 @@ public class InstrumentNewsQueryService {
 				null, NewsSummaryScope.ROLLING_24H, FeedbackContentStatus.EMPTY, null, List.of());
 		}
 
-		Optional<InstrumentNewsSummary> summary = instrumentNewsSummaryRepository
-			.findFirstByInstrumentIdAndScopeOrderByGeneratedAtDescIdDesc(
-				instrumentId, NewsSummaryScope.ROLLING_24H);
-		if (summary.isEmpty()) {
+		// 주식과 같은 형태다 — 요약 텍스트만 캐시를 거치고 items의 24시간 창은 그대로 매 요청 DB로 간다.
+		AtomicBoolean summaryRowFound = new AtomicBoolean();
+		Optional<String> text = feedbackQueryCache.getOrLoadCryptoSummaryText(instrumentId, () -> {
+			Optional<InstrumentNewsSummary> summary = instrumentNewsSummaryRepository
+				.findFirstByInstrumentIdAndScopeOrderByGeneratedAtDescIdDesc(
+					instrumentId, NewsSummaryScope.ROLLING_24H);
+			summaryRowFound.set(summary.isPresent());
+			return summary.map(InstrumentNewsSummary::getSummary);
+		});
+		if (text.isPresent()) {
 			return InstrumentNewsResponse.of(
-				null, NewsSummaryScope.ROLLING_24H, FeedbackContentStatus.EMPTY, null, items);
+				null, NewsSummaryScope.ROLLING_24H, FeedbackContentStatus.READY, text.get(), items);
 		}
 
-		String text = summary.get().getSummary();
 		return InstrumentNewsResponse.of(
 			null,
 			NewsSummaryScope.ROLLING_24H,
-			text == null ? FeedbackContentStatus.UNAVAILABLE : FeedbackContentStatus.READY,
-			text,
+			summaryRowFound.get() ? FeedbackContentStatus.UNAVAILABLE : FeedbackContentStatus.EMPTY,
+			null,
 			items);
 	}
 

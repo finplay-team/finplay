@@ -10,6 +10,7 @@ import com.finplay.api.feedback.dto.response.BriefingNewsItem;
 import com.finplay.api.feedback.dto.response.MarketBriefingResponse;
 import com.finplay.api.feedback.repository.MarketBriefingRepository;
 import com.finplay.api.feedback.repository.MarketNewsItemRepository;
+import com.finplay.api.feedback.store.FeedbackQueryCache;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.BusinessDayCalendar;
 import com.finplay.api.market.service.StockReplayService;
@@ -21,6 +22,7 @@ import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -62,6 +64,10 @@ public class MarketBriefingService {
 	private final NarrativeService narrativeService;
 
 	private final BusinessDayCalendar businessDayCalendar;
+
+	// 조회 경로만 쓴다 — 생성 경로(generateStockBriefing·refreshCryptoBriefing)는 이 캐시를 보지 않는다.
+	// 절단 상한이 조회(max-items-per-briefing)와 생성(max-items-per-summary)이 달라서다(§C-7).
+	private final FeedbackQueryCache feedbackQueryCache;
 
 	private final FeedbackNewsProperties properties;
 
@@ -188,11 +194,17 @@ public class MarketBriefingService {
 		// items는 저장하지 않으므로 생성 때와 같은 구간 질의로 다시 만든다 (FEED-009).
 		// 상한만 다르다 — 여기는 응답 목록이라 max-items-per-briefing이고, 위 생성 경로는 LLM 입력이라
 		// max-items-per-summary다. 두 값이 이 클래스 안에 공존하므로 바꿔 쓰지 않도록 주의한다(§C-7).
-		List<BriefingNewsItem> items = NewsItemTruncator
-			.truncateAndSort(collectPreMarketItems(originTradeDate), properties.maxItemsPerBriefing())
-			.stream()
-			.map(BriefingNewsItem::from)
-			.toList();
+		//
+		// 이 목록만 캐시를 거친다 — 구간이 [D-1 15:30, D 09:00] 고정이라 시각 비의존인 유일한 목록이다
+		// (ADR-0015 §1). 절단 상한이 키에 들어가므로 위 상한을 바꾸면 캐시 키가 자연히 갈린다.
+		// **생성 경로(generateStockBriefing)는 이 캐시를 보지 않는다** — 상한이 다르다.
+		List<BriefingNewsItem> items = feedbackQueryCache.getOrLoadStockBriefingItems(
+			originTradeDate,
+			() -> NewsItemTruncator
+				.truncateAndSort(collectPreMarketItems(originTradeDate), properties.maxItemsPerBriefing())
+				.stream()
+				.map(BriefingNewsItem::from)
+				.toList());
 
 		// 3번 — 기사가 0건이면 행이 있든 없든 EMPTY다. 행 조회보다 앞이라 순서를 바꾸면
 		// "기사도 없고 서술도 없는" 날이 UNAVAILABLE로 보인다.
@@ -201,21 +213,25 @@ public class MarketBriefingService {
 				market, originTradeDate, FeedbackContentStatus.EMPTY);
 		}
 
-		Optional<MarketBriefing> briefing = marketBriefingRepository
-			.findByMarketAndOriginTradeDate(market, originTradeDate);
-		// 4번 — 행이 아직 없다(배치 미실행·배포 당일). 기사는 있으므로 items를 채운다.
-		if (briefing.isEmpty()) {
+		// 4·5·6번 — 브리핑 텍스트도 캐시를 거친다. 캐시는 서술이 있는 값(READY)만 담으므로 적중은 곧 6번이고,
+		// 미적중이면 로더가 반드시 실행돼 그 DB 결과로 4·5번을 지금 로직 그대로 가른다(§C-4 판정 순서 불변).
+		AtomicBoolean briefingRowFound = new AtomicBoolean();
+		Optional<String> text = feedbackQueryCache.getOrLoadStockBriefingText(originTradeDate, () -> {
+			Optional<MarketBriefing> briefing = marketBriefingRepository
+				.findByMarketAndOriginTradeDate(market, originTradeDate);
+			briefingRowFound.set(briefing.isPresent());
+			return briefing.map(MarketBriefing::getSummary);
+		});
+		if (text.isPresent()) {
 			return MarketBriefingResponse.of(
-				market, originTradeDate, FeedbackContentStatus.EMPTY, null, items);
+				market, originTradeDate, FeedbackContentStatus.READY, text.get(), items);
 		}
 
-		// 5번 — 행은 있는데 서술이 없다(narrative_source=NONE). 6번 — 그 외는 READY.
-		String text = briefing.get().getSummary();
 		return MarketBriefingResponse.of(
 			market,
 			originTradeDate,
-			text == null ? FeedbackContentStatus.UNAVAILABLE : FeedbackContentStatus.READY,
-			text,
+			briefingRowFound.get() ? FeedbackContentStatus.UNAVAILABLE : FeedbackContentStatus.EMPTY,
+			null,
 			items);
 	}
 
@@ -250,19 +266,24 @@ public class MarketBriefingService {
 			return MarketBriefingResponse.withoutItems(Market.CRYPTO, null, FeedbackContentStatus.EMPTY);
 		}
 
-		Optional<MarketBriefing> briefing = marketBriefingRepository
-			.findFirstByMarketOrderByGeneratedAtDescIdDesc(Market.CRYPTO);
-		if (briefing.isEmpty()) {
+		// 코인은 텍스트만 캐시한다 — items의 24시간 창은 조회 시각 기준이라(FEED-008) 캐시 대상이 아니다.
+		AtomicBoolean briefingRowFound = new AtomicBoolean();
+		Optional<String> text = feedbackQueryCache.getOrLoadCryptoBriefingText(() -> {
+			Optional<MarketBriefing> briefing = marketBriefingRepository
+				.findFirstByMarketOrderByGeneratedAtDescIdDesc(Market.CRYPTO);
+			briefingRowFound.set(briefing.isPresent());
+			return briefing.map(MarketBriefing::getSummary);
+		});
+		if (text.isPresent()) {
 			return MarketBriefingResponse.of(
-				Market.CRYPTO, null, FeedbackContentStatus.EMPTY, null, items);
+				Market.CRYPTO, null, FeedbackContentStatus.READY, text.get(), items);
 		}
 
-		String text = briefing.get().getSummary();
 		return MarketBriefingResponse.of(
 			Market.CRYPTO,
 			null,
-			text == null ? FeedbackContentStatus.UNAVAILABLE : FeedbackContentStatus.READY,
-			text,
+			briefingRowFound.get() ? FeedbackContentStatus.UNAVAILABLE : FeedbackContentStatus.EMPTY,
+			null,
 			items);
 	}
 

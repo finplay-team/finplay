@@ -22,12 +22,12 @@
   - 브리핑 `items` 키에 **목록 절단 상한(`max-items-per-briefing`)을 넣는다** — 설정을 바꾸면 키가 자연히 갈려 옛 길이 목록이 남지 않는다.
   - 검증(단위, `Clock.fixed`): 코인 TTL이 다음 정시 05분, 주식 `PRE_MARKET`은 오늘 15:30·`FULL`은 익일 09:00. 로더가 "없음"을 반환하면 저장하지 않는다. `enabled=false`면 캐시를 아예 접촉하지 않는다. Redis가 예외를 던져도 로더 결과가 그대로 나오고 예외가 새지 않는다. 역직렬화 실패는 캐시 미스로 처리한다. 프로퍼티 바인딩 실패는 `ApplicationContextRunner` 슬라이스로 확인한다.
 
-- [ ] **3. 요약 조회 배선 — `InstrumentNewsQueryService`** (ADR-0015 §1)
+- [x] **3. 요약 조회 배선 — `InstrumentNewsQueryService`** (ADR-0015 §1)
   - 주식 요약 텍스트를 `getOrLoadStockSummaryText`로, 코인 요약 텍스트를 `getOrLoadCryptoSummaryText`로 감싼다. **`items` 수집 경로(주식 `collectVisibleItems`·코인 24시간 창)는 건드리지 않는다** — 그것이 §C-5 노출 게이트다.
   - §C-4 판정 순서(1~6번)를 바꾸지 않는다. 캐시 적중은 곧 `READY`이고, 미적중이면 지금 로직 그대로 DB에서 `EMPTY`/`UNAVAILABLE`을 가른다.
   - 검증(통합, `@MockitoSpyBean`으로 repository 호출 횟수 카운트) — **대조 대상은 캐시다**: `enabled=false`(대조군)에서 같은 조회 N번 → 요약 행 조회 **N회**, `enabled=true`에서 **1회**. 기존 조회 테스트가 전부 그대로 통과한다(계약 불변).
 
-- [ ] **4. 브리핑 조회 배선 — `MarketBriefingService`** (ADR-0015 §1)
+- [x] **4. 브리핑 조회 배선 — `MarketBriefingService`** (ADR-0015 §1)
   - 주식 브리핑 텍스트와 **`items`**(시각 비의존인 유일한 목록)를 각각 캐시하고, 코인 브리핑 텍스트를 캐시한다. **코인 `items`(`collectRollingItems`)는 건드리지 않는다.**
   - **생성 경로(`generateStockBriefing`)는 캐시를 보지 않는다** — 절단 상한이 조회(`max-items-per-briefing`)와 다르다(§C-7).
   - 검증(통합, 호출 횟수 카운트) — **대조 대상은 캐시다**: `enabled=false`(대조군)에서 주식 브리핑 조회 1건당 **DB 4건**, `enabled=true` 적중 시 **0건**. 코인 브리핑도 같은 방식으로 텍스트 조회 감소를 대조한다. 절단 상한을 바꾼 뒤 조회하면 **새 길이 목록**이 나온다(키가 갈린다).
@@ -43,7 +43,7 @@
   - **방어군(락 켬, 캐시도 켬)**: 스프링 빈(진짜 Redis 락) → 원본 **1회**. **로더 안에 배리어를 두지 않는다** — 상호 배제가 동작하면 로더에 1개만 들어와 `CyclicBarrier(N)`가 영원히 대기해 데드락이다. 겹침은 `getOrLoad` 호출 직전의 진입 배리어로 강제한다.
   - 테스트 프로퍼티로 `wait-millis`를 넉넉히 올린다 — 기본 300ms는 운영 추정치라 느린 CI에서 fail-open이 먼저 터지면 방어가 아니라 타이밍 때문에 단정이 깨진다.
   - **결정론적 보조 단정 2개**: 캐시를 미리 채우면 원본 **0회**. 테스트 스레드가 락을 먼저 쥐고 있으면 대기 후 **fail-open으로 원본 1회 + 응답 정상**(락 보유 중에도 조회가 실패하지 않는다).
-  - `@Transactional`을 쓰지 않고 `saveAndFlush` + `@AfterEach` 정리, **이 테스트가 쓴 캐시 키도 `@AfterEach`에서 지운다**(공유 Redis 싱글턴이라 잔여 값이 있으면 "N회" 단정이 조용히 무력해진다).
+  - `@Transactional`을 쓰지 않고 `saveAndFlush` + `@AfterEach` 정리, **이 테스트가 쓴 캐시 키도 `@BeforeEach`에서 지운다**(공유 Redis 싱글턴이라 잔여 값이 있으면 "N회" 단정이 조용히 무력해진다).
 
 - [ ] **7. 경계 조건 통합 테스트 — 범위 전환·코인 주기·Redis 장애·원장 불변**
   - **주식 범위 전환**: `Clock`을 15:29/15:31로 고정한 두 조회가 서로 다른 요약을 본다(같은 종목·같은 거래일). `scope`가 키에 있어 자동으로 갈리는 것을 확인한다.

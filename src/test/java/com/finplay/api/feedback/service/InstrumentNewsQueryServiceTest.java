@@ -12,6 +12,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.finplay.api.feedback.config.FeedbackNewsProperties;
+import com.finplay.api.feedback.config.FeedbackQueryCacheProperties;
 import com.finplay.api.feedback.domain.FeedbackContentStatus;
 import com.finplay.api.feedback.domain.InstrumentNewsSummary;
 import com.finplay.api.feedback.domain.MarketNewsItem;
@@ -21,6 +22,7 @@ import com.finplay.api.feedback.domain.NewsSummaryScope;
 import com.finplay.api.feedback.dto.response.InstrumentNewsResponse;
 import com.finplay.api.feedback.repository.InstrumentNewsSummaryRepository;
 import com.finplay.api.feedback.repository.MarketNewsItemRepository;
+import com.finplay.api.feedback.store.FeedbackQueryCache;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.BusinessDayCalendar;
@@ -75,9 +77,19 @@ class InstrumentNewsQueryServiceTest {
 		marketNewsItemRepository,
 		instrumentNewsSummaryRepository,
 		new BusinessDayCalendar(),
+		loaderDirectCache(),
 		// 마지막에서 세 번째가 max-items-per-news-list다 — 이 경로가 쓰는 상한은 그것 하나뿐이다 (§C-7).
 		new FeedbackNewsProperties("0 0/30 * * * *", "0 0/30 8-20 * * MON-FRI", 30, 5, 5, 50, 30, 30),
 		clock);
+
+	// 킬 스위치를 내린(enabled=false) FeedbackQueryCache다 — 항상 로더로 직행하므로 이 클래스의 판정 순서
+	// 단정이 캐시 도입 전과 그대로 성립한다. Redis·JSON 협력자는 그 경로에서 한 번도 쓰이지 않아 null로 두고,
+	// 키·TTL 재료(Clock)만 실제 값을 준다 — 그 둘은 캐시가 꺼져 있어도 호출 시점에 계산되기 때문이다.
+	// 브리핑 items 상한은 이 경로가 쓰지 않아 null이다(캐시가 켜진 동작은 FeedbackQueryCacheTest가 맡는다).
+	private static FeedbackQueryCache loaderDirectCache() {
+		return new FeedbackQueryCache(
+			null, null, null, Clock.system(KST), new FeedbackQueryCacheProperties(false, 1000, 300, 20), null);
+	}
 
 	private static Instrument instrument(Market market, long id, String symbol) {
 		Instrument created = Instrument.create(

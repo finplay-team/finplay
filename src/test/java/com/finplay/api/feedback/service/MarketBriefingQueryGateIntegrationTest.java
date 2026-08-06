@@ -19,6 +19,7 @@ import com.finplay.api.feedback.dto.response.MarketBriefingResponse;
 import com.finplay.api.feedback.dto.response.NewsItem;
 import com.finplay.api.feedback.repository.MarketBriefingRepository;
 import com.finplay.api.feedback.repository.MarketNewsItemRepository;
+import com.finplay.api.feedback.store.FeedbackQueryCacheTestKeys;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.domain.StockReplaySession;
@@ -41,6 +42,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -93,6 +95,9 @@ class MarketBriefingQueryGateIntegrationTest {
 	@Autowired
 	private MarketBriefingRepository marketBriefingRepository;
 
+	@Autowired
+	private StringRedisTemplate redisTemplate;
+
 	// 상한을 상수로 옮겨 적지 않고 빈에서 읽는다. 옮겨 적으면 §튜닝으로 값을 올렸을 때 픽스처가 상한 아래로
 	// 내려가 절단이 조용히 사라지는데, 그때도 테스트는 전부 초록이다 — spec §뉴스 매칭 범위가 경고한 형태다.
 	@Autowired
@@ -109,6 +114,17 @@ class MarketBriefingQueryGateIntegrationTest {
 	private Instrument samsung;
 
 	private Instrument hynix;
+
+	// 조회 캐시(#245)가 켜진 뒤 필요해진 격리 훅이다. 이 클래스는 @Transactional이라 DB는 롤백되지만 공유
+	// Testcontainers Redis는 롤백되지 않아, 앞 메서드가 캐시한 브리핑 텍스트·items가 뒤 메서드에 그대로 보인다
+	// (실제로 8건이 그렇게 깨졌다 — docs/agent-mistakes.md). @AfterEach가 아니라 @BeforeEach인 것은 앞
+	// 테스트가 정리에 실패해도 이번 테스트가 항상 빈 캐시에서 시작하게 하기 위해서다.
+	//
+	// 캐시를 끄지 않는다 — 게이트 단정들이 운영과 같은 배선(캐시 켜짐)을 그대로 지나가야 계약 불변의 증거가 된다.
+	@BeforeEach
+	void clearQueryCache() {
+		FeedbackQueryCacheTestKeys.clear(redisTemplate);
+	}
 
 	@BeforeEach
 	void setUp() {
