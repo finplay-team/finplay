@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -22,12 +23,14 @@ import com.finplay.api.auth.token.JwtTokenProvider;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.order.dto.request.LimitOrderCreateRequest;
+import com.finplay.api.order.dto.request.LimitOrderModifyRequest;
 import com.finplay.api.order.dto.request.OrderCreateRequest;
 import com.finplay.api.order.dto.response.LimitOrderResponse;
 import com.finplay.api.order.dto.response.OrderListItemResponse;
 import com.finplay.api.order.dto.response.OrderListResponse;
 import com.finplay.api.order.dto.response.OrderResponse;
 import com.finplay.api.order.service.LimitOrderCancelService;
+import com.finplay.api.order.service.LimitOrderModifyService;
 import com.finplay.api.order.service.LimitOrderService;
 import com.finplay.api.order.service.OrderService;
 import java.math.BigDecimal;
@@ -67,6 +70,9 @@ class OrderControllerTest {
 
 	@MockitoBean
 	private LimitOrderCancelService limitOrderCancelService;
+
+	@MockitoBean
+	private LimitOrderModifyService limitOrderModifyService;
 
 	@MockitoBean
 	private JwtTokenProvider jwtTokenProvider;
@@ -912,5 +918,203 @@ class OrderControllerTest {
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
 		verifyNoInteractions(limitOrderCancelService);
+	}
+
+	@Test
+	void modifyLimitOrderReturnsOkWithEveryResponseField() throws Exception {
+		stubAuthenticatedUser();
+		LocalDateTime requestedAt = LocalDateTime.of(2026, 8, 6, 9, 0);
+		LimitOrderResponse response = new LimitOrderResponse(
+			1L, "CRYPTO", 1L, "BUY", "LIMIT", "PENDING", new BigDecimal("0.5"), new BigDecimal("75000000"),
+			requestedAt);
+		when(limitOrderModifyService.modifyOrder(eq(USER_ID), eq(1L), any(LimitOrderModifyRequest.class)))
+			.thenReturn(response);
+
+		mockMvc.perform(patch("/api/orders/{orderId}", 1L)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("""
+				{"limitPrice":"75000000","quantity":"0.5"}
+				"""))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.orderId").value(1))
+			.andExpect(jsonPath("$.market").value("CRYPTO"))
+			.andExpect(jsonPath("$.instrumentId").value(1))
+			.andExpect(jsonPath("$.side").value("BUY"))
+			.andExpect(jsonPath("$.orderType").value("LIMIT"))
+			.andExpect(jsonPath("$.status").value("PENDING"))
+			.andExpect(jsonPath("$.quantity").value(0.5))
+			.andExpect(jsonPath("$.limitPrice").value(75000000))
+			.andExpect(jsonPath("$.requestedAt").value("2026-08-06T09:00:00"));
+
+		verify(limitOrderModifyService).modifyOrder(eq(USER_ID), eq(1L), any(LimitOrderModifyRequest.class));
+	}
+
+	@Test
+	void modifyLimitOrderReturnsOkForPartialUpdateWithOnlyQuantity() throws Exception {
+		stubAuthenticatedUser();
+		LocalDateTime requestedAt = LocalDateTime.of(2026, 8, 6, 9, 0);
+		LimitOrderResponse response = new LimitOrderResponse(
+			1L, "CRYPTO", 1L, "SELL", "LIMIT", "PENDING", new BigDecimal("0.2"), new BigDecimal("70000000"),
+			requestedAt);
+		when(limitOrderModifyService.modifyOrder(eq(USER_ID), eq(1L), any(LimitOrderModifyRequest.class)))
+			.thenReturn(response);
+
+		mockMvc.perform(patch("/api/orders/{orderId}", 1L)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("""
+				{"quantity":"0.2"}
+				"""))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.quantity").value(0.2))
+			.andExpect(jsonPath("$.limitPrice").value(70000000));
+
+		verify(limitOrderModifyService).modifyOrder(eq(USER_ID), eq(1L), any(LimitOrderModifyRequest.class));
+	}
+
+	@Test
+	void modifyLimitOrderReturnsValidationErrorWhenBodyHasNeitherField() throws Exception {
+		stubAuthenticatedUser();
+		when(limitOrderModifyService.modifyOrder(eq(USER_ID), eq(1L), any(LimitOrderModifyRequest.class)))
+			.thenThrow(new BusinessException(ErrorCode.VALIDATION_ERROR, "변경할 값이 없습니다."));
+
+		mockMvc.perform(patch("/api/orders/{orderId}", 1L)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("{}"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(limitOrderModifyService).modifyOrder(eq(USER_ID), eq(1L), any(LimitOrderModifyRequest.class));
+	}
+
+	@Test
+	void modifyLimitOrderReturnsNotFoundWhenOrderDoesNotExist() throws Exception {
+		stubAuthenticatedUser();
+		when(limitOrderModifyService.modifyOrder(eq(USER_ID), eq(999L), any(LimitOrderModifyRequest.class)))
+			.thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
+
+		mockMvc.perform(patch("/api/orders/{orderId}", 999L)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("""
+				{"limitPrice":"75000000"}
+				"""))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.error.code").value("NOT_FOUND"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(limitOrderModifyService).modifyOrder(eq(USER_ID), eq(999L), any(LimitOrderModifyRequest.class));
+	}
+
+	@Test
+	void modifyLimitOrderReturnsForbiddenWhenNotOwner() throws Exception {
+		stubAuthenticatedUser();
+		when(limitOrderModifyService.modifyOrder(eq(USER_ID), eq(2L), any(LimitOrderModifyRequest.class)))
+			.thenThrow(new BusinessException(ErrorCode.FORBIDDEN));
+
+		mockMvc.perform(patch("/api/orders/{orderId}", 2L)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("""
+				{"limitPrice":"75000000"}
+				"""))
+			.andExpect(status().isForbidden())
+			.andExpect(jsonPath("$.error.code").value("FORBIDDEN"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(limitOrderModifyService).modifyOrder(eq(USER_ID), eq(2L), any(LimitOrderModifyRequest.class));
+	}
+
+	@Test
+	void modifyLimitOrderReturnsOrderAlreadyFilledWhenAlreadyFilled() throws Exception {
+		stubAuthenticatedUser();
+		when(limitOrderModifyService.modifyOrder(eq(USER_ID), eq(3L), any(LimitOrderModifyRequest.class)))
+			.thenThrow(new BusinessException(ErrorCode.ORDER_ALREADY_FILLED));
+
+		mockMvc.perform(patch("/api/orders/{orderId}", 3L)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("""
+				{"limitPrice":"75000000"}
+				"""))
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.error.code").value("ORDER_ALREADY_FILLED"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(limitOrderModifyService).modifyOrder(eq(USER_ID), eq(3L), any(LimitOrderModifyRequest.class));
+	}
+
+	@Test
+	void modifyLimitOrderReturnsOrderAlreadyCancelledWhenAlreadyCancelled() throws Exception {
+		stubAuthenticatedUser();
+		when(limitOrderModifyService.modifyOrder(eq(USER_ID), eq(4L), any(LimitOrderModifyRequest.class)))
+			.thenThrow(new BusinessException(ErrorCode.ORDER_ALREADY_CANCELLED));
+
+		mockMvc.perform(patch("/api/orders/{orderId}", 4L)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("""
+				{"limitPrice":"75000000"}
+				"""))
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.error.code").value("ORDER_ALREADY_CANCELLED"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(limitOrderModifyService).modifyOrder(eq(USER_ID), eq(4L), any(LimitOrderModifyRequest.class));
+	}
+
+	@Test
+	void modifyLimitOrderReturnsInsufficientCashWhenServiceRejectsCashShortage() throws Exception {
+		stubAuthenticatedUser();
+		when(limitOrderModifyService.modifyOrder(eq(USER_ID), eq(5L), any(LimitOrderModifyRequest.class)))
+			.thenThrow(new BusinessException(ErrorCode.INSUFFICIENT_CASH));
+
+		mockMvc.perform(patch("/api/orders/{orderId}", 5L)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("""
+				{"limitPrice":"999999999"}
+				"""))
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.error.code").value("INSUFFICIENT_CASH"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(limitOrderModifyService).modifyOrder(eq(USER_ID), eq(5L), any(LimitOrderModifyRequest.class));
+	}
+
+	@Test
+	void modifyLimitOrderReturnsInsufficientQtyWhenServiceRejectsQuantityShortage() throws Exception {
+		stubAuthenticatedUser();
+		when(limitOrderModifyService.modifyOrder(eq(USER_ID), eq(6L), any(LimitOrderModifyRequest.class)))
+			.thenThrow(new BusinessException(ErrorCode.INSUFFICIENT_QTY));
+
+		mockMvc.perform(patch("/api/orders/{orderId}", 6L)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("""
+				{"quantity":"999999999"}
+				"""))
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.error.code").value("INSUFFICIENT_QTY"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(limitOrderModifyService).modifyOrder(eq(USER_ID), eq(6L), any(LimitOrderModifyRequest.class));
+	}
+
+	@Test
+	void modifyLimitOrderRejectsMissingAuthenticationWithoutCallingService() throws Exception {
+		mockMvc.perform(patch("/api/orders/{orderId}", 1L)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("""
+				{"limitPrice":"75000000"}
+				"""))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(limitOrderModifyService);
 	}
 }
