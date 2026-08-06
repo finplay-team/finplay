@@ -733,4 +733,217 @@ public record HoldingListItemResponse(
 
 - `AccountSummaryResponse.reservedCash`·`HoldingListItemResponse.reservedQuantity`로 필드명을 확정했다 — `availableCash`/`availableQuantity` 같은 파생값 필드는 추가하지 않는다.
 - 신규 마이그레이션 없음 — `accounts.reserved_cash`·`holdings.reserved_quantity`는 V22(015-limit-order LMT-001)로 이미 존재한다.
-- 주문 수정(가격·수량 변경) API는 이번 범위가 아니다(spec.md 제외 범위) — 필요성이 확정되면 별도 이슈로 다룬다.
+- ~~주문 수정(가격·수량 변경) API는 이번 범위가 아니다~~ → 이슈 #239(LMT-005)로 착수됐다. 아래 "LMT-005 지정가 주문 수정 — 구현 계획" 절 참고.
+
+---
+
+# LMT-005 지정가 주문 수정 — 구현 계획 (이슈 #239)
+
+## 관련 문서
+
+- Spec: `./spec.md` "LMT-005 지정가 주문 수정 (코인 전용, 이슈 #239)" 절, "LMT-005 완료 조건", "확정된 설계 결정" 12번(수정 이력 미보관 재확정).
+- PRD 근거: `docs/prd.md` 632~649행(LMT-005 정책, PR #238로 확정).
+- 이 절이 재사용하는 잠금·예약 인프라는 위 LMT-002·LMT-003 계획이 이미 도입했다 — 신규 repository 메서드는 필요 없다.
+
+## 기존 코드 현황 (구현 전 확인한 사실)
+
+- `LimitOrderCancelService.cancelOrder`(`src/main/java/com/finplay/api/order/service/LimitOrderCancelService.java`)가 이번 수정 흐름과 거의 동일한 골격이다: `orderRepository.findByIdForUpdate`(락+존재 404) → 소유(403) → 상태(409, `FILLED`/`CANCELLED` 개별 분기) → `accountService.getAccountByIdForUpdate`(계좌 락) → BUY는 `account.releaseReservedCash`, SELL은 `portfolioSellService.getHoldingForUpdate`(holding 락) + `holding.releaseReservedQuantity`. 수정 서비스는 이 골격에 "해제 후 재예약"을 한 번 더 얹는 형태다.
+- `Order` 엔티티(`src/main/java/com/finplay/api/order/domain/Order.java`)는 현재 `limitPrice`·`quantity`를 바꾸는 메서드가 없다 — `cancel()`(153~158행)·`markFilled()`(146~151행)와 동일한 방어적 패턴(`PENDING`이 아니면 `IllegalStateException`)으로 `modify(BigDecimal quantity, BigDecimal limitPrice)`를 신설해야 한다.
+- `Account`(`reserveCash`·`releaseReservedCash`·`getAvailableCash`)·`Holding`(`reserveQuantity`·`releaseReservedQuantity`·`getAvailableQuantity`)은 이미 LMT-001·LMT-003이 대칭으로 갖춰뒀다 — 엔티티 변경이 필요 없다.
+- **수수료 계산 중복(이슈 #239 본문 지적)**: `CRYPTO_FEE_RATE = new BigDecimal("0.0005")`와 `FLOOR(수량×지정가)` + `FLOOR(FLOOR(수량×지정가)×0.05%)` 계산이 `LimitOrderCreationService`(33·106~111행, `calculateCashRequired`)·`LimitOrderCancelService`(25·51~56행, 인라인)·`LimitOrderFillService`(32·54~59행, 인라인) 세 곳에 완전히 동일한 형태로 중복돼 있다. 수정 서비스가 이 계산을 그대로 네 번째로 복제할지, 공통화할지 판단이 필요하다 — 아래 "수수료 계산 공통화 결정" 참고.
+- `OrderController`(기존 파일)에 `POST /limit`·`DELETE /{orderId}`·`GET`·`GET /pending`이 이미 있다 — `PATCH /{orderId}` 추가만 필요.
+
+## 수수료 계산 공통화 결정
+
+**공통화한다.** 이유:
+
+- 지금 3곳(생성·취소·체결)에 동일한 수식이 중복돼 있는데, 수정 서비스가 그대로 복사하면 **4곳**이 된다. 011/015 plan.md가 이전에 "규모가 작아 추상화보다 복제가 낫다"고 판단해온 전례(예: `validateMinOrderAmount` 중복)와 다른 점은, 이건 **돈 계산**이라는 것이다 — 수수료율이 바뀌거나 반올림 규칙이 바뀌면 4곳을 전부 찾아 고쳐야 하고, 하나라도 놓치면 "생성 시 예약한 금액과 체결 시 확정되는 금액이 항상 정확히 일치한다"(spec.md 비즈니스 규칙)는 이 기능 전체의 불변식이 조용히 깨진다. 검증 로직(형식 체크 등)의 복제와 달리 금액 계산의 복제는 실제 금전 버그로 이어질 위험이 있다.
+- 4곳 모두 계산 자체는 완전히 동일하다(같은 인자 `quantity`·`limitPrice`, 같은 반올림 규칙) — 분기나 변형이 없으므로 추출 비용이 낮고 추상화가 억지스럽지 않다.
+- `OrderExecutionService`(시장가 체결)의 `CRYPTO_FEE_RATE`는 **공통화 대상에서 제외**한다 — 그쪽은 `STOCK_FEE_RATE`와 함께 시세 조회 시점의 `price`를 곱하는 별개의 계산(`priceOrder`)이라 "지정가 예약 재계산"과 목적이 다르다(시장가는 예약이 없다). 섞으면 오히려 두 도메인이 뒤엉킨다.
+
+**설계**: `order.service` 패키지에 정적 유틸리티 클래스를 신설한다(서비스 빈이 아니다 — 상태가 없고 어떤 리포지토리도 필요 없으므로 `@Service`로 만들 이유가 없다).
+
+```java
+// 코인 지정가 예약·체결 금액(원금+수수료) 계산 — 생성·취소·체결·수정 네 서비스가 공유하는 유틸리티
+package com.finplay.api.order.service;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+
+public final class LimitOrderFeeCalculator {
+
+    // 매직 넘버 금지 컨벤션 — spec.md 비즈니스 규칙(기존 코인 수수료율 ORD-004와 동일 재사용)
+    public static final BigDecimal CRYPTO_FEE_RATE = new BigDecimal("0.0005");
+
+    private LimitOrderFeeCalculator() {
+    }
+
+    // spec.md 비즈니스 규칙: 매수 예약현금 = FLOOR(수량×지정가) + FLOOR(FLOOR(수량×지정가)×0.05%)
+    public static Reservation calculate(BigDecimal quantity, BigDecimal limitPrice) {
+        long amount = quantity.multiply(limitPrice).setScale(0, RoundingMode.FLOOR).longValueExact();
+        long fee = BigDecimal.valueOf(amount).multiply(CRYPTO_FEE_RATE)
+            .setScale(0, RoundingMode.FLOOR).longValueExact();
+        return new Reservation(amount, fee);
+    }
+
+    public record Reservation(long amount, long fee) {
+        public long total() {
+            return amount + fee;
+        }
+    }
+}
+```
+
+**기존 3개 파일도 이 유틸리티를 쓰도록 함께 정리한다**(같은 커밋 — 새 유틸리티를 만들고 기존 호출부를 그대로 두면 다섯 번째 중복 경로가 열리는 것과 같으므로 즉시 치환한다):
+
+- `LimitOrderCreationService`: `private static final CRYPTO_FEE_RATE`·`calculateCashRequired(...)` 사설 메서드를 제거하고, `createBuyOrder`에서 `long cashRequired = calculateCashRequired(quantity, limitPrice);`를 `long cashRequired = LimitOrderFeeCalculator.calculate(quantity, limitPrice).total();`로 교체.
+- `LimitOrderCancelService`: `private static final CRYPTO_FEE_RATE`·인라인 `amount`/`fee` 계산 2줄을 `LimitOrderFeeCalculator.Reservation reservation = LimitOrderFeeCalculator.calculate(quantity, limitPrice);`로 교체, 이후 `reservation.amount()`/`reservation.fee()`/`reservation.total()` 참조.
+- `LimitOrderFillService`: 위와 동일하게 `fillIfPending`의 인라인 계산을 `LimitOrderFeeCalculator.calculate(...)` 호출로 교체.
+- 세 파일 모두 `import java.math.RoundingMode;`가 더 이상 필요 없어지면 제거(컴파일 경고 방지).
+
+## API 설계
+
+### `PATCH /api/orders/{orderId}`
+
+- 인증 필요. `Idempotency-Key` 헤더 불필요(LMT-003과 동일 이유 — 절대값 지정이라 자연 멱등).
+- 성공 200, `LimitOrderResponse`(LMT-001 생성 응답과 동일 DTO 재사용 — 신규 DTO 아님, 갱신된 `orderId`·`quantity`·`limitPrice`·`status`(항상 `PENDING`)·`requestedAt`(불변)을 담아 반환).
+
+**요청 (`LimitOrderModifyRequest`, 신규 DTO)**
+
+| 필드 | 타입 | 필수 | 검증 |
+|---|---|---|---|
+| limitPrice | BigDecimal | N | 지정 시 0보다 커야 함 |
+| quantity | BigDecimal | N | 지정 시 0보다 커야 함, 소수점 8자리 이하 |
+
+- 둘 다 `null`이면(요청 본문이 비어 있거나 두 필드 모두 생략) 400 `VALIDATION_ERROR`("변경할 값이 없습니다") — 컨트롤러 진입 직후, DB 조회 이전에 거부한다(리소스 상태와 무관한 요청 형식 검증이므로 존재/소유/상태 검증보다 먼저).
+- 최종 `quantity`·`limitPrice`는 서비스에서 "요청에 있으면 요청값, 없으면 기존 주문값"으로 해석한 뒤, 그 최종값 기준으로 최소주문금액(코인 5,000원, `수량×지정가` 기준, ORD-003 재사용)을 재검증한다 — LMT-001 생성 시 검증과 동일 규칙이지만 이번엔 "부분 갱신 후 합성된 값"에 적용한다는 점이 다르다.
+
+**오류 코드**
+
+| HTTP | 코드 | 조건 |
+|---|---|---|
+| 400 | VALIDATION_ERROR | 요청 필드 둘 다 없음, 형식/범위 위반(수량·지정가 0 이하, 소수점 8자리 초과), 최종값 기준 최소주문금액 미달 |
+| 404 | NOT_FOUND | `orderId`에 해당하는 주문 없음(LMT-003과 동일 코드 재사용) |
+| 403 | FORBIDDEN | 주문의 `user` ≠ 요청자(LMT-003과 동일 코드 재사용) |
+| 409 | ORDER_ALREADY_FILLED | 주문의 `status`가 이미 `FILLED`(LMT-003과 동일 코드 재사용) |
+| 409 | ORDER_ALREADY_CANCELLED | 주문의 `status`가 이미 `CANCELLED`(LMT-003과 동일 코드 재사용) |
+| 409 | INSUFFICIENT_CASH | 매수 재예약 시 예약 가능 현금 부족(LMT-001과 동일 코드 재사용) |
+| 409 | INSUFFICIENT_QTY | 매도 재예약 시 예약 가능 수량 부족(LMT-001과 동일 코드 재사용) |
+
+신규 `ErrorCode`는 추가하지 않는다 — 전부 기존 코드 재사용(이슈 #239 완료 조건).
+
+## 데이터 모델
+
+신규 테이블·컬럼·마이그레이션 없음(ADR-0004, spec.md "확정된 설계 결정" 12번 — 수정 이력 미보관 재확정). `orders.limit_price`·`orders.quantity`는 이미 nullable/필수 컬럼으로 존재해 갱신만 하면 된다.
+
+### 엔티티 변경
+
+**`Order`**: 수정 확정 메서드 추가(`cancel()`·`markFilled()`와 대칭 구조).
+
+```java
+public void modify(BigDecimal quantity, BigDecimal limitPrice) {
+    if (this.status != OrderStatus.PENDING) {
+        throw new IllegalStateException("PENDING 상태의 주문만 수정할 수 있습니다.");
+    }
+    this.quantity = quantity;
+    this.limitPrice = limitPrice;
+}
+```
+
+- 호출부(서비스 계층)가 항상 "요청에 없으면 기존값 유지"로 합성한 **최종값 두 개**를 넘긴다 — 엔티티는 부분 갱신을 모른다(부분 갱신 해석은 서비스 책임, 엔티티는 항상 완전한 상태 전이만 다룬다는 `cancel()`/`markFilled()`의 기존 관례와 동일).
+- 서비스 계층은 `markFilled()`/`cancel()` 호출부와 동일한 관례로 **entity 메서드 호출 전에** `order.getStatus()`를 확인해 `BusinessException(ORDER_ALREADY_FILLED/CANCELLED)`를 던진다(entity의 `IllegalStateException`은 방어적 이중 체크, 정상 흐름에서는 도달하지 않는다).
+
+`Account`·`Holding`은 변경 없음 — 기존 `reserveCash`/`releaseReservedCash`/`reserveQuantity`/`releaseReservedQuantity`를 그대로 재사용한다.
+
+## 패키지·클래스 설계
+
+| 클래스 | 패키지 | 역할 |
+|---|---|---|
+| `LimitOrderModifyRequest` | `order.dto.request` | 요청 DTO(`limitPrice`·`quantity` 둘 다 nullable) |
+| `LimitOrderFeeCalculator` | `order.service` | 예약·체결 금액(원금+수수료) 계산 공용 유틸리티(신규, 위 "수수료 계산 공통화 결정") |
+| `LimitOrderModifyService` | `order.service` | 수정 1건 처리(`LimitOrderCancelService`와 병렬 클래스 — 같은 잠금 순서·검증 순서, "해제 후 재예약"이 추가) |
+
+`OrderController`(기존 파일)에 `@PatchMapping("/{orderId}")` 메서드를 추가한다 — 새 컨트롤러를 만들지 않는다. 기존 `@DeleteMapping("/{orderId}")`와 HTTP 메서드만 다르므로 경로 매핑 충돌 없음.
+
+```java
+@PatchMapping("/{orderId}")
+public ResponseEntity<LimitOrderResponse> modifyLimitOrder(
+    @AuthenticationPrincipal AuthenticatedUser principal,
+    @PathVariable Long orderId,
+    @RequestBody LimitOrderModifyRequest request) {
+    return ResponseEntity.ok(limitOrderModifyService.modifyOrder(principal.userId(), orderId, request));
+}
+```
+
+## 수정 흐름 (LMT-005)
+
+`LimitOrderModifyService.modifyOrder(Long userId, Long orderId, LimitOrderModifyRequest request)`(`@Transactional`):
+
+0. `request.limitPrice() == null && request.quantity() == null`이면 `BusinessException(VALIDATION_ERROR)` — DB 조회 이전, 요청 형식 검증.
+1. `order = orderRepository.findByIdForUpdate(orderId).orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND))` — **주문 락 + 존재(404) 검증**(LMT-003 `cancelOrder`와 동일 지점).
+2. `!order.getUser().getId().equals(userId)`면 `BusinessException(ErrorCode.FORBIDDEN)` — **소유(403) 검증**.
+3. `order.getStatus() == FILLED`면 `ORDER_ALREADY_FILLED`, `== CANCELLED`면 `ORDER_ALREADY_CANCELLED` — **상태(409) 검증**.
+4. 최종값 합성: `finalQuantity = request.quantity() != null ? request.quantity() : order.getQuantity()`, `finalLimitPrice = request.limitPrice() != null ? request.limitPrice() : order.getLimitPrice()`.
+5. 형식 재검증: `finalQuantity`·`finalLimitPrice` 0보다 큰지(요청에 지정된 필드만 — LMT-001의 `validateQuantityFormat`/`validateLimitPrice`와 동일 사설 메서드 재사용 또는 복제), 최종값 기준 최소주문금액(`finalQuantity × finalLimitPrice ≥ instrument.minOrderAmount`) — LMT-001의 `validateMinOrderAmount`와 동일 로직.
+6. `account = accountService.getAccountByIdForUpdate(order.getAccount().getId())` — **계좌 락**(LMT-002·003과 동일한 두 번째 단계, BUY/SELL 공통으로 항상 잡는다).
+7. `oldReservation = LimitOrderFeeCalculator.calculate(order.getQuantity(), order.getLimitPrice())`, `newReservation = LimitOrderFeeCalculator.calculate(finalQuantity, finalLimitPrice)`.
+8. **BUY**:
+   a. `account.releaseReservedCash(oldReservation.total())` — 변경 전 예약 해제.
+   b. `account.getAvailableCash() < newReservation.total()`이면 `BusinessException(INSUFFICIENT_CASH)` — 해제 직후 늘어난 `availableCash` 기준으로 재예약 가능 여부 판정. 여기서 예외가 던져지면 `@Transactional`이 트랜잭션을 롤백해 (a)의 해제도 커밋되지 않는다(원자성의 핵심 — 명시적인 "롤백용 복구 코드"가 필요 없다. 구현 시 이 메서드 안에서 `saveAndFlush`·수동 `flush()`를 호출하지 않아야 이 보장이 유지된다).
+   c. `account.reserveCash(newReservation.total())` — 변경 후 값으로 재예약.
+9. **SELL**:
+   a. `holding = portfolioSellService.getHoldingForUpdate(account, order.getInstrument())` — **holding 락**(세 번째 단계).
+   b. `holding.releaseReservedQuantity(order.getQuantity())` — 변경 전 예약 수량 해제.
+   c. `holding.getAvailableQuantity().compareTo(finalQuantity) < 0`이면 `BusinessException(INSUFFICIENT_QTY)` — 위 8-b와 동일한 원자성 근거.
+   d. `holding.reserveQuantity(finalQuantity)` — 변경 후 수량으로 재예약.
+10. `order.modify(finalQuantity, finalLimitPrice)`.
+11. `LimitOrderResponse.from(order)` 반환.
+
+**잠금 순서**(LMT-002·003과 동일, spec.md "확정된 설계 결정" 7·8번 재확인): `order → account → (SELL만) holding`.
+
+**LMT-003과의 차이 요약**: 취소는 "해제만" 하고 끝나지만, 수정은 "해제 → 새 값으로 형식·최소금액 재검증 → 재예약"까지 한 트랜잭션에서 이어간다. 재예약 실패 시 롤백으로 원상 복구된다는 점이 이 기능의 존재 이유(spec.md "원자성")다.
+
+## 잠금 순서 요약 (갱신)
+
+| 흐름 | 순서 |
+|---|---|
+| LMT-001 BUY 생성 | account |
+| LMT-001 SELL 생성 | holding |
+| LMT-002 BUY 체결 | order → account → holding(있으면) |
+| LMT-002 SELL 체결 | order → account → holding |
+| LMT-003 취소 | order → account → (SELL만) holding |
+| 시장가 SELL/BUY 체결(조정 후) | account → holding(있으면) |
+| **LMT-005 수정** | **order → account → (SELL만) holding** |
+
+LMT-005는 LMT-003과 동일한 순서를 그대로 따르므로 새로운 ABBA 사이클을 만들지 않는다.
+
+## 동시성 테스트 시나리오 (`LimitOrderConcurrencyIntegrationTest`에 추가, 기존 `runConcurrently` 헬퍼 재사용)
+
+spec.md 시나리오 21~25에 대응한다.
+
+1. **정상 수정 단위 테스트**(`LimitOrderModifyServiceTest`, `@ExtendWith(MockitoExtension.class)`): BUY 수정 시 `releaseReservedCash`(변경 전 값)→`reserveCash`(변경 후 값) 호출 순서·인자 검증, SELL 수정 시 `releaseReservedQuantity`→`reserveQuantity` 호출 순서·인자 검증, 부분 갱신(한쪽만 요청 필드 존재) 시 나머지 필드가 기존 주문값으로 합성되는지, 둘 다 없으면 400, 존재하지 않는 주문 404, 타인 소유 403, 이미 `FILLED`/`CANCELLED` 409(개별 케이스), 검증 순서(존재→소유→상태→형식) 준수 여부.
+2. **원자성 통합 테스트(spec.md 시나리오 23, 이 기능의 핵심 증명)**: `@SpringBootTest`(Testcontainers). 매수 지정가를 예약 가능 현금을 초과하도록 올려 `PATCH` 요청 → 409 `INSUFFICIENT_CASH` 응답 확인 **후**, `orderRepository.findById(orderId)`·`accountRepository.findById(accountId)`를 재조회해 `limitPrice`·`quantity`·`reservedCash`·`cashBalance`가 요청 전 값과 완전히 동일함을 DB 값으로 직접 대조한다(서비스 예외 타입만 확인하는 얕은 검증 금지 — spec.md LMT-005 완료 조건이 명시적으로 요구). 매도 초과 수량 `INSUFFICIENT_QTY` 버전도 동일 패턴으로 1개 더 추가.
+3. **수정-대-체결 경합(spec.md 시나리오 24)**: `PENDING` 지정가 매수 주문에 대해 스레드 A는 `limitOrderModifyService.modifyOrder(...)`, 스레드 B는 `limitOrderFillService.fillIfPending(orderId)`를 동시에 호출한다 — 기존 `runConcurrently`(ready/start `CountDownLatch`) 헬퍼 재사용. 체결이 이기면 수정은 `ORDER_ALREADY_FILLED` 예외, 취소가 이기지 않으므로 이 시나리오는 "체결 승리"·"수정 승리"(수정이 이기면 체결 트리거가 이후 갱신된 `limitPrice`로 판정) 두 경로 모두 예약 이중 반환·이중 소비 없이 최종 `reservedCash`/`cashBalance`가 일관됨을 검증.
+4. **수정-대-취소 경합(spec.md 시나리오 24 후반)**: 같은 패턴으로 스레드 A는 `modifyOrder`, 스레드 B는 `cancelOrder`를 동시 호출 — 한쪽만 성공(취소가 이기면 수정은 `ORDER_ALREADY_CANCELLED`, 수정이 이기면 취소는 갱신된 값 기준으로 정상 취소)하고 예약이 일관됨을 검증.
+
+## 문서 동기화
+
+같은 커밋에서 갱신(CLAUDE.md 규칙 7 + 규칙 10):
+
+- `docs/api-routes.md`: 라우트 표에 `PATCH | /api/orders/{orderId} | order | ... | 015 LMT-005, Issue #239` 행 추가(기존 `DELETE /api/orders/{orderId}` 행 근처).
+- `docs/api-contracts.md`: `## order` 절에 "지정가 주문 수정" 표 추가(요청 `LimitOrderModifyRequest`, 응답 `LimitOrderResponse` 재사용 명시, 오류 400/401/403/404/409 계약 — `INSUFFICIENT_CASH`/`INSUFFICIENT_QTY`/`ORDER_ALREADY_FILLED`/`ORDER_ALREADY_CANCELLED` 전부 기존 코드 재사용임을 명시).
+- `docs/prd.md` §3 구현 현황 "지정가 주문·상시 체결(LMT-001~005)" 행을 이 PR 번호를 근거로 "완료"로 갱신한다 — LMT-001~005 전부 완료됨을 명시.
+
+## 테스트 계획 (ADR-0003 기준)
+
+- **단위(`LimitOrderModifyServiceTest`, 신규 파일)**: 위 "동시성 테스트 시나리오" 1번 그대로.
+- **단위(`OrderTest`, 기존 파일)**: `modify()` 정상 전이(quantity·limitPrice 갱신 확인), `PENDING`이 아닌 상태에서 호출 시 `IllegalStateException`.
+- **단위(`LimitOrderFeeCalculatorTest`, 신규 파일)**: `calculate(quantity, limitPrice)`가 기존 3개 서비스가 써오던 것과 동일한 `amount`/`fee`/`total()`을 반환하는지(회귀 방지 — 리팩터링이 계산 결과를 바꾸지 않았음을 증명하는 것이 핵심 목적), FLOOR 반올림 경계값(수수료가 정확히 나눠떨어지는 경우·나머지가 생기는 경우) 케이스.
+- **슬라이스(`OrderControllerTest`, 기존 파일)**: `PATCH /api/orders/{orderId}` — 200 응답과 갱신된 필드 계약(`jsonPath`), 요청 본문이 비어있으면 400, 인증 실패 401, 404/403/409 오류 매핑.
+- **통합(`LimitOrderConcurrencyIntegrationTest`, 기존 파일)**: 위 "동시성 테스트 시나리오" 2·3·4번.
+
+## Decision Gate (spec.md "확정된 설계 결정" 12번 재확인, 변경 없음)
+
+- 수정 이력은 저장하지 않는다 — 신규 컬럼·마이그레이션 없음(spec.md 12번 근거 참고).
+- 수수료 계산은 공통 유틸리티(`LimitOrderFeeCalculator`)로 추출하고 기존 3개 서비스도 함께 정리한다(위 "수수료 계산 공통화 결정").
+- 신규 오류 코드 없음 — 전부 LMT-001·LMT-003 코드 재사용.
