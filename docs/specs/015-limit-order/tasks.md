@@ -67,5 +67,5 @@
 - [x] 19. **통합 테스트**
   지정가 매수·매도 주문을 여러 건(`PENDING`·`FILLED`·`CANCELLED` 혼합) 생성한 뒤 `GET /api/orders/pending?market=CRYPTO`가 `PENDING`만 최신순 커서 페이지네이션으로 반환하고(첫 페이지→`nextCursor`로 다음 페이지, 중복·누락 없음) 타 사용자 주문이 섞이지 않는지 검증. 같은 시나리오에서 `GET /api/accounts/summary?market=CRYPTO`·`GET /api/holdings?market=CRYPTO`를 호출해 `reservedCash`·`reservedQuantity`가 실제 예약값과 정확히 일치하고, 체결·취소 후에는 각각 0(또는 감소한 값)으로 돌아오는지 확인(plan.md "테스트 계획" 통합 시나리오 그대로, Testcontainers 기반 — ADR-0003).
 
-- [ ] 20. **문서 동기화 및 최종 빌드**
+- [x] 20. **문서 동기화 및 최종 빌드**
   `docs/api-routes.md`에 `GET /api/orders/pending?market=&cursor=&limit=` 행 추가. `docs/api-contracts.md`의 `## order` 절에 "미체결 주문 목록 조회" 표 추가, `## account` 절 `AccountSummaryResponse` 예시에 `reservedCash` 반영, `## portfolio` 절 `HoldingListItemResponse` 예시에 `reservedQuantity` 반영(위 세 곳 모두 같은 커밋). `docs/prd.md` §3 구현 현황 "지정가 주문·상시 체결(LMT-001~004)" 행을 이 PR 번호를 근거로 "완료"로 갱신하고, "계좌·보유 조회 계약 영향(Decision Gate)" 절 본문의 미정 문구를 확정된 필드명(`reservedCash`/`reservedQuantity`)으로 교체. `docs/specs/015-limit-order/spec.md` "LMT-004 완료 조건 (이슈 #235)" 체크박스를 구현·테스트 통과 확인 후 `[x]`로 갱신. `./gradlew build` 전체 통과 확인(실패 시 수정 후 재실행).

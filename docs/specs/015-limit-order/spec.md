@@ -168,16 +168,16 @@
 
 ### LMT-004 완료 조건 (이슈 #235)
 
-- [ ] `GET /api/orders/pending?market=&cursor=&limit=`가 본인 소유의 `PENDING` 상태 지정가 주문만 최신순 커서 페이지네이션으로 반환한다.
-- [ ] `market`이 누락되거나 `STOCK`\|`CRYPTO`가 아니면 400으로 거부한다(`PORT-002`와 동일 규칙).
-- [ ] 커서가 손상되었으면(형식 불일치) 400으로 거부한다. `limit`이 1~100 범위를 벗어나면 400으로 거부한다.
-- [ ] 다른 사용자의 미체결 주문은 응답에 나타나지 않는다. `market`으로 조회한 계좌가 존재하지 않으면 조회할 수 없다.
-- [ ] 체결(LMT-002)·취소(LMT-003)로 상태가 바뀐 주문은 이후 조회에서 제외된다.
-- [ ] `AccountSummaryResponse`에 `reservedCash` 필드가 추가되고, `Account.reservedCash` 원장 값을 그대로 노출한다(계산식 변경 없음).
-- [ ] `HoldingListItemResponse`에 `reservedQuantity` 필드가 추가되고, `Holding.reservedQuantity` 원장 값을 그대로 노출한다(계산식 변경 없음).
-- [ ] `docs/api-routes.md`·`docs/api-contracts.md`에 신규 엔드포인트(`GET /api/orders/pending`)와 `AccountSummaryResponse`·`HoldingListItemResponse`의 필드 추가가 같은 커밋에서 반영된다.
-- [ ] `docs/prd.md` §3 구현 현황의 "지정가 주문·상시 체결(LMT-001~004)" 행을 이 PR 번호를 근거로 "완료"로 갱신하고, "계좌·보유 조회 계약 영향(Decision Gate)"이 해소됐음을 반영한다.
-- [ ] `./gradlew build` 통과.
+- [x] `GET /api/orders/pending?market=&cursor=&limit=`가 본인 소유의 `PENDING` 상태 지정가 주문만 최신순 커서 페이지네이션으로 반환한다.
+- [x] `market`이 누락되거나 `STOCK`\|`CRYPTO`가 아니면 400으로 거부한다(`PORT-002`와 동일 규칙).
+- [x] 커서가 손상되었으면(형식 불일치) 400으로 거부한다. `limit`이 1~100 범위를 벗어나면 400으로 거부한다.
+- [x] 다른 사용자의 미체결 주문은 응답에 나타나지 않는다. `market`으로 조회한 계좌가 존재하지 않으면 조회할 수 없다.
+- [x] 체결(LMT-002)·취소(LMT-003)로 상태가 바뀐 주문은 이후 조회에서 제외된다.
+- [x] `AccountSummaryResponse`에 `reservedCash` 필드가 추가되고, `Account.reservedCash` 원장 값을 그대로 노출한다(계산식 변경 없음).
+- [x] `HoldingListItemResponse`에 `reservedQuantity` 필드가 추가되고, `Holding.reservedQuantity` 원장 값을 그대로 노출한다(계산식 변경 없음).
+- [x] `docs/api-routes.md`·`docs/api-contracts.md`에 신규 엔드포인트(`GET /api/orders/pending`)와 `AccountSummaryResponse`·`HoldingListItemResponse`의 필드 추가가 같은 커밋에서 반영된다.
+- [x] `docs/prd.md` §3 구현 현황의 "지정가 주문·상시 체결(LMT-001~004)" 행을 이 PR 번호를 근거로 "완료"로 갱신하고, "계좌·보유 조회 계약 영향(Decision Gate)"이 해소됐음을 반영한다(근거: 이슈 #235, PR 생성 후 번호 갱신 필요).
+- [x] `./gradlew build` 통과.
 
 ## 확정된 설계 결정 (2026-08-05, 사용자 확인)
 
