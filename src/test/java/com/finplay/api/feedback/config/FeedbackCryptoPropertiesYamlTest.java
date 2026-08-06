@@ -37,13 +37,15 @@ class FeedbackCryptoPropertiesYamlTest {
 
 	private static final String SPEC_MATCH_BEFORE_MINUTES = "35";
 
+	private static final String SPEC_WATCH_LOCK_TTL_SECONDS = "30";
+
 	private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
 		.withInitializer(new ConfigDataApplicationContextInitializer())
 		.withUserConfiguration(
 			FeedbackCryptoPropertiesTest.LocalFeedbackCryptoConfig.class, MarketCryptoConfig.class);
 
 	@Test
-	@DisplayName("application.yml에 feedback.crypto 여섯 키가 §C-7 값으로 실제 존재한다")
+	@DisplayName("application.yml에 feedback.crypto 일곱 키가 §C-7 값으로 실제 존재한다")
 	void applicationYmlDeclaresEveryFeedbackCryptoKey() {
 		contextRunner.run(context -> {
 			Environment environment = context.getEnvironment();
@@ -60,6 +62,8 @@ class FeedbackCryptoPropertiesYamlTest {
 				.isEqualTo(SPEC_MIN_SAMPLE_COUNT);
 			assertThat(environment.getProperty("feedback.crypto.match-before-minutes"))
 				.isEqualTo(SPEC_MATCH_BEFORE_MINUTES);
+			assertThat(environment.getProperty("feedback.crypto.watch-lock-ttl-seconds"))
+				.isEqualTo(SPEC_WATCH_LOCK_TTL_SECONDS);
 		});
 	}
 
@@ -80,6 +84,8 @@ class FeedbackCryptoPropertiesYamlTest {
 			assertThat(properties.minSampleCount()).isEqualTo(Integer.parseInt(SPEC_MIN_SAMPLE_COUNT));
 			assertThat(properties.matchBeforeMinutes())
 				.isEqualTo(Integer.parseInt(SPEC_MATCH_BEFORE_MINUTES));
+			assertThat(properties.watchLockTtlSeconds())
+				.isEqualTo(Integer.parseInt(SPEC_WATCH_LOCK_TTL_SECONDS));
 		});
 	}
 

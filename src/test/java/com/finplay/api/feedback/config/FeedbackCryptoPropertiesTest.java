@@ -37,6 +37,8 @@ class FeedbackCryptoPropertiesTest {
 
 	private static final int SPEC_MATCH_BEFORE_MINUTES = 35;
 
+	private static final int SPEC_WATCH_LOCK_TTL_SECONDS = 30;
+
 	@Configuration(proxyBeanMethods = false)
 	@EnableConfigurationProperties(FeedbackCryptoProperties.class)
 	static class LocalFeedbackCryptoConfig {}
@@ -58,11 +60,12 @@ class FeedbackCryptoPropertiesTest {
 			assertThat(properties.sigmaLookbackHours()).isEqualTo(SPEC_SIGMA_LOOKBACK_HOURS);
 			assertThat(properties.minSampleCount()).isEqualTo(SPEC_MIN_SAMPLE_COUNT);
 			assertThat(properties.matchBeforeMinutes()).isEqualTo(SPEC_MATCH_BEFORE_MINUTES);
+			assertThat(properties.watchLockTtlSeconds()).isEqualTo(SPEC_WATCH_LOCK_TTL_SECONDS);
 		});
 	}
 
 	@Test
-	@DisplayName("feedback.crypto.* 케밥케이스 키를 주면 여섯 값이 모두 덮어써진다")
+	@DisplayName("feedback.crypto.* 케밥케이스 키를 주면 일곱 값이 모두 덮어써진다")
 	void bindsEveryPropertyFromKebabCaseKeys() {
 		contextRunner
 			.withPropertyValues(
@@ -71,7 +74,8 @@ class FeedbackCryptoPropertiesTest {
 				"feedback.crypto.rolling-window-minutes=10",
 				"feedback.crypto.sigma-lookback-hours=12",
 				"feedback.crypto.min-sample-count=50",
-				"feedback.crypto.match-before-minutes=20")
+				"feedback.crypto.match-before-minutes=20",
+				"feedback.crypto.watch-lock-ttl-seconds=45")
 			.run(context -> {
 				assertThat(context).hasNotFailed();
 
@@ -82,6 +86,7 @@ class FeedbackCryptoPropertiesTest {
 				assertThat(properties.sigmaLookbackHours()).isEqualTo(12);
 				assertThat(properties.minSampleCount()).isEqualTo(50);
 				assertThat(properties.matchBeforeMinutes()).isEqualTo(20);
+				assertThat(properties.watchLockTtlSeconds()).isEqualTo(45);
 			});
 	}
 
@@ -100,6 +105,7 @@ class FeedbackCryptoPropertiesTest {
 				assertThat(properties.sigmaLookbackHours()).isEqualTo(SPEC_SIGMA_LOOKBACK_HOURS);
 				assertThat(properties.minSampleCount()).isEqualTo(SPEC_MIN_SAMPLE_COUNT);
 				assertThat(properties.matchBeforeMinutes()).isEqualTo(SPEC_MATCH_BEFORE_MINUTES);
+				assertThat(properties.watchLockTtlSeconds()).isEqualTo(SPEC_WATCH_LOCK_TTL_SECONDS);
 			});
 	}
 

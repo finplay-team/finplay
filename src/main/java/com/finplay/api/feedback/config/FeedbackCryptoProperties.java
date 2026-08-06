@@ -32,7 +32,10 @@ public record FeedbackCryptoProperties(
 	// 코인 카드 근거 탐색(이전) 폭(분). 이후 방향은 0이다 — 탐지가 occurredAt 시점에 실시간으로 돌아
 	// 그 이후 기사는 존재할 수 없다(§뉴스 매칭 범위).
 	@DefaultValue("35")
-	int matchBeforeMinutes) {
+	int matchBeforeMinutes,
+	// 종목 단위 Redis 락(CryptoWatchLock)의 TTL(초). 다중 인스턴스 중복 감시 방어선이다(ADR-0014).
+	@DefaultValue("30")
+	int watchLockTtlSeconds) {
 
 	// 여기 있는 것만 막는다 — 나머지(쿨다운·일일 상한)가 이상하면 카드가 과하게 생겨 눈에 띄지만, 아래 넷은
 	// 예외도 로그도 없이 카드가 조용히 사라진다(FeedbackDetectionProperties·FeedbackNewsProperties와 같은 이유).

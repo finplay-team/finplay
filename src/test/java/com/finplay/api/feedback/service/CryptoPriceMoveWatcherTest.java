@@ -79,7 +79,8 @@ class CryptoPriceMoveWatcherTest {
 		int cooldownMinutes, int dailyLimit, int rollingWindowMinutes, int sigmaLookbackHours,
 		int minSampleCount, int matchBeforeMinutes) {
 		return new FeedbackCryptoProperties(
-			cooldownMinutes, dailyLimit, rollingWindowMinutes, sigmaLookbackHours, minSampleCount, matchBeforeMinutes);
+			cooldownMinutes, dailyLimit, rollingWindowMinutes, sigmaLookbackHours, minSampleCount, matchBeforeMinutes,
+			30);
 	}
 
 	private static FeedbackDetectionProperties detectionProperties(double zScoreK) {

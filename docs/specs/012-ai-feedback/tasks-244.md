@@ -21,7 +21,7 @@
 
 ## 작업 항목
 
-- [ ] **1. `FeedbackCryptoProperties`에 `watchLockTtlSeconds` 추가 + `application.yml` 갱신**
+- [x] **1. `FeedbackCryptoProperties`에 `watchLockTtlSeconds` 추가 + `application.yml` 갱신**
 
   §C-7의 `watch-lock-ttl-seconds`(기본 30)를 `FeedbackCryptoProperties`(`src/main/java/com/finplay/api/feedback/config/FeedbackCryptoProperties.java`)에 필드로 더한다 — 기존 6개 필드와 같은 형태(`@DefaultValue`)로, compact constructor 검증에는 추가하지 않는다(0 이하여도 "락을 못 건다"는 명확한 실패 모드라 나머지 넷처럼 조용히 카드가 사라지는 유형이 아니다).
   - `application.yml`의 `feedback.crypto` 블록(198번째 줄 근방, `match-before-minutes` 다음)에 `watch-lock-ttl-seconds: 30`을 추가하고 한 줄 주석으로 ADR-0014를 인용한다.

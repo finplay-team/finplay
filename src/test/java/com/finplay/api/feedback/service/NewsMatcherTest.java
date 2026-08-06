@@ -66,7 +66,7 @@ class NewsMatcherTest {
 				30,
 				30),
 			// 주식 근거 매칭과 무관해 §C-7 기본값을 그대로 둔다.
-			new FeedbackCryptoProperties(30, 6, 5, 24, 100, 35),
+			new FeedbackCryptoProperties(30, 6, 5, 24, 100, 35, 30),
 			new BusinessDayCalendar());
 	}
 
