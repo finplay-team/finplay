@@ -64,7 +64,7 @@
 - [x] 18. **`AccountSummaryResponse.reservedCash`·`HoldingListItemResponse.reservedQuantity` 노출**
   `AccountSummaryResponse`에 `reservedCash`(`cashBalance` 바로 다음) 필드·`of(...)` 인자 추가, `AccountService.getAccountSummary`가 `account.getReservedCash()`를 전달하도록 수정(기존 `totalValue` 등 계산식은 변경하지 않는다). `HoldingListItemResponse`에 `reservedQuantity`(`quantity` 바로 다음) 필드 추가, `of(Holding, HoldingValuationDto)`가 `holding.getReservedQuantity()`를 직접 읽도록 수정(`HoldingValuationDto`·`HoldingValuationService`는 변경하지 않는다 — 계산 로직과 예약 원장 노출은 별개 관심사, plan.md "계좌·보유 조회 계약 영향 해소" 근거). 컴파일이 깨지는 기존 테스트(`AccountServiceTest`의 `AccountSummaryResponse.of(...)`·`new HoldingValuationDto(...)` 호출부 등) 수정 포함, `reservedCash`·`reservedQuantity` 실측 검증 케이스를 `AccountServiceTest`·`HoldingServiceTest`에 각각 최소 1개 추가. `@WebMvcTest`(`AccountControllerTest`·`HoldingControllerTest`)에 `jsonPath`로 두 신규 필드 계약 검증 추가.
 
-- [ ] 19. **통합 테스트**
+- [x] 19. **통합 테스트**
   지정가 매수·매도 주문을 여러 건(`PENDING`·`FILLED`·`CANCELLED` 혼합) 생성한 뒤 `GET /api/orders/pending?market=CRYPTO`가 `PENDING`만 최신순 커서 페이지네이션으로 반환하고(첫 페이지→`nextCursor`로 다음 페이지, 중복·누락 없음) 타 사용자 주문이 섞이지 않는지 검증. 같은 시나리오에서 `GET /api/accounts/summary?market=CRYPTO`·`GET /api/holdings?market=CRYPTO`를 호출해 `reservedCash`·`reservedQuantity`가 실제 예약값과 정확히 일치하고, 체결·취소 후에는 각각 0(또는 감소한 값)으로 돌아오는지 확인(plan.md "테스트 계획" 통합 시나리오 그대로, Testcontainers 기반 — ADR-0003).
 
 - [ ] 20. **문서 동기화 및 최종 빌드**
