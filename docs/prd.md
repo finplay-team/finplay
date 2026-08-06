@@ -187,7 +187,7 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 | 1차 MVP 전체 (인증·계좌·시세·시장가 매매·조회·커뮤니티·배포) | AUTH-001~006, ACCT-001~003, MKT-001~008, ORD-001~006, PORT-001~002, COM-001~003 | **완료** | 1차 태스크 1~10 (`docs/specs/001`~`010`) |
 | 캔들 기간 확장 — 일봉·주봉·월봉 | MKT-009 | **완료** | `013-candle-interval`, PR #151. `interval`은 `1m·1d·1w·1M` 4종 |
 | 주문 목록 `market` 필수·커서 페이지네이션 | PORT-003 | **완료** | `018-order-list-pagination`, PR #184 |
-| 커뮤니티 고도화 — 종목 기준·대댓글·사진 첨부 | COM-004~006 | **미착수** | `022-community-enhancement`, 이슈 #246(COM-004)·#247(COM-005)·#248(COM-006) |
+| 커뮤니티 고도화 — 종목 기준·대댓글·사진 첨부 | COM-004~006 | **일부 완료(COM-004)** | `022-community-enhancement`, 이슈 #246(COM-004, PR 생성 후 번호 갱신 필요). 게시물 작성·수정 시 종목 태그(`instrumentId`), `GET /api/community/posts?instrumentId=` 필터, 존재하지 않는/비활성 종목 400 검증까지 완료. COM-005(대댓글, 이슈 #247)·COM-006(사진 첨부, 이슈 #248)은 아직 범위 밖(미착수) |
 | AI 피드백 — LLM 서술 생성·후검증·템플릿 폴백 | ADR-0011 | **완료** | PR #154 (`NarrativeGenerator`, Spring AI) |
 | AI 피드백 — 뉴스·공시 수집 | FEED-001 | **완료** | PR #174 |
 | AI 피드백 — 변동 원인 카드 | FEED-002~007 계열 | **완료** | PR #185 (`GET /api/instruments/{id}/price-moves`) |

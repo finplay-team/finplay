@@ -21,6 +21,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -61,6 +62,16 @@ class CommunityPostInstrumentTagIntegrationTest {
 	void removePostsPersistedByOtherIntegrationTests() {
 		jdbcTemplate.update("delete from post_comments");
 		jdbcTemplate.update("delete from community_posts");
+		jdbcTemplate.update("delete from instruments where symbol like 'SYM%'");
+	}
+
+	// 이 클래스가 생성한 종목(symbol 접두사 SYM)만 정리한다 — 시드 데이터는 건드리지 않는다.
+	// @BeforeEach는 다음 테스트 실행 전에만 청소하므로, 스위트의 마지막 테스트 뒤에도 정리되도록 @AfterEach를 둔다
+	// (InstrumentRepositoryTest가 공유 Testcontainers에서 정확한 종목 개수를 기대하기 때문).
+	@AfterEach
+	void removeInstrumentsCreatedByThisTestClass() {
+		jdbcTemplate.update("delete from community_posts");
+		jdbcTemplate.update("delete from instruments where symbol like 'SYM%'");
 	}
 
 	@Test

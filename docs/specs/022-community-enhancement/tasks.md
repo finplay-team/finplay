@@ -16,7 +16,7 @@
 - [x] 4. **통합 테스트**
   Testcontainers 기반 `@SpringBootTest`로 spec.md "완료 조건 COM-004" 4개 시나리오 구현: (a) 종목 태그 게시물 작성 → 단건 조회 시 태그 필드 포함, (b) `GET ?instrumentId=` 필터링(다른 종목·미태그 게시물 제외 확인), (c) 존재하지 않는/비활성 종목 태그 시도 400(개별 케이스 2개), (d) 미태그 게시물 하위 호환(기존 COM-001 시나리오) 회귀 — 모든 태그 필드 `null`.
 
-- [ ] 5. **문서 동기화 및 최종 빌드**
+- [x] 5. **문서 동기화 및 최종 빌드**
   `docs/api-routes.md`의 `POST/PATCH/GET /api/community/posts*` 행에 종목 태그·필터 반영 설명 갱신. `docs/api-contracts.md`의 `community` 절에 `instrumentId` 요청 필드·응답 태그 필드·400 `VALIDATION_ERROR`(존재하지 않는/비활성 종목) 계약 추가. `docs/prd.md` §3 구현 현황의 기존 "커뮤니티 고도화 — 종목 기준·대댓글·사진 첨부"(COM-004~006, 190행, 현재 "미착수") 행을 "일부 완료(COM-004)"로 갱신하고 근거에 이 PR 번호를 기입, COM-005·COM-006은 아직 범위 밖임을 명시(CLAUDE.md 규칙10). `docs/specs/022-community-enhancement/spec.md` "완료 조건 COM-004" 체크박스를 구현·테스트 통과 확인 후 `[x]`로 갱신. `./gradlew build` 전체 통과 확인(실패 시 수정 후 재실행).
 
 ## COM-005 대댓글 (이슈 #247) — 다음 이슈 착수 시 작성
