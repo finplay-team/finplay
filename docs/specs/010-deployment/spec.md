@@ -19,10 +19,10 @@ CI 워크플로우는 2026-07-24 튜터 피드백("CI는 배포 단계에")으�
 ## 요구사항
 
 ### CI
-- [ ] PR 대상 브랜치가 `dev`·`main`일 때 `./gradlew build`(Testcontainers 포함)를 실행한다.
-- [ ] 문서만 바뀐 PR은 Gradle 단계를 건너뛴다 (paths-filter).
-- [ ] CI 결과는 `gh pr checks`로 확인 가능하며, `/review-pr`의 tester는 build를 재실행하지 않고 이 결과를 판독한다.
-- [ ] 시크릿은 워크플로우 파일에 적지 않고 GitHub Secret으로 주입한다.
+- [x] PR 대상 브랜치가 `dev`·`main`일 때 `./gradlew build`(Testcontainers 포함)를 실행한다 (`.github/workflows/ci.yml`, 이슈 #250).
+- [x] 문서만 바뀐 PR은 Gradle 단계를 건너뛴다 (`dorny/paths-filter`, 이슈 #250).
+- [ ] CI 결과는 `gh pr checks`로 확인 가능하며, `/review-pr`의 tester는 build를 재실행하지 않고 이 결과를 판독한다. — 앞 절(체크 가능 여부)은 됐고, 뒤 절(tester가 재실행 대신 CI 결과를 판독하도록 `.claude/agents/tester.md` 변경)은 이슈 #250 범위 밖으로 남겨 별도 후속 작업으로 넘긴다.
+- [x] 시크릿은 워크플로우 파일에 적지 않고 GitHub Secret으로 주입한다 — `./gradlew build`에 필요한 더미 시크릿은 이미 `build.gradle`의 `Test` 태스크가 직접 주입해 워크플로우·GitHub Secret 어느 쪽에도 실제 시크릿이 필요 없다.
 
 ### 배포
 - [ ] 운영 프로필(`prod`)로 애플리케이션이 기동된다.
