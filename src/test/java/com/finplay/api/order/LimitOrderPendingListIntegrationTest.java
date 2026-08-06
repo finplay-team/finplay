@@ -44,8 +44,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.transaction.annotation.Transactional;
 
+// OrderListIntegrationTest(2026-07-30 agent-mistakes.md 항목)와 동일하게 instruments에 saveAndFlush로 실제 커밋을
+// 남기므로 @Transactional로 각 테스트 종료 시 롤백시킨다 — 그러지 않으면 종목 5건이 JVM 전역 싱글턴인
+// Testcontainers MySQL에 실행 내내 남아 InstrumentRepositoryTest의 "정확히 28건" 단정이 실행 순서에 의존하게 된다.
+// 롤백되지 않은 PENDING 주문이 다른 테스트가 밀어넣은 시세에 체결돼 공유 랭킹까지 오염시키는 것도 함께 막는다
+// (PR #237 리뷰. 시드 코인 재사용안은 심볼이 겹쳐 이 오염을 오히려 실제로 일으켜 채택하지 않았다).
 @SpringBootTest
+@Transactional
 @Import(TestcontainersConfiguration.class)
 class LimitOrderPendingListIntegrationTest {
 
