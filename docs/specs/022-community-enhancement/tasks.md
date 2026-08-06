@@ -13,7 +13,7 @@
 - [x] 3. **목록 조회 `instrumentId` 필터**
   `CommunityPostRepositoryCustom`/`CommunityPostRepositoryImpl.findPostsOrderByCreatedAtDesc`을 `(Pageable, Long instrumentId)`로 변경 — `instrumentId != null`이면 `post.instrument.id.eq(instrumentId)` 조건 추가, `instrument`를 `leftJoin().fetchJoin()`으로 함께 로딩. `CommunityPostService.getPosts`에 `instrumentId` 파라미터 추가. `CommunityPostController.getPosts`에 `@RequestParam(required = false) Long instrumentId` 추가. `@DataJpaTest`(instrumentId 지정 시 해당 종목만, `null` 지정 시 전체, N+1 없는지) + `@WebMvcTest`(쿼리 파라미터 전달 검증).
 
-- [ ] 4. **통합 테스트**
+- [x] 4. **통합 테스트**
   Testcontainers 기반 `@SpringBootTest`로 spec.md "완료 조건 COM-004" 4개 시나리오 구현: (a) 종목 태그 게시물 작성 → 단건 조회 시 태그 필드 포함, (b) `GET ?instrumentId=` 필터링(다른 종목·미태그 게시물 제외 확인), (c) 존재하지 않는/비활성 종목 태그 시도 400(개별 케이스 2개), (d) 미태그 게시물 하위 호환(기존 COM-001 시나리오) 회귀 — 모든 태그 필드 `null`.
 
 - [ ] 5. **문서 동기화 및 최종 빌드**
