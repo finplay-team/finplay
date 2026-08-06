@@ -128,6 +128,10 @@ class LimitOrderPendingListIntegrationTest {
 		// 않다는 것도 함께 증명된다 — 별도 noneMatch 단정 없이 이 한 줄로 충분하다.
 		assertThat(response.content()).extracting(OrderListItemResponse::orderId)
 			.containsExactly(ownerSell.orderId(), ownerBuy.orderId());
+		// PR #237 리뷰 차단 반영: 미체결 목록에서 limitPrice가 실제 걸어둔 값으로 노출되는지 확인한다
+		// (매도·매수 각각 다른 지정가를 써서 우연히 같은 값으로 통과하는 것을 방지).
+		assertThat(response.content().get(0).limitPrice()).isEqualByComparingTo(new BigDecimal("100000"));
+		assertThat(response.content().get(1).limitPrice()).isEqualByComparingTo(new BigDecimal("10000000"));
 
 		OrderListResponse otherResponse = orderService.getMyPendingOrders(other.getId(),
 			com.finplay.api.account.domain.Market.CRYPTO, null, 100);

@@ -1,6 +1,7 @@
 // 시장가 매수 주문 생성 API의 인증, 검증, 응답 계약을 검증하는 WebMvc 슬라이스 테스트다.
 package com.finplay.api.order.controller;
 
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -513,7 +514,7 @@ class OrderControllerTest {
 		stubAuthenticatedUser();
 		LocalDateTime requestedAt = LocalDateTime.of(2026, 7, 29, 9, 0);
 		OrderListItemResponse item = new OrderListItemResponse(
-			1L, "STOCK", 1L, "BUY", "MARKET", "FILLED", new BigDecimal("10"), requestedAt);
+			1L, "STOCK", 1L, "BUY", "MARKET", "FILLED", new BigDecimal("10"), null, requestedAt);
 		OrderListResponse response = OrderListResponse.of(List.of(item), "2026-07-29T09:00:00_1", true);
 		when(orderService.getMyOrders(USER_ID, Market.STOCK, null, 20)).thenReturn(response);
 
@@ -528,6 +529,8 @@ class OrderControllerTest {
 			.andExpect(jsonPath("$.content[0].orderType").value("MARKET"))
 			.andExpect(jsonPath("$.content[0].status").value("FILLED"))
 			.andExpect(jsonPath("$.content[0].quantity").value(10))
+			// PR #237 리뷰 차단 반영: 시장가 주문은 limitPrice가 없다 — 필드 자체는 존재하고 값만 null임을 고정한다.
+			.andExpect(jsonPath("$.content[0].limitPrice").value(nullValue()))
 			.andExpect(jsonPath("$.content[0].requestedAt").value("2026-07-29T09:00:00"))
 			.andExpect(jsonPath("$.nextCursor").value("2026-07-29T09:00:00_1"))
 			.andExpect(jsonPath("$.hasNext").value(true));
@@ -672,7 +675,8 @@ class OrderControllerTest {
 		stubAuthenticatedUser();
 		LocalDateTime requestedAt = LocalDateTime.of(2026, 8, 6, 9, 0);
 		OrderListItemResponse item = new OrderListItemResponse(
-			1L, "CRYPTO", 1L, "BUY", "LIMIT", "PENDING", new BigDecimal("1"), requestedAt);
+			1L, "CRYPTO", 1L, "BUY", "LIMIT", "PENDING", new BigDecimal("1"),
+			new BigDecimal("70000000"), requestedAt);
 		OrderListResponse response = OrderListResponse.of(List.of(item), "2026-08-06T09:00:00_1", true);
 		when(orderService.getMyPendingOrders(USER_ID, Market.CRYPTO, null, 20)).thenReturn(response);
 
@@ -687,6 +691,8 @@ class OrderControllerTest {
 			.andExpect(jsonPath("$.content[0].orderType").value("LIMIT"))
 			.andExpect(jsonPath("$.content[0].status").value("PENDING"))
 			.andExpect(jsonPath("$.content[0].quantity").value(1))
+			// PR #237 리뷰 차단 반영: 미체결 목록에서 지정가를 확인할 수 있어야 한다.
+			.andExpect(jsonPath("$.content[0].limitPrice").value(70000000))
 			.andExpect(jsonPath("$.content[0].requestedAt").value("2026-08-06T09:00:00"))
 			.andExpect(jsonPath("$.nextCursor").value("2026-08-06T09:00:00_1"))
 			.andExpect(jsonPath("$.hasNext").value(true));
