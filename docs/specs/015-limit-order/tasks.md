@@ -1,4 +1,4 @@
-# Tasks: 코인 지정가 매매 — 생성·체결·취소 (LMT-001~003)
+# Tasks: 코인 지정가 매매 — 생성·체결·취소·수정 (LMT-001~005)
 
 각 항목 = 커밋 1개. `plan.md`의 설계를 그대로 따른다. 순서대로 구현한다(뒤 항목이 앞 항목의 산출물에 의존).
 
@@ -20,7 +20,7 @@
 - [x] 6. **동시성 통합 테스트**
   Testcontainers 기반 `@SpringBootTest`: (a) 동일 주문에 체결 이벤트 2회 동시 도착 시 1회만 체결, (b) 지정가 SELL 체결과 시장가 SELL 체결이 동시에 실행돼도 데드락 없음(ABBA 회귀), (c) 매수 지정가 생성 시 현금 부족 거부와 무예약 확인, (d) 매도 지정가로 예약된 수량을 시장가/다른 지정가로 초과 매도 시 거부. plan.md "동시성 테스트 시나리오" 4개 그대로 구현.
 
-- [ ] 7. **문서 동기화**
+- [x] 7. **문서 동기화**
   `docs/api-routes.md`·`docs/api-contracts.md`에 `POST /api/orders/limit` 추가(요청·응답·오류 계약, `market/api-routes.md` 41행 근처 order 도메인 절). `docs/prd.md` §3 구현 현황 "지정가 주문·상시 체결" 행을 "일부 완료(LMT-001~002)"로 갱신, 근거에 이 PR 번호 기입, LMT-003·004는 범위 밖임을 명시. `./gradlew build` 통과 확인.
 
 ## LMT-003 지정가 주문 취소 (이슈 #218)
@@ -69,3 +69,17 @@
 
 - [x] 20. **문서 동기화 및 최종 빌드**
   `docs/api-routes.md`에 `GET /api/orders/pending?market=&cursor=&limit=` 행 추가. `docs/api-contracts.md`의 `## order` 절에 "미체결 주문 목록 조회" 표 추가, `## account` 절 `AccountSummaryResponse` 예시에 `reservedCash` 반영, `## portfolio` 절 `HoldingListItemResponse` 예시에 `reservedQuantity` 반영(위 세 곳 모두 같은 커밋). `docs/prd.md` §3 구현 현황 "지정가 주문·상시 체결(LMT-001~004)" 행을 이 PR 번호를 근거로 "완료"로 갱신하고, "계좌·보유 조회 계약 영향(Decision Gate)" 절 본문의 미정 문구를 확정된 필드명(`reservedCash`/`reservedQuantity`)으로 교체. `docs/specs/015-limit-order/spec.md` "LMT-004 완료 조건 (이슈 #235)" 체크박스를 구현·테스트 통과 확인 후 `[x]`로 갱신. `./gradlew build` 전체 통과 확인(실패 시 수정 후 재실행).
+
+## LMT-005 지정가 주문 수정 (이슈 #239)
+
+- [x] 21. **수수료 계산 공통화 + 엔티티 확장**
+  `order.service`에 `LimitOrderFeeCalculator`(정적 유틸리티, `CRYPTO_FEE_RATE`·`calculate(quantity, limitPrice)` → `Reservation(amount, fee)` record, plan.md "수수료 계산 공통화 결정" 그대로) 신설. `LimitOrderCreationService`·`LimitOrderCancelService`·`LimitOrderFillService` 세 파일의 개별 `CRYPTO_FEE_RATE` 상수·인라인 계산을 이 유틸리티 호출로 교체(같은 커밋 — 다섯 번째 중복 경로를 열어두지 않는다). `Order`에 `modify(BigDecimal quantity, BigDecimal limitPrice)` 추가(`cancel()`/`markFilled()`와 대칭 — `PENDING` 아니면 `IllegalStateException`). 단위 테스트: `LimitOrderFeeCalculatorTest`(신규, 기존 3개 서비스가 쓰던 값과 동일한 결과 회귀 확인 + FLOOR 경계값), `OrderTest`(`modify()` 정상 전이·비-`PENDING` 상태 예외), 리팩터링한 세 서비스의 기존 테스트 전체 회귀 확인(계산 결과가 바뀌지 않았는지).
+
+- [x] 22. **`PATCH /api/orders/{orderId}` 수정 API**
+  `LimitOrderUpdateRequest`(`limitPrice`·`quantity` 둘 다 nullable) 신규 DTO. `LimitOrderModifyService`(`order.service`, plan.md "수정 흐름" 그대로 — 요청 형식(둘 다 null이면 400) → `orderRepository.findByIdForUpdate`(락+404) → 소유(403) → 상태(409, `FILLED`/`CANCELLED` 개별) → 최종값 합성 → 형식·최소주문금액 재검증 → `accountService.getAccountByIdForUpdate`(계좌 락) → BUY는 `releaseReservedCash`→`INSUFFICIENT_CASH` 검증→`reserveCash`, SELL은 `portfolioSellService.getHoldingForUpdate`(holding 락)+`releaseReservedQuantity`→`INSUFFICIENT_QTY` 검증→`reserveQuantity` → `order.modify(...)` → `LimitOrderResponse.from(order)` 반환). `OrderController`에 `@PatchMapping("/{orderId}")` 추가(`Idempotency-Key` 헤더 없음, 200 응답). 검증 순서(존재→소유→상태→형식)와 잠금 순서(order→account→(SELL만)holding)는 LMT-003과 동일하게 고정. 서비스 단위 테스트(`LimitOrderModifyServiceTest`: BUY/SELL 각각 해제→재예약 호출 순서·인자, 부분 갱신 시 미지정 필드가 기존값으로 합성되는지, 둘 다 없음 400, 존재하지 않는 주문 404, 타인 소유 403, 이미 `FILLED`/`CANCELLED` 409 개별, 검증 순서 준수) + `@WebMvcTest`(`OrderControllerTest`: 200 응답 필드 계약, 빈 요청 본문 400, 인증 없으면 401, 404/403/409 오류 매핑).
+
+- [x] 23. **원자성·동시성 통합 테스트**
+  `LimitOrderConcurrencyIntegrationTest`에 plan.md "동시성 테스트 시나리오" 2~4번(spec.md 시나리오 23·24) 추가 — 기존 `runConcurrently`(ready/start `CountDownLatch`) 헬퍼 재사용. (a, 이 기능의 핵심 증명) 예약 가능 현금·수량을 초과하는 `PATCH` 요청이 409로 거부된 **후** 주문·계좌·보유를 DB에서 재조회해 요청 전 값과 완전히 동일함을 확인(서비스 예외 타입만 보는 얕은 검증 금지, 매수·매도 각 1개). (b) 수정-대-체결 동시 경합(체결 승리·수정 승리 두 경로 모두 예약 일관성 확인). (c) 수정-대-취소 동시 경합(취소 승리·수정 승리 두 경로 모두 확인).
+
+- [x] 24. **문서 동기화 및 최종 빌드**
+  `docs/api-routes.md`에 `PATCH /api/orders/{orderId}` 행 추가(`DELETE /api/orders/{orderId}` 행 근처). `docs/api-contracts.md`의 `## order` 절에 "지정가 주문 수정" 표 추가(요청·응답·오류 계약, 전부 기존 코드 재사용임을 명시). `docs/prd.md` §3 구현 현황 "지정가 주문·상시 체결(LMT-001~005)" 행을 이 PR 번호를 근거로 "완료"로 갱신(LMT-001~005 전부 완료). `docs/specs/015-limit-order/spec.md` "LMT-005 완료 조건 (이슈 #239)" 체크박스를 구현·테스트 통과 확인 후 `[x]`로 갱신. `./gradlew build` 전체 통과 확인(실패 시 수정 후 재실행).

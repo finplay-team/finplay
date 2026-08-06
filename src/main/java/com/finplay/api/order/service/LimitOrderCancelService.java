@@ -12,7 +12,6 @@ import com.finplay.api.order.repository.OrderRepository;
 import com.finplay.api.portfolio.domain.Holding;
 import com.finplay.api.portfolio.service.PortfolioSellService;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,9 +19,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class LimitOrderCancelService {
-
-	// 매직 넘버 금지 컨벤션 — LimitOrderCreationService·LimitOrderFillService와 동일 값(spec.md: 예약·체결 수수료가 항상 일치해야 함)
-	private static final BigDecimal CRYPTO_FEE_RATE = new BigDecimal("0.0005");
 
 	private final OrderRepository orderRepository;
 	private final AccountService accountService;
@@ -51,16 +47,14 @@ public class LimitOrderCancelService {
 		BigDecimal quantity = order.getQuantity();
 		BigDecimal limitPrice = order.getLimitPrice();
 		// 생성·체결 시 예약과 동일 계산(spec.md) — 체결가가 항상 지정가로 고정되므로 예약액과 항상 정확히 일치한다.
-		long amount = quantity.multiply(limitPrice).setScale(0, RoundingMode.FLOOR).longValueExact();
-		long fee = BigDecimal.valueOf(amount).multiply(CRYPTO_FEE_RATE).setScale(0, RoundingMode.FLOOR)
-			.longValueExact();
+		LimitOrderFeeCalculator.Reservation reservation = LimitOrderFeeCalculator.calculate(quantity, limitPrice);
 
 		if (order.getSide() == OrderSide.SELL) {
 			// SELL만 holding을 잠근다(잠금 순서 order → account → holding). BUY는 holding을 잠그지 않는다(plan.md).
 			Holding holding = portfolioSellService.getHoldingForUpdate(account, order.getInstrument());
 			holding.releaseReservedQuantity(quantity);
 		} else {
-			account.releaseReservedCash(amount + fee);
+			account.releaseReservedCash(reservation.total());
 		}
 
 		order.cancel();
