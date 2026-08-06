@@ -213,7 +213,7 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 | OCO 손절·익절 가격·퍼센트 입력 정책 | — | **문서 확정** | `019-exit-price-policy`, PR #200. production 미착수(3차 MVP) |
 | 일반 리스크관리 OCO(`intentionId` 없는 손절·익절) 설계 확정 | — | **문서 확정** | `021-general-risk-management-oco` (2026-08-06 브레인스토밍). `intentionId`를 선택 파라미터화해 튜토리얼 OCO를 이 일반 기능의 특수 사례로 흡수하는 통합 엔진을 설계. production은 3차 MVP |
 | 지정가 주문·상시 체결 | LMT-001~005 | **완료** | LMT-001(생성)·LMT-002(체결 트리거) 완료 — PR #215(`docs/specs/015-limit-order`, 코인 전용). LMT-003(취소) 완료 — PR #220(이슈 #218). LMT-004(미체결 목록조회, `GET /api/orders/pending`) + 계좌·보유 조회 계약 영향(Decision Gate, `reservedCash`/`reservedQuantity` 노출) 완료 — PR #237(이슈 #235). LMT-005(주문 수정, `PATCH /api/orders/{orderId}`) 완료 — PR #240(이슈 #239). 주식 지정가는 추후 처리(2026-08-05 확정) |
-| 관심목록 — 등록·조회·해제 | WATCH-001~003 | **완료** | `023-watchlist`, 이슈 #252. `POST`·`GET`·`DELETE /api/watchlist-items`, MySQL 영속화(V23). PRD 미등재 신규 기능 — 2차 MVP(1차 고도화)로 확정 |
+| 관심목록 — 등록·조회·해제 | WATCH-001~003 | **완료** | `023-watchlist`, PR #253(이슈 #252). `POST`·`GET`·`DELETE /api/watchlist-items`, MySQL 영속화(V23). PRD 미등재 신규 기능 — 2차 MVP(1차 고도화)로 확정 |
 | 지정가 체결 알림 | NOTI-001~005 | **미착수** | `notification` 패키지·테이블 없음. spec 폴더 미생성 |
 | 동시성 제어·부하테스트 | — | **미착수** | Kafka·분산락 의존성 없음 |
 | 코인 틱 집계와 캐싱 | MKT-010 | **미착수** | 2026-08-06 이 문서에서 MKT-008 기존 결정(틱 미집계·Redis 미저장)을 뒤집는 방향만 확정. 집계 컴포넌트·spec 폴더 없고, `BithumbRestCandleProvider`는 여전히 캐시 없이 요청마다 빗썸 REST를 호출한다. **거래량 미확보·WebSocket 포맷 미검증 두 Decision Gate가 열려 있어 구현 착수 전이다**(§MKT-010) |
