@@ -13,8 +13,11 @@ public record OrderListItemResponse(
 	String orderType,
 	String status,
 	BigDecimal quantity,
+	BigDecimal limitPrice,
 	LocalDateTime requestedAt) {
 
+	// PR #237 리뷰 차단 반영: limitPrice가 없으면 미체결 지정가 목록(GET /api/orders/pending)에서 "얼마에
+	// 걸어둔 주문인지" 알 수 없다. 시장가 주문은 Order.limitPrice가 애초에 null이라 그대로 null로 나간다.
 	public static OrderListItemResponse from(Order order) {
 		return new OrderListItemResponse(
 			order.getId(),
@@ -24,6 +27,7 @@ public record OrderListItemResponse(
 			order.getOrderType().name(),
 			order.getStatus().name(),
 			order.getQuantity(),
+			order.getLimitPrice(),
 			order.getRequestedAt());
 	}
 }

@@ -51,6 +51,7 @@ class HoldingControllerTest {
 			"005930",
 			"삼성전자",
 			new BigDecimal("10"),
+			new BigDecimal("3"),
 			new BigDecimal("70000"),
 			new BigDecimal("75000"),
 			750_000L,
@@ -67,6 +68,7 @@ class HoldingControllerTest {
 			.andExpect(jsonPath("$[0].symbol").value("005930"))
 			.andExpect(jsonPath("$[0].name").value("삼성전자"))
 			.andExpect(jsonPath("$[0].quantity").value(10))
+			.andExpect(jsonPath("$[0].reservedQuantity").value(3))
 			.andExpect(jsonPath("$[0].averagePrice").value(70000))
 			.andExpect(jsonPath("$[0].currentPrice").value(75000))
 			.andExpect(jsonPath("$[0].evaluationAmount").value(750000))
@@ -86,6 +88,7 @@ class HoldingControllerTest {
 			"BTC",
 			"비트코인",
 			new BigDecimal("0.5"),
+			new BigDecimal("0.1"),
 			new BigDecimal("50000000"),
 			null,
 			null,
@@ -102,6 +105,7 @@ class HoldingControllerTest {
 			.andExpect(jsonPath("$[0].symbol").value("BTC"))
 			.andExpect(jsonPath("$[0].name").value("비트코인"))
 			.andExpect(jsonPath("$[0].quantity").value(0.5))
+			.andExpect(jsonPath("$[0].reservedQuantity").value(0.1))
 			.andExpect(jsonPath("$[0].averagePrice").value(50000000))
 			// PR #97 리뷰 권장사항 2: doesNotExist()는 값이 null이어도 통과해 "필드 자체가 없음"과
 			// "필드가 null로 존재함"을 구분하지 못한다. value(nullValue())는 필드가 없으면 PathNotFound로

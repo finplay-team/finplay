@@ -1,6 +1,7 @@
 // 시장가 매수 주문 생성 API의 인증, 검증, 응답 계약을 검증하는 WebMvc 슬라이스 테스트다.
 package com.finplay.api.order.controller;
 
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -513,7 +514,7 @@ class OrderControllerTest {
 		stubAuthenticatedUser();
 		LocalDateTime requestedAt = LocalDateTime.of(2026, 7, 29, 9, 0);
 		OrderListItemResponse item = new OrderListItemResponse(
-			1L, "STOCK", 1L, "BUY", "MARKET", "FILLED", new BigDecimal("10"), requestedAt);
+			1L, "STOCK", 1L, "BUY", "MARKET", "FILLED", new BigDecimal("10"), null, requestedAt);
 		OrderListResponse response = OrderListResponse.of(List.of(item), "2026-07-29T09:00:00_1", true);
 		when(orderService.getMyOrders(USER_ID, Market.STOCK, null, 20)).thenReturn(response);
 
@@ -528,6 +529,8 @@ class OrderControllerTest {
 			.andExpect(jsonPath("$.content[0].orderType").value("MARKET"))
 			.andExpect(jsonPath("$.content[0].status").value("FILLED"))
 			.andExpect(jsonPath("$.content[0].quantity").value(10))
+			// PR #237 리뷰 차단 반영: 시장가 주문은 limitPrice가 없다 — 필드 자체는 존재하고 값만 null임을 고정한다.
+			.andExpect(jsonPath("$.content[0].limitPrice").value(nullValue()))
 			.andExpect(jsonPath("$.content[0].requestedAt").value("2026-07-29T09:00:00"))
 			.andExpect(jsonPath("$.nextCursor").value("2026-07-29T09:00:00_1"))
 			.andExpect(jsonPath("$.hasNext").value(true));
@@ -660,6 +663,168 @@ class OrderControllerTest {
 	void getMyOrdersRejectsMissingAuthenticationWithoutCallingService() throws Exception {
 		mockMvc.perform(get("/api/orders")
 			.param("market", "STOCK"))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(orderService);
+	}
+
+	@Test
+	void getMyPendingOrdersReturnsOkWithEveryFieldWhenMarketIsCrypto() throws Exception {
+		stubAuthenticatedUser();
+		LocalDateTime requestedAt = LocalDateTime.of(2026, 8, 6, 9, 0);
+		OrderListItemResponse item = new OrderListItemResponse(
+			1L, "CRYPTO", 1L, "BUY", "LIMIT", "PENDING", new BigDecimal("1"),
+			new BigDecimal("70000000"), requestedAt);
+		OrderListResponse response = OrderListResponse.of(List.of(item), "2026-08-06T09:00:00_1", true);
+		when(orderService.getMyPendingOrders(USER_ID, Market.CRYPTO, null, 20)).thenReturn(response);
+
+		mockMvc.perform(get("/api/orders/pending")
+			.param("market", "CRYPTO")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.content[0].orderId").value(1))
+			.andExpect(jsonPath("$.content[0].market").value("CRYPTO"))
+			.andExpect(jsonPath("$.content[0].instrumentId").value(1))
+			.andExpect(jsonPath("$.content[0].side").value("BUY"))
+			.andExpect(jsonPath("$.content[0].orderType").value("LIMIT"))
+			.andExpect(jsonPath("$.content[0].status").value("PENDING"))
+			.andExpect(jsonPath("$.content[0].quantity").value(1))
+			// PR #237 리뷰 차단 반영: 미체결 목록에서 지정가를 확인할 수 있어야 한다.
+			.andExpect(jsonPath("$.content[0].limitPrice").value(70000000))
+			.andExpect(jsonPath("$.content[0].requestedAt").value("2026-08-06T09:00:00"))
+			.andExpect(jsonPath("$.nextCursor").value("2026-08-06T09:00:00_1"))
+			.andExpect(jsonPath("$.hasNext").value(true));
+
+		verify(orderService).getMyPendingOrders(USER_ID, Market.CRYPTO, null, 20);
+	}
+
+	@Test
+	void getMyPendingOrdersReturnsOkWithEmptyContentWhenNoPendingOrders() throws Exception {
+		stubAuthenticatedUser();
+		OrderListResponse response = OrderListResponse.of(List.of(), null, false);
+		when(orderService.getMyPendingOrders(USER_ID, Market.CRYPTO, null, 20)).thenReturn(response);
+
+		mockMvc.perform(get("/api/orders/pending")
+			.param("market", "CRYPTO")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.content").isEmpty())
+			.andExpect(jsonPath("$.nextCursor").doesNotExist())
+			.andExpect(jsonPath("$.hasNext").value(false));
+
+		verify(orderService).getMyPendingOrders(USER_ID, Market.CRYPTO, null, 20);
+	}
+
+	@Test
+	void getMyPendingOrdersUsesDefaultLimitWhenLimitIsOmitted() throws Exception {
+		stubAuthenticatedUser();
+		when(orderService.getMyPendingOrders(eq(USER_ID), eq(Market.CRYPTO), isNull(), eq(20)))
+			.thenReturn(OrderListResponse.of(List.of(), null, false));
+
+		mockMvc.perform(get("/api/orders/pending")
+			.param("market", "CRYPTO")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk());
+
+		verify(orderService).getMyPendingOrders(USER_ID, Market.CRYPTO, null, 20);
+	}
+
+	@Test
+	void getMyPendingOrdersPassesCursorAndLimitToService() throws Exception {
+		stubAuthenticatedUser();
+		when(orderService.getMyPendingOrders(eq(USER_ID), eq(Market.CRYPTO), any(), eq(10)))
+			.thenReturn(OrderListResponse.of(List.of(), null, false));
+
+		mockMvc.perform(get("/api/orders/pending")
+			.param("market", "CRYPTO")
+			.param("cursor", "2026-08-06T09:00:00_1")
+			.param("limit", "10")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk());
+
+		verify(orderService).getMyPendingOrders(USER_ID, Market.CRYPTO, "2026-08-06T09:00:00_1", 10);
+	}
+
+	@Test
+	void getMyPendingOrdersRejectsMissingMarketWithoutCallingService() throws Exception {
+		stubAuthenticatedUser();
+
+		mockMvc.perform(get("/api/orders/pending")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(orderService);
+	}
+
+	@Test
+	void getMyPendingOrdersRejectsInvalidMarketLiteralWithoutCallingService() throws Exception {
+		stubAuthenticatedUser();
+
+		mockMvc.perform(get("/api/orders/pending")
+			.param("market", "FOREX")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(orderService);
+	}
+
+	@Test
+	void getMyPendingOrdersRejectsLimitBelowMinimumWithoutCallingService() throws Exception {
+		stubAuthenticatedUser();
+
+		mockMvc.perform(get("/api/orders/pending")
+			.param("market", "CRYPTO")
+			.param("limit", "0")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(orderService);
+	}
+
+	@Test
+	void getMyPendingOrdersRejectsLimitAboveMaximumWithoutCallingService() throws Exception {
+		stubAuthenticatedUser();
+
+		mockMvc.perform(get("/api/orders/pending")
+			.param("market", "CRYPTO")
+			.param("limit", "101")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(orderService);
+	}
+
+	@Test
+	void getMyPendingOrdersReturnsBadRequestWhenServiceRejectsMalformedCursor() throws Exception {
+		stubAuthenticatedUser();
+		when(orderService.getMyPendingOrders(eq(USER_ID), eq(Market.CRYPTO), eq("garbage"), eq(20)))
+			.thenThrow(new BusinessException(ErrorCode.VALIDATION_ERROR, "cursor 형식이 올바르지 않습니다."));
+
+		mockMvc.perform(get("/api/orders/pending")
+			.param("market", "CRYPTO")
+			.param("cursor", "garbage")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(orderService).getMyPendingOrders(USER_ID, Market.CRYPTO, "garbage", 20);
+	}
+
+	@Test
+	void getMyPendingOrdersRejectsMissingAuthenticationWithoutCallingService() throws Exception {
+		mockMvc.perform(get("/api/orders/pending")
+			.param("market", "CRYPTO"))
 			.andExpect(status().isUnauthorized())
 			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());

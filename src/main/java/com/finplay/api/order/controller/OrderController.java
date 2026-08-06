@@ -93,6 +93,20 @@ public class OrderController {
 		return ResponseEntity.ok(orderService.getMyOrders(principal.userId(), market, cursor, limit));
 	}
 
+	@GetMapping("/pending")
+	public ResponseEntity<OrderListResponse> getMyPendingOrders(
+		@AuthenticationPrincipal
+		AuthenticatedUser principal,
+		@RequestParam
+		Market market,
+		@RequestParam(required = false)
+		String cursor,
+		@RequestParam(defaultValue = "" + DEFAULT_LIMIT)
+		int limit) {
+		validateLimit(limit);
+		return ResponseEntity.ok(orderService.getMyPendingOrders(principal.userId(), market, cursor, limit));
+	}
+
 	private void validateLimit(int limit) {
 		if (limit < MIN_LIMIT || limit > MAX_LIMIT) {
 			throw new BusinessException(ErrorCode.VALIDATION_ERROR, "limit은 1~100 사이여야 합니다.");

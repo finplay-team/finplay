@@ -55,3 +55,17 @@
 
 - [x] 16. **spec 완료조건 확정 및 최종 빌드**
   `docs/specs/015-limit-order/spec.md` "시장가 매수 경로 락 보강 완료 조건 (이슈 #224)" 체크박스를 구현·테스트 통과 확인 후 `[x]`로 갱신. `./gradlew build` 전체 통과 확인(실패 시 수정 후 재실행). 이 커밋에는 `docs/api-routes.md`·`docs/api-contracts.md`·`docs/prd.md` §3 변경이 없어야 정상이다(controller·기능 제공 범위 변경 없음).
+
+## LMT-004 미체결 주문 목록 조회 · 계좌·보유 조회 계약 영향 해소 (이슈 #235)
+
+- [x] 17. **`GET /api/orders/pending` 목록 조회 API**
+  `OrderRepositoryCustom`/`OrderRepositoryImpl`에 `findByAccountIdAndStatusWithCursor(accountId, status, cursorRequestedAt, cursorId, fetchSize)` 추가(plan.md "Repository 설계" — 기존 `findByAccountIdWithCursor`와 병렬, `status` 조건만 추가). `OrderService`에 `getMyPendingOrders(userId, market, cursor, limit)` 추가(`OrderStatus.PENDING` 고정, 기존 `getMyOrders`와 동일 구조 — `OrderCursor`·`OrderListItemResponse`·`OrderListResponse` 재사용, 신규 DTO 없음). `OrderController`에 `@GetMapping("/pending")` 추가(기존 `DEFAULT_LIMIT`/`MIN_LIMIT`/`MAX_LIMIT`·`validateLimit` 재사용). 단위 테스트(`OrderServiceTest`: 계좌 선조회, `PENDING` 상태로 리포지토리 호출 검증, 커서·`hasNext` 판정) + `@DataJpaTest`(신규 쿼리 메서드가 상태 필터·정렬·커서 조건을 만족하는지) + `@WebMvcTest`(`market`/`limit`/`cursor` 검증, 200 응답 필드 계약, 인증 실패 401).
+
+- [x] 18. **`AccountSummaryResponse.reservedCash`·`HoldingListItemResponse.reservedQuantity` 노출**
+  `AccountSummaryResponse`에 `reservedCash`(`cashBalance` 바로 다음) 필드·`of(...)` 인자 추가, `AccountService.getAccountSummary`가 `account.getReservedCash()`를 전달하도록 수정(기존 `totalValue` 등 계산식은 변경하지 않는다). `HoldingListItemResponse`에 `reservedQuantity`(`quantity` 바로 다음) 필드 추가, `of(Holding, HoldingValuationDto)`가 `holding.getReservedQuantity()`를 직접 읽도록 수정(`HoldingValuationDto`·`HoldingValuationService`는 변경하지 않는다 — 계산 로직과 예약 원장 노출은 별개 관심사, plan.md "계좌·보유 조회 계약 영향 해소" 근거). 컴파일이 깨지는 기존 테스트(`AccountServiceTest`의 `AccountSummaryResponse.of(...)`·`new HoldingValuationDto(...)` 호출부 등) 수정 포함, `reservedCash`·`reservedQuantity` 실측 검증 케이스를 `AccountServiceTest`·`HoldingServiceTest`에 각각 최소 1개 추가. `@WebMvcTest`(`AccountControllerTest`·`HoldingControllerTest`)에 `jsonPath`로 두 신규 필드 계약 검증 추가.
+
+- [x] 19. **통합 테스트**
+  지정가 매수·매도 주문을 여러 건(`PENDING`·`FILLED`·`CANCELLED` 혼합) 생성한 뒤 `GET /api/orders/pending?market=CRYPTO`가 `PENDING`만 최신순 커서 페이지네이션으로 반환하고(첫 페이지→`nextCursor`로 다음 페이지, 중복·누락 없음) 타 사용자 주문이 섞이지 않는지 검증. 같은 시나리오에서 `GET /api/accounts/summary?market=CRYPTO`·`GET /api/holdings?market=CRYPTO`를 호출해 `reservedCash`·`reservedQuantity`가 실제 예약값과 정확히 일치하고, 체결·취소 후에는 각각 0(또는 감소한 값)으로 돌아오는지 확인(plan.md "테스트 계획" 통합 시나리오 그대로, Testcontainers 기반 — ADR-0003).
+
+- [x] 20. **문서 동기화 및 최종 빌드**
+  `docs/api-routes.md`에 `GET /api/orders/pending?market=&cursor=&limit=` 행 추가. `docs/api-contracts.md`의 `## order` 절에 "미체결 주문 목록 조회" 표 추가, `## account` 절 `AccountSummaryResponse` 예시에 `reservedCash` 반영, `## portfolio` 절 `HoldingListItemResponse` 예시에 `reservedQuantity` 반영(위 세 곳 모두 같은 커밋). `docs/prd.md` §3 구현 현황 "지정가 주문·상시 체결(LMT-001~004)" 행을 이 PR 번호를 근거로 "완료"로 갱신하고, "계좌·보유 조회 계약 영향(Decision Gate)" 절 본문의 미정 문구를 확정된 필드명(`reservedCash`/`reservedQuantity`)으로 교체. `docs/specs/015-limit-order/spec.md` "LMT-004 완료 조건 (이슈 #235)" 체크박스를 구현·테스트 통과 확인 후 `[x]`로 갱신. `./gradlew build` 전체 통과 확인(실패 시 수정 후 재실행).

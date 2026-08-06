@@ -114,7 +114,7 @@ public class AccountService {
 			: BigDecimal.valueOf(totalValue - seedMoney)
 				.divide(BigDecimal.valueOf(seedMoney), RETURN_RATE_SCALE, RoundingMode.HALF_UP);
 
-		return AccountSummaryResponse.of(cashBalance, holdingsValue, totalValue, realizedPnl, unrealizedPnl,
-			returnRate);
+		return AccountSummaryResponse.of(cashBalance, account.getReservedCash(), holdingsValue, totalValue,
+			realizedPnl, unrealizedPnl, returnRate);
 	}
 }

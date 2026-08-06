@@ -7,6 +7,7 @@ import com.finplay.api.account.service.AccountService;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.order.domain.Order;
+import com.finplay.api.order.domain.OrderStatus;
 import com.finplay.api.order.domain.Trade;
 import com.finplay.api.order.dto.request.OrderCreateRequest;
 import com.finplay.api.order.dto.response.OrderListItemResponse;
@@ -91,6 +92,27 @@ public class OrderService {
 
 		List<Order> fetched = orderRepository.findByAccountIdWithCursor(
 			account.getId(),
+			parsedCursor == null ? null : parsedCursor.requestedAt(),
+			parsedCursor == null ? null : parsedCursor.id(),
+			limit + 1);
+
+		boolean hasNext = fetched.size() > limit;
+		List<Order> page = hasNext ? fetched.subList(0, limit) : fetched;
+		String nextCursor = hasNext ? OrderCursor.encode(page.get(page.size() - 1)) : null;
+
+		List<OrderListItemResponse> content = page.stream().map(OrderListItemResponse::from).toList();
+		return OrderListResponse.of(content, nextCursor, hasNext);
+	}
+
+	// LMT-004(이슈 #235): getMyOrders와 동일 구조에 status=PENDING 필터만 얹는다.
+	@Transactional(readOnly = true)
+	public OrderListResponse getMyPendingOrders(Long userId, Market market, String cursor, int limit) {
+		Account account = accountService.getAccountFor(userId, market);
+		OrderCursor parsedCursor = OrderCursor.parse(cursor);
+
+		List<Order> fetched = orderRepository.findByAccountIdAndStatusWithCursor(
+			account.getId(),
+			OrderStatus.PENDING,
 			parsedCursor == null ? null : parsedCursor.requestedAt(),
 			parsedCursor == null ? null : parsedCursor.id(),
 			limit + 1);

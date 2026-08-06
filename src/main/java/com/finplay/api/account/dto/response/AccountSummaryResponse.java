@@ -5,6 +5,7 @@ import java.math.BigDecimal;
 
 public record AccountSummaryResponse(
 	long cashBalance,
+	long reservedCash,
 	long holdingsValue,
 	long totalValue,
 	long realizedPnl,
@@ -13,12 +14,13 @@ public record AccountSummaryResponse(
 
 	public static AccountSummaryResponse of(
 		long cashBalance,
+		long reservedCash,
 		long holdingsValue,
 		long totalValue,
 		long realizedPnl,
 		long unrealizedPnl,
 		BigDecimal returnRate) {
 		return new AccountSummaryResponse(
-			cashBalance, holdingsValue, totalValue, realizedPnl, unrealizedPnl, returnRate);
+			cashBalance, reservedCash, holdingsValue, totalValue, realizedPnl, unrealizedPnl, returnRate);
 	}
 }

@@ -43,6 +43,7 @@ class HoldingServiceTest {
 			.create(com.finplay.api.market.domain.Market.STOCK, "TSLA", "테슬라", BigDecimal.ONE, 1_000L, true, NOW);
 		Holding availableHolding = Holding.create(account, availableInstrument, NOW);
 		availableHolding.applyBuy(BigDecimal.TEN, BigDecimal.valueOf(1_000), NOW);
+		availableHolding.reserveQuantity(BigDecimal.valueOf(4));
 		Holding unavailableHolding = Holding.create(account, unavailableInstrument, NOW);
 		unavailableHolding.applyBuy(BigDecimal.ONE, BigDecimal.valueOf(500_000), NOW);
 
@@ -67,6 +68,7 @@ class HoldingServiceTest {
 		assertThat(available.symbol()).isEqualTo("AAPL");
 		assertThat(available.name()).isEqualTo("애플");
 		assertThat(available.quantity()).isEqualByComparingTo(BigDecimal.TEN);
+		assertThat(available.reservedQuantity()).isEqualByComparingTo(BigDecimal.valueOf(4));
 		assertThat(available.averagePrice()).isEqualByComparingTo(BigDecimal.valueOf(1_000));
 		assertThat(available.currentPrice()).isEqualByComparingTo(BigDecimal.valueOf(1_200));
 		assertThat(available.evaluationAmount()).isEqualTo(12_000L);
@@ -76,6 +78,7 @@ class HoldingServiceTest {
 
 		HoldingListItemResponse unavailable = result.get(1);
 		assertThat(unavailable.symbol()).isEqualTo("TSLA");
+		assertThat(unavailable.reservedQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
 		assertThat(unavailable.currentPrice()).isNull();
 		assertThat(unavailable.evaluationAmount()).isNull();
 		assertThat(unavailable.unrealizedPnl()).isNull();

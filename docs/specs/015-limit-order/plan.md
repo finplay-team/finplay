@@ -499,3 +499,238 @@ spec.md 시나리오 13·14·15에 대응한다.
 
 - 신규 종목 첫 매수 동시 생성 경합은 account 락만으로 방지한다 — `holdings.uk_holdings_account_instrument` 유니크 제약 위반에 대한 방어적 catch·재조회 로직은 추가하지 않는다(일어날 수 없는 시나리오에 방어 코드를 넣지 않는다는 컨벤션과 일치).
 - 마이그레이션·API 계약 변경 없음 — 락 순서 조정은 서비스 레이어 내부 구현이라 `docs/api-routes.md`·`docs/api-contracts.md`·`docs/prd.md` §3 갱신 대상이 아니다(CLAUDE.md 규칙7은 controller 변경 시에만 적용, 규칙10은 기능 제공 범위가 그대로인 변경이라 갱신 비대상).
+
+---
+
+# LMT-004 미체결 주문 목록 조회 · 계좌·보유 조회 계약 영향 해소 — 구현 계획 (이슈 #235)
+
+## 관련 문서
+
+- Spec: `./spec.md` "LMT-004 미체결 주문 목록 조회" 절, "계좌·보유 조회 계약 영향 해소 (Decision Gate)" 절, "확정된 설계 결정" 11번.
+- 형제 API(패턴 원본): `GET /api/orders?market=&cursor=&limit=`(PORT-003, `docs/specs/018-order-list-pagination/plan.md`) — `OrderCursor`·`OrderListItemResponse`·`OrderListResponse`·`OrderRepositoryCustom`/`OrderRepositoryImpl`(QueryDSL) 커서 페이지네이션 인프라를 그대로 재사용한다. 상태 필터만 추가되는 변형이라 새 클래스를 최소화한다.
+- PRD 근거: `docs/prd.md` 626~634행(LMT-004 + "계좌·보유 조회 계약 영향(Decision Gate)"), §3 구현 현황 213행.
+- 관련 ADR: [ADR-0002](../../adr/0002-architecture.md)(레이어드, 도메인 간 참조는 service만 — `HoldingListItemResponse`가 `Holding` 엔티티를 그대로 받는 기존 패턴을 유지), [ADR-0003](../../adr/0003-testing-strategy.md)(테스트 전략), [ADR-0004](../../adr/0004-flyway-migrations.md)(이번 작업은 스키마 변경 없음 — `accounts.reserved_cash`·`holdings.reserved_quantity`는 V22로 이미 존재).
+
+## 기존 코드 현황 (구현 전 확인한 사실)
+
+- `GET /api/orders?market=&cursor=&limit=`(018-order-list-pagination, PORT-003)가 이미 이번에 필요한 커서 페이지네이션 인프라 전체를 구현해뒀다:
+  - `OrderCursor`(`src/main/java/com/finplay/api/order/service/OrderCursor.java`) — `{ISO_LOCAL_DATE_TIME}_{id}` 포맷, `parse(String)`(손상 시 `BusinessException(VALIDATION_ERROR)`)·`encode(Order)` 정적 메서드.
+  - `OrderRepositoryCustom.findByAccountIdWithCursor(accountId, cursorRequestedAt, cursorId, fetchSize)` / `OrderRepositoryImpl`(QueryDSL, `QOrder`, `account.id.eq` + 커서 이전 조건 + `requestedAt desc, id desc` + `instrument` fetchJoin).
+  - `OrderListItemResponse.from(Order)`(orderId·market·instrumentId·side·orderType·status·quantity·requestedAt), `OrderListResponse(content, nextCursor, hasNext)`.
+  - `OrderController`의 `DEFAULT_LIMIT`(20)·`MIN_LIMIT`(1)·`MAX_LIMIT`(100) 상수와 `validateLimit(int)`(범위 밖이면 `BusinessException(VALIDATION_ERROR)`, 클램핑 없음).
+  - `OrderService.getMyOrders(userId, market, cursor, limit)`가 `accountService.getAccountFor(userId, market)`로 소유권+시장 스코프를 먼저 검증한 뒤 `limit+1` fetch로 `hasNext`를 판정하는 패턴.
+  - 이번 작업은 이 인프라 전체를 재사용하고 "상태가 `PENDING`인 것만" 조건 하나만 얹는다 — 신규 커서 포맷·신규 응답 DTO를 만들지 않는다.
+- `OrderRepository`에는 이미 `findByIdForUpdate`(단건 락)·`findPendingLimitOrdersToFill`(단건 조건 조회, 커서 없음)이 있지만 둘 다 이번 목록 조회 용도가 아니다 — `OrderRepositoryCustom`에 상태 필터가 있는 커서 조회 메서드가 새로 필요하다.
+- `Account.reservedCash`(`long`, `@Getter`로 `getReservedCash()` 이미 공개)·`Holding.reservedQuantity`(`BigDecimal`, `@Getter`로 `getReservedQuantity()` 이미 공개)는 015-limit-order LMT-001(V22)이 이미 도입했다 — 엔티티·마이그레이션 변경이 전혀 필요 없다.
+- `AccountService.getAccountSummary`(`src/main/java/com/finplay/api/account/service/AccountService.java` 91~119행)는 `AccountSummaryResponse.of(cashBalance, holdingsValue, totalValue, realizedPnl, unrealizedPnl, returnRate)`를 호출한다 — `account.getReservedCash()`를 인자 하나 추가하면 된다. `totalValue`(=`cashBalance + holdingsValue`) 등 기존 계산식은 전혀 바꾸지 않는다.
+- `HoldingService.getHoldings`(`src/main/java/com/finplay/api/portfolio/service/HoldingService.java` 24~33행)는 `HoldingListItemResponse.of(holdings.get(i), valuations.get(i))`를 호출한다 — 이미 `Holding` 엔티티를 통째로 넘기므로, `HoldingListItemResponse.of` 내부에서 `holding.getReservedQuantity()`를 추가로 읽기만 하면 되고 `HoldingService`·`HoldingValuationService`·`HoldingValuationDto`는 손댈 필요가 없다.
+
+## API 설계
+
+### `GET /api/orders/pending?market=&cursor=&limit=`
+
+| Method | URL | 요청 | 응답 | 설명 |
+|---|---|---|---|---|
+| GET | `/api/orders/pending?market=&cursor=&limit=` | `market`(필수), `cursor`(선택), `limit`(선택, 기본 20) | `OrderListResponse`(기존 타입 재사용, 신규 DTO 아님) | 인증 사용자 본인의 `market` 계좌가 보유한 `PENDING` 상태 지정가 주문을 최신순(동시각 `id` 내림차순) 커서 페이지네이션으로 조회 |
+
+- 인증·계좌 소유권 검증(`accountService.getAccountFor(userId, market)`)·오류 원칙은 `GET /api/orders`(PORT-003)와 동일하다.
+- 이 코드베이스에서 `status = PENDING`은 현재 지정가(`orderType = LIMIT`) 주문만 가질 수 있다(시장가는 생성 즉시 `FILLED`) — 그래서 쿼리에 `orderType` 조건을 별도로 추가하지 않아도 결과는 자동으로 지정가 주문만 포함한다(일어날 수 없는 조합에 방어 조건을 추가하지 않는다는 관례와 일치, `docs/conventions.md`).
+- `market=STOCK`으로 요청해도 400으로 거부하지 않는다 — `GET /api/orders`(PORT-003)와 동일하게 `STOCK`\|`CRYPTO` 모두 유효한 조회 대상이다. 현재 주식 지정가가 없으므로 결과는 자연히 빈 배열이 된다. LMT-001 생성 API의 "market≠CRYPTO면 400"(이건 주문 생성 제약)과 이 조회 API의 "market은 조회 대상 시장을 고르는 필수 파라미터"(PORT-002 규칙)는 서로 다른 성격의 검증이라 혼동하지 않는다.
+
+## 입력 명세
+
+| 필드 | 필수 | 검증 |
+|---|---|---|
+| `market` | Y | `com.finplay.api.account.domain.Market`(enum: `STOCK`\|`CRYPTO`) — **`market.domain.Market`이 아니다**(기존 006/018 plan.md의 "Market 타입 주의" 절과 동일 이유, `accountService.getAccountFor(userId, market)` 호출부와 타입을 맞춰야 컴파일된다). 누락·미지원 리터럴은 기존 `GlobalExceptionHandler`가 이미 400 `VALIDATION_ERROR`로 매핑(컨트롤러에 별도 코드 불필요) |
+| `cursor` | N | `{ISO_LOCAL_DATE_TIME}_{id}` 형식 문자열. 생략 시 첫 페이지. 파싱 실패 400 `VALIDATION_ERROR`(`OrderCursor.parse` 재사용) |
+| `limit` | N | 기본 20, 정수. 1~100 범위 밖 400 `VALIDATION_ERROR`(`OrderController.validateLimit` 재사용, 클램핑 없음) |
+
+계좌 소유권: `market`으로 조회한 계좌가 존재하지 않거나 타인 소유면 `accountService.getAccountFor`가 `BusinessException(ErrorCode.NOT_FOUND)`를 던진다(PORT-003과 동일 근거 — 요청에 타인 식별자를 받지 않는 구조라 403 분기가 없다).
+
+## 데이터 모델
+
+신규 테이블·컬럼·마이그레이션 없음(ADR-0004). `orders` 테이블 기존 컬럼(`account_id`·`status`·`requested_at`·`id`)으로 조회한다. 018 plan.md가 `(account_id, requested_at, id)` 인덱스를 필수 항목으로 두지 않은 것과 동일하게, `status` 조건이 추가된다고 해서 신규 인덱스를 이번 범위에 필수로 포함하지 않는다(코인 전용이라 `PENDING` 행 자체가 소규모, 성능 이슈로 재판단 가능).
+
+## Repository 설계
+
+`OrderRepositoryCustom`에 상태 필터가 있는 메서드를 추가한다(기존 `findByAccountIdWithCursor`는 그대로 두어 PORT-003 회귀를 만들지 않는다 — 병렬 메서드로 추가).
+
+```java
+// OrderRepositoryCustom
+List<Order> findByAccountIdAndStatusWithCursor(
+    Long accountId, OrderStatus status, LocalDateTime cursorRequestedAt, Long cursorId, int fetchSize);
+```
+
+```java
+// OrderRepositoryImpl (신규 메서드, 기존 findByAccountIdWithCursor와 병렬 — 구조 동일, status 조건만 추가)
+@Override
+public List<Order> findByAccountIdAndStatusWithCursor(
+    Long accountId, OrderStatus status, LocalDateTime cursorRequestedAt, Long cursorId, int fetchSize) {
+    QOrder order = QOrder.order;
+
+    BooleanBuilder condition = new BooleanBuilder(order.account.id.eq(accountId))
+        .and(order.status.eq(status));
+    if (cursorRequestedAt != null && cursorId != null) {
+        condition.and(
+            order.requestedAt.lt(cursorRequestedAt)
+                .or(order.requestedAt.eq(cursorRequestedAt).and(order.id.lt(cursorId))));
+    }
+
+    return queryFactory
+        .selectFrom(order)
+        .join(order.instrument).fetchJoin()
+        .where(condition)
+        .orderBy(order.requestedAt.desc(), order.id.desc())
+        .limit(fetchSize)
+        .fetch();
+}
+```
+
+## Service 설계
+
+`OrderService`에 `getMyOrders`와 병렬인 메서드를 추가한다(상태 필터만 다름, 나머지 흐름 동일):
+
+```java
+@Transactional(readOnly = true)
+public OrderListResponse getMyPendingOrders(Long userId, Market market, String cursor, int limit) {
+    Account account = accountService.getAccountFor(userId, market);
+    OrderCursor parsedCursor = OrderCursor.parse(cursor);
+
+    List<Order> fetched = orderRepository.findByAccountIdAndStatusWithCursor(
+        account.getId(),
+        OrderStatus.PENDING,
+        parsedCursor == null ? null : parsedCursor.requestedAt(),
+        parsedCursor == null ? null : parsedCursor.id(),
+        limit + 1);
+
+    boolean hasNext = fetched.size() > limit;
+    List<Order> page = hasNext ? fetched.subList(0, limit) : fetched;
+    String nextCursor = hasNext ? OrderCursor.encode(page.get(page.size() - 1)) : null;
+
+    List<OrderListItemResponse> content = page.stream().map(OrderListItemResponse::from).toList();
+    return OrderListResponse.of(content, nextCursor, hasNext);
+}
+```
+
+- `OrderListItemResponse`·`OrderListResponse`·`OrderCursor` 모두 신규 DTO 없이 재사용한다 — 이슈 #235 본문이 별도 응답 필드를 요구하지 않으므로 `GET /api/orders`와 동일한 8개 필드(orderId·market·instrumentId·side·orderType·status·quantity·requestedAt)면 충분하다. 이 목록에서는 `status`가 항상 `"PENDING"`이지만, 신규 DTO를 만드는 유지비용이 필드 1개 고정값의 이점보다 크므로 재사용을 택한다.
+
+## Controller 설계
+
+```java
+// OrderController(기존 파일)에 추가 — DEFAULT_LIMIT/MIN_LIMIT/MAX_LIMIT·validateLimit 재사용
+@GetMapping("/pending")
+public ResponseEntity<OrderListResponse> getMyPendingOrders(
+    @AuthenticationPrincipal AuthenticatedUser principal,
+    @RequestParam Market market,
+    @RequestParam(required = false) String cursor,
+    @RequestParam(defaultValue = "" + DEFAULT_LIMIT) int limit) {
+    validateLimit(limit);
+    return ResponseEntity.ok(orderService.getMyPendingOrders(principal.userId(), market, cursor, limit));
+}
+```
+
+- 기존 `OrderController`(`POST`·`POST /limit`·`DELETE /{orderId}`·`GET`이 이미 있는 클래스)에 메서드만 추가한다. 새 컨트롤러 클래스를 만들지 않는다.
+- 경로 충돌 없음: `@GetMapping("/pending")`과 기존 `@DeleteMapping("/{orderId}")`는 HTTP 메서드가 달라 매핑이 겹치지 않는다. 다만 `@GetMapping`끼리는(`GET /api/orders`와 `GET /api/orders/pending`) 고정 경로(`/pending`)가 변수 경로(`GET /{orderId}` 같은 것)보다 우선 매치되는 Spring MVC 규칙을 따르므로, 이 컨트롤러에 향후 `GET /{orderId}`(단건 조회)가 추가되면 `/pending` 매핑이 그보다 먼저 선언돼 있어야 충돌하지 않는다는 점만 기록해둔다(현재는 그런 메서드가 없어 영향 없음).
+
+## 계좌·보유 조회 계약 영향 해소 (Decision Gate, PRD 634행)
+
+### `AccountSummaryResponse.reservedCash`
+
+```java
+// AccountSummaryResponse (기존 record, 필드·of(...) 인자 추가)
+public record AccountSummaryResponse(
+    long cashBalance,
+    long reservedCash,   // 신규
+    long holdingsValue,
+    long totalValue,
+    long realizedPnl,
+    long unrealizedPnl,
+    BigDecimal returnRate) {
+
+    public static AccountSummaryResponse of(
+        long cashBalance,
+        long reservedCash,   // 신규
+        long holdingsValue,
+        long totalValue,
+        long realizedPnl,
+        long unrealizedPnl,
+        BigDecimal returnRate) {
+        return new AccountSummaryResponse(
+            cashBalance, reservedCash, holdingsValue, totalValue, realizedPnl, unrealizedPnl, returnRate);
+    }
+}
+```
+
+- 필드 위치는 `cashBalance` 바로 다음(예약분이 현금 계열 값이라 의미상 인접 배치, 다른 필드 순서는 바꾸지 않는다).
+- `AccountService.getAccountSummary`의 `AccountSummaryResponse.of(...)` 호출(118행 부근)에 `account.getReservedCash()` 인자를 추가한다. `totalValue`(=`cashBalance + holdingsValue`) 계산식은 변경하지 않는다 — `reservedCash`는 원장 값을 그대로 보여주는 추가 정보일 뿐, 기존 필드가 예약분을 반영하도록 재계산하지 않는다(spec.md "계좌·보유 조회 계약 영향 해소" 절 근거).
+- "주문 가능 금액"을 뜻하는 `availableCash` 같은 파생 필드는 추가하지 않는다(spec.md "확정된 설계 결정" 11번) — 클라이언트가 `cashBalance - reservedCash`로 직접 계산할 수 있다.
+
+### `HoldingListItemResponse.reservedQuantity`
+
+```java
+// HoldingListItemResponse (기존 record, 필드 추가 — of(Holding, HoldingValuationDto) 시그니처는 그대로)
+public record HoldingListItemResponse(
+    Long instrumentId,
+    String symbol,
+    String name,
+    BigDecimal quantity,
+    BigDecimal reservedQuantity,   // 신규
+    BigDecimal averagePrice,
+    BigDecimal currentPrice,
+    Long evaluationAmount,
+    Long unrealizedPnl,
+    BigDecimal returnRate,
+    String priceStatus) {
+
+    public static HoldingListItemResponse of(Holding holding, HoldingValuationDto valuation) {
+        return new HoldingListItemResponse(
+            holding.getInstrument().getId(),
+            holding.getInstrument().getSymbol(),
+            holding.getInstrument().getName(),
+            valuation.quantity(),
+            holding.getReservedQuantity(),   // 신규 — valuation이 아니라 holding에서 직접 읽는다
+            valuation.averagePrice(),
+            valuation.currentPrice(),
+            valuation.evaluationAmount(),
+            valuation.unrealizedPnl(),
+            valuation.returnRate(),
+            valuation.priceStatus().name());
+    }
+}
+```
+
+- 필드 위치는 `quantity` 바로 다음(총 보유수량과 예약수량을 나란히 비교하기 쉽게 배치).
+- `reservedQuantity`는 `HoldingValuationDto`가 아니라 `holding` 엔티티에서 직접 읽는다 — `HoldingValuationService.evaluateHolding`은 시세·손익 계산만 책임지고 예약 원장과는 무관하므로(관심사 분리), `HoldingValuationDto`에 필드를 추가하지 않는다. 006 plan.md가 이미 "계산 재사용과 표현 정책은 별개 결정"이라고 확립한 전례와 같은 판단이다 — 계산 로직·반올림 규칙은 전혀 바꾸지 않는다.
+- `HoldingService.getHoldings` 호출부는 변경 없음 — 이미 `holding`을 통째로 `HoldingListItemResponse.of(...)`에 넘기므로, DTO 내부에서 `holding.getReservedQuantity()`를 추가로 읽기만 하면 된다.
+- "주문 가능 수량"을 뜻하는 `availableQuantity` 같은 파생 필드는 추가하지 않는다(spec.md "확정된 설계 결정" 11번) — 클라이언트가 `quantity - reservedQuantity`로 직접 계산할 수 있다.
+
+### 영향받는 기존 테스트 (컴파일 수정 필요, 006 plan.md 454행이 예고한 것과 동일 성격의 회귀)
+
+- `AccountServiceTest` — `AccountSummaryResponse.of(...)`·`new HoldingValuationDto(...)` 관련 호출부에 인자 추가. `getAccountSummary`가 `reservedCash`를 실제 값으로 정확히 반환하는지 검증하는 케이스를 최소 1개 추가한다(기존 시세 유효/무효 혼합 케이스와는 별개 관심사).
+- `AccountControllerTest`(`@WebMvcTest`) — `jsonPath`로 `reservedCash` 필드 계약 검증 추가(기존 6개 필드 회귀 확인과 함께).
+- `HoldingServiceTest` — `HoldingListItemResponse.of(...)` 검증에 `reservedQuantity` 실제값 확인 추가.
+- `HoldingControllerTest`(`@WebMvcTest`) — `jsonPath`로 `reservedQuantity` 필드 계약 검증 추가.
+
+## 문서 동기화
+
+같은 커밋에서 갱신(CLAUDE.md 규칙 7 + 규칙 10):
+
+- `docs/api-routes.md`: 라우트 표에 `GET | /api/orders/pending?market=&cursor=&limit= | order | ... | 015 LMT-004, Issue #235` 행 추가(기존 `GET /api/orders`·`POST /api/orders/limit`·`DELETE /api/orders/{orderId}` 행 근처).
+- `docs/api-contracts.md`: `## order` 절에 "미체결 주문 목록 조회" 표 추가(요청 `market`/`cursor`/`limit`, 응답 `OrderListResponse` 예시, 오류 400/401/404). `## account` 절의 `AccountSummaryResponse` 예시에 `reservedCash` 필드를 반영. `## portfolio` 절의 `HoldingListItemResponse` 예시에 `reservedQuantity` 필드를 반영.
+- `docs/prd.md` §3 구현 현황 "지정가 주문·상시 체결(LMT-001~004)" 행을 이 PR 번호를 근거로 "완료"로 갱신한다 — LMT-001~004 전부 완료됨을 명시. "계좌·보유 조회 계약 영향(Decision Gate)" 절 본문도 "착수 시 확정한다"는 미정 문구를 실제 필드명(`reservedCash`/`reservedQuantity`)이 확정됐다는 문구로 교체한다.
+
+## 테스트 계획 (ADR-0003 기준)
+
+- **단위(`OrderServiceTest`, 기존 파일)**: `getMyPendingOrders`가 `accountService.getAccountFor`로 계좌를 선조회하는지, `OrderRepository.findByAccountIdAndStatusWithCursor`를 `OrderStatus.PENDING` 인자로 호출하는지(Mockito `verify`), 커서 파싱·`limit+1` fetch로 `hasNext` 판정, 마지막 페이지에서 `nextCursor=null` — `getMyOrders` 테스트 패턴 그대로.
+- **단위(`AccountServiceTest`, 기존 파일)**: `getAccountSummary`가 `reservedCash`를 응답에 정확히 포함하는지 실측 검증.
+- **단위(`HoldingServiceTest`, 기존 파일)**: `getHoldings`가 `reservedQuantity`를 응답에 정확히 포함하는지 실측 검증.
+- **슬라이스(`OrderControllerTest`, 기존 파일)**: `GET /api/orders/pending` — `market` 생략/미지원 400, `limit` 범위 밖 400, `cursor` 손상 400, 정상 요청 200과 `content`의 모든 항목이 `status="PENDING"`인지, 인증 실패 401 — 기존 `GET /api/orders` 테스트 대응 패턴.
+- **슬라이스(`AccountControllerTest`·`HoldingControllerTest`, 기존 파일)**: `jsonPath`로 `reservedCash`·`reservedQuantity` 필드값 검증(0인 경우·양수인 경우 각각).
+- **슬라이스(`@DataJpaTest`, 신규 또는 기존 `OrderRepositoryTest` 근처)**: `findByAccountIdAndStatusWithCursor`가 `status` 필터·`account_id` 필터·`requestedAt desc, id desc` 정렬·커서 이전 조건을 만족하는지 — 기존 `findByAccountIdWithCursor` 테스트 대응 패턴에 상태 필터 케이스 추가.
+- **통합(신규 또는 기존 `LimitOrderConcurrencyIntegrationTest`/`OrderListIntegrationTest` 인접)**: 지정가 매수·매도 주문을 여러 건(`PENDING`·`FILLED`·`CANCELLED` 혼합) 생성한 뒤 `GET /api/orders/pending?market=CRYPTO` 호출 → `PENDING`만 반환되고 최신순 커서 페이지네이션이 정확한지(첫 페이지 → `nextCursor`로 다음 페이지, 중복·누락 없음), 타 사용자 주문 미노출 확인. 같은 시나리오에서 `GET /api/accounts/summary?market=CRYPTO`·`GET /api/holdings?market=CRYPTO`를 호출해 `reservedCash`·`reservedQuantity`가 실제 예약값과 정확히 일치하는지, 체결·취소 후에는 각각 0(또는 감소한 값)으로 돌아오는지 확인.
+
+## Decision Gate (spec.md 확정된 설계 결정 11번 재확인, 변경 없음)
+
+- `AccountSummaryResponse.reservedCash`·`HoldingListItemResponse.reservedQuantity`로 필드명을 확정했다 — `availableCash`/`availableQuantity` 같은 파생값 필드는 추가하지 않는다.
+- 신규 마이그레이션 없음 — `accounts.reserved_cash`·`holdings.reserved_quantity`는 V22(015-limit-order LMT-001)로 이미 존재한다.
+- 주문 수정(가격·수량 변경) API는 이번 범위가 아니다(spec.md 제외 범위) — 필요성이 확정되면 별도 이슈로 다룬다.

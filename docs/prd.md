@@ -210,7 +210,7 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 | 투자 실습 — 진행 조회·가격 관찰·복기 | EDU-PRACTICE-001·007·011·012 | **미착수** | 컨트롤러 없음 (`practice_progresses` 테이블만 존재). **2026-08-05: 2차 MVP는 `COIN_PRACTICE_V1` 완료를 목표로 하고, 주식 세션 만료 관찰(evidence C)·완성은 3차 MVP로 이동** |
 | 투자 실습 — 코인 튜토리얼 정책 확정 (2차 MVP 활성 트랙) | — | **문서 확정** | `020-coin-practice-tutorial`, PR #223. `COIN_PRACTICE_V1` 분리, GTC 수명, 세션 없는 잠금 순서 확정. production 미착수 |
 | OCO 손절·익절 가격·퍼센트 입력 정책 | — | **문서 확정** | `019-exit-price-policy`, PR #200. production 미착수 |
-| 지정가 주문·상시 체결 | LMT-001~004 | **일부 완료(LMT-001~003)** | LMT-001(생성)·LMT-002(체결 트리거) 완료 — PR #215(`docs/specs/015-limit-order`, 코인 전용). LMT-003(취소) 완료 — PR #220(이슈 #218). LMT-004(미체결 목록조회)는 범위 밖, 후속 이슈. 주식 지정가는 추후 처리(2026-08-05 확정) |
+| 지정가 주문·상시 체결 | LMT-001~004 | **완료** | LMT-001(생성)·LMT-002(체결 트리거) 완료 — PR #215(`docs/specs/015-limit-order`, 코인 전용). LMT-003(취소) 완료 — PR #220(이슈 #218). LMT-004(미체결 목록조회, `GET /api/orders/pending`) + 계좌·보유 조회 계약 영향(Decision Gate, `reservedCash`/`reservedQuantity` 노출) 완료 — PR #237(이슈 #235). 주식 지정가는 추후 처리(2026-08-05 확정) |
 | 지정가 체결 알림 | NOTI-001~005 | **미착수** | `notification` 패키지·테이블 없음. spec 폴더 미생성 |
 | 동시성 제어·부하테스트 | — | **미착수** | Kafka·분산락 의존성 없음 |
 
@@ -629,9 +629,9 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 - 커서 기반 페이지네이션을 사용하며 최신순으로 정렬한다.
 - 다른 사용자의 미체결 주문은 조회할 수 없다.
 
-**계좌·보유 조회 계약 영향(Decision Gate)**: 예약(에스크로)이 도입되면 `cashBalance`(ACCT-002, 계좌 원장 값 그대로)와 실제 "주문 가능 금액"이 갈라지고, 보유수량(PORT-001)도 "총 보유"와 "주문 가능 수량"이 갈라진다. `AccountSummaryResponse`·`HoldingListItemResponse`에 예약분을 노출할지, 어떤 필드명으로 할지는 착수 시 확정한다 — 이번 범위는 지정가 자체의 요구사항만 다루고 기존 응답 필드 추가는 포함하지 않는다.
+**계좌·보유 조회 계약 영향 — 해소됨(2026-08-06, 이슈 #235)**: 예약(에스크로)이 도입되면 `cashBalance`(ACCT-002, 계좌 원장 값 그대로)와 실제 "주문 가능 금액"이 갈라지고, 보유수량(PORT-001)도 "총 보유"와 "주문 가능 수량"이 갈라진다. `AccountSummaryResponse`에 `reservedCash`(long, `cashBalance` 다음 위치)를, `HoldingListItemResponse`에 `reservedQuantity`(BigDecimal, `quantity` 다음 위치)를 추가해 원장 값을 그대로 노출하는 것으로 확정했다 — 둘 다 이미 존재하는 원장 값(`accounts.reserved_cash`·`holdings.reserved_quantity`, V22)을 노출할 뿐 새로운 계산·집계는 도입하지 않는다. "주문 가능 금액"·"주문 가능 수량" 같은 파생값 필드(`availableCash`/`availableQuantity`)는 추가하지 않는다 — 클라이언트가 `cashBalance - reservedCash`·`quantity - reservedQuantity`로 직접 계산할 수 있다.
 
-상세 계약(요청·응답 필드, 전체 오류 코드)은 2차 착수 시 `docs/specs/015-limit-order/spec.md`에서 확정한다. **이 폴더는 아직 만들지 않았다**(2026-08-04 현재 `015`는 비어 있으며 지정가용으로 예약된 상태다). 현재 `OrderType` enum에는 `MARKET`만 있어 지정가 경로는 코드에 존재하지 않는다.
+상세 계약(요청·응답 필드, 전체 오류 코드)은 `docs/specs/015-limit-order/spec.md`에서 확정했다. LMT-001~004 전부 완료돼 `OrderType.LIMIT`·`OrderStatus.PENDING`을 포함한 지정가 경로가 코드에 존재한다.
 
 ### 알림
 

@@ -21,6 +21,7 @@ import com.finplay.api.market.repository.StockReplaySessionRepository;
 import com.finplay.api.market.store.FeedConnectionStatus;
 import com.finplay.api.market.store.PriceStore;
 import com.finplay.api.order.domain.OrderSide;
+import com.finplay.api.order.dto.request.LimitOrderCreateRequest;
 import com.finplay.api.order.dto.request.OrderCreateRequest;
 import com.finplay.api.order.dto.response.OrderListItemResponse;
 import com.finplay.api.order.dto.response.OrderListResponse;
@@ -60,6 +61,9 @@ class OrderListIntegrationTest {
 
 	@Autowired
 	private OrderService orderService;
+
+	@Autowired
+	private LimitOrderService limitOrderService;
 
 	@Autowired
 	private Clock clock;
@@ -184,6 +188,47 @@ class OrderListIntegrationTest {
 		assertThat(cryptoResult.content()).hasSize(1);
 		assertThat(cryptoResult.content().get(0).market()).isEqualTo("CRYPTO");
 		assertThat(cryptoResult.content().get(0).instrumentId()).isEqualTo(cryptoInstrument.getId());
+	}
+
+	// PR #237 리뷰 차단 반영 커버리지 공백 보완: LimitOrderPendingListIntegrationTest는 getMyPendingOrders(지정가만)
+	// 경로에서만 limitPrice 실측값을 검증했고, 이 클래스의 기존 테스트들은 시장가 주문만 만들어 limitPrice를 전혀
+	// 단정하지 않았다. GET /api/orders(getMyOrders)는 시장가·지정가가 섞여 나오는 유일한 경로이므로, 실제 DB에
+	// 저장된 시장가 주문의 limitPrice가 null로, 지정가 주문(미체결)의 limitPrice가 실제 걸어둔 값으로 나오는지를
+	// 여기서 함께 검증한다(mock이 아니라 OrderListItemResponse.from(Order)가 실제 엔티티를 그대로 반영하는지 확인).
+	@Test
+	void getMyOrdersExposesLimitPriceForLimitOrdersAndNullForMarketOrders() {
+		User user = createUser("list-limitprice");
+		createAccount(user, com.finplay.api.account.domain.Market.CRYPTO);
+		Instrument cryptoInstrument = createCryptoInstrument("LPRICE");
+		seedCryptoPrice(cryptoInstrument, new BigDecimal("50000000"));
+
+		// 시장가 매수 — 즉시 체결되며 Order.limitPrice는 애초에 저장되지 않는다.
+		orderService.createOrder(user.getId(), "list-limitprice-market",
+			buyRequest(Market.CRYPTO, cryptoInstrument.getId(), "0.01"));
+
+		// 지정가 매수 — 미체결 상태로 남아 걸어둔 가격이 그대로 노출돼야 한다.
+		BigDecimal limitPrice = new BigDecimal("10000000");
+		limitOrderService.createLimitOrder(user.getId(), "list-limitprice-limit",
+			new LimitOrderCreateRequest(
+				Market.CRYPTO, cryptoInstrument.getId(), OrderSide.BUY, new BigDecimal("0.01"), limitPrice));
+
+		OrderListResponse response = orderService.getMyOrders(
+			user.getId(), com.finplay.api.account.domain.Market.CRYPTO, null, 100);
+		List<OrderListItemResponse> result = response.content();
+
+		assertThat(result).hasSize(2);
+		OrderListItemResponse marketItem = result.stream()
+			.filter(item -> item.orderType().equals("MARKET"))
+			.findFirst()
+			.orElseThrow();
+		OrderListItemResponse limitItem = result.stream()
+			.filter(item -> item.orderType().equals("LIMIT"))
+			.findFirst()
+			.orElseThrow();
+
+		assertThat(marketItem.limitPrice()).isNull();
+		assertThat(limitItem.status()).isEqualTo("PENDING");
+		assertThat(limitItem.limitPrice()).isEqualByComparingTo(limitPrice);
 	}
 
 	@Test
