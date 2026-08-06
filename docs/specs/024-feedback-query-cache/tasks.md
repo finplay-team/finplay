@@ -11,7 +11,7 @@
 
 항목 6에서 캐시까지 끄면 락 효과가 분리되지 않는다 — 캐시가 없으면 원본이 N회인 것은 당연하고, 그것은 락에 대해 아무것도 말해 주지 않는다. #244 PR #254 리뷰에서 받은 지적이 정확히 이 구분이다.
 
-- [ ] **1. `RedisLock` 추출 + `CryptoWatchLock`이 그 위에 얹힌다** (ADR-0015 §4)
+- [x] **1. `RedisLock` 추출 + `CryptoWatchLock`이 그 위에 얹힌다** (ADR-0015 §4)
   - `RedisLock`(`com.finplay.api.feedback.service`) 신설 — `tryLock(String key, Duration ttl)` / `unlock(String key, String token)`. SET NX PX + Lua check-then-delete를 `CryptoWatchLock`에서 그대로 옮기고, 키 조립과 TTL은 소비자가 정한다. Redis 예외는 삼켜 "획득 실패"로 처리하고 로그 레벨 관례(정상 경합 `DEBUG`, 장애 `WARN`)를 유지한다.
   - `CryptoWatchLock`은 클래스로 남고 내부에서 `RedisLock`을 부른다 — **공개 시그니처를 바꾸지 않는다.**
   - 검증: `CryptoWatchLockConcurrencyIntegrationTest`를 포함한 **#244의 기존 테스트가 한 줄도 수정 없이 통과**한다. `RedisLock` 자체의 상호 배제(같은 키 두 번째 `tryLock`이 실패, 토큰이 다르면 `unlock`이 아무것도 지우지 않음, TTL 만료 후 재획득)를 Testcontainers Redis로 확인한다.
