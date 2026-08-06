@@ -41,6 +41,21 @@ public class InstrumentService {
 			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
 	}
 
+	// 커뮤니티 게시물 종목 태그(COM-004)처럼 "존재하지 않거나 비활성"을 400 VALIDATION_ERROR로
+	// 다뤄야 하는 도메인을 위한 조회. getInstrumentEntity(404 NOT_FOUND)와 별도로 둔다 — 두 그룹의
+	// 오류 계약이 다르기 때문(예: 지정가 주문은 종목 없음을 404로 다룬다).
+	@Transactional(readOnly = true)
+	public Instrument getTradableInstrumentEntity(Long instrumentId) {
+		Instrument instrument = instrumentRepository.findById(instrumentId)
+			.orElseThrow(() -> new BusinessException(
+				ErrorCode.VALIDATION_ERROR, "존재하지 않거나 비활성인 종목은 태그할 수 없습니다."));
+		if (!instrument.isTradable()) {
+			throw new BusinessException(
+				ErrorCode.VALIDATION_ERROR, "존재하지 않거나 비활성인 종목은 태그할 수 없습니다.");
+		}
+		return instrument;
+	}
+
 	// 위와 같은 이유로 시장 단위 순회도 이 메서드를 거친다 — feedback의 뉴스·공시 수집이 종목 목록을 얻는 경로다
 	// (spec 012 §C-6 "feedback은 다른 도메인의 repository·store를 직접 주입하지 않는다").
 	// getInstruments와 달리 응답 DTO가 아니라 엔티티를 주는 이유는 호출부가 MarketNewsItem의 연관으로 그대로

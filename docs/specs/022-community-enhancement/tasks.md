@@ -4,7 +4,7 @@
 
 ## COM-004 게시물 종목 태그·필터 (이슈 #246)
 
-- [ ] 1. **엔티티·마이그레이션·`InstrumentService` 확장**
+- [x] 1. **엔티티·마이그레이션·`InstrumentService` 확장**
   `db/migration/V24__add_instrument_tag_to_community_posts.sql`(plan.md SQL 그대로: `community_posts.instrument_id` nullable FK + `idx_community_posts_instrument_created`). `CommunityPost`에 `instrument`(nullable `ManyToOne`) 필드 추가, `create`/`update` 시그니처에 `Instrument instrument` 파라미터 추가. `InstrumentService`에 `getTradableInstrumentEntity(Long instrumentId)` 신규(존재하지 않거나 `tradable=false`면 `BusinessException(VALIDATION_ERROR)`). `CommunityPostRepository.findById`의 `@EntityGraph`에 `"instrument"` 추가. 단위 테스트(`CommunityPost` 생성·수정 시 `instrument` 반영, `InstrumentServiceTest`에 신규 메서드 케이스: 존재/비활성/정상 3가지) + `@DataJpaTest`(마이그레이션 적용 후 FK·인덱스 확인, Testcontainers).
 
 - [ ] 2. **게시물 작성·수정 API에 종목 태그 반영**

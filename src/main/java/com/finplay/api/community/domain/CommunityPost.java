@@ -2,6 +2,7 @@
 package com.finplay.api.community.domain;
 
 import com.finplay.api.auth.domain.User;
+import com.finplay.api.market.domain.Instrument;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -30,6 +31,10 @@ public class CommunityPost {
 	@JoinColumn(name = "author_id", nullable = false)
 	private User author;
 
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "instrument_id")
+	private Instrument instrument;
+
 	@Column(nullable = false, length = 100)
 	private String title;
 
@@ -46,22 +51,26 @@ public class CommunityPost {
 		User author,
 		String title,
 		String content,
+		Instrument instrument,
 		LocalDateTime createdAt,
 		LocalDateTime updatedAt) {
 		this.author = author;
 		this.title = title;
 		this.content = content;
+		this.instrument = instrument;
 		this.createdAt = createdAt;
 		this.updatedAt = updatedAt;
 	}
 
-	public static CommunityPost create(User author, String title, String content, LocalDateTime now) {
-		return new CommunityPost(author, title, content, now, now);
+	public static CommunityPost create(
+		User author, String title, String content, Instrument instrument, LocalDateTime now) {
+		return new CommunityPost(author, title, content, instrument, now, now);
 	}
 
-	public void update(String title, String content, LocalDateTime now) {
+	public void update(String title, String content, Instrument instrument, LocalDateTime now) {
 		this.title = title;
 		this.content = content;
+		this.instrument = instrument;
 		this.updatedAt = now;
 	}
 }

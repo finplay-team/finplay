@@ -32,7 +32,7 @@ public class CommunityPostService {
 	public CommunityPostResponse createPost(Long authenticatedUserId, String title, String content) {
 		User author = userQueryService.getUser(authenticatedUserId);
 		LocalDateTime now = LocalDateTime.now(clock);
-		CommunityPost post = CommunityPost.create(author, title, content, now);
+		CommunityPost post = CommunityPost.create(author, title, content, null, now);
 		return CommunityPostResponse.from(communityPostRepository.save(post));
 	}
 
@@ -50,7 +50,7 @@ public class CommunityPostService {
 		if (!post.getAuthor().getId().equals(authenticatedUserId)) {
 			throw new BusinessException(ErrorCode.FORBIDDEN);
 		}
-		post.update(title, content, LocalDateTime.now(clock));
+		post.update(title, content, post.getInstrument(), LocalDateTime.now(clock));
 		return CommunityPostResponse.from(post);
 	}
 

@@ -77,7 +77,7 @@ class CommunityPostServiceTest {
 	void getPostReturnsEveryFieldFromPostFoundByExactId() {
 		User author = User.create("reader@finplay.com", "hash", "reader", LocalDateTime.now(CLOCK));
 		CommunityPost post = CommunityPost.create(
-			author, "detail title", "detail content", LocalDateTime.now(CLOCK));
+			author, "detail title", "detail content", null, LocalDateTime.now(CLOCK));
 		ReflectionTestUtils.setField(post, "id", 73L);
 		when(repository.findById(73L)).thenReturn(Optional.of(post));
 
@@ -109,7 +109,7 @@ class CommunityPostServiceTest {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
 		ReflectionTestUtils.setField(author, "id", 42L);
 		LocalDateTime createdAt = LocalDateTime.of(2026, 7, 1, 0, 0);
-		CommunityPost post = CommunityPost.create(author, "old title", "old content", createdAt);
+		CommunityPost post = CommunityPost.create(author, "old title", "old content", null, createdAt);
 		ReflectionTestUtils.setField(post, "id", 73L);
 		when(repository.findById(73L)).thenReturn(Optional.of(post));
 
@@ -142,7 +142,7 @@ class CommunityPostServiceTest {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
 		ReflectionTestUtils.setField(author, "id", 42L);
 		LocalDateTime createdAt = LocalDateTime.of(2026, 7, 1, 0, 0);
-		CommunityPost post = CommunityPost.create(author, "old title", "old content", createdAt);
+		CommunityPost post = CommunityPost.create(author, "old title", "old content", null, createdAt);
 		ReflectionTestUtils.setField(post, "id", 73L);
 		when(repository.findById(73L)).thenReturn(Optional.of(post));
 
@@ -159,7 +159,7 @@ class CommunityPostServiceTest {
 	@Test
 	void getPostsMapsRepositoryPageToListResponseWithPageMetadata() {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
-		CommunityPost post = CommunityPost.create(author, "title", "content", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(author, "title", "content", null, LocalDateTime.now(CLOCK));
 		Page<CommunityPost> page = new PageImpl<>(List.of(post), PageRequest.of(0, 10), 1);
 		when(repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10))).thenReturn(page);
 
@@ -191,7 +191,7 @@ class CommunityPostServiceTest {
 	void deletePostDeletesPostWithoutCommentsWhenAuthorMatches() {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
 		ReflectionTestUtils.setField(author, "id", 42L);
-		CommunityPost post = CommunityPost.create(author, "title", "content", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(author, "title", "content", null, LocalDateTime.now(CLOCK));
 		ReflectionTestUtils.setField(post, "id", 73L);
 		when(repository.findById(73L)).thenReturn(Optional.of(post));
 
@@ -205,7 +205,7 @@ class CommunityPostServiceTest {
 	void deletePostDeletesCommentsBeforePostWhenPostHasComments() {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
 		ReflectionTestUtils.setField(author, "id", 42L);
-		CommunityPost post = CommunityPost.create(author, "title", "content", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(author, "title", "content", null, LocalDateTime.now(CLOCK));
 		ReflectionTestUtils.setField(post, "id", 73L);
 		when(repository.findById(73L)).thenReturn(Optional.of(post));
 
@@ -233,7 +233,7 @@ class CommunityPostServiceTest {
 	void deletePostFailsWithForbiddenAndDoesNotDeleteWhenAuthorDiffers() {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
 		ReflectionTestUtils.setField(author, "id", 42L);
-		CommunityPost post = CommunityPost.create(author, "title", "content", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(author, "title", "content", null, LocalDateTime.now(CLOCK));
 		ReflectionTestUtils.setField(post, "id", 73L);
 		when(repository.findById(73L)).thenReturn(Optional.of(post));
 

@@ -59,7 +59,7 @@ class CommentDeleteIntegrationTest {
 	void ownerDeleteReturns204AndRemovesCommentFromDatabase() throws Exception {
 		User author = createUser("owner");
 		CommunityPost post = postRepository.saveAndFlush(
-			CommunityPost.create(author, "title", "content", LocalDateTime.now()));
+			CommunityPost.create(author, "title", "content", null, LocalDateTime.now()));
 		PostComment comment = commentRepository.saveAndFlush(
 			PostComment.create(post, author, "my comment", LocalDateTime.now()));
 		Long commentId = comment.getId();
@@ -77,7 +77,7 @@ class CommentDeleteIntegrationTest {
 		User author = createUser("forbidden-author");
 		User stranger = createUser("forbidden-stranger");
 		CommunityPost post = postRepository.saveAndFlush(
-			CommunityPost.create(author, "title", "content", LocalDateTime.now()));
+			CommunityPost.create(author, "title", "content", null, LocalDateTime.now()));
 		PostComment comment = commentRepository.saveAndFlush(
 			PostComment.create(post, author, "original comment", LocalDateTime.now()));
 		Long commentId = comment.getId();
@@ -108,7 +108,7 @@ class CommentDeleteIntegrationTest {
 	void unauthenticatedDeleteReturnsUnauthorizedAndLeavesCommentCountUnchanged() throws Exception {
 		User author = createUser("unauth-author");
 		CommunityPost post = postRepository.saveAndFlush(
-			CommunityPost.create(author, "title", "content", LocalDateTime.now()));
+			CommunityPost.create(author, "title", "content", null, LocalDateTime.now()));
 		commentRepository.saveAndFlush(
 			PostComment.create(post, author, "untouched comment", LocalDateTime.now()));
 		long countBefore = commentRepository.count();

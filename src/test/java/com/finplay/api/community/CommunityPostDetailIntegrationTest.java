@@ -51,7 +51,7 @@ class CommunityPostDetailIntegrationTest {
 		LocalDateTime createdAt = LocalDateTime.of(2026, 7, 26, 10, 30, 15);
 		User author = createUser("detail-author");
 		CommunityPost post = postRepository.saveAndFlush(
-			CommunityPost.create(author, "detail title", "detail content", createdAt));
+			CommunityPost.create(author, "detail title", "detail content", null, createdAt));
 		Long postId = post.getId();
 		String authorNickname = author.getNickname();
 		String accessToken = jwtTokenProvider.issue(author.getId(), author.getRole()).accessToken();

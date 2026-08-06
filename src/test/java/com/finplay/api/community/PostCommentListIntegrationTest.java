@@ -62,8 +62,9 @@ class PostCommentListIntegrationTest {
 		throws Exception {
 		User requester = createUser("requester");
 		User secondAuthor = createUser("second");
-		CommunityPost target = postRepository.saveAndFlush(CommunityPost.create(requester, "target", "post", NOW));
-		CommunityPost other = postRepository.saveAndFlush(CommunityPost.create(requester, "other", "post", NOW));
+		CommunityPost target = postRepository
+			.saveAndFlush(CommunityPost.create(requester, "target", "post", null, NOW));
+		CommunityPost other = postRepository.saveAndFlush(CommunityPost.create(requester, "other", "post", null, NOW));
 		PostComment oldest = commentRepository.saveAndFlush(
 			PostComment.create(target, requester, "oldest", NOW.minusMinutes(1)));
 		PostComment firstTie = commentRepository.saveAndFlush(
@@ -95,7 +96,7 @@ class PostCommentListIntegrationTest {
 	@Test
 	void existingPostWithoutCommentsReturnsEmptyArrayWithoutChangingDatabase() throws Exception {
 		User requester = createUser("empty");
-		CommunityPost post = postRepository.saveAndFlush(CommunityPost.create(requester, "empty", "post", NOW));
+		CommunityPost post = postRepository.saveAndFlush(CommunityPost.create(requester, "empty", "post", null, NOW));
 		String token = jwtTokenProvider.issue(requester.getId(), requester.getRole()).accessToken();
 
 		mockMvc.perform(get("/api/community/posts/{postId}/comments", post.getId())

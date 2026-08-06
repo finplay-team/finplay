@@ -49,7 +49,7 @@ class CommunityPostUpdateIntegrationTest {
 		LocalDateTime createdAt = LocalDateTime.of(2026, 7, 20, 9, 0, 0);
 		User author = createUser("update-owner");
 		CommunityPost post = postRepository.saveAndFlush(
-			CommunityPost.create(author, "original title", "original content", createdAt));
+			CommunityPost.create(author, "original title", "original content", null, createdAt));
 		Long postId = post.getId();
 		String accessToken = jwtTokenProvider.issue(author.getId(), author.getRole()).accessToken();
 		entityManager.clear();
@@ -79,7 +79,7 @@ class CommunityPostUpdateIntegrationTest {
 		User author = createUser("forbidden-owner");
 		User stranger = createUser("forbidden-stranger");
 		CommunityPost post = postRepository.saveAndFlush(
-			CommunityPost.create(author, "original title", "original content", createdAt));
+			CommunityPost.create(author, "original title", "original content", null, createdAt));
 		Long postId = post.getId();
 		String strangerToken = jwtTokenProvider.issue(stranger.getId(), stranger.getRole()).accessToken();
 		entityManager.clear();
@@ -122,7 +122,7 @@ class CommunityPostUpdateIntegrationTest {
 		LocalDateTime createdAt = LocalDateTime.of(2026, 7, 20, 9, 0, 0);
 		User author = createUser("blank-owner");
 		CommunityPost post = postRepository.saveAndFlush(
-			CommunityPost.create(author, "original title", "original content", createdAt));
+			CommunityPost.create(author, "original title", "original content", null, createdAt));
 		Long postId = post.getId();
 		String accessToken = jwtTokenProvider.issue(author.getId(), author.getRole()).accessToken();
 		entityManager.clear();
@@ -153,7 +153,7 @@ class CommunityPostUpdateIntegrationTest {
 		LocalDateTime createdAt = LocalDateTime.of(2026, 7, 20, 9, 0, 0);
 		User author = createUser("unauth-owner");
 		CommunityPost post = postRepository.saveAndFlush(
-			CommunityPost.create(author, "original title", "original content", createdAt));
+			CommunityPost.create(author, "original title", "original content", null, createdAt));
 		Long postId = post.getId();
 
 		mockMvc.perform(patch("/api/community/posts/{postId}", postId)

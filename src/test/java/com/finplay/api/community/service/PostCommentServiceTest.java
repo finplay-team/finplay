@@ -43,7 +43,7 @@ class PostCommentServiceTest {
 	@Test
 	void createCommentSavesPostAuthenticatedAuthorContentAndFixedTime() {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
-		CommunityPost post = CommunityPost.create(author, "title", "post", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(author, "title", "post", null, LocalDateTime.now(CLOCK));
 		when(postRepository.findById(7L)).thenReturn(Optional.of(post));
 		when(userQueryService.getUser(42L)).thenReturn(author);
 		when(commentRepository.save(any(PostComment.class))).thenAnswer(invocation -> {
@@ -79,7 +79,7 @@ class PostCommentServiceTest {
 	@Test
 	void createCommentDoesNotSaveWhenAuthenticatedUserDoesNotExist() {
 		User postAuthor = User.create("post@finplay.com", "hash", "poster", LocalDateTime.now(CLOCK));
-		CommunityPost post = CommunityPost.create(postAuthor, "title", "post", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(postAuthor, "title", "post", null, LocalDateTime.now(CLOCK));
 		when(postRepository.findById(7L)).thenReturn(Optional.of(post));
 		when(userQueryService.getUser(404L)).thenThrow(new BusinessException(ErrorCode.UNAUTHORIZED));
 
@@ -94,7 +94,7 @@ class PostCommentServiceTest {
 	@Test
 	void deleteCommentDeletesWhenAuthenticatedUserIsAuthor() {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
-		CommunityPost post = CommunityPost.create(author, "title", "post", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(author, "title", "post", null, LocalDateTime.now(CLOCK));
 		PostComment comment = PostComment.create(post, author, "comment", LocalDateTime.now(CLOCK));
 		ReflectionTestUtils.setField(author, "id", 42L);
 		ReflectionTestUtils.setField(comment, "id", 9L);
@@ -108,7 +108,7 @@ class PostCommentServiceTest {
 	@Test
 	void deleteCommentThrowsForbiddenAndDoesNotDeleteWhenAuthenticatedUserIsNotAuthor() {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
-		CommunityPost post = CommunityPost.create(author, "title", "post", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(author, "title", "post", null, LocalDateTime.now(CLOCK));
 		PostComment comment = PostComment.create(post, author, "comment", LocalDateTime.now(CLOCK));
 		ReflectionTestUtils.setField(author, "id", 42L);
 		ReflectionTestUtils.setField(comment, "id", 9L);
@@ -138,7 +138,7 @@ class PostCommentServiceTest {
 	void getCommentsReturnsRepositoryResultsMappedInOriginalOrder() {
 		User firstAuthor = User.create("first@finplay.com", "hash", "first", LocalDateTime.now(CLOCK));
 		User secondAuthor = User.create("second@finplay.com", "hash", "second", LocalDateTime.now(CLOCK));
-		CommunityPost post = CommunityPost.create(firstAuthor, "title", "post", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(firstAuthor, "title", "post", null, LocalDateTime.now(CLOCK));
 		PostComment first = PostComment.create(
 			post, firstAuthor, "first comment", LocalDateTime.now(CLOCK).minusMinutes(1));
 		PostComment second = PostComment.create(post, secondAuthor, "second comment", LocalDateTime.now(CLOCK));
