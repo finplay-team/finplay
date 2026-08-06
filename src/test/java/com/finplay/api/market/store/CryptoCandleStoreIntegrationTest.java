@@ -10,10 +10,12 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -168,6 +170,54 @@ class CryptoCandleStoreIntegrationTest {
 		assertThat(candle.volume()).isEqualByComparingTo(String.valueOf(threadCount)); // 유실 0건 — 합계가 정확히 50
 		assertThat(candle.high()).isEqualByComparingTo("150");
 		assertThat(candle.low()).isEqualByComparingTo("101");
+	}
+
+	// PR #255 리뷰 대응 — Lua 원자성이 "무결성"만이 아니라 "중간 상태 미노출"까지 보장하는지를 회귀 감지 가능한
+	// 형태로 고정한다. 논리상 Lua 스크립트가 open·high·low·close·volumeScaled를 한 번에 HSET/HINCRBY하므로
+	// 반쪽만 쓰인 해시를 읽을 일이 없어야 한다 — 누군가 나중에 이 스크립트를 여러 라운드트립으로 잘못 나누면
+	// 이 테스트가 실패해야 한다.
+	@Test
+	void concurrentReadDuringWritesNeverObservesPartiallyUpdatedOrInconsistentCandle() throws InterruptedException {
+		CryptoCandleStore store = storeAt(MINUTE_START);
+		int writeCount = 2000;
+		AtomicBoolean writingDone = new AtomicBoolean(false);
+		List<String> inconsistencies = new CopyOnWriteArrayList<>();
+
+		Thread writer = new Thread(() -> {
+			for (int i = 1; i <= writeCount; i++) {
+				store.recordTrade("TESTCOIN", MINUTE_START.plusSeconds(1), new BigDecimal(100 + (i % 50)),
+					new BigDecimal("1"));
+			}
+			writingDone.set(true);
+		});
+
+		Thread reader = new Thread(() -> {
+			while (!writingDone.get()) {
+				try {
+					List<CryptoCandleDto> candles = store.getCandles("TESTCOIN", MINUTE_START, MINUTE_START);
+					if (!candles.isEmpty()) {
+						CryptoCandleDto candle = candles.get(0);
+						// high가 low·open·close보다 항상 크거나 같아야 한다 — 반쪽만 갱신된 상태라면 깨질 수 있다.
+						if (candle.high().compareTo(candle.low()) < 0 || candle.high().compareTo(candle.open()) < 0
+							|| candle.high().compareTo(candle.close()) < 0
+							|| candle.low().compareTo(candle.open()) > 0
+							|| candle.low().compareTo(candle.close()) > 0) {
+							inconsistencies.add("OHLC 대소관계 붕괴: " + candle);
+						}
+					}
+				} catch (RuntimeException ex) {
+					// 필드 일부만 기록된 해시를 읽으면 BigDecimal 파싱에서 예외가 난다 — 그것도 중간 상태 노출이다.
+					inconsistencies.add("쓰는 도중 읽어서 예외 발생: " + ex);
+				}
+			}
+		});
+
+		writer.start();
+		reader.start();
+		writer.join(15_000);
+		reader.join(1_000);
+
+		assertThat(inconsistencies).isEmpty();
 	}
 
 	@Test
