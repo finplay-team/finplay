@@ -167,6 +167,9 @@ public class FeedbackQueryCache {
 			return loader.get();
 		}
 		String key = KEY_PREFIX + suffix;
+		// 진입 시점에 만료 경계가 앞에 있었는지를 붙잡아 둔다 — 저장 시점에 TTL이 0 이하가 됐을 때 "로더가 도는
+		// 사이에 경계를 넘은 것"(정상)과 "계산된 경계가 처음부터 과거였던 것"(버그)을 가르는 유일한 근거다.
+		boolean expiryWasAheadAtEntry = expiresAt.isAfter(LocalDateTime.now(clock));
 		CacheRead<T> cached = read(key, decoder);
 		if (cached.value().isPresent()) {
 			return cached.value().get();
@@ -191,7 +194,7 @@ public class FeedbackQueryCache {
 					return filledWhileAcquiringLock.value().get();
 				}
 				T loaded = loader.get();
-				encoder.apply(loaded).ifPresent(value -> write(key, value, expiresAt));
+				encoder.apply(loaded).ifPresent(value -> write(key, value, expiresAt, expiryWasAheadAtEntry));
 				return loaded;
 			} finally {
 				// 로더가 예외를 던져도 락이 TTL까지 남지 않게 한다.
@@ -244,12 +247,36 @@ public class FeedbackQueryCache {
 		}
 	}
 
-	private void write(String key, String value, LocalDateTime expiresAt) {
+	/**
+	 * TTL이 0 이하면 저장하지 않는다 — 음수 TTL은 Redis 명령 오류가 되고, 이미 만료된 값을 넣을 이유도 없다.
+	 *
+	 * <p><b>성격이 다른 두 가지가 이 분기로 함께 들어온다.</b> {@code expiresAt}은 조회 진입 시점에 계산되는데
+	 * 여기서는 로더가 끝난 뒤 {@code now}를 다시 읽으므로, 그 사이에 경계를 넘으면 <b>정상 동작에서도</b>
+	 * TTL이 0 이하가 된다.
+	 *
+	 * <ul>
+	 * <li><b>로더가 도는 사이에 경계를 넘었다 → 정상이라 {@code DEBUG}다.</b> 코인은 매시 05분 직전, 주식
+	 * {@code PRE_MARKET}은 15:30 직전에 들어온 요청에서 <b>실제로 일어난다</b> — 특히 코인은 매시 경계마다
+	 * 나올 수 있어 {@code WARN}으로 두면 운영 로그에 잡음이 된다. 저장을 건너뛰는 것이 옳은 동작이고(이미
+	 * 만료된 값이다) 다음 요청이 새 경계로 다시 채운다.</li>
+	 * <li><b>진입 시점에 이미 만료가 과거였다 → 비정상이라 {@code WARN}이다.</b> 아직 아무 일도 하기 전인데
+	 * 경계가 과거라는 것은 경계 계산이 틀렸다는 뜻이다(예: 15:30이 지났는데 {@code scope}가 여전히
+	 * {@code PRE_MARKET}이다). 이 상태는 저장이 계속 실패해 그 키의 캐시가 영영 비므로 신호가 남아야 한다.</li>
+	 * </ul>
+	 *
+	 * <p>둘을 가르는 근거가 {@code expiryWasAheadAtEntry}다. <b>시간 차의 크기로 어림하지 않는다</b> — 임의의
+	 * 임계값이 생기고, 느린 로더와 계산 버그를 그 숫자로는 구분할 수 없다.
+	 */
+	private void write(String key, String value, LocalDateTime expiresAt, boolean expiryWasAheadAtEntry) {
 		Duration ttl = Duration.between(LocalDateTime.now(clock), expiresAt);
 		if (ttl.isZero() || ttl.isNegative()) {
-			// 정상 경로에서는 발생하지 않는다(15:30 이후에는 scope가 FULL이다). 경계 계산 버그가 음수 TTL로
-			// Redis 명령 오류를 내는 것을 막는 방어다.
-			log.warn("조회 캐시 TTL이 0 이하라 저장하지 않는다 - key={}, expiresAt={}", key, expiresAt);
+			if (expiryWasAheadAtEntry) {
+				log.debug("조회 캐시 만료 경계를 로더가 도는 사이에 넘어 저장하지 않는다 - key={}, expiresAt={}",
+					key, expiresAt);
+				return;
+			}
+			log.warn("조회 캐시 TTL이 진입 시점부터 0 이하라 저장하지 않는다(만료 경계 계산 확인 필요) - "
+				+ "key={}, expiresAt={}", key, expiresAt);
 			return;
 		}
 		try {

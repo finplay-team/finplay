@@ -268,7 +268,12 @@ feedback/
                CryptoPriceMoveWatcher     코인 변동 감시
                PriceMoveQueryService, InstrumentNewsQueryService,
                MarketBriefingService, PostSellFeedbackService
+               CryptoWatchLock            코인 감시 종목 단위 락 (#244. 아래 RedisLock 위에 얹힌다)
+               RedisLock                  SET NX PX + Lua check-then-delete만 담은 범용 락 (#245 / PR #257.
+                                          키·TTL은 소비자가 정한다 — ADR-0015 §4)
                MarketSessionTimes         개장·장 마감의 벽시계 경계 상수 (§C-2-1, 빈이 아니다)
+  store/       FeedbackQueryCache         요약·브리핑 조회 캐시 — 키 조립·TTL·직렬화·쏠림 방어 락 (#245 / PR #257).
+                                          Spring 캐시 추상화를 쓰지 않는 이유는 ADR-0015 §5 (market/store와 같은 형태)
   collector/   NewsCollector(interface), NaverNewsCollector, FakeNewsCollector
                DisclosureCollector(interface), DartDisclosureCollector, FakeDisclosureCollector
   domain/      MarketNewsItem, PriceMoveEvent, PriceMoveEventSource,
@@ -287,6 +292,12 @@ feedback/
   (트랜잭션 경계 전용 내부 컴포넌트 — 위 목록의 서비스가 진입점이고 이들은 경계만 나눈다)
     PriceMoveCardWriter        카드 저장 (#180)
     PostSellFeedbackReader     매도 회고 읽기 (readOnly), TradeFeedbackWriter 서술 저장 (#208)
+    InstrumentNewsQueryReader  종목 뉴스 조회의 DB 읽기 (readOnly, #245 / PR #257)
+    MarketBriefingReader       브리핑 조회·생성이 공유하는 DB 읽기 (readOnly, #245 / PR #257)
+                               위 둘은 조회 캐시의 락 대기가 JDBC 커넥션을 쥐지 않게 나눈 것이다 —
+                               PostSellFeedbackReader가 LLM 호출을 트랜잭션 밖에 둔 것과 같은 이유다
+    SummaryTextLookupDto       요약·브리핑 행 조회 결과(행 존재 여부 + 서술)를 경계 밖으로 내보내는 내부 DTO.
+                               §C-4 4·5번을 가르려면 서술만으로는 부족하다 (#245 / PR #257)
     portfolio/service/SellAllocationQueryService  배분·lot 요약 (#208. portfolio 소유)
 ```
 

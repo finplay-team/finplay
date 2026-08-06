@@ -431,6 +431,70 @@ class FeedbackQueryCacheTest {
 		verify(redisLock, never()).unlock(anyString(), anyString());
 	}
 
+	/*
+	 * 대기 루프 안에서 Redis가 불건전해지는 경로다. skipsTheWaitEntirelyWhenRedisIsDown(통합)이 보는 것은
+	 * **첫 읽기** 시점의 불건전이라 이 분기를 지나가지 않는다 — 그쪽은 락을 시도하기도 전에 빠져나간다.
+	 *
+	 * 여기서 갈리는 것은 소요뿐이다. 이 분기가 없어도 결국 타임아웃 뒤 같은 답(로더 결과)을 내므로
+	 * "정답이 나온다"로는 두 구현이 구분되지 않는다. 그래서 wait-millis를 3초로 크게 잡고 1초 미만을 단정한다.
+	 */
+	@Test
+	@DisplayName("대기 도중 Redis가 불건전해지면 남은 wait-millis를 태우지 않고 즉시 원본으로 내려간다")
+	void leavesTheWaitImmediatelyWhenRedisTurnsUnhealthyMidWait() {
+		when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+		when(redisLock.tryLock(anyString(), any(Duration.class))).thenReturn(Optional.empty());
+		// 첫 읽기는 정상적인 미스(null), 대기 루프 안의 두 번째 읽기부터 장애다.
+		when(valueOperations.get(CRYPTO_SUMMARY_KEY))
+			.thenReturn(null)
+			.thenThrow(new RuntimeException("Redis 장애"));
+		FeedbackQueryCache cache = new FeedbackQueryCache(redisTemplate, redisLock, objectMapper,
+			clockAt(LocalDateTime.of(2026, 8, 5, 10, 3)),
+			new FeedbackQueryCacheProperties(true, 1000, 3000, 20), newsProperties(MAX_ITEMS_PER_BRIEFING));
+
+		long startedAt = System.nanoTime();
+		Optional<String> result = cache.getOrLoadCryptoSummaryText(INSTRUMENT_ID, () -> Optional.of("원본 요약"));
+		long elapsedMillis = Duration.ofNanos(System.nanoTime() - startedAt).toMillis();
+
+		assertThat(result).contains("원본 요약");
+		assertThat(elapsedMillis)
+			.as("wait-millis 3000을 다 채웠다면 대기 루프의 불건전 판정이 동작하지 않은 것이다")
+			.isLessThan(1000L);
+	}
+
+	/*
+	 * 요청 스레드가 취소된 상황이다. 계속 폴링하는 것이 더 나쁘므로 즉시 원본으로 내려가되,
+	 * **인터럽트 상태를 복원해야 한다** — 복원을 빠뜨리면 취소 신호가 이 메서드에서 소멸해 위쪽(서블릿 컨테이너·
+	 * 상위 실행자)이 취소를 영영 알지 못한다. 결과값만 보면 복원한 구현과 안 한 구현이 똑같으므로
+	 * isInterrupted를 직접 단정한다.
+	 *
+	 * Thread.interrupted()로 읽으면서 동시에 플래그를 지운다 — 남겨 두면 같은 스레드에서 도는 뒤 테스트들이
+	 * 엉뚱하게 InterruptedException을 맞는다.
+	 */
+	@Test
+	@DisplayName("대기 중 인터럽트되면 원본으로 내려가면서 인터럽트 상태를 복원한다")
+	void restoresTheInterruptFlagWhenTheWaitIsInterrupted() {
+		when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+		when(redisLock.tryLock(anyString(), any(Duration.class))).thenReturn(Optional.empty());
+		when(valueOperations.get(CRYPTO_SUMMARY_KEY)).thenReturn(null);
+		FeedbackQueryCache cache = new FeedbackQueryCache(redisTemplate, redisLock, objectMapper,
+			clockAt(LocalDateTime.of(2026, 8, 5, 10, 3)),
+			new FeedbackQueryCacheProperties(true, 1000, 3000, 20), newsProperties(MAX_ITEMS_PER_BRIEFING));
+
+		Thread.currentThread().interrupt();
+		Optional<String> result;
+		boolean stillInterrupted;
+		try {
+			result = cache.getOrLoadCryptoSummaryText(INSTRUMENT_ID, () -> Optional.of("원본 요약"));
+		} finally {
+			stillInterrupted = Thread.interrupted();
+		}
+
+		assertThat(result).as("취소돼도 응답은 준다").contains("원본 요약");
+		assertThat(stillInterrupted).as("인터럽트 상태를 삼키면 취소 신호가 여기서 사라진다").isTrue();
+		// 인터럽트로 빠져나온 경로도 fail-open이므로 캐시에 쓰지 않는다.
+		verify(valueOperations, never()).set(anyString(), anyString(), any(Duration.class));
+	}
+
 	// 로더 예외가 락을 TTL까지 붙잡고 있으면, 그 사이 같은 키의 모든 요청이 대기 후 fail-open으로 DB에 직행한다.
 	@Test
 	@DisplayName("로더가 예외를 던져도 락은 풀린다(예외 자체는 호출부로 전파된다)")

@@ -4,26 +4,40 @@ package com.finplay.api.feedback.store;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.finplay.api.TestcontainersConfiguration;
 import com.finplay.api.feedback.domain.FeedbackContentStatus;
 import com.finplay.api.feedback.domain.InstrumentNewsSummary;
+import com.finplay.api.feedback.domain.MarketBriefing;
 import com.finplay.api.feedback.domain.MarketNewsItem;
 import com.finplay.api.feedback.domain.MarketNewsItemType;
 import com.finplay.api.feedback.domain.NarrativeSource;
 import com.finplay.api.feedback.domain.NewsSummaryScope;
 import com.finplay.api.feedback.dto.response.InstrumentNewsResponse;
+import com.finplay.api.feedback.dto.response.MarketBriefingResponse;
 import com.finplay.api.feedback.repository.InstrumentNewsSummaryRepository;
+import com.finplay.api.feedback.repository.MarketBriefingRepository;
 import com.finplay.api.feedback.repository.MarketNewsItemRepository;
 import com.finplay.api.feedback.service.InstrumentNewsQueryService;
+import com.finplay.api.feedback.service.MarketBriefingPromptDto;
+import com.finplay.api.feedback.service.MarketBriefingService;
+import com.finplay.api.feedback.service.NarrativeResultDto;
+import com.finplay.api.feedback.service.NarrativeService;
 import com.finplay.api.feedback.service.RedisLock;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.domain.StockReplaySession;
 import com.finplay.api.market.repository.InstrumentRepository;
+import com.finplay.api.market.repository.StockReplaySessionRepository;
+import com.finplay.api.market.service.InstrumentService;
 import com.zaxxer.hikari.HikariDataSource;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
@@ -41,6 +55,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -50,6 +65,7 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
@@ -93,6 +109,16 @@ class FeedbackQueryCacheConnectionHoldingIntegrationTest {
 	// 커밋되는 픽스처라 저장소 안에서 이 클래스만 쓰는 연도를 쓴다 (docs/agent-mistakes.md의 UNIQUE 충돌 행).
 	private static final LocalDateTime NOW = LocalDateTime.of(2033, 8, 6, 10, 0);
 
+	// 서비스 날짜 2033-08-06(토) 기준 원본 거래일과 그 직전 영업일. 브리핑 전장 구간이 [D-1 15:30, D 09:00]이다.
+	private static final LocalDate ORIGIN_TRADE_DATE = LocalDate.of(2033, 8, 5);
+
+	private static final LocalDate PREVIOUS_TRADE_DATE = LocalDate.of(2033, 8, 4);
+
+	private static final String STOCK_SYMBOL = "005930";
+
+	// 이 클래스가 만든 기사만 골라 지우려고 붙이는 표식 — 픽스처가 커밋되므로 정리가 정확해야 한다.
+	private static final String URL_PREFIX = "https://news.example.test/pool/";
+
 	private static final int CONCURRENT_QUERIES = 4;
 
 	// wait-millis(6000) 한가운데다 — 이 시점이면 네 스레드가 전부 폴링 대기에 들어가 있다.
@@ -113,7 +139,23 @@ class FeedbackQueryCacheConnectionHoldingIntegrationTest {
 	private StringRedisTemplate redisTemplate;
 
 	@Autowired
+	private MarketBriefingService marketBriefingService;
+
+	@Autowired
+	private InstrumentService instrumentService;
+
+	@Autowired
 	private InstrumentRepository instrumentRepository;
+
+	@Autowired
+	private MarketBriefingRepository marketBriefingRepository;
+
+	@Autowired
+	private StockReplaySessionRepository stockReplaySessionRepository;
+
+	// 실 LLM을 부르지 않으면서 생성 프롬프트를 잡아 보려고 대체한다.
+	@MockitoBean
+	private NarrativeService narrativeService;
 
 	@Autowired
 	private MarketNewsItemRepository marketNewsItemRepository;
@@ -129,27 +171,52 @@ class FeedbackQueryCacheConnectionHoldingIntegrationTest {
 
 	private Instrument crypto;
 
+	private Instrument stock;
+
 	@BeforeEach
 	void setUp() {
 		FeedbackQueryCacheTestKeys.clear(redisTemplate);
+		when(narrativeService.resolveMarketBriefingNarrative(any()))
+			.thenReturn(NarrativeResultDto.llm("간밤 기사가 이어졌습니다."));
+
 		crypto = instrumentRepository.saveAndFlush(Instrument.create(
 			Market.CRYPTO,
 			"POOL" + UUID.randomUUID().toString().replace("-", "").substring(0, 8),
 			"커넥션코인", BigDecimal.ONE, 5000L, true, NOW));
+		stock = instrumentService.getInstrumentEntities(Market.STOCK).stream()
+			.filter(each -> STOCK_SYMBOL.equals(each.getSymbol()))
+			.findFirst()
+			.orElseThrow();
+
 		marketNewsItemRepository.saveAndFlush(MarketNewsItem.create(
 			crypto, MarketNewsItemType.NEWS, "코인 기사", "테스트경제",
-			"https://news.example.test/pool/" + crypto.getSymbol(),
-			NOW.minusHours(1), NOW));
+			URL_PREFIX + crypto.getSymbol(), NOW.minusHours(1), NOW));
 		instrumentNewsSummaryRepository.saveAndFlush(InstrumentNewsSummary.create(
 			crypto, NOW.toLocalDate(), NewsSummaryScope.ROLLING_24H, SUMMARY_TEXT, NarrativeSource.LLM,
 			LocalDateTime.of(NOW.toLocalDate(), LocalTime.of(9, 5))));
+		marketBriefingRepository.saveAndFlush(MarketBriefing.create(
+			Market.CRYPTO, NOW.toLocalDate(), "최근 24시간 코인 기사가 이어졌습니다.", NarrativeSource.LLM, NOW));
+
+		// 브리핑 전장 구간 [2033-08-04 15:30, 2033-08-05 09:00] 안에 드는 주식 기사.
+		marketNewsItemRepository.saveAndFlush(MarketNewsItem.create(
+			stock, MarketNewsItemType.NEWS, "전일 저녁 기사", "테스트경제",
+			URL_PREFIX + "stock", LocalDateTime.of(PREVIOUS_TRADE_DATE, LocalTime.of(18, 0)), NOW));
+		stockReplaySessionRepository.saveAndFlush(StockReplaySession.ready(
+			NOW.toLocalDate(),
+			ORIGIN_TRADE_DATE,
+			LocalDateTime.of(NOW.toLocalDate(), LocalTime.of(8, 40)),
+			LocalDateTime.of(NOW.toLocalDate(), LocalTime.of(8, 0))));
 	}
 
+	// 이 클래스는 @Transactional이 아니라 픽스처가 커밋된다 — 남기면 다른 테스트의 시장 단위 질의에 섞인다.
 	@AfterEach
 	void cleanUp() {
 		FeedbackQueryCacheTestKeys.clear(redisTemplate);
+		jdbcTemplate.update("DELETE FROM market_briefings WHERE origin_trade_date BETWEEN ? AND ?",
+			LocalDate.of(2033, 1, 1), LocalDate.of(2033, 12, 31));
 		jdbcTemplate.update("DELETE FROM instrument_news_summaries WHERE instrument_id = ?", crypto.getId());
-		jdbcTemplate.update("DELETE FROM market_news_items WHERE instrument_id = ?", crypto.getId());
+		jdbcTemplate.update("DELETE FROM market_news_items WHERE url LIKE ?", URL_PREFIX + "%");
+		jdbcTemplate.update("DELETE FROM stock_replay_sessions WHERE service_date = ?", NOW.toLocalDate());
 		jdbcTemplate.update("DELETE FROM instruments WHERE id = ?", crypto.getId());
 	}
 
@@ -188,6 +255,58 @@ class FeedbackQueryCacheConnectionHoldingIntegrationTest {
 				assertThat(item.publisher()).isNotBlank();
 				assertThat(item.publishedAt()).isNotNull();
 			});
+	}
+
+	/*
+	 * 위 종목 뉴스 조회만으로는 부족하다 — 그 매핑(NewsItem.from)은 지연 연관을 하나도 만지지 않아
+	 * JOIN FETCH를 지워도 통과한다. 트랜잭션 밖에서 실제로 instrument를 역참조하는 자리는
+	 * **BriefingNewsItem.from(브리핑 items)와 MarketBriefingService.toPromptItem(생성 프롬프트)** 둘이고,
+	 * 둘 다 종목명·심볼을 읽는다. 그래서 여기서 name·symbol을 직접 단정한다.
+	 *
+	 * MarketBriefingReader의 두 질의가 JOIN FETCH라 트랜잭션이 닫힌 뒤에도 초기화돼 있다는 주석을 코드로
+	 * 고정하는 것이 목적이다 — JOIN FETCH를 지우면 LazyInitializationException으로 red가 된다(확인했다).
+	 */
+	@Test
+	@DisplayName("[트랜잭션 밖] 주식·코인 브리핑 조회가 items의 종목명·심볼까지 지연 로딩 예외 없이 낸다")
+	void briefingQueriesResolveInstrumentIdentityOutsideAnyAmbientTransaction() {
+		assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+		marketBriefingRepository.saveAndFlush(MarketBriefing.create(
+			Market.STOCK, ORIGIN_TRADE_DATE, "간밤 기사가 이어졌습니다.", NarrativeSource.LLM, NOW));
+
+		MarketBriefingResponse stockBriefing = marketBriefingService.getBriefing(Market.STOCK);
+		MarketBriefingResponse cryptoBriefing = marketBriefingService.getBriefing(Market.CRYPTO);
+
+		assertThat(stockBriefing.items())
+			.isNotEmpty()
+			.allSatisfy(item -> {
+				assertThat(item.symbol()).isEqualTo(STOCK_SYMBOL);
+				assertThat(item.name()).isNotBlank();
+				assertThat(item.instrumentId()).isNotNull();
+			});
+		assertThat(cryptoBriefing.items())
+			.isNotEmpty()
+			.allSatisfy(item -> {
+				assertThat(item.symbol()).isEqualTo(crypto.getSymbol());
+				assertThat(item.name()).isEqualTo("커넥션코인");
+			});
+	}
+
+	// 생성 경로는 조회와 매핑이 다르다 — toPromptItem이 기사마다 종목명을 붙인다(시장 단위 단일 목록이라
+	// 어느 종목 소식인지 모델이 알 수 없기 때문이다). Reader가 엔티티를 그대로 돌려주고 그 역참조가
+	// 트랜잭션 밖에서 일어나므로, 조회와 별개로 여기도 JOIN FETCH에 기대고 있다.
+	@Test
+	@DisplayName("[트랜잭션 밖] 주식 브리핑 생성이 프롬프트에 종목명을 붙이는 동안 지연 로딩 예외가 나지 않는다")
+	void stockBriefingGenerationResolvesInstrumentNamesOutsideAnyAmbientTransaction() {
+		assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+
+		assertThatCode(() -> marketBriefingService.generateStockBriefing(ORIGIN_TRADE_DATE))
+			.doesNotThrowAnyException();
+
+		ArgumentCaptor<MarketBriefingPromptDto> prompt = ArgumentCaptor.forClass(MarketBriefingPromptDto.class);
+		verify(narrativeService).resolveMarketBriefingNarrative(prompt.capture());
+		assertThat(prompt.getValue().items())
+			.isNotEmpty()
+			.allSatisfy(item -> assertThat(item.instrumentName()).isNotBlank());
 	}
 
 	// --- 방어군: 지금 구조 (조회 메서드에 트랜잭션이 없다) ---
