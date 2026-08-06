@@ -20,6 +20,7 @@ import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.scheduling.support.CronExpression;
 import org.springframework.stereotype.Component;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
@@ -108,15 +109,23 @@ public class FeedbackQueryCache {
 	 * 주식 브리핑 {@code items}. 구간이 {@code [D-1 15:30, D 09:00]}로 고정이라 시각 비의존인 유일한 목록이다.
 	 *
 	 * <p><b>키에 절단 상한({@code feedback.news.max-items-per-briefing})이 들어간다.</b> 캐시하는 값이 절단
-	 * <i>후</i> 목록이므로, 설정을 바꿔 재배포해도 키가 갈리지 않으면 Redis에 남은 옛 길이 목록이 TTL(최대 익일
-	 * 09:00)까지 그대로 나간다 — 예외도 로그도 없이 화면 목록 길이만 틀리는 형태다. 값을 바꾸면 키가 자연히
-	 * 갈려 옛 목록은 아무도 읽지 않고 TTL로 사라진다.
+	 * <i>후</i> 목록이므로, 설정을 바꿔 재배포해도 키가 갈리지 않으면 Redis에 남은 옛 길이 목록이 TTL까지 그대로
+	 * 나간다 — 예외도 로그도 없이 화면 목록 길이만 틀리는 형태다. 값을 바꾸면 키가 자연히 갈려 옛 목록은 아무도
+	 * 읽지 않고 TTL로 사라진다.
+	 *
+	 * <p><b>이 항목만 만료가 "다음 개장"이 아니라 "다음 수집"이다</b>(PR 리뷰 [권장 2]). 텍스트 4종은 배치가
+	 * 만들면 그날 안 바뀌지만, 이 목록은 {@code market_news_items}에서 <b>재구성되는 값</b>이고 그 테이블은
+	 * {@code feedback.news.collect-cron}이 30분마다 계속 쓴다. 네이버가 뒤늦게 색인한 기사가 전장 구간
+	 * {@code [D-1 15:30, D 09:00]} 안으로 들어오면 익일 09:00까지 목록에 나타나지 않는데 <b>예외도 로그도
+	 * 없다</b> — 캐시 전에는 30분 안에 반영되던 것이다. 그래서 이 값의 도메인 경계는 다음 수집 실행이며, 같은
+	 * 클래스가 빈 목록을 캐시하지 않는 이유(수집이 뒤늦게 채울 수 있다)와 정확히 같은 논리를 비어 있지 않은
+	 * 목록에도 적용한 것이다. 임의 숫자가 아니라 도메인 경계이므로 ADR-0015 §2와 어긋나지 않는다.
 	 */
 	public List<BriefingNewsItem> getOrLoadStockBriefingItems(LocalDate originTradeDate,
 		Supplier<List<BriefingNewsItem>> loader) {
 		String suffix = STOCK_BRIEFING_ITEMS_ITEM + KEY_DELIMITER + originTradeDate + KEY_DELIMITER
 			+ newsProperties.maxItemsPerBriefing();
-		return getOrLoad(suffix, nextMarketOpenTime(), loader, this::readBriefingItems, this::writeBriefingItems);
+		return getOrLoad(suffix, nextNewsCollectionTime(), loader, this::readBriefingItems, this::writeBriefingItems);
 	}
 
 	/** 코인 브리핑 텍스트. 시장 전체에 한 벌이라 단일 키다. */
@@ -172,6 +181,15 @@ public class FeedbackQueryCache {
 			LOCK_KEY_PREFIX + suffix, Duration.ofMillis(properties.lockTtlMillis()));
 		if (token.isPresent()) {
 			try {
+				// 락을 얻은 직후 한 번 더 읽는다(double-checked). **위에서 미스를 방금 확인했는데 왜 또 읽나 —
+				// 지우지 마라.** 위 확인과 이 시점 사이에 먼저 락을 쥔 요청이 로더 실행·저장·해제까지 마쳤을 수
+				// 있고, 그러면 내 tryLock이 성공한다. 이 읽기가 없으면 나는 대기 경로(awaitCachedValue)를 거치지
+				// 않고 곧장 로더로 들어가 원본을 두 번째로 부른다 — 완료 조건 "동시 요청 N건에서 원본 1회"가
+				// 깨지는 유일한 경로다(PR 리뷰 [권장 1]).
+				CacheRead<T> filledWhileAcquiringLock = read(key, decoder);
+				if (filledWhileAcquiringLock.value().isPresent()) {
+					return filledWhileAcquiringLock.value().get();
+				}
 				T loaded = loader.get();
 				encoder.apply(loaded).ifPresent(value -> write(key, value, expiresAt));
 				return loaded;
@@ -289,6 +307,23 @@ public class FeedbackQueryCache {
 
 	private LocalDateTime nextMarketOpenTime() {
 		return LocalDate.now(clock).plusDays(1).atTime(MarketSessionTimes.MARKET_OPEN_TIME);
+	}
+
+	// 다음 뉴스 수집 실행 시각. 주기를 숫자로 다시 적지 않고 설정된 크론에서 직접 얻는다 — 리터럴을 두면
+	// collect-cron을 바꿨을 때 이 경계만 조용히 옛 주기에 남는다.
+	private LocalDateTime nextNewsCollectionTime() {
+		LocalDateTime now = LocalDateTime.now(clock);
+		try {
+			LocalDateTime next = CronExpression.parse(newsProperties.collectCron()).next(now);
+			// 다음 실행이 없는 크론(지나간 특정 일자만 지정 등)이면 개장 경계로 떨어진다.
+			return next == null ? nextMarketOpenTime() : next;
+		} catch (IllegalArgumentException ex) {
+			// 수집이 꺼져 있거나(Scheduled.CRON_DISABLED = "-" — 이 저장소의 테스트 설정이 실제로 쓴다) 표현식이
+			// 잘못된 경우다. **여기서 예외를 밖으로 내보내면 조회가 500이 된다** — 캐시가 조회를 실패시키지
+			// 않는다는 ADR-0015 §6을 지켜 개장 경계로 떨어진다. 수집이 돌지 않으면 목록도 바뀌지 않으므로
+			// 그 경계가 곧 옳은 값이기도 하다.
+			return nextMarketOpenTime();
+		}
 	}
 
 	// now보다 뒤인 가장 가까운 정시 05분. now가 10:03이면 10:05, 10:07이면 11:05다(ADR-0015 §2).

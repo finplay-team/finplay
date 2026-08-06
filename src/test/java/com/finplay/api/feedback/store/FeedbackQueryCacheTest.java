@@ -160,16 +160,44 @@ class FeedbackQueryCacheTest {
 	}
 
 	@Test
-	@DisplayName("주식 브리핑 텍스트와 items의 TTL도 익일 09:00까지다")
-	void stockBriefingEntriesExpireAtTheNextMarketOpen() {
+	@DisplayName("주식 브리핑 텍스트의 TTL은 익일 09:00까지다")
+	void stockBriefingTextExpiresAtTheNextMarketOpen() {
 		FeedbackQueryCache cache = cacheAt(LocalDateTime.of(2026, 8, 5, 8, 0));
 
 		cache.getOrLoadStockBriefingText(TRADE_DATE, () -> Optional.of("브리핑 본문"));
-		cache.getOrLoadStockBriefingItems(TRADE_DATE, () -> List.of(ITEM));
 
 		verify(valueOperations).set(STOCK_BRIEFING_TEXT_KEY, "브리핑 본문", Duration.ofHours(25));
+	}
+
+	// items만 만료가 다르다 — 텍스트는 배치가 만들면 그날 안 바뀌지만 이 목록은 market_news_items에서 재구성되고
+	// 그 테이블은 feedback.news.collect-cron이 30분마다 계속 쓴다. 익일 09:00까지 잡아 두면 뒤늦게 색인된 전장
+	// 기사가 그때까지 목록에 안 나오는데 예외도 로그도 없다(PR 리뷰 [권장 2]).
+	@Test
+	@DisplayName("주식 브리핑 items의 TTL은 익일 개장이 아니라 다음 수집 실행까지다 — 08:00이면 08:30")
+	void stockBriefingItemsExpireAtTheNextNewsCollectionRun() {
+		FeedbackQueryCache cache = cacheAt(LocalDateTime.of(2026, 8, 5, 8, 0));
+
+		cache.getOrLoadStockBriefingItems(TRADE_DATE, () -> List.of(ITEM));
+
 		verify(valueOperations)
-			.set(eq(STOCK_BRIEFING_ITEMS_KEY), anyString(), eq(Duration.ofHours(25)));
+			.set(eq(STOCK_BRIEFING_ITEMS_KEY), anyString(), eq(Duration.ofMinutes(30)));
+	}
+
+	// 주기를 리터럴로 다시 적지 않고 설정된 크론에서 얻는지 본다 — 크론을 바꾸면 TTL도 함께 따라와야 한다.
+	@Test
+	@DisplayName("수집 크론을 10분 간격으로 바꾸면 items TTL도 그 주기를 따른다")
+	void stockBriefingItemsTtlFollowsTheConfiguredCollectCron() {
+		when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+		when(redisLock.tryLock(anyString(), any(Duration.class))).thenReturn(Optional.of(LOCK_TOKEN));
+		FeedbackNewsProperties everyTenMinutes = new FeedbackNewsProperties(
+			"0 0/10 * * * *", "0 0/30 8-20 * * MON-FRI", 30, 5, 5, 50, MAX_ITEMS_PER_BRIEFING, 30);
+		FeedbackQueryCache cache = new FeedbackQueryCache(redisTemplate, redisLock, objectMapper,
+			clockAt(LocalDateTime.of(2026, 8, 5, 8, 0)), properties(true), everyTenMinutes);
+
+		cache.getOrLoadStockBriefingItems(TRADE_DATE, () -> List.of(ITEM));
+
+		verify(valueOperations)
+			.set(eq(STOCK_BRIEFING_ITEMS_KEY), anyString(), eq(Duration.ofMinutes(10)));
 	}
 
 	@Test

@@ -29,7 +29,7 @@ class CryptoWatchLockIntegrationTest {
 
 	private CryptoWatchLock cryptoWatchLock(int ttlSeconds) {
 		FeedbackCryptoProperties properties = new FeedbackCryptoProperties(30, 6, 5, 24, 100, 35, ttlSeconds);
-		return new CryptoWatchLock(redisTemplate, properties);
+		return new CryptoWatchLock(new RedisLock(redisTemplate), properties);
 	}
 
 	@AfterEach

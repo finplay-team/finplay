@@ -4,8 +4,8 @@ package com.finplay.api.feedback.service;
 import com.finplay.api.feedback.config.FeedbackCryptoProperties;
 import java.time.Duration;
 import java.util.Optional;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 /**
@@ -17,13 +17,14 @@ import org.springframework.stereotype.Component;
  * {@code feedback.crypto.watch-lock-ttl-seconds}(LLM 타임아웃 기준 45초). 그 둘이 박혀 있어 조회 경로(#245)가
  * 이 클래스를 그대로 재사용할 수 없었고, 그래서 메커니즘만 추출했다.
  *
- * <p>{@code RedisLock}을 빈으로 주입받지 않고 생성자에서 직접 조립한다 — {@code StringRedisTemplate}을 받는
- * 이 생성자 시그니처를 {@code CryptoPriceMoveWatcher}와 #244의 테스트들이 그대로 쓰고 있어 바꾸지 않았다.
- * {@code RedisLock}은 템플릿 하나만 감싸는 무상태 컴포넌트라 인스턴스가 하나 더 생겨도 동작 차이가 없다.
- * (필드 대입이 아니라 새 객체 조립이라 Lombok {@code @RequiredArgsConstructor}를 쓸 수 없어 생성자를 손으로 썼다.)
+ * <p>{@code RedisLock}은 <b>빈으로 주입받는다</b>({@code docs/conventions.md}의 생성자 주입 관례). 한때
+ * 생성자 안에서 {@code new}로 하나 더 만들었는데 — 추출 당시 테스트의 생성자 호출을 건드리지 않으려던
+ * 결과였다 — 그러면 <b>테스트 편의가 운영 배선을 결정</b>하고, 지금은 무상태라 무해해도 메트릭·설정이 붙는
+ * 순간 두 인스턴스가 갈린다(PR 리뷰 [권장 4]).
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class CryptoWatchLock {
 
 	private static final String KEY_PREFIX = "feedback:crypto-watch:lock:";
@@ -31,11 +32,6 @@ public class CryptoWatchLock {
 	private final RedisLock redisLock;
 
 	private final FeedbackCryptoProperties cryptoProperties;
-
-	public CryptoWatchLock(StringRedisTemplate redisTemplate, FeedbackCryptoProperties cryptoProperties) {
-		this.redisLock = new RedisLock(redisTemplate);
-		this.cryptoProperties = cryptoProperties;
-	}
 
 	/**
 	 * 종목 단위 락을 얻는다. 성공하면 이번 시도를 식별하는 토큰을 반환한다 — 해제할 때 그대로 넘겨야 한다.

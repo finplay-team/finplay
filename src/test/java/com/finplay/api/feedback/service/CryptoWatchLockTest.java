@@ -47,9 +47,11 @@ class CryptoWatchLockTest {
 	private final FeedbackCryptoProperties defaultTtlProperties = new FeedbackCryptoProperties(30, 6, 5, 24, 100, 35,
 		IRRELEVANT_WATCH_LOCK_TTL_SECONDS);
 
+	// RedisLock은 진짜를 쓴다 — 이 테스트가 보는 것은 mock Redis 응답이 Optional/무시로 옮겨지는 경로 전체이고,
+	// 락을 mock으로 바꾸면 SET NX PX·Lua 인자 단정이 사라져 동어반복이 된다(추출 전과 같은 범위를 유지한다).
 	private CryptoWatchLock cryptoWatchLock(FeedbackCryptoProperties properties) {
 		when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-		return new CryptoWatchLock(redisTemplate, properties);
+		return new CryptoWatchLock(new RedisLock(redisTemplate), properties);
 	}
 
 	@Test

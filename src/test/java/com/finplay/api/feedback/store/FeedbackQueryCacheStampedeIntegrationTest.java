@@ -4,7 +4,9 @@ package com.finplay.api.feedback.store;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.finplay.api.TestcontainersConfiguration;
@@ -23,6 +25,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -79,9 +82,13 @@ class FeedbackQueryCacheStampedeIntegrationTest {
 
 	private static final Long LOCK_HELD_INSTRUMENT_ID = 990_004L;
 
+	private static final Long DOUBLE_CHECK_INSTRUMENT_ID = 990_005L;
+
 	private static final String ORIGIN_TEXT = "원본이 만든 서술";
 
 	private static final String PREFILLED_TEXT = "미리 채워 둔 서술";
+
+	private static final String EARLIER_REQUEST_TEXT = "먼저 락을 쥔 요청이 채운 서술";
 
 	// 방어군에서 락 보유자가 원본을 도는 동안 나머지가 tryLock을 시도하도록 붙잡아 두는 시간. 이것이 없으면
 	// 보유자가 배리어 통과 직후 곧바로 채우고 풀어 버려, 나머지가 경합 없이 적중만 하고 끝날 수 있다 —
@@ -247,6 +254,65 @@ class FeedbackQueryCacheStampedeIntegrationTest {
 			redisLock.unlock(summaryLockKey(LOCK_HELD_INSTRUMENT_ID), heldToken);
 		}
 	}
+
+	/*
+	 * 락 획득 직후의 double-check를 지킨다 (PR 리뷰 [권장 1]).
+	 *
+	 * 막으려는 순서는 이것이다 — A와 B가 동시에 미스 → A가 락 획득·로더·저장·해제를 마침 → **그 뒤에** B의
+	 * tryLock이 성공. 이때 B가 락을 얻었다는 이유로 곧장 로더로 들어가면 원본이 2회 불려 완료 조건
+	 * "동시 요청 N건에서 원본 1회"가 깨진다. 대기 경로(awaitCachedValue)는 락을 **못 얻은** 쪽만 타므로
+	 * B를 구해 주지 못한다.
+	 *
+	 * <b>이 순서를 스레드 경합으로 만들려 하지 않는다.</b> 위 대조·방어 테스트는 배리어가 getOrLoad 호출
+	 * 직전이라 네 스레드의 첫 read가 사실상 동시에 일어나고, 그러면 "A가 전부 끝낸 뒤 B가 락을 얻는" 순간이
+	 * 재현되지 않는다. 대신 **tryLock이 성공을 반환하면서 부수 효과로 캐시를 채우는** mock을 쓴다 —
+	 * "락을 얻은 시점에는 이미 값이 있다"가 타이밍 없이 성립한다.
+	 *
+	 * double-check 세 줄을 지우면 로더가 1회 불리고 반환값이 ORIGIN_TEXT로 바뀌며 캐시까지 덮어써져
+	 * 아래 네 단정이 모두 깨진다 — 실제로 지워서 red를 확인했다.
+	 */
+	@Test
+	@DisplayName("[결정론] 락을 얻은 시점에 캐시가 이미 채워져 있으면 로더를 부르지 않고 그 값을 쓴다")
+	void doubleChecksTheCacheRightAfterAcquiringTheLockSoTheLoaderIsNeverCalled() {
+		String valueKey = summaryKey(DOUBLE_CHECK_INSTRUMENT_ID);
+		String lockKey = summaryLockKey(DOUBLE_CHECK_INSTRUMENT_ID);
+		AtomicReference<String> issuedToken = new AtomicReference<>();
+		AtomicInteger loaderCalls = new AtomicInteger();
+		FeedbackQueryCache cacheWhoseLockArrivesLate = new FeedbackQueryCache(
+			redisTemplate, lockGrantedAfterSomeoneElseAlreadyFilled(valueKey, lockKey, issuedToken),
+			objectMapper, clock, cacheProperties, newsProperties);
+
+		Optional<String> result = cacheWhoseLockArrivesLate.getOrLoadCryptoSummaryText(
+			DOUBLE_CHECK_INSTRUMENT_ID, () -> {
+				loaderCalls.incrementAndGet();
+				return Optional.of(ORIGIN_TEXT);
+			});
+
+		assertThat(loaderCalls).as("먼저 온 요청이 이미 채웠으므로 원본을 두 번째로 부르면 안 된다").hasValue(0);
+		assertThat(result).contains(EARLIER_REQUEST_TEXT);
+		// 내 로더 값으로 덮어쓰지도 않는다.
+		assertThat(redisTemplate.opsForValue().get(valueKey)).isEqualTo(EARLIER_REQUEST_TEXT);
+		// 값을 그대로 돌려주고 빠져나가도 락은 푼다 — finally 경로가 살아 있어야 다음 요청이 대기하지 않는다.
+		verify(lockUnlockRecorder).unlock(lockKey, issuedToken.get());
+	}
+
+	// tryLock이 성공을 반환하기 **직전에** 캐시를 채운다 — 먼저 락을 쥔 요청이 저장·해제까지 마친 뒤에야
+	// 내 차례가 온 상황과 호출부 입장에서 구분되지 않는다.
+	private RedisLock lockGrantedAfterSomeoneElseAlreadyFilled(
+		String valueKey, String lockKey, AtomicReference<String> issuedToken) {
+		lockUnlockRecorder = mock(RedisLock.class);
+		when(lockUnlockRecorder.tryLock(eq(lockKey), any(Duration.class))).thenAnswer(invocation -> {
+			redisTemplate.opsForValue().set(valueKey, EARLIER_REQUEST_TEXT, Duration.ofMinutes(5));
+			String token = UUID.randomUUID().toString();
+			issuedToken.set(token);
+			return Optional.of(token);
+		});
+		when(lockUnlockRecorder.unlock(anyString(), anyString())).thenReturn(RedisLock.UnlockResult.RELEASED);
+		return lockUnlockRecorder;
+	}
+
+	// 위 헬퍼가 만든 mock을 단정에서 다시 봐야 해서 필드로 잡아 둔다.
+	private RedisLock lockUnlockRecorder;
 
 	// tryLock을 부를 때마다 서로 다른 토큰으로 성공시킨다 — 상호 배제를 전혀 하지 않으면서 호출부에는
 	// "이번에도 내가 락을 얻었다"로 보이는 상태다(#244의 대조군과 같은 수법).
