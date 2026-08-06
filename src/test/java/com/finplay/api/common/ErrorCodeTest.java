@@ -11,7 +11,7 @@ class ErrorCodeTest {
 
 	@Test
 	void declaresEveryErrorCodeFromPrdAndOAuthSpecWithoutUnlistedOnes() {
-		assertThat(ErrorCode.values()).hasSize(28);
+		assertThat(ErrorCode.values()).hasSize(29);
 	}
 
 	@Test
@@ -26,6 +26,7 @@ class ErrorCodeTest {
 			Map.entry(ErrorCode.REAUTHENTICATION_FAILED, HttpStatus.FORBIDDEN),
 			Map.entry(ErrorCode.NOT_FOUND, HttpStatus.NOT_FOUND),
 			Map.entry(ErrorCode.FAVORITE_NOT_FOUND, HttpStatus.NOT_FOUND),
+			Map.entry(ErrorCode.WATCHLIST_ITEM_NOT_FOUND, HttpStatus.NOT_FOUND),
 			Map.entry(ErrorCode.DUPLICATE_RESOURCE, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.PRACTICE_STEP_LOCKED, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.PRACTICE_ALREADY_COMPLETED, HttpStatus.CONFLICT),
