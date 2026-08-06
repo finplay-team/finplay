@@ -54,7 +54,7 @@
   - 두 테스트를 같은 클래스에 나란히 두어(예: `CryptoWatchLockConcurrencyTest`) 대조가 한 파일에서 보이게 한다.
   - 검증 — Testcontainers(MySQL) + 실제 Redis(compose의 Redis 컨테이너) 통합. 고정 `Clock`으로 `now`를 통제해 z-score 게이트를 항상 통과하는 픽스처를 만든다.
 
-- [ ] **5. 문서 동기화 검증 — spec.md·ADR-0014 정합 확인**
+- [x] **5. 문서 동기화 검증 — spec.md·ADR-0014 정합 확인**
 
   spec.md §C-9·§탐지 알고리즘(코인)·§C-7·§실패 처리·§완료 조건은 이미 planner가 이 이슈 착수 전에 갱신해 뒀다(ADR-0014 인용, `watch-lock-ttl-seconds` 설정값, Redis 장애 처리, "동시성 방어" 완료 조건 2건). 이 항목은 **구현 결과가 그 문서와 실제로 일치하는지 최종 확인**만 한다 — 클래스명·메서드명·설정 키가 spec·ADR 원문과 정확히 같은지, §완료 조건의 두 조건이 4번 항목의 테스트로 실제로 커버되는지 대조한다.
   - `docs/api-routes.md`·`docs/api-contracts.md`는 **대상이 아니다** — 이 이슈는 새 컨트롤러·새 엔드포인트를 만들지 않는다.
