@@ -39,9 +39,9 @@ class PortfolioServiceTest {
 		// 두 시장의 개별 returnRate를 우연히 동일(0.5)하게 만들지만, seedMoney 합계(20,000,000) 기준으로
 		// 재계산하면 실제 결과(0.25)는 그 값과 달라야 한다 — 단순 합/평균을 쓰지 않았음을 반증한다.
 		AccountSummaryResponse stockSummary = AccountSummaryResponse.of(
-			0L, 0L, 15_000_000L, 0L, 0L, BigDecimal.valueOf(0.5));
+			0L, 0L, 0L, 15_000_000L, 0L, 0L, BigDecimal.valueOf(0.5));
 		AccountSummaryResponse cryptoSummary = AccountSummaryResponse.of(
-			0L, 0L, 10_000_000L, 500_000L, 300_000L, BigDecimal.valueOf(0.5));
+			0L, 0L, 0L, 10_000_000L, 500_000L, 300_000L, BigDecimal.valueOf(0.5));
 		when(accountService.getAccountSummary(USER_ID, Market.STOCK)).thenReturn(stockSummary);
 		when(accountService.getAccountSummary(USER_ID, Market.CRYPTO)).thenReturn(cryptoSummary);
 
@@ -72,9 +72,9 @@ class PortfolioServiceTest {
 
 		// STOCK만 보유 종목이 있어 평가손익이 발생하고, CRYPTO는 현금만 있어 0으로 기여한다.
 		AccountSummaryResponse stockSummary = AccountSummaryResponse.of(
-			5_000_000L, 6_000_000L, 11_000_000L, 200_000L, 1_000_000L, BigDecimal.valueOf(0.1000));
+			5_000_000L, 0L, 6_000_000L, 11_000_000L, 200_000L, 1_000_000L, BigDecimal.valueOf(0.1000));
 		AccountSummaryResponse cryptoSummary = AccountSummaryResponse.of(
-			10_000_000L, 0L, 10_000_000L, 0L, 0L, BigDecimal.ZERO);
+			10_000_000L, 0L, 0L, 10_000_000L, 0L, 0L, BigDecimal.ZERO);
 		when(accountService.getAccountSummary(USER_ID, Market.STOCK)).thenReturn(stockSummary);
 		when(accountService.getAccountSummary(USER_ID, Market.CRYPTO)).thenReturn(cryptoSummary);
 
@@ -99,9 +99,9 @@ class PortfolioServiceTest {
 		when(accountService.getAccountFor(USER_ID, Market.CRYPTO)).thenReturn(cryptoAccount);
 
 		AccountSummaryResponse stockSummary = AccountSummaryResponse.of(
-			10_000_000L, 0L, 10_000_000L, 0L, 0L, BigDecimal.ZERO);
+			10_000_000L, 0L, 0L, 10_000_000L, 0L, 0L, BigDecimal.ZERO);
 		AccountSummaryResponse cryptoSummary = AccountSummaryResponse.of(
-			10_000_000L, 0L, 10_000_000L, 0L, 0L, BigDecimal.ZERO);
+			10_000_000L, 0L, 0L, 10_000_000L, 0L, 0L, BigDecimal.ZERO);
 		when(accountService.getAccountSummary(USER_ID, Market.STOCK)).thenReturn(stockSummary);
 		when(accountService.getAccountSummary(USER_ID, Market.CRYPTO)).thenReturn(cryptoSummary);
 

@@ -179,6 +179,7 @@ class AccountServiceTest {
 			LocalDateTime.ofInstant(FIXED_INSTANT, ZoneOffset.UTC));
 		account.deductCash(3_000_000L);
 		account.addRealizedPnl(50_000L);
+		account.reserveCash(1_500_000L);
 		when(accountRepository.findByUserIdAndMarket(1L, Market.STOCK)).thenReturn(Optional.of(account));
 
 		HoldingValuationDto profitable = new HoldingValuationDto(
@@ -200,6 +201,7 @@ class AccountServiceTest {
 			.divide(BigDecimal.valueOf(10_000_000L), 4, java.math.RoundingMode.HALF_UP);
 
 		assertThat(result.cashBalance()).isEqualTo(expectedCashBalance);
+		assertThat(result.reservedCash()).isEqualTo(1_500_000L);
 		assertThat(result.holdingsValue()).isEqualTo(expectedHoldingsValue);
 		assertThat(result.totalValue()).isEqualTo(expectedTotalValue);
 		assertThat(result.realizedPnl()).isEqualTo(50_000L);
@@ -255,6 +257,7 @@ class AccountServiceTest {
 
 		assertThat(result.holdingsValue()).isZero();
 		assertThat(result.unrealizedPnl()).isZero();
+		assertThat(result.reservedCash()).isZero();
 		assertThat(result.cashBalance()).isEqualTo(10_000_000L);
 		assertThat(result.totalValue()).isEqualTo(10_000_000L);
 		assertThat(result.realizedPnl()).isZero();

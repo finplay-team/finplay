@@ -45,7 +45,7 @@ class AccountControllerTest {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
 		AccountSummaryResponse response = AccountSummaryResponse.of(
-			9_000_000L, 1_200_000L, 10_200_000L, 50_000L, 200_000L, new BigDecimal("0.0200"));
+			9_000_000L, 500_000L, 1_200_000L, 10_200_000L, 50_000L, 200_000L, new BigDecimal("0.0200"));
 		when(accountService.getAccountSummary(USER_ID, Market.STOCK)).thenReturn(response);
 
 		mockMvc.perform(get("/api/accounts/summary")
@@ -53,6 +53,7 @@ class AccountControllerTest {
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.cashBalance").value(9000000))
+			.andExpect(jsonPath("$.reservedCash").value(500000))
 			.andExpect(jsonPath("$.holdingsValue").value(1200000))
 			.andExpect(jsonPath("$.totalValue").value(10200000))
 			.andExpect(jsonPath("$.realizedPnl").value(50000))
@@ -67,7 +68,7 @@ class AccountControllerTest {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
 		AccountSummaryResponse response = AccountSummaryResponse.of(
-			10_000_000L, 0L, 10_000_000L, 0L, 0L, BigDecimal.ZERO);
+			10_000_000L, 0L, 0L, 10_000_000L, 0L, 0L, BigDecimal.ZERO);
 		when(accountService.getAccountSummary(USER_ID, Market.CRYPTO)).thenReturn(response);
 
 		mockMvc.perform(get("/api/accounts/summary")
@@ -75,6 +76,7 @@ class AccountControllerTest {
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.cashBalance").value(10000000))
+			.andExpect(jsonPath("$.reservedCash").value(0))
 			.andExpect(jsonPath("$.holdingsValue").value(0))
 			.andExpect(jsonPath("$.totalValue").value(10000000))
 			.andExpect(jsonPath("$.realizedPnl").value(0))
