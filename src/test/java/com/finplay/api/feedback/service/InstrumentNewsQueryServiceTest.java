@@ -71,15 +71,18 @@ class InstrumentNewsQueryServiceTest {
 	private final MutableClock clock = new MutableClock(
 		LocalDateTime.of(SERVICE_DATE, LocalTime.of(10, 0)).atZone(KST).toInstant());
 
+	// DB 읽기가 Reader로 나갔어도(트랜잭션 경계 분리, PR #257) 이 클래스가 보는 것은 그대로다 — 진짜 Reader에
+	// 같은 mock 리포지토리를 그대로 물려 조립하므로 아래 스텁·verify가 한 줄도 바뀌지 않는다.
 	private final InstrumentNewsQueryService service = new InstrumentNewsQueryService(
-		instrumentService,
+		new InstrumentNewsQueryReader(
+			instrumentService,
+			marketNewsItemRepository,
+			instrumentNewsSummaryRepository,
+			new BusinessDayCalendar(),
+			// 마지막에서 세 번째가 max-items-per-news-list다 — 이 경로가 쓰는 상한은 그것 하나뿐이다 (§C-7).
+			new FeedbackNewsProperties("0 0/30 * * * *", "0 0/30 8-20 * * MON-FRI", 30, 5, 5, 50, 30, 30)),
 		stockReplayService,
-		marketNewsItemRepository,
-		instrumentNewsSummaryRepository,
-		new BusinessDayCalendar(),
 		loaderDirectCache(),
-		// 마지막에서 세 번째가 max-items-per-news-list다 — 이 경로가 쓰는 상한은 그것 하나뿐이다 (§C-7).
-		new FeedbackNewsProperties("0 0/30 * * * *", "0 0/30 8-20 * * MON-FRI", 30, 5, 5, 50, 30, 30),
 		clock);
 
 	// 킬 스위치를 내린(enabled=false) FeedbackQueryCache다 — 항상 로더로 직행하므로 이 클래스의 판정 순서

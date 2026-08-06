@@ -88,10 +88,17 @@ class MarketBriefingServiceTest {
 		marketBriefingRepository,
 		stockReplayService,
 		narrativeService,
-		new BusinessDayCalendar(),
+		briefingReader(),
 		loaderDirectCache(),
 		properties,
 		Clock.fixed(GENERATED_AT.atZone(KST).toInstant(), KST));
+
+	// DB 읽기가 Reader로 나갔어도(트랜잭션 경계 분리, PR #257) 이 클래스가 보는 것은 그대로다 — 진짜 Reader에
+	// 같은 mock 리포지토리를 그대로 물려 조립하므로 아래 스텁·verify가 한 줄도 바뀌지 않는다.
+	private MarketBriefingReader briefingReader() {
+		return new MarketBriefingReader(
+			marketNewsItemRepository, marketBriefingRepository, new BusinessDayCalendar(), properties);
+	}
 
 	// 킬 스위치를 내린(enabled=false) FeedbackQueryCache다 — 항상 로더로 직행하므로 이 클래스의 판정 순서·
 	// 상한 단정이 캐시 도입 전과 그대로 성립한다. Redis·JSON 협력자는 그 경로에서 한 번도 쓰이지 않아 null로
@@ -297,7 +304,7 @@ class MarketBriefingServiceTest {
 			marketBriefingRepository,
 			stockReplayService,
 			narrativeService,
-			new BusinessDayCalendar(),
+			briefingReader(),
 			loaderDirectCache(),
 			properties,
 			clock);
@@ -673,7 +680,7 @@ class MarketBriefingServiceTest {
 			marketBriefingRepository,
 			stockReplayService,
 			narrativeService,
-			new BusinessDayCalendar(),
+			briefingReader(),
 			loaderDirectCache(),
 			properties,
 			clock);

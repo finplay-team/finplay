@@ -12,21 +12,18 @@ import com.finplay.api.feedback.repository.MarketBriefingRepository;
 import com.finplay.api.feedback.repository.MarketNewsItemRepository;
 import com.finplay.api.feedback.store.FeedbackQueryCache;
 import com.finplay.api.market.domain.Market;
-import com.finplay.api.market.service.BusinessDayCalendar;
 import com.finplay.api.market.service.StockReplayService;
 import com.finplay.api.market.service.StockReplaySessionDto;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * <b>생성과 조회를 한 클래스가 갖는다</b>(spec §C-6, 명문화됨). 종목 뉴스 요약이 생성
@@ -63,7 +60,9 @@ public class MarketBriefingService {
 
 	private final NarrativeService narrativeService;
 
-	private final BusinessDayCalendar businessDayCalendar;
+	// DB 읽기는 전부 이 컴포넌트가 자기 트랜잭션 안에서 끝낸다 — 조회 경로의 캐시 대기가 커넥션을 쥐지 않게
+	// 하려는 것이며(PR #257 남은 위험 1), 생성·조회가 같은 구간 질의를 공유하는 성질(§C-6)도 그대로 유지된다.
+	private final MarketBriefingReader marketBriefingReader;
 
 	// 조회 경로가 읽고, 코인 갱신 경로가 갱신 성공 시에만 무효화한다(ADR-0015 §3). 생성 경로는 이 캐시를
 	// **읽지** 않는다 — 절단 상한이 조회(max-items-per-briefing)와 생성(max-items-per-summary)이 달라서다(§C-7).
@@ -92,7 +91,7 @@ public class MarketBriefingService {
 		}
 
 		List<MarketNewsItem> items = NewsItemTruncator.truncateAndSort(
-			collectPreMarketItems(originTradeDate), properties.maxItemsPerSummary());
+			marketBriefingReader.collectPreMarketItems(originTradeDate), properties.maxItemsPerSummary());
 		if (items.isEmpty()) {
 			log.debug("전장 구간 기사가 없어 브리핑을 만들지 않는다. 거래일={}", originTradeDate);
 			return Optional.empty();
@@ -130,7 +129,7 @@ public class MarketBriefingService {
 		}
 
 		List<MarketNewsItem> items = NewsItemTruncator.truncateAndSort(
-			collectRollingItems(now), properties.maxItemsPerSummary());
+			marketBriefingReader.collectRollingItems(now), properties.maxItemsPerSummary());
 		if (items.isEmpty()) {
 			log.debug("최근 24시간 코인 기사가 없어 브리핑을 만들지 않는다.");
 			return Optional.empty();
@@ -177,8 +176,13 @@ public class MarketBriefingService {
 	 *
 	 * <p><b>이 경로는 쓰지 않는다</b> — 브리핑은 배치 산출물이고 GET은 LLM을 호출하지도 DB에 쓰지도 않는다
 	 * ({@code docs/conventions.md}, FEED-009).
+	 *
+	 * <p><b>{@code @Transactional}을 걸지 않는 것이 설계다.</b> DB 읽기는 {@link MarketBriefingReader}가 각각
+	 * 자기 트랜잭션에서 끝내고, 이 메서드에는 조회 캐시의 락 대기(최대 {@code wait-millis})만 남는다 — 전체를
+	 * 한 트랜잭션으로 감싸면 그 대기 동안 JDBC 커넥션을 쥐어, 만료 경계에 요청이 몰리는 순간 대기 스레드가
+	 * 풀을 채우고 뒤따르는 요청이 커넥션 획득에서 막힌다({@code PostSellFeedbackService}가 LLM 호출을 트랜잭션
+	 * 밖에 둔 것과 같은 형태다).
 	 */
-	@Transactional(readOnly = true)
 	public MarketBriefingResponse getBriefing(Market market) {
 		if (market == Market.CRYPTO) {
 			return getCryptoBriefing();
@@ -205,12 +209,7 @@ public class MarketBriefingService {
 		// (ADR-0015 §1). 절단 상한이 키에 들어가므로 위 상한을 바꾸면 캐시 키가 자연히 갈린다.
 		// **생성 경로(generateStockBriefing)는 이 캐시를 보지 않는다** — 상한이 다르다.
 		List<BriefingNewsItem> items = feedbackQueryCache.getOrLoadStockBriefingItems(
-			originTradeDate,
-			() -> NewsItemTruncator
-				.truncateAndSort(collectPreMarketItems(originTradeDate), properties.maxItemsPerBriefing())
-				.stream()
-				.map(BriefingNewsItem::from)
-				.toList());
+			originTradeDate, () -> marketBriefingReader.readStockBriefingItems(originTradeDate));
 
 		// 3번 — 기사가 0건이면 행이 있든 없든 EMPTY다. 행 조회보다 앞이라 순서를 바꾸면
 		// "기사도 없고 서술도 없는" 날이 UNAVAILABLE로 보인다.
@@ -223,10 +222,9 @@ public class MarketBriefingService {
 		// 미적중이면 로더가 반드시 실행돼 그 DB 결과로 4·5번을 지금 로직 그대로 가른다(§C-4 판정 순서 불변).
 		AtomicBoolean briefingRowFound = new AtomicBoolean();
 		Optional<String> text = feedbackQueryCache.getOrLoadStockBriefingText(originTradeDate, () -> {
-			Optional<MarketBriefing> briefing = marketBriefingRepository
-				.findByMarketAndOriginTradeDate(market, originTradeDate);
-			briefingRowFound.set(briefing.isPresent());
-			return briefing.map(MarketBriefing::getSummary);
+			SummaryTextLookupDto lookup = marketBriefingReader.readStockBriefingText(originTradeDate);
+			briefingRowFound.set(lookup.rowExists());
+			return lookup.readyText();
 		});
 		if (text.isPresent()) {
 			return MarketBriefingResponse.of(
@@ -263,11 +261,7 @@ public class MarketBriefingService {
 	 * 생성으로 되돌아가야 한다.
 	 */
 	private MarketBriefingResponse getCryptoBriefing() {
-		List<BriefingNewsItem> items = NewsItemTruncator
-			.truncateAndSort(collectRollingItems(LocalDateTime.now(clock)), properties.maxItemsPerBriefing())
-			.stream()
-			.map(BriefingNewsItem::from)
-			.toList();
+		List<BriefingNewsItem> items = marketBriefingReader.readCryptoBriefingItems(LocalDateTime.now(clock));
 		if (items.isEmpty()) {
 			return MarketBriefingResponse.withoutItems(Market.CRYPTO, null, FeedbackContentStatus.EMPTY);
 		}
@@ -275,10 +269,9 @@ public class MarketBriefingService {
 		// 코인은 텍스트만 캐시한다 — items의 24시간 창은 조회 시각 기준이라(FEED-008) 캐시 대상이 아니다.
 		AtomicBoolean briefingRowFound = new AtomicBoolean();
 		Optional<String> text = feedbackQueryCache.getOrLoadCryptoBriefingText(() -> {
-			Optional<MarketBriefing> briefing = marketBriefingRepository
-				.findFirstByMarketOrderByGeneratedAtDescIdDesc(Market.CRYPTO);
-			briefingRowFound.set(briefing.isPresent());
-			return briefing.map(MarketBriefing::getSummary);
+			SummaryTextLookupDto lookup = marketBriefingReader.readLatestCryptoBriefingText();
+			briefingRowFound.set(lookup.rowExists());
+			return lookup.readyText();
 		});
 		if (text.isPresent()) {
 			return MarketBriefingResponse.of(
@@ -291,44 +284,6 @@ public class MarketBriefingService {
 			briefingRowFound.get() ? FeedbackContentStatus.UNAVAILABLE : FeedbackContentStatus.EMPTY,
 			null,
 			items);
-	}
-
-	/**
-	 * 최근 24시간 코인 기사 (§C-2의 {@code ROLLING_24H}). 코인은 공시가 없어 뉴스만 모은다.
-	 *
-	 * <p>창 길이는 {@link MarketSessionTimes#ROLLING_WINDOW}다 — 생성과 조회가 같은 값을 봐야 요약이 다루는
-	 * 창과 화면 목록의 창이 갈리지 않는다.
-	 */
-	private List<MarketNewsItem> collectRollingItems(LocalDateTime now) {
-		return marketNewsItemRepository.findMarketNewsPublishedBetween(
-			Market.CRYPTO, now.minus(MarketSessionTimes.ROLLING_WINDOW), now);
-	}
-
-	/**
-	 * {@code 전장} 구간의 기사와 {@code rcept_dt = D-1} 공시를 시장 전체에서 모은다 (§C-2·§C-3).
-	 *
-	 * <p><b>생성과 조회가 같은 구간을 쓴다.</b> 브리핑은 언제 조회해도 {@code 전장}만 담으므로(FEED-009 —
-	 * 장중 기사를 절대 포함하지 않는다) Part C처럼 상한이 재생 시각을 따라 넓어지지 않는다. 두 호출부의
-	 * 차이는 <b>절단 상한뿐</b>이다.
-	 *
-	 * <p><b>종목별로 나눠 묻지 않는다</b>(§C-2-1). 상한을 시장 전체 목록에 걸어야 §뉴스 매칭 범위의 절단이
-	 * 의도대로 작동한다 — 종목별로 자른 뒤 합치면 종목당 상한이 되어 전체가 상한의 몇 배로 불어난다.
-	 *
-	 * <p>뉴스와 공시를 같은 질의로 가져오지 않는 이유는 {@code InstrumentNewsSummaryService}와 같다.
-	 * 구간 경계는 <b>벽시계</b>이며({@link MarketSessionTimes}) 분봉 시각이 아니다 — 브리핑은 시장 단위 단일
-	 * 질의라 애초에 종목별 분봉 시각을 하한으로 쓸 수 없다.
-	 */
-	private List<MarketNewsItem> collectPreMarketItems(LocalDate originTradeDate) {
-		LocalDate previousTradingDate = businessDayCalendar.previousBusinessDay(originTradeDate);
-		List<MarketNewsItem> items = new ArrayList<>(marketNewsItemRepository.findMarketNewsPublishedBetween(
-			Market.STOCK,
-			LocalDateTime.of(previousTradingDate, MarketSessionTimes.MARKET_CLOSE_TIME),
-			LocalDateTime.of(originTradeDate, MarketSessionTimes.MARKET_OPEN_TIME)));
-		items.addAll(marketNewsItemRepository.findMarketDisclosuresReceivedOn(
-			Market.STOCK,
-			previousTradingDate.atStartOfDay(),
-			previousTradingDate.plusDays(1).atStartOfDay()));
-		return items;
 	}
 
 	// 브리핑은 시장 단위 단일 목록이라 어느 종목 소식인지 모델이 알 수 없다 — 기사마다 종목명을 붙인다.

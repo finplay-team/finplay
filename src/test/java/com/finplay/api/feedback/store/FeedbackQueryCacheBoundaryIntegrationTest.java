@@ -19,7 +19,9 @@ import com.finplay.api.feedback.dto.response.MarketBriefingResponse;
 import com.finplay.api.feedback.repository.InstrumentNewsSummaryRepository;
 import com.finplay.api.feedback.repository.MarketBriefingRepository;
 import com.finplay.api.feedback.repository.MarketNewsItemRepository;
+import com.finplay.api.feedback.service.InstrumentNewsQueryReader;
 import com.finplay.api.feedback.service.InstrumentNewsQueryService;
+import com.finplay.api.feedback.service.MarketBriefingReader;
 import com.finplay.api.feedback.service.MarketBriefingService;
 import com.finplay.api.feedback.service.NarrativeService;
 import com.finplay.api.feedback.service.RedisLock;
@@ -290,12 +292,17 @@ class FeedbackQueryCacheBoundaryIntegrationTest {
 			StringRedisTemplate deadTemplate = new StringRedisTemplate(deadFactory);
 			FeedbackQueryCache cacheOnDeadRedis = new FeedbackQueryCache(
 				deadTemplate, new RedisLock(deadTemplate), objectMapper, clock, cacheProperties, newsProperties);
+			// DB 읽기는 Reader가 자기 트랜잭션에서 끝낸다(PR #257) — 여기서는 캐시만 죽은 Redis로 바꿔 끼우고
+			// Reader는 스프링 빈과 같은 협력자로 조립한다.
 			InstrumentNewsQueryService newsOnDeadRedis = new InstrumentNewsQueryService(
-				instrumentService, stockReplayService, marketNewsItemRepository, instrumentNewsSummaryRepository,
-				businessDayCalendar, cacheOnDeadRedis, newsProperties, clock);
+				new InstrumentNewsQueryReader(instrumentService, marketNewsItemRepository,
+					instrumentNewsSummaryRepository, businessDayCalendar, newsProperties),
+				stockReplayService, cacheOnDeadRedis, clock);
 			MarketBriefingService briefingOnDeadRedis = new MarketBriefingService(
 				marketNewsItemRepository, marketBriefingRepository, stockReplayService, narrativeService,
-				businessDayCalendar, cacheOnDeadRedis, newsProperties, clock);
+				new MarketBriefingReader(marketNewsItemRepository, marketBriefingRepository, businessDayCalendar,
+					newsProperties),
+				cacheOnDeadRedis, newsProperties, clock);
 
 			assertThatCode(() -> newsOnDeadRedis.getInstrumentNews(stock.getId())).doesNotThrowAnyException();
 			assertThatCode(() -> briefingOnDeadRedis.getBriefing(Market.STOCK)).doesNotThrowAnyException();
