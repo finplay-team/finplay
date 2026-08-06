@@ -9,6 +9,10 @@
 // 시장가 매수 경로 락 보강(이슈 #224) 추가: plan.md "동시성 테스트 시나리오"(tasks.md 항목15, spec.md 시나리오
 // 13~15) — (a) 시장가 매수 대 지정가 매수 생성의 계좌 경합, (b) 시장가 매수 대 지정가 매수 체결의 holdings
 // lost-update 방지, (c) 조정된 시장가 매수와 기존 시장가 매도 간 ABBA 데드락 회귀.
+// LMT-005(이슈 #239) 추가: plan.md "동시성 테스트 시나리오"(tasks.md 항목23, spec.md 시나리오 23·24) — (a, 이
+// 기능의 핵심 증명) 예약 가능 현금·수량을 초과하는 PATCH 요청이 409로 거부된 후 주문·계좌·보유를 DB에서
+// 재조회해 요청 전 값과 완전히 동일함을 확인(매수·매도 각 1개), (b) 수정-대-체결 동시 경합(체결·수정 두 경로
+// 모두 예약 이중 반환·이중 소비 없음), (c) 수정-대-취소 동시 경합(동일).
 package com.finplay.api.order;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -30,11 +34,13 @@ import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.domain.OrderStatus;
 import com.finplay.api.order.dto.request.LimitOrderCreateRequest;
+import com.finplay.api.order.dto.request.LimitOrderModifyRequest;
 import com.finplay.api.order.dto.request.OrderCreateRequest;
 import com.finplay.api.order.dto.response.LimitOrderResponse;
 import com.finplay.api.order.repository.OrderRepository;
 import com.finplay.api.order.service.LimitOrderCancelService;
 import com.finplay.api.order.service.LimitOrderFillService;
+import com.finplay.api.order.service.LimitOrderModifyService;
 import com.finplay.api.order.service.LimitOrderService;
 import com.finplay.api.order.service.OrderService;
 import com.finplay.api.portfolio.domain.Holding;
@@ -88,6 +94,9 @@ class LimitOrderConcurrencyIntegrationTest {
 
 	@Autowired
 	private LimitOrderCancelService limitOrderCancelService;
+
+	@Autowired
+	private LimitOrderModifyService limitOrderModifyService;
 
 	@Autowired
 	private OrderService orderService;
@@ -529,6 +538,236 @@ class LimitOrderConcurrencyIntegrationTest {
 		assertThat(holdingAfter.getQuantity())
 			.isEqualByComparingTo(initialQuantity.add(marketBuyQuantity).subtract(marketSellQuantity));
 		assertThat(holdingAfter.getReservedQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
+	}
+
+	// 시나리오 23 (BUY, 이 기능의 핵심 증명): 예약 가능 현금을 초과하는 PATCH 요청이 409 INSUFFICIENT_CASH로
+	// 거부된 후 주문·계좌를 DB에서 재조회해 요청 전 값과 완전히 동일함을 확인한다 — 서비스 예외 타입만 보는
+	// 얕은 검증이 아니라 실제 DB 값 대조다(spec.md LMT-005 완료 조건, plan.md "동시성 테스트 시나리오" 2번).
+	// 취소 후 재생성 방식이었다면 사라졌을 주문이 원자적 처리(트랜잭션 롤백)로 그대로 유지됨을 증명한다.
+	@Test
+	void modifyRejectedByInsufficientCashLeavesOrderAndAccountUnchangedInDb() {
+		User user = createUser("modify-cash-atomic");
+		Account account = createAccount(user);
+		Instrument instrument = createCryptoInstrument("MODCSH");
+
+		// amount = 0.1 * 10,000,000 = 1,000,000, fee = 500 → reservedCash = 1,000,500.
+		BigDecimal quantity = new BigDecimal("0.1");
+		BigDecimal limitPrice = new BigDecimal("10000000");
+		LimitOrderResponse created = limitOrderService.createLimitOrder(
+			user.getId(), "idem-modcsh-create",
+			new LimitOrderCreateRequest(Market.CRYPTO, instrument.getId(), OrderSide.BUY, quantity, limitPrice));
+		Long orderId = created.orderId();
+
+		Order orderBefore = orderRepository.findById(orderId).orElseThrow();
+		BigDecimal quantityBefore = orderBefore.getQuantity();
+		BigDecimal limitPriceBefore = orderBefore.getLimitPrice();
+		LocalDateTime requestedAtBefore = orderBefore.getRequestedAt();
+		Account accountBefore = accountRepository.findById(account.getId()).orElseThrow();
+		long reservedCashBefore = accountBefore.getReservedCash();
+		long cashBalanceBefore = accountBefore.getCashBalance();
+		assertThat(reservedCashBefore).isEqualTo(1_000_500L);
+
+		// 지정가를 120,000,000으로 올리면 amount = 0.1 * 120,000,000 = 12,000,000, fee = 6,000 → total =
+		// 12,006,000. 옛 예약을 해제해도 availableCash는 잔액 전체(10,000,000)로 돌아올 뿐이라 여전히 부족하다.
+		assertThatThrownBy(() -> limitOrderModifyService.modifyOrder(
+			user.getId(), orderId, new LimitOrderModifyRequest(new BigDecimal("120000000"), null)))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(
+				ex -> assertThat(((BusinessException)ex).getErrorCode()).isEqualTo(ErrorCode.INSUFFICIENT_CASH));
+
+		Order orderAfter = orderRepository.findById(orderId).orElseThrow();
+		assertThat(orderAfter.getQuantity()).isEqualByComparingTo(quantityBefore);
+		assertThat(orderAfter.getLimitPrice()).isEqualByComparingTo(limitPriceBefore);
+		assertThat(orderAfter.getStatus()).isEqualTo(OrderStatus.PENDING);
+		assertThat(orderAfter.getRequestedAt()).isEqualTo(requestedAtBefore);
+
+		Account accountAfter = accountRepository.findById(account.getId()).orElseThrow();
+		assertThat(accountAfter.getReservedCash()).isEqualTo(reservedCashBefore);
+		assertThat(accountAfter.getCashBalance()).isEqualTo(cashBalanceBefore);
+	}
+
+	// 시나리오 23 (SELL): 매도 버전 — 예약 가능 수량을 초과하는 PATCH 요청이 409 INSUFFICIENT_QTY로 거부된 후
+	// 주문·holding을 DB에서 재조회해 요청 전 값과 완전히 동일함을 확인한다(위 BUY 테스트와 동일 근거).
+	@Test
+	void modifyRejectedByInsufficientQtyLeavesOrderAndHoldingUnchangedInDb() {
+		User user = createUser("modify-qty-atomic");
+		Account account = createAccount(user);
+		Instrument instrument = createCryptoInstrument("MODQTY");
+
+		BigDecimal buyQuantity = new BigDecimal("10");
+		BigDecimal price = new BigDecimal("100000");
+		priceStore.saveTick(instrument.getSymbol(), price, LocalDateTime.now(clock));
+		orderService.createOrder(user.getId(), "idem-modqty-buy",
+			new OrderCreateRequest(Market.CRYPTO, instrument.getId(), OrderSide.BUY, "MARKET", buyQuantity));
+
+		BigDecimal sellQuantity = new BigDecimal("4");
+		LimitOrderResponse created = limitOrderService.createLimitOrder(user.getId(), "idem-modqty-sell",
+			new LimitOrderCreateRequest(Market.CRYPTO, instrument.getId(), OrderSide.SELL, sellQuantity, price));
+		Long orderId = created.orderId();
+
+		Order orderBefore = orderRepository.findById(orderId).orElseThrow();
+		BigDecimal quantityBefore = orderBefore.getQuantity();
+		BigDecimal limitPriceBefore = orderBefore.getLimitPrice();
+		LocalDateTime requestedAtBefore = orderBefore.getRequestedAt();
+		Holding holdingBefore = holdingRepository
+			.findByAccountIdAndInstrumentId(account.getId(), instrument.getId())
+			.orElseThrow();
+		BigDecimal totalQuantityBefore = holdingBefore.getQuantity();
+		BigDecimal reservedQuantityBefore = holdingBefore.getReservedQuantity();
+		assertThat(reservedQuantityBefore).isEqualByComparingTo(sellQuantity);
+
+		// 보유수량(10)을 초과하는 15로 올리면 옛 예약(4)을 해제해도 availableQuantity는 보유수량 전체(10)로
+		// 돌아올 뿐이라 여전히 부족하다.
+		assertThatThrownBy(() -> limitOrderModifyService.modifyOrder(
+			user.getId(), orderId, new LimitOrderModifyRequest(null, new BigDecimal("15"))))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(
+				ex -> assertThat(((BusinessException)ex).getErrorCode()).isEqualTo(ErrorCode.INSUFFICIENT_QTY));
+
+		Order orderAfter = orderRepository.findById(orderId).orElseThrow();
+		assertThat(orderAfter.getQuantity()).isEqualByComparingTo(quantityBefore);
+		assertThat(orderAfter.getLimitPrice()).isEqualByComparingTo(limitPriceBefore);
+		assertThat(orderAfter.getStatus()).isEqualTo(OrderStatus.PENDING);
+		assertThat(orderAfter.getRequestedAt()).isEqualTo(requestedAtBefore);
+
+		Holding holdingAfter = holdingRepository
+			.findByAccountIdAndInstrumentId(account.getId(), instrument.getId())
+			.orElseThrow();
+		assertThat(holdingAfter.getQuantity()).isEqualByComparingTo(totalQuantityBefore);
+		assertThat(holdingAfter.getReservedQuantity()).isEqualByComparingTo(reservedQuantityBefore);
+	}
+
+	// 시나리오 24 전반(수정-대-체결): PENDING 지정가 매수 주문에 스레드 A는 modifyOrder, 스레드 B는
+	// fillIfPending을 동시 호출한다. 둘 다 order를 가장 먼저 잠그므로 order row lock에서 직렬화된다 —
+	// 체결이 이기면 수정은 ORDER_ALREADY_FILLED로 거부되고 체결은 원래 값 기준으로 확정되며, 수정이 이기면
+	// 수정이 재예약을 마친 뒤 체결 트리거가 변경된 값을 기준으로 판정해 확정한다. 두 경로 모두 예약 이중
+	// 반환·이중 소비가 없어야 한다(plan.md "동시성 테스트 시나리오" 3번, spec.md 시나리오 24).
+	@Test
+	void modifyAndFillRaceForPendingBuyOrderApplyReservationExactlyOnceRegardlessOfWinner() throws Exception {
+		User user = createUser("modify-fill-race");
+		Account account = createAccount(user);
+		Instrument instrument = createCryptoInstrument("MODFIL");
+
+		// 원래 예약: amount = 0.1 * 10,000,000 = 1,000,000, fee = 500 → total = 1,000,500.
+		BigDecimal quantity = new BigDecimal("0.1");
+		BigDecimal limitPrice = new BigDecimal("10000000");
+		LimitOrderResponse created = limitOrderService.createLimitOrder(
+			user.getId(), "idem-modfil-create",
+			new LimitOrderCreateRequest(Market.CRYPTO, instrument.getId(), OrderSide.BUY, quantity, limitPrice));
+		Long orderId = created.orderId();
+
+		Account accountBefore = accountRepository.findById(account.getId()).orElseThrow();
+		long cashBefore = accountBefore.getCashBalance();
+		assertThat(accountBefore.getReservedCash()).isEqualTo(1_000_500L);
+
+		// 수정 후 예약: amount = 0.1 * 20,000,000 = 2,000,000, fee = 1,000 → total = 2,001,000(현금 충분).
+		BigDecimal newLimitPrice = new BigDecimal("20000000");
+
+		AtomicReference<Exception> modifyException = new AtomicReference<>();
+		AtomicReference<LimitOrderResponse> modifyResult = new AtomicReference<>();
+		runConcurrently(
+			() -> {
+				try {
+					modifyResult.set(limitOrderModifyService.modifyOrder(
+						user.getId(), orderId, new LimitOrderModifyRequest(newLimitPrice, null)));
+				} catch (Exception ex) {
+					modifyException.set(ex);
+				}
+			},
+			() -> limitOrderFillService.fillIfPending(orderId));
+
+		Order finalOrder = orderRepository.findById(orderId).orElseThrow();
+		Account accountAfter = accountRepository.findById(account.getId()).orElseThrow();
+		assertThat(finalOrder.getStatus()).isEqualTo(OrderStatus.FILLED);
+		assertThat(countTradesForOrder(orderId)).isEqualTo(1L);
+		assertThat(accountAfter.getReservedCash()).isZero();
+
+		if (modifyException.get() != null) {
+			// 체결이 이겼다 — 수정은 ORDER_ALREADY_FILLED로 거부되고, 체결은 원래 값(limitPrice=10,000,000)
+			// 기준으로 확정돼 예약분이 정확히 한 번만 실제 지출로 전환된다.
+			assertThat(modifyException.get()).isInstanceOf(BusinessException.class)
+				.satisfies(
+					ex -> assertThat(((BusinessException)ex).getErrorCode())
+						.isEqualTo(ErrorCode.ORDER_ALREADY_FILLED));
+			assertThat(finalOrder.getLimitPrice()).isEqualByComparingTo(limitPrice);
+			assertThat(cashBefore - accountAfter.getCashBalance()).isEqualTo(1_000_500L);
+		} else {
+			// 수정이 이겼다 — 수정이 재예약(1,000,500 해제 → 2,001,000 재예약)을 마친 뒤 체결이 변경된 값
+			// (limitPrice=20,000,000) 기준으로 확정돼 예약분이 정확히 한 번만 실제 지출로 전환된다.
+			assertThat(modifyResult.get()).isNotNull();
+			assertThat(finalOrder.getLimitPrice()).isEqualByComparingTo(newLimitPrice);
+			assertThat(cashBefore - accountAfter.getCashBalance()).isEqualTo(2_001_000L);
+		}
+	}
+
+	// 시나리오 24 후반(수정-대-취소): 같은 패턴으로 스레드 A는 modifyOrder, 스레드 B는 cancelOrder를 동시
+	// 호출한다. 취소가 이기면 수정은 ORDER_ALREADY_CANCELLED로 거부되고 취소는 원래 예약을 반환하며, 수정이
+	// 이기면 수정이 재예약을 마친 뒤 취소가 변경된 값 기준으로 재예약분을 반환한다. 두 경로 모두 예약이 이중
+	// 반환되지 않아야 한다(plan.md "동시성 테스트 시나리오" 4번, spec.md 시나리오 24 후반).
+	@Test
+	void modifyAndCancelRaceForPendingBuyOrderReleaseReservationExactlyOnceRegardlessOfWinner() throws Exception {
+		User user = createUser("modify-cancel-race");
+		Account account = createAccount(user);
+		Instrument instrument = createCryptoInstrument("MODCXL");
+
+		// 원래 예약: amount = 0.1 * 10,000,000 = 1,000,000, fee = 500 → total = 1,000,500.
+		BigDecimal quantity = new BigDecimal("0.1");
+		BigDecimal limitPrice = new BigDecimal("10000000");
+		LimitOrderResponse created = limitOrderService.createLimitOrder(
+			user.getId(), "idem-modcxl-create",
+			new LimitOrderCreateRequest(Market.CRYPTO, instrument.getId(), OrderSide.BUY, quantity, limitPrice));
+		Long orderId = created.orderId();
+
+		Account accountBefore = accountRepository.findById(account.getId()).orElseThrow();
+		long cashBefore = accountBefore.getCashBalance();
+
+		// 수정 후 예약: amount = 0.1 * 20,000,000 = 2,000,000, fee = 1,000 → total = 2,001,000(현금 충분).
+		BigDecimal newLimitPrice = new BigDecimal("20000000");
+
+		AtomicReference<Exception> modifyException = new AtomicReference<>();
+		AtomicReference<Exception> cancelException = new AtomicReference<>();
+		AtomicReference<LimitOrderResponse> modifyResult = new AtomicReference<>();
+		runConcurrently(
+			() -> {
+				try {
+					modifyResult.set(limitOrderModifyService.modifyOrder(
+						user.getId(), orderId, new LimitOrderModifyRequest(newLimitPrice, null)));
+				} catch (Exception ex) {
+					modifyException.set(ex);
+				}
+			},
+			() -> {
+				try {
+					limitOrderCancelService.cancelOrder(user.getId(), orderId);
+				} catch (Exception ex) {
+					cancelException.set(ex);
+				}
+			});
+
+		Order finalOrder = orderRepository.findById(orderId).orElseThrow();
+		Account accountAfter = accountRepository.findById(account.getId()).orElseThrow();
+		assertThat(finalOrder.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+		assertThat(accountAfter.getReservedCash()).isZero();
+		// 어느 쪽이 이겨도 체결이 없었으므로 cashBalance는 항상 시작값과 같다(이중 반환·이중 소비 모두 없음).
+		assertThat(accountAfter.getCashBalance()).isEqualTo(cashBefore);
+		// cancelOrder는 지는 쪽이어도 예외 없이 성공해야 한다(취소는 order가 PENDING이기만 하면 항상 성공 —
+		// 수정이 이겼더라도 상태는 여전히 PENDING이므로 뒤이은 취소는 변경된 값 기준으로 정상 처리된다).
+		assertThat(cancelException.get()).isNull();
+
+		if (modifyException.get() != null) {
+			// 취소가 이겼다 — 수정은 ORDER_ALREADY_CANCELLED로 거부되고, 취소는 원래 예약(1,000,500)을
+			// 그대로 반환한다.
+			assertThat(modifyException.get()).isInstanceOf(BusinessException.class)
+				.satisfies(
+					ex -> assertThat(((BusinessException)ex).getErrorCode())
+						.isEqualTo(ErrorCode.ORDER_ALREADY_CANCELLED));
+			assertThat(finalOrder.getLimitPrice()).isEqualByComparingTo(limitPrice);
+		} else {
+			// 수정이 이겼다 — 수정이 재예약(1,000,500 해제 → 2,001,000 재예약)을 마친 뒤, 취소가 변경된 값
+			// (limitPrice=20,000,000) 기준으로 재예약분을 그대로 반환한다.
+			assertThat(modifyResult.get()).isNotNull();
+			assertThat(finalOrder.getLimitPrice()).isEqualByComparingTo(newLimitPrice);
+		}
 	}
 
 	// PracticeIntentionConcurrencyIntegrationTest와 동일한 ready/start CountDownLatch 관례를 재사용한다 —

@@ -78,7 +78,7 @@
 - [x] 22. **`PATCH /api/orders/{orderId}` 수정 API**
   `LimitOrderModifyRequest`(`limitPrice`·`quantity` 둘 다 nullable) 신규 DTO. `LimitOrderModifyService`(`order.service`, plan.md "수정 흐름" 그대로 — 요청 형식(둘 다 null이면 400) → `orderRepository.findByIdForUpdate`(락+404) → 소유(403) → 상태(409, `FILLED`/`CANCELLED` 개별) → 최종값 합성 → 형식·최소주문금액 재검증 → `accountService.getAccountByIdForUpdate`(계좌 락) → BUY는 `releaseReservedCash`→`INSUFFICIENT_CASH` 검증→`reserveCash`, SELL은 `portfolioSellService.getHoldingForUpdate`(holding 락)+`releaseReservedQuantity`→`INSUFFICIENT_QTY` 검증→`reserveQuantity` → `order.modify(...)` → `LimitOrderResponse.from(order)` 반환). `OrderController`에 `@PatchMapping("/{orderId}")` 추가(`Idempotency-Key` 헤더 없음, 200 응답). 검증 순서(존재→소유→상태→형식)와 잠금 순서(order→account→(SELL만)holding)는 LMT-003과 동일하게 고정. 서비스 단위 테스트(`LimitOrderModifyServiceTest`: BUY/SELL 각각 해제→재예약 호출 순서·인자, 부분 갱신 시 미지정 필드가 기존값으로 합성되는지, 둘 다 없음 400, 존재하지 않는 주문 404, 타인 소유 403, 이미 `FILLED`/`CANCELLED` 409 개별, 검증 순서 준수) + `@WebMvcTest`(`OrderControllerTest`: 200 응답 필드 계약, 빈 요청 본문 400, 인증 없으면 401, 404/403/409 오류 매핑).
 
-- [ ] 23. **원자성·동시성 통합 테스트**
+- [x] 23. **원자성·동시성 통합 테스트**
   `LimitOrderConcurrencyIntegrationTest`에 plan.md "동시성 테스트 시나리오" 2~4번(spec.md 시나리오 23·24) 추가 — 기존 `runConcurrently`(ready/start `CountDownLatch`) 헬퍼 재사용. (a, 이 기능의 핵심 증명) 예약 가능 현금·수량을 초과하는 `PATCH` 요청이 409로 거부된 **후** 주문·계좌·보유를 DB에서 재조회해 요청 전 값과 완전히 동일함을 확인(서비스 예외 타입만 보는 얕은 검증 금지, 매수·매도 각 1개). (b) 수정-대-체결 동시 경합(체결 승리·수정 승리 두 경로 모두 예약 일관성 확인). (c) 수정-대-취소 동시 경합(취소 승리·수정 승리 두 경로 모두 확인).
 
 - [ ] 24. **문서 동기화 및 최종 빌드**
