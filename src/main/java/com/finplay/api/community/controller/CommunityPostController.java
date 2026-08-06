@@ -81,9 +81,11 @@ public class CommunityPostController {
 		@RequestParam(defaultValue = "" + DEFAULT_PAGE)
 		int page,
 		@RequestParam(defaultValue = "" + DEFAULT_SIZE)
-		int size) {
+		int size,
+		@RequestParam(required = false)
+		Long instrumentId) {
 		validatePageAndSize(page, size);
-		CommunityPostListResponse response = communityPostService.getPosts(page, size);
+		CommunityPostListResponse response = communityPostService.getPosts(page, size, instrumentId);
 		return ResponseEntity.ok(response);
 	}
 

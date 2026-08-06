@@ -31,7 +31,7 @@
 | GET | /api/stocks/stream | market | 주식 전용 SSE 구독. 구독 직후 16종 전체를 snapshot 1건으로 전송, 이후 매분 새로 공개된 가격을 price로, 개장·마감 전환을 status로 push | 003 MKT-002, Issue #19 |
 | POST | /api/dev/stock-replay-imports | market | **(local 프로필 전용)** 08:10 수집 배치와 08:40 세션 확정 배치를 즉시 한 번 실행해 실제 KIS 분봉을 채운다. 그 시각을 기다리지 않거나 앱이 꺼져 있어 건너뛴 날의 보정용. 요청 본문 없음. `local` 프로필이 아니면 컨트롤러 빈 자체가 없어 404 | 003 MKT-005 (개발 도구, 이슈 없음) |
 | POST | /api/community/posts | community | 인증 사용자의 텍스트 게시물 작성 | 008 COM-001, Issue #23 |
-| GET | /api/community/posts?page=&size= | community | 인증 사용자의 게시물 목록을 최신순 페이지네이션으로 조회 | 008 COM-001, Issue #24 |
+| GET | /api/community/posts?page=&size=&instrumentId= | community | 인증 사용자의 게시물 목록을 최신순 페이지네이션으로 조회. `instrumentId` 지정 시 그 종목이 태그된 게시물만 반환(미지정 시 전체) | 008 COM-001, 022 COM-004, Issue #24, Issue #246 |
 | GET | /api/community/posts/{postId} | community | 인증 사용자의 커뮤니티 게시물 단건 조회 | 008 COM-001, Issue #25 |
 | PATCH | /api/community/posts/{postId} | community | 본인 소유 커뮤니티 게시물의 제목·본문 수정 | 008 COM-001, Issue #26 |
 | DELETE | /api/community/posts/{postId} | community | 본인 소유 커뮤니티 게시물 삭제 (204, 본문 없음, 댓글도 함께 삭제) | 008 COM-001, Issue #27 |

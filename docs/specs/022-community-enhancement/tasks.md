@@ -10,7 +10,7 @@
 - [x] 2. **게시물 작성·수정 API에 종목 태그 반영**
   `CommunityPostCreateRequest`·`CommunityPostUpdateRequest`에 `instrumentId`(nullable `Long`) 필드 추가. `CommunityPostResponse`에 `instrumentId`·`instrumentSymbol`·`instrumentName`(모두 nullable) 추가, `from(CommunityPost)`에서 태그 없으면 세 필드 `null`. `CommunityPostService.createPost`/`updatePost`에 `instrumentId` 파라미터 추가 — 값이 있으면 `instrumentService.getTradableInstrumentEntity(instrumentId)` 호출 후 엔티티에 전달, 없으면 `instrument=null`. `CommunityPostController`가 `request.instrumentId()`를 그대로 전달하도록 수정. 서비스 단위 테스트(정상 태그 생성/수정, 미태그 하위 호환, 존재하지 않는/비활성 종목 태그 시 400 전파) + `@WebMvcTest`(요청 JSON `instrumentId` 포함/생략, 응답 JSON 태그 필드 계약, 400 오류 매핑).
 
-- [ ] 3. **목록 조회 `instrumentId` 필터**
+- [x] 3. **목록 조회 `instrumentId` 필터**
   `CommunityPostRepositoryCustom`/`CommunityPostRepositoryImpl.findPostsOrderByCreatedAtDesc`을 `(Pageable, Long instrumentId)`로 변경 — `instrumentId != null`이면 `post.instrument.id.eq(instrumentId)` 조건 추가, `instrument`를 `leftJoin().fetchJoin()`으로 함께 로딩. `CommunityPostService.getPosts`에 `instrumentId` 파라미터 추가. `CommunityPostController.getPosts`에 `@RequestParam(required = false) Long instrumentId` 추가. `@DataJpaTest`(instrumentId 지정 시 해당 종목만, `null` 지정 시 전체, N+1 없는지) + `@WebMvcTest`(쿼리 파라미터 전달 검증).
 
 - [ ] 4. **통합 테스트**

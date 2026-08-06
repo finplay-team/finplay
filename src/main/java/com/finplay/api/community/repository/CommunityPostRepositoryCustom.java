@@ -7,5 +7,5 @@ import org.springframework.data.domain.Pageable;
 
 public interface CommunityPostRepositoryCustom {
 
-	Page<CommunityPost> findPostsOrderByCreatedAtDesc(Pageable pageable);
+	Page<CommunityPost> findPostsOrderByCreatedAtDesc(Pageable pageable, Long instrumentId);
 }

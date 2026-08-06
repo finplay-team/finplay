@@ -252,9 +252,9 @@ class CommunityPostServiceTest {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
 		CommunityPost post = CommunityPost.create(author, "title", "content", null, LocalDateTime.now(CLOCK));
 		Page<CommunityPost> page = new PageImpl<>(List.of(post), PageRequest.of(0, 10), 1);
-		when(repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10))).thenReturn(page);
+		when(repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10), null)).thenReturn(page);
 
-		CommunityPostListResponse response = service.getPosts(0, 10);
+		CommunityPostListResponse response = service.getPosts(0, 10, null);
 
 		assertThat(response.content()).hasSize(1);
 		assertThat(response.content().get(0).authorNickname()).isEqualTo("author");
@@ -267,11 +267,27 @@ class CommunityPostServiceTest {
 	}
 
 	@Test
+	void getPostsPassesInstrumentIdToRepositoryWhenProvided() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		Instrument instrument = instrument(9L);
+		CommunityPost post = CommunityPost.create(
+			author, "tagged title", "content", instrument, LocalDateTime.now(CLOCK));
+		Page<CommunityPost> page = new PageImpl<>(List.of(post), PageRequest.of(0, 10), 1);
+		when(repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10), 9L)).thenReturn(page);
+
+		CommunityPostListResponse response = service.getPosts(0, 10, 9L);
+
+		assertThat(response.content()).hasSize(1);
+		assertThat(response.content().get(0).instrumentId()).isEqualTo(9L);
+		verify(repository).findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10), 9L);
+	}
+
+	@Test
 	void getPostsReturnsEmptyContentWhenNoPostsExist() {
 		Page<CommunityPost> emptyPage = new PageImpl<>(List.of(), PageRequest.of(0, 10), 0);
-		when(repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10))).thenReturn(emptyPage);
+		when(repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10), null)).thenReturn(emptyPage);
 
-		CommunityPostListResponse response = service.getPosts(0, 10);
+		CommunityPostListResponse response = service.getPosts(0, 10, null);
 
 		assertThat(response.content()).isEmpty();
 		assertThat(response.totalElements()).isEqualTo(0);

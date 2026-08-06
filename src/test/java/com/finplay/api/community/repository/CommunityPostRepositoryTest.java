@@ -118,7 +118,7 @@ class CommunityPostRepositoryTest {
 		CommunityPost newest = repository.saveAndFlush(
 			CommunityPost.create(author, "newest", "content", null, NOW));
 
-		Page<CommunityPost> page = repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10));
+		Page<CommunityPost> page = repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10), null);
 
 		assertThat(page.getContent())
 			.extracting(CommunityPost::getId)
@@ -131,7 +131,7 @@ class CommunityPostRepositoryTest {
 		CommunityPost first = repository.saveAndFlush(CommunityPost.create(author, "first", "content", null, NOW));
 		CommunityPost second = repository.saveAndFlush(CommunityPost.create(author, "second", "content", null, NOW));
 
-		Page<CommunityPost> page = repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10));
+		Page<CommunityPost> page = repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10), null);
 
 		assertThat(page.getContent())
 			.extracting(CommunityPost::getId)
@@ -149,7 +149,7 @@ class CommunityPostRepositoryTest {
 		statistics.setStatisticsEnabled(true);
 		statistics.clear();
 
-		Page<CommunityPost> page = repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 1));
+		Page<CommunityPost> page = repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 1), null);
 		page.getContent().forEach(post -> assertThat(post.getAuthor().getNickname()).isEqualTo("fetcher"));
 
 		assertThat(statistics.getPrepareStatementCount()).isEqualTo(2);
@@ -165,8 +165,8 @@ class CommunityPostRepositoryTest {
 			repository.saveAndFlush(CommunityPost.create(author, "p4", "content", null, NOW.minusMinutes(1))).getId(),
 			repository.saveAndFlush(CommunityPost.create(author, "p5", "content", null, NOW)).getId());
 
-		Page<CommunityPost> firstPage = repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 3));
-		Page<CommunityPost> secondPage = repository.findPostsOrderByCreatedAtDesc(PageRequest.of(1, 3));
+		Page<CommunityPost> firstPage = repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 3), null);
+		Page<CommunityPost> secondPage = repository.findPostsOrderByCreatedAtDesc(PageRequest.of(1, 3), null);
 
 		assertThat(firstPage.getTotalElements()).isEqualTo(5);
 		assertThat(firstPage.getTotalPages()).isEqualTo(2);
@@ -183,7 +183,7 @@ class CommunityPostRepositoryTest {
 
 	@Test
 	void findPostsOrderByCreatedAtDescReturnsEmptyPageWhenNoPostsExist() {
-		Page<CommunityPost> page = repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10));
+		Page<CommunityPost> page = repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10), null);
 
 		assertThat(page.getContent()).isEmpty();
 		assertThat(page.getTotalElements()).isEqualTo(0);
@@ -252,5 +252,66 @@ class CommunityPostRepositoryTest {
 		assertThat(indexColumns.get(0).get("column_name")).isEqualTo("instrument_id");
 		assertThat(indexColumns.get(1).get("column_name")).isEqualTo("created_at");
 		assertThat(indexColumns.get(2).get("column_name")).isEqualTo("id");
+	}
+
+	@Test
+	void findPostsOrderByCreatedAtDescReturnsOnlyPostsTaggedWithGivenInstrumentId() {
+		User author = userRepository.saveAndFlush(User.create("filter@finplay.com", "hash", "filterer", NOW));
+		Instrument samsung = instrumentRepository.saveAndFlush(
+			Instrument.create(Market.STOCK, uniqueSymbol(), "삼성전자", BigDecimal.valueOf(100), 70000L, true, NOW));
+		Instrument hynix = instrumentRepository.saveAndFlush(
+			Instrument.create(Market.STOCK, uniqueSymbol(), "SK하이닉스", BigDecimal.valueOf(100), 150000L, true, NOW));
+		CommunityPost taggedSamsung = repository.saveAndFlush(
+			CommunityPost.create(author, "samsung post", "content", samsung, NOW.minusMinutes(2)));
+		repository.saveAndFlush(CommunityPost.create(author, "hynix post", "content", hynix, NOW.minusMinutes(1)));
+		repository.saveAndFlush(CommunityPost.create(author, "untagged post", "content", null, NOW));
+
+		Page<CommunityPost> page = repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10), samsung.getId());
+
+		assertThat(page.getContent()).extracting(CommunityPost::getId).containsExactly(taggedSamsung.getId());
+		assertThat(page.getTotalElements()).isEqualTo(1);
+	}
+
+	@Test
+	void findPostsOrderByCreatedAtDescReturnsAllPostsWhenInstrumentIdIsNull() {
+		User author = userRepository.saveAndFlush(User.create("nofilter@finplay.com", "hash", "nofilterer", NOW));
+		Instrument samsung = instrumentRepository.saveAndFlush(
+			Instrument.create(Market.STOCK, uniqueSymbol(), "삼성전자", BigDecimal.valueOf(100), 70000L, true, NOW));
+		CommunityPost tagged = repository.saveAndFlush(
+			CommunityPost.create(author, "tagged", "content", samsung, NOW.minusMinutes(1)));
+		CommunityPost untagged = repository.saveAndFlush(
+			CommunityPost.create(author, "untagged", "content", null, NOW));
+
+		Page<CommunityPost> page = repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10), null);
+
+		assertThat(page.getContent())
+			.extracting(CommunityPost::getId)
+			.containsExactly(untagged.getId(), tagged.getId());
+		assertThat(page.getTotalElements()).isEqualTo(2);
+	}
+
+	@Test
+	void findPostsOrderByCreatedAtDescFetchesInstrumentWithoutAdditionalQueriesWhenFilteringByInstrumentId() {
+		User author = userRepository.saveAndFlush(User.create("fetchtag@finplay.com", "hash", "fetchtagger", NOW));
+		Instrument samsung = instrumentRepository.saveAndFlush(
+			Instrument.create(Market.STOCK, uniqueSymbol(), "삼성전자", BigDecimal.valueOf(100), 70000L, true, NOW));
+		repository.saveAndFlush(
+			CommunityPost.create(author, "first", "content", samsung, NOW.minusMinutes(1)));
+		repository.saveAndFlush(CommunityPost.create(author, "second", "content", samsung, NOW));
+		entityManager.clear();
+
+		Statistics statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+		statistics.setStatisticsEnabled(true);
+		statistics.clear();
+
+		Page<CommunityPost> page = repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10), samsung.getId());
+		page.getContent().forEach(post -> assertThat(post.getInstrument().getSymbol())
+			.isEqualTo(samsung.getSymbol()));
+
+		assertThat(statistics.getPrepareStatementCount()).isEqualTo(2);
+	}
+
+	private static String uniqueSymbol() {
+		return "T" + UUID.randomUUID().toString().replace("-", "").substring(0, 10);
 	}
 }

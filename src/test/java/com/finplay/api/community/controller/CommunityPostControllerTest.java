@@ -326,7 +326,7 @@ class CommunityPostControllerTest {
 		LocalDateTime now = LocalDateTime.of(2026, 7, 27, 12, 0);
 		CommunityPostResponse item = new CommunityPostResponse(
 			7L, "author", "title", "content", now, now, null, null, null);
-		when(service.getPosts(0, 10))
+		when(service.getPosts(0, 10, null))
 			.thenReturn(new CommunityPostListResponse(List.of(item), 0, 10, 1, 1, false));
 
 		mockMvc.perform(get("/api/community/posts")
@@ -339,14 +339,14 @@ class CommunityPostControllerTest {
 			.andExpect(jsonPath("$.totalPages").value(1))
 			.andExpect(jsonPath("$.hasNext").value(false));
 
-		verify(service).getPosts(0, 10);
+		verify(service).getPosts(0, 10, null);
 	}
 
 	@Test
 	void getPostsPassesExplicitPageAndSizeToService() throws Exception {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
-		when(service.getPosts(2, 5))
+		when(service.getPosts(2, 5, null))
 			.thenReturn(new CommunityPostListResponse(List.of(), 2, 5, 0, 0, false));
 
 		mockMvc.perform(get("/api/community/posts")
@@ -357,7 +357,36 @@ class CommunityPostControllerTest {
 			.andExpect(jsonPath("$.content").isArray())
 			.andExpect(jsonPath("$.content").isEmpty());
 
-		verify(service).getPosts(2, 5);
+		verify(service).getPosts(2, 5, null);
+	}
+
+	@Test
+	void getPostsPassesInstrumentIdQueryParameterToService() throws Exception {
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+		when(service.getPosts(0, 10, 9L))
+			.thenReturn(new CommunityPostListResponse(List.of(), 0, 10, 0, 0, false));
+
+		mockMvc.perform(get("/api/community/posts")
+			.param("instrumentId", "9")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk());
+
+		verify(service).getPosts(0, 10, 9L);
+	}
+
+	@Test
+	void getPostsPassesNullInstrumentIdToServiceWhenParameterOmitted() throws Exception {
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+		when(service.getPosts(0, 10, null))
+			.thenReturn(new CommunityPostListResponse(List.of(), 0, 10, 0, 0, false));
+
+		mockMvc.perform(get("/api/community/posts")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk());
+
+		verify(service).getPosts(0, 10, null);
 	}
 
 	@ParameterizedTest(name = "{0}")
