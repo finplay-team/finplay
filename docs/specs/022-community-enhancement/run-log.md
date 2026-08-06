@@ -11,3 +11,7 @@
 - COM-004 항목1: `V24` 마이그레이션·`CommunityPost.instrument`·`InstrumentService.getTradableInstrumentEntity` 추가, compileJava/compileTestJava 통과, 신규 단위 테스트 2건 통과.
 - COM-004 항목2: Create/Update 요청 DTO·응답 DTO에 종목 태그 필드 추가, `CommunityPostService`가 `instrumentService.getTradableInstrumentEntity` 호출해 컨트롤러까지 연결, compileJava 통과(테스트는 tester 담당).
 - COM-004 항목3: 목록 조회에 `instrumentId` 필터 추가 — 리포지토리(QueryDSL `leftJoin().fetchJoin()` + 동적 `BooleanExpression`)·서비스·컨트롤러(`@RequestParam(required = false)`) 관통, compileJava 통과(기존 리포지토리·서비스·컨트롤러 테스트는 옛 시그니처라 컴파일 실패 상태 — tester가 갱신 예정).
+| - | reviewer(리뷰) | `git diff dev...HEAD`(전체), conventions.md·ADR-0002·0003·0004·api-routes.md·api-contracts.md 대조 | spec.md COM-004 완료조건, plan.md 설계 |
+
+## 모니터링 (사람용 요약)
+- 리뷰 완료(COM-004, PR #246 브랜치): 차단 0건, 권장 0건. 레이어·N+1·docs 동기화(api-routes/api-contracts/prd) 모두 일치, 테스트 4계층(단위·DataJpaTest·WebMvcTest·통합) 충실. 머지 가능.
