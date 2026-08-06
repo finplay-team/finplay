@@ -45,9 +45,20 @@ import tools.jackson.databind.ObjectMapper;
 @RequiredArgsConstructor
 public class FeedbackQueryCache {
 
-	private static final String KEY_PREFIX = "feedback:query-cache:";
+	// 접두사 끝의 v1이 **값 형식의 버전**이다. 값 타입(BriefingNewsItem 등)에 필드를 더하거나 빼면 이 숫자를
+	// 올려라 — 옛 값은 아무도 읽지 않고 TTL로 사라진다.
+	//
+	// **역직렬화 실패 처리만으로는 부족해서 둔다.** 그 경로는 타입이 깨질 때만 작동하는데, Jackson은 필드 증감에
+	// 예외를 내지 않는다(모르는 필드는 무시하고, record의 빠진 컴포넌트는 null이 된다). 그래서 필드를 더한 배포는
+	// 새 인스턴스가 옛 JSON을 읽어 그 필드만 null인 목록을 최대 한 TTL 동안 응답한다 — 예외도 로그도 없이
+	// 화면만 틀리는 형태다. items 키에 절단 상한을 넣어 "설정이 바뀌면 키가 갈리게" 한 것과 같은 논리를 값
+	// 형식에도 적용한 것이다.
+	//
+	// 락 키에도 같은 세그먼트를 둔다 — 배포 중 옛·새 인스턴스가 서로 다른 값 키를 채우면서 락만 공유하면,
+	// 한쪽이 락을 쥔 동안 다른 쪽은 자기 키가 채워지길 기다리다 wait-millis를 통째로 태운다.
+	private static final String KEY_PREFIX = "feedback:query-cache:v1:";
 
-	private static final String LOCK_KEY_PREFIX = "feedback:query-cache:lock:";
+	private static final String LOCK_KEY_PREFIX = "feedback:query-cache:lock:v1:";
 
 	private static final String STOCK_SUMMARY_ITEM = "stock-summary";
 
@@ -79,7 +90,8 @@ public class FeedbackQueryCache {
 
 	private final FeedbackQueryCacheProperties properties;
 
-	// items 키에 넣을 절단 상한(max-items-per-briefing)을 읽는 용도로만 쓴다.
+	// 두 가지를 읽는다 — items 키에 넣을 절단 상한(max-items-per-briefing)과, 그 items의 만료 경계를 계산할
+	// 수집 크론(collect-cron)이다.
 	private final FeedbackNewsProperties newsProperties;
 
 	/**
@@ -167,9 +179,6 @@ public class FeedbackQueryCache {
 			return loader.get();
 		}
 		String key = KEY_PREFIX + suffix;
-		// 진입 시점에 만료 경계가 앞에 있었는지를 붙잡아 둔다 — 저장 시점에 TTL이 0 이하가 됐을 때 "로더가 도는
-		// 사이에 경계를 넘은 것"(정상)과 "계산된 경계가 처음부터 과거였던 것"(버그)을 가르는 유일한 근거다.
-		boolean expiryWasAheadAtEntry = expiresAt.isAfter(LocalDateTime.now(clock));
 		CacheRead<T> cached = read(key, decoder);
 		if (cached.value().isPresent()) {
 			return cached.value().get();
@@ -194,7 +203,7 @@ public class FeedbackQueryCache {
 					return filledWhileAcquiringLock.value().get();
 				}
 				T loaded = loader.get();
-				encoder.apply(loaded).ifPresent(value -> write(key, value, expiresAt, expiryWasAheadAtEntry));
+				encoder.apply(loaded).ifPresent(value -> write(key, value, expiresAt));
 				return loaded;
 			} finally {
 				// 로더가 예외를 던져도 락이 TTL까지 남지 않게 한다.
@@ -202,7 +211,7 @@ public class FeedbackQueryCache {
 			}
 		}
 		// 락을 쥔 요청이 곧 채우므로 그 값을 기다린다.
-		Optional<T> awaited = awaitCachedValue(key, decoder);
+		Optional<T> awaited = awaitCachedValue(LOCK_KEY_PREFIX + suffix, key, decoder);
 		if (awaited.isPresent()) {
 			return awaited.get();
 		}
@@ -212,7 +221,20 @@ public class FeedbackQueryCache {
 		return loader.get();
 	}
 
-	private <T> Optional<T> awaitCachedValue(String key, Function<String, Optional<T>> decoder) {
+	/**
+	 * 락을 쥔 요청이 캐시를 채우기를 기다린다. 채워지면 그 값을, 아니면 빈 값을 돌려주고 호출부가 원본으로 간다.
+	 *
+	 * <p><b>보유자가 "저장할 것이 없어서" 끝난 경우를 락 키로 알아챈다.</b> 음성 결과(요약 행이 없는 날 등)는
+	 * 캐시에 쓰지 않으므로 캐시만 보고 있으면 <b>아무리 기다려도 채워지지 않는다</b> — 브리핑 행이 없는 날
+	 * (FEED-009가 정상이라고 명시한 상태) 동시 요청 N건이면 1건이 수 ms에 끝나고 나머지가 {@code wait-millis}를
+	 * 통째로 태운 뒤 각자 DB로 간다. 원본 호출은 줄지 않고 p99만 늘어나며, 값이 생길 때까지 매 버스트마다
+	 * 반복된다. 그래서 <b>캐시가 비어 있고 락 키도 사라졌으면</b> 즉시 이탈한다(보유자가 저장 없이 끝났거나
+	 * 죽었다는 뜻이다).
+	 *
+	 * <p>치르는 대가는 <b>극히 드문 경합에서 원본을 한 번 더 부르는 것</b>뿐이다 — 보유자가 "저장 → 해제"
+	 * 사이에 있는 찰나에 락이 없다고 볼 수 있어서다. 그 창을 좁히려고 이탈 직전에 캐시를 한 번 더 읽는다.
+	 */
+	private <T> Optional<T> awaitCachedValue(String lockKey, String key, Function<String, Optional<T>> decoder) {
 		long deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(properties.waitMillis());
 		while (System.nanoTime() < deadlineNanos) {
 			try {
@@ -230,6 +252,10 @@ public class FeedbackQueryCache {
 			// 대기 도중 Redis가 죽었으면 더 기다려도 채워지지 않는다.
 			if (!cached.redisHealthy()) {
 				return Optional.empty();
+			}
+			if (!redisLock.isHeld(lockKey)) {
+				// 보유자가 이미 끝났다. 저장 직후 해제된 찰나일 수 있어 캐시를 한 번만 더 본다.
+				return read(key, decoder).value();
 			}
 		}
 		return Optional.empty();
@@ -250,33 +276,25 @@ public class FeedbackQueryCache {
 	/**
 	 * TTL이 0 이하면 저장하지 않는다 — 음수 TTL은 Redis 명령 오류가 되고, 이미 만료된 값을 넣을 이유도 없다.
 	 *
-	 * <p><b>성격이 다른 두 가지가 이 분기로 함께 들어온다.</b> {@code expiresAt}은 조회 진입 시점에 계산되는데
-	 * 여기서는 로더가 끝난 뒤 {@code now}를 다시 읽으므로, 그 사이에 경계를 넘으면 <b>정상 동작에서도</b>
-	 * TTL이 0 이하가 된다.
+	 * <p><b>정상 동작에서도 일어난다.</b> {@code expiresAt}은 조회 진입 시점에 계산되는데 여기서는 로더가 끝난 뒤
+	 * {@code now}를 다시 읽으므로, 그 사이에 경계를 넘으면 TTL이 0 이하가 된다 — 코인은 매시 05분 직전, 주식
+	 * {@code PRE_MARKET}은 15:30 직전에 들어온 요청에서 실제로 그렇다. 그래서 {@code WARN}이 아니라
+	 * {@code DEBUG}다(매시 경계마다 나올 수 있는 로그를 경고로 두면 잡음이 된다).
 	 *
-	 * <ul>
-	 * <li><b>로더가 도는 사이에 경계를 넘었다 → 정상이라 {@code DEBUG}다.</b> 코인은 매시 05분 직전, 주식
-	 * {@code PRE_MARKET}은 15:30 직전에 들어온 요청에서 <b>실제로 일어난다</b> — 특히 코인은 매시 경계마다
-	 * 나올 수 있어 {@code WARN}으로 두면 운영 로그에 잡음이 된다. 저장을 건너뛰는 것이 옳은 동작이고(이미
-	 * 만료된 값이다) 다음 요청이 새 경계로 다시 채운다.</li>
-	 * <li><b>진입 시점에 이미 만료가 과거였다 → 비정상이라 {@code WARN}이다.</b> 아직 아무 일도 하기 전인데
-	 * 경계가 과거라는 것은 경계 계산이 틀렸다는 뜻이다(예: 15:30이 지났는데 {@code scope}가 여전히
-	 * {@code PRE_MARKET}이다). 이 상태는 저장이 계속 실패해 그 키의 캐시가 영영 비므로 신호가 남아야 한다.</li>
-	 * </ul>
+	 * <p><b>"경계 계산이 틀린 경우"를 여기서 따로 가르지 않는다.</b> 한때 "진입 시점에 이미 과거였는가"로 둘을
+	 * 나눴는데, 그 판정에 쓸 수 있는 시각이 <b>캐시 진입 시점</b>이라 정상 요청을 오분류한다 — {@code scope}는
+	 * 조회 진입부에서 정해지고 그 뒤 {@code items} 질의에 수백 ms가 걸리므로, 15:29:59에 들어온 정상 요청이
+	 * "계산 버그"로 찍힌다. 제대로 가르려면 <b>호출부가 {@code scope}를 정한 시각</b>을 공개 메서드 5개에 함께
+	 * 흘려야 하는데, 그 신호가 의미 있는 항목은 5개 중 주식 요약 하나뿐이라 값에 비해 비용이 크다고 판단했다.
 	 *
-	 * <p>둘을 가르는 근거가 {@code expiryWasAheadAtEntry}다. <b>시간 차의 크기로 어림하지 않는다</b> — 임의의
-	 * 임계값이 생기고, 느린 로더와 계산 버그를 그 숫자로는 구분할 수 없다.
+	 * <p>대신 그 오류는 다른 곳이 잡는다 — {@code scope} 판정 자체는 조회 서비스의 단위 테스트와 15:29/15:31
+	 * 범위 전환 통합 테스트가 고정하고, 경계가 영구히 과거인 상태는 <b>그 키가 절대 채워지지 않는다</b>는
+	 * 형태로 원본 호출 횟수 대조 테스트에 드러난다.
 	 */
-	private void write(String key, String value, LocalDateTime expiresAt, boolean expiryWasAheadAtEntry) {
+	private void write(String key, String value, LocalDateTime expiresAt) {
 		Duration ttl = Duration.between(LocalDateTime.now(clock), expiresAt);
 		if (ttl.isZero() || ttl.isNegative()) {
-			if (expiryWasAheadAtEntry) {
-				log.debug("조회 캐시 만료 경계를 로더가 도는 사이에 넘어 저장하지 않는다 - key={}, expiresAt={}",
-					key, expiresAt);
-				return;
-			}
-			log.warn("조회 캐시 TTL이 진입 시점부터 0 이하라 저장하지 않는다(만료 경계 계산 확인 필요) - "
-				+ "key={}, expiresAt={}", key, expiresAt);
+			log.debug("조회 캐시 만료 경계를 이미 넘어 저장하지 않는다 - key={}, expiresAt={}", key, expiresAt);
 			return;
 		}
 		try {

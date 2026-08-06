@@ -14,6 +14,8 @@
 | 03:55 | implementer | 조회 트랜잭션 경계 분리 후 `.\gradlew.bat build` 통과 | PR #257 남은 위험 1, `PostSellFeedbackService`/`PostSellFeedbackReader` 선례, ADR-0002 |
 | 04:40 | reviewer(리뷰) | `git diff dev...HEAD` (42파일, 마지막 커밋 `8fbd3b7` 중점) | ADR-0015, spec.md(024), spec 012 §C-4·§C-6, docs/conventions.md, ADR-0002·0003·0004, CLAUDE.md 규칙 7·10 |
 | 05:05 | implementer | 2회차 리뷰 중 2건 반영 후 `.\gradlew.bat compileJava` | PR 리뷰 2회차 [참고 — TTL≤0 WARN]·[권장 — spec 012 §C-6], ADR-0015 §2 |
+| 05:40 | reviewer(리뷰) | `git diff dev...HEAD` (43파일, 테스트 방어력·단순성 2관점 한정) | spec.md(024), ADR-0015, docs/conventions.md, CLAUDE.md 전역규칙 2·3, ADR-0014, docs/agent-mistakes.md |
+| 05:50 | implementer | 3회차 리뷰 코드 7건 반영 후 `.\gradlew.bat compileJava` | PR 리뷰 3회차, ADR-0015 §1·§2·§6, docs/agent-mistakes.md 2026-08-04 |
 
 ## 모니터링 (사람용 요약)
 - 01:05 — 항목 1: `RedisLock` 추출, `CryptoWatchLock`이 위임하도록 전환. 컴파일·기존 단위 테스트 통과(#244 테스트 무수정).
@@ -27,3 +29,5 @@
 - 03:55 — 조회 2곳을 비트랜잭션 오케스트레이터 + `InstrumentNewsQueryReader`·`MarketBriefingReader`(각 메서드가 자기 읽기 트랜잭션)로 분리. 캐시 대기가 더 이상 JDBC 커넥션을 쥐지 않는다. 전체 `build` 통과.
 - 04:40 — 리뷰 판정(2회차): 차단 0건 / 권장 3건 / 참고 4건 — 머지 가능. 트랜잭션 경계 분리는 옳다(로더 안 조회만 트랜잭션, 대기는 밖, 쓰기 경로 경계 무변경). §C-4 판정 순서는 `SummaryTextLookupDto`로도 그대로 유지되고(적중=READY, 미적중이면 로더가 반드시 실행돼 4·5번을 가른다), §C-6의 "생성·조회가 같은 구간 질의를 공유"도 Reader 한 벌로 유지된다. 권장은 엔티티 누출 테스트가 lazy 연관을 만지는 경로(브리핑 items·프롬프트 조립)를 비껴간 것, `context-notes.md` "남긴 것"이 마지막 커밋과 모순되는 것, spec 012 §C-6 코드 요소 목록 미갱신.
 - 05:05 — TTL≤0 로그를 "로더가 도는 사이 경계 통과"(DEBUG)와 "진입 시점부터 과거"(WARN)로 분리 — 코인 매시 경계 잡음을 없애면서 계산 버그 신호는 남긴다. spec 012 §C-6에 `RedisLock`·`FeedbackQueryCache`(`store/`)·Reader 2종·`SummaryTextLookupDto`를 근거(#245 / PR #257)와 함께 추가.
+- 05:40 — 리뷰 판정(3회차, 테스트 방어력·단순성 한정): 차단 0건 / 권장 5건 / 참고 4건 — 머지 가능. 뮤테이션이 살아남는 자리 2곳(`RedisLock`의 `REDIS_FAILURE`↔`NOT_HELD`, `FeedbackQueryCache`의 `expiryWasAheadAtEntry` DEBUG/WARN 분기), 추출로 무효화된 단정 2개(`CryptoWatchLockTest`의 "Redis 장애" 오분류 단정 — 그 WARN이 이제 `RedisLock` 로거로 나간다), 남은 캐시 키 결합 1건(`CryptoFeedbackBatchIntegrationTest`가 전역 `crypto-briefing-text`를 지우지 않는다), 주석 오류 2건.
+- 05:50 — 3회차 리뷰 반영: `spring.data.redis.timeout/connect-timeout: 2s` 명시(Lettuce 기본 60초 노출 차단, 값 근거는 소비자별 오탐 대가 — PriceStore가 하한을 정한다), 대기 루프가 락 키 소멸 시 즉시 이탈(음성 결과에서 wait-millis 낭비 제거, `RedisLock.isHeld` 신설), 캐시 키에 값 형식 버전 `v1` 추가, TTL≤0 로그를 단일 DEBUG로 되돌림(진입 시점 플래그로는 정상 요청을 오분류한다), ADR-0015 §1 표에 정정 문단, plan.md 키·TTL·킬 스위치 롤링 창 반영, 주석 2곳 범위 정정.

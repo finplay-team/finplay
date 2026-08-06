@@ -50,7 +50,7 @@ class FeedbackQueryCacheCryptoBatchCronDriftTest {
 
 	private static final Long INSTRUMENT_ID = 7L;
 
-	private static final String CRYPTO_SUMMARY_KEY = "feedback:query-cache:crypto-summary:7";
+	private static final String CRYPTO_SUMMARY_KEY = "feedback:query-cache:v1:crypto-summary:7";
 
 	@Test
 	@DisplayName("코인 요약 캐시의 TTL 경계가 feedback.batch.crypto-cron의 다음 실행과 정확히 같다")

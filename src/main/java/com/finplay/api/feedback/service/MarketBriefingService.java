@@ -60,8 +60,10 @@ public class MarketBriefingService {
 
 	private final NarrativeService narrativeService;
 
-	// DB 읽기는 전부 이 컴포넌트가 자기 트랜잭션 안에서 끝낸다 — 조회 경로의 캐시 대기가 커넥션을 쥐지 않게
-	// 하려는 것이며(PR #257 남은 위험 1), 생성·조회가 같은 구간 질의를 공유하는 성질(§C-6)도 그대로 유지된다.
+	// **조회 경로의** DB 읽기를 이 컴포넌트가 자기 트랜잭션 안에서 끝낸다 — 캐시 대기가 커넥션을 쥐지 않게
+	// 하려는 것이다(PR #257 남은 위험 1). 생성 경로는 구간 질의만 이 컴포넌트를 거치고 브리핑 행 조회·저장은
+	// 여전히 marketBriefingRepository를 직접 부른다(이번 변경 범위가 아니다). 생성·조회가 같은 구간 질의를
+	// 공유하는 성질(§C-6)은 그대로 유지된다.
 	private final MarketBriefingReader marketBriefingReader;
 
 	// 조회 경로가 읽고, 코인 갱신 경로가 갱신 성공 시에만 무효화한다(ADR-0015 §3). 생성 경로는 이 캐시를

@@ -179,9 +179,9 @@ class FeedbackQueryCacheEnabledWiringIntegrationTest extends FeedbackQueryCacheW
 
 		marketBriefingService.getBriefing(Market.STOCK);
 
-		Set<String> keys = redisTemplate.keys("feedback:query-cache:stock-briefing-*");
+		Set<String> keys = redisTemplate.keys("feedback:query-cache:v1:stock-briefing-*");
 		assertThat(keys).containsExactlyInAnyOrder(
-			"feedback:query-cache:stock-briefing-text:" + ORIGIN_TRADE_DATE,
+			"feedback:query-cache:v1:stock-briefing-text:" + ORIGIN_TRADE_DATE,
 			STOCK_BRIEFING_ITEMS_KEY_PREFIX + ORIGIN_TRADE_DATE + ":" + newsProperties.maxItemsPerBriefing());
 	}
 }

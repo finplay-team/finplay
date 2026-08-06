@@ -84,6 +84,8 @@ class FeedbackQueryCacheStampedeIntegrationTest {
 
 	private static final Long DOUBLE_CHECK_INSTRUMENT_ID = 990_005L;
 
+	private static final Long NEGATIVE_RESULT_INSTRUMENT_ID = 990_006L;
+
 	private static final String ORIGIN_TEXT = "원본이 만든 서술";
 
 	private static final String PREFILLED_TEXT = "미리 채워 둔 서술";
@@ -127,11 +129,11 @@ class FeedbackQueryCacheStampedeIntegrationTest {
 	}
 
 	private static String summaryKey(Long instrumentId) {
-		return "feedback:query-cache:crypto-summary:" + instrumentId;
+		return "feedback:query-cache:v1:crypto-summary:" + instrumentId;
 	}
 
 	private static String summaryLockKey(Long instrumentId) {
-		return "feedback:query-cache:lock:crypto-summary:" + instrumentId;
+		return "feedback:query-cache:lock:v1:crypto-summary:" + instrumentId;
 	}
 
 	// 이 테스트가 기대는 전제라 명시적으로 확인한다 — 기본값 300ms로 돌면 방어군이 타이밍 때문에 깨질 수 있다.
@@ -192,6 +194,48 @@ class FeedbackQueryCacheStampedeIntegrationTest {
 		// 원본에 못 들어간 셋도 정상 응답을 받는다. 방어가 "막는다"가 아니라 "한 번만 부르고 나눠 준다"임을 못박는다.
 		assertThat(results).allSatisfy(result -> assertThat(result).contains(ORIGIN_TEXT));
 		assertThat(redisTemplate.opsForValue().get(summaryKey(DEFENDED_INSTRUMENT_ID))).isEqualTo(ORIGIN_TEXT);
+	}
+
+	// --- 대기 조기 이탈 (RedisLock.isHeld) ---
+
+	/*
+	 * 음성 결과(행이 없다)에서의 동시 요청이 겨냥 대상이다. 캐시는 음성 결과를 저장하지 않으므로 락을 쥔 쪽이
+	 * "저장할 것 없이" 끝나는데, 그러면 기다리던 값이 <b>영영 오지 않는다</b> — 조기 이탈이 없으면 나머지는
+	 * wait-millis를 통째로 폴링한 뒤 각자 DB로 간다. 원본 호출 수는 그대로이고 지연만 늘어난다.
+	 *
+	 * <b>그래서 단정 대상이 호출 수가 아니라 소요다.</b> 호출 수는 이 변경 전후로 같다(아래에서 그것도 못박는다)
+	 * — 소요만이 두 구현을 가른다. 고정 Clock으로는 잴 수 없어 System.nanoTime()을 쓴다(#198).
+	 *
+	 * isHeld 세 줄을 지우면 소요가 wait-millis(5000)에 붙어 red가 된다 — 실제로 지워서 확인했다.
+	 */
+	@Test
+	@DisplayName("[조기 이탈] 음성 결과에서 동시 4건이 wait-millis를 태우지 않고 곧바로 원본으로 내려간다")
+	void concurrentRequestsOnANegativeResultLeaveTheWaitEarly() throws Exception {
+		CyclicBarrier atTheGate = new CyclicBarrier(THREAD_COUNT);
+		AtomicInteger loaderCalls = new AtomicInteger();
+
+		long startedAt = System.nanoTime();
+		List<Optional<String>> results = runConcurrently(() -> {
+			awaitAt(atTheGate);
+			return feedbackQueryCache.getOrLoadCryptoSummaryText(NEGATIVE_RESULT_INSTRUMENT_ID, () -> {
+				loaderCalls.incrementAndGet();
+				// 행이 없다. 음성 결과는 캐시하지 않으므로 기다리는 쪽에는 값이 오지 않는다.
+				return Optional.empty();
+			});
+		});
+		long elapsedMillis = Duration.ofNanos(System.nanoTime() - startedAt).toMillis();
+
+		assertThat(results).allSatisfy(result -> assertThat(result).isEmpty());
+		assertThat(elapsedMillis)
+			.as("보유자가 빈손으로 끝났는데도 wait-millis(%d)를 다 태웠다면 조기 이탈이 동작하지 않은 것이다",
+				cacheProperties.waitMillis())
+			.isLessThan(1500L);
+		// 원본 호출은 줄지 않는다 — 음성 결과에는 나눠 줄 값이 없다. 이 변경이 고치는 것은 p99이지 호출 수가
+		// 아니며, 여기서 호출 수가 줄면 오히려 누군가 "없음"을 캐시하고 있다는 뜻이다(ADR-0015 §3 위반).
+		assertThat(loaderCalls)
+			.as("스레드마다 정확히 한 번씩 — 조기 이탈이 호출 수를 바꾸지는 않는다")
+			.hasValue(THREAD_COUNT);
+		assertThat(redisTemplate.hasKey(summaryKey(NEGATIVE_RESULT_INSTRUMENT_ID))).isFalse();
 	}
 
 	// --- 결정론적 보조 단정 2개 (타이밍에 기대지 않는다) ---

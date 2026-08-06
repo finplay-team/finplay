@@ -34,6 +34,7 @@
 - 값은 yml(`application.yml`)과 `@DefaultValue` 양쪽에 둔다 — `FeedbackCryptoProperties`·`FeedbackNewsProperties`와 같은 방침이다(설정 없이도 기동하는 것은 `@DefaultValue`가 보장하고, 운영 중 조정은 항상 이기는 yml만 고친다).
 - **세 숫자는 실측이 아니라 추정이다**(ADR-0015 §후속). 조회 원본이 인덱스로 덮인 단일 행·구간 조회라 수 ms라는 전제에서 나왔다. **`wait-millis`가 원본 소요보다 짧으면 방어가 무력해진다**(대기 타임아웃 후 전부 DB 직행) — 이 하한을 프로퍼티 주석에 남긴다.
 - 등록은 `FeedbackQueryCacheConfig`(`@Configuration(proxyBeanMethods = false)` + `@EnableConfigurationProperties`). 프리픽스마다 설정 클래스를 나누는 기존 관례(`FeedbackCryptoConfig`)를 따른다 — 바인딩 테스트가 이 클래스 하나만 올리는 슬라이스여야 "잘못된 값이면 기동 실패" 단정이 다른 이유로 통과하지 않는다.
+- **킬 스위치를 내리는 롤링 배포에는 창이 하나 있다**(PR #257 리뷰, 알고 받아들이는 대가다). `enabled=false`면 무효화(`evict*`)도 Redis를 접촉하지 않는데 — 킬 스위치의 정의가 "Redis를 아예 접촉하지 않는다"이므로 이 동작을 유지한다 — 플래그를 끄는 도중 A(off)·B(on) 인스턴스가 공존하면, **A가 코인 요약·브리핑을 갱신하고 무효화를 건너뛴 사이 B가 캐시한 옛 값이 남는다.** 남는 시간은 코인 TTL의 상한인 다음 정시 05분까지(최대 약 1시간)이고, 그 뒤에는 만료로 스스로 사라진다. 스위치를 켤 때(off → on)는 이 창이 없다 — 켠 인스턴스부터 정상 무효화를 한다. 코인에만 해당하며 주식은 애초에 무효화 대상이 아니다(ADR-0015 §3).
 
 ## 데이터 모델
 
@@ -41,18 +42,18 @@
 
 ### 캐시 키와 값 (ADR-0015 §1·§7)
 
-접두사 `feedback:query-cache:`, 락은 `feedback:query-cache:lock:` + 같은 접미사.
+접두사 `feedback:query-cache:v1:`, 락은 `feedback:query-cache:lock:v1:` + 같은 접미사. **`v1`은 값 형식의 버전이다** — 값 타입(`BriefingNewsItem` 등)에 필드를 더하거나 빼면 이 숫자를 올린다. 역직렬화 실패 처리는 타입이 깨질 때만 작동하고 Jackson은 필드 증감에 예외를 내지 않아, 필드를 더한 배포가 옛 JSON을 읽어 그 필드만 `null`인 목록을 TTL 동안 내보내기 때문이다(PR #257 리뷰).
 
 | 항목 | 키 | 값 | TTL(안전망) |
 |---|---|---|---|
 | 주식 요약 텍스트 | `stock-summary:{instrumentId}:{originTradeDate}:{scope}` | 요약 문자열 | `PRE_MARKET` → 오늘 15:30, `FULL` → 익일 09:00 |
 | 코인 요약 텍스트 | `crypto-summary:{instrumentId}` | 요약 문자열 | 다음 정시 05분 |
 | 주식 브리핑 텍스트 | `stock-briefing-text:{originTradeDate}` | 브리핑 문자열 | 익일 09:00 |
-| 주식 브리핑 items | `stock-briefing-items:{originTradeDate}:{maxItemsPerBriefing}` | `BriefingNewsItem` 목록(JSON) | 익일 09:00 |
+| 주식 브리핑 items | `stock-briefing-items:{originTradeDate}:{maxItemsPerBriefing}` | `BriefingNewsItem` 목록(JSON) | **다음 수집 실행**(`feedback.news.collect-cron`) |
 | 코인 브리핑 텍스트 | `crypto-briefing-text` (단일 키) | 브리핑 문자열 | 다음 정시 05분 |
 
 - **`scope`가 키에 있는 것이 장 마감 전후 전환의 정확성을 담당한다.** TTL은 안전망이지 정확성의 근거가 아니다 — 15:30을 넘기면 조회가 `FULL` 키를 보므로 `PRE_MARKET` 값이 남아 있어도 노출되지 않는다.
-- **`items` 키에 `max-items-per-briefing`(`FeedbackNewsProperties`) 값을 넣는 것도 같은 이유다.** 캐시하는 값이 절단 후 목록이므로, 설정을 바꾸고 재배포해도 키가 갈리지 않으면 Redis에 남은 옛 길이 목록이 TTL(최대 익일 09:00)까지 그대로 나간다 — **예외도 로그도 없이 화면 목록 길이만 틀리는** 종류의 결함이고, 이 저장소가 §C-7에서 특히 경계하는 형태다. 키 구성요소 하나로 막을 수 있는 것을 문서 주의로 남기지 않는다. 값을 바꾸면 키가 자연히 갈려 옛 목록은 아무도 읽지 않고 TTL로 사라진다.
+- **`items` 키에 `max-items-per-briefing`(`FeedbackNewsProperties`) 값을 넣는 것도 같은 이유다.** 캐시하는 값이 절단 후 목록이므로, 설정을 바꾸고 재배포해도 키가 갈리지 않으면 Redis에 남은 옛 길이 목록이 TTL까지 그대로 나간다 — **예외도 로그도 없이 화면 목록 길이만 틀리는** 종류의 결함이고, 이 저장소가 §C-7에서 특히 경계하는 형태다. 키 구성요소 하나로 막을 수 있는 것을 문서 주의로 남기지 않는다. 값을 바꾸면 키가 자연히 갈려 옛 목록은 아무도 읽지 않고 TTL로 사라진다.
 - **절단 전 목록을 캐시하는 방식은 쓰지 않는다.** `collectPreMarketItems`는 시장 전체 목록이라 값이 커진다 — 절단 후 목록을 담고 상한을 키에 넣는 편이 싸다.
 - **캐시하지 않는 것**: 주식 요약 `items`, 코인 요약·브리핑 `items`. 그 구간 질의가 §C-5 노출 게이트의 구현이다.
 - **주식 요약 `items`가 캐시되지 않으므로 주식 요약 조회의 DB 감소는 부분적이다** — 요청당 약 5건 중 1건이다. 더 줄이려면 계약을 바꿔야 하고, 그 교환을 하지 않기로 했다(ADR-0015 §결과).
@@ -108,7 +109,7 @@ void evictCryptoBriefingText();
 ```
 
 - **로더의 반환이 "없음"이면 캐시하지 않는다**(ADR-0015 §3). 텍스트는 `Optional.empty()`, 목록은 빈 리스트가 그 신호다. `EMPTY`/`UNAVAILABLE` 상태가 여기로 매핑된다.
-- **빈 목록도 음성 결과다** — ADR-0015 §3의 "음성 결과 미캐시"를 목록에 적용한 것이다. 근거는 텍스트와 같다: 브리핑 `items`가 0건인 것은 **수집 배치가 아직 그 구간을 채우지 않은 상태**일 수 있고(배포 직후 이틀은 근거 구간이 비는 것이 정상이다 — FEED-009), 그 0건을 캐시하면 수집이 뒤늦게 돌아 기사가 들어와도 익일 09:00까지 화면이 빈 목록을 본다.
+- **빈 목록도 음성 결과다** — ADR-0015 §3의 "음성 결과 미캐시"를 목록에 적용한 것이다. 근거는 텍스트와 같다: 브리핑 `items`가 0건인 것은 **수집 배치가 아직 그 구간을 채우지 않은 상태**일 수 있고(배포 직후 이틀은 근거 구간이 비는 것이 정상이다 — FEED-009), 그 0건을 캐시하면 수집이 뒤늦게 돌아 기사가 들어와도 만료까지 화면이 빈 목록을 본다. **비어 있지 않은 목록의 TTL을 다음 수집으로 잡은 것도 같은 논리다** — 이 목록만 `market_news_items`에서 재구성되는 값이라 수집이 계속 바꾼다(PR #257 리뷰).
 - 내부 공통 경로 `getOrLoad(항목, 키접미사, ttl, 로더, 직렬화기)` 하나가 아래 순서를 수행한다.
 
 ```

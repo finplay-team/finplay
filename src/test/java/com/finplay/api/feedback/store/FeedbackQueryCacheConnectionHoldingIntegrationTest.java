@@ -221,7 +221,7 @@ class FeedbackQueryCacheConnectionHoldingIntegrationTest {
 	}
 
 	private String summaryLockKey() {
-		return "feedback:query-cache:lock:crypto-summary:" + crypto.getId();
+		return "feedback:query-cache:lock:v1:crypto-summary:" + crypto.getId();
 	}
 
 	private int activeConnections() throws Exception {

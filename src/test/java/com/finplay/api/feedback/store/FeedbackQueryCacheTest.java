@@ -54,19 +54,19 @@ class FeedbackQueryCacheTest {
 	// 절단 상한 기본값(§C-7 feedback.news.max-items-per-briefing).
 	private static final int MAX_ITEMS_PER_BRIEFING = 30;
 
-	private static final String CRYPTO_SUMMARY_KEY = "feedback:query-cache:crypto-summary:7";
+	private static final String CRYPTO_SUMMARY_KEY = "feedback:query-cache:v1:crypto-summary:7";
 
-	private static final String CRYPTO_SUMMARY_LOCK_KEY = "feedback:query-cache:lock:crypto-summary:7";
+	private static final String CRYPTO_SUMMARY_LOCK_KEY = "feedback:query-cache:lock:v1:crypto-summary:7";
 
-	private static final String STOCK_SUMMARY_PRE_MARKET_KEY = "feedback:query-cache:stock-summary:7:2026-08-05:PRE_MARKET";
+	private static final String STOCK_SUMMARY_PRE_MARKET_KEY = "feedback:query-cache:v1:stock-summary:7:2026-08-05:PRE_MARKET";
 
-	private static final String STOCK_SUMMARY_FULL_KEY = "feedback:query-cache:stock-summary:7:2026-08-05:FULL";
+	private static final String STOCK_SUMMARY_FULL_KEY = "feedback:query-cache:v1:stock-summary:7:2026-08-05:FULL";
 
-	private static final String STOCK_BRIEFING_TEXT_KEY = "feedback:query-cache:stock-briefing-text:2026-08-05";
+	private static final String STOCK_BRIEFING_TEXT_KEY = "feedback:query-cache:v1:stock-briefing-text:2026-08-05";
 
-	private static final String STOCK_BRIEFING_ITEMS_KEY = "feedback:query-cache:stock-briefing-items:2026-08-05:30";
+	private static final String STOCK_BRIEFING_ITEMS_KEY = "feedback:query-cache:v1:stock-briefing-items:2026-08-05:30";
 
-	private static final String CRYPTO_BRIEFING_TEXT_KEY = "feedback:query-cache:crypto-briefing-text";
+	private static final String CRYPTO_BRIEFING_TEXT_KEY = "feedback:query-cache:v1:crypto-briefing-text";
 
 	private final StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
 
@@ -240,8 +240,8 @@ class FeedbackQueryCacheTest {
 
 		assertThat(keys.getAllValues())
 			.containsExactly(
-				"feedback:query-cache:stock-briefing-items:2026-08-05:30",
-				"feedback:query-cache:stock-briefing-items:2026-08-05:10");
+				"feedback:query-cache:v1:stock-briefing-items:2026-08-05:30",
+				"feedback:query-cache:v1:stock-briefing-items:2026-08-05:10");
 	}
 
 	// ── 음성 결과는 캐시하지 않는다 ───────────────────────────────────────────────────

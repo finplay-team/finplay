@@ -73,7 +73,7 @@ abstract class FeedbackQueryCacheWiringSupport {
 
 	protected static final String STOCK_SYMBOL = "005930";
 
-	protected static final String STOCK_BRIEFING_ITEMS_KEY_PREFIX = "feedback:query-cache:stock-briefing-items:";
+	protected static final String STOCK_BRIEFING_ITEMS_KEY_PREFIX = "feedback:query-cache:v1:stock-briefing-items:";
 
 	@Autowired
 	protected InstrumentNewsQueryService instrumentNewsQueryService;

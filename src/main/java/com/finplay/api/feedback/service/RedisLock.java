@@ -59,6 +59,23 @@ public class RedisLock {
 	}
 
 	/**
+	 * 지금 이 키를 누군가 잡고 있는지 본다. <b>판정이 아니라 힌트다</b> — 확인한 다음 순간 TTL로 사라지거나 다른
+	 * 요청이 새로 잡을 수 있으므로, 이 결과로 상호 배제를 대신하면 안 된다. 대기 중인 쪽이 "보유자가 이미
+	 * 끝났는가"를 알아보는 용도다(보유자가 <b>저장할 것이 없어</b> 끝나면 기다리던 값이 영영 오지 않는다).
+	 *
+	 * <p>Redis가 예외를 던지면 {@code false}다 — 확인할 수 없으면 기다리게 두는 것보다 대기를 끊고 원본으로
+	 * 내려보내는 편이 낫다(이 클래스의 다른 실패 처리와 같은 fail-open 방향이다).
+	 */
+	public boolean isHeld(String key) {
+		try {
+			return Boolean.TRUE.equals(redisTemplate.hasKey(key));
+		} catch (RuntimeException ex) {
+			log.warn("Redis 락 보유 확인 실패(Redis 장애) - key={}", key, ex);
+			return false;
+		}
+	}
+
+	/**
 	 * {@code tryLock}이 반환한 토큰으로만 해제한다. 토큰이 지금 값과 다르면(이미 TTL 만료 후 다른 인스턴스가
 	 * 새로 잡은 락이면) 스크립트가 {@code 0}을 반환하고 아무 것도 지우지 않는다 — 그 경우 {@code NOT_HELD}다.
 	 *

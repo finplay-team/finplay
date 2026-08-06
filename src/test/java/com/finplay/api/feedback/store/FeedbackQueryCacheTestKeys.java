@@ -23,7 +23,14 @@ import org.springframework.data.redis.core.StringRedisTemplate;
  */
 public final class FeedbackQueryCacheTestKeys {
 
-	/** {@code FeedbackQueryCache}가 쓰는 모든 키(값·락 공통 접두사). */
+	/**
+	 * {@code FeedbackQueryCache}가 쓰는 모든 키(값·락 공통 접두사).
+	 *
+	 * <p><b>스키마 세그먼트({@code v1})를 넣지 않는다</b> — 여기 목적은 정리이므로 옛 버전이 남긴 키까지 쓸어야
+	 * 한다. 버전을 박으면 스키마를 올린 뒤 이전 버전 키가 공유 Redis에 남아, 그것을 읽는 테스트가 생겼을 때
+	 * 조용히 살아남는다. 반대로 <b>키를 단정하는</b> 쪽은 리터럴에 {@code v1}을 그대로 적어야 접두사가 바뀌면
+	 * 테스트가 깨진다.
+	 */
 	public static final String PATTERN = "feedback:query-cache:*";
 
 	private FeedbackQueryCacheTestKeys() {}

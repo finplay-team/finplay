@@ -195,11 +195,11 @@ class FeedbackQueryCacheBoundaryIntegrationTest {
 	}
 
 	private String stockSummaryKey(NewsSummaryScope scope) {
-		return "feedback:query-cache:stock-summary:" + stock.getId() + ":" + ORIGIN_TRADE_DATE + ":" + scope.name();
+		return "feedback:query-cache:v1:stock-summary:" + stock.getId() + ":" + ORIGIN_TRADE_DATE + ":" + scope.name();
 	}
 
 	private String cryptoSummaryKey() {
-		return "feedback:query-cache:crypto-summary:" + crypto.getId();
+		return "feedback:query-cache:v1:crypto-summary:" + crypto.getId();
 	}
 
 	// ── ① 주식 범위 전환 ─────────────────────────────────────────────────────────────
