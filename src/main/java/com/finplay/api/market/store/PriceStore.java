@@ -5,11 +5,15 @@ import com.finplay.api.market.event.CryptoPriceUpdatedEvent;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.HashOperations;
@@ -21,10 +25,12 @@ import org.springframework.stereotype.Component;
 public class PriceStore {
 
 	private static final String PRICE_KEY_PREFIX = "price:crypto:";
+	private static final String SNAPSHOT_KEY_SUFFIX = ":snapshots";
 	private static final String STATUS_KEY = "feed:crypto:status";
 	private static final String FIELD_PRICE = "price";
 	private static final String FIELD_RECEIVED_AT = "receivedAt";
 	private static final Duration STALE_THRESHOLD = Duration.ofSeconds(10);
+	private static final String SNAPSHOT_MEMBER_DELIMITER = ":";
 
 	private final StringRedisTemplate redisTemplate;
 	private final Clock clock;
@@ -100,6 +106,38 @@ public class PriceStore {
 		return prices;
 	}
 
+	// 코인 가격 스냅샷 1건을 Sorted Set에 적재하고, retention을 넘은 과거 원소를 함께 제거한다
+	// (spec 012 §코인 가격 스냅샷 — CryptoPriceSnapshotService가 매 분 호출한다). 키 조립은 이 클래스 안에서만
+	// 한다(docs/conventions.md). score는 recordedAt의 epoch millis, member는 "{epochMillis}:{price}"다 —
+	// 수익률이 아니라 가격+시각을 저장해야 나중에 임의 구간의 "N분 전 가격"을 꺼낼 수 있다.
+	public void recordSnapshot(String symbol, LocalDateTime recordedAt, BigDecimal price, Duration retention) {
+		String key = snapshotKey(symbol);
+		long epochMillis = toEpochMillis(recordedAt);
+		String member = epochMillis + SNAPSHOT_MEMBER_DELIMITER + price.toPlainString();
+		redisTemplate.opsForZSet().add(key, member, epochMillis);
+		long cutoffMillis = toEpochMillis(recordedAt.minus(retention));
+		redisTemplate.opsForZSet().removeRangeByScore(key, Double.NEGATIVE_INFINITY, cutoffMillis);
+	}
+
+	// [from, to] 구간의 스냅샷을 시각 오름차순으로 반환한다. feedback은 이 메서드를 직접 호출하지 않고
+	// CryptoPriceSnapshotService.getSnapshots만 거친다(§C-6 — market은 전부 서비스를 경유한다).
+	public List<PriceSnapshotDto> getSnapshots(String symbol, LocalDateTime from, LocalDateTime to) {
+		String key = snapshotKey(symbol);
+		Set<String> members = redisTemplate.opsForZSet().rangeByScore(key, toEpochMillis(from), toEpochMillis(to));
+		if (members == null || members.isEmpty()) {
+			return List.of();
+		}
+		List<PriceSnapshotDto> snapshots = new ArrayList<>();
+		for (String member : members) {
+			int delimiterIndex = member.indexOf(SNAPSHOT_MEMBER_DELIMITER);
+			long epochMillis = Long.parseLong(member.substring(0, delimiterIndex));
+			BigDecimal price = new BigDecimal(member.substring(delimiterIndex + 1));
+			snapshots.add(new PriceSnapshotDto(toLocalDateTime(epochMillis), price));
+		}
+		snapshots.sort(Comparator.comparing(PriceSnapshotDto::recordedAt));
+		return snapshots;
+	}
+
 	private Optional<LocalDateTime> readReceivedAt(HashOperations<String, String, String> hashOps, String key) {
 		String value = hashOps.get(key, FIELD_RECEIVED_AT);
 		return value == null ? Optional.empty() : Optional.of(LocalDateTime.parse(value));
@@ -107,5 +145,19 @@ public class PriceStore {
 
 	private String priceKey(String symbol) {
 		return PRICE_KEY_PREFIX + symbol;
+	}
+
+	private String snapshotKey(String symbol) {
+		return PRICE_KEY_PREFIX + symbol + SNAPSHOT_KEY_SUFFIX;
+	}
+
+	// 이 저장소의 LocalDateTime은 전부 clock(Asia/Seoul) 기준 벽시계 값이다 — Redis score(epoch millis)와
+	// 상호 변환할 때 이 zone을 일관되게 쓴다.
+	private long toEpochMillis(LocalDateTime dateTime) {
+		return dateTime.atZone(clock.getZone()).toInstant().toEpochMilli();
+	}
+
+	private LocalDateTime toLocalDateTime(long epochMillis) {
+		return LocalDateTime.ofInstant(Instant.ofEpochMilli(epochMillis), clock.getZone());
 	}
 }

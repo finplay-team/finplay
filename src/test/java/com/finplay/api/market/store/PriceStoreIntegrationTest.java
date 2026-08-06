@@ -6,8 +6,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.finplay.api.TestcontainersConfiguration;
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -49,6 +51,8 @@ class PriceStoreIntegrationTest {
 		redisTemplate.delete("price:crypto:BTC_DISCONNECTED");
 		redisTemplate.delete("price:crypto:BTC_CONNECTED_STALE");
 		redisTemplate.delete("price:crypto:BTC_NO_STATUS_YET");
+		redisTemplate.delete("price:crypto:BTC_SNAPSHOT:snapshots");
+		redisTemplate.delete("price:crypto:BTC_PRUNE:snapshots");
 	}
 
 	private PriceStore priceStoreAt(LocalDateTime now) {
@@ -145,5 +149,58 @@ class PriceStoreIntegrationTest {
 
 		assertThat(priceStore.getConnectionStatus()).isEqualTo(FeedConnectionStatus.DISCONNECTED);
 		assertThat(priceStore.isPriceAvailable("BTC_NO_STATUS_YET")).isFalse();
+	}
+
+	// 아래부터는 spec 012 §코인 가격 스냅샷(이슈 #225) — 실제 Redis Sorted Set에 적재·조회되는지 검증한다.
+
+	@Test
+	void recordSnapshotThenGetSnapshotsReturnsStoredPriceAndTimeInAscendingOrder() {
+		PriceStore priceStore = priceStoreAt(FIXED_NOW);
+		LocalDateTime older = FIXED_NOW.minusMinutes(10);
+		LocalDateTime newer = FIXED_NOW.minusMinutes(5);
+
+		// 저장 순서를 뒤집어도(newer 먼저) 조회 결과는 시각 오름차순이어야 한다.
+		priceStore.recordSnapshot("BTC_SNAPSHOT", newer, new BigDecimal("200"), Duration.ofHours(24));
+		priceStore.recordSnapshot("BTC_SNAPSHOT", older, new BigDecimal("100"), Duration.ofHours(24));
+
+		List<PriceSnapshotDto> snapshots = priceStore.getSnapshots("BTC_SNAPSHOT", older, newer);
+
+		assertThat(snapshots).hasSize(2);
+		assertThat(snapshots.get(0).recordedAt()).isEqualTo(older);
+		assertThat(snapshots.get(0).price()).isEqualByComparingTo("100");
+		assertThat(snapshots.get(1).recordedAt()).isEqualTo(newer);
+		assertThat(snapshots.get(1).price()).isEqualByComparingTo("200");
+	}
+
+	@Test
+	void getSnapshotsReturnsEmptyListWhenNothingRecordedForSymbol() {
+		PriceStore priceStore = priceStoreAt(FIXED_NOW);
+
+		List<PriceSnapshotDto> snapshots = priceStore.getSnapshots(
+			"BTC_SNAPSHOT_EMPTY", FIXED_NOW.minusHours(1), FIXED_NOW);
+
+		assertThat(snapshots).isEmpty();
+	}
+
+	// 가지치기 — retention(sigma-lookback-hours)을 넘은 원소는 기록할 때마다 실제로 제거된다
+	// (tasks.md 항목 1 함정). mock으로는 removeRangeByScore 호출 여부만 보이지만, 여기서는 제거된 원소가
+	// 실제로 조회에서 빠지는지까지 확인한다.
+	@Test
+	void recordSnapshotActuallyPrunesElementsOlderThanRetentionFromRealRedis() {
+		PriceStore priceStore = priceStoreAt(FIXED_NOW);
+		Duration retention = Duration.ofHours(24);
+		LocalDateTime old = FIXED_NOW.minusHours(30);
+		LocalDateTime recent = FIXED_NOW.minusHours(1);
+
+		priceStore.recordSnapshot("BTC_PRUNE", old, new BigDecimal("100"), retention);
+		// recent 기록 시 cutoff = recent - 24h = FIXED_NOW - 25h 이므로, old(FIXED_NOW - 30h)는 제거 대상이다.
+		priceStore.recordSnapshot("BTC_PRUNE", recent, new BigDecimal("200"), retention);
+
+		List<PriceSnapshotDto> snapshots = priceStore.getSnapshots(
+			"BTC_PRUNE", old.minusDays(1), FIXED_NOW);
+
+		assertThat(snapshots).hasSize(1);
+		assertThat(snapshots.get(0).recordedAt()).isEqualTo(recent);
+		assertThat(snapshots.get(0).price()).isEqualByComparingTo("200");
 	}
 }

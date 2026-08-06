@@ -1,6 +1,7 @@
 // 탐지된 변동 구간에 붙일 근거 기사를 고르는 매처 — 근거창 판정과 상한 절단만 하고 저장·수집은 하지 않는다.
 package com.finplay.api.feedback.service;
 
+import com.finplay.api.feedback.config.FeedbackCryptoProperties;
 import com.finplay.api.feedback.config.FeedbackNewsProperties;
 import com.finplay.api.feedback.domain.MarketNewsItem;
 import com.finplay.api.feedback.domain.MarketNewsItemType;
@@ -40,6 +41,8 @@ public class NewsMatcher {
 
 	private final FeedbackNewsProperties properties;
 
+	private final FeedbackCryptoProperties cryptoProperties;
+
 	private final BusinessDayCalendar businessDayCalendar;
 
 	/**
@@ -57,6 +60,35 @@ public class NewsMatcher {
 			case OPENING_GAP -> matchOpeningGap(instrumentId, originTradeDate);
 		};
 		return sortAndTruncate(candidates, LocalDateTime.of(originTradeDate, detection.windowEnd()));
+	}
+
+	/**
+	 * 코인 카드 근거 — {@code [occurredAt - crypto.match-before-minutes, occurredAt]} (§C-2 근거창(코인)).
+	 *
+	 * <p>주식 {@link #match}와는 <b>별도 메서드</b>다 — 코인은 이미 절대 시각({@code occurredAt})이라 원본
+	 * 거래일과 결합할 필요가 없고, {@link PriceMoveDetectionDto}의 {@code eventType} 분기(갭 카드)도 없다.
+	 *
+	 * <p><b>이후 방향을 열지 않는다.</b> 코인 탐지는 {@code occurredAt} 시점에 실시간으로 돌아 그 이후 기사는
+	 * 존재할 수 없고, 수집이 30분 주기라 마지막 수집 이후 기사는 아직 DB에 없다 — 그래서
+	 * {@code crypto.match-before-minutes}를 주식보다 넓게 잡아 마지막 수집분을 확실히 포함시킨다
+	 * (§뉴스 매칭 범위).
+	 *
+	 * <p><b>공시는 매칭하지 않는다</b> — {@code type}에 {@link MarketNewsItemType#NEWS}만 넘긴다(§C-3 "코인 |
+	 * 공시 없음"). 상한·정렬은 {@link #sortAndTruncate}로 주식과 같은 규칙(§뉴스 매칭 범위)을 그대로 쓴다 —
+	 * 코인 전용 상한이 spec에 없어 {@code feedback.news.max-sources-per-card}를 재사용한다.
+	 *
+	 * @param occurredAt 코인 카드의 탐지 시각(= {@code windowEnd}, §C-9)
+	 * @return 발행시각이 {@code occurredAt}에 가까운 순으로 정렬된 근거 목록. 근거창 안에 기사가 없으면 빈 목록
+	 */
+	@Transactional(readOnly = true)
+	public List<MarketNewsItem> matchCrypto(Long instrumentId, LocalDateTime occurredAt) {
+		List<MarketNewsItem> candidates = marketNewsItemRepository
+			.findByInstrumentIdAndTypeAndPublishedAtBetweenOrderByPublishedAtAsc(
+				instrumentId,
+				MarketNewsItemType.NEWS,
+				occurredAt.minusMinutes(cryptoProperties.matchBeforeMinutes()),
+				occurredAt);
+		return sortAndTruncate(candidates, occurredAt);
 	}
 
 	/**

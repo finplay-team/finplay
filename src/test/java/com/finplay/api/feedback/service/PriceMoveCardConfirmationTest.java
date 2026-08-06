@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.finplay.api.TestcontainersConfiguration;
+import com.finplay.api.feedback.config.FeedbackCryptoProperties;
 import com.finplay.api.feedback.config.FeedbackNewsProperties;
 import com.finplay.api.feedback.domain.MarketNewsItem;
 import com.finplay.api.feedback.domain.MarketNewsItemType;
@@ -91,6 +92,7 @@ class PriceMoveCardConfirmationTest {
 			// §C-7 기본값
 			new FeedbackNewsProperties(
 				"0 0/30 * * * *", "0 0/30 8-20 * * MON-FRI", 30, 5, 5, 50, 30, 30),
+			new FeedbackCryptoProperties(30, 6, 5, 24, 100, 35),
 			new BusinessDayCalendar());
 		service = new PriceMoveCardService(
 			priceMoveEventRepository,

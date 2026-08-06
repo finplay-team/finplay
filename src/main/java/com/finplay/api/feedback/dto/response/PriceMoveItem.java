@@ -35,8 +35,8 @@ public record PriceMoveItem(
 	}
 
 	/**
-	 * 주식 카드를 만든다. 코인 카드는 시각 컬럼이 달라({@code occurredAt} 하나, §C-9) 이 팩토리를 쓰지 않으며
-	 * 그 형태는 {@code plan.md} 8번이 더한다.
+	 * 주식 카드를 만든다. 코인 카드는 시각 컬럼이 달라({@code occurredAt} 하나, §C-9) 이 팩토리를 쓰지 않고
+	 * {@link #ofCrypto}를 쓴다.
 	 */
 	public static PriceMoveItem ofStock(PriceMoveEvent event, List<NewsItem> sources) {
 		LocalDate originTradeDate = event.getOriginTradeDate();
@@ -45,6 +45,28 @@ public record PriceMoveItem(
 			event.getEventType(),
 			atOriginTradeDate(originTradeDate, event.getWindowStart()),
 			atOriginTradeDate(originTradeDate, event.getWindowEnd()),
+			event.getChangeRate(),
+			event.getNarrative(),
+			sources);
+	}
+
+	/**
+	 * 코인 카드를 만든다 (§C-9). {@code windowEnd = occurredAt}이고 {@code windowStart = occurredAt −
+	 * rolling-window-minutes}다 — 둘 다 이미 {@code LocalDateTime}이라 {@link #ofStock}의
+	 * {@code atOriginTradeDate} 변환이 필요 없다.
+	 *
+	 * @param rollingWindowMinutes {@code feedback.crypto.rolling-window-minutes}(§C-7) — 카드 저장 시점의
+	 *     설정값이 아니라 <b>조회 시점</b>의 현재 설정값을 쓴다({@code CryptoPriceMoveWatcher}와 같은 값을
+	 *     참조하는 소스가 하나뿐이라 어긋나지 않는다)
+	 */
+	public static PriceMoveItem ofCrypto(
+		PriceMoveEvent event, List<NewsItem> sources, int rollingWindowMinutes) {
+		LocalDateTime windowEnd = event.getOccurredAt();
+		return new PriceMoveItem(
+			event.getId(),
+			event.getEventType(),
+			windowEnd.minusMinutes(rollingWindowMinutes),
+			windowEnd,
 			event.getChangeRate(),
 			event.getNarrative(),
 			sources);

@@ -3,6 +3,7 @@ package com.finplay.api.market.store;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -14,16 +15,19 @@ import static org.mockito.Mockito.when;
 import com.finplay.api.market.event.CryptoPriceUpdatedEvent;
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.core.ZSetOperations;
 
 class PriceStoreTest {
 
@@ -36,11 +40,14 @@ class PriceStoreTest {
 	private final ValueOperations<String, String> valueOperations = mock(ValueOperations.class);
 	@SuppressWarnings("unchecked")
 	private final HashOperations<String, String, String> hashOperations = mock(HashOperations.class);
+	@SuppressWarnings("unchecked")
+	private final ZSetOperations<String, String> zSetOperations = mock(ZSetOperations.class);
 	private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
 
 	private PriceStore priceStore() {
 		when(redisTemplate.opsForValue()).thenReturn(valueOperations);
 		when(redisTemplate.<String, String>opsForHash()).thenReturn(hashOperations);
+		when(redisTemplate.opsForZSet()).thenReturn(zSetOperations);
 		return spy(new PriceStore(redisTemplate, FIXED_CLOCK, eventPublisher));
 	}
 
@@ -185,5 +192,83 @@ class PriceStoreTest {
 			.orElseThrow();
 		assertThat(ethEvent.price()).isEqualByComparingTo("3000000");
 		assertThat(ethEvent.receivedAt()).isEqualTo(ethReceivedAt);
+	}
+
+	// 아래부터는 spec 012 §코인 가격 스냅샷(이슈 #225) — recordSnapshot·getSnapshots 검증이다.
+
+	@Test
+	void recordSnapshotAddsMemberWithEpochMillisScoreAndPriceEncodedInMember() {
+		PriceStore priceStore = priceStore();
+		LocalDateTime recordedAt = NOW.minusMinutes(1);
+		long expectedEpochMillis = recordedAt.atZone(ZoneOffset.UTC).toInstant().toEpochMilli();
+
+		priceStore.recordSnapshot("BTC", recordedAt, new BigDecimal("50000000"), Duration.ofHours(24));
+
+		verify(zSetOperations).add(
+			"price:crypto:BTC:snapshots", expectedEpochMillis + ":50000000", expectedEpochMillis);
+	}
+
+	// 함정 검증 — recordSnapshot은 수익률이 아니라 "가격+시각"을 member 문자열에 그대로 담아야 한다. 수익률만
+	// 저장하면 나중에 "N분 전 가격"을 복원할 수 없다(tasks.md 항목 1 함정).
+	@Test
+	void recordSnapshotEncodesRawPriceNotAReturnRatio() {
+		PriceStore priceStore = priceStore();
+		LocalDateTime recordedAt = NOW;
+		long expectedEpochMillis = recordedAt.atZone(ZoneOffset.UTC).toInstant().toEpochMilli();
+
+		priceStore.recordSnapshot("ETH", recordedAt, new BigDecimal("3000000.50"), Duration.ofHours(24));
+
+		ArgumentCaptor<String> memberCaptor = ArgumentCaptor.forClass(String.class);
+		verify(zSetOperations).add(eq("price:crypto:ETH:snapshots"), memberCaptor.capture(), anyDouble());
+		String member = memberCaptor.getValue();
+		String encodedPrice = member.substring(member.indexOf(':') + 1);
+		assertThat(new BigDecimal(encodedPrice)).isEqualByComparingTo("3000000.50");
+		assertThat(member).startsWith(expectedEpochMillis + ":");
+	}
+
+	// 가지치기 — retention을 넘은 과거 원소를 기록할 때마다 제거한다(tasks.md 항목 1 "sigma-lookback-hours를
+	// 넘은 원소를 기록할 때마다 제거한다"). cutoff = recordedAt - retention 이전 구간을 제거 대상으로 넘겨야 한다.
+	@Test
+	void recordSnapshotPrunesElementsOlderThanRetentionOnEveryRecord() {
+		PriceStore priceStore = priceStore();
+		LocalDateTime recordedAt = NOW;
+		Duration retention = Duration.ofHours(24);
+		long expectedCutoffMillis = recordedAt.minus(retention).atZone(ZoneOffset.UTC).toInstant().toEpochMilli();
+
+		priceStore.recordSnapshot("BTC", recordedAt, new BigDecimal("100"), retention);
+
+		verify(zSetOperations).removeRangeByScore(
+			"price:crypto:BTC:snapshots", Double.NEGATIVE_INFINITY, expectedCutoffMillis);
+	}
+
+	@Test
+	void getSnapshotsReturnsEmptyListWhenNoMemberExistsInRange() {
+		PriceStore priceStore = priceStore();
+		when(zSetOperations.rangeByScore(eq("price:crypto:BTC:snapshots"), anyDouble(), anyDouble()))
+			.thenReturn(Set.of());
+
+		List<PriceSnapshotDto> snapshots = priceStore.getSnapshots("BTC", NOW.minusHours(1), NOW);
+
+		assertThat(snapshots).isEmpty();
+	}
+
+	@Test
+	void getSnapshotsParsesMembersAndSortsByRecordedAtAscending() {
+		PriceStore priceStore = priceStore();
+		LocalDateTime earlier = NOW.minusMinutes(10);
+		LocalDateTime later = NOW.minusMinutes(5);
+		long earlierMillis = earlier.atZone(ZoneOffset.UTC).toInstant().toEpochMilli();
+		long laterMillis = later.atZone(ZoneOffset.UTC).toInstant().toEpochMilli();
+		// 저장 순서와 반대로 반환돼도(later가 먼저) 결과는 시각 오름차순이어야 한다.
+		when(zSetOperations.rangeByScore(eq("price:crypto:BTC:snapshots"), anyDouble(), anyDouble()))
+			.thenReturn(Set.of(laterMillis + ":200", earlierMillis + ":100"));
+
+		List<PriceSnapshotDto> snapshots = priceStore.getSnapshots("BTC", earlier, later);
+
+		assertThat(snapshots).hasSize(2);
+		assertThat(snapshots.get(0).recordedAt()).isEqualTo(earlier);
+		assertThat(snapshots.get(0).price()).isEqualByComparingTo("100");
+		assertThat(snapshots.get(1).recordedAt()).isEqualTo(later);
+		assertThat(snapshots.get(1).price()).isEqualByComparingTo("200");
 	}
 }

@@ -141,4 +141,86 @@ class FeedbackBatchPropertiesTest {
 					.isEqualTo(SPEC_CRYPTO_CRON);
 			});
 	}
+
+	// --- 코인 변동 감시 크론 (CryptoPriceMoveWatcher, 이슈 #225 항목 3) ---
+
+	// §C-1 코인 변동 감시 크론 — market.crypto.price-snapshot-cron(매 분 정각)과 초를 30초 어긋낸다.
+	private static final String SPEC_CRYPTO_WATCH_CRON = "30 * * * * *";
+
+	@Test
+	@DisplayName("feedback.batch 설정을 주지 않아도 §C-1 코인 변동 감시 크론으로 바인딩된다")
+	void bindsSpecCryptoWatchCronDefaultWhenNoFeedbackBatchPropertyIsGiven() {
+		contextRunner.run(context -> {
+			assertThat(context).hasNotFailed();
+			assertThat(context.getBean(FeedbackBatchProperties.class).cryptoWatchCron())
+				.isEqualTo(SPEC_CRYPTO_WATCH_CRON);
+		});
+	}
+
+	@Test
+	@DisplayName("feedback.batch.crypto-watch-cron 케밥케이스 키를 주면 덮어써지고 나머지 크론은 그대로다")
+	void bindsCryptoWatchCronFromKebabCaseKey() {
+		contextRunner
+			.withPropertyValues("feedback.batch.crypto-watch-cron=15 * * * * *")
+			.run(context -> {
+				assertThat(context).hasNotFailed();
+
+				FeedbackBatchProperties properties = context.getBean(FeedbackBatchProperties.class);
+				assertThat(properties.cryptoWatchCron()).isEqualTo("15 * * * * *");
+				assertThat(properties.cron()).isEqualTo(SPEC_BATCH_CRON);
+				assertThat(properties.cryptoCron()).isEqualTo(SPEC_CRYPTO_CRON);
+			});
+	}
+
+	@Test
+	@DisplayName("§C-1 코인 변동 감시 크론 기본값이 실제로 파싱 가능하고 매 분 30초에 돈다")
+	void specCryptoWatchCronRunsAtThirtySecondsPastEveryMinute() {
+		contextRunner.run(context -> {
+			String cryptoWatchCron = context.getBean(FeedbackBatchProperties.class).cryptoWatchCron();
+			assertThatCode(() -> CronExpression.parse(cryptoWatchCron)).doesNotThrowAnyException();
+
+			java.time.LocalDateTime from = java.time.LocalDateTime.of(2026, 8, 5, 10, 0, 0);
+			java.time.LocalDateTime next = CronExpression.parse(cryptoWatchCron).next(from);
+			assertThat(next).isEqualTo(java.time.LocalDateTime.of(2026, 8, 5, 10, 0, 30));
+			assertThat(CronExpression.parse(cryptoWatchCron).next(next))
+				.isEqualTo(java.time.LocalDateTime.of(2026, 8, 5, 10, 1, 30));
+		});
+	}
+
+	@Test
+	@DisplayName("코인 변동 감시 크론이 코인 가격 스냅샷 크론(매 분 정각)과 초가 30초 어긋난다")
+	void cryptoWatchCronIsOffsetByThirtySecondsFromThePriceSnapshotCron() {
+		contextRunner.run(context -> {
+			String cryptoWatchCron = context.getBean(FeedbackBatchProperties.class).cryptoWatchCron();
+			// market.crypto.price-snapshot-cron의 값 — 이 클래스가 소유하지 않으므로 §C-1 그대로 리터럴로 대조한다.
+			String priceSnapshotCron = "0 * * * * *";
+
+			// :00 정각이 아니라 :45에서 출발해야 두 next()가 같은 분(10:00)의 실행을 가리킨다 — 정각에서 출발하면
+			// 스냅샷 크론의 다음 실행이 "그다음 분"으로 넘어가 버려 두 실행 시각이 1분 가까이 벌어진다.
+			java.time.LocalDateTime from = java.time.LocalDateTime.of(2026, 8, 5, 9, 59, 45);
+			java.time.LocalDateTime watchRun = CronExpression.parse(cryptoWatchCron).next(from);
+			java.time.LocalDateTime snapshotRun = CronExpression.parse(priceSnapshotCron).next(from);
+
+			assertThat(snapshotRun).isEqualTo(java.time.LocalDateTime.of(2026, 8, 5, 10, 0, 0));
+			assertThat(watchRun).isEqualTo(java.time.LocalDateTime.of(2026, 8, 5, 10, 0, 30));
+			assertThat(watchRun).isNotEqualTo(snapshotRun);
+			assertThat(java.time.Duration.between(snapshotRun, watchRun).getSeconds()).isEqualTo(30);
+		});
+	}
+
+	@Test
+	@DisplayName("application.yml에 feedback.batch.crypto-watch-cron이 §C-1 값으로 실제 존재한다")
+	void applicationYmlDeclaresTheCryptoWatchCronKey() {
+		new ApplicationContextRunner()
+			.withSystemProperties("spring.config.additional-location=")
+			.withInitializer(new ConfigDataApplicationContextInitializer())
+			.withUserConfiguration(FeedbackBatchConfig.class)
+			.run(context -> {
+				Environment environment = context.getEnvironment();
+				assertThat(environment.getProperty("feedback.batch.crypto-watch-cron"))
+					.isEqualTo(SPEC_CRYPTO_WATCH_CRON);
+				assertThat(context.getBean(FeedbackBatchProperties.class).cryptoWatchCron())
+					.isEqualTo(SPEC_CRYPTO_WATCH_CRON);
+			});
+	}
 }

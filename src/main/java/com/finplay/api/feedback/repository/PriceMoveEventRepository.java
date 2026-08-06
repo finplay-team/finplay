@@ -5,13 +5,18 @@ import com.finplay.api.feedback.domain.PriceMoveEvent;
 import com.finplay.api.feedback.domain.PriceMoveEventType;
 import com.finplay.api.market.domain.Market;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 /**
  * 조회 메서드는 <b>필요해진 이슈에서 하나씩</b> 더한다 — {@code MarketNewsItemRepository}와 같은 이유다.
- * 보유 구간 카드 조회(#6), 코인 쿨다운·일일 상한 카운트(#8)는 각자의 이슈가 그 이슈의 완료 조건과 함께 추가한다.
+ * 보유 구간 카드 조회(#6)는 그 이슈의 완료 조건과 함께 추가한다. 코인 쿨다운·일일 상한 카운트(#8)는
+ * 아래 {@code findFirstByInstrumentIdAndMarketOrderByOccurredAtDesc}·
+ * {@code countByInstrumentIdAndMarketAndOriginTradeDate}로 추가됐다. 코인 "최근 24시간" 카드 조회(FEED-006)는
+ * {@code findByInstrumentIdAndMarketAndOccurredAtBetweenOrderByOccurredAtAscIdAsc}로 추가됐다.
  */
 public interface PriceMoveEventRepository extends JpaRepository<PriceMoveEvent, Long> {
 
@@ -42,7 +47,8 @@ public interface PriceMoveEventRepository extends JpaRepository<PriceMoveEvent, 
 	 * 노출된다.</b> 조회 자체를 걸러야 하며 응답 조립 단계에서 거르지 않는다.
 	 *
 	 * <p>코인 카드는 {@code reveal_time}이 {@code NULL}이라 이 비교에서 자연히 빠지지만, 그것에 기대지 않는다 —
-	 * 코인은 원본 거래일이 아니라 최근 24시간으로 조회하므로 애초에 다른 질의가 필요하다({@code plan.md} 8번).
+	 * 코인은 원본 거래일이 아니라 최근 24시간으로 조회하므로 애초에 다른 질의가 필요하다(아래
+	 * {@code findByInstrumentIdAndMarketAndOccurredAtBetweenOrderByOccurredAtAscIdAsc}).
 	 *
 	 * <p><b>{@code window_start}만으로는 순서가 정해지지 않는다.</b> 첫 분봉이 09:00인 날 시가 갭 카드
 	 * ({@code window_start} = 첫 분봉 시각)와 장중 첫 후보({@code t − W})가 <b>정확히 같은 값</b>을 갖는다 —
@@ -101,4 +107,37 @@ public interface PriceMoveEventRepository extends JpaRepository<PriceMoveEvent, 
 	 * 완료 조건에 없어 응답 순서를 정하지 않는다.
 	 */
 	List<PriceMoveEvent> findByMarketAndOriginTradeDate(Market market, LocalDate originTradeDate);
+
+	/**
+	 * 코인 쿨다운 판정 — 이 종목의 가장 최근 코인 카드 생성 시각({@code occurred_at})을 찾는다
+	 * (§탐지 알고리즘(코인), 이슈 #225 — "마지막 카드 생성 후 cooldown-minutes 이내면 종료").
+	 *
+	 * <p>기존 {@code idx_price_move_events_instrument_occurred_at (instrument_id, occurred_at)} 인덱스로
+	 * 충분하다 — 새 인덱스가 필요 없다(spec §제약).
+	 */
+	Optional<PriceMoveEvent> findFirstByInstrumentIdAndMarketOrderByOccurredAtDesc(
+		Long instrumentId, Market market);
+
+	/**
+	 * 코인 일일 상한 판정 — {@code origin_trade_date}(KST) 기준 이 종목의 생성 건수를 센다
+	 * (§탐지 알고리즘(코인), 이슈 #225 — "occurred_at 기준 KST 당일 생성 건수 >= daily-limit 이면 종료").
+	 *
+	 * <p>코인 카드는 {@code origin_trade_date = occurred_at}의 KST 날짜다(§C-9) — 호출부가 KST {@code now}의
+	 * 날짜를 그대로 넘기면 된다. 위 메서드와 같은 인덱스로 충분하다.
+	 */
+	long countByInstrumentIdAndMarketAndOriginTradeDate(
+		Long instrumentId, Market market, LocalDate originTradeDate);
+
+	/**
+	 * 코인 "최근 24시간" 카드 조회 (FEED-006, §C-2 {@code ROLLING_24H}). 노출 게이트가 없다
+	 * (§C-5 "카드(코인) — 없음") — {@code reveal_time}을 보지 않는다. 기존
+	 * {@code idx_price_move_events_instrument_occurred_at (instrument_id, occurred_at)} 인덱스로 충분하다.
+	 *
+	 * <p>정렬은 {@code occurredAt} 오름차순 + {@code id} 오름차순이다 — {@code windowStart}는
+	 * {@code occurredAt − rolling-window-minutes}로 파생되는 값이라(§C-9) {@code occurredAt} 순서가 곧
+	 * {@code windowStart} 순서와 같다. {@code id} 2차 키는 위 주식 조회들과 같은 이유(동시각 카드의 순서를
+	 * DB 임의 순서에 맡기지 않는다)로 둔다.
+	 */
+	List<PriceMoveEvent> findByInstrumentIdAndMarketAndOccurredAtBetweenOrderByOccurredAtAscIdAsc(
+		Long instrumentId, Market market, LocalDateTime occurredAtFrom, LocalDateTime occurredAtTo);
 }
