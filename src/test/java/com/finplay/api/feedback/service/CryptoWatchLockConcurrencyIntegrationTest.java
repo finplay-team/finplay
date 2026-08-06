@@ -3,7 +3,9 @@ package com.finplay.api.feedback.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -72,6 +74,10 @@ class CryptoWatchLockConcurrencyIntegrationTest {
 	// 실제 CryptoWatchLock(진짜 Redis)으로 배선된 스프링 빈 — [방어 켠] 테스트 전용.
 	@Autowired
 	private CryptoPriceMoveWatcher cryptoPriceMoveWatcher;
+
+	// [결정론적 방어 확인] 테스트가 직접 잠글 때 쓰는 실제 빈(진짜 Redis) — cryptoPriceMoveWatcher와 같은 락을 쓴다.
+	@Autowired
+	private CryptoWatchLock cryptoWatchLock;
 
 	// [재현] 테스트가 CryptoWatchLock만 바꿔치기해 새 CryptoPriceMoveWatcher를 조립할 때 재사용하는 협력자들.
 	@Autowired
@@ -162,6 +168,12 @@ class CryptoWatchLockConcurrencyIntegrationTest {
 			"https://news.example.com/lock-race", NOW.minusMinutes(5), NOW));
 	}
 
+	// 공유 Testcontainers MySQL에 다른 테스트가 남긴 코인 종목이 섞여도 이 테스트의 종목만 세도록 좁힌다
+	// (PR #254 리뷰 [참고 4]). setUp()이 만드는 종목명은 항상 "락경합코인"으로 고정돼 있다.
+	private static boolean isThisTestsInstrument(PriceMovePromptDto prompt) {
+		return prompt.instrumentName().equals("락경합코인");
+	}
+
 	@Test
 	@DisplayName("[방어 켠 상태] 실제 Redis 락으로 두 스레드가 동시에 watch()를 실행해도 카드는 1건만 저장되고 NarrativeService도 1회만 불린다")
 	void watchWithRealLockPersistsExactlyOneCardAndCallsNarrativeServiceOnce() throws Exception {
@@ -173,7 +185,8 @@ class CryptoWatchLockConcurrencyIntegrationTest {
 		long cardCount = priceMoveEventRepository.countByInstrumentIdAndMarketAndOriginTradeDate(
 			instrument.getId(), Market.CRYPTO, NOW.toLocalDate());
 		assertThat(cardCount).isEqualTo(1L);
-		verify(narrativeService, times(1)).resolvePriceMoveNarrative(any());
+		verify(narrativeService, times(1))
+			.resolvePriceMoveNarrative(argThat(CryptoWatchLockConcurrencyIntegrationTest::isThisTestsInstrument));
 	}
 
 	@Test
@@ -203,7 +216,33 @@ class CryptoWatchLockConcurrencyIntegrationTest {
 		long cardCount = priceMoveEventRepository.countByInstrumentIdAndMarketAndOriginTradeDate(
 			instrument.getId(), Market.CRYPTO, NOW.toLocalDate());
 		assertThat(cardCount).isEqualTo(2L);
-		verify(narrativeService, times(2)).resolvePriceMoveNarrative(any());
+		verify(narrativeService, times(2))
+			.resolvePriceMoveNarrative(argThat(CryptoWatchLockConcurrencyIntegrationTest::isThisTestsInstrument));
+	}
+
+	// [결정론적 방어 확인] 타이밍(스레드 겹침)에 의존하지 않고 "락이 실제로 감시를 막는다"를 증명한다 —
+	// 테스트 스레드가 실제 스프링 빈(진짜 Redis)으로 먼저 락을 쥔 채로 watch()를 동시성 없이 직접 호출해,
+	// 락이 있으면 watchOne이 그 즉시(쿨다운 확인 전) 건너뛴다는 것을 단정한다(PR #254 리뷰 [권장 5]).
+	@Test
+	@DisplayName("[결정론적 방어 확인] 테스트 스레드가 실제 락을 먼저 쥔 상태면 watch()가 카드도, "
+		+ "NarrativeService 호출도 만들지 않는다")
+	void watchSkipsEntirelyWhenTheRealLockIsAlreadyHeld() {
+		givenEnoughSnapshotsWithARecentJump();
+		givenMatchingNews();
+		Optional<String> heldToken = cryptoWatchLock.tryLock(instrument.getId());
+		assertThat(heldToken).isPresent();
+
+		try {
+			cryptoPriceMoveWatcher.watch();
+
+			long cardCount = priceMoveEventRepository.countByInstrumentIdAndMarketAndOriginTradeDate(
+				instrument.getId(), Market.CRYPTO, NOW.toLocalDate());
+			assertThat(cardCount).isEqualTo(0L);
+			verify(narrativeService, never())
+				.resolvePriceMoveNarrative(argThat(CryptoWatchLockConcurrencyIntegrationTest::isThisTestsInstrument));
+		} finally {
+			cryptoWatchLock.unlock(instrument.getId(), heldToken.get());
+		}
 	}
 
 	// tryLock을 호출할 때마다 매번 서로 다른 토큰으로 성공시킨다 — 실제 경합 조정을 전혀 하지 않으면서도
@@ -216,6 +255,10 @@ class CryptoWatchLockConcurrencyIntegrationTest {
 
 	// LimitOrderConcurrencyIntegrationTest의 ready/start CountDownLatch 관례를 그대로 재사용한다 — 두 액션을
 	// 준비 완료 후 동시에 출발시켜 실제 경합을 재현한다(둘 다 latch로 실제 동시 실행임을 보장한다).
+	//
+	// awaitTermination 단정을 finally 밖으로 뺐다(PR #254 리뷰 [참고 3]) — finally 안에 두면 try 블록에서 이미
+	// 발생한 실패(예: futureA.get()의 원인 예외)를 이 단정의 AssertionError가 덮어써 원인 파악이 어려워진다.
+	// finally에는 예외 전파를 막지 않는 정리(래치 해제·풀 종료)만 남긴다.
 	private void runConcurrently(ThrowingRunnable actionA, ThrowingRunnable actionB) throws Exception {
 		CountDownLatch ready = new CountDownLatch(2);
 		CountDownLatch start = new CountDownLatch(1);
@@ -230,8 +273,8 @@ class CryptoWatchLockConcurrencyIntegrationTest {
 		} finally {
 			start.countDown();
 			executor.shutdownNow();
-			assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
 		}
+		assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
 	}
 
 	private Callable<Void> toCallable(ThrowingRunnable action, CountDownLatch ready, CountDownLatch start) {

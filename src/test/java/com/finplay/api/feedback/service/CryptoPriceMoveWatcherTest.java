@@ -493,6 +493,54 @@ class CryptoPriceMoveWatcherTest {
 		}
 	}
 
+	// --- 락 해제 보장 — 정상 종료·예외 어느 경로든 finally에서 반드시 unlock된다 (PR #254 리뷰 [권장 4]) ---
+
+	@Nested
+	@DisplayName("락 해제 보장")
+	class LockReleaseGuarantee {
+
+		private List<PriceSnapshotDto> jumpFixture() {
+			List<PriceSnapshotDto> fixture = new ArrayList<>();
+			for (int agoMinutes = 0; agoMinutes <= 60; agoMinutes++) {
+				fixture.add(snapshot(NOW.minusMinutes(agoMinutes), agoMinutes < 5 ? 100.0 * Math.exp(0.12) : 100.0));
+			}
+			return fixture;
+		}
+
+		@Test
+		@DisplayName("카드를 정상 생성한 뒤 tryLock이 돌려준 토큰 그대로 unlock을 호출한다")
+		void unlocksWithTheTokenReturnedByTryLockAfterPersistingACard() {
+			when(cryptoPriceSnapshotService.getSnapshots(eq("BTC"), any(), any())).thenReturn(jumpFixture());
+			givenInstruments(INSTRUMENT);
+			stubNoCooldownNoLimit();
+			stubOneMatchedSource(NOW);
+
+			watcher(properties(30, 6, 5, 1, 12, 35), detectionProperties(2.5), fixedClockAt(NOW)).watch();
+
+			verify(priceMoveCardWriter).persist(any(), any());
+			verify(cryptoWatchLock).unlock(INSTRUMENT.getId(), "test-lock-token");
+		}
+
+		// finally 블록이 예외 경로도 커버하는지 — 락 획득 이후 아무 지점에서나 예외가 나도 unlock은 호출돼야
+		// 한다. watch()의 종목별 try/catch(FailureIsolation)가 이 예외를 삼키므로 배치 자체는 죽지 않는다.
+		@Test
+		@DisplayName("근거 매칭이 예외를 던져도 finally에서 unlock이 호출된다")
+		void unlocksEvenWhenNewsMatcherThrowsAfterLockIsAcquired() {
+			when(cryptoPriceSnapshotService.getSnapshots(eq("BTC"), any(), any())).thenReturn(jumpFixture());
+			givenInstruments(INSTRUMENT);
+			stubNoCooldownNoLimit();
+			when(newsMatcher.matchCrypto(INSTRUMENT.getId(), NOW))
+				.thenThrow(new IllegalStateException("근거 매칭 중 장애"));
+
+			org.assertj.core.api.Assertions.assertThatCode(
+				() -> watcher(properties(30, 6, 5, 1, 12, 35), detectionProperties(2.5), fixedClockAt(NOW)).watch())
+				.doesNotThrowAnyException();
+
+			verify(priceMoveCardWriter, never()).persist(any(), any());
+			verify(cryptoWatchLock).unlock(INSTRUMENT.getId(), "test-lock-token");
+		}
+	}
+
 	// --- 종목 하나 실패해도 나머지는 계속한다 ---
 
 	@Nested

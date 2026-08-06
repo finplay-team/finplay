@@ -34,7 +34,11 @@ public record FeedbackCryptoProperties(
 	@DefaultValue("35")
 	int matchBeforeMinutes,
 	// 종목 단위 Redis 락(CryptoWatchLock)의 TTL(초). 다중 인스턴스 중복 감시 방어선이다(ADR-0014).
-	@DefaultValue("30")
+	// feedback.llm.timeout-seconds(20, FeedbackLlmProperties)보다 커야 한다 — 락 안에서 LLM 호출이 최악
+	// 그 시간까지 걸릴 수 있고, TTL이 그보다 짧으면 처리 중에 락이 스스로 풀려 다른 인스턴스가 같은 종목을
+	// 다시 시작할 수 있다. 45는 20 대비 약 2배(여유 25초)로 잡은 값이다(PR #254 리뷰 [권장 2·3]). 레코드가
+	// 서로 달라 기동 시점 교차 검증은 하지 않는다 — 이 주석이 유일한 근거다.
+	@DefaultValue("45")
 	int watchLockTtlSeconds) {
 
 	// 여기 있는 것만 막는다 — 나머지(쿨다운·일일 상한)가 이상하면 카드가 과하게 생겨 눈에 띄지만, 아래 다섯은

@@ -69,12 +69,20 @@ public class CryptoWatchLock {
 
 	/**
 	 * {@code tryLock}이 반환한 토큰으로만 해제한다. 토큰이 지금 값과 다르면(이미 TTL 만료 후 다른 인스턴스가
-	 * 새로 잡은 락이면) 아무 것도 하지 않는다. Redis 자체가 예외를 던지면(장애) {@code WARN}으로 남기고
-	 * 삼킨다 — 해제 실패는 TTL이 지나면 스스로 풀리므로 호출부의 나머지 처리를 막지 않는다.
+	 * 새로 잡은 락이면) 스크립트가 {@code 0}을 반환하고 아무 것도 지우지 않는다 — 이 경우를 {@code WARN}으로
+	 * 남긴다(TTL이 실제로 부족했다는 신호이고, ADR-0014 §후속의 TTL 재조정 근거가 된다). Redis 자체가
+	 * 예외를 던지면(장애) 이 역시 {@code WARN}으로 남기고 삼킨다 — 해제 실패는 TTL이 지나면 스스로 풀리므로
+	 * 호출부의 나머지 처리를 막지 않는다.
 	 */
 	public void unlock(Long instrumentId, String token) {
 		try {
-			redisTemplate.execute(UNLOCK_SCRIPT, List.of(lockKey(instrumentId)), token);
+			Long deleted = redisTemplate.execute(UNLOCK_SCRIPT, List.of(lockKey(instrumentId)), token);
+			if (deleted == null || deleted != 1L) {
+				log.warn(
+					"코인 감시 락 해제가 아무 것도 지우지 못했다(토큰 불일치 - TTL이 이미 만료돼 다른 "
+						+ "인스턴스가 락을 새로 잡았을 수 있다) - instrumentId={}",
+					instrumentId);
+			}
 		} catch (RuntimeException ex) {
 			log.warn("코인 감시 락 해제 실패(Redis 장애) - instrumentId={}", instrumentId, ex);
 		}

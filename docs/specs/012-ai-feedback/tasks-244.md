@@ -24,6 +24,8 @@
 - [x] **1. `FeedbackCryptoProperties`에 `watchLockTtlSeconds` 추가 + `application.yml` 갱신**
 
   §C-7의 `watch-lock-ttl-seconds`(기본 30)를 `FeedbackCryptoProperties`(`src/main/java/com/finplay/api/feedback/config/FeedbackCryptoProperties.java`)에 필드로 더한다 — 기존 6개 필드와 같은 형태(`@DefaultValue`)로, compact constructor 검증에는 추가하지 않는다(0 이하여도 "락을 못 건다"는 명확한 실패 모드라 나머지 넷처럼 조용히 카드가 사라지는 유형이 아니다).
+
+  **정정(2차 리뷰 [권장 2])**: 위 "검증 불필요" 판단은 전제가 틀렸다 — 0 이하면 `Duration.ofSeconds`가 Redis 오류를 유발하고 `CryptoWatchLock.tryLock`의 `catch(RuntimeException)`이 이를 삼켜 항상 `Optional.empty()`를 반환하므로, 실제로는 예외도 로그(WARN)도 없이 **모든 코인 카드가 영구 0건**이 되는, 나머지 넷과 같은 유형의 실패 모드다. 방침을 뒤집어 `watchLockTtlSeconds < 1` 검증을 추가했고, TTL 기본값도 이후 PR #254 리뷰([권장 2·3])에서 30 → 45로 조정됐다.
   - `application.yml`의 `feedback.crypto` 블록(198번째 줄 근방, `match-before-minutes` 다음)에 `watch-lock-ttl-seconds: 30`을 추가하고 한 줄 주석으로 ADR-0014를 인용한다.
   - `application-crypto-real.yml`은 **대상이 아니다** — 이 이슈는 `@Scheduled`를 추가하지 않으므로 그 파일의 풀 계산 주석과 무관하다.
   - 기존 `FeedbackCryptoProperties`류 드리프트 테스트(yml ↔ `@DefaultValue` 일치)가 있다면 이 필드도 덮도록 갱신한다.

@@ -37,7 +37,7 @@ class FeedbackCryptoPropertiesYamlTest {
 
 	private static final String SPEC_MATCH_BEFORE_MINUTES = "35";
 
-	private static final String SPEC_WATCH_LOCK_TTL_SECONDS = "30";
+	private static final String SPEC_WATCH_LOCK_TTL_SECONDS = "45";
 
 	private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
 		.withInitializer(new ConfigDataApplicationContextInitializer())

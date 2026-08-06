@@ -37,7 +37,7 @@ class FeedbackCryptoPropertiesTest {
 
 	private static final int SPEC_MATCH_BEFORE_MINUTES = 35;
 
-	private static final int SPEC_WATCH_LOCK_TTL_SECONDS = 30;
+	private static final int SPEC_WATCH_LOCK_TTL_SECONDS = 45;
 
 	@Configuration(proxyBeanMethods = false)
 	@EnableConfigurationProperties(FeedbackCryptoProperties.class)
@@ -75,7 +75,7 @@ class FeedbackCryptoPropertiesTest {
 				"feedback.crypto.sigma-lookback-hours=12",
 				"feedback.crypto.min-sample-count=50",
 				"feedback.crypto.match-before-minutes=20",
-				"feedback.crypto.watch-lock-ttl-seconds=45")
+				"feedback.crypto.watch-lock-ttl-seconds=60")
 			.run(context -> {
 				assertThat(context).hasNotFailed();
 
@@ -86,7 +86,7 @@ class FeedbackCryptoPropertiesTest {
 				assertThat(properties.sigmaLookbackHours()).isEqualTo(12);
 				assertThat(properties.minSampleCount()).isEqualTo(50);
 				assertThat(properties.matchBeforeMinutes()).isEqualTo(20);
-				assertThat(properties.watchLockTtlSeconds()).isEqualTo(45);
+				assertThat(properties.watchLockTtlSeconds()).isEqualTo(60);
 			});
 	}
 

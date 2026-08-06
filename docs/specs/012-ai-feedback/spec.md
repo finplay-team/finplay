@@ -363,7 +363,8 @@ feedback:
     sigma-lookback-hours: 24
     min-sample-count: 100         # σ 계산 최소 표본. 미만이면 카드 미생성
     match-before-minutes: 35      # 코인 카드 근거 탐색 (이후는 0)
-    watch-lock-ttl-seconds: 30    # 종목 단위 Redis 락 TTL (ADR-0014, 다중 인스턴스 방어)
+    watch-lock-ttl-seconds: 45    # 종목 단위 Redis 락 TTL (ADR-0014, 다중 인스턴스 방어). llm.timeout-seconds(20)보다
+                                   # 커야 한다 — 락 안에서 LLM 호출이 최악 그 시간까지 걸리며, 45는 20 대비 약 2배다
   instruments:
     stock-count: 16             # V7 시드 기준. 호출량·튜닝 계산의 근거
     crypto-count: 12
