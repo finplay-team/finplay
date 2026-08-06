@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.finplay.api.common.BusinessException;
@@ -83,6 +85,18 @@ class WatchlistServiceTest {
 			.isInstanceOf(BusinessException.class)
 			.satisfies(error -> assertThat(((BusinessException)error).getErrorCode())
 				.isEqualTo(ErrorCode.DUPLICATE_RESOURCE));
+	}
+
+	@Test
+	void createWatchlistItemRejectsWithoutSavingWhenAlreadyRegistered() {
+		when(instrumentService.getInstrumentEntity(10L)).thenReturn(instrument(10L, "005930", "삼성전자"));
+		when(watchlistItemRepository.existsByUserIdAndInstrumentId(USER_ID, 10L)).thenReturn(true);
+
+		assertThatThrownBy(() -> watchlistService.createWatchlistItem(USER_ID, 10L))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(error -> assertThat(((BusinessException)error).getErrorCode())
+				.isEqualTo(ErrorCode.DUPLICATE_RESOURCE));
+		verify(watchlistItemRepository, never()).saveAndFlush(any());
 	}
 
 	@Test

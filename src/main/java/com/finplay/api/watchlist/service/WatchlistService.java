@@ -29,6 +29,9 @@ public class WatchlistService {
 	@Transactional
 	public WatchlistItemResponse createWatchlistItem(Long userId, Long instrumentId) {
 		Instrument instrument = instrumentService.getInstrumentEntity(instrumentId);
+		if (watchlistItemRepository.existsByUserIdAndInstrumentId(userId, instrumentId)) {
+			throw new BusinessException(ErrorCode.DUPLICATE_RESOURCE);
+		}
 		WatchlistItem watchlistItem = WatchlistItem.create(userId, instrument, LocalDateTime.now(clock));
 		try {
 			return WatchlistItemResponse.from(watchlistItemRepository.saveAndFlush(watchlistItem));
