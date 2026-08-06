@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.finplay.api.auth.domain.User;
@@ -17,6 +18,10 @@ import com.finplay.api.community.dto.response.CommunityPostListResponse;
 import com.finplay.api.community.dto.response.CommunityPostResponse;
 import com.finplay.api.community.repository.CommunityPostRepository;
 import com.finplay.api.community.repository.PostCommentRepository;
+import com.finplay.api.market.domain.Instrument;
+import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.service.InstrumentService;
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -40,8 +45,16 @@ class CommunityPostServiceTest {
 	private final CommunityPostRepository repository = Mockito.mock(CommunityPostRepository.class);
 	private final PostCommentRepository postCommentRepository = Mockito.mock(PostCommentRepository.class);
 	private final UserQueryService userQueryService = Mockito.mock(UserQueryService.class);
+	private final InstrumentService instrumentService = Mockito.mock(InstrumentService.class);
 	private final CommunityPostService service = new CommunityPostService(
-		repository, postCommentRepository, userQueryService, CLOCK);
+		repository, postCommentRepository, userQueryService, instrumentService, CLOCK);
+
+	private static Instrument instrument(Long id) {
+		Instrument instrument = Instrument.create(
+			Market.CRYPTO, "BTC", "비트코인", BigDecimal.ONE, 1000L, true, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(instrument, "id", id);
+		return instrument;
+	}
 
 	@Test
 	void createPostSavesAuthenticatedUserAndFixedCreationTime() {
@@ -49,7 +62,7 @@ class CommunityPostServiceTest {
 		when(userQueryService.getUser(42L)).thenReturn(author);
 		when(repository.save(any(CommunityPost.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-		CommunityPostResponse response = service.createPost(42L, "title", "content");
+		CommunityPostResponse response = service.createPost(42L, "title", "content", null);
 
 		ArgumentCaptor<CommunityPost> postCaptor = ArgumentCaptor.forClass(CommunityPost.class);
 		verify(repository).save(postCaptor.capture());
@@ -59,6 +72,10 @@ class CommunityPostServiceTest {
 		assertThat(response.content()).isEqualTo("content");
 		assertThat(response.createdAt()).isEqualTo(LocalDateTime.now(CLOCK));
 		assertThat(response.updatedAt()).isEqualTo(LocalDateTime.now(CLOCK));
+		assertThat(response.instrumentId()).isNull();
+		assertThat(response.instrumentSymbol()).isNull();
+		assertThat(response.instrumentName()).isNull();
+		verifyNoInteractions(instrumentService);
 	}
 
 	@Test
@@ -66,10 +83,42 @@ class CommunityPostServiceTest {
 		when(userQueryService.getUser(404L))
 			.thenThrow(new BusinessException(ErrorCode.UNAUTHORIZED));
 
-		assertThatThrownBy(() -> service.createPost(404L, "title", "content"))
+		assertThatThrownBy(() -> service.createPost(404L, "title", "content", null))
 			.isInstanceOf(BusinessException.class)
 			.extracting(exception -> ((BusinessException)exception).getErrorCode())
 			.isEqualTo(ErrorCode.UNAUTHORIZED);
+		verify(repository, never()).save(any());
+	}
+
+	@Test
+	void createPostTagsInstrumentWhenInstrumentIdProvided() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		when(userQueryService.getUser(42L)).thenReturn(author);
+		Instrument instrument = instrument(9L);
+		when(instrumentService.getTradableInstrumentEntity(9L)).thenReturn(instrument);
+		when(repository.save(any(CommunityPost.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		CommunityPostResponse response = service.createPost(42L, "title", "content", 9L);
+
+		ArgumentCaptor<CommunityPost> postCaptor = ArgumentCaptor.forClass(CommunityPost.class);
+		verify(repository).save(postCaptor.capture());
+		assertThat(postCaptor.getValue().getInstrument()).isSameAs(instrument);
+		assertThat(response.instrumentId()).isEqualTo(9L);
+		assertThat(response.instrumentSymbol()).isEqualTo("BTC");
+		assertThat(response.instrumentName()).isEqualTo("비트코인");
+	}
+
+	@Test
+	void createPostFailsWithValidationErrorAndDoesNotSaveWhenInstrumentIsNotTradable() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		when(userQueryService.getUser(42L)).thenReturn(author);
+		when(instrumentService.getTradableInstrumentEntity(999L))
+			.thenThrow(new BusinessException(ErrorCode.VALIDATION_ERROR, "존재하지 않거나 비활성인 종목은 태그할 수 없습니다."));
+
+		assertThatThrownBy(() -> service.createPost(42L, "title", "content", 999L))
+			.isInstanceOf(BusinessException.class)
+			.extracting(exception -> ((BusinessException)exception).getErrorCode())
+			.isEqualTo(ErrorCode.VALIDATION_ERROR);
 		verify(repository, never()).save(any());
 	}
 
@@ -113,7 +162,7 @@ class CommunityPostServiceTest {
 		ReflectionTestUtils.setField(post, "id", 73L);
 		when(repository.findById(73L)).thenReturn(Optional.of(post));
 
-		CommunityPostResponse response = service.updatePost(42L, 73L, "new title", "new content");
+		CommunityPostResponse response = service.updatePost(42L, 73L, "new title", "new content", null);
 
 		assertThat(response.postId()).isEqualTo(73L);
 		assertThat(response.authorNickname()).isEqualTo("author");
@@ -123,13 +172,55 @@ class CommunityPostServiceTest {
 		assertThat(response.updatedAt()).isEqualTo(LocalDateTime.now(CLOCK));
 		assertThat(post.getTitle()).isEqualTo("new title");
 		assertThat(post.getContent()).isEqualTo("new content");
+		assertThat(response.instrumentId()).isNull();
+		verifyNoInteractions(instrumentService);
+	}
+
+	@Test
+	void updatePostTagsInstrumentWhenInstrumentIdProvided() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(author, "id", 42L);
+		LocalDateTime createdAt = LocalDateTime.of(2026, 7, 1, 0, 0);
+		CommunityPost post = CommunityPost.create(author, "old title", "old content", null, createdAt);
+		ReflectionTestUtils.setField(post, "id", 73L);
+		when(repository.findById(73L)).thenReturn(Optional.of(post));
+		Instrument instrument = instrument(9L);
+		when(instrumentService.getTradableInstrumentEntity(9L)).thenReturn(instrument);
+
+		CommunityPostResponse response = service.updatePost(42L, 73L, "new title", "new content", 9L);
+
+		assertThat(post.getInstrument()).isSameAs(instrument);
+		assertThat(response.instrumentId()).isEqualTo(9L);
+		assertThat(response.instrumentSymbol()).isEqualTo("BTC");
+		assertThat(response.instrumentName()).isEqualTo("비트코인");
+	}
+
+	@Test
+	void updatePostFailsWithValidationErrorAndLeavesPostUnchangedWhenInstrumentIsNotTradable() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(author, "id", 42L);
+		LocalDateTime createdAt = LocalDateTime.of(2026, 7, 1, 0, 0);
+		CommunityPost post = CommunityPost.create(author, "old title", "old content", null, createdAt);
+		ReflectionTestUtils.setField(post, "id", 73L);
+		when(repository.findById(73L)).thenReturn(Optional.of(post));
+		when(instrumentService.getTradableInstrumentEntity(999L))
+			.thenThrow(new BusinessException(ErrorCode.VALIDATION_ERROR, "존재하지 않거나 비활성인 종목은 태그할 수 없습니다."));
+
+		assertThatThrownBy(() -> service.updatePost(42L, 73L, "new title", "new content", 999L))
+			.isInstanceOf(BusinessException.class)
+			.extracting(exception -> ((BusinessException)exception).getErrorCode())
+			.isEqualTo(ErrorCode.VALIDATION_ERROR);
+
+		assertThat(post.getTitle()).isEqualTo("old title");
+		assertThat(post.getContent()).isEqualTo("old content");
+		assertThat(post.getInstrument()).isNull();
 	}
 
 	@Test
 	void updatePostFailsWithNotFoundWhenPostDoesNotExist() {
 		when(repository.findById(404L)).thenReturn(Optional.empty());
 
-		assertThatThrownBy(() -> service.updatePost(42L, 404L, "new title", "new content"))
+		assertThatThrownBy(() -> service.updatePost(42L, 404L, "new title", "new content", null))
 			.isInstanceOf(BusinessException.class)
 			.extracting(exception -> ((BusinessException)exception).getErrorCode())
 			.isEqualTo(ErrorCode.NOT_FOUND);
@@ -146,7 +237,7 @@ class CommunityPostServiceTest {
 		ReflectionTestUtils.setField(post, "id", 73L);
 		when(repository.findById(73L)).thenReturn(Optional.of(post));
 
-		assertThatThrownBy(() -> service.updatePost(999L, 73L, "new title", "new content"))
+		assertThatThrownBy(() -> service.updatePost(999L, 73L, "new title", "new content", null))
 			.isInstanceOf(BusinessException.class)
 			.extracting(exception -> ((BusinessException)exception).getErrorCode())
 			.isEqualTo(ErrorCode.FORBIDDEN);

@@ -10,6 +10,8 @@ import com.finplay.api.community.dto.response.CommunityPostListResponse;
 import com.finplay.api.community.dto.response.CommunityPostResponse;
 import com.finplay.api.community.repository.CommunityPostRepository;
 import com.finplay.api.community.repository.PostCommentRepository;
+import com.finplay.api.market.domain.Instrument;
+import com.finplay.api.market.service.InstrumentService;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
@@ -26,13 +28,16 @@ public class CommunityPostService {
 	private final CommunityPostRepository communityPostRepository;
 	private final PostCommentRepository postCommentRepository;
 	private final UserQueryService userQueryService;
+	private final InstrumentService instrumentService;
 	private final Clock clock;
 
 	@Transactional
-	public CommunityPostResponse createPost(Long authenticatedUserId, String title, String content) {
+	public CommunityPostResponse createPost(
+		Long authenticatedUserId, String title, String content, Long instrumentId) {
 		User author = userQueryService.getUser(authenticatedUserId);
+		Instrument instrument = resolveInstrument(instrumentId);
 		LocalDateTime now = LocalDateTime.now(clock);
-		CommunityPost post = CommunityPost.create(author, title, content, null, now);
+		CommunityPost post = CommunityPost.create(author, title, content, instrument, now);
 		return CommunityPostResponse.from(communityPostRepository.save(post));
 	}
 
@@ -44,14 +49,23 @@ public class CommunityPostService {
 	}
 
 	@Transactional
-	public CommunityPostResponse updatePost(Long authenticatedUserId, Long postId, String title, String content) {
+	public CommunityPostResponse updatePost(
+		Long authenticatedUserId, Long postId, String title, String content, Long instrumentId) {
 		CommunityPost post = communityPostRepository.findById(postId)
 			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
 		if (!post.getAuthor().getId().equals(authenticatedUserId)) {
 			throw new BusinessException(ErrorCode.FORBIDDEN);
 		}
-		post.update(title, content, post.getInstrument(), LocalDateTime.now(clock));
+		Instrument instrument = resolveInstrument(instrumentId);
+		post.update(title, content, instrument, LocalDateTime.now(clock));
 		return CommunityPostResponse.from(post);
+	}
+
+	private Instrument resolveInstrument(Long instrumentId) {
+		if (instrumentId == null) {
+			return null;
+		}
+		return instrumentService.getTradableInstrumentEntity(instrumentId);
 	}
 
 	@Transactional

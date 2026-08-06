@@ -49,7 +49,7 @@ public class CommunityPostController {
 		@Valid @RequestBody
 		CommunityPostCreateRequest request) {
 		CommunityPostResponse response = communityPostService.createPost(principal.userId(), request.title(),
-			request.content());
+			request.content(), request.instrumentId());
 		return ResponseEntity.status(HttpStatus.CREATED).body(response);
 	}
 
@@ -62,7 +62,7 @@ public class CommunityPostController {
 		@Valid @RequestBody
 		CommunityPostUpdateRequest request) {
 		CommunityPostResponse response = communityPostService.updatePost(principal.userId(), postId, request.title(),
-			request.content());
+			request.content(), request.instrumentId());
 		return ResponseEntity.ok(response);
 	}
 
