@@ -46,6 +46,10 @@ class CryptoPriceMoveWatcherTest {
 
 	private static final LocalDateTime NOW = LocalDateTime.of(2026, 8, 5, 10, 0);
 
+	// 이 클래스는 CryptoWatchLock을 mock으로 갈아끼우므로 TTL이 결과에 영향을 주지 않는다 — §C-7 기본값(45)과
+	// 다른 것은 의도적이며, 기본값 단정은 FeedbackCryptoPropertiesTest 몫이다.
+	private static final int IRRELEVANT_WATCH_LOCK_TTL_SECONDS = 30;
+
 	private final InstrumentService instrumentService = mock(InstrumentService.class);
 
 	private final CryptoPriceSnapshotService cryptoPriceSnapshotService = mock(CryptoPriceSnapshotService.class);
@@ -91,7 +95,7 @@ class CryptoPriceMoveWatcherTest {
 		int minSampleCount, int matchBeforeMinutes) {
 		return new FeedbackCryptoProperties(
 			cooldownMinutes, dailyLimit, rollingWindowMinutes, sigmaLookbackHours, minSampleCount, matchBeforeMinutes,
-			30);
+			IRRELEVANT_WATCH_LOCK_TTL_SECONDS);
 	}
 
 	private static FeedbackDetectionProperties detectionProperties(double zScoreK) {

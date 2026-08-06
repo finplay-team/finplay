@@ -28,13 +28,18 @@ class CryptoWatchLockTest {
 	private static final Long INSTRUMENT_ID = 1L;
 	private static final String LOCK_KEY = "feedback:crypto-watch:lock:1";
 
+	// TTL이 관심사인 테스트는 tryLockPassesConfiguredWatchLockTtlSecondsAsTheExpirationDuration 하나뿐이고
+	// 그 테스트만 자체 값을 쓴다. 나머지는 TTL이 무엇이든 결과가 같으므로 이 상수를 쓴다 — §C-7 기본값(45)과
+	// 다른 것은 의도적이며, 여기서 기본값을 다시 단정하지 않는다(그건 FeedbackCryptoPropertiesTest 몫이다).
+	private static final int IRRELEVANT_WATCH_LOCK_TTL_SECONDS = 30;
+
 	private final StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
 
 	@SuppressWarnings("unchecked")
 	private final ValueOperations<String, String> valueOperations = mock(ValueOperations.class);
 
 	private final FeedbackCryptoProperties defaultTtlProperties = new FeedbackCryptoProperties(30, 6, 5, 24, 100, 35,
-		30);
+		IRRELEVANT_WATCH_LOCK_TTL_SECONDS);
 
 	private CryptoWatchLock cryptoWatchLock(FeedbackCryptoProperties properties) {
 		when(redisTemplate.opsForValue()).thenReturn(valueOperations);
@@ -44,7 +49,8 @@ class CryptoWatchLockTest {
 	@Test
 	void tryLockReturnsTokenWhenSetIfAbsentSucceeds() {
 		CryptoWatchLock lock = cryptoWatchLock(defaultTtlProperties);
-		when(valueOperations.setIfAbsent(eq(LOCK_KEY), any(), eq(Duration.ofSeconds(30)))).thenReturn(true);
+		when(valueOperations.setIfAbsent(
+			eq(LOCK_KEY), any(), eq(Duration.ofSeconds(IRRELEVANT_WATCH_LOCK_TTL_SECONDS)))).thenReturn(true);
 
 		Optional<String> token = lock.tryLock(INSTRUMENT_ID);
 
@@ -96,15 +102,34 @@ class CryptoWatchLockTest {
 		assertThat(first.get()).isNotEqualTo(second.get());
 	}
 
+	// 스크립트 반환값을 반드시 스텁한다 — 스텁하지 않으면 mock 기본값 null이 돌아와 이 테스트가 "정상 해제"라는
+	// 이름과 달리 deleted == null(WARN) 분기를 타고 통과한다. 그러면 정상 경로(1L)를 어떤 단위 테스트도 커버하지
+	// 않게 된다(PR #254 3라운드 리뷰 [권장 1]).
 	@Test
 	@SuppressWarnings("unchecked")
 	void unlockExecutesTheCheckThenDeleteScriptWithTheLockKeyAndGivenToken() {
 		CryptoWatchLock lock = cryptoWatchLock(defaultTtlProperties);
 		String token = "some-token";
+		when(redisTemplate.execute((RedisScript<Long>)any(RedisScript.class), anyList(), any())).thenReturn(1L);
 
 		lock.unlock(INSTRUMENT_ID, token);
 
 		verify(redisTemplate).execute((RedisScript<Long>)any(RedisScript.class), eq(List.of(LOCK_KEY)), eq(token));
+	}
+
+	// 토큰 불일치(0L) — 이미 TTL이 만료돼 다른 인스턴스가 락을 새로 잡은 경우다. 스크립트가 아무 것도 지우지
+	// 않고 0을 돌려주며, 이 컴포넌트는 WARN만 남기고 조용히 넘어간다(예외를 던져 호출부의 finally를 깨뜨리면 안
+	// 된다). 이 분기를 회귀에 고정한다.
+	@Test
+	@SuppressWarnings("unchecked")
+	void unlockDoesNotThrowWhenScriptDeletesNothingBecauseTheTokenNoLongerMatches() {
+		CryptoWatchLock lock = cryptoWatchLock(defaultTtlProperties);
+		when(redisTemplate.execute((RedisScript<Long>)any(RedisScript.class), anyList(), any())).thenReturn(0L);
+
+		assertThatCode(() -> lock.unlock(INSTRUMENT_ID, "stale-token")).doesNotThrowAnyException();
+
+		verify(redisTemplate)
+			.execute((RedisScript<Long>)any(RedisScript.class), eq(List.of(LOCK_KEY)), eq("stale-token"));
 	}
 
 	@Test

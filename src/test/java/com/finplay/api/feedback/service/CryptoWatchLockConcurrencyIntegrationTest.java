@@ -71,6 +71,10 @@ class CryptoWatchLockConcurrencyIntegrationTest {
 	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 	private static final LocalDateTime NOW = LocalDateTime.of(2026, 8, 5, 10, 0);
 
+	// setUp()의 픽스처 종목명이자 isThisTestsInstrument 매처의 기준이다. 두 곳에 리터럴을 따로 두면 한쪽만
+	// 바뀌었을 때 매처가 조용히 0건을 세어 단정이 무력해지므로 상수 하나로 묶는다.
+	private static final String INSTRUMENT_NAME = "락경합코인";
+
 	// 실제 CryptoWatchLock(진짜 Redis)으로 배선된 스프링 빈 — [방어 켠] 테스트 전용.
 	@Autowired
 	private CryptoPriceMoveWatcher cryptoPriceMoveWatcher;
@@ -134,7 +138,7 @@ class CryptoWatchLockConcurrencyIntegrationTest {
 	void setUp() {
 		symbol = "LOCKR" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
 		instrument = instrumentRepository.saveAndFlush(
-			Instrument.create(Market.CRYPTO, symbol, "락경합코인", BigDecimal.ONE, 5000L, true, NOW));
+			Instrument.create(Market.CRYPTO, symbol, INSTRUMENT_NAME, BigDecimal.ONE, 5000L, true, NOW));
 		when(narrativeService.resolvePriceMoveNarrative(any())).thenReturn(NarrativeResultDto.template("변동 설명"));
 	}
 
@@ -168,10 +172,10 @@ class CryptoWatchLockConcurrencyIntegrationTest {
 			"https://news.example.com/lock-race", NOW.minusMinutes(5), NOW));
 	}
 
-	// 공유 Testcontainers MySQL에 다른 테스트가 남긴 코인 종목이 섞여도 이 테스트의 종목만 세도록 좁힌다
-	// (PR #254 리뷰 [참고 4]). setUp()이 만드는 종목명은 항상 "락경합코인"으로 고정돼 있다.
+	// 공유 Testcontainers MySQL에 다른 테스트가 남긴 코인 종목이 섞여도 이 테스트의 종목만 세도록 좁힌다.
+	// 기준은 setUp()이 쓰는 것과 같은 상수다.
 	private static boolean isThisTestsInstrument(PriceMovePromptDto prompt) {
-		return prompt.instrumentName().equals("락경합코인");
+		return prompt.instrumentName().equals(INSTRUMENT_NAME);
 	}
 
 	@Test
