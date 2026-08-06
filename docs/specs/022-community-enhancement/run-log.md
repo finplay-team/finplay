@@ -15,3 +15,13 @@
 
 ## 모니터링 (사람용 요약)
 - 리뷰 완료(COM-004, PR #246 브랜치): 차단 0건, 권장 0건. 레이어·N+1·docs 동기화(api-routes/api-contracts/prd) 모두 일치, 테스트 4계층(단위·DataJpaTest·WebMvcTest·통합) 충실. 머지 가능.
+
+## AI 로그 (에이전트 참조용, PR #256 리뷰)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| - | reviewer(리뷰) | `git diff dev...HEAD` (PR #256) | CLAUDE.md 규칙 7, api-contracts.md 4개 엔드포인트 응답 계약 대조 |
+| - | implementer(PR #256 리뷰 차단·권장 반영) | `.\gradlew.bat test --tests "com.finplay.api.community.*"` + `spotlessApply` + `build` | 16:24 리뷰 차단 1건·권장 1건 |
+
+## 모니터링 (사람용 요약)
+- PR #256 리뷰 완료: 물어본 두 가지(`getTradableInstrumentEntity` 404/400 분리, PATCH 전체 교체 방식)는 문제없음 확인. 차단 1건(`GET /api/community/posts/{postId}` 단건 조회 계약만 응답 필드 갱신에서 빠짐 — 코드·통합 테스트는 9필드인데 문서는 6필드), 권장 1건(PATCH로 태그를 `null`로 보내 해제하는 동작에 테스트 없음).
+- 반영: `docs/api-contracts.md:277`에 3필드 추가 + 태그 없으면 `null`이라는 문구 + Spec 칸에 `022 COM-004`·`Issue #246` 추가. `CommunityPostServiceTest`에 `updatePostDetachesInstrumentWhenInstrumentIdIsNullOnAlreadyTaggedPost` 신규 추가(이미 태그된 게시물 준비 → `instrumentId=null`로 update → `post.getInstrument()`가 `null`이고 `instrumentService` 미호출 확인). 커뮤니티 테스트 전체 통과, `./gradlew build` 전체 재검증.

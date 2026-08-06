@@ -196,6 +196,24 @@ class CommunityPostServiceTest {
 	}
 
 	@Test
+	void updatePostDetachesInstrumentWhenInstrumentIdIsNullOnAlreadyTaggedPost() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(author, "id", 42L);
+		LocalDateTime createdAt = LocalDateTime.of(2026, 7, 1, 0, 0);
+		CommunityPost post = CommunityPost.create(author, "old title", "old content", instrument(9L), createdAt);
+		ReflectionTestUtils.setField(post, "id", 73L);
+		when(repository.findById(73L)).thenReturn(Optional.of(post));
+
+		CommunityPostResponse response = service.updatePost(42L, 73L, "new title", "new content", null);
+
+		assertThat(post.getInstrument()).isNull();
+		assertThat(response.instrumentId()).isNull();
+		assertThat(response.instrumentSymbol()).isNull();
+		assertThat(response.instrumentName()).isNull();
+		verifyNoInteractions(instrumentService);
+	}
+
+	@Test
 	void updatePostFailsWithValidationErrorAndLeavesPostUnchangedWhenInstrumentIsNotTradable() {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
 		ReflectionTestUtils.setField(author, "id", 42L);
