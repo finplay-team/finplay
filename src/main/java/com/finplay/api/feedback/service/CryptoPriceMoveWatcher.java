@@ -137,10 +137,13 @@ public class CryptoPriceMoveWatcher {
 			return false;
 		}
 
+		// 원인(다른 인스턴스가 이미 처리 중인 정상 경합 vs Redis 장애)에 따른 로그 레벨 구분은
+		// CryptoWatchLock.tryLock 안에서 이미 이뤄진다 — 여기서는 원인을 단정하지 않는다.
 		Optional<String> lockToken = cryptoWatchLock.tryLock(instrument.getId());
 		if (lockToken.isEmpty()) {
 			log.debug(
-				"코인 감시 락 획득 실패 - 다른 인스턴스가 이미 이 종목을 처리 중이라 이번 틱을 건너뛴다. 종목={}",
+				"코인 감시 락을 얻지 못해 이번 틱을 건너뛴다(다른 인스턴스가 처리 중이거나 Redis 문제로 "
+					+ "락을 얻지 못함). 종목={}",
 				instrument.getId());
 			return false;
 		}

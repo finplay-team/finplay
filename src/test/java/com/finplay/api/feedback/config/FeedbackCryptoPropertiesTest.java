@@ -109,8 +109,8 @@ class FeedbackCryptoPropertiesTest {
 			});
 	}
 
-	// 아래 넷은 예외도 로그도 없이 카드가 조용히 사라지는 값이라 record가 기동 시점에 막는다
-	// (FeedbackCryptoProperties의 검증 블록 주석 참조).
+	// 아래 다섯은 예외도 로그도 없이(watch-lock-ttl-seconds는 DEBUG 로그 한 줄만 남기고) 카드가 조용히
+	// 사라지는 값이라 record가 기동 시점에 막는다(FeedbackCryptoProperties의 검증 블록 주석 참조).
 	@Test
 	@DisplayName("rolling-window-minutes가 1 미만이면 기동이 실패한다")
 	void failsWhenRollingWindowMinutesIsBelowOne() {
@@ -161,5 +161,21 @@ class FeedbackCryptoPropertiesTest {
 				.rootCause()
 				.isInstanceOf(IllegalArgumentException.class)
 				.hasMessageContaining("match-before-minutes"));
+	}
+
+	// 0 이하면 Duration.ofSeconds가 Redis 명령 오류를 유발하고 CryptoWatchLock.tryLock의
+	// catch(RuntimeException)이 이를 삼켜 항상 Optional.empty()를 반환한다 — 모든 코인 카드가 DEBUG 로그
+	// 한 줄만 남기고 영구 0건이 된다(이슈 #244 2차 리뷰 [권장 2]).
+	@Test
+	@DisplayName("watch-lock-ttl-seconds가 1 미만이면 기동이 실패한다")
+	void failsWhenWatchLockTtlSecondsIsBelowOne() {
+		contextRunner
+			.withPropertyValues("feedback.crypto.watch-lock-ttl-seconds=0")
+			.run(context -> assertThat(context)
+				.hasFailed()
+				.getFailure()
+				.rootCause()
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("watch-lock-ttl-seconds"));
 	}
 }

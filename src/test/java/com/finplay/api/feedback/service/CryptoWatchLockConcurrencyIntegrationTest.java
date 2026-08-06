@@ -30,6 +30,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -62,8 +63,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 // @Transactional로 감싸면 그 안에서 만든 픽스처가 다른 스레드에는 커밋된 것으로 보이지 않을 수 있다
 // (LimitOrderConcurrencyIntegrationTest와 같은 방침 — saveAndFlush로 즉시 커밋하고 @AfterEach로 직접 정리한다).
 @SpringBootTest
-@Import({TestcontainersConfiguration.class, CryptoWatchLockConcurrencyTest.FixedClockTestConfig.class})
-class CryptoWatchLockConcurrencyTest {
+@Import({TestcontainersConfiguration.class, CryptoWatchLockConcurrencyIntegrationTest.FixedClockTestConfig.class})
+class CryptoWatchLockConcurrencyIntegrationTest {
 
 	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 	private static final LocalDateTime NOW = LocalDateTime.of(2026, 8, 5, 10, 0);
@@ -181,6 +182,17 @@ class CryptoWatchLockConcurrencyTest {
 	void watchWithoutRealMutualExclusionReproducesDuplicateCardsAndNarrativeCalls() throws Exception {
 		givenEnoughSnapshotsWithARecentJump();
 		givenMatchingNews();
+		// ready/start latch는 watch() 진입 시점만 맞출 뿐이다 — 한 스레드가 latch 이후 쿨다운 확인부터
+		// 저장·커밋까지 latch만으로는 다른 스레드보다 훨씬 빨리 끝낼 수 있어, 그러면 뒤따르는 스레드는 이미
+		// 커밋된 카드 때문에 쿨다운에 걸려 카드가 우연히 1건만 나올 수 있다(락 결함이 아니라 테스트 결함,
+		// 2차 리뷰 [권장 4]). narrativeService 호출 지점(=둘 다 쿨다운·일일상한·근거매칭을 이미 통과한
+		// 시점)에서 CyclicBarrier(2)로 두 스레드를 다시 맞춰, 어느 쪽도 커밋하기 전에 반드시 인터리빙된
+		// 상태로 저장 단계에 진입하게 만든다 — 그래야 재현이 우연이 아니라 결정론적이다.
+		CyclicBarrier bothReachedNarrativeCall = new CyclicBarrier(2);
+		when(narrativeService.resolvePriceMoveNarrative(any())).thenAnswer(invocation -> {
+			bothReachedNarrativeCall.await(10, TimeUnit.SECONDS);
+			return NarrativeResultDto.template("변동 설명");
+		});
 		CryptoPriceMoveWatcher watcherWithoutRealLock = new CryptoPriceMoveWatcher(
 			instrumentService, cryptoPriceSnapshotService, priceMoveEventRepository, priceMoveCardWriter,
 			alwaysSucceedingLockWithFreshTokens(), newsMatcher, narrativeService, cryptoProperties,

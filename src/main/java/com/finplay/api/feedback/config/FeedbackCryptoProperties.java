@@ -37,7 +37,7 @@ public record FeedbackCryptoProperties(
 	@DefaultValue("30")
 	int watchLockTtlSeconds) {
 
-	// 여기 있는 것만 막는다 — 나머지(쿨다운·일일 상한)가 이상하면 카드가 과하게 생겨 눈에 띄지만, 아래 넷은
+	// 여기 있는 것만 막는다 — 나머지(쿨다운·일일 상한)가 이상하면 카드가 과하게 생겨 눈에 띄지만, 아래 다섯은
 	// 예외도 로그도 없이 카드가 조용히 사라진다(FeedbackDetectionProperties·FeedbackNewsProperties와 같은 이유).
 	public FeedbackCryptoProperties {
 		if (rollingWindowMinutes < 1) {
@@ -55,6 +55,12 @@ public record FeedbackCryptoProperties(
 		if (matchBeforeMinutes < 0) {
 			// 음수면 근거창의 시작이 끝(occurredAt)보다 늦어 BETWEEN이 항상 빈 결과다 — 카드가 매일 0건이 된다.
 			throw new IllegalArgumentException("feedback.crypto.match-before-minutes는 0 이상이어야 합니다.");
+		}
+		if (watchLockTtlSeconds < 1) {
+			// 0 이하면 Duration.ofSeconds(0/음수)가 Redis 명령 오류를 유발하고, CryptoWatchLock.tryLock의
+			// catch(RuntimeException)이 이를 삼켜 항상 Optional.empty()를 반환한다 — 모든 코인 카드가 DEBUG
+			// 로그 한 줄만 남기고 영구 0건이 된다(이슈 #244 2차 리뷰 [권장 2]).
+			throw new IllegalArgumentException("feedback.crypto.watch-lock-ttl-seconds는 1 이상이어야 합니다.");
 		}
 	}
 }

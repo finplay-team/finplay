@@ -44,7 +44,10 @@ public class CryptoWatchLock {
 	 * TTL은 {@code feedback.crypto.watch-lock-ttl-seconds}다.
 	 *
 	 * <p>Redis 자체가 예외를 던지면(장애) 획득 실패로 처리한다 — 호출부가 "얻지 못함"과 동일하게 취급해 그
-	 * 종목의 이번 틱만 건너뛰고 배치 전체는 죽지 않게 한다(ADR-0014 §결과).
+	 * 종목의 이번 틱만 건너뛰고 배치 전체는 죽지 않게 한다(ADR-0014 §결과). 다른 인스턴스가 먼저 잡아
+	 * {@code setIfAbsent}가 정상적으로 {@code false}를 반환하는 것(정상 경합)과, Redis 자체가 예외를 던지는
+	 * 것(장애)은 원인이 다르므로 로그 레벨도 다르게 남긴다 — 정상 경합은 {@code DEBUG}, 장애는 이 저장소의
+	 * 인프라 실패 관례(예: {@code CryptoPriceMoveWatcher.watch()}의 종목 실패 로그)를 따라 {@code WARN}이다.
 	 */
 	public Optional<String> tryLock(Long instrumentId) {
 		String token = UUID.randomUUID().toString();
@@ -53,23 +56,27 @@ public class CryptoWatchLock {
 				.opsForValue()
 				.setIfAbsent(
 					lockKey(instrumentId), token, Duration.ofSeconds(cryptoProperties.watchLockTtlSeconds()));
-			return Boolean.TRUE.equals(acquired) ? Optional.of(token) : Optional.empty();
+			if (Boolean.TRUE.equals(acquired)) {
+				return Optional.of(token);
+			}
+			log.debug("코인 감시 락 획득 실패(다른 인스턴스가 이미 보유 중) - instrumentId={}", instrumentId);
+			return Optional.empty();
 		} catch (RuntimeException ex) {
-			log.debug("코인 감시 락 획득 실패(Redis 장애로 간주) - instrumentId={}", instrumentId, ex);
+			log.warn("코인 감시 락 획득 실패(Redis 장애) - instrumentId={}", instrumentId, ex);
 			return Optional.empty();
 		}
 	}
 
 	/**
 	 * {@code tryLock}이 반환한 토큰으로만 해제한다. 토큰이 지금 값과 다르면(이미 TTL 만료 후 다른 인스턴스가
-	 * 새로 잡은 락이면) 아무 것도 하지 않는다. Redis 장애로 예외가 나도 삼킨다 — 해제 실패는 TTL이 지나면
-	 * 스스로 풀리므로 호출부의 나머지 처리를 막지 않는다.
+	 * 새로 잡은 락이면) 아무 것도 하지 않는다. Redis 자체가 예외를 던지면(장애) {@code WARN}으로 남기고
+	 * 삼킨다 — 해제 실패는 TTL이 지나면 스스로 풀리므로 호출부의 나머지 처리를 막지 않는다.
 	 */
 	public void unlock(Long instrumentId, String token) {
 		try {
 			redisTemplate.execute(UNLOCK_SCRIPT, List.of(lockKey(instrumentId)), token);
 		} catch (RuntimeException ex) {
-			log.debug("코인 감시 락 해제 실패(Redis 장애로 간주) - instrumentId={}", instrumentId, ex);
+			log.warn("코인 감시 락 해제 실패(Redis 장애) - instrumentId={}", instrumentId, ex);
 		}
 	}
 
