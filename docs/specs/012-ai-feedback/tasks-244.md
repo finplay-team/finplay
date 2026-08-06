@@ -29,7 +29,7 @@
   - 기존 `FeedbackCryptoProperties`류 드리프트 테스트(yml ↔ `@DefaultValue` 일치)가 있다면 이 필드도 덮도록 갱신한다.
   - 검증 — 단위(새 필드 바인딩, yml·`@DefaultValue` 드리프트 테스트).
 
-- [ ] **2. `CryptoWatchLock` 컴포넌트 신설 — Redis `SET NX PX` 획득 + Lua check-then-delete 해제**
+- [x] **2. `CryptoWatchLock` 컴포넌트 신설 — Redis `SET NX PX` 획득 + Lua check-then-delete 해제**
 
   신설 위치 `com.finplay.api.feedback.service.CryptoWatchLock`(ADR-0014 §결정). `PriceStore`(`market/store`)의 `StringRedisTemplate` 직접 사용 패턴을 참고하되, 이 컴포넌트는 `feedback` 소유이므로 자체 `StringRedisTemplate`을 주입받는다 — `market.store.PriceStore`를 거치지 않는다(코인 시세 데이터가 아니라 감시 로직의 락이므로 §C-6 "market은 서비스를 경유한다" 규칙의 대상이 아니다).
   - 키: `feedback:crypto-watch:lock:{instrumentId}`.
