@@ -363,6 +363,8 @@ feedback:
     sigma-lookback-hours: 24
     min-sample-count: 100         # σ 계산 최소 표본. 미만이면 카드 미생성
     match-before-minutes: 35      # 코인 카드 근거 탐색 (이후는 0)
+    watch-lock-ttl-seconds: 45    # 종목 단위 Redis 락 TTL (ADR-0014, 다중 인스턴스 방어). llm.timeout-seconds(20)보다
+                                   # 커야 한다 — 락 안에서 LLM 호출이 최악 그 시간까지 걸리며, 45는 20 대비 약 2배다
   instruments:
     stock-count: 16             # V7 시드 기준. 호출량·튜닝 계산의 근거
     crypto-count: 12
@@ -428,7 +430,7 @@ originTradeDate = occurred_at 의 KST 날짜               (일일 상한 카운
 
 **TIME으로 두면 자정을 못 넘긴다.** 00:03에 탐지되면 구간이 `23:58 ~ 00:03`인데 TIME 비교로는 시작이 끝보다 늦다. 어느 날짜를 붙여도 한쪽이 24시간 어긋난다. 절대 시각 하나만 저장하면 복원이 항상 맞는다.
 
-`origin_trade_date`를 `NULL`로 두지 않는 이유는 **일일 상한을 셀 컬럼이 필요하기 때문**이다. 코인 카드의 중복을 실제로 막는 것은 유니크가 아니라 쿨다운·일일 상한이다 — 코인은 `window_start`가 `NULL`이라 MySQL 유니크가 중복을 허용하기 때문이다. 응답에서는 코인의 `originTradeDate`를 `null`로 내린다.
+`origin_trade_date`를 `NULL`로 두지 않는 이유는 **일일 상한을 셀 컬럼이 필요하기 때문**이다. 코인은 `window_start`가 `NULL`이라 MySQL 유니크가 중복을 허용한다 — **다중 인스턴스에서는 Redis 락(ADR-0014)이 1차 방어선이고, 쿨다운·일일 상한이 2차 방어선이다.** 단일 인스턴스에서는 Spring `@Scheduled` cron이 자기 자신과 겹치지 않으므로 이 문제가 재현되지 않는다(이슈 #244 1단계 확인). 응답에서는 코인의 `originTradeDate`를 `null`로 내린다.
 
 **코인 요약·브리핑 행의 `origin_trade_date`는 배치 실행 시점의 KST 날짜다.** 이 행들에는 `occurred_at`이 없으므로 카드와 규칙이 다르다. 컬럼이 `NOT NULL`이고 유니크 키의 일부라 값이 미정이면 UPSERT가 성립하지 않는다.
 
@@ -683,6 +685,9 @@ gap       = (open - prevClose) / prevClose
 
   r5 = ln(p_now / p_past)
   |r5| / σ24 < k 이면 종료
+
+  종목 단위 Redis 락 획득 실패 → 종료 (ADR-0014, 다중 인스턴스 방어. 대기하지 않는다)
+
   마지막 카드 생성 후 cooldown-minutes 이내면 종료
   occurred_at 기준 KST 당일 생성 건수 >= daily-limit 이면 종료
   근거 기사 0건이면 종료 (FEED-003과 동일)
@@ -700,6 +705,8 @@ gap       = (open - prevClose) / prevClose
 ```
 
 **`occurred_at` 하나만 저장하는 이유는 자정이다.** `window_start`/`window_end`를 `TIME`으로 저장하면 00:03 탐지 시 구간이 `23:58 ~ 00:03`인데 TIME 비교로는 시작이 끝보다 늦고, 어느 날짜를 붙여도 한쪽이 24시간 어긋난다. 절대 시각 하나에서 계산하면 복원이 항상 맞는다. 자세한 근거는 §C-9에 있다.
+
+**다중 인스턴스에서 이 절차가 겹치는 문제는 ADR-0014가 다룬다.** 락은 위 `|r5|/σ24 < k` 게이트를 통과한 직후, 쿨다운을 확인하기 전에 종목 단위로 획득하며 — 저장 시점 이후만 지키는 DB 락으로는 LLM 중복 호출을 못 막기 때문이다 — 얻지 못하면 그 종목은 이번 틱을 건너뛰고 대기하지 않는다. TTL은 §C-7의 `feedback.crypto.watch-lock-ttl-seconds`다.
 
 ### 코인 가격 스냅샷
 
@@ -1116,6 +1123,7 @@ LLM이 실패하거나 후검증에 걸렸을 때 서버가 수치로 조립한�
 | 배치 중복 실행 | `UNIQUE` 제약으로 무시, 기존 데이터 유지 |
 | 코인 스냅샷 표본 부족 | 카드 미생성. `DEBUG` 로그. 오류 아님 (기동 직후 정상 상태) |
 | 코인 피드 단절(`isPriceAvailable=false`) | 스냅샷 기록 건너뜀. 표본이 줄어 자연히 카드도 안 나온다 |
+| 코인 감시 Redis 락 획득 실패 | 그 틱을 건너뛴다(원장 무관, 카드 생성만 일시 중단). 대기하지 않는다 (ADR-0014) |
 | 개장 전 배치가 09:00을 넘김 | 브리핑을 먼저 만들므로 브리핑은 정상. 나머지는 게이트에 걸려 어차피 오전 중 필요 |
 | 코인 배치(매시 05분) 실패 | 직전 요약·브리핑이 그대로 조회된다. 다음 시각에 재시도 |
 | 요약·브리핑 후검증 2회 연속 실패 | `summary=null`, `narrative_source=NONE`, 상태값 `UNAVAILABLE`. `items`는 그대로 채운다 |
@@ -1278,6 +1286,11 @@ trade_feedbacks                매도 직후 서술 (회원별)
 - [ ] `isPriceAvailable=false`일 때 스냅샷을 기록하지 않는다 — 동결 틱이 쌓이면 σ가 0에 수렴했다가 복구 첫 틱에서 허위 카드가 무더기로 생성된다.
 - [ ] 쿨다운·일일 상한이 초과 생성을 막는다.
 - [ ] **자정을 넘긴 카드(`occurred_at` 00:03)의 `windowStart <= windowEnd`가 유지되고 `origin_trade_date` 컬럼이 그날 KST 날짜다** (§C-9). 응답의 `originTradeDate`는 코인이면 `null`이다.
+
+### 동시성 방어 (통합, 이슈 #244)
+
+- [ ] 코인 변동 감시가 다중 인스턴스에서 동시에 실행돼도 Redis 락(ADR-0014)으로 카드 중복·LLM 중복 호출을 방지한다.
+- [ ] 방어를 비활성화하거나 우회하면 중복이 재현되고, 활성화하면 1건만 남는 것을 테스트로 고정한다.
 
 ### 노출 게이트 (통합, 고정 `Clock`)
 

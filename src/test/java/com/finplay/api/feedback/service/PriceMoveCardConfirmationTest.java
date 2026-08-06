@@ -92,7 +92,7 @@ class PriceMoveCardConfirmationTest {
 			// §C-7 기본값
 			new FeedbackNewsProperties(
 				"0 0/30 * * * *", "0 0/30 8-20 * * MON-FRI", 30, 5, 5, 50, 30, 30),
-			new FeedbackCryptoProperties(30, 6, 5, 24, 100, 35),
+			new FeedbackCryptoProperties(30, 6, 5, 24, 100, 35, 30),
 			new BusinessDayCalendar());
 		service = new PriceMoveCardService(
 			priceMoveEventRepository,

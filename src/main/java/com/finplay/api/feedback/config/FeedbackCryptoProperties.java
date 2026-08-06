@@ -32,9 +32,16 @@ public record FeedbackCryptoProperties(
 	// 코인 카드 근거 탐색(이전) 폭(분). 이후 방향은 0이다 — 탐지가 occurredAt 시점에 실시간으로 돌아
 	// 그 이후 기사는 존재할 수 없다(§뉴스 매칭 범위).
 	@DefaultValue("35")
-	int matchBeforeMinutes) {
+	int matchBeforeMinutes,
+	// 종목 단위 Redis 락(CryptoWatchLock)의 TTL(초). 다중 인스턴스 중복 감시 방어선이다(ADR-0014).
+	// feedback.llm.timeout-seconds(20, FeedbackLlmProperties)보다 커야 한다 — 락 안에서 LLM 호출이 최악
+	// 그 시간까지 걸릴 수 있고, TTL이 그보다 짧으면 처리 중에 락이 스스로 풀려 다른 인스턴스가 같은 종목을
+	// 다시 시작할 수 있다. 45는 20 대비 약 2배(여유 25초)로 잡은 값이다(PR #254 리뷰 [권장 2·3]). 레코드가
+	// 서로 달라 기동 시점 교차 검증은 하지 않는다 — 이 주석이 유일한 근거다.
+	@DefaultValue("45")
+	int watchLockTtlSeconds) {
 
-	// 여기 있는 것만 막는다 — 나머지(쿨다운·일일 상한)가 이상하면 카드가 과하게 생겨 눈에 띄지만, 아래 넷은
+	// 여기 있는 것만 막는다 — 나머지(쿨다운·일일 상한)가 이상하면 카드가 과하게 생겨 눈에 띄지만, 아래 다섯은
 	// 예외도 로그도 없이 카드가 조용히 사라진다(FeedbackDetectionProperties·FeedbackNewsProperties와 같은 이유).
 	public FeedbackCryptoProperties {
 		if (rollingWindowMinutes < 1) {
@@ -52,6 +59,12 @@ public record FeedbackCryptoProperties(
 		if (matchBeforeMinutes < 0) {
 			// 음수면 근거창의 시작이 끝(occurredAt)보다 늦어 BETWEEN이 항상 빈 결과다 — 카드가 매일 0건이 된다.
 			throw new IllegalArgumentException("feedback.crypto.match-before-minutes는 0 이상이어야 합니다.");
+		}
+		if (watchLockTtlSeconds < 1) {
+			// 0 이하면 Duration.ofSeconds(0/음수)가 Redis 명령 오류를 유발하고, CryptoWatchLock.tryLock의
+			// catch(RuntimeException)이 이를 삼켜 항상 Optional.empty()를 반환한다 — 모든 코인 카드가 DEBUG
+			// 로그 한 줄만 남기고 영구 0건이 된다(이슈 #244 2차 리뷰 [권장 2]).
+			throw new IllegalArgumentException("feedback.crypto.watch-lock-ttl-seconds는 1 이상이어야 합니다.");
 		}
 	}
 }

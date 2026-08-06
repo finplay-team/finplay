@@ -37,6 +37,8 @@ class FeedbackCryptoPropertiesTest {
 
 	private static final int SPEC_MATCH_BEFORE_MINUTES = 35;
 
+	private static final int SPEC_WATCH_LOCK_TTL_SECONDS = 45;
+
 	@Configuration(proxyBeanMethods = false)
 	@EnableConfigurationProperties(FeedbackCryptoProperties.class)
 	static class LocalFeedbackCryptoConfig {}
@@ -58,11 +60,12 @@ class FeedbackCryptoPropertiesTest {
 			assertThat(properties.sigmaLookbackHours()).isEqualTo(SPEC_SIGMA_LOOKBACK_HOURS);
 			assertThat(properties.minSampleCount()).isEqualTo(SPEC_MIN_SAMPLE_COUNT);
 			assertThat(properties.matchBeforeMinutes()).isEqualTo(SPEC_MATCH_BEFORE_MINUTES);
+			assertThat(properties.watchLockTtlSeconds()).isEqualTo(SPEC_WATCH_LOCK_TTL_SECONDS);
 		});
 	}
 
 	@Test
-	@DisplayName("feedback.crypto.* 케밥케이스 키를 주면 여섯 값이 모두 덮어써진다")
+	@DisplayName("feedback.crypto.* 케밥케이스 키를 주면 일곱 값이 모두 덮어써진다")
 	void bindsEveryPropertyFromKebabCaseKeys() {
 		contextRunner
 			.withPropertyValues(
@@ -71,7 +74,8 @@ class FeedbackCryptoPropertiesTest {
 				"feedback.crypto.rolling-window-minutes=10",
 				"feedback.crypto.sigma-lookback-hours=12",
 				"feedback.crypto.min-sample-count=50",
-				"feedback.crypto.match-before-minutes=20")
+				"feedback.crypto.match-before-minutes=20",
+				"feedback.crypto.watch-lock-ttl-seconds=60")
 			.run(context -> {
 				assertThat(context).hasNotFailed();
 
@@ -82,6 +86,7 @@ class FeedbackCryptoPropertiesTest {
 				assertThat(properties.sigmaLookbackHours()).isEqualTo(12);
 				assertThat(properties.minSampleCount()).isEqualTo(50);
 				assertThat(properties.matchBeforeMinutes()).isEqualTo(20);
+				assertThat(properties.watchLockTtlSeconds()).isEqualTo(60);
 			});
 	}
 
@@ -100,11 +105,12 @@ class FeedbackCryptoPropertiesTest {
 				assertThat(properties.sigmaLookbackHours()).isEqualTo(SPEC_SIGMA_LOOKBACK_HOURS);
 				assertThat(properties.minSampleCount()).isEqualTo(SPEC_MIN_SAMPLE_COUNT);
 				assertThat(properties.matchBeforeMinutes()).isEqualTo(SPEC_MATCH_BEFORE_MINUTES);
+				assertThat(properties.watchLockTtlSeconds()).isEqualTo(SPEC_WATCH_LOCK_TTL_SECONDS);
 			});
 	}
 
-	// 아래 넷은 예외도 로그도 없이 카드가 조용히 사라지는 값이라 record가 기동 시점에 막는다
-	// (FeedbackCryptoProperties의 검증 블록 주석 참조).
+	// 아래 다섯은 예외도 로그도 없이(watch-lock-ttl-seconds는 DEBUG 로그 한 줄만 남기고) 카드가 조용히
+	// 사라지는 값이라 record가 기동 시점에 막는다(FeedbackCryptoProperties의 검증 블록 주석 참조).
 	@Test
 	@DisplayName("rolling-window-minutes가 1 미만이면 기동이 실패한다")
 	void failsWhenRollingWindowMinutesIsBelowOne() {
@@ -155,5 +161,21 @@ class FeedbackCryptoPropertiesTest {
 				.rootCause()
 				.isInstanceOf(IllegalArgumentException.class)
 				.hasMessageContaining("match-before-minutes"));
+	}
+
+	// 0 이하면 Duration.ofSeconds가 Redis 명령 오류를 유발하고 CryptoWatchLock.tryLock의
+	// catch(RuntimeException)이 이를 삼켜 항상 Optional.empty()를 반환한다 — 모든 코인 카드가 DEBUG 로그
+	// 한 줄만 남기고 영구 0건이 된다(이슈 #244 2차 리뷰 [권장 2]).
+	@Test
+	@DisplayName("watch-lock-ttl-seconds가 1 미만이면 기동이 실패한다")
+	void failsWhenWatchLockTtlSecondsIsBelowOne() {
+		contextRunner
+			.withPropertyValues("feedback.crypto.watch-lock-ttl-seconds=0")
+			.run(context -> assertThat(context)
+				.hasFailed()
+				.getFailure()
+				.rootCause()
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("watch-lock-ttl-seconds"));
 	}
 }

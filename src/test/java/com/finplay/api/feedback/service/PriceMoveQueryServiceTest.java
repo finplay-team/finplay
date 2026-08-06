@@ -53,7 +53,7 @@ class PriceMoveQueryServiceTest {
 	private final PriceMoveEventSourceRepository priceMoveEventSourceRepository = mock(
 		PriceMoveEventSourceRepository.class);
 
-	private final FeedbackCryptoProperties cryptoProperties = new FeedbackCryptoProperties(30, 6, 5, 24, 100, 35);
+	private final FeedbackCryptoProperties cryptoProperties = new FeedbackCryptoProperties(30, 6, 5, 24, 100, 35, 30);
 
 	private final PriceMoveQueryService service = new PriceMoveQueryService(
 		instrumentService,

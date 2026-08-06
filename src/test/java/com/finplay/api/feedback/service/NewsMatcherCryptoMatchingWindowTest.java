@@ -66,7 +66,7 @@ class NewsMatcherCryptoMatchingWindowTest {
 			// 근거 매칭과 무관한 나머지 값은 §C-7 feedback.news 기본값을 그대로 둔다.
 			new FeedbackNewsProperties(
 				"0 0/30 * * * *", "0 0/30 8-20 * * MON-FRI", 30, 5, SPEC_MAX_SOURCES_PER_CARD, 50, 30, 30),
-			new FeedbackCryptoProperties(30, 6, 5, 24, 100, SPEC_MATCH_BEFORE_MINUTES),
+			new FeedbackCryptoProperties(30, 6, 5, 24, 100, SPEC_MATCH_BEFORE_MINUTES, 30),
 			new BusinessDayCalendar());
 	}
 
