@@ -21,4 +21,13 @@ public record MarketCryptoProperties(
 	// σ 계산에 쓰는 조회 창이자 스냅샷 보관 기간. feedback.crypto.sigma-lookback-hours와 같은 값을 유지한다.
 	@DefaultValue("24")
 	int sigmaLookbackHours) {
+
+	// FeedbackCryptoProperties.sigmaLookbackHours와 대칭으로 막는다 — 여기서 막지 않으면 두 값이 함께
+	// 잘못 설정됐을 때(예: 둘 다 0) 드리프트 테스트는 통과한 채 스냅샷 보관창이 사실상 사라진다.
+	public MarketCryptoProperties {
+		if (sigmaLookbackHours < 1) {
+			// 0이면 가지치기 창이 사라져 기록 직후 스냅샷이 스스로 제거된다.
+			throw new IllegalArgumentException("market.crypto.sigma-lookback-hours는 1 이상이어야 합니다.");
+		}
+	}
 }
