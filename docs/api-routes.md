@@ -66,6 +66,9 @@
 | GET | /api/ai/post-sell/{tradeId} | feedback | 본인 매도 체결 1건의 매도 직후 피드백. 원장의 FIFO 수치(배분 가중평균 매수단가·매도가·수량·수수료·실현손익·수익률·보유기간) + 보유 구간 변동 원인 카드 + 관찰형 서술. `buyAt`은 배분된 lot 중 가장 이른 체결 시각이고 `buyAt`·`sellAt`은 원본 거래일 축이다. 같은 원본 거래일 안에서 완결된 매매만(`sameSessionCompleted=true`) 카드·극값·반사실·집단 비교 포함. 매도 후 흐름·반사실은 **그 체결의 서비스 날짜 15:30** 이후에만 열린다(spec §C-5). **2차는 주식 전용 — 코인 체결은 400**. **투자일기에 의존하지 않는다** | 012 FEED-007, Issue #208 |
 | GET | /api/rankings?market=&limit= | ranking | 시장별(`STOCK`\|`CRYPTO`) 실현손익 상위 랭킹 조회. `market` 쿼리 파라미터 필수(누락·미지원 리터럴은 400 `VALIDATION_ERROR`). `limit`은 선택이며 **컨트롤러가 거부하지 않고** 서비스가 클램핑(생략·0 이하→10, 51 이상→50) — `GET /api/trades`·`GET /api/orders`의 범위 밖 400과 의도적으로 다름. 매도 체결 이력이 없는 회원은 제외, 동점자는 공동 순위 | 014 RANK-001, Issue #187 |
 | GET | /api/rankings/me?market= | ranking | 인증 사용자 본인의 시장별 실현손익 순위 단건 조회. 대상은 인증 토큰의 본인으로 고정(다른 사용자 지정 불가). `market` 필수(누락·미지원 리터럴은 400 `VALIDATION_ERROR`). 상위 노출 구간(`GET /api/rankings`의 limit)과 무관하게 항상 정확한 보정 순위를 반환하고, 매도 체결 이력이 없으면 `rank`만 `null`(오류 아님) | 014 RANK-002, Issue #233 |
+| POST | /api/watchlist-items | watchlist | 인증 사용자가 존재하는 종목을 본인 관심목록에 등록 (201). 거래 가능 여부(`tradable`)는 검사하지 않는다 — `education`/`favorite`(튜토리얼 전용, 인메모리)와 별개의 실제 서비스 기능. 이미 등록된 종목은 409 `DUPLICATE_RESOURCE`, 존재하지 않는 종목 ID는 404 `NOT_FOUND` | 023 WATCH-001 |
+| GET | /api/watchlist-items?market= | watchlist | 인증 사용자 본인 관심목록을 등록 최신순(동시각 `id` 내림차순)으로 조회. `market`(`STOCK`\|`CRYPTO`) 선택, 생략 시 전체. 빈 목록도 200 | 023 WATCH-002 |
+| DELETE | /api/watchlist-items/{instrumentId} | watchlist | 인증 사용자 본인 관심목록에서 종목 해제 (204, 본문 없음). 존재하지 않거나 타인 소유면 404 `WATCHLIST_ITEM_NOT_FOUND`(소유 여부 비노출) | 023 WATCH-003 |
 
 ## 투자 실습 계획 라우트 (아직 구현하지 않음)
 
