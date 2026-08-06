@@ -20,6 +20,7 @@ import com.finplay.api.feedback.domain.NarrativeSource;
 import com.finplay.api.feedback.domain.NewsSummaryScope;
 import com.finplay.api.feedback.repository.InstrumentNewsSummaryRepository;
 import com.finplay.api.feedback.repository.MarketNewsItemRepository;
+import com.finplay.api.feedback.store.FeedbackQueryCache;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.BusinessDayCalendar;
@@ -70,11 +71,16 @@ class InstrumentNewsSummaryServiceTest {
 
 	private final Instrument instrument = stock();
 
+	// 이 경로는 캐시를 읽지 않는다 — 코인 갱신이 성공했을 때 무효화만 부른다(ADR-0015 §3). 그래서 mock으로 두면
+	// 그 호출 여부를 그대로 단정할 수 있다(주식 경로에서는 한 번도 불리지 않아야 한다).
+	private final FeedbackQueryCache feedbackQueryCache = mock(FeedbackQueryCache.class);
+
 	private final InstrumentNewsSummaryService service = new InstrumentNewsSummaryService(
 		marketNewsItemRepository,
 		instrumentNewsSummaryRepository,
 		narrativeService,
 		new BusinessDayCalendar(),
+		feedbackQueryCache,
 		// 앞 다섯 값은 이 경로가 쓰지 않는다 — 마지막 max-items-per-summary만 걸린다 (§C-7).
 		new FeedbackNewsProperties(
 			"0 0/30 * * * *", "0 0/30 8-20 * * MON-FRI", 30, 5, 5, 50, 30, MAX_ITEMS_PER_SUMMARY),
@@ -535,5 +541,58 @@ class InstrumentNewsSummaryServiceTest {
 			verifyNoInteractions(narrativeService);
 			verify(instrumentNewsSummaryRepository, never()).save(any());
 		}
+
+		// --- 조회 캐시 무효화 (ADR-0015 §3, tasks.md 항목 5) ---
+
+		// 코인은 값이 있는 상태에서 바뀌는 유일한 경우라 TTL만으로는 "오래된 값이 남지 않는다"를 만족할 수
+		// 없다 — 갱신이 실제로 일어났으면 반드시 지워야 다음 조회가 새 값을 본다.
+		@Test
+		@DisplayName("갱신에 성공하면 그 종목의 조회 캐시를 지운다")
+		void evictsTheQueryCacheOfThatInstrumentWhenTheRefreshActuallyStored() {
+			givenNoPreviousRow();
+			givenNews(List.of(news(1L, LocalTime.of(18, 0))));
+
+			assertThat(service.refreshCryptoSummary(coin)).isPresent();
+
+			verify(feedbackQueryCache).evictCryptoSummaryText(coin.getId());
+		}
+
+		// 값이 바뀌지 않았는데 지우면 다음 조회가 이유 없이 DB로 간다 — 캐시를 둔 목적이 그만큼 깎인다.
+		@Test
+		@DisplayName("직전 생성 이후 새 기사가 없어 건너뛴 실행은 캐시를 지우지 않는다")
+		void doesNotEvictWhenTheRefreshWasSkippedBecauseNothingWasCollected() {
+			LocalDateTime lastGeneratedAt = GENERATED_AT.minusHours(1);
+			when(instrumentNewsSummaryRepository.findFirstByInstrumentIdAndScopeOrderByGeneratedAtDescIdDesc(
+				any(), any())).thenReturn(Optional.of(previousRow(lastGeneratedAt)));
+			when(marketNewsItemRepository.existsByInstrumentIdAndCreatedAtAfter(any(), any())).thenReturn(false);
+
+			assertThat(service.refreshCryptoSummary(coin)).isEmpty();
+
+			verifyNoInteractions(feedbackQueryCache);
+		}
+
+		@Test
+		@DisplayName("창 안 기사가 0건이라 만들지 않은 실행도 캐시를 지우지 않는다")
+		void doesNotEvictWhenNoRowWasCreatedBecauseTheWindowWasEmpty() {
+			givenNoPreviousRow();
+			givenNews(List.of());
+
+			assertThat(service.refreshCryptoSummary(coin)).isEmpty();
+
+			verifyNoInteractions(feedbackQueryCache);
+		}
+	}
+
+	// 주식은 무효화하지 않는다(ADR-0015 §3) — generateStockSummary가 이미 있는 행을 건너뛰므로 한 번 생긴 값이
+	// 그날 안 바뀐다. 여기서 캐시를 건드리면 매 배치가 그날의 주식 요약 캐시를 통째로 날려 조회가 다시 DB로 간다.
+	@Test
+	@DisplayName("주식 요약 생성 경로는 조회 캐시를 한 번도 건드리지 않는다")
+	void stockSummaryGenerationNeverTouchesTheQueryCache() {
+		givenNoDuplicateAndTemplateNarrative();
+		givenNews(List.of(news(1L, LocalTime.of(18, 0))));
+
+		service.generateStockSummary(instrument, ORIGIN_TRADE_DATE, NewsSummaryScope.PRE_MARKET);
+
+		verifyNoInteractions(feedbackQueryCache);
 	}
 }

@@ -65,8 +65,9 @@ public class MarketBriefingService {
 
 	private final BusinessDayCalendar businessDayCalendar;
 
-	// 조회 경로만 쓴다 — 생성 경로(generateStockBriefing·refreshCryptoBriefing)는 이 캐시를 보지 않는다.
-	// 절단 상한이 조회(max-items-per-briefing)와 생성(max-items-per-summary)이 달라서다(§C-7).
+	// 조회 경로가 읽고, 코인 갱신 경로가 갱신 성공 시에만 무효화한다(ADR-0015 §3). 생성 경로는 이 캐시를
+	// **읽지** 않는다 — 절단 상한이 조회(max-items-per-briefing)와 생성(max-items-per-summary)이 달라서다(§C-7).
+	// 주식은 무효화도 하지 않는다 — generateStockBriefing이 이미 있는 행을 건너뛰어 값이 그날 안 바뀐다.
 	private final FeedbackQueryCache feedbackQueryCache;
 
 	private final FeedbackNewsProperties properties;
@@ -139,14 +140,19 @@ public class MarketBriefingService {
 		NarrativeResultDto narrative = narrativeService.resolveMarketBriefingNarrative(
 			new MarketBriefingPromptDto(
 				Market.CRYPTO, batchDate, items.stream().map(MarketBriefingService::toPromptItem).toList()));
-		return Optional.of(marketBriefingRepository.save(
+		MarketBriefing saved = marketBriefingRepository.save(
 			marketBriefingRepository.findByMarketAndOriginTradeDate(Market.CRYPTO, batchDate)
 				.map(row -> {
 					row.refreshNarrative(narrative.narrative(), narrative.source(), now);
 					return row;
 				})
 				.orElseGet(() -> MarketBriefing.create(
-					Market.CRYPTO, batchDate, narrative.narrative(), narrative.source(), now))));
+					Market.CRYPTO, batchDate, narrative.narrative(), narrative.source(), now)));
+		// 저장 뒤에 지운다 — 먼저 지우면 그 사이 들어온 조회가 옛 행을 다시 캐시해 갱신이 묻힌다. 위에서
+		// Optional.empty()로 빠져나간 실행(새 기사 없음·창 안 기사 0건)은 값이 안 바뀌었으므로 지우지 않는다.
+		// 무효화 실패(Redis 장애)는 evict가 삼켜 배치를 죽이지 않는다(ADR-0015 §3).
+		feedbackQueryCache.evictCryptoBriefingText();
+		return Optional.of(saved);
 	}
 
 	/**

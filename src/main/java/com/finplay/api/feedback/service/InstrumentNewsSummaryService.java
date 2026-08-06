@@ -8,6 +8,7 @@ import com.finplay.api.feedback.domain.MarketNewsItemType;
 import com.finplay.api.feedback.domain.NewsSummaryScope;
 import com.finplay.api.feedback.repository.InstrumentNewsSummaryRepository;
 import com.finplay.api.feedback.repository.MarketNewsItemRepository;
+import com.finplay.api.feedback.store.FeedbackQueryCache;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.service.BusinessDayCalendar;
 import java.time.Clock;
@@ -48,6 +49,10 @@ public class InstrumentNewsSummaryService {
 	private final NarrativeService narrativeService;
 
 	private final BusinessDayCalendar businessDayCalendar;
+
+	// 코인 요약을 실제로 갱신했을 때만 그 종목의 캐시 키를 지운다(ADR-0015 §3). 주식은 무효화하지 않는다 —
+	// generateStockSummary가 이미 있는 행을 건너뛰므로 한 번 생긴 값이 그날 안 바뀐다.
+	private final FeedbackQueryCache feedbackQueryCache;
 
 	private final FeedbackNewsProperties properties;
 
@@ -154,7 +159,7 @@ public class InstrumentNewsSummaryService {
 				NewsSummaryScope.ROLLING_24H,
 				batchDate,
 				items.stream().map(InstrumentNewsSummaryService::toSource).toList()));
-		return Optional.of(instrumentNewsSummaryRepository.save(
+		InstrumentNewsSummary saved = instrumentNewsSummaryRepository.save(
 			instrumentNewsSummaryRepository
 				.findByInstrumentIdAndOriginTradeDateAndScope(
 					instrument.getId(), batchDate, NewsSummaryScope.ROLLING_24H)
@@ -168,7 +173,12 @@ public class InstrumentNewsSummaryService {
 					NewsSummaryScope.ROLLING_24H,
 					narrative.narrative(),
 					narrative.source(),
-					now))));
+					now)));
+		// 저장 뒤에 지운다 — 먼저 지우면 그 사이 들어온 조회가 옛 행을 다시 캐시해 갱신이 묻힌다. 위에서
+		// Optional.empty()로 빠져나간 실행(새 기사 없음·창 안 기사 0건)은 값이 안 바뀌었으므로 지우지 않는다 —
+		// 지우면 다음 조회가 불필요하게 DB로 간다. 무효화 실패(Redis 장애)는 evict가 삼켜 배치를 죽이지 않는다.
+		feedbackQueryCache.evictCryptoSummaryText(instrument.getId());
+		return Optional.of(saved);
 	}
 
 	/**
