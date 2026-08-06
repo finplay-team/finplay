@@ -357,10 +357,14 @@ class OrderRepositoryTest {
 	@Test
 	@DisplayName("커서로 연속 조회한 PENDING 결과가 커서 없이 조회한 전체 결과와 중복·누락 없이 일치한다 (LMT-004, 이슈 #235)")
 	void findByAccountIdAndStatusWithCursorPaginatesWithoutDuplicatesOrGaps() {
-		List<Order> created = new ArrayList<>();
-		for (int i = 0; i < 5; i++) {
-			created.add(createPendingOrder(owner, ownerAccount, NOW.minusMinutes(i)));
-		}
+		// 페이지 경계를 동시각 위에 떨어뜨려 커서 WHERE 절의 동점 분기
+		// (requestedAt = cursor AND id < cursorId)까지 실행시킨다 (PR #237 리뷰).
+		// 정렬 결과는 NOW, NOW-1m, sameTimeSecond, sameTimeFirst, oldest 순이고 limit 3이 동점 쌍을 가른다.
+		createPendingOrder(owner, ownerAccount, NOW);
+		createPendingOrder(owner, ownerAccount, NOW.minusMinutes(1));
+		Order sameTimeFirst = createPendingOrder(owner, ownerAccount, NOW.minusMinutes(2));
+		Order sameTimeSecond = createPendingOrder(owner, ownerAccount, NOW.minusMinutes(2));
+		Order oldest = createPendingOrder(owner, ownerAccount, NOW.minusMinutes(4));
 		// 미체결 목록에 섞이면 안 되는 FILLED·CANCELLED 주문도 함께 만든다.
 		createOrder(owner, ownerAccount, NOW);
 		createCancelledOrder(owner, ownerAccount, NOW);
@@ -372,9 +376,16 @@ class OrderRepositoryTest {
 		List<Order> firstPage = orderRepository.findByAccountIdAndStatusWithCursor(
 			ownerAccount.getId(), com.finplay.api.order.domain.OrderStatus.PENDING, null, null, 3);
 		Order lastOfFirstPage = firstPage.get(firstPage.size() - 1);
+		// 경계가 실제로 동점 위에 있는지 못박는다 — 픽스처가 흔들리면 동점 분기가 다시 죽는다.
+		assertThat(lastOfFirstPage.getId()).isEqualTo(sameTimeSecond.getId());
+		assertThat(sameTimeFirst.getRequestedAt()).isEqualTo(lastOfFirstPage.getRequestedAt());
+
 		List<Order> secondPage = orderRepository.findByAccountIdAndStatusWithCursor(
 			ownerAccount.getId(), com.finplay.api.order.domain.OrderStatus.PENDING,
 			lastOfFirstPage.getRequestedAt(), lastOfFirstPage.getId(), 3);
+		// 동점 분기가 없으면 같은 시각의 sameTimeFirst가 통째로 누락된다.
+		assertThat(secondPage).extracting(Order::getId)
+			.containsExactly(sameTimeFirst.getId(), oldest.getId());
 
 		List<Long> pagedIds = new ArrayList<>();
 		firstPage.forEach(order -> pagedIds.add(order.getId()));
