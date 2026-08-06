@@ -16,7 +16,7 @@
   - `CryptoWatchLock`은 클래스로 남고 내부에서 `RedisLock`을 부른다 — **공개 시그니처를 바꾸지 않는다.**
   - 검증: `CryptoWatchLockConcurrencyIntegrationTest`를 포함한 **#244의 기존 테스트가 한 줄도 수정 없이 통과**한다. `RedisLock` 자체의 상호 배제(같은 키 두 번째 `tryLock`이 실패, 토큰이 다르면 `unlock`이 아무것도 지우지 않음, TTL 만료 후 재획득)를 Testcontainers Redis로 확인한다.
 
-- [ ] **2. `FeedbackQueryCacheProperties`·`FeedbackQueryCacheConfig` + `FeedbackQueryCache` 신설** (ADR-0015 §2·§3·§5·§6·§7)
+- [x] **2. `FeedbackQueryCacheProperties`·`FeedbackQueryCacheConfig` + `FeedbackQueryCache` 신설** (ADR-0015 §2·§3·§5·§6·§7)
   - `feedback.query-cache.*` 프로퍼티 4개(`enabled`·`lock-ttl-millis`·`wait-millis`·`poll-millis`) — yml과 `@DefaultValue` 양쪽에 값을 두고, 조용히 방어를 무력화하는 값은 기동 실패로 막는다. **`enabled`는 운영 킬 스위치다** — 첫 조회 경로 캐시를 재배포 없이 되돌리는 수단이며, 폴백(DB 직행)이 이미 검증된 기존 경로다.
   - `FeedbackQueryCache`(`com.finplay.api.feedback.store`) — 키 조립(`feedback:query-cache:`)·TTL 계산(`MarketSessionTimes` 상수와 `Clock` 사용)·직렬화(주입받은 `ObjectMapper`)·락 게이트(캐시 확인 → 락 → 로더 → 저장 / 실패 시 폴링 대기 → 타임아웃이면 fail-open, **이 경로는 캐시에 쓰지 않는다** — 느린 로더가 나중에 깨어나 새 값을 덮어쓸 수 있다)를 전부 갖는다. **`@EnableCaching`·`@Cacheable`·`spring-boot-starter-cache`를 쓰지 않는다.**
   - 브리핑 `items` 키에 **목록 절단 상한(`max-items-per-briefing`)을 넣는다** — 설정을 바꾸면 키가 자연히 갈려 옛 길이 목록이 남지 않는다.
