@@ -101,6 +101,14 @@ tasks.withType(Test).configureEach {
 	//   ./gradlew test -PtestDbConnectionTimeoutMs=30000
 	systemProperty 'spring.datasource.hikari.connection-timeout',
 		(findProperty('testDbConnectionTimeoutMs') ?: '10000')
+	// 테스트 컨텍스트가 몇 갈래로 갈라지는지 재는 스위치 (이슈 #134). 평소에는 꺼 둔다 — 로그가 수십 MB로 불어난다.
+	//   ./gradlew test --rerun-tasks -PmeasureContexts=true
+	// 컨텍스트 캐시 미스마다 MergedContextConfiguration 키 전문이 찍히므로 "무엇이 갈래를 만들었는지"를
+	// 추측이 아니라 키 대조로 알 수 있다. 전후 비교는 반드시 같은 스위치로 잰다.
+	if (findProperty('measureContexts') == 'true') {
+		systemProperty 'logging.level.org.springframework.test.context.cache', 'DEBUG'
+		testLogging.showStandardStreams = true
+	}
 	finalizedBy tasks.jacocoTestReport
 }
 
