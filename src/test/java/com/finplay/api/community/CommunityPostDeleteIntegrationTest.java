@@ -80,6 +80,32 @@ class CommunityPostDeleteIntegrationTest {
 	}
 
 	@Test
+	void ownerDeleteWithParentCommentAndReplyReturns204AndRemovesPostParentAndChildWithoutStaleStateException()
+		throws Exception {
+		User author = createUser("delete-owner-withreply");
+		User commenter = createUser("delete-reply-commenter");
+		User replier = createUser("delete-reply-replier");
+		CommunityPost post = postRepository.saveAndFlush(
+			CommunityPost.create(author, "title", "content", null, LocalDateTime.now()));
+		PostComment parent = commentRepository.saveAndFlush(
+			PostComment.create(post, commenter, "parent comment", null, LocalDateTime.now()));
+		PostComment reply = commentRepository.saveAndFlush(
+			PostComment.create(post, replier, "reply comment", parent, LocalDateTime.now()));
+		Long postId = post.getId();
+		Long parentId = parent.getId();
+		Long replyId = reply.getId();
+		String accessToken = jwtTokenProvider.issue(author.getId(), author.getRole()).accessToken();
+
+		mockMvc.perform(delete("/api/community/posts/{postId}", postId)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+			.andExpect(status().isNoContent());
+
+		assertThat(postRepository.findById(postId)).isEmpty();
+		assertThat(commentRepository.findById(parentId)).isEmpty();
+		assertThat(commentRepository.findById(replyId)).isEmpty();
+	}
+
+	@Test
 	void nonOwnerDeleteReturnsForbiddenAndLeavesPostAndCommentsInDatabase() throws Exception {
 		User author = createUser("delete-forbidden-owner");
 		User stranger = createUser("delete-forbidden-stranger");

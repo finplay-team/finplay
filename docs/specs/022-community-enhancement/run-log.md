@@ -61,3 +61,13 @@
 - COM-005 항목4: `PostCommentReplyIntegrationTest` 신규(중첩 조회, 대댓글에 재답글 400, 타인 삭제 403, 부모 삭제 CASCADE 회귀) 4/4 통과. 새 시드 데이터 없어 COM-004 때 발생했던 공유 DB 오염 재현 없음.
 - COM-005 항목5: `api-routes.md`·`api-contracts.md`에 `parentCommentId`/`replies`/400/404 계약 반영, `prd.md` §3을 "일부 완료(COM-004~005)"로 갱신(근거 이슈 #247), spec.md COM-005 완료 조건 `[x]`. `./gradlew build` 전체 통과(SHA `af8cd55cbabf4378538825662967e3d2b5822bf7`).
 - 리뷰 완료(COM-005): 차단 0건, 권장 2건(`PostComment.java` 첫 줄 주석이 "평면 댓글"로 남아있던 것 — 수정함, run-log에 COM-005 항목4~5 기록 누락 — 이 항목으로 보완). 레이어·N+1·CASCADE 조합·docs 동기화·테스트 4계층 모두 문제없음 확인. 머지 가능.
+
+## AI 로그 (에이전트 참조용, PR #260 리뷰)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| - | reviewer(리뷰) | `git diff dev...HEAD` (PR #260) | `PostCommentRepository.deleteByPost_Id` 파생 delete 쿼리 동작, V25 ON DELETE CASCADE |
+| - | implementer(PR #260 리뷰 차단 반영) | `.\gradlew.bat test --tests "com.finplay.api.community.*"` + `spotlessApply` + `build` | 리뷰 차단 1건 |
+
+## 모니터링 (사람용 요약)
+- PR #260 리뷰 완료: 리뷰어에게 물어본 두 질문 모두 문제없음 확인(400 vs 404 판정, ON DELETE CASCADE 설계). 차단 1건 — `deleteByPost_Id`가 파생 delete라 부모·자식 댓글을 개별 DELETE로 처리하는데 V25의 ON DELETE CASCADE와 겹치면 자식이 이미 사라진 뒤 재삭제를 시도해 예외가 날 수 있다는 지적. 그 조합(부모+대댓글이 있는 게시물 삭제)을 검증하는 테스트가 없었다.
+- 반영: `CommunityPostDeleteIntegrationTest`에 `ownerDeleteWithParentCommentAndReplyReturns204AndRemovesPostParentAndChildWithoutStaleStateException` 신규 추가 — 수정 전 코드로 먼저 실행해 실제로는 예외가 나지 않음을 확인했다(`PostComment`에 `@Version`이 없어 Hibernate가 delete 영향행수를 검사하지 않아 0행 DELETE가 조용히 무시됨). 다만 이는 우연한 안전이라 향후 낙관적 락 추가 시 재발할 수 있고, 게시물당 댓글 수만큼 개별 DELETE가 나가는 비효율도 있어 리뷰 제안대로 `deleteByPost_Id`를 `@Modifying @Query` 벌크 삭제로 전환했다. 커뮤니티 테스트 전체·`./gradlew build` 전체 재검증 통과.
