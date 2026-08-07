@@ -61,15 +61,15 @@ class CommunityPostListIntegrationTest {
 		String accessToken = jwtTokenProvider.issue(author.getId(), author.getRole()).accessToken();
 		LocalDateTime base = LocalDateTime.now();
 		List<Long> createdIds = List.of(
-			postRepository.saveAndFlush(CommunityPost.create(author, "p1", "content", base.minusMinutes(4)))
+			postRepository.saveAndFlush(CommunityPost.create(author, "p1", "content", null, base.minusMinutes(4)))
 				.getId(),
-			postRepository.saveAndFlush(CommunityPost.create(author, "p2", "content", base.minusMinutes(3)))
+			postRepository.saveAndFlush(CommunityPost.create(author, "p2", "content", null, base.minusMinutes(3)))
 				.getId(),
-			postRepository.saveAndFlush(CommunityPost.create(author, "p3", "content", base.minusMinutes(2)))
+			postRepository.saveAndFlush(CommunityPost.create(author, "p3", "content", null, base.minusMinutes(2)))
 				.getId(),
-			postRepository.saveAndFlush(CommunityPost.create(author, "p4", "content", base.minusMinutes(1)))
+			postRepository.saveAndFlush(CommunityPost.create(author, "p4", "content", null, base.minusMinutes(1)))
 				.getId(),
-			postRepository.saveAndFlush(CommunityPost.create(author, "p5", "content", base)).getId());
+			postRepository.saveAndFlush(CommunityPost.create(author, "p5", "content", null, base)).getId());
 
 		String firstPageBody = mockMvc.perform(get("/api/community/posts")
 			.param("page", "0")

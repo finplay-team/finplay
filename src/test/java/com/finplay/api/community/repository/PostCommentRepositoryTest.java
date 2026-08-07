@@ -59,7 +59,7 @@ class PostCommentRepositoryTest {
 	@Test
 	void savePersistsPostAuthorContentAndMicrosecondTimestamp() {
 		User author = userRepository.saveAndFlush(User.create("comment@finplay.com", "hash", "commenter", NOW));
-		CommunityPost post = postRepository.saveAndFlush(CommunityPost.create(author, "title", "content", NOW));
+		CommunityPost post = postRepository.saveAndFlush(CommunityPost.create(author, "title", "content", null, NOW));
 
 		PostComment saved = repository.saveAndFlush(PostComment.create(post, author, "c".repeat(1000), NOW));
 		PostComment found = repository.findById(saved.getId()).orElseThrow();
@@ -83,7 +83,8 @@ class PostCommentRepositoryTest {
 	@Test
 	void databaseRejectsUnknownAuthorForeignKey() {
 		User postAuthor = userRepository.saveAndFlush(User.create("author-fk@finplay.com", "hash", "author-fk", NOW));
-		CommunityPost post = postRepository.saveAndFlush(CommunityPost.create(postAuthor, "title", "content", NOW));
+		CommunityPost post = postRepository
+			.saveAndFlush(CommunityPost.create(postAuthor, "title", "content", null, NOW));
 
 		assertThatThrownBy(() -> jdbcTemplate.update(
 			"insert into post_comments(post_id,author_id,content,created_at) values (?,?,?,?)",
@@ -94,7 +95,7 @@ class PostCommentRepositoryTest {
 	@Test
 	void databaseRejectsContentBeyond1000Characters() {
 		User author = userRepository.saveAndFlush(User.create("long@finplay.com", "hash", "long", NOW));
-		CommunityPost post = postRepository.saveAndFlush(CommunityPost.create(author, "title", "content", NOW));
+		CommunityPost post = postRepository.saveAndFlush(CommunityPost.create(author, "title", "content", null, NOW));
 
 		assertThatThrownBy(() -> jdbcTemplate.update(
 			"insert into post_comments(post_id,author_id,content,created_at) values (?,?,?,?)",
@@ -106,8 +107,10 @@ class PostCommentRepositoryTest {
 	void findAllByPostIdReturnsOnlyTargetPostCommentsInCreatedAtAndIdAscendingOrder() {
 		User firstAuthor = createUser("first");
 		User secondAuthor = createUser("second");
-		CommunityPost target = postRepository.saveAndFlush(CommunityPost.create(firstAuthor, "target", "post", NOW));
-		CommunityPost other = postRepository.saveAndFlush(CommunityPost.create(firstAuthor, "other", "post", NOW));
+		CommunityPost target = postRepository
+			.saveAndFlush(CommunityPost.create(firstAuthor, "target", "post", null, NOW));
+		CommunityPost other = postRepository
+			.saveAndFlush(CommunityPost.create(firstAuthor, "other", "post", null, NOW));
 		PostComment oldest = repository.saveAndFlush(
 			PostComment.create(target, firstAuthor, "oldest", NOW.minusMinutes(1)));
 		PostComment firstTie = repository.saveAndFlush(PostComment.create(target, firstAuthor, "first tie", NOW));
@@ -129,7 +132,8 @@ class PostCommentRepositoryTest {
 	void findAllByPostIdFetchesAuthorsInOneQueryAfterPersistenceContextClear() {
 		User firstAuthor = createUser("fetch-first");
 		User secondAuthor = createUser("fetch-second");
-		CommunityPost post = postRepository.saveAndFlush(CommunityPost.create(firstAuthor, "target", "post", NOW));
+		CommunityPost post = postRepository
+			.saveAndFlush(CommunityPost.create(firstAuthor, "target", "post", null, NOW));
 		repository.saveAndFlush(PostComment.create(post, firstAuthor, "first", NOW));
 		repository.saveAndFlush(PostComment.create(post, secondAuthor, "second", NOW.plusMinutes(1)));
 		entityManager.clear();

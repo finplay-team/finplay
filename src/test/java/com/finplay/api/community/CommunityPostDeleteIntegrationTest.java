@@ -48,7 +48,7 @@ class CommunityPostDeleteIntegrationTest {
 	void ownerDeleteWithoutCommentsReturns204AndRemovesPostFromDatabase() throws Exception {
 		User author = createUser("delete-owner-nocomment");
 		CommunityPost post = postRepository.saveAndFlush(
-			CommunityPost.create(author, "title", "content", LocalDateTime.now()));
+			CommunityPost.create(author, "title", "content", null, LocalDateTime.now()));
 		Long postId = post.getId();
 		String accessToken = jwtTokenProvider.issue(author.getId(), author.getRole()).accessToken();
 
@@ -64,7 +64,7 @@ class CommunityPostDeleteIntegrationTest {
 		User author = createUser("delete-owner-withcomment");
 		User commenter = createUser("delete-commenter");
 		CommunityPost post = postRepository.saveAndFlush(
-			CommunityPost.create(author, "title", "content", LocalDateTime.now()));
+			CommunityPost.create(author, "title", "content", null, LocalDateTime.now()));
 		PostComment comment = commentRepository.saveAndFlush(
 			PostComment.create(post, commenter, "comment", LocalDateTime.now()));
 		Long postId = post.getId();
@@ -85,7 +85,7 @@ class CommunityPostDeleteIntegrationTest {
 		User stranger = createUser("delete-forbidden-stranger");
 		User commenter = createUser("delete-forbidden-commenter");
 		CommunityPost post = postRepository.saveAndFlush(
-			CommunityPost.create(author, "title", "content", LocalDateTime.now()));
+			CommunityPost.create(author, "title", "content", null, LocalDateTime.now()));
 		PostComment comment = commentRepository.saveAndFlush(
 			PostComment.create(post, commenter, "comment", LocalDateTime.now()));
 		Long postId = post.getId();
@@ -118,7 +118,7 @@ class CommunityPostDeleteIntegrationTest {
 	void unauthenticatedDeleteReturnsUnauthorized() throws Exception {
 		User author = createUser("delete-unauth-owner");
 		CommunityPost post = postRepository.saveAndFlush(
-			CommunityPost.create(author, "title", "content", LocalDateTime.now()));
+			CommunityPost.create(author, "title", "content", null, LocalDateTime.now()));
 		Long postId = post.getId();
 
 		mockMvc.perform(delete("/api/community/posts/{postId}", postId))

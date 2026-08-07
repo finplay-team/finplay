@@ -2,6 +2,7 @@
 package com.finplay.api.community.dto.response;
 
 import com.finplay.api.community.domain.CommunityPost;
+import com.finplay.api.market.domain.Instrument;
 import java.time.LocalDateTime;
 
 public record CommunityPostResponse(
@@ -10,15 +11,22 @@ public record CommunityPostResponse(
 	String title,
 	String content,
 	LocalDateTime createdAt,
-	LocalDateTime updatedAt) {
+	LocalDateTime updatedAt,
+	Long instrumentId,
+	String instrumentSymbol,
+	String instrumentName) {
 
 	public static CommunityPostResponse from(CommunityPost post) {
+		Instrument instrument = post.getInstrument();
 		return new CommunityPostResponse(
 			post.getId(),
 			post.getAuthor().getNickname(),
 			post.getTitle(),
 			post.getContent(),
 			post.getCreatedAt(),
-			post.getUpdatedAt());
+			post.getUpdatedAt(),
+			instrument == null ? null : instrument.getId(),
+			instrument == null ? null : instrument.getSymbol(),
+			instrument == null ? null : instrument.getName());
 	}
 }

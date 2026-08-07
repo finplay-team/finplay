@@ -266,31 +266,31 @@ PR #49 차단 리뷰 후속 Fake 재사용·동시성·DB 불변 자동 회귀�
 
 | Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|---|
-| POST | /api/community/posts | Access Bearer 필수 | `{"title":"게시물 제목","content":"게시물 본문"}` (`title` 최대 100자, `content` 최대 5,000자) | 201 `{"postId":1,"authorNickname":"finplayer","title":"게시물 제목","content":"게시물 본문","createdAt":"2026-07-27T12:00:00","updatedAt":"2026-07-27T12:00:00"}` | 제목·본문 누락·빈 값·공백·최대 길이 초과는 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 008 COM-001, Issue #23 |
+| POST | /api/community/posts | Access Bearer 필수 | `{"title":"게시물 제목","content":"게시물 본문","instrumentId":1}` (`title` 최대 100자, `content` 최대 5,000자, `instrumentId`는 선택·nullable) | 201 `{"postId":1,"authorNickname":"finplayer","title":"게시물 제목","content":"게시물 본문","createdAt":"2026-07-27T12:00:00","updatedAt":"2026-07-27T12:00:00","instrumentId":1,"instrumentSymbol":"005930","instrumentName":"삼성전자"}` | 제목·본문 누락·빈 값·공백·최대 길이 초과, **존재하지 않거나 비활성(`tradable=false`)인 `instrumentId` 태그**는 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 008 COM-001, 022 COM-004, Issue #23, Issue #246 |
 
-작성자는 요청에서 받지 않고 Access Token의 인증 사용자로 결정한다.
+작성자는 요청에서 받지 않고 Access Token의 인증 사용자로 결정한다. `instrumentId`를 생략하거나 `null`로 보내면 미태그 게시물로 생성된다(하위 호환) — 이때 응답의 `instrumentId`·`instrumentSymbol`·`instrumentName`은 모두 `null`이다. 값을 보내면 `InstrumentService.getTradableInstrumentEntity`로 존재·`tradable` 여부를 검증하며, 실패 사유(미존재·비활성)는 구분하지 않고 동일한 400 `VALIDATION_ERROR`로 응답한다. 게시물당 태그 가능한 종목은 최대 1개다.
 
 ### 커뮤니티 게시물 단건 조회
 
 | Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|---|
-| GET | /api/community/posts/{postId} | Access Bearer 필수 | 경로 변수 `postId` | 200 `{"postId":1,"authorNickname":"finplayer","title":"게시물 제목","content":"게시물 본문","createdAt":"2026-07-27T12:00:00","updatedAt":"2026-07-27T12:00:00"}` | Access 인증 실패는 401 `UNAUTHORIZED`. 게시물 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 008 COM-001, Issue #25 |
+| GET | /api/community/posts/{postId} | Access Bearer 필수 | 경로 변수 `postId` | 200 `{"postId":1,"authorNickname":"finplayer","title":"게시물 제목","content":"게시물 본문","createdAt":"2026-07-27T12:00:00","updatedAt":"2026-07-27T12:00:00","instrumentId":1,"instrumentSymbol":"005930","instrumentName":"삼성전자"}` (태그 없는 게시물은 세 필드 모두 `null`) | Access 인증 실패는 401 `UNAUTHORIZED`. 게시물 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 008 COM-001, 022 COM-004, Issue #25, Issue #246 |
 
 ### 커뮤니티 게시물 목록 조회
 
 | Method | URL | 인증 | 쿼리 파라미터 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|---|
-| GET | /api/community/posts | Access Bearer 필수 | `page`(기본 0, 0 이상), `size`(기본 10, 1~50) | 200 `{"content":[{"postId":1,"authorNickname":"finplayer","title":"게시물 제목","content":"게시물 본문","createdAt":"2026-07-27T12:00:00","updatedAt":"2026-07-27T12:00:00"}],"page":0,"size":10,"totalElements":1,"totalPages":1,"hasNext":false}` | `page`·`size` 범위 밖은 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 008 COM-001, Issue #24 |
+| GET | /api/community/posts | Access Bearer 필수 | `page`(기본 0, 0 이상), `size`(기본 10, 1~50), `instrumentId`(선택) | 200 `{"content":[{"postId":1,"authorNickname":"finplayer","title":"게시물 제목","content":"게시물 본문","createdAt":"2026-07-27T12:00:00","updatedAt":"2026-07-27T12:00:00","instrumentId":1,"instrumentSymbol":"005930","instrumentName":"삼성전자"}],"page":0,"size":10,"totalElements":1,"totalPages":1,"hasNext":false}` | `page`·`size` 범위 밖은 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 008 COM-001, 022 COM-004, Issue #24, Issue #246 |
 
-작성시각(`created_at`) 내림차순으로 정렬하며 동시각 항목은 `id` 내림차순으로 안정 정렬해 페이지 경계 중복·누락을 방지한다. 게시물이 없으면 오류가 아니라 200과 빈 `content`를 반환한다.
+작성시각(`created_at`) 내림차순으로 정렬하며 동시각 항목은 `id` 내림차순으로 안정 정렬해 페이지 경계 중복·누락을 방지한다. 게시물이 없으면 오류가 아니라 200과 빈 `content`를 반환한다. `instrumentId` 지정 시 그 종목이 태그된 게시물만 반환하며, 존재하지 않는 `instrumentId`를 넘겨도 오류가 아니라 빈 `content`를 반환한다(생성·수정 시의 태그 유효성 검증과 달리 이 필터는 조회 조건일 뿐이다). 태그가 없는 게시물은 `instrumentId`·`instrumentSymbol`·`instrumentName`이 모두 `null`이다. 목록 조회는 QueryDSL `leftJoin().fetchJoin()`으로 `instrument`를 함께 로딩해 N+1을 방지한다.
 
 ### 커뮤니티 게시물 수정
 
 | Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|---|
-| PATCH | /api/community/posts/{postId} | Access Bearer 필수 | 경로 변수 `postId`, 본문 `{"title":"게시물 제목","content":"게시물 본문"}` (`title` 최대 100자, `content` 최대 5,000자) | 200 `{"postId":1,"authorNickname":"finplayer","title":"게시물 제목","content":"게시물 본문","createdAt":"2026-07-27T12:00:00","updatedAt":"2026-07-27T12:00:00"}` | 제목·본문 누락·빈 값·공백·최대 길이 초과는 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED`. 본인 소유가 아닌 게시물은 403 `FORBIDDEN`. 게시물 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 008 COM-001, Issue #26 |
+| PATCH | /api/community/posts/{postId} | Access Bearer 필수 | 경로 변수 `postId`, 본문 `{"title":"게시물 제목","content":"게시물 본문","instrumentId":1}` (`title` 최대 100자, `content` 최대 5,000자, `instrumentId`는 선택·nullable) | 200 `{"postId":1,"authorNickname":"finplayer","title":"게시물 제목","content":"게시물 본문","createdAt":"2026-07-27T12:00:00","updatedAt":"2026-07-27T12:00:00","instrumentId":1,"instrumentSymbol":"005930","instrumentName":"삼성전자"}` | 제목·본문 누락·빈 값·공백·최대 길이 초과, **존재하지 않거나 비활성인 `instrumentId` 태그**는 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED`. 본인 소유가 아닌 게시물은 403 `FORBIDDEN`. 게시물 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 008 COM-001, 022 COM-004, Issue #26, Issue #246 |
 
-작성자 본인만 수정할 수 있으며 소유자 확인은 요청 본문이 아닌 Access Token의 인증 사용자로 판단한다.
+작성자 본인만 수정할 수 있으며 소유자 확인은 요청 본문이 아닌 Access Token의 인증 사용자로 판단한다. `title`·`content`와 동일하게 매 요청이 전체를 교체한다(부분 패치 아님) — `instrumentId`를 생략/`null`로 보내면 기존 태그를 해제한다. 태그를 유지하려면 클라이언트가 기존 `instrumentId`를 다시 보내야 한다.
 
 ### 커뮤니티 게시물 삭제
 

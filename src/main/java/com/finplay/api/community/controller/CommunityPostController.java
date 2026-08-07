@@ -49,7 +49,7 @@ public class CommunityPostController {
 		@Valid @RequestBody
 		CommunityPostCreateRequest request) {
 		CommunityPostResponse response = communityPostService.createPost(principal.userId(), request.title(),
-			request.content());
+			request.content(), request.instrumentId());
 		return ResponseEntity.status(HttpStatus.CREATED).body(response);
 	}
 
@@ -62,7 +62,7 @@ public class CommunityPostController {
 		@Valid @RequestBody
 		CommunityPostUpdateRequest request) {
 		CommunityPostResponse response = communityPostService.updatePost(principal.userId(), postId, request.title(),
-			request.content());
+			request.content(), request.instrumentId());
 		return ResponseEntity.ok(response);
 	}
 
@@ -81,9 +81,11 @@ public class CommunityPostController {
 		@RequestParam(defaultValue = "" + DEFAULT_PAGE)
 		int page,
 		@RequestParam(defaultValue = "" + DEFAULT_SIZE)
-		int size) {
+		int size,
+		@RequestParam(required = false)
+		Long instrumentId) {
 		validatePageAndSize(page, size);
-		CommunityPostListResponse response = communityPostService.getPosts(page, size);
+		CommunityPostListResponse response = communityPostService.getPosts(page, size, instrumentId);
 		return ResponseEntity.ok(response);
 	}
 

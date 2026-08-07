@@ -99,4 +99,47 @@ class InstrumentServiceTest {
 		verify(instrumentRepository).findById(999L);
 		verifyNoMoreInteractions(instrumentRepository);
 	}
+
+	@Test
+	void getTradableInstrumentEntityReturnsInstrumentWhenTradable() {
+		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
+		Instrument instrument = Instrument.create(
+			Market.STOCK, "005930", "삼성전자", BigDecimal.valueOf(100), 70000L, true, LocalDateTime.now());
+		when(instrumentRepository.findById(1L)).thenReturn(Optional.of(instrument));
+		InstrumentService instrumentService = new InstrumentService(instrumentRepository);
+
+		Instrument result = instrumentService.getTradableInstrumentEntity(1L);
+
+		assertThat(result.getSymbol()).isEqualTo("005930");
+		verify(instrumentRepository).findById(1L);
+		verifyNoMoreInteractions(instrumentRepository);
+	}
+
+	@Test
+	void getTradableInstrumentEntityThrowsValidationErrorWhenInstrumentMissing() {
+		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
+		when(instrumentRepository.findById(999L)).thenReturn(Optional.empty());
+		InstrumentService instrumentService = new InstrumentService(instrumentRepository);
+
+		assertThatThrownBy(() -> instrumentService.getTradableInstrumentEntity(999L))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode()).isEqualTo(ErrorCode.VALIDATION_ERROR));
+		verify(instrumentRepository).findById(999L);
+		verifyNoMoreInteractions(instrumentRepository);
+	}
+
+	@Test
+	void getTradableInstrumentEntityThrowsValidationErrorWhenInstrumentNotTradable() {
+		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
+		Instrument instrument = Instrument.create(
+			Market.STOCK, "005930", "삼성전자", BigDecimal.valueOf(100), 70000L, false, LocalDateTime.now());
+		when(instrumentRepository.findById(1L)).thenReturn(Optional.of(instrument));
+		InstrumentService instrumentService = new InstrumentService(instrumentRepository);
+
+		assertThatThrownBy(() -> instrumentService.getTradableInstrumentEntity(1L))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode()).isEqualTo(ErrorCode.VALIDATION_ERROR));
+		verify(instrumentRepository).findById(1L);
+		verifyNoMoreInteractions(instrumentRepository);
+	}
 }

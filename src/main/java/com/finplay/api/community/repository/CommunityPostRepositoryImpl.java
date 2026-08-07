@@ -4,6 +4,8 @@ package com.finplay.api.community.repository;
 import com.finplay.api.auth.domain.QUser;
 import com.finplay.api.community.domain.CommunityPost;
 import com.finplay.api.community.domain.QCommunityPost;
+import com.finplay.api.market.domain.QInstrument;
+import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import jakarta.persistence.EntityManager;
 import java.util.List;
@@ -20,13 +22,20 @@ public class CommunityPostRepositoryImpl implements CommunityPostRepositoryCusto
 	}
 
 	@Override
-	public Page<CommunityPost> findPostsOrderByCreatedAtDesc(Pageable pageable) {
+	public Page<CommunityPost> findPostsOrderByCreatedAtDesc(Pageable pageable, Long instrumentId) {
 		QCommunityPost post = QCommunityPost.communityPost;
 		QUser author = QUser.user;
+		QInstrument instrument = QInstrument.instrument;
+
+		BooleanExpression instrumentCondition = instrumentId == null
+			? null
+			: post.instrument.id.eq(instrumentId);
 
 		List<CommunityPost> content = queryFactory
 			.selectFrom(post)
 			.join(post.author, author).fetchJoin()
+			.leftJoin(post.instrument, instrument).fetchJoin()
+			.where(instrumentCondition)
 			.orderBy(post.createdAt.desc(), post.id.desc())
 			.offset(pageable.getOffset())
 			.limit(pageable.getPageSize())
@@ -35,6 +44,7 @@ public class CommunityPostRepositoryImpl implements CommunityPostRepositoryCusto
 		Long fetchedTotalElements = queryFactory
 			.select(post.count())
 			.from(post)
+			.where(instrumentCondition)
 			.fetchOne();
 		long totalElements = fetchedTotalElements == null ? 0L : fetchedTotalElements;
 

@@ -60,7 +60,7 @@ class PostCommentCreateIntegrationTest {
 		User postAuthor = createUser("poster");
 		User commentAuthor = createUser("commenter");
 		CommunityPost post = postRepository.saveAndFlush(
-			CommunityPost.create(postAuthor, "title", "post", LocalDateTime.now()));
+			CommunityPost.create(postAuthor, "title", "post", null, LocalDateTime.now()));
 		String accessToken = jwtTokenProvider.issue(commentAuthor.getId(), commentAuthor.getRole()).accessToken();
 
 		String response = mockMvc.perform(post("/api/community/posts/{postId}/comments", post.getId())
@@ -90,7 +90,7 @@ class PostCommentCreateIntegrationTest {
 	void invalidMissingPostAndUnauthenticatedRequestsLeaveCommentsUnchanged() throws Exception {
 		User author = createUser("failure");
 		CommunityPost post = postRepository.saveAndFlush(
-			CommunityPost.create(author, "title", "post", LocalDateTime.now()));
+			CommunityPost.create(author, "title", "post", null, LocalDateTime.now()));
 		String accessToken = jwtTokenProvider.issue(author.getId(), author.getRole()).accessToken();
 
 		mockMvc.perform(post("/api/community/posts/{postId}/comments", post.getId())
