@@ -33,7 +33,7 @@
 - [x] 4. **통합 테스트**
   Testcontainers 기반 `@SpringBootTest`로 spec.md "완료 조건 COM-005" 3개 시나리오 구현: (a) 부모 댓글 작성 → 대댓글 작성 → 게시물 상세 댓글 목록 조회 시 부모 밑에 자식이 오래된 순으로 포함, (b) 대댓글에 다시 답글 시도 시 400 `VALIDATION_ERROR`, (c) 본인 대댓글만 삭제 가능·타인 대댓글 삭제 시도 403 `FORBIDDEN`. 추가로 (d) 부모 댓글 삭제 시 자식 대댓글도 함께 삭제되는지(`ON DELETE CASCADE`) 회귀 테스트.
 
-- [ ] 5. **문서 동기화 및 최종 빌드**
+- [x] 5. **문서 동기화 및 최종 빌드**
   `docs/api-routes.md`의 `POST/GET /api/community/posts/{postId}/comments` 행에 대댓글 작성·중첩 조회 설명 갱신(`DELETE /api/community/comments/{commentId}`는 URL 변경 없음이나 부모 삭제 시 자식 함께 삭제되는 동작을 설명에 추가). `docs/api-contracts.md`의 `community` 절에 `parentCommentId` 요청 필드·응답 `parentCommentId`/`replies` 필드·400 `VALIDATION_ERROR`(대댓글에 답글 시도)·404 `NOT_FOUND`(존재하지 않는/다른 게시물 소속 부모) 계약 추가. `docs/prd.md` §3 구현 현황의 "커뮤니티 고도화 — 종목 기준·대댓글·사진 첨부" 행(현재 "일부 완료(COM-004)")을 "일부 완료(COM-004~005)"로 갱신하고 근거에 이 PR 번호 추가, COM-006은 아직 범위 밖임을 명시(CLAUDE.md 규칙10). `docs/specs/022-community-enhancement/spec.md` "완료 조건 COM-005" 체크박스를 구현·테스트 통과 확인 후 `[x]`로 갱신. `./gradlew build` 전체 통과 확인(실패 시 수정 후 재실행).
 
 ## COM-006 사진 첨부 (이슈 #248) — 다음 이슈 착수 시 작성

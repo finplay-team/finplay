@@ -304,25 +304,25 @@ PR #49 차단 리뷰 후속 Fake 재사용·동시성·DB 불변 자동 회귀�
 
 | Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|---|
-| GET | /api/community/posts/{postId}/comments | Access Bearer 필수 | 경로 변수 `postId` | 200 `[{"commentId":1,"authorNickname":"finplayer","content":"댓글 본문","createdAt":"2026-07-27T12:00:00"}]`; 댓글이 없으면 `[]` | Access 인증 실패는 401 `UNAUTHORIZED`. 게시물 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 008 COM-002, Issue #29 |
+| GET | /api/community/posts/{postId}/comments | Access Bearer 필수 | 경로 변수 `postId` | 200 `[{"commentId":1,"authorNickname":"finplayer","content":"댓글 본문","createdAt":"2026-07-27T12:00:00","parentCommentId":null,"replies":[{"commentId":2,"authorNickname":"another","content":"대댓글 본문","createdAt":"2026-07-27T12:05:00","parentCommentId":1,"replies":[]}]}]`; 댓글이 없으면 `[]` | Access 인증 실패는 401 `UNAUTHORIZED`. 게시물 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 008 COM-002, 022 COM-005, Issue #29, Issue #247 |
 
-대상 게시물의 댓글만 `createdAt` 오름차순으로 반환하며, 생성시각이 같으면 `commentId` 오름차순으로 안정 정렬한다. 작성자는 fetch join으로 함께 조회해 댓글 수에 따른 추가 쿼리를 방지한다.
+부모 댓글(`parentCommentId=null`)만 최상위 배열로 `createdAt` 오름차순 반환하며, 생성시각이 같으면 `commentId` 오름차순으로 안정 정렬한다. 각 부모 댓글의 `replies`에는 그 자식 대댓글이 같은 정렬 규칙으로 중첩 포함된다(자식이 없으면 빈 배열). 대댓글 자신의 `replies`는 항상 빈 배열이다(1단계 제한). 작성자는 fetch join으로 함께 조회해 댓글 수에 따른 추가 쿼리를 방지한다.
 
 ### 커뮤니티 게시물 댓글 작성
 
 | Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|---|
-| POST | /api/community/posts/{postId}/comments | Access Bearer 필수 | `{"content":"댓글 본문"}` (`content` 필수, 최대 1,000자) | 201 `{"commentId":1,"authorNickname":"finplayer","content":"댓글 본문","createdAt":"2026-07-27T12:00:00"}` | 본문 누락·공백·1,000자 초과는 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED`. 게시물 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 008 COM-002, Issue #28 |
+| POST | /api/community/posts/{postId}/comments | Access Bearer 필수 | `{"content":"댓글 본문","parentCommentId":null}` (`content` 필수, 최대 1,000자; `parentCommentId` 선택, 지정 시 같은 게시물의 기존 부모 댓글 ID) | 201 `{"commentId":1,"authorNickname":"finplayer","content":"댓글 본문","createdAt":"2026-07-27T12:00:00","parentCommentId":null,"replies":[]}` | 본문 누락·공백·1,000자 초과는 400 `VALIDATION_ERROR`. 이미 대댓글인 댓글(`parentCommentId`)에 다시 답글 시도 시 400 `VALIDATION_ERROR`("대댓글에는 답글을 남길 수 없습니다"). `parentCommentId`가 존재하지 않거나 다른 게시물 소속이면 404 `NOT_FOUND`. Access 인증 실패는 401 `UNAUTHORIZED`. 게시물 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 008 COM-002, 022 COM-005, Issue #28, Issue #247 |
 
-작성자는 요청에서 받지 않고 Access Token의 인증 사용자로 결정한다. 댓글은 부모 댓글 없이 게시글 바로 아래에 생성되는 평면 구조다.
+작성자는 요청에서 받지 않고 Access Token의 인증 사용자로 결정한다. `parentCommentId`를 생략하면 기존과 동일하게 부모 댓글(0단계)로 생성된다. 대댓글(1단계)은 다시 답글을 받을 수 없다 — depth는 부모·자식 2단계로 고정.
 
 ### 커뮤니티 댓글 삭제
 
 | Method | URL | 인증 | 응답 | 오류 | Spec |
 |---|---|---|---|---|---|
-| DELETE | /api/community/comments/{commentId} | Access Bearer 필수 | 204 본문 없음 | 작성자 불일치는 403 `FORBIDDEN`. 댓글 미존재는 404 `NOT_FOUND`. Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 008 COM-002, Issue #30 |
+| DELETE | /api/community/comments/{commentId} | Access Bearer 필수 | 204 본문 없음 | 작성자 불일치는 403 `FORBIDDEN`. 댓글 미존재는 404 `NOT_FOUND`. Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 008 COM-002, 022 COM-005, Issue #30, Issue #247 |
 
-댓글 삭제는 소유자만 가능하며 `CommentController`(`/api/community/comments`)로 분리되어 있다. Security 공개 화이트리스트에 포함되지 않은 인증 필요 경로다.
+댓글 삭제는 소유자만 가능하며 `CommentController`(`/api/community/comments`)로 분리되어 있다. Security 공개 화이트리스트에 포함되지 않은 인증 필요 경로다. 부모 댓글(대댓글을 가진 댓글) 삭제 시 자식 대댓글도 DB `ON DELETE CASCADE`로 함께 삭제된다 — 소유권 검사는 부모 댓글에 대해서만 수행하며 자식은 부모 삭제에 연쇄한다.
 
 ---
 
