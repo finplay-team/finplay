@@ -298,7 +298,23 @@ PR #49 차단 리뷰 후속 Fake 재사용·동시성·DB 불변 자동 회귀�
 |---|---|---|---|---|---|---|
 | DELETE | /api/community/posts/{postId} | Access Bearer 필수 | 경로 변수 `postId`, 본문 없음 | 204 (본문 없음) | Access 인증 실패는 401 `UNAUTHORIZED`. 본인 소유가 아닌 게시물은 403 `FORBIDDEN`. 게시물 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 008 COM-001, Issue #27 |
 
-작성자 본인만 삭제할 수 있으며 소유자 확인은 Access Token의 인증 사용자로 판단한다. 삭제 시 해당 게시물에 달린 댓글을 먼저 모두 삭제한 뒤 게시물을 삭제한다.
+작성자 본인만 삭제할 수 있으며 소유자 확인은 Access Token의 인증 사용자로 판단한다. 삭제 시 해당 게시물에 달린 댓글을 먼저 모두 삭제한 뒤 게시물을 삭제한다. 첨부 이미지가 있으면 댓글 삭제 다음·게시물 삭제 전후로 `community_post_images` DB 행과 물리 파일을 함께 제거한다(고아 파일 방지) — 물리 파일 삭제 실패는 로그만 남기고 게시물 삭제 자체를 막지 않는다.
+
+### 커뮤니티 게시물 이미지 업로드
+
+| Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|---|
+| POST | /api/community/posts/images | Access Bearer 필수 | `multipart/form-data`, 파트명 `image`(파일 1개, JPEG·PNG·WEBP만 허용, 5MB 이하) | 201 `{"imageId":1,"imageUrl":"/api/community/posts/images/1/file"}` | 파일이 없거나 빈 파일, 허용하지 않는 형식(JPEG·PNG·WEBP 외)은 400 `VALIDATION_ERROR`("허용하지 않는 이미지 형식입니다. JPEG, PNG, WEBP만 첨부할 수 있습니다."). 5MB 초과는 Spring `MaxUploadSizeExceededException`을 `GlobalExceptionHandler`가 400 `VALIDATION_ERROR`로 매핑. Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 022 COM-006, Issue #248 |
+
+업로더는 요청에서 받지 않고 Access Token의 인증 사용자로 결정한다. 이 엔드포인트는 게시물과 아직 연결되지 않은 이미지를 저장만 하는 선(先)업로드다 — 응답의 `imageId`를 `POST /api/community/posts` 생성 요청의 `imageId`로 보내야 게시물에 연결된다. 저장 파일명은 `UUID`로 생성해 원본 파일명과 분리하고, 원본 파일명·`contentType`·크기는 `CommunityPostImage`에 그대로 보관한다. 게시물당 첨부 가능한 이미지는 최대 1장이며, 이미 다른 게시물에 연결된 `imageId`를 재사용하면 게시물 생성 시점에 400 `VALIDATION_ERROR`로 거부된다(§ 커뮤니티 게시물 작성 참고).
+
+### 커뮤니티 게시물 이미지 다운로드
+
+| Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|---|
+| GET | /api/community/posts/images/{imageId}/file | Access Bearer 필수 | 경로 변수 `imageId` | 200, `Content-Type`은 업로드 시 저장된 `contentType` 그대로, 본문은 이미지 원본 바이트 | 존재하지 않는 `imageId`는 404 `NOT_FOUND`. Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 022 COM-006, Issue #248 |
+
+인증 사용자라면 업로더·게시물 소유자와 무관하게 누구나 조회할 수 있다 — 별도 소유권 검사가 없다(게시물 조회에 포함되는 공개적 성격의 첨부 이미지이므로 COM-003 소유권 규칙 대상이 아니다). 파일은 `LocalFileStorageService`가 `finplay.community.image-storage.base-directory`(기본 `./data/community-images`) 아래 저장한 것을 그대로 읽어 반환한다.
 
 ### 커뮤니티 게시물 댓글 목록 조회
 

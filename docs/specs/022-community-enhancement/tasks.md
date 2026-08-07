@@ -53,5 +53,5 @@
 - [x] 5. **통합 테스트**
   Testcontainers 기반 `@SpringBootTest`로 spec.md "완료 조건 COM-006" 4개 시나리오 구현: (a) 이미지 업로드 → 그 `imageId`로 게시물 작성 → 단건 조회 시 `imageUrl` 포함, 다운로드 엔드포인트로 바이트 확인, (b) 허용하지 않는 형식·5MB 초과 업로드 시도 각각 400, (c) 이미지 첨부 게시물 삭제 후 DB 행·물리 파일 모두 제거 확인, (d) 미첨부 게시물 하위 호환(기존 COM-001 시나리오) 회귀 — `imageId`·`imageUrl` 모두 `null`. 추가 회귀: 타인 소유 imageId로 게시물 생성 시도 403, 이미 사용된 imageId 재사용 시도 400.
 
-- [ ] 6. **문서 동기화 및 최종 빌드**
+- [x] 6. **문서 동기화 및 최종 빌드**
   `docs/api-routes.md`에 `POST /api/community/posts/images`·`GET /api/community/posts/images/{imageId}/file` 신규 행 추가, 기존 `POST/GET /api/community/posts*` 행에 `imageId`/`imageUrl` 반영 설명 갱신. `docs/api-contracts.md`의 `community` 절에 업로드·다운로드 엔드포인트 계약(요청 파트명·응답 필드·400/404 오류), 게시물 생성 `imageId` 필드·403/400 오류 계약 추가. `docs/prd.md` §3 구현 현황의 "커뮤니티 고도화 — 종목 기준·대댓글·사진 첨부" 행(현재 "일부 완료(COM-004~005)")을 "완료(COM-004~006)"로 갱신하고 근거에 이 PR 번호 추가. `docs/specs/022-community-enhancement/spec.md` "완료 조건 COM-006" 체크박스를 구현·테스트 통과 확인 후 `[x]`로 갱신. `./gradlew build` 전체 통과 확인(실패 시 수정 후 재실행).

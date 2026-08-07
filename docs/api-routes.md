@@ -34,7 +34,9 @@
 | GET | /api/community/posts?page=&size=&instrumentId= | community | 인증 사용자의 게시물 목록을 최신순 페이지네이션으로 조회. `instrumentId` 지정 시 그 종목이 태그된 게시물만 반환(미지정 시 전체). 응답에 태그 종목·첨부 이미지 정보 포함(없으면 각각 `null`) | 008 COM-001, 022 COM-004·COM-006, Issue #24, Issue #246, Issue #248 |
 | GET | /api/community/posts/{postId} | community | 인증 사용자의 커뮤니티 게시물 단건 조회. 응답에 태그 종목·첨부 이미지 정보 포함(없으면 각각 `null`) | 008 COM-001, 022 COM-006, Issue #25, Issue #248 |
 | PATCH | /api/community/posts/{postId} | community | 본인 소유 커뮤니티 게시물의 제목·본문·종목 태그(`instrumentId`, 선택) 전체 교체 수정. 존재하지 않거나 비활성 종목 태그는 400 `VALIDATION_ERROR`. 첨부 이미지 교체·해제는 지원하지 않는다(COM-006 범위 제외) | 008 COM-001, 022 COM-004, Issue #26, Issue #246 |
-| DELETE | /api/community/posts/{postId} | community | 본인 소유 커뮤니티 게시물 삭제 (204, 본문 없음, 댓글도 함께 삭제) | 008 COM-001, Issue #27 |
+| DELETE | /api/community/posts/{postId} | community | 본인 소유 커뮤니티 게시물 삭제 (204, 본문 없음, 댓글도 함께 삭제, 첨부 이미지가 있으면 DB 행·물리 파일도 함께 제거) | 008 COM-001, 022 COM-006, Issue #27, Issue #248 |
+| POST | /api/community/posts/images | community | 인증 사용자의 이미지 파일(멀티파트 파트명 `image`) 업로드 (201, `imageId`·`imageUrl` 반환). 게시물과 아직 연결되지 않은 상태로 저장하는 선(先)업로드 — `POST /api/community/posts` 생성 시 `imageId`로 참조해 연결한다. JPEG·PNG·WEBP만 허용, 5MB 초과·빈 파일·허용하지 않는 형식은 400 `VALIDATION_ERROR` | 022 COM-006, Issue #248 |
+| GET | /api/community/posts/images/{imageId}/file | community | 이미지 원본 바이트 다운로드(`Content-Type`은 업로드 시 형식 그대로). 인증 사용자라면 누구나 조회 가능(업로드자·게시물 소유자 제한 없음), 존재하지 않는 `imageId`는 404 `NOT_FOUND` | 022 COM-006, Issue #248 |
 | GET | /api/community/posts/{postId}/comments | community | 인증 사용자가 게시물의 댓글을 조회. 부모 댓글을 오래된 순으로 나열하고 각 부모 밑에 그 대댓글(`replies`)을 오래된 순으로 중첩 포함 | 008 COM-002, 022 COM-005, Issue #29, Issue #247 |
 | POST | /api/community/posts/{postId}/comments | community | 인증 사용자의 댓글 작성. `parentCommentId`(선택)로 기존 댓글에 대댓글을 남길 수 있다 — 부모가 이미 대댓글이면 400 `VALIDATION_ERROR`, 존재하지 않거나 다른 게시물 소속이면 404 `NOT_FOUND` | 008 COM-002, 022 COM-005, Issue #28, Issue #247 |
 | DELETE | /api/community/comments/{commentId} | community | 본인 소유 댓글 삭제 (204, 본문 없음). 부모 댓글을 삭제하면 그 자식 대댓글도 `ON DELETE CASCADE`로 함께 삭제된다 | 008 COM-002, 022 COM-005, Issue #30, Issue #247 |
