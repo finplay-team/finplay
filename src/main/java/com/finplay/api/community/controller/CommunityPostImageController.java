@@ -38,11 +38,14 @@ public class CommunityPostImageController {
 
 	@GetMapping("/{imageId}/file")
 	public ResponseEntity<Resource> getImageFile(
+		@AuthenticationPrincipal
+		AuthenticatedUser principal,
 		@PathVariable
 		Long imageId) {
-		CommunityPostImageFile file = communityPostImageService.loadImageFile(imageId);
+		CommunityPostImageFile file = communityPostImageService.loadImageFile(principal.userId(), imageId);
 		return ResponseEntity.ok()
 			.contentType(MediaType.parseMediaType(file.contentType()))
+			.header("X-Content-Type-Options", "nosniff")
 			.body(file.resource());
 	}
 }

@@ -24,10 +24,11 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Optional;
+import com.finplay.api.community.event.CommunityPostImageDeletedEvent;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InOrder;
 import org.mockito.Mockito;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.core.io.Resource;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -40,8 +41,9 @@ class CommunityPostImageServiceTest {
 	private final CommunityPostImageRepository repository = Mockito.mock(CommunityPostImageRepository.class);
 	private final FileStorageService fileStorageService = Mockito.mock(FileStorageService.class);
 	private final UserQueryService userQueryService = Mockito.mock(UserQueryService.class);
+	private final ApplicationEventPublisher eventPublisher = Mockito.mock(ApplicationEventPublisher.class);
 	private final CommunityPostImageService service = new CommunityPostImageService(repository, fileStorageService,
-		userQueryService, CLOCK);
+		userQueryService, CLOCK, eventPublisher);
 
 	@Test
 	void uploadImageStoresFileAndSavesImageWhenFormatAndContentAreValid() {
@@ -68,6 +70,29 @@ class CommunityPostImageServiceTest {
 		verify(fileStorageService).store(file, imageCaptor.getValue().getStoredFilename());
 		assertThat(response.imageId()).isEqualTo(7L);
 		assertThat(response.imageUrl()).isEqualTo("/api/community/posts/images/7/file");
+	}
+
+	@Test
+	void uploadImageDerivesStoredFilenameExtensionFromContentTypeIgnoringMaliciousOriginalFilename() {
+		User uploader = User.create("uploader@finplay.com", "hash", "uploader", LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(uploader, "id", 42L);
+		when(userQueryService.getUser(42L)).thenReturn(uploader);
+		// 원본 파일명에 경로 구분자·상위 디렉터리 세그먼트를 넣어도 storedFilename은 contentType 기반
+		// 확장자로만 결정돼야 한다 — 원본 파일명이 저장 경로 조립에 쓰이지 않음을 고정한다.
+		MockMultipartFile file = new MockMultipartFile(
+			"image", "a.b/../c", "image/png", "content".getBytes());
+		when(repository.save(any(CommunityPostImage.class))).thenAnswer(invocation -> {
+			CommunityPostImage image = invocation.getArgument(0);
+			ReflectionTestUtils.setField(image, "id", 7L);
+			return image;
+		});
+
+		service.uploadImage(42L, file);
+
+		ArgumentCaptor<CommunityPostImage> imageCaptor = ArgumentCaptor.forClass(CommunityPostImage.class);
+		verify(repository).save(imageCaptor.capture());
+		assertThat(imageCaptor.getValue().getStoredFilename()).endsWith(".png").doesNotContain("/", "..");
+		assertThat(imageCaptor.getValue().getOriginalFilename()).isEqualTo("a.b/../c");
 	}
 
 	@Test
@@ -113,25 +138,47 @@ class CommunityPostImageServiceTest {
 	}
 
 	@Test
-	void loadImageFileReturnsResourceAndContentTypeWhenImageExists() {
+	void loadImageFileReturnsResourceAndContentTypeWhenImageIsAssignedToAPost() {
 		User uploader = User.create("uploader@finplay.com", "hash", "uploader", LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(uploader, "id", 42L);
 		CommunityPostImage image = CommunityPostImage.create(
 			uploader, "stored.png", "original.png", "image/png", 10L, LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(uploader, "title", "content", null, LocalDateTime.now(CLOCK));
+		image.assignToPost(post);
 		when(repository.findById(7L)).thenReturn(Optional.of(image));
 		Resource resource = Mockito.mock(Resource.class);
 		when(fileStorageService.load("stored.png")).thenReturn(resource);
 
-		CommunityPostImageFile file = service.loadImageFile(7L);
+		CommunityPostImageFile file = service.loadImageFile(999L, 7L);
 
 		assertThat(file.resource()).isSameAs(resource);
 		assertThat(file.contentType()).isEqualTo("image/png");
 	}
 
 	@Test
-	void loadImageFileFailsWithNotFoundWhenImageDoesNotExist() {
-		when(repository.findById(404L)).thenReturn(Optional.empty());
+	void loadImageFileReturnsResourceWhenUnassignedImageIsRequestedByUploader() {
+		User uploader = User.create("uploader@finplay.com", "hash", "uploader", LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(uploader, "id", 42L);
+		CommunityPostImage image = CommunityPostImage.create(
+			uploader, "stored.png", "original.png", "image/png", 10L, LocalDateTime.now(CLOCK));
+		when(repository.findById(7L)).thenReturn(Optional.of(image));
+		Resource resource = Mockito.mock(Resource.class);
+		when(fileStorageService.load("stored.png")).thenReturn(resource);
 
-		assertThatThrownBy(() -> service.loadImageFile(404L))
+		CommunityPostImageFile file = service.loadImageFile(42L, 7L);
+
+		assertThat(file.resource()).isSameAs(resource);
+	}
+
+	@Test
+	void loadImageFileFailsWithNotFoundWhenUnassignedImageIsRequestedByAnotherUser() {
+		User uploader = User.create("uploader@finplay.com", "hash", "uploader", LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(uploader, "id", 42L);
+		CommunityPostImage image = CommunityPostImage.create(
+			uploader, "stored.png", "original.png", "image/png", 10L, LocalDateTime.now(CLOCK));
+		when(repository.findById(7L)).thenReturn(Optional.of(image));
+
+		assertThatThrownBy(() -> service.loadImageFile(99L, 7L))
 			.isInstanceOf(BusinessException.class)
 			.extracting(exception -> ((BusinessException)exception).getErrorCode())
 			.isEqualTo(ErrorCode.NOT_FOUND);
@@ -140,7 +187,19 @@ class CommunityPostImageServiceTest {
 	}
 
 	@Test
-	void deleteImageIfPresentDeletesRowThenPhysicalFileWhenPostHasImage() {
+	void loadImageFileFailsWithNotFoundWhenImageDoesNotExist() {
+		when(repository.findById(404L)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> service.loadImageFile(42L, 404L))
+			.isInstanceOf(BusinessException.class)
+			.extracting(exception -> ((BusinessException)exception).getErrorCode())
+			.isEqualTo(ErrorCode.NOT_FOUND);
+
+		verifyNoInteractions(fileStorageService);
+	}
+
+	@Test
+	void deleteImageIfPresentDeletesRowAndPublishesFileDeletionEventWhenPostHasImage() {
 		User uploader = User.create("uploader@finplay.com", "hash", "uploader", LocalDateTime.now(CLOCK));
 		CommunityPostImage image = CommunityPostImage.create(
 			uploader, "stored.png", "original.png", "image/png", 10L, LocalDateTime.now(CLOCK));
@@ -150,9 +209,9 @@ class CommunityPostImageServiceTest {
 
 		service.deleteImageIfPresent(post);
 
-		InOrder inOrder = Mockito.inOrder(repository, fileStorageService);
-		inOrder.verify(repository).delete(image);
-		inOrder.verify(fileStorageService).delete("stored.png");
+		verify(repository).delete(image);
+		verifyNoInteractions(fileStorageService);
+		verify(eventPublisher).publishEvent(new CommunityPostImageDeletedEvent("stored.png"));
 	}
 
 	@Test
@@ -164,6 +223,7 @@ class CommunityPostImageServiceTest {
 
 		verify(repository, never()).delete(any());
 		verifyNoInteractions(fileStorageService);
+		verifyNoInteractions(eventPublisher);
 	}
 
 	@Test

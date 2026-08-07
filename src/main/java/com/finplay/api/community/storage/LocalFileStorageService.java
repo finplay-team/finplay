@@ -31,7 +31,7 @@ public class LocalFileStorageService implements FileStorageService {
 	public String store(MultipartFile file, String storedFilename) {
 		try {
 			Files.createDirectories(baseDirectory);
-			Path target = baseDirectory.resolve(storedFilename);
+			Path target = resolveWithinBaseDirectory(storedFilename);
 			Files.copy(file.getInputStream(), target);
 			return storedFilename;
 		} catch (IOException e) {
@@ -41,7 +41,7 @@ public class LocalFileStorageService implements FileStorageService {
 
 	@Override
 	public Resource load(String storedFilename) {
-		Path target = baseDirectory.resolve(storedFilename);
+		Path target = resolveWithinBaseDirectory(storedFilename);
 		if (!Files.exists(target)) {
 			throw new BusinessException(ErrorCode.NOT_FOUND);
 		}
@@ -54,11 +54,23 @@ public class LocalFileStorageService implements FileStorageService {
 
 	@Override
 	public void delete(String storedFilename) {
-		Path target = baseDirectory.resolve(storedFilename);
+		Path target = resolveWithinBaseDirectory(storedFilename);
 		try {
 			Files.deleteIfExists(target);
 		} catch (IOException e) {
 			log.warn("커뮤니티 이미지 파일 삭제 실패 storedFilename={}", storedFilename, e);
 		}
+	}
+
+	// storedFilename 생성 규칙이 서버 결정 확장자로 바뀌어도, 저장소 스스로 경계를 검사해 상위 디렉터리
+	// 탈출을 막는다(PR #269 리뷰 — "지금 안전한 이유가 설계가 아니라 우연"이라는 지적을 저장소 계층에서
+	// 방어로 고정한다).
+	private Path resolveWithinBaseDirectory(String storedFilename) {
+		Path base = baseDirectory.toAbsolutePath().normalize();
+		Path target = base.resolve(storedFilename).normalize();
+		if (!target.startsWith(base)) {
+			throw new BusinessException(ErrorCode.VALIDATION_ERROR, "잘못된 파일 경로입니다.");
+		}
+		return target;
 	}
 }

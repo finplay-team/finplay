@@ -312,9 +312,9 @@ PR #49 차단 리뷰 후속 Fake 재사용·동시성·DB 불변 자동 회귀�
 
 | Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|---|
-| GET | /api/community/posts/images/{imageId}/file | Access Bearer 필수 | 경로 변수 `imageId` | 200, `Content-Type`은 업로드 시 저장된 `contentType` 그대로, 본문은 이미지 원본 바이트 | 존재하지 않는 `imageId`는 404 `NOT_FOUND`. Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 022 COM-006, Issue #248 |
+| GET | /api/community/posts/images/{imageId}/file | Access Bearer 필수 | 경로 변수 `imageId` | 200, `Content-Type`은 업로드 시 저장된 `contentType` 그대로, `X-Content-Type-Options: nosniff` 포함, 본문은 이미지 원본 바이트 | 존재하지 않거나(게시물에 아직 연결되지 않은 이미지를 업로더 본인이 아닌 사용자가 요청한 경우 포함) `imageId`는 404 `NOT_FOUND`. Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 022 COM-006, Issue #248 |
 
-인증 사용자라면 업로더·게시물 소유자와 무관하게 누구나 조회할 수 있다 — 별도 소유권 검사가 없다(게시물 조회에 포함되는 공개적 성격의 첨부 이미지이므로 COM-003 소유권 규칙 대상이 아니다). 파일은 `LocalFileStorageService`가 `finplay.community.image-storage.base-directory`(기본 `./data/community-images`) 아래 저장한 것을 그대로 읽어 반환한다.
+**게시물에 연결된(공개) 이미지는 인증 사용자라면 업로더·게시물 소유자와 무관하게 누구나 조회할 수 있다** — 별도 소유권 검사가 없다(게시물 조회에 포함되는 공개적 성격의 첨부 이미지이므로 COM-003 소유권 규칙 대상이 아니다). **아직 게시물에 연결되지 않은(선업로드 상태) 이미지는 업로더 본인만 조회할 수 있고, 그 외 사용자에게는 존재를 숨겨 404로 응답한다** — 선업로드-후참조 흐름상 게시하지 않고 방치된 이미지가 정상적으로 존재하므로(PR #269 리뷰), `imageId`만 안다고 누구나 받을 수 있게 두지 않는다. 파일은 `LocalFileStorageService`가 `finplay.community.image-storage.base-directory`(기본 `./data/community-images`) 아래 저장한 것을 그대로 읽어 반환한다.
 
 ### 커뮤니티 게시물 댓글 목록 조회
 

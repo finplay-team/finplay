@@ -349,7 +349,7 @@ CREATE TABLE community_post_images (
 ) ENGINE = InnoDB;
 ```
 
-- `stored_filename`은 서비스 계층에서 `UUID.randomUUID()` + 원본 확장자로 생성한다(충돌 방지, 사용자 입력 파일명을 그대로 경로에 쓰지 않아 경로 조작 방지). `original_filename`은 표시·다운로드 시 사용자에게 보여줄 용도로 별도 저장한다(spec.md 힌트 그대로).
+- `stored_filename`은 서비스 계층에서 `UUID.randomUUID()` + **서버가 검증한 `contentType`에서 결정한 확장자**로 생성한다(충돌 방지, 사용자 입력 파일명의 어떤 부분도 경로 조립에 쓰지 않아 경로 조작 방지 — PR #269 리뷰에서 원본 파일명의 확장자를 그대로 쓰던 초안이 이 방지를 실제로 만족하지 못함을 확인하고 정정했다, 저장소 계층에도 경계 검사를 이중으로 둔다). `original_filename`은 표시·다운로드 시 사용자에게 보여줄 용도로 별도 저장하며 경로 조립에는 절대 쓰지 않는다(spec.md 힌트 그대로).
 - `post_id`는 업로드 시 `NULL`, 게시물 생성 트랜잭션에서 채워진다. `UNIQUE (post_id)`로 "게시물당 이미지 최대 1장"을 DB 제약으로도 강제한다(`NULL`은 유니크 제약에서 여러 행에 중복 허용되므로 업로드만 되고 미연결인 이미지가 여러 개 있어도 위반이 아니다 — 정상 상황).
 - `ON DELETE CASCADE`(post_id FK)로 게시물 삭제 시 이미지 행이 DB에서 함께 삭제된다(COM-005의 self-referencing CASCADE와 같은 판단). 단, **물리 파일은 DB 트리거로 지울 수 없으므로 애플리케이션 코드가 별도로 삭제한다** (아래 "삭제 처리").
 - 인덱스: `post_id`는 FK+UNIQUE 제약이 이미 인덱스를 만든다. `uploader_id`에 대한 추가 인덱스는 두지 않는다 — 현재 조회 패턴(imageId로 단건 조회 후 uploader 비교)이 PK 조회만으로 충분해 인덱스 이득이 없다(과설계 금지).
@@ -434,7 +434,7 @@ private CommunityPostImage image;
 | 클래스 | 패키지 | 변경 |
 |---|---|---|
 | `FileStorageService` | `community.storage` (신규 패키지) | 인터페이스 신규: `String store(MultipartFile file, String storedFilename)`(저장 후 저장 경로/키 반환 — 로컬 구현은 그대로 `storedFilename` 반환), `Resource load(String storedFilename)`(다운로드용), `void delete(String storedFilename)`(best-effort, 실패 시 로그만) |
-| `LocalFileStorageService` | `community.storage` | `FileStorageService` 구현체. `finplay.community.image-storage.base-directory`를 `@Value`로 주입받아 `Path`로 다룬다. `store`는 `Files.copy(file.getInputStream(), baseDir.resolve(storedFilename))`, `load`는 `UrlResource`로 파일 반환, `delete`는 `Files.deleteIfExists` — `IOException`은 잡아서 `log.warn`만 남기고 던지지 않는다(삭제 실패로 게시물 삭제 전체가 실패하면 안 됨) |
+| `LocalFileStorageService` | `community.storage` | `FileStorageService` 구현체. `finplay.community.image-storage.base-directory`를 `@Value`로 주입받아 `Path`로 다룬다. `store`는 `Files.copy(file.getInputStream(), baseDir.resolve(storedFilename))`, `load`는 `UrlResource`로 파일 반환, `delete`는 `Files.deleteIfExists` — `IOException`은 잡아서 `log.warn`만 남기고 던지지 않는다(삭제 실패로 게시물 삭제 전체가 실패하면 안 됨). **로컬 파일시스템은 인스턴스 간에 공유되지 않는다 — 이 구현은 단일 인스턴스 배포를 전제하며, 다중 인스턴스 배포로 전환하려면 `FileStorageService` 구현체를 오브젝트 스토리지로 먼저 교체해야 한다** (PR #269 리뷰, ADR-0014의 코인 변동 감시 다중 인스턴스 대응과 같은 전제 위반을 여기서도 남기지 않기 위한 기록) |
 | `CommunityPostImage` | `community.domain` | 신규 엔티티(위) |
 | `CommunityPostImageRepository` | `community.repository` | `JpaRepository<CommunityPostImage, Long>` — 커스텀 쿼리 없음(단건 `findById`로 충분) |
 | `CommunityPostImageResponse` | `community.dto.response` | 신규 record: `imageId`, `imageUrl`(`"/api/community/posts/images/" + imageId + "/file"` 조합) |

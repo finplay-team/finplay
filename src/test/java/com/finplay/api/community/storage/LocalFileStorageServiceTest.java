@@ -68,4 +68,32 @@ class LocalFileStorageServiceTest {
 
 		assertThatCode(() -> service.delete("never-existed.png")).doesNotThrowAnyException();
 	}
+
+	@Test
+	void storeRejectsFilenameThatEscapesBaseDirectory() {
+		LocalFileStorageService service = new LocalFileStorageService(tempDir.toString());
+		MultipartFile file = mock(MultipartFile.class);
+
+		assertThatThrownBy(() -> service.store(file, "../escaped.png"))
+			.isInstanceOf(BusinessException.class)
+			.hasFieldOrPropertyWithValue("errorCode", ErrorCode.VALIDATION_ERROR);
+	}
+
+	@Test
+	void loadRejectsFilenameThatEscapesBaseDirectory() {
+		LocalFileStorageService service = new LocalFileStorageService(tempDir.toString());
+
+		assertThatThrownBy(() -> service.load("../escaped.png"))
+			.isInstanceOf(BusinessException.class)
+			.hasFieldOrPropertyWithValue("errorCode", ErrorCode.VALIDATION_ERROR);
+	}
+
+	@Test
+	void deleteRejectsFilenameThatEscapesBaseDirectory() {
+		LocalFileStorageService service = new LocalFileStorageService(tempDir.toString());
+
+		assertThatThrownBy(() -> service.delete("../escaped.png"))
+			.isInstanceOf(BusinessException.class)
+			.hasFieldOrPropertyWithValue("errorCode", ErrorCode.VALIDATION_ERROR);
+	}
 }

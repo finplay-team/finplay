@@ -111,3 +111,15 @@
 
 ## 모니터링 (사람용 요약)
 - COM-006 항목4: `CommunityPostImageService.deleteImageIfPresent(CommunityPost post)` 신규 — 연결 이미지가 있으면 `storedFilename` 확보 후 DB 행 삭제, 이어서 `fileStorageService.delete(storedFilename)` 호출(구현체가 이미 IOException을 잡아 로그만 남기므로 여기서 추가 try-catch 없음). `CommunityPostService.deletePost`에서 `postCommentRepository.deleteByPost_Id` 다음·`communityPostRepository.delete(post)` 이전에 호출하도록 연결. compileJava 통과(단위·`@DataJpaTest`는 tester 담당).
+
+## AI 로그 (에이전트 참조용, PR #269 리뷰)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| - | reviewer(리뷰) | `git diff dev...HEAD` (PR #269) | 파일 경로 조립, 다운로드 접근 범위, plan.md "경로 조작 방지" 서술과 실제 코드 대조 |
+| - | implementer(PR #269 리뷰 차단 2건·권장 2건 반영) | `.\gradlew.bat compileJava compileTestJava` + `test --tests "com.finplay.api.community.*"` + `spotlessApply` + `build` | 리뷰 차단 2건·권장 2건 |
+
+## 모니터링 (사람용 요약)
+- PR #269 리뷰 완료: 리뷰어에게 물어본 두 질문(저장 구조·검증 순서) 모두 문제없음 확인. 차단 2건 — ① `resolveExtension`이 클라이언트 원본 파일명에서 마지막 점 이후 전부를 확장자로 써 저장소가 그 값을 경계 검사 없이 경로로 조립함(`a.b/c` 같은 입력이 400이 아니라 500으로 새고, plan.md의 "경로 조작 방지" 서술이 실제 코드와 불일치), ② `loadImageFile`이 소유권·연결 여부를 전혀 검사하지 않아 아직 게시되지 않은(post_id IS NULL) 이미지도 `imageId`만 알면 누구나 다운로드 가능.
+- 반영: (1) 확장자를 원본 파일명이 아니라 이미 검증한 `contentType`에서 매핑으로 결정하도록 변경, `LocalFileStorageService`에 `normalize()` 기반 경계 검사를 store/load/delete 3곳 모두에 추가(저장 키 생성 규칙이 바뀌어도 저장소가 스스로를 지킴). (2) `loadImageFile(authenticatedUserId, imageId)`로 시그니처 변경 — `isAssigned()`가 true면 누구나, false면 업로더 본인만 허용하고 그 외는 404로 존재를 숨김. 컨트롤러에 `@AuthenticationPrincipal` 추가.
+- 권장 2건도 함께 반영: 다운로드 응답에 `X-Content-Type-Options: nosniff` 헤더 추가(매직 바이트 미검사 트레이드오프의 짝). 물리 파일 삭제를 `CommunityPostImageDeletedEvent` + `@TransactionalEventListener(AFTER_COMMIT)`로 전환(`RankingEventListener` 선례) — 게시물 삭제 트랜잭션이 롤백되면 DB 행은 살아있는데 파일만 사라지는 상태를 막는다.
+- `LocalFileStorageServiceTest`에 store/load/delete 3개 경계 탈출 회귀 테스트, `CommunityPostImageServiceTest`에 악의적 파일명 확장자 무시 회귀 테스트·미할당 이미지 접근 제어 3종(업로더 본인 허용/타인 거부/미존재)을 추가. `docs/api-contracts.md`·`plan.md`의 관련 서술도 실제 동작에 맞게 정정. `./gradlew build` 전체(테스트·jacoco·spotbugs·spotless 포함) 통과.

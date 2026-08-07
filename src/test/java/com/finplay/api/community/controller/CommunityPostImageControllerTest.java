@@ -119,22 +119,23 @@ class CommunityPostImageControllerTest {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
 		byte[] content = "image-bytes".getBytes();
-		when(service.loadImageFile(7L))
+		when(service.loadImageFile(USER_ID, 7L))
 			.thenReturn(new CommunityPostImageFile(new ByteArrayResource(content), "image/png"));
 
 		mockMvc.perform(get("/api/community/posts/images/7/file")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
 			.andExpect(status().isOk())
-			.andExpect(header().string(HttpHeaders.CONTENT_TYPE, MediaType.IMAGE_PNG_VALUE));
+			.andExpect(header().string(HttpHeaders.CONTENT_TYPE, MediaType.IMAGE_PNG_VALUE))
+			.andExpect(header().string("X-Content-Type-Options", "nosniff"));
 
-		verify(service).loadImageFile(7L);
+		verify(service).loadImageFile(USER_ID, 7L);
 	}
 
 	@Test
 	void getImageFileReturnsCommonNotFoundErrorWhenImageDoesNotExist() throws Exception {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
-		when(service.loadImageFile(404L)).thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
+		when(service.loadImageFile(USER_ID, 404L)).thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
 
 		mockMvc.perform(get("/api/community/posts/images/404/file")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
@@ -143,7 +144,7 @@ class CommunityPostImageControllerTest {
 			.andExpect(jsonPath("$.error.message").value("대상을 찾을 수 없습니다."))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
-		verify(service).loadImageFile(404L);
+		verify(service).loadImageFile(USER_ID, 404L);
 	}
 
 	@Test
