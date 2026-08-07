@@ -46,6 +46,7 @@ class CommunityPostImageRepositoryTest {
 	@BeforeEach
 	void cleanSharedTablesInForeignKeySafeOrder() {
 		jdbcTemplate.update("delete from community_post_images");
+		jdbcTemplate.update("delete from post_comments");
 		jdbcTemplate.update("delete from community_posts");
 	}
 

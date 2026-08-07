@@ -56,6 +56,19 @@ public class CommunityPostImageService {
 			fileStorageService.load(image.getStoredFilename()), image.getContentType());
 	}
 
+	@Transactional(readOnly = true)
+	public CommunityPostImage resolveImageForPost(Long authenticatedUserId, Long imageId) {
+		CommunityPostImage image = communityPostImageRepository.findById(imageId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+		if (!image.getUploader().getId().equals(authenticatedUserId)) {
+			throw new BusinessException(ErrorCode.FORBIDDEN, "본인이 업로드한 이미지만 사용할 수 있습니다.");
+		}
+		if (image.isAssigned()) {
+			throw new BusinessException(ErrorCode.VALIDATION_ERROR, "이미 다른 게시물에 사용된 이미지입니다.");
+		}
+		return image;
+	}
+
 	private String resolveExtension(String originalFilename) {
 		if (originalFilename == null) {
 			return "";

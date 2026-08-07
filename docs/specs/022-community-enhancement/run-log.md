@@ -87,3 +87,11 @@
 
 ## 모니터링 (사람용 요약)
 - COM-006 항목2: `CommunityPostImage` 엔티티(`isAssigned()`·`assignToPost()`)·`CommunityPostImageRepository`(`JpaRepository`) 신규. `CommunityPostImageService.uploadImage`(빈 파일·허용하지 않는 형식 400, `UUID`+원본 확장자 파일명 생성 후 `fileStorageService.store` 호출)와 `loadImageFile`(존재하지 않으면 404, `CommunityPostImageFile`(resource+contentType) 반환) 신규. `CommunityPostImageResponse`(`imageId`·`imageUrl`) 신규. `CommunityPostImageController`에 `POST /api/community/posts/images`(201)·`GET /api/community/posts/images/{imageId}/file` 신규. compileJava 통과(단위·슬라이스 테스트는 tester 담당, `resolveImageForPost`는 항목3 범위).
+
+## AI 로그 (에이전트 참조용, COM-006 항목3)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| - | implementer | `JAVA_HOME=/c/Users/pmsal/.jdks/ms-17.0.20 ./gradlew.bat compileJava --console=plain` | plan.md "COM-006 사진 첨부" 패키지·클래스 설계(항목 3: 게시물 생성 API에 이미지 연결) |
+
+## 모니터링 (사람용 요약)
+- COM-006 항목3: `CommunityPostImageService.resolveImageForPost`(존재하지 않음 404, 타인 소유 403, 이미 연결됨 400 순서 검증) 신규. `CommunityPost`에 `@OneToOne(mappedBy = "post")` `image` 필드, `CommunityPostRepository.findById` `@EntityGraph`에 `"image"`, `CommunityPostRepositoryImpl`에 `leftJoin(post.image).fetchJoin()` 추가. `CommunityPostCreateRequest.imageId`·`CommunityPostResponse.imageId`/`imageUrl`(`CommunityPostImageResponse.toImageUrl` 재사용) 추가. `CommunityPostService.createPost`가 게시물 저장 후 같은 트랜잭션에서 `image.assignToPost(savedPost)` 호출, 컨트롤러가 `request.imageId()` 전달. `docs/api-routes.md`·`docs/api-contracts.md`의 기존 `POST/GET/PATCH /api/community/posts*` 행에 `imageId`/`imageUrl` 계약 반영(업로드·다운로드 엔드포인트 신규 행과 PRD §3 갱신은 tasks.md 항목6 범위로 남김). compileJava 통과(테스트는 tester 담당).

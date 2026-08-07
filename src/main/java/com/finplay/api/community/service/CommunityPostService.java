@@ -6,6 +6,7 @@ import com.finplay.api.auth.service.UserQueryService;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.community.domain.CommunityPost;
+import com.finplay.api.community.domain.CommunityPostImage;
 import com.finplay.api.community.dto.response.CommunityPostListResponse;
 import com.finplay.api.community.dto.response.CommunityPostResponse;
 import com.finplay.api.community.repository.CommunityPostRepository;
@@ -29,16 +30,24 @@ public class CommunityPostService {
 	private final PostCommentRepository postCommentRepository;
 	private final UserQueryService userQueryService;
 	private final InstrumentService instrumentService;
+	private final CommunityPostImageService communityPostImageService;
 	private final Clock clock;
 
 	@Transactional
 	public CommunityPostResponse createPost(
-		Long authenticatedUserId, String title, String content, Long instrumentId) {
+		Long authenticatedUserId, String title, String content, Long instrumentId, Long imageId) {
 		User author = userQueryService.getUser(authenticatedUserId);
 		Instrument instrument = resolveInstrument(instrumentId);
+		CommunityPostImage image = imageId == null
+			? null
+			: communityPostImageService.resolveImageForPost(authenticatedUserId, imageId);
 		LocalDateTime now = LocalDateTime.now(clock);
 		CommunityPost post = CommunityPost.create(author, title, content, instrument, now);
-		return CommunityPostResponse.from(communityPostRepository.save(post));
+		CommunityPost savedPost = communityPostRepository.save(post);
+		if (image != null) {
+			image.assignToPost(savedPost);
+		}
+		return CommunityPostResponse.from(savedPost);
 	}
 
 	@Transactional(readOnly = true)

@@ -14,6 +14,7 @@ import com.finplay.api.auth.service.UserQueryService;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.community.domain.CommunityPost;
+import com.finplay.api.community.domain.CommunityPostImage;
 import com.finplay.api.community.dto.response.CommunityPostListResponse;
 import com.finplay.api.community.dto.response.CommunityPostResponse;
 import com.finplay.api.community.repository.CommunityPostRepository;
@@ -46,8 +47,9 @@ class CommunityPostServiceTest {
 	private final PostCommentRepository postCommentRepository = Mockito.mock(PostCommentRepository.class);
 	private final UserQueryService userQueryService = Mockito.mock(UserQueryService.class);
 	private final InstrumentService instrumentService = Mockito.mock(InstrumentService.class);
+	private final CommunityPostImageService communityPostImageService = Mockito.mock(CommunityPostImageService.class);
 	private final CommunityPostService service = new CommunityPostService(
-		repository, postCommentRepository, userQueryService, instrumentService, CLOCK);
+		repository, postCommentRepository, userQueryService, instrumentService, communityPostImageService, CLOCK);
 
 	private static Instrument instrument(Long id) {
 		Instrument instrument = Instrument.create(
@@ -62,7 +64,7 @@ class CommunityPostServiceTest {
 		when(userQueryService.getUser(42L)).thenReturn(author);
 		when(repository.save(any(CommunityPost.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-		CommunityPostResponse response = service.createPost(42L, "title", "content", null);
+		CommunityPostResponse response = service.createPost(42L, "title", "content", null, null);
 
 		ArgumentCaptor<CommunityPost> postCaptor = ArgumentCaptor.forClass(CommunityPost.class);
 		verify(repository).save(postCaptor.capture());
@@ -75,7 +77,10 @@ class CommunityPostServiceTest {
 		assertThat(response.instrumentId()).isNull();
 		assertThat(response.instrumentSymbol()).isNull();
 		assertThat(response.instrumentName()).isNull();
+		assertThat(response.imageId()).isNull();
+		assertThat(response.imageUrl()).isNull();
 		verifyNoInteractions(instrumentService);
+		verifyNoInteractions(communityPostImageService);
 	}
 
 	@Test
@@ -83,7 +88,7 @@ class CommunityPostServiceTest {
 		when(userQueryService.getUser(404L))
 			.thenThrow(new BusinessException(ErrorCode.UNAUTHORIZED));
 
-		assertThatThrownBy(() -> service.createPost(404L, "title", "content", null))
+		assertThatThrownBy(() -> service.createPost(404L, "title", "content", null, null))
 			.isInstanceOf(BusinessException.class)
 			.extracting(exception -> ((BusinessException)exception).getErrorCode())
 			.isEqualTo(ErrorCode.UNAUTHORIZED);
@@ -98,7 +103,7 @@ class CommunityPostServiceTest {
 		when(instrumentService.getTradableInstrumentEntity(9L)).thenReturn(instrument);
 		when(repository.save(any(CommunityPost.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-		CommunityPostResponse response = service.createPost(42L, "title", "content", 9L);
+		CommunityPostResponse response = service.createPost(42L, "title", "content", 9L, null);
 
 		ArgumentCaptor<CommunityPost> postCaptor = ArgumentCaptor.forClass(CommunityPost.class);
 		verify(repository).save(postCaptor.capture());
@@ -115,7 +120,79 @@ class CommunityPostServiceTest {
 		when(instrumentService.getTradableInstrumentEntity(999L))
 			.thenThrow(new BusinessException(ErrorCode.VALIDATION_ERROR, "존재하지 않거나 비활성인 종목은 태그할 수 없습니다."));
 
-		assertThatThrownBy(() -> service.createPost(42L, "title", "content", 999L))
+		assertThatThrownBy(() -> service.createPost(42L, "title", "content", 999L, null))
+			.isInstanceOf(BusinessException.class)
+			.extracting(exception -> ((BusinessException)exception).getErrorCode())
+			.isEqualTo(ErrorCode.VALIDATION_ERROR);
+		verify(repository, never()).save(any());
+	}
+
+	@Test
+	void createPostAssignsImageToSavedPostWhenImageIdProvided() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		when(userQueryService.getUser(42L)).thenReturn(author);
+		CommunityPostImage image = Mockito.mock(CommunityPostImage.class);
+		when(communityPostImageService.resolveImageForPost(42L, 5L)).thenReturn(image);
+		when(repository.save(any(CommunityPost.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		service.createPost(42L, "title", "content", null, 5L);
+
+		ArgumentCaptor<CommunityPost> postCaptor = ArgumentCaptor.forClass(CommunityPost.class);
+		verify(repository).save(postCaptor.capture());
+		InOrder inOrder = Mockito.inOrder(repository, image);
+		inOrder.verify(repository).save(any(CommunityPost.class));
+		inOrder.verify(image).assignToPost(postCaptor.getValue());
+	}
+
+	@Test
+	void createPostDoesNotAssignImageOrFailWhenImageIdIsNullForBackwardCompatibility() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		when(userQueryService.getUser(42L)).thenReturn(author);
+		when(repository.save(any(CommunityPost.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		CommunityPostResponse response = service.createPost(42L, "title", "content", null, null);
+
+		assertThat(response.imageId()).isNull();
+		assertThat(response.imageUrl()).isNull();
+		verifyNoInteractions(communityPostImageService);
+	}
+
+	@Test
+	void createPostFailsWithNotFoundAndDoesNotSaveWhenImageDoesNotExist() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		when(userQueryService.getUser(42L)).thenReturn(author);
+		when(communityPostImageService.resolveImageForPost(42L, 404L))
+			.thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
+
+		assertThatThrownBy(() -> service.createPost(42L, "title", "content", null, 404L))
+			.isInstanceOf(BusinessException.class)
+			.extracting(exception -> ((BusinessException)exception).getErrorCode())
+			.isEqualTo(ErrorCode.NOT_FOUND);
+		verify(repository, never()).save(any());
+	}
+
+	@Test
+	void createPostFailsWithForbiddenAndDoesNotSaveWhenImageBelongsToAnotherUser() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		when(userQueryService.getUser(42L)).thenReturn(author);
+		when(communityPostImageService.resolveImageForPost(42L, 5L))
+			.thenThrow(new BusinessException(ErrorCode.FORBIDDEN, "본인이 업로드한 이미지만 사용할 수 있습니다."));
+
+		assertThatThrownBy(() -> service.createPost(42L, "title", "content", null, 5L))
+			.isInstanceOf(BusinessException.class)
+			.extracting(exception -> ((BusinessException)exception).getErrorCode())
+			.isEqualTo(ErrorCode.FORBIDDEN);
+		verify(repository, never()).save(any());
+	}
+
+	@Test
+	void createPostFailsWithValidationErrorAndDoesNotSaveWhenImageIsAlreadyAssigned() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		when(userQueryService.getUser(42L)).thenReturn(author);
+		when(communityPostImageService.resolveImageForPost(42L, 5L))
+			.thenThrow(new BusinessException(ErrorCode.VALIDATION_ERROR, "이미 다른 게시물에 사용된 이미지입니다."));
+
+		assertThatThrownBy(() -> service.createPost(42L, "title", "content", null, 5L))
 			.isInstanceOf(BusinessException.class)
 			.extracting(exception -> ((BusinessException)exception).getErrorCode())
 			.isEqualTo(ErrorCode.VALIDATION_ERROR);

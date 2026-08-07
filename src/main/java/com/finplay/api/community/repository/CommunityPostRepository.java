@@ -10,6 +10,6 @@ public interface CommunityPostRepository
 	extends JpaRepository<CommunityPost, Long>, CommunityPostRepositoryCustom {
 
 	@Override
-	@EntityGraph(attributePaths = {"author", "instrument"})
+	@EntityGraph(attributePaths = {"author", "instrument", "image"})
 	Optional<CommunityPost> findById(Long id);
 }
