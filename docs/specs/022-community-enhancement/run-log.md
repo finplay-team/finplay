@@ -71,3 +71,11 @@
 ## 모니터링 (사람용 요약)
 - PR #260 리뷰 완료: 리뷰어에게 물어본 두 질문 모두 문제없음 확인(400 vs 404 판정, ON DELETE CASCADE 설계). 차단 1건 — `deleteByPost_Id`가 파생 delete라 부모·자식 댓글을 개별 DELETE로 처리하는데 V25의 ON DELETE CASCADE와 겹치면 자식이 이미 사라진 뒤 재삭제를 시도해 예외가 날 수 있다는 지적. 그 조합(부모+대댓글이 있는 게시물 삭제)을 검증하는 테스트가 없었다.
 - 반영: `CommunityPostDeleteIntegrationTest`에 `ownerDeleteWithParentCommentAndReplyReturns204AndRemovesPostParentAndChildWithoutStaleStateException` 신규 추가 — 수정 전 코드로 먼저 실행해 실제로는 예외가 나지 않음을 확인했다(`PostComment`에 `@Version`이 없어 Hibernate가 delete 영향행수를 검사하지 않아 0행 DELETE가 조용히 무시됨). 다만 이는 우연한 안전이라 향후 낙관적 락 추가 시 재발할 수 있고, 게시물당 댓글 수만큼 개별 DELETE가 나가는 비효율도 있어 리뷰 제안대로 `deleteByPost_Id`를 `@Modifying @Query` 벌크 삭제로 전환했다. 커뮤니티 테스트 전체·`./gradlew build` 전체 재검증 통과.
+
+## AI 로그 (에이전트 참조용, COM-006 항목1)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| - | implementer | `$env:JAVA_HOME=...; .\gradlew.bat spotlessApply compileJava compileTestJava`, `test --tests LocalFileStorageServiceTest` | plan.md "COM-006 사진 첨부" Decision Gate 확정·`FileStorageService`/`LocalFileStorageService` 설계, ADR-0004 |
+
+## 모니터링 (사람용 요약)
+- COM-006 항목1: `V26` 마이그레이션(`community_post_images`, `post_id` nullable FK `ON DELETE CASCADE` + `UNIQUE`), `community.storage` 패키지에 `FileStorageService`/`LocalFileStorageService`(로컬 파일시스템, `@Value` 생성자 수동 작성) 신규, `application.yml`에 multipart 크기 제한·`finplay.community.image-storage.base-directory` 추가, `GlobalExceptionHandler`에 `MaxUploadSizeExceededException` → 400 `VALIDATION_ERROR` 핸들러 추가. `LocalFileStorageServiceTest`(`@TempDir`) 3건 통과. compileJava/compileTestJava 통과(엔티티·업로드 API는 항목2 범위).

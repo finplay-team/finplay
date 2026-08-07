@@ -39,6 +39,12 @@ spring:
       # 전환이 실제로 이뤄지면 "인스턴스 수 × 20"이 운영 DB의 max_connections를 넘지 않는지 그때 다시
       # 검토해야 한다(PR #272 리뷰 권장 사항).
       maximum-pool-size: 20
+  servlet:
+    multipart:
+      # 커뮤니티 게시물 첨부 이미지(COM-006, 최대 5MB) 1차 방어선. 초과 시 Spring이 던지는
+      # MaxUploadSizeExceededException을 GlobalExceptionHandler가 400 VALIDATION_ERROR로 매핑한다.
+      max-file-size: 5MB
+      max-request-size: 6MB
   mvc:
     async:
       # SSE(/api/stocks/stream) 연결이 장시간 유지돼야 하므로 컨테이너 async 타임아웃을 두지 않는다.
@@ -279,3 +285,12 @@ feedback:
 ranking:
   rebuild:
     cron: "0 20 4 * * *" # 매일 04:20 KST
+
+# 커뮤니티 게시물 첨부 이미지(COM-006, 이슈 #248) 저장 위치. 시크릿이 아니므로 yml에 기본값을 둔다
+# (conventions.md "시크릿" 절 대상 아님). 로컬 실행 디렉터리 기준 상대 경로가 기본값이며, 운영 배포 시
+# COMMUNITY_IMAGE_STORAGE_DIR 환경변수로 절대 경로를 덮어쓴다. 이 프로젝트는 객체 스토리지 인프라가 없어
+# 로컬 파일시스템 저장을 채택했다(docs/specs/022-community-enhancement/plan.md "Decision Gate 확정").
+finplay:
+  community:
+    image-storage:
+      base-directory: ${COMMUNITY_IMAGE_STORAGE_DIR:./data/community-images}

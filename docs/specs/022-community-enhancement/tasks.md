@@ -38,7 +38,7 @@
 
 ## COM-006 사진 첨부 (이슈 #248)
 
-- [ ] 1. **마이그레이션·저장소 추상화·설정**
+- [x] 1. **마이그레이션·저장소 추상화·설정**
   `db/migration/V26__create_community_post_images.sql`(plan.md SQL 그대로: `community_post_images` 테이블, `post_id` nullable FK `ON DELETE CASCADE` + `UNIQUE(post_id)`, `uploader_id` FK). `community.storage` 패키지에 `FileStorageService` 인터페이스(`store`/`load`/`delete`)와 `LocalFileStorageService` 구현체 신규 작성. `application.yml`에 `spring.servlet.multipart.max-file-size: 5MB`·`max-request-size: 6MB`·`finplay.community.image-storage.base-directory`(기본값 `./data/community-images`) 추가. `GlobalExceptionHandler`에 `MaxUploadSizeExceededException` → 400 `VALIDATION_ERROR` 핸들러 추가. 단위 테스트: `LocalFileStorageServiceTest`(`@TempDir`로 저장·로드·삭제 왕복, 존재하지 않는 파일 삭제 시 예외 없음).
 
 - [ ] 2. **`CommunityPostImage` 엔티티·업로드 API**
