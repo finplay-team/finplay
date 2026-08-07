@@ -4,6 +4,8 @@ package com.finplay.api.market.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finplay.api.TestcontainersConfiguration;
+import com.finplay.api.common.TestClock;
+import com.finplay.api.common.TestClockConfig;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.repository.InstrumentRepository;
@@ -11,9 +13,7 @@ import com.finplay.api.market.store.FeedConnectionStatus;
 import com.finplay.api.market.store.PriceStore;
 import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
-import java.time.Clock;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -23,10 +23,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,10 +37,8 @@ import org.springframework.transaction.annotation.Transactional;
 // (docs/agent-mistakes.md 2026-08-04 "원장 불변" 행의 값 비교 요구는 UPDATE가 가능한 경로에만 해당한다).
 @SpringBootTest
 @Transactional
-@Import({TestcontainersConfiguration.class, CryptoPriceSnapshotServiceIntegrationTest.FixedClockTestConfig.class})
+@Import({TestcontainersConfiguration.class, TestClockConfig.class})
 class CryptoPriceSnapshotServiceIntegrationTest {
-
-	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
 	private static final LocalDateTime NOW = LocalDateTime.of(2026, 8, 5, 12, 1, 0);
 
@@ -71,8 +66,13 @@ class CryptoPriceSnapshotServiceIntegrationTest {
 	@Autowired
 	private EntityManager entityManager;
 
+	// 전역 Clock 빈을 대신하는 공용 테스트 시계 (TestClockConfig). 기준 시각은 @BeforeEach에서 세운다.
+	@Autowired
+	private TestClock clock;
+
 	@BeforeEach
 	void setUp() {
+		clock.set(NOW);
 		instrumentRepository.saveAndFlush(Instrument.create(
 			Market.CRYPTO, SYMBOL, "테스트코인", BigDecimal.ONE, 5000L, true, NOW));
 		// isPriceAvailable=true가 되도록 최신 틱을 채운다 — 실제로 기록이 일어나는 것을 확인해야 "원장은 그대로다"가
@@ -113,13 +113,4 @@ class CryptoPriceSnapshotServiceIntegrationTest {
 		return counts;
 	}
 
-	@TestConfiguration
-	static class FixedClockTestConfig {
-
-		@Bean
-		@Primary
-		Clock fixedClock() {
-			return Clock.fixed(NOW.atZone(KST).toInstant(), KST);
-		}
-	}
 }

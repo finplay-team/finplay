@@ -14,6 +14,8 @@ import com.finplay.api.account.repository.AccountRepository;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.auth.token.JwtTokenProvider;
+import com.finplay.api.common.TestClock;
+import com.finplay.api.common.TestClockConfig;
 import com.finplay.api.journal.repository.BuyTradeJournalRepository;
 import com.finplay.api.journal.repository.SellTradeJournalRepository;
 import com.finplay.api.journal.service.JournalService;
@@ -36,12 +38,9 @@ import com.finplay.api.portfolio.repository.HoldingLotRepository;
 import com.finplay.api.portfolio.repository.HoldingRepository;
 import com.finplay.api.portfolio.repository.TradeAllocationRepository;
 import java.math.BigDecimal;
-import java.time.Clock;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
@@ -50,11 +49,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpHeaders;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -67,10 +63,9 @@ import org.springframework.transaction.annotation.Transactional;
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
-@Import({TestcontainersConfiguration.class, JournalListIntegrationTest.FixedClockTestConfig.class})
+@Import({TestcontainersConfiguration.class, TestClockConfig.class})
 class JournalListIntegrationTest {
 
-	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 	// 2026-07-29는 수요일이고 holidays-2026.txt에도 없어 재생세션만 READY면 개장 상태로 계산된다 (기존 선례 그대로).
 	private static final LocalDate TRADING_DATE = LocalDate.of(2026, 7, 29);
 	private static final LocalDateTime BASE_NOW = LocalDateTime.of(2026, 7, 29, 10, 0, 0);
@@ -89,7 +84,7 @@ class JournalListIntegrationTest {
 	private JournalService journalService;
 
 	@Autowired
-	private Clock clock;
+	private TestClock clock;
 
 	@Autowired
 	private UserRepository userRepository;
@@ -137,7 +132,7 @@ class JournalListIntegrationTest {
 
 	@BeforeEach
 	void setUp() {
-		((MutableClock)clock).set(BASE_NOW);
+		clock.set(BASE_NOW);
 		stockReplaySessionRepository
 			.findByServiceDate(TRADING_DATE)
 			.orElseGet(() -> stockReplaySessionRepository.saveAndFlush(
@@ -155,9 +150,9 @@ class JournalListIntegrationTest {
 
 		LocalDateTime buyCreatedAt = BASE_NOW.plusHours(1);
 		LocalDateTime sellCreatedAt = BASE_NOW.plusHours(2);
-		((MutableClock)clock).set(buyCreatedAt);
+		clock.set(buyCreatedAt);
 		journalService.createBuyJournal(user.getId(), buyTradeId, "매수 회고");
-		((MutableClock)clock).set(sellCreatedAt);
+		clock.set(sellCreatedAt);
 		journalService.createSellJournal(user.getId(), pair.sellTradeId(), "매도 회고");
 
 		// 접근 토큰은 clock 전진을 모두 마친 뒤(만료 시각이 access-token-expiration-ms=1시간이라 clock을 몇
@@ -191,9 +186,9 @@ class JournalListIntegrationTest {
 		Long stockBuyTradeId = createBuyTrade(user, "LSTMKS");
 		Long cryptoBuyTradeId = createCryptoBuyTrade(user, "LSTMKC");
 
-		((MutableClock)clock).set(BASE_NOW.plusHours(1));
+		clock.set(BASE_NOW.plusHours(1));
 		journalService.createBuyJournal(user.getId(), stockBuyTradeId, "주식 회고");
-		((MutableClock)clock).set(BASE_NOW.plusHours(2));
+		clock.set(BASE_NOW.plusHours(2));
 		journalService.createBuyJournal(user.getId(), cryptoBuyTradeId, "코인 회고");
 
 		String accessToken = issueAccessToken(user);
@@ -222,15 +217,15 @@ class JournalListIntegrationTest {
 		Long buy4 = createBuyTrade(user, "LSTPG4");
 		TradePair pair2 = createBuyThenSellTradePair(user, "LSTPG5");
 
-		((MutableClock)clock).set(BASE_NOW.plusHours(1));
+		clock.set(BASE_NOW.plusHours(1));
 		journalService.createBuyJournal(user.getId(), buy1, "1시간 후 매수 회고");
-		((MutableClock)clock).set(BASE_NOW.plusHours(2));
+		clock.set(BASE_NOW.plusHours(2));
 		journalService.createBuyJournal(user.getId(), buy2, "2시간 후 매수 회고");
-		((MutableClock)clock).set(BASE_NOW.plusHours(3));
+		clock.set(BASE_NOW.plusHours(3));
 		journalService.createSellJournal(user.getId(), pair1.sellTradeId(), "3시간 후 매도 회고");
-		((MutableClock)clock).set(BASE_NOW.plusHours(4));
+		clock.set(BASE_NOW.plusHours(4));
 		journalService.createBuyJournal(user.getId(), buy4, "4시간 후 매수 회고");
-		((MutableClock)clock).set(BASE_NOW.plusHours(5));
+		clock.set(BASE_NOW.plusHours(5));
 		journalService.createSellJournal(user.getId(), pair2.sellTradeId(), "5시간 후 매도 회고");
 
 		String accessToken = issueAccessToken(user);
@@ -261,13 +256,13 @@ class JournalListIntegrationTest {
 		LocalDateTime t1 = BASE_NOW.plusHours(2);
 		LocalDateTime t2 = BASE_NOW.plusHours(3);
 
-		((MutableClock)clock).set(t0);
+		clock.set(t0);
 		journalService.createBuyJournal(user.getId(), oldestBuyTradeId, "가장 오래된 매수 회고");
-		((MutableClock)clock).set(t1);
+		clock.set(t1);
 		journalService.createBuyJournal(user.getId(), tiedLowBuyTradeId, "동시각 매수 회고");
 		// 시각을 바꾸지 않고 바로 매도 회고를 만들어 t1에 정확히 동일한 createdAt을 강제한다.
 		journalService.createSellJournal(user.getId(), tiedPair.sellTradeId(), "동시각 매도 회고");
-		((MutableClock)clock).set(t2);
+		clock.set(t2);
 		journalService.createBuyJournal(user.getId(), newestBuyTradeId, "가장 최신 매수 회고");
 
 		String accessToken = issueAccessToken(user);
@@ -375,9 +370,9 @@ class JournalListIntegrationTest {
 		createAccount(other, com.finplay.api.account.domain.Market.STOCK);
 		Long otherBuyTradeId = createBuyTrade(other, "LSTOTH");
 
-		((MutableClock)clock).set(BASE_NOW.plusHours(1));
+		clock.set(BASE_NOW.plusHours(1));
 		journalService.createBuyJournal(owner.getId(), ownerBuyTradeId, "소유자 회고");
-		((MutableClock)clock).set(BASE_NOW.plusHours(2));
+		clock.set(BASE_NOW.plusHours(2));
 		journalService.createBuyJournal(other.getId(), otherBuyTradeId, "타인 회고");
 
 		String ownerAccessToken = issueAccessToken(owner);
@@ -410,9 +405,9 @@ class JournalListIntegrationTest {
 
 		Long buyTradeId = createBuyTrade(user, "LSTNID");
 		TradePair pair = createBuyThenSellTradePair(user, "LSTNI2");
-		((MutableClock)clock).set(BASE_NOW.plusHours(1));
+		clock.set(BASE_NOW.plusHours(1));
 		journalService.createBuyJournal(user.getId(), buyTradeId, "매수 회고");
-		((MutableClock)clock).set(BASE_NOW.plusHours(2));
+		clock.set(BASE_NOW.plusHours(2));
 		journalService.createSellJournal(user.getId(), pair.sellTradeId(), "매도 회고");
 
 		String accessToken = issueAccessToken(user);
@@ -432,9 +427,9 @@ class JournalListIntegrationTest {
 		Account account = createAccount(user, com.finplay.api.account.domain.Market.STOCK);
 
 		TradePair pair = createBuyThenSellTradePair(user, "LSTINV");
-		((MutableClock)clock).set(BASE_NOW.plusHours(1));
+		clock.set(BASE_NOW.plusHours(1));
 		journalService.createBuyJournal(user.getId(), pair.buyTradeId(), "매수 회고");
-		((MutableClock)clock).set(BASE_NOW.plusHours(2));
+		clock.set(BASE_NOW.plusHours(2));
 		journalService.createSellJournal(user.getId(), pair.sellTradeId(), "매도 회고");
 
 		String accessToken = issueAccessToken(user);
@@ -512,7 +507,7 @@ class JournalListIntegrationTest {
 	// 매수 파이프라인만 태워 체결 1건을 만들고(주문가는 09:59에 마감된 분봉), 이 호출 자체가 clock을 BASE_NOW로
 	// 되돌려 다른 헬퍼 호출로 시각이 흐트러져 있어도 항상 같은 조건에서 체결가를 매긴다.
 	private Long createBuyTrade(User user, String instrumentPrefix) {
-		((MutableClock)clock).set(BASE_NOW);
+		clock.set(BASE_NOW);
 		Instrument instrument = createStockInstrument(instrumentPrefix);
 		createCandle(instrument, FIRST_CANDLE_TIME, new BigDecimal("60000"));
 		OrderResponse response = orderService.createOrder(
@@ -522,7 +517,7 @@ class JournalListIntegrationTest {
 	}
 
 	private Long createCryptoBuyTrade(User user, String instrumentPrefix) {
-		((MutableClock)clock).set(BASE_NOW);
+		clock.set(BASE_NOW);
 		Instrument instrument = createCryptoInstrument(instrumentPrefix);
 		seedCryptoPrice(instrument, new BigDecimal("50000000"));
 		OrderResponse response = orderService.createOrder(
@@ -534,7 +529,7 @@ class JournalListIntegrationTest {
 	// 매수 → 매도까지 태워 매도 체결 1건을 만든다. 이 호출도 clock을 BASE_NOW로 되돌리는 데서 시작해 다른 헬퍼
 	// 호출들과 독립적으로 항상 같은 조건에서 체결가를 매긴다(회고 생성 시각은 이후 테스트에서 별도로 지정한다).
 	private TradePair createBuyThenSellTradePair(User user, String instrumentPrefix) {
-		((MutableClock)clock).set(BASE_NOW);
+		clock.set(BASE_NOW);
 		Instrument instrument = createStockInstrument(instrumentPrefix);
 		createCandle(instrument, FIRST_CANDLE_TIME, new BigDecimal("60000"));
 		createCandle(instrument, SECOND_CANDLE_TIME, new BigDecimal("80000"));
@@ -542,7 +537,7 @@ class JournalListIntegrationTest {
 		OrderResponse buy = orderService.createOrder(
 			user.getId(), "idem-" + instrumentPrefix + "-buy-" + UUID.randomUUID(),
 			buyRequest(Market.STOCK, instrument.getId(), "10"));
-		((MutableClock)clock).set(BASE_NOW.plusMinutes(1));
+		clock.set(BASE_NOW.plusMinutes(1));
 		OrderResponse sell = orderService.createOrder(
 			user.getId(), "idem-" + instrumentPrefix + "-sell-" + UUID.randomUUID(),
 			sellRequest(Market.STOCK, instrument.getId(), "5"));
@@ -635,45 +630,4 @@ class JournalListIntegrationTest {
 		long realizedPnl) {
 	}
 
-	// 전역 Clock 빈(ClockConfig, Asia/Seoul 실시각)을 이 테스트 컨텍스트에서만 고정 시각으로 교체한다.
-	@TestConfiguration(proxyBeanMethods = false)
-	static class FixedClockTestConfig {
-
-		@Bean
-		@Primary
-		Clock fixedClock() {
-			return new MutableClock(BASE_NOW.atZone(KST).toInstant(), KST);
-		}
-	}
-
-	// 체결 시각·회고 작성 시각을 테스트 도중 자유롭게 전진·고정시킬 수 있는 Clock 구현.
-	private static final class MutableClock extends Clock {
-
-		private final ZoneId zone;
-		private volatile Instant instant;
-
-		private MutableClock(Instant instant, ZoneId zone) {
-			this.instant = instant;
-			this.zone = zone;
-		}
-
-		void set(LocalDateTime localDateTime) {
-			this.instant = localDateTime.atZone(zone).toInstant();
-		}
-
-		@Override
-		public ZoneId getZone() {
-			return zone;
-		}
-
-		@Override
-		public Clock withZone(ZoneId zone) {
-			return new MutableClock(instant, zone);
-		}
-
-		@Override
-		public Instant instant() {
-			return instant;
-		}
-	}
 }

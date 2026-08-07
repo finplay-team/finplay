@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
 import com.finplay.api.TestcontainersConfiguration;
+import com.finplay.api.common.TestClock;
+import com.finplay.api.common.TestClockConfig;
 import com.finplay.api.feedback.config.FeedbackNewsProperties;
 import com.finplay.api.feedback.config.FeedbackQueryCacheProperties;
 import com.finplay.api.feedback.domain.FeedbackContentStatus;
@@ -36,12 +38,9 @@ import com.finplay.api.market.service.StockReplayService;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.net.ServerSocket;
-import java.time.Clock;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.ZoneId;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -52,10 +51,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -77,11 +73,9 @@ import tools.jackson.databind.ObjectMapper;
  */
 @SpringBootTest
 @Transactional
-@Import({TestcontainersConfiguration.class, FeedbackQueryCacheBoundaryIntegrationTest.MutableClockTestConfig.class})
+@Import({TestcontainersConfiguration.class, TestClockConfig.class})
 @TestPropertySource(properties = "feedback.query-cache.enabled=true")
 class FeedbackQueryCacheBoundaryIntegrationTest {
-
-	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
 	private static final LocalDate ORIGIN_TRADE_DATE = LocalDate.of(2026, 8, 5);
 
@@ -151,9 +145,9 @@ class FeedbackQueryCacheBoundaryIntegrationTest {
 	private JdbcTemplate jdbcTemplate;
 
 	@Autowired
-	private Clock clock;
+	private TestClock clock;
 
-	private MutableClock mutableClock;
+	private TestClock mutableClock;
 
 	private Instrument stock;
 
@@ -162,7 +156,7 @@ class FeedbackQueryCacheBoundaryIntegrationTest {
 	@BeforeEach
 	void setUp() {
 		FeedbackQueryCacheTestKeys.clear(redisTemplate);
-		mutableClock = (MutableClock)clock;
+		mutableClock = clock;
 		mutableClock.set(INITIAL_NOW);
 		stock = instrumentService.getInstrumentEntities(Market.STOCK).stream()
 			.filter(each -> STOCK_SYMBOL.equals(each.getSymbol()))
@@ -380,42 +374,4 @@ class FeedbackQueryCacheBoundaryIntegrationTest {
 		return snapshot;
 	}
 
-	@TestConfiguration
-	static class MutableClockTestConfig {
-
-		@Bean
-		@Primary
-		Clock mutableClock() {
-			return new MutableClock(INITIAL_NOW.atZone(KST).toInstant());
-		}
-	}
-
-	// 같은 픽스처를 여러 시각에서 조회해야 범위 전환의 양쪽을 볼 수 있다 (게이트 테스트들과 같은 방식).
-	private static final class MutableClock extends Clock {
-
-		private volatile Instant instant;
-
-		private MutableClock(Instant instant) {
-			this.instant = instant;
-		}
-
-		void set(LocalDateTime localDateTime) {
-			this.instant = localDateTime.atZone(KST).toInstant();
-		}
-
-		@Override
-		public ZoneId getZone() {
-			return KST;
-		}
-
-		@Override
-		public Clock withZone(ZoneId zone) {
-			return this;
-		}
-
-		@Override
-		public Instant instant() {
-			return instant;
-		}
-	}
 }

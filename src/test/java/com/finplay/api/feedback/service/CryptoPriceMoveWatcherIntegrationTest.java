@@ -4,6 +4,8 @@ package com.finplay.api.feedback.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finplay.api.TestcontainersConfiguration;
+import com.finplay.api.common.TestClock;
+import com.finplay.api.common.TestClockConfig;
 import com.finplay.api.feedback.domain.MarketNewsItem;
 import com.finplay.api.feedback.domain.MarketNewsItemType;
 import com.finplay.api.feedback.domain.PriceMoveEvent;
@@ -17,10 +19,8 @@ import com.finplay.api.market.repository.InstrumentRepository;
 import com.finplay.api.market.store.PriceStore;
 import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
-import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,10 +30,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,10 +44,8 @@ import org.springframework.transaction.annotation.Transactional;
 // 폴백한다(FeedbackBatchIntegrationTest와 같은 전제).
 @SpringBootTest
 @Transactional
-@Import({TestcontainersConfiguration.class, CryptoPriceMoveWatcherIntegrationTest.FixedClockTestConfig.class})
+@Import({TestcontainersConfiguration.class, TestClockConfig.class})
 class CryptoPriceMoveWatcherIntegrationTest {
-
-	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
 	// 배치 실행 시각 — 자정과 무관한 평범한 시각이다. 자정 케이스는 단위 테스트가 정밀하게 본다.
 	private static final LocalDateTime NOW = LocalDateTime.of(2026, 8, 5, 10, 0);
@@ -91,10 +86,15 @@ class CryptoPriceMoveWatcherIntegrationTest {
 	@Autowired
 	private EntityManager entityManager;
 
+	// 전역 Clock 빈을 대신하는 공용 테스트 시계 (TestClockConfig). 기준 시각은 @BeforeEach에서 세운다.
+	@Autowired
+	private TestClock clock;
+
 	private Instrument instrument;
 
 	@BeforeEach
 	void setUp() {
+		clock.set(NOW);
 		instrument = instrumentRepository.saveAndFlush(Instrument.create(
 			Market.CRYPTO, SYMBOL, "테스트코인", BigDecimal.ONE, 5000L, true, NOW));
 	}
@@ -185,13 +185,4 @@ class CryptoPriceMoveWatcherIntegrationTest {
 		return counts;
 	}
 
-	@TestConfiguration
-	static class FixedClockTestConfig {
-
-		@Bean
-		@Primary
-		Clock fixedClock() {
-			return Clock.fixed(NOW.atZone(KST).toInstant(), KST);
-		}
-	}
 }

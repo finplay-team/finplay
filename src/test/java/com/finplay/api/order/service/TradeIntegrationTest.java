@@ -14,6 +14,8 @@ import com.finplay.api.account.repository.AccountRepository;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.auth.token.JwtTokenProvider;
+import com.finplay.api.common.TestClock;
+import com.finplay.api.common.TestClockConfig;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.domain.StockCandle;
@@ -25,12 +27,9 @@ import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.dto.request.OrderCreateRequest;
 import com.finplay.api.order.dto.response.OrderResponse;
 import java.math.BigDecimal;
-import java.time.Clock;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -38,11 +37,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpHeaders;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -54,10 +50,9 @@ import org.springframework.transaction.annotation.Transactional;
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
-@Import({TestcontainersConfiguration.class, TradeIntegrationTest.FixedClockTestConfig.class})
+@Import({TestcontainersConfiguration.class, TestClockConfig.class})
 class TradeIntegrationTest {
 
-	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 	// 2026-07-29는 수요일이고 holidays-2026.txt에도 없어 재생세션만 READY면 개장 상태로 계산된다.
 	private static final LocalDate TRADING_DATE = LocalDate.of(2026, 7, 29);
 	private static final LocalDateTime BASE_NOW = LocalDateTime.of(2026, 7, 29, 10, 0, 0);
@@ -72,7 +67,7 @@ class TradeIntegrationTest {
 	private OrderService orderService;
 
 	@Autowired
-	private Clock clock;
+	private TestClock clock;
 
 	@Autowired
 	private UserRepository userRepository;
@@ -96,7 +91,7 @@ class TradeIntegrationTest {
 
 	@BeforeEach
 	void setUp() {
-		((MutableClock)clock).set(BASE_NOW);
+		clock.set(BASE_NOW);
 		stockReplaySessionRepository
 			.findByServiceDate(TRADING_DATE)
 			.orElseGet(() -> stockReplaySessionRepository.saveAndFlush(
@@ -116,11 +111,11 @@ class TradeIntegrationTest {
 
 		// 매수1: 10:00 시각 → 09:59 분봉(60000) 체결가, 매수2: 10:01 시각 → 10:00 분봉(80000) 체결가.
 		OrderResponse buy1 = orderService.createOrder(user.getId(), "trd-buy-1", buyRequest(instrument.getId(), "10"));
-		((MutableClock)clock).set(BASE_NOW.plusMinutes(1));
+		clock.set(BASE_NOW.plusMinutes(1));
 		OrderResponse buy2 = orderService.createOrder(user.getId(), "trd-buy-2", buyRequest(instrument.getId(), "10"));
 
 		// 매도: 10:02 시각 → 10:01 분봉(100000) 체결가, 5주만 매도(FIFO로 매수1 lot 일부 소진).
-		((MutableClock)clock).set(BASE_NOW.plusMinutes(2));
+		clock.set(BASE_NOW.plusMinutes(2));
 		OrderResponse sell = orderService.createOrder(user.getId(), "trd-sell-1", sellRequest(instrument.getId(), "5"));
 		assertThat(sell.realizedPnl()).isNotNull();
 
@@ -158,7 +153,7 @@ class TradeIntegrationTest {
 
 		// 5건의 매수를 서로 다른 시각(분 단위 전진)에 체결시켜 executedAt이 모두 달라지게 한다.
 		for (int i = 1; i <= 5; i++) {
-			((MutableClock)clock).set(BASE_NOW.plusMinutes(i));
+			clock.set(BASE_NOW.plusMinutes(i));
 			orderService.createOrder(user.getId(), "trd-page-buy-" + i,
 				buyRequest(instrument.getId(), String.valueOf(i)));
 		}
@@ -318,45 +313,4 @@ class TradeIntegrationTest {
 		return scenario + "-" + UUID.randomUUID().toString().replace("-", "");
 	}
 
-	// 전역 Clock 빈(ClockConfig, Asia/Seoul 실시각)을 이 테스트 컨텍스트에서만 고정 시각으로 교체한다.
-	@TestConfiguration(proxyBeanMethods = false)
-	static class FixedClockTestConfig {
-
-		@Bean
-		@Primary
-		Clock fixedClock() {
-			return new MutableClock(BASE_NOW.atZone(KST).toInstant(), KST);
-		}
-	}
-
-	// 매수·매도 순서로 서로 다른 분봉·체결시각을 쓰기 위해 테스트 도중 시각을 전진시킬 수 있는 Clock 구현.
-	private static final class MutableClock extends Clock {
-
-		private final ZoneId zone;
-		private volatile Instant instant;
-
-		private MutableClock(Instant instant, ZoneId zone) {
-			this.instant = instant;
-			this.zone = zone;
-		}
-
-		void set(LocalDateTime localDateTime) {
-			this.instant = localDateTime.atZone(zone).toInstant();
-		}
-
-		@Override
-		public ZoneId getZone() {
-			return zone;
-		}
-
-		@Override
-		public Clock withZone(ZoneId zone) {
-			return new MutableClock(instant, zone);
-		}
-
-		@Override
-		public Instant instant() {
-			return instant;
-		}
-	}
 }

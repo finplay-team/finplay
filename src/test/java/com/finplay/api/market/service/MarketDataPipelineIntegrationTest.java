@@ -11,6 +11,8 @@ import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
+import com.finplay.api.common.TestClock;
+import com.finplay.api.common.TestClockConfig;
 import com.finplay.api.market.domain.ImportStatus;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
@@ -32,8 +34,6 @@ import com.finplay.api.order.service.OrderService;
 import com.finplay.api.portfolio.repository.HoldingLotRepository;
 import com.finplay.api.portfolio.repository.HoldingRepository;
 import java.math.BigDecimal;
-import java.time.Clock;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -44,14 +44,11 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
 import org.springframework.transaction.annotation.Transactional;
 
 @SpringBootTest
-@Import({TestcontainersConfiguration.class, MarketDataPipelineIntegrationTest.FixedClockTestConfig.class})
+@Import({TestcontainersConfiguration.class, TestClockConfig.class})
 class MarketDataPipelineIntegrationTest {
 
 	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
@@ -87,7 +84,7 @@ class MarketDataPipelineIntegrationTest {
 	private static final LocalDate SD_E = LocalDate.of(2026, 5, 7); // 목
 
 	@Autowired
-	private Clock clock;
+	private TestClock clock;
 
 	@Autowired
 	private InstrumentRepository instrumentRepository;
@@ -148,7 +145,7 @@ class MarketDataPipelineIntegrationTest {
 	private Long pipelineUserId;
 
 	private void setClock(LocalDate date, LocalTime time) {
-		((MutableClock)clock).set(LocalDateTime.of(date, time));
+		clock.set(LocalDateTime.of(date, time));
 	}
 
 	// 이 테스트가 실제 종목에 남긴 분봉·재생세션·수집 이력을 정리한다 — 종목 자체는 만들지도 지우지도 않으므로 여기서는
@@ -421,46 +418,4 @@ class MarketDataPipelineIntegrationTest {
 			.containsExactlyInAnyOrder(PreparationStatus.PREPARING, PreparationStatus.READY, PreparationStatus.FAILED);
 	}
 
-	// 전역 Clock 빈(Asia/Seoul 실시각)을 이 테스트 컨텍스트에서만 시각 이동이 가능한 고정 Clock으로 교체한다 — 08:10·08:40·09:00
-	// 배치 실행 시각과 장중 시각을 각각 재현하기 위함이다 (OrderBuyIntegrationTest와 동일한 관례).
-	@TestConfiguration(proxyBeanMethods = false)
-	static class FixedClockTestConfig {
-
-		@Bean
-		@Primary
-		Clock fixedClock() {
-			return new MutableClock(LocalDateTime.of(2026, 1, 1, 0, 0).atZone(KST).toInstant(), KST);
-		}
-	}
-
-	// 테스트 도중 시각을 임의로 이동시킬 수 있는 Clock 구현 — 08:10 수집·08:40 세션 확정·09:00 이후 재생을 같은 테스트 안에서 재현한다.
-	private static final class MutableClock extends Clock {
-
-		private final ZoneId zone;
-		private volatile Instant instant;
-
-		private MutableClock(Instant instant, ZoneId zone) {
-			this.instant = instant;
-			this.zone = zone;
-		}
-
-		void set(LocalDateTime localDateTime) {
-			this.instant = localDateTime.atZone(zone).toInstant();
-		}
-
-		@Override
-		public ZoneId getZone() {
-			return zone;
-		}
-
-		@Override
-		public Clock withZone(ZoneId zone) {
-			return new MutableClock(instant, zone);
-		}
-
-		@Override
-		public Instant instant() {
-			return instant;
-		}
-	}
 }

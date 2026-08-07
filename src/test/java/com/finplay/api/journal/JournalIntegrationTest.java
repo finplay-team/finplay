@@ -13,6 +13,8 @@ import com.finplay.api.account.repository.AccountRepository;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.auth.token.JwtTokenProvider;
+import com.finplay.api.common.TestClock;
+import com.finplay.api.common.TestClockConfig;
 import com.finplay.api.journal.repository.BuyTradeJournalRepository;
 import com.finplay.api.journal.repository.SellTradeJournalRepository;
 import com.finplay.api.market.domain.Instrument;
@@ -32,12 +34,9 @@ import com.finplay.api.portfolio.repository.HoldingLotRepository;
 import com.finplay.api.portfolio.repository.HoldingRepository;
 import com.finplay.api.portfolio.repository.TradeAllocationRepository;
 import java.math.BigDecimal;
-import java.time.Clock;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -51,11 +50,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -66,10 +62,9 @@ import org.springframework.test.web.servlet.MockMvc;
 // (OrderService.createOrder)으로 만든다 — TradeIntegrationTest·OrderBuyIntegrationTest 선례를 따른다.
 @SpringBootTest
 @AutoConfigureMockMvc
-@Import({TestcontainersConfiguration.class, JournalIntegrationTest.FixedClockTestConfig.class})
+@Import({TestcontainersConfiguration.class, TestClockConfig.class})
 class JournalIntegrationTest {
 
-	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 	// 2026-07-29는 수요일이고 holidays-2026.txt에도 없어 재생세션만 READY면 개장 상태로 계산된다 (기존 선례 그대로).
 	private static final LocalDate TRADING_DATE = LocalDate.of(2026, 7, 29);
 	private static final LocalDateTime BASE_NOW = LocalDateTime.of(2026, 7, 29, 10, 0, 0);
@@ -84,7 +79,7 @@ class JournalIntegrationTest {
 	private OrderService orderService;
 
 	@Autowired
-	private Clock clock;
+	private TestClock clock;
 
 	@Autowired
 	private UserRepository userRepository;
@@ -137,7 +132,7 @@ class JournalIntegrationTest {
 
 	@BeforeEach
 	void setUp() {
-		((MutableClock)clock).set(BASE_NOW);
+		clock.set(BASE_NOW);
 		if (stockReplaySessionRepository.findByServiceDate(TRADING_DATE).isEmpty()) {
 			stockReplaySessionRepository.saveAndFlush(
 				StockReplaySession.ready(TRADING_DATE, TRADING_DATE, BASE_NOW, BASE_NOW));
@@ -472,7 +467,7 @@ class JournalIntegrationTest {
 			.andExpect(jsonPath("$.createdAt").value("2026-07-29T10:01:00"));
 
 		LedgerSnapshot before = captureLedger(account.getId());
-		((MutableClock)clock).set(BASE_NOW.plusMinutes(2));
+		clock.set(BASE_NOW.plusMinutes(2));
 
 		mockMvc.perform(patchSellJournal(sellTradeId, accessToken, "수정된 본문"))
 			.andExpect(status().isOk())
@@ -500,13 +495,13 @@ class JournalIntegrationTest {
 			.andExpect(status().isCreated());
 
 		LedgerSnapshot before = captureLedger(account.getId());
-		((MutableClock)clock).set(BASE_NOW.plusMinutes(2));
+		clock.set(BASE_NOW.plusMinutes(2));
 
 		mockMvc.perform(patchSellJournal(sellTradeId, accessToken, "첫 번째 수정"))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.content").value("첫 번째 수정"));
 
-		((MutableClock)clock).set(BASE_NOW.plusMinutes(3));
+		clock.set(BASE_NOW.plusMinutes(3));
 
 		mockMvc.perform(patchSellJournal(sellTradeId, accessToken, "두 번째 수정"))
 			.andExpect(status().isOk())
@@ -630,7 +625,7 @@ class JournalIntegrationTest {
 			.andExpect(jsonPath("$.createdAt").value("2026-07-29T10:00:00"));
 
 		LedgerSnapshot before = captureLedger(account.getId());
-		((MutableClock)clock).set(BASE_NOW.plusMinutes(2));
+		clock.set(BASE_NOW.plusMinutes(2));
 
 		mockMvc.perform(patchJournal(buyTradeId, accessToken, "수정된 본문"))
 			.andExpect(status().isOk())
@@ -658,13 +653,13 @@ class JournalIntegrationTest {
 			.andExpect(status().isCreated());
 
 		LedgerSnapshot before = captureLedger(account.getId());
-		((MutableClock)clock).set(BASE_NOW.plusMinutes(2));
+		clock.set(BASE_NOW.plusMinutes(2));
 
 		mockMvc.perform(patchJournal(buyTradeId, accessToken, "첫 번째 수정"))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.content").value("첫 번째 수정"));
 
-		((MutableClock)clock).set(BASE_NOW.plusMinutes(3));
+		clock.set(BASE_NOW.plusMinutes(3));
 
 		mockMvc.perform(patchJournal(buyTradeId, accessToken, "두 번째 수정"))
 			.andExpect(status().isOk())
@@ -794,7 +789,7 @@ class JournalIntegrationTest {
 		BigDecimal remainingBefore = remainingQuantityForBuyTrade(buyTradeId);
 		BigDecimal allocatedBefore = totalAllocatedQuantityForBuyTrade(buyTradeId);
 		LedgerSnapshot before = captureLedger(account.getId());
-		((MutableClock)clock).set(BASE_NOW.plusMinutes(2));
+		clock.set(BASE_NOW.plusMinutes(2));
 
 		mockMvc.perform(patchJournal(buyTradeId, accessToken, "부분 매도된 lot에 대한 수정"))
 			.andExpect(status().isOk())
@@ -821,7 +816,7 @@ class JournalIntegrationTest {
 		assertThat(remainingQuantityForBuyTrade(buyTradeId)).isEqualByComparingTo(BigDecimal.ZERO);
 		BigDecimal allocatedBefore = totalAllocatedQuantityForBuyTrade(buyTradeId);
 		LedgerSnapshot before = captureLedger(account.getId());
-		((MutableClock)clock).set(BASE_NOW.plusMinutes(2));
+		clock.set(BASE_NOW.plusMinutes(2));
 
 		mockMvc.perform(patchJournal(buyTradeId, accessToken, "전량 매도된 lot에 대한 수정"))
 			.andExpect(status().isOk())
@@ -954,7 +949,7 @@ class JournalIntegrationTest {
 		orderService.createOrder(
 			user.getId(), "idem-" + instrumentPrefix + "-buy-" + UUID.randomUUID(),
 			buyRequest(instrument.getId(), "10"));
-		((MutableClock)clock).set(BASE_NOW.plusMinutes(1));
+		clock.set(BASE_NOW.plusMinutes(1));
 		OrderResponse sell = orderService.createOrder(
 			user.getId(), "idem-" + instrumentPrefix + "-sell-" + UUID.randomUUID(),
 			sellRequest(instrument.getId(), "5"));
@@ -971,7 +966,7 @@ class JournalIntegrationTest {
 		OrderResponse buy = orderService.createOrder(
 			user.getId(), "idem-" + instrumentPrefix + "-buy-" + UUID.randomUUID(),
 			buyRequest(instrument.getId(), "10"));
-		((MutableClock)clock).set(BASE_NOW.plusMinutes(1));
+		clock.set(BASE_NOW.plusMinutes(1));
 		OrderResponse sell = orderService.createOrder(
 			user.getId(), "idem-" + instrumentPrefix + "-sell-" + UUID.randomUUID(),
 			sellRequest(instrument.getId(), "5"));
@@ -988,7 +983,7 @@ class JournalIntegrationTest {
 		OrderResponse buy = orderService.createOrder(
 			user.getId(), "idem-" + instrumentPrefix + "-buy-" + UUID.randomUUID(),
 			buyRequest(instrument.getId(), "10"));
-		((MutableClock)clock).set(BASE_NOW.plusMinutes(1));
+		clock.set(BASE_NOW.plusMinutes(1));
 		OrderResponse sell = orderService.createOrder(
 			user.getId(), "idem-" + instrumentPrefix + "-sell-" + UUID.randomUUID(),
 			sellRequest(instrument.getId(), "10"));
@@ -1147,46 +1142,4 @@ class JournalIntegrationTest {
 		long realizedPnl) {
 	}
 
-	// 전역 Clock 빈(ClockConfig, Asia/Seoul 실시각)을 이 테스트 컨텍스트에서만 고정 시각으로 교체한다.
-	// 주식 장중 판정·분봉 조회·투자일기 작성시각이 실제 실행 시각에 의존하지 않도록 하기 위함이다.
-	@TestConfiguration(proxyBeanMethods = false)
-	static class FixedClockTestConfig {
-
-		@Bean
-		@Primary
-		Clock fixedClock() {
-			return new MutableClock(BASE_NOW.atZone(KST).toInstant(), KST);
-		}
-	}
-
-	// 매수·매도 시나리오에서 서로 다른 분봉(시각이 다른)을 각각 체결가로 쓰기 위해 테스트 도중 시각을 전진시킬 수 있는 Clock 구현.
-	private static final class MutableClock extends Clock {
-
-		private final ZoneId zone;
-		private volatile Instant instant;
-
-		private MutableClock(Instant instant, ZoneId zone) {
-			this.instant = instant;
-			this.zone = zone;
-		}
-
-		void set(LocalDateTime localDateTime) {
-			this.instant = localDateTime.atZone(zone).toInstant();
-		}
-
-		@Override
-		public ZoneId getZone() {
-			return zone;
-		}
-
-		@Override
-		public Clock withZone(ZoneId zone) {
-			return new MutableClock(instant, zone);
-		}
-
-		@Override
-		public Instant instant() {
-			return instant;
-		}
-	}
 }

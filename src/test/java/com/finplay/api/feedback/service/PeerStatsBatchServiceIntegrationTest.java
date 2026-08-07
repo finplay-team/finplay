@@ -8,6 +8,8 @@ import com.finplay.api.account.domain.Account;
 import com.finplay.api.account.repository.AccountRepository;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
+import com.finplay.api.common.TestClock;
+import com.finplay.api.common.TestClockConfig;
 import com.finplay.api.feedback.domain.NarrativeSource;
 import com.finplay.api.feedback.domain.PriceMoveEvent;
 import com.finplay.api.feedback.domain.PriceMoveEventType;
@@ -51,10 +53,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -65,7 +64,7 @@ import org.springframework.transaction.annotation.Transactional;
 // LLM은 부르지 않는다 — 이 배치는 애초에 새 LLM 호출을 추가하지 않는다(spec 012 이슈 #212 제약).
 @SpringBootTest
 @Transactional
-@Import({TestcontainersConfiguration.class, PeerStatsBatchServiceIntegrationTest.FixedClockTestConfig.class})
+@Import({TestcontainersConfiguration.class, TestClockConfig.class})
 class PeerStatsBatchServiceIntegrationTest {
 
 	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
@@ -74,7 +73,7 @@ class PeerStatsBatchServiceIntegrationTest {
 	private static final LocalDate ORIGIN_TRADE_DATE = LocalDate.of(2026, 8, 5);
 	private static final LocalDate SERVICE_DATE = LocalDate.of(2026, 8, 6);
 
-	// 배치 실행 시각 15:32 (§C-1) — 장 마감 15:30 뒤.
+	// 배치 실행 시각 (장 마감 15:30 직후).
 	private static final LocalDateTime BATCH_AT = LocalDateTime.of(SERVICE_DATE, LocalTime.of(15, 32));
 
 	// 카드 windowEnd. T = SERVICE_DATE + 09:10.
@@ -143,6 +142,10 @@ class PeerStatsBatchServiceIntegrationTest {
 	@Autowired
 	private EntityManager entityManager;
 
+	// 전역 Clock 빈을 대신하는 공용 테스트 시계 (TestClockConfig). 기준 시각은 @BeforeEach에서 세운다.
+	@Autowired
+	private TestClock clock;
+
 	private Instrument instrument;
 
 	// 매수·매도 체결이 참조하는 더미 재생세션 — PeerStatsBatchService가 조회하는 "현재 재생세션"과는 무관하고
@@ -154,6 +157,7 @@ class PeerStatsBatchServiceIntegrationTest {
 
 	@BeforeEach
 	void setUp() {
+		clock.set(BATCH_AT);
 		instrument = instrumentRepository.saveAndFlush(
 			Instrument.create(Market.STOCK, "TEST12", "테스트종목", BigDecimal.valueOf(100), 10_000L, true, T));
 		tradeLinkSession = stockReplaySessionRepository.saveAndFlush(
@@ -388,14 +392,4 @@ class PeerStatsBatchServiceIntegrationTest {
 			TradeAllocation.create(sellTrade, lot, quantity, 700_000L, 100L, sellTrade.getExecutedAt()));
 	}
 
-	@TestConfiguration
-	static class FixedClockTestConfig {
-
-		// 15:32 — 장 마감(15:30) 직후, §C-1이 정한 배치 실행 시각.
-		@Bean
-		@Primary
-		Clock fixedClock() {
-			return Clock.fixed(BATCH_AT.atZone(KST).toInstant(), KST);
-		}
-	}
 }
