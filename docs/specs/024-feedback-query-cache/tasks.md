@@ -15,6 +15,7 @@
   - `RedisLock`(`com.finplay.api.feedback.service`) 신설 — `tryLock(String key, Duration ttl)` / `unlock(String key, String token)`. SET NX PX + Lua check-then-delete를 `CryptoWatchLock`에서 그대로 옮기고, 키 조립과 TTL은 소비자가 정한다. Redis 예외는 삼켜 "획득 실패"로 처리하고 로그 레벨 관례(정상 경합 `DEBUG`, 장애 `WARN`)를 유지한다.
   - `CryptoWatchLock`은 클래스로 남고 내부에서 `RedisLock`을 부른다 — **공개 시그니처를 바꾸지 않는다.**
   - 검증: `CryptoWatchLockConcurrencyIntegrationTest`를 포함한 **#244의 기존 테스트가 한 줄도 수정 없이 통과**한다. `RedisLock` 자체의 상호 배제(같은 키 두 번째 `tryLock`이 실패, 토큰이 다르면 `unlock`이 아무것도 지우지 않음, TTL 만료 후 재획득)를 Testcontainers Redis로 확인한다.
+  - **(2026-08-07 정정, PR #257 리뷰)** 위 검증 줄이 실제 결과와 다르다. 리뷰 1라운드에서 `CryptoWatchLock`이 `RedisLock`을 주입받도록 바뀌며 **생성자 시그니처가 달라져**, 그 생성자를 직접 부르는 `CryptoWatchLockTest`·`CryptoWatchLockIntegrationTest`의 **조립 두 줄을 고쳤다**(단정은 무수정). **`CryptoWatchLockConcurrencyIntegrationTest`는 무수정 통과가 맞다.** 애초에 이 항목이 지키려던 것은 동작 회귀 금지였고, 생성자 인자를 고정하려던 것이 아니다 — 그 구분을 남기지 않으면 다음 사람이 "전부 무수정"을 사실로 믿는다.
 
 - [x] **2. `FeedbackQueryCacheProperties`·`FeedbackQueryCacheConfig` + `FeedbackQueryCache` 신설** (ADR-0015 §2·§3·§5·§6·§7)
   - `feedback.query-cache.*` 프로퍼티 4개(`enabled`·`lock-ttl-millis`·`wait-millis`·`poll-millis`) — yml과 `@DefaultValue` 양쪽에 값을 두고, 조용히 방어를 무력화하는 값은 기동 실패로 막는다. **`enabled`는 운영 킬 스위치다** — 첫 조회 경로 캐시를 재배포 없이 되돌리는 수단이며, 폴백(DB 직행)이 이미 검증된 기존 경로다.
