@@ -41,7 +41,7 @@
 - [x] 1. **마이그레이션·저장소 추상화·설정**
   `db/migration/V26__create_community_post_images.sql`(plan.md SQL 그대로: `community_post_images` 테이블, `post_id` nullable FK `ON DELETE CASCADE` + `UNIQUE(post_id)`, `uploader_id` FK). `community.storage` 패키지에 `FileStorageService` 인터페이스(`store`/`load`/`delete`)와 `LocalFileStorageService` 구현체 신규 작성. `application.yml`에 `spring.servlet.multipart.max-file-size: 5MB`·`max-request-size: 6MB`·`finplay.community.image-storage.base-directory`(기본값 `./data/community-images`) 추가. `GlobalExceptionHandler`에 `MaxUploadSizeExceededException` → 400 `VALIDATION_ERROR` 핸들러 추가. 단위 테스트: `LocalFileStorageServiceTest`(`@TempDir`로 저장·로드·삭제 왕복, 존재하지 않는 파일 삭제 시 예외 없음).
 
-- [ ] 2. **`CommunityPostImage` 엔티티·업로드 API**
+- [x] 2. **`CommunityPostImage` 엔티티·업로드 API**
   `CommunityPostImage` 엔티티(plan.md 그대로: `uploader`·`post`(nullable)·`storedFilename`·`originalFilename`·`contentType`·`sizeBytes`·`createdAt`, `isAssigned()`·`assignToPost()`), `CommunityPostImageRepository`(`JpaRepository`) 신규. `CommunityPostImageService.uploadImage(authenticatedUserId, MultipartFile)`(빈 파일·허용하지 않는 형식 400, `UUID` 파일명 생성 후 `fileStorageService.store` 호출, `CommunityPostImage.create` 저장) 신규. `CommunityPostImageResponse`(`imageId`·`imageUrl`) 신규. `CommunityPostImageController`에 `POST /api/community/posts/images`(업로드, 201)·`GET /api/community/posts/images/{imageId}/file`(다운로드, 존재하지 않으면 404) 신규. 단위 테스트(`CommunityPostImageServiceTest`: 정상 업로드, 허용하지 않는 형식 400, 빈 파일 400) + `@DataJpaTest`(마이그레이션 FK·`UNIQUE(post_id)` 제약 확인, Testcontainers) + `@WebMvcTest`(`MockMultipartFile`로 업로드 성공/형식 오류 응답 계약, 다운로드 404).
 
 - [ ] 3. **게시물 생성 API에 이미지 연결 반영**

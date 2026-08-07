@@ -79,3 +79,11 @@
 
 ## 모니터링 (사람용 요약)
 - COM-006 항목1: `V26` 마이그레이션(`community_post_images`, `post_id` nullable FK `ON DELETE CASCADE` + `UNIQUE`), `community.storage` 패키지에 `FileStorageService`/`LocalFileStorageService`(로컬 파일시스템, `@Value` 생성자 수동 작성) 신규, `application.yml`에 multipart 크기 제한·`finplay.community.image-storage.base-directory` 추가, `GlobalExceptionHandler`에 `MaxUploadSizeExceededException` → 400 `VALIDATION_ERROR` 핸들러 추가. `LocalFileStorageServiceTest`(`@TempDir`) 3건 통과. compileJava/compileTestJava 통과(엔티티·업로드 API는 항목2 범위).
+
+## AI 로그 (에이전트 참조용, COM-006 항목2)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| - | implementer | `$env:JAVA_HOME=...; .\gradlew.bat compileJava` | plan.md "COM-006 사진 첨부" 데이터 모델(`CommunityPostImage` 엔티티)·패키지·클래스 설계(항목 2: 업로드 API) |
+
+## 모니터링 (사람용 요약)
+- COM-006 항목2: `CommunityPostImage` 엔티티(`isAssigned()`·`assignToPost()`)·`CommunityPostImageRepository`(`JpaRepository`) 신규. `CommunityPostImageService.uploadImage`(빈 파일·허용하지 않는 형식 400, `UUID`+원본 확장자 파일명 생성 후 `fileStorageService.store` 호출)와 `loadImageFile`(존재하지 않으면 404, `CommunityPostImageFile`(resource+contentType) 반환) 신규. `CommunityPostImageResponse`(`imageId`·`imageUrl`) 신규. `CommunityPostImageController`에 `POST /api/community/posts/images`(201)·`GET /api/community/posts/images/{imageId}/file` 신규. compileJava 통과(단위·슬라이스 테스트는 tester 담당, `resolveImageForPost`는 항목3 범위).
