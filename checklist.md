@@ -148,6 +148,20 @@
 - [ ] **하지 않음(의도)** — `@MockitoBean` 17곳 통합으로 컨텍스트 40개 줄이기. 테스트가 무엇을 검증하는지를 바꾸는 변경이라 **이슈 #134**로 분리
 - [ ] **미검증** — PR #127 10초 타임아웃의 병렬 부하 오탐 여부. 동시 빌드 금지 방침이라 병렬 부하 조건을 만들지 않았다 (단독 실행 중 12.7분 걸린 회차도 통과했다는 관찰만 있음)
 
+## 이슈 #134 테스트 Spring 컨텍스트 축소 + 커넥션 보유량 제거 (2026-08-07)
+- [x] 측정 방법 고정 — `-PmeasureContexts=true`로 `org.springframework.test.context.cache`를 DEBUG로 켜고 캐시 통계의 `missCount`(= 컨텍스트 적재 횟수)를 읽는다. 커넥션은 컨테이너에 3초 간격 `SHOW GLOBAL STATUS`. **전후 비교는 반드시 같은 스위치로** (측정 스위치가 로그를 10MB로 불려 빌드 시간을 왜곡하므로 PR #133의 3.5분과는 비교 불가)
+- [x] 착수 전 실측 — 컨텍스트 **82개**(이슈 본문의 40은 PR #133 시점 값), DataSource 보유 컨텍스트 50, 앱 기동 81회 266.2초, **MySQL 최대 동시 접속 276**
+- [x] 정적 분석이 예측한 키 82개와 실측 `missCount` 82가 일치 — **축출로 인한 재적재는 0건이고 82는 전부 서로 다른 설정**이다. PR #133의 "`maxSize` 상향 무효" 결론이 지금도 유효
+- [x] 원인 분류 — `@SpringBootTest` 44갈래 중 비기준 43갈래를 만든 요소: **`@Import`한 중첩 `@TestConfiguration` 31** > `@AutoConfigureMockMvc` 11 > `@MockitoBean` 7 > `@MockitoSpyBean` 6 > `@ActiveProfiles` 4 = `@TestPropertySource` 4. **이슈가 지목한 `@MockitoBean`(38곳)은 주범이 아니다**
+- [x] 31갈래의 정체 — `FixedClockTestConfig`/`MutableClockTestConfig`라는 이름만 다른 중첩 클래스 27곳. 내용은 `@Primary Clock` 빈 하나이고 `MutableClock` 구현이 22개 파일에 복제돼 있었다. 11곳은 기준 시각까지 `2026-07-29 10:00`으로 동일
+- [x] 공용 `TestClock` + `TestClockConfig`(`com.finplay.api.common`)로 27곳 통합 → 컨텍스트 **82 → 64**, 앱 기동 **81 → 63회 / 266.2 → 186.1초**, Hikari 풀 **50 → 32**
+- [x] 통합이 검증을 줄이지 않았음을 **일부러 망가뜨려 확인** — (1) `OrderBuyIntegrationTest`의 `clock.set(BASE_NOW)`를 빼면 5건 중 3건 red(클래스별 시각 세팅이 실제 방어선), (2) 프로덕션 `StockReplayService`의 `now(clock)`을 실시각으로 바꾸면 `JournalListIntegrationTest` 13건 중 7건 + `OrderBuy` 3건 red(시각 고정이 여전히 무언가를 지킨다). 둘 다 원복 확인
+- [x] `minimum-idle=0` + `idle-timeout=10초`를 테스트에만 적용 → **최대 동시 접속 276 → 16**(`Max_used_connections` 고수위 값이라 순간 스파이크 포함). `maximum-pool-size`는 기본 10 유지라 동시성 테스트는 영향 없음 — 커넥션 고갈을 직접 재는 `FeedbackQueryCacheConnectionHoldingIntegrationTest`도 통과
+- [x] `--max-connections=1000` 제거 (PR #133이 남긴 부채 종료). 기본 한도 151 대비 여유 9배
+- [x] `docs/agent-mistakes.md` 기록 — 기계 변환의 "수동 보완 남았는가" 판정을 OR로 짜서 1건이 빠져나갔고, 그 여파가 **무관한 리포지토리 카운트 테스트 5건**으로 번졌다
+- [ ] **하지 않음(의도)** — `@WebMvcTest` 31갈래 통합. 각자 다른 컨트롤러를 겨냥한 슬라이스라 갈리는 게 정상이고 DataSource가 없어 커넥션과 무관하다. 합치려면 모든 컨트롤러를 한 컨텍스트에 올려야 해 격리가 줄어든다
+- [ ] **미검증** — 여러 워크트리가 동시에 빌드를 돌릴 때의 접속 피크. 16은 단독 실행 1회 값이다
+
 ## 2차 AI 피드백 설계 확정 (2026-08-02, spec 012)
 
 ### 문서 (이번 세션 완료)
