@@ -218,6 +218,39 @@ class PostCommentControllerTest {
 	}
 
 	@Test
+	void getCommentsReturns200WithNestedRepliesUnderTheirParentAndEmptyRepliesForChildlessParent() throws Exception {
+		LocalDateTime parentCreatedAt = LocalDateTime.of(2026, 7, 27, 12, 0);
+		LocalDateTime replyCreatedAt = parentCreatedAt.plusMinutes(1);
+		LocalDateTime otherParentCreatedAt = parentCreatedAt.plusMinutes(2);
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+		when(service.getComments(7L)).thenReturn(List.of(
+			new PostCommentResponse(11L, "first", "parent comment", parentCreatedAt, null, List.of(
+				new PostCommentResponse(13L, "replier", "reply comment", replyCreatedAt, 11L, List.of()))),
+			new PostCommentResponse(12L, "second", "childless parent", otherParentCreatedAt, null, List.of())));
+
+		mockMvc.perform(get("/api/community/posts/7/comments")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.length()").value(2))
+			.andExpect(jsonPath("$[0].commentId").value(11))
+			.andExpect(jsonPath("$[0].parentCommentId").doesNotExist())
+			.andExpect(jsonPath("$[0].replies.length()").value(1))
+			.andExpect(jsonPath("$[0].replies[0].commentId").value(13))
+			.andExpect(jsonPath("$[0].replies[0].authorNickname").value("replier"))
+			.andExpect(jsonPath("$[0].replies[0].content").value("reply comment"))
+			.andExpect(jsonPath("$[0].replies[0].createdAt").value("2026-07-27T12:01:00"))
+			.andExpect(jsonPath("$[0].replies[0].parentCommentId").value(11))
+			.andExpect(jsonPath("$[0].replies[0].replies").isArray())
+			.andExpect(jsonPath("$[0].replies[0].replies").isEmpty())
+			.andExpect(jsonPath("$[1].commentId").value(12))
+			.andExpect(jsonPath("$[1].replies").isArray())
+			.andExpect(jsonPath("$[1].replies").isEmpty());
+
+		verify(service).getComments(7L);
+	}
+
+	@Test
 	void getCommentsReturnsEmptyArrayForExistingPostWithoutComments() throws Exception {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));

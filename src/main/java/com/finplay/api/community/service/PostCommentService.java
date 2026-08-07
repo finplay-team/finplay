@@ -12,7 +12,10 @@ import com.finplay.api.community.repository.CommunityPostRepository;
 import com.finplay.api.community.repository.PostCommentRepository;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -62,9 +65,26 @@ public class PostCommentService {
 		if (!communityPostRepository.existsById(postId)) {
 			throw new BusinessException(ErrorCode.NOT_FOUND);
 		}
-		return postCommentRepository.findAllByPostIdOrderByCreatedAtAscIdAsc(postId)
-			.stream()
-			.map(PostCommentResponse::from)
-			.toList();
+		List<PostComment> allComments = postCommentRepository.findAllByPostIdOrderByCreatedAtAscIdAsc(postId);
+		Map<Long, List<PostComment>> repliesByParentId = new HashMap<>();
+		List<PostComment> topLevelComments = new ArrayList<>();
+		for (PostComment comment : allComments) {
+			if (comment.isReply()) {
+				repliesByParentId
+					.computeIfAbsent(comment.getParentComment().getId(), key -> new ArrayList<>())
+					.add(comment);
+			} else {
+				topLevelComments.add(comment);
+			}
+		}
+		List<PostCommentResponse> result = new ArrayList<>();
+		for (PostComment parent : topLevelComments) {
+			List<PostCommentResponse> replies = repliesByParentId.getOrDefault(parent.getId(), List.of())
+				.stream()
+				.map(PostCommentResponse::from)
+				.toList();
+			result.add(PostCommentResponse.from(parent, replies));
+		}
+		return result;
 	}
 }

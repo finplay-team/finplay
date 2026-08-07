@@ -267,6 +267,46 @@ class PostCommentServiceTest {
 	}
 
 	@Test
+	void getCommentsGroupsRepliesUnderCorrectParentsPreservingOrderAndLeavesChildlessParentsEmpty() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(author, "title", "post", null, LocalDateTime.now(CLOCK));
+		PostComment parentA = PostComment.create(post, author, "parent A", null, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(parentA, "id", 1L);
+		PostComment childA1 = PostComment.create(
+			post, author, "child A1", parentA, LocalDateTime.now(CLOCK).plusMinutes(1));
+		ReflectionTestUtils.setField(childA1, "id", 3L);
+		PostComment parentB = PostComment.create(
+			post, author, "parent B", null, LocalDateTime.now(CLOCK).plusMinutes(2));
+		ReflectionTestUtils.setField(parentB, "id", 2L);
+		PostComment childA2 = PostComment.create(
+			post, author, "child A2", parentA, LocalDateTime.now(CLOCK).plusMinutes(3));
+		ReflectionTestUtils.setField(childA2, "id", 4L);
+		PostComment childB1 = PostComment.create(
+			post, author, "child B1", parentB, LocalDateTime.now(CLOCK).plusMinutes(4));
+		ReflectionTestUtils.setField(childB1, "id", 5L);
+		PostComment parentC = PostComment.create(
+			post, author, "parent C without replies", null, LocalDateTime.now(CLOCK).plusMinutes(5));
+		ReflectionTestUtils.setField(parentC, "id", 6L);
+		when(postRepository.existsById(7L)).thenReturn(true);
+		when(commentRepository.findAllByPostIdOrderByCreatedAtAscIdAsc(7L))
+			.thenReturn(List.of(parentA, childA1, parentB, childA2, childB1, parentC));
+
+		List<PostCommentResponse> responses = service.getComments(7L);
+
+		assertThat(responses).hasSize(3);
+		assertThat(responses.get(0).commentId()).isEqualTo(1L);
+		assertThat(responses.get(0).replies())
+			.extracting(PostCommentResponse::commentId)
+			.containsExactly(3L, 4L);
+		assertThat(responses.get(1).commentId()).isEqualTo(2L);
+		assertThat(responses.get(1).replies())
+			.extracting(PostCommentResponse::commentId)
+			.containsExactly(5L);
+		assertThat(responses.get(2).commentId()).isEqualTo(6L);
+		assertThat(responses.get(2).replies()).isEmpty();
+	}
+
+	@Test
 	void getCommentsDoesNotQueryCommentsWhenPostDoesNotExist() {
 		when(postRepository.existsById(404L)).thenReturn(false);
 

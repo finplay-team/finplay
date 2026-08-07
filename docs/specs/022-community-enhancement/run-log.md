@@ -41,3 +41,11 @@
 
 ## 모니터링 (사람용 요약)
 - COM-005 항목2: `PostCommentCreateRequest.parentCommentId` 추가, `PostCommentResponse`에 `parentCommentId`·`replies`(`List.copyOf` 방어적 복사) 추가하고 `from(comment)`/`from(comment, replies)` 두 팩토리로 분리. `PostCommentService.createComment`에 `parentCommentId` 검증(불일치/없음 404, 이미 자식이면 400) 추가, 컨트롤러가 `request.parentCommentId()` 전달. compileJava 통과(테스트는 tester 담당, `getComments` 중첩 응답은 항목3 범위).
+
+## AI 로그 (에이전트 참조용, COM-005 항목3)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| - | implementer | `.\gradlew.bat compileJava` | plan.md "COM-005 대댓글" 패키지·클래스 설계(`PostCommentService.getComments` 재구성) |
+
+## 모니터링 (사람용 요약)
+- COM-005 항목3: `getComments`가 기존 `findAllByPostIdOrderByCreatedAtAscIdAsc` 결과를 `parentComment == null` 최상위/자식으로 그룹핑(`parentComment.getId()` 기준)해 `PostCommentResponse.from(comment, replies)`로 중첩 변환하도록 재구성. 정렬은 원 쿼리 순서(`createdAt asc, id asc`) 보존, 추가 정렬 없음. compileJava 통과(테스트는 tester 담당).
