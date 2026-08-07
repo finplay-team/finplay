@@ -15,6 +15,7 @@ import com.finplay.api.feedback.dto.response.InstrumentNewsResponse;
 import com.finplay.api.feedback.dto.response.NewsItem;
 import com.finplay.api.feedback.repository.InstrumentNewsSummaryRepository;
 import com.finplay.api.feedback.repository.MarketNewsItemRepository;
+import com.finplay.api.feedback.store.FeedbackQueryCacheTestKeys;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.domain.StockReplaySession;
@@ -36,6 +37,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
 // 완료 조건 노출 게이트 ⑧의 Part C 절반·⑨·⑩과 상태값 ②③④가 이 파일의 목표다. 인증·직렬화는
@@ -90,9 +92,24 @@ class InstrumentNewsQueryGateIntegrationTest {
 	@Autowired
 	private Clock clock;
 
+	@Autowired
+	private StringRedisTemplate redisTemplate;
+
 	private MutableClock mutableClock;
 
 	private Instrument instrument;
+
+	// 조회 캐시(#245)가 켜진 뒤 필요해진 격리 훅이다. 이 클래스는 @Transactional이라 DB는 롤백되지만 공유
+	// Testcontainers Redis는 롤백되지 않는다 — 요약 캐시 키가 (종목, 원본 거래일, scope)라 여러 메서드가 같은
+	// 키를 쓰므로, saveSummary로 채운 메서드가 먼저 돌면 EMPTY·UNAVAILABLE 단정이 READY를 보게 된다.
+	// 지금까지 통과한 것은 JUnit5 기본 메서드 순서가 우연히 유리했기 때문이고, 메서드 이름 하나만 바뀌어도
+	// 뒤집힌다(같은 원인으로 MarketBriefingQueryGateIntegrationTest는 실제로 8건이 깨졌다 —
+	// docs/agent-mistakes.md). @AfterEach가 아니라 @BeforeEach인 이유는 앞 테스트가 정리에 실패해도 이번
+	// 테스트가 항상 빈 캐시에서 시작하게 하기 위해서다.
+	@BeforeEach
+	void clearQueryCache() {
+		FeedbackQueryCacheTestKeys.clear(redisTemplate);
+	}
 
 	@BeforeEach
 	void setUp() {

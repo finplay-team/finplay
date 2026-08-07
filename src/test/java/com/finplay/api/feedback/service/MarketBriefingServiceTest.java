@@ -12,6 +12,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.finplay.api.feedback.config.FeedbackNewsProperties;
+import com.finplay.api.feedback.config.FeedbackQueryCacheProperties;
 import com.finplay.api.feedback.domain.FeedbackContentStatus;
 import com.finplay.api.feedback.domain.MarketBriefing;
 import com.finplay.api.feedback.domain.MarketNewsItem;
@@ -21,6 +22,7 @@ import com.finplay.api.feedback.dto.response.BriefingNewsItem;
 import com.finplay.api.feedback.dto.response.MarketBriefingResponse;
 import com.finplay.api.feedback.repository.MarketBriefingRepository;
 import com.finplay.api.feedback.repository.MarketNewsItemRepository;
+import com.finplay.api.feedback.store.FeedbackQueryCache;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.BusinessDayCalendar;
@@ -86,9 +88,26 @@ class MarketBriefingServiceTest {
 		marketBriefingRepository,
 		stockReplayService,
 		narrativeService,
-		new BusinessDayCalendar(),
+		briefingReader(),
+		loaderDirectCache(),
 		properties,
 		Clock.fixed(GENERATED_AT.atZone(KST).toInstant(), KST));
+
+	// DB 읽기가 Reader로 나갔어도(트랜잭션 경계 분리, PR #257) 이 클래스가 보는 것은 그대로다 — 진짜 Reader에
+	// 같은 mock 리포지토리를 그대로 물려 조립하므로 아래 스텁·verify가 한 줄도 바뀌지 않는다.
+	private MarketBriefingReader briefingReader() {
+		return new MarketBriefingReader(
+			marketNewsItemRepository, marketBriefingRepository, new BusinessDayCalendar(), properties);
+	}
+
+	// 킬 스위치를 내린(enabled=false) FeedbackQueryCache다 — 항상 로더로 직행하므로 이 클래스의 판정 순서·
+	// 상한 단정이 캐시 도입 전과 그대로 성립한다. Redis·JSON 협력자는 그 경로에서 한 번도 쓰이지 않아 null로
+	// 두고, 키·TTL 재료(Clock·items 상한)만 실제 값을 준다 — 그 둘은 캐시가 꺼져 있어도 호출 시점에
+	// 계산되기 때문이다(캐시가 켜진 동작은 FeedbackQueryCacheTest와 브리핑 조회 통합 테스트가 맡는다).
+	private FeedbackQueryCache loaderDirectCache() {
+		return new FeedbackQueryCache(
+			null, null, null, Clock.system(KST), new FeedbackQueryCacheProperties(false, 1000, 300, 20), properties);
+	}
 
 	private static Instrument stock(String symbol, String name) {
 		Instrument created = Instrument.create(
@@ -285,7 +304,8 @@ class MarketBriefingServiceTest {
 			marketBriefingRepository,
 			stockReplayService,
 			narrativeService,
-			new BusinessDayCalendar(),
+			briefingReader(),
+			loaderDirectCache(),
 			properties,
 			clock);
 
@@ -660,7 +680,8 @@ class MarketBriefingServiceTest {
 			marketBriefingRepository,
 			stockReplayService,
 			narrativeService,
-			new BusinessDayCalendar(),
+			briefingReader(),
+			loaderDirectCache(),
 			properties,
 			clock);
 

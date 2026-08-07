@@ -19,6 +19,7 @@ import com.finplay.api.feedback.dto.response.MarketBriefingResponse;
 import com.finplay.api.feedback.repository.InstrumentNewsSummaryRepository;
 import com.finplay.api.feedback.repository.MarketBriefingRepository;
 import com.finplay.api.feedback.repository.MarketNewsItemRepository;
+import com.finplay.api.feedback.store.FeedbackQueryCacheTestKeys;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.InstrumentService;
@@ -40,6 +41,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
@@ -111,9 +113,25 @@ class CryptoFeedbackBatchIntegrationTest {
 	@Autowired
 	private Clock clock;
 
+	@Autowired
+	private StringRedisTemplate redisTemplate;
+
 	private MutableClock mutableClock;
 
 	private Instrument coin;
+
+	// 조회 캐시(#245)가 켜진 뒤 필요해진 격리 훅이다. 이 클래스는 @Transactional이라 DB는 롤백되지만 공유
+	// Testcontainers Redis는 롤백되지 않는데, crypto-briefing-text는 **종목 구성요소가 없는 전역 단일 키**라
+	// 어느 테스트가 남긴 값이든 다음 테스트가 그대로 읽는다(TTL 최대 60분).
+	//
+	// 지금 초록인 것은 모든 조회 앞에 성공한 배치가 있어 evict가 먼저 키를 날리기 때문이고, 그건 "배치가 먼저
+	// 돌고 반드시 성공한다"는 우연한 순서에 기댄 것이다 — 캐시된 문자열을 그대로 단정하는 자리가 있어 그 전제가
+	// 깨지면 조용히 다른 값을 본다. @AfterEach가 아니라 @BeforeEach인 이유는 앞 테스트가 정리에 실패해도
+	// 이번 테스트가 항상 빈 캐시에서 시작하게 하기 위해서다.
+	@BeforeEach
+	void clearQueryCache() {
+		FeedbackQueryCacheTestKeys.clear(redisTemplate);
+	}
 
 	@BeforeEach
 	void setUp() {

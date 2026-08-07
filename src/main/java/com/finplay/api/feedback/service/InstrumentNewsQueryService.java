@@ -1,32 +1,23 @@
-// 종목의 뉴스·공시 목록과 그 시점의 요약을 노출 게이트에 맞춰 조회하는 읽기 전용 서비스.
+// 종목의 뉴스·공시 목록과 그 시점의 요약을 노출 게이트에 맞춰 조립하는 조회 서비스 — DB는 Reader가, 캐시는 FeedbackQueryCache가 맡고 여기는 순서만 잡는다.
 package com.finplay.api.feedback.service;
 
-import com.finplay.api.feedback.config.FeedbackNewsProperties;
 import com.finplay.api.feedback.domain.FeedbackContentStatus;
-import com.finplay.api.feedback.domain.InstrumentNewsSummary;
-import com.finplay.api.feedback.domain.MarketNewsItem;
-import com.finplay.api.feedback.domain.MarketNewsItemType;
 import com.finplay.api.feedback.domain.NewsSummaryScope;
 import com.finplay.api.feedback.dto.response.InstrumentNewsResponse;
 import com.finplay.api.feedback.dto.response.NewsItem;
-import com.finplay.api.feedback.repository.InstrumentNewsSummaryRepository;
-import com.finplay.api.feedback.repository.MarketNewsItemRepository;
-import com.finplay.api.market.domain.Instrument;
+import com.finplay.api.feedback.store.FeedbackQueryCache;
 import com.finplay.api.market.domain.Market;
-import com.finplay.api.market.service.BusinessDayCalendar;
-import com.finplay.api.market.service.InstrumentService;
 import com.finplay.api.market.service.StockReplayService;
 import com.finplay.api.market.service.StockReplaySessionDto;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 계약은 {@code docs/api-contracts.md}의 "종목 뉴스 목록·요약 조회" 행, 상태값과 판정 순서는 spec §C-4,
@@ -37,22 +28,29 @@ import org.springframework.transaction.annotation.Transactional;
  * <b>스포일러 차단과 첫 사용자의 대기</b>다.
  *
  * <p><b>어느 상태값이든 200이다</b>(FEED-008). 없는 종목만 404이며 그 판정은 {@code InstrumentService}가 한다.
+ *
+ * <p><b>이 클래스에 {@code @Transactional}이 없는 것이 설계다.</b> {@code PostSellFeedbackService}가 LLM 호출을
+ * 트랜잭션 밖에 두려고 {@code Reader}로 나눈 것과 같은 형태이며, 여기서 밖에 두려는 것은 조회 캐시의 락 대기다.
+ *
+ * <pre>
+ * 1. reader.readMarket / readStockItems / readStockSummary  @Transactional(readOnly = true) — 읽고 바로 닫는다
+ * 2. feedbackQueryCache.getOrLoad...                        트랜잭션 없음 — 최대 wait-millis 대기가 여기 있다
+ * 3. 상태값 판정과 응답 조립                                 순수 로직
+ * </pre>
+ *
+ * 조회 전체를 한 트랜잭션으로 감싸면 2번의 대기 동안 JDBC 커넥션을 쥐고 있게 되고, 만료 경계에 요청이 몰리는
+ * 순간 대기 스레드가 풀을 채워 뒤따르는 요청이 커넥션 획득에서 막힌다 — 캐시가 막으려던 것보다 나쁜 실패다.
  */
 @Service
 @RequiredArgsConstructor
 public class InstrumentNewsQueryService {
 
-	private final InstrumentService instrumentService;
+	private final InstrumentNewsQueryReader instrumentNewsQueryReader;
 
 	private final StockReplayService stockReplayService;
 
-	private final MarketNewsItemRepository marketNewsItemRepository;
-
-	private final InstrumentNewsSummaryRepository instrumentNewsSummaryRepository;
-
-	private final BusinessDayCalendar businessDayCalendar;
-
-	private final FeedbackNewsProperties properties;
+	// 요약 텍스트만 이 캐시를 거친다. items 수집은 §C-5 노출 게이트의 구현이라 캐시하지 않는다(ADR-0015 §1).
+	private final FeedbackQueryCache feedbackQueryCache;
 
 	private final Clock clock;
 
@@ -73,10 +71,8 @@ public class InstrumentNewsQueryService {
 	 *
 	 * @param instrumentId 없는 종목이면 {@code InstrumentService}가 404({@code NOT_FOUND})로 거절한다
 	 */
-	@Transactional(readOnly = true)
 	public InstrumentNewsResponse getInstrumentNews(Long instrumentId) {
-		Instrument instrument = instrumentService.getInstrumentEntity(instrumentId);
-		if (instrument.getMarket() == Market.CRYPTO) {
+		if (instrumentNewsQueryReader.readMarket(instrumentId) == Market.CRYPTO) {
 			return getCryptoNews(instrumentId);
 		}
 
@@ -95,12 +91,7 @@ public class InstrumentNewsQueryService {
 		}
 
 		NewsSummaryScope scope = resolveScope(now);
-		List<NewsItem> items = NewsItemTruncator
-			.truncateAndSort(collectVisibleItems(instrumentId, originTradeDate, scope, now),
-				properties.maxItemsPerNewsList())
-			.stream()
-			.map(NewsItem::from)
-			.toList();
+		List<NewsItem> items = instrumentNewsQueryReader.readStockItems(instrumentId, originTradeDate, scope, now);
 
 		// 3번 — 기사가 0건이면 요약 행이 있든 없든 EMPTY다. 행 조회보다 앞이라 순서를 바꾸면
 		// "기사도 없고 서술도 없는" 날이 UNAVAILABLE로 보인다.
@@ -109,22 +100,30 @@ public class InstrumentNewsQueryService {
 				originTradeDate, scope, FeedbackContentStatus.EMPTY, null, List.of());
 		}
 
-		Optional<InstrumentNewsSummary> summary = instrumentNewsSummaryRepository
-			.findByInstrumentIdAndOriginTradeDateAndScope(instrumentId, originTradeDate, scope);
-		// 4번 — 요약 행이 아직 없다(배치 미실행·배포 당일). 기사는 있으므로 items를 채운다.
-		if (summary.isEmpty()) {
+		// 4·5·6번 — 요약 텍스트만 캐시를 거친다(ADR-0015 §1). items는 위에서 이미 매 요청 DB로 모았다.
+		AtomicBoolean summaryRowFound = new AtomicBoolean();
+		Optional<String> text = feedbackQueryCache.getOrLoadStockSummaryText(
+			instrumentId, originTradeDate, scope,
+			() -> {
+				SummaryTextLookupDto lookup = instrumentNewsQueryReader
+					.readStockSummary(instrumentId, originTradeDate, scope);
+				summaryRowFound.set(lookup.rowExists());
+				return lookup.readyText();
+			});
+		// 캐시는 서술이 있는 값(READY)만 담으므로 적중은 곧 6번이다.
+		if (text.isPresent()) {
 			return InstrumentNewsResponse.of(
-				originTradeDate, scope, FeedbackContentStatus.EMPTY, null, items);
+				originTradeDate, scope, FeedbackContentStatus.READY, text.get(), items);
 		}
 
-		// 5번 — 행은 있는데 서술이 없다(narrative_source=NONE). 6번 — 그 외는 READY.
-		// 저장된 행만으로는 EMPTY와 구분되지 않으므로(둘 다 summary가 NULL) 행 존재 여부와 함께 갈라야 한다.
-		String text = summary.get().getSummary();
+		// 미적중이면 위 로더가 반드시 실행됐다(캐시는 값이 없으면 항상 로더를 부른다). 그 DB 결과로 4·5번을
+		// 지금 로직 그대로 가른다 — 저장된 행만으로는 둘이 구분되지 않으므로(둘 다 summary가 NULL) 행 존재
+		// 여부와 함께 갈라야 한다. 판정 순서는 §C-4 그대로다.
 		return InstrumentNewsResponse.of(
 			originTradeDate,
 			scope,
-			text == null ? FeedbackContentStatus.UNAVAILABLE : FeedbackContentStatus.READY,
-			text,
+			summaryRowFound.get() ? FeedbackContentStatus.UNAVAILABLE : FeedbackContentStatus.EMPTY,
+			null,
 			items);
 	}
 
@@ -140,41 +139,31 @@ public class InstrumentNewsQueryService {
 	 *
 	 * <p><b>{@code items}의 24시간 창은 조회 시각 기준이고 요약은 마지막 배치 기준이라 최대 65분 어긋난다 —
 	 * 허용된 동작이다</b>(FEED-008). 맞추려고 조회 시 생성으로 되돌아가지 않는다.
-	 *
-	 * <p>코인은 공시가 없어 뉴스만 모은다(§C-3). 노출 게이트도 없다 — 실시간이라 스포일러가 성립하지 않는다(§C-5).
 	 */
 	private InstrumentNewsResponse getCryptoNews(Long instrumentId) {
-		LocalDateTime now = LocalDateTime.now(clock);
-		List<NewsItem> items = NewsItemTruncator
-			.truncateAndSort(
-				marketNewsItemRepository.findByInstrumentIdAndTypeAndPublishedAtBetweenOrderByPublishedAtAsc(
-					instrumentId,
-					MarketNewsItemType.NEWS,
-					now.minus(MarketSessionTimes.ROLLING_WINDOW),
-					now),
-				properties.maxItemsPerNewsList())
-			.stream()
-			.map(NewsItem::from)
-			.toList();
+		List<NewsItem> items = instrumentNewsQueryReader.readCryptoItems(instrumentId, LocalDateTime.now(clock));
 		if (items.isEmpty()) {
 			return InstrumentNewsResponse.of(
 				null, NewsSummaryScope.ROLLING_24H, FeedbackContentStatus.EMPTY, null, List.of());
 		}
 
-		Optional<InstrumentNewsSummary> summary = instrumentNewsSummaryRepository
-			.findFirstByInstrumentIdAndScopeOrderByGeneratedAtDescIdDesc(
-				instrumentId, NewsSummaryScope.ROLLING_24H);
-		if (summary.isEmpty()) {
+		// 주식과 같은 형태다 — 요약 텍스트만 캐시를 거치고 items의 24시간 창은 그대로 매 요청 DB로 간다.
+		AtomicBoolean summaryRowFound = new AtomicBoolean();
+		Optional<String> text = feedbackQueryCache.getOrLoadCryptoSummaryText(instrumentId, () -> {
+			SummaryTextLookupDto lookup = instrumentNewsQueryReader.readLatestCryptoSummary(instrumentId);
+			summaryRowFound.set(lookup.rowExists());
+			return lookup.readyText();
+		});
+		if (text.isPresent()) {
 			return InstrumentNewsResponse.of(
-				null, NewsSummaryScope.ROLLING_24H, FeedbackContentStatus.EMPTY, null, items);
+				null, NewsSummaryScope.ROLLING_24H, FeedbackContentStatus.READY, text.get(), items);
 		}
 
-		String text = summary.get().getSummary();
 		return InstrumentNewsResponse.of(
 			null,
 			NewsSummaryScope.ROLLING_24H,
-			text == null ? FeedbackContentStatus.UNAVAILABLE : FeedbackContentStatus.READY,
-			text,
+			summaryRowFound.get() ? FeedbackContentStatus.UNAVAILABLE : FeedbackContentStatus.EMPTY,
+			null,
 			items);
 	}
 
@@ -188,52 +177,5 @@ public class InstrumentNewsQueryService {
 		return now.isBefore(MarketSessionTimes.MARKET_CLOSE_TIME)
 			? NewsSummaryScope.PRE_MARKET
 			: NewsSummaryScope.FULL;
-	}
-
-	/**
-	 * 그 시각에 노출 가능한 기사·공시를 모은다 (§C-2의 구간, §C-3의 공시 날짜, §C-5의 게이트).
-	 *
-	 * <p><b>하한은 요약과 같고 상한만 재생 시각까지 넓다.</b> 09:00~15:30에는 {@code items}가 요약보다 넓다 —
-	 * 장중 기사가 재생 시각을 따라 하나씩 풀리기 때문이다. 요약이 {@code items}보다 <b>앞서지만 않으면</b>
-	 * 되며, 반대로 {@code items}를 09:00에서 자르면 "재생 시각을 지난 기사만 노출"이 깨진다.
-	 *
-	 * <p><b>구간 질의가 곧 게이트다.</b> §C-5는 {@code (서비스 날짜 + clamp(published_at)) <= now()}인데,
-	 * 재생이 1배속이라 원본 거래일 시각과 서비스 날짜의 벽시계 시각이 1:1로 대응하므로 상한을 현재 시각으로
-	 * 두는 것이 그 판정과 같다({@code PriceMoveQueryService}가 {@code reveal_time}에 쓰는 것과 같은 성질).
-	 * 전장 기사는 클램프 결과가 09:00이고 이 메서드에는 09:00 이후에만 들어오므로 전부 노출 대상이다.
-	 *
-	 * <p><b>뉴스와 공시를 같은 질의로 가져오지 않는다</b>(§C-3). 공시는 {@code published_at}이 접수일
-	 * {@code 00:00:00}이라 datetime 구간에 태우면 {@code D-1} 접수분이 구간 시작보다 일러 빠지고, {@code D}
-	 * 접수분은 {@code PRE_MARKET} 구간에 들어와 <b>개장 직후에 그날 장중 접수 공시가 새어 나간다.</b>
-	 * {@code D} 접수분이 {@code FULL}에만 있는 것도 그래서다 — {@code FULL}은 15:30 이후에만 노출된다.
-	 *
-	 * <p>범위는 {@code InstrumentNewsSummaryService}의 요약 생성 구간과 하한·공시 규칙이 같고 뉴스 상한만
-	 * 다르다. 상한이 다른 것이 이 API의 요지라 한 메서드로 합치지 않는다.
-	 */
-	private List<MarketNewsItem> collectVisibleItems(
-		Long instrumentId, LocalDate originTradeDate, NewsSummaryScope scope, LocalTime now) {
-		LocalDate previousTradingDate = businessDayCalendar.previousBusinessDay(originTradeDate);
-		// FULL이면 15:30에서 멈춘다 — 그 뒤 시각은 원본 거래일의 장중이 아니라서 기사가 있을 수 없고,
-		// 상한을 열어 두면 다음 거래일 새벽 기사가 그날 목록에 섞인다.
-		LocalTime newsUpperBound = now.isBefore(MarketSessionTimes.MARKET_CLOSE_TIME)
-			? now
-			: MarketSessionTimes.MARKET_CLOSE_TIME;
-
-		List<MarketNewsItem> items = new ArrayList<>(
-			marketNewsItemRepository.findByInstrumentIdAndTypeAndPublishedAtBetweenOrderByPublishedAtAsc(
-				instrumentId,
-				MarketNewsItemType.NEWS,
-				LocalDateTime.of(previousTradingDate, MarketSessionTimes.MARKET_CLOSE_TIME),
-				LocalDateTime.of(originTradeDate, newsUpperBound)));
-		items.addAll(disclosuresOn(instrumentId, previousTradingDate));
-		if (scope == NewsSummaryScope.FULL) {
-			items.addAll(disclosuresOn(instrumentId, originTradeDate));
-		}
-		return items;
-	}
-
-	private List<MarketNewsItem> disclosuresOn(Long instrumentId, LocalDate receivedDate) {
-		return marketNewsItemRepository.findDisclosuresReceivedOn(
-			instrumentId, receivedDate.atStartOfDay(), receivedDate.plusDays(1).atStartOfDay());
 	}
 }

@@ -26,16 +26,19 @@ import java.time.LocalTime;
  * <p><b>{@code config/}가 아니라 {@code feedback/service/}에 둔다</b> (§C-6). {@code feedback.*} 설정 블록은
  * §튜닝으로 조정하는 수치를 담지만 이 셋은 조정 대상이 아니라 시장 규칙이다.
  *
- * <p>가시성을 좁힌 것은 현재·예정 사용처가 전부 이 패키지의 서비스이기 때문이다
- * ({@code StockCandleAggregator}와 같은 방침). 밖에서 필요해지면 그때 넓힌다.
+ * <p>가시성을 좁혔던 것은 사용처가 전부 이 패키지의 서비스였기 때문이고, 원래 주석이 "밖에서 필요해지면 그때
+ * 넓힌다"고 예고한 그 시점이 왔다 — {@code feedback.store.FeedbackQueryCache}가 조회 캐시의 TTL 경계로 아래 두
+ * 시각을 쓴다(ADR-0015 §2). <b>캐시가 시각 상수를 따로 선언하지 않는 것이 요점이다</b> — 두 곳에 리터럴을 두면
+ * 한쪽만 바뀌었을 때 캐시 만료와 조회 범위가 예외도 로그도 없이 갈린다. 넓힌 것은 <b>실제 사용처가 생긴 둘</b>
+ * 뿐이며 {@code ROLLING_WINDOW}는 그대로 패키지 전용이다.
  */
-final class MarketSessionTimes {
+public final class MarketSessionTimes {
 
 	/** 정규장 개장 시각. 전장 구간 {@code [D-1 15:30, D 09:00]}의 상한이자 노출 클램프의 기준이다. */
-	static final LocalTime MARKET_OPEN_TIME = LocalTime.of(9, 0);
+	public static final LocalTime MARKET_OPEN_TIME = LocalTime.of(9, 0);
 
 	/** 정규장 마감 시각. 전장 구간의 하한이자 {@code FULL} 범위의 경계다. */
-	static final LocalTime MARKET_CLOSE_TIME = LocalTime.of(15, 30);
+	public static final LocalTime MARKET_CLOSE_TIME = LocalTime.of(15, 30);
 
 	/**
 	 * 코인 {@code ROLLING_24H}의 창 길이 (§C-2).

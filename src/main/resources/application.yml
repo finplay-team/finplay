@@ -2,6 +2,26 @@
 spring:
   application:
     name: finplay-api
+  data:
+    # Redis 명령 타임아웃. **Lettuce 기본값은 60초**이고 지정하지 않으면 그 값이 그대로 쓰인다 — Redis가 RST 없이
+    # 블랙홀이 되는 단절(보안그룹 변경·노드 장애)에서 명령 하나가 60초 동안 호출 스레드를 물고, 요청당 몇 배가
+    # 되면 톰캣 스레드 풀이 차서 Redis와 무관한 API까지 멎는다. 요약·브리핑 조회가 Redis를 타기 시작하면서
+    # (이슈 #245) 그 노출이 사용자 조회 경로까지 넓어져 명시한다.
+    #
+    # **2초를 고른 근거는 오탐의 대가가 소비자마다 다르기 때문이다.** 이 값은 전역이라 아래 넷에 모두 걸린다.
+    #   PriceStore        시세·연결상태. 예외를 삼키지 않아 오탐이 주문·시세 조회의 오류로 그대로 보인다 —
+    #                     여기가 하한을 정한다. 정상 명령이 1ms 안팎이라 2초는 GC 정지·순간 지연에 10배 이상 여유다
+    #   RankingStore      랭킹 조회 실패. 화면 일부가 비지만 원장과 무관하다
+    #   CryptoWatchLock   삼키고 그 틱을 건너뛴다 (fail-closed, ADR-0014) — 오탐 비용이 가장 싸다
+    #   FeedbackQueryCache 삼키고 DB로 직행한다 (fail-open, ADR-0015 §6) — 느려질 뿐 실패하지 않는다
+    #
+    # 더 짧게 잡으면 PriceStore 쪽 오탐이 사용자에게 보이고, 더 길게 잡으면 위 블랙홀 시나리오의 스레드 점유가
+    # 그만큼 길어진다. 캐시 전용 LettuceClientConfiguration으로 이 캐시에만 짧은 값을 주는 선택지도 있었으나,
+    # 같은 타입 빈을 하나 더 만드는 방식이라 이 저장소가 실제로 겪은 NoUniqueBeanDefinitionException 함정을
+    # 다시 부른다(docs/agent-mistakes.md 2026-08-04). 전역 한 값으로 두고 근거를 여기 남긴다.
+    redis:
+      timeout: 2s
+      connect-timeout: 2s
   jpa:
     hibernate:
       ddl-auto: validate # 스키마 변경은 Flyway로만 (ADR-0004)
@@ -205,3 +225,15 @@ feedback:
     min-sample-count: 100 # σ 계산 최소 표본. 미만이면 카드 미생성
     match-before-minutes: 35 # 코인 카드 근거 탐색(이전). 이후는 0 — §뉴스 매칭 범위
     watch-lock-ttl-seconds: 45 # 종목 단위 Redis 락 TTL. feedback.llm.timeout-seconds(20)의 약 2배(ADR-0014, PR #254)
+  # 요약·브리핑 조회 캐시(FeedbackQueryCache, 이슈 #245). 값의 정본은 ADR-0015이고 FeedbackQueryCacheProperties가
+  # 같은 값을 @DefaultValue로 갖는다. 아래 세 숫자는 실측이 아니라 추정이다 — 조회 원본이 인덱스로 덮인 단일
+  # 행·구간 조회라 수 ms라는 전제이며, 다중 인스턴스 배포 후 실제 대기 발생률을 보고 조정한다(ADR-0015 §후속).
+  query-cache:
+    # 운영 킬 스위치. false면 Redis를 아예 접촉하지 않고 DB로 직행한다 — 이미 검증된 기존 경로라 새 캐시 계층을
+    # 재배포 없이 즉시 되돌릴 수 있다.
+    enabled: true
+    lock-ttl-millis: 1000 # 만료 쏠림 방어 락 TTL. 1 미만이면 기동 실패 — 락이 영구히 획득 실패가 된다
+    # 락을 못 얻었을 때 캐시가 채워지길 기다리는 최대 시간. 0은 "대기 없이 즉시 DB 직행"이라 유효한 값이다.
+    # 이 값이 원본 소요보다 짧으면 대기가 전부 타임아웃돼 방어가 무력해진다.
+    wait-millis: 300
+    poll-millis: 20 # 대기 중 캐시 재확인 간격. 1 미만이면 기동 실패 — 0이면 바쁜 대기가 된다

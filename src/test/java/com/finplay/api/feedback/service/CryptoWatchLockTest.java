@@ -47,9 +47,11 @@ class CryptoWatchLockTest {
 	private final FeedbackCryptoProperties defaultTtlProperties = new FeedbackCryptoProperties(30, 6, 5, 24, 100, 35,
 		IRRELEVANT_WATCH_LOCK_TTL_SECONDS);
 
+	// RedisLock은 진짜를 쓴다 — 이 테스트가 보는 것은 mock Redis 응답이 Optional/무시로 옮겨지는 경로 전체이고,
+	// 락을 mock으로 바꾸면 SET NX PX·Lua 인자 단정이 사라져 동어반복이 된다(추출 전과 같은 범위를 유지한다).
 	private CryptoWatchLock cryptoWatchLock(FeedbackCryptoProperties properties) {
 		when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-		return new CryptoWatchLock(redisTemplate, properties);
+		return new CryptoWatchLock(new RedisLock(redisTemplate), properties);
 	}
 
 	@Test
@@ -122,15 +124,17 @@ class CryptoWatchLockTest {
 		verify(redisTemplate).execute((RedisScript<Long>)any(RedisScript.class), eq(List.of(LOCK_KEY)), eq(token));
 	}
 
-	// 반환값 null — Redis 응답이 비었거나 드라이버가 값을 못 옮긴 경우다. `unlock`의 `deleted == null` 가드가
-	// 지켜지는지 보는 테스트인데, **"예외를 던지지 않는다"로는 그 가드를 지킬 수 없다.** 가드를 지우면
-	// `deleted != 1L`에서 Long 언박싱 NPE가 나지만 그 NPE도 catch(RuntimeException)에 잡혀 삼켜지므로,
-	// 밖에서 보면 가드가 있으나 없으나 "예외 없이 끝난다"가 똑같다 — 맞는 구현과 틀린 구현이 같은 답을 내는
-	// 테스트가 된다. 실제로 가드를 임시로 지우고 돌려 그 사실을 확인했다 (PR #254 4라운드 리뷰 [권장 1]).
+	// 반환값 null — Redis 응답이 비었거나 드라이버가 값을 못 옮긴 경우다. 이 컴포넌트가 그때 "지우지 못했다"
+	// 경고를 남기는지 본다.
 	//
-	// 두 경우를 가르는 유일한 외부 관찰점이 로그 메시지라, DartDisclosureCollectorTest와 같은 방식으로
-	// 임시 appender를 붙여 "지우지 못했다" 경고가 뜨는지 본다. 가드가 없으면 NPE가 "Redis 장애" 경고로
-	// 잘못 분류돼 이 단정이 깨진다.
+	// **이 테스트가 red가 되는 근거는 추출(ADR-0015 §4) 이후 바뀌었다.** 전에는 `unlock`의 언박싱 가드가 이
+	// 클래스에 있어 "가드가 없으면 NPE가 'Redis 장애' 경고로 잘못 분류된다"가 근거였다. 지금 그 가드와 장애
+	// 경고는 둘 다 RedisLock에 있고, 아래 appender는 CryptoWatchLock 로거에만 붙는다 — 형제 로거라 RedisLock의
+	// WARN은 여기 잡히지 않는다. 그러므로 **오분류를 여기서 관찰할 수 없다**(그 단정은 RedisLockTest로 옮겼다).
+	//
+	// 지금의 근거는 이것이다 — RedisLock의 가드를 지우면 언박싱 NPE가 삼켜져 NOT_HELD 대신 REDIS_FAILURE가
+	// 돌아오고, 그러면 이 클래스는 아무 로그도 남기지 않아 아래 singleElement()가 빈 목록에서 실패한다.
+	// 즉 여기서 지키는 것은 "NOT_HELD를 받으면 소비자가 WARN을 남긴다"는 이 클래스의 책임이다.
 	@Test
 	@SuppressWarnings("unchecked")
 	void unlockWarnsThatNothingWasDeletedWhenScriptReturnsNullInsteadOfFailingOnUnboxing() {
@@ -142,9 +146,8 @@ class CryptoWatchLockTest {
 		assertThat(logs).singleElement().satisfies(event -> {
 			assertThat(event.getLevel()).isEqualTo(Level.WARN);
 			assertThat(event.getFormattedMessage()).contains("지우지 못했다");
-			// 가드가 사라지면 NPE가 catch로 떨어져 "Redis 장애"로 잘못 기록된다 — 그 오분류를 못박는다.
-			assertThat(event.getFormattedMessage()).doesNotContain("Redis 장애");
-			assertThat(event.getThrowableProxy()).isNull();
+			// 종목을 남겨야 ADR-0014 §후속의 TTL 재조정 때 어느 종목이 부족했는지 알 수 있다.
+			assertThat(event.getFormattedMessage()).contains(String.valueOf(INSTRUMENT_ID));
 		});
 		verify(redisTemplate)
 			.execute((RedisScript<Long>)any(RedisScript.class), eq(List.of(LOCK_KEY)), eq("some-token"));
