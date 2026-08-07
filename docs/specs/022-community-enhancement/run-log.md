@@ -49,3 +49,15 @@
 
 ## 모니터링 (사람용 요약)
 - COM-005 항목3: `getComments`가 기존 `findAllByPostIdOrderByCreatedAtAscIdAsc` 결과를 `parentComment == null` 최상위/자식으로 그룹핑(`parentComment.getId()` 기준)해 `PostCommentResponse.from(comment, replies)`로 중첩 변환하도록 재구성. 정렬은 원 쿼리 순서(`createdAt asc, id asc`) 보존, 추가 정렬 없음. compileJava 통과(테스트는 tester 담당).
+
+## AI 로그 (에이전트 참조용, COM-005 항목4~5)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| - | tester | `.\gradlew.bat test --tests "com.finplay.api.community.PostCommentReplyIntegrationTest"` | spec.md "완료 조건 COM-005" 3개 시나리오 + CASCADE 회귀 |
+| - | planner(동기화) | `.\gradlew.bat build`(JAVA_HOME=ms-17.0.20) | CLAUDE.md 규칙 7·10, api-routes.md·api-contracts.md·prd.md §3 동기화 |
+| - | reviewer(리뷰) | `git diff dev...HEAD`(전체), conventions.md·ADR-0002·0003·0004 대조 | spec.md COM-005 완료조건, plan.md 설계 |
+
+## 모니터링 (사람용 요약)
+- COM-005 항목4: `PostCommentReplyIntegrationTest` 신규(중첩 조회, 대댓글에 재답글 400, 타인 삭제 403, 부모 삭제 CASCADE 회귀) 4/4 통과. 새 시드 데이터 없어 COM-004 때 발생했던 공유 DB 오염 재현 없음.
+- COM-005 항목5: `api-routes.md`·`api-contracts.md`에 `parentCommentId`/`replies`/400/404 계약 반영, `prd.md` §3을 "일부 완료(COM-004~005)"로 갱신(근거 이슈 #247), spec.md COM-005 완료 조건 `[x]`. `./gradlew build` 전체 통과(SHA `af8cd55cbabf4378538825662967e3d2b5822bf7`).
+- 리뷰 완료(COM-005): 차단 0건, 권장 2건(`PostComment.java` 첫 줄 주석이 "평면 댓글"로 남아있던 것 — 수정함, run-log에 COM-005 항목4~5 기록 누락 — 이 항목으로 보완). 레이어·N+1·CASCADE 조합·docs 동기화·테스트 4계층 모두 문제없음 확인. 머지 가능.

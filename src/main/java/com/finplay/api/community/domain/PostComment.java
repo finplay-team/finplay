@@ -1,4 +1,4 @@
-// 커뮤니티 게시글에 작성된 평면 댓글의 작성자, 본문, 생성 시각을 표현하는 엔티티
+// 커뮤니티 게시글에 작성된 댓글(1단계 대댓글 포함)의 작성자, 본문, 생성 시각을 표현하는 엔티티
 package com.finplay.api.community.domain;
 
 import com.finplay.api.auth.domain.User;
