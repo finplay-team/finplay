@@ -1,6 +1,8 @@
 // 코인 뉴스 제목 필터 후보를 같은 데이터로 대조하는 측정기 (이슈 #179 1단계) — 외부 호출 없이 덤프만 읽는다.
 package com.finplay.api.feedback.collector;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.finplay.api.feedback.service.NewsTitleFilter;
@@ -19,9 +21,12 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * <b>이것은 회귀 테스트가 아니라 측정기다.</b> 단정하는 것이 없고, 덤프가 없으면 건너뛴다 — 빌드를 막지 않는다.
- * 이슈 #179의 완료 조건이 "같은 방법으로 재측정해 개선을 수치로 보인다"라서, 다음 사람이 같은 표를 다시 뽑을
- * 수 있어야 한다. 임시 프로브로 만들고 지우면 그게 안 된다.
+ * <b>주된 목적은 측정이다.</b> 덤프가 없으면 건너뛴다 — CI에서는 빌드를 막지 않는다. 이슈 #179의 완료 조건이
+ * "같은 방법으로 재측정해 개선을 수치로 보인다"라서, 다음 사람이 같은 표를 다시 뽑을 수 있어야 한다. 임시
+ * 프로브로 만들고 지우면 그게 안 된다.
+ *
+ * <p><b>단정이 하나 있다</b> — 아래 "운영 현재 ↔ 합본 {@code S}" 건별 대조다. 덤프가 있는 사람 손에서만 도는
+ * 대신, 돌 때는 진짜로 실패한다. 표만 찍고 초록으로 끝나면 운영과 측정기 복제본이 갈려도 아무도 모른다.
  *
  * <p><b>외부 API를 부르지 않는다</b>(ADR-0011, PRD C-005). 네이버 호출은 {@code tools/coin-news-measure/fetch.py}가
  * 사람 손으로 한 번 하고, 이 클래스는 그 덤프만 읽는다. 그래서 후보를 몇 번이든 다시 대조할 수 있다 — 후보마다
@@ -41,20 +46,30 @@ import org.junit.jupiter.api.Test;
  * </ul>
  *
  * <pre>
- * 현행   통과 = !O          자기 이름이 있는지 아예 안 본다
- * 후보1  통과 = S &amp;&amp; !O     자기 이름 필수 — 오탐(방향②)을 막는다
- * 후보2  통과 = S || !O     제외를 좁힌다 — 시세 브리핑 누락(방향①)을 살린다
- * 합본   통과 = S           후보 1·2는 서로 다른 칸을 바꿔서 겹치지 않는다
+ * 개정 전 통과 = !O          자기 이름이 있는지 아예 안 본다 — 지금은 주식 경로만 이 규칙이다
+ * 후보1   통과 = S &amp;&amp; !O     자기 이름 필수 — 오탐(방향②)을 막는다
+ * 후보2   통과 = S || !O     제외를 좁힌다 — 시세 브리핑 누락(방향①)을 살린다
+ * 합본    통과 = S           후보 1·2는 서로 다른 칸을 바꿔서 겹치지 않는다
  * </pre>
  *
- * <p><b>S 계산은 이 측정기 안에만 있다.</b> {@link NewsTitleFilter}가 지금 O만 판정하기 때문이다. 규칙을 고른
- * 뒤 운영 코드에 넣고 나면 <b>같은 덤프로 다시 돌려</b> 이 숫자가 재현되는지 확인해야 한다 — 여기 계산과
- * 구현이 갈릴 수 있는 자리다.
+ * <p><b>합본 {@code S}가 2026-08-07 개정으로 코인 운영 규칙이 됐다</b>(이슈 #179). 그래서 {@link NewsTitleFilter}는
+ * 코인 경로에서 이제 O가 아니라 S를 판정한다 — {@code 운영 현재} 열이 그 결과다. 이 측정기의 S·!O 계산은
+ * 지우지 않고 <b>독립 복제본</b>으로 남겨 둔다. {@code 개정 전 !O} 기준선을 같은 데이터로 재현하려면 옛 규칙이
+ * 필요하고, 복제본이 있어야 운영 판정을 <b>대조할 상대</b>가 생기기 때문이다.
+ *
+ * <p>대조는 <b>건별</b>로 한다. 합계만 맞춰 보면 서로 상쇄되는 두 오차가 "일치"로 보인다 — 어느 종목에서 하나
+ * 더 통과하고 다른 종목에서 하나 덜 통과해도 총합은 같다.
  */
 class CoinNewsFilterMeasurementTest {
 
 	private static final Path DUMP_DIR = Path.of("tools", "coin-news-measure", "out");
 	private static final Path REPORT = DUMP_DIR.resolve("report.md");
+
+	// V7 시드의 코인 종목 수. 덤프가 이보다 적으면 부분 측정이라 12종 표와 나란히 놓을 수 없다.
+	private static final int SEEDED_COIN_COUNT = 12;
+
+	// 어긋난 건을 보고서에 몇 개까지 예로 붙일지. 전부 찍으면 표가 묻힌다.
+	private static final int MISMATCH_SAMPLE_LIMIT = 5;
 
 	private final NewsTitleFilter titleFilter = new NewsTitleFilter();
 
@@ -66,16 +81,24 @@ class CoinNewsFilterMeasurementTest {
 			dumps.isEmpty(),
 			"덤프가 없다. 먼저 `python tools/coin-news-measure/fetch.py`를 돌려라.");
 
+		List<String> mismatches = new ArrayList<>();
 		StringBuilder report = new StringBuilder("# 코인 뉴스 필터 후보 대조 (이슈 #179)\n");
 		for (Path dump : dumps) {
-			report.append(measure(dump));
+			report.append(measure(dump, mismatches));
 		}
+		// 실패하더라도 보고서는 남긴다 — 어긋난 자리를 눈으로 확인하려면 표가 있어야 한다.
 		Files.writeString(REPORT, report);
 		System.out.println(report);
 		System.out.println("보고서 — " + REPORT.toAbsolutePath());
+
+		// 측정기의 합본 S 복제본과 운영 판정이 갈리면 이 측정 자체가 운영을 대변하지 못한다. 표만 찍고
+		// 넘어가면 아무도 알아채지 못하므로 여기서 실패시킨다.
+		assertThat(mismatches)
+			.as("운영 판정과 측정기 합본 `S`가 건별로 갈렸다 — 보고서 %s", REPORT.toAbsolutePath())
+			.isEmpty();
 	}
 
-	private String measure(Path dump) throws IOException {
+	private String measure(Path dump, List<String> mismatches) throws IOException {
 		JsonNode root = new ObjectMapper().readTree(Files.readString(dump));
 		List<JsonNode> records = new ArrayList<>();
 		root.get("records").forEach(records::add);
@@ -83,12 +106,24 @@ class CoinNewsFilterMeasurementTest {
 		List<String> allNames = records.stream().map(r -> r.get("name").asText()).toList();
 
 		StringBuilder out = new StringBuilder("\n## 질의 방식 `" + root.get("label").asText() + "`\n\n");
+
+		// 종목 목록이 줄면 `O`(다른 종목명 등장) 판정도, 접두 보호(비트코인 ↔ 비트코인캐시)도 함께 달라진다.
+		// 표시가 없으면 다음 사람이 12종 측정과 나란히 놓고 개선폭을 읽는다.
+		if (records.size() < SEEDED_COIN_COUNT) {
+			out.append(String.format(
+				"> **[경고] 부분 덤프다 — %d종목뿐이다** (V7 시드 코인 %d종). 종목 목록이 줄면 다른 종목명 "
+					+ "등장 판정 `O`와 접두 보호가 둘 다 달라진다. 이 표의 숫자는 12종 측정과 나란히 놓을 수 "
+					+ "없다 — 기준선과 대조하려면 `--only` 없이 다시 받아라.%n%n",
+				records.size(), SEEDED_COIN_COUNT));
+		}
+
 		out.append("| 종목 | 질의 | 수신 | 개정 전 `!O` | 후보1 `S&&!O` | 후보2 `S\\|\\|!O` | 합본 `S` "
 			+ "| 별칭 포함 | **운영 현재** |\n");
 		out.append("|---|---|---:|---:|---:|---:|---:|---:|---:|\n");
 
 		Totals totals = new Totals();
 		StringBuilder splitRows = new StringBuilder();
+		List<String> dumpMismatches = new ArrayList<>();
 		for (JsonNode record : records) {
 			String name = record.get("name").asText();
 			String symbol = record.get("symbol").asText();
@@ -103,6 +138,14 @@ class CoinNewsFilterMeasurementTest {
 				// 운영 코드가 지금 무엇을 통과시키는지. 규칙을 바꾼 뒤 이 열이 고른 후보와 일치해야 한다.
 				boolean production = titleFilter.isRelevant(instrument, allNames, title);
 				counts.add(noOther, selfPresent, selfOrAlias, production);
+
+				// 건별 대조. 합계만 맞춰 보면 서로 상쇄되는 두 오차가 "일치"로 보인다.
+				if (production != selfPresent) {
+					dumpMismatches.add(String.format(
+						"`%s` [%s] — 운영 %s / 합본 `S` %s — \"%s\"",
+						root.get("label").asText(), name,
+						production ? "통과" : "제외", selfPresent ? "통과" : "제외", title));
+				}
 			}
 			totals.add(counts);
 
@@ -125,19 +168,33 @@ class CoinNewsFilterMeasurementTest {
 			totals.received, totals.current, totals.candidate1,
 			totals.candidate2, totals.combined, totals.withAlias, totals.production));
 
-		// 규칙을 바꾼 뒤 이 줄이 "일치"여야 구현이 고른 후보와 같다는 근거가 된다. 어긋나면 코드가 문서와
-		// 다른 규칙을 돌리고 있다는 뜻이므로, 숫자만 보고 넘기지 말고 여기서 걸러야 한다.
+		// 규칙을 바꾼 뒤 이 줄이 "전건 일치"여야 구현이 고른 후보와 같다는 근거가 된다. 어긋나면 코드가
+		// 문서와 다른 규칙을 돌리고 있다는 뜻이라 테스트가 실패한다 — 표만 찍고 넘어가지 않는다.
 		out.append(String.format(
-			"%n> **운영 현재 ↔ 합본 `S`** — %s (%d vs %d)%n",
-			totals.production == totals.combined ? "일치" : "**어긋남**",
-			totals.production, totals.combined));
+			"%n> **운영 현재 ↔ 합본 `S` (건별 대조)** — %s · %d건 대조, 어긋남 **%d건** (합계 %d vs %d)%n",
+			dumpMismatches.isEmpty() ? "전건 일치" : "**어긋남 — 테스트 실패**",
+			totals.received, dumpMismatches.size(), totals.production, totals.combined));
+		dumpMismatches.stream()
+			.limit(MISMATCH_SAMPLE_LIMIT)
+			.forEach(mismatch -> out.append(String.format(">   - %s%n", mismatch)));
+		if (dumpMismatches.size() > MISMATCH_SAMPLE_LIMIT) {
+			out.append(String.format(
+				">   - … 외 %d건%n", dumpMismatches.size() - MISMATCH_SAMPLE_LIMIT));
+		}
+		mismatches.addAll(dumpMismatches);
 
 		out.append("\n### 제외분을 둘로 가르면 (후보2가 살릴 수 있는 몫)\n\n");
 		out.append("| 종목 | 현행 제외 | (a) 자기 이름 있음 → **후보2가 살린다** | (b) 자기 이름 없음 → 못 살린다 |\n");
 		out.append("|---|---:|---:|---:|\n").append(splitRows);
+		out.append(String.format(
+			"| **합계** | **%d** | **%d** | **%d** |%n",
+			totals.received - totals.current, totals.excludedButSelfPresent,
+			totals.received - totals.current - totals.excludedButSelfPresent));
 
 		out.append("\n### 개정 전 통과분 중 자기 이름이 없던 것 (= 오탐, 개정으로 걷힌 몫)\n\n");
 		out.append("| 종목 | 개정 전 통과 | 그중 자기 이름 없음 |\n|---|---:|---:|\n");
+		int totalPassed = 0;
+		int totalPassedWithoutSelf = 0;
 		for (JsonNode record : records) {
 			String name = record.get("name").asText();
 			int passed = 0;
@@ -151,8 +208,15 @@ class CoinNewsFilterMeasurementTest {
 					}
 				}
 			}
+			totalPassed += passed;
+			totalPassedWithoutSelf += passedWithoutSelf;
 			out.append(String.format("| %s | %d | %d |%n", name, passed, passedWithoutSelf));
 		}
+		// 합계 행이 없어서 이 몫을 손으로 유도하다 "680 − 145 = 535건(79%)"이라는 틀린 수치가 나왔다
+		// (145에는 개정 전에 통과하지 못한 30건이 섞여 있다). 실제 값은 680 − 115 = 565건(83%)이다.
+		out.append(String.format(
+			"| **합계** | **%d** | **%d** (%s) |%n",
+			totalPassed, totalPassedWithoutSelf, percentage(totalPassedWithoutSelf, totalPassed)));
 
 		out.append("\n> **별칭 열은 참고용이다.** 심볼을 자기 이름으로 함께 인정한 결과인데, `ETC`·`DOT`처럼 "
 			+ "영어 일반어와 겹치는 심볼이 있어 그대로 쓰면 새 오탐이 생긴다. 숫자가 크게 달라지는 종목만 "
@@ -217,6 +281,10 @@ class CoinNewsFilterMeasurementTest {
 			}
 		}
 		return true;
+	}
+
+	private static String percentage(int part, int whole) {
+		return whole == 0 ? "-" : String.format("%.0f%%", 100.0 * part / whole);
 	}
 
 	// 심볼은 대소문자를 가리지 않는다. 영어 단어 경계는 보지 않는다 — 그 거친 판정이 만드는 오탐을 보는 것이
@@ -293,6 +361,7 @@ class CoinNewsFilterMeasurementTest {
 		private int combined;
 		private int withAlias;
 		private int production;
+		private int excludedButSelfPresent;
 
 		private void add(Counts counts) {
 			received += counts.received;
@@ -302,6 +371,7 @@ class CoinNewsFilterMeasurementTest {
 			combined += counts.combined;
 			withAlias += counts.withAlias;
 			production += counts.production;
+			excludedButSelfPresent += counts.excludedButSelfPresent;
 		}
 	}
 }

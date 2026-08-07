@@ -22,10 +22,14 @@ public interface NewsCollector {
 	/**
 	 * 종목 하나의 최신 기사를 가져온다.
 	 *
-	 * @param instrument 수집 대상 종목. 질의어는 이 종목의 시장·이름에서 나온다 (FEED-001)
-	 * @param sameMarketNames 대상과 <b>같은 시장</b>의 종목명 목록. 제목에 다른 종목명이 든 기사를 걸러내는 데
-	 *     쓴다. 대상 자신의 이름이 들어 있어도 되며, 시장을 섞으면 종목명이 겹치는 순간 정상 기사가 사라지므로
-	 *     호출부가 같은 시장으로 좁혀 넘긴다. 종목 목록은 {@code market}의 서비스를 경유해 얻는다(§C-6)
+	 * @param instrument 수집 대상 종목. 질의어는 이 종목의 시장·이름에서 나오고(코인만 심볼을 덧붙인다),
+	 *     <b>제목 필터의 규칙도 이 종목의 시장이 가른다</b> — 코인과 주식이 서로 반대다 (FEED-001,
+	 *     2026-08-07 개정, {@code NewsTitleFilter} javadoc)
+	 * @param sameMarketNames 대상과 <b>같은 시장</b>의 종목명 목록. <b>주식</b>에서는 제목에 다른 종목명이 든
+	 *     기사를 걸러내는 데 쓰고, <b>코인</b>에서는 자기 이름의 등장이 더 긴 다른 종목명에 삼켜졌는지
+	 *     (예: {@code 비트코인} ⊂ {@code 비트코인캐시}) 가리는 데만 쓴다. 대상 자신의 이름이 들어 있어도 되며,
+	 *     시장을 섞으면 종목명이 겹치는 순간 정상 기사가 사라지므로 호출부가 같은 시장으로 좁혀 넘긴다.
+	 *     종목 목록은 {@code market}의 서비스를 경유해 얻는다(§C-6)
 	 * @return 저장 가능한 기사 목록. 실패·키 없음·결과 없음은 모두 빈 목록이다 (오류가 아니다)
 	 */
 	List<CollectedNewsDto> collect(Instrument instrument, List<String> sameMarketNames);

@@ -74,6 +74,28 @@ class NewsTitleFilterTest {
 		assertThat(titleFilter.isRelevant(crypto("비트코인캐시"), CRYPTO_NAMES, title)).isTrue();
 	}
 
+	// 자기 이름의 **첫 등장만** 긴 형제에 삼켜지고 뒤의 등장이 독립인 자리다. 위 두 테스트로는 덮이지 않는다 —
+	// 그쪽은 자기 이름이 긴 쪽(비트코인캐시)이라 첫 등장이 이미 독립이어서, 자기 이름의 등장을 끝까지 훑는지
+	// 아니면 첫 등장만 보는지가 구분되지 않는다. 첫 등장만 보는 구현은 이 제목을 제외해 정상 기사를 잃는다.
+	@Test
+	@DisplayName("[개정] 자기 이름의 첫 등장이 긴 형제에 삼켜져도 뒤의 독립 등장을 찾아낸다")
+	void findsIndependentSelfOccurrenceAfterSwallowedFirstOne() {
+		String title = "비트코인캐시 급등, 비트코인도 사상 최고가";
+
+		assertThat(titleFilter.isRelevant(crypto("비트코인"), CRYPTO_NAMES, title)).isTrue();
+	}
+
+	// 자기 이름의 두 번째 등장을 삼키는 것은 긴 형제의 **두 번째** 등장이다. 긴 형제의 첫 등장만 대조하는
+	// 구현은 이 제목을 통과시켜, 자기 이름이 한 번도 독립적으로 나오지 않는 형제 기사를 근거로 저장한다 —
+	// 개정이 막으려던 바로 그 오탐이다. 그래서 두 등장 목록을 모두 훑는 것이 규칙의 일부다.
+	@Test
+	@DisplayName("[개정] 자기 이름 등장이 각기 다른 형제 등장에 모두 삼켜지면 제외된다")
+	void excludesWhenEverySelfOccurrenceIsSwallowedByADifferentSiblingOccurrence() {
+		String title = "비트코인캐시 급등, 비트코인캐시 신고가";
+
+		assertThat(titleFilter.isRelevant(crypto("비트코인"), CRYPTO_NAMES, title)).isFalse();
+	}
+
 	@Test
 	@DisplayName("접두 관계가 아닌 다른 종목명이 제목에 있으면 제외된다")
 	void excludesArticleThatMentionsUnrelatedInstrumentName() {
@@ -92,7 +114,8 @@ class NewsTitleFilterTest {
 
 	// 2026-08-07 개정(이슈 #179)으로 결과가 뒤집힌 자리다. 개정 전에는 남겼다 — 그것이 오탐의 통로였다.
 	//
-	// 개정 전 규칙은 자기 이름을 아예 보지 않아, 통과한 680건 중 535건(79%)의 제목에 그 코인 이름이 없었다.
+	// 개정 전 규칙은 자기 이름을 아예 보지 않아, 통과한 680건 중 565건(83%)의 제목에 그 코인 이름이 없었다
+	// (= 개정 전 통과 680 − 후보1 `S&&!O` 115).
 	@Test
 	@DisplayName("[개정] 자기 이름이 제목에 없으면 다른 종목명이 없어도 제외된다")
 	void excludesCoinArticleThatMentionsNoInstrumentNameAtAll() {

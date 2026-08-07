@@ -110,6 +110,8 @@
 | 21:05 | implementer | `gradlew.bat compileJava compileTestJava spotlessApply --console=plain` + `test --tests FeedbackCryptoPropertiesTest --tests FeedbackCryptoPropertiesYamlTest --tests CryptoWatchLockTest --tests CryptoPriceMoveWatcherTest --tests CryptoWatchLockConcurrencyIntegrationTest`(Docker, 43건 통과) (`/review-pr 254` 승인 + 권장 6건·참고 4건 전부 반영) | PR #254 리뷰(승인, 권장 6·참고 4), ADR-0014, spec.md §C-7, docs/specs/012-ai-feedback/tasks-244.md, context-notes.md |
 | 22:34 | implementer | 임시 프로브(`unlock`의 `deleted == 1L` 분기에 `AssertionError`)로 정상 경로 커버 여부를 실측 후 원복 + `gradlew.bat spotlessApply compileJava compileTestJava` + `test --tests FeedbackCryptoPropertiesTest --tests FeedbackCryptoPropertiesYamlTest --tests CryptoWatchLockTest --tests CryptoPriceMoveWatcherTest --tests CryptoWatchLockConcurrencyIntegrationTest`(Docker, 44건 통과) (PR #254 3라운드 리뷰 권장 2건·참고 4건 반영) | PR #254 3라운드 리뷰(승인, 권장 2·참고 4), ADR-0014 §후속, docs/specs/012-ai-feedback/tasks-244.md |
 | 23:30 | implementer | 임시 프로브(`unlock`의 `deleted == null` 가드 제거)로 제안받은 테스트가 가드를 지키지 못함을 실측(9건 전부 통과) → 로그 관찰 방식으로 교체 후 같은 프로브 재실행(해당 1건만 실패) → `git checkout`으로 원복 + `gradlew.bat spotlessApply` + `test --tests CryptoWatchLockTest`(9건 통과) + `gradlew.bat build`(전체 게이트 통과) (PR #254 4라운드 리뷰 권장 1건·참고 3건 반영) | PR #254 4라운드 리뷰(승인, 권장 1·참고 3), `DartDisclosureCollectorTest`(ListAppender 로그 관찰 헬퍼 선례), CLAUDE.md 규칙 6, context-notes.md |
+| 09:27 | reviewer(리뷰) | `git diff dev...HEAD`(브랜치 fix/179-coin-news-filter) + `gradlew.bat test --tests "*NewsTitleFilterTest" --tests "*NewsSearchQueryBuilderTest" --tests "*NaverNewsCollectorTest" --tests "*CoinNewsFilterMeasurementTest"`(통과) + 임시 프로브 3종(`appearsIndependently` 첫 등장만 검사 / `swallowedByLongerName` 첫 등장만 검사 / 길이 가드 완화)으로 단정 유효성 실측 후 `git checkout` 원복 | spec.md §FEED-001(개정 문단), docs/conventions.md, ADR-0002·0003·0004, CLAUDE.md 규칙 7·10, V7__create_instruments.sql(심볼 시드), run-log.md 2026-08-07 항목 |
+| 09:38 | implementer | `gradlew.bat compileJava`(문서·javadoc·측정 도구만 변경) + `680 − 115 = 565`를 보고서 `S` 열 12행 합계로 검산 + `python -c "ast.parse"`로 `fetch.py` 구문 확인 | PR #258 리뷰 2건(차단 3·권장 11), spec.md §FEED-001 개정 문단, run-log 2026-08-07 절, docs/specs/README.md(로그 형식), CLAUDE.md 규칙 6·7·10 |
 ## 모니터링 (사람용 요약)
 - 11:40 — 문서 리뷰 완료, 차단 9건(노출 판정 전장 기사 역전, UNIQUE(url) 잔존 모순, 코인 경로 미정의, 장마감 배치 부재, 배치용 전일치 분봉 조회 경로 부재, PRD 수집주기 모순 등) / 권장 12건.
 - 12:20 — Part D(개장 전 브리핑) 정밀 리뷰: 차단 8건(08:40 잔존 모순, 크론 zone 누락, 스케줄러 풀 미증설, 09:00 전 배치 미완료, 브리핑 행 부재 상태 미정의, NOT_YET/EMPTY 우선순위 충돌, 재생세션 조회 경로 부재, 공시 00:00:00 구간 역전) / 권장 9건 — 머지 불가.
@@ -282,7 +284,7 @@
 
 ### 2026-08-07 — 이슈 #179 코인 뉴스 질의어·제목 필터 개정 (실측 근거)
 
-**측정 방법 (재현 가능).** `tools/coin-news-measure/fetch.py`가 네이버를 12종목 × 100건씩 받아 **원문 그대로** 덤프하고, `CoinNewsFilterMeasurementTest`(외부 호출 없음, 덤프 없으면 건너뜀)가 그 덤프에 필터 후보를 적용한다. 수집과 분석을 나눈 이유는 **후보마다 새로 받으면 그 사이 기사 목록이 바뀌어 무엇 때문에 숫자가 달라졌는지 구분되지 않기 때문이다.** 제목 손질(태그 제거 → 엔티티 해제 → 절단)은 측정기가 다시 구현하지 않고 운영 코드 `NaverNewsCollector.cleanTitle`을 그대로 부른다 — 그래서 그 메서드를 패키지 전용으로 넓혔다.
+**측정 방법은 재현 가능하나 원자료는 2026-08-07 스냅샷이다.** 덤프는 gitignore 대상이고 네이버는 최신순 100건만 주므로 지금 다시 받으면 다른 기사 집합이 온다 — 아래 숫자를 그대로 재현하려면 그 스냅샷이 필요하다. `tools/coin-news-measure/fetch.py`가 네이버를 12종목 × 100건씩 받아 **원문 그대로** 덤프하고, `CoinNewsFilterMeasurementTest`(외부 호출 없음, 덤프 없으면 건너뜀)가 그 덤프에 필터 후보를 적용한다. **분석은 반드시 `--rerun-tasks`로 돌린다** — 덤프가 test task의 입력이 아니라 Gradle이 `UP-TO-DATE`로 건너뛰고, `BUILD SUCCESSFUL`만 보면 이전 스냅샷 보고서를 새 결과로 읽게 된다(자세한 함정은 `tools/coin-news-measure/README.md`). 수집과 분석을 나눈 이유는 **후보마다 새로 받으면 그 사이 기사 목록이 바뀌어 무엇 때문에 숫자가 달라졌는지 구분되지 않기 때문이다.** 제목 손질(태그 제거 → 엔티티 해제 → 절단)은 측정기가 다시 구현하지 않고 운영 코드 `NaverNewsCollector.cleanTitle`을 그대로 부른다 — 그래서 그 메서드를 패키지 전용으로 넓혔다.
 
 **기준선 (개정 전 규칙, 12종목 1,200건).** 제목 하나를 두 값으로만 본다 — `S`(자기 이름이 독립적으로 등장) / `O`(다른 종목명이 독립적으로 등장).
 
@@ -294,17 +296,22 @@
 
 **이슈의 전제가 뒤집혔다.** 이슈는 방향①(정상 기사 대량 누락)을 표제로 잡았는데 실측은 반대였다.
 
-- 제외된 520건 중 자기 이름이 든 것은 **30건(6%)** 뿐이다 — 제외 규칙만 완화하는 후보2는 1,200건에서 30건을 살린다.
-- 반대로 개정 전 통과 680건 중 **535건(79%)의 제목에 그 코인 이름이 없었다.** 실제로 통과하던 제목 — `체인링크`에 `"두바이듀티프리 암호화폐 결제, 디르함 정산이 핵심"`, `비트코인캐시`에 `"260레인 CXL 스위치, 마벨 AI 메모리 병목 겨냥"`.
-- `비트코인캐시`·`이더리움클래식`은 저장된 51건 중 자기 이름이 든 제목이 **0건**이었다.
-- **`" 코인"` 접미가 오히려 해로웠다** — 일반 암호화폐 기사를 끌어와 이름만 쓰는 것(170)보다 낮은 145를 냈다.
+- 제외된 520건 중 자기 이름이 든 것은 **30건(6%)** 뿐이다 — 제외 규칙만 완화하는 후보2는 1,200건에서 30건을 살린다. **단 이 판정은 개정 전 규칙에 대해서만 참이다** (아래 "새 규칙의 누락" 참조).
+- 반대로 개정 전 통과 680건 중 **565건(83%)의 제목에 그 코인 이름이 없었다**(`680 − 115` = 개정 전 통과 − 후보1, 위 표의 `S` 열 12종목 합계와 일치). 실제로 통과하던 제목 — `체인링크`에 `"두바이듀티프리 암호화폐 결제, 디르함 정산이 핵심"`, `비트코인캐시`에 `"260레인 CXL 스위치, 마벨 AI 메모리 병목 겨냥"`.
+- `비트코인캐시`·`이더리움클래식`은 **각각 필터를 통과한 51건**(둘을 합쳐 102건) 중 자기 이름이 든 제목이 **0건**이었다.
+- **`" 코인"` 접미가 오히려 해로웠다** — 일반 암호화폐 기사를 끌어와 이름만 쓰는 것(170)보다 낮은 145를 냈다. **종목별로는 7종목 하락·5종목 무변화이고 오른 종목은 없다** — "12종목에서 일관되게 나빠졌다"가 아니다.
 
 **후보 1과 2가 서로 직교한다.** 바꾸는 칸이 겹치지 않아(후보1은 `S=F,O=F`, 후보2는 `S=T,O=T`) 합치면 규칙이 `통과 = S` 한 줄로 줄고, **접두 쌍 보호는 기존 구간 대조를 방향만 뒤집어 그대로 유지된다.**
 
 **채택 — 심볼 질의어 + 합본 필터(`S`).** 261건이 남고 전부 제목에 그 코인 이름이 있다. 대가는 저장량 680 → 261건이고, `비트코인캐시`(3건)·`이더리움클래식`(4건)은 카드가 거의 생기지 않는다. **무관한 근거가 붙은 카드보다 카드가 없는 편이 낫다**고 판단했다 — 근거가 틀린 카드는 사용자를 적극적으로 오해시킨다.
 
-**기각 — 별칭(심볼) 인정 (331건).** `ETC`·`DOT`가 영어 일반어(`etc.`·`dot`)와 겹쳐 단어 경계 처리 없이는 새 오탐이 생긴다.
+**보류 — 별칭(심볼) 인정 (331건).** 위험은 `ETC`·`DOT`가 영어 일반어(`etc.`·`dot`)와 겹치는 것이고, 구간 대조가 단어 경계를 보지 않으므로 **위험 자체는 유효하다.** 다만 **이 표본에서는 관측되지 않았다** — 3,600건에서 영어 용법 히트 **0건**이고, 별칭으로만 추가되는 11건은 전부 정상 기사였다(`"DOT 토큰 폭락"`, `"ETC, 관세 쇼크 속 주말 랠리 주도"`). 관측된 오탐이 아니라 **관측되지 않은 잠재 위험**을 근거로 보류한 것이다. 회복분은 `이더리움클래식` 4 → 8건, `폴카닷` 15 → 22건 — 바로 위 "대가"가 지목한 종목들이라 후속 판단의 재료다. 채택 규칙 변경은 재측정·재리뷰가 필요해 이 PR에서는 바꾸지 않았다.
+
+**새 규칙의 누락은 이 측정이 구조적으로 볼 수 없다.** 지표 `S`가 곧 채택 규칙이라 "`S`가 놓치는 정상 기사"는 정의상 어느 칸에도 잡히지 않는다. 리뷰가 실제 사례를 찾았다 — `이더리움클래식`이 **띄어쓰기**(`"이더리움 클래식(ETC)"`)로 3건을 놓치고, 그 3건이면 4 → 7건이 된다. 후속 후보로 남긴다.
 
 **주식은 건드리지 않았다.** 이슈의 제외 범위이고 실측하지 않았다(C-005). `NewsTitleFilter`가 시장으로 갈라지며, `NewsTitleFilterTest`의 주식 3건이 개정 전과 같은 기대값으로 남아 있는 것이 "코인만 갈렸다"의 증거다.
 
 **구현 후 재현 확인.** 같은 덤프에 운영 코드를 다시 돌려 세 질의 방식 전부 **운영 현재 = 합본 `S`** 로 일치했다(심볼 261 vs 261). 보고서가 이 대조를 매번 출력하므로, 코드가 문서와 다른 규칙을 돌리면 그 줄이 "어긋남"이 된다.
+
+- 09:27 — PR #258 리뷰(로직 관점) 완료. 차단 0건 / 권장 4건 / 참고 1건 — 직교성·접두 보호·길이 가드·주식 불변·심볼 null 경로는 전부 성립, 남은 지적은 다중 등장 순회를 지키는 단정 부재(프로브로 재현)와 스테일 javadoc이다. 머지 가능.
+- 09:38 — PR #258 리뷰 차단 3건·권장 문서분 반영(문서·javadoc·측정 도구만, 규칙 무변경). ①인용 오류 `535건(79%)` → **`565건(83%)`**(`680 − 115`, 보고서 `S` 열 합계로 검산) ②별칭 기각 근거를 "관측된 오탐"에서 **"이 표본에서는 관측되지 않은 잠재 위험"**으로 정정하고 회복분(이더리움클래식 4→8·폴카닷 15→22)을 기록 ③재현 명령에 **`--rerun-tasks`**를 넣어 UP-TO-DATE 무음 스킵을 막음(`build.gradle` 입력 배선은 전역 test task를 오염시켜 채택하지 않음, 근거는 신설 `tools/coin-news-measure/README.md`). 함께 "51건은 두 종목 각각(합 102)·저장이 아니라 필터 통과", 원자료는 2026-08-07 스냅샷, 접미 효과는 7종목 하락·5종목 무변화, 새 규칙의 누락은 이 측정이 구조적으로 못 본다(이더리움클래식 띄어쓰기 3건, 4→7)를 명시. `NewsTitleFilter`·`NewsCollector` javadoc을 시장별 규칙으로 재작성, `fetch.py`가 `link`·`pubDate`를 덤프하고 부분 덤프에 `-partial` 접미·종목 수·수집 시각을 남긴다. `compileJava` 통과.

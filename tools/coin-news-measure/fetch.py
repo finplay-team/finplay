@@ -8,17 +8,29 @@
 **제목을 여기서 손질하지 않는다.** 태그 제거·엔티티 해제·길이 절단은 운영 코드(NaverNewsCollector.cleanTitle)가
 하는 일이고, 2단계 분석기가 그 메서드를 그대로 부른다. 여기서 미리 씻으면 두 벌이 되어 조용히 갈라진다.
 
-사용법
-    python tools/coin-news-measure/fetch.py                  # 현행 질의어(이름 + " 코인")
-    python tools/coin-news-measure/fetch.py --suffix ""      # 보정 없이
-    python tools/coin-news-measure/fetch.py --symbol-suffix  # 후보 3 — 이름 + " " + 심볼
-    python tools/coin-news-measure/fetch.py --only 트론,에이다
+**측정은 필터만 본다 — 운영은 필터 앞에서 기사를 더 버린다.** URL 추출 실패·빈 제목·pubDate 파싱 실패로
+저장 전에 떨어지는 기사가 있으므로 방향은 항상 "측정 통과 수 >= 실제 저장 수"다. 그 폐기를 확인할 수 있도록
+title 외에 link(네이버 링크)와 pubDate도 함께 덤프한다 — 2026-08-07 스냅샷에서는 영향 0으로 확인됐지만,
+pubDate는 애초에 덤프에 없어 확인 자체가 불가능했다.
+
+사용법 — 보고서의 3행 표를 얻으려면 **세 번 받아야 한다** (질의 방식 하나에 덤프 하나다)
+    python tools/coin-news-measure/fetch.py --suffix ""      # 이름만
+    python tools/coin-news-measure/fetch.py                  # 개정 전 질의어(이름 + " 코인")
+    python tools/coin-news-measure/fetch.py --symbol-suffix  # 채택 질의어 — 이름 + " " + 심볼
+    python tools/coin-news-measure/fetch.py --only 트론,에이다   # 부분 덤프. 파일명에 -partial이 붙는다
+
+분석(2단계)은 **반드시 --rerun-tasks를 붙인다.**
+    .\\gradlew.bat test --tests CoinNewsFilterMeasurementTest --rerun-tasks
+덤프가 test task의 입력이 아니라, 붙이지 않으면 Gradle이 UP-TO-DATE로 건너뛴다. 그래도 BUILD SUCCESSFUL이
+찍히므로 **이전 스냅샷 보고서를 새 결과로 읽게 된다** — 이 도구를 남긴 이유를 무력화하는 조용한 실패다.
 
 키는 프로젝트 루트 .env의 NAVER_SEARCH_CLIENT_ID / NAVER_SEARCH_CLIENT_SECRET을 읽는다.
-결과는 tools/coin-news-measure/out/raw-<label>.json (gitignore 대상).
+결과는 tools/coin-news-measure/out/raw-<label>.json (gitignore 대상 — 클론 직후엔 out/이 비어 있어
+2단계 테스트가 그냥 건너뛴다). 자세한 함정은 같은 폴더의 README.md에 있다.
 """
 
 import argparse
+import datetime
 import json
 import os
 import pathlib
@@ -134,6 +146,10 @@ def main():
         label = "coin-suffix"  # 현행 질의어(이름 + " 코인")
     else:
         label = "bare"
+    # 부분 덤프는 전체 덤프를 같은 파일명으로 덮어쓰면 안 된다 — 분석기가 보는 종목 목록이 줄어들면
+    # 다른 종목명 판정(O)과 접두 보호가 둘 다 달라지는데 보고서에는 아무 표시가 남지 않는다.
+    if only and not args.label:
+        label += "-partial"
     client_id, client_secret = load_env_keys()
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -141,7 +157,9 @@ def main():
     for index, (symbol, name) in enumerate(targets, start=1):
         query = build_query(name, symbol, args)
         items = fetch_one(query, client_id, client_secret)
-        # title만 쓰지만 originallink를 함께 남긴다 — 나중에 "이 기사가 정말 무관한가"를 사람이 확인할 때 쓴다.
+        # 판정은 title만 쓰지만 나머지 셋도 남긴다 — originallink는 "이 기사가 정말 무관한가"를 사람이
+        # 확인할 때, link·pubDate는 운영이 필터 **앞에서** 버리는 기사(URL 추출 실패·pubDate 파싱 실패)를
+        # 확인할 때 쓴다. 측정이 그 폐기를 모델링하지 않으므로 방향은 항상 "측정 >= 실제 저장"이다.
         records.append(
             {
                 "symbol": symbol,
@@ -149,7 +167,15 @@ def main():
                 "query": query,
                 "received": len(items),
                 # 원문 그대로다. 손질은 2단계가 운영 코드로 한다.
-                "items": [{"title": i.get("title", ""), "url": i.get("originallink", "")} for i in items],
+                "items": [
+                    {
+                        "title": i.get("title", ""),
+                        "url": i.get("originallink", ""),
+                        "link": i.get("link", ""),
+                        "pubDate": i.get("pubDate", ""),
+                    }
+                    for i in items
+                ],
             }
         )
         print(f"  {index:2d}/{len(targets)}  {query:<20} {len(items):3d}건")
@@ -157,13 +183,30 @@ def main():
             time.sleep(0.2)  # 레이트리밋 여유. 12건이라 총 2.4초다
 
     out_path = OUT_DIR / f"raw-{label}.json"
+    # 종목 수·수집 시각·부분 여부를 덤프에 박아 둔다 — 보고서만 보고는 "12종목 전부인가"를 알 수 없고,
+    # 부분 덤프가 섞이면 O 판정과 접두 보호가 조용히 달라진다.
     out_path.write_text(
-        json.dumps({"label": label, "records": records}, ensure_ascii=False, indent=1),
+        json.dumps(
+            {
+                "label": label,
+                "collectedAt": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+                "instrumentCount": len(records),
+                "expectedInstrumentCount": len(COINS),
+                "partial": len(records) != len(COINS),
+                "records": records,
+            },
+            ensure_ascii=False,
+            indent=1,
+        ),
         encoding="utf-8",
     )
     total = sum(r["received"] for r in records)
-    print(f"\n{len(records)}종목 {total}건 → {out_path}")
-    print("다음 — .\\gradlew.bat test --tests CoinNewsFilterMeasurementTest")
+    print(f"\n{len(records)}/{len(COINS)}종목 {total}건 → {out_path}")
+    if len(records) != len(COINS):
+        print("  ! 부분 덤프다 — 종목 목록이 줄면 다른 종목명 판정(O)과 접두 보호가 함께 달라진다")
+    # --rerun-tasks가 없으면 Gradle이 UP-TO-DATE로 건너뛰고도 BUILD SUCCESSFUL을 찍어,
+    # 이전 스냅샷 보고서를 새 결과로 읽게 된다 (덤프는 test task의 입력이 아니다).
+    print("다음 — .\\gradlew.bat test --tests CoinNewsFilterMeasurementTest --rerun-tasks")
 
 
 if __name__ == "__main__":
