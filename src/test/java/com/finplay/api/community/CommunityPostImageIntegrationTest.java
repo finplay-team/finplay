@@ -130,8 +130,8 @@ class CommunityPostImageIntegrationTest {
 			.andExpect(status().isOk())
 			.andReturn().getResponse().getContentAsByteArray();
 
-		// SoftAssertions로 묶는다 — 게시물 생성 응답 자체의 imageId 필드(plan.md API 설계 POST 행이 명시한 계약)가
-		// 비어 있는 구현 버그가 있어도(아래 별도 보고), 단건 조회·다운로드까지 이어지는 나머지 시나리오 검증이
+		// SoftAssertions로 묶는다 — 생성 응답의 imageId 필드가 다시 비어지는 회귀가 있어도(CommunityPost.attachImage
+		// 양방향 동기화 누락, 4de53f3에서 수정됨), 단건 조회·다운로드까지 이어지는 나머지 시나리오 검증이
 		// 모두 실행되고 각각 별도로 보고되도록 한다.
 		org.assertj.core.api.SoftAssertions softly = new org.assertj.core.api.SoftAssertions();
 		softly.assertThat(createJson.hasNonNull("imageId") ? createJson.get("imageId").asLong() : null)

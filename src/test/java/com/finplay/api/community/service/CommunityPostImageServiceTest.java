@@ -165,4 +165,60 @@ class CommunityPostImageServiceTest {
 		verify(repository, never()).delete(any());
 		verifyNoInteractions(fileStorageService);
 	}
+
+	@Test
+	void resolveImageForPostReturnsImageWhenOwnedByRequesterAndUnassigned() {
+		User uploader = User.create("uploader@finplay.com", "hash", "uploader", LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(uploader, "id", 42L);
+		CommunityPostImage image = CommunityPostImage.create(
+			uploader, "stored.png", "original.png", "image/png", 10L, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(image, "id", 7L);
+		when(repository.findById(7L)).thenReturn(Optional.of(image));
+
+		CommunityPostImage resolved = service.resolveImageForPost(42L, 7L);
+
+		assertThat(resolved).isSameAs(image);
+	}
+
+	@Test
+	void resolveImageForPostFailsWithNotFoundWhenImageDoesNotExist() {
+		when(repository.findById(7L)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> service.resolveImageForPost(42L, 7L))
+			.isInstanceOf(BusinessException.class)
+			.extracting(e -> ((BusinessException)e).getErrorCode())
+			.isEqualTo(ErrorCode.NOT_FOUND);
+	}
+
+	@Test
+	void resolveImageForPostFailsWithForbiddenWhenImageBelongsToAnotherUser() {
+		User uploader = User.create("uploader@finplay.com", "hash", "uploader", LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(uploader, "id", 42L);
+		CommunityPostImage image = CommunityPostImage.create(
+			uploader, "stored.png", "original.png", "image/png", 10L, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(image, "id", 7L);
+		when(repository.findById(7L)).thenReturn(Optional.of(image));
+
+		assertThatThrownBy(() -> service.resolveImageForPost(99L, 7L))
+			.isInstanceOf(BusinessException.class)
+			.extracting(e -> ((BusinessException)e).getErrorCode())
+			.isEqualTo(ErrorCode.FORBIDDEN);
+	}
+
+	@Test
+	void resolveImageForPostFailsWithValidationErrorWhenImageAlreadyAssignedToAPost() {
+		User uploader = User.create("uploader@finplay.com", "hash", "uploader", LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(uploader, "id", 42L);
+		CommunityPostImage image = CommunityPostImage.create(
+			uploader, "stored.png", "original.png", "image/png", 10L, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(image, "id", 7L);
+		CommunityPost post = CommunityPost.create(uploader, "title", "content", null, LocalDateTime.now(CLOCK));
+		image.assignToPost(post);
+		when(repository.findById(7L)).thenReturn(Optional.of(image));
+
+		assertThatThrownBy(() -> service.resolveImageForPost(42L, 7L))
+			.isInstanceOf(BusinessException.class)
+			.extracting(e -> ((BusinessException)e).getErrorCode())
+			.isEqualTo(ErrorCode.VALIDATION_ERROR);
+	}
 }
