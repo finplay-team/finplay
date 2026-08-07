@@ -1,4 +1,5 @@
-// crypto-real 프로필 전체 컨텍스트에서 코인 캔들 provider가 실제 빗썸 구현 하나뿐이고 시뮬레이터 빈이 사라지는지 검증한다 (이슈 #107 ⑪⑬)
+// crypto-real 프로필 전체 컨텍스트에서 코인 캔들 provider 배선이 CachedCryptoCandleProvider(데코레이터, @Primary)
+// + BithumbRestCandleProvider(위임 대상) 조합으로 고정되고 Fake·시뮬레이터 빈이 사라지는지 검증한다 (이슈 #107 ⑪⑬, MKT-010 이슈 #242)
 package com.finplay.api.market.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -21,14 +22,17 @@ class CryptoRealProfileContextIntegrationTest {
 	@Autowired
 	private ApplicationContext applicationContext;
 
-	// 후보 빈이 둘이면(@Profile 조건이 겹치면) @Autowired 단일 필드 주입 자체가 실패하므로,
-	// 이 필드가 주입되었다는 사실만으로 CryptoCandleProvider 구현이 정확히 하나임이 보장된다.
+	// MKT-010(이슈 #242) 이후 이 프로필에는 CryptoCandleProvider 구현이 둘(데코레이터+위임 대상) 공존한다 —
+	// @Primary가 없으면 이 단일 필드 주입 자체가 모호성으로 실패하므로, 주입된 타입이 데코레이터인지를
+	// 확인하는 것으로 "정확히 어떤 구현이 CandleQueryService에 노출되는가"를 고정한다.
 	@Autowired
 	private CryptoCandleProvider cryptoCandleProvider;
 
 	@Test
-	void cryptoRealProfileRegistersOnlyBithumbRestCandleProvider() {
-		assertThat(cryptoCandleProvider).isInstanceOf(BithumbRestCandleProvider.class);
+	void cryptoRealProfileExposesCachedProviderAsPrimaryWithRestProviderAsDelegate() {
+		assertThat(cryptoCandleProvider).isInstanceOf(CachedCryptoCandleProvider.class);
+		// 위임 대상은 여전히 빈으로 존재한다 — 데코레이터가 구체 클래스로 직접 주입받는 대상이다.
+		assertThat(applicationContext.getBeanNamesForType(BithumbRestCandleProvider.class)).hasSize(1);
 		assertThat(applicationContext.getBeanNamesForType(FakeCryptoCandleProvider.class)).isEmpty();
 	}
 

@@ -4,10 +4,13 @@ package com.finplay.api.market.feed;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.repository.InstrumentRepository;
+import com.finplay.api.market.store.CryptoCandleStore;
 import com.finplay.api.market.store.FeedConnectionStatus;
 import com.finplay.api.market.store.PriceStore;
 import java.io.IOException;
 import java.net.URI;
+import java.time.Clock;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -23,11 +26,10 @@ import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 import tools.jackson.databind.ObjectMapper;
 
-// 구독 요청 JSON({"type":"ticker","symbols":["BTC_KRW",...],"tickTypes":["30M"]})과 ticker 응답 메시지의 정확한 필드
-// 구성은 실제 빗썸 연결로 확인된 적이 없는 미확정 항목이다(Decision Gate — KisHistoricalCandleClientImpl의 output2
-// 필드명과 같은 성격, spec.md·plan.md·tasks.md 이슈 #104 참고). 공개 문서 기준 최선 추정으로 구현했고, 응답 메시지
-// 파싱은 BithumbTickerMessageParser 한 곳에만 있다 — 실제 연결 검증(외부 스모크)에서 필드가 다르면 그 클래스만
-// 교정하면 된다. 재연결 지수 백오프·구독 실패 처리는 Decision Gate가 아니라 이번 PR(#110) 리뷰로 바로 확정된 로직이다.
+// ticker 채널(현재가·주문 트리거용)에 더해 transaction 채널(체결 단위 가격·수량·시각, MKT-010 1분봉 집계용)도
+// 같은 연결에 구독한다. 두 채널 모두 2026-08-06 실제 빗썸 연결로 필드 구성을 확인했다(이슈 #242) — 더 이상
+// Decision Gate가 아니다. 응답 메시지 파싱은 각각 BithumbTickerMessageParser·BithumbTransactionMessageParser
+// 한 곳에만 있다. 재연결 지수 백오프·구독 실패 처리는 PR #110 리뷰로 확정된 로직이다.
 @Slf4j
 @Component
 @Profile("prod")
@@ -37,6 +39,7 @@ public class BithumbWebSocketFeedClient extends TextWebSocketHandler implements 
 	private static final URI BITHUMB_WS_URI = URI.create("wss://pubwss.bithumb.com/pub/ws");
 	private static final String KRW_SUFFIX = "_KRW";
 	private static final String SUBSCRIBE_TYPE_TICKER = "ticker";
+	private static final String SUBSCRIBE_TYPE_TRANSACTION = "transaction";
 	private static final List<String> SUBSCRIBE_TICK_TYPES = List.of("30M");
 	// 재연결은 5초에서 시작해 실패마다 2배씩 늘어나 60초에서 캡된다(지수 백오프) — 연결에 성공하면 다음 끊김을
 	// 위해 5초로 리셋된다(PR #110 리뷰 권장사항). 장애가 길어져도 무기한 짧은 간격 재시도로 로그가 폭증하지 않는다.
@@ -45,12 +48,14 @@ public class BithumbWebSocketFeedClient extends TextWebSocketHandler implements 
 
 	private final InstrumentRepository instrumentRepository;
 	private final PriceStore priceStore;
+	private final CryptoCandleStore candleStore;
 	private final ObjectMapper objectMapper;
 	// 필드 초기화자 대신 생성자로 주입받는다 — @RequiredArgsConstructor를 유지하며(SpotBugs EI_EXPOSE_REP2 회피 패턴,
 	// docs/agent-mistakes.md 2026-07-29) 재연결 경로(끊김→DISCONNECTED→재연결 예약, MKT-004)를 목(mock)
 	// ScheduledExecutorService로 단위 테스트할 수 있게 한다(PR #110 리뷰 권장사항). 운영 빈 등록은 BithumbFeedConfig가 담당.
 	private final StandardWebSocketClient webSocketClient;
 	private final ScheduledExecutorService reconnectExecutor;
+	private final Clock clock;
 
 	private volatile boolean running;
 	private volatile WebSocketSession session;
@@ -90,8 +95,16 @@ public class BithumbWebSocketFeedClient extends TextWebSocketHandler implements 
 
 	@Override
 	public void handleTextMessage(WebSocketSession webSocketSession, TextMessage message) {
-		BithumbTickerMessageParser.parse(objectMapper, message.getPayload())
+		String payload = message.getPayload();
+		BithumbTickerMessageParser.parse(objectMapper, payload)
 			.ifPresent(tick -> priceStore.saveTick(tick.symbol(), tick.price(), tick.receivedAt()));
+		// transaction 체결도 현재가를 갱신한다(의도된 개선, plan.md "왜 transaction도 현재가를 갱신하는가") —
+		// ticker 단독 수신 공백이 실측 최대 6~7초로 PriceStore의 stale 기준(10초)에 여유가 얇았다(이슈 #242).
+		// saveTick은 과거 수신시각을 무시하므로(MKT-003) 두 채널이 함께 써도 값이 어긋나지 않는다.
+		BithumbTransactionMessageParser.parse(objectMapper, payload).forEach(trade -> {
+			candleStore.recordTrade(trade.symbol(), trade.tradedAt(), trade.price(), trade.quantity());
+			priceStore.saveTick(trade.symbol(), trade.price(), trade.tradedAt());
+		});
 	}
 
 	@Override
@@ -137,17 +150,30 @@ public class BithumbWebSocketFeedClient extends TextWebSocketHandler implements 
 	// instrumentRepository 조회부터 전송까지 전부 try 블록 안에서 수행한다 — 조회 실패도 구독 실패와 동일하게
 	// 다뤄야 하고, 구독 자체가 실패하면 물리적 소켓이 열려 있어도 연결상태를 CONNECTED로 남기지 않는다(연결은
 	// 됐는데 틱이 안 오는 상태 방지, PR #110 리뷰 권장사항). 열려 있는 소켓은 정리하고 재연결을 예약한다.
+	// ticker·transaction 두 구독을 같은 세션에 순서대로 보낸다(연결을 추가로 열지 않는다, 이슈 #242 실측
+	// 확인). 둘 중 하나라도 실패하면 이 try 블록 하나로 같은 실패 경로를 탄다 — 반쪽만 구독된 상태로 두지
+	// 않는다(plan.md "구독" 절).
 	private void subscribe(WebSocketSession target) {
 		try {
-			List<String> symbols = instrumentRepository
+			List<String> plainSymbols = instrumentRepository
 				.findByMarketAndTradableTrueOrderByIdAsc(Market.CRYPTO)
 				.stream()
 				.map(Instrument::getSymbol)
-				.map(symbol -> symbol + KRW_SUFFIX)
 				.toList();
-			String payload = objectMapper.writeValueAsString(
-				new SubscribeRequest(SUBSCRIBE_TYPE_TICKER, symbols, SUBSCRIBE_TICK_TYPES));
-			target.sendMessage(new TextMessage(payload));
+			List<String> marketSymbols = plainSymbols.stream().map(symbol -> symbol + KRW_SUFFIX).toList();
+
+			String tickerPayload = objectMapper.writeValueAsString(
+				new TickerSubscribeRequest(SUBSCRIBE_TYPE_TICKER, marketSymbols, SUBSCRIBE_TICK_TYPES));
+			target.sendMessage(new TextMessage(tickerPayload));
+
+			String transactionPayload = objectMapper.writeValueAsString(
+				new TransactionSubscribeRequest(SUBSCRIBE_TYPE_TRANSACTION, marketSymbols));
+			target.sendMessage(new TextMessage(transactionPayload));
+
+			// 이 연결이 성립된 시점 이후만 우리 분봉 데이터가 연속적으로 신뢰 가능하다는 워터마크를 심는다
+			// (plan.md "since 워터마크"). 재연결·재시작 직후에는 이 시점부터가 신뢰 구간이라는 뜻이다.
+			LocalDateTime now = LocalDateTime.now(clock);
+			plainSymbols.forEach(symbol -> candleStore.touchSince(symbol, now));
 		} catch (Exception ex) {
 			log.warn("빗썸 구독에 실패해 연결을 재시도합니다.", ex);
 			closeQuietly(target, CloseStatus.SERVER_ERROR);
@@ -166,12 +192,20 @@ public class BithumbWebSocketFeedClient extends TextWebSocketHandler implements 
 		}
 	}
 
-	private record SubscribeRequest(String type, List<String> symbols, List<String> tickTypes) {
+	private record TickerSubscribeRequest(String type, List<String> symbols, List<String> tickTypes) {
 
 		// 컬렉션 필드는 방어적 복사로 불변화한다 (SpotBugs EI_EXPOSE_REP/REP2 회피, docs/agent-mistakes.md 2026-07-29).
-		private SubscribeRequest {
+		private TickerSubscribeRequest {
 			symbols = List.copyOf(symbols);
 			tickTypes = List.copyOf(tickTypes);
+		}
+	}
+
+	// transaction 구독 요청은 tickTypes가 없다(실측 확인, 이슈 #242) — ticker와 필드 구성이 다르다.
+	private record TransactionSubscribeRequest(String type, List<String> symbols) {
+
+		private TransactionSubscribeRequest {
+			symbols = List.copyOf(symbols);
 		}
 	}
 }
