@@ -11,6 +11,8 @@ import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
+import com.finplay.api.common.TestClock;
+import com.finplay.api.common.TestClockConfig;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.domain.StockCandle;
@@ -30,12 +32,9 @@ import com.finplay.api.portfolio.domain.HoldingLot;
 import com.finplay.api.portfolio.repository.HoldingLotRepository;
 import com.finplay.api.portfolio.repository.HoldingRepository;
 import java.math.BigDecimal;
-import java.time.Clock;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -43,18 +42,14 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 @SpringBootTest
-@Import({TestcontainersConfiguration.class, OrderBuyIntegrationTest.FixedClockTestConfig.class})
+@Import({TestcontainersConfiguration.class, TestClockConfig.class})
 class OrderBuyIntegrationTest {
 
-	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 	// 2026-07-29는 수요일이고 holidays-2026.txt에도 없어 재생세션만 READY면 개장 상태로 계산된다.
 	private static final LocalDate TRADING_DATE = LocalDate.of(2026, 7, 29);
 	private static final LocalDateTime BASE_NOW = LocalDateTime.of(2026, 7, 29, 10, 0, 0);
@@ -65,7 +60,7 @@ class OrderBuyIntegrationTest {
 	private OrderService orderService;
 
 	@Autowired
-	private Clock clock;
+	private TestClock clock;
 
 	@Autowired
 	private UserRepository userRepository;
@@ -112,7 +107,7 @@ class OrderBuyIntegrationTest {
 
 	@BeforeEach
 	void setUp() {
-		((MutableClock)clock).set(BASE_NOW);
+		clock.set(BASE_NOW);
 		stockReplaySessionRepository
 			.findByServiceDate(TRADING_DATE)
 			.orElseGet(() -> stockReplaySessionRepository.saveAndFlush(
@@ -188,7 +183,7 @@ class OrderBuyIntegrationTest {
 		Account account = createAccount(user);
 		Instrument instrument = createStockInstrument("NOSESS");
 		createCandle(instrument, FIRST_CANDLE_TIME, new BigDecimal("70000"));
-		((MutableClock)clock).set(LocalDateTime.of(2099, 1, 5, 10, 0));
+		clock.set(LocalDateTime.of(2099, 1, 5, 10, 0));
 		long ordersBefore = orderRepository.count();
 		long tradesBefore = tradeRepository.count();
 		long holdingsBefore = holdingRepository.count();
@@ -243,7 +238,7 @@ class OrderBuyIntegrationTest {
 		// 첫 매수: 10:00 시각 → 09:59에 마감된 분봉(60000)이 체결가
 		orderService.createOrder(user.getId(), "idem-rebuy-1", buyRequest(instrument.getId(), "10"));
 		// 두 번째 매수: 10:01로 시각을 이동 → 10:00에 마감된 분봉(80000)이 체결가
-		((MutableClock)clock).set(BASE_NOW.plusMinutes(1));
+		clock.set(BASE_NOW.plusMinutes(1));
 		orderService.createOrder(user.getId(), "idem-rebuy-2", buyRequest(instrument.getId(), "10"));
 
 		Holding holding = holdingRepository
@@ -302,46 +297,4 @@ class OrderBuyIntegrationTest {
 		return scenario + "-" + UUID.randomUUID().toString().replace("-", "");
 	}
 
-	// 전역 Clock 빈(ClockConfig, Asia/Seoul 실시각)을 이 테스트 컨텍스트에서만 고정 시각으로 교체한다.
-	// 주식 장중 판정·분봉 조회가 실제 실행 시각에 의존하지 않도록 하기 위함이다.
-	@TestConfiguration(proxyBeanMethods = false)
-	static class FixedClockTestConfig {
-
-		@Bean
-		@Primary
-		Clock fixedClock() {
-			return new MutableClock(BASE_NOW.atZone(KST).toInstant(), KST);
-		}
-	}
-
-	// 재매수 시나리오에서 두 분봉(시각이 다른)을 각각 체결가로 쓰기 위해 테스트 도중 시각을 전진시킬 수 있는 Clock 구현.
-	private static final class MutableClock extends Clock {
-
-		private final ZoneId zone;
-		private volatile Instant instant;
-
-		private MutableClock(Instant instant, ZoneId zone) {
-			this.instant = instant;
-			this.zone = zone;
-		}
-
-		void set(LocalDateTime localDateTime) {
-			this.instant = localDateTime.atZone(zone).toInstant();
-		}
-
-		@Override
-		public ZoneId getZone() {
-			return zone;
-		}
-
-		@Override
-		public Clock withZone(ZoneId zone) {
-			return new MutableClock(instant, zone);
-		}
-
-		@Override
-		public Instant instant() {
-			return instant;
-		}
-	}
 }

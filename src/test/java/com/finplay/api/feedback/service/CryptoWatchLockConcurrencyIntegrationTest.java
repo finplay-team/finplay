@@ -11,6 +11,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.finplay.api.TestcontainersConfiguration;
+import com.finplay.api.common.TestClock;
+import com.finplay.api.common.TestClockConfig;
 import com.finplay.api.feedback.config.FeedbackCryptoProperties;
 import com.finplay.api.feedback.config.FeedbackDetectionProperties;
 import com.finplay.api.feedback.domain.MarketNewsItem;
@@ -24,10 +26,8 @@ import com.finplay.api.market.service.CryptoPriceSnapshotService;
 import com.finplay.api.market.service.InstrumentService;
 import com.finplay.api.market.store.PriceStore;
 import java.math.BigDecimal;
-import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -43,10 +43,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -65,10 +62,9 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 // @Transactional로 감싸면 그 안에서 만든 픽스처가 다른 스레드에는 커밋된 것으로 보이지 않을 수 있다
 // (LimitOrderConcurrencyIntegrationTest와 같은 방침 — saveAndFlush로 즉시 커밋하고 @AfterEach로 직접 정리한다).
 @SpringBootTest
-@Import({TestcontainersConfiguration.class, CryptoWatchLockConcurrencyIntegrationTest.FixedClockTestConfig.class})
+@Import({TestcontainersConfiguration.class, TestClockConfig.class})
 class CryptoWatchLockConcurrencyIntegrationTest {
 
-	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 	private static final LocalDateTime NOW = LocalDateTime.of(2026, 8, 5, 10, 0);
 
 	// setUp()의 픽스처 종목명이자 isThisTestsInstrument 매처의 기준이다. 두 곳에 리터럴을 따로 두면 한쪽만
@@ -103,7 +99,7 @@ class CryptoWatchLockConcurrencyIntegrationTest {
 	private FeedbackDetectionProperties detectionProperties;
 
 	@Autowired
-	private Clock clock;
+	private TestClock clock;
 
 	@Autowired
 	private InstrumentRepository instrumentRepository;
@@ -136,6 +132,7 @@ class CryptoWatchLockConcurrencyIntegrationTest {
 
 	@BeforeEach
 	void setUp() {
+		clock.set(NOW);
 		symbol = "LOCKR" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
 		instrument = instrumentRepository.saveAndFlush(
 			Instrument.create(Market.CRYPTO, symbol, INSTRUMENT_NAME, BigDecimal.ONE, 5000L, true, NOW));
@@ -295,13 +292,4 @@ class CryptoWatchLockConcurrencyIntegrationTest {
 		void run() throws Exception;
 	}
 
-	@TestConfiguration
-	static class FixedClockTestConfig {
-
-		@Bean
-		@Primary
-		Clock fixedClock() {
-			return Clock.fixed(NOW.atZone(KST).toInstant(), KST);
-		}
-	}
 }

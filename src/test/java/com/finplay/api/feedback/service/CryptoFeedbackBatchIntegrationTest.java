@@ -8,6 +8,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.finplay.api.TestcontainersConfiguration;
+import com.finplay.api.common.TestClock;
+import com.finplay.api.common.TestClockConfig;
 import com.finplay.api.feedback.domain.FeedbackContentStatus;
 import com.finplay.api.feedback.domain.InstrumentNewsSummary;
 import com.finplay.api.feedback.domain.MarketBriefing;
@@ -23,12 +25,9 @@ import com.finplay.api.feedback.store.FeedbackQueryCacheTestKeys;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.InstrumentService;
-import java.time.Clock;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.ZoneId;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -37,10 +36,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -59,10 +55,8 @@ import org.springframework.transaction.annotation.Transactional;
 @SpringBootTest
 @Transactional
 @Import({TestcontainersConfiguration.class,
-	CryptoFeedbackBatchIntegrationTest.MutableClockTestConfig.class})
+	TestClockConfig.class})
 class CryptoFeedbackBatchIntegrationTest {
-
-	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
 	// 배치가 23:05에 한 번 돌고, 자정을 넘긴 다음 00:05에 다시 도는 시나리오가 이 파일의 축이다.
 	private static final LocalDate DAY_ONE = LocalDate.of(2026, 8, 6);
@@ -111,12 +105,12 @@ class CryptoFeedbackBatchIntegrationTest {
 	private NarrativeService narrativeService;
 
 	@Autowired
-	private Clock clock;
+	private TestClock clock;
 
 	@Autowired
 	private StringRedisTemplate redisTemplate;
 
-	private MutableClock mutableClock;
+	private TestClock mutableClock;
 
 	private Instrument coin;
 
@@ -135,7 +129,7 @@ class CryptoFeedbackBatchIntegrationTest {
 
 	@BeforeEach
 	void setUp() {
-		mutableClock = (MutableClock)clock;
+		mutableClock = clock;
 		mutableClock.set(LATE_NIGHT_RUN);
 		coin = instrumentService.getInstrumentEntities(Market.CRYPTO).stream()
 			.filter(each -> CRYPTO_SYMBOL.equals(each.getSymbol()))
@@ -356,42 +350,4 @@ class CryptoFeedbackBatchIntegrationTest {
 		assertThat(rowCounts(OTHER_FEEDBACK_TABLES)).isEqualTo(otherFeedbackBefore);
 	}
 
-	@TestConfiguration
-	static class MutableClockTestConfig {
-
-		@Bean
-		@Primary
-		Clock mutableClock() {
-			return new MutableClock(LATE_NIGHT_RUN.atZone(KST).toInstant());
-		}
-	}
-
-	// 배치를 여러 시각에서 돌려야 자정 경계와 UPSERT를 볼 수 있다.
-	private static final class MutableClock extends Clock {
-
-		private volatile Instant instant;
-
-		private MutableClock(Instant instant) {
-			this.instant = instant;
-		}
-
-		void set(LocalDateTime localDateTime) {
-			this.instant = localDateTime.atZone(KST).toInstant();
-		}
-
-		@Override
-		public ZoneId getZone() {
-			return KST;
-		}
-
-		@Override
-		public Clock withZone(ZoneId zone) {
-			return this;
-		}
-
-		@Override
-		public Instant instant() {
-			return instant;
-		}
-	}
 }

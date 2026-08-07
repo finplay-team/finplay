@@ -9,6 +9,8 @@ import com.finplay.api.account.domain.Account;
 import com.finplay.api.account.repository.AccountRepository;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
+import com.finplay.api.common.TestClock;
+import com.finplay.api.common.TestClockConfig;
 import com.finplay.api.feedback.domain.MarketNewsItem;
 import com.finplay.api.feedback.domain.MarketNewsItemType;
 import com.finplay.api.feedback.domain.NarrativeSource;
@@ -42,21 +44,15 @@ import com.finplay.api.portfolio.repository.HoldingLotRepository;
 import com.finplay.api.portfolio.repository.HoldingRepository;
 import com.finplay.api.portfolio.repository.TradeAllocationRepository;
 import java.math.BigDecimal;
-import java.time.Clock;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.ZoneId;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
 import org.springframework.transaction.annotation.Transactional;
 
 // 이슈 #208 2번 항목의 게이트 ⑮와 극값 close 기준이 목표다. 게이트는 저장된 TIME 값과 그 체결의 서비스 날짜를
@@ -69,10 +65,8 @@ import org.springframework.transaction.annotation.Transactional;
 // 공유 컨테이너를 더럽히지 않도록 클래스 트랜잭션으로 감싼다 (PriceMoveQueryGateIntegrationTest 선례).
 @SpringBootTest
 @Transactional
-@Import({TestcontainersConfiguration.class, PostSellFeedbackGateIntegrationTest.MutableClockTestConfig.class})
+@Import({TestcontainersConfiguration.class, TestClockConfig.class})
 class PostSellFeedbackGateIntegrationTest {
-
-	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
 	// 2026-08-04(화)에 2026-07-29를 재생하던 중 매매가 완결됐다. 조회는 그날과 다음 날 두 번 한다.
 	private static final LocalDate ORIGIN_TRADE_DATE = LocalDate.of(2026, 7, 29);
@@ -139,9 +133,9 @@ class PostSellFeedbackGateIntegrationTest {
 	private MarketNewsItemRepository marketNewsItemRepository;
 
 	@Autowired
-	private Clock clock;
+	private TestClock clock;
 
-	private MutableClock mutableClock;
+	private TestClock mutableClock;
 
 	private User owner;
 	private Account account;
@@ -150,7 +144,7 @@ class PostSellFeedbackGateIntegrationTest {
 
 	@BeforeEach
 	void setUp() {
-		mutableClock = (MutableClock)clock;
+		mutableClock = clock;
 		mutableClock.set(SAME_DAY_VIEW);
 
 		owner = userRepository.saveAndFlush(User.create("post-sell-gate@finplay.com", "hash", "gate208", NOW));
@@ -519,45 +513,4 @@ class PostSellFeedbackGateIntegrationTest {
 			price.multiply(quantity).longValueExact(), 102L, realizedPnl, executedAt, executedAt));
 	}
 
-	@TestConfiguration
-	static class MutableClockTestConfig {
-
-		@Bean
-		@Primary
-		Clock mutableClock() {
-			return new MutableClock(SAME_DAY_VIEW.atZone(KST).toInstant(), KST);
-		}
-	}
-
-	// 같은 픽스처를 여러 시각에서 조회해야 게이트의 양쪽(닫힘·열림)을 볼 수 있다.
-	private static final class MutableClock extends Clock {
-
-		private final ZoneId zone;
-
-		private volatile Instant instant;
-
-		private MutableClock(Instant instant, ZoneId zone) {
-			this.instant = instant;
-			this.zone = zone;
-		}
-
-		void set(LocalDateTime localDateTime) {
-			this.instant = localDateTime.atZone(zone).toInstant();
-		}
-
-		@Override
-		public ZoneId getZone() {
-			return zone;
-		}
-
-		@Override
-		public Clock withZone(ZoneId newZone) {
-			return new MutableClock(instant, newZone);
-		}
-
-		@Override
-		public Instant instant() {
-			return instant;
-		}
-	}
 }

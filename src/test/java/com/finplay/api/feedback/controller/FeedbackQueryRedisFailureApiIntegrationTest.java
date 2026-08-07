@@ -1,11 +1,6 @@
 // Redis가 응답하지 못하는 상태에서 요약 조회·브리핑 조회가 HTTP 200과 정상 응답 본문을 내는지 종단(컨트롤러→서비스→캐시)으로 검증한다 (이슈 #245 완료 조건, ADR-0015 §6).
 package com.finplay.api.feedback.controller;
 
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -14,6 +9,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.finplay.api.TestcontainersConfiguration;
 import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.auth.token.JwtTokenProvider;
+import com.finplay.api.common.TestClock;
+import com.finplay.api.common.TestClockConfig;
 import com.finplay.api.feedback.domain.InstrumentNewsSummary;
 import com.finplay.api.feedback.domain.MarketBriefing;
 import com.finplay.api.feedback.domain.MarketNewsItem;
@@ -28,27 +25,17 @@ import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.domain.StockReplaySession;
 import com.finplay.api.market.repository.StockReplaySessionRepository;
 import com.finplay.api.market.service.InstrumentService;
-import java.time.Clock;
-import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.ZoneId;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
-import org.springframework.data.redis.RedisConnectionFailureException;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ValueOperations;
-import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.http.HttpHeaders;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -78,11 +65,9 @@ import org.springframework.transaction.annotation.Transactional;
 @AutoConfigureMockMvc
 @Transactional
 @Import({TestcontainersConfiguration.class,
-	FeedbackQueryRedisFailureApiIntegrationTest.FixedClockTestConfig.class})
+	TestClockConfig.class})
 @TestPropertySource(properties = "feedback.query-cache.enabled=true")
 class FeedbackQueryRedisFailureApiIntegrationTest {
-
-	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
 	private static final LocalDate ORIGIN_TRADE_DATE = LocalDate.of(2026, 8, 5);
 
@@ -125,6 +110,10 @@ class FeedbackQueryRedisFailureApiIntegrationTest {
 	@Autowired
 	private MarketBriefingRepository marketBriefingRepository;
 
+	// 전역 Clock 빈을 대신하는 공용 테스트 시계 (TestClockConfig). 기준 시각은 @BeforeEach에서 세운다.
+	@Autowired
+	private TestClock clock;
+
 	@MockitoBean
 	private JwtTokenProvider jwtTokenProvider;
 
@@ -132,6 +121,7 @@ class FeedbackQueryRedisFailureApiIntegrationTest {
 
 	@BeforeEach
 	void setUp() {
+		clock.set(NOW);
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(1L, "USER")));
 
@@ -202,43 +192,4 @@ class FeedbackQueryRedisFailureApiIntegrationTest {
 		}
 	}
 
-	@TestConfiguration
-	static class FixedClockTestConfig {
-
-		@Bean
-		@Primary
-		Clock fixedClock() {
-			return Clock.fixed(NOW.atZone(KST).toInstant(), KST);
-		}
-
-		/*
-		 * 조회 캐시가 Redis에 닿지 못하는 상태를 만든다.
-		 *
-		 * <b>@MockitoBean으로는 안 된다.</b> 그 mock은 스텁 없이 만들어져 컨텍스트 기동 중에는
-		 * opsForValue()가 null을 반환하는데, ApplicationReadyEvent가 BithumbFeedLifecycle → PriceStore로
-		 * 이어져 그 시점에 Redis에 쓰므로 기동이 NPE로 죽는다(실제로 이 방식으로 3건 전부 실패했다).
-		 * 여기처럼 @Bean에서 **이미 스텁된 채로** 만들면 기동 전에 스텁이 붙어 있다.
-		 *
-		 * 인자 없는 set(K, V)만 무해한 no-op으로 남긴다 — 기동 경로가 쓰는 것이 그것이다. 죽이는 것은
-		 * FeedbackQueryCache와 RedisLock이 실제로 쓰는 연산(get·setIfAbsent·TTL 붙은 set·delete·Lua)이며,
-		 * 이 테스트가 묻는 것도 "Redis가 죽어도 **조회**가 200인가"다. Redis 불통에 기동 자체가 견디는지는
-		 * 이 이슈의 완료 조건이 아니고 다른 문제다.
-		 */
-		@Bean
-		@Primary
-		@SuppressWarnings("unchecked")
-		StringRedisTemplate stringRedisTemplate() {
-			RedisConnectionFailureException unreachable = new RedisConnectionFailureException("Redis에 닿지 못한다");
-			StringRedisTemplate template = mock(StringRedisTemplate.class);
-			ValueOperations<String, String> valueOperations = mock(ValueOperations.class);
-			when(template.opsForValue()).thenReturn(valueOperations);
-			when(valueOperations.get(any())).thenThrow(unreachable);
-			when(valueOperations.setIfAbsent(any(), any(), any(Duration.class))).thenThrow(unreachable);
-			doThrow(unreachable).when(valueOperations).set(any(), any(), any(Duration.class));
-			when(template.delete(anyString())).thenThrow(unreachable);
-			when(template.execute((RedisScript<Long>)any(RedisScript.class), anyList(), any()))
-				.thenThrow(unreachable);
-			return template;
-		}
-	}
 }

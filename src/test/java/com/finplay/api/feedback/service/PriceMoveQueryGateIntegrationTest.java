@@ -4,6 +4,8 @@ package com.finplay.api.feedback.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finplay.api.TestcontainersConfiguration;
+import com.finplay.api.common.TestClock;
+import com.finplay.api.common.TestClockConfig;
 import com.finplay.api.feedback.domain.MarketNewsItem;
 import com.finplay.api.feedback.domain.MarketNewsItemType;
 import com.finplay.api.feedback.domain.NarrativeSource;
@@ -23,12 +25,9 @@ import com.finplay.api.market.repository.StockReplaySessionRepository;
 import com.finplay.api.market.service.InstrumentService;
 import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
-import java.time.Clock;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.ZoneId;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -37,10 +36,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -54,10 +50,8 @@ import org.springframework.transaction.annotation.Transactional;
 @SpringBootTest
 @Transactional
 @Import({TestcontainersConfiguration.class,
-	PriceMoveQueryGateIntegrationTest.MutableClockTestConfig.class})
+	TestClockConfig.class})
 class PriceMoveQueryGateIntegrationTest {
-
-	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
 	// 원본 거래일 D = 2026-08-05(수). 직전 영업일은 2026-08-04(화)다.
 	private static final LocalDate ORIGIN_TRADE_DATE = LocalDate.of(2026, 8, 5);
@@ -100,15 +94,15 @@ class PriceMoveQueryGateIntegrationTest {
 	private EntityManager entityManager;
 
 	@Autowired
-	private Clock clock;
+	private TestClock clock;
 
-	private MutableClock mutableClock;
+	private TestClock mutableClock;
 
 	private Instrument instrument;
 
 	@BeforeEach
 	void setUp() {
-		mutableClock = (MutableClock)clock;
+		mutableClock = clock;
 		mutableClock.set(INITIAL_NOW);
 		instrument = stockInstrument();
 	}
@@ -451,45 +445,4 @@ class PriceMoveQueryGateIntegrationTest {
 			.containsExactly("늦은 기사", "이른 기사");
 	}
 
-	@TestConfiguration
-	static class MutableClockTestConfig {
-
-		@Bean
-		@Primary
-		Clock mutableClock() {
-			return new MutableClock(INITIAL_NOW.atZone(KST).toInstant(), KST);
-		}
-	}
-
-	// 같은 픽스처를 여러 시각에서 조회해야 게이트의 양쪽(닫힘·열림)을 볼 수 있다.
-	private static final class MutableClock extends Clock {
-
-		private final ZoneId zone;
-
-		private volatile Instant instant;
-
-		private MutableClock(Instant instant, ZoneId zone) {
-			this.instant = instant;
-			this.zone = zone;
-		}
-
-		void set(LocalDateTime localDateTime) {
-			this.instant = localDateTime.atZone(zone).toInstant();
-		}
-
-		@Override
-		public ZoneId getZone() {
-			return zone;
-		}
-
-		@Override
-		public Clock withZone(ZoneId newZone) {
-			return new MutableClock(instant, newZone);
-		}
-
-		@Override
-		public Instant instant() {
-			return instant;
-		}
-	}
 }

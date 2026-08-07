@@ -5,6 +5,8 @@ import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mockingDetails;
 
 import com.finplay.api.TestcontainersConfiguration;
+import com.finplay.api.common.TestClock;
+import com.finplay.api.common.TestClockConfig;
 import com.finplay.api.feedback.domain.InstrumentNewsSummary;
 import com.finplay.api.feedback.domain.MarketBriefing;
 import com.finplay.api.feedback.domain.MarketNewsItem;
@@ -23,7 +25,6 @@ import com.finplay.api.market.repository.InstrumentRepository;
 import com.finplay.api.market.repository.StockReplaySessionRepository;
 import com.finplay.api.market.service.InstrumentService;
 import java.math.BigDecimal;
-import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -33,10 +34,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.annotation.Transactional;
@@ -55,7 +53,7 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @SpringBootTest
 @Transactional
-@Import({TestcontainersConfiguration.class, FeedbackQueryCacheWiringSupport.FixedClockTestConfig.class})
+@Import({TestcontainersConfiguration.class, TestClockConfig.class})
 abstract class FeedbackQueryCacheWiringSupport {
 
 	protected static final ZoneId KST = ZoneId.of("Asia/Seoul");
@@ -93,6 +91,10 @@ abstract class FeedbackQueryCacheWiringSupport {
 	@Autowired
 	protected StringRedisTemplate redisTemplate;
 
+	// 전역 Clock 빈을 대신하는 공용 테스트 시계 (TestClockConfig). 기준 시각은 @BeforeEach에서 세운다.
+	@Autowired
+	protected TestClock clock;
+
 	// 원본(DB) 호출 횟수를 세는 것이 이 테스트의 관찰점이다 — 실제 빈을 그대로 쓰면서 호출만 센다.
 	@MockitoSpyBean
 	protected MarketNewsItemRepository marketNewsItemRepository;
@@ -109,6 +111,7 @@ abstract class FeedbackQueryCacheWiringSupport {
 
 	@BeforeEach
 	void setUpFixtures() {
+		clock.set(NOW);
 		clearQueryCacheKeys();
 		stock = instrumentService.getInstrumentEntities(Market.STOCK).stream()
 			.filter(each -> STOCK_SYMBOL.equals(each.getSymbol()))
@@ -267,13 +270,4 @@ abstract class FeedbackQueryCacheWiringSupport {
 			.count();
 	}
 
-	@TestConfiguration
-	static class FixedClockTestConfig {
-
-		@Bean
-		@Primary
-		Clock fixedClock() {
-			return Clock.fixed(NOW.atZone(KST).toInstant(), KST);
-		}
-	}
 }

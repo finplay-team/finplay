@@ -4,6 +4,8 @@ package com.finplay.api.feedback.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finplay.api.TestcontainersConfiguration;
+import com.finplay.api.common.TestClock;
+import com.finplay.api.common.TestClockConfig;
 import com.finplay.api.feedback.config.FeedbackNewsProperties;
 import com.finplay.api.feedback.domain.FeedbackContentStatus;
 import com.finplay.api.feedback.domain.InstrumentNewsSummary;
@@ -21,22 +23,16 @@ import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.domain.StockReplaySession;
 import com.finplay.api.market.repository.StockReplaySessionRepository;
 import com.finplay.api.market.service.InstrumentService;
-import java.time.Clock;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.ZoneId;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -51,10 +47,8 @@ import org.springframework.transaction.annotation.Transactional;
 @SpringBootTest
 @Transactional
 @Import({TestcontainersConfiguration.class,
-	InstrumentNewsQueryGateIntegrationTest.MutableClockTestConfig.class})
+	TestClockConfig.class})
 class InstrumentNewsQueryGateIntegrationTest {
-
-	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
 	// 원본 거래일 D = 2026-08-05(수), 직전 영업일 D-1 = 2026-08-04(화), 서비스 날짜 = 2026-08-06(목)
 	private static final LocalDate ORIGIN_TRADE_DATE = LocalDate.of(2026, 8, 5);
@@ -90,12 +84,12 @@ class InstrumentNewsQueryGateIntegrationTest {
 	private FeedbackNewsProperties properties;
 
 	@Autowired
-	private Clock clock;
+	private TestClock clock;
 
 	@Autowired
 	private StringRedisTemplate redisTemplate;
 
-	private MutableClock mutableClock;
+	private TestClock mutableClock;
 
 	private Instrument instrument;
 
@@ -113,7 +107,7 @@ class InstrumentNewsQueryGateIntegrationTest {
 
 	@BeforeEach
 	void setUp() {
-		mutableClock = (MutableClock)clock;
+		mutableClock = clock;
 		mutableClock.set(INITIAL_NOW);
 		instrument = instrumentService.getInstrumentEntities(Market.STOCK).stream()
 			.filter(each -> STOCK_SYMBOL.equals(each.getSymbol()))
@@ -351,42 +345,4 @@ class InstrumentNewsQueryGateIntegrationTest {
 		assertThat(titles(response)).containsExactly("전일 저녁 기사");
 	}
 
-	@TestConfiguration
-	static class MutableClockTestConfig {
-
-		@Bean
-		@Primary
-		Clock mutableClock() {
-			return new MutableClock(INITIAL_NOW.atZone(KST).toInstant());
-		}
-	}
-
-	// 같은 픽스처를 여러 재생 시각에서 조회해야 게이트의 양쪽(닫힘·열림)을 볼 수 있다.
-	private static final class MutableClock extends Clock {
-
-		private volatile Instant instant;
-
-		private MutableClock(Instant instant) {
-			this.instant = instant;
-		}
-
-		void set(LocalDateTime localDateTime) {
-			this.instant = localDateTime.atZone(KST).toInstant();
-		}
-
-		@Override
-		public ZoneId getZone() {
-			return KST;
-		}
-
-		@Override
-		public Clock withZone(ZoneId zone) {
-			return this;
-		}
-
-		@Override
-		public Instant instant() {
-			return instant;
-		}
-	}
 }

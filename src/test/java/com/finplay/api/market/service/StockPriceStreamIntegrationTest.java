@@ -10,6 +10,8 @@ import com.finplay.api.TestcontainersConfiguration;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.auth.token.JwtTokenProvider;
+import com.finplay.api.common.TestClock;
+import com.finplay.api.common.TestClockConfig;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.domain.StockCandle;
@@ -19,23 +21,17 @@ import com.finplay.api.market.repository.StockCandleRepository;
 import com.finplay.api.market.repository.StockReplaySessionRepository;
 import com.finplay.api.market.sse.SseEmitterRegistry;
 import java.math.BigDecimal;
-import java.time.Clock;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpHeaders;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -46,11 +42,10 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 // 혹시 모를 회귀에 대비해 테스트 타임아웃도 걸어둔다.
 @SpringBootTest
 @AutoConfigureMockMvc
-@Import({TestcontainersConfiguration.class, StockPriceStreamIntegrationTest.FixedClockTestConfig.class})
+@Import({TestcontainersConfiguration.class, TestClockConfig.class})
 @Timeout(60)
 class StockPriceStreamIntegrationTest {
 
-	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 	// 컨텍스트 기동 시점(다른 날짜) 기준선은 이번 테스트의 서비스 날짜와 무관해, 이 날짜에서는 모든 종목이
 	// UNAVAILABLE 기준선으로 시작한다 — 09:01에 신규 공개된 가격이 "변경"으로 정확히 감지되는지 검증할 수 있다.
 	private static final LocalDate SERVICE_DATE = LocalDate.of(2026, 8, 10);
@@ -82,11 +77,11 @@ class StockPriceStreamIntegrationTest {
 	private SseEmitterRegistry sseEmitterRegistry;
 
 	@Autowired
-	private Clock clock;
+	private TestClock clock;
 
 	@Test
 	void subscriptionReceivesSnapshotFirstThenPriceEventAfterScheduledPublishRevealsNewPrice() throws Exception {
-		((MutableClock)clock).set(BEFORE_OPEN);
+		clock.set(BEFORE_OPEN);
 		stockReplaySessionRepository.saveAndFlush(
 			StockReplaySession.ready(SERVICE_DATE, SERVICE_DATE, LocalDateTime.now(), LocalDateTime.now()));
 		Instrument instrument = createStockInstrument("SSEFLOW");
@@ -115,7 +110,7 @@ class StockPriceStreamIntegrationTest {
 		assertThat(contentAfterSubscribe).doesNotContain("event:price");
 
 		// 매분 스케줄러가 하는 일을 직접 호출해 09:01(첫 분봉 마감) 시각으로 갱신을 재현한다.
-		((MutableClock)clock).set(AFTER_FIRST_CANDLE_CLOSES);
+		clock.set(AFTER_FIRST_CANDLE_CLOSES);
 		stockPriceStreamService.publishScheduledUpdates();
 
 		String contentAfterPublish = subscribeResult.getResponse().getContentAsString();
@@ -155,45 +150,4 @@ class StockPriceStreamIntegrationTest {
 		return "sse-" + UUID.randomUUID().toString().replace("-", "");
 	}
 
-	// 전역 Clock 빈(ClockConfig, Asia/Seoul 실시각)을 이 테스트 컨텍스트에서만 시각 이동이 가능한 고정 Clock으로 교체한다.
-	@TestConfiguration(proxyBeanMethods = false)
-	static class FixedClockTestConfig {
-
-		@Bean
-		@Primary
-		Clock fixedClock() {
-			return new MutableClock(BEFORE_OPEN.atZone(KST).toInstant(), KST);
-		}
-	}
-
-	// 스케줄 갱신 전후로 시각을 이동시킬 수 있는 테스트 전용 Clock 구현.
-	private static final class MutableClock extends Clock {
-
-		private final ZoneId zone;
-		private volatile Instant instant;
-
-		private MutableClock(Instant instant, ZoneId zone) {
-			this.instant = instant;
-			this.zone = zone;
-		}
-
-		void set(LocalDateTime localDateTime) {
-			this.instant = localDateTime.atZone(zone).toInstant();
-		}
-
-		@Override
-		public ZoneId getZone() {
-			return zone;
-		}
-
-		@Override
-		public Clock withZone(ZoneId zone) {
-			return new MutableClock(instant, zone);
-		}
-
-		@Override
-		public Instant instant() {
-			return instant;
-		}
-	}
 }

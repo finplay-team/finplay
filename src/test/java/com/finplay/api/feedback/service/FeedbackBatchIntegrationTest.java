@@ -8,6 +8,8 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.finplay.api.TestcontainersConfiguration;
+import com.finplay.api.common.TestClock;
+import com.finplay.api.common.TestClockConfig;
 import com.finplay.api.feedback.domain.InstrumentNewsSummary;
 import com.finplay.api.feedback.domain.MarketBriefing;
 import com.finplay.api.feedback.domain.MarketNewsItem;
@@ -29,11 +31,9 @@ import com.finplay.api.market.repository.StockReplaySessionRepository;
 import com.finplay.api.market.service.InstrumentService;
 import com.finplay.api.market.service.StockReplayService;
 import java.math.BigDecimal;
-import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.ZoneId;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,10 +45,7 @@ import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -61,10 +58,8 @@ import org.springframework.transaction.annotation.Transactional;
 // 공유 컨테이너를 더럽히지 않도록 클래스 트랜잭션으로 감싼다 (NewsCollectionIntegrationTest 선례).
 @SpringBootTest
 @Transactional
-@Import({TestcontainersConfiguration.class, FeedbackBatchIntegrationTest.FixedClockTestConfig.class})
+@Import({TestcontainersConfiguration.class, TestClockConfig.class})
 class FeedbackBatchIntegrationTest {
-
-	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
 	// 서비스 날짜 2026-08-06(목)의 08:45에 배치가 돈다 — 이 시각이 이 파일의 핵심이다.
 	private static final LocalDateTime BATCH_AT = LocalDateTime.of(2026, 8, 6, 8, 45);
@@ -132,10 +127,15 @@ class FeedbackBatchIntegrationTest {
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
 
+	// 전역 Clock 빈을 대신하는 공용 테스트 시계 (TestClockConfig). 기준 시각은 @BeforeEach에서 세운다.
+	@Autowired
+	private TestClock clock;
+
 	private Instrument instrument;
 
 	@BeforeEach
 	void setUp() {
+		clock.set(BATCH_AT);
 		instrument = instrumentService.getInstrumentEntities(Market.STOCK).stream()
 			.filter(each -> STOCK_SYMBOL.equals(each.getSymbol()))
 			.findFirst()
@@ -372,14 +372,4 @@ class FeedbackBatchIntegrationTest {
 		return counts;
 	}
 
-	@TestConfiguration
-	static class FixedClockTestConfig {
-
-		// 08:45 — 재생세션 확정(08:40) 직후이자 개장(09:00) 전. getRevealedCandles가 빈 목록인 시각이다.
-		@Bean
-		@Primary
-		Clock fixedClock() {
-			return Clock.fixed(BATCH_AT.atZone(KST).toInstant(), KST);
-		}
-	}
 }

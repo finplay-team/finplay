@@ -7,6 +7,8 @@ import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.when;
 
 import com.finplay.api.TestcontainersConfiguration;
+import com.finplay.api.common.TestClock;
+import com.finplay.api.common.TestClockConfig;
 import com.finplay.api.feedback.collector.CollectedNewsDto;
 import com.finplay.api.feedback.collector.DisclosureCollector;
 import com.finplay.api.feedback.collector.NewsCollector;
@@ -17,10 +19,7 @@ import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.feed.BithumbFeedSimulator;
 import com.finplay.api.market.service.InstrumentService;
-import java.time.Clock;
-import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,11 +28,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.ApplicationContext;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
 import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -51,10 +47,8 @@ import org.springframework.util.ReflectionUtils;
 // 공유 컨테이너를 더럽히지 않도록 클래스 트랜잭션으로 감싼다 (AccountSummaryIntegrationTest 선례).
 @SpringBootTest
 @Transactional
-@Import({TestcontainersConfiguration.class, NewsCollectionIntegrationTest.FixedClockTestConfig.class})
+@Import({TestcontainersConfiguration.class, TestClockConfig.class})
 class NewsCollectionIntegrationTest {
-
-	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
 	// D = 2026-08-05(수). 수집은 이 시각에 돈다.
 	private static final LocalDateTime COLLECTED_AT = LocalDateTime.of(2026, 8, 5, 10, 30);
@@ -97,13 +91,13 @@ class NewsCollectionIntegrationTest {
 	private Environment environment;
 
 	@Autowired
-	private Clock clock;
+	private TestClock clock;
 
-	private MutableClock mutableClock;
+	private TestClock mutableClock;
 
 	@BeforeEach
 	void setUp() {
-		mutableClock = (MutableClock)clock;
+		mutableClock = clock;
 		mutableClock.set(COLLECTED_AT);
 	}
 
@@ -271,45 +265,4 @@ class NewsCollectionIntegrationTest {
 			.toList();
 	}
 
-	@TestConfiguration
-	static class FixedClockTestConfig {
-
-		@Bean
-		@Primary
-		Clock fixedClock() {
-			return new MutableClock(COLLECTED_AT.atZone(KST).toInstant(), KST);
-		}
-	}
-
-	// 수집 시각을 D → D+1로 옮겨 "다시 긁지 않고 조회만" 상황을 만들기 위한 Clock 구현.
-	private static final class MutableClock extends Clock {
-
-		private final ZoneId zone;
-
-		private volatile Instant instant;
-
-		private MutableClock(Instant instant, ZoneId zone) {
-			this.instant = instant;
-			this.zone = zone;
-		}
-
-		void set(LocalDateTime localDateTime) {
-			this.instant = localDateTime.atZone(zone).toInstant();
-		}
-
-		@Override
-		public ZoneId getZone() {
-			return zone;
-		}
-
-		@Override
-		public Clock withZone(ZoneId newZone) {
-			return new MutableClock(instant, newZone);
-		}
-
-		@Override
-		public Instant instant() {
-			return instant;
-		}
-	}
 }

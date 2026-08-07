@@ -11,6 +11,8 @@ import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
+import com.finplay.api.common.TestClock;
+import com.finplay.api.common.TestClockConfig;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.domain.StockCandle;
@@ -32,12 +34,9 @@ import com.finplay.api.portfolio.repository.HoldingLotRepository;
 import com.finplay.api.portfolio.repository.HoldingRepository;
 import com.finplay.api.portfolio.repository.TradeAllocationRepository;
 import java.math.BigDecimal;
-import java.time.Clock;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.ZoneId;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
@@ -46,18 +45,14 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 @SpringBootTest
-@Import({TestcontainersConfiguration.class, OrderSellIntegrationTest.FixedClockTestConfig.class})
+@Import({TestcontainersConfiguration.class, TestClockConfig.class})
 class OrderSellIntegrationTest {
 
-	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 	// 2026-07-29는 수요일이고 holidays-2026.txt에도 없어 재생세션만 READY면 개장 상태로 계산된다.
 	private static final LocalDate TRADING_DATE = LocalDate.of(2026, 7, 29);
 	private static final LocalDateTime BASE_NOW = LocalDateTime.of(2026, 7, 29, 10, 0, 0);
@@ -69,7 +64,7 @@ class OrderSellIntegrationTest {
 	private OrderService orderService;
 
 	@Autowired
-	private Clock clock;
+	private TestClock clock;
 
 	@Autowired
 	private UserRepository userRepository;
@@ -119,7 +114,7 @@ class OrderSellIntegrationTest {
 
 	@BeforeEach
 	void setUp() {
-		((MutableClock)clock).set(BASE_NOW);
+		clock.set(BASE_NOW);
 		stockReplaySessionRepository
 			.findByServiceDate(TRADING_DATE)
 			.orElseGet(() -> stockReplaySessionRepository.saveAndFlush(
@@ -145,7 +140,7 @@ class OrderSellIntegrationTest {
 
 		// 매수1: 10:00 시각 → 09:59 분봉(60000) 체결가, 매수2: 10:01 시각 → 10:00 분봉(80000) 체결가
 		orderService.createOrder(user.getId(), "idem-fifo-buy-1", buyRequest(instrument.getId(), "10"));
-		((MutableClock)clock).set(BASE_NOW.plusMinutes(1));
+		clock.set(BASE_NOW.plusMinutes(1));
 		orderService.createOrder(user.getId(), "idem-fifo-buy-2", buyRequest(instrument.getId(), "10"));
 
 		Holding holding = holdingRepository
@@ -158,7 +153,7 @@ class OrderSellIntegrationTest {
 		assertThat(laterLot.getUnitCost()).isEqualByComparingTo("80000");
 
 		// 매도: 10:02 시각 → 10:01 분봉(100000) 체결가, 5주만 매도(먼저 산 lot의 일부만 소진)
-		((MutableClock)clock).set(BASE_NOW.plusMinutes(2));
+		clock.set(BASE_NOW.plusMinutes(2));
 		OrderResponse response = orderService.createOrder(
 			user.getId(), "idem-fifo-sell", sellRequest(instrument.getId(), "5"));
 
@@ -233,7 +228,7 @@ class OrderSellIntegrationTest {
 		long cashBefore = accountRepository.findById(account.getId()).orElseThrow().getCashBalance();
 		long ordersBefore = orderRepository.count();
 		long tradesBefore = tradeRepository.count();
-		((MutableClock)clock).set(LocalDateTime.of(2099, 1, 5, 10, 0));
+		clock.set(LocalDateTime.of(2099, 1, 5, 10, 0));
 
 		assertThatThrownBy(() -> orderService.createOrder(
 			user.getId(), "stock-sell-no-session", sellRequest(instrument.getId(), "1")))
@@ -257,7 +252,7 @@ class OrderSellIntegrationTest {
 		createCandle(instrument, THIRD_CANDLE_TIME, new BigDecimal("100000"));
 
 		orderService.createOrder(user.getId(), "idem-multi-buy-1", buyRequest(instrument.getId(), "10"));
-		((MutableClock)clock).set(BASE_NOW.plusMinutes(1));
+		clock.set(BASE_NOW.plusMinutes(1));
 		orderService.createOrder(user.getId(), "idem-multi-buy-2", buyRequest(instrument.getId(), "10"));
 
 		Holding holding = holdingRepository
@@ -269,7 +264,7 @@ class OrderSellIntegrationTest {
 		long cashBeforeSell = accountRepository.findById(account.getId()).orElseThrow().getCashBalance();
 
 		// 매도 15주 → lot1(10주) 전량 소진 + lot2(10주 중 5주) 부분 소진, 하나의 매도가 두 lot을 소비한다.
-		((MutableClock)clock).set(BASE_NOW.plusMinutes(2));
+		clock.set(BASE_NOW.plusMinutes(2));
 		OrderResponse response = orderService.createOrder(
 			user.getId(), "idem-multi-sell", sellRequest(instrument.getId(), "15"));
 
@@ -342,7 +337,7 @@ class OrderSellIntegrationTest {
 		long realizedPnlBefore = accountBefore.getRealizedPnl();
 
 		// 보유수량(10)보다 많은 11주 매도 시도 → 409 INSUFFICIENT_QTY, 어떤 테이블에도 흔적을 남기지 않는다.
-		((MutableClock)clock).set(BASE_NOW.plusMinutes(1));
+		clock.set(BASE_NOW.plusMinutes(1));
 		assertThatThrownBy(() -> orderService.createOrder(
 			user.getId(), "idem-over-sell", sellRequest(instrument.getId(), "11")))
 			.isInstanceOf(BusinessException.class)
@@ -381,7 +376,7 @@ class OrderSellIntegrationTest {
 		HoldingLot lot = holdingLotsFor(holding).get(0);
 
 		// 전량(10주) 매도 → holding 잔량 0, isActive=false, lot 잔여수량도 0
-		((MutableClock)clock).set(BASE_NOW.plusMinutes(1));
+		clock.set(BASE_NOW.plusMinutes(1));
 		orderService.createOrder(user.getId(), "idem-full-sell", sellRequest(instrument.getId(), "10"));
 
 		Holding reloadedHolding = holdingRepository.findById(holding.getId()).orElseThrow();
@@ -455,46 +450,4 @@ class OrderSellIntegrationTest {
 		return scenario + "-" + UUID.randomUUID().toString().replace("-", "");
 	}
 
-	// 전역 Clock 빈(ClockConfig, Asia/Seoul 실시각)을 이 테스트 컨텍스트에서만 고정 시각으로 교체한다.
-	// 주식 장중 판정·분봉 조회가 실제 실행 시각에 의존하지 않도록 하기 위함이다.
-	@TestConfiguration(proxyBeanMethods = false)
-	static class FixedClockTestConfig {
-
-		@Bean
-		@Primary
-		Clock fixedClock() {
-			return new MutableClock(BASE_NOW.atZone(KST).toInstant(), KST);
-		}
-	}
-
-	// 매수(t1) → 매수(t2) → 매도(t3) 순서로 서로 다른 분봉을 체결가로 쓰기 위해 테스트 도중 시각을 전진시킬 수 있는 Clock 구현.
-	private static final class MutableClock extends Clock {
-
-		private final ZoneId zone;
-		private volatile Instant instant;
-
-		private MutableClock(Instant instant, ZoneId zone) {
-			this.instant = instant;
-			this.zone = zone;
-		}
-
-		void set(LocalDateTime localDateTime) {
-			this.instant = localDateTime.atZone(zone).toInstant();
-		}
-
-		@Override
-		public ZoneId getZone() {
-			return zone;
-		}
-
-		@Override
-		public Clock withZone(ZoneId zone) {
-			return new MutableClock(instant, zone);
-		}
-
-		@Override
-		public Instant instant() {
-			return instant;
-		}
-	}
 }
