@@ -33,9 +33,6 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # 임시 디버그 — is_error:true·num_turns:1·cost:$0으로 즉시 실패하는 원인이 기본 로그에 안 보여
-          # 원인 확인 후 이 줄은 되돌린다 (이슈 #264). 공개 레포라 원인 파악 즉시 제거.
-          show_full_output: true
           prompt: |
             이슈 #${{ github.event.issue.number }}을 분석해서 수정/개발 방향 2~3안을 이슈 코멘트로 제시해라.
 
@@ -54,17 +51,52 @@ jobs:
             --allowedTools "Read,Grep,Glob,Bash(gh issue comment:*),Bash(gh issue view:*)"
             --disallowedTools "Edit,Write,NotebookEdit,Bash(git commit:*),Bash(git push:*),Bash(gh pr create:*)"
 
-  implement-and-open-pr:
-    # 이슈 댓글에서 @claude 멘션이 트리거 — PR 댓글은 제외하고, 멘션한 사람과 이슈를 연 사람 둘 다 팀 멤버여야 한다.
-    # 공개 레포라 외부인이 이슈를 열고, 그 이슈를 팀원이 정상적으로 처리(라벨→@claude)하는 흐름에서도
-    # 구현 스텝이 신뢰 못 할 이슈 본문을 그대로 읽는다 — 이슈 작성자 검증 없이 댓글 작성자만 보면 이 정상 흐름에서 게이트가 뚫린다 (PR #232 리뷰).
+  verify-actor:
+    # 이슈 댓글의 @claude 멘션을 값싼 조건으로 먼저 거르고, 실제 권한 판정은 아래 스텝에서 API로 한다.
+    # 이 job은 claude-code-action을 태우지 않으므로 사용량을 소모하지 않는다.
     if: >
       github.event_name == 'issue_comment' &&
       github.event.action == 'created' &&
       !github.event.issue.pull_request &&
-      contains(github.event.comment.body, '@claude') &&
-      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association) &&
-      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.issue.author_association)
+      contains(github.event.comment.body, '@claude')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      allowed: ${{ steps.check.outputs.allowed }}
+    steps:
+      - name: 댓글 작성자·이슈 작성자가 이 레포 협업자인지 확인
+        # author_association을 쓰지 않는 이유 — 이 값은 "공개적으로 보이는" 관계만 반영한다.
+        # 조직 멤버십이 비공개면 웹훅 페이로드에 MEMBER가 아니라 CONTRIBUTOR로 내려와 팀원이 막힌다 (이슈 #263).
+        # CONTRIBUTOR를 허용 목록에 넣는 우회는 금지 — 커밋이 머지된 적 있는 외부 기여자까지 통과해
+        # 공개 레포에서 외부인이 러너 실행(= 토큰 소유자 사용량 소모)을 트리거할 수 있다 (PR #232 리뷰가 막은 구멍).
+        # collaborators 엔드포인트는 직접 초대·팀·조직 기본 권한을 모두 반영하고 metadata 읽기만 요구해
+        # 기본 GITHUB_TOKEN으로 동작한다 — read:org PAT을 따로 두지 않는다.
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          # 로그인명을 run 스크립트에 ${{ }}로 직접 이어붙이면 스크립트 인젝션이 된다 — env로만 전달한다.
+          COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
+          ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
+        run: |
+          # 둘 다 확인한다 — 구현 스텝이 이슈 본문을 그대로 읽으므로 댓글 작성자만 보면
+          # 외부인이 연 이슈를 팀원이 처리하는 정상 흐름에서 게이트가 뚫린다 (PR #232 리뷰).
+          allowed=true
+          for user in "$COMMENT_AUTHOR" "$ISSUE_AUTHOR"; do
+            if gh api "repos/$REPO/collaborators/$user" --silent 2>/dev/null; then
+              echo "통과: $user"
+            else
+              echo "차단: $user — 이 레포 협업자가 아니다"
+              allowed=false
+            fi
+          done
+          echo "allowed=$allowed" >> "$GITHUB_OUTPUT"
+
+  implement-and-open-pr:
+    # verify-actor가 skip되면 needs가 비어 이 job도 함께 skip된다.
+    needs: verify-actor
+    if: needs.verify-actor.outputs.allowed == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
