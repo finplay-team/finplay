@@ -101,6 +101,19 @@ tasks.withType(Test).configureEach {
 	//   ./gradlew test -PtestDbConnectionTimeoutMs=30000
 	systemProperty 'spring.datasource.hikari.connection-timeout',
 		(findProperty('testDbConnectionTimeoutMs') ?: '10000')
+	// 캐시된 컨텍스트가 놀면서 커넥션을 붙잡고 있지 않게 한다 (이슈 #134).
+	// Boot 기본값은 minimumIdle = maximumPoolSize = 10이라, 테스트 한 클래스가 끝나 컨텍스트가 캐시에
+	// 들어앉은 뒤에도 그 풀이 커넥션 10개를 계속 쥔다. 실측으로 최대 동시 접속 276개가 나왔고 MySQL
+	// 기본 한도 151을 크게 넘겨 컨테이너에 --max-connections=1000을 걸어 둔 상태였다(PR #133).
+	//
+	// minimum-idle=0이면 유휴 커넥션이 idle-timeout 뒤에 반납된다. maximum-pool-size는 기본값 10 그대로라
+	// **동시성 테스트는 여전히 커넥션 10개까지 실제로 동시에 쓸 수 있다** — 이슈 #121이 우려한 "풀을 좁히면
+	// 동시 실행이 안 돼 검증이 무력해진다"에 해당하지 않는다. 줄이는 것은 노는 동안의 보유량뿐이다.
+	// idle-timeout 10초는 Hikari가 허용하는 하한이다(그보다 작으면 경고 후 기본값으로 되돌린다).
+	systemProperty 'spring.datasource.hikari.minimum-idle',
+		(findProperty('testDbMinimumIdle') ?: '0')
+	systemProperty 'spring.datasource.hikari.idle-timeout',
+		(findProperty('testDbIdleTimeoutMs') ?: '10000')
 	// 테스트 컨텍스트가 몇 갈래로 갈라지는지 재는 스위치 (이슈 #134). 평소에는 꺼 둔다 — 로그가 수십 MB로 불어난다.
 	//   ./gradlew test --rerun-tasks -PmeasureContexts=true
 	// 컨텍스트 캐시 미스마다 MergedContextConfiguration 키 전문이 찍히므로 "무엇이 갈래를 만들었는지"를

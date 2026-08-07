@@ -13,12 +13,12 @@ import org.testcontainers.utility.DockerImageName;
 @TestConfiguration(proxyBeanMethods = false)
 public class TestcontainersConfiguration {
 
-	// max_connections를 올린다 (이슈 #119). 컨테이너가 실행 내내 살아남게 되면서 캐시된 Spring 컨텍스트마다
-	// Hikari 풀이 그대로 유지되는데, Boot 기본값은 풀 하나당 커넥션 10개(minimumIdle = maximumPoolSize)라
-	// 컨텍스트가 열대여섯 개만 쌓여도 MySQL 기본 한도 151을 넘는다(실측 최대 153 → "Too many connections").
-	// 전에는 컨테이너가 중간에 교체되며 접속이 함께 끊겨 이 한도가 드러나지 않았다.
+	// max_connections는 MySQL 기본값(151)을 쓴다. 이슈 #119에서 1000으로 올렸던 것을 이슈 #134에서 되돌렸다 —
+	// 한도를 늦추는 대신 보유량 자체를 없앴기 때문이다. 캐시된 컨텍스트마다 Hikari 풀이 커넥션 10개를 계속
+	// 쥐고 있던 것이 원인이었고(Boot 기본값 minimumIdle = maximumPoolSize = 10), build.gradle에서 테스트에만
+	// minimum-idle=0 + idle-timeout=10초를 주어 노는 커넥션이 반납되게 했다.
+	// 실측: 최대 동시 접속 276 → 16 (MySQL의 Max_used_connections 고수위 값, 이슈 #134).
 	private static final MySQLContainer MYSQL = new MySQLContainer(DockerImageName.parse("mysql:8.4"))
-		.withCommand("mysqld", "--max-connections=1000")
 		// 데이터 디렉터리를 tmpfs(램)에 둔다. 진짜 MySQL 8.4 그대로이고 저장 위치만 바뀌며,
 		// 테스트 DB는 실행이 끝나면 버리므로 잃을 데이터가 없다. 실측 사용량 212MB.
 		.withTmpFs(Map.of("/var/lib/mysql", "rw"));
