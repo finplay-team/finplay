@@ -238,6 +238,12 @@ public class RankingService {
 
 **수정**: `fetchWindowResolvingBoundaryTies`의 "동점 없음" 분기가 더는 `limit`개로 미리 자르지 않고 `limit+1`개(fetch한 전체)를 그대로 반환한다. 최종 `limit`개 절단은 이미 `calculateRanks`가 유령 필터링 **이후**에 수행하므로(`.limit(limit)`), 자연스럽게 "+1"로 확보해둔 여유분이 유령 자리를 보충한다. 2개 이상의 유령이 그 "+1" 범위 안에 동시에 있는 경우까지는 완전히 해결하지 못하지만(이미 Redis/DB가 어긋난 비정상 상황에서만 나타나는 조건이라 과설계하지 않기로 함), 리뷰가 지적한 단일 유령 시나리오는 완전히 해결된다. `RankingServiceTest`에 이 정확한 시나리오를 재현하는 회귀 테스트(`getRankingsBackfillsFromSpareEntryWhenBoundaryWindowContainsGhostAccount`)를 추가했다.
 
+**8-5. 유령 계좌가 경계 동점 그룹보다 위쪽 score에 있으면 동점자 선택이 정책(userId 오름차순)을 보장하지 못함 (이슈 #270 QA 재현, 문서화로 갈음)**
+
+`fetchWindowResolvingBoundaryTies`의 동점 감지는 `topN(limit+1)` 원본 window의 `limit-1`·`limit` 인덱스만 비교한다. 유령 계좌가 그 경계 동점 그룹보다 높은 score로 window 앞쪽 슬롯을 차지하고 있으면, `calculateRanks`에서 유령이 걸러진 뒤 실제로는 경계 동점 그룹에서 한 명을 더 채워야 하는 상황인데도, 이 시점의 raw window 비교는 그 사실을 모른 채 `limit-1`·`limit` 위치의 score가 다르면 "동점 없음"으로 판정해 `findAllAtScore`를 호출하지 않는다. 응답 개수는 8-4의 backfill로 맞춰지지만, 그 자리를 채우는 사람은 정책(userId 오름차순)이 아니라 원본 `topN` 조회에서 Redis 멤버 문자열의 사전순으로 우연히 뽑힌 사람이 된다.
+
+Redis·DB가 어긋난 비정상 상황(유령 계좌 존재)에서, 그것도 유령이 경계 동점 그룹보다 정확히 위쪽에 있을 때만 나타나는 이중 조건이라 발생 빈도가 낮다. 고치려면 tie 감지 이전에 DB 존재 여부를 먼저 확인해야 해 `fetchWindowResolvingBoundaryTies`(Redis 전용 윈도우 조회)·`calculateRanks`(그 이후 필터링) 사이의 책임 분리가 깨진다 — 코드로 막을 값어치가 없다고 판단해(리뷰 결정) 이 문단으로 알려진 한계를 문서화하는 것으로 갈음한다. 8-1·8-4와 같은 과설계 회피 기준이다.
+
 ## API 설계
 
 | Method | URL | 요청 | 응답 | 설명 |
