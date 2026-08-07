@@ -11,7 +11,7 @@ class ErrorCodeTest {
 
 	@Test
 	void declaresEveryErrorCodeFromPrdAndOAuthSpecWithoutUnlistedOnes() {
-		assertThat(ErrorCode.values()).hasSize(29);
+		assertThat(ErrorCode.values()).hasSize(30);
 	}
 
 	@Test
@@ -25,6 +25,7 @@ class ErrorCodeTest {
 			Map.entry(ErrorCode.FORBIDDEN, HttpStatus.FORBIDDEN),
 			Map.entry(ErrorCode.REAUTHENTICATION_FAILED, HttpStatus.FORBIDDEN),
 			Map.entry(ErrorCode.NOT_FOUND, HttpStatus.NOT_FOUND),
+			Map.entry(ErrorCode.METHOD_NOT_ALLOWED, HttpStatus.METHOD_NOT_ALLOWED),
 			Map.entry(ErrorCode.FAVORITE_NOT_FOUND, HttpStatus.NOT_FOUND),
 			Map.entry(ErrorCode.WATCHLIST_ITEM_NOT_FOUND, HttpStatus.NOT_FOUND),
 			Map.entry(ErrorCode.DUPLICATE_RESOURCE, HttpStatus.CONFLICT),
@@ -62,6 +63,7 @@ class ErrorCodeTest {
 		assertThat(ErrorCode.UNAUTHORIZED.getHttpStatus().value()).isEqualTo(401);
 		assertThat(ErrorCode.FORBIDDEN.getHttpStatus().value()).isEqualTo(403);
 		assertThat(ErrorCode.NOT_FOUND.getHttpStatus().value()).isEqualTo(404);
+		assertThat(ErrorCode.METHOD_NOT_ALLOWED.getHttpStatus().value()).isEqualTo(405);
 		assertThat(ErrorCode.INSUFFICIENT_CASH.getHttpStatus().value()).isEqualTo(409);
 		assertThat(ErrorCode.UNSUPPORTED_ORDER_TYPE.getHttpStatus().value()).isEqualTo(422);
 		assertThat(ErrorCode.TOO_MANY_REQUESTS.getHttpStatus().value()).isEqualTo(429);

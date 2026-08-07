@@ -940,6 +940,7 @@ Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conven
 | 403 | REAUTHENTICATION_FAILED | 현재 비밀번호 또는 연결된 OAuth 제공자 재인증 실패 |
 | 404 | NOT_FOUND | 대상 없음 |
 | 404 | FAVORITE_NOT_FOUND | 즐겨찾기 없음 (타인 소유도 존재를 숨겨 404 — 2차) |
+| 405 | METHOD_NOT_ALLOWED | 라우트가 지원하지 않는 HTTP 메서드로 요청 (Issue #267) |
 | 409 | DUPLICATE_RESOURCE | 이메일·닉네임·소셜계정 중복, 인증 요청 시 기존 회원 |
 | 409 | INSTRUMENT_NOT_TRADABLE | 거래 불가 종목의 즐겨찾기 등록 (2차) |
 | 409 | PRACTICE_STEP_LOCKED | 투자 실습 선행 단계 미충족 — favorite 부재·종목 불일치 (2차) |

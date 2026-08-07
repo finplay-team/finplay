@@ -15,6 +15,7 @@ public enum ErrorCode {
 	NOT_FOUND(HttpStatus.NOT_FOUND, "대상을 찾을 수 없습니다."),
 	FAVORITE_NOT_FOUND(HttpStatus.NOT_FOUND, "즐겨찾기를 찾을 수 없습니다."),
 	WATCHLIST_ITEM_NOT_FOUND(HttpStatus.NOT_FOUND, "관심목록 항목을 찾을 수 없습니다."),
+	METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "지원하지 않는 요청 방식입니다."),
 	DUPLICATE_RESOURCE(HttpStatus.CONFLICT, "이미 존재하는 리소스입니다."),
 	PRACTICE_STEP_LOCKED(HttpStatus.CONFLICT, "선행 실습 단계를 완료해야 합니다."),
 	PRACTICE_ALREADY_COMPLETED(HttpStatus.CONFLICT, "이미 완료한 실습입니다."),
