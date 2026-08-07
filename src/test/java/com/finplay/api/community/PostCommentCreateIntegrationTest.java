@@ -66,7 +66,7 @@ class PostCommentCreateIntegrationTest {
 		String response = mockMvc.perform(post("/api/community/posts/{postId}/comments", post.getId())
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
 			.contentType(MediaType.APPLICATION_JSON)
-			.content("{\"content\":\"integration comment\",\"authorId\":999,\"parentCommentId\":999}"))
+			.content("{\"content\":\"integration comment\",\"authorId\":999}"))
 			.andExpect(status().isCreated())
 			.andExpect(jsonPath("$.commentId").isNumber())
 			.andExpect(jsonPath("$.authorNickname").value(commentAuthor.getNickname()))

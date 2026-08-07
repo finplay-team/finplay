@@ -27,12 +27,23 @@ public class PostCommentService {
 	private final Clock clock;
 
 	@Transactional
-	public PostCommentResponse createComment(Long postId, Long authenticatedUserId, String content) {
+	public PostCommentResponse createComment(
+		Long postId, Long authenticatedUserId, String content, Long parentCommentId) {
 		CommunityPost post = communityPostRepository.findById(postId)
 			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
 		User author = userQueryService.getUser(authenticatedUserId);
+		PostComment parentComment = null;
+		if (parentCommentId != null) {
+			parentComment = postCommentRepository.findById(parentCommentId)
+				.filter(candidate -> candidate.getPost().getId().equals(postId))
+				.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+			if (parentComment.isReply()) {
+				throw new BusinessException(
+					ErrorCode.VALIDATION_ERROR, "대댓글에는 답글을 남길 수 없습니다.");
+			}
+		}
 		LocalDateTime now = LocalDateTime.now(clock);
-		PostComment comment = PostComment.create(post, author, content, null, now);
+		PostComment comment = PostComment.create(post, author, content, parentComment, now);
 		return PostCommentResponse.from(postCommentRepository.save(comment));
 	}
 

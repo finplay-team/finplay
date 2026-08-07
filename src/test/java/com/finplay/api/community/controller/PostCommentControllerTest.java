@@ -53,13 +53,13 @@ class PostCommentControllerTest {
 		LocalDateTime createdAt = LocalDateTime.of(2026, 7, 27, 12, 0, 0, 123456000);
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
-		when(service.createComment(7L, USER_ID, "comment"))
-			.thenReturn(new PostCommentResponse(9L, "author", "comment", createdAt));
+		when(service.createComment(7L, USER_ID, "comment", null))
+			.thenReturn(new PostCommentResponse(9L, "author", "comment", createdAt, null, List.of()));
 
 		mockMvc.perform(post("/api/community/posts/7/comments")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
 			.contentType(MediaType.APPLICATION_JSON)
-			.content("{\"content\":\"comment\",\"authorId\":999,\"parentCommentId\":999}"))
+			.content("{\"content\":\"comment\",\"authorId\":999}"))
 			.andExpect(status().isCreated())
 			.andExpect(jsonPath("$.commentId").value(9))
 			.andExpect(jsonPath("$.authorNickname").value("author"))
@@ -67,9 +67,11 @@ class PostCommentControllerTest {
 			.andExpect(jsonPath("$.createdAt").value("2026-07-27T12:00:00.123456"))
 			.andExpect(jsonPath("$.postId").doesNotExist())
 			.andExpect(jsonPath("$.authorId").doesNotExist())
-			.andExpect(jsonPath("$.parentCommentId").doesNotExist());
+			.andExpect(jsonPath("$.parentCommentId").doesNotExist())
+			.andExpect(jsonPath("$.replies").isArray())
+			.andExpect(jsonPath("$.replies").isEmpty());
 
-		verify(service).createComment(7L, USER_ID, "comment");
+		verify(service).createComment(7L, USER_ID, "comment", null);
 	}
 
 	@ParameterizedTest(name = "{0}")
@@ -93,7 +95,7 @@ class PostCommentControllerTest {
 	void createCommentReturns404WhenServiceCannotFindPost() throws Exception {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
-		when(service.createComment(404L, USER_ID, "comment"))
+		when(service.createComment(404L, USER_ID, "comment", null))
 			.thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
 
 		mockMvc.perform(post("/api/community/posts/404/comments")
@@ -102,6 +104,60 @@ class PostCommentControllerTest {
 			.content("{\"content\":\"comment\"}"))
 			.andExpect(status().isNotFound())
 			.andExpect(jsonPath("$.error.code").value("NOT_FOUND"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+	}
+
+	@Test
+	void createCommentPassesParentCommentIdToServiceWhenPresentInRequest() throws Exception {
+		LocalDateTime createdAt = LocalDateTime.of(2026, 7, 27, 12, 0, 0);
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+		when(service.createComment(7L, USER_ID, "reply", 3L))
+			.thenReturn(new PostCommentResponse(9L, "author", "reply", createdAt, 3L, List.of()));
+
+		mockMvc.perform(post("/api/community/posts/7/comments")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("{\"content\":\"reply\",\"parentCommentId\":3}"))
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.commentId").value(9))
+			.andExpect(jsonPath("$.parentCommentId").value(3))
+			.andExpect(jsonPath("$.replies").isArray())
+			.andExpect(jsonPath("$.replies").isEmpty());
+
+		verify(service).createComment(7L, USER_ID, "reply", 3L);
+	}
+
+	@Test
+	void createCommentReturns404WhenServiceCannotFindParentComment() throws Exception {
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+		when(service.createComment(7L, USER_ID, "reply", 999L))
+			.thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
+
+		mockMvc.perform(post("/api/community/posts/7/comments")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("{\"content\":\"reply\",\"parentCommentId\":999}"))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.error.code").value("NOT_FOUND"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+	}
+
+	@Test
+	void createCommentReturns400WhenServiceRejectsReplyToReply() throws Exception {
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+		when(service.createComment(7L, USER_ID, "reply", 5L))
+			.thenThrow(new BusinessException(ErrorCode.VALIDATION_ERROR, "대댓글에는 답글을 남길 수 없습니다."));
+
+		mockMvc.perform(post("/api/community/posts/7/comments")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("{\"content\":\"reply\",\"parentCommentId\":5}"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.message").value("대댓글에는 답글을 남길 수 없습니다."))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 	}
 
@@ -140,8 +196,8 @@ class PostCommentControllerTest {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
 		when(service.getComments(7L)).thenReturn(List.of(
-			new PostCommentResponse(11L, "first", "first comment", firstCreatedAt),
-			new PostCommentResponse(12L, "second", "second comment", secondCreatedAt)));
+			new PostCommentResponse(11L, "first", "first comment", firstCreatedAt, null, List.of()),
+			new PostCommentResponse(12L, "second", "second comment", secondCreatedAt, null, List.of())));
 
 		mockMvc.perform(get("/api/community/posts/7/comments")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))

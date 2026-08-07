@@ -24,7 +24,7 @@
 - [x] 1. **엔티티·마이그레이션**
   `db/migration/V25__add_parent_comment_to_post_comments.sql`(plan.md SQL 그대로: `post_comments.parent_comment_id` nullable self-referencing FK + `ON DELETE CASCADE` + `idx_post_comments_parent`). `PostComment`에 `parentComment`(nullable self-referencing `ManyToOne`) 필드와 `isReply()` 추가, `create` 시그니처에 `PostComment parentComment` 파라미터 추가. 단위 테스트(`PostComment` 생성 시 `parentComment` 반영, `isReply()` 참/거짓) + `@DataJpaTest`(마이그레이션 적용 후 FK·인덱스 확인, 부모 댓글 삭제 시 자식이 CASCADE로 함께 삭제되는지 리포지토리 레벨 검증, Testcontainers).
 
-- [ ] 2. **댓글 작성 API에 대댓글 반영**
+- [x] 2. **댓글 작성 API에 대댓글 반영**
   `PostCommentCreateRequest`에 `parentCommentId`(nullable `Long`) 필드 추가. `PostCommentResponse`에 `parentCommentId`(nullable)·`replies`(`List<PostCommentResponse>`, 기본 빈 리스트) 필드 추가, 팩토리를 `from(PostComment comment)`(단건, `replies` 빈 리스트)와 `from(PostComment comment, List<PostCommentResponse> replies)`(중첩용) 둘로 분리. `PostCommentService.createComment`에 `parentCommentId` 파라미터 추가 — 값이 있으면 `postCommentRepository.findById(parentCommentId)`로 조회해 `post.id` 일치 확인(불일치·없음 시 404 `NOT_FOUND`), 조회된 부모가 이미 자식(`isReply()==true`)이면 400 `VALIDATION_ERROR`("대댓글에는 답글을 남길 수 없습니다."). `PostCommentController.createComment`가 `request.parentCommentId()`를 그대로 전달하도록 수정. 서비스 단위 테스트(부모 댓글 생성 하위 호환, 정상 대댓글 생성, 존재하지 않는/다른 게시물 소속 부모 404, 이미 자식인 댓글에 답글 시도 400) + `@WebMvcTest`(요청 JSON `parentCommentId` 포함/생략, 응답 JSON 필드 계약, 400/404 매핑).
 
 - [ ] 3. **댓글 목록 조회 중첩 응답**

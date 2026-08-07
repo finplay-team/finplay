@@ -52,7 +52,7 @@ class PostCommentServiceTest {
 			return comment;
 		});
 
-		PostCommentResponse response = service.createComment(7L, 42L, "comment");
+		PostCommentResponse response = service.createComment(7L, 42L, "comment", null);
 
 		ArgumentCaptor<PostComment> captor = ArgumentCaptor.forClass(PostComment.class);
 		verify(commentRepository).save(captor.capture());
@@ -60,14 +60,14 @@ class PostCommentServiceTest {
 		assertThat(captor.getValue().getAuthor()).isSameAs(author);
 		assertThat(captor.getValue().getCreatedAt()).isEqualTo(LocalDateTime.now(CLOCK));
 		assertThat(response).isEqualTo(new PostCommentResponse(
-			9L, "author", "comment", LocalDateTime.now(CLOCK)));
+			9L, "author", "comment", LocalDateTime.now(CLOCK), null, List.of()));
 	}
 
 	@Test
 	void createCommentDoesNotLookupUserOrSaveWhenPostDoesNotExist() {
 		when(postRepository.findById(404L)).thenReturn(Optional.empty());
 
-		assertThatThrownBy(() -> service.createComment(404L, 42L, "comment"))
+		assertThatThrownBy(() -> service.createComment(404L, 42L, "comment", null))
 			.isInstanceOf(BusinessException.class)
 			.extracting(exception -> ((BusinessException)exception).getErrorCode())
 			.isEqualTo(ErrorCode.NOT_FOUND);
@@ -83,10 +83,111 @@ class PostCommentServiceTest {
 		when(postRepository.findById(7L)).thenReturn(Optional.of(post));
 		when(userQueryService.getUser(404L)).thenThrow(new BusinessException(ErrorCode.UNAUTHORIZED));
 
-		assertThatThrownBy(() -> service.createComment(7L, 404L, "comment"))
+		assertThatThrownBy(() -> service.createComment(7L, 404L, "comment", null))
 			.isInstanceOf(BusinessException.class)
 			.extracting(exception -> ((BusinessException)exception).getErrorCode())
 			.isEqualTo(ErrorCode.UNAUTHORIZED);
+
+		verify(commentRepository, never()).save(any());
+	}
+
+	@Test
+	void createCommentSavesWithNullParentCommentWhenParentCommentIdIsNull() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(author, "title", "post", null, LocalDateTime.now(CLOCK));
+		when(postRepository.findById(7L)).thenReturn(Optional.of(post));
+		when(userQueryService.getUser(42L)).thenReturn(author);
+		when(commentRepository.save(any(PostComment.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		service.createComment(7L, 42L, "comment", null);
+
+		ArgumentCaptor<PostComment> captor = ArgumentCaptor.forClass(PostComment.class);
+		verify(commentRepository).save(captor.capture());
+		assertThat(captor.getValue().getParentComment()).isNull();
+		verify(commentRepository, never()).findById(any());
+	}
+
+	@Test
+	void createCommentSavesReplyWithParentCommentWhenParentBelongsToSamePost() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(author, "title", "post", null, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(post, "id", 7L);
+		PostComment parent = PostComment.create(post, author, "parent comment", null, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(parent, "id", 3L);
+		when(postRepository.findById(7L)).thenReturn(Optional.of(post));
+		when(userQueryService.getUser(42L)).thenReturn(author);
+		when(commentRepository.findById(3L)).thenReturn(Optional.of(parent));
+		when(commentRepository.save(any(PostComment.class))).thenAnswer(invocation -> {
+			PostComment comment = invocation.getArgument(0);
+			ReflectionTestUtils.setField(comment, "id", 10L);
+			return comment;
+		});
+
+		PostCommentResponse response = service.createComment(7L, 42L, "reply", 3L);
+
+		ArgumentCaptor<PostComment> captor = ArgumentCaptor.forClass(PostComment.class);
+		verify(commentRepository).save(captor.capture());
+		assertThat(captor.getValue().getParentComment()).isSameAs(parent);
+		assertThat(response.parentCommentId()).isEqualTo(3L);
+	}
+
+	@Test
+	void createCommentThrowsNotFoundWhenParentCommentDoesNotExist() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(author, "title", "post", null, LocalDateTime.now(CLOCK));
+		when(postRepository.findById(7L)).thenReturn(Optional.of(post));
+		when(userQueryService.getUser(42L)).thenReturn(author);
+		when(commentRepository.findById(999L)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> service.createComment(7L, 42L, "reply", 999L))
+			.isInstanceOf(BusinessException.class)
+			.extracting(exception -> ((BusinessException)exception).getErrorCode())
+			.isEqualTo(ErrorCode.NOT_FOUND);
+
+		verify(commentRepository, never()).save(any());
+	}
+
+	@Test
+	void createCommentThrowsNotFoundWhenParentCommentBelongsToDifferentPost() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(author, "title", "post", null, LocalDateTime.now(CLOCK));
+		CommunityPost otherPost = CommunityPost.create(author, "other title", "other post", null,
+			LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(post, "id", 7L);
+		ReflectionTestUtils.setField(otherPost, "id", 8L);
+		PostComment parentOnOtherPost = PostComment.create(
+			otherPost, author, "parent on other post", null, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(parentOnOtherPost, "id", 3L);
+		when(postRepository.findById(7L)).thenReturn(Optional.of(post));
+		when(userQueryService.getUser(42L)).thenReturn(author);
+		when(commentRepository.findById(3L)).thenReturn(Optional.of(parentOnOtherPost));
+
+		assertThatThrownBy(() -> service.createComment(7L, 42L, "reply", 3L))
+			.isInstanceOf(BusinessException.class)
+			.extracting(exception -> ((BusinessException)exception).getErrorCode())
+			.isEqualTo(ErrorCode.NOT_FOUND);
+
+		verify(commentRepository, never()).save(any());
+	}
+
+	@Test
+	void createCommentThrowsValidationErrorWhenParentCommentIsAlreadyAReply() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(author, "title", "post", null, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(post, "id", 7L);
+		PostComment grandparent = PostComment.create(post, author, "grandparent", null, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(grandparent, "id", 2L);
+		PostComment parent = PostComment.create(
+			post, author, "already a reply", grandparent, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(parent, "id", 3L);
+		when(postRepository.findById(7L)).thenReturn(Optional.of(post));
+		when(userQueryService.getUser(42L)).thenReturn(author);
+		when(commentRepository.findById(3L)).thenReturn(Optional.of(parent));
+
+		assertThatThrownBy(() -> service.createComment(7L, 42L, "reply to reply", 3L))
+			.isInstanceOf(BusinessException.class)
+			.extracting(exception -> ((BusinessException)exception).getErrorCode())
+			.isEqualTo(ErrorCode.VALIDATION_ERROR);
 
 		verify(commentRepository, never()).save(any());
 	}
@@ -151,8 +252,9 @@ class PostCommentServiceTest {
 		List<PostCommentResponse> responses = service.getComments(7L);
 
 		assertThat(responses).containsExactly(
-			new PostCommentResponse(11L, "first", "first comment", LocalDateTime.now(CLOCK).minusMinutes(1)),
-			new PostCommentResponse(12L, "second", "second comment", LocalDateTime.now(CLOCK)));
+			new PostCommentResponse(
+				11L, "first", "first comment", LocalDateTime.now(CLOCK).minusMinutes(1), null, List.of()),
+			new PostCommentResponse(12L, "second", "second comment", LocalDateTime.now(CLOCK), null, List.of()));
 		verify(commentRepository).findAllByPostIdOrderByCreatedAtAscIdAsc(7L);
 	}
 

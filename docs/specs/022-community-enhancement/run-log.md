@@ -33,3 +33,11 @@
 
 ## 모니터링 (사람용 요약)
 - COM-005 항목1: `V25` 마이그레이션(`post_comments.parent_comment_id` self-referencing FK, `ON DELETE CASCADE`, `idx_post_comments_parent`), `PostComment.parentComment`·`isReply()`·`create` 시그니처 변경 추가. 기존 `PostComment.create` 호출부(서비스 1곳 + 테스트 5개 파일)를 `null` 인자로 기계적 수정, compileJava/compileTestJava 통과(테스트 작성은 tester 담당).
+
+## AI 로그 (에이전트 참조용, COM-005 항목2)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| - | implementer | `$env:JAVA_HOME=...; .\gradlew.bat compileJava` | plan.md "COM-005 대댓글" API 설계·`createComment` 대댓글 검증 로직·패키지·클래스 설계(항목 2) |
+
+## 모니터링 (사람용 요약)
+- COM-005 항목2: `PostCommentCreateRequest.parentCommentId` 추가, `PostCommentResponse`에 `parentCommentId`·`replies`(`List.copyOf` 방어적 복사) 추가하고 `from(comment)`/`from(comment, replies)` 두 팩토리로 분리. `PostCommentService.createComment`에 `parentCommentId` 검증(불일치/없음 404, 이미 자식이면 400) 추가, 컨트롤러가 `request.parentCommentId()` 전달. compileJava 통과(테스트는 tester 담당, `getComments` 중첩 응답은 항목3 범위).
