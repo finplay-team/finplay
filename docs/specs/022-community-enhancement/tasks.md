@@ -50,7 +50,7 @@
 - [x] 4. **게시물 삭제 시 이미지 정리**
   `CommunityPostImageService.deleteImageIfPresent(CommunityPost post)` 신규 — 연결된 이미지가 있으면 `storedFilename` 확보 후 DB 행 삭제, 게시물 삭제 성공 뒤 `fileStorageService.delete(storedFilename)` 호출(실패 시 로그만). `CommunityPostService.deletePost`에서 댓글 삭제 다음, 게시물 삭제 전후로 이 메서드 호출(plan.md "삭제 처리" 순서 그대로). 단위 테스트(이미지 있는/없는 게시물 삭제 각각, 물리 파일 삭제 호출 검증 — mock) + `@DataJpaTest`(게시물 삭제 시 `community_post_images` 행이 `ON DELETE CASCADE`로 함께 삭제되는지).
 
-- [ ] 5. **통합 테스트**
+- [x] 5. **통합 테스트**
   Testcontainers 기반 `@SpringBootTest`로 spec.md "완료 조건 COM-006" 4개 시나리오 구현: (a) 이미지 업로드 → 그 `imageId`로 게시물 작성 → 단건 조회 시 `imageUrl` 포함, 다운로드 엔드포인트로 바이트 확인, (b) 허용하지 않는 형식·5MB 초과 업로드 시도 각각 400, (c) 이미지 첨부 게시물 삭제 후 DB 행·물리 파일 모두 제거 확인, (d) 미첨부 게시물 하위 호환(기존 COM-001 시나리오) 회귀 — `imageId`·`imageUrl` 모두 `null`. 추가 회귀: 타인 소유 imageId로 게시물 생성 시도 403, 이미 사용된 imageId 재사용 시도 400.
 
 - [ ] 6. **문서 동기화 및 최종 빌드**

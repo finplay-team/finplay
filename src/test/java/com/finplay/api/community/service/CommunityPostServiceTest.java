@@ -15,6 +15,7 @@ import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.community.domain.CommunityPost;
 import com.finplay.api.community.domain.CommunityPostImage;
+import com.finplay.api.community.dto.response.CommunityPostImageResponse;
 import com.finplay.api.community.dto.response.CommunityPostListResponse;
 import com.finplay.api.community.dto.response.CommunityPostResponse;
 import com.finplay.api.community.repository.CommunityPostRepository;
@@ -132,16 +133,21 @@ class CommunityPostServiceTest {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
 		when(userQueryService.getUser(42L)).thenReturn(author);
 		CommunityPostImage image = Mockito.mock(CommunityPostImage.class);
+		when(image.getId()).thenReturn(5L);
 		when(communityPostImageService.resolveImageForPost(42L, 5L)).thenReturn(image);
 		when(repository.save(any(CommunityPost.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-		service.createPost(42L, "title", "content", null, 5L);
+		CommunityPostResponse response = service.createPost(42L, "title", "content", null, 5L);
 
 		ArgumentCaptor<CommunityPost> postCaptor = ArgumentCaptor.forClass(CommunityPost.class);
 		verify(repository).save(postCaptor.capture());
 		InOrder inOrder = Mockito.inOrder(repository, image);
 		inOrder.verify(repository).save(any(CommunityPost.class));
 		inOrder.verify(image).assignToPost(postCaptor.getValue());
+		// 소유 측(assignToPost)만 갱신되고 저장된 게시물의 역방향 image 필드가 동기화되지 않으면
+		// 생성 응답의 imageId/imageUrl이 null로 나가는 회귀(양방향 동기화 누락)를 잡는 단정.
+		assertThat(response.imageId()).isEqualTo(5L);
+		assertThat(response.imageUrl()).isEqualTo(CommunityPostImageResponse.toImageUrl(5L));
 	}
 
 	@Test

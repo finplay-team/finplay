@@ -96,6 +96,14 @@
 ## 모니터링 (사람용 요약)
 - COM-006 항목3: `CommunityPostImageService.resolveImageForPost`(존재하지 않음 404, 타인 소유 403, 이미 연결됨 400 순서 검증) 신규. `CommunityPost`에 `@OneToOne(mappedBy = "post")` `image` 필드, `CommunityPostRepository.findById` `@EntityGraph`에 `"image"`, `CommunityPostRepositoryImpl`에 `leftJoin(post.image).fetchJoin()` 추가. `CommunityPostCreateRequest.imageId`·`CommunityPostResponse.imageId`/`imageUrl`(`CommunityPostImageResponse.toImageUrl` 재사용) 추가. `CommunityPostService.createPost`가 게시물 저장 후 같은 트랜잭션에서 `image.assignToPost(savedPost)` 호출, 컨트롤러가 `request.imageId()` 전달. `docs/api-routes.md`·`docs/api-contracts.md`의 기존 `POST/GET/PATCH /api/community/posts*` 행에 `imageId`/`imageUrl` 계약 반영(업로드·다운로드 엔드포인트 신규 행과 PRD §3 갱신은 tasks.md 항목6 범위로 남김). compileJava 통과(테스트는 tester 담당).
 
+## AI 로그 (에이전트 참조용, COM-006 항목3 버그 수정)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| - | implementer | `JAVA_HOME=... ./gradlew.bat compileJava compileTestJava`, `test --tests CommunityPostServiceTest` | tester가 작성한 `CommunityPostImageIntegrationTest`에서 발견한 회귀(생성 응답 `imageId`/`imageUrl` null) |
+
+## 모니터링 (사람용 요약)
+- COM-006 항목3 버그 수정: `image.assignToPost(savedPost)`는 소유 측(FK)만 갱신하고, 이미 메모리에 있는 `savedPost.image`(역방향, `mappedBy="post"`)는 Hibernate가 같은 영속성 컨텍스트 안에서 자동 동기화해주지 않아 생성 응답의 `imageId`/`imageUrl`이 `null`로 나가는 버그가 있었다(DB 재조회 시엔 정상). `CommunityPost.attachImage(image)` 신규(역방향 필드 명시적 동기화)를 추가해 `createPost`가 `assignToPost` 직후 `savedPost.attachImage(image)`도 호출하도록 수정. `CommunityPostServiceTest.createPostAssignsImageToSavedPostWhenImageIdProvided`가 mock의 `assignToPost` 호출 여부만 검증해 이 문제를 못 잡았던 것도 보강 — `image.getId()`를 스텁하고 반환된 `CommunityPostResponse.imageId()`/`imageUrl()`이 실제 값을 갖는지 단정 추가. compileJava/compileTestJava 통과, 대상 테스트 통과.
+
 ## AI 로그 (에이전트 참조용, COM-006 항목4)
 | 시각 | 에이전트 | 실행 명령 | 근거 |
 |---|---|---|---|

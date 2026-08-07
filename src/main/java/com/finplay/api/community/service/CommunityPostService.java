@@ -46,6 +46,7 @@ public class CommunityPostService {
 		CommunityPost savedPost = communityPostRepository.save(post);
 		if (image != null) {
 			image.assignToPost(savedPost);
+			savedPost.attachImage(image);
 		}
 		return CommunityPostResponse.from(savedPost);
 	}

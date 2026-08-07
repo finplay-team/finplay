@@ -77,4 +77,10 @@ public class CommunityPost {
 		this.instrument = instrument;
 		this.updatedAt = now;
 	}
+
+	// 소유 측(CommunityPostImage.assignToPost)과 함께 호출해 역방향 필드도 즉시 동기화한다 —
+	// Hibernate는 mappedBy 역방향 필드를 같은 영속성 컨텍스트 내에서 자동으로 채워주지 않는다.
+	public void attachImage(CommunityPostImage image) {
+		this.image = image;
+	}
 }
