@@ -98,6 +98,15 @@ class GlobalExceptionHandlerTest {
 	}
 
 	@Test
+	void mapsUnsupportedHttpMethodToMethodNotAllowedInsteadOfInternalError() throws Exception {
+		mockMvc.perform(post("/test/insufficient-cash"))
+			.andExpect(status().isMethodNotAllowed())
+			.andExpect(jsonPath("$.error.code").value("METHOD_NOT_ALLOWED"))
+			.andExpect(jsonPath("$.error.message").value("지원하지 않는 요청 방식입니다."))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+	}
+
+	@Test
 	void mapsUnmappedPathToNotFoundInCommonFormat() throws Exception {
 		mockMvc.perform(get("/test/no-such-endpoint"))
 			.andExpect(status().isNotFound())
