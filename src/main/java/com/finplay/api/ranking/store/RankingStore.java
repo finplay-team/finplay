@@ -21,6 +21,10 @@ public class RankingStore {
 	private static final int MAX_ATTEMPTS = 3;
 	// MAX_ATTEMPTS번째 시도는 실패해도 sleep 없이 즉시 포기하므로, 배열 길이는 MAX_ATTEMPTS-1이어야 한다.
 	private static final long[] BACKOFF_MILLIS = {50, 150};
+	// findAllAtScore의 fan-out 상한(이슈 #270) — 경계 score가 흔한 값(특히 실현손익 0)이면 동점자 전원이
+	// Redis에서 애플리케이션 메모리로 올라와 DB IN 절 조회까지 하게 된다. RankingService.MAX_LIMIT(50)의
+	// 10배로 잡아 정상 규모의 동점 그룹은 전혀 자르지 않으면서도 비정상 규모의 fan-out만 막는다.
+	private static final int FIND_ALL_AT_SCORE_MAX_MEMBERS = 500;
 
 	private final StringRedisTemplate redisTemplate;
 
@@ -65,11 +69,19 @@ public class RankingStore {
 	// 정확히 score인 멤버 전체를 가져온다 — limit 경계에 동점 그룹이 걸쳐 있을 때(RankingService의 boundary tie
 	// 병합) 그 score의 전체 멤버를 다시 가져오기 위한 조회다. ZRANGEBYSCORE score score와 동치(정확한 구간 조회,
 	// 스코어 근사 없음). 이 메서드가 반환하는 개수는 동점자 수에 비례하므로(수백 명까지 있을 수 있음) 경계에
-	// 동점이 확인된 경우에만 호출한다.
+	// 동점이 확인된 경우에만 호출한다. FIND_ALL_AT_SCORE_MAX_MEMBERS를 Redis LIMIT 옵션으로 직접 넘겨, 상한을
+	// 넘는 멤버를 애초에 애플리케이션 메모리로 가져오지 않는다(이슈 #270) — 절단된 상태에서는 동점자 내부
+	// 정렬(userId 오름차순)이 정확하지 않을 수 있으나, 이 경로는 이미 비정상 규모의 동점 상황에서만 타므로
+	// 과설계하지 않는다(PR #196 리뷰가 반복적으로 확인한 태도, plan.md 8-1·8-4절과 같은 기준).
 	public List<RankingEntryDto> findAllAtScore(Market market, long score) {
-		Set<String> members = redisTemplate.opsForZSet().rangeByScore(key(market), (double)score, (double)score);
+		Set<String> members = redisTemplate.opsForZSet()
+			.rangeByScore(key(market), (double)score, (double)score, 0, FIND_ALL_AT_SCORE_MAX_MEMBERS);
 		if (members == null || members.isEmpty()) {
 			return List.of();
+		}
+		if (members.size() >= FIND_ALL_AT_SCORE_MAX_MEMBERS) {
+			log.warn("경계 동점 그룹이 상한을 초과해 절단함. market={}, score={}, cap={}",
+				market, score, FIND_ALL_AT_SCORE_MAX_MEMBERS);
 		}
 		List<RankingEntryDto> entries = new ArrayList<>();
 		for (String member : members) {

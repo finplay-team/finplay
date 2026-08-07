@@ -61,7 +61,7 @@ class RankingStoreTest {
 	void findAllAtScoreReturnsAllMembersWithExactScore() {
 		RankingStore rankingStore = rankingStore();
 		Set<String> members = new LinkedHashSet<>(List.of("1", "2"));
-		when(zSetOperations.rangeByScore("ranking:STOCK", 100.0, 100.0)).thenReturn(members);
+		when(zSetOperations.rangeByScore("ranking:STOCK", 100.0, 100.0, 0, 500)).thenReturn(members);
 
 		List<RankingEntryDto> entries = rankingStore.findAllAtScore(Market.STOCK, 100L);
 
@@ -73,11 +73,28 @@ class RankingStoreTest {
 	@Test
 	void findAllAtScoreReturnsEmptyListWhenNoMemberMatches() {
 		RankingStore rankingStore = rankingStore();
-		when(zSetOperations.rangeByScore("ranking:CRYPTO", 100.0, 100.0)).thenReturn(Set.of());
+		when(zSetOperations.rangeByScore("ranking:CRYPTO", 100.0, 100.0, 0, 500)).thenReturn(Set.of());
 
 		List<RankingEntryDto> entries = rankingStore.findAllAtScore(Market.CRYPTO, 100L);
 
 		assertThat(entries).isEmpty();
+	}
+
+	// 이슈 #270: 경계 동점 그룹이 상한(500)을 넘으면 Redis LIMIT 옵션으로 그 이상을 애초에 가져오지 않는다 —
+	// 반환된 멤버 수가 상한과 같으면(잘렸을 가능성) 결과는 그대로 반환하되 절단 여부를 로그로 남긴다.
+	@Test
+	void findAllAtScoreTruncatesToCapWithoutThrowingWhenTiedGroupIsHuge() {
+		RankingStore rankingStore = rankingStore();
+		Set<String> members = new LinkedHashSet<>();
+		for (int i = 1; i <= 500; i++) {
+			members.add(String.valueOf(i));
+		}
+		when(zSetOperations.rangeByScore("ranking:STOCK", 0.0, 0.0, 0, 500)).thenReturn(members);
+
+		List<RankingEntryDto> entries = rankingStore.findAllAtScore(Market.STOCK, 0L);
+
+		assertThat(entries).hasSize(500);
+		verify(zSetOperations, times(1)).rangeByScore("ranking:STOCK", 0.0, 0.0, 0, 500);
 	}
 
 	@Test
