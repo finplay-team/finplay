@@ -26,6 +26,15 @@ spring:
     hibernate:
       ddl-auto: validate # 스키마 변경은 Flyway로만 (ADR-0004)
     open-in-view: false
+  datasource:
+    hikari:
+      # 매도 체결 요청 하나가 원 트랜잭션의 커넥션과 RankingEventListener.refreshScore(REQUIRES_NEW)의 새
+      # 커넥션을 동시에 점유한다(이슈 #270) — @TransactionalEventListener(AFTER_COMMIT) 콜백은 원 트랜잭션의
+      # 커넥션이 풀에 반납되기 전에 실행되므로, REQUIRES_NEW가 그 반납 전에 새 커넥션을 하나 더 연다. Spring
+      # Boot 기본 풀(10)을 그대로 두면 동시 매도 요청 5건만으로 풀이 소진돼 뒤따르는 요청이 connection-timeout
+      # (기본 30초)만큼 대기할 수 있다. "요청당 최대 2커넥션" 전제로 기존 동시성 여유(10)를 유지하려면 풀을
+      # 20으로 둔다. MySQL 컨테이너(compose.yaml)는 max_connections 기본값(151)을 그대로 쓰므로 여유가 있다.
+      maximum-pool-size: 20
   mvc:
     async:
       # SSE(/api/stocks/stream) 연결이 장시간 유지돼야 하므로 컨테이너 async 타임아웃을 두지 않는다.
