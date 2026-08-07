@@ -1,4 +1,8 @@
 # 이슈 라벨(agent)로 방향 제시, @claude 멘션으로 구현+PR까지 수행하는 이슈 트리거 에이전트 하네스 (ADR-0013)
+#
+# 모델은 단계 성격에 맞춰 나눈다 (이슈 #264) — 별칭이라 항상 각 계열의 최신 모델을 가리킨다.
+#   방향 제시(propose-directions) = 계획·문서 판단이라 opus
+#   구현·자체 리뷰(implement-and-open-pr) = 코드 작성·검증이라 sonnet
 name: Issue-triggered Agent
 
 on:
@@ -20,6 +24,9 @@ jobs:
     permissions:
       contents: read
       issues: write
+      # claude-code-action은 OIDC 토큰을 발급받아 GitHub App 토큰으로 교환한다 — 없으면 인증 단계에서 죽는다.
+      # job 레벨 permissions 블록은 top-level을 병합이 아니라 통째로 교체하므로 job마다 직접 넣어야 한다 (이슈 #264).
+      id-token: write
     steps:
       - uses: actions/checkout@v4
 
@@ -40,6 +47,7 @@ jobs:
             - 기존 ADR과 충돌하는 방향이면 새 ADR이 필요하다고 명시해라 (CLAUDE.md 규칙 2).
             - 마지막 줄에 "@claude N안으로 구현해줘" 형식으로 선택 방법을 안내하는 코멘트를 이슈에 남겨라.
           claude_args: |
+            --model opus
             --allowedTools "Read,Grep,Glob,Bash(gh issue comment:*),Bash(gh issue view:*)"
             --disallowedTools "Edit,Write,NotebookEdit,Bash(git commit:*),Bash(git push:*),Bash(gh pr create:*)"
 
@@ -59,6 +67,8 @@ jobs:
       contents: write
       issues: write
       pull-requests: write
+      # 위 propose-directions와 같은 이유 — job 레벨 선언이 top-level을 교체하므로 여기에도 필요하다 (이슈 #264).
+      id-token: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -94,6 +104,7 @@ jobs:
                - 빌드 검증 SHA 칸에 `git rev-parse HEAD` 값을 채워라.
             7. 실행하지 않은 검증을 했다고 적지 마라.
           claude_args: |
+            --model sonnet
             --allowedTools "Read,Grep,Glob,Edit,Write,Bash"
 
       - name: 빌드 검증 (러너가 직접 실행 — 에이전트 자기 보고 아님)
@@ -145,6 +156,7 @@ jobs:
             `[차단]/[권장]/[참고] 파일:줄 — 문제 — 수정 방향` 형식의 줄들을 모은 report(문자열)를 구조화된 출력으로 반환해라.
             차단·권장이 모두 0건이면 report 맨 앞줄에 "머지 가능"이라고 적어라.
           claude_args: |
+            --model sonnet
             --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*)"
             --json-schema '{"type":"object","properties":{"blocking_count":{"type":"integer"},"recommended_count":{"type":"integer"},"reference_count":{"type":"integer"},"report":{"type":"string"}},"required":["blocking_count","recommended_count","reference_count","report"]}'
 
