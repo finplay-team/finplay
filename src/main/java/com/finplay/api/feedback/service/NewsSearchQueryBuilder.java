@@ -14,29 +14,32 @@ import org.springframework.stereotype.Component;
  * 근거 0건은 카드를 막지만 <b>오탐 근거는 아무것도 막지 않는다</b> — 무관 기사가 제목·URL로 노출되고
  * LLM 입력에도 들어간다. 그래서 이 조립과 {@code NewsTitleFilter}가 수집 단계의 유일한 방어선이다.
  *
- * <p><b>이미 '코인'으로 끝나는 이름에도 그대로 붙인다.</b> 시드에는 {@code 비트코인}·{@code 도지코인}·
- * {@code 비트코인캐시}가 있어 결과가 {@code 비트코인 코인}처럼 어색해 보이지만, 그것이 spec이 직접 든 예다.
- * 예외를 두면 spec에 없는 규칙을 코드가 새로 만드는 셈이고, 네이버 검색은 두 토큰을 함께 받아도 결과가
- * 좁아질 뿐 깨지지 않는다.
+ * <p><b>보정은 {@code " 코인"}이 아니라 심볼이다</b> (2026-08-07 개정, 이슈 #179). 개정 전에는 이름 뒤에
+ * {@code " 코인"}을 붙였는데, 실측에서 그 접미가 <b>일반 암호화폐 기사를 끌어와 이름만 쓰는 것보다도
+ * 나빴다</b> — 12종목 1,200건에서 제목에 자기 이름이 든 기사가 <b>이름만 170건, {@code " 코인"}을 붙이면
+ * 오히려 줄어 145건, 심볼을 붙이면 261건</b>이었다. 근거는 spec §FEED-001의 개정 문단이다.
  *
  * <p><b>외부 의존이 없다.</b> DB·시계·HTTP를 붙이지 않아 고정 픽스처로 단정할 수 있다
  * ({@code PriceMoveDetector}를 순수 함수로 두는 이유와 같다, spec §C-6).
  *
- * <p>보정 문자열을 설정으로 빼지 않은 것은 §C-7에 그런 키가 없기 때문이다. 실측 결과 무관 기사 비율이 높으면
- * 코드가 아니라 spec §FEED-001·§C-7을 먼저 고친다 (§튜닝의 "코인 질의어 보정" 행).
+ * <p>보정 방식을 설정으로 빼지 않은 것은 §C-7에 그런 키가 없기 때문이다. 실측 결과 무관 기사 비율이 높으면
+ * 코드가 아니라 spec §FEED-001을 먼저 고친다 — 이번 개정이 그 절차를 그대로 밟았다.
  */
 @Component
 public class NewsSearchQueryBuilder {
 
-	// spec §FEED-001의 확정값. 앞의 공백까지가 값이다 — 종목명과 붙여 쓰면 다른 단어가 된다.
-	private static final String CRYPTO_QUERY_SUFFIX = " 코인";
+	// 종목명과 심볼 사이의 구분자. 붙여 쓰면 다른 단어가 된다.
+	private static final String QUERY_DELIMITER = " ";
 
 	/**
 	 * 종목 하나의 뉴스 검색 질의어를 만든다. 네이버 검색 API의 {@code query} 파라미터로 그대로 나간다.
+	 *
+	 * <p><b>주식은 이름 그대로다</b>(spec §FEED-001). 주식 시드에는 종목명이 일반명사와 충돌하는 경우가 없어
+	 * 보정할 이유가 없고, <b>실측하지 않은 시장의 규칙을 바꾸지 않는다</b>(C-005).
 	 */
 	public String build(Instrument instrument) {
 		if (instrument.getMarket() == Market.CRYPTO) {
-			return instrument.getName() + CRYPTO_QUERY_SUFFIX;
+			return instrument.getName() + QUERY_DELIMITER + instrument.getSymbol();
 		}
 		return instrument.getName();
 	}

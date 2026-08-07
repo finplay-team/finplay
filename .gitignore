@@ -47,3 +47,6 @@ graphify-out/
 
 ### 배포 스택 (nginx가 서빙할 프론트 빌드 산출물 — finplay-frontend에서 복사해 온다) ###
 /frontend-dist/
+
+### 코인 뉴스 측정 산출물 (이슈 #179)
+tools/coin-news-measure/out/

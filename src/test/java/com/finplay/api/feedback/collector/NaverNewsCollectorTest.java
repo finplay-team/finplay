@@ -120,7 +120,7 @@ class NaverNewsCollectorTest {
 	void callsSpecifiedEndpointWithQueryDisplaySortAndCredentialHeaders() {
 		server.expect(naverSearchRequest())
 			.andExpect(method(HttpMethod.GET))
-			.andExpect(decodedQueryContains("query=비트코인 코인"))
+			.andExpect(decodedQueryContains("query=비트코인 BTC"))
 			.andExpect(decodedQueryContains("display=100"))
 			.andExpect(decodedQueryContains("sort=date"))
 			.andExpect(header("X-NCP-APIGW-API-KEY-ID", CLIENT_ID))
@@ -366,8 +366,15 @@ class NaverNewsCollectorTest {
 			""".formatted(title, originallink, link, description, pubDate);
 	}
 
+	// 심볼이 질의어에 들어가므로(2026-08-07 개정, 이슈 #179) 자리표시자 대신 V7 시드의 실제 값을 쓴다 —
+	// "SYM"으로 두면 질의어 단정이 실제 호출과 다른 문자열을 고정하게 된다.
 	private static Instrument crypto(String name) {
+		String symbol = switch (name) {
+			case "비트코인" -> "BTC";
+			case "비트코인캐시" -> "BCH";
+			default -> throw new IllegalArgumentException("시드 심볼을 여기 추가해라 — " + name);
+		};
 		return Instrument.create(
-			Market.CRYPTO, "SYM", name, new BigDecimal("1000"), 5000, true, LocalDateTime.now());
+			Market.CRYPTO, symbol, name, new BigDecimal("1000"), 5000, true, LocalDateTime.now());
 	}
 }

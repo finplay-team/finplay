@@ -10,36 +10,42 @@ import java.time.LocalDateTime;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
-// 기대값의 정본은 spec.md FEED-001이다 — "코인 질의어는 instruments.name에 " 코인"을 붙인다 (예: 비트코인 코인)",
-// 그리고 보정은 코인에만 붙는다(주식 질의어는 instruments.name 그대로). 외부 의존이 없는 순수 계산이라
-// 고정 픽스처로 단정한다(§C-6).
+// 기대값의 정본은 spec.md FEED-001이다 — "코인 질의어는 instruments.name에 " " + instruments.symbol을 붙인다
+// (예: 트론 TRX)", 그리고 보정은 코인에만 붙는다(주식 질의어는 instruments.name 그대로). 외부 의존이 없는
+// 순수 계산이라 고정 픽스처로 단정한다(§C-6).
+//
+// 2026-08-07 개정(이슈 #179) — 보정이 " 코인"에서 심볼로 바뀌었다. 실측에서 " 코인" 접미가 일반 암호화폐
+// 기사를 끌어와, 제목에 자기 이름이 든 기사가 이름만 쓸 때(170건)보다도 적은 145건이었다. 심볼로 바꾸면
+// 261건이다. 근거는 spec §FEED-001의 개정 문단.
 class NewsSearchQueryBuilderTest {
 
 	private final NewsSearchQueryBuilder queryBuilder = new NewsSearchQueryBuilder();
 
 	@Test
-	@DisplayName("코인 질의어에 FEED-001의 보정이 붙는다 — 비트코인 → \"비트코인 코인\"")
-	void appendsCryptoSuffixToCoinName() {
-		assertThat(queryBuilder.build(crypto("BTC", "비트코인"))).isEqualTo("비트코인 코인");
+	@DisplayName("코인 질의어에 심볼이 붙는다 — 트론 → \"트론 TRX\"")
+	void appendsSymbolToCoinName() {
+		assertThat(queryBuilder.build(crypto("TRX", "트론"))).isEqualTo("트론 TRX");
 	}
 
-	// FEED-001이 보정의 근거로 직접 든 이름들이다 — 일반명사·인명과 충돌해 이름만으로는 무관 기사가 붙는다.
-	@ParameterizedTest(name = "{0} → \"{0} 코인\"")
-	@ValueSource(strings = {"리플", "에이다", "트론", "폴카닷", "체인링크"})
-	@DisplayName("일반명사·인명과 겹치는 코인명 전부에 보정이 붙는다")
-	void appendsCryptoSuffixToEveryAmbiguousCoinName(String name) {
-		assertThat(queryBuilder.build(crypto("SYM", name))).isEqualTo(name + " 코인");
+	// FEED-001이 보정의 근거로 든 이름들이다 — 일반명사·인명과 충돌해 이름만으로는 무관 기사가 붙는다.
+	// 심볼은 V7 시드의 실제 값을 쓴다(질의어가 검색 결과를 정하므로 가짜 심볼로 단정하면 의미가 없다).
+	@ParameterizedTest(name = "{1} → \"{1} {0}\"")
+	@CsvSource({"XRP,리플", "ADA,에이다", "TRX,트론", "DOT,폴카닷", "LINK,체인링크"})
+	@DisplayName("일반명사·인명과 겹치는 코인명 전부에 심볼이 붙는다")
+	void appendsSymbolToEveryAmbiguousCoinName(String symbol, String name) {
+		assertThat(queryBuilder.build(crypto(symbol, name))).isEqualTo(name + " " + symbol);
 	}
 
-	// FEED-001의 예가 곧 이 경우다 — 비트코인은 이미 '코인'으로 끝나지만 예시 결과가 "비트코인 코인"이다.
-	// 이름이 '코인'으로 끝날 때 보정을 생략하는 예외는 spec에 없다.
-	@ParameterizedTest(name = "{0} → \"{0} 코인\"")
-	@ValueSource(strings = {"비트코인", "도지코인", "비트코인캐시"})
-	@DisplayName("이름이 이미 '코인'으로 끝나도 보정을 생략하지 않는다")
-	void appendsCryptoSuffixEvenWhenNameAlreadyEndsWithCoin(String name) {
-		assertThat(queryBuilder.build(crypto("SYM", name))).isEqualTo(name + " 코인");
+	// 개정 전에는 이름이 '코인'으로 끝나도 " 코인"을 또 붙였다("비트코인 코인"). 그 예외 없음 규칙이
+	// 사라진 것이 아니라, 붙이는 값 자체가 심볼로 바뀌어 이 어색함이 없어졌다.
+	@ParameterizedTest(name = "{1} → \"{1} {0}\"")
+	@CsvSource({"BTC,비트코인", "DOGE,도지코인", "BCH,비트코인캐시"})
+	@DisplayName("이름이 '코인'으로 끝나도 심볼을 그대로 붙인다 — \"비트코인 코인\" 같은 중복이 사라졌다")
+	void appendsSymbolEvenWhenNameAlreadyEndsWithCoin(String symbol, String name) {
+		assertThat(queryBuilder.build(crypto(symbol, name))).isEqualTo(name + " " + symbol);
 	}
 
 	// FEED-001 — 보정은 코인에만 붙는다.
