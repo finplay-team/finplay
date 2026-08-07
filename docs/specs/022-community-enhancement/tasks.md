@@ -47,7 +47,7 @@
 - [x] 3. **게시물 생성 API에 이미지 연결 반영**
   `CommunityPostImageService.resolveImageForPost(authenticatedUserId, imageId)`(존재하지 않음 404, 타인 소유 403, 이미 연결됨 400 3단계 검증) 신규. `CommunityPost`에 `@OneToOne(mappedBy = "post")` `image` 필드 추가. `CommunityPostCreateRequest`에 `imageId`(nullable) 필드 추가. `CommunityPostResponse`에 `imageId`·`imageUrl`(nullable) 필드 추가, `from(CommunityPost)`에서 이미지 없으면 둘 다 `null`. `CommunityPostService.createPost`에 `imageId` 파라미터 추가 — 값이 있으면 `resolveImageForPost` 호출 후 게시물 저장, 저장된 `post`에 `image.assignToPost(post)` 호출(같은 트랜잭션). `CommunityPostController.createPost`가 `request.imageId()`를 전달. `CommunityPostRepository.findById`의 `@EntityGraph`에 `"image"` 추가, `CommunityPostRepositoryImpl.findPostsOrderByCreatedAtDesc`에 `leftJoin(post.image).fetchJoin()` 추가. 단위 테스트(정상 이미지 연결 생성, 미첨부 하위 호환, 존재하지 않는/타인 소유/이미 연결된 imageId 각각 404·403·400 전파) + `@DataJpaTest`(목록·단건 조회 시 `image` fetch join, N+1 없는지) + `@WebMvcTest`(요청 JSON `imageId` 포함/생략, 응답 JSON `imageId`·`imageUrl` 계약, 404/403/400 매핑).
 
-- [ ] 4. **게시물 삭제 시 이미지 정리**
+- [x] 4. **게시물 삭제 시 이미지 정리**
   `CommunityPostImageService.deleteImageIfPresent(CommunityPost post)` 신규 — 연결된 이미지가 있으면 `storedFilename` 확보 후 DB 행 삭제, 게시물 삭제 성공 뒤 `fileStorageService.delete(storedFilename)` 호출(실패 시 로그만). `CommunityPostService.deletePost`에서 댓글 삭제 다음, 게시물 삭제 전후로 이 메서드 호출(plan.md "삭제 처리" 순서 그대로). 단위 테스트(이미지 있는/없는 게시물 삭제 각각, 물리 파일 삭제 호출 검증 — mock) + `@DataJpaTest`(게시물 삭제 시 `community_post_images` 행이 `ON DELETE CASCADE`로 함께 삭제되는지).
 
 - [ ] 5. **통합 테스트**

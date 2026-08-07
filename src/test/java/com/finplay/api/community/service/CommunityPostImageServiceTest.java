@@ -13,6 +13,7 @@ import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.service.UserQueryService;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
+import com.finplay.api.community.domain.CommunityPost;
 import com.finplay.api.community.domain.CommunityPostImage;
 import com.finplay.api.community.dto.response.CommunityPostImageFile;
 import com.finplay.api.community.dto.response.CommunityPostImageResponse;
@@ -25,6 +26,7 @@ import java.time.ZoneOffset;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mockito;
 import org.springframework.core.io.Resource;
 import org.springframework.mock.web.MockMultipartFile;
@@ -134,6 +136,33 @@ class CommunityPostImageServiceTest {
 			.extracting(exception -> ((BusinessException)exception).getErrorCode())
 			.isEqualTo(ErrorCode.NOT_FOUND);
 
+		verifyNoInteractions(fileStorageService);
+	}
+
+	@Test
+	void deleteImageIfPresentDeletesRowThenPhysicalFileWhenPostHasImage() {
+		User uploader = User.create("uploader@finplay.com", "hash", "uploader", LocalDateTime.now(CLOCK));
+		CommunityPostImage image = CommunityPostImage.create(
+			uploader, "stored.png", "original.png", "image/png", 10L, LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(
+			uploader, "title", "content", null, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(post, "image", image);
+
+		service.deleteImageIfPresent(post);
+
+		InOrder inOrder = Mockito.inOrder(repository, fileStorageService);
+		inOrder.verify(repository).delete(image);
+		inOrder.verify(fileStorageService).delete("stored.png");
+	}
+
+	@Test
+	void deleteImageIfPresentDoesNothingWhenPostHasNoImage() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(author, "title", "content", null, LocalDateTime.now(CLOCK));
+
+		service.deleteImageIfPresent(post);
+
+		verify(repository, never()).delete(any());
 		verifyNoInteractions(fileStorageService);
 	}
 }

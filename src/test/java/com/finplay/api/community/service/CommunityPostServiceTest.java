@@ -419,6 +419,38 @@ class CommunityPostServiceTest {
 	}
 
 	@Test
+	void deletePostCleansUpImageBeforeDeletingPostWhenPostHasImage() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(author, "id", 42L);
+		CommunityPost post = CommunityPost.create(author, "title", "content", null, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(post, "id", 73L);
+		CommunityPostImage image = Mockito.mock(CommunityPostImage.class);
+		ReflectionTestUtils.setField(post, "image", image);
+		when(repository.findById(73L)).thenReturn(Optional.of(post));
+
+		service.deletePost(42L, 73L);
+
+		InOrder inOrder = Mockito.inOrder(postCommentRepository, communityPostImageService, repository);
+		inOrder.verify(postCommentRepository).deleteByPost_Id(73L);
+		inOrder.verify(communityPostImageService).deleteImageIfPresent(post);
+		inOrder.verify(repository).delete(post);
+	}
+
+	@Test
+	void deletePostStillDelegatesImageCleanupWhenPostHasNoImage() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(author, "id", 42L);
+		CommunityPost post = CommunityPost.create(author, "title", "content", null, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(post, "id", 73L);
+		when(repository.findById(73L)).thenReturn(Optional.of(post));
+
+		service.deletePost(42L, 73L);
+
+		verify(communityPostImageService).deleteImageIfPresent(post);
+		verify(repository).delete(post);
+	}
+
+	@Test
 	void deletePostFailsWithNotFoundAndDoesNotDeleteWhenPostDoesNotExist() {
 		when(repository.findById(404L)).thenReturn(Optional.empty());
 

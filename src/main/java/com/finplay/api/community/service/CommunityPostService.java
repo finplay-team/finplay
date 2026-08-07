@@ -85,6 +85,7 @@ public class CommunityPostService {
 			throw new BusinessException(ErrorCode.FORBIDDEN);
 		}
 		postCommentRepository.deleteByPost_Id(postId);
+		communityPostImageService.deleteImageIfPresent(post);
 		communityPostRepository.delete(post);
 	}
 

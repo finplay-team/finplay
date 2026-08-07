@@ -95,3 +95,11 @@
 
 ## 모니터링 (사람용 요약)
 - COM-006 항목3: `CommunityPostImageService.resolveImageForPost`(존재하지 않음 404, 타인 소유 403, 이미 연결됨 400 순서 검증) 신규. `CommunityPost`에 `@OneToOne(mappedBy = "post")` `image` 필드, `CommunityPostRepository.findById` `@EntityGraph`에 `"image"`, `CommunityPostRepositoryImpl`에 `leftJoin(post.image).fetchJoin()` 추가. `CommunityPostCreateRequest.imageId`·`CommunityPostResponse.imageId`/`imageUrl`(`CommunityPostImageResponse.toImageUrl` 재사용) 추가. `CommunityPostService.createPost`가 게시물 저장 후 같은 트랜잭션에서 `image.assignToPost(savedPost)` 호출, 컨트롤러가 `request.imageId()` 전달. `docs/api-routes.md`·`docs/api-contracts.md`의 기존 `POST/GET/PATCH /api/community/posts*` 행에 `imageId`/`imageUrl` 계약 반영(업로드·다운로드 엔드포인트 신규 행과 PRD §3 갱신은 tasks.md 항목6 범위로 남김). compileJava 통과(테스트는 tester 담당).
+
+## AI 로그 (에이전트 참조용, COM-006 항목4)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| - | implementer | `$env:JAVA_HOME="C:\Users\pmsal\.jdks\ms-17.0.20"; .\gradlew.bat compileJava` | plan.md "삭제 처리" 순서(댓글 삭제 → 이미지 정리 → 게시물 삭제), tasks.md COM-006 항목4 |
+
+## 모니터링 (사람용 요약)
+- COM-006 항목4: `CommunityPostImageService.deleteImageIfPresent(CommunityPost post)` 신규 — 연결 이미지가 있으면 `storedFilename` 확보 후 DB 행 삭제, 이어서 `fileStorageService.delete(storedFilename)` 호출(구현체가 이미 IOException을 잡아 로그만 남기므로 여기서 추가 try-catch 없음). `CommunityPostService.deletePost`에서 `postCommentRepository.deleteByPost_Id` 다음·`communityPostRepository.delete(post)` 이전에 호출하도록 연결. compileJava 통과(단위·`@DataJpaTest`는 tester 담당).

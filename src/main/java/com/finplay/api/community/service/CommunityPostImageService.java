@@ -5,6 +5,7 @@ import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.service.UserQueryService;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
+import com.finplay.api.community.domain.CommunityPost;
 import com.finplay.api.community.domain.CommunityPostImage;
 import com.finplay.api.community.dto.response.CommunityPostImageFile;
 import com.finplay.api.community.dto.response.CommunityPostImageResponse;
@@ -67,6 +68,17 @@ public class CommunityPostImageService {
 			throw new BusinessException(ErrorCode.VALIDATION_ERROR, "이미 다른 게시물에 사용된 이미지입니다.");
 		}
 		return image;
+	}
+
+	@Transactional
+	public void deleteImageIfPresent(CommunityPost post) {
+		CommunityPostImage image = post.getImage();
+		if (image == null) {
+			return;
+		}
+		String storedFilename = image.getStoredFilename();
+		communityPostImageRepository.delete(image);
+		fileStorageService.delete(storedFilename);
 	}
 
 	private String resolveExtension(String originalFilename) {
