@@ -61,7 +61,7 @@ class CommentDeleteIntegrationTest {
 		CommunityPost post = postRepository.saveAndFlush(
 			CommunityPost.create(author, "title", "content", null, LocalDateTime.now()));
 		PostComment comment = commentRepository.saveAndFlush(
-			PostComment.create(post, author, "my comment", LocalDateTime.now()));
+			PostComment.create(post, author, "my comment", null, LocalDateTime.now()));
 		Long commentId = comment.getId();
 		String accessToken = jwtTokenProvider.issue(author.getId(), author.getRole()).accessToken();
 
@@ -79,7 +79,7 @@ class CommentDeleteIntegrationTest {
 		CommunityPost post = postRepository.saveAndFlush(
 			CommunityPost.create(author, "title", "content", null, LocalDateTime.now()));
 		PostComment comment = commentRepository.saveAndFlush(
-			PostComment.create(post, author, "original comment", LocalDateTime.now()));
+			PostComment.create(post, author, "original comment", null, LocalDateTime.now()));
 		Long commentId = comment.getId();
 		String strangerToken = jwtTokenProvider.issue(stranger.getId(), stranger.getRole()).accessToken();
 
@@ -110,7 +110,7 @@ class CommentDeleteIntegrationTest {
 		CommunityPost post = postRepository.saveAndFlush(
 			CommunityPost.create(author, "title", "content", null, LocalDateTime.now()));
 		commentRepository.saveAndFlush(
-			PostComment.create(post, author, "untouched comment", LocalDateTime.now()));
+			PostComment.create(post, author, "untouched comment", null, LocalDateTime.now()));
 		long countBefore = commentRepository.count();
 
 		mockMvc.perform(delete("/api/community/comments/{commentId}", Long.MAX_VALUE))

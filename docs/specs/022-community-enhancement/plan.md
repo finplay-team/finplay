@@ -132,6 +132,123 @@ public Instrument getTradableInstrumentEntity(Long instrumentId) {
   3. 존재하지 않는/비활성(`tradable=false`) 종목 태그 시도 시 400 `VALIDATION_ERROR`(둘 다 개별 케이스).
   4. 미태그 게시물 생성·조회·목록(기존 COM-001 시나리오) 회귀 — 모든 태그 필드가 `null`.
 
-## COM-005 대댓글 (이슈 #247) — 다음 이슈 착수 시 작성
+## COM-005 대댓글 (이슈 #247)
+
+## 관련 문서
+
+- Spec: `./spec.md` "COM-005 대댓글" 절, "Decision Gate"(부모 댓글 삭제 시 자식 처리 — 이 plan에서 확정), "완료 조건 COM-005"
+- 선행 구현: `008-community`(`PostComment`·`PostCommentService`·`PostCommentController`·`CommentController`·`PostCommentRepository`, COM-002/003 평면 댓글), COM-004(같은 spec 그룹, `V24` 마이그레이션까지 진행됨 — 다음 버전은 `V25`)
+- 관련 ADR: [ADR-0002](../../adr/0002-architecture.md)(레이어드, controller가 비즈니스 판단을 하지 않는다), [ADR-0004](../../adr/0004-flyway-migrations.md)(신규 컬럼·FK는 Flyway로만)
+- PRD 근거: `docs/prd.md` COM-005(신설 2차 MVP, 상세는 이 spec이 정본)
+
+## 기존 코드 현황 (구현 전 확인한 사실)
+
+- `PostComment`(`src/main/java/com/finplay/api/community/domain/PostComment.java`)는 `post`·`author`·`content`·`createdAt`만 가진다. 계층 구조가 없다 — 완전 평면.
+- `PostCommentService`(`src/main/java/com/finplay/api/community/service/PostCommentService.java`)는 `createComment(postId, authenticatedUserId, content)`, `deleteComment(authenticatedUserId, commentId)`, `getComments(postId)` 세 메서드만 가진다. `deleteComment`는 자식 유무를 고려하지 않는다(현재 자식이 없으므로).
+- `PostCommentRepository.findAllByPostIdOrderByCreatedAtAscIdAsc`는 `post.id`로 전체 댓글을 `createdAt asc, id asc`로 한 번에 조회하며 `author`만 join fetch한다. `post_comments`에는 이미 `idx_post_comments_post_created_at_id (post_id, created_at, id)` 인덱스가 있다.
+- `CommunityPostService.deletePost`는 `postCommentRepository.deleteByPost_Id(postId)`로 게시물의 모든 댓글을 한 번에 삭제한다(부모·자식 구분 없이 `post_id` 조건 하나로 전체 삭제 — 이 그룹 도입 후에도 그대로 유효, 아래 참고).
+- `PostCommentController`(생성·목록)는 `/api/community/posts/{postId}/comments`, `CommentController`(삭제)는 `/api/community/comments/{commentId}`로 분리돼 있다 — 이 구조를 유지한다.
+- 코드베이스 전례(COM-004): 참조 무결성은 앱 계층에서 검증하고 CHECK 제약은 두지 않는다. 도메인 간 참조가 아니라 같은 도메인 내 self-reference이므로 ADR-0002의 "도메인 간 참조는 service 레이어만" 제약은 해당 없음(`PostCommentRepository`가 자기 자신을 참조).
+
+## API 설계
+
+이슈 #247 착수 전 확정: **별도 "대댓글 작성" 엔드포인트를 신설하지 않는다.** 기존 댓글 작성 API(`POST /api/community/posts/{postId}/comments`)에 선택적 `parentCommentId` 필드를 추가해 부모 댓글 작성과 대댓글 작성을 같은 엔드포인트로 처리한다 — COM-004가 게시물 작성 API에 `instrumentId`를 선택 필드로 얹은 것과 같은 패턴이며, 댓글 조회·삭제 URL 구조를 그대로 유지할 수 있다.
+
+| Method | URL | 요청 | 응답 | 설명 |
+|---|---|---|---|---|
+| POST | /api/community/posts/{postId}/comments | `PostCommentCreateRequest`(`parentCommentId` 필드 추가) | `PostCommentResponse`(`parentCommentId`·`replies` 필드 추가) | `parentCommentId`가 없으면 기존과 동일하게 부모 댓글 생성. 있으면 그 댓글에 대한 대댓글 생성 — 응답의 `replies`는 항상 빈 리스트(방금 만든 댓글엔 아직 자식이 없음) |
+| GET | /api/community/posts/{postId}/comments | - | `List<PostCommentResponse>` | 부모 댓글만 최상위 목록으로 오래된 순 반환, 각 항목의 `replies`에 그 부모의 자식 대댓글을 오래된 순으로 포함(중첩 구조). 대댓글 자체는 최상위 목록에 나타나지 않는다 |
+| DELETE | /api/community/comments/{commentId} | - | - | 변경 없음(URL·권한 그대로) — 단, 부모 댓글을 삭제하면 자식 대댓글도 함께 삭제(아래 "부모 삭제 시 자식 처리") |
+
+## 입력 명세
+
+### `PostCommentCreateRequest`
+
+| 필드 | 필수 | 검증 |
+|---|---|---|
+| content | 필수(기존) | 변경 없음(`@NotBlank`, `@Size(max = 1000)`) |
+| parentCommentId | 선택 | `null` 허용(부모 댓글 생성). 값이 있으면 서비스 계층에서 다음을 순서대로 검증: (1) `parentCommentId`로 조회되지 않거나 `post.id`가 경로의 `postId`와 다르면 404 `NOT_FOUND`(존재하지 않는 댓글로 취급 — 다른 게시물의 댓글 id를 넣어 존재를 추측하는 것을 막는다), (2) 조회된 부모 댓글이 이미 자식(즉 `parentComment != null`)이면 400 `VALIDATION_ERROR`("대댓글에는 답글을 남길 수 없습니다.") — 1단계 제한. `@NotNull` 등 형식 검증 애너테이션은 붙이지 않는다(선택 필드, 참조 유효성은 서비스에서 검증 — COM-004의 `instrumentId`와 동일한 패턴) |
+
+## 데이터 모델
+
+### `V25__add_parent_comment_to_post_comments.sql`
+
+```sql
+-- 커뮤니티 댓글에 1단계 대댓글을 위한 self-referencing 부모 댓글 참조(선택)를 추가한다.
+
+ALTER TABLE post_comments
+    ADD COLUMN parent_comment_id BIGINT NULL AFTER post_id,
+    ADD CONSTRAINT fk_post_comments_parent
+        FOREIGN KEY (parent_comment_id) REFERENCES post_comments (id)
+        ON DELETE CASCADE,
+    ADD INDEX idx_post_comments_parent (parent_comment_id);
+```
+
+- `parent_comment_id`는 `NULL` 허용 — 기존(COM-002 시점) 댓글은 마이그레이션으로 값을 채우지 않는다(하위 호환, spec.md "비즈니스 규칙" 3번과 동일 원칙).
+- `ON DELETE CASCADE`를 self-referencing FK에 둔다 — "부모 댓글 삭제 시 자식 처리"를 DB 제약으로 강제해 앱 계층에서 자식을 먼저 찾아 지우는 별도 코드 없이 부모 행 삭제만으로 자식이 함께 삭제되게 한다. `CommunityPostService.deletePost`가 쓰는 `deleteByPost_Id`(게시물의 모든 댓글을 `post_id` 조건 하나로 한 번에 삭제하는 벌크 DELETE)에서도 이 CASCADE 덕분에 부모·자식 삭제 순서를 신경 쓸 필요가 없다(부모·자식 모두 같은 조건에 매치되어 함께 삭제되며, self-reference CASCADE가 순서 문제를 방지).
+- `idx_post_comments_parent`는 CASCADE 삭제 시 자식 행을 빠르게 찾기 위한 인덱스다. 기존 `idx_post_comments_post_created_at_id`(전체 댓글 조회용)는 그대로 둔다.
+- CHECK 제약(예: depth 강제)은 두지 않는다 — 1단계 제한은 "부모의 부모가 없어야 한다"는 앱 로직으로만 검증 가능한 규칙이라 CHECK로 표현할 수 없다(자기 자신을 조인해야 함). COM-004와 같은 판단으로 앱 계층 검증에 맡긴다.
+
+### 엔티티 변경
+
+**`PostComment`**: `parentComment`(nullable self-referencing `ManyToOne`, `FetchType.LAZY`) 필드 추가.
+
+```java
+@ManyToOne(fetch = FetchType.LAZY)
+@JoinColumn(name = "parent_comment_id")
+private PostComment parentComment;
+```
+
+- `create` 팩토리에 `parentComment` 파라미터를 추가한다(오버로드 없이 시그니처 변경 — COM-004와 동일 판단, 호출부가 `PostCommentService` 한 곳뿐).
+
+```java
+public static PostComment create(
+    CommunityPost post, User author, String content, PostComment parentComment, LocalDateTime createdAt) {
+    return new PostComment(post, author, content, parentComment, createdAt);
+}
+
+public boolean isReply() {
+    return parentComment != null;
+}
+```
+
+- `isReply()`는 서비스 계층의 1단계 제한 검증("부모로 지정하려는 댓글이 이미 자식인가")에 쓰는 의도 노출 메서드다 — `comment.getParentComment() != null` 산재 호출 대신 엔티티에 둔다.
+
+## 패키지·클래스 설계
+
+| 클래스 | 패키지 | 변경 |
+|---|---|---|
+| `PostComment` | `community.domain` | `parentComment` 필드·`isReply()`·`create` 시그니처 변경(위) |
+| `PostCommentCreateRequest` | `community.dto.request` | `parentCommentId`(nullable `Long`) 필드 추가 |
+| `PostCommentResponse` | `community.dto.response` | `parentCommentId`(nullable `Long`)·`replies`(`List<PostCommentResponse>`, 기본 빈 리스트) 필드 추가. 팩토리 두 개로 분리: `from(PostComment comment)`(단건 생성 응답용, `replies=List.of()`, `parentCommentId`는 `comment.getParentComment()`가 있으면 그 id) / `from(PostComment comment, List<PostCommentResponse> replies)`(목록 조회에서 부모 댓글에 자식 목록을 실어 반환할 때 사용) |
+| `PostCommentRepository` | `community.repository` | 기존 `findAllByPostIdOrderByCreatedAtAscIdAsc`는 변경 없음(부모·자식 전체를 한 번에 `createdAt asc, id asc`로 이미 가져온다 — 이 순서 그대로 부모/자식 그룹핑에 쓴다). 신규 메서드 없음 |
+| `PostCommentService` | `community.service` | `createComment`에 `parentCommentId`(nullable) 파라미터 추가 — 값이 있으면 부모 댓글 조회·검증(아래) 후 `PostComment.create`에 전달. `getComments`를 재구성: 전체 댓글을 기존 쿼리로 한 번에 가져온 뒤 `parentComment == null`인 것만 최상위로 추리고, 나머지는 `parentComment.getId()` 기준으로 그룹핑해 각 최상위 댓글에 자식 리스트를 붙여 반환(둘 다 이미 `createdAt asc, id asc` 순으로 조회됐으므로 그룹핑 후에도 순서가 보존된다 — 추가 정렬 불필요). `deleteComment`는 변경 없음(DB `ON DELETE CASCADE`가 자식 삭제를 대신하므로 서비스 로직에 자식 처리 코드를 추가하지 않는다) |
+| `PostCommentController`/`CommentController` | `community.controller` | `PostCommentController.createComment`가 `request.parentCommentId()`를 서비스에 전달하도록 수정. `CommentController`는 변경 없음 |
+
+### `PostCommentService.createComment` 대댓글 검증 (신규 로직)
+
+```java
+PostComment parentComment = null;
+if (parentCommentId != null) {
+    parentComment = postCommentRepository.findById(parentCommentId)
+        .filter(candidate -> candidate.getPost().getId().equals(postId))
+        .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+    if (parentComment.isReply()) {
+        throw new BusinessException(
+            ErrorCode.VALIDATION_ERROR, "대댓글에는 답글을 남길 수 없습니다.");
+    }
+}
+PostComment comment = PostComment.create(post, author, content, parentComment, now);
+```
+
+## 테스트 계획
+
+- 단위: `PostCommentServiceTest`(Mockito) — 부모 댓글 생성(`parentCommentId=null`, 하위 호환), 대댓글 생성(정상 부모에 첫 답글), 존재하지 않는/다른 게시물 소속 `parentCommentId`로 404 전파, 이미 자식인 댓글을 부모로 지정 시 400 `VALIDATION_ERROR` 전파, `getComments`가 부모·자식을 올바르게 그룹핑해 중첩 응답을 만드는지(부모 여러 개·자식 여러 개 섞인 케이스). `PostComment` 엔티티 단위 테스트로 `isReply()` 동작 확인.
+- 슬라이스: `PostCommentRepositoryTest`(`@DataJpaTest`, Testcontainers) — 마이그레이션 적용 후 `parent_comment_id` FK·`ON DELETE CASCADE`·`idx_post_comments_parent` 확인(부모 댓글 삭제 시 자식이 DB에서 함께 사라지는지 리포지토리 레벨로 검증), 기존 `findAllByPostIdOrderByCreatedAtAscIdAsc`가 부모·자식 섞인 순서를 여전히 `createdAt asc, id asc`로 반환하는지. `PostCommentControllerTest`(`@WebMvcTest`) — 요청 JSON `parentCommentId` 포함/생략 시 서비스 호출 인자, 응답 JSON `parentCommentId`·`replies` 필드 계약, 400/404 오류 매핑.
+- 통합: `@SpringBootTest` + Testcontainers(ADR-0003) — spec.md "완료 조건 COM-005" 3개 시나리오를 그대로 구현:
+  1. 부모 댓글 작성 → 대댓글 작성 → `GET /api/community/posts/{postId}/comments` 조회 시 부모 밑에 자식이 오래된 순으로 포함(`replies` 배열 검증).
+  2. 대댓글(자식)에 다시 `parentCommentId`로 답글 시도 시 400 `VALIDATION_ERROR`.
+  3. 본인 대댓글만 `DELETE /api/community/comments/{commentId}`로 삭제 가능, 타인 대댓글 삭제 시도 403 `FORBIDDEN`.
+  4. (완료 조건 외 회귀) 부모 댓글 삭제 시 그 자식 대댓글도 함께 삭제되는지(`ON DELETE CASCADE`) 확인 — spec.md 완료 조건에 명시적 항목은 없지만 Decision Gate에서 확정한 정책이므로 통합 테스트로 검증한다.
 
 ## COM-006 사진 첨부 (이슈 #248) — 다음 이슈 착수 시 작성

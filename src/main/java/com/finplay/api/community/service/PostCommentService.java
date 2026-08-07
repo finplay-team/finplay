@@ -12,7 +12,10 @@ import com.finplay.api.community.repository.CommunityPostRepository;
 import com.finplay.api.community.repository.PostCommentRepository;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,12 +30,23 @@ public class PostCommentService {
 	private final Clock clock;
 
 	@Transactional
-	public PostCommentResponse createComment(Long postId, Long authenticatedUserId, String content) {
+	public PostCommentResponse createComment(
+		Long postId, Long authenticatedUserId, String content, Long parentCommentId) {
 		CommunityPost post = communityPostRepository.findById(postId)
 			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
 		User author = userQueryService.getUser(authenticatedUserId);
+		PostComment parentComment = null;
+		if (parentCommentId != null) {
+			parentComment = postCommentRepository.findById(parentCommentId)
+				.filter(candidate -> candidate.getPost().getId().equals(postId))
+				.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+			if (parentComment.isReply()) {
+				throw new BusinessException(
+					ErrorCode.VALIDATION_ERROR, "대댓글에는 답글을 남길 수 없습니다.");
+			}
+		}
 		LocalDateTime now = LocalDateTime.now(clock);
-		PostComment comment = PostComment.create(post, author, content, now);
+		PostComment comment = PostComment.create(post, author, content, parentComment, now);
 		return PostCommentResponse.from(postCommentRepository.save(comment));
 	}
 
@@ -51,9 +65,26 @@ public class PostCommentService {
 		if (!communityPostRepository.existsById(postId)) {
 			throw new BusinessException(ErrorCode.NOT_FOUND);
 		}
-		return postCommentRepository.findAllByPostIdOrderByCreatedAtAscIdAsc(postId)
-			.stream()
-			.map(PostCommentResponse::from)
-			.toList();
+		List<PostComment> allComments = postCommentRepository.findAllByPostIdOrderByCreatedAtAscIdAsc(postId);
+		Map<Long, List<PostComment>> repliesByParentId = new HashMap<>();
+		List<PostComment> topLevelComments = new ArrayList<>();
+		for (PostComment comment : allComments) {
+			if (comment.isReply()) {
+				repliesByParentId
+					.computeIfAbsent(comment.getParentComment().getId(), key -> new ArrayList<>())
+					.add(comment);
+			} else {
+				topLevelComments.add(comment);
+			}
+		}
+		List<PostCommentResponse> result = new ArrayList<>();
+		for (PostComment parent : topLevelComments) {
+			List<PostCommentResponse> replies = repliesByParentId.getOrDefault(parent.getId(), List.of())
+				.stream()
+				.map(PostCommentResponse::from)
+				.toList();
+			result.add(PostCommentResponse.from(parent, replies));
+		}
+		return result;
 	}
 }

@@ -3,18 +3,31 @@ package com.finplay.api.community.dto.response;
 
 import com.finplay.api.community.domain.PostComment;
 import java.time.LocalDateTime;
+import java.util.List;
 
 public record PostCommentResponse(
 	Long commentId,
 	String authorNickname,
 	String content,
-	LocalDateTime createdAt) {
+	LocalDateTime createdAt,
+	Long parentCommentId,
+	List<PostCommentResponse> replies) {
+
+	public PostCommentResponse {
+		replies = List.copyOf(replies);
+	}
 
 	public static PostCommentResponse from(PostComment comment) {
+		return from(comment, List.of());
+	}
+
+	public static PostCommentResponse from(PostComment comment, List<PostCommentResponse> replies) {
 		return new PostCommentResponse(
 			comment.getId(),
 			comment.getAuthor().getNickname(),
 			comment.getContent(),
-			comment.getCreatedAt());
+			comment.getCreatedAt(),
+			comment.getParentComment() != null ? comment.getParentComment().getId() : null,
+			replies);
 	}
 }

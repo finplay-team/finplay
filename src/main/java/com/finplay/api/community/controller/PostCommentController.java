@@ -40,7 +40,8 @@ public class PostCommentController {
 		AuthenticatedUser principal,
 		@Valid @RequestBody
 		PostCommentCreateRequest request) {
-		PostCommentResponse response = postCommentService.createComment(postId, principal.userId(), request.content());
+		PostCommentResponse response = postCommentService.createComment(
+			postId, principal.userId(), request.content(), request.parentCommentId());
 		return ResponseEntity.status(HttpStatus.CREATED).body(response);
 	}
 }

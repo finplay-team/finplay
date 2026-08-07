@@ -1,4 +1,4 @@
-// 커뮤니티 게시글에 작성된 평면 댓글의 작성자, 본문, 생성 시각을 표현하는 엔티티
+// 커뮤니티 게시글에 작성된 댓글(1단계 대댓글 포함)의 작성자, 본문, 생성 시각을 표현하는 엔티티
 package com.finplay.api.community.domain;
 
 import com.finplay.api.auth.domain.User;
@@ -40,15 +40,33 @@ public class PostComment {
 	@Column(name = "created_at", nullable = false)
 	private LocalDateTime createdAt;
 
-	private PostComment(CommunityPost post, User author, String content, LocalDateTime createdAt) {
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "parent_comment_id")
+	private PostComment parentComment;
+
+	private PostComment(
+		CommunityPost post,
+		User author,
+		String content,
+		PostComment parentComment,
+		LocalDateTime createdAt) {
 		this.post = post;
 		this.author = author;
 		this.content = content;
+		this.parentComment = parentComment;
 		this.createdAt = createdAt;
 	}
 
 	public static PostComment create(
-		CommunityPost post, User author, String content, LocalDateTime createdAt) {
-		return new PostComment(post, author, content, createdAt);
+		CommunityPost post,
+		User author,
+		String content,
+		PostComment parentComment,
+		LocalDateTime createdAt) {
+		return new PostComment(post, author, content, parentComment, createdAt);
+	}
+
+	public boolean isReply() {
+		return parentComment != null;
 	}
 }
