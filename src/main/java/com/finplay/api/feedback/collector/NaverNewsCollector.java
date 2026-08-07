@@ -231,7 +231,10 @@ public class NaverNewsCollector implements NewsCollector {
 	}
 
 	// 태그를 먼저 걷고 그다음 엔티티를 푼다. 순서를 바꾸면 &lt;b&gt;가 태그로 바뀐 뒤 지워진다.
-	private static String cleanTitle(String rawTitle) {
+	// 패키지 전용이다. 이슈 #179의 측정(CoinNewsFilterMeasurementTest)이 이 손질을 그대로 거쳐야 운영과 같은
+	// 문자열을 필터에 넣는다 — 측정 쪽에서 다시 구현하면 두 벌이 되어 조용히 갈라지고, 그러면 운영과 다른
+	// 규칙을 재게 된다. MarketSessionTimes를 넓힌 것과 같은 판단이다.
+	static String cleanTitle(String rawTitle) {
 		if (rawTitle == null) {
 			return "";
 		}

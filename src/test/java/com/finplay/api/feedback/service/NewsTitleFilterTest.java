@@ -1,4 +1,4 @@
-// 제목에 같은 시장의 다른 종목명이 든 기사를 거르는 규칙이 spec 012 FEED-001대로 동작하는지 검증한다.
+// 제목으로 그 종목의 기사인지 가리는 규칙이 spec 012 FEED-001대로 동작하는지 검증한다 (시장마다 규칙이 다르다).
 package com.finplay.api.feedback.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -13,8 +13,13 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
-// 기대값의 정본은 spec.md FEED-001이다 — "이더리움·비트코인 질의는 이더리움클래식·비트코인캐시 기사를 함께
-// 끌어온다. 제목에 같은 시장의 다른 instruments.name이 포함된 기사는 저장 시 제외한다."
+// 기대값의 정본은 spec.md FEED-001이고 시장마다 규칙이 다르다 (2026-08-07 개정, 이슈 #179).
+//
+//   코인  자기 이름이 독립적으로 등장하면 통과   — 다른 종목명이 함께 있어도 무관하다
+//   주식  다른 종목명이 독립적으로 등장하면 제외 — 자기 이름이 있는지는 보지 않는다 (개정 전 규칙 유지)
+//
+// 주식을 그대로 둔 것은 실측하지 않았기 때문이다(C-005). 아래 주식 테스트 셋이 개정 전과 같은 기대값으로
+// 남아 있는 것이 그 증거다 — 코인만 갈렸다는 것을 이 파일 안에서 대조할 수 있다.
 //
 // 종목명은 V7 시드(§C-7의 주식 16·코인 12)를 그대로 쓴다. 목록에는 대상 자신의 이름도 들어 있다 — 호출부가
 // 목록에서 대상을 빼는 손질을 하지 않아도 결과가 같아야 하기 때문이다.
@@ -47,23 +52,26 @@ class NewsTitleFilterTest {
 		assertThat(titleFilter.isRelevant(self, CRYPTO_NAMES, title)).isEqualTo(expected);
 	}
 
-	// 자기 이름이 앞에 한 번 나왔다고 통과시키면 안 된다. 뒤쪽 언급은 자기 이름 등장 구간에 덮이지 않는
-	// 독립 언급이라 다른 종목 기사다.
+	// 2026-08-07 개정(이슈 #179)으로 결과가 뒤집힌 자리다. 개정 전에는 제외했다.
+	//
+	// 암호화폐 기사는 여러 코인을 한 문장에 나열하는 것이 기본형이라("비트코인 63,340달러, 이더리움 …"),
+	// 다른 이름이 있다고 제외하면 시세 브리핑이 통째로 사라진다. 자기 이름이 제목에 온전히 보이면 그 종목의
+	// 기사가 맞다.
 	@Test
-	@DisplayName("자기 이름이 먼저 나와도 뒤에 나온 다른 종목명 때문에 제외된다")
-	void excludesWhenAnotherNameAppearsAfterOwnName() {
+	@DisplayName("[개정] 다른 종목명이 함께 있어도 자기 이름이 독립적으로 보이면 남는다")
+	void keepsCoinArticleThatAlsoMentionsAnotherCoinName() {
 		String title = "비트코인 강세, 비트코인캐시도 동반 급등";
 
-		assertThat(titleFilter.isRelevant(crypto("비트코인"), CRYPTO_NAMES, title)).isFalse();
+		assertThat(titleFilter.isRelevant(crypto("비트코인"), CRYPTO_NAMES, title)).isTrue();
 	}
 
-	// 반대 방향도 같다 — 긴 이름 종목이라도 짧은 형제가 자기 이름 밖에서 독립적으로 언급되면 제외다.
+	// 반대 방향도 같다 — 긴 이름 종목도 자기 이름이 보이면 짧은 형제가 함께 언급돼도 남는다.
 	@Test
-	@DisplayName("긴 이름 종목도 짧은 형제가 독립적으로 언급되면 제외된다")
-	void excludesLongerNameInstrumentWhenShorterSiblingIsMentionedIndependently() {
+	@DisplayName("[개정] 긴 이름 종목도 짧은 형제가 함께 언급된 제목에서 남는다")
+	void keepsLongerNameCoinWhenShorterSiblingIsAlsoMentioned() {
 		String title = "비트코인캐시 급등, 비트코인도 사상 최고가";
 
-		assertThat(titleFilter.isRelevant(crypto("비트코인캐시"), CRYPTO_NAMES, title)).isFalse();
+		assertThat(titleFilter.isRelevant(crypto("비트코인캐시"), CRYPTO_NAMES, title)).isTrue();
 	}
 
 	@Test
@@ -82,13 +90,28 @@ class NewsTitleFilterTest {
 		assertThat(titleFilter.isRelevant(crypto("이더리움"), CRYPTO_NAMES, title)).isTrue();
 	}
 
-	// 유일한 제외 사유는 "같은 시장의 다른 종목명"이다. 수집 단계에서 제목으로 관련성을 다시 판정하지 않는다.
+	// 2026-08-07 개정(이슈 #179)으로 결과가 뒤집힌 자리다. 개정 전에는 남겼다 — 그것이 오탐의 통로였다.
+	//
+	// 개정 전 규칙은 자기 이름을 아예 보지 않아, 통과한 680건 중 535건(79%)의 제목에 그 코인 이름이 없었다.
 	@Test
-	@DisplayName("다른 종목명이 없으면 자기 이름이 제목에 없어도 남는다")
-	void keepsArticleThatMentionsNoInstrumentNameAtAll() {
+	@DisplayName("[개정] 자기 이름이 제목에 없으면 다른 종목명이 없어도 제외된다")
+	void excludesCoinArticleThatMentionsNoInstrumentNameAtAll() {
 		String title = "가상자산 시장 전반 강세 지속";
 
-		assertThat(titleFilter.isRelevant(crypto("이더리움"), CRYPTO_NAMES, title)).isTrue();
+		assertThat(titleFilter.isRelevant(crypto("이더리움"), CRYPTO_NAMES, title)).isFalse();
+	}
+
+	// 실측(2026-08-07)에서 실제로 통과하던 제목들이다. 지어낸 예로만 단정하면 "우리가 상상한 오탐"만 막힌다.
+	// 셋 다 질의어에 걸려 딸려 온 무관 기사이고, 개정 전에는 카드 근거와 LLM 입력에 그대로 들어갔다.
+	@ParameterizedTest(name = "[{0}] \"{1}\" → 제외")
+	@CsvSource({
+		"체인링크, 두바이듀티프리 암호화폐 결제 디르함 정산이 핵심",
+		"체인링크, 써클 아크 9월16일 출범…블랙록·비자 등 검증인 합류",
+		"비트코인캐시, 260레인 CXL 스위치 마벨 AI 메모리 병목 겨냥"
+	})
+	@DisplayName("[개정] 실측에서 통과하던 무관 기사가 제외된다")
+	void excludesRealWorldIrrelevantTitlesObservedInMeasurement(String selfName, String title) {
+		assertThat(titleFilter.isRelevant(crypto(selfName), CRYPTO_NAMES, title)).isFalse();
 	}
 
 	// 호출부가 목록에서 대상을 빼는 손질을 하지 않아도 결과가 같아야 한다.
@@ -107,9 +130,12 @@ class NewsTitleFilterTest {
 			.isEqualTo(titleFilter.isRelevant(self, CRYPTO_NAMES, title));
 	}
 
+	// 목록이 비면 접두 관계를 알 방법이 없어 보호가 사라진다 — "비트코인캐시" 안의 "비트코인"이 독립 등장으로
+	// 보인다. 개정 전후로 결과는 같지만 이유가 바뀌었다(전: 제외할 다른 이름이 없어서 / 후: 자기 이름이 보여서).
+	// 호출부가 항상 같은 시장 목록을 넘기므로 운영에서는 이 경로가 없다.
 	@Test
-	@DisplayName("같은 시장 종목명 목록이 비어 있으면 제외하지 않는다")
-	void keepsArticleWhenSameMarketNamesIsEmpty() {
+	@DisplayName("같은 시장 종목명 목록이 비면 접두 보호가 사라진다 — 호출부가 목록을 넘기는 것이 전제다")
+	void losesPrefixProtectionWhenSameMarketNamesIsEmpty() {
 		String title = "비트코인캐시 급등에 거래량 3배";
 
 		assertThat(titleFilter.isRelevant(crypto("비트코인"), List.of(), title)).isTrue();
