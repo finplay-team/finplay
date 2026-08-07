@@ -30,7 +30,7 @@
 - [x] 3. **댓글 목록 조회 중첩 응답**
   `PostCommentService.getComments`를 재구성 — 기존 `findAllByPostIdOrderByCreatedAtAscIdAsc`로 부모·자식 전체를 한 번에 조회한 뒤, `parentComment == null`인 댓글만 최상위로 추리고 나머지는 `parentComment.getId()` 기준으로 그룹핑해 각 최상위 댓글에 자식 리스트(오래된 순 유지)를 붙여 `PostCommentResponse.from(comment, replies)`로 변환. 서비스 단위 테스트(부모 여러 개·자식 여러 개 섞인 케이스에서 그룹핑·순서 검증, 자식 없는 부모는 `replies` 빈 리스트) + `@WebMvcTest`(응답 JSON 중첩 구조 계약).
 
-- [ ] 4. **통합 테스트**
+- [x] 4. **통합 테스트**
   Testcontainers 기반 `@SpringBootTest`로 spec.md "완료 조건 COM-005" 3개 시나리오 구현: (a) 부모 댓글 작성 → 대댓글 작성 → 게시물 상세 댓글 목록 조회 시 부모 밑에 자식이 오래된 순으로 포함, (b) 대댓글에 다시 답글 시도 시 400 `VALIDATION_ERROR`, (c) 본인 대댓글만 삭제 가능·타인 대댓글 삭제 시도 403 `FORBIDDEN`. 추가로 (d) 부모 댓글 삭제 시 자식 대댓글도 함께 삭제되는지(`ON DELETE CASCADE`) 회귀 테스트.
 
 - [ ] 5. **문서 동기화 및 최종 빌드**
