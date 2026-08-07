@@ -43,6 +43,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpHeaders;
@@ -109,6 +110,9 @@ class RankingIntegrationTest {
 
 	@Autowired
 	private PlatformTransactionManager transactionManager;
+
+	@Autowired
+	private ApplicationEventPublisher eventPublisher;
 
 	@BeforeEach
 	void setUp() {
@@ -204,6 +208,36 @@ class RankingIntegrationTest {
 		});
 
 		assertThat(scoreOf("CRYPTO", account.getId())).isEqualTo(200.0);
+	}
+
+	// 시나리오 2-2(이슈 #270): 위 두 시나리오는 rankingEventListener.onRealizedPnlUpdated(...) 또는
+	// rankingService.refreshScore(...)를 테스트 코드에서 직접 호출한다 — 리스너 등록·
+	// @TransactionalEventListener(AFTER_COMMIT) phase·refreshScore가 실제로 프록시를 거쳐 호출되는지
+	// (REQUIRES_NEW가 실제로 걸리는지) 자체가 깨지는 회귀는 그 직접 호출 경로로는 잡아내지 못한다 — 리스너를
+	// 직접 부르면 이 배선 전체가 우회된다. 이 시나리오는 eventPublisher.publishEvent만 호출하고 트랜잭션을
+	// 커밋해, Spring이 실제로 그 콜백을 발동시키는지까지 확인한다.
+	@Test
+	void afterCommitListenerAppliesLatestDbValueWhenEventPublishedThroughRealTransactionalWiring() {
+		User user = createUser("rank-real-wiring");
+		Account account = createAccount(user);
+		addRealizedPnlAndCommit(account.getId(), 100L);
+
+		TransactionTemplate outerTx = new TransactionTemplate(transactionManager);
+		outerTx.executeWithoutResult(status -> {
+			// 바깥 트랜잭션의 영속성 컨텍스트에 realizedPnl=100인 계좌를 먼저 적재해 1차 캐시에 남긴다 — 리스너
+			// 등록이 REQUIRED로 잘못 바뀌는 회귀가 생기면 이 옛 값을 그대로 반영해 아래 단정이 실패한다.
+			Account cached = accountRepository.findById(account.getId()).orElseThrow();
+			assertThat(cached.getRealizedPnl()).isEqualTo(100L);
+
+			updateRealizedPnlInNewTransactionAndCommit(account.getId(), 300L);
+
+			// 리스너 메서드를 직접 부르지 않는다 — 실제 이벤트 발행만 한다. 이 executeWithoutResult 블록이
+			// 끝나 바깥 트랜잭션이 커밋되면, 그 시점에야 Spring이 등록된 @TransactionalEventListener(AFTER_COMMIT)를
+			// 실제로 호출한다.
+			eventPublisher.publishEvent(new RealizedPnlUpdatedEvent(account.getId()));
+		});
+
+		assertThat(scoreOf("CRYPTO", account.getId())).isEqualTo(300.0);
 	}
 
 	// account.addRealizedPnl(...)을 완전히 새로운(REQUIRES_NEW) 트랜잭션에서 커밋한다 — 호출한 쪽의 바깥
