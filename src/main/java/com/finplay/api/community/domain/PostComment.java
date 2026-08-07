@@ -40,15 +40,33 @@ public class PostComment {
 	@Column(name = "created_at", nullable = false)
 	private LocalDateTime createdAt;
 
-	private PostComment(CommunityPost post, User author, String content, LocalDateTime createdAt) {
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "parent_comment_id")
+	private PostComment parentComment;
+
+	private PostComment(
+		CommunityPost post,
+		User author,
+		String content,
+		PostComment parentComment,
+		LocalDateTime createdAt) {
 		this.post = post;
 		this.author = author;
 		this.content = content;
+		this.parentComment = parentComment;
 		this.createdAt = createdAt;
 	}
 
 	public static PostComment create(
-		CommunityPost post, User author, String content, LocalDateTime createdAt) {
-		return new PostComment(post, author, content, createdAt);
+		CommunityPost post,
+		User author,
+		String content,
+		PostComment parentComment,
+		LocalDateTime createdAt) {
+		return new PostComment(post, author, content, parentComment, createdAt);
+	}
+
+	public boolean isReply() {
+		return parentComment != null;
 	}
 }

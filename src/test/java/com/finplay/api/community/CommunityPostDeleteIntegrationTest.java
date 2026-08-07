@@ -66,7 +66,7 @@ class CommunityPostDeleteIntegrationTest {
 		CommunityPost post = postRepository.saveAndFlush(
 			CommunityPost.create(author, "title", "content", null, LocalDateTime.now()));
 		PostComment comment = commentRepository.saveAndFlush(
-			PostComment.create(post, commenter, "comment", LocalDateTime.now()));
+			PostComment.create(post, commenter, "comment", null, LocalDateTime.now()));
 		Long postId = post.getId();
 		Long commentId = comment.getId();
 		String accessToken = jwtTokenProvider.issue(author.getId(), author.getRole()).accessToken();
@@ -87,7 +87,7 @@ class CommunityPostDeleteIntegrationTest {
 		CommunityPost post = postRepository.saveAndFlush(
 			CommunityPost.create(author, "title", "content", null, LocalDateTime.now()));
 		PostComment comment = commentRepository.saveAndFlush(
-			PostComment.create(post, commenter, "comment", LocalDateTime.now()));
+			PostComment.create(post, commenter, "comment", null, LocalDateTime.now()));
 		Long postId = post.getId();
 		Long commentId = comment.getId();
 		String strangerToken = jwtTokenProvider.issue(stranger.getId(), stranger.getRole()).accessToken();

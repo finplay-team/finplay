@@ -32,7 +32,7 @@ public class PostCommentService {
 			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
 		User author = userQueryService.getUser(authenticatedUserId);
 		LocalDateTime now = LocalDateTime.now(clock);
-		PostComment comment = PostComment.create(post, author, content, now);
+		PostComment comment = PostComment.create(post, author, content, null, now);
 		return PostCommentResponse.from(postCommentRepository.save(comment));
 	}
 

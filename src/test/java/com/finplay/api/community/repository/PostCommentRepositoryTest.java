@@ -13,6 +13,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.hibernate.SessionFactory;
 import org.hibernate.stat.Statistics;
@@ -61,7 +62,7 @@ class PostCommentRepositoryTest {
 		User author = userRepository.saveAndFlush(User.create("comment@finplay.com", "hash", "commenter", NOW));
 		CommunityPost post = postRepository.saveAndFlush(CommunityPost.create(author, "title", "content", null, NOW));
 
-		PostComment saved = repository.saveAndFlush(PostComment.create(post, author, "c".repeat(1000), NOW));
+		PostComment saved = repository.saveAndFlush(PostComment.create(post, author, "c".repeat(1000), null, NOW));
 		PostComment found = repository.findById(saved.getId()).orElseThrow();
 
 		assertThat(found.getPost().getId()).isEqualTo(post.getId());
@@ -112,10 +113,11 @@ class PostCommentRepositoryTest {
 		CommunityPost other = postRepository
 			.saveAndFlush(CommunityPost.create(firstAuthor, "other", "post", null, NOW));
 		PostComment oldest = repository.saveAndFlush(
-			PostComment.create(target, firstAuthor, "oldest", NOW.minusMinutes(1)));
-		PostComment firstTie = repository.saveAndFlush(PostComment.create(target, firstAuthor, "first tie", NOW));
-		PostComment secondTie = repository.saveAndFlush(PostComment.create(target, secondAuthor, "second tie", NOW));
-		repository.saveAndFlush(PostComment.create(other, secondAuthor, "other post", NOW.minusMinutes(2)));
+			PostComment.create(target, firstAuthor, "oldest", null, NOW.minusMinutes(1)));
+		PostComment firstTie = repository.saveAndFlush(PostComment.create(target, firstAuthor, "first tie", null, NOW));
+		PostComment secondTie = repository
+			.saveAndFlush(PostComment.create(target, secondAuthor, "second tie", null, NOW));
+		repository.saveAndFlush(PostComment.create(other, secondAuthor, "other post", null, NOW.minusMinutes(2)));
 		entityManager.clear();
 
 		List<PostComment> comments = repository.findAllByPostIdOrderByCreatedAtAscIdAsc(target.getId());
@@ -134,8 +136,8 @@ class PostCommentRepositoryTest {
 		User secondAuthor = createUser("fetch-second");
 		CommunityPost post = postRepository
 			.saveAndFlush(CommunityPost.create(firstAuthor, "target", "post", null, NOW));
-		repository.saveAndFlush(PostComment.create(post, firstAuthor, "first", NOW));
-		repository.saveAndFlush(PostComment.create(post, secondAuthor, "second", NOW.plusMinutes(1)));
+		repository.saveAndFlush(PostComment.create(post, firstAuthor, "first", null, NOW));
+		repository.saveAndFlush(PostComment.create(post, secondAuthor, "second", null, NOW.plusMinutes(1)));
 		entityManager.clear();
 		Statistics statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
 		statistics.setStatisticsEnabled(true);
@@ -147,6 +149,69 @@ class PostCommentRepositoryTest {
 			.containsExactly(firstAuthor.getNickname(), secondAuthor.getNickname());
 
 		assertThat(statistics.getPrepareStatementCount()).isEqualTo(1);
+	}
+
+	@Test
+	void migrationCreatesParentCommentIdColumnAsNullable() {
+		Map<String, Object> column = jdbcTemplate.queryForMap(
+			"select is_nullable from information_schema.columns "
+				+ "where table_schema = database() and table_name = 'post_comments' "
+				+ "and column_name = 'parent_comment_id'");
+
+		assertThat(column.get("is_nullable")).isEqualTo("YES");
+	}
+
+	@Test
+	void migrationCreatesIndexOnParentCommentId() {
+		List<Map<String, Object>> indexColumns = jdbcTemplate.queryForList(
+			"select column_name, seq_in_index from information_schema.statistics "
+				+ "where table_schema = database() and table_name = 'post_comments' "
+				+ "and index_name = 'idx_post_comments_parent' "
+				+ "order by seq_in_index");
+
+		assertThat(indexColumns).hasSize(1);
+		assertThat(indexColumns.get(0).get("column_name")).isEqualTo("parent_comment_id");
+	}
+
+	@Test
+	void databaseRejectsUnknownParentCommentForeignKey() {
+		User author = userRepository.saveAndFlush(User.create("parent-fk@finplay.com", "hash", "parent-fk", NOW));
+		CommunityPost post = postRepository.saveAndFlush(CommunityPost.create(author, "title", "content", null, NOW));
+
+		assertThatThrownBy(() -> jdbcTemplate.update(
+			"insert into post_comments(post_id,author_id,content,parent_comment_id,created_at) values (?,?,?,?,?)",
+			post.getId(), author.getId(), "content", Long.MAX_VALUE, NOW))
+			.isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	@Test
+	void savePersistsParentCommentAndFindByIdReturnsReplyMarkedAsReply() {
+		User author = userRepository.saveAndFlush(User.create("reply@finplay.com", "hash", "replier", NOW));
+		CommunityPost post = postRepository.saveAndFlush(CommunityPost.create(author, "title", "content", null, NOW));
+		PostComment parent = repository.saveAndFlush(PostComment.create(post, author, "parent", null, NOW));
+
+		PostComment reply = repository.saveAndFlush(
+			PostComment.create(post, author, "reply", parent, NOW.plusMinutes(1)));
+		entityManager.clear();
+
+		PostComment found = repository.findById(reply.getId()).orElseThrow();
+		assertThat(found.getParentComment().getId()).isEqualTo(parent.getId());
+		assertThat(found.isReply()).isTrue();
+	}
+
+	@Test
+	void deletingParentCommentCascadesToChildReplyAtDatabaseLevel() {
+		User author = userRepository.saveAndFlush(User.create("cascade@finplay.com", "hash", "cascader", NOW));
+		CommunityPost post = postRepository.saveAndFlush(CommunityPost.create(author, "title", "content", null, NOW));
+		PostComment parent = repository.saveAndFlush(PostComment.create(post, author, "parent", null, NOW));
+		PostComment reply = repository.saveAndFlush(
+			PostComment.create(post, author, "reply", parent, NOW.plusMinutes(1)));
+		entityManager.clear();
+
+		jdbcTemplate.update("delete from post_comments where id = ?", parent.getId());
+
+		assertThat(repository.findById(parent.getId())).isEmpty();
+		assertThat(repository.findById(reply.getId())).isEmpty();
 	}
 
 	private User createUser(String prefix) {

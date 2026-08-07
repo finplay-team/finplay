@@ -25,3 +25,11 @@
 ## 모니터링 (사람용 요약)
 - PR #256 리뷰 완료: 물어본 두 가지(`getTradableInstrumentEntity` 404/400 분리, PATCH 전체 교체 방식)는 문제없음 확인. 차단 1건(`GET /api/community/posts/{postId}` 단건 조회 계약만 응답 필드 갱신에서 빠짐 — 코드·통합 테스트는 9필드인데 문서는 6필드), 권장 1건(PATCH로 태그를 `null`로 보내 해제하는 동작에 테스트 없음).
 - 반영: `docs/api-contracts.md:277`에 3필드 추가 + 태그 없으면 `null`이라는 문구 + Spec 칸에 `022 COM-004`·`Issue #246` 추가. `CommunityPostServiceTest`에 `updatePostDetachesInstrumentWhenInstrumentIdIsNullOnAlreadyTaggedPost` 신규 추가(이미 태그된 게시물 준비 → `instrumentId=null`로 update → `post.getInstrument()`가 `null`이고 `instrumentService` 미호출 확인). 커뮤니티 테스트 전체 통과, `./gradlew build` 전체 재검증.
+
+## AI 로그 (에이전트 참조용, COM-005 항목1)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| - | implementer | `.\gradlew.bat compileJava`, `compileTestJava` | plan.md "COM-005 대댓글" 데이터 모델·패키지·클래스 설계, ADR-0004 |
+
+## 모니터링 (사람용 요약)
+- COM-005 항목1: `V25` 마이그레이션(`post_comments.parent_comment_id` self-referencing FK, `ON DELETE CASCADE`, `idx_post_comments_parent`), `PostComment.parentComment`·`isReply()`·`create` 시그니처 변경 추가. 기존 `PostComment.create` 호출부(서비스 1곳 + 테스트 5개 파일)를 `null` 인자로 기계적 수정, compileJava/compileTestJava 통과(테스트 작성은 tester 담당).

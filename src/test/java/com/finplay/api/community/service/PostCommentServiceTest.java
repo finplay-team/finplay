@@ -95,7 +95,7 @@ class PostCommentServiceTest {
 	void deleteCommentDeletesWhenAuthenticatedUserIsAuthor() {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
 		CommunityPost post = CommunityPost.create(author, "title", "post", null, LocalDateTime.now(CLOCK));
-		PostComment comment = PostComment.create(post, author, "comment", LocalDateTime.now(CLOCK));
+		PostComment comment = PostComment.create(post, author, "comment", null, LocalDateTime.now(CLOCK));
 		ReflectionTestUtils.setField(author, "id", 42L);
 		ReflectionTestUtils.setField(comment, "id", 9L);
 		when(commentRepository.findById(9L)).thenReturn(Optional.of(comment));
@@ -109,7 +109,7 @@ class PostCommentServiceTest {
 	void deleteCommentThrowsForbiddenAndDoesNotDeleteWhenAuthenticatedUserIsNotAuthor() {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
 		CommunityPost post = CommunityPost.create(author, "title", "post", null, LocalDateTime.now(CLOCK));
-		PostComment comment = PostComment.create(post, author, "comment", LocalDateTime.now(CLOCK));
+		PostComment comment = PostComment.create(post, author, "comment", null, LocalDateTime.now(CLOCK));
 		ReflectionTestUtils.setField(author, "id", 42L);
 		ReflectionTestUtils.setField(comment, "id", 9L);
 		when(commentRepository.findById(9L)).thenReturn(Optional.of(comment));
@@ -140,8 +140,8 @@ class PostCommentServiceTest {
 		User secondAuthor = User.create("second@finplay.com", "hash", "second", LocalDateTime.now(CLOCK));
 		CommunityPost post = CommunityPost.create(firstAuthor, "title", "post", null, LocalDateTime.now(CLOCK));
 		PostComment first = PostComment.create(
-			post, firstAuthor, "first comment", LocalDateTime.now(CLOCK).minusMinutes(1));
-		PostComment second = PostComment.create(post, secondAuthor, "second comment", LocalDateTime.now(CLOCK));
+			post, firstAuthor, "first comment", null, LocalDateTime.now(CLOCK).minusMinutes(1));
+		PostComment second = PostComment.create(post, secondAuthor, "second comment", null, LocalDateTime.now(CLOCK));
 		ReflectionTestUtils.setField(first, "id", 11L);
 		ReflectionTestUtils.setField(second, "id", 12L);
 		when(postRepository.existsById(7L)).thenReturn(true);

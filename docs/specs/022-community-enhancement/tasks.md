@@ -21,7 +21,7 @@
 
 ## COM-005 대댓글 (이슈 #247)
 
-- [ ] 1. **엔티티·마이그레이션**
+- [x] 1. **엔티티·마이그레이션**
   `db/migration/V25__add_parent_comment_to_post_comments.sql`(plan.md SQL 그대로: `post_comments.parent_comment_id` nullable self-referencing FK + `ON DELETE CASCADE` + `idx_post_comments_parent`). `PostComment`에 `parentComment`(nullable self-referencing `ManyToOne`) 필드와 `isReply()` 추가, `create` 시그니처에 `PostComment parentComment` 파라미터 추가. 단위 테스트(`PostComment` 생성 시 `parentComment` 반영, `isReply()` 참/거짓) + `@DataJpaTest`(마이그레이션 적용 후 FK·인덱스 확인, 부모 댓글 삭제 시 자식이 CASCADE로 함께 삭제되는지 리포지토리 레벨 검증, Testcontainers).
 
 - [ ] 2. **댓글 작성 API에 대댓글 반영**

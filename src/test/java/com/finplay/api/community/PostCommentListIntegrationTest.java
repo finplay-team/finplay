@@ -66,12 +66,13 @@ class PostCommentListIntegrationTest {
 			.saveAndFlush(CommunityPost.create(requester, "target", "post", null, NOW));
 		CommunityPost other = postRepository.saveAndFlush(CommunityPost.create(requester, "other", "post", null, NOW));
 		PostComment oldest = commentRepository.saveAndFlush(
-			PostComment.create(target, requester, "oldest", NOW.minusMinutes(1)));
+			PostComment.create(target, requester, "oldest", null, NOW.minusMinutes(1)));
 		PostComment firstTie = commentRepository.saveAndFlush(
-			PostComment.create(target, requester, "first tie", NOW));
+			PostComment.create(target, requester, "first tie", null, NOW));
 		PostComment secondTie = commentRepository.saveAndFlush(
-			PostComment.create(target, secondAuthor, "second tie", NOW));
-		commentRepository.saveAndFlush(PostComment.create(other, secondAuthor, "other post", NOW.minusMinutes(2)));
+			PostComment.create(target, secondAuthor, "second tie", null, NOW));
+		commentRepository
+			.saveAndFlush(PostComment.create(other, secondAuthor, "other post", null, NOW.minusMinutes(2)));
 		long countBefore = commentRepository.count();
 		String token = jwtTokenProvider.issue(requester.getId(), requester.getRole()).accessToken();
 
