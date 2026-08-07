@@ -34,6 +34,10 @@ spring:
       # Boot 기본 풀(10)을 그대로 두면 동시 매도 요청 5건만으로 풀이 소진돼 뒤따르는 요청이 connection-timeout
       # (기본 30초)만큼 대기할 수 있다. "요청당 최대 2커넥션" 전제로 기존 동시성 여유(10)를 유지하려면 풀을
       # 20으로 둔다. MySQL 컨테이너(compose.yaml)는 max_connections 기본값(151)을 그대로 쓰므로 여유가 있다.
+      #
+      # 이 계산은 1차 범위의 단일 인스턴스 전제(docs/prd.md)에서만 유효하다. ADR-0014가 예고한 다중 인스턴스
+      # 전환이 실제로 이뤄지면 "인스턴스 수 × 20"이 운영 DB의 max_connections를 넘지 않는지 그때 다시
+      # 검토해야 한다(PR #272 리뷰 권장 사항).
       maximum-pool-size: 20
   mvc:
     async:
