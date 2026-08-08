@@ -85,9 +85,13 @@ class PostSellFeedbackReaderTest {
 	// 파생 사실(2번 항목)이 카드 노출 게이트에 그 체결의 서비스 날짜를 쓰므로 시계가 필요하다. 이 파일이 보는
 	// 완료 조건은 게이트가 아니라 검증 순서·수치·buyAt·sameSessionCompleted라, 매도 서비스 날짜의 장중 시각으로
 	// 고정해 게이트가 판정을 가리지 않게 둔다 — 게이트 자체(⑮)는 통합 테스트가 고정 Clock으로 본다.
+	// 이 파일은 주식 조립만 본다 — 코인 조립의 내용은 CryptoPostSellFeedbackReaderTest가 맡고, 여기서는
+	// "코인 체결이 이쪽으로 넘어간다"는 위임만 확인한다(이슈 #275).
+	private final CryptoPostSellFeedbackReader cryptoPostSellFeedbackReader = mock(
+		CryptoPostSellFeedbackReader.class);
+
 	private final PostSellFeedbackReader postSellFeedbackReader = new PostSellFeedbackReader(
-		// 이 파일은 주식 경로만 본다 — 코인 조립은 CryptoPostSellFeedbackReader 전담 테스트의 몫이다.
-		mock(CryptoPostSellFeedbackReader.class),
+		cryptoPostSellFeedbackReader,
 		tradeService,
 		sellAllocationQueryService,
 		stockReplayService,
@@ -327,18 +331,22 @@ class PostSellFeedbackReaderTest {
 		verifyNoInteractions(sellAllocationQueryService);
 	}
 
-	// 완료 조건 1번 — 코인 매도 체결은 빈 값을 채운 200이 아니라 400이다(FEED-007 각주).
+	// 이슈 #275가 이 자리를 뒤집었다 — 코인 매도 체결은 더 이상 400이 아니라 200이고, 조립은 코인 전담
+	// 컴포넌트가 맡는다(§FEED-012). 검증과 배분 조회는 여기 그대로 남아 두 시장이 같은 순서를 탄다.
 	@Test
-	@DisplayName("코인 매도 체결이면 400 VALIDATION_ERROR이고 빈 값 200을 돌려주지 않는다")
-	void rejectsCryptoSellTradeWithValidationErrorInsteadOfEmptyOkResponse() {
-		givenOwnedSellTrade(cryptoSellTrade());
+	@DisplayName("코인 매도 체결은 400이 아니라 배분을 읽고 코인 조립에 위임한다")
+	void delegatesCryptoSellTradeToTheCryptoReaderInsteadOfRejectingIt() {
+		Trade cryptoTrade = cryptoSellTrade();
+		givenOwnedSellTrade(cryptoTrade);
+		SellAllocationSummaryDto allocation = twoLotSummary(ORIGIN_TRADE_DATE, ORIGIN_TRADE_DATE);
+		givenAllocation(allocation);
 
-		assertThatThrownBy(() -> postSellFeedbackReader.read(USER_ID, SELL_TRADE_ID))
-			.isInstanceOf(BusinessException.class)
-			.satisfies(exception -> assertThat(((BusinessException)exception).getErrorCode())
-				.isEqualTo(ErrorCode.VALIDATION_ERROR));
+		postSellFeedbackReader.read(USER_ID, SELL_TRADE_ID);
 
-		verifyNoInteractions(sellAllocationQueryService);
+		verify(sellAllocationQueryService).getSellAllocationSummary(SELL_TRADE_ID);
+		verify(cryptoPostSellFeedbackReader).read(cryptoTrade, allocation);
+		// 주식 조립 경로로 새지 않는다 — 코인에는 재생세션이 없어 그쪽으로 가면 그 자리에서 터진다.
+		verifyNoInteractions(stockReplayService);
 	}
 
 	@Test

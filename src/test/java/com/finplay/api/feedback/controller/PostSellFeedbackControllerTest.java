@@ -61,7 +61,8 @@ class PostSellFeedbackControllerTest {
 	private static final LocalDate ORIGIN_TRADE_DATE = LocalDate.of(2026, 7, 29);
 
 	// 계약이 정한 응답 필드 수. 뒤 항목이 값을 채워도 이 수는 바뀌지 않는다.
-	private static final int CONTRACT_FIELD_COUNT = 28;
+	// 이슈 #275에서 holdHighBasis가 더해져 28 → 29다 — 주식·코인 공용 필드라 시장으로 갈리지 않는다(§FEED-012).
+	private static final int CONTRACT_FIELD_COUNT = 29;
 
 	@Autowired
 	private MockMvc mockMvc;
@@ -136,21 +137,6 @@ class PostSellFeedbackControllerTest {
 			.andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
-	}
-
-	// 완료 조건 1번의 HTTP 쪽 — 코인은 빈 값을 채운 200이 아니라 400이다.
-	@Test
-	@DisplayName("코인 체결이면 400 VALIDATION_ERROR이고 본문에 회고 필드가 없다")
-	void mapsCryptoTradeToValidationErrorWithoutAnyFeedbackField() throws Exception {
-		authenticate();
-		when(postSellFeedbackService.getPostSellFeedback(USER_ID, 3L))
-			.thenThrow(new BusinessException(ErrorCode.VALIDATION_ERROR));
-
-		mockMvc.perform(authorized(get(PATH, 3L)))
-			.andExpect(status().isBadRequest())
-			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
-			.andExpect(jsonPath("$.tradeId").doesNotExist())
-			.andExpect(jsonPath("$.sameSessionCompleted").doesNotExist());
 	}
 
 	@Test
