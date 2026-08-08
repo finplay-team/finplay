@@ -692,11 +692,11 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 | Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|---|
-| GET | /api/ai/post-sell/{tradeId} | Access Bearer 필수 | 경로 변수 `tradeId`만(쿼리·본문 없음) | 200 `{"tradeId":2,"instrumentId":1,"symbol":"005930","name":"삼성전자","buyAt":"2026-07-29T09:30:00","sellAt":"2026-07-29T14:40:00","buyPrice":70000,"sellPrice":68500,"quantity":10,"fee":102,"realizedPnl":-15207,"returnRate":-0.0217,"holdingMinutes":310,"sameSessionCompleted":true,"holdHighPrice":70800,"holdHighAt":"2026-07-29T11:05:00","holdLowPrice":68100,"holdLowAt":"2026-07-29T14:20:00","sellVsHighRate":-0.0325,"sellVsLowRate":0.0059,"buyToNewsMinutes":105,"priceMoves":[{"id":12,"windowStart":"2026-07-29T11:20:00","windowEnd":"2026-07-29T11:25:00","changeRate":-0.0182,"minutesAfterBuy":115,"minutesBeforeSell":195,"narrative":"...","sources":[...]}],"postSellFlow":{"status":"READY","closePrice":69200,"closeAt":"2026-07-29T15:29:00","sellToCloseRate":0.0102,"postSellHighPrice":69500,"postSellHighAt":"2026-07-29T15:05:00"},"counterfactuals":{"status":"READY","atClose":{"price":69200,"at":"2026-07-29T15:29:00","returnRate":-0.0117},"atHoldHigh":{"price":70800,"at":"2026-07-29T11:05:00","returnRate":0.0111},"atFirstMoveAfterBuy":{"price":69300,"at":"2026-07-29T11:25:00","returnRate":-0.0103}},"peerComparison":{"status":"READY","priceMoveId":12,"holderCount":47,"soldWithin30MinRate":0.38,"medianMinutesToSell":42,"yourMinutesToSell":195},"narrative":"09시 30분 매수는 이날 하락 구간(11시 20분)보다 1시간 55분 앞섰습니다. 하락 이후에도 3시간 넘게 보유하다 14시 40분에 68,500원에 매도했습니다. 보유 중 최고가는 11시 5분의 70,800원으로 하락이 시작되기 15분 전이었고, 매도가는 그보다 3.25% 낮습니다.","narrativeSource":"LLM","narrativeStatus":"READY"}` (`PostSellFeedbackResponse`) | Access 인증 실패는 401 `UNAUTHORIZED`. `tradeId` 미존재는 404 `NOT_FOUND`. 타인 체결은 403 `FORBIDDEN`. 매수 체결(`side=BUY`)과 **코인 체결(`market=CRYPTO`)**은 400 `VALIDATION_ERROR` 공통 오류 형식 | 012 FEED-007 |
+| GET | /api/ai/post-sell/{tradeId} | Access Bearer 필수 | 경로 변수 `tradeId`만(쿼리·본문 없음) | 200 `{"tradeId":2,"instrumentId":1,"symbol":"005930","name":"삼성전자","buyAt":"2026-07-29T09:30:00","sellAt":"2026-07-29T14:40:00","buyPrice":70000,"sellPrice":68500,"quantity":10,"fee":102,"realizedPnl":-15207,"returnRate":-0.0217,"holdingMinutes":310,"sameSessionCompleted":true,"holdHighPrice":70800,"holdHighAt":"2026-07-29T11:05:00","holdLowPrice":68100,"holdLowAt":"2026-07-29T14:20:00","sellVsHighRate":-0.0325,"sellVsLowRate":0.0059,"holdHighBasis":"MINUTE","buyToNewsMinutes":105,"priceMoves":[{"id":12,"windowStart":"2026-07-29T11:20:00","windowEnd":"2026-07-29T11:25:00","changeRate":-0.0182,"minutesAfterBuy":115,"minutesBeforeSell":195,"narrative":"...","sources":[...]}],"postSellFlow":{"status":"READY","closePrice":69200,"closeAt":"2026-07-29T15:29:00","sellToCloseRate":0.0102,"postSellHighPrice":69500,"postSellHighAt":"2026-07-29T15:05:00"},"counterfactuals":{"status":"READY","atClose":{"price":69200,"at":"2026-07-29T15:29:00","returnRate":-0.0117},"atHoldHigh":{"price":70800,"at":"2026-07-29T11:05:00","returnRate":0.0111},"atFirstMoveAfterBuy":{"price":69300,"at":"2026-07-29T11:25:00","returnRate":-0.0103}},"peerComparison":{"status":"READY","priceMoveId":12,"holderCount":47,"soldWithin30MinRate":0.38,"medianMinutesToSell":42,"yourMinutesToSell":195},"narrative":"09시 30분 매수는 이날 하락 구간(11시 20분)보다 1시간 55분 앞섰습니다. 하락 이후에도 3시간 넘게 보유하다 14시 40분에 68,500원에 매도했습니다. 보유 중 최고가는 11시 5분의 70,800원으로 하락이 시작되기 15분 전이었고, 매도가는 그보다 3.25% 낮습니다.","narrativeSource":"LLM","narrativeStatus":"READY"}` (`PostSellFeedbackResponse`) | Access 인증 실패는 401 `UNAUTHORIZED`. `tradeId` 미존재는 404 `NOT_FOUND`. 타인 체결은 403 `FORBIDDEN`. 매수 체결(`side=BUY`)은 400 `VALIDATION_ERROR` 공통 오류 형식. **코인 체결(`market=CRYPTO`)도 200이다** (3차, 이슈 #275 — 아래 코인 소절) | 012 FEED-007·012 |
 
 조회 대상은 요청에서 받지 않고 Access Token의 인증 사용자 본인 소유 매도 체결로만 결정한다.
 
-**2차에서는 주식 전용이다 (2026-08-04, 이슈 #136).** 이 응답의 게이트가 전부 "장 마감(15:30) 이후"와 "원본 거래일"에 묶여 있는데 24시간 거래인 코인에는 둘 다 없다. 코인 체결로 호출하면 400 `VALIDATION_ERROR`이며, 빈 값을 채운 200을 돌려주지 않는다. 코인 매도 회고는 3차로 미룬다.
+**2차에서는 주식 전용이었고 3차에서 코인이 열렸다 (2026-08-09, 이슈 #275).** 2차에 막았던 이유는 이 응답의 게이트가 전부 "장 마감(15:30) 이후"와 "원본 거래일"에 묶여 있는데 24시간 거래인 코인에는 둘 다 없다는 것이었다. 3차에서 **코인의 하루 경계를 `KST 자정`으로 정해** 세 게이트를 전부 거기에 맞췄다 — 결정과 근거는 spec §FEED-012가 정본이고, 이 계약의 코인 소절은 아래에 있다. **아래 본문은 별도 표시가 없으면 주식·코인 공통이다.**
 
 **응답에 `buyAt`·`sellAt`(원본 거래일 기준 체결 시각)이 포함된다.** 화면이 반사실 표의 "실제 (14:40 매도)" 행과 서술의 시각을 그려야 하는데 `holdingMinutes`만으로는 복원할 수 없고, `narrative` 문자열에서 파싱할 수도 없다. **`buyAt`은 배분된 매수 lot 중 가장 이른 체결 시각이다** — 한 매도가 여러 lot에 배분되므로 단일하지 않고, 이 값이 `holdingMinutes`·`buyToNewsMinutes`·`minutesAfterBuy`·반사실의 기준을 전부 결정한다.
 
@@ -704,7 +704,7 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 **투자일기에 의존하지 않는다.** Notion 명세 §6은 이 경로에 "계획 대비 실제 대조(2단계)"를 적어 뒀지만, 그 대조에 쓸 목표가·손절가 등 구조화 필드는 아직 없다. `007-journal`(다른 팀원 범위)은 JOUR-001(`POST /api/trades/{buyTradeId}/journal`, 자유 텍스트 `content` 작성)만 구현됐고, 구조화 필드(`plan`·`planOutcome`에 대응하는 목표가·손절가)는 Decision Gate 미해결로 아직 없다. 그 필드가 생기면 **같은 응답에 추가**하면 되고 아래 필드는 그대로 유지되므로 계약이 깨지지 않는다. 투자일기를 쓰지 않고 매수·매도한 건도 정상 200이다.
 
-**위 예시는 실제 계산이 재현되는 값이다.** 수수료율(주식 0.015% / 코인 0.05%, `## order` 절)과 원 미만 내림을 적용하면 — 이 엔드포인트는 주식 전용이므로 0.015%다 — 매수수수료 `FLOOR(700,000×0.00015)=105`, 매수원가 합 700,105, 매도수수료 `FLOOR(685,000×0.00015)=102`, 실현손익 `685,000−102−700,105=−15,207`이다. 반사실 3종도 같은 식으로 시나리오 가격마다 수수료를 다시 계산한 값이다. **테스트 픽스처를 이 예시로 만들어도 된다** — 값이 안 맞으면 그건 예시가 아니라 구현이 틀린 것이다.
+**위 예시는 실제 계산이 재현되는 값이다.** 수수료율(주식 0.015% / 코인 0.05%, `## order` 절)과 원 미만 내림을 적용하면 — 위 예시는 주식 체결이므로 0.015%다 — 매수수수료 `FLOOR(700,000×0.00015)=105`, 매수원가 합 700,105, 매도수수료 `FLOOR(685,000×0.00015)=102`, 실현손익 `685,000−102−700,105=−15,207`이다. 반사실 3종도 같은 식으로 시나리오 가격마다 수수료를 다시 계산한 값이다. **테스트 픽스처를 이 예시로 만들어도 된다** — 값이 안 맞으면 그건 예시가 아니라 구현이 틀린 것이다.
 
 **수치는 전부 기존 원장에서 가져온다.** `buyPrice`는 `trade_allocations`의 FIFO 배분 가중평균 매수단가, `sellPrice`·`quantity`·`fee`·`realizedPnl`은 `trades` 행 그대로다. `returnRate = realizedPnl ÷ (배분된 매수원가 합 + 배분된 매수수수료 합)`이며 scale 4 `RoundingMode.HALF_UP`이다. **LLM은 이 수치를 계산하지도 수정하지도 않는다** (C-004).
 
@@ -714,6 +714,7 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 |---|---|
 | `holdHighPrice`·`holdHighAt`·`holdLowPrice`·`holdLowAt` | 보유 구간의 최고가·최저가와 그 시각 |
 | `sellVsHighRate`·`sellVsLowRate` | 매도가가 그 극값에서 얼마나 떨어져 있었는지 |
+| `holdHighBasis` | 위 극값을 **어느 정밀도로** 잰 값인지. `"MINUTE"`(1분봉, 정확) \| `"DAILY"`(일봉 표본, 근사). **주식은 언제나 `"MINUTE"`**이고 코인만 `"DAILY"`가 나올 수 있다(§FEED-012 결정 4). 극값이 `null`이면 이 필드도 `null` |
 | `buyToNewsMinutes` | 매수 시각과 첫 근거 기사 발행시각의 차(분). **양수면 매수가 기사보다 앞섰다는 뜻**, 음수면 기사가 나온 뒤 매수했다는 뜻. 근거 기사가 없으면 `null` |
 | `priceMoves[].minutesAfterBuy`·`minutesBeforeSell` | 그 변동이 매수 몇 분 뒤였고 매도 몇 분 전이었는지 |
 | `postSellFlow` | 매도 후 같은 거래일 종가까지의 흐름 (아래 참고) |
@@ -732,7 +733,7 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 **`counterfactuals`도 같은 게이트를 쓴다** — 아직 재생되지 않은 가격을 쓰므로 미래 정보다. **`peerComparison`은 시각이 아니라 확정 집계 행의 존재로 판정한다**(§C-5). 장 마감 배치가 게이트 시각보다 늦게 돌기 때문에, 시각으로 두면 그 사이 조회가 게이트만 통과하고 값은 비는 상태가 된다. 그 전에는 각각 `status="NOT_YET"`이다.
 
-결과적으로 **매도 직후와 장 마감 후에 보이는 내용이 다르다** — 직후에는 수치·파생 사실·뉴스 카드만, 마감 후에 반사실과 집단 비교가 더해진다. 스포일러 차단의 부수 효과이자 의도된 재방문 유도이므로, 화면은 `NOT_YET`일 때 "장 마감 후 다시 확인" 안내를 노출한다.
+결과적으로 **매도 직후와 장 마감 후에 보이는 내용이 다르다** — 직후에는 수치·파생 사실·뉴스 카드만, 마감 후에 반사실과 집단 비교가 더해진다. 스포일러 차단의 부수 효과이자 의도된 재방문 유도이므로, 화면은 `NOT_YET`일 때 "장 마감 후 다시 확인" 안내를 노출한다. **코인은 그 안내가 "자정 이후 다시 확인"이다** — 게이트 시각이 다르므로 문구도 시장에 따라 갈라야 한다.
 
 **`sameSessionCompleted`가 응답 형태를 가른다.** 매수와 매도가 같은 원본 거래일 안에서 완결됐으면 `true`이고 `holdHighPrice`·`holdHighAt`·`holdLowPrice`·`holdLowAt`·`sellVsHighRate`·`sellVsLowRate`·`buyToNewsMinutes`·`priceMoves`·`postSellFlow`·`counterfactuals`·`peerComparison`이 채워진다. 여러 재생일에 걸친 매매는 `false`이며 이 필드가 전부 `null`(`priceMoves`는 `[]`)이 된다 — 재생일마다 원본 거래일이 달라 분봉이 불연속이라 계산 자체가 성립하지 않는다. **한 매도가 여러 매수 lot에 배분됐고 그 lot들이 서로 다른 원본 거래일에 걸쳐 있어도 `false`다** — 가장 이른 lot 하나만 보고 판정하지 않는다.
 
@@ -741,6 +742,25 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 **`holdingMinutes`는 그 nullable 목록에 없다 — 역전된 경우에만 `null`이다.** 즉 **역전이면 `sameSessionCompleted=false`이면서 `holdingMinutes`도 `null`이지만, `sameSessionCompleted=false`라고 `holdingMinutes`가 `null`이 되는 것은 아니다** — 원본 거래일이 순방향인 정상 cross-session 매매에서는 그대로 채운다. 음수를 0으로 clamp하거나 서비스 벽시계 경과분으로 대체하지 않는다(같은 응답의 `buyAt`·`sellAt`과 산술이 어긋난다). 규칙은 spec §파생 사실 계산이 정본이다.
 
 **분 단위 값(`holdingMinutes`·`priceMoves[].minutesAfterBuy`·`minutesBeforeSell`·`buyToNewsMinutes`)은 두 끝점을 분으로 내린 뒤 뺀 값이다.** `executed_at`이 `DATETIME(6)`이라 체결 시각에 소수 초가 붙는데 분봉·카드 시각은 정시이므로, 분 축에서 재야 위 예시(`holdingMinutes: 310`, `minutesAfterBuy: 115`, `buyToNewsMinutes: 105`)가 재현된다. **`buyAt`·`sellAt` 자체는 체결 시각이므로 초를 그대로 싣는다.**
+
+#### 코인 체결의 차이 (3차, 이슈 #275)
+
+**응답의 키 집합은 주식과 같다.** `counterfactuals`는 코인에서도 **고정 3키**(`atClose`·`atHoldHigh`·`atFirstMoveAfterBuy`)이고, `PostSellFeedbackStatus`는 4값 공용 열거형 그대로다. **프론트는 목록 조회의 `market` 제한만 풀면 된다.** 아래가 값이 달라지는 자리 전부다.
+
+| 자리 | 코인에서의 규칙 |
+|---|---|
+| `buyAt`·`sellAt` | **체결 시각 그대로다.** 코인 체결에는 재생세션이 없어(`Trade`가 강제) 원본 거래일 축이 존재하지 않는다 |
+| `sameSessionCompleted` | **항상 `true`.** 재생일이 없어 시간축이 언제나 연속이다. 필드를 없애지 않는 것은 프론트가 이 값으로 응답 형태를 가르기 때문이다 |
+| `postSellFlow`·`counterfactuals` 게이트 | **`now() >= (매도 체결 시각의 KST 날짜 + 1일) 00:00`.** 주식의 "그 체결의 서비스 날짜 15:30"에 대응한다. 기준이 "오늘"이 아니라 **그 체결의 날짜**인 것도 같다 |
+| `closePrice`·`closeAt`·`atClose` | 매도 시각이 속한 **KST 일자의 일봉(`interval=1d`) close**이고 `closeAt`·`at`은 그 일자의 `23:59:00`이다. 일봉을 못 받으면 넷 다 `null`이고 `status`는 게이트대로 `READY`다 |
+| `holdHighPrice`·`holdLowPrice`와 두 비율 | 보유 구간이 **200분 이내면 1분봉**(`holdHighBasis="MINUTE"`), **초과면 일봉 표본**(`"DAILY"`)이다. 일봉 표본은 **매수 시각 이후·매도 시각 이전에 확정된 일봉 close**(= 매수일 ~ 매도 전날)만 쓰므로 **실제 최고가 이하일 수 있다.** 해당 일봉이 하나도 없으면(같은 날 안에서 200분 초과 보유) 극값·`atHoldHigh`가 전부 `null` |
+| `postSellHighPrice`·`postSellHighAt` | **일봉 근사를 쓰지 않는다.** 매도~자정에 걸친 일봉은 매도 **전** 시간대를 통째로 포함해 근사가 아니라 틀린 값이 된다. 1분봉이 없으면 `null` |
+| `atFirstMoveAfterBuy` | **일봉 근사를 쓰지 않는다.** 카드 시점이라는 특정 분의 종가라 일 단위 표본으로 대체할 대상이 아니다. 그 시점 1분봉이 없으면 `null` (주식도 같다) |
+| `priceMoves` | 코인 카드는 `reveal_time`이 `NULL`이라 **노출 게이트가 없다.** 보유 구간에 걸친 카드가 그대로 들어온다 |
+| `peerComparison` | 판정 기준은 주식과 같은 "확정 집계 행 존재"다. 그 행은 **매일 00:05 배치**가 전날 KST 카드에 대해 만든다 |
+| 반사실 수수료율 | **0.05%**(`CRYPTO`)다. 주식은 0.015%이며 `## order` 절이 정본이다 |
+
+**200분 경계는 공급자 제약에서 나온 값이다.** 빗썸 캔들 API가 한 번에 200봉까지만 주고(`013-candle-interval`) 우리 1분봉 캐시 TTL도 같은 계약에서 유도한 4시간이라, 그보다 오래 보유한 구간의 1분봉을 조회 시점에 복원할 방법이 없다. **200봉 상한 자체는 이 이슈에서 바꾸지 않는다.**
 
 **`narrativeStatus`는 항상 `READY`다.** 매도 회고에는 §템플릿 문장이 있어 LLM이 실패하거나 후검증에 걸려도 서버가 수치로 조립한 문장으로 대체하므로, 서술이 비는 경우가 없다. 어느 쪽으로 만들어졌는지는 `narrativeSource`(`LLM`|`TEMPLATE`)로 구분한다. **`UNAVAILABLE`은 이 엔드포인트에 존재하지 않는다** — 템플릿이 없는 뉴스 요약·브리핑에만 있는 상태다.
 
