@@ -79,7 +79,7 @@
   - **LLM 폴백**(ADR-0011) — 코인 체결에서도 LLM 실패 시 템플릿 문장으로 대체되고 `narrativeStatus`가 `READY`, `narrativeSource="TEMPLATE"`인지. `FakeNarrativeGenerator`를 쓴다.
   - 검증 — Testcontainers(MySQL) 통합 + 고정 `Clock`.
 
-- [ ] **6. `docs/prd.md` §3 "구현 현황" 갱신**
+- [x] **6. `docs/prd.md` §3 "구현 현황" 갱신**
 
   **갱신 대상이다** (CLAUDE.md 규칙 10). 195·196행의 FEED-007·FEED-010·011 행은 **주식 전용으로 완료**였고 이 PR이 **코인 체결에 같은 기능을 연다** — 제공하는 기능의 범위가 실제로 늘어나므로 리팩터링·강화성 개선(#244가 비대상이었던 이유)과 다르다.
 
