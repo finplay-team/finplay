@@ -61,4 +61,24 @@ public class CandleQueryService {
 			.map(CandleResponse::from)
 			.toList();
 	}
+
+	/**
+	 * 코인 캔들을 <b>도메인 값 그대로</b> 돌려준다 — 매도 회고(spec 012 §FEED-012)가 쓴다.
+	 *
+	 * <p><b>{@link #getCandles}와 따로 있는 이유는 반환 타입이다.</b> 그쪽은 화면용 {@code CandleResponse}로 옮겨
+	 * 담는데, {@code feedback}은 {@code close}로 극값·반사실을 계산해야 하므로 응답 DTO를 거칠 이유가 없다.
+	 * <b>{@code feedback}이 {@code CryptoCandleProvider}를 직접 주입하지 않는 것이 요점이다</b>(§C-6 — market은
+	 * 전부 서비스를 경유한다). 주식 쪽 대응물은 {@code StockReplayService.getFullDayCandles}다.
+	 *
+	 * <p><b>노출 게이트가 없다.</b> 코인은 실시간이라 재생 스포일러가 성립하지 않으므로 요청한 구간을 그대로
+	 * 준다 — 어디까지 잘라 쓸지는 호출부 책임이다.
+	 *
+	 * <p><b>공급자의 200봉 상한이 그대로 적용된다</b>({@code 013-candle-interval}). 구간이 그보다 넓으면 조용히
+	 * {@code to} 기준 최신 200개로 잘리므로, <b>호출부가 구간 길이를 먼저 판정해야 한다</b> — 잘린 목록으로 극값을
+	 * 구하면 예외 없이 "보유 구간 앞부분을 안 본" 값이 나간다.
+	 */
+	public List<CryptoCandleDto> getCryptoCandles(
+		String symbol, CandleInterval interval, LocalDateTime from, LocalDateTime to) {
+		return cryptoCandleProvider.getCandles(symbol, interval, from, to);
+	}
 }

@@ -84,7 +84,9 @@ public class PeerStatsBatchService {
 		for (PriceMoveEvent card : cards) {
 			// 카드 하나가 실패해도 다음으로 넘어간다 — 배치 전체를 실패시키지 않는다(다른 배치와 같은 패턴).
 			try {
-				if (aggregateCard(card, serviceDate)) {
+				// T = 카드 windowEnd를 그 카드가 재생된 서비스 날짜에 붙인 절대 시각 (§반사실·집단 비교 계산).
+				// 코인은 occurredAt이 이미 절대 시각이라 이 변환이 없다 — 그래서 계산이 호출부에 있다.
+				if (aggregateCard(card, serviceDate, LocalDateTime.of(serviceDate, card.getWindowEnd()))) {
 					created++;
 				}
 			} catch (RuntimeException ex) {
@@ -97,16 +99,20 @@ public class PeerStatsBatchService {
 	/**
 	 * 카드 1건의 집단 비교를 확정한다. 이미 그 서비스 날짜의 집계가 있으면 다시 계산하지 않는다.
 	 *
+	 * <p><b>주식·코인이 이 메서드를 공유한다</b>(이슈 #275). 두 시장이 다른 것은 <b>{@code at}과
+	 * {@code serviceDate}를 어떻게 구하는가</b>뿐이라 호출부가 정해 넘긴다 — 모집단 복원·30분 비율·중앙값은
+	 * 시장과 무관한 같은 계산이고, 복제하면 한쪽만 고쳐도 <b>예외 없이 다른 통계가 저장된다.</b>
+	 *
+	 * @param at T — 모집단을 복원할 절대 시각. 주식은 카드 {@code windowEnd}를 서비스 날짜에 붙인 값이고 코인은
+	 *     카드 {@code occurredAt} 그대로다
 	 * @return 새로 저장했으면 {@code true}, 이미 있어 건너뛰었으면 {@code false}
 	 */
-	private boolean aggregateCard(PriceMoveEvent card, LocalDate serviceDate) {
+	private boolean aggregateCard(PriceMoveEvent card, LocalDate serviceDate, LocalDateTime at) {
 		if (priceMovePeerStatRepository.existsByPriceMoveEventIdAndServiceDate(card.getId(), serviceDate)) {
 			log.debug("이미 집계된 카드라 건너뛴다. 카드={} 서비스 날짜={}", card.getId(), serviceDate);
 			return false;
 		}
 
-		// T = 카드 windowEnd를 그 카드가 재생된 서비스 날짜에 붙인 절대 시각 (§반사실·집단 비교 계산).
-		LocalDateTime at = LocalDateTime.of(serviceDate, card.getWindowEnd());
 		Long instrumentId = card.getInstrument().getId();
 
 		// countHoldersAtTime·minutesToSellForHoldersAtTime을 각각 부르지 않는다 — 둘 다 내부적으로

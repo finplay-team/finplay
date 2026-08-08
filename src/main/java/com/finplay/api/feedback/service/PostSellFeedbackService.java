@@ -73,8 +73,9 @@ public class PostSellFeedbackService {
 	/**
 	 * 본인 매도 체결 1건의 회고를 조회한다.
 	 *
-	 * @param tradeId 미존재는 404 {@code NOT_FOUND}, 타인 체결은 403 {@code FORBIDDEN}, 매수·코인 체결은 400
-	 *     {@code VALIDATION_ERROR}다 — 판정은 {@code reader}가 하며 <b>서술 생성보다 먼저</b>다
+	 * @param tradeId 미존재는 404 {@code NOT_FOUND}, 타인 체결은 403 {@code FORBIDDEN}, 매수 체결은 400
+	 *     {@code VALIDATION_ERROR}다 — 판정은 {@code reader}가 하며 <b>서술 생성보다 먼저</b>다. <b>코인 체결은
+	 *     3차부터 200이고</b>(이슈 #275) 시장별 조립도 {@code reader}가 가른다 — 이 클래스는 시장을 모른다
 	 */
 	public PostSellFeedbackResponse getPostSellFeedback(Long userId, Long tradeId) {
 		PostSellFeedbackResponse facts = postSellFeedbackReader.read(userId, tradeId);
