@@ -43,7 +43,7 @@
   - `application.yml`의 `spring.task.scheduling.pool.size`를 12 → **13**으로 올리고 **주석의 개수 계산도 함께 갱신한다**(§C-1 — "신설 8 / 합계 13", 이 스케줄 1줄 추가). `crypto-real`·`prod` 프로필 개수를 적은 문장도 같이 맞춘다. 이슈 #125가 이 개수를 잘못 센 사고였다.
   - 검증 — `FeedbackBatchScheduleTest`에 새 진입점의 cron 표현식·`zone`이 §C-1과 같은지 확인하는 케이스 추가(기존 5개와 같은 패턴). 동작 검증은 3번 항목.
 
-- [ ] **3. 코인 집단 비교 배치 테스트**
+- [x] **3. 코인 집단 비교 배치 테스트**
 
   `PeerStatsBatchServiceIntegrationTest`와 같은 픽스처 자산을 쓰되 **코인 케이스는 새 클래스**(예: `CryptoPeerStatsBatchIntegrationTest`)에 둔다 — 기존 클래스는 재생세션 준비를 `setUp`에서 하고 있어 "세션을 보지 않는다"를 같은 파일에서 보이기 어렵다.
 
