@@ -149,6 +149,39 @@ class FeedbackBatchScheduleTest {
 		assertThat(cryptoWatchSchedule().cron()).isNotEqualTo(priceSnapshotSchedule().cron());
 	}
 
+	// --- 코인 집단 비교 확정 집계 배치 (§FEED-012 결정 3, 이슈 #275 항목 2) ---
+	//
+	// zone을 빠뜨리면 배포 JVM 기본이 UTC라 이 배치가 KST 09:05에 돈다. 하루 1회 크론이라 어긋나도 예외가
+	// 나지 않고, 그 시점의 "전날"은 KST 기준 이틀 전이라 대상 구간까지 함께 밀린다(§C-1).
+	@Test
+	@DisplayName("코인 집단 비교 배치에 zone = \"Asia/Seoul\"이 붙어 있다")
+	void cryptoPeerStatsScheduleDeclaresSeoulZone() throws NoSuchMethodException {
+		assertThat(cryptoPeerStatsSchedule().zone()).isEqualTo("Asia/Seoul");
+	}
+
+	@Test
+	@DisplayName("코인 집단 비교 배치가 크론 값을 코드에 박지 않고 feedback.batch.crypto-peer-stats-cron을 참조한다")
+	void cryptoPeerStatsScheduleReferencesTheConfiguredCronProperty() throws NoSuchMethodException {
+		assertThat(cryptoPeerStatsSchedule().cron()).isEqualTo("${feedback.batch.crypto-peer-stats-cron}");
+	}
+
+	// 주식 집계 키(peer-stats-cron)를 그대로 쓰면 코인 집계가 평일 15:32에만 돌고 그 시점의 "전날"도
+	// 어긋난다 — 두 진입점이 한 클래스에 나란히 있어 키를 복사하기 가장 쉬운 자리다.
+	@Test
+	@DisplayName("코인 집단 비교 배치가 주식 집단 비교 배치와 다른 크론 키를 참조한다")
+	void cryptoPeerStatsScheduleUsesItsOwnCronPropertyDistinctFromTheStockPeerStatsSchedule()
+		throws NoSuchMethodException {
+		assertThat(cryptoPeerStatsSchedule().cron()).isNotEqualTo(peerStatsSchedule().cron());
+	}
+
+	private static Scheduled cryptoPeerStatsSchedule() throws NoSuchMethodException {
+		return schedule(PeerStatsBatchService.class, "runCryptoPeerStatsBatch");
+	}
+
+	private static Scheduled peerStatsSchedule() throws NoSuchMethodException {
+		return schedule(PeerStatsBatchService.class, "runPeerStatsBatch");
+	}
+
 	private static Scheduled cryptoWatchSchedule() throws NoSuchMethodException {
 		return schedule(CryptoPriceMoveWatcher.class, "watch");
 	}

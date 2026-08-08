@@ -32,7 +32,7 @@
   - `FeedbackBatchPropertiesTest`(yml ↔ `@DefaultValue` 드리프트 테스트)가 새 필드도 덮도록 갱신한다.
   - 검증 — 단위(`FeedbackBatchPropertiesTest`에 새 키의 바인딩·드리프트 케이스 추가).
 
-- [ ] **2. `PeerStatsBatchService.runCryptoPeerStatsBatch` 신설 + 풀 크기 12 → 13**
+- [x] **2. `PeerStatsBatchService.runCryptoPeerStatsBatch` 신설 + 풀 크기 12 → 13**
 
   같은 클래스에 코인 진입점을 더한다(§FEED-012 결정 3). `@Scheduled(cron = "${feedback.batch.crypto-peer-stats-cron}", zone = "Asia/Seoul")` — **`zone`을 빠뜨리면 배포 JVM 기본이 UTC라 KST 09:05에 돈다**(§C-1).
 
