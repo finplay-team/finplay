@@ -3,6 +3,7 @@ package com.finplay.api.feedback.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finplay.api.feedback.domain.HoldHighBasis;
 import com.finplay.api.feedback.domain.NewsSummaryScope;
 import com.finplay.api.market.domain.Market;
 import java.math.BigDecimal;
@@ -370,10 +371,10 @@ class NarrativePromptBuilderTest {
 	@DisplayName("집단 비교가 확정되면 그 줄이 붙는다 — 개인 식별값 없이 관측 수치만 들어간다")
 	void postSellPromptAppendsPeerComparisonWhenSettled() {
 		PostSellPromptDto withPeers = new PostSellPromptDto(
-			"삼성전자", LocalTime.of(9, 30), bd("70000"), LocalTime.of(14, 40), bd("68500"), bd("10"),
-			bd("-0.0217"), -15207L, bd("70800"), LocalTime.of(11, 5), bd("-0.0325"),
-			bd("68100"), LocalTime.of(14, 20), bd("0.0059"), null, null, List.of(),
-			bd("69200"), bd("0.0102"), 12, bd("0.25"), 45, 310);
+			"삼성전자", TRADING_DATE.atTime(9, 30), bd("70000"), TRADING_DATE.atTime(14, 40), bd("68500"), bd("10"),
+			bd("-0.0217"), -15207L, bd("70800"), TRADING_DATE.atTime(11, 5), bd("-0.0325"),
+			bd("68100"), TRADING_DATE.atTime(14, 20), bd("0.0059"), null, null, List.of(),
+			bd("69200"), bd("0.0102"), 12, bd("0.25"), 45, 310, false, HoldHighBasis.MINUTE);
 
 		String prompt = builder.postSellPrompt(withPeers);
 
@@ -400,10 +401,10 @@ class NarrativePromptBuilderTest {
 	@DisplayName("매도 후 흐름이 매도가보다 낮으면 높음이 아니라 낮음으로 갈린다")
 	void sellToCloseLineFlipsSignWord() {
 		PostSellPromptDto belowSell = new PostSellPromptDto(
-			"삼성전자", LocalTime.of(9, 30), bd("70000"), LocalTime.of(14, 40), bd("68500"), bd("10"),
-			bd("-0.0217"), -15207L, bd("70800"), LocalTime.of(11, 5), bd("-0.0325"),
-			bd("68100"), LocalTime.of(14, 20), bd("0.0059"), null, null, List.of(),
-			bd("67800"), bd("-0.0102"), null, null, null, null);
+			"삼성전자", TRADING_DATE.atTime(9, 30), bd("70000"), TRADING_DATE.atTime(14, 40), bd("68500"), bd("10"),
+			bd("-0.0217"), -15207L, bd("70800"), TRADING_DATE.atTime(11, 5), bd("-0.0325"),
+			bd("68100"), TRADING_DATE.atTime(14, 20), bd("0.0059"), null, null, List.of(),
+			bd("67800"), bd("-0.0102"), null, null, null, null, false, HoldHighBasis.MINUTE);
 
 		String prompt = builder.postSellPrompt(belowSell);
 
@@ -442,39 +443,40 @@ class NarrativePromptBuilderTest {
 
 	private PostSellPromptDto specPostSell() {
 		return new PostSellPromptDto(
-			"삼성전자", LocalTime.of(9, 30), bd("70000"), LocalTime.of(14, 40), bd("68500"), bd("10.00"),
-			bd("-0.0217"), -15207L, bd("70800"), LocalTime.of(11, 5), bd("-0.0325"),
-			bd("68100"), LocalTime.of(14, 20), bd("0.0059"), 105, LocalTime.of(11, 15),
+			"삼성전자", TRADING_DATE.atTime(9, 30), bd("70000"), TRADING_DATE.atTime(14, 40), bd("68500"),
+			bd("10.00"),
+			bd("-0.0217"), -15207L, bd("70800"), TRADING_DATE.atTime(11, 5), bd("-0.0325"),
+			bd("68100"), TRADING_DATE.atTime(14, 20), bd("0.0059"), 105, LocalTime.of(11, 15),
 			List.of(new HeldPriceMoveDto(
 				LocalTime.of(11, 20), LocalTime.of(11, 25), bd("-0.0182"), 115, 195,
 				List.of(article("삼성전자 반도체 공장 가동 일시 중단", "한국경제", TRADING_DATE.atTime(11, 15))))),
-			bd("69200"), bd("0.0102"), null, null, null, null);
+			bd("69200"), bd("0.0102"), null, null, null, null, false, HoldHighBasis.MINUTE);
 	}
 
 	private PostSellPromptDto minimalPostSell() {
 		return new PostSellPromptDto(
-			"삼성전자", LocalTime.of(9, 30), bd("70000"), LocalTime.of(14, 40), bd("68500"), bd("10"),
-			bd("-0.0217"), -15207L, bd("70800"), LocalTime.of(11, 5), bd("-0.0325"),
-			bd("68100"), LocalTime.of(14, 20), bd("0.0059"), null, null, List.of(),
-			null, null, null, null, null, null);
+			"삼성전자", TRADING_DATE.atTime(9, 30), bd("70000"), TRADING_DATE.atTime(14, 40), bd("68500"), bd("10"),
+			bd("-0.0217"), -15207L, bd("70800"), TRADING_DATE.atTime(11, 5), bd("-0.0325"),
+			bd("68100"), TRADING_DATE.atTime(14, 20), bd("0.0059"), null, null, List.of(),
+			null, null, null, null, null, null, false, HoldHighBasis.MINUTE);
 	}
 
 	// sameSessionCompleted=false — 배분된 lot이 여러 원본 거래일에 걸쳐 보유 구간 극값 6필드가 전부 null인 매매다
 	// (spec §파생 사실 계산). 위 minimalPostSell은 극값을 채우고 있어 이 경로를 덮지 못한다.
 	private PostSellPromptDto multiSessionPostSell() {
 		return new PostSellPromptDto(
-			"삼성전자", LocalTime.of(9, 30), bd("70000"), LocalTime.of(14, 40), bd("68500"), bd("10"),
+			"삼성전자", TRADING_DATE.atTime(9, 30), bd("70000"), TRADING_DATE.atTime(14, 40), bd("68500"), bd("10"),
 			bd("-0.0217"), -15207L, null, null, null,
 			null, null, null, null, null, List.of(),
-			null, null, null, null, null, null);
+			null, null, null, null, null, null, false, HoldHighBasis.MINUTE);
 	}
 
 	private PostSellPromptDto withBuyToNews(int minutes, LocalTime firstNewsAt) {
 		return new PostSellPromptDto(
-			"삼성전자", LocalTime.of(9, 30), bd("70000"), LocalTime.of(14, 40), bd("68500"), bd("10"),
-			bd("-0.0217"), -15207L, bd("70800"), LocalTime.of(11, 5), bd("-0.0325"),
-			bd("68100"), LocalTime.of(14, 20), bd("0.0059"), minutes, firstNewsAt, List.of(),
-			null, null, null, null, null, null);
+			"삼성전자", TRADING_DATE.atTime(9, 30), bd("70000"), TRADING_DATE.atTime(14, 40), bd("68500"), bd("10"),
+			bd("-0.0217"), -15207L, bd("70800"), TRADING_DATE.atTime(11, 5), bd("-0.0325"),
+			bd("68100"), TRADING_DATE.atTime(14, 20), bd("0.0059"), minutes, firstNewsAt, List.of(),
+			null, null, null, null, null, null, false, HoldHighBasis.MINUTE);
 	}
 
 	private NewsSummaryPromptDto specNewsSummary(NewsSummaryScope scope) {

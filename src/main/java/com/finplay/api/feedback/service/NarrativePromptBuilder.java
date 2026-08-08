@@ -1,6 +1,7 @@
 // 파트별 LLM 프롬프트 문자열을 조립한다 — 시스템 1종 + 사용자 4종 + 재생성 1종.
 package com.finplay.api.feedback.service;
 
+import com.finplay.api.feedback.domain.HoldHighBasis;
 import com.finplay.api.feedback.domain.NewsSummaryScope;
 import com.finplay.api.market.domain.Market;
 import java.math.BigDecimal;
@@ -51,6 +52,9 @@ public class NarrativePromptBuilder {
 		"업황 전망을 다룬 기사"처럼 쓰지 말고 "업황을 다룬 기사"처럼 써라.""";
 
 	private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm");
+	// 하루를 넘긴 보유에서만 쓴다 — 연도는 붙이지 않는다. 회고는 언제나 최근 매매라 연도가 문장을 늘릴 뿐이다.
+	private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("M월 d일");
+	private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("M월 d일 HH:mm");
 	private static final String STOCK_MARKET_LABEL = "국내 주식";
 	private static final String CRYPTO_MARKET_LABEL = "코인";
 	private static final int PERCENT_SCALE = 2;
@@ -89,14 +93,14 @@ public class NarrativePromptBuilder {
 		StringBuilder prompt = new StringBuilder();
 		prompt.append("종목: ").append(input.instrumentName()).append('\n');
 		prompt.append("매수: ")
-			.append(input.buyAt().format(TIME))
+			.append(holdMoment(input.buyAt(), input.multiDayHold()))
 			.append(", ")
 			.append(money(input.buyPrice()))
 			.append(' ')
 			.append(quantity(input.quantity()))
 			.append("주\n");
 		prompt.append("매도: ")
-			.append(input.sellAt().format(TIME))
+			.append(holdMoment(input.sellAt(), input.multiDayHold()))
 			.append(", ")
 			.append(money(input.sellPrice()))
 			.append(' ')
@@ -118,7 +122,7 @@ public class NarrativePromptBuilder {
 		StringBuilder derivedFacts = new StringBuilder();
 		if (input.holdHighPrice() != null) {
 			derivedFacts.append("보유 중 최고가: ")
-				.append(input.holdHighAt().format(TIME))
+				.append(extremeMoment(input.holdHighAt(), input))
 				.append("의 ")
 				.append(money(input.holdHighPrice()))
 				.append(" (")
@@ -127,7 +131,7 @@ public class NarrativePromptBuilder {
 		}
 		if (input.holdLowPrice() != null) {
 			derivedFacts.append("보유 중 최저가: ")
-				.append(input.holdLowAt().format(TIME))
+				.append(extremeMoment(input.holdLowAt(), input))
 				.append("의 ")
 				.append(money(input.holdLowPrice()))
 				.append(" (")
@@ -177,6 +181,31 @@ public class NarrativePromptBuilder {
 		prompt.append("\n위 내용을 3~4문장으로 서술해줘. 수치를 그대로 나열하지 말고,\n")
 			.append("매수·매도 시각이 변동·기사와 어떤 순서였는지를 중심으로 써줘.");
 		return prompt.toString();
+	}
+
+	/**
+	 * 매수·매도 시각을 문장에 넣는 형태 — 하루를 넘긴 보유면 날짜를 붙인다 (이슈 #275).
+	 *
+	 * <p>코인은 §FEED-012 결정 4의 일봉 경로가 <b>정의상 200분 초과 보유</b>라 대부분 날짜를 넘긴다. 시·분만
+	 * 주면 8/1 14:20 매수 → 8/5 09:05 매도가 모델에게 "14:20 매수, 09:05 매도"로 보여 <b>매도가 매수보다
+	 * 이르다는 문장</b>이 나온다. <b>주식은 {@code multiDayHold}가 언제나 거짓이라 출력이 그대로다.</b>
+	 */
+	private static String holdMoment(LocalDateTime at, boolean multiDayHold) {
+		return multiDayHold ? at.format(DATE_TIME) : at.format(TIME);
+	}
+
+	/**
+	 * 보유 구간 극값의 시각 — 일봉 표본으로 잰 값이면 시·분을 적지 않는다 (§FEED-012 결정 4).
+	 *
+	 * <p>{@link HoldHighBasis#DAILY}일 때 응답의 극값 시각은 그 일자의 <b>일봉 라벨</b>({@code 23:59})이지
+	 * 가격을 실제로 잰 시각이 아니다. 그대로 문장에 넣으면 "23시 59분의 1,000원"처럼 <b>재지 않은 시각을
+	 * 단정</b>하게 되므로 "그 일자의 종가"라고 적는다. 주식은 언제나 {@link HoldHighBasis#MINUTE}다.
+	 */
+	private static String extremeMoment(LocalDateTime at, PostSellPromptDto input) {
+		if (input.holdHighBasis() == HoldHighBasis.DAILY) {
+			return at.format(DATE) + " 종가";
+		}
+		return holdMoment(at, input.multiDayHold());
 	}
 
 	// 종목 뉴스 요약 — 3~5문장. 범위 줄이 PRE_MARKET·FULL·ROLLING_24H로 갈린다.

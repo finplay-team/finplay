@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finplay.api.feedback.config.FeedbackLlmProperties;
+import com.finplay.api.feedback.domain.HoldHighBasis;
 import com.finplay.api.feedback.domain.NarrativeSource;
 import com.finplay.api.feedback.domain.NewsSummaryScope;
 import com.finplay.api.market.domain.Market;
@@ -474,20 +475,25 @@ class NarrativeServiceTest {
 
 	private PostSellPromptDto postSell() {
 		return new PostSellPromptDto(
-			"삼성전자", LocalTime.of(9, 30), new BigDecimal("70000"), LocalTime.of(14, 40), new BigDecimal("68500"),
-			new BigDecimal("10"), new BigDecimal("-0.0217"), -15207L, new BigDecimal("70800"), LocalTime.of(11, 5),
-			new BigDecimal("-0.0325"), new BigDecimal("68100"), LocalTime.of(14, 20), new BigDecimal("0.0059"),
-			null, null, List.of(), null, null, null, null, null, null);
+			// 시각은 이슈 #275로 LocalDateTime이 됐다 — 주식 픽스처라 같은 원본 거래일에 붙이고
+			// multiDayHold=false·MINUTE이라 문장이 이전과 같다.
+			"삼성전자", TRADING_DATE.atTime(9, 30), new BigDecimal("70000"), TRADING_DATE.atTime(14, 40),
+			new BigDecimal("68500"),
+			new BigDecimal("10"), new BigDecimal("-0.0217"), -15207L, new BigDecimal("70800"),
+			TRADING_DATE.atTime(11, 5),
+			new BigDecimal("-0.0325"), new BigDecimal("68100"), TRADING_DATE.atTime(14, 20), new BigDecimal("0.0059"),
+			null, null, List.of(), null, null, null, null, null, null, false, HoldHighBasis.MINUTE);
 	}
 
 	// sameSessionCompleted=false — 보유 구간 극값 6필드가 전부 null이다 (spec §파생 사실 계산).
 	// 위 postSell()이 극값을 항상 채우고 있어 이 경로가 한 번도 돌지 않았다.
 	private PostSellPromptDto multiSessionPostSell() {
 		return new PostSellPromptDto(
-			"삼성전자", LocalTime.of(9, 30), new BigDecimal("70000"), LocalTime.of(14, 40), new BigDecimal("68500"),
+			"삼성전자", TRADING_DATE.atTime(9, 30), new BigDecimal("70000"), TRADING_DATE.atTime(14, 40),
+			new BigDecimal("68500"),
 			new BigDecimal("10"), new BigDecimal("-0.0217"), -15207L, null, null,
 			null, null, null, null,
-			null, null, List.of(), null, null, null, null, null, null);
+			null, null, List.of(), null, null, null, null, null, null, false, HoldHighBasis.MINUTE);
 	}
 
 	private NewsSummaryPromptDto newsSummary() {

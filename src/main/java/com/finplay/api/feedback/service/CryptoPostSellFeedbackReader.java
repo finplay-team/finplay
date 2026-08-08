@@ -1,6 +1,8 @@
 // 코인 매도 회고의 파생 사실·반사실·집단 비교를 조립하는 컴포넌트 (spec §FEED-012, 이슈 #275).
 package com.finplay.api.feedback.service;
 
+import com.finplay.api.common.BusinessException;
+import com.finplay.api.common.ErrorCode;
 import com.finplay.api.feedback.config.FeedbackCryptoProperties;
 import com.finplay.api.feedback.domain.HoldHighBasis;
 import com.finplay.api.feedback.domain.PostSellFeedbackStatus;
@@ -34,6 +36,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
@@ -54,6 +57,7 @@ import org.springframework.stereotype.Component;
  * 존재 이유인데(매도 후 가격이 아직 오지 않은 미래다) 코인은 실시간이라 그 위험이 없다. 그래서 게이트가 남은
  * 이유는 <b>종가와 집단 집계가 언제 확정되는가</b> 하나뿐이고, 그 답이 "그 날짜가 끝나면"이다.
  */
+@Slf4j
 @Component
 @RequiredArgsConstructor
 class CryptoPostSellFeedbackReader {
@@ -102,6 +106,9 @@ class CryptoPostSellFeedbackReader {
 		List<HeldPriceMoveItem> priceMoves = findHeldPriceMoves(trade, buyAt, sellAt);
 		HoldExtremes extremes = findHoldExtremes(symbol, trade.getPrice(), buyAt, sellAt);
 		boolean dayClosed = isAfterDayClose(sellAt);
+		// 매도일 종가는 매도 후 흐름과 반사실이 같은 값을 쓴다. 각자 부르면 같은 일봉을 외부에서 두 번 받는데
+		// 일봉은 캐시되지 않아(CryptoCandleStore는 분봉 전용) 그 두 번이 전부 실제 REST 호출이다.
+		BigDecimal sellDayClose = dayClosed ? sellDayClose(symbol, sellAt) : null;
 
 		return new PostSellFeedbackResponse(
 			trade.getId(),
@@ -129,8 +136,9 @@ class CryptoPostSellFeedbackReader {
 			extremes.basis(),
 			buyToNewsMinutes(buyAt, priceMoves),
 			priceMoves,
-			buildPostSellFlow(symbol, dayClosed, trade.getPrice(), sellAt),
-			buildCounterfactuals(symbol, dayClosed, extremes, priceMoves, trade.getQuantity(), buyBasis, sellAt),
+			buildPostSellFlow(symbol, dayClosed, sellDayClose, trade.getPrice(), sellAt),
+			buildCounterfactuals(
+				symbol, dayClosed, sellDayClose, extremes, priceMoves, trade.getQuantity(), buyBasis, sellAt),
 			buildPeerComparison(priceMoves),
 			// 서술 셋은 PostSellFeedbackService가 트랜잭션이 끝난 뒤 withNarrative로 얹는다.
 			null,
@@ -165,18 +173,62 @@ class CryptoPostSellFeedbackReader {
 	private HoldExtremes findHoldExtremes(
 		String symbol, BigDecimal sellPrice, LocalDateTime buyAt, LocalDateTime sellAt) {
 		if (PostSellArithmetic.minutesBetween(buyAt, sellAt) <= MAX_MINUTE_SPAN_MINUTES) {
-			List<CryptoCandleDto> candles = candleQueryService.getCryptoCandles(
-				symbol,
-				CandleInterval.ONE_MINUTE,
-				PostSellArithmetic.onMinuteBoundary(buyAt),
-				PostSellArithmetic.onMinuteBoundary(sellAt));
-			return extremesOf(candles, sellPrice, HoldHighBasis.MINUTE, CryptoCandleDto::sourceTime);
+			LocalDateTime from = PostSellArithmetic.onMinuteBoundary(buyAt);
+			LocalDateTime to = PostSellArithmetic.onMinuteBoundary(sellAt);
+			return extremesOf(
+				minuteCandlesWithin(symbol, from, to), sellPrice, HoldHighBasis.MINUTE, CryptoCandleDto::sourceTime);
 		}
 		return extremesOf(
 			dailyCandlesWithinHold(symbol, buyAt, sellAt),
 			sellPrice,
 			HoldHighBasis.DAILY,
 			candle -> LocalDateTime.of(candle.sourceTime().toLocalDate(), DAY_END_LABEL));
+	}
+
+	/**
+	 * {@code [from, to]}(양 끝 포함) 안의 1분봉만 남긴다.
+	 *
+	 * <p><b>받은 봉을 반드시 다시 걸러야 한다.</b> 운영 공급자 {@code BithumbRestCandleProvider}는 빗썸에
+	 * {@code to}와 {@code count = 분차 + 1}만 보내고 <b>{@code from}을 하한으로 보내지 않는다</b>. 그래서 시장에
+	 * 빠진 분이 있으면 그 개수만큼 <b>{@code from} 이전 봉이 따라온다.</b> 거르지 않으면 그 봉이 최고가일 때
+	 * {@code holdHighPrice}·{@code holdHighAt}·{@code sellVsHighRate}·반사실 {@code atHoldHigh}가 <b>보유하지
+	 * 않은 구간의 가격</b>으로 나가고, {@code postSellHighPrice}는 매도 <b>이전</b> 가격을 "매도 후 최고가"로
+	 * 올려 배타 경계의 근거가 무너진다 — <b>예외도 로그도 남지 않는다.</b>
+	 *
+	 * <p>같은 클래스의 {@link #dailyCandlesWithinHold}·{@link #scenarioAtFirstMoveAfterBuy}와 주식 경로가 이미
+	 * 같은 이유로 같은 필터를 걸고 있다 — <b>중복이 아니다.</b>
+	 */
+	private List<CryptoCandleDto> minuteCandlesWithin(String symbol, LocalDateTime from, LocalDateTime to) {
+		return candles(symbol, CandleInterval.ONE_MINUTE, from, to).stream()
+			.filter(candle -> !candle.sourceTime().isBefore(from) && !candle.sourceTime().isAfter(to))
+			.toList();
+	}
+
+	/**
+	 * 봉 조회 — <b>공급자 장애를 회고 전체의 실패로 만들지 않는다.</b>
+	 *
+	 * <p>빗썸 5xx·타임아웃이면 {@code CandleQueryService}가
+	 * {@link ErrorCode#MARKET_DATA_PROVIDER_ERROR}(502)를 던지는데, 그대로 올려보내면 이미 다 만들어 둔
+	 * <b>원장 수치·보유 구간 카드·서술까지 포함한 200이 통째로 사라진다.</b> 계약({@code api-contracts.md}
+	 * 실패 처리 표)은 반대로 적고 있다 — "일봉을 못 받으면 관련 값 넷이 {@code null}이고 {@code status}는
+	 * 게이트대로 {@code READY}"다. 가격을 못 구한 것과 회고를 못 만든 것은 다르다.
+	 *
+	 * <p>다른 {@code ErrorCode}는 그대로 올린다 — 여기서 흡수할 근거가 있는 것은 <b>공급자 장애</b> 하나뿐이고,
+	 * 나머지까지 삼키면 진짜 결함이 조용히 빈 값으로 나간다. 흡수한 경우에도 {@code WARN}을 남겨 "값이 왜
+	 * 비었는가"를 추적할 수 있게 한다.
+	 */
+	private List<CryptoCandleDto> candles(
+		String symbol, CandleInterval interval, LocalDateTime from, LocalDateTime to) {
+		try {
+			return candleQueryService.getCryptoCandles(symbol, interval, from, to);
+		} catch (BusinessException ex) {
+			if (ex.getErrorCode() != ErrorCode.MARKET_DATA_PROVIDER_ERROR) {
+				throw ex;
+			}
+			log.warn("코인 봉 조회에 실패해 관련 값을 비운 채 회고를 만든다. 종목={} 간격={} 구간={}~{}",
+				symbol, interval, from, to, ex);
+			return List.of();
+		}
 	}
 
 	/**
@@ -204,8 +256,7 @@ class CryptoPostSellFeedbackReader {
 		if (lastDay.isBefore(firstDay)) {
 			return List.of();
 		}
-		return candleQueryService
-			.getCryptoCandles(symbol, CandleInterval.ONE_DAY, firstDay.atStartOfDay(), lastDay.atStartOfDay())
+		return candles(symbol, CandleInterval.ONE_DAY, firstDay.atStartOfDay(), lastDay.atStartOfDay())
 			.stream()
 			.filter(candle -> !candle.sourceTime().toLocalDate().isBefore(firstDay))
 			.filter(candle -> !candle.sourceTime().toLocalDate().isAfter(lastDay))
@@ -263,12 +314,11 @@ class CryptoPostSellFeedbackReader {
 	 * 영원히 "아직"으로 보인다.
 	 */
 	private PostSellFlow buildPostSellFlow(
-		String symbol, boolean dayClosed, BigDecimal sellPrice, LocalDateTime sellAt) {
+		String symbol, boolean dayClosed, BigDecimal closePrice, BigDecimal sellPrice, LocalDateTime sellAt) {
 		if (!dayClosed) {
 			return new PostSellFlow(PostSellFeedbackStatus.NOT_YET, null, null, null, null, null);
 		}
 
-		BigDecimal closePrice = sellDayClose(symbol, sellAt);
 		CryptoCandleDto postSellHigh = highestCloseAfterSell(symbol, sellAt);
 		return new PostSellFlow(
 			PostSellFeedbackStatus.READY,
@@ -290,8 +340,7 @@ class CryptoPostSellFeedbackReader {
 	 */
 	private BigDecimal sellDayClose(String symbol, LocalDateTime sellAt) {
 		LocalDate sellDate = sellAt.toLocalDate();
-		return candleQueryService
-			.getCryptoCandles(symbol, CandleInterval.ONE_DAY, sellDate.atStartOfDay(), sellDate.atStartOfDay())
+		return candles(symbol, CandleInterval.ONE_DAY, sellDate.atStartOfDay(), sellDate.atStartOfDay())
 			.stream()
 			.filter(candle -> candle.sourceTime().toLocalDate().equals(sellDate))
 			.findFirst()
@@ -314,7 +363,9 @@ class CryptoPostSellFeedbackReader {
 		if (from.isAfter(to) || PostSellArithmetic.minutesBetween(from, to) > MAX_MINUTE_SPAN_MINUTES) {
 			return null;
 		}
-		return candleQueryService.getCryptoCandles(symbol, CandleInterval.ONE_MINUTE, from, to).stream()
+		// minuteCandlesWithin이 구간 밖 봉을 걸러 준다 — 공급자가 from을 하한으로 보내지 않아 매도 봉 이전 가격이
+		// 따라오면 그 값이 "매도 후 최고가"로 나가고 배타 경계의 근거가 무너진다.
+		return minuteCandlesWithin(symbol, from, to).stream()
 			// 동률이면 이른 봉을 고른다 — 극값과 같은 규칙이다.
 			.reduce((left, right) -> right.close().compareTo(left.close()) > 0 ? right : left)
 			.orElse(null);
@@ -329,6 +380,7 @@ class CryptoPostSellFeedbackReader {
 	private Counterfactuals buildCounterfactuals(
 		String symbol,
 		boolean dayClosed,
+		BigDecimal closePrice,
 		HoldExtremes extremes,
 		List<HeldPriceMoveItem> priceMoves,
 		BigDecimal quantity,
@@ -339,7 +391,6 @@ class CryptoPostSellFeedbackReader {
 		}
 
 		BigDecimal feeRate = PostSellArithmetic.feeRateOf(Market.CRYPTO);
-		BigDecimal closePrice = sellDayClose(symbol, sellAt);
 		return new Counterfactuals(
 			PostSellFeedbackStatus.READY,
 			closePrice == null
@@ -378,7 +429,7 @@ class CryptoPostSellFeedbackReader {
 			return null;
 		}
 		LocalDateTime at = PostSellArithmetic.onMinuteBoundary(priceMoves.get(0).windowEnd());
-		return candleQueryService.getCryptoCandles(symbol, CandleInterval.ONE_MINUTE, at, at).stream()
+		return candles(symbol, CandleInterval.ONE_MINUTE, at, at).stream()
 			.filter(candle -> PostSellArithmetic.onMinuteBoundary(candle.sourceTime()).equals(at))
 			.findFirst()
 			.map(candle -> new CounterfactualScenario(

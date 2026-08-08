@@ -3,6 +3,7 @@ package com.finplay.api.feedback.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finplay.api.feedback.domain.HoldHighBasis;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -394,9 +395,13 @@ class NarrativeTemplateBuilderTest {
 		BigDecimal returnRate, BigDecimal holdHighPrice, LocalTime holdHighAt,
 		BigDecimal buyPrice, BigDecimal sellPrice) {
 		return new PostSellPromptDto(
-			"삼성전자", LocalTime.of(9, 30), buyPrice, LocalTime.of(14, 40), sellPrice, new BigDecimal("10"),
-			returnRate, -15207L, holdHighPrice, holdHighAt, holdHighPrice == null ? null : new BigDecimal("-0.0325"),
-			new BigDecimal("68100"), LocalTime.of(14, 20), new BigDecimal("0.0059"), null, null, List.of(),
-			null, null, null, null, null, null);
+			// 시각은 PostSellPromptDto가 LocalDateTime을 받도록 넓어져(이슈 #275) 같은 원본 거래일에 붙인다 —
+			// 주식 픽스처라 multiDayHold=false·MINUTE이고, 그래서 기대 문장이 이전과 같다.
+			"삼성전자", TRADING_DATE.atTime(9, 30), buyPrice, TRADING_DATE.atTime(14, 40), sellPrice,
+			new BigDecimal("10"),
+			returnRate, -15207L, holdHighPrice, holdHighAt == null ? null : TRADING_DATE.atTime(holdHighAt),
+			holdHighPrice == null ? null : new BigDecimal("-0.0325"),
+			new BigDecimal("68100"), TRADING_DATE.atTime(14, 20), new BigDecimal("0.0059"), null, null, List.of(),
+			null, null, null, null, null, null, false, HoldHighBasis.MINUTE);
 	}
 }

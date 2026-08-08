@@ -272,9 +272,11 @@ class PostSellFeedbackServiceTest {
 		ArgumentCaptor<PostSellPromptDto> captor = ArgumentCaptor.forClass(PostSellPromptDto.class);
 		verify(narrativeService).resolvePostSellNarrative(captor.capture());
 		PostSellPromptDto prompt = captor.getValue();
-		// 시각은 HH:mm만 쓴다 — 원본 거래일 날짜는 문장에 등장하지 않는다.
-		assertThat(prompt.buyAt()).isEqualTo(LocalTime.of(9, 30));
-		assertThat(prompt.sellAt()).isEqualTo(LocalTime.of(14, 40));
+		// 시각은 날짜까지 넘긴다(이슈 #275) — 여러 날에 걸친 코인 보유에서 문장이 뒤집히기 때문이다. 다만
+		// 주식은 multiDayHold가 거짓이라 프롬프트 문장에는 여전히 HH:mm만 등장한다.
+		assertThat(prompt.buyAt()).isEqualTo(LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(9, 30)));
+		assertThat(prompt.sellAt()).isEqualTo(LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(14, 40)));
+		assertThat(prompt.multiDayHold()).isFalse();
 		assertThat(prompt.buyPrice()).isEqualByComparingTo("70000");
 		assertThat(prompt.sellPrice()).isEqualByComparingTo("68500");
 		assertThat(prompt.realizedPnl()).isEqualTo(-15_207L);
