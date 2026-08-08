@@ -2,6 +2,7 @@
 package com.finplay.api.feedback.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -10,6 +11,8 @@ import static org.mockito.Mockito.when;
 
 import com.finplay.api.account.domain.Account;
 import com.finplay.api.auth.domain.User;
+import com.finplay.api.common.BusinessException;
+import com.finplay.api.common.ErrorCode;
 import com.finplay.api.feedback.config.FeedbackCryptoProperties;
 import com.finplay.api.feedback.domain.HoldHighBasis;
 import com.finplay.api.feedback.domain.NarrativeSource;
@@ -371,6 +374,92 @@ class CryptoPostSellFeedbackReaderTest {
 		assertThat(response.counterfactuals().atHoldHigh().returnRate()).isEqualByComparingTo("0.0108");
 	}
 
+	// --- 공급자가 구간 밖 봉을 섞어 보낼 때 (5ad19e8d) ---
+
+	// 운영 공급자 BithumbRestCandleProvider는 빗썸에 to와 count만 보내고 from을 하한으로 보내지 않는다 —
+	// 시장에 빠진 분이 있으면 그 개수만큼 from 이전 봉이 따라온다. FakeCryptoCandleProvider는 구간으로 걸러
+	// 주기 때문에 통합 테스트로는 이 자리가 영원히 드러나지 않는다. mock으로 직접 만들어야만 잡힌다.
+	@Test
+	@DisplayName("보유 구간 이전 봉이 섞여 와도 극값·sellVsHighRate·atHoldHigh에 들어가지 않는다")
+	void excludesCandlesBeforeTheHoldWindowFromTheExtremes() {
+		// 22:50은 매수(23:01)보다 이르다 — 보유하지 않은 구간의 가격이고, 걸러지지 않으면 최고가가 된다.
+		givenMinuteCandlesIgnoringLowerBound(withCandleBeforeTheHold(minuteCandles(), "99999"));
+		givenDailyCandles(dailyCandles());
+
+		PostSellFeedbackResponse response = read(GATE_OPENS_AT, BUY_AT_199);
+
+		assertThat(response.holdHighPrice())
+			.as("보유 시작 이전 봉이 최고가로 나가면 사용자가 가질 수 없었던 가격으로 후회를 유도한다")
+			.isEqualByComparingTo("70800");
+		assertThat(response.holdHighAt()).isEqualTo(LocalDateTime.of(SELL_DATE, LocalTime.of(0, 30)));
+		// 70,800 기준 비율이다 — (68,500 − 70,800) ÷ 70,800. 99,999가 섞이면 값이 통째로 달라진다.
+		assertThat(response.sellVsHighRate()).isEqualByComparingTo("-0.0325");
+		assertThat(response.counterfactuals().atHoldHigh().price()).isEqualByComparingTo("70800");
+	}
+
+	// 매도 후 최고가의 하한(매도 분 + 1분)은 배타 경계다 — 구간 이전 봉이 섞이면 매도 "이전" 가격이
+	// "매도 후 최고가"로 나가 보유 구간 극값과 나란히 놓는 의미가 사라진다.
+	@Test
+	@DisplayName("매도 이전 봉이 섞여 와도 postSellHighPrice에 들어가지 않는다")
+	void excludesCandlesBeforeTheSellMinuteFromThePostSellHigh() {
+		LocalDateTime buyAt = LocalDateTime.of(SELL_DATE, LocalTime.of(20, 0));
+		LocalDateTime sellAt = LocalDateTime.of(SELL_DATE, LocalTime.of(21, 0));
+		// 20:30은 보유 구간 안이지만 매도 후 구간([21:01, 23:59])에는 없다. 두 구간이 따로 걸러지는지를 본다.
+		givenMinuteCandlesIgnoringLowerBound(List.of(
+			candle(LocalDateTime.of(SELL_DATE, LocalTime.of(20, 30)), "99999"),
+			candle(sellAt, "68500"),
+			candle(LocalDateTime.of(SELL_DATE, LocalTime.of(22, 0)), "70000")));
+		givenDailyCandles(dailyCandles());
+
+		PostSellFeedbackResponse response = read(GATE_OPENS_AT, buyAt, sellAt);
+
+		assertThat(response.postSellFlow().postSellHighPrice())
+			.as("매도 이전 봉이 '매도 후 최고가'로 나가면 배타 경계의 근거가 무너진다")
+			.isEqualByComparingTo("70000");
+		assertThat(response.postSellFlow().postSellHighAt())
+			.isEqualTo(LocalDateTime.of(SELL_DATE, LocalTime.of(22, 0)));
+		// 같은 봉이 보유 구간에는 정당하게 들어간다 — 필터가 두 구간에 각각 걸린다는 뜻이다.
+		assertThat(response.holdHighPrice()).isEqualByComparingTo("99999");
+	}
+
+	// --- 공급자 장애 흡수 범위 (5ad19e8d) ---
+
+	@Test
+	@DisplayName("공급자 장애(MARKET_DATA_PROVIDER_ERROR)면 가격만 비고 status는 게이트대로 READY다")
+	void absorbsProviderFailuresIntoNullPricesWithoutFailingTheWholeRead() {
+		givenCandlesFailingWith(ErrorCode.MARKET_DATA_PROVIDER_ERROR);
+
+		PostSellFeedbackResponse response = read(GATE_OPENS_AT, BUY_AT_199);
+
+		// 원장 수치는 봉과 무관하므로 그대로 남는다 — 회고 전체가 사라지지 않는 것이 이 흡수의 목적이다.
+		assertThat(response.tradeId()).isEqualTo(SELL_TRADE_ID);
+		assertThat(response.sellPrice()).isEqualByComparingTo(SELL_PRICE);
+		assertThat(response.holdingMinutes()).isEqualTo(199);
+
+		assertThat(response.holdHighPrice()).isNull();
+		assertThat(response.holdHighBasis()).isNull();
+		assertThat(response.postSellFlow().closePrice()).isNull();
+		assertThat(response.postSellFlow().postSellHighPrice()).isNull();
+		assertThat(response.counterfactuals().atClose()).isNull();
+		assertThat(response.counterfactuals().atHoldHigh()).isNull();
+
+		// 값을 못 구한 것과 아직 확정되지 않은 것은 다르다 — 게이트가 열렸으면 READY다(§C-4).
+		assertThat(response.postSellFlow().status()).isEqualTo(PostSellFeedbackStatus.READY);
+		assertThat(response.counterfactuals().status()).isEqualTo(PostSellFeedbackStatus.READY);
+	}
+
+	// 흡수 범위가 넓어지면 진짜 결함이 조용히 빈 값으로 나간다 — 흡수 대상 하나만 단정하면 그 확장을 못 잡는다.
+	@Test
+	@DisplayName("공급자 장애가 아닌 오류는 흡수하지 않고 그대로 올린다")
+	void neverAbsorbsErrorCodesOtherThanProviderFailure() {
+		givenCandlesFailingWith(ErrorCode.VALIDATION_ERROR);
+
+		assertThatThrownBy(() -> read(GATE_OPENS_AT, BUY_AT_199))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(exception -> assertThat(((BusinessException)exception).getErrorCode())
+				.isEqualTo(ErrorCode.VALIDATION_ERROR));
+	}
+
 	// --- 픽스처 ---
 
 	private PostSellFeedbackResponse read(LocalDateTime now, LocalDateTime buyAt) {
@@ -408,6 +497,42 @@ class CryptoPostSellFeedbackReaderTest {
 	private void givenDailyCandles(List<CryptoCandleDto> candles) {
 		when(candleQueryService.getCryptoCandles(eq(SYMBOL), eq(CandleInterval.ONE_DAY), any(), any()))
 			.thenReturn(candles);
+	}
+
+	/**
+	 * 1분봉 stub — <b>{@code from}을 무시하고</b> {@code to} 이하 전부를 돌려준다.
+	 *
+	 * <p>운영 공급자를 그대로 모사한 것이다({@code BithumbRestCandleProvider}는 빗썸에 {@code to}와
+	 * {@code count}만 보낸다). {@link #givenMinuteCandles}처럼 stub이 하한을 대신 걸러 주면 구현의 필터가
+	 * 없어져도 테스트가 초록이라, 이 자리만큼은 stub이 걸러 주면 안 된다.
+	 */
+	private void givenMinuteCandlesIgnoringLowerBound(List<CryptoCandleDto> candles) {
+		when(candleQueryService.getCryptoCandles(eq(SYMBOL), eq(CandleInterval.ONE_MINUTE), any(), any()))
+			.thenAnswer(invocation -> upTo(candles, invocation.getArgument(3)));
+	}
+
+	// 봉 조회가 전부 실패하는 상황 — 간격·구간과 무관하게 같은 오류를 던진다.
+	private void givenCandlesFailingWith(ErrorCode errorCode) {
+		when(candleQueryService.getCryptoCandles(eq(SYMBOL), any(), any(), any()))
+			.thenThrow(new BusinessException(errorCode));
+	}
+
+	// 매수(23:01)보다 이른 22:50 봉을 목록 맨 앞에 끼운다 — 공급자가 빠진 분만큼 앞쪽 봉을 얹어 보내는 상황이다.
+	private static List<CryptoCandleDto> withCandleBeforeTheHold(List<CryptoCandleDto> candles, String close) {
+		List<CryptoCandleDto> withLeading = new ArrayList<>();
+		withLeading.add(candle(LocalDateTime.of(SELL_DATE.minusDays(1), LocalTime.of(22, 50)), close));
+		withLeading.addAll(candles);
+		return Collections.unmodifiableList(withLeading);
+	}
+
+	private static List<CryptoCandleDto> upTo(List<CryptoCandleDto> candles, LocalDateTime to) {
+		List<CryptoCandleDto> filtered = new ArrayList<>();
+		for (CryptoCandleDto candle : candles) {
+			if (!candle.sourceTime().isAfter(to)) {
+				filtered.add(candle);
+			}
+		}
+		return Collections.unmodifiableList(filtered);
 	}
 
 	private static List<CryptoCandleDto> withinRange(

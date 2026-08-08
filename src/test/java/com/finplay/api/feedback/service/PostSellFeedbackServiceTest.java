@@ -283,9 +283,9 @@ class PostSellFeedbackServiceTest {
 		assertThat(prompt.holdHighPrice()).isEqualByComparingTo("70800");
 		assertThat(prompt.buyToNewsMinutes()).isEqualTo(105);
 		// buyToNewsMinutes와 firstNewsAt은 같은 근거 기사 하나에서 나온다 — 한쪽만 채우면 기준 시각이 사라진다.
-		assertThat(prompt.firstNewsAt()).isEqualTo(LocalTime.of(11, 15));
+		assertThat(prompt.firstNewsAt()).isEqualTo(LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(11, 15)));
 		assertThat(prompt.priceMoves()).singleElement().satisfies(move -> {
-			assertThat(move.windowEnd()).isEqualTo(LocalTime.of(11, 25));
+			assertThat(move.windowEnd()).isEqualTo(LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(11, 25)));
 			assertThat(move.minutesAfterBuy()).isEqualTo(115);
 			assertThat(move.sources()).singleElement()
 				.satisfies(source -> assertThat(source.disclosure()).isFalse());
@@ -297,6 +297,41 @@ class PostSellFeedbackServiceTest {
 		assertThat(prompt.soldWithin30MinRate()).isNull();
 		assertThat(prompt.medianMinutesToSell()).isNull();
 		assertThat(prompt.yourMinutesToSell()).isNull();
+	}
+
+	// 이 판정이 프롬프트·템플릿의 날짜 표기를 켜는 유일한 스위치다(이슈 #275) — 항상 거짓으로 되돌려도
+	// 주식 픽스처만 있는 한 아무 테스트도 빨개지지 않는다.
+	@Test
+	@DisplayName("매수일과 매도일이 다르면 multiDayHold가 참이고 holdHighBasis가 그대로 실린다")
+	void marksMultiDayHoldWhenTheBuyAndSellDatesDiffer() {
+		givenFacts(crossDayFacts(true, HoldHighBasis.DAILY));
+		givenNoStoredNarrative();
+		givenGenerated(NarrativeResultDto.llm(LLM_NARRATIVE));
+
+		postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
+
+		ArgumentCaptor<PostSellPromptDto> captor = ArgumentCaptor.forClass(PostSellPromptDto.class);
+		verify(narrativeService).resolvePostSellNarrative(captor.capture());
+		PostSellPromptDto prompt = captor.getValue();
+		assertThat(prompt.multiDayHold()).isTrue();
+		// 극값을 어느 표본으로 쟀는지가 문장의 표기를 가른다 — 응답 값이 그대로 전달돼야 한다.
+		assertThat(prompt.holdHighBasis()).isEqualTo(HoldHighBasis.DAILY);
+	}
+
+	// 여러 원본 거래일에 걸친 주식 매매는 벽시계 날짜가 달라도 서술할 날짜 축이 없다 — 판정의 && 왼쪽이
+	// 없으면 그 매매의 문장에 원본 거래일과 무관한 날짜가 붙는다.
+	@Test
+	@DisplayName("sameSessionCompleted=false면 벽시계 날짜가 달라도 multiDayHold는 거짓이다")
+	void keepsMultiDayHoldFalseWhenTheTradeSpansReplaySessions() {
+		givenFacts(crossDayFacts(false, HoldHighBasis.MINUTE));
+		givenNoStoredNarrative();
+		givenGenerated(NarrativeResultDto.llm(LLM_NARRATIVE));
+
+		postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
+
+		ArgumentCaptor<PostSellPromptDto> captor = ArgumentCaptor.forClass(PostSellPromptDto.class);
+		verify(narrativeService).resolvePostSellNarrative(captor.capture());
+		assertThat(captor.getValue().multiDayHold()).isFalse();
 	}
 
 	@Test
@@ -539,6 +574,24 @@ class PostSellFeedbackServiceTest {
 
 	private static PostSellFeedbackResponse factsWithoutNarrative(boolean withCard) {
 		return factsWithoutNarrative(withCard, PostSellFeedbackStatus.READY, PostSellFeedbackStatus.NOT_YET);
+	}
+
+	/**
+	 * 8월 1일 14:20 매수 → 8월 5일 09:05 매도. 기본 픽스처에서 <b>두 체결 시각과 {@code holdHighBasis},
+	 * {@code sameSessionCompleted}만</b> 바꿨다 — multiDayHold 판정이 보는 값이 정확히 그 셋이다.
+	 */
+	private static PostSellFeedbackResponse crossDayFacts(
+		boolean sameSessionCompleted, HoldHighBasis holdHighBasis) {
+		PostSellFeedbackResponse base = factsWithoutNarrative();
+		return new PostSellFeedbackResponse(
+			base.tradeId(), base.instrumentId(), base.symbol(), base.name(),
+			LocalDateTime.of(2026, 8, 1, 14, 20),
+			LocalDateTime.of(2026, 8, 5, 9, 5),
+			base.buyPrice(), base.sellPrice(), base.quantity(), base.fee(), base.realizedPnl(), base.returnRate(),
+			base.holdingMinutes(), sameSessionCompleted, base.holdHighPrice(), base.holdHighAt(),
+			base.holdLowPrice(), base.holdLowAt(), base.sellVsHighRate(), base.sellVsLowRate(),
+			holdHighBasis, base.buyToNewsMinutes(), base.priceMoves(), base.postSellFlow(), base.counterfactuals(),
+			base.peerComparison(), base.narrative(), base.narrativeSource(), base.narrativeStatus());
 	}
 
 	/** 재생성 게이트를 여는 픽스처 — 매도 후 흐름은 READY이고 집단 비교가 확정 상태다(§C-5). */

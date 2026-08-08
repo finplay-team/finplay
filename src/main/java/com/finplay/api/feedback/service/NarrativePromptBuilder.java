@@ -149,9 +149,9 @@ public class NarrativePromptBuilder {
 			prompt.append("\n보유 구간에 걸친 변동:\n");
 			for (HeldPriceMoveDto move : input.priceMoves()) {
 				prompt.append("- ")
-					.append(move.windowStart().format(TIME))
+					.append(holdMoment(move.windowStart(), input.multiDayHold()))
 					.append('~')
-					.append(move.windowEnd().format(TIME))
+					.append(holdMoment(move.windowEnd(), input.multiDayHold()))
 					.append(' ')
 					.append(signedPercent(move.changeRate()))
 					.append(" (매수 ")
@@ -281,7 +281,7 @@ public class NarrativePromptBuilder {
 
 	private String buyToNewsLine(PostSellPromptDto input) {
 		int minutes = input.buyToNewsMinutes();
-		String at = input.firstNewsAt().format(TIME);
+		String at = holdMoment(input.firstNewsAt(), input.multiDayHold());
 		if (minutes >= 0) {
 			return "매수는 첫 근거 기사(%s)보다 %d분 앞섰습니다.".formatted(at, minutes);
 		}

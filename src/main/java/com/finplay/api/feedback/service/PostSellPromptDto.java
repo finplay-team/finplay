@@ -4,7 +4,6 @@ package com.finplay.api.feedback.service;
 import com.finplay.api.feedback.domain.HoldHighBasis;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.List;
 
 /**
@@ -60,7 +59,7 @@ public record PostSellPromptDto(
 	LocalDateTime holdLowAt,
 	BigDecimal sellVsLowRate,
 	Integer buyToNewsMinutes,
-	LocalTime firstNewsAt,
+	LocalDateTime firstNewsAt,
 	List<HeldPriceMoveDto> priceMoves,
 	BigDecimal closePrice,
 	BigDecimal sellToCloseRate,

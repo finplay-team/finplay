@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.finplay.api.feedback.domain.HoldHighBasis;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -218,6 +219,59 @@ class NarrativeTemplateBuilderTest {
 			.contains("수익률은 +0.00%입니다");
 	}
 
+	// ---------- 하루를 넘긴 보유·일봉 극값 (이슈 #275, 커밋 5ad19e8d) ----------
+
+	// DAILY일 때 극값 시각은 일봉 라벨(23:59)이지 가격을 잰 시각이 아니다 — 그대로 적으면 "23시 59분의
+	// 70,800원"처럼 재지 않은 시각을 단정하게 된다.
+	@Test
+	@DisplayName("holdHighBasis=DAILY면 셋째 문장이 시·분 없이 \"M월 d일 종가\"로 적힌다")
+	void postSellTemplateWritesDailyExtremeAsAClosingPrice() {
+		String template = builder.postSellTemplate(multiDayPostSell(HoldHighBasis.DAILY, TRADING_DATE.atTime(23, 59)));
+
+		assertThat(template).isEqualTo(
+			"70,000원에 매수해 68,500원에 매도했습니다. 수익률은 -2.17%입니다. 보유 중 최고가는 8월 3일 종가의 70,800원이었습니다.");
+		// 일봉 라벨이 문장에 새어 나가면 안 된다.
+		assertThat(template).doesNotContain("23:59");
+	}
+
+	@Test
+	@DisplayName("MINUTE이면서 하루를 넘긴 보유면 셋째 문장이 날짜 + 시·분으로 적힌다")
+	void postSellTemplateKeepsClockTimeForMinuteExtremesAcrossDays() {
+		String template = builder.postSellTemplate(multiDayPostSell(HoldHighBasis.MINUTE, TRADING_DATE.atTime(11, 5)));
+
+		assertThat(template).isEqualTo(
+			"70,000원에 매수해 68,500원에 매도했습니다. 수익률은 -2.17%입니다. 보유 중 최고가는 8월 3일 11:05의 70,800원이었습니다.");
+		assertThat(template).doesNotContain("종가의");
+	}
+
+	// 주식 회귀 — 두 분기 조건이 주식에서는 언제나 거짓이라 문장이 이전과 한 글자도 달라지지 않아야 한다.
+	@Test
+	@DisplayName("주식 조합(multiDayHold=false + MINUTE)의 템플릿 문장은 날짜 없이 시·분만 적는다")
+	void postSellTemplateKeepsTheStockCombinationUnchanged() {
+		String template = builder.postSellTemplate(
+			postSell(rate("-0.0217"), money("70800"), LocalTime.of(11, 5)));
+
+		assertThat(template).isEqualTo(
+			"70,000원에 매수해 68,500원에 매도했습니다. 수익률은 -2.17%입니다. 보유 중 최고가는 11:05의 70,800원이었습니다.");
+		assertThat(template).doesNotContain("8월").doesNotContain("종가의");
+	}
+
+	// 새 표기가 후검증에 걸리면 폴백 자체가 성립하지 않는다 — 위 골든 마스터만으로는 그 자리가 드러나지 않는다.
+	@Test
+	@DisplayName("날짜·종가 표기가 붙은 문장도 카드·매도 회고 후검증을 통과한다")
+	void newMomentPhrasingsStillPassValidation() {
+		Stream.of(
+			builder.postSellTemplate(multiDayPostSell(HoldHighBasis.DAILY, TRADING_DATE.atTime(23, 59))),
+			builder.postSellTemplate(multiDayPostSell(HoldHighBasis.MINUTE, TRADING_DATE.atTime(11, 5))))
+			.forEach(sentence -> {
+				NarrativeValidationDto result = validator.validateCardOrPostSell(sentence);
+				assertThat(result.detectedExpressions())
+					.as("적발된 표현: %s (문장: %s)", result.detectedExpressions(), sentence)
+					.isEmpty();
+				assertThat(result.passed()).isTrue();
+			});
+	}
+
 	// ---------- 확인 3: holdHighPrice가 null이면 셋째 문장이 빠진다 ----------
 
 	@Test
@@ -378,6 +432,20 @@ class NarrativeTemplateBuilderTest {
 
 	private PostSellPromptDto postSell(BigDecimal returnRate, BigDecimal holdHighPrice, LocalTime holdHighAt) {
 		return fixturePostSell(returnRate, holdHighPrice, holdHighAt, money("70000"), money("68500"));
+	}
+
+	/**
+	 * 8월 1일 14:20 매수 → 8월 5일 09:05 매도. 값은 {@link #postSell}과 같게 두고 <b>극값 시각과 두 분기
+	 * 플래그만</b> 바꿨다 — 기대 문장의 차이가 이 수정이 만든 표기 차이뿐임이 드러나야 한다.
+	 */
+	private static PostSellPromptDto multiDayPostSell(HoldHighBasis basis, LocalDateTime holdHighAt) {
+		return new PostSellPromptDto(
+			"비트코인", LocalDate.of(2026, 8, 1).atTime(14, 20), money("70000"),
+			LocalDate.of(2026, 8, 5).atTime(9, 5), money("68500"), new BigDecimal("10"),
+			new BigDecimal("-0.0217"), -15207L,
+			money("70800"), holdHighAt, new BigDecimal("-0.0325"),
+			money("68100"), TRADING_DATE.atTime(14, 20), new BigDecimal("0.0059"), null, null, List.of(),
+			null, null, null, null, null, null, true, basis);
 	}
 
 	private PostSellPromptDto postSellWithPrices(BigDecimal buyPrice, BigDecimal sellPrice, BigDecimal returnRate) {

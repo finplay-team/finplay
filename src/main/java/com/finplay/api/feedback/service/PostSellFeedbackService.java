@@ -14,7 +14,6 @@ import com.finplay.api.feedback.dto.response.PostSellFlow;
 import com.finplay.api.feedback.repository.TradeFeedbackRepository;
 import java.time.Clock;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -282,12 +281,11 @@ public class PostSellFeedbackService {
 	}
 
 	/** 보유 구간 카드의 근거 기사 중 가장 이른 발행시각 — {@code buyToNewsMinutes}의 기준값 {@code T0}다. */
-	private static LocalTime firstNewsAt(List<HeldPriceMoveItem> priceMoves) {
+	private static LocalDateTime firstNewsAt(List<HeldPriceMoveItem> priceMoves) {
 		return priceMoves.stream()
 			.flatMap(move -> move.sources().stream())
 			.map(NewsItem::publishedAt)
 			.min(Comparator.naturalOrder())
-			.map(LocalDateTime::toLocalTime)
 			.orElse(null);
 	}
 
@@ -296,8 +294,8 @@ public class PostSellFeedbackService {
 	private static List<HeldPriceMoveDto> toPromptPriceMoves(List<HeldPriceMoveItem> priceMoves) {
 		return priceMoves.stream()
 			.map(move -> new HeldPriceMoveDto(
-				move.windowStart().toLocalTime(),
-				move.windowEnd().toLocalTime(),
+				move.windowStart(),
+				move.windowEnd(),
 				move.changeRate(),
 				move.minutesAfterBuy(),
 				move.minutesBeforeSell(),
