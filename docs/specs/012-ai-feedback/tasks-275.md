@@ -55,7 +55,7 @@
   - **주식 배치 회귀** — 코인 배치를 돌려도 주식 카드에 대한 행이 생기지 않고, `PeerStatsBatchServiceIntegrationTest`가 그대로 통과하는지(기존 테스트 실행으로 확인, 수정 금지).
   - 검증 — Testcontainers(MySQL) 통합 + 고정 `Clock`.
 
-- [ ] **4. 코인 조회 경로 테스트 — 게이트·200봉 경계·일봉 부재**
+- [x] **4. 코인 조회 경로 테스트 — 게이트·200봉 경계·일봉 부재**
 
   `3adb8192`가 구현한 `CryptoPostSellFeedbackReader`의 분기를 고정한다. 지금 **코인 경로를 지나는 테스트가 하나도 없다.**
 
