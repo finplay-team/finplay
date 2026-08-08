@@ -1145,6 +1145,7 @@ LLM이 실패하거나 후검증에 걸렸을 때 서버가 수치로 조립한�
 | 상황 | 처리 |
 |---|---|
 | 네이버·DART 키 없음 | `Fake*Collector`가 빈 목록 반환. 기동·테스트 정상 |
+| **로컬에서 뉴스가 0건** | 결함이 아니다. 수집기 선택은 **키 유무가 아니라 프로필**이 가르므로, 키를 채워도 기본 로컬은 `FakeNewsCollector`다. 실제 기사를 받으려면 `SPRING_PROFILES_ACTIVE=local,news-real`로 켠다 (이슈 #273, `crypto-real` 선례). 이 0건은 계약대로 `summaryStatus="EMPTY"`로 나가 화면에 아무 신호가 없다 |
 | OpenAI 키 없음 | `NarrativeGenerator`가 즉시 실패 반환 → **카드·매도 회고는 템플릿, 요약·브리핑은 `NONE`** |
 | 뉴스 API 호출 실패 | 그 종목만 건너뛰고 나머지 계속. `WARN` 로그 |
 | DART 호출 실패 | 공시 없이 뉴스만으로 진행 |

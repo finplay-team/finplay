@@ -261,3 +261,24 @@
 - [ ] 뉴스 매칭 창 (초안 `[T−30분, T+5분]`) — 발행시각과 가격 반응 시차 관측 후
 - [ ] 코인 쿨다운·일일 상한 (초안 30분 / 6건) — 실제 변동 빈도 관측 후
 - [ ] 직전 거래일 종가 확보 여부 — 시가 갭 카드의 선행 조건. 현재 수집 배치가 하루치만 받아오면 갭 카드는 데이터가 쌓인 다음 날부터 나온다
+
+## 이슈 #273 — 코인 뉴스 0건 (2026-08-08)
+
+### 1단계 판정
+- [x] 어느 단계에서 0건이 되는지 확인 — **수집기 선택 단계.** 로컬(`!prod`)은 `FakeNewsCollector`라 네이버를 부르지 않는다
+- [x] 이슈 전제 검증 — "주식은 정상 적재" 가 사실이 아니었다. 192건은 전부 `2026-08-04 12:20:52` 한 시각, URL이 `news.example.test/198/...` 인 **이슈 #198 QA 픽스처**
+- [x] 후보 4종(검색 호출·검색어·교차 필터·저장) 실측 배제 — 실호출 1,200건 수신, 운영 필터 통과 275건
+- [x] 근거를 이슈에 남긴다
+
+### 2단계 — 수집 가능한 문제였다
+- [x] `news-real` 프로필 추가 (`crypto-real`·`oauth-real` 선례) — `NaverNewsCollector` = `{prod, news-real}`, `FakeNewsCollector` = `!prod & !news-real`
+- [x] `NewsCollectorProfileTest`에 `news-real` 회귀 단정 추가
+- [x] `.env.example`·spec §실패 처리·run-log 갱신
+- [x] 코인 종목 1건 이상 실제 적재 확인 (로컬 `local,news-real` 기동)
+- [x] `./gradlew build` 통과
+- [x] 수집 경로가 원장에 닿지 않음 확인 — `NewsCollectionService`가 주입받는 리포지터리는 `MarketNewsItemRepository` 하나뿐이고 `instruments`는 읽기만 한다
+- [ ] **원장 행 수 불변은 단정하지 못했다.** 검증 기동 중 같은 로컬 DB에서 사용자가 프론트로 거래 중이었다 (`orders` 6→7: 23:20:54 `MARKET SELL`, `trades` 3→5, `holding_lots` 3→4). 수집과 무관한 사용자 주문이지만 **두 앱 인스턴스가 한 DB를 동시에 쓴 상태**라 "불변"을 근거로 주장할 수 없다 — 재확인하려면 앱 하나만 띄운 상태에서 다시 잰다
+
+### 하지 않은 것
+- 공시(DART) 수집 — 이슈 제외 범위. `news-real`을 켜도 로컬 공시는 Fake 그대로다
+- 주식 뉴스 경로·`price_move_events` 판정 — 이슈 제외 범위
