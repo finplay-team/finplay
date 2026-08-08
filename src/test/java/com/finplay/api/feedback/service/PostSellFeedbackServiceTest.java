@@ -15,6 +15,7 @@ import static org.mockito.Mockito.when;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.feedback.config.FeedbackLlmProperties;
+import com.finplay.api.feedback.domain.HoldHighBasis;
 import com.finplay.api.feedback.domain.MarketNewsItemType;
 import com.finplay.api.feedback.domain.NarrativeSource;
 import com.finplay.api.feedback.domain.PostSellFeedbackStatus;
@@ -571,6 +572,8 @@ class PostSellFeedbackServiceTest {
 			LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(14, 20)),
 			new BigDecimal("-0.0325"),
 			new BigDecimal("0.0059"),
+			// 주식은 언제나 1분봉 정밀도다(§FEED-012 결정 4 — DAILY는 코인 전용).
+			HoldHighBasis.MINUTE,
 			withCard ? 105 : null,
 			withCard ? List.of(sampleCard()) : List.of(),
 			marketClosed

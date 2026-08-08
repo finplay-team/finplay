@@ -28,6 +28,9 @@ class FeedbackBatchPropertiesTest {
 	// §C-1 코인 요약·브리핑 갱신 크론 (매시 05분)
 	private static final String SPEC_CRYPTO_CRON = "0 5 * * * *";
 
+	// §C-1 주식 장 마감 집단 비교 확정 집계 크론 (15:32)
+	private static final String SPEC_PEER_STATS_CRON = "0 32 15 * * MON-FRI";
+
 	private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
 		.withUserConfiguration(FeedbackBatchConfig.class);
 
@@ -221,6 +224,116 @@ class FeedbackBatchPropertiesTest {
 					.isEqualTo(SPEC_CRYPTO_WATCH_CRON);
 				assertThat(context.getBean(FeedbackBatchProperties.class).cryptoWatchCron())
 					.isEqualTo(SPEC_CRYPTO_WATCH_CRON);
+			});
+	}
+
+	// --- 코인 집단 비교 확정 집계 크론 (§FEED-012 결정 3, 이슈 #275 항목 1) ---
+
+	// §C-1 코인 집단 비교 확정 집계 크론 — 매일 00:05에 전날 KST 하루치 코인 카드를 집계한다.
+	private static final String SPEC_CRYPTO_PEER_STATS_CRON = "0 5 0 * * *";
+
+	@Test
+	@DisplayName("feedback.batch 설정을 주지 않아도 §C-1 코인 집단 비교 크론으로 바인딩된다")
+	void bindsSpecCryptoPeerStatsCronDefaultWhenNoFeedbackBatchPropertyIsGiven() {
+		contextRunner.run(context -> {
+			assertThat(context).hasNotFailed();
+			assertThat(context.getBean(FeedbackBatchProperties.class).cryptoPeerStatsCron())
+				.isEqualTo(SPEC_CRYPTO_PEER_STATS_CRON);
+		});
+	}
+
+	@Test
+	@DisplayName("feedback.batch.crypto-peer-stats-cron 케밥케이스 키를 주면 덮어써지고 나머지 크론은 그대로다")
+	void bindsCryptoPeerStatsCronFromKebabCaseKey() {
+		contextRunner
+			.withPropertyValues("feedback.batch.crypto-peer-stats-cron=0 10 0 * * *")
+			.run(context -> {
+				assertThat(context).hasNotFailed();
+
+				FeedbackBatchProperties properties = context.getBean(FeedbackBatchProperties.class);
+				assertThat(properties.cryptoPeerStatsCron()).isEqualTo("0 10 0 * * *");
+				assertThat(properties.cron()).isEqualTo(SPEC_BATCH_CRON);
+				assertThat(properties.cryptoCron()).isEqualTo(SPEC_CRYPTO_CRON);
+				assertThat(properties.cryptoWatchCron()).isEqualTo(SPEC_CRYPTO_WATCH_CRON);
+				// 주식 장 마감 집계 크론과 별개 필드다 — 한쪽을 바꿔 다른 쪽이 따라 움직이면 안 된다.
+				assertThat(properties.peerStatsCron()).isEqualTo(SPEC_PEER_STATS_CRON);
+			});
+	}
+
+	// 매시 크론(`0 5 * * * *`)과 한 글자 차이라 오타가 나면 하루 1회가 매시 24회로 조용히 늘어난다.
+	@Test
+	@DisplayName("§C-1 코인 집단 비교 크론 기본값이 파싱 가능하고 매일 00:05 하루 1회만 돈다")
+	void specCryptoPeerStatsCronRunsOnceADayAtFiveMinutesPastMidnight() {
+		contextRunner.run(context -> {
+			String cron = context.getBean(FeedbackBatchProperties.class).cryptoPeerStatsCron();
+			assertThatCode(() -> CronExpression.parse(cron)).doesNotThrowAnyException();
+
+			java.time.LocalDateTime from = java.time.LocalDateTime.of(2026, 8, 5, 10, 0);
+			java.time.LocalDateTime next = CronExpression.parse(cron).next(from);
+			assertThat(next).isEqualTo(java.time.LocalDateTime.of(2026, 8, 6, 0, 5));
+			// 다음 실행이 정확히 하루 뒤여야 한다 — 매시로 넓어지는 회귀가 여기서 걸린다.
+			assertThat(CronExpression.parse(cron).next(next))
+				.isEqualTo(java.time.LocalDateTime.of(2026, 8, 7, 0, 5));
+		});
+	}
+
+	// 주식 집계는 MON-FRI지만 코인은 장 마감이 없어 주말에도 돌아야 한다(§FEED-012 결정 3).
+	@Test
+	@DisplayName("코인 집단 비교 크론은 주말에도 실행된다")
+	void specCryptoPeerStatsCronAlsoRunsOnWeekends() {
+		contextRunner.run(context -> {
+			CronExpression cron = CronExpression
+				.parse(context.getBean(FeedbackBatchProperties.class).cryptoPeerStatsCron());
+
+			// 2026-08-08은 토요일 — 다음 실행이 일요일 00:05이어야 주말이 건너뛰이지 않는다.
+			java.time.LocalDateTime saturday = java.time.LocalDateTime.of(2026, 8, 8, 1, 0);
+			assertThat(cron.next(saturday)).isEqualTo(java.time.LocalDateTime.of(2026, 8, 9, 0, 5));
+		});
+	}
+
+	@Test
+	@DisplayName("application.yml에 feedback.batch.crypto-peer-stats-cron이 §C-1 값으로 실제 존재한다")
+	void applicationYmlDeclaresTheCryptoPeerStatsCronKey() {
+		new ApplicationContextRunner()
+			.withSystemProperties("spring.config.additional-location=")
+			.withInitializer(new ConfigDataApplicationContextInitializer())
+			.withUserConfiguration(FeedbackBatchConfig.class)
+			.run(context -> {
+				Environment environment = context.getEnvironment();
+				assertThat(environment.getProperty("feedback.batch.crypto-peer-stats-cron"))
+					.isEqualTo(SPEC_CRYPTO_PEER_STATS_CRON);
+				assertThat(context.getBean(FeedbackBatchProperties.class).cryptoPeerStatsCron())
+					.isEqualTo(SPEC_CRYPTO_PEER_STATS_CRON);
+			});
+	}
+
+	// yml과 @DefaultValue가 갈리는지는 키마다 따로 보고 있지만, 새 키가 추가될 때 이 대조를 빠뜨리기 쉽다.
+	// 컨테이너 없이 도는 테스트이므로 5개 전부를 한 자리에서 한 번 더 묶어 둔다.
+	@Test
+	@DisplayName("feedback.batch의 크론 5개가 yml과 @DefaultValue 양쪽에서 모두 §C-1 값이다")
+	void allBatchCronsAgreeBetweenYmlAndDefaults() {
+		new ApplicationContextRunner()
+			.withSystemProperties("spring.config.additional-location=")
+			.withInitializer(new ConfigDataApplicationContextInitializer())
+			.withUserConfiguration(FeedbackBatchConfig.class)
+			.run(context -> {
+				Environment environment = context.getEnvironment();
+				FeedbackBatchProperties properties = context.getBean(FeedbackBatchProperties.class);
+
+				assertThat(properties.cron()).isEqualTo(SPEC_BATCH_CRON);
+				assertThat(properties.cryptoCron()).isEqualTo(SPEC_CRYPTO_CRON);
+				assertThat(properties.peerStatsCron()).isEqualTo(SPEC_PEER_STATS_CRON);
+				assertThat(properties.cryptoWatchCron()).isEqualTo(SPEC_CRYPTO_WATCH_CRON);
+				assertThat(properties.cryptoPeerStatsCron()).isEqualTo(SPEC_CRYPTO_PEER_STATS_CRON);
+
+				assertThat(environment.getProperty("feedback.batch.cron")).isEqualTo(SPEC_BATCH_CRON);
+				assertThat(environment.getProperty("feedback.batch.crypto-cron")).isEqualTo(SPEC_CRYPTO_CRON);
+				assertThat(environment.getProperty("feedback.batch.peer-stats-cron"))
+					.isEqualTo(SPEC_PEER_STATS_CRON);
+				assertThat(environment.getProperty("feedback.batch.crypto-watch-cron"))
+					.isEqualTo(SPEC_CRYPTO_WATCH_CRON);
+				assertThat(environment.getProperty("feedback.batch.crypto-peer-stats-cron"))
+					.isEqualTo(SPEC_CRYPTO_PEER_STATS_CRON);
 			});
 	}
 }

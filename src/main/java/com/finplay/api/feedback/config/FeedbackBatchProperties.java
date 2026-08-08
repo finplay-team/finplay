@@ -27,5 +27,10 @@ public record FeedbackBatchProperties(
 	// 코인 변동 감시 (CryptoPriceMoveWatcher, 이슈 #225). market.crypto.price-snapshot-cron(매 분 정각)과
 	// 초를 30초 어긋내 — 같은 시각이면 실행 순서가 보장되지 않아 감시가 그 분의 스냅샷을 못 볼 수 있다(§C-1).
 	@DefaultValue("30 * * * * *")
-	String cryptoWatchCron) {
+	String cryptoWatchCron,
+	// 코인 집단 비교 확정 집계 (§FEED-012 결정 3, 이슈 #275). 매일 00:05에 돌아 전날 KST 하루치 코인 카드를
+	// 집계한다 — 코인은 장 마감이 없어 '하루가 끝나는 시점'이 자정이고, 00:00 정각이 아니라 05분인 것은
+	// 그 직전 자정 경계 체결·분봉이 반영될 여유를 주기 위해서다(§C-1).
+	@DefaultValue("0 5 0 * * *")
+	String cryptoPeerStatsCron) {
 }

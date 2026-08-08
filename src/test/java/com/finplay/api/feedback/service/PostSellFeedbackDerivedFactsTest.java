@@ -99,6 +99,8 @@ class PostSellFeedbackDerivedFactsTest {
 	private final Clock clock = Clock.fixed(TODAY.atTime(NOW_TIME).atZone(KST).toInstant(), KST);
 
 	private final PostSellFeedbackReader postSellFeedbackReader = new PostSellFeedbackReader(
+		// 이 파일은 주식 경로만 본다 — 코인 조립은 CryptoPostSellFeedbackReader 전담 테스트의 몫이다.
+		mock(CryptoPostSellFeedbackReader.class),
 		tradeService, sellAllocationQueryService, stockReplayService, priceMoveEventRepository,
 		priceMoveEventSourceRepository, priceMovePeerStatRepository, clock);
 

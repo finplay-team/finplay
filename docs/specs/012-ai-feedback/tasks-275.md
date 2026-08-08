@@ -24,7 +24,7 @@
 
 ## 작업 항목
 
-- [ ] **1. `feedback.batch.crypto-peer-stats-cron` 설정 추가 (풀 크기는 2번에서)**
+- [x] **1. `feedback.batch.crypto-peer-stats-cron` 설정 추가 (풀 크기는 2번에서)**
 
   §C-1 표의 `0 5 0 * * *`를 `FeedbackBatchProperties`(`src/main/java/com/finplay/api/feedback/config/FeedbackBatchProperties.java`)의 5번째 컴포넌트로 더하고(`@DefaultValue`, 기존 4개와 같은 형태 — 한 줄 주석에 "매일 00:05, 전날 KST 카드" 근거를 남긴다), `application.yml`의 `feedback.batch` 블록(`crypto-watch-cron` 다음)에 같은 값을 추가한다.
 

@@ -14,6 +14,7 @@ import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.auth.token.JwtTokenProvider;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
+import com.finplay.api.feedback.domain.HoldHighBasis;
 import com.finplay.api.feedback.domain.MarketNewsItemType;
 import com.finplay.api.feedback.domain.PostSellFeedbackStatus;
 import com.finplay.api.feedback.dto.response.CounterfactualScenario;
@@ -351,6 +352,8 @@ class PostSellFeedbackControllerTest {
 			LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(14, 20)),
 			new BigDecimal("-0.0325"),
 			new BigDecimal("0.0059"),
+			// 주식은 언제나 1분봉 정밀도다(§FEED-012 결정 4 — DAILY는 코인 전용).
+			HoldHighBasis.MINUTE,
 			105,
 			List.of(new HeldPriceMoveItem(
 				12L,
@@ -461,7 +464,8 @@ class PostSellFeedbackControllerTest {
 			base.buyPrice(), base.sellPrice(), base.quantity(), base.fee(), base.realizedPnl(), base.returnRate(),
 			base.holdingMinutes(), base.sameSessionCompleted(), base.holdHighPrice(), base.holdHighAt(),
 			base.holdLowPrice(), base.holdLowAt(), base.sellVsHighRate(), base.sellVsLowRate(),
-			base.buyToNewsMinutes(), base.priceMoves(), base.postSellFlow(), base.counterfactuals(), peerComparison,
+			base.holdHighBasis(), base.buyToNewsMinutes(), base.priceMoves(), base.postSellFlow(),
+			base.counterfactuals(), peerComparison,
 			base.narrative(), base.narrativeSource(), base.narrativeStatus());
 	}
 
@@ -495,6 +499,8 @@ class PostSellFeedbackControllerTest {
 			null,
 			null,
 			null,
+			null,
+			// holdHighBasis — 극값을 아직 재지 않은 형태라 정밀도도 없다.
 			null,
 			null,
 			List.of(),

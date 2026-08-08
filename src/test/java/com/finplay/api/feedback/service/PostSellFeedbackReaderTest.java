@@ -86,6 +86,8 @@ class PostSellFeedbackReaderTest {
 	// 완료 조건은 게이트가 아니라 검증 순서·수치·buyAt·sameSessionCompleted라, 매도 서비스 날짜의 장중 시각으로
 	// 고정해 게이트가 판정을 가리지 않게 둔다 — 게이트 자체(⑮)는 통합 테스트가 고정 Clock으로 본다.
 	private final PostSellFeedbackReader postSellFeedbackReader = new PostSellFeedbackReader(
+		// 이 파일은 주식 경로만 본다 — 코인 조립은 CryptoPostSellFeedbackReader 전담 테스트의 몫이다.
+		mock(CryptoPostSellFeedbackReader.class),
 		tradeService,
 		sellAllocationQueryService,
 		stockReplayService,
