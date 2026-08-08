@@ -5,10 +5,15 @@ import com.finplay.api.market.domain.Instrument;
 import java.util.List;
 
 /**
- * 구현은 둘이다. {@code NaverNewsCollector}가 {@code @Profile("prod")}, {@code FakeNewsCollector}가
- * {@code @Profile("!prod")}로 서로 배타적이다 ({@code ResendEmailSender}/{@code FakeEmailSender} 선례).
- * 로컬·테스트는 키 없이 Fake로 뜨므로 <b>외부 API 키가 없어도 기동과 자동 테스트가 정상 동작한다</b>
+ * 구현은 둘이다. {@code NaverNewsCollector}가 {@code @Profile({"prod", "news-real"})},
+ * {@code FakeNewsCollector}가 {@code @Profile("!prod & !news-real")}로 서로 배타적이다
+ * ({@code BithumbRestCandleProvider}/{@code FakeCryptoCandleProvider}의 {@code crypto-real} 선례).
+ * 기본 로컬·테스트는 키 없이 Fake로 뜨므로 <b>외부 API 키가 없어도 기동과 자동 테스트가 정상 동작한다</b>
  * (ADR-0011, spec §실패 처리).
+ *
+ * <p><b>{@code news-real}은 로컬에서 실제 기사를 받아 보는 유일한 방법이다</b> (이슈 #273). 이 문이 없던
+ * 동안에는 키를 채운 로컬에서도 기사가 0건이었고, 그 0건이 <b>계약대로의 {@code EMPTY}</b>로 나가 코인 뉴스
+ * 수집이 고장 난 것처럼 읽혔다.
  *
  * <p><b>실패는 예외가 아니라 빈 목록이다.</b> 호출이 실패하면 그 종목만 건너뛰고 나머지 종목은 계속 수집한다
  * (§실패 처리). 그래서 이 메서드는 검사 예외도 런타임 예외도 밖으로 내보내지 않는 것을 계약으로 삼는다 —

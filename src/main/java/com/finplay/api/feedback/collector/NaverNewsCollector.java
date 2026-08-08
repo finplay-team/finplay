@@ -31,9 +31,15 @@ import org.springframework.web.util.HtmlUtils;
  * 엔드포인트·질의 파라미터·헤더·{@code display} 상한은 spec §외부 API 호출 상세가 정본이다. 질의어 조립과
  * 제목 필터는 {@code NewsSearchQueryBuilder}·{@code NewsTitleFilter}를 주입받아 쓴다 — 여기서 다시 만들지 않는다.
  *
- * <p>{@code @Profile("prod")}로 운영에서만 등록되고 로컬·테스트는 {@code FakeNewsCollector}가 대신 뜬다
- * ({@code ResendEmailSender}/{@code FakeEmailSender} 선례). 운영에 키가 아직 없는 구간은 호출이 401로 실패하고
- * §실패 처리의 "그 종목만 건너뜀"으로 흡수되므로 별도 키 검사를 두지 않는다.
+ * <p>{@code @Profile({"prod", "news-real"})}로 운영과 <b>로컬 실수집 프로필</b>에서만 등록되고, 그 밖의
+ * 로컬·테스트는 {@code FakeNewsCollector}가 대신 뜬다 ({@code BithumbRestCandleProvider}의
+ * {@code prod | crypto-real} 선례). 운영에 키가 아직 없는 구간은 호출이 401로 실패하고 §실패 처리의
+ * "그 종목만 건너뜀"으로 흡수되므로 별도 키 검사를 두지 않는다.
+ *
+ * <p><b>{@code news-real}은 로컬에서 실제 기사를 받아 보려고 연 문이다</b> (이슈 #273). 그 전에는 로컬이
+ * 무조건 {@code FakeNewsCollector}라 <b>키를 채워도 기사가 0건</b>이었고, 그 0건이 계약대로의 {@code EMPTY}로
+ * 나가 수집 결함처럼 읽혔다. 켜는 방법은 {@code SPRING_PROFILES_ACTIVE=local,news-real}이다 — 공시(DART)는
+ * 이 프로필로 바뀌지 않고 {@code FakeDisclosureCollector} 그대로다 (공시는 주식 전용이라 이슈 #273 범위 밖).
  *
  * <p><b>{@code publisher}는 {@code originallink}의 호스트에서 {@code www.}만 뗀 도메인이다</b>(§C-8).
  * 네이버 뉴스 검색 응답에는 <b>언론사 이름 필드가 없다</b> — {@code items[]}의 필드는 {@code title}·
@@ -54,7 +60,7 @@ import org.springframework.web.util.HtmlUtils;
  */
 @Slf4j
 @Component
-@Profile("prod")
+@Profile({"prod", "news-real"})
 public class NaverNewsCollector implements NewsCollector {
 
 	// spec §외부 API 호출 상세의 엔드포인트. 검색 API가 NAVER API HUB(네이버 클라우드 플랫폼 중개)로 옮겨가

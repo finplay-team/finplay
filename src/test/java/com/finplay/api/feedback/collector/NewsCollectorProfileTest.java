@@ -51,6 +51,21 @@ class NewsCollectorProfileTest {
 			});
 	}
 
+	// 이슈 #273 — 로컬에서 실제 기사를 받아 볼 문이 없어 "키를 채웠는데 0건"이 수집 결함으로 읽혔다.
+	// prod가 아니어도 이 프로필 하나로 실제 수집기가 뜨는 것을 여기서 고정한다 (crypto-real 선례).
+	@Test
+	@DisplayName("news-real 프로필에서는 prod가 아니어도 NaverNewsCollector가 조립되고 Fake가 제외된다")
+	void newsRealProfileAssemblesNaverNewsCollector() {
+		contextRunner
+			.withSystemProperties("spring.profiles.active=local,news-real")
+			.run(context -> {
+				assertThat(context).hasNotFailed();
+				assertThat(context).hasSingleBean(NewsCollector.class);
+				assertThat(context.getBean(NewsCollector.class)).isInstanceOf(NaverNewsCollector.class);
+				assertThat(context).doesNotHaveBean(FakeNewsCollector.class);
+			});
+	}
+
 	// 수집기가 RestClient를 빈으로 등록하면 RestClient 타입 빈이 둘이 되어 kisRestClient를 받던 주입이
 	// NoUniqueBeanDefinitionException으로 깨지고 컨텍스트 전체가 기동하지 않는다. RestClient.Builder만 받아
 	// 클래스 안에서 완성하는 형태를 여기서 고정한다.
