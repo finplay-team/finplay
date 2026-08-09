@@ -39,7 +39,7 @@
   - **REST 호출 대상·순서·흡수 규칙(`MARKET_DATA_PROVIDER_ERROR` 폴백)은 바뀌지 않는다** — 이번 항목은 트랜잭션 경계 재배치일 뿐 계산·폴백 로직을 수정하지 않는다.
   - 검증 — 단위(`CryptoPostSellFeedbackReaderTest`·`CryptoPostSellFeedbackDbReaderTest`).
 
-- [ ] **3. 트랜잭션 경계 통합 테스트 — REST 호출 시점에 활성 트랜잭션이 없음을 실제 DB로 고정**
+- [x] **3. 트랜잭션 경계 통합 테스트 — REST 호출 시점에 활성 트랜잭션이 없음을 실제 DB로 고정**
 
   spec §FEED-012 결정 5가 요구하는 두 층의 검증 중 실제 DB를 거치는 층이다. ADR-0003의 "핵심 시나리오는 Testcontainers 통합 테스트" 근거.
 
