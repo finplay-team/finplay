@@ -35,7 +35,9 @@ import com.finplay.api.ranking.store.RankingStore;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -46,6 +48,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
@@ -114,6 +117,17 @@ class RankingIntegrationTest {
 	@Autowired
 	private ApplicationEventPublisher eventPublisher;
 
+	@Autowired
+	private JdbcTemplate jdbcTemplate;
+
+	// 이 테스트가 만든 계좌·회원 id. @Transactional을 못 붙이는 클래스라(아래 클래스 주석) 매도 체결이 공유
+	// MySQL에 실제로 커밋되는데, 지금까지 tearDown이 Redis 키만 지워 CRYPTO 매도 이력이 남아 있었다. 그러면
+	// 뒤에 도는 다른 테스트가 "이 시장엔 매도 이력이 없다"를 단정할 수 없다 — 이슈 #279 작업 중 @DataJpaTest
+	// 프로브로 실측 확인했고, 실제로 그 단정 하나를 포기해야 했다(TradeRepositoryTest 주석 참고).
+	// JournalIntegrationTest가 같은 이유로 쓰는 명시적 정리 방식을 따른다(agent-mistakes.md 2026-07-30).
+	private final List<Long> createdAccountIds = new ArrayList<>();
+	private final List<Long> createdUserIds = new ArrayList<>();
+
 	@BeforeEach
 	void setUp() {
 		priceStore.saveConnectionStatus(FeedConnectionStatus.CONNECTED);
@@ -124,6 +138,35 @@ class RankingIntegrationTest {
 	void tearDown() {
 		reset(rankingStore);
 		cleanRankingKeys();
+		cleanCommittedLedger();
+	}
+
+	// 이 테스트가 만든 계좌에 딸린 원장을 FK 자식 → 부모 순서로 지운다. 종목(instruments)은 시드 데이터를
+	// 그대로 쓰므로 건드리지 않는다 — 지우는 기준은 "이 클래스가 만든 계좌"다.
+	//
+	// trades를 참조하는 FK 중 trade_feedbacks(V13)·buy_trade_journals(V15)·sell_trade_journals(V17)는 지우지
+	// 않는다. 이 클래스가 그 행을 만들지 않기 때문이다 — 이 클래스에서 저널이나 매도 피드백을 만들게 되면
+	// 아래 "delete from trades"가 FK 위반으로 터지므로 그때 함께 추가해야 한다.
+	private void cleanCommittedLedger() {
+		if (!createdAccountIds.isEmpty()) {
+			String accountIdIn = createdAccountIds.stream().map(String::valueOf).collect(Collectors.joining(","));
+			jdbcTemplate.update("delete from trade_allocations where sell_trade_id in "
+				+ "(select id from trades where account_id in (" + accountIdIn + "))");
+			jdbcTemplate.update("delete from holding_lots where holding_id in "
+				+ "(select id from holdings where account_id in (" + accountIdIn + "))");
+			jdbcTemplate.update("delete from holdings where account_id in (" + accountIdIn + ")");
+			jdbcTemplate.update("delete from trades where account_id in (" + accountIdIn + ")");
+			jdbcTemplate.update("delete from orders where account_id in (" + accountIdIn + ")");
+			createdAccountIds.clear();
+		}
+		// 계좌 삭제를 user_id 기준으로만 한다 — 계좌 없이 회원만 만드는 헬퍼가 생겨도 그 회원이 남지 않도록
+		// 두 블록의 조건을 분리해 둔다(계좌 id 기준 삭제와 중복 실행되지 않는다).
+		if (!createdUserIds.isEmpty()) {
+			String userIdIn = createdUserIds.stream().map(String::valueOf).collect(Collectors.joining(","));
+			jdbcTemplate.update("delete from accounts where user_id in (" + userIdIn + ")");
+			jdbcTemplate.update("delete from users where id in (" + userIdIn + ")");
+			createdUserIds.clear();
+		}
 	}
 
 	// 시나리오 1: 실제 매수 후 매도 체결 API를 호출하면(리스너가 동기 실행이므로 응답 반환 시점엔 이미 반영됨),
@@ -449,14 +492,20 @@ class RankingIntegrationTest {
 		return jwtTokenProvider.issue(user.getId(), user.getRole()).accessToken();
 	}
 
+	// createUser·createAccount가 이 클래스의 유일한 생성 지점이라, 여기서만 id를 모아두면 tearDown이 빠짐없이
+	// 정리할 수 있다. 새 픽스처 헬퍼를 추가하면 여기에도 등록해야 한다.
 	private User createUser(String scenario) {
-		return userRepository.saveAndFlush(
+		User user = userRepository.saveAndFlush(
 			User.create(uniqueEmail(scenario), "password-hash", uniqueNickname(scenario), LocalDateTime.now(clock)));
+		createdUserIds.add(user.getId());
+		return user;
 	}
 
 	private Account createAccount(User user) {
-		return accountRepository.saveAndFlush(
+		Account account = accountRepository.saveAndFlush(
 			Account.create(user, com.finplay.api.account.domain.Market.CRYPTO, LocalDateTime.now(clock)));
+		createdAccountIds.add(account.getId());
+		return account;
 	}
 
 	private static String uniqueEmail(String scenario) {

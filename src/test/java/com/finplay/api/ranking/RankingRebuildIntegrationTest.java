@@ -28,9 +28,12 @@ import com.finplay.api.ranking.store.RankingStore;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -106,9 +109,48 @@ class RankingRebuildIntegrationTest {
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
 
+	// 이 클래스가 만든 계좌·회원 id. 비-@Transactional이라 매도 체결이 공유 MySQL에 실제로 커밋되므로,
+	// 남겨두면 뒤에 도는 테스트가 "이 시장엔 매도 이력이 없다"를 단정할 수 없다. RankingIntegrationTest가
+	// 같은 이유로 쓰는 정리 방식을 그대로 따른다(이슈 #279 작업 중 실측으로 확인한 오염이다).
+	private final List<Long> createdAccountIds = new ArrayList<>();
+	private final List<Long> createdUserIds = new ArrayList<>();
+
 	@BeforeEach
 	void setUp() {
 		priceStore.saveConnectionStatus(FeedConnectionStatus.CONNECTED);
+	}
+
+	// @BeforeEach가 아니라 @AfterEach여야 한다 — 이 클래스의 시나리오 1은 "재구성 전후 목록이 같다"를 보므로,
+	// 테스트 시작 전에 원장을 건드리면 before 스냅샷의 전제가 바뀐다. 정리는 각 테스트가 끝난 뒤에만 한다.
+	//
+	// **원장과 ZSET을 반드시 함께 지운다.** 계좌만 지우고 ZSET 멤버를 남기면 그 멤버는 DB에 없는 유령이 되는데,
+	// 유령은 목록 응답에서는 필터링돼도 countStrictlyGreater(ZCOUNT)에는 그대로 세어져 순위를 부풀린다. 그러면
+	// 시나리오 1에서 before는 유령이 낀 순위(공동 2위·5위), after는 재구성이 유령을 걷어낸 순위(공동 1위·3위)가
+	// 되어 "전후 동일"이 깨진다 — 실제로 ZREM을 빼고 돌려 이 실패를 확인했다. 이 클래스가 성립하는 전제는
+	// "ZSET 상태 ≈ 원장을 재구성한 결과"이며, 정리도 그 전제를 유지하는 방향이어야 한다.
+	@AfterEach
+	void tearDown() {
+		if (!createdAccountIds.isEmpty()) {
+			String[] members = createdAccountIds.stream().map(String::valueOf).toArray(String[]::new);
+			redisTemplate.opsForZSet().remove(rankingKey(CRYPTO), (Object[])members);
+			redisTemplate.opsForZSet().remove(rankingKey(STOCK), (Object[])members);
+
+			String accountIdIn = createdAccountIds.stream().map(String::valueOf).collect(Collectors.joining(","));
+			jdbcTemplate.update("delete from trade_allocations where sell_trade_id in "
+				+ "(select id from trades where account_id in (" + accountIdIn + "))");
+			jdbcTemplate.update("delete from holding_lots where holding_id in "
+				+ "(select id from holdings where account_id in (" + accountIdIn + "))");
+			jdbcTemplate.update("delete from holdings where account_id in (" + accountIdIn + ")");
+			jdbcTemplate.update("delete from trades where account_id in (" + accountIdIn + ")");
+			jdbcTemplate.update("delete from orders where account_id in (" + accountIdIn + ")");
+			createdAccountIds.clear();
+		}
+		if (!createdUserIds.isEmpty()) {
+			String userIdIn = createdUserIds.stream().map(String::valueOf).collect(Collectors.joining(","));
+			jdbcTemplate.update("delete from accounts where user_id in (" + userIdIn + ")");
+			jdbcTemplate.update("delete from users where id in (" + userIdIn + ")");
+			createdUserIds.clear();
+		}
 	}
 
 	// 시나리오 1: ZSET을 통째로 DEL한 뒤 재구성하면 유실 전과 같은 순위·금액이 그대로 복원된다.
@@ -473,13 +515,19 @@ class RankingRebuildIntegrationTest {
 		return jwtTokenProvider.issue(user.getId(), user.getRole()).accessToken();
 	}
 
+	// createUser·createAccount가 이 클래스의 유일한 픽스처 생성 지점이라, 여기서만 id를 모으면 tearDown이
+	// 빠짐없이 정리한다. 새 픽스처 헬퍼를 추가하면 여기에도 등록해야 한다.
 	private User createUser(String scenario) {
-		return userRepository.saveAndFlush(
+		User user = userRepository.saveAndFlush(
 			User.create(uniqueEmail(scenario), "password-hash", uniqueNickname(scenario), LocalDateTime.now(clock)));
+		createdUserIds.add(user.getId());
+		return user;
 	}
 
 	private Account createAccount(User user) {
-		return accountRepository.saveAndFlush(Account.create(user, CRYPTO, LocalDateTime.now(clock)));
+		Account account = accountRepository.saveAndFlush(Account.create(user, CRYPTO, LocalDateTime.now(clock)));
+		createdAccountIds.add(account.getId());
+		return account;
 	}
 
 	private static String uniqueEmail(String scenario) {
