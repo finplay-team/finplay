@@ -27,3 +27,7 @@
 ## 모니터링 (사람용 요약)
 - 리뷰(코드 리뷰 모드) — 차단 0건 / 권장 1건 / 참고 2건. env의 fromJSON 재발 없음, judge 병합 로직은 모든 분기에서 안전 기본값(승인 보류)으로 수렴 확인. round_exhausted 분기에서 "자동 수정 1회차" 헤더 코멘트가 2건 중복 게시되는 점을 권장으로 지적.
 - PR #293 리뷰 권장 2건(코멘트 중복, review_autofix 침묵 실패) 반영 — post_review_autofix 하나로 흡수(빈 값도 코멘트 게시, blocking!=0이면 "라운드 소진" 명시), 별도 "라운드 소진 이력 코멘트" 스텝 제거. judge 스텝(always() 포함) 미변경. YAML·run: 스크립트 문법 통과.
+| - | reviewer(리뷰, 후속검증) | `git log --oneline -3`, `git diff HEAD~2...HEAD -- .github/workflows/agent.yml`, `python -c "import yaml; ..."`(step 수·if 조건 확인) | 직전 리뷰 권장 2건(코멘트 중복·침묵 실패) 재검증 |
+
+## 모니터링 (사람용 요약)
+- PR #293 직전 리뷰 권장 2건(코멘트 중복, review_autofix 침묵 실패) 재검증 — 차단 0건 / 권장 1건 / 참고 1건. 두 지적 모두 실제로 해소(post_review_autofix가 빈 값·라운드 소진 사유를 함께 처리, 별도 스텝 제거로 step 17→16). judge의 final_reason 판정과 post_review_autofix의 코멘트 문구는 같은 소스(steps.review_autofix.outputs.structured_output)를 참조해 서로 어긋나지 않음을 확인. 잔여 사각지대(review_autofix 스텝 자체가 실패로 끝나는 경우 코멘트 미게시)는 이번 지적 범위 밖이라 권장으로 별도 기록.
