@@ -59,7 +59,7 @@ class PriceMoveQueryServiceTest {
 		instrumentService,
 		stockReplayService,
 		priceMoveEventRepository,
-		priceMoveEventSourceRepository,
+		new PriceMoveSourceLoader(priceMoveEventSourceRepository),
 		cryptoProperties,
 		Clock.fixed(NOW.atZone(KST).toInstant(), KST));
 

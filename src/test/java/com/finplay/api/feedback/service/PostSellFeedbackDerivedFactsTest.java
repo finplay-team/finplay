@@ -102,7 +102,7 @@ class PostSellFeedbackDerivedFactsTest {
 		// 이 파일은 주식 경로만 본다 — 코인 조립은 CryptoPostSellFeedbackReader 전담 테스트의 몫이다.
 		mock(CryptoPostSellFeedbackReader.class),
 		tradeService, sellAllocationQueryService, stockReplayService, priceMoveEventRepository,
-		priceMoveEventSourceRepository, priceMovePeerStatRepository, clock);
+		new PriceMoveSourceLoader(priceMoveEventSourceRepository), priceMovePeerStatRepository, clock);
 
 	// --- 보유 구간 극값 (완료 조건 6번 — close 기준) ---
 

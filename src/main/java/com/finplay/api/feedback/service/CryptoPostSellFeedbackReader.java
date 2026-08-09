@@ -7,7 +7,6 @@ import com.finplay.api.feedback.config.FeedbackCryptoProperties;
 import com.finplay.api.feedback.domain.HoldHighBasis;
 import com.finplay.api.feedback.domain.PostSellFeedbackStatus;
 import com.finplay.api.feedback.domain.PriceMoveEvent;
-import com.finplay.api.feedback.domain.PriceMoveEventSource;
 import com.finplay.api.feedback.dto.response.CounterfactualScenario;
 import com.finplay.api.feedback.dto.response.Counterfactuals;
 import com.finplay.api.feedback.dto.response.HeldPriceMoveItem;
@@ -16,7 +15,6 @@ import com.finplay.api.feedback.dto.response.PeerComparison;
 import com.finplay.api.feedback.dto.response.PostSellFeedbackResponse;
 import com.finplay.api.feedback.dto.response.PostSellFlow;
 import com.finplay.api.feedback.repository.PriceMoveEventRepository;
-import com.finplay.api.feedback.repository.PriceMoveEventSourceRepository;
 import com.finplay.api.feedback.repository.PriceMovePeerStatRepository;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.CandleInterval;
@@ -29,9 +27,7 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -82,7 +78,7 @@ class CryptoPostSellFeedbackReader {
 
 	private final PriceMoveEventRepository priceMoveEventRepository;
 
-	private final PriceMoveEventSourceRepository priceMoveEventSourceRepository;
+	private final PriceMoveSourceLoader priceMoveSourceLoader;
 
 	private final PriceMovePeerStatRepository priceMovePeerStatRepository;
 
@@ -461,7 +457,7 @@ class CryptoPostSellFeedbackReader {
 			return List.of();
 		}
 
-		Map<Long, List<NewsItem>> sourcesByEventId = findSources(events);
+		Map<Long, List<NewsItem>> sourcesByEventId = priceMoveSourceLoader.findSources(events);
 		return events.stream()
 			.map(event -> toHeldPriceMoveItem(
 				event, buyAt, sellAt, sourcesByEventId.getOrDefault(event.getId(), List.of())))
@@ -529,21 +525,4 @@ class CryptoPostSellFeedbackReader {
 			.orElse(null);
 	}
 
-	/**
-	 * 카드마다 따로 묻지 않고 한 번에 읽어 카드 id로 묶는다 — 주식 경로·목록 조회와 같은 질의다.
-	 *
-	 * <p>정렬 규칙은 이 메서드가 아니라 리포지토리 질의({@code publishedAt} 내림차순 + {@code id} 오름차순)에
-	 * 있다. 여기서는 {@code LinkedHashMap}·{@code ArrayList}가 그 순서를 삽입 순서로 보존할 뿐이다.
-	 */
-	private Map<Long, List<NewsItem>> findSources(List<PriceMoveEvent> events) {
-		List<Long> eventIds = events.stream().map(PriceMoveEvent::getId).toList();
-		Map<Long, List<NewsItem>> sourcesByEventId = new LinkedHashMap<>();
-		for (PriceMoveEventSource source : priceMoveEventSourceRepository
-			.findAllByPriceMoveEventIdIn(eventIds)) {
-			sourcesByEventId
-				.computeIfAbsent(source.getPriceMoveEvent().getId(), id -> new ArrayList<>())
-				.add(NewsItem.from(source.getMarketNewsItem()));
-		}
-		return sourcesByEventId;
-	}
 }

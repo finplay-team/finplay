@@ -5,7 +5,6 @@ import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.feedback.domain.HoldHighBasis;
 import com.finplay.api.feedback.domain.PriceMoveEvent;
-import com.finplay.api.feedback.domain.PriceMoveEventSource;
 import com.finplay.api.feedback.domain.PostSellFeedbackStatus;
 import com.finplay.api.feedback.dto.response.CounterfactualScenario;
 import com.finplay.api.feedback.dto.response.Counterfactuals;
@@ -15,7 +14,6 @@ import com.finplay.api.feedback.dto.response.PeerComparison;
 import com.finplay.api.feedback.dto.response.PostSellFeedbackResponse;
 import com.finplay.api.feedback.dto.response.PostSellFlow;
 import com.finplay.api.feedback.repository.PriceMoveEventRepository;
-import com.finplay.api.feedback.repository.PriceMoveEventSourceRepository;
 import com.finplay.api.feedback.repository.PriceMovePeerStatRepository;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.domain.StockReplaySession;
@@ -31,9 +29,7 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -65,6 +61,13 @@ import org.springframework.transaction.annotation.Transactional;
  * 시장 판정을 서비스로 올리면 조립 전에 체결을 한 번 더 읽어야 하고, 코인 쪽에 {@code @Transactional}을 새로
  * 열면 같은 조회가 두 트랜잭션에 걸친다. <b>아래 주식 경로는 3차에서 동작이 바뀌지 않았다</b> — 산술을
  * {@link PostSellArithmetic}으로 옮긴 것은 코인과 식을 공유하기 위한 이동이고 값은 그대로다.
+ *
+ * <p><b>알려진 한계 — 코인 분기는 이 읽기 트랜잭션 안에서 외부 REST를 부른다</b>(이슈 #282, PR #281 리뷰).
+ * 위 문단이 "LLM 호출을 이 트랜잭션 안에 넣지 않기 위해 빈을 나눴다"고 적은 것과 <b>정반대 방향</b>이다 —
+ * 코인 경로는 {@code findHoldExtremes}·{@code sellDayClose}·{@code highestCloseAfterSell}·
+ * {@code scenarioAtFirstMoveAfterBuy}에서 빗썸을 최대 4회 부르고, 타임아웃 예산이 <b>connect 2초 / read 3초</b>라
+ * 최악의 경우 요청 하나가 십수 초 동안 커넥션 1개를 쥔다(풀 20). 지금 고치지 않는 이유는 경계를 나누려면
+ * 캔들 조회를 트랜잭션 밖으로 끌어내는 <b>조립 순서 변경</b>이 필요해 이슈 #275 범위를 넘기 때문이다.
  *
  * <p><b>수치는 원장에서 그대로 읽는다.</b> {@code buyPrice}는 FIFO 배분 가중평균 매수단가,
  * {@code sellPrice}·{@code quantity}·{@code fee}·{@code realizedPnl}은 {@code trades} 행 그대로다. 재계산하거나
@@ -108,7 +111,7 @@ class PostSellFeedbackReader {
 
 	private final PriceMoveEventRepository priceMoveEventRepository;
 
-	private final PriceMoveEventSourceRepository priceMoveEventSourceRepository;
+	private final PriceMoveSourceLoader priceMoveSourceLoader;
 
 	private final PriceMovePeerStatRepository priceMovePeerStatRepository;
 
@@ -529,7 +532,7 @@ class PostSellFeedbackReader {
 			return List.of();
 		}
 
-		Map<Long, List<NewsItem>> sourcesByEventId = findSources(events);
+		Map<Long, List<NewsItem>> sourcesByEventId = priceMoveSourceLoader.findSources(events);
 		return events.stream()
 			.map(event -> toHeldPriceMoveItem(
 				event, buyAt, sellAt, sourcesByEventId.getOrDefault(event.getId(), List.of())))
@@ -609,25 +612,6 @@ class PostSellFeedbackReader {
 			.min(Comparator.naturalOrder())
 			.map(firstNewsAt -> PostSellArithmetic.minutesBetween(buyAt, firstNewsAt))
 			.orElse(null);
-	}
-
-	/**
-	 * 카드마다 따로 묻지 않고 한 번에 읽어 카드 id로 묶는다 — {@code PriceMoveQueryService}와 같은 조회를 쓴다.
-	 *
-	 * <p><b>정렬 규칙은 이 메서드가 아니라 리포지토리 질의({@code publishedAt} 내림차순 + {@code id} 오름차순)에
-	 * 있다</b>(계약). 여기서는 {@code LinkedHashMap}·{@code ArrayList}가 그 순서를 삽입 순서로 보존할 뿐이라
-	 * 규칙이 두 곳으로 갈리지 않는다.
-	 */
-	private Map<Long, List<NewsItem>> findSources(List<PriceMoveEvent> events) {
-		List<Long> eventIds = events.stream().map(PriceMoveEvent::getId).toList();
-		Map<Long, List<NewsItem>> sourcesByEventId = new LinkedHashMap<>();
-		for (PriceMoveEventSource source : priceMoveEventSourceRepository
-			.findAllByPriceMoveEventIdIn(eventIds)) {
-			sourcesByEventId
-				.computeIfAbsent(source.getPriceMoveEvent().getId(), id -> new ArrayList<>())
-				.add(NewsItem.from(source.getMarketNewsItem()));
-		}
-		return sourcesByEventId;
 	}
 
 	/**

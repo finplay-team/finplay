@@ -470,7 +470,7 @@ class CryptoPostSellFeedbackReaderTest {
 		CryptoPostSellFeedbackReader reader = new CryptoPostSellFeedbackReader(
 			candleQueryService,
 			priceMoveEventRepository,
-			priceMoveEventSourceRepository,
+			new PriceMoveSourceLoader(priceMoveEventSourceRepository),
 			priceMovePeerStatRepository,
 			cryptoProperties,
 			Clock.fixed(now.atZone(KST).toInstant(), KST));

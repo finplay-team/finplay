@@ -96,7 +96,7 @@ class PostSellFeedbackReaderTest {
 		sellAllocationQueryService,
 		stockReplayService,
 		priceMoveEventRepository,
-		priceMoveEventSourceRepository,
+		new PriceMoveSourceLoader(priceMoveEventSourceRepository),
 		priceMovePeerStatRepository,
 		Clock.fixed(SELL_SERVICE_DATE.atTime(SELL_TIME).atZone(KST).toInstant(), KST));
 
