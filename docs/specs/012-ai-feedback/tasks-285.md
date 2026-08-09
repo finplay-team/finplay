@@ -52,7 +52,7 @@
     - **`holdsNoRepositoryOtherThanMarketNewsItemRepository` 테스트가 계속 통과하는지 확인한다** — 이 메서드는 새 리포지토리를 주입받지 않으므로 그대로 통과해야 한다(회귀 확인, 코드 추가 아님).
   - 검증 — 단위(ADR-0003 "서비스 로직은 단위").
 
-- [ ] **2. `CryptoPriceMoveWatcher.watchOne()`에 온디맨드 수집·재매칭 통합**
+- [x] **2. `CryptoPriceMoveWatcher.watchOne()`에 온디맨드 수집·재매칭 통합**
 
   `src/main/java/com/finplay/api/feedback/service/CryptoPriceMoveWatcher.java`. 155~159행 근방(`newsMatcher.matchCrypto` 호출 → 빈 목록이면 종료)을 다음 순서로 바꾼다(ADR-0016 §결정 3).
 
@@ -74,7 +74,7 @@
   - 클래스 상단 Javadoc(1~44행)의 "탐지·쿨다운·근거 매칭·서술·저장을 전부 담는다" 선언에 "필요 시 온디맨드 수집 트리거"를 덧붙인다(ADR-0016 §결정 1이 이 선언의 자연스러운 연장이라고 판단한 근거).
   - 검증 — 단위(3번 항목이 이 클래스의 기존 단위 테스트 파일에 케이스를 더한다).
 
-- [ ] **3. `CryptoPriceMoveWatcherTest` 단위 테스트 — 온디맨드 수집 오케스트레이션**
+- [x] **3. `CryptoPriceMoveWatcherTest` 단위 테스트 — 온디맨드 수집 오케스트레이션**
 
   `src/test/java/com/finplay/api/feedback/service/CryptoPriceMoveWatcherTest.java`. 2번 항목이 바꾼 생성자 시그니처에 맞춰 **먼저 테스트 배선을 고친다.**
 
@@ -90,7 +90,7 @@
   - **수집이 예외를 던져도 락이 해제된다**: `LockReleaseGuarantee` 네스티드 클래스에 새 테스트를 추가 — `newsMatcher.matchCrypto(...)`가 빈 목록을 반환하고 `newsCollectionService.collectForInstrument(...)`가 `RuntimeException`을 던지도록 스텁, `watch()`가 예외를 던지지 않는지(`assertThatCode(...).doesNotThrowAnyException()`)와 `verify(cryptoWatchLock).unlock(INSTRUMENT.getId(), "test-lock-token")`을 확인한다 — 기존 `unlocksEvenWhenNewsMatcherThrowsAfterLockIsAcquired`와 같은 패턴이다.
   - 검증 — 단위.
 
-- [ ] **4. Testcontainers 통합 테스트 — 카드 생성 성공률 상승·중복 방지·종목별 실패 격리**
+- [x] **4. Testcontainers 통합 테스트 — 카드 생성 성공률 상승·중복 방지·종목별 실패 격리**
 
   `src/test/java/com/finplay/api/feedback/service/CryptoPriceMoveWatcherIntegrationTest.java`에 케이스를 추가한다. `NewsCollectionIntegrationTest`의 선례(`@MockitoBean private NewsCollector newsCollector;` — `FakeNewsCollector`는 빈 목록이 계약이라 저장 경로를 태울 수 없으므로 실제 협력자 대신 mock으로 갈아끼운다)를 그대로 따른다.
 
@@ -102,7 +102,7 @@
   - **원장·읽기전용 테이블 검증 갱신**: 기존 `neverWritesOutsideThePriceMoveTables` 테스트는 그대로 둔다(그 테스트는 근거 기사를 사전에 저장해 두므로 온디맨드 수집이 트리거되지 않아 `market_news_items`가 여전히 read-only로 남는 것이 맞다 — 손대지 않는다). **새 테스트를 추가**해 온디맨드 수집이 실제로 `market_news_items`에 쓰는 시나리오에서 `LEDGER_TABLES`(주문·체결·계좌·잔액·보유·손익)만은 여전히 불변인지 확인한다 — "쓰기는 `price_move_events`·`price_move_event_sources`·`market_news_items` 뿐이다"(완료 조건)를 직접 고정한다.
   - 검증 — Testcontainers(MySQL) + 실제 Redis(`TestcontainersConfiguration`) 통합, 고정 `Clock`(`TestClockConfig`).
 
-- [ ] **5. 문서 동기화 — `spec.md`·`docs/prd.md` §3 갱신**
+- [x] **5. 문서 동기화 — `spec.md`·`docs/prd.md` §3 갱신**
 
   **`docs/api-routes.md`·`docs/api-contracts.md`는 대상이 아니다**(컨트롤러 변경 없음, 이슈 본문이 이미 명시).
 
