@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -60,6 +61,8 @@ class CryptoPriceMoveWatcherTest {
 
 	private final NewsMatcher newsMatcher = mock(NewsMatcher.class);
 
+	private final NewsCollectionService newsCollectionService = mock(NewsCollectionService.class);
+
 	private final NarrativeService narrativeService = mock(NarrativeService.class);
 
 	// 이 클래스는 락 통합(이슈 #244) 자체를 검증 대상으로 삼지 않는다 — 항상 획득에 성공하도록 고정해 기존
@@ -113,7 +116,8 @@ class CryptoPriceMoveWatcherTest {
 		FeedbackCryptoProperties cryptoProperties, FeedbackDetectionProperties detectionProps, Clock clock) {
 		return new CryptoPriceMoveWatcher(
 			instrumentService, cryptoPriceSnapshotService, priceMoveEventRepository, priceMoveCardWriter,
-			cryptoWatchLock, newsMatcher, narrativeService, cryptoProperties, detectionProps, clock);
+			cryptoWatchLock, newsMatcher, newsCollectionService, narrativeService, cryptoProperties, detectionProps,
+			clock);
 	}
 
 	// 기본 배선 — 카드 생성을 막지 않는 협력자 응답. 각 테스트가 필요한 부분만 덮어쓴다.
@@ -304,6 +308,7 @@ class CryptoPriceMoveWatcherTest {
 			watcher(properties(30, 6, 5, 1, 12, 35), detectionProperties(10.0), fixedClockAt(NOW)).watch();
 
 			verify(priceMoveCardWriter, never()).persist(any(), any());
+			verify(newsCollectionService, never()).collectForInstrument(any());
 		}
 
 		@Test
@@ -354,6 +359,7 @@ class CryptoPriceMoveWatcherTest {
 
 			verify(priceMoveCardWriter, never()).persist(any(), any());
 			verify(newsMatcher, never()).matchCrypto(any(), any());
+			verify(newsCollectionService, never()).collectForInstrument(any());
 		}
 
 		@Test
@@ -405,6 +411,7 @@ class CryptoPriceMoveWatcherTest {
 
 			verify(priceMoveCardWriter, never()).persist(any(), any());
 			verify(newsMatcher, never()).matchCrypto(any(), any());
+			verify(newsCollectionService, never()).collectForInstrument(any());
 		}
 
 		@Test
@@ -462,6 +469,55 @@ class CryptoPriceMoveWatcherTest {
 			watcher(properties(30, 6, 5, 1, 12, 35), detectionProperties(2.5), fixedClockAt(NOW)).watch();
 
 			verify(priceMoveCardWriter).persist(any(), eq(matched));
+			verify(newsCollectionService, never()).collectForInstrument(any());
+		}
+	}
+
+	// --- 온디맨드 수집 — 첫 매칭이 비면 수집 후 1회만 재매칭한다 (ADR-0016, tasks-285.md 항목 3) ---
+
+	@Nested
+	@DisplayName("온디맨드 수집")
+	class OnDemandCollection {
+
+		private List<PriceSnapshotDto> jumpFixture() {
+			List<PriceSnapshotDto> fixture = new ArrayList<>();
+			for (int agoMinutes = 0; agoMinutes <= 60; agoMinutes++) {
+				fixture.add(snapshot(NOW.minusMinutes(agoMinutes), agoMinutes < 5 ? 100.0 * Math.exp(0.12) : 100.0));
+			}
+			return fixture;
+		}
+
+		@Test
+		@DisplayName("첫 매칭이 비면 온디맨드 수집 후 재매칭해 근거가 생기면 카드를 만든다")
+		void collectsOnDemandAndRetriesMatchWhenFirstMatchIsEmpty() {
+			when(cryptoPriceSnapshotService.getSnapshots(eq("BTC"), any(), any())).thenReturn(jumpFixture());
+			givenInstruments(INSTRUMENT);
+			stubNoCooldownNoLimit();
+			List<MarketNewsItem> matched = List.of(newsItem(NOW.minusMinutes(3)));
+			when(newsMatcher.matchCrypto(INSTRUMENT.getId(), NOW))
+				.thenReturn(List.of())
+				.thenReturn(matched);
+			when(narrativeService.resolvePriceMoveNarrative(any())).thenReturn(NarrativeResultDto.llm("변동 설명"));
+
+			watcher(properties(30, 6, 5, 1, 12, 35), detectionProperties(2.5), fixedClockAt(NOW)).watch();
+
+			verify(newsCollectionService).collectForInstrument(INSTRUMENT);
+			verify(priceMoveCardWriter).persist(any(), eq(matched));
+		}
+
+		@Test
+		@DisplayName("재매칭도 비면 카드를 만들지 않고, 수집·재매칭은 정확히 1회씩만 일어난다")
+		void skipsCardWhenRetryStillEmptyAndCollectsOnlyOnce() {
+			when(cryptoPriceSnapshotService.getSnapshots(eq("BTC"), any(), any())).thenReturn(jumpFixture());
+			givenInstruments(INSTRUMENT);
+			stubNoCooldownNoLimit();
+			when(newsMatcher.matchCrypto(INSTRUMENT.getId(), NOW)).thenReturn(List.of());
+
+			watcher(properties(30, 6, 5, 1, 12, 35), detectionProperties(2.5), fixedClockAt(NOW)).watch();
+
+			verify(newsCollectionService, times(1)).collectForInstrument(any());
+			verify(newsMatcher, times(2)).matchCrypto(any(), any());
+			verify(priceMoveCardWriter, never()).persist(any(), any());
 		}
 	}
 
@@ -490,6 +546,7 @@ class CryptoPriceMoveWatcherTest {
 			verify(priceMoveEventRepository, never())
 				.countByInstrumentIdAndMarketAndOriginTradeDate(any(), any(), any());
 			verify(newsMatcher, never()).matchCrypto(any(), any());
+			verify(newsCollectionService, never()).collectForInstrument(any());
 			verify(narrativeService, never()).resolvePriceMoveNarrative(any());
 			verify(priceMoveCardWriter, never()).persist(any(), any());
 			// 획득하지 못한 락은 해제할 대상이 없다 — unlock이 호출되면 안 된다.
@@ -535,6 +592,26 @@ class CryptoPriceMoveWatcherTest {
 			stubNoCooldownNoLimit();
 			when(newsMatcher.matchCrypto(INSTRUMENT.getId(), NOW))
 				.thenThrow(new IllegalStateException("근거 매칭 중 장애"));
+
+			org.assertj.core.api.Assertions.assertThatCode(
+				() -> watcher(properties(30, 6, 5, 1, 12, 35), detectionProperties(2.5), fixedClockAt(NOW)).watch())
+				.doesNotThrowAnyException();
+
+			verify(priceMoveCardWriter, never()).persist(any(), any());
+			verify(cryptoWatchLock).unlock(INSTRUMENT.getId(), "test-lock-token");
+		}
+
+		// 첫 매칭이 비어 온디맨드 수집을 시도하는데 그 수집 자체가 예외를 던지는 경로 — finally의 unlock은
+		// 여전히 호출돼야 한다.
+		@Test
+		@DisplayName("온디맨드 수집이 예외를 던져도 finally에서 unlock이 호출된다")
+		void unlocksEvenWhenOnDemandCollectionThrows() {
+			when(cryptoPriceSnapshotService.getSnapshots(eq("BTC"), any(), any())).thenReturn(jumpFixture());
+			givenInstruments(INSTRUMENT);
+			stubNoCooldownNoLimit();
+			when(newsMatcher.matchCrypto(INSTRUMENT.getId(), NOW)).thenReturn(List.of());
+			when(newsCollectionService.collectForInstrument(INSTRUMENT))
+				.thenThrow(new RuntimeException("네이버 API 장애"));
 
 			org.assertj.core.api.Assertions.assertThatCode(
 				() -> watcher(properties(30, 6, 5, 1, 12, 35), detectionProperties(2.5), fixedClockAt(NOW)).watch())
