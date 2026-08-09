@@ -37,3 +37,7 @@
 
 ## 모니터링 (사람용 요약)
 - PR #293 2차 리뷰 권장 1건(review_autofix 스텝 자체가 failure로 끝나는 경우 코멘트 미게시) 반영 — autofix_build_failure_comment와 같은 패턴(always() + 명시적 status 함수)으로 autofix_review_failure_comment 스텝 신설. post_review_autofix(`review_autofix.outcome=='success'`)와는 if가 상호 배타적이라 동시 실행 없음. judge·승인 스텝 미변경. YAML·run: 스크립트 문법 통과.
+| - | reviewer(리뷰, 3차 후속검증) | `git log --oneline -2`, `git diff HEAD~1...HEAD -- .github/workflows/agent.yml`, `python -c "import yaml; ..."`(steps/if 목록 재확인) | 2차 리뷰 권장 1건(review_autofix outcome==failure 시 코멘트 미게시) 재검증, docs/conventions.md, ADR-0016 |
+
+## 모니터링 (사람용 요약)
+- PR #293 2차 리뷰 권장 1건 재검증 — 차단 0건 / 권장 0건 / 참고 0건, 해소 확인. autofix_review_failure_comment의 if(`always() && autofix==success && build_autofix==success && review_autofix==failure`)가 post_review_autofix(`review_autofix==success`)·autofix_build_failure_comment(`build_autofix==failure`)와 상호 배타적임을 17개 step 전수 확인(겹침·누락 케이스 없음). always() 배치는 기존 autofix_build_failure_comment와 동일 패턴.
