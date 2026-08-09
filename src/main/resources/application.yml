@@ -255,3 +255,24 @@ feedback:
     # 이 값이 원본 소요보다 짧으면 대기가 전부 타임아웃돼 방어가 무력해진다.
     wait-millis: 300
     poll-millis: 20 # 대기 중 캐시 재확인 간격. 1 미만이면 기동 실패 — 0이면 바쁜 대기가 된다
+
+# 랭킹 ZSET 재구성 배치(RankingRebuildService, spec 014 이슈 #279). Redis 유실 복구와 정기 교정을 겸한다.
+# 값의 정본은 docs/specs/014-ranking/plan.md "Decision Gate 확정"이며 @Scheduled는 record가 아니라
+# Environment에서 읽으므로 실제 스케줄을 결정하는 것은 이 블록이다(@ConfigurationProperties record를 따로
+# 두지 않는 이유 — 값이 크론 하나뿐이라 record를 만들면 같은 값이 두 곳에 생기는 관리 부담만 는다).
+#
+# 04:20을 고른 근거: 이 파일의 기존 크론은 market.crypto.price-snapshot-cron "0 * * * * *"(매 분 정각),
+# feedback.batch.cron "0 45 8 * * MON-FRI", crypto-cron "0 5 * * * *"(매시 05분),
+# peer-stats-cron "0 32 15 * * MON-FRI", crypto-watch-cron "30 * * * * *"(매 분 30초),
+# crypto-peer-stats-cron "0 5 0 * * *"(매일 00:05), news.collect-cron "0 0/30 * * * *",
+# news.disclosure-cron "0 0/30 8-20 * * MON-FRI"이다. 04:20은 이 중 하루·매시·평일 단위 배치 어느 것과도
+# 같은 분에 걸리지 않는다(매시 05분·30분 간격 계열과 분이 다르다). 매 분 계열(정각 "0 * * * * *"·30초
+# "30 * * * * *")과는 어떤 시각을 골라도 겹치므로 회피 대상이 아니다 — 둘 다 가격 스냅샷·변동 감시라
+# 랭킹 ZSET을 건드리지 않고 작업도 경량이라 같은 분에 돌아도 무관하다.
+# 새벽이라 조회 트래픽이 가장 적어 RENAME 교체 순간의 영향도 가장 작다.
+#
+# 선언부에 zone = "Asia/Seoul"을 반드시 함께 붙인다 — 배포 JVM 기본 타임존이 UTC라 빠뜨리면 예외도 로그도
+# 없이 KST 13:20에 돈다(위 feedback 블록들이 반복해서 경고하는 실수다).
+ranking:
+  rebuild:
+    cron: "0 20 4 * * *" # 매일 04:20 KST
