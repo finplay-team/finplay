@@ -26,8 +26,6 @@ import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.domain.OrderType;
 import com.finplay.api.order.domain.Trade;
-import com.finplay.api.order.service.TradeService;
-import com.finplay.api.portfolio.service.SellAllocationQueryService;
 import com.finplay.api.portfolio.service.SellAllocationSummaryDto;
 import java.lang.reflect.RecordComponent;
 import java.math.BigDecimal;
@@ -54,7 +52,6 @@ class PostSellFeedbackPeerComparisonTest {
 
 	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
-	private static final Long USER_ID = 1L;
 	private static final Long SELL_TRADE_ID = 2L;
 	private static final Long INSTRUMENT_ID = 7L;
 	private static final Long CARD_ID = 12L;
@@ -68,10 +65,6 @@ class PostSellFeedbackPeerComparisonTest {
 	// yourMinutesToSell = 14:40 − 09:50 = 290분. 계산과 무관한 다른 픽스처의 값들과 겹치지 않는 값으로 고른다.
 	private static final LocalTime SELL_TIME = LocalTime.of(14, 40);
 
-	private final TradeService tradeService = mock(TradeService.class);
-
-	private final SellAllocationQueryService sellAllocationQueryService = mock(SellAllocationQueryService.class);
-
 	private final StockReplayService stockReplayService = mock(StockReplayService.class);
 
 	private final PriceMoveEventRepository priceMoveEventRepository = mock(PriceMoveEventRepository.class);
@@ -81,16 +74,18 @@ class PostSellFeedbackPeerComparisonTest {
 
 	private final PriceMovePeerStatRepository priceMovePeerStatRepository = mock(PriceMovePeerStatRepository.class);
 
-	private final PostSellFeedbackReader postSellFeedbackReader = new PostSellFeedbackReader(
-		// 이 파일은 주식 경로만 본다 — 코인 조립은 CryptoPostSellFeedbackReader 전담 테스트의 몫이다.
-		mock(CryptoPostSellFeedbackReader.class),
-		tradeService,
-		sellAllocationQueryService,
+	// 검증(404·403·400)과 배분 조회는 PostSellFeedbackContextReader로 옮겨 갔다(이슈 #282) — 이 파일은 이미
+	// 검증을 마친 (trade, allocation)을 주식 조립에 그대로 넘겨 집단 비교만 본다.
+	private final StockPostSellFeedbackReader stockPostSellFeedbackReader = new StockPostSellFeedbackReader(
 		stockReplayService,
 		priceMoveEventRepository,
 		new PriceMoveSourceLoader(priceMoveEventSourceRepository),
 		priceMovePeerStatRepository,
 		Clock.fixed(SELL_SERVICE_DATE.atTime(SELL_TIME).atZone(KST).toInstant(), KST));
+
+	private Trade trade;
+
+	private SellAllocationSummaryDto allocation;
 
 	// --- 판정 순서 1: NO_EVENT (1순위) ---
 
@@ -219,12 +214,12 @@ class PostSellFeedbackPeerComparisonTest {
 	// --- 픽스처 ---
 
 	private PostSellFeedbackResponse read() {
-		return postSellFeedbackReader.read(USER_ID, SELL_TRADE_ID);
+		return stockPostSellFeedbackReader.read(trade, allocation);
 	}
 
 	private void givenSameSessionSell() {
-		when(tradeService.getOwnedTrade(USER_ID, SELL_TRADE_ID)).thenReturn(sellTrade());
-		when(sellAllocationQueryService.getSellAllocationSummary(any())).thenReturn(allocation());
+		trade = sellTrade();
+		allocation = allocation();
 	}
 
 	private void givenNoCards() {
