@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -165,6 +166,30 @@ class AccountServiceTest {
 
 		assertThat(result).containsExactly(account);
 		verify(accountRepository).findAllByIdInFetchUser(ids);
+	}
+
+	// 랭킹 재구성(이슈 #279)이 쓰는 배치 조회. getAccountsWithUser와 달리 User를 fetch join하지 않는다는 것이
+	// 이 메서드가 따로 존재하는 유일한 이유다 — 재구성은 닉네임을 쓰지 않고 (id, realizedPnl)만 필요하다.
+	// fetch join 버전으로 갈아타면 계좌 수만큼 users 조인이 붙어도 결과가 같아 조용히 통과하므로,
+	// findAllByIdInFetchUser를 부르지 않았다는 것까지 단정한다.
+	@Test
+	void getAccountsByIdsDelegatesToFindAllByIdWithoutFetchingUser() {
+		AccountRepository accountRepository = mock(AccountRepository.class);
+		HoldingValuationService holdingValuationService = mock(HoldingValuationService.class);
+		Clock fixedClock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
+		AccountService accountService = new AccountService(accountRepository, holdingValuationService, fixedClock);
+		User user = User.create("user@finplay.com", "password-hash", "finplayer",
+			LocalDateTime.ofInstant(FIXED_INSTANT, ZoneOffset.UTC));
+		Account account = Account.create(user, Market.STOCK,
+			LocalDateTime.ofInstant(FIXED_INSTANT, ZoneOffset.UTC));
+		List<Long> ids = List.of(1L, 2L);
+		when(accountRepository.findAllById(ids)).thenReturn(List.of(account));
+
+		List<Account> result = accountService.getAccountsByIds(ids);
+
+		assertThat(result).containsExactly(account);
+		verify(accountRepository).findAllById(ids);
+		verify(accountRepository, never()).findAllByIdInFetchUser(any());
 	}
 
 	@Test

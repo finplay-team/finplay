@@ -4,6 +4,7 @@ package com.finplay.api.ranking.store;
 import com.finplay.api.account.domain.Market;
 import com.finplay.api.ranking.dto.RankingEntryDto;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +26,9 @@ public class RankingStore {
 	// Redis에서 애플리케이션 메모리로 올라와 DB IN 절 조회까지 하게 된다. RankingService.MAX_LIMIT(50)의
 	// 10배로 잡아 정상 규모의 동점 그룹은 전혀 자르지 않으면서도 비정상 규모의 fan-out만 막는다.
 	private static final int FIND_ALL_AT_SCORE_MAX_MEMBERS = 500;
+	// 재구성(이슈 #279) 임시 키 suffix와 ZADD 청크 크기. key 문자열은 이 클래스에서만 조립한다(conventions.md).
+	private static final String REBUILD_KEY_SUFFIX = ":rebuild";
+	private static final int REBUILD_CHUNK_SIZE = 500;
 
 	private final StringRedisTemplate redisTemplate;
 
@@ -116,6 +120,54 @@ public class RankingStore {
 	public Long score(Market market, Long accountId) {
 		Double raw = redisTemplate.opsForZSet().score(key(market), String.valueOf(accountId));
 		return raw == null ? null : Math.round(raw);
+	}
+
+	// 랭킹 ZSET을 통째로 교체한다(이슈 #279 재구성). 임시 키 ranking:{market}:rebuild에 전량 적재한 뒤
+	// RENAME으로 원자 교체해, 재구성 중 조회가 빈 값·부분 값을 보지 않게 한다.
+	// 순서는 DEL(임시 키 잔재 제거) → 청크 ZADD → RENAME이다. 1단계를 빼면 이전 실행이 중간에 죽어 남긴
+	// 잔재와 이번 결과가 합쳐진 ZSET이 만들어진다.
+	// 경계: entries가 0건이면 ZADD가 한 번도 실행되지 않아 임시 키가 존재하지 않고, 없는 키에 대한 RENAME은
+	// Redis에서 ERR no such key다. 그래서 RENAME 대신 본 키를 DEL한다 — 매도 이력 계좌가 하나도 없으면
+	// 랭킹이 비어 있는 것이 유실 전 상태와도 일치한다(본 키를 그대로 두면 사라진 계좌가 영원히 남는다).
+	// 실패 처리: 전체를 try/catch로 감싸 예외를 밖으로 전파하지 않는다 — 호출자가 기동 훅과 스케줄러라
+	// 예외가 새면 기동이 실패하거나 스케줄러 스레드가 죽는다. addScoreWithRetry가 매도 체결을 지키려고
+	// 예외를 삼키는 것과 같은 방침이며, 재구성은 다음 기동·다음 배치에 다시 도는 멱등 작업이다.
+	// 재시도는 하지 않는다(즉시 재시도의 값어치가 낮다, plan.md "실패 처리").
+	public void replaceAll(Market market, List<RankingEntryDto> entries) {
+		String key = key(market);
+		String rebuildKey = rebuildKey(market);
+		try {
+			redisTemplate.delete(rebuildKey);
+			if (entries.isEmpty()) {
+				redisTemplate.delete(key);
+				return;
+			}
+			for (int start = 0; start < entries.size(); start += REBUILD_CHUNK_SIZE) {
+				int end = Math.min(start + REBUILD_CHUNK_SIZE, entries.size());
+				Set<ZSetOperations.TypedTuple<String>> chunk = new LinkedHashSet<>();
+				for (RankingEntryDto entry : entries.subList(start, end)) {
+					chunk.add(ZSetOperations.TypedTuple.of(String.valueOf(entry.accountId()), (double)entry.score()));
+				}
+				redisTemplate.opsForZSet().add(rebuildKey, chunk);
+			}
+			redisTemplate.rename(rebuildKey, key);
+		} catch (Exception e) {
+			log.error("랭킹 ZSET 재구성 실패. market={}, 대상 계좌 수={}", market, entries.size(), e);
+			cleanUpRebuildKey(rebuildKey, market);
+		}
+	}
+
+	// 실패 시 임시 키 정리를 한 번 시도한다. 정리 자체가 실패해도 무시한다 — 다음 실행의 DEL이 어차피 지운다.
+	private void cleanUpRebuildKey(String rebuildKey, Market market) {
+		try {
+			redisTemplate.delete(rebuildKey);
+		} catch (Exception cleanupFailure) {
+			log.warn("랭킹 재구성 임시 키 정리 실패. market={}", market, cleanupFailure);
+		}
+	}
+
+	private String rebuildKey(Market market) {
+		return key(market) + REBUILD_KEY_SUFFIX;
 	}
 
 	private String key(Market market) {

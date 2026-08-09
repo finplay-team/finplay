@@ -87,6 +87,14 @@ public class AccountService {
 		return accountRepository.findAllByIdInFetchUser(accountIds);
 	}
 
+	// 랭킹 재구성(RankingRebuildService)이 매도 이력 계좌 id 목록의 realized_pnl을 배치 조회할 때 쓴다(이슈 #279).
+	// getAccountsWithUser와 달리 User를 fetch join하지 않는다 — 재구성은 닉네임을 쓰지 않고 (id, realizedPnl)만
+	// 필요하다. AccountRepository에 신규 메서드를 만들지 않고 JpaRepository.findAllById를 그대로 위임한다.
+	@Transactional(readOnly = true)
+	public List<Account> getAccountsByIds(List<Long> accountIds) {
+		return accountRepository.findAllById(accountIds);
+	}
+
 	@Transactional(readOnly = true)
 	public AccountSummaryResponse getAccountSummary(Long userId, Market market) {
 		Account account = getAccountFor(userId, market);

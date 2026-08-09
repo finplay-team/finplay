@@ -13,6 +13,7 @@
 | 20:36 | implementer | `./gradlew test --tests RankingServiceTest` | 독립 리뷰어 재검토 지적(경계 동점 없음+유령 조합 시 backfill 누락), plan.md 8-4절(신규) |
 | 20:54 | implementer | `./gradlew compileJava compileTestJava` + `./gradlew test --tests RankingStoreTest --tests RankingServiceTest` | tasks.md "RANK-002" 1번, plan.md "RANK-002 설계"(score·getMyRanking 코드 스케치) |
 | 20:59 | implementer | `./gradlew compileJava compileTestJava` + `./gradlew test --tests "com.finplay.api.ranking.*"` | tasks.md "RANK-002" 2번, plan.md "RANK-002 설계"(`RankingController` 코드 스케치, `AccountController.getAccountSummary` 패턴), CLAUDE.md 규칙 7·10 |
+| 17:52 | implementer | `./gradlew test --tests RankingStoreTest --tests TradeRepositoryTest --tests "com.finplay.api.ranking.*"` + `spotlessCheck` + `spotbugsMain` | tasks.md "랭킹 재구성 절차(#279)" 1번, plan.md "랭킹 재구성 설계"(쿼리·위임·replaceAll 스케치), ADR-0002, agent-mistakes.md 2026-08-04(공유 컨테이너 커밋 오염) |
 
 ## 모니터링 (사람용 요약)
 - 15:53 — RealizedPnlUpdatedEvent·RankingStore·RankingEventListener·RankingService(스텁) 신설, OrderExecutionService 이벤트 발행 추가, 컴파일 통과.
@@ -26,3 +27,4 @@
 - 20:36 — 독립 리뷰어 재검토에서 나온 잔여 문제(동점 없는 경계에서 유령 계좌를 필터링하면 결과가 limit보다 적어짐) 반영: fetchWindowResolvingBoundaryTies가 해당 분기에서 limit개로 미리 자르지 않고 limit+1개를 그대로 반환, calculateRanks의 사후 필터링이 여유분으로 보충. plan.md 8-4절 신설. ranking 패키지 35/35 통과.
 - 20:54 — RankingStore.score(Market, Long) 신설(ZSCORE 단건 조회, member 없으면 null), RankingService.getMyRanking(userId, market) 신설(@Transactional(readOnly=true), AccountService.getAccountFor + RankingStore.score/countStrictlyGreater 재사용) + MyRankingResponse record 선행 추가. 컨트롤러·라우트는 이번 항목 범위 아님(다음 항목). RankingStoreTest·RankingServiceTest 확장 4건 통과, compileJava/compileTestJava 통과.
 - 20:59 — RankingController에 GET /api/rankings/me 추가(@AuthenticationPrincipal + principal.userId(), AccountController.getAccountSummary와 동일 패턴). docs/api-routes.md·docs/api-contracts.md에 계약 추가, docs/prd.md §3 "랭킹 — 내 랭킹 조회(RANK-002)" 행을 완료로 갱신(근거는 PR #234)+본문 내 잔여 미착수 서술 2곳 정정. RankingControllerTest 확장(market 누락 400·인증없음 401·매도이력없음 rank:null 200·정상 200 필드계약) 5건 추가. ranking 패키지 전체(store 7·service 14·controller 15·integration 7) 통과, compileJava/compileTestJava 통과.
+- 17:52 — 재구성 창구 신설: TradeRepository에 매도 이력 조회 3종(side='SELL' 기준, realized_pnl 기준 아님), TradeService 위임 3종(ADR-0002 경유점), AccountService.getAccountsByIds(findAllById 위임), RankingStore.replaceAll(임시키 DEL→청크 ZADD→RENAME, 0건이면 본키 DEL, 전체 try/catch). TradeRepositoryTest 3건·RankingStoreTest 6건 추가 — 공유 컨테이너 커밋 오염 때문에 시장별 "없음" 단정은 두지 않고 포함/미포함으로 단정. 컴파일·spotless·spotbugs·대상 테스트 전부 통과.

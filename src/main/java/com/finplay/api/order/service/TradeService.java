@@ -6,6 +6,7 @@ import com.finplay.api.account.domain.Market;
 import com.finplay.api.account.service.AccountService;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
+import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.domain.Trade;
 import com.finplay.api.order.dto.response.TradeListItemResponse;
 import com.finplay.api.order.dto.response.TradeListResponse;
@@ -48,5 +49,24 @@ public class TradeService {
 			throw new BusinessException(ErrorCode.FORBIDDEN);
 		}
 		return trade;
+	}
+
+	// 랭킹 재구성 대상 계좌 id(이슈 #279). ranking 도메인이 TradeRepository를 직접 주입하지 않도록 하는
+	// 경유점이다(ADR-0002). OrderSide.SELL 리터럴도 이 위임 덕분에 order 도메인 밖으로 새지 않는다.
+	@Transactional(readOnly = true)
+	public List<Long> getSoldAccountIds(Market market) {
+		return tradeRepository.findDistinctAccountIdsBySideAndMarket(OrderSide.SELL, market);
+	}
+
+	// 이 계좌에 매도 체결 이력이 있는가 — GET /api/rankings/me의 status 판정용(이슈 #279).
+	@Transactional(readOnly = true)
+	public boolean hasSellHistory(Long accountId) {
+		return tradeRepository.existsByAccountIdAndSide(accountId, OrderSide.SELL);
+	}
+
+	// 이 시장에 매도 체결 이력이 있는 계좌가 하나라도 있는가 — GET /api/rankings의 status 판정용(이슈 #279).
+	@Transactional(readOnly = true)
+	public boolean hasAnySellHistory(Market market) {
+		return tradeRepository.existsBySideAndAccountMarket(OrderSide.SELL, market);
 	}
 }
