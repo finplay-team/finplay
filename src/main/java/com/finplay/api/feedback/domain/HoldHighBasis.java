@@ -13,7 +13,7 @@ package com.finplay.api.feedback.domain;
  */
 public enum HoldHighBasis {
 
-	/** 1분봉 close로 잰 정확한 극값. 주식은 언제나 이 값이고, 코인은 보유 구간이 200분 이내일 때다. */
+	/** 1분봉 close로 잰 정확한 극값. 주식은 언제나 이 값이고, 코인은 보유 구간이 199분 이하일 때다. */
 	MINUTE,
 
 	/**

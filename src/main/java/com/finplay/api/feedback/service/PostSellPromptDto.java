@@ -18,7 +18,7 @@ import java.util.List;
  * 그래서 두 묶음을 모두 nullable로 받아 값이 있을 때만 프롬프트에 줄이 붙는다.
  *
  * <p><b>시각을 {@code LocalTime}이 아니라 {@code LocalDateTime}으로 받는다</b>(이슈 #275). 코인은 §FEED-012
- * 결정 4의 {@link HoldHighBasis#DAILY} 경로가 <b>정의상 200분 초과 보유</b>라 대부분 날짜를 넘기는데, 시각을
+ * 결정 4의 {@link HoldHighBasis#DAILY} 경로가 <b>정의상 199분 초과 보유</b>라 대부분 날짜를 넘기는데, 시각을
  * 시분으로 좁혀 넘기면 8/1 14:20 매수 → 8/5 09:05 매도가 모델에게 "매수 14:20 / 매도 09:05"로만 보여
  * <b>매도가 매수보다 이르다는 문장</b>이 나온다. 날짜를 문장에 실제로 쓸지는 {@code multiDayHold}가 정한다.
  *

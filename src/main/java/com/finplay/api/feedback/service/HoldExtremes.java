@@ -16,7 +16,7 @@ import java.time.LocalDateTime;
  * 표현 가능해지고, 그 상태가 응답에 나가면 화면이 극값 시각은 그리면서 매도가와의 거리는 못 그린다.
  *
  * @param basis 극값을 <b>어느 표본으로 쟀는지</b>. 주식은 언제나 {@link HoldHighBasis#MINUTE}이고, 코인은 보유
- *     구간이 200분을 넘으면 {@link HoldHighBasis#DAILY}다. <b>{@link #absent()}에서는 {@code null}이다</b> —
+ *     구간이 199분을 넘으면 {@link HoldHighBasis#DAILY}다. <b>{@link #absent()}에서는 {@code null}이다</b> —
  *     잰 값이 없는데 정밀도만 남으면 화면이 "근사값이 있다"로 읽는다
  */
 record HoldExtremes(
