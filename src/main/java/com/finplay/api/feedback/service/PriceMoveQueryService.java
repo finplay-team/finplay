@@ -3,12 +3,10 @@ package com.finplay.api.feedback.service;
 
 import com.finplay.api.feedback.config.FeedbackCryptoProperties;
 import com.finplay.api.feedback.domain.PriceMoveEvent;
-import com.finplay.api.feedback.domain.PriceMoveEventSource;
 import com.finplay.api.feedback.dto.response.NewsItem;
 import com.finplay.api.feedback.dto.response.PriceMoveItem;
 import com.finplay.api.feedback.dto.response.PriceMoveListResponse;
 import com.finplay.api.feedback.repository.PriceMoveEventRepository;
-import com.finplay.api.feedback.repository.PriceMoveEventSourceRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.InstrumentService;
@@ -17,8 +15,6 @@ import com.finplay.api.market.service.StockReplaySessionDto;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -44,7 +40,7 @@ public class PriceMoveQueryService {
 
 	private final PriceMoveEventRepository priceMoveEventRepository;
 
-	private final PriceMoveEventSourceRepository priceMoveEventSourceRepository;
+	private final PriceMoveSourceLoader priceMoveSourceLoader;
 
 	private final FeedbackCryptoProperties cryptoProperties;
 
@@ -79,7 +75,7 @@ public class PriceMoveQueryService {
 			return PriceMoveListResponse.of(session.sourceTradingDate(), List.of());
 		}
 
-		Map<Long, List<NewsItem>> sourcesByEventId = findSources(events);
+		Map<Long, List<NewsItem>> sourcesByEventId = priceMoveSourceLoader.findSources(events);
 		List<PriceMoveItem> moves = events.stream()
 			.map(event -> PriceMoveItem.ofStock(
 				event, sourcesByEventId.getOrDefault(event.getId(), List.of())))
@@ -103,7 +99,7 @@ public class PriceMoveQueryService {
 			return PriceMoveListResponse.of(null, List.of());
 		}
 
-		Map<Long, List<NewsItem>> sourcesByEventId = findSources(events);
+		Map<Long, List<NewsItem>> sourcesByEventId = priceMoveSourceLoader.findSources(events);
 		List<PriceMoveItem> moves = events.stream()
 			.map(event -> PriceMoveItem.ofCrypto(
 				event,
@@ -113,17 +109,4 @@ public class PriceMoveQueryService {
 		return PriceMoveListResponse.of(null, moves);
 	}
 
-	// 카드마다 따로 묻지 않고 한 번에 읽어 카드 id로 묶는다. 쿼리가 발행시각 내림차순이라 각 목록의 순서도
-	// 그대로 유지된다 (LinkedHashMap·ArrayList가 삽입 순서를 지킨다).
-	private Map<Long, List<NewsItem>> findSources(List<PriceMoveEvent> events) {
-		List<Long> eventIds = events.stream().map(PriceMoveEvent::getId).toList();
-		Map<Long, List<NewsItem>> sourcesByEventId = new LinkedHashMap<>();
-		for (PriceMoveEventSource source : priceMoveEventSourceRepository
-			.findAllByPriceMoveEventIdIn(eventIds)) {
-			sourcesByEventId
-				.computeIfAbsent(source.getPriceMoveEvent().getId(), id -> new ArrayList<>())
-				.add(NewsItem.from(source.getMarketNewsItem()));
-		}
-		return sourcesByEventId;
-	}
 }

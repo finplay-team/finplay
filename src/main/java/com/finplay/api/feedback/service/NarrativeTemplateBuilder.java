@@ -1,6 +1,7 @@
 // LLM이 실패하거나 후검증에 걸렸을 때 쓸 서술을 서버가 수치로 조립한다 — 장중 카드·시가 갭·매도 회고 3종.
 package com.finplay.api.feedback.service;
 
+import com.finplay.api.feedback.domain.HoldHighBasis;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.format.DateTimeFormatter;
@@ -20,6 +21,9 @@ import org.springframework.stereotype.Component;
 public class NarrativeTemplateBuilder {
 
 	private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm");
+	// 아래 postSellTemplate에서만 쓴다 — NarrativePromptBuilder와 같은 형태다(이 클래스의 포맷 도우미 중복 방침).
+	private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("M월 d일");
+	private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("M월 d일 HH:mm");
 	private static final int PERCENT_SCALE = 2;
 	private static final BigDecimal PERCENT_MULTIPLIER = BigDecimal.valueOf(100);
 
@@ -53,6 +57,11 @@ public class NarrativeTemplateBuilder {
 	 * <p>보유 구간 극값이 없으면 마지막 문장을 뺀다. 여러 재생일에 걸친 매매는 분봉이 불연속이라 극값 계산이
 	 * 성립하지 않아 {@code holdHighPrice}가 {@code null}인데(§파생 사실 계산), 원장 수치로 만드는 앞 두 문장은
 	 * 그때도 그대로 성립한다. 없는 값을 지어내지 않고 그 문장만 빼는 쪽을 택했다.
+	 *
+	 * <p><b>극값 시각을 그대로 적지 않는다</b>(이슈 #275). {@code holdHighBasis}가 {@link HoldHighBasis#DAILY}면 그 시각은 일봉 라벨({@code 23:59})이지
+	 * 가격을 잰 시각이 아니라, "23시 59분의 …"로 적으면 <b>실제로 재지 않은 시각을 단정</b>하게 된다. 그때는
+	 * 날짜와 "종가"로 적고, 하루를 넘긴 보유({@code multiDayHold})면 날짜를 함께 적는다. <b>주식은 두 조건이
+	 * 모두 거짓이라 문장이 이전과 같다.</b>
 	 */
 	public String postSellTemplate(PostSellPromptDto input) {
 		String base = "%s에 매수해 %s에 매도했습니다. 수익률은 %s입니다.".formatted(
@@ -60,8 +69,10 @@ public class NarrativeTemplateBuilder {
 		if (input.holdHighPrice() == null || input.holdHighAt() == null) {
 			return base;
 		}
-		return base + " 보유 중 최고가는 %s의 %s이었습니다.".formatted(
-			input.holdHighAt().format(TIME), money(input.holdHighPrice()));
+		String moment = input.holdHighBasis() == HoldHighBasis.DAILY
+			? input.holdHighAt().format(DATE) + " 종가"
+			: input.holdHighAt().format(input.multiDayHold() ? DATE_TIME : TIME);
+		return base + " 보유 중 최고가는 %s의 %s이었습니다.".formatted(moment, money(input.holdHighPrice()));
 	}
 
 	// 아래 세 포맷 도우미는 NarrativePromptBuilder에도 같은 형태로 있다. 지금은 중복을 그대로 둔다 —

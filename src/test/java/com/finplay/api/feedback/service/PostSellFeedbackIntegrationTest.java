@@ -250,23 +250,9 @@ class PostSellFeedbackIntegrationTest {
 			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
 	}
 
-	// 완료 조건 1번 — 코인 매도는 빈 값을 채운 200이 아니라 400이다. 코인 체결에는 재생세션이 없다.
-	@Test
-	@DisplayName("코인 매도 체결은 400이고 빈 값 200을 돌려주지 않는다")
-	void returnsBadRequestForCryptoSellTradeInsteadOfEmptyOkResponse() throws Exception {
-		Account cryptoAccount = accountRepository.saveAndFlush(
-			Account.create(owner, com.finplay.api.account.domain.Market.CRYPTO, NOW));
-		Instrument coin = instrumentRepository.saveAndFlush(
-			Instrument.create(Market.CRYPTO, "TESTC208", "테스트코인208", BigDecimal.valueOf(1), 5_000L, true, NOW));
-		Trade cryptoSell = saveTrade(
-			cryptoAccount, coin, null, OrderSide.SELL, new BigDecimal("1"), new BigDecimal("100000000"),
-			1_000L, LocalDateTime.of(SERVICE_DATE, SELL_TIME));
-
-		mockMvc.perform(authorized(get(PATH, cryptoSell.getId())))
-			.andExpect(status().isBadRequest())
-			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
-			.andExpect(jsonPath("$.tradeId").doesNotExist());
-	}
+	// 코인 매도가 400이던 케이스는 이슈 #275가 200으로 뒤집었다 — 그 계약은
+	// CryptoPostSellFeedbackE2eIntegrationTest가 원장·서술까지 갖춘 픽스처로 종단 검증한다.
+	// 이 파일은 주식 경로의 계약만 남긴다.
 
 	@Test
 	@DisplayName("토큰 없이 호출하면 401이다")

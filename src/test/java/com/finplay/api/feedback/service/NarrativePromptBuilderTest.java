@@ -3,6 +3,7 @@ package com.finplay.api.feedback.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finplay.api.feedback.domain.HoldHighBasis;
 import com.finplay.api.feedback.domain.NewsSummaryScope;
 import com.finplay.api.market.domain.Market;
 import java.math.BigDecimal;
@@ -98,8 +99,8 @@ class NarrativePromptBuilderTest {
 	void postSellPromptMatchesSpecExample() {
 		String expected = """
 			종목: 삼성전자
-			매수: 09:30, 70,000원 10주
-			매도: 14:40, 68,500원 10주
+			매수: 09:30, 70,000원 10
+			매도: 14:40, 68,500원 10
 			수익률: -2.17% (실현손익 -15,207원)
 
 			보유 중 최고가: 11:05의 70,800원 (매도가가 3.25% 낮음)
@@ -320,8 +321,8 @@ class NarrativePromptBuilderTest {
 	void postSellPromptOmitsHoldExtremesWhenTradeSpansMultipleSessions() {
 		String expected = """
 			종목: 삼성전자
-			매수: 09:30, 70,000원 10주
-			매도: 14:40, 68,500원 10주
+			매수: 09:30, 70,000원 10
+			매도: 14:40, 68,500원 10
 			수익률: -2.17% (실현손익 -15,207원)
 
 			위 내용을 3~4문장으로 서술해줘. 수치를 그대로 나열하지 말고,
@@ -343,8 +344,8 @@ class NarrativePromptBuilderTest {
 	void postSellPromptOmitsWholeLinesWhenNullableFieldsAreAbsent() {
 		String expected = """
 			종목: 삼성전자
-			매수: 09:30, 70,000원 10주
-			매도: 14:40, 68,500원 10주
+			매수: 09:30, 70,000원 10
+			매도: 14:40, 68,500원 10
 			수익률: -2.17% (실현손익 -15,207원)
 
 			보유 중 최고가: 11:05의 70,800원 (매도가가 3.25% 낮음)
@@ -370,10 +371,10 @@ class NarrativePromptBuilderTest {
 	@DisplayName("집단 비교가 확정되면 그 줄이 붙는다 — 개인 식별값 없이 관측 수치만 들어간다")
 	void postSellPromptAppendsPeerComparisonWhenSettled() {
 		PostSellPromptDto withPeers = new PostSellPromptDto(
-			"삼성전자", LocalTime.of(9, 30), bd("70000"), LocalTime.of(14, 40), bd("68500"), bd("10"),
-			bd("-0.0217"), -15207L, bd("70800"), LocalTime.of(11, 5), bd("-0.0325"),
-			bd("68100"), LocalTime.of(14, 20), bd("0.0059"), null, null, List.of(),
-			bd("69200"), bd("0.0102"), 12, bd("0.25"), 45, 310);
+			"삼성전자", TRADING_DATE.atTime(9, 30), bd("70000"), TRADING_DATE.atTime(14, 40), bd("68500"), bd("10"),
+			bd("-0.0217"), -15207L, bd("70800"), TRADING_DATE.atTime(11, 5), bd("-0.0325"),
+			bd("68100"), TRADING_DATE.atTime(14, 20), bd("0.0059"), null, null, List.of(),
+			bd("69200"), bd("0.0102"), 12, bd("0.25"), 45, 310, false, HoldHighBasis.MINUTE);
 
 		String prompt = builder.postSellPrompt(withPeers);
 
@@ -386,7 +387,7 @@ class NarrativePromptBuilderTest {
 	@Test
 	@DisplayName("매수가 첫 근거 기사보다 늦으면 앞섰다가 아니라 지나 이뤄졌다로 갈린다")
 	void buyToNewsLineFlipsWhenBuyHappensAfterTheFirstArticle() {
-		PostSellPromptDto afterNews = withBuyToNews(-40, LocalTime.of(9, 10));
+		PostSellPromptDto afterNews = withBuyToNews(-40, TRADING_DATE.atTime(9, 10));
 
 		String prompt = builder.postSellPrompt(afterNews);
 
@@ -400,16 +401,102 @@ class NarrativePromptBuilderTest {
 	@DisplayName("매도 후 흐름이 매도가보다 낮으면 높음이 아니라 낮음으로 갈린다")
 	void sellToCloseLineFlipsSignWord() {
 		PostSellPromptDto belowSell = new PostSellPromptDto(
-			"삼성전자", LocalTime.of(9, 30), bd("70000"), LocalTime.of(14, 40), bd("68500"), bd("10"),
-			bd("-0.0217"), -15207L, bd("70800"), LocalTime.of(11, 5), bd("-0.0325"),
-			bd("68100"), LocalTime.of(14, 20), bd("0.0059"), null, null, List.of(),
-			bd("67800"), bd("-0.0102"), null, null, null, null);
+			"삼성전자", TRADING_DATE.atTime(9, 30), bd("70000"), TRADING_DATE.atTime(14, 40), bd("68500"), bd("10"),
+			bd("-0.0217"), -15207L, bd("70800"), TRADING_DATE.atTime(11, 5), bd("-0.0325"),
+			bd("68100"), TRADING_DATE.atTime(14, 20), bd("0.0059"), null, null, List.of(),
+			bd("67800"), bd("-0.0102"), null, null, null, null, false, HoldHighBasis.MINUTE);
 
 		String prompt = builder.postSellPrompt(belowSell);
 
 		assertThat(prompt).contains("매도 후 흐름: 마감 종가 67,800원 (매도가보다 1.02% 낮음)");
 		// 부호는 단어로만 표현한다 — 숫자에 붙으면 "-1.02% 낮음"이 되어 뜻이 뒤집힌다.
 		assertThat(prompt).doesNotContain("-1.02%");
+	}
+
+	// ---------- 하루를 넘긴 보유·일봉 극값 (이슈 #275, 커밋 5ad19e8d) ----------
+
+	// 이 분기의 존재 이유는 8/1 14:20 매수 → 8/5 09:05 매도가 "14:20 매수, 09:05 매도"로 보여 모델이 매도를
+	// 매수보다 이르게 서술하던 것이다. 값은 위 골든 마스터와 같게 두고 시각 표기만 갈라 대조가 보이게 한다.
+	@Test
+	@DisplayName("하루를 넘긴 보유의 매도 회고 프롬프트가 시각을 날짜까지 적는다")
+	void postSellPromptWritesDatesWhenTheHoldSpansMultipleDays() {
+		String expected = """
+			종목: 비트코인
+			매수: 8월 1일 14:20, 70,000원 10
+			매도: 8월 5일 09:05, 68,500원 10
+			수익률: -2.17% (실현손익 -15,207원)
+
+			보유 중 최고가: 8월 3일 종가의 70,800원 (매도가가 3.25% 낮음)
+			보유 중 최저가: 8월 2일 종가의 68,100원 (매도가가 0.59% 높음)
+			매수는 첫 근거 기사(8월 2일 10:15)보다 105분 앞섰습니다.
+
+			보유 구간에 걸친 변동:
+			- 8월 2일 10:10~8월 2일 10:15 -1.82% (매수 115분 뒤, 매도 195분 전)
+			  근거: 비트코인 채굴 난이도 상승 (한국경제, 10:15)
+
+			매도 후 흐름: 마감 종가 69,200원 (매도가보다 1.02% 높음)
+
+			위 내용을 3~4문장으로 서술해줘. 수치를 그대로 나열하지 말고,
+			매수·매도 시각이 변동·기사와 어떤 순서였는지를 중심으로 써줘.""";
+
+		String prompt = builder.postSellPrompt(multiDayDailyPostSell());
+
+		assertThat(prompt).isEqualTo(expected);
+		// 시분만 남으면 매도(09:05)가 매수(14:20)보다 이른 것처럼 읽힌다 — 그 형태가 남아 있지 않아야 한다.
+		assertThat(prompt).doesNotContain("매수: 14:20").doesNotContain("매도: 09:05");
+	}
+
+	// 일봉 표본으로 잰 극값의 23:59는 라벨이지 가격을 잰 시각이 아니다 — 그대로 적으면 재지 않은 시각을 단정한다.
+	@Test
+	@DisplayName("holdHighBasis=DAILY면 극값을 시·분 없이 \"M월 d일 종가\"로 적는다")
+	void postSellPromptWritesDailyExtremesAsAClosingPriceWithoutAClockTime() {
+		String prompt = builder.postSellPrompt(multiDayDailyPostSell());
+
+		assertThat(prompt).contains("보유 중 최고가: 8월 3일 종가의 70,800원");
+		assertThat(prompt).contains("보유 중 최저가: 8월 2일 종가의 68,100원");
+		// 일봉 라벨이 문장에 새어 나가면 안 된다.
+		assertThat(prompt).doesNotContain("23:59");
+	}
+
+	// 2차까지 매도 회고가 주식 전용이라 수량에 "주"가 하드코딩돼 있었는데, 이슈 #275로 코인이 들어오면서
+	// "0.0025주"가 나왔다. 단위를 붙이지 않기로 했다 (PR #281 리뷰 권장 2).
+	@Test
+	@DisplayName("코인의 소수 수량에 \"주\" 단위가 붙지 않는다")
+	void postSellPromptWritesFractionalQuantityWithoutAShareUnit() {
+		String prompt = builder.postSellPrompt(fractionalQuantityPostSell());
+
+		assertThat(prompt).contains("매수: 8월 1일 14:20, 70,000원 0.0025");
+		assertThat(prompt).contains("매도: 8월 5일 09:05, 68,500원 0.0025");
+		assertThat(prompt).doesNotContain("0.0025주");
+	}
+
+	// DAILY는 정의상 199분 초과 보유라 multiDayHold와 거의 항상 함께 참이다 — 그래서 둘이 각각 무엇을 가르는지가
+	// 흐려지기 쉽다. MINUTE이면서 하루를 넘긴 조합에서 극값은 시각을 유지하고 날짜만 붙는다.
+	@Test
+	@DisplayName("MINUTE이면서 하루를 넘긴 보유면 극값이 날짜 + 시·분으로 적힌다")
+	void postSellPromptKeepsClockTimeForMinuteExtremesEvenAcrossDays() {
+		String prompt = builder.postSellPrompt(multiDayMinutePostSell());
+
+		assertThat(prompt).contains("보유 중 최고가: 8월 3일 11:05의 70,800원");
+		assertThat(prompt).doesNotContain("종가의 70,800원");
+	}
+
+	// 주식 회귀 — 이 수정의 유일한 위험이다. 두 분기 조건이 주식에서는 언제나 거짓이라 출력이 한 글자도
+	// 달라지지 않아야 한다. 골든 마스터가 이미 이 조합이지만, 조합임을 이름으로 드러내는 케이스를 따로 둔다.
+	@Test
+	@DisplayName("주식 조합(multiDayHold=false + MINUTE)의 프롬프트는 날짜 없이 시·분만 적는다")
+	void postSellPromptKeepsTheStockCombinationUnchanged() {
+		String prompt = builder.postSellPrompt(specPostSell());
+
+		assertThat(prompt).contains("매수: 09:30, 70,000원 10");
+		assertThat(prompt).contains("매도: 14:40, 68,500원 10");
+		assertThat(prompt).contains("보유 중 최고가: 11:05의 70,800원");
+		assertThat(prompt).contains("보유 중 최저가: 14:20의 68,100원");
+		assertThat(prompt).contains("매수는 첫 근거 기사(11:15)보다 105분 앞섰습니다.");
+		assertThat(prompt).contains("- 11:20~11:25 -1.82%");
+		// 날짜 표기가 주식 문장에 새어 들어오면 안 된다 — 원본 거래일 축의 날짜는 문장에 등장할 자리가 없다.
+		assertThat(prompt).doesNotContain("월 ");
+		assertThat(prompt).doesNotContain("종가의");
 	}
 
 	// ---------- 픽스처 ----------
@@ -442,39 +529,85 @@ class NarrativePromptBuilderTest {
 
 	private PostSellPromptDto specPostSell() {
 		return new PostSellPromptDto(
-			"삼성전자", LocalTime.of(9, 30), bd("70000"), LocalTime.of(14, 40), bd("68500"), bd("10.00"),
-			bd("-0.0217"), -15207L, bd("70800"), LocalTime.of(11, 5), bd("-0.0325"),
-			bd("68100"), LocalTime.of(14, 20), bd("0.0059"), 105, LocalTime.of(11, 15),
+			"삼성전자", TRADING_DATE.atTime(9, 30), bd("70000"), TRADING_DATE.atTime(14, 40), bd("68500"),
+			bd("10.00"),
+			bd("-0.0217"), -15207L, bd("70800"), TRADING_DATE.atTime(11, 5), bd("-0.0325"),
+			bd("68100"), TRADING_DATE.atTime(14, 20), bd("0.0059"), 105, TRADING_DATE.atTime(11, 15),
 			List.of(new HeldPriceMoveDto(
-				LocalTime.of(11, 20), LocalTime.of(11, 25), bd("-0.0182"), 115, 195,
+				TRADING_DATE.atTime(11, 20), TRADING_DATE.atTime(11, 25), bd("-0.0182"), 115, 195,
 				List.of(article("삼성전자 반도체 공장 가동 일시 중단", "한국경제", TRADING_DATE.atTime(11, 15))))),
-			bd("69200"), bd("0.0102"), null, null, null, null);
+			bd("69200"), bd("0.0102"), null, null, null, null, false, HoldHighBasis.MINUTE);
+	}
+
+	/**
+	 * 8월 1일 14:20 매수 → 8월 5일 09:05 매도. 값은 {@link #specPostSell()}과 같게 두고 <b>시각과 두 분기
+	 * 플래그만</b> 바꿨다 — 그래야 두 기대 문자열의 차이가 이 수정이 만든 표기 차이뿐임이 드러난다.
+	 *
+	 * <p>극값 시각은 일봉 라벨({@code 23:59})이다. {@code HoldHighBasis.DAILY}면 그 시·분이 문장에 나오지
+	 * 않아야 하므로, 라벨을 그대로 넣어 두는 것이 이 픽스처의 요점이다.
+	 */
+	private PostSellPromptDto multiDayDailyPostSell() {
+		return new PostSellPromptDto(
+			"비트코인", LocalDateTime.of(2026, 8, 1, 14, 20), bd("70000"),
+			LocalDateTime.of(2026, 8, 5, 9, 5), bd("68500"), bd("10.00"),
+			bd("-0.0217"), -15207L,
+			bd("70800"), LocalDateTime.of(2026, 8, 3, 23, 59), bd("-0.0325"),
+			bd("68100"), LocalDateTime.of(2026, 8, 2, 23, 59), bd("0.0059"),
+			105, LocalDateTime.of(2026, 8, 2, 10, 15),
+			List.of(new HeldPriceMoveDto(
+				LocalDateTime.of(2026, 8, 2, 10, 10), LocalDateTime.of(2026, 8, 2, 10, 15), bd("-0.0182"), 115, 195,
+				List.of(article("비트코인 채굴 난이도 상승", "한국경제", LocalDateTime.of(2026, 8, 2, 10, 15))))),
+			bd("69200"), bd("0.0102"), null, null, null, null, true, HoldHighBasis.DAILY);
+	}
+
+	// 코인 수량 — 원장이 소수를 그대로 담는다(주식은 정수 수량만 온다).
+	private PostSellPromptDto fractionalQuantityPostSell() {
+		return new PostSellPromptDto(
+			"비트코인", LocalDateTime.of(2026, 8, 1, 14, 20), bd("70000"),
+			LocalDateTime.of(2026, 8, 5, 9, 5), bd("68500"), bd("0.0025000"),
+			bd("-0.0217"), -15207L,
+			null, null, null,
+			null, null, null,
+			null, null, List.of(),
+			null, null, null, null, null, null, true, HoldHighBasis.MINUTE);
+	}
+
+	// 위와 같지만 극값을 1분봉으로 잰 조합 — 날짜는 붙되 시·분이 남는다.
+	private PostSellPromptDto multiDayMinutePostSell() {
+		return new PostSellPromptDto(
+			"비트코인", LocalDateTime.of(2026, 8, 1, 14, 20), bd("70000"),
+			LocalDateTime.of(2026, 8, 5, 9, 5), bd("68500"), bd("10.00"),
+			bd("-0.0217"), -15207L,
+			bd("70800"), LocalDateTime.of(2026, 8, 3, 11, 5), bd("-0.0325"),
+			bd("68100"), LocalDateTime.of(2026, 8, 3, 14, 20), bd("0.0059"),
+			null, null, List.of(),
+			null, null, null, null, null, null, true, HoldHighBasis.MINUTE);
 	}
 
 	private PostSellPromptDto minimalPostSell() {
 		return new PostSellPromptDto(
-			"삼성전자", LocalTime.of(9, 30), bd("70000"), LocalTime.of(14, 40), bd("68500"), bd("10"),
-			bd("-0.0217"), -15207L, bd("70800"), LocalTime.of(11, 5), bd("-0.0325"),
-			bd("68100"), LocalTime.of(14, 20), bd("0.0059"), null, null, List.of(),
-			null, null, null, null, null, null);
+			"삼성전자", TRADING_DATE.atTime(9, 30), bd("70000"), TRADING_DATE.atTime(14, 40), bd("68500"), bd("10"),
+			bd("-0.0217"), -15207L, bd("70800"), TRADING_DATE.atTime(11, 5), bd("-0.0325"),
+			bd("68100"), TRADING_DATE.atTime(14, 20), bd("0.0059"), null, null, List.of(),
+			null, null, null, null, null, null, false, HoldHighBasis.MINUTE);
 	}
 
 	// sameSessionCompleted=false — 배분된 lot이 여러 원본 거래일에 걸쳐 보유 구간 극값 6필드가 전부 null인 매매다
 	// (spec §파생 사실 계산). 위 minimalPostSell은 극값을 채우고 있어 이 경로를 덮지 못한다.
 	private PostSellPromptDto multiSessionPostSell() {
 		return new PostSellPromptDto(
-			"삼성전자", LocalTime.of(9, 30), bd("70000"), LocalTime.of(14, 40), bd("68500"), bd("10"),
+			"삼성전자", TRADING_DATE.atTime(9, 30), bd("70000"), TRADING_DATE.atTime(14, 40), bd("68500"), bd("10"),
 			bd("-0.0217"), -15207L, null, null, null,
 			null, null, null, null, null, List.of(),
-			null, null, null, null, null, null);
+			null, null, null, null, null, null, false, HoldHighBasis.MINUTE);
 	}
 
-	private PostSellPromptDto withBuyToNews(int minutes, LocalTime firstNewsAt) {
+	private PostSellPromptDto withBuyToNews(int minutes, LocalDateTime firstNewsAt) {
 		return new PostSellPromptDto(
-			"삼성전자", LocalTime.of(9, 30), bd("70000"), LocalTime.of(14, 40), bd("68500"), bd("10"),
-			bd("-0.0217"), -15207L, bd("70800"), LocalTime.of(11, 5), bd("-0.0325"),
-			bd("68100"), LocalTime.of(14, 20), bd("0.0059"), minutes, firstNewsAt, List.of(),
-			null, null, null, null, null, null);
+			"삼성전자", TRADING_DATE.atTime(9, 30), bd("70000"), TRADING_DATE.atTime(14, 40), bd("68500"), bd("10"),
+			bd("-0.0217"), -15207L, bd("70800"), TRADING_DATE.atTime(11, 5), bd("-0.0325"),
+			bd("68100"), TRADING_DATE.atTime(14, 20), bd("0.0059"), minutes, firstNewsAt, List.of(),
+			null, null, null, null, null, null, false, HoldHighBasis.MINUTE);
 	}
 
 	private NewsSummaryPromptDto specNewsSummary(NewsSummaryScope scope) {

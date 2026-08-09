@@ -21,7 +21,8 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 /**
- * 크론 값은 {@code application.yml}의 {@code feedback.batch.peer-stats-cron}이고 정본은 spec §C-1이다.
+ * 크론 값은 {@code application.yml}의 {@code feedback.batch.peer-stats-cron}(주식)·
+ * {@code feedback.batch.crypto-peer-stats-cron}(코인)이고 정본은 spec §C-1이다.
  * §C-6이 이름을 못박아 둔 신설 서비스다 — 카드별로 {@code HolderPopulationQueryService}의 모집단 조회를 불러
  * §반사실·집단 비교 계산의 세 지표(모집단 크기·30분 내 매도 개수·매도까지 걸린 시간의 중앙값)를 계산해
  * {@code price_move_peer_stats}에 저장한다.
@@ -35,9 +36,10 @@ import org.springframework.stereotype.Service;
  * 축은 {@code UNIQUE(price_move_event_id, service_date)}와 정확히 같다({@code priceMoveEventId}·
  * {@code serviceDate}) — 같은 서비스 날짜에 배치를 두 번 돌려도 예외 없이 스킵된다.
  *
- * <p><b>{@code serviceDate}는 배치 실행 시점의 오늘 날짜다({@code Clock} 기반).</b> 같은 원본 거래일이 두 번
- * 재생돼도 카드 행은 재사용되므로(§C-9), 이 값이 재재생마다 달라야 두 서비스 날짜의 집계가 따로 쌓인다 —
- * 덮어쓰면 첫날 매도자의 통계가 사라진다.
+ * <p><b>주식의 {@code serviceDate}는 배치 실행 시점의 오늘 날짜다({@code Clock} 기반).</b> 같은 원본 거래일이
+ * 두 번 재생돼도 카드 행은 재사용되므로(§C-9), 이 값이 재재생마다 달라야 두 서비스 날짜의 집계가 따로 쌓인다 —
+ * 덮어쓰면 첫날 매도자의 통계가 사라진다. <b>코인은 이 규칙을 쓰지 않는다</b> — 재생이 없어 카드가 재사용되지
+ * 않고, 배치가 자정을 넘겨 도는 탓에 실행일을 쓰면 조회 키와 어긋난다({@link #runCryptoPeerStatsBatch}).
  */
 @Slf4j
 @Service
@@ -84,7 +86,9 @@ public class PeerStatsBatchService {
 		for (PriceMoveEvent card : cards) {
 			// 카드 하나가 실패해도 다음으로 넘어간다 — 배치 전체를 실패시키지 않는다(다른 배치와 같은 패턴).
 			try {
-				if (aggregateCard(card, serviceDate)) {
+				// T = 카드 windowEnd를 그 카드가 재생된 서비스 날짜에 붙인 절대 시각 (§반사실·집단 비교 계산).
+				// 코인은 occurredAt이 이미 절대 시각이라 이 변환이 없다 — 그래서 계산이 호출부에 있다.
+				if (aggregateCard(card, serviceDate, LocalDateTime.of(serviceDate, card.getWindowEnd()))) {
 					created++;
 				}
 			} catch (RuntimeException ex) {
@@ -95,18 +99,71 @@ public class PeerStatsBatchService {
 	}
 
 	/**
+	 * 코인 집단 비교 배치 진입점 (§FEED-012 결정 3). 매일 00:05에 <b>전날 KST 하루치</b> 코인 카드를 집계한다.
+	 *
+	 * <p><b>재생세션을 보지 않는다.</b> 바로 위 주식 진입점의 첫 줄인 {@code getCurrentReplaySession().ready()}
+	 * 확인이 여기 없는 것은 빠뜨린 것이 아니다 — 코인에는 재생이라는 개념 자체가 없다. 코인 카드는 실제 시각으로
+	 * 실시간 감시가 만들고({@code CryptoPriceMoveWatcher}) {@code origin_trade_date}는 배치 실행일일 뿐이라
+	 * 하루를 가르는 기준이 되지 못한다(§C-9). 세션을 확인하도록 바꾸면 재생이 준비되지 않은 날 코인 집계가
+	 * 통째로 사라진다.
+	 *
+	 * <p><b>{@code serviceDate}가 배치 실행일이 아니다.</b> 이 배치는 자정을 넘겨 돌기 때문에 실행일을 쓰면
+	 * 저장 키가 조회 키보다 하루 뒤가 된다 — {@code CryptoPostSellFeedbackReader}가 카드
+	 * {@code windowEnd}(= {@code occurredAt})의 날짜로 찾으므로 두 규칙이 어긋나면 <b>오류 없이</b>
+	 * {@code peerComparison}이 영원히 {@code NOT_YET}으로 남는다. 그래서 카드마다 그 카드
+	 * {@code occurredAt}의 날짜를 서비스 날짜로 쓴다.
+	 *
+	 * <p><b>{@code zone}을 반드시 붙인다</b>(§C-1). 배포 JVM 기본 타임존이 UTC라 빠뜨리면 이 배치가 KST 09:05에
+	 * 돌고, 그 시점의 "전날"은 KST 기준 이틀 전이라 대상 구간까지 함께 어긋난다.
+	 */
+	@Scheduled(cron = "${feedback.batch.crypto-peer-stats-cron}", zone = "Asia/Seoul")
+	public void runCryptoPeerStatsBatch() {
+		LocalDate targetDate = LocalDate.now(clock).minusDays(1);
+		// findByMarketAndOccurredAtBetween은 양 끝을 포함한다. 상한을 다음 날 00:00으로 두면 자정 정각 카드가
+		// 이틀 치에 중복으로 걸리므로, DATETIME(6)이 실제로 담을 수 있는 마지막 값(23:59:59.999999)까지만 받는다
+		// — LocalTime.MAX(나노초)는 컬럼 정밀도를 넘어 드라이버가 반올림하면 경계가 조용히 어긋난다.
+		LocalDateTime from = targetDate.atStartOfDay();
+		LocalDateTime to = targetDate.plusDays(1).atStartOfDay().minusNanos(1_000L);
+		List<PriceMoveEvent> cards = priceMoveEventRepository.findByMarketAndOccurredAtBetween(
+			Market.CRYPTO, from, to);
+		log.info("코인 집단 비교 배치를 시작한다. 대상 날짜={} 카드={}건", targetDate, cards.size());
+
+		// 소요 시간은 주식 진입점과 같은 이유로 System.nanoTime()으로 잰다(이슈 #198).
+		long batchStartedNanos = System.nanoTime();
+		int created = 0;
+		for (PriceMoveEvent card : cards) {
+			// 카드 하나가 실패해도 다음으로 넘어간다 — 배치 전체를 실패시키지 않는다(주식 진입점과 같은 패턴).
+			try {
+				// 코인은 occurredAt이 이미 절대 시각이라 주식 같은 "서비스 날짜에 붙이는" 변환이 없다.
+				// T(모집단 기준 시각)도 occurredAt 그대로다.
+				LocalDateTime at = card.getOccurredAt();
+				if (aggregateCard(card, at.toLocalDate(), at)) {
+					created++;
+				}
+			} catch (RuntimeException ex) {
+				log.warn("코인 집단 비교 집계에 실패해 이 카드를 건너뛴다. 카드={}", card.getId(), ex);
+			}
+		}
+		log.info("코인 집단 비교 배치를 마쳤다. 생성={}건 소요={}ms", created, elapsedMillis(batchStartedNanos));
+	}
+
+	/**
 	 * 카드 1건의 집단 비교를 확정한다. 이미 그 서비스 날짜의 집계가 있으면 다시 계산하지 않는다.
 	 *
+	 * <p><b>주식·코인이 이 메서드를 공유한다</b>(이슈 #275). 두 시장이 다른 것은 <b>{@code at}과
+	 * {@code serviceDate}를 어떻게 구하는가</b>뿐이라 호출부가 정해 넘긴다 — 모집단 복원·30분 비율·중앙값은
+	 * 시장과 무관한 같은 계산이고, 복제하면 한쪽만 고쳐도 <b>예외 없이 다른 통계가 저장된다.</b>
+	 *
+	 * @param at T — 모집단을 복원할 절대 시각. 주식은 카드 {@code windowEnd}를 서비스 날짜에 붙인 값이고 코인은
+	 *     카드 {@code occurredAt} 그대로다
 	 * @return 새로 저장했으면 {@code true}, 이미 있어 건너뛰었으면 {@code false}
 	 */
-	private boolean aggregateCard(PriceMoveEvent card, LocalDate serviceDate) {
+	private boolean aggregateCard(PriceMoveEvent card, LocalDate serviceDate, LocalDateTime at) {
 		if (priceMovePeerStatRepository.existsByPriceMoveEventIdAndServiceDate(card.getId(), serviceDate)) {
 			log.debug("이미 집계된 카드라 건너뛴다. 카드={} 서비스 날짜={}", card.getId(), serviceDate);
 			return false;
 		}
 
-		// T = 카드 windowEnd를 그 카드가 재생된 서비스 날짜에 붙인 절대 시각 (§반사실·집단 비교 계산).
-		LocalDateTime at = LocalDateTime.of(serviceDate, card.getWindowEnd());
 		Long instrumentId = card.getInstrument().getId();
 
 		// countHoldersAtTime·minutesToSellForHoldersAtTime을 각각 부르지 않는다 — 둘 다 내부적으로

@@ -1,6 +1,7 @@
 // 매도 직후 피드백 조회 응답 — 원장 수치와 서버가 계산한 파생 사실·반사실·집단 비교·관찰형 서술을 담는다.
 package com.finplay.api.feedback.dto.response;
 
+import com.finplay.api.feedback.domain.HoldHighBasis;
 import com.finplay.api.feedback.domain.NarrativeSource;
 import com.finplay.api.feedback.domain.PostSellFeedbackStatus;
 import java.math.BigDecimal;
@@ -9,13 +10,16 @@ import java.util.List;
 
 /**
  * 계약은 {@code docs/api-contracts.md}의 "매도 직후 피드백 조회" 소절이 정본이고, 요구사항은 spec FEED-007·
- * 010·011이다. <b>2차는 주식 전용이며 코인 체결은 400이다</b> — 빈 값을 채운 200을 돌려주지 않는다.
+ * 010·011·012다. <b>주식·코인이 같은 record를 쓴다</b> — 3차(이슈 #275)가 코인을 열면서도 키 집합을 가르지
+ * 않았다(§FEED-012 "응답 계약이 시장별로 달라지는가"). 갈리는 것은 값뿐이고 조립 주체가
+ * {@code PostSellFeedbackReader}({@code STOCK}) / {@code CryptoPostSellFeedbackReader}({@code CRYPTO})로 나뉜다.
  *
  * <p><b>{@code sameSessionCompleted}가 응답 형태를 가른다.</b> 매수와 매도가 같은 원본 거래일 안에서 완결됐으면
  * {@code true}이고 극값·파생 사실·카드·매도 후 흐름·반사실·집단 비교가 채워진다. 여러 재생일에 걸친 매매는
  * {@code false}이며 그 필드가 전부 {@code null}({@code priceMoves}는 {@code []})이다 — 분봉이 불연속이라 계산
  * 자체가 성립하지 않는다. <b>한 매도가 여러 lot에 배분됐고 그 lot들이 서로 다른 원본 거래일에 걸쳐 있어도
- * {@code false}다</b> — 가장 이른 lot 하나만 보고 판정하지 않는다.
+ * {@code false}다</b> — 가장 이른 lot 하나만 보고 판정하지 않는다. <b>코인은 항상 {@code true}다</b>(§FEED-012
+ * 결정 0) — 재생일이 없어 시간축이 언제나 연속이다.
  *
  * <p><b>정적 팩토리를 두지 않는다.</b> 단일 엔티티 매핑이 아니라 원장 체결·FIFO 배분·분봉·카드·집계·서술
  * 여섯 곳에서 모인 값이고({@code docs/conventions.md}의 "엔티티 매핑이 없는 단순 DTO는 생략"), 항목마다
@@ -64,6 +68,7 @@ public record PostSellFeedbackResponse(
 	LocalDateTime holdLowAt,
 	BigDecimal sellVsHighRate,
 	BigDecimal sellVsLowRate,
+	HoldHighBasis holdHighBasis,
 	Integer buyToNewsMinutes,
 	List<HeldPriceMoveItem> priceMoves,
 	PostSellFlow postSellFlow,
@@ -115,6 +120,7 @@ public record PostSellFeedbackResponse(
 			holdLowAt,
 			sellVsHighRate,
 			sellVsLowRate,
+			holdHighBasis,
 			buyToNewsMinutes,
 			priceMoves,
 			postSellFlow,

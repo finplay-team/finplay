@@ -3,9 +3,8 @@ package com.finplay.api.feedback.service;
 
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
+import com.finplay.api.feedback.domain.HoldHighBasis;
 import com.finplay.api.feedback.domain.PriceMoveEvent;
-import com.finplay.api.feedback.domain.PriceMoveEventSource;
-import com.finplay.api.feedback.domain.PriceMovePeerStat;
 import com.finplay.api.feedback.domain.PostSellFeedbackStatus;
 import com.finplay.api.feedback.dto.response.CounterfactualScenario;
 import com.finplay.api.feedback.dto.response.Counterfactuals;
@@ -15,7 +14,6 @@ import com.finplay.api.feedback.dto.response.PeerComparison;
 import com.finplay.api.feedback.dto.response.PostSellFeedbackResponse;
 import com.finplay.api.feedback.dto.response.PostSellFlow;
 import com.finplay.api.feedback.repository.PriceMoveEventRepository;
-import com.finplay.api.feedback.repository.PriceMoveEventSourceRepository;
 import com.finplay.api.feedback.repository.PriceMovePeerStatRepository;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.domain.StockReplaySession;
@@ -27,15 +25,11 @@ import com.finplay.api.order.service.TradeService;
 import com.finplay.api.portfolio.service.SellAllocationQueryService;
 import com.finplay.api.portfolio.service.SellAllocationSummaryDto;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -58,12 +52,22 @@ import org.springframework.transaction.annotation.Transactional;
  * 담기는 것은 전부 스칼라·record이고 엔티티가 밖으로 나가지 않는다({@code docs/conventions.md}).
  *
  * <p><b>검증 순서를 바꾸지 않는다.</b> {@code TradeService.getOwnedTrade}가 이미 정한 존재(404 {@code NOT_FOUND})
- * → 소유(403 {@code FORBIDDEN})를 그대로 타고, 그 뒤에 매수 체결 → 400, 코인 체결 → 400이다. 매도 회고
- * 투자일기({@code JournalService})가 같은 순서를 쓰고 있다. <b>이 검증이 서술 생성보다 먼저 일어나야 한다</b> —
- * 뒤로 미루면 남의 체결이나 코인 체결로도 LLM이 한 번 불린 뒤에 400이 나간다.
+ * → 소유(403 {@code FORBIDDEN})를 그대로 타고, 그 뒤에 매수 체결 → 400이다. 매도 회고 투자일기
+ * ({@code JournalService})가 같은 순서를 쓰고 있다. <b>이 검증이 서술 생성보다 먼저 일어나야 한다</b> — 뒤로
+ * 미루면 남의 체결로도 LLM이 한 번 불린 뒤에 400이 나간다.
  *
- * <p><b>코인은 빈 값을 채운 200을 돌려주지 않는다</b>(FEED-007 각주) — 게이트가 전부 장 마감과 원본 거래일에
- * 묶여 있는데 24시간 거래인 코인에는 둘 다 없다. 코인 매도 회고는 3차다.
+ * <p><b>이 클래스가 두 시장의 진입점이고 조립은 주식만 한다</b>(3차, 이슈 #275). 코인 체결은 검증과 배분 조회를
+ * 마친 뒤 {@link CryptoPostSellFeedbackReader}에 넘긴다 — <b>검증과 트랜잭션 경계를 한 곳에 두기 위해서다.</b>
+ * 시장 판정을 서비스로 올리면 조립 전에 체결을 한 번 더 읽어야 하고, 코인 쪽에 {@code @Transactional}을 새로
+ * 열면 같은 조회가 두 트랜잭션에 걸친다. <b>아래 주식 경로는 3차에서 동작이 바뀌지 않았다</b> — 산술을
+ * {@link PostSellArithmetic}으로 옮긴 것은 코인과 식을 공유하기 위한 이동이고 값은 그대로다.
+ *
+ * <p><b>알려진 한계 — 코인 분기는 이 읽기 트랜잭션 안에서 외부 REST를 부른다</b>(이슈 #282, PR #281 리뷰).
+ * 위 문단이 "LLM 호출을 이 트랜잭션 안에 넣지 않기 위해 빈을 나눴다"고 적은 것과 <b>정반대 방향</b>이다 —
+ * 코인 경로는 {@code findHoldExtremes}·{@code sellDayClose}·{@code highestCloseAfterSell}·
+ * {@code scenarioAtFirstMoveAfterBuy}에서 빗썸을 최대 4회 부르고, 타임아웃 예산이 <b>connect 2초 / read 3초</b>라
+ * 최악의 경우 요청 하나가 십수 초 동안 커넥션 1개를 쥔다(풀 20). 지금 고치지 않는 이유는 경계를 나누려면
+ * 캔들 조회를 트랜잭션 밖으로 끌어내는 <b>조립 순서 변경</b>이 필요해 이슈 #275 범위를 넘기 때문이다.
  *
  * <p><b>수치는 원장에서 그대로 읽는다.</b> {@code buyPrice}는 FIFO 배분 가중평균 매수단가,
  * {@code sellPrice}·{@code quantity}·{@code fee}·{@code realizedPnl}은 {@code trades} 행 그대로다. 재계산하거나
@@ -76,22 +80,10 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 class PostSellFeedbackReader {
 
-	// 계약이 정한 수익률 scale·라운딩. PortfolioService·HoldingValuationService와 같은 값이다.
-	private static final int RETURN_RATE_SCALE = 4;
-
-	// 반사실 시나리오의 매도수수료율 — OrderExecutionService.STOCK_FEE_RATE와 같은 값이다(§반사실·집단 비교
-	// 계산). 그 필드는 private이고 주문 실행이라는 다른 트랜잭션 경계에 있어 상수를 공개해 의존을 만들지 않고
-	// 값만 재사용한다. 2차는 주식 전용이라 STOCK 요율만 있다.
-	private static final BigDecimal STOCK_FEE_RATE = new BigDecimal("0.00015");
-
-	// 파생 사실 비율(sellVsHighRate·sellVsLowRate)의 scale. 계약 예시(-0.0325·0.0059)가 소수 4자리다.
-	// returnRate와 값은 같지만 근거가 다르다 — 그쪽은 계약이 식과 함께 못박은 값이고 이쪽은 §파생 사실 계산의
-	// 뺄셈·나눗셈이라, 한쪽 정밀도를 바꿀 이유가 생겼을 때 다른 쪽이 딸려 가지 않게 따로 둔다.
-	private static final int DERIVED_RATE_SCALE = 4;
-
-	// 집단 비교 soldWithin30MinRate의 scale — 위 두 상수와 같은 이유로 독립해 둔다. §반사실·집단 비교 계산은
-	// 이 비율의 scale을 못박지 않아 나머지 파생 비율(scale 4 HALF_UP)과 같은 정밀도를 따른다.
-	private static final int PEER_RATE_SCALE = 4;
+	// 수익률·비율·수수료·분 단위 차이의 식과 scale은 PostSellArithmetic이 단일 출처다(이슈 #275).
+	// 코인 경로(CryptoPostSellFeedbackReader)와 같은 산술을 써야 하는 자리라 여기에 상수를 다시 두지 않는다.
+	// 이 클래스는 주식 전용이므로 요율도 그 시장의 것으로 한 번만 고른다.
+	private static final BigDecimal STOCK_FEE_RATE = PostSellArithmetic.feeRateOf(Market.STOCK);
 
 	/**
 	 * 과거 서비스 날짜의 카드 노출 게이트 상한 — 그날 카드는 이미 전부 노출된 상태라 "그날의 가장 늦은 시각"이다.
@@ -109,6 +101,8 @@ class PostSellFeedbackReader {
 	 */
 	private static final LocalTime PAST_SERVICE_DATE_CUTOFF = LocalTime.MAX.withNano(0);
 
+	private final CryptoPostSellFeedbackReader cryptoPostSellFeedbackReader;
+
 	private final TradeService tradeService;
 
 	private final SellAllocationQueryService sellAllocationQueryService;
@@ -117,7 +111,7 @@ class PostSellFeedbackReader {
 
 	private final PriceMoveEventRepository priceMoveEventRepository;
 
-	private final PriceMoveEventSourceRepository priceMoveEventSourceRepository;
+	private final PriceMoveSourceLoader priceMoveSourceLoader;
 
 	private final PriceMovePeerStatRepository priceMovePeerStatRepository;
 
@@ -126,8 +120,8 @@ class PostSellFeedbackReader {
 	/**
 	 * 본인 매도 체결 1건의 회고에서 <b>서술을 뺀 전부</b>를 읽는다.
 	 *
-	 * @param tradeId 미존재는 404 {@code NOT_FOUND}, 타인 체결은 403 {@code FORBIDDEN}, 매수·코인 체결은 400
-	 *     {@code VALIDATION_ERROR}다
+	 * @param tradeId 미존재는 404 {@code NOT_FOUND}, 타인 체결은 403 {@code FORBIDDEN}, 매수 체결은 400
+	 *     {@code VALIDATION_ERROR}다. <b>코인 체결은 400이 아니라 200이다</b>(3차, 이슈 #275)
 	 * @return {@code narrative}·{@code narrativeSource}·{@code narrativeStatus} 셋만 {@code null}인 응답.
 	 *     그 셋은 {@code PostSellFeedbackService}가 {@code withNarrative}로 얹는다
 	 */
@@ -137,11 +131,12 @@ class PostSellFeedbackReader {
 		if (trade.getSide() != OrderSide.SELL) {
 			throw new BusinessException(ErrorCode.VALIDATION_ERROR);
 		}
-		if (trade.getInstrument().getMarket() == Market.CRYPTO) {
-			throw new BusinessException(ErrorCode.VALIDATION_ERROR);
-		}
 
 		SellAllocationSummaryDto allocation = sellAllocationQueryService.getSellAllocationSummary(tradeId);
+		if (trade.getInstrument().getMarket() == Market.CRYPTO) {
+			return cryptoPostSellFeedbackReader.read(trade, allocation);
+		}
+
 		LocalDate sellSourceTradingDate = sourceTradingDateOf(trade);
 		LocalDateTime buyAt = atOriginTradeDate(
 			allocation.earliestBuyAt(), allocation.earliestBuySourceTradingDate());
@@ -189,6 +184,7 @@ class PostSellFeedbackReader {
 			extremes.holdLowAt(),
 			extremes.sellVsHighRate(),
 			extremes.sellVsLowRate(),
+			extremes.basis(),
 			sameSessionCompleted ? buyToNewsMinutes(buyAt, priceMoves) : null,
 			priceMoves,
 			// 매도 후 흐름·반사실·집단 비교. sameSessionCompleted=false면 세 필드 모두 자기 자신이 null이고
@@ -216,13 +212,9 @@ class PostSellFeedbackReader {
 	 * <p>분모가 0이면 {@code ZERO}로 둔다 — 배분 원가와 수수료가 동시에 0인 체결은 원장에 생기지 않지만
 	 * {@code ArithmeticException}으로 조회 전체가 500이 되는 것보다 낫다.
 	 */
-	private BigDecimal returnRate(Trade trade, SellAllocationSummaryDto allocation) {
-		long buyBasis = allocation.allocatedCost() + allocation.allocatedBuyFee();
-		if (buyBasis == 0L || trade.getRealizedPnl() == null) {
-			return BigDecimal.ZERO;
-		}
-		return BigDecimal.valueOf(trade.getRealizedPnl())
-			.divide(BigDecimal.valueOf(buyBasis), RETURN_RATE_SCALE, RoundingMode.HALF_UP);
+	private static BigDecimal returnRate(Trade trade, SellAllocationSummaryDto allocation) {
+		return PostSellArithmetic.returnRate(
+			trade.getRealizedPnl(), allocation.allocatedCost() + allocation.allocatedBuyFee());
 	}
 
 	/**
@@ -239,7 +231,7 @@ class PostSellFeedbackReader {
 	 * <b>그 역은 성립하지 않는다</b>는 것이 이 자리의 요점이다.
 	 */
 	private static Integer holdingMinutes(LocalDateTime buyAt, LocalDateTime sellAt) {
-		return isReversed(buyAt, sellAt) ? null : minutesBetween(buyAt, sellAt);
+		return isReversed(buyAt, sellAt) ? null : PostSellArithmetic.minutesBetween(buyAt, sellAt);
 	}
 
 	/**
@@ -285,8 +277,8 @@ class PostSellFeedbackReader {
 		LocalDate sourceTradingDate,
 		LocalDateTime buyAt,
 		LocalDateTime sellAt) {
-		LocalTime from = candleBoundary(buyAt);
-		LocalTime to = candleBoundary(sellAt);
+		LocalTime from = PostSellArithmetic.candleBoundary(buyAt);
+		LocalTime to = PostSellArithmetic.candleBoundary(sellAt);
 		List<StockCandleDto> candles = fullDayCandles.stream()
 			.filter(candle -> !candle.candleTime().isBefore(from) && !candle.candleTime().isAfter(to))
 			.toList();
@@ -310,25 +302,10 @@ class PostSellFeedbackReader {
 			LocalDateTime.of(sourceTradingDate, high.candleTime()),
 			low.close(),
 			LocalDateTime.of(sourceTradingDate, low.candleTime()),
-			rateAgainst(sellPrice, high.close()),
-			rateAgainst(sellPrice, low.close()));
-	}
-
-	/**
-	 * {@code (price − basePrice) ÷ basePrice}, scale 4 {@code HALF_UP} (§파생 사실 계산).
-	 *
-	 * <p>세 곳이 쓴다 — {@code sellVsHighRate}·{@code sellVsLowRate}는 {@code (매도가 − 극값)}이고
-	 * {@code sellToCloseRate}는 {@code (종가 − 매도가)}로 <b>기준가 자리가 뒤바뀐다.</b> 인자 순서를 헷갈리면
-	 * 부호만 반대인 값이 나가는데 예외도 로그도 없으므로, 호출부마다 어느 쪽이 기준인지 주석으로 남긴다.
-	 *
-	 * @return 기준가가 0이면 {@code null} — 원장에 없는 분봉이지만 {@code ArithmeticException}으로 조회 전체가
-	 *     500이 되는 것보다 낫다
-	 */
-	private static BigDecimal rateAgainst(BigDecimal price, BigDecimal basePrice) {
-		if (basePrice.signum() == 0) {
-			return null;
-		}
-		return price.subtract(basePrice).divide(basePrice, DERIVED_RATE_SCALE, RoundingMode.HALF_UP);
+			PostSellArithmetic.rateAgainst(sellPrice, high.close()),
+			PostSellArithmetic.rateAgainst(sellPrice, low.close()),
+			// 주식은 언제나 1분봉으로 잰다 — DAILY는 코인 전용이다(§FEED-012 결정 4).
+			HoldHighBasis.MINUTE);
 	}
 
 	/**
@@ -375,13 +352,13 @@ class PostSellFeedbackReader {
 		}
 
 		StockCandleDto lastCandle = lastCandle(fullDayCandles);
-		StockCandleDto postSellHigh = highestCloseAfter(fullDayCandles, candleBoundary(sellAt));
+		StockCandleDto postSellHigh = highestCloseAfter(fullDayCandles, PostSellArithmetic.candleBoundary(sellAt));
 		return new PostSellFlow(
 			PostSellFeedbackStatus.READY,
 			lastCandle == null ? null : lastCandle.close(),
 			lastCandle == null ? null : LocalDateTime.of(sourceTradingDate, lastCandle.candleTime()),
 			// sellToCloseRate = (종가 − 매도가) ÷ 매도가. 극값 두 비율과 기준가 자리가 뒤바뀐다.
-			lastCandle == null ? null : rateAgainst(lastCandle.close(), sellPrice),
+			lastCandle == null ? null : PostSellArithmetic.rateAgainst(lastCandle.close(), sellPrice),
 			postSellHigh == null ? null : postSellHigh.close(),
 			postSellHigh == null ? null : LocalDateTime.of(sourceTradingDate, postSellHigh.candleTime()));
 	}
@@ -422,7 +399,7 @@ class PostSellFeedbackReader {
 			? null
 			: new CounterfactualScenario(
 				lastCandle.close(), LocalDateTime.of(sourceTradingDate, lastCandle.candleTime()),
-				counterfactualReturnRate(lastCandle.close(), quantity, buyBasis));
+				PostSellArithmetic.counterfactualReturnRate(lastCandle.close(), quantity, buyBasis, STOCK_FEE_RATE));
 	}
 
 	/** {@code atHoldHigh} — 보유 구간 최고가와 그 시각. 극값이 없으면(구간에 분봉이 없으면) {@code null}이다. */
@@ -431,7 +408,8 @@ class PostSellFeedbackReader {
 		return extremes.holdHighPrice() == null
 			? null
 			: new CounterfactualScenario(extremes.holdHighPrice(), extremes.holdHighAt(),
-				counterfactualReturnRate(extremes.holdHighPrice(), quantity, buyBasis));
+				PostSellArithmetic.counterfactualReturnRate(
+					extremes.holdHighPrice(), quantity, buyBasis, STOCK_FEE_RATE));
 	}
 
 	/**
@@ -456,33 +434,10 @@ class PostSellFeedbackReader {
 			.filter(candle -> candle.candleTime().equals(windowEnd.toLocalTime()))
 			.findFirst()
 			.map(candle -> new CounterfactualScenario(
-				candle.close(), windowEnd, counterfactualReturnRate(candle.close(), quantity, buyBasis)))
+				candle.close(),
+				windowEnd,
+				PostSellArithmetic.counterfactualReturnRate(candle.close(), quantity, buyBasis, STOCK_FEE_RATE)))
 			.orElse(null);
-	}
-
-	/**
-	 * 반사실 시나리오 가격 {@code price}로 팔았다면의 수익률 (§반사실·집단 비교 계산).
-	 *
-	 * <p><b>매도금액·수수료를 시나리오 가격으로 다시 계산한다</b> — {@code OrderExecutionService.priceOrder}와
-	 * 같은 식·같은 라운딩이다. 매도금액을 원 단위로 {@code FLOOR}한 뒤 그 금액에 {@link #STOCK_FEE_RATE}를 곱해
-	 * 다시 {@code FLOOR}한다. 가격이 바뀌면 수수료도 바뀌므로 본체 {@code fee}·{@link #returnRate}를 그대로 쓸 수
-	 * 없다.
-	 *
-	 * @param buyBasis 배분 매수원가 + 배분 매수수수료. 0이면 {@link #returnRate}와 같은 이유로 {@code ZERO} —
-	 *     {@code ArithmeticException}으로 조회 전체가 500이 되는 것보다 낫다
-	 */
-	private static BigDecimal counterfactualReturnRate(BigDecimal price, BigDecimal quantity, long buyBasis) {
-		long amount = price.multiply(quantity).setScale(0, RoundingMode.FLOOR).longValueExact();
-		long fee = BigDecimal.valueOf(amount)
-			.multiply(STOCK_FEE_RATE)
-			.setScale(0, RoundingMode.FLOOR)
-			.longValueExact();
-		if (buyBasis == 0L) {
-			return BigDecimal.ZERO;
-		}
-		long realizedPnl = (amount - fee) - buyBasis;
-		return BigDecimal.valueOf(realizedPnl)
-			.divide(BigDecimal.valueOf(buyBasis), RETURN_RATE_SCALE, RoundingMode.HALF_UP);
 	}
 
 	/**
@@ -496,65 +451,6 @@ class PostSellFeedbackReader {
 	 */
 	private static StockCandleDto lastCandle(List<StockCandleDto> fullDayCandles) {
 		return fullDayCandles.isEmpty() ? null : fullDayCandles.get(fullDayCandles.size() - 1);
-	}
-
-	/**
-	 * 체결 시각을 <b>분봉·카드 구간 판정에 쓸 경계</b>로 내린다 — 초·소수 초를 버린다.
-	 *
-	 * <p><b>{@code toLocalTime()}을 그대로 쓰면 안 된다.</b> {@code executed_at}은 {@code DATETIME(6)}
-	 * ({@code V10__create_order_ledger_tables.sql})이고 값은 {@code OrderExecutionService}가
-	 * {@code LocalDateTime.now(clock)}으로 찍으므로 <b>운영에서는 항상 {@code 09:30:17.4xxxxx} 꼴</b>이다. 반대로
-	 * 분봉의 {@code candle_time}과 카드의 {@code window_end}는 <b>소수 초가 없는 정시 값</b>이다.
-	 *
-	 * <p>그대로 비교하면 경계가 <b>비대칭으로</b> 어긋난다. 하한은 {@code !candleTime.isBefore(09:30:17.4)}가
-	 * <b>09:30 분봉을 탈락시켜</b> §파생 사실 계산의 "양 끝 포함"이 깨지는데, 상한은
-	 * {@code !candleTime.isAfter(14:40:35)}로 14:40 분봉을 그대로 포함한다. 결과는 <b>극값이 매수 분봉일 때
-	 * {@code holdHighPrice}·{@code holdHighAt}·{@code sellVsHighRate}(와 그 값을 그대로 올리는 반사실
-	 * {@code atHoldHigh})가 한 봉 밀린 채 조용히 틀리는 것</b>이다 — 예외도 로그도 없고 화면 문장만
-	 * "보유 중 최고가는 09시 31분…"으로 바뀐다. 카드 파인더의 {@code window_end} 하한도 같은 이유로 밀려
-	 * <b>매수 분과 같은 분에 끝난 카드가 빠진다.</b>
-	 *
-	 * <p>소수 초가 {@code .5s} 이상이면 한 번 더 움직인다 — {@code window_end} 비교는 DB에서 일어나고
-	 * Connector/J·MySQL이 소수 초 없는 {@code TIME} 파라미터로 보내며 <b>0.5초 이상을 1초 올림</b>하기 때문이다
-	 * ({@code PAST_SERVICE_DATE_CUTOFF}의 {@code LocalTime.MAX} 트랩과 같은 부류다).
-	 *
-	 * <p><b>정시 픽스처로는 이 회귀가 잡히지 않는다.</b> 테스트가 {@code 09:30:00}으로 체결을 만들면 truncate가
-	 * 있든 없든 같은 답이 나오므로, 픽스처의 체결 시각에 초·소수 초를 붙여야 이 자리가 실제로 검증된다.
-	 *
-	 * <p><b>응답에 싣는 {@code buyAt}·{@code sellAt} 자체는 내리지 않는다</b> — 계약이 "원본 거래일 기준 체결
-	 * 시각"으로 정한 값이라 초를 버리면 실제 체결 시각과 어긋난다. 여기서 만드는 것은 <b>비교용 경계</b>뿐이다.
-	 */
-	private static LocalTime candleBoundary(LocalDateTime executedAtOnOriginTradeDate) {
-		return onMinuteBoundary(executedAtOnOriginTradeDate).toLocalTime();
-	}
-
-	/**
-	 * 계약이 <b>분 단위</b>로 정한 값들의 차를 잰다 — {@code holdingMinutes}·{@code minutesAfterBuy}·
-	 * {@code minutesBeforeSell}·{@code buyToNewsMinutes}가 전부 이것을 쓴다 (§파생 사실 계산).
-	 *
-	 * <p><b>{@code Duration.between(...).toMinutes()}를 그대로 쓰면 안 된다.</b> 위 {@link #candleBoundary}와 같은
-	 * 이유로 체결 시각에는 소수 초가 붙어 있고, {@code toMinutes()}는 <b>0 방향으로 절삭</b>한다. 그래서
-	 * {@code 09:30:17.4 → 11:25:00}이 {@code 114분 42.6초}가 되어 <b>114</b>가 나오는데
-	 * {@code docs/api-contracts.md}의 예시는 {@code minutesAfterBuy: 115}다. <b>계약 예시가 재현되지 않으면 예시가
-	 * 아니라 구현이 틀린 것이다</b>({@code tasks.md} 1번).
-	 *
-	 * <p><b>0 방향 절삭은 부호에 따라 방향이 뒤집힌다.</b> {@code buyToNewsMinutes}는 기사가 매수보다 이르면
-	 * 음수인데, 그때는 절삭이 값을 <b>키운다</b>({@code -104.7 → -104}) — 양수에서 줄이던 것과 반대다. 두 끝점을
-	 * 먼저 분으로 내리면 남은 차가 정확한 분 수이므로 <b>양쪽 부호에서 같은 규칙</b>이 된다.
-	 *
-	 * <p>응답에 싣는 {@code buyAt}·{@code sellAt}이 초를 그대로 유지하는 것과 어긋나지 않는다 — 계약이 그 둘은
-	 * <b>체결 시각</b>으로, 이 값들은 <b>분</b>으로 정했다. 분 단위 값은 같은 응답의 분봉·카드 시각(전부 정시)과
-	 * 맞아야 하므로 분 축에서 재는 것이 맞고, 체결 시각은 실제로 언제 체결됐는지라 내리면 사실이 바뀐다.
-	 */
-	private static int minutesBetween(LocalDateTime from, LocalDateTime to) {
-		return (int)ChronoUnit.MINUTES.between(onMinuteBoundary(from), onMinuteBoundary(to));
-	}
-
-	// 분 경계로 내리는 규칙의 단일 출처 — candleBoundary(분봉·카드 구간)와 minutesBetween(분 단위 값)이 함께 쓴다.
-	// 두 곳이 서로 다른 규칙으로 내리면 "카드가 보유 구간에 들어왔는데 minutesAfterBuy가 음수"처럼 한 응답 안에서
-	// 앞뒤가 안 맞는 조합이 생긴다.
-	private static LocalDateTime onMinuteBoundary(LocalDateTime executedAtOnOriginTradeDate) {
-		return executedAtOnOriginTradeDate.truncatedTo(ChronoUnit.MINUTES);
 	}
 
 	/**
@@ -595,7 +491,7 @@ class PostSellFeedbackReader {
 	 */
 	private PeerComparison buildPeerComparison(List<HeldPriceMoveItem> priceMoves, LocalDate sellServiceDate) {
 		if (priceMoves.isEmpty()) {
-			return new PeerComparison(PostSellFeedbackStatus.NO_EVENT, null, null, null, null, null);
+			return PostSellArithmetic.peerComparisonNoEvent();
 		}
 
 		HeldPriceMoveItem card = priceMoves.get(0);
@@ -604,45 +500,8 @@ class PostSellFeedbackReader {
 		Integer yourMinutesToSell = card.minutesBeforeSell();
 		return priceMovePeerStatRepository
 			.findByPriceMoveEventIdAndServiceDate(card.id(), sellServiceDate)
-			.map(stat -> toPeerComparison(stat, card.id(), yourMinutesToSell))
-			.orElseGet(PostSellFeedbackReader::peerComparisonNotYet);
-	}
-
-	/**
-	 * 확정 집계 행이 있을 때의 나머지 판정 — {@code holderCount < 5}면 {@code INSUFFICIENT_SAMPLE}(모집단 지표
-	 * 3종 {@code null}, {@code yourMinutesToSell}만 채움), 그 외 {@code READY}다 (§C-4).
-	 */
-	private static PeerComparison toPeerComparison(
-		PriceMovePeerStat stat, Long priceMoveId, Integer yourMinutesToSell) {
-		if (stat.getHolderCount() < 5) {
-			return new PeerComparison(
-				PostSellFeedbackStatus.INSUFFICIENT_SAMPLE, priceMoveId, null, null, null, yourMinutesToSell);
-		}
-		return new PeerComparison(
-			PostSellFeedbackStatus.READY,
-			priceMoveId,
-			stat.getHolderCount(),
-			soldWithin30MinRate(stat),
-			stat.getMedianMinutesToSell(),
-			yourMinutesToSell);
-	}
-
-	/** {@code soldWithin30MinCount ÷ holderCount}, scale 4 {@code HALF_UP}. 배치는 개수만 저장했다(3번 항목). */
-	private static BigDecimal soldWithin30MinRate(PriceMovePeerStat stat) {
-		return BigDecimal.valueOf(stat.getSoldWithin30MinCount())
-			.divide(BigDecimal.valueOf(stat.getHolderCount()), PEER_RATE_SCALE, RoundingMode.HALF_UP);
-	}
-
-	/**
-	 * 확정 집계 행이 아직 없을 때(배치 전)의 기본값 — {@code NOT_YET}이고 지표가 전부 {@code null}이다.
-	 *
-	 * <p><b>{@code priceMoveId}조차 채우지 않는다.</b> 기준 카드는 알고 있지만(반사실 {@code atFirstMoveAfterBuy}와
-	 * 같은 카드다) 계약이 {@code NO_EVENT}에서 {@code priceMoveId}를 포함한 전 필드를 {@code null}로 정했고,
-	 * {@code NOT_YET}에서만 그 값을 채우면 <b>배치가 돌아 판정이 바뀌는 순간 같은 체결의 {@code priceMoveId}가
-	 * 값 → {@code null}로 사라지는 조합</b>이 생긴다.
-	 */
-	private static PeerComparison peerComparisonNotYet() {
-		return new PeerComparison(PostSellFeedbackStatus.NOT_YET, null, null, null, null, null);
+			.map(stat -> PostSellArithmetic.toPeerComparison(stat, card.id(), yourMinutesToSell))
+			.orElseGet(PostSellArithmetic::peerComparisonNotYet);
 	}
 
 	/**
@@ -666,14 +525,14 @@ class PostSellFeedbackReader {
 			.findByInstrumentIdAndOriginTradeDateAndWindowEndBetweenAndRevealTimeLessThanEqualOrderByWindowStartAscIdAsc(
 				trade.getInstrument().getId(),
 				sourceTradingDate,
-				candleBoundary(buyAt),
-				candleBoundary(sellAt),
+				PostSellArithmetic.candleBoundary(buyAt),
+				PostSellArithmetic.candleBoundary(sellAt),
 				revealCutoff);
 		if (events.isEmpty()) {
 			return List.of();
 		}
 
-		Map<Long, List<NewsItem>> sourcesByEventId = findSources(events);
+		Map<Long, List<NewsItem>> sourcesByEventId = priceMoveSourceLoader.findSources(events);
 		return events.stream()
 			.map(event -> toHeldPriceMoveItem(
 				event, buyAt, sellAt, sourcesByEventId.getOrDefault(event.getId(), List.of())))
@@ -727,8 +586,8 @@ class PostSellFeedbackReader {
 			windowStart,
 			windowEnd,
 			event.getChangeRate(),
-			minutesBetween(buyAt, windowEnd),
-			minutesBetween(windowEnd, sellAt),
+			PostSellArithmetic.minutesBetween(buyAt, windowEnd),
+			PostSellArithmetic.minutesBetween(windowEnd, sellAt),
 			event.getNarrative(),
 			sources);
 	}
@@ -751,27 +610,8 @@ class PostSellFeedbackReader {
 			.flatMap(move -> move.sources().stream())
 			.map(NewsItem::publishedAt)
 			.min(Comparator.naturalOrder())
-			.map(firstNewsAt -> minutesBetween(buyAt, firstNewsAt))
+			.map(firstNewsAt -> PostSellArithmetic.minutesBetween(buyAt, firstNewsAt))
 			.orElse(null);
-	}
-
-	/**
-	 * 카드마다 따로 묻지 않고 한 번에 읽어 카드 id로 묶는다 — {@code PriceMoveQueryService}와 같은 조회를 쓴다.
-	 *
-	 * <p><b>정렬 규칙은 이 메서드가 아니라 리포지토리 질의({@code publishedAt} 내림차순 + {@code id} 오름차순)에
-	 * 있다</b>(계약). 여기서는 {@code LinkedHashMap}·{@code ArrayList}가 그 순서를 삽입 순서로 보존할 뿐이라
-	 * 규칙이 두 곳으로 갈리지 않는다.
-	 */
-	private Map<Long, List<NewsItem>> findSources(List<PriceMoveEvent> events) {
-		List<Long> eventIds = events.stream().map(PriceMoveEvent::getId).toList();
-		Map<Long, List<NewsItem>> sourcesByEventId = new LinkedHashMap<>();
-		for (PriceMoveEventSource source : priceMoveEventSourceRepository
-			.findAllByPriceMoveEventIdIn(eventIds)) {
-			sourcesByEventId
-				.computeIfAbsent(source.getPriceMoveEvent().getId(), id -> new ArrayList<>())
-				.add(NewsItem.from(source.getMarketNewsItem()));
-		}
-		return sourcesByEventId;
 	}
 
 	/**
@@ -837,24 +677,4 @@ class PostSellFeedbackReader {
 		return originTradeDate == null ? executedAt : LocalDateTime.of(originTradeDate, executedAt.toLocalTime());
 	}
 
-	/**
-	 * 보유 구간 극값 여섯 값을 함께 옮기는 내부 묶음이다 — 응답 DTO가 아니라 조립 중간값이라
-	 * {@code dto/response/}에 두지 않는다(§C-6에 이 이름이 없는 이유다).
-	 *
-	 * <p>여섯 값은 <b>함께 있거나 함께 없다.</b> 개별 {@code null}로 흩뜨리면 "극값은 있는데 비율만 빈" 조합이
-	 * 표현 가능해지고, 그 상태가 응답에 나가면 화면이 극값 시각은 그리면서 매도가와의 거리는 못 그린다.
-	 */
-	private record HoldExtremes(
-		BigDecimal holdHighPrice,
-		LocalDateTime holdHighAt,
-		BigDecimal holdLowPrice,
-		LocalDateTime holdLowAt,
-		BigDecimal sellVsHighRate,
-		BigDecimal sellVsLowRate) {
-
-		/** {@code sameSessionCompleted=false}이거나 보유 구간에 분봉이 없을 때. 계약이 정한 전부 {@code null}이다. */
-		static HoldExtremes absent() {
-			return new HoldExtremes(null, null, null, null, null, null);
-		}
-	}
 }

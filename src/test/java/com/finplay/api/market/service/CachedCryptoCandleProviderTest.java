@@ -119,6 +119,26 @@ class CachedCryptoCandleProviderTest {
 	}
 
 	@Test
+	@DisplayName("요청 구간 전체가 since보다 과거면 위임 to를 요청 to로 클램프하고 캐시는 건너뛴다")
+	void rangeEntirelyBeforeSinceClampsDelegateToRequestedTo() {
+		// 매도 회고는 언제나 체결보다 과거를 조회하므로 WS 재연결 직후(since가 최근)에 상시로 이 조건이 된다.
+		// 클램프가 없으면 to가 since-1분이 되고 빗썸이 그 시각 기준 최근 200봉을 돌려줘 요청 구간과 겹치지
+		// 않는 봉만 오고, 호출부의 [from, to] 필터가 전부 걸러 결과가 빈다 (PR #281 리뷰).
+		LocalDateTime from = NOW.minusMinutes(60);
+		LocalDateTime to = NOW.minusMinutes(50);
+		LocalDateTime since = NOW.minusMinutes(10);
+		when(candleStore.getSince("BTC")).thenReturn(Optional.of(since));
+		when(delegate.getCandles("BTC", CandleInterval.ONE_MINUTE, from, to))
+			.thenReturn(List.of(candleAt(from, "100"), candleAt(to, "101")));
+
+		List<CryptoCandleDto> result = provider.getCandles("BTC", CandleInterval.ONE_MINUTE, from, to);
+
+		assertThat(result).extracting(CryptoCandleDto::sourceTime).containsExactly(from, to);
+		verify(delegate, times(1)).getCandles("BTC", CandleInterval.ONE_MINUTE, from, to);
+		verify(candleStore, never()).getCandles(any(), any(), any());
+	}
+
+	@Test
 	@DisplayName("빗썸 구간과 캐시 구간의 sourceTime이 겹치면 캐시 쪽 값을 채택한다")
 	void overlappingSourceTimePrefersCachedValue() {
 		// 정상적인 분할이면 delegate 구간([from, since-1])과 cache 구간([since, to])은 항상 서로소다. 그래도

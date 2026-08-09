@@ -109,6 +109,19 @@ public interface PriceMoveEventRepository extends JpaRepository<PriceMoveEvent, 
 	List<PriceMoveEvent> findByMarketAndOriginTradeDate(Market market, LocalDate originTradeDate);
 
 	/**
+	 * 특정 시각 구간의 코인 카드 전체를 <b>종목 구분 없이</b> 조회한다 (spec §FEED-012 결정 3 — 코인 집단 비교
+	 * 배치).
+	 *
+	 * <p><b>주식과 축이 다르다.</b> 주식 배치는 {@code origin_trade_date}로 하루치를 찾지만 코인 카드는 그 컬럼이
+	 * 배치 실행일이라 하루를 가르는 기준이 되지 못한다(§C-9) — 코인의 시각 정본은 {@code occurred_at} 하나다.
+	 *
+	 * <p>위 {@code findByMarketAndOriginTradeDate}와 같은 이유로 <b>노출 게이트를 걸지 않는다</b> — 애초에 코인
+	 * 카드에는 {@code reveal_time}이 {@code NULL}이라 걸 게이트가 없다.
+	 */
+	List<PriceMoveEvent> findByMarketAndOccurredAtBetween(
+		Market market, LocalDateTime occurredAtFrom, LocalDateTime occurredAtTo);
+
+	/**
 	 * 코인 쿨다운 판정 — 이 종목의 가장 최근 코인 카드 생성 시각({@code occurred_at})을 찾는다
 	 * (§탐지 알고리즘(코인), 이슈 #225 — "마지막 카드 생성 후 cooldown-minutes 이내면 종료").
 	 *

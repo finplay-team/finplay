@@ -14,7 +14,6 @@ import com.finplay.api.feedback.dto.response.PostSellFlow;
 import com.finplay.api.feedback.repository.TradeFeedbackRepository;
 import java.time.Clock;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -73,8 +72,9 @@ public class PostSellFeedbackService {
 	/**
 	 * 본인 매도 체결 1건의 회고를 조회한다.
 	 *
-	 * @param tradeId 미존재는 404 {@code NOT_FOUND}, 타인 체결은 403 {@code FORBIDDEN}, 매수·코인 체결은 400
-	 *     {@code VALIDATION_ERROR}다 — 판정은 {@code reader}가 하며 <b>서술 생성보다 먼저</b>다
+	 * @param tradeId 미존재는 404 {@code NOT_FOUND}, 타인 체결은 403 {@code FORBIDDEN}, 매수 체결은 400
+	 *     {@code VALIDATION_ERROR}다 — 판정은 {@code reader}가 하며 <b>서술 생성보다 먼저</b>다. <b>코인 체결은
+	 *     3차부터 200이고</b>(이슈 #275) 시장별 조립도 {@code reader}가 가른다 — 이 클래스는 시장을 모른다
 	 */
 	public PostSellFeedbackResponse getPostSellFeedback(Long userId, Long tradeId) {
 		PostSellFeedbackResponse facts = postSellFeedbackReader.read(userId, tradeId);
@@ -239,26 +239,28 @@ public class PostSellFeedbackService {
 	 * 것이 정상 상태고, {@code READY}·{@code INSUFFICIENT_SAMPLE}이면 이슈 #212 4번이 채운 값이 같은 매핑으로
 	 * 흘러 들어간다.
 	 *
-	 * <p>시각은 프롬프트가 {@code HH:mm}만 쓰므로 {@code LocalTime}으로 좁힌다. 원본 거래일 축의 날짜는 문장에
-	 * 등장하지 않고, 넘기면 모델이 날짜를 서술에 끌어들일 자리만 생긴다.
+	 * <p><b>시각은 날짜까지 넘긴다</b>(이슈 #275). 원래는 프롬프트가 {@code HH:mm}만 쓴다는 이유로
+	 * {@code LocalTime}으로 좁혔는데, 코인은 보유가 며칠에 걸치는 경우가 흔해 그렇게 하면 <b>매도가 매수보다
+	 * 이른 문장</b>이 나온다. 날짜를 실제로 문장에 쓸지는 {@code multiDayHold}가 정하고, 주식은 그 값이 언제나
+	 * 거짓이라 문장이 달라지지 않는다.
 	 */
 	private static PostSellPromptDto toPromptInput(PostSellFeedbackResponse facts) {
 		PostSellFlow flow = facts.postSellFlow();
 		PeerComparison peer = facts.peerComparison();
 		return new PostSellPromptDto(
 			facts.name(),
-			facts.buyAt().toLocalTime(),
+			facts.buyAt(),
 			facts.buyPrice(),
-			facts.sellAt().toLocalTime(),
+			facts.sellAt(),
 			facts.sellPrice(),
 			facts.quantity(),
 			facts.returnRate(),
 			facts.realizedPnl() == null ? 0L : facts.realizedPnl(),
 			facts.holdHighPrice(),
-			toLocalTime(facts.holdHighAt()),
+			facts.holdHighAt(),
 			facts.sellVsHighRate(),
 			facts.holdLowPrice(),
-			toLocalTime(facts.holdLowAt()),
+			facts.holdLowAt(),
 			facts.sellVsLowRate(),
 			facts.buyToNewsMinutes(),
 			// buyToNewsMinutes가 있으면 firstNewsAt도 있어야 한다 — 둘이 같은 근거 기사 하나에서 나오므로
@@ -270,16 +272,20 @@ public class PostSellFeedbackService {
 			peer == null ? null : peer.holderCount(),
 			peer == null ? null : peer.soldWithin30MinRate(),
 			peer == null ? null : peer.medianMinutesToSell(),
-			peer == null ? null : peer.yourMinutesToSell());
+			peer == null ? null : peer.yourMinutesToSell(),
+			// 주식은 sameSessionCompleted=true가 곧 "같은 원본 거래일"이라 이 값이 언제나 거짓이다 — 그래서 이
+			// 판정이 붙어도 주식 문장은 그대로다. 여러 거래일에 걸친 주식 매매(false)는 극값 자체가 null이고
+			// 날짜를 서술할 근거도 없어 기존 동작을 유지한다.
+			facts.sameSessionCompleted() && !facts.buyAt().toLocalDate().equals(facts.sellAt().toLocalDate()),
+			facts.holdHighBasis());
 	}
 
 	/** 보유 구간 카드의 근거 기사 중 가장 이른 발행시각 — {@code buyToNewsMinutes}의 기준값 {@code T0}다. */
-	private static LocalTime firstNewsAt(List<HeldPriceMoveItem> priceMoves) {
+	private static LocalDateTime firstNewsAt(List<HeldPriceMoveItem> priceMoves) {
 		return priceMoves.stream()
 			.flatMap(move -> move.sources().stream())
 			.map(NewsItem::publishedAt)
 			.min(Comparator.naturalOrder())
-			.map(LocalDateTime::toLocalTime)
 			.orElse(null);
 	}
 
@@ -288,8 +294,8 @@ public class PostSellFeedbackService {
 	private static List<HeldPriceMoveDto> toPromptPriceMoves(List<HeldPriceMoveItem> priceMoves) {
 		return priceMoves.stream()
 			.map(move -> new HeldPriceMoveDto(
-				move.windowStart().toLocalTime(),
-				move.windowEnd().toLocalTime(),
+				move.windowStart(),
+				move.windowEnd(),
 				move.changeRate(),
 				move.minutesAfterBuy(),
 				move.minutesBeforeSell(),
@@ -301,9 +307,5 @@ public class PostSellFeedbackService {
 						source.type() == MarketNewsItemType.DISCLOSURE))
 					.toList()))
 			.toList();
-	}
-
-	private static LocalTime toLocalTime(LocalDateTime value) {
-		return value == null ? null : value.toLocalTime();
 	}
 }
