@@ -166,7 +166,7 @@ class PriceMoveControllerTest {
 
 		mockMvc.perform(authorized(get(PATH, CRYPTO_INSTRUMENT_ID)))
 			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.originTradeDate").doesNotExist())
+			.andExpect(content().string(containsString("\"originTradeDate\":null")))
 			// 코인의 null은 "아직"이 아니라 개념 부재라 NOT_YET이 아니다 (Issue #280).
 			.andExpect(jsonPath("$.status").value("EMPTY"))
 			.andExpect(jsonPath("$.moves").isArray())
@@ -198,7 +198,7 @@ class PriceMoveControllerTest {
 
 		mockMvc.perform(authorized(get(PATH, CRYPTO_INSTRUMENT_ID)))
 			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.originTradeDate").doesNotExist())
+			.andExpect(content().string(containsString("\"originTradeDate\":null")))
 			.andExpect(jsonPath("$.moves.length()").value(1))
 			.andExpect(jsonPath("$.moves[0].windowStart").value("2026-08-05T14:25:00"))
 			.andExpect(jsonPath("$.moves[0].windowEnd").value("2026-08-05T14:30:00"))
