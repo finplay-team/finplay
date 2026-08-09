@@ -289,9 +289,10 @@ class TradeRepositoryTest {
 	// 단정을 containsExactly가 아니라 포함/미포함으로 쓰는 이유: 이 저장소에는 비-@Transactional
 	// @SpringBootTest가 공유 MySQL 컨테이너에 매도 체결을 커밋한 채 남긴다. 전체 개수를 단정하면 실행 순서에
 	// 따라 깨진다 (docs/agent-mistakes.md 2026-08-04 "공유 컨테이너 커밋" 행).
-	// 전체 빌드 후 실측한 잔재는 CRYPTO 12계좌·STOCK 4계좌이고 출처는 RankingRebuildIntegrationTest(8),
-	// LimitOrderConcurrencyIntegrationTest(3), OrderSellIntegrationTest(1)다 — RankingIntegrationTest는
-	// tearDown에서 자기 원장을 지우게 되어(이슈 #279) 더 이상 오염원이 아니다.
+	// 알려진 오염원은 LimitOrderConcurrencyIntegrationTest·OrderSellIntegrationTest다(둘 다 order 도메인의
+	// 비-@Transactional 통합 테스트). RankingIntegrationTest·RankingRebuildIntegrationTest는 tearDown에서
+	// 자기 원장을 지우게 되어(이슈 #279) 오염원에서 빠졌다. 잔재 개수는 테스트가 늘 때마다 바뀌므로 여기
+	// 적지 않는다 — 이 목록은 "어디를 봐야 하는지"의 단서일 뿐 단정의 근거가 아니다.
 	@Test
 	@DisplayName("매도 이력 계좌 id를 중복 없이, 요청한 시장으로 한정해, 매수만 있는 계좌는 빼고 조회한다")
 	void findDistinctAccountIdsBySideAndMarketDeduplicatesAndScopesByMarket() {

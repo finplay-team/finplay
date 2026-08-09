@@ -13,8 +13,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
-import org.springframework.core.Ordered;
-import org.springframework.core.annotation.Order;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -41,17 +39,19 @@ public class RankingRebuildService {
 	// 기동 완료 시점 1회 재구성 — Redis가 비어 있는 채로 서비스가 뜨는 것을 막는다.
 	// BithumbFeedLifecycle과 같은 훅이며, 주기 배치와 완전히 같은 rebuildAll() 경로를 탄다.
 	//
-	// @Order(LOWEST_PRECEDENCE)를 지우지 말 것 (PR #284 리뷰). ApplicationReadyEvent 리스너들은 한 스레드에서
-	// 순서대로 동기 실행되고, readiness 상태(AvailabilityChangeEvent: ACCEPTING_TRAFFIC)를 발행하는 것도 그중
-	// 하나인 스프링의 기본 리스너다. 이 재구성이 그 리스너보다 먼저 잡히면 원장이 커질수록 readiness 신호가
-	// 그만큼 늦게 나가 /actuator/health/readiness가 조용히 지연된다 — 지연이 재구성 때문이라는 단서가 로그에
-	// 남지 않는다. 가장 낮은 우선순위로 밀어 readiness가 먼저 발행되게 한다.
-	//
-	// 순서를 바꿀 뿐 여전히 동기다 — 비동기화(@EnableAsync + 전용 TaskExecutor)는 RANK-001 plan.md가 "별도
-	// 스레드풀·@EnableAsync를 추가하지 않는다"고 못박아 둔 결정이라 채택하지 않았다. 동기라서 이 메서드가
-	// 반환하는 시점이 곧 "기동 시 재구성이 끝난 시점"이고, 기동 로그만으로 완료 여부를 판정할 수 있다.
+	// 이 훅이 걸리는 만큼 readiness(ACCEPTING_TRAFFIC)도 늦어진다 — 그리고 @Order로는 그걸 못 앞당긴다.
+	// 한때 @Order(LOWEST_PRECEDENCE)를 붙였다가 걷어낸 이유를 남긴다(PR #284 리뷰에서 바이트코드로 확인).
+	//   1) readiness는 ready 리스너 중 하나가 아니다. EventPublishingRunListener.ready()가
+	//      publishEvent(ApplicationReadyEvent)로 리스너를 전부 동기 디스패치한 "다음" 줄에서
+	//      AvailabilityChangeEvent.publish(ACCEPTING_TRAFFIC)를 부른다. 리스너끼리 순서를 바꿔도
+	//      readiness는 항상 전원이 끝난 뒤에 나간다.
+	//   2) 애초에 값이 기본값과 같다. ApplicationListenerMethodAdapter.resolveOrder는 @Order가 없으면
+	//      LOWEST_PRECEDENCE를 돌려주므로, 붙여도 다른 ready 리스너와의 상대 순서조차 바뀌지 않는다.
+	// 지연을 실제로 없애려면 리스너 안에서 별도 스레드로 넘겨야 하는데, RANK-001 plan.md가 "별도 스레드풀·
+	// @EnableAsync를 추가하지 않는다"고 못박아 둔 결정이라 이번 범위에서 뒤집지 않았다. 남은 지연은 spec.md
+	// "알려진 한계"에 적었다. 동기라서 이 메서드가 반환하는 시점이 곧 "기동 시 재구성이 끝난 시점"이고,
+	// 기동 로그만으로 완료 여부를 판정할 수 있다는 점은 그대로다.
 	@EventListener(ApplicationReadyEvent.class)
-	@Order(Ordered.LOWEST_PRECEDENCE)
 	public void rebuildOnStartup() {
 		log.info("기동 시 랭킹 재구성 시작");
 		rebuildAll();

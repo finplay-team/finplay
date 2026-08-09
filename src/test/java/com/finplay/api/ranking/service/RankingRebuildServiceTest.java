@@ -34,8 +34,6 @@ import org.mockito.InOrder;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
-import org.springframework.core.Ordered;
-import org.springframework.core.annotation.Order;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.scheduling.support.CronExpression;
@@ -130,7 +128,6 @@ class RankingRebuildServiceTest {
 	@DisplayName("매도 이력 계좌가 하나도 없어도 replaceAll을 빈 목록으로 호출한다")
 	void rebuildCallsReplaceAllEvenWhenNoAccountsQualify() {
 		when(tradeService.getSoldAccountIds(Market.STOCK)).thenReturn(List.of());
-		when(accountService.getAccountsByIds(List.of())).thenReturn(List.of());
 
 		rankingRebuildService.rebuild(Market.STOCK);
 
@@ -161,7 +158,6 @@ class RankingRebuildServiceTest {
 				when(tradeService.getSoldAccountIds(market)).thenReturn(List.of());
 			}
 		}
-		when(accountService.getAccountsByIds(List.of())).thenReturn(List.of());
 
 		assertThatCode(rankingRebuildService::rebuildAll).doesNotThrowAnyException();
 
@@ -183,7 +179,6 @@ class RankingRebuildServiceTest {
 			when(tradeService.getSoldAccountIds(market)).thenReturn(market == failing ? List.of(7L) : List.of());
 		}
 		when(accountService.getAccountsByIds(List.of(7L))).thenThrow(new DataAccessResourceFailureException("DB 장애"));
-		when(accountService.getAccountsByIds(List.of())).thenReturn(List.of());
 
 		assertThatCode(rankingRebuildService::rebuildAll).doesNotThrowAnyException();
 
@@ -256,17 +251,10 @@ class RankingRebuildServiceTest {
 		assertThat(next).isEqualTo(LocalDateTime.of(2026, 8, 9, 4, 20));
 	}
 
-	// ApplicationReadyEvent 리스너들은 한 스레드에서 순서대로 동기 실행되고, readiness 상태를 발행하는 것도
-	// 그중 하나다. 이 재구성이 먼저 잡히면 원장이 커질수록 readiness 신호가 조용히 늦어진다 — 애노테이션을
-	// 읽는 것 말고는 관찰할 방법이 없어 여기서 고정한다(PR #284 리뷰, scheduleDeclaresSeoulZone과 같은 형태).
-	@Test
-	@DisplayName("기동 훅이 가장 낮은 우선순위라 readiness 리스너보다 뒤에 돈다")
-	void startupHookRunsAtLowestPrecedenceSoReadinessIsPublishedFirst() throws NoSuchMethodException {
-		Order order = RankingRebuildService.class.getMethod("rebuildOnStartup").getAnnotation(Order.class);
-
-		assertThat(order).isNotNull();
-		assertThat(order.value()).isEqualTo(Ordered.LOWEST_PRECEDENCE);
-	}
+	// 기동 훅의 @Order 계약 테스트가 있었으나 지웠다(PR #284 재리뷰). readiness(ACCEPTING_TRAFFIC)는
+	// ApplicationReadyEvent 디스패치가 전부 끝난 뒤에 발행돼 리스너 간 @Order로 앞당길 수 없고, 애초에
+	// @Order가 없어도 ApplicationListenerMethodAdapter가 LOWEST_PRECEDENCE를 돌려주므로 값도 기본값과 같았다.
+	// 고정할 동작이 없어 애노테이션과 함께 제거했다 — 남은 readiness 지연은 spec.md "알려진 한계"에 있다.
 
 	// 계좌 배치 조회를 ZADD와 같은 청크 크기로 나눈다(PR #284 리뷰). 나누지 않으면 계좌 수가 늘 때 IN 절
 	// 파라미터·패킷이 먼저 한계에 닿고, 그 예외는 rebuildAll의 시장별 catch에 삼켜져 로그로만 남는다.
@@ -356,7 +344,6 @@ class RankingRebuildServiceTest {
 		for (Market market : Market.values()) {
 			when(tradeService.getSoldAccountIds(market)).thenReturn(List.of());
 		}
-		when(accountService.getAccountsByIds(List.of())).thenReturn(List.of());
 	}
 
 	@SuppressWarnings("unchecked")
