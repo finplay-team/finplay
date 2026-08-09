@@ -3,10 +3,8 @@ package com.finplay.api.feedback.service;
 
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
-import com.finplay.api.feedback.config.FeedbackCryptoProperties;
 import com.finplay.api.feedback.domain.HoldHighBasis;
 import com.finplay.api.feedback.domain.PostSellFeedbackStatus;
-import com.finplay.api.feedback.domain.PriceMoveEvent;
 import com.finplay.api.feedback.dto.response.CounterfactualScenario;
 import com.finplay.api.feedback.dto.response.Counterfactuals;
 import com.finplay.api.feedback.dto.response.HeldPriceMoveItem;
@@ -14,8 +12,6 @@ import com.finplay.api.feedback.dto.response.NewsItem;
 import com.finplay.api.feedback.dto.response.PeerComparison;
 import com.finplay.api.feedback.dto.response.PostSellFeedbackResponse;
 import com.finplay.api.feedback.dto.response.PostSellFlow;
-import com.finplay.api.feedback.repository.PriceMoveEventRepository;
-import com.finplay.api.feedback.repository.PriceMovePeerStatRepository;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.CandleInterval;
 import com.finplay.api.market.service.CandleQueryService;
@@ -29,7 +25,6 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 import java.util.function.Function;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,10 +34,15 @@ import org.springframework.stereotype.Component;
  * 계약은 {@code docs/api-contracts.md}의 "매도 직후 피드백 조회 — 코인 체결의 차이" 소절이고 결정과 근거는
  * spec §FEED-012다. 산술은 {@link PostSellArithmetic}이 주식과 공유한다.
  *
- * <p><b>진입점이 아니다.</b> 존재(404)·소유(403)·매수 체결(400) 검증과 트랜잭션 경계는
- * {@link PostSellFeedbackReader}가 갖고 있고, 이 클래스는 <b>그 읽기 트랜잭션 안에서</b> 코인 체결의 조립만
- * 맡는다. 검증을 여기에도 두면 순서가 두 곳으로 갈리고, {@code @Transactional}을 새로 열면 같은 조회가 두
- * 트랜잭션에 걸친다.
+ * <p><b>진입점이 아니다.</b> 존재(404)·소유(403)·매수 체결(400) 검증과 배분 조회는
+ * {@link PostSellFeedbackContextReader}(트랜잭션 A)가 마쳤고, 시장 분기는 {@link PostSellFeedbackReader}가 한다.
+ * 이 클래스는 코인 체결의 조립만 맡는다 — 검증을 여기에도 두면 순서가 두 곳으로 갈린다.
+ *
+ * <p><b>이 클래스에는 {@code @Transactional}이 없고, 그것이 결정이다</b>(spec §FEED-012 결정 5, 이슈 #282). 아래
+ * {@code read}는 빗썸 REST를 최대 4회 부르는데(타임아웃 예산 connect 2초·read 3초) 그 구간이 트랜잭션 안이면
+ * 요청 하나가 십수 초 동안 Hikari 커넥션 1개를 쥔다(풀 20). DB에서 읽어야 하는 두 덩어리는
+ * {@link CryptoPostSellFeedbackDbReader}가 <b>REST 구간 앞뒤로 갈라진 짧은 트랜잭션 둘</b>(B·C)로 갖는다 —
+ * 여기에 애노테이션을 되살리면 그 둘이 다시 REST 구간을 가로질러 하나로 합쳐진다.
  *
  * <p><b>코인에는 재생 시간축이 없다</b>(§FEED-012 결정 0). {@code Trade}가 코인 체결의
  * {@code stockReplaySession}을 {@code null}로 강제하므로 원본 거래일도 서비스 날짜도 없고,
@@ -76,18 +76,21 @@ class CryptoPostSellFeedbackReader {
 
 	private final CandleQueryService candleQueryService;
 
-	private final PriceMoveEventRepository priceMoveEventRepository;
-
-	private final PriceMoveSourceLoader priceMoveSourceLoader;
-
-	private final PriceMovePeerStatRepository priceMovePeerStatRepository;
-
-	private final FeedbackCryptoProperties cryptoProperties;
+	private final CryptoPostSellFeedbackDbReader cryptoPostSellFeedbackDbReader;
 
 	private final Clock clock;
 
 	/**
 	 * 코인 매도 체결 1건의 회고에서 <b>서술을 뺀 전부</b>를 조립한다.
+	 *
+	 * <p><b>단계 순서가 트랜잭션 경계다</b>(§FEED-012 결정 5) — DB 조회 둘 사이에 REST 4종이 들어가고, 그 넷은
+	 * 어느 트랜잭션에도 속하지 않는다. {@code priceMoves}를 뒤로 미룰 수 없는 것은 순서 취향이 아니라
+	 * {@link #scenarioAtFirstMoveAfterBuy}가 {@code priceMoves.get(0).windowEnd()}를 캔들 조회 인자로 쓰기
+	 * 때문이고, 반대로 {@code peerComparison}은 REST 결과와 무관한데도 뒤로 미뤄 트랜잭션이 REST 구간을 가로지르지
+	 * 않게 한다.
+	 *
+	 * <p><b>조립을 생성자 인자 안에서 하지 않는다.</b> 응답 record 인자 목록에 조회를 그대로 쓰면 실행 순서가
+	 * 인자 평가 순서에 숨어, 인자 자리를 옮기는 것만으로 트랜잭션 경계가 조용히 바뀐다.
 	 *
 	 * @param trade 코인 매도 체결. 검증은 호출부가 이미 마쳤다
 	 * @return {@code narrative}·{@code narrativeSource}·{@code narrativeStatus} 셋만 {@code null}인 응답
@@ -99,12 +102,21 @@ class CryptoPostSellFeedbackReader {
 		LocalDateTime sellAt = trade.getExecutedAt();
 		long buyBasis = allocation.allocatedCost() + allocation.allocatedBuyFee();
 
-		List<HeldPriceMoveItem> priceMoves = findHeldPriceMoves(trade, buyAt, sellAt);
+		// (트랜잭션 B) 카드 조회 — 아래 REST 조회가 이 결과를 인자로 쓴다.
+		List<HeldPriceMoveItem> priceMoves = cryptoPostSellFeedbackDbReader.findHeldPriceMoves(trade, buyAt, sellAt);
+
+		// (트랜잭션 없음) 캔들 REST 4종.
 		HoldExtremes extremes = findHoldExtremes(symbol, trade.getPrice(), buyAt, sellAt);
 		boolean dayClosed = isAfterDayClose(sellAt);
 		// 매도일 종가는 매도 후 흐름과 반사실이 같은 값을 쓴다. 각자 부르면 같은 일봉을 외부에서 두 번 받는데
 		// 일봉은 캐시되지 않아(CryptoCandleStore는 분봉 전용) 그 두 번이 전부 실제 REST 호출이다.
 		BigDecimal sellDayClose = dayClosed ? sellDayClose(symbol, sellAt) : null;
+		PostSellFlow postSellFlow = buildPostSellFlow(symbol, dayClosed, sellDayClose, trade.getPrice(), sellAt);
+		Counterfactuals counterfactuals = buildCounterfactuals(
+			symbol, dayClosed, sellDayClose, extremes, priceMoves, trade.getQuantity(), buyBasis, sellAt);
+
+		// (트랜잭션 C) 집단 비교 — priceMoves만 있으면 계산되지만 REST 구간 뒤로 미룬다.
+		PeerComparison peerComparison = cryptoPostSellFeedbackDbReader.buildPeerComparison(priceMoves);
 
 		return new PostSellFeedbackResponse(
 			trade.getId(),
@@ -132,10 +144,9 @@ class CryptoPostSellFeedbackReader {
 			extremes.basis(),
 			buyToNewsMinutes(buyAt, priceMoves),
 			priceMoves,
-			buildPostSellFlow(symbol, dayClosed, sellDayClose, trade.getPrice(), sellAt),
-			buildCounterfactuals(
-				symbol, dayClosed, sellDayClose, extremes, priceMoves, trade.getQuantity(), buyBasis, sellAt),
-			buildPeerComparison(priceMoves),
+			postSellFlow,
+			counterfactuals,
+			peerComparison,
 			// 서술 셋은 PostSellFeedbackService가 트랜잭션이 끝난 뒤 withNarrative로 얹는다.
 			null,
 			null,
@@ -433,80 +444,6 @@ class CryptoPostSellFeedbackReader {
 				at,
 				PostSellArithmetic.counterfactualReturnRate(candle.close(), quantity, buyBasis, feeRate)))
 			.orElse(null);
-	}
-
-	/**
-	 * 보유 구간에 걸친 코인 변동 카드 (§C-9 · §C-5).
-	 *
-	 * <p><b>노출 게이트가 없다</b> — 코인 카드는 {@code reveal_time}이 {@code NULL}이라(실시간이라 스포일러가
-	 * 성립하지 않는다) 주식이 쓰는 상한 계산이 여기에 나타나지 않는다. 카드를 찾는 축도 다르다: 주식은
-	 * {@code (origin_trade_date, window_end)}이고 코인은 {@code occurred_at} 하나다.
-	 *
-	 * <p>구간 경계는 <b>분으로 내려</b> 넘긴다 — {@code occurred_at}은 정시인데 체결 시각에는 소수 초가 붙어,
-	 * 그대로 넘기면 <b>매수 분과 같은 분에 탐지된 카드가 하한 밖으로 밀린다.</b>
-	 */
-	private List<HeldPriceMoveItem> findHeldPriceMoves(
-		Trade trade, LocalDateTime buyAt, LocalDateTime sellAt) {
-		List<PriceMoveEvent> events = priceMoveEventRepository
-			.findByInstrumentIdAndMarketAndOccurredAtBetweenOrderByOccurredAtAscIdAsc(
-				trade.getInstrument().getId(),
-				Market.CRYPTO,
-				PostSellArithmetic.onMinuteBoundary(buyAt),
-				PostSellArithmetic.onMinuteBoundary(sellAt));
-		if (events.isEmpty()) {
-			return List.of();
-		}
-
-		Map<Long, List<NewsItem>> sourcesByEventId = priceMoveSourceLoader.findSources(events);
-		return events.stream()
-			.map(event -> toHeldPriceMoveItem(
-				event, buyAt, sellAt, sourcesByEventId.getOrDefault(event.getId(), List.of())))
-			.toList();
-	}
-
-	/**
-	 * 카드 1건을 응답 항목으로 옮긴다.
-	 *
-	 * <p><b>{@code windowStart}는 저장 컬럼이 아니라 파생값이다</b>(§C-9) — 코인 카드는 {@code occurred_at}
-	 * 하나만 저장하고 {@code window_start}/{@code window_end}가 {@code NULL}이므로, 목록 조회
-	 * ({@code PriceMoveItem.ofCrypto})와 <b>같은 규칙</b>으로 {@code occurredAt − rolling-window-minutes}를 쓴다.
-	 * 두 곳이 다른 규칙을 쓰면 같은 카드가 화면마다 다른 구간으로 보인다.
-	 */
-	private HeldPriceMoveItem toHeldPriceMoveItem(
-		PriceMoveEvent event, LocalDateTime buyAt, LocalDateTime sellAt, List<NewsItem> sources) {
-		LocalDateTime windowEnd = event.getOccurredAt();
-		return new HeldPriceMoveItem(
-			event.getId(),
-			windowEnd.minusMinutes(cryptoProperties.rollingWindowMinutes()),
-			windowEnd,
-			event.getChangeRate(),
-			PostSellArithmetic.minutesBetween(buyAt, windowEnd),
-			PostSellArithmetic.minutesBetween(windowEnd, sellAt),
-			event.getNarrative(),
-			sources);
-	}
-
-	/**
-	 * 집단 비교 (§C-4 · §FEED-012 결정 3). 판정 순서는 {@code NO_EVENT}가 1순위다 — 기준 카드가 없으면 확정 집계
-	 * 행이 애초에 생기지 않으므로, 행 존재만 보면 그 흔한 경우가 영원히 {@code NOT_YET}이 된다.
-	 *
-	 * <p><b>조회 키가 주식과 다르다.</b> 주식은 그 체결의 <b>서비스 날짜</b> 행을 보는데 코인 체결에는 서비스
-	 * 날짜가 없다({@code stockReplaySession}이 {@code null}이다) — 그대로 넘기면 <b>행을 영원히 못 찾아
-	 * {@code NOT_YET}으로 굳는다.</b> 코인은 재생이 없어 카드와 날짜가 1:1이므로 <b>그 카드 {@code occurred_at}의
-	 * KST 날짜</b>를 쓴다. 배치가 저장하는 값과 같은 규칙이어야 한다.
-	 */
-	private PeerComparison buildPeerComparison(List<HeldPriceMoveItem> priceMoves) {
-		if (priceMoves.isEmpty()) {
-			return PostSellArithmetic.peerComparisonNoEvent();
-		}
-
-		HeldPriceMoveItem card = priceMoves.get(0);
-		// yourMinutesToSell = 매도시각 − 카드 시각. card.minutesBeforeSell()이 이미 같은 계산이라 다시 재지 않는다.
-		Integer yourMinutesToSell = card.minutesBeforeSell();
-		return priceMovePeerStatRepository
-			.findByPriceMoveEventIdAndServiceDate(card.id(), card.windowEnd().toLocalDate())
-			.map(stat -> PostSellArithmetic.toPeerComparison(stat, card.id(), yourMinutesToSell))
-			.orElseGet(PostSellArithmetic::peerComparisonNotYet);
 	}
 
 	/**
