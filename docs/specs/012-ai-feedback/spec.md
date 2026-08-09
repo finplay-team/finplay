@@ -179,7 +179,7 @@ C-004의 나머지("숫자와 판정은 서버가 계산하고 AI는 관찰형 �
 | | `NO_EVENT` | 보유 구간에 변동 카드가 0건. `priceMoveId` 포함 전 필드 `null` |
 | | `NOT_YET` | 그 밖 (배치 전) |
 | `status` (카드 목록) | `READY` | 카드가 1건 이상이다 |
-| | `EMPTY` | 카드가 0건이다. **코인의 카드 0건이 여기다** |
+| | `EMPTY` | 카드가 0건이다. **코인의 카드 0건, 그리고 아직 열린 카드가 없는 시각(§C-5 게이트 미통과)이 여기다** |
 | | `NOT_YET` | 주식이고 재생세션 미준비. `originTradeDate=null` |
 | `narrativeStatus` (Part B) | `READY` 뿐 | 템플릿이 있어 항상 채워진다. `UNAVAILABLE`이 **존재하지 않는다** |
 | `narrative_source` | `LLM` \| `TEMPLATE` | 카드·매도 회고 |
@@ -201,6 +201,10 @@ C-004의 나머지("숫자와 판정은 서버가 계산하고 AI는 관찰형 �
 Part C의 1번이 `NOT_YET`이고 Part D가 `EMPTY`인 것은 의도된 차이다 — Part D는 "브리핑이 아예 없는 날"이 정상이고, Part C는 "아직 열리지 않았다"가 맞다.
 
 **카드 목록의 `status`는 Issue #280에서 추가했다.** 그전까지 네 조회 경로 중 이 경로만 상태 필드가 없었고, 주식의 재생세션 미준비와 코인의 카드 0건이 둘 다 `{"originTradeDate":null,"moves":[]}`로 구별되지 않았다. `UNAVAILABLE`이 빠지는 것은 의도된 차이다 — 요약·브리핑은 템플릿이 없어 LLM이 실패하면 서술이 `NULL`로 남지만, 카드는 템플릿으로 대체되므로(`narrative_source`가 `LLM`\|`TEMPLATE`) 서술 없는 카드가 애초에 없다. `NOT_YET`이 코인에 나오지 않는 것도 `summaryStatus`와 같은 이유다 — 24시간 거래라 '아직'이라는 시점이 없다.
+
+**위 판정 순서 2번(09:00 이전)에 대응하는 행이 카드 목록에는 없다** — 재생세션이 `READY`이면 아직 열린 카드가 없어도 `EMPTY`이고 `originTradeDate`가 채워진다. 의도된 차이다. 카드는 하루치가 개장 전 배치에서 이미 생성돼 있고 게이트에 걸려 안 열렸을 뿐이라 '아직'을 말할 단위가 카드지 목록이 아니고, 목록 관점에서 지금 보여줄 카드가 0건인 것은 사실이다. 여기에 `NOT_YET`을 쓰면 재생세션 미준비와 구별되지 않아 이 필드를 넣은 이유가 사라진다.
+
+그래서 **Part C와 상태값이 갈리는 구간은 `READY` + 09:00 이전 한 곳뿐이다** — 카드 목록 `EMPTY` vs `summaryStatus` `NOT_YET`. **개장 후에는 두 값이 갈리지 않는다**: Part C의 `NOT_YET`은 위 판정 순서 1·2번에서만 나오므로 개장 후 첫 `reveal_time` 이전 시각에 `summaryStatus`는 `NOT_YET`이 아니다.
 
 ### C-5 노출 게이트
 
@@ -544,7 +548,7 @@ originTradeDate = occurred_at 의 KST 날짜               (일일 상한 카운
 - [ ] `GET /api/instruments/{instrumentId}/price-moves`로 조회한다.
 - [ ] 노출 게이트는 §C-5를 따른다.
 - [ ] 코인은 최근 24시간 카드를 반환한다(§C-2).
-- [ ] 카드가 없으면 빈 배열과 200으로 응답한다. **재생세션이 `READY`가 아니면 `originTradeDate=null`·빈 배열**이다 (오류 아님).
+- [ ] 카드가 없으면 빈 배열과 200으로 응답한다. **재생세션이 `READY`가 아니면 `originTradeDate=null`·빈 배열·`status=NOT_YET`**이다 (오류 아님). 카드 0건은 `status=EMPTY`이며 코인도 여기다.
 - [ ] 각 카드는 근거 목록(제목·언론사·원문 URL·발행시각)을 포함한다.
 
 ### FEED-007 매도 직후 피드백
@@ -1540,7 +1544,7 @@ trade_feedbacks                매도 직후 서술 (회원별)
 - [ ] 네 엔드포인트 모두 인증 없이 호출하면 401이다.
 - [ ] `instrumentId` 미존재는 404, 타인 체결은 403, 매수·코인 체결은 400이다.
 - [ ] `market` 파라미터가 없거나 `STOCK`·`CRYPTO` 외 값이면 400이다.
-- [ ] 카드가 0건이면 빈 배열과 200이고, 재생세션 미준비면 `originTradeDate=null`·빈 배열과 200이다 (FEED-006).
+- [ ] 카드가 0건이면 빈 배열·`status=EMPTY`와 200이고, 재생세션 미준비면 `originTradeDate=null`·빈 배열·`status=NOT_YET`과 200이다 (FEED-006). **두 응답이 서로 다른지 직렬화 결과 문자열로 확인한다** (Issue #280).
 - [ ] 응답 직렬화가 `docs/api-contracts.md`의 필드 집합과 일치한다 — `priceMoveId`·`narrativeSource`·`buyAt`·`sellAt` 포함.
 
 ### 원장 불변·기동

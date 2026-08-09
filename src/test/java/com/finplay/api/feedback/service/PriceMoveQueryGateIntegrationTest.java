@@ -287,7 +287,7 @@ class PriceMoveQueryGateIntegrationTest {
 	// --- API 계약 ② 빈 응답 세 갈래 ---
 
 	@Test
-	@DisplayName("카드가 0건이면 originTradeDate는 있고 moves는 빈 배열이다")
+	@DisplayName("카드가 0건이면 originTradeDate는 있고 moves는 빈 배열이며 status는 EMPTY다")
 	void returnsOriginTradeDateWithEmptyMovesWhenThereIsNoCard() {
 		saveReadySession(SECOND_REPLAY_DATE);
 
@@ -295,6 +295,9 @@ class PriceMoveQueryGateIntegrationTest {
 
 		assertThat(response.originTradeDate()).isEqualTo(ORIGIN_TRADE_DATE);
 		assertThat(response.moves()).isEmpty();
+		// 세션이 READY면 카드가 0건이어도 NOT_YET이 아니다 — 이 단정이 없으면 "주식 READY 경로가 EMPTY를
+		// 내는 팩터리를 탄다"가 컨트롤러 테스트의 stub에서만 간접 고정된다 (PR #283 리뷰).
+		assertThat(response.status()).isEqualTo(FeedbackContentStatus.EMPTY);
 	}
 
 	// 세션 행 없음 / PREPARING / FAILED 셋 다 같은 답이다 — 어떤 거래일을 재생 중인지 자체가 확정되지 않았다.

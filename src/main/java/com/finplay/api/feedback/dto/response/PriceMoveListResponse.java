@@ -11,7 +11,8 @@ import java.util.List;
  * 거래일을 재생 중인지 자체가 확정되지 않은 상태라 날짜를 지어낼 수 없다.
  *
  * <p><b>{@code status}가 그 두 상황을 응답만으로 갈라준다</b> (Issue #280). 이 필드가 없을 때는 주식의
- * 재생세션 미준비와 코인의 카드 0건이 똑같이 {@code {"originTradeDate":null,"moves":[]}}였고, 호출부가
+ * 재생세션 미준비와 코인의 카드 0건이 똑같이 {@code {"originTradeDate":null,"moves":[]}}였고(이 DTO에는
+ * {@code @JsonInclude(NON_NULL)}이 없어 {@code null}도 키가 남는다 — 값까지 같았다), 호출부가
  * 종목의 {@code market}을 따로 알고 있어야만 안내 문구를 갈랐다. 형제 세 경로(Part C {@code summaryStatus},
  * Part D {@code status}, 매도 회고)는 모두 상태 필드로 자기 완결적이며 이 경로만 예외였다.
  *

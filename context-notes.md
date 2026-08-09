@@ -816,10 +816,20 @@ ADR-0014 §후속이 #245로 넘긴 판단이다. **그대로 못 쓴 이유**�
 
 ### 회귀를 세 층위로 나눠 고정했다
 
-`originTradeDate`가 `null`이면 **필드째 사라지는** 직렬화 설정이라, `status`가 빠지면 두 응답의 JSON이 문자 단위로
-같아진다. 그래서 WebMvc 테스트는 필드 단정이 아니라 **응답 문자열 두 개를 직접 비교**한다 — 필드 단정만 두면
-`status`를 지웠을 때 그 단정만 지우면 통과하는 테스트가 된다. 실 DB에서 두 상황을 나란히 만드는 것은
-`PriceMoveQueryGateIntegrationTest`가 유일하게 할 수 있어 거기에 대조 테스트를 넣었다.
+`status`가 빠지면 두 응답의 JSON이 값까지 같아진다. 그래서 WebMvc 테스트는 필드 단정이 아니라 **응답 문자열 두 개를
+직접 비교**한다 — 필드 단정만 두면 `status`를 지웠을 때 그 단정만 지우면 통과하는 테스트가 된다. 실 DB에서 두 상황을
+나란히 만드는 것은 `PriceMoveQueryGateIntegrationTest`가 유일하게 할 수 있어 거기에 대조 테스트를 넣었다.
+
+**처음에는 근거를 "`null`이면 필드째 사라지므로"라고 적었는데 틀렸다** (PR #283 리뷰에서 지적, 2026-08-09).
+`PriceMoveListResponse`에는 `@JsonInclude(NON_NULL)`이 없고 전역 inclusion 설정도 없다 — 이 레포는 그 애노테이션을
+SSE DTO 3개(`MarketPriceEvent`·`MarketStatusEvent`·`MarketSnapshotEvent`)에 클래스 단위로만 붙인다. 실제 응답은
+`{"originTradeDate":null,...}`로 키가 남는다. 결론(두 응답이 같았다)은 그대로지만 **계약 문서에 잘못된 기전이 남으면
+프론트가 "키 부재"로 분기할 여지가 생기므로** 문서 3곳을 고쳤다.
+
+기존 테스트가 이 오해를 걸러내지 못한 이유가 있다. `jsonPath(...).doesNotExist()`는 **JsonPath가 `null`을 부재와 같게
+다뤄 두 경우 모두 통과한다** — `@DisplayName`이 "필드가 사라지지 않는다"인데 단정은 정반대를 말하고 있었고 그래도
+초록이었다. 그 자리를 `content().string(containsString("\"originTradeDate\":null"))`로 바꿔 키가 남는다는 사실 자체를
+고정했다.
 
 ### `docs/prd.md`는 건드리지 않았다
 
