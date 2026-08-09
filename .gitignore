@@ -50,3 +50,7 @@ graphify-out/
 
 ### 코인 뉴스 측정 산출물 (이슈 #179)
 tools/coin-news-measure/out/
+
+### JVM 치명 오류 덤프 (워커 크래시 시 저장소 루트에 생긴다 — PATH·USERNAME 등 로컬 환경이 통째로 들어 있다)
+hs_err_pid*.log
+replay_pid*.log
