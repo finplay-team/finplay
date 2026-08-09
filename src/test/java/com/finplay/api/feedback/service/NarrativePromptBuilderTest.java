@@ -99,8 +99,8 @@ class NarrativePromptBuilderTest {
 	void postSellPromptMatchesSpecExample() {
 		String expected = """
 			종목: 삼성전자
-			매수: 09:30, 70,000원 10주
-			매도: 14:40, 68,500원 10주
+			매수: 09:30, 70,000원 10
+			매도: 14:40, 68,500원 10
 			수익률: -2.17% (실현손익 -15,207원)
 
 			보유 중 최고가: 11:05의 70,800원 (매도가가 3.25% 낮음)
@@ -321,8 +321,8 @@ class NarrativePromptBuilderTest {
 	void postSellPromptOmitsHoldExtremesWhenTradeSpansMultipleSessions() {
 		String expected = """
 			종목: 삼성전자
-			매수: 09:30, 70,000원 10주
-			매도: 14:40, 68,500원 10주
+			매수: 09:30, 70,000원 10
+			매도: 14:40, 68,500원 10
 			수익률: -2.17% (실현손익 -15,207원)
 
 			위 내용을 3~4문장으로 서술해줘. 수치를 그대로 나열하지 말고,
@@ -344,8 +344,8 @@ class NarrativePromptBuilderTest {
 	void postSellPromptOmitsWholeLinesWhenNullableFieldsAreAbsent() {
 		String expected = """
 			종목: 삼성전자
-			매수: 09:30, 70,000원 10주
-			매도: 14:40, 68,500원 10주
+			매수: 09:30, 70,000원 10
+			매도: 14:40, 68,500원 10
 			수익률: -2.17% (실현손익 -15,207원)
 
 			보유 중 최고가: 11:05의 70,800원 (매도가가 3.25% 낮음)
@@ -422,8 +422,8 @@ class NarrativePromptBuilderTest {
 	void postSellPromptWritesDatesWhenTheHoldSpansMultipleDays() {
 		String expected = """
 			종목: 비트코인
-			매수: 8월 1일 14:20, 70,000원 10주
-			매도: 8월 5일 09:05, 68,500원 10주
+			매수: 8월 1일 14:20, 70,000원 10
+			매도: 8월 5일 09:05, 68,500원 10
 			수익률: -2.17% (실현손익 -15,207원)
 
 			보유 중 최고가: 8월 3일 종가의 70,800원 (매도가가 3.25% 낮음)
@@ -458,7 +458,19 @@ class NarrativePromptBuilderTest {
 		assertThat(prompt).doesNotContain("23:59");
 	}
 
-	// DAILY는 정의상 200분 초과 보유라 multiDayHold와 거의 항상 함께 참이다 — 그래서 둘이 각각 무엇을 가르는지가
+	// 2차까지 매도 회고가 주식 전용이라 수량에 "주"가 하드코딩돼 있었는데, 이슈 #275로 코인이 들어오면서
+	// "0.0025주"가 나왔다. 단위를 붙이지 않기로 했다 (PR #281 리뷰 권장 2).
+	@Test
+	@DisplayName("코인의 소수 수량에 \"주\" 단위가 붙지 않는다")
+	void postSellPromptWritesFractionalQuantityWithoutAShareUnit() {
+		String prompt = builder.postSellPrompt(fractionalQuantityPostSell());
+
+		assertThat(prompt).contains("매수: 8월 1일 14:20, 70,000원 0.0025");
+		assertThat(prompt).contains("매도: 8월 5일 09:05, 68,500원 0.0025");
+		assertThat(prompt).doesNotContain("0.0025주");
+	}
+
+	// DAILY는 정의상 199분 초과 보유라 multiDayHold와 거의 항상 함께 참이다 — 그래서 둘이 각각 무엇을 가르는지가
 	// 흐려지기 쉽다. MINUTE이면서 하루를 넘긴 조합에서 극값은 시각을 유지하고 날짜만 붙는다.
 	@Test
 	@DisplayName("MINUTE이면서 하루를 넘긴 보유면 극값이 날짜 + 시·분으로 적힌다")
@@ -476,8 +488,8 @@ class NarrativePromptBuilderTest {
 	void postSellPromptKeepsTheStockCombinationUnchanged() {
 		String prompt = builder.postSellPrompt(specPostSell());
 
-		assertThat(prompt).contains("매수: 09:30, 70,000원 10주");
-		assertThat(prompt).contains("매도: 14:40, 68,500원 10주");
+		assertThat(prompt).contains("매수: 09:30, 70,000원 10");
+		assertThat(prompt).contains("매도: 14:40, 68,500원 10");
 		assertThat(prompt).contains("보유 중 최고가: 11:05의 70,800원");
 		assertThat(prompt).contains("보유 중 최저가: 14:20의 68,100원");
 		assertThat(prompt).contains("매수는 첫 근거 기사(11:15)보다 105분 앞섰습니다.");
@@ -546,6 +558,18 @@ class NarrativePromptBuilderTest {
 				LocalDateTime.of(2026, 8, 2, 10, 10), LocalDateTime.of(2026, 8, 2, 10, 15), bd("-0.0182"), 115, 195,
 				List.of(article("비트코인 채굴 난이도 상승", "한국경제", LocalDateTime.of(2026, 8, 2, 10, 15))))),
 			bd("69200"), bd("0.0102"), null, null, null, null, true, HoldHighBasis.DAILY);
+	}
+
+	// 코인 수량 — 원장이 소수를 그대로 담는다(주식은 정수 수량만 온다).
+	private PostSellPromptDto fractionalQuantityPostSell() {
+		return new PostSellPromptDto(
+			"비트코인", LocalDateTime.of(2026, 8, 1, 14, 20), bd("70000"),
+			LocalDateTime.of(2026, 8, 5, 9, 5), bd("68500"), bd("0.0025000"),
+			bd("-0.0217"), -15207L,
+			null, null, null,
+			null, null, null,
+			null, null, List.of(),
+			null, null, null, null, null, null, true, HoldHighBasis.MINUTE);
 	}
 
 	// 위와 같지만 극값을 1분봉으로 잰 조합 — 날짜는 붙되 시·분이 남는다.

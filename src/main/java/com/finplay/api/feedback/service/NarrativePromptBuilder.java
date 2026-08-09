@@ -98,14 +98,14 @@ public class NarrativePromptBuilder {
 			.append(money(input.buyPrice()))
 			.append(' ')
 			.append(quantity(input.quantity()))
-			.append("주\n");
+			.append('\n');
 		prompt.append("매도: ")
 			.append(holdMoment(input.sellAt(), input.multiDayHold()))
 			.append(", ")
 			.append(money(input.sellPrice()))
 			.append(' ')
 			.append(quantity(input.quantity()))
-			.append("주\n");
+			.append('\n');
 		prompt.append("수익률: ")
 			.append(signedPercent(input.returnRate()))
 			.append(" (실현손익 ")
@@ -186,7 +186,7 @@ public class NarrativePromptBuilder {
 	/**
 	 * 매수·매도 시각을 문장에 넣는 형태 — 하루를 넘긴 보유면 날짜를 붙인다 (이슈 #275).
 	 *
-	 * <p>코인은 §FEED-012 결정 4의 일봉 경로가 <b>정의상 200분 초과 보유</b>라 대부분 날짜를 넘긴다. 시·분만
+	 * <p>코인은 §FEED-012 결정 4의 일봉 경로가 <b>정의상 199분 초과 보유</b>라 대부분 날짜를 넘긴다. 시·분만
 	 * 주면 8/1 14:20 매수 → 8/5 09:05 매도가 모델에게 "14:20 매수, 09:05 매도"로 보여 <b>매도가 매수보다
 	 * 이르다는 문장</b>이 나온다. <b>주식은 {@code multiDayHold}가 언제나 거짓이라 출력이 그대로다.</b>
 	 */
@@ -321,8 +321,18 @@ public class NarrativePromptBuilder {
 		return String.format(Locale.KOREA, "%,d원", value.setScale(0, RoundingMode.HALF_UP).longValueExact());
 	}
 
-	// 원장의 수량은 BigDecimal이라 정수도 "10.00"으로 들어온다. 불필요한 0을 떼어 "10주"로 적는다
-	// (2차 매도 회고는 주식 전용이라 소수 수량이 오지 않는다 — FEED-007).
+	/**
+	 * 수량 — <b>단위를 붙이지 않는다</b>(PR #281 리뷰).
+	 *
+	 * <p>2차까지는 매도 회고가 주식 전용이라 "주"를 하드코딩했는데, 이슈 #275로 코인이 들어오면서
+	 * {@code 0.0025주}가 나왔다. 시장별로 "주"·"개"를 가르려면 이 클래스가 시장을 알아야 하는데,
+	 * {@code PostSellFeedbackService}는 <b>의도적으로 시장을 모르고</b>(시장별 조립은 리더가 가른다)
+	 * 시장을 넘기려면 응답 계약에 필드를 더해야 한다. 단위 하나를 위해 계약을 넓히지 않고 <b>수량만
+	 * 적는 쪽</b>을 택했다 — 종목명이 이미 줄에 있어 모델이 단위를 오해할 자리가 아니다.
+	 *
+	 * <p>원장의 수량은 {@code BigDecimal}이라 정수도 {@code "10.00"}으로 들어온다. 불필요한 0을 떼어
+	 * {@code "10"}·{@code "0.0025"}로 적는다.
+	 */
 	private String quantity(BigDecimal value) {
 		return value.stripTrailingZeros().toPlainString();
 	}
