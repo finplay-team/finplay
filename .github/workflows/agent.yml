@@ -101,6 +101,10 @@ jobs:
     needs: verify-actor
     if: needs.verify-actor.outputs.allowed == 'true'
     runs-on: ubuntu-latest
+    # 기존 흐름(구현 + 빌드 ~7분 + 리뷰)에 자동 수정 라운드(수정 + 빌드 ~7분 + 재리뷰)가 그대로 다시 붙는다 —
+    # claude-code-action 호출이 4건(구현·리뷰·자동 수정·재리뷰)까지 늘 수 있어 60분 추정(plan.md)은 여유가
+    # 빠듯하다고 보고 90분으로 잡는다. GitHub 기본값(360분) 암묵 의존은 없앤다. 실제 실행 시간 관찰 후 조정 가능(ADR-0016).
+    timeout-minutes: 90
     permissions:
       contents: write
       issues: write
@@ -332,16 +336,78 @@ jobs:
           printf '%s\n' "## 자동 수정 1회차" "" "빌드 실패로 종료 — 사람이 직접 확인해야 합니다." > /tmp/autofix-build-failure-body.md
           gh pr comment "${{ steps.pr.outputs.number }}" --body-file /tmp/autofix-build-failure-body.md
 
-      - name: 조건부 승인 — 차단·권장 0건일 때만 (ADR-0013, 머지는 사람이 진행)
+      - name: 최종 판정 병합 (자동 수정 라운드가 돌았으면 그 결과, 아니면 라운드 1 결과, ADR-0016)
+        id: judge
+        # always() — build_autofix 실패 등으로 앞쪽 success() 체인이 깨진 뒤에도 이 스텝은 반드시 돌아서
+        # "판정 불가 = 승인 보류"로 안전하게 마무리해야 한다 (autofix_build_failure_comment와 같은 이유).
+        if: always() && steps.pr.outputs.number != ''
+        env:
+          AUTOFIX_OUTCOME: ${{ steps.autofix.outcome }}
+          BUILD_AUTOFIX_OUTCOME: ${{ steps.build_autofix.outcome }}
+          # env는 fromJSON(...) 없이 원문 문자열만 받는다 — 두 값 다 비어 있을 수 있어(스킵된 스텝) 그대로는 안전하다.
+          REVIEW_STRUCTURED_OUTPUT: ${{ steps.review.outputs.structured_output }}
+          REVIEW_AUTOFIX_STRUCTURED_OUTPUT: ${{ steps.review_autofix.outputs.structured_output }}
+        run: |
+          # 차단 여부를 확정할 수 없는 모든 경우(빌드 실패로 재리뷰를 못 돌림, 리뷰가 구조화 출력 없이 끝남)는
+          # blocking=1로 두어 승인하지 않는다 — "모르면 승인 안 함"이 이 스텝의 기본값이다.
+          if [ "$AUTOFIX_OUTCOME" = "success" ]; then
+            if [ "$BUILD_AUTOFIX_OUTCOME" != "success" ]; then
+              echo "final_blocking=1" >> "$GITHUB_OUTPUT"
+              echo "final_recommended=1" >> "$GITHUB_OUTPUT"
+              echo "final_reason=build_failure" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if [ -z "$REVIEW_AUTOFIX_STRUCTURED_OUTPUT" ]; then
+              echo "final_blocking=1" >> "$GITHUB_OUTPUT"
+              echo "final_recommended=1" >> "$GITHUB_OUTPUT"
+              echo "final_reason=review_autofix_missing_output" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            FINAL_BLOCKING=$(printf '%s' "$REVIEW_AUTOFIX_STRUCTURED_OUTPUT" | jq -r '.blocking_count')
+            FINAL_RECOMMENDED=$(printf '%s' "$REVIEW_AUTOFIX_STRUCTURED_OUTPUT" | jq -r '.recommended_count')
+            echo "final_blocking=$FINAL_BLOCKING" >> "$GITHUB_OUTPUT"
+            echo "final_recommended=$FINAL_RECOMMENDED" >> "$GITHUB_OUTPUT"
+            if [ "$FINAL_BLOCKING" = "0" ]; then
+              echo "final_reason=blocking_resolved" >> "$GITHUB_OUTPUT"
+            else
+              echo "final_reason=round_exhausted" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            # 자동 수정 라운드가 돌지 않았다 — 라운드 1이 이미 차단 0건이었거나, 리뷰 자체가 스킵/실패했다.
+            if [ -z "$REVIEW_STRUCTURED_OUTPUT" ]; then
+              echo "final_blocking=1" >> "$GITHUB_OUTPUT"
+              echo "final_recommended=1" >> "$GITHUB_OUTPUT"
+              echo "final_reason=review_missing_output" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            FINAL_BLOCKING=$(printf '%s' "$REVIEW_STRUCTURED_OUTPUT" | jq -r '.blocking_count')
+            FINAL_RECOMMENDED=$(printf '%s' "$REVIEW_STRUCTURED_OUTPUT" | jq -r '.recommended_count')
+            echo "final_blocking=$FINAL_BLOCKING" >> "$GITHUB_OUTPUT"
+            echo "final_recommended=$FINAL_RECOMMENDED" >> "$GITHUB_OUTPUT"
+            echo "final_reason=round1_only" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 자동 수정 라운드 — 라운드 소진 이력 코멘트
+        # 자동 수정 후 재리뷰까지 돌았는데도 차단이 남은 경우 — 3번 항목에서 비워둔 "라운드 소진" 사유를
+        # 여기서 남긴다 (post_review_autofix는 차단 해소 사유만 판단했다).
+        if: always() && steps.judge.outcome == 'success' && steps.judge.outputs.final_reason == 'round_exhausted'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s\n' "## 자동 수정 1회차" "" "라운드 소진(1회 한도 도달) — 사람이 직접 확인해야 합니다." > /tmp/autofix-round-exhausted-body.md
+          gh pr comment "${{ steps.pr.outputs.number }}" --body-file /tmp/autofix-round-exhausted-body.md
+
+      - name: 조건부 승인 — 차단·권장 0건일 때만 (ADR-0013·ADR-0016, 머지는 사람이 진행)
         # PR 작성자가 claude[bot](Claude GitHub App 설치됨)이 아니라 github-actions[bot]로 폴백된 경우
         # 이 승인 계정과 작성자가 같아져 GitHub이 422로 거부한다 — 테스트 이슈 검증 시 App 설치 여부를 함께 확인한다 (PR #232 리뷰).
+        # always() + steps.judge.outcome — judge가 always()로 도는 스텝이라 이 승인 스텝도 암묵적 success()에
+        # 기대지 않고 judge가 실제로 성공했는지부터 명시적으로 확인한다 (3번 항목·autofix_build_failure_comment와 같은 패턴).
         if: >
-          success() && steps.pr.outputs.number != '' &&
-          steps.review.outputs.structured_output != '' &&
-          fromJSON(steps.review.outputs.structured_output).blocking_count == 0 &&
-          fromJSON(steps.review.outputs.structured_output).recommended_count == 0
+          always() && steps.judge.outcome == 'success' && steps.pr.outputs.number != '' &&
+          steps.judge.outputs.final_blocking == '0' &&
+          steps.judge.outputs.final_recommended == '0'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh pr review "${{ steps.pr.outputs.number }}" --approve \
-            -b "차단 0건 / 권장 0건 — 이슈 트리거 에이전트 리뷰 통과 (ADR-0013). 머지는 사람이 직접 진행해 주세요."
+            -b "차단 0건 / 권장 0건 — 이슈 트리거 에이전트 리뷰 통과 (ADR-0013·ADR-0016). 머지는 사람이 직접 진행해 주세요."
