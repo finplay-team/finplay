@@ -50,7 +50,7 @@
   - **주식 회귀** — 기존 `PostSellFeedback*IntegrationTest` 전부를 **수정 없이** 그대로 실행해 통과를 확인한다(회귀가 나면 원인은 1번 항목의 이동이므로 테스트가 아니라 구현을 고친다).
   - 검증 — Testcontainers(MySQL) 통합.
 
-- [ ] **4. 문서 정리 — `PostSellFeedbackReader` Javadoc·spec·prd 정합 확인**
+- [x] **4. 문서 정리 — `PostSellFeedbackReader` Javadoc·spec·prd 정합 확인**
 
   이슈 §체크리스트 3번째 항목("알려진 한계" 문단 제거)을 여기서 닫는다.
 
