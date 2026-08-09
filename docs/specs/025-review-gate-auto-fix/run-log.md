@@ -31,3 +31,9 @@
 
 ## 모니터링 (사람용 요약)
 - PR #293 직전 리뷰 권장 2건(코멘트 중복, review_autofix 침묵 실패) 재검증 — 차단 0건 / 권장 1건 / 참고 1건. 두 지적 모두 실제로 해소(post_review_autofix가 빈 값·라운드 소진 사유를 함께 처리, 별도 스텝 제거로 step 17→16). judge의 final_reason 판정과 post_review_autofix의 코멘트 문구는 같은 소스(steps.review_autofix.outputs.structured_output)를 참조해 서로 어긋나지 않음을 확인. 잔여 사각지대(review_autofix 스텝 자체가 실패로 끝나는 경우 코멘트 미게시)는 이번 지적 범위 밖이라 권장으로 별도 기록.
+| - | implementer | `Edit .github/workflows/agent.yml` (autofix_review_failure_comment 스텝 신설) | PR #293 2차 리뷰 권장 1건, 코디네이터 지시(autofix_build_failure_comment와 같은 패턴) |
+| - | implementer | `python -c "import yaml; ... steps/if 목록 출력"` | 최종 17개 step 순서·if 조건 확인(16→17), post_review_autofix·autofix_review_failure_comment의 if 상호 배타 확인 |
+| - | implementer | `bash -n <추출한 run: 스크립트 11개>` | 신규 스텝 run: 스크립트 문법 확인 |
+
+## 모니터링 (사람용 요약)
+- PR #293 2차 리뷰 권장 1건(review_autofix 스텝 자체가 failure로 끝나는 경우 코멘트 미게시) 반영 — autofix_build_failure_comment와 같은 패턴(always() + 명시적 status 함수)으로 autofix_review_failure_comment 스텝 신설. post_review_autofix(`review_autofix.outcome=='success'`)와는 if가 상호 배타적이라 동시 실행 없음. judge·승인 스텝 미변경. YAML·run: 스크립트 문법 통과.
