@@ -3,6 +3,13 @@ description: 동작 오류 신고
 title: "[fix] "
 labels: ["bug"]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        **에이전트 하네스로 처리하려면**
+        - `agent` 라벨을 붙이면 에이전트가 수정 방향 2~3안을 코멘트로 제시합니다.
+        - 방향을 고르려면 `@claude N안으로 구현해줘` 형식으로 댓글을 답니다.
+        - 구현·PR 오픈까지 에이전트가 하고, 머지는 항상 사람이 합니다.
   - type: textarea
     id: what
     attributes:
