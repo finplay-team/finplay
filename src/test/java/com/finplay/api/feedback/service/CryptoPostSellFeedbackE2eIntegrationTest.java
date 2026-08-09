@@ -12,11 +12,16 @@ import com.finplay.api.account.repository.AccountRepository;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.auth.token.JwtTokenProvider;
+import com.finplay.api.feedback.domain.MarketNewsItem;
+import com.finplay.api.feedback.domain.MarketNewsItemType;
 import com.finplay.api.feedback.domain.NarrativeSource;
 import com.finplay.api.feedback.domain.PostSellFeedbackStatus;
 import com.finplay.api.feedback.domain.PriceMoveEvent;
+import com.finplay.api.feedback.domain.PriceMoveEventSource;
 import com.finplay.api.feedback.dto.response.PostSellFeedbackResponse;
+import com.finplay.api.feedback.repository.MarketNewsItemRepository;
 import com.finplay.api.feedback.repository.PriceMoveEventRepository;
+import com.finplay.api.feedback.repository.PriceMoveEventSourceRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.repository.InstrumentRepository;
@@ -160,6 +165,12 @@ class CryptoPostSellFeedbackE2eIntegrationTest {
 	private PriceMoveEventRepository priceMoveEventRepository;
 
 	@Autowired
+	private MarketNewsItemRepository marketNewsItemRepository;
+
+	@Autowired
+	private PriceMoveEventSourceRepository priceMoveEventSourceRepository;
+
+	@Autowired
 	private JdbcTemplate jdbcTemplate;
 
 	@Autowired
@@ -238,7 +249,10 @@ class CryptoPostSellFeedbackE2eIntegrationTest {
 			.andExpect(jsonPath("$.priceMoves[0].windowEnd").value("2026-08-05T10:30:00"))
 			// minutesAfterBuy = 09:00 → 10:30, minutesBeforeSell = 10:30 → 12:00.
 			.andExpect(jsonPath("$.priceMoves[0].minutesAfterBuy").value(90))
-			.andExpect(jsonPath("$.priceMoves[0].minutesBeforeSell").value(90));
+			.andExpect(jsonPath("$.priceMoves[0].minutesBeforeSell").value(90))
+			// 근거 기사는 세 조회 경로가 공유하는 로더가 채운다 — 코인 경로에서 그 값을 단언하는 유일한 자리다.
+			.andExpect(jsonPath("$.priceMoves[0].sources.length()").value(1))
+			.andExpect(jsonPath("$.priceMoves[0].sources[0].title").value("대형 거래소 상장 소식"));
 	}
 
 	// --- 공통 조건 — LLM 폴백 (ADR-0011) ---
@@ -301,10 +315,17 @@ class CryptoPostSellFeedbackE2eIntegrationTest {
 			price, new BigDecimal("1.5"));
 	}
 
+	// 근거 기사를 함께 심는다 — priceMoves[].sources는 세 조회 경로가 공유하는 PriceMoveSourceLoader가
+	// 채우는 값인데(PR #281), 기사를 심지 않으면 로더가 통째로 비어도 이 테스트가 통과한다.
 	private PriceMoveEvent givenHeldCryptoCard() {
-		return priceMoveEventRepository.saveAndFlush(PriceMoveEvent.createCrypto(
+		PriceMoveEvent card = priceMoveEventRepository.saveAndFlush(PriceMoveEvent.createCrypto(
 			coin, CARD_AT, new BigDecimal("0.021000"), new BigDecimal("3.2500"),
 			"10시 30분부터 2.1% 상승했습니다.", NarrativeSource.TEMPLATE, CARD_AT));
+		MarketNewsItem news = marketNewsItemRepository.saveAndFlush(MarketNewsItem.create(
+			coin, MarketNewsItemType.NEWS, "대형 거래소 상장 소식", "coindesk.com",
+			"https://news.example.test/crypto/1", CARD_AT.minusMinutes(5), CARD_AT));
+		priceMoveEventSourceRepository.saveAndFlush(PriceMoveEventSource.of(card, news));
+		return card;
 	}
 
 	private Trade givenOwnCryptoSellTrade() {

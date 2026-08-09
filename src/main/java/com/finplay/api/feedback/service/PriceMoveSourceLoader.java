@@ -18,7 +18,8 @@ import org.springframework.stereotype.Component;
  * 책임이 명확할 때만 검토한다"가 정확히 이 시점을 트리거로 잡는다 (PR #281 리뷰).
  *
  * <p><b>{@code @Transactional}을 붙이지 않는다.</b> 세 호출부가 전부 자기 트랜잭션 안에서 부르므로 여기에
- * 경계를 하나 더 두면 읽기 전용 경계가 두 겹이 되고, 호출부가 트랜잭션 없이 불러도 조용히 도는 상태가 된다.
+ * 붙여도 기본 전파({@code REQUIRED})라 물리 경계가 늘지는 않는다 — 문제는 <b>호출부가 트랜잭션 없이 불러도
+ * 조용히 도는 상태가 된다</b>는 것이다. "경계는 호출부가 갖는다"는 지금 계약이 그때 약해진다 (PR #281 리뷰).
  */
 @Component
 @RequiredArgsConstructor

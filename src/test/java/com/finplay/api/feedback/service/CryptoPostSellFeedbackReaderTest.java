@@ -228,7 +228,7 @@ class CryptoPostSellFeedbackReaderTest {
 	// --- 일봉 표본이 비는 경우 (§실패 처리) ---
 
 	@Test
-	@DisplayName("같은 날 안에서 200분 초과 보유면 극값·비율·atHoldHigh가 전부 null이고 오류가 아니다")
+	@DisplayName("같은 날 안에서 199분 초과 보유면 극값·비율·atHoldHigh가 전부 null이고 오류가 아니다")
 	void leavesExtremesNullWhenNoDailyCandleFallsInsideTheHold() {
 		givenMinuteCandles(minuteCandles());
 		givenDailyCandles(dailyCandles());
