@@ -64,7 +64,11 @@ public class CachedCryptoCandleProvider implements CryptoCandleProvider {
 
 		LocalDateTime sinceValue = since.get();
 		LocalDateTime cacheFrom = effectiveFrom.isAfter(sinceValue) ? effectiveFrom : sinceValue;
-		LocalDateTime delegateTo = sinceValue.minusMinutes(1);
+		// 위임 구간의 끝을 요청 끝(effectiveTo)으로 클램프한다 — 요청 구간 전체가 since보다 과거이면
+		// (매도 회고처럼 언제나 과거를 조회하는 경로) 클램프 없이는 to가 since-1분이 되고, 빗썸이 그 시각
+		// 기준 최근 200봉을 돌려줘 요청과 겹치지 않는 구간이 온다. 호출부가 [from, to]로 다시 거르므로
+		// 예외도 로그도 없이 결과가 통째로 빈다 (PR #281 리뷰).
+		LocalDateTime delegateTo = min(sinceValue.minusMinutes(1), effectiveTo);
 
 		List<CryptoCandleDto> delegated = List.of();
 		if (!effectiveFrom.isAfter(delegateTo)) {
@@ -83,6 +87,10 @@ public class CachedCryptoCandleProvider implements CryptoCandleProvider {
 		}
 
 		return merge(delegated, cached);
+	}
+
+	private static LocalDateTime min(LocalDateTime left, LocalDateTime right) {
+		return left.isAfter(right) ? right : left;
 	}
 
 	// 겹치는 sourceTime이 있으면 캐시(cached) 쪽을 채택한다 — 우리 데이터가 진행 중 분봉을 담고 있어 더
