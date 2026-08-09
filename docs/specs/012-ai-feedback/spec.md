@@ -178,6 +178,9 @@ C-004의 나머지("숫자와 판정은 서버가 계산하고 AI는 관찰형 �
 | | `INSUFFICIENT_SAMPLE` | 행은 있고 `holderCount < 5`. 모집단 지표 3종 `null`, `yourMinutesToSell`은 채움 |
 | | `NO_EVENT` | 보유 구간에 변동 카드가 0건. `priceMoveId` 포함 전 필드 `null` |
 | | `NOT_YET` | 그 밖 (배치 전) |
+| `status` (카드 목록) | `READY` | 카드가 1건 이상이다 |
+| | `EMPTY` | 카드가 0건이다. **코인의 카드 0건이 여기다** |
+| | `NOT_YET` | 주식이고 재생세션 미준비. `originTradeDate=null` |
 | `narrativeStatus` (Part B) | `READY` 뿐 | 템플릿이 있어 항상 채워진다. `UNAVAILABLE`이 **존재하지 않는다** |
 | `narrative_source` | `LLM` \| `TEMPLATE` | 카드·매도 회고 |
 | | `LLM` \| `NONE` | 요약·브리핑 (템플릿이 없다) |
@@ -196,6 +199,8 @@ C-004의 나머지("숫자와 판정은 서버가 계산하고 AI는 관찰형 �
 | 6 | 그 외 | `READY` |
 
 Part C의 1번이 `NOT_YET`이고 Part D가 `EMPTY`인 것은 의도된 차이다 — Part D는 "브리핑이 아예 없는 날"이 정상이고, Part C는 "아직 열리지 않았다"가 맞다.
+
+**카드 목록의 `status`는 Issue #280에서 추가했다.** 그전까지 네 조회 경로 중 이 경로만 상태 필드가 없었고, 주식의 재생세션 미준비와 코인의 카드 0건이 둘 다 `{"originTradeDate":null,"moves":[]}`로 구별되지 않았다. `UNAVAILABLE`이 빠지는 것은 의도된 차이다 — 요약·브리핑은 템플릿이 없어 LLM이 실패하면 서술이 `NULL`로 남지만, 카드는 템플릿으로 대체되므로(`narrative_source`가 `LLM`\|`TEMPLATE`) 서술 없는 카드가 애초에 없다. `NOT_YET`이 코인에 나오지 않는 것도 `summaryStatus`와 같은 이유다 — 24시간 거래라 '아직'이라는 시점이 없다.
 
 ### C-5 노출 게이트
 

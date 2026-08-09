@@ -12,6 +12,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.finplay.api.feedback.config.FeedbackCryptoProperties;
+import com.finplay.api.feedback.domain.FeedbackContentStatus;
 import com.finplay.api.feedback.domain.MarketNewsItem;
 import com.finplay.api.feedback.domain.MarketNewsItemType;
 import com.finplay.api.feedback.domain.NarrativeSource;
@@ -91,6 +92,22 @@ class PriceMoveQueryServiceTest {
 		assertThat(response).isEqualTo(PriceMoveListResponse.of(null, List.of()));
 	}
 
+	// 코인에는 재생세션도 '개장 전'도 없으므로 NOT_YET이 성립하지 않는다 (§C-4의 "코인에는 이 값이 없다"와
+	// 같은 결). 카드가 0건이면 아직이 아니라 그냥 없는 것이다 — Issue #280.
+	@Test
+	@DisplayName("코인 종목은 카드가 0건이어도 status가 NOT_YET이 아니라 EMPTY다")
+	void reportsEmptyRatherThanNotYetForCryptoWithoutCards() {
+		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID)).thenReturn(cryptoInstrument());
+		when(priceMoveEventRepository.findByInstrumentIdAndMarketAndOccurredAtBetweenOrderByOccurredAtAscIdAsc(
+			eq(INSTRUMENT_ID), eq(Market.CRYPTO), any(), any()))
+			.thenReturn(List.of());
+
+		PriceMoveListResponse response = service.getPriceMoves(INSTRUMENT_ID);
+
+		assertThat(response.status()).isEqualTo(FeedbackContentStatus.EMPTY);
+		assertThat(response).isNotEqualTo(PriceMoveListResponse.notYet());
+	}
+
 	@Test
 	@DisplayName("코인 종목은 (now - 24시간, now)를 조회 창으로 리포지토리를 부른다")
 	void queriesTheRepositoryWithExactly24HourWindowEndingAtNow() {
@@ -126,6 +143,7 @@ class PriceMoveQueryServiceTest {
 		PriceMoveListResponse response = service.getPriceMoves(INSTRUMENT_ID);
 
 		assertThat(response.originTradeDate()).isNull();
+		assertThat(response.status()).isEqualTo(FeedbackContentStatus.READY);
 		assertThat(response.moves()).singleElement().satisfies(move -> {
 			assertThat(move.id()).isEqualTo(7L);
 			assertThat(move.windowEnd()).isEqualTo(occurredAt);

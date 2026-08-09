@@ -672,9 +672,21 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 | Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|---|
-| GET | /api/instruments/{instrumentId}/price-moves | Access Bearer 필수 | 경로 변수 `instrumentId`만(쿼리·본문 없음) | 200 `{"originTradeDate":"2026-07-29","moves":[{"id":12,"eventType":"INTRADAY","windowStart":"2026-07-29T11:20:00","windowEnd":"2026-07-29T11:25:00","changeRate":-0.0182,"narrative":"11시 20분부터 5분간 1.82% 하락했습니다. 같은 시간대에 생산 차질을 다룬 기사가 있었습니다.","sources":[{"type":"NEWS","title":"...","publisher":"hankyung.com","url":"https://...","publishedAt":"2026-07-29T11:15:00"}]}]}` (`PriceMoveListResponse`); 카드가 없으면 200 `{"originTradeDate":"2026-07-29","moves":[]}` | Access 인증 실패는 401 `UNAUTHORIZED`. `instrumentId` 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 012 FEED-006 |
+| GET | /api/instruments/{instrumentId}/price-moves | Access Bearer 필수 | 경로 변수 `instrumentId`만(쿼리·본문 없음) | 200 `{"originTradeDate":"2026-07-29","status":"READY","moves":[{"id":12,"eventType":"INTRADAY","windowStart":"2026-07-29T11:20:00","windowEnd":"2026-07-29T11:25:00","changeRate":-0.0182,"narrative":"11시 20분부터 5분간 1.82% 하락했습니다. 같은 시간대에 생산 차질을 다룬 기사가 있었습니다.","sources":[{"type":"NEWS","title":"...","publisher":"hankyung.com","url":"https://...","publishedAt":"2026-07-29T11:15:00"}]}]}` (`PriceMoveListResponse`); 카드가 없으면 200 `{"originTradeDate":"2026-07-29","status":"EMPTY","moves":[]}` | Access 인증 실패는 401 `UNAUTHORIZED`. `instrumentId` 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 012 FEED-006, Issue #280 |
 
 `originTradeDate`는 주식일 때 현재 재생세션의 원본 거래일이고, 코인은 실시간이므로 항상 `null`이다. **재생세션이 `READY`가 아니면 주식도 `originTradeDate=null`·`moves=[]`이며 200이다** (오류가 아니다). `eventType`은 `INTRADAY`(장중 변동) 또는 `OPENING_GAP`(시가 갭)이다.
+
+**`status`** (Issue #280) — Part C의 `summaryStatus`, Part D의 `status`와 같은 `FeedbackContentStatus`를 쓰되 **세 값만 나온다.**
+
+| 값 | 언제 | 그때의 `originTradeDate` |
+|---|---|---|
+| `READY` | 카드가 1건 이상이다 | 주식은 원본 거래일, 코인은 `null` |
+| `EMPTY` | 카드가 0건이다 | 주식은 원본 거래일, 코인은 `null` |
+| `NOT_YET` | **주식이고 재생세션이 `READY`가 아니다** | 항상 `null` |
+
+**`UNAVAILABLE`은 나오지 않는다** — 카드 서술은 LLM이 실패해도 템플릿으로 대체되므로(`narrative_source`가 `LLM`\|`TEMPLATE`, §C-4) 서술 없는 카드가 존재하지 않는다. **`NOT_YET`은 코인에 나오지 않는다** — 재생세션도 개장 전도 없어 '아직'이라는 시점이 성립하지 않는다(§C-4의 `summaryStatus`가 코인에 `NOT_YET`을 두지 않는 것과 같은 이유). **코인의 카드 0건은 `EMPTY`다.**
+
+이 필드가 없던 동안 주식의 재생세션 미준비와 코인의 카드 0건이 둘 다 `{"originTradeDate":null,"moves":[]}`로 같았고(`null`은 필드째 빠지므로 JSON이 문자 단위로 동일했다), 호출부가 종목의 `market`을 따로 알아야만 "장 준비 중"과 "최근 24시간 변동 원인 카드가 없습니다"를 갈랐다. 형제 세 경로(`news`·`briefing`·`post-sell`)는 모두 상태 필드로 자기 완결적이며 이 경로만 예외였다.
 
 **노출 필터**: 주식은 `(서비스 날짜 + revealTime) <= now()`인 카드만 반환한다 — 재생 방식이라 하루치 카드가 08:45 배치에서 이미 전부 생성돼 있으므로, 이 필터가 없으면 오후 사건이 오전에 노출되는 스포일러가 된다. `revealTime`은 응답에 포함하지 않는다(서버 내부 판정값). 코인은 `revealTime`이 `NULL`이고 게이트 없이 최근 24시간 카드를 반환한다.
 
