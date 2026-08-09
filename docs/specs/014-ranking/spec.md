@@ -219,6 +219,7 @@ Redis ZSET `ranking:{market}`은 MySQL 원장(`accounts.realized_pnl`)의 파생
 - **재구성 직후에도 유령 member가 남을 수 있는 경우는 없다** — 전체 교체이므로 교체 결과는 DB를 읽은 시점(T0)의 원장과 일치한다. 다만 교체 이후 발생하는 어긋남(이벤트 유실 등)은 다음 재구성까지 남는다.
 - **재구성 도중 커밋된 매도는 교체에 덮인다(PR 리뷰 지적, 이슈 #279).** 재구성은 T0에 DB를 읽고 T2에 `RENAME`한다. 그 사이에 매도가 커밋되면 after-commit `addScoreWithRetry`가 **본 키**에 쓴 값이 T0 스냅샷으로 통째로 교체된다. 그 계좌의 첫 매도였다면 member 자체가 사라져, 다음 매도나 다음 재구성(최대 약 24시간)까지 `rank: null` + `REBUILDING`으로 보인다. 기동 훅도 예외가 아니다 — `ApplicationReadyEvent`는 웹 서버가 이미 요청을 받는 시점에 발화한다.
   - **고치지 않는 이유**: ZSET은 파생 데이터라 원장이 깨지지 않고, 다음 매도 또는 다음 재구성이 자가 치유한다. 창을 없애려면 재구성 중 쓰기를 막는 락이나 임시 키 동시 기록이 필요한데, "분산 락 없음·과설계 금지"라는 이번 확정과 어긋난다. 새벽 04:20이라 이 창에 매도가 걸릴 확률 자체도 낮다. 다중 인스턴스 전환 시 이 항목도 함께 재검토한다(`plan.md` 참고).
+- **Redis Cluster로 전환하면 재구성이 조용히 무력화된다(PR #284 리뷰 참고 사항).** `RankingStore.replaceAll`의 `RENAME`은 `ranking:{market}`과 `ranking:{market}:rebuild`의 해시 슬롯이 달라 클러스터에서 `CROSSSLOT` 오류로 실패한다. `replaceAll`은 예외를 삼키므로 `log.error`만 남고 랭킹은 낡은 상태로 방치된다. 현재는 Standalone이라 실제 문제가 아니다. 클러스터로 옮길 때는 두 키가 같은 슬롯에 떨어지도록 해시태그(`ranking:{STOCK}`·`ranking:{STOCK}:rebuild` 형태)를 도입해야 한다.
 
 ### 완료 조건
 

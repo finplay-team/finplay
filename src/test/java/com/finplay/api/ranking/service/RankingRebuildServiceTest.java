@@ -13,6 +13,10 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.finplay.api.account.domain.Account;
 import com.finplay.api.account.domain.Market;
 import com.finplay.api.account.service.AccountService;
@@ -21,13 +25,17 @@ import com.finplay.api.order.service.TradeService;
 import com.finplay.api.ranking.dto.RankingEntryDto;
 import com.finplay.api.ranking.store.RankingStore;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.scheduling.support.CronExpression;
@@ -246,6 +254,98 @@ class RankingRebuildServiceTest {
 		LocalDateTime next = CronExpression.parse(EXPECTED_CRON).next(LocalDateTime.of(2026, 8, 9, 0, 0));
 
 		assertThat(next).isEqualTo(LocalDateTime.of(2026, 8, 9, 4, 20));
+	}
+
+	// ApplicationReadyEvent 리스너들은 한 스레드에서 순서대로 동기 실행되고, readiness 상태를 발행하는 것도
+	// 그중 하나다. 이 재구성이 먼저 잡히면 원장이 커질수록 readiness 신호가 조용히 늦어진다 — 애노테이션을
+	// 읽는 것 말고는 관찰할 방법이 없어 여기서 고정한다(PR #284 리뷰, scheduleDeclaresSeoulZone과 같은 형태).
+	@Test
+	@DisplayName("기동 훅이 가장 낮은 우선순위라 readiness 리스너보다 뒤에 돈다")
+	void startupHookRunsAtLowestPrecedenceSoReadinessIsPublishedFirst() throws NoSuchMethodException {
+		Order order = RankingRebuildService.class.getMethod("rebuildOnStartup").getAnnotation(Order.class);
+
+		assertThat(order).isNotNull();
+		assertThat(order.value()).isEqualTo(Ordered.LOWEST_PRECEDENCE);
+	}
+
+	// 계좌 배치 조회를 ZADD와 같은 청크 크기로 나눈다(PR #284 리뷰). 나누지 않으면 계좌 수가 늘 때 IN 절
+	// 파라미터·패킷이 먼저 한계에 닿고, 그 예외는 rebuildAll의 시장별 catch에 삼켜져 로그로만 남는다.
+	// 상수를 여기서 하드코딩하지 않고 RankingStore.REBUILD_CHUNK_SIZE를 참조해 두 크기가 갈리는 회귀도 잡는다.
+	@Test
+	@DisplayName("계좌 배치 조회를 ZADD와 같은 청크 크기로 나눠 부르고 순서를 보존한다")
+	void rebuildSplitsAccountLookupIntoChunksOfTheSameSizeAsZadd() {
+		int chunkSize = RankingStore.REBUILD_CHUNK_SIZE;
+		List<Long> accountIds = new ArrayList<>();
+		for (long id = 1; id <= chunkSize + 1L; id++) {
+			accountIds.add(id);
+		}
+		List<Long> firstChunk = List.copyOf(accountIds.subList(0, chunkSize));
+		List<Long> secondChunk = List.copyOf(accountIds.subList(chunkSize, accountIds.size()));
+		when(tradeService.getSoldAccountIds(Market.STOCK)).thenReturn(accountIds);
+		when(accountService.getAccountsByIds(firstChunk)).thenReturn(List.of(account(1L, 5_000L, 10L, "alpha")));
+		when(accountService.getAccountsByIds(secondChunk)).thenReturn(List.of(account(2L, -1_000L, 11L, "beta")));
+
+		rankingRebuildService.rebuild(Market.STOCK);
+
+		ArgumentCaptor<List<Long>> captor = ArgumentCaptor.captor();
+		verify(accountService, times(2)).getAccountsByIds(captor.capture());
+		assertThat(captor.getAllValues())
+			.as("두 번째 청크가 통째로 붙으면 IN 절 한계를 그대로 맞는다")
+			.containsExactly(firstChunk, secondChunk);
+		// 청크를 나눠도 결과는 조회 순서대로 이어 붙는다 — 순서가 뒤집히면 랭킹 자체는 score 정렬이라 보이지
+		// 않지만, 경계 동점 처리·회귀 단정이 조회 순서를 전제로 하고 있다.
+		assertThat(capturedEntries(Market.STOCK))
+			.containsExactly(new RankingEntryDto(1L, 5_000L), new RankingEntryDto(2L, -1_000L));
+	}
+
+	// replaceAll은 예외를 삼키므로(기동 훅·스케줄러를 지키기 위한 계약) 반환값이 유일한 성공 판정 근거다.
+	// Redis가 죽어 교체가 실패한 tick에서 "완료" INFO가 남으면 로그만 보는 사람이 실패를 성공으로 읽는다.
+	@Test
+	@DisplayName("ZSET 교체가 실패한 tick에서는 완료 INFO를 남기지 않는다")
+	void rebuildDoesNotLogCompletionWhenReplaceAllFails() {
+		when(tradeService.getSoldAccountIds(Market.STOCK)).thenReturn(List.of(1L));
+		when(accountService.getAccountsByIds(List.of(1L))).thenReturn(List.of(account(1L, 5_000L, 10L, "alpha")));
+		when(rankingStore.replaceAll(eq(Market.STOCK), anyList())).thenReturn(false);
+
+		List<ILoggingEvent> logs = capturingLogs(() -> rankingRebuildService.rebuild(Market.STOCK));
+
+		assertThat(logs)
+			.as("실패한 tick의 완료 로그는 운영에서 실패를 성공으로 읽게 만든다")
+			.extracting(ILoggingEvent::getFormattedMessage)
+			.noneMatch(message -> message.contains("랭킹 재구성 완료"));
+	}
+
+	// 위 단정이 "완료 로그가 아예 사라져서" 통과하는 것이 아님을 반대 방향으로 고정한다.
+	@Test
+	@DisplayName("ZSET 교체가 성공한 tick에서는 완료 INFO를 남긴다")
+	void rebuildLogsCompletionWhenReplaceAllSucceeds() {
+		when(tradeService.getSoldAccountIds(Market.STOCK)).thenReturn(List.of(1L));
+		when(accountService.getAccountsByIds(List.of(1L))).thenReturn(List.of(account(1L, 5_000L, 10L, "alpha")));
+		when(rankingStore.replaceAll(eq(Market.STOCK), anyList())).thenReturn(true);
+
+		List<ILoggingEvent> logs = capturingLogs(() -> rankingRebuildService.rebuild(Market.STOCK));
+
+		assertThat(logs)
+			.extracting(ILoggingEvent::getFormattedMessage)
+			.anyMatch(message -> message.contains("랭킹 재구성 완료") && message.contains("대상 계좌 수=1"));
+	}
+
+	// 로그가 성공/실패 구분의 유일한 외부 관찰점이라 로거에 임시 appender를 붙인다 (CryptoWatchLockTest와 같은 방식).
+	private static List<ILoggingEvent> capturingLogs(Runnable action) {
+		Logger logger = (Logger)LoggerFactory.getLogger(RankingRebuildService.class);
+		ListAppender<ILoggingEvent> appender = new ListAppender<>();
+		appender.start();
+		Level originalLevel = logger.getLevel();
+		logger.setLevel(Level.DEBUG);
+		logger.addAppender(appender);
+		try {
+			action.run();
+			return List.copyOf(appender.list);
+		} finally {
+			logger.detachAppender(appender);
+			logger.setLevel(originalLevel);
+			appender.stop();
+		}
 	}
 
 	private Scheduled schedule() throws NoSuchMethodException {

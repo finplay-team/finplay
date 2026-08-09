@@ -254,4 +254,49 @@ class RankingStoreTest {
 
 		verify(redisTemplate, never()).rename(any(), any());
 	}
+
+	// 아래 4건은 반환값 계약이다(PR #284 QA 지적). 예외를 삼키는 것과 성공/실패를 감추는 것은 다르다 —
+	// 호출자(RankingRebuildService)는 이 boolean으로만 성공을 판정해 "완료" 로그를 남길지 정한다.
+	// 반환값이 항상 true가 되는 회귀가 생기면 Redis가 죽은 tick에서도 완료 로그가 찍힌다.
+	@Test
+	void replaceAllReturnsTrueWhenRenameSucceeds() {
+		RankingStore rankingStore = rankingStore();
+
+		boolean replaced = rankingStore.replaceAll(Market.STOCK, List.of(new RankingEntryDto(1L, 10L)));
+
+		assertThat(replaced).isTrue();
+	}
+
+	// 0건 경계도 성공이다 — 본 키를 지워 빈 랭킹으로 만드는 것이 의도한 교체 결과다(실패가 아니다).
+	@Test
+	void replaceAllReturnsTrueWhenEntriesAreEmptyBecauseDeletingTheMainKeyIsTheIntendedResult() {
+		RankingStore rankingStore = rankingStore();
+
+		boolean replaced = rankingStore.replaceAll(Market.STOCK, List.of());
+
+		assertThat(replaced).isTrue();
+	}
+
+	@Test
+	void replaceAllReturnsFalseWhenRenameFails() {
+		RankingStore rankingStore = rankingStore();
+		doThrow(new RuntimeException("redis down"))
+			.when(redisTemplate)
+			.rename("ranking:STOCK:rebuild", "ranking:STOCK");
+
+		boolean replaced = rankingStore.replaceAll(Market.STOCK, List.of(new RankingEntryDto(1L, 10L)));
+
+		assertThat(replaced).isFalse();
+	}
+
+	// 0건 경계의 실패도 false다 — 여기서 true를 돌려주면 본 키가 그대로 남은 채 "완료"로 읽힌다.
+	@Test
+	void replaceAllReturnsFalseWhenMainKeyDeleteFailsOnEmptyEntries() {
+		RankingStore rankingStore = rankingStore();
+		doThrow(new RuntimeException("redis down")).when(redisTemplate).delete("ranking:CRYPTO");
+
+		boolean replaced = rankingStore.replaceAll(Market.CRYPTO, List.of());
+
+		assertThat(replaced).isFalse();
+	}
 }

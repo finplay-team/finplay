@@ -28,7 +28,10 @@ public class RankingStore {
 	private static final int FIND_ALL_AT_SCORE_MAX_MEMBERS = 500;
 	// 재구성(이슈 #279) 임시 키 suffix와 ZADD 청크 크기. key 문자열은 이 클래스에서만 조립한다(conventions.md).
 	private static final String REBUILD_KEY_SUFFIX = ":rebuild";
-	private static final int REBUILD_CHUNK_SIZE = 500;
+	// 재구성 한 번에 묶어 보내는 계좌 수. ZADD 한 번의 크기이자 그 앞에 오는 계좌 배치 조회(IN 절)의 크기이기도
+	// 하다 — RankingRebuildService가 이 상수를 그대로 참조해 DB 조회를 같은 크기로 나눈다(PR #284 리뷰).
+	// 값을 복제하지 않는 이유: Redis 쪽만 나눠 봐야 앞단 IN 절 파라미터·패킷이 먼저 한계에 닿는다.
+	public static final int REBUILD_CHUNK_SIZE = 500;
 
 	private final StringRedisTemplate redisTemplate;
 
@@ -133,14 +136,18 @@ public class RankingStore {
 	// 예외가 새면 기동이 실패하거나 스케줄러 스레드가 죽는다. addScoreWithRetry가 매도 체결을 지키려고
 	// 예외를 삼키는 것과 같은 방침이며, 재구성은 다음 기동·다음 배치에 다시 도는 멱등 작업이다.
 	// 재시도는 하지 않는다(즉시 재시도의 값어치가 낮다, plan.md "실패 처리").
-	public void replaceAll(Market market, List<RankingEntryDto> entries) {
+	//
+	// 다만 예외를 삼키는 것과 성공/실패를 감추는 것은 다르다(PR #284 QA 지적) — 교체 성공 여부를 boolean으로
+	// 돌려준다. 이 값이 없으면 호출자는 Redis가 죽은 tick에서도 "재구성 완료" INFO를 남겨, 로그만 보는 사람이
+	// 실패를 성공으로 읽는다. 반환값을 무시해도 이 메서드는 여전히 예외를 던지지 않는다.
+	public boolean replaceAll(Market market, List<RankingEntryDto> entries) {
 		String key = key(market);
 		String rebuildKey = rebuildKey(market);
 		try {
 			redisTemplate.delete(rebuildKey);
 			if (entries.isEmpty()) {
 				redisTemplate.delete(key);
-				return;
+				return true;
 			}
 			for (int start = 0; start < entries.size(); start += REBUILD_CHUNK_SIZE) {
 				int end = Math.min(start + REBUILD_CHUNK_SIZE, entries.size());
@@ -151,9 +158,11 @@ public class RankingStore {
 				redisTemplate.opsForZSet().add(rebuildKey, chunk);
 			}
 			redisTemplate.rename(rebuildKey, key);
+			return true;
 		} catch (Exception e) {
 			log.error("랭킹 ZSET 재구성 실패. market={}, 대상 계좌 수={}", market, entries.size(), e);
 			cleanUpRebuildKey(rebuildKey, market);
+			return false;
 		}
 	}
 

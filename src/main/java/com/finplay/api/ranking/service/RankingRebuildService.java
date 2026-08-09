@@ -1,16 +1,20 @@
 // 매도 이력 원장(trades)과 계좌 실현손익(accounts)에서 랭킹 ZSET을 통째로 재구성하는 서비스 (이슈 #279)
 package com.finplay.api.ranking.service;
 
+import com.finplay.api.account.domain.Account;
 import com.finplay.api.account.domain.Market;
 import com.finplay.api.account.service.AccountService;
 import com.finplay.api.order.service.TradeService;
 import com.finplay.api.ranking.dto.RankingEntryDto;
 import com.finplay.api.ranking.store.RankingStore;
+import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -36,7 +40,18 @@ public class RankingRebuildService {
 
 	// 기동 완료 시점 1회 재구성 — Redis가 비어 있는 채로 서비스가 뜨는 것을 막는다.
 	// BithumbFeedLifecycle과 같은 훅이며, 주기 배치와 완전히 같은 rebuildAll() 경로를 탄다.
+	//
+	// @Order(LOWEST_PRECEDENCE)를 지우지 말 것 (PR #284 리뷰). ApplicationReadyEvent 리스너들은 한 스레드에서
+	// 순서대로 동기 실행되고, readiness 상태(AvailabilityChangeEvent: ACCEPTING_TRAFFIC)를 발행하는 것도 그중
+	// 하나인 스프링의 기본 리스너다. 이 재구성이 그 리스너보다 먼저 잡히면 원장이 커질수록 readiness 신호가
+	// 그만큼 늦게 나가 /actuator/health/readiness가 조용히 지연된다 — 지연이 재구성 때문이라는 단서가 로그에
+	// 남지 않는다. 가장 낮은 우선순위로 밀어 readiness가 먼저 발행되게 한다.
+	//
+	// 순서를 바꿀 뿐 여전히 동기다 — 비동기화(@EnableAsync + 전용 TaskExecutor)는 RANK-001 plan.md가 "별도
+	// 스레드풀·@EnableAsync를 추가하지 않는다"고 못박아 둔 결정이라 채택하지 않았다. 동기라서 이 메서드가
+	// 반환하는 시점이 곧 "기동 시 재구성이 끝난 시점"이고, 기동 로그만으로 완료 여부를 판정할 수 있다.
 	@EventListener(ApplicationReadyEvent.class)
+	@Order(Ordered.LOWEST_PRECEDENCE)
 	public void rebuildOnStartup() {
 		log.info("기동 시 랭킹 재구성 시작");
 		rebuildAll();
@@ -66,13 +81,27 @@ public class RankingRebuildService {
 	// 대상 판정은 매도 체결 이력(trades.side = 'SELL')이고 score는 accounts.realized_pnl이다. 둘을 분리하는
 	// 이유는 매도했지만 실현손익이 정확히 0인 계좌 때문이다 — realized_pnl != 0으로 대상을 고르면 그 계좌가
 	// 빠져 재구성 결과가 유실 전과 달라진다(spec.md 비즈니스 규칙).
+	//
+	// 계좌 배치 조회를 RankingStore.REBUILD_CHUNK_SIZE로 나눠 부른다(PR #284 리뷰). ZADD만 청크로 나누고 그
+	// 앞의 IN 절 조회를 통째로 두면 계좌 수가 늘 때 IN 절 파라미터·패킷 쪽이 먼저 한계에 닿는데, 그 예외는
+	// rebuildAll의 시장별 catch에 삼켜져 로그로만 남는다. 청크를 여기서 나누는 이유는 AccountService의
+	// getAccountsByIds가 랭킹 전용 메서드가 아니기 때문이다 — 랭킹 재구성의 배치 크기를 그 안에 넣으면
+	// account 도메인이 ranking의 상수에 의존하게 되고(ADR-0002 도메인 경계 역행), 다른 호출자에게도 이
+	// 사정이 딸려 간다. 반대로 여기서 나누면 두 청크 크기의 정본이 RankingStore 한 곳으로 남는다.
 	public void rebuild(Market market) {
 		List<Long> accountIds = tradeService.getSoldAccountIds(market);
-		List<RankingEntryDto> entries = accountService.getAccountsByIds(accountIds)
-			.stream()
-			.map(account -> new RankingEntryDto(account.getId(), account.getRealizedPnl()))
-			.toList();
-		rankingStore.replaceAll(market, entries);
-		log.info("랭킹 재구성 완료. market={}, 대상 계좌 수={}", market, entries.size());
+		List<RankingEntryDto> entries = new ArrayList<>(accountIds.size());
+		for (int start = 0; start < accountIds.size(); start += RankingStore.REBUILD_CHUNK_SIZE) {
+			int end = Math.min(start + RankingStore.REBUILD_CHUNK_SIZE, accountIds.size());
+			for (Account account : accountService.getAccountsByIds(accountIds.subList(start, end))) {
+				entries.add(new RankingEntryDto(account.getId(), account.getRealizedPnl()));
+			}
+		}
+		// replaceAll은 예외를 삼키므로 반환값이 유일한 성공 판정 근거다. 실패한 tick에서 "완료" INFO를 남기면
+		// 로그만 보는 사람이 실패를 성공으로 읽는다(PR #284 QA 지적). 실패 사유·스택트레이스는 replaceAll이
+		// ERROR로 이미 남기므로 여기서 다시 찍지 않는다.
+		if (rankingStore.replaceAll(market, entries)) {
+			log.info("랭킹 재구성 완료. market={}, 대상 계좌 수={}", market, entries.size());
+		}
 	}
 }
