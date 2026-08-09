@@ -85,6 +85,26 @@ public class NewsCollectionService {
 	}
 
 	/**
+	 * 종목 하나만 온디맨드로 수집한다 (ADR-0016 §결정 2). 이 메서드의 유일한 소비자는
+	 * {@code CryptoPriceMoveWatcher}다. 코인 온디맨드 수집 전용이며, 배치 진입점({@code collectNews})과
+	 * 별개로 언제든 호출될 수 있다.
+	 *
+	 * <p>{@code sameMarketNames}는 {@code collectNews()}와 같은 규칙(같은 시장 안에서만 제목 필터)이지만
+	 * 매번 다시 조회한다 — 온디맨드 호출은 드물어(게이트를 다 통과한 뒤, 첫 매칭이 빈 경우에만) 비용이 무시할
+	 * 만하다.
+	 *
+	 * <p>타입은 {@link MarketNewsItemType#NEWS}로 고정한다. 공시는 코인에 없다(§C-3).
+	 *
+	 * @return 실제로 새로 저장한 건수
+	 */
+	public int collectForInstrument(Instrument instrument) {
+		List<Instrument> sameMarket = instrumentService.getInstrumentEntities(instrument.getMarket());
+		List<String> sameMarketNames = sameMarket.stream().map(Instrument::getName).toList();
+		List<CollectedNewsDto> collected = newsCollector.collect(instrument, sameMarketNames);
+		return save(instrument, MarketNewsItemType.NEWS, collected, LocalDateTime.now(clock));
+	}
+
+	/**
 	 * <b>주식 종목의</b> 공시를 수집한다. 코인에는 공시가 없다 (FEED-001·§C-3). 크론은
 	 * {@code feedback.news.disclosure-cron}이다.
 	 */
