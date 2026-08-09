@@ -20,6 +20,10 @@
 - 자동 수정 라운드 6개 스텝 추가(prep_autofix·autofix·build_autofix·review_autofix·post_review_autofix·autofix_build_failure_comment). "조건부 승인" 스텝은 이번 턴에 손대지 않음(4번 항목에서 판정 병합 후 재배치 예정). YAML 파싱 통과.
 - 최종 판정 병합(`judge`) + 라운드 소진 코멘트 스텝 추가, "조건부 승인" 스텝을 judge 뒤로 재배치(if를 judge 출력 참조로 변경, always()+명시적 status 함수 패턴 적용), `timeout-minutes: 90` 명시. YAML 파싱·전체 run: 스크립트 `bash -n` 통과, 컴파일 통과. tasks.md 1~4번 완료.
 | - | reviewer(리뷰) | `git diff origin/dev...HEAD`, `gh api repos/finplay-team/finplay/actions/jobs/93295980910`, `gh issue view 292` | docs/conventions.md, ADR-0013, ADR-0016, spec.md/plan.md/tasks.md, if: 즉시평가·암묵적 success() 논리 검증 |
+| - | implementer | `Edit .github/workflows/agent.yml` (post_review_autofix에 코멘트 중복·침묵 실패 수정 흡수, 별도 라운드소진 스텝 제거) | PR #293 리뷰 권장 2건, 코디네이터 지시(post_review_autofix 하나로 흡수) |
+| - | implementer | `python -c "import yaml; ... steps/if 목록 출력"` | 최종 16개 step 순서·if 조건 확인(라운드소진 스텝 제거로 17→16) |
+| - | implementer | `bash -n <추출한 run: 스크립트 10개>` | post_review_autofix 등 변경 run: 스크립트 셸 문법 재확인 |
 
 ## 모니터링 (사람용 요약)
 - 리뷰(코드 리뷰 모드) — 차단 0건 / 권장 1건 / 참고 2건. env의 fromJSON 재발 없음, judge 병합 로직은 모든 분기에서 안전 기본값(승인 보류)으로 수렴 확인. round_exhausted 분기에서 "자동 수정 1회차" 헤더 코멘트가 2건 중복 게시되는 점을 권장으로 지적.
+- PR #293 리뷰 권장 2건(코멘트 중복, review_autofix 침묵 실패) 반영 — post_review_autofix 하나로 흡수(빈 값도 코멘트 게시, blocking!=0이면 "라운드 소진" 명시), 별도 "라운드 소진 이력 코멘트" 스텝 제거. judge 스텝(always() 포함) 미변경. YAML·run: 스크립트 문법 통과.
