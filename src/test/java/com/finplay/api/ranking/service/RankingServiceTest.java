@@ -16,6 +16,8 @@ import com.finplay.api.account.domain.Account;
 import com.finplay.api.account.domain.Market;
 import com.finplay.api.account.service.AccountService;
 import com.finplay.api.auth.domain.User;
+import com.finplay.api.order.service.TradeService;
+import com.finplay.api.ranking.domain.RankingStatus;
 import com.finplay.api.ranking.dto.RankingEntryDto;
 import com.finplay.api.ranking.dto.response.MyRankingResponse;
 import com.finplay.api.ranking.dto.response.RankingListItemResponse;
@@ -33,8 +35,9 @@ class RankingServiceTest {
 
 	private final RankingStore rankingStore = mock(RankingStore.class);
 	private final AccountService accountService = mock(AccountService.class);
+	private final TradeService tradeService = mock(TradeService.class);
 
-	private final RankingService rankingService = new RankingService(rankingStore, accountService);
+	private final RankingService rankingService = new RankingService(rankingStore, accountService, tradeService);
 
 	@Test
 	void refreshScoreDoesNothingWhenAccountNotFound() {
@@ -230,7 +233,7 @@ class RankingServiceTest {
 
 		MyRankingResponse response = rankingService.getMyRanking(10L, Market.STOCK);
 
-		assertThat(response).isEqualTo(new MyRankingResponse("STOCK", null, "alice", 0L));
+		assertThat(response).isEqualTo(new MyRankingResponse("STOCK", RankingStatus.READY, null, "alice", 0L));
 		verify(rankingStore, never()).countStrictlyGreater(any(), anyLong());
 	}
 
@@ -245,7 +248,7 @@ class RankingServiceTest {
 
 		MyRankingResponse response = rankingService.getMyRanking(10L, Market.STOCK);
 
-		assertThat(response).isEqualTo(new MyRankingResponse("STOCK", 3, "alice", 5_000L));
+		assertThat(response).isEqualTo(new MyRankingResponse("STOCK", RankingStatus.READY, 3, "alice", 5_000L));
 	}
 
 	// PR #234 리뷰 차단 반영: DB accounts.realized_pnl과 Redis ZSET score가 어긋난 경우(after-commit 반영 지연·
@@ -261,7 +264,174 @@ class RankingServiceTest {
 		MyRankingResponse response = rankingService.getMyRanking(10L, Market.STOCK);
 
 		// rank(3)를 계산한 근거인 50,000이 realizedPnl에도 그대로 나와야 한다 — DB의 120,000이 아니다.
-		assertThat(response).isEqualTo(new MyRankingResponse("STOCK", 3, "alice", 50_000L));
+		assertThat(response).isEqualTo(new MyRankingResponse("STOCK", RankingStatus.READY, 3, "alice", 50_000L));
+	}
+
+	// --- 유실 상태 노출(status, 이슈 #279) ---
+	// 두 엔드포인트의 판정 기준이 의도적으로 다르다: 목록은 전체 유실만, 내 랭킹은 부분 유실까지 감지한다.
+
+	// 목록 REBUILDING: ZSET이 비었는데 그 시장에 매도 이력 계좌가 존재한다 == 유실이다.
+	@Test
+	void getRankingsReportsRebuildingWhenZsetIsEmptyButSellHistoryExists() {
+		when(rankingStore.topN(Market.STOCK, 11)).thenReturn(List.of());
+		when(tradeService.hasAnySellHistory(Market.STOCK)).thenReturn(true);
+
+		RankingListResponse response = rankingService.getRankings(Market.STOCK, null);
+
+		assertThat(response.status()).isEqualTo(RankingStatus.REBUILDING);
+		assertThat(response.content()).isEmpty();
+		assertThat(response.market()).isEqualTo("STOCK");
+	}
+
+	// 목록 READY: ZSET이 비었고 매도 이력도 없다 == 정상적인 빈 랭킹이다(유실이 아니다).
+	@Test
+	void getRankingsReportsReadyWhenZsetIsEmptyAndNoSellHistoryExists() {
+		when(rankingStore.topN(Market.STOCK, 11)).thenReturn(List.of());
+		when(tradeService.hasAnySellHistory(Market.STOCK)).thenReturn(false);
+
+		RankingListResponse response = rankingService.getRankings(Market.STOCK, null);
+
+		assertThat(response.status()).isEqualTo(RankingStatus.READY);
+		assertThat(response.content()).isEmpty();
+	}
+
+	// 정상 경로 비용 0: ZSET에 데이터가 있으면 status 판정을 위한 DB 왕복이 아예 없어야 한다.
+	@Test
+	void getRankingsReportsReadyWithoutTouchingTradeServiceWhenZsetHasMembers() {
+		Account alice = account(1L, Market.STOCK, 100L, 1L, "alice");
+		when(rankingStore.topN(Market.STOCK, 11)).thenReturn(List.of(new RankingEntryDto(1L, 100L)));
+		when(accountService.getAccountsWithUser(List.of(1L))).thenReturn(List.of(alice));
+		when(rankingStore.countStrictlyGreater(Market.STOCK, 100L)).thenReturn(0L);
+
+		RankingListResponse response = rankingService.getRankings(Market.STOCK, null);
+
+		assertThat(response.status()).isEqualTo(RankingStatus.READY);
+		verify(tradeService, never()).hasAnySellHistory(any());
+	}
+
+	// 유령 필터링으로 content만 빈 경우는 READY를 유지한다 — ZSET 유실이 아니라 Redis/DB 불일치라는
+	// 다른 상황이고, REBUILDING으로 표시하면 상태값의 의미가 흐려진다(plan.md "상태(status) 판정").
+	@Test
+	void getRankingsKeepsReadyWhenContentIsEmptyOnlyBecauseOfGhostFiltering() {
+		when(rankingStore.topN(Market.STOCK, 11)).thenReturn(List.of(new RankingEntryDto(999L, 100L)));
+		when(accountService.getAccountsWithUser(List.of(999L))).thenReturn(List.of());
+
+		RankingListResponse response = rankingService.getRankings(Market.STOCK, null);
+
+		assertThat(response.content()).isEmpty();
+		assertThat(response.status()).isEqualTo(RankingStatus.READY);
+		verify(tradeService, never()).hasAnySellHistory(any());
+	}
+
+	// 내 랭킹 REBUILDING: 내 score가 ZSET에 없는데 내 계좌에 매도 이력이 있다 == 부분 유실이든 전체 유실이든
+	// 유실이다. 이 경우 rank는 여전히 null이지만 그 의미가 "매도 이력 없음"이 아니다.
+	@Test
+	void getMyRankingReportsRebuildingWhenScoreIsMissingButSellHistoryExists() {
+		Account account = account(1L, Market.STOCK, 5_000L, 10L, "alice");
+		when(accountService.getAccountForWithUser(10L, Market.STOCK)).thenReturn(account);
+		when(rankingStore.score(Market.STOCK, 1L)).thenReturn(null);
+		when(tradeService.hasSellHistory(1L)).thenReturn(true);
+
+		MyRankingResponse response = rankingService.getMyRanking(10L, Market.STOCK);
+
+		assertThat(response.status()).isEqualTo(RankingStatus.REBUILDING);
+		assertThat(response.rank()).isNull();
+		assertThat(response.nickname()).isEqualTo("alice");
+	}
+
+	// 내 랭킹 READY + rank null: score도 없고 매도 이력도 없다 == 정상적인 "매도 이력 없음"이다.
+	@Test
+	void getMyRankingReportsReadyWhenScoreIsMissingAndNoSellHistoryExists() {
+		Account account = account(1L, Market.STOCK, 0L, 10L, "alice");
+		when(accountService.getAccountForWithUser(10L, Market.STOCK)).thenReturn(account);
+		when(rankingStore.score(Market.STOCK, 1L)).thenReturn(null);
+		when(tradeService.hasSellHistory(1L)).thenReturn(false);
+
+		MyRankingResponse response = rankingService.getMyRanking(10L, Market.STOCK);
+
+		assertThat(response.status()).isEqualTo(RankingStatus.READY);
+		assertThat(response.rank()).isNull();
+	}
+
+	// score가 있으면 항상 READY이고, && 단축 평가 덕분에 매도 이력 조회 자체가 일어나지 않는다.
+	@Test
+	void getMyRankingReportsReadyWithoutTouchingTradeServiceWhenScoreExists() {
+		Account account = account(1L, Market.STOCK, 5_000L, 10L, "alice");
+		when(accountService.getAccountForWithUser(10L, Market.STOCK)).thenReturn(account);
+		when(rankingStore.score(Market.STOCK, 1L)).thenReturn(5_000L);
+		when(rankingStore.countStrictlyGreater(Market.STOCK, 5_000L)).thenReturn(2L);
+
+		MyRankingResponse response = rankingService.getMyRanking(10L, Market.STOCK);
+
+		assertThat(response.status()).isEqualTo(RankingStatus.READY);
+		verify(tradeService, never()).hasSellHistory(anyLong());
+	}
+
+	// 두 엔드포인트의 판정 비대칭을 **하나의 상태**에서 못박는다. 위 테스트들은 목록과 내 랭킹을 각각 다른
+	// 셋업으로 확인해서, "같은 순간의 같은 ZSET을 두 엔드포인트가 다르게 판정한다"는 설계 의도 자체는
+	// 어느 단정에도 걸려 있지 않았다 — 한쪽 판정 기준을 다른 쪽에 맞춰 통일해 버리는 회귀(예: 목록도
+	// 부분 유실을 감지하게 만들거나, 내 랭킹도 전체 유실만 보게 만드는 변경)가 통과한다.
+	//
+	// 상태: ZSET에는 남의 계좌(2L)만 남아 있고 내 계좌(1L)의 score는 유실됐으며 나에게는 매도 이력이 있다.
+	// 목록은 window가 비지 않았으므로 READY(부분 유실 미감지), 내 랭킹은 내 score가 없고 이력이 있으므로
+	// REBUILDING(부분 유실 감지)이어야 한다.
+	@Test
+	void listAndMyRankingJudgeTheSamePartialLossDifferently() {
+		Account other = account(2L, Market.STOCK, 100L, 20L, "bob");
+		Account mine = account(1L, Market.STOCK, 5_000L, 10L, "alice");
+		when(rankingStore.topN(Market.STOCK, 11)).thenReturn(List.of(new RankingEntryDto(2L, 100L)));
+		when(accountService.getAccountsWithUser(List.of(2L))).thenReturn(List.of(other));
+		when(rankingStore.countStrictlyGreater(Market.STOCK, 100L)).thenReturn(0L);
+		when(accountService.getAccountForWithUser(10L, Market.STOCK)).thenReturn(mine);
+		when(rankingStore.score(Market.STOCK, 1L)).thenReturn(null);
+		when(tradeService.hasSellHistory(1L)).thenReturn(true);
+
+		RankingListResponse list = rankingService.getRankings(Market.STOCK, null);
+		MyRankingResponse me = rankingService.getMyRanking(10L, Market.STOCK);
+
+		assertThat(list.status())
+			.as("목록은 부분 유실을 감지하지 않는다 — window가 비지 않았으면 READY다")
+			.isEqualTo(RankingStatus.READY);
+		assertThat(me.status())
+			.as("내 랭킹은 부분 유실까지 감지한다 — 내 score가 없고 내게 매도 이력이 있으면 REBUILDING이다")
+			.isEqualTo(RankingStatus.REBUILDING);
+	}
+
+	// api-contracts.md의 rank × status 표에 (숫자, REBUILDING) 행이 없는 근거를 코드 쪽에서 고정한다.
+	// score != null이면 rank가 채워지고 status는 항상 READY이므로 그 조합은 발생할 수 없다 — 매도 이력을
+	// "있음"으로 stub해 두고도 REBUILDING이 되지 않아야 한다(그 조회 자체가 일어나지 않는다).
+	@Test
+	void rankIsNeverAccompaniedByRebuildingStatus() {
+		Account account = account(1L, Market.STOCK, 5_000L, 10L, "alice");
+		when(accountService.getAccountForWithUser(10L, Market.STOCK)).thenReturn(account);
+		when(rankingStore.score(Market.STOCK, 1L)).thenReturn(5_000L);
+		when(rankingStore.countStrictlyGreater(Market.STOCK, 5_000L)).thenReturn(2L);
+		when(tradeService.hasSellHistory(1L)).thenReturn(true);
+
+		MyRankingResponse response = rankingService.getMyRanking(10L, Market.STOCK);
+
+		assertThat(response.rank()).isNotNull();
+		assertThat(response.status()).isEqualTo(RankingStatus.READY);
+	}
+
+	// REBUILDING 응답의 realizedPnl은 DB accounts.realized_pnl이 아니라 0이다(api-contracts.md의 REBUILDING
+	// 예시가 "realizedPnl":0인 근거). 여기 계좌는 DB 실현손익이 500,000인데도 응답은 0이어야 한다 —
+	// 순위 산정 근거인 ZSET score와 같은 출처만 노출한다는 RANK-002 원칙(PR #234 리뷰 차단)이 유실 상태에도
+	// 그대로 적용되기 때문이다. status가 REBUILDING이라 이 0은 "손익이 0"이 아니라 "아직 신뢰할 수 없음"으로
+	// 읽어야 한다는 것이 계약이다.
+	@Test
+	void rebuildingMyRankingReportsZeroRealizedPnlEvenWhenDbValueIsNotZero() {
+		Account account = account(1L, Market.STOCK, 500_000L, 10L, "alice");
+		when(accountService.getAccountForWithUser(10L, Market.STOCK)).thenReturn(account);
+		when(rankingStore.score(Market.STOCK, 1L)).thenReturn(null);
+		when(tradeService.hasSellHistory(1L)).thenReturn(true);
+
+		MyRankingResponse response = rankingService.getMyRanking(10L, Market.STOCK);
+
+		assertThat(response.status()).isEqualTo(RankingStatus.REBUILDING);
+		assertThat(response.realizedPnl())
+			.as("ZSET score가 없으면 DB 값을 대신 싣지 않는다 — rank와 다른 출처의 값을 섞지 않는 원칙")
+			.isZero();
 	}
 
 	private Market market() {

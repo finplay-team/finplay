@@ -4,6 +4,8 @@ package com.finplay.api.ranking.service;
 import com.finplay.api.account.domain.Account;
 import com.finplay.api.account.domain.Market;
 import com.finplay.api.account.service.AccountService;
+import com.finplay.api.order.service.TradeService;
+import com.finplay.api.ranking.domain.RankingStatus;
 import com.finplay.api.ranking.dto.RankingEntryDto;
 import com.finplay.api.ranking.dto.response.MyRankingResponse;
 import com.finplay.api.ranking.dto.response.RankingListItemResponse;
@@ -33,6 +35,12 @@ public class RankingService {
 
 	private final RankingStore rankingStore;
 	private final AccountService accountService;
+	// status 판정(이슈 #279)에만 쓰는 의존이다. order 도메인이 ranking 이벤트를 발행하는 방향
+	// (OrderExecutionService → RealizedPnlUpdatedEvent)과 반대라 순환 참조로 보일 수 있으나 타입 수준 순환이
+	// 아니다 — OrderExecutionService가 참조하는 것은 ApplicationEventPublisher와 account 도메인의 이벤트
+	// record뿐이고 ranking 패키지의 어떤 빈도 주입하지 않는다. 스프링 빈 그래프상으로도 RankingService →
+	// TradeService의 단방향이다(plan.md "레이어 배치"). TradeRepository를 직접 주입하지 않는 것도 같은 기준이다(ADR-0002).
+	private final TradeService tradeService;
 
 	// after-commit 이벤트 처리 시점에 DB에서 최신 realized_pnl을 다시 조회해 절댓값으로 ZADD한다.
 	// 이벤트 도착 순서가 뒤바뀌어도 최종 수렴한다(spec.md 동시성 경합 Decision Gate).
@@ -52,7 +60,14 @@ public class RankingService {
 		int limit = clampLimit(limitParam);
 		List<RankingEntryDto> window = fetchWindowResolvingBoundaryTies(market, limit);
 		if (window.isEmpty()) {
-			return new RankingListResponse(market.name(), List.of());
+			// window가 비었다 == ZSET에 멤버가 하나도 없다. topN은 limit+1(최소 2)개를 요청하므로 멤버가 하나라도
+			// 있으면 window는 비지 않는다 — 별도 ZCARD 왕복 없이 이 값으로 카디널리티 0을 판정할 수 있다.
+			// DB 조회(hasAnySellHistory)는 이 분기에서만 일어난다. 랭킹에 사람이 한 명이라도 있으면 status
+			// 판정을 위한 추가 왕복이 전혀 없다(정상 경로 비용 0, 이슈 #279).
+			RankingStatus status = tradeService.hasAnySellHistory(market)
+				? RankingStatus.REBUILDING
+				: RankingStatus.READY;
+			return new RankingListResponse(market.name(), status, List.of());
 		}
 
 		Map<Long, Account> accountById = accountService
@@ -60,8 +75,13 @@ public class RankingService {
 			.stream()
 			.collect(Collectors.toMap(Account::getId, account -> account));
 
+		// window가 비지 않은 경로는 항상 READY다. calculateRanks의 DB 부재 필터링(8-1절)으로 content가 0건이
+		// 될 수 있는데, 그건 ZSET 유실이 아니라 Redis/DB 불일치라는 다른 상황이라 REBUILDING으로 표시하면
+		// 상태값의 의미가 흐려진다 — READY + 빈 content로 둔다(plan.md "상태(status) 판정").
+		// 목록은 부분 유실(멤버 일부 누락)을 감지하지 않는다. 매 조회마다 전체 집계 비교가 필요하고, 대부분이
+		// 정확한 목록에 "준비 중" 경고를 띄우는 것이 과한 신호이기 때문이다(spec.md 비즈니스 규칙).
 		List<RankingListItemResponse> content = calculateRanks(window, market, accountById, limit);
-		return new RankingListResponse(market.name(), content);
+		return new RankingListResponse(market.name(), RankingStatus.READY, content);
 	}
 
 	// 인증 사용자 본인의 시장별 순위를 단건으로 계산한다(RANK-002). RANK-001의 topN 목록과 달리 상위 limit건
@@ -70,8 +90,12 @@ public class RankingService {
 	// 기준으로 계산해야 두 엔드포인트가 서로 다른 순위를 보여주는 불일치가 생기지 않기 때문이다(plan.md
 	// "RANK-002 설계" 참고). realizedPnl도 이 score를 그대로 노출한다(PR #234 리뷰 차단) — rank를 계산한 값과
 	// 다른 값(DB accounts.realized_pnl)을 응답에 함께 실으면, after-commit 반영 지연·재시도 소진 등으로 두 값이
-	// 어긋난 계좌에서 "이 손익, 이 순위"가 서로 대응하지 않는 응답이 나간다. score가 null(매도 이력 없음)이면
-	// DB realized_pnl도 항상 0이므로(이력 없는 계좌는 갱신된 적이 없다) 0을 그대로 써도 값이 갈리지 않는다.
+	// 어긋난 계좌에서 "이 손익, 이 순위"가 서로 대응하지 않는 응답이 나간다. score가 null이면 DB 값과 무관하게
+	// 0을 싣는다 — status가 READY면(매도 이력 자체가 없음) DB realized_pnl도 0이라 값이 갈리지 않지만,
+	// REBUILDING이면(매도 이력은 있는데 ZSET에서 유실됨) DB realized_pnl은 0이 아닐 수 있다. 그래도 DB 값을
+	// 대신 싣지 않는다: rank가 null인 응답에 손익만 실제 값을 채우면 "이 손익, 이 순위"의 대응이 다시 깨진다.
+	// REBUILDING일 때의 이 0은 "손익이 0"이 아니라 "아직 신뢰할 수 없음"을 뜻하며, 그 구별이 status의 존재
+	// 이유다(이슈 #279).
 	// 형제 메서드 getRankings와 동일한 패턴(PR #234 리뷰 권장 반영): 이 메서드 자체는 트랜잭션으로 감싸지 않는다
 	// — accountService.getAccountForWithUser가 User를 fetch join으로 미리 로딩해 자신의 트랜잭션 안에서 끝내므로,
 	// 이후 account.getUser().getNickname() 접근과 Redis 왕복 2회가 전부 트랜잭션 밖에서 일어나 DB 커넥션을
@@ -85,7 +109,15 @@ public class RankingService {
 			// 공식을 만들지 않는다.
 			: (int)(rankingStore.countStrictlyGreater(market, score) + 1);
 		long realizedPnl = score == null ? 0L : score;
-		return new MyRankingResponse(market.name(), rank, account.getUser().getNickname(), realizedPnl);
+		// 내 랭킹은 목록과 달리 부분 유실까지 잡는다(의도적 비대칭, 이슈 #279). 내 것 1건만 확인하는 인덱스
+		// 조회라 싸고, 틀릴 때 당사자는 "매도했는데 매도 이력이 없다"는 잘못된 안내를 100% 받게 된다.
+		// DB 조회는 score == null일 때만 일어난다(&& 단축 평가) — 랭킹에 들어 있는 사용자는 추가 왕복이 없다.
+		// score != null이면 항상 READY다. 내 점수가 있는데 다른 사람 점수가 유실됐는지까지는 판정하지 않는다
+		// (그 판정은 전체 비교와 같은 비용이다).
+		RankingStatus status = score == null && tradeService.hasSellHistory(account.getId())
+			? RankingStatus.REBUILDING
+			: RankingStatus.READY;
+		return new MyRankingResponse(market.name(), status, rank, account.getUser().getNickname(), realizedPnl);
 	}
 
 	// PR #196 리뷰 지적(차단 2): topN(limit)만 가져오면 "어떤 동점자가 window에 들어갈지"가 Redis 멤버 문자열의
