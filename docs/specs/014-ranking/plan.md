@@ -421,3 +421,317 @@ com.finplay.api.account                    # PR #234 리뷰 권장 반영 — �
 - **단위 (`AccountServiceTest`/`AccountRepositoryTest` 확장, PR #234 리뷰 권장 반영)**: `getAccountForWithUser`/`findByUserIdAndMarketFetchUser`가 `findByUserIdAndMarket`과 동일하게 계좌를 찾되 `User`까지 fetch join으로 채워 반환하는지, 미존재 시 각각 `NOT_FOUND`/빈 `Optional`을 반환하는지.
 - **슬라이스 (`@WebMvcTest RankingControllerTest` 확장)**: `market` 누락·미지원 리터럴 400, 인증 없이 요청 401, 매도 이력 없는 사용자 200(`rank: null` JSON 필드 계약), 매도 이력 있는 사용자 200(`rank`/`nickname`/`realizedPnl`/`market` 필드 계약).
 - **통합 (`RankingIntegrationTest` 확장, PR #234 리뷰 권장 반영)**: 최초 계획은 "RANK-001이 이미 검증한 ZSET 쓰기·이벤트 흐름을 그대로 재사용하므로 신규 통합 테스트 불필요"였다. 하지만 그 근거는 **쓰기 경로**만 커버하고, RANK-002가 RANK-001과 별개로 존재하는 이유인 "상위 `limit`(기본 10) 밖에서도 정확한 보정 순위를 반환한다"는 **읽기 경로**의 핵심 성질은 어떤 테스트로도 검증되지 않고 있었다(`RankingServiceTest`의 단위 테스트는 `countStrictlyGreater`를 stub해 `+1` 산술만 확인할 뿐, 실제 Redis ZSET에서 limit 밖 순위가 맞게 나오는지는 확인하지 못한다). 시나리오 5·6과 픽스처를 재사용해, 기본 limit(10)보다 많은 계좌를 커밋하고 그중 순위가 10위 밖인 계좌로 `GET /api/rankings/me`를 호출해 정확한 순위가 나오는지 확인하는 시나리오 7을 추가한다.
+
+## 랭킹 재구성 설계 (이슈 #279)
+
+### 관련 문서
+
+- Spec: `./spec.md` "랭킹 재구성 절차 (이슈 #279)"
+- 이슈: #279(`gh issue view 279`), 선행 이슈 #187(RANK-001)·#233(RANK-002)
+- PRD: `docs/prd.md` RANK-001 절("유실 시 MySQL 원장으로 재구성한다 — 세부 구현은 착수 시 확정")·§6 "Redis 키 책임"의 랭킹 항목
+- 관련 ADR
+  - **ADR-0002 (레이어드 아키텍처)** — `ranking` 도메인은 다른 도메인의 repository를 직접 주입하지 않는다. 매도 이력 조회는 `order` 도메인의 `TradeService`를 경유하고, 계좌 조회는 `account` 도메인의 `AccountService`를 경유한다. RANK-001이 `AccountRepository` 직접 주입을 리뷰에서 지적받아 `AccountService` 경유로 바꾼 것(위 9행)과 같은 기준이다.
+  - **ADR-0003 (테스트 전략)** — 단위 / `@DataJpaTest`·`@WebMvcTest` 슬라이스 / Testcontainers 통합. 세부는 아래 "테스트 계획".
+  - **ADR-0004 (Flyway)** — **해당 없음. 이번 작업은 스키마 변경이 전혀 없다.** 기존 `trades`(매도 이력)·`accounts`(`realized_pnl`)를 **읽기만** 한다. 신규 테이블·컬럼·인덱스·마이그레이션 파일이 없다. Redis ZSET은 파생 데이터라 Flyway 대상 개념 자체가 아니다(위 "데이터 모델" 절과 동일).
+- 코드 컨벤션: `docs/conventions.md`(Redis key는 전용 component 한 곳에서만 조립 — 임시 키도 `RankingStore` 안에서만 조립한다, 레이어 규칙, 새 파일 첫 줄 한국어 주석)
+- 선례 코드
+  - 기동 훅: `src/main/java/com/finplay/api/market/feed/BithumbFeedLifecycle.java`(`@EventListener(ApplicationReadyEvent.class)`)
+  - 크론 배치: `FeedbackBatchService`·`NewsCollectionService`·`CryptoPriceSnapshotService`(`@Scheduled(cron = "${...}", zone = "Asia/Seoul")` — 크론 문자열은 코드 상수가 아니라 `application.yml` 프로퍼티)
+
+### Decision Gate 확정 (사용자 확정, 다시 논의하지 않음)
+
+| 항목 | 확정 내용 |
+|---|---|
+| 기동 훅 | `@EventListener(ApplicationReadyEvent.class)` — `BithumbFeedLifecycle` 선례 |
+| 주기 배치 | `@Scheduled(cron = "${ranking.rebuild.cron}", zone = "Asia/Seoul")`, 값 `0 20 4 * * *`(매일 04:20 KST) |
+| 수동 엔드포인트 | 만들지 않는다(관리자 롤 개념 부재 — 범위 확대 회피) |
+| 대상 판정 | `trades.side = 'SELL'`인 해당 market 계좌의 `DISTINCT account_id`. score는 `accounts.realized_pnl` |
+| 배치 방식 | 항상 전체 재구성. 임시 키 `ranking:{market}:rebuild` 적재 후 `RENAME`으로 원자 교체 |
+| 분산 락 | 없음(멱등·단일 인스턴스 전제). **다중 인스턴스 전환 시 재검토** — 아래 별도 절 |
+| 상태 필드 | `status`(`READY`\|`REBUILDING`)를 `RankingListResponse`·`MyRankingResponse` 양쪽에 추가 |
+| 스키마 변경 | 없음(ADR-0004 해당 없음) |
+
+**크론 시각 선정 근거**: 기존 배치 크론과 겹치지 않는 시간대를 골랐다. 현재 `application.yml`의 크론은 `0 45 8 * * MON-FRI`(피드백 배치), `0 5 * * * *`(매시 05분), `0 32 15 * * MON-FRI`(장 마감 집계), `30 * * * * *`(매 분 30초), `0 5 0 * * *`(매일 00:05), `0 0/30 * * * *`(뉴스 30분 간격), `0 * * * * *`(코인 스냅샷 매 분)이다. 04:20은 이 중 어느 것과도 같은 분에 걸리지 않는다(매시 05분·매 분 계열과도 초·분이 다르다). 새벽 시간대라 조회 트래픽이 가장 적어 `RENAME` 교체 순간의 영향도 최소다. **`zone = "Asia/Seoul"`을 반드시 붙인다** — 배포 JVM 기본 타임존이 UTC라 빠뜨리면 예외도 로그도 없이 KST 13:20에 돈다(`application.yml` 주석이 반복 경고하는 실수).
+
+### 다중 인스턴스 전환 시 재검토 (명시적 기록)
+
+**지금은 분산 락을 두지 않는다.** 재구성은 멱등하고(같은 원장 → 같은 결과, 임시 키 교체라 중간 상태를 남기지 않는다) 현재 단일 인스턴스 전제이기 때문이다. 두 인스턴스가 동시에 재구성해도 마지막 `RENAME`이 이기고 두 결과가 같으므로 데이터가 깨지지 않는다.
+
+**다중 인스턴스로 전환하면 다음 두 가지를 재검토한다.**
+
+1. **임시 키 충돌** — 두 인스턴스가 같은 `ranking:{market}:rebuild` 키에 동시에 `ZADD`하면 서로의 중간 결과가 섞인다. 결과 자체는 같은 원장에서 나오므로 값이 어긋나지는 않지만, 한쪽이 `RENAME`한 뒤 다른 쪽이 남은 `ZADD`를 계속하면 새로 만들어진 임시 키가 다음 재구성까지 남는다. 인스턴스별 임시 키 suffix나 분산 락(`SET NX`)이 필요해진다.
+2. **중복 부하** — 인스턴스 수만큼 같은 DB 전량 조회가 동시에 발생한다. 계좌 수가 커지면 새벽 04:20에 불필요한 N배 부하가 된다.
+
+이 재검토 메모는 커밋 `43e9aaa`(Hikari 풀 20 근거에 "다중 인스턴스 전환 시 재검토"를 남긴 선례)와 같은 형식이다 — 지금 과설계하지 않되, 전제가 바뀌는 시점을 문서로 남겨 다음 사람이 놓치지 않게 한다.
+
+### 신규·변경 클래스 목록
+
+```
+com.finplay.api.ranking
+├── domain/RankingStatus.java                  # (신규) enum { READY, REBUILDING } — 응답 계약 값
+├── service/RankingRebuildService.java         # (신규) 재구성 오케스트레이션 + 기동 훅 + @Scheduled
+├── service/RankingService.java                # (변경) getRankings·getMyRanking에 status 판정 추가
+├── store/RankingStore.java                    # (변경) replaceAll(market, entries) 추가 — 임시 키 적재 + RENAME
+└── dto/response/
+    ├── RankingListResponse.java               # (변경) status 필드 추가
+    └── MyRankingResponse.java                 # (변경) status 필드 추가
+
+com.finplay.api.order
+├── repository/TradeRepository.java            # (변경) 매도 이력 조회 3종 추가
+└── service/TradeService.java                  # (변경) ranking 도메인이 경유할 위임 메서드 3종 추가
+
+com.finplay.api.account
+└── service/AccountService.java                # (변경) getAccountsByIds(accountIds) 추가
+
+src/main/resources/application.yml             # (변경) ranking.rebuild.cron 프로퍼티 추가
+```
+
+`RankingController`는 **변경하지 않는다** — 응답 DTO만 바뀌고 매핑·파라미터는 그대로다. 그래서 `docs/api-routes.md`의 Method·URL·요약 행도 그대로이고, 갱신 대상은 `docs/api-contracts.md`뿐이다(CLAUDE.md 규칙 7의 취지는 "controller와 문서를 같은 커밋에서 맞춘다"이므로, 계약이 바뀌는 이번에는 contracts가 그 대상이다).
+
+### 레이어 배치 (ADR-0002)
+
+```
+RankingRebuildService (ranking/service)
+  ├─→ TradeService.getSoldAccountIds(market)      # order 도메인 — service 경유 (TradeRepository 직접 주입 금지)
+  ├─→ AccountService.getAccountsByIds(ids)        # account 도메인 — service 경유
+  └─→ RankingStore.replaceAll(market, entries)    # ranking 자체 Redis 창구
+
+RankingService (ranking/service)
+  ├─→ RankingStore.topN / score / countStrictlyGreater   # 기존
+  ├─→ AccountService.getAccountsWithUser / getAccountForWithUser  # 기존
+  └─→ TradeService.hasAnySellHistory / hasSellHistory     # 신규 — status 판정용
+```
+
+`ranking` 도메인은 `TradeRepository`·`AccountRepository`를 **직접 주입하지 않는다.** `RankingService`에 `TradeService` 의존이 새로 생기는데, `order` 도메인이 이미 `ranking` 이벤트를 발행하는 방향(`OrderExecutionService` → `RealizedPnlUpdatedEvent`)과 반대 방향이라 순환 참조로 보일 수 있다. 실제로는 **타입 수준 순환이 아니다** — `OrderExecutionService`가 참조하는 것은 `ApplicationEventPublisher`와 `account` 도메인의 이벤트 record뿐이고 `ranking` 패키지의 어떤 빈도 주입하지 않는다. 스프링 빈 그래프상으로도 `RankingService → TradeService`의 단방향이다. 구현 시 이 점을 주석으로 남긴다.
+
+### `TradeRepository` 신규 쿼리 (order 도메인)
+
+```java
+// 재구성 대상 조회 — 해당 시장 계좌 중 매도 체결 이력이 있는 계좌 id (RANK 재구성, 이슈 #279)
+@Query("SELECT DISTINCT t.account.id FROM Trade t WHERE t.side = :side AND t.account.market = :market")
+List<Long> findDistinctAccountIdsBySideAndMarket(@Param("side") OrderSide side, @Param("market") Market market);
+
+// 내 랭킹 status 판정 — 이 계좌에 매도 이력이 있는가 (단건, 인덱스 조회)
+boolean existsByAccountIdAndSide(Long accountId, OrderSide side);
+
+// 랭킹 목록 status 판정 — 이 시장에 매도 이력 계좌가 하나라도 있는가
+boolean existsBySideAndAccountMarket(OrderSide side, Market market);
+```
+
+- 뒤 둘은 Spring Data 파생 쿼리로 충분하다(`account.market` 중첩 프로퍼티 탐색). 첫 번째만 `DISTINCT`가 필요해 `@Query`로 쓴다.
+- **`realized_pnl != 0`을 조건으로 쓰지 않는다.** spec.md 비즈니스 규칙 참고 — 매도했지만 손익이 정확히 0인 계좌가 누락되면 재구성 결과가 유실 전과 달라진다.
+
+### `TradeService` 위임 메서드 시그니처 (order 도메인)
+
+```java
+// 재구성 대상 계좌 id — ranking 도메인이 TradeRepository를 직접 주입하지 않도록 하는 위임 메서드(ADR-0002)
+@Transactional(readOnly = true)
+public List<Long> getSoldAccountIds(Market market) {
+    return tradeRepository.findDistinctAccountIdsBySideAndMarket(OrderSide.SELL, market);
+}
+
+// 이 계좌에 매도 체결 이력이 있는가 — GET /api/rankings/me의 status 판정용
+@Transactional(readOnly = true)
+public boolean hasSellHistory(Long accountId) {
+    return tradeRepository.existsByAccountIdAndSide(accountId, OrderSide.SELL);
+}
+
+// 이 시장에 매도 체결 이력이 있는 계좌가 하나라도 있는가 — GET /api/rankings의 status 판정용
+@Transactional(readOnly = true)
+public boolean hasAnySellHistory(Market market) {
+    return tradeRepository.existsBySideAndAccountMarket(OrderSide.SELL, market);
+}
+```
+
+`OrderSide.SELL` 리터럴이 `ranking` 도메인으로 새지 않고 `order` 도메인 안에 머문다 — 이것도 service 경유의 이득이다.
+
+### `AccountService` 위임 메서드 시그니처 (account 도메인)
+
+```java
+// 재구성 시 accountId 목록의 realized_pnl을 배치 조회한다. 랭킹 목록의 getAccountsWithUser와 달리
+// User를 fetch join하지 않는다 — 재구성은 닉네임을 쓰지 않고 (id, realizedPnl)만 필요하다.
+@Transactional(readOnly = true)
+public List<Account> getAccountsByIds(List<Long> accountIds) {
+    return accountRepository.findAllById(accountIds);
+}
+```
+
+`AccountRepository`에는 **신규 메서드가 없다** — `JpaRepository.findAllById`를 그대로 쓴다.
+
+### `RankingStore.replaceAll` — 임시 키 RENAME 절차
+
+```java
+// (RankingStore 기존 파일에 추가) 임시 키에 전량 적재한 뒤 RENAME으로 원자 교체한다.
+// 재구성 중 조회가 빈 값·부분 값을 보지 않게 하는 것이 목적이다(spec.md 이슈 #279).
+// key 문자열 조립은 이 클래스에서만 한다는 원칙(conventions.md)에 따라 임시 키도 여기서 조립한다.
+private static final String REBUILD_KEY_SUFFIX = ":rebuild";
+private static final int REBUILD_CHUNK_SIZE = 500;
+
+public void replaceAll(Market market, List<RankingEntryDto> entries) { ... }
+private String rebuildKey(Market market) { return key(market) + REBUILD_KEY_SUFFIX; }
+```
+
+절차는 다음 순서다.
+
+1. `DEL ranking:{market}:rebuild` — 이전 실행이 중간에 죽어 남긴 잔재를 먼저 지운다. 이 단계를 빼면 지난 잔재와 이번 결과가 합쳐진 ZSET이 만들어진다.
+2. `entries`를 `REBUILD_CHUNK_SIZE`(500)개씩 나눠 `ZADD ranking:{market}:rebuild`(Spring Data `opsForZSet().add(key, Set<TypedTuple>)` 배치 오버로드)로 적재한다. 청크로 나누는 이유는 계좌 수가 커졌을 때 한 번의 파이프라인 payload와 애플리케이션 힙 점유가 함께 커지는 것을 막기 위해서다. 임시 키에 **누적**하는 방식이라 청크 분할이 결과에 영향을 주지 않는다.
+3. `RENAME ranking:{market}:rebuild ranking:{market}` — Redis `RENAME`은 대상 키가 이미 있으면 덮어쓰며 원자적이다. 조회는 교체 전 상태 아니면 교체 후 상태만 본다.
+
+**경계: `entries`가 비었을 때(대상 0건).** 2단계에서 `ZADD`가 한 번도 실행되지 않으면 임시 키가 만들어지지 않고, 존재하지 않는 키에 대한 `RENAME`은 Redis에서 `ERR no such key` 오류다. 그래서 **`entries.isEmpty()`면 `RENAME`을 시도하지 않고 `DEL ranking:{market}`으로 본 키를 삭제하고 끝낸다.** 이것이 의미상으로도 정확하다 — 그 시장에 매도 이력 계좌가 하나도 없으면 랭킹은 비어 있는 것이 맞고, 유실 전 상태와도 일치한다. 빈 상태를 "아무것도 하지 않음"으로 처리하면(본 키를 그대로 두면) 원장에서 사라진 계좌가 ZSET에 영원히 남는다.
+
+**실패 처리.** `replaceAll` 전체를 try/catch로 감싸 어떤 예외도 밖으로 던지지 않고 `log.error`만 남긴다. 실패 시 임시 키 정리(`DEL`)를 한 번 시도하되 그 정리 자체가 실패해도 무시한다(다음 실행의 1단계가 어차피 지운다). 근거: 이 메서드의 호출자는 기동 훅과 스케줄러다 — 여기서 예외가 새면 **기동이 실패**하거나 스케줄러 스레드가 죽는다. `addScoreWithRetry`가 매도 체결을 지키기 위해 예외를 삼키는 것과 같은 방침이며, 재구성은 어차피 다음 기동·다음 배치에 다시 돈다.
+
+**재시도는 하지 않는다.** `addScoreWithRetry`의 backoff 재시도는 "이 한 번을 놓치면 다음 기회가 없다"(이벤트 유실)는 성격 때문이었다. 재구성은 매일 다시 돌고 기동 때마다 다시 도는 멱등 작업이라 즉시 재시도의 값어치가 낮다. 대신 실패를 `log.error`로 명확히 남긴다.
+
+### `RankingRebuildService` (신규, `ranking/service`)
+
+```java
+// 매도 이력 원장(trades)과 계좌 실현손익(accounts)에서 랭킹 ZSET을 통째로 재구성하는 서비스 (이슈 #279)
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class RankingRebuildService {
+
+    private final TradeService tradeService;
+    private final AccountService accountService;
+    private final RankingStore rankingStore;
+
+    // 기동 완료 시점 1회 재구성 — BithumbFeedLifecycle과 동일한 훅.
+    @EventListener(ApplicationReadyEvent.class)
+    public void rebuildOnStartup() { rebuildAll(); }
+
+    // 매일 04:20(KST) 정기 재구성. 크론은 application.yml의 ranking.rebuild.cron이 정본이다.
+    @Scheduled(cron = "${ranking.rebuild.cron}", zone = "Asia/Seoul")
+    public void rebuildOnSchedule() { rebuildAll(); }
+
+    // 두 시장을 각각 재구성한다. 한 시장이 실패해도 다른 시장은 계속 시도한다.
+    public void rebuildAll() { for (Market market : Market.values()) { rebuild(market); } }
+
+    public void rebuild(Market market) {
+        List<Long> accountIds = tradeService.getSoldAccountIds(market);          // 1) 매도 이력 계좌
+        List<RankingEntryDto> entries = accountService.getAccountsByIds(accountIds).stream()
+            .map(a -> new RankingEntryDto(a.getId(), a.getRealizedPnl()))        // 2) score = realized_pnl
+            .toList();
+        rankingStore.replaceAll(market, entries);                                // 3) 임시 키 적재 + RENAME
+        log.info("랭킹 재구성 완료. market={}, 대상 계좌 수={}", market, entries.size());
+    }
+}
+```
+
+- **`@Scheduled`를 서비스에 직접 붙인다.** 이 저장소의 배치 관례다(`FeedbackBatchService`·`PeerStatsBatchService`·`CryptoPriceSnapshotService` 전부 서비스에 직접 붙어 있다). 기동 훅만 별도 `*Lifecycle` 컴포넌트로 빼는 선례(`BithumbFeedLifecycle`)도 있으나, 트리거 2종이 완전히 같은 일(`rebuildAll()`)을 하므로 한 클래스에 두는 편이 "이 재구성은 언제 도는가"를 한 곳에서 읽게 한다.
+- **이 서비스에 `@Transactional`을 붙이지 않는다.** DB 조회는 `TradeService`·`AccountService`가 각자 자기 트랜잭션 안에서 끝내고, 그 사이의 Redis 왕복 동안 DB 커넥션을 쥐지 않는다. `RankingService.getMyRanking`이 같은 이유로 트랜잭션을 걷어낸 것(위 "RANK-002 설계")과 같은 판단이다. 또 `@Scheduled` 메서드에 `@Transactional`을 함께 붙일 때 생기는 프록시·self-invocation 혼선도 피한다.
+- **원장을 쓰지 않는다.** 이 흐름의 모든 DB 접근은 `readOnly = true` 조회다. 완료 조건 "재구성 전후로 원장이 변경되지 않는다"가 설계로 보장된다.
+- **한 시장의 실패가 다른 시장을 막지 않는다.** `replaceAll`이 예외를 삼키므로 `rebuildAll`의 루프는 자연히 계속 돈다. `getSoldAccountIds`/`getAccountsByIds`가 던지는 예외(DB 장애)까지 막으려면 `rebuild(market)` 호출부를 try/catch로 감싸야 한다 — `rebuildAll`의 루프 안에서 감싼다.
+
+### `application.yml` 프로퍼티
+
+```yaml
+# 랭킹 ZSET 재구성 배치(RankingRebuildService, spec 014 이슈 #279). Redis 유실 복구와 정기 교정을 겸한다.
+# 기존 크론(08:45·15:32·매시 05분·매 분 계열·00:05·30분 간격)과 겹치지 않는 새벽 시간대로 골랐다.
+# 선언부에 zone = "Asia/Seoul"을 반드시 함께 붙인다 — 배포 JVM 기본이 UTC라 빠뜨리면 KST 13:20에 돈다.
+ranking:
+  rebuild:
+    cron: "0 20 4 * * *" # 매일 04:20 KST
+```
+
+`feedback`·`market` 블록처럼 `@ConfigurationProperties` record를 함께 두지는 않는다 — 값이 크론 하나뿐이고 `@Scheduled`는 record가 아니라 `Environment`에서 읽으므로 record를 만들면 "두 곳에 같은 값" 관리 부담만 늘어난다(`FeedbackBatchProperties` 주석이 지적하는 바로 그 이중화).
+
+`@EnableScheduling`은 `FinPlayApiApplication`에 **이미 붙어 있다**(SSE heartbeat용) — 추가 설정이 필요 없다.
+
+### 상태(`status`) 판정 — 로직 위치와 규칙
+
+**위치는 `RankingService`다**(controller 아님, store 아님). 판정이 "Redis 상태 + 원장 상태를 함께 보고 비즈니스 의미를 정하는 일"이라 service 책임이고, `RankingStore`는 순수 Redis 연산 컴포넌트로 유지해야 하기 때문이다(RANK-001이 `RankingStore`에서 DB를 걷어낸 것과 같은 기준, 위 141행).
+
+```java
+// (신규) com.finplay.api.ranking.domain.RankingStatus
+public enum RankingStatus {
+    READY,       // ZSET이 원장을 반영하고 있다(빈 랭킹이면 실제로 매도 이력이 없는 것이다)
+    REBUILDING   // ZSET이 유실된 상태다 — 재구성 전이며 지금 값은 신뢰할 수 없다
+}
+```
+
+**`GET /api/rankings`(목록) 판정.**
+
+```java
+// getRankings 안: window(topN 결과)가 비었다 == ZSET에 멤버가 하나도 없다.
+// topN은 limit+1(최소 2)개를 요청하므로 멤버가 하나라도 있으면 window는 비지 않는다 —
+// 별도의 ZCARD 왕복 없이 이 값으로 카디널리티 0을 판정할 수 있다.
+if (window.isEmpty()) {
+    RankingStatus status = tradeService.hasAnySellHistory(market)
+        ? RankingStatus.REBUILDING : RankingStatus.READY;
+    return new RankingListResponse(market.name(), status, List.of());
+}
+// 그 외 경로는 항상 READY
+```
+
+- **정상 경로의 추가 비용이 0이다.** DB 조회(`hasAnySellHistory`)는 ZSET이 비었을 때만 일어난다. 랭킹에 사람이 한 명이라도 있으면 이 판정을 위한 왕복이 전혀 없다.
+- **유령 필터링으로 `content`가 비는 경우는 `READY`다.** `window`는 비지 않았는데 `calculateRanks`의 DB 부재 필터링(8-1절)으로 결과가 0건이 될 수 있다. 이건 ZSET 유실이 아니라 Redis/DB 불일치라는 다른 상황이고, `REBUILDING`으로 표시하면 상태값의 의미가 흐려진다. 그대로 `READY` + 빈 `content`로 둔다.
+- **부분 유실은 감지하지 않는다.** 근거는 spec.md 비즈니스 규칙. 매일 배치가 교정한다.
+
+**`GET /api/rankings/me`(내 랭킹) 판정.**
+
+```java
+// getMyRanking 안: score가 null == 이 계좌가 ZSET에 없다.
+// 매도 이력이 있는데 ZSET에 없으면 전체 유실이든 부분 유실이든 유실이다.
+RankingStatus status = (score == null && tradeService.hasSellHistory(account.getId()))
+    ? RankingStatus.REBUILDING : RankingStatus.READY;
+```
+
+- **부분 유실까지 잡는다.** 목록과 판정 기준이 다른 의도적 비대칭이며 근거는 spec.md 비즈니스 규칙("확인 비용이 싸고, 틀릴 때 당사자가 100% 잘못된 안내를 받는다").
+- DB 조회는 `score == null`일 때만 일어난다(`&&` 단축 평가). 랭킹에 들어 있는 사용자는 추가 왕복이 없다.
+- `score != null`이면 항상 `READY`다 — 내 점수가 있는데 다른 사람 점수가 유실됐는지까지는 판정하지 않는다(그 판정은 전체 비교와 같은 비용이다).
+
+### 응답 DTO 변경 (하위 호환)
+
+```java
+// (변경) 기존 필드는 그대로, status만 추가한다 — 필드 추가라 기존 클라이언트가 깨지지 않는다.
+public record RankingListResponse(String market, RankingStatus status, List<RankingListItemResponse> content) {
+    public RankingListResponse { content = List.copyOf(content); }
+}
+
+public record MyRankingResponse(String market, RankingStatus status, Integer rank, String nickname, long realizedPnl) {
+}
+```
+
+- `RankingListItemResponse`(항목)는 **바꾸지 않는다.** `status`는 응답 전체의 성질이지 항목별 성질이 아니다(`market`을 wrapper에만 두는 RANK-001 원칙과 같다).
+- `MyRankingResponse`는 단건 응답이라 wrapper 개념이 없으므로 필드로 직접 포함한다(RANK-002가 `market`을 그렇게 둔 것과 같은 이유).
+- enum은 Jackson 기본 직렬화로 `"READY"`/`"REBUILDING"` 문자열이 된다 — 별도 `@JsonValue`·컨버터가 필요 없다.
+
+### 문서 동기화 (CLAUDE.md 규칙 7·10)
+
+- **`docs/api-contracts.md`** — 랭킹 절의 `GET /api/rankings`·`GET /api/rankings/me` 응답 예시와 필드 표에 `status`를 추가한다. `rank: null` + `status: READY`(매도 이력 없음)와 `rank: null` + `status: REBUILDING`(집계 준비 중)이 서로 다른 의미라는 점을 명시한다. **응답 DTO가 실제로 바뀌는 커밋과 같은 커밋에서 갱신한다.**
+- **`docs/api-routes.md`** — Method·URL·요약이 바뀌지 않으므로 변경 없음이 정상이다. 확인만 하고 불필요하게 손대지 않는다.
+- **`docs/prd.md`** — §3 구현 현황 표는 **갱신 대상이 아니다**(RANK-001·RANK-002 행 판정이 "완료"에서 바뀌지 않는다, 근거는 spec.md "요구사항 ID를 새로 부여하지 않는 이유"). 대신 본문 2곳을 갱신한다.
+  - RANK-001 절(현재 827행 부근): "재구성 트리거·절차의 세부 구현은 착수 시 확정한다"·"이 경우의 보상·정합성 재확인(재구성 배치 등)은 여전히 Decision Gate다" → 확정 내용(기동 훅 + 매일 04:20 배치, 전체 재구성, 임시 키 RENAME 교체)으로 갱신.
+  - §6 "Redis 키 책임"(현재 1048행 부근): "유실 시 MySQL 원장으로 재구성한다" → 재구성 트리거·대상 판정 기준(매도 이력)·교체 방식과 `status` 노출을 덧붙인다.
+
+### 테스트 계획 (ADR-0003)
+
+- **단위 (`RankingStoreTest` 확장, Redis mock)**
+  - `replaceAll`이 (1) 임시 키를 먼저 `DEL`하고 (2) `ZADD`로 적재한 뒤 (3) `RENAME`을 호출하는 **순서**를 `InOrder`로 검증한다. 순서가 뒤바뀌면 재구성이 깨지므로 순서 자체가 계약이다.
+  - `entries`가 비면 `RENAME`을 호출하지 않고 본 키를 `DEL`하는지(경계).
+  - `entries`가 `REBUILD_CHUNK_SIZE`를 넘으면 `ZADD` 배치가 청크 수만큼 호출되고 `RENAME`은 마지막에 1회만 호출되는지.
+  - Redis mock이 예외를 던져도 `replaceAll`이 예외를 밖으로 전파하지 않는지(기동 실패 방지의 핵심 — 빠지면 안 된다).
+- **단위 (`RankingRebuildServiceTest` 신규, `TradeService`/`AccountService`/`RankingStore` mock)**
+  - `rebuild(market)`이 `getSoldAccountIds` → `getAccountsByIds` → `replaceAll` 순으로 위임하고, `replaceAll`에 넘어가는 entries의 score가 `accounts.realized_pnl` 값인지(`ArgumentCaptor`).
+  - **매도 이력이 있고 `realized_pnl`이 정확히 0인 계좌가 entries에 포함되는지** — `realized_pnl != 0` 기준을 쓰지 않았음을 고정하는 회귀 테스트. spec.md 비즈니스 규칙의 핵심이라 반드시 넣는다.
+  - 대상이 0건이면 빈 리스트로 `replaceAll`이 호출되는지(스킵하지 않는지).
+  - `rebuildAll`이 `Market.values()` 전부를 시도하고, 한 시장에서 예외가 나도 나머지 시장을 계속 시도하는지.
+  - `rebuildOnStartup`·`rebuildOnSchedule`이 같은 `rebuildAll` 경로를 타는지.
+- **단위 (`RankingServiceTest` 확장, `TradeService` mock 추가)**
+  - `getRankings`: ZSET 비었음 + 매도 이력 있음 → `REBUILDING`, ZSET 비었음 + 매도 이력 없음 → `READY`, ZSET에 데이터 있음 → `READY`이면서 `hasAnySellHistory`가 **호출되지 않는지**(정상 경로 비용 0 검증).
+  - `getMyRanking`: score null + 매도 이력 있음 → `REBUILDING`(+`rank: null`), score null + 매도 이력 없음 → `READY` + `rank: null`, score 있음 → `READY`이면서 `hasSellHistory` 미호출.
+- **슬라이스 (`@DataJpaTest`, `TradeRepositoryTest` 확장)**
+  - `findDistinctAccountIdsBySideAndMarket`이 매도 이력 계좌만, 요청한 market으로만 한정해, 같은 계좌의 매도가 여러 건이어도 중복 없이 반환하는지. 매수만 있는 계좌가 빠지는지.
+  - `existsByAccountIdAndSide`·`existsBySideAndAccountMarket`의 true/false 경계.
+- **슬라이스 (`@WebMvcTest RankingControllerTest` 확장)**
+  - 두 엔드포인트 응답 JSON에 `status` 필드가 `"READY"`/`"REBUILDING"` 문자열로 나가는지, 기존 필드(`market`·`content`·`rank`·`nickname`·`realizedPnl`)가 그대로 있는지(하위 호환 계약).
+  - 유실 상태에서도 **200**인지(오류로 바뀌지 않았다는 계약).
+- **통합 (`RankingRebuildIntegrationTest` 신규, Testcontainers MySQL+Redis — 기존 `TestcontainersConfiguration` 재사용, `@ServiceConnection` 사용 금지)**
+  - 매도 체결로 랭킹이 만들어진 상태에서 `ranking:{market}`을 직접 `DEL`한 뒤 `rebuildAll()`을 호출하면, `GET /api/rankings`가 **유실 전과 동일한 순위·금액**을 반환하는지(이슈 #279 완료 조건 1·2의 직접 검증).
+  - 재구성 후 각 `realizedPnl`이 `accounts.realized_pnl`과 일치하는지.
+  - 매도 이력이 있고 `realized_pnl = 0`인 계좌가 재구성 후 랭킹에 **포함**되는지(실데이터 회귀).
+  - 매도 이력이 없는 계좌가 재구성 후에도 랭킹에 나타나지 않는지.
+  - 대상이 0건인 시장에서 `rebuild(market)`이 예외 없이 끝나고 랭킹이 빈 상태가 되는지(`RENAME` 경계의 실 Redis 검증 — mock으로는 `ERR no such key`가 재현되지 않으므로 이 시나리오는 통합 테스트에서만 의미가 있다).
+  - ZSET을 비운 직후(재구성 전) `GET /api/rankings`가 200 + `status: REBUILDING`, `GET /api/rankings/me`가 200 + `rank: null` + `status: REBUILDING`을 반환하는지.
+  - 재구성 전후로 `orders`·`trades`·`accounts`·보유·잔액 행이 변하지 않는지(완료 조건 "원장 불변"의 직접 검증 — 재구성 전후 스냅샷 비교).
