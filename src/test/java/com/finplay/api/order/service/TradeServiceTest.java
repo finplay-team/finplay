@@ -174,6 +174,40 @@ class TradeServiceTest {
 				.isEqualTo(ErrorCode.FORBIDDEN));
 	}
 
+	// 아래 3개는 랭킹 재구성·status 판정이 쓰는 위임(이슈 #279)이다. 위임 자체는 얇지만 이 테스트가 지키는 건
+	// 위임 코드가 아니라 **인자로 넘기는 OrderSide.SELL**이다 — 여기가 BUY로 바뀌거나 realized_pnl 기반 조회로
+	// 갈아타면 랭킹 대상 집합이 통째로 달라지는데, repository 슬라이스 테스트는 자기 인자를 스스로 넘기므로
+	// 그 회귀를 잡지 못한다. ArgumentCaptor 대신 eq()로 stub해 "SELL로 부르지 않으면 기본값이 반환된다"로 드러낸다.
+	@Test
+	void getSoldAccountIdsQueriesSellSideOnlyForRequestedMarket() {
+		when(tradeRepository.findDistinctAccountIdsBySideAndMarket(OrderSide.SELL, Market.CRYPTO))
+			.thenReturn(List.of(11L, 12L));
+
+		assertThat(tradeService.getSoldAccountIds(Market.CRYPTO)).containsExactly(11L, 12L);
+		verify(tradeRepository).findDistinctAccountIdsBySideAndMarket(OrderSide.SELL, Market.CRYPTO);
+		verify(tradeRepository, never()).findDistinctAccountIdsBySideAndMarket(OrderSide.BUY, Market.CRYPTO);
+	}
+
+	@Test
+	void hasSellHistoryAsksRepositoryWithSellSideAndReturnsBothOutcomes() {
+		when(tradeRepository.existsByAccountIdAndSide(10L, OrderSide.SELL)).thenReturn(true);
+		when(tradeRepository.existsByAccountIdAndSide(20L, OrderSide.SELL)).thenReturn(false);
+
+		assertThat(tradeService.hasSellHistory(10L)).isTrue();
+		assertThat(tradeService.hasSellHistory(20L)).isFalse();
+		verify(tradeRepository, never()).existsByAccountIdAndSide(any(), eq(OrderSide.BUY));
+	}
+
+	@Test
+	void hasAnySellHistoryAsksRepositoryWithSellSideAndReturnsBothOutcomes() {
+		when(tradeRepository.existsBySideAndAccountMarket(OrderSide.SELL, Market.STOCK)).thenReturn(true);
+		when(tradeRepository.existsBySideAndAccountMarket(OrderSide.SELL, Market.CRYPTO)).thenReturn(false);
+
+		assertThat(tradeService.hasAnySellHistory(Market.STOCK)).isTrue();
+		assertThat(tradeService.hasAnySellHistory(Market.CRYPTO)).isFalse();
+		verify(tradeRepository, never()).existsBySideAndAccountMarket(eq(OrderSide.BUY), any());
+	}
+
 	// getOwnedTrade 전용 — 소유자(user.id)를 직접 지정해 본인/타인 판정을 검증하기 위한 체결을 만든다.
 	private static Trade tradeOwnedBy(Long tradeId, Long ownerUserId, LocalDateTime executedAt) {
 		User owner = testUser();

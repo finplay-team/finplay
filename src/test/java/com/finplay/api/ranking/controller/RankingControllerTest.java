@@ -14,6 +14,7 @@ import com.finplay.api.account.domain.Market;
 import com.finplay.api.auth.config.SecurityConfig;
 import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.auth.token.JwtTokenProvider;
+import com.finplay.api.ranking.domain.RankingStatus;
 import com.finplay.api.ranking.dto.response.MyRankingResponse;
 import com.finplay.api.ranking.dto.response.RankingListItemResponse;
 import com.finplay.api.ranking.dto.response.RankingListResponse;
@@ -54,6 +55,7 @@ class RankingControllerTest {
 		stubAuthenticatedUser();
 		RankingListResponse response = new RankingListResponse(
 			"STOCK",
+			RankingStatus.READY,
 			List.of(
 				new RankingListItemResponse(1, "투자왕", 500_000L),
 				new RankingListItemResponse(1, "차트요정", 500_000L),
@@ -65,6 +67,7 @@ class RankingControllerTest {
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.market").value("STOCK"))
+			.andExpect(jsonPath("$.status").value("READY"))
 			.andExpect(jsonPath("$.content[0].rank").value(1))
 			.andExpect(jsonPath("$.content[0].nickname").value("투자왕"))
 			.andExpect(jsonPath("$.content[0].realizedPnl").value(500000))
@@ -74,27 +77,93 @@ class RankingControllerTest {
 		verify(rankingService).getRankings(Market.STOCK, null);
 	}
 
+	// 이슈 #279의 직렬화 계약을 따로 못박는다. 위 테스트의 jsonPath(...).value("READY")는 값만 보므로,
+	// 두 가지가 확인되지 않은 채 남는다.
+	//
+	// 1) enum이 **문자열로** 나가는지. RankingStatus에 @JsonValue가 붙거나 전역 Jackson 설정이
+	//    WRITE_ENUMS_USING_INDEX로 바뀌면 응답이 0/1이 되어 클라이언트 파싱이 통째로 깨지는데,
+	//    그건 자바 타입 시그니처에는 드러나지 않는다. isString()으로 타입 자체를 고정한다.
+	// 2) status가 **wrapper에만** 있고 항목에는 없는지. api-contracts.md가 "항목은 rank·nickname·realizedPnl
+	//    3개 필드로 고정"이라고 못박은 부분이라, 항목에 status가 새로 새어 나오면 계약 위반이다.
+	//
+	// 기존 필드가 이름·타입 그대로인지도 여기서 함께 본다(하위 호환 — 필드 추가만 있었다는 확인).
+	@Test
+	void getRankingsSerializesStatusAsStringOnTheWrapperOnly() throws Exception {
+		stubAuthenticatedUser();
+		when(rankingService.getRankings(Market.STOCK, null)).thenReturn(new RankingListResponse(
+			"STOCK", RankingStatus.READY, List.of(new RankingListItemResponse(1, "투자왕", 500_000L))));
+
+		mockMvc.perform(get("/api/rankings")
+			.param("market", "STOCK")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.status").isString())
+			.andExpect(jsonPath("$.market").isString())
+			.andExpect(jsonPath("$.content").isArray())
+			// 항목에는 status가 없어야 한다 — 응답 전체의 성질이라 wrapper에만 둔다는 계약이다.
+			.andExpect(jsonPath("$.content[0].status").doesNotExist())
+			.andExpect(jsonPath("$.content[0].rank").isNumber())
+			.andExpect(jsonPath("$.content[0].nickname").isString())
+			.andExpect(jsonPath("$.content[0].realizedPnl").isNumber());
+	}
+
+	// 내 랭킹도 같은 직렬화 계약을 따른다. rank는 null일 때 필드가 사라지는(doesNotExist) 기존 동작이
+	// status 추가 이후에도 그대로인지 함께 확인한다 — 하위 호환의 실체다.
+	@Test
+	void getMyRankingSerializesStatusAsStringAndKeepsLegacyFieldTypes() throws Exception {
+		stubAuthenticatedUser();
+		when(rankingService.getMyRanking(USER_ID, Market.CRYPTO))
+			.thenReturn(new MyRankingResponse("CRYPTO", RankingStatus.READY, 3, "존버맨", 120_000L));
+
+		mockMvc.perform(get("/api/rankings/me")
+			.param("market", "CRYPTO")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.status").isString())
+			.andExpect(jsonPath("$.market").isString())
+			.andExpect(jsonPath("$.rank").isNumber())
+			.andExpect(jsonPath("$.nickname").isString())
+			.andExpect(jsonPath("$.realizedPnl").isNumber());
+	}
+
 	@Test
 	void getRankingsReturnsOkWithEmptyContentWhenMarketIsCrypto() throws Exception {
 		stubAuthenticatedUser();
 		when(rankingService.getRankings(Market.CRYPTO, null))
-			.thenReturn(new RankingListResponse("CRYPTO", List.of()));
+			.thenReturn(new RankingListResponse("CRYPTO", RankingStatus.READY, List.of()));
 
 		mockMvc.perform(get("/api/rankings")
 			.param("market", "CRYPTO")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.market").value("CRYPTO"))
+			.andExpect(jsonPath("$.status").value("READY"))
 			.andExpect(jsonPath("$.content").isEmpty());
 
 		verify(rankingService).getRankings(Market.CRYPTO, null);
+	}
+
+	// 이슈 #279: 유실 상태여도 오류가 아니라 200 + status로 알린다. 기존 필드(market·content)도 그대로다.
+	@Test
+	void getRankingsReturnsOkWithRebuildingStatusWhenAggregationIsLost() throws Exception {
+		stubAuthenticatedUser();
+		when(rankingService.getRankings(Market.STOCK, null))
+			.thenReturn(new RankingListResponse("STOCK", RankingStatus.REBUILDING, List.of()));
+
+		mockMvc.perform(get("/api/rankings")
+			.param("market", "STOCK")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.market").value("STOCK"))
+			.andExpect(jsonPath("$.status").value("REBUILDING"))
+			.andExpect(jsonPath("$.content").isEmpty());
 	}
 
 	@Test
 	void getRankingsPassesLimitToServiceWhenProvided() throws Exception {
 		stubAuthenticatedUser();
 		when(rankingService.getRankings(eq(Market.STOCK), eq(20)))
-			.thenReturn(new RankingListResponse("STOCK", List.of()));
+			.thenReturn(new RankingListResponse("STOCK", RankingStatus.READY, List.of()));
 
 		mockMvc.perform(get("/api/rankings")
 			.param("market", "STOCK")
@@ -109,7 +178,7 @@ class RankingControllerTest {
 	void getRankingsPassesNullLimitToServiceWhenOmitted() throws Exception {
 		stubAuthenticatedUser();
 		when(rankingService.getRankings(eq(Market.STOCK), isNull()))
-			.thenReturn(new RankingListResponse("STOCK", List.of()));
+			.thenReturn(new RankingListResponse("STOCK", RankingStatus.READY, List.of()));
 
 		mockMvc.perform(get("/api/rankings")
 			.param("market", "STOCK")
@@ -124,7 +193,7 @@ class RankingControllerTest {
 	void getRankingsReturnsOkAndPassesZeroLimitToServiceWithoutRejecting() throws Exception {
 		stubAuthenticatedUser();
 		when(rankingService.getRankings(eq(Market.STOCK), eq(0)))
-			.thenReturn(new RankingListResponse("STOCK", List.of()));
+			.thenReturn(new RankingListResponse("STOCK", RankingStatus.READY, List.of()));
 
 		mockMvc.perform(get("/api/rankings")
 			.param("market", "STOCK")
@@ -140,7 +209,7 @@ class RankingControllerTest {
 	void getRankingsReturnsOkAndPassesNegativeLimitToServiceWithoutRejecting() throws Exception {
 		stubAuthenticatedUser();
 		when(rankingService.getRankings(eq(Market.STOCK), eq(-1)))
-			.thenReturn(new RankingListResponse("STOCK", List.of()));
+			.thenReturn(new RankingListResponse("STOCK", RankingStatus.READY, List.of()));
 
 		mockMvc.perform(get("/api/rankings")
 			.param("market", "STOCK")
@@ -156,7 +225,7 @@ class RankingControllerTest {
 	void getRankingsReturnsOkAndPassesLimitAboveMaximumToServiceWithoutRejecting() throws Exception {
 		stubAuthenticatedUser();
 		when(rankingService.getRankings(eq(Market.STOCK), eq(51)))
-			.thenReturn(new RankingListResponse("STOCK", List.of()));
+			.thenReturn(new RankingListResponse("STOCK", RankingStatus.READY, List.of()));
 
 		mockMvc.perform(get("/api/rankings")
 			.param("market", "STOCK")
@@ -210,13 +279,14 @@ class RankingControllerTest {
 	void getMyRankingReturnsOkWithNullRankWhenNoSellHistory() throws Exception {
 		stubAuthenticatedUser();
 		when(rankingService.getMyRanking(USER_ID, Market.STOCK))
-			.thenReturn(new MyRankingResponse("STOCK", null, "투자왕", 0L));
+			.thenReturn(new MyRankingResponse("STOCK", RankingStatus.READY, null, "투자왕", 0L));
 
 		mockMvc.perform(get("/api/rankings/me")
 			.param("market", "STOCK")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.market").value("STOCK"))
+			.andExpect(jsonPath("$.status").value("READY"))
 			.andExpect(jsonPath("$.rank").doesNotExist())
 			.andExpect(jsonPath("$.nickname").value("투자왕"))
 			.andExpect(jsonPath("$.realizedPnl").value(0));
@@ -224,18 +294,37 @@ class RankingControllerTest {
 		verify(rankingService).getMyRanking(USER_ID, Market.STOCK);
 	}
 
+	// 이슈 #279: rank가 null인 같은 형태의 응답이라도 status가 REBUILDING이면 "매도 이력 없음"이 아니라
+	// "집계 준비 중"이다. 이 구별이 클라이언트가 판별 가능해야 하는 지점이다(위 READY 케이스와 짝).
+	@Test
+	void getMyRankingReturnsOkWithRebuildingStatusWhenAggregationIsLost() throws Exception {
+		stubAuthenticatedUser();
+		when(rankingService.getMyRanking(USER_ID, Market.STOCK))
+			.thenReturn(new MyRankingResponse("STOCK", RankingStatus.REBUILDING, null, "투자왕", 0L));
+
+		mockMvc.perform(get("/api/rankings/me")
+			.param("market", "STOCK")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.market").value("STOCK"))
+			.andExpect(jsonPath("$.status").value("REBUILDING"))
+			.andExpect(jsonPath("$.rank").doesNotExist())
+			.andExpect(jsonPath("$.nickname").value("투자왕"));
+	}
+
 	// RANK-002: 매도 이력이 있으면 rank·nickname·realizedPnl·market 필드 계약을 정상 값으로 검증한다.
 	@Test
 	void getMyRankingReturnsOkWithEveryResponseFieldWhenSellHistoryExists() throws Exception {
 		stubAuthenticatedUser();
 		when(rankingService.getMyRanking(USER_ID, Market.CRYPTO))
-			.thenReturn(new MyRankingResponse("CRYPTO", 3, "존버맨", 120_000L));
+			.thenReturn(new MyRankingResponse("CRYPTO", RankingStatus.READY, 3, "존버맨", 120_000L));
 
 		mockMvc.perform(get("/api/rankings/me")
 			.param("market", "CRYPTO")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.market").value("CRYPTO"))
+			.andExpect(jsonPath("$.status").value("READY"))
 			.andExpect(jsonPath("$.rank").value(3))
 			.andExpect(jsonPath("$.nickname").value("존버맨"))
 			.andExpect(jsonPath("$.realizedPnl").value(120000));
