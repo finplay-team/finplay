@@ -199,15 +199,23 @@ jobs:
             --json-schema '{"type":"object","properties":{"blocking_count":{"type":"integer"},"recommended_count":{"type":"integer"},"reference_count":{"type":"integer"},"report":{"type":"string"}},"required":["blocking_count","recommended_count","reference_count","report"]}'
 
       - name: 리뷰 결과를 PR에 게시
-        # 리뷰 에이전트가 스키마 도구를 호출하지 않고 끝나면 structured_output이 빈 문자열이 되고
-        # fromJSON('')이 표현식 평가 자체를 실패시켜 스텝이 죽는다 — 빈 값이면 건너뛴다 (PR #232 리뷰).
-        if: success() && steps.pr.outputs.number != '' && steps.review.outputs.structured_output != ''
+        # env는 if: 가드와 무관하게(그리고 먼저) 평가된다 — fromJSON(...)을 env에 두면
+        # structured_output이 빈 문자열일 때 표현식 평가 자체가 실패해 if: 가드가 걸러주기도 전에
+        # 스텝이 죽는다 (2026-08-09 실행 https://github.com/finplay-team/finplay/actions/runs/31333724172/job/93295980910 에서 실측, ADR-0016).
+        # env에는 원문 문자열만 넘기고, 빈 값 체크와 JSON 파싱은 run: 스크립트 안에서 한다.
+        if: success() && steps.pr.outputs.number != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # report는 LLM이 diff 내용을 보고 생성한 텍스트라 신뢰할 수 없다.
           # ${{ }}로 run: 스크립트에 직접 이어붙이면 GitHub Actions 스크립트 인젝션이 된다 — env로만 전달한다.
-          REVIEW_REPORT: ${{ fromJSON(steps.review.outputs.structured_output).report }}
+          STRUCTURED_OUTPUT: ${{ steps.review.outputs.structured_output }}
         run: |
+          # 리뷰 에이전트가 스키마 도구를 호출하지 않고 끝나면 STRUCTURED_OUTPUT이 빈 문자열이 된다 — 건너뛴다 (PR #232 리뷰).
+          if [ -z "$STRUCTURED_OUTPUT" ]; then
+            echo "structured_output이 비어 있어 PR 코멘트를 건너뜁니다."
+            exit 0
+          fi
+          REVIEW_REPORT=$(printf '%s' "$STRUCTURED_OUTPUT" | jq -r '.report')
           printf '%s\n' "$REVIEW_REPORT" > /tmp/review-body.md
           gh pr comment "${{ steps.pr.outputs.number }}" --body-file /tmp/review-body.md
 
