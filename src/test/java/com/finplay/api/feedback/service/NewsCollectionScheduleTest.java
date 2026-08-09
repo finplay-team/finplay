@@ -132,22 +132,34 @@ class NewsCollectionScheduleTest {
 	}
 
 	// ①의 뒷면 — "재생 시점이 아니라 기사 당일에 수집한다"는 재생 경로가 수집을 부르지 않아야 성립한다.
-	// 수집 진입점은 @Scheduled 2종뿐이고 다른 어떤 코드도 이 서비스를 부르지 않는다는 것을 소스에서 직접 본다.
+	// 수집 진입점은 @Scheduled 2종뿐이고, 그 외에 이 서비스를 부르는 코드는 재생 경로가 아니어야 한다는 것을
+	// 소스에서 직접 본다.
 	//
 	// 주석은 검사 대상에서 뺀다(이슈 #180). 파일 전체를 문자열로 훑으면 "수집은 이 배치가 하지 않는다"처럼
 	// 그 클래스를 언급하는 설명 주석만으로 실패해 문서화를 막는데, 지키려는 것은 코드가 이 서비스를 부르지
 	// 않는다는 것이므로 주석은 애초에 대상이 아니다. 문자열 리터럴은 그대로 둔다 — 코드가 아니지만 남겨 두는
 	// 쪽이 안전한 방향이고(거짓 양성은 눈에 띄고 거짓 음성은 안 띈다), 리터럴 안의 //로 뒤 코드가 잘려
 	// 실제 호출을 놓치는 일도 없어야 하기 때문이다.
+	//
+	// 예외: CryptoPriceMoveWatcher.java(ADR-0016)는 의도적으로 허용한다. 이 테스트가 막으려는 것은
+	// "수집이 재생 시점에 일어나는 것"이지 "@Scheduled 2종 외 호출 전부"가 아니다 — 지금까지는 그 둘이
+	// 우연히 같았을 뿐이다. 코인 감시는 재생 세션 시간축이 없고 `LocalDateTime.now(clock)`으로 실제 현재
+	// 시각을 쓰는 실시간 배치(`feedback.batch.crypto-watch-cron`, 매 분)라 재생 시점 수집 문제가 애초에
+	// 생기지 않는다. 다음에 또 다른 파일이 이 스캔에 걸리면, "재생 경로가 아니고 실시간 시각을 쓰는가"를
+	// 기준으로 예외 추가 여부를 판단한다 — 두 조건 중 하나라도 아니면 예외로 추가하지 말고 실제 위반으로
+	// 다뤄야 한다.
 	@Test
 	@DisplayName("수집 서비스를 부르는 코드가 스케줄 진입점 외에 없다 — 재생 경로가 수집을 부르지 않는다")
 	void noOtherSourceFileTriggersCollection() throws IOException {
 		Path serviceFile = Path.of(
 			"src/main/java/com/finplay/api/feedback/service/NewsCollectionService.java");
+		Path cryptoWatcherFile = Path.of(
+			"src/main/java/com/finplay/api/feedback/service/CryptoPriceMoveWatcher.java");
 		try (Stream<Path> sources = Files.walk(Path.of("src/main/java"))) {
 			List<Path> callers = sources
 				.filter(path -> path.toString().endsWith(".java"))
 				.filter(path -> !path.equals(serviceFile))
+				.filter(path -> !path.equals(cryptoWatcherFile))
 				.filter(path -> stripComments(readString(path)).contains("NewsCollectionService"))
 				.toList();
 
