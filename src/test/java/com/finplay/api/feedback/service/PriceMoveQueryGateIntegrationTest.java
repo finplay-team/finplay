@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.finplay.api.TestcontainersConfiguration;
 import com.finplay.api.common.TestClock;
 import com.finplay.api.common.TestClockConfig;
+import com.finplay.api.feedback.domain.FeedbackContentStatus;
 import com.finplay.api.feedback.domain.MarketNewsItem;
 import com.finplay.api.feedback.domain.MarketNewsItemType;
 import com.finplay.api.feedback.domain.NarrativeSource;
@@ -286,7 +287,7 @@ class PriceMoveQueryGateIntegrationTest {
 	// --- API 계약 ② 빈 응답 세 갈래 ---
 
 	@Test
-	@DisplayName("카드가 0건이면 originTradeDate는 있고 moves는 빈 배열이다")
+	@DisplayName("카드가 0건이면 originTradeDate는 있고 moves는 빈 배열이며 status는 EMPTY다")
 	void returnsOriginTradeDateWithEmptyMovesWhenThereIsNoCard() {
 		saveReadySession(SECOND_REPLAY_DATE);
 
@@ -294,6 +295,9 @@ class PriceMoveQueryGateIntegrationTest {
 
 		assertThat(response.originTradeDate()).isEqualTo(ORIGIN_TRADE_DATE);
 		assertThat(response.moves()).isEmpty();
+		// 세션이 READY면 카드가 0건이어도 NOT_YET이 아니다 — 이 단정이 없으면 "주식 READY 경로가 EMPTY를
+		// 내는 팩터리를 탄다"가 컨트롤러 테스트의 stub에서만 간접 고정된다 (PR #283 리뷰).
+		assertThat(response.status()).isEqualTo(FeedbackContentStatus.EMPTY);
 	}
 
 	// 세션 행 없음 / PREPARING / FAILED 셋 다 같은 답이다 — 어떤 거래일을 재생 중인지 자체가 확정되지 않았다.
@@ -304,14 +308,14 @@ class PriceMoveQueryGateIntegrationTest {
 
 		// ① 행 자체가 없다
 		assertThat(priceMoveQueryService.getPriceMoves(instrument.getId()))
-			.isEqualTo(PriceMoveListResponse.empty());
+			.isEqualTo(PriceMoveListResponse.notYet());
 
 		// ② PREPARING
 		stockReplaySessionRepository.save(StockReplaySession.preparing(
 			SECOND_REPLAY_DATE, ORIGIN_TRADE_DATE,
 			LocalDateTime.of(SECOND_REPLAY_DATE, LocalTime.of(8, 0))));
 		assertThat(priceMoveQueryService.getPriceMoves(instrument.getId()))
-			.isEqualTo(PriceMoveListResponse.empty());
+			.isEqualTo(PriceMoveListResponse.notYet());
 
 		// ③ FAILED — 다른 서비스 날짜로 심고 시계를 그 날짜로 옮긴다(service_date가 유니크다).
 		stockReplaySessionRepository.save(StockReplaySession.failed(
@@ -320,7 +324,7 @@ class PriceMoveQueryGateIntegrationTest {
 			LocalDateTime.of(FIRST_REPLAY_DATE, LocalTime.of(8, 0))));
 		mutableClock.set(LocalDateTime.of(FIRST_REPLAY_DATE, LocalTime.of(15, 0)));
 		assertThat(priceMoveQueryService.getPriceMoves(instrument.getId()))
-			.isEqualTo(PriceMoveListResponse.empty());
+			.isEqualTo(PriceMoveListResponse.notYet());
 	}
 
 	// 코인은 재생 시간축이 없어 originTradeDate가 항상 null이다 — 예외가 아니라 빈 목록이다(plan.md 8번 소유).
@@ -334,7 +338,33 @@ class PriceMoveQueryGateIntegrationTest {
 			.orElseThrow();
 
 		assertThat(priceMoveQueryService.getPriceMoves(crypto.getId()))
-			.isEqualTo(PriceMoveListResponse.empty());
+			.isEqualTo(PriceMoveListResponse.of(null, List.of()));
+	}
+
+	// Issue #280 — 이 파일이 두 상황을 실 DB 위에서 나란히 만들 수 있는 유일한 자리다. 위 두 테스트가 각각
+	// notYet()·of(null, [])와 같은지만 보므로, 둘이 서로 다르다는 사실은 여기서 직접 못 박는다. status를 빼면
+	// 두 응답이 다시 같아지면서 이 테스트만 깨진다.
+	@Test
+	@DisplayName("주식 재생세션 미준비(NOT_YET)와 코인 카드 0건(EMPTY)이 응답만으로 구별된다")
+	void distinguishesNotReadyStockFromCryptoByStatusAlone() {
+		Instrument crypto = instrumentService.getInstrumentEntities(Market.CRYPTO).stream()
+			.filter(each -> CRYPTO_SYMBOL.equals(each.getSymbol()))
+			.findFirst()
+			.orElseThrow();
+
+		// 재생세션 행이 없는 상태 — 주식은 미준비, 코인은 애초에 재생세션과 무관하다.
+		PriceMoveListResponse stockResponse = priceMoveQueryService.getPriceMoves(instrument.getId());
+		PriceMoveListResponse cryptoResponse = priceMoveQueryService.getPriceMoves(crypto.getId());
+
+		// 이 두 줄이 이슈에 실린 실측이다 — status가 없던 시절 두 응답을 같게 만들던 필드들.
+		assertThat(stockResponse.originTradeDate()).isNull();
+		assertThat(cryptoResponse.originTradeDate()).isNull();
+		assertThat(stockResponse.moves()).isEmpty();
+		assertThat(cryptoResponse.moves()).isEmpty();
+
+		assertThat(stockResponse.status()).isEqualTo(FeedbackContentStatus.NOT_YET);
+		assertThat(cryptoResponse.status()).isEqualTo(FeedbackContentStatus.EMPTY);
+		assertThat(stockResponse).isNotEqualTo(cryptoResponse);
 	}
 
 	// --- 8개 이슈 공통 조건: 원장 불변 (코인 분기, tasks.md 5번 항목) ---

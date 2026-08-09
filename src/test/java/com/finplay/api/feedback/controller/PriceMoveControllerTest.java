@@ -1,10 +1,13 @@
 // 변동 원인 카드 조회 API의 인증·직렬화·오류 매핑 계약을 검증하는 WebMvc 슬라이스 테스트다.
 package com.finplay.api.feedback.controller;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -94,23 +97,57 @@ class PriceMoveControllerTest {
 		mockMvc.perform(authorized(get(PATH, INSTRUMENT_ID)))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.originTradeDate").value("2026-07-29"))
+			.andExpect(jsonPath("$.status").value("EMPTY"))
 			.andExpect(jsonPath("$.moves").isArray())
 			.andExpect(jsonPath("$.moves.length()").value(0));
 	}
 
 	// 재생세션 미준비·코인은 어떤 거래일을 재생 중인지 자체가 없어 originTradeDate가 null이다.
+	//
+	// 이 DTO에는 @JsonInclude(NON_NULL)이 없고 전역 inclusion 설정도 없다(그 애노테이션은 SSE DTO 3개에만
+	// 클래스 단위로 붙어 있다) — 그래서 키가 남는다. doesNotExist()는 JsonPath가 null을 부재와 같게 다뤄
+	// 어느 쪽이든 통과하므로, "키가 남는다"를 고정하려면 그 단정으로는 부족하다 (PR #283 리뷰).
 	@Test
-	@DisplayName("originTradeDate가 없으면 null로 직렬화되고 200이다 — 필드가 사라지지 않는다")
+	@DisplayName("originTradeDate가 없으면 키는 남고 값만 null로 직렬화되며 200이다")
 	void returnsOkWithNullOriginTradeDateWhenSessionIsNotReady() throws Exception {
 		authenticate();
 		when(priceMoveQueryService.getPriceMoves(INSTRUMENT_ID))
-			.thenReturn(PriceMoveListResponse.empty());
+			.thenReturn(PriceMoveListResponse.notYet());
 
 		mockMvc.perform(authorized(get(PATH, INSTRUMENT_ID)))
 			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.originTradeDate").doesNotExist())
+			.andExpect(content().string(containsString("\"originTradeDate\":null")))
+			.andExpect(jsonPath("$.status").value("NOT_YET"))
 			.andExpect(jsonPath("$.moves").isArray())
 			.andExpect(jsonPath("$.moves.length()").value(0));
+	}
+
+	// Issue #280 — status가 빠지면 두 응답이 {"originTradeDate":null,"moves":[]}로 값까지 같아진다. 그 회귀를
+	// 필드 단정이 아니라 직렬화 결과 문자열로 못 박는다 — 필드 단정만 두면 status를 지웠을 때 그 단정만
+	// 지우면 통과하는 테스트가 된다.
+	@Test
+	@DisplayName("재생세션 미준비(주식)와 카드 0건(코인)의 JSON이 status로 갈린다")
+	void distinguishesNotYetFromEmptyInSerializedJson() throws Exception {
+		authenticate();
+		when(priceMoveQueryService.getPriceMoves(INSTRUMENT_ID))
+			.thenReturn(PriceMoveListResponse.notYet());
+		when(priceMoveQueryService.getPriceMoves(CRYPTO_INSTRUMENT_ID))
+			.thenReturn(PriceMoveListResponse.of(null, List.of()));
+
+		String notYetJson = mockMvc.perform(authorized(get(PATH, INSTRUMENT_ID)))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		String emptyJson = mockMvc.perform(authorized(get(PATH, CRYPTO_INSTRUMENT_ID)))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(notYetJson).isNotEqualTo(emptyJson);
+		assertThat(notYetJson).contains("\"status\":\"NOT_YET\"");
+		assertThat(emptyJson).contains("\"status\":\"EMPTY\"");
 	}
 
 	// --- FEED-006 코인 분기 — 실제 조회 결과 형태(§C-2 ROLLING_24H)가 계약대로 직렬화되는지 ---
@@ -118,8 +155,8 @@ class PriceMoveControllerTest {
 	private static final long CRYPTO_INSTRUMENT_ID = 2L;
 
 	// 코인은 실시간이라 원본 거래일 개념이 없다 — PriceMoveQueryService의 실제 코인 분기가 카드 0건일 때
-	// 돌려주는 형태가 PriceMoveListResponse.of(null, List.of())다(재생세션 미준비의 .empty()와 값은 같지만
-	// 만들어지는 경로가 다르다).
+	// 돌려주는 형태가 PriceMoveListResponse.of(null, List.of())다. 재생세션 미준비의 notYet()과는 이제 status가
+	// 다르며(EMPTY vs NOT_YET), 그 차이를 위 distinguishesNotYetFromEmptyInSerializedJson이 못 박는다.
 	@Test
 	@DisplayName("코인 instrumentId로 호출해 카드가 0건이면 originTradeDate=null·moves=[]이고 200이다")
 	void returnsNullOriginTradeDateAndEmptyMovesForCryptoInstrumentWithNoCards() throws Exception {
@@ -129,7 +166,9 @@ class PriceMoveControllerTest {
 
 		mockMvc.perform(authorized(get(PATH, CRYPTO_INSTRUMENT_ID)))
 			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.originTradeDate").doesNotExist())
+			.andExpect(content().string(containsString("\"originTradeDate\":null")))
+			// 코인의 null은 "아직"이 아니라 개념 부재라 NOT_YET이 아니다 (Issue #280).
+			.andExpect(jsonPath("$.status").value("EMPTY"))
 			.andExpect(jsonPath("$.moves").isArray())
 			.andExpect(jsonPath("$.moves.length()").value(0));
 
@@ -159,7 +198,7 @@ class PriceMoveControllerTest {
 
 		mockMvc.perform(authorized(get(PATH, CRYPTO_INSTRUMENT_ID)))
 			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.originTradeDate").doesNotExist())
+			.andExpect(content().string(containsString("\"originTradeDate\":null")))
 			.andExpect(jsonPath("$.moves.length()").value(1))
 			.andExpect(jsonPath("$.moves[0].windowStart").value("2026-08-05T14:25:00"))
 			.andExpect(jsonPath("$.moves[0].windowEnd").value("2026-08-05T14:30:00"))
@@ -177,6 +216,7 @@ class PriceMoveControllerTest {
 
 		mockMvc.perform(authorized(get(PATH, INSTRUMENT_ID)))
 			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.status").value("READY"))
 			.andExpect(jsonPath("$.moves.length()").value(1))
 			.andExpect(jsonPath("$.moves[0].id").value(12))
 			.andExpect(jsonPath("$.moves[0].eventType").value("INTRADAY"))

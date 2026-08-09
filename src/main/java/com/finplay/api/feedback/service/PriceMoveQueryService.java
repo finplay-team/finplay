@@ -25,7 +25,8 @@ import org.springframework.transaction.annotation.Transactional;
  * 계약은 {@code docs/api-contracts.md}의 "종목 변동 원인 카드 조회" 행이고 노출 게이트는 spec §C-5다.
  *
  * <p><b>빈 응답이 오류가 아니다</b>(FEED-006·§실패 처리). 카드 0건도, 재생세션 미준비도 200이다 — 후자는
- * {@code originTradeDate}까지 {@code null}이다.
+ * {@code originTradeDate}까지 {@code null}이다. 둘은 {@code status}로 갈린다({@code EMPTY} vs
+ * {@code NOT_YET}, Issue #280) — 코인은 재생세션 개념이 없어 {@code NOT_YET}이 나오지 않는다.
  *
  * <p><b>쓰지 않는다.</b> 카드·요약은 전 회원이 공유하는 배치 산출물이라 조회가 만들지 않는다
  * ({@code docs/conventions.md} — GET은 부수효과 없음). 원장 불변이 조회 경로에서 취하는 형태다.
@@ -51,7 +52,7 @@ public class PriceMoveQueryService {
 	 *
 	 * @param instrumentId 없는 종목이면 {@code InstrumentService}가 404({@code NOT_FOUND})로 거절한다
 	 * @return 노출 시각이 지난 카드만 담은 목록. 재생세션이 {@code READY}가 아니면
-	 *     {@code originTradeDate=null}·빈 배열이며 <b>오류가 아니다</b>
+	 *     {@code originTradeDate=null}·빈 배열·{@code status=NOT_YET}이며 <b>오류가 아니다</b>
 	 */
 	@Transactional(readOnly = true)
 	public PriceMoveListResponse getPriceMoves(Long instrumentId) {
@@ -63,7 +64,7 @@ public class PriceMoveQueryService {
 
 		StockReplaySessionDto session = stockReplayService.getCurrentReplaySession();
 		if (!session.ready()) {
-			return PriceMoveListResponse.empty();
+			return PriceMoveListResponse.notYet();
 		}
 
 		// 게이트 (§C-5) — reveal_time이 TIME이라 오늘 벽시계 시각과 비교하는 것이 곧 "서비스 날짜 + reveal_time".
@@ -88,7 +89,7 @@ public class PriceMoveQueryService {
 	 * {@code reveal_time}을 보지 않는다.
 	 *
 	 * @return {@code originTradeDate}는 <b>항상 {@code null}</b>이다(§C-2) — 코인은 실시간이라 원본 거래일
-	 *     개념이 없다
+	 *     개념이 없다. 그래서 카드가 0건이면 "아직"이 아니라 {@code EMPTY}다 (Issue #280)
 	 */
 	private PriceMoveListResponse getCryptoPriceMoves(Instrument instrument) {
 		LocalDateTime now = LocalDateTime.now(clock);

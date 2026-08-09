@@ -282,3 +282,18 @@
 ### 하지 않은 것
 - 공시(DART) 수집 — 이슈 제외 범위. `news-real`을 켜도 로컬 공시는 Fake 그대로다
 - 주식 뉴스 경로·`price_move_events` 판정 — 이슈 제외 범위
+
+## Issue #280 — price-moves 응답에 시장 판별 근거 추가 (2026-08-09)
+
+- [x] A·B 중 선택 — **B안(`status` enum)**. 근거는 context-notes 같은 날짜 항목
+- [x] `PriceMoveListResponse`에 `status` 추가 (`FeedbackContentStatus` 재사용, 3값)
+- [x] `empty()` → `notYet()` 개명, `of()`가 카드 유무로 `status` 도출
+- [x] `docs/api-contracts.md` — 응답 예시 2건 + `status` 표·제약 서술
+- [x] `docs/api-routes.md` 63행, `docs/specs/012-ai-feedback/spec.md` §C-4 표·사유 서술
+- [x] 회귀 고정 3건 — 통합(실 DB에서 NOT_YET ≠ EMPTY), WebMvc(JSON 문자열 비교), 단위(코인은 NOT_YET 아님)
+- [x] `./gradlew build` 통과
+
+### 하지 않은 것
+- `docs/prd.md` §3 구현 현황 갱신 — 193·197행이 이미 **완료**이고 제공 기능이 그대로다 (CLAUDE.md 규칙 10 "갱신 비대상")
+- A안(`market` 필드) 병행 — 이슈가 "둘 중 하나로 충분"이라 계약을 넓히지 않았다
+- `news`·`briefing`·`post-sell` 상태값 체계 — 이슈 제외 범위
