@@ -1,6 +1,6 @@
 # ADR-0013: 이슈 트리거 GitHub Actions 에이전트 하네스를 도입한다
 
-- 상태: 승인됨
+- 상태: 일부 대체됨 — "조건부 승인" 절은 [ADR-0016](0016-review-gate-auto-fix-round.md)이 대체(자동 수정 라운드 도입에 따라 승인 판정 대상이 최종 라운드 결과로 바뀜, 승인 기준 자체는 유지). 그 외 결정(러너 환경, 인증 방식, 이슈 트리거 흐름)은 유효.
 - 날짜: 2026-08-05
 - 관계: `docs/harness-roadmap.md`의 "이슈 트리거 CI 하네스"를 구체화한다. [ADR-0005](0005-local-agent-orchestration.md)의 "자동 머지 금지" 원칙은 유지한다. PR 승인 자동화는 이 ADR에서 새로 허용하며, 이 점에서 ADR-0007이 참조했던 "자동 승인 금지" 관행과 갈라진다(아래 "결정" 참조). 폐기된 [ADR-0007](0007-codex-ci-review.md)의 Codex CI 자동 리뷰는 재도입하지 않는다. [ADR-0009](0009-codex-local-orchestration.md)가 범위 밖으로 남겨둔 "GitHub Actions에서 실행되는 무인 에이전트"가 이 ADR의 대상이다.
 
