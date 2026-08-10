@@ -670,18 +670,25 @@ OCO 전용 경로는 `STOCK`이면 `INVESTMENT_OCO_PRACTICE_V1`, `CRYPTO`이면 
 
 이 API는 030 도입 뒤에도 표시 전용 호환 API다. 아래 영속 세션과 seed·cursor·가격을 공유하지 않으며 주문 체결·holding 관찰 evidence에 사용하지 않는다.
 
-### 030 코인 가상 가격 실행 환경 (계획)
+### 030 코인 가상 가격 세션 생성·조회
 
 | Method | URL | 요청 | 성공 응답 | 오류 응답 |
 |---|---|---|---|---|
-| POST | `/api/education/practice/price-sessions` | `{"instrumentId":1}` | 201 `PracticePriceSessionResponse` | 400 `VALIDATION_ERROR`; 404 `NOT_FOUND`; 409 `INSTRUMENT_NOT_TRADABLE`, `PRACTICE_PRICE_SESSION_ALREADY_ACTIVE` |
-| GET | `/api/education/practice/price-sessions/{sessionId}` | 양수 path ID | 200 `PracticePriceSessionResponse` | 400 `VALIDATION_ERROR`; 404 `NOT_FOUND`(없음·타인 소유) |
+| POST | `/api/education/practice/price-sessions` | Access Bearer 필수. `{"instrumentId":1}`(`PracticePriceSessionCreateRequest`, 양의 `Long`) | 201 `PracticePriceSessionResponse` | 400 `VALIDATION_ERROR`(누락·0 이하); 401 `UNAUTHORIZED`; 404 `NOT_FOUND`(종목 없음); 409 `INSTRUMENT_NOT_TRADABLE`(주식이거나 `tradable=false`), `PRACTICE_PRICE_SESSION_ALREADY_ACTIVE`(동일 사용자·종목 ACTIVE 중복, 동시 생성의 unique 위반도 동일 매핑) |
+| GET | `/api/education/practice/price-sessions/{sessionId}` | Access Bearer 필수. 양의 `Long` path `sessionId` | 200 `PracticePriceSessionResponse` | 400 `VALIDATION_ERROR`(0 이하); 401 `UNAUTHORIZED`; 404 `NOT_FOUND`(없음·타인 소유, 존재 은닉) |
+
+`PracticePriceSessionResponse`는 `sessionId`, `instrumentId`, `status`(`ACTIVE`\|`COMPLETED`), `generatorVersion`, `startPrice`, `currentTick`, `currentPrice`, `tickSeconds=3`, `totalTicks=100`, `createdAt`, nullable `completedAt`을 반환한다. `seed`는 서버 내부 재현 정보이며 응답에 노출하지 않는다. 생성은 `InstrumentService.getInstrumentEntity`로 종목 존재를 확인한 뒤 `market=CRYPTO`·`tradable=true`를 서비스가 검증하고, `PriceQueryService.getPriceQuote`로 조회한 실제 유효 현재가를 anchor로 쓰며 미가용 시 정확히 `10000.00000000`을 쓴다. seed는 서버 CSPRNG(`SecureRandom`)로 생성하고 생성 직후 `currentTick=0`, `currentPrice=startPrice`, `status=ACTIVE`다. 조회 시 seed·startPrice로 저장된 tick까지 v1 생성기를 재실행해 저장된 `currentPrice`와 일치하는지 검증하고, 불일치하면 클라이언트 오류가 아니라 500 `INTERNAL_ERROR`로 중단한다(재기동 재현성 방어).
+
+가격 세션은 DB 영속이며 `(user_id, instrument_id)`별 ACTIVE 세션은 MySQL generated column(`active_slot`)과 unique 제약으로 최대 1개만 허용한다(완료 세션은 이 상한에 포함하지 않는다). 상세 스키마·생성기 byte encoding·잠금·재기동 계약은 `docs/specs/030-coin-practice-price-runtime/plan.md`가 정본이다.
+
+### 030 코인 지정가·tick 진행 (계획)
+
+| Method | URL | 요청 | 성공 응답 | 오류 응답 |
+|---|---|---|---|---|
 | POST | `/api/education/practice/price-sessions/{sessionId}/ticks` | `{"expectedTick":1}` | 200 `PracticePriceSessionResponse` | 400 `VALIDATION_ERROR`; 404 `NOT_FOUND`; 409 `PRACTICE_PRICE_SESSION_CLOSED`, `PRACTICE_PRICE_TICK_CONFLICT` |
 | POST | `/api/education/practice/limit-orders` | `{"practicePriceSessionId":1,"instrumentId":1,"quantity":0.01,"limitPrice":9500}` | 201 기존 `OrderResponse`(side는 서버가 `BUY`로 고정) | 400 `VALIDATION_ERROR`; 404 `NOT_FOUND`; 409 `PRACTICE_PRICE_SESSION_CLOSED`, `PRACTICE_PRICE_SESSION_MISMATCH`, `PRACTICE_LIMIT_ORDER_ALREADY_PENDING` 및 기존 주문 오류 |
 
-`PracticePriceSessionResponse`는 `sessionId`, `instrumentId`, `status`, `generatorVersion`, `startPrice`, `currentTick`, `currentPrice`, `tickSeconds=3`, `totalTicks=100`, `createdAt`, nullable `completedAt`을 반환하며 seed는 노출하지 않는다. 생성 직후 tick 0이고 next는 정확히 `currentTick+1`만 받는다. tick 99 가격으로 체결을 먼저 판정한 뒤 미체결 세션 주문을 취소·예약 반환하고 세션을 완료한다.
-
-가격 세션은 DB 영속이며 같은 사용자·종목 ACTIVE 1개, 같은 세션의 PENDING 교육 주문 1개가 상한이다. 튜토리얼 이벤트는 `PriceStore`와 `CryptoPriceUpdatedEvent`를 사용하지 않고 같은 owner·instrument·sessionId 주문만 처리한다. holding 관찰은 buyTrade→order에서 sessionId를 서버가 역추적한다. sessionId가 있으면 ACTIVE/COMPLETED 세션의 마지막 현재가, null이면 기존 실제 가격원을 사용한다. 상세 스키마·잠금·재기동 계약은 `docs/specs/030-coin-practice-price-runtime/plan.md`가 정본이다.
+next는 정확히 `currentTick+1`만 받는다. tick 99 가격으로 체결을 먼저 판정한 뒤 미체결 세션 주문을 취소·예약 반환하고 세션을 완료한다. 같은 세션의 PENDING 교육 주문 1개가 상한이다. 튜토리얼 이벤트는 `PriceStore`와 `CryptoPriceUpdatedEvent`를 사용하지 않고 같은 owner·instrument·sessionId 주문만 처리한다. holding 관찰은 buyTrade→order에서 sessionId를 서버가 역추적한다. sessionId가 있으면 ACTIVE/COMPLETED 세션의 마지막 현재가, null이면 기존 실제 가격원을 사용한다. 상세 계약은 `docs/specs/030-coin-practice-price-runtime/plan.md`가 정본이다.
 
 ### OCO exit plan 생성 (계획)
 
