@@ -4,6 +4,7 @@ AI 에이전트가 실제로 저지르고 재현·확인된 실수만 기록한�
 
 | 날짜 | 실수 | 증상 | 수정 | 재발 방지 |
 |---|---|---|---|---|
+| 2026-08-10 | `CryptoWatchLockConcurrencyIntegrationTest`가 MySQL·snapshot Redis 픽스처만 정리하고 실제 감시 락 키 `feedback:crypto-watch:lock:{instrumentId}`는 정리하지 않았다 | 문서 전용 PR #315 CI에서 3,661건 중 `watchSkipsEntirelyWhenTheRealLockIsAlreadyHeld`만 실패했다. 첫 `cryptoWatchLock.tryLock()` 결과가 이미 empty여서 241행 `isPresent()` 단정이 깨졌다. 공유 Redis가 Spring Context보다 오래 살고 다른 테스트 DB가 같은 instrument ID를 다시 쓰면 이전 Context의 TTL 락이 새 테스트와 충돌한다 | `@BeforeEach`에서 새 instrument ID의 감시 락 키를 먼저 삭제하고 `@AfterEach`에서도 같은 키를 정리했다. 해당 Testcontainers 클래스 전체 재실행으로 통과 확인 | **공유 Redis를 쓰는 통합 테스트는 결과 데이터 키뿐 아니라 분산락 키도 `@BeforeEach`와 `@AfterEach`에서 정리한다.** DB PK를 Redis 키에 넣었다고 전역 유일하다고 가정하지 않는다 — Context별 DB 초기화·컨테이너 생명주기 차이로 같은 PK가 다시 사용될 수 있다. |
 | 2026-07-22 | Spring Boot 4에서 Flyway를 `flyway-core` 의존성으로만 추가 | 에러 없이 마이그레이션이 조용히 스킵됨 (Boot 4 모듈 분리로 자동설정 미적용) | `spring-boot-starter-flyway`로 교체 | Boot 4에서 인프라 의존성은 스타터 존재 여부부터 확인. 마이그레이션 실행은 `flyway_schema_history` 테이블로 검증 |
 | 2026-07-22 | 한글 포함 경로에 프로젝트 생성 | 컴파일은 되는데 테스트만 전부 `ClassNotFoundException` (Gradle 테스트 워커가 한글 클래스패스를 못 읽음) | 영문 경로(`Desktop\tradeclass-api`)로 이전 | 프로젝트/클론 경로는 항상 영문. `-Dfile.encoding=UTF-8`로는 해결 안 됨 |
 | 2026-07-23 | Windows에서 `gradlew`를 실행 비트 없이(100644) 커밋 | 로컬(Windows)은 전부 정상인데 GitHub 푸시 후 Linux CI가 전 PR에서 `./gradlew: Permission denied` (exit 126) | `git update-index --chmod=+x gradlew` 후 커밋 | Windows는 파일 권한이 없어 git 인덱스 모드로만 관리됨. CI 첫 실행 전 `git ls-files -s gradlew`가 100755인지 확인 |
