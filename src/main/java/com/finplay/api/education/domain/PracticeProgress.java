@@ -47,7 +47,12 @@ public class PracticeProgress {
 	@Column(name = "completed_at")
 	private LocalDateTime completedAt;
 
+	// 완료는 불변이다(spec MKT-PRACTICE-009) — 호출부가 COMPLETED 여부를 먼저 걸러내는 것과 별개로, 엔티티
+	// 스스로도 재완료를 막아 가드 없는 호출부가 completedAt을 조용히 덮어쓰는 것을 방지한다(PR #304 리뷰 권장).
 	public void complete(LocalDateTime completedAt) {
+		if (this.status == PracticeProgressStatus.COMPLETED) {
+			throw new IllegalStateException("이미 완료된 실습 진행 상태는 다시 완료할 수 없습니다. id=" + this.id);
+		}
 		this.status = PracticeProgressStatus.COMPLETED;
 		this.completedAt = completedAt;
 	}

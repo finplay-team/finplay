@@ -2,6 +2,7 @@
 package com.finplay.api.education.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
@@ -28,9 +29,9 @@ class PracticeProgressTest {
 	}
 
 	@Test
-	void completeOverwritesPreviousCompletedAtWhenCalledAgain() {
-		// complete()는 재호출을 막지 않는다(가드 없음) — 서비스 계층이 COMPLETED 상태를 먼저 걸러낸다는 전제를
-		// 엔티티 자체 동작으로도 확인해 둔다(계약 회귀 방지).
+	void completeThrowsWhenAlreadyCompleted() {
+		// PR #304 리뷰 권장 반영: 완료는 불변이므로 재호출은 엔티티 스스로 막는다 — 서비스 계층의
+		// COMPLETED 사전 검사가 없더라도 completedAt이 조용히 덮어써지지 않는다.
 		PracticeProgress progress = new PracticeProgress();
 		ReflectionTestUtils.setField(progress, "tutorialKey", "INVESTMENT_PRACTICE_V1");
 		ReflectionTestUtils.setField(progress, "status", PracticeProgressStatus.IN_PROGRESS);
@@ -39,9 +40,11 @@ class PracticeProgressTest {
 		LocalDateTime firstCompletedAt = LocalDateTime.of(2026, 8, 10, 10, 0);
 		LocalDateTime secondCompletedAt = firstCompletedAt.plus(1, ChronoUnit.DAYS);
 		progress.complete(firstCompletedAt);
-		progress.complete(secondCompletedAt);
+
+		assertThatThrownBy(() -> progress.complete(secondCompletedAt))
+			.isInstanceOf(IllegalStateException.class);
 
 		assertThat(progress.getStatus()).isEqualTo(PracticeProgressStatus.COMPLETED);
-		assertThat(progress.getCompletedAt()).isEqualTo(secondCompletedAt);
+		assertThat(progress.getCompletedAt()).isEqualTo(firstCompletedAt);
 	}
 }
