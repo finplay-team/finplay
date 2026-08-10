@@ -4,6 +4,7 @@ package com.finplay.api.order.repository;
 import com.finplay.api.account.domain.Market;
 import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.domain.Trade;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.EntityGraph;
@@ -35,4 +36,10 @@ public interface TradeRepository extends JpaRepository<Trade, Long>, TradeReposi
 
 	// 랭킹 목록 status 판정(이슈 #279) — 이 시장에 매도 이력 계좌가 하나라도 있는가(account.market 중첩 탐색).
 	boolean existsBySideAndAccountMarket(OrderSide side, Market market);
+
+	// 026-market-order-practice-tutorial 2단계 chain 해석용 — 사용자·종목의 intention.createdAt 이후 체결된
+	// BUY 체결을 오래된 순으로 가져온다(Trade는 체결 결과만 영속하므로 이 조회 결과 자체가 FILLED 체결이다).
+	// 수량 정규화 비교(BigDecimal.compareTo)는 DB 조건이 아니라 호출부(TradeService)에서 수행한다.
+	List<Trade> findByAccount_User_IdAndInstrument_IdAndSideAndExecutedAtAfterOrderByExecutedAtAscIdAsc(
+		Long userId, Long instrumentId, OrderSide side, LocalDateTime after);
 }

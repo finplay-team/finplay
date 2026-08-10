@@ -8,6 +8,7 @@ import com.finplay.api.portfolio.domain.Holding;
 import com.finplay.api.portfolio.dto.response.HoldingListItemResponse;
 import com.finplay.api.portfolio.repository.HoldingRepository;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.IntStream;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -30,5 +31,17 @@ public class HoldingService {
 		return IntStream.range(0, holdings.size())
 			.mapToObj(i -> HoldingListItemResponse.of(holdings.get(i), valuations.get(i)))
 			.toList();
+	}
+
+	// 026-market-order-practice-tutorial 2단계 chain 해석용 — owner·instrument 일치 holding의 id만 반환한다
+	// (현재 수량은 검증하지 않는다, spec.md "2단계 완료 증거"). education 도메인이 HoldingRepository를 직접
+	// 주입하지 않도록 이 서비스 메서드만 거치게 한다(ADR-0002). market은 종목의 market(market.domain.Market)을
+	// 받아 계좌 조회에 필요한 account.domain.Market으로 내부 변환한다(OrderExecutionService의 기존 변환 관례).
+	@Transactional(readOnly = true)
+	public Optional<Long> findHoldingId(
+		Long userId, com.finplay.api.market.domain.Market market, Long instrumentId) {
+		Market accountMarket = Market.valueOf(market.name());
+		Account account = accountService.getAccountFor(userId, accountMarket);
+		return holdingRepository.findByAccountIdAndInstrumentId(account.getId(), instrumentId).map(Holding::getId);
 	}
 }
