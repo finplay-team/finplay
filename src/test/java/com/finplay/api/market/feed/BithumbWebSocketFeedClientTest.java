@@ -35,6 +35,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketHttpHeaders;
@@ -254,6 +255,39 @@ class BithumbWebSocketFeedClientTest {
 		ArgumentCaptor<Long> delayCaptor = ArgumentCaptor.forClass(Long.class);
 		verify(reconnectExecutor, times(3)).schedule(any(Runnable.class), delayCaptor.capture(), eq(TimeUnit.SECONDS));
 		assertThat(delayCaptor.getAllValues()).containsExactly(5L, 10L, 5L);
+	}
+
+	// PR #296 리뷰 권장사항 1번: Redis 장애 중에는 priceStore.saveConnectionStatus(DISCONNECTED)가 예외를
+	// 던진다. onDisconnected() 안에서 감싸지 않으면 바로 다음 줄의 scheduleReconnect()가 실행되지 못해,
+	// WebSocket 연결 자체와 무관한 Redis 장애 때문에 재연결이 영구히 멈춘다 — 이 테스트가 그 회귀를 막는다.
+	@Test
+	@DisplayName("연결 종료 시 상태 기록이 Redis 장애로 실패해도 재연결은 그대로 예약된다 (PR #296 리뷰 권장사항)")
+	void afterConnectionClosedStillSchedulesReconnectWhenSavingDisconnectedStatusFails() {
+		stubSuccessfulConnectAttempt();
+		doThrow(new RedisConnectionFailureException("Unable to connect to Redis"))
+			.when(priceStore)
+			.saveConnectionStatus(FeedConnectionStatus.DISCONNECTED);
+		client.start();
+
+		client.afterConnectionClosed(session, CloseStatus.NORMAL);
+
+		verify(reconnectExecutor, times(1)).schedule(any(Runnable.class), eq(5L), eq(TimeUnit.SECONDS));
+	}
+
+	// connect()의 .exceptionally도 같은 onDisconnected()를 거친다 — 초기 연결 시도 자체가 실패하는 경로에서도
+	// 같은 회귀가 재현될 수 있어 별도로 확인한다.
+	@Test
+	@DisplayName("초기 연결 실패 시 상태 기록이 Redis 장애로 실패해도 재연결은 그대로 예약된다 (PR #296 리뷰 권장사항)")
+	void connectExceptionallyStillSchedulesReconnectWhenSavingDisconnectedStatusFails() {
+		when(webSocketClient.execute(any(), any(WebSocketHttpHeaders.class), any(URI.class)))
+			.thenReturn(CompletableFuture.failedFuture(new IOException("연결 실패")));
+		doThrow(new RedisConnectionFailureException("Unable to connect to Redis"))
+			.when(priceStore)
+			.saveConnectionStatus(FeedConnectionStatus.DISCONNECTED);
+
+		client.start();
+
+		verify(reconnectExecutor, times(1)).schedule(any(Runnable.class), eq(5L), eq(TimeUnit.SECONDS));
 	}
 
 	@Test

@@ -142,9 +142,20 @@ public class BithumbWebSocketFeedClient extends TextWebSocketHandler implements 
 		reconnectDelaySeconds = Math.min(delay * 2, RECONNECT_DELAY_MAX_SECONDS);
 	}
 
+	// priceStore.saveConnectionStatus 호출을 try/catch로 감싼다(PR #296 리뷰 권장사항 1번) — 이 메서드는
+	// afterConnectionClosed와 connect()의 .exceptionally 두 곳에서 scheduleReconnect() 바로 앞에 호출된다.
+	// Redis 장애 중에는 이 Redis 쓰기가 예외를 던지는데, 감싸지 않으면 두 호출부 모두 뒤따르는
+	// scheduleReconnect()가 실행되지 못해(connect() 쪽은 CompletableFuture가 예외를 삼켜 로그조차 남지 않는다)
+	// Redis가 복구돼도 프로세스 재시작 전까지 재연결이 영구히 멈춘다. 이슈 #288이 "장애 중에도 앱은 계속
+	// 실행 중"인 상태를 새로 만들면서 실제로 밟히게 된 경로라, 그 전제("시세 기능만 저하")를 지키려면 여기도
+	// 감싸야 한다.
 	private void onDisconnected() {
 		session = null;
-		priceStore.saveConnectionStatus(FeedConnectionStatus.DISCONNECTED);
+		try {
+			priceStore.saveConnectionStatus(FeedConnectionStatus.DISCONNECTED);
+		} catch (Exception e) {
+			log.warn("연결 끊김 상태 기록 실패(Redis 장애로 추정) — 재연결 예약은 계속 진행합니다.", e);
+		}
 	}
 
 	// instrumentRepository 조회부터 전송까지 전부 try 블록 안에서 수행한다 — 조회 실패도 구독 실패와 동일하게
