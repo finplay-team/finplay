@@ -44,7 +44,11 @@ public class PracticeHoldingObservationService {
 			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
 
 		String tutorialKey = resolveTutorialKey(holding.getInstrument().getMarket());
-		ResolvedPracticeChainDto chain = chainResolutionService.resolve(userId, tutorialKey)
+		// resolve()는 tutorialKey 안에서 우선순위가 가장 높은 chain 1건만 고르므로, 사용자가 같은 market에서
+		// 종목을 여러 개 완결했을 때 요청받은 holding과 다른 종목이 뽑힐 수 있다. holding이 속한 instrument로
+		// 범위를 좁힌 resolveForInstrument를 써서 그 holding 자신의 chain만 재해석한다(PR #300 리뷰 반영).
+		ResolvedPracticeChainDto chain = chainResolutionService
+			.resolveForInstrument(userId, tutorialKey, holding.getInstrument().getId())
 			.filter(resolved -> resolved.holdingId().equals(holding.getId()))
 			.orElseThrow(() -> new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING));
 

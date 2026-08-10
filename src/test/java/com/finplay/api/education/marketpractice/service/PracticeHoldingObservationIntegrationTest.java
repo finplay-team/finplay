@@ -81,14 +81,12 @@ class PracticeHoldingObservationIntegrationTest {
 	@Autowired
 	private StringRedisTemplate redisTemplate;
 
-	private String priceKeyToCleanUp;
+	private final List<String> priceKeysToCleanUp = new java.util.ArrayList<>();
 
 	@AfterEach
 	void tearDown() {
 		priceStore.saveConnectionStatus(FeedConnectionStatus.CONNECTED);
-		if (priceKeyToCleanUp != null) {
-			redisTemplate.delete(priceKeyToCleanUp);
-		}
+		priceKeysToCleanUp.forEach(redisTemplate::delete);
 	}
 
 	@BeforeEach
@@ -139,6 +137,36 @@ class PracticeHoldingObservationIntegrationTest {
 		assertThat(saved.get(0).getCloserToBoundary()).isFalse();
 	}
 
+	@Test
+	void observationSucceedsForNonPriorityHoldingWhenUserHasTwoCompletedChainsInSameMarket() {
+		// PR #300 리뷰 회귀 테스트: MarketPracticeChainResolutionService.resolve()는 buyTradeExecutedAt이 가장
+		// 이른 chain 하나만 우선순위로 고른다. 이 테스트는 같은 사용자가 코인 종목 두 개를 각각 독립적으로
+		// 완결했을 때, "우선순위가 아닌" 두 번째 holding에 대한 관찰도 정상 처리되는지(409로 오탐하지 않는지)
+		// 검증한다 — resolveForInstrument로 고치기 전에는 여기서 PRACTICE_EVIDENCE_MISSING이 났다.
+		User user = userRepository.saveAndFlush(
+			User.create(uniqueEmail("two-chains"), "password-hash", uniqueNickname("two-chains"), BASE_NOW));
+		Account account = accountRepository.saveAndFlush(
+			Account.create(user, com.finplay.api.account.domain.Market.CRYPTO, BASE_NOW));
+
+		ChainFixture priorityChain = buildFilledChainAndHolding("two-chains-a", user, account, 0);
+		ChainFixture nonPriorityChain = buildFilledChainAndHolding("two-chains-b", user, account, 10);
+
+		priceStore.saveTick(nonPriorityChain.symbol(), new BigDecimal("95000"), BASE_NOW.plusMinutes(1));
+
+		PracticeHoldingObservationResponse response = practiceHoldingObservationService.createObservation(
+			nonPriorityChain.userId(), new PracticeHoldingObservationCreateRequest(nonPriorityChain.holdingId()));
+
+		assertThat(response.holdingId()).isEqualTo(nonPriorityChain.holdingId());
+		assertThat(response.closerToBoundary()).isTrue();
+		assertThat(response.closerBoundary()).isEqualTo("STOP_LOSS");
+
+		// priorityChain의 holding에 대한 관찰도 여전히 정상 동작해야 한다(한쪽만 고치다 다른 쪽을 깨지 않았는지).
+		priceStore.saveTick(priorityChain.symbol(), ENTRY_PRICE, BASE_NOW.plusMinutes(1));
+		PracticeHoldingObservationResponse priorityResponse = practiceHoldingObservationService.createObservation(
+			priorityChain.userId(), new PracticeHoldingObservationCreateRequest(priorityChain.holdingId()));
+		assertThat(priorityResponse.holdingId()).isEqualTo(priorityChain.holdingId());
+	}
+
 	// Account·Holding·Instrument는 LAZY 연관이라 저장 트랜잭션 바깥에서 재조회하면
 	// LazyInitializationException 위험이 있다 — 필요한 값(userId·holdingId·symbol)만 트랜잭션 안에서 뽑아
 	// 이 fixture로 넘긴다.
@@ -155,21 +183,35 @@ class PracticeHoldingObservationIntegrationTest {
 			User.create(uniqueEmail(scenario), "password-hash", uniqueNickname(scenario), BASE_NOW));
 		Account account = accountRepository.saveAndFlush(
 			Account.create(user, com.finplay.api.account.domain.Market.CRYPTO, BASE_NOW));
+		return buildFilledChainAndHolding(scenario, user, account, 0);
+	}
+
+	/**
+	 * 이미 만들어진 user·account 위에 instrument chain을 완결한다 — 한 사용자가 같은 market에서 종목을 여러 개
+	 * 완결하는 시나리오(PR #300 리뷰 회귀 테스트)를 준비하는 용도다. {@code baseOffsetSeconds}로 chain마다
+	 * {@code BASE_NOW} 기준 시각을 겹치지 않게 벌려, 두 번째 chain의 intention·매수 시각이 첫 번째보다 항상
+	 * 뒤가 되도록 한다(같은 clock을 여러 chain이 공유해도 서로 되돌리지 않는다).
+	 */
+	private ChainFixture buildFilledChainAndHolding(
+		String scenario, User user, Account account, long baseOffsetSeconds) {
 		String symbol = "OBS" + UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
 		Instrument instrument = instrumentRepository.saveAndFlush(
 			Instrument.create(Market.CRYPTO, symbol, scenario + "코인", new BigDecimal("0.00000001"), 0L, true,
 				BASE_NOW));
-		priceKeyToCleanUp = "price:crypto:" + symbol;
+		priceKeysToCleanUp.add("price:crypto:" + symbol);
 		priceStore.saveConnectionStatus(FeedConnectionStatus.CONNECTED);
-		priceStore.saveTick(symbol, ENTRY_PRICE, BASE_NOW);
+		// PriceStore.isStale은 STALE_THRESHOLD(10초)를 주입된 Clock 기준으로 비교한다 — 매수 체결 시각
+		// (baseOffsetSeconds+2)과 같은 오프셋에 틱을 둬 여러 chain을 한 clock으로 이어 만들어도 stale로
+		// 오판되지 않게 한다.
+		priceStore.saveTick(symbol, ENTRY_PRICE, BASE_NOW.plusSeconds(baseOffsetSeconds));
 
 		favoriteService.createFavorite(user.getId(), instrument.getId());
 
-		clock.set(BASE_NOW.plusSeconds(1));
+		clock.set(BASE_NOW.plusSeconds(baseOffsetSeconds + 1));
 		practiceIntentionService.createIntention(user.getId(),
 			new PracticeIntentionCreateRequest(instrument.getId(), QUANTITY, STOP_LOSS, TAKE_PROFIT));
 
-		clock.set(BASE_NOW.plusSeconds(2));
+		clock.set(BASE_NOW.plusSeconds(baseOffsetSeconds + 2));
 		orderService.createOrder(user.getId(), "obs-" + scenario + "-" + UUID.randomUUID(),
 			new OrderCreateRequest(Market.CRYPTO, instrument.getId(), OrderSide.BUY, "MARKET", QUANTITY));
 
