@@ -609,13 +609,15 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 수량은 양수 `DECIMAL(30,8)` 범위(정수부 최대 22자리·소수부 최대 8자리), 가격은 양수 `DECIMAL(18,8)` 범위(정수부 최대 10자리·소수부 최대 8자리)다. 초과 precision/scale은 반올림하지 않고 400 `VALIDATION_ERROR`로 거부한다. 모든 id는 양의 `Long`이다.
 
+**즐겨찾기·사전 의도의 저장 방식 (정본: `docs/adr/0012-tutorial-state-in-memory.md`)** — 이 절 전체에 적용되므로 각 엔드포인트에서 반복하지 않는다. `#193`부터 `favorites`(V14)·`practice_intentions`(V16) 테이블은 DROP됐고 서버 힙 메모리(인스턴스 단위 `ConcurrentHashMap`)에 저장한다. 클라이언트가 관측하는 결과는 셋이다 — ① **서버 재시작·재배포 시 등록된 즐겨찾기와 사전 의도가 모두 사라진다**(재등록 필요, 삭제 요청은 404가 된다), ② `favoriteId`·`intentionId`는 프로세스 기동마다 1부터 재채번되므로 서로 다른 시점의 같은 id가 다른 리소스일 수 있다, ③ 다중 인스턴스에서 sticky session이 없으면 인스턴스마다 다른 상태가 보인다. `practice_progresses`·`practice_completions`(완료 판정)는 DB에 남아 이 유실의 영향을 받지 않는다.
+
 ### 즐겨찾기 등록
 
 | Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|
 | POST | /api/favorites | `{"instrumentId":1}` (`FavoriteCreateRequest`) | 201 `{"favoriteId":1,"instrumentId":1,"market":"STOCK","symbol":"005930","name":"삼성전자","createdAt":"2026-08-03T10:00:00"}` (`FavoriteResponse`) | 400 `VALIDATION_ERROR`; 404 `NOT_FOUND`(종목); 409 `INSTRUMENT_NOT_TRADABLE`, `DUPLICATE_RESOURCE` | 016 candidate 1 |
 
-같은 사용자의 `(userId, instrumentId)`는 유일하다. 중복 등록은 기존 값을 반환하지 않는다. `#193`(ADR-0012)부터 DB가 아닌 서버 힙 메모리(인스턴스 단위 `ConcurrentHashMap`)에 저장하며, `favoriteId`는 프로세스 기동마다 1부터 재채번된다. 서버 재시작 시 등록된 즐겨찾기는 모두 유실된다(재등록 필요).
+같은 사용자의 `(userId, instrumentId)`는 유일하다. 중복 등록은 기존 값을 반환하지 않는다. 저장 방식과 재시작 유실은 이 절 도입부 참고.
 
 ### 즐겨찾기 목록 조회
 
@@ -631,7 +633,7 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 |---|---|---|---|---|---|
 | DELETE | /api/favorites/{instrumentId} | 양의 `instrumentId` path | 204, 본문 없음 | 400 `VALIDATION_ERROR`; 404 `FAVORITE_NOT_FOUND` | 016 candidate 3 |
 
-타인 소유 행은 존재를 숨겨 404로 처리하며 반복 삭제도 404다. 즐겨찾기가 서버 힙 메모리 저장이므로(위 등록 절 참고) 재시작 후에는 삭제 대상도 사라져 있어 항상 404다.
+타인 소유 행은 존재를 숨겨 404로 처리하며 반복 삭제도 404다. 재시작 후에는 삭제 대상 자체가 사라져 있어 항상 404다(도입부 ① 참고).
 
 ### 투자 실습 진행 조회 (계획 — 3차 MVP OCO 버전)
 
@@ -651,7 +653,7 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 현재 존재하는 본인 favorite와 같은 종목만 허용한다. 서비스는 `(user_id, tutorial_key)` 유일 제약의 `practice_progresses`를 atomic insert-if-absent 한 뒤 진행 행과 favorite를 잠가 검증한다.
 
-**`tutorial_key`는 대상 종목의 `market`으로 서버가 결정한다** — `STOCK`이면 `INVESTMENT_PRACTICE_V1`, `CRYPTO`이면 `COIN_PRACTICE_V1`(이슈 #226 구현 완료, 규칙 정본은 `docs/specs/020-coin-practice-tutorial`). **클라이언트는 key를 입력하지 않는다.** 주식과 코인은 완전히 독립된 튜토리얼이라 한쪽 완료가 다른 쪽에 영향을 주지 않으며, 코인 종목으로 의도를 기록하려면 1단계 favorite도 같은 코인 종목이어야 한다(아니면 409 `PRACTICE_STEP_LOCKED`). 완료 상태면 저장 없이 409 `PRACTICE_ALREADY_COMPLETED`, favorite가 없으면 저장 없이 409 `PRACTICE_STEP_LOCKED`다. `#193`(ADR-0012)부터 `practice_intentions` 테이블은 DROP되어 있으며, 유효 요청마다 서버 힙 메모리(인스턴스 단위, 사용자별 리스트)에 새 레코드를 추가한다(중복 intention을 금지하는 유일 제약은 없음). 필드는 기존과 동일한 `intentionId`(프로세스 기동마다 1부터 재채번), `instrumentId`, `quantity`, `stopLoss`, `takeProfit`, `createdAt`이며, 서버 재시작 시 모두 유실된다. 이 API는 의도만 기록하며 실제 시장가 매수 체결은 기존 `POST /api/orders`의 별도 요청이다.
+**`tutorial_key`는 대상 종목의 `market`으로 서버가 결정한다** — `STOCK`이면 `INVESTMENT_PRACTICE_V1`, `CRYPTO`이면 `COIN_PRACTICE_V1`(이슈 #226 구현 완료, 규칙 정본은 `docs/specs/020-coin-practice-tutorial`). **클라이언트는 key를 입력하지 않는다.** 주식과 코인은 완전히 독립된 튜토리얼이라 한쪽 완료가 다른 쪽에 영향을 주지 않으며, 코인 종목으로 의도를 기록하려면 1단계 favorite도 같은 코인 종목이어야 한다(아니면 409 `PRACTICE_STEP_LOCKED`). 완료 상태면 저장 없이 409 `PRACTICE_ALREADY_COMPLETED`, favorite가 없으면 저장 없이 409 `PRACTICE_STEP_LOCKED`다. 유효 요청마다 사용자별 리스트에 새 레코드를 추가하며 **중복 intention을 금지하는 유일 제약은 없다**(저장 방식·유실은 도입부 참고). 이 API는 의도만 기록하며 실제 매수 체결은 `POST /api/orders`(시장가) 또는 `POST /api/orders/limit`(코인 지정가)의 별도 요청이다.
 
 **후속 확장 계획(#199, 아직 미구현):** 기존 타입 생략+`stopLoss`·`takeProfit` 요청은 PRICE로 호환하면서 `exitPriceType=PRICE|PERCENT`를 추가한다. PERCENT는 퍼센트 단위(백분율 값, `5`=5%)의 `stopLossRate`·`takeProfitRate`만 받고 실제 시장가 BUY `entryPrice`를 기준으로 OCO 생성 시 scale 8 절대 가격선을 계산한다. intention은 ADR-0012대로 인메모리를 유지하고 내부 UUID instance key로 영속 exit plan과 숫자 ID 재사용을 구분한다. tagged union, rate 범위·반올림·저장 정책은 `docs/specs/019-exit-price-policy`가 정본이며, 구현 전까지 위 현재 요청·응답만 실제 호출 가능하다.
 
