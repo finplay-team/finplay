@@ -11,6 +11,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
@@ -34,6 +35,9 @@ public class CommunityPost {
 	@ManyToOne(fetch = FetchType.LAZY)
 	@JoinColumn(name = "instrument_id")
 	private Instrument instrument;
+
+	@OneToOne(mappedBy = "post", fetch = FetchType.LAZY)
+	private CommunityPostImage image;
 
 	@Column(nullable = false, length = 100)
 	private String title;
@@ -72,5 +76,11 @@ public class CommunityPost {
 		this.content = content;
 		this.instrument = instrument;
 		this.updatedAt = now;
+	}
+
+	// 소유 측(CommunityPostImage.assignToPost)과 함께 호출해 역방향 필드도 즉시 동기화한다 —
+	// Hibernate는 mappedBy 역방향 필드를 같은 영속성 컨텍스트 내에서 자동으로 채워주지 않는다.
+	public void attachImage(CommunityPostImage image) {
+		this.image = image;
 	}
 }

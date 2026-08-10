@@ -49,7 +49,7 @@ public class CommunityPostController {
 		@Valid @RequestBody
 		CommunityPostCreateRequest request) {
 		CommunityPostResponse response = communityPostService.createPost(principal.userId(), request.title(),
-			request.content(), request.instrumentId());
+			request.content(), request.instrumentId(), request.imageId());
 		return ResponseEntity.status(HttpStatus.CREATED).body(response);
 	}
 

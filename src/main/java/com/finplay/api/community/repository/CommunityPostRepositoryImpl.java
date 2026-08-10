@@ -4,6 +4,7 @@ package com.finplay.api.community.repository;
 import com.finplay.api.auth.domain.QUser;
 import com.finplay.api.community.domain.CommunityPost;
 import com.finplay.api.community.domain.QCommunityPost;
+import com.finplay.api.community.domain.QCommunityPostImage;
 import com.finplay.api.market.domain.QInstrument;
 import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.jpa.impl.JPAQueryFactory;
@@ -26,6 +27,7 @@ public class CommunityPostRepositoryImpl implements CommunityPostRepositoryCusto
 		QCommunityPost post = QCommunityPost.communityPost;
 		QUser author = QUser.user;
 		QInstrument instrument = QInstrument.instrument;
+		QCommunityPostImage image = QCommunityPostImage.communityPostImage;
 
 		BooleanExpression instrumentCondition = instrumentId == null
 			? null
@@ -35,6 +37,7 @@ public class CommunityPostRepositoryImpl implements CommunityPostRepositoryCusto
 			.selectFrom(post)
 			.join(post.author, author).fetchJoin()
 			.leftJoin(post.instrument, instrument).fetchJoin()
+			.leftJoin(post.image, image).fetchJoin()
 			.where(instrumentCondition)
 			.orderBy(post.createdAt.desc(), post.id.desc())
 			.offset(pageable.getOffset())

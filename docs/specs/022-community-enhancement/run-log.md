@@ -71,3 +71,55 @@
 ## 모니터링 (사람용 요약)
 - PR #260 리뷰 완료: 리뷰어에게 물어본 두 질문 모두 문제없음 확인(400 vs 404 판정, ON DELETE CASCADE 설계). 차단 1건 — `deleteByPost_Id`가 파생 delete라 부모·자식 댓글을 개별 DELETE로 처리하는데 V25의 ON DELETE CASCADE와 겹치면 자식이 이미 사라진 뒤 재삭제를 시도해 예외가 날 수 있다는 지적. 그 조합(부모+대댓글이 있는 게시물 삭제)을 검증하는 테스트가 없었다.
 - 반영: `CommunityPostDeleteIntegrationTest`에 `ownerDeleteWithParentCommentAndReplyReturns204AndRemovesPostParentAndChildWithoutStaleStateException` 신규 추가 — 수정 전 코드로 먼저 실행해 실제로는 예외가 나지 않음을 확인했다(`PostComment`에 `@Version`이 없어 Hibernate가 delete 영향행수를 검사하지 않아 0행 DELETE가 조용히 무시됨). 다만 이는 우연한 안전이라 향후 낙관적 락 추가 시 재발할 수 있고, 게시물당 댓글 수만큼 개별 DELETE가 나가는 비효율도 있어 리뷰 제안대로 `deleteByPost_Id`를 `@Modifying @Query` 벌크 삭제로 전환했다. 커뮤니티 테스트 전체·`./gradlew build` 전체 재검증 통과.
+
+## AI 로그 (에이전트 참조용, COM-006 항목1)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| - | implementer | `$env:JAVA_HOME=...; .\gradlew.bat spotlessApply compileJava compileTestJava`, `test --tests LocalFileStorageServiceTest` | plan.md "COM-006 사진 첨부" Decision Gate 확정·`FileStorageService`/`LocalFileStorageService` 설계, ADR-0004 |
+
+## 모니터링 (사람용 요약)
+- COM-006 항목1: `V26` 마이그레이션(`community_post_images`, `post_id` nullable FK `ON DELETE CASCADE` + `UNIQUE`), `community.storage` 패키지에 `FileStorageService`/`LocalFileStorageService`(로컬 파일시스템, `@Value` 생성자 수동 작성) 신규, `application.yml`에 multipart 크기 제한·`finplay.community.image-storage.base-directory` 추가, `GlobalExceptionHandler`에 `MaxUploadSizeExceededException` → 400 `VALIDATION_ERROR` 핸들러 추가. `LocalFileStorageServiceTest`(`@TempDir`) 3건 통과. compileJava/compileTestJava 통과(엔티티·업로드 API는 항목2 범위).
+
+## AI 로그 (에이전트 참조용, COM-006 항목2)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| - | implementer | `$env:JAVA_HOME=...; .\gradlew.bat compileJava` | plan.md "COM-006 사진 첨부" 데이터 모델(`CommunityPostImage` 엔티티)·패키지·클래스 설계(항목 2: 업로드 API) |
+
+## 모니터링 (사람용 요약)
+- COM-006 항목2: `CommunityPostImage` 엔티티(`isAssigned()`·`assignToPost()`)·`CommunityPostImageRepository`(`JpaRepository`) 신규. `CommunityPostImageService.uploadImage`(빈 파일·허용하지 않는 형식 400, `UUID`+원본 확장자 파일명 생성 후 `fileStorageService.store` 호출)와 `loadImageFile`(존재하지 않으면 404, `CommunityPostImageFile`(resource+contentType) 반환) 신규. `CommunityPostImageResponse`(`imageId`·`imageUrl`) 신규. `CommunityPostImageController`에 `POST /api/community/posts/images`(201)·`GET /api/community/posts/images/{imageId}/file` 신규. compileJava 통과(단위·슬라이스 테스트는 tester 담당, `resolveImageForPost`는 항목3 범위).
+
+## AI 로그 (에이전트 참조용, COM-006 항목3)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| - | implementer | `JAVA_HOME=/c/Users/pmsal/.jdks/ms-17.0.20 ./gradlew.bat compileJava --console=plain` | plan.md "COM-006 사진 첨부" 패키지·클래스 설계(항목 3: 게시물 생성 API에 이미지 연결) |
+
+## 모니터링 (사람용 요약)
+- COM-006 항목3: `CommunityPostImageService.resolveImageForPost`(존재하지 않음 404, 타인 소유 403, 이미 연결됨 400 순서 검증) 신규. `CommunityPost`에 `@OneToOne(mappedBy = "post")` `image` 필드, `CommunityPostRepository.findById` `@EntityGraph`에 `"image"`, `CommunityPostRepositoryImpl`에 `leftJoin(post.image).fetchJoin()` 추가. `CommunityPostCreateRequest.imageId`·`CommunityPostResponse.imageId`/`imageUrl`(`CommunityPostImageResponse.toImageUrl` 재사용) 추가. `CommunityPostService.createPost`가 게시물 저장 후 같은 트랜잭션에서 `image.assignToPost(savedPost)` 호출, 컨트롤러가 `request.imageId()` 전달. `docs/api-routes.md`·`docs/api-contracts.md`의 기존 `POST/GET/PATCH /api/community/posts*` 행에 `imageId`/`imageUrl` 계약 반영(업로드·다운로드 엔드포인트 신규 행과 PRD §3 갱신은 tasks.md 항목6 범위로 남김). compileJava 통과(테스트는 tester 담당).
+
+## AI 로그 (에이전트 참조용, COM-006 항목3 버그 수정)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| - | implementer | `JAVA_HOME=... ./gradlew.bat compileJava compileTestJava`, `test --tests CommunityPostServiceTest` | tester가 작성한 `CommunityPostImageIntegrationTest`에서 발견한 회귀(생성 응답 `imageId`/`imageUrl` null) |
+
+## 모니터링 (사람용 요약)
+- COM-006 항목3 버그 수정: `image.assignToPost(savedPost)`는 소유 측(FK)만 갱신하고, 이미 메모리에 있는 `savedPost.image`(역방향, `mappedBy="post"`)는 Hibernate가 같은 영속성 컨텍스트 안에서 자동 동기화해주지 않아 생성 응답의 `imageId`/`imageUrl`이 `null`로 나가는 버그가 있었다(DB 재조회 시엔 정상). `CommunityPost.attachImage(image)` 신규(역방향 필드 명시적 동기화)를 추가해 `createPost`가 `assignToPost` 직후 `savedPost.attachImage(image)`도 호출하도록 수정. `CommunityPostServiceTest.createPostAssignsImageToSavedPostWhenImageIdProvided`가 mock의 `assignToPost` 호출 여부만 검증해 이 문제를 못 잡았던 것도 보강 — `image.getId()`를 스텁하고 반환된 `CommunityPostResponse.imageId()`/`imageUrl()`이 실제 값을 갖는지 단정 추가. compileJava/compileTestJava 통과, 대상 테스트 통과.
+
+## AI 로그 (에이전트 참조용, COM-006 항목4)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| - | implementer | `$env:JAVA_HOME="C:\Users\pmsal\.jdks\ms-17.0.20"; .\gradlew.bat compileJava` | plan.md "삭제 처리" 순서(댓글 삭제 → 이미지 정리 → 게시물 삭제), tasks.md COM-006 항목4 |
+
+## 모니터링 (사람용 요약)
+- COM-006 항목4: `CommunityPostImageService.deleteImageIfPresent(CommunityPost post)` 신규 — 연결 이미지가 있으면 `storedFilename` 확보 후 DB 행 삭제, 이어서 `fileStorageService.delete(storedFilename)` 호출(구현체가 이미 IOException을 잡아 로그만 남기므로 여기서 추가 try-catch 없음). `CommunityPostService.deletePost`에서 `postCommentRepository.deleteByPost_Id` 다음·`communityPostRepository.delete(post)` 이전에 호출하도록 연결. compileJava 통과(단위·`@DataJpaTest`는 tester 담당).
+
+## AI 로그 (에이전트 참조용, PR #269 리뷰)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| - | reviewer(리뷰) | `git diff dev...HEAD` (PR #269) | 파일 경로 조립, 다운로드 접근 범위, plan.md "경로 조작 방지" 서술과 실제 코드 대조 |
+| - | implementer(PR #269 리뷰 차단 2건·권장 2건 반영) | `.\gradlew.bat compileJava compileTestJava` + `test --tests "com.finplay.api.community.*"` + `spotlessApply` + `build` | 리뷰 차단 2건·권장 2건 |
+
+## 모니터링 (사람용 요약)
+- PR #269 리뷰 완료: 리뷰어에게 물어본 두 질문(저장 구조·검증 순서) 모두 문제없음 확인. 차단 2건 — ① `resolveExtension`이 클라이언트 원본 파일명에서 마지막 점 이후 전부를 확장자로 써 저장소가 그 값을 경계 검사 없이 경로로 조립함(`a.b/c` 같은 입력이 400이 아니라 500으로 새고, plan.md의 "경로 조작 방지" 서술이 실제 코드와 불일치), ② `loadImageFile`이 소유권·연결 여부를 전혀 검사하지 않아 아직 게시되지 않은(post_id IS NULL) 이미지도 `imageId`만 알면 누구나 다운로드 가능.
+- 반영: (1) 확장자를 원본 파일명이 아니라 이미 검증한 `contentType`에서 매핑으로 결정하도록 변경, `LocalFileStorageService`에 `normalize()` 기반 경계 검사를 store/load/delete 3곳 모두에 추가(저장 키 생성 규칙이 바뀌어도 저장소가 스스로를 지킴). (2) `loadImageFile(authenticatedUserId, imageId)`로 시그니처 변경 — `isAssigned()`가 true면 누구나, false면 업로더 본인만 허용하고 그 외는 404로 존재를 숨김. 컨트롤러에 `@AuthenticationPrincipal` 추가.
+- 권장 2건도 함께 반영: 다운로드 응답에 `X-Content-Type-Options: nosniff` 헤더 추가(매직 바이트 미검사 트레이드오프의 짝). 물리 파일 삭제를 `CommunityPostImageDeletedEvent` + `@TransactionalEventListener(AFTER_COMMIT)`로 전환(`RankingEventListener` 선례) — 게시물 삭제 트랜잭션이 롤백되면 DB 행은 살아있는데 파일만 사라지는 상태를 막는다.
+- `LocalFileStorageServiceTest`에 store/load/delete 3개 경계 탈출 회귀 테스트, `CommunityPostImageServiceTest`에 악의적 파일명 확장자 무시 회귀 테스트·미할당 이미지 접근 제어 3종(업로더 본인 허용/타인 거부/미존재)을 추가. `docs/api-contracts.md`·`plan.md`의 관련 서술도 실제 동작에 맞게 정정. `./gradlew build` 전체(테스트·jacoco·spotbugs·spotless 포함) 통과.

@@ -266,31 +266,31 @@ PR #49 차단 리뷰 후속 Fake 재사용·동시성·DB 불변 자동 회귀�
 
 | Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|---|
-| POST | /api/community/posts | Access Bearer 필수 | `{"title":"게시물 제목","content":"게시물 본문","instrumentId":1}` (`title` 최대 100자, `content` 최대 5,000자, `instrumentId`는 선택·nullable) | 201 `{"postId":1,"authorNickname":"finplayer","title":"게시물 제목","content":"게시물 본문","createdAt":"2026-07-27T12:00:00","updatedAt":"2026-07-27T12:00:00","instrumentId":1,"instrumentSymbol":"005930","instrumentName":"삼성전자"}` | 제목·본문 누락·빈 값·공백·최대 길이 초과, **존재하지 않거나 비활성(`tradable=false`)인 `instrumentId` 태그**는 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 008 COM-001, 022 COM-004, Issue #23, Issue #246 |
+| POST | /api/community/posts | Access Bearer 필수 | `{"title":"게시물 제목","content":"게시물 본문","instrumentId":1,"imageId":1}` (`title` 최대 100자, `content` 최대 5,000자, `instrumentId`·`imageId`는 선택·nullable) | 201 `{"postId":1,"authorNickname":"finplayer","title":"게시물 제목","content":"게시물 본문","createdAt":"2026-07-27T12:00:00","updatedAt":"2026-07-27T12:00:00","instrumentId":1,"instrumentSymbol":"005930","instrumentName":"삼성전자","imageId":1,"imageUrl":"/api/community/posts/images/1/file"}` | 제목·본문 누락·빈 값·공백·최대 길이 초과, **존재하지 않거나 비활성(`tradable=false`)인 `instrumentId` 태그**는 400 `VALIDATION_ERROR`. `imageId`는 순서대로 검증: 존재하지 않으면 404 `NOT_FOUND`, 업로더가 인증 사용자와 다르면 403 `FORBIDDEN`("본인이 업로드한 이미지만 사용할 수 있습니다."), 이미 다른 게시물에 연결됐으면 400 `VALIDATION_ERROR`("이미 다른 게시물에 사용된 이미지입니다."). Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 008 COM-001, 022 COM-004·COM-006, Issue #23, Issue #246, Issue #248 |
 
-작성자는 요청에서 받지 않고 Access Token의 인증 사용자로 결정한다. `instrumentId`를 생략하거나 `null`로 보내면 미태그 게시물로 생성된다(하위 호환) — 이때 응답의 `instrumentId`·`instrumentSymbol`·`instrumentName`은 모두 `null`이다. 값을 보내면 `InstrumentService.getTradableInstrumentEntity`로 존재·`tradable` 여부를 검증하며, 실패 사유(미존재·비활성)는 구분하지 않고 동일한 400 `VALIDATION_ERROR`로 응답한다. 게시물당 태그 가능한 종목은 최대 1개다.
+작성자는 요청에서 받지 않고 Access Token의 인증 사용자로 결정한다. `instrumentId`를 생략하거나 `null`로 보내면 미태그 게시물로 생성된다(하위 호환) — 이때 응답의 `instrumentId`·`instrumentSymbol`·`instrumentName`은 모두 `null`이다. 값을 보내면 `InstrumentService.getTradableInstrumentEntity`로 존재·`tradable` 여부를 검증하며, 실패 사유(미존재·비활성)는 구분하지 않고 동일한 400 `VALIDATION_ERROR`로 응답한다. 게시물당 태그 가능한 종목은 최대 1개다. `imageId`는 `POST /api/community/posts/images`로 미리 업로드한 이미지의 식별자를 선(先)업로드-후(後)참조 방식으로 연결한다(생략 시 미첨부, 하위 호환) — 응답의 `imageId`·`imageUrl`은 연결 성공 시에만 채워지고 미첨부면 둘 다 `null`이다. 게시물당 첨부 가능한 이미지는 최대 1장이다.
 
 ### 커뮤니티 게시물 단건 조회
 
 | Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|---|
-| GET | /api/community/posts/{postId} | Access Bearer 필수 | 경로 변수 `postId` | 200 `{"postId":1,"authorNickname":"finplayer","title":"게시물 제목","content":"게시물 본문","createdAt":"2026-07-27T12:00:00","updatedAt":"2026-07-27T12:00:00","instrumentId":1,"instrumentSymbol":"005930","instrumentName":"삼성전자"}` (태그 없는 게시물은 세 필드 모두 `null`) | Access 인증 실패는 401 `UNAUTHORIZED`. 게시물 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 008 COM-001, 022 COM-004, Issue #25, Issue #246 |
+| GET | /api/community/posts/{postId} | Access Bearer 필수 | 경로 변수 `postId` | 200 `{"postId":1,"authorNickname":"finplayer","title":"게시물 제목","content":"게시물 본문","createdAt":"2026-07-27T12:00:00","updatedAt":"2026-07-27T12:00:00","instrumentId":1,"instrumentSymbol":"005930","instrumentName":"삼성전자","imageId":1,"imageUrl":"/api/community/posts/images/1/file"}` (태그 없는 게시물은 `instrumentId`·`instrumentSymbol`·`instrumentName`이, 첨부 이미지 없는 게시물은 `imageId`·`imageUrl`이 각각 모두 `null`) | Access 인증 실패는 401 `UNAUTHORIZED`. 게시물 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 008 COM-001, 022 COM-004·COM-006, Issue #25, Issue #246, Issue #248 |
 
 ### 커뮤니티 게시물 목록 조회
 
 | Method | URL | 인증 | 쿼리 파라미터 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|---|
-| GET | /api/community/posts | Access Bearer 필수 | `page`(기본 0, 0 이상), `size`(기본 10, 1~50), `instrumentId`(선택) | 200 `{"content":[{"postId":1,"authorNickname":"finplayer","title":"게시물 제목","content":"게시물 본문","createdAt":"2026-07-27T12:00:00","updatedAt":"2026-07-27T12:00:00","instrumentId":1,"instrumentSymbol":"005930","instrumentName":"삼성전자"}],"page":0,"size":10,"totalElements":1,"totalPages":1,"hasNext":false}` | `page`·`size` 범위 밖은 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 008 COM-001, 022 COM-004, Issue #24, Issue #246 |
+| GET | /api/community/posts | Access Bearer 필수 | `page`(기본 0, 0 이상), `size`(기본 10, 1~50), `instrumentId`(선택) | 200 `{"content":[{"postId":1,"authorNickname":"finplayer","title":"게시물 제목","content":"게시물 본문","createdAt":"2026-07-27T12:00:00","updatedAt":"2026-07-27T12:00:00","instrumentId":1,"instrumentSymbol":"005930","instrumentName":"삼성전자","imageId":1,"imageUrl":"/api/community/posts/images/1/file"}],"page":0,"size":10,"totalElements":1,"totalPages":1,"hasNext":false}` | `page`·`size` 범위 밖은 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 008 COM-001, 022 COM-004·COM-006, Issue #24, Issue #246, Issue #248 |
 
-작성시각(`created_at`) 내림차순으로 정렬하며 동시각 항목은 `id` 내림차순으로 안정 정렬해 페이지 경계 중복·누락을 방지한다. 게시물이 없으면 오류가 아니라 200과 빈 `content`를 반환한다. `instrumentId` 지정 시 그 종목이 태그된 게시물만 반환하며, 존재하지 않는 `instrumentId`를 넘겨도 오류가 아니라 빈 `content`를 반환한다(생성·수정 시의 태그 유효성 검증과 달리 이 필터는 조회 조건일 뿐이다). 태그가 없는 게시물은 `instrumentId`·`instrumentSymbol`·`instrumentName`이 모두 `null`이다. 목록 조회는 QueryDSL `leftJoin().fetchJoin()`으로 `instrument`를 함께 로딩해 N+1을 방지한다.
+작성시각(`created_at`) 내림차순으로 정렬하며 동시각 항목은 `id` 내림차순으로 안정 정렬해 페이지 경계 중복·누락을 방지한다. 게시물이 없으면 오류가 아니라 200과 빈 `content`를 반환한다. `instrumentId` 지정 시 그 종목이 태그된 게시물만 반환하며, 존재하지 않는 `instrumentId`를 넘겨도 오류가 아니라 빈 `content`를 반환한다(생성·수정 시의 태그 유효성 검증과 달리 이 필터는 조회 조건일 뿐이다). 태그가 없는 게시물은 `instrumentId`·`instrumentSymbol`·`instrumentName`이, 첨부 이미지가 없는 게시물은 `imageId`·`imageUrl`이 각각 모두 `null`이다. 목록 조회는 QueryDSL `leftJoin().fetchJoin()`으로 `instrument`·`image`를 함께 로딩해 N+1을 방지한다.
 
 ### 커뮤니티 게시물 수정
 
 | Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|---|
-| PATCH | /api/community/posts/{postId} | Access Bearer 필수 | 경로 변수 `postId`, 본문 `{"title":"게시물 제목","content":"게시물 본문","instrumentId":1}` (`title` 최대 100자, `content` 최대 5,000자, `instrumentId`는 선택·nullable) | 200 `{"postId":1,"authorNickname":"finplayer","title":"게시물 제목","content":"게시물 본문","createdAt":"2026-07-27T12:00:00","updatedAt":"2026-07-27T12:00:00","instrumentId":1,"instrumentSymbol":"005930","instrumentName":"삼성전자"}` | 제목·본문 누락·빈 값·공백·최대 길이 초과, **존재하지 않거나 비활성인 `instrumentId` 태그**는 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED`. 본인 소유가 아닌 게시물은 403 `FORBIDDEN`. 게시물 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 008 COM-001, 022 COM-004, Issue #26, Issue #246 |
+| PATCH | /api/community/posts/{postId} | Access Bearer 필수 | 경로 변수 `postId`, 본문 `{"title":"게시물 제목","content":"게시물 본문","instrumentId":1}` (`title` 최대 100자, `content` 최대 5,000자, `instrumentId`는 선택·nullable) | 200 `{"postId":1,"authorNickname":"finplayer","title":"게시물 제목","content":"게시물 본문","createdAt":"2026-07-27T12:00:00","updatedAt":"2026-07-27T12:00:00","instrumentId":1,"instrumentSymbol":"005930","instrumentName":"삼성전자","imageId":1,"imageUrl":"/api/community/posts/images/1/file"}` | 제목·본문 누락·빈 값·공백·최대 길이 초과, **존재하지 않거나 비활성인 `instrumentId` 태그**는 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED`. 본인 소유가 아닌 게시물은 403 `FORBIDDEN`. 게시물 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 008 COM-001, 022 COM-004, Issue #26, Issue #246 |
 
-작성자 본인만 수정할 수 있으며 소유자 확인은 요청 본문이 아닌 Access Token의 인증 사용자로 판단한다. `title`·`content`와 동일하게 매 요청이 전체를 교체한다(부분 패치 아님) — `instrumentId`를 생략/`null`로 보내면 기존 태그를 해제한다. 태그를 유지하려면 클라이언트가 기존 `instrumentId`를 다시 보내야 한다.
+작성자 본인만 수정할 수 있으며 소유자 확인은 요청 본문이 아닌 Access Token의 인증 사용자로 판단한다. `title`·`content`와 동일하게 매 요청이 전체를 교체한다(부분 패치 아님) — `instrumentId`를 생략/`null`로 보내면 기존 태그를 해제한다. 태그를 유지하려면 클라이언트가 기존 `instrumentId`를 다시 보내야 한다. 이 엔드포인트는 `imageId`를 요청으로 받지 않는다 — 첨부 이미지 교체·해제는 이번 그룹(COM-006)의 범위가 아니며, 응답의 `imageId`·`imageUrl`은 기존에 연결된 이미지가 있으면 그대로 유지되어 노출된다.
 
 ### 커뮤니티 게시물 삭제
 
@@ -298,7 +298,23 @@ PR #49 차단 리뷰 후속 Fake 재사용·동시성·DB 불변 자동 회귀�
 |---|---|---|---|---|---|---|
 | DELETE | /api/community/posts/{postId} | Access Bearer 필수 | 경로 변수 `postId`, 본문 없음 | 204 (본문 없음) | Access 인증 실패는 401 `UNAUTHORIZED`. 본인 소유가 아닌 게시물은 403 `FORBIDDEN`. 게시물 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 008 COM-001, Issue #27 |
 
-작성자 본인만 삭제할 수 있으며 소유자 확인은 Access Token의 인증 사용자로 판단한다. 삭제 시 해당 게시물에 달린 댓글을 먼저 모두 삭제한 뒤 게시물을 삭제한다.
+작성자 본인만 삭제할 수 있으며 소유자 확인은 Access Token의 인증 사용자로 판단한다. 삭제 시 해당 게시물에 달린 댓글을 먼저 모두 삭제한 뒤 게시물을 삭제한다. 첨부 이미지가 있으면 댓글 삭제 다음·게시물 삭제 전후로 `community_post_images` DB 행과 물리 파일을 함께 제거한다(고아 파일 방지) — 물리 파일 삭제 실패는 로그만 남기고 게시물 삭제 자체를 막지 않는다.
+
+### 커뮤니티 게시물 이미지 업로드
+
+| Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|---|
+| POST | /api/community/posts/images | Access Bearer 필수 | `multipart/form-data`, 파트명 `image`(파일 1개, JPEG·PNG·WEBP만 허용, 5MB 이하) | 201 `{"imageId":1,"imageUrl":"/api/community/posts/images/1/file"}` | 파일이 없거나 빈 파일, 허용하지 않는 형식(JPEG·PNG·WEBP 외)은 400 `VALIDATION_ERROR`("허용하지 않는 이미지 형식입니다. JPEG, PNG, WEBP만 첨부할 수 있습니다."). 5MB 초과는 Spring `MaxUploadSizeExceededException`을 `GlobalExceptionHandler`가 400 `VALIDATION_ERROR`로 매핑. Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 022 COM-006, Issue #248 |
+
+업로더는 요청에서 받지 않고 Access Token의 인증 사용자로 결정한다. 이 엔드포인트는 게시물과 아직 연결되지 않은 이미지를 저장만 하는 선(先)업로드다 — 응답의 `imageId`를 `POST /api/community/posts` 생성 요청의 `imageId`로 보내야 게시물에 연결된다. 저장 파일명은 `UUID`로 생성해 원본 파일명과 분리하고, 원본 파일명·`contentType`·크기는 `CommunityPostImage`에 그대로 보관한다. 게시물당 첨부 가능한 이미지는 최대 1장이며, 이미 다른 게시물에 연결된 `imageId`를 재사용하면 게시물 생성 시점에 400 `VALIDATION_ERROR`로 거부된다(§ 커뮤니티 게시물 작성 참고).
+
+### 커뮤니티 게시물 이미지 다운로드
+
+| Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|---|
+| GET | /api/community/posts/images/{imageId}/file | Access Bearer 필수 | 경로 변수 `imageId` | 200, `Content-Type`은 업로드 시 저장된 `contentType` 그대로, `X-Content-Type-Options: nosniff` 포함, 본문은 이미지 원본 바이트 | 존재하지 않거나(게시물에 아직 연결되지 않은 이미지를 업로더 본인이 아닌 사용자가 요청한 경우 포함) `imageId`는 404 `NOT_FOUND`. Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 022 COM-006, Issue #248 |
+
+**게시물에 연결된(공개) 이미지는 인증 사용자라면 업로더·게시물 소유자와 무관하게 누구나 조회할 수 있다** — 별도 소유권 검사가 없다(게시물 조회에 포함되는 공개적 성격의 첨부 이미지이므로 COM-003 소유권 규칙 대상이 아니다). **아직 게시물에 연결되지 않은(선업로드 상태) 이미지는 업로더 본인만 조회할 수 있고, 그 외 사용자에게는 존재를 숨겨 404로 응답한다** — 선업로드-후참조 흐름상 게시하지 않고 방치된 이미지가 정상적으로 존재하므로(PR #269 리뷰), `imageId`만 안다고 누구나 받을 수 있게 두지 않는다. 파일은 `LocalFileStorageService`가 `finplay.community.image-storage.base-directory`(기본 `./data/community-images`) 아래 저장한 것을 그대로 읽어 반환한다.
 
 ### 커뮤니티 게시물 댓글 목록 조회
 
