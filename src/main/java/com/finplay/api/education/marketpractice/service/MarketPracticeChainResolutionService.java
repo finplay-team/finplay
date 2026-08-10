@@ -65,6 +65,24 @@ public class MarketPracticeChainResolutionService {
 			.findFirst();
 	}
 
+	/**
+	 * {@code resolve}와 달리 여러 favorite 중 우선순위 1건을 고르지 않고, 요청받은 {@code instrumentId} 하나의
+	 * chain만 해석한다. holding 기반 API(관찰·복기)는 사용자가 같은 market에서 종목을 여러 개 완결했을 수 있어
+	 * "가장 우선순위 높은 chain"이 아니라 "그 holding이 속한 종목의 chain"을 봐야 한다(PR #300 리뷰에서 확정 —
+	 * {@code resolve()}만 쓰면 다른 종목의 chain이 우선순위로 뽑혀 정상 chain을 가진 holding이 오탐으로
+	 * PRACTICE_EVIDENCE_MISSING을 받는다).
+	 */
+	@Transactional(readOnly = true)
+	public Optional<ResolvedPracticeChainDto> resolveForInstrument(Long userId, String tutorialKey, Long instrumentId) {
+		Market targetMarket = resolveTargetMarket(tutorialKey);
+
+		return favoriteService.getFavorites(userId).content().stream()
+			.filter(favorite -> targetMarket.name().equals(favorite.market()))
+			.filter(favorite -> favorite.instrumentId().equals(instrumentId))
+			.findFirst()
+			.flatMap(favorite -> resolveForFavorite(userId, favorite));
+	}
+
 	private Optional<ResolvedPracticeChainDto> resolveForFavorite(Long userId, FavoriteResponse favorite) {
 		Optional<PracticeIntention> earliestIntention = practiceIntentionRepository.findByUserId(userId).stream()
 			.filter(intention -> intention.instrumentId().equals(favorite.instrumentId()))

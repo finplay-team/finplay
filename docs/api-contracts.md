@@ -718,6 +718,27 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 진행 상태의 모든 조합, OCO fingerprint canonical JSON과 동시성·잠금 정본은 `docs/specs/016-investment-education-policy/plan.md`를 따른다.
 
+## 026 시장가/지정가 매매 기반 투자 실습 (OCO 없이, holding-observations)
+
+`016`의 OCO exit plan 없이 지금 production에 있는 시장가·코인 지정가 매수만으로 2·3단계를 완결하는 대안 경로다(`docs/specs/026-market-order-practice-tutorial`). `holdingId`를 요청 식별자로 받으며 `016`의 `/observations`·`exitPlanId` 계약과 URL·필드가 다르고 서로 공존한다(spec.md "관찰·복기 API 대상 식별자" 절).
+
+### 실습 3단계 가격 관찰 기록 (holding 기준)
+
+| Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|
+| POST | /api/education/practice/holding-observations | Access Bearer 필수. `{"holdingId":1}` (`PracticeHoldingObservationCreateRequest`). `holdingId` 필수·양수 | 201 `{"observationId":1,"holdingId":1,"currentPrice":69000,"observedAt":"2026-08-10T10:05:00","closerToBoundary":true,"closerBoundary":"STOP_LOSS","evidenceType":"CLOSER_TO_BOUNDARY"}` (`PracticeHoldingObservationResponse`) | 400 `VALIDATION_ERROR`(`holdingId` 누락·0 이하); Access 인증 실패는 401 `UNAUTHORIZED`; 404 `NOT_FOUND`(holding 없음 또는 타인 소유, 존재 비노출); 409 `PRACTICE_EVIDENCE_MISSING`(chain 재해석 실패 또는 요청 holding과 불일치), `PRICE_UNAVAILABLE`(서버 유효 현재가 없음) | 026 MKT-PRACTICE-004·005·007, Issue #300 |
+
+처리 순서는 다음과 같다(plan.md "확정 HTTP·JSON 계약" 절). ① `holdingId`로 본인 소유 holding을 조회한다(`HoldingService.findHoldingForOwner`) — 없거나 타인 소유면 404. ② holding의 종목 market으로 `tutorialKey`(`STOCK`→`INVESTMENT_PRACTICE_V1`, `CRYPTO`→`COIN_PRACTICE_V1`)를 정하고 `MarketPracticeChainResolutionService.resolveForInstrument`로 favorite→intention→buyTrade→holding chain을 재해석한다 — chain이 없거나 해석된 chain의 `holdingId`가 요청 holding과 다르면 409 `PRACTICE_EVIDENCE_MISSING`. ③ `ReferencePriceCalculator`로 참조 손절·익절 가격선을 매 요청 재계산한다 — intention이 유실돼 계산할 수 없으면 같은 409 `PRACTICE_EVIDENCE_MISSING`. ④ `PriceQueryService.getPrice`로 서버 유효 현재가를 조회한다(없으면 자체적으로 409 `PRICE_UNAVAILABLE`). ⑤ 같은 holding의 기존 관찰 목록을 조회해 `EvidenceJudgmentService`로 evidence A(경계 접근)·B(2분 이상 3회 시간 분산)를 판정한다. ⑥ `practice_market_observations` 1행을 append-only insert한다(비관적 락 없음, 동시 여러 건이 여러 행으로 쌓여도 무해).
+
+`closerBoundary`는 `STOP_LOSS|TAKE_PROFIT` 또는 A 미충족 시 null, `evidenceType`은 `CLOSER_TO_BOUNDARY|TIMED_REPETITION` 또는 A·B 모두 미충족 시 null이다(`FINAL_EVENT`는 이 경로에 없음, evidence C 부재). `Idempotency-Key`를 요구하지 않는다 — 호출마다 새 행을 추가하는 append이며 `016`의 관찰 API도 같은 이유로 멱등키가 없다.
+
+| DTO | 필드 순서와 타입 | nullable 규칙 |
+|---|---|---|
+| `PracticeHoldingObservationCreateRequest` | `Long holdingId` | non-null, 양수 |
+| `PracticeHoldingObservationResponse` | `Long observationId`, `Long holdingId`, `BigDecimal currentPrice`, `LocalDateTime observedAt`, `Boolean closerToBoundary`, `String closerBoundary`, `String evidenceType` | 앞의 다섯 필드는 non-null; `closerBoundary`·`evidenceType`은 조건 미충족 시 null |
+
+`holding-reflections`·`GET /api/education/practice`(이 경로 기준)는 아직 구현하지 않았다(이 spec의 다음 작업 항목).
+
 ## 012 AI 피드백
 
 `docs/specs/012-ai-feedback`의 계약 4건이다(변동 원인 카드·매도 직후 피드백·종목 뉴스 요약·개장 전 브리핑). 네 경로는 URL 접두사(`instruments`·`ai`·`market`)가 다르지만 소유 도메인은 `feedback` 하나다. spec 단위로 묶어 둔다. **네 절 모두 제목에 "(계획)" 표시가 없다 — controller가 전부 있으므로 네 절이 전부 블랙박스 QA 근거다** (매도 직후 피드백이 마지막이며 이슈 #208에서 걷었다). `docs/api-routes.md`도 같은 상태이며 계획 라우트로 남은 2차 경로는 없다. **`plan.md`의 남은 이슈 7·8번은 이 네 절에 필드·분기를 더하고 새 엔드포인트를 만들지 않는다** — 계획 절을 다시 세우지 않는다.

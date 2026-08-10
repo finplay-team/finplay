@@ -44,4 +44,12 @@ public class HoldingService {
 		Account account = accountService.getAccountFor(userId, accountMarket);
 		return holdingRepository.findByAccountIdAndInstrumentId(account.getId(), instrumentId).map(Holding::getId);
 	}
+
+	// 026-market-order-practice-tutorial 3단계 관찰 API용 — holdingId로 조회하되 계좌 소유자가 본인이 아니면
+	// 존재를 숨겨 빈 값을 반환한다(호출측이 404 NOT_FOUND로 매핑).
+	@Transactional(readOnly = true)
+	public Optional<Holding> findHoldingForOwner(Long userId, Long holdingId) {
+		return holdingRepository.findById(holdingId)
+			.filter(holding -> holding.getAccount().getUser().getId().equals(userId));
+	}
 }

@@ -153,6 +153,57 @@ class MarketPracticeChainResolutionServiceTest {
 	}
 
 	@Test
+	void resolveForInstrumentReturnsRequestedInstrumentChainEvenWhenAnotherChainWouldWinResolve() {
+		// resolve()라면 buyTradeExecutedAt이 더 이른 favoriteB(instrument 200)를 우선순위로 고른다
+		// (resolveSelectsChainWithEarliestBuyTradeExecutedAtAmongMultipleCompletedFavoriteChains와 동일 픽스처).
+		// resolveForInstrument(instrumentId=100)는 그 우선순위와 무관하게 요청받은 instrument 100의 chain만
+		// 반환해야 한다 — PR #300 리뷰가 지적한 "다른 종목이 뽑혀 정상 holding이 오탐 409를 받는" 버그의 회귀 테스트.
+		FavoriteResponse favoriteA = favorite(10L, 100L, "STOCK", NOW.minusDays(10));
+		FavoriteResponse favoriteB = favorite(11L, 200L, "STOCK", NOW.minusDays(9));
+		when(favoriteService.getFavorites(USER_ID)).thenReturn(new FavoriteListResponse(List.of(favoriteA, favoriteB)));
+
+		PracticeIntention intentionA = intention(20L, 100L, new BigDecimal("3"), NOW.minusDays(8));
+		PracticeIntention intentionB = intention(21L, 200L, new BigDecimal("2"), NOW.minusDays(7));
+		when(practiceIntentionRepository.findByUserId(USER_ID)).thenReturn(List.of(intentionA, intentionB));
+
+		Trade laterTrade = buyTrade(30L, new BigDecimal("100"), new BigDecimal("3"), NOW.minusDays(3));
+		Trade earlierTrade = buyTrade(31L, new BigDecimal("50"), new BigDecimal("2"), NOW.minusDays(5));
+		when(tradeService.findEarliestFilledBuyTradeMatching(
+			USER_ID, 100L, intentionA.quantity(), intentionA.createdAt()))
+			.thenReturn(Optional.of(laterTrade));
+		when(tradeService.findEarliestFilledBuyTradeMatching(
+			USER_ID, 200L, intentionB.quantity(), intentionB.createdAt()))
+			.thenReturn(Optional.of(earlierTrade));
+
+		when(holdingService.findHoldingId(USER_ID, Market.STOCK, 100L)).thenReturn(Optional.of(40L));
+		when(holdingService.findHoldingId(USER_ID, Market.STOCK, 200L)).thenReturn(Optional.of(41L));
+
+		Optional<ResolvedPracticeChainDto> resolveResult = service.resolve(USER_ID,
+			PracticeIntentionService.TUTORIAL_KEY);
+		assertThat(resolveResult).isPresent();
+		assertThat(resolveResult.get().favoriteId()).as("resolve()는 우선순위상 instrument 200을 고른다").isEqualTo(11L);
+
+		Optional<ResolvedPracticeChainDto> result = service.resolveForInstrument(
+			USER_ID, PracticeIntentionService.TUTORIAL_KEY, 100L);
+
+		assertThat(result).isPresent();
+		assertThat(result.get().favoriteId()).isEqualTo(10L);
+		assertThat(result.get().buyTradeId()).isEqualTo(30L);
+		assertThat(result.get().holdingId()).isEqualTo(40L);
+	}
+
+	@Test
+	void resolveForInstrumentReturnsEmptyWhenNoFavoriteMatchesInstrument() {
+		FavoriteResponse favorite = favorite(10L, 100L, "STOCK", NOW.minusDays(1));
+		when(favoriteService.getFavorites(USER_ID)).thenReturn(new FavoriteListResponse(List.of(favorite)));
+
+		Optional<ResolvedPracticeChainDto> result = service.resolveForInstrument(
+			USER_ID, PracticeIntentionService.TUTORIAL_KEY, 999L);
+
+		assertThat(result).isEmpty();
+	}
+
+	@Test
 	void resolveFallsBackToFavoriteCreatedAtAscWhenBuyTradeExecutedAtTies() {
 		LocalDateTime sameExecutedAt = NOW.minusDays(1);
 		FavoriteResponse laterFavorite = favorite(10L, 100L, "STOCK", NOW.minusDays(2));
