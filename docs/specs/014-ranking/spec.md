@@ -207,7 +207,7 @@ Redis ZSET `ranking:{market}`은 MySQL 원장(`accounts.realized_pnl`)의 파생
 
 - **ZSET의 정본 승격** — 정본은 계속 MySQL `accounts.realized_pnl`이다(위 "비즈니스 규칙", `docs/prd.md` §6). 이 작업은 그 결정을 바꾸지 않는다.
 - **`realizedPnl`을 DB에서 조회하도록 변경** — RANK-002가 응답 내부 정합성(rank와 realizedPnl이 동일 스냅샷 기준)을 위해 의도적으로 ZSET을 선택한 결정을 유지한다.
-- **Redis 장애(연결 불가) 시 폴백** — 유실과 장애는 다르다. 현재 읽기 경로(`RankingStore.topN` 등)에 try/catch가 없어 Redis 장애 시 500이 나가는데, **이번 범위에서 바꾸지 않는다.** 이슈 #279가 명시적으로 제외했다.
+- ~~**Redis 장애(연결 불가) 시 폴백** — 유실과 장애는 다르다. 현재 읽기 경로(`RankingStore.topN` 등)에 try/catch가 없어 Redis 장애 시 500이 나가는데, **이번 범위에서 바꾸지 않는다.** 이슈 #279가 명시적으로 제외했다.~~ → **해소됨. 이슈 [#288](https://github.com/finplay-team/finplay/issues/288)에서 읽기 경로에 `RankingStoreUnavailableException`을 도입해 Redis 장애 시에도 200 + `status: UNAVAILABLE`을 반환하도록 구현했다** — 아래 "Redis 장애 시 읽기 경로 폴백과 기동 내성 (이슈 #288)" 절이 정본이다.
 - **수동 재구성 엔드포인트** — 관리자 롤 개념이 없어 권한 설계까지 범위가 커진다(위 Decision Gate 참고).
 - **다중 인스턴스 중복 실행 방지(분산 락)** — 위 비즈니스 규칙 참고. 다중 인스턴스 전환 시 재검토.
 - **프론트엔드(FinPlay 레포) 대응** — `status` 필드를 실제 화면 문구에 반영하는 작업은 별도 조율·별도 작업이다.
@@ -215,7 +215,7 @@ Redis ZSET `ranking:{market}`은 MySQL 원장(`accounts.realized_pnl`)의 파생
 ### 알려진 한계 (다음 사람을 위한 기록)
 
 - **목록 조회는 부분 유실을 감지하지 못한다.** 멤버 일부가 누락됐거나 score가 낡은 상태에서도 `GET /api/rankings`는 `READY`를 반환한다. 감지 비용이 조회 경로에 상시로 얹히는 것을 피하기 위한 의도적 선택이며(위 비즈니스 규칙), 매일 도는 재구성 배치가 교정한다. 필요해지면 그때 재검토한다.
-- **Redis 장애 시에는 여전히 500이 나간다.** `status`는 "ZSET을 읽을 수 있는데 내용이 비어 있다"는 상태를 표현하는 필드이지 Redis 자체가 죽었을 때의 폴백이 아니다. 장애 폴백은 별도 항목이다.
+- ~~**Redis 장애 시에는 여전히 500이 나간다.** `status`는 "ZSET을 읽을 수 있는데 내용이 비어 있다"는 상태를 표현하는 필드이지 Redis 자체가 죽었을 때의 폴백이 아니다. 장애 폴백은 별도 항목이다.~~ → **해소됨(이슈 #288).** `status`에 `UNAVAILABLE` 값이 추가되어 Redis 연결 장애도 이제 200으로 응답한다.
 - **재구성 직후에도 유령 member가 남을 수 있는 경우는 없다** — 전체 교체이므로 교체 결과는 DB를 읽은 시점(T0)의 원장과 일치한다. 다만 교체 이후 발생하는 어긋남(이벤트 유실 등)은 다음 재구성까지 남는다.
 - **재구성 도중 커밋된 매도는 교체에 덮인다(PR 리뷰 지적, 이슈 #279).** 재구성은 T0에 DB를 읽고 T2에 `RENAME`한다. 그 사이에 매도가 커밋되면 after-commit `addScoreWithRetry`가 **본 키**에 쓴 값이 T0 스냅샷으로 통째로 교체된다. 그 계좌의 첫 매도였다면 member 자체가 사라져, 다음 매도나 다음 재구성(최대 약 24시간)까지 `rank: null` + `REBUILDING`으로 보인다. 기동 훅도 예외가 아니다 — `ApplicationReadyEvent`는 웹 서버가 이미 요청을 받는 시점에 발화한다.
   - **고치지 않는 이유**: ZSET은 파생 데이터라 원장이 깨지지 않고, 다음 매도 또는 다음 재구성이 자가 치유한다. 창을 없애려면 재구성 중 쓰기를 막는 락이나 임시 키 동시 기록이 필요한데, "분산 락 없음·과설계 금지"라는 이번 확정과 어긋난다. 새벽 04:20이라 이 창에 매도가 걸릴 확률 자체도 낮다. 다중 인스턴스 전환 시 이 항목도 함께 재검토한다(`plan.md` 참고).
@@ -242,4 +242,37 @@ Redis ZSET `ranking:{market}`은 MySQL 원장(`accounts.realized_pnl`)의 파생
 - [ ] `docs/prd.md` 본문 2곳(RANK-001 절의 "재구성 트리거·절차의 세부 구현은 착수 시 확정한다"·"여전히 Decision Gate다", §6 Redis 키 책임의 랭킹 항목)에 확정된 재구성 절차가 반영된다. **§3 구현 현황 표는 갱신 대상이 아니다** — RANK-001·RANK-002 행의 판정이 "완료"에서 바뀌지 않는다(위 "요구사항 ID를 새로 부여하지 않는 이유" 참고)
 - [ ] 이 spec의 미결 표기 3곳(RANK-001 Decision Gate·RANK-001 범위 제외·RANK-002 범위 제외)이 삭제가 아니라 "#279에서 확정·구현됨"으로 갱신되어 이력이 남는다
 - [ ] 단위·슬라이스(`@WebMvcTest`)·통합(Testcontainers MySQL+Redis) 테스트를 작성한다(`docs/adr/0003-testing-strategy.md` 기준, 세부는 `plan.md` 테스트 계획)
+- [ ] 기존 테스트가 모두 통과하고 `./gradlew build`가 통과한다
+
+## Redis 장애 시 읽기 경로 폴백과 기동 내성 (이슈 #288)
+
+위 "RANK-001 범위 제외"·"RANK-002 알려진 한계"가 각각 "이번 범위에서 바꾸지 않는다"·"장애 폴백은 별도 항목이다"로 명시적으로 미뤄 둔 항목이 이 절이다. 이슈 #279는 **유실**(ZSET을 읽을 수 있는데 내용이 비어 있음)만 다뤘고, 이 절은 **장애**(Redis 연결 자체가 안 됨)를 다룬다.
+
+### 요구사항
+
+- [ ] Redis 연결이 끊긴 상태에서 `GET /api/rankings`가 500이 아니라 200 + `status: UNAVAILABLE` + 빈 `content`를 반환한다
+- [ ] `GET /api/rankings/me`도 200 + `status: UNAVAILABLE` + `rank: null`을 반환한다(닉네임은 DB 조회라 장애와 무관하게 정상 값)
+- [ ] Redis가 정상일 때의 기존 응답(`READY`·`REBUILDING`)은 그대로다
+- [ ] `RankingStore`의 읽기 경로(`topN`·`findAllAtScore`·`countStrictlyGreater`·`score`) 4곳이 Redis 연결 장애 시 `RankingStoreUnavailableException`을 던진다. 쓰기 경로(`addScoreWithRetry`·`replaceAll`)는 기존과 동일하게 예외를 삼킨다 — 의도한 비대칭이다
+- [ ] 랭킹과 무관한 `BithumbFeedLifecycle.startFeed`도 `BithumbFeedClient.start()` 실패를 삼켜, Redis가 죽어 있어도 애플리케이션 기동이 성공한다. 시세 기능만 저하되고 거래내역·계좌요약 등 Redis와 무관한 API는 정상 동작한다 — 랭킹 도메인은 아니지만 PR #284 리뷰의 블랙박스 QA에서 발견된 같은 이슈(#288)의 두 번째 항목이라 여기서 함께 처리한다
+
+### 비즈니스 규칙
+
+- **`UNAVAILABLE`은 `REBUILDING`과 다른 축이다.** `REBUILDING`은 "ZSET을 읽을 수 있는데 비어 있다"이고, `UNAVAILABLE`은 "ZSET 자체를 읽지 못했다"다. 후자는 재구성으로 해결되지 않는다 — Redis 연결이 복구되면 별도 조치 없이 다음 조회부터 정상화된다.
+- **(2026-08-10 PR #296 리뷰로 확정) 예외 타입은 `RedisConnectionFailureException`·`QueryTimeoutException`만 잡는다.** 처음에는 `DataAccessException` 전체를 잡았으나, 이 타입은 WRONGTYPE 등 데이터 오염이 번역되는 `RedisSystemException`까지 포함해 "연결 장애"보다 넓다는 리뷰 지적을 받아 좁혔다. 좁힌 두 타입이 Lettuce 연결 실패·타임아웃 시 실제로 쓰이는 타입이고, 그 밖의 `DataAccessException`(파싱 버그·데이터 오염 등)은 잡지 않고 그대로 전파해 500으로 드러난다 — 재시도로 저절로 낫지 않는 버그를 "일시 장애"로 위장해 UNAVAILABLE 뒤에 숨기지 않기 위해서다.
+- **읽기·쓰기의 비대칭은 유지한다.** 쓰기 경로가 실패를 삼키는 이유는 매도 체결 자체를 보호하기 위해서고(위 RANK-001 "비즈니스 규칙"), 읽기 경로가 예외를 던지는 이유는 호출자(`RankingService`)가 신뢰할 수 없는 값을 응답에 그대로 실어 보내지 않게 하기 위해서다. 목적이 다르므로 같은 처리 방식을 강제하지 않는다.
+
+### 범위 제외
+
+- **503 응답** — HTTP 의미로는 503이 더 정확하지만, PRD §5 오류 표에 503이 없어 랭킹 하나 때문에 전체 오류 계약을 바꾸지 않는다. 다른 기능에서도 "의존성 장애" 표현이 필요해지면 그때 PRD 규약 이슈로 별도 처리한다.
+- **MySQL 폴백(장애 중 `accounts.realized_pnl` 직접 재집계)** — 장애 중 MySQL 부하를 올리는 방향이라 멀쩡한 API까지 함께 느려질 수 있고, 순위 계산을 DB에도 구현하게 되어 랭킹을 이중으로 구현하는 셈이 된다.
+- **프론트엔드(FinPlay 레포) 대응** — `UNAVAILABLE` 값을 실제 화면 문구에 반영하는 작업은 이슈 #279와 동일하게 범위 밖이다.
+
+### 완료 조건
+
+- [ ] `RankingStore`를 스텁해 `RankingStoreUnavailableException`을 던지게 구성한 통합 테스트로 `GET /api/rankings`·`GET /api/rankings/me` 모두 200 + `UNAVAILABLE`을 확인한다(Testcontainers, 컨트롤러→서비스→스토어 실배선)
+- [ ] `BithumbFeedClient.start()`가 예외를 던져도 `BithumbFeedLifecycle.startFeed`가 전파하지 않는 것을 단위 테스트로 확인한다
+- [ ] `docs/api-routes.md`·`docs/api-contracts.md`에 `UNAVAILABLE`이 반영된다(응답 계약이 바뀌는 커밋과 같은 커밋, CLAUDE.md 규칙 7)
+- [ ] `docs/prd.md` 본문(RANK-001 절)에 이 결정이 반영된다. **§3 구현 현황 표는 갱신 대상이 아니다** — 기존 기능의 견고성 보강이라 RANK-001·RANK-002 행의 판정("완료")이 바뀌지 않는다(이슈 #279와 동일한 판단 근거, 위 "요구사항 ID를 새로 부여하지 않는 이유" 참고)
+- [ ] 이 spec의 미결 표기 2곳(RANK-001 범위 제외·RANK-002 알려진 한계)이 삭제가 아니라 "#288에서 해소됨"으로 갱신되어 이력이 남는다
 - [ ] 기존 테스트가 모두 통과하고 `./gradlew build`가 통과한다

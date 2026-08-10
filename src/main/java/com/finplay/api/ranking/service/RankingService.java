@@ -11,6 +11,7 @@ import com.finplay.api.ranking.dto.response.MyRankingResponse;
 import com.finplay.api.ranking.dto.response.RankingListItemResponse;
 import com.finplay.api.ranking.dto.response.RankingListResponse;
 import com.finplay.api.ranking.store.RankingStore;
+import com.finplay.api.ranking.store.RankingStoreUnavailableException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -58,6 +59,16 @@ public class RankingService {
 
 	public RankingListResponse getRankings(Market market, Integer limitParam) {
 		int limit = clampLimit(limitParam);
+		try {
+			return getRankingsOrThrow(market, limit);
+		} catch (RankingStoreUnavailableException e) {
+			// Redis 연결 장애 — 유실(REBUILDING)과 달리 재구성으로 해결되지 않는다. 500 대신 200 +
+			// UNAVAILABLE로 응답한다(이슈 #288). 로그는 RankingStore.unavailable에서 이미 남겼다.
+			return new RankingListResponse(market.name(), RankingStatus.UNAVAILABLE, List.of());
+		}
+	}
+
+	private RankingListResponse getRankingsOrThrow(Market market, int limit) {
 		List<RankingEntryDto> window = fetchWindowResolvingBoundaryTies(market, limit);
 		if (window.isEmpty()) {
 			// window가 비었다 == ZSET에 멤버가 하나도 없다. topN은 limit+1(최소 2)개를 요청하므로 멤버가 하나라도
@@ -101,7 +112,19 @@ public class RankingService {
 	// 이후 account.getUser().getNickname() 접근과 Redis 왕복 2회가 전부 트랜잭션 밖에서 일어나 DB 커넥션을
 	// 점유하지 않는다.
 	public MyRankingResponse getMyRanking(Long userId, Market market) {
+		// 계좌·닉네임은 DB 조회라 Redis 장애와 무관하다 — UNAVAILABLE 응답에도 그대로 실을 수 있다.
 		Account account = accountService.getAccountForWithUser(userId, market);
+		try {
+			return getMyRankingOrThrow(market, account);
+		} catch (RankingStoreUnavailableException e) {
+			// Redis 연결 장애(이슈 #288). rank는 REBUILDING과 같은 모양(null)으로 두고, realizedPnl도 같은
+			// 원칙(score가 없을 때의 0)을 그대로 따른다 — 신뢰할 수 없는 값을 채우지 않는다.
+			return new MyRankingResponse(market.name(), RankingStatus.UNAVAILABLE, null,
+				account.getUser().getNickname(), 0L);
+		}
+	}
+
+	private MyRankingResponse getMyRankingOrThrow(Market market, Account account) {
 		Long score = rankingStore.score(market, account.getId());
 		Integer rank = score == null
 			? null

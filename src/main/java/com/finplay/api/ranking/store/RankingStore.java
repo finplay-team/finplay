@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.QueryTimeoutException;
+import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.stereotype.Component;
@@ -55,9 +57,20 @@ public class RankingStore {
 	}
 
 	// score desc 상위 limit개를 (accountId, score)로 반환한다. 동점자 내부 정렬·공동 순위 보정은 RankingService 책임이다.
+	// 쓰기 경로(addScoreWithRetry·replaceAll)와 달리 읽기 경로는 실패를 삼키지 않는다 — 읽기 실패는 호출자가
+	// 신뢰할 수 없는 값을 그대로 응답에 실어 보낼 위험이 있어, RankingService가 UNAVAILABLE로 변환할 수 있게
+	// 예외로 알려야 한다(이슈 #288). RedisConnectionFailureException·QueryTimeoutException만 잡아 감싼다 —
+	// "연결 장애"로 응답하는 상태값의 의미와 catch 범위를 정확히 맞추기 위해서다(PR #296 리뷰 권장사항).
+	// 이보다 넓은 DataAccessException(예: WRONGTYPE 등 데이터 오염이 RedisSystemException으로 번역된 경우)은
+	// 여기서 잡지 않고 그대로 전파해 500으로 드러나게 한다 — 재시도로 저절로 낫지 않는 버그를 "일시 장애"로
+	// 위장해 조용히 UNAVAILABLE로 감추지 않기 위해서다.
 	public List<RankingEntryDto> topN(Market market, int limit) {
-		Set<ZSetOperations.TypedTuple<String>> window = redisTemplate.opsForZSet().reverseRangeWithScores(key(market),
-			0, limit - 1);
+		Set<ZSetOperations.TypedTuple<String>> window;
+		try {
+			window = redisTemplate.opsForZSet().reverseRangeWithScores(key(market), 0, limit - 1);
+		} catch (RedisConnectionFailureException | QueryTimeoutException e) {
+			throw unavailable(market, e);
+		}
 		if (window == null) {
 			return List.of();
 		}
@@ -81,8 +94,13 @@ public class RankingStore {
 	// 정렬(userId 오름차순)이 정확하지 않을 수 있으나, 이 경로는 이미 비정상 규모의 동점 상황에서만 타므로
 	// 과설계하지 않는다(PR #196 리뷰가 반복적으로 확인한 태도, plan.md 8-1·8-4절과 같은 기준).
 	public List<RankingEntryDto> findAllAtScore(Market market, long score) {
-		Set<String> members = redisTemplate.opsForZSet()
-			.rangeByScore(key(market), (double)score, (double)score, 0, FIND_ALL_AT_SCORE_MAX_MEMBERS);
+		Set<String> members;
+		try {
+			members = redisTemplate.opsForZSet()
+				.rangeByScore(key(market), (double)score, (double)score, 0, FIND_ALL_AT_SCORE_MAX_MEMBERS);
+		} catch (RedisConnectionFailureException | QueryTimeoutException e) {
+			throw unavailable(market, e);
+		}
 		if (members == null || members.isEmpty()) {
 			return List.of();
 		}
@@ -106,8 +124,23 @@ public class RankingStore {
 		// 클램핑된 경우 lowerBound == score라 자기 자신도 포함돼 "엄격히 큼"이 정확히는 아니지만,
 		// KRW 실현손익 규모에서 이 값에 도달할 수 없어 더 정교하게 고치지 않는다(PR #196 리뷰 참고).
 		long lowerBound = Math.min(score, Long.MAX_VALUE - 1) + 1;
-		Long count = redisTemplate.opsForZSet().count(key(market), lowerBound, Double.POSITIVE_INFINITY);
+		Long count;
+		try {
+			count = redisTemplate.opsForZSet().count(key(market), lowerBound, Double.POSITIVE_INFINITY);
+		} catch (RedisConnectionFailureException | QueryTimeoutException e) {
+			throw unavailable(market, e);
+		}
 		return count == null ? 0 : count;
+	}
+
+	// 읽기 경로 4곳(topN·findAllAtScore·countStrictlyGreater·score)이 공유하는 예외 변환 지점이다.
+	// 로그는 여기서 한 번만 남긴다 — 호출부(RankingService)가 다시 잡아 UNAVAILABLE로 바꿀 때 또 남기지 않는다.
+	// WARN + 스택트레이스 생략(PR #296 리뷰 권장사항) — 이제 이 경로는 500이 아니라 정상 폴백이라, 장애가
+	// 몇 분만 이어져도 요청 수만큼 동일 스택트레이스가 쌓여 정작 봐야 할 다른 ERROR를 덮는다. 예외 타입·메시지는
+	// 원인 파악에 충분하고, 반복 여부·지속 시간은 이 로그 라인 자체의 빈도로 알 수 있다.
+	private RankingStoreUnavailableException unavailable(Market market, Exception cause) {
+		log.warn("랭킹 조회 실패(Redis 연결 장애). market={}, cause={}", market, cause.toString());
+		return new RankingStoreUnavailableException("랭킹 조회 중 Redis 연결 장애. market=" + market, cause);
 	}
 
 	private void sleepBackoff(long millis) {
@@ -121,7 +154,12 @@ public class RankingStore {
 	// 계좌 하나의 score를 조회한다(RANK-002 내 랭킹 조회). ZSET에 member가 없으면(매도 이력 없음) null을 반환한다
 	// — RankingService.getMyRanking이 이 null 여부로 매도 이력 유무를 판정한다(plan.md "RANK-002 설계" 참고).
 	public Long score(Market market, Long accountId) {
-		Double raw = redisTemplate.opsForZSet().score(key(market), String.valueOf(accountId));
+		Double raw;
+		try {
+			raw = redisTemplate.opsForZSet().score(key(market), String.valueOf(accountId));
+		} catch (RedisConnectionFailureException | QueryTimeoutException e) {
+			throw unavailable(market, e);
+		}
 		return raw == null ? null : Math.round(raw);
 	}
 

@@ -3,6 +3,7 @@ package com.finplay.api.ranking;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.reset;
@@ -32,6 +33,7 @@ import com.finplay.api.ranking.dto.response.RankingListResponse;
 import com.finplay.api.ranking.listener.RankingEventListener;
 import com.finplay.api.ranking.service.RankingService;
 import com.finplay.api.ranking.store.RankingStore;
+import com.finplay.api.ranking.store.RankingStoreUnavailableException;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -408,6 +410,48 @@ class RankingIntegrationTest {
 		assertThat(response.rank()).isEqualTo(11);
 		assertThat(response.realizedPnl()).isEqualTo(100_000L);
 		assertThat(response.nickname()).isEqualTo(lowestRankedUser.getNickname());
+	}
+
+	// 시나리오 8(이슈 #288): 랭킹 목록 조회 자체가 Redis 연결 장애로 실패해도(RankingStore를 스텁해 재현) 500이
+	// 아니라 200 + status(UNAVAILABLE)이어야 한다. 유실(REBUILDING)과 달리 재구성으로 해결되지 않는 장애다 —
+	// 컨트롤러→서비스→스토어 실제 배선을 통해 GlobalExceptionHandler의 500 캐치올로 새지 않는지 확인한다.
+	@Test
+	void getRankingsReturnsUnavailableStatusInsteadOfFiveHundredWhenRankingStoreIsUnreachable() throws Exception {
+		User user = createUser("rank-redis-outage");
+		createAccount(user);
+		String accessToken = issueAccessToken(user);
+		doThrow(new RankingStoreUnavailableException("redis down", new RuntimeException()))
+			.when(rankingStore)
+			.topN(any(), anyInt());
+
+		mockMvc.perform(get("/api/rankings")
+			.param("market", "CRYPTO")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.market").value("CRYPTO"))
+			.andExpect(jsonPath("$.status").value("UNAVAILABLE"))
+			.andExpect(jsonPath("$.content").isEmpty());
+	}
+
+	// 시나리오 9(이슈 #288): 내 랭킹 조회도 같은 장애에서 200 + status(UNAVAILABLE) + rank:null이어야 한다.
+	// 계좌·닉네임은 DB 조회라 장애와 무관하게 정상 값으로 채워진다.
+	@Test
+	void getMyRankingReturnsUnavailableStatusInsteadOfFiveHundredWhenRankingStoreIsUnreachable() throws Exception {
+		User user = createUser("rank-me-redis-outage");
+		createAccount(user);
+		String accessToken = issueAccessToken(user);
+		doThrow(new RankingStoreUnavailableException("redis down", new RuntimeException()))
+			.when(rankingStore)
+			.score(any(), any());
+
+		mockMvc.perform(get("/api/rankings/me")
+			.param("market", "CRYPTO")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.market").value("CRYPTO"))
+			.andExpect(jsonPath("$.status").value("UNAVAILABLE"))
+			.andExpect(jsonPath("$.rank").doesNotExist())
+			.andExpect(jsonPath("$.nickname").value(user.getNickname()));
 	}
 
 	private MyRankingResponse getMyRanking(String accessToken, String market) throws Exception {
