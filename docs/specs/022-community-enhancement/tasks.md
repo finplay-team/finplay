@@ -36,4 +36,22 @@
 - [x] 5. **문서 동기화 및 최종 빌드**
   `docs/api-routes.md`의 `POST/GET /api/community/posts/{postId}/comments` 행에 대댓글 작성·중첩 조회 설명 갱신(`DELETE /api/community/comments/{commentId}`는 URL 변경 없음이나 부모 삭제 시 자식 함께 삭제되는 동작을 설명에 추가). `docs/api-contracts.md`의 `community` 절에 `parentCommentId` 요청 필드·응답 `parentCommentId`/`replies` 필드·400 `VALIDATION_ERROR`(대댓글에 답글 시도)·404 `NOT_FOUND`(존재하지 않는/다른 게시물 소속 부모) 계약 추가. `docs/prd.md` §3 구현 현황의 "커뮤니티 고도화 — 종목 기준·대댓글·사진 첨부" 행(현재 "일부 완료(COM-004)")을 "일부 완료(COM-004~005)"로 갱신하고 근거에 이 PR 번호 추가, COM-006은 아직 범위 밖임을 명시(CLAUDE.md 규칙10). `docs/specs/022-community-enhancement/spec.md` "완료 조건 COM-005" 체크박스를 구현·테스트 통과 확인 후 `[x]`로 갱신. `./gradlew build` 전체 통과 확인(실패 시 수정 후 재실행).
 
-## COM-006 사진 첨부 (이슈 #248) — 다음 이슈 착수 시 작성
+## COM-006 사진 첨부 (이슈 #248)
+
+- [x] 1. **마이그레이션·저장소 추상화·설정**
+  `db/migration/V26__create_community_post_images.sql`(plan.md SQL 그대로: `community_post_images` 테이블, `post_id` nullable FK `ON DELETE CASCADE` + `UNIQUE(post_id)`, `uploader_id` FK). `community.storage` 패키지에 `FileStorageService` 인터페이스(`store`/`load`/`delete`)와 `LocalFileStorageService` 구현체 신규 작성. `application.yml`에 `spring.servlet.multipart.max-file-size: 5MB`·`max-request-size: 6MB`·`finplay.community.image-storage.base-directory`(기본값 `./data/community-images`) 추가. `GlobalExceptionHandler`에 `MaxUploadSizeExceededException` → 400 `VALIDATION_ERROR` 핸들러 추가. 단위 테스트: `LocalFileStorageServiceTest`(`@TempDir`로 저장·로드·삭제 왕복, 존재하지 않는 파일 삭제 시 예외 없음).
+
+- [x] 2. **`CommunityPostImage` 엔티티·업로드 API**
+  `CommunityPostImage` 엔티티(plan.md 그대로: `uploader`·`post`(nullable)·`storedFilename`·`originalFilename`·`contentType`·`sizeBytes`·`createdAt`, `isAssigned()`·`assignToPost()`), `CommunityPostImageRepository`(`JpaRepository`) 신규. `CommunityPostImageService.uploadImage(authenticatedUserId, MultipartFile)`(빈 파일·허용하지 않는 형식 400, `UUID` 파일명 생성 후 `fileStorageService.store` 호출, `CommunityPostImage.create` 저장) 신규. `CommunityPostImageResponse`(`imageId`·`imageUrl`) 신규. `CommunityPostImageController`에 `POST /api/community/posts/images`(업로드, 201)·`GET /api/community/posts/images/{imageId}/file`(다운로드, 존재하지 않으면 404) 신규. 단위 테스트(`CommunityPostImageServiceTest`: 정상 업로드, 허용하지 않는 형식 400, 빈 파일 400) + `@DataJpaTest`(마이그레이션 FK·`UNIQUE(post_id)` 제약 확인, Testcontainers) + `@WebMvcTest`(`MockMultipartFile`로 업로드 성공/형식 오류 응답 계약, 다운로드 404).
+
+- [x] 3. **게시물 생성 API에 이미지 연결 반영**
+  `CommunityPostImageService.resolveImageForPost(authenticatedUserId, imageId)`(존재하지 않음 404, 타인 소유 403, 이미 연결됨 400 3단계 검증) 신규. `CommunityPost`에 `@OneToOne(mappedBy = "post")` `image` 필드 추가. `CommunityPostCreateRequest`에 `imageId`(nullable) 필드 추가. `CommunityPostResponse`에 `imageId`·`imageUrl`(nullable) 필드 추가, `from(CommunityPost)`에서 이미지 없으면 둘 다 `null`. `CommunityPostService.createPost`에 `imageId` 파라미터 추가 — 값이 있으면 `resolveImageForPost` 호출 후 게시물 저장, 저장된 `post`에 `image.assignToPost(post)` 호출(같은 트랜잭션). `CommunityPostController.createPost`가 `request.imageId()`를 전달. `CommunityPostRepository.findById`의 `@EntityGraph`에 `"image"` 추가, `CommunityPostRepositoryImpl.findPostsOrderByCreatedAtDesc`에 `leftJoin(post.image).fetchJoin()` 추가. 단위 테스트(정상 이미지 연결 생성, 미첨부 하위 호환, 존재하지 않는/타인 소유/이미 연결된 imageId 각각 404·403·400 전파) + `@DataJpaTest`(목록·단건 조회 시 `image` fetch join, N+1 없는지) + `@WebMvcTest`(요청 JSON `imageId` 포함/생략, 응답 JSON `imageId`·`imageUrl` 계약, 404/403/400 매핑).
+
+- [x] 4. **게시물 삭제 시 이미지 정리**
+  `CommunityPostImageService.deleteImageIfPresent(CommunityPost post)` 신규 — 연결된 이미지가 있으면 `storedFilename` 확보 후 DB 행 삭제, 게시물 삭제 성공 뒤 `fileStorageService.delete(storedFilename)` 호출(실패 시 로그만). `CommunityPostService.deletePost`에서 댓글 삭제 다음, 게시물 삭제 전후로 이 메서드 호출(plan.md "삭제 처리" 순서 그대로). 단위 테스트(이미지 있는/없는 게시물 삭제 각각, 물리 파일 삭제 호출 검증 — mock) + `@DataJpaTest`(게시물 삭제 시 `community_post_images` 행이 `ON DELETE CASCADE`로 함께 삭제되는지).
+
+- [x] 5. **통합 테스트**
+  Testcontainers 기반 `@SpringBootTest`로 spec.md "완료 조건 COM-006" 4개 시나리오 구현: (a) 이미지 업로드 → 그 `imageId`로 게시물 작성 → 단건 조회 시 `imageUrl` 포함, 다운로드 엔드포인트로 바이트 확인, (b) 허용하지 않는 형식·5MB 초과 업로드 시도 각각 400, (c) 이미지 첨부 게시물 삭제 후 DB 행·물리 파일 모두 제거 확인, (d) 미첨부 게시물 하위 호환(기존 COM-001 시나리오) 회귀 — `imageId`·`imageUrl` 모두 `null`. 추가 회귀: 타인 소유 imageId로 게시물 생성 시도 403, 이미 사용된 imageId 재사용 시도 400.
+
+- [x] 6. **문서 동기화 및 최종 빌드**
+  `docs/api-routes.md`에 `POST /api/community/posts/images`·`GET /api/community/posts/images/{imageId}/file` 신규 행 추가, 기존 `POST/GET /api/community/posts*` 행에 `imageId`/`imageUrl` 반영 설명 갱신. `docs/api-contracts.md`의 `community` 절에 업로드·다운로드 엔드포인트 계약(요청 파트명·응답 필드·400/404 오류), 게시물 생성 `imageId` 필드·403/400 오류 계약 추가. `docs/prd.md` §3 구현 현황의 "커뮤니티 고도화 — 종목 기준·대댓글·사진 첨부" 행(현재 "일부 완료(COM-004~005)")을 "완료(COM-004~006)"로 갱신하고 근거에 이 PR 번호 추가. `docs/specs/022-community-enhancement/spec.md` "완료 조건 COM-006" 체크박스를 구현·테스트 통과 확인 후 `[x]`로 갱신. `./gradlew build` 전체 통과 확인(실패 시 수정 후 재실행).

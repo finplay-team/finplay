@@ -54,3 +54,6 @@ tools/coin-news-measure/out/
 ### JVM 치명 오류 덤프 (워커 크래시 시 저장소 루트에 생긴다 — PATH·USERNAME 등 로컬 환경이 통째로 들어 있다)
 hs_err_pid*.log
 replay_pid*.log
+
+### 커뮤니티 게시물 이미지 로컬 저장 디렉터리 (COM-006, 이슈 #248)
+/data/

@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -13,15 +15,11 @@ import com.finplay.api.account.domain.Account;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
-import com.finplay.api.feedback.config.FeedbackCryptoProperties;
 import com.finplay.api.feedback.domain.HoldHighBasis;
-import com.finplay.api.feedback.domain.NarrativeSource;
 import com.finplay.api.feedback.domain.PostSellFeedbackStatus;
-import com.finplay.api.feedback.domain.PriceMoveEvent;
+import com.finplay.api.feedback.dto.response.HeldPriceMoveItem;
+import com.finplay.api.feedback.dto.response.PeerComparison;
 import com.finplay.api.feedback.dto.response.PostSellFeedbackResponse;
-import com.finplay.api.feedback.repository.PriceMoveEventRepository;
-import com.finplay.api.feedback.repository.PriceMoveEventSourceRepository;
-import com.finplay.api.feedback.repository.PriceMovePeerStatRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.CandleInterval;
@@ -32,6 +30,7 @@ import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.domain.OrderType;
 import com.finplay.api.order.domain.Trade;
 import com.finplay.api.portfolio.service.SellAllocationSummaryDto;
+import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -41,10 +40,13 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.annotation.Transactional;
 
 // tasks-275.md 4번 항목이다. 정본은 spec §FEED-012 결정 0~4·§C-5이고 계약은 docs/api-contracts.md의
 // "코인 체결의 차이" 소절이다. 3adb8192가 구현한 CryptoPostSellFeedbackReader의 분기를 고정한다.
@@ -52,6 +54,10 @@ import org.springframework.test.util.ReflectionTestUtils;
 // CandleQueryService를 mock한다 — 200봉 상한은 공급자 계약이라 실제 호출로는 경계를 재현할 수 없고, 봉 유무를
 // 케이스별로 만들어야 "일봉으로 채우지 않는다"를 보일 수 있다. mock만으로 끝내지 않는다: 게이트 전이는
 // CryptoPostSellFeedbackGateIntegrationTest가 실제 원장 위에서 고정 Clock으로 본다(ADR-0003).
+//
+// DB 조회 둘(트랜잭션 B·C)은 CryptoPostSellFeedbackDbReader가 갖는다(이슈 #282) — 여기서는 그것도 mock으로
+// 두어 이 파일에는 REST·극값 계산만 남긴다. 카드 매핑과 집계 조회 키는 CryptoPostSellFeedbackDbReaderTest가
+// 따로 본다. 두 관심사가 한 파일에 섞이면 어느 쪽이 깨졌는지 실패 메시지가 말해 주지 않는다(tasks-282.md 2번).
 //
 // 주식 테스트(PostSellFeedbackBoundaryIntegrationTest·PostSellFeedbackGateIntegrationTest)는 수정하지 않는다.
 class CryptoPostSellFeedbackReaderTest {
@@ -86,19 +92,21 @@ class CryptoPostSellFeedbackReaderTest {
 	// §C-5 게이트가 열리는 첫 순간 — 매도 체결 KST 날짜의 다음 날 00:00이다.
 	private static final LocalDateTime GATE_OPENS_AT = SELL_DATE.plusDays(1).atStartOfDay();
 
+	// 트랜잭션 C가 돌려주는 값 — 이 파일이 보는 것은 "조립 리더가 이것을 그대로 싣는가"뿐이라 판정 내용은 무관하다.
+	private static final PeerComparison PEER_COMPARISON = new PeerComparison(
+		PostSellFeedbackStatus.NO_EVENT, null, null, null, null, null);
+
 	private final CandleQueryService candleQueryService = mock(CandleQueryService.class);
 
-	private final PriceMoveEventRepository priceMoveEventRepository = mock(PriceMoveEventRepository.class);
+	private final CryptoPostSellFeedbackDbReader cryptoPostSellFeedbackDbReader = mock(
+		CryptoPostSellFeedbackDbReader.class);
 
-	private final PriceMoveEventSourceRepository priceMoveEventSourceRepository = mock(
-		PriceMoveEventSourceRepository.class);
-
-	// 집단 비교의 저장·조회 키 정합은 CryptoPeerStatsBatchIntegrationTest가 실제 DB로 본다 — 여기서는
-	// Mockito 기본값(Optional.empty())으로 두고 이 파일이 맡은 분기만 본다.
-	private final PriceMovePeerStatRepository priceMovePeerStatRepository = mock(PriceMovePeerStatRepository.class);
-
-	private final FeedbackCryptoProperties cryptoProperties = new FeedbackCryptoProperties(
-		30, 6, 5, 24, 100, 35, 45);
+	@BeforeEach
+	void stubTheDbReaderWithItsEmptyHoldDefaults() {
+		// 카드 0건은 코인에서 흔한 경우다 — 대부분의 케이스가 이 기본값 위에서 돈다. findHeldPriceMoves는
+		// Mockito 기본값이 이미 빈 목록이라 그대로 두고, record를 돌려주는 쪽만 null을 걷어낸다.
+		when(cryptoPostSellFeedbackDbReader.buildPeerComparison(any())).thenReturn(PEER_COMPARISON);
+	}
 
 	// --- 게이트 (§C-5 · 결정 1) ---
 
@@ -460,6 +468,46 @@ class CryptoPostSellFeedbackReaderTest {
 				.isEqualTo(ErrorCode.VALIDATION_ERROR));
 	}
 
+	// --- 트랜잭션 경계 (§FEED-012 결정 5 · 이슈 #282) ---
+
+	// 단계 순서가 곧 트랜잭션 경계다 — 카드 조회(B)가 REST보다 뒤로 가면 scenarioAtFirstMoveAfterBuy가 인자를 잃고,
+	// 집단 비교(C)가 REST보다 앞으로 가면 그 트랜잭션이 REST 구간을 가로질러 열린 채로 남는다. 두 경우 다 값은
+	// 그대로라 다른 단정은 전부 초록이다.
+	@Test
+	@DisplayName("카드 조회 → 캔들 REST → 집단 비교 순서로 부르고 REST 구간이 DB 조회 둘 사이에 들어간다")
+	void readsCardsBeforeTheRestCallsAndPeerComparisonAfterThem() {
+		givenMinuteCandles(minuteCandles());
+		givenDailyCandles(dailyCandles());
+		List<HeldPriceMoveItem> priceMoves = givenHeldCard(LocalDateTime.of(SELL_DATE, LocalTime.of(0, 30)));
+
+		PostSellFeedbackResponse response = read(GATE_OPENS_AT, BUY_AT_199);
+
+		InOrder inOrder = inOrder(cryptoPostSellFeedbackDbReader, candleQueryService);
+		inOrder.verify(cryptoPostSellFeedbackDbReader).findHeldPriceMoves(any(), eq(BUY_AT_199), eq(SELL_AT));
+		inOrder.verify(candleQueryService, atLeastOnce()).getCryptoCandles(eq(SYMBOL), any(), any(), any());
+		// C에는 B의 결과가 그대로 들어간다 — 조립 리더가 카드를 다시 고르면 기준 카드가 두 곳에서 갈릴 수 있다.
+		inOrder.verify(cryptoPostSellFeedbackDbReader).buildPeerComparison(priceMoves);
+
+		// 두 조회 결과를 응답에 그대로 싣는다(재계산 없음).
+		assertThat(response.priceMoves()).isEqualTo(priceMoves);
+		assertThat(response.peerComparison()).isSameAs(PEER_COMPARISON);
+	}
+
+	// 편의로 애노테이션을 붙이는 회귀는 동작으로 드러나지 않는다 — 값은 그대로이고 커넥션을 오래 쥘 뿐이다.
+	// PostSellFeedbackService가 같은 이유로 같은 단정을 갖고 있다.
+	@Test
+	@DisplayName("CryptoPostSellFeedbackReader에는 클래스·read 어디에도 @Transactional이 없다")
+	void neverWrapsTheCryptoAssemblyInATransaction() throws Exception {
+		assertThat(CryptoPostSellFeedbackReader.class.getAnnotation(Transactional.class)).isNull();
+		assertThat(CryptoPostSellFeedbackReader.class.getAnnotation(jakarta.transaction.Transactional.class))
+			.isNull();
+
+		Method read = CryptoPostSellFeedbackReader.class.getDeclaredMethod(
+			"read", Trade.class, SellAllocationSummaryDto.class);
+		assertThat(read.getAnnotation(Transactional.class)).isNull();
+		assertThat(read.getAnnotation(jakarta.transaction.Transactional.class)).isNull();
+	}
+
 	// --- 픽스처 ---
 
 	private PostSellFeedbackResponse read(LocalDateTime now, LocalDateTime buyAt) {
@@ -468,12 +516,7 @@ class CryptoPostSellFeedbackReaderTest {
 
 	private PostSellFeedbackResponse read(LocalDateTime now, LocalDateTime buyAt, LocalDateTime sellAt) {
 		CryptoPostSellFeedbackReader reader = new CryptoPostSellFeedbackReader(
-			candleQueryService,
-			priceMoveEventRepository,
-			new PriceMoveSourceLoader(priceMoveEventSourceRepository),
-			priceMovePeerStatRepository,
-			cryptoProperties,
-			Clock.fixed(now.atZone(KST).toInstant(), KST));
+			candleQueryService, cryptoPostSellFeedbackDbReader, Clock.fixed(now.atZone(KST).toInstant(), KST));
 		return reader.read(cryptoSellTrade(sellAt), allocation(buyAt));
 	}
 
@@ -578,14 +621,13 @@ class CryptoPostSellFeedbackReaderTest {
 			closePrice.subtract(new BigDecimal("5000")), closePrice, new BigDecimal("1.5"));
 	}
 
-	private void givenHeldCard(LocalDateTime occurredAt) {
-		PriceMoveEvent event = PriceMoveEvent.createCrypto(
-			cryptoInstrument(), occurredAt, new BigDecimal("0.021"), new BigDecimal("3.0"),
-			"코인 카드", NarrativeSource.TEMPLATE, occurredAt);
-		ReflectionTestUtils.setField(event, "id", 11L);
-		when(priceMoveEventRepository.findByInstrumentIdAndMarketAndOccurredAtBetweenOrderByOccurredAtAscIdAsc(
-			eq(INSTRUMENT_ID), eq(Market.CRYPTO), any(), any()))
-			.thenReturn(List.of(event));
+	// 트랜잭션 B가 돌려주는 카드 — 조립 리더가 이 값에서 실제로 쓰는 것은 windowEnd(첫 카드 반사실의 캔들 조회
+	// 인자)와 sources(buyToNewsMinutes)뿐이다. occurredAt → windowStart 파생은 DbReader의 몫이라 여기서는 지어낸다.
+	private List<HeldPriceMoveItem> givenHeldCard(LocalDateTime windowEnd) {
+		List<HeldPriceMoveItem> priceMoves = List.of(new HeldPriceMoveItem(
+			11L, windowEnd.minusMinutes(5), windowEnd, new BigDecimal("0.021"), 0, 0, "코인 카드", List.of()));
+		when(cryptoPostSellFeedbackDbReader.findHeldPriceMoves(any(), any(), any())).thenReturn(priceMoves);
+		return priceMoves;
 	}
 
 	private static SellAllocationSummaryDto allocation(LocalDateTime earliestBuyAt) {

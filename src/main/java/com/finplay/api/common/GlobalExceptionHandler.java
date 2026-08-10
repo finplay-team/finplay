@@ -13,6 +13,7 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
@@ -47,6 +48,14 @@ public class GlobalExceptionHandler {
 		// 잘못된 JSON 본문·필수 파라미터 누락·파라미터 검증 실패·쿼리 파라미터 타입 변환 실패·필수 헤더 누락을 모두 VALIDATION_ERROR(400)로 매핑한다.
 		// 사용자 입력 원문을 반사하지 않도록 고정 기본 메시지만 응답한다.
 		return build(ErrorCode.VALIDATION_ERROR, ErrorCode.VALIDATION_ERROR.getDefaultMessage());
+	}
+
+	@ExceptionHandler(MaxUploadSizeExceededException.class)
+	public ResponseEntity<ErrorResponse> handleMaxUploadSizeExceeded(
+		MaxUploadSizeExceededException ex) {
+		// 커뮤니티 게시물 첨부 이미지(COM-006) 등 multipart 업로드가 spring.servlet.multipart.max-file-size를
+		// 초과하면 Spring이 이 예외를 던진다. 400 VALIDATION_ERROR로 매핑한다.
+		return build(ErrorCode.VALIDATION_ERROR, "첨부 파일 크기가 허용 범위를 초과했습니다.");
 	}
 
 	@ExceptionHandler({NoHandlerFoundException.class, NoResourceFoundException.class})

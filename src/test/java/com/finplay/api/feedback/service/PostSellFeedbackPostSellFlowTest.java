@@ -30,8 +30,6 @@ import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.domain.OrderType;
 import com.finplay.api.order.domain.Trade;
-import com.finplay.api.order.service.TradeService;
-import com.finplay.api.portfolio.service.SellAllocationQueryService;
 import com.finplay.api.portfolio.service.SellAllocationSummaryDto;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -56,7 +54,6 @@ class PostSellFeedbackPostSellFlowTest {
 
 	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
-	private static final Long USER_ID = 1L;
 	private static final Long SELL_TRADE_ID = 2L;
 	private static final Long INSTRUMENT_ID = 7L;
 
@@ -77,10 +74,6 @@ class PostSellFeedbackPostSellFlowTest {
 
 	private static final BigDecimal SELL_PRICE = new BigDecimal("68500");
 
-	private final TradeService tradeService = mock(TradeService.class);
-
-	private final SellAllocationQueryService sellAllocationQueryService = mock(SellAllocationQueryService.class);
-
 	private final StockReplayService stockReplayService = mock(StockReplayService.class);
 
 	private final PriceMoveEventRepository priceMoveEventRepository = mock(PriceMoveEventRepository.class);
@@ -90,6 +83,12 @@ class PostSellFeedbackPostSellFlowTest {
 
 	// 이 파일은 매도 후 흐름 게이트만 본다 — 집단 비교는 stub하지 않고 Mockito 기본값(Optional.empty())으로 둔다.
 	private final PriceMovePeerStatRepository priceMovePeerStatRepository = mock(PriceMovePeerStatRepository.class);
+
+	// 검증(404·403·400)과 배분 조회는 PostSellFeedbackContextReader로 옮겨 갔다(이슈 #282) — 이 파일은 이미
+	// 검증을 마친 (trade, allocation)을 주식 조립에 그대로 넘겨 매도 후 흐름 게이트만 본다.
+	private Trade trade;
+
+	private SellAllocationSummaryDto allocation;
 
 	// --- 게이트 ⑬ 직전·직후 (완료 조건 13번) ---
 
@@ -394,9 +393,8 @@ class PostSellFeedbackPostSellFlowTest {
 	@Test
 	@DisplayName("sameSessionCompleted=false면 매도 후 흐름·반사실·집단 비교가 필드 자체로 null이다")
 	void leavesThePostSellBlocksThemselvesNullWhenTheTradeSpansMultipleOriginTradeDates() {
-		when(tradeService.getOwnedTrade(USER_ID, SELL_TRADE_ID)).thenReturn(sellTrade());
-		when(sellAllocationQueryService.getSellAllocationSummary(any()))
-			.thenReturn(allocation(ORIGIN_TRADE_DATE, ORIGIN_TRADE_DATE.plusDays(1)));
+		trade = sellTrade();
+		allocation = allocation(ORIGIN_TRADE_DATE, ORIGIN_TRADE_DATE.plusDays(1));
 
 		PostSellFeedbackResponse response = getPostSellFeedbackAt(EXACTLY_AT_GATE);
 
@@ -409,13 +407,11 @@ class PostSellFeedbackPostSellFlowTest {
 	// --- 픽스처 ---
 
 	private PostSellFeedbackResponse getPostSellFeedbackAt(LocalDateTime now) {
-		PostSellFeedbackReader service = new PostSellFeedbackReader(
-			// 이 파일은 주식 경로만 본다 — 코인 조립은 CryptoPostSellFeedbackReader 전담 테스트의 몫이다.
-			mock(CryptoPostSellFeedbackReader.class),
-			tradeService, sellAllocationQueryService, stockReplayService, priceMoveEventRepository,
+		StockPostSellFeedbackReader reader = new StockPostSellFeedbackReader(
+			stockReplayService, priceMoveEventRepository,
 			new PriceMoveSourceLoader(priceMoveEventSourceRepository), priceMovePeerStatRepository,
 			Clock.fixed(now.atZone(KST).toInstant(), KST));
-		return service.read(USER_ID, SELL_TRADE_ID);
+		return reader.read(trade, allocation);
 	}
 
 	/** 계약 예시를 그대로 재현하는 하루치 분봉. 마지막 분봉이 15:27이고 15:30 분봉은 없다. */
@@ -431,9 +427,8 @@ class PostSellFeedbackPostSellFlowTest {
 	}
 
 	private void givenSameSessionSell() {
-		when(tradeService.getOwnedTrade(USER_ID, SELL_TRADE_ID)).thenReturn(sellTrade());
-		when(sellAllocationQueryService.getSellAllocationSummary(any()))
-			.thenReturn(allocation(ORIGIN_TRADE_DATE, ORIGIN_TRADE_DATE));
+		trade = sellTrade();
+		allocation = allocation(ORIGIN_TRADE_DATE, ORIGIN_TRADE_DATE);
 	}
 
 	private void givenCandles(List<StockCandleDto> candles) {

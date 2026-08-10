@@ -739,6 +739,42 @@ atClose (코인)
 
 **바뀌면 ADR을 다시 판정한다** — 200봉 상한을 조정하거나(별도 이슈) 코인 분봉을 우리가 장기 보관하기로 하면 그때는 인프라 결정이다.
 
+#### 결정 5 — 코인 경로의 트랜잭션을 넷으로 쪼갠다 (이슈 #282, PR #281 리뷰 권장 1)
+
+`CryptoPostSellFeedbackReader`는 §FEED-012 착수 시점부터 `PostSellFeedbackReader`의 단일 `@Transactional(readOnly = true)` 안에서 빗썸 REST를 최대 4회(`findHoldExtremes`·`sellDayClose`·`highestCloseAfterSell`·`scenarioAtFirstMoveAfterBuy`) 불렀다. `PostSellFeedbackReader`가 스스로 "LLM 호출을 이 트랜잭션 안에 넣지 않기 위해 빈을 나눴다"고 적어 둔 원칙과 **정반대**였다. 타임아웃 예산이 connect 2초·read 3초라 최악의 경우 요청 1건이 십수 초 동안 Hikari 커넥션 1개를 쥔다(풀 20). 이 결정은 그 경계를 다시 나눈다.
+
+```
+(트랜잭션 A) trade 검증 + allocation 조회
+  → (트랜잭션 B) priceMoves 조회
+  → (트랜잭션 없음) 캔들 REST 조회 4종
+  → (트랜잭션 C) peerComparison 조회
+  → 조립 (트랜잭션 없음)
+```
+
+`priceMoves`가 B에서 먼저 필요한 이유는 `scenarioAtFirstMoveAfterBuy`가 `priceMoves.get(0).windowEnd()`를 REST 조회 인자로 쓰기 때문이다. `peerComparison`은 REST 결과와 무관하지만 C로 미뤄 둔다 — `priceMoves`만 있으면 계산되므로 B에 합칠 이유가 없고, 합치면 트랜잭션이 REST 구간을 가로질러 열려 있게 된다. 이미 체결된 매도 건의 trade·allocation은 사실상 불변이므로 트랜잭션 사이 시차로 인한 데이터 불일치 위험은 낮다.
+
+**빈 경계 — 자기호출과 "주변 트랜잭션 흡수" 둘 다 피해야 한다.** `PostSellFeedbackReader`가 이미 문서화한 자기호출 함정("같은 클래스의 private 메서드에 애노테이션을 붙이면 프록시를 타지 않아 무효")은 여기서도 유효하지만, 이 이슈가 실제로 걸려 있는 함정은 **하나 더 있다** — 오케스트레이터 메서드 자체에 `@Transactional`이 남아 있으면, 그 안에서 부르는 **다른 빈**의 메서드는 (자기호출이 아니어도, 그 메서드에 `@Transactional`이 없어도) 전파 기본값 `REQUIRED`에 따라 **이미 열린 트랜잭션에 그대로 합류**한다. 지금 버그가 정확히 이 경로다 — `CryptoPostSellFeedbackReader.read()`에는 `@Transactional`이 없는데도 REST 호출이 트랜잭션 안에 갇히는 것은, 그 메서드가 `PostSellFeedbackReader.read()`가 이미 열어 둔 트랜잭션 안에서 호출되기 때문이다. 그래서 분리의 핵심은 "어느 메서드에 애노테이션을 붙이는가"가 아니라 **"오케스트레이터에는 애노테이션이 전혀 없어야 한다"**이다.
+
+신설·변경 빈은 다음과 같다 (전부 `com.finplay.api.feedback.service`, 패키지 전용 클래스).
+
+| 빈 | 변경 | 트랜잭션 | 담당 |
+|---|---|---|---|
+| `PostSellFeedbackReader` | 변경 | **없음** (오케스트레이터) | 컨텍스트 로드 → 시장 분기 → 위임. 서술을 뺀 조립은 더 이상 이 클래스가 하지 않는다 |
+| `PostSellFeedbackContextReader` | **신설** | `@Transactional(readOnly=true)` (트랜잭션 A) | `tradeService.getOwnedTrade` + 매도 체결 검증(400) + `sellAllocationQueryService.getSellAllocationSummary`. **lazy 연관을 여기서 강제 초기화한다**(아래) |
+| `StockPostSellFeedbackReader` | **신설** | `@Transactional(readOnly=true)` (단일, 기존과 동일 범위) | 현재 `PostSellFeedbackReader`의 주식 조립 전부를 그대로 옮긴다. 동작 불변 — `CryptoPostSellFeedbackReader.read(Trade, SellAllocationSummaryDto)`와 대칭 시그니처가 된다 |
+| `CryptoPostSellFeedbackReader` | 변경 | **없음** (오케스트레이터) | 극값·매도 후 흐름·반사실의 REST 조회·조립만 남는다 |
+| `CryptoPostSellFeedbackDbReader` | **신설** | `@Transactional(readOnly=true)` 메서드 2개 (트랜잭션 B·C) | `findHeldPriceMoves`(B)·`buildPeerComparison`(C). 서로 다른 메서드이고 호출부(오케스트레이터)가 외부에서 부르므로 자기호출이 아니다 |
+
+**lazy 연관 초기화가 이 설계의 숨은 필수 조건이다.** `Trade.instrument`·`Trade.stockReplaySession`은 `FetchType.LAZY`이고 `spring.jpa.open-in-view=false`다. 오늘은 `PostSellFeedbackReader.read()` 하나가 트랜잭션을 끝까지 쥐고 있어 `trade.getInstrument().getMarket()`(시장 분기)이 같은 세션 안에서 안전했다. 트랜잭션 A가 끝나면 그 세션은 닫히므로, **`instrument`·`stockReplaySession`을 트랜잭션 A 안에서 미리 채워 두지 않으면** 오케스트레이터의 시장 분기와 `StockPostSellFeedbackReader`의 `sourceTradingDateOf(trade)`(`trade.getStockReplaySession()`)가 **다른(이미 닫힌) 세션에 묶인 프록시**를 건드려 `LazyInitializationException`을 던진다 — 컴파일도 되고 목(mock) 기반 단위 테스트도 통과하는데(기존 `PostSellFeedbackReaderTest`·`CryptoPostSellFeedbackReaderTest`가 엔티티를 `Trade.of(...)`로 직접 만들어 실제 Hibernate 세션을 거치지 않는다) **실제 DB로 돌리는 순간 500이 난다.** `PostSellFeedbackContextReader.loadContext`는 반환 직전에 `org.hibernate.Hibernate.initialize(trade.getInstrument())`와 `Hibernate.initialize(trade.getStockReplaySession())`를 호출해 두 프록시를 실체화한다 — 후자는 코인 체결에서 `null`이고 `Hibernate.initialize(null)`은 안전한 no-op이다. 이 저장소에 `Hibernate.initialize` 선례가 없으므로 신규 관용구다.
+
+**`SellAllocationSummaryDto`는 대상이 아니다** — 스칼라·`LocalDate`/`LocalDateTime`/`BigDecimal`/`List<LocalDate>`만 담는 DTO라 엔티티 참조가 없다. 트랜잭션 A 밖으로 들고 나가도 안전하다.
+
+**"테스트로 고정한다"는 두 층이 필요하다.** Mockito 단위 테스트는 목 객체를 그대로 주입하므로 실제 Hibernate 프록시를 거치지 않아 위 lazy 함정을 통과시켜도 초록으로 남는다. Testcontainers 통합 테스트가 **실제로 저장한 뒤 다시 조회한 `Trade`**로 이 경로를 태워야만 회귀를 잡는다 — 사용자가 사전에 합의한 검증 방식(`TransactionSynchronizationManager.isActualTransactionActive()`가 캔들 REST 호출 시점에 `false`)과 같은 테스트에서 함께 확인한다.
+
+**주식 경로는 동작이 바뀌지 않는다.** `StockPostSellFeedbackReader`는 현재 `PostSellFeedbackReader.read()`의 주식 분기 코드를 그대로(값 하나 바꾸지 않고) 옮긴 것이고 여전히 단일 트랜잭션이다 — 이 이슈가 다루는 것은 코인 경로의 REST 호출뿐이다(이슈 §제외 범위).
+
+**새 ADR이 필요한가 — 필요하지 않다.** `PostSellFeedbackService`가 이미 "LLM 호출을 트랜잭션 밖에 두려고 협력자를 나눈다"는 같은 구조를 쓰고 있다 — 이 결정은 그 패턴을 코인 경로의 REST 호출에 반복 적용하는 것이라 결정할 새 구조가 없다.
+
 ---
 
 ## 구현 사양

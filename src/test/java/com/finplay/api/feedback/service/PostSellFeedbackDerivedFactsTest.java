@@ -33,8 +33,6 @@ import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.domain.OrderType;
 import com.finplay.api.order.domain.Trade;
-import com.finplay.api.order.service.TradeService;
-import com.finplay.api.portfolio.service.SellAllocationQueryService;
 import com.finplay.api.portfolio.service.SellAllocationSummaryDto;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -61,7 +59,6 @@ class PostSellFeedbackDerivedFactsTest {
 
 	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
-	private static final Long USER_ID = 1L;
 	private static final Long SELL_TRADE_ID = 2L;
 	private static final Long INSTRUMENT_ID = 7L;
 
@@ -81,10 +78,6 @@ class PostSellFeedbackDerivedFactsTest {
 
 	private static final BigDecimal SELL_PRICE = new BigDecimal("68500");
 
-	private final TradeService tradeService = mock(TradeService.class);
-
-	private final SellAllocationQueryService sellAllocationQueryService = mock(SellAllocationQueryService.class);
-
 	private final StockReplayService stockReplayService = mock(StockReplayService.class);
 
 	private final PriceMoveEventRepository priceMoveEventRepository = mock(PriceMoveEventRepository.class);
@@ -98,11 +91,15 @@ class PostSellFeedbackDerivedFactsTest {
 	// 기본 픽스처는 "그 체결의 서비스 날짜 = 오늘"이라 게이트 상한이 현재 시각(15:00)이다.
 	private final Clock clock = Clock.fixed(TODAY.atTime(NOW_TIME).atZone(KST).toInstant(), KST);
 
-	private final PostSellFeedbackReader postSellFeedbackReader = new PostSellFeedbackReader(
-		// 이 파일은 주식 경로만 본다 — 코인 조립은 CryptoPostSellFeedbackReader 전담 테스트의 몫이다.
-		mock(CryptoPostSellFeedbackReader.class),
-		tradeService, sellAllocationQueryService, stockReplayService, priceMoveEventRepository,
+	// 검증(404·403·400)과 배분 조회는 PostSellFeedbackContextReader로 옮겨 갔다(이슈 #282) — 이 파일은 이미
+	// 검증을 마친 (trade, allocation)을 주식 조립에 그대로 넘겨 파생 사실만 본다.
+	private final StockPostSellFeedbackReader stockPostSellFeedbackReader = new StockPostSellFeedbackReader(
+		stockReplayService, priceMoveEventRepository,
 		new PriceMoveSourceLoader(priceMoveEventSourceRepository), priceMovePeerStatRepository, clock);
+
+	private Trade trade;
+
+	private SellAllocationSummaryDto allocation;
 
 	// --- 보유 구간 극값 (완료 조건 6번 — close 기준) ---
 
@@ -506,9 +503,8 @@ class PostSellFeedbackDerivedFactsTest {
 	@DisplayName("sameSessionCompleted=false면 파생 사실이 전부 null·priceMoves는 []이고 분봉·카드를 읽지 않는다")
 	void skipsAllDerivedFactsWhenTheTradeSpansMultipleOriginTradeDates() {
 		LocalDate otherOriginTradeDate = LocalDate.of(2026, 7, 30);
-		when(tradeService.getOwnedTrade(USER_ID, SELL_TRADE_ID)).thenReturn(sellTrade(TODAY, ORIGIN_TRADE_DATE));
-		when(sellAllocationQueryService.getSellAllocationSummary(any())).thenReturn(
-			allocation(ORIGIN_TRADE_DATE, otherOriginTradeDate));
+		trade = sellTrade(TODAY, ORIGIN_TRADE_DATE);
+		allocation = allocation(ORIGIN_TRADE_DATE, otherOriginTradeDate);
 
 		PostSellFeedbackResponse response = getPostSellFeedback();
 
@@ -527,7 +523,7 @@ class PostSellFeedbackDerivedFactsTest {
 	// --- 픽스처 ---
 
 	private PostSellFeedbackResponse getPostSellFeedback() {
-		return postSellFeedbackReader.read(USER_ID, SELL_TRADE_ID);
+		return stockPostSellFeedbackReader.read(trade, allocation);
 	}
 
 	private LocalTime capturedRevealCutoff() {
@@ -540,10 +536,8 @@ class PostSellFeedbackDerivedFactsTest {
 
 	/** 초·소수 초가 붙은 체결시각 픽스처 — 원본 거래일은 매도와 같아 sameSessionCompleted가 참이다. */
 	private void givenSubSecondSell() {
-		when(tradeService.getOwnedTrade(USER_ID, SELL_TRADE_ID))
-			.thenReturn(subSecondSellTrade());
-		when(sellAllocationQueryService.getSellAllocationSummary(any()))
-			.thenReturn(subSecondAllocation());
+		trade = subSecondSellTrade();
+		allocation = subSecondAllocation();
 	}
 
 	private void givenSameSessionSell() {
@@ -551,10 +545,8 @@ class PostSellFeedbackDerivedFactsTest {
 	}
 
 	private void givenSameSessionSell(LocalDate serviceDate) {
-		when(tradeService.getOwnedTrade(USER_ID, SELL_TRADE_ID))
-			.thenReturn(sellTrade(serviceDate, ORIGIN_TRADE_DATE));
-		when(sellAllocationQueryService.getSellAllocationSummary(any()))
-			.thenReturn(allocation(ORIGIN_TRADE_DATE, ORIGIN_TRADE_DATE));
+		trade = sellTrade(serviceDate, ORIGIN_TRADE_DATE);
+		allocation = allocation(ORIGIN_TRADE_DATE, ORIGIN_TRADE_DATE);
 	}
 
 	// 원본 거래일로만 스텁한다 — 서비스 날짜로 물은 구현은 스텁이 없어 빈 목록을 받는다.

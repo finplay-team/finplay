@@ -25,8 +25,6 @@ import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.domain.OrderType;
 import com.finplay.api.order.domain.Trade;
-import com.finplay.api.order.service.TradeService;
-import com.finplay.api.portfolio.service.SellAllocationQueryService;
 import com.finplay.api.portfolio.service.SellAllocationSummaryDto;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -52,7 +50,6 @@ class PostSellFeedbackCounterfactualReturnRateTest {
 
 	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
-	private static final Long USER_ID = 1L;
 	private static final Long SELL_TRADE_ID = 2L;
 	private static final Long INSTRUMENT_ID = 7L;
 
@@ -80,10 +77,6 @@ class PostSellFeedbackCounterfactualReturnRateTest {
 	private static final long ALLOCATED_BUY_FEE = 1_000L;
 	private static final long BUY_BASIS = ALLOCATED_COST + ALLOCATED_BUY_FEE;
 
-	private final TradeService tradeService = mock(TradeService.class);
-
-	private final SellAllocationQueryService sellAllocationQueryService = mock(SellAllocationQueryService.class);
-
 	private final StockReplayService stockReplayService = mock(StockReplayService.class);
 
 	private final PriceMoveEventRepository priceMoveEventRepository = mock(PriceMoveEventRepository.class);
@@ -93,6 +86,12 @@ class PostSellFeedbackCounterfactualReturnRateTest {
 
 	// 이 파일은 반사실 returnRate만 본다 — 집단 비교는 stub하지 않고 Mockito 기본값(Optional.empty())으로 둔다.
 	private final PriceMovePeerStatRepository priceMovePeerStatRepository = mock(PriceMovePeerStatRepository.class);
+
+	// 검증(404·403·400)과 배분 조회는 PostSellFeedbackContextReader로 옮겨 갔다(이슈 #282) — 이 파일은 이미
+	// 검증을 마친 (trade, allocation)을 주식 조립에 그대로 넘겨 반사실 returnRate만 본다.
+	private Trade trade;
+
+	private SellAllocationSummaryDto allocation;
 
 	@Test
 	@DisplayName("반사실 3종의 returnRate가 FLOOR 수수료로 산출된다 — HALF_UP으로 반올림하면 셋 다 0.0001씩 어긋난다")
@@ -135,18 +134,16 @@ class PostSellFeedbackCounterfactualReturnRateTest {
 	// --- 픽스처 ---
 
 	private PostSellFeedbackResponse getPostSellFeedbackAt(LocalDateTime now) {
-		PostSellFeedbackReader reader = new PostSellFeedbackReader(
-			// 이 파일은 주식 경로만 본다 — 코인 조립은 CryptoPostSellFeedbackReader 전담 테스트의 몫이다.
-			mock(CryptoPostSellFeedbackReader.class),
-			tradeService, sellAllocationQueryService, stockReplayService, priceMoveEventRepository,
+		StockPostSellFeedbackReader reader = new StockPostSellFeedbackReader(
+			stockReplayService, priceMoveEventRepository,
 			new PriceMoveSourceLoader(priceMoveEventSourceRepository), priceMovePeerStatRepository,
 			Clock.fixed(now.atZone(KST).toInstant(), KST));
-		return reader.read(USER_ID, SELL_TRADE_ID);
+		return reader.read(trade, allocation);
 	}
 
 	private void givenSameSessionSell() {
-		when(tradeService.getOwnedTrade(USER_ID, SELL_TRADE_ID)).thenReturn(sellTrade());
-		when(sellAllocationQueryService.getSellAllocationSummary(any())).thenReturn(allocation());
+		trade = sellTrade();
+		allocation = allocation();
 	}
 
 	private void givenCandles(List<StockCandleDto> candles) {

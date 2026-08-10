@@ -8,6 +8,7 @@ import com.finplay.api.TestcontainersConfiguration;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.community.domain.CommunityPost;
+import com.finplay.api.community.domain.CommunityPostImage;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.repository.InstrumentRepository;
@@ -52,6 +53,9 @@ class CommunityPostRepositoryTest {
 	private InstrumentRepository instrumentRepository;
 
 	@Autowired
+	private CommunityPostImageRepository communityPostImageRepository;
+
+	@Autowired
 	private JdbcTemplate jdbcTemplate;
 
 	@Autowired
@@ -63,6 +67,7 @@ class CommunityPostRepositoryTest {
 	@BeforeEach
 	void removePostsPersistedByOtherTestContexts() {
 		jdbcTemplate.update("delete from post_comments");
+		jdbcTemplate.update("delete from community_post_images");
 		jdbcTemplate.update("delete from community_posts");
 	}
 
@@ -308,6 +313,68 @@ class CommunityPostRepositoryTest {
 		page.getContent().forEach(post -> assertThat(post.getInstrument().getSymbol())
 			.isEqualTo(samsung.getSymbol()));
 
+		assertThat(statistics.getPrepareStatementCount()).isEqualTo(2);
+	}
+
+	@Test
+	void findByIdFetchesAssignedImageWithoutAdditionalQuery() {
+		User author = userRepository.saveAndFlush(User.create("imagefind@finplay.com", "hash", "imagefinder", NOW));
+		CommunityPost post = repository.saveAndFlush(
+			CommunityPost.create(author, "with image", "content", null, NOW));
+		CommunityPostImage image = communityPostImageRepository.saveAndFlush(
+			CommunityPostImage.create(author, "stored.png", "original.png", "image/png", 10L, NOW));
+		image.assignToPost(post);
+		communityPostImageRepository.saveAndFlush(image);
+		entityManager.clear();
+
+		Statistics statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+		statistics.setStatisticsEnabled(true);
+		statistics.clear();
+
+		CommunityPost found = repository.findById(post.getId()).orElseThrow();
+
+		assertThat(found.getImage()).isNotNull();
+		assertThat(found.getImage().getStoredFilename()).isEqualTo("stored.png");
+		assertThat(statistics.getPrepareStatementCount()).isEqualTo(1);
+	}
+
+	@Test
+	void findByIdReturnsNullImageForUnattachedPost() {
+		User author = userRepository.saveAndFlush(User.create("noimage@finplay.com", "hash", "noimage", NOW));
+		CommunityPost post = repository.saveAndFlush(
+			CommunityPost.create(author, "no image", "content", null, NOW));
+		entityManager.clear();
+
+		CommunityPost found = repository.findById(post.getId()).orElseThrow();
+
+		assertThat(found.getImage()).isNull();
+	}
+
+	@Test
+	void findPostsOrderByCreatedAtDescFetchesImagesWithoutAdditionalQueries() {
+		User author = userRepository.saveAndFlush(User.create("imagelist@finplay.com", "hash", "imagelister", NOW));
+		CommunityPost withImagePost = repository.saveAndFlush(
+			CommunityPost.create(author, "with image", "content", null, NOW.minusMinutes(1)));
+		CommunityPostImage image = communityPostImageRepository.saveAndFlush(
+			CommunityPostImage.create(author, "stored.png", "original.png", "image/png", 10L, NOW));
+		image.assignToPost(withImagePost);
+		communityPostImageRepository.saveAndFlush(image);
+		repository.saveAndFlush(CommunityPost.create(author, "without image", "content", null, NOW));
+		entityManager.clear();
+
+		Statistics statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+		statistics.setStatisticsEnabled(true);
+		statistics.clear();
+
+		Page<CommunityPost> page = repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10), null);
+
+		assertThat(page.getContent()).hasSize(2);
+		CommunityPost fetchedWithImage = page.getContent().stream()
+			.filter(post -> post.getId().equals(withImagePost.getId()))
+			.findFirst()
+			.orElseThrow();
+		assertThat(fetchedWithImage.getImage()).isNotNull();
+		assertThat(fetchedWithImage.getImage().getStoredFilename()).isEqualTo("stored.png");
 		assertThat(statistics.getPrepareStatementCount()).isEqualTo(2);
 	}
 
