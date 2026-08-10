@@ -33,6 +33,16 @@
 | - | implementer | `Edit docs/adr/0016-review-gate-auto-fix-round.md` (timeout 60→90, !cancelled()·PR_NUMBER·pr 가드 근거 추가) | 정식 리뷰 권장 4(문서 불일치 해소, ADR을 정본으로) |
 | - | implementer | `Edit docs/specs/025-review-gate-auto-fix/plan.md` (스텝 시퀀스를 최종 구현에 동기화, timeout 60→90) | 정식 리뷰 권장 5 |
 | - | implementer | `Write docs/specs/025-review-gate-auto-fix/run-log.md` (표 1개 + 모니터링 1개로 통합) | 정식 리뷰 권장 6, `docs/specs/README.md` run-log 형식 |
+| - | implementer | `Edit .github/workflows/agent.yml` (이력 코멘트 3개 !cancelled()→always() 되돌림, 주석 근거 갱신) | 4차 리뷰 권장 1 — 타임아웃=취소라 autofix 타임아웃 흔적이 사라지는 문제, spec.md "코멘트 이력으로 중단 사유 파악" |
+| - | implementer | `Edit .github/workflows/agent.yml` (review_failure_comment 스텝 신설) | 4차 리뷰 참고 1 — 라운드 1만 비대칭으로 흔적 없던 것 해소, autofix_review_failure_comment와 동일 패턴 |
+| - | implementer | `Edit .github/workflows/agent.yml` (judge else 분기 final_reason을 autofix_failed / round1_only로 분리) | 4차 리뷰 참고 3 |
+| - | implementer | `grep -n "final_reason\|steps.judge.outputs" .github/workflows/agent.yml` | 참고 3 안전성 자체 검증 — final_reason이 로그 전용(소비처 없음)임을 직접 확인 |
+| - | implementer | `python -c "import yaml; ... steps/if 목록 출력"` | 최종 19개 step 순서·id·if 확인(18→19), always()/!cancelled() 배치 구분 확인 |
+| - | implementer | `bash -n <추출한 run: 스크립트 13개, newline='' + LF 강제>` | 신규/변경 run: 스크립트 문법 확인 (CRLF 거짓 실패 방지) |
+| - | implementer | `git diff \| grep -E "final_blocking\|final_recommended\|FINAL_"` | judge의 승인 판정 계산이 무변경임을 diff로 확인 |
+| - | implementer | `Edit docs/specs/025-review-gate-auto-fix/plan.md` (스텝 번호에 build 추가·전체 재번호, 신규 스텝 반영, always/!cancelled 구분 절 정정) | 4차 리뷰 권장 2·권장 1·참고 1·참고 3 |
+| - | implementer | `Edit docs/adr/0016-review-gate-auto-fix-round.md` (종료 사유 5가지 정본 열거, always/!cancelled 구분 근거) | 4차 리뷰 참고 2·권장 1 |
+| - | implementer | `Edit docs/specs/025-review-gate-auto-fix/spec.md` (종료 사유 열거 갱신, 라운드 1 흔적 요구사항 추가) | 4차 리뷰 참고 2·참고 1 |
 
 ## 모니터링 (사람용 요약)
 - ADR-0016 초안 작성, ADR-0013 상태 줄만 "일부 대체됨"으로 갱신(본문 미수정), 컴파일 통과.
@@ -46,3 +56,8 @@
 - PR #293 2차 리뷰 권장 1건 재검증 — 차단 0건 / 권장 0건 / 참고 0건, 해소 확인. autofix_review_failure_comment의 if(`always() && autofix==success && build_autofix==success && review_autofix==failure`)가 post_review_autofix(`review_autofix==success`)·autofix_build_failure_comment(`build_autofix==failure`)와 상호 배타적임을 17개 step 전수 확인(겹침·누락 케이스 없음). always() 배치는 기존 autofix_build_failure_comment와 동일 패턴.
 - 팀원(WookJaes) 정식 리뷰 — 차단 0건 / 권장 6건 / 참고 4건. 권장 6건 전부 + 참고 1(always()→!cancelled())·참고 4(PR_NUMBER env 통일) 반영, 문서(ADR-0016·plan.md) timeout 값을 90으로 동기화. 최종 18개 step. judge·승인 게이트의 "모르면 승인 안 함" 안전 기본값 성질은 이번 수정으로 바뀌지 않음(judge 분기 로직 자체는 무변경, if 조건만 always()→!cancelled()로 교체 — 취소되지 않은 정상 실행 경로에서는 동일하게 동작).
 - 참고 2·3은 이번 회차에서 손대지 않았다 — **참고 3**(review 스텝의 `success()` 암묵 의존)은 리뷰어 스스로 "조치 불필요"로 결론지어 반영 대상에서 제외됐다. **참고 2**는 별도 설계 논의가 필요하다고 판단해 이번 PR 범위에서 제외하고 후속 이슈로 미뤘다(코디네이터 판단, 상세 논의는 이 세션 범위 밖이라 이 로그엔 판단 근거만 기록).
+- 팀원(WookJaes) 4차 리뷰 — 차단 0건, 직전 지적(권장 6 + 참고 2) 전부 해소 확인. 새 권장 2건·참고 3건 **5건 전부 반영**. 최종 19개 step.
+- **권장 1(가장 중요)**: 3차 리뷰에서 일괄 적용했던 `always()`→`!cancelled()`를 이력 코멘트 스텝에서는 되돌렸다. `timeout-minutes: 90` 초과 시 GitHub이 job을 **취소**로 처리하는데 가장 오래 도는 스텝이 `autofix`라 타임아웃 확률이 제일 높은 지점이고, `!cancelled()`면 그 경우 PR에 아무 흔적도 안 남아 spec.md의 "코멘트 이력으로 중단 사유 파악"을 못 지킨다. 최종 배치 — **이력 코멘트 4개(`review_failure_comment`·`autofix_call_failure_comment`·`autofix_build_failure_comment`·`autofix_review_failure_comment`)는 `always()`**, **판정·승인 2개(`judge`·조건부 승인)는 `!cancelled()`**. 정보성 코멘트는 취소된 런에 붙어도 무해하지만 승인은 아니라는 게 구분 기준이다.
+- **참고 1**: 라운드 1의 `review` 호출 자체가 failure로 끝나는 경우를 `review_failure_comment` 스텝으로 흡수 — 자동 수정 라운드만 흔적을 남기고 라운드 1은 침묵하던 비대칭 해소.
+- **참고 3**: `judge`의 else 분기에서 `final_reason`을 `autofix_failed`(돌다가 실패)와 `round1_only`(아예 안 돎)로 분리. **안전성 근거를 직접 검증했다** — `grep`으로 `final_reason`이 전부 `echo ... >> $GITHUB_OUTPUT` 쓰기 위치에만 있고 어느 `if:`에서도 참조되지 않음(라운드 소진 코멘트 스텝 제거 후 소비처 없음), `steps.judge.outputs` 소비처는 `final_blocking`·`final_recommended` 2개뿐임을 확인했다. 즉 **로그 전용 값이라 판정에 영향이 없다.** `final_blocking`·`final_recommended` 계산 로직은 손대지 않았고 `git diff`로 무변경임을 재확인했다("모르면 승인 안 함" 성질 유지).
+- 권장 2(plan.md 스텝 번호에서 `build` 누락)·참고 2(ADR-0016·spec.md의 종료 사유 열거가 3가지로 낡음) 반영 — plan.md는 "변경 전" 절과 번호 기준을 맞춰 전체 재번호(1=checkout그룹, 2=구현, 3=빌드검증, 4=PR번호조회, …17=조건부승인)했고, 종료 사유는 실제 구현대로 5가지(차단 해소/라운드 소진/재리뷰 구조화 출력 없음/빌드 실패/자동 수정 호출 실패) + 라운드 1의 2가지 흔적으로 갱신했다. ADR-0016을 정본으로 두고 spec.md는 그쪽을 가리킨다.

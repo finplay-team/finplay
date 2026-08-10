@@ -228,6 +228,20 @@ jobs:
           printf '%s\n' "$REVIEW_REPORT" > /tmp/review-body.md
           gh pr comment "$PR_NUMBER" --body-file /tmp/review-body.md
 
+      - name: 리뷰 호출 실패 이력 코멘트 — 라운드 1
+        id: review_failure_comment
+        # 바로 위 스텝은 review가 success로 끝났지만 구조화 출력이 비어 있는 경우(침묵 실패)를 흡수한다.
+        # 여기는 review 호출 자체가 실패로 끝나는 경우다 — 자동 수정 라운드 쪽 autofix_review_failure_comment와
+        # 같은 패턴이며, 라운드 1만 비대칭으로 흔적이 안 남던 것을 맞춘 것이다 (PR #293 4차 리뷰 참고 1).
+        # 이력 코멘트라 always() — 라운드가 아니므로 "자동 수정 N회차" 헤더는 붙이지 않는다.
+        if: always() && steps.pr.outputs.number != '' && steps.review.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+        run: |
+          printf '%s\n' "리뷰 호출이 실패했습니다 — 사람이 직접 확인해야 합니다." > /tmp/review-failure-body.md
+          gh pr comment "$PR_NUMBER" --body-file /tmp/review-failure-body.md
+
       - name: 자동 수정 준비 — 라운드 1 리뷰 report 저장 (ADR-0016)
         id: prep_autofix
         # claude-code-action의 prompt(= with:)도 env와 마찬가지로 if: 가드와 무관하게 먼저 평가된다.
@@ -263,9 +277,13 @@ jobs:
       - name: 자동 수정 라운드 — 자동 수정 호출 실패 이력 코멘트
         id: autofix_call_failure_comment
         # autofix_build_failure_comment와 같은 패턴 — autofix 스텝 자체가 실패/취소로 끝나면(커밋·push까지
-        # 못 갔을 수 있음) 그 뒤로는 아무 흔적도 안 남았다. !cancelled()로 취소된 런에서는 돌지 않되,
-        # 실패로 success() 체인이 깨진 뒤에도 반드시 돌아야 한다 (PR #293 3차 리뷰 권장 1).
-        if: "!cancelled() && steps.prep_autofix.outcome == 'success' && steps.autofix.outcome != 'success'"
+        # 못 갔을 수 있음) 그 뒤로는 아무 흔적도 안 남았다.
+        # 이력 코멘트 스텝은 judge·조건부 승인과 달리 !cancelled()가 아니라 always()를 쓴다 —
+        # timeout-minutes 초과는 GitHub이 job을 '취소'로 처리하는데 가장 오래 도는 스텝이 바로 이 autofix라
+        # 타임아웃이 걸릴 확률이 제일 높다. !cancelled()면 그 경우 PR에 아무 흔적도 안 남아
+        # spec.md의 "코멘트 이력만 보고 왜 멈췄는지 알 수 있다"를 못 지킨다. 정보성 코멘트는 취소된 런에
+        # 붙어도 무해하지만 승인은 아니므로, 승인·판정 스텝만 !cancelled()로 막는다 (PR #293 4차 리뷰 권장 1).
+        if: always() && steps.prep_autofix.outcome == 'success' && steps.autofix.outcome != 'success'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
@@ -354,9 +372,10 @@ jobs:
         # always()가 없으면 build_autofix가 failure일 때 GitHub Actions가 암묵적으로 요구하는 success()가
         # 이미 깨진 상태라 이 스텝 자체가 도달 전에 skip된다 — 바로 위 build_autofix if:의 커스텀 조건과
         # 같은 이유로 명시적 status 함수가 필요하다 (PR #271 리뷰가 정리한 패턴, ADR-0016).
-        # always() 대신 !cancelled()를 쓴다 — "실패 후에도 실행"은 유지하되 취소된 런에서까지 돌아
-        # 이력 코멘트·승인이 붙는 것은 막는다 (PR #293 3차 리뷰 참고 1).
-        if: "!cancelled() && steps.autofix.outcome == 'success' && steps.build_autofix.outcome == 'failure'"
+        # 이력 코멘트라 !cancelled()가 아니라 always()다 — 취소(타임아웃 포함)된 런에서도 왜 멈췄는지
+        # 흔적은 남아야 한다. 정보성 코멘트는 취소된 런에 붙어도 무해하고, 승인만 !cancelled()로 막는다
+        # (PR #293 4차 리뷰 권장 1).
+        if: always() && steps.autofix.outcome == 'success' && steps.build_autofix.outcome == 'failure'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
@@ -368,10 +387,10 @@ jobs:
         id: autofix_review_failure_comment
         # post_review_autofix는 review_autofix가 success로 끝났지만 구조화 출력이 비어 있는 경우(침묵 실패)만
         # 흡수한다. 여기는 review_autofix 호출 자체가 실패(outcome == 'failure')로 끝나는 경우다 — 두 if:는
-        # 상호 배타적이라 동시에 돌지 않는다. always() 대신 !cancelled()를 쓰는 이유는 autofix_build_failure_comment와
-        # 같다 — 실패로 success() 체인이 깨진 뒤에도 돌아야 하지만 취소된 런에서까지 돌 필요는 없다 (PR #293 2차 리뷰,
-        # 3차 리뷰 참고 1 반영).
-        if: "!cancelled() && steps.autofix.outcome == 'success' && steps.build_autofix.outcome == 'success' && steps.review_autofix.outcome == 'failure'"
+        # 상호 배타적이라 동시에 돌지 않는다. always()를 쓰는 이유는 autofix_build_failure_comment와 같다 —
+        # 이력 코멘트는 취소(타임아웃 포함)된 런에서도 남아야 하고, 취소된 런을 막아야 하는 건 판정·승인뿐이다
+        # (PR #293 2차 리뷰, 4차 리뷰 권장 1 반영).
+        if: always() && steps.autofix.outcome == 'success' && steps.build_autofix.outcome == 'success' && steps.review_autofix.outcome == 'failure'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
@@ -383,7 +402,9 @@ jobs:
         id: judge
         # always() 대신 !cancelled() — build_autofix 실패 등으로 앞쪽 success() 체인이 깨진 뒤에도 이 스텝은
         # 반드시 돌아서 "판정 불가 = 승인 보류"로 안전하게 마무리해야 한다(autofix_build_failure_comment와 같은
-        # 이유). 다만 취소된 런에서까지 판정을 매기고 승인으로 이어질 필요는 없다 (PR #293 3차 리뷰 참고 1).
+        # 이유). 다만 취소된 런에서까지 판정을 매기고 승인으로 이어질 필요는 없다 — 이력 코멘트 스텝들이
+        # always()인 것과 갈리는 지점이다(정보성 코멘트는 취소된 런에 붙어도 무해하지만 승인은 아니다,
+        # PR #293 3차 리뷰 참고 1 · 4차 리뷰 권장 1).
         if: "!cancelled() && steps.pr.outputs.number != ''"
         env:
           AUTOFIX_OUTCOME: ${{ steps.autofix.outcome }}
@@ -428,7 +449,14 @@ jobs:
             FINAL_RECOMMENDED=$(printf '%s' "$REVIEW_STRUCTURED_OUTPUT" | jq -r '.recommended_count')
             echo "final_blocking=$FINAL_BLOCKING" >> "$GITHUB_OUTPUT"
             echo "final_recommended=$FINAL_RECOMMENDED" >> "$GITHUB_OUTPUT"
-            echo "final_reason=round1_only" >> "$GITHUB_OUTPUT"
+            # "자동 수정이 아예 안 돌았다"와 "돌다가 실패했다"를 로그에서 구분한다. final_reason은 어느 if:에서도
+            # 참조되지 않는 로그 전용 값이라(round_exhausted 코멘트 스텝 제거 후 소비처 없음) 판정에 영향이 없다.
+            # 위 final_blocking·final_recommended 계산은 건드리지 않는다 (PR #293 4차 리뷰 참고 3).
+            if [ "$AUTOFIX_OUTCOME" = "failure" ] || [ "$AUTOFIX_OUTCOME" = "cancelled" ]; then
+              echo "final_reason=autofix_failed" >> "$GITHUB_OUTPUT"
+            else
+              echo "final_reason=round1_only" >> "$GITHUB_OUTPUT"
+            fi
           fi
 
       - name: 조건부 승인 — 차단·권장 0건일 때만 (ADR-0013·ADR-0016, 머지는 사람이 진행)
