@@ -22,6 +22,7 @@ import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.domain.OrderType;
 import com.finplay.api.order.domain.Trade;
 import com.finplay.api.portfolio.service.SellAllocationSummaryDto;
+import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -33,15 +34,16 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.InOrder;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.annotation.Transactional;
 
 // tasks-282.md 1번 항목이 이 파일에 남긴 책임은 **오케스트레이션뿐**이다 — 검증 순서·배분 조회는
 // PostSellFeedbackContextReaderTest가, 주식 조립은 StockPostSellFeedbackReaderTest가, 코인 조립은
 // CryptoPostSellFeedbackReaderTest가 본다. 401·404·403·400의 HTTP 매핑은 PostSellFeedbackControllerTest가,
 // 서술 생성·재사용은 PostSellFeedbackServiceTest가, 종단은 PostSellFeedbackIntegrationTest가 맡는다.
 //
-// **이 클래스에 @Transactional이 없어야 한다는 결정(spec §FEED-012 결정 5)은 여기서 검증할 수 없다** —
-// 애노테이션 유무는 프록시가 붙는 실행 시점의 성질이라 mock 위에서는 드러나지 않는다. 트랜잭션 경계는
-// tasks-282.md 3번 항목의 통합 테스트가 실제 DB로 고정한다.
+// **이 클래스에 @Transactional이 없어야 한다는 결정(spec §FEED-012 결정 5)**은 아래 리플렉션 단정이 지킨다 —
+// mock 위에서는 프록시가 붙지 않아 동작으로는 드러나지 않지만, 애노테이션 자체는 볼 수 있다. 실제로 트랜잭션이
+// 열리지 않는다는 사실은 tasks-282.md 3번 항목의 통합 테스트가 실제 DB로 고정한다.
 class PostSellFeedbackReaderTest {
 
 	private static final Long USER_ID = 1L;
@@ -135,6 +137,22 @@ class PostSellFeedbackReaderTest {
 			.satisfies(exception -> assertThat(((BusinessException)exception).getErrorCode()).isEqualTo(errorCode));
 
 		verifyNoInteractions(stockPostSellFeedbackReader, cryptoPostSellFeedbackReader);
+	}
+
+	// --- 트랜잭션 경계 ---
+
+	// 편의로 애노테이션을 붙이는 회귀는 동작으로 드러나지 않는다 — 값은 그대로이고 커넥션을 오래 쥘 뿐이다.
+	// 오케스트레이터가 트랜잭션을 열면 REQUIRED 전파로 코인 경로의 빗썸 REST 4종이 그 안으로 딸려 들어간다
+	// (spec §FEED-012 결정 5). CryptoPostSellFeedbackReader·PostSellFeedbackService가 같은 이유로 같은 단정을 갖는다.
+	@Test
+	@DisplayName("PostSellFeedbackReader에는 클래스·read 어디에도 @Transactional이 없다")
+	void neverWrapsTheOrchestrationInATransaction() throws Exception {
+		assertThat(PostSellFeedbackReader.class.getAnnotation(Transactional.class)).isNull();
+		assertThat(PostSellFeedbackReader.class.getAnnotation(jakarta.transaction.Transactional.class)).isNull();
+
+		Method read = PostSellFeedbackReader.class.getDeclaredMethod("read", Long.class, Long.class);
+		assertThat(read.getAnnotation(Transactional.class)).isNull();
+		assertThat(read.getAnnotation(jakarta.transaction.Transactional.class)).isNull();
 	}
 
 	// --- 픽스처 ---
