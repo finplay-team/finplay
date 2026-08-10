@@ -217,8 +217,8 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 | 관심목록 — 등록·조회·해제 | WATCH-001~003 | **완료** | `023-watchlist`, PR #253(이슈 #252). `POST`·`GET`·`DELETE /api/watchlist-items`, MySQL 영속화(V23). PRD 미등재 신규 기능 — 2차 MVP(1차 고도화)로 확정 |
 | 지정가 체결 알림 | NOTI-001~005 | **미착수** | `notification` 패키지·테이블 없음. spec 폴더 미생성. **2026-08-07: 착수 시점을 2차 MVP(1차 고도화) → 3차 MVP(2차 고도화)로 재조정(이슈 #261)** |
 | 동시성 제어·부하테스트 | — | **미착수** | Kafka·분산락 의존성 없음 |
-| 코인 틱 집계와 캐싱 | MKT-010 | **완료** | `022-crypto-tick-candle-cache`(이슈 #242), PR #255. `transaction` 채널 구독 추가, `CryptoCandleStore`(Lua 원자 갱신)·`CachedCryptoCandleProvider`(캐시·위임 병합) 신설. 동시성 테스트(Testcontainers)로 유실 0건 확인, 실측 호출 절감률 100%(캐시 구간 안) |
-| 코인 변동 카드 확정 SSE push | 요구사항 ID 없음(GitHub 이슈 #286에는 있으나 이 문서에 대응 행이 신설 전까지 없었다) | **완료** | `026-crypto-card-sse-push`, 이슈 #286, ADR-0018. `GET /api/cryptos/stream` 신설(`CryptoPriceSseController`·`CryptoPriceStreamService`) — 코인 snapshot·price·status에 더해 `CryptoPriceMoveWatcher`가 카드 저장 성공 직후 발행하는 `priceMoveCardConfirmed`(카드 id·종목 id만, 본문 없음)를 push. 발행은 Redis pub/sub(`CryptoPriceMoveCardPublisher`→채널 `feedback:price-move:crypto-confirmed`→`CryptoCardPushSubscriber`)로 다중 인스턴스 팬아웃. Redis 장애·구독자 0명·느린 구독자 모두 카드 생성(`price_move_events` 커밋)을 막지 않음(통합 테스트로 확인). 주식 확정 경로(`PriceMoveCardService`)는 이 채널을 호출하지 않아 노출 게이트를 우회하지 않는다. `GET /api/stocks/stream` 기존 계약은 무변경(회귀 테스트로 확인) |
+| 코인 틱 집계와 캐싱 | MKT-010 | **완료** | `027-crypto-tick-candle-cache`(이슈 #242), PR #255. `transaction` 채널 구독 추가, `CryptoCandleStore`(Lua 원자 갱신)·`CachedCryptoCandleProvider`(캐시·위임 병합) 신설. 동시성 테스트(Testcontainers)로 유실 0건 확인, 실측 호출 절감률 100%(캐시 구간 안) |
+| 코인 변동 카드 확정 SSE push | 요구사항 ID 없음(GitHub 이슈 #286에는 있으나 이 문서에 대응 행이 신설 전까지 없었다) | **완료** | `028-crypto-card-sse-push`, 이슈 #286, ADR-0018. `GET /api/cryptos/stream` 신설(`CryptoPriceSseController`·`CryptoPriceStreamService`) — 코인 snapshot·price·status에 더해 `CryptoPriceMoveWatcher`가 카드 저장 성공 직후 발행하는 `priceMoveCardConfirmed`(카드 id·종목 id만, 본문 없음)를 push. 발행은 Redis pub/sub(`CryptoPriceMoveCardPublisher`→채널 `feedback:price-move:crypto-confirmed`→`CryptoCardPushSubscriber`)로 다중 인스턴스 팬아웃. Redis 장애·구독자 0명·느린 구독자 모두 카드 생성(`price_move_events` 커밋)을 막지 않음(통합 테스트로 확인). 주식 확정 경로(`PriceMoveCardService`)는 이 채널을 호출하지 않아 노출 게이트를 우회하지 않는다. `GET /api/stocks/stream` 기존 계약은 무변경(회귀 테스트로 확인) |
 
 ### 2차 MVP — 남은 범위와 계약 정의
 
@@ -234,7 +234,7 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 - 지정가 주문과 상시 체결 (LMT-001~005, 2026-08-03 이벤트 드리븐 상시 처리로 재변경 — 배치 아님) — **완료**: LMT-001~004(생성·체결 트리거·취소·미체결 목록) 완료, LMT-005(주문 수정, `PATCH /api/orders/{orderId}`)도 완료(PR #240, 이슈 #239). **2차 범위는 코인을 우선으로 시작하고 주식은 추후 처리한다**(2026-08-05 확정 — 주식은 재생 데이터 기반이라 "이 가격 도달 시" 조건 자체가 성립하기 어렵고, 분봉 판정 해상도·재생세션 자동취소·OCO와의 잠금 순서 공유 같은 부가 복잡도가 있다). 동시 체결 경합과 취소(LMT-003)·체결 트리거 동시 도착 경합은 비관적 락(SELECT FOR UPDATE, 잠금 순서 `order → account → holding` — 상세는 §LMT-002)으로 제어하기로 확정했다(2026-08-05, 잠금 순서는 2026-08-05 `docs/specs/015-limit-order` 구현·검증 중 정정)
 - 매수·매도 회고 작성·수정·상세·목록 (JOUR-001~006, 2026-07-28 Notion 확인 — 작성도 2차로 이동) — **일부 완료**: JOUR-001 매수 작성(PR #181)·JOUR-003 매도 작성(PR #189)·JOUR-004 매도 수정(PR #192)·JOUR-002 매수 수정(PR #201)·JOUR-006 목록(PR #213) 완료, JOUR-005 상세는 계약 확정(이슈 #217) 후 착수 예정
 - 캔들 조회 기간 확장 — 일봉/주봉/월봉 (MKT-009) — **완료** (`docs/specs/013-candle-interval`, PR #151)
-- 코인 틱 집계와 캐싱 (MKT-010, 2026-08-06 튜터 피드백 계기로 착수 결정, MKT-008의 "틱 미집계·Redis 미저장" 결정을 뒤집음) — **완료**(`022-crypto-tick-candle-cache`, 이슈 #242). 코인 캔들(MKT-008)의 진행 중 1분봉을 빗썸 REST 재조회 대신 서버가 `transaction` 채널 유입으로 직접 만들어 Redis에 캐싱한다. 새 MySQL 테이블은 만들지 않았다
+- 코인 틱 집계와 캐싱 (MKT-010, 2026-08-06 튜터 피드백 계기로 착수 결정, MKT-008의 "틱 미집계·Redis 미저장" 결정을 뒤집음) — **완료**(`027-crypto-tick-candle-cache`, 이슈 #242). 코인 캔들(MKT-008)의 진행 중 1분봉을 빗썸 REST 재조회 대신 서버가 `transaction` 채널 유입으로 직접 만들어 Redis에 캐싱한다. 새 MySQL 테이블은 만들지 않았다
 
 ### 3차 MVP — 2차 완료 후 별도 Spec
 
@@ -568,14 +568,14 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 - **WebSocket 메시지 포맷 — 해소.** `ticker`·`transaction` 두 채널 모두 실제 연결로 응답 필드를 확인했다. 기존 `BithumbTickerMessageParser`가 쓰던 `content.symbol`·`content.closePrice`·`content.date`·`content.time` 4개는 실측과 정확히 일치했다 — 이슈 #104가 남긴 Decision Gate는 이로써 해소됐다.
 - **호출량 실측 — 해소.** §10 레이트리밋 Decision Gate가 요구한 실측을 완료했다: 캐시 구간 안의 요청(30건 시뮬레이션)은 빗썸 호출 0건(**절감률 100%**), 캐싱 없는 대조군은 30건 중 30건(항상 1:1)이었다. 이 100%는 "요청 구간이 이미 수집된(= `since` 이후) 구간 안에 완전히 들어있을 때"의 수치이며, 서버 재시작 직후나 그보다 과거를 포함하는 요청은 그 구간만큼 여전히 빗썸을 호출한다.
 
-**구현 완료 (2026-08-06, `022-crypto-tick-candle-cache`)**
+**구현 완료 (2026-08-06, `027-crypto-tick-candle-cache`)**
 
 - `BithumbWebSocketFeedClient`가 `transaction` 채널을 추가 구독해 체결을 `CryptoCandleStore`(신설, Redis)에 Lua 스크립트로 원자적으로 누적한다. 거래량은 `×10^8` 정수로 스케일링해 `HINCRBY`로 더한다(코인 수량 소수 8자리 관례, `OrderExecutionService` 등과 동일 기준). 늦게 도착한 체결(이미 지난 분)은 버린다.
 - `CachedCryptoCandleProvider`(신설, 데코레이터)가 `interval=1m` 조회에서 `since` 워터마크 기준으로 캐시 구간·빗썸 위임 구간을 나눠 병합한다. Redis 장애 시 전량 위임, 빗썸 장애 시 캐시로 커버되는 요청은 영향 없음.
 - 새 MySQL 테이블·마이그레이션 없음(Redis 캐시만). `1d`·`1w`·`1M`은 범위 밖, 그대로 빗썸 위임(MKT-009).
 - 동시성 테스트(Testcontainers 실제 Redis, 스레드 50개 동시 체결)로 거래량 유실 0건 확인.
 
-**spec에서 확정한 세부**: `docs/specs/022-crypto-tick-candle-cache/plan.md` 참조 — Redis 키 구조, Lua 원자 갱신, `since` 워터마크로 캐시·위임 구간 분할, TTL 4시간(200봉 상한에서 역산).
+**spec에서 확정한 세부**: `docs/specs/027-crypto-tick-candle-cache/plan.md` 참조 — Redis 키 구조, Lua 원자 갱신, `since` 워터마크로 캐시·위임 구간 분할, TTL 4시간(200봉 상한에서 역산).
 
 - 범위: 1차 고도화. Decision Gate 해소 → spec → 구현 순서로 진행했다.
 
@@ -907,7 +907,7 @@ Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conven
 - `GET /api/instruments/{instrumentId}/candles?interval=1m&from=&to=` (주식은 `stock_candles` 재생 분봉, 코인은 빗썸 공개 캔들 API 실시간 조회·진행 중 분봉 포함 — MKT-008. 코인의 실시간 화면 표출은 이 엔드포인트의 재조회로 충당하며 전용 스트림을 두지 않는다)[^crypto-sse-card-only]
 - `GET /api/stocks/stream` (SSE, 주식 시세)
 
-[^crypto-sse-card-only]: **(2026-08-10, 이슈 #286으로 카드 알림 한정 대체 — 구현 완료)** "코인은 전용 스트림을 두지 않는다"는 이 결정은 시세(가격) 표출 목적에서는 그대로 유지된다 — 캔들 재조회로 충분하다는 원문 판단은 바뀌지 않았다. 다만 **카드 확정 알림**(가격이 아니라 "변동 카드가 방금 확정됐다"는 사건 자체)은 재조회로 알 수 없어 `026-crypto-card-sse-push`에서 `GET /api/cryptos/stream`을 신설했다 — MKT-010이 MKT-008을 부분 대체한 것과 같은 패턴으로, 원문 문장은 그대로 두고 이 각주로만 대체 사실을 남긴다. 세부는 §3 "구현 현황"의 "코인 변동 카드 확정 SSE push" 행과 ADR-0018을 따른다.
+[^crypto-sse-card-only]: **(2026-08-10, 이슈 #286으로 카드 알림 한정 대체 — 구현 완료)** "코인은 전용 스트림을 두지 않는다"는 이 결정은 시세(가격) 표출 목적에서는 그대로 유지된다 — 캔들 재조회로 충분하다는 원문 판단은 바뀌지 않았다. 다만 **카드 확정 알림**(가격이 아니라 "변동 카드가 방금 확정됐다"는 사건 자체)은 재조회로 알 수 없어 `028-crypto-card-sse-push`에서 `GET /api/cryptos/stream`을 신설했다 — MKT-010이 MKT-008을 부분 대체한 것과 같은 패턴으로, 원문 문장은 그대로 두고 이 각주로만 대체 사실을 남긴다. 세부는 §3 "구현 현황"의 "코인 변동 카드 확정 SSE push" 행과 ADR-0018을 따른다.
 
 `interval`에 일봉·주봉·월봉(`1d`·`1w`·`1M`)을 추가하는 것(MKT-009)은 2차(1차 고도화) 범위로 이동했다. 1차 API 계약은 `interval=1m`만 포함한다.
 

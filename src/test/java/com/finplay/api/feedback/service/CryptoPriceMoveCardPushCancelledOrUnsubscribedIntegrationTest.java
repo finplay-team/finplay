@@ -1,5 +1,5 @@
 // 카드 생성이 취소되면(근거 매칭 0건) Redis 채널에 아무것도 발행되지 않고, 반대로 구독자가 0명이어도 카드
-// 생성 자체는 정상 성공함을 확인한다. (docs/specs/026-crypto-card-sse-push/tasks.md 항목 4 — 완료 조건 3가지 중 2가지)
+// 생성 자체는 정상 성공함을 확인한다. (docs/specs/028-crypto-card-sse-push/tasks.md 항목 4 — 완료 조건 3가지 중 2가지)
 package com.finplay.api.feedback.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

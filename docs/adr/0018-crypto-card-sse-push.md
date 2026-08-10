@@ -2,7 +2,7 @@
 
 - 상태: 승인됨
 - 날짜: 2026-08-10
-- 관계: 이슈 #286. `docs/specs/026-crypto-card-sse-push`의 정본. ADR-0002(레이어 구조), ADR-0014(코인 감시 Redis 락 — 같은 다중 인스턴스 전제를 공유), ADR-0015(조회 캐시 Redis 락 — `RedisLock` 추출 선례)를 따른다. `docs/specs/003-market-data/plan.md`의 "코인은 전용 SSE 스트림을 두지 않는다"(2026-07-30) 결정을 이 ADR이 뒤집는다 — 상세는 §맥락.
+- 관계: 이슈 #286. `docs/specs/028-crypto-card-sse-push`의 정본. ADR-0002(레이어 구조), ADR-0014(코인 감시 Redis 락 — 같은 다중 인스턴스 전제를 공유), ADR-0015(조회 캐시 Redis 락 — `RedisLock` 추출 선례)를 따른다. `docs/specs/003-market-data/plan.md`의 "코인은 전용 SSE 스트림을 두지 않는다"(2026-07-30) 결정을 이 ADR이 뒤집는다 — 상세는 §맥락.
 
 ## 맥락
 
@@ -85,6 +85,6 @@ Redis 메시지·SSE 이벤트 payload에는 카드의 `instrumentId`·`priceMov
 
 ## 후속
 
-- `docs/prd.md` MKT-008·`docs/specs/003-market-data/plan.md`의 "코인 SSE 스트림 없음" 문구는 이 spec(`026-crypto-card-sse-push`)의 tasks.md에서 갱신한다 — 이 ADR 자체는 갱신 대상이 아니다.
+- `docs/prd.md` MKT-008·`docs/specs/003-market-data/plan.md`의 "코인 SSE 스트림 없음" 문구는 이 spec(`028-crypto-card-sse-push`)의 tasks.md에서 갱신한다 — 이 ADR 자체는 갱신 대상이 아니다.
 - 코인 시세 실시간 스트림(snapshot·price·status)이 카드 push와 별개로 실제 트래픽에서 유용한지는 배포 후 사용률로 재검토한다 — 지금은 카드 push 인프라의 대칭 부산물로 함께 만든다.
 - 다중 인스턴스 배포 후 실제 Redis pub/sub 팬아웃 지연·유실률을 관측한 적이 없다 — 단일 Redis 인스턴스 기준이며, Redis 자체를 다중화(센티널/클러스터)하는 시점에 ADR-0014·0015와 같은 조건(페일오버 순간 유실 가능성)을 재검토한다.

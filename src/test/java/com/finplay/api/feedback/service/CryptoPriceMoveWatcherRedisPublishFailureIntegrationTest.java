@@ -1,6 +1,6 @@
 // 코인 카드 확정 push(CryptoPriceMoveCardPublisher.publish)가 예외를 던지는 상황(Redis 장애 모사)에서도
 // 카드 생성 자체(price_move_events 커밋)는 성공함을 실제 MySQL로 확인한다.
-// (docs/specs/026-crypto-card-sse-push/tasks.md 항목 4 — 완료 조건 "Redis 발행이 실패해도 카드 생성 자체는 성공한다")
+// (docs/specs/028-crypto-card-sse-push/tasks.md 항목 4 — 완료 조건 "Redis 발행이 실패해도 카드 생성 자체는 성공한다")
 package com.finplay.api.feedback.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

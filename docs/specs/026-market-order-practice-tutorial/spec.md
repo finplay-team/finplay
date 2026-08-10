@@ -2,7 +2,7 @@
 
 > 상태: 계획 모드에서 신규 작성 (2026-08-10). production 구현 미착수.
 >
-> **번호 확정 경위**: 작업 지시 시점에는 024를 쓰기로 했으나, 착수 전 `git ls-tree origin/dev docs/specs/`로 재확인한 결과 origin/dev에 이미 `024-feedback-query-cache`·`025-review-gate-auto-fix`가 존재해 026으로 올렸다. `022-community-enhancement`/`022-crypto-tick-candle-cache`, `023-watchlist` 모두 origin/dev에 이미 존재한다(로컬 미커밋 추측은 틀렸다 — 실제로는 이미 머지돼 있었다).
+> **번호 확정 경위**: 작업 지시 시점에는 024를 쓰기로 했으나, 착수 전 `git ls-tree origin/dev docs/specs/`로 재확인한 결과 origin/dev에 이미 `024-feedback-query-cache`·`025-review-gate-auto-fix`가 존재해 026으로 올렸다. `022-community-enhancement`/`027-crypto-tick-candle-cache`, `023-watchlist` 모두 origin/dev에 이미 존재한다(로컬 미커밋 추측은 틀렸다 — 실제로는 이미 머지돼 있었다).
 
 ## 개요
 

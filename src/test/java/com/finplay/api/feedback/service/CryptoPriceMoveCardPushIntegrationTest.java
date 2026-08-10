@@ -1,6 +1,6 @@
 // 코인 카드 확정(CryptoPriceMoveWatcher) → CryptoPriceMoveCardPublisher → Redis 채널까지 실 Redis로 이어지는지,
 // 주식 카드 확정 경로(PriceMoveCardService)는 이 채널에 아무것도 보내지 않는지 검증한다.
-// (docs/specs/026-crypto-card-sse-push/tasks.md 항목 3 — 통합 검증)
+// (docs/specs/028-crypto-card-sse-push/tasks.md 항목 3 — 통합 검증)
 package com.finplay.api.feedback.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
