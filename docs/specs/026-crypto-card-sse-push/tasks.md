@@ -25,7 +25,7 @@
   - **다중 인스턴스 팬아웃**: 같은 Testcontainers Redis에 대해 `SseEmitterRegistry`+`CryptoCardPushSubscriber`+`RedisMessageListenerContainer` 조합을 테스트 코드에서 두 벌 직접 조립(전체 Spring Context 2개를 띄우지 않음) → 한쪽 `CryptoPriceMoveCardPublisher`가 발행한 메시지를 **양쪽** 조합의 emitter가 모두 수신함을 확인.
   - 저장 실패 시 push 없음, Redis 장애에도 카드 생성 성공, 구독자 0명이어도 카드 생성 성공 — 3가지도 이 항목에서 함께 통합 테스트로 확인.
 
-- [ ] **5. 문서 갱신** (`docs/specs/026-crypto-card-sse-push/plan.md` §문서 동기화 계획)
+- [x] **5. 문서 갱신** (`docs/specs/026-crypto-card-sse-push/plan.md` §문서 동기화 계획)
   - `docs/api-routes.md` — `GET /api/cryptos/stream` 행 추가(도메인 `market`, Spec `026`).
   - `docs/api-contracts.md` — market 섹션에 `/api/cryptos/stream` 계약(이벤트 4종·payload 예시) 추가. `/api/stocks/stream` 계약 절은 무수정.
   - `docs/prd.md` §3 "구현 현황" — 새 행 추가(요구사항 ID 없음을 명시, 근거는 이슈 #286·spec `026`). MKT-008 본문에 카드 알림 한정 반전 각주 추가(원문 보존).
