@@ -141,7 +141,7 @@ class NewsCollectionScheduleTest {
 	// 쪽이 안전한 방향이고(거짓 양성은 눈에 띄고 거짓 음성은 안 띈다), 리터럴 안의 //로 뒤 코드가 잘려
 	// 실제 호출을 놓치는 일도 없어야 하기 때문이다.
 	//
-	// 예외: CryptoPriceMoveWatcher.java(ADR-0016)는 의도적으로 허용한다. 이 테스트가 막으려는 것은
+	// 예외: CryptoPriceMoveWatcher.java(ADR-0017)는 의도적으로 허용한다. 이 테스트가 막으려는 것은
 	// "수집이 재생 시점에 일어나는 것"이지 "@Scheduled 2종 외 호출 전부"가 아니다 — 지금까지는 그 둘이
 	// 우연히 같았을 뿐이다. 코인 감시는 재생 세션 시간축이 없고 `LocalDateTime.now(clock)`으로 실제 현재
 	// 시각을 쓰는 실시간 배치(`feedback.batch.crypto-watch-cron`, 매 분)라 재생 시점 수집 문제가 애초에

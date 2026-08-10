@@ -473,7 +473,7 @@ class CryptoPriceMoveWatcherTest {
 		}
 	}
 
-	// --- 온디맨드 수집 — 첫 매칭이 비면 수집 후 1회만 재매칭한다 (ADR-0016, tasks-285.md 항목 3) ---
+	// --- 온디맨드 수집 — 첫 매칭이 비면 수집 후 1회만 재매칭한다 (ADR-0017, tasks-285.md 항목 3) ---
 
 	@Nested
 	@DisplayName("온디맨드 수집")

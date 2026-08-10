@@ -68,12 +68,12 @@ class CryptoPriceMoveWatcherIntegrationTest {
 	private static final List<String> LEDGER_TABLES = List.of("orders", "trades", "accounts", "holdings",
 		"holding_lots", "trade_allocations");
 
-	// 이 배치가 읽기만 해야 하는 테이블. market_news_items는 첫 매칭이 성공해 온디맨드 수집(ADR-0016)이
+	// 이 배치가 읽기만 해야 하는 테이블. market_news_items는 첫 매칭이 성공해 온디맨드 수집(ADR-0017)이
 	// 트리거되지 않는 시나리오에서만 읽기 전용이다 — 이 상수를 쓰는 테스트가 사전에 givenMatchingNews()로
 	// 근거를 채워 온디맨드 경로를 타지 않게 하는지 확인하고 재사용해야 한다.
 	private static final List<String> READ_ONLY_TABLES = List.of("instruments", "market_news_items");
 
-	// tasks-285.md 4번 항목 — 온디맨드 수집(ADR-0016)을 실 협력자로 종단 검증하려고 NewsCollector만 mock으로
+	// tasks-285.md 4번 항목 — 온디맨드 수집(ADR-0017)을 실 협력자로 종단 검증하려고 NewsCollector만 mock으로
 	// 갈아끼운다. FakeNewsCollector는 빈 목록이 계약이라 저장 경로를 태울 수 없다(NewsCollectionIntegrationTest
 	// 선례와 같은 이유).
 	@MockitoBean
@@ -230,7 +230,7 @@ class CryptoPriceMoveWatcherIntegrationTest {
 	// 종목별 실패 격리)을 실 협력자(NewsCollector mock + 실제 MySQL/Redis)로 종단 검증한다.
 
 	@Test
-	@DisplayName("근거 기사가 DB에 없어도 온디맨드 수집(ADR-0016) 후 카드가 생성된다 — 카드 생성 성공률 상승")
+	@DisplayName("근거 기사가 DB에 없어도 온디맨드 수집(ADR-0017) 후 카드가 생성된다 — 카드 생성 성공률 상승")
 	void createsCardViaOnDemandCollectionWhenNoEvidenceExistsBeforehand() {
 		givenEnoughSnapshotsWithARecentJump();
 		CollectedNewsDto article = onDemandNews("success");

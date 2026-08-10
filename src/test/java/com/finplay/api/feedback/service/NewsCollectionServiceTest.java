@@ -186,7 +186,7 @@ class NewsCollectionServiceTest {
 		verify(marketNewsItemRepository, never()).findExistingUrls(anyLong(), any());
 	}
 
-	// ADR-0016 §결정 2 — 온디맨드 수집도 같은 시장 종목명 목록만 넘긴다(collectNews()와 같은 제목 필터 규칙).
+	// ADR-0017 §결정 2 — 온디맨드 수집도 같은 시장 종목명 목록만 넘긴다(collectNews()와 같은 제목 필터 규칙).
 	@Test
 	@DisplayName("collectForInstrument는 같은 시장 종목명만 넘겨 수집기를 부른다")
 	void collectForInstrumentCollectsWithSameMarketNamesOnly() {
@@ -213,7 +213,7 @@ class NewsCollectionServiceTest {
 		assertThat(saved.getType()).isEqualTo(MarketNewsItemType.NEWS);
 	}
 
-	// ADR-0016 §결정 6 — 이미 저장된 URL이면 온디맨드 수집도 다시 저장하지 않는다.
+	// ADR-0017 §결정 6 — 이미 저장된 URL이면 온디맨드 수집도 다시 저장하지 않는다.
 	@Test
 	@DisplayName("collectForInstrument는 이미 저장된 URL이면 다시 저장하지 않는다")
 	void collectForInstrumentIgnoresAlreadyCollectedArticle() {

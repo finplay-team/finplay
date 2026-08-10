@@ -1,4 +1,4 @@
-# ADR-0016: 코인 변동 카드의 근거 기사는 CryptoPriceMoveWatcher가 매칭 실패 시 온디맨드로 수집한다
+# ADR-0017: 코인 변동 카드의 근거 기사는 CryptoPriceMoveWatcher가 매칭 실패 시 온디맨드로 수집한다
 
 - 상태: 승인됨
 - 날짜: 2026-08-10

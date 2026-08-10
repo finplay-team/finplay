@@ -85,7 +85,7 @@ public class NewsCollectionService {
 	}
 
 	/**
-	 * 종목 하나만 온디맨드로 수집한다 (ADR-0016 §결정 2). 이 메서드의 유일한 소비자는
+	 * 종목 하나만 온디맨드로 수집한다 (ADR-0017 §결정 2). 이 메서드의 유일한 소비자는
 	 * {@code CryptoPriceMoveWatcher}다. 코인 온디맨드 수집 전용이며, 배치 진입점({@code collectNews})과
 	 * 별개로 언제든 호출될 수 있다.
 	 *
