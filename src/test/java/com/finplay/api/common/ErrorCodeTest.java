@@ -11,7 +11,7 @@ class ErrorCodeTest {
 
 	@Test
 	void declaresEveryErrorCodeFromPrdAndOAuthSpecWithoutUnlistedOnes() {
-		assertThat(ErrorCode.values()).hasSize(30);
+		assertThat(ErrorCode.values()).hasSize(31);
 	}
 
 	@Test
@@ -31,6 +31,7 @@ class ErrorCodeTest {
 			Map.entry(ErrorCode.DUPLICATE_RESOURCE, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.PRACTICE_STEP_LOCKED, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.PRACTICE_ALREADY_COMPLETED, HttpStatus.CONFLICT),
+			Map.entry(ErrorCode.PRACTICE_EVIDENCE_MISSING, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.INSTRUMENT_NOT_TRADABLE, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.EMAIL_VERIFICATION_REQUIRED, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.ACCOUNT_LINK_REQUIRED, HttpStatus.CONFLICT),
@@ -83,6 +84,8 @@ class ErrorCodeTest {
 			.isEqualTo("선행 실습 단계를 완료해야 합니다.");
 		assertThat(ErrorCode.PRACTICE_ALREADY_COMPLETED.getDefaultMessage())
 			.isEqualTo("이미 완료한 실습입니다.");
+		assertThat(ErrorCode.PRACTICE_EVIDENCE_MISSING.getDefaultMessage())
+			.isEqualTo("실습 진행에 필요한 증거를 확인할 수 없습니다.");
 	}
 
 	@Test

@@ -39,9 +39,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.transaction.annotation.Transactional;
 
+// 이 클래스의 @Transactional은 JPA(MySQL) 쓰기만 테스트 종료 시 롤백한다 — User/Account/Instrument/
+// Holding/Trade가 다른 테스트 클래스(예: InstrumentRepositoryTest의 시드 데이터 개수 단정)로 누출되지
+// 않게 한다(AccountSummaryIntegrationTest와 동일 관례). Redis(price:crypto:*)는 이 롤백 대상이 아니라
+// @AfterEach에서 별도로 지운다.
 @SpringBootTest
 @Import({TestcontainersConfiguration.class, TestClockConfig.class})
+@Transactional
 class PracticeHoldingObservationIntegrationTest {
 
 	private static final LocalDateTime BASE_NOW = LocalDateTime.of(2026, 8, 10, 10, 0, 0);
