@@ -1,6 +1,8 @@
 # Spec: OCO 손절·익절 가격·퍼센트 입력 정책
 
 > 상태: 문서 설계 확정, production 구현 미착수
+>
+> 이 문서의 PRICE/PERCENT 계산·반올림 공식은 OCO 트랙(`016`·`020`·`021`, 3차 MVP)뿐 아니라 **2차 MVP 활성 경로인 `docs/specs/026-market-order-practice-tutorial`의 참조 가격선 계산(`ReferencePriceCalculator`)도 변경 없이 그대로 재사용한다.** 이 문서를 고칠 때는 두 경로 모두에 영향이 있는지 확인한다.
 
 ## 개요
 
