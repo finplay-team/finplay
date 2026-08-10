@@ -232,6 +232,27 @@ PR #49 차단 리뷰 후속 Fake 재사용·동시성·DB 불변 자동 회귀�
 - 재접속하면 새 emitter로 `snapshot` 1건을 다시 받는다. 연결이 끊긴 동안 놓친 이벤트를 서버가 재전송하는 기능은 없다(MVP 제외).
 - heartbeat(20초 간격 SSE 주석)·`retry` 힌트·`onCompletion`/`onTimeout`/`onError` 시 emitter 정리는 `SseEmitterRegistry`(이슈 #18)가 공통 처리하며 이 컨트롤러에서 재구현하지 않는다.
 
+### 코인 SSE 스트림
+
+| Method | URL | 인증 | 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|
+| GET | /api/cryptos/stream | Access Bearer 필수(fetch + `Authorization: Bearer <accessToken>` 헤더, 브라우저 기본 `EventSource` 미사용) | `Content-Type: text/event-stream`. `snapshot`(코인 12종 전체, id 없음) → 이후 `price`(빗썸 틱마다, id 있음)·`status`(연결상태 변경 시, id 없음)·`priceMoveCardConfirmed`(코인 변동 카드 확정 시, id 없음) | Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식(응답 본문, 스트림 시작 전) | 026, Issue #286, ADR-0018 |
+
+`CryptoPriceSseController.stream()`이 `CryptoPriceStreamService.createEmitter()`(`SseEmitterRegistry.createEmitter(Market.CRYPTO)` 위임) → `sendSnapshot(emitter)`(해당 emitter에만 snapshot 전송) → `activate(emitter)`(브로드캐스트 대상에 추가) 순서로 호출한다 — `StockPriceSseController`와 동일한 3단계 순서이며, snapshot 전송보다 activate가 먼저면 새 구독자가 snapshot보다 price를 먼저 받는 경합이 생긴다.
+
+- **snapshot**: `{"market":"CRYPTO","emittedAt":"2026-08-10T09:05:12","prices":[{"symbol":"BTC","price":71200000,"sourceTime":"2026-08-10T09:05:10","status":"AVAILABLE"}, ...]}` — 코인 12종 전체를 배열 1건에 담는다. 가격이 없는 종목도 배열에서 빠지지 않고 `price`·`sourceTime`은 `null`, `status`는 `UNAVAILABLE`이다. 코인은 `sourceTradingDate`·`marketStatus` 개념이 없어 항상 `null`이며 `MarketSnapshotEvent`의 `@JsonInclude(NON_NULL)`로 필드 자체가 응답에서 생략된다(주식 snapshot과 같은 DTO를 재사용). id 없음.
+- **price**: `id: CRYPTO:BTC:20260810090510` + `{"market":"CRYPTO","symbol":"BTC","price":71200000,"sourceTime":"2026-08-10T09:05:10","emittedAt":"2026-08-10T09:05:10"}` — `sourceTradingDate`·`marketStatus`는 `null`이라 생략된다. 기존 `CryptoPriceUpdatedEvent`(`PriceStore.saveTick()`이 이미 발행 — 015 LMT-002 체결 트리거가 함께 소비 중이던 이벤트)를 그대로 구독해 push한다. id는 `CRYPTO:{symbol}:{event.receivedAt()을 yyyyMMddHHmmss로 포맷}`이다 — 주식은 분 단위(`yyyyMMddHHmm`)지만 코인은 틱마다 와서 초 단위까지 포함한다(같은 분 안의 여러 틱을 id로 구분하기 위함).
+- **status**: `{"market":"CRYPTO","status":"UNAVAILABLE","reason":"DISCONNECTED","emittedAt":"2026-08-10T09:05:15"}` — `symbol`·`marketStatus`는 시장 전체 상태 변화라 생략된다. 주식과 달리 코인 연결상태 변경 이벤트가 없어 5초 주기로 `PriceStore.getConnectionStatus()`(`FeedConnectionStatus`)를 직전 값과 비교해 달라졌을 때만 1회 push한다(폴링 주기는 `PriceStore`의 stale 기준 10초의 절반). `FeedConnectionStatus.CONNECTED`는 `status:"AVAILABLE"`, `DISCONNECTED`는 `status:"UNAVAILABLE"`로 매핑하고, `reason`에 원본 `FeedConnectionStatus` 이름(`CONNECTED`\|`DISCONNECTED`)을 그대로 남긴다. 서버 기동 시점의 연결상태를 기준선으로 세팅해 기동 직후 첫 스케줄 실행을 오탐 전송하지 않는다.
+- **priceMoveCardConfirmed**: `{"market":"CRYPTO","instrumentId":5,"priceMoveEventId":123,"emittedAt":"2026-08-10T09:05:20"}`(`PriceMoveCardConfirmedEvent`) — 코인 변동 카드가 확정 저장된 직후(`CryptoPriceMoveWatcher.watchOne()`이 `PriceMoveCardWriter.persist()` 성공을 확인한 뒤) 발행한다. 카드 본문(서술·변동률·탐지점수)은 담지 않는다 — 클라이언트는 이 알림을 받으면 `GET /api/instruments/{instrumentId}/price-moves`를 재조회해 카드 내용을 얻는다. id 없음.
+  - **전달 경로**: `CryptoPriceMoveCardPublisher.publish(instrumentId, priceMoveEventId)`가 Redis 채널 `feedback:price-move:crypto-confirmed`(`CryptoPriceMoveCardPublisher.CHANNEL`)로 JSON 직렬화해 발행 → `RedisPubSubConfig`가 등록한 `RedisMessageListenerContainer`가 그 채널을 구독하는 `CryptoCardPushSubscriber.onMessage()`를 (자체 스레드에서) 호출 → 역직렬화 후 `SseEmitterRegistry.getEmitters(Market.CRYPTO)`로 **그 순간 연결된 코인 스트림 구독자 전원**에게 개별 전송한다 — 특정 `instrumentId`를 보고 있는 구독자에게만 필터링해 보내지 않는다(클라이언트가 `instrumentId`를 보고 자신이 관심 있는 종목인지 스스로 판단한다).
+  - **다중 인스턴스 팬아웃**: Redis pub/sub을 경유하므로 카드를 확정한 서버 인스턴스와 클라이언트가 연결된 인스턴스가 달라도 알림이 전달된다.
+  - **최선형(best-effort) 전달**: `CryptoPriceMoveCardPublisher.publish()`는 `RuntimeException`을 내부에서 삼키고 WARN 로그만 남긴다(Redis 장애가 카드 생성 자체를 실패시키지 않는다) — 호출부(`CryptoPriceMoveWatcher`)는 발행 성공 여부를 확인하지 않는다. `CryptoCardPushSubscriber`도 역직렬화 실패(형식이 깨진 메시지)를 삼키고 로그만 남겨 리스너 스레드가 죽지 않는다. 개별 emitter로의 전송 실패는 그 emitter만 `completeWithError`로 종료하고 나머지 구독자에게는 계속 전송한다(`StockPriceStreamService.broadcastPriceEvent`와 같은 패턴).
+  - **주식 카드는 이 알림 대상이 아니다** — 주식 확정 경로(`PriceMoveCardService`)는 `CryptoPriceMoveCardPublisher`를 호출하지 않으므로 이 채널에 아무 메시지도 발행되지 않는다(노출 게이트 `revealTime` 우회 방지).
+- `GET /api/stocks/stream`의 기존 계약(이벤트 이름·페이로드·heartbeat 간격)은 이 엔드포인트 신설로 한 글자도 바뀌지 않는다.
+- 재접속하면 새 emitter로 `snapshot` 1건을 다시 받는다. 연결이 끊긴 동안 놓친 이벤트(`price`·`status`·`priceMoveCardConfirmed` 모두)를 서버가 재전송하는 기능은 없다 — `Last-Event-ID` 기반 replay는 범위 제외다.
+- heartbeat(20초 간격 SSE 주석)·`retry` 힌트·`onCompletion`/`onTimeout`/`onError` 시 emitter 정리는 `SseEmitterRegistry`(이슈 #18)가 공통 처리하며 이 컨트롤러·서비스에서 재구현하지 않는다.
+- `deploy/nginx.conf`의 `location /api { proxy_pass http://app:8080; }`은 서버 블록 공통 설정(`proxy_buffering off`·`proxy_cache off`·`proxy_read_timeout 3600s`)을 그대로 상속한다 — 새 엔드포인트가 `/api` 하위 경로라 별도 nginx 수정이 필요 없다.
+
 ### 로컬 KIS 실수집 트리거 (local 프로필 전용)
 
 | Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |

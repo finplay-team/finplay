@@ -19,6 +19,7 @@ import com.finplay.api.feedback.domain.PriceMoveEvent;
 import com.finplay.api.feedback.repository.PriceMoveEventRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.service.CryptoPriceMoveCardPublisher;
 import com.finplay.api.market.service.CryptoPriceSnapshotService;
 import com.finplay.api.market.service.InstrumentService;
 import com.finplay.api.market.store.PriceSnapshotDto;
@@ -58,6 +59,8 @@ class CryptoPriceMoveWatcherTest {
 	private final PriceMoveEventRepository priceMoveEventRepository = mock(PriceMoveEventRepository.class);
 
 	private final PriceMoveCardWriter priceMoveCardWriter = mock(PriceMoveCardWriter.class);
+
+	private final CryptoPriceMoveCardPublisher cryptoPriceMoveCardPublisher = mock(CryptoPriceMoveCardPublisher.class);
 
 	private final NewsMatcher newsMatcher = mock(NewsMatcher.class);
 
@@ -116,8 +119,8 @@ class CryptoPriceMoveWatcherTest {
 		FeedbackCryptoProperties cryptoProperties, FeedbackDetectionProperties detectionProps, Clock clock) {
 		return new CryptoPriceMoveWatcher(
 			instrumentService, cryptoPriceSnapshotService, priceMoveEventRepository, priceMoveCardWriter,
-			cryptoWatchLock, newsMatcher, newsCollectionService, narrativeService, cryptoProperties, detectionProps,
-			clock);
+			cryptoPriceMoveCardPublisher, cryptoWatchLock, newsMatcher, newsCollectionService, narrativeService,
+			cryptoProperties, detectionProps, clock);
 	}
 
 	// 기본 배선 — 카드 생성을 막지 않는 협력자 응답. 각 테스트가 필요한 부분만 덮어쓴다.
@@ -450,6 +453,8 @@ class CryptoPriceMoveWatcherTest {
 
 			verify(narrativeService, never()).resolvePriceMoveNarrative(any());
 			verify(priceMoveCardWriter, never()).persist(any(), any());
+			// 카드 생성 자체가 취소된 경우이므로 push도 시도되면 안 된다 (026 tasks.md 항목 3).
+			verify(cryptoPriceMoveCardPublisher, never()).publish(any(), any());
 		}
 
 		@Test
@@ -518,6 +523,8 @@ class CryptoPriceMoveWatcherTest {
 			verify(newsCollectionService, times(1)).collectForInstrument(any());
 			verify(newsMatcher, times(2)).matchCrypto(any(), any());
 			verify(priceMoveCardWriter, never()).persist(any(), any());
+			// 재매칭도 비어 카드 생성 자체가 취소된 경우이므로 push도 시도되면 안 된다 (026 tasks.md 항목 3).
+			verify(cryptoPriceMoveCardPublisher, never()).publish(any(), any());
 		}
 	}
 
@@ -750,5 +757,54 @@ class CryptoPriceMoveWatcherTest {
 		assertThat(card.getChangeRate().scale()).isEqualTo(6);
 		assertThat(card.getDetectionScore().scale()).isEqualTo(4);
 		assertThat(card.getChangeRate().setScale(6, RoundingMode.HALF_UP)).isEqualTo(card.getChangeRate());
+	}
+
+	// --- 카드 확정 push 배선 — 저장 성공 후에만 발행한다 (026 tasks.md 항목 3) ---
+
+	@Nested
+	@DisplayName("카드 확정 push 배선")
+	class CardConfirmedPush {
+
+		private List<PriceSnapshotDto> jumpFixture() {
+			List<PriceSnapshotDto> fixture = new ArrayList<>();
+			for (int agoMinutes = 0; agoMinutes <= 60; agoMinutes++) {
+				fixture.add(snapshot(NOW.minusMinutes(agoMinutes), agoMinutes < 5 ? 100.0 * Math.exp(0.12) : 100.0));
+			}
+			return fixture;
+		}
+
+		@Test
+		@DisplayName("persist가 성공한 직후 그 카드의 id·종목 id로 publish가 호출된다")
+		void callsPublishWithTheInstrumentAndCardIdRightAfterPersistSucceeds() {
+			when(cryptoPriceSnapshotService.getSnapshots(eq("BTC"), any(), any())).thenReturn(jumpFixture());
+			givenInstruments(INSTRUMENT);
+			stubNoCooldownNoLimit();
+			stubOneMatchedSource(NOW);
+
+			watcher(properties(30, 6, 5, 1, 12, 35), detectionProperties(2.5), fixedClockAt(NOW)).watch();
+
+			ArgumentCaptor<PriceMoveEvent> cardCaptor = ArgumentCaptor.forClass(PriceMoveEvent.class);
+			verify(priceMoveCardWriter).persist(cardCaptor.capture(), any());
+			verify(cryptoPriceMoveCardPublisher).publish(INSTRUMENT.getId(), cardCaptor.getValue().getId());
+		}
+
+		// watchOne()은 private이라 리플렉션으로 직접 불러 반환값을 확인한다 — watch()를 거치면 종목별
+		// try/catch(FailureIsolation)가 예외를 삼켜 watchOne() 자체의 반환값을 볼 수 없다.
+		@Test
+		@DisplayName("publish가 예외를 던져도 watchOne()은 true를 반환한다 — push 실패가 카드 생성에 영향 없다")
+		void watchOneStillReturnsTrueWhenPublishThrows() {
+			when(cryptoPriceSnapshotService.getSnapshots(eq("BTC"), any(), any())).thenReturn(jumpFixture());
+			stubNoCooldownNoLimit();
+			stubOneMatchedSource(NOW);
+			org.mockito.Mockito.doThrow(new RuntimeException("Redis 발행 실패"))
+				.when(cryptoPriceMoveCardPublisher).publish(any(), any());
+			CryptoPriceMoveWatcher watcher = watcher(properties(30, 6, 5, 1, 12, 35), detectionProperties(2.5),
+				fixedClockAt(NOW));
+
+			Boolean created = ReflectionTestUtils.invokeMethod(watcher, "watchOne", INSTRUMENT, NOW);
+
+			assertThat(created).isTrue();
+			verify(priceMoveCardWriter).persist(any(), any());
+		}
 	}
 }

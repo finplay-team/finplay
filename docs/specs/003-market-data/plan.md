@@ -60,7 +60,9 @@
 
 ### SSE 계약 (MVP 확정 — 변경하려면 문서와 프론트·백엔드를 함께 수정)
 
-아래 계약은 `/stocks/stream`(#19)에 적용된다. `retry`·heartbeat·emitter 정리는 이슈 #18에서 만드는 `SseEmitterRegistry`가 제공한다. **코인은 전용 SSE 엔드포인트가 없으므로 이 계약 대상이 아니다** — 코인 이벤트 필드 설명(`sourceTradingDate` 미포함 등)은 `SseEmitterRegistry`·이벤트 DTO가 market 매개변수를 받는 범용 설계임을 보여주는 참고용으로만 남겨둔다.
+아래 계약은 `/stocks/stream`(#19)에 적용된다. `retry`·heartbeat·emitter 정리는 이슈 #18에서 만드는 `SseEmitterRegistry`가 제공한다. **코인은 전용 SSE 엔드포인트가 없으므로 이 계약 대상이 아니다**[^crypto-sse-026] — 코인 이벤트 필드 설명(`sourceTradingDate` 미포함 등)은 `SseEmitterRegistry`·이벤트 DTO가 market 매개변수를 받는 범용 설계임을 보여주는 참고용으로만 남겨둔다.
+
+[^crypto-sse-026]: **(2026-08-10, 026에서 카드 알림 한정으로 뒤집힘 — 구현 완료)** `026-crypto-card-sse-push`(이슈 #286, ADR-0018)가 `GET /api/cryptos/stream`을 신설했다. 시세(snapshot·price·status)는 이 계약이 예고한 대로 재조회 대안 대신 대칭 인프라로 함께 구현됐고, 신설의 직접 동기는 카드 확정 알림(`priceMoveCardConfirmed`)이었다 — 카드가 방금 확정됐다는 사건은 캔들 재조회로 알 수 없기 때문이다. 계약 상세는 `docs/api-contracts.md`의 "코인 SSE 스트림" 절을 정본으로 본다.
 
 - **인증**: 브라우저 기본 `EventSource`는 커스텀 헤더를 지원하지 않으므로, 프론트는 `fetch()`로 스트림을 요청하며 `Authorization: Bearer <accessToken>` 헤더를 그대로 전달하고 응답 `ReadableStream`을 직접 파싱한다. Access Token을 URL 쿼리 파라미터에 넣지 않는다. 인증 실패는 401.
 - **Content-Type**: `text/event-stream`.
@@ -439,4 +441,4 @@ KisHistoricalReplayPriceProvider를 @Service로 직접 등록 → StockPriceProv
 - **실패 처리**: 조회 실패·타임아웃·파싱 불가는 그 회차 skip + 로그. 임의값으로 대체하지 않는다 (MKT-004). 마지막 값이 10초 뒤 stale이 되어 `PRICE_UNAVAILABLE`로 정직하게 드러난다.
 - **연결 상태**: `feed:crypto:status`는 폴러가 직접 쓰지 않는다. `BithumbFeedLifecycle`이 `ApplicationReadyEvent`에서 활성 `BithumbFeedClient`(로컬은 `FakeBithumbFeedClient`)의 `start()`를 호출해 이미 `CONNECTED`가 된다.
 - **기본값은 현행 유지** — 자동 테스트가 외부 네트워크에 의존하면 안 된다 (C-005). 실제 ticker REST 조회는 외부 스모크로 구분 보고한다.
-- **제외**: prod 환경, `BithumbFeedSimulator` 코드 수정, WebSocket ticker 필드 Decision Gate 해소, 코인 SSE, 코인 분봉 저장·캐시(MKT-008 — 보관 없이 중계).
+- **제외**: prod 환경, `BithumbFeedSimulator` 코드 수정, WebSocket ticker 필드 Decision Gate 해소, 코인 SSE[^crypto-sse-026], 코인 분봉 저장·캐시(MKT-008 — 보관 없이 중계).
