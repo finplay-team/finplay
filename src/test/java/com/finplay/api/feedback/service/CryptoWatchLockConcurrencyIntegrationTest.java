@@ -71,6 +71,7 @@ class CryptoWatchLockConcurrencyIntegrationTest {
 	// setUp()의 픽스처 종목명이자 isThisTestsInstrument 매처의 기준이다. 두 곳에 리터럴을 따로 두면 한쪽만
 	// 바뀌었을 때 매처가 조용히 0건을 세어 단정이 무력해지므로 상수 하나로 묶는다.
 	private static final String INSTRUMENT_NAME = "락경합코인";
+	private static final String WATCH_LOCK_KEY_PREFIX = "feedback:crypto-watch:lock:";
 
 	// 실제 CryptoWatchLock(진짜 Redis)으로 배선된 스프링 빈 — [방어 켠] 테스트 전용.
 	@Autowired
@@ -143,6 +144,9 @@ class CryptoWatchLockConcurrencyIntegrationTest {
 		symbol = "LOCKR" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
 		instrument = instrumentRepository.saveAndFlush(
 			Instrument.create(Market.CRYPTO, symbol, INSTRUMENT_NAME, BigDecimal.ONE, 5000L, true, NOW));
+		// 공유 Redis는 Spring Context보다 오래 살아 다른 테스트 DB에서 재사용된 instrument ID의 락이 남을 수 있다.
+		// 이 테스트가 사용할 키를 먼저 비워 첫 tryLock이 이전 Context의 상태에 좌우되지 않게 한다.
+		redisTemplate.delete(watchLockKey());
 		when(narrativeService.resolvePriceMoveNarrative(any())).thenReturn(NarrativeResultDto.template("변동 설명"));
 	}
 
@@ -156,6 +160,11 @@ class CryptoWatchLockConcurrencyIntegrationTest {
 		jdbcTemplate.update("DELETE FROM market_news_items WHERE instrument_id = ?", instrument.getId());
 		jdbcTemplate.update("DELETE FROM instruments WHERE id = ?", instrument.getId());
 		redisTemplate.delete("price:crypto:" + symbol + ":snapshots");
+		redisTemplate.delete(watchLockKey());
+	}
+
+	private String watchLockKey() {
+		return WATCH_LOCK_KEY_PREFIX + instrument.getId();
 	}
 
 	// CryptoPriceMoveWatcherIntegrationTest의 givenEnoughSnapshotsWithARecentJump와 같은 픽스처 — z-score

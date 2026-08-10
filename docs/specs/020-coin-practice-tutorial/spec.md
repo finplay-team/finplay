@@ -5,6 +5,8 @@
 > **이 spec은 OCO(예약형 손절·익절) 기반 코인 실습만 다룬다.** 차수는 **3차 MVP(2차 고도화)**다(2026-08-06 재확정 — 결정 경위 전문은 `docs/prd.md` §3이 정본). 설계(튜토리얼 key 분리, GTC 수명, 세션 없는 잠금 순서, 소수 수량 비교)는 그대로 유효하며 3차 착수 시점에 그 설계를 따른다.
 >
 > **2차 MVP에서 코인 실습을 실제로 완결할 수 있는 경로는 `docs/specs/026-market-order-practice-tutorial`이다** (2026-08-10 신설, OCO 없이 시장가·코인 지정가 매수로 완결). `026`은 이 문서의 튜토리얼 key 분리(`COIN_PRACTICE_V1`)와 scale 무관 수량 비교 규칙을 그대로 재사용한다 — 그 key 분기는 이미 production에 있다(이슈 #226, `PracticeIntentionService`). 진행조회는 필수 `market=STOCK|CRYPTO`로 한 시장만 선택하고, 3차 OCO는 별도 URL·완료 key를 사용한다(2026-08-10, 이슈 #308).
+>
+> **2차 코인 holding 경로의 가격원은 `docs/specs/030-coin-practice-price-runtime`이 부분 대체한다.** 아래 COIN-PRACTICE-008·009의 빗썸 가격/합성 시세 evidence 비사용은 3차 OCO와 세션 없는 기존 주문에 계속 유효하다. 교육 가격 세션으로 만든 지정가 trade·holding만 030의 영속 세션 가격으로 체결·관찰한다. 기존 표시 전용 `/synthetic-prices`는 여전히 evidence가 아니다.
 
 ## 개요
 
