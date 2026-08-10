@@ -7,7 +7,7 @@
   - `CryptoPriceSseController`(`com.finplay.api.market.controller`) — `GET /api/cryptos/stream`, `StockPriceSseController`와 같은 3단계 호출 순서(emitter 생성 → snapshot 전송 → activate).
   - 검증: `@WebMvcTest`(인증 없이 401, 인증 시 `text/event-stream`), 통합 테스트(구독 → snapshot 수신 → `CryptoPriceUpdatedEvent` 발생 시 `price` 수신 → `PriceStore.saveConnectionStatus` 변경 시 `status` 수신, 최대 5초 이내). **`GET /api/stocks/stream`의 기존 테스트가 파일 수정 없이 그대로 통과**함을 재확인한다(회귀 없음).
 
-- [ ] **2. Redis pub/sub 배선** (ADR-0018 §결정 2·6·7)
+- [x] **2. Redis pub/sub 배선** (ADR-0018 §결정 2·6·7)
   - `PriceMoveCardConfirmedEvent`(`com.finplay.api.market.dto.sse`) — `record(Market market, Long instrumentId, Long priceMoveEventId, LocalDateTime emittedAt)`.
   - `CryptoPriceMoveCardPublisher`(`com.finplay.api.market.service`) — `public static final String CHANNEL`(`feedback:price-move:crypto-confirmed`) + `publish(Long instrumentId, Long priceMoveEventId)`. `ObjectMapper` 직렬화, `StringRedisTemplate.convertAndSend`. `RuntimeException`은 내부에서 삼키고 WARN 로그(호출부에 전파하지 않음).
   - `CryptoCardPushSubscriber`(`com.finplay.api.market.sse`) — `MessageListener` 구현. 메시지 수신 시 역직렬화 → `SseEmitterRegistry.getEmitters(Market.CRYPTO)` 순회 → `priceMoveCardConfirmed` 이벤트로 개별 전송(전송 실패는 해당 emitter만 `completeWithError`, 나머지 계속 — `StockPriceStreamService.broadcastPriceEvent`와 같은 패턴). 역직렬화 실패는 예외를 삼키고 로그만(리스너 스레드 자체가 죽지 않아야 함).
