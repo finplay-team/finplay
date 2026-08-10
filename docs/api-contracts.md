@@ -668,6 +668,21 @@ OCO 전용 경로는 `STOCK`이면 `INVESTMENT_OCO_PRACTICE_V1`, `CRYPTO`이면 
 
 `InstrumentService.getInstrumentEntity`로 종목 존재만 확인하고 `instrument.isTradable()`은 검증하지 않는다(비거래 종목도 순수 참고용 차트로 허용). `title`은 `Instrument.name`(예: `"삼성전자"`)이고 `tickSeconds`는 항상 3, `prices`는 100개(5분/3초, 시작가 포함) `BigDecimal` 정수 배열이다. 시작가는 `PriceQueryService.getPriceQuote`로 조회한 실제 현재가를 사용하고, 가격이 없으면(PRICE_UNAVAILABLE 등) 고정 fallback 상수(10,000)를 시작가로 쓴다. 각 틱은 이전 값 대비 -1%~+1% 균등분포로 변동하며 시작가의 50% 미만으로는 떨어지지 않게 clamp한다. 요청마다 새로 계산하며 어떤 저장소에도 남기지 않고, 비즈니스 락은 없다(`InstrumentService`/`PriceQueryService` 조회를 위한 읽기 전용 트랜잭션만 사용).
 
+이 API는 030 도입 뒤에도 표시 전용 호환 API다. 아래 영속 세션과 seed·cursor·가격을 공유하지 않으며 주문 체결·holding 관찰 evidence에 사용하지 않는다.
+
+### 030 코인 가상 가격 실행 환경 (계획)
+
+| Method | URL | 요청 | 성공 응답 | 오류 응답 |
+|---|---|---|---|---|
+| POST | `/api/education/practice/price-sessions` | `{"instrumentId":1}` | 201 `PracticePriceSessionResponse` | 400 `VALIDATION_ERROR`; 404 `NOT_FOUND`; 409 `INSTRUMENT_NOT_TRADABLE`, `PRACTICE_PRICE_SESSION_ALREADY_ACTIVE` |
+| GET | `/api/education/practice/price-sessions/{sessionId}` | 양수 path ID | 200 `PracticePriceSessionResponse` | 400 `VALIDATION_ERROR`; 404 `NOT_FOUND`(없음·타인 소유) |
+| POST | `/api/education/practice/price-sessions/{sessionId}/ticks` | `{"expectedTick":1}` | 200 `PracticePriceSessionResponse` | 400 `VALIDATION_ERROR`; 404 `NOT_FOUND`; 409 `PRACTICE_PRICE_SESSION_CLOSED`, `PRACTICE_PRICE_TICK_CONFLICT` |
+| POST | `/api/education/practice/limit-orders` | `{"practicePriceSessionId":1,"instrumentId":1,"quantity":0.01,"limitPrice":9500}` | 201 기존 `OrderResponse`(side는 서버가 `BUY`로 고정) | 400 `VALIDATION_ERROR`; 404 `NOT_FOUND`; 409 `PRACTICE_PRICE_SESSION_CLOSED`, `PRACTICE_PRICE_SESSION_MISMATCH`, `PRACTICE_LIMIT_ORDER_ALREADY_PENDING` 및 기존 주문 오류 |
+
+`PracticePriceSessionResponse`는 `sessionId`, `instrumentId`, `status`, `generatorVersion`, `startPrice`, `currentTick`, `currentPrice`, `tickSeconds=3`, `totalTicks=100`, `createdAt`, nullable `completedAt`을 반환하며 seed는 노출하지 않는다. 생성 직후 tick 0이고 next는 정확히 `currentTick+1`만 받는다. tick 99 가격으로 체결을 먼저 판정한 뒤 미체결 세션 주문을 취소·예약 반환하고 세션을 완료한다.
+
+가격 세션은 DB 영속이며 같은 사용자·종목 ACTIVE 1개, 같은 세션의 PENDING 교육 주문 1개가 상한이다. 튜토리얼 이벤트는 `PriceStore`와 `CryptoPriceUpdatedEvent`를 사용하지 않고 같은 owner·instrument·sessionId 주문만 처리한다. holding 관찰은 buyTrade→order에서 sessionId를 서버가 역추적한다. sessionId가 있으면 ACTIVE/COMPLETED 세션의 마지막 현재가, null이면 기존 실제 가격원을 사용한다. 상세 스키마·잠금·재기동 계약은 `docs/specs/030-coin-practice-price-runtime/plan.md`가 정본이다.
+
 ### OCO exit plan 생성 (계획)
 
 | Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
