@@ -150,7 +150,27 @@ jobs:
       - name: 빌드 검증 (러너가 직접 실행 — 에이전트 자기 보고 아님)
         id: build
         if: success()
-        run: ./gradlew build
+        run: |
+          # 앞 구현 스텝의 에이전트도 프롬프트 4번에 따라 ./gradlew build를 돌린다. 그때 뜬 Gradle 프로세스가
+          # 스텝이 끝난 뒤에도 살아남아 이 검증 빌드와 같은 build/ 디렉터리를 동시에 건드리면
+          # :test가 NoSuchFileException(build/test-results/test/binary/in-progress-results-generic.bin)으로 죽는다.
+          # 2026-08-10 실행에서 실측 — job 정리 단계에 "Terminate orphan process: pid (java)"가 찍혔고
+          # 컴파일 태스크는 전부 UP-TO-DATE(같은 워크스페이스에서 앞선 빌드가 돌았다는 뜻)인데
+          # 테스트 단언 실패는 한 건도 없이 Gradle 내부 오류만 났다:
+          # https://github.com/finplay-team/finplay/actions/runs/31353092525/job/93347455971
+          # 같은 실패 모드가 로컬에서도 이미 재현·기록돼 있다 — docs/agent-mistakes.md의 2026-07-25 행
+          # ("같은 worktree에서 Gradle 검증을 겹쳐 실행 → 테스트 결과 NoSuchFileException").
+          # 그때의 해법이 "모든 에이전트 Gradle 프로세스 **종료 후** 단독 재실행"이었으므로 여기서도 같게 간다.
+          # --stop만으로는 부족하다: 바쁜 데몬에는 "현재 빌드를 끝내고 종료하라"는 요청만 보내고 즉시 반환해서,
+          # 앞선 빌드가 아직 돌고 있으면 그대로 겹친다. 프로세스가 실제로 사라질 때까지 기다린다.
+          ./gradlew --stop || true
+          for _ in $(seq 1 30); do
+            pgrep -f 'GradleDaemon|GradleWrapperMain|GradleWorkerMain' > /dev/null || break
+            sleep 2
+          done
+          # --no-daemon: 이 검증 빌드가 데몬을 남기지 않게 한다. 남기면 뒤따르는 자동 수정 에이전트의
+          # 빌드가 이번엔 반대 방향으로 같은 충돌을 일으킨다. 2026-08-09 행의 복구 절차와도 같은 방향이다.
+          ./gradlew build --no-daemon
 
       - name: 방금 연 PR 번호 조회
         # 워크스페이스에 이미 구현 스텝이 만든 브랜치가 체크아웃돼 있으므로 그 브랜치로 정확히 찾는다.
@@ -306,7 +326,17 @@ jobs:
       - name: 빌드 재검증 — 자동 수정 후 (러너가 직접 실행 — 에이전트 자기 보고 아님)
         id: build_autofix
         if: steps.autofix.outcome == 'success'
-        run: ./gradlew build
+        run: |
+          # 위 "빌드 검증" 스텝과 같은 이유·같은 방식 — 바로 앞 자동 수정 스텝의 에이전트도 빌드를 돌릴 수 있어
+          # 남은 Gradle 프로세스가 이 재검증 빌드와 워크스페이스를 다툴 수 있다.
+          ./gradlew --stop || true
+          for _ in $(seq 1 30); do
+            pgrep -f 'GradleDaemon|GradleWrapperMain|GradleWorkerMain' > /dev/null || break
+            sleep 2
+          done
+          # --no-daemon: 이 검증 빌드가 데몬을 남기지 않게 한다. 남기면 뒤따르는 자동 수정 에이전트의
+          # 빌드가 이번엔 반대 방향으로 같은 충돌을 일으킨다. 2026-08-09 행의 복구 절차와도 같은 방향이다.
+          ./gradlew build --no-daemon
 
       - name: 재리뷰 (자동 수정 라운드, .claude/agents/reviewer.md 리뷰 모드 기준)
         id: review_autofix
