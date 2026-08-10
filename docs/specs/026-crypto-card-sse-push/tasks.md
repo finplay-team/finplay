@@ -14,7 +14,7 @@
   - `RedisPubSubConfig`(`com.finplay.api.market.config`, `@Configuration`) — `RedisMessageListenerContainer` 빈 등록, `CryptoCardPushSubscriber`를 `CryptoPriceMoveCardPublisher.CHANNEL`에 `addMessageListener`로 구독.
   - 검증: 단위(`CryptoPriceMoveCardPublisher` 정상 발행·Redis 예외 삼킴, `CryptoCardPushSubscriber` 정상 처리·역직렬화 실패 격리).
 
-- [ ] **3. `CryptoPriceMoveWatcher` 배선 — 저장 성공 후에만 발행** (ADR-0018 §결정 1·3·8, 완료 조건 핵심)
+- [x] **3. `CryptoPriceMoveWatcher` 배선 — 저장 성공 후에만 발행** (ADR-0018 §결정 1·3·8, 완료 조건 핵심)
   - `watchOne()`에서 `priceMoveCardWriter.persist(card, sources)`가 예외 없이 반환한 직후 `cryptoPriceMoveCardPublisher.publish(instrument.getId(), card.getId())` 호출.
   - **주식 확정 경로(`PriceMoveCardService`)는 이 publisher를 호출하지 않는다** — 새 의존성을 추가하지 않는다.
   - 검증(단위): `publish(...)`가 예외를 던지도록 mock해도 `watchOne()`이 `true`를 반환. 근거 매칭 0건으로 카드 생성이 취소되는 기존 케이스에서 `publish`가 호출되지 않음(mock 호출 검증).
