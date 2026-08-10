@@ -2,6 +2,10 @@
 package com.finplay.api.education.marketpractice.repository;
 
 import com.finplay.api.education.marketpractice.domain.PracticeCompletion;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-public interface PracticeCompletionRepository extends JpaRepository<PracticeCompletion, Long> {}
+public interface PracticeCompletionRepository extends JpaRepository<PracticeCompletion, Long> {
+
+	Optional<PracticeCompletion> findByUserIdAndTutorialKey(Long userId, String tutorialKey);
+}

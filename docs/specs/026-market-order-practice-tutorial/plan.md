@@ -126,6 +126,8 @@ else: # PERCENT
 
 ## 후속 확인 필요 (이 spec이 결정하지 않음)
 
-- `docs/prd.md` §2 "2차 MVP — 남은 범위와 계약 정의"·§3 구현 현황에 이 경로("투자 실습 — 시장가/지정가 매매 기반 완료 경로")를 신규 행으로 추가할지, 기존 "투자 실습 — 진행 조회·가격 관찰·복기(EDU-PRACTICE-001·007·011·012)" 행을 이 경로 기준으로 갱신할지는 이 spec이 결정하지 않는다. **구현 PR이 CLAUDE.md 규칙 10에 따라 실제 갱신을 수행해야 한다** — 이 spec은 계획 모드라 PRD를 직접 수정하지 않는다.
+- `MarketPracticeChainResolutionService.resolve()`는 favorite별 trade·holding 조회에 더해 완성 chain별 qualifying observation 조회를 수행한다. favorite 개수 상한이 없으므로 데이터가 늘면 조회가 선형 증가한다. 후속 성능 작업에서 favorite 상한을 도입하거나 intention·holding·observation을 일괄 조회하도록 배치화하며, 완료 조회의 `Holding → Instrument` lazy 조회도 함께 줄인다(PR #307 리뷰 권장).
+
+- ~~`docs/prd.md` §2·§3 구현 현황 반영 방식 결정~~ — **PR #307에서 해소했다.** holding 기반 완료 경로를 별도 행으로 완료 처리하고 OCO 미착수 행과 분리했다.
 - 3차 OCO 경로는 `GET /api/education/practice/oco?market=`와 `INVESTMENT_OCO_PRACTICE_V1|COIN_OCO_PRACTICE_V1`을 사용한다. 이 문서는 해당 production 구현을 다루지 않는다.
 - 클라이언트는 주식·코인 진행을 각각 조회해 화면에서 조합한다. 서버가 두 시장을 배열로 합쳐 반환하는 계약은 두지 않는다.

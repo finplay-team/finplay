@@ -743,7 +743,7 @@ OCO 전용 경로는 `STOCK`이면 `INVESTMENT_OCO_PRACTICE_V1`, `CRYPTO`이면 
 
 > **2차 MVP에서 3단계 실습을 실제로 완료할 수 있는 유일한 경로이며, 블랙박스 QA는 이 절을 근거로 삼는다.** `016` 절의 OCO 계약(`/exit-plans`, `/observations`, `/reflections`)은 3차 MVP 설계이고 controller가 없다.
 >
-> **`GET /api/education/practice?market=STOCK|CRYPTO`가 이 holding 기반 경로의 정본이다**(2026-08-10 확정, 이슈 #308). `market`은 필수이며 응답 하나는 선택한 시장의 `INVESTMENT_PRACTICE_V1|COIN_PRACTICE_V1` 한 key만 나타낸다. 아직 구현되지 않았으며(이슈 #305), evidence 필드는 `holdingId`와 계산된 참조 손절·익절가를 담고 `evidenceType`은 `CLOSER_TO_BOUNDARY|TIMED_REPETITION`만 허용한다. 3차 OCO는 별도 `GET /api/education/practice/oco?market=`와 별도 완료 key를 사용한다.
+> **`GET /api/education/practice?market=STOCK|CRYPTO`가 이 holding 기반 경로의 정본이다**(2026-08-10 확정, 이슈 #308, PR #307 구현). `market`은 필수이며 응답 하나는 선택한 시장의 `INVESTMENT_PRACTICE_V1|COIN_PRACTICE_V1` 한 key만 나타낸다. evidence 필드는 `holdingId`와 계산된 참조 손절·익절가를 담고 `evidenceType`은 `CLOSER_TO_BOUNDARY|TIMED_REPETITION`만 허용한다. 3차 OCO는 별도 `GET /api/education/practice/oco?market=`와 별도 완료 key를 사용한다.
 
 **시장 적용 범위**: 주식·코인 모두 지원한다. 2단계 매수 증거는 주문 유형을 구분하지 않으므로(`TradeService.findEarliestFilledBuyTradeMatching`이 `side=BUY`와 수량 일치만 검사) 코인은 `POST /api/orders`(시장가)와 `POST /api/orders/limit`(지정가) 체결 둘 다 인정되고, 주식은 지정가 API 자체가 없어 시장가만 자연히 해당한다.
 
@@ -777,7 +777,26 @@ OCO 전용 경로는 `STOCK`이면 `INVESTMENT_OCO_PRACTICE_V1`, `CRYPTO`이면 
 | `PracticeHoldingReflectionCreateRequest` | `Long holdingId`, `String answer` | `holdingId` non-null·양수; `answer`는 non-blank·2000자 이하 |
 | `PracticeHoldingReflectionResponse` | `Long reflectionId`, `Long holdingId`, `String prompt`, `String answer`, `LocalDateTime createdAt` | 모두 non-null; `prompt`는 고정 문구 |
 
-`GET /api/education/practice?market=`의 상태와 정본 여부는 이 절 도입부 참고(이슈 #305 미착수).
+### 실습 진행 조회 (holding 기준)
+
+| Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|
+| GET | /api/education/practice?market= | Access Bearer 필수. `market`(`STOCK`\|`CRYPTO`) 필수 | 200 `InvestmentPracticeResponse` | 400 `VALIDATION_ERROR`(`market` 누락·미지원 값); Access 인증 실패는 401 `UNAUTHORIZED` | 026 MKT-PRACTICE-008, Issue #305 |
+
+조회는 `market`으로 holding 기반 `tutorialKey`(`STOCK`→`INVESTMENT_PRACTICE_V1`, `CRYPTO`→`COIN_PRACTICE_V1`)를 정하고 쓰기 없이 상태를 계산한다. OCO 전용 key와 evidence는 조회하거나 합치지 않는다.
+
+1. `(userId, tutorialKey)` 완료 행이 있으면 `COMPLETED`, `currentStep=null`이며 저장된 `completedAt`을 반환한다. 완료 evidence 일부가 인메모리 재시작으로 유실돼도 완료 상태는 회귀하지 않는다.
+2. 완료 전 유효 chain이 있으면 1·2단계는 `COMPLETED`, 3단계는 `IN_PROGRESS`다. 같은 holding의 qualifying observation이 있으면 observation evidence도 채운다.
+3. 유효 chain은 없고 해당 시장 favorite만 있으면 1단계 `COMPLETED`, 2단계 `IN_PROGRESS`, 3단계 `NOT_STARTED`다.
+4. favorite도 없으면 전체 `NOT_STARTED`, `currentStep=1`이다.
+
+`locked`는 직전 단계가 완료되지 않았으면 `true`다. favorite·intention·buyTrade와 observation의 식별자·시각은 각각 한 쌍으로 null/non-null이며 observation은 `evidenceType`까지 함께 null/non-null이다. `holdingId`는 chain이 있을 때 채우고 참조 손절·익절가는 완료 전 계산 가능한 경우에만 채운다.
+
+| DTO | 필드 순서와 타입 | nullable 규칙 |
+|---|---|---|
+| `InvestmentPracticeResponse` | `String tutorialKey`, `String status`, `Integer currentStep`, `List<PracticeStepResponse> steps`, `LocalDateTime completedAt` | `tutorialKey`·`status`·`steps` non-null; `currentStep`은 완료 시 null, `completedAt`은 완료 전 null |
+| `PracticeStepResponse` | `Integer step`, `String status`, `Boolean locked`, `PracticeEvidenceResponse evidence` | 모두 non-null; locked 단계도 빈 evidence 객체 반환 |
+| `PracticeEvidenceResponse` | `Long favoriteId`, `LocalDateTime favoriteCreatedAt`, `Long intentionId`, `LocalDateTime intentionCreatedAt`, `Long buyTradeId`, `LocalDateTime buyTradeExecutedAt`, `Long holdingId`, `BigDecimal referenceStopLossPrice`, `BigDecimal referenceTakeProfitPrice`, `Long observationId`, `LocalDateTime observationObservedAt`, `String evidenceType`, `Long reflectionId`, `LocalDateTime reflectionCreatedAt` | favorite·intention·buyTrade는 id·시각 쌍; observation은 id·시각·type 삼쌍; reflection은 완료 시에만 non-null |
 
 ## 012 AI 피드백
 
