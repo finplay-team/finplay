@@ -63,7 +63,8 @@ public class PracticeHoldingReflectionService {
 			throw new BusinessException(ErrorCode.PRACTICE_ALREADY_COMPLETED);
 		}
 
-		ResolvedPracticeChainDto chain = chainResolutionService
+		// 이 chain의 필드는 이후 로직에서 쓰지 않는다 — 여기서는 존재·holding 일치 여부만 evidence 재검증에 쓴다.
+		chainResolutionService
 			.resolveForInstrument(userId, tutorialKey, holding.getInstrument().getId())
 			.filter(resolved -> resolved.holdingId().equals(holding.getId()))
 			.orElseThrow(() -> new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING));
