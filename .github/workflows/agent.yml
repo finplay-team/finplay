@@ -125,6 +125,7 @@ jobs:
           java-version: "17"
 
       - uses: anthropics/claude-code-action@v1
+        id: implement
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
@@ -146,6 +147,26 @@ jobs:
           claude_args: |
             --model sonnet
             --allowedTools "Read,Grep,Glob,Edit,Write,Bash"
+
+      - name: 구현 에이전트 호출 실패 이력 코멘트 — PR 생성 전
+        id: implement_failure_comment
+        # 이력 코멘트라 always() — 판정/승인이 아니다(ADR-0016 원칙).
+        # outcome != 'success'로 취소(타임아웃)·실패·(앞선 checkout/setup-java 실패로 인한) 스킵을 모두 잡는다.
+        # implement 앞에는 조건부 스텝이 없으므로(checkout·git 설정·setup-java 모두 암묵적 success() 의존)
+        # 이 스텝이 always()로 도는 유일한 앞단 게이트다 — checkout이 실패해도 여기서 흔적이 남는다.
+        if: always() && steps.implement.outcome != 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          IMPLEMENT_OUTCOME: ${{ steps.implement.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          printf '%s\n' \
+            "구현 에이전트 호출이 정상 종료되지 않았습니다 (outcome: $IMPLEMENT_OUTCOME) — PR이 열리지 않았습니다." \
+            "cancelled은 job 타임아웃(timeout-minutes)일 수 있고, skipped는 이보다 앞선 준비 스텝(checkout 등)이 실패했다는 뜻일 수 있습니다." \
+            "" \
+            "실행 로그: $RUN_URL" > /tmp/implement-failure-body.md
+          gh issue comment "$ISSUE_NUMBER" --body-file /tmp/implement-failure-body.md
 
       - name: 빌드 검증 (러너가 직접 실행 — 에이전트 자기 보고 아님)
         id: build
@@ -183,6 +204,24 @@ jobs:
           # 빌드가 이번엔 반대 방향으로 같은 충돌을 일으킨다. 2026-08-09 행의 복구 절차와도 같은 방향이다.
           ./gradlew build --no-daemon
 
+      - name: 빌드 검증 실패 이력 코멘트 — PR 생성 전
+        id: build_failure_issue_comment
+        # 구현이 성공했는데 빌드가 실패/취소된 경우만 잡는다 — 구현이 실패했으면 build 자체가 skipped라
+        # steps.implement.outcome == 'success' 조건으로 위 1번과 상호 배타를 이룬다.
+        if: always() && steps.implement.outcome == 'success' && steps.build.outcome != 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          printf '%s\n' \
+            "빌드 검증이 정상 종료되지 않았습니다 (outcome: $BUILD_OUTCOME) — 구현은 끝났지만 PR이 열리지 않았습니다." \
+            "cancelled은 job 타임아웃(timeout-minutes)일 수 있습니다." \
+            "" \
+            "실행 로그: $RUN_URL" > /tmp/build-failure-issue-body.md
+          gh issue comment "$ISSUE_NUMBER" --body-file /tmp/build-failure-issue-body.md
+
       - name: 방금 연 PR 번호 조회
         # 워크스페이스에 이미 구현 스텝이 만든 브랜치가 체크아웃돼 있으므로 그 브랜치로 정확히 찾는다.
         # 이슈번호 패턴으로 전체 open PR을 뒤지면 같은 이슈의 예전 PR을 잘못 집을 수 있다 (PR #232 리뷰).
@@ -197,6 +236,26 @@ jobs:
           # 이후 스텝이 전부 조용히 스킵돼 job이 우연히 초록으로 끝나는 것에 의존하지 않는다 (PR #293 3차 리뷰 권장 3).
           [ -n "$NUMBER" ] || { echo "::error::PR을 찾지 못했습니다"; exit 1; }
           echo "number=$NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: PR 번호 조회 실패 이력 코멘트
+        id: pr_lookup_failure_comment
+        # 빌드가 성공했는데 PR 조회가 실패/취소된 경우만 잡는다 — 빌드가 실패했으면 pr 자체가 skipped라
+        # steps.build.outcome == 'success' 조건으로 위 2번과 상호 배타를 이룬다.
+        # pr 스텝은 NUMBER가 비면 이미 명시적으로 exit 1하므로(기존 로직, ADR-0016) 그 경우도 outcome='failure'로
+        # 여기서 잡힌다 — 이슈 #311이 지목한 "steps.pr.outputs.number가 빈 값" 사례와 동일하다.
+        if: always() && steps.build.outcome == 'success' && steps.pr.outcome != 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          PR_LOOKUP_OUTCOME: ${{ steps.pr.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          printf '%s\n' \
+            "PR 번호 조회가 정상 종료되지 않았습니다 (outcome: $PR_LOOKUP_OUTCOME) — 구현·빌드는 끝났지만 PR을 찾지 못했습니다." \
+            "cancelled은 job 타임아웃(timeout-minutes)일 수 있습니다." \
+            "" \
+            "실행 로그: $RUN_URL" > /tmp/pr-lookup-failure-body.md
+          gh issue comment "$ISSUE_NUMBER" --body-file /tmp/pr-lookup-failure-body.md
 
       - name: 코드 리뷰 (.claude/agents/reviewer.md 리뷰 모드 기준)
         id: review
