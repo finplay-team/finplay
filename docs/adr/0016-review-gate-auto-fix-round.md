@@ -15,12 +15,13 @@ ADR-0013은 `implement-and-open-pr` job이 PR을 연 뒤 자체 리뷰를 한 �
 - `implement-and-open-pr` job에 자동 수정 라운드를 정확히 1회 추가한다. 라운드 1(자체 리뷰)의 `blocking_count > 0`일 때만 실행된다.
   - 자동 수정 대상은 차단 사항뿐이다. 권장 사항은 고치지 않는다 — 권장까지 포함하면 리뷰어가 만들어내는 지적만큼 PR 스코프가 원래 이슈를 넘어설 수 있다(이슈 #292 propose-directions 코멘트의 공통 권고).
   - 순서: 수정 커밋 푸시 → 러너가 직접 `./gradlew build` 재실행(에이전트의 "빌드 통과했다"는 자기 보고를 검증 근거로 쓰지 않는 기존 원칙 유지) → 자동 수정과 별도의 claude-code-action 호출로 독립 재리뷰 → 재리뷰 결과를 "자동 수정 1회차" 헤더와 종료 사유를 붙여 PR에 게시.
-  - **자동 수정 라운드의 종료 사유는 아래 5가지다**(PR #293 4차 리뷰 참고 2 — 아래 열거가 정본이며, 각 사유마다 대응하는 스텝이 하나씩 있다. 이 목록만 보고 스텝을 지우지 않도록 구현과 일치시켜 둔다).
+  - **자동 수정 라운드의 종료 사유는 아래 6가지다**(PR #293 4차 리뷰 참고 2 — 아래 열거가 정본이며, 각 사유마다 대응하는 스텝이 하나씩 있다. 이 목록만 보고 스텝을 지우지 않도록 구현과 일치시켜 둔다).
     - **차단 해소** — 재리뷰 `blocking_count == 0` (`post_review_autofix`)
     - **라운드 소진** — 재리뷰 `blocking_count > 0`, 1회 한도 도달 (`post_review_autofix`)
     - **재리뷰 구조화 출력 없음** — 재리뷰가 success로 끝났지만 `structured_output`이 빈 값 (`post_review_autofix`)
-    - **빌드 실패** — 자동 수정 후 `./gradlew build` 실패로 재리뷰까지 못 감 (`autofix_build_failure_comment`)
-    - **자동 수정 호출 실패** — `autofix` 스텝 자체가 실패/취소 (`autofix_call_failure_comment`)
+    - **재리뷰 호출 비정상 종료** — `review_autofix` 스텝 자체가 실패/취소 (`autofix_review_failure_comment`)
+    - **빌드 비정상 종료** — 자동 수정 후 `./gradlew build`가 실패/취소로 끝나 재리뷰까지 못 감 (`autofix_build_failure_comment`)
+    - **자동 수정 호출 비정상 종료** — `autofix` 스텝 자체가 실패/취소 (`autofix_call_failure_comment`)
   - 라운드 1(자동 수정 라운드 밖)에도 같은 취지로 두 가지 흔적이 남는다 — 리뷰가 구조화 출력 없이 끝난 경우("리뷰 결과를 PR에 게시" 스텝 안에서 처리)와 리뷰 호출 자체가 실패한 경우(`review_failure_comment`). 자동 수정 라운드만 흔적을 남기고 라운드 1은 비대칭으로 침묵하지 않게 하기 위함이다(PR #293 4차 리뷰 참고 1).
   - 재리뷰를 수행하는 호출은 자동 수정을 수행한 호출과 별도의 claude-code-action 호출이다 — 자기가 고친 것을 자기가 통과시키지 않는다.
 - **승인 판정 대상이 바뀐다.** ADR-0013은 라운드 1 리뷰 결과만으로 승인 여부를 판정했다. 이 ADR은 최종 판정 병합 스텝을 두어, 자동 수정 라운드가 실행됐으면 그 재리뷰 결과를, 실행되지 않았으면(라운드 1이 이미 차단 0건이었거나 자동 수정 전제 조건 미충족) 라운드 1 결과를 최종값으로 쓴다. **승인 기준 자체(차단 0건·권장 0건)는 ADR-0013 그대로 유지한다** — 바뀌는 것은 그 기준을 어느 라운드의 결과에 적용하느냐뿐이다.
@@ -31,6 +32,8 @@ ADR-0013은 `implement-and-open-pr` job이 PR을 연 뒤 자체 리뷰를 한 �
   - **이력 코멘트 스텝은 `always()`** — `review_failure_comment`·`autofix_call_failure_comment`·`autofix_build_failure_comment`·`autofix_review_failure_comment`.
   - **판정 병합(`judge`)과 조건부 승인은 `!cancelled()`** — 취소된 런이 판정을 매기고 승인까지 이어지는 것은 막는다.
   - 근거: `timeout-minutes` 초과 시 GitHub은 job을 **취소**로 처리한다. 가장 오래 도는 스텝이 `autofix`라 타임아웃이 걸릴 확률이 제일 높은 지점이 거기인데, 이력 코멘트까지 `!cancelled()`면 그 경우 PR에 아무 흔적도 남지 않아 "코멘트 이력만 보고 왜 멈췄는지 알 수 있다"는 요구사항을 못 지킨다. 정보성 코멘트는 취소된 런에 붙어도 무해하지만 승인은 아니다 — 원래 막으려던 것은 승인이지 코멘트가 아니었다.
+  - **이력 코멘트 스텝의 대상 판정은 `outcome == 'failure'`가 아니라 `outcome != 'success'`로 통일한다**(PR #293 5차 리뷰 권장 1). 취소된 스텝의 `outcome`은 `failure`가 아니라 `cancelled`이므로, `== 'failure'`로 두면 `always()`를 붙여놓고도 정작 타임아웃 경로가 걸리지 않는다. 각 이력 코멘트 스텝은 바로 앞 스텝이 `success`임을 함께 요구하므로 대상 스텝이 `skipped`가 되는 경우는 없어 `!= 'success'`가 과하게 잡히지 않는다.
+  - 같은 이유로 이력 코멘트 본문은 "실패했습니다"로 단정하지 않고 실제 `outcome` 값을 함께 찍는다 — 조건이 `failure`와 `cancelled`를 모두 잡으므로, 단정하면 타임아웃으로 멈춘 런에서 원인을 잘못 지목하게 된다.
 - PR 번호를 참조하는 `gh pr comment`/`gh pr review` 호출은 `run:` 스크립트에 `${{ }}`를 직접 보간하지 않고 `env: PR_NUMBER: ${{ steps.pr.outputs.number }}`를 거친다 — 위 env 즉시평가 원칙과 스크립트 인젝션 방지 원칙을 PR 번호에도 동일하게 적용한 것이다(PR #293 3차 리뷰 참고 4).
 - "방금 연 PR 번호 조회" 스텝은 PR 번호를 못 찾으면(`NUMBER`가 빈 문자열) job을 명시적으로 실패시킨다 — 이전에는 이후 스텝이 전부 조용히 스킵돼 job이 우연히 초록으로 끝났다(이슈 #292의 실제 실패 사례, PR #293 3차 리뷰 권장 3).
 

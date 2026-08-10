@@ -231,15 +231,22 @@ jobs:
       - name: 리뷰 호출 실패 이력 코멘트 — 라운드 1
         id: review_failure_comment
         # 바로 위 스텝은 review가 success로 끝났지만 구조화 출력이 비어 있는 경우(침묵 실패)를 흡수한다.
-        # 여기는 review 호출 자체가 실패로 끝나는 경우다 — 자동 수정 라운드 쪽 autofix_review_failure_comment와
+        # 여기는 review 호출 자체가 정상 종료되지 않은 경우다 — 자동 수정 라운드 쪽 autofix_review_failure_comment와
         # 같은 패턴이며, 라운드 1만 비대칭으로 흔적이 안 남던 것을 맞춘 것이다 (PR #293 4차 리뷰 참고 1).
         # 이력 코멘트라 always() — 라운드가 아니므로 "자동 수정 N회차" 헤더는 붙이지 않는다.
-        if: always() && steps.pr.outputs.number != '' && steps.review.outcome == 'failure'
+        # 조건은 == 'failure'가 아니라 != 'success'다 — 취소된 스텝의 outcome은 'failure'가 아니라 'cancelled'라
+        # == 'failure'로는 타임아웃 경로가 걸리지 않는다. 이력 코멘트 4개가 모두 이 규칙을 따른다 (PR #293 5차 리뷰 권장 1).
+        # 앞의 pr.outputs.number 가드가 성립하면 review는 skipped가 될 수 없어 != 'success'가 과하게 잡히지 않는다.
+        if: always() && steps.pr.outputs.number != '' && steps.review.outcome != 'success'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
+          # 본문에 실제 outcome을 찍는다 — 조건이 failure·cancelled를 모두 잡으므로 "실패"로 단정하면
+          # 타임아웃(=취소)으로 멈춘 런에서 원인을 잘못 지목하게 된다 (PR #293 5차 리뷰 권장 1).
+          REVIEW_OUTCOME: ${{ steps.review.outcome }}
         run: |
-          printf '%s\n' "리뷰 호출이 실패했습니다 — 사람이 직접 확인해야 합니다." > /tmp/review-failure-body.md
+          printf '%s\n' "리뷰 호출이 정상 종료되지 않았습니다 (outcome: $REVIEW_OUTCOME) — 사람이 직접 확인해야 합니다." \
+            "cancelled은 job 타임아웃(timeout-minutes)일 수 있습니다." > /tmp/review-failure-body.md
           gh pr comment "$PR_NUMBER" --body-file /tmp/review-failure-body.md
 
       - name: 자동 수정 준비 — 라운드 1 리뷰 report 저장 (ADR-0016)
@@ -287,8 +294,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
+          # 조건이 failure·cancelled를 모두 잡으므로 본문에서 "실패"로 단정하지 않고 실제 outcome을 찍는다
+          # (PR #293 5차 리뷰 권장 1).
+          AUTOFIX_OUTCOME: ${{ steps.autofix.outcome }}
         run: |
-          printf '%s\n' "## 자동 수정 1회차" "" "자동 수정 호출이 실패했습니다 — 사람이 직접 확인해야 합니다." > /tmp/autofix-call-failure-body.md
+          printf '%s\n' "## 자동 수정 1회차" "" \
+            "자동 수정 호출이 정상 종료되지 않았습니다 (outcome: $AUTOFIX_OUTCOME) — 사람이 직접 확인해야 합니다." \
+            "cancelled은 job 타임아웃(timeout-minutes)일 수 있습니다." > /tmp/autofix-call-failure-body.md
           gh pr comment "$PR_NUMBER" --body-file /tmp/autofix-call-failure-body.md
 
       - name: 빌드 재검증 — 자동 수정 후 (러너가 직접 실행 — 에이전트 자기 보고 아님)
@@ -374,28 +386,37 @@ jobs:
         # 같은 이유로 명시적 status 함수가 필요하다 (PR #271 리뷰가 정리한 패턴, ADR-0016).
         # 이력 코멘트라 !cancelled()가 아니라 always()다 — 취소(타임아웃 포함)된 런에서도 왜 멈췄는지
         # 흔적은 남아야 한다. 정보성 코멘트는 취소된 런에 붙어도 무해하고, 승인만 !cancelled()로 막는다
-        # (PR #293 4차 리뷰 권장 1).
-        if: always() && steps.autofix.outcome == 'success' && steps.build_autofix.outcome == 'failure'
+        # (PR #293 4차 리뷰 권장 1). 같은 이유로 조건도 == 'failure'가 아니라 != 'success'다 — 취소된 스텝의
+        # outcome은 'cancelled'이므로 == 'failure'로는 always()를 붙인 의미가 없어진다 (5차 리뷰 권장 1).
+        # 위 build_autofix가 autofix 성공 시 반드시 실행되므로 여기서 skipped가 잡힐 일은 없다.
+        if: always() && steps.autofix.outcome == 'success' && steps.build_autofix.outcome != 'success'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
+          BUILD_AUTOFIX_OUTCOME: ${{ steps.build_autofix.outcome }}
         run: |
-          printf '%s\n' "## 자동 수정 1회차" "" "빌드 실패로 종료 — 사람이 직접 확인해야 합니다." > /tmp/autofix-build-failure-body.md
+          printf '%s\n' "## 자동 수정 1회차" "" \
+            "자동 수정 후 빌드가 정상 종료되지 않았습니다 (outcome: $BUILD_AUTOFIX_OUTCOME) — 사람이 직접 확인해야 합니다." \
+            "cancelled은 job 타임아웃(timeout-minutes)일 수 있습니다." > /tmp/autofix-build-failure-body.md
           gh pr comment "$PR_NUMBER" --body-file /tmp/autofix-build-failure-body.md
 
       - name: 자동 수정 라운드 — 재리뷰 호출 실패 이력 코멘트
         id: autofix_review_failure_comment
         # post_review_autofix는 review_autofix가 success로 끝났지만 구조화 출력이 비어 있는 경우(침묵 실패)만
-        # 흡수한다. 여기는 review_autofix 호출 자체가 실패(outcome == 'failure')로 끝나는 경우다 — 두 if:는
-        # 상호 배타적이라 동시에 돌지 않는다. always()를 쓰는 이유는 autofix_build_failure_comment와 같다 —
+        # 흡수한다. 여기는 review_autofix 호출 자체가 정상 종료되지 않은 경우다 — 두 if:는 success 여부로
+        # 갈리므로 상호 배타적이라 동시에 돌지 않는다. always()를 쓰는 이유는 autofix_build_failure_comment와 같다 —
         # 이력 코멘트는 취소(타임아웃 포함)된 런에서도 남아야 하고, 취소된 런을 막아야 하는 건 판정·승인뿐이다
-        # (PR #293 2차 리뷰, 4차 리뷰 권장 1 반영).
-        if: always() && steps.autofix.outcome == 'success' && steps.build_autofix.outcome == 'success' && steps.review_autofix.outcome == 'failure'
+        # (PR #293 2차 리뷰, 4차 리뷰 권장 1 반영). 조건이 != 'success'인 이유도 같다 — 취소된 스텝의 outcome은
+        # 'cancelled'이라 == 'failure'로는 타임아웃 경로가 안 걸린다 (5차 리뷰 권장 1).
+        if: always() && steps.autofix.outcome == 'success' && steps.build_autofix.outcome == 'success' && steps.review_autofix.outcome != 'success'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
+          REVIEW_AUTOFIX_OUTCOME: ${{ steps.review_autofix.outcome }}
         run: |
-          printf '%s\n' "## 자동 수정 1회차" "" "재리뷰 호출이 실패했습니다 — 사람이 직접 확인해야 합니다." > /tmp/autofix-review-failure-body.md
+          printf '%s\n' "## 자동 수정 1회차" "" \
+            "재리뷰 호출이 정상 종료되지 않았습니다 (outcome: $REVIEW_AUTOFIX_OUTCOME) — 사람이 직접 확인해야 합니다." \
+            "cancelled은 job 타임아웃(timeout-minutes)일 수 있습니다." > /tmp/autofix-review-failure-body.md
           gh pr comment "$PR_NUMBER" --body-file /tmp/autofix-review-failure-body.md
 
       - name: 최종 판정 병합 (자동 수정 라운드가 돌았으면 그 결과, 아니면 라운드 1 결과, ADR-0016)

@@ -43,6 +43,13 @@
 | - | implementer | `Edit docs/specs/025-review-gate-auto-fix/plan.md` (스텝 번호에 build 추가·전체 재번호, 신규 스텝 반영, always/!cancelled 구분 절 정정) | 4차 리뷰 권장 2·권장 1·참고 1·참고 3 |
 | - | implementer | `Edit docs/adr/0016-review-gate-auto-fix-round.md` (종료 사유 5가지 정본 열거, always/!cancelled 구분 근거) | 4차 리뷰 참고 2·권장 1 |
 | - | implementer | `Edit docs/specs/025-review-gate-auto-fix/spec.md` (종료 사유 열거 갱신, 라운드 1 흔적 요구사항 추가) | 4차 리뷰 참고 2·참고 1 |
+| - | 메인세션 | `Edit .github/workflows/agent.yml` (이력 코멘트 4개 조건을 `== 'failure'` → `!= 'success'`로 통일, 본문에 실제 outcome 출력) | PR #293 5차 리뷰 권장 1 — 취소된 스텝의 outcome은 'cancelled'라 == 'failure'로는 타임아웃 경로가 안 걸림 |
+| - | 메인세션 | 도달 가능한 outcome 조합 10개 전수 시뮬레이션 (라운드1/자동수정 라운드별 코멘트 개수 검증) | 한 칸씩 대응하던 방식을 그만두고 조합 전체를 한 번에 닫기 위함 — 이상 0건 확인 |
+| - | 메인세션 | `python yaml.safe_load` + `bash -n` (run: 13개, LF 강제) | YAML·셸 문법 확인 |
+| - | 메인세션 | `Edit docs/specs/.../plan.md` (버그 수정 상세 절의 옛 스텝 번호 12·16 → 13·17, 15·16 → 16·17) | 5차 리뷰 권장 2 |
+| - | 메인세션 | `Edit docs/specs/.../spec.md` (사용자 시나리오의 3가지 열거를 "등 + ADR-0016 정본" 형태로 정정) | 5차 리뷰 참고 1 |
+| - | 메인세션 | `Edit docs/specs/.../tasks.md` (취소 경로 이력 코멘트 실측 항목 추가) | 5차 리뷰 참고 2 — 검증되지 않은 전제가 정본으로 굳는 것 방지 |
+| - | 메인세션 | `Edit docs/adr/0016-*.md` (종료 사유 6가지로 정정, != 'success' 규칙과 outcome 출력 근거 추가) | 5차 리뷰 권장 1·참고 1 |
 
 ## 모니터링 (사람용 요약)
 - ADR-0016 초안 작성, ADR-0013 상태 줄만 "일부 대체됨"으로 갱신(본문 미수정), 컴파일 통과.
@@ -61,3 +68,5 @@
 - **참고 1**: 라운드 1의 `review` 호출 자체가 failure로 끝나는 경우를 `review_failure_comment` 스텝으로 흡수 — 자동 수정 라운드만 흔적을 남기고 라운드 1은 침묵하던 비대칭 해소.
 - **참고 3**: `judge`의 else 분기에서 `final_reason`을 `autofix_failed`(돌다가 실패)와 `round1_only`(아예 안 돎)로 분리. **안전성 근거를 직접 검증했다** — `grep`으로 `final_reason`이 전부 `echo ... >> $GITHUB_OUTPUT` 쓰기 위치에만 있고 어느 `if:`에서도 참조되지 않음(라운드 소진 코멘트 스텝 제거 후 소비처 없음), `steps.judge.outputs` 소비처는 `final_blocking`·`final_recommended` 2개뿐임을 확인했다. 즉 **로그 전용 값이라 판정에 영향이 없다.** `final_blocking`·`final_recommended` 계산 로직은 손대지 않았고 `git diff`로 무변경임을 재확인했다("모르면 승인 안 함" 성질 유지).
 - 권장 2(plan.md 스텝 번호에서 `build` 누락)·참고 2(ADR-0016·spec.md의 종료 사유 열거가 3가지로 낡음) 반영 — plan.md는 "변경 전" 절과 번호 기준을 맞춰 전체 재번호(1=checkout그룹, 2=구현, 3=빌드검증, 4=PR번호조회, …17=조건부승인)했고, 종료 사유는 실제 구현대로 5가지(차단 해소/라운드 소진/재리뷰 구조화 출력 없음/빌드 실패/자동 수정 호출 실패) + 라운드 1의 2가지 흔적으로 갱신했다. ADR-0016을 정본으로 두고 spec.md는 그쪽을 가리킨다.
+- PR #293 5차 리뷰(권장 2 / 참고 2) 반영 — 이력 코멘트 4개의 조건을 `!= 'success'`로 통일해 취소(타임아웃) 경로를 닫았다. 4차 리뷰에서 `always()`로 되돌린 것만으로는 부족했다: 조건이 `== 'failure'`라 `cancelled`가 걸러지고 있었다. 도달 가능한 outcome 조합 10개를 전수 시뮬레이션해 라운드1 코멘트 1개 · 자동 수정 라운드 코멘트 1개(미진입 시 0개)로 중복·누락 0건임을 확인했다.
+- 지적이 반복되는 원인은 세션 누적 오류가 아니라 **한 칸씩 대응하는 방식**이었다 — 이 변경은 스텝 outcome(success/failure/cancelled/skipped) 조합 위의 상태 기계라, 개별 칸을 메우면 인접 칸이 계속 드러난다. 이번 회차부터 조합 전수 검증으로 전환했다.

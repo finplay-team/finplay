@@ -6,3 +6,4 @@
 - [x] `.github/workflows/agent.yml` — 최종 판정 병합 스텝(라운드 2 결과 우선, 없으면 라운드 1 결과)을 추가하고 조건부 승인 스텝을 그 결과를 보도록 재배치한다. `implement-and-open-pr` job에 `timeout-minutes`를 명시한다.
 - [x] `docs/harness-roadmap.md` 관련 항목 갱신 — 자동 수정 라운드 도입을 구현 단계 체크리스트에 반영한다.
 - [ ] 테스트 이슈 1건으로 전체 흐름 검증 — 차단 있는 self-review → 자동 수정 커밋 → 재빌드 → 재리뷰 → PR 코멘트 이력까지 실제로 도는지 확인한다(spec 완료 조건, GitHub 이슈 #292 완료 조건과 동일). **PR 머지 후에만 가능** — GitHub Actions는 issue/issue_comment 트리거 워크플로우를 항상 기본 브랜치(dev) 버전으로 실행하므로, 이 PR이 머지되기 전까지는 실제 흐름 검증이 불가능하다.
+- [ ] **취소(job 타임아웃) 경로의 이력 코멘트 실측** — 이력 코멘트 스텝을 `always()` + `outcome != 'success'`로 둔 근거는 "취소된 스텝의 outcome은 `cancelled`이고 `always()`는 취소에도 참을 반환한다"는 GitHub Actions 문서상 의미론이며, **로컬에서 실행해 확인한 것이 아니다**(PR #293 5차 리뷰 참고 2). 러너의 취소 유예 시간 안에 `gh pr comment`까지 실제로 끝나는지는 실측 대상이다. 검증되지 않은 전제가 정본으로 굳지 않도록, 머지 후 검증에서 이 항목을 함께 확인한다.
