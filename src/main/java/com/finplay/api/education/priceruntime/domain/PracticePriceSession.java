@@ -21,6 +21,9 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class PracticePriceSession {
 
+	// 100개 tick(0..99) 계약의 마지막 tick — 도달 시 세션을 COMPLETED로 전이한다 (spec COIN-PRICE-RUNTIME-005).
+	private static final int MAX_TICK = 99;
+
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
@@ -85,5 +88,22 @@ public class PracticePriceSession {
 		BigDecimal startPrice,
 		LocalDateTime createdAt) {
 		return new PracticePriceSession(userId, instrumentId, seed, generatorVersion, startPrice, createdAt);
+	}
+
+	// expectedTick으로 한 tick 진행한다. 방어적 검증만 하며 사용자향 409 매핑은 호출 전 service가 담당한다
+	// (Order.cancel() 패턴, plan.md "트랜잭션·잠금·이벤트").
+	public void advance(int expectedTick, BigDecimal nextPrice, LocalDateTime now) {
+		if (this.status != PracticePriceSessionStatus.ACTIVE) {
+			throw new IllegalStateException("ACTIVE 상태의 세션만 진행할 수 있습니다.");
+		}
+		if (expectedTick != this.currentTick + 1) {
+			throw new IllegalStateException("expectedTick은 currentTick+1이어야 합니다.");
+		}
+		this.currentTick = (short)expectedTick;
+		this.currentPrice = nextPrice;
+		if (expectedTick == MAX_TICK) {
+			this.status = PracticePriceSessionStatus.COMPLETED;
+			this.completedAt = now;
+		}
 	}
 }
