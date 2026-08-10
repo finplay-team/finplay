@@ -186,6 +186,62 @@ class NewsCollectionServiceTest {
 		verify(marketNewsItemRepository, never()).findExistingUrls(anyLong(), any());
 	}
 
+	// ADR-0017 §결정 2 — 온디맨드 수집도 같은 시장 종목명 목록만 넘긴다(collectNews()와 같은 제목 필터 규칙).
+	@Test
+	@DisplayName("collectForInstrument는 같은 시장 종목명만 넘겨 수집기를 부른다")
+	void collectForInstrumentCollectsWithSameMarketNamesOnly() {
+		when(newsCollector.collect(eq(bitcoin), any())).thenReturn(List.of());
+
+		service.collectForInstrument(bitcoin);
+
+		verify(newsCollector).collect(bitcoin, List.of("비트코인"));
+	}
+
+	// §데이터 모델 — collectForInstrument도 collectNews()와 같은 규칙으로 created_at에 수집 시각을 넣는다.
+	@Test
+	@DisplayName("collectForInstrument로 저장한 기사의 created_at도 clock 기준 수집 시각이다")
+	void collectForInstrumentSavesCollectedNewsWithCollectionTimeAsCreatedAt() {
+		LocalDateTime publishedAt = LocalDateTime.of(2026, 8, 5, 10, 3);
+		when(newsCollector.collect(eq(bitcoin), any())).thenReturn(
+			List.of(news("비트코인 급등", "coindesk.com", "https://coindesk.com/a/1", publishedAt)));
+
+		service.collectForInstrument(bitcoin);
+
+		MarketNewsItem saved = captureSaved();
+		assertThat(saved.getPublishedAt()).isEqualTo(publishedAt);
+		assertThat(saved.getCreatedAt()).isEqualTo(COLLECTED_AT);
+		assertThat(saved.getType()).isEqualTo(MarketNewsItemType.NEWS);
+	}
+
+	// ADR-0017 §결정 6 — 이미 저장된 URL이면 온디맨드 수집도 다시 저장하지 않는다.
+	@Test
+	@DisplayName("collectForInstrument는 이미 저장된 URL이면 다시 저장하지 않는다")
+	void collectForInstrumentIgnoresAlreadyCollectedArticle() {
+		when(newsCollector.collect(eq(bitcoin), any())).thenReturn(
+			List.of(news("이미 있는 기사", "coindesk.com", "https://coindesk.com/a/dup",
+				LocalDateTime.of(2026, 8, 5, 9, 0))));
+		when(marketNewsItemRepository.findExistingUrls(2L, List.of("https://coindesk.com/a/dup")))
+			.thenReturn(List.of("https://coindesk.com/a/dup"));
+
+		int saved = service.collectForInstrument(bitcoin);
+
+		assertThat(saved).isZero();
+		verify(marketNewsItemRepository, never()).save(any());
+	}
+
+	// 완료 조건 — 반환값은 실제 저장 건수와 같다.
+	@Test
+	@DisplayName("collectForInstrument는 실제로 저장한 건수를 반환한다")
+	void collectForInstrumentReturnsActualSavedCount() {
+		when(newsCollector.collect(eq(bitcoin), any())).thenReturn(List.of(
+			news("비트코인 급등", "coindesk.com", "https://coindesk.com/a/1", LocalDateTime.of(2026, 8, 5, 9, 0)),
+			news("비트코인 하락", "coindesk.com", "https://coindesk.com/a/2", LocalDateTime.of(2026, 8, 5, 9, 5))));
+
+		int saved = service.collectForInstrument(bitcoin);
+
+		assertThat(saved).isEqualTo(2);
+	}
+
 	// ④ 원장 불변의 구조적 형태 — 저장 경로가 market_news_items 밖의 리포지토리를 아예 들고 있지 않다.
 	// 종목 목록도 리포지토리가 아니라 market의 서비스를 경유한다(§C-6).
 	@Test

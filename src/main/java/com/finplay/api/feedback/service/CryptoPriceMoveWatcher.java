@@ -39,8 +39,13 @@ import org.springframework.stereotype.Service;
  * <p><b>다른 도메인 데이터는 서비스를 경유한다</b>(§C-6). 코인 가격은 {@code CryptoPriceSnapshotService}만 알고
  * {@code PriceStore}를 직접 주입하지 않는다.
  *
+ * <p><b>필요 시 온디맨드 수집을 트리거한다</b>(ADR-0017 §결정 1). 근거 매칭이 비어 있으면
+ * {@code NewsCollectionService.collectForInstrument}를 직접 호출해 그 시점에 기사를 수집하고 1회 재매칭한다 —
+ * "탐지·쿨다운·근거 매칭·서술·저장을 전부 담는다"는 선언의 자연스러운 연장이다.
+ *
  * <p><b>쓰기는 {@code price_move_events}·{@code price_move_event_sources} 둘뿐이다</b>(원장 불변, 8개 이슈 공통
- * 조건). 나머지는 전부 읽기다.
+ * 조건). 나머지는 전부 읽기다 — 단, 온디맨드 수집은 {@code NewsCollectionService}를 거쳐
+ * {@code market_news_items}에 쓴다(ADR-0017).
  */
 @Slf4j
 @Service
@@ -69,6 +74,8 @@ public class CryptoPriceMoveWatcher {
 	private final CryptoWatchLock cryptoWatchLock;
 
 	private final NewsMatcher newsMatcher;
+
+	private final NewsCollectionService newsCollectionService;
 
 	private final NarrativeService narrativeService;
 
@@ -105,9 +112,10 @@ public class CryptoPriceMoveWatcher {
 	}
 
 	// 의사코드 순서를 그대로 따른다 (§탐지 알고리즘(코인)) — p_now/p_past 조회 → 표본 부족·σ=0 종료 →
-	// |r5|/σ24 < k 종료 → 종목 단위 Redis 락 획득(ADR-0014) → 쿨다운 → 일일 상한 → 근거 매칭(0건이면 종료) →
-	// 서술 → 저장. 락은 z-score 게이트 통과 직후(쿨다운 확인 전)부터 저장까지 전부 감싼다 — 다른 인스턴스가
-	// 이미 이 종목을 처리 중이면 대기하지 않고 이번 틱을 건너뛴다(오류가 아니다, DEBUG).
+	// |r5|/σ24 < k 종료 → 종목 단위 Redis 락 획득(ADR-0014) → 쿨다운 → 일일 상한 → 근거 매칭 → 비어 있으면
+	// 온디맨드 수집(ADR-0017) 후 1회 재매칭, 그래도 0건이면 종료 → 서술 → 저장. 락은 z-score 게이트 통과
+	// 직후(쿨다운 확인 전)부터 저장까지 전부 감싼다 — 다른 인스턴스가 이미 이 종목을 처리 중이면 대기하지 않고
+	// 이번 틱을 건너뛴다(오류가 아니다, DEBUG).
 	private boolean watchOne(Instrument instrument, LocalDateTime now) {
 		int rollingWindowMinutes = cryptoProperties.rollingWindowMinutes();
 		LocalDateTime lookbackStart = now.minusHours(cryptoProperties.sigmaLookbackHours());
@@ -153,9 +161,14 @@ public class CryptoPriceMoveWatcher {
 			}
 
 			List<MarketNewsItem> sources = newsMatcher.matchCrypto(instrument.getId(), now);
-			// 근거가 하나도 없으면 카드를 생성하지 않는다 (FEED-003과 동일 규칙).
+			// 첫 매칭이 비면 온디맨드 수집(ADR-0017) 후 1회만 재매칭한다 — 수집 직후에도 근거가 하나도 없으면
+			// 카드를 생성하지 않는다 (FEED-003과 동일 규칙).
 			if (sources.isEmpty()) {
-				return false;
+				newsCollectionService.collectForInstrument(instrument);
+				sources = newsMatcher.matchCrypto(instrument.getId(), now);
+				if (sources.isEmpty()) {
+					return false;
+				}
 			}
 
 			BigDecimal changeRate = scaled(Math.expm1(r5), CHANGE_RATE_SCALE);

@@ -93,6 +93,9 @@ class CryptoWatchLockConcurrencyIntegrationTest {
 	private NewsMatcher newsMatcher;
 
 	@Autowired
+	private NewsCollectionService newsCollectionService;
+
+	@Autowired
 	private FeedbackCryptoProperties cryptoProperties;
 
 	@Autowired
@@ -209,8 +212,8 @@ class CryptoWatchLockConcurrencyIntegrationTest {
 		});
 		CryptoPriceMoveWatcher watcherWithoutRealLock = new CryptoPriceMoveWatcher(
 			instrumentService, cryptoPriceSnapshotService, priceMoveEventRepository, priceMoveCardWriter,
-			alwaysSucceedingLockWithFreshTokens(), newsMatcher, narrativeService, cryptoProperties,
-			detectionProperties, clock);
+			alwaysSucceedingLockWithFreshTokens(), newsMatcher, newsCollectionService, narrativeService,
+			cryptoProperties, detectionProperties, clock);
 
 		runConcurrently(watcherWithoutRealLock::watch, watcherWithoutRealLock::watch);
 
