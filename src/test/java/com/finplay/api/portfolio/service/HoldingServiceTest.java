@@ -188,4 +188,68 @@ class HoldingServiceTest {
 		org.mockito.Mockito.verify(accountService).getAccountFor(1L, Market.CRYPTO);
 		org.mockito.Mockito.verify(accountService, org.mockito.Mockito.never()).getAccountFor(1L, Market.STOCK);
 	}
+
+	// 아래는 026-market-order-practice-tutorial 3단계 관찰 API가 쓰는 findHoldingForOwner(holdingId로 조회하되
+	// 계좌 소유자가 본인이 아니면 존재를 숨겨 빈 값을 반환)를 검증한다.
+
+	@Test
+	void findHoldingForOwnerReturnsHoldingWhenOwnerMatches() {
+		AccountService accountService = mock(AccountService.class);
+		HoldingRepository holdingRepository = mock(HoldingRepository.class);
+		HoldingValuationService holdingValuationService = mock(HoldingValuationService.class);
+		HoldingService holdingService = new HoldingService(accountService, holdingRepository,
+			holdingValuationService);
+
+		User owner = User.create("owner@finplay.com", "password-hash", "owner", NOW);
+		org.springframework.test.util.ReflectionTestUtils.setField(owner, "id", 1L);
+		Account account = Account.create(owner, Market.STOCK, NOW);
+		com.finplay.api.market.domain.Instrument instrument = com.finplay.api.market.domain.Instrument
+			.create(com.finplay.api.market.domain.Market.STOCK, "005930", "삼성전자", BigDecimal.ONE, 0L, true, NOW);
+		Holding holding = Holding.create(account, instrument, NOW);
+		org.springframework.test.util.ReflectionTestUtils.setField(holding, "id", 99L);
+
+		when(holdingRepository.findById(99L)).thenReturn(java.util.Optional.of(holding));
+
+		java.util.Optional<Holding> result = holdingService.findHoldingForOwner(1L, 99L);
+
+		assertThat(result).contains(holding);
+	}
+
+	@Test
+	void findHoldingForOwnerReturnsEmptyWhenHoldingDoesNotExist() {
+		AccountService accountService = mock(AccountService.class);
+		HoldingRepository holdingRepository = mock(HoldingRepository.class);
+		HoldingValuationService holdingValuationService = mock(HoldingValuationService.class);
+		HoldingService holdingService = new HoldingService(accountService, holdingRepository,
+			holdingValuationService);
+
+		when(holdingRepository.findById(99L)).thenReturn(java.util.Optional.empty());
+
+		java.util.Optional<Holding> result = holdingService.findHoldingForOwner(1L, 99L);
+
+		assertThat(result).isEmpty();
+	}
+
+	@Test
+	void findHoldingForOwnerReturnsEmptyWhenHoldingBelongsToAnotherUser() {
+		AccountService accountService = mock(AccountService.class);
+		HoldingRepository holdingRepository = mock(HoldingRepository.class);
+		HoldingValuationService holdingValuationService = mock(HoldingValuationService.class);
+		HoldingService holdingService = new HoldingService(accountService, holdingRepository,
+			holdingValuationService);
+
+		User otherOwner = User.create("other@finplay.com", "password-hash", "other", NOW);
+		org.springframework.test.util.ReflectionTestUtils.setField(otherOwner, "id", 2L);
+		Account account = Account.create(otherOwner, Market.STOCK, NOW);
+		com.finplay.api.market.domain.Instrument instrument = com.finplay.api.market.domain.Instrument
+			.create(com.finplay.api.market.domain.Market.STOCK, "005930", "삼성전자", BigDecimal.ONE, 0L, true, NOW);
+		Holding holding = Holding.create(account, instrument, NOW);
+		org.springframework.test.util.ReflectionTestUtils.setField(holding, "id", 99L);
+
+		when(holdingRepository.findById(99L)).thenReturn(java.util.Optional.of(holding));
+
+		java.util.Optional<Holding> result = holdingService.findHoldingForOwner(1L, 99L);
+
+		assertThat(result).isEmpty();
+	}
 }
