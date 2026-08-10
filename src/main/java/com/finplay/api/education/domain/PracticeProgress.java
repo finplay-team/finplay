@@ -46,4 +46,9 @@ public class PracticeProgress {
 
 	@Column(name = "completed_at")
 	private LocalDateTime completedAt;
+
+	public void complete(LocalDateTime completedAt) {
+		this.status = PracticeProgressStatus.COMPLETED;
+		this.completedAt = completedAt;
+	}
 }
