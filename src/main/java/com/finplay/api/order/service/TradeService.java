@@ -11,7 +11,10 @@ import com.finplay.api.order.domain.Trade;
 import com.finplay.api.order.dto.response.TradeListItemResponse;
 import com.finplay.api.order.dto.response.TradeListResponse;
 import com.finplay.api.order.repository.TradeRepository;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -68,5 +71,20 @@ public class TradeService {
 	@Transactional(readOnly = true)
 	public boolean hasAnySellHistory(Market market) {
 		return tradeRepository.existsBySideAndAccountMarket(OrderSide.SELL, market);
+	}
+
+	// 026-market-order-practice-tutorial 2단계 chain 해석용 — intention.createdAt 이후 체결된 본인 BUY 체결 중
+	// intention 수량과 정규화 비교(BigDecimal.compareTo, 020의 scale 무관 규칙)로 일치하는 가장 이른 체결 1건을
+	// 고른다. education 도메인은 이 서비스 메서드로만 체결을 조회하고 TradeRepository를 직접 주입하지 않는다
+	// (ADR-0002).
+	@Transactional(readOnly = true)
+	public Optional<Trade> findEarliestFilledBuyTradeMatching(
+		Long userId, Long instrumentId, BigDecimal quantity, LocalDateTime after) {
+		return tradeRepository
+			.findByAccount_User_IdAndInstrument_IdAndSideAndExecutedAtAfterOrderByExecutedAtAscIdAsc(
+				userId, instrumentId, OrderSide.BUY, after)
+			.stream()
+			.filter(trade -> trade.getQuantity().compareTo(quantity) == 0)
+			.findFirst();
 	}
 }

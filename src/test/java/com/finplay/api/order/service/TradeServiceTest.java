@@ -208,6 +208,97 @@ class TradeServiceTest {
 		verify(tradeRepository, never()).existsBySideAndAccountMarket(eq(OrderSide.BUY), any());
 	}
 
+	// 아래는 026-market-order-practice-tutorial 2단계 chain 해석이 쓰는
+	// findEarliestFilledBuyTradeMatching(수량 정규화 비교 + 가장 이른 체결 선택)을 검증한다.
+
+	@Test
+	void findEarliestFilledBuyTradeMatchingMatchesQuantityRegardlessOfScale() {
+		LocalDateTime after = NOW.minusDays(1);
+		// intention.quantity()는 "0.1", 실제 체결 수량은 scale이 다른 "0.10000000" — BigDecimal.compareTo 기준
+		// 정규화 비교로 같은 값으로 인정돼야 한다(020의 scale 무관 규칙).
+		Trade differentScaleTrade = buyTrade(1L, NOW.minusHours(1), new BigDecimal("0.10000000"));
+		when(tradeRepository.findByAccount_User_IdAndInstrument_IdAndSideAndExecutedAtAfterOrderByExecutedAtAscIdAsc(
+			USER_ID, 100L, OrderSide.BUY, after))
+			.thenReturn(List.of(differentScaleTrade));
+
+		Optional<Trade> result = tradeService.findEarliestFilledBuyTradeMatching(
+			USER_ID, 100L, new BigDecimal("0.1"), after);
+
+		assertThat(result).isPresent();
+		assertThat(result.get()).isSameAs(differentScaleTrade);
+	}
+
+	@Test
+	void findEarliestFilledBuyTradeMatchingReturnsEmptyWhenNoTradeMatchesQuantity() {
+		LocalDateTime after = NOW.minusDays(1);
+		Trade mismatchedTrade = buyTrade(1L, NOW.minusHours(1), new BigDecimal("5"));
+		when(tradeRepository.findByAccount_User_IdAndInstrument_IdAndSideAndExecutedAtAfterOrderByExecutedAtAscIdAsc(
+			USER_ID, 100L, OrderSide.BUY, after))
+			.thenReturn(List.of(mismatchedTrade));
+
+		Optional<Trade> result = tradeService.findEarliestFilledBuyTradeMatching(
+			USER_ID, 100L, new BigDecimal("3"), after);
+
+		assertThat(result).isEmpty();
+	}
+
+	@Test
+	void findEarliestFilledBuyTradeMatchingReturnsEmptyWhenRepositoryHasNoCandidates() {
+		LocalDateTime after = NOW.minusDays(1);
+		when(tradeRepository.findByAccount_User_IdAndInstrument_IdAndSideAndExecutedAtAfterOrderByExecutedAtAscIdAsc(
+			USER_ID, 100L, OrderSide.BUY, after))
+			.thenReturn(List.of());
+
+		Optional<Trade> result = tradeService.findEarliestFilledBuyTradeMatching(
+			USER_ID, 100L, new BigDecimal("3"), after);
+
+		assertThat(result).isEmpty();
+	}
+
+	@Test
+	void findEarliestFilledBuyTradeMatchingPicksFirstQuantityMatchInRepositoryOrder() {
+		LocalDateTime after = NOW.minusDays(1);
+		// repository는 executedAt ASC, id ASC로 이미 정렬해 반환한다는 계약이다(쿼리 메서드명). 서비스는 그
+		// 순서를 유지한 채 수량이 일치하는 첫 항목을 고른다 — 앞선 수량 불일치 항목을 건너뛰고 더 이른
+		// 매칭 항목(id=20)을 골라야 하며 그 뒤 나오는 또 다른 매칭 항목(id=30)을 고르면 버그다.
+		Trade nonMatching = buyTrade(10L, NOW.minusHours(3), new BigDecimal("5"));
+		Trade earliestMatching = buyTrade(20L, NOW.minusHours(2), new BigDecimal("3"));
+		Trade laterMatching = buyTrade(30L, NOW.minusHours(1), new BigDecimal("3"));
+		when(tradeRepository.findByAccount_User_IdAndInstrument_IdAndSideAndExecutedAtAfterOrderByExecutedAtAscIdAsc(
+			USER_ID, 100L, OrderSide.BUY, after))
+			.thenReturn(List.of(nonMatching, earliestMatching, laterMatching));
+
+		Optional<Trade> result = tradeService.findEarliestFilledBuyTradeMatching(
+			USER_ID, 100L, new BigDecimal("3"), after);
+
+		assertThat(result).isPresent();
+		assertThat(result.get()).isSameAs(earliestMatching);
+	}
+
+	@Test
+	void findEarliestFilledBuyTradeMatchingQueriesRepositoryWithBuySideAndGivenAfterBoundary() {
+		LocalDateTime after = NOW.minusDays(1);
+		when(tradeRepository.findByAccount_User_IdAndInstrument_IdAndSideAndExecutedAtAfterOrderByExecutedAtAscIdAsc(
+			USER_ID, 100L, OrderSide.BUY, after))
+			.thenReturn(List.of());
+
+		tradeService.findEarliestFilledBuyTradeMatching(USER_ID, 100L, new BigDecimal("3"), after);
+
+		verify(tradeRepository).findByAccount_User_IdAndInstrument_IdAndSideAndExecutedAtAfterOrderByExecutedAtAscIdAsc(
+			USER_ID, 100L, OrderSide.BUY, after);
+	}
+
+	private static Trade buyTrade(Long id, LocalDateTime executedAt, BigDecimal quantity) {
+		Order order = Order.create(
+			testUser(), account(), stockInstrument(), OrderSide.BUY, OrderType.MARKET, quantity,
+			"idem-key-" + id, "h".repeat(64), NOW);
+		Trade trade = Trade.of(
+			order, order.getAccount(), stockInstrument(), stockSession(),
+			OrderSide.BUY, new BigDecimal("100"), quantity, 300L, 1L, null, executedAt, NOW);
+		ReflectionTestUtils.setField(trade, "id", id);
+		return trade;
+	}
+
 	// getOwnedTrade 전용 — 소유자(user.id)를 직접 지정해 본인/타인 판정을 검증하기 위한 체결을 만든다.
 	private static Trade tradeOwnedBy(Long tradeId, Long ownerUserId, LocalDateTime executedAt) {
 		User owner = testUser();

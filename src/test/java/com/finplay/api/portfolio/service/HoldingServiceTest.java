@@ -119,4 +119,73 @@ class HoldingServiceTest {
 			.isInstanceOf(BusinessException.class)
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode()).isEqualTo(ErrorCode.NOT_FOUND));
 	}
+
+	// 아래는 026-market-order-practice-tutorial 2단계 chain 해석이 쓰는 findHoldingId(owner·instrument 일치
+	// holding id만 반환, market.domain.Market -> account.domain.Market 변환)를 검증한다.
+
+	@Test
+	void findHoldingIdReturnsHoldingIdWhenOwnerAndInstrumentMatch() {
+		AccountService accountService = mock(AccountService.class);
+		HoldingRepository holdingRepository = mock(HoldingRepository.class);
+		HoldingValuationService holdingValuationService = mock(HoldingValuationService.class);
+		HoldingService holdingService = new HoldingService(accountService, holdingRepository,
+			holdingValuationService);
+
+		User user = User.create("user@finplay.com", "password-hash", "finplayer", NOW);
+		Account account = Account.create(user, Market.STOCK, NOW);
+		org.springframework.test.util.ReflectionTestUtils.setField(account, "id", 10L);
+		when(accountService.getAccountFor(1L, Market.STOCK)).thenReturn(account);
+
+		com.finplay.api.market.domain.Instrument instrument = com.finplay.api.market.domain.Instrument
+			.create(com.finplay.api.market.domain.Market.STOCK, "005930", "삼성전자", BigDecimal.ONE, 0L, true, NOW);
+		Holding holding = Holding.create(account, instrument, NOW);
+		org.springframework.test.util.ReflectionTestUtils.setField(holding, "id", 99L);
+
+		when(holdingRepository.findByAccountIdAndInstrumentId(10L, 100L)).thenReturn(java.util.Optional.of(holding));
+
+		java.util.Optional<Long> result = holdingService.findHoldingId(
+			1L, com.finplay.api.market.domain.Market.STOCK, 100L);
+
+		assertThat(result).contains(99L);
+	}
+
+	@Test
+	void findHoldingIdReturnsEmptyWhenNoHoldingExistsForAccountAndInstrument() {
+		AccountService accountService = mock(AccountService.class);
+		HoldingRepository holdingRepository = mock(HoldingRepository.class);
+		HoldingValuationService holdingValuationService = mock(HoldingValuationService.class);
+		HoldingService holdingService = new HoldingService(accountService, holdingRepository,
+			holdingValuationService);
+
+		User user = User.create("user@finplay.com", "password-hash", "finplayer", NOW);
+		Account account = Account.create(user, Market.STOCK, NOW);
+		org.springframework.test.util.ReflectionTestUtils.setField(account, "id", 10L);
+		when(accountService.getAccountFor(1L, Market.STOCK)).thenReturn(account);
+		when(holdingRepository.findByAccountIdAndInstrumentId(10L, 100L)).thenReturn(java.util.Optional.empty());
+
+		java.util.Optional<Long> result = holdingService.findHoldingId(
+			1L, com.finplay.api.market.domain.Market.STOCK, 100L);
+
+		assertThat(result).isEmpty();
+	}
+
+	@Test
+	void findHoldingIdConvertsMarketDomainMarketToAccountDomainMarketForCryptoAccountLookup() {
+		AccountService accountService = mock(AccountService.class);
+		HoldingRepository holdingRepository = mock(HoldingRepository.class);
+		HoldingValuationService holdingValuationService = mock(HoldingValuationService.class);
+		HoldingService holdingService = new HoldingService(accountService, holdingRepository,
+			holdingValuationService);
+
+		User user = User.create("user@finplay.com", "password-hash", "finplayer", NOW);
+		Account account = Account.create(user, Market.CRYPTO, NOW);
+		org.springframework.test.util.ReflectionTestUtils.setField(account, "id", 20L);
+		when(accountService.getAccountFor(1L, Market.CRYPTO)).thenReturn(account);
+		when(holdingRepository.findByAccountIdAndInstrumentId(20L, 200L)).thenReturn(java.util.Optional.empty());
+
+		holdingService.findHoldingId(1L, com.finplay.api.market.domain.Market.CRYPTO, 200L);
+
+		org.mockito.Mockito.verify(accountService).getAccountFor(1L, Market.CRYPTO);
+		org.mockito.Mockito.verify(accountService, org.mockito.Mockito.never()).getAccountFor(1L, Market.STOCK);
+	}
 }
