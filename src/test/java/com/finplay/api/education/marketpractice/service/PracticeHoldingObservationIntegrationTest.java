@@ -200,9 +200,10 @@ class PracticeHoldingObservationIntegrationTest {
 				BASE_NOW));
 		priceKeysToCleanUp.add("price:crypto:" + symbol);
 		priceStore.saveConnectionStatus(FeedConnectionStatus.CONNECTED);
-		// PriceStore.isStale은 STALE_THRESHOLD(10초)를 주입된 Clock 기준으로 비교한다 — 매수 체결 시각
-		// (baseOffsetSeconds+2)과 같은 오프셋에 틱을 둬 여러 chain을 한 clock으로 이어 만들어도 stale로
-		// 오판되지 않게 한다.
+		// PriceStore.isStale은 STALE_THRESHOLD(10초)를 주입된 Clock 기준으로 비교한다. 틱 시각을 이 chain의
+		// clock 오프셋(baseOffsetSeconds)에 맞춰 두면 그 시점의 clock.now()보다 절대 앞서지 않아, 이후 관찰
+		// 단계에서 clock을 더 전진시키지 않는 이 테스트 구조상 stale 계산이 항상 음수(미래 시각과 비교)가
+		// 되어 10초 임계값을 넘지 않는다.
 		priceStore.saveTick(symbol, ENTRY_PRICE, BASE_NOW.plusSeconds(baseOffsetSeconds));
 
 		favoriteService.createFavorite(user.getId(), instrument.getId());
