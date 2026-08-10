@@ -36,7 +36,7 @@
    - **[설계 대비 변경]** `if:`에서 `steps.review.outputs.structured_output != ''` 조건이 빠졌다 — 빈 값 판단을 이제 `run:` 안에서 위 방식으로 직접 처리하므로 `if:`에서 걸러낼 필요가 없어졌다.
 
 7. **[신규, PR #293 4차 리뷰 참고 1]** 리뷰 호출 실패 이력 코멘트 — 라운드 1 (id: `review_failure_comment`)
-   - `if: always() && steps.pr.outputs.number != '' && steps.review.outcome == 'failure'`
+   - `if: always() && steps.pr.outputs.number != '' && steps.review.outcome != 'success'`
    - 6번은 `review`가 success로 끝났지만 구조화 출력이 빈 경우(침묵 실패)를 흡수한다. 여기는 `review` 호출 자체가 실패로 끝나는 경우다 — 자동 수정 라운드 쪽 15번(`autofix_review_failure_comment`)과 같은 패턴이며, 라운드 1만 비대칭으로 흔적이 안 남던 것을 맞췄다. 라운드가 아니므로 "자동 수정 N회차" 헤더는 없다.
 
 8. **[신규, 최초 설계에는 없었음]** 자동 수정 준비 — 라운드 1 report 파일 저장 (id: `prep_autofix`)
@@ -60,10 +60,10 @@
     - 그 외(여전히 blocking > 0) → "라운드 소진(1회 한도 도달) — 사람이 직접 확인해야 합니다"
     - **[설계 대비 변경, PR #293 리뷰]** 최초 설계엔 "라운드 소진"을 별도 스텝(`judge` 뒤)에서 게시하려 했으나, `post_review_autofix`와 동시에 "## 자동 수정 1회차" 코멘트가 2건 게시되는 중복 문제가 나와 별도 스텝을 없애고 이 스텝 하나로 세 분기(침묵 실패/차단 해소/라운드 소진)를 모두 흡수했다.
 
-14. 자동 수정 라운드 — 빌드 실패 이력 코멘트 (id: `autofix_build_failure_comment`) — `if: always() && steps.autofix.outcome == 'success' && steps.build_autofix.outcome == 'failure'`. 내용은 최초 설계와 동일.
+14. 자동 수정 라운드 — 빌드 실패 이력 코멘트 (id: `autofix_build_failure_comment`) — `if: always() && steps.autofix.outcome == 'success' && steps.build_autofix.outcome != 'success'`. 내용은 최초 설계와 동일.
 
 15. **[신규, PR #293 2차 리뷰]** 자동 수정 라운드 — 재리뷰 호출 실패 이력 코멘트 (id: `autofix_review_failure_comment`)
-    - `if: always() && steps.autofix.outcome == 'success' && steps.build_autofix.outcome == 'success' && steps.review_autofix.outcome == 'failure'`
+    - `if: always() && steps.autofix.outcome == 'success' && steps.build_autofix.outcome == 'success' && steps.review_autofix.outcome != 'success'`
     - `review_autofix` 호출 자체가 실패로 끝나는 경우(13번의 "구조화 출력 없이 성공 종료"와 다름)를 흡수한다. `post_review_autofix`의 if와 상호 배타적이라 동시 실행은 없다.
 
 16. 최종 판정 병합 (id: `judge`)
@@ -76,11 +76,13 @@
     - **[설계 대비 변경]** `success()`가 아니라 `!cancelled() && steps.judge.outcome == 'success'`다 — `judge`가 `!cancelled()`로 도는 스텝이라 이 승인 스텝도 암묵적 `success()`에 기대지 않고 `judge`가 실제로 성공했는지부터 명시적으로 확인한다.
     - 승인 판정 기준(차단 0·권장 0) 자체는 ADR-0013 그대로 — 판정 대상만 "라운드 1 또는 자동 수정 라운드의 최종 결과"로 바뀐다.
 
-### `always()`와 `!cancelled()`를 나누는 기준 (PR #293 3차 리뷰 참고 1 → 4차 리뷰 권장 1로 정정)
+### `always()`와 `!cancelled()`를 나누는 기준, 그리고 대상 판정을 `!= 'success'`로 두는 이유 (PR #293 3차 리뷰 참고 1 → 4차 리뷰 권장 1 → 5차 리뷰 권장 1로 정정)
 - **이력 코멘트 스텝 4개는 `always()`** — `review_failure_comment`·`autofix_call_failure_comment`·`autofix_build_failure_comment`·`autofix_review_failure_comment`.
 - **판정·승인 스텝 2개는 `!cancelled()`** — `judge`·조건부 승인.
 - 근거: `timeout-minutes: 90` 초과 시 GitHub은 job을 **취소**로 처리한다. 가장 오래 도는 스텝이 `autofix`라 타임아웃이 걸릴 확률이 제일 높은 지점이 바로 거기인데, 이력 코멘트까지 `!cancelled()`면 그 경우 PR에 아무 흔적도 안 남아 spec.md의 "코멘트 이력만 보고 왜 멈췄는지 알 수 있다"를 못 지킨다. 정보성 코멘트는 취소된 런에 붙어도 무해하지만 **승인**은 아니므로, 막아야 하는 것은 판정·승인뿐이다.
 - 3차 리뷰에서 이력 코멘트까지 일괄 `!cancelled()`로 바꿨던 것을 4차 리뷰에서 위 기준으로 되돌렸다.
+- **이력 코멘트 스텝의 대상 판정은 `outcome == 'failure'`가 아니라 `outcome != 'success'`다** (5차 리뷰 권장 1). 취소된 스텝의 `outcome`은 `failure`가 아니라 `cancelled`라, `== 'failure'`로 두면 위에서 `always()`를 붙여 취소 경로를 살려둔 의미가 그대로 사라진다. 이력 코멘트 4개가 모두 이 규칙을 따른다. 각 스텝이 바로 앞 스텝의 `success`를 함께 요구하므로 대상 스텝이 `skipped`가 될 수 없어 `!= 'success'`가 과하게 잡히지도 않는다. 같은 이유로 코멘트 본문은 "실패했습니다"로 단정하지 않고 실제 `outcome` 값을 `*_OUTCOME` env로 받아 출력한다 — 조건이 `failure`와 `cancelled`를 모두 잡으므로 단정하면 타임아웃으로 멈춘 런에서 원인을 잘못 지목하게 된다.
+- 도달 가능한 outcome 조합 10개를 전수 시뮬레이션해 라운드 1 코멘트 1개 + (자동 수정 라운드 진입 시) 라운드 코멘트 1개로 중복·누락이 0건임을 확인했다 (5차 리뷰 답신에 표로 기록).
 
 ### PR 번호를 `run:` 스크립트에 전달하는 방식 (PR #293 3차 리뷰 참고 4)
 - `gh pr comment`/`gh pr review` 호출 전부 `run:` 스크립트에 `${{ steps.pr.outputs.number }}`를 직접 보간하지 않는다. 각 스텝의 `env:`에 `PR_NUMBER: ${{ steps.pr.outputs.number }}`를 추가하고, `run:`에서는 `"$PR_NUMBER"`로 참조한다 — 파일 상단 L79 규칙("run 스크립트에는 env로만 전달")과의 일관성.
