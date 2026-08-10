@@ -737,7 +737,22 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 | `PracticeHoldingObservationCreateRequest` | `Long holdingId` | non-null, 양수 |
 | `PracticeHoldingObservationResponse` | `Long observationId`, `Long holdingId`, `BigDecimal currentPrice`, `LocalDateTime observedAt`, `Boolean closerToBoundary`, `String closerBoundary`, `String evidenceType` | 앞의 다섯 필드는 non-null; `closerBoundary`·`evidenceType`은 조건 미충족 시 null |
 
-`holding-reflections`·`GET /api/education/practice`(이 경로 기준)는 아직 구현하지 않았다(이 spec의 다음 작업 항목).
+### 실습 3단계 자유 복기 저장 및 완료 확정 (holding 기준)
+
+| Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|
+| POST | /api/education/practice/holding-reflections | Access Bearer 필수. `{"holdingId":1,"answer":"..."}` (`PracticeHoldingReflectionCreateRequest`). `holdingId` 필수·양수, `answer`는 `@NotBlank @Size(max=2000)`(whitespace-only 거부, 원문 저장) | 최초 201 `{"reflectionId":1,"holdingId":1,"prompt":"지금 팔고 싶나요? 그렇다면 왜 그런가요? 계획한 손절·익절 라인과 비교해 적어보세요.","answer":"...","createdAt":"2026-08-10T10:10:00"}` (`PracticeHoldingReflectionResponse`) | 400 `VALIDATION_ERROR`(`holdingId` 누락·0 이하, `answer` 공백·2000자 초과); Access 인증 실패는 401 `UNAUTHORIZED`; 404 `NOT_FOUND`(holding 없음 또는 타인 소유, 존재 비노출); 409 `PRACTICE_EVIDENCE_MISSING`(`practice_progresses` 행 없음, chain 재해석 실패, 또는 A·B 관찰 미존재), `PRACTICE_ALREADY_COMPLETED`(이미 완료) | 026 MKT-PRACTICE-004·005·007·009, Issue #303 |
+
+처리 순서는 다음과 같다(지시사항 및 plan.md "트랜잭션과 경합" 절). ① `holdingId`로 본인 소유 holding을 조회한다(`HoldingService.findHoldingForOwner`) — 없거나 타인 소유면 404. ② holding의 종목 market으로 `tutorialKey`를 정하고 `PracticeProgressRepository.findByUserIdAndTutorialKeyForUpdate`로 `practice_progresses` 행을 잠근다 — 사전 의도 기록을 거치지 않아 행 자체가 없으면 409 `PRACTICE_EVIDENCE_MISSING`. ③ progress가 이미 `COMPLETED`면 409 `PRACTICE_ALREADY_COMPLETED`. ④ `MarketPracticeChainResolutionService.resolveForInstrument`로 chain을 재해석한다 — 실패하거나 해석된 chain의 `holdingId`가 요청 holding과 다르면 409 `PRACTICE_EVIDENCE_MISSING`. ⑤ 같은 holding의 기존 `practice_market_observations` 중 `evidenceType`이 non-null인 행이 하나도 없으면 같은 409. ⑥ `practice_market_reflections` 1행 + `practice_completions` 1행을 저장하고 progress를 `COMPLETED`로 전이한다 — 전부 같은 트랜잭션. `Idempotency-Key`를 요구하지 않는다(`016`의 복기 API와 같은 이유).
+
+`(user_id, tutorial_key)` unique(`practice_market_reflections`, `practice_completions` 모두)가 최종 경합 방어선이며, `practice_progresses` 비관적 락으로 동시 복기 요청을 직렬화한다.
+
+| DTO | 필드 순서와 타입 | nullable 규칙 |
+|---|---|---|
+| `PracticeHoldingReflectionCreateRequest` | `Long holdingId`, `String answer` | `holdingId` non-null·양수; `answer`는 non-blank·2000자 이하 |
+| `PracticeHoldingReflectionResponse` | `Long reflectionId`, `Long holdingId`, `String prompt`, `String answer`, `LocalDateTime createdAt` | 모두 non-null; `prompt`는 고정 문구 |
+
+`GET /api/education/practice`(이 경로 기준)는 아직 구현하지 않았다(이 spec의 다음 작업 항목).
 
 ## 012 AI 피드백
 
