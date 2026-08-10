@@ -22,11 +22,12 @@
 | Method | URL | 요청 | 응답 | 설명 |
 |---|---|---|---|---|
 | POST | /api/community/posts | `CommunityPostCreateRequest`(instrumentId 필드 추가) | `CommunityPostResponse`(태그 필드 추가) | 게시물 작성 시 종목을 선택적으로 하나 태그 |
-| PATCH | /api/community/posts/{postId} | `CommunityPostUpdateRequest`(instrumentId 필드 추가) | `CommunityPostResponse` | 수정 시에도 title·content와 동일하게 매 요청 전체를 교체(부분 패치 아님) — instrumentId를 생략/`null`로 보내면 태그를 해제한다 |
+| PATCH | /api/community/posts/{postId} | `CommunityPostUpdateRequest`(instrumentId 필드 추가) | `CommunityPostResponse` | title·content는 매 요청 전체 교체(필수 필드). instrumentId는 JSON Merge Patch 관례 — 키 부재는 보존, 명시 `null`은 해제(**2026-08-10 Issue #276로 아래 원 결정을 대체**) |
 | GET | /api/community/posts?page=&size=&instrumentId= | - | `CommunityPostListResponse`(각 항목에 태그 필드 추가) | `instrumentId` 지정 시 그 종목이 태그된 게시물만, 미지정 시 기존 COM-001과 동일 |
 | GET | /api/community/posts/{postId} | - | `CommunityPostResponse` | 응답에 태그 필드 추가 |
 
-- `PATCH`가 title·content처럼 매번 전체를 교체하는 기존 관례를 그대로 따른다 — `instrumentId`만 선택적으로 유지하는 부분 패치 API를 새로 만들지 않는다. 즉 "태그를 그대로 두고 제목만 바꾸고 싶다"면 클라이언트가 기존 `instrumentId`를 그대로 다시 보내야 한다(기존 title·content도 동일한 제약).
+- **원 결정(아래, 2026-08 초 작성).** `PATCH`가 title·content처럼 매번 전체를 교체하는 기존 관례를 그대로 따른다 — `instrumentId`만 선택적으로 유지하는 부분 패치 API를 새로 만들지 않는다. 즉 "태그를 그대로 두고 제목만 바꾸고 싶다"면 클라이언트가 기존 `instrumentId`를 그대로 다시 보내야 한다(기존 title·content도 동일한 제약).
+- **2026-08-10 정정 (Issue #276, A안 채택).** 위 결정이 `conventions.md:117`("PATCH는 부분 수정")과 충돌하고, 저장소의 다른 nullable-필드 PATCH(`PATCH /api/orders/{orderId}`, 015 LMT-005)는 이미 부분 갱신(생략 시 유지)으로 동작해 "기존 관례"라는 근거 자체가 틀렸다는 지적을 받아들여 대체한다. `instrumentId`만 JSON Merge Patch 관례로 바꾼다 — 요청 본문에 키가 없으면 기존 태그를 보존하고, 키를 넣고 값을 `null`로 명시해야만 해제한다. `title`·`content`는 원 결정 그대로 유지한다(둘 다 필수 필드라 생략 시 400이므로 이 구분이 적용되지 않는다). 구현은 `CommunityPostUpdateRequestDeserializer`(레코드 전용 커스텀 역직렬화기, `JsonNode.has("instrumentId")`로 키 존재 여부를 직접 판별)로 처리한다 — Jackson 3(`tools.jackson`)에는 `org.openapitools:jackson-databind-nullable`(Jackson 2 대상) 같은 기성 라이브러리가 없어 새 의존성 없이 자체 구현했다.
 - `GET /api/community/posts?instrumentId=`에 존재하지 않는 `instrumentId`를 넘기면 검증 오류를 던지지 않고 단순히 빈 목록을 반환한다(필터 파라미터는 조회 조건일 뿐, 생성·수정 시의 "태그 유효성 검증"과는 성격이 다르다 — 이 필터에 한해 404/400을 만들지 않는다).
 
 ## 입력 명세

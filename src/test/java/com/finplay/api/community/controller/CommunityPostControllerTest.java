@@ -317,12 +317,12 @@ class CommunityPostControllerTest {
 	}
 
 	@Test
-	void updatePostReturnsOkWithEveryResponseFieldAndPrincipalUserId() throws Exception {
+	void updatePostPreservesInstrumentTagAndPassesKeyAbsentToServiceWhenInstrumentIdOmitted() throws Exception {
 		LocalDateTime createdAt = LocalDateTime.of(2026, 7, 26, 10, 30);
 		LocalDateTime updatedAt = LocalDateTime.of(2026, 7, 27, 12, 0);
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
-		when(service.updatePost(USER_ID, 73L, "new title", "new content", null))
+		when(service.updatePost(USER_ID, 73L, "new title", "new content", false, null))
 			.thenReturn(new CommunityPostResponse(
 				73L, "author", "new title", "new content", createdAt, updatedAt, null, null, null, null, null));
 
@@ -343,7 +343,31 @@ class CommunityPostControllerTest {
 			.andExpect(jsonPath("$.instrumentSymbol").doesNotExist())
 			.andExpect(jsonPath("$.instrumentName").doesNotExist());
 
-		verify(service).updatePost(USER_ID, 73L, "new title", "new content", null);
+		verify(service).updatePost(USER_ID, 73L, "new title", "new content", false, null);
+	}
+
+	@Test
+	void updatePostDetachesInstrumentTagAndPassesExplicitNullToServiceWhenInstrumentIdIsNull() throws Exception {
+		LocalDateTime createdAt = LocalDateTime.of(2026, 7, 26, 10, 30);
+		LocalDateTime updatedAt = LocalDateTime.of(2026, 7, 27, 12, 0);
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+		when(service.updatePost(USER_ID, 73L, "new title", "new content", true, null))
+			.thenReturn(new CommunityPostResponse(
+				73L, "author", "new title", "new content", createdAt, updatedAt, null, null, null, null, null));
+
+		mockMvc.perform(patch("/api/community/posts/73")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("""
+				{"title":"new title","content":"new content","instrumentId":null}
+				"""))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.instrumentId").doesNotExist())
+			.andExpect(jsonPath("$.instrumentSymbol").doesNotExist())
+			.andExpect(jsonPath("$.instrumentName").doesNotExist());
+
+		verify(service).updatePost(USER_ID, 73L, "new title", "new content", true, null);
 	}
 
 	@Test
@@ -352,7 +376,7 @@ class CommunityPostControllerTest {
 		LocalDateTime updatedAt = LocalDateTime.of(2026, 7, 27, 12, 0);
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
-		when(service.updatePost(USER_ID, 73L, "new title", "new content", 9L))
+		when(service.updatePost(USER_ID, 73L, "new title", "new content", true, 9L))
 			.thenReturn(new CommunityPostResponse(
 				73L, "author", "new title", "new content", createdAt, updatedAt, 9L, "BTC", "비트코인", null, null));
 
@@ -367,14 +391,14 @@ class CommunityPostControllerTest {
 			.andExpect(jsonPath("$.instrumentSymbol").value("BTC"))
 			.andExpect(jsonPath("$.instrumentName").value("비트코인"));
 
-		verify(service).updatePost(USER_ID, 73L, "new title", "new content", 9L);
+		verify(service).updatePost(USER_ID, 73L, "new title", "new content", true, 9L);
 	}
 
 	@Test
 	void updatePostReturnsCommonValidationErrorWhenServiceRejectsInstrumentTag() throws Exception {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
-		when(service.updatePost(USER_ID, 73L, "new title", "new content", 999L))
+		when(service.updatePost(USER_ID, 73L, "new title", "new content", true, 999L))
 			.thenThrow(new BusinessException(ErrorCode.VALIDATION_ERROR, "존재하지 않거나 비활성인 종목은 태그할 수 없습니다."));
 
 		mockMvc.perform(patch("/api/community/posts/73")
@@ -388,7 +412,7 @@ class CommunityPostControllerTest {
 			.andExpect(jsonPath("$.error.message").value("존재하지 않거나 비활성인 종목은 태그할 수 없습니다."))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
-		verify(service).updatePost(USER_ID, 73L, "new title", "new content", 999L);
+		verify(service).updatePost(USER_ID, 73L, "new title", "new content", true, 999L);
 	}
 
 	@ParameterizedTest(name = "{0}")
@@ -501,7 +525,7 @@ class CommunityPostControllerTest {
 	void updatePostReturnsCommonNotFoundErrorWhenServiceCannotFindPost() throws Exception {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
-		when(service.updatePost(USER_ID, 404L, "new title", "new content", null))
+		when(service.updatePost(USER_ID, 404L, "new title", "new content", false, null))
 			.thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
 
 		mockMvc.perform(patch("/api/community/posts/404")
@@ -513,14 +537,14 @@ class CommunityPostControllerTest {
 			.andExpect(jsonPath("$.error.message").value("대상을 찾을 수 없습니다."))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
-		verify(service).updatePost(USER_ID, 404L, "new title", "new content", null);
+		verify(service).updatePost(USER_ID, 404L, "new title", "new content", false, null);
 	}
 
 	@Test
 	void updatePostReturnsCommonForbiddenErrorWhenServiceRejectsNonOwner() throws Exception {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
-		when(service.updatePost(USER_ID, 73L, "new title", "new content", null))
+		when(service.updatePost(USER_ID, 73L, "new title", "new content", false, null))
 			.thenThrow(new BusinessException(ErrorCode.FORBIDDEN));
 
 		mockMvc.perform(patch("/api/community/posts/73")
@@ -532,7 +556,7 @@ class CommunityPostControllerTest {
 			.andExpect(jsonPath("$.error.message").value("접근 권한이 없습니다."))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
-		verify(service).updatePost(USER_ID, 73L, "new title", "new content", null);
+		verify(service).updatePost(USER_ID, 73L, "new title", "new content", false, null);
 	}
 
 	@Test

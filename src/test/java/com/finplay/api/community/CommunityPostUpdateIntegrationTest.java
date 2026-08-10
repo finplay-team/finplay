@@ -12,9 +12,14 @@ import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.auth.token.JwtTokenProvider;
 import com.finplay.api.community.domain.CommunityPost;
 import com.finplay.api.community.repository.CommunityPostRepository;
+import com.finplay.api.market.domain.Instrument;
+import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.repository.InstrumentRepository;
 import jakarta.persistence.EntityManager;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -22,6 +27,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest
@@ -39,10 +45,25 @@ class CommunityPostUpdateIntegrationTest {
 	private CommunityPostRepository postRepository;
 
 	@Autowired
+	private InstrumentRepository instrumentRepository;
+
+	@Autowired
 	private JwtTokenProvider jwtTokenProvider;
 
 	@Autowired
 	private EntityManager entityManager;
+
+	@Autowired
+	private JdbcTemplate jdbcTemplate;
+
+	// 이 클래스가 생성한 종목(symbol 접두사 SYM)만 정리한다 — InstrumentRepositoryTest의 개수 단정을 깨지 않기 위해
+	// (CommunityPostInstrumentTagIntegrationTest와 동일한 패턴).
+	@AfterEach
+	void removeInstrumentsCreatedByThisTestClass() {
+		jdbcTemplate.update("delete from community_posts where instrument_id in "
+			+ "(select id from instruments where symbol like 'SYM%')");
+		jdbcTemplate.update("delete from instruments where symbol like 'SYM%'");
+	}
 
 	@Test
 	void ownerPatchUpdatesTitleContentAndUpdatedAtInDatabase() throws Exception {
@@ -71,6 +92,59 @@ class CommunityPostUpdateIntegrationTest {
 		assertThat(reloaded.getContent()).isEqualTo("updated content");
 		assertThat(reloaded.getUpdatedAt()).isAfter(createdAt);
 		assertThat(reloaded.getCreatedAt()).isEqualTo(createdAt);
+	}
+
+	@Test
+	void ownerPatchPreservesInstrumentTagWhenInstrumentIdKeyIsOmitted() throws Exception {
+		LocalDateTime createdAt = LocalDateTime.of(2026, 7, 20, 9, 0, 0);
+		User author = createUser("preserve-owner");
+		Instrument instrument = createTradableInstrument();
+		CommunityPost post = postRepository.saveAndFlush(
+			CommunityPost.create(author, "original title", "original content", instrument, createdAt));
+		Long postId = post.getId();
+		String accessToken = jwtTokenProvider.issue(author.getId(), author.getRole()).accessToken();
+		entityManager.clear();
+
+		mockMvc.perform(patch("/api/community/posts/{postId}", postId)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("""
+				{"title":"updated title","content":"updated content"}
+				"""))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.instrumentId").value(instrument.getId()))
+			.andExpect(jsonPath("$.instrumentSymbol").value(instrument.getSymbol()));
+
+		entityManager.clear();
+		CommunityPost reloaded = postRepository.findById(postId).orElseThrow();
+		assertThat(reloaded.getInstrument()).isNotNull();
+		assertThat(reloaded.getInstrument().getId()).isEqualTo(instrument.getId());
+	}
+
+	@Test
+	void ownerPatchDetachesInstrumentTagWhenInstrumentIdIsExplicitlyNull() throws Exception {
+		LocalDateTime createdAt = LocalDateTime.of(2026, 7, 20, 9, 0, 0);
+		User author = createUser("detach-owner");
+		Instrument instrument = createTradableInstrument();
+		CommunityPost post = postRepository.saveAndFlush(
+			CommunityPost.create(author, "original title", "original content", instrument, createdAt));
+		Long postId = post.getId();
+		String accessToken = jwtTokenProvider.issue(author.getId(), author.getRole()).accessToken();
+		entityManager.clear();
+
+		mockMvc.perform(patch("/api/community/posts/{postId}", postId)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("""
+				{"title":"updated title","content":"updated content","instrumentId":null}
+				"""))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.instrumentId").doesNotExist())
+			.andExpect(jsonPath("$.instrumentSymbol").doesNotExist());
+
+		entityManager.clear();
+		CommunityPost reloaded = postRepository.findById(postId).orElseThrow();
+		assertThat(reloaded.getInstrument()).isNull();
 	}
 
 	@Test
@@ -164,6 +238,13 @@ class CommunityPostUpdateIntegrationTest {
 			.andExpect(status().isUnauthorized())
 			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+	}
+
+	private Instrument createTradableInstrument() {
+		String symbol = "SYM" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+		return instrumentRepository.saveAndFlush(
+			Instrument.create(Market.STOCK, symbol, "테스트종목", BigDecimal.valueOf(100), 10000L, true,
+				LocalDateTime.now()));
 	}
 
 	private User createUser(String prefix) {

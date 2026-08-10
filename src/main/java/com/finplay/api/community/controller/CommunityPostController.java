@@ -62,7 +62,7 @@ public class CommunityPostController {
 		@Valid @RequestBody
 		CommunityPostUpdateRequest request) {
 		CommunityPostResponse response = communityPostService.updatePost(principal.userId(), postId, request.title(),
-			request.content(), request.instrumentId());
+			request.content(), request.instrumentIdProvided(), request.instrumentId());
 		return ResponseEntity.ok(response);
 	}
 

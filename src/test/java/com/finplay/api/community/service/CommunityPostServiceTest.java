@@ -245,7 +245,7 @@ class CommunityPostServiceTest {
 		ReflectionTestUtils.setField(post, "id", 73L);
 		when(repository.findById(73L)).thenReturn(Optional.of(post));
 
-		CommunityPostResponse response = service.updatePost(42L, 73L, "new title", "new content", null);
+		CommunityPostResponse response = service.updatePost(42L, 73L, "new title", "new content", true, null);
 
 		assertThat(response.postId()).isEqualTo(73L);
 		assertThat(response.authorNickname()).isEqualTo("author");
@@ -270,7 +270,7 @@ class CommunityPostServiceTest {
 		Instrument instrument = instrument(9L);
 		when(instrumentService.getTradableInstrumentEntity(9L)).thenReturn(instrument);
 
-		CommunityPostResponse response = service.updatePost(42L, 73L, "new title", "new content", 9L);
+		CommunityPostResponse response = service.updatePost(42L, 73L, "new title", "new content", true, 9L);
 
 		assertThat(post.getInstrument()).isSameAs(instrument);
 		assertThat(response.instrumentId()).isEqualTo(9L);
@@ -279,7 +279,7 @@ class CommunityPostServiceTest {
 	}
 
 	@Test
-	void updatePostDetachesInstrumentWhenInstrumentIdIsNullOnAlreadyTaggedPost() {
+	void updatePostDetachesInstrumentWhenInstrumentIdKeyIsExplicitlyNullOnAlreadyTaggedPost() {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
 		ReflectionTestUtils.setField(author, "id", 42L);
 		LocalDateTime createdAt = LocalDateTime.of(2026, 7, 1, 0, 0);
@@ -287,12 +287,31 @@ class CommunityPostServiceTest {
 		ReflectionTestUtils.setField(post, "id", 73L);
 		when(repository.findById(73L)).thenReturn(Optional.of(post));
 
-		CommunityPostResponse response = service.updatePost(42L, 73L, "new title", "new content", null);
+		CommunityPostResponse response = service.updatePost(42L, 73L, "new title", "new content", true, null);
 
 		assertThat(post.getInstrument()).isNull();
 		assertThat(response.instrumentId()).isNull();
 		assertThat(response.instrumentSymbol()).isNull();
 		assertThat(response.instrumentName()).isNull();
+		verifyNoInteractions(instrumentService);
+	}
+
+	@Test
+	void updatePostPreservesInstrumentWhenInstrumentIdKeyIsAbsentOnAlreadyTaggedPost() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(author, "id", 42L);
+		LocalDateTime createdAt = LocalDateTime.of(2026, 7, 1, 0, 0);
+		Instrument instrument = instrument(9L);
+		CommunityPost post = CommunityPost.create(author, "old title", "old content", instrument, createdAt);
+		ReflectionTestUtils.setField(post, "id", 73L);
+		when(repository.findById(73L)).thenReturn(Optional.of(post));
+
+		CommunityPostResponse response = service.updatePost(42L, 73L, "new title", "new content", false, null);
+
+		assertThat(post.getInstrument()).isSameAs(instrument);
+		assertThat(response.instrumentId()).isEqualTo(9L);
+		assertThat(response.instrumentSymbol()).isEqualTo("BTC");
+		assertThat(response.instrumentName()).isEqualTo("비트코인");
 		verifyNoInteractions(instrumentService);
 	}
 
@@ -307,7 +326,7 @@ class CommunityPostServiceTest {
 		when(instrumentService.getTradableInstrumentEntity(999L))
 			.thenThrow(new BusinessException(ErrorCode.VALIDATION_ERROR, "존재하지 않거나 비활성인 종목은 태그할 수 없습니다."));
 
-		assertThatThrownBy(() -> service.updatePost(42L, 73L, "new title", "new content", 999L))
+		assertThatThrownBy(() -> service.updatePost(42L, 73L, "new title", "new content", true, 999L))
 			.isInstanceOf(BusinessException.class)
 			.extracting(exception -> ((BusinessException)exception).getErrorCode())
 			.isEqualTo(ErrorCode.VALIDATION_ERROR);
@@ -321,7 +340,7 @@ class CommunityPostServiceTest {
 	void updatePostFailsWithNotFoundWhenPostDoesNotExist() {
 		when(repository.findById(404L)).thenReturn(Optional.empty());
 
-		assertThatThrownBy(() -> service.updatePost(42L, 404L, "new title", "new content", null))
+		assertThatThrownBy(() -> service.updatePost(42L, 404L, "new title", "new content", false, null))
 			.isInstanceOf(BusinessException.class)
 			.extracting(exception -> ((BusinessException)exception).getErrorCode())
 			.isEqualTo(ErrorCode.NOT_FOUND);
@@ -338,7 +357,7 @@ class CommunityPostServiceTest {
 		ReflectionTestUtils.setField(post, "id", 73L);
 		when(repository.findById(73L)).thenReturn(Optional.of(post));
 
-		assertThatThrownBy(() -> service.updatePost(999L, 73L, "new title", "new content", null))
+		assertThatThrownBy(() -> service.updatePost(999L, 73L, "new title", "new content", false, null))
 			.isInstanceOf(BusinessException.class)
 			.extracting(exception -> ((BusinessException)exception).getErrorCode())
 			.isEqualTo(ErrorCode.FORBIDDEN);
