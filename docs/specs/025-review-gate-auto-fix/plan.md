@@ -16,48 +16,64 @@
 6. 리뷰 결과를 PR에 게시 — **버그**: `env.REVIEW_REPORT: ${{ fromJSON(steps.review.outputs.structured_output).report }}`가 `if: ... structured_output != ''` 가드와 무관하게 즉시 평가돼, `structured_output`이 빈 문자열이면 `fromJSON('')`이 표현식 평가 자체에서 실패해 스텝이 failure로 죽는다(2026-08-09 실행 실측).
 7. 조건부 승인 — `if:`에서 `fromJSON(...).blocking_count == 0 && fromJSON(...).recommended_count == 0`
 
-## 변경 후 스텝 시퀀스
+## 변경 후 스텝 시퀀스 (최종 구현 기준, PR #293 리뷰 3라운드 반영)
 
-1~4. 변경 없음.
+> 아래는 초기 설계가 아니라 최종 머지된 `agent.yml` 기준이다. 구현 중·리뷰 과정에서 초기 설계와 달라진 지점은 각 항목에 **[설계 대비 변경]**으로 표시했다.
+
+1~4. checkout → git 사용자 설정 → setup-java → 구현(claude-code-action)은 변경 없음. 다만 4번("방금 연 PR 번호 조회", id: `pr`)에 **[설계 대비 변경, PR #293 3차 리뷰 권장 3]** PR을 못 찾으면(`NUMBER`가 빈 문자열) `[ -n "$NUMBER" ] || { echo "::error::..."; exit 1; }`로 job을 명시적으로 실패시키는 가드가 추가됐다 — 이전엔 이후 스텝이 전부 조용히 스킵돼 job이 우연히 초록으로 끝났다(이슈 #292의 실제 실패 사례).
 
 5. 코드 리뷰 — 라운드 1 (id: `review`) — 내용 변경 없음.
 
-6. 리뷰 결과를 PR에 게시 — 라운드 1 — **버그 수정** (아래 "버그 수정 상세" 참고). 게시하는 내용·조건은 기존과 동일, 파싱 방식만 바꾼다.
+6. 리뷰 결과를 PR에 게시 — 라운드 1 — 버그 수정(아래 "버그 수정 상세" 참고).
+   - **[설계 대비 변경, PR #293 3차 리뷰 권장 2]** `structured_output`이 빈 값이어도 조용히 건너뛰지 않고 "리뷰가 구조화된 결과를 반환하지 않았습니다 — 사람이 직접 확인해야 합니다."를 PR에 게시한다. 이건 라운드가 아니므로 "자동 수정 N회차" 헤더는 붙이지 않는다.
+   - **[설계 대비 변경]** `if:`에서 `steps.review.outputs.structured_output != ''` 조건이 빠졌다 — 빈 값 판단을 이제 `run:` 안에서 위 방식으로 직접 처리하므로 `if:`에서 걸러낼 필요가 없어졌다.
 
-7. **[신규]** 자동 수정 — 차단 사항 반영 (id: `autofix`)
+7. **[신규, 최초 설계에는 없었음]** 자동 수정 준비 — 라운드 1 report 파일 저장 (id: `prep_autofix`)
    - `if: success() && steps.pr.outputs.number != '' && steps.review.outputs.structured_output != '' && fromJSON(steps.review.outputs.structured_output).blocking_count > 0`
-   - claude-code-action 별도 호출(구현 스텝과 같은 checkout·브랜치 위에서 이어서 실행). 프롬프트에 라운드 1 리뷰 report를 전달하고 "차단 항목만 반영해라, 권장 항목은 건드리지 마라"를 명시한다.
-   - 허용 툴은 구현 스텝과 동일 수준(`Read,Grep,Glob,Edit,Write,Bash`). 커밋 후 push까지 이 스텝 안에서 수행한다.
+   - 구현 중 드러난 사실: claude-code-action의 `prompt:`(= `with:`)도 `env:`와 마찬가지로 `if:` 가드와 무관하게 먼저 평가된다. 그래서 report 본문을 다음 스텝의 prompt에 `fromJSON(...)`으로 직접 넣지 않고, `/tmp/review-report-round1.md` 파일에 적어 자동 수정 스텝이 파일을 읽게 했다.
 
-8. **[신규]** 빌드 재검증 — 자동 수정 후 (id: `build_autofix`)
-   - `if: steps.autofix.outcome == 'success'`
-   - `./gradlew build`를 러너가 직접 실행(에이전트 자기 보고에 의존하지 않는 기존 원칙 유지).
+8. 자동 수정 — 차단 사항 반영 (id: `autofix`) — `if: steps.prep_autofix.outcome == 'success'`. 나머지 내용(프롬프트·허용 툴)은 최초 설계와 동일.
 
-9. **[신규]** 재리뷰 — 자동 수정 라운드 (id: `review_autofix`)
-   - `if: steps.build_autofix.outcome == 'success'`
-   - claude-code-action 별도 호출. 리뷰 기준·프롬프트·허용 툴·`json-schema`는 라운드 1 리뷰 스텝(5번)과 동일하다 — 자기가 고친 걸 자기가 통과시키지 않도록 `autofix` 스텝과는 다른 호출.
+9. **[신규, PR #293 3차 리뷰 권장 1]** 자동 수정 라운드 — 자동 수정 호출 실패 이력 코멘트
+   - `if: !cancelled() && steps.prep_autofix.outcome == 'success' && steps.autofix.outcome != 'success'`
+   - `autofix` 스텝 자체가 실패/취소로 끝나면(커밋·push까지 못 갔을 수 있음) 이후 아무 흔적도 안 남던 사각지대를 메운다. `autofix_build_failure_comment`와 같은 패턴.
 
-10. **[신규]** 재리뷰 결과를 PR에 게시 — 자동 수정 1회차
-    - `if: steps.review_autofix.outcome == 'success' && steps.review_autofix.outputs.structured_output != ''`
-    - 6번과 동일하게 수정된 파싱 패턴을 쓰되, 코멘트 본문 맨 앞에 `## 자동 수정 1회차` 헤더를 붙이고 맨 끝에 종료 사유 줄을 추가한다.
-      - `blocking_count == 0` → "차단 해소"
-      - 그 외(여전히 blocking > 0) → "라운드 소진(1회 한도 도달) — 사람이 직접 확인해야 합니다"
+10. 빌드 재검증 — 자동 수정 후 (id: `build_autofix`) — `if: steps.autofix.outcome == 'success'`. 변경 없음.
 
-11. **[신규]** 자동 수정 라운드 — 빌드 실패 이력 코멘트
-    - `if: steps.autofix.outcome == 'success' && steps.build_autofix.outcome == 'failure'`
-    - PR에 `## 자동 수정 1회차\n빌드 실패로 종료 — 사람이 직접 확인해야 합니다.`만 게시한다(재리뷰는 돌리지 않는다).
+11. 재리뷰 — 자동 수정 라운드 (id: `review_autofix`) — `if: steps.build_autofix.outcome == 'success'`. 변경 없음.
 
-12. **[신규]** 최종 판정 병합 (id: `judge`)
-    - `if: always() && steps.pr.outputs.number != ''`
-    - 셸 스크립트: `steps.review_autofix.outputs.structured_output`이 비어 있지 않으면(자동 수정 라운드가 재리뷰까지 실행됨) 그 값에서 `blocking_count`·`recommended_count`를 뽑아 최종값으로 쓴다. 비어 있으면(자동 수정 라운드 미실행 — 라운드 1이 이미 깨끗했거나, 빌드 실패로 재리뷰까지 못 갔거나) 라운드 1(`steps.review.outputs.structured_output`) 값을 최종값으로 쓴다. `final_blocking`·`final_recommended`를 `GITHUB_OUTPUT`에 쓴다.
+12. 재리뷰 결과를 PR에 게시 — 자동 수정 1회차 (id: `post_review_autofix`)
+    - **[설계 대비 변경]** `if: steps.review_autofix.outcome == 'success'`만 남았다(`&& steps.review_autofix.outputs.structured_output != ''` 조건은 빠졌다 — 빈 값도 이 스텝 안에서 직접 처리하기 때문).
+    - `STRUCTURED_OUTPUT`이 비어 있으면(PR #293 2차 리뷰 — 침묵 실패) → "## 자동 수정 1회차 / 재리뷰가 구조화된 결과를 반환하지 않았습니다 — 사람이 직접 확인해야 합니다."
+    - `blocking_count == 0` → "차단 해소"
+    - 그 외(여전히 blocking > 0) → "라운드 소진(1회 한도 도달) — 사람이 직접 확인해야 합니다"
+    - **[설계 대비 변경, PR #293 리뷰]** 최초 설계(옛 10번)엔 "라운드 소진"을 별도 스텝(`judge` 뒤)에서 게시하려 했으나, `post_review_autofix`와 동시에 "## 자동 수정 1회차" 코멘트가 2건 게시되는 중복 문제가 나와 별도 스텝을 없애고 이 스텝 하나로 세 분기(침묵 실패/차단 해소/라운드 소진)를 모두 흡수했다.
 
-13. 조건부 승인 (기존 7번 위치에서 이 자리로 이동)
-    - `if: success() && steps.pr.outputs.number != '' && steps.judge.outputs.final_blocking == '0' && steps.judge.outputs.final_recommended == '0'`
+13. 자동 수정 라운드 — 빌드 실패 이력 코멘트 (id: `autofix_build_failure_comment`) — `if: !cancelled() && steps.autofix.outcome == 'success' && steps.build_autofix.outcome == 'failure'`. 내용은 최초 설계와 동일. **[설계 대비 변경]** `always()` 대신 `!cancelled()`(PR #293 3차 리뷰 참고 1 — 아래 참조).
+
+14. **[신규, PR #293 2차 리뷰]** 자동 수정 라운드 — 재리뷰 호출 실패 이력 코멘트 (id: `autofix_review_failure_comment`)
+    - `if: !cancelled() && steps.autofix.outcome == 'success' && steps.build_autofix.outcome == 'success' && steps.review_autofix.outcome == 'failure'`
+    - `review_autofix` 호출 자체가 실패로 끝나는 경우(12번의 "구조화 출력 없이 성공 종료"와 다름)를 흡수한다. `post_review_autofix`의 if와 상호 배타적이라 동시 실행은 없다.
+
+15. 최종 판정 병합 (id: `judge`)
+    - `if: !cancelled() && steps.pr.outputs.number != ''`
+    - **[설계 대비 변경]** 최초 설계는 "`review_autofix`의 structured_output 유무"로 분기하려 했으나, 최종 구현은 **`steps.autofix.outcome`**을 1차 분기 기준으로 쓴다. `AUTOFIX_OUTCOME == 'success'`(자동 수정 라운드가 시도됨)면 `BUILD_AUTOFIX_OUTCOME`(빌드 실패 시 `final_blocking=1`로 승인 보류)과 `REVIEW_AUTOFIX_STRUCTURED_OUTPUT`(비어 있어도 `final_blocking=1`)을 차례로 확인한 뒤에만 실제 `blocking_count`·`recommended_count`를 최종값으로 쓴다. 자동 수정 라운드가 안 돌았으면 라운드 1 결과를 쓰되, 그마저 비어 있으면 역시 `final_blocking=1`이다. **판정 불가한 모든 경우가 "모르면 승인 안 함"으로 수렴**한다.
+
+16. 조건부 승인 (기존 7번 위치에서 15번 뒤로 이동, 위치 변경 없음)
+    - `if: !cancelled() && steps.judge.outcome == 'success' && steps.pr.outputs.number != '' && steps.judge.outputs.final_blocking == '0' && steps.judge.outputs.final_recommended == '0'`
+    - **[설계 대비 변경]** `success()`가 아니라 `!cancelled() && steps.judge.outcome == 'success'`다 — `judge`가 `!cancelled()`로 도는 스텝이라 이 승인 스텝도 암묵적 `success()`에 기대지 않고 `judge`가 실제로 성공했는지부터 명시적으로 확인한다.
     - 승인 판정 기준(차단 0·권장 0) 자체는 ADR-0013 그대로 — 판정 대상만 "라운드 1 또는 자동 수정 라운드의 최종 결과"로 바뀐다.
 
+### `always()` → `!cancelled()` (PR #293 3차 리뷰 참고 1)
+- `judge`·조건부 승인·이력 코멘트 스텝 4개(`autofix_build_failure_comment`·`autofix_review_failure_comment`·`autofix_call_failure_comment`) 전부 `always()`가 아니라 `!cancelled()`를 쓴다.
+- 목적("앞선 스텝 실패로 success() 체인이 깨진 뒤에도 실행")은 그대로 유지하면서, 취소된 런에서까지 이력 코멘트가 붙거나 승인까지 이어지는 것을 막는다.
+
+### PR 번호를 `run:` 스크립트에 전달하는 방식 (PR #293 3차 리뷰 참고 4)
+- `gh pr comment`/`gh pr review` 호출 6곳 모두 `run:` 스크립트에 `${{ steps.pr.outputs.number }}`를 직접 보간하지 않는다. 각 스텝의 `env:`에 `PR_NUMBER: ${{ steps.pr.outputs.number }}`를 추가하고, `run:`에서는 `"$PR_NUMBER"`로 참조한다 — 파일 상단 L79 규칙("run 스크립트에는 env로만 전달")과의 일관성.
+
 ### `timeout-minutes`
-- `implement-and-open-pr` job에 `timeout-minutes: 60`을 명시한다.
-- 근거: 기존 흐름(구현 + 빌드 ~7분 + 리뷰) 소요에 자동 수정 라운드(수정 + 빌드 ~7분 + 재리뷰) 추가분을 더한 보수적 추정 — 이슈 #292 propose-directions의 비용 추정("라운드 1회당 claude-code-action 호출 2건과 전체 빌드")과 `docs/agent-mistakes.md`의 실측 빌드 시간(7분 내외)을 근거로 삼았다. 정확한 값 자체는 이번 spec의 핵심 결정이 아니며, 실제 실행 시간을 관찰한 뒤 조정 가능하다.
+- `implement-and-open-pr` job에 `timeout-minutes: 90`을 명시한다(PR #293 3차 리뷰 권장 4 — 최초 60분 추정에서 상향).
+- 산정 근거의 정본은 [ADR-0016](../../adr/0016-review-gate-auto-fix-round.md)에 둔다. `agent.yml`에는 ADR 참조만 짧게 남긴다.
 
 ## 버그 수정 상세 — env 표현식 즉시 평가
 - **기존**: `env: REVIEW_REPORT: ${{ fromJSON(steps.review.outputs.structured_output).report }}` + `if: ... && steps.review.outputs.structured_output != ''`
@@ -65,19 +81,21 @@
 - **수정**: `env`에는 원문 문자열만 넘긴다.
   ```yaml
   env:
+    PR_NUMBER: ${{ steps.pr.outputs.number }}
     STRUCTURED_OUTPUT: ${{ steps.review.outputs.structured_output }}
   run: |
     if [ -z "$STRUCTURED_OUTPUT" ]; then
-      echo "structured_output이 비어 있어 PR 코멘트를 건너뜁니다."
+      printf '%s\n' "리뷰가 구조화된 결과를 반환하지 않았습니다 — 사람이 직접 확인해야 합니다." > /tmp/review-body.md
+      gh pr comment "$PR_NUMBER" --body-file /tmp/review-body.md
       exit 0
     fi
     REVIEW_REPORT=$(printf '%s' "$STRUCTURED_OUTPUT" | jq -r '.report')
     printf '%s\n' "$REVIEW_REPORT" > /tmp/review-body.md
-    gh pr comment "${{ steps.pr.outputs.number }}" --body-file /tmp/review-body.md
+    gh pr comment "$PR_NUMBER" --body-file /tmp/review-body.md
   ```
-  문자열 대입(env)은 빈 값이어도 실패하지 않는다 — JSON 파싱(`jq`)은 값이 있는지 셸에서 확인한 **뒤**, `run:` 스크립트 안에서만 수행한다. `jq`는 `ubuntu-latest`에 기본 설치돼 있다.
-- 이 패턴을 라운드 1 게시 스텝(6번)과 자동 수정 라운드 재리뷰 게시 스텝(10번) 양쪽에 동일하게 적용해, 새로 추가하는 스텝이 같은 버그를 복제하지 않게 한다.
-- 조건부 승인 스텝(13번, 기존 7번)의 `if:`는 `env`가 아니라 `if:` 표현식 자체 안에서 좌에서 우로 단락 평가되므로(기존에도 `structured_output != ''`를 `fromJSON(...)` 호출보다 먼저 검사) 이 버그의 대상이 아니다 — 그대로 둔다. 다만 이번 변경으로 판정 대상이 `judge` 스텝의 출력을 보도록 바뀐다(12·13번 참고).
+  문자열 대입(env)은 빈 값이어도 실패하지 않는다 — JSON 파싱(`jq`)은 값이 있는지 셸에서 확인한 **뒤**, `run:` 스크립트 안에서만 수행한다. `jq`는 `ubuntu-latest`에 기본 설치돼 있다. `PR_NUMBER`도 같은 이유로 `env`를 거친다(위 "PR 번호를 run: 스크립트에 전달하는 방식" 참고).
+- 이 패턴을 리뷰 결과 게시 스텝(6번)과 자동 수정 라운드 재리뷰 게시 스텝(12번) 양쪽에 동일하게 적용해, 새로 추가하는 스텝이 같은 버그를 복제하지 않게 한다.
+- 조건부 승인 스텝(16번, 기존 7번)의 `if:`는 `env`가 아니라 `if:` 표현식 자체 안에서 좌에서 우로 단락 평가되므로(기존에도 `structured_output != ''`를 `fromJSON(...)` 호출보다 먼저 검사) 이 버그의 대상이 아니다 — 그대로 둔다. 다만 이번 변경으로 판정 대상이 `judge` 스텝의 출력을 보도록 바뀐다(15·16번 참고).
 
 ## 테스트 계획
 - 단위/슬라이스/통합 테스트: 해당 없음(`src/` 무변경, ADR-0003 테스트 전략의 대상이 아니다).

@@ -101,9 +101,7 @@ jobs:
     needs: verify-actor
     if: needs.verify-actor.outputs.allowed == 'true'
     runs-on: ubuntu-latest
-    # 기존 흐름(구현 + 빌드 ~7분 + 리뷰)에 자동 수정 라운드(수정 + 빌드 ~7분 + 재리뷰)가 그대로 다시 붙는다 —
-    # claude-code-action 호출이 4건(구현·리뷰·자동 수정·재리뷰)까지 늘 수 있어 60분 추정(plan.md)은 여유가
-    # 빠듯하다고 보고 90분으로 잡는다. GitHub 기본값(360분) 암묵 의존은 없앤다. 실제 실행 시간 관찰 후 조정 가능(ADR-0016).
+    # 산정 근거는 ADR-0016(정본)을 참고 — GitHub 기본값(360분) 암묵 의존을 없애기 위한 값이다.
     timeout-minutes: 90
     permissions:
       contents: write
@@ -164,6 +162,9 @@ jobs:
         run: |
           BRANCH=$(git branch --show-current)
           NUMBER=$(gh pr list --state open --head "$BRANCH" --json number --jq '.[0].number // empty')
+          # PR을 못 찾으면(구현 에이전트가 PR을 못 열었을 때, 이슈 #292 실패 사례) job을 명시적으로 실패시킨다 —
+          # 이후 스텝이 전부 조용히 스킵돼 job이 우연히 초록으로 끝나는 것에 의존하지 않는다 (PR #293 3차 리뷰 권장 3).
+          [ -n "$NUMBER" ] || { echo "::error::PR을 찾지 못했습니다"; exit 1; }
           echo "number=$NUMBER" >> "$GITHUB_OUTPUT"
 
       - name: 코드 리뷰 (.claude/agents/reviewer.md 리뷰 모드 기준)
@@ -210,18 +211,22 @@ jobs:
         if: success() && steps.pr.outputs.number != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # PR 번호도 run: 스크립트에 ${{ }}로 직접 이어붙이지 않고 env로만 전달한다 (L79 규칙, PR #293 3차 리뷰 참고 4).
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
           # report는 LLM이 diff 내용을 보고 생성한 텍스트라 신뢰할 수 없다.
           # ${{ }}로 run: 스크립트에 직접 이어붙이면 GitHub Actions 스크립트 인젝션이 된다 — env로만 전달한다.
           STRUCTURED_OUTPUT: ${{ steps.review.outputs.structured_output }}
         run: |
-          # 리뷰 에이전트가 스키마 도구를 호출하지 않고 끝나면 STRUCTURED_OUTPUT이 빈 문자열이 된다 — 건너뛴다 (PR #232 리뷰).
+          # 리뷰 에이전트가 스키마 도구를 호출하지 않고 끝나면 STRUCTURED_OUTPUT이 빈 문자열이 된다 — 조용히
+          # 건너뛰지 않고 흔적을 남긴다 (PR #232 리뷰가 스킵으로 처리한 지점을 PR #293 3차 리뷰 권장 2가 재지적).
           if [ -z "$STRUCTURED_OUTPUT" ]; then
-            echo "structured_output이 비어 있어 PR 코멘트를 건너뜁니다."
+            printf '%s\n' "리뷰가 구조화된 결과를 반환하지 않았습니다 — 사람이 직접 확인해야 합니다." > /tmp/review-body.md
+            gh pr comment "$PR_NUMBER" --body-file /tmp/review-body.md
             exit 0
           fi
           REVIEW_REPORT=$(printf '%s' "$STRUCTURED_OUTPUT" | jq -r '.report')
           printf '%s\n' "$REVIEW_REPORT" > /tmp/review-body.md
-          gh pr comment "${{ steps.pr.outputs.number }}" --body-file /tmp/review-body.md
+          gh pr comment "$PR_NUMBER" --body-file /tmp/review-body.md
 
       - name: 자동 수정 준비 — 라운드 1 리뷰 report 저장 (ADR-0016)
         id: prep_autofix
@@ -254,6 +259,19 @@ jobs:
           claude_args: |
             --model sonnet
             --allowedTools "Read,Grep,Glob,Edit,Write,Bash"
+
+      - name: 자동 수정 라운드 — 자동 수정 호출 실패 이력 코멘트
+        id: autofix_call_failure_comment
+        # autofix_build_failure_comment와 같은 패턴 — autofix 스텝 자체가 실패/취소로 끝나면(커밋·push까지
+        # 못 갔을 수 있음) 그 뒤로는 아무 흔적도 안 남았다. !cancelled()로 취소된 런에서는 돌지 않되,
+        # 실패로 success() 체인이 깨진 뒤에도 반드시 돌아야 한다 (PR #293 3차 리뷰 권장 1).
+        if: "!cancelled() && steps.prep_autofix.outcome == 'success' && steps.autofix.outcome != 'success'"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+        run: |
+          printf '%s\n' "## 자동 수정 1회차" "" "자동 수정 호출이 실패했습니다 — 사람이 직접 확인해야 합니다." > /tmp/autofix-call-failure-body.md
+          gh pr comment "$PR_NUMBER" --body-file /tmp/autofix-call-failure-body.md
 
       - name: 빌드 재검증 — 자동 수정 후 (러너가 직접 실행 — 에이전트 자기 보고 아님)
         id: build_autofix
@@ -308,11 +326,12 @@ jobs:
         if: steps.review_autofix.outcome == 'success'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
           STRUCTURED_OUTPUT: ${{ steps.review_autofix.outputs.structured_output }}
         run: |
           if [ -z "$STRUCTURED_OUTPUT" ]; then
             printf '%s\n' "## 자동 수정 1회차" "" "재리뷰가 구조화된 결과를 반환하지 않았습니다 — 사람이 직접 확인해야 합니다." > /tmp/review-autofix-body.md
-            gh pr comment "${{ steps.pr.outputs.number }}" --body-file /tmp/review-autofix-body.md
+            gh pr comment "$PR_NUMBER" --body-file /tmp/review-autofix-body.md
             exit 0
           fi
           REVIEW_REPORT=$(printf '%s' "$STRUCTURED_OUTPUT" | jq -r '.report')
@@ -328,38 +347,44 @@ jobs:
               echo "라운드 소진(1회 한도 도달) — 사람이 직접 확인해야 합니다."
             fi
           } > /tmp/review-autofix-body.md
-          gh pr comment "${{ steps.pr.outputs.number }}" --body-file /tmp/review-autofix-body.md
+          gh pr comment "$PR_NUMBER" --body-file /tmp/review-autofix-body.md
 
       - name: 자동 수정 라운드 — 빌드 실패 이력 코멘트
         id: autofix_build_failure_comment
         # always()가 없으면 build_autofix가 failure일 때 GitHub Actions가 암묵적으로 요구하는 success()가
         # 이미 깨진 상태라 이 스텝 자체가 도달 전에 skip된다 — 바로 위 build_autofix if:의 커스텀 조건과
         # 같은 이유로 명시적 status 함수가 필요하다 (PR #271 리뷰가 정리한 패턴, ADR-0016).
-        if: always() && steps.autofix.outcome == 'success' && steps.build_autofix.outcome == 'failure'
+        # always() 대신 !cancelled()를 쓴다 — "실패 후에도 실행"은 유지하되 취소된 런에서까지 돌아
+        # 이력 코멘트·승인이 붙는 것은 막는다 (PR #293 3차 리뷰 참고 1).
+        if: "!cancelled() && steps.autofix.outcome == 'success' && steps.build_autofix.outcome == 'failure'"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
         run: |
           printf '%s\n' "## 자동 수정 1회차" "" "빌드 실패로 종료 — 사람이 직접 확인해야 합니다." > /tmp/autofix-build-failure-body.md
-          gh pr comment "${{ steps.pr.outputs.number }}" --body-file /tmp/autofix-build-failure-body.md
+          gh pr comment "$PR_NUMBER" --body-file /tmp/autofix-build-failure-body.md
 
       - name: 자동 수정 라운드 — 재리뷰 호출 실패 이력 코멘트
         id: autofix_review_failure_comment
         # post_review_autofix는 review_autofix가 success로 끝났지만 구조화 출력이 비어 있는 경우(침묵 실패)만
         # 흡수한다. 여기는 review_autofix 호출 자체가 실패(outcome == 'failure')로 끝나는 경우다 — 두 if:는
-        # 상호 배타적이라 동시에 돌지 않는다. always()가 필요한 이유는 autofix_build_failure_comment와 같다
-        # (review_autofix 실패로 success() 체인이 깨진 뒤에도 이 스텝은 반드시 돌아야 한다, PR #293 2차 리뷰 반영).
-        if: always() && steps.autofix.outcome == 'success' && steps.build_autofix.outcome == 'success' && steps.review_autofix.outcome == 'failure'
+        # 상호 배타적이라 동시에 돌지 않는다. always() 대신 !cancelled()를 쓰는 이유는 autofix_build_failure_comment와
+        # 같다 — 실패로 success() 체인이 깨진 뒤에도 돌아야 하지만 취소된 런에서까지 돌 필요는 없다 (PR #293 2차 리뷰,
+        # 3차 리뷰 참고 1 반영).
+        if: "!cancelled() && steps.autofix.outcome == 'success' && steps.build_autofix.outcome == 'success' && steps.review_autofix.outcome == 'failure'"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
         run: |
           printf '%s\n' "## 자동 수정 1회차" "" "재리뷰 호출이 실패했습니다 — 사람이 직접 확인해야 합니다." > /tmp/autofix-review-failure-body.md
-          gh pr comment "${{ steps.pr.outputs.number }}" --body-file /tmp/autofix-review-failure-body.md
+          gh pr comment "$PR_NUMBER" --body-file /tmp/autofix-review-failure-body.md
 
       - name: 최종 판정 병합 (자동 수정 라운드가 돌았으면 그 결과, 아니면 라운드 1 결과, ADR-0016)
         id: judge
-        # always() — build_autofix 실패 등으로 앞쪽 success() 체인이 깨진 뒤에도 이 스텝은 반드시 돌아서
-        # "판정 불가 = 승인 보류"로 안전하게 마무리해야 한다 (autofix_build_failure_comment와 같은 이유).
-        if: always() && steps.pr.outputs.number != ''
+        # always() 대신 !cancelled() — build_autofix 실패 등으로 앞쪽 success() 체인이 깨진 뒤에도 이 스텝은
+        # 반드시 돌아서 "판정 불가 = 승인 보류"로 안전하게 마무리해야 한다(autofix_build_failure_comment와 같은
+        # 이유). 다만 취소된 런에서까지 판정을 매기고 승인으로 이어질 필요는 없다 (PR #293 3차 리뷰 참고 1).
+        if: "!cancelled() && steps.pr.outputs.number != ''"
         env:
           AUTOFIX_OUTCOME: ${{ steps.autofix.outcome }}
           BUILD_AUTOFIX_OUTCOME: ${{ steps.build_autofix.outcome }}
@@ -409,14 +434,17 @@ jobs:
       - name: 조건부 승인 — 차단·권장 0건일 때만 (ADR-0013·ADR-0016, 머지는 사람이 진행)
         # PR 작성자가 claude[bot](Claude GitHub App 설치됨)이 아니라 github-actions[bot]로 폴백된 경우
         # 이 승인 계정과 작성자가 같아져 GitHub이 422로 거부한다 — 테스트 이슈 검증 시 App 설치 여부를 함께 확인한다 (PR #232 리뷰).
-        # always() + steps.judge.outcome — judge가 always()로 도는 스텝이라 이 승인 스텝도 암묵적 success()에
-        # 기대지 않고 judge가 실제로 성공했는지부터 명시적으로 확인한다 (3번 항목·autofix_build_failure_comment와 같은 패턴).
+        # !cancelled() + steps.judge.outcome — judge가 !cancelled()로 도는 스텝이라 이 승인 스텝도 암묵적
+        # success()에 기대지 않고 judge가 실제로 성공했는지부터 명시적으로 확인한다(3번 항목·autofix_build_failure_comment와
+        # 같은 패턴). always()가 아니라 !cancelled()를 쓰는 이유는 취소된 런에서까지 승인이 붙는 것을 막기 위함이다
+        # (PR #293 3차 리뷰 참고 1).
         if: >
-          always() && steps.judge.outcome == 'success' && steps.pr.outputs.number != '' &&
+          !cancelled() && steps.judge.outcome == 'success' && steps.pr.outputs.number != '' &&
           steps.judge.outputs.final_blocking == '0' &&
           steps.judge.outputs.final_recommended == '0'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
         run: |
-          gh pr review "${{ steps.pr.outputs.number }}" --approve \
+          gh pr review "$PR_NUMBER" --approve \
             -b "차단 0건 / 권장 0건 — 이슈 트리거 에이전트 리뷰 통과 (ADR-0013·ADR-0016). 머지는 사람이 직접 진행해 주세요."
