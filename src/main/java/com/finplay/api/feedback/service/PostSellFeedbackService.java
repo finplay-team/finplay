@@ -34,7 +34,7 @@ import org.springframework.stereotype.Service;
  * 자기호출이라 프록시를 타지 않아 무효이고, 정확히 막으려던 상태가 조용히 된다.</b>
  *
  * <pre>
- * 1. reader.read(...)           @Transactional(readOnly = true)  — 원장·분봉·카드를 읽고 트랜잭션을 닫는다
+ * 1. reader.read(...)           트랜잭션 없음(오케스트레이터)     — 협력자별 트랜잭션으로 원장·분봉·카드를 읽는다
  * 2. findByTradeId(...)         리포지터리 기본 트랜잭션          — 기존 서술이 있으면 2·3단계를 건너뛴다
  * 3. narrativeService.resolve   트랜잭션 없음                     — 외부 LLM 호출이 여기 있다
  * 4. writer.create(...)         @Transactional                   — 저장만 감싼다
