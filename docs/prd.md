@@ -827,6 +827,7 @@ LMT-001~005의 상세 계약(요청·응답 필드, 전체 오류 코드)은 `do
 - 실현손익의 정본은 MySQL `accounts.realized_pnl`이며 Redis ZSET은 조회 성능을 위한 파생 데이터다. Redis 유실 시 MySQL 원장으로 재구성한다. 커밋 이후 갱신 자체가 실패하는 경우(예: 그 순간 Redis 장애)는 재시도(backoff) 후에도 실패하면 로그만 남기고 매도 체결 자체에는 영향을 주지 않는다.
 - **(2026-08-09 확정, 이슈 #279) 재구성 트리거·절차**: 트리거는 두 가지이며 둘 다 같은 경로를 탄다 — 애플리케이션 **기동 완료 시점 1회**와 **매일 04:20(KST) 정기 배치**다. 수동 재구성 엔드포인트는 만들지 않는다(관리자 롤 개념이 없어 범위가 넓어진다). 절차는 항상 **전체 재구성**이다: 해당 시장 계좌 중 `trades.side = 'SELL'` 체결 이력이 있는 계좌를 대상으로 뽑고(**`realized_pnl` 값이 아니라 매도 이력 유무가 기준**이다 — 손익이 정확히 0인 매도 계좌가 빠지면 재구성 결과가 유실 전과 달라진다), 그 계좌들의 `accounts.realized_pnl`을 score로 임시 키에 적재한 뒤 원자적으로 교체한다. 재구성은 **읽기 전용**이라 주문·체결·계좌·보유 원장을 일절 변경하지 않는다. 멱등하고 단일 인스턴스 전제라 분산 락은 두지 않는다 — 다중 인스턴스로 전환하면 임시 키 충돌과 중복 부하를 재검토한다.
 - **(2026-08-09 확정, 이슈 #279) 유실 상태 노출**: 재구성 전이라도 클라이언트가 "집계가 준비되지 않은 상태"를 판별할 수 있도록 RANK-001·RANK-002 응답에 `status`(`READY`|`REBUILDING`)를 추가한다. 기존 필드는 그대로 두는 필드 추가라 하위 호환이다. 유실 상태에서도 오류가 아니라 200이다.
+- **(2026-08-10 확정, 이슈 #288) 장애 상태 노출**: 유실(ZSET이 비어 있음)과 장애(Redis 연결 자체가 안 됨)는 다르다. `status`에 `UNAVAILABLE`을 추가해, Redis 연결 장애로 조회 자체가 실패한 경우도 500 대신 200 + `status: UNAVAILABLE`로 응답한다. `RankingStore`의 읽기 경로(`topN`·`findAllAtScore`·`countStrictlyGreater`·`score`)가 `RankingStoreUnavailableException`을 던지고 `RankingService`가 이를 상태값으로 변환한다 — 쓰기 경로(랭킹 갱신)는 기존과 동일하게 실패를 삼킨다(의도한 비대칭). 랭킹과 무관하지만 같은 이슈에서 함께 고친 항목으로, `BithumbFeedLifecycle.startFeed`도 시세 클라이언트 시작 실패를 삼켜 Redis가 죽어 있어도 애플리케이션 기동 자체는 성공한다(시세 기능만 저하).
 
 #### RANK-002 내 랭킹 조회 (2차 MVP)
 
@@ -1049,6 +1050,7 @@ Flyway 마이그레이션은 V1~V21까지 적용돼 있다. 아래는 2차에서
 - **(2026-08-06 MKT-010, 구현 완료)** 코인 진행 중·확정 1분봉 캐시: `candle:crypto:<symbol>:1m:<epochMinute>`(Hash — open·high·low·close·volumeScaled) + `candle:crypto:<symbol>:1m:since`(String — 이 심볼의 캐시가 연속적으로 신뢰 가능한 시작 분). TTL 4시간(응답 상한 200봉에서 역산). MySQL에는 저장하지 않는다(새 테이블 없음). 위 `:snapshots`와는 **별개 키**다 — 그쪽은 분당 샘플, 이쪽은 체결 단위 OHLCV 누적으로 목적이 다르다.
 - 랭킹(`ranking:<market>` ZSET, RANK-001·2026-08-04 추가): 시장별 실현손익 순위. **정본은 MySQL `accounts.realized_pnl`이고 ZSET은 조회 성능용 파생 데이터다** — 유실 시 MySQL 원장으로 재구성한다. 매도 체결 커밋 이후(after-commit)에만 갱신한다.
   - **(2026-08-09 이슈 #279) 재구성 상세**: 트리거는 기동 완료 시점 1회 + 매일 04:20(KST) 배치이며 항상 전체 재구성이다. 대상 판정은 **`trades.side = 'SELL'` 이력 유무**(손익 값이 아니다)이고 score는 `accounts.realized_pnl`이다. 교체는 임시 키 `ranking:<market>:rebuild`에 전량 적재한 뒤 `RENAME`으로 원자 교체해, 재구성 중 조회가 빈 값·부분 값을 보지 않게 한다(대상이 0건이면 임시 키가 만들어지지 않으므로 `RENAME` 대신 본 키를 `DEL`한다). 재구성은 읽기 전용이라 원장을 변경하지 않고, 실패해도 예외를 밖으로 던지지 않는다 — 호출자가 기동 훅과 스케줄러라 예외가 새면 기동이 실패하거나 스케줄러 스레드가 죽는다. 재구성 전 상태는 두 랭킹 응답의 `status`(`READY`|`REBUILDING`)로 노출한다.
+  - **(2026-08-10 이슈 #288) 연결 장애와 유실의 구분**: 위 재구성은 "ZSET을 읽을 수 있는데 유실됐다"는 전제였다. Redis 연결 자체가 안 되는 경우는 `RankingStore`의 읽기 경로(`topN`·`findAllAtScore`·`countStrictlyGreater`·`score`)가 예외를 던지고 `RankingService`가 이를 `status: UNAVAILABLE`로 변환한다 — 500이 아니라 200이다. 쓰기 경로(after-commit 랭킹 갱신)는 기존과 동일하게 재시도 후 실패를 삼킨다. 코인 시세 키(`feed:crypto:status` 등)를 다루는 `BithumbFeedLifecycle.startFeed`도 같은 이슈에서 시작 실패를 삼키도록 고쳤다 — Redis 장애로 이 훅이 예외를 던지면 애플리케이션 기동 자체가 실패해(`ApplicationReadyEvent` 동기 리스너) 랭킹·시세와 무관한 API까지 전부 죽는 문제였다.
 - 회원·잔고·체결·보유·게시물 원장은 Redis에 저장하지 않는다.
 - Redis 유실 시 MySQL 원장은 보존되며, 새 시세 수신 전 주문은 차단한다.
 

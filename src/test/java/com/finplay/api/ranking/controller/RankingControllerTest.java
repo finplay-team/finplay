@@ -159,6 +159,24 @@ class RankingControllerTest {
 			.andExpect(jsonPath("$.content").isEmpty());
 	}
 
+	// 이슈 #288: Redis 연결 장애도 500이 아니라 200 + status(UNAVAILABLE)다. 이 컨트롤러 테스트는 서비스가
+	// 이미 변환한 응답을 그대로 직렬화만 하지만, 그 값이 500으로 튀지 않고 정상적으로 200 계약을 타는지는
+	// 컨트롤러 레벨에서 확인해야 한다 — GlobalExceptionHandler 캐치올로 새는 회귀가 여기서 잡힌다.
+	@Test
+	void getRankingsReturnsOkWithUnavailableStatusWhenRedisConnectionFails() throws Exception {
+		stubAuthenticatedUser();
+		when(rankingService.getRankings(Market.STOCK, null))
+			.thenReturn(new RankingListResponse("STOCK", RankingStatus.UNAVAILABLE, List.of()));
+
+		mockMvc.perform(get("/api/rankings")
+			.param("market", "STOCK")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.market").value("STOCK"))
+			.andExpect(jsonPath("$.status").value("UNAVAILABLE"))
+			.andExpect(jsonPath("$.content").isEmpty());
+	}
+
 	@Test
 	void getRankingsPassesLimitToServiceWhenProvided() throws Exception {
 		stubAuthenticatedUser();
@@ -330,6 +348,23 @@ class RankingControllerTest {
 			.andExpect(jsonPath("$.realizedPnl").value(120000));
 
 		verify(rankingService).getMyRanking(USER_ID, Market.CRYPTO);
+	}
+
+	// 이슈 #288: 내 랭킹도 Redis 연결 장애 시 500이 아니라 200 + status(UNAVAILABLE) + rank:null이다.
+	@Test
+	void getMyRankingReturnsOkWithUnavailableStatusWhenRedisConnectionFails() throws Exception {
+		stubAuthenticatedUser();
+		when(rankingService.getMyRanking(USER_ID, Market.STOCK))
+			.thenReturn(new MyRankingResponse("STOCK", RankingStatus.UNAVAILABLE, null, "투자왕", 0L));
+
+		mockMvc.perform(get("/api/rankings/me")
+			.param("market", "STOCK")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.market").value("STOCK"))
+			.andExpect(jsonPath("$.status").value("UNAVAILABLE"))
+			.andExpect(jsonPath("$.rank").doesNotExist())
+			.andExpect(jsonPath("$.nickname").value("투자왕"));
 	}
 
 	@Test

@@ -23,6 +23,7 @@ import com.finplay.api.ranking.dto.response.MyRankingResponse;
 import com.finplay.api.ranking.dto.response.RankingListItemResponse;
 import com.finplay.api.ranking.dto.response.RankingListResponse;
 import com.finplay.api.ranking.store.RankingStore;
+import com.finplay.api.ranking.store.RankingStoreUnavailableException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -432,6 +433,82 @@ class RankingServiceTest {
 		assertThat(response.realizedPnl())
 			.as("ZSET score가 없으면 DB 값을 대신 싣지 않는다 — rank와 다른 출처의 값을 섞지 않는 원칙")
 			.isZero();
+	}
+
+	// --- Redis 연결 장애 시 UNAVAILABLE (이슈 #288) ---
+	// 유실(REBUILDING)과 달리 ZSET 자체를 읽지 못한 상태다. RankingStoreUnavailableException이 어느 단계에서
+	// 나든(첫 topN·경계 병합의 findAllAtScore·순위 계산의 countStrictlyGreater) 같은 응답으로 수렴해야 한다.
+
+	@Test
+	void getRankingsReturnsUnavailableWhenTopNThrowsUnavailableException() {
+		when(rankingStore.topN(Market.STOCK, 11))
+			.thenThrow(new RankingStoreUnavailableException("redis down", new RuntimeException()));
+
+		RankingListResponse response = rankingService.getRankings(Market.STOCK, null);
+
+		assertThat(response).isEqualTo(new RankingListResponse("STOCK", RankingStatus.UNAVAILABLE, List.of()));
+		verify(accountService, never()).getAccountsWithUser(any());
+	}
+
+	// 경계 동점 병합(findAllAtScore) 단계에서 터져도 마찬가지로 UNAVAILABLE이어야 한다 — window을 가져온
+	// 뒤에도 실패 지점이 있다.
+	@Test
+	void getRankingsReturnsUnavailableWhenFindAllAtScoreThrowsUnavailableExceptionDuringBoundaryMerge() {
+		when(rankingStore.topN(Market.STOCK, 2)).thenReturn(List.of(
+			new RankingEntryDto(1L, 100L),
+			new RankingEntryDto(2L, 100L)));
+		when(rankingStore.findAllAtScore(Market.STOCK, 100L))
+			.thenThrow(new RankingStoreUnavailableException("redis down", new RuntimeException()));
+
+		RankingListResponse response = rankingService.getRankings(Market.STOCK, 1);
+
+		assertThat(response.status()).isEqualTo(RankingStatus.UNAVAILABLE);
+		assertThat(response.content()).isEmpty();
+	}
+
+	// calculateRanks 단계(countStrictlyGreater)에서 터져도 마찬가지다 — window·계좌 조회까지는 성공했더라도
+	// 순위 계산 중간에 끊긴 값을 부분적으로 내보내지 않는다.
+	@Test
+	void getRankingsReturnsUnavailableWhenCountStrictlyGreaterThrowsUnavailableExceptionDuringRankCalculation() {
+		Account alice = account(1L, Market.STOCK, 100L, 1L, "alice");
+		when(rankingStore.topN(Market.STOCK, 11)).thenReturn(List.of(new RankingEntryDto(1L, 100L)));
+		when(accountService.getAccountsWithUser(List.of(1L))).thenReturn(List.of(alice));
+		when(rankingStore.countStrictlyGreater(Market.STOCK, 100L))
+			.thenThrow(new RankingStoreUnavailableException("redis down", new RuntimeException()));
+
+		RankingListResponse response = rankingService.getRankings(Market.STOCK, null);
+
+		assertThat(response.status()).isEqualTo(RankingStatus.UNAVAILABLE);
+		assertThat(response.content()).isEmpty();
+	}
+
+	// 계좌·닉네임은 DB 조회라 Redis 장애와 무관하게 정상 값을 낸다 — UNAVAILABLE이어도 "누구의" 응답인지는 안다.
+	@Test
+	void getMyRankingReturnsUnavailableWithNullRankAndZeroPnlWhenScoreThrowsUnavailableException() {
+		Account account = account(1L, Market.STOCK, 500_000L, 10L, "alice");
+		when(accountService.getAccountForWithUser(10L, Market.STOCK)).thenReturn(account);
+		when(rankingStore.score(Market.STOCK, 1L))
+			.thenThrow(new RankingStoreUnavailableException("redis down", new RuntimeException()));
+
+		MyRankingResponse response = rankingService.getMyRanking(10L, Market.STOCK);
+
+		assertThat(response).isEqualTo(new MyRankingResponse("STOCK", RankingStatus.UNAVAILABLE, null, "alice", 0L));
+		verify(tradeService, never()).hasSellHistory(anyLong());
+	}
+
+	// score는 성공했는데 countStrictlyGreater가 실패하는 경우도 UNAVAILABLE이어야 한다 — 순위 계산 중간에
+	// 끊긴 상태로 rank만 비워서 내보내면 안 된다.
+	@Test
+	void getMyRankingReturnsUnavailableWhenCountStrictlyGreaterThrowsUnavailableExceptionAfterScoreSucceeds() {
+		Account account = account(1L, Market.STOCK, 5_000L, 10L, "alice");
+		when(accountService.getAccountForWithUser(10L, Market.STOCK)).thenReturn(account);
+		when(rankingStore.score(Market.STOCK, 1L)).thenReturn(5_000L);
+		when(rankingStore.countStrictlyGreater(Market.STOCK, 5_000L))
+			.thenThrow(new RankingStoreUnavailableException("redis down", new RuntimeException()));
+
+		MyRankingResponse response = rankingService.getMyRanking(10L, Market.STOCK);
+
+		assertThat(response).isEqualTo(new MyRankingResponse("STOCK", RankingStatus.UNAVAILABLE, null, "alice", 0L));
 	}
 
 	private Market market() {

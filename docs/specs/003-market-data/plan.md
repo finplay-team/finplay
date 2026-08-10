@@ -437,6 +437,6 @@ KisHistoricalReplayPriceProvider를 @Service로 직접 등록 → StockPriceProv
 - **ticker REST 명세**: `GET https://api.bithumb.com/v1/ticker?markets=KRW-BTC,KRW-ETH,...` → 응답 배열 각 항목의 `trade_price`를 현재가로 쓴다. 심볼 변환은 캔들과 같은 `KRW-{symbol}`.
 - **폴링 주기 3초** — `PriceStore`의 stale 기준 10초보다 짧아야 한다. 길면 가격이 존재하는데도 `409 PRICE_UNAVAILABLE`이 뜬다. 주입 통로는 `FakeBithumbFeedClient.emitTick(symbol, price, receivedAt)`으로, 시뮬레이터가 쓰던 것과 동일하다(과거 틱 무시 규칙은 `PriceStore`가 이미 처리).
 - **실패 처리**: 조회 실패·타임아웃·파싱 불가는 그 회차 skip + 로그. 임의값으로 대체하지 않는다 (MKT-004). 마지막 값이 10초 뒤 stale이 되어 `PRICE_UNAVAILABLE`로 정직하게 드러난다.
-- **연결 상태**: `feed:crypto:status`는 폴러가 직접 쓰지 않는다. `BithumbFeedLifecycle`이 `ApplicationReadyEvent`에서 활성 `BithumbFeedClient`(로컬은 `FakeBithumbFeedClient`)의 `start()`를 호출해 이미 `CONNECTED`가 된다.
+- **연결 상태**: `feed:crypto:status`는 폴러가 직접 쓰지 않는다. `BithumbFeedLifecycle`이 `ApplicationReadyEvent`에서 활성 `BithumbFeedClient`(로컬은 `FakeBithumbFeedClient`)의 `start()`를 호출해 이미 `CONNECTED`가 된다. **(2026-08-10 이슈 #288) `start()`가 던지는 예외는 `startFeed`가 삼킨다** — `FakeBithumbFeedClient.start()`는 `PriceStore.saveConnectionStatus`로 Redis를 동기 호출하는데, Redis가 죽어 있으면 그 예외가 `ApplicationReadyEvent` 동기 리스너까지 전파돼 애플리케이션 기동 자체가 실패했다(랭킹과 무관한 이 경로가 시세뿐 아니라 거래내역·계좌요약 등 전체 API를 막는 더 심각한 장애였다, PR #284 리뷰의 블랙박스 QA에서 발견). 지금은 로그만 남기고 기동을 계속한다 — 시세 기능만 저하된다.
 - **기본값은 현행 유지** — 자동 테스트가 외부 네트워크에 의존하면 안 된다 (C-005). 실제 ticker REST 조회는 외부 스모크로 구분 보고한다.
 - **제외**: prod 환경, `BithumbFeedSimulator` 코드 수정, WebSocket ticker 필드 Decision Gate 해소, 코인 SSE, 코인 분봉 저장·캐시(MKT-008 — 보관 없이 중계).

@@ -3,6 +3,7 @@ package com.finplay.api.ranking.store;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
@@ -25,6 +26,7 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
+import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
 
@@ -137,6 +139,68 @@ class RankingStoreTest {
 		Long score = rankingStore.score(Market.CRYPTO, 999L);
 
 		assertThat(score).isNull();
+	}
+
+	// --- Redis 연결 장애 시 읽기 경로 (이슈 #288) ---
+	// 쓰기 경로(addScoreWithRetry·replaceAll)는 실패를 삼키지만, 읽기 경로 4곳은 RankingStoreUnavailableException을
+	// 던져 RankingService가 UNAVAILABLE 응답으로 바꿀 수 있게 한다. RedisConnectionFailureException은 실제
+	// Lettuce 연결 실패 시 쓰이는 DataAccessException 하위 타입이다.
+
+	@Test
+	void topNThrowsRankingStoreUnavailableExceptionWhenRedisConnectionFails() {
+		RankingStore rankingStore = rankingStore();
+		when(zSetOperations.reverseRangeWithScores("ranking:STOCK", 0, 10))
+			.thenThrow(new RedisConnectionFailureException("Unable to connect to Redis"));
+
+		assertThatThrownBy(() -> rankingStore.topN(Market.STOCK, 11))
+			.isInstanceOf(RankingStoreUnavailableException.class)
+			.hasCauseInstanceOf(RedisConnectionFailureException.class);
+	}
+
+	@Test
+	void findAllAtScoreThrowsRankingStoreUnavailableExceptionWhenRedisConnectionFails() {
+		RankingStore rankingStore = rankingStore();
+		when(zSetOperations.rangeByScore("ranking:STOCK", 100.0, 100.0, 0, 500))
+			.thenThrow(new RedisConnectionFailureException("Unable to connect to Redis"));
+
+		assertThatThrownBy(() -> rankingStore.findAllAtScore(Market.STOCK, 100L))
+			.isInstanceOf(RankingStoreUnavailableException.class)
+			.hasCauseInstanceOf(RedisConnectionFailureException.class);
+	}
+
+	@Test
+	void countStrictlyGreaterThrowsRankingStoreUnavailableExceptionWhenRedisConnectionFails() {
+		RankingStore rankingStore = rankingStore();
+		when(zSetOperations.count("ranking:STOCK", 101.0, Double.POSITIVE_INFINITY))
+			.thenThrow(new RedisConnectionFailureException("Unable to connect to Redis"));
+
+		assertThatThrownBy(() -> rankingStore.countStrictlyGreater(Market.STOCK, 100L))
+			.isInstanceOf(RankingStoreUnavailableException.class)
+			.hasCauseInstanceOf(RedisConnectionFailureException.class);
+	}
+
+	@Test
+	void scoreThrowsRankingStoreUnavailableExceptionWhenRedisConnectionFails() {
+		RankingStore rankingStore = rankingStore();
+		when(zSetOperations.score("ranking:STOCK", "1"))
+			.thenThrow(new RedisConnectionFailureException("Unable to connect to Redis"));
+
+		assertThatThrownBy(() -> rankingStore.score(Market.STOCK, 1L))
+			.isInstanceOf(RankingStoreUnavailableException.class)
+			.hasCauseInstanceOf(RedisConnectionFailureException.class);
+	}
+
+	// 한 클래스 안에서 읽기·쓰기 태도가 갈리는 것은 의도한 비대칭이다(이슈 #288 본문) — 이 테스트가 그 비대칭이
+	// 나중에 조용히 사라지지 않는지(예: 쓰기 경로까지 예외를 던지게 바뀌는 회귀) 못박는다.
+	@Test
+	void addScoreWithRetryStillSwallowsRedisConnectionFailureUnlikeReadMethods() {
+		RankingStore rankingStore = rankingStore();
+		doThrow(new RedisConnectionFailureException("Unable to connect to Redis"))
+			.when(zSetOperations)
+			.add(eq("ranking:STOCK"), eq("1"), anyDouble());
+
+		assertThatCode(() -> rankingStore.addScoreWithRetry(Market.STOCK, 1L, 1000L))
+			.doesNotThrowAnyException();
 	}
 
 	// 이슈 #279 재구성: 임시 키 DEL → ZADD → RENAME 순서를 지켜야 한다. DEL이 빠지면 이전 실행이 남긴
