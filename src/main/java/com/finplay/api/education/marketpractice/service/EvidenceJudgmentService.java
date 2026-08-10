@@ -55,7 +55,14 @@ public class EvidenceJudgmentService {
 	/**
 	 * Evidence A: {@code baselineDistance}(매수가 기준 두 경계까지 거리 중 짧은 쪽)보다 {@code currentDistance}
 	 * (현재가 기준 두 경계까지 거리 중 짧은 쪽)가 더 짧아졌으면 경계에 가까워진 것으로 판정한다. 더 가까운 쪽
-	 * 경계를 {@code closerBoundary}로 그대로 노출한다(동률이면 {@link PracticeBoundary#STOP_LOSS}를 우선한다).
+	 * 경계를 {@code closerBoundary}로 그대로 노출한다.
+	 *
+	 * <p><b>동률 tie-break</b>: 두 거리가 정확히 같으면 {@link PracticeBoundary#STOP_LOSS}를 우선한다
+	 * (`docs/specs/026-market-order-practice-tutorial/plan.md` "Evidence A" 절, PR #298 리뷰에서 명시
+	 * 확정). {@code 019}의 {@code stopLossPrice < entryPrice < takeProfitPrice} 불변조건이 유지되는 한
+	 * 동률 지점의 거리는 항상 {@code baselineDistance} 이상이라 이 분기는 {@code closerToBoundary=true}로
+	 * 이어지지 못한다(현재 도달 불가능) — 그래도 그 불변조건이 깨지는 입력이 들어올 경우를 위해 임의 방치
+	 * 대신 명시적으로 정해 둔다.
 	 */
 	public BoundaryEvidenceResult judgeBoundaryEvidence(
 		BigDecimal entryPrice, BigDecimal referenceStopLossPrice, BigDecimal referenceTakeProfitPrice,
