@@ -26,7 +26,9 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
+import org.springframework.dao.QueryTimeoutException;
 import org.springframework.data.redis.RedisConnectionFailureException;
+import org.springframework.data.redis.RedisSystemException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
 
@@ -141,10 +143,12 @@ class RankingStoreTest {
 		assertThat(score).isNull();
 	}
 
-	// --- Redis 연결 장애 시 읽기 경로 (이슈 #288) ---
+	// --- Redis 연결 장애 시 읽기 경로 (이슈 #288, catch 범위는 PR #296 리뷰 권장사항으로 좁힘) ---
 	// 쓰기 경로(addScoreWithRetry·replaceAll)는 실패를 삼키지만, 읽기 경로 4곳은 RankingStoreUnavailableException을
 	// 던져 RankingService가 UNAVAILABLE 응답으로 바꿀 수 있게 한다. RedisConnectionFailureException은 실제
-	// Lettuce 연결 실패 시 쓰이는 DataAccessException 하위 타입이다.
+	// Lettuce 연결 실패 시 쓰이는 타입이고, QueryTimeoutException도 같은 이유로 잡는다. 반면 그 밖의
+	// DataAccessException(예: RedisSystemException — WRONGTYPE 등 데이터 오염이 번역되는 타입)은 잡지 않고
+	// 그대로 전파해 500으로 드러나야 한다 — 재시도로 저절로 낫지 않는 버그를 UNAVAILABLE로 위장하지 않기 위해서다.
 
 	@Test
 	void topNThrowsRankingStoreUnavailableExceptionWhenRedisConnectionFails() {
@@ -188,6 +192,33 @@ class RankingStoreTest {
 		assertThatThrownBy(() -> rankingStore.score(Market.STOCK, 1L))
 			.isInstanceOf(RankingStoreUnavailableException.class)
 			.hasCauseInstanceOf(RedisConnectionFailureException.class);
+	}
+
+	// QueryTimeoutException도 RedisConnectionFailureException과 동일하게 UNAVAILABLE로 변환돼야 한다 — 응답
+	// 지연도 "지금 이 값을 믿지 마라"는 점에서 연결 자체가 안 되는 경우와 같은 취급을 받는다.
+	@Test
+	void topNThrowsRankingStoreUnavailableExceptionWhenRedisTimesOut() {
+		RankingStore rankingStore = rankingStore();
+		when(zSetOperations.reverseRangeWithScores("ranking:STOCK", 0, 10))
+			.thenThrow(new QueryTimeoutException("Redis command timed out"));
+
+		assertThatThrownBy(() -> rankingStore.topN(Market.STOCK, 11))
+			.isInstanceOf(RankingStoreUnavailableException.class)
+			.hasCauseInstanceOf(QueryTimeoutException.class);
+	}
+
+	// PR #296 리뷰 권장사항(3번): catch 범위를 연결 장애 전용 타입으로 좁힌 핵심 회귀 방지 테스트다. WRONGTYPE 등
+	// 데이터 오염으로 생기는 RedisSystemException(연결 문제가 아니다)까지 UNAVAILABLE로 감싸면, 재시도로 저절로
+	// 낫지 않는 진짜 버그가 "일시 장애"로 위장돼 계속 조용히 묻힌다 — 이 경우는 그대로 전파돼 500으로 드러나야 한다.
+	@Test
+	void topNDoesNotWrapNonConnectionRedisSystemExceptionAndLetsItPropagate() {
+		RankingStore rankingStore = rankingStore();
+		RedisSystemException wrongType = new RedisSystemException("WRONGTYPE", new RuntimeException("WRONGTYPE"));
+		when(zSetOperations.reverseRangeWithScores("ranking:STOCK", 0, 10)).thenThrow(wrongType);
+
+		assertThatThrownBy(() -> rankingStore.topN(Market.STOCK, 11))
+			.isSameAs(wrongType)
+			.isNotInstanceOf(RankingStoreUnavailableException.class);
 	}
 
 	// 한 클래스 안에서 읽기·쓰기 태도가 갈리는 것은 의도한 비대칭이다(이슈 #288 본문) — 이 테스트가 그 비대칭이

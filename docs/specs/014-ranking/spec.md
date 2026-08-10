@@ -259,7 +259,7 @@ Redis ZSET `ranking:{market}`은 MySQL 원장(`accounts.realized_pnl`)의 파생
 ### 비즈니스 규칙
 
 - **`UNAVAILABLE`은 `REBUILDING`과 다른 축이다.** `REBUILDING`은 "ZSET을 읽을 수 있는데 비어 있다"이고, `UNAVAILABLE`은 "ZSET 자체를 읽지 못했다"다. 후자는 재구성으로 해결되지 않는다 — Redis 연결이 복구되면 별도 조치 없이 다음 조회부터 정상화된다.
-- **예외 타입은 `DataAccessException`만 잡는다.** Lettuce 연결 실패는 이 타입(`RedisConnectionFailureException` 등)으로 온다 — 파싱 버그 등 다른 런타임 예외까지 "Redis 장애"로 위장하지 않기 위해서다.
+- **(2026-08-10 PR #296 리뷰로 확정) 예외 타입은 `RedisConnectionFailureException`·`QueryTimeoutException`만 잡는다.** 처음에는 `DataAccessException` 전체를 잡았으나, 이 타입은 WRONGTYPE 등 데이터 오염이 번역되는 `RedisSystemException`까지 포함해 "연결 장애"보다 넓다는 리뷰 지적을 받아 좁혔다. 좁힌 두 타입이 Lettuce 연결 실패·타임아웃 시 실제로 쓰이는 타입이고, 그 밖의 `DataAccessException`(파싱 버그·데이터 오염 등)은 잡지 않고 그대로 전파해 500으로 드러난다 — 재시도로 저절로 낫지 않는 버그를 "일시 장애"로 위장해 UNAVAILABLE 뒤에 숨기지 않기 위해서다.
 - **읽기·쓰기의 비대칭은 유지한다.** 쓰기 경로가 실패를 삼키는 이유는 매도 체결 자체를 보호하기 위해서고(위 RANK-001 "비즈니스 규칙"), 읽기 경로가 예외를 던지는 이유는 호출자(`RankingService`)가 신뢰할 수 없는 값을 응답에 그대로 실어 보내지 않게 하기 위해서다. 목적이 다르므로 같은 처리 방식을 강제하지 않는다.
 
 ### 범위 제외
