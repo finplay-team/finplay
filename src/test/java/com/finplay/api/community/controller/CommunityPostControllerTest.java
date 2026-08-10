@@ -415,6 +415,24 @@ class CommunityPostControllerTest {
 		verify(service).updatePost(USER_ID, 73L, "new title", "new content", true, 999L);
 	}
 
+	@Test
+	void updatePostRejectsNonNumericInstrumentIdWithoutCallingService() throws Exception {
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+
+		mockMvc.perform(patch("/api/community/posts/73")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("""
+				{"title":"new title","content":"new content","instrumentId":"abc"}
+				"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(service);
+	}
+
 	@ParameterizedTest(name = "{0}")
 	@MethodSource("invalidRequests")
 	void updatePostRejectsInvalidTextWithoutCallingService(String scenario, String json) throws Exception {
