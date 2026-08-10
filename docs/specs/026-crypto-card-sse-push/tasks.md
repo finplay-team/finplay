@@ -20,7 +20,7 @@
   - 검증(단위): `publish(...)`가 예외를 던지도록 mock해도 `watchOne()`이 `true`를 반환. 근거 매칭 0건으로 카드 생성이 취소되는 기존 케이스에서 `publish`가 호출되지 않음(mock 호출 검증).
   - 검증(통합): 실제 코인 감시 시나리오에서 카드 확정 → Redis 채널에 올바른 `instrumentId`·`priceMoveEventId`가 발행됨. 주식 카드 확정 경로를 호출해도 채널에 메시지가 없음.
 
-- [ ] **4. 다중 인스턴스·비차단 검증 통합 테스트** (완료 조건 — 감시 틱 비차단, 다중 인스턴스 팬아웃)
+- [x] **4. 다중 인스턴스·비차단 검증 통합 테스트** (완료 조건 — 감시 틱 비차단, 다중 인스턴스 팬아웃)
   - **비차단**: 전송이 지연되는 가짜 emitter를 `SseEmitterRegistry(Market.CRYPTO)`에 등록한 상태에서 `CryptoPriceMoveWatcher.watch()`의 여러 종목 처리 소요시간이 가짜 emitter가 없을 때와 유의미하게 다르지 않음을 확인(publish가 별도 스레드에서 소비되는 것의 직접 증거).
   - **다중 인스턴스 팬아웃**: 같은 Testcontainers Redis에 대해 `SseEmitterRegistry`+`CryptoCardPushSubscriber`+`RedisMessageListenerContainer` 조합을 테스트 코드에서 두 벌 직접 조립(전체 Spring Context 2개를 띄우지 않음) → 한쪽 `CryptoPriceMoveCardPublisher`가 발행한 메시지를 **양쪽** 조합의 emitter가 모두 수신함을 확인.
   - 저장 실패 시 push 없음, Redis 장애에도 카드 생성 성공, 구독자 0명이어도 카드 생성 성공 — 3가지도 이 항목에서 함께 통합 테스트로 확인.

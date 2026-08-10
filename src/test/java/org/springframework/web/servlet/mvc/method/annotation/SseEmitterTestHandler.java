@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 import org.springframework.http.MediaType;
 
@@ -23,10 +24,13 @@ public final class SseEmitterTestHandler implements ResponseBodyEmitter.Handler 
 	private final List<Runnable> completionCallbacks = new ArrayList<>();
 	private final List<Runnable> timeoutCallbacks = new ArrayList<>();
 	private final List<Consumer<Throwable>> errorCallbacks = new ArrayList<>();
-	private final List<Object> sentEvents = new ArrayList<>();
+	// delaySendsBy()로 지연 전송을 쓰는 테스트는 리스너 스레드(쓰기)와 테스트 스레드(읽기, awaitUntil 폴링)가
+	// 동시에 이 목록에 접근한다 — CopyOnWriteArrayList로 그 경합을 안전하게 만든다.
+	private final List<Object> sentEvents = new CopyOnWriteArrayList<>();
 
 	private boolean throwIoExceptionOnSend = false;
 	private boolean completeWithErrorCalled = false;
+	private volatile long sendDelayMillis = 0;
 
 	// emitter를 이 핸들러로 초기화한다 — 프레임워크가 실제 요청 처리 시 수행하는 것과 동일한 진입점(package-private initialize)이다.
 	public void attachTo(ResponseBodyEmitter emitter) throws IOException {
@@ -35,6 +39,25 @@ public final class SseEmitterTestHandler implements ResponseBodyEmitter.Handler 
 
 	public void failOnNextSend() {
 		this.throwIoExceptionOnSend = true;
+	}
+
+	// 전송이 지연되는 가짜 구독자를 흉내낸다 — 이후의 모든 send() 호출자가 이 시간만큼 블로킹된다(026 tasks.md
+	// 4번 항목 "비차단" 증거용). 호출자 스레드(RedisMessageListenerContainer의 리스너 스레드)만 블로킹되고 이
+	// emitter를 등록한 감시 스레드는 영향받지 않아야 한다는 것이 그 테스트의 주장이다.
+	public void delaySendsBy(long millis) {
+		this.sendDelayMillis = millis;
+	}
+
+	private void applySendDelay() throws IOException {
+		if (sendDelayMillis <= 0) {
+			return;
+		}
+		try {
+			Thread.sleep(sendDelayMillis);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("send delay interrupted", e);
+		}
 	}
 
 	public boolean isCompleteWithErrorCalled() {
@@ -59,6 +82,7 @@ public final class SseEmitterTestHandler implements ResponseBodyEmitter.Handler 
 
 	@Override
 	public void send(Object data, MediaType mediaType) throws IOException {
+		applySendDelay();
 		if (throwIoExceptionOnSend) {
 			throw new IOException("simulated broken connection");
 		}
@@ -67,6 +91,7 @@ public final class SseEmitterTestHandler implements ResponseBodyEmitter.Handler 
 
 	@Override
 	public void send(Set<ResponseBodyEmitter.DataWithMediaType> dataToSend) throws IOException {
+		applySendDelay();
 		if (throwIoExceptionOnSend) {
 			throw new IOException("simulated broken connection");
 		}
