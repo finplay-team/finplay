@@ -1,6 +1,6 @@
 # ADR-0016: 리뷰 게이트에 자동 수정 라운드를 추가한다
 
-- 상태: 승인됨
+- 상태: 승인됨 — PR 생성 전 구간(구현 호출·빌드 검증·PR 조회 실패)의 이력 코멘트는 [ADR-0019](0019-pre-pr-failure-issue-comment.md)가 이 ADR의 "이력 코멘트는 always()" 원칙을 이슈 코멘트로 확장한다. 그 외 결정은 유효.
 - 날짜: 2026-08-10
 - 관계: [ADR-0013](0013-issue-triggered-agent-harness.md)의 "조건부 승인" 결정을 대체(superseded)한다. ADR-0013의 다른 결정(러너 환경, 인증 방식, 이슈 트리거 흐름)은 유효하다. [ADR-0005](0005-local-agent-orchestration.md)의 "자동 머지 금지" 원칙은 유지한다. GitHub 이슈 #292, `docs/specs/025-review-gate-auto-fix/spec.md`·`plan.md`를 구체화한다.
 
