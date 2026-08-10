@@ -88,6 +88,7 @@ else: # PERCENT
 - `baselineDistance = min(|entryPrice - referenceStopLossPrice|, |referenceTakeProfitPrice - entryPrice|)`
 - 관찰 시점 `currentDistance = min(|currentPrice - referenceStopLossPrice|, |referenceTakeProfitPrice - currentPrice|)`
 - `currentDistance < baselineDistance`이면 `closerToBoundary=true`, `evidenceType=CLOSER_TO_BOUNDARY`, `closerBoundary`는 더 가까운 쪽(`STOP_LOSS`|`TAKE_PROFIT`)을 그대로 노출한다.
+- **동률 tie-break(#297 PR #298 리뷰에서 결정)**: 손절선·익절선까지의 거리가 정확히 같으면 `closerBoundary=STOP_LOSS`를 우선한다. `019`가 강제하는 `stopLossPrice < entryPrice < takeProfitPrice` 불변조건 아래에서는 동률 지점(두 경계의 중간점)의 거리가 항상 `baselineDistance` 이상이 되어 `closerToBoundary=true` 자체가 성립할 수 없으므로, 이 tie-break는 현재 도달 불가능한 분기다. 그럼에도 임의로 방치하지 않고 `STOP_LOSS` 우선으로 명시 확정한다 — 근거: 향후 `019`의 그 불변조건이 깨지는 입력(예: rate 검증 누락, 계산 버그)이 이 서비스에 들어오면 이 분기가 조용히 실제 결과를 바꿀 수 있으므로, 그 시점에 "정의되지 않은 동작"이 아니라 "이미 정한 규칙"이 적용되게 한다.
 
 ### Evidence B (시간 분산 관찰)
 

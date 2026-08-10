@@ -3,14 +3,12 @@
 ## AI 로그 (에이전트 참조용)
 | 시각 | 에이전트 | 실행 명령 | 근거 |
 |---|---|---|---|
-| - | implementer | `ls src/main/resources/db/migration \| sort -V` (V27 확정) | plan.md "신규 migration 번호는 착수 시점에 재확인", ADR-0004 |
-| - | implementer | `.\gradlew.bat compileJava` | plan.md "2단계 chain 해석", ADR-0002(도메인 서비스 경유) |
-| - | reviewer(리뷰) | `git diff origin/dev...HEAD` — migration·엔티티·repository·chain 해석 서비스·기존 서비스 확장(TradeService/HoldingService)·테스트 전수 검토 | docs/conventions.md, ADR-0002, ADR-0003, ADR-0004, docs/specs/026-market-order-practice-tutorial/spec.md·plan.md |
-| - | reviewer(PR #295, namdongyeob) | reviewer+tester 병렬 투입, `gh pr checks 295`로 CI head_sha(`18c376f`) 일치 확인 | 종합 판정 승인, 차단 0건·권장 2건 |
-| - | 오케스트레이터(권장 1건 반영) | `.\gradlew.bat test --tests "com.finplay.api.education.marketpractice.*" --tests "com.finplay.api.order.service.TradeServiceTest" --tests "com.finplay.api.portfolio.service.HoldingServiceTest"` 재실행, JUnit XML로 건수 실측 | PR #295 리뷰 권장 1번(run-log 테스트 실행 명령 미기록) |
+| - | implementer | `.\gradlew.bat compileJava` | plan.md "3단계 참조 가격선 계산"·"Evidence A"·"Evidence B" 절, 019 spec.md 계산 규칙 |
+| - | reviewer(PR #298 리뷰, 독립 재검토) | `git diff origin/dev...HEAD -- src/main/java`, `git diff origin/dev...HEAD -- docs/...`, PowerShell `[decimal]` 산술로 `ReferencePriceCalculatorTest` 반올림 기대값(11933.62345660/13305.20370801 등) 재계산 검증, `gh pr view 298`·`gh issue view 297`·`gh pr checks 298` 대조 | docs/conventions.md, ADR-0002, ADR-0003, docs/specs/026-market-order-practice-tutorial/plan.md·spec.md, 019-exit-price-policy/spec.md |
+| - | 오케스트레이터(PR #298 리뷰 참고사항 반영) | `EvidenceJudgmentService.judgeBoundaryEvidence`의 동률 tie-break를 임의 결정에서 명시 확정으로 전환(Javadoc·plan.md "Evidence A" 절에 근거 추가) | PR #298 리뷰 참고 2번 |
 
 ## 모니터링 (사람용 요약)
-- V27 migration + practice_market_observations/reflections 엔티티·repository + MarketPracticeChainResolutionService(2단계 chain 해석) 추가, compileJava 통과.
-- 리뷰 완료 — 차단 0건, 권장 1건(run-log에 테스트 실행 기록 보강 필요), 참고 1건(HoldingService 완전정규화명 가독성). 머지 가능.
-- PR #295 리뷰(namdongyeob, 종합 판정 승인) — 차단 0건. 권장 2건: (1) 이 run-log의 테스트 실행 기록 보강을 "다음 이슈로 미룸"이 아니라 같은 PR에서 반영하라는 지적 — 아래 실측 결과로 반영했다. (2) `MarketPracticeChainResolutionService.resolve()`가 favorite 1건당 조회 3회(TradeService/HoldingService)를 발생시키는 구조라, `GET /api/education/practice`(tasks.md 5번)가 이 서비스를 매 요청 호출하게 되면 즐겨찾기 수에 비례해 쿼리가 늘어난다 — **다음 작업 항목(진행조회 GET) 착수 시 배치 조회 도입을 검토할 것.**
-- 권장 1번 실측: `.\gradlew.bat test --tests "com.finplay.api.education.marketpractice.*" --tests "com.finplay.api.order.service.TradeServiceTest" --tests "com.finplay.api.portfolio.service.HoldingServiceTest"` 재실행, `BUILD SUCCESSFUL`. JUnit XML 4개 파일 직접 확인: `MarketPracticeChainResolutionServiceTest` 12건, `PracticeMarketObservationAndReflectionRepositoryTest` 8건, `TradeServiceTest` 16건, `HoldingServiceTest` 6건 — 합계 42건, 실패·에러 0건.
+- 참조 가격선 계산(`ReferencePriceCalculator`)·evidence A/B 판정(`EvidenceJudgmentService`) 순수 서비스 추가, 컴파일 통과. `PracticeIntention`에 `exitPriceType`/rate 필드가 아직 없어(019 미착수) PERCENT 분기는 독립 메서드로만 구현.
+- PR #298 독립 재리뷰(reviewer 세션, 이전 판정을 신뢰하지 않고 재검증) — 차단 0건, 권장 0건, 참고 2건. PowerShell decimal로 PERCENT 반올림 테스트 기대값을 직접 재계산해 정확함을 확인했고, tie-break 죽은 분기 주장도 대수적으로 재확인(entryPrice가 항상 두 경계 사이에 있다는 019 불변조건 하에 성립). 신규 API 없음 → api-routes/api-contracts/prd 갱신 불필요, ADR 위반 없음, 순수 서비스라 단위 테스트만으로 충분(ADR-0003). 머지 가능.
+- **참고 1(DTO 네이밍) 처리**: `BoundaryEvidenceResult`/`ObservationEvidenceJudgment`/`ReferencePriceLines`가 `docs/conventions.md`의 `~Dto` 접미사 관례를 따르지 않는다는 지적. 기존 코드베이스에 `OAuthAuthorizationResult`(`~Result` 접미사) 선례가 있고 리뷰어가 명시적으로 "지적하지 않는다"고 판정해, **변경하지 않기로 결정**한다(개인 취향 수준, 일관된 다른 관례로도 커버됨).
+- **참고 2(tie-break 임의 결정) 처리**: 동률이면 `STOP_LOSS` 우선이라는 규칙을 spec.md가 아니라 코드에만 있던 임의 결정에서, `plan.md` "Evidence A" 절과 Javadoc에 근거(019 불변조건 하 도달 불가능, 불변조건 깨질 경우를 대비한 명시적 확정)를 남겨 **문서화된 결정으로 전환**했다. 로직 자체는 변경하지 않았다(이미 "STOP_LOSS 우선"이었고 그 선택 자체를 바꿀 근거는 없었다 — 임의성만 해소).
