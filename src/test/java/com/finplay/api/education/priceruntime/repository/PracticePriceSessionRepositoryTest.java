@@ -104,6 +104,34 @@ class PracticePriceSessionRepositoryTest {
 			user.getId(), instrument.getId(), PracticePriceSessionStatus.ACTIVE)).isFalse();
 	}
 
+	@Test
+	void findByIdAndUserIdForUpdateReturnsSessionForOwner() {
+		PracticePriceSession session = PracticePriceSession.create(
+			user.getId(), instrument.getId(), 1L, (short)1, new BigDecimal("10000.00000000"), NOW);
+		PracticePriceSession saved = practicePriceSessionRepository.saveAndFlush(session);
+
+		assertThat(practicePriceSessionRepository.findByIdAndUserIdForUpdate(saved.getId(), user.getId()))
+			.isPresent()
+			.get()
+			.satisfies(found -> assertThat(found.getId()).isEqualTo(saved.getId()));
+	}
+
+	@Test
+	void findByIdAndUserIdForUpdateReturnsEmptyForAnotherOwner() {
+		PracticePriceSession session = PracticePriceSession.create(
+			user.getId(), instrument.getId(), 1L, (short)1, new BigDecimal("10000.00000000"), NOW);
+		PracticePriceSession saved = practicePriceSessionRepository.saveAndFlush(session);
+
+		assertThat(practicePriceSessionRepository.findByIdAndUserIdForUpdate(saved.getId(), user.getId() + 1))
+			.isEmpty();
+	}
+
+	@Test
+	void findByIdAndUserIdForUpdateReturnsEmptyWhenSessionDoesNotExist() {
+		assertThat(practicePriceSessionRepository.findByIdAndUserIdForUpdate(999_999L, user.getId()))
+			.isEmpty();
+	}
+
 	private static String uniqueEmail() {
 		return "pps-" + UUID.randomUUID().toString().replace("-", "") + "@finplay.com";
 	}

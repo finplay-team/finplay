@@ -68,6 +68,7 @@
 | GET | /api/education/practice?market= | education | OCO 없이 시장가/지정가 매수로 완결하는 holding 기반 실습 진행 상태 순수 조회. `market`(`STOCK`\|`CRYPTO`) 필수(누락·미지원 값은 400 `VALIDATION_ERROR`). holding 기반 완료 key(`INVESTMENT_PRACTICE_V1`\|`COIN_PRACTICE_V1`)만 조회하며 OCO 진행 상태와 합치지 않는다 | 026 MKT-PRACTICE-008, Issue #305 |
 | POST | /api/education/practice/price-sessions | education | 사용자·코인 종목별 ACTIVE 가상 가격 세션 생성. 종목이 `market=CRYPTO`·`tradable=true`가 아니면 409 `INSTRUMENT_NOT_TRADABLE`, 동일 사용자·종목 ACTIVE 중복은 409 `PRACTICE_PRICE_SESSION_ALREADY_ACTIVE`(동시 생성의 unique 위반도 동일 매핑). 시작가는 실제 유효 현재가 anchor, 없으면 `10000.00000000` | 030 COIN-PRICE-RUNTIME-001~003, Issue #318 |
 | GET | /api/education/practice/price-sessions/{sessionId} | education | 본인 세션의 cursor·현재가·상태 조회. 없거나 타인 소유는 404 `NOT_FOUND`(존재 은닉) | 030 COIN-PRICE-RUNTIME-001·002, Issue #318 |
+| POST | /api/education/practice/price-sessions/{sessionId}/ticks | education | `expectedTick`(정확히 `currentTick+1`)으로 세션을 한 tick 진행. 세션 없음·타인 소유는 404 `NOT_FOUND`, COMPLETED 세션 진행은 409 `PRACTICE_PRICE_SESSION_CLOSED`, tick 불일치는 409 `PRACTICE_PRICE_TICK_CONFLICT`. tick 99 도달 시 세션이 `COMPLETED`로 전이한다. 교육 지정가 주문 체결·취소·예약 반환은 아직 이 API에 없다(후속 이슈) | 030 COIN-PRICE-RUNTIME-004·005, Issue #319 |
 | GET | /api/instruments/{instrumentId}/price-moves | feedback | 종목의 변동 원인 카드 목록 조회. 주식은 현재 재생세션 원본 거래일 중 `revealTime`이 지난 카드만(스포일러 차단) `windowStart` 오름차순, 각 카드의 근거는 발행시각 내림차순. 카드 0건·재생세션 미준비 모두 200(후자는 `originTradeDate=null`). `status`(`READY`·`EMPTY`·`NOT_YET`)로 둘을 구별한다 | 012 FEED-006, Issue #180, Issue #280 |
 | GET | /api/instruments/{instrumentId}/news | feedback | 종목의 뉴스·공시 목록과 AI 요약 순수 조회. 주식은 09:00 이후에만 열리고 발행시각이 재생 시각을 지난 것만 노출하며, `summaryScope`가 15:30 전후로 `PRE_MARKET`→`FULL`로 바뀐다. 목록은 발행시각 내림차순 + `id` 내림차순이고 상한 초과 시 공시를 먼저 채운다. 코인은 재생세션·개장 게이트와 무관하게 조회 시각 기준 최근 24시간 뉴스와 `ROLLING_24H` 요약 `generated_at` 최신 1행을 돌려주고 `originTradeDate`는 `null`이다. 개장 전·재생세션 미준비·기사 0건·요약 행 없음·서술 실패가 전부 200(상태값은 spec §C-4) | 012 FEED-008, Issue #188 |
 | GET | /api/market/briefing?market= | feedback | 시장 단위 개장 전 브리핑 순수 조회. 주식은 **spec §C-2의 `전장` 구간 기사·공시만**(장중 기사 절대 미포함)이고 Part C와 09:00 하한이 같다. `items`는 저장하지 않고 조회 시 같은 구간 질의로 다시 만들며 상한은 `max-items-per-briefing`. 재생세션 미준비는 `EMPTY`·`originTradeDate=null`, 개장 전은 `NOT_YET`(Part C와 의도된 차이, spec §C-4). 코인은 재생세션과 무관하게 최근 24시간 코인 뉴스와 `generated_at` 최신 1행을 돌려주며 `originTradeDate=null`이고 `NOT_YET`이 되지 않는다. `market` 누락·허용 값 밖은 400 | 012 FEED-009, Issue #188 |
@@ -80,13 +81,12 @@
 
 ## 투자 실습 계획 라우트 (아직 구현하지 않음)
 
-`016` candidate 1~4와 표시 전용 합성 시세, `026`의 관찰·복기·진행 조회, `030`의 세션 생성·조회 2개는 위 실제 라우트다. 아래 표는 controller가 없는 계획 계약이며 블랙박스 QA 근거가 아니다. 030의 나머지 2개(tick 진행·교육 지정가)는 2차 코인 가상 가격 실행 환경 후속 이슈, 나머지 7개는 3차 OCO다.
+`016` candidate 1~4와 표시 전용 합성 시세, `026`의 관찰·복기·진행 조회, `030`의 세션 생성·조회·next-tick 3개는 위 실제 라우트다. 아래 표는 controller가 없는 계획 계약이며 블랙박스 QA 근거가 아니다. 030의 나머지 1개(교육 지정가)는 2차 코인 가상 가격 실행 환경 후속 이슈, 나머지 7개는 3차 OCO다.
 
 표의 뒤 7개는 전부 OCO 계열 **3차 MVP 착수분**이다(2026-08-06 확정). OCO 진행조회는 holding 기반 조회와 URL·완료 key를 공유하지 않는다.
 
 | Method | URL | 도메인 | 요약 | Spec |
 |---|---|---|---|---|
-| POST | /api/education/practice/price-sessions/{sessionId}/ticks | education | `expectedTick`으로 한 tick 진행, 세션 전용 주문 체결, tick 99 잔여 주문 취소·예약 반환 | 030 COIN-PRICE-RUNTIME-004·005·007·008, Issue #314 |
 | POST | /api/education/practice/limit-orders | education | ACTIVE 가격 세션에 귀속된 코인 지정가 BUY 생성(side는 서버 고정) | 030 COIN-PRICE-RUNTIME-006·007, Issue #314 |
 | GET | /api/education/practice/oco?market= | education | `market=STOCK|CRYPTO` 필수. `exitPlanId` 기반 3차 OCO 실습 진행 상태 순수 조회. `INVESTMENT_OCO_PRACTICE_V1|COIN_OCO_PRACTICE_V1` 별도 완료 key 사용 | 016 candidate 12, Issue #308 |
 | POST | /api/education/practice/oco/intentions | education | OCO 전용 사전 의도 기록. 종목 market에 따라 OCO 전용 progress를 생성·잠그고 intention에 내부 tutorial key를 귀속. holding 기반 intention과 상호 대체 불가 | 016 candidate 4 확장, Issue #308 |

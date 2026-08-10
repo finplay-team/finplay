@@ -19,6 +19,7 @@ import com.finplay.api.common.ErrorCode;
 import com.finplay.api.education.priceruntime.domain.PracticePriceSessionStatus;
 import com.finplay.api.education.priceruntime.dto.response.PracticePriceSessionResponse;
 import com.finplay.api.education.priceruntime.service.PracticePriceSessionService;
+import com.finplay.api.education.priceruntime.service.PracticePriceTickService;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -46,6 +47,8 @@ class PracticePriceSessionControllerTest {
 	private MockMvc mockMvc;
 	@MockitoBean
 	private PracticePriceSessionService practicePriceSessionService;
+	@MockitoBean
+	private PracticePriceTickService practicePriceTickService;
 	@MockitoBean
 	private JwtTokenProvider jwtTokenProvider;
 
@@ -176,6 +179,100 @@ class PracticePriceSessionControllerTest {
 			.andExpect(jsonPath("$.error.code").value("NOT_FOUND"));
 	}
 
+	@Test
+	void advanceTickReturnsOkWithAdvancedFields() throws Exception {
+		authenticate();
+		when(practicePriceTickService.advanceTick(USER_ID, 99L, 1)).thenReturn(advancedResponse());
+
+		mockMvc.perform(post("/api/education/practice/price-sessions/99/ticks")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+			.contentType(MediaType.APPLICATION_JSON).content("{\"expectedTick\":1}"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.currentTick").value(1))
+			.andExpect(jsonPath("$.currentPrice").value(10092.29))
+			.andExpect(jsonPath("$.status").value("ACTIVE"));
+	}
+
+	@Test
+	void advanceTickRejectsMissingAuthentication() throws Exception {
+		mockMvc.perform(post("/api/education/practice/price-sessions/99/ticks")
+			.contentType(MediaType.APPLICATION_JSON).content("{\"expectedTick\":1}"))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"));
+		verifyNoInteractions(practicePriceTickService);
+	}
+
+	@ParameterizedTest(name = "{0}")
+	@MethodSource("invalidTickAdvanceBodies")
+	void advanceTickRejectsMissingOrNonPositiveExpectedTick(String name, String body) throws Exception {
+		authenticate();
+		mockMvc.perform(post("/api/education/practice/price-sessions/99/ticks")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+			.contentType(MediaType.APPLICATION_JSON).content(body))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
+		verifyNoInteractions(practicePriceTickService);
+	}
+
+	@ParameterizedTest(name = "sessionId={0}")
+	@MethodSource("nonPositiveSessionIds")
+	void advanceTickRejectsNonPositiveSessionId(String sessionId) throws Exception {
+		authenticate();
+		mockMvc.perform(post("/api/education/practice/price-sessions/" + sessionId + "/ticks")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+			.contentType(MediaType.APPLICATION_JSON).content("{\"expectedTick\":1}"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
+		verifyNoInteractions(practicePriceTickService);
+	}
+
+	@Test
+	void advanceTickMapsMissingOrOtherOwnerSessionToNotFound() throws Exception {
+		authenticate();
+		when(practicePriceTickService.advanceTick(anyLong(), anyLong(), any()))
+			.thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
+
+		mockMvc.perform(post("/api/education/practice/price-sessions/99/ticks")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+			.contentType(MediaType.APPLICATION_JSON).content("{\"expectedTick\":1}"))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.error.code").value("NOT_FOUND"));
+	}
+
+	@Test
+	void advanceTickMapsClosedSessionToConflict() throws Exception {
+		authenticate();
+		when(practicePriceTickService.advanceTick(anyLong(), anyLong(), any()))
+			.thenThrow(new BusinessException(ErrorCode.PRACTICE_PRICE_SESSION_CLOSED));
+
+		mockMvc.perform(post("/api/education/practice/price-sessions/99/ticks")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+			.contentType(MediaType.APPLICATION_JSON).content("{\"expectedTick\":1}"))
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.error.code").value("PRACTICE_PRICE_SESSION_CLOSED"));
+	}
+
+	@Test
+	void advanceTickMapsTickConflictToConflict() throws Exception {
+		authenticate();
+		when(practicePriceTickService.advanceTick(anyLong(), anyLong(), any()))
+			.thenThrow(new BusinessException(ErrorCode.PRACTICE_PRICE_TICK_CONFLICT));
+
+		mockMvc.perform(post("/api/education/practice/price-sessions/99/ticks")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+			.contentType(MediaType.APPLICATION_JSON).content("{\"expectedTick\":1}"))
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.error.code").value("PRACTICE_PRICE_TICK_CONFLICT"));
+	}
+
+	private static Stream<Arguments> invalidTickAdvanceBodies() {
+		return Stream.of(
+			Arguments.of("null expectedTick", "{\"expectedTick\":null}"),
+			Arguments.of("missing expectedTick", "{}"),
+			Arguments.of("zero expectedTick", "{\"expectedTick\":0}"),
+			Arguments.of("negative expectedTick", "{\"expectedTick\":-1}"));
+	}
+
 	private static Stream<Arguments> invalidCreateBodies() {
 		return Stream.of(
 			Arguments.of("null instrumentId", "{\"instrumentId\":null}"),
@@ -197,6 +294,13 @@ class PracticePriceSessionControllerTest {
 		return new PracticePriceSessionResponse(
 			99L, 10L, PracticePriceSessionStatus.ACTIVE, 1,
 			new BigDecimal("10000.00000000"), 0, new BigDecimal("10000.00000000"),
+			3, 100, LocalDateTime.of(2026, 8, 11, 10, 0), null);
+	}
+
+	private PracticePriceSessionResponse advancedResponse() {
+		return new PracticePriceSessionResponse(
+			99L, 10L, PracticePriceSessionStatus.ACTIVE, 1,
+			new BigDecimal("10000.00000000"), 1, new BigDecimal("10092.29000000"),
 			3, 100, LocalDateTime.of(2026, 8, 11, 10, 0), null);
 	}
 }
