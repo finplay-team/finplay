@@ -26,9 +26,9 @@
   - 저장 실패 시 push 없음, Redis 장애에도 카드 생성 성공, 구독자 0명이어도 카드 생성 성공 — 3가지도 이 항목에서 함께 통합 테스트로 확인.
 
 - [x] **5. 문서 갱신** (`docs/specs/028-crypto-card-sse-push/plan.md` §문서 동기화 계획)
-  - `docs/api-routes.md` — `GET /api/cryptos/stream` 행 추가(도메인 `market`, Spec `026`).
+  - `docs/api-routes.md` — `GET /api/cryptos/stream` 행 추가(도메인 `market`, Spec `028`).
   - `docs/api-contracts.md` — market 섹션에 `/api/cryptos/stream` 계약(이벤트 4종·payload 예시) 추가. `/api/stocks/stream` 계약 절은 무수정.
-  - `docs/prd.md` §3 "구현 현황" — 새 행 추가(요구사항 ID 없음을 명시, 근거는 이슈 #286·spec `026`). MKT-008 본문에 카드 알림 한정 반전 각주 추가(원문 보존).
-  - `docs/specs/003-market-data/plan.md` — 61행·442행의 "코인 SSE 없음" 문구에 "026에서 카드 알림 한정으로 뒤집힘" 각주 추가(원문 보존).
+  - `docs/prd.md` §3 "구현 현황" — 새 행 추가(요구사항 ID 없음을 명시, 근거는 이슈 #286·spec `028`). MKT-008 본문에 카드 알림 한정 반전 각주 추가(원문 보존).
+  - `docs/specs/003-market-data/plan.md` — 61행·442행의 "코인 SSE 없음" 문구에 "028에서 카드 알림 한정으로 뒤집힘" 각주 추가(원문 보존).
   - `deploy/nginx.conf` 확인 — `location /api` 블록이 새 경로(`/api/cryptos/stream`)에 이미 적용됨을 재확인만 하고 수정하지 않는다(경로가 `/api` 밖으로 바뀌면 그때 `location` 추가가 필요하다).
   - 마무리로 `./gradlew build` 전체 통과 확인.

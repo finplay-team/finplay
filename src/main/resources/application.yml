@@ -94,7 +94,7 @@ spring:
       #   신설 1   CryptoPriceMoveWatcher.watch (spec 012 §탐지 알고리즘(코인), 이슈 #225)
       #   신설 1   PeerStatsBatchService.runCryptoPeerStatsBatch (spec 012 §FEED-012, 이슈 #275)
       #   신설 1   RankingRebuildService.rebuildOnSchedule (spec 014 랭킹 재구성, 이슈 #279)
-      #   신설 1   CryptoPriceStreamService.publishConnectionStatusIfChanged (spec 026, 이슈 #286)
+      #   신설 1   CryptoPriceStreamService.publishConnectionStatusIfChanged (spec 028, 이슈 #286)
       #   합계 15
       # 시뮬레이터는 @Profile("!prod") + matchIfMissing=true라 별도 설정 없이 기본 활성이며, 이전 주석은 이걸
       # 빠뜨리고 4로 세고 있었다 (이슈 #125). 각자 독립 스레드를 쓰도록 15로 맞춘다.
@@ -102,7 +102,7 @@ spring:
       # prod는 시뮬레이터가 없어 14개지만 스레드 하나가 더 있는 것은 무해하다.
       # 풀은 앱 전역 단일 풀이라 소유 도메인과 무관하게 전부 센다 — price-snapshot-cron이 market 소유라고
       # 빼지 않는다. spec 012의 스케줄 8개(§C-1)가 이슈 #275의 crypto-peer-stats까지 전부 들어온 뒤, spec 014의
-      # 랭킹 재구성 배치(이슈 #279)와 spec 026의 코인 SSE 연결상태 push(이슈 #286)가 더해져 최종 15가 됐다.
+      # 랭킹 재구성 배치(이슈 #279)와 spec 028의 코인 SSE 연결상태 push(이슈 #286)가 더해져 최종 15가 됐다.
       # 풀이 부족하면 개장 시간대에 SSE heartbeat와 매분 가격 push가 밀린다. 이 숫자는 @Scheduled를 추가할
       # 때마다 함께 올려야 한다 —
       # NewsCollectionIntegrationTest.schedulingPoolIsLargeEnoughForEveryScheduledTask가 전체 빌드에서 검증한다.

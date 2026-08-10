@@ -32,7 +32,7 @@
 
 | API | 입력 | 성공 | 도메인 오류 |
 |---|---|---|---|
-| `GET /api/education/practice` | 없음 | 200 `InvestmentPracticeResponse` | 인증 공통 오류만 |
+| `GET /api/education/practice?market=` | `market` 필수(`STOCK|CRYPTO`) | 200 `InvestmentPracticeResponse` | 400 `VALIDATION_ERROR`; 인증 공통 오류 |
 | `POST /api/education/practice/holding-observations` | body `{"holdingId":1}` | 201 `PracticeHoldingObservationResponse` | 404 `NOT_FOUND`(holding 자체가 없거나 타인 소유 — 존재 은닉); 409 `PRACTICE_EVIDENCE_MISSING`(chain 재해석 실패: intention 유실·불일치), `PRICE_UNAVAILABLE` |
 | `POST /api/education/practice/holding-reflections` | body `{"holdingId":1,"answer":"..."}` | 최초 201 `PracticeHoldingReflectionResponse` | 404 `NOT_FOUND`(holding); 409 `PRACTICE_EVIDENCE_MISSING`(A·B 미충족 또는 chain 불일치), `PRACTICE_ALREADY_COMPLETED` |
 
@@ -46,7 +46,7 @@
 - `PracticeHoldingObservationResponse(Long observationId, Long holdingId, BigDecimal currentPrice, LocalDateTime observedAt, Boolean closerToBoundary, String closerBoundary, String evidenceType)`: 앞 다섯은 non-null. `closerBoundary` 허용값 `STOP_LOSS|TAKE_PROFIT`(해당 없으면 null), `evidenceType` 허용값 `CLOSER_TO_BOUNDARY|TIMED_REPETITION`(A·B 모두 미충족이면 null). `FINAL_EVENT`는 이 경로에 없다(evidence C 부재).
 - `PracticeHoldingReflectionCreateRequest(Long holdingId, String answer)`: `holdingId` non-null·양수, `answer`는 `@NotBlank @Size(max=2000)`, whitespace-only 거부, raw 길이 최대 2000, 원문 저장.
 - `PracticeHoldingReflectionResponse(Long reflectionId, Long holdingId, String prompt, String answer, LocalDateTime createdAt)`: 모두 non-null. 정답·점수·보상 필드 없음.
-- `InvestmentPracticeResponse(String tutorialKey, String status, Integer currentStep, List<PracticeStepResponse> steps, LocalDateTime completedAt)`: `016`과 동일 구조. `tutorialKey`는 `INVESTMENT_PRACTICE_V1|COIN_PRACTICE_V1`(대상 종목 market으로 결정, `020` 규칙 재사용). 코인·주식 진행은 서로 다른 튜토리얼이라 완전히 독립이다(별도 GET 응답, 클라이언트가 관심 market으로 재조회하는 방식은 이 spec의 범위 밖 — `market` query 파라미터 도입 여부는 tasks.md "후속 확인 필요"로 남긴다).
+- `InvestmentPracticeResponse(String tutorialKey, String status, Integer currentStep, List<PracticeStepResponse> steps, LocalDateTime completedAt)`: `016`과 동일 구조. 필수 `market`이 `STOCK`이면 `INVESTMENT_PRACTICE_V1`, `CRYPTO`이면 `COIN_PRACTICE_V1`이다. 한 응답은 한 key만 나타내며 OCO 전용 key와 완료 상태를 공유하지 않는다.
 - `PracticeStepResponse(Integer step, String status, Boolean locked, PracticeEvidenceResponse evidence)`: `016`과 동일.
 - `PracticeEvidenceResponse(Long favoriteId, LocalDateTime favoriteCreatedAt, Long intentionId, LocalDateTime intentionCreatedAt, Long buyTradeId, LocalDateTime buyTradeExecutedAt, Long holdingId, BigDecimal referenceStopLossPrice, BigDecimal referenceTakeProfitPrice, Long observationId, LocalDateTime observationObservedAt, String evidenceType, Long reflectionId, LocalDateTime reflectionCreatedAt)`: `016`의 `exitPlanId`·`exitPlanReservedAt`을 `holdingId`(대응 시각 없음 — holding 생성시각을 별도로 노출하지 않는다, buyTradeExecutedAt이 그 역할을 한다)와 계산된 참조 가격선 둘로 대체했다. `referenceStopLossPrice`·`referenceTakeProfitPrice`는 buyTrade가 확정된 뒤에만 non-null이고, intention이 인메모리에서 유실되면(재시작) 다시 계산할 수 없어 null로 되돌아갈 수 있다(완료 후에는 회귀하지 않음 — 아래 "재시작 유실과 완료 불변" 참고). 각 id·시각 쌍의 null 규칙은 `016`과 동일(favorite/intention/buyTrade는 함께 null 또는 함께 non-null).
 
@@ -120,12 +120,12 @@ else: # PERCENT
 ## 테스트 계획
 
 - 단위: 2단계 chain 해석(수량 정규화 비교, 최이른 buyTrade 선택), 참조 가격선 계산(PRICE·PERCENT, 019 반올림), evidence A/B 판정 경계값, evidence C 부재 확인, tutorial_key market 분기.
-- 슬라이스: `GET /api/education/practice`, `POST .../holding-observations`, `POST .../holding-reflections`의 인증·소유권·검증·응답, holding 타인 소유 404, chain 실패 409.
+- 슬라이스: `GET /api/education/practice?market=`의 market 누락·허용값 검증과 시장별 단일 key 응답, `POST .../holding-observations`, `POST .../holding-reflections`의 인증·소유권·검증·응답, holding 타인 소유 404, chain 실패 409.
 - 통합: 즐겨찾기 → 의도 → (시장가 또는 코인 지정가) 매수 FILLED → 관찰 A 또는 B → 복기 → 완료 전체 흐름(주식·코인 각 1개), intention 재시작 유실 시나리오(완료 전 evidence 회귀, 완료 후 불변), 완료 후 holding 전량 매도에도 완료 유지.
 - 경합: 동시 복기 요청이 `practice_progresses` 잠금에서 직렬화되어 한 건만 201·나머지 409, `practice_market_reflections` 행이 정확히 1개인지 DB로 확인.
 
 ## 후속 확인 필요 (이 spec이 결정하지 않음)
 
 - `docs/prd.md` §2 "2차 MVP — 남은 범위와 계약 정의"·§3 구현 현황에 이 경로("투자 실습 — 시장가/지정가 매매 기반 완료 경로")를 신규 행으로 추가할지, 기존 "투자 실습 — 진행 조회·가격 관찰·복기(EDU-PRACTICE-001·007·011·012)" 행을 이 경로 기준으로 갱신할지는 이 spec이 결정하지 않는다. **구현 PR이 CLAUDE.md 규칙 10에 따라 실제 갱신을 수행해야 한다** — 이 spec은 계획 모드라 PRD를 직접 수정하지 않는다.
-- 3차 MVP에서 OCO 버전이 구현될 때 `tutorial_key` 공유 여부(spec.md "완료 판정과 tutorial_key" 절의 잔여 위험).
-- `GET /api/education/practice`가 코인·주식 두 튜토리얼을 어떻게 동시에 노출할지(query 파라미터 `market` 도입 여부, 또는 응답을 배열로 바꿀지) — 이 spec은 "market으로 결정된 단일 tutorialKey 응답"만 확정했고 두 튜토리얼을 한 화면에서 보여주는 UX 계약은 범위 밖이다.
+- 3차 OCO 경로는 `GET /api/education/practice/oco?market=`와 `INVESTMENT_OCO_PRACTICE_V1|COIN_OCO_PRACTICE_V1`을 사용한다. 이 문서는 해당 production 구현을 다루지 않는다.
+- 클라이언트는 주식·코인 진행을 각각 조회해 화면에서 조합한다. 서버가 두 시장을 배열로 합쳐 반환하는 계약은 두지 않는다.

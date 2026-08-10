@@ -77,20 +77,22 @@
 
 ## 투자 실습 계획 라우트 (아직 구현하지 않음)
 
-`docs/specs/016-investment-education-policy`의 candidate 1~4(`POST`·`GET /api/favorites`, `DELETE /api/favorites/{instrumentId}`, `POST /api/education/practice/intentions`)와 튜토리얼 합성 시세는 구현되어 위 실제 라우트 목록에 반영했다. `026` 경로의 관찰·복기 2개도 마찬가지다. 아래 6개 경로는 계약만 확정했으며 아직 controller가 없다. **위 실제 라우트 목록과 분리하며 블랙박스 QA의 실행 가능 API 근거로 사용하지 않는다.** 각 구현이 병합되는 커밋에서 해당 행을 위 표로 옮기고 `docs/api-contracts.md`의 계획 표시를 제거한다.
+`docs/specs/016-investment-education-policy`의 candidate 1~4(`POST`·`GET /api/favorites`, `DELETE /api/favorites/{instrumentId}`, `POST /api/education/practice/intentions`)와 튜토리얼 합성 시세는 구현되어 위 실제 라우트 목록에 반영했다. `026` 경로의 관찰·복기 2개도 마찬가지다. 아래 8개 경로는 계약만 확정했으며 아직 controller가 없다. **위 실제 라우트 목록과 분리하며 블랙박스 QA의 실행 가능 API 근거로 사용하지 않는다.** 각 구현이 병합되는 커밋에서 해당 행을 위 표로 옮기고 `docs/api-contracts.md`의 계획 표시를 제거한다.
 
-`GET /api/education/practice`를 제외한 5개는 전부 OCO 계열이라 **3차 MVP 착수분**이다(2026-08-06 확정).
+`GET /api/education/practice?market=`를 제외한 7개는 전부 OCO 계열이라 **3차 MVP 착수분**이다(2026-08-06 확정). OCO 진행조회는 holding 기반 조회와 URL·완료 key를 공유하지 않는다.
 
 | Method | URL | 도메인 | 요약 | Spec |
 |---|---|---|---|---|
-| GET | /api/education/practice | education | 실제 증거로 계산한 3단계 실습 진행 상태 순수 조회. **계약 정본은 `026`(`holdingId` 기반)이며 016 candidate 12(`exitPlanId` 기반)는 3차 MVP OCO 버전 설계다** (2026-08-10 확정, 이슈 #308) | 026 MKT-PRACTICE-008, Issue #305 |
+| GET | /api/education/practice?market= | education | `market=STOCK|CRYPTO` 필수. 선택한 시장의 holding 기반 3단계 실습 진행 상태를 실제 증거로 계산하는 순수 조회 | 026 MKT-PRACTICE-008, Issue #305 |
+| GET | /api/education/practice/oco?market= | education | `market=STOCK|CRYPTO` 필수. `exitPlanId` 기반 3차 OCO 실습 진행 상태 순수 조회. `INVESTMENT_OCO_PRACTICE_V1|COIN_OCO_PRACTICE_V1` 별도 완료 key 사용 | 016 candidate 12, Issue #308 |
+| POST | /api/education/practice/oco/intentions | education | OCO 전용 사전 의도 기록. 종목 market에 따라 OCO 전용 progress를 생성·잠그고 intention에 내부 tutorial key를 귀속. holding 기반 intention과 상호 대체 불가 | 016 candidate 4 확장, Issue #308 |
 | POST | /api/exit-plans | order | 시장가 매수 체결분의 tutorial-only OCO 청산 예약 | 016 EDU-PRACTICE-003·005·006·010·013, candidate 7, 019 |
 | GET | /api/exit-plans?status= | order | 본인의 OCO 예약 목록 순수 조회. status 생략 시 PENDING, 현재는 PENDING만 허용 | 016 EDU-PRACTICE-003, candidate 8 |
 | DELETE | /api/exit-plans/{exitPlanId} | order | PENDING OCO 전체 취소와 예약 수량 1회 반환 | 016 EDU-PRACTICE-006, candidate 9 |
 | POST | /api/education/practice/observations | education | PENDING plan의 서버 현재가 관찰 기록 | 016 EDU-PRACTICE-012, candidate 13 |
 | POST | /api/education/practice/reflections | education | 관찰 증거 이후 자유 복기 저장과 최초 불변 완료 | 016 EDU-PRACTICE-007·011·013, candidate 14 |
 
-**투자 실습 관련 경로는 구현·계획을 막론하고 전부** 공개 경로에 추가하지 않으며 Access Bearer 인증을 요구한다 — 즐겨찾기 3개, 사전 의도, 합성 시세, `026`의 관찰·복기 2개, 그리고 위 계획 6개 모두 해당한다. `POST /api/orders` 시장가 매수는 이미 제공 중인 기존 API를 그대로 사용하므로 계획 라우트에 중복 기재하지 않는다.
+**투자 실습 관련 경로는 구현·계획을 막론하고 전부** 공개 경로에 추가하지 않으며 Access Bearer 인증을 요구한다 — 즐겨찾기 3개, 기존 사전 의도, 합성 시세, `026`의 관찰·복기 2개, 그리고 위 계획 7개 모두 해당한다. `POST /api/orders` 시장가 매수는 이미 제공 중인 기존 API를 그대로 사용하므로 계획 라우트에 중복 기재하지 않는다.
 
 #199의 PRICE/PERCENT intention 확장은 아직 실제 라우트 계약이 아니다. 구현 시 기존 타입 생략+가격 요청을 PRICE로 호환하고, OCO 계획 라우트는 가격·rate를 다시 받지 않고 intention 정본에서 확정한다. 상세 계약은 `docs/specs/019-exit-price-policy`를 따른다.
 

@@ -78,7 +78,7 @@ takeProfitPrice = entryPrice.multiply(ONE.add(normalizedTakeRate))
 ### `practice_intentions` 인메모리 record
 
 - ADR-0012와 V19에 따라 DB 테이블을 다시 만들지 않고 Flyway migration도 추가하지 않는다.
-- 기존 record에 API 비노출 `UUID intentionInstanceKey`, `ExitPriceType exitPriceType`, nullable `stopLoss`, `takeProfit`, `stopLossRate`, `takeProfitRate`를 추가한다.
+- 기존 record에 API 비노출 `UUID intentionInstanceKey`, `String tutorialKey`, `ExitPriceType exitPriceType`, nullable `stopLoss`, `takeProfit`, `stopLossRate`, `takeProfitRate`를 추가한다. `tutorialKey`는 holding/OCO 경로와 market을 구분하며 응답 DTO에는 노출하지 않는다.
 - repository 저장 시 instance key와 숫자 `intentionId`를 각각 새로 생성한다. 타입 생략 legacy 요청도 저장 전에 `exitPriceType=PRICE`로 정규화한다.
 - 정적 팩토리와 service 정책이 PRICE 가격 둘 non-null·rate 둘 null, PERCENT는 반대인 불변식을 강제한다. 이 구조는 `@DataJpaTest`나 DB CHECK 대상이 아니라 순수 단위·동시성 테스트 대상이다.
 
