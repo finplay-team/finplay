@@ -8,6 +8,13 @@
 
 새 ADR은 필요 없다. ADR-0012는 즐겨찾기·사전 의도의 유실 가능한 인메모리 선택만 소유하며, 이 기능의 가격 cursor와 주문 귀속은 재기동 정합성이 수용 기준이므로 ADR-0004에 따라 DB로 영속화한다.
 
+## 도메인·패키지 경계
+
+- 가격 세션 엔티티·Repository·결정적 생성기·API와 next-tick orchestration은 `education` 도메인 하위(예: `com.finplay.api.education.priceruntime`)가 소유한다. `030`의 구현을 `order`나 `market` 하위에 두지 않는다.
+- `education`은 `order`의 공개 service를 통해 주문 생성·세션별 잠금·체결·취소를 요청하며 `OrderRepository`·`AccountRepository`·`HoldingRepository`를 직접 주입하지 않는다. 필요한 session-scoped 유스케이스는 `order` service가 제공한다.
+- `order`는 nullable scalar `practicePriceSessionId`와 기존 주문·예약·체결 규칙만 소유한다. `practice_price_sessions` 엔티티·Repository·`education` service에 의존하지 않으며, FK도 JPA 연관관계가 아니라 scalar 필드로 매핑한다.
+- `market`의 `PriceStore`·`CryptoPriceUpdatedEvent`는 기존 실제 시세 경계로 유지한다. 교육 가격 생성·이벤트는 `education` 내부에서 끝나며 `market` 저장소를 호출하지 않는다.
+
 ## API 설계
 
 | Method | URL | 요청 | 응답 | 설명 |
@@ -74,3 +81,5 @@
 2. 교육 지정가 API·주문 session FK·전용 이벤트 체결·종료 취소.
 3. holding 관찰의 trade/order 세션 역추적 가격원 연결.
 4. 앞의 production 구현 3개가 모두 dev에 병합된 뒤 #313을 재개한다. 030 구현 이슈는 세션·주문·관찰 구성요소별 계약·격리·경합 테스트를 소유하고, #313은 즐겨찾기 → 사전 의도 → 교육 지정가 → tick 체결 → holding 관찰 → 복기·완료를 실제 API로 연결한 전체 흐름과 서버 재기동 후 이어하기만 소유한다. `026/tasks.md`의 미완료 전체 흐름 항목은 #313에서 닫으며 030 구현 이슈에 중복 작성하지 않는다.
+
+각 production 이슈는 자신이 구현한 controller의 요청·응답·오류를 이 문서와 `docs/api-contracts.md`의 030 계획 표에 대조한다. 구현과 계약이 다르면 코드를 임의로 맞추지 않고 먼저 spec 변경을 확정한다. 일치하면 같은 커밋에서 `docs/api-routes.md`의 해당 행을 계획 표에서 실제 라우트 표로 옮기고 `docs/api-contracts.md`의 해당 계약에서 “계획” 상태를 제거한다. 계획 4개가 한 번에 모두 구현된 것처럼 일괄 이동하지 않는다.
