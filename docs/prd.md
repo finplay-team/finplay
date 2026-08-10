@@ -206,6 +206,7 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 | 투자 실습 — 즐겨찾기 등록·목록·해제 | EDU-PRACTICE-002 | **완료** | PR #165·#171·#173. **ADR-0012로 인메모리 저장** |
 | 투자 실습 — 매수 전 사전 의도 기록 | EDU-PRACTICE-003 일부 | **완료** | PR #176. **ADR-0012로 인메모리 저장** |
 | 투자 실습 — 튜토리얼 전용 합성 시세 | — | **완료** | PR #195 (`GET /api/education/practice/synthetic-prices/{id}`) |
+| 투자 실습 — 코인 가상 가격 실행 환경 | COIN-PRICE-RUNTIME-001~012 | **문서 확정, 구현 미착수** | `030-coin-practice-price-runtime`, 이슈 #314. 사용자·종목별 DB 영속 세션, 명시적 next tick, 교육 지정가·holding 관찰 가격원 격리. 기존 합성 시세는 표시 전용 호환 유지하고 주식은 3차 MVP |
 | 투자 실습 — 주식 체결 재생 세션 FK (주식 OCO 선행, 3차 MVP 완성분) | — | **완료** | PR #191 (`trades.stock_replay_session_id`, V20). 이미 완료된 인프라라 차수 재분류와 무관하게 유지 |
 | 투자 실습 — OCO exit plan 생성·목록·취소·트리거 | EDU-PRACTICE-005·006·010·013 | **미착수** | 계약만 확정. 공통 예약 원장은 `015`로 이미 완료. **엔진 정본은 `021`**(스키마·잠금·트리거), 가격 정책은 `019`, 코인 delta는 `020`, chain 검증·세션 만료는 `016`이 소유한다. **3차 MVP로 이동(2026-08-06)** — 경위는 아래 "3차 MVP" 절 참고 |
 | 투자 실습 — 진행 조회·가격 관찰·복기 (**OCO 경로 한정**) | EDU-PRACTICE-001·007·011·012 | **미착수** | `exitPlanId` 기반 OCO 경로(`016` candidate 12·13·14)에 한한 판정이다 — `POST /api/education/practice/observations`·`reflections`, `GET /api/education/practice/oco?market=` 모두 컨트롤러 없음. OCO 완료 key는 `INVESTMENT_OCO_PRACTICE_V1|COIN_OCO_PRACTICE_V1`로 holding 기반 완료와 분리한다. **2026-08-06: OCO 3차 이동에 따라 이 항목도 3차 MVP로 이동.** ⚠️ 같은 기능의 `holdingId` 기반 026 경로는 **이미 구현돼 있다** — 아래 "시장가/지정가 매매 기반 완료 경로" 행 참고 |
@@ -222,7 +223,7 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 
 ### 2차 MVP — 남은 범위와 계약 정의
 
-- 3단계 투자 실습 튜토리얼 — 즐겨찾기 등록·목록·해제(EDU-PRACTICE-002)와 매수 전 사전 의도 기록(EDU-PRACTICE-003 일부), 튜토리얼 전용 합성 시세, 주식 체결 재생 세션 FK는 2차 MVP 완료로 유지된다(PR #165·#171·#173·#176·#191·#195). **OCO exit plan 기반 2·3단계는 3차 MVP로 이동했다(2026-08-06)** — 경위와 통합 설계 근거는 §3 "3차 MVP" 절이 정본이다. **2차 MVP의 holding 기반 3단계 실습과 진행 조회는 모두 동작한다** — OCO 없이 시장가/지정가 매매로 완결하는 `docs/specs/026-market-order-practice-tutorial`이며(PR #295·#298·#302·#304·#307), `GET /api/education/practice?market=STOCK|CRYPTO`도 포함한다. 설계 문서는 `016`(3단계 모델 원 정본)·`019`·`020`·`021`(OCO 계열, 3차)과 `026`(2차 활성 경로)이다.
+- 3단계 투자 실습 튜토리얼 — 즐겨찾기 등록·목록·해제(EDU-PRACTICE-002)와 매수 전 사전 의도 기록(EDU-PRACTICE-003 일부), 표시 전용 합성 시세, 주식 체결 재생 세션 FK는 2차 MVP 완료로 유지된다(PR #165·#171·#173·#176·#191·#195). **OCO exit plan 기반 2·3단계는 3차 MVP로 이동했다(2026-08-06)** — 경위와 통합 설계 근거는 §3 "3차 MVP" 절이 정본이다. **2차 MVP의 holding 기반 3단계 실습과 진행 조회는 모두 동작한다** — OCO 없이 시장가/지정가 매매로 완결하는 `docs/specs/026-market-order-practice-tutorial`이며(PR #295·#298·#302·#304·#307), `GET /api/education/practice?market=STOCK|CRYPTO`도 포함한다. 다만 코인 튜토리얼에서 가격 진행·지정가 체결·관찰 근거를 하나의 격리된 시간축으로 연결하는 `COIN-PRICE-RUNTIME-001~012`는 2차 MVP의 남은 선행 작업이며 `docs/specs/030-coin-practice-price-runtime`이 정본이다. 기존 합성 시세 API는 표시 전용으로 유지하고, 주식 튜토리얼은 3차 MVP 범위로 둔다. 설계 문서는 `016`(3단계 모델 원 정본)·`019`·`020`·`021`(OCO 계열, 3차)·`026`(2차 활성 경로)·`030`(코인 가상 가격 실행 환경)이다.
 - 동시성 제어 — **미착수**
 - 부하테스트 — **미착수**
 - AI 피드백 — 뉴스 기반 변동 원인 카드, 매도 직후 피드백, 종목 뉴스 요약, 개장 전 브리핑, 반사실 시뮬레이션·집단 비교, 코인 실시간 변동 감시 (`docs/specs/012-ai-feedback`) — **완료** (이슈 8개 전부 머지, 근거는 §3 "구현 현황" 각 행). 뉴스·공시 사용은 C-004 개정으로 허용된다. **종목 뉴스 요약은 3차 → 2차로 앞당겼다** — 변동 원인 카드가 수집 파이프라인을 이미 만들어 3차까지 미루면 같은 코드를 두 번 건드리게 된다
@@ -274,7 +275,7 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 > 이 절은 1차 MVP 요구사항으로 시작해 2차·3차 MVP 요구사항이 차수 표시와 함께 추가됐다. **각 요구사항 ID의 차수는 그 절의 머리말과 제목의 "(2차 MVP)"·"(3차 MVP)" 표기로 판정한다** — 표기가 없는 것이 1차다. 2차·3차 요구사항 중 실제 구현된 것과 미착수인 것은 §3 구현 현황 표를 본다.
 >
 > - 1차: AUTH-001~006, ACCT-001~003, MKT-001~008, ORD-001~006, PORT-001~002, COM-001~003
-> - 2차: MKT-009, **MKT-010**, PORT-003, LMT-001~005, JOUR-001~006, RANK-001~002, COM-004~006 (3단계 투자 실습 EDU-PRACTICE-*·MKT-PRACTICE-*와 AI 피드백 FEED-*는 이 문서에 요구사항 절을 두지 않고 각각 `docs/specs/016-investment-education-policy`·`docs/specs/026-market-order-practice-tutorial`·`docs/specs/012-ai-feedback`이 정본이다. **커뮤니티 고도화 COM-004~006도 같은 패턴으로 `docs/specs/022-community-enhancement`가 정본이다** — 종목 기준 분류·대댓글·사진 첨부, 이슈 #246·#247·#248. **관심목록 WATCH-001~003은 `docs/specs/023-watchlist`가 정본이다** — 2차 MVP, 이슈 #252)
+> - 2차: MKT-009, **MKT-010**, PORT-003, LMT-001~005, JOUR-001~006, RANK-001~002, COM-004~006 (3단계 투자 실습 EDU-PRACTICE-*·MKT-PRACTICE-*와 코인 가상 가격 실행 환경 COIN-PRICE-RUNTIME-*, AI 피드백 FEED-*는 이 문서에 요구사항 절을 두지 않고 각각 `docs/specs/016-investment-education-policy`·`docs/specs/026-market-order-practice-tutorial`·`docs/specs/030-coin-practice-price-runtime`·`docs/specs/012-ai-feedback`이 정본이다. **커뮤니티 고도화 COM-004~006도 같은 패턴으로 `docs/specs/022-community-enhancement`가 정본이다** — 종목 기준 분류·대댓글·사진 첨부, 이슈 #246·#247·#248. **관심목록 WATCH-001~003은 `docs/specs/023-watchlist`가 정본이다** — 2차 MVP, 이슈 #252)
 >   - **MKT-010의 제목 표기만 "(1차 고도화)"로 다르다** — 2026-08-06 작업자가 팀 회의 용어를 그대로 쓴 것이며, §3 차수 용어 대응표대로 이 문서의 "2차 MVP"와 같은 차수다. 위 목록이 판정 기준이다.
 > - 3차: NOTI-001~005 (2026-08-07, 2차 → 3차로 재이동, 이슈 #261 — 원래 2026-08-04 이슈 #140으로 2차 확정했던 항목이며 §4의 요구사항 내용 자체는 변경 없이 유지, 착수 시점만 재조정)
 

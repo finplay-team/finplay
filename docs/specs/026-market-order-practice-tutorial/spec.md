@@ -4,6 +4,8 @@
 >
 > **이 spec이 2차 MVP의 유일한 실제 튜토리얼 완료 경로다.** 사용자는 이미 API 호출만으로 3단계를 완료할 수 있다(즐겨찾기 → 사전 의도 → 매수 → 관찰 → 복기). OCO 기반 경로(`016`·`019`·`020`·`021`)는 3차 MVP로 이연됐다.
 >
+> **코인 지정가 실행·관찰 가격원 확장:** `docs/specs/030-coin-practice-price-runtime`은 이 완료 chain을 바꾸지 않고, 교육 가격 세션에 귀속된 코인 지정가 trade/holding의 가격원만 부분 대체한다. 관찰은 order에서 세션을 역추적하며, 세션 없는 시장가·기존 지정가 holding은 이 문서의 기존 서버 유효 현재가 경로를 유지한다.
+>
 > **번호 확정 경위**: 작업 지시 시점에는 024를 쓰기로 했으나, 착수 전 `git ls-tree origin/dev docs/specs/`로 재확인한 결과 origin/dev에 이미 `024-feedback-query-cache`·`025-review-gate-auto-fix`가 존재해 026으로 올렸다. `022-community-enhancement`/`027-crypto-tick-candle-cache`, `023-watchlist` 모두 origin/dev에 이미 존재한다(로컬 미커밋 추측은 틀렸다 — 실제로는 이미 머지돼 있었다).
 
 ## 개요
