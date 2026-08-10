@@ -3,6 +3,7 @@
 package com.finplay.api.market.feed;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -208,6 +209,24 @@ class BithumbWebSocketFeedClientTest {
 
 		verify(session, times(1)).close(CloseStatus.NORMAL);
 		verify(priceStore, times(1)).saveConnectionStatus(FeedConnectionStatus.DISCONNECTED);
+		assertThat(client.isConnected()).isFalse();
+	}
+
+	// PR #296 재리뷰 참고사항: stop()도 onDisconnected()와 같은 이유로 Redis 장애에 견고해야 한다 — 감싸지
+	// 않으면 @PreDestroy 훅(BithumbFeedLifecycle.stopFeed) 밖으로 예외가 새 애플리케이션 종료를 방해할 수 있다.
+	@Test
+	@DisplayName("종료 시 상태 기록이 Redis 장애로 실패해도 stop()은 예외 없이 끝난다 (PR #296 재리뷰 참고사항)")
+	void stopDoesNotPropagateWhenSavingDisconnectedStatusFails() throws Exception {
+		when(instrumentRepository.findByMarketAndTradableTrueOrderByIdAsc(Market.CRYPTO)).thenReturn(List.of());
+		when(session.isOpen()).thenReturn(true);
+		client.afterConnectionEstablished(session);
+		doThrow(new RedisConnectionFailureException("Unable to connect to Redis"))
+			.when(priceStore)
+			.saveConnectionStatus(FeedConnectionStatus.DISCONNECTED);
+
+		assertThatCode(client::stop).doesNotThrowAnyException();
+
+		verify(session, times(1)).close(CloseStatus.NORMAL);
 		assertThat(client.isConnected()).isFalse();
 	}
 

@@ -69,13 +69,20 @@ public class BithumbWebSocketFeedClient extends TextWebSocketHandler implements 
 
 	// BithumbFeedLifecycle이 애플리케이션 종료 시 이 메서드를 호출하는 유일한 지점이다 — 여기 @PreDestroy를
 	// 붙이면 컨테이너가 두 번 호출하게 되어 그 단일 지점 원칙이 깨진다(리뷰 권장사항, 이슈 #104).
+	// priceStore 호출을 try/catch로 감싼다(PR #296 재리뷰 참고사항) — onDisconnected()와 같은 이유다. Redis
+	// 장애 중 종료되면 이 호출이 예외를 던지는데, 감싸지 않으면 @PreDestroy 훅(BithumbFeedLifecycle.stopFeed)
+	// 밖으로 예외가 새 애플리케이션 종료를 방해할 수 있다.
 	@Override
 	public void stop() {
 		running = false;
 		reconnectExecutor.shutdownNow();
 		closeQuietly(session, CloseStatus.NORMAL);
 		session = null;
-		priceStore.saveConnectionStatus(FeedConnectionStatus.DISCONNECTED);
+		try {
+			priceStore.saveConnectionStatus(FeedConnectionStatus.DISCONNECTED);
+		} catch (Exception e) {
+			log.warn("종료 시 연결상태 기록 실패(Redis 장애로 추정) — 종료는 계속 진행합니다.", e);
+		}
 	}
 
 	@Override
