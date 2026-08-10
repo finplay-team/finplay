@@ -311,7 +311,7 @@ PR #49 차단 리뷰 후속 Fake 재사용·동시성·DB 불변 자동 회귀�
 |---|---|---|---|---|---|---|
 | PATCH | /api/community/posts/{postId} | Access Bearer 필수 | 경로 변수 `postId`, 본문 `{"title":"게시물 제목","content":"게시물 본문","instrumentId":1}` (`title` 최대 100자, `content` 최대 5,000자, `instrumentId`는 선택·nullable) | 200 `{"postId":1,"authorNickname":"finplayer","title":"게시물 제목","content":"게시물 본문","createdAt":"2026-07-27T12:00:00","updatedAt":"2026-07-27T12:00:00","instrumentId":1,"instrumentSymbol":"005930","instrumentName":"삼성전자","imageId":1,"imageUrl":"/api/community/posts/images/1/file"}` | 제목·본문 누락·빈 값·공백·최대 길이 초과, **존재하지 않거나 비활성인 `instrumentId` 태그**는 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED`. 본인 소유가 아닌 게시물은 403 `FORBIDDEN`. 게시물 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 008 COM-001, 022 COM-004, Issue #26, Issue #246 |
 
-작성자 본인만 수정할 수 있으며 소유자 확인은 요청 본문이 아닌 Access Token의 인증 사용자로 판단한다. `title`·`content`와 동일하게 매 요청이 전체를 교체한다(부분 패치 아님) — `instrumentId`를 생략/`null`로 보내면 기존 태그를 해제한다. 태그를 유지하려면 클라이언트가 기존 `instrumentId`를 다시 보내야 한다. 이 엔드포인트는 `imageId`를 요청으로 받지 않는다 — 첨부 이미지 교체·해제는 이번 그룹(COM-006)의 범위가 아니며, 응답의 `imageId`·`imageUrl`은 기존에 연결된 이미지가 있으면 그대로 유지되어 노출된다.
+작성자 본인만 수정할 수 있으며 소유자 확인은 요청 본문이 아닌 Access Token의 인증 사용자로 판단한다. `title`·`content`는 매 요청이 전체를 교체한다(필수 필드라 생략 시 400). `instrumentId`는 **JSON Merge Patch 관례**를 따른다(2026-08-10 Issue #276 확정, A안) — 요청 본문에 `instrumentId` **키 자체가 없으면 기존 태그를 그대로 보존**하고, **키를 넣고 값을 `null`로 명시하면 태그를 해제**한다. 값을 넣으면 그 종목으로 교체한다(존재하지 않거나 비활성이면 400 `VALIDATION_ERROR`). 이 엔드포인트는 `imageId`를 요청으로 받지 않는다 — 첨부 이미지 교체·해제는 이번 그룹(COM-006)의 범위가 아니며, 응답의 `imageId`·`imageUrl`은 기존에 연결된 이미지가 있으면 그대로 유지되어 노출된다.
 
 ### 커뮤니티 게시물 삭제
 

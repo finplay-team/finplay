@@ -60,13 +60,14 @@ public class CommunityPostService {
 
 	@Transactional
 	public CommunityPostResponse updatePost(
-		Long authenticatedUserId, Long postId, String title, String content, Long instrumentId) {
+		Long authenticatedUserId, Long postId, String title, String content, boolean instrumentIdProvided,
+		Long instrumentId) {
 		CommunityPost post = communityPostRepository.findById(postId)
 			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
 		if (!post.getAuthor().getId().equals(authenticatedUserId)) {
 			throw new BusinessException(ErrorCode.FORBIDDEN);
 		}
-		Instrument instrument = resolveInstrument(instrumentId);
+		Instrument instrument = instrumentIdProvided ? resolveInstrument(instrumentId) : post.getInstrument();
 		post.update(title, content, instrument, LocalDateTime.now(clock));
 		return CommunityPostResponse.from(post);
 	}
