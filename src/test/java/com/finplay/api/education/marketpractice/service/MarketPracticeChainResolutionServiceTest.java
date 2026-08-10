@@ -13,6 +13,9 @@ import com.finplay.api.auth.domain.User;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.education.domain.PracticeIntention;
+import com.finplay.api.education.marketpractice.domain.PracticeEvidenceType;
+import com.finplay.api.education.marketpractice.domain.PracticeMarketObservation;
+import com.finplay.api.education.marketpractice.repository.PracticeMarketObservationRepository;
 import com.finplay.api.education.repository.PracticeIntentionRepository;
 import com.finplay.api.education.service.PracticeIntentionService;
 import com.finplay.api.favorite.dto.response.FavoriteListResponse;
@@ -43,9 +46,12 @@ class MarketPracticeChainResolutionServiceTest {
 	private final PracticeIntentionRepository practiceIntentionRepository = mock(PracticeIntentionRepository.class);
 	private final TradeService tradeService = mock(TradeService.class);
 	private final HoldingService holdingService = mock(HoldingService.class);
+	private final PracticeMarketObservationRepository practiceMarketObservationRepository = mock(
+		PracticeMarketObservationRepository.class);
 
 	private final MarketPracticeChainResolutionService service = new MarketPracticeChainResolutionService(
-		favoriteService, practiceIntentionRepository, tradeService, holdingService);
+		favoriteService, practiceIntentionRepository, tradeService, holdingService,
+		practiceMarketObservationRepository);
 
 	@Test
 	void resolveReturnsCompletedChainWhenFavoriteIntentionBuyTradeAndHoldingAllMatch() {
@@ -144,6 +150,89 @@ class MarketPracticeChainResolutionServiceTest {
 
 		when(holdingService.findHoldingId(USER_ID, Market.STOCK, 100L)).thenReturn(Optional.of(40L));
 		when(holdingService.findHoldingId(USER_ID, Market.STOCK, 200L)).thenReturn(Optional.of(41L));
+
+		Optional<ResolvedPracticeChainDto> result = service.resolve(USER_ID, PracticeIntentionService.TUTORIAL_KEY);
+
+		assertThat(result).isPresent();
+		assertThat(result.get().favoriteId()).isEqualTo(11L);
+		assertThat(result.get().buyTradeId()).isEqualTo(31L);
+	}
+
+	@Test
+	void resolveSelectsChainWithQualifyingObservationOverEarlierBuyTradeExecutedAtChain() {
+		// resolveSelectsChainWithEarliestBuyTradeExecutedAtAmongMultipleCompletedFavoriteChains의 픽스처를
+		// 뒤집는다 — favoriteB/earlierTrade(instrument 200)가 buyTradeExecutedAt이 더 이르지만, 이번에는
+		// favoriteA/laterTrade(instrument 100)의 holding에 qualifying observation(evidenceType non-null)을
+		// 붙인다. qualifying observation이 있는 chain은 buyTradeExecutedAt 순서와 무관하게 최우선이어야 한다.
+		FavoriteResponse favoriteA = favorite(10L, 100L, "STOCK", NOW.minusDays(10));
+		FavoriteResponse favoriteB = favorite(11L, 200L, "STOCK", NOW.minusDays(9));
+		when(favoriteService.getFavorites(USER_ID)).thenReturn(new FavoriteListResponse(List.of(favoriteA, favoriteB)));
+
+		PracticeIntention intentionA = intention(20L, 100L, new BigDecimal("3"), NOW.minusDays(8));
+		PracticeIntention intentionB = intention(21L, 200L, new BigDecimal("2"), NOW.minusDays(7));
+		when(practiceIntentionRepository.findByUserId(USER_ID)).thenReturn(List.of(intentionA, intentionB));
+
+		Trade laterTrade = buyTrade(30L, new BigDecimal("100"), new BigDecimal("3"), NOW.minusDays(3));
+		Trade earlierTrade = buyTrade(31L, new BigDecimal("50"), new BigDecimal("2"), NOW.minusDays(5));
+		when(tradeService.findEarliestFilledBuyTradeMatching(
+			USER_ID, 100L, intentionA.quantity(), intentionA.createdAt()))
+			.thenReturn(Optional.of(laterTrade));
+		when(tradeService.findEarliestFilledBuyTradeMatching(
+			USER_ID, 200L, intentionB.quantity(), intentionB.createdAt()))
+			.thenReturn(Optional.of(earlierTrade));
+
+		when(holdingService.findHoldingId(USER_ID, Market.STOCK, 100L)).thenReturn(Optional.of(40L));
+		when(holdingService.findHoldingId(USER_ID, Market.STOCK, 200L)).thenReturn(Optional.of(41L));
+
+		// holding 40(favoriteA/instrument 100, buyTradeExecutedAt이 더 늦음)에만 qualifying observation을 둔다.
+		PracticeMarketObservation qualifyingObservation = mock(PracticeMarketObservation.class);
+		when(qualifyingObservation.getEvidenceType()).thenReturn(PracticeEvidenceType.CLOSER_TO_BOUNDARY);
+		when(practiceMarketObservationRepository.findByUserIdAndHoldingIdOrderByObservedAtAsc(USER_ID, 40L))
+			.thenReturn(List.of(qualifyingObservation));
+		when(practiceMarketObservationRepository.findByUserIdAndHoldingIdOrderByObservedAtAsc(USER_ID, 41L))
+			.thenReturn(List.of());
+
+		Optional<ResolvedPracticeChainDto> result = service.resolve(USER_ID, PracticeIntentionService.TUTORIAL_KEY);
+
+		assertThat(result).isPresent();
+		assertThat(result.get().favoriteId()).isEqualTo(10L);
+		assertThat(result.get().buyTradeId()).isEqualTo(30L);
+		assertThat(result.get().holdingId()).isEqualTo(40L);
+	}
+
+	@Test
+	void resolveFallsBackToBuyTradeExecutedAtAscWhenNoChainHasQualifyingObservation() {
+		// 두 chain 모두 qualifying observation이 없으면(관찰 자체가 없거나 evidenceType이 전부 null) 기존
+		// 우선순위(buyTradeExecutedAt ASC)로 폴백한다 —
+		// resolveSelectsChainWithEarliestBuyTradeExecutedAtAmongMultipleCompletedFavoriteChains와 동일한 결과를
+		// qualifying-observation 조회 경로를 명시적으로 거친 뒤에도 유지하는지 검증한다.
+		FavoriteResponse favoriteA = favorite(10L, 100L, "STOCK", NOW.minusDays(10));
+		FavoriteResponse favoriteB = favorite(11L, 200L, "STOCK", NOW.minusDays(9));
+		when(favoriteService.getFavorites(USER_ID)).thenReturn(new FavoriteListResponse(List.of(favoriteA, favoriteB)));
+
+		PracticeIntention intentionA = intention(20L, 100L, new BigDecimal("3"), NOW.minusDays(8));
+		PracticeIntention intentionB = intention(21L, 200L, new BigDecimal("2"), NOW.minusDays(7));
+		when(practiceIntentionRepository.findByUserId(USER_ID)).thenReturn(List.of(intentionA, intentionB));
+
+		Trade laterTrade = buyTrade(30L, new BigDecimal("100"), new BigDecimal("3"), NOW.minusDays(3));
+		Trade earlierTrade = buyTrade(31L, new BigDecimal("50"), new BigDecimal("2"), NOW.minusDays(5));
+		when(tradeService.findEarliestFilledBuyTradeMatching(
+			USER_ID, 100L, intentionA.quantity(), intentionA.createdAt()))
+			.thenReturn(Optional.of(laterTrade));
+		when(tradeService.findEarliestFilledBuyTradeMatching(
+			USER_ID, 200L, intentionB.quantity(), intentionB.createdAt()))
+			.thenReturn(Optional.of(earlierTrade));
+
+		when(holdingService.findHoldingId(USER_ID, Market.STOCK, 100L)).thenReturn(Optional.of(40L));
+		when(holdingService.findHoldingId(USER_ID, Market.STOCK, 200L)).thenReturn(Optional.of(41L));
+
+		// 관찰이 존재하지만(예: A 미충족 관찰) evidenceType이 non-null인 건이 하나도 없다 — qualifying 아님.
+		PracticeMarketObservation nonQualifyingObservation = mock(PracticeMarketObservation.class);
+		when(nonQualifyingObservation.getEvidenceType()).thenReturn(null);
+		when(practiceMarketObservationRepository.findByUserIdAndHoldingIdOrderByObservedAtAsc(USER_ID, 40L))
+			.thenReturn(List.of(nonQualifyingObservation));
+		when(practiceMarketObservationRepository.findByUserIdAndHoldingIdOrderByObservedAtAsc(USER_ID, 41L))
+			.thenReturn(List.of());
 
 		Optional<ResolvedPracticeChainDto> result = service.resolve(USER_ID, PracticeIntentionService.TUTORIAL_KEY);
 

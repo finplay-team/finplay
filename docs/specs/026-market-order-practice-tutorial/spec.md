@@ -1,6 +1,6 @@
 # Spec: 시장가/지정가 매매 기반 3단계 투자 실습 완결 경로 (OCO 없이)
 
-> 상태: 2026-08-10 신규 작성 → **일부 구현 완료**. MKT-PRACTICE-001~007·009~012는 production에 반영됐고(PR #295·#298·#302·#304, `V27`·`V28`), **MKT-PRACTICE-008(`GET /api/education/practice?market=` 진행 조회)만 미착수**(이슈 #305)다. 아래 "범위 제외"의 "순수 설계" 서술은 최초 작성 시점 기준이며 더 이상 유효하지 않다.
+> 상태: 2026-08-10 신규 작성 → **구현 완료**. MKT-PRACTICE-001~012가 production에 반영됐고(PR #295·#298·#302·#304·#307, `V27`·`V28`), holding 기반 진행 조회는 `GET /api/education/practice?market=STOCK|CRYPTO`다. 3차 MVP OCO 경로는 별도 spec·URL·완료 key를 사용한다. 아래 "범위 제외"의 "순수 설계" 서술은 최초 작성 시점 기준이며 더 이상 유효하지 않다.
 >
 > **이 spec이 2차 MVP의 유일한 실제 튜토리얼 완료 경로다.** 사용자는 이미 API 호출만으로 3단계를 완료할 수 있다(즐겨찾기 → 사전 의도 → 매수 → 관찰 → 복기). OCO 기반 경로(`016`·`019`·`020`·`021`)는 3차 MVP로 이연됐다.
 >
@@ -20,18 +20,18 @@
 
 ## 요구사항
 
-- [ ] MKT-PRACTICE-001: 이 경로는 `016`이 정의한 1단계(즐겨찾기)·사전 의도 기록 API를 변경 없이 재사용한다.
-- [ ] MKT-PRACTICE-002: 2단계 완료 증거는 OCO exit plan이 아니라 intention과 연결된 실제 `FILLED` 매수 체결(시장가 또는 코인 지정가) 및 그 매수로 만들어진 holding의 존재다.
-- [ ] MKT-PRACTICE-003: 2단계 evidence chain은 `favorite → intention → buyTrade → holding` 순서로 구성하며, `intention.quantity == buyTrade.quantity`(수량 정규화 비교, `020`의 scale 무관 규칙 재사용)와 owner·instrument 일치를 검증한다. holding은 owner·instrument 일치만 검증하고 현재 수량이 intention 수량과 달라도(추가 매수·일부 매도) 무방하다.
-- [ ] MKT-PRACTICE-004: 3단계 evidence A는 intention에 저장된 손절·익절 기준(`019`의 PRICE/PERCENT 정책으로 계산한 절대 가격선)과 매수 체결가(`buyTrade.entryPrice`)를 기준선(baseline)으로 사용해, 서버 유효 현재가가 그 기준선보다 경계에 가까워졌는지 판정한다. OCO exit plan을 생성하지 않는다.
-- [ ] MKT-PRACTICE-005: 3단계 evidence B(최소 2분 범위의 관찰 3회, 경계 접근 불필요)는 `016`의 정의를 그대로 재사용한다.
-- [ ] MKT-PRACTICE-006: 3단계 evidence C(익절·손절 자동 체결)는 이 경로에 존재하지 않는다. A 또는 B만으로 3단계를 완료할 수 있어야 한다.
-- [ ] MKT-PRACTICE-007: 가격 관찰·복기 저장 API는 `exitPlanId`가 아니라 `holdingId`를 요청 식별자로 받는다.
-- [ ] MKT-PRACTICE-008: `GET /api/education/practice?market=STOCK|CRYPTO`는 필수 `market`으로 한 시장의 진행만 조회하며, `016`의 `InvestmentPracticeResponse`/`PracticeStepResponse`/`PracticeEvidenceResponse` DTO 설계를 evidence 필드만 이 경로에 맞게 조정해 재사용한다.
-- [ ] MKT-PRACTICE-009: 완료 판정은 클라이언트 완료 주장을 받지 않고 서버가 실제 도메인 증거를 연결해 계산하며, `practice_progresses`·`practice_completions`의 불변 완료 원칙(`016`)을 그대로 상속한다.
-- [ ] MKT-PRACTICE-010: `tutorial_key`는 기존 `INVESTMENT_PRACTICE_V1`(주식)·`COIN_PRACTICE_V1`(코인)을 그대로 재사용한다. 이 경로가 지금 그 key들의 유일한 실제 완료 정본이다.
-- [ ] MKT-PRACTICE-011: 주식·코인 시장 모두 지원한다. 코인은 시장가·지정가 매수 둘 다 2단계 증거로 인정하고, 주식은 시장가 매수만 인정한다(주식 지정가는 `015`에서 코인 전용으로 확정돼 존재하지 않는다 — 별도 분기 코드 없이 자연히 배제된다).
-- [ ] MKT-PRACTICE-012: 이 경로에는 배지·포인트·보상·LLM을 사용하지 않는다(`016` C-004 상속).
+- [x] MKT-PRACTICE-001: 이 경로는 `016`이 정의한 1단계(즐겨찾기)·사전 의도 기록 API를 변경 없이 재사용한다.
+- [x] MKT-PRACTICE-002: 2단계 완료 증거는 OCO exit plan이 아니라 intention과 연결된 실제 `FILLED` 매수 체결(시장가 또는 코인 지정가) 및 그 매수로 만들어진 holding의 존재다.
+- [x] MKT-PRACTICE-003: 2단계 evidence chain은 `favorite → intention → buyTrade → holding` 순서로 구성하며, `intention.quantity == buyTrade.quantity`(수량 정규화 비교, `020`의 scale 무관 규칙 재사용)와 owner·instrument 일치를 검증한다. holding은 owner·instrument 일치만 검증하고 현재 수량이 intention 수량과 달라도(추가 매수·일부 매도) 무방하다.
+- [x] MKT-PRACTICE-004: 3단계 evidence A는 intention에 저장된 손절·익절 기준(`019`의 PRICE/PERCENT 정책으로 계산한 절대 가격선)과 매수 체결가(`buyTrade.entryPrice`)를 기준선(baseline)으로 사용해, 서버 유효 현재가가 그 기준선보다 경계에 가까워졌는지 판정한다. OCO exit plan을 생성하지 않는다.
+- [x] MKT-PRACTICE-005: 3단계 evidence B(최소 2분 범위의 관찰 3회, 경계 접근 불필요)는 `016`의 정의를 그대로 재사용한다.
+- [x] MKT-PRACTICE-006: 3단계 evidence C(익절·손절 자동 체결)는 이 경로에 존재하지 않는다. A 또는 B만으로 3단계를 완료할 수 있어야 한다.
+- [x] MKT-PRACTICE-007: 가격 관찰·복기 저장 API는 `exitPlanId`가 아니라 `holdingId`를 요청 식별자로 받는다.
+- [x] MKT-PRACTICE-008: `GET /api/education/practice?market=STOCK|CRYPTO`는 필수 `market`으로 한 시장의 진행만 조회하며, `016`의 `InvestmentPracticeResponse`/`PracticeStepResponse`/`PracticeEvidenceResponse` DTO 설계를 evidence 필드만 이 경로에 맞게 조정해 재사용한다. (PR #307)
+- [x] MKT-PRACTICE-009: 완료 판정은 클라이언트 완료 주장을 받지 않고 서버가 실제 도메인 증거를 연결해 계산하며, `practice_progresses`·`practice_completions`의 불변 완료 원칙(`016`)을 그대로 상속한다.
+- [x] MKT-PRACTICE-010: `tutorial_key`는 기존 `INVESTMENT_PRACTICE_V1`(주식)·`COIN_PRACTICE_V1`(코인)을 그대로 재사용한다. 이 경로가 지금 그 key들의 유일한 실제 완료 정본이다.
+- [x] MKT-PRACTICE-011: 주식·코인 시장 모두 지원한다. 코인은 시장가·지정가 매수 둘 다 2단계 증거로 인정하고, 주식은 시장가 매수만 인정한다(주식 지정가는 `015`에서 코인 전용으로 확정돼 존재하지 않는다 — 별도 분기 코드 없이 자연히 배제된다).
+- [x] MKT-PRACTICE-012: 이 경로에는 배지·포인트·보상·LLM을 사용하지 않는다(`016` C-004 상속).
 
 ## 2단계 완료 증거 — 설계 결정과 근거
 
@@ -114,10 +114,10 @@
 
 ## 완료 조건
 
-- [ ] 1단계는 `016`과 완전히 동일하게 재사용되고 어떤 계약도 바뀌지 않는다.
-- [ ] 2단계 완료 증거가 `favorite → intention → buyTrade → holding` chain과 2자 수량 비교(`intention.quantity == buyTrade.quantity`)로 확정되고, OCO exitPlan quantity 비교가 대응 개념 없이 제거된 근거가 문서화된다.
-- [ ] 3단계 evidence A·B가 `buyTrade.entryPrice`/`executedAt`을 기준선으로 사용하도록 확정되고, evidence C가 이 경로에 존재하지 않음이 명시된다.
-- [ ] 관찰·복기 API가 `holdingId` 요청 필드의 새 URL(`/holding-observations`, `/holding-reflections`)로 확정되고 `016`의 `/observations`·`/reflections`와 충돌하지 않는다.
-- [ ] `GET /api/education/practice?market=STOCK|CRYPTO`가 필수 시장 선택으로 이 경로 기준 구현 대상이 되고 DTO 설계가 `016`에서 최대한 재사용된다.
-- [ ] holding 기반 key와 OCO 전용 key가 분리되어 완료 상태를 공유하지 않는다.
-- [ ] 새 오류 코드를 추가하지 않고 기존 코드(`PRACTICE_STEP_LOCKED`, `PRACTICE_EVIDENCE_MISSING`, `PRACTICE_ALREADY_COMPLETED`, `PRICE_UNAVAILABLE`, `VALIDATION_ERROR`)만으로 표현됨이 확인된다.
+- [x] 1단계는 `016`과 완전히 동일하게 재사용되고 어떤 계약도 바뀌지 않는다.
+- [x] 2단계 완료 증거가 `favorite → intention → buyTrade → holding` chain과 2자 수량 비교(`intention.quantity == buyTrade.quantity`)로 확정되고, OCO exitPlan quantity 비교가 대응 개념 없이 제거된 근거가 문서화된다.
+- [x] 3단계 evidence A·B가 `buyTrade.entryPrice`/`executedAt`을 기준선으로 사용하도록 확정되고, evidence C가 이 경로에 존재하지 않음이 명시된다.
+- [x] 관찰·복기 API가 `holdingId` 요청 필드의 새 URL(`/holding-observations`, `/holding-reflections`)로 확정되고 `016`의 `/observations`·`/reflections`와 충돌하지 않는다.
+- [x] `GET /api/education/practice?market=STOCK|CRYPTO`가 필수 시장 선택으로 이 경로 기준 구현 대상이 되고 DTO 설계가 `016`에서 최대한 재사용된다.
+- [x] holding 기반 key와 OCO 전용 key가 분리되어 완료 상태를 공유하지 않는다.
+- [x] 새 오류 코드를 추가하지 않고 기존 코드(`PRACTICE_STEP_LOCKED`, `PRACTICE_EVIDENCE_MISSING`, `PRACTICE_ALREADY_COMPLETED`, `PRICE_UNAVAILABLE`, `VALIDATION_ERROR`)만으로 표현됨이 확인된다.

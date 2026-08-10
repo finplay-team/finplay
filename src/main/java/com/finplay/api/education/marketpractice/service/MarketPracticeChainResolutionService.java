@@ -4,6 +4,7 @@ package com.finplay.api.education.marketpractice.service;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.education.domain.PracticeIntention;
+import com.finplay.api.education.marketpractice.repository.PracticeMarketObservationRepository;
 import com.finplay.api.education.repository.PracticeIntentionRepository;
 import com.finplay.api.education.service.PracticeIntentionService;
 import com.finplay.api.favorite.dto.response.FavoriteResponse;
@@ -37,16 +38,16 @@ public class MarketPracticeChainResolutionService {
 	private final PracticeIntentionRepository practiceIntentionRepository;
 	private final TradeService tradeService;
 	private final HoldingService holdingService;
+	private final PracticeMarketObservationRepository practiceMarketObservationRepository;
 
 	/**
 	 * {@code tutorialKey}({@link PracticeIntentionService#TUTORIAL_KEY}/{@link
 	 * PracticeIntentionService#COIN_TUTORIAL_KEY})가 대상으로 하는 market에 속한 본인 favorite마다 chain을
-	 * 시도해, 완성된 chain 중 {@code buyTrade.executedAt} 오름차순(동률이면 {@code favorite.createdAt}
-	 * 오름차순)으로 하나를 고른다. 완성된 chain이 하나도 없으면 빈 값을 반환한다.
-	 *
-	 * <p>"qualifying observation이 있는 chain 우선" 규칙(plan.md 5번)은 관찰 저장이 아직 없는 이 작업 항목의
-	 * 범위 밖이라 적용하지 않는다 — 다음 작업 항목이 이어받도록 이 메서드 시그니처(tutorialKey 기준 전체 chain
-	 * 목록을 우선순위대로 재정렬해야 할 수 있음)를 바꾸지 않고 남겨둔다.
+	 * 시도해 완성된 chain 목록을 만든 뒤, 그중 <b>qualifying observation(해당 chain의 holding에 대해
+	 * {@code evidenceType}이 non-null인 관찰이 1건 이상 존재)이 있는 chain을 최우선으로</b> 고르고, 그 안에서
+	 * {@code buyTrade.executedAt} 오름차순(동률이면 {@code favorite.createdAt} 오름차순)으로 하나를 선택한다
+	 * (이슈 #305, plan.md "2단계 chain 해석" 5번). qualifying observation이 있는 chain이 하나도 없으면 전체
+	 * 유효 chain 중 같은 정렬 규칙으로 하나를 고른다(기존 동작). 완성된 chain이 하나도 없으면 빈 값을 반환한다.
 	 */
 	@Transactional(readOnly = true)
 	public Optional<ResolvedPracticeChainDto> resolve(Long userId, String tutorialKey) {
@@ -58,11 +59,25 @@ public class MarketPracticeChainResolutionService {
 			.flatMap(Optional::stream)
 			.toList();
 
-		return completedChains.stream()
-			.sorted(
-				Comparator.comparing(ResolvedPracticeChainDto::buyTradeExecutedAt)
-					.thenComparing(ResolvedPracticeChainDto::favoriteCreatedAt))
+		Comparator<ResolvedPracticeChainDto> priorityOrder = Comparator
+			.comparing(ResolvedPracticeChainDto::buyTradeExecutedAt)
+			.thenComparing(ResolvedPracticeChainDto::favoriteCreatedAt);
+
+		Optional<ResolvedPracticeChainDto> qualifyingFirst = completedChains.stream()
+			.filter(chain -> hasQualifyingObservation(userId, chain.holdingId()))
+			.sorted(priorityOrder)
 			.findFirst();
+		if (qualifyingFirst.isPresent()) {
+			return qualifyingFirst;
+		}
+
+		return completedChains.stream().sorted(priorityOrder).findFirst();
+	}
+
+	private boolean hasQualifyingObservation(Long userId, Long holdingId) {
+		return practiceMarketObservationRepository.findByUserIdAndHoldingIdOrderByObservedAtAsc(userId, holdingId)
+			.stream()
+			.anyMatch(observation -> observation.getEvidenceType() != null);
 	}
 
 	/**
