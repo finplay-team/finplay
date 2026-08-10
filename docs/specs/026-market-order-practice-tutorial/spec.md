@@ -1,8 +1,10 @@
 # Spec: 시장가/지정가 매매 기반 3단계 투자 실습 완결 경로 (OCO 없이)
 
-> 상태: 계획 모드에서 신규 작성 (2026-08-10). production 구현 미착수.
+> 상태: 2026-08-10 신규 작성 → **일부 구현 완료**. MKT-PRACTICE-001~007·009~012는 production에 반영됐고(PR #295·#298·#302·#304, `V27`·`V28`), **MKT-PRACTICE-008(`GET /api/education/practice?market=` 진행 조회)만 미착수**(이슈 #305)다. 아래 "범위 제외"의 "순수 설계" 서술은 최초 작성 시점 기준이며 더 이상 유효하지 않다.
 >
-> **번호 확정 경위**: 작업 지시 시점에는 024를 쓰기로 했으나, 착수 전 `git ls-tree origin/dev docs/specs/`로 재확인한 결과 origin/dev에 이미 `024-feedback-query-cache`·`025-review-gate-auto-fix`가 존재해 026으로 올렸다. `022-community-enhancement`/`022-crypto-tick-candle-cache`, `023-watchlist` 모두 origin/dev에 이미 존재한다(로컬 미커밋 추측은 틀렸다 — 실제로는 이미 머지돼 있었다).
+> **이 spec이 2차 MVP의 유일한 실제 튜토리얼 완료 경로다.** 사용자는 이미 API 호출만으로 3단계를 완료할 수 있다(즐겨찾기 → 사전 의도 → 매수 → 관찰 → 복기). OCO 기반 경로(`016`·`019`·`020`·`021`)는 3차 MVP로 이연됐다.
+>
+> **번호 확정 경위**: 작업 지시 시점에는 024를 쓰기로 했으나, 착수 전 `git ls-tree origin/dev docs/specs/`로 재확인한 결과 origin/dev에 이미 `024-feedback-query-cache`·`025-review-gate-auto-fix`가 존재해 026으로 올렸다. `022-community-enhancement`/`027-crypto-tick-candle-cache`, `023-watchlist` 모두 origin/dev에 이미 존재한다(로컬 미커밋 추측은 틀렸다 — 실제로는 이미 머지돼 있었다).
 
 ## 개요
 
@@ -25,7 +27,7 @@
 - [ ] MKT-PRACTICE-005: 3단계 evidence B(최소 2분 범위의 관찰 3회, 경계 접근 불필요)는 `016`의 정의를 그대로 재사용한다.
 - [ ] MKT-PRACTICE-006: 3단계 evidence C(익절·손절 자동 체결)는 이 경로에 존재하지 않는다. A 또는 B만으로 3단계를 완료할 수 있어야 한다.
 - [ ] MKT-PRACTICE-007: 가격 관찰·복기 저장 API는 `exitPlanId`가 아니라 `holdingId`를 요청 식별자로 받는다.
-- [ ] MKT-PRACTICE-008: `GET /api/education/practice`는 이 경로에서 처음으로 실제 production에 구현되며, `016`의 `InvestmentPracticeResponse`/`PracticeStepResponse`/`PracticeEvidenceResponse` DTO 설계를 evidence 필드만 이 경로에 맞게 조정해 재사용한다.
+- [ ] MKT-PRACTICE-008: `GET /api/education/practice?market=STOCK|CRYPTO`는 필수 `market`으로 한 시장의 진행만 조회하며, `016`의 `InvestmentPracticeResponse`/`PracticeStepResponse`/`PracticeEvidenceResponse` DTO 설계를 evidence 필드만 이 경로에 맞게 조정해 재사용한다.
 - [ ] MKT-PRACTICE-009: 완료 판정은 클라이언트 완료 주장을 받지 않고 서버가 실제 도메인 증거를 연결해 계산하며, `practice_progresses`·`practice_completions`의 불변 완료 원칙(`016`)을 그대로 상속한다.
 - [ ] MKT-PRACTICE-010: `tutorial_key`는 기존 `INVESTMENT_PRACTICE_V1`(주식)·`COIN_PRACTICE_V1`(코인)을 그대로 재사용한다. 이 경로가 지금 그 key들의 유일한 실제 완료 정본이다.
 - [ ] MKT-PRACTICE-011: 주식·코인 시장 모두 지원한다. 코인은 시장가·지정가 매수 둘 다 2단계 증거로 인정하고, 주식은 시장가 매수만 인정한다(주식 지정가는 `015`에서 코인 전용으로 확정돼 존재하지 않는다 — 별도 분기 코드 없이 자연히 배제된다).
@@ -85,15 +87,15 @@
 
 ## 진행 조회
 
-- `GET /api/education/practice`는 실제 favorite·intention·buyTrade·holding·관찰·복기 리소스를 조회해 단계별 상태·잠금·evidence를 계산한다(`016`의 계약을 이 경로에 맞게 최초로 구현). 조회는 어떤 것도 쓰지 않는다.
+- `GET /api/education/practice?market=STOCK|CRYPTO`는 필수 `market`으로 선택한 시장의 favorite·intention·buyTrade·holding·관찰·복기 리소스만 조회해 단계별 상태·잠금·evidence를 계산한다. 한 응답에 주식·코인 evidence를 섞지 않으며 조회는 어떤 것도 쓰지 않는다.
 - 응답 DTO 이름(`InvestmentPracticeResponse`/`PracticeStepResponse`/`PracticeEvidenceResponse`)은 `016`과 동일하게 유지하되, evidence 필드에서 `exitPlanId`·`replaySessionId`·`baselinePrice`(plan snapshot) 대신 `holdingId`, 계산된 참조 손절가·익절가(`referenceStopLossPrice`·`referenceTakeProfitPrice`)를 담는다. 상세는 `plan.md`.
 - 완료 전 여러 유효 chain이 있으면 `016`과 같은 우선순위 규칙(qualifying observation 있는 chain 우선, 그 안에서 가장 이른 buyTrade)을 적용한다.
 
 ## 완료 판정과 tutorial_key
 
-- `tutorial_key`는 대상 종목의 `market`으로 결정한다 — `STOCK`이면 `INVESTMENT_PRACTICE_V1`, `CRYPTO`이면 `COIN_PRACTICE_V1`(`020`의 규칙 그대로 재사용). 새 key를 만들지 않는다.
-- 근거: 이 경로는 지금 이 두 key의 유일한 실제 완료 방법이다. 사용자에게는 "같은 튜토리얼을 완료했다"는 사실이 중요하고, 완료 방법(OCO냐 시장가·지정가 매매냐)이 다르다고 별개의 튜토리얼로 보이게 하는 것은 어색하다. 새 key(`INVESTMENT_PRACTICE_MARKET_V1` 등)를 만들면 3차 MVP에서 OCO 버전이 완성됐을 때 "같은 실습을 두 번 완료해야 하는가"라는 혼란이 생긴다.
-- **미확정 잔여 위험 — 지금 결정하지 않음**: 3차 MVP에서 OCO 기반 버전이 실제로 production에 들어가면, 같은 `tutorial_key`를 두 경로가 계속 공유해도 되는지(즉 "OCO로 완료"와 "시장가·지정가 매매로 완료" 중 하나만 만족하면 전체 완료로 치는지), 아니면 그 시점에 key를 분리해야 하는지는 이 spec이 결정하지 않는다. `docs/prd.md` §2·§3에 근거를 남기고 3차 MVP 착수 spec(`016`의 후속)에서 재판단해야 한다.
+- 이 holding 기반 경로는 `STOCK`이면 `INVESTMENT_PRACTICE_V1`, `CRYPTO`이면 `COIN_PRACTICE_V1`을 사용한다.
+- 3차 OCO 경로는 별도 `INVESTMENT_OCO_PRACTICE_V1`·`COIN_OCO_PRACTICE_V1`을 사용한다. 두 경로의 `practice_progresses`·`practice_completions` 행은 독립이며 한쪽 완료가 다른 쪽을 완료시키지 않는다(2026-08-10, 이슈 #308).
+- 근거: OCO는 손절·익절 예약과 자동 청산까지 포함해 현재의 관찰·복기 경로보다 학습 증거가 강하다. 같은 key를 공유하면 현재 경로를 완료한 사용자가 OCO 실습을 건너뛸 수 있으므로 독립 완료로 관리한다.
 
 ## 비즈니스 규칙
 
@@ -107,8 +109,8 @@
 - OCO exit plan 생성·수정·트리거·만료 — `016`·`019`·`020`·`021`이 정본으로 유지하며 이 spec은 만들거나 바꾸지 않는다.
 - 이 spec이 만드는 신규 엔드포인트가 `016`의 `/observations`·`/reflections`·`/exit-plans` 계열 URL을 점유하거나 대체하는 일 — URL을 명시적으로 분리했다(위 "관찰·복기 API 대상 식별자" 절).
 - 8개 투자 지식 과정, 배지, RAG 코치, 보상(PRD 3차 MVP, C-004).
-- production 코드, Controller, DTO, entity, migration 구현 — 이 spec은 순수 설계다.
-- 3차 MVP에서 OCO 버전이 들어올 때 `tutorial_key` 공유 여부의 최종 결정 — 위 "완료 판정과 tutorial_key" 절의 잔여 위험으로 남긴다.
+- ~~production 코드, Controller, DTO, entity, migration 구현 — 이 spec은 순수 설계다.~~ **(2026-08-10 해소)** 최초 작성 시점의 범위 제외였으나 이후 같은 spec 범위로 구현됐다 — 상태 헤더 참고.
+- 3차 OCO 진행조회·완료 구현 — 별도 URL과 완료 key 계약은 확정했지만 production 구현은 3차 범위다.
 
 ## 완료 조건
 
@@ -116,6 +118,6 @@
 - [ ] 2단계 완료 증거가 `favorite → intention → buyTrade → holding` chain과 2자 수량 비교(`intention.quantity == buyTrade.quantity`)로 확정되고, OCO exitPlan quantity 비교가 대응 개념 없이 제거된 근거가 문서화된다.
 - [ ] 3단계 evidence A·B가 `buyTrade.entryPrice`/`executedAt`을 기준선으로 사용하도록 확정되고, evidence C가 이 경로에 존재하지 않음이 명시된다.
 - [ ] 관찰·복기 API가 `holdingId` 요청 필드의 새 URL(`/holding-observations`, `/holding-reflections`)로 확정되고 `016`의 `/observations`·`/reflections`와 충돌하지 않는다.
-- [ ] `GET /api/education/practice`가 이 경로 기준으로 최초 구현 대상이 되고 DTO 설계가 `016`에서 최대한 재사용된다.
-- [ ] `tutorial_key` 재사용 결정과 3차 MVP 재판단 필요성이 문서에 남는다.
+- [ ] `GET /api/education/practice?market=STOCK|CRYPTO`가 필수 시장 선택으로 이 경로 기준 구현 대상이 되고 DTO 설계가 `016`에서 최대한 재사용된다.
+- [ ] holding 기반 key와 OCO 전용 key가 분리되어 완료 상태를 공유하지 않는다.
 - [ ] 새 오류 코드를 추가하지 않고 기존 코드(`PRACTICE_STEP_LOCKED`, `PRACTICE_EVIDENCE_MISSING`, `PRACTICE_ALREADY_COMPLETED`, `PRICE_UNAVAILABLE`, `VALIDATION_ERROR`)만으로 표현됨이 확인된다.

@@ -30,14 +30,15 @@
 | 엔드포인트 | 코인 delta |
 |---|---|
 | `POST /api/education/practice/intentions` | 대상 종목이 `CRYPTO`면 `COIN_PRACTICE_V1` progress를 확보·잠근다. 코인 favorite 부재·불일치는 409 `PRACTICE_STEP_LOCKED`. 요청 필드 변경 없음 |
-| `GET /api/education/practice` | 조회 대상 튜토리얼별로 응답한다. `tutorialKey`는 `INVESTMENT_PRACTICE_V1` 또는 `COIN_PRACTICE_V1`이고 evidence는 같은 key chain에서만 구성한다 |
+| `GET /api/education/practice?market=` | `market=STOCK|CRYPTO` 필수. `tutorialKey`는 `INVESTMENT_PRACTICE_V1` 또는 `COIN_PRACTICE_V1`이고 evidence는 같은 key chain에서만 구성한다 |
+| `GET /api/education/practice/oco?market=` | `market=STOCK|CRYPTO` 필수. OCO 전용 key `INVESTMENT_OCO_PRACTICE_V1` 또는 `COIN_OCO_PRACTICE_V1`로 독립 응답한다 |
 | `POST /api/exit-plans` | 코인은 세션 검증·15:30 조건을 수행하지 않고 `replaySessionId`를 null로 저장한다. `holding → plan` 잠금. `EXIT_PLAN_SESSION_CLOSED`를 반환하지 않는다 |
 | `GET /api/exit-plans` | 코인 항목의 `replaySessionId`는 null. 생성 시각과 예약 수량을 노출해 사용자가 미종결 plan을 판단·취소할 수 있게 한다 |
 | `DELETE /api/exit-plans/{id}` | 코인 취소는 세션 잠금 없이 `holding → plan` 순서. 예약 수량을 정확히 한 번 반환 |
 | `POST /api/education/practice/observations` | 코인 `PENDING` plan만 허용. terminal은 409 `EXIT_PLAN_NOT_PENDING`. 코인은 `CANCELLED_EXPIRED` 상태가 존재하지 않는다 |
 | `POST /api/education/practice/reflections` | `COIN_PRACTICE_V1` progress를 `FOR UPDATE`로 먼저 잠그고 코인 chain evidence를 재검증한다 |
 
-- `GET /api/education/practice`의 튜토리얼 선택 방식(경로 분리 vs query 파라미터)은 그 엔드포인트를 실제로 구현하는 이슈가 소유한다. 이 spec은 **응답이 하나의 key에만 대응하고 두 튜토리얼 evidence를 섞지 않는다**는 제약만 확정한다.
+- 두 진행조회 모두 필수 `market` query로 조회 대상을 선택한다. 응답 하나는 한 시장·한 key에만 대응하며 주식·코인 또는 holding·OCO evidence를 섞지 않는다(2026-08-10, 이슈 #308).
 - 응답 DTO의 nullable 규칙은 `016` plan을 따른다. 코인에서 `replaySessionId`가 항상 null인 것은 기존 "코인만 null" 규칙과 동일하며 새 규칙이 아니다.
 
 ## 트랜잭션과 잠금

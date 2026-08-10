@@ -29,7 +29,7 @@
 | GET | /api/instruments/{instrumentId}/price | market | 인증 사용자의 종목 현재가 조회. 주식은 StockPriceProvider(재생/실시간 공급자 불문), 코인은 PriceStore(Redis)에서 유효한 최신 가격만 반환 | 003 MKT-002/MKT-003/MKT-004, Issue #16 |
 | GET | /api/instruments/{instrumentId}/candles?interval=1m\|1d\|1w\|1M&from=&to= | market | 인증 사용자의 캔들 조회. `interval`은 대소문자 구분 4값(`1m`·`1d`·`1w`·`1M`), 응답은 모두 최대 200개. 주식 `1m`은 `stock_candles` 과거 거래일 재생(미마감 분봉 제외), 주식 `1d`·`1w`·`1M`은 같은 1분봉을 거래일·주(월요일 시작)·월(1일 시작) 단위로 **집계**(공개 상한 적용, 진행 중 버킷 포함, 재생세션 미준비 시 모든 interval 공통 200 빈 배열). 코인은 4개 interval 모두 빗썸 공개 캔들 REST(`minutes/1`·`days`·`weeks`·`months`)에 **위임**(저장 없음, 진행 중 분봉/봉 포함, 조회 실패 시 502) | 003 MKT-002·MKT-008, 013 MKT-009, Issue #17, Issue #20, Issue #143 |
 | GET | /api/stocks/stream | market | 주식 전용 SSE 구독. 구독 직후 16종 전체를 snapshot 1건으로 전송, 이후 매분 새로 공개된 가격을 price로, 개장·마감 전환을 status로 push | 003 MKT-002, Issue #19 |
-| GET | /api/cryptos/stream | market | 코인 전용 SSE 구독. 구독 직후 12종 전체를 snapshot 1건으로 전송, 이후 빗썸 틱마다 price, 연결상태(5초 폴링) 변경을 status로 push. 코인 변동 카드가 확정되면 priceMoveCardConfirmed로 카드 id·종목 id를 push(Redis pub/sub 팬아웃, 카드 본문 없음) | 026, Issue #286, ADR-0018 |
+| GET | /api/cryptos/stream | market | 코인 전용 SSE 구독. 구독 직후 12종 전체를 snapshot 1건으로 전송, 이후 빗썸 틱마다 price, 연결상태(5초 폴링) 변경을 status로 push. 코인 변동 카드가 확정되면 priceMoveCardConfirmed로 카드 id·종목 id를 push(Redis pub/sub 팬아웃, 카드 본문 없음) | 028, Issue #286, ADR-0018 |
 | POST | /api/dev/stock-replay-imports | market | **(local 프로필 전용)** 08:10 수집 배치와 08:40 세션 확정 배치를 즉시 한 번 실행해 실제 KIS 분봉을 채운다. 그 시각을 기다리지 않거나 앱이 꺼져 있어 건너뛴 날의 보정용. 요청 본문 없음. `local` 프로필이 아니면 컨트롤러 빈 자체가 없어 404 | 003 MKT-005 (개발 도구, 이슈 없음) |
 | POST | /api/community/posts | community | 인증 사용자의 텍스트 게시물 작성. `instrumentId`(선택)로 종목을 하나 태그할 수 있다 — 존재하지 않거나 비활성(`tradable=false`) 종목은 400 `VALIDATION_ERROR`. `imageId`(선택)로 `POST /api/community/posts/images`에서 미리 업로드한 이미지 하나를 선(先)업로드-후(後)참조로 연결한다 — 존재하지 않으면 404, 타인 소유면 403, 이미 다른 게시물에 연결됐으면 400 | 008 COM-001, 022 COM-004·COM-006, Issue #23, Issue #246, Issue #248 |
 | GET | /api/community/posts?page=&size=&instrumentId= | community | 인증 사용자의 게시물 목록을 최신순 페이지네이션으로 조회. `instrumentId` 지정 시 그 종목이 태그된 게시물만 반환(미지정 시 전체). 응답에 태그 종목·첨부 이미지 정보 포함(없으면 각각 `null`) | 008 COM-001, 022 COM-004·COM-006, Issue #24, Issue #246, Issue #248 |
@@ -62,9 +62,9 @@
 | GET | /api/favorites | education | 본인 즐겨찾기를 등록 최신순으로 순수 조회 | 016 EDU-PRACTICE-002, candidate 2, Issue #168 |
 | DELETE | /api/favorites/{instrumentId} | education | 본인 즐겨찾기 해제 | 016 EDU-PRACTICE-002, candidate 3, Issue #172 |
 | POST | /api/education/practice/intentions | education | favorite로 선행 확인한 종목의 매수 전 수량·손절가·익절가 기록 | 016 EDU-PRACTICE-003·013, candidate 4, Issue #175 |
-| GET | /api/education/practice/synthetic-prices/{instrumentId} | education | 튜토리얼 전용 서버 생성 랜덤워크 시계열(제목·틱초·가격 100틱) 조회. 실제 시세·evidence와 무관, 저장소 없음 | 016 EDU-PRACTICE-003(#193), Issue #193 tasks 항목4 |
-| POST | /api/education/practice/holding-observations | education | OCO 없이 시장가/지정가 매수만으로 완결하는 실습 경로의 3단계 — holdingId로 favorite→intention→buyTrade→holding chain을 재해석해 서버 유효 현재가로 참조 손절·익절선 접근(evidence A)·시간 분산 관찰(evidence B)을 판정하고 관찰 1건을 append-only 저장. holding 타인 소유·존재하지 않음은 404 `NOT_FOUND`, chain 해석 실패는 409 `PRACTICE_EVIDENCE_MISSING`, 시세 없음은 409 `PRICE_UNAVAILABLE` | 026 MKT-PRACTICE-004·005·007, Issue #300 |
-| POST | /api/education/practice/holding-reflections | education | 위 경로의 3단계 완료 확정 — `practice_progresses`를 잠그고 chain 재해석 + 기존 관찰의 evidence A/B 존재를 재검증한 뒤 자유 복기 1건과 `practice_completions` 1행을 원자 저장하며 progress를 `COMPLETED`로 전이. holding 타인 소유·존재하지 않음은 404 `NOT_FOUND`, progress 행 없음·chain 실패·evidence 없음은 409 `PRACTICE_EVIDENCE_MISSING`, 이미 완료는 409 `PRACTICE_ALREADY_COMPLETED` | 026 MKT-PRACTICE-004·005·007·009, Issue #303 |
+| GET | /api/education/practice/synthetic-prices/{instrumentId} | education | 튜토리얼 전용 서버 생성 랜덤워크 시계열(제목·틱초·가격 100틱) 조회. 실제 시세·evidence와 무관, 저장소 없음. 거래 불가 종목도 허용하고 시세가 없으면 fallback 가격으로 생성해 `PRICE_UNAVAILABLE`이 발생하지 않는다. `instrumentId` 0 이하는 400 `VALIDATION_ERROR`, 미존재 종목은 404 `NOT_FOUND` | 016 EDU-PRACTICE-003(#193), Issue #193 tasks 항목4 |
+| POST | /api/education/practice/holding-observations | education | OCO 없이 시장가/지정가 매수만으로 완결하는 실습 경로의 3단계 — holdingId로 favorite→intention→buyTrade→holding chain을 재해석해 서버 유효 현재가로 참조 손절·익절선 접근(evidence A)·시간 분산 관찰(evidence B)을 판정하고 관찰 1건을 append-only 저장. holding 타인 소유·존재하지 않음은 404 `NOT_FOUND`, chain 해석 실패는 409 `PRACTICE_EVIDENCE_MISSING`, 시세 없음은 409 `PRICE_UNAVAILABLE`, `holdingId` 누락·0 이하는 400 `VALIDATION_ERROR`. 주식·코인 모두 적용 | 026 MKT-PRACTICE-004·005·007, Issue #300 |
+| POST | /api/education/practice/holding-reflections | education | 위 경로의 3단계 완료 확정 — `practice_progresses`를 잠그고 chain 재해석 + 기존 관찰의 evidence A/B 존재를 재검증한 뒤 자유 복기 1건과 `practice_completions` 1행을 원자 저장하며 progress를 `COMPLETED`로 전이. holding 타인 소유·존재하지 않음은 404 `NOT_FOUND`, progress 행 없음·chain 실패·evidence 없음은 409 `PRACTICE_EVIDENCE_MISSING`, 이미 완료는 409 `PRACTICE_ALREADY_COMPLETED`, `holdingId` 누락·0 이하나 `answer` 공백·2000자 초과는 400 `VALIDATION_ERROR`. 주식·코인 모두 적용 | 026 MKT-PRACTICE-004·005·007·009, Issue #303 |
 | GET | /api/instruments/{instrumentId}/price-moves | feedback | 종목의 변동 원인 카드 목록 조회. 주식은 현재 재생세션 원본 거래일 중 `revealTime`이 지난 카드만(스포일러 차단) `windowStart` 오름차순, 각 카드의 근거는 발행시각 내림차순. 카드 0건·재생세션 미준비 모두 200(후자는 `originTradeDate=null`). `status`(`READY`·`EMPTY`·`NOT_YET`)로 둘을 구별한다 | 012 FEED-006, Issue #180, Issue #280 |
 | GET | /api/instruments/{instrumentId}/news | feedback | 종목의 뉴스·공시 목록과 AI 요약 순수 조회. 주식은 09:00 이후에만 열리고 발행시각이 재생 시각을 지난 것만 노출하며, `summaryScope`가 15:30 전후로 `PRE_MARKET`→`FULL`로 바뀐다. 목록은 발행시각 내림차순 + `id` 내림차순이고 상한 초과 시 공시를 먼저 채운다. 코인은 재생세션·개장 게이트와 무관하게 조회 시각 기준 최근 24시간 뉴스와 `ROLLING_24H` 요약 `generated_at` 최신 1행을 돌려주고 `originTradeDate`는 `null`이다. 개장 전·재생세션 미준비·기사 0건·요약 행 없음·서술 실패가 전부 200(상태값은 spec §C-4) | 012 FEED-008, Issue #188 |
 | GET | /api/market/briefing?market= | feedback | 시장 단위 개장 전 브리핑 순수 조회. 주식은 **spec §C-2의 `전장` 구간 기사·공시만**(장중 기사 절대 미포함)이고 Part C와 09:00 하한이 같다. `items`는 저장하지 않고 조회 시 같은 구간 질의로 다시 만들며 상한은 `max-items-per-briefing`. 재생세션 미준비는 `EMPTY`·`originTradeDate=null`, 개장 전은 `NOT_YET`(Part C와 의도된 차이, spec §C-4). 코인은 재생세션과 무관하게 최근 24시간 코인 뉴스와 `generated_at` 최신 1행을 돌려주며 `originTradeDate=null`이고 `NOT_YET`이 되지 않는다. `market` 누락·허용 값 밖은 400 | 012 FEED-009, Issue #188 |
@@ -77,18 +77,22 @@
 
 ## 투자 실습 계획 라우트 (아직 구현하지 않음)
 
-`docs/specs/016-investment-education-policy`의 candidate 1 `POST /api/favorites`, candidate 2 `GET /api/favorites`, candidate 3 `DELETE /api/favorites/{instrumentId}`, candidate 4 `POST /api/education/practice/intentions`는 구현되어 위 실제 라우트 목록에 반영했다. 아래 6개 경로는 계약만 확정했으며 아직 controller가 없다. **위 실제 라우트 목록과 분리하며 블랙박스 QA의 실행 가능 API 근거로 사용하지 않는다.** 각 구현이 병합되는 커밋에서 해당 행을 위 표로 옮기고 `docs/api-contracts.md`의 계획 표시를 제거한다.
+`docs/specs/016-investment-education-policy`의 candidate 1~4(`POST`·`GET /api/favorites`, `DELETE /api/favorites/{instrumentId}`, `POST /api/education/practice/intentions`)와 튜토리얼 합성 시세는 구현되어 위 실제 라우트 목록에 반영했다. `026` 경로의 관찰·복기 2개도 마찬가지다. 아래 8개 경로는 계약만 확정했으며 아직 controller가 없다. **위 실제 라우트 목록과 분리하며 블랙박스 QA의 실행 가능 API 근거로 사용하지 않는다.** 각 구현이 병합되는 커밋에서 해당 행을 위 표로 옮기고 `docs/api-contracts.md`의 계획 표시를 제거한다.
+
+`GET /api/education/practice?market=`를 제외한 7개는 전부 OCO 계열이라 **3차 MVP 착수분**이다(2026-08-06 확정). OCO 진행조회는 holding 기반 조회와 URL·완료 key를 공유하지 않는다.
 
 | Method | URL | 도메인 | 요약 | Spec |
 |---|---|---|---|---|
-| GET | /api/education/practice | education | 실제 증거로 계산한 3단계 실습 진행 상태 순수 조회 | 016 EDU-PRACTICE-001~003·008·011, candidate 12 |
+| GET | /api/education/practice?market= | education | `market=STOCK|CRYPTO` 필수. 선택한 시장의 holding 기반 3단계 실습 진행 상태를 실제 증거로 계산하는 순수 조회 | 026 MKT-PRACTICE-008, Issue #305 |
+| GET | /api/education/practice/oco?market= | education | `market=STOCK|CRYPTO` 필수. `exitPlanId` 기반 3차 OCO 실습 진행 상태 순수 조회. `INVESTMENT_OCO_PRACTICE_V1|COIN_OCO_PRACTICE_V1` 별도 완료 key 사용 | 016 candidate 12, Issue #308 |
+| POST | /api/education/practice/oco/intentions | education | OCO 전용 사전 의도 기록. 종목 market에 따라 OCO 전용 progress를 생성·잠그고 intention에 내부 tutorial key를 귀속. holding 기반 intention과 상호 대체 불가 | 016 candidate 4 확장, Issue #308 |
 | POST | /api/exit-plans | order | 시장가 매수 체결분의 tutorial-only OCO 청산 예약 | 016 EDU-PRACTICE-003·005·006·010·013, candidate 7, 019 |
 | GET | /api/exit-plans?status= | order | 본인의 OCO 예약 목록 순수 조회. status 생략 시 PENDING, 현재는 PENDING만 허용 | 016 EDU-PRACTICE-003, candidate 8 |
 | DELETE | /api/exit-plans/{exitPlanId} | order | PENDING OCO 전체 취소와 예약 수량 1회 반환 | 016 EDU-PRACTICE-006, candidate 9 |
 | POST | /api/education/practice/observations | education | PENDING plan의 서버 현재가 관찰 기록 | 016 EDU-PRACTICE-012, candidate 13 |
 | POST | /api/education/practice/reflections | education | 관찰 증거 이후 자유 복기 저장과 최초 불변 완료 | 016 EDU-PRACTICE-007·011·013, candidate 14 |
 
-candidate 1·2·3·4와 나머지 6개 계획 경로 모두 공개 경로에 추가하지 않으며 Access Bearer 인증을 요구한다. `POST /api/orders` 시장가 매수는 이미 제공 중인 기존 API를 그대로 사용하므로 계획 라우트에 중복 기재하지 않는다.
+**투자 실습 관련 경로는 구현·계획을 막론하고 전부** 공개 경로에 추가하지 않으며 Access Bearer 인증을 요구한다 — 즐겨찾기 3개, 기존 사전 의도, 합성 시세, `026`의 관찰·복기 2개, 그리고 위 계획 7개 모두 해당한다. `POST /api/orders` 시장가 매수는 이미 제공 중인 기존 API를 그대로 사용하므로 계획 라우트에 중복 기재하지 않는다.
 
 #199의 PRICE/PERCENT intention 확장은 아직 실제 라우트 계약이 아니다. 구현 시 기존 타입 생략+가격 요청을 PRICE로 호환하고, OCO 계획 라우트는 가격·rate를 다시 받지 않고 intention 정본에서 확정한다. 상세 계약은 `docs/specs/019-exit-price-policy`를 따른다.
 

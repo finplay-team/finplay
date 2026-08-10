@@ -41,7 +41,7 @@ public final class SseEmitterTestHandler implements ResponseBodyEmitter.Handler 
 		this.throwIoExceptionOnSend = true;
 	}
 
-	// 전송이 지연되는 가짜 구독자를 흉내낸다 — 이후의 모든 send() 호출자가 이 시간만큼 블로킹된다(026 tasks.md
+	// 전송이 지연되는 가짜 구독자를 흉내낸다 — 이후의 모든 send() 호출자가 이 시간만큼 블로킹된다(028 tasks.md
 	// 4번 항목 "비차단" 증거용). 호출자 스레드(RedisMessageListenerContainer의 리스너 스레드)만 블로킹되고 이
 	// emitter를 등록한 감시 스레드는 영향받지 않아야 한다는 것이 그 테스트의 주장이다.
 	public void delaySendsBy(long millis) {

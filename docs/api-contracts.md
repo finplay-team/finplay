@@ -180,7 +180,7 @@ PR #49 차단 리뷰 후속 Fake 재사용·동시성·DB 불변 자동 회귀�
 
 | Method | URL | 인증 | 쿼리 파라미터 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|---|
-| GET | /api/instruments/{instrumentId}/candles | Access Bearer 필수 | `interval`(필수, `1m`\|`1d`\|`1w`\|`1M` 중 하나, **대소문자 구분**), `from`·`to`(선택, ISO-8601 `LocalDateTime`, 예: `2026-07-27T09:00:00`) | 200 `[{"sourceTime":"2026-07-22T09:00:00","open":71000,"high":71500,"low":70900,"close":71200,"volume":12345}, ...]` (`CandleResponse[]`, 시각 오름차순, 모든 `interval`·모든 시장 공통 최대 200개, 초과 시 `to` 기준 최신 200개). 주식은 어떤 `interval`이든 아직 공개된 분봉이 없거나 재생세션이 준비되지 않은 경우 예외 없이 200 `[]` | `interval`이 `1m`·`1d`·`1w`·`1M`이 아니면(대소문자 변형 `1D`·`1W`·`1MO`·`1min` 포함) 400 `VALIDATION_ERROR`. `from > to`면 400 `VALIDATION_ERROR` — **코인은 `interval`과 무관하게 항상 시각까지 포함해 비교**하지만, 주식 `1d`·`1w`·`1M`은 날짜 성분만 비교한다(아래 요약 참조). 그래서 같은 `from`·`to`라도 주식 집계에서는 통과하는 값이 코인에서는 400이 될 수 있다. 존재하지 않는 `instrumentId`는 404 `NOT_FOUND`. 코인에서 빗썸 조회가 실패하면 502 `MARKET_DATA_PROVIDER_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED`. **오류 계약은 `1m`만 지원하던 때와 동일하며 013에서 바뀌지 않았다** — 4값으로 확장된 것은 `interval` 허용값 자체뿐이다 | 003 MKT-002·MKT-008, 013 MKT-009, 022 MKT-010(이슈 #242, `1m` 코인만 캐싱 경로 추가), Issue #17, Issue #20, Issue #143 |
+| GET | /api/instruments/{instrumentId}/candles | Access Bearer 필수 | `interval`(필수, `1m`\|`1d`\|`1w`\|`1M` 중 하나, **대소문자 구분**), `from`·`to`(선택, ISO-8601 `LocalDateTime`, 예: `2026-07-27T09:00:00`) | 200 `[{"sourceTime":"2026-07-22T09:00:00","open":71000,"high":71500,"low":70900,"close":71200,"volume":12345}, ...]` (`CandleResponse[]`, 시각 오름차순, 모든 `interval`·모든 시장 공통 최대 200개, 초과 시 `to` 기준 최신 200개). 주식은 어떤 `interval`이든 아직 공개된 분봉이 없거나 재생세션이 준비되지 않은 경우 예외 없이 200 `[]` | `interval`이 `1m`·`1d`·`1w`·`1M`이 아니면(대소문자 변형 `1D`·`1W`·`1MO`·`1min` 포함) 400 `VALIDATION_ERROR`. `from > to`면 400 `VALIDATION_ERROR` — **코인은 `interval`과 무관하게 항상 시각까지 포함해 비교**하지만, 주식 `1d`·`1w`·`1M`은 날짜 성분만 비교한다(아래 요약 참조). 그래서 같은 `from`·`to`라도 주식 집계에서는 통과하는 값이 코인에서는 400이 될 수 있다. 존재하지 않는 `instrumentId`는 404 `NOT_FOUND`. 코인에서 빗썸 조회가 실패하면 502 `MARKET_DATA_PROVIDER_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED`. **오류 계약은 `1m`만 지원하던 때와 동일하며 013에서 바뀌지 않았다** — 4값으로 확장된 것은 `interval` 허용값 자체뿐이다 | 003 MKT-002·MKT-008, 013 MKT-009, 027 MKT-010(이슈 #242, `1m` 코인만 캐싱 경로 추가), Issue #17, Issue #20, Issue #143 |
 
 - **`interval` 4값**: `1m`(1분봉)·`1d`(일봉)·`1w`(주봉)·`1M`(월봉). **대소문자를 구분한다** — `1M`은 월봉, `1m`은 분봉이며 서버는 정규화하지 않는다. `interval` 검증은 `instrumentId` 존재 조회보다 **먼저** 수행한다 — 잘못된 `interval`은 존재하지 않는 종목이어도 400이다.
 - **주식과 코인의 출처가 다르다** — 응답 형식은 같지만 주식은 MySQL `stock_candles`의 **과거 거래일 재생** 1분봉(`1d`·`1w`·`1M`은 그 1분봉을 서버가 직접 집계), 코인은 빗썸 공개 캔들 REST의 **지금 이 순간까지의 실시간** 봉(모든 `interval`에서 위임, 서버 집계 없음)이다. 소비자는 `market`에 따라 파싱을 나누지 않지만, **미마감 분봉/미완성 버킷 규칙은 시장별로 다르다**(바로 아래 두 절 참조).
@@ -194,7 +194,7 @@ PR #49 차단 리뷰 후속 Fake 재사용·동시성·DB 불변 자동 회귀�
 
 #### 코인 캔들 전용 규칙 (MKT-008, 013)
 
-> 아래 규칙은 원래 `1m` 계약이며 `1d`·`1w`·`1M`(013)에도 그대로 적용됐다 — 코인은 4개 `interval` 모두 저장·집계 없이 빗썸에 위임하는 같은 구조였다. **(2026-08-06 MKT-010, `022-crypto-tick-candle-cache`) `1m`만 이 구조에서 갈라졌다** — 서버가 빗썸 체결 스트림으로 직접 만든 최근 진행 중 분봉을 Redis에 캐싱하고, 캐시에 없는 구간만 아래 REST 위임으로 보충한다. `1d`·`1w`·`1M`은 이 절 그대로이며 위 "코인 위임(`1d`·`1w`·`1M`) 규칙 요약"을 참조한다.
+> 아래 규칙은 원래 `1m` 계약이며 `1d`·`1w`·`1M`(013)에도 그대로 적용됐다 — 코인은 4개 `interval` 모두 저장·집계 없이 빗썸에 위임하는 같은 구조였다. **(2026-08-06 MKT-010, `027-crypto-tick-candle-cache`) `1m`만 이 구조에서 갈라졌다** — 서버가 빗썸 체결 스트림으로 직접 만든 최근 진행 중 분봉을 Redis에 캐싱하고, 캐시에 없는 구간만 아래 REST 위임으로 보충한다. `1d`·`1w`·`1M`은 이 절 그대로이며 위 "코인 위임(`1d`·`1w`·`1M`) 규칙 요약"을 참조한다.
 
 - `1d`·`1w`·`1M`의 데이터 출처는 빗썸 공개 캔들 REST API다 — 인증·API Key가 필요 없고, 응답을 MySQL·Redis에 저장하지 않는다. **`1m`은 다르다** — 서버가 만든 진행 중 분봉을 Redis에 캐싱하고, 캐시에 없는 구간만 이 REST를 호출한다(MKT-010). 코인 캔들 전용 **MySQL** 테이블은 `1m`도 여전히 만들지 않는다 — 캐싱은 Redis에만 한다.
 - **실시간 차트다 — 과거 데이터 재생이 아니다.** 주식의 재생 분봉은 옛 거래일을 오늘 다시 트는 것이지만, 코인 분봉은 지금 이 순간까지의 실제 시장이다(11:43:06에 조회하면 `11:43`·`11:42`·`11:41` 봉이 온다). 현재가 API의 WebSocket 틱과 **같은 지금의 시장을 다른 해상도로 본 것**이다.
@@ -236,7 +236,7 @@ PR #49 차단 리뷰 후속 Fake 재사용·동시성·DB 불변 자동 회귀�
 
 | Method | URL | 인증 | 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|
-| GET | /api/cryptos/stream | Access Bearer 필수(fetch + `Authorization: Bearer <accessToken>` 헤더, 브라우저 기본 `EventSource` 미사용) | `Content-Type: text/event-stream`. `snapshot`(코인 12종 전체, id 없음) → 이후 `price`(빗썸 틱마다, id 있음)·`status`(연결상태 변경 시, id 없음)·`priceMoveCardConfirmed`(코인 변동 카드 확정 시, id 없음) | Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식(응답 본문, 스트림 시작 전) | 026, Issue #286, ADR-0018 |
+| GET | /api/cryptos/stream | Access Bearer 필수(fetch + `Authorization: Bearer <accessToken>` 헤더, 브라우저 기본 `EventSource` 미사용) | `Content-Type: text/event-stream`. `snapshot`(코인 12종 전체, id 없음) → 이후 `price`(빗썸 틱마다, id 있음)·`status`(연결상태 변경 시, id 없음)·`priceMoveCardConfirmed`(코인 변동 카드 확정 시, id 없음) | Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식(응답 본문, 스트림 시작 전) | 028, Issue #286, ADR-0018 |
 
 `CryptoPriceSseController.stream()`이 `CryptoPriceStreamService.createEmitter()`(`SseEmitterRegistry.createEmitter(Market.CRYPTO)` 위임) → `sendSnapshot(emitter)`(해당 emitter에만 snapshot 전송) → `activate(emitter)`(브로드캐스트 대상에 추가) 순서로 호출한다 — `StockPriceSseController`와 동일한 3단계 순서이며, snapshot 전송보다 activate가 먼저면 새 구독자가 snapshot보다 price를 먼저 받는 경합이 생긴다.
 
@@ -593,11 +593,23 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 ---
 
-## 016 투자 실습 (candidate 1·2·3 제공, 나머지 계획)
+## 016 투자 실습 (candidate 1~4·합성 시세 제공, OCO 계열 계획)
 
-`docs/specs/016-investment-education-policy`의 신규 계약 10건이다. candidate 1 `POST /api/favorites`, candidate 2 `GET /api/favorites`, candidate 3 `DELETE /api/favorites/{instrumentId}`는 controller가 구현되어 제공 중이며, 나머지 7건은 아직 계획 상태이므로 블랙박스 QA의 실행 가능 API 근거로 사용하지 않는다. 각 후속 구현이 병합될 때 해당 계약을 실제 상태로 전환하고 `docs/api-routes.md`의 계획 행도 실제 라우트 목록으로 옮긴다. 모든 경로는 Access Bearer 인증과 공통 오류 body를 사용하며 JSON POST는 `Content-Type: application/json`이다.
+`docs/specs/016-investment-education-policy`의 계약은 제공 5건과 계획 7건, 총 12건이다.
+
+**제공 중(블랙박스 QA 실행 가능)** — 5건: candidate 1 `POST /api/favorites`, candidate 2 `GET /api/favorites`, candidate 3 `DELETE /api/favorites/{instrumentId}`, candidate 4 `POST /api/education/practice/intentions`, 튜토리얼 합성 시세 `GET /api/education/practice/synthetic-prices/{instrumentId}`. 아래 각 절에 "(계획)" 표시가 없는 것이 이에 해당한다.
+
+**계획 상태(QA 실행 근거로 쓰지 않는다)** — 7건: `POST /api/education/practice/oco/intentions`(candidate 4 확장), `GET /api/education/practice/oco`(candidate 12), `POST/GET/DELETE /api/exit-plans`(7·8·9), `POST /api/education/practice/observations`(13), `POST /api/education/practice/reflections`(14). 전부 3차 MVP OCO 경로이며 절 제목에 "(계획)"으로 표시한다. 이 절들이 참조하는 `EXIT_PLAN_*` 오류 코드는 아직 `ErrorCode` enum에 없다.
+
+> `GET /api/education/practice/oco`는 3차 MVP OCO 전용 진행조회다. 2차 holding 기반 `GET /api/education/practice`와 URL·완료 key를 공유하지 않는다(2026-08-10 확정, 이슈 #308).
+>
+> 3단계 실습을 **지금 QA한다면 이 절이 아니라 `026` 절**을 근거로 삼는다 — 2차 MVP에서 실제로 완료 가능한 경로는 그쪽이다.
+
+각 후속 구현이 병합될 때 해당 계약을 실제 상태로 전환하고 `docs/api-routes.md`의 계획 행도 실제 라우트 목록으로 옮긴다. 모든 경로는 Access Bearer 인증과 공통 오류 body를 사용하며 JSON POST는 `Content-Type: application/json`이다.
 
 수량은 양수 `DECIMAL(30,8)` 범위(정수부 최대 22자리·소수부 최대 8자리), 가격은 양수 `DECIMAL(18,8)` 범위(정수부 최대 10자리·소수부 최대 8자리)다. 초과 precision/scale은 반올림하지 않고 400 `VALIDATION_ERROR`로 거부한다. 모든 id는 양의 `Long`이다.
+
+**즐겨찾기·사전 의도의 저장 방식 (정본: `docs/adr/0012-tutorial-state-in-memory.md`)** — 이 절 전체에 적용되므로 각 엔드포인트에서 반복하지 않는다. `#193`부터 `favorites`(V14)·`practice_intentions`(V16) 테이블은 DROP됐고 서버 힙 메모리(인스턴스 단위 `ConcurrentHashMap`)에 저장한다. 클라이언트가 관측하는 결과는 셋이다 — ① **서버 재시작·재배포 시 등록된 즐겨찾기와 사전 의도가 모두 사라진다**(재등록 필요, 삭제 요청은 404가 된다), ② `favoriteId`·`intentionId`는 프로세스 기동마다 1부터 재채번되므로 서로 다른 시점의 같은 id가 다른 리소스일 수 있다, ③ 다중 인스턴스에서 sticky session이 없으면 인스턴스마다 다른 상태가 보인다. `practice_progresses`·`practice_completions`(완료 판정)는 DB에 남아 이 유실의 영향을 받지 않는다.
 
 ### 즐겨찾기 등록
 
@@ -605,7 +617,7 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 |---|---|---|---|---|---|
 | POST | /api/favorites | `{"instrumentId":1}` (`FavoriteCreateRequest`) | 201 `{"favoriteId":1,"instrumentId":1,"market":"STOCK","symbol":"005930","name":"삼성전자","createdAt":"2026-08-03T10:00:00"}` (`FavoriteResponse`) | 400 `VALIDATION_ERROR`; 404 `NOT_FOUND`(종목); 409 `INSTRUMENT_NOT_TRADABLE`, `DUPLICATE_RESOURCE` | 016 candidate 1 |
 
-같은 사용자의 `(userId, instrumentId)`는 유일하다. 중복 등록은 기존 값을 반환하지 않는다. `#193`(ADR-0012)부터 DB가 아닌 서버 힙 메모리(인스턴스 단위 `ConcurrentHashMap`)에 저장하며, `favoriteId`는 프로세스 기동마다 1부터 재채번된다. 서버 재시작 시 등록된 즐겨찾기는 모두 유실된다(재등록 필요).
+같은 사용자의 `(userId, instrumentId)`는 유일하다. 중복 등록은 기존 값을 반환하지 않는다. 저장 방식과 재시작 유실은 이 절 도입부 참고.
 
 ### 즐겨찾기 목록 조회
 
@@ -621,23 +633,30 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 |---|---|---|---|---|---|
 | DELETE | /api/favorites/{instrumentId} | 양의 `instrumentId` path | 204, 본문 없음 | 400 `VALIDATION_ERROR`; 404 `FAVORITE_NOT_FOUND` | 016 candidate 3 |
 
-타인 소유 행은 존재를 숨겨 404로 처리하며 반복 삭제도 404다. 즐겨찾기가 서버 힙 메모리 저장이므로(위 등록 절 참고) 재시작 후에는 삭제 대상도 사라져 있어 항상 404다.
+타인 소유 행은 존재를 숨겨 404로 처리하며 반복 삭제도 404다. 재시작 후에는 삭제 대상 자체가 사라져 있어 항상 404다(도입부 ① 참고).
 
-### 투자 실습 진행 조회 (계획)
+### 투자 실습 진행 조회 (계획 — 3차 MVP OCO 버전)
+
+> 이 계약은 3차 MVP OCO 전용 정본이다. `exitPlanId`·`FINAL_EVENT` evidence와 OCO 전용 완료 key를 사용하며 아래 `026`의 holding 기반 계약과 독립적으로 공존한다.
 
 | Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|
-| GET | /api/education/practice | 추가 입력 없음 | 200 `InvestmentPracticeResponse` | 인증 공통 오류 | 016 candidate 12 |
+| GET | /api/education/practice/oco?market= | `market` 필수(`STOCK|CRYPTO`) | 200 `InvestmentPracticeResponse` | 400 `VALIDATION_ERROR`; 인증 공통 오류 | 016 candidate 12 (3차 MVP) |
 
-응답은 `tutorialKey="INVESTMENT_PRACTICE_V1"`, `status`(`NOT_STARTED|IN_PROGRESS|COMPLETED`), `currentStep`(진행 중 1~3, 완료 시 null), 1~3 순서의 `steps`, `completedAt`(완료 전 null)을 포함한다. 각 step은 `step`, `status`, `locked`, non-null `evidence`를 가진다. evidence는 favorite·intention·buyTrade·exitPlan·observation·reflection 각각의 id와 시각을 쌍으로 노출하며 아직 없는 값은 null이다. observation은 `evidenceType`(`CLOSER_TO_BOUNDARY|TIMED_REPETITION|FINAL_EVENT`)까지 삼쌍으로 null/non-null이다. 완료 전에는 qualifying observation이 있는 유효 chain을 우선해 `exitPlan.reservedAt ASC, exitPlan.id ASC` 첫 chain을 선택하고, 없으면 전체 유효 chain에서 같은 정렬의 첫 chain을 선택한다. 유효 chain도 없으면 `favorite.createdAt ASC, favorite.id ASC` 첫 favorite를 사용한다. 단계별 evidence와 observation은 선택한 한 chain 안에서만 구성한다. 조회는 write하지 않고, 최초 완료 기록 이후에는 evidence 삭제·종결에도 `COMPLETED`가 회귀하지 않는다.
+응답은 `market=STOCK`이면 `tutorialKey="INVESTMENT_OCO_PRACTICE_V1"`, `market=CRYPTO`이면 `tutorialKey="COIN_OCO_PRACTICE_V1"`이며, `status`(`NOT_STARTED|IN_PROGRESS|COMPLETED`), `currentStep`(진행 중 1~3, 완료 시 null), 1~3 순서의 `steps`, `completedAt`(완료 전 null)을 포함한다. 각 step은 `step`, `status`, `locked`, non-null `evidence`를 가진다. evidence는 favorite·intention·buyTrade·exitPlan·observation·reflection 각각의 id와 시각을 쌍으로 노출하며 아직 없는 값은 null이다. observation은 `evidenceType`(`CLOSER_TO_BOUNDARY|TIMED_REPETITION|FINAL_EVENT`)까지 삼쌍으로 null/non-null이다. 완료 전에는 qualifying observation이 있는 유효 chain을 우선해 `exitPlan.reservedAt ASC, exitPlan.id ASC` 첫 chain을 선택하고, 없으면 전체 유효 chain에서 같은 정렬의 첫 chain을 선택한다. 유효 chain도 없으면 `favorite.createdAt ASC, favorite.id ASC` 첫 favorite를 사용한다. 단계별 evidence와 observation은 선택한 한 chain 안에서만 구성한다. 조회는 write하지 않고, 최초 완료 기록 이후에는 evidence 삭제·종결에도 `COMPLETED`가 회귀하지 않는다.
 
 ### 투자 의도 기록
 
 | Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|
 | POST | /api/education/practice/intentions | Access Bearer 필수. `{"instrumentId":1,"quantity":10,"stopLoss":65000,"takeProfit":75000}` (`PracticeIntentionCreateRequest`). 네 필드 모두 필수·양수이며 `quantity`는 정수부 22자리/소수부 8자리 이하, `stopLoss`·`takeProfit`은 각각 정수부 10자리/소수부 8자리 이하 | 201 `{"intentionId":1,"instrumentId":1,"quantity":10,"stopLoss":65000,"takeProfit":75000,"createdAt":"2026-08-03T10:01:00"}` (`PracticeIntentionResponse`) | 400 `VALIDATION_ERROR`; Access 인증 실패는 401 `UNAUTHORIZED`; 404 `NOT_FOUND`(종목); 409 `PRACTICE_STEP_LOCKED`, `PRACTICE_ALREADY_COMPLETED` 공통 오류 형식 | 016 candidate 4, Issue #175 |
+| POST | /api/education/practice/oco/intentions | **계획 — QA 실행 근거 아님.** 요청·응답 DTO와 검증은 위 API와 동일 | 201 `PracticeIntentionResponse`. 종목 market에 따라 OCO 전용 progress를 생성·잠그고 intention에 같은 key를 내부 귀속 | 위 API와 같은 오류 형식. 완료 판정은 OCO 전용 key 기준 | 016 candidate 4 확장, Issue #308 |
 
-현재 존재하는 본인 favorite와 같은 종목만 허용한다. 서비스는 `(user_id, tutorial_key)` 유일 제약의 `practice_progresses`를 atomic insert-if-absent 한 뒤 진행 행과 favorite를 잠가 검증한다. 완료 상태면 저장 없이 409 `PRACTICE_ALREADY_COMPLETED`, favorite가 없으면 저장 없이 409 `PRACTICE_STEP_LOCKED`다. `#193`(ADR-0012)부터 `practice_intentions` 테이블은 DROP되어 있으며, 유효 요청마다 서버 힙 메모리(인스턴스 단위, 사용자별 리스트)에 새 레코드를 추가한다(중복 intention을 금지하는 유일 제약은 없음). 필드는 기존과 동일한 `intentionId`(프로세스 기동마다 1부터 재채번), `instrumentId`, `quantity`, `stopLoss`, `takeProfit`, `createdAt`이며, 서버 재시작 시 모두 유실된다. 이 API는 의도만 기록하며 실제 시장가 매수 체결은 기존 `POST /api/orders`의 별도 요청이다.
+현재 존재하는 본인 favorite와 같은 종목만 허용한다. 서비스는 `(user_id, tutorial_key)` 유일 제약의 `practice_progresses`를 atomic insert-if-absent 한 뒤 진행 행과 favorite를 잠가 검증한다.
+
+**`tutorial_key`는 대상 종목의 `market`으로 서버가 결정한다** — `STOCK`이면 `INVESTMENT_PRACTICE_V1`, `CRYPTO`이면 `COIN_PRACTICE_V1`(이슈 #226 구현 완료, 규칙 정본은 `docs/specs/020-coin-practice-tutorial`). **클라이언트는 key를 입력하지 않는다.** 주식과 코인은 완전히 독립된 튜토리얼이라 한쪽 완료가 다른 쪽에 영향을 주지 않으며, 코인 종목으로 의도를 기록하려면 1단계 favorite도 같은 코인 종목이어야 한다(아니면 409 `PRACTICE_STEP_LOCKED`). 완료 상태면 저장 없이 409 `PRACTICE_ALREADY_COMPLETED`, favorite가 없으면 저장 없이 409 `PRACTICE_STEP_LOCKED`다. 유효 요청마다 사용자별 리스트에 새 레코드를 추가하며 **중복 intention을 금지하는 유일 제약은 없다**(저장 방식·유실은 도입부 참고). 이 API는 의도만 기록하며 실제 매수 체결은 `POST /api/orders`(시장가) 또는 `POST /api/orders/limit`(코인 지정가)의 별도 요청이다.
+
+OCO 전용 경로는 `STOCK`이면 `INVESTMENT_OCO_PRACTICE_V1`, `CRYPTO`이면 `COIN_OCO_PRACTICE_V1`을 사용한다. 두 경로의 intention은 같은 인메모리 ID 공간에 저장하되 내부 tutorial key로 구분하며 상호 대체할 수 없다. OCO 생성은 OCO 전용 intention만 인정하고, OCO 복기는 exit plan 시장의 OCO progress를 잠가 같은 key의 completion을 생성한다. 따라서 holding 기반 실습을 이미 완료한 사용자도 OCO 전용 의도를 새로 기록해 독립적으로 시작할 수 있다.
 
 **후속 확장 계획(#199, 아직 미구현):** 기존 타입 생략+`stopLoss`·`takeProfit` 요청은 PRICE로 호환하면서 `exitPriceType=PRICE|PERCENT`를 추가한다. PERCENT는 퍼센트 단위(백분율 값, `5`=5%)의 `stopLossRate`·`takeProfitRate`만 받고 실제 시장가 BUY `entryPrice`를 기준으로 OCO 생성 시 scale 8 절대 가격선을 계산한다. intention은 ADR-0012대로 인메모리를 유지하고 내부 UUID instance key로 영속 exit plan과 숫자 ID 재사용을 구분한다. tagged union, rate 범위·반올림·저장 정책은 `docs/specs/019-exit-price-policy`가 정본이며, 구현 전까지 위 현재 요청·응답만 실제 호출 가능하다.
 
@@ -720,7 +739,13 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 ## 026 시장가/지정가 매매 기반 투자 실습 (OCO 없이, holding-observations)
 
-`016`의 OCO exit plan 없이 지금 production에 있는 시장가·코인 지정가 매수만으로 2·3단계를 완결하는 대안 경로다(`docs/specs/026-market-order-practice-tutorial`). `holdingId`를 요청 식별자로 받으며 `016`의 `/observations`·`exitPlanId` 계약과 URL·필드가 다르고 서로 공존한다(spec.md "관찰·복기 API 대상 식별자" 절).
+`016`의 OCO exit plan 없이 지금 production에 있는 시장가·코인 지정가 매수만으로 2·3단계를 완결하는 경로다(`docs/specs/026-market-order-practice-tutorial`). `holdingId`를 요청 식별자로 받으며 `016`의 `/observations`·`exitPlanId` 계약과 URL·필드가 다르고 서로 공존한다(spec.md "관찰·복기 API 대상 식별자" 절).
+
+> **2차 MVP에서 3단계 실습을 실제로 완료할 수 있는 유일한 경로이며, 블랙박스 QA는 이 절을 근거로 삼는다.** `016` 절의 OCO 계약(`/exit-plans`, `/observations`, `/reflections`)은 3차 MVP 설계이고 controller가 없다.
+>
+> **`GET /api/education/practice?market=STOCK|CRYPTO`가 이 holding 기반 경로의 정본이다**(2026-08-10 확정, 이슈 #308). `market`은 필수이며 응답 하나는 선택한 시장의 `INVESTMENT_PRACTICE_V1|COIN_PRACTICE_V1` 한 key만 나타낸다. 아직 구현되지 않았으며(이슈 #305), evidence 필드는 `holdingId`와 계산된 참조 손절·익절가를 담고 `evidenceType`은 `CLOSER_TO_BOUNDARY|TIMED_REPETITION`만 허용한다. 3차 OCO는 별도 `GET /api/education/practice/oco?market=`와 별도 완료 key를 사용한다.
+
+**시장 적용 범위**: 주식·코인 모두 지원한다. 2단계 매수 증거는 주문 유형을 구분하지 않으므로(`TradeService.findEarliestFilledBuyTradeMatching`이 `side=BUY`와 수량 일치만 검사) 코인은 `POST /api/orders`(시장가)와 `POST /api/orders/limit`(지정가) 체결 둘 다 인정되고, 주식은 지정가 API 자체가 없어 시장가만 자연히 해당한다.
 
 ### 실습 3단계 가격 관찰 기록 (holding 기준)
 
@@ -752,7 +777,7 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 | `PracticeHoldingReflectionCreateRequest` | `Long holdingId`, `String answer` | `holdingId` non-null·양수; `answer`는 non-blank·2000자 이하 |
 | `PracticeHoldingReflectionResponse` | `Long reflectionId`, `Long holdingId`, `String prompt`, `String answer`, `LocalDateTime createdAt` | 모두 non-null; `prompt`는 고정 문구 |
 
-`GET /api/education/practice`(이 경로 기준)는 아직 구현하지 않았다(이 spec의 다음 작업 항목).
+`GET /api/education/practice?market=`의 상태와 정본 여부는 이 절 도입부 참고(이슈 #305 미착수).
 
 ## 012 AI 피드백
 

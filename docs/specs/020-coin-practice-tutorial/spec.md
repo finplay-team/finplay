@@ -1,8 +1,10 @@
 # Spec: 코인 투자 실습 튜토리얼 정책
 
-> 상태: 문서 설계 확정, production 구현 미착수
+> 상태: 문서 설계 확정. OCO 계열 production은 미착수이나, **튜토리얼 key market 분기(`COIN_PRACTICE_V1`)는 이미 구현됨**(이슈 #226) — `tasks.md` 참고.
 >
-> **차수: 3차 MVP(2차 고도화) 착수분 (2026-08-06 재확정)**. 2026-08-05에는 이 코인 경로를 2차 MVP(1차 고도화)의 활성 트랙으로 우선 production하기로 했었으나, 2026-08-06 결정으로 그 우선 구현을 철회했다 — 튜토리얼 OCO(코인·주식 모두)와 일반 리스크관리 OCO(`021-general-risk-management-oco`)를 함께 3차 MVP에서 하나의 엔진으로 착수하기로 확정했기 때문이다. 이 spec의 설계(튜토리얼 key 분리, GTC 수명, 세션 없는 잠금 순서, 소수 수량 비교)는 그대로 유효하며 3차 착수 시점에 그 설계를 따른다. `docs/prd.md` §2·§3·§4 참고.
+> **이 spec은 OCO(예약형 손절·익절) 기반 코인 실습만 다룬다.** 차수는 **3차 MVP(2차 고도화)**다(2026-08-06 재확정 — 결정 경위 전문은 `docs/prd.md` §3이 정본). 설계(튜토리얼 key 분리, GTC 수명, 세션 없는 잠금 순서, 소수 수량 비교)는 그대로 유효하며 3차 착수 시점에 그 설계를 따른다.
+>
+> **2차 MVP에서 코인 실습을 실제로 완결할 수 있는 경로는 `docs/specs/026-market-order-practice-tutorial`이다** (2026-08-10 신설, OCO 없이 시장가·코인 지정가 매수로 완결). `026`은 이 문서의 튜토리얼 key 분리(`COIN_PRACTICE_V1`)와 scale 무관 수량 비교 규칙을 그대로 재사용한다 — 그 key 분기는 이미 production에 있다(이슈 #226, `PracticeIntentionService`). 진행조회는 필수 `market=STOCK|CRYPTO`로 한 시장만 선택하고, 3차 OCO는 별도 URL·완료 key를 사용한다(2026-08-10, 이슈 #308).
 
 ## 개요
 
@@ -39,7 +41,7 @@ production 구현은 이 이슈 범위가 아니다 — `019`(#199)와 같은 �
 - `practice_progresses.tutorial_key`는 이미 `VARCHAR(50)`이고 unique 제약도 key를 포함하므로 **스키마 변경·migration이 필요하지 않다**. 현재 하드코딩된 단일 상수(`PracticeIntentionService.TUTORIAL_KEY`)를 종목 market으로 해석하는 규칙으로 바꾸는 것이 구현 범위다.
 - key는 intention 생성 시 대상 종목의 `market`으로 결정한다. `STOCK`이면 `INVESTMENT_PRACTICE_V1`, `CRYPTO`이면 `COIN_PRACTICE_V1`이다. 클라이언트는 key를 입력하지 않는다.
 - **기존 행은 재해석·백필하지 않는다.** 현재 구현은 market과 무관하게 `INVESTMENT_PRACTICE_V1` 행을 만들기 때문에, 코인 종목으로 진행한 기존 진행 상태가 그 key에 남아 있을 수 있다. 그 행은 주식 실습 진행으로 그대로 두고 코인 실습은 새 key에서 새로 시작한다 — 완료 기록은 회귀 금지 대상이므로 소급 이동하지 않는다.
-- `GET /api/education/practice`는 조회 대상 튜토리얼을 구분해 응답한다. 응답의 `tutorialKey`는 두 값 중 하나이며 단계 evidence는 같은 key의 chain에서만 구성한다.
+- holding 기반 `GET /api/education/practice?market=STOCK|CRYPTO`와 OCO 기반 `GET /api/education/practice/oco?market=STOCK|CRYPTO`는 모두 `market`을 필수로 받아 한 시장의 튜토리얼만 응답한다. holding 기반 key는 `INVESTMENT_PRACTICE_V1|COIN_PRACTICE_V1`, OCO 기반 key는 `INVESTMENT_OCO_PRACTICE_V1|COIN_OCO_PRACTICE_V1`이며 서로 완료를 공유하지 않는다.
 
 ## 3단계 정의와 완료 증거 (코인)
 

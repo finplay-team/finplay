@@ -1,6 +1,6 @@
 // 전송이 느린 가짜 SSE 구독자가 등록돼 있어도 CryptoPriceMoveWatcher.watch()의 소요시간이 늘어나지 않음을 확인한다
 // — publish가 별도 스레드(RedisMessageListenerContainer)에서 소비되는 것의 직접 증거다.
-// (docs/specs/026-crypto-card-sse-push/tasks.md 항목 4 — 비차단 검증)
+// (docs/specs/028-crypto-card-sse-push/tasks.md 항목 4 — 비차단 검증)
 package com.finplay.api.feedback.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

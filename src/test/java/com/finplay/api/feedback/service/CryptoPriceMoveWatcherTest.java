@@ -453,7 +453,7 @@ class CryptoPriceMoveWatcherTest {
 
 			verify(narrativeService, never()).resolvePriceMoveNarrative(any());
 			verify(priceMoveCardWriter, never()).persist(any(), any());
-			// 카드 생성 자체가 취소된 경우이므로 push도 시도되면 안 된다 (026 tasks.md 항목 3).
+			// 카드 생성 자체가 취소된 경우이므로 push도 시도되면 안 된다 (028 tasks.md 항목 3).
 			verify(cryptoPriceMoveCardPublisher, never()).publish(any(), any());
 		}
 
@@ -523,7 +523,7 @@ class CryptoPriceMoveWatcherTest {
 			verify(newsCollectionService, times(1)).collectForInstrument(any());
 			verify(newsMatcher, times(2)).matchCrypto(any(), any());
 			verify(priceMoveCardWriter, never()).persist(any(), any());
-			// 재매칭도 비어 카드 생성 자체가 취소된 경우이므로 push도 시도되면 안 된다 (026 tasks.md 항목 3).
+			// 재매칭도 비어 카드 생성 자체가 취소된 경우이므로 push도 시도되면 안 된다 (028 tasks.md 항목 3).
 			verify(cryptoPriceMoveCardPublisher, never()).publish(any(), any());
 		}
 	}
@@ -759,7 +759,7 @@ class CryptoPriceMoveWatcherTest {
 		assertThat(card.getChangeRate().setScale(6, RoundingMode.HALF_UP)).isEqualTo(card.getChangeRate());
 	}
 
-	// --- 카드 확정 push 배선 — 저장 성공 후에만 발행한다 (026 tasks.md 항목 3) ---
+	// --- 카드 확정 push 배선 — 저장 성공 후에만 발행한다 (028 tasks.md 항목 3) ---
 
 	@Nested
 	@DisplayName("카드 확정 push 배선")

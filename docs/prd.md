@@ -1,6 +1,6 @@
 # 📘 FinPlay 통합 PRD — 1차 MVP + 2차 MVP(1차 고도화)
 
-> 상태: **1차 MVP 구현 완료. 2차 MVP(1차 고도화) 진행 중** (최종 갱신 2026-08-07)
+> 상태: **1차 MVP 구현 완료. 2차 MVP(1차 고도화) 진행 중** (최종 갱신 2026-08-10)
 >
 > 목적: 팀이 Notion에서 확정한 제품 범위를 사람과 AI 구현자가 같은 요구사항으로 읽고, **현재 차수의 범위**를 넘지 않으며, 테스트 근거를 남기면서 구현하도록 만든 저장소 구현 기준 문서다.
 >
@@ -77,7 +77,7 @@
 - 1차에는 AI 피드백을 구현하지 않는다.
 - 2차 이후에도 숫자와 판정은 서버가 계산하고 AI는 관찰형 문장으로만 변환한다.
 - 3차 투자 교육 튜토리얼의 코치는 서버가 확정한 교육 자료를 검색 근거로 초보자 수준에서 설명·재서술할 수 있다. 정답·진도·완료·보상 판정에는 참여하지 않고, 검색 근거에 없는 숫자를 만들지 않는다.
-- 2차 MVP의 3단계 투자 실습 튜토리얼에는 AI·LLM을 사용하지 않는다. 실제 즐겨찾기·시장가 체결·OCO exit plan·가격 관찰·자유 복기 기록을 서버가 검증해 진행을 판정한다.
+- 2차 MVP의 3단계 투자 실습 튜토리얼에는 AI·LLM을 사용하지 않는다. 실제 즐겨찾기·매수 체결·보유·가격 관찰·자유 복기 기록을 서버가 검증해 진행을 판정한다. **OCO exit plan은 2026-08-06 결정으로 3차 MVP로 이동했다** — 2차 MVP의 실제 완료 경로는 OCO 없이 시장가/지정가 매매로 완결하는 `docs/specs/026-market-order-practice-tutorial`이다(§3 참고).
 - 특정 종목의 매수·매도를 추천하지 않는다.
 - 뉴스·공시는 **시간적 동시 발생 서술에만** 사용하고 인과를 단정하지 않는다. 기존 문구는 "외부 시장 정보(뉴스·공시) 미사용"이었으나, 2차 "AI 피드백"의 범위가 "뉴스를 통한 변동 원인 + 수익률 피드백"으로 확정되면서 개정했다 (`docs/specs/012-ai-feedback`). 위 세 줄은 그대로 유지된다 — 변동률·시각·구간 판정은 여전히 서버 몫이고 AI는 서술만 담당한다.
 - 뉴스 기사 본문은 저장하지 않는다. **제목·언론사·원문 URL·발행시각만 저장하고 화면에도 그 범위까지만 노출한다.** 본문은 AI 입력으로만 사용한 뒤 폐기하며, 검색 API가 제공하는 요약 스니펫도 노출하지 않는다 (2026-08-03 확정, C-006과 같은 취지).
@@ -176,7 +176,7 @@ FinPlay는 주식과 코인을 가상 자산으로 매매하고, 거래 결과�
 
 C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 
-### 구현 현황 (2026-08-07 기준)
+### 구현 현황 (2026-08-10 기준)
 
 **이 표가 "무엇이 실제로 동작하는가"의 정본이다.** 아래 요구사항 절들은 차수별 계약 정의이므로 그 절에 요구사항이 적혀 있다는 사실이 구현 완료를 뜻하지 않는다. 실제 엔드포인트 목록은 `docs/api-routes.md`, 요청·응답 계약은 `docs/api-contracts.md`가 정본이다.
 
@@ -207,22 +207,22 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 | 투자 실습 — 매수 전 사전 의도 기록 | EDU-PRACTICE-003 일부 | **완료** | PR #176. **ADR-0012로 인메모리 저장** |
 | 투자 실습 — 튜토리얼 전용 합성 시세 | — | **완료** | PR #195 (`GET /api/education/practice/synthetic-prices/{id}`) |
 | 투자 실습 — 주식 체결 재생 세션 FK (주식 OCO 선행, 3차 MVP 완성분) | — | **완료** | PR #191 (`trades.stock_replay_session_id`, V20). 이미 완료된 인프라라 차수 재분류와 무관하게 유지 |
-| 투자 실습 — OCO exit plan 생성·목록·취소·트리거 | EDU-PRACTICE-005·006·010·013 | **미착수** | 계약만 확정(`016`·`019`·`020`·`021`). 공통 예약 원장은 `015`로 이미 완료. **2026-08-06: 코인(GTC) 경로를 2차 MVP에서 우선 구현하기로 한 2026-08-05 결정을 철회 — 일반 리스크관리 OCO(`021`)와 통합 설계해 주식·코인 구분 없이 전부 3차 MVP로 이동** |
-| 투자 실습 — 진행 조회·가격 관찰·복기 | EDU-PRACTICE-001·007·011·012 | **미착수** | 컨트롤러 없음 (`practice_progresses` 테이블만 존재). **2026-08-06: OCO 3차 이동에 따라 이 항목도 3차 MVP로 이동(2026-08-05의 `COIN_PRACTICE_V1` 2차 목표 결정 철회)** |
-| 투자 실습 — 코인 튜토리얼 정책 확정 | — | **문서 확정** | `020-coin-practice-tutorial`, PR #223. `COIN_PRACTICE_V1` 분리, GTC 수명, 세션 없는 잠금 순서 확정. **production은 3차 MVP로 이동(2026-08-06, 더 이상 2차 활성 트랙 아님)** |
+| 투자 실습 — OCO exit plan 생성·목록·취소·트리거 | EDU-PRACTICE-005·006·010·013 | **미착수** | 계약만 확정. 공통 예약 원장은 `015`로 이미 완료. **엔진 정본은 `021`**(스키마·잠금·트리거), 가격 정책은 `019`, 코인 delta는 `020`, chain 검증·세션 만료는 `016`이 소유한다. **3차 MVP로 이동(2026-08-06)** — 경위는 아래 "3차 MVP" 절 참고 |
+| 투자 실습 — 진행 조회·가격 관찰·복기 (**OCO 경로 한정**) | EDU-PRACTICE-001·007·011·012 | **미착수** | `exitPlanId` 기반 OCO 경로(`016` candidate 12·13·14)에 한한 판정이다 — `POST /api/education/practice/observations`·`reflections`, `GET /api/education/practice/oco?market=` 모두 컨트롤러 없음. OCO 완료 key는 `INVESTMENT_OCO_PRACTICE_V1|COIN_OCO_PRACTICE_V1`로 holding 기반 완료와 분리한다. **2026-08-06: OCO 3차 이동에 따라 이 항목도 3차 MVP로 이동.** ⚠️ 같은 기능의 `holdingId` 기반 026 경로는 **이미 구현돼 있다** — 아래 "시장가/지정가 매매 기반 완료 경로" 행 참고 |
+| 투자 실습 — 코인 튜토리얼 정책 확정 | — | **일부 완료** | `020-coin-practice-tutorial`, PR #223. GTC 수명·세션 없는 잠금 순서는 문서 확정만(OCO production은 3차 MVP로 이동, 2026-08-06). **`COIN_PRACTICE_V1` tutorial key market 분기는 구현 완료**(이슈 #226) — `026` 경로가 이 key로 코인 실습 완료를 실제로 판정한다 |
 | OCO 손절·익절 가격·퍼센트 입력 정책 | — | **문서 확정** | `019-exit-price-policy`, PR #200. production 미착수(3차 MVP) |
 | 일반 리스크관리 OCO(`intentionId` 없는 손절·익절) 설계 확정 | — | **문서 확정** | `021-general-risk-management-oco` (2026-08-06 브레인스토밍). `intentionId`를 선택 파라미터화해 튜토리얼 OCO를 이 일반 기능의 특수 사례로 흡수하는 통합 엔진을 설계. production은 3차 MVP |
-| 투자 실습 — 시장가/지정가 매매 기반 완료 경로(OCO 없이) | MKT-PRACTICE-001~007 완료, 008(진행조회) 미착수 | **일부 완료** | `026-market-order-practice-tutorial`. 2단계 chain 해석(PR #295, 이슈 #294), 참조 가격선·evidence A/B 판정(PR #298, 이슈 #297), 가격 관찰(PR #302, 이슈 #300), 자유 복기·`practice_completions` 불변 완료(PR #304, 이슈 #303)까지 완료 — **사용자는 이미 API 호출만으로 3단계를 실제로 완료할 수 있다**(즐겨찾기→의도→매수→관찰→복기). `GET /api/education/practice` 진행 조회(tasks.md 5번)는 조회 전용이라 완료 자체의 필요조건은 아니며, 아직 미착수라 클라이언트가 단계별 진행 상태를 미리 보여줄 수는 없다 |
+| 투자 실습 — 시장가/지정가 매매 기반 완료 경로(OCO 없이) | MKT-PRACTICE-001~007·009~012 완료, 008(진행조회) 미착수 | **일부 완료** | `026-market-order-practice-tutorial`. 2단계 chain 해석(PR #295, 이슈 #294), 참조 가격선·evidence A/B 판정(PR #298, 이슈 #297), 가격 관찰(PR #302, 이슈 #300), 자유 복기·`practice_completions` 불변 완료(PR #304, 이슈 #303)까지 완료 — **사용자는 이미 API 호출만으로 3단계를 실제로 완료할 수 있다**(즐겨찾기→의도→매수→관찰→복기). `GET /api/education/practice?market=STOCK|CRYPTO` 진행 조회(tasks.md 5번)는 조회 전용이라 완료 자체의 필요조건은 아니며, 아직 미착수라 클라이언트가 단계별 진행 상태를 미리 보여줄 수는 없다 |
 | 지정가 주문·상시 체결 | LMT-001~005 | **완료** | LMT-001(생성)·LMT-002(체결 트리거) 완료 — PR #215(`docs/specs/015-limit-order`, 코인 전용). LMT-003(취소) 완료 — PR #220(이슈 #218). LMT-004(미체결 목록조회, `GET /api/orders/pending`) + 계좌·보유 조회 계약 영향(Decision Gate, `reservedCash`/`reservedQuantity` 노출) 완료 — PR #237(이슈 #235). LMT-005(주문 수정, `PATCH /api/orders/{orderId}`) 완료 — PR #240(이슈 #239). 주식 지정가는 추후 처리(2026-08-05 확정) |
 | 관심목록 — 등록·조회·해제 | WATCH-001~003 | **완료** | `023-watchlist`, PR #253(이슈 #252). `POST`·`GET`·`DELETE /api/watchlist-items`, MySQL 영속화(V23). PRD 미등재 신규 기능 — 2차 MVP(1차 고도화)로 확정 |
 | 지정가 체결 알림 | NOTI-001~005 | **미착수** | `notification` 패키지·테이블 없음. spec 폴더 미생성. **2026-08-07: 착수 시점을 2차 MVP(1차 고도화) → 3차 MVP(2차 고도화)로 재조정(이슈 #261)** |
 | 동시성 제어·부하테스트 | — | **미착수** | Kafka·분산락 의존성 없음 |
-| 코인 틱 집계와 캐싱 | MKT-010 | **완료** | `022-crypto-tick-candle-cache`(이슈 #242), PR #255. `transaction` 채널 구독 추가, `CryptoCandleStore`(Lua 원자 갱신)·`CachedCryptoCandleProvider`(캐시·위임 병합) 신설. 동시성 테스트(Testcontainers)로 유실 0건 확인, 실측 호출 절감률 100%(캐시 구간 안) |
-| 코인 변동 카드 확정 SSE push | 요구사항 ID 없음(GitHub 이슈 #286에는 있으나 이 문서에 대응 행이 신설 전까지 없었다) | **완료** | `026-crypto-card-sse-push`, 이슈 #286, ADR-0018. `GET /api/cryptos/stream` 신설(`CryptoPriceSseController`·`CryptoPriceStreamService`) — 코인 snapshot·price·status에 더해 `CryptoPriceMoveWatcher`가 카드 저장 성공 직후 발행하는 `priceMoveCardConfirmed`(카드 id·종목 id만, 본문 없음)를 push. 발행은 Redis pub/sub(`CryptoPriceMoveCardPublisher`→채널 `feedback:price-move:crypto-confirmed`→`CryptoCardPushSubscriber`)로 다중 인스턴스 팬아웃. Redis 장애·구독자 0명·느린 구독자 모두 카드 생성(`price_move_events` 커밋)을 막지 않음(통합 테스트로 확인). 주식 확정 경로(`PriceMoveCardService`)는 이 채널을 호출하지 않아 노출 게이트를 우회하지 않는다. `GET /api/stocks/stream` 기존 계약은 무변경(회귀 테스트로 확인) |
+| 코인 틱 집계와 캐싱 | MKT-010 | **완료** | `027-crypto-tick-candle-cache`(이슈 #242), PR #255. `transaction` 채널 구독 추가, `CryptoCandleStore`(Lua 원자 갱신)·`CachedCryptoCandleProvider`(캐시·위임 병합) 신설. 동시성 테스트(Testcontainers)로 유실 0건 확인, 실측 호출 절감률 100%(캐시 구간 안) |
+| 코인 변동 카드 확정 SSE push | 요구사항 ID 없음(GitHub 이슈 #286에는 있으나 이 문서에 대응 행이 신설 전까지 없었다) | **완료** | `028-crypto-card-sse-push`, 이슈 #286, ADR-0018. `GET /api/cryptos/stream` 신설(`CryptoPriceSseController`·`CryptoPriceStreamService`) — 코인 snapshot·price·status에 더해 `CryptoPriceMoveWatcher`가 카드 저장 성공 직후 발행하는 `priceMoveCardConfirmed`(카드 id·종목 id만, 본문 없음)를 push. 발행은 Redis pub/sub(`CryptoPriceMoveCardPublisher`→채널 `feedback:price-move:crypto-confirmed`→`CryptoCardPushSubscriber`)로 다중 인스턴스 팬아웃. Redis 장애·구독자 0명·느린 구독자 모두 카드 생성(`price_move_events` 커밋)을 막지 않음(통합 테스트로 확인). 주식 확정 경로(`PriceMoveCardService`)는 이 채널을 호출하지 않아 노출 게이트를 우회하지 않는다. `GET /api/stocks/stream` 기존 계약은 무변경(회귀 테스트로 확인) |
 
 ### 2차 MVP — 남은 범위와 계약 정의
 
-- 3단계 투자 실습 튜토리얼 — 즐겨찾기 등록·목록·해제(EDU-PRACTICE-002)와 매수 전 사전 의도 기록(EDU-PRACTICE-003 일부), 튜토리얼 전용 합성 시세, 주식 체결 재생 세션 FK는 2차 MVP 완료로 유지된다(PR #165·#171·#173·#176·#191·#195). **2026-08-06: OCO exit plan 예약(2단계 완성)과 진행조회·관찰·복기(3단계)는 주식·코인 구분 없이 3차 MVP로 이동한다 — 2026-08-05에 코인(GTC) 경로를 2차 MVP 활성 트랙으로 우선 구현하기로 한 결정을 철회했다.** 동시에 `intentionId` 없는 일반 리스크관리 OCO(원래 3차 MVP 후보)도 같은 3차 착수 시점에 튜토리얼 OCO와 통합해 설계·구현한다 — `docs/specs/021-general-risk-management-oco`가 이 통합 설계의 정본이다. 상세 완성 범위·설계는 §3 "3차 MVP" 절과 `docs/specs/016-investment-education-policy`·`019-exit-price-policy`·`020-coin-practice-tutorial`·`021-general-risk-management-oco`를 참고한다.
+- 3단계 투자 실습 튜토리얼 — 즐겨찾기 등록·목록·해제(EDU-PRACTICE-002)와 매수 전 사전 의도 기록(EDU-PRACTICE-003 일부), 튜토리얼 전용 합성 시세, 주식 체결 재생 세션 FK는 2차 MVP 완료로 유지된다(PR #165·#171·#173·#176·#191·#195). **OCO exit plan 기반 2·3단계는 3차 MVP로 이동했다(2026-08-06)** — 경위와 통합 설계 근거는 §3 "3차 MVP" 절이 정본이다. **다만 2차 MVP에서 3단계 실습을 완료하는 경로 자체는 이미 동작한다** — OCO 없이 시장가/지정가 매매로 완결하는 `docs/specs/026-market-order-practice-tutorial`이며(PR #295·#298·#302·#304), 진행 조회(`GET /api/education/practice?market=STOCK|CRYPTO`, 이슈 #305)만 남았다. 설계 문서는 `016`(3단계 모델 원 정본)·`019`·`020`·`021`(OCO 계열, 3차)과 `026`(2차 활성 경로)이다.
 - 동시성 제어 — **미착수**
 - 부하테스트 — **미착수**
 - AI 피드백 — 뉴스 기반 변동 원인 카드, 매도 직후 피드백, 종목 뉴스 요약, 개장 전 브리핑, 반사실 시뮬레이션·집단 비교, 코인 실시간 변동 감시 (`docs/specs/012-ai-feedback`) — **완료** (이슈 8개 전부 머지, 근거는 §3 "구현 현황" 각 행). 뉴스·공시 사용은 C-004 개정으로 허용된다. **종목 뉴스 요약은 3차 → 2차로 앞당겼다** — 변동 원인 카드가 수집 파이프라인을 이미 만들어 3차까지 미루면 같은 코드를 두 번 건드리게 된다
@@ -234,11 +234,12 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 - 지정가 주문과 상시 체결 (LMT-001~005, 2026-08-03 이벤트 드리븐 상시 처리로 재변경 — 배치 아님) — **완료**: LMT-001~004(생성·체결 트리거·취소·미체결 목록) 완료, LMT-005(주문 수정, `PATCH /api/orders/{orderId}`)도 완료(PR #240, 이슈 #239). **2차 범위는 코인을 우선으로 시작하고 주식은 추후 처리한다**(2026-08-05 확정 — 주식은 재생 데이터 기반이라 "이 가격 도달 시" 조건 자체가 성립하기 어렵고, 분봉 판정 해상도·재생세션 자동취소·OCO와의 잠금 순서 공유 같은 부가 복잡도가 있다). 동시 체결 경합과 취소(LMT-003)·체결 트리거 동시 도착 경합은 비관적 락(SELECT FOR UPDATE, 잠금 순서 `order → account → holding` — 상세는 §LMT-002)으로 제어하기로 확정했다(2026-08-05, 잠금 순서는 2026-08-05 `docs/specs/015-limit-order` 구현·검증 중 정정)
 - 매수·매도 회고 작성·수정·상세·목록 (JOUR-001~006, 2026-07-28 Notion 확인 — 작성도 2차로 이동) — **일부 완료**: JOUR-001 매수 작성(PR #181)·JOUR-003 매도 작성(PR #189)·JOUR-004 매도 수정(PR #192)·JOUR-002 매수 수정(PR #201)·JOUR-006 목록(PR #213) 완료, JOUR-005 상세는 계약 확정(이슈 #217) 후 착수 예정
 - 캔들 조회 기간 확장 — 일봉/주봉/월봉 (MKT-009) — **완료** (`docs/specs/013-candle-interval`, PR #151)
-- 코인 틱 집계와 캐싱 (MKT-010, 2026-08-06 튜터 피드백 계기로 착수 결정, MKT-008의 "틱 미집계·Redis 미저장" 결정을 뒤집음) — **완료**(`022-crypto-tick-candle-cache`, 이슈 #242). 코인 캔들(MKT-008)의 진행 중 1분봉을 빗썸 REST 재조회 대신 서버가 `transaction` 채널 유입으로 직접 만들어 Redis에 캐싱한다. 새 MySQL 테이블은 만들지 않았다
+- 코인 틱 집계와 캐싱 (MKT-010, 2026-08-06 튜터 피드백 계기로 착수 결정, MKT-008의 "틱 미집계·Redis 미저장" 결정을 뒤집음) — **완료**(`027-crypto-tick-candle-cache`, 이슈 #242). 코인 캔들(MKT-008)의 진행 중 1분봉을 빗썸 REST 재조회 대신 서버가 `transaction` 채널 유입으로 직접 만들어 Redis에 캐싱한다. 새 MySQL 테이블은 만들지 않았다
 
 ### 3차 MVP — 2차 완료 후 별도 Spec
 
-- **3단계 투자 실습 튜토리얼 OCO 완성 + 일반 리스크관리 OCO 신설 (2026-08-06, 2차 → 3차로 재이동)** — 2026-08-05에 코인(GTC) 경로를 2차 MVP 활성 트랙으로 우선 구현하기로 했던 결정을 철회한다. OCO exit plan(생성·목록·취소·트리거)과 튜토리얼 진행조회·관찰·복기는 주식·코인 구분 없이 전부 3차 MVP에서 함께 착수한다.
+- **3단계 투자 실습 튜토리얼 OCO 완성 + 일반 리스크관리 OCO 신설 (2026-08-06, 2차 → 3차로 재이동)** — 이 항목이 차수 재분류 경위의 **정본**이며 다른 절은 여기를 참조한다. 2026-08-05에 코인(GTC) 경로를 2차 MVP 활성 트랙으로 우선 구현하기로 했던 결정을 철회한다. OCO exit plan(생성·목록·취소·트리거)과 그 위에 얹히는 튜토리얼 진행조회·관찰·복기는 주식·코인 구분 없이 전부 3차 MVP에서 함께 착수한다 — 튜토리얼 OCO와 일반 리스크관리 OCO(원래 3차 후보)를 처음부터 하나의 엔진으로 설계하기 위함이며 `docs/specs/021-general-risk-management-oco`가 그 통합 설계의 정본이다.
+  - **이 재분류는 2차 MVP의 튜토리얼을 미완성으로 두지 않는다** — OCO 없이 시장가/지정가 매매 결과만으로 3단계를 완결하는 `docs/specs/026-market-order-practice-tutorial`을 2026-08-10에 신설해 2차 활성 경로로 삼았고, 진행 조회를 제외한 전 구간이 구현됐다(§3 구현 현황 참고).
   - 주식 경로는 체결 재생 세션 귀속(`buyTrade.stockReplaySessionId`와 `OPEN` session 일치·15:30 이전 생성)과 15:30 자동 `CANCELLED_EXPIRED` 만료·evidence C의 세션 만료 관찰을 포함한다(`docs/specs/016-investment-education-policy`).
   - 코인 경로는 세션 개념 없는 GTC이며 `docs/specs/020-coin-practice-tutorial`이 delta를 소유한다.
   - 이와 동시에 `intentionId` 없는 일반 리스크관리 OCO(원래 3차 MVP 후보)를 튜토리얼 OCO와 하나의 엔진으로 통합 구현한다 — `docs/specs/021-general-risk-management-oco`가 정본이다. `021`은 `intentionId`를 선택 파라미터로 둬 튜토리얼 OCO를 일반 기능의 특수 사례로 흡수하므로, 3차 착수 시 별도 두 트랙이 아니라 하나의 생성·트리거·취소 엔진만 구현한다. `021`의 코인 우선(세션 없음, GTC) 설계는 유지하되 착수 시점만 3차로 미룬다. 손절·익절 PRICE/PERCENT 입력·계산 정책(`docs/specs/019-exit-price-policy`)은 두 경로 모두에서 변경 없이 재사용한다.
@@ -273,7 +274,7 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 > 이 절은 1차 MVP 요구사항으로 시작해 2차·3차 MVP 요구사항이 차수 표시와 함께 추가됐다. **각 요구사항 ID의 차수는 그 절의 머리말과 제목의 "(2차 MVP)"·"(3차 MVP)" 표기로 판정한다** — 표기가 없는 것이 1차다. 2차·3차 요구사항 중 실제 구현된 것과 미착수인 것은 §3 구현 현황 표를 본다.
 >
 > - 1차: AUTH-001~006, ACCT-001~003, MKT-001~008, ORD-001~006, PORT-001~002, COM-001~003
-> - 2차: MKT-009, **MKT-010**, PORT-003, LMT-001~005, JOUR-001~006, RANK-001~002, COM-004~006 (3단계 투자 실습 EDU-PRACTICE-*와 AI 피드백 FEED-*는 이 문서에 요구사항 절을 두지 않고 각각 `docs/specs/016-investment-education-policy`·`docs/specs/012-ai-feedback`이 정본이다. **커뮤니티 고도화 COM-004~006도 같은 패턴으로 `docs/specs/022-community-enhancement`가 정본이다** — 종목 기준 분류·대댓글·사진 첨부, 이슈 #246·#247·#248)
+> - 2차: MKT-009, **MKT-010**, PORT-003, LMT-001~005, JOUR-001~006, RANK-001~002, COM-004~006 (3단계 투자 실습 EDU-PRACTICE-*·MKT-PRACTICE-*와 AI 피드백 FEED-*는 이 문서에 요구사항 절을 두지 않고 각각 `docs/specs/016-investment-education-policy`·`docs/specs/026-market-order-practice-tutorial`·`docs/specs/012-ai-feedback`이 정본이다. **커뮤니티 고도화 COM-004~006도 같은 패턴으로 `docs/specs/022-community-enhancement`가 정본이다** — 종목 기준 분류·대댓글·사진 첨부, 이슈 #246·#247·#248. **관심목록 WATCH-001~003은 `docs/specs/023-watchlist`가 정본이다** — 2차 MVP, 이슈 #252)
 >   - **MKT-010의 제목 표기만 "(1차 고도화)"로 다르다** — 2026-08-06 작업자가 팀 회의 용어를 그대로 쓴 것이며, §3 차수 용어 대응표대로 이 문서의 "2차 MVP"와 같은 차수다. 위 목록이 판정 기준이다.
 > - 3차: NOTI-001~005 (2026-08-07, 2차 → 3차로 재이동, 이슈 #261 — 원래 2026-08-04 이슈 #140으로 2차 확정했던 항목이며 §4의 요구사항 내용 자체는 변경 없이 유지, 착수 시점만 재조정)
 
@@ -568,14 +569,14 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 - **WebSocket 메시지 포맷 — 해소.** `ticker`·`transaction` 두 채널 모두 실제 연결로 응답 필드를 확인했다. 기존 `BithumbTickerMessageParser`가 쓰던 `content.symbol`·`content.closePrice`·`content.date`·`content.time` 4개는 실측과 정확히 일치했다 — 이슈 #104가 남긴 Decision Gate는 이로써 해소됐다.
 - **호출량 실측 — 해소.** §10 레이트리밋 Decision Gate가 요구한 실측을 완료했다: 캐시 구간 안의 요청(30건 시뮬레이션)은 빗썸 호출 0건(**절감률 100%**), 캐싱 없는 대조군은 30건 중 30건(항상 1:1)이었다. 이 100%는 "요청 구간이 이미 수집된(= `since` 이후) 구간 안에 완전히 들어있을 때"의 수치이며, 서버 재시작 직후나 그보다 과거를 포함하는 요청은 그 구간만큼 여전히 빗썸을 호출한다.
 
-**구현 완료 (2026-08-06, `022-crypto-tick-candle-cache`)**
+**구현 완료 (2026-08-06, `027-crypto-tick-candle-cache`)**
 
 - `BithumbWebSocketFeedClient`가 `transaction` 채널을 추가 구독해 체결을 `CryptoCandleStore`(신설, Redis)에 Lua 스크립트로 원자적으로 누적한다. 거래량은 `×10^8` 정수로 스케일링해 `HINCRBY`로 더한다(코인 수량 소수 8자리 관례, `OrderExecutionService` 등과 동일 기준). 늦게 도착한 체결(이미 지난 분)은 버린다.
 - `CachedCryptoCandleProvider`(신설, 데코레이터)가 `interval=1m` 조회에서 `since` 워터마크 기준으로 캐시 구간·빗썸 위임 구간을 나눠 병합한다. Redis 장애 시 전량 위임, 빗썸 장애 시 캐시로 커버되는 요청은 영향 없음.
 - 새 MySQL 테이블·마이그레이션 없음(Redis 캐시만). `1d`·`1w`·`1M`은 범위 밖, 그대로 빗썸 위임(MKT-009).
 - 동시성 테스트(Testcontainers 실제 Redis, 스레드 50개 동시 체결)로 거래량 유실 0건 확인.
 
-**spec에서 확정한 세부**: `docs/specs/022-crypto-tick-candle-cache/plan.md` 참조 — Redis 키 구조, Lua 원자 갱신, `since` 워터마크로 캐시·위임 구간 분할, TTL 4시간(200봉 상한에서 역산).
+**spec에서 확정한 세부**: `docs/specs/027-crypto-tick-candle-cache/plan.md` 참조 — Redis 키 구조, Lua 원자 갱신, `since` 워터마크로 캐시·위임 구간 분할, TTL 4시간(200봉 상한에서 역산).
 
 - 범위: 1차 고도화. Decision Gate 해소 → spec → 구현 순서로 진행했다.
 
@@ -907,7 +908,7 @@ Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conven
 - `GET /api/instruments/{instrumentId}/candles?interval=1m&from=&to=` (주식은 `stock_candles` 재생 분봉, 코인은 빗썸 공개 캔들 API 실시간 조회·진행 중 분봉 포함 — MKT-008. 코인의 실시간 화면 표출은 이 엔드포인트의 재조회로 충당하며 전용 스트림을 두지 않는다)[^crypto-sse-card-only]
 - `GET /api/stocks/stream` (SSE, 주식 시세)
 
-[^crypto-sse-card-only]: **(2026-08-10, 이슈 #286으로 카드 알림 한정 대체 — 구현 완료)** "코인은 전용 스트림을 두지 않는다"는 이 결정은 시세(가격) 표출 목적에서는 그대로 유지된다 — 캔들 재조회로 충분하다는 원문 판단은 바뀌지 않았다. 다만 **카드 확정 알림**(가격이 아니라 "변동 카드가 방금 확정됐다"는 사건 자체)은 재조회로 알 수 없어 `026-crypto-card-sse-push`에서 `GET /api/cryptos/stream`을 신설했다 — MKT-010이 MKT-008을 부분 대체한 것과 같은 패턴으로, 원문 문장은 그대로 두고 이 각주로만 대체 사실을 남긴다. 세부는 §3 "구현 현황"의 "코인 변동 카드 확정 SSE push" 행과 ADR-0018을 따른다.
+[^crypto-sse-card-only]: **(2026-08-10, 이슈 #286으로 카드 알림 한정 대체 — 구현 완료)** "코인은 전용 스트림을 두지 않는다"는 이 결정은 시세(가격) 표출 목적에서는 그대로 유지된다 — 캔들 재조회로 충분하다는 원문 판단은 바뀌지 않았다. 다만 **카드 확정 알림**(가격이 아니라 "변동 카드가 방금 확정됐다"는 사건 자체)은 재조회로 알 수 없어 `028-crypto-card-sse-push`에서 `GET /api/cryptos/stream`을 신설했다 — MKT-010이 MKT-008을 부분 대체한 것과 같은 패턴으로, 원문 문장은 그대로 두고 이 각주로만 대체 사실을 남긴다. 세부는 §3 "구현 현황"의 "코인 변동 카드 확정 SSE push" 행과 ADR-0018을 따른다.
 
 `interval`에 일봉·주봉·월봉(`1d`·`1w`·`1M`)을 추가하는 것(MKT-009)은 2차(1차 고도화) 범위로 이동했다. 1차 API 계약은 `interval=1m`만 포함한다.
 
@@ -1020,7 +1021,7 @@ Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conven
 
 ### 2차 MVP에서 추가된 테이블 (2026-08-04 기준 실제 마이그레이션)
 
-Flyway 마이그레이션은 V1~V21까지 적용돼 있다. 아래는 2차에서 추가·변경된 것만 적는다 — 정본은 `src/main/resources/db/migration/`이며 스키마 변경은 항상 새 번호 마이그레이션으로만 한다(ADR-0004).
+Flyway 마이그레이션은 V1~V28까지 적용돼 있다. 아래는 2차에서 추가·변경된 것만 적는다 — 정본은 `src/main/resources/db/migration/`이며 스키마 변경은 항상 새 번호 마이그레이션으로만 한다(ADR-0004).
 
 **AI 피드백 (V13, `docs/specs/012-ai-feedback`)**
 
@@ -1037,10 +1038,12 @@ Flyway 마이그레이션은 V1~V21까지 적용돼 있다. 아래는 2차에서
 - `buy_trade_journals`: 매수 체결별 회고 1건 + `updated_at`(V21) — `UNIQUE(buy_trade_id)` (JOUR-001·002)
 - `sell_trade_journals`: 매도 체결별 회고 1건 + `updated_at`(V18) — `UNIQUE(sell_trade_id)` (JOUR-003·004)
 
-**투자 실습 (V16·V19, `docs/specs/016-investment-education-policy` + ADR-0012)**
+**투자 실습 (V16·V19·V27·V28, `docs/specs/016-investment-education-policy`·`026-market-order-practice-tutorial` + ADR-0012)**
 
 - `practice_progresses`: 회원·튜토리얼별 진행 상태 — `UNIQUE(user_id, tutorial_key)`. **완료 여부는 영구 기록이라 DB에 유지한다**
 - ~~`favorites`(V14)~~·~~`practice_intentions`(V16)~~ → **V19에서 DROP.** ADR-0012에 따라 서버 힙 메모리(`ConcurrentHashMap`) 저장으로 전환했다. 재시작·다중 인스턴스 시 유실을 감수하며 API 계약은 바뀌지 않는다. `favoriteId`·`intentionId`는 프로세스 기동마다 1부터 재채번된다
+- `practice_market_observations`·`practice_market_reflections`(V27): `026` 경로의 3단계 가격 관찰(append-only)과 자유 복기. 복기는 `UNIQUE(user_id, tutorial_key)` — `016`의 `UNIQUE(user_id, exit_plan_id)` 설계와 다르다(exit plan이 없는 경로)
+- `practice_completions`(V28): 튜토리얼 완료의 불변 기록. `026` 경로에서 최초 생성됐으며 완료 후 evidence가 바뀌어도 회귀하지 않는다
 
 **주문 원장 (V20)**
 
@@ -1255,4 +1258,4 @@ Flyway 마이그레이션은 V1~V21까지 적용돼 있다. 아래는 2차에서
 - 알림은 지정가 매수·매도 체결 알림으로 범위를 한정하고 SSE 실시간 push를 포함하는 것으로 확정했으며(2026-08-04, NOTI-001~005, 이슈 #140), SSE 연결·인증 스코프·알림 페이로드 필드 등 세부 계약은 착수 시 알림 spec에서 확정한다 — **spec 폴더는 미생성이고 번호 미배정이다**(`013`은 캔들 기간 확장이 점유). 알림은 지정가 체결 트리거(LMT-002)가 선행되어야 하므로 LMT보다 먼저 착수하지 않는다. **(2026-08-07) 팀 일정 재조정으로 알림 착수 시점을 2차 MVP(1차 고도화) → 3차 MVP(2차 고도화)로 미뤘다(이슈 #261)** — 위 범위·전달 방식 확정 내용은 그대로 유지된다.
 - 주문 목록(`GET /api/orders`)은 `market` 필수·`cursor`·`limit` 페이지네이션 도입으로 확정했다(2026-08-04, PORT-003, 이슈 #177) — 실제 구현은 이슈 #182에서 완료했다.
 - **뉴스 출처·저작권 결정을 3차에서 2차로 앞당겼다 (2026-08-02)**: 2차 "AI 피드백"이 뉴스를 근거로 쓰게 되면서 3차를 기다릴 수 없게 됐다. 출처는 네이버 뉴스 검색 API(분 단위 발행시각)와 OpenDART 공시검색 API(일 단위 접수일자)로 확정했고, 저작권 대응은 "본문 미저장, 제목·언론사·원문 URL·발행시각만 저장"이다 (C-004). **갱신주기도 함께 확정했다 (2026-08-03, 2026-08-04 정정)** — 기사가 나오는 당일에 상시 수집한다(~~주식 평일 08:00~16:00 30분 간격, 코인 2시간 간격~~ → **주식·코인 공통 24시간 30분 간격**). 네이버 API가 날짜 범위 지정을 지원하지 않고 `display` 상한이 100이라, 재생 시점에 소급 수집하면 대형주의 앞부분이 잘린다. **장중으로 한정하면 안 된다** — 개장 전 브리핑과 전장 요약의 근거 구간이 "직전 거래일 15:30 ~ 당일 09:00"(약 17.5시간)인데 장중만 돌리면 이 구간이 통째로 비어 브리핑이 매일 빈 값이 된다. 상세는 `docs/specs/012-ai-feedback` FEED-001.
-- 2차 MVP의 3단계 투자 실습 계약은 `docs/specs/016-investment-education-policy`에서 확정한다. 즐겨찾기·주식 체결 session FK·공통 예약 원장·OCO exit plan·튜토리얼 연결은 각각 후속 구현 이슈로 진행한다. **2026-08-04 기준 즐겨찾기(PR #165·#171·#173)·사전 의도(PR #176)·합성 시세(PR #195)·체결 session FK(PR #191)까지 완료했고, 공통 예약 원장·OCO·진행 조회·관찰·복기는 미착수다.** 즐겨찾기·사전 의도는 ADR-0012에 따라 DB가 아닌 인메모리 저장이며 OCO 가격·퍼센트 입력 정책은 `019-exit-price-policy`가 정본이다. 이 OCO는 튜토리얼 전용이며 일반 리스크 관리 OCO는 3차 후보로 분리한다. 8개 투자 지식 과정·배지·RAG 교육 코치는 3차 착수 승인 뒤 별도 구현 spec으로 분리한다. AI 리포트 주기는 3차 시작 전 별도 Spec으로 확정한다. 종목 뉴스 요약은 2차로 이동했으므로 3차에서는 다루지 않는다. ~~뉴스 갱신주기~~는 2026-08-03에 확정했다(위 항목).
+- 3단계 투자 실습 계약은 `docs/specs/016-investment-education-policy`가 **OCO 기반 설계의 정본**이나, **2차 MVP에서 실제로 동작하는 완료 경로의 정본은 `docs/specs/026-market-order-practice-tutorial`이다**(2026-08-10 신설, OCO 없이 시장가/지정가 매매로 완결). **2026-08-10 기준 즐겨찾기(PR #165·#171·#173)·사전 의도(PR #176)·합성 시세(PR #195)·체결 session FK(PR #191)·공통 예약 원장(`015`)에 더해, 026 경로의 2단계 chain 해석·참조 가격선·가격 관찰·자유 복기·불변 완료(PR #295·#298·#302·#304)까지 완료했다 — 사용자는 이미 API 호출만으로 3단계를 완료할 수 있다. 진행 조회(`GET /api/education/practice?market=STOCK|CRYPTO`, 이슈 #305)와 OCO 계열은 미착수다.** 즐겨찾기·사전 의도는 ADR-0012에 따라 DB가 아닌 인메모리 저장이며 OCO 가격·퍼센트 입력 정책은 `019-exit-price-policy`가 정본이다. 이 OCO는 튜토리얼 전용이며 일반 리스크 관리 OCO는 3차 후보로 분리한다. 8개 투자 지식 과정·배지·RAG 교육 코치는 3차 착수 승인 뒤 별도 구현 spec으로 분리한다. AI 리포트 주기는 3차 시작 전 별도 Spec으로 확정한다. 종목 뉴스 요약은 2차로 이동했으므로 3차에서는 다루지 않는다. ~~뉴스 갱신주기~~는 2026-08-03에 확정했다(위 항목).

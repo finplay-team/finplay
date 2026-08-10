@@ -1,6 +1,6 @@
 // SseEmitterRegistry+CryptoCardPushSubscriber+RedisMessageListenerContainer 조합을 (스프링 빈이 아니라) 테스트
 // 코드에서 두 벌 직접 조립해, 같은 Testcontainers Redis에 한쪽이 발행한 카드 확정 메시지를 양쪽 모두 수신하는지
-// (다중 인스턴스 팬아웃) 검증한다. (docs/specs/026-crypto-card-sse-push/tasks.md 항목 4)
+// (다중 인스턴스 팬아웃) 검증한다. (docs/specs/028-crypto-card-sse-push/tasks.md 항목 4)
 package com.finplay.api.market.sse;
 
 import static org.assertj.core.api.Assertions.assertThat;

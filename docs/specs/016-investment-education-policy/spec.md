@@ -1,10 +1,16 @@
 # Spec: 3단계 투자 실습 튜토리얼
 
-> 상태: spec·계획 API 계약 확정, candidate 1~4는 구현됐고 #193에서 즐겨찾기·사전 의도 저장을 인메모리로 전환·튜토리얼 합성 시세를 추가 완료, 나머지 production 구현 미착수
+> ## ⚠️ 먼저 읽을 것 — 이 문서는 3차 MVP OCO 경로의 설계 정본이다
 >
-> 이 문서의 OCO·관찰 규칙은 주식 체결 재생 세션 기준으로 확정돼 있다. **코인 시장 실습의 정본은 `docs/specs/020-coin-practice-tutorial`이다** — 튜토리얼 key 분리, GTC 수명, 세션 없는 잠금 순서, 소수 수량 비교는 그 문서가 소유한다.
+> **2·3단계를 지금 구현하러 왔다면 이 문서가 아니라 `docs/specs/026-market-order-practice-tutorial`을 봐야 한다.** 이 문서가 정의한 OCO 기반 2·3단계는 2026-08-06 결정으로 3차 MVP(2차 고도화)로 이연됐고, 2차 MVP에서 실제로 동작하는 완료 경로는 `026`(2026-08-10 신설, OCO 없이 시장가/지정가 매매로 완결)이다. `026`은 이 문서의 1단계(즐겨찾기)와 사전 의도 기록 API(`POST /api/education/practice/intentions`), 공통 판정 원칙(클라이언트 완료 주장 불허 등)을 **변경 없이 그대로 재사용**한다.
 >
-> **차수 재분류 (2026-08-06 재확정)**: 이미 구현된 candidate 1~5(즐겨찾기·사전 의도·합성 시세·주식 체결 세션 FK)는 2차 MVP 완료로 유지된다. **나머지 미착수 production(OCO·진행조회·관찰·복기)은 코인·주식 구분 없이 3차 MVP(2차 고도화)로 이동했다.** 2026-08-05에는 코인 경로(`020-coin-practice-tutorial`)를 2차 MVP 활성 트랙으로 우선 production하기로 했었으나, 2026-08-06 결정으로 철회했다 — 튜토리얼 OCO(코인·주식 모두)와 일반 리스크관리 OCO(`021-general-risk-management-oco`)를 함께 3차 MVP에서 하나의 엔진으로 착수하기로 확정했기 때문이다. 코인 시장 실습의 설계 정본은 여전히 `docs/specs/020-coin-practice-tutorial`(이슈 #222)이며, 착수 시점만 3차로 미뤄졌다. `docs/prd.md` §2·§3·§4 참고.
+> `GET /api/education/practice?market=`의 계약 정본은 `026`이다. 이 문서의 candidate 12는 별도 `GET /api/education/practice/oco?market=`에서 `exitPlanId` 기반 evidence를 조회하며, holding 기반 경로와 완료 key를 공유하지 않는다(2026-08-10 확정, 이슈 #308).
+>
+> 상태: spec·계획 API 계약 확정, candidate 1~6 구현 완료(즐겨찾기·사전 의도·합성 시세·주식 체결 세션 FK·공통 예약 원장). **나머지 OCO 계열 production은 3차 MVP로 이연.**
+>
+> 이 문서의 OCO·관찰 규칙은 주식 체결 재생 세션 기준으로 확정돼 있다. **코인 시장 실습의 설계 정본은 `docs/specs/020-coin-practice-tutorial`이다** — 튜토리얼 key 분리, GTC 수명, 세션 없는 잠금 순서, 소수 수량 비교는 그 문서가 소유한다. 단 **OCO 엔진 공통부(스키마·잠금·트리거)의 정본은 `021-general-risk-management-oco`로 이관됐다**(`021/spec.md`의 "문서 소유권 재배치" 표) — 이 문서의 "OCO exit plan 비즈니스 규칙" 절 중 엔진 공통 부분은 그 표에 따라 대체된 것으로 읽는다.
+>
+> **차수 재분류 (2026-08-06 재확정)**: 이미 구현된 candidate 1~6은 2차 MVP 완료로 유지되고, **이 문서가 정의한 OCO 기반 2·3단계(진행조회·관찰·복기 포함)는 코인·주식 구분 없이 3차 MVP(2차 고도화)로 이동했다.** 결정 경위 전문은 `docs/prd.md` §3의 해당 행이 정본이며 여기서 반복하지 않는다.
 
 ## 개요
 1차 고도화(PRD 2차 MVP)의 교육 범위는 사용자가 실제 FinPlay 도메인 API를 사용해 계획·매수·예약·관찰·복기를 경험하는 3단계 실습이다. 서버는 실제 즐겨찾기, 체결, OCO exit plan과 관찰·복기 기록을 연결해 진행 상태를 판정하며 클라이언트의 완료 주장만으로 단계를 완료하지 않는다.
@@ -39,13 +45,14 @@
 - 서버 완료 증거는 같은 사용자의 즐겨찾기 행 존재다. `GET /api/favorites` 호출 여부나 별도 확인 시각은 증거로 저장하지 않는다. 목록 응답에 같은 `instrumentId`가 보이는지는 API 테스트와 UX 수용 기준으로 검증한다.
 
 ### 2단계 — 먼저 계획하고 시장가 진입과 OCO 청산을 예약하기
+- OCO 실습은 `POST /api/education/practice/oco/intentions`로 시작한다. 요청·응답 필드는 기존 holding 기반 의도 API와 같지만, 서버는 종목 market에 따라 `INVESTMENT_OCO_PRACTICE_V1|COIN_OCO_PRACTICE_V1` progress를 생성·잠그고 intention에 해당 key를 내부 귀속한다. 기존 `POST /api/education/practice/intentions`로 만든 holding 기반 intention은 OCO plan 생성에 사용할 수 없다.
 - 사용자는 매수 전에 `instrumentId`, `quantity`와 PRICE 방식의 `stopLoss`·`takeProfit` 또는 PERCENT 방식의 `stopLossRate`·`takeProfitRate`를 실습 의도로 기록한다. 기존 타입 생략+가격 요청은 PRICE로 호환하며 상세 tagged union은 `docs/specs/019-exit-price-policy`를 따른다. **PERCENT는 019 구현 전까지 production에 없으며 현재는 PRICE(또는 타입 생략) 요청만 실제로 받을 수 있다.**
 - intention의 `instrumentId`는 현재 존재하는 step 1 본인 favorite의 `instrumentId`와 같아야 한다. favorite가 없거나 다른 종목이면 409 `PRACTICE_STEP_LOCKED`로 intention 생성을 거부한다.
-- 최초 intention 생성 트랜잭션은 `(user_id, tutorial_key)`별 `practice_progresses` 행을 상태를 덮어쓰지 않는 MySQL 원자 upsert로 확보한 뒤 재조회·잠그고, 대상 favorite의 사용자 단위 in-memory 락을 이어서 획득해 intention 저장까지 유지한다. upsert는 unique 예외를 발생시키지 않고 이미 완료된 progress도 변경하지 않는다. favorite DELETE도 같은 in-memory 락을 사용해 직렬화하며, 삭제 선행은 409 `PRACTICE_STEP_LOCKED`·intention 무저장, intention 선행은 201 뒤 DELETE 204다. 동시 intention 요청도 progress 한 행으로 수렴한다.
+- 최초 intention 생성 트랜잭션은 호출 경로와 종목 market으로 결정한 `(user_id, tutorial_key)`별 `practice_progresses` 행을 상태를 덮어쓰지 않는 MySQL 원자 upsert로 확보한 뒤 재조회·잠그고, 대상 favorite의 사용자 단위 in-memory 락을 이어서 획득해 intention 저장까지 유지한다. upsert는 unique 예외를 발생시키지 않고 이미 완료된 progress도 변경하지 않는다. favorite DELETE도 같은 in-memory 락을 사용해 직렬화하며, 삭제 선행은 409 `PRACTICE_STEP_LOCKED`·intention 무저장, intention 선행은 201 뒤 DELETE 204다. 동시 intention 요청도 각 tutorial key의 progress 한 행으로 수렴한다.
 - 이후 기존 `POST /api/orders`에 `orderType="MARKET"`, `side="BUY"`로 같은 종목·수량을 주문한다. 이 시장가 주문은 기존 계약대로 즉시 `FILLED` 체결되며 예약 상태가 아니다.
 - 서버는 실제 매수 `tradeId`와 체결가 `entryPrice`를 기준으로 PRICE 값을 복사하거나 PERCENT 값을 계산해 `0 < stopLossPrice < entryPrice < takeProfitPrice`을 검증한다.
 - 사용자는 같은 `instrumentId`의 holding에서 intention·매수 체결과 정확히 같은 `quantity` snapshot으로 OCO exit plan 하나를 생성한다. 손절과 익절을 별도 매도 예약 두 건으로 만들 수 없다.
-- OCO 생성 시 step 1 favorite가 아직 존재해야 하며 favorite → intention → `buyTradeId` → holding → exit plan의 사용자와 `instrumentId`가 모두 같아야 한다. exact quantity equality는 `intention.quantity == buyTrade.quantity == exitPlan.quantity`에만 적용한다.
+- OCO 생성 시 step 1 favorite가 아직 존재해야 하며 favorite → OCO 전용 intention → `buyTradeId` → holding → exit plan의 사용자와 `instrumentId`가 모두 같아야 한다. intention의 내부 tutorial key도 exit plan 시장의 OCO key와 같아야 하며, exact quantity equality는 `intention.quantity == buyTrade.quantity == exitPlan.quantity`에만 적용한다.
 - holding은 생성 시 owner·instrument 일치와 `availableQuantity >= exitPlan.quantity`만 검증한다. 기존 또는 추가 매수로 `holding.totalQuantity`가 snapshot quantity와 달라도 정상이다. favorite 삭제 또는 chain 누락·불일치는 409 `PRACTICE_EVIDENCE_MISSING`이며 plan·예약을 남기지 않는다.
 - 하나의 사전 의도에는 OCO exit plan을 한 건만 연결한다. 같은 의도·동일 fingerprint의 새 멱등키 요청은 기존 plan과 새 key mapping으로 200 수렴하고 추가 수량을 예약하지 않는다. 관측한 모든 key는 영속화되어 다른 요청·intention 재사용을 409로 막는다.
 - 서버 완료 증거는 사전 의도 기록 시각이 매수 체결보다 앞서고, 같은 값이 실제 체결·보유·OCO plan에 연결된 사실이다. `GET /api/exit-plans` 호출 여부는 완료 증거가 아니며 plan이 본인 목록 응답에 보이는지는 API 테스트와 UX 수용 기준으로 검증한다.
@@ -102,7 +109,7 @@
 
 ## 튜토리얼 판정 규칙
 - 진행 상태는 `NOT_STARTED`, `IN_PROGRESS`, `COMPLETED`이며 세 단계는 순차 잠금한다.
-- `GET /api/education/practice`가 실제 즐겨찾기·의도·체결·OCO·관찰·복기 리소스를 서버에서 조회해 단계별 `evidence`와 상태를 계산한다. 모든 GET은 쓰기를 하지 않는다.
+- `GET /api/education/practice/oco?market=STOCK|CRYPTO`가 실제 즐겨찾기·의도·체결·OCO·관찰·복기 리소스를 서버에서 조회해 단계별 `evidence`와 상태를 계산한다. 주식은 `INVESTMENT_OCO_PRACTICE_V1`, 코인은 `COIN_OCO_PRACTICE_V1`을 사용하며 holding 기반 완료와 독립이다. 모든 GET은 쓰기를 하지 않는다.
 - 완료 전 복수 chain은 qualifying observation이 있는 유효 chain을 우선하고 그 안에서 `exitPlan.reservedAt ASC, exitPlan.id ASC` 첫 chain을 선택한다. 그런 chain이 없으면 전체 유효 chain에서 같은 정렬의 첫 chain, 유효 chain 자체가 없으면 `favorite.createdAt ASC, favorite.id ASC` 첫 favorite를 선택한다. 단계별 evidence는 선택한 한 chain 안에서만 구성한다.
 - 1단계 완료는 본인 favorite 존재만으로 계산한다. 2단계 완료는 그 favorite의 사용자·종목에 연결되고 시각·수량 규칙을 만족하는 intention → buyTrade → exitPlan chain 존재로 계산한다. favorite·OCO 목록 API 호출 여부 자체는 어느 단계의 완료 증거도 아니다.
 - 전체 완료 전 단계 상태는 현재 실제 evidence 존재로 계산한다. favorite 삭제나 완료 전 OCO 취소로 evidence가 사라지면 해당 단계를 다시 진행해야 할 수 있다.

@@ -1,4 +1,4 @@
-# Run Log: 026-crypto-card-sse-push
+# Run Log: 028-crypto-card-sse-push
 
 ## AI 로그 (에이전트 참조용)
 | 시각 | 에이전트 | 실행 명령 | 근거 |

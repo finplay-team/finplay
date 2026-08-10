@@ -42,7 +42,7 @@
 - **정렬 반전**: 빗썸 내림차순 응답을 시각 오름차순으로 뒤집어 반환한다 (주식 캔들과 동일한 계약).
 - **진행 중 분봉 포함**: 빗썸이 돌려주는 가장 최신 봉은 아직 마감하지 않은 분봉이며, **그것을 그대로 포함해 반환한다** — 그게 지금의 실시간 시세다. 다시 조회하면 그 봉의 고가·저가·종가·거래량이 자란다(정상 동작이며, 캐시하지 않는 이유 중 하나).
   - **주식(MKT-002)은 미마감 봉을 제외하는데 코인은 포함한다 — 의도된 차이다.** 주식의 제외 규칙은 과거 거래일 재생 구조에서 아직 공개되지 않아야 할 분봉이 새는 것을 막고 체결가 계약과 어긋나지 않게 하기 위한 것이다. 코인은 재생이 아니라 실시간이고 주문도 최신 틱으로 체결되므로 가릴 대상이 없다. 잘라내면 차트 오른쪽 끝이 최대 59초 늦게 움직여 실시간성을 해친다. 구현 시 `StockReplayService`의 공개 컷오프 로직을 코인 경로에 재사용하지 않는다.
-  - 분 이하 해상도의 실시간 갱신은 프론트가 이미 구독하는 SSE 틱(#20)으로 마지막 봉을 갱신해 얻는다. **(2026-08-06 `022-crypto-tick-candle-cache`, MKT-010에서 대체됨)** "서버는 틱을 분봉으로 집계하지 않고 진행 중 분봉 상태를 메모리에 들고 있지도 않는다"는 이 시점의 결정이었다 — 022부터 `CryptoCandleStore`(`KisTickAggregator`에 대응하는 컴포넌트)가 체결을 Redis에 집계한다. 메모리가 아니라 Redis라 재시작 유실 문제도 다른 방식(`since` 워터마크)으로 다룬다.
+  - 분 이하 해상도의 실시간 갱신은 프론트가 이미 구독하는 SSE 틱(#20)으로 마지막 봉을 갱신해 얻는다. **(2026-08-06 `027-crypto-tick-candle-cache`, MKT-010에서 대체됨)** "서버는 틱을 분봉으로 집계하지 않고 진행 중 분봉 상태를 메모리에 들고 있지도 않는다"는 이 시점의 결정이었다 — 027부터 `CryptoCandleStore`(`KisTickAggregator`에 대응하는 컴포넌트)가 체결을 Redis에 집계한다. 메모리가 아니라 Redis라 재시작 유실 문제도 다른 방식(`since` 워터마크)으로 다룬다.
 - **`from`·`to` → `to`+`count` 변환**: 빗썸은 `from`을 받지 않으므로 우리 쪽에서 변환한다.
 
   | 요청 | 빗썸 호출 |
@@ -60,9 +60,9 @@
 
 ### SSE 계약 (MVP 확정 — 변경하려면 문서와 프론트·백엔드를 함께 수정)
 
-아래 계약은 `/stocks/stream`(#19)에 적용된다. `retry`·heartbeat·emitter 정리는 이슈 #18에서 만드는 `SseEmitterRegistry`가 제공한다. **코인은 전용 SSE 엔드포인트가 없으므로 이 계약 대상이 아니다**[^crypto-sse-026] — 코인 이벤트 필드 설명(`sourceTradingDate` 미포함 등)은 `SseEmitterRegistry`·이벤트 DTO가 market 매개변수를 받는 범용 설계임을 보여주는 참고용으로만 남겨둔다.
+아래 계약은 `/stocks/stream`(#19)에 적용된다. `retry`·heartbeat·emitter 정리는 이슈 #18에서 만드는 `SseEmitterRegistry`가 제공한다. **코인은 전용 SSE 엔드포인트가 없으므로 이 계약 대상이 아니다**[^crypto-sse-028] — 코인 이벤트 필드 설명(`sourceTradingDate` 미포함 등)은 `SseEmitterRegistry`·이벤트 DTO가 market 매개변수를 받는 범용 설계임을 보여주는 참고용으로만 남겨둔다.
 
-[^crypto-sse-026]: **(2026-08-10, 026에서 카드 알림 한정으로 뒤집힘 — 구현 완료)** `026-crypto-card-sse-push`(이슈 #286, ADR-0018)가 `GET /api/cryptos/stream`을 신설했다. 시세(snapshot·price·status)는 이 계약이 예고한 대로 재조회 대안 대신 대칭 인프라로 함께 구현됐고, 신설의 직접 동기는 카드 확정 알림(`priceMoveCardConfirmed`)이었다 — 카드가 방금 확정됐다는 사건은 캔들 재조회로 알 수 없기 때문이다. 계약 상세는 `docs/api-contracts.md`의 "코인 SSE 스트림" 절을 정본으로 본다.
+[^crypto-sse-028]: **(2026-08-10, 028에서 카드 알림 한정으로 뒤집힘 — 구현 완료)** `028-crypto-card-sse-push`(이슈 #286, ADR-0018)가 `GET /api/cryptos/stream`을 신설했다. 시세(snapshot·price·status)는 이 계약이 예고한 대로 재조회 대안 대신 대칭 인프라로 함께 구현됐고, 신설의 직접 동기는 카드 확정 알림(`priceMoveCardConfirmed`)이었다 — 카드가 방금 확정됐다는 사건은 캔들 재조회로 알 수 없기 때문이다. 계약 상세는 `docs/api-contracts.md`의 "코인 SSE 스트림" 절을 정본으로 본다.
 
 - **인증**: 브라우저 기본 `EventSource`는 커스텀 헤더를 지원하지 않으므로, 프론트는 `fetch()`로 스트림을 요청하며 `Authorization: Bearer <accessToken>` 헤더를 그대로 전달하고 응답 `ReadableStream`을 직접 파싱한다. Access Token을 URL 쿼리 파라미터에 넣지 않는다. 인증 실패는 401.
 - **Content-Type**: `text/event-stream`.
@@ -443,4 +443,4 @@ KisHistoricalReplayPriceProvider를 @Service로 직접 등록 → StockPriceProv
   - **알려진 한계(2026-08-10, PR #296 리뷰 권장사항)**: 위 흡수 때문에 `feed:crypto:status` 키가 끝내 써지지 않는 경우가 생긴다 — `FakeBithumbFeedClient.start()`가 `connected = true`를 먼저 세운 뒤 `saveConnectionStatus(CONNECTED)`에서 실패하면, 그 예외가 흡수돼 기동은 성공하지만 이 키를 쓰는 다른 경로가 없어 Redis가 복구돼도 코인 시세가 계속 `DISCONNECTED`(fail-closed)로 남는다 — 앱을 재시작해야 정상화된다. 운영(`BithumbWebSocketFeedClient`, prod)은 재연결마다 `afterConnectionEstablished`에서 이 키를 다시 쓰므로 영향이 없다. 로컬/테스트 프로필 한정 한계이며, 재시도 도입 여부는 이슈 [#299](https://github.com/finplay-team/finplay/issues/299)에서 다룬다.
   - **(2026-08-10 PR #296 리뷰 권장사항 1번 반영) 운영(`BithumbWebSocketFeedClient`) 재연결도 같은 이유로 영구히 멈출 수 있었다.** `afterConnectionClosed`·`connect()`의 `.exceptionally`가 공통으로 호출하는 `onDisconnected()`가 `priceStore.saveConnectionStatus(DISCONNECTED)`를 무방비로 호출했는데, Redis 장애 중에는 이 호출이 예외를 던져 바로 다음 줄의 `scheduleReconnect()`가 실행되지 못했다(`connect()` 쪽은 `CompletableFuture`가 예외를 삼켜 로그도 안 남았다) — WebSocket 연결 자체는 Redis와 무관한데도, Redis만 죽으면 프로세스 재시작 전까지 시세가 영영 안 돌아오는 결과였다. 이슈 #288이 "장애 중에도 앱은 계속 실행 중"인 상태를 새로 만들면서 실제로 밟히게 된 경로다. `onDisconnected()` 안에서 그 호출을 try/catch로 감싸 이제는 Redis 장애와 무관하게 재연결이 항상 예약된다. `stop()`(애플리케이션 종료 시 `@PreDestroy` 훅이 호출)의 같은 호출도 같은 이유로 감쌌다(PR #296 재리뷰 참고사항) — 재연결과는 무관하지만, Redis 장애 중 종료되면 이 예외가 `@PreDestroy` 훅 밖으로 새 종료를 방해할 수 있었다.
 - **기본값은 현행 유지** — 자동 테스트가 외부 네트워크에 의존하면 안 된다 (C-005). 실제 ticker REST 조회는 외부 스모크로 구분 보고한다.
-- **제외**: prod 환경, `BithumbFeedSimulator` 코드 수정, WebSocket ticker 필드 Decision Gate 해소, 코인 SSE[^crypto-sse-026], 코인 분봉 저장·캐시(MKT-008 — 보관 없이 중계).
+- **제외**: prod 환경, `BithumbFeedSimulator` 코드 수정, WebSocket ticker 필드 Decision Gate 해소, 코인 SSE[^crypto-sse-028], 코인 분봉 저장·캐시(MKT-008 — 보관 없이 중계).
