@@ -1,6 +1,10 @@
 # Spec: OCO 손절·익절 가격·퍼센트 입력 정책
 
-> 상태: 문서 설계 확정, production 구현 미착수
+> 상태: **부분 구현.** PRICE/PERCENT 계산·반올림 공식(scale 8, `RoundingMode.HALF_UP`)은 `026`의 `ReferencePriceCalculator`로 이미 production에 있다(PR #298). **OCO 트리거·예약 경로는 미착수**(3차 MVP, `021`이 엔진 정본).
+>
+> 이 문서의 계산 공식은 두 경로가 공유한다 — 3차 MVP의 OCO 트랙(`016`·`020`·`021`)과 2차 MVP의 활성 경로 `026`(참조 가격선 계산). 공식을 고칠 때는 양쪽 영향을 함께 확인한다.
+>
+> 다만 **PERCENT 입력은 아직 어느 경로에서도 실제로 쓰이지 않는다** — `PracticeIntention`이 PRICE만 저장해(이슈 #243) `ReferencePriceCalculator`의 PERCENT 분기는 현재 호출되지 않는다.
 
 ## 개요
 

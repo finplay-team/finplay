@@ -1,6 +1,8 @@
 # Spec: 시장가/지정가 매매 기반 3단계 투자 실습 완결 경로 (OCO 없이)
 
-> 상태: 계획 모드에서 신규 작성 (2026-08-10). production 구현 미착수.
+> 상태: 2026-08-10 신규 작성 → **일부 구현 완료**. MKT-PRACTICE-001~007·009~012는 production에 반영됐고(PR #295·#298·#302·#304, `V27`·`V28`), **MKT-PRACTICE-008(`GET /api/education/practice` 진행 조회)만 미착수**(이슈 #305)다. 아래 "범위 제외"의 "순수 설계" 서술은 최초 작성 시점 기준이며 더 이상 유효하지 않다.
+>
+> **이 spec이 2차 MVP의 유일한 실제 튜토리얼 완료 경로다.** 사용자는 이미 API 호출만으로 3단계를 완료할 수 있다(즐겨찾기 → 사전 의도 → 매수 → 관찰 → 복기). OCO 기반 경로(`016`·`019`·`020`·`021`)는 3차 MVP로 이연됐다.
 >
 > **번호 확정 경위**: 작업 지시 시점에는 024를 쓰기로 했으나, 착수 전 `git ls-tree origin/dev docs/specs/`로 재확인한 결과 origin/dev에 이미 `024-feedback-query-cache`·`025-review-gate-auto-fix`가 존재해 026으로 올렸다. `022-community-enhancement`/`027-crypto-tick-candle-cache`, `023-watchlist` 모두 origin/dev에 이미 존재한다(로컬 미커밋 추측은 틀렸다 — 실제로는 이미 머지돼 있었다).
 
@@ -107,7 +109,7 @@
 - OCO exit plan 생성·수정·트리거·만료 — `016`·`019`·`020`·`021`이 정본으로 유지하며 이 spec은 만들거나 바꾸지 않는다.
 - 이 spec이 만드는 신규 엔드포인트가 `016`의 `/observations`·`/reflections`·`/exit-plans` 계열 URL을 점유하거나 대체하는 일 — URL을 명시적으로 분리했다(위 "관찰·복기 API 대상 식별자" 절).
 - 8개 투자 지식 과정, 배지, RAG 코치, 보상(PRD 3차 MVP, C-004).
-- production 코드, Controller, DTO, entity, migration 구현 — 이 spec은 순수 설계다.
+- ~~production 코드, Controller, DTO, entity, migration 구현 — 이 spec은 순수 설계다.~~ **(2026-08-10 해소)** 최초 작성 시점의 범위 제외였으나 이후 같은 spec 범위로 구현됐다 — 상태 헤더 참고.
 - 3차 MVP에서 OCO 버전이 들어올 때 `tutorial_key` 공유 여부의 최종 결정 — 위 "완료 판정과 tutorial_key" 절의 잔여 위험으로 남긴다.
 
 ## 완료 조건
