@@ -3,7 +3,7 @@
 ## 관련 문서
 - Spec: `./spec.md`
 - GitHub 이슈: #311 (finplay-team/finplay)
-- 관련 ADR: [ADR-0016](../../adr/0016-review-gate-auto-fix-round.md)(이력 코멘트 always()/outcome != success 원칙의 출처, 이번에 적용 범위를 넓히는 갱신 대상), [ADR-0013](../../adr/0013-issue-triggered-agent-harness.md)(job 구조 원본)
+- 관련 ADR: [ADR-0019](../../adr/0019-pre-pr-failure-issue-comment.md)(이번 결정의 정본 — PR #312 리뷰 후 신설), [ADR-0016](../../adr/0016-review-gate-auto-fix-round.md)(이력 코멘트 always()/outcome != success 원칙의 출처, 본문은 수정하지 않고 상태 줄에 ADR-0019 포인터만 추가), [ADR-0001](../../adr/0001-record-architecture-decisions.md)(승인된 ADR 본문 불변 원칙 — PR #312 리뷰가 근거로 든 문서), [ADR-0013](../../adr/0013-issue-triggered-agent-harness.md)(job 구조 원본)
 - 선례: `docs/specs/025-review-gate-auto-fix/`(같은 파일을 다룬 직전 spec — plan.md의 "always()와 !cancelled()를 나누는 기준" 절이 이번 작업의 조건식 원칙 그대로다)
 
 이 spec도 025와 같은 이유로 API 엔드포인트·엔티티가 아니라 `.github/workflows/agent.yml`의 `implement-and-open-pr` job을 바꾸는 CI 워크플로우 변경이다. "API 설계·입력 명세·데이터 모델" 대신 스텝 시퀀스로 설계를 기술한다.
@@ -126,32 +126,22 @@
 
 각 행에서 세 조건식(`implement_failure_comment`/`build_failure_issue_comment`/`pr_lookup_failure_comment`의 `if:`)을 대입하면 정확히 하나만 참이 된다(1행: 1번 조건만 참, 2행: 2번만, 3행: 3번만, 4행: 셋 다 거짓). 완료 조건 "정확히 1개, 중복 0·누락 0"과 "정상 흐름에서 중복 코멘트가 늘지 않는다"를 이 표로 검증한다.
 
-## ADR-0016 갱신 — 종료 사유 열거 확장
+## ADR — 종료 사유 열거 확장 (2026-08-10 PR #312 리뷰 후 정정)
 
-CLAUDE.md 규칙 2에 따라 ADR을 새 번호로 대체하지 않고 **같은 ADR을 직접 갱신**한다(오케스트레이터 지시 근거: 이슈 #311 완료 조건 "ADR-0016의 종료 사유 열거를 갱신한다"는 기존 결정을 뒤집는 게 아니라 같은 원칙의 적용 범위를 PR 생성 전 구간으로 넓히는 것이다). 갱신 이력을 명확히 남긴다.
+**최초 계획(아래 취소선 절)은 PR #312 리뷰(WookJaes, 차단 1건)에서 기각됐다** — "적용 범위 확장이면 인플레이스 수정 허용"이라는 예외는 `docs/adr/0001-record-architecture-decisions.md:15`("ADR은 한번 승인되면 수정하지 않는다")와 CLAUDE.md 규칙 2 어디에도 없다는 지적이다. 이 저장소에는 정확히 반대 방향의 선례가 이미 있다 — ADR-0014가 PR #290에서 락 범위가 확장됐을 때, 본문은 고치지 않고 **상태 줄에 포인터 한 줄만** 추가했다(PR #285 커밋 `7ab60341`).
 
-### 1) 메타데이터 절에 갱신 이력 한 줄 추가
-
-`docs/adr/0016-review-gate-auto-fix-round.md`의 "관계" 줄(L5) 바로 아래에 추가:
+**정정된 결정**: 새 ADR `docs/adr/0019-pre-pr-failure-issue-comment.md`를 만들어 이번 결정(PR 생성 전 구간도 이력 코멘트 always() 원칙을 따른다)을 그 안에 전부 담는다. `docs/adr/0016-review-gate-auto-fix-round.md` 본문은 한 글자도 고치지 않고, ADR-0014 선례와 같은 형태로 상태 줄에 포인터만 추가한다.
 
 ```markdown
-- 갱신: 2026-08-10(이슈 #311, `docs/specs/029-pr-fallback-comment/`) — "이력 코멘트 스텝은 always()" 목록에 PR 생성 전 구간 스텝 3개를 추가했다. 기존 결정을 뒤집지 않고 적용 범위를 넓히는 갱신이라 새 ADR 번호를 만들지 않았다(CLAUDE.md 규칙 2).
+- 상태: 승인됨 — PR 생성 전 구간(구현 호출·빌드 검증·PR 조회 실패)의 이력 코멘트는 [ADR-0019](0019-pre-pr-failure-issue-comment.md)가 이 ADR의 "이력 코멘트는 always()" 원칙을 이슈 코멘트로 확장한다. 그 외 결정은 유효.
 ```
 
-### 2) "이력 코멘트 스텝은 always()" 목록 확장 (L32)
+이슈 #311 완료 조건의 "ADR-0016의 종료 사유 열거를 갱신한다"는 이제 "ADR-0016 상태 줄에 포인터를 추가하고, 실제 열거는 ADR-0019에 담는다"로 해석한다 — 완료 조건의 의도(PR 생성 전 구간의 종료 사유가 어딘가에 정본으로 남는 것)는 그대로 충족하되, ADR-0001의 불변성 원칙을 지키는 방식으로 이행한다.
 
-현재:
-```markdown
-  - **이력 코멘트 스텝은 `always()`** — `review_failure_comment`·`autofix_call_failure_comment`·`autofix_build_failure_comment`·`autofix_review_failure_comment`.
-```
+~~### (기각됨) 1) 메타데이터 절에 갱신 이력 한 줄 추가~~
+~~`docs/adr/0016-review-gate-auto-fix-round.md`의 "관계" 줄(L5) 바로 아래에 추가~~ — 본문 수정이라 기각.
 
-갱신 후:
-```markdown
-  - **이력 코멘트 스텝은 `always()`** — `review_failure_comment`·`autofix_call_failure_comment`·`autofix_build_failure_comment`·`autofix_review_failure_comment`.
-  - **PR 생성 전 구간도 같은 원칙을 따른다**(이슈 #311) — `implement_failure_comment`·`build_failure_issue_comment`·`pr_lookup_failure_comment`. 이 셋은 정의상 PR이 아직 없는 시점에만 조건이 성립하므로 `steps.pr.outputs.number != ''` 게이트가 아니라 앞 스텝의 `outcome`으로 상호 배타를 걸고, 게시 대상도 PR이 아니라 이슈(`github.event.issue.number`)다. 대상 판정(`outcome != 'success'`)과 코멘트 본문에 실제 outcome을 찍는 원칙은 동일하다.
-```
-
-원본 문장("현재 열거는 PR이 존재하는 구간만 다룬다", 이슈 #311)이 가리키는 열거가 바로 이 목록이다 — `implement-and-open-pr` job의 다른 이력 코멘트류 텍스트(예: L18-24의 "자동 수정 라운드의 종료 사유 6가지")는 자동 수정 라운드 자체에 국한된 별도 열거이므로 손대지 않는다.
+~~### (기각됨) 2) "이력 코멘트 스텝은 always()" 목록 확장 (L32)~~ — 본문 수정이라 기각. 대신 이 목록에 있던 신규 스텝 열거는 ADR-0019 "결정" 절로 그대로 옮겼다.
 
 ## 로컬 검증 절차 (CI 없음 — `./gradlew build`는 이 변경의 검증 대상 아님, `src/` 무변경)
 

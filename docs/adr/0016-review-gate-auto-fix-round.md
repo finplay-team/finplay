@@ -1,9 +1,8 @@
 # ADR-0016: 리뷰 게이트에 자동 수정 라운드를 추가한다
 
-- 상태: 승인됨
+- 상태: 승인됨 — PR 생성 전 구간(구현 호출·빌드 검증·PR 조회 실패)의 이력 코멘트는 [ADR-0019](0019-pre-pr-failure-issue-comment.md)가 이 ADR의 "이력 코멘트는 always()" 원칙을 이슈 코멘트로 확장한다. 그 외 결정은 유효.
 - 날짜: 2026-08-10
 - 관계: [ADR-0013](0013-issue-triggered-agent-harness.md)의 "조건부 승인" 결정을 대체(superseded)한다. ADR-0013의 다른 결정(러너 환경, 인증 방식, 이슈 트리거 흐름)은 유효하다. [ADR-0005](0005-local-agent-orchestration.md)의 "자동 머지 금지" 원칙은 유지한다. GitHub 이슈 #292, `docs/specs/025-review-gate-auto-fix/spec.md`·`plan.md`를 구체화한다.
-- 갱신: 2026-08-10(이슈 #311, `docs/specs/029-pr-fallback-comment/`) — "이력 코멘트 스텝은 always()" 목록에 PR 생성 전 구간 스텝 3개를 추가했다. 기존 결정을 뒤집지 않고 적용 범위를 넓히는 갱신이라 새 ADR 번호를 만들지 않았다(CLAUDE.md 규칙 2).
 
 ## 맥락
 
@@ -31,10 +30,9 @@ ADR-0013은 `implement-and-open-pr` job이 PR을 연 뒤 자체 리뷰를 한 �
 - "리뷰 결과를 PR에 게시" 계열 스텝(라운드 1·자동 수정 라운드 공통)은 `env`에 `fromJSON(...)` 평가 결과가 아니라 raw `structured_output` 문자열만 넘기고, `run:` 스크립트 안에서 빈 값을 먼저 체크한 뒤 `jq -r`로 파싱한다. `structured_output`이 빈 문자열이어도 스텝 자체는 실패하지 않는다 — 빈 값일 때도 조용히 건너뛰지 않고 "구조화된 결과를 반환하지 않았습니다" 계열 코멘트로 흔적을 남긴다(PR #293 2·3차 리뷰 권장).
 - 앞선 스텝 실패로 `success()` 체인이 깨진 뒤에도 돌아야 하는 스텝들은 명시적 status 함수를 쓰되, **이력 코멘트와 판정·승인을 구분한다**(PR #293 3차 리뷰 참고 1 → 4차 리뷰 권장 1로 정정).
   - **이력 코멘트 스텝은 `always()`** — `review_failure_comment`·`autofix_call_failure_comment`·`autofix_build_failure_comment`·`autofix_review_failure_comment`.
-  - **PR 생성 전 구간도 같은 원칙을 따른다**(이슈 #311) — `implement_failure_comment`·`build_failure_issue_comment`·`pr_lookup_failure_comment`. 이 셋은 정의상 PR이 아직 없는 시점에만 조건이 성립하므로 `steps.pr.outputs.number != ''` 게이트가 아니라 앞 스텝의 `outcome`으로 상호 배타를 걸고, 게시 대상도 PR이 아니라 이슈(`github.event.issue.number`)다. 대상 판정(`outcome != 'success'`)과 코멘트 본문에 실제 outcome을 찍는 원칙은 동일하다.
   - **판정 병합(`judge`)과 조건부 승인은 `!cancelled()`** — 취소된 런이 판정을 매기고 승인까지 이어지는 것은 막는다.
   - 근거: `timeout-minutes` 초과 시 GitHub은 job을 **취소**로 처리한다. 가장 오래 도는 스텝이 `autofix`라 타임아웃이 걸릴 확률이 제일 높은 지점이 거기인데, 이력 코멘트까지 `!cancelled()`면 그 경우 PR에 아무 흔적도 남지 않아 "코멘트 이력만 보고 왜 멈췄는지 알 수 있다"는 요구사항을 못 지킨다. 정보성 코멘트는 취소된 런에 붙어도 무해하지만 승인은 아니다 — 원래 막으려던 것은 승인이지 코멘트가 아니었다.
-  - **이력 코멘트 스텝의 대상 판정은 `outcome == 'failure'`가 아니라 `outcome != 'success'`로 통일한다**(PR #293 5차 리뷰 권장 1). 취소된 스텝의 `outcome`은 `failure`가 아니라 `cancelled`이므로, `== 'failure'`로 두면 `always()`를 붙여놓고도 정작 타임아웃 경로가 걸리지 않는다. 각 이력 코멘트 스텝은 바로 앞 스텝이 `success`임을 함께 요구하므로 대상 스텝이 `skipped`가 되는 경우는 없어 `!= 'success'`가 과하게 잡히지 않는다 — 단, `implement_failure_comment`는 예외로, `implement` 앞에 조건부 스텝이 없어 `implement` 자체가 `skipped`인 경우(예: `checkout` 실패로 인한 연쇄 스킵)까지 잡도록 의도적으로 설계됐다(이슈 #311).
+  - **이력 코멘트 스텝의 대상 판정은 `outcome == 'failure'`가 아니라 `outcome != 'success'`로 통일한다**(PR #293 5차 리뷰 권장 1). 취소된 스텝의 `outcome`은 `failure`가 아니라 `cancelled`이므로, `== 'failure'`로 두면 `always()`를 붙여놓고도 정작 타임아웃 경로가 걸리지 않는다. 각 이력 코멘트 스텝은 바로 앞 스텝이 `success`임을 함께 요구하므로 대상 스텝이 `skipped`가 되는 경우는 없어 `!= 'success'`가 과하게 잡히지 않는다.
   - 같은 이유로 이력 코멘트 본문은 "실패했습니다"로 단정하지 않고 실제 `outcome` 값을 함께 찍는다 — 조건이 `failure`와 `cancelled`를 모두 잡으므로, 단정하면 타임아웃으로 멈춘 런에서 원인을 잘못 지목하게 된다.
 - PR 번호를 참조하는 `gh pr comment`/`gh pr review` 호출은 `run:` 스크립트에 `${{ }}`를 직접 보간하지 않고 `env: PR_NUMBER: ${{ steps.pr.outputs.number }}`를 거친다 — 위 env 즉시평가 원칙과 스크립트 인젝션 방지 원칙을 PR 번호에도 동일하게 적용한 것이다(PR #293 3차 리뷰 참고 4).
 - "방금 연 PR 번호 조회" 스텝은 PR 번호를 못 찾으면(`NUMBER`가 빈 문자열) job을 명시적으로 실패시킨다 — 이전에는 이후 스텝이 전부 조용히 스킵돼 job이 우연히 초록으로 끝났다(이슈 #292의 실제 실패 사례, PR #293 3차 리뷰 권장 3).
