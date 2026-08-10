@@ -11,7 +11,7 @@ class ErrorCodeTest {
 
 	@Test
 	void declaresEveryErrorCodeFromPrdAndOAuthSpecWithoutUnlistedOnes() {
-		assertThat(ErrorCode.values()).hasSize(31);
+		assertThat(ErrorCode.values()).hasSize(32);
 	}
 
 	@Test
@@ -40,6 +40,7 @@ class ErrorCodeTest {
 			Map.entry(ErrorCode.INSUFFICIENT_QTY, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.MARKET_CLOSED, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.PRICE_UNAVAILABLE, HttpStatus.CONFLICT),
+			Map.entry(ErrorCode.PRACTICE_PRICE_SESSION_ALREADY_ACTIVE, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.IDEMPOTENCY_CONFLICT, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.ORDER_ALREADY_FILLED, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.ORDER_ALREADY_CANCELLED, HttpStatus.CONFLICT),
@@ -86,6 +87,8 @@ class ErrorCodeTest {
 			.isEqualTo("이미 완료한 실습입니다.");
 		assertThat(ErrorCode.PRACTICE_EVIDENCE_MISSING.getDefaultMessage())
 			.isEqualTo("실습 진행에 필요한 증거를 확인할 수 없습니다.");
+		assertThat(ErrorCode.PRACTICE_PRICE_SESSION_ALREADY_ACTIVE.getDefaultMessage())
+			.isEqualTo("이미 진행 중인 가상 가격 세션이 있습니다.");
 	}
 
 	@Test
