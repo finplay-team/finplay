@@ -5,4 +5,11 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "finplay.community.image-storage.s3")
 public record CommunityS3StorageProperties(String bucket) {
+
+	public CommunityS3StorageProperties {
+		if (bucket == null || bucket.isBlank() || bucket.startsWith("${")) {
+			throw new IllegalStateException(
+				"finplay.community.image-storage.s3.bucket이 설정되지 않았습니다 (COMMUNITY_S3_BUCKET 환경변수를 확인하세요).");
+		}
+	}
 }

@@ -72,12 +72,41 @@ class FileStorageServiceProfileTest {
 			});
 	}
 
-	// application-prod.yml은 COMMUNITY_S3_BUCKET을 기본값 없이 "${COMMUNITY_S3_BUCKET}" 형태로 참조하고
-	// deploy/README.md는 이를 DB_URL 등과 같은 fail-fast 관례로 문서화한다. 그런데 이 값을 실제로 재현해
-	// 검증해 보면(withPropertyValues로 미해결 플레이스홀더 문자열을 그대로 넣어 실행) 컨텍스트가 실패하지
-	// 않고 성공한다 — @ConfigurationProperties 바인딩(PropertySourcesPlaceholdersResolver)은 기본적으로
-	// 관용(lenient) 모드라 미해결 "${...}"를 예외 없이 리터럴 문자열로 그대로 바인딩하기 때문이다. S3Client는
-	// 버킷명을 기동 시점에 검증하지 않아(요청 시점에만 사용) 이 리터럴 문자열이 실제 운영에서도 기동 실패로
-	// 이어지지 않고 첫 S3 요청에서야 조용히 실패할 수 있다. 이는 이 PR의 스코프를 벗어난 기존 문서·구현 간
-	// 불일치이므로 여기서 고정하지 않고 별도로 보고한다(오케스트레이터 보고 참고).
+	// 이슈 #335 — CommunityS3StorageProperties의 컴팩트 생성자 가드가 미해결 플레이스홀더·공백 bucket을
+	// 실제로 막는지 고정한다. @ConfigurationProperties 바인딩은 기본적으로 관용(lenient) 모드라 가드가
+	// 없으면 "${COMMUNITY_S3_BUCKET}" 같은 미해결 문자열도 예외 없이 그대로 바인딩된다.
+	@Test
+	@DisplayName("COMMUNITY_S3_BUCKET이 미해결 플레이스홀더로 남아 있으면 prod 컨텍스트 기동이 실패한다")
+	void prodProfileFailsFastWhenBucketPlaceholderUnresolved() {
+		contextRunner
+			.withSystemProperties("spring.profiles.active=prod")
+			.withPropertyValues("finplay.community.image-storage.s3.bucket=${COMMUNITY_S3_BUCKET}")
+			.run(context -> {
+				assertThat(context).hasFailed();
+				assertThat(context.getStartupFailure()).hasRootCauseInstanceOf(IllegalStateException.class);
+			});
+	}
+
+	@Test
+	@DisplayName("COMMUNITY_S3_BUCKET이 공백이면 prod 컨텍스트 기동이 실패한다")
+	void prodProfileFailsFastWhenBucketBlank() {
+		contextRunner
+			.withSystemProperties("spring.profiles.active=prod")
+			.withPropertyValues("finplay.community.image-storage.s3.bucket=   ")
+			.run(context -> {
+				assertThat(context).hasFailed();
+				assertThat(context.getStartupFailure()).hasRootCauseInstanceOf(IllegalStateException.class);
+			});
+	}
+
+	@Test
+	@DisplayName("s3.bucket 프로퍼티 키 자체가 없으면(null 바인딩) prod 컨텍스트 기동이 실패한다")
+	void prodProfileFailsFastWhenBucketPropertyMissing() {
+		contextRunner
+			.withSystemProperties("spring.profiles.active=prod")
+			.run(context -> {
+				assertThat(context).hasFailed();
+				assertThat(context.getStartupFailure()).hasRootCauseInstanceOf(IllegalStateException.class);
+			});
+	}
 }
