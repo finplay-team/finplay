@@ -121,7 +121,8 @@ else: # PERCENT
 
 - 단위: 2단계 chain 해석(수량 정규화 비교, 최이른 buyTrade 선택), 참조 가격선 계산(PRICE·PERCENT, 019 반올림), evidence A/B 판정 경계값, evidence C 부재 확인, tutorial_key market 분기.
 - 슬라이스: `GET /api/education/practice?market=`의 market 누락·허용값 검증과 시장별 단일 key 응답, `POST .../holding-observations`, `POST .../holding-reflections`의 인증·소유권·검증·응답, holding 타인 소유 404, chain 실패 409.
-- 통합: 즐겨찾기 → 의도 → (시장가 또는 코인 지정가) 매수 FILLED → 관찰 A 또는 B → 복기 → 완료 전체 흐름(주식·코인 각 1개), intention 재시작 유실 시나리오(완료 전 evidence 회귀, 완료 후 불변), 완료 후 holding 전량 매도에도 완료 유지.
+- 통합(2차 MVP, 이슈 #313): 코인 즐겨찾기 → 의도 → 지정가 매수 FILLED → 관찰 A 또는 B → 복기 → 완료 전체 흐름 1건, 실제 Spring Context 재생성으로 intention 유실 시 완료 전 evidence 회귀·완료 후 DB 완료 불변을 검증한다.
+- 통합(3차 MVP로 이관): 주식 시장가 튜토리얼 전체 흐름 검증. 기존 주식 기능 계약은 유지하며 이슈 #313에서 다루지 않는다.
 - 경합: 동시 복기 요청이 `practice_progresses` 잠금에서 직렬화되어 한 건만 201·나머지 409, `practice_market_reflections` 행이 정확히 1개인지 DB로 확인.
 
 ## 후속 확인 필요 (이 spec이 결정하지 않음)
