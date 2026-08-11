@@ -275,6 +275,59 @@ class TradeServiceTest {
 		assertThat(result.get()).isSameAs(earliestMatching);
 	}
 
+	// 아래는 이슈 #339 tasks.md 6번 통합 테스트 작업 중 발견한 회귀 수정 — 샘플 종목 chain 재도전용
+	// findLatestFilledBuyTradeMatching(수량 정규화 비교 + 가장 최신 체결 선택, findEarliestFilledBuyTradeMatching과
+	// 대칭)을 검증한다.
+
+	@Test
+	void findLatestFilledBuyTradeMatchingPicksLastQuantityMatchInRepositoryOrder() {
+		LocalDateTime after = NOW.minusDays(1);
+		// repository는 executedAt ASC, id ASC로 이미 정렬해 반환한다 — 서비스는 그 순서에서 수량이 일치하는
+		// 마지막(가장 최신) 항목을 골라야 한다. earliestMatching(id=20)이 아니라 laterMatching(id=30)이 선택돼야
+		// 만료된 샘플 chain의 최초 매수가 아니라 재도전 매수를 anchor로 쓸 수 있다.
+		Trade nonMatching = buyTrade(10L, NOW.minusHours(3), new BigDecimal("5"));
+		Trade earliestMatching = buyTrade(20L, NOW.minusHours(2), new BigDecimal("3"));
+		Trade laterMatching = buyTrade(30L, NOW.minusHours(1), new BigDecimal("3"));
+		when(tradeRepository.findByAccount_User_IdAndInstrument_IdAndSideAndExecutedAtAfterOrderByExecutedAtAscIdAsc(
+			USER_ID, 100L, OrderSide.BUY, after))
+			.thenReturn(List.of(nonMatching, earliestMatching, laterMatching));
+
+		Optional<Trade> result = tradeService.findLatestFilledBuyTradeMatching(
+			USER_ID, 100L, new BigDecimal("3"), after);
+
+		assertThat(result).isPresent();
+		assertThat(result.get()).isSameAs(laterMatching);
+	}
+
+	@Test
+	void findLatestFilledBuyTradeMatchingMatchesQuantityRegardlessOfScale() {
+		LocalDateTime after = NOW.minusDays(1);
+		Trade differentScaleTrade = buyTrade(1L, NOW.minusHours(1), new BigDecimal("0.10000000"));
+		when(tradeRepository.findByAccount_User_IdAndInstrument_IdAndSideAndExecutedAtAfterOrderByExecutedAtAscIdAsc(
+			USER_ID, 100L, OrderSide.BUY, after))
+			.thenReturn(List.of(differentScaleTrade));
+
+		Optional<Trade> result = tradeService.findLatestFilledBuyTradeMatching(
+			USER_ID, 100L, new BigDecimal("0.1"), after);
+
+		assertThat(result).isPresent();
+		assertThat(result.get()).isSameAs(differentScaleTrade);
+	}
+
+	@Test
+	void findLatestFilledBuyTradeMatchingReturnsEmptyWhenNoTradeMatchesQuantity() {
+		LocalDateTime after = NOW.minusDays(1);
+		Trade mismatchedTrade = buyTrade(1L, NOW.minusHours(1), new BigDecimal("5"));
+		when(tradeRepository.findByAccount_User_IdAndInstrument_IdAndSideAndExecutedAtAfterOrderByExecutedAtAscIdAsc(
+			USER_ID, 100L, OrderSide.BUY, after))
+			.thenReturn(List.of(mismatchedTrade));
+
+		Optional<Trade> result = tradeService.findLatestFilledBuyTradeMatching(
+			USER_ID, 100L, new BigDecimal("3"), after);
+
+		assertThat(result).isEmpty();
+	}
+
 	// 아래는 031-tutorial-sandbox-instruments 매도 chain 해석이 쓰는
 	// findEarliestFilledSellTradeAfter(수량 무관 + buyTrade 이후 가장 이른 체결 선택)을 검증한다.
 

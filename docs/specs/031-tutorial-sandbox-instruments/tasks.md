@@ -33,6 +33,8 @@
   10필드 유지, `empty()`류 정적 팩토리는 `null`). 테스트: `TradeService` 단위(수량 무관 매도 선택,
   `executedAt` 동순위 시 `tradeId` 순), `MarketPracticeChainResolutionService` 단위(매도 없음/있음/여러
   건 중 최이른 선택), `026`의 기존 2단계 chain 해석 회귀 테스트 통과 확인. (plan 3번 "매도 chain 조회")
+  (정정: 재도전 버그 발견·수정, 이슈 #339 tasks.md 6번 진행 중 발견 — plan.md "재도전을 위한 buyTrade 선택
+  정정" 참조)
 
 - [x] **`GET /api/education/practice` 4단계 응답(샘플 종목 chain 한정)** — `InvestmentPracticeQueryService`가
   chain 해석 후 `resolvedInstrument.isTutorialSample()`로 분기해 `PracticeStepResponse` 배열을 3개(실제

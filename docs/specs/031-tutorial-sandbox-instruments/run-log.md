@@ -8,6 +8,8 @@
 | - | implementer | `.\gradlew.bat compileJava compileTestJava` | plan.md "3. 매도 단계 API 설계"(매도 chain 조회), 026 `findEarliestFilledBuyTradeMatching`과의 대칭 원칙 |
 | - | implementer | `.\gradlew.bat compileJava compileTestJava` | plan.md "3. 매도 단계 API 설계" GET 4단계 응답(PR #340 정정본), plan.md "4. 5분 타이머" |
 | - | implementer | `.\gradlew.bat compileJava compileTestJava` | plan.md "`POST /api/education/practice/holding-reflections` 전제조건 변경" 표, spec.md SANDBOX-008 |
+| - | implementer | `.\gradlew.bat compileJava compileTestJava` + `test --tests MarketPracticeChainResolutionServiceTest,TradeServiceTest` | 이슈 #339 재도전 버그 수정(오케스트레이터 확정 방향), plan.md "재도전을 위한 buyTrade 선택 정정" |
+| - | implementer | `.\gradlew.bat test --tests TutorialSandboxPracticeIntegrationTest` | tasks.md 6번 검증 중 신규 차단 버그 발견(`Trade.validateStockReplaySession`) |
 
 ## 모니터링 (사람용 요약)
 - V32 마이그레이션(`is_tutorial_sample` 컬럼 + 샘플 종목 6행) 추가, `Instrument`·`InstrumentResponse`에 필드 반영, `InstrumentService.getTradableInstrumentEntity`에 샘플 종목 커뮤니티 태그 제외 조건 추가. 컴파일 통과.
@@ -15,3 +17,5 @@
 - `TradeService.findEarliestFilledSellTradeAfter` 추가(기존 derived 쿼리 재사용, SELL로 side만 다르게), `MarketPracticeChainResolutionService.resolveForFavorite`가 buyTrade 이후 첫 SELL을 채워 `ResolvedPracticeChainDto`에 `sellTradeId`·`sellTradeExecutedAt` 2필드 추가. 기존 DTO 생성 호출부(테스트 4개 파일) 시그니처만 `null, null` 보정. 컴파일 통과.
 - `ResolvedPracticeChainDto`에 `instrumentIsTutorialSample` 추가, `InvestmentPracticeQueryService`가 샘플 종목 chain에서만 `steps` 4개(신규 4단계 매도·복기, `EXPIRED` 상태 포함)로 확장하고 `PracticeEvidenceResponse`에 `sellTradeId`·`sellTradeExecutedAt`·`saleDeadlineAt` 3필드 추가(실제 종목 chain은 3단계 그대로, 신규 필드는 항상 null). 5분 만료 판정(`!isAfter` 경계 포함)을 GET 조회에만 반영, `holding-reflections` 전제조건 변경은 다음 항목. 기존 테스트 5개 파일 생성자 시그니처만 보정, 컴파일 통과. `docs/api-routes.md`·`docs/api-contracts.md` 동기화, prd.md §3은 spec 미완결(후속 항목 남음)이라 갱신 대상 아님.
 - `PracticeHoldingReflectionService.createReflection`이 chain의 `instrumentIsTutorialSample()`일 때만 매도 evidence·5분 이내 전제조건을 추가 검사(`verifySampleChainSaleEvidence`), 실제 종목 chain은 026 전제조건(A/B만) 그대로. 신규 `ErrorCode.PRACTICE_SANDBOX_TIME_EXPIRED` 추가하고 `ErrorCodeTest`의 개수(37)·상태맵·기본메시지 화이트리스트를 같은 커밋에서 갱신. 응답 DTO 변경 없음(spec 결정). compileJava/compileTestJava 통과. controller 변경 없어 api-routes.md/api-contracts.md/prd.md §3 갱신 대상 아님.
+- 오케스트레이터 확정 방향대로 `TradeService.findLatestFilledBuyTradeMatching` 신규 추가 + `MarketPracticeChainResolutionService`가 `InstrumentService` 주입받아 `isTutorialSample()`로 분기(샘플=최신 매수, 실제=기존 최이른 매수 유지). 단위 테스트 통과(`MarketPracticeChainResolutionServiceTest` 2건, `TradeServiceTest` 3건 신규). plan.md·tasks.md에 정정 기록.
+- tasks.md 6번 통합 테스트(`TutorialSandboxPracticeIntegrationTest`, 5개 시나리오 이미 작성돼 있었음) 실행 결과 3건 실패 — anchor 버그와 무관한 별도 차단 버그 발견: `Trade.validateStockReplaySession`이 STOCK market이면 `stockReplaySession`이 항상 non-null을 요구해, 샘플 종목(replaySession=null 설계, SANDBOX-003)의 매수 자체가 `IllegalArgumentException("주식 체결에는 재생세션이 필수입니다.")`로 실패한다. 이 수정은 스코프를 넘어서 오케스트레이터 확인 후 진행 필요 — tasks.md 6번 체크 보류.

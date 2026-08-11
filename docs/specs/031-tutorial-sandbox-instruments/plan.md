@@ -217,6 +217,17 @@ price = (basePrice * (1 + rate)) 을 scale 8 HALF_UP으로 반올림
 새 `ErrorCode.PRACTICE_SANDBOX_TIME_EXPIRED(HttpStatus.CONFLICT, "실습 매수 후 5분이 지나 이 시도는
 만료됐습니다. 다시 매수해 주세요.")`를 추가한다.
 
+### 재도전을 위한 buyTrade 선택 정정 (이슈 #339 tasks.md 6번 진행 중 발견)
+
+`MarketPracticeChainResolutionService.resolveForFavorite`가 항상 `TradeService.
+findEarliestFilledBuyTradeMatching`(가장 이른 매수)으로 chain의 buyTrade를 고정하면, 샘플 종목 chain이 한 번
+5분 만료된 뒤 같은 종목을 다시 매수해도 anchor가 최초의 만료된 매수에 고정돼 재도전이 불가능하다(SANDBOX-007
+위반). **샘플 종목 chain에 한정해서만** 신규 `TradeService.findLatestFilledBuyTradeMatching`(같은 조회·정렬,
+마지막 매칭 항목 선택)을 쓰도록 수정한다. `MarketPracticeChainResolutionService`가 `InstrumentService`를
+주입받아 `favorite.instrumentId()`의 `isTutorialSample()`로 분기한다. 실제 종목 chain은 `026`의 anti-gaming
+근거(가장 이른 체결 고정, `TradeServiceTest.
+findEarliestFilledBuyTradeMatchingPicksFirstQuantityMatchInRepositoryOrder`가 고정한 계약)를 그대로 유지한다.
+
 ## 4. 5분 타이머 — 서버 강제 여부와 anchor
 
 **결정: 서버가 강제하지만, 강제 지점은 "매도 주문 접수"가 아니라 "그 매도를 evidence로 인정하는

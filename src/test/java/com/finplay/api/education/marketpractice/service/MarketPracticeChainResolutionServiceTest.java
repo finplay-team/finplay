@@ -24,6 +24,7 @@ import com.finplay.api.favorite.service.FavoriteService;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.domain.StockReplaySession;
+import com.finplay.api.market.service.InstrumentService;
 import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.domain.OrderType;
@@ -48,10 +49,18 @@ class MarketPracticeChainResolutionServiceTest {
 	private final HoldingService holdingService = mock(HoldingService.class);
 	private final PracticeMarketObservationRepository practiceMarketObservationRepository = mock(
 		PracticeMarketObservationRepository.class);
+	private final InstrumentService instrumentService = mock(InstrumentService.class);
 
 	private final MarketPracticeChainResolutionService service = new MarketPracticeChainResolutionService(
 		favoriteService, practiceIntentionRepository, tradeService, holdingService,
-		practiceMarketObservationRepository);
+		practiceMarketObservationRepository, instrumentService);
+
+	{
+		// 이 테스트 파일의 대다수 케이스는 026(실제 종목) chain을 다루므로, 별도 스텁이 없는 instrumentId는
+		// 기본으로 실제 종목(isTutorialSample=false)을 반환하게 해 기존 회귀 테스트를 그대로 유지한다.
+		when(instrumentService.getInstrumentEntity(org.mockito.ArgumentMatchers.anyLong()))
+			.thenReturn(stockInstrument());
+	}
 
 	@Test
 	void resolveReturnsCompletedChainWhenFavoriteIntentionBuyTradeAndHoldingAllMatch() {
@@ -487,6 +496,59 @@ class MarketPracticeChainResolutionServiceTest {
 		verify(tradeService).findEarliestFilledSellTradeAfter(USER_ID, 100L, buyTrade.getExecutedAt());
 	}
 
+	// 이슈 #339 tasks.md 6번 통합 테스트 작업 중 발견한 회귀 수정 — 샘플 종목 chain은 만료 후 재도전이 가능해야
+	// 하므로(spec.md SANDBOX-007) buyTrade anchor를 "가장 최신"으로 고른다. 실제 종목 chain은 026의 anti-gaming
+	// 규칙(가장 이른 체결 고정)을 그대로 유지한다.
+
+	@Test
+	void resolvePicksLatestFilledBuyTradeForTutorialSampleInstrumentToAllowRetryAfterExpiry() {
+		FavoriteResponse favorite = favorite(10L, 100L, "STOCK", NOW.minusDays(3));
+		when(favoriteService.getFavorites(USER_ID)).thenReturn(new FavoriteListResponse(List.of(favorite)));
+		when(instrumentService.getInstrumentEntity(100L)).thenReturn(tutorialSampleInstrument());
+
+		PracticeIntention intention = intention(20L, 100L, new BigDecimal("3"), NOW.minusDays(2));
+		when(practiceIntentionRepository.findByUserId(USER_ID)).thenReturn(List.of(intention));
+
+		// 첫 매수(만료된 chain의 anchor)와 재도전 매수 둘 다 존재한다 — 샘플 chain은 최신(재도전) 쪽을 골라야 한다.
+		Trade expiredBuyTrade = buyTrade(30L, new BigDecimal("100"), new BigDecimal("3"), NOW.minusHours(1));
+		Trade retryBuyTrade = buyTrade(31L, new BigDecimal("105"), new BigDecimal("3"), NOW.minusMinutes(1));
+		when(tradeService.findLatestFilledBuyTradeMatching(
+			USER_ID, 100L, intention.quantity(), intention.createdAt()))
+			.thenReturn(Optional.of(retryBuyTrade));
+		when(holdingService.findHoldingId(USER_ID, Market.STOCK, 100L)).thenReturn(Optional.of(40L));
+
+		Optional<ResolvedPracticeChainDto> result = service.resolve(USER_ID, PracticeIntentionService.TUTORIAL_KEY);
+
+		assertThat(result).isPresent();
+		assertThat(result.get().buyTradeId()).isEqualTo(31L);
+		verify(tradeService, org.mockito.Mockito.never()).findEarliestFilledBuyTradeMatching(
+			USER_ID, 100L, intention.quantity(), intention.createdAt());
+	}
+
+	@Test
+	void resolvePicksEarliestFilledBuyTradeForRealInstrumentEvenWhenLaterMatchExists() {
+		// 026의 anti-gaming 회귀 확인 — 샘플 종목이 아니면 여전히 가장 이른 매수를 고정 선택한다.
+		FavoriteResponse favorite = favorite(10L, 100L, "STOCK", NOW.minusDays(3));
+		when(favoriteService.getFavorites(USER_ID)).thenReturn(new FavoriteListResponse(List.of(favorite)));
+		when(instrumentService.getInstrumentEntity(100L)).thenReturn(stockInstrument());
+
+		PracticeIntention intention = intention(20L, 100L, new BigDecimal("3"), NOW.minusDays(2));
+		when(practiceIntentionRepository.findByUserId(USER_ID)).thenReturn(List.of(intention));
+
+		Trade earliestBuyTrade = buyTrade(30L, new BigDecimal("100"), new BigDecimal("3"), NOW.minusHours(1));
+		when(tradeService.findEarliestFilledBuyTradeMatching(
+			USER_ID, 100L, intention.quantity(), intention.createdAt()))
+			.thenReturn(Optional.of(earliestBuyTrade));
+		when(holdingService.findHoldingId(USER_ID, Market.STOCK, 100L)).thenReturn(Optional.of(40L));
+
+		Optional<ResolvedPracticeChainDto> result = service.resolve(USER_ID, PracticeIntentionService.TUTORIAL_KEY);
+
+		assertThat(result).isPresent();
+		assertThat(result.get().buyTradeId()).isEqualTo(30L);
+		verify(tradeService, org.mockito.Mockito.never()).findLatestFilledBuyTradeMatching(
+			USER_ID, 100L, intention.quantity(), intention.createdAt());
+	}
+
 	@Test
 	void resolveThrowsValidationErrorForUnknownTutorialKey() {
 		assertThatThrownBy(() -> service.resolve(USER_ID, "UNKNOWN_TUTORIAL_KEY"))
@@ -533,6 +595,13 @@ class MarketPracticeChainResolutionServiceTest {
 
 	private static Instrument stockInstrument() {
 		return Instrument.create(Market.STOCK, "005930", "삼성전자", new BigDecimal("100"), 0L, true, NOW);
+	}
+
+	private static Instrument tutorialSampleInstrument() {
+		Instrument instrument = Instrument.create(Market.STOCK, "SANDBOX_STK_1", "샌드박스 종목", new BigDecimal("100"),
+			0L, true, NOW);
+		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
+		return instrument;
 	}
 
 	private static Account account() {
