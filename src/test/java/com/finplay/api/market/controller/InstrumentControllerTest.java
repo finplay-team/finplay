@@ -178,6 +178,26 @@ class InstrumentControllerTest {
 	}
 
 	@Test
+	void getInstrumentsResponseExposesIsTutorialSampleFieldForSampleInstruments() throws Exception {
+		authenticate();
+		when(instrumentService.getInstruments(Market.STOCK)).thenReturn(List.of(
+			new InstrumentResponse(101L, "STOCK", "SANDBOX_STK_1", "연습용 주식 A",
+				BigDecimal.valueOf(100), 10000L, true, true),
+			new InstrumentResponse(102L, "STOCK", "SANDBOX_STK_2", "연습용 주식 B",
+				BigDecimal.valueOf(100), 10000L, false, true)));
+
+		mockMvc.perform(authorized(get("/api/instruments")).param("market", "STOCK"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.length()").value(2))
+			.andExpect(jsonPath("$[0].isTutorialSample").value(true))
+			.andExpect(jsonPath("$[0].tradable").value(true))
+			.andExpect(jsonPath("$[1].isTutorialSample").value(true))
+			.andExpect(jsonPath("$[1].tradable").value(false));
+
+		verify(instrumentService).getInstruments(Market.STOCK);
+	}
+
+	@Test
 	void getInstrumentReturnsStockInstrumentWithFullContractWhenFound() throws Exception {
 		authenticate();
 		when(instrumentService.getInstrument(1L)).thenReturn(
