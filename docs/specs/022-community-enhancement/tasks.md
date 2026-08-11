@@ -76,3 +76,16 @@ plan.md의 "COM-005 부모 댓글 tombstone 전환 (이슈 #277)" 절 설계를 
 
 - [x] 5. **tombstone된 댓글에 답글 금지 (PR #331 리뷰 참고 사항 #2)**
   plan.md의 "tombstone된 댓글에 답글 금지" 절 설계를 그대로 따른다. `PostCommentService.createComment`의 `parentCommentId` 검증에 세 번째 단계 추가 — 조회된 부모가 `isTombstoned()==true`이면 400 `VALIDATION_ERROR`("삭제된 댓글에는 답글을 남길 수 없습니다."). 단위 테스트(`PostCommentServiceTest`: tombstone된 부모에 답글 시도 400, 정상 부모에는 여전히 허용되는 대조 케이스) + `@WebMvcTest`(`PostCommentControllerTest`: 400 응답 계약) + 통합 테스트(부모 tombstone 후 그 부모로 대댓글 작성 시도 → 400, 재조회로 응답에 새 대댓글이 반영되지 않았는지 확인). `docs/api-contracts.md`의 `POST /api/community/posts/{postId}/comments` 400 오류 사유에 이 케이스 추가. `./gradlew build` 전체 통과 확인.
+
+## COM-006 후속: 이미지 저장소를 S3로 전환 (이슈 #330)
+
+`FileStorageService` 인터페이스는 바꾸지 않는다. 구현체 추가와 프로파일 분기만으로 끝내는 것이 목표다(plan.md "COM-006 후속: 이미지 저장소를 S3로 전환" 절 참고). PR #329(이슈 #326, ADR-0020)는 이미 `dev`에 머지됐고 이 브랜치는 그 위로 리베이스된 상태다.
+
+- [x] 1. **AWS SDK 의존성·`S3FileStorageService`·프로파일 분기·설정**
+  `build.gradle`에 `software.amazon.awssdk:bom` platform + `software.amazon.awssdk:s3` 추가(Boot 4.1/Java17과 충돌 없는 최신 안정 BOM 버전을 확인해 고정). `community.storage` 패키지에 `S3FileStorageService`(`@Profile("prod")`) 신규 작성 — `store`/`load`/`delete`는 plan.md 서술대로 `PutObjectRequest`/`GetObjectRequest`/`DeleteObjectRequest`로 구현하고, 각각 `LocalFileStorageService`와 동일한 예외 계약(`store` 실패 시 `BusinessException(INTERNAL_ERROR)`, `load` 대상 없음 시 `BusinessException(NOT_FOUND)`, `delete`는 best-effort 로그만) 유지. 기존 `LocalFileStorageService`에 `@Profile("!prod")`를 추가한다(현재 무조건 등록 상태에서 로컬/테스트 전용으로 좁힌다 — 두 구현체가 동시에 빈으로 등록되면 `prod` 기동이 실패하므로 필수 변경). `application-prod.yml`에 `finplay.community.image-storage.s3.bucket: ${COMMUNITY_S3_BUCKET}`(기본값 없음, fail-fast) 추가, `.env.example`에 `COMMUNITY_S3_BUCKET=`을 "배포(prod 프로필)에서만 필요" 절에 추가(버킷은 AWS 콘솔에서 사전 생성 필요임을 주석으로 명시). `S3Client`는 자격 증명·리전 모두 SDK 기본 체인(EC2 IAM 인스턴스 프로파일, `AWS_REGION`)에 맡긴다 — 정적 액세스 키·커스텀 리전 설정 키를 새로 추가하지 않는다. 단위 테스트: `S3FileStorageServiceTest`(Mockito `S3Client` mock) — 정상 store/load/delete, S3 예외 발생 시 예외 변환 각각 확인. 기존 `LocalFileStorageServiceTest`가 `@Profile("!prod")` 추가 후에도 그대로 통과하는지 확인(단위 테스트는 빈을 직접 생성하므로 프로파일 애너테이션 영향이 없을 것으로 예상되나 실제로 확인).
+
+- [x] 2. **배포 문서·이관 절차 문서화**
+  `deploy/README.md`에 S3 버킷 생성(퍼블릭 액세스 차단 유지)·IAM 역할(대상 버킷 한정 `s3:GetObject`/`PutObject`/`DeleteObject` 최소 권한)·EC2 인스턴스 프로파일 연결 체크리스트를 ADR-0020의 RDS·ElastiCache 콘솔 설정 안내와 같은 형식으로 추가한다. 기존 로컬 업로드 파일 이관 절차(`aws s3 sync` 1회성 스크립트, 블루-그린 전환 전 실행)를 같은 문서에 남긴다 — 이관 대상 데이터가 실제로 있는지 먼저 EC2에서 확인하고, 소수/테스트 데이터 수준이면 이관을 생략하고 재업로드 안내로 대체한다는 판단 기준도 함께 적는다(plan.md "기존 로컬 데이터 이관 방안" 절 그대로). `compose.deploy.yaml`에 이미지 볼륨을 새로 추가하지 않는다(ADR-0020 §결정 3 유지 확인, 코드 변경 없음 — 이 항목은 "추가하지 않았음"을 리뷰에서 확인하기 위한 체크 항목).
+
+- [x] 3. **문서 동기화 및 최종 빌드**
+  `docs/specs/022-community-enhancement/plan.md`의 "Decision Gate 확정" 절 — "`S3FileStorageService` 등은 실제로 필요해지는 시점(운영 배포 논의)에 새로 추가한다" 문장 아래(PR #329가 이미 추가했을 화살표 각주가 있다면 그 바로 아래)에 "구현 완료(이슈 #330, 이 PR)"를 표기하는 각주를 추가한다. `docs/prd.md` §3 "커뮤니티 고도화" 행 근거 칸에 이슈 #330/이 PR 번호를 추가한다(기능 제공 범위는 그대로이므로 판정 문구 "완료(COM-004~006)" 자체는 유지 — CLAUDE.md 규칙10 "갱신 비대상"에 해당하는지는 실제 diff를 보고 최종 판단한다). `./gradlew build` 전체 통과 확인(실패 시 수정 후 재실행) — 특히 `prod` 프로필로 애플리케이션 컨텍스트를 띄우는 테스트가 있다면 `S3Client`/버킷 설정 부재로 실패하지 않는지 확인한다.

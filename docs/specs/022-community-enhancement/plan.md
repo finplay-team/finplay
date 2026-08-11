@@ -631,3 +631,129 @@ private CommunityPostImage image;
   3. 이미지 첨부 게시물 삭제 후 DB에서 `community_post_images` 행이 사라지고, 저장 디렉터리에서도 물리 파일이 삭제됐는지 확인.
   4. 미첨부 게시물 생성·조회·목록(기존 COM-001 시나리오) 회귀 — `imageId`·`imageUrl` 모두 `null`.
   - 추가로(완료 조건 외 회귀): 타인이 업로드한 `imageId`로 게시물 생성 시도 403, 이미 다른 게시물에 쓰인 `imageId` 재사용 시도 400.
+
+## COM-006 후속: 이미지 저장소를 S3로 전환 (이슈 #330)
+
+### 관련 문서
+
+- 위 "Decision Gate 확정" 절 — "**과설계 금지 — 인터페이스로만 추상화, 클라우드 구현체는 지금 만들지 않는다.** ... `S3FileStorageService` 등은 실제로 필요해지는 시점(운영 배포 논의)에 새로 추가한다"고 명시적으로 미뤄 둔 결정을 실행한다.
+- ADR-0020(`docs/adr/0020-managed-service-deployment.md` §결정 3 "업로드 파일은 S3로 옮긴다")이 이 전환의 아키텍처 근거다. **주의**: 이 spec 작업 시점 기준 ADR-0020은 PR #329(이슈 #326)에 있고 아직 `dev`에 머지되지 않았다(`origin/docs/326-deployment-architecture-adr`). 이 작업 브랜치는 **PR #329가 먼저 머지된 뒤 그 위로 리베이스**해야 ADR-0020 파일과, PR #329가 위 Decision Gate 절에 추가한 각주("→ 그 시점이 왔다 (2026-08-11, ADR-0020·이슈 #326)")를 함께 가져온다. 리베이스 없이 이 작업만 먼저 머지하면 plan.md가 존재하지 않는 ADR을 참조하게 된다.
+- ADR-0002(레이어드, 도메인 간 참조는 service 레이어만) — 이번 변경은 `community.storage` 패키지 내부 구현체 교체이므로 해당 없음(위반 없음).
+- ADR-0004(Flyway 마이그레이션) — **이번 작업은 스키마 변경이 없다.** `community_post_images` 테이블·`stored_filename` 컬럼 의미는 그대로다(저장 위치만 바뀐다). 신규 `V*` 마이그레이션 파일을 만들지 않는다.
+- PR #329 "남은 위험/후속" 절, 이슈 #330 본문.
+
+### 설계 원칙 — 인터페이스는 바꾸지 않는다
+
+`FileStorageService`(`store`/`load`/`delete`)는 COM-006 설계 시점에 이미 "바이트 스트림 입출력, 저장소 종속 경로 개념 노출 안 함"을 목표로 만들어졌다. 이번 작업은 그 경계를 검증하는 작업이지, 다시 설계하는 작업이 아니다 — 시그니처를 바꾸지 않고 구현체 `S3FileStorageService` 하나를 추가한다. `CommunityPostImageService`·`CommunityPostImageController`·`CommunityPost` 엔티티·DTO는 전혀 건드리지 않는다.
+
+### 프로파일 분기
+
+코드베이스에 이미 있는 "실 서비스는 `prod`, 나머지는 `!prod`" 패턴(`ResendEmailSender`/`FakeEmailSender`, `KakaoOAuth*`/`FakeOAuth*`, `DartDisclosureCollector`/`FakeDisclosureCollector`)을 그대로 따른다 — 새 조건식을 발명하지 않는다.
+
+```java
+// LocalFileStorageService
+@Profile("!prod")
+@Service
+public class LocalFileStorageService implements FileStorageService { ... }
+
+// S3FileStorageService (신규)
+@Profile("prod")
+@Service
+public class S3FileStorageService implements FileStorageService { ... }
+```
+
+- `crypto-real`·`oauth-real`·`news-real`처럼 로컬에서 실 서비스를 켜보는 보조 프로파일(`s3-real` 등)은 **만들지 않는다.** 저 프로파일들은 "로컬에서 외부 API 실호출을 확인하고 싶다"는 반복 수요가 있던 도메인(코인 시세·OAuth·뉴스)에만 생겼다. 이미지 저장소는 `LocalFileStorageServiceTest`(`@TempDir`)로 로컬 동작을 이미 충분히 검증하고 있고, S3 쪽은 아래 "테스트 계획"의 mock 단위 테스트로 커버한다 — 새 프로파일을 추가하면 관리할 조합만 늘어난다(과설계 금지).
+
+### AWS SDK 의존성
+
+AWS SDK for Java **v2**(`software.amazon.awssdk`)를 쓴다 — v1(`com.amazonaws:aws-java-sdk-*`)은 유지보수 모드로 신규 도입 대상이 아니다. `build.gradle`에 BOM으로 버전을 고정한다:
+
+```groovy
+dependencies {
+    implementation platform('software.amazon.awssdk:bom:<BOM 최신 안정 버전>')
+    implementation 'software.amazon.awssdk:s3'
+}
+```
+
+- 정확한 BOM 버전은 구현 시점에 Maven Central에서 Boot 4.1/Java 17과 충돌 없는 최신 안정판을 implementer가 확인해 고정한다(이 문서는 설계 시점이라 버전을 못박지 않는다 — `spring-ai-starter-model-openai:2.0.0` 도입 때처럼 호환성 확인 후 확정하는 절차를 그대로 따른다).
+- `software.amazon.awssdk:s3` 하나만 추가한다. `s3-transfer-manager` 등 상위 편의 모듈은 이번 규모(파일 1개 업로드/다운로드/삭제, 대용량·병렬 전송 요구 없음)에 과설계다.
+
+### 자격 증명·리전 — 시크릿을 새로 만들지 않는다
+
+- **정적 액세스 키를 코드·설정·환경변수 어디에도 두지 않는다.** `S3Client`는 인자 없이 `S3Client.builder().build()`로 생성해 AWS SDK 기본 자격 증명 체인(`DefaultCredentialsProvider`)에 맡긴다 — EC2 인스턴스에 붙는 **IAM 인스턴스 프로파일 역할**이 배포 환경의 자격 증명이 된다. 이슈 #330 본문의 "시크릿인 접근키는 `.env`/환경변수로만"이라는 전제 자체를 없애는 선택이다: RDS 마스터 비밀번호 로테이션이 필요했던 사례(PR #329 "남은 위험")처럼 정적 키를 도입하면 그 키도 로테이션 대상이 되므로, 로테이션할 시크릿을 아예 만들지 않는 편이 이 팀 규모에 맞는다.
+  - IAM 역할에는 대상 버킷 한정 `s3:GetObject`·`s3:PutObject`·`s3:DeleteObject` 권한만 부여한다(최소 권한). 역할 생성·EC2 인스턴스 프로파일 연결은 AWS 콘솔 작업이라 코드 범위 밖이다 — ADR-0020이 보안 그룹을 다룬 것과 같은 방식으로 `deploy/README.md`에 체크리스트로 남긴다(아래 "배포 문서 갱신").
+  - 리전은 커스텀 설정 키를 새로 만들지 않고 SDK 기본 리전 프로바이더 체인(`AWS_REGION` 표준 환경변수 또는 인스턴스 메타데이터)에 맡긴다 — `DB_URL`·`REDIS_HOST`처럼 이 프로젝트 전용 접두 환경변수를 또 만들 이유가 없다(과설계 금지, "이미 있는 관례를 재사용" 원칙).
+- 버킷 이름만 이 프로젝트 설정으로 관리한다. **시크릿이 아니다**(존재를 알아도 IAM 권한 없이는 접근 불가) — `application-prod.yml`의 기존 fail-fast 관례(`DB_URL`처럼 기본값 없이 환경변수 참조, 누락 시 기동 실패)를 그대로 따른다.
+
+```yaml
+# application-prod.yml 추가
+finplay:
+  community:
+    image-storage:
+      s3:
+        bucket: ${COMMUNITY_S3_BUCKET}
+```
+
+- `.env.example`에 `COMMUNITY_S3_BUCKET=`을 "배포(prod 프로필)에서만 필요" 절에 추가하고, 버킷은 코드가 아니라 AWS 콘솔에서 미리 만들어야 함을 주석으로 남긴다(`DB_URL` 항목의 "compose가 덮어쓴다" 식 안내와 같은 톤).
+- `application.yml`(공통)의 기존 `finplay.community.image-storage.base-directory`는 그대로 둔다 — `!prod`(로컬·테스트)에서 `LocalFileStorageService`만 이 값을 읽으므로 삭제할 이유가 없다.
+
+### `S3FileStorageService` 설계
+
+```java
+// community.storage 패키지, S3FileStorageService.java
+@Profile("prod")
+@Service
+public class S3FileStorageService implements FileStorageService {
+
+    private final S3Client s3Client;
+    private final String bucket;
+
+    public S3FileStorageService(
+        S3Client s3Client,
+        @Value("${finplay.community.image-storage.s3.bucket}") String bucket) {
+        this.s3Client = s3Client;
+        this.bucket = bucket;
+    }
+    // store/load/delete는 아래 서술대로 구현
+}
+```
+
+- `S3Client`는 `S3FileStorageService`가 직접 `S3Client.create()`로 만들지, `@Configuration` 클래스가 `@Bean`으로 노출할지는 implementer 재량이다 — 다만 `LocalFileStorageService`가 `@Value` 필드를 생성자로 손으로 받는 이유(Lombok이 `@Value`를 생성자 파라미터로 복사하지 않음, `docs/agent-mistakes.md` 2026-07-30)와 같은 함정이 여기도 적용되므로 `@RequiredArgsConstructor`를 쓰지 않는다.
+- `store(MultipartFile file, String storedFilename)`: `PutObjectRequest.builder().bucket(bucket).key(storedFilename).contentType(file.getContentType()).build()`와 `RequestBody.fromInputStream(file.getInputStream(), file.getSize())`로 업로드. 업로드 실패(`S3Exception`, `IOException`)는 `LocalFileStorageService.store`와 동일하게 `BusinessException(ErrorCode.INTERNAL_ERROR, "이미지 저장에 실패했습니다.")`로 감싼다(호출부 `CommunityPostImageService`가 저장소 구현 세부사항을 모르게 하는 기존 계약 유지).
+- `load(String storedFilename)`: `GetObjectRequest`로 `ResponseInputStream<GetObjectResponse>`를 받아 `Resource`로 감싼다. 존재하지 않으면 SDK가 `NoSuchKeyException`을 던지는데, 이를 잡아 `LocalFileStorageService.load`와 동일하게 `BusinessException(ErrorCode.NOT_FOUND)`로 변환한다(호출부 `CommunityPostImageService.loadImageFile`이 저장소 종류와 무관하게 같은 예외 계약을 받는다). `InputStreamResource`를 그대로 쓰면 `contentLength()`가 정의되지 않아 `CommunityPostImageController`의 `ResponseEntity<Resource>` 직렬화 시 `Content-Length` 헤더가 빠질 수 있으므로, `GetObjectResponse.contentLength()`를 오버라이드한 얇은 `InputStreamResource` 서브클래스를 두거나 동급 처리를 한다.
+- `delete(String storedFilename)`: `DeleteObjectRequest`로 삭제. `LocalFileStorageService.delete`와 같은 계약(best-effort, 실패해도 예외를 던지지 않고 `log.warn`만 남긴다) — 존재하지 않는 키를 지워도 S3는 오류를 던지지 않으므로 별도 존재 확인이 필요 없다(로컬 구현의 `deleteIfExists`와 동등한 동작이 기본으로 보장된다).
+- `LocalFileStorageService`의 `resolveWithinBaseDirectory`(경로 탈출 방지, PR #269 리뷰)에 대응하는 방어는 S3에는 필요 없다 — `storedFilename`이 S3 객체 키가 될 뿐 파일시스템 경로로 해석되지 않으므로 `../` 같은 값이 들어와도 디렉터리 탈출이 성립하지 않는다. 다만 `CommunityPostImageService`가 `storedFilename`을 여전히 `UUID + 서버 결정 확장자`로만 생성하는 기존 규칙은 그대로 유지한다(키 이름 예측·충돌 방지 목적은 저장소와 무관하게 유효).
+
+### 기존 로컬 데이터 이관 방안
+
+- **DB 스키마·`stored_filename` 규칙은 바뀌지 않는다** — `CommunityPostImage.storedFilename`은 지금도 저장소 위치 정보를 담지 않는 순수 키(`UUID+확장자`)이므로, 이관은 "같은 키로 바이트를 로컬 디스크에서 S3로 복사"하는 것만으로 끝난다. DB 마이그레이션·엔티티 변경이 필요 없다(ADR-0004와 충돌 없음 — 애초에 스키마 변경 대상이 아니다).
+- 이관 대상 데이터가 있는지 먼저 확인한다: 이 프로젝트는 아직 실사용자 트래픽 이전 단계이고(ADR-0020 "후속" 절, RDS Single-AZ를 "실사용자 트래픽 붙는 시점까지 보류"라고 명시), PR #329가 배포한 EC2가 블루-그린 전환 전 유일한 배포 스택이다. 그 인스턴스의 `${COMMUNITY_IMAGE_STORAGE_DIR}`(compose.deploy.yaml 기준 컨테이너 내부 `./data/community-images`)에 실제로 파일이 있는지 SSH로 확인하는 것이 이관 절차의 0단계다.
+- **파일이 없거나 소수(운영 검증용 테스트 데이터 수준)면**: 별도 이관 스크립트를 만들지 않는다. 배포 전환(블루-그린 첫 그린 스택을 S3 프로필로 띄우는 시점) 후 기존 데이터는 폐기하고, 재현이 필요하면 사용자가 이미지를 다시 업로드하게 안내한다 — 이 팀 규모에서 1회성 이관 자동화 코드를 만드는 비용이 더 크다(spec 022 전반의 과설계 금지 원칙과 동일 판단).
+- **파일이 실사용 데이터 수준으로 있으면**: 애플리케이션 코드에 넣지 않는 1회성 운영 스크립트(예: `aws s3 sync`)로 처리한다.
+  ```bash
+  # EC2 인스턴스 위에서, 블루-그린 전환 직전 1회 실행
+  aws s3 sync /path/to/mounted/data/community-images s3://${COMMUNITY_S3_BUCKET}/ \
+    --exclude "*" --include "*.jpg" --include "*.png" --include "*.webp"
+  ```
+  - `aws s3 sync`가 각 파일을 로컬 파일명(=`stored_filename`)을 그대로 S3 키로 사용하므로 DB의 `stored_filename` 값과 키가 자동으로 일치한다 — 애플리케이션 배포(S3 프로필 전환)는 이 동기화가 끝난 뒤에만 트래픽을 넘긴다(블루-그린 헬스체크 통과 조건에 "이관 완료 확인"을 사람이 체크하는 절차로 추가, 자동화하지 않는다).
+  - 이 스크립트와 절차는 코드 저장소가 아니라 `deploy/README.md`에 문서로만 남긴다(1회성 운영 작업이므로 `src/`에 배치 코드로 만들지 않는다 — 과설계 금지).
+- 이관 여부와 관계없이 **`compose.deploy.yaml`의 `app` 서비스에 이미지 볼륨을 새로 붙이지 않는다** — ADR-0020 §결정 3이 이미 이 판단을 명시했다("볼륨 마운트를 추가해 고치지 않는다 — 볼륨을 붙이면 그 파일이 다시 인스턴스에 묶여 이 ADR의 목적을 되돌린다").
+
+### 설정 항목 요약 (신규/변경)
+
+| 파일 | 변경 |
+|---|---|
+| `build.gradle` | `software.amazon.awssdk:bom` platform + `software.amazon.awssdk:s3` 추가 |
+| `application-prod.yml` | `finplay.community.image-storage.s3.bucket: ${COMMUNITY_S3_BUCKET}` 추가(기본값 없음, fail-fast) |
+| `.env.example` | "배포(prod 프로필)에서만 필요" 절에 `COMMUNITY_S3_BUCKET=` 추가, 버킷 사전 생성 안내 주석 |
+| `deploy/README.md` | S3 버킷 생성(퍼블릭 액세스 차단 유지 — 이미지는 앱의 다운로드 엔드포인트로만 노출되고 버킷을 직접 공개하지 않는다), IAM 역할·최소 권한 정책, EC2 인스턴스 프로파일 연결 체크리스트 추가(ADR-0020이 RDS·ElastiCache 콘솔 설정을 남긴 것과 같은 형식). 이관 스크립트(`aws s3 sync`) 절차 포함 |
+| `docs/adr/0020-managed-service-deployment.md` | 이미 "S3FileStorageService 구현·이관은 별도 이슈"라고 후속을 명시해 뒀으므로 **내용 수정은 필요 없다.** ADR은 새 번호로 대체(superseded)하는 것 외에 고치지 않는다(CLAUDE.md 규칙2) — 이번 구현 완료는 이 spec의 plan.md와 `docs/prd.md` §3에 기록한다. |
+| `docs/specs/022-community-enhancement/plan.md` (이 문서) | 위 "Decision Gate 확정" 절의 "지금은 만들지 않는다" 문장이 실행 완료됐음을 별도 각주로 표기(구현 완료 커밋에서, PR #329가 남긴 화살표 각주 바로 아래에 이어 적는다) |
+| `docs/prd.md` §3 | "커뮤니티 고도화" 행 근거에 이슈 #330/이 PR 번호 추가(기능 제공 범위 자체는 바뀌지 않음 — 저장 위치만 바뀌므로 CLAUDE.md 규칙10 "갱신 비대상"에 해당할 수 있다. 다만 §3가 이미 "완료(COM-004~006)"로 적혀 있고 그 각주가 "로컬 파일시스템"을 함의하지 않으므로, 근거 칸에 이슈 번호만 추가하고 판정 문구는 바꾸지 않는 것으로 충분하다 — 최종 판단은 implementer가 실제 diff를 보고 내린다) |
+
+### 테스트 계획
+
+- 단위: `S3FileStorageServiceTest`(Mockito, `S3Client` mock) — `store` 정상 호출 시 `PutObjectRequest`에 올바른 bucket/key/contentType이 실리는지, S3 예외 발생 시 `BusinessException(INTERNAL_ERROR)`로 변환되는지. `load` 정상 시 `Resource` 반환, `NoSuchKeyException` 시 `BusinessException(NOT_FOUND)`로 변환되는지. `delete` 정상 호출 검증, 예외 발생 시 던지지 않고 로그만(호출 자체는 검증 가능해도 예외 전파는 없음을 확인).
+- **Testcontainers 기반 실 S3 호환 통합 테스트는 이번 그룹에 추가하지 않는다.** ADR-0003이 정의한 통합 테스트 스택은 MySQL Testcontainers 하나뿐이고, LocalStack 등 S3 호환 모듈은 이 저장소에 전례가 없다 — 이슈 #330 완료 조건의 "실 S3(or 호환 목) 통합 검증"은 위 mock 단위 테스트로 충족하는 것으로 판단한다(전례 없는 새 테스트 인프라를 이 크기의 변경 하나를 위해 들이는 것은 과설계). 이 판단이 리뷰에서 부족하다고 지적되면 LocalStack Testcontainers 모듈 도입을 별도로 검토한다.
+- 배포 검증(자동화 테스트 범위 밖, 운영 확인): PR #329가 남긴 실배포 검증 방식과 동일하게, 블루-그린 전환 시 EC2에서 실제 업로드→다운로드→삭제 왕복을 한 번 수동 확인하고 `deploy/README.md`에 결과를 남긴다(이슈 #330 완료 조건 "컨테이너 재생성에도 첨부 이미지가 유실되지 않음을 확인").
+- 회귀: 기존 `LocalFileStorageServiceTest`·`CommunityPostImageServiceTest`·`CommunityPostImageControllerTest`·COM-006 통합 테스트는 변경하지 않는다(인터페이스가 그대로이므로 `!prod` 경로 동작은 영향받지 않는다) — `./gradlew build`로 회귀 없음을 확인한다.
