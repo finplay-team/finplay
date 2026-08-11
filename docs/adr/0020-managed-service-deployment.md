@@ -55,7 +55,7 @@ Single-AZ를 고른 것은 이 결정의 목적이 **고가용성이 아니라 �
 
 `finplay-cache` — Redis OSS 7.1, `cache.t3.micro`, **복제본 1 + 다중 AZ + 자동 장애 조치**, private 서브넷, 전용 보안 그룹 `finplay-elasticache-sg`.
 
-**여기는 RDS와 달리 복제본을 둔다.** 판단 근거가 다르기 때문이다 — Redis는 이 저장소에서 fail-open(장애 시 DB로 폴백)만 하는 것이 아니다. `PriceStore`는 시세의 유일한 저장소이고, ADR-0014의 감시 락과 ADR-0015의 조회 캐시 락은 fail-closed(락을 못 잡으면 그 틱을 건너뛴다)다. 즉 **Redis가 죽으면 폴백되는 것이 아니라 기능이 멈춘다.** RDS의 Single-AZ 논리(“가용성은 나중에”)를 여기에 그대로 복사하면 단일 노드 장애가 곧 서비스 정지가 된다.
+**여기는 RDS와 달리 복제본을 둔다.** 판단 근거가 다르기 때문이다 — Redis는 이 저장소에서 fail-open(장애 시 DB로 폴백)만 하는 것이 아니다. ADR-0014의 감시 락은 fail-closed(락을 못 잡으면 그 틱을 건너뛴다)이고, ADR-0015의 조회 캐시 락은 반대로 fail-open(대기 타임아웃 시 원본 DB 직행, `FeedbackQueryCache.java:39`)이다 — 하지만 `PriceStore`는 폴백 자체가 없는 **시세의 유일한 저장소**다. 즉 **Redis가 죽으면 `PriceStore` 경로는 폴백되는 것이 아니라 기능이 멈춘다** — 이 한 가지 사실만으로도 단일 노드 의존을 받아들일 수 없다. RDS의 Single-AZ 논리(“가용성은 나중에”)를 여기에 그대로 복사하면 단일 노드 장애가 곧 서비스 정지가 된다.
 
 **클라이언트는 `SPRING_DATA_REDIS_SSL_ENABLED=true`로 붙는다.** ElastiCache의 전송 중 암호화를 켜면 서버가 TLS 핸드셰이크를 요구하는데, Lettuce 기본 설정은 평문으로 접속하므로 **TCP는 연결되고 Redis 핸드셰이크만 타임아웃된다**(2026-08-11 실측: `RedisCommandTimeoutException: Connection initialization timed out after 2 second(s)`). DNS·보안그룹·포트가 전부 정상이라 네트워크 문제로 오진하기 쉬운 증상이므로 이 값을 배포 필수 환경변수로 못박는다.
 
