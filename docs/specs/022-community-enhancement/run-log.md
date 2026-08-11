@@ -140,3 +140,15 @@
 
 ## 모니터링 (사람용 요약)
 - COM-005 tombstone 항목2: `PostCommentService.deleteComment`가 소유자 검증(403) 통과 후 `parentComment == null`이면 `comment.tombstone(LocalDateTime.now(clock))`(기존 주입된 `Clock` 재사용, hard delete 없음), 아니면 기존처럼 `postCommentRepository.delete(comment)`. `PostCommentResponse.from(comment, replies)`에 tombstone 분기 추가 — tombstone이면 `content`="삭제된 댓글입니다", `authorNickname`="(삭제됨)"으로 치환, `parentCommentId`·`replies`는 무영향(레코드 필드 추가 없음). 컨트롤러·엔드포인트 계약 변경 없음. compileJava 통과(테스트는 tester 담당).
+
+## AI 로그 (에이전트 참조용, COM-005 tombstone 항목3)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| - | implementer | `./gradlew test --tests "com.finplay.api.community.*"` | plan.md "테스트 계획 정정" 통합 테스트 4개 시나리오, 이슈 #277 |
+| - | implementer(tester 재현 회귀 대응) | `./gradlew test --tests "com.finplay.api.community.*" --rerun`(연속 2회) | tester가 `--rerun` 독립 2회 실행으로 재현한 33건 결정적 실패, 같은 버그 클래스 전수 조사 |
+
+## 모니터링 (사람용 요약)
+- COM-005 tombstone 항목3: `PostCommentTombstoneDeleteIntegrationTest` 신규(plan.md 시나리오 a~d — 부모+자식 삭제 시 tombstone 치환·자식 보존, 자식 없는 부모도 동일, 자식 자신 삭제는 hard delete 유지, 타인 삭제 여전히 403). `CommentDeleteIntegrationTest.ownerDeleteReturns204AndRemovesCommentFromDatabase`를 tombstone 전제(`ownerDeleteReturns204AndTombstonesTopLevelCommentInsteadOfRemovingIt`)로 수정. `PostCommentReplyIntegrationTest`의 `@BeforeEach`(부모+자식 섞인 상태에서 단일 "delete from post_comments"가 V31 RESTRICT 하에서 행 처리 순서 미보장으로 실패 가능)를 자식 먼저 지우는 2단계로 수정, `deletingParentCommentCascadesToChildReplies`(CASCADE 가정)를 tombstone 회귀 테스트로 교체.
+- 범위 확장: 전체 커뮤니티 테스트(`./gradlew test --tests "com.finplay.api.community.*"`)를 돌려보니 `PostCommentRepositoryTest`의 `@BeforeEach`도 같은 종류의 버그(단일 "delete from post_comments")로 48건이 연쇄 실패했다 — 이 파일은 tasks.md 항목3에 명시되진 않았지만 같은 근본 원인(V31 RESTRICT + 순서 미보장 벌크 삭제)이 전체 스위트를 막고 있어 같은 방식(자식 먼저)으로 함께 고쳤다. 수정 후 커뮤니티 패키지 전체 256개 테스트 통과.
+- tester 재현(`--rerun` 2회 독립 실행, 33건 결정적 실패): 최초 1회 통과 보고가 실행 순서 우연이었다는 지적을 받고, 같은 버그 클래스를 놓친 나머지 파일을 전수 조사(`grep -rn 'delete from post_comments'`)해 3개(tester 지목: `CommunityPostRepositoryTest`·`CommunityPostImageMigrationTest`·`CommunityPostImageRepositoryTest`) + 추가 발견 6개(`PostCommentListIntegrationTest`·`CommunityPostListIntegrationTest`·`PostCommentCreateIntegrationTest`·`CommunityPostImageIntegrationTest`의 `@BeforeEach`/`@AfterEach` 2곳·`CommunityPostImageUploadSizeLimitIntegrationTest`·`CommunityPostInstrumentTagIntegrationTest`)까지 동일 패턴(자식 먼저 삭제)으로 정리 — 총 9개 파일. `./gradlew test --tests "com.finplay.api.community.*" --rerun`을 연속 2회 실행해 두 번 다 256/256 통과(결정적) 확인.
+- tester 재검증(256/256, 2회 재현) 완료 후 일관성 지적: `CommentDeleteIntegrationTest`의 `@BeforeEach`만 옛 방식(단독 `delete from post_comments`)이 남아 있었다(이 클래스는 최상위 댓글만 만들어 현재는 안 터지지만 실행 순서가 바뀌면 잠재 위험) — 같은 2단계 패턴으로 통일, compileTestJava 통과.
