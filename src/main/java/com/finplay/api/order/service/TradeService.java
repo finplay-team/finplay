@@ -87,4 +87,12 @@ public class TradeService {
 			.filter(trade -> trade.getQuantity().compareTo(quantity) == 0)
 			.findFirst();
 	}
+
+	// 030 holding 관찰 세션 가격원 역추적용(이슈 #321) — buyTrade가 귀속된 order의 practicePriceSessionId를
+	// 공개 조회로 노출한다. education 도메인은 이 메서드로만 세션 귀속을 확인하고 OrderRepository를 직접
+	// 주입하지 않는다(ADR-0002). trade가 세션 없는 실제 가격 주문이면 빈 값을 반환한다.
+	@Transactional(readOnly = true)
+	public Optional<Long> findPracticePriceSessionId(Long buyTradeId) {
+		return tradeRepository.findPracticePriceSessionIdByTradeId(buyTradeId);
+	}
 }

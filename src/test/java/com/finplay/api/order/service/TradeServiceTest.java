@@ -275,6 +275,26 @@ class TradeServiceTest {
 		assertThat(result.get()).isSameAs(earliestMatching);
 	}
 
+	// 030 holding 관찰 세션 역추적(이슈 #321)이 쓰는 위임 — buyTradeId로 practicePriceSessionId를 조회한다.
+
+	@Test
+	void findPracticePriceSessionIdReturnsSessionIdFromRepository() {
+		when(tradeRepository.findPracticePriceSessionIdByTradeId(30L)).thenReturn(Optional.of(7L));
+
+		Optional<Long> result = tradeService.findPracticePriceSessionId(30L);
+
+		assertThat(result).contains(7L);
+	}
+
+	@Test
+	void findPracticePriceSessionIdReturnsEmptyWhenTradeHasNoPracticeSession() {
+		when(tradeRepository.findPracticePriceSessionIdByTradeId(31L)).thenReturn(Optional.empty());
+
+		Optional<Long> result = tradeService.findPracticePriceSessionId(31L);
+
+		assertThat(result).isEmpty();
+	}
+
 	@Test
 	void findEarliestFilledBuyTradeMatchingQueriesRepositoryWithBuySideAndGivenAfterBoundary() {
 		LocalDateTime after = NOW.minusDays(1);

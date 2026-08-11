@@ -16,6 +16,12 @@ import com.finplay.api.education.marketpractice.domain.PracticeMarketObservation
 import com.finplay.api.education.marketpractice.dto.request.PracticeHoldingObservationCreateRequest;
 import com.finplay.api.education.marketpractice.dto.response.PracticeHoldingObservationResponse;
 import com.finplay.api.education.marketpractice.repository.PracticeMarketObservationRepository;
+import com.finplay.api.education.priceruntime.domain.PracticePriceSession;
+import com.finplay.api.education.priceruntime.dto.request.PracticeLimitOrderCreateRequest;
+import com.finplay.api.education.priceruntime.repository.PracticePriceSessionRepository;
+import com.finplay.api.education.priceruntime.service.PracticeLimitOrderService;
+import com.finplay.api.education.priceruntime.service.PracticePriceGeneratorV1;
+import com.finplay.api.education.priceruntime.service.PracticePriceTickService;
 import com.finplay.api.education.service.PracticeIntentionService;
 import com.finplay.api.favorite.service.FavoriteService;
 import com.finplay.api.market.domain.Instrument;
@@ -80,6 +86,12 @@ class PracticeHoldingObservationIntegrationTest {
 	private PriceStore priceStore;
 	@Autowired
 	private StringRedisTemplate redisTemplate;
+	@Autowired
+	private PracticePriceSessionRepository practicePriceSessionRepository;
+	@Autowired
+	private PracticeLimitOrderService practiceLimitOrderService;
+	@Autowired
+	private PracticePriceTickService practicePriceTickService;
 
 	private final List<String> priceKeysToCleanUp = new java.util.ArrayList<>();
 
@@ -165,6 +177,49 @@ class PracticeHoldingObservationIntegrationTest {
 		PracticeHoldingObservationResponse priorityResponse = practiceHoldingObservationService.createObservation(
 			priorityChain.userId(), new PracticeHoldingObservationCreateRequest(priorityChain.holdingId()));
 		assertThat(priorityResponse.holdingId()).isEqualTo(priorityChain.holdingId());
+	}
+
+	// 030 holding 관찰 세션 역추적(이슈 #321) — buyTrade가 교육 지정가 세션에 귀속되면 PriceStore(실제 시세)가
+	// 아니라 세션의 currentPrice를 관찰 가격으로 써야 한다. 이 종목의 PriceStore 틱을 의도적으로 세팅하지 않는다
+	// — fallback 경로로 새면 PRICE_UNAVAILABLE(409)로 즉시 드러나고, 그렇지 않더라도 세션 tick 1 가격은
+	// PracticePriceGeneratorV1로 독립 재계산한 값과 정확히 일치해야만 세션 경로가 실제로 쓰였다고 증명된다.
+	@Test
+	void observationUsesPracticeSessionCurrentPriceWhenBuyTradeIsSessionScoped() {
+		BigDecimal quantity = BigDecimal.ONE;
+		// startPrice(10,000)보다 항상 높아 tick 1에서 즉시 체결된다(±1%/tick, PracticeLimitOrderTickIntegrationTest와 동일 계약).
+		BigDecimal alwaysFillsLimitPrice = new BigDecimal("30000");
+		BigDecimal startPrice = new BigDecimal("10000.00000000");
+		long seed = 741852L;
+
+		User user = userRepository.saveAndFlush(
+			User.create(uniqueEmail("session-price"), "password-hash", uniqueNickname("session-price"), BASE_NOW));
+		Account account = accountRepository.saveAndFlush(
+			Account.create(user, com.finplay.api.account.domain.Market.CRYPTO, BASE_NOW));
+		Instrument btc = instrumentRepository.findByMarketAndSymbol(Market.CRYPTO, "BTC").orElseThrow();
+
+		favoriteService.createFavorite(user.getId(), btc.getId());
+
+		clock.set(BASE_NOW.plusSeconds(1));
+		practiceIntentionService.createIntention(user.getId(),
+			new PracticeIntentionCreateRequest(btc.getId(), quantity, STOP_LOSS, TAKE_PROFIT));
+
+		clock.set(BASE_NOW.plusSeconds(2));
+		PracticePriceSession session = practicePriceSessionRepository.saveAndFlush(PracticePriceSession.create(
+			user.getId(), btc.getId(), seed, (short)PracticePriceGeneratorV1.VERSION, startPrice,
+			BASE_NOW.plusSeconds(2)));
+		practiceLimitOrderService.createOrder(user.getId(),
+			new PracticeLimitOrderCreateRequest(session.getId(), btc.getId(), quantity, alwaysFillsLimitPrice));
+
+		clock.set(BASE_NOW.plusSeconds(5));
+		practicePriceTickService.advanceTick(user.getId(), session.getId(), 1);
+
+		Holding holding = holdingRepository.findByAccountIdAndInstrumentId(account.getId(), btc.getId()).orElseThrow();
+
+		PracticeHoldingObservationResponse response = practiceHoldingObservationService.createObservation(
+			user.getId(), new PracticeHoldingObservationCreateRequest(holding.getId()));
+
+		BigDecimal expectedTickOnePrice = PracticePriceGeneratorV1.nextPrice(seed, 1, startPrice, startPrice);
+		assertThat(response.currentPrice()).isEqualByComparingTo(expectedTickOnePrice);
 	}
 
 	// Account·Holding·Instrument는 LAZY 연관이라 저장 트랜잭션 바깥에서 재조회하면
