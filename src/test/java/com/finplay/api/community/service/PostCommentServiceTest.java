@@ -192,6 +192,51 @@ class PostCommentServiceTest {
 		verify(commentRepository, never()).save(any());
 	}
 
+	// 이슈 #277 / PR #331 리뷰 참고 사항 #2: tombstone된 부모에는 새 대댓글을 남길 수 없다.
+	@Test
+	void createCommentThrowsValidationErrorWhenParentCommentIsTombstoned() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(author, "title", "post", null, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(post, "id", 7L);
+		PostComment tombstonedParent = PostComment.create(
+			post, author, "original content", null, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(tombstonedParent, "id", 3L);
+		tombstonedParent.tombstone(LocalDateTime.now(CLOCK));
+		when(postRepository.findById(7L)).thenReturn(Optional.of(post));
+		when(userQueryService.getUser(42L)).thenReturn(author);
+		when(commentRepository.findById(3L)).thenReturn(Optional.of(tombstonedParent));
+
+		assertThatThrownBy(() -> service.createComment(7L, 42L, "reply", 3L))
+			.isInstanceOf(BusinessException.class)
+			.extracting(exception -> ((BusinessException)exception).getErrorCode())
+			.isEqualTo(ErrorCode.VALIDATION_ERROR);
+
+		verify(commentRepository, never()).save(any());
+	}
+
+	// 대조 케이스: tombstone되지 않은 정상 부모에는 여전히 답글을 남길 수 있어야 한다.
+	@Test
+	void createCommentSavesReplyWhenParentCommentIsNotTombstoned() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(author, "title", "post", null, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(post, "id", 7L);
+		PostComment liveParent = PostComment.create(post, author, "live content", null, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(liveParent, "id", 3L);
+		when(postRepository.findById(7L)).thenReturn(Optional.of(post));
+		when(userQueryService.getUser(42L)).thenReturn(author);
+		when(commentRepository.findById(3L)).thenReturn(Optional.of(liveParent));
+		when(commentRepository.save(any(PostComment.class))).thenAnswer(invocation -> {
+			PostComment comment = invocation.getArgument(0);
+			ReflectionTestUtils.setField(comment, "id", 10L);
+			return comment;
+		});
+
+		PostCommentResponse response = service.createComment(7L, 42L, "reply", 3L);
+
+		assertThat(response.parentCommentId()).isEqualTo(3L);
+		verify(commentRepository).save(any(PostComment.class));
+	}
+
 	// 이슈 #277: 최상위 댓글(parentComment == null)은 하드 삭제 대신 tombstone된다 — 자식을 가질 수 있는
 	// 위치이므로 실제로 지우면 자식이 부모를 잃는다. delete()는 호출되지 않아야 한다.
 	@Test

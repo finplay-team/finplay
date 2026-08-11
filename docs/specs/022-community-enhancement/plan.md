@@ -391,6 +391,14 @@ public static PostCommentResponse from(PostComment comment, List<PostCommentResp
   3. 대댓글(자식) 자신을 삭제하면 기존처럼 하드 삭제된다 — 삭제 후 조회 시 그 자식이 부모의 `replies`에서 사라진다.
   4. 타인의 부모 댓글·대댓글 삭제 시도는 여전히 403 `FORBIDDEN`(회귀 — tombstone 도입으로 소유권 규칙이 약해지지 않았음을 확인).
 
+## tombstone된 댓글에 답글 금지 (PR #331 리뷰 참고 사항 #2 — 사용자 확정)
+
+- **배경**: 위 tombstone 설계는 `parentCommentId`가 가리키는 부모가 살아있는지 여부를 검증하지 않았다 — `PostCommentControllerTest`·통합 테스트로 "삭제된 댓글입니다"로 표시되는 글타래에도 새 대댓글이 계속 달릴 수 있음을 확인했고, 리뷰에서 spec에 정책이 없는 사각지대로 지적됐다.
+- **결정**: tombstone된 부모(`isTombstoned() == true`)에는 새 대댓글을 남길 수 없다. `PostCommentService.createComment`의 `parentCommentId` 검증 순서에 세 번째 단계를 추가한다 — (1) 존재하지 않거나 다른 게시물 소속이면 404 `NOT_FOUND`(기존), (2) 이미 자식(`isReply()==true`)이면 400 `VALIDATION_ERROR`("대댓글에는 답글을 남길 수 없습니다.", 기존, 1단계 제한), **(3) `isTombstoned()==true`면 400 `VALIDATION_ERROR`("삭제된 댓글에는 답글을 남길 수 없습니다.")(신규)**.
+- **API 계약 변경**: `POST /api/community/posts/{postId}/comments`의 400 오류 사유가 하나 늘어난다(요청·응답 필드는 그대로). `docs/api-contracts.md`의 해당 엔드포인트 절에 이 400 사유를 추가한다.
+- 테스트: `PostCommentServiceTest`(tombstone된 부모에 답글 시도 시 400, 정상 부모에는 여전히 허용되는 대조 케이스) + `@WebMvcTest`(400 응답 계약) + 통합 테스트(부모 tombstone 후 그 부모로 대댓글 작성 시도 → 400, 응답 본문에 새 대댓글이 반영되지 않았는지 재조회로 확인).
+
+
 
 ## COM-006 사진 첨부 (이슈 #248)
 

@@ -73,3 +73,6 @@ plan.md의 "COM-005 부모 댓글 tombstone 전환 (이슈 #277)" 절 설계를 
 
 - [x] 4. **문서 동기화 및 최종 빌드**
   `docs/api-routes.md`의 `DELETE /api/community/comments/{commentId}` 행("부모 댓글을 삭제하면 그 자식 대댓글도 `ON DELETE CASCADE`로 함께 삭제된다") 설명을 tombstone 동작("부모 댓글을 삭제하면 실제로 삭제되지 않고 내용·작성자 표시가 치환되며, 자식 대댓글은 그대로 보존된다")으로 교체. `docs/api-contracts.md`의 `community` 절 중 같은 엔드포인트의 CASCADE 서술("부모 댓글(대댓글을 가진 댓글) 삭제 시 자식 대댓글도 DB `ON DELETE CASCADE`로 함께 삭제된다")을 tombstone 계약(치환되는 `content`·`authorNickname` 값, 자식 보존)으로 교체. `docs/prd.md` §3은 갱신 대상이 아니다(COM-005가 제공하는 기능 자체는 그대로이고 삭제 시 내부 동작만 바뀜 — CLAUDE.md 규칙10 "갱신 비대상: 버그 수정"). `docs/specs/022-community-enhancement/spec.md` "완료 조건 COM-005" 체크박스는 이미 `[x]`이므로 변경하지 않는다(요구사항 자체가 아니라 정책 정정이므로). `./gradlew build` 전체 통과 확인(실패 시 수정 후 재실행).
+
+- [x] 5. **tombstone된 댓글에 답글 금지 (PR #331 리뷰 참고 사항 #2)**
+  plan.md의 "tombstone된 댓글에 답글 금지" 절 설계를 그대로 따른다. `PostCommentService.createComment`의 `parentCommentId` 검증에 세 번째 단계 추가 — 조회된 부모가 `isTombstoned()==true`이면 400 `VALIDATION_ERROR`("삭제된 댓글에는 답글을 남길 수 없습니다."). 단위 테스트(`PostCommentServiceTest`: tombstone된 부모에 답글 시도 400, 정상 부모에는 여전히 허용되는 대조 케이스) + `@WebMvcTest`(`PostCommentControllerTest`: 400 응답 계약) + 통합 테스트(부모 tombstone 후 그 부모로 대댓글 작성 시도 → 400, 재조회로 응답에 새 대댓글이 반영되지 않았는지 확인). `docs/api-contracts.md`의 `POST /api/community/posts/{postId}/comments` 400 오류 사유에 이 케이스 추가. `./gradlew build` 전체 통과 확인.

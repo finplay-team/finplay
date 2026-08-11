@@ -152,3 +152,11 @@
 - 범위 확장: 전체 커뮤니티 테스트(`./gradlew test --tests "com.finplay.api.community.*"`)를 돌려보니 `PostCommentRepositoryTest`의 `@BeforeEach`도 같은 종류의 버그(단일 "delete from post_comments")로 48건이 연쇄 실패했다 — 이 파일은 tasks.md 항목3에 명시되진 않았지만 같은 근본 원인(V31 RESTRICT + 순서 미보장 벌크 삭제)이 전체 스위트를 막고 있어 같은 방식(자식 먼저)으로 함께 고쳤다. 수정 후 커뮤니티 패키지 전체 256개 테스트 통과.
 - tester 재현(`--rerun` 2회 독립 실행, 33건 결정적 실패): 최초 1회 통과 보고가 실행 순서 우연이었다는 지적을 받고, 같은 버그 클래스를 놓친 나머지 파일을 전수 조사(`grep -rn 'delete from post_comments'`)해 3개(tester 지목: `CommunityPostRepositoryTest`·`CommunityPostImageMigrationTest`·`CommunityPostImageRepositoryTest`) + 추가 발견 6개(`PostCommentListIntegrationTest`·`CommunityPostListIntegrationTest`·`PostCommentCreateIntegrationTest`·`CommunityPostImageIntegrationTest`의 `@BeforeEach`/`@AfterEach` 2곳·`CommunityPostImageUploadSizeLimitIntegrationTest`·`CommunityPostInstrumentTagIntegrationTest`)까지 동일 패턴(자식 먼저 삭제)으로 정리 — 총 9개 파일. `./gradlew test --tests "com.finplay.api.community.*" --rerun`을 연속 2회 실행해 두 번 다 256/256 통과(결정적) 확인.
 - tester 재검증(256/256, 2회 재현) 완료 후 일관성 지적: `CommentDeleteIntegrationTest`의 `@BeforeEach`만 옛 방식(단독 `delete from post_comments`)이 남아 있었다(이 클래스는 최상위 댓글만 만들어 현재는 안 터지지만 실행 순서가 바뀌면 잠재 위험) — 같은 2단계 패턴으로 통일, compileTestJava 통과.
+
+## AI 로그 (에이전트 참조용, COM-005 tombstone 항목5)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| - | implementer | `./gradlew compileJava` | plan.md "tombstone된 댓글에 답글 금지 (PR #331 리뷰 참고 사항 #2)" |
+
+## 모니터링 (사람용 요약)
+- COM-005 tombstone 항목5: `PostCommentService.createComment`의 부모 검증에 3단계(`isTombstoned()`)를 추가해 tombstone된 부모에는 400 `VALIDATION_ERROR`("삭제된 댓글에는 답글을 남길 수 없습니다.")로 막았다. `docs/api-contracts.md`의 해당 엔드포인트 400 사유에 Issue #277 함께 추가. compileJava 통과(테스트는 tester 담당).

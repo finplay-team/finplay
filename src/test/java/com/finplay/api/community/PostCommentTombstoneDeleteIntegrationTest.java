@@ -4,6 +4,7 @@ package com.finplay.api.community;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -24,6 +25,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -173,6 +175,39 @@ class PostCommentTombstoneDeleteIntegrationTest {
 
 		assertThat(commentRepository.findById(parentId).orElseThrow().isTombstoned()).isFalse();
 		assertThat(commentRepository.findById(replyId)).isPresent();
+	}
+
+	// 이슈 #277 / PR #331 리뷰 참고 사항 #2: 부모 댓글을 tombstone한 뒤 그 부모로 대댓글을 시도하면
+	// 400이며, 재조회 응답에도 새 대댓글이 반영되지 않아야 한다(글타래가 계속 자라지 않는다).
+	@Test
+	void replyingToTombstonedParentReturns400AndDoesNotAppearOnReQuery() throws Exception {
+		User author = createUser("tomb-reply-block");
+		CommunityPost post = postRepository.saveAndFlush(
+			CommunityPost.create(author, "title", "post", null, NOW));
+		PostComment parent = commentRepository.saveAndFlush(
+			PostComment.create(post, author, "parent original content", null, NOW));
+		Long parentId = parent.getId();
+		String accessToken = jwtTokenProvider.issue(author.getId(), author.getRole()).accessToken();
+
+		mockMvc.perform(delete("/api/community/comments/{commentId}", parentId)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+			.andExpect(status().isNoContent());
+
+		mockMvc.perform(post("/api/community/posts/{postId}/comments", post.getId())
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("{\"content\":\"late reply\",\"parentCommentId\":" + parentId + "}"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.message").value("삭제된 댓글에는 답글을 남길 수 없습니다."));
+
+		mockMvc.perform(get("/api/community/posts/{postId}/comments", post.getId())
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.length()").value(1))
+			.andExpect(jsonPath("$[0].commentId").value(parentId))
+			.andExpect(jsonPath("$[0].content").value("삭제된 댓글입니다"))
+			.andExpect(jsonPath("$[0].replies").isEmpty());
 	}
 
 	private User createUser(String prefix) {

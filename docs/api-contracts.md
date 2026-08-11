@@ -349,7 +349,7 @@ PR #49 차단 리뷰 후속 Fake 재사용·동시성·DB 불변 자동 회귀�
 
 | Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|---|
-| POST | /api/community/posts/{postId}/comments | Access Bearer 필수 | `{"content":"댓글 본문","parentCommentId":null}` (`content` 필수, 최대 1,000자; `parentCommentId` 선택, 지정 시 같은 게시물의 기존 부모 댓글 ID) | 201 `{"commentId":1,"authorNickname":"finplayer","content":"댓글 본문","createdAt":"2026-07-27T12:00:00","parentCommentId":null,"replies":[]}` | 본문 누락·공백·1,000자 초과는 400 `VALIDATION_ERROR`. 이미 대댓글인 댓글(`parentCommentId`)에 다시 답글 시도 시 400 `VALIDATION_ERROR`("대댓글에는 답글을 남길 수 없습니다"). `parentCommentId`가 존재하지 않거나 다른 게시물 소속이면 404 `NOT_FOUND`. Access 인증 실패는 401 `UNAUTHORIZED`. 게시물 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 008 COM-002, 022 COM-005, Issue #28, Issue #247 |
+| POST | /api/community/posts/{postId}/comments | Access Bearer 필수 | `{"content":"댓글 본문","parentCommentId":null}` (`content` 필수, 최대 1,000자; `parentCommentId` 선택, 지정 시 같은 게시물의 기존 부모 댓글 ID) | 201 `{"commentId":1,"authorNickname":"finplayer","content":"댓글 본문","createdAt":"2026-07-27T12:00:00","parentCommentId":null,"replies":[]}` | 본문 누락·공백·1,000자 초과는 400 `VALIDATION_ERROR`. 이미 대댓글인 댓글(`parentCommentId`)에 다시 답글 시도 시 400 `VALIDATION_ERROR`("대댓글에는 답글을 남길 수 없습니다"). tombstone된(삭제된) 부모 댓글(`parentCommentId`)에 답글 시도 시 400 `VALIDATION_ERROR`("삭제된 댓글에는 답글을 남길 수 없습니다"). `parentCommentId`가 존재하지 않거나 다른 게시물 소속이면 404 `NOT_FOUND`. Access 인증 실패는 401 `UNAUTHORIZED`. 게시물 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 008 COM-002, 022 COM-005, Issue #28, Issue #247, Issue #277 |
 
 작성자는 요청에서 받지 않고 Access Token의 인증 사용자로 결정한다. `parentCommentId`를 생략하면 기존과 동일하게 부모 댓글(0단계)로 생성된다. 대댓글(1단계)은 다시 답글을 받을 수 없다 — depth는 부모·자식 2단계로 고정.
 

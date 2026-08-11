@@ -161,6 +161,25 @@ class PostCommentControllerTest {
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 	}
 
+	// 이슈 #277 / PR #331 리뷰 참고 사항 #2: tombstone된 부모에 답글을 시도하면 서비스가 던진
+	// VALIDATION_ERROR가 그대로 400 응답으로 매핑돼야 한다.
+	@Test
+	void createCommentReturns400WhenServiceRejectsReplyToTombstonedParent() throws Exception {
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+		when(service.createComment(7L, USER_ID, "reply", 5L))
+			.thenThrow(new BusinessException(ErrorCode.VALIDATION_ERROR, "삭제된 댓글에는 답글을 남길 수 없습니다."));
+
+		mockMvc.perform(post("/api/community/posts/7/comments")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("{\"content\":\"reply\",\"parentCommentId\":5}"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.message").value("삭제된 댓글에는 답글을 남길 수 없습니다."))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+	}
+
 	@Test
 	void createCommentRejectsMissingAuthenticationWithoutCallingService() throws Exception {
 		mockMvc.perform(post("/api/community/posts/7/comments")
