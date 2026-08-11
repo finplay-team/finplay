@@ -44,7 +44,7 @@
   `steps.length==3`, `saleDeadlineAt` 직렬화). 회귀: `026`의 기존 3단계 응답 테스트가 실제 종목 chain에서
   그대로 통과. (spec SANDBOX-005, plan 3번 "GET 4단계 응답")
 
-- [ ] **5분 만료 판정 + `holding-reflections` 전제조건 확장 + `PRACTICE_SANDBOX_TIME_EXPIRED`** — 신규
+- [x] **5분 만료 판정 + `holding-reflections` 전제조건 확장 + `PRACTICE_SANDBOX_TIME_EXPIRED`** — 신규
   `ErrorCode.PRACTICE_SANDBOX_TIME_EXPIRED(HttpStatus.CONFLICT, ...)` 추가. `PracticeHoldingReflectionService`
   전제조건 검사를 샘플 종목 chain에 한해 확장: evidence A/B 없음 → 기존 409
   `PRACTICE_EVIDENCE_MISSING`(변경 없음), A/B는 있으나 매도 체결 없고 5분 이내 → 409

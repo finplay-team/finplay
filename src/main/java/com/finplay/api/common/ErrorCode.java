@@ -20,6 +20,7 @@ public enum ErrorCode {
 	PRACTICE_STEP_LOCKED(HttpStatus.CONFLICT, "선행 실습 단계를 완료해야 합니다."),
 	PRACTICE_ALREADY_COMPLETED(HttpStatus.CONFLICT, "이미 완료한 실습입니다."),
 	PRACTICE_EVIDENCE_MISSING(HttpStatus.CONFLICT, "실습 진행에 필요한 증거를 확인할 수 없습니다."),
+	PRACTICE_SANDBOX_TIME_EXPIRED(HttpStatus.CONFLICT, "실습 매수 후 5분이 지나 이 시도는 만료됐습니다. 다시 매수해 주세요."),
 	INSTRUMENT_NOT_TRADABLE(HttpStatus.CONFLICT, "거래할 수 없는 종목입니다."),
 	EMAIL_VERIFICATION_REQUIRED(HttpStatus.CONFLICT, "이메일 인증이 필요합니다."),
 	ACCOUNT_LINK_REQUIRED(HttpStatus.CONFLICT, "같은 이메일의 일반 회원이 있어 계정 연결이 필요합니다."),

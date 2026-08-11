@@ -7,9 +7,11 @@
 | - | implementer | `.\gradlew.bat compileJava compileTestJava` | plan.md "2. 항시 시세·장시간 우회"(PR #340 정정본), ClockConfig 기존 Clock 빈 |
 | - | implementer | `.\gradlew.bat compileJava compileTestJava` | plan.md "3. 매도 단계 API 설계"(매도 chain 조회), 026 `findEarliestFilledBuyTradeMatching`과의 대칭 원칙 |
 | - | implementer | `.\gradlew.bat compileJava compileTestJava` | plan.md "3. 매도 단계 API 설계" GET 4단계 응답(PR #340 정정본), plan.md "4. 5분 타이머" |
+| - | implementer | `.\gradlew.bat compileJava compileTestJava` | plan.md "`POST /api/education/practice/holding-reflections` 전제조건 변경" 표, spec.md SANDBOX-008 |
 
 ## 모니터링 (사람용 요약)
 - V32 마이그레이션(`is_tutorial_sample` 컬럼 + 샘플 종목 6행) 추가, `Instrument`·`InstrumentResponse`에 필드 반영, `InstrumentService.getTradableInstrumentEntity`에 샘플 종목 커뮤니티 태그 제외 조건 추가. 컴파일 통과.
 - `TutorialSampleInstrumentPriceService` 신설 + `PriceQueryService` 3개 메서드(getPriceQuote/getOrderExecutionPrice/getPriceQuotes) 샘플 종목 분기 추가, compileJava/compileTestJava 통과(기존 테스트 생성자 시그니처만 조정).
 - `TradeService.findEarliestFilledSellTradeAfter` 추가(기존 derived 쿼리 재사용, SELL로 side만 다르게), `MarketPracticeChainResolutionService.resolveForFavorite`가 buyTrade 이후 첫 SELL을 채워 `ResolvedPracticeChainDto`에 `sellTradeId`·`sellTradeExecutedAt` 2필드 추가. 기존 DTO 생성 호출부(테스트 4개 파일) 시그니처만 `null, null` 보정. 컴파일 통과.
 - `ResolvedPracticeChainDto`에 `instrumentIsTutorialSample` 추가, `InvestmentPracticeQueryService`가 샘플 종목 chain에서만 `steps` 4개(신규 4단계 매도·복기, `EXPIRED` 상태 포함)로 확장하고 `PracticeEvidenceResponse`에 `sellTradeId`·`sellTradeExecutedAt`·`saleDeadlineAt` 3필드 추가(실제 종목 chain은 3단계 그대로, 신규 필드는 항상 null). 5분 만료 판정(`!isAfter` 경계 포함)을 GET 조회에만 반영, `holding-reflections` 전제조건 변경은 다음 항목. 기존 테스트 5개 파일 생성자 시그니처만 보정, 컴파일 통과. `docs/api-routes.md`·`docs/api-contracts.md` 동기화, prd.md §3은 spec 미완결(후속 항목 남음)이라 갱신 대상 아님.
+- `PracticeHoldingReflectionService.createReflection`이 chain의 `instrumentIsTutorialSample()`일 때만 매도 evidence·5분 이내 전제조건을 추가 검사(`verifySampleChainSaleEvidence`), 실제 종목 chain은 026 전제조건(A/B만) 그대로. 신규 `ErrorCode.PRACTICE_SANDBOX_TIME_EXPIRED` 추가하고 `ErrorCodeTest`의 개수(37)·상태맵·기본메시지 화이트리스트를 같은 커밋에서 갱신. 응답 DTO 변경 없음(spec 결정). compileJava/compileTestJava 통과. controller 변경 없어 api-routes.md/api-contracts.md/prd.md §3 갱신 대상 아님.

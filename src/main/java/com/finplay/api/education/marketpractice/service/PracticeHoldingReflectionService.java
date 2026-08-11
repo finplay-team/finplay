@@ -35,6 +35,9 @@ import org.springframework.transaction.annotation.Transactional;
 public class PracticeHoldingReflectionService {
 
 	private static final short PROMPT_VERSION = 1;
+	// 샘플 종목 chain 4단계 evidence의 매도 유효 기한(031/plan.md "4. 5분 타이머" anchor는
+	// buyTrade.executedAt, InvestmentPracticeQueryService.isWithinSaleDeadline과 동일 정책).
+	private static final long SALE_DEADLINE_MINUTES = 5;
 
 	private final HoldingService holdingService;
 	private final MarketPracticeChainResolutionService chainResolutionService;
@@ -63,8 +66,9 @@ public class PracticeHoldingReflectionService {
 			throw new BusinessException(ErrorCode.PRACTICE_ALREADY_COMPLETED);
 		}
 
-		// 이 chain의 필드는 이후 로직에서 쓰지 않는다 — 여기서는 존재·holding 일치 여부만 evidence 재검증에 쓴다.
-		chainResolutionService
+		// chain 존재·holding 일치 여부는 evidence 재검증에 쓰고, 샘플 종목 여부는 4단계 매도 evidence
+		// 전제조건 확장(031 SANDBOX-008) 분기에 쓴다.
+		ResolvedPracticeChainDto resolvedChain = chainResolutionService
 			.resolveForInstrument(userId, tutorialKey, holding.getInstrument().getId())
 			.filter(resolved -> resolved.holdingId().equals(holding.getId()))
 			.orElseThrow(() -> new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING));
@@ -78,6 +82,12 @@ public class PracticeHoldingReflectionService {
 		}
 
 		LocalDateTime now = LocalDateTime.now(clock);
+
+		// 026의 전제조건(evidence A/B만)은 실제 종목 chain에서 그대로 유지한다. 샘플 종목 chain에만
+		// 매도 evidence·5분 이내 전제조건을 추가로 요구한다(031 SANDBOX-008, plan.md 전제조건 표).
+		if (resolvedChain.instrumentIsTutorialSample()) {
+			verifySampleChainSaleEvidence(resolvedChain, now);
+		}
 		PracticeMarketReflection reflection = practiceMarketReflectionRepository.save(
 			PracticeMarketReflection.create(userId, holding, tutorialKey, PROMPT_VERSION, request.answer(), now));
 
@@ -93,5 +103,25 @@ public class PracticeHoldingReflectionService {
 			case STOCK -> PracticeIntentionService.TUTORIAL_KEY;
 			case CRYPTO -> PracticeIntentionService.COIN_TUTORIAL_KEY;
 		};
+	}
+
+	// 031 SANDBOX-008 전제조건 표: 매도 체결이 없으면(5분 이내는 EVIDENCE_MISSING 재사용, 5분 초과는
+	// TIME_EXPIRED), 매도 체결이 있어도 그 executedAt이 buyTrade.executedAt + 5분을 넘으면 TIME_EXPIRED다.
+	private void verifySampleChainSaleEvidence(ResolvedPracticeChainDto resolvedChain, LocalDateTime now) {
+		LocalDateTime saleDeadlineAt = resolvedChain.buyTradeExecutedAt().plusMinutes(SALE_DEADLINE_MINUTES);
+		if (resolvedChain.sellTradeId() == null) {
+			if (isWithinSaleDeadline(now, saleDeadlineAt)) {
+				throw new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING);
+			}
+			throw new BusinessException(ErrorCode.PRACTICE_SANDBOX_TIME_EXPIRED);
+		}
+		if (!isWithinSaleDeadline(resolvedChain.sellTradeExecutedAt(), saleDeadlineAt)) {
+			throw new BusinessException(ErrorCode.PRACTICE_SANDBOX_TIME_EXPIRED);
+		}
+	}
+
+	// 경계값 포함(정확히 5분 시점 포함) — InvestmentPracticeQueryService.isWithinSaleDeadline과 동일 정책.
+	private boolean isWithinSaleDeadline(LocalDateTime at, LocalDateTime saleDeadlineAt) {
+		return !at.isAfter(saleDeadlineAt);
 	}
 }
