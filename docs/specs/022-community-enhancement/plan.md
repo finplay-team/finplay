@@ -637,7 +637,7 @@ private CommunityPostImage image;
 ### 관련 문서
 
 - 위 "Decision Gate 확정" 절 — "**과설계 금지 — 인터페이스로만 추상화, 클라우드 구현체는 지금 만들지 않는다.** ... `S3FileStorageService` 등은 실제로 필요해지는 시점(운영 배포 논의)에 새로 추가한다"고 명시적으로 미뤄 둔 결정을 실행한다.
-- ADR-0020(`docs/adr/0020-managed-service-deployment.md` §결정 3 "업로드 파일은 S3로 옮긴다")이 이 전환의 아키텍처 근거다. **주의**: 이 spec 작업 시점 기준 ADR-0020은 PR #329(이슈 #326)에 있고 아직 `dev`에 머지되지 않았다(`origin/docs/326-deployment-architecture-adr`). 이 작업 브랜치는 **PR #329가 먼저 머지된 뒤 그 위로 리베이스**해야 ADR-0020 파일과, PR #329가 위 Decision Gate 절에 추가한 각주("→ 그 시점이 왔다 (2026-08-11, ADR-0020·이슈 #326)")를 함께 가져온다. 리베이스 없이 이 작업만 먼저 머지하면 plan.md가 존재하지 않는 ADR을 참조하게 된다.
+- ADR-0020(`docs/adr/0020-managed-service-deployment.md` §결정 3 "업로드 파일은 S3로 옮긴다")이 이 전환의 아키텍처 근거다. PR #329(이슈 #326)가 `dev`에 머지됐고 이 작업 브랜치는 그 위로 리베이스된 상태다.
 - ADR-0002(레이어드, 도메인 간 참조는 service 레이어만) — 이번 변경은 `community.storage` 패키지 내부 구현체 교체이므로 해당 없음(위반 없음).
 - ADR-0004(Flyway 마이그레이션) — **이번 작업은 스키마 변경이 없다.** `community_post_images` 테이블·`stored_filename` 컬럼 의미는 그대로다(저장 위치만 바뀐다). 신규 `V*` 마이그레이션 파일을 만들지 않는다.
 - PR #329 "남은 위험/후속" 절, 이슈 #330 본문.
