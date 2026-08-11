@@ -1,6 +1,6 @@
 # Spec: 튜토리얼 전용 샘플 종목·항시 시세·매도 단계·5분 제한 (Sandbox 실습 확장)
 
-> 상태: 2026-08-11 spec·plan 확정. production 구현 미착수(이슈 #339).
+> 상태: 2026-08-11 spec·plan 확정. **구현 완료**(이슈 #339, PR #341).
 >
 > **이 spec은 `026-market-order-practice-tutorial`을 대체하지 않고 확장(amend)한다.** `026`이 정의한
 > `favorite → intention → buyTrade → holding` 2단계 chain 해석, 참조 가격선 계산, evidence A/B 판정, 불변 완료
@@ -40,35 +40,35 @@
 
 ## 요구사항
 
-- [ ] SANDBOX-001: 주식·코인 시장마다 실제 종목이 아닌 샘플 종목 3개를 신설한다. 시장별 1번째만
+- [x] SANDBOX-001: 주식·코인 시장마다 실제 종목이 아닌 샘플 종목 3개를 신설한다. 시장별 1번째만
   `tradable=true`, 나머지 2개는 `tradable=false`로 목록에는 노출되되 즐겨찾기·매수 대상에서 배제된다
   (`026`이 이미 상속한 "존재하지 않거나 비활성 종목" 배제 규칙을 그대로 적용받는다 — 별도 배제 로직을
   새로 만들지 않는다).
-- [ ] SANDBOX-002: 샘플 종목은 실제 시세 피드 연결 상태·장 시간과 무관하게 항상 유효한 가격을 반환한다.
+- [x] SANDBOX-002: 샘플 종목은 실제 시세 피드 연결 상태·장 시간과 무관하게 항상 유효한 가격을 반환한다.
   이 종목에 대한 어떤 가격 조회도 `PRICE_UNAVAILABLE`을 던지지 않는다.
-- [ ] SANDBOX-003: 주식 샘플 종목은 09:00~15:30 개장 게이트, 영업일 판정, 재생세션 준비 여부를 전혀
+- [x] SANDBOX-003: 주식 샘플 종목은 09:00~15:30 개장 게이트, 영업일 판정, 재생세션 준비 여부를 전혀
   적용받지 않고 항상 매매 가능(`MARKET_CLOSED`가 나지 않음)으로 취급된다.
-- [ ] SANDBOX-004: 샘플 종목의 가격은 완전히 고정된 값이 아니라 시간에 따라 결정적으로(같은 공식,
+- [x] SANDBOX-004: 샘플 종목의 가격은 완전히 고정된 값이 아니라 시간에 따라 결정적으로(같은 공식,
   저장 상태 없음) 소폭 변동한다 — `026`의 3단계 evidence A(경계 접근)가 샘플 종목에서도 원칙적으로
   도달 가능해야 하기 때문이다(아래 "가격 알고리즘" 참고).
-- [ ] SANDBOX-005: `GET /api/education/practice?market=`의 응답 단계 모델은 **해석된 chain의 종목이
+- [x] SANDBOX-005: `GET /api/education/practice?market=`의 응답 단계 모델은 **해석된 chain의 종목이
   샘플 종목(`is_tutorial_sample=true`)일 때만** 3단계에서 4단계로 확장된다 — 1즐겨찾기, 2의도 기록·매수,
   3견디기/관찰(evidence A/B, `026`과 동일 판정), 4매도·복기(신규, evidence는 매도 체결과 자유 복기 둘
   다 필요). **실제 종목 chain은 `026`의 3단계 응답을 그대로 유지한다** — `steps` 배열 길이가 chain의
   종목 종류에 따라 3 또는 4로 달라진다(프론트엔드는 배열 길이로 분기). 이미 완료된 `practice_completions`
   행의 과거 완료 상태는 회귀하지 않는다.
-- [ ] SANDBOX-006: 4단계(매도·복기)의 매도 evidence는 기존 `POST /api/orders`(`side=SELL`,
+- [x] SANDBOX-006: 4단계(매도·복기)의 매도 evidence는 기존 `POST /api/orders`(`side=SELL`,
   `orderType=MARKET`)로 만들어진 실제 `FILLED` 체결이다. 튜토리얼 전용 매도 엔드포인트를 신설하지 않는다.
   이 4단계 자체가 샘플 종목 chain에만 존재하므로, 매도 evidence 판정도 샘플 종목 chain에만 적용된다.
-- [ ] SANDBOX-007: (샘플 종목 chain 한정) 매수 체결(`buyTrade.executedAt`)부터 5분 이내에 그 chain의
+- [x] SANDBOX-007: (샘플 종목 chain 한정) 매수 체결(`buyTrade.executedAt`)부터 5분 이내에 그 chain의
   매도 체결이 없으면 그 chain은 만료된다. 만료된 chain은 4단계를 완료할 수 없고, 사용자가 같은 종목을
   다시 매수해 만든 새 chain(새 `buyTrade`)만 4단계 대상이 될 수 있다. 실제 종목 chain에는 이 만료 개념이
   없다(4단계 자체가 없으므로).
-- [ ] SANDBOX-008: `POST /api/education/practice/holding-reflections`(기존 URL 재사용)는 **샘플 종목
+- [x] SANDBOX-008: `POST /api/education/practice/holding-reflections`(기존 URL 재사용)는 **샘플 종목
   chain에 대해서만** evidence A/B에 더해 유효한(5분 이내) 매도 체결을 요구한다. 매도 체결이 없으면 409
   `PRACTICE_EVIDENCE_MISSING`, chain이 만료됐으면 409 `PRACTICE_SANDBOX_TIME_EXPIRED`다. 실제 종목
   chain은 `026`의 기존 전제조건(evidence A/B만)을 그대로 유지한다.
-- [ ] SANDBOX-009: 이 spec은 실제 종목·실제 시세·장시간 규칙, `030`의 코인 가상 가격 세션·지정가 경로를
+- [x] SANDBOX-009: 이 spec은 실제 종목·실제 시세·장시간 규칙, `030`의 코인 가상 가격 세션·지정가 경로를
   변경하지 않는다.
 
 ## 비즈니스 규칙
@@ -100,12 +100,12 @@
 
 ## 완료 조건
 
-- [ ] 샘플 종목 데이터 모델(신규 컬럼)과 시드 데이터가 확정되고 근거가 문서화된다.
-- [ ] 항시 시세·장시간 우회 구현 위치가 `PriceQueryService` 분기로 확정되고 실거래 경로에 영향이 없음이
+- [x] 샘플 종목 데이터 모델(신규 컬럼)과 시드 데이터가 확정되고 근거가 문서화된다.
+- [x] 항시 시세·장시간 우회 구현 위치가 `PriceQueryService` 분기로 확정되고 실거래 경로에 영향이 없음이
   명시된다.
-- [ ] 매도 단계가 기존 `POST /api/orders`를 재사용하는 것으로 확정되고, `GET /api/education/practice`의
+- [x] 매도 단계가 기존 `POST /api/orders`를 재사용하는 것으로 확정되고, `GET /api/education/practice`의
   4단계 응답·evidence 필드가 확정된다.
-- [ ] 5분 타이머의 anchor(`buyTrade.executedAt`)와 서버 판정 시점(evidence 판정, 주문 접수 아님)이
+- [x] 5분 타이머의 anchor(`buyTrade.executedAt`)와 서버 판정 시점(evidence 판정, 주문 접수 아님)이
   확정된다.
-- [ ] `026`·`030`과의 관계(확장 vs 대체, 병행 여부)가 명시되고 ADR 필요 여부가 판단된다.
-- [ ] 프론트엔드 영향 범위가 `plan.md`에 요약되고 finplay-frontend#8과의 관계가 명시된다.
+- [x] `026`·`030`과의 관계(확장 vs 대체, 병행 여부)가 명시되고 ADR 필요 여부가 판단된다.
+- [x] 프론트엔드 영향 범위가 `plan.md`에 요약되고 finplay-frontend#8과의 관계가 명시된다.

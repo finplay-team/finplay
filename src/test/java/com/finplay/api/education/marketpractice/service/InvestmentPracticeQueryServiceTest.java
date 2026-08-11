@@ -313,8 +313,8 @@ class InvestmentPracticeQueryServiceTest {
 	}
 
 	// (b) 샘플 종목 chain에서 매수만 하고 매도 전, 아직 5분 이내면 steps가 4개이고 4번째는 대기 상태다
-	// (SANDBOX-005·007). 구현은 대기 상태를 STATUS_NOT_STARTED로 표현한다 — 이 재사용이 적절한지는 별도 판단
-	// 사항(보고 참고), 여기서는 현재 구현 동작을 고정한다.
+	// (SANDBOX-005·007). 구현은 이 대기 상태를 STATUS_AWAITING_SALE로 표현한다(locked=false) — NOT_STARTED를
+	// 재사용하면 이 API의 다른 모든 NOT_STARTED가 locked=true와 짝을 이루는 관례와 충돌해 별도 값을 신설했다.
 	@Test
 	void getProgressReturnsFourStepsWithWaitingStepFourWhenSampleChainBoughtButNotSoldWithinFiveMinutes() {
 		when(practiceCompletionRepository.findByUserIdAndTutorialKey(USER_ID, PracticeIntentionService.TUTORIAL_KEY))

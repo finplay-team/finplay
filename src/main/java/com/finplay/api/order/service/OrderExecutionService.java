@@ -173,6 +173,13 @@ public class OrderExecutionService {
 		if (instrument.getMarket() != market) {
 			throw new BusinessException(ErrorCode.VALIDATION_ERROR, "요청한 시장과 종목의 시장이 일치하지 않습니다.");
 		}
+		// tradable=false 종목은 이 경로로 체결될 수 없다(031 SANDBOX-001, 이슈 #339 PR #341 리뷰 차단사항).
+		// 이 검증이 없던 시절엔 tradable=false인 실제 종목이 하나도 없어 빈틈이 드러나지 않았을 뿐이다 —
+		// 031이 처음으로 tradable=false 샘플 종목을 만들면서 즐겨찾기(POST /api/favorites)는 이미 막혀 있는데
+		// 이 일반 주문 경로만 뚫려 있던 것을 여기서 함께 막는다.
+		if (!instrument.isTradable()) {
+			throw new BusinessException(ErrorCode.INSTRUMENT_NOT_TRADABLE);
+		}
 		return instrument;
 	}
 
