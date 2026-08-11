@@ -1,4 +1,4 @@
-// 코인 지정가 체결부터 튜토리얼 완료까지와 Spring Context 재생성 전후 상태를 실제 MySQL로 검증한다.
+// 코인 즐겨찾기부터 가상 가격 세션 tick 체결·복기·완료까지와 Spring Context 재생성 전후 상태를 실제 MySQL로 검증한다.
 package com.finplay.api.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -14,16 +14,20 @@ import com.finplay.api.education.dto.request.PracticeIntentionCreateRequest;
 import com.finplay.api.education.marketpractice.dto.request.PracticeHoldingObservationCreateRequest;
 import com.finplay.api.education.marketpractice.dto.request.PracticeHoldingReflectionCreateRequest;
 import com.finplay.api.education.marketpractice.dto.response.InvestmentPracticeResponse;
+import com.finplay.api.education.priceruntime.dto.request.PracticeLimitOrderCreateRequest;
+import com.finplay.api.education.priceruntime.dto.response.PracticePriceSessionResponse;
+import com.finplay.api.education.priceruntime.service.PracticeLimitOrderService;
+import com.finplay.api.education.priceruntime.service.PracticePriceSessionService;
+import com.finplay.api.education.priceruntime.service.PracticePriceTickService;
 import com.finplay.api.education.service.PracticeIntentionService;
 import com.finplay.api.favorite.service.FavoriteService;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.repository.InstrumentRepository;
-import com.finplay.api.market.store.FeedConnectionStatus;
-import com.finplay.api.market.store.PriceStore;
 import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.domain.OrderStatus;
 import com.finplay.api.order.dto.request.LimitOrderCreateRequest;
+import com.finplay.api.order.dto.response.LimitOrderResponse;
 import com.finplay.api.order.repository.OrderRepository;
 import com.finplay.api.order.service.LimitOrderService;
 import com.finplay.api.portfolio.domain.Holding;
@@ -44,7 +48,6 @@ import org.junit.jupiter.api.TestMethodOrder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.annotation.DirtiesContext;
 
@@ -57,16 +60,19 @@ class CryptoLimitPracticeFlowRestartIntegrationTest {
 
 	private static final LocalDateTime BASE_NOW = LocalDateTime.of(2033, 3, 13, 10, 0);
 	private static final BigDecimal QUANTITY = new BigDecimal("0.1");
-	private static final BigDecimal LIMIT_PRICE = new BigDecimal("100000");
-	private static final BigDecimal STOP_LOSS = new BigDecimal("90000");
-	private static final BigDecimal TAKE_PROFIT = new BigDecimal("120000");
+	// startPrice는 새로 만든(가격 피드에 없는) 종목이라 항상 PracticePriceSessionService의 fallback anchor다.
+	private static final BigDecimal FALLBACK_START_PRICE = new BigDecimal("10000.00000000");
+	// tick당 ±1%만 움직이므로(030 생성기 계약) startPrice의 1.5배는 tick 1에서 항상 즉시 체결된다.
+	private static final BigDecimal LIMIT_PRICE = new BigDecimal("15000");
+	// entryPrice(=LIMIT_PRICE)를 기준으로 대칭 7,000원 거리 — tick 1 직후 currentPrice(9,900~10,100 범위)는
+	// 항상 STOP_LOSS(8,000)에 훨씬 가까워 CLOSER_TO_BOUNDARY 판정이 seed와 무관하게 성립한다.
+	private static final BigDecimal STOP_LOSS = new BigDecimal("8000");
+	private static final BigDecimal TAKE_PROFIT = new BigDecimal("22000");
 
 	private Long incompleteUserId;
 	private Long completedUserId;
 	private Long completedHoldingId;
 	private LocalDateTime completedAt;
-	private String incompleteSymbol;
-	private String completedSymbol;
 	private final List<Long> createdUserIds = new ArrayList<>();
 	private final List<Long> createdAccountIds = new ArrayList<>();
 	private final List<Long> createdInstrumentIds = new ArrayList<>();
@@ -82,6 +88,12 @@ class CryptoLimitPracticeFlowRestartIntegrationTest {
 	@Autowired
 	private PracticeIntentionService intentionService;
 	@Autowired
+	private PracticePriceSessionService practicePriceSessionService;
+	@Autowired
+	private PracticeLimitOrderService practiceLimitOrderService;
+	@Autowired
+	private PracticePriceTickService practicePriceTickService;
+	@Autowired
 	private LimitOrderService limitOrderService;
 	@Autowired
 	private UserRepository userRepository;
@@ -94,10 +106,6 @@ class CryptoLimitPracticeFlowRestartIntegrationTest {
 	@Autowired
 	private HoldingRepository holdingRepository;
 	@Autowired
-	private PriceStore priceStore;
-	@Autowired
-	private StringRedisTemplate redisTemplate;
-	@Autowired
 	private JdbcTemplate jdbcTemplate;
 	@Autowired
 	private TestClock clock;
@@ -105,23 +113,16 @@ class CryptoLimitPracticeFlowRestartIntegrationTest {
 	@BeforeEach
 	void setUp() {
 		clock.set(BASE_NOW);
-		priceStore.saveConnectionStatus(FeedConnectionStatus.CONNECTED);
 	}
 
 	@AfterEach
-	void clearRedisPrices() {
-		if (incompleteSymbol != null) {
-			redisTemplate.delete("price:crypto:" + incompleteSymbol);
-		}
-		if (completedSymbol != null) {
-			redisTemplate.delete("price:crypto:" + completedSymbol);
-		}
-		redisTemplate.delete("feed:crypto:status");
+	void clearFixtureLists() {
+		// 각 테스트 메서드 사이에 Spring Context가 재생성되므로(재기동 검증), 필드에 남은 id는 새 컨텍스트에서도
+		// 유효한 DB 값이며 다음 메서드에서 그대로 재사용된다. 여기서는 정리할 인메모리 상태가 없다.
 	}
 
 	@AfterAll
 	void cleanUpAllFixtures() {
-		clearRedisPrices();
 		cleanUpCommittedFixtures();
 		createdUserIds.clear();
 		createdAccountIds.clear();
@@ -130,8 +131,6 @@ class CryptoLimitPracticeFlowRestartIntegrationTest {
 		completedUserId = null;
 		completedHoldingId = null;
 		completedAt = null;
-		incompleteSymbol = null;
-		completedSymbol = null;
 	}
 
 	@Test
@@ -139,7 +138,6 @@ class CryptoLimitPracticeFlowRestartIntegrationTest {
 	void incompleteEvidenceExistsBeforeSpringContextIsRecreated() {
 		FlowFixture fixture = createFilledLimitBuyChain("restart-incomplete");
 		incompleteUserId = fixture.userId();
-		incompleteSymbol = fixture.symbol();
 
 		InvestmentPracticeResponse progress = queryService.getProgress(incompleteUserId, Market.CRYPTO);
 
@@ -158,10 +156,8 @@ class CryptoLimitPracticeFlowRestartIntegrationTest {
 		FlowFixture fixture = createFilledLimitBuyChain("restart-completed");
 		completedUserId = fixture.userId();
 		completedHoldingId = fixture.holdingId();
-		completedSymbol = fixture.symbol();
 
-		clock.set(BASE_NOW.plusSeconds(4));
-		priceStore.saveTick(completedSymbol, new BigDecimal("95000"), BASE_NOW.plusSeconds(4));
+		clock.set(BASE_NOW.plusSeconds(10));
 		observationService.createObservation(
 			completedUserId, new PracticeHoldingObservationCreateRequest(completedHoldingId));
 		reflectionService.createReflection(completedUserId,
@@ -193,6 +189,9 @@ class CryptoLimitPracticeFlowRestartIntegrationTest {
 		});
 	}
 
+	// 즐겨찾기 → 의도 → 가상 가격 세션 생성 → 교육 지정가 BUY → tick 1 진행·체결까지 실제 API 경로로 수행한다.
+	// 같은 종목의 일반 주문·다른 사용자 세션 주문이 이 tick으로 건드려지지 않음도 함께 확인한다
+	// (이슈 #313 완료 조건, 030/plan.md "트랜잭션·잠금·이벤트").
 	private FlowFixture createFilledLimitBuyChain(String scenario) {
 		User user = userRepository.saveAndFlush(User.create(
 			scenario + "-" + shortRandom() + "@finplay.com", "password-hash",
@@ -206,6 +205,15 @@ class CryptoLimitPracticeFlowRestartIntegrationTest {
 		createdAccountIds.add(account.getId());
 		createdInstrumentIds.add(instrument.getId());
 
+		// 격리 확인용: 다른 사용자의 같은 종목 세션 주문.
+		User otherUser = userRepository.saveAndFlush(User.create(
+			scenario + "-other-" + shortRandom() + "@finplay.com", "password-hash",
+			scenario + "-other-" + shortRandom(), BASE_NOW));
+		Account otherAccount = accountRepository.saveAndFlush(
+			Account.create(otherUser, com.finplay.api.account.domain.Market.CRYPTO, BASE_NOW));
+		createdUserIds.add(otherUser.getId());
+		createdAccountIds.add(otherAccount.getId());
+
 		InvestmentPracticeResponse notStarted = queryService.getProgress(user.getId(), Market.CRYPTO);
 		assertThat(notStarted.status()).isEqualTo("NOT_STARTED");
 		assertThat(notStarted.currentStep()).isEqualTo(1);
@@ -216,18 +224,39 @@ class CryptoLimitPracticeFlowRestartIntegrationTest {
 		assertThat(favoriteOnly.currentStep()).isEqualTo(2);
 		assertThat(favoriteOnly.steps().get(0).status()).isEqualTo("COMPLETED");
 		assertThat(favoriteOnly.steps().get(1).status()).isEqualTo("IN_PROGRESS");
+
 		clock.set(BASE_NOW.plusSeconds(1));
 		intentionService.createIntention(user.getId(),
 			new PracticeIntentionCreateRequest(instrument.getId(), QUANTITY, STOP_LOSS, TAKE_PROFIT));
+
 		clock.set(BASE_NOW.plusSeconds(2));
-		var pending = limitOrderService.createLimitOrder(user.getId(), UUID.randomUUID().toString(),
-			new LimitOrderCreateRequest(Market.CRYPTO, instrument.getId(), OrderSide.BUY, QUANTITY, LIMIT_PRICE));
+		PracticePriceSessionResponse session = practicePriceSessionService.createSession(user.getId(), instrument.getId());
+		assertThat(session.startPrice()).isEqualByComparingTo(FALLBACK_START_PRICE);
+		PracticePriceSessionResponse otherSession =
+			practicePriceSessionService.createSession(otherUser.getId(), instrument.getId());
+
+		LimitOrderResponse pending = practiceLimitOrderService.createOrder(user.getId(),
+			new PracticeLimitOrderCreateRequest(session.sessionId(), instrument.getId(), QUANTITY, LIMIT_PRICE));
 		assertThat(pending.status()).isEqualTo("PENDING");
+		LimitOrderResponse otherPending = practiceLimitOrderService.createOrder(otherUser.getId(),
+			new PracticeLimitOrderCreateRequest(
+				otherSession.sessionId(), instrument.getId(), QUANTITY, LIMIT_PRICE));
+		LimitOrderResponse normalPending = limitOrderService.createLimitOrder(
+			user.getId(), UUID.randomUUID().toString(),
+			new LimitOrderCreateRequest(Market.CRYPTO, instrument.getId(), OrderSide.BUY, QUANTITY, LIMIT_PRICE));
 
 		clock.set(BASE_NOW.plusSeconds(3));
-		priceStore.saveTick(symbol, LIMIT_PRICE, BASE_NOW.plusSeconds(3));
+		practicePriceTickService.advanceTick(user.getId(), session.sessionId(), 1);
+
 		assertThat(orderRepository.findById(pending.orderId()).orElseThrow().getStatus())
 			.isEqualTo(OrderStatus.FILLED);
+		assertThat(orderRepository.findById(otherPending.orderId()).orElseThrow().getStatus())
+			.as("다른 사용자의 세션 주문은 이 세션의 tick으로 체결되지 않는다")
+			.isEqualTo(OrderStatus.PENDING);
+		assertThat(orderRepository.findById(normalPending.orderId()).orElseThrow().getStatus())
+			.as("세션에 귀속되지 않은 일반 주문은 세션 tick 이벤트로 체결되지 않는다")
+			.isEqualTo(OrderStatus.PENDING);
+
 		Holding holding = holdingRepository.findByAccountIdAndInstrumentId(account.getId(), instrument.getId())
 			.orElseThrow();
 		assertThat(holding.getQuantity()).isEqualByComparingTo(QUANTITY);
@@ -236,10 +265,13 @@ class CryptoLimitPracticeFlowRestartIntegrationTest {
 		assertThat(filled.currentStep()).isEqualTo(3);
 		assertThat(filled.steps().get(1).status()).isEqualTo("COMPLETED");
 		assertThat(filled.steps().get(2).status()).isEqualTo("IN_PROGRESS");
-		return new FlowFixture(user.getId(), holding.getId(), symbol);
+		return new FlowFixture(user.getId(), holding.getId());
 	}
 
 	private void cleanUpCommittedFixtures() {
+		// FK 순서: practice_market_observations/reflections/completions/progresses → holdings(사용자 루프,
+		// holdings보다 먼저) → orders/holdings/accounts(계좌 루프) → practice_price_sessions(orders가 참조하므로
+		// orders 삭제 뒤, 사용자 루프) → instruments → users. 역순이면 "부모 행 삭제 불가" 제약 위반으로 실패한다.
 		for (Long userId : createdUserIds) {
 			jdbcTemplate.update("DELETE FROM practice_completions WHERE user_id = ?", userId);
 			jdbcTemplate.update("DELETE FROM practice_market_reflections WHERE user_id = ?", userId);
@@ -260,6 +292,9 @@ class CryptoLimitPracticeFlowRestartIntegrationTest {
 			jdbcTemplate.update("DELETE FROM holdings WHERE account_id = ?", accountId);
 			jdbcTemplate.update("DELETE FROM accounts WHERE id = ?", accountId);
 		}
+		for (Long userId : createdUserIds) {
+			jdbcTemplate.update("DELETE FROM practice_price_sessions WHERE user_id = ?", userId);
+		}
 		createdInstrumentIds.forEach(
 			instrumentId -> jdbcTemplate.update("DELETE FROM instruments WHERE id = ?", instrumentId));
 		createdUserIds.forEach(userId -> jdbcTemplate.update("DELETE FROM users WHERE id = ?", userId));
@@ -269,6 +304,6 @@ class CryptoLimitPracticeFlowRestartIntegrationTest {
 		return UUID.randomUUID().toString().replace("-", "").substring(0, 8);
 	}
 
-	private record FlowFixture(Long userId, Long holdingId, String symbol) {
+	private record FlowFixture(Long userId, Long holdingId) {
 	}
 }
