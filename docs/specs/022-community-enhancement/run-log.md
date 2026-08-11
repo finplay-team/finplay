@@ -168,3 +168,11 @@
 
 ## 모니터링 (사람용 요약)
 - COM-006 후속 항목1: `build.gradle`에 `software.amazon.awssdk:bom:2.51.4`(Maven Central 확인) platform + `s3` 추가. `community.storage`에 `S3FileStorageService`(`@Profile("prod")`, store/load/delete를 Put/Get/DeleteObjectRequest로 구현, 예외 계약은 `LocalFileStorageService`와 동일하게 INTERNAL_ERROR/NOT_FOUND/best-effort log)와 `S3ClientConfig`(`@Bean S3Client`, prod 전용, 자격증명·리전은 SDK 기본 체인) 신규. `LocalFileStorageService`에 `@Profile("!prod")` 추가. `application-prod.yml`에 `finplay.community.image-storage.s3.bucket`(기본값 없음, fail-fast) 추가, `.env.example`에 `COMMUNITY_S3_BUCKET=` 추가. `S3FileStorageServiceTest`(Mockito `S3Client` mock) 6건 신규, 기존 `LocalFileStorageServiceTest` 7건 모두 통과(프로파일 애너테이션 영향 없음 확인). compileJava/compileTestJava 통과.
+
+## AI 로그 (에이전트 참조용, COM-006 후속(S3, 이슈 #330) 항목2)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| - | implementer | `git status --short`, `git diff --stat`(코드 변경 없음 확인) | plan.md "기존 로컬 데이터 이관 방안"·"설정 항목 요약", 010-deployment/spec.md "관리형 서비스(ADR-0020)" 체크리스트 형식, ADR-0020 §결정 3 |
+
+## 모니터링 (사람용 요약)
+- COM-006 후속 항목2: `deploy/README.md`에 "S3 업로드 이미지 저장소 설정" 절(버킷 생성·퍼블릭 액세스 차단·IAM 최소 권한·인스턴스 프로파일 체크리스트, 010-deployment/spec.md의 RDS·ElastiCache 체크리스트 형식 재사용)과 "기존 로컬 업로드 파일 이관" 절(SSH로 대상 유무 확인 → 소수/테스트 데이터면 이관 생략·재업로드 안내, 실사용 데이터면 `aws s3 sync` 1회 실행, plan.md 그대로) 추가. "아직 하지 않은 것"의 기존 S3 이관 항목 문구를 최신 상태로 갱신. `compose.deploy.yaml`은 변경하지 않았음을 `git diff --stat`으로 확인(ADR-0020 §결정 3 유지). 코드 변경 없어 compileJava 영향 없음.
