@@ -317,7 +317,7 @@ PR #49 차단 리뷰 후속 Fake 재사용·동시성·DB 불변 자동 회귀�
 
 | Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|---|
-| DELETE | /api/community/posts/{postId} | Access Bearer 필수 | 경로 변수 `postId`, 본문 없음 | 204 (본문 없음) | Access 인증 실패는 401 `UNAUTHORIZED`. 본인 소유가 아닌 게시물은 403 `FORBIDDEN`. 게시물 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 008 COM-001, Issue #27 |
+| DELETE | /api/community/posts/{postId} | Access Bearer 필수 | 경로 변수 `postId`, 본문 없음 | 204 (본문 없음) | Access 인증 실패는 401 `UNAUTHORIZED`. 본인 소유가 아닌 게시물은 403 `FORBIDDEN`. 게시물 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 008 COM-001, 022 COM-006, Issue #27, Issue #248 |
 
 작성자 본인만 삭제할 수 있으며 소유자 확인은 Access Token의 인증 사용자로 판단한다. 삭제 시 해당 게시물에 달린 댓글을 먼저 모두 삭제한 뒤 게시물을 삭제한다. 첨부 이미지가 있으면 댓글 삭제 다음·게시물 삭제 전후로 `community_post_images` DB 행과 물리 파일을 함께 제거한다(고아 파일 방지) — 물리 파일 삭제 실패는 로그만 남기고 게시물 삭제 자체를 막지 않는다.
 
