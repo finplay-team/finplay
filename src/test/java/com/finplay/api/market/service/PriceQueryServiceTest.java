@@ -433,4 +433,140 @@ class PriceQueryServiceTest {
 		verifyNoInteractions(stockPriceProvider, priceStore);
 	}
 
+	// 이하 샘플 종목(isTutorialSample=true) 분기 회귀 테스트 (이슈 #339, SANDBOX-002·003) —
+	// stockPriceProvider·priceStore를 전혀 호출하지 않고 항상 AVAILABLE·OPEN을 반환해야 한다.
+
+	@Test
+	void getPriceQuoteForTutorialSampleInstrumentDelegatesToSampleServiceWithoutTouchingRealProviders() {
+		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
+		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
+		PriceStore priceStore = mock(PriceStore.class);
+		TutorialSampleInstrumentPriceService tutorialSampleInstrumentPriceService = mock(
+			TutorialSampleInstrumentPriceService.class);
+		Instrument sample = tutorialSampleInstrument(Market.STOCK, 1L);
+		PriceQuoteDto sampleQuote = new PriceQuoteDto(new BigDecimal("51000.00000000"), NOW, PriceStatus.AVAILABLE,
+			null);
+		when(tutorialSampleInstrumentPriceService.getPriceQuote(sample)).thenReturn(sampleQuote);
+		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
+			priceStore, tutorialSampleInstrumentPriceService);
+
+		PriceQuoteDto result = priceQueryService.getPriceQuote(sample);
+
+		assertThat(result).isEqualTo(sampleQuote);
+		assertThat(result.status()).isEqualTo(PriceStatus.AVAILABLE);
+		verifyNoInteractions(stockPriceProvider, priceStore);
+	}
+
+	@Test
+	void getOrderExecutionPriceForStockTutorialSampleInstrumentSkipsStockPriceProviderAndReturnsNullReplaySession() {
+		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
+		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
+		PriceStore priceStore = mock(PriceStore.class);
+		TutorialSampleInstrumentPriceService tutorialSampleInstrumentPriceService = mock(
+			TutorialSampleInstrumentPriceService.class);
+		Instrument sample = tutorialSampleInstrument(Market.STOCK, 1L);
+		PriceQuoteDto sampleQuote = new PriceQuoteDto(new BigDecimal("50500.00000000"), NOW, PriceStatus.AVAILABLE,
+			null);
+		when(tutorialSampleInstrumentPriceService.getPriceQuote(sample)).thenReturn(sampleQuote);
+		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
+			priceStore, tutorialSampleInstrumentPriceService);
+
+		OrderExecutionPriceDto result = priceQueryService.getOrderExecutionPrice(sample);
+
+		assertThat(result.priceQuote()).isEqualTo(sampleQuote);
+		assertThat(result.stockReplaySession()).isNull();
+		verifyNoInteractions(stockPriceProvider, priceStore);
+	}
+
+	@Test
+	void getOrderExecutionPriceForCryptoTutorialSampleInstrumentSkipsPriceStoreAndReturnsNullReplaySession() {
+		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
+		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
+		PriceStore priceStore = mock(PriceStore.class);
+		TutorialSampleInstrumentPriceService tutorialSampleInstrumentPriceService = mock(
+			TutorialSampleInstrumentPriceService.class);
+		Instrument sample = tutorialSampleInstrument(Market.CRYPTO, 4L);
+		PriceQuoteDto sampleQuote = new PriceQuoteDto(new BigDecimal("10100.00000000"), NOW, PriceStatus.AVAILABLE,
+			null);
+		when(tutorialSampleInstrumentPriceService.getPriceQuote(sample)).thenReturn(sampleQuote);
+		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
+			priceStore, tutorialSampleInstrumentPriceService);
+
+		OrderExecutionPriceDto result = priceQueryService.getOrderExecutionPrice(sample);
+
+		assertThat(result.priceQuote()).isEqualTo(sampleQuote);
+		assertThat(result.stockReplaySession()).isNull();
+		verifyNoInteractions(stockPriceProvider, priceStore);
+	}
+
+	@Test
+	void getPriceQuotesMergesSampleAndRealStockInstrumentsInOriginalOrder() {
+		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
+		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
+		PriceStore priceStore = mock(PriceStore.class);
+		TutorialSampleInstrumentPriceService tutorialSampleInstrumentPriceService = mock(
+			TutorialSampleInstrumentPriceService.class);
+		Instrument realFirst = Instrument.create(Market.STOCK, "005930", "삼성전자", BigDecimal.valueOf(100), 70000L, true,
+			NOW);
+		Instrument sample = tutorialSampleInstrument(Market.STOCK, 1L);
+		Instrument realSecond = Instrument.create(Market.STOCK, "000660", "SK하이닉스", BigDecimal.valueOf(100), 80000L,
+			true, NOW);
+		StockReplayPriceDto realFirstQuote = new StockReplayPriceDto(
+			true, StockMarketStatus.OPEN, LocalDate.of(2026, 7, 28), new BigDecimal("71000"),
+			LocalDateTime.of(2026, 7, 28, 10, 0));
+		StockReplayPriceDto realSecondQuote = new StockReplayPriceDto(
+			true, StockMarketStatus.OPEN, LocalDate.of(2026, 7, 28), new BigDecimal("72000"),
+			LocalDateTime.of(2026, 7, 28, 10, 0));
+		// realFirst·realSecond는 persist하지 않아 getId()가 null이므로(List.of는 null 원소를 금지) any()로 매칭한다.
+		when(stockPriceProvider.getCurrentPrices(any())).thenReturn(List.of(realFirstQuote, realSecondQuote));
+		PriceQuoteDto sampleQuote = new PriceQuoteDto(new BigDecimal("51000.00000000"), NOW, PriceStatus.AVAILABLE,
+			null);
+		when(tutorialSampleInstrumentPriceService.getPriceQuote(sample)).thenReturn(sampleQuote);
+		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
+			priceStore, tutorialSampleInstrumentPriceService);
+
+		List<PriceQuoteDto> results = priceQueryService.getPriceQuotes(List.of(realFirst, sample, realSecond));
+
+		assertThat(results).hasSize(3);
+		assertThat(results.get(0).price()).isEqualByComparingTo("71000");
+		assertThat(results.get(1)).isEqualTo(sampleQuote);
+		assertThat(results.get(2).price()).isEqualByComparingTo("72000");
+		verifyNoInteractions(priceStore);
+	}
+
+	@Test
+	void getPriceQuotesForAllSampleInstrumentsNeverTouchesStockPriceProviderOrPriceStore() {
+		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
+		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
+		PriceStore priceStore = mock(PriceStore.class);
+		TutorialSampleInstrumentPriceService tutorialSampleInstrumentPriceService = mock(
+			TutorialSampleInstrumentPriceService.class);
+		Instrument sampleStock = tutorialSampleInstrument(Market.STOCK, 1L);
+		Instrument sampleCrypto = tutorialSampleInstrument(Market.CRYPTO, 4L);
+		PriceQuoteDto sampleStockQuote = new PriceQuoteDto(new BigDecimal("51000.00000000"), NOW, PriceStatus.AVAILABLE,
+			null);
+		PriceQuoteDto sampleCryptoQuote = new PriceQuoteDto(new BigDecimal("10100.00000000"), NOW,
+			PriceStatus.AVAILABLE,
+			null);
+		when(tutorialSampleInstrumentPriceService.getPriceQuote(sampleStock)).thenReturn(sampleStockQuote);
+		when(tutorialSampleInstrumentPriceService.getPriceQuote(sampleCrypto)).thenReturn(sampleCryptoQuote);
+		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
+			priceStore, tutorialSampleInstrumentPriceService);
+
+		// 샘플 종목만 있으면 market 혼재(STOCK+CRYPTO)여도 실제 종목 방어 검사(마켓 혼재 확인)를 타지 않아야 한다 —
+		// 그 검사는 실제 종목 부분집합에만 적용되기 때문이다.
+		List<PriceQuoteDto> results = priceQueryService.getPriceQuotes(List.of(sampleStock, sampleCrypto));
+
+		assertThat(results).containsExactly(sampleStockQuote, sampleCryptoQuote);
+		verifyNoInteractions(stockPriceProvider, priceStore);
+	}
+
+	private Instrument tutorialSampleInstrument(Market market, long id) {
+		Instrument instrument = Instrument.create(market, "SANDBOX_" + market + "_" + id, "연습용",
+			BigDecimal.ONE, 10000L, true, NOW);
+		org.springframework.test.util.ReflectionTestUtils.setField(instrument, "id", id);
+		org.springframework.test.util.ReflectionTestUtils.setField(instrument, "tutorialSample", true);
+		return instrument;
+	}
+
 }
