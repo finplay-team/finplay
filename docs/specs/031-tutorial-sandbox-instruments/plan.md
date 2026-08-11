@@ -79,16 +79,32 @@ INSERT INTO instruments (market, symbol, name, tick_size, min_order_amount, trad
 
 ## 2. 항시 시세·장시간 우회 — 구현 위치와 근거
 
-**결정: `PriceQueryService`의 `getPriceQuote(Instrument)`와 `getOrderExecutionPrice(Instrument)` 맨 앞에
+**결정(리뷰 차단사항 반영, 정정): `PriceQueryService`의 `getPriceQuote(Instrument)`·
+`getOrderExecutionPrice(Instrument)`뿐 아니라 배치 조회 `getPriceQuotes(List<Instrument>)`에도 각각
 `instrument.isTutorialSample()` 분기를 추가하고, 새 클래스 `TutorialSampleInstrumentPriceService`(패키지
 `com.finplay.api.market.service`)에 위임한다. `stockPriceProvider`·`priceStore`는 호출하지 않는다.**
 
+- **리뷰에서 확인된 문제(차단 사항)**: `getPriceQuotes(List<Instrument>)`(69~82행)는 `getPriceQuote(Instrument)`를
+  재사용하지 않고 자체 private 메서드(`getStockPriceQuotes`/`getCryptoPriceQuotes`)로 바로 위임한다.
+  `getPriceQuote(Instrument)` 하나만 패치하면 이 배치 경로가 그대로 남아, `HoldingValuationService.
+  evaluateHoldings`(보유 종목 목록·계좌 요약 화면)가 샘플 종목 holding에 대해 여전히
+  `PriceStatus.UNAVAILABLE`을 받는다 — SANDBOX-002를 위반한다.
+- **수정**: `getPriceQuotes`도 진입 시 `instruments`를 `isTutorialSample()` 여부로 분할한다. 샘플 종목은
+  `TutorialSampleInstrumentPriceService`로 개별 처리하고, 나머지(실제 종목)만 기존
+  `getStockPriceQuotes`/`getCryptoPriceQuotes`에 넘긴 뒤 두 결과를 **원래 `instruments` 순서대로 병합**해
+  반환한다(69행 주석이 "반환 순서는 instruments 순서와 일치"를 이미 계약으로 명시하고 있으므로 병합 시
+  순서 보존이 필수). market 혼재 방어 검사(77~80행)는 실제 종목 부분집합에만 적용한다(샘플 종목은
+  market이 STOCK/CRYPTO 어느 쪽이든 이 분기에서 먼저 빠지므로 그 검사와 무관하다).
+
 ### 왜 여기인가
 
-- `PriceQueryService`는 이미 "주문·화면·평가손익이 공통으로 소비하는 유효 가격" 조회의 유일한 진입점이다
-  (파일 헤더 주석, `getPrice`/`getOrderExecutionPrice`/`getPriceQuote`/`getPriceQuotes` 전부 이 클래스).
-  `OrderService`·SSE·평가손익·`026`·`030`이 전부 이 클래스만 거치므로, 여기 한 곳에서 분기하면 소비자
-  코드를 전혀 건드리지 않고 모든 소비 경로에 동시에 적용된다.
+- `PriceQueryService`는 "주문·화면·평가손익이 공통으로 소비하는 유효 가격" 조회의 진입점이다(파일 헤더
+  주석, `getPrice`/`getOrderExecutionPrice`/`getPriceQuote`/`getPriceQuotes` 전부 이 클래스에 있다).
+  다만 위에서 확인했듯 이 네 메서드가 서로를 재사용하는 관계가 아니라 각자 자체 구현을 갖고 있어,
+  "한 곳만 고치면 전부 적용된다"는 최초 판단은 틀렸다 — **네 개 메서드 각각**에 분기가 필요하다.
+  `OrderService`·SSE·평가손익·`026`·`030`이 이 네 메서드 중 하나를 호출하므로, 넷 모두 패치해야 모든
+  소비 경로에 적용된다. `getPrice`는 내부적으로 `getPriceQuote(Long)` → `getPriceQuote(Instrument)`를
+  거치므로 별도 분기가 필요 없다(체인 확인 완료).
 - `getOrderExecutionPrice`의 STOCK 분기는 `stockPriceProvider.getCurrentPrice()`를 호출해 `StockMarketStatus`,
   재생세션(`StockReplaySession`) 존재를 함께 확인한다(현재 코드 39~44행). 이 경로를 그대로 타면 샘플
   종목도 실제 `StockReplaySession`·`StockCandle` 데이터가 있어야 하므로(`StockReplayService`가 이 없이는
@@ -260,6 +276,9 @@ price = (basePrice * (1 + rate)) 을 scale 8 HALF_UP으로 반올림
 
 ## 6. 프론트엔드 영향 요약 (finplay-frontend, 별도 레포)
 
+- **동시 진행 경합 완화(권장, 서버 강제 아님)**: 같은 시장에서 이미 진행 중인 chain(step ≥ 2)이 있으면
+  다른 종목(실제·샘플 불문) 즐겨찾기 등록 UI를 숨기거나 경고를 보여준다 — `steps` 배열 길이가 3↔4로
+  흔들리는 edge case를 사용자가 애초에 만들지 않도록 UI에서 유도한다(위 "리뷰 권장사항 반영" 참고).
 - **종목 선택 UI**: `GET /api/instruments?market=`이 이제 시장별로 실제 종목 목록 + 샘플 종목 3개를
   함께 반환한다. `isTutorialSample=true`인 종목 중 `tradable=false`인 2개는 선택 불가 상태로 표시하되
   숨기지 않는다(spec 요구사항). `tradable=true` 샘플 종목은 "연습용" 배지와 함께 정상 선택 가능하게
@@ -327,3 +346,25 @@ price = (basePrice * (1 + rate)) 을 scale 8 HALF_UP으로 반올림
 - finplay-frontend#8의 실제 구현이 종목을 어떻게 선택하는지 확인 후 조정 범위를 이슈로 분리.
 - 가격 알고리즘의 `amplitude`·`periodSeconds` 구체값은 실제 실습 중 evidence A 도달 빈도를 QA하며
   조정할 수 있다 — 이 문서의 값은 시작점이며 불변 계약은 아니다(공식의 구조·결정성만 계약).
+
+## 리뷰 권장사항 반영 (PR #340)
+
+- **동시 진행 시 `steps` 배열 길이 흔들림 위험 문서화**: `GET /api/education/practice?market=`의 chain
+  선택은 `026/plan.md`의 우선순위 규칙(qualifying observation 있는 chain 우선, 없으면
+  `favorite.createdAt ASC`)을 그대로 쓴다. 한 사용자가 같은 시장에서 실제 종목 favorite과 샘플 종목
+  favorite을 동시에 갖고 있으면, 요청마다 어느 chain이 우선순위로 뽑히는지에 따라 `steps` 배열이 3개
+  또는 4개로 흔들릴 수 있다 — 이 spec은 이 경합을 새로 막지 않는다(026의 기존 다중 favorite 처리
+  방식을 그대로 상속하고, 별도 배제 로직을 추가하지 않는다). 이 흔들림은 **드문 edge case로 받아들이고
+  프론트엔드에 명시적으로 알린다**: 튜토리얼 진입 화면에서 이미 하나의 chain이 진행 중(step ≥ 2)이면
+  같은 시장의 다른 종목 즐겨찾기 등록 UI를 숨기거나 경고를 보여주는 것을 프론트엔드 권장사항으로
+  `plan.md` "6. 프론트엔드 영향 요약"에 추가한다(서버 강제는 하지 않는다 — 026이 이미 다중 favorite
+  자체를 금지하지 않으므로 이 spec만 새로 강제할 근거가 약하다).
+- **샘플 종목이 다른 `Instrument` 전체 순회 기능에 미치는 영향 점검**: 랭킹(`GET /api/rankings`)은
+  거래 이력(실현손익) 기준이라 `Instrument` 카탈로그를 순회하지 않으므로 영향 없음(코드 확인 필요 —
+  착수 시 `RankingRebuildService`가 `Instrument`를 직접 조회하는지 재확인). 커뮤니티(COM-004 종목 태그,
+  `CommunityPostService.createPost` → `InstrumentService.getTradableInstrumentEntity`)는 `tradable=true`
+  종목이면 태그 대상으로 허용하므로, 샘플 종목 중 `tradable=true`인 1번째가 실제 커뮤니티 게시물에
+  태그될 수 있다 — 이는 의도치 않은 노출이므로, `getTradableInstrumentEntity`(또는 그 호출부)에
+  `!instrument.isTutorialSample()` 조건을 추가해 샘플 종목은 `tradable` 값과 무관하게 커뮤니티 태그
+  대상에서 제외하기로 결정한다. 이 결정은 착수 시 실제 코드 재확인 후 구현에 반영한다(이 문서는 결정만
+  기록, 구현은 후속).
