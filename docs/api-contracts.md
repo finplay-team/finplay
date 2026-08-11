@@ -359,7 +359,7 @@ PR #49 차단 리뷰 후속 Fake 재사용·동시성·DB 불변 자동 회귀�
 |---|---|---|---|---|---|
 | DELETE | /api/community/comments/{commentId} | Access Bearer 필수 | 204 본문 없음 | 작성자 불일치는 403 `FORBIDDEN`. 댓글 미존재는 404 `NOT_FOUND`. Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 008 COM-002, 022 COM-005, Issue #30, Issue #247, Issue #277 |
 
-댓글 삭제는 소유자만 가능하며 `CommentController`(`/api/community/comments`)로 분리되어 있다. Security 공개 화이트리스트에 포함되지 않은 인증 필요 경로다. 부모 댓글(`parentCommentId=null`, 자식 유무 무관) 삭제는 이슈 #277로 CASCADE 하드 삭제에서 tombstone으로 전환됐다 — 소유자 검증(403) 통과 후 행을 실제로 지우지 않고 `content`를 `"삭제된 댓글입니다"`로, `authorNickname`을 `"(삭제됨)"`으로 치환한다(`GET /api/community/posts/{postId}/comments` 응답에 그대로 반영). `parentCommentId`·`replies`는 영향받지 않으며, 자식 대댓글은 원래 내용 그대로 보존된다. 반대로 대댓글(자식, `parentCommentId != null`) 자신을 삭제하면 기존과 동일하게 하드 삭제되어 부모의 `replies`에서 사라진다.
+댓글 삭제는 소유자만 가능하며 `CommentController`(`/api/community/comments`)로 분리되어 있다. Security 공개 화이트리스트에 포함되지 않은 인증 필요 경로다. 부모 댓글(`parentCommentId=null`, 자식 유무 무관) 삭제는 이슈 #277로 CASCADE 하드 삭제에서 tombstone으로 전환됐다 — 소유자 검증(403) 통과 후 행을 실제로 지우지 않고 `content`를 `"삭제된 댓글입니다"`로, `authorNickname`을 `"(삭제됨)"`으로 치환한다(`GET /api/community/posts/{postId}/comments` 응답에 그대로 반영). `parentCommentId`·`replies`는 영향받지 않으며, 자식 대댓글은 원래 내용 그대로 보존된다. 반대로 대댓글(자식, `parentCommentId != null`) 자신을 삭제하면 기존과 동일하게 하드 삭제되어 부모의 `replies`에서 사라진다. **이미 tombstone된 부모 댓글을 소유자가 다시 삭제 요청해도 404가 아니라 204를 반환한다** — `deletedAt`만 멱등하게 갱신되며 `content`·`authorNickname` 표시는 그대로 유지된다(PR #331 리뷰 확정, 새 오류 코드 없음).
 
 ---
 

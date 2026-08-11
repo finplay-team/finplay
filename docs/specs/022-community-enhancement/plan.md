@@ -399,6 +399,14 @@ public static PostCommentResponse from(PostComment comment, List<PostCommentResp
 - 테스트: `PostCommentServiceTest`(tombstone된 부모에 답글 시도 시 400, 정상 부모에는 여전히 허용되는 대조 케이스) + `@WebMvcTest`(400 응답 계약) + 통합 테스트(부모 tombstone 후 그 부모로 대댓글 작성 시도 → 400, 응답 본문에 새 대댓글이 반영되지 않았는지 재조회로 확인).
 
 
+## tombstone된 댓글 재삭제 요청 응답 (PR #331 리뷰 참고 사항 #3 — 사용자 확정)
+
+- **배경**: 리뷰에서 QA로 확인된 동작 — 이미 tombstone된 댓글을 소유자가 다시 `DELETE /api/community/comments/{commentId}`로 요청하면 404가 아니라 204를 반환하고 `deleted_at`만 갱신된다(`tombstone()`이 멱등적으로 `deletedAt`을 덮어쓴다). spec·api-contracts.md 어디에도 재삭제 시 동작이 명시되어 있지 않아 리뷰에서 판정을 보류했다.
+- **결정**: 현행(204) 유지. 코드 변경 없음 — 이미 tombstone된 댓글을 소유자가 다시 삭제해도 204를 반환하고 `deletedAt`만 조용히 갱신된다.
+- **근거**: (1) 멱등성은 HTTP 응답 코드가 아니라 서버 상태(여러 번 불러도 결과가 같음)에 관한 개념이라 204 반복과 404 전환 모두 멱등 DELETE로 인정된다. (2) 이 프로젝트에는 두 선례가 있다 — 하드 삭제 계열(관심목록 등, `api-contracts.md:1053`)은 행이 진짜로 사라지므로 재삭제 시도가 자연스럽게 404가 되고, 상태 전환으로 논리적으로 삭제되는 `DELETE /api/orders/{orderId}`(지정가 취소)는 재요청 시 409 `ORDER_ALREADY_CANCELLED`로 명시적으로 알린다 — tombstone은 후자와 구조가 가깝지만, 새 오류 코드를 만들고 spec·계약 문서를 늘리는 비용 대비 얻는 것(클라이언트가 재삭제를 구분해야 할 실사용 요구가 없다)이 적다고 판단해 현행을 유지한다. (3) `docs/api-contracts.md`의 `DELETE /api/community/comments/{commentId}` 계약에 이 재삭제 멱등 동작을 명시적으로 추가해 다음 리뷰에서 같은 질문이 나오지 않도록 한다(코드 변경 없음, 문서만 보강).
+
+
+
 
 ## COM-006 사진 첨부 (이슈 #248)
 
