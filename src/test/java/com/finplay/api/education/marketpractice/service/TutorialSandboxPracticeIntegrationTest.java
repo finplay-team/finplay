@@ -58,11 +58,10 @@ import org.springframework.transaction.annotation.Transactional;
 class TutorialSandboxPracticeIntegrationTest {
 
 	private static final LocalDateTime BASE_NOW = LocalDateTime.of(2026, 8, 12, 10, 0, 0);
-	// SANDBOX-002·003 대상은 STOCK·CRYPTO 공통이지만, STOCK 샘플 종목의 실제 주문 체결은 별도 확인된 버그(기존
-	// Trade.validateStockReplaySession이 실제 종목에만 성립하는 "STOCK 체결은 재생세션 필수" 불변조건을 샘플
-	// 종목에도 그대로 적용해 항상 IllegalArgumentException을 던진다 — main에 별도 보고)로 지금은 항상 실패한다.
-	// 이 클래스의 샘플 종목 시나리오(1~3)는 그 버그의 영향을 받지 않는 CRYPTO 샘플 종목(SANDBOX_COIN_1)으로
-	// 진행한다 — PriceQueryService 분기·5분 만료 판정 로직 자체는 market과 무관하므로 커버리지 목적은 동일하다.
+	// SANDBOX-002·003 대상은 STOCK·CRYPTO 공통이다. STOCK 샘플 종목의 재생세션 필수 불변조건 예외 처리는
+	// TradeTest(allowsTutorialSampleStockTradeWithoutReplaySession 등)가 단위로 이미 커버하므로, 이 클래스의
+	// 샘플 종목 시나리오(1~3)는 중복을 피해 CRYPTO 샘플 종목(SANDBOX_COIN_1)으로만 진행한다 — PriceQueryService
+	// 분기·5분 만료 판정 로직 자체는 market과 무관하므로 커버리지 목적은 동일하다.
 	private static final BigDecimal SAMPLE_QUANTITY = new BigDecimal("1");
 	private static final BigDecimal SAMPLE_SELL_QUANTITY = new BigDecimal("0.6");
 	private static final BigDecimal SAMPLE_STOP_LOSS = new BigDecimal("8000");
