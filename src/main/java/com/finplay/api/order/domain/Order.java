@@ -61,6 +61,10 @@ public class Order {
 	@Column(name = "limit_price", precision = 18, scale = 8)
 	private BigDecimal limitPrice;
 
+	// null이면 실제 가격 주문, non-null이면 교육 전용 가상 가격 세션에 귀속된 주문이다(030 COIN-PRICE-RUNTIME-006).
+	@Column(name = "practice_price_session_id")
+	private Long practicePriceSessionId;
+
 	@Column(name = "idempotency_key", nullable = false, length = 100)
 	private String idempotencyKey;
 
@@ -79,6 +83,7 @@ public class Order {
 		OrderStatus status,
 		BigDecimal quantity,
 		BigDecimal limitPrice,
+		Long practicePriceSessionId,
 		String idempotencyKey,
 		String requestHash,
 		LocalDateTime requestedAt) {
@@ -90,6 +95,7 @@ public class Order {
 		this.status = status;
 		this.quantity = quantity;
 		this.limitPrice = limitPrice;
+		this.practicePriceSessionId = practicePriceSessionId;
 		this.idempotencyKey = idempotencyKey;
 		this.requestHash = requestHash;
 		this.requestedAt = requestedAt;
@@ -113,6 +119,7 @@ public class Order {
 			orderType,
 			OrderStatus.FILLED,
 			quantity,
+			null,
 			null,
 			idempotencyKey,
 			requestHash,
@@ -138,6 +145,34 @@ public class Order {
 			OrderStatus.PENDING,
 			quantity,
 			limitPrice,
+			null,
+			idempotencyKey,
+			requestHash,
+			requestedAt);
+	}
+
+	// 교육 전용 지정가 BUY 생성 — side를 서버가 BUY로 고정하고 practicePriceSessionId를 기록한다
+	// (030 COIN-PRICE-RUNTIME-006, PracticeLimitOrderCreationService 전용).
+	public static Order createPracticeLimitPendingBuy(
+		User user,
+		Account account,
+		Instrument instrument,
+		BigDecimal quantity,
+		BigDecimal limitPrice,
+		Long practicePriceSessionId,
+		String idempotencyKey,
+		String requestHash,
+		LocalDateTime requestedAt) {
+		return new Order(
+			user,
+			account,
+			instrument,
+			OrderSide.BUY,
+			OrderType.LIMIT,
+			OrderStatus.PENDING,
+			quantity,
+			limitPrice,
+			practicePriceSessionId,
 			idempotencyKey,
 			requestHash,
 			requestedAt);

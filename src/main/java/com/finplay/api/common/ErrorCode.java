@@ -31,6 +31,8 @@ public enum ErrorCode {
 	PRACTICE_PRICE_SESSION_ALREADY_ACTIVE(HttpStatus.CONFLICT, "이미 진행 중인 가상 가격 세션이 있습니다."),
 	PRACTICE_PRICE_SESSION_CLOSED(HttpStatus.CONFLICT, "이미 종료된 가상 가격 세션입니다."),
 	PRACTICE_PRICE_TICK_CONFLICT(HttpStatus.CONFLICT, "요청한 tick이 현재 진행 위치와 일치하지 않습니다."),
+	PRACTICE_LIMIT_ORDER_ALREADY_PENDING(HttpStatus.CONFLICT, "이미 대기 중인 교육 지정가 주문이 있습니다."),
+	PRACTICE_PRICE_SESSION_MISMATCH(HttpStatus.CONFLICT, "주문의 사용자 또는 종목이 가상 가격 세션과 일치하지 않습니다."),
 	IDEMPOTENCY_CONFLICT(HttpStatus.CONFLICT, "같은 키의 다른 요청이 이미 처리되었습니다."),
 	UNSUPPORTED_ORDER_TYPE(HttpStatus.UNPROCESSABLE_CONTENT, "지원하지 않는 주문 유형입니다."),
 	ORDER_ALREADY_FILLED(HttpStatus.CONFLICT, "이미 체결된 주문입니다."),

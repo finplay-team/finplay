@@ -112,7 +112,9 @@ public class LimitOrderCreationService {
 		return instrument;
 	}
 
-	private void validateQuantityFormat(BigDecimal quantity) {
+	// PracticeLimitOrderCreationService(030)가 교육 지정가 검증에 그대로 재사용한다 — 패키지 전용 접근이라
+	// order.service 밖으로는 노출되지 않는다(plan.md "기존 수량·가격·최소금액·현금 예약 검증 재사용").
+	static void validateQuantityFormat(BigDecimal quantity) {
 		if (quantity.compareTo(BigDecimal.ZERO) <= 0) {
 			throw new BusinessException(ErrorCode.VALIDATION_ERROR, "수량은 0보다 커야 합니다.");
 		}
@@ -121,14 +123,14 @@ public class LimitOrderCreationService {
 		}
 	}
 
-	private void validateLimitPrice(BigDecimal limitPrice) {
+	static void validateLimitPrice(BigDecimal limitPrice) {
 		if (limitPrice.compareTo(BigDecimal.ZERO) <= 0) {
 			throw new BusinessException(ErrorCode.VALIDATION_ERROR, "지정가는 0보다 커야 합니다.");
 		}
 	}
 
 	// spec.md: 수량×지정가(내림 전 금액) 기준으로 기존 ORD-003 최소주문금액 규칙을 재사용한다.
-	private void validateMinOrderAmount(BigDecimal quantity, BigDecimal limitPrice, Instrument instrument) {
+	static void validateMinOrderAmount(BigDecimal quantity, BigDecimal limitPrice, Instrument instrument) {
 		BigDecimal rawAmount = quantity.multiply(limitPrice);
 		if (rawAmount.compareTo(BigDecimal.valueOf(instrument.getMinOrderAmount())) < 0) {
 			throw new BusinessException(ErrorCode.VALIDATION_ERROR, "코인 최소 주문금액에 미달합니다.");

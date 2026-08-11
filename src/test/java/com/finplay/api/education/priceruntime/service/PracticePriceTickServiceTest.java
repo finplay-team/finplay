@@ -3,6 +3,7 @@ package com.finplay.api.education.priceruntime.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.finplay.api.common.BusinessException;
@@ -10,6 +11,7 @@ import com.finplay.api.common.ErrorCode;
 import com.finplay.api.education.priceruntime.domain.PracticePriceSession;
 import com.finplay.api.education.priceruntime.domain.PracticePriceSessionStatus;
 import com.finplay.api.education.priceruntime.dto.response.PracticePriceSessionResponse;
+import com.finplay.api.education.priceruntime.event.PracticePriceTickAdvancedEvent;
 import com.finplay.api.education.priceruntime.repository.PracticePriceSessionRepository;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -20,6 +22,7 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -36,13 +39,16 @@ class PracticePriceTickServiceTest {
 	@Mock
 	private PracticePriceSessionRepository practicePriceSessionRepository;
 
+	@Mock
+	private org.springframework.context.ApplicationEventPublisher eventPublisher;
+
 	private Clock clock;
 	private PracticePriceTickService service;
 
 	@BeforeEach
 	void setUp() {
 		clock = Clock.fixed(NOW.atZone(ZoneOffset.UTC).toInstant(), ZoneId.of("UTC"));
-		service = new PracticePriceTickService(practicePriceSessionRepository, clock);
+		service = new PracticePriceTickService(practicePriceSessionRepository, eventPublisher, clock);
 	}
 
 	@Test
@@ -57,6 +63,16 @@ class PracticePriceTickServiceTest {
 		assertThat(response.currentTick()).isEqualTo(1);
 		assertThat(response.currentPrice()).isEqualByComparingTo(expectedPrice);
 		assertThat(response.status()).isEqualTo(PracticePriceSessionStatus.ACTIVE);
+		ArgumentCaptor<PracticePriceTickAdvancedEvent> eventCaptor = ArgumentCaptor
+			.forClass(PracticePriceTickAdvancedEvent.class);
+		verify(eventPublisher).publishEvent(eventCaptor.capture());
+		PracticePriceTickAdvancedEvent publishedEvent = eventCaptor.getValue();
+		assertThat(publishedEvent.sessionId()).isEqualTo(SESSION_ID);
+		assertThat(publishedEvent.userId()).isEqualTo(USER_ID);
+		assertThat(publishedEvent.instrumentId()).isEqualTo(INSTRUMENT_ID);
+		assertThat(publishedEvent.tick()).isEqualTo(1);
+		assertThat(publishedEvent.price()).isEqualByComparingTo(expectedPrice);
+		assertThat(publishedEvent.lastTick()).isFalse();
 	}
 
 	@Test
@@ -74,7 +90,8 @@ class PracticePriceTickServiceTest {
 		PracticePriceSession session = newSession();
 		setField(session, "currentTick", (short)98);
 		BigDecimal lastPrice = PracticePriceGeneratorV1.nextPrice(SEED, 99, START_PRICE, START_PRICE);
-		session.advance(99, lastPrice, NOW);
+		session.advance(99, lastPrice);
+		session.complete(NOW);
 		assertThat(session.getStatus()).isEqualTo(PracticePriceSessionStatus.COMPLETED);
 		when(practicePriceSessionRepository.findByIdAndUserIdForUpdate(SESSION_ID, USER_ID))
 			.thenReturn(Optional.of(session));
@@ -143,11 +160,27 @@ class PracticePriceTickServiceTest {
 		assertThat(response.currentPrice()).isEqualByComparingTo(expectedPrice);
 		assertThat(response.status()).isEqualTo(PracticePriceSessionStatus.COMPLETED);
 		assertThat(response.completedAt()).isEqualTo(LocalDateTime.now(clock));
+		// lastTick=true 이벤트가 먼저 발행되고(같은 트랜잭션에서 리스너가 동기 체결·취소를 끝낸 뒤) 세션이
+		// COMPLETED로 전이한다 — 이 테스트는 mock이라 리스너가 실제로 붙지 않으므로 이벤트 페이로드만 검증한다.
+		ArgumentCaptor<PracticePriceTickAdvancedEvent> eventCaptor = ArgumentCaptor
+			.forClass(PracticePriceTickAdvancedEvent.class);
+		verify(eventPublisher).publishEvent(eventCaptor.capture());
+		PracticePriceTickAdvancedEvent publishedEvent = eventCaptor.getValue();
+		assertThat(publishedEvent.sessionId()).isEqualTo(SESSION_ID);
+		assertThat(publishedEvent.tick()).isEqualTo(99);
+		assertThat(publishedEvent.price()).isEqualByComparingTo(expectedPrice);
+		assertThat(publishedEvent.lastTick()).isTrue();
 	}
 
 	private PracticePriceSession newSession() {
-		return PracticePriceSession.create(
+		PracticePriceSession session = PracticePriceSession.create(
 			USER_ID, INSTRUMENT_ID, SEED, (short)PracticePriceGeneratorV1.VERSION, START_PRICE, NOW);
+		try {
+			setField(session, "id", SESSION_ID);
+		} catch (Exception e) {
+			throw new IllegalStateException(e);
+		}
+		return session;
 	}
 
 	private static void setField(Object target, String fieldName, Object value) throws Exception {
