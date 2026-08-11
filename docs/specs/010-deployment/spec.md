@@ -3,12 +3,40 @@
 > PRD 근거: §3 1차 MVP, §8 태스크 10. 선행: 001-foundation.
 > 착수는 009-integration보다 앞선다 — 1주차에 첫 배포를 시작한다.
 > plan.md·tasks.md는 착수 직전 작성한다.
+>
+> **2026-08-11 개정 (ADR-0020, 이슈 #326).** 배포 대상 구조가 "EC2 한 대 안의 4개 컨테이너"에서
+> "EC2 + 관리형 서비스(RDS·ElastiCache·S3) + 블루-그린"으로 바뀌었다. 아래 "배포 아키텍처" 절이
+> 그 결정을 요구사항으로 옮긴 것이고, **결정 자체의 근거·대안은 ADR-0020이 정본이다.**
+> 이 개정으로 원래 범위 제외였던 **무중단 배포가 범위 안으로 들어왔다** (§범위 제외 참고).
 
 ## 개요
 
-MVP 기능을 실제 환경에 올려 팀과 시연자가 확인할 수 있게 한다. 배포 전에 최소 CI로 전체 build·테스트를 통과시키고, 배포는 사람이 수동으로 수행하며, 배포 후 담당자가 스모크 스크립트로 기본 동작을 확인한다. 자동 배포는 이번 범위가 아니다.
+MVP 기능을 실제 환경에 올려 팀과 시연자가 확인할 수 있게 한다. 배포 전에 최소 CI로 전체 build·테스트를 통과시키고, 배포는 사람이 수동으로 수행하며, 배포 후 담당자가 스모크 스크립트로 기본 동작을 확인한다. 자동 배포(CI에서 배포까지 잇는 파이프라인)는 이번 범위가 아니다.
 
 CI 워크플로우는 2026-07-24 튜터 피드백("CI는 배포 단계에")으로 제거된 상태다. 이 태스크가 그 재도입 시점이다 (`docs/harness-roadmap.md`).
+
+## 배포 아키텍처 (ADR-0020, 이슈 #326)
+
+**상태를 갖는 것은 EC2 밖에 둔다.** EC2에는 애플리케이션(nginx + app)만 올리고, DB·캐시·업로드 파일은 각각 RDS·ElastiCache·S3로 분리한다. 그 위에서 ALB의 두 타깃 그룹을 번갈아 가리키는 블루-그린으로 무중단 배포한다.
+
+```
+                     ┌─ ALB (ACM 인증서, HTTPS) ─┐
+                     │                            │
+              [Target Group: blue]        [Target Group: green]
+                     │                            │
+              EC2 (nginx + app)            EC2 (nginx + app)
+                     └───────────┬────────────────┘
+                  ┌──────────────┼──────────────┐
+                RDS          ElastiCache        S3
+             (MySQL)          (Redis)      (업로드 이미지)
+```
+
+결정 근거·대안·트레이드오프는 **ADR-0020**에 있다. 이 절은 그 결정을 배포 요구사항으로 옮긴 것이며, 판단이 갈리면 ADR이 정본이다.
+
+**초기 구조에서 무엇이 바뀌었나.** 1차 MVP는 EC2 한 대에 `compose.deploy.yaml`로 nginx·app·mysql·redis 네 컨테이너를 함께 올렸다. 그 구조에서는 EC2를 종료하면 그 위 볼륨의 원장이 함께 사라지고(이 팀이 실제로 겪었다), 인스턴스를 버릴 수 없으니 블루-그린 자체가 성립하지 않는다. 또한 ADR-0014·0015·0018이 전제한 "인스턴스 간 공유 Redis"도 EC2 내부 컨테이너로는 만들 수 없다.
+
+- **로컬 개발은 바뀌지 않는다.** 루트 `compose.yaml`(`spring-boot-docker-compose`가 `bootRun`에서 자동 기동)은 그대로 컨테이너 mysql·redis를 쓴다. 관리형 서비스는 배포에만 적용된다.
+- 이 절의 구성 값(인스턴스 유형·서브넷·보안 그룹·암호화 옵션)은 코드가 아니라 AWS 콘솔에 있다. IaC를 도입하지 않았으므로 **이 문서와 ADR-0020이 사실상 유일한 정본이다.**
 
 ## 사용자 시나리오
 
@@ -29,11 +57,42 @@ CI 워크플로우는 2026-07-24 튜터 피드백("CI는 배포 단계에")으�
 - [ ] 시크릿은 전부 환경변수 또는 AWS Secret으로 주입한다 (`conventions.md` 시크릿 규칙).
 - [ ] 배포는 사람이 수행한다 — 자동 배포·자동 머지는 하지 않는다 (ADR-0005).
 
+### 관리형 서비스 (ADR-0020)
+
+**DB — RDS**
+
+- [x] `finplay-db` (MySQL 8.4, `db.t4g.micro`, Single-AZ)를 private 서브넷 2개(2 AZ)에 둔다.
+- [x] 전용 보안 그룹 `finplay-rds-sg`를 쓰고 인바운드 소스는 EC2의 보안 그룹 ID로 지정한다 — CIDR·기본 VPC 보안 그룹(`default`)을 쓰지 않는다.
+- [x] `.env`의 `DB_URL`·`DB_USERNAME`·`DB_PASSWORD`가 RDS 엔드포인트를 가리키고, Flyway 마이그레이션이 RDS 스키마에 적용된다.
+- Single-AZ는 의도된 선택이다 — 이 결정의 목적은 고가용성이 아니라 **EC2 생명주기로부터의 분리**다. Multi-AZ 전환은 실사용자 트래픽 시점에 재검토한다 (ADR-0020 §후속).
+
+**캐시 — ElastiCache**
+
+- [x] `finplay-cache` (Redis OSS 7.1, `cache.t3.micro`, **복제본 1 + 다중 AZ + 자동 장애 조치**)를 private 서브넷에 둔다.
+- [x] 전용 보안 그룹 `finplay-elasticache-sg`를 쓰고 인바운드 소스는 EC2의 보안 그룹 ID로 지정한다.
+- [x] `.env`에 `REDIS_HOST`(기본 엔드포인트)·`REDIS_PORT`와 함께 **`SPRING_DATA_REDIS_SSL_ENABLED=true`** 를 반드시 넣는다.
+- RDS와 달리 복제본을 두는 이유는 **Redis 장애가 폴백이 아니라 기능 정지이기 때문이다** — `PriceStore`는 시세의 유일한 저장소이며 폴백이 없다. (ADR-0014의 감시 락은 fail-closed지만, ADR-0015의 조회 캐시 락은 반대로 fail-open — 대기 타임아웃 시 원본 DB로 직행한다. 두 락 모두와 무관하게 `PriceStore` 하나만으로 복제본이 필요하다.)
+- 전송 중 암호화는 **클러스터 생성 후 변경할 수 없다.** 클라이언트가 TLS로 맞추는 것 외의 선택지가 없다.
+
+**업로드 파일 — S3**
+
+- [ ] `FileStorageService`의 새 구현체 `S3FileStorageService`를 추가하고 배포 프로필에서 `LocalFileStorageService` 대신 쓴다 (**별도 이슈** — ADR-0020 §후속).
+- [ ] 기존 로컬 업로드 파일을 S3로 이관한다 (**별도 이슈**).
+- `compose.deploy.yaml`의 `app`에 이미지 볼륨을 추가해 해결하지 않는다 — 볼륨을 붙이면 파일이 다시 인스턴스에 묶여 이 결정의 목적을 되돌린다.
+
+### 블루-그린 무중단 배포 (ADR-0020)
+
+- [ ] blue(8081)·green(8082) 두 스택을 번갈아 띄우고 ALB의 두 타깃 그룹으로 트래픽을 전환한다.
+- [ ] 새 스택이 헬스체크를 통과한 뒤에만 트래픽을 옮긴다. 이전 스택은 롤백 경로로 잠시 남긴다.
+- [ ] ALB에 ACM 인증서를 붙여 HTTPS로 서비스한다.
+- **ALB는 무중단만을 위한 것이 아니다** — ACM으로 HTTPS가 붙어야 카카오·네이버 OAuth 로그인이 열린다(아래 "동일 오리진 서빙"의 제약 참고). 무중단 배포와 OAuth 활성화가 같은 인프라 하나로 동시에 풀린다.
+- ALB·타깃 그룹·ACM 발급과 `compose.bluegreen.yaml` 작성은 **별도 이슈**다.
+
 ### 동일 오리진 서빙 (이슈 #108 — A안)
 
 같은 EC2에서 nginx가 프론트 정적 파일과 `/api` 프록시를 함께 서빙한다. 프론트와 API가 같은 오리진이므로 백엔드에 CORS 설정을 추가하지 않는다. 결정 근거는 이슈 #108에 있다.
 
-- [x] 앱 이미지(`Dockerfile`)와 배포용 스택(`compose.deploy.yaml`: nginx·app·mysql·redis)을 작성한다.
+- [x] 앱 이미지(`Dockerfile`)와 배포용 스택(`compose.deploy.yaml`: **nginx·app** — mysql·redis는 ADR-0020으로 RDS·ElastiCache에 분리됐다)을 작성한다.
 - [x] nginx가 프론트 빌드 산출물(`npm run build` → `dist/`)을 정적 서빙하고 SPA 폴백(`try_files ... /index.html`)을 적용한다.
 - [x] `/api`를 앱 컨테이너로 프록시하며 SSE가 흐르도록 `proxy_buffering off`·`proxy_cache off`·`proxy_read_timeout 3600s`를 설정한다.
 - [x] 스모크가 호출하는 `/actuator`·`/v3/api-docs`도 프록시한다 — 프록시하지 않으면 SPA 폴백이 `index.html`을 200으로 돌려줘 스모크가 거짓 통과한다.
@@ -41,11 +100,17 @@ CI 워크플로우는 2026-07-24 튜터 피드백("CI는 배포 단계에")으�
 
 **배포 시점 체크 (EC2 준비 후 수행 — 설정 파일 작성 단계에서는 검증 불가)**
 
-- [ ] `docker compose -f compose.deploy.yaml up -d --build`로 4개 컨테이너가 모두 기동한다.
+- [x] `docker compose -f compose.deploy.yaml up -d --build`로 2개 컨테이너(app·nginx)가 모두 기동한다 — 2026-08-11 실측(이슈 #326).
+- [x] 앱이 RDS·ElastiCache에 접속해 기동하고 Flyway 마이그레이션 30건이 적용된다 — 2026-08-11 실측.
+- [x] `/actuator/health`가 `UP`을 반환한다 — 2026-08-11 실측.
 - [ ] 브라우저에서 배포 주소에 접속해 프론트가 뜨고, `/api` 호출이 CORS 오류 없이 성공한다.
 - [ ] 브라우저 개발자도구 Network에서 `/api/stocks/stream`이 실제로 **매분 push**되는 것을 확인한다 — nginx 버퍼링이 살아 있으면 여기서 드러난다.
 - [ ] `/trade` 등 하위 경로에서 새로고침해도 404가 아니라 앱 화면이 뜬다 (SPA 폴백).
-- [ ] HTTPS를 붙이기 전이라면 카카오·네이버 OAuth 로그인이 동작하지 않는 것을 전제로 시연 범위를 잡는다 — `prod` 프로필은 `OAUTH_STATE_COOKIE_SECURE=false`를 거부하고(`OAuthStateCookieFactory` fail-fast, 2026-07-31 실측), 브라우저는 `http://`에서 `Secure` 쿠키를 저장하지 않는다. 이슈 #108이 근거로 든 "HTTP 데모 시 Secure를 내린다"는 현재 코드에서 불가능하다.
+- [ ] HTTPS를 붙이기 전이라면 카카오·네이버 OAuth 로그인이 동작하지 않는 것을 전제로 시연 범위를 잡는다 — `prod` 프로필은 `OAUTH_STATE_COOKIE_SECURE=false`를 거부하고(`OAuthStateCookieFactory` fail-fast, 2026-07-31 실측), 브라우저는 `http://`에서 `Secure` 쿠키를 저장하지 않는다. 이슈 #108이 근거로 든 "HTTP 데모 시 Secure를 내린다"는 현재 코드에서 불가능하다. **해결 경로는 ALB + ACM이다** (위 "블루-그린 무중단 배포").
+
+**ElastiCache 접속 실패는 네트워크 문제로 오진하기 쉽다 (2026-08-11 실측)**
+
+`SPRING_DATA_REDIS_SSL_ENABLED`를 빠뜨리면 DNS 해석·보안 그룹·TCP 연결이 **전부 정상인데** Lettuce만 `RedisCommandTimeoutException: Connection initialization timed out after 2 second(s)`로 실패한다. 서버가 TLS 핸드셰이크를 요구하는데 클라이언트가 평문으로 붙기 때문이다. 컨테이너 안에서 `/dev/tcp`로 6379가 열리는 것을 확인했다면 네트워크가 아니라 이 설정을 먼저 본다.
 
 ### 주식 시세 공급자 설정 (PRD C-007·MKT-007)
 - [ ] 공개 배포 환경은 `SERVICE_EXPOSURE=PUBLIC` + `STOCK_FEED_PROVIDER=KIS_HISTORICAL`로 기동한다 — **이것이 현재 공개 배포의 기본값이다.**
@@ -90,7 +155,9 @@ CI 워크플로우는 2026-07-24 튜터 피드백("CI는 배포 단계에")으�
 ## 범위 제외
 
 - 자동 배포·배포 파이프라인 (수동 배포로 시작).
-- 무중단 배포·롤백 자동화·오토스케일링.
+- **롤백 자동화·오토스케일링(ASG)·상시 다중 인스턴스 운영.** 블루-그린은 이전 스택을 잠시 남겨 **수동** 롤백 경로를 제공할 뿐 자동 롤백이 아니며, 인스턴스를 자동으로 늘리지도 않는다 (ADR-0020 §6).
+  - **무중단 배포는 2026-08-11 ADR-0020으로 범위에 들어왔다** — 이 줄은 원래 "무중단 배포·롤백 자동화·오토스케일링"으로 셋을 함께 제외하고 있었다. 상태를 EC2 밖으로 뺀 뒤에는 블루-그린의 한계 비용이 작고, HTTPS(OAuth)를 위해 ALB가 어차피 필요해 판단이 뒤집혔다. `S3FileStorageService`·ALB·타깃 그룹·ACM·`compose.bluegreen.yaml`은 **이 spec의 요구사항이므로 여기 두지 않는다** — 위 "관리형 서비스"·"블루-그린 무중단 배포" 절의 미체크 항목으로 추적하며, 실행은 별도 이슈로 나눈다.
+- 스케줄러 전용 인스턴스 분리 — 지금은 ADR-0014의 Redis 락에 계속 의존한다 (ADR-0020 §6).
 - 실제 이메일 수신, 실제 카카오·네이버 OAuth, 실제 KIS WebSocket 연결 확인 — 자동 스모크와 분리해 주요 배포 시 **수동 외부 스모크**로 처리한다 (PRD §9).
 - 공개 환경의 KIS 실시간 전환 실행 (한국투자 서면 답변 Decision Gate — 이번 범위는 기본값을 `KIS_HISTORICAL`로 고정하고 잘못된 조합을 fail-fast로 막는 것까지다).
 - 부하테스트·모니터링 대시보드 (2차 MVP).
@@ -100,7 +167,10 @@ CI 워크플로우는 2026-07-24 튜터 피드백("CI는 배포 단계에")으�
 
 - [ ] PR에서 CI가 `./gradlew build`를 실행하고 결과가 PR에 표시된다.
 - [ ] 문서만 바뀐 PR에서 Gradle 단계가 실행되지 않는다.
-- [ ] 운영 환경에 배포된 앱의 `/actuator/health`가 `UP`을 반환한다.
+- [x] 운영 환경에 배포된 앱의 `/actuator/health`가 `UP`을 반환한다 — 2026-08-11 실측(이슈 #326).
+- [x] 앱이 EC2 내부 컨테이너가 아니라 RDS·ElastiCache에 접속해 기동한다 (ADR-0020).
+- [ ] 업로드 이미지가 S3에 저장돼 재배포·인스턴스 교체 후에도 남는다 (별도 이슈).
+- [ ] 블루-그린 전환 중 요청이 끊기지 않는다 (별도 이슈).
 - [ ] 공개 배포 환경이 `SERVICE_EXPOSURE=PUBLIC`·`STOCK_FEED_PROVIDER=KIS_HISTORICAL`·`KIS_PUBLIC_DISPLAY_APPROVED=false`로 기동됨을 확인한다.
 - [ ] 승인 없는 공개 KIS 조합에서 기동이 실패하는 것을 배포 전 1회 확인한다.
 - [ ] Resend 발신 서브도메인 인증이 완료되고 실제 인증 메일 수신이 1회 확인된다 (수동 외부 스모크).

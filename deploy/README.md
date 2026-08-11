@@ -8,11 +8,13 @@
 ```
 브라우저 ──▶ nginx :80 ──┬─▶ /            정적 파일 (프론트 dist/, SPA 폴백)
                          └─▶ /api, /actuator, /v3/api-docs, /swagger-ui ─▶ app :8080
-                                                                            ├─▶ mysql :3306
-                                                                            └─▶ redis :6379
+                                                                            ├─▶ RDS (MySQL)        ┐ EC2 밖
+                                                                            └─▶ ElastiCache (Redis)┘ 관리형 서비스
 ```
 
 앱 컨테이너는 호스트에 포트를 열지 않는다. 외부 진입점은 nginx 하나뿐이라 프론트와 API가 같은 오리진이고, 따라서 백엔드에 CORS 설정이 필요 없다.
+
+**DB·캐시는 이 스택 안에 없다 (ADR-0020, 이슈 #326).** 예전에는 `compose.deploy.yaml`이 mysql·redis 컨테이너를 함께 띄웠지만, EC2를 종료하면 그 볼륨의 원장이 함께 사라지는 문제 때문에 RDS·ElastiCache로 분리했다. 그래서 이 스택이 띄우는 컨테이너는 **app·nginx 두 개뿐이고**, 접속 정보는 전부 `.env`에서 온다. 로컬 개발(`compose.yaml` + `bootRun`)은 바뀌지 않았다 — 여전히 컨테이너 mysql·redis를 쓴다.
 
 ## 절차
 
@@ -22,8 +24,10 @@
 
 2. **`.env`를 만든다.** `.env.example`을 복사해 값을 채운다. 배포에 필요한 값은 다음과 같다.
    - 시크릿 — `JWT_SECRET`, `OAUTH_STATE_SECRET`, `EMAIL_VERIFICATION_SECRET`, `PASSWORD_RESET_SECRET`
-   - DB — `DB_USERNAME`(root 불가), `DB_PASSWORD`, `MYSQL_ROOT_PASSWORD`
-     (`DB_URL`은 compose가 스택 내부 주소로 덮어쓴다)
+   - DB(RDS) — `DB_URL`(RDS 엔드포인트), `DB_USERNAME`(root 불가), `DB_PASSWORD`.
+     **compose가 덮어쓰지 않으므로 여기 값이 그대로 쓰인다.**
+   - 캐시(ElastiCache) — `REDIS_HOST`(기본 엔드포인트), `REDIS_PORT`,
+     그리고 **`SPRING_DATA_REDIS_SSL_ENABLED=true`**. 아래 "알려진 함정" 참고.
    - OAuth — `KAKAO_*`, `NAVER_*`. `*_REDIRECT_URI`는 배포 주소 기준으로 적고 각 콘솔에도 같은 값을 등록한다.
    - 메일 — `RESEND_API_KEY`, `EMAIL_FROM`
    - KIS — `KIS_APP_KEY`, `KIS_APP_SECRET` (없어도 기동은 성공한다)
@@ -52,6 +56,25 @@
 - 프론트만 바뀐 경우: `frontend-dist/`를 새 `dist/`로 교체한다. nginx는 정적 파일을 읽기 전용 마운트로 바로 읽으므로 재기동이 필요 없다.
 - `deploy/nginx.conf`를 바꾼 경우: `docker compose -f compose.deploy.yaml restart nginx`
 
+## 알려진 함정 — ElastiCache 접속 실패는 네트워크 문제처럼 보인다
+
+`SPRING_DATA_REDIS_SSL_ENABLED`를 빠뜨리면 **DNS 해석·보안 그룹·TCP 연결이 전부 정상인데** 앱만 기동에 실패한다.
+
+```
+io.lettuce.core.RedisConnectionException: Unable to connect to <엔드포인트>/<unresolved>:6379
+Caused by: io.lettuce.core.RedisCommandTimeoutException: Connection initialization timed out after 2 second(s)
+```
+
+`<unresolved>`라는 표기 때문에 DNS 문제로 읽히지만 아니다. ElastiCache의 "전송 중 암호화"가 켜져 있으면 서버가 TLS 핸드셰이크를 요구하는데 Lettuce 기본 설정은 평문으로 붙어서, **TCP는 연결되고 Redis 핸드셰이크만 타임아웃된다** (2026-08-11 실측).
+
+컨테이너 안에서 이렇게 확인할 수 있다.
+
+```bash
+docker exec finplay-deploy-app-1 bash -c 'timeout 5 cat < /dev/null > /dev/tcp/<엔드포인트>/6379 && echo TCP_OK'
+```
+
+`TCP_OK`가 나오는데 앱이 위 예외로 죽는다면 네트워크가 아니라 `.env`의 `SPRING_DATA_REDIS_SSL_ENABLED=true`가 빠진 것이다. 전송 중 암호화는 클러스터 생성 후 끌 수 없으므로 클라이언트를 맞추는 것 외의 방법이 없다.
+
 ## 알려진 제약 — HTTP 배포에서는 OAuth 로그인이 안 된다
 
 이슈 #108은 "급하면 `OAUTH_STATE_COOKIE_SECURE=false`로 내려서 `http://<EC2-IP>/`로도 데모가 돌아간다"를 A안의 근거 중 하나로 들었지만, 실제 코드는 그걸 막는다.
@@ -66,6 +89,8 @@
 
 ## 아직 하지 않은 것
 
-- HTTPS(인증서) — `http://<EC2-IP>/` 기준이다. 도메인·인증서를 붙일 때 nginx에 443 server 블록을 추가한다.
+- **HTTPS** — `http://<EC2-IP>/` 기준이다. ADR-0020의 결정은 nginx에 443을 직접 붙이는 대신 **ALB에 ACM 인증서를 붙이는 것**이다(블루-그린 전환과 같은 인프라를 쓴다). 별도 이슈.
+- **블루-그린 무중단 배포** — `compose.bluegreen.yaml`(8081/8082)과 ALB 타깃 그룹 2개. 별도 이슈. 지금 이 문서의 절차는 단일 스택 교체(재배포 시 40초 안팎 중단)다.
+- **업로드 이미지의 S3 이관** — `app` 서비스에 이미지 볼륨이 없어 재배포마다 업로드 파일이 유실된다. 볼륨을 붙여 고치지 않고 `S3FileStorageService`로 교체한다 (ADR-0020). 별도 이슈.
 - 배포 자동화(CI) — 수동 배포로 시작한다 (`docs/specs/010-deployment/spec.md` 범위 제외).
-- 실제 배포 환경에서의 동작 검증 — EC2가 준비되면 위 4번과 spec의 배포 시점 체크 항목을 수행한다.
+- 프론트 연동·SSE·SPA 폴백의 브라우저 검증 — spec의 "배포 시점 체크" 중 앱 기동·헬스체크는 2026-08-11에 확인했고 브라우저 항목은 남아 있다.
