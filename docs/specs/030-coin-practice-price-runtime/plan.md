@@ -22,7 +22,7 @@
 | POST | `/api/education/practice/price-sessions` | `PracticePriceSessionCreateRequest` | 201 `PracticePriceSessionResponse` | 코인 가격 세션 생성 |
 | GET | `/api/education/practice/price-sessions/{sessionId}` | path | 200 `PracticePriceSessionResponse` | 본인 세션 현재 상태 조회 |
 | POST | `/api/education/practice/price-sessions/{sessionId}/ticks` | `PracticePriceTickAdvanceRequest` | 200 `PracticePriceSessionResponse` | 기대 tick으로 한 칸 진행 |
-| POST | `/api/education/practice/limit-orders` | `PracticeLimitOrderCreateRequest` | 201 기존 `OrderResponse` | 세션 귀속 코인 지정가 BUY 생성(side는 서버 고정) |
+| POST | `/api/education/practice/limit-orders` | `PracticeLimitOrderCreateRequest` | 201 `LimitOrderResponse` | 세션 귀속 코인 지정가 BUY 생성(side는 서버 고정) |
 
 모두 Access Bearer 인증이 필요하다. 생성 요청은 `{"instrumentId":1}`, tick 요청은 `{"expectedTick":1}`, 주문 요청은 `{"practicePriceSessionId":1,"instrumentId":1,"quantity":0.01,"limitPrice":9500}`다. 교육 주문의 side는 입력받지 않고 서버가 `BUY`로 고정한다. 응답 세션 필드는 `sessionId`, `instrumentId`, `status(ACTIVE|COMPLETED)`, `generatorVersion`, `startPrice`, `currentTick`, `currentPrice`, `tickSeconds(3)`, `totalTicks(100)`, `createdAt`, `completedAt(nullable)`다. seed는 서버 내부 재현 정보이며 API에 노출하지 않는다.
 

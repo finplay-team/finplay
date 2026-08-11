@@ -8,6 +8,8 @@ import com.finplay.api.account.domain.Account;
 import com.finplay.api.account.repository.AccountRepository;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
+import com.finplay.api.education.priceruntime.domain.PracticePriceSession;
+import com.finplay.api.education.priceruntime.repository.PracticePriceSessionRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.repository.InstrumentRepository;
@@ -45,6 +47,9 @@ class OrderRepositoryTest {
 
 	@Autowired
 	private OrderRepository orderRepository;
+
+	@Autowired
+	private PracticePriceSessionRepository practicePriceSessionRepository;
 
 	@Autowired
 	private EntityManager entityManager;
@@ -406,5 +411,87 @@ class OrderRepositoryTest {
 
 		assertThat(result).extracting(order -> order.getInstrument().getSymbol())
 			.containsExactly(instrument.getSymbol());
+	}
+
+	// 이 이름의 idempotency 접두사는 030의 practice 전용 주문을 다른 테스트의 지정가 주문과 겹치지 않게 구분한다.
+	private Order createPracticePendingOrder(
+		User user, Account account, BigDecimal limitPrice, Long practicePriceSessionId, String idempotencySuffix) {
+		return orderRepository.saveAndFlush(Order.createPracticeLimitPendingBuy(
+			user, account, instrument, BigDecimal.valueOf(1), limitPrice, practicePriceSessionId,
+			"practice-idem-" + idempotencySuffix, "q".repeat(64), NOW));
+	}
+
+	// orders.practice_price_session_id는 practice_price_sessions(id) FK다(V30) — 존재하는 세션 행이 있어야 한다.
+	// 같은 owner·instrument로 여러 세션을 만들어야 하므로 ACTIVE 유일 제약(UNIQUE user_id,instrument_id,active_slot)에
+	// 걸리지 않게 생성 직후 바로 완료 처리한다 — 이 테스트는 세션 상태가 아니라 주문 FK·조회만 검증한다.
+	private Long createPracticeSession(long seed) {
+		PracticePriceSession session = practicePriceSessionRepository.saveAndFlush(
+			PracticePriceSession.create(
+				owner.getId(), instrument.getId(), seed, (short)1, BigDecimal.valueOf(10_000), NOW));
+		session.complete(NOW);
+		return practicePriceSessionRepository.saveAndFlush(session).getId();
+	}
+
+	@Test
+	@DisplayName("역방향 오염 차단(030): 지정가가 일치해도 교육 세션 귀속 주문은 실제 시세 체결 후보에서 제외된다")
+	void findPendingLimitOrdersToFillExcludesPracticeSessionOrdersEvenWhenLimitPriceMatches() {
+		Order normalOrder = orderRepository.saveAndFlush(Order.createLimitPending(
+			owner, ownerAccount, instrument, OrderSide.BUY,
+			BigDecimal.valueOf(1), BigDecimal.valueOf(70_000), "limit-normal-1", "r".repeat(64), NOW));
+		Long sessionId = createPracticeSession(1L);
+		createPracticePendingOrder(owner, ownerAccount, BigDecimal.valueOf(70_000), sessionId, "1");
+
+		List<Order> result = orderRepository
+			.findPendingLimitOrdersToFill(instrument.getId(), BigDecimal.valueOf(70_000));
+
+		assertThat(result).extracting(Order::getId).containsExactly(normalOrder.getId());
+	}
+
+	@Test
+	@DisplayName("세션에 PENDING 교육 주문이 있으면 existsByPracticePriceSessionIdAndStatus가 true를 반환한다 (030)")
+	void existsByPracticePriceSessionIdAndStatusReturnsTrueWhenPendingOrderExistsForSession() {
+		Long sessionId = createPracticeSession(2L);
+		createPracticePendingOrder(owner, ownerAccount, BigDecimal.valueOf(70_000), sessionId, "2");
+
+		boolean result = orderRepository.existsByPracticePriceSessionIdAndStatus(
+			sessionId, com.finplay.api.order.domain.OrderStatus.PENDING);
+
+		assertThat(result).isTrue();
+	}
+
+	@Test
+	@DisplayName("다른 세션이거나 PENDING이 아니면 existsByPracticePriceSessionIdAndStatus가 false를 반환한다 (030)")
+	void existsByPracticePriceSessionIdAndStatusReturnsFalseWhenNoMatchingPendingOrderForSession() {
+		Long sessionId = createPracticeSession(3L);
+		Long otherSessionId = createPracticeSession(4L);
+		Order cancelled = createPracticePendingOrder(owner, ownerAccount, BigDecimal.valueOf(70_000), sessionId, "3");
+		cancelled.cancel();
+		orderRepository.saveAndFlush(cancelled);
+		createPracticePendingOrder(owner, ownerAccount, BigDecimal.valueOf(70_000), otherSessionId, "4"); // 다른 세션
+
+		boolean result = orderRepository.existsByPracticePriceSessionIdAndStatus(
+			sessionId, com.finplay.api.order.domain.OrderStatus.PENDING);
+
+		assertThat(result).isFalse();
+	}
+
+	@Test
+	@DisplayName("findPendingBySessionIdForUpdate는 해당 세션의 PENDING 주문만 id 오름차순으로 반환한다 (030)")
+	void findPendingBySessionIdForUpdateReturnsOnlyThatSessionsPendingOrdersSortedByIdAscending() {
+		Long sessionId = createPracticeSession(5L);
+		Long otherSessionId = createPracticeSession(6L);
+		Order first = createPracticePendingOrder(owner, ownerAccount, BigDecimal.valueOf(70_000), sessionId, "5");
+		Order second = createPracticePendingOrder(owner, ownerAccount, BigDecimal.valueOf(71_000), sessionId, "6");
+		Order otherSession = createPracticePendingOrder(owner, ownerAccount, BigDecimal.valueOf(70_000), otherSessionId,
+			"7");
+		Order filledInSameSession = createPracticePendingOrder(owner, ownerAccount, BigDecimal.valueOf(70_000),
+			sessionId, "8");
+		filledInSameSession.markFilled();
+		orderRepository.saveAndFlush(filledInSameSession);
+
+		List<Order> result = orderRepository.findPendingBySessionIdForUpdate(sessionId);
+
+		assertThat(result).extracting(Order::getId).containsExactly(first.getId(), second.getId());
+		assertThat(result).extracting(Order::getId).doesNotContain(otherSession.getId());
 	}
 }

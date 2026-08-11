@@ -90,9 +90,11 @@ public class PracticePriceSession {
 		return new PracticePriceSession(userId, instrumentId, seed, generatorVersion, startPrice, createdAt);
 	}
 
-	// expectedTick으로 한 tick 진행한다. 방어적 검증만 하며 사용자향 409 매핑은 호출 전 service가 담당한다
-	// (Order.cancel() 패턴, plan.md "트랜잭션·잠금·이벤트").
-	public void advance(int expectedTick, BigDecimal nextPrice, LocalDateTime now) {
+	// expectedTick으로 한 tick 진행한다(tick·가격만 갱신, 상태 전이는 하지 않는다). 방어적 검증만 하며
+	// 사용자향 409 매핑은 호출 전 service가 담당한다(Order.cancel() 패턴, plan.md "트랜잭션·잠금·이벤트").
+	// tick 99 완료 전이는 이 메서드가 하지 않는다 — service가 이벤트 발행으로 체결·취소를 먼저 끝낸 뒤 complete()를
+	// 별도 호출해야 "체결 판정 → 잔여 취소·예약 반환 → 세션 COMPLETED 전이" 순서가 지켜진다(plan.md).
+	public void advance(int expectedTick, BigDecimal nextPrice) {
 		if (this.status != PracticePriceSessionStatus.ACTIVE) {
 			throw new IllegalStateException("ACTIVE 상태의 세션만 진행할 수 있습니다.");
 		}
@@ -101,9 +103,18 @@ public class PracticePriceSession {
 		}
 		this.currentTick = (short)expectedTick;
 		this.currentPrice = nextPrice;
-		if (expectedTick == MAX_TICK) {
-			this.status = PracticePriceSessionStatus.COMPLETED;
-			this.completedAt = now;
+	}
+
+	// tick 99 도달 후 체결·취소·예약 반환이 끝난 뒤 호출해 세션을 COMPLETED로 전이한다(plan.md).
+	public void complete(LocalDateTime now) {
+		if (this.status != PracticePriceSessionStatus.ACTIVE) {
+			throw new IllegalStateException("ACTIVE 상태의 세션만 완료할 수 있습니다.");
 		}
+		this.status = PracticePriceSessionStatus.COMPLETED;
+		this.completedAt = now;
+	}
+
+	public static int maxTick() {
+		return MAX_TICK;
 	}
 }
