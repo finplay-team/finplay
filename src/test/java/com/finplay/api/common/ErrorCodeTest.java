@@ -11,7 +11,7 @@ class ErrorCodeTest {
 
 	@Test
 	void declaresEveryErrorCodeFromPrdAndOAuthSpecWithoutUnlistedOnes() {
-		assertThat(ErrorCode.values()).hasSize(34);
+		assertThat(ErrorCode.values()).hasSize(36);
 	}
 
 	@Test
@@ -43,6 +43,8 @@ class ErrorCodeTest {
 			Map.entry(ErrorCode.PRACTICE_PRICE_SESSION_ALREADY_ACTIVE, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.PRACTICE_PRICE_SESSION_CLOSED, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.PRACTICE_PRICE_TICK_CONFLICT, HttpStatus.CONFLICT),
+			Map.entry(ErrorCode.PRACTICE_LIMIT_ORDER_ALREADY_PENDING, HttpStatus.CONFLICT),
+			Map.entry(ErrorCode.PRACTICE_PRICE_SESSION_MISMATCH, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.IDEMPOTENCY_CONFLICT, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.ORDER_ALREADY_FILLED, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.ORDER_ALREADY_CANCELLED, HttpStatus.CONFLICT),
@@ -95,6 +97,10 @@ class ErrorCodeTest {
 			.isEqualTo("이미 종료된 가상 가격 세션입니다.");
 		assertThat(ErrorCode.PRACTICE_PRICE_TICK_CONFLICT.getDefaultMessage())
 			.isEqualTo("요청한 tick이 현재 진행 위치와 일치하지 않습니다.");
+		assertThat(ErrorCode.PRACTICE_LIMIT_ORDER_ALREADY_PENDING.getDefaultMessage())
+			.isEqualTo("이미 대기 중인 교육 지정가 주문이 있습니다.");
+		assertThat(ErrorCode.PRACTICE_PRICE_SESSION_MISMATCH.getDefaultMessage())
+			.isEqualTo("주문의 사용자 또는 종목이 가상 가격 세션과 일치하지 않습니다.");
 	}
 
 	@Test
