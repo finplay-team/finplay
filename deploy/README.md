@@ -82,7 +82,7 @@ docker exec finplay-deploy-app-1 bash -c 'timeout 5 cat < /dev/null > /dev/tcp/<
 **버킷 — S3**
 
 - [ ] 버킷(예: `finplay-community-images`)을 생성한다. **퍼블릭 액세스 차단(Block Public Access) 4개 옵션을 모두 켠 채로 유지한다** — 이미지는 앱의 다운로드 엔드포인트(`GET /api/community/posts/images/{imageId}/file`)로만 노출되고 버킷을 직접 공개하지 않는다.
-- [ ] 버킷 이름을 `.env`의 `COMMUNITY_S3_BUCKET`에 넣는다 — `application-prod.yml`이 기본값 없이 참조하므로(fail-fast) 빠뜨리면 `prod` 기동이 즉시 실패한다.
+- [ ] 버킷 이름을 `.env`의 `COMMUNITY_S3_BUCKET`에 넣는다 — 설정이 누락돼도 `prod` 기동 자체는 성공하며, 첫 이미지 요청에서 500 오류로 나타난다(fail-fast 미적용, 이슈 #335에서 별도로 다룬다).
 
 **IAM 역할·EC2 인스턴스 프로파일**
 

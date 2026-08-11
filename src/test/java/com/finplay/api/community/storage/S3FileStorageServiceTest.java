@@ -99,6 +99,18 @@ class S3FileStorageServiceTest {
 	}
 
 	@Test
+	void loadThrowsInternalErrorWhenS3Fails() {
+		S3Client s3Client = mock(S3Client.class);
+		S3FileStorageService service = new S3FileStorageService(s3Client, new CommunityS3StorageProperties(BUCKET));
+		when(s3Client.getObject(any(GetObjectRequest.class)))
+			.thenThrow(S3Exception.builder().message("boom").build());
+
+		assertThatThrownBy(() -> service.load("test-image.png"))
+			.isInstanceOf(BusinessException.class)
+			.hasFieldOrPropertyWithValue("errorCode", ErrorCode.INTERNAL_ERROR);
+	}
+
+	@Test
 	void deleteCallsDeleteObjectWithBucketAndKey() {
 		S3Client s3Client = mock(S3Client.class);
 		S3FileStorageService service = new S3FileStorageService(s3Client, new CommunityS3StorageProperties(BUCKET));

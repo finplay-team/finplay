@@ -59,6 +59,8 @@ public class S3FileStorageService implements FileStorageService {
 			return new S3ObjectResource(response, response.response().contentLength());
 		} catch (NoSuchKeyException e) {
 			throw new BusinessException(ErrorCode.NOT_FOUND);
+		} catch (S3Exception e) {
+			throw new BusinessException(ErrorCode.INTERNAL_ERROR, "이미지 조회에 실패했습니다.");
 		}
 	}
 
