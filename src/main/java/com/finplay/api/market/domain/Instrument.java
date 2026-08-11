@@ -44,6 +44,9 @@ public class Instrument {
 	@Column(nullable = false)
 	private boolean tradable;
 
+	@Column(name = "is_tutorial_sample", nullable = false)
+	private boolean tutorialSample;
+
 	@Column(name = "created_at", nullable = false)
 	private LocalDateTime createdAt;
 
@@ -54,6 +57,7 @@ public class Instrument {
 		BigDecimal tickSize,
 		long minOrderAmount,
 		boolean tradable,
+		boolean tutorialSample,
 		LocalDateTime createdAt) {
 		this.market = market;
 		this.symbol = symbol;
@@ -61,6 +65,7 @@ public class Instrument {
 		this.tickSize = tickSize;
 		this.minOrderAmount = minOrderAmount;
 		this.tradable = tradable;
+		this.tutorialSample = tutorialSample;
 		this.createdAt = createdAt;
 	}
 
@@ -72,6 +77,6 @@ public class Instrument {
 		long minOrderAmount,
 		boolean tradable,
 		LocalDateTime now) {
-		return new Instrument(market, symbol, name, tickSize, minOrderAmount, tradable, now);
+		return new Instrument(market, symbol, name, tickSize, minOrderAmount, tradable, false, now);
 	}
 }

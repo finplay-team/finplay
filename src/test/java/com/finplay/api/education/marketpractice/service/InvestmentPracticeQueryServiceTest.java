@@ -23,7 +23,9 @@ import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.portfolio.domain.Holding;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -42,10 +44,11 @@ class InvestmentPracticeQueryServiceTest {
 		PracticeMarketObservationRepository.class);
 	private final PracticeCompletionRepository practiceCompletionRepository = mock(
 		PracticeCompletionRepository.class);
+	private final Clock clock = Clock.fixed(NOW.atZone(ZoneId.systemDefault()).toInstant(), ZoneId.systemDefault());
 
 	private final InvestmentPracticeQueryService service = new InvestmentPracticeQueryService(
 		favoriteService, chainResolutionService, referencePriceCalculator, practiceMarketObservationRepository,
-		practiceCompletionRepository);
+		practiceCompletionRepository, clock);
 
 	@Test
 	void getProgressReturnsCompletedWithSharedEvidenceAcrossAllThreeStepsWhenCompletionExists() {
@@ -274,17 +277,180 @@ class InvestmentPracticeQueryServiceTest {
 		assertThat(step3.locked()).isTrue();
 	}
 
+	// (a) 샘플 종목 chain이 매도·복기까지 모두 완료되면 steps가 4개이고 4번째가 COMPLETED다(SANDBOX-005).
+	@Test
+	void getProgressReturnsFourStepsWithCompletedStepFourWhenSampleInstrumentChainFullyCompleted() {
+		Holding holding = holding(40L, 100L, true);
+		PracticeMarketReflection reflection = reflection(50L, holding, NOW.minusMinutes(1));
+		PracticeCompletion completion = completion(reflection, NOW);
+		when(practiceCompletionRepository.findByUserIdAndTutorialKey(USER_ID, PracticeIntentionService.TUTORIAL_KEY))
+			.thenReturn(Optional.of(completion));
+
+		LocalDateTime buyExecutedAt = NOW.minusMinutes(10);
+		LocalDateTime sellExecutedAt = NOW.minusMinutes(6);
+		ResolvedPracticeChainDto chain = sampleChainDto(10L, NOW.minusDays(3), 20L, NOW.minusDays(2), 30L,
+			buyExecutedAt, 40L, 35L, sellExecutedAt);
+		when(chainResolutionService.resolveForInstrument(USER_ID, PracticeIntentionService.TUTORIAL_KEY, 100L))
+			.thenReturn(Optional.of(chain));
+
+		PracticeMarketObservation qualifying = observation(60L, PracticeEvidenceType.CLOSER_TO_BOUNDARY,
+			NOW.minusMinutes(9));
+		when(practiceMarketObservationRepository.findByUserIdAndHoldingIdOrderByObservedAtAscIdAsc(USER_ID, 40L))
+			.thenReturn(List.of(qualifying));
+
+		InvestmentPracticeResponse response = service.getProgress(USER_ID, Market.STOCK);
+
+		assertThat(response.status()).isEqualTo("COMPLETED");
+		assertThat(response.steps()).hasSize(4);
+		for (PracticeStepResponse step : response.steps()) {
+			assertThat(step.status()).isEqualTo("COMPLETED");
+		}
+		PracticeStepResponse step4 = response.steps().get(3);
+		assertThat(step4.evidence().sellTradeId()).isEqualTo(35L);
+		assertThat(step4.evidence().sellTradeExecutedAt()).isEqualTo(sellExecutedAt);
+		// (f) saleDeadlineAt은 buyTrade.executedAt + 5분과 정확히 일치해야 한다.
+		assertThat(step4.evidence().saleDeadlineAt()).isEqualTo(buyExecutedAt.plusMinutes(5));
+	}
+
+	// (b) 샘플 종목 chain에서 매수만 하고 매도 전, 아직 5분 이내면 steps가 4개이고 4번째는 대기 상태다
+	// (SANDBOX-005·007). 구현은 이 대기 상태를 STATUS_AWAITING_SALE로 표현한다(locked=false) — NOT_STARTED를
+	// 재사용하면 이 API의 다른 모든 NOT_STARTED가 locked=true와 짝을 이루는 관례와 충돌해 별도 값을 신설했다.
+	@Test
+	void getProgressReturnsFourStepsWithWaitingStepFourWhenSampleChainBoughtButNotSoldWithinFiveMinutes() {
+		when(practiceCompletionRepository.findByUserIdAndTutorialKey(USER_ID, PracticeIntentionService.TUTORIAL_KEY))
+			.thenReturn(Optional.empty());
+
+		LocalDateTime buyExecutedAt = NOW.minusMinutes(2);
+		ResolvedPracticeChainDto chain = sampleChainDto(10L, NOW.minusDays(3), 20L, NOW.minusDays(2), 30L,
+			buyExecutedAt, 40L, null, null);
+		when(chainResolutionService.resolve(USER_ID, PracticeIntentionService.TUTORIAL_KEY))
+			.thenReturn(Optional.of(chain));
+		when(referencePriceCalculator.calculate(chain)).thenReturn(Optional.empty());
+		when(practiceMarketObservationRepository.findByUserIdAndHoldingIdOrderByObservedAtAscIdAsc(USER_ID, 40L))
+			.thenReturn(List.of());
+
+		InvestmentPracticeResponse response = service.getProgress(USER_ID, Market.STOCK);
+
+		assertThat(response.status()).isEqualTo("IN_PROGRESS");
+		assertThat(response.currentStep()).isEqualTo(4);
+		assertThat(response.steps()).hasSize(4);
+		PracticeStepResponse step4 = response.steps().get(3);
+		assertThat(step4.status()).isEqualTo("AWAITING_SALE");
+		assertThat(step4.locked()).isFalse();
+		assertThat(step4.evidence().sellTradeId()).isNull();
+		// (f) saleDeadlineAt은 buyTrade.executedAt + 5분과 정확히 일치해야 한다.
+		assertThat(step4.evidence().saleDeadlineAt()).isEqualTo(buyExecutedAt.plusMinutes(5));
+	}
+
+	// (c) 매도 없이 5분을 초과하면 4번째가 EXPIRED다(SANDBOX-007).
+	@Test
+	void getProgressReturnsExpiredStepFourWhenSampleChainNotSoldPastFiveMinuteDeadline() {
+		when(practiceCompletionRepository.findByUserIdAndTutorialKey(USER_ID, PracticeIntentionService.TUTORIAL_KEY))
+			.thenReturn(Optional.empty());
+
+		LocalDateTime buyExecutedAt = NOW.minusMinutes(6);
+		ResolvedPracticeChainDto chain = sampleChainDto(10L, NOW.minusDays(3), 20L, NOW.minusDays(2), 30L,
+			buyExecutedAt, 40L, null, null);
+		when(chainResolutionService.resolve(USER_ID, PracticeIntentionService.TUTORIAL_KEY))
+			.thenReturn(Optional.of(chain));
+		when(referencePriceCalculator.calculate(chain)).thenReturn(Optional.empty());
+		when(practiceMarketObservationRepository.findByUserIdAndHoldingIdOrderByObservedAtAscIdAsc(USER_ID, 40L))
+			.thenReturn(List.of());
+
+		InvestmentPracticeResponse response = service.getProgress(USER_ID, Market.STOCK);
+
+		PracticeStepResponse step4 = response.steps().get(3);
+		assertThat(step4.status()).isEqualTo("EXPIRED");
+		assertThat(step4.evidence().saleDeadlineAt()).isEqualTo(buyExecutedAt.plusMinutes(5));
+	}
+
+	// (d) 매도했지만 그 체결이 5분 초과 후라면 4번째가 EXPIRED다(SANDBOX-007 "매도 executedAt이 buyTrade.executedAt
+	// + 5분 초과").
+	@Test
+	void getProgressReturnsExpiredStepFourWhenSampleChainSoldAfterFiveMinuteDeadline() {
+		when(practiceCompletionRepository.findByUserIdAndTutorialKey(USER_ID, PracticeIntentionService.TUTORIAL_KEY))
+			.thenReturn(Optional.empty());
+
+		LocalDateTime buyExecutedAt = NOW.minusMinutes(10);
+		LocalDateTime lateSellExecutedAt = NOW.minusMinutes(4);
+		ResolvedPracticeChainDto chain = sampleChainDto(10L, NOW.minusDays(3), 20L, NOW.minusDays(2), 30L,
+			buyExecutedAt, 40L, 35L, lateSellExecutedAt);
+		when(chainResolutionService.resolve(USER_ID, PracticeIntentionService.TUTORIAL_KEY))
+			.thenReturn(Optional.of(chain));
+		when(referencePriceCalculator.calculate(chain)).thenReturn(Optional.empty());
+		when(practiceMarketObservationRepository.findByUserIdAndHoldingIdOrderByObservedAtAscIdAsc(USER_ID, 40L))
+			.thenReturn(List.of());
+
+		InvestmentPracticeResponse response = service.getProgress(USER_ID, Market.STOCK);
+
+		PracticeStepResponse step4 = response.steps().get(3);
+		assertThat(step4.status()).isEqualTo("EXPIRED");
+		assertThat(step4.evidence().sellTradeId()).isEqualTo(35L);
+		assertThat(step4.evidence().sellTradeExecutedAt()).isEqualTo(lateSellExecutedAt);
+	}
+
+	// (e) 실제 종목 chain은 완료 여부와 무관하게 steps가 항상 3개다(SANDBOX-005 "실제 종목 chain은 026의 3단계
+	// 응답을 그대로 유지한다").
+	@Test
+	void getProgressAlwaysReturnsThreeStepsForRealInstrumentChainRegardlessOfCompletion() {
+		// 완료된 실제 종목 chain.
+		Holding completedHolding = holding(41L, 101L, false);
+		PracticeMarketReflection completedReflection = reflection(51L, completedHolding, NOW.minusMinutes(1));
+		PracticeCompletion completion = completion(completedReflection, NOW);
+		when(practiceCompletionRepository.findByUserIdAndTutorialKey(USER_ID, PracticeIntentionService.TUTORIAL_KEY))
+			.thenReturn(Optional.of(completion));
+		when(chainResolutionService.resolveForInstrument(USER_ID, PracticeIntentionService.TUTORIAL_KEY, 101L))
+			.thenReturn(Optional.empty());
+		when(practiceMarketObservationRepository.findByUserIdAndHoldingIdOrderByObservedAtAscIdAsc(USER_ID, 41L))
+			.thenReturn(List.of());
+
+		InvestmentPracticeResponse completedResponse = service.getProgress(USER_ID, Market.STOCK);
+		assertThat(completedResponse.steps()).hasSize(3);
+
+		// 완료되지 않은(진행 중) 실제 종목 chain.
+		when(practiceCompletionRepository.findByUserIdAndTutorialKey(USER_ID,
+			PracticeIntentionService.COIN_TUTORIAL_KEY))
+			.thenReturn(Optional.empty());
+		ResolvedPracticeChainDto chain = chainDto(11L, NOW.minusDays(3), 21L, NOW.minusDays(2), 31L,
+			NOW.minusDays(1), 42L);
+		when(chainResolutionService.resolve(USER_ID, PracticeIntentionService.COIN_TUTORIAL_KEY))
+			.thenReturn(Optional.of(chain));
+		when(referencePriceCalculator.calculate(chain)).thenReturn(Optional.empty());
+		when(practiceMarketObservationRepository.findByUserIdAndHoldingIdOrderByObservedAtAscIdAsc(USER_ID, 42L))
+			.thenReturn(List.of());
+
+		InvestmentPracticeResponse inProgressResponse = service.getProgress(USER_ID, Market.CRYPTO);
+		assertThat(inProgressResponse.steps()).hasSize(3);
+	}
+
 	private static ResolvedPracticeChainDto chainDto(
 		Long favoriteId, LocalDateTime favoriteCreatedAt, Long intentionId, LocalDateTime intentionCreatedAt,
 		Long buyTradeId, LocalDateTime buyTradeExecutedAt, Long holdingId) {
 		return new ResolvedPracticeChainDto(
 			favoriteId, favoriteCreatedAt, intentionId, intentionCreatedAt, new BigDecimal("90"),
-			new BigDecimal("110"), buyTradeId, buyTradeExecutedAt, new BigDecimal("100"), holdingId);
+			new BigDecimal("110"), buyTradeId, buyTradeExecutedAt, new BigDecimal("100"), holdingId, null, null, false);
+	}
+
+	// 샘플 종목 chain(4단계) 전용 — sellTradeId/sellTradeExecutedAt·instrumentIsTutorialSample=true를 채운다
+	// (이슈 #339 tasks.md 4번).
+	private static ResolvedPracticeChainDto sampleChainDto(
+		Long favoriteId, LocalDateTime favoriteCreatedAt, Long intentionId, LocalDateTime intentionCreatedAt,
+		Long buyTradeId, LocalDateTime buyTradeExecutedAt, Long holdingId, Long sellTradeId,
+		LocalDateTime sellTradeExecutedAt) {
+		return new ResolvedPracticeChainDto(
+			favoriteId, favoriteCreatedAt, intentionId, intentionCreatedAt, new BigDecimal("90"),
+			new BigDecimal("110"), buyTradeId, buyTradeExecutedAt, new BigDecimal("100"), holdingId, sellTradeId,
+			sellTradeExecutedAt, true);
 	}
 
 	private static Holding holding(Long holdingId, Long instrumentId) {
+		return holding(holdingId, instrumentId, false);
+	}
+
+	private static Holding holding(Long holdingId, Long instrumentId, boolean isTutorialSample) {
 		Instrument instrument = Instrument.create(Market.STOCK, "005930", "삼성전자", new BigDecimal("100"), 0L, true, NOW);
 		ReflectionTestUtils.setField(instrument, "id", instrumentId);
+		ReflectionTestUtils.setField(instrument, "tutorialSample", isTutorialSample);
 		Account account = Account.create(
 			User.create("trader@finplay.com", "password-hash", "trader", NOW),
 			com.finplay.api.account.domain.Market.STOCK, NOW);

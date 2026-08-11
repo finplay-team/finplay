@@ -11,7 +11,7 @@ class ErrorCodeTest {
 
 	@Test
 	void declaresEveryErrorCodeFromPrdAndOAuthSpecWithoutUnlistedOnes() {
-		assertThat(ErrorCode.values()).hasSize(36);
+		assertThat(ErrorCode.values()).hasSize(37);
 	}
 
 	@Test
@@ -32,6 +32,7 @@ class ErrorCodeTest {
 			Map.entry(ErrorCode.PRACTICE_STEP_LOCKED, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.PRACTICE_ALREADY_COMPLETED, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.PRACTICE_EVIDENCE_MISSING, HttpStatus.CONFLICT),
+			Map.entry(ErrorCode.PRACTICE_SANDBOX_TIME_EXPIRED, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.INSTRUMENT_NOT_TRADABLE, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.EMAIL_VERIFICATION_REQUIRED, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.ACCOUNT_LINK_REQUIRED, HttpStatus.CONFLICT),
@@ -91,6 +92,8 @@ class ErrorCodeTest {
 			.isEqualTo("이미 완료한 실습입니다.");
 		assertThat(ErrorCode.PRACTICE_EVIDENCE_MISSING.getDefaultMessage())
 			.isEqualTo("실습 진행에 필요한 증거를 확인할 수 없습니다.");
+		assertThat(ErrorCode.PRACTICE_SANDBOX_TIME_EXPIRED.getDefaultMessage())
+			.isEqualTo("실습 매수 후 5분이 지나 이 시도는 만료됐습니다. 다시 매수해 주세요.");
 		assertThat(ErrorCode.PRACTICE_PRICE_SESSION_ALREADY_ACTIVE.getDefaultMessage())
 			.isEqualTo("이미 진행 중인 가상 가격 세션이 있습니다.");
 		assertThat(ErrorCode.PRACTICE_PRICE_SESSION_CLOSED.getDefaultMessage())

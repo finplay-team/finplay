@@ -6,6 +6,8 @@
 >
 > **코인 지정가 실행·관찰 가격원 확장:** `docs/specs/030-coin-practice-price-runtime`은 이 완료 chain을 바꾸지 않고, 교육 가격 세션에 귀속된 코인 지정가 trade/holding의 가격원만 부분 대체한다. 관찰은 order에서 세션을 역추적하며, 세션 없는 시장가·기존 지정가 holding은 이 문서의 기존 서버 유효 현재가 경로를 유지한다.
 >
+> **샘플 종목(4단계 매도·복기) 확장의 정본은 `031-tutorial-sandbox-instruments`다.** 이 spec의 3단계 완료 chain·evidence A/B 판정은 실제 종목 chain에서 변경 없이 그대로 유지되며, 튜토리얼 전용 샘플 종목(`is_tutorial_sample=true`) chain에서만 4단계(매도·복기)·5분 만료가 추가된다.
+>
 > **이슈 #313의 남은 2차 MVP 통합 검증 범위는 코인 지정가 전체 흐름과 실제 Spring Context 재생성뿐이다.** 주식 시장가 전체 흐름 통합 검증은 3차 MVP로 이관하며, 이 spec의 이미 구현된 주식 기능 계약을 변경하지 않는다.
 >
 > **번호 확정 경위**: 작업 지시 시점에는 024를 쓰기로 했으나, 착수 전 `git ls-tree origin/dev docs/specs/`로 재확인한 결과 origin/dev에 이미 `024-feedback-query-cache`·`025-review-gate-auto-fix`가 존재해 026으로 올렸다. `022-community-enhancement`/`027-crypto-tick-candle-cache`, `023-watchlist` 모두 origin/dev에 이미 존재한다(로컬 미커밋 추측은 틀렸다 — 실제로는 이미 머지돼 있었다).

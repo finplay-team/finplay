@@ -19,6 +19,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class InstrumentServiceTest {
 
@@ -133,6 +134,24 @@ class InstrumentServiceTest {
 		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
 		Instrument instrument = Instrument.create(
 			Market.STOCK, "005930", "삼성전자", BigDecimal.valueOf(100), 70000L, false, LocalDateTime.now());
+		when(instrumentRepository.findById(1L)).thenReturn(Optional.of(instrument));
+		InstrumentService instrumentService = new InstrumentService(instrumentRepository);
+
+		assertThatThrownBy(() -> instrumentService.getTradableInstrumentEntity(1L))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode()).isEqualTo(ErrorCode.VALIDATION_ERROR));
+		verify(instrumentRepository).findById(1L);
+		verifyNoMoreInteractions(instrumentRepository);
+	}
+
+	// 회귀: 커뮤니티 종목 태그(COM-004)는 tradable=true인 튜토리얼 샘플 종목도 거부해야 한다(spec 031
+	// SANDBOX-001). tradable=true만으로는 태그를 허용하면 안 되고 isTutorialSample도 함께 봐야 한다.
+	@Test
+	void getTradableInstrumentEntityThrowsValidationErrorWhenInstrumentIsTutorialSampleEvenIfTradable() {
+		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
+		Instrument instrument = Instrument.create(
+			Market.STOCK, "SANDBOX_STK_1", "연습용 주식 A", BigDecimal.valueOf(100), 10000L, true, LocalDateTime.now());
+		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
 		when(instrumentRepository.findById(1L)).thenReturn(Optional.of(instrument));
 		InstrumentService instrumentService = new InstrumentService(instrumentRepository);
 

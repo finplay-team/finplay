@@ -43,7 +43,7 @@ class CryptoCandleAndPriceIndependenceTest {
 			new CryptoCandleDto(NOW, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE)));
 
 		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
-			priceStore);
+			priceStore, mock(TutorialSampleInstrumentPriceService.class));
 		CandleQueryService candleQueryService = new CandleQueryService(instrumentRepository, stockPriceProvider,
 			cryptoCandleProvider);
 
@@ -73,7 +73,7 @@ class CryptoCandleAndPriceIndependenceTest {
 			.thenThrow(new BusinessException(ErrorCode.MARKET_DATA_PROVIDER_ERROR));
 
 		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
-			priceStore);
+			priceStore, mock(TutorialSampleInstrumentPriceService.class));
 		CandleQueryService candleQueryService = new CandleQueryService(instrumentRepository, stockPriceProvider,
 			cryptoCandleProvider);
 

@@ -149,6 +149,11 @@ price = (basePrice * (1 + rate)) 을 scale 8 HALF_UP으로 반올림
   기록한 nullable FK 규칙과 같은 모양이다(주식도 이 한 가지 경우에서는 null이 된다. 기존 실제 주식
   체결의 "STOCK ⇒ non-null" 불변식은 **실제 종목에만** 성립하도록 범위를 명확히 한다 — 이 nullable
   컬럼은 이미 nullable로 정의돼 있으므로 스키마 변경은 필요 없다).
+- **버그 발견·수정(이슈 #339, tasks.md 6번 통합 테스트 작성 중 발견)**: 위 정정이 `PriceQueryService`에는
+  반영됐지만 `Trade.validateStockReplaySession`(엔티티 불변식 검사)에는 반영되지 않아, STOCK 샘플 종목
+  매수/매도가 전부 `IllegalArgumentException("주식 체결에는 재생세션이 필수입니다.")`으로 실패했다.
+  `instrument.isTutorialSample()`이면 STOCK이어도 `stockReplaySession == null`을 허용하도록 조건을 좁혀
+  수정했다 — 실제 종목(`isTutorialSample() == false`)의 기존 동작(`026`)은 그대로 유지된다.
 
 ## 3. 매도 단계 API 설계
 
@@ -216,6 +221,17 @@ price = (basePrice * (1 + rate)) 을 scale 8 HALF_UP으로 반올림
 
 새 `ErrorCode.PRACTICE_SANDBOX_TIME_EXPIRED(HttpStatus.CONFLICT, "실습 매수 후 5분이 지나 이 시도는
 만료됐습니다. 다시 매수해 주세요.")`를 추가한다.
+
+### 재도전을 위한 buyTrade 선택 정정 (이슈 #339 tasks.md 6번 진행 중 발견)
+
+`MarketPracticeChainResolutionService.resolveForFavorite`가 항상 `TradeService.
+findEarliestFilledBuyTradeMatching`(가장 이른 매수)으로 chain의 buyTrade를 고정하면, 샘플 종목 chain이 한 번
+5분 만료된 뒤 같은 종목을 다시 매수해도 anchor가 최초의 만료된 매수에 고정돼 재도전이 불가능하다(SANDBOX-007
+위반). **샘플 종목 chain에 한정해서만** 신규 `TradeService.findLatestFilledBuyTradeMatching`(같은 조회·정렬,
+마지막 매칭 항목 선택)을 쓰도록 수정한다. `MarketPracticeChainResolutionService`가 `InstrumentService`를
+주입받아 `favorite.instrumentId()`의 `isTutorialSample()`로 분기한다. 실제 종목 chain은 `026`의 anti-gaming
+근거(가장 이른 체결 고정, `TradeServiceTest.
+findEarliestFilledBuyTradeMatchingPicksFirstQuantityMatchInRepositoryOrder`가 고정한 계약)를 그대로 유지한다.
 
 ## 4. 5분 타이머 — 서버 강제 여부와 anchor
 

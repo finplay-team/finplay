@@ -162,7 +162,7 @@ class InstrumentControllerTest {
 	void getInstrumentsResponseExposesOnlyDtoFieldsNotEntityInternals() throws Exception {
 		authenticate();
 		when(instrumentService.getInstruments(null)).thenReturn(List.of(
-			new InstrumentResponse(1L, "STOCK", "005930", "삼성전자", BigDecimal.valueOf(100), 70000L, true)));
+			new InstrumentResponse(1L, "STOCK", "005930", "삼성전자", BigDecimal.valueOf(100), 70000L, true, false)));
 
 		mockMvc.perform(authorized(get("/api/instruments")))
 			.andExpect(status().isOk())
@@ -178,10 +178,30 @@ class InstrumentControllerTest {
 	}
 
 	@Test
+	void getInstrumentsResponseExposesIsTutorialSampleFieldForSampleInstruments() throws Exception {
+		authenticate();
+		when(instrumentService.getInstruments(Market.STOCK)).thenReturn(List.of(
+			new InstrumentResponse(101L, "STOCK", "SANDBOX_STK_1", "연습용 주식 A",
+				BigDecimal.valueOf(100), 10000L, true, true),
+			new InstrumentResponse(102L, "STOCK", "SANDBOX_STK_2", "연습용 주식 B",
+				BigDecimal.valueOf(100), 10000L, false, true)));
+
+		mockMvc.perform(authorized(get("/api/instruments")).param("market", "STOCK"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.length()").value(2))
+			.andExpect(jsonPath("$[0].isTutorialSample").value(true))
+			.andExpect(jsonPath("$[0].tradable").value(true))
+			.andExpect(jsonPath("$[1].isTutorialSample").value(true))
+			.andExpect(jsonPath("$[1].tradable").value(false));
+
+		verify(instrumentService).getInstruments(Market.STOCK);
+	}
+
+	@Test
 	void getInstrumentReturnsStockInstrumentWithFullContractWhenFound() throws Exception {
 		authenticate();
 		when(instrumentService.getInstrument(1L)).thenReturn(
-			new InstrumentResponse(1L, "STOCK", "005930", "삼성전자", BigDecimal.valueOf(100), 70000L, true));
+			new InstrumentResponse(1L, "STOCK", "005930", "삼성전자", BigDecimal.valueOf(100), 70000L, true, false));
 
 		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}", 1L)))
 			.andExpect(status().isOk())
@@ -200,7 +220,7 @@ class InstrumentControllerTest {
 	void getInstrumentReturnsCryptoInstrumentWithFullContractWhenFound() throws Exception {
 		authenticate();
 		when(instrumentService.getInstrument(17L)).thenReturn(
-			new InstrumentResponse(17L, "CRYPTO", "BTC", "비트코인", BigDecimal.valueOf(1000), 5000L, true));
+			new InstrumentResponse(17L, "CRYPTO", "BTC", "비트코인", BigDecimal.valueOf(1000), 5000L, true, false));
 
 		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}", 17L)))
 			.andExpect(status().isOk())
@@ -638,7 +658,8 @@ class InstrumentControllerTest {
 				"종목" + (i + 1),
 				BigDecimal.valueOf(100),
 				70000L,
-				true))
+				true,
+				false))
 			.toList();
 	}
 }

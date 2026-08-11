@@ -95,4 +95,31 @@ public class TradeService {
 	public Optional<Long> findPracticePriceSessionId(Long buyTradeId) {
 		return tradeRepository.findPracticePriceSessionIdByTradeId(buyTradeId);
 	}
+
+	// 031-tutorial-sandbox-instruments 매도 chain 해석용 — findEarliestFilledBuyTradeMatching과 대칭이다.
+	// buyTrade.executedAt 이후 체결된 본인 SELL 체결 중 executedAt ASC, tradeId ASC로 가장 이른 것 1건을
+	// 고른다. 수량 일치는 요구하지 않는다(holding 전량이 아니라 일부만 팔아도 매도 실행 사실은 성립).
+	@Transactional(readOnly = true)
+	public Optional<Trade> findEarliestFilledSellTradeAfter(Long userId, Long instrumentId, LocalDateTime after) {
+		return tradeRepository
+			.findByAccount_User_IdAndInstrument_IdAndSideAndExecutedAtAfterOrderByExecutedAtAscIdAsc(
+				userId, instrumentId, OrderSide.SELL, after)
+			.stream()
+			.findFirst();
+	}
+
+	// 이슈 #339 통합 테스트 중 발견한 회귀 수정 — 샘플 종목 chain 재도전용. findEarliestFilledBuyTradeMatching과
+	// 같은 정렬(executedAt ASC, tradeId ASC) 조회 결과에서 마지막(가장 최신) 수량 일치 체결을 고른다. 실제 종목
+	// chain의 anti-gaming 규칙(가장 이른 체결 고정, 026)은 이 메서드를 쓰지 않으므로 그대로 유지된다 — 호출부
+	// (MarketPracticeChainResolutionService)가 isTutorialSample()로 분기한다.
+	@Transactional(readOnly = true)
+	public Optional<Trade> findLatestFilledBuyTradeMatching(
+		Long userId, Long instrumentId, BigDecimal quantity, LocalDateTime after) {
+		return tradeRepository
+			.findByAccount_User_IdAndInstrument_IdAndSideAndExecutedAtAfterOrderByExecutedAtAscIdAsc(
+				userId, instrumentId, OrderSide.BUY, after)
+			.stream()
+			.filter(trade -> trade.getQuantity().compareTo(quantity) == 0)
+			.reduce((first, second) -> second);
+	}
 }

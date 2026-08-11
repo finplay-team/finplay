@@ -212,6 +212,19 @@ class OrderExecutionServiceTest {
 	}
 
 	@Test
+	void createOrderThrowsInstrumentNotTradableWhenInstrumentIsNotTradable() {
+		// 이슈 #339 PR #341 리뷰 차단사항 — 031이 tradable=false 종목을 처음 만들면서 이 경로의 검증
+		// 빈틈이 실제로 열렸다(즐겨찾기는 이미 막혀 있었으나 일반 주문 경로는 검증이 없었음).
+		Instrument instrument = Instrument.create(
+			Market.STOCK, "005930", "삼성전자", new BigDecimal("100"), 0L, false, NOW);
+		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
+		OrderCreateRequest request = buyRequest(Market.STOCK, instrument.getId(), "1");
+
+		assertBusinessExceptionAndNoSideEffects(request, ErrorCode.INSTRUMENT_NOT_TRADABLE);
+		verifyNoInteractions(priceQueryService, accountService);
+	}
+
+	@Test
 	void createOrderThrowsMarketClosedWhenStockMarketIsClosed() {
 		Instrument instrument = stockInstrument();
 		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);

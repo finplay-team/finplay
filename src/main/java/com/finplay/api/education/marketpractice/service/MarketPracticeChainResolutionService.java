@@ -9,7 +9,9 @@ import com.finplay.api.education.repository.PracticeIntentionRepository;
 import com.finplay.api.education.service.PracticeIntentionService;
 import com.finplay.api.favorite.dto.response.FavoriteResponse;
 import com.finplay.api.favorite.service.FavoriteService;
+import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.service.InstrumentService;
 import com.finplay.api.order.domain.Trade;
 import com.finplay.api.order.service.TradeService;
 import com.finplay.api.portfolio.service.HoldingService;
@@ -39,6 +41,7 @@ public class MarketPracticeChainResolutionService {
 	private final TradeService tradeService;
 	private final HoldingService holdingService;
 	private final PracticeMarketObservationRepository practiceMarketObservationRepository;
+	private final InstrumentService instrumentService;
 
 	/**
 	 * {@code tutorialKey}({@link PracticeIntentionService#TUTORIAL_KEY}/{@link
@@ -107,8 +110,15 @@ public class MarketPracticeChainResolutionService {
 		}
 		PracticeIntention intention = earliestIntention.get();
 
-		Optional<Trade> buyTrade = tradeService.findEarliestFilledBuyTradeMatching(
-			userId, favorite.instrumentId(), intention.quantity(), intention.createdAt());
+		// 이슈 #339 통합 테스트 중 발견한 회귀 수정 — 샘플 종목 chain은 만료 후 재도전이 가능해야 하므로(spec.md
+		// SANDBOX-007) 가장 최신 매수 체결을 anchor로 쓴다. 실제 종목 chain은 026의 anti-gaming 규칙(가장 이른
+		// 체결 고정, TradeServiceTest 회귀 계약)을 그대로 유지한다.
+		Instrument instrument = instrumentService.getInstrumentEntity(favorite.instrumentId());
+		Optional<Trade> buyTrade = instrument.isTutorialSample()
+			? tradeService.findLatestFilledBuyTradeMatching(
+				userId, favorite.instrumentId(), intention.quantity(), intention.createdAt())
+			: tradeService.findEarliestFilledBuyTradeMatching(
+				userId, favorite.instrumentId(), intention.quantity(), intention.createdAt());
 		if (buyTrade.isEmpty()) {
 			return Optional.empty();
 		}
@@ -120,6 +130,9 @@ public class MarketPracticeChainResolutionService {
 			return Optional.empty();
 		}
 
+		Optional<Trade> sellTrade = tradeService.findEarliestFilledSellTradeAfter(
+			userId, favorite.instrumentId(), trade.getExecutedAt());
+
 		return Optional.of(new ResolvedPracticeChainDto(
 			favorite.favoriteId(),
 			favorite.createdAt(),
@@ -130,7 +143,10 @@ public class MarketPracticeChainResolutionService {
 			trade.getId(),
 			trade.getExecutedAt(),
 			trade.getPrice(),
-			holdingId.get()));
+			holdingId.get(),
+			sellTrade.map(Trade::getId).orElse(null),
+			sellTrade.map(Trade::getExecutedAt).orElse(null),
+			trade.getInstrument().isTutorialSample()));
 	}
 
 	private Market resolveTargetMarket(String tutorialKey) {

@@ -11,7 +11,8 @@ public record InstrumentResponse(
 	String name,
 	BigDecimal tickSize,
 	Long minOrderAmount,
-	Boolean tradable) {
+	Boolean tradable,
+	Boolean isTutorialSample) {
 
 	public static InstrumentResponse from(Instrument instrument) {
 		return new InstrumentResponse(
@@ -21,6 +22,7 @@ public record InstrumentResponse(
 			instrument.getName(),
 			instrument.getTickSize(),
 			instrument.getMinOrderAmount(),
-			instrument.isTradable());
+			instrument.isTradable(),
+			instrument.isTutorialSample());
 	}
 }

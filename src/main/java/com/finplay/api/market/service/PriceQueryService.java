@@ -8,6 +8,7 @@ import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.repository.InstrumentRepository;
 import com.finplay.api.market.store.CryptoPriceDto;
 import com.finplay.api.market.store.PriceStore;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +22,7 @@ public class PriceQueryService {
 	private final InstrumentRepository instrumentRepository;
 	private final StockPriceProvider stockPriceProvider;
 	private final PriceStore priceStore;
+	private final TutorialSampleInstrumentPriceService tutorialSampleInstrumentPriceService;
 
 	// 가격이 없으면 PRICE_UNAVAILABLE 예외를 던진다 — 가격 API의 409 계약 (이슈 #16 확정, 동작 변경 없음). getPriceQuote를 감싸 판정 로직을 중복하지 않는다.
 	@Transactional(readOnly = true)
@@ -31,6 +33,10 @@ public class PriceQueryService {
 	// 주문 체결 전용 — 주식의 주문 가능 상태·가격·재생세션을 공급자의 같은 관측 결과로 확정한다.
 	@Transactional(readOnly = true)
 	public OrderExecutionPriceDto getOrderExecutionPrice(Instrument instrument) {
+		// 샘플 종목은 실제 시세 인프라(stockPriceProvider·재생세션)를 완전히 우회한다 — 항상 AVAILABLE·OPEN, replaySession=null (SANDBOX-003)
+		if (instrument.isTutorialSample()) {
+			return new OrderExecutionPriceDto(tutorialSampleInstrumentPriceService.getPriceQuote(instrument), null);
+		}
 		if (instrument.getMarket() == Market.CRYPTO) {
 			return new OrderExecutionPriceDto(requireAvailable(getCryptoPriceQuote(instrument)), null);
 		}
@@ -61,6 +67,9 @@ public class PriceQueryService {
 
 	@Transactional(readOnly = true)
 	public PriceQuoteDto getPriceQuote(Instrument instrument) {
+		if (instrument.isTutorialSample()) {
+			return tutorialSampleInstrumentPriceService.getPriceQuote(instrument);
+		}
 		return instrument.getMarket() == Market.STOCK ? getStockPriceQuote(instrument)
 			: getCryptoPriceQuote(instrument);
 	}
@@ -74,11 +83,26 @@ public class PriceQueryService {
 		if (instruments.isEmpty()) {
 			return List.of();
 		}
-		Market market = instruments.get(0).getMarket();
-		if (instruments.stream().anyMatch(instrument -> instrument.getMarket() != market)) {
-			throw new IllegalArgumentException("getPriceQuotes는 서로 다른 market이 섞인 종목 목록을 받을 수 없습니다.");
+		// 샘플 종목은 분할해 개별 처리하고, market 혼재 방어 검사는 실제 종목 부분집합에만 적용한 뒤 원래 순서로 병합한다
+		List<Instrument> realInstruments = instruments.stream().filter(instrument -> !instrument.isTutorialSample())
+			.toList();
+		Map<Instrument, PriceQuoteDto> realQuotesByInstrument = new IdentityHashMap<>();
+		if (!realInstruments.isEmpty()) {
+			Market market = realInstruments.get(0).getMarket();
+			if (realInstruments.stream().anyMatch(instrument -> instrument.getMarket() != market)) {
+				throw new IllegalArgumentException("getPriceQuotes는 서로 다른 market이 섞인 종목 목록을 받을 수 없습니다.");
+			}
+			List<PriceQuoteDto> realQuotes = market == Market.STOCK ? getStockPriceQuotes(realInstruments)
+				: getCryptoPriceQuotes(realInstruments);
+			for (int i = 0; i < realInstruments.size(); i++) {
+				realQuotesByInstrument.put(realInstruments.get(i), realQuotes.get(i));
+			}
 		}
-		return market == Market.STOCK ? getStockPriceQuotes(instruments) : getCryptoPriceQuotes(instruments);
+		return instruments.stream()
+			.map(instrument -> instrument.isTutorialSample()
+				? tutorialSampleInstrumentPriceService.getPriceQuote(instrument)
+				: realQuotesByInstrument.get(instrument))
+			.toList();
 	}
 
 	private List<PriceQuoteDto> getStockPriceQuotes(List<Instrument> instruments) {

@@ -31,11 +31,13 @@ class InstrumentRepositoryTest {
 	@Test
 	void seedDataContainsSixteenStocksAndTwelveCryptosTotalingTwentyEight() {
 		List<Instrument> all = repository.findAllByOrderByIdAsc();
+		List<Instrument> nonSamples = all.stream().filter(instrument -> !instrument.isTutorialSample()).toList();
 
-		assertThat(all).hasSize(28);
-		assertThat(all.stream().filter(instrument -> instrument.getMarket() == Market.STOCK).count())
+		assertThat(all).hasSize(34);
+		assertThat(nonSamples).hasSize(28);
+		assertThat(nonSamples.stream().filter(instrument -> instrument.getMarket() == Market.STOCK).count())
 			.isEqualTo(16);
-		assertThat(all.stream().filter(instrument -> instrument.getMarket() == Market.CRYPTO).count())
+		assertThat(nonSamples.stream().filter(instrument -> instrument.getMarket() == Market.CRYPTO).count())
 			.isEqualTo(12);
 	}
 
@@ -47,19 +49,21 @@ class InstrumentRepositoryTest {
 	}
 
 	@Test
-	void findByMarketOrderByIdAscReturnsOnlySixteenStockInstruments() {
+	void findByMarketOrderByIdAscReturnsNineteenStockInstrumentsIncludingThreeTutorialSamples() {
 		List<Instrument> stocks = repository.findByMarketOrderByIdAsc(Market.STOCK);
 
-		assertThat(stocks).hasSize(16);
+		assertThat(stocks).hasSize(19);
 		assertThat(stocks).allMatch(instrument -> instrument.getMarket() == Market.STOCK);
+		assertThat(stocks.stream().filter(Instrument::isTutorialSample).count()).isEqualTo(3);
 	}
 
 	@Test
-	void findByMarketOrderByIdAscReturnsOnlyTwelveCryptoInstruments() {
+	void findByMarketOrderByIdAscReturnsFifteenCryptoInstrumentsIncludingThreeTutorialSamples() {
 		List<Instrument> cryptos = repository.findByMarketOrderByIdAsc(Market.CRYPTO);
 
-		assertThat(cryptos).hasSize(12);
+		assertThat(cryptos).hasSize(15);
 		assertThat(cryptos).allMatch(instrument -> instrument.getMarket() == Market.CRYPTO);
+		assertThat(cryptos.stream().filter(Instrument::isTutorialSample).count()).isEqualTo(3);
 	}
 
 	@Test
@@ -72,7 +76,8 @@ class InstrumentRepositoryTest {
 
 		List<Instrument> tradableCryptos = repository.findByMarketAndTradableTrueOrderByIdAsc(Market.CRYPTO);
 
-		assertThat(tradableCryptos).hasSize(12);
+		// 실제 코인 12개(전부 tradable) + 샘플 코인 중 tradable=true인 SANDBOX_COIN_1 1개 = 13개.
+		assertThat(tradableCryptos).hasSize(13);
 		assertThat(tradableCryptos).extracting(Instrument::getSymbol).doesNotContain("DELISTED");
 	}
 
@@ -97,6 +102,33 @@ class InstrumentRepositoryTest {
 		var result = repository.findByMarketAndSymbol(Market.CRYPTO, "NO_SUCH_SYMBOL");
 
 		assertThat(result).isEmpty();
+	}
+
+	@Test
+	void v32MigrationSeedsSixTutorialSampleInstrumentsWithExactlyOneTradablePerMarket() {
+		List<Instrument> samples = repository.findAllByOrderByIdAsc().stream()
+			.filter(Instrument::isTutorialSample)
+			.toList();
+
+		assertThat(samples).hasSize(6);
+		assertThat(samples.stream().filter(instrument -> instrument.getMarket() == Market.STOCK).count())
+			.isEqualTo(3);
+		assertThat(samples.stream().filter(instrument -> instrument.getMarket() == Market.CRYPTO).count())
+			.isEqualTo(3);
+		assertThat(samples.stream()
+			.filter(instrument -> instrument.getMarket() == Market.STOCK)
+			.filter(Instrument::isTradable)
+			.count())
+			.isEqualTo(1);
+		assertThat(samples.stream()
+			.filter(instrument -> instrument.getMarket() == Market.CRYPTO)
+			.filter(Instrument::isTradable)
+			.count())
+			.isEqualTo(1);
+		assertThat(samples).extracting(Instrument::getSymbol)
+			.containsExactlyInAnyOrder(
+				"SANDBOX_STK_1", "SANDBOX_STK_2", "SANDBOX_STK_3",
+				"SANDBOX_COIN_1", "SANDBOX_COIN_2", "SANDBOX_COIN_3");
 	}
 
 	@Test

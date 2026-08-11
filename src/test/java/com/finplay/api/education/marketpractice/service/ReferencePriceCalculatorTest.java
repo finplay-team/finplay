@@ -48,7 +48,7 @@ class ReferencePriceCalculatorTest {
 	void calculateDelegatesToCalculateFromPriceUsingChainIntentionValues() {
 		ResolvedPracticeChainDto chain = new ResolvedPracticeChainDto(
 			1L, null, 2L, null, new BigDecimal("95"), new BigDecimal("105"), 3L, null,
-			new BigDecimal("100"), 4L);
+			new BigDecimal("100"), 4L, null, null, false);
 
 		Optional<ReferencePriceLines> result = calculator.calculate(chain);
 
