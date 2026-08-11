@@ -44,7 +44,7 @@ class PracticeLimitOrderServiceTest {
 		PracticePriceSession session = activeSession();
 		when(practicePriceSessionRepository.findByIdAndUserIdForUpdate(SESSION_ID, USER_ID))
 			.thenReturn(Optional.of(session));
-		LimitOrderResponse expected = mock(LimitOrderResponse.class);
+		LimitOrderResponse expected = sampleResponse();
 		when(practiceLimitOrderCreationService.createSessionBuyOrder(
 			USER_ID, SESSION_ID, INSTRUMENT_ID, new BigDecimal("0.1"), new BigDecimal("9500")))
 			.thenReturn(expected);
@@ -119,5 +119,11 @@ class PracticeLimitOrderServiceTest {
 		// 테스트 목적상 tick 1에서 바로 완료 처리한다 — complete()는 ACTIVE 상태만 요구하고 tick 값을 검증하지 않는다.
 		session.complete(NOW);
 		return session;
+	}
+
+	private LimitOrderResponse sampleResponse() {
+		return new LimitOrderResponse(
+			55L, "CRYPTO", INSTRUMENT_ID, "BUY", "LIMIT", "PENDING",
+			new BigDecimal("0.1"), new BigDecimal("9500"), NOW);
 	}
 }
