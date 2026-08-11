@@ -275,6 +275,60 @@ class TradeServiceTest {
 		assertThat(result.get()).isSameAs(earliestMatching);
 	}
 
+	// 아래는 031-tutorial-sandbox-instruments 매도 chain 해석이 쓰는
+	// findEarliestFilledSellTradeAfter(수량 무관 + buyTrade 이후 가장 이른 체결 선택)을 검증한다.
+
+	@Test
+	void findEarliestFilledSellTradeAfterPicksEarliestSellTradeInRepositoryOrderRegardlessOfQuantity() {
+		LocalDateTime after = NOW.minusHours(1);
+		// repository는 executedAt ASC, id ASC로 이미 정렬해 반환한다는 계약이다(쿼리 메서드명). 서비스는 그
+		// 순서의 첫 항목을 그대로 골라야 하며, buyTrade 수량(예: 3)과 다른 수량(부분 매도, 1)도 그대로
+		// 채택돼야 한다 — 수량 일치를 요구하는 findEarliestFilledBuyTradeMatching과 달리 이 메서드는 수량
+		// 비교 로직 자체가 없어야 한다.
+		Trade earliestSell = sellTrade(20L, NOW.minusMinutes(50), new BigDecimal("1"));
+		Trade laterSell = sellTrade(30L, NOW.minusMinutes(10), new BigDecimal("3"));
+		when(tradeRepository.findByAccount_User_IdAndInstrument_IdAndSideAndExecutedAtAfterOrderByExecutedAtAscIdAsc(
+			USER_ID, 100L, OrderSide.SELL, after))
+			.thenReturn(List.of(earliestSell, laterSell));
+
+		Optional<Trade> result = tradeService.findEarliestFilledSellTradeAfter(USER_ID, 100L, after);
+
+		assertThat(result).isPresent();
+		assertThat(result.get()).isSameAs(earliestSell);
+	}
+
+	@Test
+	void findEarliestFilledSellTradeAfterReturnsEmptyWhenRepositoryHasNoCandidates() {
+		LocalDateTime after = NOW.minusHours(1);
+		when(tradeRepository.findByAccount_User_IdAndInstrument_IdAndSideAndExecutedAtAfterOrderByExecutedAtAscIdAsc(
+			USER_ID, 100L, OrderSide.SELL, after))
+			.thenReturn(List.of());
+
+		Optional<Trade> result = tradeService.findEarliestFilledSellTradeAfter(USER_ID, 100L, after);
+
+		assertThat(result).isEmpty();
+	}
+
+	@Test
+	void findEarliestFilledSellTradeAfterQueriesRepositoryWithSellSideAndGivenAfterBoundary() {
+		LocalDateTime after = NOW.minusHours(1);
+		when(tradeRepository.findByAccount_User_IdAndInstrument_IdAndSideAndExecutedAtAfterOrderByExecutedAtAscIdAsc(
+			USER_ID, 100L, OrderSide.SELL, after))
+			.thenReturn(List.of());
+
+		tradeService.findEarliestFilledSellTradeAfter(USER_ID, 100L, after);
+
+		// 매수 이전 SELL을 무시하는 경계(after=buyTrade.executedAt)를 그대로 넘기는지, SELL로 조회하지(BUY로
+		// 잘못 부르지 않는지) 확인한다. PENDING/CANCELLED 상태는 별도로 걸러낼 필요가 없다 — trades 테이블은
+		// 체결 결과만 영속하므로(TradeRepository 41행 주석, Trade 엔티티에 status 필드 자체가 없음) 이 조회
+		// 결과는 이미 전부 FILLED 체결이다.
+		verify(tradeRepository).findByAccount_User_IdAndInstrument_IdAndSideAndExecutedAtAfterOrderByExecutedAtAscIdAsc(
+			USER_ID, 100L, OrderSide.SELL, after);
+		verify(tradeRepository, never())
+			.findByAccount_User_IdAndInstrument_IdAndSideAndExecutedAtAfterOrderByExecutedAtAscIdAsc(
+				USER_ID, 100L, OrderSide.BUY, after);
+	}
+
 	// 030 holding 관찰 세션 역추적(이슈 #321)이 쓰는 위임 — buyTradeId로 practicePriceSessionId를 조회한다.
 
 	@Test
@@ -351,6 +405,17 @@ class TradeServiceTest {
 			order, order.getAccount(), stockInstrument(), stockSession(),
 			OrderSide.SELL, new BigDecimal("110"),
 			new BigDecimal("3"), 330L, 1L, realizedPnl, executedAt, NOW);
+		ReflectionTestUtils.setField(trade, "id", id);
+		return trade;
+	}
+
+	private static Trade sellTrade(Long id, LocalDateTime executedAt, BigDecimal quantity) {
+		Order order = Order.create(
+			testUser(), account(), stockInstrument(), OrderSide.SELL, OrderType.MARKET, quantity,
+			"idem-key-sell-" + id, "h".repeat(64), NOW);
+		Trade trade = Trade.of(
+			order, order.getAccount(), stockInstrument(), stockSession(),
+			OrderSide.SELL, new BigDecimal("110"), quantity, 330L, 1L, 30L, executedAt, NOW);
 		ReflectionTestUtils.setField(trade, "id", id);
 		return trade;
 	}
