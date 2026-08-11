@@ -55,3 +55,20 @@
 
 - [x] 6. **문서 동기화 및 최종 빌드**
   `docs/api-routes.md`에 `POST /api/community/posts/images`·`GET /api/community/posts/images/{imageId}/file` 신규 행 추가, 기존 `POST/GET /api/community/posts*` 행에 `imageId`/`imageUrl` 반영 설명 갱신. `docs/api-contracts.md`의 `community` 절에 업로드·다운로드 엔드포인트 계약(요청 파트명·응답 필드·400/404 오류), 게시물 생성 `imageId` 필드·403/400 오류 계약 추가. `docs/prd.md` §3 구현 현황의 "커뮤니티 고도화 — 종목 기준·대댓글·사진 첨부" 행(현재 "일부 완료(COM-004~005)")을 "완료(COM-004~006)"로 갱신하고 근거에 이 PR 번호 추가. `docs/specs/022-community-enhancement/spec.md` "완료 조건 COM-006" 체크박스를 구현·테스트 통과 확인 후 `[x]`로 갱신. `./gradlew build` 전체 통과 확인(실패 시 수정 후 재실행).
+
+## COM-005 부모 댓글 tombstone 전환 (이슈 #277)
+
+plan.md의 "COM-005 부모 댓글 tombstone 전환 (이슈 #277)" 절 설계를 그대로 따른다. `V25`(CASCADE)는 이미 머지됐으므로 수정하지 않고 새 마이그레이션(`V31`)으로 대체한다(ADR-0004).
+
+- [x] 1. **마이그레이션 + 엔티티 tombstone 필드/메서드**
+  `db/migration/V31__change_post_comments_parent_fk_to_restrict.sql`(plan.md SQL 그대로: `post_comments.deleted_at DATETIME NULL` 컬럼 추가 + `fk_post_comments_parent`를 `DROP FOREIGN KEY` 후 `ON DELETE RESTRICT`로 재생성, `idx_post_comments_parent`는 변경 없이 유지). `PostComment`에 `deletedAt`(nullable `LocalDateTime`) 필드, `tombstone(LocalDateTime deletedAt)`, `isTombstoned()` 추가(기존 `content`·`author` 필드는 건드리지 않는다 — 원본 보존). 단위 테스트(`tombstone()` 호출 후 `isTombstoned()`가 `true`, 호출 전엔 `false`) + `@DataJpaTest`(Testcontainers, `V31` 적용 후 `deleted_at` 컬럼 확인, FK가 `RESTRICT`로 바뀐 뒤 자식이 있는 부모 댓글을 리포지토리 레벨에서 직접 `delete()` 시도하면 제약 위반 예외가 발생하는지, `postCommentRepository.deleteByPost_Id`가 부모+자식이 섞인 게시물에서도 여전히 성공하는지 — plan.md "주의" 캐벗의 회귀 확인).
+  **회귀 재현·수정 (계획 대비 정정):** 위 `deleteByPost_Id` 회귀가 실제로 재현됐다(MySQL이 단일 벌크 DELETE 안에서 행 처리 순서를 보장하지 않아 부모가 자식보다 먼저 지워지면 RESTRICT 위반). 별도 이슈로 미루지 않고 이 항목 범위 안에서 고쳤다 — `CommunityPostService.deletePost`가 그대로 쓰는 메서드라 이슈 #277의 "기존 테스트가 모두 통과합니다" 조건에 직접 걸리기 때문이다. `PostCommentRepository.deleteByPost_Id`를 `deleteByPost_IdAndParentCommentIsNotNull`(자식, 먼저)·`deleteByPost_IdAndParentCommentIsNull`(부모, 나중) 두 개로 분리하고 `CommunityPostService.deletePost`가 같은 트랜잭션 안에서 이 순서로 호출하도록 수정. 리포지토리 레벨(정순 성공/역순 실패 대조)과 서비스 레벨(`InOrder` mock 검증) 양쪽에서 확인.
+
+- [ ] 2. **`deleteComment` tombstone 로직 + 응답 표시 분기**
+  `PostCommentService.deleteComment`를 재작성 — 소유자 검증(403, 기존 로직 유지) 후 `comment.getParentComment() == null`이면 실제 삭제 대신 `comment.tombstone(LocalDateTime.now(clock))` 호출(hard delete 없음), `parentComment != null`이면 기존처럼 `postCommentRepository.delete(comment)`. `PostCommentResponse.from(PostComment, List<PostCommentResponse>)`에 tombstone 분기 추가 — `comment.isTombstoned()`이면 `content`를 "삭제된 댓글입니다", `authorNickname`을 "(삭제됨)"으로 치환(레코드 필드 추가 없음, `parentCommentId`·`replies`는 영향받지 않음). 단위 테스트(`PostCommentServiceTest`: 최상위 댓글 삭제 시 `tombstone()` 경로를 타고 `postCommentRepository.delete()` 미호출, 대댓글 삭제 시 기존처럼 `delete()` 호출, 타인 댓글·대댓글 삭제 시도 403 회귀) + `@WebMvcTest`(`PostCommentControllerTest`: tombstone된 부모 댓글 조회 응답의 `content`·`authorNickname` 치환 계약, `replies`·`parentCommentId` 불변 계약).
+
+- [ ] 3. **통합 테스트**
+  Testcontainers 기반 `@SpringBootTest`로 plan.md "테스트 계획 정정" 통합 테스트 4개 시나리오 구현: (a) 부모 댓글 작성 → 대댓글 작성 → 부모 삭제 → 게시물 상세 댓글 목록 재조회 시 부모 행이 사라지지 않고 `content`·`authorNickname`이 치환된 채 자식은 원래 내용 그대로 `replies`에 남아있는지, (b) 자식 없는 부모 댓글 삭제도 동일하게 tombstone되는지(하드 삭제 아님), (c) 대댓글(자식) 자신을 삭제하면 기존처럼 하드 삭제되어 부모의 `replies`에서 사라지는지, (d) 타인의 부모 댓글·대댓글 삭제 시도는 여전히 403 `FORBIDDEN`(회귀 — tombstone 도입으로 소유권 규칙이 약해지지 않았음을 확인).
+
+- [ ] 4. **문서 동기화 및 최종 빌드**
+  `docs/api-routes.md`의 `DELETE /api/community/comments/{commentId}` 행("부모 댓글을 삭제하면 그 자식 대댓글도 `ON DELETE CASCADE`로 함께 삭제된다") 설명을 tombstone 동작("부모 댓글을 삭제하면 실제로 삭제되지 않고 내용·작성자 표시가 치환되며, 자식 대댓글은 그대로 보존된다")으로 교체. `docs/api-contracts.md`의 `community` 절 중 같은 엔드포인트의 CASCADE 서술("부모 댓글(대댓글을 가진 댓글) 삭제 시 자식 대댓글도 DB `ON DELETE CASCADE`로 함께 삭제된다")을 tombstone 계약(치환되는 `content`·`authorNickname` 값, 자식 보존)으로 교체. `docs/prd.md` §3은 갱신 대상이 아니다(COM-005가 제공하는 기능 자체는 그대로이고 삭제 시 내부 동작만 바뀜 — CLAUDE.md 규칙10 "갱신 비대상: 버그 수정"). `docs/specs/022-community-enhancement/spec.md` "완료 조건 COM-005" 체크박스는 이미 `[x]`이므로 변경하지 않는다(요구사항 자체가 아니라 정책 정정이므로). `./gradlew build` 전체 통과 확인(실패 시 수정 후 재실행).

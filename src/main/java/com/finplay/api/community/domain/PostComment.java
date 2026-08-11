@@ -44,6 +44,9 @@ public class PostComment {
 	@JoinColumn(name = "parent_comment_id")
 	private PostComment parentComment;
 
+	@Column(name = "deleted_at")
+	private LocalDateTime deletedAt;
+
 	private PostComment(
 		CommunityPost post,
 		User author,
@@ -68,5 +71,13 @@ public class PostComment {
 
 	public boolean isReply() {
 		return parentComment != null;
+	}
+
+	public void tombstone(LocalDateTime deletedAt) {
+		this.deletedAt = deletedAt;
+	}
+
+	public boolean isTombstoned() {
+		return deletedAt != null;
 	}
 }

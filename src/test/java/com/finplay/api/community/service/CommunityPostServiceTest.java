@@ -424,12 +424,15 @@ class CommunityPostServiceTest {
 
 		service.deletePost(42L, 73L);
 
-		verify(postCommentRepository).deleteByPost_Id(73L);
+		verify(postCommentRepository).deleteByPost_IdAndParentCommentIsNotNull(73L);
+		verify(postCommentRepository).deleteByPost_IdAndParentCommentIsNull(73L);
 		verify(repository).delete(post);
 	}
 
+	// V31에서 parent_comment_id FK가 RESTRICT로 바뀌어 자식(대댓글)을 부모보다 먼저 지워야 한다 —
+	// 순서가 뒤바뀌면 실제 DB에서 FK 위반이 나므로(이슈 #277 회귀), 두 삭제 호출의 순서까지 검증한다.
 	@Test
-	void deletePostDeletesCommentsBeforePostWhenPostHasComments() {
+	void deletePostDeletesChildCommentsBeforeParentCommentsBeforePostWhenPostHasComments() {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
 		ReflectionTestUtils.setField(author, "id", 42L);
 		CommunityPost post = CommunityPost.create(author, "title", "content", null, LocalDateTime.now(CLOCK));
@@ -439,7 +442,8 @@ class CommunityPostServiceTest {
 		service.deletePost(42L, 73L);
 
 		InOrder inOrder = Mockito.inOrder(postCommentRepository, repository);
-		inOrder.verify(postCommentRepository).deleteByPost_Id(73L);
+		inOrder.verify(postCommentRepository).deleteByPost_IdAndParentCommentIsNotNull(73L);
+		inOrder.verify(postCommentRepository).deleteByPost_IdAndParentCommentIsNull(73L);
 		inOrder.verify(repository).delete(post);
 	}
 
@@ -456,7 +460,8 @@ class CommunityPostServiceTest {
 		service.deletePost(42L, 73L);
 
 		InOrder inOrder = Mockito.inOrder(postCommentRepository, communityPostImageService, repository);
-		inOrder.verify(postCommentRepository).deleteByPost_Id(73L);
+		inOrder.verify(postCommentRepository).deleteByPost_IdAndParentCommentIsNotNull(73L);
+		inOrder.verify(postCommentRepository).deleteByPost_IdAndParentCommentIsNull(73L);
 		inOrder.verify(communityPostImageService).deleteImageIfPresent(post);
 		inOrder.verify(repository).delete(post);
 	}
@@ -484,7 +489,8 @@ class CommunityPostServiceTest {
 			.extracting(exception -> ((BusinessException)exception).getErrorCode())
 			.isEqualTo(ErrorCode.NOT_FOUND);
 
-		verify(postCommentRepository, never()).deleteByPost_Id(any());
+		verify(postCommentRepository, never()).deleteByPost_IdAndParentCommentIsNotNull(any());
+		verify(postCommentRepository, never()).deleteByPost_IdAndParentCommentIsNull(any());
 		verify(repository, never()).delete(any());
 	}
 
@@ -501,7 +507,8 @@ class CommunityPostServiceTest {
 			.extracting(exception -> ((BusinessException)exception).getErrorCode())
 			.isEqualTo(ErrorCode.FORBIDDEN);
 
-		verify(postCommentRepository, never()).deleteByPost_Id(any());
+		verify(postCommentRepository, never()).deleteByPost_IdAndParentCommentIsNotNull(any());
+		verify(postCommentRepository, never()).deleteByPost_IdAndParentCommentIsNull(any());
 		verify(repository, never()).delete(any());
 	}
 }

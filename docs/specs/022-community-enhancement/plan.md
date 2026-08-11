@@ -160,6 +160,8 @@ public Instrument getTradableInstrumentEntity(Long instrumentId) {
 | POST | /api/community/posts/{postId}/comments | `PostCommentCreateRequest`(`parentCommentId` 필드 추가) | `PostCommentResponse`(`parentCommentId`·`replies` 필드 추가) | `parentCommentId`가 없으면 기존과 동일하게 부모 댓글 생성. 있으면 그 댓글에 대한 대댓글 생성 — 응답의 `replies`는 항상 빈 리스트(방금 만든 댓글엔 아직 자식이 없음) |
 | GET | /api/community/posts/{postId}/comments | - | `List<PostCommentResponse>` | 부모 댓글만 최상위 목록으로 오래된 순 반환, 각 항목의 `replies`에 그 부모의 자식 대댓글을 오래된 순으로 포함(중첩 구조). 대댓글 자체는 최상위 목록에 나타나지 않는다 |
 | DELETE | /api/community/comments/{commentId} | - | - | 변경 없음(URL·권한 그대로) — 단, 부모 댓글을 삭제하면 자식 대댓글도 함께 삭제(아래 "부모 삭제 시 자식 처리") |
+> **2026-08-11 정정 (Issue #277)**: 위 `DELETE` 행의 "부모 댓글을 삭제하면 자식 대댓글도 함께 삭제" 설명은 폐기됐다 — 이제는 부모를 지우면 자식은 보존된 채 부모만 tombstone 처리된다. 상세는 아래 "## COM-005 부모 댓글 tombstone 전환 (이슈 #277)" 절 참고.
+
 
 ## 입력 명세
 
@@ -187,6 +189,7 @@ ALTER TABLE post_comments
 
 - `parent_comment_id`는 `NULL` 허용 — 기존(COM-002 시점) 댓글은 마이그레이션으로 값을 채우지 않는다(하위 호환, spec.md "비즈니스 규칙" 3번과 동일 원칙).
 - `ON DELETE CASCADE`를 self-referencing FK에 둔다 — "부모 댓글 삭제 시 자식 처리"를 DB 제약으로 강제해 앱 계층에서 자식을 먼저 찾아 지우는 별도 코드 없이 부모 행 삭제만으로 자식이 함께 삭제되게 한다. `CommunityPostService.deletePost`가 쓰는 `deleteByPost_Id`(게시물의 모든 댓글을 `post_id` 조건 하나로 한 번에 삭제하는 벌크 DELETE)에서도 이 CASCADE 덕분에 부모·자식 삭제 순서를 신경 쓸 필요가 없다(부모·자식 모두 같은 조건에 매치되어 함께 삭제되며, self-reference CASCADE가 순서 문제를 방지).
+  - **2026-08-11 정정 (Issue #277): 이 CASCADE 결정은 폐기됐다.** 부모 댓글 삭제 시 자식까지 함께 지우는 것이 spec.md의 "남의 대댓글을 지우려 하면 거부당한다" 소유권 규칙과 충돌한다는 지적을 받아들여 tombstone(표시 변경) 방식으로 대체한다. 이 절(`V25` SQL, 엔티티, `PostCommentService`, 테스트 계획 일부)는 착수 당시 기록으로 남겨두되 아래 "## COM-005 부모 댓글 tombstone 전환 (이슈 #277)" 절이 우선한다.
 - `idx_post_comments_parent`는 CASCADE 삭제 시 자식 행을 빠르게 찾기 위한 인덱스다. 기존 `idx_post_comments_post_created_at_id`(전체 댓글 조회용)는 그대로 둔다.
 - CHECK 제약(예: depth 강제)은 두지 않는다 — 1단계 제한은 "부모의 부모가 없어야 한다"는 앱 로직으로만 검증 가능한 규칙이라 CHECK로 표현할 수 없다(자기 자신을 조인해야 함). COM-004와 같은 판단으로 앱 계층 검증에 맡긴다.
 
@@ -226,6 +229,8 @@ public boolean isReply() {
 | `PostCommentService` | `community.service` | `createComment`에 `parentCommentId`(nullable) 파라미터 추가 — 값이 있으면 부모 댓글 조회·검증(아래) 후 `PostComment.create`에 전달. `getComments`를 재구성: 전체 댓글을 기존 쿼리로 한 번에 가져온 뒤 `parentComment == null`인 것만 최상위로 추리고, 나머지는 `parentComment.getId()` 기준으로 그룹핑해 각 최상위 댓글에 자식 리스트를 붙여 반환(둘 다 이미 `createdAt asc, id asc` 순으로 조회됐으므로 그룹핑 후에도 순서가 보존된다 — 추가 정렬 불필요). `deleteComment`는 변경 없음(DB `ON DELETE CASCADE`가 자식 삭제를 대신하므로 서비스 로직에 자식 처리 코드를 추가하지 않는다) |
 | `PostCommentController`/`CommentController` | `community.controller` | `PostCommentController.createComment`가 `request.parentCommentId()`를 서비스에 전달하도록 수정. `CommentController`는 변경 없음 |
 
+> **2026-08-11 정정 (Issue #277)**: 위 `PostCommentService` 행의 "`deleteComment`는 변경 없음" 서술은 폐기됐다 — CASCADE가 없어지고 `deleteComment`가 tombstone 분기를 갖도록 재작성된다. 상세는 아래 "## COM-005 부모 댓글 tombstone 전환 (이슈 #277)" 절 참고.
+
 ### `PostCommentService.createComment` 대댓글 검증 (신규 로직)
 
 ```java
@@ -250,7 +255,142 @@ PostComment comment = PostComment.create(post, author, content, parentComment, n
   1. 부모 댓글 작성 → 대댓글 작성 → `GET /api/community/posts/{postId}/comments` 조회 시 부모 밑에 자식이 오래된 순으로 포함(`replies` 배열 검증).
   2. 대댓글(자식)에 다시 `parentCommentId`로 답글 시도 시 400 `VALIDATION_ERROR`.
   3. 본인 대댓글만 `DELETE /api/community/comments/{commentId}`로 삭제 가능, 타인 대댓글 삭제 시도 403 `FORBIDDEN`.
-  4. (완료 조건 외 회귀) 부모 댓글 삭제 시 그 자식 대댓글도 함께 삭제되는지(`ON DELETE CASCADE`) 확인 — spec.md 완료 조건에 명시적 항목은 없지만 Decision Gate에서 확정한 정책이므로 통합 테스트로 검증한다.
+  4. (완료 조건 외 회귀, **2026-08-11 폐기**) ~~부모 댓글 삭제 시 그 자식 대댓글도 함께 삭제되는지(`ON DELETE CASCADE`) 확인~~ — 이 CASCADE 회귀 시나리오는 Issue #277로 반대 동작(tombstone, 자식 보존)을 검증하도록 대체됐다. 상세는 아래 "## COM-005 부모 댓글 tombstone 전환 (이슈 #277)" 절의 "테스트 계획 정정" 참고.
+
+## COM-005 부모 댓글 tombstone 전환 (이슈 #277)
+
+## 관련 문서
+
+- Spec: `./spec.md` "COM-005 대댓글" 절, "Decision Gate"(부모 댓글 삭제 시 자식 처리 — 이 절에서 재확정), 사용자 시나리오 소유권 규칙 옆 2026-08-11 추가 각주
+- 배경: Issue #277 — 위 "COM-005 대댓글 (이슈 #247)" 절에서 확정한 `ON DELETE CASCADE`(`V25`)가 부모 댓글 삭제 시 다른 회원 소유의 자식 대댓글까지 함께 지워, spec.md의 "남의 대댓글을 지우려 하면 거부당한다" 소유권 규칙과 어떻게 함께 성립하는지 근거가 부족하다는 지적을 받았다(원 근거는 plan.md의 "DB 제약으로 구현 단순화"라는 기술적 이유뿐이었다). 이 절이 그 CASCADE 결정을 대체한다.
+- 관련 ADR: [ADR-0002](../../adr/0002-architecture.md)(레이어드, 비즈니스 판단은 service), [ADR-0004](../../adr/0004-flyway-migrations.md)(신규 컬럼·FK 변경은 Flyway로만, 머지된 마이그레이션은 수정하지 않고 새 버전을 추가)
+
+## 확정 정책 (사용자 승인 완료, 재논의 대상 아님)
+
+1. **CASCADE → tombstone 전환.** 부모 댓글(최상위 댓글, `parentComment == null` — 자식이 있든 없든 무관, 자식 유무로 분기하지 않는다) 삭제 시 행을 실제로 지우지 않고 `content`를 "삭제된 댓글입니다"로, 작성자 표시를 "(삭제됨)"으로 치환한다. 동작 일관성을 위해 자식 없는 부모도 동일하게 tombstone 처리한다 — hard delete로 분기하는 코드를 두지 않는다.
+2. 자식(대댓글) 자신을 삭제하는 경우는 기존과 동일하게 hard delete를 유지한다 — 대댓글에는 더 하위 자식이 없으므로 보존할 대상이 없다. 즉 tombstone은 "자식을 가질 수 있는 위치"(`parentComment == null`인 최상위 댓글)의 삭제에만 적용된다.
+3. 자식이 모두 나중에 개별 삭제(hard delete)되어도 tombstone된 부모 행은 정리하지 않고 영구 보존한다.
+4. **spec.md 소유권 규칙과 함께 성립하는 논리**: 타인의 댓글·대댓글을 직접 삭제하려는 시도는 여전히 403 `FORBIDDEN`으로 차단된다(변경 없음). tombstone은 "삭제"가 아니라 부모 자신의 삭제 행위로 인한 "표시 변경"이므로 자식 소유자의 삭제 권한을 침해하지 않는다 — 자식 데이터(작성 사실)는 DB에 그대로 남고, 다만 부모가 사라졌다는 맥락 손실만 발생한다.
+
+## API 설계 정정
+
+| Method | URL | 설명 |
+|---|---|---|
+| DELETE | /api/community/comments/{commentId} | **요청·응답 계약은 바뀌지 않는다**(URL·204·소유권 검증 그대로) — 서버 내부 동작만 바뀐다. 소유자 검증(403) 통과 후 대상이 최상위 댓글(`parentComment == null`)이면 실제 DELETE 대신 tombstone 처리, 대댓글(자식, `parentComment != null`)이면 기존처럼 실제 DELETE |
+
+## 데이터 모델 정정
+
+### `V31__change_post_comments_parent_fk_to_restrict.sql` (신규 — 현재 마지막 버전 `V30`, `ls db/migration/`으로 확인한 다음 번호)
+
+```sql
+-- Issue #277: 부모 댓글 삭제가 ON DELETE CASCADE로 자식 대댓글까지 함께 지우던 것을
+-- tombstone(표시 변경) 방식으로 전환한다. 삭제 표시 시각을 저장할 컬럼을 추가하고,
+-- 부모 댓글은 이제 실제로 DELETE되지 않으므로(UPDATE만 발생) CASCADE가 발동할
+-- 상황 자체가 없어야 정상이다 — 그럼에도 향후 실수로 부모를 하드 삭제하는 코드가
+-- 생겨 자식이 조용히 함께 사라지는 회귀를 막기 위해 FK 규칙을 RESTRICT로 명시한다.
+
+ALTER TABLE post_comments
+    ADD COLUMN deleted_at DATETIME NULL AFTER content;
+
+ALTER TABLE post_comments
+    DROP FOREIGN KEY fk_post_comments_parent;
+
+ALTER TABLE post_comments
+    ADD CONSTRAINT fk_post_comments_parent
+        FOREIGN KEY (parent_comment_id) REFERENCES post_comments (id)
+        ON DELETE RESTRICT;
+```
+
+- MySQL은 FK의 `ON DELETE` 규칙만 단독으로 `ALTER`할 수 없다 — 표준 절차대로 기존 제약을 `DROP FOREIGN KEY`한 뒤 같은 이름으로 `ADD CONSTRAINT`해 재생성한다. `idx_post_comments_parent` 인덱스는 FK 제약과 별개로 이미 존재하므로 그대로 둔다(재생성 불필요).
+- `deleted_at DATETIME NULL` — `NULL`이면 살아있는(또는 tombstone 대상이 아닌) 댓글, 값이 있으면 tombstone된 부모 댓글이다. 하드 삭제된 자식은 행 자체가 사라지므로 이 컬럼과 무관하다. 기존(마이그레이션 이전) 댓글은 모두 `NULL`로 하위 호환.
+- `RESTRICT`(`NO ACTION`과 MySQL에서 동일하게 동작 — 참조 행이 남아있으면 삭제를 거부)를 택한다. `CASCADE`를 없앤 것으로 충분하지만, 명시적으로 `RESTRICT`를 선언해 "부모를 실수로 하드 삭제하면 자식이 남아있는 한 DB가 거부한다"는 안전장치를 코드로 남긴다.
+- **주의 — `deleteByPost_Id` 벌크 삭제와의 상호작용 (이번 작업 범위 밖이지만 회귀 위험이 있어 기록한다)**: `CommunityPostService.deletePost`가 쓰는 `postCommentRepository.deleteByPost_Id(postId)`는 게시물의 모든 댓글(부모·자식 모두)을 단일 `DELETE` 문으로 지운다. 이 로직 자체는 이번 spec 그룹의 범위 밖이라 코드를 바꾸지 않는다. 다만 `RESTRICT` 제약 하에서 자기참조 FK를 가진 테이블의 벌크 삭제는 MySQL이 행 처리 순서를 보장하지 않으므로, 같은 문 안에서 자식보다 부모 행이 먼저 처리되면 그 시점엔 아직 자식 행이 남아있어 제약 위반으로 실패할 가능성이 이론상 있다(`CASCADE`였을 때는 이 순서 문제가 없었다 — DB가 알아서 연쇄 삭제했기 때문). 이 마이그레이션이 `deletePost`의 기존 동작을 깨뜨리지 않는지는 실제로 검증이 필요하다 — 아래 "테스트 계획 정정"의 `@DataJpaTest`에 회귀 케이스를 추가한다. 실패가 재현되면(코드 변경 없이는 통과하지 못하면) 이 spec 범위를 넘어서는 별도 이슈로 등록하고 이 plan에서 미리 코드를 고치지 않는다.
+
+### 엔티티 변경 정정
+
+**`PostComment`**: `deletedAt`(nullable `LocalDateTime`) 필드 추가.
+
+```java
+@Column(name = "deleted_at")
+private LocalDateTime deletedAt;
+
+public void tombstone(LocalDateTime deletedAt) {
+    this.deletedAt = deletedAt;
+}
+
+public boolean isTombstoned() {
+    return deletedAt != null;
+}
+```
+
+- **결정: `content`·작성자 필드를 실제로 치환(overwrite)하지 않고, `deletedAt` 플래그로만 tombstone 여부를 표시한 뒤 응답 계층에서 표시 문구로 바꿔치기한다.** (content를 직접 덮어쓰는 대안과 비교한 근거)
+  - 원본 `content`·`author`를 DB에 보존하면 향후 신고·감사(audit) 목적으로 필요할 때 원문을 조회할 수 있다 — 직접 치환은 되돌릴 수 없는 파괴적 연산이라 지금 그 비가역성을 선택할 이유가 없다.
+  - 원본 작성자(`author` FK)를 건드리지 않으므로 `deleteComment`의 소유권 검증(`comment.getAuthor().getId().equals(authenticatedUserId)`)이 tombstone 여부와 무관하게 그대로 동작한다 — 이미 tombstone된 댓글에 같은 작성자가 삭제를 다시 요청해도(멱등하게 `deletedAt`만 갱신) 소유권 검사 로직을 분기할 필요가 없다.
+  - `deletedAt`은 conventions.md의 "시간 필드는 `LocalDateTime` + `xxxAt`" 네이밍과 자연히 맞고, 별도 boolean `tombstoned` 플래그보다 "언제 tombstone됐는지"까지 기록해 정보 손실이 적다(감사 목적에 유리).
+- `tombstone(LocalDateTime)`·`isTombstoned()`는 conventions.md "상태 변경은 의도가 드러나는 메서드로만", "boolean은 `is~`" 규칙을 그대로 따른다(setter 없음).
+
+## 패키지·클래스 설계 정정 (위 "COM-005 대댓글" 절 표 중 아래 두 행을 대체)
+
+| 클래스 | 패키지 | 변경 |
+|---|---|---|
+| `PostComment` | `community.domain` | `deletedAt`(nullable `LocalDateTime`) 필드, `tombstone(LocalDateTime)`, `isTombstoned()` 추가(위) |
+| `PostCommentService` | `community.service` | `deleteComment`를 아래 로직으로 재작성(위 절의 "변경 없음" 서술을 대체) |
+| `PostCommentResponse` | `community.dto.response` | `from(PostComment, List<PostCommentResponse>)` 내부 로직에 tombstone 분기 추가(레코드 필드는 추가하지 않음, 아래) |
+
+### `PostCommentService.deleteComment` 재설계
+
+```java
+@Transactional
+public void deleteComment(Long authenticatedUserId, Long commentId) {
+    PostComment comment = postCommentRepository.findById(commentId)
+        .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+    if (!comment.getAuthor().getId().equals(authenticatedUserId)) {
+        throw new BusinessException(ErrorCode.FORBIDDEN);
+    }
+    if (comment.getParentComment() == null) {
+        comment.tombstone(LocalDateTime.now(clock));
+    } else {
+        postCommentRepository.delete(comment);
+    }
+}
+```
+
+- 소유자 검증(403)은 tombstone 대상이든 hard delete 대상이든 동일하게 먼저 수행한다 — spec.md 사용자 시나리오에 남긴 "직접 삭제는 여전히 403" 근거가 이 순서로 구현에 반영된다.
+- `comment.getParentComment() == null`로 "자식을 가질 수 있는 위치"를 판별한다. 기존 `PostComment.isReply()`(`parentComment != null`)의 부정과 동일한 조건이므로 `!comment.isReply()`로 표현해도 무방하다 — 구현 시점에 가독성 기준으로 택일한다.
+- `tombstone()` 호출은 관리 상태(managed) 엔티티의 필드를 바꾸는 것이므로 트랜잭션 커밋 시 JPA dirty checking으로 자동 반영된다 — 명시적 `save()` 호출 불필요(`CommunityPost.update()` 등 기존 패턴과 동일).
+- 이미 tombstone된 부모 댓글에 같은 작성자가 삭제를 다시 요청하면 오류 없이 `deletedAt`만 갱신되는 멱등 동작이다 — spec에 금지 조항이 없으므로 막지 않는다.
+
+### `PostCommentResponse` 재설계
+
+```java
+private static final String TOMBSTONED_CONTENT = "삭제된 댓글입니다";
+private static final String TOMBSTONED_AUTHOR_DISPLAY = "(삭제됨)";
+
+public static PostCommentResponse from(PostComment comment, List<PostCommentResponse> replies) {
+    boolean tombstoned = comment.isTombstoned();
+    return new PostCommentResponse(
+        comment.getId(),
+        tombstoned ? TOMBSTONED_AUTHOR_DISPLAY : comment.getAuthor().getNickname(),
+        tombstoned ? TOMBSTONED_CONTENT : comment.getContent(),
+        comment.getCreatedAt(),
+        comment.getParentComment() != null ? comment.getParentComment().getId() : null,
+        replies);
+}
+```
+
+- `parentCommentId`·`replies`는 tombstone 여부와 무관하게 그대로 노출한다 — tombstone은 "표시 변경"이지 자식 관계를 숨기는 것이 아니다(자식은 여전히 목록에 남아 조회된다).
+- 응답 레코드에 `isTombstoned` 같은 boolean 필드를 새로 추가하지 않는다 — 클라이언트가 "삭제된 댓글입니다" 문자열이 아닌 명시적 상태를 원할 수도 있지만, spec.md 요구사항에 없는 필드를 미리 만들지 않는다(과설계 금지). 필요해지면 별도 이슈로 확장한다.
+
+## 테스트 계획 정정 (위 "COM-005 대댓글" 절 테스트 계획의 통합 테스트 4번 항목을 대체)
+
+- 단위: `PostCommentServiceTest`(Mockito) 추가 케이스 — 최상위 댓글(`parentComment == null`) 삭제 시 `postCommentRepository.delete()`가 호출되지 않고 `tombstone()` 경로를 타는지(엔티티 상태 또는 `deletedAt` 검증), 대댓글(자식) 삭제 시 기존처럼 `delete()`가 호출되는지, 타인 댓글·대댓글 삭제 시도 403(회귀). `PostComment` 엔티티 단위 테스트로 `tombstone()`·`isTombstoned()` 동작 확인.
+- 슬라이스: `PostCommentRepositoryTest`(`@DataJpaTest`, Testcontainers) 추가 케이스 — `V31` 적용 후 `deleted_at` 컬럼 존재 확인, FK가 `RESTRICT`로 바뀐 뒤 자식이 있는 부모 댓글을 리포지토리 레벨에서 직접 `delete()` 시도하면 제약 위반 예외가 발생하는지(안전장치 검증), 위 "주의" 캐벗에서 지적한 `deleteByPost_Id`가 부모+자식이 섞인 게시물에서도 여전히 성공하는지(회귀 확인 — 실패하면 별도 이슈로 넘긴다). `PostCommentControllerTest`(`@WebMvcTest`) — tombstone된 부모 댓글 조회 시 응답 `content`가 "삭제된 댓글입니다", `authorNickname`이 "(삭제됨)"으로 나오는지, `replies`·`parentCommentId`는 영향받지 않는지.
+- 통합: `@SpringBootTest` + Testcontainers(ADR-0003) — 아래 시나리오로 위 "COM-005 대댓글" 절 통합 테스트 4번(CASCADE 회귀)을 대체한다:
+  1. 부모 댓글 작성 → 대댓글 작성 → 부모 삭제 → `GET /api/community/posts/{postId}/comments` 재조회 시: 부모 행이 사라지지 않고 `content`="삭제된 댓글입니다"·`authorNickname`="(삭제됨)"으로 노출, 자식은 원래 내용 그대로 `replies`에 남아있다.
+  2. 자식(대댓글) 없는 부모 댓글 삭제도 동일하게 tombstone된다(하드 삭제 아님) — 삭제 후 조회 시 행이 여전히 존재하고 표시만 바뀐다.
+  3. 대댓글(자식) 자신을 삭제하면 기존처럼 하드 삭제된다 — 삭제 후 조회 시 그 자식이 부모의 `replies`에서 사라진다.
+  4. 타인의 부모 댓글·대댓글 삭제 시도는 여전히 403 `FORBIDDEN`(회귀 — tombstone 도입으로 소유권 규칙이 약해지지 않았음을 확인).
+
 
 ## COM-006 사진 첨부 (이슈 #248)
 

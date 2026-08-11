@@ -123,3 +123,12 @@
 - 반영: (1) 확장자를 원본 파일명이 아니라 이미 검증한 `contentType`에서 매핑으로 결정하도록 변경, `LocalFileStorageService`에 `normalize()` 기반 경계 검사를 store/load/delete 3곳 모두에 추가(저장 키 생성 규칙이 바뀌어도 저장소가 스스로를 지킴). (2) `loadImageFile(authenticatedUserId, imageId)`로 시그니처 변경 — `isAssigned()`가 true면 누구나, false면 업로더 본인만 허용하고 그 외는 404로 존재를 숨김. 컨트롤러에 `@AuthenticationPrincipal` 추가.
 - 권장 2건도 함께 반영: 다운로드 응답에 `X-Content-Type-Options: nosniff` 헤더 추가(매직 바이트 미검사 트레이드오프의 짝). 물리 파일 삭제를 `CommunityPostImageDeletedEvent` + `@TransactionalEventListener(AFTER_COMMIT)`로 전환(`RankingEventListener` 선례) — 게시물 삭제 트랜잭션이 롤백되면 DB 행은 살아있는데 파일만 사라지는 상태를 막는다.
 - `LocalFileStorageServiceTest`에 store/load/delete 3개 경계 탈출 회귀 테스트, `CommunityPostImageServiceTest`에 악의적 파일명 확장자 무시 회귀 테스트·미할당 이미지 접근 제어 3종(업로더 본인 허용/타인 거부/미존재)을 추가. `docs/api-contracts.md`·`plan.md`의 관련 서술도 실제 동작에 맞게 정정. `./gradlew build` 전체(테스트·jacoco·spotbugs·spotless 포함) 통과.
+
+## AI 로그 (에이전트 참조용, COM-005 tombstone 항목1)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| - | implementer | `./gradlew compileJava` | plan.md "COM-005 부모 댓글 tombstone 전환" 데이터 모델·엔티티 변경 정정, ADR-0004 |
+
+## 모니터링 (사람용 요약)
+- COM-005 tombstone 항목1: `V31` 마이그레이션(`post_comments.deleted_at DATETIME NULL` 추가 + `fk_post_comments_parent`를 `DROP`·재생성해 `ON DELETE RESTRICT`로 전환, 인덱스는 유지) 신규, `V25`는 수정하지 않음. `PostComment`에 `deletedAt`·`tombstone(LocalDateTime)`·`isTombstoned()` 추가(`content`·`author`는 그대로 보존). compileJava 통과(테스트는 tester 담당).
+- 회귀 수정(tester 발견, 이슈 #277): `RESTRICT` 전환으로 `PostCommentRepository.deleteByPost_Id` 단일 벌크 DELETE가 부모+자식 섞인 게시물에서 행 처리 순서 미보장으로 FK 위반 가능 — `deleteByPost_IdAndParentCommentIsNotNull`(자식 먼저)·`deleteByPost_IdAndParentCommentIsNull`(부모 나중) 두 개의 `@Modifying` 쿼리로 분리, `CommunityPostService.deletePost`(기존 `@Transactional` 경계 그대로)에서 순서대로 호출하도록 수정. 다른 호출부 없음(단일 호출 지점). compileJava 통과.

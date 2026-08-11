@@ -86,7 +86,10 @@ public class CommunityPostService {
 		if (!post.getAuthor().getId().equals(authenticatedUserId)) {
 			throw new BusinessException(ErrorCode.FORBIDDEN);
 		}
-		postCommentRepository.deleteByPost_Id(postId);
+		// V31에서 post_comments의 parent_comment_id FK가 ON DELETE RESTRICT로 바뀌어, 자식(대댓글)을
+		// 먼저 지우고 부모를 나중에 지워야 한다(순서를 바꾸면 FK 위반) — PostCommentRepository 참고.
+		postCommentRepository.deleteByPost_IdAndParentCommentIsNotNull(postId);
+		postCommentRepository.deleteByPost_IdAndParentCommentIsNull(postId);
 		communityPostImageService.deleteImageIfPresent(post);
 		communityPostRepository.delete(post);
 	}
