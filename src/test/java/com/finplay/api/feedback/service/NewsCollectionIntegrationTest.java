@@ -18,6 +18,7 @@ import com.finplay.api.feedback.repository.MarketNewsItemRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.feed.BithumbFeedSimulator;
+import com.finplay.api.market.feed.BithumbFeedStatusReconciler;
 import com.finplay.api.market.service.InstrumentService;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
@@ -176,10 +177,11 @@ class NewsCollectionIntegrationTest {
 		int registered = countScheduledMethods();
 		// 스캔이 0을 세면 이 단정은 공허하게 통과한다 — 최소한 기존 4개 + 신설 2개는 잡혀야 한다.
 		assertThat(registered).as("컨텍스트에서 @Scheduled를 하나도 세지 못했다").isGreaterThanOrEqualTo(6);
-		// BithumbFeedSimulator는 기본 프로필에서 도는 스케줄이지만 테스트에서만 프로퍼티로 꺼져 있다
-		// (build.gradle의 spring.config.additional-location). 실제 기본 프로필 개수로 환산해 비교한다.
-		int disabledInTestsOnly = applicationContext.getBeanNamesForType(BithumbFeedSimulator.class).length == 0 ? 1
-			: 0;
+		// BithumbFeedSimulator·BithumbFeedStatusReconciler는 기본 프로필에서 도는 스케줄이지만 테스트에서만
+		// 프로퍼티로 꺼져 있다(build.gradle의 spring.config.additional-location). 실제 기본 프로필 개수로
+		// 환산해 비교한다 — 보정하지 않으면 풀이 실제 프로덕션 스케줄 수보다 작아도 통과할 수 있다.
+		int disabledInTestsOnly = countIfDisabledInTests(BithumbFeedSimulator.class)
+			+ countIfDisabledInTests(BithumbFeedStatusReconciler.class);
 
 		assertThat(poolSize)
 			.as("등록된 @Scheduled %d개(+테스트에서만 꺼진 %d개)보다 풀이 작다",
@@ -192,6 +194,11 @@ class NewsCollectionIntegrationTest {
 	void bothCollectionSchedulesAreRegisteredInContext() {
 		assertThat(scheduledMethodNames(NewsCollectionService.class))
 			.contains("collectNews", "collectDisclosures");
+	}
+
+	// 빈이 아예 없으면 그 클래스의 @Scheduled 1개가 테스트에서만 빠진 것으로 본다.
+	private int countIfDisabledInTests(Class<?> scheduledBeanType) {
+		return applicationContext.getBeanNamesForType(scheduledBeanType).length == 0 ? 1 : 0;
 	}
 
 	private void givenNewsForStock(CollectedNewsDto... articles) {
