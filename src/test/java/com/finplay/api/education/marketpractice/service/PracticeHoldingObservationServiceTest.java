@@ -18,6 +18,7 @@ import com.finplay.api.education.marketpractice.domain.PracticeMarketObservation
 import com.finplay.api.education.marketpractice.dto.request.PracticeHoldingObservationCreateRequest;
 import com.finplay.api.education.marketpractice.dto.response.PracticeHoldingObservationResponse;
 import com.finplay.api.education.marketpractice.repository.PracticeMarketObservationRepository;
+import com.finplay.api.education.priceruntime.service.PracticePriceObservationService;
 import com.finplay.api.education.service.PracticeIntentionService;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
@@ -48,6 +49,8 @@ class PracticeHoldingObservationServiceTest {
 	private final MarketPracticeChainResolutionService chainResolutionService = mock(
 		MarketPracticeChainResolutionService.class);
 	private final PriceQueryService priceQueryService = mock(PriceQueryService.class);
+	private final PracticePriceObservationService practicePriceObservationService = mock(
+		PracticePriceObservationService.class);
 	private final ReferencePriceCalculator referencePriceCalculator = mock(ReferencePriceCalculator.class);
 	private final EvidenceJudgmentService evidenceJudgmentService = mock(EvidenceJudgmentService.class);
 	private final PracticeMarketObservationRepository observationRepository = mock(
@@ -55,8 +58,8 @@ class PracticeHoldingObservationServiceTest {
 	private final Clock clock = Clock.fixed(OBSERVED_AT.toInstant(ZoneOffset.UTC), ZoneOffset.UTC);
 
 	private final PracticeHoldingObservationService service = new PracticeHoldingObservationService(
-		holdingService, chainResolutionService, priceQueryService, referencePriceCalculator,
-		evidenceJudgmentService, observationRepository, clock);
+		holdingService, chainResolutionService, priceQueryService, practicePriceObservationService,
+		referencePriceCalculator, evidenceJudgmentService, observationRepository, clock);
 
 	private Holding holding;
 	private Instrument instrument;
@@ -98,6 +101,7 @@ class PracticeHoldingObservationServiceTest {
 
 		verify(referencePriceCalculator, never()).calculate(any());
 		verify(priceQueryService, never()).getPrice(any());
+		verify(practicePriceObservationService, never()).findObservationPrice(any(), any(), any());
 	}
 
 	@Test
@@ -135,6 +139,7 @@ class PracticeHoldingObservationServiceTest {
 				.isEqualTo(ErrorCode.PRACTICE_EVIDENCE_MISSING));
 
 		verify(priceQueryService, never()).getPrice(any());
+		verify(practicePriceObservationService, never()).findObservationPrice(any(), any(), any());
 	}
 
 	@Test
@@ -147,6 +152,10 @@ class PracticeHoldingObservationServiceTest {
 		ReferencePriceLines referenceLines = new ReferencePriceLines(new BigDecimal("90"), new BigDecimal("120"));
 		when(referencePriceCalculator.calculate(chain)).thenReturn(Optional.of(referenceLines));
 
+		// buyTrade에 귀속된 가상 가격 세션이 없는 경우(세션 없는 기존 시장가·실제 지정가) — 기존
+		// PriceQueryService 경로로 fallback한다(이슈 #321).
+		when(practicePriceObservationService.findObservationPrice(USER_ID, chain.buyTradeId(), INSTRUMENT_ID))
+			.thenReturn(Optional.empty());
 		PriceQuoteDto priceQuote = new PriceQuoteDto(new BigDecimal("95"), OBSERVED_AT, PriceStatus.AVAILABLE, null);
 		when(priceQueryService.getPrice(INSTRUMENT_ID)).thenReturn(priceQuote);
 
@@ -180,6 +189,43 @@ class PracticeHoldingObservationServiceTest {
 		InOrder inOrder = Mockito.inOrder(referencePriceCalculator, priceQueryService);
 		inOrder.verify(referencePriceCalculator).calculate(chain);
 		inOrder.verify(priceQueryService).getPrice(INSTRUMENT_ID);
+	}
+
+	@Test
+	void createObservationUsesSessionPriceAndSkipsRealPriceLookupWhenBuyTradeHasPracticeSession() {
+		when(holdingService.findHoldingForOwner(USER_ID, HOLDING_ID)).thenReturn(Optional.of(holding));
+		ResolvedPracticeChainDto chain = completedChain();
+		when(chainResolutionService.resolveForInstrument(USER_ID, PracticeIntentionService.TUTORIAL_KEY, INSTRUMENT_ID))
+			.thenReturn(Optional.of(chain));
+
+		ReferencePriceLines referenceLines = new ReferencePriceLines(new BigDecimal("90"), new BigDecimal("120"));
+		when(referencePriceCalculator.calculate(chain)).thenReturn(Optional.of(referenceLines));
+
+		BigDecimal sessionPrice = new BigDecimal("101.5");
+		when(practicePriceObservationService.findObservationPrice(USER_ID, chain.buyTradeId(), INSTRUMENT_ID))
+			.thenReturn(Optional.of(sessionPrice));
+
+		List<PracticeMarketObservation> existing = List.of();
+		when(observationRepository.findByUserIdAndHoldingIdOrderByObservedAtAsc(USER_ID, HOLDING_ID))
+			.thenReturn(existing);
+
+		ObservationEvidenceJudgment judgment = new ObservationEvidenceJudgment(
+			false, null, null);
+		when(evidenceJudgmentService.judgeObservationEvidence(
+			chain.buyTradeEntryPrice(), referenceLines.referenceStopLossPrice(),
+			referenceLines.referenceTakeProfitPrice(), sessionPrice, existing, OBSERVED_AT))
+			.thenReturn(judgment);
+
+		PracticeMarketObservation saved = PracticeMarketObservation.create(
+			USER_ID, holding, INSTRUMENT_ID, sessionPrice, judgment.closerToBoundary(),
+			judgment.closerBoundary(), judgment.evidenceType(), OBSERVED_AT);
+		when(observationRepository.save(any(PracticeMarketObservation.class))).thenReturn(saved);
+
+		PracticeHoldingObservationResponse response = service.createObservation(
+			USER_ID, new PracticeHoldingObservationCreateRequest(HOLDING_ID));
+
+		assertThat(response.currentPrice()).isEqualByComparingTo("101.5");
+		verify(priceQueryService, never()).getPrice(any());
 	}
 
 	@Test

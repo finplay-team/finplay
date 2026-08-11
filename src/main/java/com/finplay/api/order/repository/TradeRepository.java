@@ -42,4 +42,10 @@ public interface TradeRepository extends JpaRepository<Trade, Long>, TradeReposi
 	// 수량 정규화 비교(BigDecimal.compareTo)는 DB 조건이 아니라 호출부(TradeService)에서 수행한다.
 	List<Trade> findByAccount_User_IdAndInstrument_IdAndSideAndExecutedAtAfterOrderByExecutedAtAscIdAsc(
 		Long userId, Long instrumentId, OrderSide side, LocalDateTime after);
+
+	// 030 holding 관찰 세션 가격원 역추적용(이슈 #321) — buyTrade가 귀속된 order의 practicePriceSessionId만
+	// 프로젝션한다. 단일 필드 프로젝션은 파생 쿼리 이름으로 되지 않아 @Query로 쓴다(agent-mistakes.md 2026-08-03).
+	@Query("SELECT t.order.practicePriceSessionId FROM Trade t WHERE t.id = :tradeId")
+	Optional<Long> findPracticePriceSessionIdByTradeId(@Param("tradeId")
+	Long tradeId);
 }

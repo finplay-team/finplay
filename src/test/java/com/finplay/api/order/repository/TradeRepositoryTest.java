@@ -8,6 +8,8 @@ import com.finplay.api.account.domain.Account;
 import com.finplay.api.account.repository.AccountRepository;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
+import com.finplay.api.education.priceruntime.domain.PracticePriceSession;
+import com.finplay.api.education.priceruntime.repository.PracticePriceSessionRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.domain.StockReplaySession;
@@ -22,6 +24,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -61,6 +64,9 @@ class TradeRepositoryTest {
 
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
+
+	@Autowired
+	private PracticePriceSessionRepository practicePriceSessionRepository;
 
 	private User owner;
 	private Account ownerAccount;
@@ -393,6 +399,37 @@ class TradeRepositoryTest {
 	// 시장별 매도 이력 유무는 "있음"만 단정한다 — "없음"은 공유 컨테이너에 남은 다른 클래스의 커밋에 좌우돼
 	// 이 슬라이스에서 결정적으로 재현할 수 없다. 시장 한정이 실제로 걸리는지는 위
 	// findDistinctAccountIdsBySideAndMarket 테스트의 doesNotContain이 같은 중첩 탐색 경로로 확인한다.
+	// 030 holding 관찰 세션 역추적(이슈 #321)이 쓰는 단일 필드 프로젝션 쿼리를 검증한다.
+	@Test
+	@DisplayName("buyTrade가 귀속된 order의 practicePriceSessionId를 프로젝션한다")
+	void findPracticePriceSessionIdByTradeIdReturnsSessionIdWhenOrderIsPracticeSessionScoped() {
+		Instrument crypto = instrumentRepository.saveAndFlush(Instrument.create(
+			Market.CRYPTO, "PRC01", "테스트프랙티스코인", new BigDecimal("0.00000001"), 5_000L, true, NOW));
+		PracticePriceSession session = practicePriceSessionRepository.saveAndFlush(
+			PracticePriceSession.create(owner.getId(), crypto.getId(), 1L, (short)1, new BigDecimal("100"), NOW));
+		Order practiceOrder = orderRepository.saveAndFlush(Order.createPracticeLimitPendingBuy(
+			owner, ownerAccount, crypto, BigDecimal.ONE, new BigDecimal("100"), session.getId(),
+			"practice-session-idem", "p".repeat(64), NOW));
+		Trade practiceTrade = tradeRepository.saveAndFlush(Trade.of(
+			practiceOrder, ownerAccount, crypto, null, OrderSide.BUY,
+			BigDecimal.valueOf(100), BigDecimal.ONE, 100L, 0L, null, NOW, NOW));
+
+		Optional<Long> result = tradeRepository.findPracticePriceSessionIdByTradeId(practiceTrade.getId());
+
+		assertThat(result).contains(session.getId());
+	}
+
+	@Test
+	@DisplayName("세션 없는 실제 가격 buyTrade는 practicePriceSessionId 프로젝션이 빈 값이다")
+	void findPracticePriceSessionIdByTradeIdReturnsEmptyWhenOrderHasNoPracticeSession() {
+		Order order = createOrder(owner, ownerAccount, NOW);
+		Trade trade = createTrade(order, ownerAccount, NOW);
+
+		Optional<Long> result = tradeRepository.findPracticePriceSessionIdByTradeId(trade.getId());
+
+		assertThat(result).isEmpty();
+	}
+
 	@Test
 	@DisplayName("시장별로 매도 이력 계좌 존재 여부를 판정한다(account.market 중첩 탐색)")
 	void existsBySideAndAccountMarketDetectsSellHistoryPerMarket() {

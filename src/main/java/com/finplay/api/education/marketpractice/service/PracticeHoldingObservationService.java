@@ -7,12 +7,13 @@ import com.finplay.api.education.marketpractice.domain.PracticeMarketObservation
 import com.finplay.api.education.marketpractice.dto.request.PracticeHoldingObservationCreateRequest;
 import com.finplay.api.education.marketpractice.dto.response.PracticeHoldingObservationResponse;
 import com.finplay.api.education.marketpractice.repository.PracticeMarketObservationRepository;
+import com.finplay.api.education.priceruntime.service.PracticePriceObservationService;
 import com.finplay.api.education.service.PracticeIntentionService;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.PriceQueryService;
-import com.finplay.api.market.service.PriceQuoteDto;
 import com.finplay.api.portfolio.domain.Holding;
 import com.finplay.api.portfolio.service.HoldingService;
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -32,6 +33,7 @@ public class PracticeHoldingObservationService {
 	private final HoldingService holdingService;
 	private final MarketPracticeChainResolutionService chainResolutionService;
 	private final PriceQueryService priceQueryService;
+	private final PracticePriceObservationService practicePriceObservationService;
 	private final ReferencePriceCalculator referencePriceCalculator;
 	private final EvidenceJudgmentService evidenceJudgmentService;
 	private final PracticeMarketObservationRepository practiceMarketObservationRepository;
@@ -55,8 +57,12 @@ public class PracticeHoldingObservationService {
 		ReferencePriceLines referenceLines = referencePriceCalculator.calculate(chain)
 			.orElseThrow(() -> new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING));
 
-		// PriceQueryService.getPrice는 가격이 없으면 스스로 PRICE_UNAVAILABLE(409)을 던진다 (market 도메인 계약).
-		PriceQuoteDto priceQuote = priceQueryService.getPrice(holding.getInstrument().getId());
+		// 세션 귀속 buyTrade(030 교육 지정가 체결)는 같은 세션 currentPrice를, 세션 없는 기존 시장가·실제
+		// 지정가 buyTrade는 PriceQueryService.getPrice(가격 없으면 스스로 PRICE_UNAVAILABLE(409))를 쓴다
+		// (이슈 #321, plan.md "holding 관찰 연결").
+		BigDecimal observedPrice = practicePriceObservationService
+			.findObservationPrice(userId, chain.buyTradeId(), holding.getInstrument().getId())
+			.orElseGet(() -> priceQueryService.getPrice(holding.getInstrument().getId()).price());
 
 		List<PracticeMarketObservation> existingObservations = practiceMarketObservationRepository
 			.findByUserIdAndHoldingIdOrderByObservedAtAsc(userId, holding.getId());
@@ -66,7 +72,7 @@ public class PracticeHoldingObservationService {
 			chain.buyTradeEntryPrice(),
 			referenceLines.referenceStopLossPrice(),
 			referenceLines.referenceTakeProfitPrice(),
-			priceQuote.price(),
+			observedPrice,
 			existingObservations,
 			observedAt);
 
@@ -74,7 +80,7 @@ public class PracticeHoldingObservationService {
 			userId,
 			holding,
 			holding.getInstrument().getId(),
-			priceQuote.price(),
+			observedPrice,
 			judgment.closerToBoundary(),
 			judgment.closerBoundary(),
 			judgment.evidenceType(),
