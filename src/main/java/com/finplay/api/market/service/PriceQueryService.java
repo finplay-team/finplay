@@ -84,7 +84,8 @@ public class PriceQueryService {
 			return List.of();
 		}
 		// 샘플 종목은 분할해 개별 처리하고, market 혼재 방어 검사는 실제 종목 부분집합에만 적용한 뒤 원래 순서로 병합한다
-		List<Instrument> realInstruments = instruments.stream().filter(instrument -> !instrument.isTutorialSample()).toList();
+		List<Instrument> realInstruments = instruments.stream().filter(instrument -> !instrument.isTutorialSample())
+			.toList();
 		Map<Instrument, PriceQuoteDto> realQuotesByInstrument = new IdentityHashMap<>();
 		if (!realInstruments.isEmpty()) {
 			Market market = realInstruments.get(0).getMarket();
@@ -98,7 +99,8 @@ public class PriceQueryService {
 			}
 		}
 		return instruments.stream()
-			.map(instrument -> instrument.isTutorialSample() ? tutorialSampleInstrumentPriceService.getPriceQuote(instrument)
+			.map(instrument -> instrument.isTutorialSample()
+				? tutorialSampleInstrumentPriceService.getPriceQuote(instrument)
 				: realQuotesByInstrument.get(instrument))
 			.toList();
 	}
