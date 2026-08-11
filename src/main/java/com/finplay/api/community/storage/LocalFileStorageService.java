@@ -8,11 +8,15 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Profile;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+// prod는 S3FileStorageService를 쓴다 — 로컬 파일시스템은 인스턴스 간 공유되지 않는다
+// (docs/specs/022-community-enhancement/plan.md "COM-006 후속: 이미지 저장소를 S3로 전환").
+@Profile("!prod")
 @Slf4j
 @Service
 public class LocalFileStorageService implements FileStorageService {

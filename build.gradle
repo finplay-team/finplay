@@ -36,6 +36,11 @@ dependencies {
 	// Spring AI 2.0.0 이상만 Boot 4.x를 지원한다 (ADR-0011). 1.x는 Boot 3.x 전용이라 컨텍스트가 기동하지 않는다.
 	implementation 'org.springframework.ai:spring-ai-starter-model-openai:2.0.0'
 	implementation 'org.flywaydb:flyway-mysql'
+	// AWS SDK v2(software.amazon.awssdk) — v1(com.amazonaws:aws-java-sdk-*)은 유지보수 모드라 신규 도입 대상이 아니다
+	// (docs/specs/022-community-enhancement/plan.md "COM-006 후속"). BOM 2.51.4는 구현 시점(2026-08-11)
+	// Maven Central 최신 안정판이며 Boot 4.1/Java 17과 충돌이 없다.
+	implementation platform('software.amazon.awssdk:bom:2.51.4')
+	implementation 'software.amazon.awssdk:s3'
 	implementation 'com.querydsl:querydsl-jpa:5.1.0:jakarta'
 	annotationProcessor 'com.querydsl:querydsl-apt:5.1.0:jakarta'
 	annotationProcessor 'jakarta.annotation:jakarta.annotation-api'

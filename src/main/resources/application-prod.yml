@@ -18,3 +18,12 @@ resend:
   api-key: ${RESEND_API_KEY}
 email:
   from: ${EMAIL_FROM}
+
+finplay:
+  community:
+    image-storage:
+      # 커뮤니티 첨부 이미지 저장소를 S3로 전환(이슈 #330) — 버킷 이름은 시크릿이 아니지만
+      # 기존 fail-fast 관례(DB_URL 등)를 그대로 따라 기본값 없이 참조한다. 자격 증명·리전은
+      # SDK 기본 체인(EC2 IAM 인스턴스 프로파일, AWS_REGION)에 맡긴다 — 커스텀 키를 추가하지 않는다.
+      s3:
+        bucket: ${COMMUNITY_S3_BUCKET}
