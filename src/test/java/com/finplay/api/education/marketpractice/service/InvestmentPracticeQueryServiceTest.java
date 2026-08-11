@@ -23,7 +23,9 @@ import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.portfolio.domain.Holding;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -42,10 +44,11 @@ class InvestmentPracticeQueryServiceTest {
 		PracticeMarketObservationRepository.class);
 	private final PracticeCompletionRepository practiceCompletionRepository = mock(
 		PracticeCompletionRepository.class);
+	private final Clock clock = Clock.fixed(NOW.atZone(ZoneId.systemDefault()).toInstant(), ZoneId.systemDefault());
 
 	private final InvestmentPracticeQueryService service = new InvestmentPracticeQueryService(
 		favoriteService, chainResolutionService, referencePriceCalculator, practiceMarketObservationRepository,
-		practiceCompletionRepository);
+		practiceCompletionRepository, clock);
 
 	@Test
 	void getProgressReturnsCompletedWithSharedEvidenceAcrossAllThreeStepsWhenCompletionExists() {
@@ -279,7 +282,7 @@ class InvestmentPracticeQueryServiceTest {
 		Long buyTradeId, LocalDateTime buyTradeExecutedAt, Long holdingId) {
 		return new ResolvedPracticeChainDto(
 			favoriteId, favoriteCreatedAt, intentionId, intentionCreatedAt, new BigDecimal("90"),
-			new BigDecimal("110"), buyTradeId, buyTradeExecutedAt, new BigDecimal("100"), holdingId, null, null);
+			new BigDecimal("110"), buyTradeId, buyTradeExecutedAt, new BigDecimal("100"), holdingId, null, null, false);
 	}
 
 	private static Holding holding(Long holdingId, Long instrumentId) {

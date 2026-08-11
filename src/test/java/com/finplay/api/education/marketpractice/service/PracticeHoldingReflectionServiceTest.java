@@ -148,7 +148,7 @@ class PracticeHoldingReflectionServiceTest {
 			USER_ID, PracticeIntentionService.TUTORIAL_KEY)).thenReturn(Optional.of(progress));
 		ResolvedPracticeChainDto mismatchedChain = new ResolvedPracticeChainDto(
 			10L, NOW.minusDays(1), 20L, NOW.minusHours(2), new BigDecimal("90"), new BigDecimal("120"), 30L,
-			NOW.minusHours(1), new BigDecimal("100"), 999L, null, null);
+			NOW.minusHours(1), new BigDecimal("100"), 999L, null, null, false);
 		when(chainResolutionService.resolveForInstrument(USER_ID, PracticeIntentionService.TUTORIAL_KEY, INSTRUMENT_ID))
 			.thenReturn(Optional.of(mismatchedChain));
 
@@ -268,7 +268,7 @@ class PracticeHoldingReflectionServiceTest {
 	private ResolvedPracticeChainDto completedChain() {
 		return new ResolvedPracticeChainDto(
 			10L, NOW.minusDays(1), 20L, NOW.minusHours(2), new BigDecimal("90"), new BigDecimal("120"), 30L,
-			NOW.minusHours(1), new BigDecimal("100"), HOLDING_ID, null, null);
+			NOW.minusHours(1), new BigDecimal("100"), HOLDING_ID, null, null, false);
 	}
 
 	private PracticeHoldingReflectionCreateRequest request() {

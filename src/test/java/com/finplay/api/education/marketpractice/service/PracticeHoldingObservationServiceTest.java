@@ -111,7 +111,7 @@ class PracticeHoldingObservationServiceTest {
 		when(holdingService.findHoldingForOwner(USER_ID, HOLDING_ID)).thenReturn(Optional.of(holding));
 		ResolvedPracticeChainDto mismatchedChain = new ResolvedPracticeChainDto(
 			10L, OBSERVED_AT.minusDays(1), 20L, OBSERVED_AT.minusHours(2), new BigDecimal("90"),
-			new BigDecimal("120"), 30L, OBSERVED_AT.minusHours(1), new BigDecimal("100"), 999L, null, null);
+			new BigDecimal("120"), 30L, OBSERVED_AT.minusHours(1), new BigDecimal("100"), 999L, null, null, false);
 		when(chainResolutionService.resolveForInstrument(USER_ID, PracticeIntentionService.TUTORIAL_KEY, INSTRUMENT_ID))
 			.thenReturn(Optional.of(mismatchedChain));
 
@@ -247,6 +247,7 @@ class PracticeHoldingObservationServiceTest {
 	private ResolvedPracticeChainDto completedChain() {
 		return new ResolvedPracticeChainDto(
 			10L, OBSERVED_AT.minusDays(1), 20L, OBSERVED_AT.minusHours(2), new BigDecimal("90"),
-			new BigDecimal("120"), 30L, OBSERVED_AT.minusHours(1), new BigDecimal("100"), HOLDING_ID, null, null);
+			new BigDecimal("120"), 30L, OBSERVED_AT.minusHours(1), new BigDecimal("100"), HOLDING_ID, null, null,
+			false);
 	}
 }

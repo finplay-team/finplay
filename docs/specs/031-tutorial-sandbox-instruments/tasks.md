@@ -34,7 +34,7 @@
   `executedAt` 동순위 시 `tradeId` 순), `MarketPracticeChainResolutionService` 단위(매도 없음/있음/여러
   건 중 최이른 선택), `026`의 기존 2단계 chain 해석 회귀 테스트 통과 확인. (plan 3번 "매도 chain 조회")
 
-- [ ] **`GET /api/education/practice` 4단계 응답(샘플 종목 chain 한정)** — `InvestmentPracticeQueryService`가
+- [x] **`GET /api/education/practice` 4단계 응답(샘플 종목 chain 한정)** — `InvestmentPracticeQueryService`가
   chain 해석 후 `resolvedInstrument.isTutorialSample()`로 분기해 `PracticeStepResponse` 배열을 3개(실제
   종목, `026`과 동일) 또는 4개(샘플 종목, 신규 4번째 "매도·복기")로 구성한다. step 상태 상수에 `EXPIRED`
   추가. `PracticeEvidenceResponse`에 `sellTradeId`, `sellTradeExecutedAt`, `saleDeadlineAt`(=

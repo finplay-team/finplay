@@ -16,5 +16,6 @@ public record ResolvedPracticeChainDto(
 	BigDecimal buyTradeEntryPrice,
 	Long holdingId,
 	Long sellTradeId,
-	LocalDateTime sellTradeExecutedAt) {
+	LocalDateTime sellTradeExecutedAt,
+	boolean instrumentIsTutorialSample) {
 }

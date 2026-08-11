@@ -14,6 +14,8 @@ import com.finplay.api.favorite.dto.response.FavoriteResponse;
 import com.finplay.api.favorite.service.FavoriteService;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.portfolio.domain.Holding;
+import java.time.Clock;
+import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -35,12 +37,17 @@ public class InvestmentPracticeQueryService {
 	private static final String STATUS_COMPLETED = "COMPLETED";
 	private static final String STATUS_IN_PROGRESS = "IN_PROGRESS";
 	private static final String STATUS_NOT_STARTED = "NOT_STARTED";
+	// 샘플 종목 chain(4단계)에서만 등장하는 상태 — 매수 후 5분 이내에 매도 evidence가 없으면 만료된다
+	// (plan.md "3. 매도 단계 API 설계" GET 4단계 응답 표).
+	private static final String STATUS_EXPIRED = "EXPIRED";
+	private static final long SALE_DEADLINE_MINUTES = 5;
 
 	private final FavoriteService favoriteService;
 	private final MarketPracticeChainResolutionService chainResolutionService;
 	private final ReferencePriceCalculator referencePriceCalculator;
 	private final PracticeMarketObservationRepository practiceMarketObservationRepository;
 	private final PracticeCompletionRepository practiceCompletionRepository;
+	private final Clock clock;
 
 	@Transactional(readOnly = true)
 	public InvestmentPracticeResponse getProgress(Long userId, Market market) {
@@ -74,6 +81,7 @@ public class InvestmentPracticeQueryService {
 		Long userId, String tutorialKey, PracticeCompletion completion) {
 		PracticeMarketReflection reflection = completion.getReflection();
 		Holding holding = reflection.getHolding();
+		boolean sampleInstrument = holding.getInstrument().isTutorialSample();
 
 		Optional<ResolvedPracticeChainDto> chain = chainResolutionService
 			.resolveForInstrument(userId, tutorialKey, holding.getInstrument().getId())
@@ -99,12 +107,39 @@ public class InvestmentPracticeQueryService {
 			qualifyingObservation.map(PracticeMarketObservation::getObservedAt).orElse(null),
 			qualifyingObservation.map(observation -> observation.getEvidenceType().name()).orElse(null),
 			reflection.getId(),
-			reflection.getCreatedAt());
+			reflection.getCreatedAt(),
+			null,
+			null,
+			null);
+
+		if (!sampleInstrument) {
+			List<PracticeStepResponse> steps = List.of(
+				new PracticeStepResponse(1, STATUS_COMPLETED, false, evidence),
+				new PracticeStepResponse(2, STATUS_COMPLETED, false, evidence),
+				new PracticeStepResponse(3, STATUS_COMPLETED, false, evidence));
+			return new InvestmentPracticeResponse(
+				tutorialKey, STATUS_COMPLETED, null, steps, completion.getCompletedAt());
+		}
+
+		// 샘플 종목 chain은 4단계(매도·복기)까지 완료돼야 practice_completions가 생기므로(4단계
+		// evidence(a)·(b) 모두 필요), 완료 응답도 4단계로 확장해 매도 evidence를 노출한다.
+		PracticeEvidenceResponse stepFourEvidence = new PracticeEvidenceResponse(
+			evidence.favoriteId(), evidence.favoriteCreatedAt(), evidence.intentionId(), evidence.intentionCreatedAt(),
+			evidence.buyTradeId(), evidence.buyTradeExecutedAt(), evidence.holdingId(),
+			evidence.referenceStopLossPrice(), evidence.referenceTakeProfitPrice(),
+			evidence.observationId(), evidence.observationObservedAt(), evidence.evidenceType(),
+			evidence.reflectionId(), evidence.reflectionCreatedAt(),
+			chain.map(ResolvedPracticeChainDto::sellTradeId).orElse(null),
+			chain.map(ResolvedPracticeChainDto::sellTradeExecutedAt).orElse(null),
+			evidence.buyTradeExecutedAt() == null
+				? null
+				: evidence.buyTradeExecutedAt().plusMinutes(SALE_DEADLINE_MINUTES));
 
 		List<PracticeStepResponse> steps = List.of(
 			new PracticeStepResponse(1, STATUS_COMPLETED, false, evidence),
 			new PracticeStepResponse(2, STATUS_COMPLETED, false, evidence),
-			new PracticeStepResponse(3, STATUS_COMPLETED, false, evidence));
+			new PracticeStepResponse(3, STATUS_COMPLETED, false, evidence),
+			new PracticeStepResponse(4, STATUS_COMPLETED, false, stepFourEvidence));
 		return new InvestmentPracticeResponse(tutorialKey, STATUS_COMPLETED, null, steps, completion.getCompletedAt());
 	}
 
@@ -124,6 +159,9 @@ public class InvestmentPracticeQueryService {
 			chain.holdingId(),
 			referenceLines.map(ReferencePriceLines::referenceStopLossPrice).orElse(null),
 			referenceLines.map(ReferencePriceLines::referenceTakeProfitPrice).orElse(null),
+			null,
+			null,
+			null,
 			null,
 			null,
 			null,
@@ -151,17 +189,73 @@ public class InvestmentPracticeQueryService {
 				observation.getObservedAt(),
 				observation.getEvidenceType().name(),
 				null,
+				null,
+				null,
+				null,
 				null))
 			.orElse(chainEvidence);
 
 		PracticeEvidenceResponse favoriteEvidence = PracticeEvidenceResponse
 			.favoriteOnly(chain.favoriteId(), chain.favoriteCreatedAt());
 
+		if (!chain.instrumentIsTutorialSample()) {
+			List<PracticeStepResponse> steps = List.of(
+				new PracticeStepResponse(1, STATUS_COMPLETED, false, favoriteEvidence),
+				new PracticeStepResponse(2, STATUS_COMPLETED, false, chainEvidence),
+				new PracticeStepResponse(3, STATUS_IN_PROGRESS, false, stepThreeEvidence));
+			return new InvestmentPracticeResponse(tutorialKey, STATUS_IN_PROGRESS, 3, steps, null);
+		}
+
+		// 샘플 종목 chain: 4단계(매도·복기) 확장(plan.md "GET /api/education/practice 4단계 응답").
+		LocalDateTime saleDeadlineAt = chain.buyTradeExecutedAt() == null
+			? null
+			: chain.buyTradeExecutedAt().plusMinutes(SALE_DEADLINE_MINUTES);
+		String stepFourStatus = resolveStepFourStatus(chain, saleDeadlineAt);
+
+		PracticeEvidenceResponse stepFourEvidence = new PracticeEvidenceResponse(
+			chainEvidence.favoriteId(),
+			chainEvidence.favoriteCreatedAt(),
+			chainEvidence.intentionId(),
+			chainEvidence.intentionCreatedAt(),
+			chainEvidence.buyTradeId(),
+			chainEvidence.buyTradeExecutedAt(),
+			chainEvidence.holdingId(),
+			chainEvidence.referenceStopLossPrice(),
+			chainEvidence.referenceTakeProfitPrice(),
+			null,
+			null,
+			null,
+			null,
+			null,
+			chain.sellTradeId(),
+			chain.sellTradeExecutedAt(),
+			saleDeadlineAt);
+
 		List<PracticeStepResponse> steps = List.of(
 			new PracticeStepResponse(1, STATUS_COMPLETED, false, favoriteEvidence),
 			new PracticeStepResponse(2, STATUS_COMPLETED, false, chainEvidence),
-			new PracticeStepResponse(3, STATUS_IN_PROGRESS, false, stepThreeEvidence));
-		return new InvestmentPracticeResponse(tutorialKey, STATUS_IN_PROGRESS, 3, steps, null);
+			new PracticeStepResponse(3, STATUS_IN_PROGRESS, false, stepThreeEvidence),
+			new PracticeStepResponse(4, stepFourStatus, false, stepFourEvidence));
+		return new InvestmentPracticeResponse(tutorialKey, STATUS_IN_PROGRESS, 4, steps, null);
+	}
+
+	// 4단계(매도·복기) evidence 판정. (a) 매도 체결이 buyTrade.executedAt + 5분 이내여야 IN_PROGRESS(복기 대기),
+	// 매도가 아직 없으면 그 5분 창이 지나기 전까지 NOT_STARTED, 매도 없이 5분을 넘기거나 매도 자체가 5분을 넘겨
+	// 체결됐으면 EXPIRED다(plan.md "4. 5분 타이머"). 완료(practice_completions)는 buildCompletedResponse가
+	// 담당하므로 이 메서드는 COMPLETED를 반환하지 않는다.
+	private String resolveStepFourStatus(ResolvedPracticeChainDto chain, LocalDateTime saleDeadlineAt) {
+		if (chain.sellTradeId() != null) {
+			return isWithinSaleDeadline(chain.sellTradeExecutedAt(), saleDeadlineAt)
+				? STATUS_IN_PROGRESS
+				: STATUS_EXPIRED;
+		}
+		LocalDateTime now = LocalDateTime.now(clock);
+		return isWithinSaleDeadline(now, saleDeadlineAt) ? STATUS_NOT_STARTED : STATUS_EXPIRED;
+	}
+
+	// 경계값 포함(정확히 5분 시점 포함) — "!isAfter"로 5분 초과만 만료로 다룬다(plan.md 4번 "5분 경계값").
+	private boolean isWithinSaleDeadline(LocalDateTime at, LocalDateTime saleDeadlineAt) {
+		return saleDeadlineAt == null || !at.isAfter(saleDeadlineAt);
 	}
 
 	// 완료 조건 4: 유효 chain이 없지만 해당 market에 본인 favorite이 1개 이상이면 1단계만 COMPLETED다. 여러

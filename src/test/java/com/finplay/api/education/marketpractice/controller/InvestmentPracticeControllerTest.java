@@ -76,7 +76,8 @@ class InvestmentPracticeControllerTest {
 		PracticeEvidenceResponse evidence = new PracticeEvidenceResponse(
 			10L, LocalDateTime.of(2026, 8, 1, 9, 0), 20L, LocalDateTime.of(2026, 8, 2, 9, 0), 30L,
 			LocalDateTime.of(2026, 8, 3, 9, 0), 40L, null, null, 60L,
-			LocalDateTime.of(2026, 8, 9, 9, 0), "CLOSER_TO_BOUNDARY", 70L, LocalDateTime.of(2026, 8, 10, 9, 0));
+			LocalDateTime.of(2026, 8, 9, 9, 0), "CLOSER_TO_BOUNDARY", 70L, LocalDateTime.of(2026, 8, 10, 9, 0),
+			null, null, null);
 		List<PracticeStepResponse> steps = List.of(
 			new PracticeStepResponse(1, "COMPLETED", false, evidence),
 			new PracticeStepResponse(2, "COMPLETED", false, evidence),

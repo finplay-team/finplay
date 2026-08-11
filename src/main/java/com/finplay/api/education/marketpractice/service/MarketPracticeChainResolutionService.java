@@ -135,7 +135,8 @@ public class MarketPracticeChainResolutionService {
 			trade.getPrice(),
 			holdingId.get(),
 			sellTrade.map(Trade::getId).orElse(null),
-			sellTrade.map(Trade::getExecutedAt).orElse(null)));
+			sellTrade.map(Trade::getExecutedAt).orElse(null),
+			trade.getInstrument().isTutorialSample()));
 	}
 
 	private Market resolveTargetMarket(String tutorialKey) {
