@@ -160,3 +160,11 @@
 
 ## 모니터링 (사람용 요약)
 - COM-005 tombstone 항목5: `PostCommentService.createComment`의 부모 검증에 3단계(`isTombstoned()`)를 추가해 tombstone된 부모에는 400 `VALIDATION_ERROR`("삭제된 댓글에는 답글을 남길 수 없습니다.")로 막았다. `docs/api-contracts.md`의 해당 엔드포인트 400 사유에 Issue #277 함께 추가. compileJava 통과(테스트는 tester 담당).
+
+## AI 로그 (에이전트 참조용, COM-006 후속(S3, 이슈 #330) 항목1)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| - | implementer | `JAVA_HOME=... ./gradlew.bat compileJava compileTestJava`, `test --tests "com.finplay.api.community.storage.*"`, `spotlessApply` | plan.md "COM-006 후속: 이미지 저장소를 S3로 전환" AWS SDK 의존성·프로파일 분기·자격증명 절, ADR-0020 |
+
+## 모니터링 (사람용 요약)
+- COM-006 후속 항목1: `build.gradle`에 `software.amazon.awssdk:bom:2.51.4`(Maven Central 확인) platform + `s3` 추가. `community.storage`에 `S3FileStorageService`(`@Profile("prod")`, store/load/delete를 Put/Get/DeleteObjectRequest로 구현, 예외 계약은 `LocalFileStorageService`와 동일하게 INTERNAL_ERROR/NOT_FOUND/best-effort log)와 `S3ClientConfig`(`@Bean S3Client`, prod 전용, 자격증명·리전은 SDK 기본 체인) 신규. `LocalFileStorageService`에 `@Profile("!prod")` 추가. `application-prod.yml`에 `finplay.community.image-storage.s3.bucket`(기본값 없음, fail-fast) 추가, `.env.example`에 `COMMUNITY_S3_BUCKET=` 추가. `S3FileStorageServiceTest`(Mockito `S3Client` mock) 6건 신규, 기존 `LocalFileStorageServiceTest` 7건 모두 통과(프로파일 애너테이션 영향 없음 확인). compileJava/compileTestJava 통과.
