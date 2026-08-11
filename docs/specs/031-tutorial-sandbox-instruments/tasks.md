@@ -57,7 +57,7 @@
   4분59초/5분정확/5분1초, `!isAfter` 기준 포함/제외 확정), `@WebMvcTest`(신규 409 매핑 2종), 통합 없이 이번
   항목은 단위·슬라이스로 충분(전체 흐름 통합은 다음 항목). (spec SANDBOX-006·007·008, plan 3번·4번)
 
-- [ ] **통합 테스트 — 샘플 종목 전체 흐름 + 만료·재도전 + 실제 종목 회귀** — Testcontainers 통합 테스트로
+- [x] **통합 테스트 — 샘플 종목 전체 흐름 + 만료·재도전 + 실제 종목 회귀** — Testcontainers 통합 테스트로
   (1) 빗썸 poller 미기동·주식 재생세션 미시딩 상태에서 샘플 종목 즐겨찾기→의도→매수→관찰(A 또는 B)→매도
   (`POST /api/orders` SELL MARKET)→복기 전체 흐름이 성공(이슈 #339 직접 회귀 테스트), (2) 5분 초과 후
   매도 시 `holding-reflections`가 409 `PRACTICE_SANDBOX_TIME_EXPIRED`를 반환하고 같은 종목 재매수로 만든
@@ -67,7 +67,7 @@
   상단에 "이 spec의 4단계 확장은 `031`이 정본" 1줄 상태 참조를 추가한다(내용 수정 아님). (spec
   SANDBOX-009, plan 5번, 완료 조건)
 
-- [ ] **문서 동기화 + `./gradlew build`** — `docs/api-routes.md`(`GET /api/instruments` 응답 필드 변경,
+- [x] **문서 동기화 + `./gradlew build`** — `docs/api-routes.md`(`GET /api/instruments` 응답 필드 변경,
   `GET /api/education/practice` 4단계 응답 변경 각주), `docs/api-contracts.md`(`isTutorialSample` 필드,
   4단계 `steps` 배열, `PracticeEvidenceResponse` 3신규 필드, `holding-reflections`의 신규 409
   `PRACTICE_SANDBOX_TIME_EXPIRED` 계약) 갱신. `docs/prd.md` §3 구현 현황에 해당 요구사항 ID 행 갱신(근거:

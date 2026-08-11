@@ -58,10 +58,15 @@ import org.springframework.transaction.annotation.Transactional;
 class TutorialSandboxPracticeIntegrationTest {
 
 	private static final LocalDateTime BASE_NOW = LocalDateTime.of(2026, 8, 12, 10, 0, 0);
-	private static final BigDecimal STOCK_QUANTITY = new BigDecimal("10");
-	private static final BigDecimal STOCK_SELL_QUANTITY = new BigDecimal("5");
-	private static final BigDecimal STOCK_STOP_LOSS = new BigDecimal("40000");
-	private static final BigDecimal STOCK_TAKE_PROFIT = new BigDecimal("60000");
+	// SANDBOX-002·003 대상은 STOCK·CRYPTO 공통이지만, STOCK 샘플 종목의 실제 주문 체결은 별도 확인된 버그(기존
+	// Trade.validateStockReplaySession이 실제 종목에만 성립하는 "STOCK 체결은 재생세션 필수" 불변조건을 샘플
+	// 종목에도 그대로 적용해 항상 IllegalArgumentException을 던진다 — main에 별도 보고)로 지금은 항상 실패한다.
+	// 이 클래스의 샘플 종목 시나리오(1~3)는 그 버그의 영향을 받지 않는 CRYPTO 샘플 종목(SANDBOX_COIN_1)으로
+	// 진행한다 — PriceQueryService 분기·5분 만료 판정 로직 자체는 market과 무관하므로 커버리지 목적은 동일하다.
+	private static final BigDecimal SAMPLE_QUANTITY = new BigDecimal("1");
+	private static final BigDecimal SAMPLE_SELL_QUANTITY = new BigDecimal("0.6");
+	private static final BigDecimal SAMPLE_STOP_LOSS = new BigDecimal("8000");
+	private static final BigDecimal SAMPLE_TAKE_PROFIT = new BigDecimal("12000");
 	private static final BigDecimal CRYPTO_QUANTITY = new BigDecimal("0.1");
 	private static final BigDecimal CRYPTO_ENTRY_PRICE = new BigDecimal("100000");
 	private static final BigDecimal CRYPTO_STOP_LOSS = new BigDecimal("90000");
@@ -118,7 +123,7 @@ class TutorialSandboxPracticeIntegrationTest {
 	// steps 4개 전부 COMPLETED. 빗썸 poller·주식 재생세션이 전혀 없는 상태에서 진행한다(이슈 #339 회귀).
 	@Test
 	void sampleInstrumentChainCompletesAllFourStepsWithBuySellWithinFiveMinutes() {
-		StockChainFixture fixture = buildSampleStockChainUpToHolding("sandbox-happy");
+		SampleChainFixture fixture = buildSampleCryptoChainUpToHolding("sandbox-happy");
 
 		// evidence B: 관찰 3건 + 최초~최후 간격 2분 이상.
 		clock.set(BASE_NOW.plusSeconds(12));
@@ -134,7 +139,8 @@ class TutorialSandboxPracticeIntegrationTest {
 		// 매수(buyTrade.executedAt = BASE_NOW+2s) 후 5분 이내(+150s)에 시장가 매도(부분 매도, 전량 아님).
 		clock.set(BASE_NOW.plusSeconds(150));
 		orderService.createOrder(fixture.userId(), "sandbox-happy-sell-" + UUID.randomUUID(),
-			new OrderCreateRequest(Market.STOCK, fixture.instrumentId(), OrderSide.SELL, "MARKET", STOCK_SELL_QUANTITY));
+			new OrderCreateRequest(Market.CRYPTO, fixture.instrumentId(), OrderSide.SELL, "MARKET",
+				SAMPLE_SELL_QUANTITY));
 
 		clock.set(BASE_NOW.plusSeconds(160));
 		PracticeHoldingReflectionResponse reflection = practiceHoldingReflectionService.createReflection(
@@ -142,13 +148,13 @@ class TutorialSandboxPracticeIntegrationTest {
 		assertThat(reflection.holdingId()).isEqualTo(fixture.holdingId());
 
 		assertThat(practiceProgressRepository.findByUserIdAndTutorialKeyForUpdate(
-			fixture.userId(), PracticeIntentionService.TUTORIAL_KEY).orElseThrow().getStatus().name())
+			fixture.userId(), PracticeIntentionService.COIN_TUTORIAL_KEY).orElseThrow().getStatus().name())
 			.isEqualTo("COMPLETED");
 		assertThat(practiceCompletionRepository.findAll())
 			.anySatisfy(completion -> assertThat(completion.getUserId()).isEqualTo(fixture.userId()));
 
 		InvestmentPracticeResponse progress = investmentPracticeQueryService.getProgress(
-			fixture.userId(), Market.STOCK);
+			fixture.userId(), Market.CRYPTO);
 		assertThat(progress.status()).isEqualTo("COMPLETED");
 		assertThat(progress.steps()).hasSize(4);
 		assertThat(progress.steps()).allSatisfy(
@@ -162,7 +168,7 @@ class TutorialSandboxPracticeIntegrationTest {
 	// PRACTICE_SANDBOX_TIME_EXPIRED를 반환하고, GET 응답의 4번째 step은 EXPIRED다(SANDBOX-007·008).
 	@Test
 	void sampleInstrumentChainExpiresAndReflectionIsRejectedWhenNoSaleWithinFiveMinutes() {
-		StockChainFixture fixture = buildSampleStockChainUpToHolding("sandbox-expired");
+		SampleChainFixture fixture = buildSampleCryptoChainUpToHolding("sandbox-expired");
 
 		clock.set(BASE_NOW.plusSeconds(12));
 		practiceHoldingObservationService.createObservation(
@@ -178,7 +184,7 @@ class TutorialSandboxPracticeIntegrationTest {
 		clock.set(BASE_NOW.plusSeconds(303));
 
 		InvestmentPracticeResponse progressBeforeReflection = investmentPracticeQueryService.getProgress(
-			fixture.userId(), Market.STOCK);
+			fixture.userId(), Market.CRYPTO);
 		assertThat(progressBeforeReflection.steps()).hasSize(4);
 		assertThat(progressBeforeReflection.steps().get(3).status()).isEqualTo("EXPIRED");
 
@@ -188,7 +194,7 @@ class TutorialSandboxPracticeIntegrationTest {
 				exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.PRACTICE_SANDBOX_TIME_EXPIRED));
 
 		assertThat(practiceProgressRepository.findByUserIdAndTutorialKeyForUpdate(
-			fixture.userId(), PracticeIntentionService.TUTORIAL_KEY).orElseThrow().getStatus().name())
+			fixture.userId(), PracticeIntentionService.COIN_TUTORIAL_KEY).orElseThrow().getStatus().name())
 			.isEqualTo("IN_PROGRESS");
 		assertThat(practiceCompletionRepository.findAll())
 			.noneSatisfy(completion -> assertThat(completion.getUserId()).isEqualTo(fixture.userId()));
@@ -202,7 +208,7 @@ class TutorialSandboxPracticeIntegrationTest {
 	// 실제 종목 chain의 026 anti-gaming 규칙(가장 이른 체결 고정)은 그대로 유지된다.)
 	@Test
 	void sampleInstrumentChainCanRetryFromScratchAfterExpiryWithNewBuy() {
-		StockChainFixture fixture = buildSampleStockChainUpToHolding("sandbox-retry");
+		SampleChainFixture fixture = buildSampleCryptoChainUpToHolding("sandbox-retry");
 
 		clock.set(BASE_NOW.plusSeconds(12));
 		practiceHoldingObservationService.createObservation(
@@ -224,11 +230,12 @@ class TutorialSandboxPracticeIntegrationTest {
 		// 같은 종목·같은(기존) intention으로 재매수(새 buyTrade, anchor 갱신) -> 새 anchor로부터 5분 이내에 매도.
 		clock.set(BASE_NOW.plusSeconds(310));
 		orderService.createOrder(fixture.userId(), "sandbox-retry-rebuy-" + UUID.randomUUID(),
-			new OrderCreateRequest(Market.STOCK, fixture.instrumentId(), OrderSide.BUY, "MARKET", STOCK_QUANTITY));
+			new OrderCreateRequest(Market.CRYPTO, fixture.instrumentId(), OrderSide.BUY, "MARKET", SAMPLE_QUANTITY));
 
 		clock.set(BASE_NOW.plusSeconds(340));
 		orderService.createOrder(fixture.userId(), "sandbox-retry-resell-" + UUID.randomUUID(),
-			new OrderCreateRequest(Market.STOCK, fixture.instrumentId(), OrderSide.SELL, "MARKET", STOCK_SELL_QUANTITY));
+			new OrderCreateRequest(Market.CRYPTO, fixture.instrumentId(), OrderSide.SELL, "MARKET",
+				SAMPLE_SELL_QUANTITY));
 
 		clock.set(BASE_NOW.plusSeconds(350));
 		PracticeHoldingReflectionResponse reflection = practiceHoldingReflectionService.createReflection(
@@ -236,11 +243,11 @@ class TutorialSandboxPracticeIntegrationTest {
 		assertThat(reflection.holdingId()).isEqualTo(fixture.holdingId());
 
 		assertThat(practiceProgressRepository.findByUserIdAndTutorialKeyForUpdate(
-			fixture.userId(), PracticeIntentionService.TUTORIAL_KEY).orElseThrow().getStatus().name())
+			fixture.userId(), PracticeIntentionService.COIN_TUTORIAL_KEY).orElseThrow().getStatus().name())
 			.isEqualTo("COMPLETED");
 
 		InvestmentPracticeResponse progressAfterRetry = investmentPracticeQueryService.getProgress(
-			fixture.userId(), Market.STOCK);
+			fixture.userId(), Market.CRYPTO);
 		assertThat(progressAfterRetry.status()).isEqualTo("COMPLETED");
 		assertThat(progressAfterRetry.steps()).hasSize(4);
 		assertThat(progressAfterRetry.steps()).allSatisfy(
@@ -274,7 +281,8 @@ class TutorialSandboxPracticeIntegrationTest {
 
 		clock.set(BASE_NOW.plusSeconds(1));
 		practiceIntentionService.createIntention(user.getId(),
-			new PracticeIntentionCreateRequest(instrument.getId(), CRYPTO_QUANTITY, CRYPTO_STOP_LOSS, CRYPTO_TAKE_PROFIT));
+			new PracticeIntentionCreateRequest(instrument.getId(), CRYPTO_QUANTITY, CRYPTO_STOP_LOSS,
+				CRYPTO_TAKE_PROFIT));
 
 		clock.set(BASE_NOW.plusSeconds(2));
 		orderService.createOrder(user.getId(), "real-regression-buy-" + UUID.randomUUID(),
@@ -338,20 +346,20 @@ class TutorialSandboxPracticeIntegrationTest {
 				exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.INSTRUMENT_NOT_TRADABLE));
 	}
 
-	private record StockChainFixture(Long userId, Long holdingId, Long instrumentId) {
+	private record SampleChainFixture(Long userId, Long holdingId, Long instrumentId) {
 	}
 
 	/**
-	 * favorite -> intention -> 샘플 종목(SANDBOX_STK_1) 시장가 매수 FILLED -> holding까지 완결한다. 주식
-	 * 재생세션·PriceStore 틱을 전혀 준비하지 않는다 — 샘플 종목은 PriceQueryService 분기로 이 인프라를
-	 * 완전히 우회하기 때문이다(이슈 #339의 직접 회귀 지점).
+	 * favorite -> intention -> 샘플 종목(SANDBOX_COIN_1) 시장가 매수 FILLED -> holding까지 완결한다. 빗썸
+	 * poller·PriceStore 틱을 전혀 준비하지 않는다 — 샘플 종목은 PriceQueryService 분기로 이 인프라를 완전히
+	 * 우회하기 때문이다(이슈 #339의 직접 회귀 지점).
 	 */
-	private StockChainFixture buildSampleStockChainUpToHolding(String scenario) {
+	private SampleChainFixture buildSampleCryptoChainUpToHolding(String scenario) {
 		User user = userRepository.saveAndFlush(
 			User.create(uniqueEmail(scenario), "password-hash", uniqueNickname(scenario), BASE_NOW));
 		Account account = accountRepository.saveAndFlush(
-			Account.create(user, com.finplay.api.account.domain.Market.STOCK, BASE_NOW));
-		Instrument sampleInstrument = instrumentRepository.findByMarketAndSymbol(Market.STOCK, "SANDBOX_STK_1")
+			Account.create(user, com.finplay.api.account.domain.Market.CRYPTO, BASE_NOW));
+		Instrument sampleInstrument = instrumentRepository.findByMarketAndSymbol(Market.CRYPTO, "SANDBOX_COIN_1")
 			.orElseThrow();
 		assertThat(sampleInstrument.isTutorialSample()).isTrue();
 		assertThat(sampleInstrument.isTradable()).isTrue();
@@ -361,16 +369,16 @@ class TutorialSandboxPracticeIntegrationTest {
 		clock.set(BASE_NOW.plusSeconds(1));
 		practiceIntentionService.createIntention(user.getId(),
 			new PracticeIntentionCreateRequest(
-				sampleInstrument.getId(), STOCK_QUANTITY, STOCK_STOP_LOSS, STOCK_TAKE_PROFIT));
+				sampleInstrument.getId(), SAMPLE_QUANTITY, SAMPLE_STOP_LOSS, SAMPLE_TAKE_PROFIT));
 
 		clock.set(BASE_NOW.plusSeconds(2));
 		orderService.createOrder(user.getId(), scenario + "-buy-" + UUID.randomUUID(),
-			new OrderCreateRequest(Market.STOCK, sampleInstrument.getId(), OrderSide.BUY, "MARKET", STOCK_QUANTITY));
+			new OrderCreateRequest(Market.CRYPTO, sampleInstrument.getId(), OrderSide.BUY, "MARKET", SAMPLE_QUANTITY));
 
 		Holding holding = holdingRepository
 			.findByAccountIdAndInstrumentId(account.getId(), sampleInstrument.getId())
 			.orElseThrow();
-		return new StockChainFixture(user.getId(), holding.getId(), sampleInstrument.getId());
+		return new SampleChainFixture(user.getId(), holding.getId(), sampleInstrument.getId());
 	}
 
 	private static String uniqueEmail(String scenario) {
