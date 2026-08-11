@@ -40,6 +40,10 @@ public class InvestmentPracticeQueryService {
 	// 샘플 종목 chain(4단계)에서만 등장하는 상태 — 매수 후 5분 이내에 매도 evidence가 없으면 만료된다
 	// (plan.md "3. 매도 단계 API 설계" GET 4단계 응답 표).
 	private static final String STATUS_EXPIRED = "EXPIRED";
+	// 4단계가 STATUS_NOT_STARTED(잠긴 미착수)를 재사용하면 locked=false와 조합될 때 "지금 매도해야 하는
+	// 실행 가능한 단계"를 "아직 진입 전"으로 오인시켜 프론트엔드가 CTA를 숨길 위험이 있다(tester 지적,
+	// PR #340 이후 정정). 매도 대기(잠기지 않음, 5분 이내)만을 가리키는 별도 상태값을 쓴다.
+	private static final String STATUS_AWAITING_SALE = "AWAITING_SALE";
 	private static final long SALE_DEADLINE_MINUTES = 5;
 
 	private final FavoriteService favoriteService;
@@ -240,9 +244,12 @@ public class InvestmentPracticeQueryService {
 	}
 
 	// 4단계(매도·복기) evidence 판정. (a) 매도 체결이 buyTrade.executedAt + 5분 이내여야 IN_PROGRESS(복기 대기),
-	// 매도가 아직 없으면 그 5분 창이 지나기 전까지 NOT_STARTED, 매도 없이 5분을 넘기거나 매도 자체가 5분을 넘겨
-	// 체결됐으면 EXPIRED다(plan.md "4. 5분 타이머"). 완료(practice_completions)는 buildCompletedResponse가
-	// 담당하므로 이 메서드는 COMPLETED를 반환하지 않는다.
+	// 매도가 아직 없으면 그 5분 창이 지나기 전까지 AWAITING_SALE(잠기지 않음, 매도 유도), 매도 없이 5분을
+	// 넘기거나 매도 자체가 5분을 넘겨 체결됐으면 EXPIRED다(plan.md "4. 5분 타이머"). 완료
+	// (practice_completions)는 buildCompletedResponse가 담당하므로 이 메서드는 COMPLETED를 반환하지 않는다.
+	// STATUS_NOT_STARTED를 쓰지 않는 이유: 이 API의 다른 모든 NOT_STARTED는 locked=true와 짝을 이루는데,
+	// 4단계는 locked=false(지금 매도해야 하는 단계)이므로 같은 이름을 쓰면 프론트엔드가 기존 관례대로
+	// CTA를 숨기는 오작동 위험이 있다(tester 지적, 이슈 #339).
 	private String resolveStepFourStatus(ResolvedPracticeChainDto chain, LocalDateTime saleDeadlineAt) {
 		if (chain.sellTradeId() != null) {
 			return isWithinSaleDeadline(chain.sellTradeExecutedAt(), saleDeadlineAt)
@@ -250,7 +257,7 @@ public class InvestmentPracticeQueryService {
 				: STATUS_EXPIRED;
 		}
 		LocalDateTime now = LocalDateTime.now(clock);
-		return isWithinSaleDeadline(now, saleDeadlineAt) ? STATUS_NOT_STARTED : STATUS_EXPIRED;
+		return isWithinSaleDeadline(now, saleDeadlineAt) ? STATUS_AWAITING_SALE : STATUS_EXPIRED;
 	}
 
 	// 경계값 포함(정확히 5분 시점 포함) — "!isAfter"로 5분 초과만 만료로 다룬다(plan.md 4번 "5분 경계값").

@@ -335,7 +335,8 @@ class InvestmentPracticeQueryServiceTest {
 		assertThat(response.currentStep()).isEqualTo(4);
 		assertThat(response.steps()).hasSize(4);
 		PracticeStepResponse step4 = response.steps().get(3);
-		assertThat(step4.status()).isEqualTo("NOT_STARTED");
+		assertThat(step4.status()).isEqualTo("AWAITING_SALE");
+		assertThat(step4.locked()).isFalse();
 		assertThat(step4.evidence().sellTradeId()).isNull();
 		// (f) saleDeadlineAt은 buyTrade.executedAt + 5분과 정확히 일치해야 한다.
 		assertThat(step4.evidence().saleDeadlineAt()).isEqualTo(buyExecutedAt.plusMinutes(5));
@@ -407,7 +408,8 @@ class InvestmentPracticeQueryServiceTest {
 		assertThat(completedResponse.steps()).hasSize(3);
 
 		// 완료되지 않은(진행 중) 실제 종목 chain.
-		when(practiceCompletionRepository.findByUserIdAndTutorialKey(USER_ID, PracticeIntentionService.COIN_TUTORIAL_KEY))
+		when(practiceCompletionRepository.findByUserIdAndTutorialKey(USER_ID,
+			PracticeIntentionService.COIN_TUTORIAL_KEY))
 			.thenReturn(Optional.empty());
 		ResolvedPracticeChainDto chain = chainDto(11L, NOW.minusDays(3), 21L, NOW.minusDays(2), 31L,
 			NOW.minusDays(1), 42L);

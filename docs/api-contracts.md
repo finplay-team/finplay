@@ -820,14 +820,14 @@ holding 관찰은 buyTrade→order에서 sessionId를 서버가 역추적한다(
 **`steps` 배열 길이(031, Issue #339, `docs/specs/031-tutorial-sandbox-instruments`)**: 위 1~4번에서 해석·완료된 chain의 종목이 샘플 종목(`is_tutorial_sample=true`)이면 `steps`가 3개가 아니라 **4개**다(실제 종목 chain은 위 계약을 그대로 유지, 항상 3개). 4번째 "매도·복기" 단계는 샘플 종목 chain에만 존재한다.
 
 - 4단계 evidence는 (a) `buyTrade.executedAt` 기준 5분 이내 `FILLED` `SELL` 체결(`POST /api/orders` 재사용, 신규 매도 엔드포인트 없음), (b) 자유 복기 저장(`holding-reflections`, 031에서 샘플 종목 chain에 전제조건 추가) 둘 다 필요하다.
-- 4단계 `status`는 (a)·(b) 모두 있으면 `COMPLETED`, (a)만 있으면 `IN_PROGRESS`(복기 대기), 매도가 아직 없고 5분 이내면 `NOT_STARTED`, 매도 없이 5분 초과 또는 매도 체결 자체가 `buyTrade.executedAt+5분`을 초과했으면(늦은 매도) 신규 상태값 **`EXPIRED`**다(`status` 필드는 여전히 `String`이라 스키마 변경 없음).
+- 4단계 `status`는 (a)·(b) 모두 있으면 `COMPLETED`, (a)만 있으면 `IN_PROGRESS`(복기 대기), 매도가 아직 없고 5분 이내면 신규 상태값 **`AWAITING_SALE`**(`locked=false` — 이 API의 다른 `NOT_STARTED`는 전부 `locked=true`와 짝을 이루므로, 지금 매도해야 하는 이 단계에 `NOT_STARTED`를 재사용하면 프론트엔드가 기존 관례대로 CTA를 숨길 위험이 있어 별도 값을 쓴다), 매도 없이 5분 초과 또는 매도 체결 자체가 `buyTrade.executedAt+5분`을 초과했으면(늦은 매도) 신규 상태값 **`EXPIRED`**다(`status` 필드는 여전히 `String`이라 스키마 변경 없음).
 - 만료 판정은 매 요청 시점에 재계산한다(snapshot 없음). 이미 `practice_completions` 행이 있으면(4단계까지 완료) 만료 여부를 다시 검사하지 않는다 — 완료는 chain 만료·재매수와 무관하게 회귀하지 않는다.
 - 실제 종목 chain의 evidence(1~3단계)에서는 아래 3개 신규 필드가 항상 `null`이다. 샘플 종목 chain도 1~3단계 evidence는 이 3개 필드가 `null`이며, **4단계 evidence에서만** 채워진다.
 
 | DTO | 필드 순서와 타입 | nullable 규칙 |
 |---|---|---|
 | `InvestmentPracticeResponse` | `String tutorialKey`, `String status`, `Integer currentStep`, `List<PracticeStepResponse> steps`, `LocalDateTime completedAt` | `tutorialKey`·`status`·`steps` non-null; `currentStep`은 완료 시 null, `completedAt`은 완료 전 null. `currentStep`은 샘플 종목 chain이 미완료 상태로 진행 중이면 `4` |
-| `PracticeStepResponse` | `Integer step`, `String status`, `Boolean locked`, `PracticeEvidenceResponse evidence` | 모두 non-null; locked 단계도 빈 evidence 객체 반환. `status`는 샘플 종목 chain의 4단계에서만 `EXPIRED`일 수 있다 |
+| `PracticeStepResponse` | `Integer step`, `String status`, `Boolean locked`, `PracticeEvidenceResponse evidence` | 모두 non-null; locked 단계도 빈 evidence 객체 반환. `status`는 샘플 종목 chain의 4단계에서만 `AWAITING_SALE`·`EXPIRED`일 수 있다(둘 다 `locked=false`) |
 | `PracticeEvidenceResponse` | `Long favoriteId`, `LocalDateTime favoriteCreatedAt`, `Long intentionId`, `LocalDateTime intentionCreatedAt`, `Long buyTradeId`, `LocalDateTime buyTradeExecutedAt`, `Long holdingId`, `BigDecimal referenceStopLossPrice`, `BigDecimal referenceTakeProfitPrice`, `Long observationId`, `LocalDateTime observationObservedAt`, `String evidenceType`, `Long reflectionId`, `LocalDateTime reflectionCreatedAt`, `Long sellTradeId`(신규, 031), `LocalDateTime sellTradeExecutedAt`(신규, 031), `LocalDateTime saleDeadlineAt`(신규, 031, `= buyTradeExecutedAt + 5분`) | favorite·intention·buyTrade는 id·시각 쌍; observation은 id·시각·type 삼쌍; reflection은 완료 시에만 non-null. `sellTradeId`·`sellTradeExecutedAt`는 id·시각 쌍이며 샘플 종목 chain의 4단계 evidence에서만 non-null 가능; `saleDeadlineAt`은 샘플 종목 chain의 4단계 evidence에서 `buyTradeExecutedAt`이 있으면 항상 채워지고, 그 외(1~3단계, 실제 종목 chain)에서는 항상 `null` |
 
 ## 012 AI 피드백
