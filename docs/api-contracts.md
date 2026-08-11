@@ -158,15 +158,15 @@ PR #49 차단 리뷰 후속 Fake 재사용·동시성·DB 불변 자동 회귀�
 
 | Method | URL | 인증 | 쿼리 파라미터 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|---|
-| GET | /api/instruments?market= | Access Bearer 필수 | `market`(선택, `STOCK`·`CRYPTO`만 허용, 생략·빈 값 시 전체) | 200 `[{"instrumentId":1,"market":"STOCK","symbol":"005930","name":"삼성전자","tickSize":100,"minOrderAmount":70000,"tradable":true}, ...]` | `market`이 `STOCK`·`CRYPTO` 외 값이면 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 003 MKT-001, Issue #14 |
+| GET | /api/instruments?market= | Access Bearer 필수 | `market`(선택, `STOCK`·`CRYPTO`만 허용, 생략·빈 값 시 전체) | 200 `[{"instrumentId":1,"market":"STOCK","symbol":"005930","name":"삼성전자","tickSize":100,"minOrderAmount":70000,"tradable":true,"isTutorialSample":false}, ...]` | `market`이 `STOCK`·`CRYPTO` 외 값이면 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 003 MKT-001, Issue #14, 031 SANDBOX-001 |
 
-`market` 생략·빈 값 시 시드된 주식 16종·코인 12종 전체를 `id` 오름차순(주식 먼저, 코인 나중)으로 반환한다.
+`market` 생략·빈 값 시 시드된 주식 16종·코인 12종에 더해 031의 튜토리얼 전용 샘플 종목(`SANDBOX_STK_1~3`·`SANDBOX_COIN_1~3`, `isTutorialSample=true`, 시장당 1번째만 `tradable=true`)을 `id` 오름차순으로 반환한다. `isTutorialSample`은 목록·단건 응답 모두에 존재하는 추가 전용 필드다(기존 소비자에게 breaking change 없음).
 
 ### 종목 단건 조회
 
 | Method | URL | 인증 | 경로 변수 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|---|
-| GET | /api/instruments/{instrumentId} | Access Bearer 필수 | `instrumentId` | 200 `{"instrumentId":1,"market":"STOCK","symbol":"005930","name":"삼성전자","tickSize":100,"minOrderAmount":70000,"tradable":true}` (`InstrumentResponse`, 목록 API와 동일 DTO) | 존재하지 않는 `instrumentId`는 404 `NOT_FOUND`. 숫자가 아닌 `instrumentId`는 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 003 MKT-001, Issue #15 |
+| GET | /api/instruments/{instrumentId} | Access Bearer 필수 | `instrumentId` | 200 `{"instrumentId":1,"market":"STOCK","symbol":"005930","name":"삼성전자","tickSize":100,"minOrderAmount":70000,"tradable":true,"isTutorialSample":false}` (`InstrumentResponse`, 목록 API와 동일 DTO) | 존재하지 않는 `instrumentId`는 404 `NOT_FOUND`. 숫자가 아닌 `instrumentId`는 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 003 MKT-001, Issue #15, 031 SANDBOX-001 |
 
 ### 종목 현재가 조회
 
@@ -287,7 +287,7 @@ PR #49 차단 리뷰 후속 Fake 재사용·동시성·DB 불변 자동 회귀�
 
 | Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|---|
-| POST | /api/community/posts | Access Bearer 필수 | `{"title":"게시물 제목","content":"게시물 본문","instrumentId":1,"imageId":1}` (`title` 최대 100자, `content` 최대 5,000자, `instrumentId`·`imageId`는 선택·nullable) | 201 `{"postId":1,"authorNickname":"finplayer","title":"게시물 제목","content":"게시물 본문","createdAt":"2026-07-27T12:00:00","updatedAt":"2026-07-27T12:00:00","instrumentId":1,"instrumentSymbol":"005930","instrumentName":"삼성전자","imageId":1,"imageUrl":"/api/community/posts/images/1/file"}` | 제목·본문 누락·빈 값·공백·최대 길이 초과, **존재하지 않거나 비활성(`tradable=false`)인 `instrumentId` 태그**는 400 `VALIDATION_ERROR`. `imageId`는 순서대로 검증: 존재하지 않으면 404 `NOT_FOUND`, 업로더가 인증 사용자와 다르면 403 `FORBIDDEN`("본인이 업로드한 이미지만 사용할 수 있습니다."), 이미 다른 게시물에 연결됐으면 400 `VALIDATION_ERROR`("이미 다른 게시물에 사용된 이미지입니다."). Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 008 COM-001, 022 COM-004·COM-006, Issue #23, Issue #246, Issue #248 |
+| POST | /api/community/posts | Access Bearer 필수 | `{"title":"게시물 제목","content":"게시물 본문","instrumentId":1,"imageId":1}` (`title` 최대 100자, `content` 최대 5,000자, `instrumentId`·`imageId`는 선택·nullable) | 201 `{"postId":1,"authorNickname":"finplayer","title":"게시물 제목","content":"게시물 본문","createdAt":"2026-07-27T12:00:00","updatedAt":"2026-07-27T12:00:00","instrumentId":1,"instrumentSymbol":"005930","instrumentName":"삼성전자","imageId":1,"imageUrl":"/api/community/posts/images/1/file"}` | 제목·본문 누락·빈 값·공백·최대 길이 초과, **존재하지 않거나 비활성(`tradable=false`)인 `instrumentId` 태그, 튜토리얼 전용 샘플 종목(`isTutorialSample=true`, 031)은 `tradable` 값과 무관하게 태그 대상에서 제외**는 400 `VALIDATION_ERROR`. `imageId`는 순서대로 검증: 존재하지 않으면 404 `NOT_FOUND`, 업로더가 인증 사용자와 다르면 403 `FORBIDDEN`("본인이 업로드한 이미지만 사용할 수 있습니다."), 이미 다른 게시물에 연결됐으면 400 `VALIDATION_ERROR`("이미 다른 게시물에 사용된 이미지입니다."). Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 008 COM-001, 022 COM-004·COM-006, Issue #23, Issue #246, Issue #248 |
 
 작성자는 요청에서 받지 않고 Access Token의 인증 사용자로 결정한다. `instrumentId`를 생략하거나 `null`로 보내면 미태그 게시물로 생성된다(하위 호환) — 이때 응답의 `instrumentId`·`instrumentSymbol`·`instrumentName`은 모두 `null`이다. 값을 보내면 `InstrumentService.getTradableInstrumentEntity`로 존재·`tradable` 여부를 검증하며, 실패 사유(미존재·비활성)는 구분하지 않고 동일한 400 `VALIDATION_ERROR`로 응답한다. 게시물당 태그 가능한 종목은 최대 1개다. `imageId`는 `POST /api/community/posts/images`로 미리 업로드한 이미지의 식별자를 선(先)업로드-후(後)참조 방식으로 연결한다(생략 시 미첨부, 하위 호환) — 응답의 `imageId`·`imageUrl`은 연결 성공 시에만 채워지고 미첨부면 둘 다 `null`이다. 게시물당 첨부 가능한 이미지는 최대 1장이다.
 
@@ -309,7 +309,7 @@ PR #49 차단 리뷰 후속 Fake 재사용·동시성·DB 불변 자동 회귀�
 
 | Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|---|
-| PATCH | /api/community/posts/{postId} | Access Bearer 필수 | 경로 변수 `postId`, 본문 `{"title":"게시물 제목","content":"게시물 본문","instrumentId":1}` (`title` 최대 100자, `content` 최대 5,000자, `instrumentId`는 선택·nullable) | 200 `{"postId":1,"authorNickname":"finplayer","title":"게시물 제목","content":"게시물 본문","createdAt":"2026-07-27T12:00:00","updatedAt":"2026-07-27T12:00:00","instrumentId":1,"instrumentSymbol":"005930","instrumentName":"삼성전자","imageId":1,"imageUrl":"/api/community/posts/images/1/file"}` | 제목·본문 누락·빈 값·공백·최대 길이 초과, **존재하지 않거나 비활성인 `instrumentId` 태그**는 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED`. 본인 소유가 아닌 게시물은 403 `FORBIDDEN`. 게시물 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 008 COM-001, 022 COM-004, Issue #26, Issue #246 |
+| PATCH | /api/community/posts/{postId} | Access Bearer 필수 | 경로 변수 `postId`, 본문 `{"title":"게시물 제목","content":"게시물 본문","instrumentId":1}` (`title` 최대 100자, `content` 최대 5,000자, `instrumentId`는 선택·nullable) | 200 `{"postId":1,"authorNickname":"finplayer","title":"게시물 제목","content":"게시물 본문","createdAt":"2026-07-27T12:00:00","updatedAt":"2026-07-27T12:00:00","instrumentId":1,"instrumentSymbol":"005930","instrumentName":"삼성전자","imageId":1,"imageUrl":"/api/community/posts/images/1/file"}` | 제목·본문 누락·빈 값·공백·최대 길이 초과, **존재하지 않거나 비활성(`tradable=false`)인 `instrumentId` 태그, 튜토리얼 전용 샘플 종목(`isTutorialSample=true`, 031)은 `tradable` 값과 무관하게 태그 대상에서 제외**는 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED`. 본인 소유가 아닌 게시물은 403 `FORBIDDEN`. 게시물 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 008 COM-001, 022 COM-004, Issue #26, Issue #246 |
 
 작성자 본인만 수정할 수 있으며 소유자 확인은 요청 본문이 아닌 Access Token의 인증 사용자로 판단한다. `title`·`content`는 매 요청이 전체를 교체한다(필수 필드라 생략 시 400). `instrumentId`는 **JSON Merge Patch 관례**를 따른다(2026-08-10 Issue #276 확정, A안) — 요청 본문에 `instrumentId` **키 자체가 없으면 기존 태그를 그대로 보존**하고, **키를 넣고 값을 `null`로 명시하면 태그를 해제**한다. 값을 넣으면 그 종목으로 교체한다(존재하지 않거나 비활성이면 400 `VALIDATION_ERROR`). 이 엔드포인트는 `imageId`를 요청으로 받지 않는다 — 첨부 이미지 교체·해제는 이번 그룹(COM-006)의 범위가 아니며, 응답의 `imageId`·`imageUrl`은 기존에 연결된 이미지가 있으면 그대로 유지되어 노출된다.
 

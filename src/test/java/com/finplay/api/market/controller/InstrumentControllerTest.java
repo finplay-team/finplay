@@ -162,7 +162,7 @@ class InstrumentControllerTest {
 	void getInstrumentsResponseExposesOnlyDtoFieldsNotEntityInternals() throws Exception {
 		authenticate();
 		when(instrumentService.getInstruments(null)).thenReturn(List.of(
-			new InstrumentResponse(1L, "STOCK", "005930", "삼성전자", BigDecimal.valueOf(100), 70000L, true)));
+			new InstrumentResponse(1L, "STOCK", "005930", "삼성전자", BigDecimal.valueOf(100), 70000L, true, false)));
 
 		mockMvc.perform(authorized(get("/api/instruments")))
 			.andExpect(status().isOk())
@@ -181,7 +181,7 @@ class InstrumentControllerTest {
 	void getInstrumentReturnsStockInstrumentWithFullContractWhenFound() throws Exception {
 		authenticate();
 		when(instrumentService.getInstrument(1L)).thenReturn(
-			new InstrumentResponse(1L, "STOCK", "005930", "삼성전자", BigDecimal.valueOf(100), 70000L, true));
+			new InstrumentResponse(1L, "STOCK", "005930", "삼성전자", BigDecimal.valueOf(100), 70000L, true, false));
 
 		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}", 1L)))
 			.andExpect(status().isOk())
@@ -200,7 +200,7 @@ class InstrumentControllerTest {
 	void getInstrumentReturnsCryptoInstrumentWithFullContractWhenFound() throws Exception {
 		authenticate();
 		when(instrumentService.getInstrument(17L)).thenReturn(
-			new InstrumentResponse(17L, "CRYPTO", "BTC", "비트코인", BigDecimal.valueOf(1000), 5000L, true));
+			new InstrumentResponse(17L, "CRYPTO", "BTC", "비트코인", BigDecimal.valueOf(1000), 5000L, true, false));
 
 		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}", 17L)))
 			.andExpect(status().isOk())
@@ -638,7 +638,8 @@ class InstrumentControllerTest {
 				"종목" + (i + 1),
 				BigDecimal.valueOf(100),
 				70000L,
-				true))
+				true,
+				false))
 			.toList();
 	}
 }

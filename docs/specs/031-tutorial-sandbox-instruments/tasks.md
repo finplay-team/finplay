@@ -1,6 +1,6 @@
 # Tasks: 튜토리얼 전용 샘플 종목·항시 시세·매도 단계·5분 제한 (Sandbox 실습 확장)
 
-- [ ] **migration + 샘플 종목 데이터 모델 + 커뮤니티 태그 제외** — 착수 시 `origin/dev` 최신 `V{N}` 재확인 후
+- [x] **migration + 샘플 종목 데이터 모델 + 커뮤니티 태그 제외** — 착수 시 `origin/dev` 최신 `V{N}` 재확인 후
   `V{N}__add_tutorial_sample_instruments.sql`(plan.md 잠정 번호 `V32`)에서 `instruments.is_tutorial_sample
   BOOLEAN NOT NULL DEFAULT FALSE` 컬럼 추가 + `SANDBOX_STK_1~3`/`SANDBOX_COIN_1~3` 6행 시드(1번째만
   `tradable=TRUE`). `Instrument` 엔티티에 `isTutorialSample` 필드·getter 추가. `InstrumentResponse`에

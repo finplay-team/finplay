@@ -49,7 +49,7 @@ public class InstrumentService {
 		Instrument instrument = instrumentRepository.findById(instrumentId)
 			.orElseThrow(() -> new BusinessException(
 				ErrorCode.VALIDATION_ERROR, "존재하지 않거나 비활성인 종목은 태그할 수 없습니다."));
-		if (!instrument.isTradable()) {
+		if (!instrument.isTradable() || instrument.isTutorialSample()) {
 			throw new BusinessException(
 				ErrorCode.VALIDATION_ERROR, "존재하지 않거나 비활성인 종목은 태그할 수 없습니다.");
 		}
