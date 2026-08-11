@@ -14,5 +14,7 @@ public record ResolvedPracticeChainDto(
 	Long buyTradeId,
 	LocalDateTime buyTradeExecutedAt,
 	BigDecimal buyTradeEntryPrice,
-	Long holdingId) {
+	Long holdingId,
+	Long sellTradeId,
+	LocalDateTime sellTradeExecutedAt) {
 }

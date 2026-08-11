@@ -120,6 +120,9 @@ public class MarketPracticeChainResolutionService {
 			return Optional.empty();
 		}
 
+		Optional<Trade> sellTrade = tradeService.findEarliestFilledSellTradeAfter(
+			userId, favorite.instrumentId(), trade.getExecutedAt());
+
 		return Optional.of(new ResolvedPracticeChainDto(
 			favorite.favoriteId(),
 			favorite.createdAt(),
@@ -130,7 +133,9 @@ public class MarketPracticeChainResolutionService {
 			trade.getId(),
 			trade.getExecutedAt(),
 			trade.getPrice(),
-			holdingId.get()));
+			holdingId.get(),
+			sellTrade.map(Trade::getId).orElse(null),
+			sellTrade.map(Trade::getExecutedAt).orElse(null)));
 	}
 
 	private Market resolveTargetMarket(String tutorialKey) {

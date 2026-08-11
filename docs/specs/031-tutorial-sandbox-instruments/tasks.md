@@ -26,7 +26,7 @@
   `MARKET_CLOSED`를 던지지 않고 `replaySession=null`을 반환, `getPriceQuote`가 항상 `PriceStatus.AVAILABLE`.
   슬라이스: `getPriceQuotes` 배치 조회 순서 보존(샘플·실제 혼재 리스트). (spec SANDBOX-002·003·004, plan 2번)
 
-- [ ] **매도 chain 해석 확장** — `TradeService`에 `findEarliestFilledSellTradeAfter(userId, instrumentId,
+- [x] **매도 chain 해석 확장** — `TradeService`에 `findEarliestFilledSellTradeAfter(userId, instrumentId,
   after)`(`findEarliestFilledBuyTradeMatching`과 대칭, `executedAt ASC, tradeId ASC`, 수량 일치 불요) 추가.
   `MarketPracticeChainResolutionService`에 매도 조회를 연결해 `buyTrade.executedAt` 이후 첫 FILLED SELL
   trade를 찾는다. `ResolvedPracticeChainDto`에 `sellTradeId`, `sellTradeExecutedAt` 2필드 추가(기존

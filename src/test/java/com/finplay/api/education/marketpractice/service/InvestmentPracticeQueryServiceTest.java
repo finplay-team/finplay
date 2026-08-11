@@ -279,7 +279,7 @@ class InvestmentPracticeQueryServiceTest {
 		Long buyTradeId, LocalDateTime buyTradeExecutedAt, Long holdingId) {
 		return new ResolvedPracticeChainDto(
 			favoriteId, favoriteCreatedAt, intentionId, intentionCreatedAt, new BigDecimal("90"),
-			new BigDecimal("110"), buyTradeId, buyTradeExecutedAt, new BigDecimal("100"), holdingId);
+			new BigDecimal("110"), buyTradeId, buyTradeExecutedAt, new BigDecimal("100"), holdingId, null, null);
 	}
 
 	private static Holding holding(Long holdingId, Long instrumentId) {

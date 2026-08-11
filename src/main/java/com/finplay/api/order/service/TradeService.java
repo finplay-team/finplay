@@ -95,4 +95,16 @@ public class TradeService {
 	public Optional<Long> findPracticePriceSessionId(Long buyTradeId) {
 		return tradeRepository.findPracticePriceSessionIdByTradeId(buyTradeId);
 	}
+
+	// 031-tutorial-sandbox-instruments 매도 chain 해석용 — findEarliestFilledBuyTradeMatching과 대칭이다.
+	// buyTrade.executedAt 이후 체결된 본인 SELL 체결 중 executedAt ASC, tradeId ASC로 가장 이른 것 1건을
+	// 고른다. 수량 일치는 요구하지 않는다(holding 전량이 아니라 일부만 팔아도 매도 실행 사실은 성립).
+	@Transactional(readOnly = true)
+	public Optional<Trade> findEarliestFilledSellTradeAfter(Long userId, Long instrumentId, LocalDateTime after) {
+		return tradeRepository
+			.findByAccount_User_IdAndInstrument_IdAndSideAndExecutedAtAfterOrderByExecutedAtAscIdAsc(
+				userId, instrumentId, OrderSide.SELL, after)
+			.stream()
+			.findFirst();
+	}
 }
