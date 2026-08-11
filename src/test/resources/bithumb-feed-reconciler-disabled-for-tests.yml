@@ -1,0 +1,22 @@
+# @SpringBootTest 전체 컨텍스트에서 BithumbFeedStatusReconciler(이슈 #299)의 연결상태 재기록 크론이
+# 등록되지 않게 만드는 전용 설정 파일.
+#
+# 왜 필요한가. 이 리컨사일러는 15초마다 feed:crypto:status 키를 다시 쓴다. BithumbFeedLifecycle.startFeed()가
+# 모든 @SpringBootTest 컨텍스트 기동 시(ApplicationReadyEvent) bithumbFeedClient.start()를 호출해 싱글턴
+# FakeBithumbFeedClient.connected를 영구히 true로 만들어 두므로, 끄지 않으면 이 리컨사일러가 공유 캐시
+# 컨텍스트 안에서 계속 CONNECTED로 재기록한다. 이 키는 여러 통합 테스트가 DISCONNECTED로 설정하거나
+# 삭제한 뒤 곧바로 단정하는 대상이라 백그라운드 재기록과 타이밍이 겹치면 간헐적으로 실패한다.
+#
+# bithumb-feed-simulator-disabled-for-tests.yml에 합치지 않고 파일을 나눈 이유. 그 파일은 헤더가 스스로
+# 밝히듯 "외부 호출·합성 틱을 내는 로컬 전용 컴포넌트"(BithumbFeedSimulator·BithumbRestTickerPoller)를 끄기
+# 위한 것이다. 이 리컨사일러는 합성 틱을 내지 않고 Fake·WebSocket 두 BithumbFeedClient 구현 모두에 프로필
+# 제한 없이 적용되므로 끄는 이유가 다르다 — 소유 spec·이유가 다르면 파일을 나누는 관례
+# (ranking-rebuild-schedule-disabled-for-tests.yml)를 따른다.
+#
+# 적재 경로는 나머지와 같다. build.gradle test 태스크의 spring.config.additional-location으로만 로드되며,
+# ConfigDataEnvironmentPostProcessor(SpringApplication 부트스트랩)만 이 위치를 해석하므로
+# ApplicationContextRunner 기반 슬라이스 테스트에는 영향이 없다.
+bithumb:
+  feed:
+    reconciler:
+      enabled: false
