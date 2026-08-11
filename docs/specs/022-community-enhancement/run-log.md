@@ -176,3 +176,11 @@
 
 ## 모니터링 (사람용 요약)
 - COM-006 후속 항목2: `deploy/README.md`에 "S3 업로드 이미지 저장소 설정" 절(버킷 생성·퍼블릭 액세스 차단·IAM 최소 권한·인스턴스 프로파일 체크리스트, 010-deployment/spec.md의 RDS·ElastiCache 체크리스트 형식 재사용)과 "기존 로컬 업로드 파일 이관" 절(SSH로 대상 유무 확인 → 소수/테스트 데이터면 이관 생략·재업로드 안내, 실사용 데이터면 `aws s3 sync` 1회 실행, plan.md 그대로) 추가. "아직 하지 않은 것"의 기존 S3 이관 항목 문구를 최신 상태로 갱신. `compose.deploy.yaml`은 변경하지 않았음을 `git diff --stat`으로 확인(ADR-0020 §결정 3 유지). 코드 변경 없어 compileJava 영향 없음.
+
+## AI 로그 (에이전트 참조용, COM-006 후속(S3, 이슈 #330) 항목3)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| - | implementer | `JAVA_HOME=... ./gradlew.bat build`(1차 `spotbugsMain` 실패 후 수정, 2차 `spotlessJavaCheck` 실패 후 `spotlessApply`, 3차 `BUILD SUCCESSFUL`) | plan.md "Decision Gate 확정" 각주, docs/prd.md §3, docs/agent-mistakes.md 2026-07-29(손으로 쓴 생성자의 가변 필드 저장만 EI_EXPOSE_REP2로 잡힘) |
+
+## 모니터링 (사람용 요약)
+- COM-006 후속 항목3: plan.md "Decision Gate 확정"에 "구현 완료(이슈 #330, 이 PR)" 각주, `docs/prd.md` §3 근거 칸에 이슈 #330 추가(판정 문구 "완료(COM-004~006)"는 기능 범위 불변이라 유지). spec.md는 이 후속 작업에 대응하는 완료 조건 항목이 없어(전부 COM-004~006 원본 조건) 변경하지 않음. `./gradlew build`에서 `spotbugsMain`이 `S3FileStorageService`의 손으로 쓴 생성자가 `S3Client` 필드를 그대로 저장한다며 `EI_EXPOSE_REP2`로, 내부 `S3ObjectResource`가 `equals()`를 오버라이드하지 않는다며 `EQ_DOESNT_OVERRIDE_EQUALS`로 각각 실패 재현 확인 — 버킷명을 `@Value` 대신 `CommunityS3StorageProperties`(`@ConfigurationProperties`) 주입으로 바꿔 손으로 쓴 생성자를 없애고 `@RequiredArgsConstructor`로 전환(agent-mistakes.md 2026-07-29 패턴), `S3ObjectResource`에 `equals`/`hashCode`를 `super` 위임으로 명시적 오버라이드. 이어 `spotlessJavaCheck`가 신규 파일 포맷 위반으로 실패해 `spotlessApply` 실행. 최종 `./gradlew build` 통과(약 4분 25초). 빌드 검증 SHA(이 항목 커밋 전 HEAD): `76c8aa5404ea206c4f2fde73e593b16b58d89812`.

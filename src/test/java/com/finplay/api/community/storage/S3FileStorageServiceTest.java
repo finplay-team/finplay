@@ -35,7 +35,7 @@ class S3FileStorageServiceTest {
 	@Test
 	void storeUploadsWithBucketKeyAndContentType() throws IOException {
 		S3Client s3Client = mock(S3Client.class);
-		S3FileStorageService service = new S3FileStorageService(s3Client, BUCKET);
+		S3FileStorageService service = new S3FileStorageService(s3Client, new CommunityS3StorageProperties(BUCKET));
 		byte[] content = "이미지 바이트".getBytes(StandardCharsets.UTF_8);
 		MultipartFile file = mock(MultipartFile.class);
 		when(file.getInputStream()).thenReturn(new ByteArrayInputStream(content));
@@ -56,7 +56,7 @@ class S3FileStorageServiceTest {
 	@Test
 	void storeThrowsInternalErrorWhenS3PutFails() throws IOException {
 		S3Client s3Client = mock(S3Client.class);
-		S3FileStorageService service = new S3FileStorageService(s3Client, BUCKET);
+		S3FileStorageService service = new S3FileStorageService(s3Client, new CommunityS3StorageProperties(BUCKET));
 		MultipartFile file = mock(MultipartFile.class);
 		when(file.getInputStream())
 			.thenReturn(new ByteArrayInputStream("x".getBytes(StandardCharsets.UTF_8)));
@@ -73,7 +73,7 @@ class S3FileStorageServiceTest {
 	@Test
 	void loadReturnsResourceWithBytesAndContentLengthFromS3() throws IOException {
 		S3Client s3Client = mock(S3Client.class);
-		S3FileStorageService service = new S3FileStorageService(s3Client, BUCKET);
+		S3FileStorageService service = new S3FileStorageService(s3Client, new CommunityS3StorageProperties(BUCKET));
 		byte[] content = "이미지 바이트".getBytes(StandardCharsets.UTF_8);
 		GetObjectResponse response = GetObjectResponse.builder().contentLength((long)content.length).build();
 		ResponseInputStream<GetObjectResponse> responseInputStream = new ResponseInputStream<>(response,
@@ -89,7 +89,7 @@ class S3FileStorageServiceTest {
 	@Test
 	void loadThrowsNotFoundWhenKeyDoesNotExist() {
 		S3Client s3Client = mock(S3Client.class);
-		S3FileStorageService service = new S3FileStorageService(s3Client, BUCKET);
+		S3FileStorageService service = new S3FileStorageService(s3Client, new CommunityS3StorageProperties(BUCKET));
 		when(s3Client.getObject(any(GetObjectRequest.class)))
 			.thenThrow(NoSuchKeyException.builder().message("not found").build());
 
@@ -101,7 +101,7 @@ class S3FileStorageServiceTest {
 	@Test
 	void deleteCallsDeleteObjectWithBucketAndKey() {
 		S3Client s3Client = mock(S3Client.class);
-		S3FileStorageService service = new S3FileStorageService(s3Client, BUCKET);
+		S3FileStorageService service = new S3FileStorageService(s3Client, new CommunityS3StorageProperties(BUCKET));
 
 		service.delete("to-delete.png");
 
@@ -114,7 +114,7 @@ class S3FileStorageServiceTest {
 	@Test
 	void deleteDoesNotThrowWhenS3Fails() {
 		S3Client s3Client = mock(S3Client.class);
-		S3FileStorageService service = new S3FileStorageService(s3Client, BUCKET);
+		S3FileStorageService service = new S3FileStorageService(s3Client, new CommunityS3StorageProperties(BUCKET));
 		when(s3Client.deleteObject(any(DeleteObjectRequest.class)))
 			.thenThrow(S3Exception.builder().message("boom").build());
 

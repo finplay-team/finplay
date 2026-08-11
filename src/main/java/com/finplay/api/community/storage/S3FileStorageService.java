@@ -5,8 +5,8 @@ import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import java.io.IOException;
 import java.io.InputStream;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
@@ -22,29 +22,24 @@ import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 
+// 버킷명은 CommunityS3StorageProperties(@ConfigurationProperties)로 받는다 — @Value 필드 대신 프로퍼티
+// record를 주입받으면 파생 로직 없는 파라미터 직접 대입만으로 Lombok @RequiredArgsConstructor를 쓸 수
+// 있다(SpotBugs EI_EXPOSE_REP2 회피, docs/agent-mistakes.md 2026-07-29 항목 — 손으로 쓴 생성자의 가변
+// 필드(S3Client) 저장만 EI_EXPOSE_REP2로 잡히고 Lombok이 생성한 생성자는 잡히지 않는다).
 @Profile("prod")
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class S3FileStorageService implements FileStorageService {
 
 	private final S3Client s3Client;
-	private final String bucket;
-
-	// @Value 주입 필드가 있는 빈은 Lombok @RequiredArgsConstructor를 쓰지 않고 생성자를 손으로 작성한다
-	// (docs/agent-mistakes.md 2026-07-30 — Lombok은 @Value를 생성자 파라미터로 복사하지 않는다).
-	public S3FileStorageService(
-		S3Client s3Client,
-		@Value("${finplay.community.image-storage.s3.bucket}")
-		String bucket) {
-		this.s3Client = s3Client;
-		this.bucket = bucket;
-	}
+	private final CommunityS3StorageProperties properties;
 
 	@Override
 	public String store(MultipartFile file, String storedFilename) {
 		try {
 			PutObjectRequest request = PutObjectRequest.builder()
-				.bucket(bucket)
+				.bucket(properties.bucket())
 				.key(storedFilename)
 				.contentType(file.getContentType())
 				.build();
@@ -58,7 +53,8 @@ public class S3FileStorageService implements FileStorageService {
 	@Override
 	public Resource load(String storedFilename) {
 		try {
-			GetObjectRequest request = GetObjectRequest.builder().bucket(bucket).key(storedFilename).build();
+			GetObjectRequest request = GetObjectRequest.builder().bucket(properties.bucket()).key(storedFilename)
+				.build();
 			ResponseInputStream<GetObjectResponse> response = s3Client.getObject(request);
 			return new S3ObjectResource(response, response.response().contentLength());
 		} catch (NoSuchKeyException e) {
@@ -69,7 +65,8 @@ public class S3FileStorageService implements FileStorageService {
 	@Override
 	public void delete(String storedFilename) {
 		try {
-			DeleteObjectRequest request = DeleteObjectRequest.builder().bucket(bucket).key(storedFilename).build();
+			DeleteObjectRequest request = DeleteObjectRequest.builder().bucket(properties.bucket()).key(storedFilename)
+				.build();
 			s3Client.deleteObject(request);
 		} catch (S3Exception e) {
 			log.warn("커뮤니티 이미지 파일 삭제 실패 storedFilename={}", storedFilename, e);
@@ -90,6 +87,19 @@ public class S3FileStorageService implements FileStorageService {
 		@Override
 		public long contentLength() {
 			return contentLength;
+		}
+
+		// contentLength는 다운로드 응답 헤더 계산용 파생 필드일 뿐 동등성 기준이 아니다 — 상위 클래스
+		// (InputStreamResource, 내부 InputStream 식별자 기반)의 동등성 규칙을 그대로 유지함을 명시한다
+		// (SpotBugs EQ_DOESNT_OVERRIDE_EQUALS).
+		@Override
+		public boolean equals(Object obj) {
+			return super.equals(obj);
+		}
+
+		@Override
+		public int hashCode() {
+			return super.hashCode();
 		}
 	}
 }
