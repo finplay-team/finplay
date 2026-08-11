@@ -47,4 +47,24 @@ class PostCommentTest {
 
 		assertThat(topLevel.isReply()).isFalse();
 	}
+
+	@Test
+	void isTombstonedReturnsFalseBeforeTombstoneIsCalled() {
+		User author = author();
+		PostComment comment = PostComment.create(post(author), author, "content", null, NOW);
+
+		assertThat(comment.isTombstoned()).isFalse();
+	}
+
+	@Test
+	void tombstoneSetsDeletedAtAndIsTombstonedReturnsTrue() {
+		User author = author();
+		PostComment comment = PostComment.create(post(author), author, "content", null, NOW);
+		LocalDateTime deletedAt = NOW.plusMinutes(5);
+
+		comment.tombstone(deletedAt);
+
+		assertThat(comment.isTombstoned()).isTrue();
+		assertThat(comment.getDeletedAt()).isEqualTo(deletedAt);
+	}
 }

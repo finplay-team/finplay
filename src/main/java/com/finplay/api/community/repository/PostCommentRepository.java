@@ -10,13 +10,20 @@ import org.springframework.data.repository.query.Param;
 
 public interface PostCommentRepository extends JpaRepository<PostComment, Long> {
 
-	// 파생 delete 쿼리(`deleteBy...`)는 엔티티를 SELECT한 뒤 하나씩 remove하므로 부모·자식 댓글이 각각 별도
-	// DELETE문으로 나간다 — V25의 ON DELETE CASCADE와 겹치면 자식 행이 이미 사라진 뒤 그 자식을 다시
-	// 지우려는 DELETE가 나가는 경합이 생긴다. 벌크 @Modifying 쿼리로 부모·자식을 한 statement에서 함께
-	// 지워 그 경합 가능성 자체를 없앤다(PR #260 리뷰).
+	// 파생 delete 쿼리(`deleteBy...`)는 엔티티를 SELECT한 뒤 하나씩 remove하므로 여러 DELETE문으로 나간다
+	// (PR #260 리뷰) — 그래서 벌크 @Modifying 쿼리를 쓴다. V31에서 parent_comment_id FK가
+	// ON DELETE CASCADE에서 RESTRICT로 바뀌면서, 부모·자식을 한 statement로 함께 지우면 MySQL이 같은
+	// DELETE 문 안에서 행 처리 순서를 보장하지 않아 부모가 자식보다 먼저 처리될 경우 FK 위반이 날 수
+	// 있다(이슈 #277 회귀). 자식(대댓글)을 먼저 지우는 쿼리와 부모를 나중에 지우는 쿼리로 나눠 호출 측이
+	// 순서를 명시적으로 보장하게 한다.
 	@Modifying(clearAutomatically = true)
-	@Query("delete from PostComment comment where comment.post.id = :postId")
-	void deleteByPost_Id(@Param("postId")
+	@Query("delete from PostComment comment where comment.post.id = :postId and comment.parentComment is not null")
+	void deleteByPost_IdAndParentCommentIsNotNull(@Param("postId")
+	Long postId);
+
+	@Modifying(clearAutomatically = true)
+	@Query("delete from PostComment comment where comment.post.id = :postId and comment.parentComment is null")
+	void deleteByPost_IdAndParentCommentIsNull(@Param("postId")
 	Long postId);
 
 	@Query("""

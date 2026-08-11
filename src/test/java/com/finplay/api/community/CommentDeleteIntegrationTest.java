@@ -51,12 +51,15 @@ class CommentDeleteIntegrationTest {
 
 	@BeforeEach
 	void cleanDatabaseInForeignKeySafeOrder() {
+		// V31: parent_comment_id FK가 ON DELETE RESTRICT라 단일 "delete from post_comments"는
+		// 다른 테스트 컨텍스트가 남긴 부모+자식이 섞여 있으면 행 처리 순서 미보장으로 실패할 수 있다(이슈 #277).
+		jdbcTemplate.update("delete from post_comments where parent_comment_id is not null");
 		jdbcTemplate.update("delete from post_comments");
 		jdbcTemplate.update("delete from community_posts");
 	}
 
 	@Test
-	void ownerDeleteReturns204AndRemovesCommentFromDatabase() throws Exception {
+	void ownerDeleteReturns204AndTombstonesTopLevelCommentInsteadOfRemovingIt() throws Exception {
 		User author = createUser("owner");
 		CommunityPost post = postRepository.saveAndFlush(
 			CommunityPost.create(author, "title", "content", null, LocalDateTime.now()));
@@ -69,7 +72,9 @@ class CommentDeleteIntegrationTest {
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
 			.andExpect(status().isNoContent());
 
-		assertThat(commentRepository.findById(commentId)).isEmpty();
+		// 이슈 #277: 최상위 댓글은 하드 삭제가 아니라 tombstone된다 — 행은 남고 표시만 바뀐다.
+		PostComment tombstoned = commentRepository.findById(commentId).orElseThrow();
+		assertThat(tombstoned.isTombstoned()).isTrue();
 	}
 
 	@Test

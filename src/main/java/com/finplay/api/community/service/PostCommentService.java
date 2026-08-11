@@ -44,6 +44,10 @@ public class PostCommentService {
 				throw new BusinessException(
 					ErrorCode.VALIDATION_ERROR, "대댓글에는 답글을 남길 수 없습니다.");
 			}
+			if (parentComment.isTombstoned()) {
+				throw new BusinessException(
+					ErrorCode.VALIDATION_ERROR, "삭제된 댓글에는 답글을 남길 수 없습니다.");
+			}
 		}
 		LocalDateTime now = LocalDateTime.now(clock);
 		PostComment comment = PostComment.create(post, author, content, parentComment, now);
@@ -57,7 +61,11 @@ public class PostCommentService {
 		if (!comment.getAuthor().getId().equals(authenticatedUserId)) {
 			throw new BusinessException(ErrorCode.FORBIDDEN);
 		}
-		postCommentRepository.delete(comment);
+		if (comment.getParentComment() == null) {
+			comment.tombstone(LocalDateTime.now(clock));
+		} else {
+			postCommentRepository.delete(comment);
+		}
 	}
 
 	@Transactional(readOnly = true)

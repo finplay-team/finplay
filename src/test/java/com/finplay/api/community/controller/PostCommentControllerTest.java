@@ -161,6 +161,25 @@ class PostCommentControllerTest {
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 	}
 
+	// 이슈 #277 / PR #331 리뷰 참고 사항 #2: tombstone된 부모에 답글을 시도하면 서비스가 던진
+	// VALIDATION_ERROR가 그대로 400 응답으로 매핑돼야 한다.
+	@Test
+	void createCommentReturns400WhenServiceRejectsReplyToTombstonedParent() throws Exception {
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+		when(service.createComment(7L, USER_ID, "reply", 5L))
+			.thenThrow(new BusinessException(ErrorCode.VALIDATION_ERROR, "삭제된 댓글에는 답글을 남길 수 없습니다."));
+
+		mockMvc.perform(post("/api/community/posts/7/comments")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("{\"content\":\"reply\",\"parentCommentId\":5}"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.message").value("삭제된 댓글에는 답글을 남길 수 없습니다."))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+	}
+
 	@Test
 	void createCommentRejectsMissingAuthenticationWithoutCallingService() throws Exception {
 		mockMvc.perform(post("/api/community/posts/7/comments")
@@ -246,6 +265,36 @@ class PostCommentControllerTest {
 			.andExpect(jsonPath("$[1].commentId").value(12))
 			.andExpect(jsonPath("$[1].replies").isArray())
 			.andExpect(jsonPath("$[1].replies").isEmpty());
+
+		verify(service).getComments(7L);
+	}
+
+	// 이슈 #277: tombstone된 부모 댓글은 content·authorNickname이 치환된 값으로 노출되고, replies·
+	// parentCommentId 등 나머지 필드는 tombstone 여부와 무관하게 그대로 전달돼야 한다(서비스 계층에서 이미
+	// 치환된 PostCommentResponse를 컨트롤러가 그대로 직렬화하는지 확인).
+	@Test
+	void getCommentsReturns200WithTombstonedParentContentAndAuthorReplacedWhileRepliesAndParentCommentIdAreUnaffected()
+		throws Exception {
+		LocalDateTime parentCreatedAt = LocalDateTime.of(2026, 7, 27, 12, 0);
+		LocalDateTime replyCreatedAt = parentCreatedAt.plusMinutes(1);
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+		when(service.getComments(7L)).thenReturn(List.of(
+			new PostCommentResponse(11L, "(삭제됨)", "삭제된 댓글입니다", parentCreatedAt, null, List.of(
+				new PostCommentResponse(13L, "replier", "reply comment", replyCreatedAt, 11L, List.of())))));
+
+		mockMvc.perform(get("/api/community/posts/7/comments")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$[0].commentId").value(11))
+			.andExpect(jsonPath("$[0].authorNickname").value("(삭제됨)"))
+			.andExpect(jsonPath("$[0].content").value("삭제된 댓글입니다"))
+			.andExpect(jsonPath("$[0].parentCommentId").doesNotExist())
+			.andExpect(jsonPath("$[0].replies.length()").value(1))
+			.andExpect(jsonPath("$[0].replies[0].commentId").value(13))
+			.andExpect(jsonPath("$[0].replies[0].authorNickname").value("replier"))
+			.andExpect(jsonPath("$[0].replies[0].content").value("reply comment"))
+			.andExpect(jsonPath("$[0].replies[0].parentCommentId").value(11));
 
 		verify(service).getComments(7L);
 	}

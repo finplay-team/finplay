@@ -53,6 +53,9 @@ class PostCommentRepositoryTest {
 
 	@BeforeEach
 	void cleanSharedTablesInForeignKeySafeOrder() {
+		// V31: parent_comment_id FK가 ON DELETE RESTRICT라 단일 "delete from post_comments"는
+		// 이전 테스트가 남긴 부모+자식이 섞여 있으면 행 처리 순서 미보장으로 실패할 수 있다(이슈 #277).
+		jdbcTemplate.update("delete from post_comments where parent_comment_id is not null");
 		jdbcTemplate.update("delete from post_comments");
 		jdbcTemplate.update("delete from community_posts");
 	}
@@ -199,19 +202,81 @@ class PostCommentRepositoryTest {
 		assertThat(found.isReply()).isTrue();
 	}
 
+	// Issue #277(V31)로 부모 댓글의 자식 CASCADE 삭제가 RESTRICT로 전환됐다. 자식이 남아있는 부모를
+	// 원시 SQL로 직접 지우려 하면 더 이상 조용히 성공(cascade)하지 않고 FK 제약 위반으로 거부돼야 한다 —
+	// 이 테스트는 위 CASCADE 가정 테스트를 대체한다.
 	@Test
-	void deletingParentCommentCascadesToChildReplyAtDatabaseLevel() {
-		User author = userRepository.saveAndFlush(User.create("cascade@finplay.com", "hash", "cascader", NOW));
+	void databaseRejectsDeletingParentCommentThatHasChildReplyAfterFkChangedToRestrict() {
+		User author = userRepository.saveAndFlush(User.create("restrict@finplay.com", "hash", "restrictor", NOW));
 		CommunityPost post = postRepository.saveAndFlush(CommunityPost.create(author, "title", "content", null, NOW));
 		PostComment parent = repository.saveAndFlush(PostComment.create(post, author, "parent", null, NOW));
-		PostComment reply = repository.saveAndFlush(
-			PostComment.create(post, author, "reply", parent, NOW.plusMinutes(1)));
+		repository.saveAndFlush(PostComment.create(post, author, "reply", parent, NOW.plusMinutes(1)));
 		entityManager.clear();
 
-		jdbcTemplate.update("delete from post_comments where id = ?", parent.getId());
+		assertThatThrownBy(() -> jdbcTemplate.update("delete from post_comments where id = ?", parent.getId()))
+			.isInstanceOf(DataIntegrityViolationException.class);
+	}
 
-		assertThat(repository.findById(parent.getId())).isEmpty();
-		assertThat(repository.findById(reply.getId())).isEmpty();
+	// tasks.md 항목 1의 "리포지토리 레벨에서 직접 delete()" 검증 — repository.delete()로 관리 엔티티를
+	// 지우고 flush 시점에 같은 RESTRICT 제약 위반이 발생하는지 확인한다(원시 SQL이 아닌 JPA 경로).
+	@Test
+	void repositoryDeleteOnParentCommentWithChildReplyViolatesRestrictConstraintOnFlush() {
+		User author = userRepository
+			.saveAndFlush(User.create("jpa-restrict@finplay.com", "hash", "jpaRestrictor", NOW));
+		CommunityPost post = postRepository.saveAndFlush(CommunityPost.create(author, "title", "content", null, NOW));
+		PostComment parent = repository.saveAndFlush(PostComment.create(post, author, "parent", null, NOW));
+		repository.saveAndFlush(PostComment.create(post, author, "reply", parent, NOW.plusMinutes(1)));
+		entityManager.clear();
+		PostComment reloadedParent = repository.findById(parent.getId()).orElseThrow();
+
+		repository.delete(reloadedParent);
+
+		assertThatThrownBy(repository::flush).isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	@Test
+	void migrationCreatesDeletedAtColumnAsNullable() {
+		Map<String, Object> column = jdbcTemplate.queryForMap(
+			"select is_nullable from information_schema.columns "
+				+ "where table_schema = database() and table_name = 'post_comments' "
+				+ "and column_name = 'deleted_at'");
+
+		assertThat(column.get("is_nullable")).isEqualTo("YES");
+	}
+
+	// plan.md V31 "주의" 캐벗의 회귀 확인 — 원래 단일 벌크 DELETE(deleteByPost_Id)는 RESTRICT 제약 하에서
+	// 부모가 자식보다 먼저 처리될 경우 FK 위반으로 실패함을 이전 테스트 실행에서 재현했다(별도 이슈 보고 대상).
+	// implementer가 이를 자식 먼저(deleteByPost_IdAndParentCommentIsNotNull) → 부모 나중
+	// (deleteByPost_IdAndParentCommentIsNull) 두 단계 호출로 고쳤다 — 이 테스트는 그 순서를 지키면
+	// 부모+자식이 섞인 게시물 삭제가 실제로 성공하는지 리포지토리 레벨에서 재확인한다.
+	@Test
+	void deleteByPostIdTwoStepOrderSucceedsForPostWithMixedParentAndChildCommentsUnderRestrictFk() {
+		User author = userRepository
+			.saveAndFlush(User.create("bulk-restrict@finplay.com", "hash", "bulkRestrict", NOW));
+		CommunityPost post = postRepository.saveAndFlush(CommunityPost.create(author, "title", "content", null, NOW));
+		PostComment parent = repository.saveAndFlush(PostComment.create(post, author, "parent", null, NOW));
+		repository.saveAndFlush(PostComment.create(post, author, "reply", parent, NOW.plusMinutes(1)));
+		entityManager.clear();
+
+		repository.deleteByPost_IdAndParentCommentIsNotNull(post.getId());
+		repository.deleteByPost_IdAndParentCommentIsNull(post.getId());
+
+		assertThat(repository.findAllByPostIdOrderByCreatedAtAscIdAsc(post.getId())).isEmpty();
+	}
+
+	// 순서를 반대로(부모 먼저) 호출하면 여전히 RESTRICT 위반으로 실패해야 한다 — 두 메서드로 나눈 것 자체가
+	// 아니라 "자식 먼저 호출하는 순서"가 회귀 수정의 핵심임을 명확히 하는 대조 테스트.
+	@Test
+	void deleteByPostIdReversedOrderStillViolatesRestrictConstraintWhenParentDeletedBeforeChild() {
+		User author = userRepository
+			.saveAndFlush(User.create("reversed-order@finplay.com", "hash", "reversedOrder", NOW));
+		CommunityPost post = postRepository.saveAndFlush(CommunityPost.create(author, "title", "content", null, NOW));
+		PostComment parent = repository.saveAndFlush(PostComment.create(post, author, "parent", null, NOW));
+		repository.saveAndFlush(PostComment.create(post, author, "reply", parent, NOW.plusMinutes(1)));
+		entityManager.clear();
+
+		assertThatThrownBy(() -> repository.deleteByPost_IdAndParentCommentIsNull(post.getId()))
+			.isInstanceOf(DataIntegrityViolationException.class);
 	}
 
 	private User createUser(String prefix) {

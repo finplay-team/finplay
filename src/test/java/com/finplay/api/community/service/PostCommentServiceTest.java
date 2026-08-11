@@ -192,8 +192,55 @@ class PostCommentServiceTest {
 		verify(commentRepository, never()).save(any());
 	}
 
+	// 이슈 #277 / PR #331 리뷰 참고 사항 #2: tombstone된 부모에는 새 대댓글을 남길 수 없다.
 	@Test
-	void deleteCommentDeletesWhenAuthenticatedUserIsAuthor() {
+	void createCommentThrowsValidationErrorWhenParentCommentIsTombstoned() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(author, "title", "post", null, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(post, "id", 7L);
+		PostComment tombstonedParent = PostComment.create(
+			post, author, "original content", null, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(tombstonedParent, "id", 3L);
+		tombstonedParent.tombstone(LocalDateTime.now(CLOCK));
+		when(postRepository.findById(7L)).thenReturn(Optional.of(post));
+		when(userQueryService.getUser(42L)).thenReturn(author);
+		when(commentRepository.findById(3L)).thenReturn(Optional.of(tombstonedParent));
+
+		assertThatThrownBy(() -> service.createComment(7L, 42L, "reply", 3L))
+			.isInstanceOf(BusinessException.class)
+			.extracting(exception -> ((BusinessException)exception).getErrorCode())
+			.isEqualTo(ErrorCode.VALIDATION_ERROR);
+
+		verify(commentRepository, never()).save(any());
+	}
+
+	// 대조 케이스: tombstone되지 않은 정상 부모에는 여전히 답글을 남길 수 있어야 한다.
+	@Test
+	void createCommentSavesReplyWhenParentCommentIsNotTombstoned() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(author, "title", "post", null, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(post, "id", 7L);
+		PostComment liveParent = PostComment.create(post, author, "live content", null, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(liveParent, "id", 3L);
+		when(postRepository.findById(7L)).thenReturn(Optional.of(post));
+		when(userQueryService.getUser(42L)).thenReturn(author);
+		when(commentRepository.findById(3L)).thenReturn(Optional.of(liveParent));
+		when(commentRepository.save(any(PostComment.class))).thenAnswer(invocation -> {
+			PostComment comment = invocation.getArgument(0);
+			ReflectionTestUtils.setField(comment, "id", 10L);
+			return comment;
+		});
+
+		PostCommentResponse response = service.createComment(7L, 42L, "reply", 3L);
+
+		assertThat(response.parentCommentId()).isEqualTo(3L);
+		verify(commentRepository).save(any(PostComment.class));
+	}
+
+	// 이슈 #277: 최상위 댓글(parentComment == null)은 하드 삭제 대신 tombstone된다 — 자식을 가질 수 있는
+	// 위치이므로 실제로 지우면 자식이 부모를 잃는다. delete()는 호출되지 않아야 한다.
+	@Test
+	void deleteCommentTombstonesTopLevelCommentInsteadOfHardDeletingWhenAuthenticatedUserIsAuthor() {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
 		CommunityPost post = CommunityPost.create(author, "title", "post", null, LocalDateTime.now(CLOCK));
 		PostComment comment = PostComment.create(post, author, "comment", null, LocalDateTime.now(CLOCK));
@@ -203,17 +250,58 @@ class PostCommentServiceTest {
 
 		service.deleteComment(42L, 9L);
 
-		verify(commentRepository).delete(comment);
+		assertThat(comment.isTombstoned()).isTrue();
+		assertThat(comment.getDeletedAt()).isEqualTo(LocalDateTime.now(CLOCK));
+		verify(commentRepository, never()).delete(any());
+	}
+
+	// 대댓글(parentComment != null)은 더 하위 자식이 없으므로 기존처럼 하드 삭제를 유지한다.
+	@Test
+	void deleteCommentHardDeletesReplyWhenAuthenticatedUserIsAuthor() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(author, "title", "post", null, LocalDateTime.now(CLOCK));
+		PostComment parent = PostComment.create(post, author, "parent", null, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(parent, "id", 3L);
+		PostComment reply = PostComment.create(post, author, "reply", parent, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(author, "id", 42L);
+		ReflectionTestUtils.setField(reply, "id", 9L);
+		when(commentRepository.findById(9L)).thenReturn(Optional.of(reply));
+
+		service.deleteComment(42L, 9L);
+
+		verify(commentRepository).delete(reply);
+		assertThat(reply.isTombstoned()).isFalse();
 	}
 
 	@Test
-	void deleteCommentThrowsForbiddenAndDoesNotDeleteWhenAuthenticatedUserIsNotAuthor() {
+	void deleteCommentThrowsForbiddenAndDoesNotTombstoneTopLevelCommentWhenAuthenticatedUserIsNotAuthor() {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
 		CommunityPost post = CommunityPost.create(author, "title", "post", null, LocalDateTime.now(CLOCK));
 		PostComment comment = PostComment.create(post, author, "comment", null, LocalDateTime.now(CLOCK));
 		ReflectionTestUtils.setField(author, "id", 42L);
 		ReflectionTestUtils.setField(comment, "id", 9L);
 		when(commentRepository.findById(9L)).thenReturn(Optional.of(comment));
+
+		assertThatThrownBy(() -> service.deleteComment(999L, 9L))
+			.isInstanceOf(BusinessException.class)
+			.extracting(exception -> ((BusinessException)exception).getErrorCode())
+			.isEqualTo(ErrorCode.FORBIDDEN);
+
+		assertThat(comment.isTombstoned()).isFalse();
+		verify(commentRepository, never()).delete(any());
+	}
+
+	// 소유권 규칙 회귀 — 대댓글도 타인이 삭제를 시도하면 403이며, tombstone 도입으로 이 검증이 약해지지 않았는지 확인.
+	@Test
+	void deleteCommentThrowsForbiddenAndDoesNotDeleteReplyWhenAuthenticatedUserIsNotAuthor() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(author, "title", "post", null, LocalDateTime.now(CLOCK));
+		PostComment parent = PostComment.create(post, author, "parent", null, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(parent, "id", 3L);
+		PostComment reply = PostComment.create(post, author, "reply", parent, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(author, "id", 42L);
+		ReflectionTestUtils.setField(reply, "id", 9L);
+		when(commentRepository.findById(9L)).thenReturn(Optional.of(reply));
 
 		assertThatThrownBy(() -> service.deleteComment(999L, 9L))
 			.isInstanceOf(BusinessException.class)

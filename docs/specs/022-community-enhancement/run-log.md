@@ -123,3 +123,40 @@
 - 반영: (1) 확장자를 원본 파일명이 아니라 이미 검증한 `contentType`에서 매핑으로 결정하도록 변경, `LocalFileStorageService`에 `normalize()` 기반 경계 검사를 store/load/delete 3곳 모두에 추가(저장 키 생성 규칙이 바뀌어도 저장소가 스스로를 지킴). (2) `loadImageFile(authenticatedUserId, imageId)`로 시그니처 변경 — `isAssigned()`가 true면 누구나, false면 업로더 본인만 허용하고 그 외는 404로 존재를 숨김. 컨트롤러에 `@AuthenticationPrincipal` 추가.
 - 권장 2건도 함께 반영: 다운로드 응답에 `X-Content-Type-Options: nosniff` 헤더 추가(매직 바이트 미검사 트레이드오프의 짝). 물리 파일 삭제를 `CommunityPostImageDeletedEvent` + `@TransactionalEventListener(AFTER_COMMIT)`로 전환(`RankingEventListener` 선례) — 게시물 삭제 트랜잭션이 롤백되면 DB 행은 살아있는데 파일만 사라지는 상태를 막는다.
 - `LocalFileStorageServiceTest`에 store/load/delete 3개 경계 탈출 회귀 테스트, `CommunityPostImageServiceTest`에 악의적 파일명 확장자 무시 회귀 테스트·미할당 이미지 접근 제어 3종(업로더 본인 허용/타인 거부/미존재)을 추가. `docs/api-contracts.md`·`plan.md`의 관련 서술도 실제 동작에 맞게 정정. `./gradlew build` 전체(테스트·jacoco·spotbugs·spotless 포함) 통과.
+
+## AI 로그 (에이전트 참조용, COM-005 tombstone 항목1)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| - | implementer | `./gradlew compileJava` | plan.md "COM-005 부모 댓글 tombstone 전환" 데이터 모델·엔티티 변경 정정, ADR-0004 |
+
+## 모니터링 (사람용 요약)
+- COM-005 tombstone 항목1: `V31` 마이그레이션(`post_comments.deleted_at DATETIME NULL` 추가 + `fk_post_comments_parent`를 `DROP`·재생성해 `ON DELETE RESTRICT`로 전환, 인덱스는 유지) 신규, `V25`는 수정하지 않음. `PostComment`에 `deletedAt`·`tombstone(LocalDateTime)`·`isTombstoned()` 추가(`content`·`author`는 그대로 보존). compileJava 통과(테스트는 tester 담당).
+- 회귀 수정(tester 발견, 이슈 #277): `RESTRICT` 전환으로 `PostCommentRepository.deleteByPost_Id` 단일 벌크 DELETE가 부모+자식 섞인 게시물에서 행 처리 순서 미보장으로 FK 위반 가능 — `deleteByPost_IdAndParentCommentIsNotNull`(자식 먼저)·`deleteByPost_IdAndParentCommentIsNull`(부모 나중) 두 개의 `@Modifying` 쿼리로 분리, `CommunityPostService.deletePost`(기존 `@Transactional` 경계 그대로)에서 순서대로 호출하도록 수정. 다른 호출부 없음(단일 호출 지점). compileJava 통과.
+
+## AI 로그 (에이전트 참조용, COM-005 tombstone 항목2)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| - | implementer | `./gradlew compileJava` | plan.md "COM-005 부모 댓글 tombstone 전환" `deleteComment` 재설계·`PostCommentResponse` 재설계 |
+
+## 모니터링 (사람용 요약)
+- COM-005 tombstone 항목2: `PostCommentService.deleteComment`가 소유자 검증(403) 통과 후 `parentComment == null`이면 `comment.tombstone(LocalDateTime.now(clock))`(기존 주입된 `Clock` 재사용, hard delete 없음), 아니면 기존처럼 `postCommentRepository.delete(comment)`. `PostCommentResponse.from(comment, replies)`에 tombstone 분기 추가 — tombstone이면 `content`="삭제된 댓글입니다", `authorNickname`="(삭제됨)"으로 치환, `parentCommentId`·`replies`는 무영향(레코드 필드 추가 없음). 컨트롤러·엔드포인트 계약 변경 없음. compileJava 통과(테스트는 tester 담당).
+
+## AI 로그 (에이전트 참조용, COM-005 tombstone 항목3)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| - | implementer | `./gradlew test --tests "com.finplay.api.community.*"` | plan.md "테스트 계획 정정" 통합 테스트 4개 시나리오, 이슈 #277 |
+| - | implementer(tester 재현 회귀 대응) | `./gradlew test --tests "com.finplay.api.community.*" --rerun`(연속 2회) | tester가 `--rerun` 독립 2회 실행으로 재현한 33건 결정적 실패, 같은 버그 클래스 전수 조사 |
+
+## 모니터링 (사람용 요약)
+- COM-005 tombstone 항목3: `PostCommentTombstoneDeleteIntegrationTest` 신규(plan.md 시나리오 a~d — 부모+자식 삭제 시 tombstone 치환·자식 보존, 자식 없는 부모도 동일, 자식 자신 삭제는 hard delete 유지, 타인 삭제 여전히 403). `CommentDeleteIntegrationTest.ownerDeleteReturns204AndRemovesCommentFromDatabase`를 tombstone 전제(`ownerDeleteReturns204AndTombstonesTopLevelCommentInsteadOfRemovingIt`)로 수정. `PostCommentReplyIntegrationTest`의 `@BeforeEach`(부모+자식 섞인 상태에서 단일 "delete from post_comments"가 V31 RESTRICT 하에서 행 처리 순서 미보장으로 실패 가능)를 자식 먼저 지우는 2단계로 수정, `deletingParentCommentCascadesToChildReplies`(CASCADE 가정)를 tombstone 회귀 테스트로 교체.
+- 범위 확장: 전체 커뮤니티 테스트(`./gradlew test --tests "com.finplay.api.community.*"`)를 돌려보니 `PostCommentRepositoryTest`의 `@BeforeEach`도 같은 종류의 버그(단일 "delete from post_comments")로 48건이 연쇄 실패했다 — 이 파일은 tasks.md 항목3에 명시되진 않았지만 같은 근본 원인(V31 RESTRICT + 순서 미보장 벌크 삭제)이 전체 스위트를 막고 있어 같은 방식(자식 먼저)으로 함께 고쳤다. 수정 후 커뮤니티 패키지 전체 256개 테스트 통과.
+- tester 재현(`--rerun` 2회 독립 실행, 33건 결정적 실패): 최초 1회 통과 보고가 실행 순서 우연이었다는 지적을 받고, 같은 버그 클래스를 놓친 나머지 파일을 전수 조사(`grep -rn 'delete from post_comments'`)해 3개(tester 지목: `CommunityPostRepositoryTest`·`CommunityPostImageMigrationTest`·`CommunityPostImageRepositoryTest`) + 추가 발견 6개(`PostCommentListIntegrationTest`·`CommunityPostListIntegrationTest`·`PostCommentCreateIntegrationTest`·`CommunityPostImageIntegrationTest`의 `@BeforeEach`/`@AfterEach` 2곳·`CommunityPostImageUploadSizeLimitIntegrationTest`·`CommunityPostInstrumentTagIntegrationTest`)까지 동일 패턴(자식 먼저 삭제)으로 정리 — 총 9개 파일. `./gradlew test --tests "com.finplay.api.community.*" --rerun`을 연속 2회 실행해 두 번 다 256/256 통과(결정적) 확인.
+- tester 재검증(256/256, 2회 재현) 완료 후 일관성 지적: `CommentDeleteIntegrationTest`의 `@BeforeEach`만 옛 방식(단독 `delete from post_comments`)이 남아 있었다(이 클래스는 최상위 댓글만 만들어 현재는 안 터지지만 실행 순서가 바뀌면 잠재 위험) — 같은 2단계 패턴으로 통일, compileTestJava 통과.
+
+## AI 로그 (에이전트 참조용, COM-005 tombstone 항목5)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| - | implementer | `./gradlew compileJava` | plan.md "tombstone된 댓글에 답글 금지 (PR #331 리뷰 참고 사항 #2)" |
+
+## 모니터링 (사람용 요약)
+- COM-005 tombstone 항목5: `PostCommentService.createComment`의 부모 검증에 3단계(`isTombstoned()`)를 추가해 tombstone된 부모에는 400 `VALIDATION_ERROR`("삭제된 댓글에는 답글을 남길 수 없습니다.")로 막았다. `docs/api-contracts.md`의 해당 엔드포인트 400 사유에 Issue #277 함께 추가. compileJava 통과(테스트는 tester 담당).
