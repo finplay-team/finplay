@@ -5,11 +5,13 @@ import com.finplay.api.market.store.FeedConnectionStatus;
 import com.finplay.api.market.store.PriceStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 @Slf4j
 @Component
+@ConditionalOnProperty(prefix = "bithumb.feed.reconciler", name = "enabled", havingValue = "true", matchIfMissing = true)
 @RequiredArgsConstructor
 public class BithumbFeedStatusReconciler {
 
@@ -23,6 +25,8 @@ public class BithumbFeedStatusReconciler {
 	// 재시작 없이 복구한다. isConnected()가 false면 아무것도 쓰지 않는다 — fail-closed(MKT-004)를 그대로
 	// 유지하며, 판단 근거는 항상 isConnected() 하나뿐이다. Redis 읽기·쓰기 실패는 로그만 남기고 다음
 	// 주기에 자연히 재시도한다(Fake·WebSocket 두 BithumbFeedClient 구현 모두에 프로필 제한 없이 적용된다).
+	// @SpringBootTest 전체 컨텍스트에서는 bithumb-feed-reconciler-disabled-for-tests.yml이 bithumb.feed.reconciler.enabled를
+	// false로 낮춰 이 빈 자체가 생성되지 않게 한다 — BithumbFeedSimulator와 동일한 컨벤션(PR #110 리뷰).
 	@Scheduled(fixedRate = RECONCILE_INTERVAL_MS)
 	public void reconcileConnectionStatus() {
 		if (!bithumbFeedClient.isConnected()) {

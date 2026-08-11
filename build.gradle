@@ -90,10 +90,16 @@ tasks.withType(Test).configureEach {
 	// 위와 같지만 소유 spec이 다르고, 파괴력도 한 단계 크다 — MySQL에 행을 더하는 것이 아니라 공유 Redis의
 	// ranking:{market} 키를 RENAME으로 통째로 교체하므로, 04:20에 걸친 빌드에서 RankingIntegrationTest의
 	// 개수 단정이 그 순간 무너진다(그 클래스는 AFTER_COMMIT 검증 때문에 @Transactional로 롤백할 수 없다).
+	//
+	// 넷째로 이슈 #299의 빗썸 연결상태 재기록 크론(15초 주기)을 끄는 파일을 얹는다. 합성 틱을 내지 않고
+	// Fake·WebSocket 두 BithumbFeedClient 구현 모두에 적용된다는 점에서 첫째 파일과 끄는 이유가 달라
+	// 별도 파일로 둔다 — 끄지 않으면 feed:crypto:status 키를 DISCONNECTED로 두고 단정하는 통합 테스트들이
+	// 백그라운드 재기록과 타이밍이 겹쳐 간헐적으로 실패한다.
 	systemProperty 'spring.config.additional-location',
 		'classpath:/bithumb-feed-simulator-disabled-for-tests.yml,' +
 			'classpath:/feedback-schedules-disabled-for-tests.yml,' +
-			'classpath:/ranking-rebuild-schedule-disabled-for-tests.yml'
+			'classpath:/ranking-rebuild-schedule-disabled-for-tests.yml,' +
+			'classpath:/bithumb-feed-reconciler-disabled-for-tests.yml'
 	// 테스트 DB 커넥션 타임아웃을 Hikari 기본값 30초에서 10초로 줄인다 (이슈 #119 완화책).
 	// 공유 Testcontainers MySQL이 실행 중 교체되면 그 전에 만들어진 컨텍스트는 옛 포트를 물고 있어 반드시 실패하는데,
 	// 기본값이면 테스트 1건마다 30초를 헛되이 기다린다 — 실측에서 9건 실패에 4분 30초가 이 대기에만 쓰였다.
