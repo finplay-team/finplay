@@ -132,3 +132,11 @@
 ## 모니터링 (사람용 요약)
 - COM-005 tombstone 항목1: `V31` 마이그레이션(`post_comments.deleted_at DATETIME NULL` 추가 + `fk_post_comments_parent`를 `DROP`·재생성해 `ON DELETE RESTRICT`로 전환, 인덱스는 유지) 신규, `V25`는 수정하지 않음. `PostComment`에 `deletedAt`·`tombstone(LocalDateTime)`·`isTombstoned()` 추가(`content`·`author`는 그대로 보존). compileJava 통과(테스트는 tester 담당).
 - 회귀 수정(tester 발견, 이슈 #277): `RESTRICT` 전환으로 `PostCommentRepository.deleteByPost_Id` 단일 벌크 DELETE가 부모+자식 섞인 게시물에서 행 처리 순서 미보장으로 FK 위반 가능 — `deleteByPost_IdAndParentCommentIsNotNull`(자식 먼저)·`deleteByPost_IdAndParentCommentIsNull`(부모 나중) 두 개의 `@Modifying` 쿼리로 분리, `CommunityPostService.deletePost`(기존 `@Transactional` 경계 그대로)에서 순서대로 호출하도록 수정. 다른 호출부 없음(단일 호출 지점). compileJava 통과.
+
+## AI 로그 (에이전트 참조용, COM-005 tombstone 항목2)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| - | implementer | `./gradlew compileJava` | plan.md "COM-005 부모 댓글 tombstone 전환" `deleteComment` 재설계·`PostCommentResponse` 재설계 |
+
+## 모니터링 (사람용 요약)
+- COM-005 tombstone 항목2: `PostCommentService.deleteComment`가 소유자 검증(403) 통과 후 `parentComment == null`이면 `comment.tombstone(LocalDateTime.now(clock))`(기존 주입된 `Clock` 재사용, hard delete 없음), 아니면 기존처럼 `postCommentRepository.delete(comment)`. `PostCommentResponse.from(comment, replies)`에 tombstone 분기 추가 — tombstone이면 `content`="삭제된 댓글입니다", `authorNickname`="(삭제됨)"으로 치환, `parentCommentId`·`replies`는 무영향(레코드 필드 추가 없음). 컨트롤러·엔드포인트 계약 변경 없음. compileJava 통과(테스트는 tester 담당).

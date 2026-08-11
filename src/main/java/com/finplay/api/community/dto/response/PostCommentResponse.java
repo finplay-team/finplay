@@ -13,6 +13,9 @@ public record PostCommentResponse(
 	Long parentCommentId,
 	List<PostCommentResponse> replies) {
 
+	private static final String TOMBSTONED_CONTENT = "삭제된 댓글입니다";
+	private static final String TOMBSTONED_AUTHOR_DISPLAY = "(삭제됨)";
+
 	public PostCommentResponse {
 		replies = List.copyOf(replies);
 	}
@@ -22,10 +25,11 @@ public record PostCommentResponse(
 	}
 
 	public static PostCommentResponse from(PostComment comment, List<PostCommentResponse> replies) {
+		boolean tombstoned = comment.isTombstoned();
 		return new PostCommentResponse(
 			comment.getId(),
-			comment.getAuthor().getNickname(),
-			comment.getContent(),
+			tombstoned ? TOMBSTONED_AUTHOR_DISPLAY : comment.getAuthor().getNickname(),
+			tombstoned ? TOMBSTONED_CONTENT : comment.getContent(),
 			comment.getCreatedAt(),
 			comment.getParentComment() != null ? comment.getParentComment().getId() : null,
 			replies);

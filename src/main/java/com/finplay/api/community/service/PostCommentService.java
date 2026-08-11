@@ -57,7 +57,11 @@ public class PostCommentService {
 		if (!comment.getAuthor().getId().equals(authenticatedUserId)) {
 			throw new BusinessException(ErrorCode.FORBIDDEN);
 		}
-		postCommentRepository.delete(comment);
+		if (comment.getParentComment() == null) {
+			comment.tombstone(LocalDateTime.now(clock));
+		} else {
+			postCommentRepository.delete(comment);
+		}
 	}
 
 	@Transactional(readOnly = true)

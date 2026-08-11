@@ -192,8 +192,10 @@ class PostCommentServiceTest {
 		verify(commentRepository, never()).save(any());
 	}
 
+	// 이슈 #277: 최상위 댓글(parentComment == null)은 하드 삭제 대신 tombstone된다 — 자식을 가질 수 있는
+	// 위치이므로 실제로 지우면 자식이 부모를 잃는다. delete()는 호출되지 않아야 한다.
 	@Test
-	void deleteCommentDeletesWhenAuthenticatedUserIsAuthor() {
+	void deleteCommentTombstonesTopLevelCommentInsteadOfHardDeletingWhenAuthenticatedUserIsAuthor() {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
 		CommunityPost post = CommunityPost.create(author, "title", "post", null, LocalDateTime.now(CLOCK));
 		PostComment comment = PostComment.create(post, author, "comment", null, LocalDateTime.now(CLOCK));
@@ -203,17 +205,58 @@ class PostCommentServiceTest {
 
 		service.deleteComment(42L, 9L);
 
-		verify(commentRepository).delete(comment);
+		assertThat(comment.isTombstoned()).isTrue();
+		assertThat(comment.getDeletedAt()).isEqualTo(LocalDateTime.now(CLOCK));
+		verify(commentRepository, never()).delete(any());
+	}
+
+	// 대댓글(parentComment != null)은 더 하위 자식이 없으므로 기존처럼 하드 삭제를 유지한다.
+	@Test
+	void deleteCommentHardDeletesReplyWhenAuthenticatedUserIsAuthor() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(author, "title", "post", null, LocalDateTime.now(CLOCK));
+		PostComment parent = PostComment.create(post, author, "parent", null, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(parent, "id", 3L);
+		PostComment reply = PostComment.create(post, author, "reply", parent, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(author, "id", 42L);
+		ReflectionTestUtils.setField(reply, "id", 9L);
+		when(commentRepository.findById(9L)).thenReturn(Optional.of(reply));
+
+		service.deleteComment(42L, 9L);
+
+		verify(commentRepository).delete(reply);
+		assertThat(reply.isTombstoned()).isFalse();
 	}
 
 	@Test
-	void deleteCommentThrowsForbiddenAndDoesNotDeleteWhenAuthenticatedUserIsNotAuthor() {
+	void deleteCommentThrowsForbiddenAndDoesNotTombstoneTopLevelCommentWhenAuthenticatedUserIsNotAuthor() {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
 		CommunityPost post = CommunityPost.create(author, "title", "post", null, LocalDateTime.now(CLOCK));
 		PostComment comment = PostComment.create(post, author, "comment", null, LocalDateTime.now(CLOCK));
 		ReflectionTestUtils.setField(author, "id", 42L);
 		ReflectionTestUtils.setField(comment, "id", 9L);
 		when(commentRepository.findById(9L)).thenReturn(Optional.of(comment));
+
+		assertThatThrownBy(() -> service.deleteComment(999L, 9L))
+			.isInstanceOf(BusinessException.class)
+			.extracting(exception -> ((BusinessException)exception).getErrorCode())
+			.isEqualTo(ErrorCode.FORBIDDEN);
+
+		assertThat(comment.isTombstoned()).isFalse();
+		verify(commentRepository, never()).delete(any());
+	}
+
+	// 소유권 규칙 회귀 — 대댓글도 타인이 삭제를 시도하면 403이며, tombstone 도입으로 이 검증이 약해지지 않았는지 확인.
+	@Test
+	void deleteCommentThrowsForbiddenAndDoesNotDeleteReplyWhenAuthenticatedUserIsNotAuthor() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(author, "title", "post", null, LocalDateTime.now(CLOCK));
+		PostComment parent = PostComment.create(post, author, "parent", null, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(parent, "id", 3L);
+		PostComment reply = PostComment.create(post, author, "reply", parent, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(author, "id", 42L);
+		ReflectionTestUtils.setField(reply, "id", 9L);
+		when(commentRepository.findById(9L)).thenReturn(Optional.of(reply));
 
 		assertThatThrownBy(() -> service.deleteComment(999L, 9L))
 			.isInstanceOf(BusinessException.class)
