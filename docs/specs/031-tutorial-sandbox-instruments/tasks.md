@@ -12,7 +12,7 @@
   포함해 6행을 반환), `InstrumentService`/`CommunityPostService` 단위 테스트(샘플 종목 태그 시도 시 거부,
   `tradable=false` 실제 종목 거부는 회귀 확인). (spec SANDBOX-001, plan 1번·"리뷰 권장사항 반영")
 
-- [ ] **`TutorialSampleInstrumentPriceService` + `PriceQueryService` 4개 메서드 분기** — 신규 클래스
+- [x] **`TutorialSampleInstrumentPriceService` + `PriceQueryService` 4개 메서드 분기** — 신규 클래스
   `com.finplay.api.market.service.TutorialSampleInstrumentPriceService`에 결정적 가격 알고리즘(basePrice
   50,000/10,000, amplitude 0.03, periodSeconds 180, phase = `(instrument.getId() % 7) * (π/7)`, 기존 `Clock`
   빈 주입, scale 8 HALF_UP)을 구현한다. `PriceQueryService.getPriceQuote(Instrument)`,

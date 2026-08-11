@@ -41,7 +41,8 @@ class PriceQueryServiceTest {
 		when(stockPriceProvider.getCurrentPrice(any())).thenReturn(new StockReplayPriceDto(
 			true, StockMarketStatus.OPEN, session.getSourceTradingDate(), new BigDecimal("71000"), NOW, session));
 		PriceQueryService service = new PriceQueryService(
-			mock(InstrumentRepository.class), stockPriceProvider, mock(PriceStore.class));
+			mock(InstrumentRepository.class), stockPriceProvider, mock(PriceStore.class),
+			mock(TutorialSampleInstrumentPriceService.class));
 
 		OrderExecutionPriceDto result = service.getOrderExecutionPrice(instrument);
 
@@ -58,7 +59,8 @@ class PriceQueryServiceTest {
 		when(priceStore.getLatestPrice("BTC"))
 			.thenReturn(Optional.of(new CryptoPriceDto("BTC", new BigDecimal("50000000"), NOW)));
 		PriceQueryService service = new PriceQueryService(
-			mock(InstrumentRepository.class), mock(StockPriceProvider.class), priceStore);
+			mock(InstrumentRepository.class), mock(StockPriceProvider.class), priceStore,
+			mock(TutorialSampleInstrumentPriceService.class));
 
 		OrderExecutionPriceDto result = service.getOrderExecutionPrice(instrument);
 
@@ -74,7 +76,8 @@ class PriceQueryServiceTest {
 		when(stockPriceProvider.getCurrentPrice(any())).thenReturn(new StockReplayPriceDto(
 			true, StockMarketStatus.OPEN, NOW.toLocalDate(), new BigDecimal("71000"), NOW, null));
 		PriceQueryService service = new PriceQueryService(
-			mock(InstrumentRepository.class), stockPriceProvider, mock(PriceStore.class));
+			mock(InstrumentRepository.class), stockPriceProvider, mock(PriceStore.class),
+			mock(TutorialSampleInstrumentPriceService.class));
 
 		assertThatThrownBy(() -> service.getOrderExecutionPrice(instrument))
 			.isInstanceOf(BusinessException.class)
@@ -94,7 +97,7 @@ class PriceQueryServiceTest {
 			LocalDateTime.of(2026, 7, 27, 15, 30));
 		when(stockPriceProvider.getCurrentPrice(any())).thenReturn(quote);
 		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
-			priceStore);
+			priceStore, mock(TutorialSampleInstrumentPriceService.class));
 
 		PriceQuoteDto result = priceQueryService.getPrice(1L);
 
@@ -116,7 +119,7 @@ class PriceQueryServiceTest {
 		StockReplayPriceDto quote = new StockReplayPriceDto(false, StockMarketStatus.CLOSED, null, null, null);
 		when(stockPriceProvider.getCurrentPrice(any())).thenReturn(quote);
 		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
-			priceStore);
+			priceStore, mock(TutorialSampleInstrumentPriceService.class));
 
 		assertThatThrownBy(() -> priceQueryService.getPrice(1L))
 			.isInstanceOf(BusinessException.class)
@@ -135,7 +138,7 @@ class PriceQueryServiceTest {
 		when(priceStore.getLatestPrice("BTC"))
 			.thenReturn(Optional.of(new CryptoPriceDto("BTC", new BigDecimal("50000000"), NOW)));
 		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
-			priceStore);
+			priceStore, mock(TutorialSampleInstrumentPriceService.class));
 
 		PriceQuoteDto result = priceQueryService.getPrice(2L);
 
@@ -156,7 +159,7 @@ class PriceQueryServiceTest {
 		when(instrumentRepository.findById(2L)).thenReturn(Optional.of(instrument));
 		when(priceStore.isPriceAvailable("BTC")).thenReturn(false);
 		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
-			priceStore);
+			priceStore, mock(TutorialSampleInstrumentPriceService.class));
 
 		assertThatThrownBy(() -> priceQueryService.getPrice(2L))
 			.isInstanceOf(BusinessException.class)
@@ -176,7 +179,7 @@ class PriceQueryServiceTest {
 		when(priceStore.isPriceAvailable("BTC")).thenReturn(true);
 		when(priceStore.getLatestPrice("BTC")).thenReturn(Optional.empty());
 		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
-			priceStore);
+			priceStore, mock(TutorialSampleInstrumentPriceService.class));
 
 		assertThatThrownBy(() -> priceQueryService.getPrice(2L))
 			.isInstanceOf(BusinessException.class)
@@ -190,7 +193,7 @@ class PriceQueryServiceTest {
 		PriceStore priceStore = mock(PriceStore.class);
 		when(instrumentRepository.findById(999L)).thenReturn(Optional.empty());
 		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
-			priceStore);
+			priceStore, mock(TutorialSampleInstrumentPriceService.class));
 
 		assertThatThrownBy(() -> priceQueryService.getPrice(999L))
 			.isInstanceOf(BusinessException.class)
@@ -214,7 +217,7 @@ class PriceQueryServiceTest {
 			LocalDateTime.of(2026, 7, 28, 9, 5));
 		when(stockPriceProvider.getCurrentPrice(any())).thenReturn(quote);
 		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
-			priceStore);
+			priceStore, mock(TutorialSampleInstrumentPriceService.class));
 
 		PriceQuoteDto result = priceQueryService.getPriceQuote(1L);
 
@@ -236,7 +239,7 @@ class PriceQueryServiceTest {
 			false, StockMarketStatus.CLOSED, LocalDate.of(2026, 7, 27), null, null);
 		when(stockPriceProvider.getCurrentPrice(any())).thenReturn(quote);
 		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
-			priceStore);
+			priceStore, mock(TutorialSampleInstrumentPriceService.class));
 
 		PriceQuoteDto result = priceQueryService.getPriceQuote(1L);
 
@@ -257,7 +260,7 @@ class PriceQueryServiceTest {
 		when(priceStore.getLatestPrice("BTC"))
 			.thenReturn(Optional.of(new CryptoPriceDto("BTC", new BigDecimal("50000000"), NOW)));
 		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
-			priceStore);
+			priceStore, mock(TutorialSampleInstrumentPriceService.class));
 
 		PriceQuoteDto result = priceQueryService.getPriceQuote(2L);
 
@@ -276,7 +279,7 @@ class PriceQueryServiceTest {
 		when(instrumentRepository.findById(2L)).thenReturn(Optional.of(instrument));
 		when(priceStore.isPriceAvailable("BTC")).thenReturn(false);
 		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
-			priceStore);
+			priceStore, mock(TutorialSampleInstrumentPriceService.class));
 
 		PriceQuoteDto result = priceQueryService.getPriceQuote(2L);
 
@@ -293,7 +296,7 @@ class PriceQueryServiceTest {
 		PriceStore priceStore = mock(PriceStore.class);
 		when(instrumentRepository.findById(999L)).thenReturn(Optional.empty());
 		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
-			priceStore);
+			priceStore, mock(TutorialSampleInstrumentPriceService.class));
 
 		assertThatThrownBy(() -> priceQueryService.getPriceQuote(999L))
 			.isInstanceOf(BusinessException.class)
@@ -313,7 +316,7 @@ class PriceQueryServiceTest {
 		StockReplayPriceDto quote = new StockReplayPriceDto(false, StockMarketStatus.CLOSED, null, null, null);
 		when(stockPriceProvider.getCurrentPrice(any())).thenReturn(quote);
 		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
-			priceStore);
+			priceStore, mock(TutorialSampleInstrumentPriceService.class));
 
 		// getPriceQuote 자체는 UNAVAILABLE을 반환할 뿐 예외를 던지지 않는다.
 		assertThat(priceQueryService.getPriceQuote(1L).status()).isEqualTo(PriceStatus.UNAVAILABLE);
@@ -341,7 +344,7 @@ class PriceQueryServiceTest {
 		// 테스트 대상 Instrument는 persist하지 않아 getId()가 null이므로(List.of는 null 원소를 금지) any()로 매칭한다.
 		when(stockPriceProvider.getCurrentPrices(any())).thenReturn(List.of(firstQuote, secondQuote));
 		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
-			priceStore);
+			priceStore, mock(TutorialSampleInstrumentPriceService.class));
 
 		List<PriceQuoteDto> results = priceQueryService.getPriceQuotes(List.of(first, second));
 
@@ -369,7 +372,7 @@ class PriceQueryServiceTest {
 		when(stockPriceProvider.getCurrentPrice(any())).thenReturn(quote);
 		when(stockPriceProvider.getCurrentPrices(any())).thenReturn(List.of(quote));
 		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
-			priceStore);
+			priceStore, mock(TutorialSampleInstrumentPriceService.class));
 
 		PriceQuoteDto viaSingle = priceQueryService.getPriceQuote(instrument);
 		PriceQuoteDto viaBatch = priceQueryService.getPriceQuotes(List.of(instrument)).get(0);
@@ -387,7 +390,7 @@ class PriceQueryServiceTest {
 		when(priceStore.getLatestPrices(List.of("BTC", "ETH")))
 			.thenReturn(Map.of("BTC", new CryptoPriceDto("BTC", new BigDecimal("50000000"), NOW)));
 		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
-			priceStore);
+			priceStore, mock(TutorialSampleInstrumentPriceService.class));
 
 		List<PriceQuoteDto> results = priceQueryService.getPriceQuotes(List.of(btc, eth));
 
@@ -405,7 +408,7 @@ class PriceQueryServiceTest {
 		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
 		PriceStore priceStore = mock(PriceStore.class);
 		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
-			priceStore);
+			priceStore, mock(TutorialSampleInstrumentPriceService.class));
 
 		List<PriceQuoteDto> results = priceQueryService.getPriceQuotes(List.of());
 
@@ -419,7 +422,7 @@ class PriceQueryServiceTest {
 		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
 		PriceStore priceStore = mock(PriceStore.class);
 		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
-			priceStore);
+			priceStore, mock(TutorialSampleInstrumentPriceService.class));
 		Instrument stock = Instrument.create(Market.STOCK, "005930", "삼성전자", BigDecimal.valueOf(100), 70000L, true,
 			NOW);
 		Instrument crypto = Instrument.create(Market.CRYPTO, "BTC", "비트코인", BigDecimal.valueOf(1000), 5000L, true,
