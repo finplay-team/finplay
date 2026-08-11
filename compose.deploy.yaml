@@ -4,29 +4,6 @@
 name: finplay-deploy
 
 services:
-  mysql:
-    image: mysql:8.4
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: finplay
-      # 앱이 쓰는 계정. root는 여기에 쓸 수 없다(mysql 이미지가 거부) — DB_USERNAME은 root가 아닌 값으로 둔다.
-      MYSQL_USER: ${DB_USERNAME}
-      MYSQL_PASSWORD: ${DB_PASSWORD}
-    volumes:
-      - mysql-data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-    restart: unless-stopped
-
-  redis:
-    image: redis:7.4
-    volumes:
-      - redis-data:/data
-    restart: unless-stopped
-
   app:
     build:
       context: .
@@ -39,18 +16,6 @@ services:
       - .env
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      # 아래 3개는 이 compose의 네트워크 구성에서 결정되므로 .env 값보다 우선한다.
-      DB_URL: "jdbc:mysql://mysql:3306/finplay?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8"
-      # Redis 주소도 이 compose의 네트워크 구성에서 결정된다. application-prod.yml이 ${REDIS_HOST}·${REDIS_PORT}를
-      # 기본값 없이 참조하므로(이슈 #125), SPRING_DATA_REDIS_* 대신 이 이름으로 주입해야 한다 —
-      # SPRING_DATA_REDIS_HOST로 주면 환경변수가 yml보다 우선해 placeholder가 평가되지 않고 fail-fast가 무력해진다.
-      REDIS_HOST: redis
-      REDIS_PORT: "6379"
-    depends_on:
-      mysql:
-        condition: service_healthy
-      redis:
-        condition: service_started
     # nginx가 이 조건을 기다린다. 없으면 Flyway 마이그레이션이 끝나기 전에 nginx가 떠서 첫 요청이 502가 된다.
     # 런타임 이미지(eclipse-temurin:17-jre)는 Ubuntu 기반이라 curl이 이미 들어 있다.
     healthcheck:
@@ -78,6 +43,3 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-volumes:
-  mysql-data:
-  redis-data:
