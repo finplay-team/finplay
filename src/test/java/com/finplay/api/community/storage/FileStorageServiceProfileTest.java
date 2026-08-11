@@ -98,4 +98,15 @@ class FileStorageServiceProfileTest {
 				assertThat(context.getStartupFailure()).hasRootCauseInstanceOf(IllegalStateException.class);
 			});
 	}
+
+	@Test
+	@DisplayName("s3.bucket 프로퍼티 키 자체가 없으면(null 바인딩) prod 컨텍스트 기동이 실패한다")
+	void prodProfileFailsFastWhenBucketPropertyMissing() {
+		contextRunner
+			.withSystemProperties("spring.profiles.active=prod")
+			.run(context -> {
+				assertThat(context).hasFailed();
+				assertThat(context.getStartupFailure()).hasRootCauseInstanceOf(IllegalStateException.class);
+			});
+	}
 }
