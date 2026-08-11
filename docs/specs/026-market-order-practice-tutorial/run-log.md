@@ -12,6 +12,7 @@
 | - | implementer(이슈 #305, tasks.md 5번) | `JAVA_HOME=~/.jdks/ms-17.0.20 ./gradlew.bat compileJava`, `spotlessApply` | plan.md "2단계 chain 해석" 5번·"완료 판정과 tutorial_key"·"확정 HTTP·JSON 계약" 절, spec.md 4.1~4.5 완료 조건, ADR-0002 |
 | - | tester(이슈 #313, tasks.md 6·7번) | 대상 통합 테스트 3건, `.\gradlew.bat build` | plan.md "테스트 계획", 주식 시장가 전체 흐름 검증 3차 MVP 이관 결정 |
 | - | implementer(이슈 #313, tasks.md 6번 재연결) | `.\gradlew.bat compileTestJava`, `.\gradlew.bat test --tests CryptoLimitPracticeFlowRestartIntegrationTest`(3건 통과) | 030/plan.md "생성기·가격 anchor"·"트랜잭션·잠금·이벤트"·"holding 관찰 연결" 절, 026/plan.md "재시작 유실과 완료 불변" 절 |
+| - | tester(이슈 #313, tasks.md 7번) | `JAVA_HOME=~/.jdks/ms-17.0.20 ./gradlew.bat build`(1차 `spotlessJavaCheck` 포맷 위반으로 실패 → `spotlessApply`로 테스트 파일 포맷 수정 → 재실행 `BUILD SUCCESSFUL`), `gh issue view 313` 완료조건 대조 | ADR-0003, docs/specs/026-market-order-practice-tutorial/tasks.md 7번, 이슈 #313 완료 조건 |
 
 ## 모니터링 (사람용 요약)
 - 참조 가격선 계산(`ReferencePriceCalculator`)·evidence A/B 판정(`EvidenceJudgmentService`) 순수 서비스 추가, 컴파일 통과. `PracticeIntention`에 `exitPriceType`/rate 필드가 아직 없어(019 미착수) PERCENT 분기는 독립 메서드로만 구현.

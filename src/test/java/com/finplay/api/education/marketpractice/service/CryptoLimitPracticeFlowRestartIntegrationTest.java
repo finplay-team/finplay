@@ -24,6 +24,8 @@ import com.finplay.api.favorite.service.FavoriteService;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.repository.InstrumentRepository;
+import com.finplay.api.market.store.FeedConnectionStatus;
+import com.finplay.api.market.store.PriceStore;
 import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.domain.OrderStatus;
 import com.finplay.api.order.dto.request.LimitOrderCreateRequest;
@@ -109,6 +111,8 @@ class CryptoLimitPracticeFlowRestartIntegrationTest {
 	private JdbcTemplate jdbcTemplate;
 	@Autowired
 	private TestClock clock;
+	@Autowired
+	private PriceStore priceStore;
 
 	@BeforeEach
 	void setUp() {
@@ -230,10 +234,11 @@ class CryptoLimitPracticeFlowRestartIntegrationTest {
 			new PracticeIntentionCreateRequest(instrument.getId(), QUANTITY, STOP_LOSS, TAKE_PROFIT));
 
 		clock.set(BASE_NOW.plusSeconds(2));
-		PracticePriceSessionResponse session = practicePriceSessionService.createSession(user.getId(), instrument.getId());
+		PracticePriceSessionResponse session = practicePriceSessionService.createSession(user.getId(),
+			instrument.getId());
 		assertThat(session.startPrice()).isEqualByComparingTo(FALLBACK_START_PRICE);
-		PracticePriceSessionResponse otherSession =
-			practicePriceSessionService.createSession(otherUser.getId(), instrument.getId());
+		PracticePriceSessionResponse otherSession = practicePriceSessionService.createSession(otherUser.getId(),
+			instrument.getId());
 
 		LimitOrderResponse pending = practiceLimitOrderService.createOrder(user.getId(),
 			new PracticeLimitOrderCreateRequest(session.sessionId(), instrument.getId(), QUANTITY, LIMIT_PRICE));
@@ -245,8 +250,23 @@ class CryptoLimitPracticeFlowRestartIntegrationTest {
 			user.getId(), UUID.randomUUID().toString(),
 			new LimitOrderCreateRequest(Market.CRYPTO, instrument.getId(), OrderSide.BUY, QUANTITY, LIMIT_PRICE));
 
+		// 실습 세션 tick은 인메모리 세션 상태만 진행시킬 뿐 실제 PriceStore(Redis)의 코인 가격·연결상태는 건드리지
+		// 않아야 한다(이슈 #313 완료 조건). 이 심볼은 실제 시세 피드가 절대 채우지 않는 실습 전용 종목이므로,
+		// tick 전후로 항상 조회 결과가 없어야 한다.
+		FeedConnectionStatus statusBeforeTick = priceStore.getConnectionStatus();
+		assertThat(priceStore.getLatestPrice(symbol))
+			.as("실습 세션 tick 전에도 실제 PriceStore에는 이 실습 전용 심볼의 가격이 없다")
+			.isEmpty();
+
 		clock.set(BASE_NOW.plusSeconds(3));
 		practicePriceTickService.advanceTick(user.getId(), session.sessionId(), 1);
+
+		assertThat(priceStore.getLatestPrice(symbol))
+			.as("실습 세션 tick 진행이 실제 PriceStore의 코인 가격을 채우지 않는다")
+			.isEmpty();
+		assertThat(priceStore.getConnectionStatus())
+			.as("실습 세션 tick 진행이 실제 PriceStore의 연결 상태를 바꾸지 않는다")
+			.isEqualTo(statusBeforeTick);
 
 		assertThat(orderRepository.findById(pending.orderId()).orElseThrow().getStatus())
 			.isEqualTo(OrderStatus.FILLED);
