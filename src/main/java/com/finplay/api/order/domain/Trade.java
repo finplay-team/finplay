@@ -121,7 +121,9 @@ public class Trade {
 
 	private static void validateStockReplaySession(
 		Instrument instrument, StockReplaySession stockReplaySession) {
-		if (instrument.getMarket() == Market.STOCK && stockReplaySession == null) {
+		if (instrument.getMarket() == Market.STOCK
+			&& stockReplaySession == null
+			&& !instrument.isTutorialSample()) {
 			throw new IllegalArgumentException("주식 체결에는 재생세션이 필수입니다.");
 		}
 		if (instrument.getMarket() == Market.CRYPTO && stockReplaySession != null) {

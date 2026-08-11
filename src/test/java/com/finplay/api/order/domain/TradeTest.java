@@ -71,6 +71,36 @@ class TradeTest {
 			.hasMessage("코인 체결에는 재생세션을 지정할 수 없습니다.");
 	}
 
+	// 이슈 #339: PriceQueryService.getOrderExecutionPrice가 튜토리얼 샘플 종목에 대해 의도적으로
+	// replaySession=null을 반환하는데, 이 불변식이 실제 종목에만 성립하도록 범위를 좁혔는지 확인한다.
+
+	@Test
+	void rejectsRealStockTradeWithoutReplaySession() {
+		TradeFixture fixture = fixture(com.finplay.api.market.domain.Market.STOCK);
+
+		assertThatThrownBy(() -> createTrade(fixture, null))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("주식 체결에는 재생세션이 필수입니다.");
+	}
+
+	@Test
+	void allowsTutorialSampleStockTradeWithoutReplaySession() {
+		TradeFixture fixture = tutorialSampleFixture(com.finplay.api.market.domain.Market.STOCK);
+
+		Trade trade = createTrade(fixture, null);
+
+		assertThat(trade.getStockReplaySession()).isNull();
+	}
+
+	@Test
+	void rejectsTutorialSampleCryptoTradeWithReplaySession() {
+		TradeFixture fixture = tutorialSampleFixture(com.finplay.api.market.domain.Market.CRYPTO);
+
+		assertThatThrownBy(() -> createTrade(fixture, readySession()))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("코인 체결에는 재생세션을 지정할 수 없습니다.");
+	}
+
 	private static Trade sellTradeWithNullRealizedPnl() {
 		User user = User.create("trader@finplay.com", "password-hash", "trader", NOW);
 		Account account = Account.create(user, Market.STOCK, NOW);
@@ -97,6 +127,13 @@ class TradeTest {
 			user, account, instrument, OrderSide.BUY, OrderType.MARKET,
 			BigDecimal.ONE, "fixture-idem", "b".repeat(64), NOW);
 		return new TradeFixture(order, account, instrument);
+	}
+
+	private static TradeFixture tutorialSampleFixture(com.finplay.api.market.domain.Market market) {
+		TradeFixture fixture = fixture(market);
+		org.springframework.test.util.ReflectionTestUtils.setField(
+			fixture.instrument(), "tutorialSample", true);
+		return fixture;
 	}
 
 	private static Trade createTrade(TradeFixture fixture, StockReplaySession session) {

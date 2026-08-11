@@ -10,6 +10,7 @@
 | - | implementer | `.\gradlew.bat compileJava compileTestJava` | plan.md "`POST /api/education/practice/holding-reflections` 전제조건 변경" 표, spec.md SANDBOX-008 |
 | - | implementer | `.\gradlew.bat compileJava compileTestJava` + `test --tests MarketPracticeChainResolutionServiceTest,TradeServiceTest` | 이슈 #339 재도전 버그 수정(오케스트레이터 확정 방향), plan.md "재도전을 위한 buyTrade 선택 정정" |
 | - | implementer | `.\gradlew.bat test --tests TutorialSandboxPracticeIntegrationTest` | tasks.md 6번 검증 중 신규 차단 버그 발견(`Trade.validateStockReplaySession`) |
+| - | implementer | `.\gradlew.bat compileJava compileTestJava` + `test --tests TradeTest,TradeServiceTest` | plan.md "2. 항시 시세" 정정(STOCK⇒non-null 불변식은 실제 종목에만 성립), 이슈 #339 발견 버그 수정 |
 
 ## 모니터링 (사람용 요약)
 - V32 마이그레이션(`is_tutorial_sample` 컬럼 + 샘플 종목 6행) 추가, `Instrument`·`InstrumentResponse`에 필드 반영, `InstrumentService.getTradableInstrumentEntity`에 샘플 종목 커뮤니티 태그 제외 조건 추가. 컴파일 통과.
@@ -19,3 +20,4 @@
 - `PracticeHoldingReflectionService.createReflection`이 chain의 `instrumentIsTutorialSample()`일 때만 매도 evidence·5분 이내 전제조건을 추가 검사(`verifySampleChainSaleEvidence`), 실제 종목 chain은 026 전제조건(A/B만) 그대로. 신규 `ErrorCode.PRACTICE_SANDBOX_TIME_EXPIRED` 추가하고 `ErrorCodeTest`의 개수(37)·상태맵·기본메시지 화이트리스트를 같은 커밋에서 갱신. 응답 DTO 변경 없음(spec 결정). compileJava/compileTestJava 통과. controller 변경 없어 api-routes.md/api-contracts.md/prd.md §3 갱신 대상 아님.
 - 오케스트레이터 확정 방향대로 `TradeService.findLatestFilledBuyTradeMatching` 신규 추가 + `MarketPracticeChainResolutionService`가 `InstrumentService` 주입받아 `isTutorialSample()`로 분기(샘플=최신 매수, 실제=기존 최이른 매수 유지). 단위 테스트 통과(`MarketPracticeChainResolutionServiceTest` 2건, `TradeServiceTest` 3건 신규). plan.md·tasks.md에 정정 기록.
 - tasks.md 6번 통합 테스트(`TutorialSandboxPracticeIntegrationTest`, 5개 시나리오 이미 작성돼 있었음) 실행 결과 3건 실패 — anchor 버그와 무관한 별도 차단 버그 발견: `Trade.validateStockReplaySession`이 STOCK market이면 `stockReplaySession`이 항상 non-null을 요구해, 샘플 종목(replaySession=null 설계, SANDBOX-003)의 매수 자체가 `IllegalArgumentException("주식 체결에는 재생세션이 필수입니다.")`로 실패한다. 이 수정은 스코프를 넘어서 오케스트레이터 확인 후 진행 필요 — tasks.md 6번 체크 보류.
+- 위 버그 수정: `Trade.validateStockReplaySession`에 `!instrument.isTutorialSample()` 조건을 추가해 STOCK 샘플 종목만 `stockReplaySession == null`을 허용. `TradeTest`에 회귀 테스트 3건 추가(실제 STOCK+null→예외, 샘플 STOCK+null→성공, 샘플 CRYPTO+non-null→예외). 실제 종목 경로(`isTutorialSample() == false`)는 조건 변경 없어 026 동작 그대로. `TradeTest`(9건)·`TradeServiceTest` 전부 통과, compileJava/compileTestJava 통과. controller 변경 없어 api-routes.md/api-contracts.md/prd.md §3 갱신 대상 아님.

@@ -149,6 +149,11 @@ price = (basePrice * (1 + rate)) 을 scale 8 HALF_UP으로 반올림
   기록한 nullable FK 규칙과 같은 모양이다(주식도 이 한 가지 경우에서는 null이 된다. 기존 실제 주식
   체결의 "STOCK ⇒ non-null" 불변식은 **실제 종목에만** 성립하도록 범위를 명확히 한다 — 이 nullable
   컬럼은 이미 nullable로 정의돼 있으므로 스키마 변경은 필요 없다).
+- **버그 발견·수정(이슈 #339, tasks.md 6번 통합 테스트 작성 중 발견)**: 위 정정이 `PriceQueryService`에는
+  반영됐지만 `Trade.validateStockReplaySession`(엔티티 불변식 검사)에는 반영되지 않아, STOCK 샘플 종목
+  매수/매도가 전부 `IllegalArgumentException("주식 체결에는 재생세션이 필수입니다.")`으로 실패했다.
+  `instrument.isTutorialSample()`이면 STOCK이어도 `stockReplaySession == null`을 허용하도록 조건을 좁혀
+  수정했다 — 실제 종목(`isTutorialSample() == false`)의 기존 동작(`026`)은 그대로 유지된다.
 
 ## 3. 매도 단계 API 설계
 
