@@ -271,6 +271,155 @@ class PracticeHoldingReflectionServiceTest {
 			NOW.minusHours(1), new BigDecimal("100"), HOLDING_ID, null, null, false);
 	}
 
+	// 031 SANDBOX-008: 샘플 종목 chain(instrumentIsTutorialSample=true) 전용 4단계 매도 evidence 전제조건.
+	private ResolvedPracticeChainDto sampleChain(
+		LocalDateTime buyTradeExecutedAt, Long sellTradeId, LocalDateTime sellTradeExecutedAt) {
+		return new ResolvedPracticeChainDto(
+			10L, NOW.minusDays(1), 20L, NOW.minusHours(2), new BigDecimal("90"), new BigDecimal("120"), 30L,
+			buyTradeExecutedAt, new BigDecimal("100"), HOLDING_ID, sellTradeId, sellTradeExecutedAt, true);
+	}
+
+	private void givenChainAndEvidence(ResolvedPracticeChainDto chain) {
+		when(holdingService.findHoldingForOwner(USER_ID, HOLDING_ID)).thenReturn(Optional.of(holding));
+		when(practiceProgressRepository.findByUserIdAndTutorialKeyForUpdate(
+			USER_ID, PracticeIntentionService.TUTORIAL_KEY)).thenReturn(Optional.of(progress));
+		when(chainResolutionService.resolveForInstrument(USER_ID, PracticeIntentionService.TUTORIAL_KEY, INSTRUMENT_ID))
+			.thenReturn(Optional.of(chain));
+
+		PracticeMarketObservation withEvidence = mock(PracticeMarketObservation.class);
+		when(withEvidence.getEvidenceType()).thenReturn(PracticeEvidenceType.CLOSER_TO_BOUNDARY);
+		when(practiceMarketObservationRepository.findByUserIdAndHoldingIdOrderByObservedAtAsc(USER_ID, HOLDING_ID))
+			.thenReturn(List.of(withEvidence));
+	}
+
+	// (a) 샘플 chain, evidence A/B 없음 -> 409 PRACTICE_EVIDENCE_MISSING (샘플 여부 이전에 evidence 부재로 이미 걸린다).
+	@Test
+	void createReflectionThrowsEvidenceMissingWhenSampleChainHasNoObservationEvidence() {
+		when(holdingService.findHoldingForOwner(USER_ID, HOLDING_ID)).thenReturn(Optional.of(holding));
+		when(practiceProgressRepository.findByUserIdAndTutorialKeyForUpdate(
+			USER_ID, PracticeIntentionService.TUTORIAL_KEY)).thenReturn(Optional.of(progress));
+		ResolvedPracticeChainDto chain = sampleChain(NOW.minusMinutes(1), null, null);
+		when(chainResolutionService.resolveForInstrument(USER_ID, PracticeIntentionService.TUTORIAL_KEY, INSTRUMENT_ID))
+			.thenReturn(Optional.of(chain));
+
+		PracticeMarketObservation noEvidenceObservation = mock(PracticeMarketObservation.class);
+		when(noEvidenceObservation.getEvidenceType()).thenReturn(null);
+		when(practiceMarketObservationRepository.findByUserIdAndHoldingIdOrderByObservedAtAsc(USER_ID, HOLDING_ID))
+			.thenReturn(List.of(noEvidenceObservation));
+
+		assertThatThrownBy(() -> service.createReflection(USER_ID, request()))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
+				.isEqualTo(ErrorCode.PRACTICE_EVIDENCE_MISSING));
+
+		verify(practiceMarketReflectionRepository, never()).save(any());
+		verify(progress, never()).complete(any());
+	}
+
+	// (b) 샘플 chain, evidence A/B 있음, 매도 없음, 5분 이내 -> 409 PRACTICE_EVIDENCE_MISSING
+	@Test
+	void createReflectionThrowsEvidenceMissingWhenSampleChainHasNoSaleWithinFiveMinutes() {
+		ResolvedPracticeChainDto chain = sampleChain(NOW.minusMinutes(3), null, null);
+		givenChainAndEvidence(chain);
+
+		assertThatThrownBy(() -> service.createReflection(USER_ID, request()))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
+				.isEqualTo(ErrorCode.PRACTICE_EVIDENCE_MISSING));
+
+		verify(practiceMarketReflectionRepository, never()).save(any());
+		verify(practiceCompletionRepository, never()).save(any());
+		verify(progress, never()).complete(any());
+	}
+
+	// (c) 샘플 chain, evidence A/B 있음, 매도 없음, 5분 초과 -> 409 PRACTICE_SANDBOX_TIME_EXPIRED
+	@Test
+	void createReflectionThrowsTimeExpiredWhenSampleChainHasNoSaleAfterFiveMinutes() {
+		ResolvedPracticeChainDto chain = sampleChain(NOW.minusMinutes(6), null, null);
+		givenChainAndEvidence(chain);
+
+		assertThatThrownBy(() -> service.createReflection(USER_ID, request()))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
+				.isEqualTo(ErrorCode.PRACTICE_SANDBOX_TIME_EXPIRED));
+
+		verify(practiceMarketReflectionRepository, never()).save(any());
+		verify(practiceCompletionRepository, never()).save(any());
+		verify(progress, never()).complete(any());
+	}
+
+	// (d) 샘플 chain, 매도 있음, 매도 체결이 buyTrade.executedAt+5분 초과 -> 409 PRACTICE_SANDBOX_TIME_EXPIRED
+	@Test
+	void createReflectionThrowsTimeExpiredWhenSampleChainSaleExecutedAfterFiveMinuteDeadline() {
+		ResolvedPracticeChainDto chain = sampleChain(NOW.minusMinutes(10), 40L, NOW);
+		givenChainAndEvidence(chain);
+
+		assertThatThrownBy(() -> service.createReflection(USER_ID, request()))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
+				.isEqualTo(ErrorCode.PRACTICE_SANDBOX_TIME_EXPIRED));
+
+		verify(practiceMarketReflectionRepository, never()).save(any());
+		verify(practiceCompletionRepository, never()).save(any());
+		verify(progress, never()).complete(any());
+	}
+
+	// (e) 샘플 chain, evidence A/B 있음 + 매도가 5분 이내 -> 201 성공(변경 없음)
+	@Test
+	void createReflectionSucceedsWhenSampleChainSaleExecutedWithinFiveMinuteDeadline() {
+		ResolvedPracticeChainDto chain = sampleChain(NOW.minusMinutes(3), 40L, NOW.minusMinutes(1));
+		givenChainAndEvidence(chain);
+
+		PracticeMarketReflection savedReflection = PracticeMarketReflection.create(
+			USER_ID, holding, PracticeIntentionService.TUTORIAL_KEY, (short)1, ANSWER, NOW);
+		when(practiceMarketReflectionRepository.save(any(PracticeMarketReflection.class)))
+			.thenReturn(savedReflection);
+
+		PracticeHoldingReflectionResponse response = service.createReflection(USER_ID, request());
+
+		assertThat(response.holdingId()).isEqualTo(HOLDING_ID);
+		verify(practiceMarketReflectionRepository).save(any(PracticeMarketReflection.class));
+		verify(practiceCompletionRepository).save(any(PracticeCompletion.class));
+		verify(progress).complete(NOW);
+	}
+
+	// (d)/경계값: 매도가 정확히 5분 시점(경계 포함)이면 성공해야 한다 (isWithinSaleDeadline은 !isAfter 정책).
+	@Test
+	void createReflectionSucceedsWhenSampleChainSaleExecutedExactlyAtFiveMinuteBoundary() {
+		LocalDateTime buyExecutedAt = NOW.minusMinutes(5);
+		ResolvedPracticeChainDto chain = sampleChain(buyExecutedAt, 40L, buyExecutedAt.plusMinutes(5));
+		givenChainAndEvidence(chain);
+
+		when(practiceMarketReflectionRepository.save(any(PracticeMarketReflection.class)))
+			.thenAnswer(invocation -> invocation.getArgument(0));
+
+		service.createReflection(USER_ID, request());
+
+		verify(practiceMarketReflectionRepository).save(any(PracticeMarketReflection.class));
+		verify(progress).complete(NOW);
+	}
+
+	// (f) 실제 종목 chain(샘플 아님) — 매도·5분과 무관하게 026 기존 전제조건(A/B만)으로 성공해야 한다(회귀 확인).
+	// buyTradeExecutedAt이 5분보다 훨씬 이전이고 매도 체결이 전혀 없어도(sellTradeId=null) 샘플 chain이었다면
+	// 만료였을 상황이지만, instrumentIsTutorialSample=false이므로 verifySampleChainSaleEvidence 분기 자체를
+	// 타지 않고 evidence A/B만으로 통과해야 한다.
+	@Test
+	void createReflectionSucceedsForRealInstrumentChainRegardlessOfSaleOrFiveMinuteWindow() {
+		ResolvedPracticeChainDto realChain = new ResolvedPracticeChainDto(
+			10L, NOW.minusDays(1), 20L, NOW.minusHours(2), new BigDecimal("90"), new BigDecimal("120"), 30L,
+			NOW.minusHours(1), new BigDecimal("100"), HOLDING_ID, null, null, false);
+		givenChainAndEvidence(realChain);
+
+		when(practiceMarketReflectionRepository.save(any(PracticeMarketReflection.class)))
+			.thenAnswer(invocation -> invocation.getArgument(0));
+
+		service.createReflection(USER_ID, request());
+
+		verify(practiceMarketReflectionRepository).save(any(PracticeMarketReflection.class));
+		verify(practiceCompletionRepository).save(any(PracticeCompletion.class));
+		verify(progress).complete(NOW);
+	}
+
 	private PracticeHoldingReflectionCreateRequest request() {
 		return new PracticeHoldingReflectionCreateRequest(HOLDING_ID, ANSWER);
 	}
