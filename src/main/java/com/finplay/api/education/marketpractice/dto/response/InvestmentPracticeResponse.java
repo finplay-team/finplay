@@ -6,7 +6,7 @@ import java.util.List;
 
 public record InvestmentPracticeResponse(
 	String tutorialKey, String status, Integer currentStep, List<PracticeStepResponse> steps,
-	LocalDateTime completedAt) {
+	LocalDateTime completedAt, Long rewardAmount) {
 
 	public InvestmentPracticeResponse {
 		// steps는 List 필드라 방어적 복사 없이는 SpotBugs EI_EXPOSE_REP/REP2로 잡힌다(agent-mistakes.md 2026-07-29).

@@ -9,8 +9,11 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.finplay.api.account.domain.Account;
+import com.finplay.api.account.service.AccountService;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.education.domain.PracticeProgress;
@@ -58,15 +61,17 @@ class PracticeHoldingReflectionServiceTest {
 		PracticeMarketReflectionRepository.class);
 	private final PracticeCompletionRepository practiceCompletionRepository = mock(
 		PracticeCompletionRepository.class);
+	private final AccountService accountService = mock(AccountService.class);
 	private final Clock clock = Clock.fixed(NOW.toInstant(ZoneOffset.UTC), ZoneOffset.UTC);
 
 	private final PracticeHoldingReflectionService service = new PracticeHoldingReflectionService(
 		holdingService, chainResolutionService, practiceProgressRepository, practiceMarketObservationRepository,
-		practiceMarketReflectionRepository, practiceCompletionRepository, clock);
+		practiceMarketReflectionRepository, practiceCompletionRepository, accountService, clock);
 
 	private Holding holding;
 	private Instrument instrument;
 	private PracticeProgress progress;
+	private Account account;
 
 	@BeforeEach
 	void setUp() {
@@ -80,6 +85,9 @@ class PracticeHoldingReflectionServiceTest {
 
 		progress = mock(PracticeProgress.class);
 		when(progress.getStatus()).thenReturn(PracticeProgressStatus.IN_PROGRESS);
+
+		account = mock(Account.class);
+		when(accountService.getAccountForUpdate(eq(USER_ID), any())).thenReturn(account);
 	}
 
 	@Test
@@ -121,6 +129,9 @@ class PracticeHoldingReflectionServiceTest {
 
 		verify(chainResolutionService, never()).resolveForInstrument(any(), any(), any());
 		verify(practiceMarketReflectionRepository, never()).save(any());
+		// 이슈 #343: 이미 완료(409)로 실패하는 경로에서는 보상 지급 로직(accountService)이 전혀 호출되지 않아야
+		// 한다 — 중복 지급 방지의 첫 번째 방어선.
+		verifyNoInteractions(accountService);
 	}
 
 	@Test
@@ -223,6 +234,55 @@ class PracticeHoldingReflectionServiceTest {
 		assertThat(completionCaptor.getValue().getCompletedAt()).isEqualTo(NOW);
 
 		verify(progress).complete(NOW);
+	}
+
+	// 이슈 #343: 완료 성공 시 해당 시장(STOCK) 계좌를 잠가 조회하고 500만원을 지급해야 한다.
+	@Test
+	void createReflectionPaysTutorialCompletionRewardToStockAccountOnHappyPath() {
+		when(holdingService.findHoldingForOwner(USER_ID, HOLDING_ID)).thenReturn(Optional.of(holding));
+		when(practiceProgressRepository.findByUserIdAndTutorialKeyForUpdate(
+			USER_ID, PracticeIntentionService.TUTORIAL_KEY)).thenReturn(Optional.of(progress));
+		ResolvedPracticeChainDto chain = completedChain();
+		when(chainResolutionService.resolveForInstrument(USER_ID, PracticeIntentionService.TUTORIAL_KEY, INSTRUMENT_ID))
+			.thenReturn(Optional.of(chain));
+
+		PracticeMarketObservation withEvidence = mock(PracticeMarketObservation.class);
+		when(withEvidence.getEvidenceType()).thenReturn(PracticeEvidenceType.CLOSER_TO_BOUNDARY);
+		when(practiceMarketObservationRepository.findByUserIdAndHoldingIdOrderByObservedAtAsc(USER_ID, HOLDING_ID))
+			.thenReturn(List.of(withEvidence));
+		when(practiceMarketReflectionRepository.save(any(PracticeMarketReflection.class)))
+			.thenAnswer(invocation -> invocation.getArgument(0));
+
+		service.createReflection(USER_ID, request());
+
+		verify(accountService).getAccountForUpdate(USER_ID, com.finplay.api.account.domain.Market.STOCK);
+		verify(account).addCash(5_000_000L);
+	}
+
+	// 이슈 #343: instrument.getMarket()이 CRYPTO면 코인 계좌(com.finplay.api.account.domain.Market.CRYPTO)에
+	// 지급돼야 한다 — market 도메인 -> account 도메인 변환이 시장별로 독립적으로 이루어지는지 확인.
+	@Test
+	void createReflectionPaysTutorialCompletionRewardToCryptoAccountWhenInstrumentIsCrypto() {
+		when(instrument.getMarket()).thenReturn(Market.CRYPTO);
+		when(holdingService.findHoldingForOwner(USER_ID, HOLDING_ID)).thenReturn(Optional.of(holding));
+		when(practiceProgressRepository.findByUserIdAndTutorialKeyForUpdate(
+			USER_ID, PracticeIntentionService.COIN_TUTORIAL_KEY)).thenReturn(Optional.of(progress));
+		ResolvedPracticeChainDto chain = completedChain();
+		when(chainResolutionService.resolveForInstrument(
+			USER_ID, PracticeIntentionService.COIN_TUTORIAL_KEY, INSTRUMENT_ID))
+			.thenReturn(Optional.of(chain));
+
+		PracticeMarketObservation withEvidence = mock(PracticeMarketObservation.class);
+		when(withEvidence.getEvidenceType()).thenReturn(PracticeEvidenceType.CLOSER_TO_BOUNDARY);
+		when(practiceMarketObservationRepository.findByUserIdAndHoldingIdOrderByObservedAtAsc(USER_ID, HOLDING_ID))
+			.thenReturn(List.of(withEvidence));
+		when(practiceMarketReflectionRepository.save(any(PracticeMarketReflection.class)))
+			.thenAnswer(invocation -> invocation.getArgument(0));
+
+		service.createReflection(USER_ID, request());
+
+		verify(accountService).getAccountForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO);
+		verify(account).addCash(5_000_000L);
 	}
 
 	@Test

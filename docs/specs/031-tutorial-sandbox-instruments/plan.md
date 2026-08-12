@@ -384,3 +384,7 @@ findEarliestFilledBuyTradeMatchingPicksFirstQuantityMatchInRepositoryOrder`가 �
   `!instrument.isTutorialSample()` 조건을 추가해 샘플 종목은 `tradable` 값과 무관하게 커뮤니티 태그
   대상에서 제외하기로 결정한다. 이 결정은 착수 시 실제 코드 재확인 후 구현에 반영한다(이 문서는 결정만
   기록, 구현은 후속).
+- **시장별 최초 완료 보상(이슈 #343)**: 샘플 종목 4단계 완료도 `PracticeHoldingReflectionService
+  .createReflection`을 그대로 거치므로, 026이 지급하는 시장별 최초 완료 보상 500만원이 이 4단계 완료
+  경로에도 동일하게 적용된다. 상세 지급 로직·`practice_completions` unique와의 결합은
+  `026-market-order-practice-tutorial/plan.md`가 정본이다.

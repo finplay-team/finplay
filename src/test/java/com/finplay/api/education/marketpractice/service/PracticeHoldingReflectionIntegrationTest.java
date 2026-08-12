@@ -149,6 +149,142 @@ class PracticeHoldingReflectionIntegrationTest {
 			completion -> assertThat(completion.getUserId()).isEqualTo(fixture.userId()));
 	}
 
+	// 이슈 #343: 완료 트랜잭션이 실제로 커밋되면 계좌 cash_balance가 500만원 증가해야 한다(mock이 아닌 실제
+	// MySQL 조회로 확인).
+	@Test
+	void reflectionIncreasesAccountCashBalanceByFiveMillionOnCompletion() {
+		ChainFixture fixture = buildFilledChainAndHolding("reward-happy");
+
+		priceStore.saveTick(fixture.symbol(), new BigDecimal("95000"), BASE_NOW.plusMinutes(1));
+		practiceHoldingObservationService.createObservation(
+			fixture.userId(), new PracticeHoldingObservationCreateRequest(fixture.holdingId()));
+
+		long cashBalanceBeforeReflection = accountRepository
+			.findByUserIdAndMarket(fixture.userId(), com.finplay.api.account.domain.Market.CRYPTO)
+			.orElseThrow()
+			.getCashBalance();
+
+		practiceHoldingReflectionService.createReflection(
+			fixture.userId(), new PracticeHoldingReflectionCreateRequest(fixture.holdingId(), "보상 지급 확인용 복기."));
+
+		long cashBalanceAfterReflection = accountRepository
+			.findByUserIdAndMarket(fixture.userId(), com.finplay.api.account.domain.Market.CRYPTO)
+			.orElseThrow()
+			.getCashBalance();
+
+		assertThat(cashBalanceAfterReflection - cashBalanceBeforeReflection).isEqualTo(5_000_000L);
+	}
+
+	// 이슈 #343: 같은 사용자가 주식·코인 튜토리얼을 각각 완료하면 보상이 각 시장 계좌에 독립적으로(각 500만원)
+	// 지급돼야 한다. 코인은 실제 종목 chain(3단계), 주식은 SANDBOX_STK_1 샘플 종목(4단계, 재생세션 없이도 거래
+	// 가능 — TradeTest.allowsTutorialSampleStockTradeWithoutReplaySession)으로 완결한다.
+	@Test
+	void completingBothMarketTutorialsPaysRewardIndependentlyToEachAccount() {
+		User user = userRepository.saveAndFlush(
+			User.create(uniqueEmail("dual-market"), "password-hash", uniqueNickname("dual-market"), BASE_NOW));
+		Account cryptoAccount = accountRepository.saveAndFlush(
+			Account.create(user, com.finplay.api.account.domain.Market.CRYPTO, BASE_NOW));
+		Account stockAccount = accountRepository.saveAndFlush(
+			Account.create(user, com.finplay.api.account.domain.Market.STOCK, BASE_NOW));
+
+		// 코인: 실제 종목 3단계 완료.
+		String symbol = "DUAL" + UUID.randomUUID().toString().replace("-", "").substring(0, 6).toUpperCase();
+		Instrument cryptoInstrument = instrumentRepository.saveAndFlush(
+			Instrument.create(Market.CRYPTO, symbol, "dual-market코인", new BigDecimal("0.00000001"), 0L, true,
+				BASE_NOW));
+		priceKeysToCleanUp.add("price:crypto:" + symbol);
+		priceStore.saveConnectionStatus(FeedConnectionStatus.CONNECTED);
+		priceStore.saveTick(symbol, ENTRY_PRICE, BASE_NOW);
+
+		favoriteService.createFavorite(user.getId(), cryptoInstrument.getId());
+		clock.set(BASE_NOW.plusSeconds(1));
+		practiceIntentionService.createIntention(user.getId(),
+			new PracticeIntentionCreateRequest(cryptoInstrument.getId(), QUANTITY, STOP_LOSS, TAKE_PROFIT));
+		clock.set(BASE_NOW.plusSeconds(2));
+		orderService.createOrder(user.getId(), "dual-market-crypto-buy-" + UUID.randomUUID(),
+			new OrderCreateRequest(Market.CRYPTO, cryptoInstrument.getId(), OrderSide.BUY, "MARKET", QUANTITY));
+		Holding cryptoHolding = holdingRepository
+			.findByAccountIdAndInstrumentId(cryptoAccount.getId(), cryptoInstrument.getId())
+			.orElseThrow();
+
+		clock.set(BASE_NOW.plusSeconds(12));
+		// evidence A(경계 접근): 매수가(100000)보다 손절가(90000)에 더 가까운 95000으로 틱을 갱신한다
+		// (buildFilledChainAndHolding 기반 기존 통과 테스트와 동일한 값).
+		priceStore.saveTick(symbol, new BigDecimal("95000"), BASE_NOW.plusSeconds(12));
+		practiceHoldingObservationService.createObservation(
+			user.getId(), new PracticeHoldingObservationCreateRequest(cryptoHolding.getId()));
+
+		practiceHoldingReflectionService.createReflection(
+			user.getId(), new PracticeHoldingReflectionCreateRequest(cryptoHolding.getId(), "코인 튜토리얼 완료 복기."));
+
+		long cryptoCashAfterCryptoCompletion = accountRepository
+			.findByUserIdAndMarket(user.getId(), com.finplay.api.account.domain.Market.CRYPTO)
+			.orElseThrow()
+			.getCashBalance();
+		long stockCashAfterCryptoCompletion = accountRepository
+			.findByUserIdAndMarket(user.getId(), com.finplay.api.account.domain.Market.STOCK)
+			.orElseThrow()
+			.getCashBalance();
+		// 코인 완료 시점에는 코인 계좌만 보상을 받고 주식 계좌는 아직 초기 시드머니 그대로다.
+		assertThat(stockCashAfterCryptoCompletion).isEqualTo(stockAccount.getCashBalance());
+
+		// 주식: SANDBOX_STK_1 샘플 종목 4단계(매수 -> 5분 이내 매도 -> 복기) 완료.
+		Instrument sampleStock = instrumentRepository.findByMarketAndSymbol(Market.STOCK, "SANDBOX_STK_1")
+			.orElseThrow();
+		favoriteService.createFavorite(user.getId(), sampleStock.getId());
+		clock.set(BASE_NOW.plusSeconds(20));
+		practiceIntentionService.createIntention(user.getId(),
+			new PracticeIntentionCreateRequest(sampleStock.getId(), new BigDecimal("1"), new BigDecimal("8000"),
+				new BigDecimal("12000")));
+		clock.set(BASE_NOW.plusSeconds(21));
+		orderService.createOrder(user.getId(), "dual-market-stock-buy-" + UUID.randomUUID(),
+			new OrderCreateRequest(Market.STOCK, sampleStock.getId(), OrderSide.BUY, "MARKET", new BigDecimal("1")));
+		Holding stockHolding = holdingRepository
+			.findByAccountIdAndInstrumentId(stockAccount.getId(), sampleStock.getId())
+			.orElseThrow();
+
+		clock.set(BASE_NOW.plusSeconds(30));
+		practiceHoldingObservationService.createObservation(
+			user.getId(), new PracticeHoldingObservationCreateRequest(stockHolding.getId()));
+		clock.set(BASE_NOW.plusSeconds(90));
+		practiceHoldingObservationService.createObservation(
+			user.getId(), new PracticeHoldingObservationCreateRequest(stockHolding.getId()));
+		clock.set(BASE_NOW.plusSeconds(150));
+		practiceHoldingObservationService.createObservation(
+			user.getId(), new PracticeHoldingObservationCreateRequest(stockHolding.getId()));
+
+		clock.set(BASE_NOW.plusSeconds(170));
+		// 주식 수량은 정수여야 한다(OrderExecutionService.validateQuantityFormat) — 코인과 달리 소수 매도 불가.
+		orderService.createOrder(user.getId(), "dual-market-stock-sell-" + UUID.randomUUID(),
+			new OrderCreateRequest(Market.STOCK, sampleStock.getId(), OrderSide.SELL, "MARKET",
+				new BigDecimal("1")));
+
+		// 매수·매도 체결 자체도 현금에 영향을 주므로(체결가·수수료 등), 보상 지급 효과만 분리해서 보려면
+		// 복기(보상 지급) 바로 이전 시점의 잔고를 기준으로 삼아야 한다.
+		long stockCashBeforeReward = accountRepository
+			.findByUserIdAndMarket(user.getId(), com.finplay.api.account.domain.Market.STOCK)
+			.orElseThrow()
+			.getCashBalance();
+
+		clock.set(BASE_NOW.plusSeconds(180));
+		practiceHoldingReflectionService.createReflection(
+			user.getId(), new PracticeHoldingReflectionCreateRequest(stockHolding.getId(), "주식 튜토리얼 완료 복기."));
+
+		long cryptoCashAfterBothCompletions = accountRepository
+			.findByUserIdAndMarket(user.getId(), com.finplay.api.account.domain.Market.CRYPTO)
+			.orElseThrow()
+			.getCashBalance();
+		long stockCashAfterBothCompletions = accountRepository
+			.findByUserIdAndMarket(user.getId(), com.finplay.api.account.domain.Market.STOCK)
+			.orElseThrow()
+			.getCashBalance();
+
+		// 코인 계좌는 주식 완료로 영향받지 않고, 주식 계좌는 보상 지급분(500만원)만큼만 늘어난다 — 시장별
+		// 독립 지급. 매수·매도 체결 자체의 현금 영향은 stockCashBeforeReward 기준으로 제외한다.
+		assertThat(cryptoCashAfterBothCompletions).isEqualTo(cryptoCashAfterCryptoCompletion);
+		assertThat(stockCashAfterBothCompletions - stockCashBeforeReward).isEqualTo(5_000_000L);
+	}
+
 	private record ChainFixture(Long userId, Long holdingId, String symbol) {
 	}
 

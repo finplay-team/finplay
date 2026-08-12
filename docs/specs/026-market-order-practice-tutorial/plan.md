@@ -130,5 +130,6 @@ else: # PERCENT
 - `MarketPracticeChainResolutionService.resolve()`는 favorite별 trade·holding 조회에 더해 완성 chain별 qualifying observation 조회를 수행한다. favorite 개수 상한이 없으므로 데이터가 늘면 조회가 선형 증가한다. 후속 성능 작업에서 favorite 상한을 도입하거나 intention·holding·observation을 일괄 조회하도록 배치화하며, 완료 조회의 `Holding → Instrument` lazy 조회도 함께 줄인다(PR #307 리뷰 권장).
 
 - ~~`docs/prd.md` §2·§3 구현 현황 반영 방식 결정~~ — **PR #307에서 해소했다.** holding 기반 완료 경로를 별도 행으로 완료 처리하고 OCO 미착수 행과 분리했다.
+- **시장별 최초 완료 보상(이슈 #343)**: `PracticeHoldingReflectionService.createReflection`이 `progress.complete(now)` 직후 같은 트랜잭션에서 `AccountService.getAccountForUpdate` + `Account.addCash(5_000_000L)`으로 완료된 시장 계좌에 500만원을 지급한다. 위 "복기 저장" 절의 `(user_id, tutorial_key)` unique 방어선을 그대로 재사용해 별도 지급 이력 테이블 없이 정확히 1회만 실행된다. `InvestmentPracticeResponse.rewardAmount`가 완료 응답에서만 5,000,000을 노출한다(031의 4단계 완료 경로도 같은 서비스를 거치므로 동일 보상이 적용된다).
 - 3차 OCO 경로는 `GET /api/education/practice/oco?market=`와 `INVESTMENT_OCO_PRACTICE_V1|COIN_OCO_PRACTICE_V1`을 사용한다. 이 문서는 해당 production 구현을 다루지 않는다.
 - 클라이언트는 주식·코인 진행을 각각 조회해 화면에서 조합한다. 서버가 두 시장을 배열로 합쳐 반환하는 계약은 두지 않는다.

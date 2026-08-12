@@ -45,6 +45,9 @@ public class InvestmentPracticeQueryService {
 	// PR #340 이후 정정). 매도 대기(잠기지 않음, 5분 이내)만을 가리키는 별도 상태값을 쓴다.
 	private static final String STATUS_AWAITING_SALE = "AWAITING_SALE";
 	private static final long SALE_DEADLINE_MINUTES = 5;
+	// PracticeHoldingReflectionService.TUTORIAL_COMPLETION_REWARD_AMOUNT와 동일 금액(이슈 #343) — 완료
+	// 응답에서만 노출하고 그 외 상태는 null이다.
+	private static final long TUTORIAL_COMPLETION_REWARD_AMOUNT = 5_000_000L;
 
 	private final FavoriteService favoriteService;
 	private final MarketPracticeChainResolutionService chainResolutionService;
@@ -122,7 +125,8 @@ public class InvestmentPracticeQueryService {
 				new PracticeStepResponse(2, STATUS_COMPLETED, false, evidence),
 				new PracticeStepResponse(3, STATUS_COMPLETED, false, evidence));
 			return new InvestmentPracticeResponse(
-				tutorialKey, STATUS_COMPLETED, null, steps, completion.getCompletedAt());
+				tutorialKey, STATUS_COMPLETED, null, steps, completion.getCompletedAt(),
+				TUTORIAL_COMPLETION_REWARD_AMOUNT);
 		}
 
 		// 샘플 종목 chain은 4단계(매도·복기)까지 완료돼야 practice_completions가 생기므로(4단계
@@ -144,7 +148,8 @@ public class InvestmentPracticeQueryService {
 			new PracticeStepResponse(2, STATUS_COMPLETED, false, evidence),
 			new PracticeStepResponse(3, STATUS_COMPLETED, false, evidence),
 			new PracticeStepResponse(4, STATUS_COMPLETED, false, stepFourEvidence));
-		return new InvestmentPracticeResponse(tutorialKey, STATUS_COMPLETED, null, steps, completion.getCompletedAt());
+		return new InvestmentPracticeResponse(tutorialKey, STATUS_COMPLETED, null, steps, completion.getCompletedAt(),
+			TUTORIAL_COMPLETION_REWARD_AMOUNT);
 	}
 
 	// 완료 조건 2·3: 완료되지 않았지만 유효 chain이 있으면 1·2단계는 COMPLETED, 3단계는 IN_PROGRESS다. chain에
@@ -207,7 +212,7 @@ public class InvestmentPracticeQueryService {
 				new PracticeStepResponse(1, STATUS_COMPLETED, false, favoriteEvidence),
 				new PracticeStepResponse(2, STATUS_COMPLETED, false, chainEvidence),
 				new PracticeStepResponse(3, STATUS_IN_PROGRESS, false, stepThreeEvidence));
-			return new InvestmentPracticeResponse(tutorialKey, STATUS_IN_PROGRESS, 3, steps, null);
+			return new InvestmentPracticeResponse(tutorialKey, STATUS_IN_PROGRESS, 3, steps, null, null);
 		}
 
 		// 샘플 종목 chain: 4단계(매도·복기) 확장(plan.md "GET /api/education/practice 4단계 응답").
@@ -240,7 +245,7 @@ public class InvestmentPracticeQueryService {
 			new PracticeStepResponse(2, STATUS_COMPLETED, false, chainEvidence),
 			new PracticeStepResponse(3, STATUS_IN_PROGRESS, false, stepThreeEvidence),
 			new PracticeStepResponse(4, stepFourStatus, false, stepFourEvidence));
-		return new InvestmentPracticeResponse(tutorialKey, STATUS_IN_PROGRESS, 4, steps, null);
+		return new InvestmentPracticeResponse(tutorialKey, STATUS_IN_PROGRESS, 4, steps, null, null);
 	}
 
 	// 4단계(매도·복기) evidence 판정. (a) 매도 체결이 buyTrade.executedAt + 5분 이내여야 IN_PROGRESS(복기 대기),
@@ -280,7 +285,7 @@ public class InvestmentPracticeQueryService {
 			new PracticeStepResponse(1, STATUS_COMPLETED, false, favoriteEvidence),
 			new PracticeStepResponse(2, STATUS_IN_PROGRESS, false, favoriteEvidence),
 			new PracticeStepResponse(3, STATUS_NOT_STARTED, true, PracticeEvidenceResponse.empty()));
-		return new InvestmentPracticeResponse(tutorialKey, STATUS_IN_PROGRESS, 2, steps, null);
+		return new InvestmentPracticeResponse(tutorialKey, STATUS_IN_PROGRESS, 2, steps, null, null);
 	}
 
 	// 완료 조건 5: favorite조차 없으면 전부 미착수다.
@@ -289,7 +294,7 @@ public class InvestmentPracticeQueryService {
 			new PracticeStepResponse(1, STATUS_NOT_STARTED, false, PracticeEvidenceResponse.empty()),
 			new PracticeStepResponse(2, STATUS_NOT_STARTED, true, PracticeEvidenceResponse.empty()),
 			new PracticeStepResponse(3, STATUS_NOT_STARTED, true, PracticeEvidenceResponse.empty()));
-		return new InvestmentPracticeResponse(tutorialKey, STATUS_NOT_STARTED, 1, steps, null);
+		return new InvestmentPracticeResponse(tutorialKey, STATUS_NOT_STARTED, 1, steps, null, null);
 	}
 
 	// PracticeHoldingObservationService.resolveTutorialKey와 동일 패턴(이 spec 전체가 공유하는 관례).
