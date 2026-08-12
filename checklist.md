@@ -297,3 +297,32 @@
 - `docs/prd.md` §3 구현 현황 갱신 — 193·197행이 이미 **완료**이고 제공 기능이 그대로다 (CLAUDE.md 규칙 10 "갱신 비대상")
 - A안(`market` 필드) 병행 — 이슈가 "둘 중 하나로 충분"이라 계약을 넓히지 않았다
 - `news`·`briefing`·`post-sell` 상태값 체계 — 이슈 제외 범위
+
+## 이슈 #345 — 완전 자동 배포(CD) 결정·문서 정본화 (2026-08-12)
+
+### 결정 (사용자 선택)
+- [x] 트리거 = **`dev` push**. `main`은 배포 소스에서 빠지고 시연·심사 스냅샷으로 역할 재정의
+- [x] AWS 접근 = **GitHub OIDC → IAM 역할**, EC2 명령 = **SSM Send Command** (장기 크리덴셜 0개, SSH 인바운드 없음)
+- [x] 이미지 = **러너에서 빌드 → ECR push, 태그는 커밋 SHA**. EC2는 pull만
+- [x] 범위 = 블루-그린 자동 전환 + **직전 색 자동 롤백** + **프론트(별도 레포) dist까지**. 스모크 자동 실행은 제외(헬스체크까지가 자동 게이트)
+
+### 문서 (이번 세션)
+- [x] `docs/adr/0021-continuous-deployment.md` 신설 — 결정 9개, 대안 6개 기각 사유, 대가 6개
+- [x] `deploy/cd-runbook.md` 신설 — AWS 콘솔 설정 체크리스트(OIDC·IAM·ECR·SSM·아티팩트 버킷), 실패 경로 4종, 오진표 7행
+- [x] ADR-0005 상태 줄·ADR-0013 §범위 밖 — "자동 배포"만 대체, **"자동 머지" 금지는 유지**로 분리 표기
+- [x] ADR-0004 — 파괴적 마이그레이션 금지 제약 추가 (롤백이 앱만 되돌리므로). `CLAUDE.md` 규칙 8·`AGENTS.md`에도 반영
+- [x] `docs/specs/010-deployment/spec.md` — §자동 배포(CD) 신설, §개요·시나리오·배포 요구사항·범위 제외·완료 조건 개정
+- [x] `deploy/README.md` — 수동 절차를 **폴백**으로 재배치, "프론트만 교체" 절에 자동 경로 비적용 사유 추가
+- [x] `docs/context-router.md`·`docs/git-conventions.md`·`docs/harness-roadmap.md`·`README.md`·`AGENTS.md` 동기화
+
+### 하지 않은 것 (의도)
+- **`.github/workflows/deploy.yml` 작성** — 이 이슈는 결정·문서까지다. 후속 이슈
+- **`compose.bluegreen.yaml`의 ECR 전환·런타임 Dockerfile 분리·`.env.example` 갱신** — 워크플로우와 짝이라 같은 후속 이슈
+- **AWS 콘솔 설정 실행** — 사람이 수행. 체크리스트는 `deploy/cd-runbook.md`
+- **`docs/prd.md` §3 구현 현황 갱신** — 222행(배포 아키텍처)의 판정이 **일부 완료** 그대로이고 이 PR이 제공 기능을 바꾸지 않는다 (CLAUDE.md 규칙 10 "갱신 비대상"). 파이프라인이 실제로 도는 후속 PR이 갱신 대상이다
+- **`./gradlew build` 미실행** — Java 코드 무변경. 2026-08-11 교훈(문서 전용 변경에 전체 빌드를 태우지 않는다, `docs/agent-mistakes.md`)
+
+### 미확인 (첫 구축 때 실측)
+- [ ] `ubuntu-24.04-arm` 러너가 이 레포에서 실제로 잡히는지 — 공개 레포라 쓸 수 있다고 적었으나 **실행으로 확인한 적 없다**
+- [ ] ALB·타깃 그룹·ACM이 아직 없다 — 이 파이프라인의 **선행 조건**이며 별도 이슈
+- [ ] 전환 순간 SSE(`/api/stocks/stream`) 연결이 어떻게 끊기고 재연결되는지
