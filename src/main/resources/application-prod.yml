@@ -27,3 +27,10 @@ finplay:
       # SDK 기본 체인(EC2 IAM 인스턴스 프로파일, AWS_REGION)에 맡긴다 — 커스텀 키를 추가하지 않는다.
       s3:
         bucket: ${COMMUNITY_S3_BUCKET}
+  cors:
+    # DB_URL·REDIS_HOST와 같은 fail-fast 규칙이다 — 기본값을 두지 않는다 (ADR-0022 §결정 2).
+    # 이유도 REDIS_HOST와 같다. 값이 틀리면 앱은 정상 기동하고 브라우저에서만 전 API가 막혀
+    # "화면은 뜨는데 아무것도 안 되는" 형태가 되므로, 누락은 기동 단계에서 드러나게 한다.
+    # 값 예시(A 단계): http://finplay-frontend.s3-website.ap-northeast-2.amazonaws.com
+    # 값 예시(B 단계): https://www.finplay.site
+    allowed-origins: ${CORS_ALLOWED_ORIGINS}
