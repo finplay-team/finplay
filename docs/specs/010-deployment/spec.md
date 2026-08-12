@@ -96,7 +96,7 @@ CI 워크플로우는 2026-07-24 튜터 피드백("CI는 배포 단계에")으�
 - [ ] 새 스택이 헬스체크를 통과한 뒤에만 트래픽을 옮긴다. 이전 스택은 롤백 경로로 잠시 남긴다.
 - [ ] ALB에 ACM 인증서를 붙여 HTTPS로 서비스한다.
 - **ALB는 무중단만을 위한 것이 아니다** — ACM으로 HTTPS가 붙어야 카카오·네이버 OAuth 로그인이 열린다(아래 "동일 오리진 서빙"의 제약 참고). 무중단 배포와 OAuth 활성화가 같은 인프라 하나로 동시에 풀린다.
-- ALB·타깃 그룹·ACM 발급은 **별도 이슈**다. `compose.bluegreen.yaml`·`deploy/nginx-blue.conf`·`nginx-green.conf` 작성은 **완료됐다** (이슈 #332).
+- ALB·타깃 그룹·ACM 발급은 **별도 이슈**다. `compose.bluegreen.yaml` 작성은 **완료됐다** (이슈 #332). nginx는 이후 프론트 S3 독립 배포로 **제거됐다**(ADR-0022, 이슈 #352) — 앱 컨테이너가 각 색의 호스트 포트를 직접 연다.
 
 ### 자동 배포 (CD, ADR-0021 · 이슈 #345)
 
@@ -111,8 +111,8 @@ CI 워크플로우는 2026-07-24 튜터 피드백("CI는 배포 단계에")으�
 - [ ] 라이브 색은 **ALB 리스너의 현재 기본 작업에서 읽는다.** 사람이 색을 입력하지 않는다.
 - [ ] 유휴 색이 컨테이너 헬스체크와 ALB 타깃 헬스체크를 **모두 통과한 뒤에만** 리스너를 전환한다.
 - [ ] 헬스체크 실패 시 전환하지 않고 새 색을 내린다. 전환 후 unhealthy면 리스너를 이전 색으로 되돌린다. **이 자동 롤백은 직전 색까지이며**, 그보다 과거로 가는 것은 사람이 SHA 태그를 지정해 재실행하는 수동 경로다.
-- [ ] 프론트(별도 레포 `finplay-team/finplay-frontend`)의 `dist/`도 같은 전환을 탄다 — S3 아티팩트 버킷(`dist/<커밋SHA>.tar.gz`) 업로드 + `repository_dispatch`. **배포 단위는 "백엔드 이미지 + 프론트 dist" 한 쌍**이다.
-- [ ] 워크플로우에 `concurrency` 그룹을 걸어 배포를 직렬화한다 — 트리거가 두 레포라 동시 실행 시 유휴 색을 서로 덮어쓴다.
+- ~~프론트(별도 레포 `finplay-team/finplay-frontend`)의 `dist/`도 같은 전환을 탄다~~ — **폐기 (ADR-0022, 이슈 #352).** 프론트는 S3에서 독립 배포되므로 이 파이프라인과 무관하다. "배포 단위는 백엔드 이미지 + 프론트 dist 한 쌍"이라는 옛 ADR-0021 §결정 8은 대체됐다.
+- [ ] 워크플로우에 `concurrency` 그룹을 걸어 배포를 직렬화한다 — 같은 레포에서 `dev`로의 연속 머지가 겹치면 유휴 색을 서로 덮어쓸 수 있다.
 - [ ] 수동 배포 절차(`deploy/README.md`)를 폐기하지 않고 **폴백으로 유지한다.** 수동으로 배포할 때도 ALB 리스너 전환을 빠뜨리지 않는다 — 파이프라인이 그 값으로 라이브 색을 판별하므로, 리스너만 정확하면 다음 자동 배포가 정상 복귀한다.
 
 **마이그레이션 제약 (ADR-0021 §결정 7 — ADR-0004에 조건 추가)**
@@ -120,25 +120,29 @@ CI 워크플로우는 2026-07-24 튜터 피드백("CI는 배포 단계에")으�
 - [ ] **파괴적 마이그레이션(컬럼·테이블 삭제, 이름 변경, 타입 축소, NOT NULL 승격)을 한 배포에 담지 않는다.** 롤백은 앱만 되돌리고 스키마는 되돌리지 않으므로, 구버전 앱이 신버전 스키마에서 돌 수 있어야 한다.
 - [ ] 파괴적 변경은 두 배포로 나눈다 — ① 추가 + 양쪽 쓰기, ② 롤백 필요가 사라진 뒤 제거.
 
-### 동일 오리진 서빙 (이슈 #108 — A안)
+### 프론트 독립 배포와 CORS (ADR-0022 — 이슈 #108 A안·동일 오리진 서빙을 대체)
 
-같은 EC2에서 nginx가 프론트 정적 파일과 `/api` 프록시를 함께 서빙한다. 프론트와 API가 같은 오리진이므로 백엔드에 CORS 설정을 추가하지 않는다. 결정 근거는 이슈 #108에 있다.
+프론트 정적 파일은 S3에서 독립 배포되고, EC2에는 백엔드만 남는다. 프론트와 API의 오리진이 갈라지므로 백엔드가 CORS로 연다. 이슈 #108의 A안(동일 오리진, nginx 서빙)과 그 근거는 ADR-0022가 재검토해 대체했다 — 근거 중 인증서 부재는 ALB+ACM 도입으로 소멸했고, SSE+CORS preflight 우려는 아래 "배포 시점 체크"에서 실측으로 반증했다.
 
-- [x] 앱 이미지(`Dockerfile`)와 배포용 스택(`compose.deploy.yaml`: **nginx·app** — mysql·redis는 ADR-0020으로 RDS·ElastiCache에 분리됐다)을 작성한다.
-- [x] nginx가 프론트 빌드 산출물(`npm run build` → `dist/`)을 정적 서빙하고 SPA 폴백(`try_files ... /index.html`)을 적용한다.
-- [x] `/api`를 앱 컨테이너로 프록시하며 SSE가 흐르도록 `proxy_buffering off`·`proxy_cache off`·`proxy_read_timeout 3600s`를 설정한다.
-- [x] 스모크가 호출하는 `/actuator`·`/v3/api-docs`도 프록시한다 — 프록시하지 않으면 SPA 폴백이 `index.html`을 200으로 돌려줘 스모크가 거짓 통과한다.
-- [x] 앱 컨테이너는 호스트 포트를 열지 않고 nginx만 외부에 노출한다.
+- [x] `CorsConfig`가 `CORS_ALLOWED_ORIGINS`(환경변수, 콤마 구분)를 허용 오리진으로 등록한다. 값이 없거나 형식이 틀리면 기동 단계에서 fail-fast로 거부한다 (PR #353).
+- [x] `Authorization` 헤더를 허용 헤더에 포함한다 — 프론트 SSE가 `fetch` + `Authorization`으로 열려 preflight가 반드시 선행하기 때문이다.
+- [x] `server.forward-headers-strategy: framework`를 설정한다 — nginx가 없어지며 ALB의 `X-Forwarded-Proto`를 Spring이 직접 해석해야 OAuth 리다이렉트 URL·Secure 쿠키 발급이 틀어지지 않는다.
+- [x] `compose.bluegreen.yaml`·`compose.deploy.yaml`에서 nginx 서비스를 제거하고 앱 컨테이너가 호스트 포트를 직접 연다 (이슈 #352).
+- [x] `deploy/nginx-blue.conf`·`nginx-green.conf`·`nginx.conf`를 삭제한다.
+- [ ] **위 코드·문서 변경은 완료됐으나 EC2에 아직 반영되지 않았다** — ALB 타깃 그룹을 nginx 포트(8081/8082) 대신 앱 포트로 전환하는 실제 배포 전환은 별도로 수행한다(이슈 #352 Phase 3).
+- SPA 폴백(`/trade` 새로고침 등)은 nginx의 `try_files`가 아니라 **S3 버킷의 오류 문서 설정**(`finplay-frontend` 버킷 정적 웹 호스팅, 오류 문서 `index.html`)이 담당한다 — 이 저장소 코드와 무관한 AWS 콘솔 설정이다.
 
 **배포 시점 체크 (EC2 준비 후 수행 — 설정 파일 작성 단계에서는 검증 불가)**
 
-- [x] `docker compose -f compose.deploy.yaml up -d --build`로 2개 컨테이너(app·nginx)가 모두 기동한다 — 2026-08-11 실측(이슈 #326).
-- [x] 앱이 RDS·ElastiCache에 접속해 기동하고 Flyway 마이그레이션 30건이 적용된다 — 2026-08-11 실측.
-- [x] `/actuator/health`가 `UP`을 반환한다 — 2026-08-11 실측.
-- [ ] 브라우저에서 배포 주소에 접속해 프론트가 뜨고, `/api` 호출이 CORS 오류 없이 성공한다.
-- [ ] 브라우저 개발자도구 Network에서 `/api/stocks/stream`이 실제로 **매분 push**되는 것을 확인한다 — nginx 버퍼링이 살아 있으면 여기서 드러난다.
-- [ ] `/trade` 등 하위 경로에서 새로고침해도 404가 아니라 앱 화면이 뜬다 (SPA 폴백).
-- [ ] HTTPS를 붙이기 전이라면 카카오·네이버 OAuth 로그인이 동작하지 않는 것을 전제로 시연 범위를 잡는다 — `prod` 프로필은 `OAUTH_STATE_COOKIE_SECURE=false`를 거부하고(`OAuthStateCookieFactory` fail-fast, 2026-07-31 실측), 브라우저는 `http://`에서 `Secure` 쿠키를 저장하지 않는다. 이슈 #108이 근거로 든 "HTTP 데모 시 Secure를 내린다"는 현재 코드에서 불가능하다. **해결 경로는 ALB + ACM이다** (위 "블루-그린 무중단 배포").
+- [x] `docker compose -f compose.deploy.yaml up -d --build`로 앱 컨테이너가 기동한다 — 2026-08-11 실측(이슈 #326). nginx 제거 후에는 컨테이너가 app 하나뿐이다.
+- [x] 앱이 RDS·ElastiCache에 접속해 기동하고 Flyway 마이그레이션이 적용된다 — 2026-08-11 실측.
+- [x] `/actuator/health`가 `UP`을 반환한다 — 2026-08-11 실측, CORS 코드 반영 후 2026-08-12 재확인(블루-그린 `app-blue`).
+- [x] **S3(`finplay-frontend`, ap-northeast-2)에서 프론트가 뜨고, `/actuator/health` 호출이 CORS 오류 없이 200으로 성공한다** — 2026-08-12 브라우저 실측(EC2 `CORS_ALLOWED_ORIGINS`를 S3 정적 웹 호스팅 엔드포인트로 설정한 뒤).
+- [x] **`Authorization` 헤더를 실은 `/api/stocks/stream` 요청이 preflight에서 막히지 않고 서버까지 도달한다** — 2026-08-12 브라우저 실측(가짜 토큰으로 401 응답을 받아 CORS가 아니라 인증에서 거부됐음을 확인). 이슈 #108이 우려한 "SSE + CORS preflight"의 핵심 리스크가 반증됐다.
+- [x] 허용되지 않은 오리진의 요청은 preflight·실제 요청 모두 차단된다 — 2026-08-12 브라우저 실측(`Failed to fetch`).
+- [ ] **실제 로그인 토큰으로 SSE가 매분 push되는지는 미확인.** 계정 생성(이메일 발송 부작용)이 필요해 자동 검증하지 않았다 — 사람이 로그인해서 개발자도구로 직접 확인한다.
+- [ ] `/trade` 등 하위 경로에서 새로고침해도 404가 아니라 앱 화면이 뜬다 (S3 오류 문서 설정 — 위 "SPA 폴백" 참고, 아직 실측 안 함).
+- [ ] HTTPS를 붙이기 전이라면 카카오·네이버 OAuth 로그인이 동작하지 않는 것을 전제로 시연 범위를 잡는다 — `prod` 프로필은 `OAUTH_STATE_COOKIE_SECURE=false`를 거부하고(`OAuthStateCookieFactory` fail-fast, 2026-07-31 실측), 브라우저는 `http://`에서 `Secure` 쿠키를 저장하지 않는다. **추가로 ADR-0022 A 단계(S3 단독, HTTP)에서는 프론트·API가 same-site가 아니라 `oauth_state` 쿠키가 콜백에 실리지 않아** 로그인이 400으로 막힌다(2026-08-12 확인 — 프론트에 카카오·네이버 로그인 UI가 이미 병합돼 있다). **해결 경로는 ALB + ACM, 그리고 ADR-0022 B 단계(CloudFront + 같은 사이트 도메인)다.**
 
 **ElastiCache 접속 실패는 네트워크 문제로 오진하기 쉽다 (2026-08-11 실측)**
 
@@ -210,11 +214,11 @@ CI 워크플로우는 2026-07-24 튜터 피드백("CI는 배포 단계에")으�
 - [ ] **`dev`에 PR을 머지한 것만으로 배포가 끝난다** — 사람이 EC2에 접속하거나 ALB 콘솔을 여는 단계가 없다 (ADR-0021).
 - [ ] 배포된 이미지가 **그 커밋 SHA 태그로 ECR에서 조회된다** — 무엇이 배포됐는지 이름으로 특정할 수 있다.
 - [ ] 헬스체크를 **일부러 실패시켰을 때** 전환이 일어나지 않고 라이브 색이 그대로 유지된다 (롤백 경로 1회 검증).
-- [ ] 프론트 레포에 push한 변경이 사람 개입 없이 배포 주소에 반영된다.
+- ~~프론트 레포에 push한 변경이 사람 개입 없이 배포 주소에 반영된다~~ — **범위 밖 (ADR-0022, 이슈 #352).** 프론트가 S3에서 독립 배포되면서 이 백엔드 CD 파이프라인과 무관해졌다. 프론트 자신의 배포 자동화는 `finplay-frontend` 레포의 별도 관심사다.
 - [ ] 배포에 쓰이는 장기 크리덴셜이 GitHub에 **0개**다 (OIDC + SSM). EC2에 22번 인바운드 규칙이 없다.
 - [ ] 공개 배포 환경이 `SERVICE_EXPOSURE=PUBLIC`·`STOCK_FEED_PROVIDER=KIS_HISTORICAL`·`KIS_PUBLIC_DISPLAY_APPROVED=false`로 기동됨을 확인한다.
 - [ ] 승인 없는 공개 KIS 조합에서 기동이 실패하는 것을 배포 전 1회 확인한다.
 - [ ] Resend 발신 서브도메인 인증이 완료되고 실제 인증 메일 수신이 1회 확인된다 (수동 외부 스모크).
 - [ ] `scripts/smoke.ps1`이 성공 시 `exit 0`, 실패 시 `exit 1`로 동작한다.
-- [ ] 배포 주소에서 프론트와 `/api`가 같은 오리진으로 동작하고, `/api/stocks/stream`이 브라우저에서 실시간으로 흐른다 (이슈 #108).
+- [x] **프론트(S3)와 API(`finplay.site`)가 다른 오리진에서 CORS로 통신하고, `/api/stocks/stream`의 preflight가 차단되지 않는다** (ADR-0022, 이슈 #352) — 2026-08-12 브라우저 실측. 실제 로그인 토큰으로의 매분 push까지는 위 "배포 시점 체크" 절 참고, 미확인.
 - [ ] 실행한 검증과 미실행 외부 검증을 구분해 보고한다.

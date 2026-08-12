@@ -1,7 +1,7 @@
 # 배포 스택 실행 방법 (수동 배포 — 파이프라인 폴백)
 
-`compose.deploy.yaml` + `deploy/nginx.conf` + `Dockerfile`로 구성된 동일 오리진 스택을 EC2에서 수동으로 띄우는 절차다.
-설계 배경과 완료 조건은 `docs/specs/010-deployment/spec.md`, 동일 오리진(A안) 결정 근거는 이슈 #108에 있다.
+`compose.deploy.yaml` + `Dockerfile`로 구성된 **백엔드 전용** 스택을 EC2에서 수동으로 띄우는 절차다. 프론트는 여기 포함되지 않는다 — S3에서 독립 배포된다 (ADR-0022).
+설계 배경과 완료 조건은 `docs/specs/010-deployment/spec.md`에 있다. 예전에는 nginx가 프론트와 API를 한 오리진에서 같이 서빙했지만(이슈 #108 A안), ADR-0022로 그 결정이 뒤집혀 nginx는 제거됐고 지금은 CORS로 연다.
 
 > **2026-08-12 — 이 문서는 더 이상 정상 배포 경로가 아니다** (ADR-0021, 이슈 #345).
 > 정상 배포는 `dev` 머지로 GitHub Actions가 수행하며, 그 구조·구축 순서·실패 대응은 [`cd-runbook.md`](cd-runbook.md)에 있다.
@@ -17,28 +17,25 @@
 ## 구성
 
 ```
-브라우저 ──▶ nginx :80 ──┬─▶ /            정적 파일 (프론트 dist/, SPA 폴백)
-                         └─▶ /api, /actuator, /v3/api-docs, /swagger-ui ─▶ app :8080
-                                                                            ├─▶ RDS (MySQL)        ┐ EC2 밖
-                                                                            └─▶ ElastiCache (Redis)┘ 관리형 서비스
+브라우저 ──▶ app :8080 ─┬─▶ RDS (MySQL)        ┐ EC2 밖
+                        └─▶ ElastiCache (Redis)┘ 관리형 서비스
+
+프론트(별도 오리진) ──▶ S3 정적 웹 호스팅 (ADR-0022, finplay-frontend 레포에서 독립 배포)
 ```
 
-앱 컨테이너는 호스트에 포트를 열지 않는다. 외부 진입점은 nginx 하나뿐이라 프론트와 API가 같은 오리진이고, 따라서 백엔드에 CORS 설정이 필요 없다.
+앱 컨테이너가 호스트 포트 8080을 직접 연다(ADR-0022 — nginx 제거). 프론트가 다른 오리진(S3)에서 오므로 백엔드가 CORS로 열어야 한다 — `.env`의 `CORS_ALLOWED_ORIGINS`가 그 허용 목록이다. 값이 비어 있으면 `CorsConfig`가 기동 단계에서 fail-fast로 거부한다.
 
-**DB·캐시는 이 스택 안에 없다 (ADR-0020, 이슈 #326).** 예전에는 `compose.deploy.yaml`이 mysql·redis 컨테이너를 함께 띄웠지만, EC2를 종료하면 그 볼륨의 원장이 함께 사라지는 문제 때문에 RDS·ElastiCache로 분리했다. 그래서 이 스택이 띄우는 컨테이너는 **app·nginx 두 개뿐이고**, 접속 정보는 전부 `.env`에서 온다. 로컬 개발(`compose.yaml` + `bootRun`)은 바뀌지 않았다 — 여전히 컨테이너 mysql·redis를 쓴다.
+**DB·캐시는 이 스택 안에 없다 (ADR-0020, 이슈 #326).** 예전에는 `compose.deploy.yaml`이 mysql·redis 컨테이너를 함께 띄웠지만, EC2를 종료하면 그 볼륨의 원장이 함께 사라지는 문제 때문에 RDS·ElastiCache로 분리했다. 그래서 이 스택이 띄우는 컨테이너는 **app 하나뿐이고**, 접속 정보는 전부 `.env`에서 온다. 로컬 개발(`compose.yaml` + `bootRun`)은 바뀌지 않았다 — 여전히 컨테이너 mysql·redis를 쓴다.
 
 ## 절차
 
-1. **프론트 빌드 산출물을 호스트에 올린다.**
-   `finplay-frontend`에서 `npm run build`로 만든 `dist/`를 이 저장소 루트의 `frontend-dist/`에 둔다.
-   다른 경로를 쓰려면 `.env`의 `FRONTEND_DIST_PATH`에 그 경로를 적는다.
-
-2. **`.env`를 만든다.** `.env.example`을 복사해 값을 채운다. 배포에 필요한 값은 다음과 같다.
+1. **`.env`를 만든다.** `.env.example`을 복사해 값을 채운다. 배포에 필요한 값은 다음과 같다.
    - 시크릿 — `JWT_SECRET`, `OAUTH_STATE_SECRET`, `EMAIL_VERIFICATION_SECRET`, `PASSWORD_RESET_SECRET`
    - DB(RDS) — `DB_URL`(RDS 엔드포인트), `DB_USERNAME`(root 불가), `DB_PASSWORD`.
      **compose가 덮어쓰지 않으므로 여기 값이 그대로 쓰인다.**
    - 캐시(ElastiCache) — `REDIS_HOST`(기본 엔드포인트), `REDIS_PORT`,
      그리고 **`SPRING_DATA_REDIS_SSL_ENABLED=true`**. 아래 "알려진 함정" 참고.
+   - **CORS — `CORS_ALLOWED_ORIGINS`.** 프론트가 서빙되는 S3(또는 CloudFront) 오리진을 스킴+호스트까지 적는다(끝 슬래시 금지). 비어 있거나 형식이 틀리면 기동이 실패한다(ADR-0022).
    - OAuth — `KAKAO_*`, `NAVER_*`. `*_REDIRECT_URI`는 배포 주소 기준으로 적고 각 콘솔에도 같은 값을 등록한다.
    - 메일 — `RESEND_API_KEY`, `EMAIL_FROM`
    - KIS — `KIS_APP_KEY`, `KIS_APP_SECRET` (없어도 기동은 성공한다)
@@ -46,27 +43,25 @@
      `OAuthStateCookieFactory`가 기동 단계에서 예외를 던져 앱이 뜨지 않는다 (2026-07-31 실측).
      아래 "알려진 제약" 참고.
 
-3. **기동한다.**
+2. **기동한다.**
    ```bash
    docker compose -f compose.deploy.yaml up -d --build
    ```
-   nginx는 `app`이 healthy가 될 때까지 기다렸다가 뜬다(Flyway 마이그레이션이 끝나기 전에 nginx가 떠서
-   첫 요청이 502가 되는 것을 막는다). 그래서 이 명령은 앱 기동이 끝날 때까지 돌아오지 않는다 — 로컬 실측 40초 안팎이다.
+   Flyway 마이그레이션이 끝나야 healthcheck가 통과하므로, 이 명령은 앱 기동이 끝날 때까지 돌아오지 않는다 — 로컬 실측 40초 안팎이다.
 
-4. **확인한다.**
+3. **확인한다.**
    ```bash
    docker compose -f compose.deploy.yaml ps
-   curl http://<호스트>/actuator/health          # {"status":"UP"}
-   curl -N http://<호스트>/api/stocks/stream     # SSE — 20초마다 heartbeat가 흘러야 한다
+   curl http://<호스트>:8080/actuator/health          # {"status":"UP"}
+   curl -N http://<호스트>:8080/api/stocks/stream     # SSE — 20초마다 heartbeat가 흘러야 한다
    ```
-   브라우저에서 `/trade` 같은 하위 경로를 새로고침해도 404가 나지 않아야 한다(SPA 폴백).
+   프론트(S3)에서 브라우저 개발자도구로 CORS 오류 없이 API 호출이 성공하는지, `/trade` 같은 하위 경로 새로고침이 404가 아닌지도 확인한다(SPA 폴백은 S3 오류 문서 설정이 담당하며 이 스택과 무관하다).
 
 ## 갱신
 
-- 백엔드만 바뀐 경우: `docker compose -f compose.deploy.yaml up -d --build app`
-- 프론트만 바뀐 경우: `frontend-dist/`를 새 `dist/`로 교체한다. nginx는 정적 파일을 읽기 전용 마운트로 바로 읽으므로 재기동이 필요 없다.
-  - **자동 배포 경로는 이 방식을 쓰지 않는다** (ADR-0021 §결정 8). 라이브 색의 파일을 제자리에서 바꾸면 **되돌아갈 이전 프론트가 남지 않아** 색을 나눈 의미가 없어진다. 파이프라인은 프론트만 바뀌어도 유휴 색에 풀고 전환한다. 이 줄은 폴백(수동) 경로에만 해당한다.
-- `deploy/nginx.conf`를 바꾼 경우: `docker compose -f compose.deploy.yaml restart nginx`
+- 백엔드가 바뀐 경우: `docker compose -f compose.deploy.yaml up -d --build app`
+- 프론트가 바뀐 경우: 이 스택과 무관하다. `finplay-frontend` 레포에서 빌드해 S3에 `aws s3 sync`로 올린다.
+- `CORS_ALLOWED_ORIGINS` 등 `.env`만 바뀐 경우(이미지는 그대로): `docker compose -f compose.deploy.yaml up -d --force-recreate app` — 재빌드 불필요.
 
 ## 알려진 함정 — ElastiCache 접속 실패는 네트워크 문제처럼 보인다
 
@@ -138,8 +133,8 @@ docker exec finplay-deploy-app-1 bash -c 'timeout 5 cat < /dev/null > /dev/tcp/<
 
 ## 아직 하지 않은 것
 
-- **HTTPS** — `http://<EC2-IP>/` 기준이다. ADR-0020의 결정은 nginx에 443을 직접 붙이는 대신 **ALB에 ACM 인증서를 붙이는 것**이다(블루-그린 전환과 같은 인프라를 쓴다). 별도 이슈.
-- **블루-그린 무중단 배포** — `compose.bluegreen.yaml`(8081/8082)과 `deploy/nginx-blue.conf`·`nginx-green.conf`는 **작성 완료**(이슈 #332)이고, ALB·타깃 그룹 2개·ACM은 아직 없다. 별도 이슈. 지금 이 문서의 절차는 단일 스택 교체(재배포 시 40초 안팎 중단)다.
+- **HTTPS** — `http://<EC2-IP>:8080/` 기준이다. ADR-0020의 결정은 **ALB에 ACM 인증서를 붙이는 것**이다(블루-그린 전환과 같은 인프라를 쓴다). 별도 이슈.
+- **블루-그린 무중단 배포** — `compose.bluegreen.yaml`(8081/8082)은 **작성 완료**이고 nginx는 제거됐다(ADR-0022, 이슈 #332→#352). ALB·타깃 그룹 2개·ACM은 아직 없다. 별도 이슈. 지금 이 문서의 절차는 단일 스택 교체(재배포 시 40초 안팎 중단)다.
 - **S3 콘솔 설정·기존 파일 이관 실행** — `S3FileStorageService` 구현은 끝났고(이슈 #330), 위 "S3 업로드 이미지 저장소 설정"·"기존 로컬 업로드 파일 이관" 절에 체크리스트·절차를 남겼다. 실제 버킷 생성·IAM 역할 연결·(필요 시) `aws s3 sync` 실행은 다음 배포 시점에 사람이 수행한다.
 - **배포 자동화(CD)** — ~~수동 배포로 시작한다~~ → **2026-08-12 ADR-0021로 방향이 결정됐다**(이슈 #345). `dev` 머지 트리거 + OIDC/SSM/ECR + 블루-그린 자동 전환 + 직전 색 자동 롤백. **아직 구축 전이다** — `.github/workflows/deploy.yml`도 AWS 설정도 없다. 구축 순서와 실패 대응은 [`cd-runbook.md`](cd-runbook.md).
-- 프론트 연동·SSE·SPA 폴백의 브라우저 검증 — spec의 "배포 시점 체크" 중 앱 기동·헬스체크는 2026-08-11에 확인했고 브라우저 항목은 남아 있다.
+- **프론트 연동·SSE의 브라우저 검증은 실제로 완료됐다 (2026-08-12, ADR-0022).** 프론트를 S3에 올리고 EC2(블루-그린 스택)의 `CORS_ALLOWED_ORIGINS`를 그 주소로 맞춘 뒤, 일반 API 호출·`/api/stocks/stream`의 `Authorization` 헤더 포함 preflight가 CORS에 막히지 않고 서버까지 도달하는 것을 브라우저에서 실측했다 — 이슈 #108이 우려한 지점의 반증이다. 이 단일 스택(`compose.deploy.yaml`)은 같은 앱 이미지를 쓰지만 별도로 실측하지는 않았다.

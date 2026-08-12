@@ -251,7 +251,7 @@ PR #49 차단 리뷰 후속 Fake 재사용·동시성·DB 불변 자동 회귀�
 - `GET /api/stocks/stream`의 기존 계약(이벤트 이름·페이로드·heartbeat 간격)은 이 엔드포인트 신설로 한 글자도 바뀌지 않는다.
 - 재접속하면 새 emitter로 `snapshot` 1건을 다시 받는다. 연결이 끊긴 동안 놓친 이벤트(`price`·`status`·`priceMoveCardConfirmed` 모두)를 서버가 재전송하는 기능은 없다 — `Last-Event-ID` 기반 replay는 범위 제외다.
 - heartbeat(20초 간격 SSE 주석)·`retry` 힌트·`onCompletion`/`onTimeout`/`onError` 시 emitter 정리는 `SseEmitterRegistry`(이슈 #18)가 공통 처리하며 이 컨트롤러·서비스에서 재구현하지 않는다.
-- `deploy/nginx.conf`의 `location /api { proxy_pass http://app:8080; }`은 서버 블록 공통 설정(`proxy_buffering off`·`proxy_cache off`·`proxy_read_timeout 3600s`)을 그대로 상속한다 — 새 엔드포인트가 `/api` 하위 경로라 별도 nginx 수정이 필요 없다.
+- ALB가 EC2 앞의 유일한 진입점이다(ADR-0022 — nginx 제거). nginx의 `proxy_buffering off`·`proxy_read_timeout 3600s` 같은 경로별 설정이 사라졌으므로, 이 엔드포인트를 포함한 모든 SSE 연결의 생존 시간은 **ALB 리스너의 유휴 제한 시간**(기본 60초, 늘려 둔 상태를 유지해야 한다)에 직접 좌우된다. 새 엔드포인트를 추가해도 nginx 설정을 손댈 필요가 없다는 이점은 사라졌지만, 반대로 ALB 쪽에 경로별 예외를 둘 필요도 없다.
 
 ### 로컬 KIS 실수집 트리거 (local 프로필 전용)
 
