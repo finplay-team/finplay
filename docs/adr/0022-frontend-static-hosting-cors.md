@@ -27,7 +27,7 @@
 | 프론트의 API 주소 지정 방식 | `VITE_*` 환경변수 0개, 모든 호출이 상대경로 `/api`. 하드코딩은 3군데(`apiClient.ts`, `useStockStream.ts`) | 프론트 레포에 베이스 URL 도입이 **선행 조건**이다. 다만 3군데뿐이라 비용은 작다 |
 | 쿠키 전송 여부 | `credentials:` 옵션 사용처 0. 토큰은 localStorage + `Authorization: Bearer` | `allowCredentials=false`로 확정한다 (§결정 2) |
 | SSE 구현 방식 | `EventSource`가 아니라 `fetch` + `Authorization` 헤더(`useStockStream.ts:2`) | `Authorization`은 CORS 안전목록 헤더가 아니므로 **preflight가 반드시 발생한다.** 이슈 #108의 우려는 가정이 아니라 확정된 조건이다 |
-| 프론트의 OAuth 로그인 | `authorize` 호출부 0 — UI가 아직 없다 | `oauth_state` 쿠키(`SameSite=Lax`)의 크로스 사이트 차단이 **지금은 발생하지 않는다.** 다만 향후를 위해 §결정 4가 필요하다 |
+| 프론트의 OAuth 로그인 | 착수 시점엔 `authorize` 호출부 0(UI 없음)이었으나, **작업 도중 프론트 `main`에 병합됐다**(finplay-frontend#12, `SocialLoginButtons.tsx`) | §결정 4가 막던 위험이 **이미 실재한다.** `oauth_state` 쿠키(`SameSite=Lax`)가 크로스 오리진 콜백 fetch에 실리지 않아 A 단계(S3 단독)에서는 로그인이 400 `VALIDATION_ERROR`로 막힌다. 프론트가 그 실패를 크래시 없이 안내 문구로 처리하도록 되어 있어(`OAuthCallback.tsx`) 사용자에게 보이는 형태는 "로그인 안 됨" 수준이지 오류 화면이 아니다. §결정 4는 여전히 유효한 해법이며, B 단계(같은 사이트 도메인)까지는 **로그인 버튼이 화면에 보이되 동작하지 않는 것을 알려진 한계로 받아들인다** |
 | `server.forward-headers-strategy` | `application.yml`에 **없다** | nginx가 `X-Forwarded-Proto https`를 강제 주입해 왔다(`nginx-blue.conf`). nginx를 빼면 이 설정이 없는 채로 ALB 헤더를 해석하지 못한다 (§결정 6) |
 | ADR-0021 §결정 8의 구현 | `.github/workflows/`에 `agent.yml`·`ci.yml`뿐 — 해당 파이프라인은 **아직 존재하지 않는다** | 그 결정을 대체해도 **삭제할 코드가 없다.** 문서 변경만으로 끝난다 |
 
@@ -79,8 +79,8 @@
 B 단계에서 프론트를 `www.finplay.site`에 두고 API는 apex(`finplay.site`)에 그대로 남긴다. **API를 `api.finplay.site`로 옮기지 않는다.**
 
 - API 주소가 고정되면 `KAKAO_REDIRECT_URI`·`NAVER_REDIRECT_URI`와 각 개발자센터 콘솔 설정, ALB의 ACM 인증서를 **하나도 건드리지 않는다.**
-- `www.finplay.site`와 `finplay.site`는 **같은 등록가능 도메인이라 same-site다.** 프론트에 카카오·네이버 로그인 UI를 붙일 때(현재 없음 — §맥락 표) `oauth_state` 쿠키(`SameSite=Lax`, `Secure`, `path=/api/auth/oauth/{provider}/callback`)가 그대로 동작한다. 프론트가 S3 기본 주소나 CloudFront 기본 도메인에 있으면 cross-site가 되어 이 쿠키가 차단된다.
-- **따라서 A 단계에 머무는 동안에는 프론트에 OAuth 로그인을 붙이지 않는다.** 붙이려면 B를 먼저 끝낸다.
+- `www.finplay.site`와 `finplay.site`는 **같은 등록가능 도메인이라 same-site다.** 프론트의 카카오·네이버 로그인 UI(finplay-frontend#12, §맥락 표 갱신 참고)가 붙이려는 `oauth_state` 쿠키(`SameSite=Lax`, `Secure`, `path=/api/auth/oauth/{provider}/callback`)가 이 조건에서 그대로 동작한다. 프론트가 S3 기본 주소나 CloudFront 기본 도메인에 있으면 cross-site가 되어 이 쿠키가 차단된다.
+- **이 로그인 UI는 이미 프론트에 존재하므로 "붙이지 않는다"는 선택지가 없다.** A 단계(S3 단독)에서는 로그인 버튼이 눌리지만 `oauth_state` 쿠키가 콜백 요청에 실리지 않아 백엔드가 400 `VALIDATION_ERROR`로 거부한다 — 프론트가 이 실패를 크래시 없이 안내 문구로 처리하도록 이미 되어 있어(`OAuthCallback.tsx`), 사용자에게는 "로그인이 안 된다"로 보이는 알려진 한계로 남긴다. **B로 넘어가야 실제로 동작한다.**
 
 ### 5. API를 CloudFront에 태우지 않는다
 
