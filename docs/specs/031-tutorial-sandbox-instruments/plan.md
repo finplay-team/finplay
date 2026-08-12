@@ -70,6 +70,10 @@ INSERT INTO instruments (market, symbol, name, tick_size, min_order_amount, trad
 ('CRYPTO', 'SANDBOX_COIN_3', '연습용 코인 C', 1, 5000, FALSE, TRUE, CURRENT_TIMESTAMP(6));
 ```
 
+- **이름 정정(V33, 이슈 #339 후속)**: 위 V32의 `연습용 주식 A/B/C`·`연습용 코인 A/B/C`는 프론트가 이름
+  옆에 이미 "연습용" 배지를 붙이므로 이름 자체에 반복돼 어색했다. `V33__rename_tutorial_sample_instruments.sql`
+  이 `알파전자`·`베타바이오`·`감마에너지`(주식), `알파코인`·`베타코인`·`감마코인`(코인)으로 UPDATE한다.
+  머지된 V32는 수정하지 않는다(ADR-0004). `symbol`(SANDBOX_*)은 변경하지 않는다.
 - 심볼은 `uk_instruments_symbol` 유니크 제약과 충돌하지 않도록 실제 심볼(종목코드·티커)과 겹치지 않는
   접두사(`SANDBOX_`)를 쓴다. `tradable=false`인 2개는 상세 시세·틱사이즈가 실제로 쓰이지 않으므로
   `tradable=true` 종목과 같은 값을 그대로 둬도 무방하다(spec의 "내부 시세 등 상세는 채우지 않아도 됨").
