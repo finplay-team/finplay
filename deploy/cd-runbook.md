@@ -25,7 +25,7 @@
   ⑦ 이전 색은 그대로 남긴다 (다음 배포까지 롤백 경로)
 ```
 
-프론트(별도 레포 `finplay-team/finplay-frontend`)는 `dist/`를 S3 아티팩트 버킷에 올린 뒤 `repository_dispatch`로 이 워크플로우를 부른다. ④에서 유휴 색의 정적 디렉터리에 그 아티팩트를 푼다 — **배포 단위는 "백엔드 이미지 + 프론트 dist" 한 쌍**이다 (ADR-0021 §결정 8).
+**프론트는 이 파이프라인과 무관하다 (ADR-0022, 2026-08-12).** 이전에는 프론트 레포가 `dist/`를 S3 아티팩트 버킷에 올리고 `repository_dispatch`로 이 워크플로우를 불러 유휴 색의 정적 디렉터리에 풀었지만("배포 단위는 백엔드 이미지 + 프론트 dist 한 쌍", 옛 ADR-0021 §결정 8), 프론트가 S3에서 독립 배포되면서 그 계약이 폐기됐다. 이 파이프라인은 이제 **백엔드 이미지만** 다룬다 — ④~⑦ 전 단계가 백엔드 컨테이너 전환에만 관여한다.
 
 ## 선행 조건 — 이게 없으면 파이프라인을 만들 수 없다
 
@@ -56,7 +56,6 @@ IaC를 쓰지 않으므로 **이 절이 사실상 유일한 정본이다** (ADR-
   | ECR push | `ecr:GetAuthorizationToken`(리소스 지정 불가) + `ecr:BatchCheckLayerAvailability`·`InitiateLayerUpload`·`UploadLayerPart`·`CompleteLayerUpload`·`PutImage` | 해당 ECR 리포지터리 |
   | EC2 명령 실행 | `ssm:SendCommand`·`GetCommandInvocation`·`ListCommandInvocations` | 배포 대상 인스턴스 + `AWS-RunShellScript` 문서 |
   | ALB 전환 | `elasticloadbalancing:DescribeListeners`·`DescribeTargetHealth`·`ModifyListener` | 해당 리스너·타깃 그룹 |
-  | 프론트 아티팩트 조회 | `s3:GetObject`·`ListBucket` | 아티팩트 버킷 |
 - [ ] 역할 ARN을 GitHub 리포지터리 **Variable**(시크릿 아님 — ARN은 비밀이 아니다)로 등록한다.
 
 ### 3. ECR 리포지터리
@@ -69,18 +68,13 @@ IaC를 쓰지 않으므로 **이 절이 사실상 유일한 정본이다** (ADR-
 - [ ] 기존 인스턴스 프로파일(이슈 #330에서 S3 정책을 붙인 그 역할)에 다음을 **추가**한다. 역할을 새로 만들지 않는다.
   - `AmazonSSMManagedInstanceCore` — SSM Agent가 명령을 받아 가려면 필요하다.
   - ECR **읽기** 권한(`ecr:GetAuthorizationToken`·`BatchGetImage`·`GetDownloadUrlForLayer`) — EC2는 pull만 한다.
-  - 프론트 아티팩트 버킷 읽기 권한.
 - [ ] EC2에서 SSM Agent가 살아 있는지 확인한다.
   ```bash
   sudo systemctl status amazon-ssm-agent
   ```
 - [ ] 콘솔의 **Systems Manager → Fleet Manager**에 이 인스턴스가 나타나는지 확인한다. 안 보이면 아직 SSM으로 명령을 보낼 수 없다 (권한 또는 아웃바운드 문제).
 
-### 5. 프론트 아티팩트 S3 버킷
-
-- [ ] 버킷 생성(예: `finplay-frontend-artifacts`). **퍼블릭 액세스 차단 4개를 모두 켠 채로 유지한다** — 커뮤니티 이미지 버킷과 같은 방침이다(`README.md` S3 절).
-- [ ] 키 규칙: `dist/<커밋SHA>.tar.gz`. 이 규칙이 프론트 레포와의 계약이므로 양쪽 문서에 같은 값을 적는다.
-- [ ] 수명 주기 규칙 — 30일 지난 아티팩트 삭제.
+> ~~### 5. 프론트 아티팩트 S3 버킷~~ — **폐기 (ADR-0022, 2026-08-12).** 프론트가 S3에서 독립 배포되면서 이 파이프라인이 프론트 아티팩트를 다룰 필요가 없어졌다. 프론트 자신의 S3 배포는 `finplay-frontend` 레포의 별도 관심사다.
 
 ## 사람이 개입하는 순간
 
@@ -121,8 +115,6 @@ IaC를 쓰지 않으므로 **이 절이 사실상 유일한 정본이다** (ADR-
 | `docker ps`는 `(healthy)`인데 호스트 `curl :8080`이 실패 | **앱 컨테이너는 호스트에 포트를 열지 않는다**(설계). 호스트에서 부르면 앱 상태와 무관하게 실패한다 (2026-08-11 실측, `docs/agent-mistakes.md`) | `docker exec <앱컨테이너> curl -fsS http://localhost:8080/actuator/health` |
 | SSM 명령이 `DeliveryTimedOut`으로 끝난다 | SSM Agent가 죽었거나 인스턴스 프로파일에 `AmazonSSMManagedInstanceCore`가 없다. 네트워크가 아니다 | Fleet Manager 목록에 인스턴스가 보이는지 |
 | OIDC 단계에서 `Not authorized to perform sts:AssumeRoleWithWebIdentity` | 신뢰 정책의 `sub`가 실제 브랜치와 다르다. `refs/heads/dev`로 못박았으므로 **다른 브랜치에서 돌린 워크플로우는 반드시 여기서 막힌다**(의도된 동작) | 역할 신뢰 정책의 `sub` 값 |
-| 전환 후에도 옛 화면이 보인다 | 프론트 `dist/`가 유휴 색 디렉터리에 안 풀렸다. 백엔드 이미지만 새것이다 | 색상별 디렉터리(`FRONTEND_DIST_*_PATH`)의 `index.html` 해시 |
-| 두 배포가 서로를 덮어썼다 | `concurrency` 그룹 누락. 백엔드 push와 프론트 `repository_dispatch`가 동시에 들어왔다 (ADR-0021 §결정 8) | 워크플로우 실행 시각 겹침 |
 
 ## 첫 구축 후 확인할 것 (아직 아무것도 실행하지 않았다)
 
