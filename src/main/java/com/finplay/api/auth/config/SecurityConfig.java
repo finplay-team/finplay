@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -54,6 +55,9 @@ public class SecurityConfig {
 	public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
 		// 필터는 빈으로 등록하지 않는다. Filter 빈은 서블릿 컨테이너에 자동 등록되어 Security 체인 밖에서도 실행된다.
 		http
+			// CorsConfig의 CorsConfigurationSource 빈을 쓴다. 이 설정이 CorsFilter를 체인 맨 앞에 놓으므로
+			// preflight(OPTIONS)는 JwtAuthenticationFilter와 인가 규칙에 닿기 전에 응답된다 (ADR-0022).
+			.cors(Customizer.withDefaults())
 			.csrf(AbstractHttpConfigurer::disable)
 			.formLogin(AbstractHttpConfigurer::disable)
 			.httpBasic(AbstractHttpConfigurer::disable)
