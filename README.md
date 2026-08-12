@@ -42,8 +42,8 @@ FinPlay 백엔드 API 서버. Spring Boot 4.1 / Java 17 / Gradle (`build.gradle`
 
 정본은 [`docs/git-conventions.md`](docs/git-conventions.md)(브랜치·커밋·PR)와 [`docs/team-conventions.md`](docs/team-conventions.md)(이슈·리뷰 운영)다. 아래는 요약이다.
 
-- 브랜치: `dev`가 기본(통합) 브랜치. `dev`에서 분기한 `<타입>/<이슈번호>-<영문-요약>`(이슈번호는 0으로 채우지 않는다 — `feat/16-price-query`) → **dev로 PR** → 리뷰 승인 1명 후 Squash merge. PR 전 로컬 `./gradlew build` 통과는 작성자 의무.
-- `main`은 배포·시연용 — 직접 푸시 금지(보호 규칙), `dev`에서 PR로만 머지.
+- 브랜치: `dev`가 기본(통합) 브랜치. `dev`에서 분기한 `<타입>/<이슈번호>-<영문-요약>`(이슈번호는 0으로 채우지 않는다 — `feat/16-price-query`) → **dev로 PR** → 리뷰 승인 1명 후 **Merge commit**(2026-08-07 정정 — 팀 실제 관행에 맞춤, `docs/git-conventions.md` 참고). PR 전 로컬 `./gradlew build` 통과는 작성자 의무. **`dev` 머지는 곧 배포 실행이다** — CI(`./gradlew build`)가 통과한 코드만 머지되도록 한다 (ADR-0021).
+- `main`은 시연·심사 스냅샷 — 직접 푸시 금지(보호 규칙), `dev`에서 PR로만 머지. **배포되는 브랜치는 `dev`다** — `dev` 머지가 곧 배포 실행이며 그 뒤 사람이 개입하는 단계가 없다 (ADR-0021, 구축 전).
 - 커밋/PR 제목은 Conventional Commits (`feat:`, `fix:`, ...).
 - 시크릿은 어떤 값도 yml·코드에 커밋 금지 — `.env`(gitignore)로 주입, 목록은 `.env.example` 참조.
 - 스키마 변경은 Flyway 마이그레이션으로만 (ADR-0004).

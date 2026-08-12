@@ -16,8 +16,9 @@ AI 에이전트는 **docs/ 전체를 순회하지 않는다.** 작업 유형에 
 | 브랜치 생성 / 커밋 / PR 작성 | `docs/git-conventions.md` |
 | 이슈 분할 / 리뷰 지적 처리 | `docs/team-conventions.md` |
 | 하네스/문서 수정 | `AGENTS.md` + `CLAUDE.md` + 이 파일 + `docs/adr/0005-local-agent-orchestration.md` + `docs/adr/0008-four-agent-roster.md` + `docs/adr/0009-codex-local-orchestration.md` + `docs/adr/0010-agent-session-lifecycle.md` |
-| 배포 / CI 구성 / 스모크 | `docs/specs/010-deployment/spec.md` + **`docs/adr/0020-managed-service-deployment.md`**(배포 아키텍처 결정 정본 — EC2 + RDS·ElastiCache·S3 + 블루-그린. spec과 판단이 갈리면 ADR이 정본) + `docs/conventions.md`(시크릿 절) |
-| 배포 스택 실행 (수동 배포 절차) | `deploy/README.md` (+ `compose.deploy.yaml`·`deploy/nginx.conf`·`Dockerfile`). **DB·캐시는 이 스택 안에 없다** — RDS·ElastiCache이며 근거는 ADR-0020 |
+| 배포 / CI·CD 구성 / 스모크 | `docs/specs/010-deployment/spec.md` + **`docs/adr/0020-managed-service-deployment.md`**(배포 **아키텍처** 정본 — EC2 + RDS·ElastiCache·S3 + 블루-그린) + **`docs/adr/0021-continuous-deployment.md`**(배포 **실행 방식** 정본 — `dev` 머지 트리거·OIDC·SSM·ECR·자동 롤백) + `docs/conventions.md`(시크릿 절). **둘은 층이 다르다** — 무엇 위에 배포하는가는 0020, 어떻게 배포되는가는 0021이며, spec과 판단이 갈리면 ADR이 정본이다 |
+| 자동 배포 파이프라인 구축·장애 대응 | `deploy/cd-runbook.md` (AWS 콘솔 선행 설정·파이프라인 단계·실패 경로·오진표) + ADR-0021. **아직 구축 전이므로 이 문서는 "돌고 있는 것"의 기록이 아니라 목표 구조다** |
+| 배포 스택 실행 (수동 배포 절차 — 파이프라인 폴백) | `deploy/README.md` (+ `compose.deploy.yaml`·`deploy/nginx.conf`·`Dockerfile`). **DB·캐시는 이 스택 안에 없다** — RDS·ElastiCache이며 근거는 ADR-0020. **정상 배포 경로는 더 이상 이 문서가 아니다** — ADR-0021 이후 이 절차는 파이프라인이 막혔을 때만 쓴다 |
 | 하네스 CI 전환 (미착수) | `docs/harness-roadmap.md` + `docs/adr/0005-local-agent-orchestration.md` |
 | 병렬 작업 / 팀 구성 | `docs/parallel-agents.md` |
 | 과거 실수 확인 | `docs/agent-mistakes.md` (구현 시작 전 1회) |
