@@ -74,6 +74,8 @@ class InvestmentPracticeQueryServiceTest {
 		assertThat(response.status()).isEqualTo("COMPLETED");
 		assertThat(response.currentStep()).isNull();
 		assertThat(response.completedAt()).isEqualTo(NOW);
+		// 이슈 #343: 완료 응답은 보상 지급 금액 500만원을 노출해야 한다.
+		assertThat(response.rewardAmount()).isEqualTo(5_000_000L);
 		assertThat(response.steps()).hasSize(3);
 		for (PracticeStepResponse step : response.steps()) {
 			assertThat(step.status()).isEqualTo("COMPLETED");
@@ -149,6 +151,8 @@ class InvestmentPracticeQueryServiceTest {
 		assertThat(response.status()).isEqualTo("IN_PROGRESS");
 		assertThat(response.currentStep()).isEqualTo(3);
 		assertThat(response.completedAt()).isNull();
+		// 이슈 #343: 미완료(IN_PROGRESS) 응답은 보상 금액을 노출하지 않는다.
+		assertThat(response.rewardAmount()).isNull();
 		assertThat(response.steps()).hasSize(3);
 
 		PracticeStepResponse step1 = response.steps().get(0);
@@ -262,6 +266,8 @@ class InvestmentPracticeQueryServiceTest {
 		assertThat(response.status()).isEqualTo("NOT_STARTED");
 		assertThat(response.currentStep()).isEqualTo(1);
 		assertThat(response.completedAt()).isNull();
+		// 이슈 #343: 미착수(NOT_STARTED) 응답도 보상 금액을 노출하지 않는다.
+		assertThat(response.rewardAmount()).isNull();
 
 		PracticeStepResponse step1 = response.steps().get(0);
 		assertThat(step1.status()).isEqualTo("NOT_STARTED");
@@ -301,6 +307,8 @@ class InvestmentPracticeQueryServiceTest {
 		InvestmentPracticeResponse response = service.getProgress(USER_ID, Market.STOCK);
 
 		assertThat(response.status()).isEqualTo("COMPLETED");
+		// 이슈 #343: 샘플 종목(4단계) chain의 완료 응답도 동일하게 500만원을 노출해야 한다.
+		assertThat(response.rewardAmount()).isEqualTo(5_000_000L);
 		assertThat(response.steps()).hasSize(4);
 		for (PracticeStepResponse step : response.steps()) {
 			assertThat(step.status()).isEqualTo("COMPLETED");

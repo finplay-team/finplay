@@ -1,6 +1,8 @@
 // holdingId로 evidence chain·A/B 관찰을 재검증해 실습 3단계 자유 복기를 저장하고 튜토리얼 완료를 확정하는 서비스
 package com.finplay.api.education.marketpractice.service;
 
+import com.finplay.api.account.domain.Account;
+import com.finplay.api.account.service.AccountService;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.education.domain.PracticeProgress;
@@ -38,6 +40,9 @@ public class PracticeHoldingReflectionService {
 	// 샘플 종목 chain 4단계 evidence의 매도 유효 기한(031/plan.md "4. 5분 타이머" anchor는
 	// buyTrade.executedAt, InvestmentPracticeQueryService.isWithinSaleDeadline과 동일 정책).
 	private static final long SALE_DEADLINE_MINUTES = 5;
+	// 시장별 최초 완료 보상 금액(이슈 #343) — practice_completions의 UNIQUE(user_id, tutorial_key) 불변
+	// (026 완료 불변 원칙)에 결합해 이 트랜잭션에서 정확히 1회만 지급된다.
+	private static final long TUTORIAL_COMPLETION_REWARD_AMOUNT = 5_000_000L;
 
 	private final HoldingService holdingService;
 	private final MarketPracticeChainResolutionService chainResolutionService;
@@ -45,6 +50,7 @@ public class PracticeHoldingReflectionService {
 	private final PracticeMarketObservationRepository practiceMarketObservationRepository;
 	private final PracticeMarketReflectionRepository practiceMarketReflectionRepository;
 	private final PracticeCompletionRepository practiceCompletionRepository;
+	private final AccountService accountService;
 	private final Clock clock;
 
 	@Transactional
@@ -93,8 +99,18 @@ public class PracticeHoldingReflectionService {
 
 		practiceCompletionRepository.save(PracticeCompletion.create(userId, tutorialKey, reflection, now));
 		progress.complete(now);
+		payTutorialCompletionReward(userId, holding.getInstrument().getMarket());
 
 		return PracticeHoldingReflectionResponse.from(reflection);
+	}
+
+	// 이슈 #343: 시장별 최초 완료에만 500만원을 그 시장 계좌에 지급한다. OrderExecutionService
+	// .getAccountForUpdateFor와 동일 패턴으로 market 도메인의 Market을 account 도메인의 Market으로 변환한다.
+	private void payTutorialCompletionReward(Long userId, Market market) {
+		com.finplay.api.account.domain.Market accountMarket = com.finplay.api.account.domain.Market
+			.valueOf(market.name());
+		Account account = accountService.getAccountForUpdate(userId, accountMarket);
+		account.addCash(TUTORIAL_COMPLETION_REWARD_AMOUNT);
 	}
 
 	// PracticeHoldingObservationService.resolveTutorialKey와 동일 패턴(지시사항)

@@ -83,7 +83,7 @@ class InvestmentPracticeControllerTest {
 			new PracticeStepResponse(2, "COMPLETED", false, evidence),
 			new PracticeStepResponse(3, "COMPLETED", false, evidence));
 		InvestmentPracticeResponse response = new InvestmentPracticeResponse(
-			"INVESTMENT_PRACTICE_V1", "COMPLETED", null, steps, LocalDateTime.of(2026, 8, 10, 9, 0));
+			"INVESTMENT_PRACTICE_V1", "COMPLETED", null, steps, LocalDateTime.of(2026, 8, 10, 9, 0), 5_000_000L);
 		when(investmentPracticeQueryService.getProgress(eq(USER_ID), eq(Market.STOCK))).thenReturn(response);
 
 		mockMvc.perform(get("/api/education/practice")
@@ -101,7 +101,8 @@ class InvestmentPracticeControllerTest {
 			.andExpect(jsonPath("$.steps[0].evidence.favoriteId").value(10))
 			.andExpect(jsonPath("$.steps[0].evidence.holdingId").value(40))
 			.andExpect(jsonPath("$.steps[0].evidence.evidenceType").value("CLOSER_TO_BOUNDARY"))
-			.andExpect(jsonPath("$.steps[0].evidence.reflectionId").value(70));
+			.andExpect(jsonPath("$.steps[0].evidence.reflectionId").value(70))
+			.andExpect(jsonPath("$.rewardAmount").value(5_000_000));
 	}
 
 	@Test
@@ -113,7 +114,7 @@ class InvestmentPracticeControllerTest {
 			new PracticeStepResponse(2, "NOT_STARTED", true, emptyEvidence),
 			new PracticeStepResponse(3, "NOT_STARTED", true, emptyEvidence));
 		InvestmentPracticeResponse response = new InvestmentPracticeResponse(
-			"COIN_PRACTICE_V1", "NOT_STARTED", 1, steps, null);
+			"COIN_PRACTICE_V1", "NOT_STARTED", 1, steps, null, null);
 		when(investmentPracticeQueryService.getProgress(eq(USER_ID), eq(Market.CRYPTO))).thenReturn(response);
 
 		mockMvc.perform(get("/api/education/practice")
@@ -140,7 +141,7 @@ class InvestmentPracticeControllerTest {
 			new PracticeStepResponse(2, "IN_PROGRESS", false, favoriteEvidence),
 			new PracticeStepResponse(3, "NOT_STARTED", true, PracticeEvidenceResponse.empty()));
 		InvestmentPracticeResponse response = new InvestmentPracticeResponse(
-			"INVESTMENT_PRACTICE_V1", "IN_PROGRESS", 2, steps, null);
+			"INVESTMENT_PRACTICE_V1", "IN_PROGRESS", 2, steps, null, null);
 		when(investmentPracticeQueryService.getProgress(eq(USER_ID), eq(Market.STOCK))).thenReturn(response);
 
 		mockMvc.perform(get("/api/education/practice")
