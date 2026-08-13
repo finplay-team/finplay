@@ -84,6 +84,24 @@ class HoldingValuationServiceTest {
 	}
 
 	@Test
+	void evaluateHoldingReturnsUnavailableStatusAndNullEvaluationFieldsWhenPriceStale() {
+		// PRICE-STALE-005 엄격 유지 고정 — STALE도 UNAVAILABLE과 동일하게 평가불가 처리해야 한다.
+		Instrument instrument = testInstrument();
+		Holding holding = testHolding(instrument, new BigDecimal("10"), new BigDecimal("50000"));
+		when(priceQueryService.getPriceQuote(instrument))
+			.thenReturn(new PriceQuoteDto(new BigDecimal("60000"), NOW, PriceStatus.STALE, null));
+
+		HoldingValuationDto result = service.evaluateHolding(holding);
+
+		assertThat(result.costBasis()).isEqualTo(500_000L);
+		assertThat(result.priceStatus()).isEqualTo(PriceStatus.UNAVAILABLE);
+		assertThat(result.evaluationAmount()).isNull();
+		assertThat(result.unrealizedPnl()).isNull();
+		assertThat(result.returnRate()).isNull();
+		assertThat(result.currentPrice()).isNull();
+	}
+
+	@Test
 	void evaluateHoldingReturnsZeroCostBasisAndZeroReturnRateWhenQuantityIsZero() {
 		Instrument instrument = testInstrument();
 		Account account = testAccount();

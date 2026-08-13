@@ -58,7 +58,8 @@ public class HoldingValuationService {
 		BigDecimal averagePrice = holding.getAveragePrice();
 		long costBasis = quantity.multiply(averagePrice).setScale(0, RoundingMode.FLOOR).longValueExact();
 
-		if (quote.status() == PriceStatus.UNAVAILABLE) {
+		// STALE도 UNAVAILABLE과 동일하게 평가불가 처리 (PRICE-STALE-005, 엄격 유지 확정 — quote.status() != AVAILABLE로 명시)
+		if (quote.status() != PriceStatus.AVAILABLE) {
 			return new HoldingValuationDto(quantity, averagePrice, costBasis, PriceStatus.UNAVAILABLE, null, null,
 				null, null);
 		}

@@ -9,7 +9,7 @@
 - [x] **2. `PriceQueryService` 배치 표시 경로 분리**
   기존 private 배치 `getCryptoPriceQuotes(List<Instrument>)`를 `getCryptoDisplayPriceQuotes(List<Instrument>)`로 대체한다(항목 1의 단건 판정과 동일한 규칙, 연결상태는 루프 밖에서 1회 조회). `getPriceQuotes(List<Instrument>)`의 크립토 분기가 이 메서드를 쓰도록 바꾼다. `PriceQueryServiceTest`에 배치 버전 stale/disconnected/한번도못받음 케이스를 추가한다.
 
-- [ ] **3. `HoldingValuationService` 엄격 유지 방어 수정**
+- [x] **3. `HoldingValuationService` 엄격 유지 방어 수정**
   `buildValuation`의 조건을 `quote.status() == PriceStatus.UNAVAILABLE`에서 `quote.status() != PriceStatus.AVAILABLE`로 바꿔 STALE도 UNAVAILABLE과 동일하게 평가불가 처리되도록 명시적으로 고정한다. `HoldingValuationServiceTest`에 STALE `PriceQuoteDto` 입력 시 `priceStatus=UNAVAILABLE`이고 평가금액·손익·수익률이 null인 케이스를 추가한다. `docs/api-contracts.md`의 `## portfolio`·`## account` 절은 이 항목으로 인해 바뀌지 않음을 확인한다(변경 없으면 그대로 둔다).
 
 - [ ] **4. 표시/엄격 소비자 회귀 테스트 고정 (코드 변경 없음)**
