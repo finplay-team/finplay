@@ -190,22 +190,30 @@ class TradeServiceTest {
 
 	@Test
 	void hasSellHistoryAsksRepositoryWithSellSideAndReturnsBothOutcomes() {
-		when(tradeRepository.existsByAccountIdAndSide(10L, OrderSide.SELL)).thenReturn(true);
-		when(tradeRepository.existsByAccountIdAndSide(20L, OrderSide.SELL)).thenReturn(false);
+		when(tradeRepository.existsByAccountIdAndSideAndInstrument_TutorialSampleFalse(10L, OrderSide.SELL))
+			.thenReturn(true);
+		when(tradeRepository.existsByAccountIdAndSideAndInstrument_TutorialSampleFalse(20L, OrderSide.SELL))
+			.thenReturn(false);
 
 		assertThat(tradeService.hasSellHistory(10L)).isTrue();
 		assertThat(tradeService.hasSellHistory(20L)).isFalse();
-		verify(tradeRepository, never()).existsByAccountIdAndSide(any(), eq(OrderSide.BUY));
+		verify(tradeRepository, never())
+			.existsByAccountIdAndSideAndInstrument_TutorialSampleFalse(any(), eq(OrderSide.BUY));
 	}
 
 	@Test
 	void hasAnySellHistoryAsksRepositoryWithSellSideAndReturnsBothOutcomes() {
-		when(tradeRepository.existsBySideAndAccountMarket(OrderSide.SELL, Market.STOCK)).thenReturn(true);
-		when(tradeRepository.existsBySideAndAccountMarket(OrderSide.SELL, Market.CRYPTO)).thenReturn(false);
+		when(
+			tradeRepository.existsBySideAndAccountMarketAndInstrument_TutorialSampleFalse(OrderSide.SELL, Market.STOCK))
+			.thenReturn(true);
+		when(tradeRepository.existsBySideAndAccountMarketAndInstrument_TutorialSampleFalse(OrderSide.SELL,
+			Market.CRYPTO))
+			.thenReturn(false);
 
 		assertThat(tradeService.hasAnySellHistory(Market.STOCK)).isTrue();
 		assertThat(tradeService.hasAnySellHistory(Market.CRYPTO)).isFalse();
-		verify(tradeRepository, never()).existsBySideAndAccountMarket(eq(OrderSide.BUY), any());
+		verify(tradeRepository, never())
+			.existsBySideAndAccountMarketAndInstrument_TutorialSampleFalse(eq(OrderSide.BUY), any());
 	}
 
 	// 아래는 026-market-order-practice-tutorial 2단계 chain 해석이 쓰는

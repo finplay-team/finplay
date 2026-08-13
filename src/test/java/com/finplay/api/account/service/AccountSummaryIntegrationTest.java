@@ -259,6 +259,50 @@ class AccountSummaryIntegrationTest {
 		assertThat(response.returnRate()).isEqualByComparingTo(new BigDecimal("0.0400"));
 	}
 
+	// SANDBOX-EXCL-007 통합 시나리오(plan.md §4-3 수치 예시와 동일 구조): 튜토리얼 완료 보상(500만원, 001
+	// sandboxCashAdjustment 누적은 004 항목에서 이미 검증됨)을 받은 뒤 그 현금으로 실제 종목을 사서 평가차익을
+	// 내면, totalValue는 "보상 원금은 제외하고 실거래 평가차익만 반영"해야 한다.
+	@Test
+	void totalValueExcludesTutorialRewardPrincipalButIncludesRealTradeGainOnThatMoney() {
+		User user = createUser("summary-reward-gain");
+		Account account = createAccount(user);
+
+		// 튜토리얼 완료 보상 지급을 직접 재현한다(PracticeHoldingReflectionService.
+		// payTutorialCompletionReward와 정확히 같은 두 호출 — cashBalance·sandboxCashAdjustment 모두 +500만).
+		account.addCash(5_000_000L);
+		account.addSandboxCashAdjustment(5_000_000L);
+		accountRepository.saveAndFlush(account);
+
+		Instrument instrument = createStockInstrument("RWGN");
+		createCandle(instrument, FIRST_CANDLE_TIME, new BigDecimal("500000"));
+
+		// 보상금 500만원 전액으로 실제 종목을 매수한다. amount=5,000,000, fee=5,000,000*0.00015=750(FLOOR).
+		orderService.createOrder(user.getId(), "summary-reward-gain-idem", buyRequest(instrument.getId(), "10"));
+
+		// 시각 이동 후 시세가 60만원으로 올라 평가차익이 발생한다.
+		createCandle(instrument, SECOND_CANDLE_TIME, new BigDecimal("600000"));
+		clock.set(BASE_NOW.plusMinutes(1));
+
+		AccountSummaryResponse response = accountService.getAccountSummary(
+			user.getId(), com.finplay.api.account.domain.Market.STOCK);
+
+		// cashBalance = 10,000,000(시드) + 5,000,000(보상) - 5,000,000(매수원금) - 750(수수료) = 9,999,250
+		long expectedCashBalance = 9_999_250L;
+		// holdingsValue = 10주 * 60만원 = 6,000,000, unrealizedPnl = 6,000,000 - 5,000,000(원가) = 1,000,000
+		long expectedHoldingsValue = 6_000_000L;
+		long expectedUnrealizedPnl = 1_000_000L;
+		// totalValue = cashBalance + holdingsValue - sandboxCashAdjustment(500만, 보상 원금만 남음)
+		//            = 9,999,250 + 6,000,000 - 5,000,000 = 10,999,250
+		long expectedTotalValue = 10_999_250L;
+
+		assertThat(response.cashBalance()).isEqualTo(expectedCashBalance);
+		assertThat(response.holdingsValue()).isEqualTo(expectedHoldingsValue);
+		assertThat(response.unrealizedPnl()).isEqualTo(expectedUnrealizedPnl);
+		assertThat(response.totalValue()).isEqualTo(expectedTotalValue);
+		// returnRate = (10,999,250 - 10,000,000) / 10,000,000 = 0.099925 → scale4 HALF_UP = 0.0999
+		assertThat(response.returnRate()).isEqualByComparingTo(new BigDecimal("0.0999"));
+	}
+
 	private OrderCreateRequest buyRequest(Long instrumentId, String quantity) {
 		return new OrderCreateRequest(Market.STOCK, instrumentId, OrderSide.BUY, "MARKET", new BigDecimal(quantity));
 	}
@@ -296,7 +340,10 @@ class AccountSummaryIntegrationTest {
 	}
 
 	private static String uniqueNickname(String scenario) {
-		return scenario + "-" + UUID.randomUUID().toString().replace("-", "");
+		// nickname 컬럼은 VARCHAR(50)이다(V2). scenario 접두사가 길어도 잘리지 않도록 UUID 부분을 20자로
+		// 제한한다(전체 UUID 32자를 그대로 붙이면 "summary-reward-gain-<32자>"가 50자를 넘겨 저장 시
+		// data truncation 오류가 난다).
+		return scenario + "-" + UUID.randomUUID().toString().replace("-", "").substring(0, 20);
 	}
 
 }

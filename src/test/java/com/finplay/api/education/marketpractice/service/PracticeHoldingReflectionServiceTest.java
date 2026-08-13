@@ -257,6 +257,8 @@ class PracticeHoldingReflectionServiceTest {
 
 		verify(accountService).getAccountForUpdate(USER_ID, com.finplay.api.account.domain.Market.STOCK);
 		verify(account).addCash(5_000_000L);
+		// spec 033 SANDBOX-EXCL-006 call site #5: 튜토리얼 완료 보상은 종목 조건 없이 항상 누적된다.
+		verify(account).addSandboxCashAdjustment(5_000_000L);
 	}
 
 	// 이슈 #343: instrument.getMarket()이 CRYPTO면 코인 계좌(com.finplay.api.account.domain.Market.CRYPTO)에
@@ -283,6 +285,7 @@ class PracticeHoldingReflectionServiceTest {
 
 		verify(accountService).getAccountForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO);
 		verify(account).addCash(5_000_000L);
+		verify(account).addSandboxCashAdjustment(5_000_000L);
 	}
 
 	@Test

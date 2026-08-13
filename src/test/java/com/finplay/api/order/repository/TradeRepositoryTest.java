@@ -377,7 +377,8 @@ class TradeRepositoryTest {
 		entityManager.clear();
 
 		assertThat(accountRepository.findById(ownerAccount.getId()).orElseThrow().getRealizedPnl()).isZero();
-		assertThat(tradeRepository.existsByAccountIdAndSide(ownerAccount.getId(), OrderSide.SELL)).isTrue();
+		assertThat(tradeRepository.existsByAccountIdAndSideAndInstrument_TutorialSampleFalse(
+			ownerAccount.getId(), OrderSide.SELL)).isTrue();
 	}
 
 	@Test
@@ -391,9 +392,60 @@ class TradeRepositoryTest {
 			Account.create(buyer, com.finplay.api.account.domain.Market.STOCK, NOW));
 		createTradeWithSide(buyer, buyOnlyAccount, instrument, session, OrderSide.BUY);
 
-		assertThat(tradeRepository.existsByAccountIdAndSide(ownerAccount.getId(), OrderSide.SELL)).isTrue();
-		assertThat(tradeRepository.existsByAccountIdAndSide(buyOnlyAccount.getId(), OrderSide.SELL)).isFalse();
-		assertThat(tradeRepository.existsByAccountIdAndSide(buyOnlyAccount.getId(), OrderSide.BUY)).isTrue();
+		assertThat(tradeRepository.existsByAccountIdAndSideAndInstrument_TutorialSampleFalse(
+			ownerAccount.getId(), OrderSide.SELL)).isTrue();
+		assertThat(tradeRepository.existsByAccountIdAndSideAndInstrument_TutorialSampleFalse(
+			buyOnlyAccount.getId(), OrderSide.SELL)).isFalse();
+		assertThat(tradeRepository.existsByAccountIdAndSideAndInstrument_TutorialSampleFalse(
+			buyOnlyAccount.getId(), OrderSide.BUY)).isTrue();
+	}
+
+	// 033-exclude-tutorial-sandbox-data(SANDBOX-EXCL-003): 샌드박스 종목만 매도한 계좌는 대상자 목록·
+	// existsBy... 판정 둘 다에서 매도 이력이 아예 없는 계좌와 동일하게 취급돼야 한다.
+	@Test
+	@DisplayName("샌드박스 종목만 매도한 계좌는 대상자 목록에서 매도 이력 없는 계좌와 동일하게 제외된다")
+	void findDistinctAccountIdsBySideAndMarketExcludesSandboxOnlySellAccount() {
+		Instrument sandboxInstrument = instrumentRepository.findByMarketAndSymbol(Market.STOCK, "SANDBOX_STK_1")
+			.orElseThrow();
+		assertThat(sandboxInstrument.isTutorialSample()).isTrue();
+
+		User sandboxOnlySeller = userRepository.saveAndFlush(
+			User.create("sandbox-only-seller@finplay.com", "hash", "sandboxonly", NOW));
+		Account sandboxOnlyAccount = accountRepository.saveAndFlush(
+			Account.create(sandboxOnlySeller, com.finplay.api.account.domain.Market.STOCK, NOW));
+		createTradeWithSide(sandboxOnlySeller, sandboxOnlyAccount, sandboxInstrument, null, OrderSide.SELL);
+
+		createTradeWithSide(owner, ownerAccount, instrument, session, OrderSide.SELL);
+
+		List<Long> stockAccountIds = tradeRepository.findDistinctAccountIdsBySideAndMarket(
+			OrderSide.SELL, com.finplay.api.account.domain.Market.STOCK);
+
+		assertThat(stockAccountIds)
+			.contains(ownerAccount.getId())
+			.doesNotContain(sandboxOnlyAccount.getId());
+	}
+
+	@Test
+	@DisplayName("샌드박스 종목만 매도한 계좌는 existsBy... 판정 둘 다 매도 이력 없는 계좌와 동일하게 false다")
+	void existsByMethodsTreatSandboxOnlySellAccountAsNoSellHistory() {
+		Instrument sandboxInstrument = instrumentRepository.findByMarketAndSymbol(Market.STOCK, "SANDBOX_STK_1")
+			.orElseThrow();
+		assertThat(sandboxInstrument.isTutorialSample()).isTrue();
+
+		User sandboxOnlySeller = userRepository.saveAndFlush(
+			User.create("sandbox-only-exists@finplay.com", "hash", "sandboxexists", NOW));
+		Account sandboxOnlyAccount = accountRepository.saveAndFlush(
+			Account.create(sandboxOnlySeller, com.finplay.api.account.domain.Market.STOCK, NOW));
+		createTradeWithSide(sandboxOnlySeller, sandboxOnlyAccount, sandboxInstrument, null, OrderSide.SELL);
+
+		createTradeWithSide(owner, ownerAccount, instrument, session, OrderSide.SELL);
+
+		assertThat(tradeRepository.existsByAccountIdAndSideAndInstrument_TutorialSampleFalse(
+			sandboxOnlyAccount.getId(), OrderSide.SELL)).isFalse();
+		assertThat(tradeRepository.existsByAccountIdAndSideAndInstrument_TutorialSampleFalse(
+			ownerAccount.getId(), OrderSide.SELL)).isTrue();
+		assertThat(tradeRepository.existsBySideAndAccountMarketAndInstrument_TutorialSampleFalse(
+			OrderSide.SELL, com.finplay.api.account.domain.Market.STOCK)).isTrue();
 	}
 
 	// 시장별 매도 이력 유무는 "있음"만 단정한다 — "없음"은 공유 컨테이너에 남은 다른 클래스의 커밋에 좌우돼
@@ -441,9 +493,9 @@ class TradeRepositoryTest {
 			Market.CRYPTO, "RBLDX", "재구성존재테스트코인", new BigDecimal("0.00000001"), 5_000L, true, NOW));
 		createTradeWithSide(owner, ownerCryptoAccount, crypto, null, OrderSide.SELL);
 
-		assertThat(tradeRepository.existsBySideAndAccountMarket(
+		assertThat(tradeRepository.existsBySideAndAccountMarketAndInstrument_TutorialSampleFalse(
 			OrderSide.SELL, com.finplay.api.account.domain.Market.STOCK)).isTrue();
-		assertThat(tradeRepository.existsBySideAndAccountMarket(
+		assertThat(tradeRepository.existsBySideAndAccountMarketAndInstrument_TutorialSampleFalse(
 			OrderSide.SELL, com.finplay.api.account.domain.Market.CRYPTO)).isTrue();
 	}
 }

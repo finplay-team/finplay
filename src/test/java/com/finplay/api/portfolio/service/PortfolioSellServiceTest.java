@@ -137,6 +137,42 @@ class PortfolioSellServiceTest {
 	}
 
 	@Test
+	void finalizeSellRealizedPnlSkipsAccountRealizedPnlWhenInstrumentIsTutorialSample() {
+		// spec 033 SANDBOX-EXCL-004: 샌드박스 종목 매도는 account.realizedPnl에 반영하지 않지만
+		// trade.realizedPnl·account.cashBalance는 항상 그대로 반영된다.
+		Account account = testAccount();
+		Instrument instrument = testInstrument();
+		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
+		Trade sellTrade = testTrade(account, instrument, OrderSide.SELL, new BigDecimal("150"),
+			new BigDecimal("10"), 1500L, 4L, NOW);
+		SellAllocationDto allocation = new SellAllocationDto(1000L, 30L);
+		long cashBeforeSell = account.getCashBalance();
+		long realizedPnlBeforeSell = account.getRealizedPnl();
+
+		long realizedPnl = service.finalizeSellRealizedPnl(account, sellTrade, 1500L, 4L, allocation);
+
+		assertThat(realizedPnl).isEqualTo(466L);
+		assertThat(sellTrade.getRealizedPnl()).isEqualTo(466L);
+		assertThat(account.getCashBalance()).isEqualTo(cashBeforeSell + 1500L - 4L);
+		assertThat(account.getRealizedPnl()).isEqualTo(realizedPnlBeforeSell);
+		// spec 033 SANDBOX-EXCL-006 call site #3: 샌드박스 매도 입금은 sandboxCashAdjustment에 누적된다.
+		assertThat(account.getSandboxCashAdjustment()).isEqualTo(1500L - 4L);
+	}
+
+	@Test
+	void finalizeSellRealizedPnlDoesNotAccumulateSandboxCashAdjustmentWhenInstrumentIsReal() {
+		Account account = testAccount();
+		Instrument instrument = testInstrument();
+		Trade sellTrade = testTrade(account, instrument, OrderSide.SELL, new BigDecimal("150"),
+			new BigDecimal("10"), 1500L, 4L, NOW);
+		SellAllocationDto allocation = new SellAllocationDto(1000L, 30L);
+
+		service.finalizeSellRealizedPnl(account, sellTrade, 1500L, 4L, allocation);
+
+		assertThat(account.getSandboxCashAdjustment()).isEqualTo(0L);
+	}
+
+	@Test
 	void applySellTradeFullyConsumesSingleLotAndAllocatesExactBuyTradeAmount() {
 		Account account = testAccount();
 		Instrument instrument = testInstrument();

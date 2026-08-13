@@ -68,6 +68,10 @@ public class LimitOrderFillService {
 		Instrument instrument = order.getInstrument();
 
 		account.confirmReservedCash(amount + fee);
+		// 샌드박스(튜토리얼) 종목 지정가 매수 체결의 현금 순변동도 별도로 누적한다(spec 033 SANDBOX-EXCL-006).
+		if (instrument.isTutorialSample()) {
+			account.addSandboxCashAdjustment(-(amount + fee));
+		}
 
 		Trade trade = Trade.of(
 			order, account, instrument, null, order.getSide(), limitPrice, quantity, amount, fee, null, now, now);

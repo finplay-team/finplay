@@ -111,6 +111,9 @@ public class PracticeHoldingReflectionService {
 			.valueOf(market.name());
 		Account account = accountService.getAccountForUpdate(userId, accountMarket);
 		account.addCash(TUTORIAL_COMPLETION_REWARD_AMOUNT);
+		// 튜토리얼 완료 보상은 정의상 항상 샌드박스 기원이므로 종목 조건 없이 항상 누적한다(spec 033
+		// SANDBOX-EXCL-006).
+		account.addSandboxCashAdjustment(TUTORIAL_COMPLETION_REWARD_AMOUNT);
 	}
 
 	// PracticeHoldingObservationService.resolveTutorialKey와 동일 패턴(지시사항)

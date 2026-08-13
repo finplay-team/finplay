@@ -61,16 +61,17 @@ public class TradeService {
 		return tradeRepository.findDistinctAccountIdsBySideAndMarket(OrderSide.SELL, market);
 	}
 
-	// 이 계좌에 매도 체결 이력이 있는가 — GET /api/rankings/me의 status 판정용(이슈 #279).
+	// 이 계좌에 실제 종목 매도 체결 이력이 있는가 — GET /api/rankings/me의 status 판정용(이슈 #279, #366).
 	@Transactional(readOnly = true)
 	public boolean hasSellHistory(Long accountId) {
-		return tradeRepository.existsByAccountIdAndSide(accountId, OrderSide.SELL);
+		return tradeRepository.existsByAccountIdAndSideAndInstrument_TutorialSampleFalse(accountId, OrderSide.SELL);
 	}
 
-	// 이 시장에 매도 체결 이력이 있는 계좌가 하나라도 있는가 — GET /api/rankings의 status 판정용(이슈 #279).
+	// 이 시장에 실제 종목 매도 체결 이력이 있는 계좌가 하나라도 있는가 — GET /api/rankings의 status
+	// 판정용(이슈 #279, #366).
 	@Transactional(readOnly = true)
 	public boolean hasAnySellHistory(Market market) {
-		return tradeRepository.existsBySideAndAccountMarket(OrderSide.SELL, market);
+		return tradeRepository.existsBySideAndAccountMarketAndInstrument_TutorialSampleFalse(OrderSide.SELL, market);
 	}
 
 	// 026-market-order-practice-tutorial 2단계 chain 해석용 — intention.createdAt 이후 체결된 본인 BUY 체결 중

@@ -59,7 +59,14 @@ public class PortfolioSellService {
 		long realizedPnl = (amount - fee) - (allocation.totalAllocatedCost() + allocation.totalAllocatedBuyFee());
 		sellTrade.fillRealizedPnl(realizedPnl);
 		account.addCash(amount - fee);
-		account.addRealizedPnl(realizedPnl);
+		// 샌드박스(튜토리얼) 종목 매도 손익은 계좌 집계(랭킹 score)에 반영하지 않는다(spec 033
+		// SANDBOX-EXCL-004). trade.realizedPnl은 원장 값이라 항상 채운다.
+		if (!sellTrade.getInstrument().isTutorialSample()) {
+			account.addRealizedPnl(realizedPnl);
+		} else {
+			// 샌드박스 매도의 현금 입금도 같은 조건으로 별도 누적한다(spec 033 SANDBOX-EXCL-006).
+			account.addSandboxCashAdjustment(amount - fee);
+		}
 		return realizedPnl;
 	}
 

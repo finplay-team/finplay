@@ -85,6 +85,37 @@ class LimitOrderFillServiceTest {
 	}
 
 	@Test
+	void fillIfPendingBuyAccumulatesSandboxCashAdjustmentWhenInstrumentIsTutorialSample() {
+		// spec 033 SANDBOX-EXCL-006 call site #4: 샌드박스 종목 지정가 매수 체결은 confirmReservedCash와
+		// 별도로 sandboxCashAdjustment에 음수로 누적된다.
+		Instrument instrument = cryptoInstrument();
+		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
+		Account account = account();
+		account.reserveCash(100_050L);
+		Order order = limitPendingOrder(account, instrument, OrderSide.BUY, "0.1", "1000000");
+		when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+		when(accountService.getAccountByIdForUpdate(account.getId())).thenReturn(account);
+
+		service.fillIfPending(order.getId());
+
+		assertThat(account.getSandboxCashAdjustment()).isEqualTo(-100_050L);
+	}
+
+	@Test
+	void fillIfPendingBuyDoesNotAccumulateSandboxCashAdjustmentWhenInstrumentIsReal() {
+		Instrument instrument = cryptoInstrument();
+		Account account = account();
+		account.reserveCash(100_050L);
+		Order order = limitPendingOrder(account, instrument, OrderSide.BUY, "0.1", "1000000");
+		when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+		when(accountService.getAccountByIdForUpdate(account.getId())).thenReturn(account);
+
+		service.fillIfPending(order.getId());
+
+		assertThat(account.getSandboxCashAdjustment()).isEqualTo(0L);
+	}
+
+	@Test
 	void fillIfPendingFillsBuyOrderWhenNoExistingHoldingForNewInstrument() {
 		// 신규 종목 첫 매수: LimitOrderFillService는 holding을 조회·잠그지 않고 전량 PortfolioBuyService에
 		// 위임한다(holding 신규 생성은 PortfolioBuyService.applyBuyTrade 내부의 orElseGet이 처리, plan.md).

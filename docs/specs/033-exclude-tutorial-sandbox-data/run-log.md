@@ -1,0 +1,19 @@
+# Run Log: 033-exclude-tutorial-sandbox-data
+
+## AI 로그 (에이전트 참조용)
+| 시각 | 에이전트 | 실행 명령 | 근거 |
+|---|---|---|---|
+| - | implementer | `HoldingRepository`/`BuyTradeJournalRepositoryImpl`/`SellTradeJournalRepositoryImpl` 조건절 수정 후 `.\gradlew.bat compileJava compileTestJava` | plan.md 1·2번, spec SANDBOX-EXCL-001·002 |
+| - | implementer | `TradeRepository.findDistinctAccountIdsBySideAndMarket`에 `t.instrument.tutorialSample = false` 추가(Instrument 실제 필드명 확인, getter `isTutorialSample`과 다름), `existsByAccountIdAndSide`/`existsBySideAndAccountMarket`을 `...Instrument_TutorialSampleFalse` 파생 쿼리로 교체, `TradeService.hasSellHistory`/`hasAnySellHistory` 내부 구현 변경 후 `.\gradlew.bat compileJava compileTestJava` | plan.md 3-1번, spec SANDBOX-EXCL-003 |
+| - | implementer | `PortfolioSellService.finalizeSellRealizedPnl`·`OrderExecutionService.createSellOrder`에 `instrument.isTutorialSample()` 분기로 `account.addRealizedPnl` skip 추가, 기존 단위 테스트 클래스에 케이스 추가 후 `.\gradlew.bat compileJava compileTestJava` | plan.md 3-2번, spec SANDBOX-EXCL-004 |
+| - | implementer | `Account`에 `sandboxCashAdjustment`(long)·`addSandboxCashAdjustment(long)` 추가, plan.md 4-4번 표의 5개 지점(`OrderExecutionService.createBuyOrder`/`createSellOrder`, `PortfolioSellService.finalizeSellRealizedPnl`, `LimitOrderFillService.fillBuy`, `PracticeHoldingReflectionService.payTutorialCompletionReward`)에 누적 호출 추가, 각 클래스 기존 단위 테스트에 케이스 추가 후 `.\gradlew.bat compileJava compileTestJava` | plan.md 4-2·4-4번, spec SANDBOX-EXCL-006 |
+| - | implementer | `AccountService.getAccountSummary`의 `totalValue` 계산에 `- account.getSandboxCashAdjustment()` 추가(`returnRate`는 코드 변경 없이 그대로 재사용), `PortfolioService.getPortfolioSummary`는 코드 확인만 하고 변경 없음(이미 `AccountSummaryResponse.totalValue` 합산). 단위 테스트 2건(조정치 있음/0 회귀) 추가, `AccountSummaryIntegrationTest`에 plan.md §4-3 수치 예시와 동일 구조의 통합 테스트 추가 후 `.\gradlew.bat compileJava compileTestJava` | plan.md 4-5번, spec SANDBOX-EXCL-007 |
+| - | implementer | `origin/dev` 최신 `V33` 확인 후 `V34__add_sandbox_cash_adjustment_and_backfill.sql`(컬럼 추가 + `sandbox_cash_adjustment`·`realized_pnl` 전체 덮어쓰기 재계산, plan.md 5번 SQL 그대로) 작성. `SandboxCashAdjustmentBackfillMigrationTest`(`@DataJpaTest`, 마이그레이션 파일의 UPDATE 문을 그대로 읽어 재실행) 신설 — 오염 계좌 재계산, 클린 계좌 불변, 재실행 멱등성 3케이스. 부수적으로 `AccountSummaryIntegrationTest`의 returnRate 기대값 오류(0.0993→0.0999, 컬럼 부재로 그동안 한 번도 실행된 적 없어 미검증 상태였던 산술 오류)와 nickname 50자 제한 초과 테스트 픽스처 버그를 발견해 함께 수정. `.\gradlew.bat compileJava compileTestJava` 통과 후 `.\gradlew.bat build` 전체 그린 확인 | plan.md 5번, spec SANDBOX-EXCL-005·008, ADR-0004, ADR-0021 §결정7 |
+
+## 모니터링 (사람용 요약)
+- 포트폴리오·투자일기 조회 필터(tasks.md 항목 1) 구현, `@DataJpaTest`에 샌드박스 제외·`findHoldingId`/`findHoldingForOwner` 회귀 테스트 추가, 컴파일 통과.
+- 랭킹 대상자·status 판정 필터(tasks.md 항목 2) 구현, 파생 쿼리명은 `Instrument_IsTutorialSampleFalse`가 아니라 `Instrument_TutorialSampleFalse`(엔티티 필드명이 `tutorialSample`)로 확정, 기존·신규 `@DataJpaTest` 모두 컴파일 통과.
+- 매도 체결 쓰기 시점 필터(tasks.md 항목 3) 구현, 시장가·지정가 매도 두 경로 모두 샌드박스 종목이면 `account.addRealizedPnl` skip, `trade.realizedPnl`·`account.cashBalance`·이벤트 발행은 항상 수행. 기존 단위 테스트 클래스에 케이스 추가, 컴파일 통과.
+- `sandboxCashAdjustment` 엔티티·5개 지점 누적(tasks.md 항목 4) 구현, `cashBalance`/`reservedCash` 계산·검증 로직은 손대지 않았고 병렬 누적 컬럼만 추가. 5곳 각각 샌드박스/실제 종목 케이스 단위 테스트 추가(보상 지급은 무조건 호출 검증), 컴파일 통과.
+- `totalValue`·`returnRate` 표시 시점 배제(tasks.md 항목 5) 구현, `cashBalance`·`realizedPnl`·`unrealizedPnl`은 미변경, `PortfolioService`는 변경 불필요 확인. 단위 테스트 통과 확인(`AccountServiceTest` 전체 그린). 통합 테스트(`AccountSummaryIntegrationTest`)는 컴파일만 통과 — `accounts.sandbox_cash_adjustment` 컬럼 마이그레이션(tasks.md 항목 6, 아직 미착수)이 없어 Hibernate 스키마 검증 실패로 실행은 불가함을 확인(코드 결함 아님, 후속 작업 의존).
+- `V34` 마이그레이션(tasks.md 항목 6) 작성, 컬럼 추가는 그대로 두고 `sandbox_cash_adjustment`·`realized_pnl` 재계산 UPDATE 2건은 전체 덮어쓰기(멱등)로 구현. 마이그레이션 파일을 직접 읽어 재실행하는 방식의 테스트로 오염 계좌 재계산·클린 계좌 불변·재실행 멱등성 3케이스 확인. 컬럼이 생기면서 그동안 실행조차 못 했던 `AccountSummaryIntegrationTest`가 드러낸 산술 오류(returnRate 기대값)와 nickname 길이 초과 테스트 버그를 함께 고쳤다. `.\gradlew.bat build` 전체 통과(BUILD SUCCESSFUL).
