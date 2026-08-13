@@ -25,6 +25,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 		this.jwtTokenProvider = jwtTokenProvider;
 	}
 
+	// SSE emitter가 completeWithError()로 완료되면 서블릿 컨테이너가 같은 요청에 ASYNC 재디스패치를 일으키는데,
+	// 이 필터가 기본값(true)대로 그 디스패치를 건너뛰면 SecurityContext가 비어 AuthorizationFilter가 거부한다
+	// (이슈 #359). STATELESS라 매 디스패치마다 Authorization 헤더에서 다시 인증해도 비용이 작다.
+	@Override
+	protected boolean shouldNotFilterAsyncDispatch() {
+		return false;
+	}
+
 	@Override
 	protected void doFilterInternal(
 		HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
