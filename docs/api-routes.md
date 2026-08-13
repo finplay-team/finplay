@@ -47,6 +47,8 @@
 | PATCH | /api/orders/{orderId} | order | 인증 사용자 본인 소유의 `PENDING` 코인 지정가 주문의 `limitPrice`·`quantity`를 부분/전체 갱신 (200, `LimitOrderResponse`). 변경 전 예약을 해제하고 변경 후 값으로 재예약(매수는 현금, 매도는 수량), 부족하면 거부하고 변경 전 상태 유지. 검증 순서는 존재(404)→소유(403)→상태(409) 고정(LMT-003과 동일), 신규 오류 코드 없음. `Idempotency-Key` 헤더 불필요(자연 멱등) | 015 LMT-005, Issue #239 |
 | GET | /api/orders?market=&cursor=&limit= | order | 인증 사용자 본인의 시장별(`STOCK`\|`CRYPTO`) 주문 목록을 최신순(동시각 `id` 내림차순)으로 커서 페이지네이션 조회. `market` 쿼리 파라미터 필수, `cursor`·`limit`(기본 20, 1~100) 선택. 체결 전용 필드는 노출하지 않음 | 006 PORT-003, 018 PORT-003(1차 고도화), Issue #21, Issue #182 |
 | GET | /api/orders/pending?market=&cursor=&limit= | order | 인증 사용자 본인의 시장별(`STOCK`\|`CRYPTO`) `PENDING` 상태 지정가 주문만 최신순(동시각 `id` 내림차순)으로 커서 페이지네이션 조회. `market` 쿼리 파라미터 필수, `cursor`·`limit`(기본 20, 1~100) 선택. 체결·취소로 상태가 바뀐 주문은 이후 조회에서 제외되는 실시간 목록 | 015 LMT-004, Issue #235 |
+| POST | /api/exit-plans | order | 코인 holding에 대한 **일반 경로**(`intentionId` 생략) 손절·익절 OCO 예약 생성 (201). `holdingId`·`quantity`·`exitPriceType` 필수, `Idempotency-Key` 헤더 필수. `intentionId`를 지정하는 교육 경로는 아직 지원하지 않음(400) | 021 일반 리스크관리 OCO, Issue #348 |
+| DELETE | /api/exit-plans/{exitPlanId} | order | 인증 사용자 본인 소유의 `PENDING` OCO 예약을 취소하고 예약 수량을 반환 (204, 본문 없음). 경로(일반/교육) 공통 | 021 일반 리스크관리 OCO, Issue #348 |
 | GET | /api/accounts/summary?market= | account | 인증 사용자 본인의 시장별(`STOCK`\|`CRYPTO`) 계좌 요약(현금잔고·예약현금·보유평가액·총평가액·실현손익·미실현손익·수익률) 조회. `market` 쿼리 파라미터 필수 | 006 ACCT-002, Issue #81, 015 LMT-004(reservedCash), Issue #235 |
 | GET | /api/holdings?market= | portfolio | 인증 사용자 본인의 시장별(`STOCK`\|`CRYPTO`) 활성 보유 종목 목록(수량·예약수량·평균단가·현재가·평가금액·미실현손익·수익률·시세 상태 + 종목 표시 정보) 조회. `market` 쿼리 파라미터 필수, 전량 매도 종목은 목록에서 제외 | 006 PORT-001, Issue #52, 015 LMT-004(reservedQuantity), Issue #235 |
 | GET | /api/trades?market=&cursor=&limit= | order | 인증 사용자 본인의 시장별(`STOCK`\|`CRYPTO`) 체결 내역을 `executedAt` 내림차순(동시각 `id` 내림차순)으로 커서 페이지네이션 조회. `market` 쿼리 파라미터 필수, `cursor`·`limit`(기본 20, 1~100) 선택. 매도 건은 실현손익 포함 | 006 PORT-002, Issue #82 |
@@ -82,21 +84,19 @@
 
 ## 투자 실습 계획 라우트 (아직 구현하지 않음)
 
-`016` candidate 1~4와 표시 전용 합성 시세, `026`의 관찰·복기·진행 조회, `030`의 세션 생성·조회·next-tick·교육 지정가 4개는 위 실제 라우트다. 아래 표는 controller가 없는 계획 계약이며 블랙박스 QA 근거가 아니다.
+`016` candidate 1~4와 표시 전용 합성 시세, `026`의 관찰·복기·진행 조회, `030`의 세션 생성·조회·next-tick·교육 지정가 4개, 그리고 `021`(Issue #348)의 일반 경로 `POST`·`DELETE /api/exit-plans`는 위 실제 라우트다. 아래 표는 controller가 없는 계획 계약이며 블랙박스 QA 근거가 아니다.
 
-표의 뒤 7개는 전부 OCO 계열 **3차 MVP 착수분**이다(2026-08-06 확정). OCO 진행조회는 holding 기반 조회와 URL·완료 key를 공유하지 않는다.
+표의 5개는 전부 OCO 계열 **3차 MVP 착수분**이다(2026-08-06 확정). OCO 진행조회는 holding 기반 조회와 URL·완료 key를 공유하지 않는다. `GET /api/exit-plans?status=`는 라우트 자체가 아직 없다 — `POST`·`DELETE`는 Issue #348로 일반 경로만 production에 존재하고(위 실제 라우트 표 참고), 교육 경로(`intentionId` 지정)는 이 표의 나머지 항목과 함께 여전히 미착수다.
 
 | Method | URL | 도메인 | 요약 | Spec |
 |---|---|---|---|---|
 | GET | /api/education/practice/oco?market= | education | `market=STOCK|CRYPTO` 필수. `exitPlanId` 기반 3차 OCO 실습 진행 상태 순수 조회. `INVESTMENT_OCO_PRACTICE_V1|COIN_OCO_PRACTICE_V1` 별도 완료 key 사용 | 016 candidate 12, Issue #308 |
 | POST | /api/education/practice/oco/intentions | education | OCO 전용 사전 의도 기록. 종목 market에 따라 OCO 전용 progress를 생성·잠그고 intention에 내부 tutorial key를 귀속. holding 기반 intention과 상호 대체 불가 | 016 candidate 4 확장, Issue #308 |
-| POST | /api/exit-plans | order | 시장가 매수 체결분의 tutorial-only OCO 청산 예약 | 016 EDU-PRACTICE-003·005·006·010·013, candidate 7, 019 |
 | GET | /api/exit-plans?status= | order | 본인의 OCO 예약 목록 순수 조회. status 생략 시 PENDING, 현재는 PENDING만 허용 | 016 EDU-PRACTICE-003, candidate 8 |
-| DELETE | /api/exit-plans/{exitPlanId} | order | PENDING OCO 전체 취소와 예약 수량 1회 반환 | 016 EDU-PRACTICE-006, candidate 9 |
 | POST | /api/education/practice/observations | education | PENDING plan의 서버 현재가 관찰 기록 | 016 EDU-PRACTICE-012, candidate 13 |
 | POST | /api/education/practice/reflections | education | 관찰 증거 이후 자유 복기 저장과 최초 불변 완료 | 016 EDU-PRACTICE-007·011·013, candidate 14 |
 
-**투자 실습 관련 경로는 구현·계획을 막론하고 전부** 공개 경로에 추가하지 않으며 Access Bearer 인증을 요구한다 — 즐겨찾기 3개, 기존 사전 의도, 합성 시세, `026`의 관찰·복기 2개, 그리고 위 계획 11개 모두 해당한다. `POST /api/orders` 시장가 매수는 이미 제공 중인 기존 API를 그대로 사용하므로 계획 라우트에 중복 기재하지 않는다.
+**투자 실습 관련 경로는 구현·계획을 막론하고 전부** 공개 경로에 추가하지 않으며 Access Bearer 인증을 요구한다 — 즐겨찾기 3개, 기존 사전 의도, 합성 시세, `026`의 관찰·복기 2개, 위 실제 라우트로 옮긴 일반 경로 OCO 생성·취소 2개, 그리고 위 계획 5개 모두 해당한다. `POST /api/orders` 시장가 매수는 이미 제공 중인 기존 API를 그대로 사용하므로 계획 라우트에 중복 기재하지 않는다.
 
 #199의 PRICE/PERCENT intention 확장은 아직 실제 라우트 계약이 아니다. 구현 시 기존 타입 생략+가격 요청을 PRICE로 호환하고, OCO 계획 라우트는 가격·rate를 다시 받지 않고 intention 정본에서 확정한다. 상세 계약은 `docs/specs/019-exit-price-policy`를 따른다.
 
