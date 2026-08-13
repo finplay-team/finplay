@@ -243,4 +243,15 @@ public class ExitPlan {
 	public boolean isPending() {
 		return this.status == ExitPlanStatus.PENDING;
 	}
+
+	// 사용자 취소(021 plan.md "잠금 순서" — holding을 먼저 잠근 뒤 이 plan을 잠그고 호출한다). 호출부(서비스 계층)가
+	// 이미 PENDING 여부를 409로 검증한 뒤 부르므로, 여기서의 예외는 원장 불변식이 깨진 방어적 상황이다
+	// (Order.cancel과 같은 형태).
+	public void cancel(LocalDateTime closedAt) {
+		if (this.status != ExitPlanStatus.PENDING) {
+			throw new IllegalStateException("PENDING 상태의 예약만 취소할 수 있습니다.");
+		}
+		this.status = ExitPlanStatus.CANCELLED;
+		this.closedAt = closedAt;
+	}
 }

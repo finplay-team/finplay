@@ -59,4 +59,12 @@ public class ExitPlanCondition {
 		ExitPlan exitPlan, ExitPlanConditionType conditionType, BigDecimal triggerPrice, LocalDateTime now) {
 		return new ExitPlanCondition(exitPlan, conditionType, triggerPrice, now);
 	}
+
+	// 소속 exit plan이 사용자 취소로 종결될 때 PENDING 조건을 함께 종결한다(021 plan.md, 정확히 한 번 규칙).
+	public void cancel() {
+		if (this.status != ExitPlanConditionStatus.PENDING) {
+			throw new IllegalStateException("PENDING 상태의 조건만 취소할 수 있습니다.");
+		}
+		this.status = ExitPlanConditionStatus.CANCELLED;
+	}
 }
