@@ -63,7 +63,7 @@
   않는지 확인. 두 번 적용해도(재실행 시뮬레이션) 같은 결과인지(멱등성) 확인. (spec SANDBOX-EXCL-005·
   008, plan 5번)
 
-- [ ] **통합 테스트 + 문서 동기화 + `./gradlew build`** — Testcontainers 통합 테스트로 실제 종목 +
+- [x] **통합 테스트 + 문서 동기화 + `./gradlew build`** — Testcontainers 통합 테스트로 실제 종목 +
   샌드박스 종목을 함께 보유·매도한 계좌 하나가 `GET /api/holdings`·`GET /api/journal`·
   `GET /api/rankings`·`GET /api/rankings/me` 네 응답 모두에서 샌드박스 항목·대상자 판정이 빠지고
   실제 항목만 남는지 확인. 튜토리얼 완료 보상 + 실거래 평가차익 혼합 시나리오(위 작업에서 이미
