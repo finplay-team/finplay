@@ -8,7 +8,7 @@
   확인, `HoldingService.findHoldingId`/`findHoldingForOwner`(다른 메서드 사용)가 샌드박스 holding을
   여전히 찾는 회귀 테스트. (spec SANDBOX-EXCL-001·002, plan 1·2번)
 
-- [ ] **랭킹 대상자·status 판정 필터** — `TradeRepository.findDistinctAccountIdsBySideAndMarket`에
+- [x] **랭킹 대상자·status 판정 필터** — `TradeRepository.findDistinctAccountIdsBySideAndMarket`에
   `AND t.instrument.isTutorialSample = false` 추가. 기존 `existsByAccountIdAndSide`/
   `existsBySideAndAccountMarket`을 제거하고 `existsByAccountIdAndSideAndInstrument_IsTutorialSampleFalse`/
   `existsBySideAndAccountMarketAndInstrument_IsTutorialSampleFalse` 파생 쿼리로 교체, `TradeService.
