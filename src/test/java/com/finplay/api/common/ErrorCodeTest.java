@@ -11,7 +11,7 @@ class ErrorCodeTest {
 
 	@Test
 	void declaresEveryErrorCodeFromPrdAndOAuthSpecWithoutUnlistedOnes() {
-		assertThat(ErrorCode.values()).hasSize(39);
+		assertThat(ErrorCode.values()).hasSize(41);
 	}
 
 	@Test
@@ -48,6 +48,8 @@ class ErrorCodeTest {
 			Map.entry(ErrorCode.PRACTICE_PRICE_SESSION_MISMATCH, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.EXIT_PLAN_ALREADY_EXISTS, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.EXIT_PLAN_INVALID_PRICE_RANGE, HttpStatus.CONFLICT),
+			Map.entry(ErrorCode.EXIT_PLAN_NOT_FOUND, HttpStatus.NOT_FOUND),
+			Map.entry(ErrorCode.EXIT_PLAN_NOT_PENDING, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.IDEMPOTENCY_CONFLICT, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.ORDER_ALREADY_FILLED, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.ORDER_ALREADY_CANCELLED, HttpStatus.CONFLICT),
@@ -114,6 +116,10 @@ class ErrorCodeTest {
 			.isEqualTo("이미 대기 중인 손절·익절 예약이 있습니다.");
 		assertThat(ErrorCode.EXIT_PLAN_INVALID_PRICE_RANGE.getDefaultMessage())
 			.isEqualTo("손절가와 익절가의 범위가 올바르지 않습니다.");
+		assertThat(ErrorCode.EXIT_PLAN_NOT_FOUND.getDefaultMessage())
+			.isEqualTo("손절·익절 예약을 찾을 수 없습니다.");
+		assertThat(ErrorCode.EXIT_PLAN_NOT_PENDING.getDefaultMessage())
+			.isEqualTo("대기 중인 예약만 취소할 수 있습니다.");
 	}
 
 	@Test
