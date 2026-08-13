@@ -14,6 +14,7 @@ import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.dto.response.CandleResponse;
 import com.finplay.api.market.repository.InstrumentRepository;
 import com.finplay.api.market.store.CryptoPriceDto;
+import com.finplay.api.market.store.FeedConnectionStatus;
 import com.finplay.api.market.store.PriceStore;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -66,6 +67,10 @@ class CryptoCandleAndPriceIndependenceTest {
 		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
 		PriceStore priceStore = mock(PriceStore.class);
 		when(priceStore.isPriceAvailable("BTC")).thenReturn(true);
+		// getCryptoDisplayPriceQuote(표시 경로, PriceQueryService.getPrice가 위임)가 연결상태를 먼저 확인한다
+		// (032 PRICE-STALE-001, PR #360 리뷰 권장사항 후속 — race window 제거를 위해 isPriceAvailable 위임 대신
+		// getConnectionStatus()+getLatestPrice()를 직접 조합하도록 바뀌면서 이 stub이 필요해졌다. 단정은 불변).
+		when(priceStore.getConnectionStatus()).thenReturn(FeedConnectionStatus.CONNECTED);
 		when(priceStore.getLatestPrice("BTC"))
 			.thenReturn(Optional.of(new CryptoPriceDto("BTC", new BigDecimal("50000000"), NOW)));
 		CryptoCandleProvider cryptoCandleProvider = mock(CryptoCandleProvider.class);

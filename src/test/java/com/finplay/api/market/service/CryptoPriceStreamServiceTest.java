@@ -66,6 +66,10 @@ class CryptoPriceStreamServiceTest {
 		return new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null);
 	}
 
+	private static PriceQuoteDto staleQuote(BigDecimal price, LocalDateTime sourceTime) {
+		return new PriceQuoteDto(price, sourceTime, PriceStatus.STALE, null);
+	}
+
 	private static String joinSentTextEvents(SseEmitterTestHandler handler) {
 		return handler.getSentEvents().stream()
 			.map(CryptoPriceStreamServiceTest::unwrapData)
@@ -122,6 +126,26 @@ class CryptoPriceStreamServiceTest {
 		InstrumentPriceSnapshot first = snapshot.prices().get(0);
 		assertThat(first.symbol()).isEqualTo("SYM1");
 		assertThat(first.status()).isEqualTo(PriceStatus.AVAILABLE);
+	}
+
+	// PRICE-STALE-004: getPriceQuote가 STALE quote(연결 유지 + 신선도 초과, 마지막 가격 non-null)를
+	// 반환해도 buildSnapshot()이 필터링 없이 그대로 실어 나르는지 고정한다(코드 변경 없음, tasks.md 항목 4).
+	@Test
+	void buildSnapshotCarriesStaleQuoteThroughWithNonNullPriceAndSourceTime() {
+		Instrument instrument = cryptoInstrument(1, "XRP");
+		stubInstruments(List.of(instrument));
+		BigDecimal lastPrice = new BigDecimal("850.5");
+		LocalDateTime lastSourceTime = LocalDateTime.of(2026, 8, 10, 9, 4, 50);
+		when(priceQueryService.getPriceQuote(instrument)).thenReturn(staleQuote(lastPrice, lastSourceTime));
+
+		MarketSnapshotEvent snapshot = service.buildSnapshot();
+
+		assertThat(snapshot.prices()).hasSize(1);
+		InstrumentPriceSnapshot priceSnapshot = snapshot.prices().get(0);
+		assertThat(priceSnapshot.symbol()).isEqualTo("XRP");
+		assertThat(priceSnapshot.status()).isEqualTo(PriceStatus.STALE);
+		assertThat(priceSnapshot.price()).isEqualByComparingTo(lastPrice);
+		assertThat(priceSnapshot.sourceTime()).isEqualTo(lastSourceTime);
 	}
 
 	// ---------- sendSnapshot ----------

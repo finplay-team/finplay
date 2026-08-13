@@ -6,7 +6,7 @@ import com.finplay.api.common.ErrorCode;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.repository.InstrumentRepository;
-import com.finplay.api.market.store.CryptoPriceDto;
+import com.finplay.api.market.store.FeedConnectionStatus;
 import com.finplay.api.market.store.PriceStore;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -38,7 +38,7 @@ public class PriceQueryService {
 			return new OrderExecutionPriceDto(tutorialSampleInstrumentPriceService.getPriceQuote(instrument), null);
 		}
 		if (instrument.getMarket() == Market.CRYPTO) {
-			return new OrderExecutionPriceDto(requireAvailable(getCryptoPriceQuote(instrument)), null);
+			return new OrderExecutionPriceDto(requireAvailable(getCryptoExecutionPriceQuote(instrument)), null);
 		}
 
 		StockReplayPriceDto stockQuote = stockPriceProvider.getCurrentPrice(instrument.getId());
@@ -71,7 +71,7 @@ public class PriceQueryService {
 			return tutorialSampleInstrumentPriceService.getPriceQuote(instrument);
 		}
 		return instrument.getMarket() == Market.STOCK ? getStockPriceQuote(instrument)
-			: getCryptoPriceQuote(instrument);
+			: getCryptoDisplayPriceQuote(instrument);
 	}
 
 	// 계좌(=market) 단위로 여러 종목의 시세를 한 번에 조회한다 — 호출측(HoldingValuationService 등)이 이미 계좌 단위로 종목을
@@ -93,7 +93,7 @@ public class PriceQueryService {
 				throw new IllegalArgumentException("getPriceQuotes는 서로 다른 market이 섞인 종목 목록을 받을 수 없습니다.");
 			}
 			List<PriceQuoteDto> realQuotes = market == Market.STOCK ? getStockPriceQuotes(realInstruments)
-				: getCryptoPriceQuotes(realInstruments);
+				: getCryptoDisplayPriceQuotes(realInstruments);
 			for (int i = 0; i < realInstruments.size(); i++) {
 				realQuotesByInstrument.put(realInstruments.get(i), realQuotes.get(i));
 			}
@@ -115,15 +115,19 @@ public class PriceQueryService {
 			.toList();
 	}
 
-	private List<PriceQuoteDto> getCryptoPriceQuotes(List<Instrument> instruments) {
-		List<String> symbols = instruments.stream().map(Instrument::getSymbol).toList();
-		Map<String, CryptoPriceDto> latestPrices = priceStore.getLatestPrices(symbols);
+	// 표시 전용 배치 판정 — 연결상태는 요청당 1회만 조회해 재사용하고(PR #97 리뷰 권장사항), 심볼별 최신가 조회·신선도 판정만
+	// 반복한다. 단건 getCryptoDisplayPriceQuote와 동일한 규칙(연결 끊김→UNAVAILABLE, 연결 유지+fresh→AVAILABLE,
+	// 연결 유지+stale→STALE, 연결 유지+수신 이력 없음→UNAVAILABLE)이다 (PRICE-STALE-001).
+	private List<PriceQuoteDto> getCryptoDisplayPriceQuotes(List<Instrument> instruments) {
+		if (priceStore.getConnectionStatus() != FeedConnectionStatus.CONNECTED) {
+			return instruments.stream().map(instrument -> new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null))
+				.toList();
+		}
 		return instruments.stream()
-			.map(instrument -> {
-				CryptoPriceDto price = latestPrices.get(instrument.getSymbol());
-				return price == null ? new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null)
-					: new PriceQuoteDto(price.price(), price.receivedAt(), PriceStatus.AVAILABLE, null);
-			})
+			.map(instrument -> priceStore.getLatestPrice(instrument.getSymbol())
+				.map(price -> new PriceQuoteDto(price.price(), price.receivedAt(),
+					priceStore.isStale(price.receivedAt()) ? PriceStatus.STALE : PriceStatus.AVAILABLE, null))
+				.orElseGet(() -> new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null)))
 			.toList();
 	}
 
@@ -143,7 +147,9 @@ public class PriceQueryService {
 		return new PriceQuoteDto(quote.price(), quote.sourceTime(), PriceStatus.AVAILABLE, quote.sourceTradingDate());
 	}
 
-	private PriceQuoteDto getCryptoPriceQuote(Instrument instrument) {
+	// 주문 체결 전용 판정 — 표시 경로(getCryptoDisplayPriceQuote)가 생기기 전의 원본 로직 그대로다(이름만 변경, PRICE-STALE-003).
+	// AVAILABLE·UNAVAILABLE만 반환하며 stale은 UNAVAILABLE로 fail-closed 처리한다(MKT-004 무변경).
+	private PriceQuoteDto getCryptoExecutionPriceQuote(Instrument instrument) {
 		String symbol = instrument.getSymbol();
 		if (!priceStore.isPriceAvailable(symbol)) {
 			return new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null);
@@ -153,5 +159,21 @@ public class PriceQueryService {
 			.map(latestPrice -> new PriceQuoteDto(latestPrice.price(), latestPrice.receivedAt(), PriceStatus.AVAILABLE,
 				null))
 			.orElseGet(() -> new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null));
+	}
+
+	// 표시 전용 판정 — 연결 유지 + 수신 이력 있음이면 stale이어도 마지막 가격을 STALE로 보여준다(PRICE-STALE-001).
+	// 연결 끊김이거나 수신 이력이 아예 없으면 지금처럼 UNAVAILABLE이다(완화 대상 아님). 배치 버전
+	// (getCryptoDisplayPriceQuotes)과 동일하게 getConnectionStatus()·getLatestPrice()를 각 1회만 호출하고
+	// 같은 조회 결과에 isStale()을 직접 적용한다 — isPriceAvailable() 위임 후 별도로 getLatestPrice()를
+	// 다시 부르면 그 사이 새 틱이 도착했을 때 방금 fresh해진 값을 STALE로 잘못 라벨링하는 race window가
+	// 있었다(PR #360 리뷰 권장사항).
+	private PriceQuoteDto getCryptoDisplayPriceQuote(Instrument instrument) {
+		if (priceStore.getConnectionStatus() != FeedConnectionStatus.CONNECTED) {
+			return new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null); // 연결 끊김 — 완화 대상 아님
+		}
+		return priceStore.getLatestPrice(instrument.getSymbol())
+			.map(p -> new PriceQuoteDto(p.price(), p.receivedAt(),
+				priceStore.isStale(p.receivedAt()) ? PriceStatus.STALE : PriceStatus.AVAILABLE, null))
+			.orElseGet(() -> new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null)); // 받은 적 없음 — 완화 대상 아님
 	}
 }

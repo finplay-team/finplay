@@ -18,12 +18,12 @@ import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.domain.StockReplaySession;
 import com.finplay.api.market.repository.InstrumentRepository;
 import com.finplay.api.market.store.CryptoPriceDto;
+import com.finplay.api.market.store.FeedConnectionStatus;
 import com.finplay.api.market.store.PriceStore;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
@@ -134,9 +134,10 @@ class PriceQueryServiceTest {
 		Instrument instrument = Instrument.create(Market.CRYPTO, "BTC", "비트코인", BigDecimal.valueOf(1000), 5000L, true,
 			NOW);
 		when(instrumentRepository.findById(2L)).thenReturn(Optional.of(instrument));
-		when(priceStore.isPriceAvailable("BTC")).thenReturn(true);
+		when(priceStore.getConnectionStatus()).thenReturn(FeedConnectionStatus.CONNECTED);
 		when(priceStore.getLatestPrice("BTC"))
 			.thenReturn(Optional.of(new CryptoPriceDto("BTC", new BigDecimal("50000000"), NOW)));
+		// isStale은 stub하지 않는다 — Mockito mock의 boolean 기본값 false가 곧 "fresh"라 AVAILABLE로 떨어진다.
 		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
 			priceStore, mock(TutorialSampleInstrumentPriceService.class));
 
@@ -157,7 +158,7 @@ class PriceQueryServiceTest {
 		Instrument instrument = Instrument.create(Market.CRYPTO, "BTC", "비트코인", BigDecimal.valueOf(1000), 5000L, true,
 			NOW);
 		when(instrumentRepository.findById(2L)).thenReturn(Optional.of(instrument));
-		when(priceStore.isPriceAvailable("BTC")).thenReturn(false);
+		when(priceStore.getConnectionStatus()).thenReturn(FeedConnectionStatus.DISCONNECTED);
 		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
 			priceStore, mock(TutorialSampleInstrumentPriceService.class));
 
@@ -167,16 +168,16 @@ class PriceQueryServiceTest {
 		verify(priceStore, never()).getLatestPrice(any());
 	}
 
-	// isPriceAvailable=true 이후 조회 사이에 값이 사라지는 경합(레이스)까지 방어적으로 PRICE_UNAVAILABLE 처리하는지 확인한다.
+	// 연결은 유지되지만 그 심볼의 시세를 한 번도 받은 적이 없는 경우도 방어적으로 PRICE_UNAVAILABLE 처리하는지 확인한다.
 	@Test
-	void getPriceThrowsPriceUnavailableWhenCryptoLatestPriceMissingDespiteAvailableFlag() {
+	void getPriceThrowsPriceUnavailableWhenCryptoConnectionAliveButTickNeverReceived() {
 		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
 		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
 		PriceStore priceStore = mock(PriceStore.class);
 		Instrument instrument = Instrument.create(Market.CRYPTO, "BTC", "비트코인", BigDecimal.valueOf(1000), 5000L, true,
 			NOW);
 		when(instrumentRepository.findById(2L)).thenReturn(Optional.of(instrument));
-		when(priceStore.isPriceAvailable("BTC")).thenReturn(true);
+		when(priceStore.getConnectionStatus()).thenReturn(FeedConnectionStatus.CONNECTED);
 		when(priceStore.getLatestPrice("BTC")).thenReturn(Optional.empty());
 		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
 			priceStore, mock(TutorialSampleInstrumentPriceService.class));
@@ -256,9 +257,10 @@ class PriceQueryServiceTest {
 		Instrument instrument = Instrument.create(Market.CRYPTO, "BTC", "비트코인", BigDecimal.valueOf(1000), 5000L, true,
 			NOW);
 		when(instrumentRepository.findById(2L)).thenReturn(Optional.of(instrument));
-		when(priceStore.isPriceAvailable("BTC")).thenReturn(true);
+		when(priceStore.getConnectionStatus()).thenReturn(FeedConnectionStatus.CONNECTED);
 		when(priceStore.getLatestPrice("BTC"))
 			.thenReturn(Optional.of(new CryptoPriceDto("BTC", new BigDecimal("50000000"), NOW)));
+		// isStale은 stub하지 않는다 — Mockito mock의 boolean 기본값 false가 곧 "fresh"라 AVAILABLE로 떨어진다.
 		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
 			priceStore, mock(TutorialSampleInstrumentPriceService.class));
 
@@ -277,7 +279,7 @@ class PriceQueryServiceTest {
 		Instrument instrument = Instrument.create(Market.CRYPTO, "BTC", "비트코인", BigDecimal.valueOf(1000), 5000L, true,
 			NOW);
 		when(instrumentRepository.findById(2L)).thenReturn(Optional.of(instrument));
-		when(priceStore.isPriceAvailable("BTC")).thenReturn(false);
+		when(priceStore.getConnectionStatus()).thenReturn(FeedConnectionStatus.DISCONNECTED);
 		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
 			priceStore, mock(TutorialSampleInstrumentPriceService.class));
 
@@ -286,6 +288,91 @@ class PriceQueryServiceTest {
 		assertThat(result.price()).isNull();
 		assertThat(result.status()).isEqualTo(PriceStatus.UNAVAILABLE);
 		verify(priceStore, never()).getLatestPrice(any());
+	}
+
+	// 이하 PRICE-STALE-001·003 — 표시 경로 stale 완화(connected+stale)와 체결 경로 무변경 (docs/specs/032-price-quote-stale-split).
+
+	@Test
+	void getPriceQuoteReturnsStaleQuoteWithLastKnownPriceWhenCryptoConnectionAliveButTickIsStale() {
+		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
+		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
+		PriceStore priceStore = mock(PriceStore.class);
+		Instrument instrument = Instrument.create(Market.CRYPTO, "BTC", "비트코인", BigDecimal.valueOf(1000), 5000L, true,
+			NOW);
+		when(instrumentRepository.findById(2L)).thenReturn(Optional.of(instrument));
+		when(priceStore.getConnectionStatus()).thenReturn(FeedConnectionStatus.CONNECTED);
+		when(priceStore.getLatestPrice("BTC"))
+			.thenReturn(Optional.of(new CryptoPriceDto("BTC", new BigDecimal("50000000"), NOW)));
+		when(priceStore.isStale(NOW)).thenReturn(true);
+		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
+			priceStore, mock(TutorialSampleInstrumentPriceService.class));
+
+		PriceQuoteDto result = priceQueryService.getPriceQuote(2L);
+
+		assertThat(result.status()).isEqualTo(PriceStatus.STALE);
+		assertThat(result.price()).isEqualTo(new BigDecimal("50000000"));
+		assertThat(result.sourceTime()).isEqualTo(NOW);
+	}
+
+	@Test
+	void getPriceQuoteReturnsUnavailableQuoteWhenCryptoConnectionAliveButTickNeverReceived() {
+		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
+		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
+		PriceStore priceStore = mock(PriceStore.class);
+		Instrument instrument = Instrument.create(Market.CRYPTO, "BTC", "비트코인", BigDecimal.valueOf(1000), 5000L, true,
+			NOW);
+		when(instrumentRepository.findById(2L)).thenReturn(Optional.of(instrument));
+		when(priceStore.getConnectionStatus()).thenReturn(FeedConnectionStatus.CONNECTED);
+		when(priceStore.getLatestPrice("BTC")).thenReturn(Optional.empty());
+		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
+			priceStore, mock(TutorialSampleInstrumentPriceService.class));
+
+		PriceQuoteDto result = priceQueryService.getPriceQuote(2L);
+
+		assertThat(result.status()).isEqualTo(PriceStatus.UNAVAILABLE);
+		assertThat(result.price()).isNull();
+		assertThat(result.sourceTime()).isNull();
+	}
+
+	@Test
+	void getPriceDoesNotThrowAndReturnsStaleQuoteWhenCryptoConnectionAliveButTickIsStale() {
+		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
+		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
+		PriceStore priceStore = mock(PriceStore.class);
+		Instrument instrument = Instrument.create(Market.CRYPTO, "BTC", "비트코인", BigDecimal.valueOf(1000), 5000L, true,
+			NOW);
+		when(instrumentRepository.findById(2L)).thenReturn(Optional.of(instrument));
+		when(priceStore.getConnectionStatus()).thenReturn(FeedConnectionStatus.CONNECTED);
+		when(priceStore.getLatestPrice("BTC"))
+			.thenReturn(Optional.of(new CryptoPriceDto("BTC", new BigDecimal("50000000"), NOW)));
+		when(priceStore.isStale(NOW)).thenReturn(true);
+		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
+			priceStore, mock(TutorialSampleInstrumentPriceService.class));
+
+		// getPrice(Long)은 requireAvailable을 거치지만 STALE은 UNAVAILABLE이 아니므로 예외를 던지지 않는다 (PRICE-STALE-001).
+		PriceQuoteDto result = priceQueryService.getPrice(2L);
+
+		assertThat(result.status()).isEqualTo(PriceStatus.STALE);
+		assertThat(result.price()).isEqualTo(new BigDecimal("50000000"));
+		assertThat(result.sourceTime()).isEqualTo(NOW);
+	}
+
+	// 체결 경로(getOrderExecutionPrice)는 표시 경로가 완화되어도 stale이면 여전히 409를 던진다 (PRICE-STALE-003, MKT-004 fail-closed 무변경).
+	@Test
+	void getOrderExecutionPriceStillThrowsPriceUnavailableWhenCryptoTickIsStale() {
+		Instrument instrument = Instrument.create(
+			Market.CRYPTO, "BTC", "비트코인", new BigDecimal("0.00000001"), 5000L, true, NOW);
+		PriceStore priceStore = mock(PriceStore.class);
+		// 체결 경로는 getCryptoExecutionPriceQuote(옛 getCryptoPriceQuote)를 그대로 쓰므로 isPriceAvailable=false만으로 충분하다 —
+		// getConnectionStatus()는 호출되지 않는다(표시 경로 전용 판정).
+		when(priceStore.isPriceAvailable("BTC")).thenReturn(false);
+		PriceQueryService priceQueryService = new PriceQueryService(
+			mock(InstrumentRepository.class), mock(StockPriceProvider.class), priceStore,
+			mock(TutorialSampleInstrumentPriceService.class));
+
+		assertThatThrownBy(() -> priceQueryService.getOrderExecutionPrice(instrument))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode()).isEqualTo(ErrorCode.PRICE_UNAVAILABLE));
 	}
 
 	@Test
@@ -381,14 +468,17 @@ class PriceQueryServiceTest {
 	}
 
 	@Test
-	void getPriceQuotesForCryptoDelegatesToPriceStoreBatchMethodOnceAndMapsMissingSymbolAsUnavailable() {
+	void getPriceQuotesForCryptoQueriesConnectionStatusOnceAndMapsMissingSymbolAsUnavailable() {
 		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
 		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
 		PriceStore priceStore = mock(PriceStore.class);
 		Instrument btc = Instrument.create(Market.CRYPTO, "BTC", "비트코인", BigDecimal.valueOf(1000), 5000L, true, NOW);
 		Instrument eth = Instrument.create(Market.CRYPTO, "ETH", "이더리움", BigDecimal.valueOf(1000), 6000L, true, NOW);
-		when(priceStore.getLatestPrices(List.of("BTC", "ETH")))
-			.thenReturn(Map.of("BTC", new CryptoPriceDto("BTC", new BigDecimal("50000000"), NOW)));
+		when(priceStore.getConnectionStatus()).thenReturn(FeedConnectionStatus.CONNECTED);
+		when(priceStore.getLatestPrice("BTC"))
+			.thenReturn(Optional.of(new CryptoPriceDto("BTC", new BigDecimal("50000000"), NOW)));
+		when(priceStore.getLatestPrice("ETH")).thenReturn(Optional.empty());
+		// isStale은 stub하지 않는다 — Mockito mock의 boolean 기본값 false가 곧 "fresh"라 AVAILABLE로 떨어진다.
 		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
 			priceStore, mock(TutorialSampleInstrumentPriceService.class));
 
@@ -397,9 +487,70 @@ class PriceQueryServiceTest {
 		assertThat(results.get(0).price()).isEqualTo(new BigDecimal("50000000"));
 		assertThat(results.get(0).status()).isEqualTo(PriceStatus.AVAILABLE);
 		assertThat(results.get(1).status()).isEqualTo(PriceStatus.UNAVAILABLE);
-		verify(priceStore, times(1)).getLatestPrices(any());
-		verify(priceStore, never()).getLatestPrice(any());
+		// 연결상태는 심볼 수와 무관하게 요청당 1회만 조회해야 한다(PR #97 최적화, tasks.md 항목 2 지시사항).
+		verify(priceStore, times(1)).getConnectionStatus();
 		verify(priceStore, never()).isPriceAvailable(any());
+	}
+
+	// 이하 PRICE-STALE-001 배치판 — 단건 getCryptoDisplayPriceQuote와 동일한 규칙(연결 유지+stale→STALE,
+	// 연결 끊김·수신 이력 없음→UNAVAILABLE)을 배치에서도 확인한다(docs/specs/032-price-quote-stale-split tasks.md 항목 2).
+
+	@Test
+	void getPriceQuotesReturnsStaleQuoteWithLastKnownPriceWhenCryptoConnectionAliveButTickIsStale() {
+		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
+		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
+		PriceStore priceStore = mock(PriceStore.class);
+		Instrument btc = Instrument.create(Market.CRYPTO, "BTC", "비트코인", BigDecimal.valueOf(1000), 5000L, true, NOW);
+		when(priceStore.getConnectionStatus()).thenReturn(FeedConnectionStatus.CONNECTED);
+		when(priceStore.getLatestPrice("BTC"))
+			.thenReturn(Optional.of(new CryptoPriceDto("BTC", new BigDecimal("50000000"), NOW)));
+		when(priceStore.isStale(NOW)).thenReturn(true);
+		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
+			priceStore, mock(TutorialSampleInstrumentPriceService.class));
+
+		List<PriceQuoteDto> results = priceQueryService.getPriceQuotes(List.of(btc));
+
+		assertThat(results.get(0).status()).isEqualTo(PriceStatus.STALE);
+		assertThat(results.get(0).price()).isEqualTo(new BigDecimal("50000000"));
+		assertThat(results.get(0).sourceTime()).isEqualTo(NOW);
+	}
+
+	@Test
+	void getPriceQuotesReturnsUnavailableQuoteForAllInstrumentsWhenCryptoConnectionIsDisconnected() {
+		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
+		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
+		PriceStore priceStore = mock(PriceStore.class);
+		Instrument btc = Instrument.create(Market.CRYPTO, "BTC", "비트코인", BigDecimal.valueOf(1000), 5000L, true, NOW);
+		Instrument eth = Instrument.create(Market.CRYPTO, "ETH", "이더리움", BigDecimal.valueOf(1000), 6000L, true, NOW);
+		when(priceStore.getConnectionStatus()).thenReturn(FeedConnectionStatus.DISCONNECTED);
+		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
+			priceStore, mock(TutorialSampleInstrumentPriceService.class));
+
+		List<PriceQuoteDto> results = priceQueryService.getPriceQuotes(List.of(btc, eth));
+
+		assertThat(results).extracting(PriceQuoteDto::status)
+			.containsExactly(PriceStatus.UNAVAILABLE, PriceStatus.UNAVAILABLE);
+		assertThat(results).allSatisfy(quote -> assertThat(quote.price()).isNull());
+		// 연결이 끊기면 심볼별 최신가 조회 자체를 생략한다(불필요한 Redis 호출 방지).
+		verify(priceStore, never()).getLatestPrice(any());
+	}
+
+	@Test
+	void getPriceQuotesReturnsUnavailableQuoteWhenCryptoConnectionAliveButTickNeverReceived() {
+		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
+		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
+		PriceStore priceStore = mock(PriceStore.class);
+		Instrument btc = Instrument.create(Market.CRYPTO, "BTC", "비트코인", BigDecimal.valueOf(1000), 5000L, true, NOW);
+		when(priceStore.getConnectionStatus()).thenReturn(FeedConnectionStatus.CONNECTED);
+		when(priceStore.getLatestPrice("BTC")).thenReturn(Optional.empty());
+		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
+			priceStore, mock(TutorialSampleInstrumentPriceService.class));
+
+		List<PriceQuoteDto> results = priceQueryService.getPriceQuotes(List.of(btc));
+
+		assertThat(results.get(0).status()).isEqualTo(PriceStatus.UNAVAILABLE);
+		assertThat(results.get(0).price()).isNull();
+		assertThat(results.get(0).sourceTime()).isNull();
 	}
 
 	@Test
