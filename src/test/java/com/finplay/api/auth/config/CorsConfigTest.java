@@ -84,6 +84,20 @@ class CorsConfigTest {
 			.andExpect(status().isOk());
 	}
 
+	// 주문 생성 API가 요구하는 Idempotency-Key 헤더가 preflight에서 허용되는지 고정한다 — 이 헤더가
+	// 빠지면 브라우저가 실제 요청을 CORS 오류로 막아 주식·코인 주문이 전부 실패한다(2026-08-13 실측).
+	@ParameterizedTest(name = "preflight {0}")
+	@ValueSource(strings = {"/api/orders", "/api/orders/limit"})
+	void allowsIdempotencyKeyHeaderInOrderPreflight(String orderPath) throws Exception {
+		mockMvc.perform(options(orderPath)
+			.header(HttpHeaders.ORIGIN, ALLOWED_ORIGIN)
+			.header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST")
+			.header(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS, "Idempotency-Key"))
+			.andExpect(status().isOk())
+			.andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, ALLOWED_ORIGIN))
+			.andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_HEADERS, containsString("Idempotency-Key")));
+	}
+
 	@Test
 	void allowsConfiguredMethodsInPreflight() throws Exception {
 		mockMvc.perform(options("/api/community/posts/1")

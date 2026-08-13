@@ -22,6 +22,10 @@ public class CorsConfig {
 
 	private static final List<String> ALLOWED_METHODS = List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS");
 
+	// 주문 생성 API(POST /api/orders, POST /api/orders/limit)가 멱등성 판정에 쓰는 커스텀 헤더 — CORS
+	// 안전목록이 아니므로 여기서 허용하지 않으면 preflight 단계에서 막혀 주식·코인 주문이 전부 CORS 오류로 실패한다.
+	private static final String IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
+
 	// preflight 응답을 브라우저가 1시간 캐싱한다. 이슈 #108이 A안을 고른 근거 중 하나가 "preflight 왕복
 	// 비용"이었고, SSE는 재연결마다 이 왕복을 다시 치른다 — 캐시가 그 비용을 실질적으로 없앤다.
 	private static final long PREFLIGHT_CACHE_SECONDS = 3600L;
@@ -41,7 +45,8 @@ public class CorsConfig {
 		configuration.setAllowedMethods(ALLOWED_METHODS);
 		// SSE(/api/stocks/stream, /api/cryptos/stream)가 Authorization 헤더를 싣는다. 이 헤더는 CORS
 		// 안전목록이 아니므로 여기서 허용하지 않으면 preflight 단계에서 막혀 스트림이 열리지 않는다.
-		configuration.setAllowedHeaders(List.of(HttpHeaders.AUTHORIZATION, HttpHeaders.CONTENT_TYPE));
+		configuration.setAllowedHeaders(
+			List.of(HttpHeaders.AUTHORIZATION, HttpHeaders.CONTENT_TYPE, IDEMPOTENCY_KEY_HEADER));
 		// 크로스 오리진에서는 응답 헤더가 기본적으로 안 보인다. 장애 추적을 위해 요청 식별자만 연다.
 		configuration.setExposedHeaders(List.of(RequestIdFilter.REQUEST_ID_HEADER));
 		// 토큰을 localStorage + Bearer 헤더로 전달하므로 쿠키를 실을 일이 없다 (ADR-0022 §결정 2).
