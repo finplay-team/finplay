@@ -1,6 +1,6 @@
 # CD 런북 — `dev` 머지 자동 배포
 
-> **이 문서는 아직 "돌고 있는 파이프라인"의 기록이 아니다.** 2026-08-12 기준 `.github/workflows/deploy.yml`은 존재하지 않고, 아래 AWS 설정도 하나도 만들어지지 않았다. 이 문서는 [ADR-0021](../docs/adr/0021-continuous-deployment.md)이 결정한 목표 구조를 **구축 순서와 실패 대응까지 포함해 옮긴 것**이며, 각 항목은 실제로 수행한 시점에 체크한다.
+> **이 문서는 아직 "돌고 있는 파이프라인"의 기록이 아니다.** 2026-08-13 기준 `.github/workflows/deploy.yml`은 PR #357로 작성됐고 AWS 콘솔 설정(OIDC·IAM 역할·ECR·EC2 권한·GitHub Variables)도 완료됐지만, **파이프라인이 실제로 한 번도 실행된 적은 없다.** 이 문서는 [ADR-0021](../docs/adr/0021-continuous-deployment.md)이 결정한 목표 구조를 **구축 순서와 실패 대응까지 포함해 옮긴 것**이며, 각 항목은 실제로 수행한 시점에 체크한다.
 >
 > 결정의 근거·대안은 ADR-0021이 정본이다. 배포 아키텍처(EC2 + RDS·ElastiCache·S3 + 블루-그린) 자체는 [ADR-0020](../docs/adr/0020-managed-service-deployment.md)이 정본이다. **수동 배포 절차는 폐기하지 않는다** — 파이프라인이 막혔을 때의 폴백으로 [`README.md`](README.md)에 남아 있다.
 
@@ -57,6 +57,18 @@ IaC를 쓰지 않으므로 **이 절이 사실상 유일한 정본이다** (ADR-
   | EC2 명령 실행 | `ssm:SendCommand`·`GetCommandInvocation`·`ListCommandInvocations` | 배포 대상 인스턴스 + `AWS-RunShellScript` 문서 |
   | ALB 전환 | `elasticloadbalancing:DescribeListeners`·`DescribeTargetHealth`·`ModifyListener` | 해당 리스너·타깃 그룹 |
 - [ ] 역할 ARN을 GitHub 리포지터리 **Variable**(시크릿 아님 — ARN은 비밀이 아니다)로 등록한다.
+
+`deploy.yml`이 실제로 참조하는 GitHub 리포지터리 Variable 이름은 다음 7개다 — 워크플로우 파일을 거꾸로 뒤져 이름을 맞출 필요 없이 여기서 확인한다.
+
+| Variable | 값의 출처 |
+|---|---|
+| `AWS_REGION` | EC2·ALB·ECR이 있는 리전 |
+| `AWS_ROLE_ARN` | 위 §2에서 만든 배포용 역할 ARN |
+| `ECR_REPOSITORY` | §3에서 만든 ECR 리포지터리 이름 |
+| `EC2_INSTANCE_ID` | 배포 대상 EC2 인스턴스 ID |
+| `ALB_LISTENER_ARN` | ALB의 443 리스너 ARN (리스너 상세 화면에서 복사) |
+| `TG_BLUE_ARN` | blue 타깃 그룹 ARN |
+| `TG_GREEN_ARN` | green 타깃 그룹 ARN |
 
 ### 3. ECR 리포지터리
 
