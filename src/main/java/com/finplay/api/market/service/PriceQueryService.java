@@ -7,6 +7,7 @@ import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.repository.InstrumentRepository;
 import com.finplay.api.market.store.CryptoPriceDto;
+import com.finplay.api.market.store.FeedConnectionStatus;
 import com.finplay.api.market.store.PriceStore;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -38,7 +39,7 @@ public class PriceQueryService {
 			return new OrderExecutionPriceDto(tutorialSampleInstrumentPriceService.getPriceQuote(instrument), null);
 		}
 		if (instrument.getMarket() == Market.CRYPTO) {
-			return new OrderExecutionPriceDto(requireAvailable(getCryptoPriceQuote(instrument)), null);
+			return new OrderExecutionPriceDto(requireAvailable(getCryptoExecutionPriceQuote(instrument)), null);
 		}
 
 		StockReplayPriceDto stockQuote = stockPriceProvider.getCurrentPrice(instrument.getId());
@@ -71,7 +72,7 @@ public class PriceQueryService {
 			return tutorialSampleInstrumentPriceService.getPriceQuote(instrument);
 		}
 		return instrument.getMarket() == Market.STOCK ? getStockPriceQuote(instrument)
-			: getCryptoPriceQuote(instrument);
+			: getCryptoDisplayPriceQuote(instrument);
 	}
 
 	// 계좌(=market) 단위로 여러 종목의 시세를 한 번에 조회한다 — 호출측(HoldingValuationService 등)이 이미 계좌 단위로 종목을
@@ -143,7 +144,9 @@ public class PriceQueryService {
 		return new PriceQuoteDto(quote.price(), quote.sourceTime(), PriceStatus.AVAILABLE, quote.sourceTradingDate());
 	}
 
-	private PriceQuoteDto getCryptoPriceQuote(Instrument instrument) {
+	// 주문 체결 전용 판정 — 표시 경로(getCryptoDisplayPriceQuote)가 생기기 전의 원본 로직 그대로다(이름만 변경, PRICE-STALE-003).
+	// AVAILABLE·UNAVAILABLE만 반환하며 stale은 UNAVAILABLE로 fail-closed 처리한다(MKT-004 무변경).
+	private PriceQuoteDto getCryptoExecutionPriceQuote(Instrument instrument) {
 		String symbol = instrument.getSymbol();
 		if (!priceStore.isPriceAvailable(symbol)) {
 			return new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null);
@@ -153,5 +156,24 @@ public class PriceQueryService {
 			.map(latestPrice -> new PriceQuoteDto(latestPrice.price(), latestPrice.receivedAt(), PriceStatus.AVAILABLE,
 				null))
 			.orElseGet(() -> new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null));
+	}
+
+	// 표시 전용 판정 — 연결 유지 + 수신 이력 있음이면 stale이어도 마지막 가격을 STALE로 보여준다(PRICE-STALE-001).
+	// 연결 끊김이거나 수신 이력이 아예 없으면 지금처럼 UNAVAILABLE이다(완화 대상 아님).
+	private PriceQuoteDto getCryptoDisplayPriceQuote(Instrument instrument) {
+		String symbol = instrument.getSymbol();
+		if (priceStore.isPriceAvailable(symbol)) {
+			// 연결 유지 + fresh — 기존 AVAILABLE 경로와 완전히 동일한 조회 순서·race 가드
+			return priceStore.getLatestPrice(symbol)
+				.map(p -> new PriceQuoteDto(p.price(), p.receivedAt(), PriceStatus.AVAILABLE, null))
+				.orElseGet(() -> new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null));
+		}
+		if (priceStore.getConnectionStatus() != FeedConnectionStatus.CONNECTED) {
+			return new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null); // 연결 끊김 — 완화 대상 아님
+		}
+		// 연결은 유지되지만 isPriceAvailable()이 false였다 → 신선도만 초과(stale)였거나, 애초에 시세를 받은 적이 없다.
+		return priceStore.getLatestPrice(symbol)
+			.map(p -> new PriceQuoteDto(p.price(), p.receivedAt(), PriceStatus.STALE, null))
+			.orElseGet(() -> new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null)); // 받은 적 없음 — 완화 대상 아님
 	}
 }

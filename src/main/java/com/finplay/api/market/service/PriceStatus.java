@@ -3,5 +3,6 @@ package com.finplay.api.market.service;
 
 public enum PriceStatus {
 	AVAILABLE,
+	STALE, // 연결 유지 + 마지막 수신 틱이 10초 초과(표시 전용 완화, PRICE-STALE-001). price·sourceTime은 non-null.
 	UNAVAILABLE
 }
