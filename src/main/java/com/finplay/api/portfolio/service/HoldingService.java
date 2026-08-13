@@ -47,9 +47,13 @@ public class HoldingService {
 
 	// 026-market-order-practice-tutorial 3단계 관찰 API용 — holdingId로 조회하되 계좌 소유자가 본인이 아니면
 	// 존재를 숨겨 빈 값을 반환한다(호출측이 404 NOT_FOUND로 매핑).
+	// 021 PR #368 리뷰 차단 1: instrument는 LAZY라 open-in-view=false 환경에서 이 메서드가 반환한 뒤(트랜잭션
+	// 종료 후) 호출부가 holding.getInstrument()에 접근하면 LazyInitializationException이 난다. account는
+	// 아래 filter에서 이미 이 세션 안에 초기화되므로 안전하지만, instrument는 그렇지 않아 JOIN FETCH로 즉시
+	// 로딩한다(findByIdFetchingInstrument).
 	@Transactional(readOnly = true)
 	public Optional<Holding> findHoldingForOwner(Long userId, Long holdingId) {
-		return holdingRepository.findById(holdingId)
+		return holdingRepository.findByIdFetchingInstrument(holdingId)
 			.filter(holding -> holding.getAccount().getUser().getId().equals(userId));
 	}
 }

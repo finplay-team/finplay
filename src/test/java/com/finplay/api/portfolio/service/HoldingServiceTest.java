@@ -208,7 +208,7 @@ class HoldingServiceTest {
 		Holding holding = Holding.create(account, instrument, NOW);
 		org.springframework.test.util.ReflectionTestUtils.setField(holding, "id", 99L);
 
-		when(holdingRepository.findById(99L)).thenReturn(java.util.Optional.of(holding));
+		when(holdingRepository.findByIdFetchingInstrument(99L)).thenReturn(java.util.Optional.of(holding));
 
 		java.util.Optional<Holding> result = holdingService.findHoldingForOwner(1L, 99L);
 
@@ -223,7 +223,7 @@ class HoldingServiceTest {
 		HoldingService holdingService = new HoldingService(accountService, holdingRepository,
 			holdingValuationService);
 
-		when(holdingRepository.findById(99L)).thenReturn(java.util.Optional.empty());
+		when(holdingRepository.findByIdFetchingInstrument(99L)).thenReturn(java.util.Optional.empty());
 
 		java.util.Optional<Holding> result = holdingService.findHoldingForOwner(1L, 99L);
 
@@ -246,7 +246,7 @@ class HoldingServiceTest {
 		Holding holding = Holding.create(account, instrument, NOW);
 		org.springframework.test.util.ReflectionTestUtils.setField(holding, "id", 99L);
 
-		when(holdingRepository.findById(99L)).thenReturn(java.util.Optional.of(holding));
+		when(holdingRepository.findByIdFetchingInstrument(99L)).thenReturn(java.util.Optional.of(holding));
 
 		java.util.Optional<Holding> result = holdingService.findHoldingForOwner(1L, 99L);
 

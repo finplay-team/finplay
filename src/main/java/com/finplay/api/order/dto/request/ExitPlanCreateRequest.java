@@ -2,7 +2,9 @@
 package com.finplay.api.order.dto.request;
 
 import com.finplay.api.order.domain.ExitPriceType;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 import java.math.BigDecimal;
 
 /**
@@ -19,11 +21,19 @@ public record ExitPlanCreateRequest(
 	Long buyTradeId,
 	Long instrumentId,
 	Long holdingId,
-	@NotNull(message = "수량은 필수입니다.")
+	@NotNull(message = "수량은 필수입니다.") @Positive(message = "수량은 0보다 커야 합니다.")
 	BigDecimal quantity,
 	ExitPriceType exitPriceType,
+	// exit_plans.stop_loss_price/take_profit_price DECIMAL(18,8) 기준 — PRICE 모드 원본 값이 그대로 저장된다.
+	// null 허용(@Digits·@Positive는 null이면 통과) — PRICE/PERCENT 필수 여부는 ExitPlanService가 검증한다.
+	@Digits(integer = 10, fraction = 8, message = "손절가는 정수부 10자리·소수부 8자리 이하여야 합니다.") @Positive(message = "손절가는 0보다 커야 합니다.")
 	BigDecimal stopLoss,
+	@Digits(integer = 10, fraction = 8, message = "익절가는 정수부 10자리·소수부 8자리 이하여야 합니다.") @Positive(message = "익절가는 0보다 커야 합니다.")
 	BigDecimal takeProfit,
+	// exit_plans.stop_loss_rate DECIMAL(7,4) 기준 — 계산된 가격이 아니라 원본 rate 자체가 이 컬럼에 저장된다.
+	@Digits(integer = 3, fraction = 4, message = "손절률은 정수부 3자리·소수부 4자리 이하여야 합니다.") @Positive(message = "손절률은 0보다 커야 합니다.")
 	BigDecimal stopLossRate,
+	// exit_plans.take_profit_rate DECIMAL(8,4) 기준.
+	@Digits(integer = 4, fraction = 4, message = "익절률은 정수부 4자리·소수부 4자리 이하여야 합니다.") @Positive(message = "익절률은 0보다 커야 합니다.")
 	BigDecimal takeProfitRate) {
 }

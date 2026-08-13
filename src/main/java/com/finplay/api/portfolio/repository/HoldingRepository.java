@@ -14,6 +14,13 @@ public interface HoldingRepository extends JpaRepository<Holding, Long> {
 
 	Optional<Holding> findByAccountIdAndInstrumentId(Long accountId, Long instrumentId);
 
+	// HoldingService.findHoldingForOwner 전용 — 021 PR #368 리뷰 차단 1: open-in-view=false 운영 환경에서
+	// 트랜잭션 종료 후 instrument(LAZY)에 접근하면 LazyInitializationException이 난다. 호출부가 세션이 열린
+	// 트랜잭션 안에서 instrument까지 즉시 로딩해 반환하도록 JOIN FETCH로 조회한다.
+	@Query("SELECT h FROM Holding h JOIN FETCH h.instrument WHERE h.id = :id")
+	Optional<Holding> findByIdFetchingInstrument(@Param("id")
+	Long id);
+
 	// PR #97 리뷰 권장사항 1: ORDER BY 없이는 응답 순서가 DB 임의 순서였다 — 종목 심볼 오름차순으로 고정한다.
 	// 033-exclude-tutorial-sandbox-data(SANDBOX-EXCL-001): 튜토리얼 샌드박스 종목 holding은 제외한다.
 	@Query("SELECT h FROM Holding h JOIN FETCH h.instrument WHERE h.account.id = :accountId AND h.isActive = true "
