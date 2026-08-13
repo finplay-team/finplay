@@ -1,4 +1,4 @@
-// V34가 만든 exit_plan_idempotency_keys의 (user_id, idempotency_key) unique와 key-first 조회를 검증하는 슬라이스 테스트다 (021 plan "멱등성").
+// V35가 만든 exit_plan_idempotency_keys의 (user_id, idempotency_key) unique와 key-first 조회를 검증하는 슬라이스 테스트다 (021 plan "멱등성").
 package com.finplay.api.order.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;

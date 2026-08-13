@@ -1,4 +1,4 @@
-// V34가 만든 세 테이블의 컬럼 타입·NULL 허용 여부와 unique·FK 구성을 information_schema로 직접 대조하는 슬라이스 테스트다.
+// V35가 만든 세 테이블의 컬럼 타입·NULL 허용 여부와 unique·FK 구성을 information_schema로 직접 대조하는 슬라이스 테스트다.
 package com.finplay.api.order.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -18,7 +18,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 /**
  * <b>왜 엔티티가 아니라 스키마를 보는가.</b> {@code ddl-auto=validate}는 컬럼 존재와 타입만 검사하고 NULL 허용 여부,
  * DECIMAL 정밀도, unique·FK 구성은 보지 않는다. 이 클래스가 021 plan.md "데이터 모델" 표를 물리 스키마에 고정한다.
- * (엔티티 ↔ V34 정합성 자체는 이 테스트 컨텍스트가 {@code validate}로 기동하는 것으로 확인된다 — 매핑이 어긋나면
+ * (엔티티 ↔ V35 정합성 자체는 이 테스트 컨텍스트가 {@code validate}로 기동하는 것으로 확인된다 — 매핑이 어긋나면
  * 컨텍스트 로딩 단계에서 실패한다.)
  *
  * <p>컬럼이 조용히 추가·변경되면 먼저 깨지도록 <b>맵 전체를 비교</b>한다.
@@ -232,7 +232,7 @@ class ExitPlanSchemaConstraintsTest {
 	}
 
 	@Test
-	@DisplayName("V34가 만든 세 테이블이 모두 존재한다")
+	@DisplayName("V35가 만든 세 테이블이 모두 존재한다")
 	void createsAllThreeExitPlanTables() {
 		List<String> tables = jdbcTemplate.queryForList(
 			"select table_name from information_schema.tables where table_schema = database() "

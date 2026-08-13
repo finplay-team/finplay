@@ -1,4 +1,4 @@
-// V34가 만든 exit_plans의 FK·nullable 조합과 (user_id, intention_instance_key) unique, 조회 메서드를 검증하는 슬라이스 테스트다 (021 plan "데이터 모델").
+// V35가 만든 exit_plans의 FK·nullable 조합과 (user_id, intention_instance_key) unique, 조회 메서드를 검증하는 슬라이스 테스트다 (021 plan "데이터 모델").
 package com.finplay.api.order.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
