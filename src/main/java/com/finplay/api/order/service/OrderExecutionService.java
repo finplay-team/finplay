@@ -154,7 +154,11 @@ public class OrderExecutionService {
 		trade.fillRealizedPnl(realizedPnl);
 
 		account.addCash(pricing.amount() - pricing.fee());
-		account.addRealizedPnl(realizedPnl);
+		// 샌드박스(튜토리얼) 종목 매도 손익은 계좌 집계(랭킹 score)에 반영하지 않는다(spec 033
+		// SANDBOX-EXCL-004). trade.realizedPnl은 원장 값이라 항상 채운다.
+		if (!instrument.isTutorialSample()) {
+			account.addRealizedPnl(realizedPnl);
+		}
 		// 커밋 이후(after-commit)에만 랭킹에 반영되도록 이벤트만 발행한다 — 손익값을 싣지 않고 이벤트 처리 시점에
 		// DB에서 최신 realizedPnl을 다시 조회한다(동시성 경합 Decision Gate, plan.md).
 		eventPublisher.publishEvent(new RealizedPnlUpdatedEvent(account.getId()));

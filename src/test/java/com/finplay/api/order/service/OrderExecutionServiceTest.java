@@ -326,6 +326,33 @@ class OrderExecutionServiceTest {
 	}
 
 	@Test
+	void createOrderSellSkipsAccountRealizedPnlWhenInstrumentIsTutorialSampleButTradeRealizedPnlIsAlwaysFilled() {
+		// spec 033 SANDBOX-EXCL-004: 샌드박스 종목 시장가 매도는 account.realizedPnl에 반영하지 않지만
+		// trade.realizedPnl·account.cashBalance는 항상 그대로 반영된다.
+		Instrument instrument = stockInstrument();
+		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
+		Account account = account(com.finplay.api.account.domain.Market.STOCK);
+		Holding holding = mock(Holding.class);
+		User user = testUser();
+		BigDecimal quantity = new BigDecimal("3");
+		// price 10000 * 3 = amount 30000, fee = floor(30000*0.00015)=4
+		stubSellHappyPath(instrument, account, user, new BigDecimal("10000"));
+		when(portfolioSellService.getHoldingForUpdateOrThrow(account, instrument, quantity)).thenReturn(holding);
+		when(portfolioSellService.applySellTrade(eq(holding), any(Trade.class), eq(quantity), eq(NOW)))
+			.thenReturn(new SellAllocationDto(20_000L, 3L));
+		OrderCreateRequest request = sellRequest(Market.STOCK, instrument.getId(), "3");
+
+		orderExecutionService.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, request);
+
+		assertThat(account.getRealizedPnl()).isEqualTo(0L);
+		assertThat(account.getCashBalance()).isEqualTo(10_000_000L + 30000L - 4L);
+		ArgumentCaptor<Trade> tradeCaptor = ArgumentCaptor.forClass(Trade.class);
+		verify(tradeRepository).save(tradeCaptor.capture());
+		// realizedPnl = (30000 - 4) - (20000 + 3) = 9993
+		assertThat(tradeCaptor.getValue().getRealizedPnl()).isEqualTo(9993L);
+	}
+
+	@Test
 	void createOrderSellPublishesRealizedPnlUpdatedEventAfterAddingRealizedPnl() {
 		// 랭킹 갱신(after-commit 리스너)이 반응할 수 있도록 SELL 체결 시 이벤트가 정확히 1회 발행되는지 검증한다.
 		Instrument instrument = stockInstrument();

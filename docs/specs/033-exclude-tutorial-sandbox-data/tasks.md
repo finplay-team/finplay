@@ -17,7 +17,7 @@
   목록·`existsBy...` 판정 모두에서 매도 이력 없는 계좌와 동일하게 취급되는지, 실제 종목 매도 이력이
   있는 계좌는 그대로 포함되는 회귀 확인. (spec SANDBOX-EXCL-003, plan 3-1번)
 
-- [ ] **매도 체결 쓰기 시점 필터 — `realized_pnl`** — `PortfolioSellService.finalizeSellRealizedPnl`과
+- [x] **매도 체결 쓰기 시점 필터 — `realized_pnl`** — `PortfolioSellService.finalizeSellRealizedPnl`과
   `OrderExecutionService.createSellOrder`(시장가 매도 인라인 계산) 각각에서, 매도 종목이
   `isTutorialSample()`이면 `account.addRealizedPnl(...)` 호출을 건너뛴다. `trade.fillRealizedPnl(...)`·
   `account.addCash(...)`·`RealizedPnlUpdatedEvent` 발행은 종목 종류와 무관하게 항상 수행한다(변경
