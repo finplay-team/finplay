@@ -289,6 +289,68 @@ class AccountServiceTest {
 		assertThat(result.returnRate()).isEqualByComparingTo(BigDecimal.ZERO);
 	}
 
+	// SANDBOX-EXCL-007: sandboxCashAdjustment가 있으면 totalValue·returnRate가 그만큼 줄고,
+	// cashBalance·holdingsValue·realizedPnl·unrealizedPnl은 그대로여야 한다.
+	@Test
+	void getAccountSummarySubtractsSandboxCashAdjustmentFromTotalValueAndReturnRateOnly() {
+		AccountRepository accountRepository = mock(AccountRepository.class);
+		HoldingValuationService holdingValuationService = mock(HoldingValuationService.class);
+		Clock fixedClock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
+		AccountService accountService = new AccountService(accountRepository, holdingValuationService, fixedClock);
+		User user = User.create("user@finplay.com", "password-hash", "finplayer",
+			LocalDateTime.ofInstant(FIXED_INSTANT, ZoneOffset.UTC));
+		Account account = Account.create(user, Market.STOCK,
+			LocalDateTime.ofInstant(FIXED_INSTANT, ZoneOffset.UTC));
+		account.addSandboxCashAdjustment(5_000_000L);
+		when(accountRepository.findByUserIdAndMarket(1L, Market.STOCK)).thenReturn(Optional.of(account));
+		when(holdingValuationService.evaluateActiveHoldingsForAccount(any())).thenReturn(List.of());
+
+		AccountSummaryResponse result = accountService.getAccountSummary(1L, Market.STOCK);
+
+		long expectedTotalValue = 10_000_000L - 5_000_000L;
+		BigDecimal expectedReturnRate = BigDecimal.valueOf(expectedTotalValue - 10_000_000L)
+			.divide(BigDecimal.valueOf(10_000_000L), 4, java.math.RoundingMode.HALF_UP);
+		assertThat(result.cashBalance()).isEqualTo(10_000_000L);
+		assertThat(result.holdingsValue()).isZero();
+		assertThat(result.totalValue()).isEqualTo(expectedTotalValue);
+		assertThat(result.returnRate()).isEqualByComparingTo(expectedReturnRate);
+		assertThat(result.realizedPnl()).isZero();
+		assertThat(result.unrealizedPnl()).isZero();
+	}
+
+	// SANDBOX-EXCL-007 회귀: sandboxCashAdjustment가 0이면 이 spec 이전과 결과가 완전히 같아야 한다.
+	@Test
+	void getAccountSummaryMatchesPreExistingBehaviorWhenSandboxCashAdjustmentIsZero() {
+		AccountRepository accountRepository = mock(AccountRepository.class);
+		HoldingValuationService holdingValuationService = mock(HoldingValuationService.class);
+		Clock fixedClock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
+		AccountService accountService = new AccountService(accountRepository, holdingValuationService, fixedClock);
+		User user = User.create("user@finplay.com", "password-hash", "finplayer",
+			LocalDateTime.ofInstant(FIXED_INSTANT, ZoneOffset.UTC));
+		Account account = Account.create(user, Market.STOCK,
+			LocalDateTime.ofInstant(FIXED_INSTANT, ZoneOffset.UTC));
+		account.deductCash(3_000_000L);
+		account.addRealizedPnl(50_000L);
+		when(accountRepository.findByUserIdAndMarket(1L, Market.STOCK)).thenReturn(Optional.of(account));
+		HoldingValuationDto profitable = new HoldingValuationDto(
+			BigDecimal.TEN, BigDecimal.valueOf(1_000), 10_000L, PriceStatus.AVAILABLE, BigDecimal.valueOf(1_200),
+			12_000L, 2_000L, BigDecimal.valueOf(0.2000));
+		when(holdingValuationService.evaluateActiveHoldingsForAccount(any())).thenReturn(List.of(profitable));
+
+		AccountSummaryResponse result = accountService.getAccountSummary(1L, Market.STOCK);
+
+		long expectedCashBalance = 7_000_000L;
+		long expectedHoldingsValue = 12_000L;
+		long expectedTotalValue = expectedCashBalance + expectedHoldingsValue;
+		assertThat(result.cashBalance()).isEqualTo(expectedCashBalance);
+		assertThat(result.holdingsValue()).isEqualTo(expectedHoldingsValue);
+		assertThat(result.totalValue()).isEqualTo(expectedTotalValue);
+		assertThat(result.realizedPnl()).isEqualTo(50_000L);
+		assertThat(result.unrealizedPnl()).isEqualTo(2_000L);
+		assertThat(result.returnRate()).isEqualByComparingTo(BigDecimal.valueOf(expectedTotalValue - 10_000_000L)
+			.divide(BigDecimal.valueOf(10_000_000L), 4, java.math.RoundingMode.HALF_UP));
+	}
+
 	@Test
 	void getAccountSummaryThrowsNotFoundWhenNoAccountExistsForUserAndMarket() {
 		AccountRepository accountRepository = mock(AccountRepository.class);

@@ -38,7 +38,7 @@
   종목별 호출 여부, 보상은 항상 호출), 기존 매수·매도·지정가 체결·보상 지급 단위 테스트에 케이스
   추가. (spec SANDBOX-EXCL-006, plan 4-2·4-4번)
 
-- [ ] **`totalValue`·`returnRate` 표시 시점 배제 (신규, 사용자 확정)** — `AccountService.
+- [x] **`totalValue`·`returnRate` 표시 시점 배제 (신규, 사용자 확정)** — `AccountService.
   getAccountSummary`의 `totalValue` 계산을 `cashBalance + holdingsValue - account.
   getSandboxCashAdjustment()`로 변경한다. `cashBalance`(응답 필드)·`realizedPnl`·`unrealizedPnl` 계산은
   변경 없음(각각 이미 원값 그대로 노출, 이미 SANDBOX-EXCL-004로 조정됨, 이미 실제 holding만 반영).

@@ -114,7 +114,7 @@ public class AccountService {
 		}
 
 		long cashBalance = account.getCashBalance();
-		long totalValue = cashBalance + holdingsValue;
+		long totalValue = cashBalance + holdingsValue - account.getSandboxCashAdjustment();
 		long realizedPnl = account.getRealizedPnl();
 		long seedMoney = account.getSeedMoney();
 		BigDecimal returnRate = seedMoney == 0
