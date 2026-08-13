@@ -6,7 +6,7 @@
 - [x] **1. `PriceStatus.STALE` 추가 + `PriceQueryService` 표시/체결 경로 분리 (단건)**
   `PriceStatus`에 `STALE` 값을 추가한다. `PriceQueryService`의 기존 private `getCryptoPriceQuote(Instrument)`를 `getCryptoExecutionPriceQuote(Instrument)`로 이름만 바꾸고(로직 무변경) `getOrderExecutionPrice`가 계속 이 메서드를 쓰도록 유지한다. 새 private `getCryptoDisplayPriceQuote(Instrument)`(plan.md 코드 참조)를 추가하고 `getPriceQuote(Instrument)`의 크립토 분기가 이 메서드를 쓰도록 바꾼다. `PriceQueryServiceTest`에 plan.md "테스트 계획" (a)~(f) 케이스(단건)를 추가하고, 기존 크립토 테스트 중 `isPriceAvailable=false`만 stub하던 것들에 `priceStore.getConnectionStatus()`를 `FeedConnectionStatus.DISCONNECTED`로 명시적으로 stub 추가(단정은 그대로 둔다). `CryptoCandleAndPriceIndependenceTest`를 실행해 회귀가 없는지 확인하고, 필요한 경우에만 stub을 보강한다(단정 불변).
 
-- [ ] **2. `PriceQueryService` 배치 표시 경로 분리**
+- [x] **2. `PriceQueryService` 배치 표시 경로 분리**
   기존 private 배치 `getCryptoPriceQuotes(List<Instrument>)`를 `getCryptoDisplayPriceQuotes(List<Instrument>)`로 대체한다(항목 1의 단건 판정과 동일한 규칙, 연결상태는 루프 밖에서 1회 조회). `getPriceQuotes(List<Instrument>)`의 크립토 분기가 이 메서드를 쓰도록 바꾼다. `PriceQueryServiceTest`에 배치 버전 stale/disconnected/한번도못받음 케이스를 추가한다.
 
 - [ ] **3. `HoldingValuationService` 엄격 유지 방어 수정**

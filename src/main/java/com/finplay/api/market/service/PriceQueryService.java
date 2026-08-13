@@ -6,7 +6,6 @@ import com.finplay.api.common.ErrorCode;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.repository.InstrumentRepository;
-import com.finplay.api.market.store.CryptoPriceDto;
 import com.finplay.api.market.store.FeedConnectionStatus;
 import com.finplay.api.market.store.PriceStore;
 import java.util.IdentityHashMap;
@@ -94,7 +93,7 @@ public class PriceQueryService {
 				throw new IllegalArgumentException("getPriceQuotes는 서로 다른 market이 섞인 종목 목록을 받을 수 없습니다.");
 			}
 			List<PriceQuoteDto> realQuotes = market == Market.STOCK ? getStockPriceQuotes(realInstruments)
-				: getCryptoPriceQuotes(realInstruments);
+				: getCryptoDisplayPriceQuotes(realInstruments);
 			for (int i = 0; i < realInstruments.size(); i++) {
 				realQuotesByInstrument.put(realInstruments.get(i), realQuotes.get(i));
 			}
@@ -116,15 +115,19 @@ public class PriceQueryService {
 			.toList();
 	}
 
-	private List<PriceQuoteDto> getCryptoPriceQuotes(List<Instrument> instruments) {
-		List<String> symbols = instruments.stream().map(Instrument::getSymbol).toList();
-		Map<String, CryptoPriceDto> latestPrices = priceStore.getLatestPrices(symbols);
+	// 표시 전용 배치 판정 — 연결상태는 요청당 1회만 조회해 재사용하고(PR #97 리뷰 권장사항), 심볼별 최신가 조회·신선도 판정만
+	// 반복한다. 단건 getCryptoDisplayPriceQuote와 동일한 규칙(연결 끊김→UNAVAILABLE, 연결 유지+fresh→AVAILABLE,
+	// 연결 유지+stale→STALE, 연결 유지+수신 이력 없음→UNAVAILABLE)이다 (PRICE-STALE-001).
+	private List<PriceQuoteDto> getCryptoDisplayPriceQuotes(List<Instrument> instruments) {
+		if (priceStore.getConnectionStatus() != FeedConnectionStatus.CONNECTED) {
+			return instruments.stream().map(instrument -> new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null))
+				.toList();
+		}
 		return instruments.stream()
-			.map(instrument -> {
-				CryptoPriceDto price = latestPrices.get(instrument.getSymbol());
-				return price == null ? new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null)
-					: new PriceQuoteDto(price.price(), price.receivedAt(), PriceStatus.AVAILABLE, null);
-			})
+			.map(instrument -> priceStore.getLatestPrice(instrument.getSymbol())
+				.map(price -> new PriceQuoteDto(price.price(), price.receivedAt(),
+					priceStore.isStale(price.receivedAt()) ? PriceStatus.STALE : PriceStatus.AVAILABLE, null))
+				.orElseGet(() -> new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null)))
 			.toList();
 	}
 
