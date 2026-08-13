@@ -113,6 +113,34 @@ class SellTradeJournalRepositoryTest {
 			NOW));
 	}
 
+	// 033-exclude-tutorial-sandbox-data(SANDBOX-EXCL-002) 테스트 전용: 지정한 종목으로 매도 체결을 만든다.
+	private Trade createSellTradeWithInstrument(Instrument tradeInstrument) {
+		sequence++;
+		Order order = orderRepository.saveAndFlush(Order.create(
+			user,
+			account,
+			tradeInstrument,
+			OrderSide.SELL,
+			OrderType.MARKET,
+			BigDecimal.valueOf(10),
+			"sell-journal-idem-" + sequence,
+			String.valueOf((char)('a' + sequence)).repeat(64),
+			NOW));
+		return tradeRepository.saveAndFlush(Trade.of(
+			order,
+			account,
+			tradeInstrument,
+			session,
+			OrderSide.SELL,
+			BigDecimal.valueOf(100),
+			BigDecimal.valueOf(10),
+			1_000L,
+			1L,
+			null,
+			NOW,
+			NOW));
+	}
+
 	private Trade createSellTradeFor(User tradeUser, Account tradeAccount) {
 		sequence++;
 		Order order = orderRepository.saveAndFlush(Order.create(
@@ -301,6 +329,27 @@ class SellTradeJournalRepositoryTest {
 	}
 
 	// --- ⑨ fetchSize(limit) 준수 ---
+
+	// --- ⑩ 033-exclude-tutorial-sandbox-data(SANDBOX-EXCL-002): 샌드박스 종목 매도 회고 제외 ---
+
+	@Test
+	@DisplayName("튜토리얼 샌드박스 종목 매도 체결의 회고는 커서 조회 결과에서 제외된다")
+	void findByAccountIdWithCursorExcludesTutorialSampleInstrumentJournals() {
+		Trade realTrade = createSellTrade();
+		SellTradeJournal realJournal = sellTradeJournalRepository.saveAndFlush(
+			SellTradeJournal.of(realTrade, CONTENT, NOW));
+
+		Instrument sandboxInstrument = instrumentRepository.findByMarketAndSymbol(Market.STOCK, "SANDBOX_STK_1")
+			.orElseThrow();
+		assertThat(sandboxInstrument.isTutorialSample()).isTrue();
+		Trade sandboxTrade = createSellTradeWithInstrument(sandboxInstrument);
+		sellTradeJournalRepository.saveAndFlush(SellTradeJournal.of(sandboxTrade, CONTENT, NOW));
+
+		List<SellTradeJournal> result = sellTradeJournalRepository.findByAccountIdWithCursor(account.getId(), null,
+			null, 10);
+
+		assertThat(result).extracting(SellTradeJournal::getId).containsExactly(realJournal.getId());
+	}
 
 	@Test
 	@DisplayName("fetchSize로 지정한 개수만큼만 반환한다")

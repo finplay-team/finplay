@@ -22,7 +22,9 @@ public class BuyTradeJournalRepositoryImpl implements BuyTradeJournalRepositoryC
 		Long accountId, LocalDateTime cursorCreatedAt, Long cursorTradeId, int fetchSize) {
 		QBuyTradeJournal journal = QBuyTradeJournal.buyTradeJournal;
 
-		BooleanBuilder condition = new BooleanBuilder(journal.buyTrade.account.id.eq(accountId));
+		// 033-exclude-tutorial-sandbox-data(SANDBOX-EXCL-002): 튜토리얼 샌드박스 종목 매수 회고는 제외한다.
+		BooleanBuilder condition = new BooleanBuilder(
+			journal.buyTrade.account.id.eq(accountId).and(journal.buyTrade.instrument.tutorialSample.eq(false)));
 		if (cursorCreatedAt != null && cursorTradeId != null) {
 			condition.and(
 				journal.createdAt.lt(cursorCreatedAt)

@@ -148,6 +148,58 @@ class HoldingRepositoryTest {
 	}
 
 	@Test
+	@DisplayName("033-exclude-tutorial-sandbox-data(SANDBOX-EXCL-001): 튜토리얼 샌드박스 종목 보유는 결과에서 제외한다")
+	void findAllByAccountIdAndIsActiveTrueExcludesTutorialSampleInstrumentHoldings() {
+		Holding realHolding = Holding.create(ownerAccount, instrument, NOW);
+		realHolding.applyBuy(BigDecimal.TEN, new BigDecimal("50000"), NOW);
+		holdingRepository.saveAndFlush(realHolding);
+
+		Instrument sandboxInstrument = instrumentRepository.findByMarketAndSymbol(Market.STOCK, "SANDBOX_STK_1")
+			.orElseThrow();
+		assertThat(sandboxInstrument.isTutorialSample()).isTrue();
+		Holding sandboxHolding = Holding.create(ownerAccount, sandboxInstrument, NOW);
+		sandboxHolding.applyBuy(BigDecimal.ONE, new BigDecimal("10000"), NOW);
+		holdingRepository.saveAndFlush(sandboxHolding);
+
+		List<Holding> result = holdingRepository.findAllByAccountIdAndIsActiveTrue(ownerAccount.getId());
+
+		assertThat(result).extracting(Holding::getId).containsExactly(realHolding.getId());
+	}
+
+	@Test
+	@DisplayName("회귀: findByAccountIdAndInstrumentId(HoldingService.findHoldingId가 사용)는 "
+		+ "튜토리얼 샌드박스 종목 보유도 여전히 찾는다 — 026/031 튜토리얼 chain 해석이 깨지면 안 된다")
+	void findByAccountIdAndInstrumentIdStillFindsTutorialSampleInstrumentHoldingRegression() {
+		Instrument sandboxInstrument = instrumentRepository.findByMarketAndSymbol(Market.STOCK, "SANDBOX_STK_1")
+			.orElseThrow();
+		assertThat(sandboxInstrument.isTutorialSample()).isTrue();
+		Holding sandboxHolding = Holding.create(ownerAccount, sandboxInstrument, NOW);
+		sandboxHolding.applyBuy(BigDecimal.ONE, new BigDecimal("10000"), NOW);
+		holdingRepository.saveAndFlush(sandboxHolding);
+
+		var result = holdingRepository.findByAccountIdAndInstrumentId(ownerAccount.getId(), sandboxInstrument.getId());
+
+		assertThat(result).isPresent();
+		assertThat(result.get().getId()).isEqualTo(sandboxHolding.getId());
+	}
+
+	@Test
+	@DisplayName("회귀: findById(HoldingService.findHoldingForOwner가 사용)는 "
+		+ "튜토리얼 샌드박스 종목 보유도 여전히 찾는다 — 026 3단계 관찰 API가 깨지면 안 된다")
+	void findByIdStillFindsTutorialSampleInstrumentHoldingRegression() {
+		Instrument sandboxInstrument = instrumentRepository.findByMarketAndSymbol(Market.STOCK, "SANDBOX_STK_1")
+			.orElseThrow();
+		Holding sandboxHolding = Holding.create(ownerAccount, sandboxInstrument, NOW);
+		sandboxHolding.applyBuy(BigDecimal.ONE, new BigDecimal("10000"), NOW);
+		holdingRepository.saveAndFlush(sandboxHolding);
+
+		var result = holdingRepository.findById(sandboxHolding.getId());
+
+		assertThat(result).isPresent();
+		assertThat(result.get().getInstrument().isTutorialSample()).isTrue();
+	}
+
+	@Test
 	@DisplayName("계좌·종목 조합으로 락 조회하면 해당 보유가 반환된다 (015-limit-order LMT-001·LMT-002)")
 	void findByAccountIdAndInstrumentIdForUpdateReturnsMatchingHolding() {
 		Holding holding = Holding.create(ownerAccount, instrument, NOW);
