@@ -58,7 +58,9 @@ public class PracticeHoldingObservationService {
 			.orElseThrow(() -> new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING));
 
 		// 세션 귀속 buyTrade(030 교육 지정가 체결)는 같은 세션 currentPrice를, 세션 없는 기존 시장가·실제
-		// 지정가 buyTrade는 PriceQueryService.getPrice(가격 없으면 스스로 PRICE_UNAVAILABLE(409))를 쓴다
+		// 지정가 buyTrade는 PriceQueryService.getPrice(표시 경로)를 쓴다 — 코인이 연결 유지 + stale이어도
+		// 마지막 실제 가격을 그대로 관찰 근거로 받아들인다(의도적 승계, 032 PRICE-STALE-005, 이슈 #355).
+		// 가격이 아예 없으면(연결 끊김·미수신) getPrice가 스스로 PRICE_UNAVAILABLE(409)을 던진다
 		// (이슈 #321, plan.md "holding 관찰 연결").
 		BigDecimal observedPrice = practicePriceObservationService
 			.findObservationPrice(userId, chain.buyTradeId(), holding.getInstrument().getId())

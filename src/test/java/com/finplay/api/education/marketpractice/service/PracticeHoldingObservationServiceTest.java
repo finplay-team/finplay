@@ -192,6 +192,46 @@ class PracticeHoldingObservationServiceTest {
 	}
 
 	@Test
+	void createObservationUsesLastKnownPriceWhenCryptoPriceIsStale() {
+		// 032 PRICE-STALE-005(의도적 승계): getPrice()가 표시 경로라 코인이 연결 유지 + stale이어도
+		// 예외 없이 마지막 실제 가격을 반환한다 — 이 서비스는 status를 따로 확인하지 않고 그 가격을
+		// 그대로 관찰 근거로 쓴다(PR #360 리뷰 차단 사항 후속).
+		when(holdingService.findHoldingForOwner(USER_ID, HOLDING_ID)).thenReturn(Optional.of(holding));
+		ResolvedPracticeChainDto chain = completedChain();
+		when(chainResolutionService.resolveForInstrument(USER_ID, PracticeIntentionService.TUTORIAL_KEY, INSTRUMENT_ID))
+			.thenReturn(Optional.of(chain));
+
+		ReferencePriceLines referenceLines = new ReferencePriceLines(new BigDecimal("90"), new BigDecimal("120"));
+		when(referencePriceCalculator.calculate(chain)).thenReturn(Optional.of(referenceLines));
+
+		when(practicePriceObservationService.findObservationPrice(USER_ID, chain.buyTradeId(), INSTRUMENT_ID))
+			.thenReturn(Optional.empty());
+		PriceQuoteDto staleQuote = new PriceQuoteDto(new BigDecimal("95"), OBSERVED_AT, PriceStatus.STALE, null);
+		when(priceQueryService.getPrice(INSTRUMENT_ID)).thenReturn(staleQuote);
+
+		List<PracticeMarketObservation> existing = List.of();
+		when(observationRepository.findByUserIdAndHoldingIdOrderByObservedAtAsc(USER_ID, HOLDING_ID))
+			.thenReturn(existing);
+
+		ObservationEvidenceJudgment judgment = new ObservationEvidenceJudgment(
+			true, PracticeBoundary.STOP_LOSS, PracticeEvidenceType.CLOSER_TO_BOUNDARY);
+		when(evidenceJudgmentService.judgeObservationEvidence(
+			chain.buyTradeEntryPrice(), referenceLines.referenceStopLossPrice(),
+			referenceLines.referenceTakeProfitPrice(), staleQuote.price(), existing, OBSERVED_AT))
+			.thenReturn(judgment);
+
+		PracticeMarketObservation saved = PracticeMarketObservation.create(
+			USER_ID, holding, INSTRUMENT_ID, staleQuote.price(), judgment.closerToBoundary(),
+			judgment.closerBoundary(), judgment.evidenceType(), OBSERVED_AT);
+		when(observationRepository.save(any(PracticeMarketObservation.class))).thenReturn(saved);
+
+		PracticeHoldingObservationResponse response = service.createObservation(
+			USER_ID, new PracticeHoldingObservationCreateRequest(HOLDING_ID));
+
+		assertThat(response.currentPrice()).isEqualByComparingTo("95");
+	}
+
+	@Test
 	void createObservationUsesSessionPriceAndSkipsRealPriceLookupWhenBuyTradeHasPracticeSession() {
 		when(holdingService.findHoldingForOwner(USER_ID, HOLDING_ID)).thenReturn(Optional.of(holding));
 		ResolvedPracticeChainDto chain = completedChain();
