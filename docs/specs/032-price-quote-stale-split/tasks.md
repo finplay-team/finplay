@@ -12,7 +12,7 @@
 - [x] **3. `HoldingValuationService` 엄격 유지 방어 수정**
   `buildValuation`의 조건을 `quote.status() == PriceStatus.UNAVAILABLE`에서 `quote.status() != PriceStatus.AVAILABLE`로 바꿔 STALE도 UNAVAILABLE과 동일하게 평가불가 처리되도록 명시적으로 고정한다. `HoldingValuationServiceTest`에 STALE `PriceQuoteDto` 입력 시 `priceStatus=UNAVAILABLE`이고 평가금액·손익·수익률이 null인 케이스를 추가한다. `docs/api-contracts.md`의 `## portfolio`·`## account` 절은 이 항목으로 인해 바뀌지 않음을 확인한다(변경 없으면 그대로 둔다).
 
-- [ ] **4. 표시/엄격 소비자 회귀 테스트 고정 (코드 변경 없음)**
+- [x] **4. 표시/엄격 소비자 회귀 테스트 고정 (코드 변경 없음)**
   `CryptoPriceStreamServiceTest`에 `priceQueryService.getPriceQuote(instrument)`가 STALE quote를 반환할 때 `buildSnapshot()`이 그대로(price·sourceTime non-null, status=STALE) 실어 나르는 케이스를 추가한다. `SyntheticPriceServiceTest`·`PracticePriceSessionServiceTest`에 STALE 입력 시 여전히 `FALLBACK_START_PRICE`를 쓰는 케이스를 각각 추가한다. 이 항목은 프로덕션 코드를 바꾸지 않고, 이미 "우연히 맞는" 동작을 테스트로 못박아 의도로 확정하는 것이 목적이다.
 
 - [ ] **5. Controller 슬라이스 테스트 + 문서 동기화 + 최종 빌드**

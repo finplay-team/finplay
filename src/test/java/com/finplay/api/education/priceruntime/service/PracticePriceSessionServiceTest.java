@@ -157,6 +157,24 @@ class PracticePriceSessionServiceTest {
 		assertThat(response.currentPrice()).isEqualByComparingTo("10000.00000000");
 	}
 
+	// PRICE-STALE-005: STALE도 AVAILABLE이 아니므로 fallback anchor(10000)를 쓰는지 고정한다(코드 변경 없음, tasks.md 항목 4).
+	@Test
+	void createSessionUsesFallbackTenThousandWhenPriceStale() {
+		Instrument crypto = cryptoInstrument(true);
+		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID)).thenReturn(crypto);
+		when(practicePriceSessionRepository.existsByUserIdAndInstrumentIdAndStatus(
+			USER_ID, INSTRUMENT_ID, PracticePriceSessionStatus.ACTIVE)).thenReturn(false);
+		when(priceQueryService.getPriceQuote(crypto))
+			.thenReturn(new PriceQuoteDto(new BigDecimal("54321.5"), NOW, PriceStatus.STALE, null));
+		when(practicePriceSessionRepository.saveAndFlush(any()))
+			.thenAnswer(invocation -> invocation.getArgument(0));
+
+		PracticePriceSessionResponse response = service.createSession(USER_ID, INSTRUMENT_ID);
+
+		assertThat(response.startPrice()).isEqualByComparingTo("10000.00000000");
+		assertThat(response.currentPrice()).isEqualByComparingTo("10000.00000000");
+	}
+
 	@Test
 	void createSessionPersistsInitialStateWithTickZeroAndCurrentPriceEqualToStartPrice() {
 		Instrument crypto = cryptoInstrument(true);
