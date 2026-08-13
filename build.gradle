@@ -16,6 +16,13 @@ java {
 	}
 }
 
+// plain jar(비실행용)를 끈다 — build/libs에 bootJar 하나만 남아야 CD 런타임 이미지
+// (Dockerfile.runtime)의 `COPY build/libs/*.jar app.jar`가 어느 jar가 복사되는지
+// 알파벳 순서에 기대지 않고 항상 유일하게 정해진다.
+tasks.named('jar') {
+	enabled = false
+}
+
 repositories {
 	mavenCentral()
 }

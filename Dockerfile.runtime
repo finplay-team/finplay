@@ -1,0 +1,15 @@
+# CD 파이프라인 전용 런타임 이미지. 러너가 미리 만든 bootJar만 담는다 (ADR-0021 §결정 4).
+# Gradle을 이미지 안에서 돌리지 않아 러너의 Gradle 캐시를 그대로 쓸 수 있다.
+# 기존 Dockerfile(멀티스테이지, 수동 배포·로컬 경로용)은 그대로 남긴다 — 이 이미지는 CD 전용이다.
+#
+# 빌드 전제: 러너에서 ./gradlew bootJar를 먼저 실행해 build/libs/*.jar가 존재해야 한다.
+# 실행: docker build -f Dockerfile.runtime -t <태그> .   (컨텍스트는 레포 루트)
+FROM eclipse-temurin:17-jre
+WORKDIR /app
+
+RUN useradd --create-home --uid 1001 finplay
+COPY build/libs/*.jar app.jar
+USER finplay
+
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]

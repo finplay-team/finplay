@@ -1,0 +1,285 @@
+# dev 머지 시 블루-그린 무중단 배포를 수행하는 CD 파이프라인 (ADR-0021, 이슈 #345·#356)
+name: Deploy
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "재배포할 커밋 SHA (비우면 현재 dev HEAD). workflow_dispatch는 반드시 dev 브랜치에서 실행한다 — OIDC 신뢰 정책이 ref:refs/heads/dev로 한정돼 있어 다른 브랜치에서 실행하면 AssumeRoleWithWebIdentity에서 막힌다."
+        required: false
+
+# 백엔드 push와 향후 다른 트리거가 겹치면 유휴 색을 서로 덮어쓸 수 있어 직렬화한다.
+# cancel-in-progress: true로 두면 전환 도중 취소되어 두 색이 어긋난 상태로 남을 수 있어 쓰지 않는다.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  id-token: write # AWS OIDC
+  contents: read
+
+jobs:
+  deploy:
+    # EC2가 t4g.small(Graviton/arm64)이라 x86 러너에서 만든 이미지는 exec format error로 죽는다.
+    # 이 러너의 실제 가용성은 아직 미확인 — 큐에 안 잡히면 ubuntu-latest + QEMU 크로스빌드로 대체한다.
+    runs-on: ubuntu-24.04-arm
+    steps:
+      # image_tag는 이후 ECR 태그·.env sed 치환·원격 셸 명령에 그대로 쓰인다 — checkout보다 먼저,
+      # 커밋 SHA 형식인지부터 검증해 특수문자 섞인 입력이 원격 스크립트를 깨뜨리는 것을 막는다.
+      #
+      # ${{ }} 표현식은 셸이 스크립트를 실행하기 전에 GitHub이 텍스트로 먼저 치환한다 — run: 블록
+      # 안에 직접 보간하면 image_tag에 $(...) 같은 커맨드 치환을 넣었을 때 정규식 검사도 거치기 전에
+      # 그 서브셸이 먼저 실행된다(이 job은 id-token: write 권한을 이미 가지고 있다). env:로 값을
+      # 전달하고 셸에서는 변수로만 참조해 텍스트 치환이 아니라 값 대입이 되게 한다.
+      - name: image_tag 입력 형식 검증
+        if: inputs.image_tag != ''
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          if ! [[ "$IMAGE_TAG" =~ ^[0-9a-f]{7,40}$ ]]; then
+            echo "::error::image_tag는 커밋 SHA(7~40자 소문자 hex) 형식만 허용한다: '$IMAGE_TAG'"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.image_tag || github.sha }}
+
+      - name: 배포할 이미지 태그 결정
+        id: image
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          TAG="$IMAGE_TAG"
+          if [ -z "$TAG" ]; then
+            TAG="${{ github.sha }}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "배포 대상 커밋: $TAG"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: bootJar 빌드
+        run: ./gradlew bootJar --no-daemon
+
+      - name: AWS 자격 증명 (OIDC — 장기 액세스 키 없음)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: ECR 로그인
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: 런타임 이미지 빌드 · ECR push (태그 = 커밋 SHA, latest 미사용)
+        env:
+          REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+          TAG: ${{ steps.image.outputs.tag }}
+        run: |
+          IMAGE="$REGISTRY/$REPOSITORY:$TAG"
+          docker build -f Dockerfile.runtime -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "이미지 push 완료: $IMAGE"
+
+      # 라이브 색은 ALB 리스너의 현재 기본 작업에서 읽는다 — 사람이 입력하지 않는다 (ADR-0021 §결정 5).
+      # 입력을 받으면 그 값이 틀렸을 때 라이브 색을 재기동하게 되고, 그것이 이 ADR이 지목한 가장 나쁜 실패다.
+      - name: 라이브 색 판별 (ALB 리스너 조회)
+        id: live-color
+        run: |
+          ACTIONS_JSON=$(aws elbv2 describe-listeners \
+            --listener-arns "${{ vars.ALB_LISTENER_ARN }}" \
+            --query 'Listeners[0].DefaultActions' --output json)
+          ACTION_COUNT=$(echo "$ACTIONS_JSON" | jq 'length')
+
+          # 리스너가 두 타깃 그룹으로 가중 분배 중인 예외 상태는 판별 불가로 보고 실패시킨다 —
+          # 조용히 한쪽을 고르지 않는다.
+          if [ "$ACTION_COUNT" -ne 1 ]; then
+            echo "::error::리스너 기본 작업이 1개가 아니다(가중 분배 중일 수 있음) — 라이브 색을 판별할 수 없다"
+            exit 1
+          fi
+
+          LIVE_TG=$(echo "$ACTIONS_JSON" | jq -r '.[0].TargetGroupArn')
+
+          if [ "$LIVE_TG" = "${{ vars.TG_BLUE_ARN }}" ]; then
+            LIVE=blue; IDLE=green; IDLE_TG="${{ vars.TG_GREEN_ARN }}"
+          elif [ "$LIVE_TG" = "${{ vars.TG_GREEN_ARN }}" ]; then
+            LIVE=green; IDLE=blue; IDLE_TG="${{ vars.TG_BLUE_ARN }}"
+          else
+            echo "::error::리스너가 알 수 없는 타깃 그룹을 가리킨다: $LIVE_TG"
+            exit 1
+          fi
+
+          echo "live=$LIVE" >> "$GITHUB_OUTPUT"
+          echo "idle=$IDLE" >> "$GITHUB_OUTPUT"
+          echo "live_tg=$LIVE_TG" >> "$GITHUB_OUTPUT"
+          echo "idle_tg=$IDLE_TG" >> "$GITHUB_OUTPUT"
+          echo "라이브 색: $LIVE / 이번 배포 대상(유휴 색): $IDLE"
+
+      # 유휴 색을 SSM Send Command로 기동한다. SSH 인바운드를 열지 않기 위해서다 (ADR-0021 §결정 3).
+      # 컨테이너 헬스체크 대기까지 같은 원격 스크립트 안에서 수행한다 — 앱 컨테이너는 호스트에 포트를
+      # 열지 않으므로(설계) 러너에서 직접 curl로 확인할 수 없다(docs/agent-mistakes.md 2026-08-11 오진 사례).
+      - name: 유휴 색 기동 + 컨테이너 헬스체크 대기 (SSM)
+        id: ssm-deploy
+        run: |
+          IDLE="${{ steps.live-color.outputs.idle }}"
+          IDLE_UPPER=$(echo "$IDLE" | tr '[:lower:]' '[:upper:]')
+          IMAGE="${{ steps.ecr-login.outputs.registry }}/${{ vars.ECR_REPOSITORY }}:${{ steps.image.outputs.tag }}"
+          AWS_REGION="${{ vars.AWS_REGION }}"
+          REGISTRY="${{ steps.ecr-login.outputs.registry }}"
+
+          cat > deploy-remote.sh <<SCRIPT
+          set -e
+          cd /home/ec2-user/finplay
+          aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $REGISTRY
+          # .env는 이 한 줄만 치환한다 — 다른 시크릿 값은 건드리지 않는다. .env의 정본은 EC2다.
+          sed -i "s|^APP_IMAGE_${IDLE_UPPER}=.*|APP_IMAGE_${IDLE_UPPER}=$IMAGE|" .env
+          docker compose -f compose.bluegreen.yaml up -d app-$IDLE
+
+          for i in \$(seq 1 36); do
+            STATUS=\$(docker inspect --format '{{.State.Health.Status}}' finplay-app-$IDLE 2>/dev/null || echo starting)
+            echo "컨테이너 헬스체크: \$STATUS (\$i/36)"
+            if [ "\$STATUS" = "healthy" ]; then
+              echo "컨테이너 healthy"
+              exit 0
+            fi
+            if [ "\$STATUS" = "unhealthy" ]; then
+              echo "컨테이너 unhealthy로 판정됨"
+              exit 1
+            fi
+            sleep 5
+          done
+          echo "타임아웃 — 3분 안에 healthy가 되지 않았다"
+          exit 1
+          SCRIPT
+
+          jq -n --rawfile script deploy-remote.sh '{commands: ($script | rtrimstr("\n") | split("\n"))}' > ssm-params.json
+
+          CMD_ID=$(aws ssm send-command \
+            --instance-ids "${{ vars.EC2_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --parameters file://ssm-params.json \
+            --query 'Command.CommandId' --output text)
+          echo "command_id=$CMD_ID" >> "$GITHUB_OUTPUT"
+          echo "SSM 명령 전송됨: $CMD_ID"
+
+      - name: SSM 명령 결과 대기 · 판독
+        id: ssm-wait
+        run: |
+          CMD_ID="${{ steps.ssm-deploy.outputs.command_id }}"
+          INSTANCE_ID="${{ vars.EC2_INSTANCE_ID }}"
+          STATUS="Pending"
+
+          for i in $(seq 1 50); do
+            sleep 5
+            STATUS=$(aws ssm get-command-invocation \
+              --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" \
+              --query Status --output text 2>/dev/null || echo Pending)
+            echo "SSM 명령 상태: $STATUS ($i/50)"
+            if [ "$STATUS" != "Pending" ] && [ "$STATUS" != "InProgress" ] && [ "$STATUS" != "Delayed" ]; then
+              break
+            fi
+          done
+
+          echo "SSM 명령 최종 상태: $STATUS"
+
+          # 실패 진단은 이 출력이 유일한 창구다 — 반드시 로그에 남긴다.
+          echo "--- stdout ---"
+          aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" \
+            --query StandardOutputContent --output text
+          echo "--- stderr ---"
+          aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" \
+            --query StandardErrorContent --output text
+
+          if [ "$STATUS" != "Success" ]; then
+            echo "::error::SSM 명령 실패 — 라이브 색은 건드리지 않았다"
+            exit 1
+          fi
+
+      # ALB 타깃 헬스는 컨테이너 헬스체크와 별개다 — 둘 다 통과해야 전환한다.
+      - name: ALB 타깃 헬스 대기
+        run: |
+          IDLE_TG="${{ steps.live-color.outputs.idle_tg }}"
+          for i in $(seq 1 24); do
+            STATE=$(aws elbv2 describe-target-health \
+              --target-group-arn "$IDLE_TG" \
+              --query 'TargetHealthDescriptions[0].TargetHealth.State' --output text)
+            echo "ALB 타깃 상태: $STATE ($i/24)"
+            if [ "$STATE" = "healthy" ]; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::타임아웃 — ALB 타깃이 healthy가 되지 않았다"
+          exit 1
+
+      # 헬스체크 실패 시 여기까지 오지 않는다 — 전환하지 않고 새 색만 정리한다 (ADR-0021 §결정 6).
+      # steps.live-color.outcome 가드: 라이브 색 판별 자체가 실패했으면(빌드 실패 등 이전 단계 실패 포함)
+      # 유휴 색이 무엇인지 모르므로 이 단계를 건너뛴다.
+      - name: 실패 시 유휴 색 정리 (라이브는 건드리지 않는다)
+        if: failure() && steps.live-color.outcome == 'success'
+        run: |
+          IDLE="${{ steps.live-color.outputs.idle }}"
+          echo "cd /home/ec2-user/finplay && docker compose -f compose.bluegreen.yaml stop app-$IDLE || true" > stop-remote.sh
+          jq -n --rawfile script stop-remote.sh '{commands: ($script | rtrimstr("\n") | split("\n"))}' > stop-params.json
+          aws ssm send-command \
+            --instance-ids "${{ vars.EC2_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --parameters file://stop-params.json \
+            --query 'Command.CommandId' --output text
+
+      - name: 리스너 전환
+        id: switch
+        run: |
+          aws elbv2 modify-listener \
+            --listener-arn "${{ vars.ALB_LISTENER_ARN }}" \
+            --default-actions Type=forward,TargetGroupArn=${{ steps.live-color.outputs.idle_tg }}
+          echo "전환 완료: ${{ steps.live-color.outputs.live }} → ${{ steps.live-color.outputs.idle }}"
+
+      # "자동 롤백"은 직전 색으로 되돌리는 것으로 좁게 정의한다 — 그 이상은 사람이 workflow_dispatch로
+      # 과거 SHA를 지정해 재실행하는 수동 경로다 (ADR-0021 §결정 6).
+      - name: 전환 후 타깃 상태 재확인 (실패 시 이전 색으로 복구 + 유휴 색 정리)
+        run: |
+          sleep 15
+          STATE=$(aws elbv2 describe-target-health \
+            --target-group-arn "${{ steps.live-color.outputs.idle_tg }}" \
+            --query 'TargetHealthDescriptions[0].TargetHealth.State' --output text)
+          echo "전환 후 상태: $STATE"
+          if [ "$STATE" != "healthy" ]; then
+            echo "::error::전환 후 unhealthy — 이전 색(${{ steps.live-color.outputs.live }})으로 되돌린다"
+            aws elbv2 modify-listener \
+              --listener-arn "${{ vars.ALB_LISTENER_ARN }}" \
+              --default-actions Type=forward,TargetGroupArn=${{ steps.live-color.outputs.live_tg }}
+
+            # 리스너를 되돌렸으니 방금 승격됐던 컨테이너는 더 이상 트래픽을 받지 않는다. 그래도 계속
+            # 띄워 두면 전환 전 실패 경로(정리함)와 정리 방식이 비대칭이 되므로 여기서도 내린다.
+            IDLE="${{ steps.live-color.outputs.idle }}"
+            echo "cd /home/ec2-user/finplay && docker compose -f compose.bluegreen.yaml stop app-$IDLE || true" > stop-remote.sh
+            jq -n --rawfile script stop-remote.sh '{commands: ($script | rtrimstr("\n") | split("\n"))}' > stop-params.json
+            aws ssm send-command \
+              --instance-ids "${{ vars.EC2_INSTANCE_ID }}" \
+              --document-name "AWS-RunShellScript" \
+              --parameters file://stop-params.json \
+              --query 'Command.CommandId' --output text
+
+            exit 1
+          fi
+          # 이전 색 컨테이너는 여기서 내리지 않는다 — 다음 배포까지 롤백 경로로 남긴다.
+
+      - name: 배포 요약
+        if: always()
+        run: |
+          {
+            echo "### 배포 결과"
+            echo "- 배포 커밋: \`${{ steps.image.outputs.tag }}\`"
+            echo "- 이전 라이브 색: \`${{ steps.live-color.outputs.live || '판별 실패' }}\`"
+            echo "- 이번 배포 대상 색: \`${{ steps.live-color.outputs.idle || '판별 실패' }}\`"
+            echo "- 워크플로우 결과: \`${{ job.status }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
