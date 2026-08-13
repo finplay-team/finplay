@@ -146,6 +146,20 @@ public class ExitPlan {
 		this.requestHash = requestHash;
 	}
 
+	// 019의 tagged union 불변식 — PERCENT만 원본 rate를 snapshot하고 PRICE는 rate 컬럼을 비운다.
+	// 요청 필드 조합 검증(stopLoss·takeProfit 포함)은 호출부 정책이 400으로 먼저 걸러낸다.
+	// 생성자가 아니라 정적 팩토리에서 호출한다 — 생성자에서 예외를 던지면 SpotBugs CT_CONSTRUCTOR_THROW가 잡는다
+	// (Trade.of의 validateStockReplaySession과 같은 형태).
+	private static void validateRateSnapshot(
+		ExitPriceType exitPriceType, BigDecimal stopLossRate, BigDecimal takeProfitRate) {
+		if (exitPriceType == ExitPriceType.PERCENT && (stopLossRate == null || takeProfitRate == null)) {
+			throw new IllegalArgumentException("PERCENT 방식은 손절률·익절률 snapshot이 모두 필요합니다.");
+		}
+		if (exitPriceType == ExitPriceType.PRICE && (stopLossRate != null || takeProfitRate != null)) {
+			throw new IllegalArgumentException("PRICE 방식은 손절률·익절률 snapshot을 가질 수 없습니다.");
+		}
+	}
+
 	// 일반 경로(intentionId 생략) 생성 — intentionId·intentionInstanceKey·buyTrade는 항상 null이다.
 	public static ExitPlan createGeneral(
 		User user,
@@ -162,6 +176,7 @@ public class ExitPlan {
 		LocalDateTime baselineObservedAt,
 		String requestHash,
 		LocalDateTime reservedAt) {
+		validateRateSnapshot(exitPriceType, stopLossRate, takeProfitRate);
 		return new ExitPlan(
 			user,
 			holding,
@@ -201,6 +216,10 @@ public class ExitPlan {
 		LocalDateTime baselineObservedAt,
 		String requestHash,
 		LocalDateTime reservedAt) {
+		if (intentionId == null || intentionInstanceKey == null || buyTrade == null) {
+			throw new IllegalArgumentException("교육 경로 OCO는 intentionId·intentionInstanceKey·buyTrade가 모두 필요합니다.");
+		}
+		validateRateSnapshot(exitPriceType, stopLossRate, takeProfitRate);
 		return new ExitPlan(
 			user,
 			holding,
