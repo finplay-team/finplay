@@ -29,9 +29,9 @@
 
 ## 선행 조건 — 이게 없으면 파이프라인을 만들 수 없다
 
-- [ ] **ALB + 타깃 그룹 2개(blue 8081 / green 8082) + ACM 인증서** — ADR-0020 §후속의 별도 이슈. ⑥의 "리스너 전환"이 성립하려면 리스너가 먼저 있어야 한다.
-- [ ] `compose.bluegreen.yaml`이 ECR 이미지를 참조하도록 전환 (현재는 `build:` 컨텍스트 기반).
-- [ ] 런타임 전용 Dockerfile 분리 (ADR-0021 §결정 4).
+- [x] **ALB + 타깃 그룹 2개(blue 8081 / green 8082) + ACM 인증서** — 2026-08-13 콘솔 확인. `finplay-alb`(활성), `finplay-blue`(healthy)·`finplay-green`(등록됨) 타깃 그룹, `finplay.site` 인증서 발급·사용 중.
+- [x] `compose.bluegreen.yaml`이 ECR 이미지를 참조하도록 전환 (PR #357).
+- [x] 런타임 전용 Dockerfile 분리 (PR #357, `Dockerfile.runtime`).
 
 ## AWS 콘솔 설정 (사람이 1회 수행)
 
@@ -39,24 +39,24 @@ IaC를 쓰지 않으므로 **이 절이 사실상 유일한 정본이다** (ADR-
 
 ### 1. GitHub OIDC 자격 증명 공급자
 
-- [ ] IAM → 자격 증명 공급자 → OpenID Connect 추가
+- [x] IAM → 자격 증명 공급자 → OpenID Connect 추가 (2026-08-13 완료)
   - 공급자 URL: `https://token.actions.githubusercontent.com`
   - 대상(Audience): `sts.amazonaws.com`
 
 ### 2. 배포용 IAM 역할
 
-- [ ] 위 OIDC 공급자를 신뢰하는 역할을 만든다. **신뢰 정책의 `sub` 조건을 브랜치까지 못박는다** — 레포까지만 제한하면 어떤 브랜치의 워크플로우든 이 역할을 가져간다 (ADR-0021 §결정 2).
+- [x] `finplay-cd-deploy-role` 생성 완료 (2026-08-13). **신뢰 정책의 `sub` 조건을 브랜치까지 못박았다** — 레포까지만 제한하면 어떤 브랜치의 워크플로우든 이 역할을 가져간다 (ADR-0021 §결정 2).
   ```
   "token.actions.githubusercontent.com:sub": "repo:finplay-team/finplay-backend:ref:refs/heads/dev"
   "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
   ```
-- [ ] 권한은 다음 네 가지로 한정한다. `*` 리소스를 쓰지 않는다.
+- [x] 권한을 다음 네 가지로 한정했다. `*` 리소스를 쓰지 않는다.
   | 용도 | 필요한 동작 | 리소스 |
   |---|---|---|
   | ECR push | `ecr:GetAuthorizationToken`(리소스 지정 불가) + `ecr:BatchCheckLayerAvailability`·`InitiateLayerUpload`·`UploadLayerPart`·`CompleteLayerUpload`·`PutImage` | 해당 ECR 리포지터리 |
   | EC2 명령 실행 | `ssm:SendCommand`·`GetCommandInvocation`·`ListCommandInvocations` | 배포 대상 인스턴스 + `AWS-RunShellScript` 문서 |
   | ALB 전환 | `elasticloadbalancing:DescribeListeners`·`DescribeTargetHealth`·`ModifyListener` | 해당 리스너·타깃 그룹 |
-- [ ] 역할 ARN을 GitHub 리포지터리 **Variable**(시크릿 아님 — ARN은 비밀이 아니다)로 등록한다.
+- [x] 역할 ARN(`arn:aws:iam::951532862726:role/finplay-cd-deploy-role`)을 GitHub 리포지터리 **Variable**(시크릿 아님)로 등록 완료.
 
 `deploy.yml`이 실제로 참조하는 GitHub 리포지터리 Variable 이름은 다음 7개다 — 워크플로우 파일을 거꾸로 뒤져 이름을 맞출 필요 없이 여기서 확인한다.
 
@@ -72,19 +72,16 @@ IaC를 쓰지 않으므로 **이 절이 사실상 유일한 정본이다** (ADR-
 
 ### 3. ECR 리포지터리
 
-- [ ] 리포지터리 생성(예: `finplay-api`). **이미지 스캔을 켠다.**
-- [ ] 수명 주기 정책 — 태그가 커밋 SHA라 무한히 쌓인다. **최근 10개만 유지**하도록 규칙을 넣는다 (ADR-0021 §결과의 비용 항목).
+- [x] `finplay-api` 리포지터리 생성 완료 (2026-08-13). **이미지 스캔 켜짐** (푸시 시 스캔).
+- [x] 수명 주기 정책 등록 완료 — 태그 상태 "모두 선택", 이미지 개수 10개 초과 시 만료. 콘솔에서 저장 결과 재확인함.
 
 ### 4. EC2 인스턴스 프로파일에 권한 추가
 
-- [ ] 기존 인스턴스 프로파일(이슈 #330에서 S3 정책을 붙인 그 역할)에 다음을 **추가**한다. 역할을 새로 만들지 않는다.
+- [x] 기존 인스턴스 프로파일 `finplay-ec2-s3-role`(이슈 #330에서 S3 정책을 붙인 그 역할)에 아래를 **추가**했다 (역할을 새로 만들지 않았다). 2026-08-13 콘솔에서 정책 3개(`AmazonSSMManagedInstanceCore`·`finplay-community-images-policy`·`finplay-ec2-ecr-pull-policy`) 확인.
   - `AmazonSSMManagedInstanceCore` — SSM Agent가 명령을 받아 가려면 필요하다.
   - ECR **읽기** 권한(`ecr:GetAuthorizationToken`·`BatchGetImage`·`GetDownloadUrlForLayer`) — EC2는 pull만 한다.
-- [ ] EC2에서 SSM Agent가 살아 있는지 확인한다.
-  ```bash
-  sudo systemctl status amazon-ssm-agent
-  ```
-- [ ] 콘솔의 **Systems Manager → Fleet Manager**에 이 인스턴스가 나타나는지 확인한다. 안 보이면 아직 SSM으로 명령을 보낼 수 없다 (권한 또는 아웃바운드 문제).
+- [x] EC2에서 SSM Agent가 살아 있는지 확인했다 — Systems Manager 콘솔의 Ping 상태가 **온라인**(Agent 버전 3.3.4624.0)으로 나온다. 이 확인이 `sudo systemctl status amazon-ssm-agent`보다 상위 신호다(실제로 AWS와 통신 중임을 보여준다).
+- [x] 콘솔의 **Systems Manager → 노드 살펴보기**에 `i-0509f247327bf5ff6`(`finplay-prod`)이 관리형 노드로 나타나는 것을 확인했다 (2026-08-13, 권한 추가 전에는 0개였다 — Phase 0 실측).
 
 > ~~### 5. 프론트 아티팩트 S3 버킷~~ — **폐기 (ADR-0022, 2026-08-12).** 프론트가 S3에서 독립 배포되면서 이 파이프라인이 프론트 아티팩트를 다룰 필요가 없어졌다. 프론트 자신의 S3 배포는 `finplay-frontend` 레포의 별도 관심사다.
 
