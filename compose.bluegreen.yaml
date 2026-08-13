@@ -3,14 +3,14 @@
 # 프론트는 S3에서 독립 배포되므로 nginx가 없다 (ADR-0022 — 이슈 #108 A안·동일 오리진 서빙 폐기).
 # 앱 컨테이너가 각 색의 호스트 포트를 직접 열고, ALB가 그 포트로 바로 붙는다.
 # compose.deploy.yaml(단일 스택)과 달리 mysql·redis는 처음부터 없다 — RDS·ElastiCache를 쓴다.
-# 실행: docker compose -f compose.bluegreen.yaml up -d --build app-blue
+# 이미지는 CD 파이프라인(러너)이 ECR에 올린 것을 그대로 pull한다 — EC2에서 빌드하지 않는다
+# (ADR-0021 §맥락 — 두 색이 서로 다른 빌드가 되면 롤백 대상을 이름으로 지목할 수 없다).
+# .env의 APP_IMAGE_BLUE·APP_IMAGE_GREEN은 파이프라인이 갱신한다. 사람이 손으로 고치지 않는다.
+# 실행: docker compose -f compose.bluegreen.yaml up -d app-blue
 #       (처음엔 blue만 띄운다. green은 다음 배포 때 STEP 2~4에서 띄운다 — 체크리스트 Phase 6 참고)
 name: finplay-bluegreen
 
 x-app-common: &app-common
-  build:
-    context: .
-    dockerfile: Dockerfile
   env_file:
     - .env
   environment:
@@ -26,12 +26,14 @@ x-app-common: &app-common
     retries: 6
     start_period: 90s
   restart: unless-stopped
-  # Graceful shutdown(stop_grace_period·server.shutdown: graceful)은 앱 코드 변경이 먼저 필요해
-  # 여기서 함께 넣지 않는다 — 별도 PR(체크리스트 Phase 5)에서 두 값을 짝 맞춰 추가한다.
+  # graceful shutdown(server.shutdown: graceful, application.yml)의 타임아웃보다 길게 잡는다 —
+  # 짧으면 graceful이 끝나기 전에 SIGKILL이 와서 무의미해진다.
+  stop_grace_period: 30s
 
 services:
   app-blue:
     <<: *app-common
+    image: ${APP_IMAGE_BLUE}
     container_name: finplay-app-blue
     # 외부 진입점이 ALB로 바뀌면서 호스트 포트를 직접 연다 (ADR-0022 — nginx 제거로 대체).
     ports:
@@ -39,6 +41,7 @@ services:
 
   app-green:
     <<: *app-common
+    image: ${APP_IMAGE_GREEN}
     container_name: finplay-app-green
     ports:
       - "8082:8080"

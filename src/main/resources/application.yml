@@ -2,6 +2,10 @@
 spring:
   application:
     name: finplay-api
+  # 블루-그린 전환 순간의 graceful shutdown 유예 (server.shutdown: graceful, 아래 server: 참고).
+  # compose.bluegreen.yaml의 stop_grace_period(30s)보다 짧게 잡는다.
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
   data:
     # Redis 명령 타임아웃. **Lettuce 기본값은 60초**이고 지정하지 않으면 그 값이 그대로 쓰인다 — Redis가 RST 없이
     # 블랙홀이 되는 단절(보안그룹 변경·노드 장애)에서 명령 하나가 60초 동안 호출 스레드를 물고, 요청당 몇 배가
@@ -310,5 +314,12 @@ finplay:
 # X-Forwarded-Proto를 https로 강제 주입해 줬지만, ADR-0022로 nginx가 사라진 뒤로는 ALB가 넣는
 # X-Forwarded-* 를 Spring이 직접 해석해야 한다. 없으면 앱이 요청을 http로 인식해 OAuth 리다이렉트 URL
 # 생성과 Secure 쿠키 발급이 틀어진다.
+#
+# graceful shutdown — 블루-그린 전환 순간 진행 중이던 요청을 끊지 않기 위해서다(ADR-0021 §후속,
+# 이슈 #332). compose.bluegreen.yaml의 stop_grace_period(30s)보다 짧게 잡는다 — 이 타임아웃이
+# 끝나기 전에 SIGKILL이 오면 graceful이 무의미해진다. SSE(/api/stocks/stream 등)처럼 계속 열려
+# 있는 연결은 이 유예로 기다려 주지 않는다 — 전환 순간 끊기는 것 자체는 정상이고 브라우저 재연결로
+# 흡수한다(체크리스트 Phase 6에서 실측 대상).
 server:
   forward-headers-strategy: framework
+  shutdown: graceful
