@@ -335,12 +335,13 @@ class ExitPlanRepositoryTest {
 	}
 
 	private ExitPlan educationalPlan(User owner, Holding target, String instanceKey, String requestHash) {
+		Trade buyTrade = createBuyTrade(owner, target.getAccount(), target.getInstrument());
 		return ExitPlan.createEducational(
 			owner,
 			target,
 			7L,
 			instanceKey,
-			null,
+			buyTrade,
 			target.getInstrument(),
 			QUANTITY,
 			ENTRY_PRICE,
@@ -356,21 +357,25 @@ class ExitPlanRepositoryTest {
 	}
 
 	private Trade createBuyTrade() {
+		return createBuyTrade(user, account, instrument);
+	}
+
+	private Trade createBuyTrade(User owner, Account forAccount, Instrument forInstrument) {
 		Order order = Order.create(
-			user,
-			account,
-			instrument,
+			owner,
+			forAccount,
+			forInstrument,
 			OrderSide.BUY,
 			OrderType.MARKET,
 			QUANTITY,
 			UUID.randomUUID().toString(),
-			hash("o"),
+			hash("o-" + UUID.randomUUID()),
 			NOW);
 		entityManager.persist(order);
 		Trade trade = Trade.of(
 			order,
-			account,
-			instrument,
+			forAccount,
+			forInstrument,
 			null,
 			OrderSide.BUY,
 			ENTRY_PRICE,
