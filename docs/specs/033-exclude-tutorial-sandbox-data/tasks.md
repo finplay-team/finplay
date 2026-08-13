@@ -51,7 +51,7 @@
   `totalValue`가 나오는지, 이것이 이 spec 전체에서 가장 회귀에 취약한 계산이므로 반드시 통합 테스트로
   고정). (spec SANDBOX-EXCL-007, plan 4-5번)
 
-- [ ] **`sandbox_cash_adjustment` 컬럼 + 통합 백필 마이그레이션** — 착수 시 `origin/dev` 최신 `V{N}`
+- [x] **`sandbox_cash_adjustment` 컬럼 + 통합 백필 마이그레이션** — 착수 시 `origin/dev` 최신 `V{N}`
   재확인 후 `V{N}__add_sandbox_cash_adjustment_and_backfill.sql`(plan.md 잠정 번호 `V34`)에서 (1)
   `accounts.sandbox_cash_adjustment BIGINT NOT NULL DEFAULT 0` 컬럼 추가, (2) 샌드박스 종목 매매의
   현금 순변동 합계 + `practice_completions` 행 수 × 5,000,000(tutorial_key→market 매핑 포함)으로

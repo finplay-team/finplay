@@ -299,8 +299,8 @@ class AccountSummaryIntegrationTest {
 		assertThat(response.holdingsValue()).isEqualTo(expectedHoldingsValue);
 		assertThat(response.unrealizedPnl()).isEqualTo(expectedUnrealizedPnl);
 		assertThat(response.totalValue()).isEqualTo(expectedTotalValue);
-		// returnRate = (10,999,250 - 10,000,000) / 10,000,000 = 0.09925 → scale4 HALF_UP = 0.0993
-		assertThat(response.returnRate()).isEqualByComparingTo(new BigDecimal("0.0993"));
+		// returnRate = (10,999,250 - 10,000,000) / 10,000,000 = 0.099925 → scale4 HALF_UP = 0.0999
+		assertThat(response.returnRate()).isEqualByComparingTo(new BigDecimal("0.0999"));
 	}
 
 	private OrderCreateRequest buyRequest(Long instrumentId, String quantity) {
@@ -340,7 +340,10 @@ class AccountSummaryIntegrationTest {
 	}
 
 	private static String uniqueNickname(String scenario) {
-		return scenario + "-" + UUID.randomUUID().toString().replace("-", "");
+		// nickname 컬럼은 VARCHAR(50)이다(V2). scenario 접두사가 길어도 잘리지 않도록 UUID 부분을 20자로
+		// 제한한다(전체 UUID 32자를 그대로 붙이면 "summary-reward-gain-<32자>"가 50자를 넘겨 저장 시
+		// data truncation 오류가 난다).
+		return scenario + "-" + UUID.randomUUID().toString().replace("-", "").substring(0, 20);
 	}
 
 }
