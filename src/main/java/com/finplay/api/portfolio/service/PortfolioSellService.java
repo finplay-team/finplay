@@ -63,6 +63,9 @@ public class PortfolioSellService {
 		// SANDBOX-EXCL-004). trade.realizedPnl은 원장 값이라 항상 채운다.
 		if (!sellTrade.getInstrument().isTutorialSample()) {
 			account.addRealizedPnl(realizedPnl);
+		} else {
+			// 샌드박스 매도의 현금 입금도 같은 조건으로 별도 누적한다(spec 033 SANDBOX-EXCL-006).
+			account.addSandboxCashAdjustment(amount - fee);
 		}
 		return realizedPnl;
 	}

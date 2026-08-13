@@ -25,7 +25,7 @@
   realizedPnl`은 항상 채워짐 — 기존 시장가·지정가 매도 단위 테스트에 케이스 추가). (spec
   SANDBOX-EXCL-004, plan 3-2번)
 
-- [ ] **`sandboxCashAdjustment` 엔티티·쓰기 시점 누적 — 현금·평가자산 배제 (신규, 사용자 확정)** —
+- [x] **`sandboxCashAdjustment` 엔티티·쓰기 시점 누적 — 현금·평가자산 배제 (신규, 사용자 확정)** —
   `Account`에 `sandboxCashAdjustment`(long) 필드·`addSandboxCashAdjustment(long amount)` 메서드 추가
   (생성자에 `= 0L` 초기화 포함, `cashBalance`·`realizedPnl`과 나란히 둔다). `cashBalance`를 실제로
   바꾸는 5개 지점 각각에 조건부(또는 무조건, 보상은 항상) 누적 호출 추가(plan.md 4-4번 표 그대로):

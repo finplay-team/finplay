@@ -104,6 +104,11 @@ public class OrderExecutionService {
 		tradeRepository.save(trade);
 
 		account.deductCash(cashRequired);
+		// 샌드박스(튜토리얼) 종목 매수의 현금 순변동은 사용자에게 보이는 평가자산에서 나중에 제외할 수
+		// 있도록 별도로 누적해 둔다(spec 033 SANDBOX-EXCL-006).
+		if (instrument.isTutorialSample()) {
+			account.addSandboxCashAdjustment(-cashRequired);
+		}
 
 		portfolioBuyService.applyBuyTrade(account, instrument, trade, quantity, pricing.price(), pricing.fee(), now);
 
@@ -158,6 +163,9 @@ public class OrderExecutionService {
 		// SANDBOX-EXCL-004). trade.realizedPnl은 원장 값이라 항상 채운다.
 		if (!instrument.isTutorialSample()) {
 			account.addRealizedPnl(realizedPnl);
+		} else {
+			// 샌드박스 매도의 현금 입금도 같은 조건으로 별도 누적한다(spec 033 SANDBOX-EXCL-006).
+			account.addSandboxCashAdjustment(pricing.amount() - pricing.fee());
 		}
 		// 커밋 이후(after-commit)에만 랭킹에 반영되도록 이벤트만 발행한다 — 손익값을 싣지 않고 이벤트 처리 시점에
 		// DB에서 최신 realizedPnl을 다시 조회한다(동시성 경합 Decision Gate, plan.md).

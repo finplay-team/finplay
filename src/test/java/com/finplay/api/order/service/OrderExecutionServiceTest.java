@@ -131,6 +131,36 @@ class OrderExecutionServiceTest {
 	}
 
 	@Test
+	void createOrderBuyAccumulatesSandboxCashAdjustmentWhenInstrumentIsTutorialSample() {
+		// spec 033 SANDBOX-EXCL-006 call site #1: 샌드박스 종목 매수는 deductCash와 별도로
+		// sandboxCashAdjustment에 음수로 누적된다.
+		Instrument instrument = stockInstrument();
+		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
+		Account account = account(com.finplay.api.account.domain.Market.STOCK);
+		User user = testUser();
+		stubHappyPath(instrument, account, user, new BigDecimal("10000.33"));
+		OrderCreateRequest request = buyRequest(Market.STOCK, instrument.getId(), "3");
+
+		orderExecutionService.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, request);
+
+		// cashRequired = amount(30000) + fee(4) = 30004
+		assertThat(account.getSandboxCashAdjustment()).isEqualTo(-30004L);
+	}
+
+	@Test
+	void createOrderBuyDoesNotAccumulateSandboxCashAdjustmentWhenInstrumentIsReal() {
+		Instrument instrument = stockInstrument();
+		Account account = account(com.finplay.api.account.domain.Market.STOCK);
+		User user = testUser();
+		stubHappyPath(instrument, account, user, new BigDecimal("10000.33"));
+		OrderCreateRequest request = buyRequest(Market.STOCK, instrument.getId(), "3");
+
+		orderExecutionService.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, request);
+
+		assertThat(account.getSandboxCashAdjustment()).isEqualTo(0L);
+	}
+
+	@Test
 	void createOrderThrowsUnsupportedOrderTypeWhenOrderTypeIsNotMarket() {
 		OrderCreateRequest request = new OrderCreateRequest(
 			Market.STOCK, 1L, OrderSide.BUY, "LIMIT", new BigDecimal("1"));
@@ -346,10 +376,30 @@ class OrderExecutionServiceTest {
 
 		assertThat(account.getRealizedPnl()).isEqualTo(0L);
 		assertThat(account.getCashBalance()).isEqualTo(10_000_000L + 30000L - 4L);
+		// spec 033 SANDBOX-EXCL-006 call site #2: 샌드박스 매도 입금은 sandboxCashAdjustment에도 반영된다.
+		assertThat(account.getSandboxCashAdjustment()).isEqualTo(30000L - 4L);
 		ArgumentCaptor<Trade> tradeCaptor = ArgumentCaptor.forClass(Trade.class);
 		verify(tradeRepository).save(tradeCaptor.capture());
 		// realizedPnl = (30000 - 4) - (20000 + 3) = 9993
 		assertThat(tradeCaptor.getValue().getRealizedPnl()).isEqualTo(9993L);
+	}
+
+	@Test
+	void createOrderSellDoesNotAccumulateSandboxCashAdjustmentWhenInstrumentIsReal() {
+		Instrument instrument = stockInstrument();
+		Account account = account(com.finplay.api.account.domain.Market.STOCK);
+		Holding holding = mock(Holding.class);
+		User user = testUser();
+		BigDecimal quantity = new BigDecimal("3");
+		stubSellHappyPath(instrument, account, user, new BigDecimal("10000"));
+		when(portfolioSellService.getHoldingForUpdateOrThrow(account, instrument, quantity)).thenReturn(holding);
+		when(portfolioSellService.applySellTrade(eq(holding), any(Trade.class), eq(quantity), eq(NOW)))
+			.thenReturn(new SellAllocationDto(20_000L, 3L));
+		OrderCreateRequest request = sellRequest(Market.STOCK, instrument.getId(), "3");
+
+		orderExecutionService.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, request);
+
+		assertThat(account.getSandboxCashAdjustment()).isEqualTo(0L);
 	}
 
 	@Test

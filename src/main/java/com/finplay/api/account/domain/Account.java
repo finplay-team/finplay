@@ -50,6 +50,9 @@ public class Account {
 	@Column(name = "realized_pnl", nullable = false)
 	private long realizedPnl;
 
+	@Column(name = "sandbox_cash_adjustment", nullable = false)
+	private long sandboxCashAdjustment;
+
 	@Column(name = "created_at", nullable = false)
 	private LocalDateTime createdAt;
 
@@ -63,6 +66,7 @@ public class Account {
 		this.reservedCash = 0L;
 		this.seedMoney = INITIAL_SEED_MONEY;
 		this.realizedPnl = 0L;
+		this.sandboxCashAdjustment = 0L;
 		this.createdAt = now;
 		this.updatedAt = now;
 	}
@@ -84,6 +88,10 @@ public class Account {
 
 	public void addRealizedPnl(long amount) {
 		this.realizedPnl += amount;
+	}
+
+	public void addSandboxCashAdjustment(long amount) {
+		this.sandboxCashAdjustment += amount;
 	}
 
 	public long getAvailableCash() {
