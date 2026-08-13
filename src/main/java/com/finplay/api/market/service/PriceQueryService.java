@@ -162,21 +162,18 @@ public class PriceQueryService {
 	}
 
 	// 표시 전용 판정 — 연결 유지 + 수신 이력 있음이면 stale이어도 마지막 가격을 STALE로 보여준다(PRICE-STALE-001).
-	// 연결 끊김이거나 수신 이력이 아예 없으면 지금처럼 UNAVAILABLE이다(완화 대상 아님).
+	// 연결 끊김이거나 수신 이력이 아예 없으면 지금처럼 UNAVAILABLE이다(완화 대상 아님). 배치 버전
+	// (getCryptoDisplayPriceQuotes)과 동일하게 getConnectionStatus()·getLatestPrice()를 각 1회만 호출하고
+	// 같은 조회 결과에 isStale()을 직접 적용한다 — isPriceAvailable() 위임 후 별도로 getLatestPrice()를
+	// 다시 부르면 그 사이 새 틱이 도착했을 때 방금 fresh해진 값을 STALE로 잘못 라벨링하는 race window가
+	// 있었다(PR #360 리뷰 권장사항).
 	private PriceQuoteDto getCryptoDisplayPriceQuote(Instrument instrument) {
-		String symbol = instrument.getSymbol();
-		if (priceStore.isPriceAvailable(symbol)) {
-			// 연결 유지 + fresh — 기존 AVAILABLE 경로와 완전히 동일한 조회 순서·race 가드
-			return priceStore.getLatestPrice(symbol)
-				.map(p -> new PriceQuoteDto(p.price(), p.receivedAt(), PriceStatus.AVAILABLE, null))
-				.orElseGet(() -> new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null));
-		}
 		if (priceStore.getConnectionStatus() != FeedConnectionStatus.CONNECTED) {
 			return new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null); // 연결 끊김 — 완화 대상 아님
 		}
-		// 연결은 유지되지만 isPriceAvailable()이 false였다 → 신선도만 초과(stale)였거나, 애초에 시세를 받은 적이 없다.
-		return priceStore.getLatestPrice(symbol)
-			.map(p -> new PriceQuoteDto(p.price(), p.receivedAt(), PriceStatus.STALE, null))
+		return priceStore.getLatestPrice(instrument.getSymbol())
+			.map(p -> new PriceQuoteDto(p.price(), p.receivedAt(),
+				priceStore.isStale(p.receivedAt()) ? PriceStatus.STALE : PriceStatus.AVAILABLE, null))
 			.orElseGet(() -> new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null)); // 받은 적 없음 — 완화 대상 아님
 	}
 }
