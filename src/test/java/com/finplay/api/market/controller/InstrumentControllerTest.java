@@ -348,6 +348,24 @@ class InstrumentControllerTest {
 	}
 
 	@Test
+	void getPriceReturnsStaleStatusWithLastKnownPriceForCryptoInstrumentWhenTickIsStale() throws Exception {
+		// PRICE-STALE-001: 연결은 살아있지만 최신 틱이 10초를 넘긴 코인은 409가 아니라 200 + status=STALE이다.
+		authenticate();
+		LocalDateTime sourceTime = LocalDateTime.of(2026, 7, 28, 10, 30, 0);
+		when(priceQueryService.getPrice(17L)).thenReturn(
+			new PriceQuoteDto(BigDecimal.valueOf(95000000), sourceTime, PriceStatus.STALE, null));
+
+		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}/price", 17L)))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.price").value(95000000))
+			.andExpect(jsonPath("$.sourceTime").value("2026-07-28T10:30:00"))
+			.andExpect(jsonPath("$.status").value("STALE"))
+			.andExpect(jsonPath("$.sourceTradingDate").doesNotExist());
+
+		verify(priceQueryService).getPrice(17L);
+	}
+
+	@Test
 	void getPriceReturnsCommonValidationErrorForNonNumericIdWithoutCallingService() throws Exception {
 		authenticate();
 
