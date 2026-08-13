@@ -79,7 +79,7 @@ class ExitPlanCreationServiceTest {
 	@Test
 	@DisplayName("검증 순서는 4단계(EXIT_PLAN_ALREADY_EXISTS)가 5단계(INSUFFICIENT_QTY)보다 먼저다 — 기존 예약이 수량 부족의 진짜 원인을 가리지 않게 한다")
 	void validatesExistingPendingPlanBeforeAvailableQuantityToAvoidMaskingTheRealCause() {
-		when(portfolioSellService.getHoldingForUpdate(account, instrument)).thenReturn(holding);
+		when(portfolioSellService.getHoldingForUpdateForExitPlanCreation(account, instrument)).thenReturn(holding);
 		when(exitPlanRepository.existsByHoldingIdAndStatus(holding.getId(), ExitPlanStatus.PENDING)).thenReturn(true);
 		ExitPlanCreateCommandDto command = generalCommand(new BigDecimal("100.00000000")); // 수량도 부족하지만
 
@@ -96,7 +96,7 @@ class ExitPlanCreationServiceTest {
 	@Test
 	@DisplayName("PENDING plan이 없고 availableQuantity가 부족하면 INSUFFICIENT_QTY로 거부된다")
 	void rejectsWithInsufficientQtyWhenNoPendingPlanButAvailableQuantityIsShort() {
-		when(portfolioSellService.getHoldingForUpdate(account, instrument)).thenReturn(holding);
+		when(portfolioSellService.getHoldingForUpdateForExitPlanCreation(account, instrument)).thenReturn(holding);
 		when(exitPlanRepository.existsByHoldingIdAndStatus(holding.getId(), ExitPlanStatus.PENDING))
 			.thenReturn(false);
 		ExitPlanCreateCommandDto command = generalCommand(new BigDecimal("100.00000000"));
@@ -113,7 +113,7 @@ class ExitPlanCreationServiceTest {
 	@Test
 	@DisplayName("가격 계산까지 통과했지만 유효 현재가가 없으면 PRICE_UNAVAILABLE로 거부되고 plan·condition·예약 흔적이 남지 않는다")
 	void rejectsWithPriceUnavailableAndLeavesNoTraceWhenNoValidQuote() {
-		when(portfolioSellService.getHoldingForUpdate(account, instrument)).thenReturn(holding);
+		when(portfolioSellService.getHoldingForUpdateForExitPlanCreation(account, instrument)).thenReturn(holding);
 		when(exitPlanRepository.existsByHoldingIdAndStatus(holding.getId(), ExitPlanStatus.PENDING))
 			.thenReturn(false);
 		ExitPlanCreateCommandDto command = generalCommand(new BigDecimal("1.00000000"));
@@ -138,7 +138,7 @@ class ExitPlanCreationServiceTest {
 	@Test
 	@DisplayName("일반 경로 성공 시 holding 예약 1회, exit_plans 1행, exit_plan_conditions 2행(손절·익절)이 저장된다")
 	void succeedsWithOneReservationOnePlanRowAndTwoConditionRowsForGeneralPath() {
-		when(portfolioSellService.getHoldingForUpdate(account, instrument)).thenReturn(holding);
+		when(portfolioSellService.getHoldingForUpdateForExitPlanCreation(account, instrument)).thenReturn(holding);
 		when(exitPlanRepository.existsByHoldingIdAndStatus(holding.getId(), ExitPlanStatus.PENDING))
 			.thenReturn(false);
 		BigDecimal requestedQuantity = new BigDecimal("1.00000000");
@@ -175,15 +175,15 @@ class ExitPlanCreationServiceTest {
 	}
 
 	@Test
-	@DisplayName("holding 잠금은 015가 이미 구현한 PortfolioSellService.getHoldingForUpdate를 재사용한다 — 새 원장을 만들지 않는다")
+	@DisplayName("holding 잠금은 015가 이미 구현한 PortfolioSellService.getHoldingForUpdateForExitPlanCreation을 재사용한다 — 새 원장을 만들지 않는다")
 	void locksHoldingThroughExistingPortfolioSellServiceInsteadOfNewLedger() {
-		when(portfolioSellService.getHoldingForUpdate(account, instrument)).thenReturn(holding);
+		when(portfolioSellService.getHoldingForUpdateForExitPlanCreation(account, instrument)).thenReturn(holding);
 		when(exitPlanRepository.existsByHoldingIdAndStatus(holding.getId(), ExitPlanStatus.PENDING)).thenReturn(true);
 		ExitPlanCreateCommandDto command = generalCommand(new BigDecimal("1.00000000"));
 
 		assertThatThrownBy(() -> service.create(command)).isInstanceOf(BusinessException.class);
 
-		verify(portfolioSellService, times(1)).getHoldingForUpdate(account, instrument);
+		verify(portfolioSellService, times(1)).getHoldingForUpdateForExitPlanCreation(account, instrument);
 	}
 
 	private ExitPlanCreateCommandDto generalCommand(BigDecimal quantity) {

@@ -42,7 +42,7 @@ public class PortfolioSellService {
 		return holding;
 	}
 
-	// 지정가 매도 체결 시 holding을 잠근다(015-limit-order LMT-002). 체결 대상 수량은 생성 시점에 이미
+	// 지정가 매도 체결·취소·정정 시 holding을 잠근다(015-limit-order LMT-002). 체결 대상 수량은 생성 시점에 이미
 	// reserveQuantity로 예약이 확인된 값이라 availableQuantity 재검증은 하지 않는다 — 예약된 holding이 없는
 	// 상태는 원장 불변식 위반이므로 방어적으로 IllegalStateException을 던진다(호출부 리스너가 건별 catch로 흡수).
 	public Holding getHoldingForUpdate(Account account, Instrument instrument) {
@@ -50,6 +50,18 @@ public class PortfolioSellService {
 			.findByAccountIdAndInstrumentIdForUpdate(account.getId(), instrument.getId())
 			.orElseThrow(() -> new IllegalStateException(
 				"체결 대상 holding을 찾을 수 없습니다. accountId=" + account.getId() + ", instrumentId=" + instrument.getId()));
+	}
+
+	// OCO exit plan 생성(021-general-risk-management-oco) 시 holding을 잠근다. 호출부(ExitPlanCreationService)가
+	// 이미 존재를 확인한 holding의 ID로 조회하는 동기 생성 경로이므로, 이 시점에 holding이 사라졌다면 예약 검증
+	// 이전에 원장 불변식이 깨진 것이다 — availableQuantity 재검증은 별도로 validateAvailableQuantity에서
+	// EXIT_PLAN_ALREADY_EXISTS 판정 이후에 수행하므로 여기서는 하지 않는다.
+	public Holding getHoldingForUpdateForExitPlanCreation(Account account, Instrument instrument) {
+		return holdingRepository
+			.findByAccountIdAndInstrumentIdForUpdate(account.getId(), instrument.getId())
+			.orElseThrow(() -> new IllegalStateException(
+				"exit plan 생성 대상 holding을 찾을 수 없습니다. accountId=" + account.getId()
+					+ ", instrumentId=" + instrument.getId()));
 	}
 
 	// 매도 체결의 실현손익 계산·반영(시장가·지정가 공통, ORD-005 공식 그대로 재사용) — Trade.realizedPnl 확정 +

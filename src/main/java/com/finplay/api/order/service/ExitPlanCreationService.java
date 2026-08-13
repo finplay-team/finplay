@@ -67,7 +67,8 @@ public class ExitPlanCreationService {
 	// 호출부가 이미 존재·소유권을 확인한 holding을 다시 잠근다 — 다른 도메인 repository를 직접 주입하지 않기
 	// 위해 015가 만든 portfolio service의 잠금 접근자를 재사용한다(ADR-0002).
 	private Holding lockHolding(Holding holding) {
-		return portfolioSellService.getHoldingForUpdate(holding.getAccount(), holding.getInstrument());
+		return portfolioSellService.getHoldingForUpdateForExitPlanCreation(holding.getAccount(),
+			holding.getInstrument());
 	}
 
 	private void validateNoPendingPlan(Holding holding) {
