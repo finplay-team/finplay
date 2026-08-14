@@ -22,7 +22,7 @@
 - [x] **5. 스케줄러 풀 크기 상향 + 개수 주석 정합 (A)**
   `application.yml`의 `spring.task.scheduling.pool.size`를 16 → 17로 올린다(운영 프로필에 `@Scheduled` 1개 추가). `application.yml`과 `application-crypto-real.yml` 두 곳의 "스케줄 개수" 주석을 실제 값으로 함께 맞춘다 — 현재 16 vs 13으로 어긋나 있다(PRICE-REST-006). `NewsCollectionIntegrationTest.schedulingPoolIsLargeEnoughForEveryScheduledTask`가 통과하는지 확인한다.
 
-- [ ] **6. 판정 경로 회귀 테스트 + 문서 동기화 + 최종 빌드**
+- [x] **6. 판정 경로 회귀 테스트 + 문서 동기화 + 최종 빌드**
   `PriceQueryServiceTest`에 A 적용 후의 케이스를 추가한다(연결 정상 + 관측 신선 → 표시 `AVAILABLE` / 관측도 오래됨 → 표시 `STALE`이지만 체결은 통과). 항목 1에서 고정한 fail-closed 잔여선 케이스가 여전히 통과하는지 확인한다.
   문서를 동기화한다 — `docs/api-contracts.md`의 `### 종목 현재가 조회` 절과 주문 절에서 `PRICE_UNAVAILABLE` 발생 조건 설명 갱신, `docs/prd.md` §3 "구현 현황"에 행 추가(근거: PR 번호 — PR 생성 후 채운다). MKT-004(spec 003·PRD)와 spec 032의 체결 차단 요구사항은 **이미 갱신 완료**다.
   `./gradlew build`를 실행해 전체 테스트·포맷·커버리지가 통과하는 것을 확인한다.

@@ -121,7 +121,8 @@ public class PriceQueryService {
 
 	// 표시 전용 배치 판정 — 연결상태는 요청당 1회만 조회해 재사용하고(PR #97 리뷰 권장사항), 심볼별 최신가 조회·신선도 판정만
 	// 반복한다. 단건 getCryptoDisplayPriceQuote와 동일한 규칙(연결 끊김→UNAVAILABLE, 연결 유지+fresh→AVAILABLE,
-	// 연결 유지+stale→STALE, 연결 유지+수신 이력 없음→UNAVAILABLE)이다 (PRICE-STALE-001).
+	// 연결 유지+stale→STALE, 연결 유지+수신 이력 없음→UNAVAILABLE)이며 isStale에도 동일하게 observedAt을 넘긴다
+	// (PRICE-STALE-001, PRICE-REST-001).
 	private List<PriceQuoteDto> getCryptoDisplayPriceQuotes(List<Instrument> instruments) {
 		if (priceStore.getConnectionStatus() != FeedConnectionStatus.CONNECTED) {
 			return instruments.stream().map(instrument -> new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null))
@@ -130,7 +131,7 @@ public class PriceQueryService {
 		return instruments.stream()
 			.map(instrument -> priceStore.getLatestPrice(instrument.getSymbol())
 				.map(price -> new PriceQuoteDto(price.price(), price.receivedAt(),
-					priceStore.isStale(price.receivedAt()) ? PriceStatus.STALE : PriceStatus.AVAILABLE, null))
+					priceStore.isStale(price.observedAt()) ? PriceStatus.STALE : PriceStatus.AVAILABLE, null))
 				.orElseGet(() -> new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null)))
 			.toList();
 	}
@@ -158,14 +159,16 @@ public class PriceQueryService {
 	// (getCryptoDisplayPriceQuotes)과 동일하게 getConnectionStatus()·getLatestPrice()를 각 1회만 호출하고
 	// 같은 조회 결과에 isStale()을 직접 적용한다 — isPriceAvailable() 위임 후 별도로 getLatestPrice()를
 	// 다시 부르면 그 사이 새 틱이 도착했을 때 방금 fresh해진 값을 STALE로 잘못 라벨링하는 race window가
-	// 있었다(PR #360 리뷰 권장사항).
+	// 있었다(PR #360 리뷰 권장사항). isStale에는 p.observedAt()을 넘긴다 — p.receivedAt()(체결 시각)을 넘기면
+	// REST 폴링이 관측 시각을 갱신해도 신선도 판정이 그대로 stale로 남는다(PRICE-REST-001, 034 tasks.md 항목 6에서
+	// 회귀 테스트로 확인된 배선 오류를 수정).
 	private PriceQuoteDto getCryptoDisplayPriceQuote(Instrument instrument) {
 		if (priceStore.getConnectionStatus() != FeedConnectionStatus.CONNECTED) {
 			return new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null); // 연결 끊김 — 완화 대상 아님
 		}
 		return priceStore.getLatestPrice(instrument.getSymbol())
 			.map(p -> new PriceQuoteDto(p.price(), p.receivedAt(),
-				priceStore.isStale(p.receivedAt()) ? PriceStatus.STALE : PriceStatus.AVAILABLE, null))
+				priceStore.isStale(p.observedAt()) ? PriceStatus.STALE : PriceStatus.AVAILABLE, null))
 			.orElseGet(() -> new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null)); // 받은 적 없음 — 완화 대상 아님
 	}
 }

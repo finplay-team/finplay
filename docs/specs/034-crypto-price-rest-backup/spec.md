@@ -42,39 +42,39 @@ MKT-004의 "10초 초과 시 주문 거부" 규칙은 이 spec으로 **실질적
 
 ### PRICE-REST-001 관측 시각과 체결 시각의 분리 (A)
 
-- [ ] `PriceStore`는 심볼별로 **마지막 체결 시각**과 **마지막 관측 시각**을 서로 다른 값으로 보관한다. 전자는 "이 가격이 언제 체결됐는가"(거래소가 준 시각), 후자는 "이 가격이 지금도 최신이라고 마지막으로 확인한 때"(웹소켓 틱 수신 또는 REST 폴링 성공)다.
-- [ ] stale 판정(`isStale`)의 기준은 **관측 시각**으로 바뀐다 — 10초 임계값 자체는 그대로 둔다.
-- [ ] API 응답의 `sourceTime`이 뜻하는 값은 **체결 시각 그대로 유지**된다 — 화면에 "몇 시 기준 가격인가"로 표시되는 값의 의미를 바꾸지 않는다.
+- [x] `PriceStore`는 심볼별로 **마지막 체결 시각**과 **마지막 관측 시각**을 서로 다른 값으로 보관한다. 전자는 "이 가격이 언제 체결됐는가"(거래소가 준 시각), 후자는 "이 가격이 지금도 최신이라고 마지막으로 확인한 때"(웹소켓 틱 수신 또는 REST 폴링 성공)다.
+- [x] stale 판정(`isStale`)의 기준은 **관측 시각**으로 바뀐다 — 10초 임계값 자체는 그대로 둔다.
+- [x] API 응답의 `sourceTime`이 뜻하는 값은 **체결 시각 그대로 유지**된다 — 화면에 "몇 시 기준 가격인가"로 표시되는 값의 의미를 바꾸지 않는다.
 
 ### PRICE-REST-002 REST 폴링의 운영 확장 (A)
 
-- [ ] `BithumbRestTickerPoller`가 운영 환경에서도 동작한다. 3초 주기로 빗썸 공개 ticker REST를 1회 호출해 **전 코인 심볼의 현재가를 한 번에** 받아온다.
-- [ ] 폴링이 성공한 심볼은 관측 시각이 갱신된다. 응답 가격이 저장된 가격과 다르면 가격도 함께 갱신된다.
-- [ ] 폴링 실패·타임아웃·비정상 상태코드·파싱 불가는 **그 회차만 건너뛰고** 로그만 남긴다 — 예외를 스케줄러 밖으로 던지지 않으며, 임의값·보간값으로 대체하지 않는다(현행 동작 유지).
-- [ ] 폴링이 연속 실패해 관측 시각이 10초를 넘기면 기존과 동일하게 `STALE`로 떨어진다 — 폴러가 죽은 것을 신선함으로 위장하지 않는다.
+- [x] `BithumbRestTickerPoller`가 운영 환경에서도 동작한다. 3초 주기로 빗썸 공개 ticker REST를 1회 호출해 **전 코인 심볼의 현재가를 한 번에** 받아온다.
+- [x] 폴링이 성공한 심볼은 관측 시각이 갱신된다. 응답 가격이 저장된 가격과 다르면 가격도 함께 갱신된다.
+- [x] 폴링 실패·타임아웃·비정상 상태코드·파싱 불가는 **그 회차만 건너뛰고** 로그만 남긴다 — 예외를 스케줄러 밖으로 던지지 않으며, 임의값·보간값으로 대체하지 않는다(현행 동작 유지).
+- [x] 폴링이 연속 실패해 관측 시각이 10초를 넘기면 기존과 동일하게 `STALE`로 떨어진다 — 폴러가 죽은 것을 신선함으로 위장하지 않는다.
 
 ### PRICE-REST-003 웹소켓 실시간성 보존 (A)
 
-- [ ] 웹소켓으로 도착한 체결 틱은 REST 폴링이 켜진 뒤에도 **버려지지 않고 즉시 반영된다.** REST가 방금 관측 시각을 갱신했다는 이유로 그보다 이른 체결 시각을 가진 실제 틱이 무시되어서는 안 된다.
-- [ ] 동일 심볼의 **과거 체결 틱이 최신 체결을 덮어쓰지 않는다**(MKT-003 무변경).
+- [x] 웹소켓으로 도착한 체결 틱은 REST 폴링이 켜진 뒤에도 **버려지지 않고 즉시 반영된다.** REST가 방금 관측 시각을 갱신했다는 이유로 그보다 이른 체결 시각을 가진 실제 틱이 무시되어서는 안 된다.
+- [x] 동일 심볼의 **과거 체결 틱이 최신 체결을 덮어쓰지 않는다**(MKT-003 무변경).
 
 ### PRICE-REST-004 체결 경로의 STALE 허용 (B)
 
-- [ ] 빗썸 연결상태가 `CONNECTED`이고 해당 심볼의 최신 가격을 한 번이라도 받은 적이 있으면, 관측 시각이 10초를 넘겼더라도(`STALE`) **시장가·지정가 주문이 그 마지막 가격으로 체결된다** — `PRICE_UNAVAILABLE`을 던지지 않는다.
-- [ ] 체결에 쓰는 가격은 **실제로 수신된 마지막 가격 그대로**다 — 임의값·보간값으로 대체하지 않는다.
-- [ ] 코인의 체결 판정과 표시 판정은 **같은 규칙**을 쓴다. 032가 나눠놓은 두 경로는 이 spec에서 판정 규칙이 일치하게 되며, 규칙을 두 벌로 유지하지 않는다.
-- [ ] `PriceQueryServiceTest.getOrderExecutionPriceStillThrowsPriceUnavailableWhenCryptoTickIsStale`은 이 요구사항과 충돌하므로 새 동작을 고정하는 테스트로 이름과 단정을 반전시킨다.
+- [x] 빗썸 연결상태가 `CONNECTED`이고 해당 심볼의 최신 가격을 한 번이라도 받은 적이 있으면, 관측 시각이 10초를 넘겼더라도(`STALE`) **시장가·지정가 주문이 그 마지막 가격으로 체결된다** — `PRICE_UNAVAILABLE`을 던지지 않는다.
+- [x] 체결에 쓰는 가격은 **실제로 수신된 마지막 가격 그대로**다 — 임의값·보간값으로 대체하지 않는다.
+- [x] 코인의 체결 판정과 표시 판정은 **같은 규칙**을 쓴다. 032가 나눠놓은 두 경로는 이 spec에서 판정 규칙이 일치하게 되며, 규칙을 두 벌로 유지하지 않는다.
+- [x] `PriceQueryServiceTest.getOrderExecutionPriceStillThrowsPriceUnavailableWhenCryptoTickIsStale`은 이 요구사항과 충돌하므로 새 동작을 고정하는 테스트로 이름과 단정을 반전시킨다.
 
 ### PRICE-REST-005 여전히 거부되는 경우 (fail-closed 잔여선)
 
-- [ ] 빗썸 연결상태가 `DISCONNECTED`이면 REST 관측 시각이 신선하더라도 표시·체결 모두 기존과 동일하게 `UNAVAILABLE` / 409다.
-- [ ] 해당 심볼의 시세를 한 번도 받은 적이 없으면(최신가 자체가 없음) 기존과 동일하게 `UNAVAILABLE` / 409다.
-- [ ] 위 두 경우는 "가격이 오래된 것"이 아니라 **"보여줄 가격 자체가 없는 것"**이므로 이번 완화 대상이 아니다. 이 구분은 032가 세운 것이며 이 spec도 그대로 승계한다.
+- [x] 빗썸 연결상태가 `DISCONNECTED`이면 REST 관측 시각이 신선하더라도 표시·체결 모두 기존과 동일하게 `UNAVAILABLE` / 409다.
+- [x] 해당 심볼의 시세를 한 번도 받은 적이 없으면(최신가 자체가 없음) 기존과 동일하게 `UNAVAILABLE` / 409다.
+- [x] 위 두 경우는 "가격이 오래된 것"이 아니라 **"보여줄 가격 자체가 없는 것"**이므로 이번 완화 대상이 아니다. 이 구분은 032가 세운 것이며 이 spec도 그대로 승계한다.
 
 ### PRICE-REST-006 스케줄러 용량
 
-- [ ] 운영 프로필에 `@Scheduled` 작업이 하나 늘어나는 것을 `spring.task.scheduling.pool.size`에 반영한다. 이 값을 검증하는 기존 테스트(`NewsCollectionIntegrationTest.schedulingPoolIsLargeEnoughForEveryScheduledTask`)가 통과해야 한다.
-- [ ] 스케줄 개수를 단정하는 주석이 `application.yml`과 `application-crypto-real.yml` 두 곳에 있으므로 **둘을 함께 갱신한다**(현재 16 vs 13으로 이미 어긋나 있다).
+- [x] 운영 프로필에 `@Scheduled` 작업이 하나 늘어나는 것을 `spring.task.scheduling.pool.size`에 반영한다. 이 값을 검증하는 기존 테스트(`NewsCollectionIntegrationTest.schedulingPoolIsLargeEnoughForEveryScheduledTask`)가 통과해야 한다.
+- [x] 스케줄 개수를 단정하는 주석이 `application.yml`과 `application-crypto-real.yml` 두 곳에 있으므로 **둘을 함께 갱신한다**(현재 16 vs 13으로 이미 어긋나 있다).
 
 ## 비즈니스 규칙
 
@@ -105,17 +105,17 @@ A+B를 모두 적용해도 **웹소켓이 완전히 끊긴 구간에서는 매�
 
 ## 완료 조건
 
-- [ ] 웹소켓 연결이 `CONNECTED`이고 마지막 체결이 10초를 넘겼지만 REST 폴링이 관측 시각을 갱신한 코인 종목에서, `GET /api/instruments/{instrumentId}/price`가 200과 `status: "AVAILABLE"`을 반환하는 테스트 통과. (A)
-- [ ] REST가 관측 시각을 갱신한 직후에 그보다 이른 체결 시각을 가진 웹소켓 틱이 도착해도 **그 틱의 가격이 반영되는** 테스트 통과 — 이 spec에서 가장 깨지기 쉬운 지점이다. (A)
-- [ ] 동일 심볼의 과거 체결 틱이 최신 체결을 덮어쓰지 않는 기존 동작이 유지되는 회귀 테스트 통과(MKT-003). (A)
-- [ ] 연결이 `CONNECTED`이고 관측 시각이 10초를 넘긴(`STALE`) 코인 종목에서 `getOrderExecutionPrice`가 **예외 없이 마지막 가격을 반환**하는 테스트 통과. (B)
-- [ ] `getOrderExecutionPriceStillThrowsPriceUnavailableWhenCryptoTickIsStale`이 새 동작을 고정하는 테스트로 반전됨. (B)
-- [ ] 연결이 `DISCONNECTED`이거나 시세 수신 이력이 없으면 표시·체결 모두 여전히 `UNAVAILABLE` / 409인 테스트 통과(fail-closed 잔여선 고정).
-- [ ] 관측 시각이 10초를 넘기면 화면 `status`는 여전히 `STALE`로 표시되는 테스트 통과 — 체결만 허용될 뿐 표시 구분은 유지된다.
-- [ ] REST 폴링이 실패·타임아웃·비정상 응답에서 예외를 스케줄러 밖으로 던지지 않는 기존 테스트가 회귀 없이 통과(`BithumbRestTickerPollerTest`).
-- [ ] 자동 테스트가 외부 네트워크에 의존하지 않는다(PRD C-005) — `BithumbRestTickerPollerConditionalTest`로 확인.
-- [ ] 기존 회귀 테스트 통과: `CryptoCandleAndPriceIndependenceTest`, `PriceQueryServiceTest`, `HoldingValuationServiceTest`, `OrderExecutionServiceTest`, `NewsCollectionIntegrationTest.schedulingPoolIsLargeEnoughForEveryScheduledTask`.
-- [ ] `docs/api-contracts.md`의 `/price` 절과 주문 절에서 `PRICE_UNAVAILABLE` 발생 조건 설명이 갱신됨(같은 커밋).
+- [x] 웹소켓 연결이 `CONNECTED`이고 마지막 체결이 10초를 넘겼지만 REST 폴링이 관측 시각을 갱신한 코인 종목에서, `GET /api/instruments/{instrumentId}/price`가 200과 `status: "AVAILABLE"`을 반환하는 테스트 통과. (A)
+- [x] REST가 관측 시각을 갱신한 직후에 그보다 이른 체결 시각을 가진 웹소켓 틱이 도착해도 **그 틱의 가격이 반영되는** 테스트 통과 — 이 spec에서 가장 깨지기 쉬운 지점이다. (A)
+- [x] 동일 심볼의 과거 체결 틱이 최신 체결을 덮어쓰지 않는 기존 동작이 유지되는 회귀 테스트 통과(MKT-003). (A)
+- [x] 연결이 `CONNECTED`이고 관측 시각이 10초를 넘긴(`STALE`) 코인 종목에서 `getOrderExecutionPrice`가 **예외 없이 마지막 가격을 반환**하는 테스트 통과. (B)
+- [x] `getOrderExecutionPriceStillThrowsPriceUnavailableWhenCryptoTickIsStale`이 새 동작을 고정하는 테스트로 반전됨. (B)
+- [x] 연결이 `DISCONNECTED`이거나 시세 수신 이력이 없으면 표시·체결 모두 여전히 `UNAVAILABLE` / 409인 테스트 통과(fail-closed 잔여선 고정).
+- [x] 관측 시각이 10초를 넘기면 화면 `status`는 여전히 `STALE`로 표시되는 테스트 통과 — 체결만 허용될 뿐 표시 구분은 유지된다.
+- [x] REST 폴링이 실패·타임아웃·비정상 응답에서 예외를 스케줄러 밖으로 던지지 않는 기존 테스트가 회귀 없이 통과(`BithumbRestTickerPollerTest`).
+- [x] 자동 테스트가 외부 네트워크에 의존하지 않는다(PRD C-005) — `BithumbRestTickerPollerConditionalTest`로 확인.
+- [x] 기존 회귀 테스트 통과: `CryptoCandleAndPriceIndependenceTest`, `PriceQueryServiceTest`, `HoldingValuationServiceTest`, `OrderExecutionServiceTest`, `NewsCollectionIntegrationTest.schedulingPoolIsLargeEnoughForEveryScheduledTask`.
+- [x] `docs/api-contracts.md`의 `/price` 절과 주문 절에서 `PRICE_UNAVAILABLE` 발생 조건 설명이 갱신됨(같은 커밋).
 - [x] `docs/specs/003-market-data/spec.md`·`docs/prd.md`의 MKT-004, `docs/specs/032-price-quote-stale-split/spec.md`의 체결 차단 요구사항을 새 동작에 맞게 갱신 완료.
-- [ ] `docs/prd.md` §3 "구현 현황"에 이 기능의 행이 추가됨(근거: PR 번호).
-- [ ] `./gradlew build` 통과.
+- [x] `docs/prd.md` §3 "구현 현황"에 이 기능의 행이 추가됨(근거: 이슈 #369, PR 생성 후 번호 갱신 필요).
+- [x] `./gradlew build` 통과.
