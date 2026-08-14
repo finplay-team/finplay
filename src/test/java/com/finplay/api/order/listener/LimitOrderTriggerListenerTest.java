@@ -48,7 +48,7 @@ class LimitOrderTriggerListenerTest {
 		BigDecimal price = new BigDecimal("70000000");
 		when(orderRepository.findPendingLimitOrdersToFill(1L, price)).thenReturn(List.of(first, second));
 
-		listener.onPriceUpdated(new CryptoPriceUpdatedEvent("BTC", price, NOW));
+		listener.onPriceUpdated(new CryptoPriceUpdatedEvent("BTC", price, NOW, NOW));
 
 		InOrder order = inOrder(limitOrderFillService);
 		order.verify(limitOrderFillService).fillIfPending(10L);
@@ -60,7 +60,7 @@ class LimitOrderTriggerListenerTest {
 		when(instrumentService.findEntityByMarketAndSymbol(Market.CRYPTO, "UNKNOWN")).thenReturn(Optional.empty());
 
 		assertThatCode(() -> listener.onPriceUpdated(
-			new CryptoPriceUpdatedEvent("UNKNOWN", new BigDecimal("100"), NOW)))
+			new CryptoPriceUpdatedEvent("UNKNOWN", new BigDecimal("100"), NOW, NOW)))
 			.doesNotThrowAnyException();
 
 		verifyNoInteractions(orderRepository, limitOrderFillService);
@@ -76,7 +76,7 @@ class LimitOrderTriggerListenerTest {
 		when(orderRepository.findPendingLimitOrdersToFill(1L, price)).thenReturn(List.of(failing, succeeding));
 		doThrow(new IllegalStateException("체결 실패")).when(limitOrderFillService).fillIfPending(10L);
 
-		assertThatCode(() -> listener.onPriceUpdated(new CryptoPriceUpdatedEvent("BTC", price, NOW)))
+		assertThatCode(() -> listener.onPriceUpdated(new CryptoPriceUpdatedEvent("BTC", price, NOW, NOW)))
 			.doesNotThrowAnyException();
 
 		verify(limitOrderFillService).fillIfPending(10L);
@@ -89,7 +89,7 @@ class LimitOrderTriggerListenerTest {
 			.thenThrow(new RuntimeException("조회 실패"));
 
 		assertThatCode(() -> listener.onPriceUpdated(
-			new CryptoPriceUpdatedEvent("BTC", new BigDecimal("100"), NOW)))
+			new CryptoPriceUpdatedEvent("BTC", new BigDecimal("100"), NOW, NOW)))
 			.doesNotThrowAnyException();
 
 		verifyNoInteractions(orderRepository, limitOrderFillService);

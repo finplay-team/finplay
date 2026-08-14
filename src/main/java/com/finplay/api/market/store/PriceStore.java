@@ -57,25 +57,33 @@ public class PriceStore {
 		fields.put(FIELD_RECEIVED_AT, receivedAt.toString());
 		fields.put(FIELD_OBSERVED_AT, observedAt.toString());
 		hashOps.putAll(key, fields);
-		eventPublisher.publishEvent(new CryptoPriceUpdatedEvent(symbol, price, receivedAt));
+		eventPublisher.publishEvent(new CryptoPriceUpdatedEvent(symbol, price, receivedAt, observedAt));
 	}
 
 	// REST 폴러(BithumbRestTickerPoller) 전용 — "이 가격이 지금도 최신"임을 재확인했다는 뜻으로 observedAt은
 	// 항상 갱신한다. price는 저장된 값과 실제로 다를 때만 갱신하고, receivedAt(체결 시각)은 절대 건드리지 않는다 —
 	// REST는 체결 시각을 모르고 "폴링한 시각"만 알기 때문에 여기 채워 넣으면 MKT-003 가드가 오염된다
 	// (PRICE-REST-001·002, docs/specs/034-crypto-price-rest-backup/plan.md).
-	// 이벤트 발행 조건(가격이 실제로 바뀔 때만 publish)은 이 spec의 다음 작업 항목에서 확정한다 — 이 메서드는
-	// 아직 어떤 소비자도 호출하지 않는다.
+	// CryptoPriceUpdatedEvent는 가격이 실제로 바뀌었을 때만 publish한다 — 관측 시각만 갱신한 호출은 소비자
+	// (LimitOrderTriggerListener·CryptoPriceStreamService) 입장에서 같은 값을 3초마다 재처리·재전송하는 순수한
+	// 낭비이기 때문이다(plan.md "컴포넌트 설계 — PriceStore" §이벤트 발행). 이벤트의 receivedAt은 이 메서드가
+	// 건드리지 않는 기존 체결 시각을 그대로 실어 보낸다 — receivedAt이 아예 없던 심볼(REST가 웹소켓보다 먼저
+	// 도착한 극히 드문 경우)만 observedAt으로 대체한다.
 	public void recordObservation(String symbol, BigDecimal price, LocalDateTime observedAt) {
 		HashOperations<String, String, String> hashOps = redisTemplate.opsForHash();
 		String key = priceKey(symbol);
 		String existingPriceValue = hashOps.get(key, FIELD_PRICE);
+		boolean priceChanged = existingPriceValue == null || new BigDecimal(existingPriceValue).compareTo(price) != 0;
 		Map<String, String> fields = new HashMap<>();
 		fields.put(FIELD_OBSERVED_AT, observedAt.toString());
-		if (existingPriceValue == null || new BigDecimal(existingPriceValue).compareTo(price) != 0) {
+		if (priceChanged) {
 			fields.put(FIELD_PRICE, price.toPlainString());
 		}
 		hashOps.putAll(key, fields);
+		if (priceChanged) {
+			LocalDateTime receivedAt = readReceivedAt(hashOps, key).orElse(observedAt);
+			eventPublisher.publishEvent(new CryptoPriceUpdatedEvent(symbol, price, receivedAt, observedAt));
+		}
 	}
 
 	public Optional<CryptoPriceDto> getLatestPrice(String symbol) {

@@ -12,7 +12,7 @@
   Redis 해시 `price:crypto:{symbol}`에 `observedAt` 필드를 추가한다(새 키는 만들지 않는다). `saveTick`은 기존 과거틱 가드(`receivedAt` 비교)를 **그대로 두고**, 가드를 통과했을 때 `observedAt = now(clock)`을 함께 기록한다. 새 메서드 `recordObservation(symbol, price, observedAt)`을 추가한다 — `observedAt`은 항상 갱신하고, `price`는 저장값과 다를 때만 갱신하며 `receivedAt`은 건드리지 않는다. `isStale` 판정 기준을 `observedAt`으로 바꾸되 임계값 10초는 유지한다. `observedAt`이 없는 기존 해시는 `receivedAt`으로 폴백한다. `CryptoPriceDto`에 `observedAt`을 싣는다.
   `PriceStoreTest`에 plan.md "테스트 계획 — `PriceStoreTest`"의 케이스를 전부 추가한다. 특히 **`recordObservation` 직후 더 이른 `receivedAt`의 `saveTick`이 정상 반영되는 케이스**를 반드시 포함한다(PRICE-REST-003, 가장 깨지기 쉬운 지점). MKT-003 기존 케이스가 회귀 없이 통과하는지 확인한다.
 
-- [ ] **3. `recordObservation`의 이벤트 발행 조건 확정 (A)**
+- [x] **3. `recordObservation`의 이벤트 발행 조건 확정 (A)**
   `recordObservation`은 **가격이 실제로 바뀌었을 때만** `CryptoPriceUpdatedEvent`를 발행한다(관측 시각만 갱신한 경우 미발행). `saveTick`의 발행 조건은 건드리지 않는다. `PriceStoreTest`에 발행/미발행 두 케이스를 추가한다. `LimitOrderTriggerListener`·`CryptoPriceStreamService`는 코드 변경 없이 소비자로만 남는다 — 두 리스너의 기존 테스트가 회귀 없이 통과하는지 확인한다.
 
 - [ ] **4. `BithumbRestTickerPoller` 운영 확장 + 주입 대상 전환 (A)**

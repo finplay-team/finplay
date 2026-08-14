@@ -196,8 +196,8 @@ class PriceStoreTest {
 	}
 
 	// 아래부터는 034-crypto-price-rest-backup PRICE-REST-001 — observedAt(관측 시각) 분리 검증이다.
-	// recordObservation의 이벤트 발행 여부(가격 변경 시에만 publish)는 이 항목의 범위가 아니다 — 다음 작업
-	// 항목(tasks.md 항목 3)에서 별도로 고정한다.
+	// recordObservation의 이벤트 발행 조건(가격 변경 시에만 publish)은 tasks.md 항목 3에서 고정한다 —
+	// 아래 §recordObservation 이벤트 발행 조건 절에서 검증한다.
 
 	@Test
 	void recordObservationUpdatesObservedAtOnlyWhenPriceUnchanged() {
@@ -283,6 +283,39 @@ class PriceStoreTest {
 		Map<String, String> lastFields = fieldsCaptor.getAllValues().get(fieldsCaptor.getAllValues().size() - 1);
 		assertThat(lastFields.get("price")).isEqualTo("101");
 		assertThat(lastFields.get("receivedAt")).isEqualTo(tradeReceivedAt.toString());
+	}
+
+	// 034-crypto-price-rest-backup tasks.md 항목 3 — recordObservation의 이벤트 발행 조건. 가격이 실제로
+	// 바뀌었을 때만 CryptoPriceUpdatedEvent를 publish한다(관측 시각만 갱신된 경우는 미발행) — 같은 값으로
+	// LimitOrderTriggerListener·CryptoPriceStreamService를 3초마다 다시 도는 것은 순수한 낭비이기 때문이다
+	// (plan.md "컴포넌트 설계 — PriceStore" §이벤트 발행).
+
+	@Test
+	void recordObservationDoesNotPublishEventWhenOnlyObservedAtChanges() {
+		PriceStore priceStore = priceStore();
+		LocalDateTime existingReceivedAt = NOW.minusSeconds(5);
+		stubTick("OBS_EVENT_SAME", new BigDecimal("100"), existingReceivedAt);
+
+		priceStore.recordObservation("OBS_EVENT_SAME", new BigDecimal("100"), NOW);
+
+		verify(eventPublisher, never()).publishEvent(any());
+	}
+
+	@Test
+	void recordObservationPublishesEventWithExistingReceivedAtWhenPriceActuallyChanges() {
+		PriceStore priceStore = priceStore();
+		LocalDateTime existingReceivedAt = NOW.minusSeconds(5);
+		stubTick("OBS_EVENT_DIFF", new BigDecimal("100"), existingReceivedAt);
+
+		priceStore.recordObservation("OBS_EVENT_DIFF", new BigDecimal("150"), NOW);
+
+		ArgumentCaptor<CryptoPriceUpdatedEvent> eventCaptor = ArgumentCaptor.forClass(CryptoPriceUpdatedEvent.class);
+		verify(eventPublisher).publishEvent(eventCaptor.capture());
+		CryptoPriceUpdatedEvent event = eventCaptor.getValue();
+		assertThat(event.symbol()).isEqualTo("OBS_EVENT_DIFF");
+		assertThat(event.price()).isEqualByComparingTo("150");
+		// receivedAt(체결 시각)은 recordObservation이 절대 건드리지 않으므로 기존 값 그대로 실려야 한다.
+		assertThat(event.receivedAt()).isEqualTo(existingReceivedAt);
 	}
 
 	// 아래부터는 spec 012 §코인 가격 스냅샷(이슈 #225) — recordSnapshot·getSnapshots 검증이다.

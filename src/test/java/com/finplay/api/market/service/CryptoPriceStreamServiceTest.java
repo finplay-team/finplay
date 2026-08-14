@@ -179,14 +179,19 @@ class CryptoPriceStreamServiceTest {
 		handlerB.attachTo(emitterB);
 		when(sseEmitterRegistry.getEmitters(Market.CRYPTO)).thenReturn(List.of(emitterA, emitterB));
 		LocalDateTime receivedAt = LocalDateTime.of(2026, 8, 10, 9, 5, 33);
-		CryptoPriceUpdatedEvent event = new CryptoPriceUpdatedEvent("BTC", new BigDecimal("140000000"), receivedAt);
+		LocalDateTime observedAt = LocalDateTime.of(2026, 8, 10, 9, 5, 34);
+		CryptoPriceUpdatedEvent event = new CryptoPriceUpdatedEvent("BTC", new BigDecimal("140000000"), receivedAt,
+			observedAt);
 
 		service.onPriceUpdated(event);
 
 		String sentA = joinSentTextEvents(handlerA);
 		String sentB = joinSentTextEvents(handlerB);
 		assertThat(sentA).contains("event:price");
-		assertThat(sentA).contains("id:CRYPTO:BTC:20260810090533");
+		// id는 receivedAt(체결 시각)이 아니라 observedAt(관측 시각) 기준이다 — 034-crypto-price-rest-backup에서
+		// REST 폴러가 receivedAt을 갱신하지 않아도 매번 새 observedAt으로 id를 구분해야 하는 이유는 아래
+		// onPriceUpdatedAssignsDistinctSseIdsToTwoEventsSharingTheSameReceivedAtButDifferentObservedAt에서 검증한다.
+		assertThat(sentA).contains("id:CRYPTO:BTC:20260810090534");
 		assertThat(sentB).contains("event:price");
 		MarketPriceEvent payload = lastPayloadOfType(handlerA, MarketPriceEvent.class);
 		assertThat(payload.market()).isEqualTo(Market.CRYPTO);
@@ -209,12 +214,42 @@ class CryptoPriceStreamServiceTest {
 		failingHandler.failOnNextSend();
 		when(sseEmitterRegistry.getEmitters(Market.CRYPTO)).thenReturn(List.of(failingEmitter, healthyEmitter));
 		LocalDateTime receivedAt = LocalDateTime.of(2026, 8, 10, 9, 5, 33);
-		CryptoPriceUpdatedEvent event = new CryptoPriceUpdatedEvent("ETH", new BigDecimal("5000000"), receivedAt);
+		CryptoPriceUpdatedEvent event = new CryptoPriceUpdatedEvent("ETH", new BigDecimal("5000000"), receivedAt,
+			receivedAt);
 
 		service.onPriceUpdated(event);
 
 		assertThat(failingHandler.isCompleteWithErrorCalled()).isTrue();
 		assertThat(joinSentTextEvents(healthyHandler)).contains("event:price");
+	}
+
+	// 회귀 — 034-crypto-price-rest-backup tasks.md 항목 3 tester 발견 결함. REST 폴러(recordObservation)는
+	// receivedAt(체결 시각)을 절대 갱신하지 않으므로, 웹소켓 체결 없이 REST 폴링만으로 서로 다른 가격이 연달아
+	// 감지되면 두 CryptoPriceUpdatedEvent가 같은 receivedAt을 실은 채 발행된다. id가 receivedAt 기준이면 두
+	// 이벤트가 같은 SSE id를 갖게 되어 프론트가 id로 dedup할 때 두 번째(더 최신) 가격 갱신이 조용히 무시될 수
+	// 있다 — observedAt은 발행마다 항상 새 값이므로 id를 observedAt 기준으로 만들면 이 충돌이 없다.
+	@Test
+	void onPriceUpdatedAssignsDistinctSseIdsToTwoEventsSharingTheSameReceivedAtButDifferentObservedAt()
+		throws Exception {
+		SseEmitter emitter = new SseEmitter();
+		SseEmitterTestHandler handler = new SseEmitterTestHandler();
+		handler.attachTo(emitter);
+		when(sseEmitterRegistry.getEmitters(Market.CRYPTO)).thenReturn(List.of(emitter));
+		// 두 REST 폴링 모두 웹소켓 체결이 없어 같은(오래된) receivedAt을 그대로 실은 채, 서로 다른 가격을 감지한다.
+		LocalDateTime sharedReceivedAt = LocalDateTime.of(2026, 8, 10, 9, 0, 0);
+		LocalDateTime firstObservedAt = LocalDateTime.of(2026, 8, 10, 9, 5, 30);
+		LocalDateTime secondObservedAt = LocalDateTime.of(2026, 8, 10, 9, 5, 33);
+		CryptoPriceUpdatedEvent first = new CryptoPriceUpdatedEvent("XRP", new BigDecimal("700"), sharedReceivedAt,
+			firstObservedAt);
+		CryptoPriceUpdatedEvent second = new CryptoPriceUpdatedEvent("XRP", new BigDecimal("710"), sharedReceivedAt,
+			secondObservedAt);
+
+		service.onPriceUpdated(first);
+		service.onPriceUpdated(second);
+
+		String sent = joinSentTextEvents(handler);
+		assertThat(sent).contains("id:CRYPTO:XRP:20260810090530");
+		assertThat(sent).contains("id:CRYPTO:XRP:20260810090533");
 	}
 
 	// ---------- publishConnectionStatusIfChanged: status ----------
