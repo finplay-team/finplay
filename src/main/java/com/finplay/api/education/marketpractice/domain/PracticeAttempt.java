@@ -117,4 +117,16 @@ public class PracticeAttempt {
 		this.completedAt = null;
 		this.updatedAt = updatedAt;
 	}
+
+	public void complete(LocalDateTime completedAt) {
+		if (this.status == PracticeAttemptStatus.COMPLETED) {
+			throw new IllegalStateException("이미 완료된 튜토리얼 attempt입니다.");
+		}
+		if (this.status != PracticeAttemptStatus.IN_PROGRESS) {
+			throw new IllegalStateException("진행 중인 튜토리얼 attempt만 완료할 수 있습니다.");
+		}
+		this.status = PracticeAttemptStatus.COMPLETED;
+		this.completedAt = completedAt;
+		this.updatedAt = completedAt;
+	}
 }

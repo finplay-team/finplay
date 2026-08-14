@@ -1,13 +1,21 @@
 // 실제 favorite·intention·buyTrade·holding·관찰·복기 리소스를 조회해 3단계 실습 진행 상태를 계산하는 순수 조회 서비스
 package com.finplay.api.education.marketpractice.service;
 
+import com.finplay.api.common.BusinessException;
+import com.finplay.api.common.ErrorCode;
 import com.finplay.api.education.marketpractice.domain.PracticeCompletion;
+import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
+import com.finplay.api.education.marketpractice.domain.PracticeAttemptStatus;
+import com.finplay.api.education.marketpractice.domain.PracticeRiskSnapshot;
 import com.finplay.api.education.marketpractice.domain.PracticeMarketObservation;
 import com.finplay.api.education.marketpractice.domain.PracticeMarketReflection;
 import com.finplay.api.education.marketpractice.dto.response.InvestmentPracticeResponse;
+import com.finplay.api.education.marketpractice.dto.response.PracticeAttemptResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeEvidenceResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeStepResponse;
 import com.finplay.api.education.marketpractice.repository.PracticeCompletionRepository;
+import com.finplay.api.education.marketpractice.repository.PracticeAttemptRepository;
+import com.finplay.api.education.marketpractice.repository.PracticeRiskSnapshotRepository;
 import com.finplay.api.education.marketpractice.repository.PracticeMarketObservationRepository;
 import com.finplay.api.education.service.PracticeIntentionService;
 import com.finplay.api.favorite.dto.response.FavoriteResponse;
@@ -50,6 +58,9 @@ public class InvestmentPracticeQueryService {
 	private static final long TUTORIAL_COMPLETION_REWARD_AMOUNT = 5_000_000L;
 
 	private final FavoriteService favoriteService;
+	private final PracticeAttemptRepository practiceAttemptRepository;
+	private final PracticeRiskSnapshotRepository practiceRiskSnapshotRepository;
+	private final PracticeAttemptEvidenceService practiceAttemptEvidenceService;
 	private final MarketPracticeChainResolutionService chainResolutionService;
 	private final ReferencePriceCalculator referencePriceCalculator;
 	private final PracticeMarketObservationRepository practiceMarketObservationRepository;
@@ -62,6 +73,17 @@ public class InvestmentPracticeQueryService {
 
 		Optional<PracticeCompletion> completion = practiceCompletionRepository
 			.findByUserIdAndTutorialKey(userId, tutorialKey);
+		Optional<PracticeAttempt> attempt = practiceAttemptRepository.findByUserIdAndMarket(userId, market);
+		if (attempt.isPresent()) {
+			if (attempt.get().getStatus() == PracticeAttemptStatus.COMPLETED) {
+				return buildCompletedAttemptResponse(
+					userId,
+					tutorialKey,
+					attempt.get(),
+					completion.orElseThrow(() -> new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING)));
+			}
+			return buildActiveAttemptResponse(userId, tutorialKey, attempt.get());
+		}
 		if (completion.isPresent()) {
 			return buildCompletedResponse(userId, tutorialKey, completion.get());
 		}
@@ -79,6 +101,139 @@ public class InvestmentPracticeQueryService {
 		}
 
 		return buildNotStartedResponse(tutorialKey);
+	}
+
+	private InvestmentPracticeResponse buildActiveAttemptResponse(
+		Long userId, String tutorialKey, PracticeAttempt attempt) {
+		PracticeAttemptResponse attemptResponse;
+		if (attempt.getInstrument() == null) {
+			attemptResponse = PracticeAttemptResponse.from(attempt, null);
+			List<PracticeStepResponse> steps = List.of(
+				new PracticeStepResponse(1, STATUS_IN_PROGRESS, false, PracticeEvidenceResponse.empty()),
+				new PracticeStepResponse(2, STATUS_NOT_STARTED, true, PracticeEvidenceResponse.empty()),
+				new PracticeStepResponse(3, STATUS_NOT_STARTED, true, PracticeEvidenceResponse.empty()),
+				new PracticeStepResponse(4, STATUS_NOT_STARTED, true, PracticeEvidenceResponse.empty()));
+			return new InvestmentPracticeResponse(
+				tutorialKey, STATUS_IN_PROGRESS, 1, steps, null, null, attemptResponse);
+		}
+
+		Optional<PracticeRiskSnapshot> snapshot = practiceRiskSnapshotRepository
+			.findByAttemptIdAndRunNumber(attempt.getId(), attempt.getRunNumber());
+		attemptResponse = PracticeAttemptResponse.from(attempt, snapshot.orElse(null));
+		if (snapshot.isEmpty()) {
+			List<PracticeStepResponse> steps = List.of(
+				new PracticeStepResponse(1, STATUS_COMPLETED, false, PracticeEvidenceResponse.empty()),
+				new PracticeStepResponse(2, STATUS_IN_PROGRESS, false, PracticeEvidenceResponse.empty()),
+				new PracticeStepResponse(3, STATUS_NOT_STARTED, true, PracticeEvidenceResponse.empty()),
+				new PracticeStepResponse(4, STATUS_NOT_STARTED, true, PracticeEvidenceResponse.empty()));
+			return new InvestmentPracticeResponse(
+				tutorialKey, STATUS_IN_PROGRESS, 2, steps, null, null, attemptResponse);
+		}
+
+		ResolvedPracticeAttemptEvidenceDto resolved = practiceAttemptEvidenceService
+			.requireCurrentRun(attempt, userId, null);
+		Optional<PracticeMarketObservation> qualifyingObservation = currentRunObservations(userId, resolved).stream()
+			.filter(observation -> observation.getEvidenceType() != null)
+			.findFirst();
+		LocalDateTime saleDeadlineAt = snapshot.get().getBuyTrade().getExecutedAt()
+			.plusMinutes(SALE_DEADLINE_MINUTES);
+		PracticeEvidenceResponse evidence = attemptEvidence(resolved, qualifyingObservation.orElse(null),
+			saleDeadlineAt,
+			null);
+
+		String stepFourStatus;
+		boolean stepFourLocked;
+		if (qualifyingObservation.isEmpty()) {
+			stepFourStatus = STATUS_NOT_STARTED;
+			stepFourLocked = true;
+		} else if (resolved.sellTrade() != null) {
+			stepFourStatus = isWithinSaleDeadline(resolved.sellTrade().getExecutedAt(), saleDeadlineAt)
+				? STATUS_IN_PROGRESS
+				: STATUS_EXPIRED;
+			stepFourLocked = false;
+		} else {
+			stepFourStatus = isWithinSaleDeadline(LocalDateTime.now(clock), saleDeadlineAt)
+				? STATUS_AWAITING_SALE
+				: STATUS_EXPIRED;
+			stepFourLocked = false;
+		}
+		List<PracticeStepResponse> steps = List.of(
+			new PracticeStepResponse(1, STATUS_COMPLETED, false, PracticeEvidenceResponse.empty()),
+			new PracticeStepResponse(2, STATUS_COMPLETED, false, evidence),
+			new PracticeStepResponse(
+				3, qualifyingObservation.isPresent() ? STATUS_COMPLETED : STATUS_IN_PROGRESS, false, evidence),
+			new PracticeStepResponse(4, stepFourStatus, stepFourLocked, evidence));
+		String overallStatus = STATUS_EXPIRED.equals(stepFourStatus) ? STATUS_EXPIRED : STATUS_IN_PROGRESS;
+		return new InvestmentPracticeResponse(
+			tutorialKey, overallStatus, qualifyingObservation.isPresent() ? 4 : 3, steps, null, null, attemptResponse);
+	}
+
+	private InvestmentPracticeResponse buildCompletedAttemptResponse(
+		Long userId, String tutorialKey, PracticeAttempt attempt, PracticeCompletion completion) {
+		ResolvedPracticeAttemptEvidenceDto resolved = practiceAttemptEvidenceService
+			.requireCurrentRun(attempt, userId, completion.getReflection().getHolding().getId());
+		PracticeMarketObservation observation = currentRunObservations(userId, resolved).stream()
+			.filter(candidate -> candidate.getEvidenceType() != null)
+			.findFirst()
+			.orElse(null);
+		LocalDateTime saleDeadlineAt = resolved.riskSnapshot().getBuyTrade().getExecutedAt()
+			.plusMinutes(SALE_DEADLINE_MINUTES);
+		PracticeEvidenceResponse evidence = attemptEvidence(
+			resolved, observation, saleDeadlineAt, completion.getReflection());
+		List<PracticeStepResponse> steps = List.of(
+			new PracticeStepResponse(1, STATUS_COMPLETED, false, evidence),
+			new PracticeStepResponse(2, STATUS_COMPLETED, false, evidence),
+			new PracticeStepResponse(3, STATUS_COMPLETED, false, evidence),
+			new PracticeStepResponse(4, STATUS_COMPLETED, false, evidence));
+		return new InvestmentPracticeResponse(
+			tutorialKey,
+			STATUS_COMPLETED,
+			null,
+			steps,
+			completion.getCompletedAt(),
+			TUTORIAL_COMPLETION_REWARD_AMOUNT,
+			PracticeAttemptResponse.from(attempt, resolved.riskSnapshot()));
+	}
+
+	private List<PracticeMarketObservation> currentRunObservations(
+		Long userId, ResolvedPracticeAttemptEvidenceDto resolved) {
+		return practiceMarketObservationRepository
+			.findByUserIdAndHoldingIdOrderByObservedAtAscIdAsc(userId, resolved.holdingId())
+			.stream()
+			.filter(observation -> !observation.getObservedAt().isBefore(resolved.riskSnapshot().getCreatedAt()))
+			.filter(observation -> resolved.sellTrade() == null
+				|| !observation.getObservedAt().isAfter(resolved.sellTrade().getExecutedAt()))
+			.toList();
+	}
+
+	private PracticeEvidenceResponse attemptEvidence(
+		ResolvedPracticeAttemptEvidenceDto resolved,
+		PracticeMarketObservation observation,
+		LocalDateTime saleDeadlineAt,
+		PracticeMarketReflection reflection) {
+		return new PracticeEvidenceResponse(
+			null,
+			null,
+			null,
+			null,
+			resolved.riskSnapshot().getBuyTrade().getId(),
+			resolved.riskSnapshot().getBuyTrade().getExecutedAt(),
+			resolved.holdingId(),
+			resolved.riskSnapshot().getStopLossPrice(),
+			resolved.riskSnapshot().getTakeProfitPrice(),
+			observation == null ? null : observation.getId(),
+			observation == null ? null : observation.getObservedAt(),
+			observation == null || observation.getEvidenceType() == null
+				? null
+				: observation.getEvidenceType().name(),
+			reflection == null ? null : reflection.getId(),
+			reflection == null ? null : reflection.getCreatedAt(),
+			resolved.sellTrade() == null ? null : resolved.sellTrade().getId(),
+			resolved.sellTrade() == null ? null : resolved.sellTrade().getExecutedAt(),
+			saleDeadlineAt,
+			resolved.buyQuantity(),
+			resolved.sellQuantity(),
+			resolved.remainingQuantity());
 	}
 
 	// 완료 조건 1: practice_completions 행이 있으면 COMPLETED, 1·2·3단계 전부 COMPLETED. evidence는
@@ -117,6 +272,9 @@ public class InvestmentPracticeQueryService {
 			reflection.getCreatedAt(),
 			null,
 			null,
+			null,
+			null,
+			null,
 			null);
 
 		if (!sampleInstrument) {
@@ -126,7 +284,7 @@ public class InvestmentPracticeQueryService {
 				new PracticeStepResponse(3, STATUS_COMPLETED, false, evidence));
 			return new InvestmentPracticeResponse(
 				tutorialKey, STATUS_COMPLETED, null, steps, completion.getCompletedAt(),
-				TUTORIAL_COMPLETION_REWARD_AMOUNT);
+				TUTORIAL_COMPLETION_REWARD_AMOUNT, null);
 		}
 
 		// 샘플 종목 chain은 4단계(매도·복기)까지 완료돼야 practice_completions가 생기므로(4단계
@@ -141,7 +299,10 @@ public class InvestmentPracticeQueryService {
 			chain.map(ResolvedPracticeChainDto::sellTradeExecutedAt).orElse(null),
 			evidence.buyTradeExecutedAt() == null
 				? null
-				: evidence.buyTradeExecutedAt().plusMinutes(SALE_DEADLINE_MINUTES));
+				: evidence.buyTradeExecutedAt().plusMinutes(SALE_DEADLINE_MINUTES),
+			null,
+			null,
+			null);
 
 		List<PracticeStepResponse> steps = List.of(
 			new PracticeStepResponse(1, STATUS_COMPLETED, false, evidence),
@@ -149,7 +310,7 @@ public class InvestmentPracticeQueryService {
 			new PracticeStepResponse(3, STATUS_COMPLETED, false, evidence),
 			new PracticeStepResponse(4, STATUS_COMPLETED, false, stepFourEvidence));
 		return new InvestmentPracticeResponse(tutorialKey, STATUS_COMPLETED, null, steps, completion.getCompletedAt(),
-			TUTORIAL_COMPLETION_REWARD_AMOUNT);
+			TUTORIAL_COMPLETION_REWARD_AMOUNT, null);
 	}
 
 	// 완료 조건 2·3: 완료되지 않았지만 유효 chain이 있으면 1·2단계는 COMPLETED, 3단계는 IN_PROGRESS다. chain에
@@ -168,6 +329,9 @@ public class InvestmentPracticeQueryService {
 			chain.holdingId(),
 			referenceLines.map(ReferencePriceLines::referenceStopLossPrice).orElse(null),
 			referenceLines.map(ReferencePriceLines::referenceTakeProfitPrice).orElse(null),
+			null,
+			null,
+			null,
 			null,
 			null,
 			null,
@@ -201,6 +365,9 @@ public class InvestmentPracticeQueryService {
 				null,
 				null,
 				null,
+				null,
+				null,
+				null,
 				null))
 			.orElse(chainEvidence);
 
@@ -212,7 +379,7 @@ public class InvestmentPracticeQueryService {
 				new PracticeStepResponse(1, STATUS_COMPLETED, false, favoriteEvidence),
 				new PracticeStepResponse(2, STATUS_COMPLETED, false, chainEvidence),
 				new PracticeStepResponse(3, STATUS_IN_PROGRESS, false, stepThreeEvidence));
-			return new InvestmentPracticeResponse(tutorialKey, STATUS_IN_PROGRESS, 3, steps, null, null);
+			return new InvestmentPracticeResponse(tutorialKey, STATUS_IN_PROGRESS, 3, steps, null, null, null);
 		}
 
 		// 샘플 종목 chain: 4단계(매도·복기) 확장(plan.md "GET /api/education/practice 4단계 응답").
@@ -238,14 +405,17 @@ public class InvestmentPracticeQueryService {
 			null,
 			chain.sellTradeId(),
 			chain.sellTradeExecutedAt(),
-			saleDeadlineAt);
+			saleDeadlineAt,
+			null,
+			null,
+			null);
 
 		List<PracticeStepResponse> steps = List.of(
 			new PracticeStepResponse(1, STATUS_COMPLETED, false, favoriteEvidence),
 			new PracticeStepResponse(2, STATUS_COMPLETED, false, chainEvidence),
 			new PracticeStepResponse(3, STATUS_IN_PROGRESS, false, stepThreeEvidence),
 			new PracticeStepResponse(4, stepFourStatus, false, stepFourEvidence));
-		return new InvestmentPracticeResponse(tutorialKey, STATUS_IN_PROGRESS, 4, steps, null, null);
+		return new InvestmentPracticeResponse(tutorialKey, STATUS_IN_PROGRESS, 4, steps, null, null, null);
 	}
 
 	// 4단계(매도·복기) evidence 판정. (a) 매도 체결이 buyTrade.executedAt + 5분 이내여야 IN_PROGRESS(복기 대기),
@@ -285,7 +455,7 @@ public class InvestmentPracticeQueryService {
 			new PracticeStepResponse(1, STATUS_COMPLETED, false, favoriteEvidence),
 			new PracticeStepResponse(2, STATUS_IN_PROGRESS, false, favoriteEvidence),
 			new PracticeStepResponse(3, STATUS_NOT_STARTED, true, PracticeEvidenceResponse.empty()));
-		return new InvestmentPracticeResponse(tutorialKey, STATUS_IN_PROGRESS, 2, steps, null, null);
+		return new InvestmentPracticeResponse(tutorialKey, STATUS_IN_PROGRESS, 2, steps, null, null, null);
 	}
 
 	// 완료 조건 5: favorite조차 없으면 전부 미착수다.
@@ -294,7 +464,7 @@ public class InvestmentPracticeQueryService {
 			new PracticeStepResponse(1, STATUS_NOT_STARTED, false, PracticeEvidenceResponse.empty()),
 			new PracticeStepResponse(2, STATUS_NOT_STARTED, true, PracticeEvidenceResponse.empty()),
 			new PracticeStepResponse(3, STATUS_NOT_STARTED, true, PracticeEvidenceResponse.empty()));
-		return new InvestmentPracticeResponse(tutorialKey, STATUS_NOT_STARTED, 1, steps, null, null);
+		return new InvestmentPracticeResponse(tutorialKey, STATUS_NOT_STARTED, 1, steps, null, null, null);
 	}
 
 	// PracticeHoldingObservationService.resolveTutorialKey와 동일 패턴(이 spec 전체가 공유하는 관례).

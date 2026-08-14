@@ -20,6 +20,9 @@
 | 22:28 | implementer | `.\gradlew.bat compileTestJava` | canonical 가격이 추가된 attribution DTO/port와 서비스 생성자에 기존 테스트 8개가 미동기화되어 17건 컴파일 실패, tester 이관 |
 | 22:29 | implementer | `.\gradlew.bat spotlessCheck spotbugsMain` | task 4 신규 generator·응답 DTO·서비스 포맷과 production 정적 분석 통과 |
 | 22:35 | implementer | `.\gradlew.bat compileJava` + production 2파일 `spotlessCheck -PspotlessIdeHook=...` | GET chart를 순수 조회로 고정하고 명시적 POST tick으로 canonical 지정가 정산을 분리한 production 컴파일·대상 포맷 통과. 전역 포맷은 tester 작업 중 테스트 8파일 때문에 미통과 |
+| 22:51 | implementer | `.\gradlew.bat compileJava` | task 5 attempt/current-run 진행·관찰·복기·완료/reward 통합과 replay 수량 evidence production 컴파일 통과 |
+| 23:00 | implementer | `.\gradlew.bat spotlessApply/spotlessCheck -PspotlessIdeHook=...` + `.\gradlew.bat compileJava` | task 5 변경 production 파일 포맷과 current-run BUY·SELL·잔여 수량 계약 보강 후 컴파일 통과 |
+| 23:09 | implementer | production 파일 대상 `spotlessApply/spotlessCheck` + `.\gradlew.bat compileJava` | 영속 attempt가 없는 기존 샘플은 주문 비귀속·026 chain·session 가격 경로를 유지하고, attempt가 있으면 current-run 검증을 legacy evidence로 우회하지 않도록 rollout 호환 수정 후 컴파일 통과 |
 
 ## 모니터링 (사람용 요약)
 - 21:22 — V36 추가형 migration, attempt·risk 엔티티/Repository, nullable 주문 run 귀속 구현 및 컴파일 통과.
@@ -31,3 +34,5 @@
 - 22:03 — 일반 지정가 `/api/orders/limit`의 샘플 BUY·SELL도 account/holding보다 attempt를 먼저 잠그고 현재 run에 귀속해 재시작 취소·예약 반환 대상에 포함.
 - 22:28 — 영속 seed/version/anchor 기반 3초=1분 29+1 차트와 canonical close를 추가하고 샘플 시장가·일반/교육 지정가·관찰·보상 SELL 가격원을 통합.
 - 22:35 — GET chart의 체결 side effect를 제거하고 attempt 선잠금 기반 `POST .../{market}/tick`에서만 current-run 지정가를 canonical 가격으로 정산하도록 분리.
+- 23:00 — 샘플 진행 정본을 favorite/intention에서 영속 attempt/current run snapshot·원장으로 전환하고 completion/reward와 immutable replay, BUY·SELL·잔여 수량 evidence를 통합.
+- 23:09 — 영속 attempt 존재 여부를 새 흐름의 명시적 경계로 삼아 기존 샘플의 비귀속 주문과 chain 관찰·복기·완료/만료/재시도를 보존하고, attempt가 있는 사용자는 current-run 검증을 우회하지 못하게 고정.

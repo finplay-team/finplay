@@ -123,4 +123,24 @@ public class TradeService {
 			.filter(trade -> trade.getQuantity().compareTo(quantity) == 0)
 			.reduce((first, second) -> second);
 	}
+
+	@Transactional(readOnly = true)
+	public PracticeRunTradeSummaryDto summarizePracticeRun(Long attemptId, long runNumber) {
+		BigDecimal buyQuantity = BigDecimal.ZERO;
+		BigDecimal sellQuantity = BigDecimal.ZERO;
+		Trade firstSell = null;
+		for (Trade trade : tradeRepository.findFilledPracticeRunTrades(attemptId, runNumber)) {
+			if (trade.getSide() == OrderSide.BUY) {
+				buyQuantity = buyQuantity.add(trade.getQuantity());
+			} else {
+				sellQuantity = sellQuantity.add(trade.getQuantity());
+				if (firstSell == null) {
+					firstSell = trade;
+				}
+			}
+		}
+		BigDecimal netQuantity = buyQuantity.subtract(sellQuantity);
+		return new PracticeRunTradeSummaryDto(
+			buyQuantity, sellQuantity, netQuantity.max(BigDecimal.ZERO), firstSell);
+	}
 }

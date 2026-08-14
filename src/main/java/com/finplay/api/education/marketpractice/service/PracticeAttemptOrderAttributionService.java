@@ -44,9 +44,12 @@ public class PracticeAttemptOrderAttributionService implements PracticeOrderAttr
 		if (!instrument.isTutorialSample()) {
 			return Optional.empty();
 		}
-		PracticeAttempt attempt = practiceAttemptRepository
-			.findByUserIdAndMarketForUpdate(userId, instrument.getMarket())
-			.orElseThrow(() -> new BusinessException(ErrorCode.PRACTICE_STEP_LOCKED));
+		Optional<PracticeAttempt> foundAttempt = practiceAttemptRepository
+			.findByUserIdAndMarketForUpdate(userId, instrument.getMarket());
+		if (foundAttempt.isEmpty()) {
+			return Optional.empty();
+		}
+		PracticeAttempt attempt = foundAttempt.get();
 		validateCurrentRun(attempt, instrument, attempt.getRunNumber());
 		return Optional.of(new PracticeOrderAttributionDto(
 			attempt.getId(), attempt.getRunNumber(),

@@ -21,7 +21,7 @@
   vector, 시간 경계, 반복 GET 무변경, 같은 minute tick 재시도, reload·Spring Context 재생성 테스트를
   추가한다.
 
-- [ ] **진행·완료 경로 통합과 회귀 테스트** — `GET /api/education/practice`를 attempt/risk/replay evidence로
+- [x] **진행·완료 경로 통합과 회귀 테스트** — `GET /api/education/practice`를 attempt/risk/replay evidence로
   확장하고 두 시장의 선택→BUY→관찰→SELL→복기→completion/reward 전체 흐름을 Testcontainers로 검증한다.
   `026`·`030`·`031`·`033` 및 실제 종목 주문/가격 회귀를 함께 실행한다.
 

@@ -13,11 +13,14 @@ import static org.mockito.Mockito.when;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.education.marketpractice.domain.PracticeBoundary;
+import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
 import com.finplay.api.education.marketpractice.domain.PracticeEvidenceType;
 import com.finplay.api.education.marketpractice.domain.PracticeMarketObservation;
+import com.finplay.api.education.marketpractice.domain.PracticeRiskSnapshot;
 import com.finplay.api.education.marketpractice.dto.request.PracticeHoldingObservationCreateRequest;
 import com.finplay.api.education.marketpractice.dto.response.PracticeHoldingObservationResponse;
 import com.finplay.api.education.marketpractice.repository.PracticeMarketObservationRepository;
+import com.finplay.api.education.marketpractice.repository.PracticeAttemptRepository;
 import com.finplay.api.education.priceruntime.service.PracticePriceObservationService;
 import com.finplay.api.education.service.PracticeIntentionService;
 import com.finplay.api.market.domain.Instrument;
@@ -46,6 +49,9 @@ class PracticeHoldingObservationServiceTest {
 	private static final LocalDateTime OBSERVED_AT = LocalDateTime.of(2026, 8, 10, 10, 0);
 
 	private final HoldingService holdingService = mock(HoldingService.class);
+	private final PracticeAttemptRepository practiceAttemptRepository = mock(PracticeAttemptRepository.class);
+	private final PracticeAttemptEvidenceService practiceAttemptEvidenceService = mock(
+		PracticeAttemptEvidenceService.class);
 	private final MarketPracticeChainResolutionService chainResolutionService = mock(
 		MarketPracticeChainResolutionService.class);
 	private final PriceQueryService priceQueryService = mock(PriceQueryService.class);
@@ -60,7 +66,8 @@ class PracticeHoldingObservationServiceTest {
 	private final Clock clock = Clock.fixed(OBSERVED_AT.toInstant(ZoneOffset.UTC), ZoneOffset.UTC);
 
 	private final PracticeHoldingObservationService service = new PracticeHoldingObservationService(
-		holdingService, chainResolutionService, priceQueryService, canonicalPriceService,
+		holdingService, practiceAttemptRepository, practiceAttemptEvidenceService, chainResolutionService,
+		priceQueryService, canonicalPriceService,
 		practicePriceObservationService,
 		referencePriceCalculator, evidenceJudgmentService, observationRepository, clock);
 
@@ -198,11 +205,16 @@ class PracticeHoldingObservationServiceTest {
 	void createObservationUsesCanonicalPriceForTutorialSampleAndSkipsOtherPriceSources() {
 		when(instrument.isTutorialSample()).thenReturn(true);
 		when(holdingService.findHoldingForOwner(USER_ID, HOLDING_ID)).thenReturn(Optional.of(holding));
-		ResolvedPracticeChainDto chain = completedChain();
-		when(chainResolutionService.resolveForInstrument(USER_ID, PracticeIntentionService.TUTORIAL_KEY, INSTRUMENT_ID))
-			.thenReturn(Optional.of(chain));
-		ReferencePriceLines referenceLines = new ReferencePriceLines(new BigDecimal("90"), new BigDecimal("120"));
-		when(referencePriceCalculator.calculate(chain)).thenReturn(Optional.of(referenceLines));
+		PracticeAttempt attempt = mock(PracticeAttempt.class);
+		when(practiceAttemptRepository.findByUserIdAndMarket(USER_ID, Market.STOCK)).thenReturn(Optional.of(attempt));
+		PracticeRiskSnapshot snapshot = mock(PracticeRiskSnapshot.class);
+		when(snapshot.getEntryPrice()).thenReturn(new BigDecimal("100"));
+		when(snapshot.getStopLossPrice()).thenReturn(new BigDecimal("90"));
+		when(snapshot.getTakeProfitPrice()).thenReturn(new BigDecimal("120"));
+		when(snapshot.getCreatedAt()).thenReturn(OBSERVED_AT.minusSeconds(1));
+		ResolvedPracticeAttemptEvidenceDto evidence = new ResolvedPracticeAttemptEvidenceDto(
+			snapshot, HOLDING_ID, BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.ONE, null);
+		when(practiceAttemptEvidenceService.requireCurrentRun(attempt, USER_ID, HOLDING_ID)).thenReturn(evidence);
 		BigDecimal canonicalPrice = new BigDecimal("10932.45600000");
 		when(canonicalPriceService.canonicalPriceForMutation(USER_ID, instrument, OBSERVED_AT))
 			.thenReturn(canonicalPrice);
@@ -210,8 +222,8 @@ class PracticeHoldingObservationServiceTest {
 			.thenReturn(List.of());
 		ObservationEvidenceJudgment judgment = new ObservationEvidenceJudgment(false, null, null);
 		when(evidenceJudgmentService.judgeObservationEvidence(
-			chain.buyTradeEntryPrice(), referenceLines.referenceStopLossPrice(),
-			referenceLines.referenceTakeProfitPrice(), canonicalPrice, List.of(), OBSERVED_AT))
+			snapshot.getEntryPrice(), snapshot.getStopLossPrice(), snapshot.getTakeProfitPrice(), canonicalPrice,
+			List.of(), OBSERVED_AT))
 			.thenReturn(judgment);
 		when(observationRepository.save(any(PracticeMarketObservation.class)))
 			.thenAnswer(invocation -> invocation.getArgument(0));
