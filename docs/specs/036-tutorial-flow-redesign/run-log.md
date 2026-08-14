@@ -24,6 +24,8 @@
 | 23:00 | implementer | `.\gradlew.bat spotlessApply/spotlessCheck -PspotlessIdeHook=...` + `.\gradlew.bat compileJava` | task 5 변경 production 파일 포맷과 current-run BUY·SELL·잔여 수량 계약 보강 후 컴파일 통과 |
 | 23:09 | implementer | production 파일 대상 `spotlessApply/spotlessCheck` + `.\gradlew.bat compileJava` | 영속 attempt가 없는 기존 샘플은 주문 비귀속·026 chain·session 가격 경로를 유지하고, attempt가 있으면 current-run 검증을 legacy evidence로 우회하지 않도록 rollout 호환 수정 후 컴파일 통과 |
 | 23:52 | implementer | backend `compileJava`/대상 `spotlessCheck`, frontend `lint`/`build` | legacy completion의 lazy 완료 replay attempt·완료시각 고정 chart와 주문 목록 attempt/run 귀속 노출, frontend 정확한 run pending 복원 구현 검증 |
+| 00:20 | tester | backend `gradlew build`, frontend 17 tests + `lint` + `build` | backend 4,124 tests, 실패 0, skip 1, 3분 49초; frontend 전 게이트 통과 |
+| 00:20 | planner | PRD §3·036 tasks/run-log 최종 동기화 | Backend PR #381 / companion frontend PR #30, TUTORIAL-FLOW-001~012 완료 근거 |
 
 ## 모니터링 (사람용 요약)
 - 21:22 — V36 추가형 migration, attempt·risk 엔티티/Repository, nullable 주문 run 귀속 구현 및 컴파일 통과.
@@ -38,3 +40,4 @@
 - 23:00 — 샘플 진행 정본을 favorite/intention에서 영속 attempt/current run snapshot·원장으로 전환하고 completion/reward와 immutable replay, BUY·SELL·잔여 수량 evidence를 통합.
 - 23:09 — 영속 attempt 존재 여부를 새 흐름의 명시적 경계로 삼아 기존 샘플의 비귀속 주문과 chain 관찰·복기·완료/만료/재시도를 보존하고, attempt가 있는 사용자는 current-run 검증을 우회하지 못하게 고정.
 - 23:52 — migration 이전 completion 사용자는 실제·샘플 reflection 종목으로 완료 replay attempt를 lazy 생성하고 risk snapshot 없이 legacy 완료 evidence를 유지하며, 주문 목록 attempt/run으로 frontend stale pending 채택을 차단.
+- 00:20 — Backend PR #381은 전체 build 4,124 tests(실패 0, skip 1, 3분 49초), companion frontend PR #30은 17 tests·lint·build를 통과했고 TUTORIAL-FLOW-001~012 및 최종 문서/PRD 동기화를 완료.

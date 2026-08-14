@@ -25,8 +25,10 @@
   확장하고 두 시장의 선택→BUY→관찰→SELL→복기→completion/reward 전체 흐름을 Testcontainers로 검증한다.
   `026`·`030`·`031`·`033` 및 실제 종목 주문/가격 회귀를 함께 실행한다.
 
-- [ ] **프론트엔드 companion·API/PRD 동기화** — 프론트에서 사전 의도 폼을 제거하고 서버 attempt 진입,
+- [x] **프론트엔드 companion·API/PRD 동기화** — 프론트에서 사전 의도 폼을 제거하고 서버 attempt 진입,
   restart 확인, 자동 risk 카드, 최초 순수 chart GET + 3초 간격 tick POST 기반 단일 29+1 live chart,
   완료 read-only replay를 연결한다. 실제 controller
   mapping에 맞춰 `docs/api-routes.md`·`docs/api-contracts.md`를 함께 갱신하고, 기능 완료 시 `docs/prd.md` §3에
   TUTORIAL-FLOW-001~012와 PR 번호를 반영한 뒤 대상 테스트와 전체 `gradlew build` 결과를 기록한다.
+  Backend PR #381 / companion frontend PR #30에서 완료했으며, backend build 4,124 tests(실패 0,
+  skip 1)와 frontend 17 tests·lint·build를 최종 확인했다.
