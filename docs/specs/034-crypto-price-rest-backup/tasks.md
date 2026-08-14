@@ -8,7 +8,7 @@
   `PriceQueryService.getOrderExecutionPrice`의 코인 분기가 `getCryptoDisplayPriceQuote`를 쓰도록 바꾸고 `getCryptoExecutionPriceQuote`를 제거한다(판정 규칙을 두 벌로 유지하지 않는다). `requireAvailable`은 `UNAVAILABLE`에만 예외를 던지므로 새 분기는 필요 없다 — 표시 판정이 주는 `STALE` quote가 그대로 통과한다. `PriceStore.isPriceAvailable`은 다른 소비자가 여전히 쓰므로 **남긴다**(주석에 코인 체결 경로가 더 이상 호출하지 않는다는 사실만 반영).
   `PriceQueryServiceTest`의 `getOrderExecutionPriceStillThrowsPriceUnavailableWhenCryptoTickIsStale`을 **새 동작을 고정하는 테스트로 바꾼다** — 이름과 단정을 새 동작에 맞게 반전시킨다. 연결 끊김·수신 이력 없음에서 여전히 거부되는 케이스를 함께 추가해 fail-closed 잔여선을 고정한다. `OrderExecutionServiceTest`에 stale 코인 시장가 주문이 체결까지 도달하는 케이스를 추가한다.
 
-- [ ] **2. `PriceStore`에 관측 시각(`observedAt`) 분리 도입 (A)**
+- [x] **2. `PriceStore`에 관측 시각(`observedAt`) 분리 도입 (A)**
   Redis 해시 `price:crypto:{symbol}`에 `observedAt` 필드를 추가한다(새 키는 만들지 않는다). `saveTick`은 기존 과거틱 가드(`receivedAt` 비교)를 **그대로 두고**, 가드를 통과했을 때 `observedAt = now(clock)`을 함께 기록한다. 새 메서드 `recordObservation(symbol, price, observedAt)`을 추가한다 — `observedAt`은 항상 갱신하고, `price`는 저장값과 다를 때만 갱신하며 `receivedAt`은 건드리지 않는다. `isStale` 판정 기준을 `observedAt`으로 바꾸되 임계값 10초는 유지한다. `observedAt`이 없는 기존 해시는 `receivedAt`으로 폴백한다. `CryptoPriceDto`에 `observedAt`을 싣는다.
   `PriceStoreTest`에 plan.md "테스트 계획 — `PriceStoreTest`"의 케이스를 전부 추가한다. 특히 **`recordObservation` 직후 더 이른 `receivedAt`의 `saveTick`이 정상 반영되는 케이스**를 반드시 포함한다(PRICE-REST-003, 가장 깨지기 쉬운 지점). MKT-003 기존 케이스가 회귀 없이 통과하는지 확인한다.
 

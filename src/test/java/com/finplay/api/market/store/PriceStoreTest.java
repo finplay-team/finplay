@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
@@ -192,6 +193,96 @@ class PriceStoreTest {
 			.orElseThrow();
 		assertThat(ethEvent.price()).isEqualByComparingTo("3000000");
 		assertThat(ethEvent.receivedAt()).isEqualTo(ethReceivedAt);
+	}
+
+	// 아래부터는 034-crypto-price-rest-backup PRICE-REST-001 — observedAt(관측 시각) 분리 검증이다.
+	// recordObservation의 이벤트 발행 여부(가격 변경 시에만 publish)는 이 항목의 범위가 아니다 — 다음 작업
+	// 항목(tasks.md 항목 3)에서 별도로 고정한다.
+
+	@Test
+	void recordObservationUpdatesObservedAtOnlyWhenPriceUnchanged() {
+		PriceStore priceStore = priceStore();
+		when(hashOperations.get("price:crypto:OBS_SAME", "price")).thenReturn("100");
+
+		priceStore.recordObservation("OBS_SAME", new BigDecimal("100"), NOW);
+
+		@SuppressWarnings("unchecked") ArgumentCaptor<Map<String, String>> fieldsCaptor = ArgumentCaptor
+			.forClass(Map.class);
+		verify(hashOperations).putAll(eq("price:crypto:OBS_SAME"), fieldsCaptor.capture());
+		Map<String, String> fields = fieldsCaptor.getValue();
+		assertThat(fields).containsEntry("observedAt", NOW.toString());
+		assertThat(fields).doesNotContainKey("price");
+		assertThat(fields).doesNotContainKey("receivedAt");
+	}
+
+	@Test
+	void recordObservationUpdatesPriceWhenDifferentButLeavesReceivedAtFieldUntouched() {
+		PriceStore priceStore = priceStore();
+		when(hashOperations.get("price:crypto:OBS_DIFF", "price")).thenReturn("100");
+
+		priceStore.recordObservation("OBS_DIFF", new BigDecimal("150"), NOW);
+
+		@SuppressWarnings("unchecked") ArgumentCaptor<Map<String, String>> fieldsCaptor = ArgumentCaptor
+			.forClass(Map.class);
+		verify(hashOperations).putAll(eq("price:crypto:OBS_DIFF"), fieldsCaptor.capture());
+		Map<String, String> fields = fieldsCaptor.getValue();
+		assertThat(fields).containsEntry("observedAt", NOW.toString());
+		assertThat(fields).containsEntry("price", "150");
+		assertThat(fields).doesNotContainKey("receivedAt");
+	}
+
+	@Test
+	void isStaleIsFalseWhenObservedAtIsFreshEvenIfReceivedAtIsVeryOld() {
+		PriceStore priceStore = priceStore();
+		LocalDateTime oldReceivedAt = NOW.minusMinutes(5);
+		LocalDateTime freshObservedAt = NOW.minusSeconds(1);
+		when(hashOperations.get("price:crypto:OBS_FRESH", "price")).thenReturn("100");
+		when(hashOperations.get("price:crypto:OBS_FRESH", "receivedAt")).thenReturn(oldReceivedAt.toString());
+		when(hashOperations.get("price:crypto:OBS_FRESH", "observedAt")).thenReturn(freshObservedAt.toString());
+
+		CryptoPriceDto result = priceStore.getLatestPrice("OBS_FRESH").orElseThrow();
+
+		assertThat(result.receivedAt()).isEqualTo(oldReceivedAt);
+		assertThat(result.observedAt()).isEqualTo(freshObservedAt);
+		assertThat(priceStore.isStale(result.observedAt())).isFalse();
+	}
+
+	@Test
+	void getLatestPriceFallsBackToReceivedAtWhenObservedAtFieldIsMissingFromExistingHash() {
+		PriceStore priceStore = priceStore();
+		LocalDateTime receivedAt = NOW.minusSeconds(3);
+		// 배포 전 기존 해시를 재현 — observedAt 필드가 아예 없다(hashOperations.get이 null 반환).
+		when(hashOperations.get("price:crypto:OBS_LEGACY", "price")).thenReturn("100");
+		when(hashOperations.get("price:crypto:OBS_LEGACY", "receivedAt")).thenReturn(receivedAt.toString());
+		when(hashOperations.get("price:crypto:OBS_LEGACY", "observedAt")).thenReturn(null);
+
+		CryptoPriceDto result = priceStore.getLatestPrice("OBS_LEGACY").orElseThrow();
+
+		assertThat(result.observedAt()).isEqualTo(receivedAt);
+	}
+
+	// PRICE-REST-003 — 이 spec에서 가장 깨지기 쉬운 지점. REST 폴러가 recordObservation으로 observedAt="지금"을
+	// 남긴 직후, 그보다 이른 receivedAt(실제 체결 시각)을 가진 진짜 웹소켓 틱이 도착해도 saveTick의 MKT-003
+	// 가드는 receivedAt끼리만 비교하므로 그 틱이 버려지지 않고 정상 반영돼야 한다.
+	@Test
+	void saveTickStillAppliesTickWithReceivedAtEarlierThanJustRecordedObservationTime() {
+		PriceStore priceStore = priceStore();
+		LocalDateTime oldReceivedAt = NOW.minusSeconds(20);
+		stubTick("OBS_RACE", new BigDecimal("100"), oldReceivedAt);
+
+		// REST 폴러가 "지금"(observedAt=NOW)을 관측 시각으로 기록한다 — receivedAt은 건드리지 않는다.
+		priceStore.recordObservation("OBS_RACE", new BigDecimal("100"), NOW);
+
+		// 실제 체결 틱 도착 — receivedAt은 oldReceivedAt(-20초)보다 늦고 NOW(관측 시각)보다는 이르다.
+		LocalDateTime tradeReceivedAt = NOW.minusSeconds(15);
+		priceStore.saveTick("OBS_RACE", new BigDecimal("101"), tradeReceivedAt);
+
+		@SuppressWarnings("unchecked") ArgumentCaptor<Map<String, String>> fieldsCaptor = ArgumentCaptor
+			.forClass(Map.class);
+		verify(hashOperations, atLeastOnce()).putAll(eq("price:crypto:OBS_RACE"), fieldsCaptor.capture());
+		Map<String, String> lastFields = fieldsCaptor.getAllValues().get(fieldsCaptor.getAllValues().size() - 1);
+		assertThat(lastFields.get("price")).isEqualTo("101");
+		assertThat(lastFields.get("receivedAt")).isEqualTo(tradeReceivedAt.toString());
 	}
 
 	// 아래부터는 spec 012 §코인 가격 스냅샷(이슈 #225) — recordSnapshot·getSnapshots 검증이다.
