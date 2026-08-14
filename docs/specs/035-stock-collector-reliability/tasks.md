@@ -32,12 +32,14 @@
   - `KisProperties.java`의 `requestIntervalMs` 주석 중 "실전투자 도메인 기준" 근거 문장을 현재 배포 구성
     (운영도 모의투자 도메인)에 맞게 정정.
 
-- [ ] 5. 전체 회귀 확인 + 문서 동기화
+- [x] 5. 전체 회귀 확인 + 문서 동기화
   - 기존 `KisHistoricalCandleCollectorTest`·`StockReplaySessionSchedulerTest`가 태스크 1~4 변경 후에도
     통과함을 확인.
   - `./gradlew build` 통과 확인.
   - `docs/prd.md` §3 "구현 현황"에 새 행 추가 — 기능: "주식 분봉 수집 배치 안정성 — 다중 인스턴스 중복 방지·
     샌드박스 제외·당일 재시도", 요구사항 ID: `COLLECT-STAB-001~005`, 상태·근거(이 spec 경로 + 구현 PR 번호)
-    (CLAUDE.md 규칙 10).
+    (CLAUDE.md 규칙 10). — 완료. PR 미생성이라 근거는 spec 경로 + 이슈 #370, PR 번호는 생성 후 갱신 필요.
   - 이 spec의 §배경 조사 ④(9시간 불일치)가 이 태스크 완료 시점까지도 미확인이면, `docs/prd.md` §3 행 또는
-    별도 GitHub 이슈로 "미확인·후속 조사 필요"를 남긴다 — 추측으로 원인을 채우지 않는다.
+    별도 GitHub 이슈로 "미확인·후속 조사 필요"를 남긴다 — 추측으로 원인을 채우지 않는다. — 완료. 여전히
+    미확인이라 별도 이슈 [#373](https://github.com/finplay-team/finplay-backend/issues/373)으로 분리하고
+    `docs/prd.md` 새 행에서 링크.
