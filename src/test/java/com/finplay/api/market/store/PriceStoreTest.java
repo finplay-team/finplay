@@ -202,7 +202,9 @@ class PriceStoreTest {
 	@Test
 	void recordObservationUpdatesObservedAtOnlyWhenPriceUnchanged() {
 		PriceStore priceStore = priceStore();
+		// 이 심볼은 이미 최소 한 번 관측된 적이 있다(receivedAt 존재) — 부트스트랩 대상이 아니다.
 		when(hashOperations.get("price:crypto:OBS_SAME", "price")).thenReturn("100");
+		when(hashOperations.get("price:crypto:OBS_SAME", "receivedAt")).thenReturn(NOW.minusSeconds(5).toString());
 
 		priceStore.recordObservation("OBS_SAME", new BigDecimal("100"), NOW);
 
@@ -218,7 +220,9 @@ class PriceStoreTest {
 	@Test
 	void recordObservationUpdatesPriceWhenDifferentButLeavesReceivedAtFieldUntouched() {
 		PriceStore priceStore = priceStore();
+		// 이 심볼도 이미 최소 한 번 관측된 적이 있다(receivedAt 존재) — 부트스트랩 대상이 아니다.
 		when(hashOperations.get("price:crypto:OBS_DIFF", "price")).thenReturn("100");
+		when(hashOperations.get("price:crypto:OBS_DIFF", "receivedAt")).thenReturn(NOW.minusSeconds(5).toString());
 
 		priceStore.recordObservation("OBS_DIFF", new BigDecimal("150"), NOW);
 
@@ -316,6 +320,70 @@ class PriceStoreTest {
 		assertThat(event.price()).isEqualByComparingTo("150");
 		// receivedAt(체결 시각)은 recordObservation이 절대 건드리지 않으므로 기존 값 그대로 실려야 한다.
 		assertThat(event.receivedAt()).isEqualTo(existingReceivedAt);
+	}
+
+	// 아래부터는 PR 리뷰 [권장] 후속 수정 — recordObservation이 "receivedAt이 아예 없던 심볼"(웹소켓 체결을
+	// 한 번도 받은 적 없는 상태, 예: 서버 재시작 직후 REST가 그 심볼의 첫 웹소켓 체결보다 먼저 도착)에도
+	// receivedAt을 영원히 비워둬 getLatestPrice가 계속 UNAVAILABLE을 돌려주던 문제를 부트스트랩으로 고친다.
+
+	@Test
+	void recordObservationBootstrapsReceivedAtAndPublishesEventWhenSymbolHasNeverBeenObserved() {
+		PriceStore priceStore = priceStore();
+		// 이 심볼은 웹소켓 체결이든 REST 관측이든 한 번도 기록된 적이 없다 — 두 필드 모두 null.
+		when(hashOperations.get("price:crypto:OBS_BOOTSTRAP", "price")).thenReturn(null);
+		when(hashOperations.get("price:crypto:OBS_BOOTSTRAP", "receivedAt")).thenReturn(null);
+
+		priceStore.recordObservation("OBS_BOOTSTRAP", new BigDecimal("100"), NOW);
+
+		@SuppressWarnings("unchecked") ArgumentCaptor<Map<String, String>> fieldsCaptor = ArgumentCaptor
+			.forClass(Map.class);
+		verify(hashOperations).putAll(eq("price:crypto:OBS_BOOTSTRAP"), fieldsCaptor.capture());
+		Map<String, String> fields = fieldsCaptor.getValue();
+		assertThat(fields).containsEntry("price", "100");
+		assertThat(fields).containsEntry("observedAt", NOW.toString());
+		// receivedAt이 없던 심볼만 observedAt과 같은 값으로 부트스트랩된다 — getLatestPrice가 더 이상
+		// receivedAt 없음을 이유로 Optional.empty()를 돌려주지 않는다.
+		assertThat(fields).containsEntry("receivedAt", NOW.toString());
+
+		ArgumentCaptor<CryptoPriceUpdatedEvent> eventCaptor = ArgumentCaptor.forClass(CryptoPriceUpdatedEvent.class);
+		verify(eventPublisher).publishEvent(eventCaptor.capture());
+		CryptoPriceUpdatedEvent event = eventCaptor.getValue();
+		assertThat(event.symbol()).isEqualTo("OBS_BOOTSTRAP");
+		assertThat(event.price()).isEqualByComparingTo("100");
+		assertThat(event.receivedAt()).isEqualTo(NOW);
+		assertThat(event.observedAt()).isEqualTo(NOW);
+	}
+
+	// 이미 저장값이 있는 심볼(웹소켓이든 REST든 한 번이라도 관측된 적 있음)에는 부트스트랩이 적용되지 않는다 —
+	// receivedAt은 여전히 웹소켓만 갱신한다(PRICE-REST-003 무변경). recordObservationUpdatesObservedAtOnlyWhenPriceUnchanged·
+	// recordObservationUpdatesPriceWhenDifferentButLeavesReceivedAtFieldUntouched(위)가 이미 receivedAt 스텁을
+	// 갖춘 채 "receivedAt 필드를 건드리지 않음"을 검증하므로 이 케이스의 회귀도 함께 고정돼 있다.
+
+	// 부트스트랩 이후 실제 웹소켓 체결이 들어오면 MKT-003 가드가 부트스트랩 시각을 "과거"로 보고 정상적으로
+	// 덮어써야 한다 — 부트스트랩이 receivedAt을 영구히 얼려버리면 안 된다.
+	@Test
+	void saveTickOverwritesBootstrappedReceivedAtWhenRealTickArrivesLater() {
+		PriceStore priceStore = priceStore();
+		when(hashOperations.get("price:crypto:OBS_BOOTSTRAP_THEN_TICK", "price")).thenReturn(null);
+		when(hashOperations.get("price:crypto:OBS_BOOTSTRAP_THEN_TICK", "receivedAt")).thenReturn(null);
+
+		priceStore.recordObservation("OBS_BOOTSTRAP_THEN_TICK", new BigDecimal("100"), NOW);
+
+		// 실제 Redis라면 위 호출로 receivedAt=NOW가 저장돼 있을 것이다 — mock은 putAll이 get 스텁을 자동으로
+		// 갱신하지 않으므로, 이후 saveTick 호출부터 그 상태를 반영하도록 스텁을 갈아 끼운다.
+		when(hashOperations.get("price:crypto:OBS_BOOTSTRAP_THEN_TICK", "receivedAt")).thenReturn(NOW.toString());
+
+		// 실제 웹소켓 체결 — 부트스트랩 시각(NOW)보다 나중이다(서버 재시작 뒤 실제로 발생한 체결).
+		LocalDateTime realReceivedAt = NOW.plusSeconds(2);
+		priceStore.saveTick("OBS_BOOTSTRAP_THEN_TICK", new BigDecimal("105"), realReceivedAt);
+
+		@SuppressWarnings("unchecked") ArgumentCaptor<Map<String, String>> fieldsCaptor = ArgumentCaptor
+			.forClass(Map.class);
+		verify(hashOperations, atLeastOnce()).putAll(eq("price:crypto:OBS_BOOTSTRAP_THEN_TICK"),
+			fieldsCaptor.capture());
+		Map<String, String> lastFields = fieldsCaptor.getAllValues().get(fieldsCaptor.getAllValues().size() - 1);
+		assertThat(lastFields.get("price")).isEqualTo("105");
+		assertThat(lastFields.get("receivedAt")).isEqualTo(realReceivedAt.toString());
 	}
 
 	// 아래부터는 spec 012 §코인 가격 스냅샷(이슈 #225) — recordSnapshot·getSnapshots 검증이다.
