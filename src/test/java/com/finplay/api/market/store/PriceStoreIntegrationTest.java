@@ -53,6 +53,7 @@ class PriceStoreIntegrationTest {
 		redisTemplate.delete("price:crypto:BTC_NO_STATUS_YET");
 		redisTemplate.delete("price:crypto:BTC_SNAPSHOT:snapshots");
 		redisTemplate.delete("price:crypto:BTC_PRUNE:snapshots");
+		redisTemplate.delete("price:crypto:BTC_OBS_BOOTSTRAP");
 	}
 
 	private PriceStore priceStoreAt(LocalDateTime now) {
@@ -149,6 +150,25 @@ class PriceStoreIntegrationTest {
 
 		assertThat(priceStore.getConnectionStatus()).isEqualTo(FeedConnectionStatus.DISCONNECTED);
 		assertThat(priceStore.isPriceAvailable("BTC_NO_STATUS_YET")).isFalse();
+	}
+
+	// PR 리뷰 [권장] 후속 수정 — 실제 Redis로 recordObservation의 부트스트랩이 getLatestPrice의 반환 자체를
+	// 바꾸는지 끝까지 확인한다(034-crypto-price-rest-backup). 단위 테스트(PriceStoreTest)는 mock이라 putAll이
+	// 이후 get 호출에 반영되지 않으므로, 여기서만 "받은 적 없음 → 값이 생김"이라는 실제 상태 변화를 검증할 수 있다.
+	@Test
+	void recordObservationOnNeverObservedSymbolMakesGetLatestPriceReturnPresent() {
+		PriceStore priceStore = priceStoreAt(FIXED_NOW);
+
+		assertThat(priceStore.getLatestPrice("BTC_OBS_BOOTSTRAP")).isEmpty();
+
+		priceStore.recordObservation("BTC_OBS_BOOTSTRAP", new BigDecimal("100"), FIXED_NOW);
+
+		CryptoPriceDto result = priceStore.getLatestPrice("BTC_OBS_BOOTSTRAP").orElseThrow();
+		assertThat(result.price()).isEqualByComparingTo("100");
+		// 딱 한 번, receivedAt이 observedAt과 같은 값으로 부트스트랩된다 — 그래야 이 심볼이 "받은 적 없음"
+		// 상태를 벗어나 이후 REST 신선도 유지의 효과를 실제로 본다.
+		assertThat(result.receivedAt()).isEqualTo(FIXED_NOW);
+		assertThat(result.observedAt()).isEqualTo(FIXED_NOW);
 	}
 
 	// 아래부터는 spec 012 §코인 가격 스냅샷(이슈 #225) — 실제 Redis Sorted Set에 적재·조회되는지 검증한다.

@@ -8,13 +8,13 @@
 
 `GET /api/instruments/{instrumentId}/price`는 코인 종목의 최신 틱 수신시각이 10초를 넘으면 무조건 409 `PRICE_UNAVAILABLE`을 반환한다. 이 10초 기준(MKT-004)은 원래 "체결을 막아야 하는가"를 판정하려고 만든 fail-closed 규칙인데, 지금 코드는 같은 판정 결과를 **화면 조회에도 그대로 재사용**하고 있다. 그 결과 웹소켓 연결 자체는 멀쩡한데 체결이 뜸한 저유동성 코인은 화면에서 가격을 아예 볼 수 없다.
 
-이 spec은 "체결을 막을지"와 "화면에 보여줄지"를 서로 다른 질문으로 분리한다. **연결이 끊겼거나 시세를 한 번도 받은 적이 없으면** 화면도 체결도 똑같이 막는다(보여줄 가격 자체가 없다). 반면 **연결은 살아있는데 최신 틱만 10초를 넘겼으면**, 체결은 계속 막되(MKT-004 그대로) 화면은 마지막으로 받은 진짜 가격을 "지연됨" 표시와 함께 계속 보여준다.
+이 spec은 "체결을 막을지"와 "화면에 보여줄지"를 서로 다른 질문으로 분리한다. **연결이 끊겼거나 시세를 한 번도 받은 적이 없으면** 화면도 체결도 똑같이 막는다(보여줄 가격 자체가 없다). 반면 **연결은 살아있는데 최신 틱만 10초를 넘겼으면**, 화면은 마지막으로 받은 진짜 가격을 "지연됨" 표시와 함께 계속 보여준다(이 spec 당시엔 체결만 계속 막았으나, `034-crypto-price-rest-backup`에서 체결도 같은 규칙으로 합쳐졌다).
 
 ## 사용자 시나리오
 
 - 회원이 체결이 뜸한 저유동성 코인(예: 웹소켓 연결은 정상이지만 10초 넘게 신규 체결이 없는 종목)의 현재가를 조회하면, 409 대신 200과 함께 마지막으로 받은 실제 가격·수신시각·`status: "STALE"`을 받는다.
 - 같은 종목의 웹소켓 연결이 끊기거나 서버 기동 이후 그 종목의 시세를 한 번도 받지 못했으면, 회원은 여전히 409 `PRICE_UNAVAILABLE`을 받는다 — "보여줄 가격이 아예 없는 상태"는 이번 완화 대상이 아니다.
-- 회원이 그 코인을 실제로 매수·매도 주문하면, 최신 틱이 10초를 넘긴 상태에서는 화면 조회 성공 여부와 무관하게 여전히 주문이 거부된다(MKT-004 fail-closed 유지) — "화면에 가격이 보이니 체결도 될 것"이라고 오해하지 않도록 화면에 지연 표시가 남아 있다.
+- 회원이 그 코인을 실제로 매수·매도 주문하면, 연결이 살아있고 마지막 가격을 받은 적 있으므로 최신 틱이 10초를 넘겨도(stale) 그 가격으로 주문이 체결된다. 화면의 지연 표시는 "이 가격이 오래됐다"는 사실만 알려줄 뿐 매매 가능 여부와는 무관하다.
 - 회원이 코인 SSE 스트림(`GET /api/cryptos/stream`)을 구독 중일 때도 같은 완화가 적용된다 — snapshot이 저유동성 종목을 `UNAVAILABLE`로 비우지 않고 마지막 가격을 `STALE`로 보여준다.
 - 회원이 보유자산 화면(`GET /api/holdings`, 평가손익)을 볼 때는 이번 완화가 적용되지 않는다 — stale인 코인 보유분은 지금처럼 `priceStatus: "UNAVAILABLE"`로 평가불가 처리된다(아래 "완화·엄격 판단" 참조).
 - 운영자는 `CryptoCandleAndPriceIndependenceTest`(캔들-현재가 독립성 계약)가 이번 변경으로 회귀하지 않는 것을 확인한다.
@@ -33,9 +33,8 @@
 - [ ] `PriceStatus`에 `STALE`을 추가한다(`AVAILABLE`·`UNAVAILABLE`에 이어 3번째 값). `PriceQuoteDto`·`PriceResponse`의 필드 구조는 바꾸지 않는다 — 이미 상태를 문자열로 그대로 직렬화하는 기존 구조가 새 값을 그대로 실어 나른다.
 - [ ] `STALE` 상태의 `PriceQuoteDto`는 `price`·`sourceTime`이 **null이 아니다** — 마지막으로 받은 실제 값을 담는다(`UNAVAILABLE`은 지금처럼 둘 다 null).
 
-### PRICE-STALE-003 체결 경로 불변
+### PRICE-STALE-003 캔들-현재가 독립성 유지
 
-- [ ] `PriceQueryService.getOrderExecutionPrice`(주문 체결 전용 진입점)와 그 뒤의 `requireAvailable` fail-closed 판정은 이번 변경으로 동작이 달라지지 않는다 — stale 상태의 코인은 이번 변경 이후에도 여전히 주문이 409 `PRICE_UNAVAILABLE`로 거부된다. `OrderExecutionServiceTest`·`PriceQueryServiceTest`의 기존 체결 경로 테스트는 회귀 없이 통과해야 한다.
 - [ ] `CryptoCandleAndPriceIndependenceTest`의 두 테스트(`candleQueryStillSucceedsWhenPriceStoreIsEmptyOrDisconnected`, `priceQueryStillSucceedsWhenCryptoCandleProviderFails`)는 기존 단정을 그대로 유지한 채 통과한다 — 이 두 테스트를 깨지 않는 것이 이번 spec의 명시적 제약이다(2026-08-13 GitHub Actions 자동 구현 시도가 이 중 하나를 깼던 이력이 있다).
 
 ### PRICE-STALE-004 표시 소비자 확장 — 코인 SSE snapshot
@@ -54,7 +53,6 @@
 ## 비즈니스 규칙
 
 - "연결 끊김/시세 없음"과 "연결은 유지되지만 10초 초과(stale)"는 서로 다른 상태다 — 전자는 **보여줄 가격 자체가 없는 것**이고 후자는 **가격은 있지만 오래된 것**이다. 이 spec은 이 둘을 명확히 구분하는 것이 핵심이며, 어느 소비자든 이 둘을 하나의 `boolean`으로 뭉뚱그리지 않는다.
-- MKT-004의 "10초 초과·연결 끊김 시 거부" 규칙은 **주문 가능 상태 판정에서는 문구 그대로 유지된다** — 이 spec은 MKT-004를 대체(supersede)하지 않는다. MKT-004의 원문도 "주문 가능 상태"·"주문을 거부한다"로 이미 체결 관점으로 좁게 쓰여 있었다(`docs/prd.md` §4 MKT-004, `docs/specs/003-market-data/spec.md` MKT-004) — 지금까지의 구현이 이 문구보다 넓게(화면 조회까지) 적용했던 것이 이슈 #355의 원인이다. 따라서 PRD·spec 003의 MKT-004 **문구 자체는 고치지 않고**, 구현이 그 문구의 의도에 맞게 좁혀지는 것이라는 각주만 남긴다.
 - 코인 시세 정본은 여전히 Redis 최신 틱이며, 이 spec은 새 Redis 키나 새 저장 항목을 만들지 않는다 — `PriceStore`가 이미 갖고 있는 연결상태·최신가·수신시각·`isStale` 판정을 조합만 다르게 해서 쓴다.
 - 표시 경로에서 노출하는 `STALE` 가격은 여전히 "실제로 수신된 마지막 체결가"다 — 임의값·보간값·직전 스냅샷 평균 등으로 대체하지 않는다.
 
@@ -71,12 +69,11 @@
 - [ ] 코인 종목이 연결 유지 + stale(10초 초과) 상태일 때 `GET /api/instruments/{instrumentId}/price`가 200과 `status: "STALE"`, null이 아닌 `price`·`sourceTime`을 반환하는 테스트 통과.
 - [ ] 코인 종목이 연결 끊김이거나 시세를 한 번도 받은 적이 없을 때는 여전히 409 `PRICE_UNAVAILABLE`을 반환하는 테스트 통과(기존 계약 유지 회귀 확인).
 - [ ] 코인 종목이 fresh(10초 이내)일 때 기존과 동일하게 `status: "AVAILABLE"`을 반환하는 회귀 테스트 통과.
-- [ ] `getOrderExecutionPrice`(체결 경로)는 stale 상태에서 이번 변경 이후에도 여전히 `PRICE_UNAVAILABLE`을 던지는 테스트 통과 — MKT-004 fail-closed 무변경 확인.
 - [ ] `CryptoCandleAndPriceIndependenceTest`의 기존 두 테스트가 회귀 없이 통과.
 - [ ] `HoldingValuationService`가 stale 코인 보유분을 여전히 `priceStatus: "UNAVAILABLE"`로 처리(평가금액·손익 null)하는 테스트 통과 — 완화가 새지 않음을 고정.
 - [ ] `SyntheticPriceService`·`PracticePriceSessionService`가 stale 입력에서 여전히 고정 fallback 시작가를 쓰는 테스트 통과.
 - [ ] 코인 SSE snapshot이 stale 종목을 `status: "STALE"` + 실제 마지막 가격으로 노출하는 테스트 통과.
 - [ ] `docs/api-contracts.md`의 `/price` 절과 코인 SSE snapshot 절이 `STALE` 상태를 반영해 갱신됨(같은 커밋).
-- [ ] `docs/specs/003-market-data/spec.md` MKT-004에 이 spec으로의 구현 세분화 각주가 남음(원문 문구는 유지).
+- [ ] `docs/specs/003-market-data/spec.md` MKT-004에 이 spec의 반영이 남음(이후 `034-crypto-price-rest-backup`에서 체결까지 완화되면서 MKT-004 원문 자체가 다시 교체됐다 — 현재 원문이 정본이다).
 - [ ] `docs/prd.md` §3 "구현 현황"에 이 기능의 행이 추가됨(근거: PR 번호).
 - [ ] `./gradlew build` 통과.

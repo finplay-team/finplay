@@ -1,10 +1,11 @@
-// crypto-real 프로필에서 빗썸 공개 ticker REST를 주기 조회해 코인 실시세를 FakeBithumbFeedClient로 주입하는 로컬 전용 폴러 (이슈 #107)
+// prod·crypto-real 프로필에서 빗썸 공개 ticker REST를 주기 조회해 PriceStore의 관측 시각을 갱신하는 폴러 (이슈 #107·#369)
 package com.finplay.api.market.feed;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.repository.InstrumentRepository;
+import com.finplay.api.market.store.PriceStore;
 import java.math.BigDecimal;
 import java.net.URI;
 import java.time.Clock;
@@ -24,14 +25,15 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
 
-// 사용자 대상 스위치는 crypto-real 프로필 하나다. bithumb.feed.ticker.enabled는 켜고 끄는 용도가 아니라
-// 테스트 격리 전용 프로퍼티다 — 이 빈은 @Scheduled로 실제 빗썸을 호출하므로 @ActiveProfiles("crypto-real")
-// 통합 테스트에서 빈이 생성되면 자동 테스트가 외부 네트워크에 의존하게 된다(PRD C-005 위반).
+// 사용자 대상 스위치는 prod·crypto-real 프로필이다(이슈 #369 — 운영도 이 폴러로 REST 백업 관측을 받는다).
+// bithumb.feed.ticker.enabled는 켜고 끄는 용도가 아니라 테스트 격리 전용 프로퍼티다 — 이 빈은 @Scheduled로
+// 실제 빗썸을 호출하므로 @ActiveProfiles("crypto-real")·@ActiveProfiles("prod") 통합 테스트에서 빈이 생성되면
+// 자동 테스트가 외부 네트워크에 의존하게 된다(PRD C-005 위반).
 // BithumbFeedSimulator의 bithumb.feed.simulate.enabled와 완전히 같은 격리 패턴이며, 테스트용 false 주입은
 // 별도 설정 파일이 담당한다. 기본은 matchIfMissing=true라 프로필만 켜면 그대로 동작한다.
 @Slf4j
 @Component
-@Profile("!prod & crypto-real")
+@Profile("prod | crypto-real")
 @ConditionalOnProperty(prefix = "bithumb.feed.ticker", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class BithumbRestTickerPoller {
 
@@ -42,29 +44,29 @@ public class BithumbRestTickerPoller {
 
 	private final RestClient restClient;
 	private final InstrumentRepository instrumentRepository;
-	private final FakeBithumbFeedClient fakeBithumbFeedClient;
+	private final PriceStore priceStore;
 	private final Clock clock;
 
 	@Autowired
 	public BithumbRestTickerPoller(
 		RestClient.Builder builder,
 		InstrumentRepository instrumentRepository,
-		FakeBithumbFeedClient fakeBithumbFeedClient,
+		PriceStore priceStore,
 		Clock clock,
 		@Value("${bithumb.feed.ticker.connect-timeout-ms:2000}")
 		long connectTimeoutMs,
 		@Value("${bithumb.feed.ticker.read-timeout-ms:3000}")
 		long readTimeoutMs) {
 		this(applyTimeouts(builder, connectTimeoutMs, readTimeoutMs).build(), instrumentRepository,
-			fakeBithumbFeedClient, clock);
+			priceStore, clock);
 	}
 
 	// 테스트 전용: MockRestServiceServer로 이미 구성된 RestClient를 직접 주입한다 (타임아웃 팩토리를 거치지 않는다).
 	BithumbRestTickerPoller(RestClient restClient, InstrumentRepository instrumentRepository,
-		FakeBithumbFeedClient fakeBithumbFeedClient, Clock clock) {
+		PriceStore priceStore, Clock clock) {
 		this.restClient = restClient;
 		this.instrumentRepository = instrumentRepository;
-		this.fakeBithumbFeedClient = fakeBithumbFeedClient;
+		this.priceStore = priceStore;
 		this.clock = clock;
 	}
 
@@ -111,8 +113,11 @@ public class BithumbRestTickerPoller {
 	}
 
 	// 항목 일부에 필수 필드가 없거나 심볼 형식이 다르면 그 항목만 건너뛰고 나머지는 정상 주입한다.
+	// 여기서 넘기는 시각은 "지금 폴링한 시각"일 뿐 실제 체결 시각이 아니므로 receivedAt이 아니라 observedAt으로
+	// PriceStore.recordObservation에 넘긴다(PRICE-REST-001·002) — saveTick(체결 시각)과 섞이면 MKT-003 과거틱
+	// 가드가 오염된다.
 	private void emitTicks(BithumbTickerItem[] response) {
-		LocalDateTime receivedAt = LocalDateTime.now(clock);
+		LocalDateTime observedAt = LocalDateTime.now(clock);
 		for (BithumbTickerItem item : response) {
 			if (item == null || item.market() == null || item.trade_price() == null
 				|| !item.market().startsWith(KRW_MARKET_PREFIX)) {
@@ -124,7 +129,7 @@ public class BithumbRestTickerPoller {
 				log.warn("빗썸 ticker 항목의 심볼이 비어 있어 건너뛴다: {}", item.market());
 				continue;
 			}
-			fakeBithumbFeedClient.emitTick(symbol, item.trade_price(), receivedAt);
+			priceStore.recordObservation(symbol, item.trade_price(), observedAt);
 		}
 	}
 
