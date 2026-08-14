@@ -14,7 +14,9 @@ import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
 import com.finplay.api.education.marketpractice.domain.PracticeAttemptStatus;
 import com.finplay.api.education.marketpractice.dto.response.PracticeAttemptResponse;
 import com.finplay.api.education.marketpractice.repository.PracticeAttemptRepository;
+import com.finplay.api.education.marketpractice.repository.PracticeCompletionRepository;
 import com.finplay.api.education.marketpractice.repository.PracticeRiskSnapshotRepository;
+import com.finplay.api.education.repository.PracticeProgressRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.InstrumentService;
@@ -38,12 +40,16 @@ class PracticeAttemptServiceTest {
 	private static final LocalDateTime NOW = LocalDateTime.ofInstant(FIXED_INSTANT, ZoneOffset.UTC);
 
 	private final PracticeAttemptRepository practiceAttemptRepository = mock(PracticeAttemptRepository.class);
+	private final PracticeCompletionRepository practiceCompletionRepository = mock(PracticeCompletionRepository.class);
 	private final PracticeRiskSnapshotRepository practiceRiskSnapshotRepository = mock(
 		PracticeRiskSnapshotRepository.class);
+	private final PracticeProgressRepository practiceProgressRepository = mock(PracticeProgressRepository.class);
 	private final InstrumentService instrumentService = mock(InstrumentService.class);
 	private final PracticeAttemptService service = new PracticeAttemptService(
 		practiceAttemptRepository,
+		practiceCompletionRepository,
 		practiceRiskSnapshotRepository,
+		practiceProgressRepository,
 		instrumentService,
 		Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC));
 
@@ -55,6 +61,8 @@ class PracticeAttemptServiceTest {
 			NOW.minusMinutes(3));
 		when(practiceAttemptRepository.insertIfAbsent(USER_ID, Market.STOCK.name(), NOW)).thenReturn(0);
 		when(practiceAttemptRepository.findByUserIdAndMarket(USER_ID, Market.STOCK))
+			.thenReturn(Optional.of(attempt));
+		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.STOCK))
 			.thenReturn(Optional.of(attempt));
 		when(practiceRiskSnapshotRepository.findByAttemptIdAndRunNumber(ATTEMPT_ID, 1L))
 			.thenReturn(Optional.empty());
@@ -77,6 +85,8 @@ class PracticeAttemptServiceTest {
 		ReflectionTestUtils.setField(attempt, "completedAt", NOW.minusDays(1));
 		when(practiceAttemptRepository.insertIfAbsent(USER_ID, Market.CRYPTO.name(), NOW)).thenReturn(0);
 		when(practiceAttemptRepository.findByUserIdAndMarket(USER_ID, Market.CRYPTO))
+			.thenReturn(Optional.of(attempt));
+		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
 			.thenReturn(Optional.of(attempt));
 		when(practiceRiskSnapshotRepository.findByAttemptIdAndRunNumber(ATTEMPT_ID, 1L))
 			.thenReturn(Optional.empty());

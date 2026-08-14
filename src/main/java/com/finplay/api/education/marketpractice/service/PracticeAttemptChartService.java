@@ -30,7 +30,9 @@ public class PracticeAttemptChartService {
 	public PracticeTutorialChartResponse getChart(Long userId, Market market) {
 		PracticeAttempt attempt = practiceAttemptRepository.findByUserIdAndMarket(userId, market)
 			.orElseThrow(() -> new BusinessException(ErrorCode.PRACTICE_STEP_LOCKED));
-		LocalDateTime now = LocalDateTime.now(clock);
+		LocalDateTime now = attempt.getStatus() == PracticeAttemptStatus.COMPLETED
+			? attempt.getCompletedAt()
+			: LocalDateTime.now(clock);
 		return toResponse(attempt, now);
 	}
 

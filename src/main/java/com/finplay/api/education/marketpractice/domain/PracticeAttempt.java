@@ -129,4 +129,25 @@ public class PracticeAttempt {
 		this.completedAt = completedAt;
 		this.updatedAt = completedAt;
 	}
+
+	public void reconcileCompletedReplay(
+		Instrument instrument,
+		LocalDateTime anchorAt,
+		LocalDate tutorialDate,
+		long priceSeed,
+		short generatorVersion,
+		LocalDateTime completedAt,
+		LocalDateTime updatedAt) {
+		if (this.status == PracticeAttemptStatus.COMPLETED) {
+			return;
+		}
+		this.status = PracticeAttemptStatus.COMPLETED;
+		this.instrument = instrument;
+		this.anchorAt = anchorAt;
+		this.tutorialDate = tutorialDate;
+		this.priceSeed = priceSeed;
+		this.generatorVersion = generatorVersion;
+		this.completedAt = completedAt;
+		this.updatedAt = updatedAt;
+	}
 }

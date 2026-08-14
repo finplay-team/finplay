@@ -4,11 +4,14 @@ package com.finplay.api.education.marketpractice.service;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
+import com.finplay.api.education.marketpractice.domain.PracticeCompletion;
 import com.finplay.api.education.marketpractice.domain.PracticeAttemptStatus;
 import com.finplay.api.education.marketpractice.domain.PracticeRiskSnapshot;
 import com.finplay.api.education.marketpractice.dto.response.PracticeAttemptResponse;
 import com.finplay.api.education.marketpractice.repository.PracticeAttemptRepository;
+import com.finplay.api.education.marketpractice.repository.PracticeCompletionRepository;
 import com.finplay.api.education.marketpractice.repository.PracticeRiskSnapshotRepository;
+import com.finplay.api.education.repository.PracticeProgressRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.InstrumentService;
@@ -27,18 +30,71 @@ public class PracticeAttemptService {
 	private static final short GENERATOR_VERSION = 1;
 
 	private final PracticeAttemptRepository practiceAttemptRepository;
+	private final PracticeCompletionRepository practiceCompletionRepository;
 	private final PracticeRiskSnapshotRepository practiceRiskSnapshotRepository;
+	private final PracticeProgressRepository practiceProgressRepository;
 	private final InstrumentService instrumentService;
 	private final Clock clock;
 	private final SecureRandom secureRandom = new SecureRandom();
 
 	@Transactional
 	public PracticeAttemptResponse ensureAttempt(Long userId, Market market) {
+		String tutorialKey = resolveTutorialKey(market);
 		LocalDateTime now = LocalDateTime.now(clock);
-		practiceAttemptRepository.insertIfAbsent(userId, market.name(), now);
-		PracticeAttempt attempt = practiceAttemptRepository.findByUserIdAndMarket(userId, market)
+		boolean inserted = practiceAttemptRepository.insertIfAbsent(userId, market.name(), now) == 1;
+		PracticeAttempt attempt = practiceAttemptRepository.findByUserIdAndMarketForUpdate(userId, market)
 			.orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_ERROR));
+		practiceProgressRepository.findByUserIdAndTutorialKeyForUpdate(userId, tutorialKey);
+		PracticeCompletion completion = practiceCompletionRepository
+			.findByUserIdAndTutorialKey(userId, tutorialKey)
+			.orElse(null);
+		if (completion != null) {
+			if (attempt.getStatus() == PracticeAttemptStatus.COMPLETED) {
+				return toResponse(attempt);
+			}
+			if (!inserted) {
+				throw new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING);
+			}
+			initializeCompletedReplay(userId, market, attempt, completion, now);
+		}
 		return toResponse(attempt);
+	}
+
+	private void initializeCompletedReplay(
+		Long userId, Market market, PracticeAttempt attempt, PracticeCompletion completion, LocalDateTime updatedAt) {
+		Instrument instrument = requireCompletionInstrument(market, completion);
+		LocalDateTime completedAt = completion.getCompletedAt();
+		attempt.reconcileCompletedReplay(
+			instrument,
+			completedAt,
+			completedAt.toLocalDate(),
+			deterministicReplaySeed(userId, market, completion.getId(), instrument.getId()),
+			GENERATOR_VERSION,
+			completedAt,
+			updatedAt);
+	}
+
+	private Instrument requireCompletionInstrument(Market market, PracticeCompletion completion) {
+		Instrument instrument = completion.getReflection().getHolding().getInstrument();
+		if (instrument.getMarket() != market) {
+			throw new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING);
+		}
+		return instrument;
+	}
+
+	private long deterministicReplaySeed(Long userId, Market market, Long completionId, Long instrumentId) {
+		long seed = 0xcbf29ce484222325L;
+		seed = (seed ^ userId) * 0x100000001b3L;
+		seed = (seed ^ market.ordinal()) * 0x100000001b3L;
+		seed = (seed ^ completionId) * 0x100000001b3L;
+		return (seed ^ instrumentId) * 0x100000001b3L;
+	}
+
+	private String resolveTutorialKey(Market market) {
+		return switch (market) {
+			case STOCK -> "INVESTMENT_PRACTICE_V1";
+			case CRYPTO -> "COIN_PRACTICE_V1";
+		};
 	}
 
 	@Transactional

@@ -74,13 +74,25 @@ public class InvestmentPracticeQueryService {
 		Optional<PracticeCompletion> completion = practiceCompletionRepository
 			.findByUserIdAndTutorialKey(userId, tutorialKey);
 		Optional<PracticeAttempt> attempt = practiceAttemptRepository.findByUserIdAndMarket(userId, market);
+		if (completion.isPresent()
+			&& attempt.filter(value -> value.getStatus() == PracticeAttemptStatus.COMPLETED).isEmpty()) {
+			return buildCompletedResponse(userId, tutorialKey, completion.get());
+		}
 		if (attempt.isPresent()) {
 			if (attempt.get().getStatus() == PracticeAttemptStatus.COMPLETED) {
+				PracticeCompletion completed = completion
+					.orElseThrow(() -> new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING));
+				if (practiceRiskSnapshotRepository
+					.findByAttemptIdAndRunNumber(attempt.get().getId(), attempt.get().getRunNumber())
+					.isEmpty()) {
+					return attachReplayAttempt(
+						buildCompletedResponse(userId, tutorialKey, completed), attempt.get());
+				}
 				return buildCompletedAttemptResponse(
 					userId,
 					tutorialKey,
 					attempt.get(),
-					completion.orElseThrow(() -> new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING)));
+					completed);
 			}
 			return buildActiveAttemptResponse(userId, tutorialKey, attempt.get());
 		}
@@ -101,6 +113,18 @@ public class InvestmentPracticeQueryService {
 		}
 
 		return buildNotStartedResponse(tutorialKey);
+	}
+
+	private InvestmentPracticeResponse attachReplayAttempt(
+		InvestmentPracticeResponse response, PracticeAttempt attempt) {
+		return new InvestmentPracticeResponse(
+			response.tutorialKey(),
+			response.status(),
+			response.currentStep(),
+			response.steps(),
+			response.completedAt(),
+			response.rewardAmount(),
+			PracticeAttemptResponse.from(attempt, null));
 	}
 
 	private InvestmentPracticeResponse buildActiveAttemptResponse(
