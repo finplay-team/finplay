@@ -94,8 +94,11 @@ class CryptoPriceStreamIntegrationTest {
 		assertThat(snapshotIndex).isGreaterThanOrEqualTo(0);
 		assertThat(priceIndex).isGreaterThan(snapshotIndex);
 		assertThat(contentAfterPrice).contains("\"symbol\":\"" + symbol + "\"");
+		// id는 receivedAt(체결 시각, 09:05:33)이 아니라 observedAt(관측 시각) 기준이다 — saveTick이 그 값을
+		// LocalDateTime.now(clock)으로 채우고, 이 테스트의 TestClock은 BASELINE_TIME(09:00:00)에 고정돼 있다
+		// (034-crypto-price-rest-backup, CryptoPriceStreamService id 충돌 회귀 수정).
 		assertThat(contentAfterPrice).contains(
-			"id:CRYPTO:" + symbol + ":" + SERVICE_DATE.toString().replace("-", "") + "090533");
+			"id:CRYPTO:" + symbol + ":" + SERVICE_DATE.toString().replace("-", "") + "090000");
 		assertThat(contentAfterPrice).doesNotContain("event:status");
 
 		// 실서비스에서는 5초 주기 @Scheduled가 이 변경을 감지하지만, 그 주기를 실제로 기다리면 테스트가

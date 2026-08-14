@@ -1,4 +1,4 @@
-// Mock HTTP로 BithumbRestTickerPoller의 markets 조합·trade_price 매핑·부분 이상 항목 skip·장애 시 무전파를 검증한다 (이슈 #107 ⑫)
+// Mock HTTP로 BithumbRestTickerPoller의 markets 조합·trade_price 매핑·부분 이상 항목 skip·장애 시 무전파를 검증한다 (이슈 #107 ⑫, #369)
 package com.finplay.api.market.feed;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -20,6 +20,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.repository.InstrumentRepository;
+import com.finplay.api.market.store.PriceStore;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -50,7 +51,7 @@ class BithumbRestTickerPollerTest {
 	private InstrumentRepository instrumentRepository;
 
 	@Mock
-	private FakeBithumbFeedClient fakeBithumbFeedClient;
+	private PriceStore priceStore;
 
 	private MockRestServiceServer server;
 	private BithumbRestTickerPoller poller;
@@ -60,7 +61,7 @@ class BithumbRestTickerPollerTest {
 		RestClient.Builder builder = RestClient.builder();
 		server = MockRestServiceServer.bindTo(builder).build();
 		Clock clock = Clock.fixed(FIXED_NOW.toInstant(ZoneOffset.UTC), ZoneOffset.UTC);
-		poller = new BithumbRestTickerPoller(builder.build(), instrumentRepository, fakeBithumbFeedClient, clock);
+		poller = new BithumbRestTickerPoller(builder.build(), instrumentRepository, priceStore, clock);
 	}
 
 	private static Instrument crypto(String symbol) {
@@ -105,14 +106,14 @@ class BithumbRestTickerPollerTest {
 
 		// 기대를 하나도 등록하지 않았으므로, 호출이 있었다면 그 시점에 실패한다.
 		server.verify();
-		verifyNoInteractions(fakeBithumbFeedClient);
+		verifyNoInteractions(priceStore);
 	}
 
-	// --- 응답 매핑: KRW- 접두사 제거 + trade_price 그대로 ---
+	// --- 응답 매핑: KRW- 접두사 제거 + trade_price 그대로, PriceStore.recordObservation으로 전달 ---
 
 	@Test
-	@DisplayName("응답 항목마다 KRW- 접두사를 뗀 심볼과 trade_price로 emitTick을 호출한다")
-	void pollTickersEmitsTickPerItemWithStrippedSymbolAndTradePrice() {
+	@DisplayName("응답 항목마다 KRW- 접두사를 뗀 심볼과 trade_price로 PriceStore.recordObservation을 호출한다")
+	void pollTickersRecordsObservationPerItemWithStrippedSymbolAndTradePrice() {
 		givenCryptoInstruments("BTC", "ETH");
 		String body = "[" + tickerItem("KRW-BTC", "91234000") + "," + tickerItem("KRW-ETH", "4567000.5") + "]";
 		server.expect(requestTo(Matchers.startsWith(ENDPOINT)))
@@ -121,18 +122,18 @@ class BithumbRestTickerPollerTest {
 		poller.pollTickers();
 
 		ArgumentCaptor<BigDecimal> priceCaptor = ArgumentCaptor.forClass(BigDecimal.class);
-		verify(fakeBithumbFeedClient).emitTick(eq("BTC"), priceCaptor.capture(), eq(FIXED_NOW));
-		verify(fakeBithumbFeedClient).emitTick(eq("ETH"), priceCaptor.capture(), eq(FIXED_NOW));
+		verify(priceStore).recordObservation(eq("BTC"), priceCaptor.capture(), eq(FIXED_NOW));
+		verify(priceStore).recordObservation(eq("ETH"), priceCaptor.capture(), eq(FIXED_NOW));
 		assertThat(priceCaptor.getAllValues().get(0)).isEqualByComparingTo("91234000");
 		assertThat(priceCaptor.getAllValues().get(1)).isEqualByComparingTo("4567000.5");
-		// PriceStore·연결상태를 직접 건드리지 않는다 — start/stop/simulateDisconnect 등 다른 호출이 없어야 한다.
-		verifyNoMoreInteractions(fakeBithumbFeedClient);
+		// PriceStore의 다른 메서드(연결상태·과거틱 가드 등)는 건드리지 않는다 — recordObservation만 호출된다.
+		verifyNoMoreInteractions(priceStore);
 	}
 
 	// --- 부분 이상 항목: 그 항목만 건너뛴다 ---
 
 	@Test
-	@DisplayName("trade_price가 없는 항목만 건너뛰고 나머지는 정상 주입한다")
+	@DisplayName("trade_price가 없는 항목만 건너뛰고 나머지는 정상 관측한다")
 	void pollTickersSkipsOnlyTheItemMissingTradePrice() {
 		givenCryptoInstruments("BTC", "ETH");
 		String body = "[{\"market\": \"KRW-BTC\"}," + tickerItem("KRW-ETH", "4567000") + "]";
@@ -141,13 +142,13 @@ class BithumbRestTickerPollerTest {
 
 		poller.pollTickers();
 
-		verify(fakeBithumbFeedClient, never()).emitTick(eq("BTC"), any(), any());
-		verify(fakeBithumbFeedClient).emitTick(eq("ETH"), any(BigDecimal.class), eq(FIXED_NOW));
-		verifyNoMoreInteractions(fakeBithumbFeedClient);
+		verify(priceStore, never()).recordObservation(eq("BTC"), any(), any());
+		verify(priceStore).recordObservation(eq("ETH"), any(BigDecimal.class), eq(FIXED_NOW));
+		verifyNoMoreInteractions(priceStore);
 	}
 
 	@Test
-	@DisplayName("market이 KRW-로 시작하지 않는 항목만 건너뛰고 나머지는 정상 주입한다")
+	@DisplayName("market이 KRW-로 시작하지 않는 항목만 건너뛰고 나머지는 정상 관측한다")
 	void pollTickersSkipsOnlyTheItemWithNonKrwMarketCode() {
 		givenCryptoInstruments("BTC", "ETH");
 		String body = "[" + tickerItem("BTC_KRW", "91234000") + "," + tickerItem("KRW-ETH", "4567000") + "]";
@@ -156,86 +157,86 @@ class BithumbRestTickerPollerTest {
 
 		poller.pollTickers();
 
-		verify(fakeBithumbFeedClient).emitTick(eq("ETH"), any(BigDecimal.class), eq(FIXED_NOW));
-		verifyNoMoreInteractions(fakeBithumbFeedClient);
+		verify(priceStore).recordObservation(eq("ETH"), any(BigDecimal.class), eq(FIXED_NOW));
+		verifyNoMoreInteractions(priceStore);
 	}
 
 	// --- 장애 처리: 예외를 밖으로 던지지 않고 그 회차를 건너뛴다 (스케줄러가 죽으면 안 된다) ---
 
 	@Test
-	@DisplayName("5xx 응답이면 예외를 전파하지 않고 emitTick도 호출하지 않는다")
-	void pollTickersSwallowsServerErrorWithoutEmittingTick() {
+	@DisplayName("5xx 응답이면 예외를 전파하지 않고 recordObservation도 호출하지 않는다")
+	void pollTickersSwallowsServerErrorWithoutRecordingObservation() {
 		givenCryptoInstruments("BTC");
 		server.expect(requestTo(Matchers.startsWith(ENDPOINT))).andRespond(withServerError());
 
 		assertThatCode(() -> poller.pollTickers()).doesNotThrowAnyException();
 
-		verifyNoInteractions(fakeBithumbFeedClient);
+		verifyNoInteractions(priceStore);
 	}
 
 	@Test
-	@DisplayName("4xx 응답이면 예외를 전파하지 않고 emitTick도 호출하지 않는다")
-	void pollTickersSwallowsClientErrorWithoutEmittingTick() {
+	@DisplayName("4xx 응답이면 예외를 전파하지 않고 recordObservation도 호출하지 않는다")
+	void pollTickersSwallowsClientErrorWithoutRecordingObservation() {
 		givenCryptoInstruments("BTC");
 		server.expect(requestTo(Matchers.startsWith(ENDPOINT)))
 			.andRespond(withStatus(HttpStatus.BAD_REQUEST).body("bad request"));
 
 		assertThatCode(() -> poller.pollTickers()).doesNotThrowAnyException();
 
-		verifyNoInteractions(fakeBithumbFeedClient);
+		verifyNoInteractions(priceStore);
 	}
 
 	@Test
-	@DisplayName("응답 본문이 null이면 예외를 전파하지 않고 emitTick도 호출하지 않는다")
-	void pollTickersSwallowsNullBodyWithoutEmittingTick() {
+	@DisplayName("응답 본문이 null이면 예외를 전파하지 않고 recordObservation도 호출하지 않는다")
+	void pollTickersSwallowsNullBodyWithoutRecordingObservation() {
 		givenCryptoInstruments("BTC");
 		server.expect(requestTo(Matchers.startsWith(ENDPOINT)))
 			.andRespond(withSuccess("null", MediaType.APPLICATION_JSON));
 
 		assertThatCode(() -> poller.pollTickers()).doesNotThrowAnyException();
 
-		verifyNoInteractions(fakeBithumbFeedClient);
+		verifyNoInteractions(priceStore);
 	}
 
 	@Test
-	@DisplayName("응답 본문이 비어 있으면 예외를 전파하지 않고 emitTick도 호출하지 않는다")
-	void pollTickersSwallowsEmptyBodyWithoutEmittingTick() {
+	@DisplayName("응답 본문이 비어 있으면 예외를 전파하지 않고 recordObservation도 호출하지 않는다")
+	void pollTickersSwallowsEmptyBodyWithoutRecordingObservation() {
 		givenCryptoInstruments("BTC");
 		server.expect(requestTo(Matchers.startsWith(ENDPOINT)))
 			.andRespond(withSuccess("", MediaType.APPLICATION_JSON));
 
 		assertThatCode(() -> poller.pollTickers()).doesNotThrowAnyException();
 
-		verifyNoInteractions(fakeBithumbFeedClient);
+		verifyNoInteractions(priceStore);
 	}
 
 	@Test
-	@DisplayName("빈 배열 응답이면 emitTick을 호출하지 않는다")
-	void pollTickersEmitsNothingForEmptyArrayResponse() {
+	@DisplayName("빈 배열 응답이면 recordObservation을 호출하지 않는다")
+	void pollTickersRecordsNothingForEmptyArrayResponse() {
 		givenCryptoInstruments("BTC");
 		server.expect(requestTo(Matchers.startsWith(ENDPOINT)))
 			.andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
 
 		assertThatCode(() -> poller.pollTickers()).doesNotThrowAnyException();
 
-		verifyNoInteractions(fakeBithumbFeedClient);
+		verifyNoInteractions(priceStore);
 	}
 
 	@Test
-	@DisplayName("JSON 파싱이 불가능하면 예외를 전파하지 않고 emitTick도 호출하지 않는다")
-	void pollTickersSwallowsMalformedJsonWithoutEmittingTick() {
+	@DisplayName("JSON 파싱이 불가능하면 예외를 전파하지 않고 recordObservation도 호출하지 않는다")
+	void pollTickersSwallowsMalformedJsonWithoutRecordingObservation() {
 		givenCryptoInstruments("BTC");
 		server.expect(requestTo(Matchers.startsWith(ENDPOINT)))
 			.andRespond(withSuccess("{malformed", MediaType.APPLICATION_JSON));
 
 		assertThatCode(() -> poller.pollTickers()).doesNotThrowAnyException();
 
-		verifyNoInteractions(fakeBithumbFeedClient);
+		verifyNoInteractions(priceStore);
 	}
 
 	@Test
-	@DisplayName("연결 실패(RestClientException)면 예외를 전파하지 않고 emitTick도 호출하지 않는다")
-	void pollTickersSwallowsConnectionFailureWithoutEmittingTick() {
+	@DisplayName("연결 실패(RestClientException)면 예외를 전파하지 않고 recordObservation도 호출하지 않는다")
+	void pollTickersSwallowsConnectionFailureWithoutRecordingObservation() {
 		givenCryptoInstruments("BTC");
 		server.expect(requestTo(Matchers.startsWith(ENDPOINT)))
 			.andRespond(request -> {
@@ -244,6 +245,6 @@ class BithumbRestTickerPollerTest {
 
 		assertThatCode(() -> poller.pollTickers()).doesNotThrowAnyException();
 
-		verifyNoInteractions(fakeBithumbFeedClient);
+		verifyNoInteractions(priceStore);
 	}
 }

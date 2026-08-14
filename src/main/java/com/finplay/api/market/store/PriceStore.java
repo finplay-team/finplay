@@ -29,6 +29,7 @@ public class PriceStore {
 	private static final String STATUS_KEY = "feed:crypto:status";
 	private static final String FIELD_PRICE = "price";
 	private static final String FIELD_RECEIVED_AT = "receivedAt";
+	private static final String FIELD_OBSERVED_AT = "observedAt";
 	private static final Duration STALE_THRESHOLD = Duration.ofSeconds(10);
 	private static final String SNAPSHOT_MEMBER_DELIMITER = ":";
 
@@ -37,8 +38,12 @@ public class PriceStore {
 	private final ApplicationEventPublisher eventPublisher;
 
 	// 동일 심볼의 과거 틱(수신시각이 현재 저장된 값보다 이전 또는 같음)은 최신 틱을 덮어쓰지 못한다 (spec.md MKT-003).
+	// 이 가드는 receivedAt(체결 시각)끼리만 비교한다 — REST 폴러(recordObservation)가 항상 "지금" 시각을 관측 시각으로
+	// 남기더라도 이 가드에는 영향을 주지 않는다(PRICE-REST-003, docs/specs/034-crypto-price-rest-backup/plan.md).
 	// 이 분기를 통과해 실제로 최신값을 갱신했을 때만 CryptoPriceUpdatedEvent를 publish한다 (015-limit-order LMT-002 트리거,
 	// spec.md 확정된 설계 결정 3번). 일반 ApplicationEvent다 — 가격 수신이 DB 트랜잭션이 아니므로 AFTER_COMMIT 대상이 없다.
+	// 가드를 통과하면 observedAt(관측 시각)도 "지금"으로 함께 갱신한다 — 체결이 신선함을 웹소켓 수신 자체로도
+	// 확인했다는 뜻이다(PRICE-REST-001).
 	public void saveTick(String symbol, BigDecimal price, LocalDateTime receivedAt) {
 		HashOperations<String, String, String> hashOps = redisTemplate.opsForHash();
 		String key = priceKey(symbol);
@@ -46,11 +51,49 @@ public class PriceStore {
 		if (existingReceivedAt.isPresent() && !receivedAt.isAfter(existingReceivedAt.get())) {
 			return;
 		}
+		LocalDateTime observedAt = LocalDateTime.now(clock);
 		Map<String, String> fields = new HashMap<>();
 		fields.put(FIELD_PRICE, price.toPlainString());
 		fields.put(FIELD_RECEIVED_AT, receivedAt.toString());
+		fields.put(FIELD_OBSERVED_AT, observedAt.toString());
 		hashOps.putAll(key, fields);
-		eventPublisher.publishEvent(new CryptoPriceUpdatedEvent(symbol, price, receivedAt));
+		eventPublisher.publishEvent(new CryptoPriceUpdatedEvent(symbol, price, receivedAt, observedAt));
+	}
+
+	// REST 폴러(BithumbRestTickerPoller) 전용 — "이 가격이 지금도 최신"임을 재확인했다는 뜻으로 observedAt은
+	// 항상 갱신한다. price는 저장된 값과 실제로 다를 때만 갱신하고, receivedAt(체결 시각)은 원칙적으로 절대
+	// 건드리지 않는다 — REST는 체결 시각을 모르고 "폴링한 시각"만 알기 때문에 여기 채워 넣으면 MKT-003 가드가
+	// 오염된다(PRICE-REST-001·002, docs/specs/034-crypto-price-rest-backup/plan.md).
+	// 예외 — 이 심볼의 웹소켓 체결을 한 번도 받은 적 없을 때(서버 재시작 직후 REST가 그 심볼의 첫 웹소켓
+	// 체결보다 먼저 도착하는 경우 등)만 receivedAt도 observedAt과 같은 값으로 부트스트랩한다. 그러지 않으면
+	// getLatestPrice가 receivedAt 없음을 이유로 계속 Optional.empty()를 돌려줘, REST가 신선한 가격을 확보했는데도
+	// "받은 적 없음" UNAVAILABLE이 배포 직후 저유동성 종목에서 재현된다(리뷰 [권장], PR 리뷰 지적). 이 부트스트랩은
+	// 딱 한 번 "받은 적 없음" 상태를 벗어나게 할 뿐이다 — 그 뒤 실제 웹소켓 체결이 도착하면 부트스트랩 시각보다
+	// 나중이므로 MKT-003 가드가 정상적으로 덮어쓴다.
+	// CryptoPriceUpdatedEvent는 가격이 실제로 바뀌었을 때만 publish한다 — 관측 시각만 갱신한 호출은 소비자
+	// (LimitOrderTriggerListener·CryptoPriceStreamService) 입장에서 같은 값을 3초마다 재처리·재전송하는 순수한
+	// 낭비이기 때문이다(plan.md "컴포넌트 설계 — PriceStore" §이벤트 발행). 신규 심볼의 첫 관측은 price가 null에서
+	// 값이 생기는 것이므로 항상 priceChanged=true라 이 조건에 자연히 포함된다. 이벤트의 receivedAt은 이 메서드가
+	// 건드리지 않는 기존 체결 시각을 그대로 실어 보낸다 — receivedAt이 아예 없던 심볼은 방금 부트스트랩한 값(=observedAt)을 쓴다.
+	public void recordObservation(String symbol, BigDecimal price, LocalDateTime observedAt) {
+		HashOperations<String, String, String> hashOps = redisTemplate.opsForHash();
+		String key = priceKey(symbol);
+		String existingPriceValue = hashOps.get(key, FIELD_PRICE);
+		boolean priceChanged = existingPriceValue == null || new BigDecimal(existingPriceValue).compareTo(price) != 0;
+		Optional<LocalDateTime> existingReceivedAt = readReceivedAt(hashOps, key);
+		Map<String, String> fields = new HashMap<>();
+		fields.put(FIELD_OBSERVED_AT, observedAt.toString());
+		if (priceChanged) {
+			fields.put(FIELD_PRICE, price.toPlainString());
+		}
+		if (existingReceivedAt.isEmpty()) {
+			fields.put(FIELD_RECEIVED_AT, observedAt.toString());
+		}
+		hashOps.putAll(key, fields);
+		if (priceChanged) {
+			LocalDateTime receivedAt = existingReceivedAt.orElse(observedAt);
+			eventPublisher.publishEvent(new CryptoPriceUpdatedEvent(symbol, price, receivedAt, observedAt));
+		}
 	}
 
 	public Optional<CryptoPriceDto> getLatestPrice(String symbol) {
@@ -61,7 +104,10 @@ public class PriceStore {
 		if (priceValue == null || receivedAt.isEmpty()) {
 			return Optional.empty();
 		}
-		return Optional.of(new CryptoPriceDto(symbol, new BigDecimal(priceValue), receivedAt.get()));
+		// observedAt 필드가 없는 기존 해시(배포 전 데이터)는 receivedAt을 관측 시각으로 간주한다 — 배포 전과
+		// 동일한 신선도 판정을 유지한다(PRICE-REST-001).
+		LocalDateTime observedAt = readObservedAt(hashOps, key).orElse(receivedAt.get());
+		return Optional.of(new CryptoPriceDto(symbol, new BigDecimal(priceValue), receivedAt.get(), observedAt));
 	}
 
 	public void saveConnectionStatus(FeedConnectionStatus status) {
@@ -74,13 +120,18 @@ public class PriceStore {
 		return value == null ? FeedConnectionStatus.DISCONNECTED : FeedConnectionStatus.valueOf(value);
 	}
 
-	// 수신시각이 10초를 초과하면 stale(유효하지 않음)로 판정한다 (spec.md MKT-004). PriceQueryService가 그대로 재사용한다.
-	public boolean isStale(LocalDateTime receivedAt) {
-		Duration elapsed = Duration.between(receivedAt, LocalDateTime.now(clock));
+	// 주어진 시각이 10초를 초과하면 stale(유효하지 않음)로 판정한다 (spec.md MKT-004). 임계값 자체는 그대로이지만
+	// 판정 기준 시각은 관측 시각(observedAt)으로 바뀐다(PRICE-REST-001, docs/specs/034-crypto-price-rest-backup) —
+	// 호출자가 CryptoPriceDto.observedAt()을 넘겨야 REST 폴링이 신선도를 유지하는 효과가 실제로 반영된다.
+	public boolean isStale(LocalDateTime observedAt) {
+		Duration elapsed = Duration.between(observedAt, LocalDateTime.now(clock));
 		return elapsed.compareTo(STALE_THRESHOLD) > 0;
 	}
 
 	// 연결이 끊겼거나 최신 틱이 stale이면 유효하지 않은 가격으로 판정한다 (MKT-004).
+	// PriceQueryService의 코인 체결 경로는 더 이상 이 메서드를 호출하지 않는다 — 표시 판정과 같은 규칙(STALE 허용)을
+	// 쓰도록 바뀌었다(PRICE-REST-004, docs/specs/034-crypto-price-rest-backup). CryptoPriceSnapshotService 등
+	// 다른 소비자는 여전히 이 메서드로 stale 심볼을 건너뛴다.
 	public boolean isPriceAvailable(String symbol) {
 		if (getConnectionStatus() != FeedConnectionStatus.CONNECTED) {
 			return false;
@@ -140,6 +191,11 @@ public class PriceStore {
 
 	private Optional<LocalDateTime> readReceivedAt(HashOperations<String, String, String> hashOps, String key) {
 		String value = hashOps.get(key, FIELD_RECEIVED_AT);
+		return value == null ? Optional.empty() : Optional.of(LocalDateTime.parse(value));
+	}
+
+	private Optional<LocalDateTime> readObservedAt(HashOperations<String, String, String> hashOps, String key) {
+		String value = hashOps.get(key, FIELD_OBSERVED_AT);
 		return value == null ? Optional.empty() : Optional.of(LocalDateTime.parse(value));
 	}
 

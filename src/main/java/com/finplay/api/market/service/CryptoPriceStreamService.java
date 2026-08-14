@@ -90,7 +90,12 @@ public class CryptoPriceStreamService {
 	public void onPriceUpdated(CryptoPriceUpdatedEvent event) {
 		MarketPriceEvent payload = new MarketPriceEvent(Market.CRYPTO, event.symbol(), event.price(),
 			event.receivedAt(), LocalDateTime.now(clock), null, null);
-		String eventId = "CRYPTO:%s:%s".formatted(event.symbol(), event.receivedAt().format(EVENT_ID_TIME_FORMAT));
+		// id는 observedAt(관측 시각) 기준으로 만든다 — receivedAt(체결 시각)은 REST 폴러(recordObservation)가
+		// 절대 갱신하지 않으므로, 웹소켓 체결 없이 REST만으로 서로 다른 가격이 연달아 감지되면 같은 receivedAt을
+		// 실은 이벤트 2건이 같은 id를 갖게 되어 프론트의 SSE id dedup에 두 번째 갱신이 조용히 먹힐 수 있다.
+		// observedAt은 이벤트가 발행될 때마다(웹소켓·REST 어느 경로든) 항상 "지금"으로 새로 갱신되므로 이 충돌이
+		// 없다(034-crypto-price-rest-backup).
+		String eventId = "CRYPTO:%s:%s".formatted(event.symbol(), event.observedAt().format(EVENT_ID_TIME_FORMAT));
 		for (SseEmitter emitter : sseEmitterRegistry.getEmitters(Market.CRYPTO)) {
 			send(emitter, SseEmitter.event().name("price").id(eventId).data(payload));
 		}

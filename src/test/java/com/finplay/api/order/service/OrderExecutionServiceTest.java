@@ -130,6 +130,33 @@ class OrderExecutionServiceTest {
 		assertThat(tradeCaptor.getValue().getStockReplaySession()).isNull();
 	}
 
+	// PRICE-REST-004(docs/specs/034-crypto-price-rest-backup) — PriceQueryService.getOrderExecutionPrice가
+	// 연결 유지 + 수신 이력 있음 상태에서 STALE quote를 예외 없이 돌려주면, OrderExecutionService는 status를
+	// 따로 판단하지 않고 그 가격 그대로 체결까지 진행해야 한다(032 시절엔 여기가 fail-closed로 막혔다).
+	@Test
+	void createOrderExecutesCryptoMarketBuyToCompletionWhenExecutionPriceQuoteIsStale() {
+		Instrument instrument = cryptoInstrument(5_000L);
+		Account account = account(com.finplay.api.account.domain.Market.CRYPTO);
+		User user = testUser();
+		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
+		when(priceQueryService.getOrderExecutionPrice(instrument)).thenReturn(
+			new OrderExecutionPriceDto(new PriceQuoteDto(new BigDecimal("133330"), NOW, PriceStatus.STALE, null),
+				null));
+		when(accountService.getAccountForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO))
+			.thenReturn(account);
+		when(userQueryService.getUser(USER_ID)).thenReturn(user);
+		OrderCreateRequest request = buyRequest(Market.CRYPTO, instrument.getId(), "0.1");
+
+		OrderResponse response = orderExecutionService.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, request);
+
+		// rawAmount = 133330 * 0.1 = 13333.0, 수수료 13333*0.0005=6.6665 → 내림 6
+		assertThat(response.amount()).isEqualTo(13333L);
+		assertThat(response.fee()).isEqualTo(6L);
+		assertThat(account.getCashBalance()).isEqualTo(10_000_000L - 13339L);
+		verify(orderRepository).save(any(Order.class));
+		verify(tradeRepository).save(any(Trade.class));
+	}
+
 	@Test
 	void createOrderBuyAccumulatesSandboxCashAdjustmentWhenInstrumentIsTutorialSample() {
 		// spec 033 SANDBOX-EXCL-006 call site #1: 샌드박스 종목 매수는 deductCash와 별도로

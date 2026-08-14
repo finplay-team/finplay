@@ -85,9 +85,10 @@ spring:
     scheduling:
       # 기본 pool size 1이면 블로킹 @Scheduled 작업 하나(예: KisHistoricalCandleCollector의 배치 HTTP 호출)가
       # 스레드를 점유하는 동안 나머지 스케줄(heartbeat, price push, replay 세션 확정)이 전부 밀린다.
-      # 기본 프로필의 @Scheduled 작업은 16개다 — 기존 5개에 뉴스·공시 수집 2개, 개장 전 배치 1개,
+      # 코드베이스 전체의 @Scheduled 메서드는 17개다 — 기존 5개에 뉴스·공시 수집 2개, 개장 전 배치 1개,
       # 코인 요약·브리핑 배치 1개, 장 마감 집단 비교 배치 1개, 코인 가격 스냅샷 기록 1개, 코인 변동 감시 1개,
-      # 코인 집단 비교 배치 1개, 랭킹 재구성 배치 1개, 코인 SSE 연결상태 push 1개, 빗썸 연결상태 재기록 1개가 더해졌다.
+      # 코인 집단 비교 배치 1개, 랭킹 재구성 배치 1개, 코인 SSE 연결상태 push 1개, 빗썸 연결상태 재기록 1개,
+      # 빗썸 REST ticker 폴링 1개가 더해졌다.
       #   기존 5   SseEmitterRegistry heartbeat · StockPriceStreamService · KisHistoricalCandleCollector
       #            StockReplaySessionScheduler · BithumbFeedSimulator
       #   신설 2   NewsCollectionService.collectNews · NewsCollectionService.collectDisclosures (spec 012 FEED-001)
@@ -100,21 +101,26 @@ spring:
       #   신설 1   RankingRebuildService.rebuildOnSchedule (spec 014 랭킹 재구성, 이슈 #279)
       #   신설 1   CryptoPriceStreamService.publishConnectionStatusIfChanged (spec 028, 이슈 #286)
       #   신설 1   BithumbFeedStatusReconciler.reconcileConnectionStatus (이슈 #299)
-      #   합계 16
+      #   신설 1   BithumbRestTickerPoller.pollTickers (spec 034 PRICE-REST-002, 이슈 #369)
+      #   합계 17
       # 시뮬레이터는 @Profile("!prod") + matchIfMissing=true라 별도 설정 없이 기본 활성이며, 이전 주석은 이걸
-      # 빠뜨리고 4로 세고 있었다 (이슈 #125). 각자 독립 스레드를 쓰도록 16으로 맞춘다.
-      # crypto-real 프로필은 시뮬레이터가 꺼지고 BithumbRestTickerPoller가 켜져 개수가 그대로 16이다.
-      # prod는 시뮬레이터가 없어 15개지만 스레드 하나가 더 있는 것은 무해하다.
+      # 빠뜨리고 4로 세고 있었다 (이슈 #125). 위 17개가 전부 동시에 한 프로필에서 뜨는 것은 아니다 —
+      # 시뮬레이터(BithumbFeedSimulator)와 폴러(BithumbRestTickerPoller)는 프로필이 갈린다.
+      #   기본(local, crypto-real 없음) — 시뮬레이터 O, 폴러 X → 16개
+      #   crypto-real                  — 시뮬레이터 X, 폴러 O → 16개
+      #   prod                         — 시뮬레이터 X, 폴러 O(이슈 #369부터, 이전엔 X라 15개였다) → 16개
+      # 세 프로필 모두 실제 필요 스레드는 16개로 같다. 풀을 17로 두어 스레드 하나를 여유로 남긴다(이슈 #369
+      # 이전에도 prod는 16 대 실제 15로 같은 여유 1개를 유지하고 있었다 — 그 여유를 그대로 유지하는 것이다).
       # 풀은 앱 전역 단일 풀이라 소유 도메인과 무관하게 전부 센다 — price-snapshot-cron이 market 소유라고
       # 빼지 않는다. spec 012의 스케줄 8개(§C-1)가 이슈 #275의 crypto-peer-stats까지 전부 들어온 뒤, spec 014의
       # 랭킹 재구성 배치(이슈 #279)와 spec 028의 코인 SSE 연결상태 push(이슈 #286), 이슈 #299의 빗썸 연결상태
-      # 재기록이 더해져 최종 16이 됐다.
+      # 재기록이 더해져 16이 됐고, 이슈 #369에서 폴러가 prod에서도 뜨게 되며 여유를 유지하기 위해 17로 올렸다.
       # 풀이 부족하면 개장 시간대에 SSE heartbeat와 매분 가격 push가 밀린다. 이 숫자는 @Scheduled를 추가할
       # 때마다 함께 올려야 한다 —
       # NewsCollectionIntegrationTest.schedulingPoolIsLargeEnoughForEveryScheduledTask가 전체 빌드에서 검증한다.
       # 전용 TaskScheduler 분리는 작업 수가 적어 이번 범위에서는 채택하지 않는다 (PR #90/#94 리뷰, plan.md 참고).
       pool:
-        size: 16
+        size: 17
 
 # 인증 spec(PRD 태스크 2) 구현 시 사용. 시크릿은 환경변수로만 주입.
 jwt:
@@ -152,7 +158,8 @@ bithumb:
     read-timeout-ms: ${BITHUMB_CANDLE_READ_TIMEOUT_MS:3000}
   feed:
     # 빗썸 공개 ticker REST 조회 타임아웃 (이슈 #107). 위 candle과 같은 공개 API·같은 목적이라 형태를 맞춘다.
-    # 이 값을 읽는 BithumbRestTickerPoller는 crypto-real 프로필에서만 생성되므로 기본 실행에는 영향이 없다.
+    # 이 값을 읽는 BithumbRestTickerPoller는 prod·crypto-real 프로필에서만 생성되므로(이슈 #369) 기본 실행에는
+    # 영향이 없다.
     ticker:
       connect-timeout-ms: ${BITHUMB_TICKER_CONNECT_TIMEOUT_MS:2000}
       read-timeout-ms: ${BITHUMB_TICKER_READ_TIMEOUT_MS:3000}
