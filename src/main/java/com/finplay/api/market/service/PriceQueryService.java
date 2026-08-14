@@ -31,7 +31,8 @@ public class PriceQueryService {
 	}
 
 	// 주문 체결 전용 — 주식은 주문 가능 상태·가격·재생세션을 공급자의 같은 관측 결과로 확정한다. 코인은 표시 판정과 같은
-	// 규칙(getCryptoDisplayPriceQuote)을 써서 STALE도 체결을 허용한다(PRICE-REST-004).
+	// 규칙(getCryptoDisplayPriceQuote)을 써서 관측 시각과 무관하게 마지막 가격으로 체결한다(PRICE-NOSTALE-001,
+	// docs/specs/036-remove-crypto-stale-status).
 	@Transactional(readOnly = true)
 	public OrderExecutionPriceDto getOrderExecutionPrice(Instrument instrument) {
 		// 샘플 종목은 실제 시세 인프라(stockPriceProvider·재생세션)를 완전히 우회한다 — 항상 AVAILABLE·OPEN, replaySession=null (SANDBOX-003)
@@ -39,9 +40,9 @@ public class PriceQueryService {
 			return new OrderExecutionPriceDto(tutorialSampleInstrumentPriceService.getPriceQuote(instrument), null);
 		}
 		if (instrument.getMarket() == Market.CRYPTO) {
-			// 표시 판정과 같은 규칙을 쓴다 — 연결 유지 + 수신 이력 있음이면 STALE이어도 마지막 가격으로 체결한다
-			// (PRICE-REST-004, docs/specs/034-crypto-price-rest-backup). requireAvailable은 UNAVAILABLE에만
-			// 예외를 던지므로 STALE quote는 그대로 통과한다 — 별도 체결 전용 판정을 두지 않는다.
+			// 표시 판정과 같은 규칙을 쓴다 — 연결 유지 + 수신 이력 있음이면 관측 시각과 무관하게 마지막 가격으로
+			// 체결한다(PRICE-NOSTALE-001, docs/specs/036-remove-crypto-stale-status). requireAvailable은
+			// UNAVAILABLE에만 예외를 던지므로 별도 체결 전용 판정을 두지 않는다.
 			return new OrderExecutionPriceDto(requireAvailable(getCryptoDisplayPriceQuote(instrument)), null);
 		}
 
