@@ -17,7 +17,7 @@
   - `MarketStatusEventTest` 등 그 외 `PriceStatus.STALE` 참조 잔여분 확인·정리, 컴파일 통과 확인.
   - `CryptoCandleAndPriceIndependenceTest`는 손대지 않고 회귀만 확인.
 
-- [ ] **3. API 계약 문서 동기화**
+- [x] **3. API 계약 문서 동기화**
   - `docs/api-contracts.md`: `/price` 절, 주문 절, 코인 SSE `snapshot` 절에서 `STALE` 관련 서술 제거·갱신(plan.md "문서 동기화" 참조).
   - `docs/api-routes.md`: `/api/instruments/{instrumentId}/price` 라우트 설명에서 `STALE` 언급 제거, 근거 칸에 `036` 추가.
 
