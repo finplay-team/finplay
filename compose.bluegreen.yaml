@@ -15,6 +15,14 @@ x-app-common: &app-common
     - .env
   environment:
     SPRING_PROFILES_ACTIVE: prod
+    # 컨테이너에 TZ가 없으면 기반 이미지(eclipse-temurin) 기본값인 UTC로 JVM이 뜬다. 이 저장소 코드
+    # 곳곳(CryptoFeedbackBatchService 등)이 "@Scheduled의 zone을 빠뜨리면 배포 JVM 기본 타임존이 UTC라
+    # 9시간 밀린다"고 경고해 왔는데, zone은 다 명시돼 있었음에도 실제로 market_data_imports.collected_at이
+    # 9시간(정확히 UTC 오프셋만큼) 밀려 기록되는 현상이 실측됐다(이슈 #370). @Scheduled(zone=...)는 JVM
+    # 기본 타임존과 무관하게 정확히 발동하지만, LocalDateTime을 DB에 쓰는 경로가 JDBC 드라이버의 세션
+    # 타임존(JDBC URL의 serverTimezone=Asia/Seoul)과 JVM 기본 타임존(UTC) 사이에서 변환되면 정확히 이만큼
+    # 어긋난다 — 컨테이너 자체의 TZ를 맞춰 이 클래스의 문제를 원천 차단한다.
+    TZ: Asia/Seoul
     # t4g.small(2GB)에 app 2벌이 함께 뜬다 — JVM 기본값(컨테이너 메모리의 25~50%)에 맡기면 한쪽이
     # 다른 쪽을 밀어낼 수 있어 힙을 명시적으로 눌러 둔다. 첫 전환 때 `docker stats`로 실사용량을
     # 보고 조정한다.

@@ -17,6 +17,9 @@ services:
       - .env
     environment:
       SPRING_PROFILES_ACTIVE: prod
+      # 컨테이너에 TZ가 없으면 기반 이미지(eclipse-temurin) 기본값인 UTC로 JVM이 뜬다 — compose.bluegreen.yaml과
+      # 같은 이유(이슈 #370, 9시간 어긋난 collected_at 실측)로 명시한다.
+      TZ: Asia/Seoul
     # 런타임 이미지(eclipse-temurin:17-jre)는 Ubuntu 기반이라 curl이 이미 들어 있어 별도 설치 없이 쓴다.
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health"]
