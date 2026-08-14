@@ -1,8 +1,9 @@
-// OCO 손절·익절 예약 1건을 트리거 시점 현재가로 시장가 체결하는 서비스 — 잠금 순서 holding → plan(021 plan.md)
+// OCO 손절·익절 예약 1건을 트리거 시점 현재가로 시장가 체결하는 서비스 — 잠금 순서 account → holding → plan
 package com.finplay.api.order.service;
 
 import com.finplay.api.account.domain.Account;
 import com.finplay.api.account.event.RealizedPnlUpdatedEvent;
+import com.finplay.api.account.service.AccountService;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.order.domain.ExitPlan;
 import com.finplay.api.order.domain.ExitPlanCondition;
@@ -34,9 +35,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * {@code docs/specs/021-general-risk-management-oco} plan.md "트리거·취소·잠금 순서" 표의 "가격 트리거" 행을
- * 구현한다. 잠금 순서는 사용자 취소({@link ExitPlanCancelService})와 동일한 {@code holding → plan}이라 데드락이
- * 없다. 트리거는 사용자 API 요청 문맥(Idempotency-Key, 요청 DTO)이 없는 서버 주도 경로라 {@code
- * OrderExecutionService}를 그대로 호출하지 않고, 여기서 직접 시장가 SELL 주문·체결을 생성한다 — 하위 조립
+ * 구현한다. 그 표의 {@code holding → plan}은 예약수량 원장(reservedQuantity)에 대한 잠금 순서를 규정한 것이고,
+ * 현금·실현손익 갱신은 기존 시장가 매도({@code OrderExecutionService})·지정가 체결({@code LimitOrderFillService})과
+ * 동일한 관례를 따라 {@code account}를 가장 먼저 잠근다 — 전체 잠금 순서는 {@code account → holding → plan}이다
+ * (PR #349 리뷰 차단 수정). 트리거는 사용자 API 요청 문맥(Idempotency-Key, 요청 DTO)이 없는 서버 주도 경로라
+ * {@code OrderExecutionService}를 그대로 호출하지 않고, 여기서 직접 시장가 SELL 주문·체결을 생성한다 — 하위 조립
  * 블록({@code PortfolioSellService}의 lot 배분·실현손익 반영)은 기존 시장가·지정가 SELL과 그대로 재사용한다.
  */
 @Service
@@ -45,6 +48,7 @@ public class ExitPlanFillService {
 
 	private final ExitPlanRepository exitPlanRepository;
 	private final ExitPlanConditionRepository exitPlanConditionRepository;
+	private final AccountService accountService;
 	private final PortfolioSellService portfolioSellService;
 	private final OrderRepository orderRepository;
 	private final TradeRepository tradeRepository;
@@ -53,16 +57,16 @@ public class ExitPlanFillService {
 
 	@Transactional
 	public void fillIfPending(Long exitPlanId, BigDecimal currentPrice) {
-		// 존재 확인 겸 holding 참조 확보 — 잠그지 않은 조회(holding을 먼저 잠가야 하므로,
-		// ExitPlanCancelService.cancel()과 동일 패턴).
+		// 존재 확인 겸 account·holding 참조 확보 — 잠그지 않은 조회(account를 먼저 잠가야 하므로).
 		ExitPlan ownershipCheck = exitPlanRepository.findById(exitPlanId).orElse(null);
 		if (ownershipCheck == null) {
 			return;
 		}
 
-		// 잠금 순서 holding → plan — 사용자 취소·가격 트리거가 같은 순서를 쓰므로 데드락이 없다(021 plan.md).
-		Holding holding = portfolioSellService.getHoldingForUpdate(
-			ownershipCheck.getHolding().getAccount(), ownershipCheck.getInstrument());
+		// 잠금 순서 account → holding → plan — 기존 시장가·지정가 매도와 동일하게 현금 갱신 전에 계좌를 먼저
+		// 잠근다(PR #349 리뷰 차단 수정). getId()는 FK 값만 읽으므로 lazy 프록시 초기화 없이 안전하다.
+		Account account = accountService.getAccountByIdForUpdate(ownershipCheck.getHolding().getAccount().getId());
+		Holding holding = portfolioSellService.getHoldingForUpdate(account, ownershipCheck.getInstrument());
 
 		ExitPlan plan = exitPlanRepository.findByIdForUpdate(exitPlanId).orElse(null);
 		if (plan == null || !plan.isPending()) {
@@ -79,7 +83,7 @@ public class ExitPlanFillService {
 		}
 
 		LocalDateTime now = LocalDateTime.now(clock);
-		Order order = executeMarketSell(plan, holding, currentPrice, now);
+		Order order = executeMarketSell(plan, account, holding, currentPrice, now);
 
 		if (triggeredType == ExitPlanConditionType.TAKE_PROFIT) {
 			plan.fillTakeProfit(order, now);
@@ -102,9 +106,10 @@ public class ExitPlanFillService {
 	}
 
 	// 트리거 시점 현재가로 서버가 직접 시장가 SELL 주문을 생성·체결한다 — 기존 시장가 매도(OrderExecutionService)와
-	// 동일한 fee 계산(코인 전용, LimitOrderFeeCalculator 재사용)·lot 배분·실현손익 반영을 공유한다.
-	private Order executeMarketSell(ExitPlan plan, Holding holding, BigDecimal currentPrice, LocalDateTime now) {
-		Account account = holding.getAccount();
+	// 동일한 fee 계산(코인 전용, LimitOrderFeeCalculator 재사용)·lot 배분·실현손익 반영을 공유한다. account는
+	// 호출부가 이미 잠근 것을 그대로 받는다(holding.getAccount() lazy 참조를 다시 쓰지 않는다).
+	private Order executeMarketSell(
+		ExitPlan plan, Account account, Holding holding, BigDecimal currentPrice, LocalDateTime now) {
 		Instrument instrument = plan.getInstrument();
 		BigDecimal quantity = plan.getQuantity();
 

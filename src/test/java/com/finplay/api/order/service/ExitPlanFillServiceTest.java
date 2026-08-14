@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.finplay.api.account.domain.Account;
+import com.finplay.api.account.service.AccountService;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
@@ -53,6 +54,7 @@ class ExitPlanFillServiceTest {
 
 	private final ExitPlanRepository exitPlanRepository = mock(ExitPlanRepository.class);
 	private final ExitPlanConditionRepository exitPlanConditionRepository = mock(ExitPlanConditionRepository.class);
+	private final AccountService accountService = mock(AccountService.class);
 	private final PortfolioSellService portfolioSellService = mock(PortfolioSellService.class);
 	private final OrderRepository orderRepository = mock(OrderRepository.class);
 	private final TradeRepository tradeRepository = mock(TradeRepository.class);
@@ -60,8 +62,8 @@ class ExitPlanFillServiceTest {
 	private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
 
 	private final ExitPlanFillService service = new ExitPlanFillService(
-		exitPlanRepository, exitPlanConditionRepository, portfolioSellService, orderRepository, tradeRepository,
-		clock, eventPublisher);
+		exitPlanRepository, exitPlanConditionRepository, accountService, portfolioSellService, orderRepository,
+		tradeRepository, clock, eventPublisher);
 
 	private Holding holding;
 	private ExitPlan plan;
@@ -76,6 +78,7 @@ class ExitPlanFillServiceTest {
 		takeProfitCondition = ExitPlanCondition.create(plan, ExitPlanConditionType.TAKE_PROFIT, TAKE_PROFIT_PRICE, NOW);
 
 		when(exitPlanRepository.findById(PLAN_ID)).thenReturn(Optional.of(plan));
+		when(accountService.getAccountByIdForUpdate(holding.getAccount().getId())).thenReturn(holding.getAccount());
 		when(portfolioSellService.getHoldingForUpdate(holding.getAccount(), plan.getInstrument())).thenReturn(holding);
 		when(exitPlanRepository.findByIdForUpdate(PLAN_ID)).thenReturn(Optional.of(plan));
 		when(exitPlanConditionRepository.findByExitPlanIdOrderByIdAsc(PLAN_ID))
@@ -108,11 +111,12 @@ class ExitPlanFillServiceTest {
 	}
 
 	@Test
-	@DisplayName("holding → plan 순서로 잠근다 — plan을 잠그기 전에 holding을 먼저 잠근다")
-	void fillIfPendingLocksHoldingBeforePlan() {
+	@DisplayName("account → holding → plan 순서로 잠근다(리뷰 지적 수정) — account를 가장 먼저 잠근다")
+	void fillIfPendingLocksAccountBeforeHoldingBeforePlan() {
 		service.fillIfPending(PLAN_ID, TAKE_PROFIT_PRICE);
 
-		var inOrder = org.mockito.Mockito.inOrder(portfolioSellService, exitPlanRepository);
+		var inOrder = org.mockito.Mockito.inOrder(accountService, portfolioSellService, exitPlanRepository);
+		inOrder.verify(accountService).getAccountByIdForUpdate(holding.getAccount().getId());
 		inOrder.verify(portfolioSellService).getHoldingForUpdate(holding.getAccount(), plan.getInstrument());
 		inOrder.verify(exitPlanRepository).findByIdForUpdate(PLAN_ID);
 	}
@@ -139,7 +143,7 @@ class ExitPlanFillServiceTest {
 
 		service.fillIfPending(PLAN_ID, TAKE_PROFIT_PRICE);
 
-		verifyNoInteractions(portfolioSellService, orderRepository, tradeRepository, eventPublisher);
+		verifyNoInteractions(accountService, portfolioSellService, orderRepository, tradeRepository, eventPublisher);
 	}
 
 	@Test
