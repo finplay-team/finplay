@@ -4,6 +4,7 @@ package com.finplay.api.order.repository;
 import com.finplay.api.order.domain.ExitPlan;
 import com.finplay.api.order.domain.ExitPlanStatus;
 import jakarta.persistence.LockModeType;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -27,4 +28,18 @@ public interface ExitPlanRepository extends JpaRepository<ExitPlan, Long> {
 	@Query("SELECT p FROM ExitPlan p WHERE p.id = :id")
 	Optional<ExitPlan> findByIdForUpdate(@Param("id")
 	Long id);
+
+	// 가격 갱신 시 체결 후보 OCO 예약 조회(021 plan.md "가격 트리거"). 익절·손절 방향이 반대라 두 조건을 OR로
+	// 묶는다 — 생성 시 0 < stopLossPrice < entryPrice < takeProfitPrice가 보장되므로 한 plan이 두 방향을 동시에
+	// 만족하지 않는다(체결 서비스가 잠근 뒤 재판정한다, LimitOrderTriggerListener의 findPendingLimitOrdersToFill과
+	// 동일 관례로 락 없이 후보만 조회).
+	@Query("""
+		select p from ExitPlan p
+		where p.instrument.id = :instrumentId and p.status = com.finplay.api.order.domain.ExitPlanStatus.PENDING
+		  and (p.takeProfitPrice <= :price or p.stopLossPrice >= :price)
+		order by p.reservedAt asc, p.id asc
+		""")
+	List<ExitPlan> findPendingExitPlansToFill(@Param("instrumentId")
+	Long instrumentId, @Param("price")
+	BigDecimal price);
 }

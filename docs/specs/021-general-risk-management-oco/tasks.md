@@ -11,7 +11,7 @@
 - [x] **`exit_plans`/`exit_plan_conditions`/`exit_plan_idempotency_keys` migration + 공통 엔진 골격** — 이 spec이 확정한 최종 스키마로 최초 migration을 만들고, holding→plan 잠금·예약 원장 연동(`015`가 이미 구현한 `Holding.reserveQuantity()` 등 재사용)·baseline 저장까지의 생성 골격을 구현한다. `intentionId` 분기는 다음 두 항목이 각각 채운다. (이슈 #347, PR 예정, V35 migration + `ExitPlanCreationService`/`ExitPricePolicy`)
 - [x] **일반 경로 생성·취소** — `POST /api/exit-plans`(`intentionId` 생략)와 `DELETE /api/exit-plans/{id}`의 holding 소유권·시장 제한(코인만)·holding당 PENDING 1건 검증(`EXIT_PLAN_ALREADY_EXISTS`)·단순 멱등 재조회 폴백을 구현한다. (이슈 #348, PR 예정, `ExitPlanController`/`ExitPlanService`/`ExitPlanIdempotentCreationService`/`ExitPlanCancelService`)
 - [ ] **교육 경로 재접합** — 기존 `016`·`019`가 설계한 `intentionId` 지정 경로(chain 검증, key-first coordinator)를 이 spec의 공통 엔진 위로 이식하고, holding당 PENDING 1건 검증이 교육 경로에도 회귀 없이 적용됨을 확인한다.
-- [ ] **가격 트리거·GTC 체결** — 유효 가격 이벤트에서 두 경로 공통으로 익절·손절 시장가 청산, 반대 조건 자동 취소, 정확히 한 번 규칙을 구현한다(주식 세션 만료 분기는 포함하지 않음).
+- [x] **가격 트리거·GTC 체결** — 유효 가격 이벤트에서 두 경로 공통으로 익절·손절 시장가 청산, 반대 조건 자동 취소, 정확히 한 번 규칙을 구현한다(주식 세션 만료 분기는 포함하지 않음). (이슈 #349, PR 예정, `ExitPlanTriggerListener`/`ExitPlanFillService`)
 - [ ] **목록·응답 계약 전환** — `GET /api/exit-plans?status=`에 `holdingId` 필드를 포함한 응답을 실제로 제공하고 `docs/api-routes.md`·`docs/api-contracts.md`를 이 spec의 계약으로 동기화한다.
 - [ ] **통합·경합 검증** — `plan.md` 테스트 계획의 통합 시나리오(홀딩당 1건, 재생성 허용, 교육 경로 회귀, 주식 거부, 경합, 멱등 재시도)를 Testcontainers로 확정한다.
 
