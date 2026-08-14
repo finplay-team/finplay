@@ -52,4 +52,18 @@ public interface TradeRepository extends JpaRepository<Trade, Long>, TradeReposi
 	@Query("SELECT t.order.practicePriceSessionId FROM Trade t WHERE t.id = :tradeId")
 	Optional<Long> findPracticePriceSessionIdByTradeId(@Param("tradeId")
 	Long tradeId);
+
+	// 재시작 보상 수량은 수정 가능한 holding이 아니라 현재 attempt/run의 불변 체결 원장에서 계산한다.
+	@Query("""
+		select t from Trade t
+		where t.order.practiceAttemptId = :attemptId
+		  and t.order.practiceAttemptRunNumber = :runNumber
+		  and t.order.status = com.finplay.api.order.domain.OrderStatus.FILLED
+		order by t.id asc
+		""")
+	List<Trade> findFilledPracticeRunTrades(
+		@Param("attemptId")
+		Long attemptId,
+		@Param("runNumber")
+		long runNumber);
 }

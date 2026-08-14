@@ -38,6 +38,20 @@ public interface OrderRepository extends JpaRepository<Order, Long>, OrderReposi
 	Optional<PracticeOrderFillAttributionDto> findPracticeFillAttribution(@Param("id")
 	Long id);
 
+	// 재시작은 attempt를 먼저 잠근 호출부에서 현재 실행 세대 주문 전체를 ID 순서로 잠근다.
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("""
+		select o from Order o
+		where o.practiceAttemptId = :attemptId
+		  and o.practiceAttemptRunNumber = :runNumber
+		order by o.id asc
+		""")
+	List<Order> findPracticeRunOrdersForUpdate(
+		@Param("attemptId")
+		Long attemptId,
+		@Param("runNumber")
+		long runNumber);
+
 	// 가격 갱신 시 체결 후보 지정가 주문 조회(015-limit-order LMT-002) — idx_orders_limit_fill 인덱스 활용
 	// practicePriceSessionId is null 조건으로 교육 세션 주문을 제외한다(030 역방향 오염 차단 — 실제 빗썸 시세 tick이
 	// 교육 주문을 체결하지 않는다). 교육 주문은 전용 이벤트(PracticeOrderSettlementService)로만 체결한다.

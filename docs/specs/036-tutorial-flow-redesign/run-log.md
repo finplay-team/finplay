@@ -13,6 +13,9 @@
 | 21:42 | implementer | `.\gradlew.bat compileTestJava` | 기존 직접 생성 테스트 3곳의 신규 port mock 인자 미반영으로 컴파일 실패, tester 이관 |
 | 21:46 | implementer | `.\gradlew.bat compileJava` | 지정가 체결 attempt→order preflight 잠금 순서 수정 후 production 컴파일 통과 |
 | 21:50 | implementer | `.\gradlew.bat compileJava` | 완료 attempt ensure의 무변경 REPLAY 응답 분기 수정 후 컴파일 통과 |
+| 22:00 | implementer | `.\gradlew.bat spotlessApply compileJava compileTestJava spotlessCheck` | task 3 원자 재시작·보상 매도·완료 replay와 API 계약 동기화 후 production/test 컴파일·포맷 통과 |
+| 22:01 | implementer | `.\gradlew.bat spotbugsMain` | 신규 재시작 서비스·DTO와 attempt 상태 전이 정적 분석 통과 |
+| 22:03 | implementer | `.\gradlew.bat spotlessApply compileJava` | 일반 지정가 샘플 BUY·SELL의 attempt 선잠금·현재 run 귀속 보강 후 production 컴파일 통과 |
 
 ## 모니터링 (사람용 요약)
 - 21:22 — V36 추가형 migration, attempt·risk 엔티티/Repository, nullable 주문 run 귀속 구현 및 컴파일 통과.
@@ -20,3 +23,5 @@
 - 21:42 — order→education 직접 의존을 order-owned port로 역전; 기존 테스트 생성자 3곳 갱신 필요.
 - 21:46 — 지정가 체결이 attempt를 먼저 잠그고 restart 후 취소 주문은 상태 재확인에서 no-op 하도록 교착 위험 제거.
 - 21:50 — 완료 attempt ensure는 상태·run을 변경하지 않고 `mode=REPLAY`로 반환하도록 수정.
+- 22:00 — attempt→현재 run 주문(ID ASC)→account→holding 잠금 순서로 pending 예약과 순보유를 정리하고, canonical price 보상 SELL 감사 원장 뒤에만 run을 증가시키는 명시적 재시작 API 구현.
+- 22:03 — 일반 지정가 `/api/orders/limit`의 샘플 BUY·SELL도 account/holding보다 attempt를 먼저 잠그고 현재 run에 귀속해 재시작 취소·예약 반환 대상에 포함.

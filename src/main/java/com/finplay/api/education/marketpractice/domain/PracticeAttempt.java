@@ -102,4 +102,19 @@ public class PracticeAttempt {
 		this.status = PracticeAttemptStatus.IN_PROGRESS;
 		this.updatedAt = updatedAt;
 	}
+
+	public void restart(LocalDateTime updatedAt) {
+		if (this.status == PracticeAttemptStatus.COMPLETED) {
+			throw new IllegalStateException("완료한 튜토리얼 attempt는 재시작할 수 없습니다.");
+		}
+		this.runNumber = Math.addExact(this.runNumber, 1L);
+		this.status = PracticeAttemptStatus.SELECTING_INSTRUMENT;
+		this.instrument = null;
+		this.anchorAt = null;
+		this.tutorialDate = null;
+		this.priceSeed = null;
+		this.generatorVersion = null;
+		this.completedAt = null;
+		this.updatedAt = updatedAt;
+	}
 }

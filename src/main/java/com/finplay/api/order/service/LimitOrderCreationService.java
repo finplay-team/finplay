@@ -20,6 +20,7 @@ import com.finplay.api.portfolio.service.PortfolioSellService;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,6 +34,7 @@ public class LimitOrderCreationService {
 	private final InstrumentService instrumentService;
 	private final PortfolioSellService portfolioSellService;
 	private final OrderRepository orderRepository;
+	private final PracticeOrderAttributionPort practiceOrderAttributionPort;
 	private final Clock clock;
 
 	// plan.md "지정가 생성 흐름" — BUY는 account 락만, SELL은 holding 락만 잡는다.
@@ -44,15 +46,17 @@ public class LimitOrderCreationService {
 		validateQuantityFormat(request.quantity());
 		validateLimitPrice(request.limitPrice());
 		validateMinOrderAmount(request.quantity(), request.limitPrice(), instrument);
+		Optional<PracticeOrderAttributionDto> practiceAttribution = practiceOrderAttributionPort
+			.lockForOrder(userId, instrument);
 
 		return request.side() == OrderSide.SELL
-			? createSellOrder(userId, idempotencyKey, requestHash, request, instrument)
-			: createBuyOrder(userId, idempotencyKey, requestHash, request, instrument);
+			? createSellOrder(userId, idempotencyKey, requestHash, request, instrument, practiceAttribution)
+			: createBuyOrder(userId, idempotencyKey, requestHash, request, instrument, practiceAttribution);
 	}
 
 	private LimitOrderResponse createBuyOrder(
 		Long userId, String idempotencyKey, String requestHash, LimitOrderCreateRequest request,
-		Instrument instrument) {
+		Instrument instrument, Optional<PracticeOrderAttributionDto> practiceAttribution) {
 		BigDecimal quantity = request.quantity();
 		BigDecimal limitPrice = request.limitPrice();
 
@@ -66,13 +70,14 @@ public class LimitOrderCreationService {
 		account.reserveCash(cashRequired);
 
 		Order order = saveLimitPendingOrder(
-			userId, idempotencyKey, requestHash, request, instrument, account, quantity, limitPrice);
+			userId, idempotencyKey, requestHash, request, instrument, account, quantity, limitPrice,
+			practiceAttribution);
 		return LimitOrderResponse.from(order);
 	}
 
 	private LimitOrderResponse createSellOrder(
 		Long userId, String idempotencyKey, String requestHash, LimitOrderCreateRequest request,
-		Instrument instrument) {
+		Instrument instrument, Optional<PracticeOrderAttributionDto> practiceAttribution) {
 		BigDecimal quantity = request.quantity();
 		BigDecimal limitPrice = request.limitPrice();
 
@@ -82,18 +87,24 @@ public class LimitOrderCreationService {
 		holding.reserveQuantity(quantity);
 
 		Order order = saveLimitPendingOrder(
-			userId, idempotencyKey, requestHash, request, instrument, account, quantity, limitPrice);
+			userId, idempotencyKey, requestHash, request, instrument, account, quantity, limitPrice,
+			practiceAttribution);
 		return LimitOrderResponse.from(order);
 	}
 
 	private Order saveLimitPendingOrder(
 		Long userId, String idempotencyKey, String requestHash, LimitOrderCreateRequest request,
-		Instrument instrument, Account account, BigDecimal quantity, BigDecimal limitPrice) {
+		Instrument instrument, Account account, BigDecimal quantity, BigDecimal limitPrice,
+		Optional<PracticeOrderAttributionDto> practiceAttribution) {
 		User user = userQueryService.getUser(userId);
 		LocalDateTime now = LocalDateTime.now(clock);
 
-		Order order = Order.createLimitPending(
-			user, account, instrument, request.side(), quantity, limitPrice, idempotencyKey, requestHash, now);
+		Order order = practiceAttribution
+			.map(attribution -> Order.createLimitPendingForPracticeAttempt(
+				user, account, instrument, request.side(), quantity, limitPrice,
+				attribution.attemptId(), attribution.runNumber(), idempotencyKey, requestHash, now))
+			.orElseGet(() -> Order.createLimitPending(
+				user, account, instrument, request.side(), quantity, limitPrice, idempotencyKey, requestHash, now));
 		orderRepository.save(order);
 		return order;
 	}

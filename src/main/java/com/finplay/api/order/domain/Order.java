@@ -196,6 +196,36 @@ public class Order {
 			requestedAt);
 	}
 
+	public static Order createLimitPendingForPracticeAttempt(
+		User user,
+		Account account,
+		Instrument instrument,
+		OrderSide side,
+		BigDecimal quantity,
+		BigDecimal limitPrice,
+		Long practiceAttemptId,
+		long practiceAttemptRunNumber,
+		String idempotencyKey,
+		String requestHash,
+		LocalDateTime requestedAt) {
+		validatePracticeAttemptAttribution(practiceAttemptId, practiceAttemptRunNumber);
+		return new Order(
+			user,
+			account,
+			instrument,
+			side,
+			OrderType.LIMIT,
+			OrderStatus.PENDING,
+			quantity,
+			limitPrice,
+			null,
+			practiceAttemptId,
+			practiceAttemptRunNumber,
+			idempotencyKey,
+			requestHash,
+			requestedAt);
+	}
+
 	// 교육 전용 지정가 BUY 생성 — side를 서버가 BUY로 고정하고 practicePriceSessionId를 기록한다
 	// (030 COIN-PRICE-RUNTIME-006, PracticeLimitOrderCreationService 전용).
 	public static Order createPracticeLimitPendingBuy(

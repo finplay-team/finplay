@@ -9,7 +9,7 @@
   귀속, 최초 BUY fill의 entry/-3%/+5% snapshot 원자 저장을 구현한다. legacy intention API는 유지하되 새
   흐름의 전제에서 제거하고 reload가 restart를 일으키지 않는 STOCK·CRYPTO 단위·MVC 테스트를 작성한다.
 
-- [ ] **명시적 원자 재시작·완료 replay** — `POST /attempts/{market}/restart`에서만 현재 run pending 주문
+- [x] **명시적 원자 재시작·완료 replay** — `POST /attempts/{market}/restart`에서만 현재 run pending 주문
   취소/예약 반환, FILLED BUY-SELL 순수량 계산,
   canonical price 보상 SELL, run 증가와 선택 상태 초기화를 한 트랜잭션으로 구현한다. 다른 사용자·시장·run·
   일반 주문 격리, 부분 매도, 수량 불일치 rollback, 동시 restart, 완료 attempt 무변경 replay를 통합 검증한다.
