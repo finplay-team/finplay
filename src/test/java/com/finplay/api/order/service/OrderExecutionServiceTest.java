@@ -130,18 +130,18 @@ class OrderExecutionServiceTest {
 		assertThat(tradeCaptor.getValue().getStockReplaySession()).isNull();
 	}
 
-	// PRICE-REST-004(docs/specs/034-crypto-price-rest-backup) — PriceQueryService.getOrderExecutionPrice가
-	// 연결 유지 + 수신 이력 있음 상태에서 STALE quote를 예외 없이 돌려주면, OrderExecutionService는 status를
-	// 따로 판단하지 않고 그 가격 그대로 체결까지 진행해야 한다(032 시절엔 여기가 fail-closed로 막혔다).
+	// 036-remove-crypto-stale-status 회귀(구 PRICE-REST-004 승계) — PriceQueryService.getOrderExecutionPrice가
+	// 관측 시각이 오래된(과거 032 시절엔 STALE) AVAILABLE quote를 돌려줘도, OrderExecutionService는 status를
+	// 따로 판단하지 않고 그 가격 그대로 체결까지 진행해야 한다(경과 시간과 무관하게 항상 AVAILABLE만 받는다).
 	@Test
-	void createOrderExecutesCryptoMarketBuyToCompletionWhenExecutionPriceQuoteIsStale() {
+	void createOrderExecutesCryptoMarketBuyToCompletionRegardlessOfExecutionPriceObservationAge() {
 		Instrument instrument = cryptoInstrument(5_000L);
 		Account account = account(com.finplay.api.account.domain.Market.CRYPTO);
 		User user = testUser();
 		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
 		when(priceQueryService.getOrderExecutionPrice(instrument)).thenReturn(
-			new OrderExecutionPriceDto(new PriceQuoteDto(new BigDecimal("133330"), NOW, PriceStatus.STALE, null),
-				null));
+			new OrderExecutionPriceDto(
+				new PriceQuoteDto(new BigDecimal("133330"), NOW.minusHours(3), PriceStatus.AVAILABLE, null), null));
 		when(accountService.getAccountForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO))
 			.thenReturn(account);
 		when(userQueryService.getUser(USER_ID)).thenReturn(user);

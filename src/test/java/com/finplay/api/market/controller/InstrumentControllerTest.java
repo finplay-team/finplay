@@ -348,18 +348,20 @@ class InstrumentControllerTest {
 	}
 
 	@Test
-	void getPriceReturnsStaleStatusWithLastKnownPriceForCryptoInstrumentWhenTickIsStale() throws Exception {
-		// PRICE-STALE-001: 연결은 살아있지만 최신 틱이 10초를 넘긴 코인은 409가 아니라 200 + status=STALE이다.
+	void getPriceReturnsAvailableStatusWithLastKnownPriceForCryptoInstrumentWhenObservationIsHoursOld()
+		throws Exception {
+		// 036-remove-crypto-stale-status: 연결이 살아있고 수신 이력이 있으면, 관측 시각이 몇 시간 지나도
+		// (과거 032 시절엔 STALE) 여전히 409가 아니라 200 + status=AVAILABLE이다.
 		authenticate();
-		LocalDateTime sourceTime = LocalDateTime.of(2026, 7, 28, 10, 30, 0);
+		LocalDateTime sourceTime = LocalDateTime.of(2026, 7, 28, 6, 30, 0);
 		when(priceQueryService.getPrice(17L)).thenReturn(
-			new PriceQuoteDto(BigDecimal.valueOf(95000000), sourceTime, PriceStatus.STALE, null));
+			new PriceQuoteDto(BigDecimal.valueOf(95000000), sourceTime, PriceStatus.AVAILABLE, null));
 
 		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}/price", 17L)))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.price").value(95000000))
-			.andExpect(jsonPath("$.sourceTime").value("2026-07-28T10:30:00"))
-			.andExpect(jsonPath("$.status").value("STALE"))
+			.andExpect(jsonPath("$.sourceTime").value("2026-07-28T06:30:00"))
+			.andExpect(jsonPath("$.status").value("AVAILABLE"))
 			.andExpect(jsonPath("$.sourceTradingDate").doesNotExist());
 
 		verify(priceQueryService).getPrice(17L);

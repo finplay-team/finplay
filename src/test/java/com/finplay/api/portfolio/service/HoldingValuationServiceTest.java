@@ -84,21 +84,23 @@ class HoldingValuationServiceTest {
 	}
 
 	@Test
-	void evaluateHoldingReturnsUnavailableStatusAndNullEvaluationFieldsWhenPriceStale() {
-		// PRICE-STALE-005 엄격 유지 고정 — STALE도 UNAVAILABLE과 동일하게 평가불가 처리해야 한다.
+	void evaluateHoldingFillsEvaluationFieldsWhenObservationIsHoursOldButStatusIsAvailable() {
+		// 036-remove-crypto-stale-status 회귀 — 연결 유지+수신 이력 있음이면 관측 시각이 몇 시간 전이어도
+		// (032 시절엔 STALE→UNAVAILABLE 취급이라 "-"로 깜빡였다) 항상 AVAILABLE로 평가금액·수익률이 채워진다.
 		Instrument instrument = testInstrument();
 		Holding holding = testHolding(instrument, new BigDecimal("10"), new BigDecimal("50000"));
+		LocalDateTime hoursOldObservation = NOW.minusHours(3);
 		when(priceQueryService.getPriceQuote(instrument))
-			.thenReturn(new PriceQuoteDto(new BigDecimal("60000"), NOW, PriceStatus.STALE, null));
+			.thenReturn(new PriceQuoteDto(new BigDecimal("60000"), hoursOldObservation, PriceStatus.AVAILABLE, null));
 
 		HoldingValuationDto result = service.evaluateHolding(holding);
 
 		assertThat(result.costBasis()).isEqualTo(500_000L);
-		assertThat(result.priceStatus()).isEqualTo(PriceStatus.UNAVAILABLE);
-		assertThat(result.evaluationAmount()).isNull();
-		assertThat(result.unrealizedPnl()).isNull();
-		assertThat(result.returnRate()).isNull();
-		assertThat(result.currentPrice()).isNull();
+		assertThat(result.priceStatus()).isEqualTo(PriceStatus.AVAILABLE);
+		assertThat(result.evaluationAmount()).isEqualTo(600_000L);
+		assertThat(result.unrealizedPnl()).isEqualTo(100_000L);
+		assertThat(result.returnRate()).isEqualByComparingTo("0.2000");
+		assertThat(result.currentPrice()).isEqualByComparingTo("60000");
 	}
 
 	@Test
