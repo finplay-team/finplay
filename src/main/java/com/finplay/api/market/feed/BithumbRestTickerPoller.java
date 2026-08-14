@@ -37,7 +37,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 @ConditionalOnProperty(prefix = "bithumb.feed.ticker", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class BithumbRestTickerPoller {
 
-	private static final String TICKER_ENDPOINT = "https://api.bithumb.com/v1/ticker";
+	private static final String DEFAULT_TICKER_ENDPOINT = "https://api.bithumb.com/v1/ticker";
 	private static final String KRW_MARKET_PREFIX = "KRW-";
 	// PriceStore의 stale 기준 10초보다 짧아야 한다 — 길면 가격이 있는데도 409 PRICE_UNAVAILABLE이 뜬다.
 	private static final long POLL_INTERVAL_MS = 3000;
@@ -46,28 +46,41 @@ public class BithumbRestTickerPoller {
 	private final InstrumentRepository instrumentRepository;
 	private final PriceStore priceStore;
 	private final Clock clock;
+	// mock 서버 기반 회귀 테스트가 실제 엔드포인트 URL을 로컬 서버로 바꿔치기할 수 있도록 외부화한다 — PR #377 리뷰 권장.
+	private final String tickerEndpoint;
 
+	// RestClient.Builder를 DI로 받지 않고 RestClient.builder()를 직접 호출하는 이유는 ADR-0023 참고
+	// (Jackson 2/3 클래스패스 공존으로 공유 빈의 컨버터 선택이 불확실했던 문제, 이슈 #369 후속).
 	@Autowired
 	public BithumbRestTickerPoller(
-		RestClient.Builder builder,
 		InstrumentRepository instrumentRepository,
 		PriceStore priceStore,
 		Clock clock,
 		@Value("${bithumb.feed.ticker.connect-timeout-ms:2000}")
 		long connectTimeoutMs,
 		@Value("${bithumb.feed.ticker.read-timeout-ms:3000}")
-		long readTimeoutMs) {
-		this(applyTimeouts(builder, connectTimeoutMs, readTimeoutMs).build(), instrumentRepository,
-			priceStore, clock);
+		long readTimeoutMs,
+		@Value("${bithumb.feed.ticker.endpoint-url:" + DEFAULT_TICKER_ENDPOINT + "}")
+		String tickerEndpoint) {
+		this(applyTimeouts(RestClient.builder(), connectTimeoutMs, readTimeoutMs).build(), instrumentRepository,
+			priceStore, clock, tickerEndpoint);
 	}
 
 	// 테스트 전용: MockRestServiceServer로 이미 구성된 RestClient를 직접 주입한다 (타임아웃 팩토리를 거치지 않는다).
 	BithumbRestTickerPoller(RestClient restClient, InstrumentRepository instrumentRepository,
 		PriceStore priceStore, Clock clock) {
+		this(restClient, instrumentRepository, priceStore, clock, DEFAULT_TICKER_ENDPOINT);
+	}
+
+	// 테스트 전용: @Autowired 생성자 경로(RestClient.builder() 직접 호출)를 실제 로컬 서버로 검증할 때
+	// 엔드포인트까지 함께 바꿔치기한다.
+	BithumbRestTickerPoller(RestClient restClient, InstrumentRepository instrumentRepository,
+		PriceStore priceStore, Clock clock, String tickerEndpoint) {
 		this.restClient = restClient;
 		this.instrumentRepository = instrumentRepository;
 		this.priceStore = priceStore;
 		this.clock = clock;
+		this.tickerEndpoint = tickerEndpoint;
 	}
 
 	// 조회 실패·타임아웃·비정상 상태코드·파싱 불가는 이번 회차를 건너뛰고 로그만 남긴다. 예외를 밖으로 던지면
@@ -97,7 +110,7 @@ public class BithumbRestTickerPoller {
 	}
 
 	private BithumbTickerItem[] fetchTickers(String markets) {
-		URI uri = UriComponentsBuilder.fromUriString(TICKER_ENDPOINT)
+		URI uri = UriComponentsBuilder.fromUriString(tickerEndpoint)
 			.queryParam("markets", markets)
 			.build()
 			.toUri();

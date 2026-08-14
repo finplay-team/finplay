@@ -20,11 +20,14 @@ public class KisRestClientConfig {
 	// 타임아웃이 적용된 완성된 RestClient를 그대로 주입받게 한다 — KisHistoricalCandleClientImpl이
 	// 파생 로직 없는 파라미터 직접 대입만으로 @RequiredArgsConstructor를 쓸 수 있도록(SpotBugs EI_EXPOSE_REP2
 	// 회피, docs/agent-mistakes.md 2026-07-29 항목 참고) 빌드 로직을 이 클래스가 담당한다.
+	//
+	// RestClient.Builder를 DI로 받지 않고 RestClient.builder()를 직접 호출하는 이유는 ADR-0023 참고
+	// (BithumbRestTickerPoller와 동일한 Jackson 2/3 공존 위험, PR #377 리뷰 권장①).
 	@Bean
-	public RestClient kisRestClient(RestClient.Builder builder) {
+	public RestClient kisRestClient() {
 		SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
 		requestFactory.setConnectTimeout(CONNECT_TIMEOUT);
 		requestFactory.setReadTimeout(READ_TIMEOUT);
-		return builder.requestFactory(requestFactory).build();
+		return RestClient.builder().requestFactory(requestFactory).build();
 	}
 }
