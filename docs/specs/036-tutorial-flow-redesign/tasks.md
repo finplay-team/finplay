@@ -1,6 +1,6 @@
 # Tasks: 튜토리얼 흐름 재설계 — 영속 attempt·자동 위험 스냅샷·단일 라이브 차트
 
-- [ ] **attempt·run 귀속 기반 데이터 모델** — 사용자·시장 유일 `practice_attempts`, 실행별 불변
+- [x] **attempt·run 귀속 기반 데이터 모델** — 사용자·시장 유일 `practice_attempts`, 실행별 불변
   `practice_risk_snapshots`, nullable order attempt/run 귀속을 추가형 Flyway migration과 엔티티·Repository로
   구현한다. unique/check/nullable 구버전 호환과 실행 세대 격리를 MySQL `@DataJpaTest`로 검증한다.
 
