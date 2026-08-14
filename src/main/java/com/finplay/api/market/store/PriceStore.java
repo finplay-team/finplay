@@ -81,6 +81,9 @@ public class PriceStore {
 	}
 
 	// 연결이 끊겼거나 최신 틱이 stale이면 유효하지 않은 가격으로 판정한다 (MKT-004).
+	// PriceQueryService의 코인 체결 경로는 더 이상 이 메서드를 호출하지 않는다 — 표시 판정과 같은 규칙(STALE 허용)을
+	// 쓰도록 바뀌었다(PRICE-REST-004, docs/specs/034-crypto-price-rest-backup). CryptoPriceSnapshotService 등
+	// 다른 소비자는 여전히 이 메서드로 stale 심볼을 건너뛴다.
 	public boolean isPriceAvailable(String symbol) {
 		if (getConnectionStatus() != FeedConnectionStatus.CONNECTED) {
 			return false;

@@ -4,7 +4,7 @@
 > **제약(모든 항목 공통)**: `CryptoCandleAndPriceIndependenceTest`와 MKT-003 과거틱 가드 테스트를 깨지 않는다 — 단정을 바꾸지 않고, 필요하면 stub만 보강한다.
 > **항목 1을 B(항목 2)보다 먼저 할 필요는 없다.** B는 A와 독립적으로 성립하며 사용자 가치 대부분을 담당하므로, 급하면 항목 2를 먼저 떼어 별도 PR로 낼 수 있다. 아래 순서는 한 PR로 갈 때의 순서다.
 
-- [ ] **1. 체결 경로의 STALE 허용 (B)**
+- [x] **1. 체결 경로의 STALE 허용 (B)**
   `PriceQueryService.getOrderExecutionPrice`의 코인 분기가 `getCryptoDisplayPriceQuote`를 쓰도록 바꾸고 `getCryptoExecutionPriceQuote`를 제거한다(판정 규칙을 두 벌로 유지하지 않는다). `requireAvailable`은 `UNAVAILABLE`에만 예외를 던지므로 새 분기는 필요 없다 — 표시 판정이 주는 `STALE` quote가 그대로 통과한다. `PriceStore.isPriceAvailable`은 다른 소비자가 여전히 쓰므로 **남긴다**(주석에 코인 체결 경로가 더 이상 호출하지 않는다는 사실만 반영).
   `PriceQueryServiceTest`의 `getOrderExecutionPriceStillThrowsPriceUnavailableWhenCryptoTickIsStale`을 **새 동작을 고정하는 테스트로 바꾼다** — 이름과 단정을 새 동작에 맞게 반전시킨다. 연결 끊김·수신 이력 없음에서 여전히 거부되는 케이스를 함께 추가해 fail-closed 잔여선을 고정한다. `OrderExecutionServiceTest`에 stale 코인 시장가 주문이 체결까지 도달하는 케이스를 추가한다.
 

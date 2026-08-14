@@ -55,9 +55,10 @@ class PriceQueryServiceTest {
 		Instrument instrument = Instrument.create(
 			Market.CRYPTO, "BTC", "비트코인", new BigDecimal("0.00000001"), 5000L, true, NOW);
 		PriceStore priceStore = mock(PriceStore.class);
-		when(priceStore.isPriceAvailable("BTC")).thenReturn(true);
+		when(priceStore.getConnectionStatus()).thenReturn(FeedConnectionStatus.CONNECTED);
 		when(priceStore.getLatestPrice("BTC"))
 			.thenReturn(Optional.of(new CryptoPriceDto("BTC", new BigDecimal("50000000"), NOW)));
+		// isStale은 stub하지 않는다 — Mockito mock의 boolean 기본값 false가 곧 "fresh"라 AVAILABLE로 떨어진다.
 		PriceQueryService service = new PriceQueryService(
 			mock(InstrumentRepository.class), mock(StockPriceProvider.class), priceStore,
 			mock(TutorialSampleInstrumentPriceService.class));
@@ -357,15 +358,55 @@ class PriceQueryServiceTest {
 		assertThat(result.sourceTime()).isEqualTo(NOW);
 	}
 
-	// 체결 경로(getOrderExecutionPrice)는 표시 경로가 완화되어도 stale이면 여전히 409를 던진다 (PRICE-STALE-003, MKT-004 fail-closed 무변경).
+	// 체결 경로(getOrderExecutionPrice)는 이제 표시 경로와 같은 규칙을 쓴다 — 연결 유지 + 수신 이력 있음이면 STALE이어도
+	// 예외 없이 마지막 가격으로 체결된다(PRICE-REST-004, docs/specs/034-crypto-price-rest-backup이 032
+	// PRICE-STALE-003의 fail-closed 체결 차단을 대체한다). 이름·단정을 032 시절의 반대로 뒤집은 테스트다.
 	@Test
-	void getOrderExecutionPriceStillThrowsPriceUnavailableWhenCryptoTickIsStale() {
+	void getOrderExecutionPriceReturnsLastKnownPriceWhenCryptoConnectionAliveButTickIsStale() {
 		Instrument instrument = Instrument.create(
 			Market.CRYPTO, "BTC", "비트코인", new BigDecimal("0.00000001"), 5000L, true, NOW);
 		PriceStore priceStore = mock(PriceStore.class);
-		// 체결 경로는 getCryptoExecutionPriceQuote(옛 getCryptoPriceQuote)를 그대로 쓰므로 isPriceAvailable=false만으로 충분하다 —
-		// getConnectionStatus()는 호출되지 않는다(표시 경로 전용 판정).
-		when(priceStore.isPriceAvailable("BTC")).thenReturn(false);
+		when(priceStore.getConnectionStatus()).thenReturn(FeedConnectionStatus.CONNECTED);
+		when(priceStore.getLatestPrice("BTC"))
+			.thenReturn(Optional.of(new CryptoPriceDto("BTC", new BigDecimal("50000000"), NOW)));
+		when(priceStore.isStale(NOW)).thenReturn(true);
+		PriceQueryService priceQueryService = new PriceQueryService(
+			mock(InstrumentRepository.class), mock(StockPriceProvider.class), priceStore,
+			mock(TutorialSampleInstrumentPriceService.class));
+
+		OrderExecutionPriceDto result = priceQueryService.getOrderExecutionPrice(instrument);
+
+		assertThat(result.priceQuote().status()).isEqualTo(PriceStatus.STALE);
+		assertThat(result.priceQuote().price()).isEqualByComparingTo("50000000");
+		assertThat(result.stockReplaySession()).isNull();
+	}
+
+	// 이하 fail-closed 잔여선(PRICE-REST-005) — "가격이 오래된 것"과 "가격 자체가 없는 것"은 다른 상태이며,
+	// 후자는 이번 완화 대상이 아니다.
+
+	@Test
+	void getOrderExecutionPriceStillThrowsPriceUnavailableWhenCryptoConnectionIsDisconnected() {
+		Instrument instrument = Instrument.create(
+			Market.CRYPTO, "BTC", "비트코인", new BigDecimal("0.00000001"), 5000L, true, NOW);
+		PriceStore priceStore = mock(PriceStore.class);
+		when(priceStore.getConnectionStatus()).thenReturn(FeedConnectionStatus.DISCONNECTED);
+		PriceQueryService priceQueryService = new PriceQueryService(
+			mock(InstrumentRepository.class), mock(StockPriceProvider.class), priceStore,
+			mock(TutorialSampleInstrumentPriceService.class));
+
+		assertThatThrownBy(() -> priceQueryService.getOrderExecutionPrice(instrument))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode()).isEqualTo(ErrorCode.PRICE_UNAVAILABLE));
+		verify(priceStore, never()).getLatestPrice(any());
+	}
+
+	@Test
+	void getOrderExecutionPriceStillThrowsPriceUnavailableWhenCryptoTickNeverReceived() {
+		Instrument instrument = Instrument.create(
+			Market.CRYPTO, "BTC", "비트코인", new BigDecimal("0.00000001"), 5000L, true, NOW);
+		PriceStore priceStore = mock(PriceStore.class);
+		when(priceStore.getConnectionStatus()).thenReturn(FeedConnectionStatus.CONNECTED);
+		when(priceStore.getLatestPrice("BTC")).thenReturn(Optional.empty());
 		PriceQueryService priceQueryService = new PriceQueryService(
 			mock(InstrumentRepository.class), mock(StockPriceProvider.class), priceStore,
 			mock(TutorialSampleInstrumentPriceService.class));
