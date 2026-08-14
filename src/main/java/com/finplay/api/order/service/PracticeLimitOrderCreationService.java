@@ -22,19 +22,36 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.HexFormat;
 import java.util.UUID;
-import lombok.RequiredArgsConstructor;
+import java.util.Optional;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
-@RequiredArgsConstructor
 public class PracticeLimitOrderCreationService {
 
 	private final UserQueryService userQueryService;
 	private final AccountService accountService;
 	private final InstrumentService instrumentService;
 	private final OrderRepository orderRepository;
+	private final PracticeOrderAttributionPort practiceOrderAttributionPort;
 	private final Clock clock;
+
+	@Autowired
+	public PracticeLimitOrderCreationService(
+		UserQueryService userQueryService,
+		AccountService accountService,
+		InstrumentService instrumentService,
+		OrderRepository orderRepository,
+		PracticeOrderAttributionPort practiceOrderAttributionPort,
+		Clock clock) {
+		this.userQueryService = userQueryService;
+		this.accountService = accountService;
+		this.instrumentService = instrumentService;
+		this.orderRepository = orderRepository;
+		this.practiceOrderAttributionPort = practiceOrderAttributionPort;
+		this.clock = clock;
+	}
 
 	// education의 PracticeLimitOrderService가 세션을 owner 스코프로 잠근 뒤 같은 트랜잭션에서 호출한다
 	// (plan.md 잠금 순서: session → account → order insert). side는 항상 BUY로 고정한다.
@@ -43,6 +60,8 @@ public class PracticeLimitOrderCreationService {
 	public LimitOrderResponse createSessionBuyOrder(
 		Long userId, Long practicePriceSessionId, Long instrumentId, BigDecimal quantity, BigDecimal limitPrice) {
 		Instrument instrument = getValidatedInstrument(instrumentId);
+		Optional<PracticeOrderAttributionDto> practiceAttribution = practiceOrderAttributionPort
+			.lockForOrder(userId, instrument);
 		LimitOrderCreationService.validateQuantityFormat(quantity);
 		LimitOrderCreationService.validateLimitPrice(limitPrice);
 		LimitOrderCreationService.validateMinOrderAmount(quantity, limitPrice, instrument);
@@ -63,8 +82,22 @@ public class PracticeLimitOrderCreationService {
 		String idempotencyKey = "practice:%d:%s".formatted(practicePriceSessionId, UUID.randomUUID());
 		String requestHash = calculateRequestHash(practicePriceSessionId, instrumentId, quantity, limitPrice);
 
-		Order order = Order.createPracticeLimitPendingBuy(
-			user, account, instrument, quantity, limitPrice, practicePriceSessionId, idempotencyKey, requestHash, now);
+		Order order = practiceAttribution
+			.map(attribution -> Order.createPracticeLimitPendingBuyForAttempt(
+				user,
+				account,
+				instrument,
+				quantity,
+				limitPrice,
+				practicePriceSessionId,
+				attribution.attemptId(),
+				attribution.runNumber(),
+				idempotencyKey,
+				requestHash,
+				now))
+			.orElseGet(() -> Order.createPracticeLimitPendingBuy(
+				user, account, instrument, quantity, limitPrice, practicePriceSessionId, idempotencyKey, requestHash,
+				now));
 		orderRepository.save(order);
 		return LimitOrderResponse.from(order);
 	}

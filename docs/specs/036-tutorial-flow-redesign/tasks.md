@@ -4,7 +4,7 @@
   `practice_risk_snapshots`, nullable order attempt/run 귀속을 추가형 Flyway migration과 엔티티·Repository로
   구현한다. unique/check/nullable 구버전 호환과 실행 세대 격리를 MySQL `@DataJpaTest`로 검증한다.
 
-- [ ] **진입 ensure·선택·자동 위험 snapshot** — 기존 ACTIVE run을 바꾸지 않는
+- [x] **진입 ensure·선택·자동 위험 snapshot** — 기존 ACTIVE run을 바꾸지 않는
   `PUT /attempts/{market}` ensure/read와 instrument 선택 API, attempt 상태 전이, 샘플 주문의 현재 run 서버
   귀속, 최초 BUY fill의 entry/-3%/+5% snapshot 원자 저장을 구현한다. legacy intention API는 유지하되 새
   흐름의 전제에서 제거하고 reload가 restart를 일으키지 않는 STOCK·CRYPTO 단위·MVC 테스트를 작성한다.

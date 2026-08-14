@@ -30,13 +30,13 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.LocalDateTime;
-import lombok.RequiredArgsConstructor;
+import java.util.Optional;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
-@RequiredArgsConstructor
 public class OrderExecutionService {
 
 	private static final String MARKET_ORDER_TYPE = "MARKET";
@@ -52,8 +52,35 @@ public class OrderExecutionService {
 	private final PortfolioSellService portfolioSellService;
 	private final OrderRepository orderRepository;
 	private final TradeRepository tradeRepository;
+	private final PracticeOrderAttributionPort practiceOrderAttributionPort;
 	private final Clock clock;
 	private final ApplicationEventPublisher eventPublisher;
+
+	@Autowired
+	public OrderExecutionService(
+		UserQueryService userQueryService,
+		AccountService accountService,
+		InstrumentService instrumentService,
+		PriceQueryService priceQueryService,
+		PortfolioBuyService portfolioBuyService,
+		PortfolioSellService portfolioSellService,
+		OrderRepository orderRepository,
+		TradeRepository tradeRepository,
+		PracticeOrderAttributionPort practiceOrderAttributionPort,
+		Clock clock,
+		ApplicationEventPublisher eventPublisher) {
+		this.userQueryService = userQueryService;
+		this.accountService = accountService;
+		this.instrumentService = instrumentService;
+		this.priceQueryService = priceQueryService;
+		this.portfolioBuyService = portfolioBuyService;
+		this.portfolioSellService = portfolioSellService;
+		this.orderRepository = orderRepository;
+		this.tradeRepository = tradeRepository;
+		this.practiceOrderAttributionPort = practiceOrderAttributionPort;
+		this.clock = clock;
+		this.eventPublisher = eventPublisher;
+	}
 
 	@Transactional
 	public OrderResponse execute(
@@ -62,15 +89,22 @@ public class OrderExecutionService {
 
 		Instrument instrument = getValidatedInstrument(request.market(), request.instrumentId());
 		validateQuantityFormat(request.market(), request.quantity());
+		Optional<PracticeOrderAttributionDto> practiceAttribution = practiceOrderAttributionPort
+			.lockForOrder(userId, instrument);
 
 		// 계좌 선조회를 제거했다 — 매수·매도 모두 각자 계좌를 잠가 조회한다(호출 시점·인자만 다름, 이슈 #224).
 		return request.side() == OrderSide.SELL
-			? createSellOrder(userId, idempotencyKey, requestHash, request, instrument)
-			: createBuyOrder(userId, idempotencyKey, requestHash, request, instrument);
+			? createSellOrder(userId, idempotencyKey, requestHash, request, instrument, practiceAttribution)
+			: createBuyOrder(userId, idempotencyKey, requestHash, request, instrument, practiceAttribution);
 	}
 
 	private OrderResponse createBuyOrder(
-		Long userId, String idempotencyKey, String requestHash, OrderCreateRequest request, Instrument instrument) {
+		Long userId,
+		String idempotencyKey,
+		String requestHash,
+		OrderCreateRequest request,
+		Instrument instrument,
+		Optional<PracticeOrderAttributionDto> practiceAttribution) {
 		BigDecimal quantity = request.quantity();
 		// 매수도 매도와 동일하게 계좌를 먼저 잠근다(spec.md "시장가 매수 경로 락 보강", 이슈 #224).
 		Account account = getAccountForUpdateFor(userId, request.market());
@@ -85,16 +119,8 @@ public class OrderExecutionService {
 		User user = userQueryService.getUser(userId);
 		LocalDateTime now = LocalDateTime.now(clock);
 
-		Order order = Order.create(
-			user,
-			account,
-			instrument,
-			request.side(),
-			OrderType.MARKET,
-			quantity,
-			idempotencyKey,
-			requestHash,
-			now);
+		Order order = createOrder(
+			user, account, instrument, request, quantity, practiceAttribution, idempotencyKey, requestHash, now);
 		orderRepository.save(order);
 
 		Trade trade = Trade.of(
@@ -111,12 +137,18 @@ public class OrderExecutionService {
 		}
 
 		portfolioBuyService.applyBuyTrade(account, instrument, trade, quantity, pricing.price(), pricing.fee(), now);
+		practiceOrderAttributionPort.createFirstBuyRiskSnapshot(order, trade, now);
 
 		return OrderResponse.of(order, trade);
 	}
 
 	private OrderResponse createSellOrder(
-		Long userId, String idempotencyKey, String requestHash, OrderCreateRequest request, Instrument instrument) {
+		Long userId,
+		String idempotencyKey,
+		String requestHash,
+		OrderCreateRequest request,
+		Instrument instrument,
+		Optional<PracticeOrderAttributionDto> practiceAttribution) {
 		BigDecimal quantity = request.quantity();
 
 		// 잠금 순서를 지정가 체결(LimitOrderFillService)과 맞춘다 — 실제로 경합하는 두 자원인 account·holding에
@@ -130,16 +162,8 @@ public class OrderExecutionService {
 		User user = userQueryService.getUser(userId);
 		LocalDateTime now = LocalDateTime.now(clock);
 
-		Order order = Order.create(
-			user,
-			account,
-			instrument,
-			request.side(),
-			OrderType.MARKET,
-			quantity,
-			idempotencyKey,
-			requestHash,
-			now);
+		Order order = createOrder(
+			user, account, instrument, request, quantity, practiceAttribution, idempotencyKey, requestHash, now);
 		orderRepository.save(order);
 
 		// 실현손익은 lot 배분이 끝난 뒤에만 계산 가능하므로 최초 저장 시 null.
@@ -172,6 +196,41 @@ public class OrderExecutionService {
 		eventPublisher.publishEvent(new RealizedPnlUpdatedEvent(account.getId()));
 
 		return OrderResponse.of(order, trade);
+	}
+
+	private Order createOrder(
+		User user,
+		Account account,
+		Instrument instrument,
+		OrderCreateRequest request,
+		BigDecimal quantity,
+		Optional<PracticeOrderAttributionDto> practiceAttribution,
+		String idempotencyKey,
+		String requestHash,
+		LocalDateTime now) {
+		return practiceAttribution
+			.map(attribution -> Order.createForPracticeAttempt(
+				user,
+				account,
+				instrument,
+				request.side(),
+				OrderType.MARKET,
+				quantity,
+				attribution.attemptId(),
+				attribution.runNumber(),
+				idempotencyKey,
+				requestHash,
+				now))
+			.orElseGet(() -> Order.create(
+				user,
+				account,
+				instrument,
+				request.side(),
+				OrderType.MARKET,
+				quantity,
+				idempotencyKey,
+				requestHash,
+				now));
 	}
 
 	private void validateOrderType(String orderType) {

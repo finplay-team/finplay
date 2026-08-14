@@ -1,9 +1,11 @@
-// 지정가 주문 1건을 목표가로 체결(예약 확정)하는 서비스 — 잠금 순서 order → account → holding(plan.md)
+// 지정가 주문을 체결하며 attempt 귀속 주문은 attempt → order → account → holding 순서로 잠그는 서비스
 package com.finplay.api.order.service;
 
 import com.finplay.api.account.domain.Account;
 import com.finplay.api.account.event.RealizedPnlUpdatedEvent;
 import com.finplay.api.account.service.AccountService;
+import com.finplay.api.common.BusinessException;
+import com.finplay.api.common.ErrorCode;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderSide;
@@ -33,6 +35,7 @@ public class LimitOrderFillService {
 	private final AccountService accountService;
 	private final PortfolioBuyService portfolioBuyService;
 	private final PortfolioSellService portfolioSellService;
+	private final PracticeOrderAttributionPort practiceOrderAttributionPort;
 	private final Clock clock;
 	private final ApplicationEventPublisher eventPublisher;
 
@@ -59,11 +62,20 @@ public class LimitOrderFillService {
 		}
 	}
 
+	// attempt 귀속은 비잠금 preflight로 scalar만 읽고 attempt를 먼저 잠근다. restart가 attempt 잠금을 잡은 채
+	// 주문을 취소했다면 대기 후 order FOR UPDATE의 PENDING 재확인에서 no-op 되므로 과거 run을 체결하지 않는다.
+	// 일반 주문은 preflight가 비어 기존 order → account → holding 잠금 순서를 그대로 사용한다.
 	private void fillOnePending(Long orderId) {
+		boolean currentPracticeRun = orderRepository.findPracticeFillAttribution(orderId)
+			.map(practiceOrderAttributionPort::lockForFill)
+			.orElse(true);
 		Order order = orderRepository.findByIdForUpdate(orderId)
 			.orElseThrow(() -> new IllegalStateException("체결 대상 주문을 찾을 수 없습니다. orderId=" + orderId));
 		if (order.getStatus() != OrderStatus.PENDING) {
 			return;
+		}
+		if (!currentPracticeRun) {
+			throw new BusinessException(ErrorCode.PRACTICE_STEP_LOCKED);
 		}
 
 		Account account = accountService.getAccountByIdForUpdate(order.getAccount().getId());
@@ -102,6 +114,7 @@ public class LimitOrderFillService {
 		portfolioBuyService.applyBuyTrade(account, instrument, trade, quantity, limitPrice, fee, now);
 
 		order.markFilled();
+		practiceOrderAttributionPort.createFirstBuyRiskSnapshot(order, trade, now);
 	}
 
 	private void fillSell(

@@ -83,4 +83,23 @@ public class PracticeAttempt {
 	public static PracticeAttempt create(Long userId, Market market, LocalDateTime createdAt) {
 		return new PracticeAttempt(userId, market, createdAt);
 	}
+
+	public void selectInstrument(
+		Instrument instrument,
+		LocalDateTime anchorAt,
+		LocalDate tutorialDate,
+		long priceSeed,
+		short generatorVersion,
+		LocalDateTime updatedAt) {
+		if (this.status != PracticeAttemptStatus.SELECTING_INSTRUMENT) {
+			throw new IllegalStateException("종목 선택 대기 상태에서만 종목을 선택할 수 있습니다.");
+		}
+		this.instrument = instrument;
+		this.anchorAt = anchorAt;
+		this.tutorialDate = tutorialDate;
+		this.priceSeed = priceSeed;
+		this.generatorVersion = generatorVersion;
+		this.status = PracticeAttemptStatus.IN_PROGRESS;
+		this.updatedAt = updatedAt;
+	}
 }

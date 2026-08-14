@@ -3,6 +3,7 @@ package com.finplay.api.order.repository;
 
 import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderStatus;
+import com.finplay.api.order.service.PracticeOrderFillAttributionDto;
 import jakarta.persistence.LockModeType;
 import java.math.BigDecimal;
 import java.util.List;
@@ -24,6 +25,17 @@ public interface OrderRepository extends JpaRepository<Order, Long>, OrderReposi
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("SELECT o FROM Order o WHERE o.id = :id")
 	Optional<Order> findByIdForUpdate(@Param("id")
+	Long id);
+
+	// attempt 귀속 지정가 체결의 잠금 순서를 attempt → order로 고정하기 위한 비잠금 preflight 조회다.
+	// 조회 직후 attempt를 먼저 잠그며, 그 사이 restart가 주문을 취소하면 후속 FOR UPDATE 상태 재확인에서 no-op 된다.
+	@Query("""
+		select new com.finplay.api.order.service.PracticeOrderFillAttributionDto(
+			o.practiceAttemptId, o.practiceAttemptRunNumber, o.user.id, o.instrument.id)
+		from Order o
+		where o.id = :id and o.practiceAttemptId is not null
+		""")
+	Optional<PracticeOrderFillAttributionDto> findPracticeFillAttribution(@Param("id")
 	Long id);
 
 	// 가격 갱신 시 체결 후보 지정가 주문 조회(015-limit-order LMT-002) — idx_orders_limit_fill 인덱스 활용

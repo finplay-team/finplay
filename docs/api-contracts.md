@@ -850,6 +850,19 @@ holding 관찰은 buyTrade→order에서 sessionId를 서버가 역추적한다(
 | `PracticeHoldingReflectionCreateRequest` | `Long holdingId`, `String answer` | `holdingId` non-null·양수; `answer`는 non-blank·2000자 이하 |
 | `PracticeHoldingReflectionResponse` | `Long reflectionId`, `Long holdingId`, `String prompt`, `String answer`, `LocalDateTime createdAt` | 모두 non-null; `prompt`는 고정 문구 |
 
+### 036 튜토리얼 attempt 진입·종목 선택·자동 위험 스냅샷
+
+| Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|
+| PUT | `/api/education/practice/attempts/{market}` | Access Bearer 필수. path `market=STOCK|CRYPTO`, body 없음 | 200 `PracticeAttemptResponse`. 행이 없을 때만 `runNumber=1`, `status=SELECTING_INSTRUMENT`로 생성하며 기존 행은 실행 세대·선택·스냅샷을 변경하지 않고 반환. 기존 `COMPLETED` 행은 상태·run을 쓰지 않고 `mode=REPLAY`로 반환 | 400 `VALIDATION_ERROR`(미지원 market); 401 `UNAUTHORIZED` | 036 TUTORIAL-FLOW-001·002·005, Issue #378 |
+| PUT | `/api/education/practice/attempts/{market}/instrument` | Access Bearer 필수. `{"instrumentId":1}`(`PracticeAttemptInstrumentUpdateRequest`, 양의 `Long`) | 200 `PracticeAttemptResponse`. 최초 선택은 `status=IN_PROGRESS`와 anchor·tutorial date를 저장하고, 같은 종목 재요청은 무변경 응답 | 400 `VALIDATION_ERROR`(누락·0 이하·미지원 market); 401 `UNAUTHORIZED`; 404 `NOT_FOUND`(종목 없음); 409 `INSTRUMENT_NOT_TRADABLE`(다른 시장·실제 종목·`tradable=false`), `PRACTICE_STEP_LOCKED`(attempt 없음·다른 종목 재선택·선택 가능 상태 아님), `PRACTICE_ALREADY_COMPLETED` | 036 TUTORIAL-FLOW-006, Issue #378 |
+
+`PracticeAttemptResponse` 필드 순서는 `attemptId`, `market`, `runNumber`, `mode`, `status`, nullable `instrumentId`, nullable `anchorAt`, nullable `tutorialDate`, nullable `riskSnapshot`, nullable `completedAt`이다. 쓰기 가능한 미완료 실행은 `mode=ACTIVE`, 완료 실행은 읽기 전용 `mode=REPLAY`이며 상태는 `SELECTING_INSTRUMENT|IN_PROGRESS|EXPIRED|COMPLETED`다. `riskSnapshot`은 `entryPrice`, `stopLossPrice`, `takeProfitPrice`, `buyTradeId`, `createdAt`을 반환하고 seed·generator version은 노출하지 않는다.
+
+동시 진입은 MySQL `INSERT IGNORE`와 `UNIQUE(user_id, market)`로 하나의 attempt만 만들며 reload는 run을 증가시키거나 선택을 지우지 않는다. 종목 선택은 attempt 행을 비관 잠근 뒤 요청 시장과 일치하는 `tradable=true`, `is_tutorial_sample=true` 종목만 허용하고 선택 시각을 `anchorAt`, 그 날짜를 `tutorialDate`, 서버 생성 seed와 generator version 1을 같은 행에 저장한다.
+
+선택된 샘플 종목의 신규 `POST /api/orders` 시장가 주문과 `POST /api/education/practice/limit-orders` 교육 지정가 BUY는 클라이언트 입력이 아니라 서버가 잠근 현재 attempt ID/run number에 귀속한다. attempt가 없거나 종목·상태가 현재 실행과 다르면 409 `PRACTICE_STEP_LOCKED`이며 일반 종목 주문은 귀속 컬럼이 계속 null이다. 현재 실행의 최초 FILLED BUY는 체결 트랜잭션 안에서 `entryPrice`를 scale 8 `HALF_UP`으로 고정하고 `stopLossPrice=entryPrice×0.97`, `takeProfitPrice=entryPrice×1.05`를 같은 방식으로 계산해 `practice_risk_snapshots`에 한 번만 저장한다. 이후 BUY는 기존 스냅샷을 변경하지 않는다. legacy `POST /api/education/practice/intentions`는 유지되지만 이 attempt·주문 귀속·스냅샷 경로의 전제조건이 아니다.
+
 ### 실습 진행 조회 (holding 기준)
 
 | Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
