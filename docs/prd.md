@@ -223,7 +223,7 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 | 코인 틱 집계와 캐싱 | MKT-010 | **완료** | `027-crypto-tick-candle-cache`(이슈 #242), PR #255. `transaction` 채널 구독 추가, `CryptoCandleStore`(Lua 원자 갱신)·`CachedCryptoCandleProvider`(캐시·위임 병합) 신설. 동시성 테스트(Testcontainers)로 유실 0건 확인, 실측 호출 절감률 100%(캐시 구간 안) |
 | 배포 아키텍처 — 관리형 서비스 전환·블루-그린 | 요구사항 ID 없음(1차 태스크 10 배포의 후속 구조 변경) | **일부 완료** | ADR-0020, 이슈 #326, PR #329. **RDS·ElastiCache 전환은 실배포 검증 완료** — `compose.deploy.yaml`에서 mysql·redis 서비스·볼륨 제거, `finplay-db`(MySQL 8.4)·`finplay-cache`(Redis OSS 7.1, 복제본 1+다중 AZ)에 접속해 기동, Flyway 30건 적용·`/actuator/health` `UP` 확인(2026-08-11). ElastiCache는 전송 중 암호화를 켰으므로 `SPRING_DATA_REDIS_SSL_ENABLED=true`가 필수다. **S3 스토리지 전환(`S3FileStorageService`)과 블루-그린 파이프라인(ALB·타깃 그룹·ACM·`compose.bluegreen.yaml`)은 문서 확정만** — 각각 별도 이슈. ADR-0014·0015·0018이 전제해 온 "다중 인스턴스 전환"의 실체를 ADR-0020이 정의한다. **프론트 정적 파일의 서빙 주체는 ADR-0022(이슈 #352, PR #353)로 nginx 동일 오리진에서 S3 독립 배포로 전환 결정됨** — ADR §결정 7의 적용 순서 중 **1번(백엔드: ADR 확정 + CORS·`forward-headers-strategy` 코드·테스트)만 완료**, 2번(프론트 베이스 URL 도입 + S3 게시 + 실측 검증)·3번(nginx 제거 + ALB 타깃 전환)은 미착수. **CD 워크플로우(`.github/workflows/deploy.yml`)는 코드로 구현됨(PR #357) — 첫 실행 미검증.** |
 | 코인 변동 카드 확정 SSE push | 요구사항 ID 없음(GitHub 이슈 #286에는 있으나 이 문서에 대응 행이 신설 전까지 없었다) | **완료** | `028-crypto-card-sse-push`, 이슈 #286, ADR-0018. `GET /api/cryptos/stream` 신설(`CryptoPriceSseController`·`CryptoPriceStreamService`) — 코인 snapshot·price·status에 더해 `CryptoPriceMoveWatcher`가 카드 저장 성공 직후 발행하는 `priceMoveCardConfirmed`(카드 id·종목 id만, 본문 없음)를 push. 발행은 Redis pub/sub(`CryptoPriceMoveCardPublisher`→채널 `feedback:price-move:crypto-confirmed`→`CryptoCardPushSubscriber`)로 다중 인스턴스 팬아웃. Redis 장애·구독자 0명·느린 구독자 모두 카드 생성(`price_move_events` 커밋)을 막지 않음(통합 테스트로 확인). 주식 확정 경로(`PriceMoveCardService`)는 이 채널을 호출하지 않아 노출 게이트를 우회하지 않는다. `GET /api/stocks/stream` 기존 계약은 무변경(회귀 테스트로 확인) |
-| 코인 시세 표시·체결 stale 기준 분리 | PRICE-STALE-001~005 | **완료** | `032-price-quote-stale-split`, 이슈 #355, PR #360. `PriceStatus`에 `STALE` 추가(PRICE-STALE-002). `GET /api/instruments/{instrumentId}/price`가 코인에서 연결 유지 + stale(10초 초과)이면 409 대신 200과 `status: "STALE"` + 마지막 실제 가격을 반환(PRICE-STALE-001, `PriceQueryService.getCryptoDisplayPriceQuote`/`getCryptoDisplayPriceQuotes`). `getOrderExecutionPrice`(체결 경로)는 `getCryptoExecutionPriceQuote`로 분리해 무변경 — stale이어도 여전히 409 `PRICE_UNAVAILABLE`(PRICE-STALE-003, MKT-004 fail-closed 유지). `HoldingValuationService`는 STALE도 UNAVAILABLE과 동일하게 평가불가 처리되도록 조건을 `!= AVAILABLE`로 명시적으로 고정(PRICE-STALE-005 엄격 유지). `SyntheticPriceService`·`PracticePriceSessionService`는 기존 `== AVAILABLE` 조건으로 자동 엄격 유지, 코드 변경 없음(PRICE-STALE-005). 코인 SSE snapshot(`GET /api/cryptos/stream`)도 같은 완화를 물려받음(PRICE-STALE-004). `CryptoCandleAndPriceIndependenceTest` 기존 두 테스트 회귀 없음 |
+| 코인 시세 표시·체결 stale 기준 분리 | PRICE-STALE-001~005 | **완료** | `032-price-quote-stale-split`, 이슈 #355, PR #360. `PriceStatus`에 `STALE` 추가(PRICE-STALE-002). `GET /api/instruments/{instrumentId}/price`가 코인에서 연결 유지 + stale(10초 초과)이면 409 대신 200과 `status: "STALE"` + 마지막 실제 가격을 반환(PRICE-STALE-001, `PriceQueryService.getCryptoDisplayPriceQuote`/`getCryptoDisplayPriceQuotes`). `getOrderExecutionPrice`(체결 경로)는 034에서 표시 판정과 같은 규칙으로 합쳐졌다 — 연결이 살아있고 마지막 가격이 있으면 stale이어도 체결된다. `HoldingValuationService`는 STALE도 UNAVAILABLE과 동일하게 평가불가 처리되도록 조건을 `!= AVAILABLE`로 명시적으로 고정(PRICE-STALE-005 엄격 유지). `SyntheticPriceService`·`PracticePriceSessionService`는 기존 `== AVAILABLE` 조건으로 자동 엄격 유지, 코드 변경 없음(PRICE-STALE-005). 코인 SSE snapshot(`GET /api/cryptos/stream`)도 같은 완화를 물려받음(PRICE-STALE-004). `CryptoCandleAndPriceIndependenceTest` 기존 두 테스트 회귀 없음 |
 
 ### 2차 MVP — 남은 범위와 계약 정의
 
@@ -466,9 +466,11 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 
 #### MKT-004 시세 장애
 
-- 최신 틱 수신시각이 10초를 초과하거나 연결이 끊기면 해당 코인 주문을 거부한다.
+- 연결이 끊겼거나 해당 코인의 시세를 한 번도 받은 적이 없으면 그 코인의 화면 조회와 주문을 모두 거부한다 — 보여줄 가격 자체가 없는 상태다.
 - 재연결 후 새 틱을 받은 경우에만 주문을 자동 재개한다.
-- 장애 중 마지막 가격으로 체결하거나 임의 가격으로 몰래 전환하지 않는다.
+- 연결이 살아있고 마지막 가격을 받은 적이 있으면, 그 가격의 관측 시각이 10초를 넘겼더라도(stale) 화면 조회와 주문 체결에 모두 그 마지막 가격을 사용한다. 화면에는 `status: "STALE"`로 지연 상태임을 함께 노출한다.
+- 관측 시각은 웹소켓 체결 수신과 REST 폴링 성공 중 나중 것을 쓴다 — 체결이 뜸해도 폴링이 살아있으면 신선한 상태를 유지한다.
+- 임의 가격·보간값·호가 기준가로 몰래 전환하지 않는다. 표시·체결에 쓰는 값은 언제나 실제로 수신된 마지막 가격이다.
 
 #### MKT-005 데이터 수집과 보관
 
