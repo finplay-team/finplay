@@ -19,7 +19,7 @@
   프로필을 `@Profile("!prod & crypto-real")`에서 `@Profile("prod | crypto-real")`로 바꾼다. 의존성을 `FakeBithumbFeedClient`(운영에 빈이 없다)에서 `PriceStore`로 교체하고 `emitTicks`가 `recordObservation`을 호출하도록 바꾼다. 폴링 주기(3초)·실패 시 회차 스킵·타임아웃 설정·`bithumb.feed.ticker.enabled` 격리 프로퍼티는 전부 그대로 둔다.
   `BithumbRestTickerPollerTest`를 `PriceStore` 목 검증으로 전환하고(기존 `MockRestServiceServer` 구성은 유지), 실패·타임아웃·비정상 상태코드·항목 누락에서 예외를 던지지 않는 기존 단정을 유지한다. `BithumbRestTickerPollerConditionalTest`로 프로필 변경 후에도 테스트 격리(`enabled=false` 시 빈 미생성)가 유지되는지 확인한다 — PRD C-005 위반 방지.
 
-- [ ] **5. 스케줄러 풀 크기 상향 + 개수 주석 정합 (A)**
+- [x] **5. 스케줄러 풀 크기 상향 + 개수 주석 정합 (A)**
   `application.yml`의 `spring.task.scheduling.pool.size`를 16 → 17로 올린다(운영 프로필에 `@Scheduled` 1개 추가). `application.yml`과 `application-crypto-real.yml` 두 곳의 "스케줄 개수" 주석을 실제 값으로 함께 맞춘다 — 현재 16 vs 13으로 어긋나 있다(PRICE-REST-006). `NewsCollectionIntegrationTest.schedulingPoolIsLargeEnoughForEveryScheduledTask`가 통과하는지 확인한다.
 
 - [ ] **6. 판정 경로 회귀 테스트 + 문서 동기화 + 최종 빌드**
