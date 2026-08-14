@@ -28,7 +28,8 @@ import org.springframework.stereotype.Service;
 //  - 전체 단위: 종목 하나로 좁힐 수 없는 진짜 전체 오류(종목 목록 조회 실패, 검증·저장 로직 자체의 버그 등)만 collect()의
 //    최상위 catch에서 이번 실행 전체를 미저장·FAILED로 남긴다.
 // 아래 두 가지는 이번 클라이언트 경계(RawMinuteCandleDto)에서 항상 구조적으로 만족되어 별도 런타임 검사를 두지 않는다.
-//  - "MVP 허용 16종 여부": InstrumentRepository.findByMarketOrderByIdAsc(Market.STOCK)로만 순회하므로 애초에 허용 종목만 대상이다.
+//  - "MVP 허용 16종 여부": InstrumentRepository.findByMarketAndTutorialSampleFalseOrderByIdAsc(Market.STOCK)로만
+//    순회하므로 애초에 허용 종목(샌드박스 튜토리얼 종목 제외)만 대상이다.
 //  - "조회 대상 거래일과 응답 거래일 일치": KisHistoricalCandleClient는 이번 Decision Gate(plan.md — output2 필드명은
 //    체결시각·시가·고가·저가·종가·거래량 6종만 확인 대상)에서 행별 거래일 필드를 노출하지 않는다. Collector는 항상 단일
 //    tradingDate로 조회하고 그 값을 모든 StockCandle에 그대로 정규화하므로 이 경계 안에서는 불일치가 발생할 수 없다.
@@ -61,7 +62,9 @@ public class KisHistoricalCandleCollector {
 		LocalDateTime collectedAt = LocalDateTime.now(clock);
 		try {
 			// 종목 목록 조회 자체도 이 try 안에 둔다 — 실패하면(진짜 전체 오류) 아래 catch가 잡아 FAILED로 남긴다.
-			List<Instrument> stockInstruments = instrumentRepository.findByMarketOrderByIdAsc(Market.STOCK);
+			// 샌드박스 튜토리얼 종목은 조회 시점에 제외한다 — 검증·저장 어느 단계에도 등장하지 않는다(COLLECT-STAB-002).
+			List<Instrument> stockInstruments = instrumentRepository
+				.findByMarketAndTutorialSampleFalseOrderByIdAsc(Market.STOCK);
 			List<InstrumentOutcome> outcomes = new ArrayList<>();
 			for (Instrument instrument : stockInstruments) {
 				outcomes.add(collectInstrument(instrument, tradingDate, collectedAt));

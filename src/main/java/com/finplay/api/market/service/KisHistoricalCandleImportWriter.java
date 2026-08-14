@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 // 점유하지 않는다(PR #94 리뷰 권장사항 ②).
 @Component
 @RequiredArgsConstructor
+@Slf4j
 class KisHistoricalCandleImportWriter {
 
 	private static final String DATA_SOURCE = "KIS";
@@ -56,6 +58,16 @@ class KisHistoricalCandleImportWriter {
 		}
 		marketDataImportRepository.save(
 			MarketDataImport.create(DATA_SOURCE, tradingDate, collectedAt, status, failureReason));
+
+		// 종목별 부분 실패는 market_data_imports를 직접 조회해야만 알 수 있었다 — 로그로도 검색 가능하게 남긴다
+		// (COLLECT-STAB-004). 전체 실패(FAILED)와 부분 실패(PARTIAL_SUCCESS)는 심각도가 다르므로 레벨을 구분한다.
+		if (status == ImportStatus.FAILED) {
+			log.error("주식 분봉 수집이 {}로 끝났습니다 (tradingDate={}, failureReason={})", status, tradingDate,
+				failureReason);
+		} else if (status == ImportStatus.PARTIAL_SUCCESS) {
+			log.warn("주식 분봉 수집이 {}로 끝났습니다 (tradingDate={}, failureReason={})", status, tradingDate,
+				failureReason);
+		}
 	}
 
 	// FAILED 이력 저장 전용 — 호출부(collect())의 예외가 JPA 트랜잭션 도중 발생했다면 그 세션이 rollback-only가 되어

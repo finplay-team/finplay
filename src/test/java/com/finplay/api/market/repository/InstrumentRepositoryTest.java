@@ -82,6 +82,19 @@ class InstrumentRepositoryTest {
 	}
 
 	@Test
+	void findByMarketAndTutorialSampleFalseOrderByIdAscExcludesTutorialSampleInstruments() {
+		// 035-stock-collector-reliability COLLECT-STAB-002 — 수집 배치가 이 메서드로만 종목을 조회하면 샌드박스
+		// 종목(SANDBOX_STK_1~3, V32 시드)이 애초에 대상에 포함되지 않는다.
+		List<Instrument> nonSampleStocks = repository.findByMarketAndTutorialSampleFalseOrderByIdAsc(Market.STOCK);
+
+		assertThat(nonSampleStocks).hasSize(16);
+		assertThat(nonSampleStocks).allMatch(instrument -> instrument.getMarket() == Market.STOCK);
+		assertThat(nonSampleStocks).noneMatch(Instrument::isTutorialSample);
+		assertThat(nonSampleStocks).extracting(Instrument::getSymbol)
+			.doesNotContain("SANDBOX_STK_1", "SANDBOX_STK_2", "SANDBOX_STK_3");
+	}
+
+	@Test
 	void findByMarketAndSymbolReturnsMatchingInstrument() {
 		var result = repository.findByMarketAndSymbol(Market.CRYPTO, "BTC");
 
