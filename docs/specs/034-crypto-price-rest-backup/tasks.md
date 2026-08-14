@@ -15,7 +15,7 @@
 - [x] **3. `recordObservation`의 이벤트 발행 조건 확정 (A)**
   `recordObservation`은 **가격이 실제로 바뀌었을 때만** `CryptoPriceUpdatedEvent`를 발행한다(관측 시각만 갱신한 경우 미발행). `saveTick`의 발행 조건은 건드리지 않는다. `PriceStoreTest`에 발행/미발행 두 케이스를 추가한다. `LimitOrderTriggerListener`·`CryptoPriceStreamService`는 코드 변경 없이 소비자로만 남는다 — 두 리스너의 기존 테스트가 회귀 없이 통과하는지 확인한다.
 
-- [ ] **4. `BithumbRestTickerPoller` 운영 확장 + 주입 대상 전환 (A)**
+- [x] **4. `BithumbRestTickerPoller` 운영 확장 + 주입 대상 전환 (A)**
   프로필을 `@Profile("!prod & crypto-real")`에서 `@Profile("prod | crypto-real")`로 바꾼다. 의존성을 `FakeBithumbFeedClient`(운영에 빈이 없다)에서 `PriceStore`로 교체하고 `emitTicks`가 `recordObservation`을 호출하도록 바꾼다. 폴링 주기(3초)·실패 시 회차 스킵·타임아웃 설정·`bithumb.feed.ticker.enabled` 격리 프로퍼티는 전부 그대로 둔다.
   `BithumbRestTickerPollerTest`를 `PriceStore` 목 검증으로 전환하고(기존 `MockRestServiceServer` 구성은 유지), 실패·타임아웃·비정상 상태코드·항목 누락에서 예외를 던지지 않는 기존 단정을 유지한다. `BithumbRestTickerPollerConditionalTest`로 프로필 변경 후에도 테스트 격리(`enabled=false` 시 빈 미생성)가 유지되는지 확인한다 — PRD C-005 위반 방지.
 
