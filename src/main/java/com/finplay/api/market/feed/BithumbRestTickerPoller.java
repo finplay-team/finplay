@@ -47,9 +47,14 @@ public class BithumbRestTickerPoller {
 	private final PriceStore priceStore;
 	private final Clock clock;
 
+	// RestClient.Builder를 DI로 받지 않고 RestClient.builder()를 직접 호출한다 — springdoc·spring-ai·jjwt-jackson이
+	// 각자 Jackson 2를 끌어와 앱 클래스패스에 Jackson 2·3이 공존하는데, DI로 주입되는 공유 RestClient.Builder 빈은
+	// Spring Boot가 컨텍스트의 모든 HttpMessageConverter 빈(레거시 Jackson 2 컨버터 포함)을 반영해 구성되므로
+	// 어떤 컨버터가 선택될지 예측할 수 없다 — 실측 결과 이 경로로는 빗썸 응답이 100% 파싱 실패했다(이슈 #369 후속).
+	// RestClient.builder()를 직접 호출하면 그 컨텍스트 구성과 무관하게 클래스패스 기준으로 Jackson 3 컨버터가
+	// 결정적으로 선택된다 — 이 클래스의 테스트가 이미 이 방식을 쓰고 있고 실제로 안정적으로 통과한다.
 	@Autowired
 	public BithumbRestTickerPoller(
-		RestClient.Builder builder,
 		InstrumentRepository instrumentRepository,
 		PriceStore priceStore,
 		Clock clock,
@@ -57,7 +62,7 @@ public class BithumbRestTickerPoller {
 		long connectTimeoutMs,
 		@Value("${bithumb.feed.ticker.read-timeout-ms:3000}")
 		long readTimeoutMs) {
-		this(applyTimeouts(builder, connectTimeoutMs, readTimeoutMs).build(), instrumentRepository,
+		this(applyTimeouts(RestClient.builder(), connectTimeoutMs, readTimeoutMs).build(), instrumentRepository,
 			priceStore, clock);
 	}
 
