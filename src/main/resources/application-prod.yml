@@ -19,6 +19,13 @@ resend:
 email:
   from: ${EMAIL_FROM}
 
+# 모의투자 도메인은 초당 호출 허용량이 낮아 분봉 수집(16종목 x 최대 10페이지)을 연달아 호출하면
+# EGW00201(초당 거래건수를 초과하였습니다)로 전 종목이 실패한다(application-local.yml과 동일 근거, 2026-07-30
+# 실측). 운영 kis.base-url도 현재 배포 구성상 모의투자 도메인이라(이슈 #370) 로컬에서만 있던 이 보호장치가
+# 운영에는 빠져 있었다 — 로컬에서 이미 검증된 600ms를 그대로 적용한다.
+kis:
+  request-interval-ms: 600
+
 finplay:
   community:
     image-storage:

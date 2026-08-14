@@ -27,7 +27,7 @@
     2에서 만든 클래스에 이어서 작성 — 같은 픽스처·같은 락 컴포넌트를 공유하므로 별도 클래스로 분리하지
     않는다).
 
-- [ ] 4. 운영 KIS 호출 간격 설정 보강 (COLLECT-STAB-005)
+- [x] 4. 운영 KIS 호출 간격 설정 보강 (COLLECT-STAB-005)
   - `application-prod.yml`에 `kis.request-interval-ms: 600` 추가.
   - `KisProperties.java`의 `requestIntervalMs` 주석 중 "실전투자 도메인 기준" 근거 문장을 현재 배포 구성
     (운영도 모의투자 도메인)에 맞게 정정.
