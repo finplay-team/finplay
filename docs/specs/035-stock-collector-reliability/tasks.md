@@ -9,7 +9,7 @@
   - 기존 `KisHistoricalCandleCollectorTest` 확장(샌드박스 종목이 섞인 mock 목록에서도 실제 종목만 처리됨을
     검증) + 로그 상호작용 단위 테스트.
 
-- [ ] 2. Redis 기반 수집 락 도입 (COLLECT-STAB-001)
+- [x] 2. Redis 기반 수집 락 도입 (COLLECT-STAB-001)
   - `com.finplay.api.market.config.MarketStockProperties`/`MarketStockConfig` 신설
     (`collect-lock-ttl-seconds` 기본값 600) + `application.yml` 미러링 + 드리프트 테스트(있다면 기존 패턴 재사용).
   - `com.finplay.api.market.service.StockCollectionLock` 신설 — `feedback.service.RedisLock` 재사용,

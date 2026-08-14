@@ -33,6 +33,7 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.slf4j.LoggerFactory;
@@ -53,6 +54,15 @@ class KisHistoricalCandleCollectorTest {
 	// 검증은 그대로 유효하다.
 	private final KisHistoricalCandleImportWriter importWriter = new KisHistoricalCandleImportWriter(
 		stockCandleRepository, marketDataImportRepository);
+
+	// COLLECT-STAB-001 — collect()가 이 락을 못 얻으면 조용히 반환하므로, 락과 무관한 기존 시나리오(전체/부분
+	// 실패·멱등성·샌드박스 제외 등)가 계속 성립하려면 기본적으로 항상 락 획득에 성공해야 한다. 락 자체의 동작
+	// (실패 시 조용히 반환·finally 해제 보장)은 별도 테스트에서 이 mock을 개별적으로 재구성해 검증한다.
+	private final StockCollectionLock stockCollectionLock = mock(StockCollectionLock.class);
+
+	{
+		when(stockCollectionLock.tryLock(any())).thenReturn(Optional.of("test-lock-token"));
+	}
 
 	private static Clock fixedClock(LocalDateTime dateTime) {
 		return Clock.fixed(dateTime.atZone(KST).toInstant(), KST);
@@ -95,7 +105,7 @@ class KisHistoricalCandleCollectorTest {
 
 		KisHistoricalCandleCollector collector = new KisHistoricalCandleCollector(
 			instrumentRepository, fakeClient, stockCandleRepository, importWriter,
-			fixedClock(WEEKDAY_RUN_AT), new BusinessDayCalendar());
+			fixedClock(WEEKDAY_RUN_AT), new BusinessDayCalendar(), stockCollectionLock);
 
 		collector.collect();
 
@@ -123,7 +133,7 @@ class KisHistoricalCandleCollectorTest {
 
 		KisHistoricalCandleCollector collector = new KisHistoricalCandleCollector(
 			instrumentRepository, neverCalledClient, stockCandleRepository, importWriter,
-			fixedClock(WEEKDAY_RUN_AT), new BusinessDayCalendar());
+			fixedClock(WEEKDAY_RUN_AT), new BusinessDayCalendar(), stockCollectionLock);
 
 		collector.collect();
 
@@ -150,7 +160,7 @@ class KisHistoricalCandleCollectorTest {
 
 		KisHistoricalCandleCollector collector = new KisHistoricalCandleCollector(
 			instrumentRepository, new ThrowingKisHistoricalCandleClient(), stockCandleRepository,
-			importWriter, fixedClock(WEEKDAY_RUN_AT), new BusinessDayCalendar());
+			importWriter, fixedClock(WEEKDAY_RUN_AT), new BusinessDayCalendar(), stockCollectionLock);
 
 		collector.collect();
 
@@ -183,7 +193,7 @@ class KisHistoricalCandleCollectorTest {
 
 		KisHistoricalCandleCollector collector = new KisHistoricalCandleCollector(
 			instrumentRepository, partiallyFlakyClient, stockCandleRepository, importWriter,
-			fixedClock(WEEKDAY_RUN_AT), new BusinessDayCalendar());
+			fixedClock(WEEKDAY_RUN_AT), new BusinessDayCalendar(), stockCollectionLock);
 
 		collector.collect();
 
@@ -211,7 +221,7 @@ class KisHistoricalCandleCollectorTest {
 
 		KisHistoricalCandleCollector collector = new KisHistoricalCandleCollector(
 			instrumentRepository, new FakeKisHistoricalCandleClient(), stockCandleRepository, importWriter,
-			fixedClock(WEEKDAY_RUN_AT), new BusinessDayCalendar());
+			fixedClock(WEEKDAY_RUN_AT), new BusinessDayCalendar(), stockCollectionLock);
 
 		collector.collect();
 
@@ -241,7 +251,7 @@ class KisHistoricalCandleCollectorTest {
 
 		KisHistoricalCandleCollector collector = new KisHistoricalCandleCollector(
 			instrumentRepository, fakeClient, stockCandleRepository, importWriter,
-			fixedClock(WEEKDAY_RUN_AT), new BusinessDayCalendar());
+			fixedClock(WEEKDAY_RUN_AT), new BusinessDayCalendar(), stockCollectionLock);
 
 		collector.collect();
 
@@ -270,7 +280,7 @@ class KisHistoricalCandleCollectorTest {
 
 		KisHistoricalCandleCollector collector = new KisHistoricalCandleCollector(
 			instrumentRepository, spyClient, stockCandleRepository, importWriter,
-			fixedClock(WEEKDAY_RUN_AT), new BusinessDayCalendar());
+			fixedClock(WEEKDAY_RUN_AT), new BusinessDayCalendar(), stockCollectionLock);
 
 		// 1차 실행: 아직 저장된 분봉이 없다.
 		when(stockCandleRepository.existsByInstrumentIdAndTradingDate(1L, EXPECTED_TRADING_DATE))
@@ -321,7 +331,7 @@ class KisHistoricalCandleCollectorTest {
 
 		KisHistoricalCandleCollector collector = new KisHistoricalCandleCollector(
 			instrumentRepository, fakeClient, stockCandleRepository, importWriter,
-			fixedClock(mondayRunAt), new BusinessDayCalendar());
+			fixedClock(mondayRunAt), new BusinessDayCalendar(), stockCollectionLock);
 
 		collector.collect();
 
@@ -348,7 +358,7 @@ class KisHistoricalCandleCollectorTest {
 
 		KisHistoricalCandleCollector collector = new KisHistoricalCandleCollector(
 			instrumentRepository, fakeClient, stockCandleRepository, importWriter,
-			fixedClock(tuesdayRunAt), new BusinessDayCalendar());
+			fixedClock(tuesdayRunAt), new BusinessDayCalendar(), stockCollectionLock);
 
 		collector.collect();
 
@@ -379,7 +389,7 @@ class KisHistoricalCandleCollectorTest {
 
 		KisHistoricalCandleCollector collector = new KisHistoricalCandleCollector(
 			instrumentRepository, spyClient, stockCandleRepository, importWriter,
-			fixedClock(WEEKDAY_RUN_AT), new BusinessDayCalendar());
+			fixedClock(WEEKDAY_RUN_AT), new BusinessDayCalendar(), stockCollectionLock);
 
 		collector.collect();
 
@@ -407,7 +417,7 @@ class KisHistoricalCandleCollectorTest {
 		};
 		KisHistoricalCandleCollector collector = new KisHistoricalCandleCollector(
 			instrumentRepository, partiallyFlakyClient, stockCandleRepository, importWriter,
-			fixedClock(WEEKDAY_RUN_AT), new BusinessDayCalendar());
+			fixedClock(WEEKDAY_RUN_AT), new BusinessDayCalendar(), stockCollectionLock);
 
 		List<ILoggingEvent> logs = capturingLogs(collector::collect);
 
@@ -430,7 +440,7 @@ class KisHistoricalCandleCollectorTest {
 
 		KisHistoricalCandleCollector collector = new KisHistoricalCandleCollector(
 			instrumentRepository, new ThrowingKisHistoricalCandleClient(), stockCandleRepository,
-			importWriter, fixedClock(WEEKDAY_RUN_AT), new BusinessDayCalendar());
+			importWriter, fixedClock(WEEKDAY_RUN_AT), new BusinessDayCalendar(), stockCollectionLock);
 
 		List<ILoggingEvent> logs = capturingLogs(collector::collect);
 
@@ -454,11 +464,52 @@ class KisHistoricalCandleCollectorTest {
 
 		KisHistoricalCandleCollector collector = new KisHistoricalCandleCollector(
 			instrumentRepository, fakeClient, stockCandleRepository, importWriter,
-			fixedClock(WEEKDAY_RUN_AT), new BusinessDayCalendar());
+			fixedClock(WEEKDAY_RUN_AT), new BusinessDayCalendar(), stockCollectionLock);
 
 		List<ILoggingEvent> logs = capturingLogs(collector::collect);
 
 		assertThat(logs).noneMatch(event -> event.getLevel() == Level.WARN || event.getLevel() == Level.ERROR);
+	}
+
+	@Test
+	void collectSkipsEntirelyWithoutCallingKisOrRecordingImportWhenLockIsNotAcquired() {
+		// COLLECT-STAB-001 비즈니스 규칙 — 락 획득 실패는 "시도했으나 실패"가 아니라 "이번 실행 자체가 일어나지
+		// 않음"이다. KIS 호출도, market_data_imports 저장도 전혀 일어나지 않아야 한다(다른 실행이 처리 중이라고
+		// 본다 — 실패 이력으로 기록하지 않는다).
+		when(stockCollectionLock.tryLock(EXPECTED_TRADING_DATE)).thenReturn(Optional.empty());
+		KisHistoricalCandleClient neverCalledClient = mock(KisHistoricalCandleClient.class);
+		InstrumentRepository neverCalledInstrumentRepository = mock(InstrumentRepository.class);
+
+		KisHistoricalCandleCollector collector = new KisHistoricalCandleCollector(
+			neverCalledInstrumentRepository, neverCalledClient, stockCandleRepository, importWriter,
+			fixedClock(WEEKDAY_RUN_AT), new BusinessDayCalendar(), stockCollectionLock);
+
+		collector.collect();
+
+		verify(neverCalledInstrumentRepository, never()).findByMarketAndTutorialSampleFalseOrderByIdAsc(any());
+		verify(neverCalledClient, never()).fetchMinuteCandles(any(), any());
+		verify(marketDataImportRepository, never()).save(any());
+		verify(stockCollectionLock, never()).unlock(any(), any());
+	}
+
+	@Test
+	void collectReleasesLockWithTheAcquiredTokenEvenWhenATopLevelFailureOccurs() {
+		// try/finally 해제 보장 — 종목 하나로 좁힐 수 없는 전체 오류(여기서는 marketDataImportRepository.save 실패)로
+		// collect()가 예외 경로를 타도 락은 반드시 해제되어야 한다. 그렇지 않으면 다음 실행이 TTL 만료 전까지 계속
+		// 건너뛰게 된다.
+		when(stockCollectionLock.tryLock(EXPECTED_TRADING_DATE)).thenReturn(Optional.of("held-token"));
+		when(instrumentRepository.findByMarketAndTutorialSampleFalseOrderByIdAsc(Market.STOCK)).thenReturn(List.of());
+		when(marketDataImportRepository.save(any()))
+			.thenThrow(new RuntimeException("DB 저장 중 오류"))
+			.thenAnswer(invocation -> invocation.getArgument(0));
+
+		KisHistoricalCandleCollector collector = new KisHistoricalCandleCollector(
+			instrumentRepository, new FakeKisHistoricalCandleClient(), stockCandleRepository, importWriter,
+			fixedClock(WEEKDAY_RUN_AT), new BusinessDayCalendar(), stockCollectionLock);
+
+		collector.collect();
+
+		verify(stockCollectionLock).unlock(EXPECTED_TRADING_DATE, "held-token");
 	}
 
 	// 로그가 부분/전체 실패 구분의 유일한 외부 관찰점이라 로거에 임시 appender를 붙인다(RankingRebuildServiceTest와 같은 방식).

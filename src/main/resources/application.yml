@@ -166,6 +166,11 @@ market:
     # σ 계산 조회 창이자 Redis 스냅샷 보관 기간(시간). feedback.crypto.sigma-lookback-hours(§C-7, 이슈 #225의
     # 다음 항목이 신설)와 반드시 같은 값을 유지한다 — 어긋나면 조회 창과 보관 창이 갈려 표본이 조용히 달라진다.
     sigma-lookback-hours: 24
+  stock:
+    # 주식 분봉 수집 배치(KisHistoricalCandleCollector)의 거래일 단위 Redis 락 TTL(초). 정본은
+    # docs/specs/035-stock-collector-reliability/plan.md §락 설계 세부 — 정상 실행 소요시간의 수 배 여유를
+    # 두면서도 프로세스가 죽어 finally를 못 도는 최후의 경우 하루 종일 잠기지 않게 하는 값이다(COLLECT-STAB-001).
+    collect-lock-ttl-seconds: 600
 
 # 네이버 뉴스 검색 API 키 — 뉴스 수집기(spec 012 FEED-001)가 사용한다. 키 경로의 정본은 spec §C-7이다.
 # kis 블록과 같은 형태로 yml에는 빈 기본값 플레이스홀더만 두고 실제 값은 환경변수로만 주입한다 (conventions.md).
