@@ -103,6 +103,12 @@ class MarketDataPipelineIntegrationTest {
 	@Autowired
 	private KisHistoricalCandleImportWriter importWriter;
 
+	// COLLECT-STAB-001 — 실제 Redis 배선의 락을 그대로 재사용한다. 이 클래스의 시나리오는 순차 호출(동시성 없음)이므로
+	// 매번 새 거래일에 처음 tryLock하는 한 항상 획득에 성공하고, collect() 종료 시 finally에서 즉시 해제된다 — 동시
+	// 경합 자체는 StockCollectionLockConcurrencyIntegrationTest가 별도로 검증한다.
+	@Autowired
+	private StockCollectionLock stockCollectionLock;
+
 	// StockReplaySessionScheduler는 KisHistoricalCandleClient에 의존하지 않으므로(spec.md MKT-005), 실제 Spring 빈을
 	// 그대로 재사용해도 안전하다 — 08:40 배치의 실제 배선을 검증하는 셈이다.
 	@Autowired
@@ -207,7 +213,8 @@ class MarketDataPipelineIntegrationTest {
 	// @Scheduled 우회하고 서비스 메서드를 직접 호출하는 방식(tasks.md 항목 ⑦ 지시)이다.
 	private KisHistoricalCandleCollector collectorWith(KisHistoricalCandleClient client) {
 		return new KisHistoricalCandleCollector(
-			instrumentRepository, client, stockCandleRepository, importWriter, clock, businessDayCalendar);
+			instrumentRepository, client, stockCandleRepository, importWriter, clock, businessDayCalendar,
+			stockCollectionLock);
 	}
 
 	// "서버 재시작" 시뮬레이션 — StockReplaySessionScheduler는 인스턴스 상태가 없으므로, 새 인스턴스를 만들어 호출해도

@@ -15,6 +15,9 @@ public interface InstrumentRepository extends JpaRepository<Instrument, Long> {
 
 	List<Instrument> findByMarketAndTradableTrueOrderByIdAsc(Market market);
 
+	// 샌드박스 튜토리얼 종목을 배치 수집 대상에서 제외한다 (035-stock-collector-reliability COLLECT-STAB-002)
+	List<Instrument> findByMarketAndTutorialSampleFalseOrderByIdAsc(Market market);
+
 	// 지정가 체결 리스너의 가격 갱신 이벤트에서 심볼로 종목을 조회한다(015-limit-order LMT-002)
 	Optional<Instrument> findByMarketAndSymbol(Market market, String symbol);
 }
