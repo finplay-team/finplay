@@ -3,9 +3,13 @@ package com.finplay.api.order.repository;
 
 import com.finplay.api.order.domain.ExitPlan;
 import com.finplay.api.order.domain.ExitPlanStatus;
+import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface ExitPlanRepository extends JpaRepository<ExitPlan, Long> {
 
@@ -17,4 +21,10 @@ public interface ExitPlanRepository extends JpaRepository<ExitPlan, Long> {
 	boolean existsByHoldingIdAndStatus(Long holdingId, ExitPlanStatus status);
 
 	List<ExitPlan> findByUserIdAndStatusOrderByIdDesc(Long userId, ExitPlanStatus status);
+
+	// 사용자 취소(021 plan.md 잠금 순서 holding → plan) — 호출부가 holding을 먼저 잠근 뒤 이 plan을 잠근다.
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("SELECT p FROM ExitPlan p WHERE p.id = :id")
+	Optional<ExitPlan> findByIdForUpdate(@Param("id")
+	Long id);
 }

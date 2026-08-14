@@ -36,6 +36,8 @@ public enum ErrorCode {
 	PRACTICE_PRICE_SESSION_MISMATCH(HttpStatus.CONFLICT, "주문의 사용자 또는 종목이 가상 가격 세션과 일치하지 않습니다."),
 	EXIT_PLAN_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 대기 중인 손절·익절 예약이 있습니다."),
 	EXIT_PLAN_INVALID_PRICE_RANGE(HttpStatus.CONFLICT, "손절가와 익절가의 범위가 올바르지 않습니다."),
+	EXIT_PLAN_NOT_FOUND(HttpStatus.NOT_FOUND, "손절·익절 예약을 찾을 수 없습니다."),
+	EXIT_PLAN_NOT_PENDING(HttpStatus.CONFLICT, "대기 중인 예약만 취소할 수 있습니다."),
 	IDEMPOTENCY_CONFLICT(HttpStatus.CONFLICT, "같은 키의 다른 요청이 이미 처리되었습니다."),
 	UNSUPPORTED_ORDER_TYPE(HttpStatus.UNPROCESSABLE_CONTENT, "지원하지 않는 주문 유형입니다."),
 	ORDER_ALREADY_FILLED(HttpStatus.CONFLICT, "이미 체결된 주문입니다."),

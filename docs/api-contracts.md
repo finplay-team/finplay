@@ -599,15 +599,15 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 ## 016 투자 실습 (candidate 1~4·합성 시세 제공, OCO 계열 계획)
 
-`docs/specs/016-investment-education-policy`의 계약은 제공 5건과 계획 7건, 총 12건이다.
+`docs/specs/016-investment-education-policy`의 계약은 제공 5건과 계획 6건, 총 11건이다. **`POST`·`DELETE /api/exit-plans`는 Issue #348로 production에 추가됐지만 이 절이 아니라 아래 `021` 절이 정본이다** — 이번에 구현된 것은 `intentionId`를 생략하는 **일반 경로**뿐이고, 이 절이 다루는 `intentionId` 지정 **교육 경로**는 여전히 컨트롤러가 이를 거부한다(400 `VALIDATION_ERROR`). 아래 "OCO exit plan 생성 (계획)"·"OCO 예약 취소" 두 절의 본문은 교육 경로 계약이므로 QA 실행 근거로 쓰지 않는다.
 
 **제공 중(블랙박스 QA 실행 가능)** — 5건: candidate 1 `POST /api/favorites`, candidate 2 `GET /api/favorites`, candidate 3 `DELETE /api/favorites/{instrumentId}`, candidate 4 `POST /api/education/practice/intentions`, 튜토리얼 합성 시세 `GET /api/education/practice/synthetic-prices/{instrumentId}`. 아래 각 절에 "(계획)" 표시가 없는 것이 이에 해당한다.
 
-**계획 상태(QA 실행 근거로 쓰지 않는다)** — 7건: `POST /api/education/practice/oco/intentions`(candidate 4 확장), `GET /api/education/practice/oco`(candidate 12), `POST/GET/DELETE /api/exit-plans`(7·8·9), `POST /api/education/practice/observations`(13), `POST /api/education/practice/reflections`(14). 전부 3차 MVP OCO 경로이며 절 제목에 "(계획)"으로 표시한다. 이 절들이 참조하는 `EXIT_PLAN_*` 오류 코드는 아직 `ErrorCode` enum에 없다.
+**계획 상태(QA 실행 근거로 쓰지 않는다)** — 6건: `POST /api/education/practice/oco/intentions`(candidate 4 확장), `GET /api/education/practice/oco`(candidate 12), `GET /api/exit-plans?status=`(candidate 8), 교육 경로(`intentionId` 지정) `POST`·`DELETE /api/exit-plans`(7·9, 라우트 자체는 존재하나 이 경로는 항상 거부됨), `POST /api/education/practice/observations`(13), `POST /api/education/practice/reflections`(14). 전부 3차 MVP OCO 경로이며 절 제목에 "(계획)"으로 표시한다. `EXIT_PLAN_ALREADY_EXISTS`·`EXIT_PLAN_INVALID_PRICE_RANGE`·`EXIT_PLAN_NOT_FOUND`·`EXIT_PLAN_NOT_PENDING`은 Issue #348로 이미 `ErrorCode` enum에 있다(일반 경로 구현으로 추가됨). 이 절이 참조하는 나머지 `EXIT_PLAN_SESSION_CLOSED` 등 교육 경로 전용 오류 코드는 아직 없다.
 
 > `GET /api/education/practice/oco`는 3차 MVP OCO 전용 진행조회다. 2차 holding 기반 `GET /api/education/practice`와 URL·완료 key를 공유하지 않는다(2026-08-10 확정, 이슈 #308).
 >
-> 3단계 실습을 **지금 QA한다면 이 절이 아니라 `026` 절**을 근거로 삼는다 — 2차 MVP에서 실제로 완료 가능한 경로는 그쪽이다.
+> 3단계 실습을 **지금 QA한다면 이 절이 아니라 `026` 절**을 근거로 삼는다 — 2차 MVP에서 실제로 완료 가능한 경로는 그쪽이다. 일반 리스크관리 OCO 생성·취소(`intentionId` 생략)를 QA한다면 아래 **`021` 절**을 근거로 삼는다.
 
 각 후속 구현이 병합될 때 해당 계약을 실제 상태로 전환하고 `docs/api-routes.md`의 계획 행도 실제 라우트 목록으로 옮긴다. 모든 경로는 Access Bearer 인증과 공통 오류 body를 사용하며 JSON POST는 `Content-Type: application/json`이다.
 
@@ -693,7 +693,9 @@ next-tick은 세션을 owner 스코프로 `SELECT ... FOR UPDATE`(`findByIdAndUs
 
 holding 관찰은 buyTrade→order에서 sessionId를 서버가 역추적한다(이슈 #321, 3안 — priceruntime의 `PracticePriceObservationService` 파사드가 세션 가격원을 소유). sessionId가 있으면 ACTIVE/COMPLETED 세션의 마지막 현재가, null이면 기존 실제 가격원(`PriceQueryService`)을 사용한다. sessionId가 있는데 세션 owner·instrument가 chain과 불일치하면(데이터 이상 상태) 실제 가격으로 조용히 fallback하지 않고 409 `PRACTICE_EVIDENCE_MISSING`으로 거부한다 — `holding-observations` API의 기존 오류 집합을 늘리지 않는다. 세션 가격 경로에서는 `PRICE_UNAVAILABLE`이 발생하지 않는다(세션 `currentPrice`는 항상 non-null). 상세 잠금 순서·트랜잭션 계약은 `docs/specs/030-coin-practice-price-runtime/plan.md`가 정본이다.
 
-### OCO exit plan 생성 (계획)
+### OCO exit plan 생성 — 교육 경로, `intentionId` 지정 (계획)
+
+> **라우트는 이미 존재한다(`POST /api/exit-plans`, Issue #348).** 아래 표는 `intentionId`를 지정하는 **교육 경로** 계약이며 아직 구현되지 않았다 — 현재 컨트롤러는 `intentionId`가 오면 무조건 400 `VALIDATION_ERROR`로 거부한다. `intentionId`를 생략하는 **일반 경로**는 이미 production이며 아래 `021` 절이 정본이다.
 
 | Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|
@@ -711,11 +713,13 @@ holding 관찰은 buyTrade→order에서 sessionId를 서버가 역추적한다(
 
 `reservedAt DESC, exitPlanId DESC` 순이며 페이지네이션과 write가 없다.
 
-### OCO 예약 취소 (계획)
+### OCO 예약 취소 (production, 경로 공통)
+
+> Issue #348로 실제 production이 됐다 — 아래 `021` 절이 정본이다. 이 표는 016이 원래 세운 계약이며 실제 구현과 일치한다(경로 무관, 일반·교육 plan을 구분하지 않는다).
 
 | Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|
-| DELETE | /api/exit-plans/{exitPlanId} | 양의 `exitPlanId` path | 204, 본문 없음 | 400 `VALIDATION_ERROR`; 404 `EXIT_PLAN_NOT_FOUND`; 409 `EXIT_PLAN_NOT_PENDING` | 016 candidate 9 |
+| DELETE | /api/exit-plans/{exitPlanId} | 양의 `exitPlanId` path | 204, 본문 없음 | 400 `VALIDATION_ERROR`; 404 `EXIT_PLAN_NOT_FOUND`; 409 `EXIT_PLAN_NOT_PENDING` | 021 일반 리스크관리 OCO, 016 candidate 9, Issue #348 |
 
 본인 PENDING plan만 취소한다. 두 조건을 함께 종결하고 예약 수량을 정확히 한 번 반환한다. 타인 plan은 404, 반복 요청과 가격 트리거·만료 경합 패자는 409다.
 
@@ -749,8 +753,8 @@ holding 관찰은 buyTrade→order에서 sessionId를 서버가 역추적한다(
 | `FavoriteListResponse` | `List<FavoriteResponse> content` | non-null, 빈 배열 허용 |
 | `PracticeIntentionCreateRequest` | `Long instrumentId`, `BigDecimal quantity`, `BigDecimal stopLoss`, `BigDecimal takeProfit` | 모두 non-null |
 | `PracticeIntentionResponse` | `Long intentionId`, `Long instrumentId`, `BigDecimal quantity`, `BigDecimal stopLoss`, `BigDecimal takeProfit`, `LocalDateTime createdAt` | 모두 non-null |
-| `ExitPlanCreateRequest` (계획) | `Long intentionId`, `Long buyTradeId`, `Long instrumentId`, `BigDecimal quantity` | 모두 non-null; 가격·rate 입력 없음 |
-| `ExitPlanResponse` (계획) | 기존 식별자·수량·entry/baseline/status/시각 + `String exitPriceType`, `BigDecimal stopLossRate`, `BigDecimal takeProfitRate`, `BigDecimal stopLossPrice`, `BigDecimal takeProfitPrice` | rate 둘은 PERCENT만 non-null; 확정 가격 둘은 항상 non-null; 기존 replay/terminal nullable 규칙 유지 |
+| `ExitPlanCreateRequest` | `Long intentionId`, `Long buyTradeId`, `Long instrumentId`, `Long holdingId`, `BigDecimal quantity`, `ExitPriceType exitPriceType`, `BigDecimal stopLoss`, `BigDecimal takeProfit`, `BigDecimal stopLossRate`, `BigDecimal takeProfitRate` | **일반 경로(production, 021)**: `holdingId`·`quantity`·`exitPriceType` non-null 필수, `intentionId`·`buyTradeId`·`instrumentId`는 포함하면 400. **교육 경로(계획, 016)**: `intentionId`·`buyTradeId`·`instrumentId`·`quantity` non-null 필수, `holdingId`·`exitPriceType`·가격·rate 필드는 없음(현재 컨트롤러가 `intentionId` non-null이면 무조건 400으로 거부) |
+| `ExitPlanResponse` | `Long id`, `Long holdingId`, `Long intentionId`, `Long buyTradeId`, `Long instrumentId`, `BigDecimal quantity`, `BigDecimal entryPrice`, `ExitPriceType exitPriceType`, `BigDecimal stopLossRate`, `BigDecimal takeProfitRate`, `BigDecimal stopLossPrice`, `BigDecimal takeProfitPrice`, `BigDecimal baselinePrice`, `LocalDateTime baselineObservedAt`, `ExitPlanStatus status`, `LocalDateTime reservedAt`, `LocalDateTime closedAt`, `Long triggeredOrderId`, `Long replaySessionId` | `holdingId`·`instrumentId`·`quantity`·`entryPrice`·`exitPriceType`·확정 가격 둘·`baselinePrice`·`baselineObservedAt`·`status`·`reservedAt`은 항상 non-null. `intentionId`·`buyTradeId`는 일반 경로(021)에서 항상 null, 교육 경로(계획, 016)에서 non-null. rate 둘은 PERCENT만 non-null. `closedAt`·`triggeredOrderId`는 PENDING이면 null. `replaySessionId`는 코인이면 항상 null(021 범위) |
 | `ExitPlanListResponse` | `List<ExitPlanResponse> content` | non-null, 빈 배열 허용 |
 | `PracticeObservationCreateRequest` | `Long exitPlanId` | non-null |
 | `PracticeObservationResponse` | `Long observationId`, `Long exitPlanId`, `BigDecimal currentPrice`, `LocalDateTime observedAt`, `Boolean closerToBoundary`, `String closerBoundary`, `String evidenceType` | 앞의 다섯 필드는 non-null; 뒤의 두 필드는 조건 미충족 시 null |
@@ -761,6 +765,42 @@ holding 관찰은 buyTrade→order에서 sessionId를 서버가 역추적한다(
 | `PracticeEvidenceResponse` | `Long favoriteId`, `LocalDateTime favoriteCreatedAt`, `Long intentionId`, `LocalDateTime intentionCreatedAt`, `Long buyTradeId`, `LocalDateTime buyTradeExecutedAt`, `Long exitPlanId`, `LocalDateTime exitPlanReservedAt`, `Long observationId`, `LocalDateTime observationObservedAt`, `String evidenceType`, `Long reflectionId`, `LocalDateTime reflectionCreatedAt` | 리소스 id·시각은 쌍으로 null/non-null; observation은 id·시각·type이 함께 null/non-null |
 
 진행 상태의 모든 조합, OCO fingerprint canonical JSON과 동시성·잠금 정본은 `docs/specs/016-investment-education-policy/plan.md`를 따른다.
+
+## 021 일반 리스크관리 OCO — 생성·취소 (production, `intentionId` 생략 일반 경로만)
+
+`docs/specs/021-general-risk-management-oco`(plan.md "API 설계"·"일반 경로 검증 순서")가 정본이다. Issue #348로 `ExitPlanController`(`POST /api/exit-plans`, `DELETE /api/exit-plans/{exitPlanId}`)가 production에 추가됐다 — **이번 구현은 `intentionId`를 생략하는 일반 경로만이다.** 목록 조회(`GET /api/exit-plans?status=`), 가격 트리거·자동 청산, `intentionId`를 지정하는 교육 경로 재접합은 아직 미착수다(위 `016` 절 참고).
+
+`POST`·`DELETE`는 두 경로가 라우트를 공유한다 — `intentionId`가 non-null이면 컨트롤러가 아니라 서비스 계층(`ExitPlanService.rejectUnsupportedEducationalPath`)이 무조건 400 `VALIDATION_ERROR`("intentionId를 지정하는 교육 경로는 아직 지원하지 않습니다.")로 거부한다.
+
+### OCO 예약 생성 (일반 경로)
+
+| Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|
+| POST | /api/exit-plans | 필수 `Idempotency-Key: <UUID>`(공백 불가, 최대 36자); body `{"holdingId":1,"quantity":10,"exitPriceType":"PRICE","stopLoss":65000,"takeProfit":75000}` 또는 `exitPriceType":"PERCENT"`면 `stopLossRate`·`takeProfitRate` (`ExitPlanCreateRequest`) | 최초 201, 같은 key 재요청 수렴 200 `ExitPlanResponse` | 400 `VALIDATION_ERROR`; 404 `NOT_FOUND`(holding 없음/타인 소유); 409 `EXIT_PLAN_ALREADY_EXISTS`, `INSUFFICIENT_QTY`, `EXIT_PLAN_INVALID_PRICE_RANGE`, `PRICE_UNAVAILABLE`, `IDEMPOTENCY_CONFLICT` | 021, Issue #348 |
+
+**요청 필드 (일반 경로 필수·금지, plan.md 필드 표)**
+
+- `holdingId`(양의 `Long`)·`quantity`(양수 `BigDecimal`)·`exitPriceType`(`PRICE`\|`PERCENT`)는 **필수**다. 셋 중 하나라도 없으면 400 `VALIDATION_ERROR`.
+- `intentionId`·`buyTradeId`·`instrumentId`는 일반 경로에 **존재하지 않는다** — 요청 body에 포함되면(교육 경로 필드 포함) 400 `VALIDATION_ERROR`로 거부한다. 이 PR 시점에는 `intentionId`를 지정하면 (교육 경로가 아직 구현되지 않았으므로) 항상 400이다.
+- `exitPriceType=PRICE`면 `stopLoss`·`takeProfit`이 둘 다 필수이고 `stopLossRate`·`takeProfitRate`는 금지(포함 시 400). `PERCENT`면 반대다.
+- `holding`이 존재하지 않거나 본인 소유가 아니면 404 `NOT_FOUND`(소유 여부 비노출).
+- `holding.instrument.market != CRYPTO`(주식 holding)면 400 `VALIDATION_ERROR`("코인 종목만 일반 리스크관리 OCO를 지원합니다.") — 이 spec 범위는 코인 전용이다.
+- 같은 holding에 이미 `PENDING` exit plan이 있으면(멱등 재현이 아닌 한) 409 `EXIT_PLAN_ALREADY_EXISTS`(이 판정이 아래 수량 판정보다 먼저다 — 기존 예약이 원인인데 `INSUFFICIENT_QTY`로 가려지지 않게).
+- `holding.getAvailableQuantity() < quantity`면 409 `INSUFFICIENT_QTY`.
+- 계산된 `stopLossPrice`·`takeProfitPrice`가 `0 < stopLossPrice < entryPrice < takeProfitPrice` 또는 `DECIMAL(18,8)` 상한을 벗어나면 409 `EXIT_PLAN_INVALID_PRICE_RANGE`.
+- 서버 유효 현재가가 없으면 409 `PRICE_UNAVAILABLE`(이 단계까지 도달하지 않으면 plan·condition·예약 흔적이 남지 않는다).
+- `Idempotency-Key` 헤더는 필수다. 같은 key로 같은 요청 본문(정규화된 fingerprint 일치)을 재현하면 200으로 과거 plan을 반환하고, 같은 key에 다른 본문이면 409 `IDEMPOTENCY_CONFLICT`.
+- `entryPrice`는 생성 시점 `holding.averagePrice` snapshot이다. 응답의 `intentionId`·`buyTradeId`는 일반 경로에서 항상 null이고 `holdingId`는 항상 non-null이다.
+
+### OCO 예약 취소 (경로 공통)
+
+| Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|
+| DELETE | /api/exit-plans/{exitPlanId} | 양의 `exitPlanId` path | 204, 본문 없음 | 404 `EXIT_PLAN_NOT_FOUND`; 409 `EXIT_PLAN_NOT_PENDING` | 021, Issue #348 |
+
+본인 소유의 `PENDING` exit plan만 취소한다. 존재하지 않거나 타인 소유는 존재를 숨겨 404 `EXIT_PLAN_NOT_FOUND`다(소유 여부 비노출). `PENDING`이 아닌(이미 체결·취소된 terminal) plan을 취소하려 하면 409 `EXIT_PLAN_NOT_PENDING`이다. 검증 순서는 항상 존재 → 상태다. 성공 시 `holding.releaseReservedQuantity(plan.getQuantity())`로 예약 수량을 정확히 한 번 반환하고 대기 중인 `exit_plan_conditions`도 함께 취소한다. 잠금 순서는 `holding → plan`(트리거와 동일해 데드락이 없다).
+
+이 절이 참조하는 `EXIT_PLAN_ALREADY_EXISTS`(409)·`EXIT_PLAN_INVALID_PRICE_RANGE`(409)·`EXIT_PLAN_NOT_FOUND`(404)·`EXIT_PLAN_NOT_PENDING`(409)은 모두 `ErrorCode` enum에 이미 존재한다.
 
 ## 026 시장가/지정가 매매 기반 투자 실습 (OCO 없이, holding-observations)
 
