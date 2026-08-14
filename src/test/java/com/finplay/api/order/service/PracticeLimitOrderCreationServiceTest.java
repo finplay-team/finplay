@@ -85,7 +85,7 @@ class PracticeLimitOrderCreationServiceTest {
 		Account account = account();
 		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID)).thenReturn(instrument);
 		when(practiceOrderAttributionPort.lockForOrder(USER_ID, instrument))
-			.thenReturn(Optional.of(new PracticeOrderAttributionDto(50L, 3L)));
+			.thenReturn(Optional.of(new PracticeOrderAttributionDto(50L, 3L, new BigDecimal("1000000"))));
 		when(orderRepository.existsByPracticePriceSessionIdAndStatus(SESSION_ID, OrderStatus.PENDING))
 			.thenReturn(false);
 		when(accountService.getAccountForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO))

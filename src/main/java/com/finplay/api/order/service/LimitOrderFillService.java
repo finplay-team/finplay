@@ -21,6 +21,7 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -45,7 +46,14 @@ public class LimitOrderFillService {
 	// 단독으로 체결해야 하는 호출부가 쓴다.
 	@Transactional
 	public void fillIfPending(Long orderId) {
-		fillOnePending(orderId);
+		fillOnePending(orderId, LocalDateTime.now(clock));
+	}
+
+	// attempt/run 정산(PracticeOrderSettlementService.settleCurrentRun)이 재시작·복기 등 과거 시각으로 재현할
+	// 체결가·시각을 명시해야 할 때 쓴다 — canonical 가격은 이 pricedAt 기준으로 계산된다.
+	@Transactional
+	public void fillIfPending(Long orderId, LocalDateTime pricedAt) {
+		fillOnePending(orderId, pricedAt);
 	}
 
 	// ADR-0025 — 파티션 워커가 청크 하나(최대 order.limit-fill-executor.batch-size건)를 트랜잭션 1개로
@@ -57,68 +65,80 @@ public class LimitOrderFillService {
 	// 감수하는 것이다(ADR-0025 §결정 3의 선택 이유).
 	@Transactional
 	public void fillBatch(List<Long> orderIds) {
+		LocalDateTime pricedAt = LocalDateTime.now(clock);
 		for (Long orderId : orderIds) {
-			fillOnePending(orderId);
+			fillOnePending(orderId, pricedAt);
 		}
 	}
 
 	// attempt 귀속은 비잠금 preflight로 scalar만 읽고 attempt를 먼저 잠근다. restart가 attempt 잠금을 잡은 채
 	// 주문을 취소했다면 대기 후 order FOR UPDATE의 PENDING 재확인에서 no-op 되므로 과거 run을 체결하지 않는다.
 	// 일반 주문은 preflight가 비어 기존 order → account → holding 잠금 순서를 그대로 사용한다.
-	private void fillOnePending(Long orderId) {
-		boolean currentPracticeRun = orderRepository.findPracticeFillAttribution(orderId)
-			.map(practiceOrderAttributionPort::lockForFill)
-			.orElse(true);
+	private void fillOnePending(Long orderId, LocalDateTime pricedAt) {
+		Optional<PracticeOrderFillContextDto> practiceContext = orderRepository.findPracticeFillAttribution(orderId)
+			.map(attribution -> practiceOrderAttributionPort.lockForFill(attribution, pricedAt));
 		Order order = orderRepository.findByIdForUpdate(orderId)
 			.orElseThrow(() -> new IllegalStateException("체결 대상 주문을 찾을 수 없습니다. orderId=" + orderId));
 		if (order.getStatus() != OrderStatus.PENDING) {
 			return;
 		}
-		if (!currentPracticeRun) {
+		if (practiceContext.isPresent() && !practiceContext.get().currentRun()) {
 			throw new BusinessException(ErrorCode.PRACTICE_STEP_LOCKED);
+		}
+		BigDecimal limitPrice = order.getLimitPrice();
+		BigDecimal executionPrice = practiceContext
+			.map(PracticeOrderFillContextDto::canonicalPrice)
+			.orElse(limitPrice);
+		if (practiceContext.isPresent() && !isTriggered(order, executionPrice)) {
+			return;
 		}
 
 		Account account = accountService.getAccountByIdForUpdate(order.getAccount().getId());
 
 		BigDecimal quantity = order.getQuantity();
-		BigDecimal limitPrice = order.getLimitPrice();
-		// 생성 시 예약과 동일 계산(spec.md) — 체결가가 항상 지정가로 고정되므로 예약액과 항상 정확히 일치한다.
-		LimitOrderFeeCalculator.Reservation reservation = LimitOrderFeeCalculator.calculate(quantity, limitPrice);
-		long amount = reservation.amount();
-		long fee = reservation.fee();
-		LocalDateTime now = LocalDateTime.now(clock);
+		LimitOrderFeeCalculator.Reservation reserved = LimitOrderFeeCalculator.calculate(quantity, limitPrice);
+		LimitOrderFeeCalculator.Reservation execution = LimitOrderFeeCalculator.calculate(quantity, executionPrice);
+		long amount = execution.amount();
+		long fee = execution.fee();
 
 		if (order.getSide() == OrderSide.SELL) {
-			fillSell(order, account, quantity, limitPrice, amount, fee, now);
+			fillSell(order, account, quantity, executionPrice, amount, fee, pricedAt);
 		} else {
-			fillBuy(order, account, quantity, limitPrice, amount, fee, now);
+			fillBuy(
+				order, account, quantity, executionPrice, amount, fee, reserved.total(), practiceContext.isPresent(),
+				pricedAt);
 		}
 	}
 
 	private void fillBuy(
-		Order order, Account account, BigDecimal quantity, BigDecimal limitPrice, long amount, long fee,
-		LocalDateTime now) {
+		Order order, Account account, BigDecimal quantity, BigDecimal executionPrice, long amount, long fee,
+		long reservedCash, boolean canonicalPracticeFill, LocalDateTime now) {
 		Instrument instrument = order.getInstrument();
 
-		account.confirmReservedCash(amount + fee);
+		if (canonicalPracticeFill) {
+			account.releaseReservedCash(reservedCash);
+			account.deductCash(amount + fee);
+		} else {
+			account.confirmReservedCash(amount + fee);
+		}
 		// 샌드박스(튜토리얼) 종목 지정가 매수 체결의 현금 순변동도 별도로 누적한다(spec 033 SANDBOX-EXCL-006).
 		if (instrument.isTutorialSample()) {
 			account.addSandboxCashAdjustment(-(amount + fee));
 		}
 
 		Trade trade = Trade.of(
-			order, account, instrument, null, order.getSide(), limitPrice, quantity, amount, fee, null, now, now);
+			order, account, instrument, null, order.getSide(), executionPrice, quantity, amount, fee, null, now, now);
 		tradeRepository.save(trade);
 
 		// 기존 시장가 매수와 동일한 lot 생성 로직 재사용 — holding이 없으면(신규 종목 첫 매수) 여기서 새로 만든다.
-		portfolioBuyService.applyBuyTrade(account, instrument, trade, quantity, limitPrice, fee, now);
+		portfolioBuyService.applyBuyTrade(account, instrument, trade, quantity, executionPrice, fee, now);
 
 		order.markFilled();
 		practiceOrderAttributionPort.createFirstBuyRiskSnapshot(order, trade, now);
 	}
 
 	private void fillSell(
-		Order order, Account account, BigDecimal quantity, BigDecimal limitPrice, long amount, long fee,
+		Order order, Account account, BigDecimal quantity, BigDecimal executionPrice, long amount, long fee,
 		LocalDateTime now) {
 		Instrument instrument = order.getInstrument();
 
@@ -128,7 +148,7 @@ public class LimitOrderFillService {
 		holding.releaseReservedQuantity(quantity);
 
 		Trade trade = Trade.of(
-			order, account, instrument, null, order.getSide(), limitPrice, quantity, amount, fee, null, now, now);
+			order, account, instrument, null, order.getSide(), executionPrice, quantity, amount, fee, null, now, now);
 		tradeRepository.save(trade);
 
 		// 기존 FIFO lot 소비 재사용 — releaseReservedQuantity(예약 해제)와 applySell(실보유 차감)을 함께 호출한다.
@@ -140,5 +160,11 @@ public class LimitOrderFillService {
 		order.markFilled();
 		// 커밋 이후(after-commit)에만 랭킹에 반영되도록 이벤트만 발행한다 — 기존 시장가 매도와 동일 훅 재사용.
 		eventPublisher.publishEvent(new RealizedPnlUpdatedEvent(account.getId()));
+	}
+
+	private boolean isTriggered(Order order, BigDecimal canonicalPrice) {
+		return order.getSide() == OrderSide.BUY
+			? order.getLimitPrice().compareTo(canonicalPrice) >= 0
+			: order.getLimitPrice().compareTo(canonicalPrice) <= 0;
 	}
 }

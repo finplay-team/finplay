@@ -186,7 +186,7 @@ class OrderExecutionServiceTest {
 		User user = testUser();
 		stubHappyPath(instrument, account, user, new BigDecimal("10000"));
 		when(practiceOrderAttributionPort.lockForOrder(USER_ID, instrument))
-			.thenReturn(Optional.of(new PracticeOrderAttributionDto(50L, 3L)));
+			.thenReturn(Optional.of(new PracticeOrderAttributionDto(50L, 3L, new BigDecimal("10000"))));
 		OrderCreateRequest request = buyRequest(Market.CRYPTO, instrument.getId(), "1");
 
 		orderExecutionService.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, request);
@@ -195,6 +195,10 @@ class OrderExecutionServiceTest {
 		verify(orderRepository).save(orderCaptor.capture());
 		assertThat(orderCaptor.getValue().getPracticeAttemptId()).isEqualTo(50L);
 		assertThat(orderCaptor.getValue().getPracticeAttemptRunNumber()).isEqualTo(3L);
+		ArgumentCaptor<Trade> tradeCaptor = ArgumentCaptor.forClass(Trade.class);
+		verify(tradeRepository).save(tradeCaptor.capture());
+		assertThat(tradeCaptor.getValue().getPrice()).isEqualByComparingTo("10000");
+		verifyNoInteractions(priceQueryService);
 	}
 
 	@Test

@@ -38,8 +38,10 @@ class PracticeAttemptRestartServiceTest {
 	private final PracticeRiskSnapshotRepository riskSnapshotRepository = mock(
 		PracticeRiskSnapshotRepository.class);
 	private final PracticeRunRestartOrderService orderRestartService = mock(PracticeRunRestartOrderService.class);
+	private final PracticeAttemptCanonicalPriceService canonicalPriceService = mock(
+		PracticeAttemptCanonicalPriceService.class);
 	private final PracticeAttemptRestartService service = new PracticeAttemptRestartService(
-		attemptRepository, riskSnapshotRepository, orderRestartService,
+		attemptRepository, riskSnapshotRepository, orderRestartService, canonicalPriceService,
 		Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC));
 
 	@Test

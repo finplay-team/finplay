@@ -49,6 +49,8 @@ class PracticeHoldingObservationServiceTest {
 	private final MarketPracticeChainResolutionService chainResolutionService = mock(
 		MarketPracticeChainResolutionService.class);
 	private final PriceQueryService priceQueryService = mock(PriceQueryService.class);
+	private final PracticeAttemptCanonicalPriceService canonicalPriceService = mock(
+		PracticeAttemptCanonicalPriceService.class);
 	private final PracticePriceObservationService practicePriceObservationService = mock(
 		PracticePriceObservationService.class);
 	private final ReferencePriceCalculator referencePriceCalculator = mock(ReferencePriceCalculator.class);
@@ -58,7 +60,8 @@ class PracticeHoldingObservationServiceTest {
 	private final Clock clock = Clock.fixed(OBSERVED_AT.toInstant(ZoneOffset.UTC), ZoneOffset.UTC);
 
 	private final PracticeHoldingObservationService service = new PracticeHoldingObservationService(
-		holdingService, chainResolutionService, priceQueryService, practicePriceObservationService,
+		holdingService, chainResolutionService, priceQueryService, canonicalPriceService,
+		practicePriceObservationService,
 		referencePriceCalculator, evidenceJudgmentService, observationRepository, clock);
 
 	private Holding holding;
@@ -189,6 +192,36 @@ class PracticeHoldingObservationServiceTest {
 		InOrder inOrder = Mockito.inOrder(referencePriceCalculator, priceQueryService);
 		inOrder.verify(referencePriceCalculator).calculate(chain);
 		inOrder.verify(priceQueryService).getPrice(INSTRUMENT_ID);
+	}
+
+	@Test
+	void createObservationUsesCanonicalPriceForTutorialSampleAndSkipsOtherPriceSources() {
+		when(instrument.isTutorialSample()).thenReturn(true);
+		when(holdingService.findHoldingForOwner(USER_ID, HOLDING_ID)).thenReturn(Optional.of(holding));
+		ResolvedPracticeChainDto chain = completedChain();
+		when(chainResolutionService.resolveForInstrument(USER_ID, PracticeIntentionService.TUTORIAL_KEY, INSTRUMENT_ID))
+			.thenReturn(Optional.of(chain));
+		ReferencePriceLines referenceLines = new ReferencePriceLines(new BigDecimal("90"), new BigDecimal("120"));
+		when(referencePriceCalculator.calculate(chain)).thenReturn(Optional.of(referenceLines));
+		BigDecimal canonicalPrice = new BigDecimal("10932.45600000");
+		when(canonicalPriceService.canonicalPriceForMutation(USER_ID, instrument, OBSERVED_AT))
+			.thenReturn(canonicalPrice);
+		when(observationRepository.findByUserIdAndHoldingIdOrderByObservedAtAsc(USER_ID, HOLDING_ID))
+			.thenReturn(List.of());
+		ObservationEvidenceJudgment judgment = new ObservationEvidenceJudgment(false, null, null);
+		when(evidenceJudgmentService.judgeObservationEvidence(
+			chain.buyTradeEntryPrice(), referenceLines.referenceStopLossPrice(),
+			referenceLines.referenceTakeProfitPrice(), canonicalPrice, List.of(), OBSERVED_AT))
+			.thenReturn(judgment);
+		when(observationRepository.save(any(PracticeMarketObservation.class)))
+			.thenAnswer(invocation -> invocation.getArgument(0));
+
+		PracticeHoldingObservationResponse response = service.createObservation(
+			USER_ID, new PracticeHoldingObservationCreateRequest(HOLDING_ID));
+
+		assertThat(response.currentPrice()).isEqualByComparingTo(canonicalPrice);
+		verify(priceQueryService, never()).getPrice(any());
+		verify(practicePriceObservationService, never()).findObservationPrice(any(), any(), any());
 	}
 
 	@Test

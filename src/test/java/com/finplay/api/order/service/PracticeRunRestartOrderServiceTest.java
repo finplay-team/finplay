@@ -53,8 +53,7 @@ class PracticeRunRestartOrderServiceTest {
 	private final PriceQueryService priceQueryService = mock(PriceQueryService.class);
 	private final PortfolioSellService portfolioSellService = mock(PortfolioSellService.class);
 	private final PracticeRunRestartOrderService service = new PracticeRunRestartOrderService(
-		orderRepository, tradeRepository, accountService, instrumentService, priceQueryService,
-		portfolioSellService);
+		orderRepository, tradeRepository, accountService, instrumentService, portfolioSellService);
 
 	@Test
 	void cleanupCurrentRunCancelsPendingBuyAndSellAndReturnsReservationsExactlyOnce() {
@@ -144,7 +143,7 @@ class PracticeRunRestartOrderServiceTest {
 	void cleanupCurrentRunWithoutInstrumentAllowsOnlyEmptyOrderSet() {
 		when(orderRepository.findPracticeRunOrdersForUpdate(ATTEMPT_ID, 1L)).thenReturn(List.of());
 		PracticeRunRestartCommand command = new PracticeRunRestartCommand(
-			ATTEMPT_ID, 1L, USER_ID, Market.CRYPTO, null, NOW);
+			ATTEMPT_ID, 1L, USER_ID, Market.CRYPTO, null, null, NOW);
 
 		service.cleanupCurrentRun(command);
 
@@ -164,7 +163,7 @@ class PracticeRunRestartOrderServiceTest {
 
 	private static PracticeRunRestartCommand command() {
 		return new PracticeRunRestartCommand(
-			ATTEMPT_ID, 1L, USER_ID, Market.CRYPTO, INSTRUMENT_ID, NOW);
+			ATTEMPT_ID, 1L, USER_ID, Market.CRYPTO, INSTRUMENT_ID, new BigDecimal("100000"), NOW);
 	}
 
 	private static Fixture fixture() {

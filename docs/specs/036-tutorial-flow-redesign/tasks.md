@@ -14,9 +14,11 @@
   canonical price 보상 SELL, run 증가와 선택 상태 초기화를 한 트랜잭션으로 구현한다. 다른 사용자·시장·run·
   일반 주문 격리, 부분 매도, 수량 불일치 rollback, 동시 restart, 완료 attempt 무변경 replay를 통합 검증한다.
 
-- [ ] **결정적 canonical price와 29+1 차트** — attempt seed/version/anchor 기반 순수 생성기, 12:00 시작
-  3초=1분 clock, 29개 완결 일봉+현재 일봉 API를 구현하고 샘플 quote·시장가/교육 지정가 체결·관찰·보상
-  SELL이 같은 minute close를 쓰게 연결한다. golden vector, 시간 경계, reload·Spring Context 재생성 테스트를
+- [x] **결정적 canonical price와 29+1 차트** — attempt seed/version/anchor 기반 순수 생성기, 12:00 시작
+  3초=1분 clock, 부수효과 없는 29개 완결 일봉+현재 일봉 GET과 명시적
+  `POST /attempts/{market}/tick` canonical settlement/live update를 구현한다. tick은 샘플 quote·시장가/교육
+  지정가 체결·관찰·보상 SELL과 같은 minute close를 사용하고 클라이언트가 3초마다 polling한다. golden
+  vector, 시간 경계, 반복 GET 무변경, 같은 minute tick 재시도, reload·Spring Context 재생성 테스트를
   추가한다.
 
 - [ ] **진행·완료 경로 통합과 회귀 테스트** — `GET /api/education/practice`를 attempt/risk/replay evidence로
@@ -24,6 +26,7 @@
   `026`·`030`·`031`·`033` 및 실제 종목 주문/가격 회귀를 함께 실행한다.
 
 - [ ] **프론트엔드 companion·API/PRD 동기화** — 프론트에서 사전 의도 폼을 제거하고 서버 attempt 진입,
-  restart 확인, 자동 risk 카드, 단일 29+1 polling chart, 완료 read-only replay를 연결한다. 실제 controller
+  restart 확인, 자동 risk 카드, 최초 순수 chart GET + 3초 간격 tick POST 기반 단일 29+1 live chart,
+  완료 read-only replay를 연결한다. 실제 controller
   mapping에 맞춰 `docs/api-routes.md`·`docs/api-contracts.md`를 함께 갱신하고, 기능 완료 시 `docs/prd.md` §3에
   TUTORIAL-FLOW-001~012와 PR 번호를 반영한 뒤 대상 테스트와 전체 `gradlew build` 결과를 기록한다.

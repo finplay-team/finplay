@@ -91,7 +91,7 @@ class LimitOrderCreationServiceTest {
 		Account account = account();
 		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
 		when(practiceOrderAttributionPort.lockForOrder(USER_ID, instrument))
-			.thenReturn(Optional.of(new PracticeOrderAttributionDto(50L, 3L)));
+			.thenReturn(Optional.of(new PracticeOrderAttributionDto(50L, 3L, new BigDecimal("1000000"))));
 		when(accountService.getAccountForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO))
 			.thenReturn(account);
 		when(userQueryService.getUser(USER_ID)).thenReturn(testUser());
@@ -116,7 +116,7 @@ class LimitOrderCreationServiceTest {
 		Holding holding = mock(Holding.class);
 		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
 		when(practiceOrderAttributionPort.lockForOrder(USER_ID, instrument))
-			.thenReturn(Optional.of(new PracticeOrderAttributionDto(50L, 3L)));
+			.thenReturn(Optional.of(new PracticeOrderAttributionDto(50L, 3L, new BigDecimal("1000000"))));
 		when(accountService.getAccountFor(USER_ID, com.finplay.api.account.domain.Market.CRYPTO))
 			.thenReturn(account);
 		when(portfolioSellService.getHoldingForUpdateOrThrow(account, instrument, BigDecimal.ONE))

@@ -101,7 +101,8 @@ class LimitOrderFillServiceTest {
 		PracticeOrderFillAttributionDto attribution = new PracticeOrderFillAttributionDto(
 			20L, 1L, 30L, instrument.getId());
 		when(orderRepository.findPracticeFillAttribution(order.getId())).thenReturn(Optional.of(attribution));
-		when(practiceOrderAttributionPort.lockForFill(attribution)).thenReturn(true);
+		when(practiceOrderAttributionPort.lockForFill(attribution, NOW))
+			.thenReturn(new PracticeOrderFillContextDto(true, new BigDecimal("900000")));
 		when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
 		when(accountService.getAccountByIdForUpdate(account.getId())).thenReturn(account);
 
@@ -109,8 +110,13 @@ class LimitOrderFillServiceTest {
 
 		InOrder lockOrder = org.mockito.Mockito.inOrder(orderRepository, practiceOrderAttributionPort);
 		lockOrder.verify(orderRepository).findPracticeFillAttribution(order.getId());
-		lockOrder.verify(practiceOrderAttributionPort).lockForFill(attribution);
+		lockOrder.verify(practiceOrderAttributionPort).lockForFill(attribution, NOW);
 		lockOrder.verify(orderRepository).findByIdForUpdate(order.getId());
+		ArgumentCaptor<Trade> tradeCaptor = ArgumentCaptor.forClass(Trade.class);
+		verify(tradeRepository).save(tradeCaptor.capture());
+		assertThat(tradeCaptor.getValue().getPrice()).isEqualByComparingTo("900000");
+		assertThat(account.getReservedCash()).isZero();
+		assertThat(account.getCashBalance()).isEqualTo(10_000_000L - 90_045L);
 	}
 
 	@Test
@@ -125,7 +131,7 @@ class LimitOrderFillServiceTest {
 
 		service.fillIfPending(order.getId());
 
-		verify(practiceOrderAttributionPort, never()).lockForFill(any());
+		verify(practiceOrderAttributionPort, never()).lockForFill(any(), any());
 	}
 
 	@Test
@@ -136,7 +142,8 @@ class LimitOrderFillServiceTest {
 		PracticeOrderFillAttributionDto attribution = new PracticeOrderFillAttributionDto(
 			20L, 1L, 30L, instrument.getId());
 		when(orderRepository.findPracticeFillAttribution(order.getId())).thenReturn(Optional.of(attribution));
-		when(practiceOrderAttributionPort.lockForFill(attribution)).thenReturn(false);
+		when(practiceOrderAttributionPort.lockForFill(attribution, NOW))
+			.thenReturn(new PracticeOrderFillContextDto(false, null));
 		when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
 
 		assertThatThrownBy(() -> service.fillIfPending(order.getId()))

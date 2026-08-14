@@ -22,6 +22,7 @@ import com.finplay.api.order.domain.OrderType;
 import com.finplay.api.order.domain.Trade;
 import com.finplay.api.order.service.PracticeOrderAttributionDto;
 import com.finplay.api.order.service.PracticeOrderFillAttributionDto;
+import com.finplay.api.order.service.PracticeOrderFillContextDto;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -39,8 +40,11 @@ class PracticeAttemptOrderAttributionServiceTest {
 	private final PracticeAttemptRepository practiceAttemptRepository = mock(PracticeAttemptRepository.class);
 	private final PracticeRiskSnapshotRepository practiceRiskSnapshotRepository = mock(
 		PracticeRiskSnapshotRepository.class);
+	private final PracticeAttemptCanonicalPriceService canonicalPriceService = mock(
+		PracticeAttemptCanonicalPriceService.class);
 	private final PracticeAttemptOrderAttributionService service = new PracticeAttemptOrderAttributionService(
-		practiceAttemptRepository, practiceRiskSnapshotRepository);
+		practiceAttemptRepository, practiceRiskSnapshotRepository, canonicalPriceService,
+		java.time.Clock.fixed(NOW.toInstant(java.time.ZoneOffset.UTC), java.time.ZoneOffset.UTC));
 
 	@Test
 	void lockForOrderReturnsCurrentAttemptForTutorialSample() {
@@ -48,10 +52,11 @@ class PracticeAttemptOrderAttributionServiceTest {
 		PracticeAttempt attempt = inProgressAttempt(instrument);
 		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
 			.thenReturn(Optional.of(attempt));
+		when(canonicalPriceService.canonicalPrice(attempt, NOW)).thenReturn(new BigDecimal("100.00000000"));
 
 		Optional<PracticeOrderAttributionDto> result = service.lockForOrder(USER_ID, instrument);
 
-		assertThat(result).contains(new PracticeOrderAttributionDto(ATTEMPT_ID, 1L));
+		assertThat(result).contains(new PracticeOrderAttributionDto(ATTEMPT_ID, 1L, new BigDecimal("100.00000000")));
 	}
 
 	@Test
@@ -71,13 +76,16 @@ class PracticeAttemptOrderAttributionServiceTest {
 		PracticeAttempt attempt = inProgressAttempt(instrument);
 		when(practiceAttemptRepository.findByIdForUpdate(ATTEMPT_ID)).thenReturn(Optional.of(attempt));
 
-		boolean current = service.lockForFill(
-			new PracticeOrderFillAttributionDto(ATTEMPT_ID, 1L, USER_ID, INSTRUMENT_ID));
-		boolean stale = service.lockForFill(
-			new PracticeOrderFillAttributionDto(ATTEMPT_ID, 2L, USER_ID, INSTRUMENT_ID));
+		when(canonicalPriceService.canonicalPrice(attempt, NOW)).thenReturn(new BigDecimal("100.00000000"));
+		PracticeOrderFillContextDto current = service.lockForFill(
+			new PracticeOrderFillAttributionDto(ATTEMPT_ID, 1L, USER_ID, INSTRUMENT_ID), NOW);
+		PracticeOrderFillContextDto stale = service.lockForFill(
+			new PracticeOrderFillAttributionDto(ATTEMPT_ID, 2L, USER_ID, INSTRUMENT_ID), NOW);
 
-		assertThat(current).isTrue();
-		assertThat(stale).isFalse();
+		assertThat(current.currentRun()).isTrue();
+		assertThat(current.canonicalPrice()).isEqualByComparingTo("100.00000000");
+		assertThat(stale.currentRun()).isFalse();
+		assertThat(stale.canonicalPrice()).isNull();
 	}
 
 	@Test

@@ -39,8 +39,10 @@ class PracticeOrderSettlementServiceTest {
 	void settleOnTickFillsOnlyOrdersWhoseLimitPriceIsAtOrAboveCurrentPrice() {
 		Order fillable = practiceOrder(1L, "10000");
 		Order notFillable = practiceOrder(2L, "9000");
-		when(orderRepository.findPendingBySessionIdForUpdate(SESSION_ID))
-			.thenReturn(List.of(fillable, notFillable));
+		when(orderRepository.findPendingIdsBySessionId(SESSION_ID))
+			.thenReturn(List.of(fillable.getId(), notFillable.getId()));
+		when(orderRepository.findById(fillable.getId())).thenReturn(java.util.Optional.of(fillable));
+		when(orderRepository.findById(notFillable.getId())).thenReturn(java.util.Optional.of(notFillable));
 
 		service.settleOnTick(SESSION_ID, new BigDecimal("9500"), false);
 
@@ -51,7 +53,8 @@ class PracticeOrderSettlementServiceTest {
 	@Test
 	void settleOnTickDoesNotCancelAnyOrderWhenNotLastTick() {
 		Order pending = practiceOrder(3L, "9000");
-		when(orderRepository.findPendingBySessionIdForUpdate(SESSION_ID)).thenReturn(List.of(pending));
+		when(orderRepository.findPendingIdsBySessionId(SESSION_ID)).thenReturn(List.of(pending.getId()));
+		when(orderRepository.findById(pending.getId())).thenReturn(java.util.Optional.of(pending));
 
 		service.settleOnTick(SESSION_ID, new BigDecimal("9500"), false);
 
@@ -62,8 +65,10 @@ class PracticeOrderSettlementServiceTest {
 	void settleOnTickJudgesFillFirstThenCancelsOnlyRemainingPendingOrdersOnLastTick() {
 		Order fillsAtLastTick = practiceOrder(4L, "10000");
 		Order staysPending = practiceOrder(5L, "9000");
-		when(orderRepository.findPendingBySessionIdForUpdate(SESSION_ID))
-			.thenReturn(List.of(fillsAtLastTick, staysPending));
+		when(orderRepository.findPendingIdsBySessionId(SESSION_ID))
+			.thenReturn(List.of(fillsAtLastTick.getId(), staysPending.getId()), List.of(staysPending.getId()));
+		when(orderRepository.findById(fillsAtLastTick.getId())).thenReturn(java.util.Optional.of(fillsAtLastTick));
+		when(orderRepository.findById(staysPending.getId())).thenReturn(java.util.Optional.of(staysPending));
 		// fillIfPending은 실제 서비스에서 같은 영속성 컨텍스트의 엔티티를 체결 확정한다 — 단위 테스트에서는
 		// 호출 시 markFilled()를 직접 실행해 이후 getStatus() 판정이 그 결과를 반영하도록 흉내낸다.
 		doAnswer(invocation -> {
@@ -82,11 +87,21 @@ class PracticeOrderSettlementServiceTest {
 
 	@Test
 	void settleOnTickLoadsPendingOrdersScopedToGivenSessionOnly() {
-		when(orderRepository.findPendingBySessionIdForUpdate(SESSION_ID)).thenReturn(List.of());
+		when(orderRepository.findPendingIdsBySessionId(SESSION_ID)).thenReturn(List.of(), List.of());
 
 		service.settleOnTick(SESSION_ID, new BigDecimal("9500"), true);
 
-		verify(orderRepository).findPendingBySessionIdForUpdate(SESSION_ID);
+		verify(orderRepository, org.mockito.Mockito.times(2)).findPendingIdsBySessionId(SESSION_ID);
+	}
+
+	@Test
+	void settleCurrentRunPassesSameCanonicalPricingTimeToEveryPendingOrder() {
+		when(orderRepository.findPendingPracticeRunOrderIds(11L, 3L)).thenReturn(List.of(1L, 2L));
+
+		service.settleCurrentRun(11L, 3L, NOW);
+
+		verify(limitOrderFillService).fillIfPending(1L, NOW);
+		verify(limitOrderFillService).fillIfPending(2L, NOW);
 	}
 
 	private Order practiceOrder(long orderId, String limitPrice) {

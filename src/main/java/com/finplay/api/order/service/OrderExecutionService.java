@@ -13,7 +13,6 @@ import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.InstrumentService;
 import com.finplay.api.market.service.OrderExecutionPriceDto;
 import com.finplay.api.market.service.PriceQueryService;
-import com.finplay.api.market.service.PriceQuoteDto;
 import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.domain.OrderType;
@@ -110,7 +109,7 @@ public class OrderExecutionService {
 		Account account = getAccountForUpdateFor(userId, request.market());
 
 		// 설계 노트 2: 매수 최소구현 견본 — marketStatus·가격·세션 단일 관측→최소금액→amount/fee 계산(공유)
-		OrderPricing pricing = priceOrder(request.market(), instrument, quantity);
+		OrderPricing pricing = priceOrder(request.market(), instrument, quantity, practiceAttribution);
 		long cashRequired = pricing.amount() + pricing.fee();
 		if (account.getAvailableCash() < cashRequired) {
 			throw new BusinessException(ErrorCode.INSUFFICIENT_CASH);
@@ -157,7 +156,7 @@ public class OrderExecutionService {
 		Account account = getAccountForUpdateFor(userId, request.market());
 		Holding holding = portfolioSellService.getHoldingForUpdateOrThrow(account, instrument, quantity);
 
-		OrderPricing pricing = priceOrder(request.market(), instrument, quantity);
+		OrderPricing pricing = priceOrder(request.market(), instrument, quantity, practiceAttribution);
 
 		User user = userQueryService.getUser(userId);
 		LocalDateTime now = LocalDateTime.now(clock);
@@ -276,10 +275,17 @@ public class OrderExecutionService {
 
 	// 설계 노트 1: getOrderExecutionPrice 한 관측에서 marketStatus·가격·세션을 확정한 뒤 최소주문금액 검증과
 	// amount/fee 계산(FLOOR)을 매수·매도가 공유한다.
-	private OrderPricing priceOrder(Market market, Instrument instrument, BigDecimal quantity) {
-		OrderExecutionPriceDto executionPrice = priceQueryService.getOrderExecutionPrice(instrument);
-		PriceQuoteDto priceQuote = executionPrice.priceQuote();
-		BigDecimal price = priceQuote.price();
+	private OrderPricing priceOrder(
+		Market market,
+		Instrument instrument,
+		BigDecimal quantity,
+		Optional<PracticeOrderAttributionDto> practiceAttribution) {
+		OrderExecutionPriceDto executionPrice = practiceAttribution.isPresent()
+			? null
+			: priceQueryService.getOrderExecutionPrice(instrument);
+		BigDecimal price = practiceAttribution
+			.map(PracticeOrderAttributionDto::canonicalPrice)
+			.orElseGet(() -> executionPrice.priceQuote().price());
 		BigDecimal rawAmount = price.multiply(quantity);
 
 		validateMinOrderAmount(market, rawAmount, instrument);
@@ -287,7 +293,8 @@ public class OrderExecutionService {
 		long amount = rawAmount.setScale(0, RoundingMode.FLOOR).longValueExact();
 		BigDecimal feeRate = market == Market.STOCK ? STOCK_FEE_RATE : CRYPTO_FEE_RATE;
 		long fee = BigDecimal.valueOf(amount).multiply(feeRate).setScale(0, RoundingMode.FLOOR).longValueExact();
-		return new OrderPricing(price, amount, fee, executionPrice.stockReplaySession());
+		return new OrderPricing(
+			price, amount, fee, executionPrice == null ? null : executionPrice.stockReplaySession());
 	}
 
 	// 설계 노트 1: 코인 최소주문금액 검증(내림 전 금액으로 비교). 매수·매도 공유 — 사람 확인 결과 대칭 적용 확정.

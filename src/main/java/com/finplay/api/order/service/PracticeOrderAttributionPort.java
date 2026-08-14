@@ -11,7 +11,8 @@ public interface PracticeOrderAttributionPort {
 
 	Optional<PracticeOrderAttributionDto> lockForOrder(Long userId, Instrument instrument);
 
-	boolean lockForFill(PracticeOrderFillAttributionDto attribution);
+	PracticeOrderFillContextDto lockForFill(
+		PracticeOrderFillAttributionDto attribution, LocalDateTime pricedAt);
 
 	void createFirstBuyRiskSnapshot(Order order, Trade trade, LocalDateTime createdAt);
 }

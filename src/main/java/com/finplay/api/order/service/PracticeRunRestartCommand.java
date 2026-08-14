@@ -2,6 +2,7 @@
 package com.finplay.api.order.service;
 
 import com.finplay.api.market.domain.Market;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 public record PracticeRunRestartCommand(
@@ -10,5 +11,6 @@ public record PracticeRunRestartCommand(
 	Long userId,
 	Market market,
 	Long instrumentId,
+	BigDecimal canonicalPrice,
 	LocalDateTime restartedAt) {
 }

@@ -33,6 +33,7 @@ public class PracticeHoldingObservationService {
 	private final HoldingService holdingService;
 	private final MarketPracticeChainResolutionService chainResolutionService;
 	private final PriceQueryService priceQueryService;
+	private final PracticeAttemptCanonicalPriceService canonicalPriceService;
 	private final PracticePriceObservationService practicePriceObservationService;
 	private final ReferencePriceCalculator referencePriceCalculator;
 	private final EvidenceJudgmentService evidenceJudgmentService;
@@ -62,14 +63,15 @@ public class PracticeHoldingObservationService {
 		// 마지막 실제 가격을 그대로 관찰 근거로 받아들인다(의도적 승계, 032 PRICE-STALE-005, 이슈 #355).
 		// 가격이 아예 없으면(연결 끊김·미수신) getPrice가 스스로 PRICE_UNAVAILABLE(409)을 던진다
 		// (이슈 #321, plan.md "holding 관찰 연결").
-		BigDecimal observedPrice = practicePriceObservationService
-			.findObservationPrice(userId, chain.buyTradeId(), holding.getInstrument().getId())
-			.orElseGet(() -> priceQueryService.getPrice(holding.getInstrument().getId()).price());
+		LocalDateTime observedAt = LocalDateTime.now(clock);
+		BigDecimal observedPrice = holding.getInstrument().isTutorialSample()
+			? canonicalPriceService.canonicalPriceForMutation(userId, holding.getInstrument(), observedAt)
+			: practicePriceObservationService
+				.findObservationPrice(userId, chain.buyTradeId(), holding.getInstrument().getId())
+				.orElseGet(() -> priceQueryService.getPrice(holding.getInstrument().getId()).price());
 
 		List<PracticeMarketObservation> existingObservations = practiceMarketObservationRepository
 			.findByUserIdAndHoldingIdOrderByObservedAtAsc(userId, holding.getId());
-		LocalDateTime observedAt = LocalDateTime.now(clock);
-
 		ObservationEvidenceJudgment judgment = evidenceJudgmentService.judgeObservationEvidence(
 			chain.buyTradeEntryPrice(),
 			referenceLines.referenceStopLossPrice(),

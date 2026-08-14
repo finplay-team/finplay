@@ -60,6 +60,7 @@ public interface OrderRepository extends JpaRepository<Order, Long>, OrderReposi
 		where o.instrument.id = :instrumentId and o.status = com.finplay.api.order.domain.OrderStatus.PENDING
 		  and o.orderType = com.finplay.api.order.domain.OrderType.LIMIT
 		  and o.practicePriceSessionId is null
+		  and o.practiceAttemptId is null
 		  and ((o.side = com.finplay.api.order.domain.OrderSide.BUY and o.limitPrice >= :price)
 		    or (o.side = com.finplay.api.order.domain.OrderSide.SELL and o.limitPrice <= :price))
 		order by o.requestedAt asc, o.id asc
@@ -82,4 +83,27 @@ public interface OrderRepository extends JpaRepository<Order, Long>, OrderReposi
 		""")
 	List<Order> findPendingBySessionIdForUpdate(@Param("sessionId")
 	Long sessionId);
+
+	@Query("""
+		select o.id from Order o
+		where o.practicePriceSessionId = :sessionId
+		  and o.status = com.finplay.api.order.domain.OrderStatus.PENDING
+		order by o.id asc
+		""")
+	List<Long> findPendingIdsBySessionId(@Param("sessionId")
+	Long sessionId);
+
+	@Query("""
+		select o.id from Order o
+		where o.practiceAttemptId = :attemptId
+		  and o.practiceAttemptRunNumber = :runNumber
+		  and o.status = com.finplay.api.order.domain.OrderStatus.PENDING
+		  and o.orderType = com.finplay.api.order.domain.OrderType.LIMIT
+		order by o.id asc
+		""")
+	List<Long> findPendingPracticeRunOrderIds(
+		@Param("attemptId")
+		Long attemptId,
+		@Param("runNumber")
+		long runNumber);
 }

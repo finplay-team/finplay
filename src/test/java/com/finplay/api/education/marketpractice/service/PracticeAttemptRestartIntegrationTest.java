@@ -58,6 +58,8 @@ class PracticeAttemptRestartIntegrationTest {
 	@Autowired
 	private PracticeAttemptRestartService restartService;
 	@Autowired
+	private PracticeAttemptChartService chartService;
+	@Autowired
 	private UserRepository userRepository;
 	@Autowired
 	private AccountRepository accountRepository;
@@ -203,6 +205,8 @@ class PracticeAttemptRestartIntegrationTest {
 			quantity, 135_000L, 67L, null, NOW.minusMinutes(1), NOW.minusMinutes(1)));
 		holdingLotRepository.saveAndFlush(HoldingLot.create(
 			holding, buyTrade, quantity, BigDecimal.valueOf(90_000), 67L, NOW.minusMinutes(1), NOW.minusMinutes(1)));
+		BigDecimal chartCurrentClose = chartService.getChart(fixture.user().getId(), Market.CRYPTO)
+			.candles().get(29).close();
 
 		PracticeAttemptResponse response = restartService.restart(fixture.user().getId(), Market.CRYPTO);
 
@@ -217,6 +221,7 @@ class PracticeAttemptRestartIntegrationTest {
 		Trade auditTrade = tradeRepository.findByOrderId(auditOrder.getId()).orElseThrow();
 		assertThat(auditTrade.getSide()).isEqualTo(OrderSide.SELL);
 		assertThat(auditTrade.getQuantity()).isEqualByComparingTo(quantity);
+		assertThat(auditTrade.getPrice()).isEqualByComparingTo(chartCurrentClose);
 		assertThat(auditTrade.getRealizedPnl()).isNotNull();
 		List<TradeAllocation> allocations = tradeAllocationRepository
 			.findAllBySellTradeIdOrderByLotExecutedAtAscLotIdAsc(auditTrade.getId());

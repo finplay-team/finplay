@@ -27,7 +27,8 @@ ADR-0012가 명시적으로 인메모리로 정한 favorite·legacy intention의
 | PUT | `/api/education/practice/attempts/{market}` | path `STOCK|CRYPTO`, body 없음 | 200 `PracticeAttemptResponse` | 없으면 생성하고 기존 attempt는 무변경 ensure/read; 완료면 `REPLAY` |
 | POST | `/api/education/practice/attempts/{market}/restart` | path, body 없음 | 200 `PracticeAttemptResponse` | 미완료 current run을 원자 정리·증가; 완료면 무변경 `REPLAY` |
 | PUT | `/api/education/practice/attempts/{market}/instrument` | `PracticeAttemptInstrumentUpdateRequest` | 200 `PracticeAttemptResponse` | 현재 run의 거래 가능한 시장별 샘플 종목 선택 및 clock 시작 |
-| GET | `/api/education/practice/attempts/{market}/chart` | path | 200 `PracticeTutorialChartResponse` | 현재 run의 결정적 29+1 일봉 조회 |
+| GET | `/api/education/practice/attempts/{market}/chart` | path | 200 `PracticeTutorialChartResponse` | 현재 run의 결정적 29+1 일봉 순수 조회; settlement·체결 없음 |
+| POST | `/api/education/practice/attempts/{market}/tick` | path, body 없음 | 200 `PracticeTutorialChartResponse` | 요청 시점 가상 분 canonical price 정산·pending 교육 주문 체결 판정·live chart 반환 |
 | GET | `/api/education/practice?market=` | 기존 query | 200 `InvestmentPracticeResponse` 확장 | attempt mode/run/status와 자동 risk evidence를 포함한 진행/replay 조회 |
 
 모든 경로는 Access Bearer 인증이 필요하다. 기존 `POST /api/orders`, 코인 교육 지정가 API, holding 관찰·복기
@@ -50,7 +51,7 @@ nullable `tutorialDate`, nullable `riskSnapshot`, nullable `completedAt`을 반�
 | market 누락·미지원, instrumentId 누락·0 이하 | 400 `VALIDATION_ERROR` |
 | 종목 없음 | 404 `NOT_FOUND` |
 | 선택 종목이 다른 시장·실제 종목·`tradable=false` | 409 `INSTRUMENT_NOT_TRADABLE` |
-| 종목 선택 전 chart·샘플 주문, 현재 run과 종목 불일치 | 409 `PRACTICE_STEP_LOCKED` |
+| 종목 선택 전 chart·tick·샘플 주문, 현재 run과 종목 불일치 | 409 `PRACTICE_STEP_LOCKED` |
 | 완료 attempt에서 종목 선택·주문·관찰·복기 쓰기 | 409 `PRACTICE_ALREADY_COMPLETED` |
 | 재시작 정리 수량과 현재 holding 정합성 불일치 | 409 `PRACTICE_EVIDENCE_MISSING`(전체 rollback) |
 | 인증 실패 | 401 `UNAUTHORIZED` |
@@ -100,6 +101,12 @@ nullable `tutorialDate`, nullable `riskSnapshot`, nullable `completedAt`을 반�
   동일하다. clock 역행은 minute 0으로 clamp한다.
 - canonical tutorial price는 current candle에 포함된 마지막 minute close다. 기존 epoch 기반 사인파를
   attempt/run 기반 생성기로 대체하되 실제 종목 가격 경로는 변경하지 않는다.
+- `GET .../chart`는 위 순수 계산 결과만 반환하며 attempt·order·account·holding을 쓰거나 pending 주문을
+  정산하지 않는다. 조회 횟수는 체결 결과에 영향을 주지 않는다.
+- `POST .../tick`은 attempt를 owner/market/current run 범위로 잠그고 요청 시점 공개 minute와 canonical
+  close를 계산한 뒤, 그 가격으로 현재 run의 pending 교육 주문만 체결 판정한다. 같은 minute 재호출과
+  네트워크 재시도는 이미 terminal이 된 주문을 다시 체결하지 않으며, 다른 사용자·시장·run·일반 주문은
+  대상이 아니다. 응답 chart는 정산에 사용한 동일 시각·동일 생성 결과다.
 - 5분 만료는 기존처럼 실제 `anchor buyTrade.executedAt + 5분` evidence 규칙을 유지한다. virtual clock은
   시각화·가격 생성용이며 만료 시간을 100 virtual minute로 바꾸어 표현할 뿐 별도 timer를 만들지 않는다.
 
@@ -110,8 +117,10 @@ nullable `tutorialDate`, nullable `riskSnapshot`, nullable `completedAt`을 반�
   재시작하지 않는다. replay에서 주문·관찰·복기 mutation CTA를 숨긴다.
 - 사전 의도 폼과 `POST /api/education/practice/intentions` 호출을 제거한다. BUY 체결 뒤 응답/진행 조회의
   자동 `riskSnapshot`(-3%, +5%)을 설명 카드로 표시한다.
-- 차트는 하나만 렌더링하고 29개 history + 마지막 current candle을 3초 이하 간격 GET 재조회로 갱신한다.
-  reload 후 새 local seed/timer를 만들지 않고 서버 응답만 정본으로 쓴다.
+- 차트는 하나만 렌더링한다. 진입·reload의 최초 표시는 순수 `GET .../chart`로 읽고, 진행 중 live update는
+  `POST .../tick`을 3초마다 polling해 응답의 29개 history + 마지막 current candle로 갱신한다. GET을
+  polling settlement 용도로 사용하지 않으며 reload 후 새 local seed/timer를 만들지 않고 서버 응답만
+  정본으로 쓴다.
 - restart CTA는 미완료/만료에서만 보이고 확인 후 `POST attempts/{market}/restart`를 호출한다. 성공 응답이
   `SELECTING_INSTRUMENT`가 된 뒤 로컬 주문·차트 선택 상태를 비운다.
 
@@ -119,11 +128,13 @@ nullable `tutorialDate`, nullable `riskSnapshot`, nullable `completedAt`을 반�
 
 - 단위: -3%/+5% scale 8 계산, generator golden vector·29+1 OHLC·3초 경계, net filled quantity 집계,
   상태 전이와 completed replay 무변경.
-- 슬라이스: attempt/risk unique와 비관 잠금(`@DataJpaTest`), 5개 mapping의 validation·JSON·오류
+- 슬라이스: attempt/risk unique와 비관 잠금(`@DataJpaTest`), 6개 mapping의 validation·JSON·오류
   (`@WebMvcTest`), nullable order 귀속과 일반 주문 회귀.
-- 통합: STOCK·CRYPTO 각각 선택→BUY fill→snapshot→chart→관찰→SELL→복기→완료; reload와 Spring Context
-  재생성 후 동일 candle/price; pending 예약과 부분 매수/매도의 restart 정리; 두 restart 경합; 다른 사용자·
-  시장·run·일반 주문 격리; completed restart가 ledger/reward row count를 바꾸지 않는지 Testcontainers 검증.
+- 통합: STOCK·CRYPTO 각각 선택→BUY fill→snapshot→chart GET→tick settlement→관찰→SELL→복기→완료;
+  GET 반복이 주문·원장을 바꾸지 않는지, 같은 가상 분 tick 재시도가 중복 체결하지 않는지, reload와 Spring
+  Context 재생성 후 동일 candle/price인지 검증한다. pending 예약과 부분 매수/매도의 restart 정리, 두
+  restart 경합, 다른 사용자·시장·run·일반 주문 격리, completed restart가 ledger/reward row count를 바꾸지
+  않는지도 Testcontainers로 검증한다.
 - 회귀: `026` completion/reward, `030` 교육 지정가, `031` 5분 만료, `033` 포트폴리오·일기·랭킹 제외와
   실제 종목 가격·주문 테스트를 유지한다.
 

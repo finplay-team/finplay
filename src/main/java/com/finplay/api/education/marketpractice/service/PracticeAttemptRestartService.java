@@ -25,6 +25,7 @@ public class PracticeAttemptRestartService {
 	private final PracticeAttemptRepository practiceAttemptRepository;
 	private final PracticeRiskSnapshotRepository practiceRiskSnapshotRepository;
 	private final PracticeRunRestartOrderService practiceRunRestartOrderService;
+	private final PracticeAttemptCanonicalPriceService canonicalPriceService;
 	private final Clock clock;
 
 	@Transactional
@@ -38,7 +39,9 @@ public class PracticeAttemptRestartService {
 		LocalDateTime restartedAt = LocalDateTime.now(clock);
 		practiceRunRestartOrderService.cleanupCurrentRun(new PracticeRunRestartCommand(
 			attempt.getId(), attempt.getRunNumber(), userId, market,
-			attempt.getInstrument() == null ? null : attempt.getInstrument().getId(), restartedAt));
+			attempt.getInstrument() == null ? null : attempt.getInstrument().getId(),
+			attempt.getInstrument() == null ? null : canonicalPriceService.canonicalPrice(attempt, restartedAt),
+			restartedAt));
 		attempt.restart(restartedAt);
 		return toResponse(attempt);
 	}

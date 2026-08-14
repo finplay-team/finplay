@@ -15,8 +15,10 @@ import com.finplay.api.order.domain.Trade;
 import com.finplay.api.order.service.PracticeOrderAttributionDto;
 import com.finplay.api.order.service.PracticeOrderAttributionPort;
 import com.finplay.api.order.service.PracticeOrderFillAttributionDto;
+import com.finplay.api.order.service.PracticeOrderFillContextDto;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -33,6 +35,8 @@ public class PracticeAttemptOrderAttributionService implements PracticeOrderAttr
 
 	private final PracticeAttemptRepository practiceAttemptRepository;
 	private final PracticeRiskSnapshotRepository practiceRiskSnapshotRepository;
+	private final PracticeAttemptCanonicalPriceService canonicalPriceService;
+	private final Clock clock;
 
 	@Transactional
 	@Override
@@ -44,12 +48,15 @@ public class PracticeAttemptOrderAttributionService implements PracticeOrderAttr
 			.findByUserIdAndMarketForUpdate(userId, instrument.getMarket())
 			.orElseThrow(() -> new BusinessException(ErrorCode.PRACTICE_STEP_LOCKED));
 		validateCurrentRun(attempt, instrument, attempt.getRunNumber());
-		return Optional.of(new PracticeOrderAttributionDto(attempt.getId(), attempt.getRunNumber()));
+		return Optional.of(new PracticeOrderAttributionDto(
+			attempt.getId(), attempt.getRunNumber(),
+			canonicalPriceService.canonicalPrice(attempt, LocalDateTime.now(clock))));
 	}
 
 	@Transactional
 	@Override
-	public boolean lockForFill(PracticeOrderFillAttributionDto attribution) {
+	public PracticeOrderFillContextDto lockForFill(
+		PracticeOrderFillAttributionDto attribution, LocalDateTime pricedAt) {
 		PracticeAttempt attempt = practiceAttemptRepository.findByIdForUpdate(attribution.attemptId())
 			.orElseThrow(() -> new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING));
 		if (!attempt.getUserId().equals(attribution.userId())
@@ -57,8 +64,10 @@ public class PracticeAttemptOrderAttributionService implements PracticeOrderAttr
 			|| !attempt.getInstrument().getId().equals(attribution.instrumentId())) {
 			throw new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING);
 		}
-		return attempt.getStatus() == PracticeAttemptStatus.IN_PROGRESS
+		boolean currentRun = attempt.getStatus() == PracticeAttemptStatus.IN_PROGRESS
 			&& attempt.getRunNumber() == attribution.runNumber();
+		return new PracticeOrderFillContextDto(
+			currentRun, currentRun ? canonicalPriceService.canonicalPrice(attempt, pricedAt) : null);
 	}
 
 	@Transactional

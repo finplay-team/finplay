@@ -16,7 +16,9 @@
 
 주식·코인 모두 같은 흐름을 사용한다. 차트는 29개 완결 일봉과 가상 12:00부터 진행 중인 오늘 일봉 하나만
 보여 주며, 실제 3초를 가상 1분으로 계산한다. attempt에 저장한 시간·seed·생성기 버전으로 다시 계산하므로
-새로고침과 서버 재기동 뒤에도 같은 시각의 같은 가격을 재현한다.
+새로고침과 서버 재기동 뒤에도 같은 시각의 같은 가격을 재현한다. 차트 GET은 어떤 체결·상태 변경도 만들지
+않는 순수 조회이고, 클라이언트가 3초마다 호출하는 명시적 tick POST만 canonical 가격 정산과 live update를
+실행한다.
 
 ## 사용자 시나리오
 
@@ -52,13 +54,19 @@
   최초 FILLED BUY 때 서버가 entry price를 snapshot하고 `stopLossPrice=entryPrice×0.97`,
   `takeProfitPrice=entryPrice×1.05`를 scale 8 `HALF_UP`으로 계산해 영속한다. snapshot은 이후 가격·재시작
   전까지 변경하지 않는다.
-- [ ] TUTORIAL-FLOW-009: 차트 응답은 시간순 30개 일봉이다. 앞 29개는 seed·generator version으로 생성한
-  완결 과거 일봉이고 마지막 하나는 선택 시점의 가상 12:00에서 시작한 현재 tutorial-day 일봉이다.
-- [ ] TUTORIAL-FLOW-010: 가상 clock은 `floor((조회시각-anchorAt)/3초)`분이며, 미래 분을 미리 노출하지 않는다.
-  현재 일봉의 open은 첫 가상 분 가격, high/low는 공개된 분 가격의 최대/최소, close는 마지막 공개 분 가격이다.
-  동일 attempt·실행 세대·가상 분은 reload·재기동·다중 인스턴스에서도 같은 OHLC와 canonical price를 반환한다.
-- [ ] TUTORIAL-FLOW-011: 화면의 현재가, 샘플 시장가·교육 지정가 체결 판정, 관찰, 재시작 보상 매도는 모두
-  현재 가상 분의 canonical tutorial price를 사용한다. 차트와 실제 튜토리얼 체결 가격이 갈라지지 않는다.
+- [ ] TUTORIAL-FLOW-009: 순수 조회 `GET /api/education/practice/attempts/{market}/chart`의 응답은 시간순
+  30개 일봉이다. 앞 29개는 seed·generator version으로 생성한 완결 과거 일봉이고 마지막 하나는 선택
+  시점의 가상 12:00에서 시작한 현재 tutorial-day 일봉이다. GET은 주문 체결·attempt 상태·예약·원장을
+  변경하거나 settlement를 암묵 실행하지 않는다.
+- [ ] TUTORIAL-FLOW-010: 가상 clock은 `floor((요청시각-anchorAt)/3초)`분이며, 미래 분을 미리 노출하지
+  않는다. 현재 일봉의 open은 첫 가상 분 가격, high/low는 공개된 분 가격의 최대/최소, close는 마지막 공개
+  분 가격이다. 동일 attempt·실행 세대·가상 분은 reload·재기동·다중 인스턴스에서도 같은 OHLC와 canonical
+  price를 반환한다. 클라이언트는 `POST /api/education/practice/attempts/{market}/tick`을 3초마다 호출하고,
+  이 명시적 action만 해당 요청 시점 가상 분의 canonical price로 pending 교육 주문 정산과 live update를
+  실행한다. 같은 가상 분의 중복 tick은 이미 정산된 결과를 중복 체결하지 않는다.
+- [ ] TUTORIAL-FLOW-011: 화면의 현재가, 샘플 시장가·교육 지정가 체결 판정, tick 정산, 관찰, 재시작 보상
+  매도는 모두 같은 가상 분의 canonical tutorial price를 사용한다. 차트와 실제 튜토리얼 체결 가격이
+  갈라지지 않으며 GET chart가 빠르게 반복돼도 체결 부수효과는 생기지 않는다.
 - [ ] TUTORIAL-FLOW-012: STOCK·CRYPTO의 상태 전이, 재시작, 위험 스냅샷, 차트 계약은 동일하다. 완료는 기존
   시장별 tutorial key와 불변 completion을 재사용하며 최초 완료 보상은 시장별 정확히 한 번만 지급한다.
 
@@ -91,6 +99,7 @@
 - [ ] 두 시장에서 최초 시작·종목 선택·매수·자동 위험 snapshot·차트·매도·복기·완료가 동작한다.
 - [ ] 미완료 재시작이 현재 실행 pending 예약과 순체결수량만 원자 정리하고 새 실행 세대로 돌아간다.
 - [ ] 완료 재진입이 `REPLAY`이며 completion·reward·ledger가 변하지 않는다.
-- [ ] 차트 29+1 구성, 3초=1분 clock, reload·재기동 결정성이 자동 테스트로 확인된다.
+- [ ] 차트 29+1 구성, 순수 GET, 명시적 3초 tick 정산, 3초=1분 clock, reload·재기동 결정성이 자동
+  테스트로 확인된다.
 - [ ] 다른 사용자·시장·실행 세대·일반 주문 격리와 재시작 경합이 MySQL Testcontainers로 확인된다.
 - [ ] 백엔드 실제 mapping과 API 문서, 프론트 companion이 같은 계약을 사용한다.

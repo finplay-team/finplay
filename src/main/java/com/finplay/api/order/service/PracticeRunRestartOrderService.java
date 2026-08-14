@@ -8,7 +8,6 @@ import com.finplay.api.common.ErrorCode;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.InstrumentService;
-import com.finplay.api.market.service.PriceQueryService;
 import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.domain.OrderStatus;
@@ -41,7 +40,6 @@ public class PracticeRunRestartOrderService {
 	private final TradeRepository tradeRepository;
 	private final AccountService accountService;
 	private final InstrumentService instrumentService;
-	private final PriceQueryService priceQueryService;
 	private final PortfolioSellService portfolioSellService;
 
 	@Transactional
@@ -121,7 +119,10 @@ public class PracticeRunRestartOrderService {
 		Instrument instrument,
 		Holding holding,
 		BigDecimal quantity) {
-		BigDecimal price = priceQueryService.getOrderExecutionPrice(instrument).priceQuote().price();
+		BigDecimal price = command.canonicalPrice();
+		if (price == null || price.signum() <= 0) {
+			throw new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING);
+		}
 		long amount = price.multiply(quantity).setScale(0, RoundingMode.FLOOR).longValueExact();
 		BigDecimal feeRate = command.market() == Market.STOCK ? STOCK_FEE_RATE : CRYPTO_FEE_RATE;
 		long fee = BigDecimal.valueOf(amount).multiply(feeRate)

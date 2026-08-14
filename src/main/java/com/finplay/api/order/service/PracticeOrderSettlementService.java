@@ -2,9 +2,10 @@
 package com.finplay.api.order.service;
 
 import com.finplay.api.order.domain.Order;
-import com.finplay.api.order.domain.OrderStatus;
+import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.repository.OrderRepository;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -19,17 +20,18 @@ public class PracticeOrderSettlementService {
 	private final LimitOrderCancelService limitOrderCancelService;
 
 	// education의 PracticeTickFillListener가 tick 진행 트랜잭션 안에서 동기 호출한다(plan.md "트랜잭션·잠금·이벤트").
-	// 잠금 순서: session(호출부가 이미 잠금) → order(id ASC 일괄 FOR UPDATE, 아래) → account → (해당 없음) holding.
-	// 세션 PENDING 주문을 먼저 전부 잠근 뒤에만 체결·취소 과정에서 account를 잠그며, 순차 잠금(1건씩 잠갔다 풀기)은
-	// order↔account 교착 위험이 있어 쓰지 않는다.
+	// attempt 귀속 주문은 ID 목록만 비잠금 조회한 뒤 fill 서비스가 attempt → order → account → holding 순으로
+	// 잠근다. 기존 세션 가격만 쓰는 무귀속 주문은 같은 목록에서 기존 조건 판정을 유지한다.
 	@Transactional
 	public void settleOnTick(Long sessionId, BigDecimal price, boolean lastTick) {
-		List<Order> pendingOrders = orderRepository.findPendingBySessionIdForUpdate(sessionId);
+		List<Long> pendingOrderIds = orderRepository.findPendingIdsBySessionId(sessionId);
 
-		// tick 99에서도 체결 판정을 먼저 수행한 뒤 잔여만 취소한다(spec COIN-PRICE-RUNTIME-008).
-		for (Order order : pendingOrders) {
-			if (order.getLimitPrice().compareTo(price) >= 0) {
-				limitOrderFillService.fillIfPending(order.getId());
+		// attempt 귀속 주문은 fill 서비스가 attempt를 먼저 잠그고 canonical 가격으로 조건을 판정한다.
+		for (Long orderId : pendingOrderIds) {
+			Order order = orderRepository.findById(orderId)
+				.orElseThrow(() -> new IllegalStateException("교육 지정가 주문을 찾을 수 없습니다."));
+			if (order.getPracticeAttemptId() != null || isTriggered(order, price)) {
+				limitOrderFillService.fillIfPending(orderId);
 			}
 		}
 
@@ -38,10 +40,24 @@ public class PracticeOrderSettlementService {
 		}
 		// fillIfPending은 같은 트랜잭션의 영속성 컨텍스트에서 동일 엔티티를 반환하므로 getStatus()가
 		// 방금 체결 여부를 그대로 반영한다 — 체결된 주문은 취소 대상에서 자연히 제외된다.
-		for (Order order : pendingOrders) {
-			if (order.getStatus() == OrderStatus.PENDING) {
-				limitOrderCancelService.cancelOrder(order.getUser().getId(), order.getId());
-			}
+		for (Long orderId : orderRepository.findPendingIdsBySessionId(sessionId)) {
+			Long userId = orderRepository.findById(orderId)
+				.orElseThrow(() -> new IllegalStateException("교육 지정가 주문을 찾을 수 없습니다."))
+				.getUser().getId();
+			limitOrderCancelService.cancelOrder(userId, orderId);
 		}
+	}
+
+	@Transactional
+	public void settleCurrentRun(Long attemptId, long runNumber, LocalDateTime pricedAt) {
+		for (Long orderId : orderRepository.findPendingPracticeRunOrderIds(attemptId, runNumber)) {
+			limitOrderFillService.fillIfPending(orderId, pricedAt);
+		}
+	}
+
+	private boolean isTriggered(Order order, BigDecimal price) {
+		return order.getSide() == OrderSide.BUY
+			? order.getLimitPrice().compareTo(price) >= 0
+			: order.getLimitPrice().compareTo(price) <= 0;
 	}
 }
