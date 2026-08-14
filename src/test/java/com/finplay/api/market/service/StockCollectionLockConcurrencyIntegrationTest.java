@@ -3,7 +3,14 @@ package com.finplay.api.market.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.finplay.api.TestcontainersConfiguration;
@@ -21,6 +28,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -61,6 +69,13 @@ class StockCollectionLockConcurrencyIntegrationTest {
 	// 2026-09-17(목) 08:10 KST 실행 — 직전 영업일은 2026-09-16(수). [방어 켠] 테스트와 다른 거래일을 써서 두
 	// 테스트가 서로의 market_data_imports 잔여물에 영향받지 않게 한다.
 	private static final LocalDateTime REPRODUCTION_RUN_AT = LocalDateTime.of(2026, 9, 17, 8, 10, 0);
+	// 2026-09-24(목) 08:10 KST 실행 — 직전 영업일은 2026-09-24가 아니라 2026-09-23(수, holidays-2026.txt 확인 결과
+	// 공휴일 아님). [재시도 멱등성] 테스트 전용 — 위 두 테스트와 다른 거래일을 써서 market_data_imports 잔여물이
+	// 서로 섞이지 않게 한다.
+	private static final LocalDateTime RETRY_IDEMPOTENCY_RUN_AT = LocalDateTime.of(2026, 9, 24, 8, 10, 0);
+	// 2026-10-01(목) 08:10 KST 실행 — 직전 영업일은 2026-09-30(수, holidays-2026.txt 확인 결과 공휴일 아님).
+	// [재시도 무대상] 테스트 전용.
+	private static final LocalDateTime RETRY_NO_TARGET_RUN_AT = LocalDateTime.of(2026, 10, 1, 8, 10, 0);
 
 	@Autowired
 	private InstrumentRepository instrumentRepository;
@@ -91,6 +106,14 @@ class StockCollectionLockConcurrencyIntegrationTest {
 
 	private LocalDate testTradingDate;
 
+	// [재시도 멱등성]·[재시도 무대상] 두 시나리오 전용 — 위 단일 testInstrument와 달리 종목을 최대 2개 쓴다.
+	// 두 시나리오 모두 "그 거래일의 STOCK 종목 전체가 이미 수집 완료"를 실제 16종까지 포함해 재현해야 해서
+	// (그래야 [재시도 무대상]의 "KIS 클라이언트 0회 호출"이 우연이 아니라 결정론적으로 성립한다), cleanUp도
+	// 임시 종목뿐 아니라 그 거래일의 STOCK 종목 전체 분봉을 함께 지운다(아래 cleanUpRetryScenarioIfNeeded).
+	private final List<Instrument> retryScenarioInstruments = new ArrayList<>();
+
+	private LocalDate retryScenarioTradingDate;
+
 	// StockCollectionLock의 키 접두사(market:stock-collect:lock:)를 그대로 복제한다 — 공유 Redis는 Spring Context보다
 	// 오래 살아, 이전 실행이 비정상 종료해 TTL이 남아 있으면 이번 실행의 tryLock이 처음부터 실패해 [방어 켠] 테스트가
 	// "둘 다 실패"로 깨질 수 있다(CryptoWatchLockConcurrencyIntegrationTest의 같은 이유·같은 방어).
@@ -107,22 +130,59 @@ class StockCollectionLockConcurrencyIntegrationTest {
 
 	@AfterEach
 	void cleanUp() {
-		if (testInstrument == null) {
+		if (testInstrument != null) {
+			redisTemplate.delete(lockKeyFor(testTradingDate));
+			List<StockCandle> candles = stockCandleRepository
+				.findByInstrumentIdAndTradingDateOrderByCandleTimeAsc(testInstrument.getId(), testTradingDate);
+			if (!candles.isEmpty()) {
+				stockCandleRepository.deleteAll(candles);
+			}
+			List<MarketDataImport> imports = marketDataImportRepository
+				.findBySourceTradingDateOrderByCollectedAtDesc(testTradingDate);
+			if (!imports.isEmpty()) {
+				marketDataImportRepository.deleteAll(imports);
+			}
+			instrumentRepository.delete(testInstrument);
+			testInstrument = null;
+		}
+		cleanUpRetryScenarioIfNeeded();
+	}
+
+	// [재시도 멱등성]·[재시도 무대상] 전용 정리. 두 테스트 모두 실제 STOCK 종목 전체를 기본 분봉으로 채워
+	// "그 거래일이 전부 수집 완료"인 상태를 만들기 때문에, 임시 종목만 지우는 위 로직으로는 부족하다 — 그
+	// 거래일의 STOCK 종목 전체(findByMarketAndTutorialSampleFalseOrderByIdAsc, collector 자신이 순회하는 것과
+	// 같은 조회)를 대상으로 분봉을 지운다.
+	private void cleanUpRetryScenarioIfNeeded() {
+		if (retryScenarioTradingDate == null) {
 			return;
 		}
-		redisTemplate.delete(lockKeyFor(testTradingDate));
-		List<StockCandle> candles = stockCandleRepository
-			.findByInstrumentIdAndTradingDateOrderByCandleTimeAsc(testInstrument.getId(), testTradingDate);
-		if (!candles.isEmpty()) {
-			stockCandleRepository.deleteAll(candles);
+		redisTemplate.delete(lockKeyFor(retryScenarioTradingDate));
+		List<Instrument> allStockInstruments = instrumentRepository
+			.findByMarketAndTutorialSampleFalseOrderByIdAsc(Market.STOCK);
+		for (Instrument instrument : allStockInstruments) {
+			List<StockCandle> candles = stockCandleRepository.findByInstrumentIdAndTradingDateOrderByCandleTimeAsc(
+				instrument.getId(), retryScenarioTradingDate);
+			if (!candles.isEmpty()) {
+				stockCandleRepository.deleteAll(candles);
+			}
 		}
 		List<MarketDataImport> imports = marketDataImportRepository
-			.findBySourceTradingDateOrderByCollectedAtDesc(testTradingDate);
+			.findBySourceTradingDateOrderByCollectedAtDesc(retryScenarioTradingDate);
 		if (!imports.isEmpty()) {
 			marketDataImportRepository.deleteAll(imports);
 		}
-		instrumentRepository.delete(testInstrument);
-		testInstrument = null;
+		for (Instrument instrument : retryScenarioInstruments) {
+			instrumentRepository.delete(instrument);
+		}
+		retryScenarioTradingDate = null;
+		retryScenarioInstruments.clear();
+	}
+
+	private static RawMinuteCandleDto defaultFallbackCandle() {
+		// [재시도 멱등성]·[재시도 무대상] 전용 — 이 테스트가 만들지 않은 실제 16종을 포함해 그 거래일의 모든
+		// STOCK 종목을 기본으로 성공 처리하기 위한 값. 가격 자체는 검증 규칙(고가>=시가/종가/저가 등)만
+		// 만족하면 되므로 임의값이다.
+		return validCandle(LocalTime.of(9, 0), "10000");
 	}
 
 	private static RawMinuteCandleDto validCandle(LocalTime time, String price) {
@@ -228,6 +288,111 @@ class StockCollectionLockConcurrencyIntegrationTest {
 		// collect()의 최상위 catch가 남기는 문구("수집이 예상치 못한 오류로 중단되었습니다: ...")로, 이 FAILED가
 		// 종목별 검증 실패가 아니라 저장 단계의 예외(유니크 위반)에서 왔다는 것을 고정한다.
 		assertThat(failedImport.getFailureReason()).contains("예상치 못한 오류");
+	}
+
+	@Test
+	@DisplayName("[재시도 멱등성] 정규 배치 실행 후 특정 종목만 실패한 상태에서 retryPendingInstruments()를 실행하면 "
+		+ "그 종목만 다시 조회되고 이미 수집된 종목은 재조회되지 않는다")
+	void retryPendingInstrumentsRefetchesOnlyThePendingInstrumentAndSkipsAlreadyCollectedOnes() throws Exception {
+		Instrument instrumentA = createTempStockInstrument();
+		Instrument instrumentB = createTempStockInstrument();
+		retryScenarioInstruments.add(instrumentA);
+		retryScenarioInstruments.add(instrumentB);
+		retryScenarioTradingDate = businessDayCalendar.previousBusinessDay(RETRY_IDEMPOTENCY_RUN_AT.toLocalDate());
+		clock.set(RETRY_IDEMPOTENCY_RUN_AT);
+		redisTemplate.delete(lockKeyFor(retryScenarioTradingDate));
+
+		RawMinuteCandleDto candleA = validCandle(LocalTime.of(9, 0), "50000");
+		RawMinuteCandleDto candleB = validCandle(LocalTime.of(9, 0), "60000");
+
+		KisHistoricalCandleClient client = mock(KisHistoricalCandleClient.class);
+		// 이 테스트가 만들지 않은 실제 16종을 포함한 나머지 모든 종목은 기본 분봉으로 항상 성공 처리한다 —
+		// 아래 A·B 전용 stub이 이 뒤에 등록되어 그 두 종목에 대해서는 이 기본값을 덮어쓴다(Mockito는 매칭되는
+		// stub 중 나중에 등록된 것을 우선한다).
+		when(client.fetchMinuteCandles(anyString(), any())).thenReturn(List.of(defaultFallbackCandle()));
+		when(client.fetchMinuteCandles(eq(instrumentA.getSymbol()), any())).thenReturn(List.of(candleA));
+		// B는 정규 배치에서 한 번은 실패(KIS 일시적 오류 상황을 흉내)하고, 재시도에서는 성공한다 — Mockito
+		// 연속 stubbing(첫 호출 예외, 이후 호출 정상 반환).
+		when(client.fetchMinuteCandles(eq(instrumentB.getSymbol()), any()))
+			.thenThrow(new RuntimeException("일시적 오류(테스트 주입)"))
+			.thenReturn(List.of(candleB));
+
+		KisHistoricalCandleCollector collector = collectorWith(client, stockCollectionLock);
+
+		// 정규 배치 — A·실제 16종은 성공하고, B는 종목 단위 실패로 흡수되어 이번 실행은 PARTIAL_SUCCESS로 남는다.
+		collector.collect();
+
+		assertThat(stockCandleRepository
+			.existsByInstrumentIdAndTradingDate(instrumentA.getId(), retryScenarioTradingDate)).isTrue();
+		assertThat(stockCandleRepository
+			.existsByInstrumentIdAndTradingDate(instrumentB.getId(), retryScenarioTradingDate)).isFalse();
+
+		List<MarketDataImport> importsAfterRegularRun = marketDataImportRepository
+			.findBySourceTradingDateOrderByCollectedAtDesc(retryScenarioTradingDate);
+		assertThat(importsAfterRegularRun).hasSize(1);
+		assertThat(importsAfterRegularRun.get(0).getStatus()).isEqualTo(ImportStatus.PARTIAL_SUCCESS);
+
+		// 정규 배치에서의 호출은 이 시점부터의 검증과 무관하므로 지운다 — 이후 verify는 재시도 실행만 본다.
+		clearInvocations(client);
+
+		// 재시도 — 이미 수집된 A와 실제 16종은 재조회되지 않고, 아직 없는 B만 다시 조회되어 이번엔 성공한다.
+		collector.retryPendingInstruments();
+
+		verify(client, never()).fetchMinuteCandles(eq(instrumentA.getSymbol()), any());
+		verify(client, times(1)).fetchMinuteCandles(eq(instrumentB.getSymbol()), any());
+
+		assertThat(stockCandleRepository
+			.existsByInstrumentIdAndTradingDate(instrumentB.getId(), retryScenarioTradingDate)).isTrue();
+
+		// A는 재조회되지 않았으므로 정규 배치 때 저장된 1건 그대로이지 중복 저장되지 않는다.
+		List<StockCandle> candlesA = stockCandleRepository
+			.findByInstrumentIdAndTradingDateOrderByCandleTimeAsc(instrumentA.getId(), retryScenarioTradingDate);
+		assertThat(candlesA).hasSize(1);
+
+		List<MarketDataImport> importsAfterRetry = marketDataImportRepository
+			.findBySourceTradingDateOrderByCollectedAtDesc(retryScenarioTradingDate);
+		assertThat(importsAfterRetry).hasSize(2);
+		assertThat(importsAfterRetry).extracting(MarketDataImport::getStatus)
+			.containsExactlyInAnyOrder(ImportStatus.PARTIAL_SUCCESS, ImportStatus.SUCCESS);
+	}
+
+	@Test
+	@DisplayName("[재시도 무대상] 재시도 시점에 그 거래일의 모든 종목이 이미 수집 완료 상태면 KIS 클라이언트가 "
+		+ "호출되지 않는다")
+	void retryPendingInstrumentsDoesNotCallKisClientWhenNothingIsPending() throws Exception {
+		Instrument instrumentA = createTempStockInstrument();
+		retryScenarioInstruments.add(instrumentA);
+		retryScenarioTradingDate = businessDayCalendar.previousBusinessDay(RETRY_NO_TARGET_RUN_AT.toLocalDate());
+		clock.set(RETRY_NO_TARGET_RUN_AT);
+		redisTemplate.delete(lockKeyFor(retryScenarioTradingDate));
+
+		KisHistoricalCandleClient client = mock(KisHistoricalCandleClient.class);
+		// 이 테스트 종목과 실제 16종 모두 기본 분봉으로 성공 처리해, 정규 배치 한 번으로 그 거래일 전체를
+		// "이미 수집 완료" 상태로 만든다 — 그래야 재시도가 KIS를 전혀 호출하지 않는 것이 우연이 아니라
+		// 결정론적으로 성립한다.
+		when(client.fetchMinuteCandles(anyString(), any())).thenReturn(List.of(defaultFallbackCandle()));
+
+		KisHistoricalCandleCollector collector = collectorWith(client, stockCollectionLock);
+
+		collector.collect();
+		assertThat(stockCandleRepository
+			.existsByInstrumentIdAndTradingDate(instrumentA.getId(), retryScenarioTradingDate)).isTrue();
+
+		List<MarketDataImport> importsAfterRegularRun = marketDataImportRepository
+			.findBySourceTradingDateOrderByCollectedAtDesc(retryScenarioTradingDate);
+		assertThat(importsAfterRegularRun).hasSize(1);
+		assertThat(importsAfterRegularRun.get(0).getStatus()).isEqualTo(ImportStatus.SUCCESS);
+
+		clearInvocations(client);
+
+		collector.retryPendingInstruments();
+
+		verifyNoInteractions(client);
+
+		List<MarketDataImport> importsAfterRetry = marketDataImportRepository
+			.findBySourceTradingDateOrderByCollectedAtDesc(retryScenarioTradingDate);
+		assertThat(importsAfterRetry).hasSize(2);
+		assertThat(importsAfterRetry).allMatch(dataImport -> dataImport.getStatus() == ImportStatus.SUCCESS);
 	}
 
 	// CryptoWatchLockConcurrencyIntegrationTest의 ready/start CountDownLatch 관례를 그대로 재사용한다 — 두 액션을

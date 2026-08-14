@@ -20,7 +20,7 @@
     `market_data_imports` 1건만 남고 `stock_candles` 유니크 위반 없음 / [재현] 락 우회 mock으로 위반 재현
     대조.
 
-- [ ] 3. 당일 재시도 스케줄러 (COLLECT-STAB-003)
+- [x] 3. 당일 재시도 스케줄러 (COLLECT-STAB-003)
   - `MarketStockProperties`에 `retry-cron` 추가(기본값 `0 15,30,45 8-10 * * MON-FRI`).
   - `KisHistoricalCandleCollector.retryPendingInstruments()` 신설(`@Scheduled` + `collect()` 위임 호출).
   - `StockCollectionLockConcurrencyIntegrationTest`에 [재시도 멱등성]·[재시도 무대상] 시나리오 추가(태스크

@@ -171,6 +171,9 @@ market:
     # docs/specs/035-stock-collector-reliability/plan.md §락 설계 세부 — 정상 실행 소요시간의 수 배 여유를
     # 두면서도 프로세스가 죽어 finally를 못 도는 최후의 경우 하루 종일 잠기지 않게 하는 값이다(COLLECT-STAB-001).
     collect-lock-ttl-seconds: 600
+    # 정규 08:10 배치 이후 당일 재시도 크론(COLLECT-STAB-003). 08:15부터 10:45까지 15분 간격 9회 — 근거는
+    # docs/specs/035-stock-collector-reliability/plan.md §재시도 스케줄 근거.
+    retry-cron: "0 15,30,45 8-10 * * MON-FRI"
 
 # 네이버 뉴스 검색 API 키 — 뉴스 수집기(spec 012 FEED-001)가 사용한다. 키 경로의 정본은 spec §C-7이다.
 # kis 블록과 같은 형태로 yml에는 빈 기본값 플레이스홀더만 두고 실제 값은 환경변수로만 주입한다 (conventions.md).

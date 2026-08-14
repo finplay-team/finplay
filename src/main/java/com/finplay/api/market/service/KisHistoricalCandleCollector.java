@@ -95,6 +95,16 @@ public class KisHistoricalCandleCollector {
 		}
 	}
 
+	// 정규 08:10 배치 이후 당일 재시도(market.stock.retry-cron, 기본 08:15~10:45 15분 간격 9회) — collect()를
+	// 그대로 위임 호출한다(COLLECT-STAB-003). collect()가 이미 갖고 있는 종목 단위
+	// existsByInstrumentIdAndTradingDate 스킵(기존 멱등성)을 그대로 재사용하므로, 재조회되는 것은 그 거래일에
+	// 아직 분봉이 없는 종목뿐이다 — 새 판정 로직을 도입하지 않는다(spec.md 비즈니스 규칙, C-002 최소 구현).
+	// 정규 배치와 재시도가 같은 tradingDate를 다루므로 collect() 내부의 StockCollectionLock으로 서로도 배제된다.
+	@Scheduled(cron = "${market.stock.retry-cron}", zone = "Asia/Seoul")
+	public void retryPendingInstruments() {
+		collect();
+	}
+
 	private InstrumentOutcome collectInstrument(Instrument instrument, LocalDate tradingDate,
 		LocalDateTime collectedAt) {
 		boolean alreadyCollected = stockCandleRepository
