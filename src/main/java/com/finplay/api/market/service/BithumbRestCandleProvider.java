@@ -31,36 +31,41 @@ import org.springframework.web.util.UriComponentsBuilder;
 @Profile({"prod", "crypto-real"})
 public class BithumbRestCandleProvider implements CryptoCandleProvider {
 
-	private static final String MINUTE_CANDLE_ENDPOINT = "https://api.bithumb.com/v1/candles/minutes/1";
-	private static final String DAY_CANDLE_ENDPOINT = "https://api.bithumb.com/v1/candles/days";
-	private static final String WEEK_CANDLE_ENDPOINT = "https://api.bithumb.com/v1/candles/weeks";
-	private static final String MONTH_CANDLE_ENDPOINT = "https://api.bithumb.com/v1/candles/months";
+	private static final String DEFAULT_CANDLE_BASE_URL = "https://api.bithumb.com/v1/candles";
 	private static final String KRW_MARKET_PREFIX = "KRW-";
 	// 빗썸 캔들 API의 count 상한 (MKT-008) — from·to 범위가 이를 넘으면 to 기준 최신 count개로 캡한다.
 	private static final int MAX_COUNT = 200;
 
 	private final RestClient restClient;
 	private final Clock clock;
+	// mock 서버 기반 회귀 테스트가 실제 엔드포인트를 로컬 서버로 바꿔치기할 수 있도록 외부화한다 — PR #377 리뷰 권장②.
+	private final String candleBaseUrl;
 
-	// RestClient.Builder를 DI로 받지 않고 RestClient.builder()를 직접 호출한다 — springdoc·spring-ai·jjwt-jackson이
-	// 각자 Jackson 2를 끌어와 앱 클래스패스에 Jackson 2·3이 공존하는데, DI로 주입되는 공유 RestClient.Builder 빈은
-	// 컨텍스트의 모든 HttpMessageConverter 빈(레거시 Jackson 2 컨버터 포함)을 반영해 구성되므로 어떤 컨버터가
-	// 선택될지 예측할 수 없다. RestClient.builder()를 직접 호출하면 클래스패스 기준으로 Jackson 3 컨버터가
-	// 결정적으로 선택된다 — BithumbRestTickerPoller와 동일한 위험·동일한 수정 (PR #377 리뷰 권장①).
+	// RestClient.Builder를 DI로 받지 않고 RestClient.builder()를 직접 호출하는 이유는 ADR-0023 참고
+	// (BithumbRestTickerPoller와 동일한 Jackson 2/3 공존 위험, PR #377 리뷰 권장①).
 	@Autowired
 	public BithumbRestCandleProvider(
 		Clock clock,
 		@Value("${bithumb.candle.connect-timeout-ms:2000}")
 		long connectTimeoutMs,
 		@Value("${bithumb.candle.read-timeout-ms:3000}")
-		long readTimeoutMs) {
-		this(applyTimeouts(RestClient.builder(), connectTimeoutMs, readTimeoutMs).build(), clock);
+		long readTimeoutMs,
+		@Value("${bithumb.candle.base-url:" + DEFAULT_CANDLE_BASE_URL + "}")
+		String candleBaseUrl) {
+		this(applyTimeouts(RestClient.builder(), connectTimeoutMs, readTimeoutMs).build(), clock, candleBaseUrl);
 	}
 
 	// 테스트 전용: MockRestServiceServer로 이미 구성된 RestClient를 직접 주입한다 (타임아웃 팩토리를 거치지 않는다).
 	BithumbRestCandleProvider(RestClient restClient, Clock clock) {
+		this(restClient, clock, DEFAULT_CANDLE_BASE_URL);
+	}
+
+	// 테스트 전용: @Autowired 생성자 경로(RestClient.builder() 직접 호출)를 실제 로컬 서버로 검증할 때
+	// base URL까지 함께 바꿔치기한다.
+	BithumbRestCandleProvider(RestClient restClient, Clock clock, String candleBaseUrl) {
 		this.restClient = restClient;
 		this.clock = clock;
+		this.candleBaseUrl = candleBaseUrl;
 	}
 
 	@Override
@@ -78,12 +83,12 @@ public class BithumbRestCandleProvider implements CryptoCandleProvider {
 	}
 
 	// interval별 빗썸 캔들 엔드포인트 (1m은 minutes/1을 그대로 유지). 서버는 빗썸 봉의 버킷 경계를 재계산하지 않는다.
-	private static String resolveEndpoint(CandleInterval interval) {
+	private String resolveEndpoint(CandleInterval interval) {
 		return switch (interval) {
-			case ONE_MINUTE -> MINUTE_CANDLE_ENDPOINT;
-			case ONE_DAY -> DAY_CANDLE_ENDPOINT;
-			case ONE_WEEK -> WEEK_CANDLE_ENDPOINT;
-			case ONE_MONTH -> MONTH_CANDLE_ENDPOINT;
+			case ONE_MINUTE -> candleBaseUrl + "/minutes/1";
+			case ONE_DAY -> candleBaseUrl + "/days";
+			case ONE_WEEK -> candleBaseUrl + "/weeks";
+			case ONE_MONTH -> candleBaseUrl + "/months";
 		};
 	}
 
