@@ -10,6 +10,7 @@
 | 2026-08-16 03:42 | implementer·tester | `LimitOrderTriggerListener` 실행기 위임 방식 전환, `application.yml` 기본값 추가, `LimitOrderTriggerListenerTest` 갱신 후 실행 | tasks.md 항목 4·5 |
 | 2026-08-16 03:44 | tester | `LimitOrderAsyncFillConcurrencyIntegrationTest` 작성 후 실행 | tasks.md 항목 6 |
 | 2026-08-16 03:46 | tester | 기존 `LimitOrderFillIntegrationTest`가 "체결이 이 스레드에서 동기로 끝난다"는 옛 전제로 짜여 있어 타이밍 경합 가능성 확인, `awaitUntil` 폴링으로 수정 후 재검증 | tasks.md 항목 8 |
+| 2026-08-16 04:17 | planner·tester | ADR-0024·ADR-0025 상태를 "구현됨"으로 갱신, `./gradlew build` 최종 실행 — 테스트 4164건, SpotBugs·커버리지·포맷검사 포함 전체 통과 | tasks.md 항목 7·8 |
 
 ## 모니터링 (사람용 요약)
 - ADR-0024(종목별 직렬화 실행기)·ADR-0025(배치 커밋)를 dev의 빈 번호(0024·0025)로 작성했다. spec 015(LMT-002) 계약은 바꾸지 않는 내부 실행 방식 변경이라 spec.md 없이 plan.md·tasks.md만으로 진행했고, spec 036이 `CryptoPriceUpdatedEvent`를 바꾸지 않았음을 코드로 확인해 옛 브랜치 설계를 그대로 재적용했다.

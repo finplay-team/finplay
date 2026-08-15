@@ -6,5 +6,5 @@
 - [x] `LimitOrderTriggerListener` 배치 제출로 전환 — `enabled=false` 폴백 경로 유지, 단위 테스트
 - [x] `application.yml`에 `order.limit-fill-executor.*` 기본값 추가
 - [x] 통합 테스트 — 종목별 순서 보장·동시성(`LimitOrderAsyncFillConcurrencyIntegrationTest`), 배치 원자성(`LimitOrderFillBatchAtomicityIntegrationTest`)
-- [ ] ADR-0024·ADR-0025 상태를 "구현됨"으로 갱신
-- [ ] `./gradlew build` 통과
+- [x] ADR-0024·ADR-0025 상태를 "구현됨"으로 갱신
+- [x] `./gradlew build` 통과
