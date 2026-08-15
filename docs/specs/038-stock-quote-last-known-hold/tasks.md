@@ -29,7 +29,7 @@
   `MARKET_CLOSED`임을 확인한다. SSE 쪽은 값이 멈춘 동안 `price` 이벤트가 없고 `snapshot`에 멈춘 값이 실리는 것을
   확인한다.
 
-- [ ] **6. 문서 동기화**
+- [x] **6. 문서 동기화**
   `docs/api-contracts.md`(가격·캔들 장외 동작, SSE "마지막 값 유지" 문단, `costBasis` 대체 문단)와
   `docs/prd.md` §3 "구현 현황"의 `QUOTE-HOLD-001~007` 행을 갱신한다(CLAUDE.md 규칙 10).
   `docs/api-routes.md`는 라우트 변경이 없어 대상이 아니다.
