@@ -2,7 +2,7 @@
 
 순서대로 진행한다. 1번이 나머지 전부의 입력이고, 2·3번은 서로 독립이지만 같은 클래스를 건드리므로 순차로 둔다.
 
-- [ ] **1. 폴백 세션 조회 메서드 + @DataJpaTest**
+- [x] **1. 폴백 세션 조회 메서드 + @DataJpaTest**
   `StockReplaySessionRepository`에 `findFirstByServiceDateBeforeAndPreparationStatusOrderByServiceDateDesc`를 추가한다.
   슬라이스 테스트로 오늘 세션 제외·`READY`만 선택·서비스 날짜 최댓값 1건·후보 없음(`Optional.empty()`)을 확인한다.
   스키마 변경 없음(Flyway 마이그레이션을 만들지 않는다).
