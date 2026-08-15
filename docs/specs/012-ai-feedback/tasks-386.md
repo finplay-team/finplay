@@ -159,7 +159,7 @@
     - 템플릿 폴백 시 서술·지문이 유지되고 `journalRegenerations`만 오른다.
     - 일기 사유로 상한을 다 쓴 체결도 게이트가 열리면 흐름·집단 사유로 재생성된다(카운터 독립).
 
-- [ ] **7. Testcontainers 통합 테스트 — 핵심 시나리오 (§완료 조건이 "통합"으로 지목한 것)**
+- [x] **7. Testcontainers 통합 테스트 — 핵심 시나리오 (§완료 조건이 "통합"으로 지목한 것)**
 
   신설 파일에 둔다(예: `src/test/java/com/finplay/api/feedback/service/PostSellFeedbackJournalIntegrationTest.java`). 선례는 `PostSellFeedbackRegenerationIntegrationTest`이고 **기존 파일은 수정하지 않는다** — 그것들이 3차 동작의 회귀 기준이다. 고정 `Clock`(`TestClockConfig`)과 `FakeNarrativeGenerator`를 쓴다.
 
