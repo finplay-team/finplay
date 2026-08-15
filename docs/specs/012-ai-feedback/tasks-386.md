@@ -88,7 +88,7 @@
     - **배분 0건에 예외를 던지지 않고 빈 목록을 돌려준다.** 기존 `getSellAllocationSummary`는 원장 불일치를 드러내려고 `IllegalStateException`을 던지지만, 이 메서드는 그 요약이 이미 성공한 뒤에만 불리므로 0건이 나올 수 없고, 만약 나온다면 **서술 재료가 없는 것일 뿐 조회를 죽일 이유가 아니다.** 근거를 Javadoc에 남긴다.
   - 검증 — 리포지터리 질의는 `@DataJpaTest`(ADR-0003), 서비스 조립은 단위. `BuyTradeJournalRepositoryTest`에 `findAllByBuyTradeIdIn` 케이스를 더한다(존재·미존재 섞인 ID 목록, 빈 목록).
 
-- [ ] **4. `PostSellJournalReader` + `JournalDigestDto` 신설 — 조회·정렬·절단·지문 (§C-6·결정 3·4)**
+- [x] **4. `PostSellJournalReader` + `JournalDigestDto` 신설 — 조회·정렬·절단·지문 (§C-6·결정 3·4)**
 
   `feedback/service/`에 둘을 신설한다. `JournalDigestDto`는 **조립 중간값이라 `dto/response/`에 두지 않는다** — `HoldExtremes`와 같은 자리다(§C-6).
 

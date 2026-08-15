@@ -225,13 +225,13 @@ class SellAllocationQueryServiceTest {
 			.hasMessageContaining(String.valueOf(sellTrade.getId()));
 	}
 
-	// --- 배분된 매수 체결 id (spec 012 §C-6 · 4차 §FEED-013 결정 4) ---
+	// --- 배분된 매수 체결 id·체결시각 (spec 012 §C-6 · 4차 §FEED-013 결정 4) ---
 
 	// 순서가 곧 프롬프트의 일기 순서다 — 무너지면 서술의 시간 축(가장 이른 executed_at 기준)과 어긋난다.
 	// 저장 순서(=PK 순서)를 체결시각 순서와 일부러 어긋내, 정렬을 잃은 구현이 실제로 빨개지게 한다.
 	@Test
-	@DisplayName("배분된 매수 체결 id를 매수 시각 오름차순으로 돌려준다 — 저장 순서가 체결 순서와 달라도 그렇다")
-	void returnsAllocatedBuyTradeIdsOrderedByBuyExecutedAt() {
+	@DisplayName("배분된 매수 체결을 매수 시각 오름차순으로 돌려준다 — 저장 순서가 체결 순서와 달라도 그렇다")
+	void returnsAllocatedBuyTradesOrderedByBuyExecutedAt() {
 		Trade sellTrade = saveSellTrade(new BigDecimal("9"));
 		HoldingLot later = saveLot(firstSession, LocalTime.of(11, 0), new BigDecimal("3"));
 		HoldingLot earliest = saveLot(firstSession, LocalTime.of(9, 30), new BigDecimal("3"));
@@ -240,12 +240,19 @@ class SellAllocationQueryServiceTest {
 		saveAllocation(sellTrade, middle, new BigDecimal("3"), 210_000L, 31L);
 		saveAllocation(sellTrade, earliest, new BigDecimal("3"), 210_000L, 31L);
 
-		List<Long> buyTradeIds = sellAllocationQueryService.getAllocatedBuyTradeIds(sellTrade.getId());
+		List<AllocatedBuyTradeDto> allocatedBuyTrades = sellAllocationQueryService
+			.getAllocatedBuyTrades(sellTrade.getId());
 
 		// PK 순서와 결과 순서가 실제로 다름을 먼저 확인한다 — 같으면 이 단정이 우연히 통과한다.
 		assertThat(earliest.getBuyTrade().getId()).isGreaterThan(later.getBuyTrade().getId());
-		assertThat(buyTradeIds).containsExactly(
-			earliest.getBuyTrade().getId(), middle.getBuyTrade().getId(), later.getBuyTrade().getId());
+		assertThat(allocatedBuyTrades)
+			.extracting(AllocatedBuyTradeDto::buyTradeId)
+			.containsExactly(
+				earliest.getBuyTrade().getId(), middle.getBuyTrade().getId(), later.getBuyTrade().getId());
+		// 시각이 프롬프트의 일기 줄머리가 된다 — id만 맞고 시각이 어긋나면 서술이 조용히 오도된다.
+		assertThat(allocatedBuyTrades)
+			.extracting(AllocatedBuyTradeDto::executedAt)
+			.containsExactly(earliest.getExecutedAt(), middle.getExecutedAt(), later.getExecutedAt());
 	}
 
 	// 중복이 실제로 들어오는 경로는 "한 매수 체결의 lot이 여럿"이 아니다 — holding_lots에 UNIQUE(buy_trade_id)
@@ -256,8 +263,8 @@ class SellAllocationQueryServiceTest {
 	// 중복 제거가 순서를 무너뜨려서도 안 된다 — 첫 등장(가장 이른 lot)의 자리를 지켜야 프롬프트의 일기 순서와
 	// 서술의 시간 축이 같다(§FEED-013 결정 4).
 	@Test
-	@DisplayName("같은 lot이 한 매도에 두 번 배분돼도 매수 체결 id는 한 번만, 가장 이른 자리에 나온다")
-	void deduplicatesBuyTradeIdsWhileKeepingTheEarliestPosition() {
+	@DisplayName("같은 lot이 한 매도에 두 번 배분돼도 매수 체결은 한 번만, 가장 이른 자리에 나온다")
+	void deduplicatesBuyTradesWhileKeepingTheEarliestPosition() {
 		Trade sellTrade = saveSellTrade(new BigDecimal("9"));
 		HoldingLot earliest = saveLot(firstSession, LocalTime.of(9, 30), new BigDecimal("3"));
 		HoldingLot later = saveLot(firstSession, LocalTime.of(11, 0), new BigDecimal("3"));
@@ -266,15 +273,15 @@ class SellAllocationQueryServiceTest {
 		// 같은 lot에 대한 두 번째 배분 — 스키마가 막지 않는다.
 		saveAllocation(sellTrade, earliest, new BigDecimal("1"), 70_000L, 10L);
 
-		List<Long> buyTradeIds = sellAllocationQueryService.getAllocatedBuyTradeIds(sellTrade.getId());
-
-		assertThat(buyTradeIds)
-			.containsExactly(earliest.getBuyTrade().getId(), later.getBuyTrade().getId());
+		assertThat(sellAllocationQueryService.getAllocatedBuyTrades(sellTrade.getId()))
+			.containsExactly(
+				new AllocatedBuyTradeDto(earliest.getBuyTrade().getId(), earliest.getExecutedAt()),
+				new AllocatedBuyTradeDto(later.getBuyTrade().getId(), later.getExecutedAt()));
 	}
 
 	@Test
 	@DisplayName("다른 매도 체결에 배분된 매수 체결은 섞이지 않는다")
-	void returnsOnlyTheRequestedSellTradesBuyTradeIds() {
+	void returnsOnlyTheRequestedSellTradesBuyTrades() {
 		Trade sellTrade = saveSellTrade(new BigDecimal("3"));
 		Trade otherSellTrade = saveSellTrade(new BigDecimal("3"));
 		HoldingLot mine = saveLot(firstSession, LocalTime.of(9, 30), new BigDecimal("3"));
@@ -282,8 +289,8 @@ class SellAllocationQueryServiceTest {
 		saveAllocation(sellTrade, mine, new BigDecimal("3"), 210_000L, 31L);
 		saveAllocation(otherSellTrade, other, new BigDecimal("3"), 210_000L, 31L);
 
-		assertThat(sellAllocationQueryService.getAllocatedBuyTradeIds(sellTrade.getId()))
-			.containsExactly(mine.getBuyTrade().getId());
+		assertThat(sellAllocationQueryService.getAllocatedBuyTrades(sellTrade.getId()))
+			.containsExactly(new AllocatedBuyTradeDto(mine.getBuyTrade().getId(), mine.getExecutedAt()));
 	}
 
 	// getSellAllocationSummary와 계약이 다르다 — 그쪽은 원장 불일치를 드러내려고 던지지만, 이 메서드는 그 요약이
@@ -293,7 +300,7 @@ class SellAllocationQueryServiceTest {
 	void returnsEmptyListInsteadOfThrowingWhenSellTradeHasNoAllocation() {
 		Trade sellTrade = saveSellTrade(new BigDecimal("10"));
 
-		assertThat(sellAllocationQueryService.getAllocatedBuyTradeIds(sellTrade.getId())).isEmpty();
+		assertThat(sellAllocationQueryService.getAllocatedBuyTrades(sellTrade.getId())).isEmpty();
 	}
 
 	// --- 픽스처 ---
