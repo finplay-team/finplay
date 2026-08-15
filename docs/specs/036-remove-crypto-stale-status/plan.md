@@ -119,7 +119,7 @@ REST 폴링 백업(034 PRICE-REST-002)은 그대로 3초 주기로 관측 시각
 - **슬라이스 (`InstrumentControllerTest`)**: `status == "STALE"` JSON을 단정하던 테스트를 제거하고, 오래된 관측 시각에서도 `"AVAILABLE"`이 나오는 케이스로 교체한다.
 - **기타**: `MarketStatusEventTest`에서 `PriceStatus.STALE`을 참조하는 부분을 확인해 컴파일이 깨지지 않게 정리한다.
 - **회귀 (`CryptoCandleAndPriceIndependenceTest`)**: 기존 두 테스트 그대로 통과 확인 — 이 spec과 무관한 계약이라 손대지 않는다.
-- **통합**: 새 Testcontainers 통합 테스트는 추가하지 않는다 — 변경이 순수 판정 로직 단순화(분기 제거)이고 위 단위·슬라이스가 충분히 덮는다(ADR-0003). 기존 `OrderExecutionServiceTest`(통합 성격 포함) 재사용으로 충분하다.
+- **통합 (`OrderListIntegrationTest`)**: `OrderExecutionServiceTest`는 협력자를 전부 mock한 순수 단위 테스트라 실제 Redis(`PriceStore`)·DB로 체결까지 이어지는지 실측하지 못한다(PR #380 리뷰 권장 반영). 관측 시각을 3시간 전으로 찍고 clock을 앞으로 돌린 뒤에도 실제 `OrderService.createOrder`가 그 마지막 가격으로 체결하는지를 검증하는 핵심 시나리오 통합 테스트를 추가한다(ADR-0003).
 
 ## 데이터 모델
 
