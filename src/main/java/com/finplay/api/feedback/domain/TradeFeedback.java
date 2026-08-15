@@ -33,6 +33,15 @@ import lombok.NoArgsConstructor;
  * <p><b>재생성 게이트 판정은 조회 서비스 소유다</b>({@code PostSellFeedbackService}) — 이 엔티티는 판정 결과에
  * 따른 <b>전이</b>만 갖는다. 게이트는 응답의 {@code postSellFlow}·{@code peerComparison} 상태를 보는데, 그 둘은
  * 저장 컬럼이 아니라 조회 시 계산하는 값이라 엔티티가 알 수 있는 정보가 아니다.
+ *
+ * <p>{@code journalFingerprint}는 <b>이 서술을 만들 때 프롬프트에 실린 투자일기의 지문</b>이다 (SHA-256 hex 64자,
+ * §FEED-013 결정 3). {@code null}은 "그때 일기가 없었다"는 뜻이며 유의미한 상태다 — <b>{@code null}에서 값으로
+ * 바뀌는 것도 "달라짐"</b>이라 일기를 나중에 쓴 체결에서 재생성이 열린다.
+ *
+ * <p>{@code journalRegenerations}는 <b>일기 사유 재생성 누적 횟수</b>이며 {@code regenerationAttempts}와 따로
+ * 센다 — 합치면 일기를 여러 번 고친 체결이 흐름·집단 반영 기회를 잃는다. 같은 이유로 <b>일기 판정에는
+ * {@code narrativeFinalized}를 쓰지 않는다</b> — 쓰면 게이트를 이미 통과한 체결에서 일기가 영원히 반영되지
+ * 않는데 예외도 로그도 남지 않는다 (§FEED-013 결정 3).
  */
 @Entity
 @Table(name = "trade_feedbacks")
@@ -60,6 +69,12 @@ public class TradeFeedback {
 
 	@Column(name = "regeneration_attempts", nullable = false)
 	private int regenerationAttempts;
+
+	@Column(name = "journal_fingerprint", length = 64)
+	private String journalFingerprint;
+
+	@Column(name = "journal_regenerations", nullable = false)
+	private int journalRegenerations;
 
 	@Column(name = "generated_at", nullable = false)
 	private LocalDateTime generatedAt;
