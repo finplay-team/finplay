@@ -12,7 +12,7 @@
   폴백 시세는 `sessionReady=false`·`replaySession=null`·`marketStatus=CLOSED`를 유지한다(QUOTE-HOLD-005).
   폴백 세션 조회는 요청당 1회. 단위 테스트는 plan.md "테스트 계획"의 ①②⑤⑥⑦⑧을 덮는다.
 
-- [ ] **3. 캔들 표시 경로 폴백 (`getRevealedCandles`·`getRevealedAggregatedCandles`) + 단위 테스트**
+- [x] **3. 캔들 표시 경로 폴백 (`getRevealedCandles`·`getRevealedAggregatedCandles`) + 단위 테스트**
   같은 조건에서 폴백 세션의 원본 거래일을 **하루치 전부 공개**로 조회한다(집계 경로는 그 거래일의 컷오프를
   `LocalTime.MAX`로 둔다). 200개 캡·선두 partial 버킷 필터·`narrowRangeStart`는 그대로 재사용한다.
   단위 테스트는 ①②③④⑦을 덮는다 — 특히 **09:00~09:01 빈 배열 회귀**와 **08:50에 오늘 세션의 거래일이 새지

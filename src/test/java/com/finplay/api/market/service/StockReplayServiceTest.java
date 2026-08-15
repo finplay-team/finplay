@@ -1262,6 +1262,282 @@ class StockReplayServiceTest {
 		assertThat(result.get(0).tradingDate()).isEqualTo(firstOfMonthFrom);
 	}
 
+	// --- 장 마감 후 마지막 재생 상태 유지(getRevealedCandles·getRevealedAggregatedCandles 폴백, spec 038 QUOTE-HOLD-002) ---
+
+	@Test
+	void getRevealedCandlesFallsBackToLastReplayedTradingDayOnWeekendWhenNoSessionRowExists() {
+		// ① 토요일 — 오늘(SATURDAY) 세션 행 자체가 없다. 폴백 세션의 원본 거래일 하루치 전부가 반환되어야 한다.
+		when(stockReplaySessionRepository.findByServiceDate(SATURDAY)).thenReturn(Optional.empty());
+		when(stockReplaySessionRepository
+			.findFirstByServiceDateBeforeAndPreparationStatusOrderByServiceDateDesc(SATURDAY, PreparationStatus.READY))
+			.thenReturn(Optional.of(readySession(FRIDAY_BEFORE_SATURDAY, FRIDAY_BEFORE_SATURDAY)));
+		StockCandle firstCandle = candle(FRIDAY_BEFORE_SATURDAY, LocalTime.of(9, 0), bd(2000), bd(2010), bd(1995),
+			bd(2005), 10);
+		StockCandle lastCandle = candle(FRIDAY_BEFORE_SATURDAY, LocalTime.of(15, 29), bd(2005), bd(2020), bd(2000),
+			bd(2015), 20);
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+			INSTRUMENT_ID, FRIDAY_BEFORE_SATURDAY, LocalTime.MIN, LocalTime.MAX))
+			.thenReturn(List.of(firstCandle, lastCandle));
+		StockReplayService service = service(fixedClock(SATURDAY, LocalTime.of(15, 0)));
+
+		List<StockCandleDto> candles = service.getRevealedCandles(INSTRUMENT_ID, null, null);
+
+		assertThat(candles).hasSize(2);
+		assertThat(candles).extracting(StockCandleDto::tradingDate)
+			.containsOnly(FRIDAY_BEFORE_SATURDAY);
+		assertThat(candles).extracting(StockCandleDto::candleTime)
+			.containsExactly(LocalTime.of(9, 0), LocalTime.of(15, 29));
+	}
+
+	@Test
+	void getRevealedCandlesFallsBackOnWeekdayBeforeSessionRowExistsAtZeroThirty() {
+		// ② 평일 00:30 — 오늘(WEEKDAY) 세션 행이 아직 없다(세션 생성 배치는 08:40에 돈다).
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY)).thenReturn(Optional.empty());
+		when(stockReplaySessionRepository
+			.findFirstByServiceDateBeforeAndPreparationStatusOrderByServiceDateDesc(WEEKDAY, PreparationStatus.READY))
+			.thenReturn(Optional.of(fallbackSession()));
+		StockCandle fallbackCandle = candle(FALLBACK_TRADING_DATE, LocalTime.of(15, 29), bd(3000), bd(3010), bd(2995),
+			bd(3005), 10);
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+			INSTRUMENT_ID, FALLBACK_TRADING_DATE, LocalTime.MIN, LocalTime.MAX))
+			.thenReturn(List.of(fallbackCandle));
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(0, 30)));
+
+		List<StockCandleDto> candles = service.getRevealedCandles(INSTRUMENT_ID, null, null);
+
+		assertThat(candles).hasSize(1);
+		assertThat(candles.get(0).tradingDate()).isEqualTo(FALLBACK_TRADING_DATE);
+	}
+
+	@Test
+	void getRevealedCandlesFallsBackOnWeekdayAtZeroEightFiftyWithoutLeakingTodaySessionSourceTradingDate() {
+		// ② 평일 08:50 — 오늘(WEEKDAY) 세션은 READY지만 개장 전이라 공개된 분봉이 없다. QUOTE-HOLD-003 핵심 검증:
+		// 오늘 세션의 원본 거래일(WEEKDAY)로는 절대 조회되지 않고, 직전 세션의 원본 거래일(FALLBACK_TRADING_DATE)만 쓰인다.
+		StockReplaySession todaySession = readySession(WEEKDAY, WEEKDAY);
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY)).thenReturn(Optional.of(todaySession));
+		when(stockReplaySessionRepository
+			.findFirstByServiceDateBeforeAndPreparationStatusOrderByServiceDateDesc(WEEKDAY, PreparationStatus.READY))
+			.thenReturn(Optional.of(fallbackSession()));
+		StockCandle fallbackCandle = candle(FALLBACK_TRADING_DATE, LocalTime.of(15, 29), bd(4000), bd(4010), bd(3995),
+			bd(4005), 10);
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+			INSTRUMENT_ID, FALLBACK_TRADING_DATE, LocalTime.MIN, LocalTime.MAX))
+			.thenReturn(List.of(fallbackCandle));
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(8, 50)));
+
+		List<StockCandleDto> candles = service.getRevealedCandles(INSTRUMENT_ID, null, null);
+
+		assertThat(candles).hasSize(1);
+		assertThat(candles.get(0).tradingDate()).isEqualTo(FALLBACK_TRADING_DATE);
+		assertThat(candles.get(0).tradingDate()).isNotEqualTo(todaySession.getSourceTradingDate());
+		verify(stockCandleRepository, never())
+			.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+				eq(INSTRUMENT_ID), eq(WEEKDAY), any(), any());
+	}
+
+	@Test
+	void getRevealedCandlesDoesNotFallBackDuringFirstCandleWindowEvenWhenFallbackSessionExists() {
+		// ③ 회귀 방지(가장 중요) — 09:00~09:00:59는 이미 OPEN이므로(QUOTE-HOLD-004) 폴백 후보가 있어도 절대 쓰지 않고
+		// 예외 없이 빈 배열이어야 한다. 폴백 후보를 mock에 일부러 심어 두어, 스텁이 없어 우연히 통과하는 게 아니라
+		// OPEN이면 폴백 코드 경로 자체를 타지 않는지 함께 확인한다.
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		when(stockReplaySessionRepository
+			.findFirstByServiceDateBeforeAndPreparationStatusOrderByServiceDateDesc(WEEKDAY, PreparationStatus.READY))
+			.thenReturn(Optional.of(fallbackSession()));
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(9, 0, 30)));
+
+		List<StockCandleDto> candles = service.getRevealedCandles(INSTRUMENT_ID, null, null);
+
+		assertThat(candles).isEmpty();
+		verify(stockReplaySessionRepository, never())
+			.findFirstByServiceDateBeforeAndPreparationStatusOrderByServiceDateDesc(any(), any());
+		verifyNoInteractions(stockCandleRepository);
+	}
+
+	@Test
+	void getRevealedCandlesReturnsTodayCandlesAfterMarketCloseWithoutFallingBack() {
+		// ④ 회귀 방지 — 평일 15:31(CLOSED)에도 오늘 세션의 공개 분봉이 있으면 그대로 반환하고 폴백을 시도하지 않는다.
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		StockCandle lastCandle = candle(WEEKDAY, LocalTime.of(15, 29), bd(5000), bd(5010), bd(4995), bd(5005), 10);
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+			INSTRUMENT_ID, WEEKDAY, LocalTime.MIN, LocalTime.of(15, 30)))
+			.thenReturn(List.of(lastCandle));
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(15, 31)));
+
+		List<StockCandleDto> candles = service.getRevealedCandles(INSTRUMENT_ID, null, null);
+
+		assertThat(candles).hasSize(1);
+		assertThat(candles.get(0).tradingDate()).isEqualTo(WEEKDAY);
+		verify(stockReplaySessionRepository, never())
+			.findFirstByServiceDateBeforeAndPreparationStatusOrderByServiceDateDesc(any(), any());
+	}
+
+	@Test
+	void getRevealedCandlesStaysEmptyWhenFallbackSessionSourceTradingDateHasNoCandle() {
+		// ⑦ 폴백 세션은 찾았지만 그 원본 거래일에 분봉이 하나도 없음(보관 정리 등) — 값이 없는 것보다 틀린 값이 나쁘므로
+		// 빈 배열을 유지한다.
+		when(stockReplaySessionRepository.findByServiceDate(SATURDAY)).thenReturn(Optional.empty());
+		when(stockReplaySessionRepository
+			.findFirstByServiceDateBeforeAndPreparationStatusOrderByServiceDateDesc(SATURDAY, PreparationStatus.READY))
+			.thenReturn(Optional.of(fallbackSession()));
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+			INSTRUMENT_ID, FALLBACK_TRADING_DATE, LocalTime.MIN, LocalTime.MAX))
+			.thenReturn(List.of());
+		StockReplayService service = service(fixedClock(SATURDAY, LocalTime.of(10, 0)));
+
+		List<StockCandleDto> candles = service.getRevealedCandles(INSTRUMENT_ID, null, null);
+
+		assertThat(candles).isEmpty();
+	}
+
+	@Test
+	void getRevealedAggregatedCandlesFallsBackToLastReplayedTradingDayOnWeekendWhenNoSessionRowExists() {
+		// 주말 폴백 시 sourceTradingDate가 폴백 거래일(FRIDAY_BEFORE_SATURDAY) 기준으로 집계됨을 확인한다(QUOTE-HOLD-002).
+		// 그 거래일은 이미 재생이 끝난 과거이므로 컷오프 없이(LocalTime.MAX) 하루치 전부가 집계 입력에 들어가야 한다.
+		when(stockReplaySessionRepository.findByServiceDate(SATURDAY)).thenReturn(Optional.empty());
+		when(stockReplaySessionRepository
+			.findFirstByServiceDateBeforeAndPreparationStatusOrderByServiceDateDesc(SATURDAY, PreparationStatus.READY))
+			.thenReturn(Optional.of(readySession(FRIDAY_BEFORE_SATURDAY, FRIDAY_BEFORE_SATURDAY)));
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+			INSTRUMENT_ID, FRIDAY_BEFORE_SATURDAY, LocalTime.MIN, LocalTime.MAX))
+			.thenReturn(List.of(
+				candle(FRIDAY_BEFORE_SATURDAY, LocalTime.of(9, 0), bd(1000), bd(1010), bd(995), bd(1005), 10),
+				candle(FRIDAY_BEFORE_SATURDAY, LocalTime.of(15, 29), bd(1005), bd(1015), bd(1000), bd(1012), 20)));
+		StockReplayService service = service(fixedClock(SATURDAY, LocalTime.of(15, 0)));
+
+		List<StockCandleDto> result = service.getRevealedAggregatedCandles(
+			INSTRUMENT_ID, CandleInterval.ONE_DAY, FRIDAY_BEFORE_SATURDAY, FRIDAY_BEFORE_SATURDAY);
+
+		assertThat(result).hasSize(1);
+		StockCandleDto bucket = result.get(0);
+		assertThat(bucket.tradingDate()).isEqualTo(FRIDAY_BEFORE_SATURDAY);
+		assertThat(bucket.open()).isEqualByComparingTo(bd(1000));
+		assertThat(bucket.close()).isEqualByComparingTo(bd(1012));
+		assertThat(bucket.volume()).isEqualTo(30L);
+	}
+
+	@Test
+	void getRevealedAggregatedCandlesFallsBackOnWeekdayAtZeroEightFiftyWithoutLeakingTodaySessionSourceTradingDate() {
+		// 오늘 세션(WEEKDAY)은 READY지만 개장 전이라 공개된 것이 없다. 폴백 거래일(FALLBACK_TRADING_DATE) 기준으로
+		// 집계되고 오늘 세션의 원본 거래일(WEEKDAY)로는 절대 조회되지 않아야 한다(QUOTE-HOLD-003).
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		when(stockReplaySessionRepository
+			.findFirstByServiceDateBeforeAndPreparationStatusOrderByServiceDateDesc(WEEKDAY, PreparationStatus.READY))
+			.thenReturn(Optional.of(fallbackSession()));
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+			INSTRUMENT_ID, FALLBACK_TRADING_DATE, LocalTime.MIN, LocalTime.MAX))
+			.thenReturn(List.of(
+				candle(FALLBACK_TRADING_DATE, LocalTime.of(9, 0), bd(2000), bd(2010), bd(1995), bd(2005), 10)));
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(8, 50)));
+
+		List<StockCandleDto> result = service.getRevealedAggregatedCandles(
+			INSTRUMENT_ID, CandleInterval.ONE_DAY, FALLBACK_TRADING_DATE, FALLBACK_TRADING_DATE);
+
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).tradingDate()).isEqualTo(FALLBACK_TRADING_DATE);
+		assertThat(result.get(0).tradingDate()).isNotEqualTo(WEEKDAY);
+		verify(stockCandleRepository, never())
+			.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+				eq(INSTRUMENT_ID), eq(WEEKDAY), any(), any());
+	}
+
+	@Test
+	void getRevealedCandlesDoesNotFallBackWhenMarketOpenAndCandleMissingForOneInstrument() {
+		// 회귀 방지(QUOTE-HOLD-004) — 09:01 이후 OPEN인데 특정 종목만 그날 분봉이 아직 없으면(수집 지연 등) 폴백 없이
+		// 빈 배열이어야 한다. getCurrentPrices 쪽의 동일 회귀 테스트(⑤)와 짝을 이루는 캔들 경로 검증이다. 폴백 후보를
+		// mock에 일부러 심어 두어(가짜 종가 9999), 스텁이 없어 우연히 통과하는 게 아니라 OPEN이면 폴백 코드 경로 자체를
+		// 타지 않는지 함께 확인한다.
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+			INSTRUMENT_ID, WEEKDAY, LocalTime.MIN, LocalTime.of(9, 1)))
+			.thenReturn(List.of());
+		when(stockReplaySessionRepository
+			.findFirstByServiceDateBeforeAndPreparationStatusOrderByServiceDateDesc(WEEKDAY, PreparationStatus.READY))
+			.thenReturn(Optional.of(fallbackSession()));
+		StockCandle poisonedFallbackCandle = candle(FALLBACK_TRADING_DATE, LocalTime.of(15, 29), bd(9999), bd(9999),
+			bd(9999), bd(9999), 10);
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+			INSTRUMENT_ID, FALLBACK_TRADING_DATE, LocalTime.MIN, LocalTime.MAX))
+			.thenReturn(List.of(poisonedFallbackCandle));
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(9, 2, 15)));
+
+		List<StockCandleDto> candles = service.getRevealedCandles(INSTRUMENT_ID, null, null);
+
+		assertThat(candles).isEmpty();
+		verify(stockReplaySessionRepository, never())
+			.findFirstByServiceDateBeforeAndPreparationStatusOrderByServiceDateDesc(any(), any());
+		verify(stockCandleRepository, never())
+			.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+				eq(INSTRUMENT_ID), eq(FALLBACK_TRADING_DATE), any(), any());
+	}
+
+	@Test
+	void getRevealedAggregatedCandlesDoesNotFallBackWhenMarketOpenAndCandlesMissingForOneInstrument() {
+		// 회귀 방지(QUOTE-HOLD-004) — 집계 캔들 경로에서도 09:01 이후 OPEN인데 특정 종목의 분봉이 하나도 없으면 폴백
+		// 없이 빈 배열이어야 한다. 과거 구간·재생거래일 당일 구간 두 쿼리 모두 빈 결과를 스텁해 "해당 종목 데이터
+		// 자체가 없음"을 재현하고, 폴백 후보를 poison해 실제로 그 경로를 타지 않는지 확인한다.
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+			eq(INSTRUMENT_ID), any(), eq(WEEKDAY.minusDays(1))))
+			.thenReturn(List.of());
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+			INSTRUMENT_ID, WEEKDAY, LocalTime.MIN, LocalTime.of(9, 1)))
+			.thenReturn(List.of());
+		when(stockReplaySessionRepository
+			.findFirstByServiceDateBeforeAndPreparationStatusOrderByServiceDateDesc(WEEKDAY, PreparationStatus.READY))
+			.thenReturn(Optional.of(fallbackSession()));
+		StockCandle poisonedFallbackCandle = candle(FALLBACK_TRADING_DATE, LocalTime.of(15, 29), bd(9999), bd(9999),
+			bd(9999), bd(9999), 10);
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+			INSTRUMENT_ID, FALLBACK_TRADING_DATE, LocalTime.MIN, LocalTime.MAX))
+			.thenReturn(List.of(poisonedFallbackCandle));
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(9, 2, 15)));
+
+		List<StockCandleDto> result = service.getRevealedAggregatedCandles(
+			INSTRUMENT_ID, CandleInterval.ONE_DAY, null, null);
+
+		assertThat(result).isEmpty();
+		verify(stockReplaySessionRepository, never())
+			.findFirstByServiceDateBeforeAndPreparationStatusOrderByServiceDateDesc(any(), any());
+		verify(stockCandleRepository, never())
+			.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+				eq(INSTRUMENT_ID), eq(FALLBACK_TRADING_DATE), any(), any());
+	}
+
+	@Test
+	void getRevealedAggregatedCandlesDoesNotFallBackDuringFirstCandleWindowEvenWhenFallbackSessionExists() {
+		// 회귀 방지(가장 중요, QUOTE-HOLD-004) — 09:00~09:00:59는 이미 OPEN이므로 그날 범위만 조회해도(과거 구간이
+		// 섞이지 않도록 from=to=WEEKDAY로 좁혀) 결과가 비어야 하고, 폴백 후보가 있어도 절대 쓰지 않아야 한다.
+		// getRevealedCandles 쪽의 동일 회귀 테스트(③)와 짝을 이루는 집계 캔들 경로 검증이다. 폴백 후보를 mock에
+		// 일부러 심어 두어(가짜 종가 9999), OPEN이면 폴백 코드 경로 자체를 타지 않는지 확인한다.
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		when(stockReplaySessionRepository
+			.findFirstByServiceDateBeforeAndPreparationStatusOrderByServiceDateDesc(WEEKDAY, PreparationStatus.READY))
+			.thenReturn(Optional.of(fallbackSession()));
+		StockCandle poisonedFallbackCandle = candle(FALLBACK_TRADING_DATE, LocalTime.of(15, 29), bd(9999), bd(9999),
+			bd(9999), bd(9999), 10);
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+			INSTRUMENT_ID, FALLBACK_TRADING_DATE, LocalTime.MIN, LocalTime.MAX))
+			.thenReturn(List.of(poisonedFallbackCandle));
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(9, 0, 30)));
+
+		List<StockCandleDto> result = service.getRevealedAggregatedCandles(
+			INSTRUMENT_ID, CandleInterval.ONE_DAY, WEEKDAY, WEEKDAY);
+
+		assertThat(result).isEmpty();
+		verify(stockReplaySessionRepository, never())
+			.findFirstByServiceDateBeforeAndPreparationStatusOrderByServiceDateDesc(any(), any());
+		verify(stockCandleRepository, never())
+			.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+				eq(INSTRUMENT_ID), eq(FALLBACK_TRADING_DATE), any(), any());
+	}
+
 	// --- spec 012 §C-6 조회 4종 (이슈 #180 항목 2) ---
 	//
 	// 여기서는 "어떤 날짜·어떤 상태를 보는가"만 단정한다. 실제 분봉으로 값을 보는 대비
