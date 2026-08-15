@@ -120,18 +120,20 @@ public class PriceStore {
 		return value == null ? FeedConnectionStatus.DISCONNECTED : FeedConnectionStatus.valueOf(value);
 	}
 
-	// 주어진 시각이 10초를 초과하면 stale(유효하지 않음)로 판정한다 (spec.md MKT-004). 임계값 자체는 그대로이지만
-	// 판정 기준 시각은 관측 시각(observedAt)으로 바뀐다(PRICE-REST-001, docs/specs/034-crypto-price-rest-backup) —
-	// 호출자가 CryptoPriceDto.observedAt()을 넘겨야 REST 폴링이 신선도를 유지하는 효과가 실제로 반영된다.
+	// 주어진 시각이 10초를 초과하면 stale(유효하지 않음)로 판정한다. 판정 기준 시각은 관측 시각(observedAt)이다
+	// (PRICE-REST-001, docs/specs/034-crypto-price-rest-backup) — 호출자가 CryptoPriceDto.observedAt()을 넘겨야
+	// REST 폴링이 신선도를 유지하는 효과가 실제로 반영된다. 표시·체결 판정(PriceQueryService)은 036 이후 이
+	// 메서드를 더 이상 호출하지 않는다 — 지금은 isPriceAvailable() 경유로 CryptoPriceSnapshotService(변동 카드
+	// 재료 신뢰도 게이트, PRICE-NOSTALE-004)만 이 stale 개념을 쓴다.
 	public boolean isStale(LocalDateTime observedAt) {
 		Duration elapsed = Duration.between(observedAt, LocalDateTime.now(clock));
 		return elapsed.compareTo(STALE_THRESHOLD) > 0;
 	}
 
-	// 연결이 끊겼거나 최신 틱이 stale이면 유효하지 않은 가격으로 판정한다 (MKT-004).
-	// PriceQueryService의 코인 체결 경로는 더 이상 이 메서드를 호출하지 않는다 — 표시 판정과 같은 규칙(STALE 허용)을
-	// 쓰도록 바뀌었다(PRICE-REST-004, docs/specs/034-crypto-price-rest-backup). CryptoPriceSnapshotService 등
-	// 다른 소비자는 여전히 이 메서드로 stale 심볼을 건너뛴다.
+	// 연결이 끊겼거나 최신 틱이 stale이면 유효하지 않은 가격으로 판정한다. PriceQueryService의 코인 표시·체결
+	// 경로는 이 메서드를 호출하지 않는다 — 036 이후 관측 시각과 무관하게 항상 AVAILABLE로 취급한다(PRICE-NOSTALE-001,
+	// docs/specs/036-remove-crypto-stale-status). CryptoPriceSnapshotService(변동 카드 재료 신뢰도 게이트,
+	// PRICE-NOSTALE-004)는 여전히 이 메서드로 stale 심볼을 건너뛴다.
 	public boolean isPriceAvailable(String symbol) {
 		if (getConnectionStatus() != FeedConnectionStatus.CONNECTED) {
 			return false;

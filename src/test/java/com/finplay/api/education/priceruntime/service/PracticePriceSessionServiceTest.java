@@ -157,22 +157,23 @@ class PracticePriceSessionServiceTest {
 		assertThat(response.currentPrice()).isEqualByComparingTo("10000.00000000");
 	}
 
-	// PRICE-STALE-005: STALE도 AVAILABLE이 아니므로 fallback anchor(10000)를 쓰는지 고정한다(코드 변경 없음, tasks.md 항목 4).
+	// 036-remove-crypto-stale-status 회귀 — 관측 시각이 오래돼도(과거엔 STALE) AVAILABLE이면 fallback anchor(10000)가
+	// 아니라 실시세를 anchor로 쓴다.
 	@Test
-	void createSessionUsesFallbackTenThousandWhenPriceStale() {
+	void createSessionUsesRealPriceAsAnchorEvenWhenObservationIsHoursOldButStatusIsAvailable() {
 		Instrument crypto = cryptoInstrument(true);
 		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID)).thenReturn(crypto);
 		when(practicePriceSessionRepository.existsByUserIdAndInstrumentIdAndStatus(
 			USER_ID, INSTRUMENT_ID, PracticePriceSessionStatus.ACTIVE)).thenReturn(false);
 		when(priceQueryService.getPriceQuote(crypto))
-			.thenReturn(new PriceQuoteDto(new BigDecimal("54321.5"), NOW, PriceStatus.STALE, null));
+			.thenReturn(new PriceQuoteDto(new BigDecimal("54321.5"), NOW.minusHours(3), PriceStatus.AVAILABLE, null));
 		when(practicePriceSessionRepository.saveAndFlush(any()))
 			.thenAnswer(invocation -> invocation.getArgument(0));
 
 		PracticePriceSessionResponse response = service.createSession(USER_ID, INSTRUMENT_ID);
 
-		assertThat(response.startPrice()).isEqualByComparingTo("10000.00000000");
-		assertThat(response.currentPrice()).isEqualByComparingTo("10000.00000000");
+		assertThat(response.startPrice()).isEqualByComparingTo("54321.50000000");
+		assertThat(response.currentPrice()).isEqualByComparingTo("54321.50000000");
 	}
 
 	@Test

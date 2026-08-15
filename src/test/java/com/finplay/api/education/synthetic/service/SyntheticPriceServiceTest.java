@@ -75,15 +75,17 @@ class SyntheticPriceServiceTest {
 		assertThat(result.prices().get(0)).isEqualByComparingTo(BigDecimal.valueOf(10_000));
 	}
 
-	// PRICE-STALE-005: STALE도 AVAILABLE이 아니므로 fallback 경로를 타는지 고정한다(코드 변경 없음, tasks.md 항목 4).
+	// 036-remove-crypto-stale-status 회귀 — 관측 시각이 오래돼도(과거엔 STALE) AVAILABLE이면 fallback이 아니라
+	// 실시세를 시작가로 쓴다.
 	@Test
-	void generateSeriesUsesFallbackStartPriceWhenPriceStale() {
+	void generateSeriesUsesRealPriceEvenWhenObservationIsHoursOldButStatusIsAvailable() {
 		when(priceQueryService.getPriceQuote(instrument))
-			.thenReturn(new PriceQuoteDto(new BigDecimal("54321.5"), LocalDateTime.now(), PriceStatus.STALE, null));
+			.thenReturn(new PriceQuoteDto(
+				new BigDecimal("54321"), LocalDateTime.now().minusHours(3), PriceStatus.AVAILABLE, null));
 
 		SyntheticPriceSeriesResponse result = service.generateSeries(INSTRUMENT_ID);
 
-		assertThat(result.prices().get(0)).isEqualByComparingTo(BigDecimal.valueOf(10_000));
+		assertThat(result.prices().get(0)).isEqualByComparingTo(new BigDecimal("54321"));
 	}
 
 	@Test

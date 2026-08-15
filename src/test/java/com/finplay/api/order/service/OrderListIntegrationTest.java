@@ -185,6 +185,30 @@ class OrderListIntegrationTest {
 		assertThat(cryptoResult.content().get(0).instrumentId()).isEqualTo(cryptoInstrument.getId());
 	}
 
+	// PR #380(spec 036) 리뷰 권장 반영 — STALE 판정 제거가 실제 Redis(PriceStore)·DB로 체결까지 이어지는지
+	// 확인하는 핵심 시나리오 통합 테스트(ADR-0003). OrderExecutionServiceTest는 협력자를 전부 mock한 단위
+	// 테스트라 이 경로를 실측하지 못한다 — 관측 시각을 3시간 전으로 찍고 clock을 앞으로 돌린 뒤에도 실제
+	// 주문 서비스가 그 마지막 가격으로 체결하는지를 여기서 검증한다.
+	@Test
+	void createOrderFillsCryptoOrderEvenWhenLastObservationIsHoursOld() {
+		User user = createUser("list-old-obs");
+		createAccount(user, com.finplay.api.account.domain.Market.CRYPTO);
+		Instrument cryptoInstrument = createCryptoInstrument("OLDOBS");
+
+		clock.set(BASE_NOW.minusHours(3));
+		priceStore.saveTick(cryptoInstrument.getSymbol(), new BigDecimal("50000000"), LocalDateTime.now(clock));
+		clock.set(BASE_NOW);
+
+		orderService.createOrder(
+			user.getId(), "list-old-obs-1", buyRequest(Market.CRYPTO, cryptoInstrument.getId(), "0.01"));
+
+		OrderListResponse result = orderService.getMyOrders(
+			user.getId(), com.finplay.api.account.domain.Market.CRYPTO, null, 100);
+
+		assertThat(result.content()).hasSize(1);
+		assertThat(result.content().get(0).status()).isEqualTo("FILLED");
+	}
+
 	// PR #237 리뷰 차단 반영 커버리지 공백 보완: LimitOrderPendingListIntegrationTest는 getMyPendingOrders(지정가만)
 	// 경로에서만 limitPrice 실측값을 검증했고, 이 클래스의 기존 테스트들은 시장가 주문만 만들어 limitPrice를 전혀
 	// 단정하지 않았다. GET /api/orders(getMyOrders)는 시장가·지정가가 섞여 나오는 유일한 경로이므로, 실제 DB에

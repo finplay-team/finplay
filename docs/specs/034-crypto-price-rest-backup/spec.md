@@ -3,6 +3,7 @@
 > GitHub 이슈 #369. 팀 확정 방향: **A(REST 폴링 백업)와 B(체결 경로의 STALE 허용)를 함께 적용한다**(yxejxnn 확정, 2026-08-13) — 재논의하지 않는다.
 > 선행 근거: `docs/specs/032-price-quote-stale-split/spec.md`(표시/체결 stale 판정 분리), `docs/specs/003-market-data/spec.md` MKT-003·MKT-004, 이슈 #107(폴러 최초 도입), 이슈 #355.
 > 요구사항 ID는 이 spec 전용 네임스페이스 `PRICE-REST-*`를 쓴다 — `PRICE-STALE-*`(032)와 같은 패턴으로, PRD 본문에 요구사항 절을 새로 추가하지 않고 이 spec이 정본이다. PRD §3 "구현 현황"에는 완료 시 행을 추가한다(CLAUDE.md 규칙 10).
+> **(2026-08-14 `036-remove-crypto-stale-status`로 대체됨)** PRICE-REST-004(체결 경로 STALE 허용)는 표시 판정 자체가 다시는 STALE을 만들지 않게 되어 도달 불가능해져 무의미해졌다(코드 변경 없음) — `getOrderExecutionPrice`는 이미 표시 판정에 위임하는 구조라 자동으로 항상 `AVAILABLE`만 받는다. PRICE-REST-001~003(관측시각 분리·REST 폴링 백업·웹소켓 실시간성 보존)과 PRICE-REST-005·006(fail-closed 잔여선·스케줄러 풀 크기)은 코드 변경 없이 그대로 유효하다. 아래 체크박스 원문은 이력으로 유지한다.
 
 
 ## 개요

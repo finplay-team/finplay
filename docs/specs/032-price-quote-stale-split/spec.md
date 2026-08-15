@@ -3,6 +3,7 @@
 > GitHub 이슈 #355. 팀 확정 방향: 이슈 코멘트에서 제시된 1/2/3안 중 **1안**(표시용 판정과 체결용 판정 분리, yxejxnn 확정) — 재논의하지 않는다.
 > 선행 근거: `docs/specs/003-market-data/spec.md` MKT-003·MKT-004, `docs/adr/0002-architecture.md`.
 > 요구사항 ID는 이 spec 전용 네임스페이스 `PRICE-STALE-*`를 쓴다 — `docs/prd.md`의 EDU-PRACTICE-*·COIN-PRICE-RUNTIME-*·FEED-*와 같은 패턴으로, PRD 본문에 요구사항 절을 새로 추가하지 않고 이 spec이 정본이다. PRD §3 "구현 현황"에는 완료 시 행을 추가한다(CLAUDE.md 규칙 10).
+> **(2026-08-14 `036-remove-crypto-stale-status`로 대체됨)** PRICE-STALE-001·002·004는 036에서 되돌려졌다 — 연결 유지+수신 이력 있음이면 경과 시간과 무관하게 항상 `AVAILABLE`이며 `STALE` 상태 자체가 사라졌다. PRICE-STALE-005는 STALE이 더 이상 발생하지 않아 무의미해졌다(코드 변경 없음). PRICE-STALE-003(`CryptoCandleAndPriceIndependenceTest` 회귀 없음)은 이 변경과 무관하게 그대로 유효하다. 아래 체크박스 원문은 이력으로 유지한다.
 
 ## 개요
 

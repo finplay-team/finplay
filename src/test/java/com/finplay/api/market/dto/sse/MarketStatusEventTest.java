@@ -22,10 +22,11 @@ class MarketStatusEventTest {
 
 	@Test
 	void serializesInstrumentLevelStatusEventWithSymbolAndStatusPresent() {
-		// 코인 stale 등 종목 단위 상태 변화는 symbol·status·reason이 모두 채워진다.
+		// 코인 웹소켓 연결 끊김 등 종목 단위 상태 변화는 symbol·status·reason이 모두 채워진다 — reason은
+		// 036-remove-crypto-stale-status 이후에도 여전히 원본 연결상태 이름(FeedConnectionStatus)을 담는다.
 		LocalDateTime emittedAt = LocalDateTime.of(2026, 7, 28, 10, 30, 0);
 		MarketStatusEvent event = new MarketStatusEvent(
-			Market.CRYPTO, "BTC", StockMarketStatus.OPEN, PriceStatus.UNAVAILABLE, "STALE", emittedAt);
+			Market.CRYPTO, "BTC", StockMarketStatus.OPEN, PriceStatus.UNAVAILABLE, "DISCONNECTED", emittedAt);
 
 		JsonNode json = objectMapper.readTree(objectMapper.writeValueAsString(event));
 
@@ -33,7 +34,7 @@ class MarketStatusEventTest {
 		assertThat(json.get("symbol").asString()).isEqualTo("BTC");
 		assertThat(json.get("marketStatus").asString()).isEqualTo("OPEN");
 		assertThat(json.get("status").asString()).isEqualTo("UNAVAILABLE");
-		assertThat(json.get("reason").asString()).isEqualTo("STALE");
+		assertThat(json.get("reason").asString()).isEqualTo("DISCONNECTED");
 		assertThat(json.get("emittedAt").asString()).isEqualTo("2026-07-28T10:30:00");
 	}
 

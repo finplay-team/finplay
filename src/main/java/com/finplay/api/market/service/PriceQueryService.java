@@ -31,7 +31,8 @@ public class PriceQueryService {
 	}
 
 	// 주문 체결 전용 — 주식은 주문 가능 상태·가격·재생세션을 공급자의 같은 관측 결과로 확정한다. 코인은 표시 판정과 같은
-	// 규칙(getCryptoDisplayPriceQuote)을 써서 STALE도 체결을 허용한다(PRICE-REST-004).
+	// 규칙(getCryptoDisplayPriceQuote)을 써서 관측 시각과 무관하게 마지막 가격으로 체결한다(PRICE-NOSTALE-001,
+	// docs/specs/036-remove-crypto-stale-status).
 	@Transactional(readOnly = true)
 	public OrderExecutionPriceDto getOrderExecutionPrice(Instrument instrument) {
 		// 샘플 종목은 실제 시세 인프라(stockPriceProvider·재생세션)를 완전히 우회한다 — 항상 AVAILABLE·OPEN, replaySession=null (SANDBOX-003)
@@ -39,9 +40,9 @@ public class PriceQueryService {
 			return new OrderExecutionPriceDto(tutorialSampleInstrumentPriceService.getPriceQuote(instrument), null);
 		}
 		if (instrument.getMarket() == Market.CRYPTO) {
-			// 표시 판정과 같은 규칙을 쓴다 — 연결 유지 + 수신 이력 있음이면 STALE이어도 마지막 가격으로 체결한다
-			// (PRICE-REST-004, docs/specs/034-crypto-price-rest-backup). requireAvailable은 UNAVAILABLE에만
-			// 예외를 던지므로 STALE quote는 그대로 통과한다 — 별도 체결 전용 판정을 두지 않는다.
+			// 표시 판정과 같은 규칙을 쓴다 — 연결 유지 + 수신 이력 있음이면 관측 시각과 무관하게 마지막 가격으로
+			// 체결한다(PRICE-NOSTALE-001, docs/specs/036-remove-crypto-stale-status). requireAvailable은
+			// UNAVAILABLE에만 예외를 던지므로 별도 체결 전용 판정을 두지 않는다.
 			return new OrderExecutionPriceDto(requireAvailable(getCryptoDisplayPriceQuote(instrument)), null);
 		}
 
@@ -119,10 +120,10 @@ public class PriceQueryService {
 			.toList();
 	}
 
-	// 표시 전용 배치 판정 — 연결상태는 요청당 1회만 조회해 재사용하고(PR #97 리뷰 권장사항), 심볼별 최신가 조회·신선도 판정만
-	// 반복한다. 단건 getCryptoDisplayPriceQuote와 동일한 규칙(연결 끊김→UNAVAILABLE, 연결 유지+fresh→AVAILABLE,
-	// 연결 유지+stale→STALE, 연결 유지+수신 이력 없음→UNAVAILABLE)이며 isStale에도 동일하게 observedAt을 넘긴다
-	// (PRICE-STALE-001, PRICE-REST-001).
+	// 표시 전용 배치 판정 — 연결상태는 요청당 1회만 조회해 재사용하고(PR #97 리뷰 권장사항), 심볼별 최신가 조회만
+	// 반복한다. 단건 getCryptoDisplayPriceQuote와 동일한 규칙(연결 끊김→UNAVAILABLE, 연결 유지+수신 이력 있음→
+	// 경과 시간과 무관하게 항상 AVAILABLE, 연결 유지+수신 이력 없음→UNAVAILABLE)이다 — stale 분기를 완전히
+	// 없앤다(PRICE-NOSTALE-001, docs/specs/036-remove-crypto-stale-status).
 	private List<PriceQuoteDto> getCryptoDisplayPriceQuotes(List<Instrument> instruments) {
 		if (priceStore.getConnectionStatus() != FeedConnectionStatus.CONNECTED) {
 			return instruments.stream().map(instrument -> new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null))
@@ -130,8 +131,7 @@ public class PriceQueryService {
 		}
 		return instruments.stream()
 			.map(instrument -> priceStore.getLatestPrice(instrument.getSymbol())
-				.map(price -> new PriceQuoteDto(price.price(), price.receivedAt(),
-					priceStore.isStale(price.observedAt()) ? PriceStatus.STALE : PriceStatus.AVAILABLE, null))
+				.map(price -> new PriceQuoteDto(price.price(), price.receivedAt(), PriceStatus.AVAILABLE, null))
 				.orElseGet(() -> new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null)))
 			.toList();
 	}
@@ -152,23 +152,18 @@ public class PriceQueryService {
 		return new PriceQuoteDto(quote.price(), quote.sourceTime(), PriceStatus.AVAILABLE, quote.sourceTradingDate());
 	}
 
-	// 표시·체결 공통 판정 — 연결 유지 + 수신 이력 있음이면 stale이어도 마지막 가격을 STALE로 보여준다(PRICE-STALE-001).
-	// getOrderExecutionPrice의 코인 분기도 이 메서드를 그대로 쓴다(PRICE-REST-004) — 032가 나눠놓은 체결 전용
-	// getCryptoExecutionPriceQuote는 제거됐다. 판정 규칙을 두 벌로 유지하지 않는다.
-	// 연결 끊김이거나 수신 이력이 아예 없으면 지금처럼 UNAVAILABLE이다(완화 대상 아님). 배치 버전
-	// (getCryptoDisplayPriceQuotes)과 동일하게 getConnectionStatus()·getLatestPrice()를 각 1회만 호출하고
-	// 같은 조회 결과에 isStale()을 직접 적용한다 — isPriceAvailable() 위임 후 별도로 getLatestPrice()를
-	// 다시 부르면 그 사이 새 틱이 도착했을 때 방금 fresh해진 값을 STALE로 잘못 라벨링하는 race window가
-	// 있었다(PR #360 리뷰 권장사항). isStale에는 p.observedAt()을 넘긴다 — p.receivedAt()(체결 시각)을 넘기면
-	// REST 폴링이 관측 시각을 갱신해도 신선도 판정이 그대로 stale로 남는다(PRICE-REST-001, 034 tasks.md 항목 6에서
-	// 회귀 테스트로 확인된 배선 오류를 수정).
+	// 표시·체결 공통 판정 — 연결 유지 + 수신 이력 있음이면 관측 시각이 얼마나 오래됐든 항상 마지막 가격을
+	// AVAILABLE로 보여준다(PRICE-NOSTALE-001, docs/specs/036-remove-crypto-stale-status). 이전에는 연결 유지 +
+	// 마지막 수신 틱이 10초를 넘으면 STALE로 낮췄으나(PRICE-STALE-001, 032), 이 완화 자체를 없애 STALE 상태가
+	// 발생하지 않게 되돌렸다. getOrderExecutionPrice의 코인 분기도 이 메서드를 그대로 쓴다(PRICE-REST-004) —
+	// 판정 규칙을 두 벌로 유지하지 않는다.
+	// 연결 끊김이거나 수신 이력이 아예 없으면 지금처럼 UNAVAILABLE이다(이번 spec 대상 아님).
 	private PriceQuoteDto getCryptoDisplayPriceQuote(Instrument instrument) {
 		if (priceStore.getConnectionStatus() != FeedConnectionStatus.CONNECTED) {
-			return new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null); // 연결 끊김 — 완화 대상 아님
+			return new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null); // 연결 끊김 — 이번 spec 대상 아님
 		}
 		return priceStore.getLatestPrice(instrument.getSymbol())
-			.map(p -> new PriceQuoteDto(p.price(), p.receivedAt(),
-				priceStore.isStale(p.observedAt()) ? PriceStatus.STALE : PriceStatus.AVAILABLE, null))
-			.orElseGet(() -> new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null)); // 받은 적 없음 — 완화 대상 아님
+			.map(p -> new PriceQuoteDto(p.price(), p.receivedAt(), PriceStatus.AVAILABLE, null))
+			.orElseGet(() -> new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, null)); // 받은 적 없음 — 이번 spec 대상 아님
 	}
 }

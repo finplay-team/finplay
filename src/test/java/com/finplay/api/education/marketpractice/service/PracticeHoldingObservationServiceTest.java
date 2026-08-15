@@ -192,10 +192,10 @@ class PracticeHoldingObservationServiceTest {
 	}
 
 	@Test
-	void createObservationUsesLastKnownPriceWhenCryptoPriceIsStale() {
-		// 032 PRICE-STALE-005(의도적 승계): getPrice()가 표시 경로라 코인이 연결 유지 + stale이어도
-		// 예외 없이 마지막 실제 가격을 반환한다 — 이 서비스는 status를 따로 확인하지 않고 그 가격을
-		// 그대로 관찰 근거로 쓴다(PR #360 리뷰 차단 사항 후속).
+	void createObservationUsesLastKnownPriceRegardlessOfObservationAge() {
+		// 036-remove-crypto-stale-status: getPrice()가 표시 경로라 코인이 연결 유지 상태면 관측 시각이
+		// 얼마나 오래됐든(과거 032 시절엔 stale) 항상 AVAILABLE로 마지막 실제 가격을 반환한다 — 이 서비스는
+		// status를 따로 확인하지 않고 그 가격을 그대로 관찰 근거로 쓴다(PR #360 리뷰 차단 사항 후속 승계).
 		when(holdingService.findHoldingForOwner(USER_ID, HOLDING_ID)).thenReturn(Optional.of(holding));
 		ResolvedPracticeChainDto chain = completedChain();
 		when(chainResolutionService.resolveForInstrument(USER_ID, PracticeIntentionService.TUTORIAL_KEY, INSTRUMENT_ID))
@@ -206,8 +206,9 @@ class PracticeHoldingObservationServiceTest {
 
 		when(practicePriceObservationService.findObservationPrice(USER_ID, chain.buyTradeId(), INSTRUMENT_ID))
 			.thenReturn(Optional.empty());
-		PriceQuoteDto staleQuote = new PriceQuoteDto(new BigDecimal("95"), OBSERVED_AT, PriceStatus.STALE, null);
-		when(priceQueryService.getPrice(INSTRUMENT_ID)).thenReturn(staleQuote);
+		PriceQuoteDto oldQuote = new PriceQuoteDto(
+			new BigDecimal("95"), OBSERVED_AT.minusHours(3), PriceStatus.AVAILABLE, null);
+		when(priceQueryService.getPrice(INSTRUMENT_ID)).thenReturn(oldQuote);
 
 		List<PracticeMarketObservation> existing = List.of();
 		when(observationRepository.findByUserIdAndHoldingIdOrderByObservedAtAsc(USER_ID, HOLDING_ID))
@@ -217,11 +218,11 @@ class PracticeHoldingObservationServiceTest {
 			true, PracticeBoundary.STOP_LOSS, PracticeEvidenceType.CLOSER_TO_BOUNDARY);
 		when(evidenceJudgmentService.judgeObservationEvidence(
 			chain.buyTradeEntryPrice(), referenceLines.referenceStopLossPrice(),
-			referenceLines.referenceTakeProfitPrice(), staleQuote.price(), existing, OBSERVED_AT))
+			referenceLines.referenceTakeProfitPrice(), oldQuote.price(), existing, OBSERVED_AT))
 			.thenReturn(judgment);
 
 		PracticeMarketObservation saved = PracticeMarketObservation.create(
-			USER_ID, holding, INSTRUMENT_ID, staleQuote.price(), judgment.closerToBoundary(),
+			USER_ID, holding, INSTRUMENT_ID, oldQuote.price(), judgment.closerToBoundary(),
 			judgment.closerBoundary(), judgment.evidenceType(), OBSERVED_AT);
 		when(observationRepository.save(any(PracticeMarketObservation.class))).thenReturn(saved);
 

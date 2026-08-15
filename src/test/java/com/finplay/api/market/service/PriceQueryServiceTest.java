@@ -291,28 +291,30 @@ class PriceQueryServiceTest {
 		verify(priceStore, never()).getLatestPrice(any());
 	}
 
-	// 이하 PRICE-STALE-001·003 — 표시 경로 stale 완화(connected+stale)와 체결 경로 무변경 (docs/specs/032-price-quote-stale-split).
+	// 이하 PRICE-NOSTALE-001 — 연결 유지 + 수신 이력 있음이면 관측 시각이 얼마나 오래됐든 항상 AVAILABLE이다
+	// (docs/specs/036-remove-crypto-stale-status, 032 PRICE-STALE-001의 stale 완화 자체를 되돌림 — STALE은
+	// 더 이상 발생하지 않는다).
 
 	@Test
-	void getPriceQuoteReturnsStaleQuoteWithLastKnownPriceWhenCryptoConnectionAliveButTickIsStale() {
+	void getPriceQuoteReturnsAvailableQuoteWithLastKnownPriceEvenThoughObservedLongAgo() {
 		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
 		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
 		PriceStore priceStore = mock(PriceStore.class);
 		Instrument instrument = Instrument.create(Market.CRYPTO, "BTC", "비트코인", BigDecimal.valueOf(1000), 5000L, true,
 			NOW);
+		LocalDateTime longAgo = NOW.minusHours(3);
 		when(instrumentRepository.findById(2L)).thenReturn(Optional.of(instrument));
 		when(priceStore.getConnectionStatus()).thenReturn(FeedConnectionStatus.CONNECTED);
 		when(priceStore.getLatestPrice("BTC"))
-			.thenReturn(Optional.of(new CryptoPriceDto("BTC", new BigDecimal("50000000"), NOW)));
-		when(priceStore.isStale(NOW)).thenReturn(true);
+			.thenReturn(Optional.of(new CryptoPriceDto("BTC", new BigDecimal("50000000"), longAgo)));
 		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
 			priceStore, mock(TutorialSampleInstrumentPriceService.class));
 
 		PriceQuoteDto result = priceQueryService.getPriceQuote(2L);
 
-		assertThat(result.status()).isEqualTo(PriceStatus.STALE);
+		assertThat(result.status()).isEqualTo(PriceStatus.AVAILABLE);
 		assertThat(result.price()).isEqualTo(new BigDecimal("50000000"));
-		assertThat(result.sourceTime()).isEqualTo(NOW);
+		assertThat(result.sourceTime()).isEqualTo(longAgo);
 	}
 
 	@Test
@@ -336,47 +338,47 @@ class PriceQueryServiceTest {
 	}
 
 	@Test
-	void getPriceDoesNotThrowAndReturnsStaleQuoteWhenCryptoConnectionAliveButTickIsStale() {
+	void getPriceDoesNotThrowAndReturnsAvailableQuoteWhenCryptoConnectionAliveButObservedLongAgo() {
 		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
 		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
 		PriceStore priceStore = mock(PriceStore.class);
 		Instrument instrument = Instrument.create(Market.CRYPTO, "BTC", "비트코인", BigDecimal.valueOf(1000), 5000L, true,
 			NOW);
+		LocalDateTime longAgo = NOW.minusHours(3);
 		when(instrumentRepository.findById(2L)).thenReturn(Optional.of(instrument));
 		when(priceStore.getConnectionStatus()).thenReturn(FeedConnectionStatus.CONNECTED);
 		when(priceStore.getLatestPrice("BTC"))
-			.thenReturn(Optional.of(new CryptoPriceDto("BTC", new BigDecimal("50000000"), NOW)));
-		when(priceStore.isStale(NOW)).thenReturn(true);
+			.thenReturn(Optional.of(new CryptoPriceDto("BTC", new BigDecimal("50000000"), longAgo)));
 		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
 			priceStore, mock(TutorialSampleInstrumentPriceService.class));
 
-		// getPrice(Long)은 requireAvailable을 거치지만 STALE은 UNAVAILABLE이 아니므로 예외를 던지지 않는다 (PRICE-STALE-001).
+		// getPrice(Long)은 requireAvailable을 거치지만 관측 시각이 오래됐다는 이유만으로는 UNAVAILABLE이 아니므로
+		// 예외를 던지지 않는다(PRICE-NOSTALE-001).
 		PriceQuoteDto result = priceQueryService.getPrice(2L);
 
-		assertThat(result.status()).isEqualTo(PriceStatus.STALE);
+		assertThat(result.status()).isEqualTo(PriceStatus.AVAILABLE);
 		assertThat(result.price()).isEqualTo(new BigDecimal("50000000"));
-		assertThat(result.sourceTime()).isEqualTo(NOW);
+		assertThat(result.sourceTime()).isEqualTo(longAgo);
 	}
 
-	// 체결 경로(getOrderExecutionPrice)는 이제 표시 경로와 같은 규칙을 쓴다 — 연결 유지 + 수신 이력 있음이면 STALE이어도
-	// 예외 없이 마지막 가격으로 체결된다(PRICE-REST-004, docs/specs/034-crypto-price-rest-backup이 032
-	// PRICE-STALE-003의 fail-closed 체결 차단을 대체한다). 이름·단정을 032 시절의 반대로 뒤집은 테스트다.
+	// 체결 경로(getOrderExecutionPrice)는 표시 경로와 같은 규칙을 쓴다 — 연결 유지 + 수신 이력 있음이면 관측 시각이
+	// 얼마나 오래됐든 예외 없이 마지막 가격으로 체결된다(PRICE-NOSTALE-001, docs/specs/036-remove-crypto-stale-status).
 	@Test
-	void getOrderExecutionPriceReturnsLastKnownPriceWhenCryptoConnectionAliveButTickIsStale() {
+	void getOrderExecutionPriceReturnsLastKnownPriceEvenThoughObservedLongAgo() {
 		Instrument instrument = Instrument.create(
 			Market.CRYPTO, "BTC", "비트코인", new BigDecimal("0.00000001"), 5000L, true, NOW);
 		PriceStore priceStore = mock(PriceStore.class);
+		LocalDateTime longAgo = NOW.minusHours(3);
 		when(priceStore.getConnectionStatus()).thenReturn(FeedConnectionStatus.CONNECTED);
 		when(priceStore.getLatestPrice("BTC"))
-			.thenReturn(Optional.of(new CryptoPriceDto("BTC", new BigDecimal("50000000"), NOW)));
-		when(priceStore.isStale(NOW)).thenReturn(true);
+			.thenReturn(Optional.of(new CryptoPriceDto("BTC", new BigDecimal("50000000"), longAgo)));
 		PriceQueryService priceQueryService = new PriceQueryService(
 			mock(InstrumentRepository.class), mock(StockPriceProvider.class), priceStore,
 			mock(TutorialSampleInstrumentPriceService.class));
 
 		OrderExecutionPriceDto result = priceQueryService.getOrderExecutionPrice(instrument);
 
-		assertThat(result.priceQuote().status()).isEqualTo(PriceStatus.STALE);
+		assertThat(result.priceQuote().status()).isEqualTo(PriceStatus.AVAILABLE);
 		assertThat(result.priceQuote().price()).isEqualByComparingTo("50000000");
 		assertThat(result.stockReplaySession()).isNull();
 	}
@@ -411,26 +413,26 @@ class PriceQueryServiceTest {
 		assertThat(result.sourceTime()).isEqualTo(staleReceivedAt); // sourceTime은 여전히 체결 시각 그대로다
 	}
 
-	// 관측 시각도 함께 오래된 경우(REST 폴링도 조용한 것처럼) — 표시는 STALE이지만 체결(getOrderExecutionPrice)은
-	// 예외 없이 마지막 가격을 반환한다(PRICE-REST-004가 여전히 성립함을 확인).
+	// 관측 시각(observedAt)도 체결 시각(receivedAt)과 함께 오래된 경우(REST 폴링도 조용한 것처럼)에도 체결
+	// (getOrderExecutionPrice)은 예외 없이 마지막 가격을 반환한다(PRICE-NOSTALE-001) — isStale 자체를 더 이상
+	// 호출하지 않으므로 observedAt·receivedAt 둘 다 얼마나 오래됐는지는 결과에 영향을 주지 않는다.
 	@Test
-	void getOrderExecutionPriceReturnsLastKnownPriceWithoutThrowingWhenObservedAtIsAlsoStale() {
+	void getOrderExecutionPriceReturnsLastKnownPriceWithoutThrowingWhenObservedAtIsAlsoOld() {
 		Instrument instrument = Instrument.create(
 			Market.CRYPTO, "BTC", "비트코인", new BigDecimal("0.00000001"), 5000L, true, NOW);
 		PriceStore priceStore = mock(PriceStore.class);
-		LocalDateTime staleReceivedAt = NOW.minusSeconds(30);
-		LocalDateTime staleObservedAt = NOW.minusSeconds(20);
+		LocalDateTime oldReceivedAt = NOW.minusHours(3);
+		LocalDateTime oldObservedAt = NOW.minusHours(2);
 		when(priceStore.getConnectionStatus()).thenReturn(FeedConnectionStatus.CONNECTED);
 		when(priceStore.getLatestPrice("BTC")).thenReturn(
-			Optional.of(new CryptoPriceDto("BTC", new BigDecimal("50000000"), staleReceivedAt, staleObservedAt)));
-		when(priceStore.isStale(staleObservedAt)).thenReturn(true);
+			Optional.of(new CryptoPriceDto("BTC", new BigDecimal("50000000"), oldReceivedAt, oldObservedAt)));
 		PriceQueryService priceQueryService = new PriceQueryService(
 			mock(InstrumentRepository.class), mock(StockPriceProvider.class), priceStore,
 			mock(TutorialSampleInstrumentPriceService.class));
 
 		OrderExecutionPriceDto result = priceQueryService.getOrderExecutionPrice(instrument);
 
-		assertThat(result.priceQuote().status()).isEqualTo(PriceStatus.STALE);
+		assertThat(result.priceQuote().status()).isEqualTo(PriceStatus.AVAILABLE);
 		assertThat(result.priceQuote().price()).isEqualByComparingTo("50000000");
 		assertThat(result.stockReplaySession()).isNull();
 	}
@@ -587,27 +589,28 @@ class PriceQueryServiceTest {
 		verify(priceStore, never()).isPriceAvailable(any());
 	}
 
-	// 이하 PRICE-STALE-001 배치판 — 단건 getCryptoDisplayPriceQuote와 동일한 규칙(연결 유지+stale→STALE,
-	// 연결 끊김·수신 이력 없음→UNAVAILABLE)을 배치에서도 확인한다(docs/specs/032-price-quote-stale-split tasks.md 항목 2).
+	// 이하 PRICE-NOSTALE-001 배치판 — 단건 getCryptoDisplayPriceQuote와 동일한 규칙(연결 유지+수신 이력 있음이면
+	// 경과 시간과 무관하게 항상 AVAILABLE, 연결 끊김·수신 이력 없음→UNAVAILABLE)을 배치에서도 확인한다
+	// (docs/specs/036-remove-crypto-stale-status).
 
 	@Test
-	void getPriceQuotesReturnsStaleQuoteWithLastKnownPriceWhenCryptoConnectionAliveButTickIsStale() {
+	void getPriceQuotesReturnsAvailableQuoteWithLastKnownPriceEvenThoughObservedLongAgo() {
 		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
 		StockPriceProvider stockPriceProvider = mock(StockPriceProvider.class);
 		PriceStore priceStore = mock(PriceStore.class);
 		Instrument btc = Instrument.create(Market.CRYPTO, "BTC", "비트코인", BigDecimal.valueOf(1000), 5000L, true, NOW);
+		LocalDateTime longAgo = NOW.minusHours(3);
 		when(priceStore.getConnectionStatus()).thenReturn(FeedConnectionStatus.CONNECTED);
 		when(priceStore.getLatestPrice("BTC"))
-			.thenReturn(Optional.of(new CryptoPriceDto("BTC", new BigDecimal("50000000"), NOW)));
-		when(priceStore.isStale(NOW)).thenReturn(true);
+			.thenReturn(Optional.of(new CryptoPriceDto("BTC", new BigDecimal("50000000"), longAgo)));
 		PriceQueryService priceQueryService = new PriceQueryService(instrumentRepository, stockPriceProvider,
 			priceStore, mock(TutorialSampleInstrumentPriceService.class));
 
 		List<PriceQuoteDto> results = priceQueryService.getPriceQuotes(List.of(btc));
 
-		assertThat(results.get(0).status()).isEqualTo(PriceStatus.STALE);
+		assertThat(results.get(0).status()).isEqualTo(PriceStatus.AVAILABLE);
 		assertThat(results.get(0).price()).isEqualTo(new BigDecimal("50000000"));
-		assertThat(results.get(0).sourceTime()).isEqualTo(NOW);
+		assertThat(results.get(0).sourceTime()).isEqualTo(longAgo);
 	}
 
 	@Test
