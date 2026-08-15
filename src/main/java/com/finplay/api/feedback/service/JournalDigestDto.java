@@ -38,10 +38,17 @@ record JournalDigestDto(String sellJournalContent, List<BuyJournalLine> buyJourn
 	}
 
 	/**
-	 * 프롬프트에 실을 일기가 하나도 없는가.
+	 * 프롬프트에 실을 일기가 하나도 없는가. 참이면 프롬프트가 3차와 <b>한 글자도 다르지 않아야 한다</b>(결정 1).
 	 *
-	 * <p>참이면 프롬프트가 3차와 <b>한 글자도 다르지 않아야 한다</b>(결정 1) — 호출부가 일기 덩어리를 통째로
-	 * 빼는 판정에 쓴다.
+	 * <p><b>운영 코드에는 호출부가 없고 테스트 단정에만 쓴다</b>(2026-08-16 리뷰 지적으로 정정 — 그전까지 이
+	 * 주석은 "호출부가 일기 덩어리를 빼는 판정에 쓴다"고 적혀 있었으나 사실이 아니었다). 같은 판정이 실제로
+	 * 놓이는 자리는 둘이며 <b>둘 다 이 메서드를 부를 수 없다</b> — {@code PostSellJournalReader}는 이 record를
+	 * 만들기 <b>전에</b> 조회 결과로 판정하고, {@code NarrativePromptBuilder}는 이 타입이 아니라
+	 * {@code PostSellPromptDto}를 받는다(프롬프트 조립부는 지문을 알 필요가 없어 그 자리에 지문 없는 타입을
+	 * 둔 것이 §C-6의 의도다).
+	 *
+	 * <p>그래서 규칙이 세 곳에 있는 셈이고 <b>한 곳만 고치면 갈린다.</b> 셋을 한 타입으로 모으려면 조립부가
+	 * 지문까지 받아야 해서 그 의도가 깨지므로, 합치는 대신 이 관계를 여기 적어 둔다.
 	 */
 	boolean isEmpty() {
 		return sellJournalContent == null && buyJournals.isEmpty();
