@@ -72,8 +72,8 @@ class PostSellFeedbackServiceTest {
 	private final TradeFeedbackRepository tradeFeedbackRepository = mock(TradeFeedbackRepository.class);
 
 	// 재생성 누적 상한만 쓰이므로 나머지는 application.yml 기본값과 같은 값으로 둔다(§C-7).
-	private static final FeedbackLlmProperties LLM_PROPERTIES = new FeedbackLlmProperties("gpt-5.4-mini", 20, 512, 1,
-		3);
+	private static final FeedbackLlmProperties LLM_PROPERTIES = new FeedbackLlmProperties("gpt-5.4-mini", 20, 1024, 1,
+		3, 3);
 
 	private final PostSellFeedbackService postSellFeedbackService = new PostSellFeedbackService(
 		postSellFeedbackReader, narrativeService, tradeFeedbackWriter, tradeFeedbackRepository,

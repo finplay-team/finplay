@@ -19,14 +19,25 @@ public record FeedbackLlmProperties(
 	// OpenAiChatModel 바이트코드 확인). GPT-5 계열(기본 모델)은 max_tokens를 거부하므로 maxTokens로 넘기면
 	// 전 호출이 실패해 서술이 통째로 템플릿이 된다. max_completion_tokens는 GPT-4.1 계열도 받으므로
 	// §튜닝의 폴백 모델로 내려도 그대로 쓸 수 있다.
-	@DefaultValue("512")
+	//
+	// 4차에 512에서 1024로 올렸다(§FEED-013 결정 5). 투자일기가 실리면 매도 회고가 6~8문장으로 길어지는데,
+	// 토큰이 모자라 잘린 문장은 §후검증을 그대로 통과해 조용히 사용자에게 나간다. 기본 모델이 GPT-5 계열이라
+	// 추론 토큰이 같은 예산을 나눠 쓸 수 있다는 것도 이유다(2026-08-03 실측 당시 0이었으나 프롬프트가 길어진
+	// 뒤에도 0인지는 확인되지 않았다). 상한이라 짧은 파트(카드·요약·브리핑)의 비용은 늘지 않는다.
+	@DefaultValue("1024")
 	int maxTokens,
 	// 요약·브리핑이 후검증에 걸렸을 때 재생성하는 횟수. 카드·매도 회고는 템플릿이 있어 재생성하지 않는다.
 	@DefaultValue("1")
 	int maxRegeneration,
 	// 매도 회고 서술 재생성의 체결 1건당 누적 재시도 상한. 날짜 단위로 리셋하지 않는다.
+	// 흐름·집단 사유(§C-5 게이트) 전용이며 아래 max-journal-regeneration과 따로 센다.
 	@DefaultValue("3")
-	int maxNarrativeRetry) {
+	int maxNarrativeRetry,
+	// 투자일기 사유로 매도 회고 서술을 다시 만드는 체결 1건당 누적 상한 (§FEED-013 결정 3).
+	// maxNarrativeRetry와 카운터를 합치지 않는 이유는, 합치면 일기를 여러 번 고친 체결이 그 상한을 먼저
+	// 소진해 흐름·집단 반영 기회를 잃기 때문이다 — 예외도 로그도 없이 그렇게 된다.
+	@DefaultValue("3")
+	int maxJournalRegeneration) {
 
 	// 음수를 막는 이유는 실패 모양이 조용하기 때문이다. maxRegeneration이 음수면 NarrativeService의 재생성
 	// 루프가 0회 돌아 생성기를 한 번도 부르지 않고 NONE을 반환한다 — 예외도 로그도 없이 요약·브리핑이

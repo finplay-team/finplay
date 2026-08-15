@@ -55,7 +55,7 @@
   - 클래스 Javadoc에 두 컬럼의 뜻을 §데이터 모델 주석대로 남긴다 — 특히 **`journal_fingerprint`가 `NULL`에서 값으로 바뀌는 것도 "달라짐"**이라는 것과 **`narrative_finalized`를 일기 판정에 쓰지 않는다**는 것.
   - 검증 — 통합. 기존 Testcontainers 통합 테스트가 전부 `ddl-auto=validate`로 기동하므로 별도 테스트를 새로 만들지 않는다. `./gradlew test`로 기동이 깨지지 않는지만 확인한다.
 
-- [ ] **2. 설정값 — `llm.max-tokens` 512 → 1024, `llm.max-journal-regeneration` 신설, `feedback.journal` 블록 신설**
+- [x] **2. 설정값 — `llm.max-tokens` 512 → 1024, `llm.max-journal-regeneration` 신설, `feedback.journal` 블록 신설**
 
   §C-7이 정본이다. 세 곳을 함께 고친다 — `@DefaultValue`(바닥값)·`application.yml`(동작값)·드리프트 테스트.
 

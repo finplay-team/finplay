@@ -40,7 +40,7 @@ import org.springframework.util.StreamUtils;
 class OpenAiNarrativeGeneratorTest {
 
 	// 프로퍼티에서 온 값이 요청에 실리는지 보려면 §C-7 기본값과 달라야 한다 — 같으면 코드에 박아도 통과한다.
-	private static final FeedbackLlmProperties PROPERTIES = new FeedbackLlmProperties("test-model-x", 7, 321, 1, 3);
+	private static final FeedbackLlmProperties PROPERTIES = new FeedbackLlmProperties("test-model-x", 7, 321, 1, 3, 3);
 
 	private static final String SYSTEM_PROMPT = "너는 관찰형 서술만 쓴다.";
 

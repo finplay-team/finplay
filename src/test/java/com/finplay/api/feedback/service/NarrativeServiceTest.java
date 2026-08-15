@@ -452,7 +452,7 @@ class NarrativeServiceTest {
 			new NarrativePromptBuilder(),
 			new NarrativeValidator(),
 			new NarrativeTemplateBuilder(),
-			new FeedbackLlmProperties("gpt-5.4-mini", 20, 512, maxRegeneration, 3));
+			new FeedbackLlmProperties("gpt-5.4-mini", 20, 1024, maxRegeneration, 3, 3));
 	}
 
 	private static int countOccurrences(String text, String token) {
