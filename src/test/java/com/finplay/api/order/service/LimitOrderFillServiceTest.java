@@ -4,6 +4,7 @@ package com.finplay.api.order.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -31,9 +32,11 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -208,6 +211,49 @@ class LimitOrderFillServiceTest {
 		when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
 
 		service.fillIfPending(order.getId());
+
+		verify(accountService, never()).getAccountByIdForUpdate(any());
+		verifyNoInteractions(tradeRepository, portfolioBuyService, portfolioSellService, eventPublisher);
+	}
+
+	// ADR-0025 — fillBatch(List<Long>)는 청크 안 각 주문에 fillIfPending과 동일한 체결 로직(fillOnePending)을
+	// 순서대로 적용한다. 단위 테스트에서는 목만으로 검증 가능한 "순서대로 처리한다"만 본다 — 청크 원자적
+	// 롤백(한 건 실패 시 전체 롤백)은 실제 DB 커밋이 필요해 LimitOrderFillBatchAtomicityIntegrationTest가 맡는다.
+	@Test
+	void fillBatchFillsEachOrderInGivenOrder() {
+		// account()는 항상 id=10L을 부여하므로(테스트 헬퍼 관례), 두 주문에 서로 다른 Account 인스턴스를 쓰면
+		// getAccountByIdForUpdate(10L) 스텁이 나중 것으로 덮어써져 첫 주문도 두 번째 계좌를 참조하게 된다 —
+		// 하나의 계좌를 공유하고 두 주문의 예약 합계를 누적해서 이 문제를 피한다.
+		Instrument instrument = cryptoInstrument();
+		Account account = account();
+		Order first = limitPendingOrder(account, instrument, OrderSide.BUY, "0.1", "1000000");
+		Order second = limitPendingOrder(account, instrument, OrderSide.BUY, "0.2", "1000000");
+		ReflectionTestUtils.setField(first, "id", 101L);
+		ReflectionTestUtils.setField(second, "id", 102L);
+		account.reserveCash(100_050L + 200_100L);
+		when(orderRepository.findByIdForUpdate(101L)).thenReturn(Optional.of(first));
+		when(orderRepository.findByIdForUpdate(102L)).thenReturn(Optional.of(second));
+		when(accountService.getAccountByIdForUpdate(account.getId())).thenReturn(account);
+
+		service.fillBatch(List.of(101L, 102L));
+
+		InOrder order = inOrder(orderRepository);
+		order.verify(orderRepository).findByIdForUpdate(101L);
+		order.verify(orderRepository).findByIdForUpdate(102L);
+		assertThat(first.getStatus()).isEqualTo(OrderStatus.FILLED);
+		assertThat(second.getStatus()).isEqualTo(OrderStatus.FILLED);
+	}
+
+	@Test
+	void fillBatchSkipsOrderThatIsNoLongerPending() {
+		Instrument instrument = cryptoInstrument();
+		Account account = account();
+		Order alreadyFilled = limitPendingOrder(account, instrument, OrderSide.BUY, "0.1", "1000000");
+		alreadyFilled.markFilled();
+		ReflectionTestUtils.setField(alreadyFilled, "id", 103L);
+		when(orderRepository.findByIdForUpdate(103L)).thenReturn(Optional.of(alreadyFilled));
+
+		service.fillBatch(List.of(103L));
 
 		verify(accountService, never()).getAccountByIdForUpdate(any());
 		verifyNoInteractions(tradeRepository, portfolioBuyService, portfolioSellService, eventPublisher);
