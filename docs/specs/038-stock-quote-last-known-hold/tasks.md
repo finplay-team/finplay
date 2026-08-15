@@ -7,7 +7,7 @@
   슬라이스 테스트로 오늘 세션 제외·`READY`만 선택·서비스 날짜 최댓값 1건·후보 없음(`Optional.empty()`)을 확인한다.
   스키마 변경 없음(Flyway 마이그레이션을 만들지 않는다).
 
-- [ ] **2. 가격 표시 경로 폴백 (`StockReplayService.getCurrentPrices`) + 단위 테스트**
+- [x] **2. 가격 표시 경로 폴백 (`StockReplayService.getCurrentPrices`) + 단위 테스트**
   `marketStatus == CLOSED`이고 오늘 세션 기준 공개 분봉이 없을 때만 폴백 세션의 마지막 분봉 종가로 응답을 채운다.
   폴백 시세는 `sessionReady=false`·`replaySession=null`·`marketStatus=CLOSED`를 유지한다(QUOTE-HOLD-005).
   폴백 세션 조회는 요청당 1회. 단위 테스트는 plan.md "테스트 계획"의 ①②⑤⑥⑦⑧을 덮는다.

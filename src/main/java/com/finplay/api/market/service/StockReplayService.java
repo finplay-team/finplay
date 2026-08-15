@@ -56,21 +56,28 @@ public class StockReplayService {
 	// 계좌(=market) 단위로 여러 종목을 평가할 때 종목과 무관한 전역 상태(현재시각·재생세션·시장상태)를 요청당 1회만 계산하고,
 	// 종목별로 실제로 달라지는 분봉 조회(findRevealedCandle)만 반복한다 (PR #97 리뷰 권장사항 — HoldingValuationService 등이
 	// 보유 종목 N개를 평가할 때 이 전역 상태를 종목 수만큼 중복 조회하던 낭비를 없앤다). 반환 순서는 instrumentIds와 일치한다.
+	//
+	// marketStatus == CLOSED일 때만 폴백을 시도한다(QUOTE-HOLD-004 — 장중에는 어떤 경우에도 폴백하지 않는다. 특정 종목의
+	// 분봉 결손은 수집 장애이며 옛 값으로 가리지 않는다). 폴백 대상은 오늘 세션이 아니라 서비스 날짜가 오늘보다 이전인
+	// 마지막 READY 세션이다(QUOTE-HOLD-003) — 오늘 세션을 폴백에 쓰면 아직 재생되지 않은 오후가 개장 전에 새어 나간다.
 	@Transactional(readOnly = true)
 	public List<StockReplayPriceDto> getCurrentPrices(List<Long> instrumentIds) {
 		LocalDateTime now = LocalDateTime.now(clock);
-		Optional<StockReplaySession> readySession = findReadySession(now.toLocalDate());
+		LocalDate today = now.toLocalDate();
+		Optional<StockReplaySession> readySession = findReadySession(today);
 		StockMarketStatus marketStatus = computeMarketStatus(readySession.isPresent(), now);
 
-		if (readySession.isEmpty()) {
-			return instrumentIds.stream()
-				.map(instrumentId -> new StockReplayPriceDto(false, marketStatus, null, null, null, null))
-				.toList();
+		if (marketStatus == StockMarketStatus.OPEN) {
+			// OPEN이면 오늘 세션이 반드시 준비되어 있다(computeMarketStatus 계약) — 폴백을 아예 시도하지 않는다.
+			return buildTodaySessionPrices(instrumentIds, marketStatus, readySession.orElseThrow(), now.toLocalTime());
 		}
+		return buildClosedMarketPrices(instrumentIds, marketStatus, readySession, today, now.toLocalTime());
+	}
 
-		StockReplaySession replaySession = readySession.get();
+	// marketStatus == OPEN 전용 — 오늘 재생세션 기준으로만 시세를 만든다(이 spec 도입 전 getCurrentPrices 본문과 동일).
+	private List<StockReplayPriceDto> buildTodaySessionPrices(
+		List<Long> instrumentIds, StockMarketStatus marketStatus, StockReplaySession replaySession, LocalTime nowTime) {
 		LocalDate sourceTradingDate = replaySession.getSourceTradingDate();
-		LocalTime nowTime = now.toLocalTime();
 		boolean isFirstCandleWindow = isWithinFirstCandleWindow(nowTime);
 		return instrumentIds.stream().map(instrumentId -> {
 			Optional<StockCandle> revealedCandle = findRevealedCandle(instrumentId, sourceTradingDate, nowTime);
@@ -82,6 +89,67 @@ public class StockReplayService {
 			LocalDateTime sourceTime = LocalDateTime.of(sourceTradingDate, candle.getCandleTime());
 			return new StockReplayPriceDto(true, marketStatus, sourceTradingDate, price, sourceTime, replaySession);
 		}).toList();
+	}
+
+	// marketStatus == CLOSED 전용(QUOTE-HOLD-001·003·005) — 오늘 세션 기준으로 공개할 분봉이 없는 종목만 폴백 후보다.
+	// 오늘 세션이 아예 없거나(행 없음·FAILED·PREPARING) READY 세션이라도 공개된 분봉이 없는 경우 모두 여기로 들어온다.
+	private List<StockReplayPriceDto> buildClosedMarketPrices(
+		List<Long> instrumentIds, StockMarketStatus marketStatus, Optional<StockReplaySession> readySession,
+		LocalDate today, LocalTime nowTime) {
+		StockReplaySession todaySession = readySession.orElse(null);
+		LocalDate todaySourceTradingDate = readySession.map(StockReplaySession::getSourceTradingDate).orElse(null);
+		boolean isFirstCandleWindow = isWithinFirstCandleWindow(nowTime);
+
+		List<Optional<StockCandle>> todayCandles = readySession.isEmpty()
+			? instrumentIds.stream().<Optional<StockCandle>>map(id -> Optional.empty()).toList()
+			: instrumentIds.stream().map(id -> findRevealedCandle(id, todaySourceTradingDate, nowTime)).toList();
+
+		// 폴백 세션 조회는 요청당 최대 1회 — 폴백이 필요한 종목이 하나도 없으면(오늘 세션 기준으로 전부 정상 공개)
+		// 아예 조회하지 않는다(plan.md "구성요소 변경" §2).
+		boolean anyFallbackNeeded = todayCandles.stream().anyMatch(Optional::isEmpty);
+		Optional<StockReplaySession> fallbackSession = anyFallbackNeeded
+			? findFallbackSession(today)
+			: Optional.empty();
+
+		List<StockReplayPriceDto> results = new ArrayList<>(instrumentIds.size());
+		for (int i = 0; i < instrumentIds.size(); i++) {
+			Optional<StockCandle> todayCandle = todayCandles.get(i);
+			if (todayCandle.isPresent()) {
+				StockCandle candle = todayCandle.get();
+				var price = isFirstCandleWindow ? candle.getOpen() : candle.getClose();
+				LocalDateTime sourceTime = LocalDateTime.of(todaySourceTradingDate, candle.getCandleTime());
+				results.add(new StockReplayPriceDto(
+					true, marketStatus, todaySourceTradingDate, price, sourceTime, todaySession));
+				continue;
+			}
+			Long instrumentId = instrumentIds.get(i);
+			results.add(fallbackSession
+				.flatMap(session -> buildFallbackPrice(instrumentId, marketStatus, session))
+				.orElseGet(() -> new StockReplayPriceDto(
+					readySession.isPresent(), marketStatus, todaySourceTradingDate, null, null, todaySession)));
+		}
+		return results;
+	}
+
+	// 폴백 세션의 원본 거래일 마지막 분봉으로 시세를 만든다(QUOTE-HOLD-001·005). sessionReady=false·replaySession=null을
+	// 유지해 체결 경로에 구조적으로 도달하지 못하게 한다 — PriceQueryService.getOrderExecutionPrice가 marketStatus==CLOSED와
+	// replaySession==null을 가격을 보기 전에 검사한다(plan.md "폴백 시세 DTO의 형태"). 그 거래일에 분봉이 하나도 없으면
+	// (보관 정리 등) 폴백이 성립하지 않아 Optional.empty()를 반환하고, 호출부가 기존 UNAVAILABLE로 대체한다.
+	private Optional<StockReplayPriceDto> buildFallbackPrice(
+		Long instrumentId, StockMarketStatus marketStatus, StockReplaySession fallbackSession) {
+		LocalDate fallbackTradingDate = fallbackSession.getSourceTradingDate();
+		return stockCandleRepository
+			.findFirstByInstrumentIdAndTradingDateOrderByCandleTimeDesc(instrumentId, fallbackTradingDate)
+			.map(candle -> new StockReplayPriceDto(
+				false, marketStatus, fallbackTradingDate, candle.getClose(),
+				LocalDateTime.of(fallbackTradingDate, candle.getCandleTime()), null));
+	}
+
+	// 폴백 대상 세션 조회(QUOTE-HOLD-003·006) — 서비스 날짜가 오늘보다 이전인 READY 세션 중 가장 최근 것. 날짜 상한을
+	// 두지 않는다. buildClosedMarketPrices가 실제로 필요할 때만(anyFallbackNeeded) 호출해 요청당 최대 1회로 제한한다.
+	private Optional<StockReplaySession> findFallbackSession(LocalDate today) {
+		return stockReplaySessionRepository
+			.findFirstByServiceDateBeforeAndPreparationStatusOrderByServiceDateDesc(today, PreparationStatus.READY);
 	}
 
 	// 캔들 API — 아직 마감하지 않은 분봉은 절대 응답에 포함하지 않는다. 09:00~09:00:59(첫 분봉 구간)은 그 첫 분봉조차 아직
