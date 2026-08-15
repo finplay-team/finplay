@@ -39,7 +39,8 @@ public class BithumbRestTickerPoller {
 
 	private static final String DEFAULT_TICKER_ENDPOINT = "https://api.bithumb.com/v1/ticker";
 	private static final String KRW_MARKET_PREFIX = "KRW-";
-	// PriceStore의 stale 기준 10초보다 짧아야 한다 — 길면 가격이 있는데도 409 PRICE_UNAVAILABLE이 뜬다.
+	// PriceStore의 stale 기준 10초보다 짧아야 한다 — 표시·체결 판정(036 이후)은 더 이상 이 기준을 안 쓰지만,
+	// CryptoPriceSnapshotService.isPriceAvailable()이 변동 카드 재료 신뢰도 게이트로 여전히 이 기준을 쓴다.
 	private static final long POLL_INTERVAL_MS = 3000;
 
 	private final RestClient restClient;
@@ -84,8 +85,10 @@ public class BithumbRestTickerPoller {
 	}
 
 	// 조회 실패·타임아웃·비정상 상태코드·파싱 불가는 이번 회차를 건너뛰고 로그만 남긴다. 예외를 밖으로 던지면
-	// 스케줄러가 죽으므로 절대 전파하지 않으며, 임의값·마지막 값으로 대체하지도 않는다 (MKT-004) —
-	// 마지막 값이 10초 뒤 자연히 stale이 되어 PRICE_UNAVAILABLE로 정직하게 드러난다.
+	// 스케줄러가 죽으므로 절대 전파하지 않으며, 임의값·마지막 값으로 대체하지도 않는다 (MKT-004) — 표시·체결
+	// 판정(PriceQueryService)은 036 이후 관측 시각과 무관하게 항상 AVAILABLE이라, 웹소켓 연결이 살아있는 한
+	// 이 폴러가 조용히 계속 실패해도 409로 드러나지 않는다(PR #380 리뷰 참고). 다만 CryptoPriceSnapshotService의
+	// isPriceAvailable() 게이트는 여전히 관측 시각(10초 기준)을 쓰므로, 그쪽 변동 카드 재료로는 stale 취급된다.
 	@Scheduled(fixedRate = POLL_INTERVAL_MS)
 	public void pollTickers() {
 		try {
