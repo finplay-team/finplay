@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -37,6 +38,7 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -63,7 +65,30 @@ class PostSellFeedbackServiceTest {
 	private static final String LLM_NARRATIVE = "09시 30분 매수는 이날 하락 구간보다 1시간 55분 앞섰습니다.";
 	private static final String TEMPLATE_NARRATIVE = "09시 30분에 70,000원에 매수해 14시 40분에 68,500원에 매도했습니다.";
 
+	// 이 파일의 픽스처에는 투자일기가 없어 지문이 저장된 값과 늘 같다 — 그래서 성립하는 사유는 이 파일이 원래
+	// 재현하던 흐름·집단(§C-5 게이트) 하나뿐이다. 일기 사유 쪽은 tester가 따로 덮는다.
+	private static final RegenerationReasons GATE_REASON_ONLY = new RegenerationReasons(false, true);
+
+	// 나머지 두 조합 — 아래 일기 사유 케이스가 쓴다. 인자 순서가 뒤바뀌면 journal_regenerations와
+	// regeneration_attempts가 조용히 맞바뀌므로(RegenerationReasons Javadoc) 조합을 이름으로 고정한다.
+	private static final RegenerationReasons JOURNAL_REASON_ONLY = new RegenerationReasons(true, false);
+
+	private static final RegenerationReasons BOTH_REASONS = new RegenerationReasons(true, true);
+
+	// 지문은 SHA-256 hex 64자다(§FEED-013 결정 3) — 값 자체는 대조에만 쓰이므로 길이만 컬럼 제약과 맞춘다.
+	private static final String STORED_FINGERPRINT = "a".repeat(64);
+
+	private static final String CURRENT_FINGERPRINT = "b".repeat(64);
+
+	private static final String SELL_JOURNAL = "손절 라인을 지켰습니다.";
+
+	private static final String BUY_JOURNAL = "실적 발표 전에 담았습니다.";
+
 	private final PostSellFeedbackReader postSellFeedbackReader = mock(PostSellFeedbackReader.class);
+
+	// 이 파일의 픽스처에는 투자일기가 없다 — 저장된 지문도 현재 지문도 null이라 일기 사유는 성립하지 않고,
+	// 기존 케이스가 재현하던 흐름·집단 사유만 남는다(§FEED-013 결정 3).
+	private final PostSellJournalReader postSellJournalReader = mock(PostSellJournalReader.class);
 
 	private final NarrativeService narrativeService = mock(NarrativeService.class);
 
@@ -76,8 +101,13 @@ class PostSellFeedbackServiceTest {
 		3, 3);
 
 	private final PostSellFeedbackService postSellFeedbackService = new PostSellFeedbackService(
-		postSellFeedbackReader, narrativeService, tradeFeedbackWriter, tradeFeedbackRepository,
+		postSellFeedbackReader, postSellJournalReader, narrativeService, tradeFeedbackWriter, tradeFeedbackRepository,
 		LLM_PROPERTIES, Clock.fixed(NOW.atZone(KST).toInstant(), KST));
+
+	@BeforeEach
+	void stubEmptyJournals() {
+		when(postSellJournalReader.read(SELL_TRADE_ID)).thenReturn(JournalDigestDto.empty());
+	}
 
 	// --- 최초 생성 ---
 
@@ -95,7 +125,7 @@ class PostSellFeedbackServiceTest {
 		assertThat(response.narrativeStatus()).isEqualTo(PostSellFeedbackStatus.READY);
 		// 저장은 그 회원·그 체결로만 나가고 생성 시각은 주입된 시계다.
 		verify(tradeFeedbackWriter).create(
-			eq(USER_ID), eq(SELL_TRADE_ID), eq(NarrativeResultDto.llm(LLM_NARRATIVE)), eq(NOW));
+			eq(USER_ID), eq(SELL_TRADE_ID), eq(NarrativeResultDto.llm(LLM_NARRATIVE)), isNull(), eq(NOW));
 	}
 
 	// --- 재사용 (최초 1회만 부른다) ---
@@ -130,7 +160,7 @@ class PostSellFeedbackServiceTest {
 		PostSellFeedbackResponse second = postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
 
 		verify(narrativeService).resolvePostSellNarrative(any());
-		verify(tradeFeedbackWriter).create(any(), any(), any(), any());
+		verify(tradeFeedbackWriter).create(any(), any(), any(), any(), any());
 		assertThat(second.narrative()).isEqualTo(first.narrative());
 		assertThat(second.narrativeSource()).isEqualTo(first.narrativeSource());
 	}
@@ -188,7 +218,7 @@ class PostSellFeedbackServiceTest {
 		givenFacts(factsWithoutNarrative());
 		givenNoStoredNarrative();
 		givenGenerated(NarrativeResultDto.llm(LLM_NARRATIVE));
-		when(tradeFeedbackWriter.create(any(), any(), any(), any()))
+		when(tradeFeedbackWriter.create(any(), any(), any(), any(), any()))
 			.thenThrow(new DataIntegrityViolationException("Duplicate entry for key 'uk_trade_feedbacks_trade_id'"));
 
 		PostSellFeedbackResponse response = postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
@@ -210,7 +240,7 @@ class PostSellFeedbackServiceTest {
 		// 최초 조회와 저장 실패 후 재조회가 모두 빈 결과다 — 중복이 아니므로 행이 생기지 않았다.
 		givenNoStoredNarrative();
 		givenGenerated(NarrativeResultDto.llm(LLM_NARRATIVE));
-		when(tradeFeedbackWriter.create(any(), any(), any(), any()))
+		when(tradeFeedbackWriter.create(any(), any(), any(), any(), any()))
 			.thenThrow(new DataIntegrityViolationException(
 				"Cannot add or update a child row: a foreign key constraint fails (`fk_trade_feedbacks_trade`)"));
 
@@ -223,7 +253,7 @@ class PostSellFeedbackServiceTest {
 		assertThat(response.returnRate()).isEqualByComparingTo(facts.returnRate());
 		assertThat(response.priceMoves()).isEqualTo(facts.priceMoves());
 		// 그 경로를 실제로 밟았다 — 저장을 시도했고 실패 후 행을 다시 읽었다(최초 조회 + 재조회 = 2회).
-		verify(tradeFeedbackWriter).create(eq(USER_ID), eq(SELL_TRADE_ID), any(), eq(NOW));
+		verify(tradeFeedbackWriter).create(eq(USER_ID), eq(SELL_TRADE_ID), any(), isNull(), eq(NOW));
 		verify(tradeFeedbackRepository, times(2)).findByTradeId(SELL_TRADE_ID);
 	}
 
@@ -235,7 +265,7 @@ class PostSellFeedbackServiceTest {
 		givenFacts(factsWithoutNarrative());
 		givenNoStoredNarrative();
 		givenGenerated(NarrativeResultDto.llm(LLM_NARRATIVE));
-		when(tradeFeedbackWriter.create(any(), any(), any(), any()))
+		when(tradeFeedbackWriter.create(any(), any(), any(), any(), any()))
 			.thenThrow(new IllegalStateException("커넥션 없음"));
 
 		assertThatThrownBy(() -> postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID))
@@ -366,9 +396,10 @@ class PostSellFeedbackServiceTest {
 		assertThat(response.narrative()).isEqualTo("재생성된 문장입니다.");
 		assertThat(response.narrativeSource()).isEqualTo(NarrativeSource.LLM);
 		assertThat(response.narrativeStatus()).isEqualTo(PostSellFeedbackStatus.READY);
-		verify(tradeFeedbackWriter).applyRegenerated(eq(SELL_TRADE_ID), any(), eq(NOW));
-		verify(tradeFeedbackWriter, never()).recordFailedRegeneration(any());
-		verify(tradeFeedbackWriter, never()).create(any(), any(), any(), any());
+		verify(tradeFeedbackWriter).applyRegenerated(
+			eq(SELL_TRADE_ID), any(), isNull(), eq(GATE_REASON_ONLY), eq(NOW));
+		verify(tradeFeedbackWriter, never()).recordFailedRegeneration(any(), any());
+		verify(tradeFeedbackWriter, never()).create(any(), any(), any(), any(), any());
 	}
 
 	@Test
@@ -445,8 +476,8 @@ class PostSellFeedbackServiceTest {
 		assertThat(response.narrative()).isEqualTo(LLM_NARRATIVE);
 		assertThat(response.narrativeSource()).isEqualTo(NarrativeSource.LLM);
 		assertThat(response.narrativeStatus()).isEqualTo(PostSellFeedbackStatus.READY);
-		verify(tradeFeedbackWriter).recordFailedRegeneration(SELL_TRADE_ID);
-		verify(tradeFeedbackWriter, never()).applyRegenerated(any(), any(), any());
+		verify(tradeFeedbackWriter).recordFailedRegeneration(SELL_TRADE_ID, GATE_REASON_ONLY);
+		verify(tradeFeedbackWriter, never()).applyRegenerated(any(), any(), any(), any(), any());
 	}
 
 	@Test
@@ -459,7 +490,7 @@ class PostSellFeedbackServiceTest {
 		postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
 
 		verify(narrativeService).resolvePostSellNarrative(any());
-		verify(tradeFeedbackWriter).recordFailedRegeneration(SELL_TRADE_ID);
+		verify(tradeFeedbackWriter).recordFailedRegeneration(SELL_TRADE_ID, GATE_REASON_ONLY);
 	}
 
 	// 상한에 도달하면 게이트가 열려 있어도 LLM을 부르지 않는다 — 여기서 부르면 실패하는 체결 하나가 조회마다
@@ -506,6 +537,252 @@ class PostSellFeedbackServiceTest {
 		assertThat(captor.getValue().sellToCloseRate()).isEqualByComparingTo("0.0102");
 	}
 
+	// --- 투자일기 사유 재생성 (§FEED-013 결정 3) ---
+
+	// 최초 저장에서 지문이 빠지면 저장된 값이 늘 null이라 일기가 있는 체결의 모든 조회가 "지문 다름"으로
+	// 판정된다 — 상한에 닿기 전까지 조회마다 LLM을 부르는데 응답은 정상 200이라 아무 신호도 남지 않는다.
+	@Test
+	@DisplayName("최초 생성에서 이번 프롬프트에 실린 일기의 지문을 함께 저장한다")
+	void storesTheJournalFingerprintOfThePromptOnTheFirstQuery() {
+		givenFacts(factsWithoutNarrative());
+		givenNoStoredNarrative();
+		givenJournals(journalsWith(CURRENT_FINGERPRINT));
+		givenGenerated(NarrativeResultDto.llm(LLM_NARRATIVE));
+
+		postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
+
+		verify(tradeFeedbackWriter).create(
+			eq(USER_ID), eq(SELL_TRADE_ID), eq(NarrativeResultDto.llm(LLM_NARRATIVE)), eq(CURRENT_FINGERPRINT),
+			eq(NOW));
+	}
+
+	// 위 테스트의 짝 — 저장된 지문이 현재 지문과 같으면 두 번째 조회가 생성기를 부르지 않는다. 지문 저장이
+	// 빠졌을 때 실제로 깨지는 것이 이 동작이다.
+	@Test
+	@DisplayName("일기가 그대로면 두 번째 조회에서 생성기를 부르지 않는다")
+	void callsTheGeneratorOnlyOnceWhileTheJournalFingerprintStaysTheSame() {
+		givenFacts(factsWithoutNarrative());
+		givenJournals(journalsWith(CURRENT_FINGERPRINT));
+		givenGenerated(NarrativeResultDto.llm(LLM_NARRATIVE));
+		when(tradeFeedbackRepository.findByTradeId(SELL_TRADE_ID))
+			.thenReturn(Optional.empty())
+			.thenReturn(Optional.of(storedFeedback(LLM_NARRATIVE, NarrativeSource.LLM, CURRENT_FINGERPRINT)));
+
+		postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
+		PostSellFeedbackResponse second = postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
+
+		verify(narrativeService, times(1)).resolvePostSellNarrative(any());
+		verify(tradeFeedbackWriter, never()).applyRegenerated(any(), any(), any(), any(), any());
+		assertThat(second.narrative()).isEqualTo(LLM_NARRATIVE);
+	}
+
+	// 이 이슈에서 가장 조용히 틀리는 자리다 — 일기 판정이 narrative_finalized를 읽으면 게이트를 이미 통과한
+	// 체결에서 일기가 영원히 반영되지 않는다. 예외도 로그도 남지 않으므로 이 테스트가 유일한 신호다.
+	@Test
+	@DisplayName("확정된 서술도 일기 지문이 다르면 재생성한다 — 일기 판정은 narrative_finalized를 보지 않는다")
+	void regeneratesForTheJournalReasonEvenWhenTheNarrativeIsAlreadyFinalized() {
+		givenFacts(gateOpenFacts(PostSellFeedbackStatus.READY));
+		givenStored(finalizedFeedback(STORED_FINGERPRINT));
+		givenJournals(journalsWith(CURRENT_FINGERPRINT));
+		givenGenerated(NarrativeResultDto.llm("일기를 반영한 문장입니다."));
+
+		PostSellFeedbackResponse response = postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
+
+		assertThat(response.narrative()).isEqualTo("일기를 반영한 문장입니다.");
+		// 확정 상태라 흐름·집단 사유는 닫혀 있다 — 성립한 사유가 일기 하나뿐이어야 확정 플래그를 건드리지 않는
+		// 전이로 저장된다.
+		verify(tradeFeedbackWriter).applyRegenerated(
+			eq(SELL_TRADE_ID), any(), eq(CURRENT_FINGERPRINT), eq(JOURNAL_REASON_ONLY), eq(NOW));
+		verify(narrativeService, times(1)).resolvePostSellNarrative(any());
+	}
+
+	// 재생성도 최초 생성과 같은 매핑을 써야 한다 — 일기 줄이 빠진 프롬프트로 재생성하면 지문만 갱신되고
+	// 일기는 반영되지 않은 채 카운터만 탄다.
+	@Test
+	@DisplayName("일기 사유 재생성 프롬프트에 매도·매수 회고가 실린다")
+	void feedsTheJournalsIntoTheRegenerationPrompt() {
+		givenFacts(factsWithoutNarrative());
+		givenStored(pendingFeedback(0, STORED_FINGERPRINT));
+		givenJournals(journalsWith(CURRENT_FINGERPRINT));
+		givenGenerated(NarrativeResultDto.llm("일기를 반영한 문장입니다."));
+
+		postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
+
+		ArgumentCaptor<PostSellPromptDto> captor = ArgumentCaptor.forClass(PostSellPromptDto.class);
+		verify(narrativeService).resolvePostSellNarrative(captor.capture());
+		assertThat(captor.getValue().sellJournalContent()).isEqualTo(SELL_JOURNAL);
+		assertThat(captor.getValue().buyJournals()).singleElement()
+			.satisfies(line -> assertThat(line.content()).isEqualTo(BUY_JOURNAL));
+	}
+
+	// 결정 1의 사용자 — 피드백을 먼저 보고 나중에 회고를 쓴다. null에서 값으로 바뀌는 것도 "달라짐"이라
+	// Objects.equals가 양쪽 null을 함께 다뤄야 이 경로가 열린다.
+	@Test
+	@DisplayName("저장된 지문이 null인 체결도 일기를 나중에 쓰면 재생성한다")
+	void regeneratesWhenAJournalIsWrittenAfterTheNarrativeWasStoredWithoutOne() {
+		givenFacts(factsWithoutNarrative());
+		givenStored(pendingFeedback(0, null));
+		givenJournals(journalsWith(CURRENT_FINGERPRINT));
+		givenGenerated(NarrativeResultDto.llm("일기를 반영한 문장입니다."));
+
+		PostSellFeedbackResponse response = postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
+
+		assertThat(response.narrative()).isEqualTo("일기를 반영한 문장입니다.");
+		verify(tradeFeedbackWriter).applyRegenerated(
+			eq(SELL_TRADE_ID), any(), eq(CURRENT_FINGERPRINT), eq(JOURNAL_REASON_ONLY), eq(NOW));
+	}
+
+	// 반대 방향 — 값에서 null로 바뀌는 것도 "달라짐"이다. 한쪽만 다루면 일기를 지운 체결이 지운 일기를 계속
+	// 반영한 서술을 본다.
+	@Test
+	@DisplayName("일기가 사라져 현재 지문이 null이 돼도 달라짐으로 보고 재생성한다")
+	void regeneratesWhenTheJournalDisappearsAndTheCurrentFingerprintBecomesNull() {
+		givenFacts(factsWithoutNarrative());
+		givenStored(pendingFeedback(0, STORED_FINGERPRINT));
+		givenJournals(JournalDigestDto.empty());
+		givenGenerated(NarrativeResultDto.llm("일기 없이 다시 만든 문장입니다."));
+
+		postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
+
+		verify(tradeFeedbackWriter).applyRegenerated(
+			eq(SELL_TRADE_ID), any(), isNull(), eq(JOURNAL_REASON_ONLY), eq(NOW));
+	}
+
+	// 양쪽 다 null이면 같음이다 — 일기를 한 번도 쓰지 않은 체결에서 재생성이 열리면 조회마다 LLM을 부른다.
+	@Test
+	@DisplayName("저장된 지문과 현재 지문이 모두 null이면 재생성하지 않는다")
+	void treatsTwoNullFingerprintsAsUnchanged() {
+		givenFacts(factsWithoutNarrative());
+		givenStored(pendingFeedback(0, null));
+		givenJournals(JournalDigestDto.empty());
+
+		PostSellFeedbackResponse response = postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
+
+		assertThat(response.narrative()).isEqualTo(LLM_NARRATIVE);
+		verifyNoInteractions(narrativeService, tradeFeedbackWriter);
+	}
+
+	// 상한 + 1회를 재현한다 — 상한 이하만 보는 테스트는 "상한을 넘겨도 계속 부른다"를 잡지 못한다. 지문이
+	// 다른데 상한을 넘긴 것은 오류가 아니라 재사용이다(결정 3).
+	@Test
+	@DisplayName("일기 사유 누적이 상한에 도달하면 지문이 달라도 생성기를 부르지 않고 재사용한다")
+	void stopsRegeneratingForTheJournalReasonAtAndBeyondTheCumulativeLimit() {
+		for (int consumed : List.of(
+			LLM_PROPERTIES.maxJournalRegeneration(), LLM_PROPERTIES.maxJournalRegeneration() + 1)) {
+			givenFacts(factsWithoutNarrative());
+			givenStored(journalConsumedFeedback(consumed, STORED_FINGERPRINT));
+			givenJournals(journalsWith(CURRENT_FINGERPRINT));
+
+			PostSellFeedbackResponse response = postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
+
+			assertThat(response.narrative())
+				.as("journalRegenerations=%d는 상한 이상이라 기존 서술을 그대로 쓴다", consumed)
+				.isEqualTo(LLM_NARRATIVE);
+		}
+		verifyNoInteractions(narrativeService, tradeFeedbackWriter);
+	}
+
+	@Test
+	@DisplayName("일기 사유 누적이 상한 미만이면 다시 시도한다")
+	void retriesForTheJournalReasonWhileTheCumulativeCountIsBelowTheLimit() {
+		givenFacts(factsWithoutNarrative());
+		givenStored(journalConsumedFeedback(LLM_PROPERTIES.maxJournalRegeneration() - 1, STORED_FINGERPRINT));
+		givenJournals(journalsWith(CURRENT_FINGERPRINT));
+		givenGenerated(NarrativeResultDto.llm("일기를 반영한 문장입니다."));
+
+		postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
+
+		verify(narrativeService).resolvePostSellNarrative(any());
+		verify(tradeFeedbackWriter).applyRegenerated(
+			eq(SELL_TRADE_ID), any(), eq(CURRENT_FINGERPRINT), eq(JOURNAL_REASON_ONLY), eq(NOW));
+	}
+
+	// 템플릿 문장에는 일기가 반영되지 않았다 — 그런데 지문만 갱신하면 다음 조회가 "이미 반영됐다"고 판정해
+	// 그 일기가 영원히 반영되지 않는다.
+	@Test
+	@DisplayName("일기 사유 재생성이 템플릿으로 폴백하면 서술과 지문을 유지하고 일기 카운터만 올린다")
+	void keepsTheStoredNarrativeAndFingerprintWhenTheJournalRegenerationFallsBackToTheTemplate() {
+		givenFacts(factsWithoutNarrative());
+		givenStored(pendingFeedback(0, STORED_FINGERPRINT));
+		givenJournals(journalsWith(CURRENT_FINGERPRINT));
+		givenGenerated(NarrativeResultDto.template("템플릿 문장입니다."));
+
+		PostSellFeedbackResponse response = postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
+
+		assertThat(response.narrative()).isEqualTo(LLM_NARRATIVE);
+		assertThat(response.narrativeSource()).isEqualTo(NarrativeSource.LLM);
+		verify(tradeFeedbackWriter).recordFailedRegeneration(SELL_TRADE_ID, JOURNAL_REASON_ONLY);
+		verify(tradeFeedbackWriter, never()).applyRegenerated(any(), any(), any(), any(), any());
+	}
+
+	// --- 두 카운터가 서로를 소모하지 않는다 (불변식 2) ---
+
+	@Test
+	@DisplayName("일기 사유로 상한을 다 쓴 체결도 게이트가 열리면 흐름·집단 사유로 재생성한다")
+	void stillRegeneratesForTheGateReasonAfterTheJournalLimitIsExhausted() {
+		givenFacts(gateOpenFacts(PostSellFeedbackStatus.READY));
+		givenStored(journalConsumedFeedback(LLM_PROPERTIES.maxJournalRegeneration(), STORED_FINGERPRINT));
+		givenJournals(journalsWith(CURRENT_FINGERPRINT));
+		givenGenerated(NarrativeResultDto.llm("재생성된 문장입니다."));
+
+		PostSellFeedbackResponse response = postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
+
+		assertThat(response.narrative()).isEqualTo("재생성된 문장입니다.");
+		verify(tradeFeedbackWriter).applyRegenerated(
+			eq(SELL_TRADE_ID), any(), eq(CURRENT_FINGERPRINT), eq(GATE_REASON_ONLY), eq(NOW));
+	}
+
+	@Test
+	@DisplayName("흐름·집단 사유로 상한을 다 쓴 체결도 일기를 고치면 일기 사유로 재생성한다")
+	void stillRegeneratesForTheJournalReasonAfterTheGateLimitIsExhausted() {
+		givenFacts(gateOpenFacts(PostSellFeedbackStatus.READY));
+		givenStored(pendingFeedback(LLM_PROPERTIES.maxNarrativeRetry(), STORED_FINGERPRINT));
+		givenJournals(journalsWith(CURRENT_FINGERPRINT));
+		givenGenerated(NarrativeResultDto.llm("일기를 반영한 문장입니다."));
+
+		PostSellFeedbackResponse response = postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
+
+		assertThat(response.narrative()).isEqualTo("일기를 반영한 문장입니다.");
+		verify(tradeFeedbackWriter).applyRegenerated(
+			eq(SELL_TRADE_ID), any(), eq(CURRENT_FINGERPRINT), eq(JOURNAL_REASON_ONLY), eq(NOW));
+	}
+
+	// --- 두 사유 동시 성립 (불변식 4) ---
+
+	// 두 번 부르면 비용이 두 배인데 두 번째 프롬프트는 첫 번째와 같은 재료라 다른 문장이 나올 이유도 없다.
+	// 호출 횟수로 단정하는 것이 이 규칙을 고정하는 유일한 방법이다.
+	@Test
+	@DisplayName("두 사유가 동시에 성립해도 생성기를 정확히 1회 부르고 사유 둘을 함께 넘긴다")
+	void callsTheGeneratorExactlyOnceWhenBothReasonsHold() {
+		givenFacts(gateOpenFacts(PostSellFeedbackStatus.READY));
+		givenStored(pendingFeedback(0, STORED_FINGERPRINT));
+		givenJournals(journalsWith(CURRENT_FINGERPRINT));
+		givenGenerated(NarrativeResultDto.llm("둘 다 반영한 문장입니다."));
+
+		PostSellFeedbackResponse response = postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
+
+		assertThat(response.narrative()).isEqualTo("둘 다 반영한 문장입니다.");
+		verify(narrativeService, times(1)).resolvePostSellNarrative(any());
+		// 카운터 둘을 모두 올리는 판단은 저장 쪽이 이 값을 보고 한다 — 여기서 조합이 틀리면 한쪽이 조용히 안 오른다.
+		verify(tradeFeedbackWriter).applyRegenerated(
+			eq(SELL_TRADE_ID), any(), eq(CURRENT_FINGERPRINT), eq(BOTH_REASONS), eq(NOW));
+	}
+
+	@Test
+	@DisplayName("두 사유가 동시에 성립한 재생성이 템플릿으로 폴백하면 사유 둘을 함께 실패로 누적한다")
+	void recordsBothReasonsAsFailedWhenTheSharedRegenerationFallsBackToTheTemplate() {
+		givenFacts(gateOpenFacts(PostSellFeedbackStatus.READY));
+		givenStored(pendingFeedback(0, STORED_FINGERPRINT));
+		givenJournals(journalsWith(CURRENT_FINGERPRINT));
+		givenGenerated(NarrativeResultDto.template("템플릿 문장입니다."));
+
+		PostSellFeedbackResponse response = postSellFeedbackService.getPostSellFeedback(USER_ID, SELL_TRADE_ID);
+
+		assertThat(response.narrative()).isEqualTo(LLM_NARRATIVE);
+		verify(narrativeService, times(1)).resolvePostSellNarrative(any());
+		verify(tradeFeedbackWriter).recordFailedRegeneration(SELL_TRADE_ID, BOTH_REASONS);
+	}
+
 	// --- 트랜잭션 경계 (구조 단정) ---
 
 	// LLM 호출이 중앙값 2.5초라 여기에 트랜잭션을 걸면 그 시간 동안 커넥션을 쥔다. 편의로 애노테이션을 붙이는
@@ -536,10 +813,23 @@ class PostSellFeedbackServiceTest {
 		when(narrativeService.resolvePostSellNarrative(any())).thenReturn(resolved);
 	}
 
+	private void givenJournals(JournalDigestDto journals) {
+		when(postSellJournalReader.read(SELL_TRADE_ID)).thenReturn(journals);
+	}
+
+	/** 매도 회고 1건 + 매수 회고 1건이 실린 묶음 — 지문만 케이스마다 바꿔 대조를 가른다. */
+	private static JournalDigestDto journalsWith(String fingerprint) {
+		return new JournalDigestDto(
+			SELL_JOURNAL,
+			List.of(new JournalDigestDto.BuyJournalLine(
+				11L, LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(9, 30)), BUY_JOURNAL)),
+			fingerprint);
+	}
+
 	private PostSellFeedbackService newService() {
 		return new PostSellFeedbackService(
-			postSellFeedbackReader, narrativeService, tradeFeedbackWriter, tradeFeedbackRepository,
-			LLM_PROPERTIES, Clock.fixed(NOW.atZone(KST).toInstant(), KST));
+			postSellFeedbackReader, postSellJournalReader, narrativeService, tradeFeedbackWriter,
+			tradeFeedbackRepository, LLM_PROPERTIES, Clock.fixed(NOW.atZone(KST).toInstant(), KST));
 	}
 
 	private void givenStored(TradeFeedback feedback) {
@@ -548,24 +838,49 @@ class PostSellFeedbackServiceTest {
 
 	/** 아직 확정되지 않은 행 — 실패를 {@code attempts}회 누적한 상태를 실제 전이 메서드로 만든다. */
 	private static TradeFeedback pendingFeedback(int attempts) {
-		TradeFeedback feedback = storedFeedback(LLM_NARRATIVE, NarrativeSource.LLM);
+		return pendingFeedback(attempts, null);
+	}
+
+	private static TradeFeedback pendingFeedback(int attempts, String fingerprint) {
+		TradeFeedback feedback = storedFeedback(LLM_NARRATIVE, NarrativeSource.LLM, fingerprint);
 		for (int i = 0; i < attempts; i++) {
 			feedback.recordFailedRegeneration();
 		}
 		return feedback;
 	}
 
+	/**
+	 * 일기 사유 재생성을 {@code consumed}회 소비한 행 — 흐름·집단 쪽 카운터는 0이다. 두 카운터가 서로를 소모하지
+	 * 않는지 보려면 한쪽만 태운 상태가 필요하다.
+	 */
+	private static TradeFeedback journalConsumedFeedback(int consumed, String fingerprint) {
+		TradeFeedback feedback = storedFeedback(LLM_NARRATIVE, NarrativeSource.LLM, fingerprint);
+		for (int i = 0; i < consumed; i++) {
+			feedback.countJournalRegeneration();
+		}
+		return feedback;
+	}
+
 	/** 재생성 게이트를 이미 통과해 확정된 행. */
 	private static TradeFeedback finalizedFeedback() {
-		TradeFeedback feedback = storedFeedback(LLM_NARRATIVE, NarrativeSource.LLM);
-		feedback.applyRegeneratedNarrative("확정된 문장입니다.", NarrativeSource.LLM, NOW.minusMinutes(10));
+		return finalizedFeedback(null);
+	}
+
+	private static TradeFeedback finalizedFeedback(String fingerprint) {
+		TradeFeedback feedback = storedFeedback(LLM_NARRATIVE, NarrativeSource.LLM, fingerprint);
+		feedback.applyRegeneratedNarrative("확정된 문장입니다.", NarrativeSource.LLM, fingerprint, NOW.minusMinutes(10));
 		return feedback;
 	}
 
 	// 엔티티를 mock으로 만들지 않는다 — 실제 팩토리로 만들어 값이 담긴 객체를 쓴다(docs/conventions.md).
-	// 이 경로는 서술 두 값만 읽으므로 연관 체결은 필요하지 않다.
+	// 이 경로는 서술 두 값만 읽으므로 연관 체결은 필요하지 않다. 지문은 null이다 — 저장 당시 프롬프트에 실린
+	// 일기가 없었다는 뜻이고, PostSellJournalReader 대역이 돌려주는 현재 지문(null)과 같아 일기 사유가 닫힌다.
 	private static TradeFeedback storedFeedback(String narrative, NarrativeSource source) {
-		return TradeFeedback.create(null, narrative, source, NOW.minusMinutes(30));
+		return storedFeedback(narrative, source, null);
+	}
+
+	private static TradeFeedback storedFeedback(String narrative, NarrativeSource source, String journalFingerprint) {
+		return TradeFeedback.create(null, narrative, source, journalFingerprint, NOW.minusMinutes(30));
 	}
 
 	private static PostSellFeedbackResponse factsWithoutNarrative() {

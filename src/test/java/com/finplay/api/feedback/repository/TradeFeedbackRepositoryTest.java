@@ -66,6 +66,8 @@ class TradeFeedbackRepositoryTest {
 
 	private static final LocalDateTime NOW = LocalDateTime.of(2026, 8, 3, 10, 0, 0);
 	private static final LocalDateTime GENERATED_AT = LocalDateTime.of(2026, 8, 3, 10, 1, 0);
+	// 이 파일의 픽스처에는 투자일기가 없다 — 그때 프롬프트에 실린 일기가 없으므로 지문도 null이다(§FEED-013 결정 3).
+	private static final String NO_JOURNAL = null;
 	private static final String NARRATIVE = "급등 직후 매도해 수익을 확정했습니다.";
 
 	private User user;
@@ -121,9 +123,10 @@ class TradeFeedbackRepositoryTest {
 	@DisplayName("같은 체결에 피드백 2건째는 유니크 제약에 걸린다 — 체결 1건당 1행이다")
 	void databaseRejectsSecondFeedbackForTheSameTrade() {
 		tradeFeedbackRepository.saveAndFlush(
-			TradeFeedback.create(trade, NARRATIVE, NarrativeSource.LLM, GENERATED_AT));
+			TradeFeedback.create(trade, NARRATIVE, NarrativeSource.LLM, NO_JOURNAL, GENERATED_AT));
 
-		TradeFeedback duplicate = TradeFeedback.create(trade, NARRATIVE, NarrativeSource.TEMPLATE, GENERATED_AT);
+		TradeFeedback duplicate = TradeFeedback.create(trade, NARRATIVE, NarrativeSource.TEMPLATE, NO_JOURNAL,
+			GENERATED_AT);
 
 		assertThatThrownBy(() -> tradeFeedbackRepository.saveAndFlush(duplicate))
 			.isInstanceOf(DataIntegrityViolationException.class);
@@ -135,9 +138,9 @@ class TradeFeedbackRepositoryTest {
 		Trade anotherTrade = createSellTrade();
 
 		tradeFeedbackRepository.saveAndFlush(
-			TradeFeedback.create(trade, NARRATIVE, NarrativeSource.LLM, GENERATED_AT));
+			TradeFeedback.create(trade, NARRATIVE, NarrativeSource.LLM, NO_JOURNAL, GENERATED_AT));
 		tradeFeedbackRepository.saveAndFlush(
-			TradeFeedback.create(anotherTrade, NARRATIVE, NarrativeSource.LLM, GENERATED_AT));
+			TradeFeedback.create(anotherTrade, NARRATIVE, NarrativeSource.LLM, NO_JOURNAL, GENERATED_AT));
 
 		assertThat(tradeFeedbackRepository.count()).isEqualTo(2);
 	}
@@ -149,7 +152,7 @@ class TradeFeedbackRepositoryTest {
 	void newlyCreatedFeedbackStartsUnfinalizedWithZeroAttempts() {
 		// validate는 컬럼 존재와 타입만 보고 기본값은 검사하지 않는다. 저장된 값을 직접 확인한다.
 		Long id = tradeFeedbackRepository.saveAndFlush(
-			TradeFeedback.create(trade, NARRATIVE, NarrativeSource.LLM, GENERATED_AT)).getId();
+			TradeFeedback.create(trade, NARRATIVE, NarrativeSource.LLM, NO_JOURNAL, GENERATED_AT)).getId();
 
 		Map<String, Object> row = jdbcTemplate.queryForMap(
 			"select narrative_finalized, regeneration_attempts from trade_feedbacks where id = ?", id);
@@ -165,7 +168,7 @@ class TradeFeedbackRepositoryTest {
 	@DisplayName("저장한 피드백을 다시 읽으면 서술·출처·생성 시각이 그대로 복원된다")
 	void savedFeedbackRoundTripsAllFields() {
 		Long id = tradeFeedbackRepository.saveAndFlush(
-			TradeFeedback.create(trade, NARRATIVE, NarrativeSource.TEMPLATE, GENERATED_AT)).getId();
+			TradeFeedback.create(trade, NARRATIVE, NarrativeSource.TEMPLATE, NO_JOURNAL, GENERATED_AT)).getId();
 
 		TradeFeedback found = tradeFeedbackRepository.findById(id).orElseThrow();
 
@@ -180,7 +183,7 @@ class TradeFeedbackRepositoryTest {
 	void narrativeSourceIsStoredAsItsName() {
 		// ORDINAL로 매핑되면 VARCHAR(20)에 "1"이 들어가도 MySQL은 조용히 받는다. 실제 저장 문자열을 확인한다.
 		tradeFeedbackRepository.saveAndFlush(
-			TradeFeedback.create(trade, NARRATIVE, NarrativeSource.TEMPLATE, GENERATED_AT));
+			TradeFeedback.create(trade, NARRATIVE, NarrativeSource.TEMPLATE, NO_JOURNAL, GENERATED_AT));
 
 		assertThat(jdbcTemplate.queryForObject("select narrative_source from trade_feedbacks", String.class))
 			.isEqualTo("TEMPLATE");
@@ -193,7 +196,7 @@ class TradeFeedbackRepositoryTest {
 		assertThat(longNarrative.length()).isGreaterThan(255);
 
 		Long id = tradeFeedbackRepository.saveAndFlush(
-			TradeFeedback.create(trade, longNarrative, NarrativeSource.LLM, GENERATED_AT)).getId();
+			TradeFeedback.create(trade, longNarrative, NarrativeSource.LLM, NO_JOURNAL, GENERATED_AT)).getId();
 
 		assertThat(tradeFeedbackRepository.findById(id).orElseThrow().getNarrative()).isEqualTo(longNarrative);
 	}
@@ -208,7 +211,7 @@ class TradeFeedbackRepositoryTest {
 		long tradeCountBefore = jdbcTemplate.queryForObject("select count(*) from trades", Long.class);
 
 		tradeFeedbackRepository.saveAndFlush(
-			TradeFeedback.create(trade, NARRATIVE, NarrativeSource.LLM, GENERATED_AT));
+			TradeFeedback.create(trade, NARRATIVE, NarrativeSource.LLM, NO_JOURNAL, GENERATED_AT));
 
 		Map<String, Object> after = jdbcTemplate.queryForMap("select * from trades where id = ?", trade.getId());
 		assertThat(after).isEqualTo(before);
@@ -221,7 +224,7 @@ class TradeFeedbackRepositoryTest {
 	@DisplayName("피드백을 지워도 체결 원장 행은 그대로 남는다")
 	void deletingFeedbackDoesNotCascadeIntoTheTradeLedger() {
 		TradeFeedback feedback = tradeFeedbackRepository.saveAndFlush(
-			TradeFeedback.create(trade, NARRATIVE, NarrativeSource.LLM, GENERATED_AT));
+			TradeFeedback.create(trade, NARRATIVE, NarrativeSource.LLM, NO_JOURNAL, GENERATED_AT));
 
 		tradeFeedbackRepository.delete(feedback);
 		tradeFeedbackRepository.flush();
