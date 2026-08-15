@@ -1,11 +1,15 @@
-// OAuth callback의 성공·검증 오류 응답과 state 만료 쿠키 HTTP 계약을 검증한다.
+// OAuth callback의 성공(LOGIN 리다이렉트·REAUTH JSON)·검증 오류 응답과 state 만료 쿠키, login-exchange
+// 교환 HTTP 계약을 검증한다.
 package com.finplay.api.auth.controller;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.endsWith;
 import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -13,33 +17,45 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.finplay.api.auth.config.SecurityConfig;
 import com.finplay.api.auth.dto.response.ReauthTokenResponse;
 import com.finplay.api.auth.dto.response.TokenResponse;
+import com.finplay.api.auth.oauth.OAuthLoginExchangeStore;
 import com.finplay.api.auth.oauth.OAuthStateCookieFactory;
 import com.finplay.api.auth.service.OAuthCallbackService;
 import com.finplay.api.auth.token.JwtTokenProvider;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import jakarta.servlet.http.Cookie;
+import java.util.Optional;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import tools.jackson.databind.ObjectMapper;
 
 @WebMvcTest(OAuthCallbackController.class)
 @Import({OAuthStateCookieFactory.class, SecurityConfig.class})
-@TestPropertySource(properties = "oauth.state-cookie-secure=false")
+@TestPropertySource(properties = {
+	"oauth.state-cookie-secure=false",
+	"oauth.login-redirect-uri=https://www.finplay.site/oauth/callback"
+})
 class OAuthCallbackControllerTest {
 
 	private static final String CODE = "authorization-code";
 	private static final String STATE = "state-value_123";
+
+	// Boot가 만드는 @Autowired 대상이 아니라 이 슬라이스 컨텍스트에 없는 tools.jackson 빈이다 — 다른 테스트들과
+	// 같이 직접 만든다(WatchlistIntegrationTest 등).
+	private final ObjectMapper objectMapper = new ObjectMapper();
 
 	@Autowired
 	private MockMvc mockMvc;
@@ -48,25 +64,29 @@ class OAuthCallbackControllerTest {
 	private OAuthCallbackService callbackService;
 
 	@MockitoBean
+	private OAuthLoginExchangeStore exchangeStore;
+
+	@MockitoBean
 	private JwtTokenProvider jwtTokenProvider;
 
 	@ParameterizedTest
 	@MethodSource("successfulCallbacks")
-	@DisplayName("지원 provider callback은 200 TokenResponse와 정확한 callback Path의 만료 쿠키를 반환한다")
-	void callbackReturnsTokensAndExpiresStateCookie(
+	@DisplayName("지원 provider의 LOGIN callback은 302로 프론트 콜백 주소에 교환 코드만 실어 반환하고, "
+		+ "정확한 callback Path의 만료 쿠키를 함께 반환한다")
+	void callbackRedirectsToFrontendWithExchangeCodeAndExpiresStateCookie(
 		String provider, String expectedCookiePath) throws Exception {
 		TokenResponse response = new TokenResponse("access-token", "refresh-token", 3600L, 1209600L);
 		given(callbackService.callback(provider, CODE, STATE, STATE)).willReturn(response);
+		given(exchangeStore.issue(response)).willReturn("exchange-code-123");
 
 		mockMvc.perform(get("/api/auth/oauth/{provider}/callback", provider)
 			.param("code", CODE)
 			.param("state", STATE)
 			.cookie(new Cookie("oauth_state", STATE)))
-			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.accessToken").value("access-token"))
-			.andExpect(jsonPath("$.refreshToken").value("refresh-token"))
-			.andExpect(jsonPath("$.accessTokenExpiresInSeconds").value(3600))
-			.andExpect(jsonPath("$.refreshTokenExpiresInSeconds").value(1209600))
+			.andExpect(status().isFound())
+			.andExpect(header().string(HttpHeaders.LOCATION,
+				startsWith("https://www.finplay.site/oauth/callback?code=")))
+			.andExpect(header().string(HttpHeaders.LOCATION, endsWith("exchange-code-123")))
 			.andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("oauth_state=")))
 			.andExpect(
 				header().string(
@@ -77,6 +97,39 @@ class OAuthCallbackControllerTest {
 			.andExpect(header().string(HttpHeaders.SET_COOKIE, not(containsString("; Secure"))));
 
 		verify(callbackService).callback(provider, CODE, STATE, STATE);
+		verify(exchangeStore).issue(response);
+	}
+
+	@Test
+	@DisplayName("login-exchange는 유효한 코드를 소비해 200 TokenResponse를 반환한다")
+	void exchangeReturnsTokensForValidCode() throws Exception {
+		TokenResponse response = new TokenResponse("access-token", "refresh-token", 3600L, 1209600L);
+		given(exchangeStore.consume("exchange-code-123")).willReturn(Optional.of(response));
+
+		mockMvc.perform(post("/api/auth/oauth/login-exchange")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(objectMapper.writeValueAsString(new CodeRequest("exchange-code-123"))))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.accessToken").value("access-token"))
+			.andExpect(jsonPath("$.refreshToken").value("refresh-token"))
+			.andExpect(jsonPath("$.accessTokenExpiresInSeconds").value(3600))
+			.andExpect(jsonPath("$.refreshTokenExpiresInSeconds").value(1209600));
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {"expired-or-already-consumed", "  "})
+	@DisplayName("login-exchange는 만료·소비됐거나 공백인 코드에 400 VALIDATION_ERROR를 반환한다")
+	void exchangeReturnsValidationErrorForInvalidCode(String code) throws Exception {
+		given(exchangeStore.consume(code)).willReturn(Optional.empty());
+
+		mockMvc.perform(post("/api/auth/oauth/login-exchange")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(objectMapper.writeValueAsString(new CodeRequest(code))))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
+	}
+
+	private record CodeRequest(String code) {
 	}
 
 	@ParameterizedTest
@@ -119,12 +172,13 @@ class OAuthCallbackControllerTest {
 		String utf8State = "상태-검증-한글";
 		TokenResponse response = new TokenResponse("access-token", "refresh-token", 3600L, 1209600L);
 		given(callbackService.callback("naver", CODE, utf8State, utf8State)).willReturn(response);
+		given(exchangeStore.issue(response)).willReturn("exchange-code-123");
 
 		mockMvc.perform(get("/api/auth/oauth/naver/callback")
 			.param("code", CODE)
 			.param("state", utf8State)
 			.cookie(new Cookie("oauth_state", utf8State)))
-			.andExpect(status().isOk());
+			.andExpect(status().isFound());
 
 		verify(callbackService).callback("naver", CODE, utf8State, utf8State);
 	}
