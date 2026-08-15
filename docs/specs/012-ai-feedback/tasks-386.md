@@ -71,7 +71,7 @@
   - 신설 드리프트 테스트 — `FeedbackJournalPropertiesTest`(바인딩·기본값)와 `FeedbackJournalPropertiesYamlTest`(yml ↔ `@DefaultValue` 대조). 선례는 `FeedbackDetectionPropertiesTest`·`FeedbackDetectionPropertiesYamlTest`다.
   - 검증 — 단위.
 
-- [ ] **3. `journal`·`portfolio`에 조회 경로 신설 (§C-6)**
+- [x] **3. `journal`·`portfolio`에 조회 경로 신설 (§C-6)**
 
   **소유 도메인이 달라 `feedback` 쪽 작업과 같은 커밋에 담지 않는다.** 이 항목이 끝난 시점에는 새 메서드를 아무도 부르지 않는다 — 정상이다.
 
@@ -83,7 +83,7 @@
     - 반환 타입은 `journal` 소유의 읽기 전용 record를 새로 둔다(예: `JournalContentDto` — 체결 ID·본문·`updatedAt`). **spec에 이름이 없으므로 구현자가 정하되 `feedback`의 `JournalDigestDto`와 혼동되지 않는 이름으로 둔다.** 절단은 하지 않는다 — 상한이 `feedback.journal.*` 설정이라 절단은 `feedback` 책임이다(항목 4).
     - `@Transactional(readOnly = true)`. **쓰기가 없다** — `updated_at`을 건드리지 않는다는 보장이 여기서 나온다.
   - **`portfolio`** — `SellAllocationQueryService`에 **배분된 매수 체결 ID 목록**을 매수 시각 오름차순으로 돌려주는 메서드를 더한다(§C-6·결정 4).
-    - 기존 `findAllBySellTradeIdOrderByLotExecutedAtAscLotIdAsc` 질의를 그대로 재사용하고 `lot.getBuyTrade().getId()`를 순서대로 모은다. **순서를 유지한 채 중복을 제거한다**(`LinkedHashSet`) — lot ↔ 매수 체결이 1:1이라는 것이 스키마로 강제돼 있지 않다.
+    - 기존 `findAllBySellTradeIdOrderByLotExecutedAtAscLotIdAsc` 질의를 그대로 재사용하고 `lot.getBuyTrade().getId()`를 순서대로 모은다. **순서를 유지한 채 중복을 제거한다**(`LinkedHashSet`) — ~~lot ↔ 매수 체결이 1:1이라는 것이 스키마로 강제돼 있지 않다.~~ **2026-08-16 정정**: 1:1은 `uk_holding_lots_buy_trade`(V10)가 강제한다. 중복이 실제로 생기는 자리는 `trade_allocations`이며 `(sell_trade_id, holding_lot_id)` 유니크가 없어 같은 lot이 한 매도에 두 번 배분될 수 있다. 제거는 그대로 필요하고 근거만 바뀐다.
     - **`SellAllocationSummaryDto`에 필드를 더하지 않는다**(결정 4가 "조회 경로를 §C-6에 신설한다"로 정했다). 기존 소비자의 DTO 모양을 바꾸지 않는 쪽이 안전하다.
     - **배분 0건에 예외를 던지지 않고 빈 목록을 돌려준다.** 기존 `getSellAllocationSummary`는 원장 불일치를 드러내려고 `IllegalStateException`을 던지지만, 이 메서드는 그 요약이 이미 성공한 뒤에만 불리므로 0건이 나올 수 없고, 만약 나온다면 **서술 재료가 없는 것일 뿐 조회를 죽일 이유가 아니다.** 근거를 Javadoc에 남긴다.
   - 검증 — 리포지터리 질의는 `@DataJpaTest`(ADR-0003), 서비스 조립은 단위. `BuyTradeJournalRepositoryTest`에 `findAllByBuyTradeIdIn` 케이스를 더한다(존재·미존재 섞인 ID 목록, 빈 목록).
