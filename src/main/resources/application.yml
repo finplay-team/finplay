@@ -167,6 +167,26 @@ bithumb:
       connect-timeout-ms: ${BITHUMB_TICKER_CONNECT_TIMEOUT_MS:2000}
       read-timeout-ms: ${BITHUMB_TICKER_READ_TIMEOUT_MS:3000}
 
+# 지정가 체결 비동기 실행기(LimitOrderFillExecutorRouter, ADR-0024). enabled·partition-count·
+# queue-capacity-per-partition의 정본은 docs/adr/0024-limit-order-fill-executor.md이고, batch-size의
+# 정본은 docs/adr/0025-limit-order-fill-batch-commit.md다. LimitOrderFillExecutorProperties가 같은
+# 값을 @DefaultValue로 갖는다.
+order:
+  limit-fill-executor:
+    # 운영 킬 스위치. false면 LimitOrderTriggerListener가 실행기를 거치지 않고 기존처럼 피드 스레드에서
+    # 순차 동기 처리한다 — 재배포 없이 되돌릴 수단이다.
+    enabled: true
+    # 종목별 체결을 직렬화하는 단일 스레드 실행기(파티션) 개수. 같은 종목은 항상 같은 파티션으로만
+    # 라우팅되므로 종목 내부 순서(requestedAt asc, id asc)는 이 값과 무관하게 보존되고, 이 값은 서로 다른
+    # 종목 간 병렬도만 결정한다. 1 미만이면 기동 실패.
+    partition-count: 8
+    # 파티션 하나(단일 스레드)가 처리 대기할 수 있는 체결 작업(청크) 수 상한. 가득 차면 새 작업은
+    # 버려진다 — 주문은 여전히 PENDING이라 다음 가격 틱이 다시 후보로 집어낸다. 1 미만이면 기동 실패.
+    queue-capacity-per-partition: 200
+    # 파티션 워커가 체결 후보를 몇 건씩 묶어 트랜잭션 1개로 처리할지(ADR-0025). 청크 안의 한 건이 실패하면
+    # 청크 전체가 롤백되고 나머지는 PENDING으로 남아 다음 가격 틱이 재시도한다. 1 미만이면 기동 실패.
+    batch-size: 50
+
 # 코인 가격 스냅샷(CryptoPriceSnapshotService, spec 012 §코인 가격 스냅샷, 이슈 #225). 값의 정본은
 # docs/specs/012-ai-feedback/spec.md §C-1(크론)·§코인 가격 스냅샷(보관 기간)이고 MarketCryptoProperties가
 # 같은 값을 @DefaultValue로 갖는다. 선언부에 zone = "Asia/Seoul"을 반드시 함께 붙인다.
