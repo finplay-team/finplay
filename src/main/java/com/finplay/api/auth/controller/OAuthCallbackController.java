@@ -3,11 +3,8 @@ package com.finplay.api.auth.controller;
 
 import com.finplay.api.auth.dto.request.LoginExchangeRequest;
 import com.finplay.api.auth.dto.response.TokenResponse;
-import com.finplay.api.auth.oauth.OAuthLoginExchangeStore;
 import com.finplay.api.auth.oauth.OAuthStateCookieFactory;
 import com.finplay.api.auth.service.OAuthCallbackService;
-import com.finplay.api.common.BusinessException;
-import com.finplay.api.common.ErrorCode;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import java.net.URI;
@@ -31,7 +28,6 @@ public class OAuthCallbackController {
 
 	private final OAuthCallbackService callbackService;
 	private final OAuthStateCookieFactory stateCookieFactory;
-	private final OAuthLoginExchangeStore exchangeStore;
 
 	// 카카오·네이버 콘솔의 redirect_uri가 이 컨트롤러를 직접 가리켜 브라우저가 여기로 완전히 이동한다. 그래서
 	// LOGIN 성공은 body로 토큰을 주지 않고 이 프론트 주소로 302 리다이렉트한다 — JSON을 그대로 주면 사용자
@@ -42,12 +38,10 @@ public class OAuthCallbackController {
 	public OAuthCallbackController(
 		OAuthCallbackService callbackService,
 		OAuthStateCookieFactory stateCookieFactory,
-		OAuthLoginExchangeStore exchangeStore,
 		@Value("${oauth.login-redirect-uri}")
 		String loginRedirectUri) {
 		this.callbackService = callbackService;
 		this.stateCookieFactory = stateCookieFactory;
-		this.exchangeStore = exchangeStore;
 		this.loginRedirectUri = loginRedirectUri;
 	}
 
@@ -71,7 +65,7 @@ public class OAuthCallbackController {
 			: callbackService.callback(provider, code, state, cookieState);
 
 		if (result instanceof TokenResponse tokenResponse) {
-			String exchangeCode = exchangeStore.issue(tokenResponse);
+			String exchangeCode = callbackService.issueLoginExchangeCode(tokenResponse);
 			URI location = UriComponentsBuilder.fromUriString(loginRedirectUri)
 				.queryParam("code", exchangeCode)
 				.build()
@@ -82,12 +76,10 @@ public class OAuthCallbackController {
 	}
 
 	// 위 리다이렉트가 실어 보낸 1회용 교환 코드를 실제 토큰으로 바꾼다. 코드는 발급 후 60초 안에 한 번만 쓸 수
-	// 있다 — 두 번째 호출이나 만료된 코드는 VALIDATION_ERROR다.
+	// 있다 — 두 번째 호출이나 만료된 코드는 VALIDATION_ERROR다(OAuthCallbackService.consumeLoginExchangeCode).
 	@PostMapping("/login-exchange")
 	public ResponseEntity<TokenResponse> exchange(@Valid @RequestBody
 	LoginExchangeRequest request) {
-		TokenResponse tokens = exchangeStore.consume(request.code())
-			.orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_ERROR));
-		return ResponseEntity.ok(tokens);
+		return ResponseEntity.ok(callbackService.consumeLoginExchangeCode(request.code()));
 	}
 }

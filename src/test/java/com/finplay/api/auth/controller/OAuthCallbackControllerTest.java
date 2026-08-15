@@ -15,16 +15,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.finplay.api.auth.config.SecurityConfig;
+import com.finplay.api.auth.dto.request.LoginExchangeRequest;
 import com.finplay.api.auth.dto.response.ReauthTokenResponse;
 import com.finplay.api.auth.dto.response.TokenResponse;
-import com.finplay.api.auth.oauth.OAuthLoginExchangeStore;
 import com.finplay.api.auth.oauth.OAuthStateCookieFactory;
 import com.finplay.api.auth.service.OAuthCallbackService;
 import com.finplay.api.auth.token.JwtTokenProvider;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import jakarta.servlet.http.Cookie;
-import java.util.Optional;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -64,9 +63,6 @@ class OAuthCallbackControllerTest {
 	private OAuthCallbackService callbackService;
 
 	@MockitoBean
-	private OAuthLoginExchangeStore exchangeStore;
-
-	@MockitoBean
 	private JwtTokenProvider jwtTokenProvider;
 
 	@ParameterizedTest
@@ -77,7 +73,7 @@ class OAuthCallbackControllerTest {
 		String provider, String expectedCookiePath) throws Exception {
 		TokenResponse response = new TokenResponse("access-token", "refresh-token", 3600L, 1209600L);
 		given(callbackService.callback(provider, CODE, STATE, STATE)).willReturn(response);
-		given(exchangeStore.issue(response)).willReturn("exchange-code-123");
+		given(callbackService.issueLoginExchangeCode(response)).willReturn("exchange-code-123");
 
 		mockMvc.perform(get("/api/auth/oauth/{provider}/callback", provider)
 			.param("code", CODE)
@@ -97,18 +93,18 @@ class OAuthCallbackControllerTest {
 			.andExpect(header().string(HttpHeaders.SET_COOKIE, not(containsString("; Secure"))));
 
 		verify(callbackService).callback(provider, CODE, STATE, STATE);
-		verify(exchangeStore).issue(response);
+		verify(callbackService).issueLoginExchangeCode(response);
 	}
 
 	@Test
 	@DisplayName("login-exchange는 유효한 코드를 소비해 200 TokenResponse를 반환한다")
 	void exchangeReturnsTokensForValidCode() throws Exception {
 		TokenResponse response = new TokenResponse("access-token", "refresh-token", 3600L, 1209600L);
-		given(exchangeStore.consume("exchange-code-123")).willReturn(Optional.of(response));
+		given(callbackService.consumeLoginExchangeCode("exchange-code-123")).willReturn(response);
 
 		mockMvc.perform(post("/api/auth/oauth/login-exchange")
 			.contentType(MediaType.APPLICATION_JSON)
-			.content(objectMapper.writeValueAsString(new CodeRequest("exchange-code-123"))))
+			.content(objectMapper.writeValueAsString(new LoginExchangeRequest("exchange-code-123"))))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.accessToken").value("access-token"))
 			.andExpect(jsonPath("$.refreshToken").value("refresh-token"))
@@ -120,16 +116,14 @@ class OAuthCallbackControllerTest {
 	@ValueSource(strings = {"expired-or-already-consumed", "  "})
 	@DisplayName("login-exchange는 만료·소비됐거나 공백인 코드에 400 VALIDATION_ERROR를 반환한다")
 	void exchangeReturnsValidationErrorForInvalidCode(String code) throws Exception {
-		given(exchangeStore.consume(code)).willReturn(Optional.empty());
+		given(callbackService.consumeLoginExchangeCode(code))
+			.willThrow(new BusinessException(ErrorCode.VALIDATION_ERROR));
 
 		mockMvc.perform(post("/api/auth/oauth/login-exchange")
 			.contentType(MediaType.APPLICATION_JSON)
-			.content(objectMapper.writeValueAsString(new CodeRequest(code))))
+			.content(objectMapper.writeValueAsString(new LoginExchangeRequest(code))))
 			.andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
-	}
-
-	private record CodeRequest(String code) {
 	}
 
 	@ParameterizedTest
@@ -172,7 +166,7 @@ class OAuthCallbackControllerTest {
 		String utf8State = "상태-검증-한글";
 		TokenResponse response = new TokenResponse("access-token", "refresh-token", 3600L, 1209600L);
 		given(callbackService.callback("naver", CODE, utf8State, utf8State)).willReturn(response);
-		given(exchangeStore.issue(response)).willReturn("exchange-code-123");
+		given(callbackService.issueLoginExchangeCode(response)).willReturn("exchange-code-123");
 
 		mockMvc.perform(get("/api/auth/oauth/naver/callback")
 			.param("code", CODE)

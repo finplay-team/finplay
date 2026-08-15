@@ -12,6 +12,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import com.finplay.api.auth.dto.response.ReauthTokenResponse;
 import com.finplay.api.auth.dto.response.TokenResponse;
 import com.finplay.api.auth.oauth.OAuthCallbackProvider;
+import com.finplay.api.auth.oauth.OAuthLoginExchangeStore;
 import com.finplay.api.auth.oauth.OAuthProviderName;
 import com.finplay.api.auth.oauth.OAuthPurpose;
 import com.finplay.api.auth.oauth.OAuthStateGenerator;
@@ -19,6 +20,7 @@ import com.finplay.api.auth.oauth.OAuthUserDto;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -47,12 +49,15 @@ class OAuthCallbackServiceTest {
 	@Mock
 	private AuthService authService;
 
+	@Mock
+	private OAuthLoginExchangeStore exchangeStore;
+
 	private OAuthCallbackService callbackService;
 
 	@BeforeEach
 	void setUp() {
 		callbackService = new OAuthCallbackService(
-			List.of(kakaoProvider, naverProvider), authService, STATE_GENERATOR);
+			List.of(kakaoProvider, naverProvider), authService, STATE_GENERATOR, exchangeStore);
 	}
 
 	@ParameterizedTest
@@ -196,6 +201,35 @@ class OAuthCallbackServiceTest {
 
 		verifyNoInteractions(authService);
 		verifyNoInteractions(kakaoProvider, naverProvider);
+	}
+
+	@Test
+	@DisplayName("issueLoginExchangeCode는 OAuthLoginExchangeStore.issue에 그대로 위임한다")
+	void issueLoginExchangeCodeDelegatesToStore() {
+		TokenResponse tokens = tokenResponse();
+		given(exchangeStore.issue(tokens)).willReturn("exchange-code-123");
+
+		assertThat(callbackService.issueLoginExchangeCode(tokens)).isEqualTo("exchange-code-123");
+	}
+
+	@Test
+	@DisplayName("consumeLoginExchangeCode는 유효한 코드를 store가 돌려준 토큰으로 그대로 바꾼다")
+	void consumeLoginExchangeCodeReturnsTokensForValidCode() {
+		TokenResponse tokens = tokenResponse();
+		given(exchangeStore.consume("exchange-code-123")).willReturn(Optional.of(tokens));
+
+		assertThat(callbackService.consumeLoginExchangeCode("exchange-code-123")).isEqualTo(tokens);
+	}
+
+	@Test
+	@DisplayName("consumeLoginExchangeCode는 store가 빈 값을 주면 400 VALIDATION_ERROR로 거부한다")
+	void consumeLoginExchangeCodeRejectsMissingCode() {
+		given(exchangeStore.consume("expired-or-consumed")).willReturn(Optional.empty());
+
+		assertThatThrownBy(() -> callbackService.consumeLoginExchangeCode("expired-or-consumed"))
+			.isInstanceOfSatisfying(
+				BusinessException.class,
+				exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.VALIDATION_ERROR));
 	}
 
 	private static Stream<Arguments> supportedProviders() {
