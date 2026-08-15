@@ -277,7 +277,13 @@ public class PostSellFeedbackService {
 			// 판정이 붙어도 주식 문장은 그대로다. 여러 거래일에 걸친 주식 매매(false)는 극값 자체가 null이고
 			// 날짜를 서술할 근거도 없어 기존 동작을 유지한다.
 			facts.sameSessionCompleted() && !facts.buyAt().toLocalDate().equals(facts.sellAt().toLocalDate()),
-			facts.holdHighBasis());
+			facts.holdHighBasis(),
+			// 투자일기는 응답(facts)에 실리지 않으므로 여기서 나올 수 없다 — PostSellJournalReader가 읽은 것을
+			// 이 메서드에 함께 넘기는 배선은 재생성 판정(§C-5·§FEED-013 결정 3)이 들어올 때 붙인다. 그때도
+			// 최초 생성과 재생성이 이 매핑 하나를 함께 써야 한다 — 매핑을 따로 만들면 재생성 프롬프트에서
+			// 일기 줄이 빠져 게이트가 무의미해진다.
+			List.of(),
+			null);
 	}
 
 	/** 보유 구간 카드의 근거 기사 중 가장 이른 발행시각 — {@code buyToNewsMinutes}의 기준값 {@code T0}다. */

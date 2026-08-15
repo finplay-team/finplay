@@ -75,6 +75,32 @@ class NarrativeTemplateBuilderTest {
 			"70,000원에 매수해 68,500원에 매도했습니다. 수익률은 -2.17%입니다. 보유 중 최고가는 11:05의 70,800원이었습니다.");
 	}
 
+	// 템플릿은 LLM이 실패했을 때 나가는 문장이라 사용자가 쓴 회고를 실을 자리가 없다 — 일기가 실리는 것은
+	// 프롬프트뿐이다(§FEED-013 결정 5는 프롬프트만 바꾼다). 일기가 새면 후검증을 거치지 않은 사용자 텍스트가
+	// 그대로 서술로 나간다.
+	@Test
+	@DisplayName("매도 회고 템플릿은 일기가 있어도 한 글자도 달라지지 않는다")
+	void postSellTemplateIgnoresJournalsEntirely() {
+		PostSellPromptDto withoutJournals = postSell(rate("-0.0217"), money("70800"), LocalTime.of(11, 5));
+		PostSellPromptDto withJournals = new PostSellPromptDto(
+			withoutJournals.instrumentName(), withoutJournals.buyAt(), withoutJournals.buyPrice(),
+			withoutJournals.sellAt(), withoutJournals.sellPrice(), withoutJournals.quantity(),
+			withoutJournals.returnRate(), withoutJournals.realizedPnl(), withoutJournals.holdHighPrice(),
+			withoutJournals.holdHighAt(), withoutJournals.sellVsHighRate(), withoutJournals.holdLowPrice(),
+			withoutJournals.holdLowAt(), withoutJournals.sellVsLowRate(), withoutJournals.buyToNewsMinutes(),
+			withoutJournals.firstNewsAt(), withoutJournals.priceMoves(), withoutJournals.closePrice(),
+			withoutJournals.sellToCloseRate(), withoutJournals.holderCount(), withoutJournals.soldWithin30MinRate(),
+			withoutJournals.medianMinutesToSell(), withoutJournals.yourMinutesToSell(),
+			withoutJournals.multiDayHold(), withoutJournals.holdHighBasis(),
+			List.of(new BuyJournalLineDto(TRADING_DATE.atTime(9, 30), "반등을 기대하고 들어갔습니다.")),
+			"불안해 정리했습니다.");
+
+		assertThat(builder.postSellTemplate(withJournals))
+			.isEqualTo(builder.postSellTemplate(withoutJournals))
+			.doesNotContain("반등을 기대하고")
+			.doesNotContain("불안해 정리했습니다");
+	}
+
 	// ---------- 확인 1: 조립 문장이 후검증(37표현)을 통과한다 ----------
 
 	static Stream<String> everyTemplateSentence() {
@@ -445,7 +471,7 @@ class NarrativeTemplateBuilderTest {
 			new BigDecimal("-0.0217"), -15207L,
 			money("70800"), holdHighAt, new BigDecimal("-0.0325"),
 			money("68100"), TRADING_DATE.atTime(14, 20), new BigDecimal("0.0059"), null, null, List.of(),
-			null, null, null, null, null, null, true, basis);
+			null, null, null, null, null, null, true, basis, List.of(), null);
 	}
 
 	private PostSellPromptDto postSellWithPrices(BigDecimal buyPrice, BigDecimal sellPrice, BigDecimal returnRate) {
@@ -470,6 +496,6 @@ class NarrativeTemplateBuilderTest {
 			returnRate, -15207L, holdHighPrice, holdHighAt == null ? null : TRADING_DATE.atTime(holdHighAt),
 			holdHighPrice == null ? null : new BigDecimal("-0.0325"),
 			new BigDecimal("68100"), TRADING_DATE.atTime(14, 20), new BigDecimal("0.0059"), null, null, List.of(),
-			null, null, null, null, null, null, false, HoldHighBasis.MINUTE);
+			null, null, null, null, null, null, false, HoldHighBasis.MINUTE, List.of(), null);
 	}
 }

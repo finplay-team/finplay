@@ -39,6 +39,14 @@ import java.util.List;
  *                     {@code sameSessionCompleted && 매수일 != 매도일}로 정한다. <b>주식은 언제나 거짓이다</b>
  *                     ({@code sameSessionCompleted=true}가 곧 같은 원본 거래일이라는 뜻이므로) — 그래서 주식
  *                     문장은 이 필드가 생기기 전과 한 글자도 달라지지 않는다
+ * @param buyJournals  프롬프트에 실을 매수 회고 (4차, §FEED-013). <b>매수 시각 오름차순이고 상한·절단이 이미
+ *                     적용돼 있다</b> — 고르고 자르는 것은 {@code PostSellJournalReader}의 일이고 여기서 다시
+ *                     하지 않는다. 일기가 없으면 빈 목록이다
+ * @param sellJournalContent 매도 회고 본문. 없으면 {@code null}이다.
+ *                     <b>{@code buyJournals}가 비고 이 값이 {@code null}이면 프롬프트가 3차와 한 글자도
+ *                     달라지지 않는다</b>(결정 1) — 그것이 이 두 필드의 계약이다.
+ *                     <b>지문은 이 record에 넣지 않는다</b>: 프롬프트에 쓰지 않는 값을 담으면 문자열 단정
+ *                     테스트가 무관한 값에 흔들린다
  * @param holdHighBasis 극값을 어느 표본으로 쟀는가. {@link HoldHighBasis#DAILY}면 극값 시각의 시·분
  *                      ({@code 23:59})이 <b>일봉 라벨일 뿐 실제로 잰 시각이 아니므로</b> 문장이 시각 대신
  *                      "그 일자의 종가"라고 적는다. 주식은 언제나 {@link HoldHighBasis#MINUTE}다
@@ -68,9 +76,12 @@ public record PostSellPromptDto(
 	Integer medianMinutesToSell,
 	Integer yourMinutesToSell,
 	boolean multiDayHold,
-	HoldHighBasis holdHighBasis) {
+	HoldHighBasis holdHighBasis,
+	List<BuyJournalLineDto> buyJournals,
+	String sellJournalContent) {
 
 	public PostSellPromptDto {
 		priceMoves = List.copyOf(priceMoves);
+		buyJournals = List.copyOf(buyJournals);
 	}
 }
