@@ -142,13 +142,18 @@ EMAIL 회원은 현재 비밀번호, OAuth 전용 회원은 Issue #53에서 발�
 
 | Method | URL | 입력 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|
-| GET | /api/auth/oauth/{provider}/callback | query `code`, `state`; cookie `oauth_state`. 인가 취소 시 query `error`, `state` | purpose=LOGIN state: 200 `{"accessToken":"<JWT>","refreshToken":"<JWT>","accessTokenExpiresInSeconds":3600,"refreshTokenExpiresInSeconds":1209600}`. purpose=REAUTH state: 200 `{"reauthToken":"<원문, 1회>","expiresInSeconds":300}`. 두 경우 모두 정상 브라우저 callback 응답의 `oauth_state` 만료 쿠키 포함 | 400 `VALIDATION_ERROR`, `OAUTH_AUTHORIZATION_FAILED`, `OAUTH_EMAIL_REQUIRED`; 403 `REAUTHENTICATION_FAILED`; 409 `ACCOUNT_LINK_REQUIRED` 또는 동시성 충돌 시 `DUPLICATE_RESOURCE`; 500 `INTERNAL_ERROR`; 502 `OAUTH_PROVIDER_ERROR` 공통 오류 형식 | 002 AUTH-003, Issue #10, Issue #53 |
+| GET | /api/auth/oauth/{provider}/callback | query `code`, `state`; cookie `oauth_state`. 인가 취소 시 query `error`, `state` | purpose=LOGIN state: 302, `Location: <oauth.login-redirect-uri>?code=<1회용 교환 코드>` — 본문·토큰 없음. purpose=REAUTH state: 200 `{"reauthToken":"<원문, 1회>","expiresInSeconds":300}`. 두 경우 모두 정상 브라우저 callback 응답의 `oauth_state` 만료 쿠키 포함 | 400 `VALIDATION_ERROR`, `OAUTH_AUTHORIZATION_FAILED`, `OAUTH_EMAIL_REQUIRED`; 403 `REAUTHENTICATION_FAILED`; 409 `ACCOUNT_LINK_REQUIRED` 또는 동시성 충돌 시 `DUPLICATE_RESOURCE`; 500 `INTERNAL_ERROR`; 502 `OAUTH_PROVIDER_ERROR` 공통 오류 형식 | 002 AUTH-003, Issue #10, Issue #53 |
+| POST | /api/auth/oauth/login-exchange | body `{"code":"<위 리다이렉트의 code>"}` | 200 `{"accessToken":"<JWT>","refreshToken":"<JWT>","accessTokenExpiresInSeconds":3600,"refreshTokenExpiresInSeconds":1209600}` | 400 `VALIDATION_ERROR` — `code` 필드 누락·공백은 `"교환 코드는 필수입니다."`, 형식 오류·만료·이미 소비됨·존재하지 않음은 `"요청 값이 올바르지 않습니다."`로 메시지만 다르고 HTTP 상태·오류 코드는 동일하다(만료·재사용·형식오류를 서로 구분해 알려주지 않는다) 공통 오류 형식 | 002 AUTH-003, Issue #10 |
 
 응답 종류는 요청 파라미터가 아니라 서명된 `state` 안의 purpose로 결정된다. 검증 순서는 provider 해석 → query/cookie state 일치(400 `VALIDATION_ERROR`) → state HMAC 서명 검증(실패 시 403 `REAUTHENTICATION_FAILED`) → 인가 취소·code 검사 → 공급자 사용자 조회 → purpose 분기다. 서명이 깨진 state는 purpose를 신뢰할 수 없으므로 `LOGIN`으로 위장한 경우도 403이다. REAUTH 분기는 회원·소셜계정·계좌·시드머니를 만들거나 바꾸지 않고 `reauth_tokens`에 해시 1행만 추가한다.
+
+**LOGIN 성공이 302인 이유.** 카카오·네이버 콘솔의 redirect_uri가 이 API 주소를 직접 가리켜, 사용자가 소셜 로그인을 마치면 브라우저가 프론트를 거치지 않고 이 컨트롤러로 완전히 이동한다. 여기서 토큰을 200 JSON 본문으로 주면 브라우저 화면에 API 응답이 그대로 뜨고 프론트 SPA는 로그인이 끝난 사실 자체를 알 방법이 없다. 그래서 발급한 토큰은 Redis에 TTL 60초로 잠시 보관하고(`OAuthLoginExchangeStore`), 그 토큰을 가리키는 1회용 교환 코드만 프론트 주소 쿼리에 실어 리다이렉트한다 — 토큰 원문은 URL 어디에도 노출되지 않아 서버 접근 로그·Referer 헤더·브라우저 히스토리에 남지 않는다. 프론트는 그 코드로 `POST /api/auth/oauth/login-exchange`를 호출해 실제 토큰을 받는다. REAUTH는 호출자가 이미 로그인한 SPA(재인증 팝업이 응답을 직접 읽는 구조)라 이 문제가 없으므로 기존 200 JSON 계약을 그대로 둔다.
 
 callback은 query `state`와 cookie `oauth_state`의 존재·일치를 검증하지만 서버가 발급 state를 Redis·DB·메모리에 저장하지는 않는다. 따라서 정상 브라우저는 callback 응답의 만료 쿠키를 적용하지만 raw cookie 재전송 자체를 서버 state 저장으로 차단한다고 보장하지 않는다. 실제 카카오·네이버는 authorization code의 단일 사용으로 같은 code 재전송을 거부한다. local·test Fake는 authorize마다 state에 결합된 고유 code를 발급하고 KAKAO/NAVER 전용 callback bean이 thread-safe store에서 `(provider, code, state)`를 원자적으로 한 번만 소비해 첫 요청만 허용한다. 잘못된 provider 요청은 grant를 소비하지 않고 400 `OAUTH_AUTHORIZATION_FAILED`로 거부하며, 원 provider의 첫 요청은 성공하고 이후 같은 grant 재사용은 400이다. `no-email`, `existing-email` 등 특수 fixture code는 오류 분기 테스트용으로 유지한다.
 
 PR #49 차단 리뷰 후속 Fake 재사용·동시성·DB 불변 자동 회귀와 전체 build는 `PASS`했다. 실제 KAKAO/NAVER 스모크 `PASS`는 기존 별도 검증 기록이며, 이 후속 자동 검증에서 실제 공급자 스모크를 재실행하지 않았다.
+
+**후속 미해결 범위.** 이 변경은 LOGIN 성공 경로만 고친다. callback이 오류(400·403·409 등)로 끝나는 경우는 여전히 API 주소에 JSON 오류 본문이 그대로 뜬다 — 프론트가 이 상태를 안내 문구로 바꿔 보여줄 방법이 없다. 프론트 쪽 실제 처리(`OAuthCallback.tsx`에서 `code` 쿼리를 읽어 `login-exchange` 호출)는 별도 레포 작업이다.
 
 ---
 

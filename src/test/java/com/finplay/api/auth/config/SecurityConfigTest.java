@@ -148,7 +148,8 @@ class SecurityConfigTest {
 		"/api/auth/email-verifications/confirm",
 		"/api/auth/password-resets",
 		// PathPatternRequestMatcher는 접두 매칭이 아니라 /confirm이 별도 항목이어야 한다.
-		"/api/auth/password-resets/confirm"
+		"/api/auth/password-resets/confirm",
+		"/api/auth/oauth/login-exchange"
 	})
 	void allowsPublicAuthPathsWithoutToken(String path) throws Exception {
 		expectPassesSecurityChain(post(path));

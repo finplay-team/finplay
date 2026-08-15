@@ -31,7 +31,9 @@ public class SecurityConfig {
 		"/api/auth/email-verifications",
 		"/api/auth/email-verifications/confirm",
 		"/api/auth/password-resets",
-		"/api/auth/password-resets/confirm"
+		"/api/auth/password-resets/confirm",
+		// OAuth 로그인 callback이 302로 넘긴 1회용 교환 코드를 토큰으로 바꾼다 — 아직 로그인 전이라 인증이 없다.
+		"/api/auth/oauth/login-exchange"
 	};
 
 	private static final String[] PUBLIC_GET_PATHS = {

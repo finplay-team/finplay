@@ -3,6 +3,7 @@ package com.finplay.api.auth.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -37,6 +38,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -221,21 +223,34 @@ class FakeOAuthFlowIntegrationTest {
 		return new Authorization(query.get("code"), query.get("state"), cookie);
 	}
 
+	// LOGIN 성공은 이제 토큰을 바로 주지 않고 프론트 콜백 주소로 302 리다이렉트하며 1회용 교환 코드만 싣는다
+	// (docs/api-contracts.md OAuth callback). 그 코드로 login-exchange를 호출해야 실제 토큰을 받는다.
 	private MvcResult callback(
 		String provider, String code, String state, Cookie cookie) throws Exception {
-		return mockMvc.perform(get("/api/auth/oauth/{provider}/callback", provider)
+		MvcResult redirected = mockMvc.perform(get("/api/auth/oauth/{provider}/callback", provider)
 			.param("code", code)
 			.param("state", state)
 			.cookie(cookie))
-			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.accessToken").isNotEmpty())
-			.andExpect(jsonPath("$.refreshToken").isNotEmpty())
+			.andExpect(status().isFound())
+			.andExpect(header().string(HttpHeaders.LOCATION,
+				Matchers.startsWith("https://www.finplay.site/oauth/callback?code=")))
 			.andExpect(header().string(
 				HttpHeaders.SET_COOKIE,
 				Matchers.allOf(
 					Matchers.containsString(
 						"; Path=/api/auth/oauth/" + provider + "/callback"),
 					Matchers.containsString("; Max-Age=0"))))
+			.andReturn();
+
+		Map<String, String> query = queryParameters(
+			URI.create(redirected.getResponse().getHeader(HttpHeaders.LOCATION)));
+
+		return mockMvc.perform(post("/api/auth/oauth/login-exchange")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("{\"code\":\"" + query.get("code") + "\"}"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.accessToken").isNotEmpty())
+			.andExpect(jsonPath("$.refreshToken").isNotEmpty())
 			.andReturn();
 	}
 
