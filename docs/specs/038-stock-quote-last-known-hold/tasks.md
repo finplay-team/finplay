@@ -34,4 +34,4 @@
   `docs/prd.md` §3 "구현 현황"의 `QUOTE-HOLD-001~007` 행을 갱신한다(CLAUDE.md 규칙 10).
   `docs/api-routes.md`는 라우트 변경이 없어 대상이 아니다.
 
-- [ ] **7. `./gradlew build` 통과 확인**
+- [x] **7. `./gradlew build` 통과 확인**
