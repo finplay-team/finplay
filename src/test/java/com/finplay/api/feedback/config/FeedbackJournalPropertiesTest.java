@@ -3,6 +3,7 @@ package com.finplay.api.feedback.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -72,5 +73,57 @@ class FeedbackJournalPropertiesTest {
 		contextRunner
 			.withPropertyValues("feedback.journal.max-buy-journals=three")
 			.run(context -> assertThat(context).hasFailed());
+	}
+
+	// --- 하한 검증 (FeedbackDetectionProperties·FeedbackNewsProperties와 같은 처방) ---
+
+	// 두 값 모두 잘못된 설정이 예외도 로그도 없이 **정반대 결과**로만 나타나므로 기동에서 막는다.
+	// 0 이하이면 선별 루프의 상한 비교가 걸리지 않아 배분된 매수 일기가 전부 프롬프트에 실린다 —
+	// 기능을 끄려고 0을 넣은 운영자가 상한이 통째로 무효가 된 결과를 받는다.
+	@Test
+	@DisplayName("max-buy-journals가 1 미만이면 기동이 실패한다 — 0도 음수도 막는다")
+	void failsWhenMaxBuyJournalsIsBelowOne() {
+		for (String invalid : List.of("0", "-1")) {
+			contextRunner
+				.withPropertyValues("feedback.journal.max-buy-journals=" + invalid)
+				.run(context -> assertThat(context)
+					.hasFailed()
+					.getFailure()
+					.rootCause()
+					.isInstanceOf(IllegalArgumentException.class)
+					.hasMessageContaining("max-buy-journals"));
+		}
+	}
+
+	// 음수면 절단이 substring(0, -N)으로 StringIndexOutOfBoundsException을 던져 "매도 회고 조회는 항상
+	// 200·READY"(§C-4)가 500으로 깨진다. 0은 본문이 통째로 빈 문자열이 되어 일기를 실은 의미가 사라진다.
+	@Test
+	@DisplayName("max-journal-chars가 1 미만이면 기동이 실패한다 — 0도 음수도 막는다")
+	void failsWhenMaxJournalCharsIsBelowOne() {
+		for (String invalid : List.of("0", "-100")) {
+			contextRunner
+				.withPropertyValues("feedback.journal.max-journal-chars=" + invalid)
+				.run(context -> assertThat(context)
+					.hasFailed()
+					.getFailure()
+					.rootCause()
+					.isInstanceOf(IllegalArgumentException.class)
+					.hasMessageContaining("max-journal-chars"));
+		}
+	}
+
+	// 하한이 1인지 2인지를 가른다 — 검증을 `< 2`로 잘못 쓰면 정상 설정이 기동을 막는다.
+	@Test
+	@DisplayName("두 값이 1이면 정상 기동한다 — 하한은 1이다")
+	void acceptsOneAsTheLowerBoundOfBothProperties() {
+		contextRunner
+			.withPropertyValues("feedback.journal.max-buy-journals=1", "feedback.journal.max-journal-chars=1")
+			.run(context -> {
+				assertThat(context).hasNotFailed();
+
+				FeedbackJournalProperties properties = context.getBean(FeedbackJournalProperties.class);
+				assertThat(properties.maxBuyJournals()).isEqualTo(1);
+				assertThat(properties.maxJournalChars()).isEqualTo(1);
+			});
 	}
 }

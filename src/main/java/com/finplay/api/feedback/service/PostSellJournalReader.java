@@ -116,7 +116,10 @@ class PostSellJournalReader {
 			JournalContentDto journal = byTradeId.get(buyTradeId);
 			if (journal != null) {
 				selected.add(journal);
-				if (selected.size() == properties.maxBuyJournals()) {
+				// == 가 아니라 >= 다. == 는 상한이 0 이하일 때 영원히 거짓이라 상한이 통째로 무효가 되고
+				// 배분된 일기가 전부 실린다 — 끄려던 운영자가 정반대 결과를 받는다.
+				// (NewsItemTruncator.truncateAndSort도 같은 이유로 <= 를 쓴다.)
+				if (selected.size() >= properties.maxBuyJournals()) {
 					break;
 				}
 			}
@@ -143,10 +146,16 @@ class PostSellJournalReader {
 	 * <p><b>잘렸다는 표시를 붙이지 않는다</b> — spec이 절단만 정했고, 표시를 붙이면 그 문자열이 프롬프트에 그대로
 	 * 실려 모델이 회고의 일부로 읽는다. 절단은 지문에 영향을 주지 않는다(지문은 본문이 아니라 {@code updated_at}을
 	 * 해싱한다).
+	 *
+	 * <p><b>자르기 전에 개행을 공백 하나로 접는다</b>(결정 6). 본문은 사용자 자유 텍스트인데 프롬프트가 줄 단위
+	 * 구조라, 개행을 그대로 실으면 사용자가 {@code 사용자가 쓴 회고 …} 헤더나 {@code 매도 후 흐름: …} 같은 사실
+	 * 줄을 <b>위조</b>해 자기 서술에 없는 수치를 말하게 만들 수 있다 — 후검증 금지어에 걸리지 않는 형태로도 된다.
+	 * <b>접기가 자르기보다 먼저여야</b> 절단 길이가 실제로 실리는 문자열 기준이 된다.
 	 */
 	private String truncate(String content) {
+		String folded = content.replaceAll("\\s*\\R\\s*", " ");
 		int limit = properties.maxJournalChars();
-		return content.length() <= limit ? content : content.substring(0, limit);
+		return folded.length() <= limit ? folded : folded.substring(0, limit);
 	}
 
 	/**
