@@ -23,7 +23,7 @@
   옮긴다(`StockReplayServiceTest`·`CandleQueryServiceTest`·`PriceQueryServiceTest`·`MarketDataPipelineIntegrationTest`
   주변). `LocalForcedOpenStockPriceProviderTest`에 폴백 시세를 강제 OPEN이 덮어쓰지 않는 케이스를 추가한다.
 
-- [ ] **5. 통합 테스트 (핵심 시나리오)**
+- [x] **5. 통합 테스트 (핵심 시나리오)**
   Testcontainers로 금요일 장 마감 → 토요일 조회(가격·캔들 유지, 값이 금요일과 동일) → 월요일 08:50(여전히 금요일
   재생일) → 월요일 09:01(오늘 재생분으로 전환)을 한 시나리오로 확인하고, 같은 테스트에서 토요일 주문이 409
   `MARKET_CLOSED`임을 확인한다. SSE 쪽은 값이 멈춘 동안 `price` 이벤트가 없고 `snapshot`에 멈춘 값이 실리는 것을
