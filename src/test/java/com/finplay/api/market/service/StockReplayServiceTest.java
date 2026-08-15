@@ -35,6 +35,9 @@ class StockReplayServiceTest {
 
 	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 	private static final Long INSTRUMENT_ID = 1L;
+	// 폴백 하루치 상한(StockReplayService.END_OF_DAY와 동일 값) — LocalTime.MAX(나노초 포함)를 그대로 스텁 인자로 쓰면
+	// 프로덕션 코드가 실제로 넘기는 값(나노초를 버린 23:59:59)과 달라 Mockito 매칭이 깨진다(agent-mistakes.md 2026-08-04).
+	private static final LocalTime END_OF_DAY = LocalTime.MAX.withNano(0);
 	// 2026-07-27(월) 평일 기준일 — 주말·공휴일과 겹치지 않는 순수 평일 케이스용
 	private static final LocalDate WEEKDAY = LocalDate.of(2026, 7, 27);
 	// 2026-08-01(토) — 주말 CLOSED 케이스용
@@ -216,6 +219,11 @@ class StockReplayServiceTest {
 	void getCurrentPriceReturnsUnavailableBeforeMarketOpenWithoutQueryingCandles() {
 		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
 			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		// 개장 전(CLOSED)이라 오늘 세션 기준 공개 분봉이 없어 폴백 후보를 조회하게 된다(spec 038) — 폴백 후보가
+		// 실제로 없다는 것을 Mockito 기본값(Optional.empty())에 우연히 기대지 않고 명시한다.
+		when(stockReplaySessionRepository
+			.findFirstByServiceDateBeforeAndPreparationStatusOrderByServiceDateDesc(WEEKDAY, PreparationStatus.READY))
+			.thenReturn(Optional.empty());
 		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(8, 59)));
 
 		StockReplayPriceDto dto = service.getCurrentPrice(INSTRUMENT_ID);
@@ -248,6 +256,11 @@ class StockReplayServiceTest {
 	@Test
 	void getCurrentPriceReturnsSessionNotReadyDtoWhenNoReadySession() {
 		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY)).thenReturn(Optional.empty());
+		// CLOSED(세션 없음)이라 폴백 후보를 조회하게 된다(spec 038) — 폴백 후보가 없다는 것을 명시해 이 테스트가
+		// 검증하려는 "세션 자체가 없을 때의 원래 동작"이 Mockito 기본값이 아니라 이 조건에서 실제로 유지되게 한다.
+		when(stockReplaySessionRepository
+			.findFirstByServiceDateBeforeAndPreparationStatusOrderByServiceDateDesc(WEEKDAY, PreparationStatus.READY))
+			.thenReturn(Optional.empty());
 		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(10, 0)));
 
 		StockReplayPriceDto dto = service.getCurrentPrice(INSTRUMENT_ID);
@@ -292,6 +305,11 @@ class StockReplayServiceTest {
 	@Test
 	void getCurrentPriceReturnsNullReplaySessionWhenNoReadySession() {
 		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY)).thenReturn(Optional.empty());
+		// 폴백 후보가 없다는 것을 명시한다(spec 038) — 있었다면 replaySession은 여전히 null이어야 하지만
+		// (QUOTE-HOLD-005) 이 테스트의 원래 의도는 "폴백 자체가 없는" 경우를 고정하는 것이다.
+		when(stockReplaySessionRepository
+			.findFirstByServiceDateBeforeAndPreparationStatusOrderByServiceDateDesc(WEEKDAY, PreparationStatus.READY))
+			.thenReturn(Optional.empty());
 		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(10, 0)));
 
 		StockReplayPriceDto dto = service.getCurrentPrice(INSTRUMENT_ID);
@@ -365,6 +383,10 @@ class StockReplayServiceTest {
 	void getCurrentPricesReturnsSessionNotReadyForAllInstrumentsWithoutQueryingCandlesWhenNoReadySession() {
 		Long secondInstrumentId = 2L;
 		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY)).thenReturn(Optional.empty());
+		// 폴백 후보가 없다는 것을 명시한다(spec 038) — 있었다면 아래 "가격 없음" 단정들이 깨졌을 것이다.
+		when(stockReplaySessionRepository
+			.findFirstByServiceDateBeforeAndPreparationStatusOrderByServiceDateDesc(WEEKDAY, PreparationStatus.READY))
+			.thenReturn(Optional.empty());
 		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(10, 0)));
 
 		List<StockReplayPriceDto> results = service.getCurrentPrices(List.of(INSTRUMENT_ID, secondInstrumentId));
@@ -637,6 +659,10 @@ class StockReplayServiceTest {
 	@Test
 	void getRevealedCandlesReturnsEmptyListWhenNoReadySession() {
 		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY)).thenReturn(Optional.empty());
+		// 폴백 후보가 없다는 것을 명시한다(spec 038) — 있었다면 아래 "빈 배열" 단정이 깨졌을 것이다.
+		when(stockReplaySessionRepository
+			.findFirstByServiceDateBeforeAndPreparationStatusOrderByServiceDateDesc(WEEKDAY, PreparationStatus.READY))
+			.thenReturn(Optional.empty());
 		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(10, 0)));
 
 		List<StockCandleDto> candles = service.getRevealedCandles(INSTRUMENT_ID, null, null);
@@ -649,6 +675,11 @@ class StockReplayServiceTest {
 	void getRevealedCandlesReturnsEmptyListBeforeMarketOpenWithoutQueryingCandles() {
 		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
 			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		// 개장 전(CLOSED)이라 컷오프가 없어(resolveRevealCutoff empty) 폴백 후보를 조회하게 된다(spec 038) —
+		// 폴백 후보가 없다는 것을 명시한다.
+		when(stockReplaySessionRepository
+			.findFirstByServiceDateBeforeAndPreparationStatusOrderByServiceDateDesc(WEEKDAY, PreparationStatus.READY))
+			.thenReturn(Optional.empty());
 		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(8, 59)));
 
 		List<StockCandleDto> candles = service.getRevealedCandles(INSTRUMENT_ID, null, null);
@@ -789,6 +820,10 @@ class StockReplayServiceTest {
 	@Test
 	void getRevealedAggregatedCandlesReturnsEmptyListWhenNoReadySession() {
 		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY)).thenReturn(Optional.empty());
+		// 폴백 후보가 없다는 것을 명시한다(spec 038) — 있었다면 아래 세 interval 모두 "빈 배열" 단정이 깨졌을 것이다.
+		when(stockReplaySessionRepository
+			.findFirstByServiceDateBeforeAndPreparationStatusOrderByServiceDateDesc(WEEKDAY, PreparationStatus.READY))
+			.thenReturn(Optional.empty());
 		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(10, 0)));
 
 		assertThat(service.getRevealedAggregatedCandles(INSTRUMENT_ID, CandleInterval.ONE_DAY, null, null))
@@ -1276,7 +1311,7 @@ class StockReplayServiceTest {
 		StockCandle lastCandle = candle(FRIDAY_BEFORE_SATURDAY, LocalTime.of(15, 29), bd(2005), bd(2020), bd(2000),
 			bd(2015), 20);
 		when(stockCandleRepository.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
-			INSTRUMENT_ID, FRIDAY_BEFORE_SATURDAY, LocalTime.MIN, LocalTime.MAX))
+			INSTRUMENT_ID, FRIDAY_BEFORE_SATURDAY, LocalTime.MIN, END_OF_DAY))
 			.thenReturn(List.of(firstCandle, lastCandle));
 		StockReplayService service = service(fixedClock(SATURDAY, LocalTime.of(15, 0)));
 
@@ -1299,7 +1334,7 @@ class StockReplayServiceTest {
 		StockCandle fallbackCandle = candle(FALLBACK_TRADING_DATE, LocalTime.of(15, 29), bd(3000), bd(3010), bd(2995),
 			bd(3005), 10);
 		when(stockCandleRepository.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
-			INSTRUMENT_ID, FALLBACK_TRADING_DATE, LocalTime.MIN, LocalTime.MAX))
+			INSTRUMENT_ID, FALLBACK_TRADING_DATE, LocalTime.MIN, END_OF_DAY))
 			.thenReturn(List.of(fallbackCandle));
 		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(0, 30)));
 
@@ -1321,7 +1356,7 @@ class StockReplayServiceTest {
 		StockCandle fallbackCandle = candle(FALLBACK_TRADING_DATE, LocalTime.of(15, 29), bd(4000), bd(4010), bd(3995),
 			bd(4005), 10);
 		when(stockCandleRepository.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
-			INSTRUMENT_ID, FALLBACK_TRADING_DATE, LocalTime.MIN, LocalTime.MAX))
+			INSTRUMENT_ID, FALLBACK_TRADING_DATE, LocalTime.MIN, END_OF_DAY))
 			.thenReturn(List.of(fallbackCandle));
 		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(8, 50)));
 
@@ -1383,7 +1418,7 @@ class StockReplayServiceTest {
 			.findFirstByServiceDateBeforeAndPreparationStatusOrderByServiceDateDesc(SATURDAY, PreparationStatus.READY))
 			.thenReturn(Optional.of(fallbackSession()));
 		when(stockCandleRepository.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
-			INSTRUMENT_ID, FALLBACK_TRADING_DATE, LocalTime.MIN, LocalTime.MAX))
+			INSTRUMENT_ID, FALLBACK_TRADING_DATE, LocalTime.MIN, END_OF_DAY))
 			.thenReturn(List.of());
 		StockReplayService service = service(fixedClock(SATURDAY, LocalTime.of(10, 0)));
 
@@ -1395,13 +1430,13 @@ class StockReplayServiceTest {
 	@Test
 	void getRevealedAggregatedCandlesFallsBackToLastReplayedTradingDayOnWeekendWhenNoSessionRowExists() {
 		// 주말 폴백 시 sourceTradingDate가 폴백 거래일(FRIDAY_BEFORE_SATURDAY) 기준으로 집계됨을 확인한다(QUOTE-HOLD-002).
-		// 그 거래일은 이미 재생이 끝난 과거이므로 컷오프 없이(LocalTime.MAX) 하루치 전부가 집계 입력에 들어가야 한다.
+		// 그 거래일은 이미 재생이 끝난 과거이므로 컷오프 없이(END_OF_DAY) 하루치 전부가 집계 입력에 들어가야 한다.
 		when(stockReplaySessionRepository.findByServiceDate(SATURDAY)).thenReturn(Optional.empty());
 		when(stockReplaySessionRepository
 			.findFirstByServiceDateBeforeAndPreparationStatusOrderByServiceDateDesc(SATURDAY, PreparationStatus.READY))
 			.thenReturn(Optional.of(readySession(FRIDAY_BEFORE_SATURDAY, FRIDAY_BEFORE_SATURDAY)));
 		when(stockCandleRepository.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
-			INSTRUMENT_ID, FRIDAY_BEFORE_SATURDAY, LocalTime.MIN, LocalTime.MAX))
+			INSTRUMENT_ID, FRIDAY_BEFORE_SATURDAY, LocalTime.MIN, END_OF_DAY))
 			.thenReturn(List.of(
 				candle(FRIDAY_BEFORE_SATURDAY, LocalTime.of(9, 0), bd(1000), bd(1010), bd(995), bd(1005), 10),
 				candle(FRIDAY_BEFORE_SATURDAY, LocalTime.of(15, 29), bd(1005), bd(1015), bd(1000), bd(1012), 20)));
@@ -1428,7 +1463,7 @@ class StockReplayServiceTest {
 			.findFirstByServiceDateBeforeAndPreparationStatusOrderByServiceDateDesc(WEEKDAY, PreparationStatus.READY))
 			.thenReturn(Optional.of(fallbackSession()));
 		when(stockCandleRepository.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
-			INSTRUMENT_ID, FALLBACK_TRADING_DATE, LocalTime.MIN, LocalTime.MAX))
+			INSTRUMENT_ID, FALLBACK_TRADING_DATE, LocalTime.MIN, END_OF_DAY))
 			.thenReturn(List.of(
 				candle(FALLBACK_TRADING_DATE, LocalTime.of(9, 0), bd(2000), bd(2010), bd(1995), bd(2005), 10)));
 		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(8, 50)));
@@ -1461,7 +1496,7 @@ class StockReplayServiceTest {
 		StockCandle poisonedFallbackCandle = candle(FALLBACK_TRADING_DATE, LocalTime.of(15, 29), bd(9999), bd(9999),
 			bd(9999), bd(9999), 10);
 		when(stockCandleRepository.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
-			INSTRUMENT_ID, FALLBACK_TRADING_DATE, LocalTime.MIN, LocalTime.MAX))
+			INSTRUMENT_ID, FALLBACK_TRADING_DATE, LocalTime.MIN, END_OF_DAY))
 			.thenReturn(List.of(poisonedFallbackCandle));
 		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(9, 2, 15)));
 
@@ -1494,7 +1529,7 @@ class StockReplayServiceTest {
 		StockCandle poisonedFallbackCandle = candle(FALLBACK_TRADING_DATE, LocalTime.of(15, 29), bd(9999), bd(9999),
 			bd(9999), bd(9999), 10);
 		when(stockCandleRepository.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
-			INSTRUMENT_ID, FALLBACK_TRADING_DATE, LocalTime.MIN, LocalTime.MAX))
+			INSTRUMENT_ID, FALLBACK_TRADING_DATE, LocalTime.MIN, END_OF_DAY))
 			.thenReturn(List.of(poisonedFallbackCandle));
 		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(9, 2, 15)));
 
@@ -1523,7 +1558,7 @@ class StockReplayServiceTest {
 		StockCandle poisonedFallbackCandle = candle(FALLBACK_TRADING_DATE, LocalTime.of(15, 29), bd(9999), bd(9999),
 			bd(9999), bd(9999), 10);
 		when(stockCandleRepository.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
-			INSTRUMENT_ID, FALLBACK_TRADING_DATE, LocalTime.MIN, LocalTime.MAX))
+			INSTRUMENT_ID, FALLBACK_TRADING_DATE, LocalTime.MIN, END_OF_DAY))
 			.thenReturn(List.of(poisonedFallbackCandle));
 		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(9, 0, 30)));
 

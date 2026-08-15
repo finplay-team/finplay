@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.finplay.api.TestcontainersConfiguration;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.domain.PreparationStatus;
 import com.finplay.api.market.domain.StockCandle;
 import com.finplay.api.market.domain.StockReplaySession;
 import com.finplay.api.market.dto.response.CandleResponse;
@@ -33,6 +34,13 @@ class CandleQueryServiceIntegrationTest {
 
 	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 	private static final LocalDate SOURCE_TRADING_DATE = LocalDate.of(2026, 7, 22);
+	// spec 038(QUOTE-HOLD-006) 도입 이후 "세션 없음/PREPARING → 빈 배열" 테스트 전용 — 폴백은 날짜 상한 없이 과거
+	// 전체에서 마지막 READY 세션을 찾으므로(StockReplayService.findFallbackSession), 이 클래스의 다른 테스트가 커밋하는
+	// 가장 이른 서비스 날짜(2026-05-20, aggregatedIntervalsSpanMultipleTradingDaysWhileOneMinuteRegressionHolds)보다도
+	// 훨씬 이전인 날짜를 써야 폴백 후보가 실제로 하나도 없다는 것을 보장할 수 있다 — "그날 이후로 세션을 저장하지
+	// 않았다"는 사실만으로는 이제 충분하지 않다(공유 MySQL 컨테이너에 이미 커밋된 다른 테스트의 READY 세션이 폴백
+	// 후보가 되어 조용히 값을 채워 버릴 수 있다, 실제 재현 확인 — agent-mistakes.md 참고).
+	private static final LocalDate NO_FALLBACK_CANDIDATE_SERVICE_DATE = LocalDate.of(2000, 1, 3);
 
 	@Autowired
 	private InstrumentRepository instrumentRepository;
@@ -183,7 +191,11 @@ class CandleQueryServiceIntegrationTest {
 		Instrument instrument = saveInstrument("CDL0004");
 		saveCandle(instrument, LocalTime.of(9, 0), "71100");
 		// 이 서비스 날짜에는 세션을 저장하지 않는다.
-		LocalDate serviceDateNoSession = LocalDate.of(2026, 8, 3);
+		LocalDate serviceDateNoSession = NO_FALLBACK_CANDIDATE_SERVICE_DATE;
+		// 폴백 후보가 실제로 없다는 것을 날짜 선택에만 맡기지 않고 직접 확인한다(spec 038 QUOTE-HOLD-002·006 회귀 방지) —
+		// 이 assertion이 깨지면 "폴백 없음"이 아니라 "폴백은 있는데 우연히 안 걸렸다"는 뜻이므로 날짜를 더 당겨야 한다.
+		assertThat(stockReplaySessionRepository.findFirstByServiceDateBeforeAndPreparationStatusOrderByServiceDateDesc(
+			serviceDateNoSession, PreparationStatus.READY)).isEmpty();
 
 		CandleQueryService service = candleQueryServiceAt(clockAt(serviceDateNoSession, LocalTime.of(9, 5)));
 		List<CandleResponse> candles = service.getCandles(instrument.getId(), "1m", null, null);
@@ -195,9 +207,14 @@ class CandleQueryServiceIntegrationTest {
 	void returnsEmptyListInsteadOfErrorWhenSessionIsStillPreparing() {
 		Instrument instrument = saveInstrument("CDL0005");
 		saveCandle(instrument, LocalTime.of(9, 0), "71100");
-		LocalDate serviceDatePreparing = LocalDate.of(2026, 8, 4);
+		LocalDate serviceDatePreparing = NO_FALLBACK_CANDIDATE_SERVICE_DATE.plusDays(1);
 		stockReplaySessionRepository.save(
 			StockReplaySession.preparing(serviceDatePreparing, null, LocalDateTime.now()));
+		// PREPARING은 findReadySession을 통과하지 못해 "세션 없음"과 같은 폴백 경로를 탄다(spec 038 QUOTE-HOLD-006:
+		// 오늘 세션이 PREPARING이어도 폴백은 동작한다). 이 테스트가 검증하려는 건 "폴백 후보 자체가 없을 때는 여전히
+		// 빈 배열"이므로, 후보가 없다는 것을 위와 동일하게 직접 확인한다.
+		assertThat(stockReplaySessionRepository.findFirstByServiceDateBeforeAndPreparationStatusOrderByServiceDateDesc(
+			serviceDatePreparing, PreparationStatus.READY)).isEmpty();
 
 		CandleQueryService service = candleQueryServiceAt(clockAt(serviceDatePreparing, LocalTime.of(9, 5)));
 		List<CandleResponse> candles = service.getCandles(instrument.getId(), "1m", null, null);

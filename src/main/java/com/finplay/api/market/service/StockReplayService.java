@@ -30,6 +30,11 @@ public class StockReplayService {
 	private static final LocalTime FIRST_CANDLE_END_TIME = LocalTime.of(9, 1);
 	private static final LocalTime MARKET_CLOSE_TIME = LocalTime.of(15, 30);
 
+	// 폴백(QUOTE-HOLD-002)에서 하루치 상한으로 쓰는 sentinel. LocalTime.MAX(23:59:59.999999999)를 그대로 DB 파라미터로
+	// 넘기지 않는다 — candle_time 컬럼은 소수 초 없는 TIME이라 Connector/J가 나노초를 올림해 00:00:00으로 접고,
+	// BETWEEN의 상한이 하한보다 작아져 조회 결과가 항상 0건이 된다(agent-mistakes.md 2026-08-04, 같은 함정 재현·확인).
+	private static final LocalTime END_OF_DAY = LocalTime.MAX.withNano(0);
+
 	// 집계 캔들(1d·1w·1M)의 from 생략 시 조회 하한과 결과 상한(spec 공통 계약 — 200개 캡, 이슈 #143)
 	private static final int MAX_AGGREGATED_CANDLES = 200;
 	private static final long LOOKBACK_FLOOR_DAYS = 400;
@@ -169,7 +174,7 @@ public class StockReplayService {
 		StockMarketStatus marketStatus = computeMarketStatus(readySession.isPresent(), now);
 
 		LocalTime rangeStart = from != null ? from.toLocalTime() : LocalTime.MIN;
-		LocalTime requestedEnd = to != null ? to.toLocalTime() : LocalTime.MAX;
+		LocalTime requestedEnd = to != null ? to.toLocalTime() : END_OF_DAY;
 
 		if (readySession.isPresent()) {
 			LocalDate sourceTradingDate = readySession.get().getSourceTradingDate();
@@ -210,7 +215,7 @@ public class StockReplayService {
 	// (spec.md "공개 상한" — 재생 준비 전 거래일이 일봉으로 미리 새어 나가는 것을 막는다).
 	//
 	// marketStatus == CLOSED이고 오늘 세션 기준 결과가 비어 있으면 폴백 세션의 원본 거래일로 다시 집계한다(QUOTE-HOLD-002).
-	// 폴백일 때는 그 거래일의 유효 컷오프를 LocalTime.MAX로 둬 하루치 전부를 집계 입력에 넣는다 — 이미 재생이 끝난 과거
+	// 폴백일 때는 그 거래일의 유효 컷오프를 END_OF_DAY로 둬 하루치 전부를 집계 입력에 넣는다 — 이미 재생이 끝난 과거
 	// 거래일이므로 컷오프로 가릴 이유가 없다(plan.md). OPEN에는 폴백하지 않는다(QUOTE-HOLD-004).
 	@Transactional(readOnly = true)
 	public List<StockCandleDto> getRevealedAggregatedCandles(
@@ -234,12 +239,12 @@ public class StockReplayService {
 		}
 		return findFallbackSession(today)
 			.map(session -> buildAggregatedCandles(
-				instrumentId, interval, fromDate, toDate, session.getSourceTradingDate(), Optional.of(LocalTime.MAX)))
+				instrumentId, interval, fromDate, toDate, session.getSourceTradingDate(), Optional.of(END_OF_DAY)))
 			.orElse(List.of());
 	}
 
 	// getRevealedAggregatedCandles 실행부 — 기준 거래일(sourceTradingDate)과 그날의 유효 컷오프를 매개변수로 받는다.
-	// 오늘 세션 경로는 resolveRevealCutoff(현재 시각)를, 폴백 경로는 Optional.of(LocalTime.MAX)를 넘겨 같은 로직을
+	// 오늘 세션 경로는 resolveRevealCutoff(현재 시각)를, 폴백 경로는 Optional.of(END_OF_DAY)를 넘겨 같은 로직을
 	// 재사용한다(200개 캡·선두 partial 버킷 필터·narrowRangeStart 포함, plan.md "getRevealedAggregatedCandles" 절).
 	private List<StockCandleDto> buildAggregatedCandles(
 		Long instrumentId, CandleInterval interval, LocalDate fromDate, LocalDate toDate,

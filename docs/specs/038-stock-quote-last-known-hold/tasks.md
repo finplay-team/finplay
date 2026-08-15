@@ -18,7 +18,7 @@
   단위 테스트는 ①②③④⑦을 덮는다 — 특히 **09:00~09:01 빈 배열 회귀**와 **08:50에 오늘 세션의 거래일이 새지
   않는 것**을 반드시 포함한다.
 
-- [ ] **4. 회귀 정리 + 강제 OPEN 데코레이터 확인**
+- [x] **4. 회귀 정리 + 강제 OPEN 데코레이터 확인**
   "세션 없으면 `UNAVAILABLE`·빈 배열"을 단정하던 기존 테스트를 삭제하지 말고 원래 검증 의도가 살아 있는 형태로
   옮긴다(`StockReplayServiceTest`·`CandleQueryServiceTest`·`PriceQueryServiceTest`·`MarketDataPipelineIntegrationTest`
   주변). `LocalForcedOpenStockPriceProviderTest`에 폴백 시세를 강제 OPEN이 덮어쓰지 않는 케이스를 추가한다.
