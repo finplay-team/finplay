@@ -854,6 +854,50 @@ class JournalServiceTest {
 		assertThat(buyTradeIdCaptor.getValue()).isEqualTo(sellTradeIdCaptor.getValue());
 	}
 
+	// --- spec 012 §C-6 조회 경로 (4차 §FEED-013) ---
+	//
+	// 이 둘은 getBuyJournal·getSellJournal과 계약이 반대다 — 일기가 없는 것이 정상 상태라 404가 아니다.
+	// 소유권 검증(getOwnedTrade)을 부르지 않는 것도 계약이므로 tradeService 무호출까지 단정한다(§C-6).
+
+	@Test
+	void findSellJournalContentReturnsEmptyWhenSellJournalDoesNotExist() {
+		when(sellTradeJournalRepository.findBySellTradeId(SELL_TRADE_ID)).thenReturn(Optional.empty());
+
+		assertThat(journalService.findSellJournalContent(SELL_TRADE_ID)).isEmpty();
+		verify(tradeService, never()).getOwnedTrade(any(), any());
+	}
+
+	@Test
+	void findSellJournalContentReturnsTradeIdContentAndUpdatedAt() {
+		SellTradeJournal journal = SellTradeJournal.of(sellTrade(SELL_TRADE_ID), "손절 기준을 못 지켰다.", NOW);
+		journal.updateContent("손절 기준을 못 지켰다. 다음엔 지킨다.", NOW.plusDays(1));
+		when(sellTradeJournalRepository.findBySellTradeId(SELL_TRADE_ID)).thenReturn(Optional.of(journal));
+
+		assertThat(journalService.findSellJournalContent(SELL_TRADE_ID))
+			.contains(new JournalContentDto(SELL_TRADE_ID, "손절 기준을 못 지켰다. 다음엔 지킨다.", NOW.plusDays(1)));
+	}
+
+	// 빈 목록은 "배분된 매수 체결이 없다"는 정상 입력이다. 여기서 걸러내지 않으면 `in ()`이 DB까지 나간다.
+	@Test
+	void findBuyJournalContentsReturnsEmptyWithoutQueryingWhenBuyTradeIdsAreEmpty() {
+		assertThat(journalService.findBuyJournalContents(List.of())).isEmpty();
+
+		verify(buyTradeJournalRepository, never()).findAllByBuyTradeIdIn(any());
+	}
+
+	// 일기가 있는 체결만 담기므로 입력 id 수와 결과 수가 다른 것이 정상이다 — 여기서 빈 자리를 채우거나
+	// 예외를 던지면 "일기를 아직 안 쓴 매수"가 서술 경로를 죽인다.
+	@Test
+	void findBuyJournalContentsReturnsOnlyTheTradesThatHaveAJournal() {
+		BuyTradeJournal journal = BuyTradeJournal.of(buyTrade(BUY_TRADE_ID), "실적 발표 전 분할 매수.", NOW);
+		when(buyTradeJournalRepository.findAllByBuyTradeIdIn(List.of(BUY_TRADE_ID, 99L)))
+			.thenReturn(List.of(journal));
+
+		assertThat(journalService.findBuyJournalContents(List.of(BUY_TRADE_ID, 99L)))
+			.containsExactly(new JournalContentDto(BUY_TRADE_ID, "실적 발표 전 분할 매수.", NOW));
+		verify(tradeService, never()).getOwnedTrade(any(), any());
+	}
+
 	private static Account accountWithId(Long id) {
 		Account account = account();
 		ReflectionTestUtils.setField(account, "id", id);

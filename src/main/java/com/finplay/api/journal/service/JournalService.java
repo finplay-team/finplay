@@ -23,8 +23,10 @@ import com.finplay.api.order.domain.Trade;
 import com.finplay.api.order.service.TradeService;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -129,6 +131,50 @@ public class JournalService {
 			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
 
 		return SellJournalDetailResponse.from(journal);
+	}
+
+	/**
+	 * 매도 체결 1건의 매도 회고를 읽는다 — 없으면 {@link Optional#empty()}다 (spec 012 §C-6, 4차 §FEED-013).
+	 *
+	 * <p><b>{@link #getSellJournal}을 재사용하지 않는다.</b> 그쪽은 소유권 검증과 "없으면 404"가 계약인데, 매도
+	 * 회고 서술 경로에서는 <b>일기가 없는 것이 정상 상태</b>라 예외로 다룰 수 없다.
+	 *
+	 * <p><b>회원 id를 인자로 받지 않는다</b>(§C-6). 호출부({@code PostSellFeedbackService} 경로)가
+	 * {@code getOwnedTrade}로 이미 확인한 체결의 id만 넘긴다 — 여기서 회원 id를 받으면 검증하는 것처럼 보이는데
+	 * 실제로는 아무것도 막지 않는 인자가 된다.
+	 *
+	 * <p><b>읽기만 한다.</b> {@code updated_at}을 건드리면 지문이 스스로 바뀌어 재생성이 무한히 열린다
+	 * (§FEED-013 결정 3).
+	 */
+	@Transactional(readOnly = true)
+	public Optional<JournalContentDto> findSellJournalContent(Long sellTradeId) {
+		return sellTradeJournalRepository
+			.findBySellTradeId(sellTradeId)
+			.map(journal -> new JournalContentDto(sellTradeId, journal.getContent(), journal.getUpdatedAt()));
+	}
+
+	/**
+	 * 매수 체결 id 목록으로 매수 회고를 <b>한 번에</b> 읽는다 (spec 012 §C-6, 4차 §FEED-013).
+	 *
+	 * <p><b>빈 목록이면 쿼리 없이 빈 결과를 돌려준다.</b> 배분된 매수 체결이 없는 경우가 정상 입력이다.
+	 *
+	 * <p><b>일기가 있는 체결만 담긴다.</b> 입력 id 수와 결과 수가 다른 것이 정상이며, 프롬프트에 실을 순서
+	 * (매수 시각 오름차순)와 건수 상한은 호출부가 정한다(§FEED-013 결정 4).
+	 *
+	 * <p>회원 id를 받지 않는 근거는 {@link #findSellJournalContent}와 같다 — 매수 체결 id는 이미 소유권을 확인한
+	 * 매도 체결의 배분에서 나온 값이라 같은 회원의 것임이 구조적으로 보장된다(§C-6).
+	 */
+	@Transactional(readOnly = true)
+	public List<JournalContentDto> findBuyJournalContents(Collection<Long> buyTradeIds) {
+		if (buyTradeIds.isEmpty()) {
+			return List.of();
+		}
+		return buyTradeJournalRepository
+			.findAllByBuyTradeIdIn(buyTradeIds)
+			.stream()
+			.map(journal -> new JournalContentDto(journal.getBuyTrade().getId(), journal.getContent(),
+				journal.getUpdatedAt()))
+			.toList();
 	}
 
 	@Transactional(readOnly = true)

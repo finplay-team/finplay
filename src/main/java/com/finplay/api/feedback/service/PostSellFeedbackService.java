@@ -16,6 +16,7 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,16 +36,29 @@ import org.springframework.stereotype.Service;
  *
  * <pre>
  * 1. reader.read(...)           트랜잭션 없음(오케스트레이터)     — 협력자별 트랜잭션으로 원장·분봉·카드를 읽는다
- * 2. findByTradeId(...)         리포지터리 기본 트랜잭션          — 기존 서술이 있으면 2·3단계를 건너뛴다
- * 3. narrativeService.resolve   트랜잭션 없음                     — 외부 LLM 호출이 여기 있다
- * 4. writer.create(...)         @Transactional                   — 저장만 감싼다
+ * 2. journalReader.read(...)    트랜잭션 없음(오케스트레이터)     — journal·portfolio 서비스가 각자 읽기 트랜잭션
+ * 3. findByTradeId(...)         리포지터리 기본 트랜잭션          — 기존 서술이 있으면 4단계를 건너뛸 수 있다
+ * 4. narrativeService.resolve   트랜잭션 없음                     — 외부 LLM 호출이 여기 있다
+ * 5. writer.create(...)         @Transactional                   — 저장만 감싼다
  * </pre>
  *
  * <p><b>서술은 최초 조회에서 만들어 저장하고 이후 재사용한다</b>(FEED-007, {@code UNIQUE(trade_id)}).
- * <b>예외는 하나다</b> — 매도 후 흐름과 집단 비교가 확정된 뒤 첫 조회에서 <b>1회</b> 갈아 끼운다
- * ({@link #isRegenerationGateOpen}). 성공하면 {@code narrative_finalized=TRUE}로 닫히고, 템플릿으로 폴백하면
- * 기존 서술을 유지한 채 {@code regeneration_attempts}만 누적해 <b>체결 1건당</b> {@code max-narrative-retry}회까지
- * 다시 시도한다. 그 밖에는 매도 체결이 불변 원장이므로 재생성하지 않는다.
+ * <b>재생성 사유는 둘이고 카운터도 둘이다</b>(§FEED-013 결정 3, 4차).
+ *
+ * <pre>
+ * 1. 기존 행 없음                 → 생성 후 저장 (일기가 있으면 프롬프트에 함께 실린다)
+ * 2. 일기 지문이 저장된 값과 다름 → 일기 사유      (journal_regenerations &lt; max-journal-regeneration)
+ * 3. §C-5 게이트 통과 + 미확정    → 흐름·집단 사유 (regeneration_attempts  &lt; max-narrative-retry)
+ * 4. 그 밖                        → 저장된 서술 재사용
+ * </pre>
+ *
+ * <p>흐름·집단 사유는 매도 후 흐름과 집단 비교가 확정된 뒤 첫 조회에서 갈아 끼우고
+ * ({@link #isRegenerationGateOpen}) 성공하면 {@code narrative_finalized=TRUE}로 닫힌다. <b>일기 사유는 시각
+ * 게이트가 아니라 값의 대조라 일기를 고칠 때마다 다시 열리며, {@code narrative_finalized}를 보지도 쓰지도
+ * 않는다</b> — 보면 게이트를 이미 통과한 체결에서 일기가 영원히 반영되지 않고, 쓰면 흐름·집단 게이트가 조기에
+ * 닫힌다. 어느 쪽이든 템플릿으로 폴백하면 기존 서술과 지문을 유지한 채 해당 카운터만 누적해 상한까지 다시
+ * 시도한다. <b>두 사유가 동시에 성립해도 LLM은 한 번만 부르고 카운터는 둘 다 오른다.</b> 그 밖에는 매도 체결이
+ * 불변 원장이므로 재생성하지 않는다.
  *
  * <p><b>{@code narrativeStatus}는 항상 {@code READY}다</b>(§C-4) — 매도 회고에는 §템플릿 문장이 있어 LLM이
  * 실패하거나 후검증에 걸려도 서버가 수치로 조립한 문장으로 대체하므로 서술이 비지 않는다. 어느 쪽으로
@@ -58,6 +72,8 @@ import org.springframework.stereotype.Service;
 public class PostSellFeedbackService {
 
 	private final PostSellFeedbackReader postSellFeedbackReader;
+
+	private final PostSellJournalReader postSellJournalReader;
 
 	private final NarrativeService narrativeService;
 
@@ -78,7 +94,10 @@ public class PostSellFeedbackService {
 	 */
 	public PostSellFeedbackResponse getPostSellFeedback(Long userId, Long tradeId) {
 		PostSellFeedbackResponse facts = postSellFeedbackReader.read(userId, tradeId);
-		NarrativeResultDto narrative = resolveNarrative(userId, tradeId, facts);
+		// 기존 행 유무와 무관하게 조회마다 한 번 읽는다 — 최초 생성에도 저장할 지문이 필요하고, 재사용
+		// 판정에도 현재 지문이 필요하다. DB 읽기라 트랜잭션 경계 규칙(LLM은 경계 밖)을 그대로 지킨다.
+		JournalDigestDto journals = postSellJournalReader.read(tradeId);
+		NarrativeResultDto narrative = resolveNarrative(userId, tradeId, facts, journals);
 		// narrativeStatus는 상수 READY다 — 위 클래스 주석의 근거이며 분기가 없는 것이 의도다.
 		return facts.withNarrative(
 			narrative.narrative(), narrative.source(), PostSellFeedbackStatus.READY);
@@ -97,23 +116,30 @@ public class PostSellFeedbackService {
 	 * 나가면서 "{@code narrativeStatus}는 항상 {@code READY}"가 조용히 깨진다.
 	 */
 	private NarrativeResultDto resolveNarrative(
-		Long userId, Long tradeId, PostSellFeedbackResponse facts) {
+		Long userId, Long tradeId, PostSellFeedbackResponse facts, JournalDigestDto journals) {
 		Optional<TradeFeedback> found = tradeFeedbackRepository.findByTradeId(tradeId);
 		if (found.isEmpty()) {
-			return createNarrative(userId, tradeId, facts);
+			return createNarrative(userId, tradeId, facts, journals);
 		}
 
 		TradeFeedback existing = found.get();
 		NarrativeResultDto stored = new NarrativeResultDto(existing.getNarrative(), existing.getNarrativeSource());
-		return shouldRegenerate(existing, facts) ? regenerateNarrative(tradeId, facts, stored) : stored;
+		RegenerationReasons reasons = regenerationReasons(tradeId, existing, facts, journals);
+		return reasons.any() ? regenerateNarrative(tradeId, facts, journals, stored, reasons) : stored;
 	}
 
-	/** 최초 조회 — 생성해 저장한다 ({@code UNIQUE(trade_id)}가 체결 1건당 1행을 강제한다). */
+	/**
+	 * 최초 조회 — 생성해 저장한다 ({@code UNIQUE(trade_id)}가 체결 1건당 1행을 강제한다).
+	 *
+	 * <p><b>이번 프롬프트에 실린 일기의 지문을 함께 저장한다</b>(§FEED-013 결정 3). 빠뜨리면 저장된 지문이 늘
+	 * {@code null}이라 <b>일기가 있는 체결의 모든 조회가 "지문 다름"으로 판정돼 조회마다 LLM을 부른다</b> —
+	 * 상한에 닿기 전까지 그렇고, 응답은 정상 200이라 신호가 없다.
+	 */
 	private NarrativeResultDto createNarrative(
-		Long userId, Long tradeId, PostSellFeedbackResponse facts) {
-		NarrativeResultDto resolved = narrativeService.resolvePostSellNarrative(toPromptInput(facts));
+		Long userId, Long tradeId, PostSellFeedbackResponse facts, JournalDigestDto journals) {
+		NarrativeResultDto resolved = narrativeService.resolvePostSellNarrative(toPromptInput(facts, journals));
 		try {
-			tradeFeedbackWriter.create(userId, tradeId, resolved, LocalDateTime.now(clock));
+			tradeFeedbackWriter.create(userId, tradeId, resolved, journals.fingerprint(), LocalDateTime.now(clock));
 		} catch (DataIntegrityViolationException e) {
 			absorbOnlyDuplicateRow(tradeId, e);
 		}
@@ -151,7 +177,50 @@ public class PostSellFeedbackService {
 	}
 
 	/**
-	 * 재생성 여부 — <b>확정 전 + 누적 상한 안 + §C-5의 재생성 게이트 통과</b> 셋을 모두 만족해야 한다.
+	 * 두 사유를 각각 판정한다 (§FEED-013 결정 3). <b>둘 다 참일 수 있고, 그때도 LLM은 한 번만 부른다</b> —
+	 * 프롬프트에 매도 후 흐름·집단 비교·일기가 모두 실리므로 한 번의 생성이 두 사유를 함께 반영한다.
+	 *
+	 * <p><b>두 판정이 서로의 상태를 읽지 않는 것이 요점이다.</b> 일기 사유는 지문과 {@code journalRegenerations}만
+	 * 보고, 흐름·집단 사유는 {@code narrativeFinalized}와 {@code regenerationAttempts}만 본다.
+	 */
+	private RegenerationReasons regenerationReasons(
+		Long tradeId, TradeFeedback existing, PostSellFeedbackResponse facts, JournalDigestDto journals) {
+		return new RegenerationReasons(
+			shouldRegenerateForJournal(tradeId, existing, journals), shouldRegenerate(existing, facts));
+	}
+
+	/**
+	 * 투자일기 사유 — <b>저장된 지문 ≠ 현재 지문</b>이고 {@code journal_regenerations}가
+	 * {@code max-journal-regeneration} 미만이다 (§FEED-013 결정 3, 4차).
+	 *
+	 * <p><b>{@code narrativeFinalized}를 보지 않는다.</b> 그 플래그는 흐름·집단 게이트 전용이라 여기서 읽으면
+	 * <b>게이트를 이미 통과한 체결에서 일기가 영원히 반영되지 않는다</b> — 예외도 로그도 없이 그렇게 된다. 이
+	 * 이슈에서 가장 조용히 틀리는 자리다.
+	 *
+	 * <p>지문 비교는 {@link Objects#equals}로 한다. 일기가 없으면 지문이 {@code null}이고 <b>{@code null}에서 값으로
+	 * 바뀌는 것도 "달라짐"</b>이라(결정 3) 양쪽 {@code null}을 함께 다뤄야 한다 — 그 경로가 "피드백을 먼저 보고
+	 * 나중에 회고를 쓰는" 결정 1의 사용자다.
+	 *
+	 * <p><b>지문이 다른데 상한을 넘겼으면 그냥 재사용한다 — 오류가 아니다</b>(결정 3). 사용자는 일기를 계속 고칠
+	 * 수 있고 서술이 그만큼 다시 만들어질 이유는 없다.
+	 */
+	private boolean shouldRegenerateForJournal(
+		Long tradeId, TradeFeedback existing, JournalDigestDto journals) {
+		if (Objects.equals(existing.getJournalFingerprint(), journals.fingerprint())) {
+			return false;
+		}
+		if (existing.getJournalRegenerations() >= feedbackLlmProperties.maxJournalRegeneration()) {
+			log.debug(
+				"투자일기가 바뀌었지만 재생성 상한에 닿아 기존 서술을 재사용한다. tradeId={} journalRegenerations={}",
+				tradeId,
+				existing.getJournalRegenerations());
+			return false;
+		}
+		return true;
+	}
+
+	/**
+	 * 흐름·집단 사유 — <b>확정 전 + 누적 상한 안 + §C-5의 재생성 게이트 통과</b> 셋을 모두 만족해야 한다.
 	 *
 	 * <p>순서에 이유가 있다. {@code narrativeFinalized}와 상한은 <b>DB 값만 보는 판정</b>이라 먼저 걸러야
 	 * 게이트 계산이 헛돌지 않고, 무엇보다 상한을 게이트보다 뒤에 두면 상한을 넘긴 체결이 게이트가 열린 동안
@@ -212,17 +281,30 @@ public class PostSellFeedbackService {
 	 * 문장을 그것으로 덮으면 재생성할수록 서술이 빈약해진다. 기존 서술을 유지하고 {@code narrative_finalized}를
 	 * {@code false}로 남겨 다음 조회에서 상한 안이면 다시 시도한다.
 	 *
+	 * <p><b>사유가 둘이어도 생성기는 한 번만 부른다</b>(§FEED-013 결정 3). 두 번 부르면 비용이 두 배가 되는데
+	 * 두 번째 프롬프트는 첫 번째와 같은 재료라 다른 문장이 나올 이유도 없다. 사유별 카운터 반영은 저장 쪽
+	 * ({@link TradeFeedbackWriter})이 {@code reasons}를 보고 가른다.
+	 *
+	 * <p><b>템플릿 폴백에서는 지문도 유지한다</b> — 그 서술에는 일기가 반영되지 않았는데 지문만 맞춰 두면 다음
+	 * 조회가 "이미 반영됐다"고 판정해 일기가 영원히 반영되지 않는다.
+	 *
 	 * @param stored 실패 시 그대로 응답에 실리는 기존 서술
 	 */
 	private NarrativeResultDto regenerateNarrative(
-		Long tradeId, PostSellFeedbackResponse facts, NarrativeResultDto stored) {
-		NarrativeResultDto resolved = narrativeService.resolvePostSellNarrative(toPromptInput(facts));
+		Long tradeId,
+		PostSellFeedbackResponse facts,
+		JournalDigestDto journals,
+		NarrativeResultDto stored,
+		RegenerationReasons reasons) {
+		NarrativeResultDto resolved = narrativeService.resolvePostSellNarrative(toPromptInput(facts, journals));
 		if (resolved.source() != NarrativeSource.LLM) {
-			log.debug("매도 회고 서술 재생성이 템플릿으로 폴백해 기존 서술을 유지한다. tradeId={}", tradeId);
-			tradeFeedbackWriter.recordFailedRegeneration(tradeId);
+			log.debug(
+				"매도 회고 서술 재생성이 템플릿으로 폴백해 기존 서술을 유지한다. tradeId={} reasons={}", tradeId, reasons);
+			tradeFeedbackWriter.recordFailedRegeneration(tradeId, reasons);
 			return stored;
 		}
-		tradeFeedbackWriter.applyRegenerated(tradeId, resolved, LocalDateTime.now(clock));
+		tradeFeedbackWriter.applyRegenerated(
+			tradeId, resolved, journals.fingerprint(), reasons, LocalDateTime.now(clock));
 		return resolved;
 	}
 
@@ -244,7 +326,7 @@ public class PostSellFeedbackService {
 	 * 이른 문장</b>이 나온다. 날짜를 실제로 문장에 쓸지는 {@code multiDayHold}가 정하고, 주식은 그 값이 언제나
 	 * 거짓이라 문장이 달라지지 않는다.
 	 */
-	private static PostSellPromptDto toPromptInput(PostSellFeedbackResponse facts) {
+	private static PostSellPromptDto toPromptInput(PostSellFeedbackResponse facts, JournalDigestDto journals) {
 		PostSellFlow flow = facts.postSellFlow();
 		PeerComparison peer = facts.peerComparison();
 		return new PostSellPromptDto(
@@ -277,7 +359,21 @@ public class PostSellFeedbackService {
 			// 판정이 붙어도 주식 문장은 그대로다. 여러 거래일에 걸친 주식 매매(false)는 극값 자체가 null이고
 			// 날짜를 서술할 근거도 없어 기존 동작을 유지한다.
 			facts.sameSessionCompleted() && !facts.buyAt().toLocalDate().equals(facts.sellAt().toLocalDate()),
-			facts.holdHighBasis());
+			facts.holdHighBasis(),
+			// 투자일기는 응답(facts)에 실리지 않으므로 PostSellJournalReader가 읽은 것을 따로 받는다 —
+			// 일기 본문은 응답 필드가 아니다(§범위 제외. 프론트는 GET /api/journal/...로 읽는다).
+			// 고르기·정렬·절단은 그 리더가 이미 끝냈고 여기서는 프롬프트에 쓰는 두 값만 옮긴다.
+			// 지문은 옮기지 않는다 — 프롬프트에 쓰지 않는 값이라 문자열 단정이 무관한 값에 흔들린다.
+			toPromptJournals(journals),
+			journals.sellJournalContent());
+	}
+
+	// 매수 회고 줄 — 순서(매수 시각 오름차순)와 상한·절단은 PostSellJournalReader가 정한 그대로 따른다.
+	private static List<BuyJournalLineDto> toPromptJournals(JournalDigestDto journals) {
+		return journals.buyJournals()
+			.stream()
+			.map(journal -> new BuyJournalLineDto(journal.buyAt(), journal.content()))
+			.toList();
 	}
 
 	/** 보유 구간 카드의 근거 기사 중 가장 이른 발행시각 — {@code buyToNewsMinutes}의 기준값 {@code T0}다. */

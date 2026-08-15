@@ -44,12 +44,19 @@ class TradeFeedbackWriter {
 	 *
 	 * @param narrative {@code LLM} 아니면 {@code TEMPLATE}이다. 매도 회고는 §템플릿 문장이 있어 {@code NONE}이
 	 *     되지 않으며, {@code TradeFeedback.create}가 그 전제로 서술이 비지 않음을 문서화하고 있다
+	 * @param journalFingerprint 이번 프롬프트에 실린 투자일기의 지문. 일기가 없었으면 {@code null}이다 —
+	 *     <b>최초 저장에서 빠뜨리면 그 뒤 모든 조회가 "지문 다름"으로 판정돼 조회마다 LLM을 부른다</b>
 	 */
 	@Transactional
-	TradeFeedback create(Long userId, Long tradeId, NarrativeResultDto narrative, LocalDateTime generatedAt) {
+	TradeFeedback create(
+		Long userId,
+		Long tradeId,
+		NarrativeResultDto narrative,
+		String journalFingerprint,
+		LocalDateTime generatedAt) {
 		Trade trade = tradeService.getOwnedTrade(userId, tradeId);
 		return tradeFeedbackRepository.save(
-			TradeFeedback.create(trade, narrative.narrative(), narrative.source(), generatedAt));
+			TradeFeedback.create(trade, narrative.narrative(), narrative.source(), journalFingerprint, generatedAt));
 	}
 
 	/**
@@ -60,28 +67,57 @@ class TradeFeedbackWriter {
 	 * 없이 재생성이 매 조회마다 반복되고 상한도 오르지 않는다. {@code create}가 {@code Trade}를 다시 읽는 것과
 	 * 같은 이유다.
 	 *
+	 * <p><b>사유별로 전이가 갈린다</b> (§FEED-013 결정 3, 4차). 흐름·집단 사유가 성립했으면 확정 전이
+	 * ({@code narrative_finalized=TRUE}·{@code regeneration_attempts++})를 쓰고, 일기 사유만 성립했으면
+	 * <b>확정 플래그를 건드리지 않는</b> 전이를 쓴다. 둘 다면 확정 전이에 일기 카운터를 마저 올린다 — 한 번의
+	 * 생성이 두 사유를 함께 반영했기 때문이다. 지문은 <b>어느 사유든 갱신한다</b>: 그 프롬프트에도 현재 일기가
+	 * 실렸다.
+	 *
 	 * @param narrative {@code LLM}이어야 한다 — 템플릿 폴백은 실패로 취급해 {@link #recordFailedRegeneration}으로
 	 *     간다. 판정은 게이트를 가진 {@code PostSellFeedbackService}가 한다
 	 */
 	@Transactional
-	void applyRegenerated(Long tradeId, NarrativeResultDto narrative, LocalDateTime generatedAt) {
+	void applyRegenerated(
+		Long tradeId,
+		NarrativeResultDto narrative,
+		String journalFingerprint,
+		RegenerationReasons reasons,
+		LocalDateTime generatedAt) {
 		tradeFeedbackRepository.findByTradeId(tradeId).ifPresentOrElse(
-			feedback -> feedback.applyRegeneratedNarrative(
-				narrative.narrative(), narrative.source(), generatedAt),
+			feedback -> {
+				if (reasons.gate()) {
+					feedback.applyRegeneratedNarrative(
+						narrative.narrative(), narrative.source(), journalFingerprint, generatedAt);
+					if (reasons.journal()) {
+						feedback.countJournalRegeneration();
+					}
+					return;
+				}
+				feedback.applyJournalRegeneratedNarrative(
+					narrative.narrative(), narrative.source(), journalFingerprint, generatedAt);
+			},
 			() -> log.debug("재생성 대상 회고 행이 사라져 저장을 건너뛴다. tradeId={}", tradeId));
 	}
 
 	/**
-	 * 재생성 <b>실패</b>를 저장한다 — 기존 서술과 {@code narrative_finalized=false}를 유지하고
-	 * {@code regeneration_attempts}만 누적한다 (FEED-007·§C-7).
+	 * 재생성 <b>실패</b>를 저장한다 — 기존 서술·지문과 {@code narrative_finalized=false}를 유지하고 성립한 사유의
+	 * 카운터만 누적한다 (FEED-007·§C-7·§FEED-013 결정 3).
 	 *
 	 * <p><b>이 저장을 빠뜨리면 상한이 성립하지 않는다.</b> 횟수가 오르지 않아 게이트가 계속 열려 있고, 실패하는
-	 * 체결 하나가 <b>조회마다 LLM을 부르는데</b> 응답은 정상 200이라 아무 신호도 남지 않는다.
+	 * 체결 하나가 <b>조회마다 LLM을 부르는데</b> 응답은 정상 200이라 아무 신호도 남지 않는다. 일기 사유도 같다 —
+	 * 지문이 그대로라 다음 조회에서도 다시 성립한다.
 	 */
 	@Transactional
-	void recordFailedRegeneration(Long tradeId) {
+	void recordFailedRegeneration(Long tradeId, RegenerationReasons reasons) {
 		tradeFeedbackRepository.findByTradeId(tradeId).ifPresentOrElse(
-			TradeFeedback::recordFailedRegeneration,
+			feedback -> {
+				if (reasons.gate()) {
+					feedback.recordFailedRegeneration();
+				}
+				if (reasons.journal()) {
+					feedback.countJournalRegeneration();
+				}
+			},
 			() -> log.debug("재생성 대상 회고 행이 사라져 재시도 횟수 누적을 건너뛴다. tradeId={}", tradeId));
 	}
 }

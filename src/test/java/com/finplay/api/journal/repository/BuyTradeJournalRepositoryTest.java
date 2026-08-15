@@ -22,10 +22,13 @@ import com.finplay.api.order.domain.Trade;
 import com.finplay.api.order.repository.OrderRepository;
 import com.finplay.api.order.repository.TradeRepository;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityManagerFactory;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -67,6 +70,9 @@ class BuyTradeJournalRepositoryTest {
 
 	@Autowired
 	private EntityManager entityManager;
+
+	@Autowired
+	private EntityManagerFactory entityManagerFactory;
 
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
@@ -366,6 +372,67 @@ class BuyTradeJournalRepositoryTest {
 			10);
 
 		assertThat(result).extracting(BuyTradeJournal::getId).containsExactly(realJournal.getId());
+	}
+
+	// --- ⑫ spec 012 §C-6 findAllByBuyTradeIdIn (4차 §FEED-013) ---
+
+	// 한 매도가 여러 lot에 배분되면 매수 체결이 N건이라 건별 조회는 lot 수만큼 쿼리가 늘어난다(§C-6).
+	// 일기가 없는 매수가 섞여 있는 것이 정상 입력이므로 "있는 것만" 돌아와야 한다.
+	@Test
+	@DisplayName("findAllByBuyTradeIdIn은 일기가 있는 매수 체결만 돌려준다 — 없는 id가 섞여도 예외가 아니다")
+	void findAllByBuyTradeIdInReturnsOnlyTheTradesThatHaveAJournal() {
+		Trade withJournal = createBuyTrade();
+		Trade withoutJournal = createBuyTrade();
+		BuyTradeJournal saved = buyTradeJournalRepository.saveAndFlush(BuyTradeJournal.of(withJournal, CONTENT, NOW));
+		entityManager.clear();
+
+		List<BuyTradeJournal> result = buyTradeJournalRepository
+			.findAllByBuyTradeIdIn(List.of(withJournal.getId(), withoutJournal.getId(), 999_999_999L));
+
+		assertThat(result).extracting(BuyTradeJournal::getId).containsExactly(saved.getId());
+	}
+
+	// implementer가 "지연 프록시의 getId()가 프록시 초기화를 불러 조회 건수만큼 쿼리가 늘어날 수 있다"는 이유로
+	// join fetch를 넣었다. 그 주장이 실제로 성립하는지 본다 — 호출부(JournalService)가 결과마다
+	// getBuyTrade().getId()를 읽으므로, 그 접근까지 끝낸 뒤의 statement 수가 1이어야 한다.
+	// PostCommentRepositoryTest의 Statistics 선례를 따른다.
+	@Test
+	@DisplayName("findAllByBuyTradeIdIn은 매수 체결까지 쿼리 1회로 읽는다 — 결과가 여러 건이어도 N+1이 없다")
+	void findAllByBuyTradeIdInReadsEveryJournalAndItsBuyTradeInASingleQuery() {
+		List<Long> buyTradeIds = new ArrayList<>();
+		for (int i = 0; i < 3; i++) {
+			Trade buyTrade = createBuyTrade();
+			buyTradeJournalRepository.saveAndFlush(BuyTradeJournal.of(buyTrade, CONTENT, NOW));
+			buyTradeIds.add(buyTrade.getId());
+		}
+		entityManager.clear();
+		Statistics statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+		statistics.setStatisticsEnabled(true);
+		statistics.clear();
+
+		List<BuyTradeJournal> result = buyTradeJournalRepository.findAllByBuyTradeIdIn(buyTradeIds);
+		assertThat(result).extracting(journal -> journal.getBuyTrade().getId())
+			.containsExactlyInAnyOrderElementsOf(buyTradeIds);
+
+		assertThat(statistics.getPrepareStatementCount()).isEqualTo(1);
+	}
+
+	// 조회는 읽기만 한다 — updated_at을 건드리면 지문이 스스로 바뀌어 재생성이 무한히 열린다(§FEED-013 결정 3).
+	// 더티체킹으로 새는 UPDATE가 있으면 flush 시점에 잡힌다.
+	@Test
+	@DisplayName("findAllByBuyTradeIdIn 조회는 updated_at을 바꾸지 않는다")
+	void findAllByBuyTradeIdInDoesNotTouchUpdatedAt() {
+		Trade buyTrade = createBuyTrade();
+		BuyTradeJournal saved = buyTradeJournalRepository.saveAndFlush(BuyTradeJournal.of(buyTrade, CONTENT, NOW));
+		entityManager.clear();
+
+		buyTradeJournalRepository.findAllByBuyTradeIdIn(List.of(buyTrade.getId()));
+		entityManager.flush();
+		entityManager.clear();
+
+		BuyTradeJournal reloaded = buyTradeJournalRepository.findById(saved.getId()).orElseThrow();
+		assertThat(reloaded.getUpdatedAt()).isEqualTo(NOW);
+		assertThat(reloaded.getContent()).isEqualTo(CONTENT);
 	}
 
 	@Test

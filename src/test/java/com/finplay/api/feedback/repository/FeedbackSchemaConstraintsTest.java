@@ -140,8 +140,10 @@ class FeedbackSchemaConstraintsTest {
 	}
 
 	@Test
-	@DisplayName("trade_feedbacks는 narrative만 NULL 허용이다")
-	void tradeFeedbacksAllowNullOnlyForTheNarrative() {
+	@DisplayName("trade_feedbacks는 narrative와 journal_fingerprint만 NULL 허용이다")
+	void tradeFeedbacksAllowNullOnlyForTheNarrativeAndJournalFingerprint() {
+		// journal_fingerprint의 NULL은 누락이 아니라 "그때 일기가 없었음"이라는 값이다 (§C-8, §FEED-013 결정 3).
+		// NOT NULL로 승격하면 NULL → 값 전이가 사라져 일기를 나중에 쓴 체결에서 재생성이 열리지 않는다.
 		assertThat(nullabilityOf("trade_feedbacks")).isEqualTo(expected(
 			"id", "NO",
 			"trade_id", "NO",
@@ -149,25 +151,30 @@ class FeedbackSchemaConstraintsTest {
 			"narrative_source", "NO",
 			"narrative_finalized", "NO",
 			"regeneration_attempts", "NO",
+			"journal_fingerprint", "YES",
+			"journal_regenerations", "NO",
 			"generated_at", "NO"));
 	}
 
 	@Test
-	@DisplayName("trade_feedbacks의 narrative_finalized·regeneration_attempts에 DDL 기본값이 걸려 있다")
+	@DisplayName("trade_feedbacks의 narrative_finalized·regeneration_attempts·journal_regenerations에 DDL 기본값이 걸려 있다")
 	void tradeFeedbacksCarryTheirDdlDefaults() {
-		// 엔티티 팩토리가 두 컬럼을 항상 INSERT에 포함하므로 이 DEFAULT는 애플리케이션 경로에서 한 번도 쓰이지
+		// 엔티티 팩토리가 세 컬럼을 항상 INSERT에 포함하므로 이 DEFAULT는 애플리케이션 경로에서 한 번도 쓰이지
 		// 않는다 — 즉 저장·조회 테스트로는 존재를 확인할 수 없다. §C-8이 기본값을 명시했으므로 DDL에서 본다.
+		// journal_regenerations는 여기에 DEFAULT가 없으면 V37이 기존 행을 채우지 못해 마이그레이션 자체가 깨진다.
 		Map<String, Object> defaults = new LinkedHashMap<>();
 		jdbcTemplate.query(
 			"select column_name, column_default from information_schema.columns "
 				+ "where table_schema = database() and table_name = 'trade_feedbacks' "
-				+ "and column_name in ('narrative_finalized', 'regeneration_attempts')",
+				+ "and column_name in ('narrative_finalized', 'regeneration_attempts', "
+				+ "'journal_regenerations')",
 			rs -> {
 				defaults.put(rs.getString("column_name"), rs.getString("column_default"));
 			});
 
-		assertThat(defaults).hasSize(2);
+		assertThat(defaults).hasSize(3);
 		assertThat(defaults.get("narrative_finalized")).isEqualTo("0");
 		assertThat(defaults.get("regeneration_attempts")).isEqualTo("0");
+		assertThat(defaults.get("journal_regenerations")).isEqualTo("0");
 	}
 }

@@ -234,9 +234,15 @@ feedback:
   llm:
     model: gpt-5.4-mini
     timeout-seconds: 20
-    max-tokens: 512
+    max-tokens: 1024 # 4차에 512에서 올렸다 — 일기가 실린 6~8문장이 잘려 나가면 후검증을 그대로 통과한다(§FEED-013 결정 5)
     max-regeneration: 1 # 요약·브리핑 후검증 재생성 횟수
-    max-narrative-retry: 3 # 매도 회고 서술 재생성 누적 재시도 상한
+    max-narrative-retry: 3 # 매도 회고 서술 재생성 누적 재시도 상한 (흐름·집단 사유)
+    max-journal-regeneration: 3 # 매도 회고 서술 재생성 누적 상한 (투자일기 사유). 위와 따로 센다(§FEED-013 결정 3)
+  # 매도 회고 프롬프트에 실을 투자일기의 건수·본문 길이 상한. 값의 정본은 spec §C-7이고
+  # FeedbackJournalProperties가 같은 값을 @DefaultValue로 갖는다. 두 곳이 갈리면 드리프트 테스트가 잡는다.
+  journal:
+    max-buy-journals: 3 # 프롬프트에 넣을 매수 회고 수 상한 (매수 시각 오름차순)
+    max-journal-chars: 500 # 일기 1건의 본문 절단 길이. 원본 상한은 5000자다
   # 변동 구간 탐지(PriceMoveDetector)의 임계치·구간. 값의 정본은 spec §C-7이고 FeedbackDetectionProperties가
   # 같은 값을 @DefaultValue로 갖는다. 실데이터로 검증한 뒤 조정할 대상이며(§튜닝) 조정은 이 블록만 고친다 —
   # 코드에는 상수가 없다. 두 곳이 갈리면 드리프트 테스트가 잡는다.
