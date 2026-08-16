@@ -1,5 +1,9 @@
 # Spec: 코인 튜토리얼 가상 가격 실행 환경
 
+> **후속 delta:** `039-tutorial-flow-redesign`은 샘플 종목 attempt에서 차트·체결·관찰·재시작 보상 매도가
+> 하나의 canonical tutorial price를 사용하도록 확장한다. 이 문서의 일반 가격 세션 격리·pending 주문
+> 취소/예약 반환 원칙은 그대로 상속한다.
+
 > 상태: 2026-08-10 정책·계약 확정. production 구현은 후속 이슈로 분리한다.
 
 ## 개요

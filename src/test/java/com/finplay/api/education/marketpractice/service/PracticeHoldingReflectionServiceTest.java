@@ -25,6 +25,7 @@ import com.finplay.api.education.marketpractice.domain.PracticeMarketReflection;
 import com.finplay.api.education.marketpractice.dto.request.PracticeHoldingReflectionCreateRequest;
 import com.finplay.api.education.marketpractice.dto.response.PracticeHoldingReflectionResponse;
 import com.finplay.api.education.marketpractice.repository.PracticeCompletionRepository;
+import com.finplay.api.education.marketpractice.repository.PracticeAttemptRepository;
 import com.finplay.api.education.marketpractice.repository.PracticeMarketObservationRepository;
 import com.finplay.api.education.marketpractice.repository.PracticeMarketReflectionRepository;
 import com.finplay.api.education.repository.PracticeProgressRepository;
@@ -52,6 +53,9 @@ class PracticeHoldingReflectionServiceTest {
 	private static final LocalDateTime NOW = LocalDateTime.of(2026, 8, 10, 10, 0);
 
 	private final HoldingService holdingService = mock(HoldingService.class);
+	private final PracticeAttemptRepository practiceAttemptRepository = mock(PracticeAttemptRepository.class);
+	private final PracticeAttemptEvidenceService practiceAttemptEvidenceService = mock(
+		PracticeAttemptEvidenceService.class);
 	private final MarketPracticeChainResolutionService chainResolutionService = mock(
 		MarketPracticeChainResolutionService.class);
 	private final PracticeProgressRepository practiceProgressRepository = mock(PracticeProgressRepository.class);
@@ -65,7 +69,8 @@ class PracticeHoldingReflectionServiceTest {
 	private final Clock clock = Clock.fixed(NOW.toInstant(ZoneOffset.UTC), ZoneOffset.UTC);
 
 	private final PracticeHoldingReflectionService service = new PracticeHoldingReflectionService(
-		holdingService, chainResolutionService, practiceProgressRepository, practiceMarketObservationRepository,
+		holdingService, practiceAttemptRepository, practiceAttemptEvidenceService, chainResolutionService,
+		practiceProgressRepository, practiceMarketObservationRepository,
 		practiceMarketReflectionRepository, practiceCompletionRepository, accountService, clock);
 
 	private Holding holding;

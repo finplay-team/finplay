@@ -65,6 +65,13 @@ public class Order {
 	@Column(name = "practice_price_session_id")
 	private Long practicePriceSessionId;
 
+	// 두 값이 함께 null이면 일반 주문, 함께 non-null이면 해당 튜토리얼 attempt 실행 세대에 귀속된 주문이다.
+	@Column(name = "practice_attempt_id")
+	private Long practiceAttemptId;
+
+	@Column(name = "practice_attempt_run_number")
+	private Long practiceAttemptRunNumber;
+
 	@Column(name = "idempotency_key", nullable = false, length = 100)
 	private String idempotencyKey;
 
@@ -84,6 +91,8 @@ public class Order {
 		BigDecimal quantity,
 		BigDecimal limitPrice,
 		Long practicePriceSessionId,
+		Long practiceAttemptId,
+		Long practiceAttemptRunNumber,
 		String idempotencyKey,
 		String requestHash,
 		LocalDateTime requestedAt) {
@@ -96,6 +105,8 @@ public class Order {
 		this.quantity = quantity;
 		this.limitPrice = limitPrice;
 		this.practicePriceSessionId = practicePriceSessionId;
+		this.practiceAttemptId = practiceAttemptId;
+		this.practiceAttemptRunNumber = practiceAttemptRunNumber;
 		this.idempotencyKey = idempotencyKey;
 		this.requestHash = requestHash;
 		this.requestedAt = requestedAt;
@@ -121,6 +132,38 @@ public class Order {
 			quantity,
 			null,
 			null,
+			null,
+			null,
+			idempotencyKey,
+			requestHash,
+			requestedAt);
+	}
+
+	public static Order createForPracticeAttempt(
+		User user,
+		Account account,
+		Instrument instrument,
+		OrderSide side,
+		OrderType orderType,
+		BigDecimal quantity,
+		Long practiceAttemptId,
+		long practiceAttemptRunNumber,
+		String idempotencyKey,
+		String requestHash,
+		LocalDateTime requestedAt) {
+		validatePracticeAttemptAttribution(practiceAttemptId, practiceAttemptRunNumber);
+		return new Order(
+			user,
+			account,
+			instrument,
+			side,
+			orderType,
+			OrderStatus.FILLED,
+			quantity,
+			null,
+			null,
+			practiceAttemptId,
+			practiceAttemptRunNumber,
 			idempotencyKey,
 			requestHash,
 			requestedAt);
@@ -146,6 +189,38 @@ public class Order {
 			quantity,
 			limitPrice,
 			null,
+			null,
+			null,
+			idempotencyKey,
+			requestHash,
+			requestedAt);
+	}
+
+	public static Order createLimitPendingForPracticeAttempt(
+		User user,
+		Account account,
+		Instrument instrument,
+		OrderSide side,
+		BigDecimal quantity,
+		BigDecimal limitPrice,
+		Long practiceAttemptId,
+		long practiceAttemptRunNumber,
+		String idempotencyKey,
+		String requestHash,
+		LocalDateTime requestedAt) {
+		validatePracticeAttemptAttribution(practiceAttemptId, practiceAttemptRunNumber);
+		return new Order(
+			user,
+			account,
+			instrument,
+			side,
+			OrderType.LIMIT,
+			OrderStatus.PENDING,
+			quantity,
+			limitPrice,
+			null,
+			practiceAttemptId,
+			practiceAttemptRunNumber,
 			idempotencyKey,
 			requestHash,
 			requestedAt);
@@ -173,9 +248,48 @@ public class Order {
 			quantity,
 			limitPrice,
 			practicePriceSessionId,
+			null,
+			null,
 			idempotencyKey,
 			requestHash,
 			requestedAt);
+	}
+
+	public static Order createPracticeLimitPendingBuyForAttempt(
+		User user,
+		Account account,
+		Instrument instrument,
+		BigDecimal quantity,
+		BigDecimal limitPrice,
+		Long practicePriceSessionId,
+		Long practiceAttemptId,
+		long practiceAttemptRunNumber,
+		String idempotencyKey,
+		String requestHash,
+		LocalDateTime requestedAt) {
+		validatePracticeAttemptAttribution(practiceAttemptId, practiceAttemptRunNumber);
+		return new Order(
+			user,
+			account,
+			instrument,
+			OrderSide.BUY,
+			OrderType.LIMIT,
+			OrderStatus.PENDING,
+			quantity,
+			limitPrice,
+			practicePriceSessionId,
+			practiceAttemptId,
+			practiceAttemptRunNumber,
+			idempotencyKey,
+			requestHash,
+			requestedAt);
+	}
+
+	private static void validatePracticeAttemptAttribution(
+		Long practiceAttemptId, long practiceAttemptRunNumber) {
+		if (practiceAttemptId == null || practiceAttemptId <= 0 || practiceAttemptRunNumber <= 0) {
+			throw new IllegalArgumentException("튜토리얼 attempt ID와 실행 세대는 양수여야 합니다.");
+		}
 	}
 
 	public void markFilled() {

@@ -1,5 +1,8 @@
 # Spec: 튜토리얼 샌드박스 매매·완료 보상의 포트폴리오·투자일기·랭킹 제외
 
+> **후속 적용:** `039-tutorial-flow-redesign`의 attempt 귀속 주문과 재시작 보상 SELL도 샘플 종목 원장이므로
+> 이 문서의 포트폴리오·투자일기·랭킹 제외 및 `sandboxCashAdjustment` 규칙을 동일하게 적용한다.
+
 > 배경: `031-tutorial-sandbox-instruments`가 실제 계좌·주문 API를 그대로 쓰는 튜토리얼 전용 샌드박스
 > 종목(`instruments.is_tutorial_sample=true`)을 도입하면서, 그 매매·보상이 실거래 화면에 그대로 섞여
 > 나오는 부작용이 드러났다(이슈 #366). 이 spec은 그 누출을 막는다. `031`의 샌드박스 종목·항시 시세·

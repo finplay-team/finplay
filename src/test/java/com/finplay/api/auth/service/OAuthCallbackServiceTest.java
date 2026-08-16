@@ -15,6 +15,7 @@ import com.finplay.api.auth.oauth.OAuthCallbackProvider;
 import com.finplay.api.auth.oauth.OAuthLoginExchangeStore;
 import com.finplay.api.auth.oauth.OAuthProviderName;
 import com.finplay.api.auth.oauth.OAuthPurpose;
+import com.finplay.api.auth.oauth.OAuthReauthExchangeStore;
 import com.finplay.api.auth.oauth.OAuthStateGenerator;
 import com.finplay.api.auth.oauth.OAuthUserDto;
 import com.finplay.api.common.BusinessException;
@@ -52,12 +53,15 @@ class OAuthCallbackServiceTest {
 	@Mock
 	private OAuthLoginExchangeStore exchangeStore;
 
+	@Mock
+	private OAuthReauthExchangeStore reauthExchangeStore;
+
 	private OAuthCallbackService callbackService;
 
 	@BeforeEach
 	void setUp() {
 		callbackService = new OAuthCallbackService(
-			List.of(kakaoProvider, naverProvider), authService, STATE_GENERATOR, exchangeStore);
+			List.of(kakaoProvider, naverProvider), authService, STATE_GENERATOR, exchangeStore, reauthExchangeStore);
 	}
 
 	@ParameterizedTest
@@ -114,6 +118,36 @@ class OAuthCallbackServiceTest {
 		assertThat(actual).isEqualTo(expected);
 		verify(authService).reauthenticate(7L, OAuthProviderName.KAKAO, oauthUser);
 		verify(authService, never()).oauthLogin(any(), any());
+	}
+
+	@Test
+	@DisplayName("REAUTH purpose state는 oauth_state 쿠키가 없어도 통과한다")
+	void callbackAllowsReauthPurposeWithoutCookieState() {
+		String reauthState = STATE_GENERATOR.generate(OAuthPurpose.REAUTH, 7L);
+		OAuthUserDto oauthUser = new OAuthUserDto("provider-user-id", "member@example.com");
+		ReauthTokenResponse expected = new ReauthTokenResponse("raw-reauth-token", 300L);
+		given(kakaoProvider.supports(OAuthProviderName.KAKAO)).willReturn(true);
+		given(kakaoProvider.fetchUser(AUTHORIZATION_CODE, reauthState)).willReturn(oauthUser);
+		given(authService.reauthenticate(7L, OAuthProviderName.KAKAO, oauthUser)).willReturn(expected);
+
+		Object actual = callbackService.callback("kakao", AUTHORIZATION_CODE, reauthState, null);
+
+		assertThat(actual).isEqualTo(expected);
+	}
+
+	@Test
+	@DisplayName("REAUTH purpose state는 oauth_state 쿠키가 query state와 달라도 통과한다")
+	void callbackAllowsReauthPurposeWithMismatchedCookieState() {
+		String reauthState = STATE_GENERATOR.generate(OAuthPurpose.REAUTH, 7L);
+		OAuthUserDto oauthUser = new OAuthUserDto("provider-user-id", "member@example.com");
+		ReauthTokenResponse expected = new ReauthTokenResponse("raw-reauth-token", 300L);
+		given(kakaoProvider.supports(OAuthProviderName.KAKAO)).willReturn(true);
+		given(kakaoProvider.fetchUser(AUTHORIZATION_CODE, reauthState)).willReturn(oauthUser);
+		given(authService.reauthenticate(7L, OAuthProviderName.KAKAO, oauthUser)).willReturn(expected);
+
+		Object actual = callbackService.callback("kakao", AUTHORIZATION_CODE, reauthState, "different-state");
+
+		assertThat(actual).isEqualTo(expected);
 	}
 
 	@ParameterizedTest
@@ -227,6 +261,35 @@ class OAuthCallbackServiceTest {
 		given(exchangeStore.consume("expired-or-consumed")).willReturn(Optional.empty());
 
 		assertThatThrownBy(() -> callbackService.consumeLoginExchangeCode("expired-or-consumed"))
+			.isInstanceOfSatisfying(
+				BusinessException.class,
+				exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.VALIDATION_ERROR));
+	}
+
+	@Test
+	@DisplayName("issueReauthExchangeCode는 OAuthReauthExchangeStore.issue에 그대로 위임한다")
+	void issueReauthExchangeCodeDelegatesToStore() {
+		ReauthTokenResponse reauthToken = new ReauthTokenResponse("raw-reauth-token", 300L);
+		given(reauthExchangeStore.issue(reauthToken)).willReturn("reauth-exchange-code-123");
+
+		assertThat(callbackService.issueReauthExchangeCode(reauthToken)).isEqualTo("reauth-exchange-code-123");
+	}
+
+	@Test
+	@DisplayName("consumeReauthExchangeCode는 유효한 코드를 store가 돌려준 reauthToken으로 그대로 바꾼다")
+	void consumeReauthExchangeCodeReturnsReauthTokenForValidCode() {
+		ReauthTokenResponse reauthToken = new ReauthTokenResponse("raw-reauth-token", 300L);
+		given(reauthExchangeStore.consume("reauth-exchange-code-123")).willReturn(Optional.of(reauthToken));
+
+		assertThat(callbackService.consumeReauthExchangeCode("reauth-exchange-code-123")).isEqualTo(reauthToken);
+	}
+
+	@Test
+	@DisplayName("consumeReauthExchangeCode는 store가 빈 값을 주면 400 VALIDATION_ERROR로 거부한다")
+	void consumeReauthExchangeCodeRejectsMissingCode() {
+		given(reauthExchangeStore.consume("expired-or-consumed")).willReturn(Optional.empty());
+
+		assertThatThrownBy(() -> callbackService.consumeReauthExchangeCode("expired-or-consumed"))
 			.isInstanceOfSatisfying(
 				BusinessException.class,
 				exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.VALIDATION_ERROR));

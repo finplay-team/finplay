@@ -31,8 +31,10 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 class LimitOrderCreationServiceTest {
@@ -48,16 +50,20 @@ class LimitOrderCreationServiceTest {
 	private final InstrumentService instrumentService = mock(InstrumentService.class);
 	private final PortfolioSellService portfolioSellService = mock(PortfolioSellService.class);
 	private final OrderRepository orderRepository = mock(OrderRepository.class);
+	private final PracticeOrderAttributionPort practiceOrderAttributionPort = mock(
+		PracticeOrderAttributionPort.class);
 	private final Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
 
 	private final LimitOrderCreationService service = new LimitOrderCreationService(
-		userQueryService, accountService, instrumentService, portfolioSellService, orderRepository, clock);
+		userQueryService, accountService, instrumentService, portfolioSellService, orderRepository,
+		practiceOrderAttributionPort, clock);
 
 	@Test
 	void createLimitOrderBuyReservesCashRequiredAndCreatesPendingOrder() {
 		Instrument instrument = cryptoInstrument(5_000L);
 		Account account = account();
 		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
+		when(practiceOrderAttributionPort.lockForOrder(USER_ID, instrument)).thenReturn(Optional.empty());
 		when(accountService.getAccountForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO))
 			.thenReturn(account);
 		when(userQueryService.getUser(USER_ID)).thenReturn(testUser());
@@ -70,8 +76,62 @@ class LimitOrderCreationServiceTest {
 		assertThat(account.getCashBalance()).isEqualTo(10_000_000L); // 예약만 하고 실제 차감은 없다
 		assertThat(response.status()).isEqualTo("PENDING");
 		assertThat(response.orderType()).isEqualTo("LIMIT");
-		verify(orderRepository).save(any(Order.class));
+		ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
+		verify(orderRepository).save(orderCaptor.capture());
+		assertThat(orderCaptor.getValue().getPracticeAttemptId()).isNull();
+		assertThat(orderCaptor.getValue().getPracticeAttemptRunNumber()).isNull();
+		verify(practiceOrderAttributionPort).lockForOrder(USER_ID, instrument);
 		verifyNoInteractions(portfolioSellService);
+	}
+
+	@Test
+	void createLimitBuyForTutorialSampleLocksAttemptBeforeAccountAndStoresAttribution() {
+		Instrument instrument = cryptoInstrument(5_000L);
+		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
+		Account account = account();
+		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
+		when(practiceOrderAttributionPort.lockForOrder(USER_ID, instrument))
+			.thenReturn(Optional.of(new PracticeOrderAttributionDto(50L, 3L, new BigDecimal("1000000"))));
+		when(accountService.getAccountForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO))
+			.thenReturn(account);
+		when(userQueryService.getUser(USER_ID)).thenReturn(testUser());
+
+		service.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, buyRequest("0.1", "1000000"));
+
+		ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
+		verify(orderRepository).save(orderCaptor.capture());
+		assertThat(orderCaptor.getValue().getPracticeAttemptId()).isEqualTo(50L);
+		assertThat(orderCaptor.getValue().getPracticeAttemptRunNumber()).isEqualTo(3L);
+		InOrder lockOrder = org.mockito.Mockito.inOrder(practiceOrderAttributionPort, accountService);
+		lockOrder.verify(practiceOrderAttributionPort).lockForOrder(USER_ID, instrument);
+		lockOrder.verify(accountService)
+			.getAccountForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO);
+	}
+
+	@Test
+	void createLimitSellForTutorialSampleLocksAttemptBeforeHoldingAndStoresAttribution() {
+		Instrument instrument = cryptoInstrument(5_000L);
+		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
+		Account account = account();
+		Holding holding = mock(Holding.class);
+		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
+		when(practiceOrderAttributionPort.lockForOrder(USER_ID, instrument))
+			.thenReturn(Optional.of(new PracticeOrderAttributionDto(50L, 3L, new BigDecimal("1000000"))));
+		when(accountService.getAccountFor(USER_ID, com.finplay.api.account.domain.Market.CRYPTO))
+			.thenReturn(account);
+		when(portfolioSellService.getHoldingForUpdateOrThrow(account, instrument, BigDecimal.ONE))
+			.thenReturn(holding);
+		when(userQueryService.getUser(USER_ID)).thenReturn(testUser());
+
+		service.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, sellRequest("1", "70000000"));
+
+		ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
+		verify(orderRepository).save(orderCaptor.capture());
+		assertThat(orderCaptor.getValue().getPracticeAttemptId()).isEqualTo(50L);
+		assertThat(orderCaptor.getValue().getPracticeAttemptRunNumber()).isEqualTo(3L);
+		InOrder lockOrder = org.mockito.Mockito.inOrder(practiceOrderAttributionPort, portfolioSellService);
+		lockOrder.verify(practiceOrderAttributionPort).lockForOrder(USER_ID, instrument);
+		lockOrder.verify(portfolioSellService).getHoldingForUpdateOrThrow(account, instrument, BigDecimal.ONE);
 	}
 
 	@Test

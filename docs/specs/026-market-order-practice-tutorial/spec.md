@@ -1,5 +1,9 @@
 # Spec: 시장가/지정가 매매 기반 3단계 투자 실습 완결 경로 (OCO 없이)
 
+> **후속 delta:** `039-tutorial-flow-redesign`은 샘플 종목 경로를 사용자·시장별 영속 attempt, 자동
+> -3%/+5% 위험 snapshot, 29+1 라이브 차트로 재설계한다. 실제 종목 경로와 이 문서의 불변
+> completion·reward 원칙은 유지된다.
+
 > 상태: 2026-08-10 신규 작성 → **구현 완료**. MKT-PRACTICE-001~012가 production에 반영됐고(PR #295·#298·#302·#304·#307, `V27`·`V28`), holding 기반 진행 조회는 `GET /api/education/practice?market=STOCK|CRYPTO`다. 3차 MVP OCO 경로는 별도 spec·URL·완료 key를 사용한다. 아래 "범위 제외"의 "순수 설계" 서술은 최초 작성 시점 기준이며 더 이상 유효하지 않다.
 >
 > **이 spec이 2차 MVP의 유일한 실제 튜토리얼 완료 경로다.** 사용자는 이미 API 호출만으로 3단계를 완료할 수 있다(즐겨찾기 → 사전 의도 → 매수 → 관찰 → 복기). OCO 기반 경로(`016`·`019`·`020`·`021`)는 3차 MVP로 이연됐다.

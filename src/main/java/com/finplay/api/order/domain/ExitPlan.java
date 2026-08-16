@@ -254,4 +254,24 @@ public class ExitPlan {
 		this.status = ExitPlanStatus.CANCELLED;
 		this.closedAt = closedAt;
 	}
+
+	// 가격 트리거 체결(021 plan.md "트리거·취소·잠금 순서" — holding을 먼저 잠근 뒤 이 plan을 잠그고 호출한다).
+	// 호출부(ExitPlanFillService)가 이미 PENDING 여부를 재확인한 뒤 부르므로, 여기서의 예외는 cancel()과 같이
+	// 원장 불변식이 깨진 방어적 상황이다.
+	public void fillTakeProfit(Order triggeredOrder, LocalDateTime closedAt) {
+		fill(ExitPlanStatus.FILLED_TAKE_PROFIT, triggeredOrder, closedAt);
+	}
+
+	public void fillStopLoss(Order triggeredOrder, LocalDateTime closedAt) {
+		fill(ExitPlanStatus.FILLED_STOP_LOSS, triggeredOrder, closedAt);
+	}
+
+	private void fill(ExitPlanStatus filledStatus, Order triggeredOrder, LocalDateTime closedAt) {
+		if (this.status != ExitPlanStatus.PENDING) {
+			throw new IllegalStateException("PENDING 상태의 예약만 체결할 수 있습니다.");
+		}
+		this.status = filledStatus;
+		this.triggeredOrder = triggeredOrder;
+		this.closedAt = closedAt;
+	}
 }

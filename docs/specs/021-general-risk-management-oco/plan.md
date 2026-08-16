@@ -86,8 +86,10 @@
 |---|---|---|
 | 생성(일반) | `holding → plan` | 세션 없음(코인 전용) |
 | 생성(교육) | `favorite 락(in-memory) → intention 락(in-memory) → holding → plan` | `016` 변경 없음 |
-| 가격 트리거 | `holding → plan` | `016`·`020`이 코인 경로용으로 확정한 순서, 경로 무관하게 동일 |
+| 가격 트리거 | `holding → plan`[^1] | `016`·`020`이 코인 경로용으로 확정한 순서, 경로 무관하게 동일 |
 | 사용자 취소 | `holding → plan` | 동일 |
+
+[^1]: 실제 구현(`ExitPlanFillService`)은 PR #371 리뷰 반영으로 `account → holding → plan`을 쓴다 — 체결 시 계좌 cash를 직접 mutate하므로 account 락이 먼저 필요했고, 기존 시장가·지정가 매도(`OrderExecutionService`)의 잠금 관례와 통일하기 위함이다. 이 표의 값은 `016`·`020`이 최초 확정한 설계 순서를 기록한 것이라 원문은 유지하고 각주로만 보강한다.
 
 - 트리거 판정은 가격 공급자(코인은 빗썸 실시간)가 거래 가능으로 인정한 유효 갱신 이벤트에서만 수행한다. 장애 중에는 `PENDING`을 유지한다.
 - 중복·역순 가격 이벤트는 plan 잠금에서 최초 커밋한 이벤트만 승자가 되고 후속 이벤트는 terminal plan을 보고 no-op으로 skip한다(`016` 규칙 그대로).

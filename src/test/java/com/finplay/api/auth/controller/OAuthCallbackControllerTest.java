@@ -1,5 +1,5 @@
-// OAuth callback의 성공(LOGIN 리다이렉트·REAUTH JSON)·검증 오류 응답과 state 만료 쿠키, login-exchange
-// 교환 HTTP 계약을 검증한다.
+// OAuth callback의 성공(LOGIN·REAUTH 302 리다이렉트)·검증 오류 응답과 state 만료 쿠키, login-exchange·
+// reauth-exchange 교환 HTTP 계약을 검증한다.
 package com.finplay.api.auth.controller;
 
 import static org.hamcrest.Matchers.containsString;
@@ -16,6 +16,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.finplay.api.auth.config.SecurityConfig;
 import com.finplay.api.auth.dto.request.LoginExchangeRequest;
+import com.finplay.api.auth.dto.request.ReauthExchangeRequest;
 import com.finplay.api.auth.dto.response.ReauthTokenResponse;
 import com.finplay.api.auth.dto.response.TokenResponse;
 import com.finplay.api.auth.oauth.OAuthStateCookieFactory;
@@ -45,7 +46,8 @@ import tools.jackson.databind.ObjectMapper;
 @Import({OAuthStateCookieFactory.class, SecurityConfig.class})
 @TestPropertySource(properties = {
 	"oauth.state-cookie-secure=false",
-	"oauth.login-redirect-uri=https://www.finplay.site/oauth/callback"
+	"oauth.login-redirect-uri=https://www.finplay.site/oauth/callback",
+	"oauth.reauth-redirect-uri=https://www.finplay.site/oauth/reauth-callback"
 })
 class OAuthCallbackControllerTest {
 
@@ -178,24 +180,57 @@ class OAuthCallbackControllerTest {
 	}
 
 	@Test
-	@DisplayName("reauth 분기 callback은 200 ReauthTokenResponse와 callback Path의 만료 쿠키를 반환한다")
-	void callbackReturnsReauthTokenAndExpiresStateCookie() throws Exception {
+	@DisplayName("reauth 분기 callback은 302로 재인증 프론트 콜백 주소에 교환 코드만 실어 반환하고(reauthToken 원문 없음), "
+		+ "callback Path의 만료 쿠키를 함께 반환한다")
+	void callbackRedirectsToReauthFrontendWithExchangeCodeAndExpiresStateCookie() throws Exception {
 		ReauthTokenResponse response = new ReauthTokenResponse("raw-reauth-token", 300L);
 		given(callbackService.callback("kakao", CODE, STATE, STATE)).willReturn(response);
+		given(callbackService.issueReauthExchangeCode(response)).willReturn("reauth-exchange-code-123");
 
 		mockMvc.perform(get("/api/auth/oauth/kakao/callback")
 			.param("code", CODE)
 			.param("state", STATE)
 			.cookie(new Cookie("oauth_state", STATE)))
-			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.reauthToken").value("raw-reauth-token"))
-			.andExpect(jsonPath("$.expiresInSeconds").value(300))
+			.andExpect(status().isFound())
+			.andExpect(header().string(HttpHeaders.LOCATION,
+				startsWith("https://www.finplay.site/oauth/reauth-callback?code=")))
+			.andExpect(header().string(HttpHeaders.LOCATION, endsWith("reauth-exchange-code-123")))
+			.andExpect(header().string(HttpHeaders.LOCATION, not(containsString("raw-reauth-token"))))
 			.andExpect(header().string(
 				HttpHeaders.SET_COOKIE,
 				containsString("; Path=/api/auth/oauth/kakao/callback")))
 			.andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("; Max-Age=0")));
 
 		verify(callbackService).callback("kakao", CODE, STATE, STATE);
+		verify(callbackService).issueReauthExchangeCode(response);
+	}
+
+	@Test
+	@DisplayName("reauth-exchange는 유효한 코드를 소비해 200 ReauthTokenResponse를 반환한다")
+	void reauthExchangeReturnsReauthTokenForValidCode() throws Exception {
+		ReauthTokenResponse response = new ReauthTokenResponse("raw-reauth-token", 300L);
+		given(callbackService.consumeReauthExchangeCode("reauth-exchange-code-123")).willReturn(response);
+
+		mockMvc.perform(post("/api/auth/oauth/reauth-exchange")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(objectMapper.writeValueAsString(new ReauthExchangeRequest("reauth-exchange-code-123"))))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.reauthToken").value("raw-reauth-token"))
+			.andExpect(jsonPath("$.expiresInSeconds").value(300));
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {"expired-or-already-consumed", "  "})
+	@DisplayName("reauth-exchange는 만료·소비됐거나 공백인 코드에 400 VALIDATION_ERROR를 반환한다")
+	void reauthExchangeReturnsValidationErrorForInvalidCode(String code) throws Exception {
+		given(callbackService.consumeReauthExchangeCode(code))
+			.willThrow(new BusinessException(ErrorCode.VALIDATION_ERROR));
+
+		mockMvc.perform(post("/api/auth/oauth/reauth-exchange")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(objectMapper.writeValueAsString(new ReauthExchangeRequest(code))))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
 	}
 
 	@Test

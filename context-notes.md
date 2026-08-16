@@ -976,3 +976,14 @@ ADR-0021을 읽지 않는다(`docs/context-router.md`의 "엔티티/스키마 �
 구현 전부(마이그레이션·`PostSellJournalReader`·프롬프트 조립·`journal`/`portfolio` 조회 경로), `application.yml`
 값 반영, `docs/api-contracts.md`의 재생성 소절 갱신, `docs/prd.md` §3 행 추가. 마지막 둘은 **구현 PR과 같은
 커밋에서** 해야 한다(CLAUDE.md 규칙 7·10) — 지금 미리 적으면 문서가 미구현을 구현된 것처럼 말하게 된다.
+
+## 2026-08-16 — PR #381 dev 리베이스·리뷰 반영 및 요구사항 14개 검증, 배포 실패 발견
+
+- **PR #381(튜토리얼 흐름 재설계)을 dev 위로 리베이스해 충돌 4건 해소, 머지 완료**: dev가 80커밋 앞서 있어 `CONFLICTING` 상태였다. 충돌은 전부 의미 보존 방식으로 해결 — `LimitOrderFillService.java`는 dev의 ADR-0025 배치 실행기 구조(`fillBatch`/`fillOnePending`)와 이 PR의 attempt/run 기반 canonical 가격 체결 로직을 병합했다(단일 `fillIfPending(orderId)`는 `LocalDateTime.now(clock)`으로, `fillIfPending(orderId, pricedAt)`는 `settleCurrentRun`이 명시 시각으로 호출). `docs/api-contracts.md`·`docs/prd.md`는 두 브랜치의 신규 문장을 모두 보존.
+- **spec 번호 충돌을 `036`→`039`로 해소**: 리뷰(namdongyeob)가 예고한 대로 PR #380이 `036-remove-crypto-stale-status`를 먼저 차지했는데, 리뷰가 예상한 이동 대상 `037`도 그 사이 다른 PR(`037-limit-order-async-fill`)이 차지해 실제 빈 번호는 `039`였다. **번호 재조정은 머지 시점의 실제 dev 상태를 다시 확인해야 한다** — 리뷰가 남긴 이동 대상 숫자를 그대로 믿으면 틀릴 수 있다.
+- **PR #381 review 권장사항 반영**: `PracticeOrderSettlementService.java` 헤더 주석에 `settleCurrentRun`(attempt/run 기반 정산) 책임 추가.
+- **프론트 companion PR #30을 리뷰 0건·CI 없음 상태로 머지**(사용자 명시 지시 "리뷰는 나중에"): `finplay-frontend`는 PR에 CI 워크플로가 붙어 있지 않다(배포용 `deploy.yml`만 존재, push 트리거).
+- **PRD 사용자 요구사항 14개(재시작 전 화면 무관 노출, 미체결 취소·예약 반환, 보상매도, 완료 불변, 사전의도 제거, 자동 -3%/+5% 위험 스냅샷, 단일 차트, 29+1 캔들, 12:00 가상 시작, 3초=1분, 새로고침 복원, 다시체험하기 재사용 등)를 백엔드·프론트 각각 서브에이전트로 검증**: 백엔드 12/12 PASS(코드+전용 테스트 근거), 프론트 8개 중 7 PASS·1건은 "기존 `TutorialReplay.tsx` 재사용"이 아니라 "삭제 후 `AttemptTutorialFlow.tsx` 안에 재작성"으로 확인됐지만, 옛 컴포넌트가 이번에 함께 삭제된 `IntentionStep`·`FavoriteStep`에 의존하고 있어 그대로 재사용이 애초에 불가능했던 상황 — 기능적 결함은 아니라고 판단.
+- **⚠️ 발견: PR #381 머지 직후 백엔드 배포가 실패했고, 이후 머지(#371·#391·#392)도 전부 연쇄 실패해 프로덕션이 여전히 PR #380/#387 시점 코드로 멈춰 있다.** `gh run list --workflow=deploy.yml`로 확인 — `e671d083`(#381 머지 커밋) 배포가 컨테이너 헬스체크에서 `unhealthy` 판정으로 실패(블루-그린이라 라이브 색은 안 건드림, 롤백 불필요하나 신규 기능도 배포 안 됨). 사용자가 라이브 사이트(`finplay-frontend` S3)에서 튜토리얼을 테스트했을 때 "프론트가 반영 안 된 것 같다"고 느낀 원인은 **프론트가 아니라 백엔드 미배포**였다 — 프론트 PR #30은 정상 배포됐고(`deploy.yml` 성공, 08:46:46) 코드도 소스 레벨에서 전부 확인됨.
+- **원인 미확정 — AWS 접근 권한 없어 컨테이너 로그 직접 확인 불가**: `deploy.yml`의 SSM 스텝은 `docker inspect Health.Status`만 폴링하고 실패 시 앱 stdout을 job 로그에 남기지 않는다. `application.yml`/`application-prod.yml` diff는 PR #381에서 **변화 없음**(설정 문제 가능성 낮음) — 유력 가설은 `V36__create_practice_attempts_and_risk_snapshots.sql`의 `orders` 테이블 `ALTER`(컬럼 2개+FK+CHECK+복합 인덱스 1건, 단일 statement)가 실제 프로덕션 `orders` 테이블 행 수 기준으로 헬스체크 타임아웃(`start_period 90s` + `retries 6 × interval 10s` ≈ 150s)보다 오래 걸렸을 가능성 — 확정하려면 EC2 SSM 또는 RDS 슬로우 쿼리 로그 확인이 필요하다(이 세션엔 `aws` CLI 미설치·자격증명 없음).
+- **다음 조치는 사용자 판단 필요**: workflow_dispatch로 재배포를 재시도하거나(단순 타임아웃이면 두 번째 시도는 성공할 수 있음), AWS 콘솔/SSM으로 실패 시점 컨테이너 로그를 직접 확인해야 한다. 이건 프로덕션에 영향을 주는 배포 트리거라 사용자 확인 없이 재시도하지 않았다.

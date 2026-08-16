@@ -27,6 +27,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -43,10 +44,12 @@ class PracticeLimitOrderCreationServiceTest {
 	private final AccountService accountService = mock(AccountService.class);
 	private final InstrumentService instrumentService = mock(InstrumentService.class);
 	private final OrderRepository orderRepository = mock(OrderRepository.class);
+	private final PracticeOrderAttributionPort practiceOrderAttributionPort = mock(
+		PracticeOrderAttributionPort.class);
 	private final Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
 
 	private final PracticeLimitOrderCreationService service = new PracticeLimitOrderCreationService(
-		userQueryService, accountService, instrumentService, orderRepository, clock);
+		userQueryService, accountService, instrumentService, orderRepository, practiceOrderAttributionPort, clock);
 
 	@Test
 	void createSessionBuyOrderReservesCashAndCreatesPendingBuyOrderWithSessionId() {
@@ -71,6 +74,32 @@ class PracticeLimitOrderCreationServiceTest {
 		verify(orderRepository).save(orderCaptor.capture());
 		assertThat(orderCaptor.getValue().getPracticePriceSessionId()).isEqualTo(SESSION_ID);
 		assertThat(orderCaptor.getValue().getSide().name()).isEqualTo("BUY");
+		assertThat(orderCaptor.getValue().getPracticeAttemptId()).isNull();
+		assertThat(orderCaptor.getValue().getPracticeAttemptRunNumber()).isNull();
+	}
+
+	@Test
+	void createSessionBuyOrderStoresAttemptAttributionForTutorialSample() {
+		Instrument instrument = cryptoInstrument(5_000L);
+		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
+		Account account = account();
+		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID)).thenReturn(instrument);
+		when(practiceOrderAttributionPort.lockForOrder(USER_ID, instrument))
+			.thenReturn(Optional.of(new PracticeOrderAttributionDto(50L, 3L, new BigDecimal("1000000"))));
+		when(orderRepository.existsByPracticePriceSessionIdAndStatus(SESSION_ID, OrderStatus.PENDING))
+			.thenReturn(false);
+		when(accountService.getAccountForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO))
+			.thenReturn(account);
+		when(userQueryService.getUser(USER_ID)).thenReturn(testUser());
+
+		service.createSessionBuyOrder(
+			USER_ID, SESSION_ID, INSTRUMENT_ID, new BigDecimal("0.1"), new BigDecimal("1000000"));
+
+		ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
+		verify(orderRepository).save(orderCaptor.capture());
+		assertThat(orderCaptor.getValue().getPracticePriceSessionId()).isEqualTo(SESSION_ID);
+		assertThat(orderCaptor.getValue().getPracticeAttemptId()).isEqualTo(50L);
+		assertThat(orderCaptor.getValue().getPracticeAttemptRunNumber()).isEqualTo(3L);
 	}
 
 	@Test

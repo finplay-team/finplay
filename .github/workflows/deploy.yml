@@ -167,11 +167,15 @@ jobs:
             fi
             if [ "\$STATUS" = "unhealthy" ]; then
               echo "컨테이너 unhealthy로 판정됨"
+              echo "--- 예외 요약 (docker logs finplay-app-$IDLE) ---"
+              docker logs finplay-app-$IDLE 2>&1 | grep -A 40 -E "APPLICATION FAILED TO START|Error creating bean|Caused by:" | tail -c 2000 || true
               exit 1
             fi
             sleep 5
           done
           echo "타임아웃 — 3분 안에 healthy가 되지 않았다"
+          echo "--- 예외 요약 (docker logs finplay-app-$IDLE) ---"
+          docker logs finplay-app-$IDLE 2>&1 | grep -A 40 -E "APPLICATION FAILED TO START|Error creating bean|Caused by:" | tail -c 2000 || true
           exit 1
           SCRIPT
 

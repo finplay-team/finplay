@@ -12,10 +12,14 @@ import com.finplay.api.auth.config.SecurityConfig;
 import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.auth.token.JwtTokenProvider;
 import com.finplay.api.education.marketpractice.dto.response.InvestmentPracticeResponse;
+import com.finplay.api.education.marketpractice.dto.response.PracticeAttemptResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeEvidenceResponse;
+import com.finplay.api.education.marketpractice.dto.response.PracticeRiskSnapshotResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeStepResponse;
 import com.finplay.api.education.marketpractice.service.InvestmentPracticeQueryService;
 import com.finplay.api.market.domain.Market;
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -77,13 +81,21 @@ class InvestmentPracticeControllerTest {
 			10L, LocalDateTime.of(2026, 8, 1, 9, 0), 20L, LocalDateTime.of(2026, 8, 2, 9, 0), 30L,
 			LocalDateTime.of(2026, 8, 3, 9, 0), 40L, null, null, 60L,
 			LocalDateTime.of(2026, 8, 9, 9, 0), "CLOSER_TO_BOUNDARY", 70L, LocalDateTime.of(2026, 8, 10, 9, 0),
-			null, null, null);
+			null, null, null, new BigDecimal("10"), new BigDecimal("4"), new BigDecimal("6"));
 		List<PracticeStepResponse> steps = List.of(
 			new PracticeStepResponse(1, "COMPLETED", false, evidence),
 			new PracticeStepResponse(2, "COMPLETED", false, evidence),
 			new PracticeStepResponse(3, "COMPLETED", false, evidence));
+		PracticeAttemptResponse attempt = new PracticeAttemptResponse(
+			99L, "STOCK", 2L, "REPLAY", "COMPLETED", 100L,
+			LocalDateTime.of(2026, 8, 3, 9, 0), LocalDate.of(2026, 8, 3),
+			new PracticeRiskSnapshotResponse(
+				new BigDecimal("100.00000000"), new BigDecimal("97.00000000"),
+				new BigDecimal("105.00000000"), 30L, LocalDateTime.of(2026, 8, 3, 9, 0)),
+			LocalDateTime.of(2026, 8, 10, 9, 0));
 		InvestmentPracticeResponse response = new InvestmentPracticeResponse(
-			"INVESTMENT_PRACTICE_V1", "COMPLETED", null, steps, LocalDateTime.of(2026, 8, 10, 9, 0), 5_000_000L);
+			"INVESTMENT_PRACTICE_V1", "COMPLETED", null, steps, LocalDateTime.of(2026, 8, 10, 9, 0), 5_000_000L,
+			attempt);
 		when(investmentPracticeQueryService.getProgress(eq(USER_ID), eq(Market.STOCK))).thenReturn(response);
 
 		mockMvc.perform(get("/api/education/practice")
@@ -102,6 +114,14 @@ class InvestmentPracticeControllerTest {
 			.andExpect(jsonPath("$.steps[0].evidence.holdingId").value(40))
 			.andExpect(jsonPath("$.steps[0].evidence.evidenceType").value("CLOSER_TO_BOUNDARY"))
 			.andExpect(jsonPath("$.steps[0].evidence.reflectionId").value(70))
+			.andExpect(jsonPath("$.steps[0].evidence.buyQuantity").value(10))
+			.andExpect(jsonPath("$.steps[0].evidence.sellQuantity").value(4))
+			.andExpect(jsonPath("$.steps[0].evidence.remainingQuantity").value(6))
+			.andExpect(jsonPath("$.attempt.mode").value("REPLAY"))
+			.andExpect(jsonPath("$.attempt.runNumber").value(2))
+			.andExpect(jsonPath("$.attempt.riskSnapshot.entryPrice").value(100.00000000))
+			.andExpect(jsonPath("$.attempt.riskSnapshot.stopLossPrice").value(97.00000000))
+			.andExpect(jsonPath("$.attempt.riskSnapshot.takeProfitPrice").value(105.00000000))
 			.andExpect(jsonPath("$.rewardAmount").value(5_000_000));
 	}
 
@@ -114,7 +134,7 @@ class InvestmentPracticeControllerTest {
 			new PracticeStepResponse(2, "NOT_STARTED", true, emptyEvidence),
 			new PracticeStepResponse(3, "NOT_STARTED", true, emptyEvidence));
 		InvestmentPracticeResponse response = new InvestmentPracticeResponse(
-			"COIN_PRACTICE_V1", "NOT_STARTED", 1, steps, null, null);
+			"COIN_PRACTICE_V1", "NOT_STARTED", 1, steps, null, null, null);
 		when(investmentPracticeQueryService.getProgress(eq(USER_ID), eq(Market.CRYPTO))).thenReturn(response);
 
 		mockMvc.perform(get("/api/education/practice")
@@ -141,7 +161,7 @@ class InvestmentPracticeControllerTest {
 			new PracticeStepResponse(2, "IN_PROGRESS", false, favoriteEvidence),
 			new PracticeStepResponse(3, "NOT_STARTED", true, PracticeEvidenceResponse.empty()));
 		InvestmentPracticeResponse response = new InvestmentPracticeResponse(
-			"INVESTMENT_PRACTICE_V1", "IN_PROGRESS", 2, steps, null, null);
+			"INVESTMENT_PRACTICE_V1", "IN_PROGRESS", 2, steps, null, null, null);
 		when(investmentPracticeQueryService.getProgress(eq(USER_ID), eq(Market.STOCK))).thenReturn(response);
 
 		mockMvc.perform(get("/api/education/practice")

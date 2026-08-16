@@ -1,4 +1,4 @@
-// OAuth state에 목적·사용자 ID·난수를 HMAC-SHA-256으로 서명해 생성하고 검증한다.
+// OAuth state에 목적·사용자 ID·난수·만료시각을 HMAC-SHA-256으로 서명해 생성하고 검증한다.
 package com.finplay.api.auth.oauth;
 
 import com.finplay.api.common.BusinessException;
@@ -8,6 +8,9 @@ import java.security.InvalidKeyException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Base64;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -23,31 +26,48 @@ public class OAuthStateGenerator {
 	private static final String PART_SEPARATOR = ".";
 	private static final String PART_SEPARATOR_REGEX = "\\.";
 	private static final int STATE_PART_COUNT = 2;
-	private static final int PAYLOAD_FIELD_COUNT = 3;
+	private static final int PAYLOAD_FIELD_COUNT = 4;
+	// state 자체 만료시각의 유효기간. oauth_state 쿠키 maxAge(OAuthStateCookieFactory)와 같은 값을 재사용한다.
+	private static final Duration STATE_TTL = Duration.ofMinutes(10);
 	private static final Base64.Encoder BASE64_URL_ENCODER = Base64.getUrlEncoder().withoutPadding();
 	private static final Base64.Decoder BASE64_URL_DECODER = Base64.getUrlDecoder();
 
 	private final SecureRandom secureRandom;
 	private final byte[] hmacKey;
+	private final Clock clock;
 
-	// 테스트용 생성자가 하나 더 있어 Spring이 후보를 고를 수 없으므로 주입 대상을 명시한다.
+	// 생성자가 여러 개라 Spring이 후보를 고를 수 없으므로 주입 대상을 명시한다.
 	@Autowired
 	public OAuthStateGenerator(
 		@Value("${oauth.state-secret}")
-		String stateSecret) {
-		this(new SecureRandom(), stateSecret);
+		String stateSecret,
+		Clock clock) {
+		this(new SecureRandom(), stateSecret, clock);
+	}
+
+	// 기존 호출부(OAuthCallbackServiceTest·OAuthAuthorizationControllerTest 등) 전용 — 시스템 클럭을 쓴다.
+	public OAuthStateGenerator(String stateSecret) {
+		this(new SecureRandom(), stateSecret, Clock.systemDefaultZone());
 	}
 
 	OAuthStateGenerator(SecureRandom secureRandom, String stateSecret) {
+		this(secureRandom, stateSecret, Clock.systemDefaultZone());
+	}
+
+	// 고정 시각 테스트 전용 — TTL 경계를 결정론적으로 검증할 때만 쓴다.
+	OAuthStateGenerator(SecureRandom secureRandom, String stateSecret, Clock clock) {
 		this.secureRandom = secureRandom;
 		this.hmacKey = stateSecret.getBytes(StandardCharsets.UTF_8);
+		this.clock = clock;
 	}
 
 	public String generate(OAuthPurpose purpose, Long userId) {
 		byte[] nonceBytes = new byte[NONCE_BYTE_LENGTH];
 		secureRandom.nextBytes(nonceBytes);
+		long expiresAtEpochSecond = clock.instant().plus(STATE_TTL).getEpochSecond();
 		String payload = purpose.name() + PART_SEPARATOR + (userId == null ? "" : userId.toString())
-			+ PART_SEPARATOR + BASE64_URL_ENCODER.encodeToString(nonceBytes);
+			+ PART_SEPARATOR + BASE64_URL_ENCODER.encodeToString(nonceBytes)
+			+ PART_SEPARATOR + expiresAtEpochSecond;
 		String payloadPart = BASE64_URL_ENCODER.encodeToString(payload.getBytes(StandardCharsets.UTF_8));
 
 		return payloadPart + PART_SEPARATOR + sign(payloadPart);
@@ -87,8 +107,23 @@ public class OAuthStateGenerator {
 
 		OAuthPurpose purpose = OAuthPurpose.from(fields[0])
 			.orElseThrow(() -> new BusinessException(ErrorCode.REAUTHENTICATION_FAILED));
+		Long userId = parseUserId(fields[1]);
+		verifyNotExpired(fields[3]);
 
-		return new OAuthStateClaims(purpose, parseUserId(fields[1]));
+		return new OAuthStateClaims(purpose, userId);
+	}
+
+	private void verifyNotExpired(String value) {
+		long expiresAtEpochSecond;
+		try {
+			expiresAtEpochSecond = Long.parseLong(value);
+		} catch (NumberFormatException ex) {
+			throw new BusinessException(ErrorCode.REAUTHENTICATION_FAILED);
+		}
+
+		if (!clock.instant().isBefore(Instant.ofEpochSecond(expiresAtEpochSecond))) {
+			throw new BusinessException(ErrorCode.REAUTHENTICATION_FAILED);
+		}
 	}
 
 	private Long parseUserId(String value) {

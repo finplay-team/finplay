@@ -520,7 +520,7 @@ class OrderControllerTest {
 		stubAuthenticatedUser();
 		LocalDateTime requestedAt = LocalDateTime.of(2026, 7, 29, 9, 0);
 		OrderListItemResponse item = new OrderListItemResponse(
-			1L, "STOCK", 1L, "BUY", "MARKET", "FILLED", new BigDecimal("10"), null, requestedAt);
+			1L, "STOCK", 1L, "BUY", "MARKET", "FILLED", new BigDecimal("10"), null, requestedAt, null, null);
 		OrderListResponse response = OrderListResponse.of(List.of(item), "2026-07-29T09:00:00_1", true);
 		when(orderService.getMyOrders(USER_ID, Market.STOCK, null, 20)).thenReturn(response);
 
@@ -538,6 +538,8 @@ class OrderControllerTest {
 			// PR #237 리뷰 차단 반영: 시장가 주문은 limitPrice가 없다 — 필드 자체는 존재하고 값만 null임을 고정한다.
 			.andExpect(jsonPath("$.content[0].limitPrice").value(nullValue()))
 			.andExpect(jsonPath("$.content[0].requestedAt").value("2026-07-29T09:00:00"))
+			.andExpect(jsonPath("$.content[0].practiceAttemptId").value(nullValue()))
+			.andExpect(jsonPath("$.content[0].practiceAttemptRunNumber").value(nullValue()))
 			.andExpect(jsonPath("$.nextCursor").value("2026-07-29T09:00:00_1"))
 			.andExpect(jsonPath("$.hasNext").value(true));
 
@@ -682,7 +684,7 @@ class OrderControllerTest {
 		LocalDateTime requestedAt = LocalDateTime.of(2026, 8, 6, 9, 0);
 		OrderListItemResponse item = new OrderListItemResponse(
 			1L, "CRYPTO", 1L, "BUY", "LIMIT", "PENDING", new BigDecimal("1"),
-			new BigDecimal("70000000"), requestedAt);
+			new BigDecimal("70000000"), requestedAt, 91L, 3L);
 		OrderListResponse response = OrderListResponse.of(List.of(item), "2026-08-06T09:00:00_1", true);
 		when(orderService.getMyPendingOrders(USER_ID, Market.CRYPTO, null, 20)).thenReturn(response);
 
@@ -700,6 +702,8 @@ class OrderControllerTest {
 			// PR #237 리뷰 차단 반영: 미체결 목록에서 지정가를 확인할 수 있어야 한다.
 			.andExpect(jsonPath("$.content[0].limitPrice").value(70000000))
 			.andExpect(jsonPath("$.content[0].requestedAt").value("2026-08-06T09:00:00"))
+			.andExpect(jsonPath("$.content[0].practiceAttemptId").value(91))
+			.andExpect(jsonPath("$.content[0].practiceAttemptRunNumber").value(3))
 			.andExpect(jsonPath("$.nextCursor").value("2026-08-06T09:00:00_1"))
 			.andExpect(jsonPath("$.hasNext").value(true));
 
