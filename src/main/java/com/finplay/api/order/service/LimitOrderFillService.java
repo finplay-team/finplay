@@ -18,6 +18,7 @@ import com.finplay.api.portfolio.service.SellAllocationDto;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -37,8 +38,28 @@ public class LimitOrderFillService {
 
 	// plan.md "체결 리스너·체결 서비스" — order(자기 자신) → account → (SELL만) holding 순으로 잠근다.
 	// 이미 order를 락으로 잡은 뒤 PENDING 여부를 재확인하므로 같은 주문에 이벤트가 중복 도착해도 두 번째 호출은 no-op.
+	// order.limit-fill-executor.enabled=false(폴백 경로)와, 실행기 큐 청크(fillBatch) 없이 주문 1건만
+	// 단독으로 체결해야 하는 호출부가 쓴다.
 	@Transactional
 	public void fillIfPending(Long orderId) {
+		fillOnePending(orderId);
+	}
+
+	// ADR-0025 — 파티션 워커가 청크 하나(최대 order.limit-fill-executor.batch-size건)를 트랜잭션 1개로
+	// 처리한다. 청크 안의 한 건이 예외를 던지면 이 메서드 전체가 롤백된다 — 이미 처리된 앞선 건도 함께
+	// 되돌아가 PENDING으로 남고, 다음 가격 틱이 findPendingLimitOrdersToFill로 다시 후보에 올린다(ADR-0024
+	// §결정 2와 같은 재시도 철학). "청크 안에서 건별로 flush 후 catch"처럼 실패한 건만 골라내 나머지를
+	// 그대로 커밋하는 방식은 택하지 않았다 — Hibernate는 flush 중 예외가 나면 그 세션을 더 이상 신뢰할 수
+	// 없다고 보므로, 예외 이후에도 같은 영속성 컨텍스트로 나머지 건을 계속 처리하는 건 검증되지 않은 위험을
+	// 감수하는 것이다(ADR-0025 §결정 3의 선택 이유).
+	@Transactional
+	public void fillBatch(List<Long> orderIds) {
+		for (Long orderId : orderIds) {
+			fillOnePending(orderId);
+		}
+	}
+
+	private void fillOnePending(Long orderId) {
 		Order order = orderRepository.findByIdForUpdate(orderId)
 			.orElseThrow(() -> new IllegalStateException("체결 대상 주문을 찾을 수 없습니다. orderId=" + orderId));
 		if (order.getStatus() != OrderStatus.PENDING) {

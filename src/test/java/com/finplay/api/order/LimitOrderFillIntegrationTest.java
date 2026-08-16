@@ -27,6 +27,7 @@ import com.finplay.api.portfolio.domain.Holding;
 import com.finplay.api.portfolio.repository.HoldingRepository;
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -95,9 +96,9 @@ class LimitOrderFillIntegrationTest {
 	}
 
 	// 시나리오: BUY 지정가 생성(PENDING, 현금 예약) → 지정가 이하로 가격 틱 저장(PriceStore.saveTick이 실제로
-	// CryptoPriceUpdatedEvent를 publish) → 같은 스레드에서 동기 실행되는 LimitOrderTriggerListener가
-	// LimitOrderFillService.fillIfPending을 호출해 체결까지 끝낸다. saveTick 호출이 반환한 시점에는 이미
-	// 체결 트랜잭션이 커밋돼 있어야 한다(AFTER_COMMIT이 아닌 일반 리스너, spec.md 확정 설계 결정 3번).
+	// CryptoPriceUpdatedEvent를 publish) → LimitOrderTriggerListener가 후보를 조회해 실행기(ADR-0024)에
+	// 위임하고 즉시 반환한다. 실제 체결(LimitOrderFillService.fillBatch)은 파티션 전용 스레드에서 비동기로
+	// 끝나므로, saveTick 호출이 반환한 시점에 곧바로 상태를 확인하면 안 되고 체결 완료(FILLED)를 폴링해야 한다.
 	@Test
 	void limitBuyOrderFillsEndToEndWhenPriceTickReachesLimitPrice() throws Exception {
 		User user = createUser("lmt-fill-e2e");
@@ -122,8 +123,10 @@ class LimitOrderFillIntegrationTest {
 		// 지정가 이하로 가격 틱을 저장한다 — BUY 체결 조건(현재가 ≤ 지정가)을 충족시켜 리스너를 실제로 촉발한다.
 		priceStore.saveTick(instrument.getSymbol(), limitPrice, LocalDateTime.now(clock));
 
-		var filledOrder = orderRepository.findById(orderId).orElseThrow();
-		assertThat(filledOrder.getStatus()).isEqualTo(OrderStatus.FILLED);
+		// 체결은 파티션 전용 스레드에서 비동기로 끝난다(ADR-0024) — 완료될 때까지 폴링한다.
+		awaitUntil(
+			() -> orderRepository.findById(orderId).orElseThrow().getStatus() == OrderStatus.FILLED,
+			Duration.ofSeconds(5), "주문이 제한 시간 안에 체결되지 않았다");
 
 		Account accountAfterFill = accountRepository.findById(account.getId()).orElseThrow();
 		assertThat(accountAfterFill.getReservedCash()).isZero();
@@ -177,5 +180,23 @@ class LimitOrderFillIntegrationTest {
 
 	private static String uniqueNickname(String scenario) {
 		return scenario + "-" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+	}
+
+	// LimitOrderAsyncFillConcurrencyIntegrationTest의 awaitUntil 관례를 그대로 따른다.
+	private static void awaitUntil(
+		java.util.function.BooleanSupplier condition, Duration timeout, String failureMessage) {
+		long deadline = System.currentTimeMillis() + timeout.toMillis();
+		while (System.currentTimeMillis() < deadline) {
+			if (condition.getAsBoolean()) {
+				return;
+			}
+			try {
+				Thread.sleep(50);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new AssertionError(failureMessage, e);
+			}
+		}
+		throw new AssertionError(failureMessage);
 	}
 }
