@@ -44,7 +44,7 @@ class ExitPlanTriggerListenerTest {
 	@Test
 	@DisplayName("코인 목록에 없는 심볼의 가격 틱은 조용히 무시한다 — plan 조회·체결 시도를 하지 않는다")
 	void onPriceUpdatedIgnoresSymbolNotInInstrumentList() {
-		CryptoPriceUpdatedEvent event = new CryptoPriceUpdatedEvent("NOT_LISTED", new BigDecimal("100"), NOW);
+		CryptoPriceUpdatedEvent event = new CryptoPriceUpdatedEvent("NOT_LISTED", new BigDecimal("100"), NOW, NOW);
 		when(instrumentService.findEntityByMarketAndSymbol(Market.CRYPTO, "NOT_LISTED")).thenReturn(Optional.empty());
 
 		assertThatCode(() -> listener.onPriceUpdated(event)).doesNotThrowAnyException();
@@ -56,7 +56,7 @@ class ExitPlanTriggerListenerTest {
 	@DisplayName("여러 후보 중 하나가 예외를 던져도 나머지 후보는 계속 처리된다 — 건별 catch로 격리")
 	void onPriceUpdatedIsolatesFailureOfOneCandidateFromTheRest() {
 		Instrument instrument = instrument();
-		CryptoPriceUpdatedEvent event = new CryptoPriceUpdatedEvent("BTC", new BigDecimal("110000"), NOW);
+		CryptoPriceUpdatedEvent event = new CryptoPriceUpdatedEvent("BTC", new BigDecimal("110000"), NOW, NOW);
 		when(instrumentService.findEntityByMarketAndSymbol(Market.CRYPTO, "BTC")).thenReturn(Optional.of(instrument));
 
 		ExitPlan failingCandidate = exitPlanWithId(1L);
@@ -79,7 +79,7 @@ class ExitPlanTriggerListenerTest {
 		when(instrumentService.findEntityByMarketAndSymbol(any(), any()))
 			.thenThrow(new RuntimeException("instrument lookup failed"));
 
-		CryptoPriceUpdatedEvent event = new CryptoPriceUpdatedEvent("BTC", new BigDecimal("100000"), NOW);
+		CryptoPriceUpdatedEvent event = new CryptoPriceUpdatedEvent("BTC", new BigDecimal("100000"), NOW, NOW);
 
 		assertThatCode(() -> listener.onPriceUpdated(event)).doesNotThrowAnyException();
 		verify(exitPlanFillService, never()).fillIfPending(anyLong(), any());
