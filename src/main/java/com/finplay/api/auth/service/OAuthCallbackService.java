@@ -1,11 +1,13 @@
-// OAuth callback state를 검증한 뒤 공급자 조회와 FinPlay 로그인, 로그인 토큰 교환 코드 발급·소비를 조정한다.
+// OAuth callback state를 검증한 뒤 공급자 조회와 FinPlay 로그인·재인증, 교환 코드 발급·소비를 조정한다.
 package com.finplay.api.auth.service;
 
+import com.finplay.api.auth.dto.response.ReauthTokenResponse;
 import com.finplay.api.auth.dto.response.TokenResponse;
 import com.finplay.api.auth.oauth.OAuthCallbackProvider;
 import com.finplay.api.auth.oauth.OAuthLoginExchangeStore;
 import com.finplay.api.auth.oauth.OAuthProviderName;
 import com.finplay.api.auth.oauth.OAuthPurpose;
+import com.finplay.api.auth.oauth.OAuthReauthExchangeStore;
 import com.finplay.api.auth.oauth.OAuthStateClaims;
 import com.finplay.api.auth.oauth.OAuthStateGenerator;
 import com.finplay.api.auth.oauth.OAuthUserDto;
@@ -25,6 +27,7 @@ public class OAuthCallbackService {
 	private final AuthService authService;
 	private final OAuthStateGenerator stateGenerator;
 	private final OAuthLoginExchangeStore exchangeStore;
+	private final OAuthReauthExchangeStore reauthExchangeStore;
 
 	// purpose는 서명된 state 안에만 있어 응답 타입을 컨트롤러 라우팅으로 나눌 수 없다.
 	// Jackson은 선언 타입이 아니라 런타임 타입으로 직렬화하므로 Object 반환으로 분기한다.
@@ -76,6 +79,17 @@ public class OAuthCallbackService {
 	/** 교환 코드를 실제 토큰으로 바꾼다. 이미 소비됐거나 만료됐거나 존재하지 않으면 400 VALIDATION_ERROR다. */
 	public TokenResponse consumeLoginExchangeCode(String code) {
 		return exchangeStore.consume(code).orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_ERROR));
+	}
+
+	/** REAUTH 콜백이 발급한 reauthToken을 1회용 교환 코드로 감싼다. Redis 접촉은 {@link OAuthReauthExchangeStore}에 맡긴다. */
+	public String issueReauthExchangeCode(ReauthTokenResponse reauthToken) {
+		return reauthExchangeStore.issue(reauthToken);
+	}
+
+	/** 교환 코드를 실제 reauthToken으로 바꾼다. 이미 소비됐거나 만료됐거나 존재하지 않으면 400 VALIDATION_ERROR다. */
+	public ReauthTokenResponse consumeReauthExchangeCode(String code) {
+		return reauthExchangeStore.consume(code)
+			.orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_ERROR));
 	}
 
 	private void requireQueryState(String queryState) {

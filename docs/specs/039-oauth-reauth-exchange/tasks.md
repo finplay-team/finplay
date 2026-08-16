@@ -20,7 +20,7 @@
   `queryState`와 달라도 통과함을 새 테스트로 확인한다. `invalidCallbacks()` 파라미터화 픽스처를 이 변경에 맞게
   갱신한다(REAUTH state로 쿠키만 빠진 케이스는 더 이상 400 목록에 있으면 안 된다).
 
-- [ ] **3. `OAuthReauthExchangeStore` + `reauth-exchange` 엔드포인트 + REAUTH 콜백 302 전환 (+ 슬라이스 테스트)**
+- [x] **3. `OAuthReauthExchangeStore` + `reauth-exchange` 엔드포인트 + REAUTH 콜백 302 전환 (+ 슬라이스 테스트)**
   `OAuthLoginExchangeStore`를 미러링한 `OAuthReauthExchangeStore`(Redis key prefix
   `auth:oauth-reauth-exchange:v1:`, TTL 60초, `issue(ReauthTokenResponse)`/`consume(String)`)를 만든다.
   `ReauthExchangeRequest`(code) DTO를 추가한다. `OAuthCallbackService`에 `issueReauthExchangeCode`/
