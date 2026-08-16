@@ -161,6 +161,32 @@ class TradeRepositoryTest {
 		assertThat(result).extracting(Trade::getId).containsExactly(ownerTrade.getId());
 	}
 
+	// 포트폴리오 체결 내역 화면에 튜토리얼 샌드박스 종목 체결이 섞여 나오던 누출 수정 —
+	// 033-exclude-tutorial-sandbox-data(SANDBOX-EXCL-001)와 동일 원칙을 GET /api/trades에도 적용한다.
+	@Test
+	@DisplayName("샌드박스 종목 체결은 제외하고 실제 종목 체결만 커서 조회한다")
+	void findByAccountIdWithCursorExcludesSandboxInstrumentTrades() {
+		Instrument sandboxInstrument = instrumentRepository.findByMarketAndSymbol(Market.STOCK, "SANDBOX_STK_1")
+			.orElseThrow();
+		assertThat(sandboxInstrument.isTutorialSample()).isTrue();
+
+		Order realOrder = createOrder(owner, ownerAccount, NOW);
+		Trade realTrade = createTrade(realOrder, ownerAccount, NOW);
+
+		idempotencySequence++;
+		Order sandboxOrder = orderRepository.saveAndFlush(Order.create(
+			owner, ownerAccount, sandboxInstrument, OrderSide.BUY, OrderType.MARKET,
+			BigDecimal.valueOf(10), "cursor-sandbox-trade-idem-" + idempotencySequence,
+			String.valueOf((char)('a' + idempotencySequence)).repeat(64), NOW));
+		tradeRepository.saveAndFlush(Trade.of(
+			sandboxOrder, ownerAccount, sandboxInstrument, session, OrderSide.BUY,
+			BigDecimal.valueOf(100), BigDecimal.valueOf(10), 1_000L, 1L, null, NOW, NOW));
+
+		List<Trade> result = tradeRepository.findByAccountIdWithCursor(ownerAccount.getId(), null, null, 10);
+
+		assertThat(result).extracting(Trade::getId).containsExactly(realTrade.getId());
+	}
+
 	@Test
 	@DisplayName("executedAt 내림차순, 동시각이면 id 내림차순으로 정렬해 반환한다")
 	void findByAccountIdWithCursorSortedByExecutedAtThenIdDescending() {
