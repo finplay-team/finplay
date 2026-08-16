@@ -52,18 +52,18 @@ provider 계정으로 다시 로그인해 `reauthToken`을 받아 오는" 별도
 
 ## 요구사항
 
-- [ ] OAUTH-REAUTH-001: OAuth state는 서명 payload 안에 자체 만료시각을 갖는다. LOGIN·REAUTH purpose 공통으로
+- [x] OAUTH-REAUTH-001: OAuth state는 서명 payload 안에 자체 만료시각을 갖는다. LOGIN·REAUTH purpose 공통으로
   발급 후 일정 시간이 지나면, 서명이 유효하고 쿠키가 일치해도 재인증 실패(403 `REAUTHENTICATION_FAILED`)로
   거부된다. 하나의 서명 검증 함수가 두 purpose를 함께 처리하는 기존 구조를 유지한다.
-- [ ] OAUTH-REAUTH-002: REAUTH purpose의 콜백 검증은 `oauth_state` 쿠키 이중제출(query state와 cookie state의
+- [x] OAUTH-REAUTH-002: REAUTH purpose의 콜백 검증은 `oauth_state` 쿠키 이중제출(query state와 cookie state의
   일치)에 의존하지 않는다. LOGIN purpose는 지금과 동일하게 쿠키 이중제출을 그대로 요구한다 — 이 spec은 LOGIN의
   기존 계약을 하나도 바꾸지 않는다.
-- [ ] OAUTH-REAUTH-003: REAUTH purpose 콜백이 성공하면 `reauthToken`이 담긴 JSON을 그 응답 본문으로 직접 주지
+- [x] OAUTH-REAUTH-003: REAUTH purpose 콜백이 성공하면 `reauthToken`이 담긴 JSON을 그 응답 본문으로 직접 주지
   않는다. 대신 팝업이 로드할 프론트 주소로 302 리다이렉트하며, 실제 `reauthToken`은 그 리다이렉트 URL 어디에도
   노출하지 않고 1회용 교환 코드만 싣는다.
-- [ ] OAUTH-REAUTH-004: 위 교환 코드를 실제 `reauthToken`(+ 남은 유효시간)으로 바꾸는 공개 엔드포인트가 있다.
+- [x] OAUTH-REAUTH-004: 위 교환 코드를 실제 `reauthToken`(+ 남은 유효시간)으로 바꾸는 공개 엔드포인트가 있다.
   같은 코드를 두 번 쓰거나, 발급 후 일정 시간이 지난 코드를 쓰면 거부된다.
-- [ ] OAUTH-REAUTH-005: REAUTH purpose 콜백이 **실패**하는 경우(잘못된 provider 계정으로 재인증, state 위조·만료
+- [x] OAUTH-REAUTH-005: REAUTH purpose 콜백이 **실패**하는 경우(잘못된 provider 계정으로 재인증, state 위조·만료
   등)의 응답 형태는 이 spec에서 바꾸지 않는다 — 오류 JSON을 그대로 반환하는 기존 동작이 유지된다(LOGIN purpose의
   실패 경로가 이미 이 한계를 갖고 있는 것과 같다).
 
@@ -101,20 +101,20 @@ provider 계정으로 다시 로그인해 `reauthToken`을 받아 오는" 별도
 
 ## 완료 조건
 
-- [ ] 발급된 state가 만료 유효기간 이전에는 정상 검증되고, 유효기간을 넘기면 서명·purpose·userId가 모두 정확해도
+- [x] 발급된 state가 만료 유효기간 이전에는 정상 검증되고, 유효기간을 넘기면 서명·purpose·userId가 모두 정확해도
   403 `REAUTHENTICATION_FAILED`로 거부되는 단위 테스트가 LOGIN·REAUTH 양쪽에서 통과한다.
-- [ ] REAUTH purpose 콜백이 `oauth_state` 쿠키 없이(또는 쿠키 값이 query state와 달라도) 성공하는 테스트와, LOGIN
+- [x] REAUTH purpose 콜백이 `oauth_state` 쿠키 없이(또는 쿠키 값이 query state와 달라도) 성공하는 테스트와, LOGIN
   purpose 콜백은 지금처럼 쿠키가 없거나 불일치하면 여전히 400 `VALIDATION_ERROR`로 거부되는 회귀 테스트가 함께
   통과한다.
-- [ ] REAUTH purpose 콜백 성공이 200 JSON이 아니라 302 리다이렉트이고, 응답 어디에도(Location 쿼리·본문) 원문
+- [x] REAUTH purpose 콜백 성공이 200 JSON이 아니라 302 리다이렉트이고, 응답 어디에도(Location 쿼리·본문) 원문
   `reauthToken`이 노출되지 않는 테스트가 통과한다.
-- [ ] 리다이렉트가 실어 보낸 교환 코드로 새 엔드포인트를 호출하면 실제 `reauthToken`과 남은 유효시간을 받고, 같은
+- [x] 리다이렉트가 실어 보낸 교환 코드로 새 엔드포인트를 호출하면 실제 `reauthToken`과 남은 유효시간을 받고, 같은
   코드를 두 번째로 쓰거나 만료된 코드를 쓰면 거부되는 테스트가 통과한다.
-- [ ] 다른 provider 계정으로 재인증을 시도하면(기존 `AuthService.reauthenticate()` 검증) state 자체 만료시각
+- [x] 다른 provider 계정으로 재인증을 시도하면(기존 `AuthService.reauthenticate()` 검증) state 자체 만료시각
   추가·쿠키 검증 제거 이후에도 여전히 403 `REAUTHENTICATION_FAILED`로 거부되고 회원·소셜계정·계좌·시드머니가
   바뀌지 않는 통합 테스트가 통과한다(Fake OAuth 제공자 사용, ADR-0003).
-- [ ] Fake OAuth로 인가 시작 → 콜백 → 302 리다이렉트 → 교환 코드로 `reauthToken` 획득 → 그 토큰으로
+- [x] Fake OAuth로 인가 시작 → 콜백 → 302 리다이렉트 → 교환 코드로 `reauthToken` 획득 → 그 토큰으로
   `PATCH /api/auth/me/nickname` 성공까지 이어지는 통합 테스트가 통과한다.
-- [ ] `./gradlew build` 통과.
-- [ ] `docs/api-routes.md`·`docs/api-contracts.md`의 OAuth 재인증 관련 절이 이번 변경(새 교환 엔드포인트,
+- [x] `./gradlew build` 통과.
+- [x] `docs/api-routes.md`·`docs/api-contracts.md`의 OAuth 재인증 관련 절이 이번 변경(새 교환 엔드포인트,
   REAUTH 콜백 응답이 200 JSON에서 302 리다이렉트로 바뀌는 것)에 맞게 갱신된다.
