@@ -3,6 +3,7 @@ package com.finplay.api.auth.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -23,6 +24,7 @@ import com.finplay.api.auth.repository.SocialAccountRepository;
 import com.finplay.api.auth.repository.UserRepository;
 import com.jayway.jsonpath.JsonPath;
 import jakarta.servlet.http.Cookie;
+import java.net.URI;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -34,8 +36,10 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
 
 @SpringBootTest
@@ -96,17 +100,26 @@ class OAuthReauthCallbackIntegrationTest {
 		long refreshCount = refreshTokens.count();
 		long reauthCount = reauthTokens.count();
 
-		String responseBody = mockMvc.perform(get("/api/auth/oauth/kakao/callback")
+		MvcResult callbackResult = mockMvc.perform(get("/api/auth/oauth/kakao/callback")
 			.param("code", code)
 			.param("state", state)
 			.cookie(new Cookie("oauth_state", state)))
-			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.reauthToken").isNotEmpty())
-			.andExpect(jsonPath("$.expiresInSeconds").value(300))
+			.andExpect(status().isFound())
+			.andExpect(header().string(HttpHeaders.LOCATION,
+				Matchers.startsWith("https://www.finplay.site/oauth/reauth-callback?code=")))
 			.andExpect(header().string(
 				HttpHeaders.SET_COOKIE,
 				Matchers.containsString("; Path=/api/auth/oauth/kakao/callback")))
 			.andExpect(header().string(HttpHeaders.SET_COOKIE, Matchers.containsString("; Max-Age=0")))
+			.andReturn();
+		String exchangeCode = extractExchangeCode(callbackResult.getResponse().getHeader(HttpHeaders.LOCATION));
+
+		String responseBody = mockMvc.perform(post("/api/auth/oauth/reauth-exchange")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("{\"code\":\"" + exchangeCode + "\"}"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.reauthToken").isNotEmpty())
+			.andExpect(jsonPath("$.expiresInSeconds").value(300))
 			.andReturn()
 			.getResponse()
 			.getContentAsString();
@@ -211,9 +224,36 @@ class OAuthReauthCallbackIntegrationTest {
 			.param("code", code)
 			.param("state", validState)
 			.cookie(new Cookie("oauth_state", validState)))
-			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.reauthToken").isNotEmpty());
+			.andExpect(status().isFound())
+			.andExpect(header().string(HttpHeaders.LOCATION,
+				Matchers.startsWith("https://www.finplay.site/oauth/reauth-callback?code=")));
 		assertThat(reauthTokens.count()).isEqualTo(reauthCount + 1);
+	}
+
+	@Test
+	void reauthCallbackSucceedsWithoutOauthStateCookie() throws Exception {
+		LocalDateTime now = LocalDateTime.now(clock);
+		User user = users.saveAndFlush(User.create(
+			uniqueEmail(), "password-hash", uniqueNickname(), now));
+		accountService.createAccountsFor(user);
+		socialAccounts.saveAndFlush(
+			SocialAccount.create(user, OAuthProviderName.KAKAO, FAKE_PROVIDER_USER_ID, now));
+
+		String state = stateGenerator.generate(OAuthPurpose.REAUTH, user.getId());
+		String code = grantStore.issue(OAuthProviderName.KAKAO, state);
+
+		// oauth_state 쿠키를 아예 보내지 않는다 — REAUTH는 쿠키 이중제출에 의존하지 않는다(spec 039 OAUTH-REAUTH-002).
+		mockMvc.perform(get("/api/auth/oauth/kakao/callback")
+			.param("code", code)
+			.param("state", state))
+			.andExpect(status().isFound())
+			.andExpect(header().string(HttpHeaders.LOCATION,
+				Matchers.startsWith("https://www.finplay.site/oauth/reauth-callback?code=")));
+	}
+
+	private static String extractExchangeCode(String location) {
+		String query = URI.create(location).getRawQuery();
+		return query.substring("code=".length());
 	}
 
 	private void assertReauthRejectedWithoutSideEffects(String code, String state) throws Exception {

@@ -31,7 +31,7 @@
   주석("재인증 SPA가 이미 열어 둔 팝업이 응답을 직접 읽는다")을 정정한다. `OAuthCallbackControllerTest`에서 REAUTH
   성공이 302이고 `Location`에 `reauthToken` 원문이 없음을, `reauth-exchange` 성공·잘못된 코드 400을 검증한다.
 
-- [ ] **4. 통합 테스트 (핵심 시나리오, Fake OAuth·Testcontainers)**
+- [x] **4. 통합 테스트 (핵심 시나리오, Fake OAuth·Testcontainers)**
   `OAuthReauthCallbackIntegrationTest`에 쿠키 없이도 REAUTH 콜백이 성공하는 케이스를 추가하고, 기존 4개
   시나리오는 응답 검증부만 302/신규 엔드포인트에 맞게 갱신한다(회원·소셜계정·계좌·시드머니 불변 검증은 그대로
   유지). 인가 시작 → 콜백 302 → `reauth-exchange` → 받은 `reauthToken`으로
