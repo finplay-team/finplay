@@ -113,6 +113,38 @@ class PortfolioServiceTest {
 		assertThat(result.returnRate()).isEqualByComparingTo(BigDecimal.ZERO);
 	}
 
+	// 이슈 #390 — 두 시장 합계 시드머니(2,000만원) 대비 작은 손실도 scale 4에서는 반올림으로 0%가 됐다.
+	// scale 8로 올린 뒤에는 0이 아닌 값이어야 한다.
+	@Test
+	void getPortfolioSummaryPreservesSmallCombinedLossInReturnRateInsteadOfRoundingToZero() {
+		AccountService accountService = mock(AccountService.class);
+		PortfolioService portfolioService = new PortfolioService(accountService);
+
+		User user = User.create("user@finplay.com", "password-hash", "finplayer", NOW);
+		Account stockAccount = Account.create(user, Market.STOCK, NOW);
+		Account cryptoAccount = Account.create(user, Market.CRYPTO, NOW);
+		when(accountService.getAccountFor(USER_ID, Market.STOCK)).thenReturn(stockAccount);
+		when(accountService.getAccountFor(USER_ID, Market.CRYPTO)).thenReturn(cryptoAccount);
+
+		AccountSummaryResponse stockSummary = AccountSummaryResponse.of(
+			10_000_000L, 0L, 0L, 10_000_000L, 0L, 0L, BigDecimal.ZERO);
+		AccountSummaryResponse cryptoSummary = AccountSummaryResponse.of(
+			9_999_694L, 0L, 0L, 9_999_694L, -306L, 0L, BigDecimal.valueOf(-0.0000306));
+		when(accountService.getAccountSummary(USER_ID, Market.STOCK)).thenReturn(stockSummary);
+		when(accountService.getAccountSummary(USER_ID, Market.CRYPTO)).thenReturn(cryptoSummary);
+
+		PortfolioSummaryResponse result = portfolioService.getPortfolioSummary(USER_ID);
+
+		// (19,999,694 - 20,000,000) / 20,000,000 = -0.0000153 — scale 4였다면 반올림으로 0.0000이 됐을 값이다.
+		BigDecimal expectedReturnRate = BigDecimal.valueOf(-306L)
+			.divide(BigDecimal.valueOf(20_000_000L), 8, java.math.RoundingMode.HALF_UP);
+
+		assertThat(result.totalValue()).isEqualTo(19_999_694L);
+		assertThat(result.realizedPnl()).isEqualTo(-306L);
+		assertThat(result.returnRate()).isEqualByComparingTo(expectedReturnRate);
+		assertThat(result.returnRate()).isNotEqualByComparingTo(BigDecimal.ZERO);
+	}
+
 	@Test
 	void getPortfolioSummaryPropagatesNotFoundWhenAccountMissing() {
 		AccountService accountService = mock(AccountService.class);
