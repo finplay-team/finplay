@@ -167,11 +167,15 @@ jobs:
             fi
             if [ "\$STATUS" = "unhealthy" ]; then
               echo "컨테이너 unhealthy로 판정됨"
+              echo "--- docker logs finplay-app-$IDLE (tail 300) ---"
+              docker logs finplay-app-$IDLE --tail 300 2>&1 || true
               exit 1
             fi
             sleep 5
           done
           echo "타임아웃 — 3분 안에 healthy가 되지 않았다"
+          echo "--- docker logs finplay-app-$IDLE (tail 300) ---"
+          docker logs finplay-app-$IDLE --tail 300 2>&1 || true
           exit 1
           SCRIPT
 
