@@ -25,7 +25,10 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class AccountService {
 
-	private static final int RETURN_RATE_SCALE = 4;
+	// 시드머니가 원 단위 정수(long)라 1원 변화도 seedMoney(현재 1,000만원) 대비 소수 7자리에서 처음 나타난다
+	// (1 ÷ 10,000,000 = 0.0000001) — scale 4로는 소액 손익이 반올림으로 0%가 되는 문제가 있어 8로 올렸다
+	// (이슈 #390).
+	private static final int RETURN_RATE_SCALE = 8;
 
 	private final AccountRepository accountRepository;
 	private final HoldingValuationService holdingValuationService;

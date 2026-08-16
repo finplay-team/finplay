@@ -16,7 +16,8 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class PortfolioService {
 
-	private static final int RETURN_RATE_SCALE = 4;
+	// AccountService.RETURN_RATE_SCALE과 같은 이유로 4 → 8 (이슈 #390).
+	private static final int RETURN_RATE_SCALE = 8;
 
 	private final AccountService accountService;
 
