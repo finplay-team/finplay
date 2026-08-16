@@ -301,6 +301,76 @@ class ExitPlanRepositoryTest {
 		assertThat(cancelled).extracting(ExitPlan::getId).containsExactly(older.getId());
 	}
 
+	@Test
+	@DisplayName("findPendingExitPlansToFill은 현재가가 익절가 이상이면 익절 방향 후보로 반환한다 (PR #371 리뷰 권장)")
+	void findPendingExitPlansToFillReturnsCandidateWhenPriceAtOrAboveTakeProfitPrice() {
+		ExitPlan plan = exitPlanRepository.saveAndFlush(generalPlan(hash("a")));
+
+		List<ExitPlan> result = exitPlanRepository.findPendingExitPlansToFill(instrument.getId(), TAKE_PROFIT_PRICE);
+
+		assertThat(result).extracting(ExitPlan::getId).containsExactly(plan.getId());
+	}
+
+	@Test
+	@DisplayName("findPendingExitPlansToFill은 현재가가 손절가 이하이면 손절 방향 후보로 반환한다 (PR #371 리뷰 권장)")
+	void findPendingExitPlansToFillReturnsCandidateWhenPriceAtOrBelowStopLossPrice() {
+		ExitPlan plan = exitPlanRepository.saveAndFlush(generalPlan(hash("a")));
+
+		List<ExitPlan> result = exitPlanRepository.findPendingExitPlansToFill(instrument.getId(), STOP_LOSS_PRICE);
+
+		assertThat(result).extracting(ExitPlan::getId).containsExactly(plan.getId());
+	}
+
+	@Test
+	@DisplayName("findPendingExitPlansToFill은 손절가와 익절가 사이의 가격이면 후보에서 제외한다 (PR #371 리뷰 권장)")
+	void findPendingExitPlansToFillExcludesPlanWhenPriceBetweenStopLossAndTakeProfit() {
+		exitPlanRepository.saveAndFlush(generalPlan(hash("a")));
+
+		List<ExitPlan> result = exitPlanRepository
+			.findPendingExitPlansToFill(instrument.getId(), ENTRY_PRICE);
+
+		assertThat(result).isEmpty();
+	}
+
+	@Test
+	@DisplayName("findPendingExitPlansToFill은 PENDING이 아닌 plan을 제외한다 (PR #371 리뷰 권장)")
+	void findPendingExitPlansToFillExcludesNonPendingPlan() {
+		ExitPlan filled = exitPlanRepository.saveAndFlush(generalPlan(hash("a")));
+		closePlan(filled.getId(), ExitPlanStatus.FILLED_TAKE_PROFIT);
+		ExitPlan cancelled = exitPlanRepository.saveAndFlush(generalPlanFor(holding, hash("b")));
+		closePlan(cancelled.getId(), ExitPlanStatus.CANCELLED);
+
+		List<ExitPlan> result = exitPlanRepository.findPendingExitPlansToFill(instrument.getId(), TAKE_PROFIT_PRICE);
+
+		assertThat(result).isEmpty();
+	}
+
+	@Test
+	@DisplayName("findPendingExitPlansToFill은 다른 instrument의 plan을 제외한다 (PR #371 리뷰 권장)")
+	void findPendingExitPlansToFillExcludesPlanOfAnotherInstrument() {
+		Instrument otherInstrument = createInstrument();
+		Holding otherHolding = createHolding(account, otherInstrument);
+		exitPlanRepository.saveAndFlush(generalPlanFor(otherHolding, hash("a")));
+
+		List<ExitPlan> result = exitPlanRepository.findPendingExitPlansToFill(instrument.getId(), TAKE_PROFIT_PRICE);
+
+		assertThat(result).isEmpty();
+	}
+
+	@Test
+	@DisplayName("findPendingExitPlansToFill은 reservedAt 오름차순, 동시각이면 id 오름차순으로 여러 후보를 정렬한다 (PR #371 리뷰 권장)")
+	void findPendingExitPlansToFillSortedByReservedAtThenIdAscending() {
+		// holding당 PENDING 1건 불변식은 앱 계층 검증이라 리포지터리 테스트는 우회해 같은 holding에 여러 PENDING plan을 직접 저장한다.
+		ExitPlan older = exitPlanRepository.saveAndFlush(generalPlanAt(holding, hash("a"), NOW.minusMinutes(10)));
+		ExitPlan sameTimeFirst = exitPlanRepository.saveAndFlush(generalPlanAt(holding, hash("b"), NOW));
+		ExitPlan sameTimeSecond = exitPlanRepository.saveAndFlush(generalPlanAt(holding, hash("c"), NOW));
+
+		List<ExitPlan> result = exitPlanRepository.findPendingExitPlansToFill(instrument.getId(), TAKE_PROFIT_PRICE);
+
+		assertThat(result).extracting(ExitPlan::getId)
+			.containsExactly(older.getId(), sameTimeFirst.getId(), sameTimeSecond.getId());
+	}
+
 	private void closePlan(Long planId, ExitPlanStatus status) {
 		entityManager.flush();
 		entityManager.createNativeQuery(
@@ -317,6 +387,10 @@ class ExitPlanRepositoryTest {
 	}
 
 	private ExitPlan generalPlanFor(Holding target, String requestHash) {
+		return generalPlanAt(target, requestHash, NOW);
+	}
+
+	private ExitPlan generalPlanAt(Holding target, String requestHash, LocalDateTime reservedAt) {
 		return ExitPlan.createGeneral(
 			user,
 			target,
@@ -331,7 +405,7 @@ class ExitPlanRepositoryTest {
 			BASELINE_PRICE,
 			NOW,
 			requestHash,
-			NOW);
+			reservedAt);
 	}
 
 	private ExitPlan educationalPlan(User owner, Holding target, String instanceKey, String requestHash) {
