@@ -39,7 +39,7 @@
   `REAUTHENTICATION_FAILED`로 거부되는 시나리오를 검증한다(기존 `NicknameChangeIntegrationTest` 확장 또는 신규
   테스트 클래스 — 구현 시점에 기존 클래스 구조를 보고 판단).
 
-- [ ] **5. 문서 동기화**
+- [x] **5. 문서 동기화**
   `docs/api-routes.md`·`docs/api-contracts.md`의 OAuth 재인증 콜백 행(신규 `reauth-exchange` 엔드포인트, REAUTH
   콜백 응답이 200 JSON에서 302 리다이렉트로 바뀌는 것, "REAUTH는... 기존 200 JSON 계약을 그대로 둔다"는 이제
   틀린 서술 정정)을 갱신한다(CLAUDE.md 규칙 7). `docs/prd.md` §3 "구현 현황"은 AUTH-003·AUTH-005가 이미 "완료"로

@@ -23,8 +23,9 @@
 | POST | /api/auth/email-changes | auth | 인증 사용자의 새 이메일 변경 인증번호 발송 (202, 본문 없음). 재인증 증명·중복 이메일·발송 제한 검사 | 002 AUTH-005, Issue #55 |
 | POST | /api/auth/email-changes/confirm | auth | 새 이메일 인증번호 확인 후 users.email 원자적 변경, 성공 시 기존 Refresh Token 전체 폐기 | 002 AUTH-005, Issue #56 |
 | GET | /api/auth/oauth/{provider}/authorize | auth | 카카오·네이버 OAuth 인가 시작. `purpose` 생략/`login`은 공개 302, `purpose=reauth`는 인증 필요 200 JSON | 002 AUTH-003, Issue #9, Issue #53 |
-| GET | /api/auth/oauth/{provider}/callback | auth | OAuth 콜백. LOGIN purpose는 프론트 `oauth.login-redirect-uri`로 302 리다이렉트(쿼리 `code`에 1회용 교환 코드만 실림, 토큰 본문 없음). REAUTH purpose는 기존대로 200 `reauthToken` 반환 | 002 AUTH-003, Issue #10, Issue #53 |
-| POST | /api/auth/oauth/login-exchange | auth | 위 리다이렉트의 교환 코드를 로그인 토큰으로 교환(공개, 1회용·TTL 60초) | 002 AUTH-003, Issue #10 |
+| GET | /api/auth/oauth/{provider}/callback | auth | OAuth 콜백. LOGIN purpose는 프론트 `oauth.login-redirect-uri`로 302 리다이렉트(쿼리 `code`에 1회용 교환 코드만 실림, 토큰 본문 없음). REAUTH purpose도 이제 200 JSON이 아니라 프론트 `oauth.reauth-redirect-uri`로 302 리다이렉트하며 `reauthToken` 원문 없이 1회용 교환 코드만 싣는다(039). REAUTH는 `oauth_state` 쿠키 이중제출 없이도 통과한다(039 OAUTH-REAUTH-002) | 002 AUTH-003, Issue #10, Issue #53, 039 OAUTH-REAUTH-002/003 |
+| POST | /api/auth/oauth/login-exchange | auth | 위 LOGIN 리다이렉트의 교환 코드를 로그인 토큰으로 교환(공개, 1회용·TTL 60초) | 002 AUTH-003, Issue #10 |
+| POST | /api/auth/oauth/reauth-exchange | auth | 위 REAUTH 리다이렉트의 교환 코드를 `reauthToken`으로 교환(공개, 1회용·TTL 60초) | 039 OAUTH-REAUTH-004 |
 | GET | /api/instruments?market= | market | 인증 사용자의 종목 목록 조회 (market 선택: STOCK·CRYPTO, 생략 시 전체). 응답 `InstrumentResponse`에 `isTutorialSample` 필드 추가(031, 튜토리얼 전용 샘플 종목 6행 포함) | 003 MKT-001, Issue #14, 031 SANDBOX-001 |
 | GET | /api/instruments/{instrumentId} | market | 인증 사용자의 종목 단건 조회. 응답에 `isTutorialSample` 필드 추가(031) | 003 MKT-001, Issue #15, 031 SANDBOX-001 |
 | GET | /api/instruments/{instrumentId}/price | market | 인증 사용자의 종목 현재가 조회. 주식은 StockPriceProvider(재생/실시간 공급자 불문), 코인은 PriceStore(Redis)에서 유효한 최신 가격을 반환 — 연결 유지 + 수신 이력 있음이면 마지막 관측 시각이 얼마나 오래됐든 경과 시간과 무관하게 항상 `status: "AVAILABLE"`(체결 판정은 별도) | 003 MKT-002/MKT-003/MKT-004, 032, 036, Issue #16, Issue #355 |
@@ -143,6 +144,7 @@ Spring Security는 세션을 만들지 않는 Bearer 인증을 사용한다. 현
 | 조건부 공개 | GET | `/api/auth/oauth/*/authorize` — `purpose`가 없거나 공백이거나 대소문자 무관 `login`일 때만 공개. 그 밖의 값(`reauth` 포함)은 `anyRequest().authenticated()`로 떨어져 인증 필요 |
 | 공개 | GET | `/api/auth/oauth/*/callback` |
 | 공개 | POST | `/api/auth/oauth/login-exchange` |
+| 공개 | POST | `/api/auth/oauth/reauth-exchange` |
 | 공개 | GET | `/actuator/health` |
 | 공개 | GET | `/swagger-ui.html`, `/swagger-ui/**` |
 | 공개 | GET | `/v3/api-docs/**` |
