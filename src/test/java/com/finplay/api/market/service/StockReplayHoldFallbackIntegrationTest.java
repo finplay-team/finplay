@@ -281,6 +281,27 @@ class StockReplayHoldFallbackIntegrationTest {
 		assertThat(mondayOpenCandles.get(0).close()).isEqualByComparingTo("72000");
 	}
 
+	// PR #387 리뷰 권고 반영 — getRevealedAggregatedCandles의 CLOSED 폴백 분기(1d)는 이 PR 이전까지 실 MySQL로
+	// 직접 검증된 적이 없었다. END_OF_DAY(LocalTime.MAX.withNano(0)) 컷오프가 실제 MySQL TIME 컬럼 비교에서
+	// 정상 동작해 빈 배열이 아니라 폴백 거래일(금요일) 기준 실제 집계 결과가 나오는지 확인한다(1분봉 폴백 경로는
+	// weekendQuoteHoldsFridayCloseExactlyThenSwitchesToMondayReplayAtNineOhOne이 이미 검증했다).
+	@Test
+	void weekendAggregatedDailyCandleFallbackReturnsFridaySessionFromRealMySql() {
+		setClock(SATURDAY, LocalTime.of(14, 0));
+
+		List<StockCandleDto> dailyCandles = stockReplayService.getRevealedAggregatedCandles(
+			instrument.getId(), CandleInterval.ONE_DAY, null, null);
+
+		assertThat(dailyCandles).hasSize(1);
+		StockCandleDto fridayDaily = dailyCandles.get(0);
+		assertThat(fridayDaily.tradingDate()).isEqualTo(FRIDAY);
+		assertThat(fridayDaily.open()).isEqualByComparingTo("70000");
+		assertThat(fridayDaily.high()).isEqualByComparingTo("71200");
+		assertThat(fridayDaily.low()).isEqualByComparingTo("70000");
+		assertThat(fridayDaily.close()).isEqualByComparingTo("71200");
+		assertThat(fridayDaily.volume()).isEqualTo(500L);
+	}
+
 	@Test
 	void sseSkipsRepeatedPriceEventsWhileFrozenAndSnapshotCarriesTheFrozenValue() throws Exception {
 		setClock(SATURDAY, LocalTime.of(14, 0));
