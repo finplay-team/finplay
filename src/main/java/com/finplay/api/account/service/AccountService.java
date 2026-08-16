@@ -28,6 +28,12 @@ public class AccountService {
 	// 시드머니가 원 단위 정수(long)라 1원 변화도 seedMoney(현재 1,000만원) 대비 소수 7자리에서 처음 나타난다
 	// (1 ÷ 10,000,000 = 0.0000001) — scale 4로는 소액 손익이 반올림으로 0%가 되는 문제가 있어 8로 올렸다
 	// (이슈 #390).
+	//
+	// seedMoney(Account.INITIAL_SEED_MONEY = 10,000,000 = 2^7 × 5^7)가 소인수 2·5로만 이뤄져 있어,
+	// 어떤 원 단위 정수를 나누더라도 소수 7자리 안에서 나눗셈이 끝난다 — 그래서 scale 8의
+	// RoundingMode.HALF_UP은 지금은 실제로 반올림을 수행할 상황 자체가 없다(PR #393 리뷰 참고).
+	// seedMoney가 고정값이 아니게 되면(예: 튜토리얼 보상 등으로 가변화) 이 전제가 깨지므로,
+	// 그 시점에 실제 반올림이 일어나는 케이스로 테스트를 다시 검증해야 한다.
 	private static final int RETURN_RATE_SCALE = 8;
 
 	private final AccountRepository accountRepository;
