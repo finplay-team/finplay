@@ -67,4 +67,20 @@ public class ExitPlanCondition {
 		}
 		this.status = ExitPlanConditionStatus.CANCELLED;
 	}
+
+	// 가격 트리거로 실제 체결된 조건(익절 또는 손절 중 하나)을 TRIGGERED로 전이한다(021 plan.md "가격 트리거").
+	public void trigger() {
+		if (this.status != ExitPlanConditionStatus.PENDING) {
+			throw new IllegalStateException("PENDING 상태의 조건만 트리거할 수 있습니다.");
+		}
+		this.status = ExitPlanConditionStatus.TRIGGERED;
+	}
+
+	// 반대쪽 조건을 OCO 규칙으로 자동 취소한다 — 사용자 취소(cancel(), CANCELLED)와 상태를 구분해 원인을 남긴다.
+	public void cancelByOco() {
+		if (this.status != ExitPlanConditionStatus.PENDING) {
+			throw new IllegalStateException("PENDING 상태의 조건만 취소할 수 있습니다.");
+		}
+		this.status = ExitPlanConditionStatus.CANCELLED_BY_OCO;
+	}
 }
