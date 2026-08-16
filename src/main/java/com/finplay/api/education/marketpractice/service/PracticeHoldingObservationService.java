@@ -4,9 +4,12 @@ package com.finplay.api.education.marketpractice.service;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.education.marketpractice.domain.PracticeMarketObservation;
+import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
+import com.finplay.api.education.marketpractice.domain.PracticeAttemptStatus;
 import com.finplay.api.education.marketpractice.dto.request.PracticeHoldingObservationCreateRequest;
 import com.finplay.api.education.marketpractice.dto.response.PracticeHoldingObservationResponse;
 import com.finplay.api.education.marketpractice.repository.PracticeMarketObservationRepository;
+import com.finplay.api.education.marketpractice.repository.PracticeAttemptRepository;
 import com.finplay.api.education.priceruntime.service.PracticePriceObservationService;
 import com.finplay.api.education.service.PracticeIntentionService;
 import com.finplay.api.market.domain.Market;
@@ -17,6 +20,7 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,8 +35,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class PracticeHoldingObservationService {
 
 	private final HoldingService holdingService;
+	private final PracticeAttemptRepository practiceAttemptRepository;
+	private final PracticeAttemptEvidenceService practiceAttemptEvidenceService;
 	private final MarketPracticeChainResolutionService chainResolutionService;
 	private final PriceQueryService priceQueryService;
+	private final PracticeAttemptCanonicalPriceService canonicalPriceService;
 	private final PracticePriceObservationService practicePriceObservationService;
 	private final ReferencePriceCalculator referencePriceCalculator;
 	private final EvidenceJudgmentService evidenceJudgmentService;
@@ -44,6 +51,12 @@ public class PracticeHoldingObservationService {
 		Long userId, PracticeHoldingObservationCreateRequest request) {
 		Holding holding = holdingService.findHoldingForOwner(userId, request.holdingId())
 			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+		Optional<PracticeAttempt> attempt = holding.getInstrument().isTutorialSample()
+			? practiceAttemptRepository.findByUserIdAndMarket(userId, holding.getInstrument().getMarket())
+			: Optional.empty();
+		if (attempt.isPresent()) {
+			return createAttemptObservation(userId, holding, attempt.get());
+		}
 
 		String tutorialKey = resolveTutorialKey(holding.getInstrument().getMarket());
 		// resolve()는 tutorialKey 안에서 우선순위가 가장 높은 chain 1건만 고르므로, 사용자가 같은 market에서
@@ -62,14 +75,13 @@ public class PracticeHoldingObservationService {
 		// 마지막 실제 가격을 그대로 관찰 근거로 받아들인다(의도적 승계, 032 PRICE-STALE-005, 이슈 #355).
 		// 가격이 아예 없으면(연결 끊김·미수신) getPrice가 스스로 PRICE_UNAVAILABLE(409)을 던진다
 		// (이슈 #321, plan.md "holding 관찰 연결").
+		LocalDateTime observedAt = LocalDateTime.now(clock);
 		BigDecimal observedPrice = practicePriceObservationService
 			.findObservationPrice(userId, chain.buyTradeId(), holding.getInstrument().getId())
 			.orElseGet(() -> priceQueryService.getPrice(holding.getInstrument().getId()).price());
 
 		List<PracticeMarketObservation> existingObservations = practiceMarketObservationRepository
 			.findByUserIdAndHoldingIdOrderByObservedAtAsc(userId, holding.getId());
-		LocalDateTime observedAt = LocalDateTime.now(clock);
-
 		ObservationEvidenceJudgment judgment = evidenceJudgmentService.judgeObservationEvidence(
 			chain.buyTradeEntryPrice(),
 			referenceLines.referenceStopLossPrice(),
@@ -88,6 +100,44 @@ public class PracticeHoldingObservationService {
 			judgment.evidenceType(),
 			observedAt);
 
+		return PracticeHoldingObservationResponse.from(practiceMarketObservationRepository.save(observation));
+	}
+
+	private PracticeHoldingObservationResponse createAttemptObservation(
+		Long userId, Holding holding, PracticeAttempt attempt) {
+		if (attempt.getStatus() == PracticeAttemptStatus.COMPLETED) {
+			throw new BusinessException(ErrorCode.PRACTICE_ALREADY_COMPLETED);
+		}
+		ResolvedPracticeAttemptEvidenceDto evidence = practiceAttemptEvidenceService
+			.requireCurrentRun(attempt, userId, holding.getId());
+		if (evidence.sellTrade() != null) {
+			throw new BusinessException(ErrorCode.PRACTICE_STEP_LOCKED);
+		}
+		LocalDateTime observedAt = LocalDateTime.now(clock);
+		BigDecimal observedPrice = canonicalPriceService
+			.canonicalPriceForMutation(userId, holding.getInstrument(), observedAt);
+
+		List<PracticeMarketObservation> existingObservations = practiceMarketObservationRepository
+			.findByUserIdAndHoldingIdOrderByObservedAtAsc(userId, holding.getId())
+			.stream()
+			.filter(observation -> !observation.getObservedAt().isBefore(evidence.riskSnapshot().getCreatedAt()))
+			.toList();
+		ObservationEvidenceJudgment judgment = evidenceJudgmentService.judgeObservationEvidence(
+			evidence.riskSnapshot().getEntryPrice(),
+			evidence.riskSnapshot().getStopLossPrice(),
+			evidence.riskSnapshot().getTakeProfitPrice(),
+			observedPrice,
+			existingObservations,
+			observedAt);
+		PracticeMarketObservation observation = PracticeMarketObservation.create(
+			userId,
+			holding,
+			holding.getInstrument().getId(),
+			observedPrice,
+			judgment.closerToBoundary(),
+			judgment.closerBoundary(),
+			judgment.evidenceType(),
+			observedAt);
 		return PracticeHoldingObservationResponse.from(practiceMarketObservationRepository.save(observation));
 	}
 

@@ -42,6 +42,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -63,6 +64,8 @@ class OrderExecutionServiceTest {
 	private final PortfolioSellService portfolioSellService = mock(PortfolioSellService.class);
 	private final OrderRepository orderRepository = mock(OrderRepository.class);
 	private final TradeRepository tradeRepository = mock(TradeRepository.class);
+	private final PracticeOrderAttributionPort practiceOrderAttributionPort = mock(
+		PracticeOrderAttributionPort.class);
 	private final Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
 	private final org.springframework.context.ApplicationEventPublisher eventPublisher = mock(
 		org.springframework.context.ApplicationEventPublisher.class);
@@ -80,6 +83,7 @@ class OrderExecutionServiceTest {
 			portfolioSellService,
 			orderRepository,
 			tradeRepository,
+			practiceOrderAttributionPort,
 			clock,
 			eventPublisher);
 	}
@@ -172,6 +176,46 @@ class OrderExecutionServiceTest {
 
 		// cashRequired = amount(30000) + fee(4) = 30004
 		assertThat(account.getSandboxCashAdjustment()).isEqualTo(-30004L);
+	}
+
+	@Test
+	void createTutorialSampleOrderStoresCurrentAttemptAttribution() {
+		Instrument instrument = cryptoInstrument(5_000L);
+		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
+		Account account = account(com.finplay.api.account.domain.Market.CRYPTO);
+		User user = testUser();
+		stubHappyPath(instrument, account, user, new BigDecimal("10000"));
+		when(practiceOrderAttributionPort.lockForOrder(USER_ID, instrument))
+			.thenReturn(Optional.of(new PracticeOrderAttributionDto(50L, 3L, new BigDecimal("10000"))));
+		OrderCreateRequest request = buyRequest(Market.CRYPTO, instrument.getId(), "1");
+
+		orderExecutionService.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, request);
+
+		ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
+		verify(orderRepository).save(orderCaptor.capture());
+		assertThat(orderCaptor.getValue().getPracticeAttemptId()).isEqualTo(50L);
+		assertThat(orderCaptor.getValue().getPracticeAttemptRunNumber()).isEqualTo(3L);
+		ArgumentCaptor<Trade> tradeCaptor = ArgumentCaptor.forClass(Trade.class);
+		verify(tradeRepository).save(tradeCaptor.capture());
+		assertThat(tradeCaptor.getValue().getPrice()).isEqualByComparingTo("10000");
+		verifyNoInteractions(priceQueryService);
+	}
+
+	@Test
+	void createOrdinaryOrderKeepsAttemptAttributionNull() {
+		Instrument instrument = cryptoInstrument(5_000L);
+		Account account = account(com.finplay.api.account.domain.Market.CRYPTO);
+		User user = testUser();
+		stubHappyPath(instrument, account, user, new BigDecimal("10000"));
+		when(practiceOrderAttributionPort.lockForOrder(USER_ID, instrument)).thenReturn(Optional.empty());
+		OrderCreateRequest request = buyRequest(Market.CRYPTO, instrument.getId(), "1");
+
+		orderExecutionService.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, request);
+
+		ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
+		verify(orderRepository).save(orderCaptor.capture());
+		assertThat(orderCaptor.getValue().getPracticeAttemptId()).isNull();
+		assertThat(orderCaptor.getValue().getPracticeAttemptRunNumber()).isNull();
 	}
 
 	@Test

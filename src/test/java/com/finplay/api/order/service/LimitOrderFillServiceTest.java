@@ -2,6 +2,7 @@
 package com.finplay.api.order.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
@@ -16,6 +17,8 @@ import com.finplay.api.account.domain.Market;
 import com.finplay.api.account.event.RealizedPnlUpdatedEvent;
 import com.finplay.api.account.service.AccountService;
 import com.finplay.api.auth.domain.User;
+import com.finplay.api.common.BusinessException;
+import com.finplay.api.common.ErrorCode;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderSide;
@@ -50,12 +53,14 @@ class LimitOrderFillServiceTest {
 	private final AccountService accountService = mock(AccountService.class);
 	private final PortfolioBuyService portfolioBuyService = mock(PortfolioBuyService.class);
 	private final PortfolioSellService portfolioSellService = mock(PortfolioSellService.class);
+	private final PracticeOrderAttributionPort practiceOrderAttributionPort = mock(
+		PracticeOrderAttributionPort.class);
 	private final Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
 	private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
 
 	private final LimitOrderFillService service = new LimitOrderFillService(
-		orderRepository, tradeRepository, accountService, portfolioBuyService, portfolioSellService, clock,
-		eventPublisher);
+		orderRepository, tradeRepository, accountService, portfolioBuyService, portfolioSellService,
+		practiceOrderAttributionPort, clock, eventPublisher);
 
 	@Test
 	void fillIfPendingFillsBuyOrderConfirmsReservedCashAndAppliesBuyTrade() {
@@ -85,6 +90,67 @@ class LimitOrderFillServiceTest {
 			account, instrument, savedTrade, new BigDecimal("0.1"), new BigDecimal("1000000"), 50L, NOW);
 		verifyNoInteractions(portfolioSellService);
 		verifyNoInteractions(eventPublisher);
+	}
+
+	@Test
+	void fillIfPendingLocksAttemptBeforeAttributedOrder() {
+		Instrument instrument = cryptoInstrument();
+		Account account = account();
+		account.reserveCash(100_050L);
+		Order order = attributedLimitPendingBuyOrder(account, instrument);
+		PracticeOrderFillAttributionDto attribution = new PracticeOrderFillAttributionDto(
+			20L, 1L, 30L, instrument.getId());
+		when(orderRepository.findPracticeFillAttribution(order.getId())).thenReturn(Optional.of(attribution));
+		when(practiceOrderAttributionPort.lockForFill(attribution, NOW))
+			.thenReturn(new PracticeOrderFillContextDto(true, new BigDecimal("900000")));
+		when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+		when(accountService.getAccountByIdForUpdate(account.getId())).thenReturn(account);
+
+		service.fillIfPending(order.getId());
+
+		InOrder lockOrder = org.mockito.Mockito.inOrder(orderRepository, practiceOrderAttributionPort);
+		lockOrder.verify(orderRepository).findPracticeFillAttribution(order.getId());
+		lockOrder.verify(practiceOrderAttributionPort).lockForFill(attribution, NOW);
+		lockOrder.verify(orderRepository).findByIdForUpdate(order.getId());
+		ArgumentCaptor<Trade> tradeCaptor = ArgumentCaptor.forClass(Trade.class);
+		verify(tradeRepository).save(tradeCaptor.capture());
+		assertThat(tradeCaptor.getValue().getPrice()).isEqualByComparingTo("900000");
+		assertThat(account.getReservedCash()).isZero();
+		assertThat(account.getCashBalance()).isEqualTo(10_000_000L - 90_045L);
+	}
+
+	@Test
+	void fillIfPendingSkipsAttemptLockForOrdinaryOrder() {
+		Instrument instrument = cryptoInstrument();
+		Account account = account();
+		account.reserveCash(100_050L);
+		Order order = limitPendingOrder(account, instrument, OrderSide.BUY, "0.1", "1000000");
+		when(orderRepository.findPracticeFillAttribution(order.getId())).thenReturn(Optional.empty());
+		when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+		when(accountService.getAccountByIdForUpdate(account.getId())).thenReturn(account);
+
+		service.fillIfPending(order.getId());
+
+		verify(practiceOrderAttributionPort, never()).lockForFill(any(), any());
+	}
+
+	@Test
+	void fillIfPendingRejectsAttributedOrderFromStaleRunAfterOrderLock() {
+		Instrument instrument = cryptoInstrument();
+		Account account = account();
+		Order order = attributedLimitPendingBuyOrder(account, instrument);
+		PracticeOrderFillAttributionDto attribution = new PracticeOrderFillAttributionDto(
+			20L, 1L, 30L, instrument.getId());
+		when(orderRepository.findPracticeFillAttribution(order.getId())).thenReturn(Optional.of(attribution));
+		when(practiceOrderAttributionPort.lockForFill(attribution, NOW))
+			.thenReturn(new PracticeOrderFillContextDto(false, null));
+		when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+
+		assertThatThrownBy(() -> service.fillIfPending(order.getId()))
+			.isInstanceOfSatisfying(BusinessException.class,
+				exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.PRACTICE_STEP_LOCKED));
+
+		verifyNoInteractions(accountService, tradeRepository, portfolioBuyService, portfolioSellService);
 	}
 
 	@Test
@@ -265,6 +331,14 @@ class LimitOrderFillServiceTest {
 			account.getUser(), account, instrument, side, new BigDecimal(quantity), new BigDecimal(limitPrice),
 			"idem-fill-" + side, "a".repeat(64), NOW);
 		ReflectionTestUtils.setField(order, "id", 100L);
+		return order;
+	}
+
+	private static Order attributedLimitPendingBuyOrder(Account account, Instrument instrument) {
+		Order order = Order.createPracticeLimitPendingBuyForAttempt(
+			account.getUser(), account, instrument, new BigDecimal("0.1"), new BigDecimal("1000000"),
+			40L, 20L, 1L, "idem-attributed-fill", "c".repeat(64), NOW);
+		ReflectionTestUtils.setField(order, "id", 101L);
 		return order;
 	}
 

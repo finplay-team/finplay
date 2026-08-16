@@ -8,11 +8,14 @@ import com.finplay.api.common.ErrorCode;
 import com.finplay.api.education.domain.PracticeProgress;
 import com.finplay.api.education.domain.PracticeProgressStatus;
 import com.finplay.api.education.marketpractice.domain.PracticeCompletion;
+import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
+import com.finplay.api.education.marketpractice.domain.PracticeAttemptStatus;
 import com.finplay.api.education.marketpractice.domain.PracticeMarketObservation;
 import com.finplay.api.education.marketpractice.domain.PracticeMarketReflection;
 import com.finplay.api.education.marketpractice.dto.request.PracticeHoldingReflectionCreateRequest;
 import com.finplay.api.education.marketpractice.dto.response.PracticeHoldingReflectionResponse;
 import com.finplay.api.education.marketpractice.repository.PracticeCompletionRepository;
+import com.finplay.api.education.marketpractice.repository.PracticeAttemptRepository;
 import com.finplay.api.education.marketpractice.repository.PracticeMarketObservationRepository;
 import com.finplay.api.education.marketpractice.repository.PracticeMarketReflectionRepository;
 import com.finplay.api.education.repository.PracticeProgressRepository;
@@ -45,6 +48,8 @@ public class PracticeHoldingReflectionService {
 	private static final long TUTORIAL_COMPLETION_REWARD_AMOUNT = 5_000_000L;
 
 	private final HoldingService holdingService;
+	private final PracticeAttemptRepository practiceAttemptRepository;
+	private final PracticeAttemptEvidenceService practiceAttemptEvidenceService;
 	private final MarketPracticeChainResolutionService chainResolutionService;
 	private final PracticeProgressRepository practiceProgressRepository;
 	private final PracticeMarketObservationRepository practiceMarketObservationRepository;
@@ -58,6 +63,14 @@ public class PracticeHoldingReflectionService {
 		Long userId, PracticeHoldingReflectionCreateRequest request) {
 		Holding holding = holdingService.findHoldingForOwner(userId, request.holdingId())
 			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+		if (holding.getInstrument().isTutorialSample()) {
+			PracticeAttempt attempt = practiceAttemptRepository
+				.findByUserIdAndMarketForUpdate(userId, holding.getInstrument().getMarket())
+				.orElse(null);
+			if (attempt != null) {
+				return createAttemptReflection(userId, holding, request.answer(), attempt);
+			}
+		}
 
 		String tutorialKey = resolveTutorialKey(holding.getInstrument().getMarket());
 
@@ -104,6 +117,46 @@ public class PracticeHoldingReflectionService {
 		return PracticeHoldingReflectionResponse.from(reflection);
 	}
 
+	private PracticeHoldingReflectionResponse createAttemptReflection(
+		Long userId, Holding holding, String answer, PracticeAttempt attempt) {
+		if (attempt.getStatus() == PracticeAttemptStatus.COMPLETED) {
+			throw new BusinessException(ErrorCode.PRACTICE_ALREADY_COMPLETED);
+		}
+		ResolvedPracticeAttemptEvidenceDto evidence = practiceAttemptEvidenceService
+			.requireCurrentRun(attempt, userId, holding.getId());
+		LocalDateTime now = LocalDateTime.now(clock);
+		verifyAttemptSaleEvidence(evidence, now);
+
+		boolean hasEvidence = practiceMarketObservationRepository
+			.findByUserIdAndHoldingIdOrderByObservedAtAsc(userId, holding.getId())
+			.stream()
+			.filter(observation -> !observation.getObservedAt().isBefore(evidence.riskSnapshot().getCreatedAt()))
+			.filter(observation -> evidence.sellTrade() == null
+				|| !observation.getObservedAt().isAfter(evidence.sellTrade().getExecutedAt()))
+			.anyMatch(observation -> observation.getEvidenceType() != null);
+		if (!hasEvidence) {
+			throw new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING);
+		}
+
+		String tutorialKey = resolveTutorialKey(attempt.getMarket());
+		practiceProgressRepository.insertIfAbsent(userId, tutorialKey, attempt.getCreatedAt());
+		PracticeProgress progress = practiceProgressRepository
+			.findByUserIdAndTutorialKeyForUpdate(userId, tutorialKey)
+			.orElseThrow(() -> new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING));
+		if (progress.getStatus() == PracticeProgressStatus.COMPLETED
+			|| practiceCompletionRepository.findByUserIdAndTutorialKey(userId, tutorialKey).isPresent()) {
+			throw new BusinessException(ErrorCode.PRACTICE_ALREADY_COMPLETED);
+		}
+
+		PracticeMarketReflection reflection = practiceMarketReflectionRepository.save(
+			PracticeMarketReflection.create(userId, holding, tutorialKey, PROMPT_VERSION, answer, now));
+		practiceCompletionRepository.save(PracticeCompletion.create(userId, tutorialKey, reflection, now));
+		progress.complete(now);
+		attempt.complete(now);
+		payTutorialCompletionReward(userId, attempt.getMarket());
+		return PracticeHoldingReflectionResponse.from(reflection);
+	}
+
 	// 이슈 #343: 시장별 최초 완료에만 500만원을 그 시장 계좌에 지급한다. OrderExecutionService
 	// .getAccountForUpdateFor와 동일 패턴으로 market 도메인의 Market을 account 도메인의 Market으로 변환한다.
 	private void payTutorialCompletionReward(Long userId, Market market) {
@@ -135,6 +188,20 @@ public class PracticeHoldingReflectionService {
 			throw new BusinessException(ErrorCode.PRACTICE_SANDBOX_TIME_EXPIRED);
 		}
 		if (!isWithinSaleDeadline(resolvedChain.sellTradeExecutedAt(), saleDeadlineAt)) {
+			throw new BusinessException(ErrorCode.PRACTICE_SANDBOX_TIME_EXPIRED);
+		}
+	}
+
+	private void verifyAttemptSaleEvidence(ResolvedPracticeAttemptEvidenceDto evidence, LocalDateTime now) {
+		LocalDateTime saleDeadlineAt = evidence.riskSnapshot().getBuyTrade().getExecutedAt()
+			.plusMinutes(SALE_DEADLINE_MINUTES);
+		if (evidence.sellTrade() == null) {
+			if (isWithinSaleDeadline(now, saleDeadlineAt)) {
+				throw new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING);
+			}
+			throw new BusinessException(ErrorCode.PRACTICE_SANDBOX_TIME_EXPIRED);
+		}
+		if (!isWithinSaleDeadline(evidence.sellTrade().getExecutedAt(), saleDeadlineAt)) {
 			throw new BusinessException(ErrorCode.PRACTICE_SANDBOX_TIME_EXPIRED);
 		}
 	}

@@ -14,7 +14,9 @@ import com.finplay.api.education.marketpractice.domain.PracticeMarketReflection;
 import com.finplay.api.education.marketpractice.dto.response.InvestmentPracticeResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeStepResponse;
 import com.finplay.api.education.marketpractice.repository.PracticeCompletionRepository;
+import com.finplay.api.education.marketpractice.repository.PracticeAttemptRepository;
 import com.finplay.api.education.marketpractice.repository.PracticeMarketObservationRepository;
+import com.finplay.api.education.marketpractice.repository.PracticeRiskSnapshotRepository;
 import com.finplay.api.education.service.PracticeIntentionService;
 import com.finplay.api.favorite.dto.response.FavoriteListResponse;
 import com.finplay.api.favorite.dto.response.FavoriteResponse;
@@ -37,6 +39,11 @@ class InvestmentPracticeQueryServiceTest {
 	private static final LocalDateTime NOW = LocalDateTime.of(2026, 8, 10, 10, 0);
 
 	private final FavoriteService favoriteService = mock(FavoriteService.class);
+	private final PracticeAttemptRepository practiceAttemptRepository = mock(PracticeAttemptRepository.class);
+	private final PracticeRiskSnapshotRepository practiceRiskSnapshotRepository = mock(
+		PracticeRiskSnapshotRepository.class);
+	private final PracticeAttemptEvidenceService practiceAttemptEvidenceService = mock(
+		PracticeAttemptEvidenceService.class);
 	private final MarketPracticeChainResolutionService chainResolutionService = mock(
 		MarketPracticeChainResolutionService.class);
 	private final ReferencePriceCalculator referencePriceCalculator = mock(ReferencePriceCalculator.class);
@@ -47,7 +54,8 @@ class InvestmentPracticeQueryServiceTest {
 	private final Clock clock = Clock.fixed(NOW.atZone(ZoneId.systemDefault()).toInstant(), ZoneId.systemDefault());
 
 	private final InvestmentPracticeQueryService service = new InvestmentPracticeQueryService(
-		favoriteService, chainResolutionService, referencePriceCalculator, practiceMarketObservationRepository,
+		favoriteService, practiceAttemptRepository, practiceRiskSnapshotRepository, practiceAttemptEvidenceService,
+		chainResolutionService, referencePriceCalculator, practiceMarketObservationRepository,
 		practiceCompletionRepository, clock);
 
 	@Test

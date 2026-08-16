@@ -3,6 +3,7 @@ package com.finplay.api.order.repository;
 
 import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderStatus;
+import com.finplay.api.order.service.PracticeOrderFillAttributionDto;
 import jakarta.persistence.LockModeType;
 import java.math.BigDecimal;
 import java.util.List;
@@ -26,6 +27,31 @@ public interface OrderRepository extends JpaRepository<Order, Long>, OrderReposi
 	Optional<Order> findByIdForUpdate(@Param("id")
 	Long id);
 
+	// attempt 귀속 지정가 체결의 잠금 순서를 attempt → order로 고정하기 위한 비잠금 preflight 조회다.
+	// 조회 직후 attempt를 먼저 잠그며, 그 사이 restart가 주문을 취소하면 후속 FOR UPDATE 상태 재확인에서 no-op 된다.
+	@Query("""
+		select new com.finplay.api.order.service.PracticeOrderFillAttributionDto(
+			o.practiceAttemptId, o.practiceAttemptRunNumber, o.user.id, o.instrument.id)
+		from Order o
+		where o.id = :id and o.practiceAttemptId is not null
+		""")
+	Optional<PracticeOrderFillAttributionDto> findPracticeFillAttribution(@Param("id")
+	Long id);
+
+	// 재시작은 attempt를 먼저 잠근 호출부에서 현재 실행 세대 주문 전체를 ID 순서로 잠근다.
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("""
+		select o from Order o
+		where o.practiceAttemptId = :attemptId
+		  and o.practiceAttemptRunNumber = :runNumber
+		order by o.id asc
+		""")
+	List<Order> findPracticeRunOrdersForUpdate(
+		@Param("attemptId")
+		Long attemptId,
+		@Param("runNumber")
+		long runNumber);
+
 	// 가격 갱신 시 체결 후보 지정가 주문 조회(015-limit-order LMT-002) — idx_orders_limit_fill 인덱스 활용
 	// practicePriceSessionId is null 조건으로 교육 세션 주문을 제외한다(030 역방향 오염 차단 — 실제 빗썸 시세 tick이
 	// 교육 주문을 체결하지 않는다). 교육 주문은 전용 이벤트(PracticeOrderSettlementService)로만 체결한다.
@@ -34,6 +60,7 @@ public interface OrderRepository extends JpaRepository<Order, Long>, OrderReposi
 		where o.instrument.id = :instrumentId and o.status = com.finplay.api.order.domain.OrderStatus.PENDING
 		  and o.orderType = com.finplay.api.order.domain.OrderType.LIMIT
 		  and o.practicePriceSessionId is null
+		  and o.practiceAttemptId is null
 		  and ((o.side = com.finplay.api.order.domain.OrderSide.BUY and o.limitPrice >= :price)
 		    or (o.side = com.finplay.api.order.domain.OrderSide.SELL and o.limitPrice <= :price))
 		order by o.requestedAt asc, o.id asc
@@ -56,4 +83,27 @@ public interface OrderRepository extends JpaRepository<Order, Long>, OrderReposi
 		""")
 	List<Order> findPendingBySessionIdForUpdate(@Param("sessionId")
 	Long sessionId);
+
+	@Query("""
+		select o.id from Order o
+		where o.practicePriceSessionId = :sessionId
+		  and o.status = com.finplay.api.order.domain.OrderStatus.PENDING
+		order by o.id asc
+		""")
+	List<Long> findPendingIdsBySessionId(@Param("sessionId")
+	Long sessionId);
+
+	@Query("""
+		select o.id from Order o
+		where o.practiceAttemptId = :attemptId
+		  and o.practiceAttemptRunNumber = :runNumber
+		  and o.status = com.finplay.api.order.domain.OrderStatus.PENDING
+		  and o.orderType = com.finplay.api.order.domain.OrderType.LIMIT
+		order by o.id asc
+		""")
+	List<Long> findPendingPracticeRunOrderIds(
+		@Param("attemptId")
+		Long attemptId,
+		@Param("runNumber")
+		long runNumber);
 }
