@@ -76,6 +76,11 @@ class MarketDataPipelineIntegrationTest {
 	// 시나리오 D(전체 응답 오류 → FAILED·미개장). 다른 시나리오보다 훨씬 이른 날짜를 써서 StockReplaySessionScheduler의
 	// 최대 30영업일 폴백 탐색이 다른 시나리오가 저장해 둔 성공 이력까지 거슬러 올라가 잘못 READY로 판정하지 않게 한다
 	// (탐색은 항상 과거 방향으로만 진행되므로, 이 시나리오를 가장 이른 날짜에 두면 다른 시나리오의 데이터에 닿을 수 없다).
+	// 이 날짜 선택은 spec 038(QUOTE-HOLD-006) 도입 이후 아래 entireResponseErrorLeavesSessionFailedAndStockMarketClosed의
+	// PRICE_UNAVAILABLE 단정도 함께 지켜준다 — StockReplayService.findFallbackSession도 날짜 상한 없이 과거 전체를
+	// 훑으므로, SD_D가 이 저장소 전체(공유 MySQL 컨테이너)에서 가장 이른 서비스 날짜가 아니면 다른 스펙이 커밋해 둔
+	// READY 세션이 폴백 후보로 걸려 PRICE_UNAVAILABLE 대신 AVAILABLE이 나올 수 있다. 더 이른 날짜를 쓰는 통합 테스트를
+	// 새로 추가하면 이 시나리오도 함께 재확인한다.
 	private static final LocalDate TD_D = LocalDate.of(2026, 2, 2); // 월
 	private static final LocalDate SD_D = LocalDate.of(2026, 2, 3); // 화
 

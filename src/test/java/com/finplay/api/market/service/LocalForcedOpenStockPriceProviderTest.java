@@ -109,6 +109,53 @@ class LocalForcedOpenStockPriceProviderTest {
 		assertThat(result.replaySession()).isSameAs(session);
 	}
 
+	// spec 038(QUOTE-HOLD-005) — 장 마감 후 폴백 시세는 sessionReady=false·replaySession=null을 유지해 체결 경로에
+	// 구조적으로 도달하지 못한다. 강제 OPEN 데코레이터가 이 불변식을 깨면 안 된다: forceOpenWhenReady(73~80행)는
+	// !quote.sessionReady()면 그대로 반환하므로, 폴백 시세(오늘 세션이 준비되지 않았다는 사실 자체는 참이다)는
+	// forceMarketOpen=true여도 절대 OPEN으로 바뀌지 않아야 한다. StockReplayService.buildFallbackPrice가 실제로
+	// 만드는 DTO 형태(sessionReady=false, marketStatus=CLOSED, sourceTradingDate=폴백 거래일, replaySession=null)를
+	// 그대로 재현해 검증한다.
+	@Test
+	void getCurrentPriceDoesNotForceFallbackQuoteOpenBecauseSessionIsNotReady() {
+		LocalDate fallbackTradingDate = SERVICE_DATE.minusDays(5);
+		StockReplayPriceDto fallbackQuote = new StockReplayPriceDto(
+			false, StockMarketStatus.CLOSED, fallbackTradingDate, new BigDecimal("71000"),
+			AFTER_HOURS.minusDays(5), null);
+		when(delegate.getCurrentPrice(INSTRUMENT_ID)).thenReturn(fallbackQuote);
+
+		StockReplayPriceDto result = provider(true).getCurrentPrice(INSTRUMENT_ID);
+
+		assertThat(result).isSameAs(fallbackQuote);
+		assertThat(result.marketStatus()).isEqualTo(StockMarketStatus.CLOSED);
+		assertThat(result.sessionReady()).isFalse();
+		assertThat(result.replaySession()).isNull();
+	}
+
+	// 배치 경로(getCurrentPrices)에서도 같은 불변식이 지켜지는지 확인한다 — HoldingValuationService 등 다건 호출
+	// 소비자가 주말·휴장 폴백이 섞인 목록을 받아도 폴백분만은 절대 OPEN으로 바뀌지 않아야 한다.
+	@Test
+	void getCurrentPricesDoesNotForceFallbackQuotesOpenWhileStillForcingReadyClosedQuotes() {
+		StockReplaySession readySessionInList = readySession();
+		LocalDate fallbackTradingDate = SERVICE_DATE.minusDays(5);
+		StockReplayPriceDto readyClosed = new StockReplayPriceDto(
+			true, StockMarketStatus.CLOSED, readySessionInList.getSourceTradingDate(), new BigDecimal("71000"),
+			AFTER_HOURS.minusHours(7), readySessionInList);
+		StockReplayPriceDto fallbackQuote = new StockReplayPriceDto(
+			false, StockMarketStatus.CLOSED, fallbackTradingDate, new BigDecimal("65000"),
+			AFTER_HOURS.minusDays(5), null);
+		List<Long> instrumentIds = List.of(1L, 2L);
+		when(delegate.getCurrentPrices(instrumentIds)).thenReturn(List.of(readyClosed, fallbackQuote));
+
+		List<StockReplayPriceDto> results = provider(true).getCurrentPrices(instrumentIds);
+
+		assertThat(results).hasSize(2);
+		assertThat(results.get(0).marketStatus()).isEqualTo(StockMarketStatus.OPEN);
+		assertThat(results.get(1)).isSameAs(fallbackQuote);
+		assertThat(results.get(1).marketStatus()).isEqualTo(StockMarketStatus.CLOSED);
+		assertThat(results.get(1).sessionReady()).isFalse();
+		assertThat(results.get(1).replaySession()).isNull();
+	}
+
 	@Test
 	void getCurrentPriceKeepsClosedQuoteAndSameSessionWhenForceFlagIsOff() {
 		StockReplaySession session = readySession();
