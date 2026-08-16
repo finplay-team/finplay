@@ -135,6 +135,9 @@ oauth:
   state-secret: ${OAUTH_STATE_SECRET}
   # 로그인 callback 성공 시 1회용 교환 코드를 실어 리다이렉트할 프론트 주소. 실제 토큰은 여기 노출되지 않는다.
   login-redirect-uri: ${OAUTH_LOGIN_REDIRECT_URI}
+  # 재인증 callback 성공 시 1회용 교환 코드를 실어 리다이렉트할 프론트(재인증 팝업) 주소. 실제 reauthToken은
+  # 여기 노출되지 않는다 — 로그인 콜백 라우트와는 별도 프론트 경로일 수 있어 값을 공유하지 않는다.
+  reauth-redirect-uri: ${OAUTH_REAUTH_REDIRECT_URI}
   kakao:
     client-id: ${KAKAO_CLIENT_ID}
     client-secret: ${KAKAO_CLIENT_SECRET}

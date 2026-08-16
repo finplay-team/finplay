@@ -33,7 +33,10 @@ public class SecurityConfig {
 		"/api/auth/password-resets",
 		"/api/auth/password-resets/confirm",
 		// OAuth 로그인 callback이 302로 넘긴 1회용 교환 코드를 토큰으로 바꾼다 — 아직 로그인 전이라 인증이 없다.
-		"/api/auth/oauth/login-exchange"
+		"/api/auth/oauth/login-exchange",
+		// OAuth 재인증 callback이 302로 넘긴 1회용 교환 코드를 reauthToken으로 바꾼다 — spec 039
+		// OAUTH-REAUTH-004가 공개 엔드포인트로 정한 것이며, 코드 자체가 1회용·TTL 60초라 인증 없이도 안전하다.
+		"/api/auth/oauth/reauth-exchange"
 	};
 
 	private static final String[] PUBLIC_GET_PATHS = {
