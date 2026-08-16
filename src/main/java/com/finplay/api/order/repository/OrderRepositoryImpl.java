@@ -23,7 +23,11 @@ public class OrderRepositoryImpl implements OrderRepositoryCustom {
 		Long accountId, LocalDateTime cursorRequestedAt, Long cursorId, int fetchSize) {
 		QOrder order = QOrder.order;
 
-		BooleanBuilder condition = new BooleanBuilder(order.account.id.eq(accountId));
+		// 033-exclude-tutorial-sandbox-data(SANDBOX-EXCL-001과 동일 원칙, 이슈: 포트폴리오 주문 내역 누출) —
+		// 이 조회는 GET /api/orders(사용자 노출) 전용이다. 튜토리얼 샌드박스 종목 주문은 실거래 화면에
+		// 섞이면 안 된다.
+		BooleanBuilder condition = new BooleanBuilder(order.account.id.eq(accountId))
+			.and(order.instrument.tutorialSample.eq(false));
 		if (cursorRequestedAt != null && cursorId != null) {
 			condition.and(
 				order.requestedAt.lt(cursorRequestedAt)
@@ -44,8 +48,10 @@ public class OrderRepositoryImpl implements OrderRepositoryCustom {
 		Long accountId, OrderStatus status, LocalDateTime cursorRequestedAt, Long cursorId, int fetchSize) {
 		QOrder order = QOrder.order;
 
+		// GET /api/orders/pending(사용자 노출) 전용 — 같은 이유로 샌드박스 종목 주문을 제외한다.
 		BooleanBuilder condition = new BooleanBuilder(order.account.id.eq(accountId))
-			.and(order.status.eq(status));
+			.and(order.status.eq(status))
+			.and(order.instrument.tutorialSample.eq(false));
 		if (cursorRequestedAt != null && cursorId != null) {
 			condition.and(
 				order.requestedAt.lt(cursorRequestedAt)

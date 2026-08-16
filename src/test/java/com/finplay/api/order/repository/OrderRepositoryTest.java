@@ -146,6 +146,28 @@ class OrderRepositoryTest {
 		assertThat(result).extracting(Order::getId).containsExactly(ownerOrder.getId());
 	}
 
+	// 포트폴리오 화면(체결·주문 내역)에 튜토리얼 샌드박스 종목 주문이 섞여 나오던 누출 수정 —
+	// 033-exclude-tutorial-sandbox-data(SANDBOX-EXCL-001)와 동일 원칙을 GET /api/orders,
+	// GET /api/orders/pending에도 적용한다.
+	@Test
+	@DisplayName("샌드박스 종목 주문은 제외하고 실제 종목 주문만 커서 조회한다")
+	void findByAccountIdWithCursorExcludesSandboxInstrumentOrders() {
+		Instrument sandboxInstrument = instrumentRepository.findByMarketAndSymbol(Market.STOCK, "SANDBOX_STK_1")
+			.orElseThrow();
+		assertThat(sandboxInstrument.isTutorialSample()).isTrue();
+
+		Order realOrder = createOrder(owner, ownerAccount, NOW);
+		idempotencySequence++;
+		orderRepository.saveAndFlush(Order.create(
+			owner, ownerAccount, sandboxInstrument, OrderSide.BUY, OrderType.MARKET,
+			BigDecimal.valueOf(10), "cursor-sandbox-idem-" + idempotencySequence,
+			String.valueOf((char)('a' + idempotencySequence)).repeat(64), NOW));
+
+		List<Order> result = orderRepository.findByAccountIdWithCursor(ownerAccount.getId(), null, null, 10);
+
+		assertThat(result).extracting(Order::getId).containsExactly(realOrder.getId());
+	}
+
 	@Test
 	@DisplayName("requestedAt 내림차순, 동시각이면 id 내림차순으로 정렬해 커서 조회한다")
 	void findByAccountIdWithCursorSortedByRequestedAtThenIdDescending() {
@@ -343,6 +365,27 @@ class OrderRepositoryTest {
 			ownerAccount.getId(), com.finplay.api.order.domain.OrderStatus.PENDING, null, null, 10);
 
 		assertThat(result).extracting(Order::getId).containsExactly(ownerPending.getId());
+	}
+
+	@Test
+	@DisplayName("샌드박스 종목 PENDING 주문은 제외하고 실제 종목 PENDING 주문만 조회한다")
+	void findByAccountIdAndStatusWithCursorExcludesSandboxInstrumentOrders() {
+		Instrument sandboxInstrument = instrumentRepository.findByMarketAndSymbol(Market.STOCK, "SANDBOX_STK_1")
+			.orElseThrow();
+		assertThat(sandboxInstrument.isTutorialSample()).isTrue();
+
+		Order realPending = createPendingOrder(owner, ownerAccount, NOW);
+		idempotencySequence++;
+		orderRepository.saveAndFlush(Order.createLimitPending(
+			owner, ownerAccount, sandboxInstrument, OrderSide.BUY,
+			BigDecimal.valueOf(1), BigDecimal.valueOf(70_000),
+			"cursor-sandbox-pending-idem-" + idempotencySequence,
+			String.valueOf((char)('a' + idempotencySequence)).repeat(64), NOW));
+
+		List<Order> result = orderRepository.findByAccountIdAndStatusWithCursor(
+			ownerAccount.getId(), com.finplay.api.order.domain.OrderStatus.PENDING, null, null, 10);
+
+		assertThat(result).extracting(Order::getId).containsExactly(realPending.getId());
 	}
 
 	@Test

@@ -22,7 +22,11 @@ public class TradeRepositoryImpl implements TradeRepositoryCustom {
 		Long accountId, LocalDateTime cursorExecutedAt, Long cursorId, int fetchSize) {
 		QTrade trade = QTrade.trade;
 
-		BooleanBuilder condition = new BooleanBuilder(trade.account.id.eq(accountId));
+		// 033-exclude-tutorial-sandbox-data(SANDBOX-EXCL-001과 동일 원칙, 이슈: 포트폴리오 체결 내역 누출) —
+		// 이 조회는 GET /api/trades(사용자 노출) 전용이다. 튜토리얼 샌드박스 종목 체결은 실거래 화면에
+		// 섞이면 안 된다.
+		BooleanBuilder condition = new BooleanBuilder(trade.account.id.eq(accountId))
+			.and(trade.instrument.tutorialSample.eq(false));
 		if (cursorExecutedAt != null && cursorId != null) {
 			condition.and(
 				trade.executedAt.lt(cursorExecutedAt)
