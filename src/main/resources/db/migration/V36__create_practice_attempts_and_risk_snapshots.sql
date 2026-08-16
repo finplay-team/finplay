@@ -1,4 +1,4 @@
--- 튜토리얼 실행 세대의 영속 attempt·위험 스냅샷과 주문 귀속 컬럼을 추가한다(036 TUTORIAL-FLOW-001).
+-- 튜토리얼 실행 세대의 영속 attempt·위험 스냅샷과 주문 귀속 컬럼을 추가한다(039 TUTORIAL-FLOW-001).
 -- 기존 주문은 두 귀속 컬럼이 모두 NULL이며, 추가형 변경만 사용해 구버전 앱과의 호환성을 유지한다(ADR-0004).
 
 CREATE TABLE practice_attempts (

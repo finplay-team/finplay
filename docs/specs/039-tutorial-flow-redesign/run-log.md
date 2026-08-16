@@ -1,4 +1,4 @@
-# Run Log: 036-tutorial-flow-redesign
+# Run Log: 039-tutorial-flow-redesign
 
 ## AI 로그 (에이전트 참조용)
 | 시각 | 에이전트 | 실행 명령 | 근거 |

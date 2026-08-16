@@ -1,6 +1,6 @@
 # Spec: 시장가/지정가 매매 기반 3단계 투자 실습 완결 경로 (OCO 없이)
 
-> **후속 delta:** `036-tutorial-flow-redesign`은 샘플 종목 경로를 사용자·시장별 영속 attempt, 자동
+> **후속 delta:** `039-tutorial-flow-redesign`은 샘플 종목 경로를 사용자·시장별 영속 attempt, 자동
 > -3%/+5% 위험 snapshot, 29+1 라이브 차트로 재설계한다. 실제 종목 경로와 이 문서의 불변
 > completion·reward 원칙은 유지된다.
 

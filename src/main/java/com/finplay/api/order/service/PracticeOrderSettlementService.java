@@ -1,4 +1,4 @@
-// 코인 튜토리얼 가상 가격 세션의 tick 진행에 맞춰 세션 귀속 PENDING 주문을 체결·취소하는 서비스
+// 코인 튜토리얼 가상 가격 세션의 tick 진행에 맞춰 세션 귀속 PENDING 주문을 체결·취소하고, attempt/run 기반 현재 run의 PENDING 주문도 정산하는 서비스
 package com.finplay.api.order.service;
 
 import com.finplay.api.order.domain.Order;

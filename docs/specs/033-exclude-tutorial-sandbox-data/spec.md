@@ -1,6 +1,6 @@
 # Spec: 튜토리얼 샌드박스 매매·완료 보상의 포트폴리오·투자일기·랭킹 제외
 
-> **후속 적용:** `036-tutorial-flow-redesign`의 attempt 귀속 주문과 재시작 보상 SELL도 샘플 종목 원장이므로
+> **후속 적용:** `039-tutorial-flow-redesign`의 attempt 귀속 주문과 재시작 보상 SELL도 샘플 종목 원장이므로
 > 이 문서의 포트폴리오·투자일기·랭킹 제외 및 `sandboxCashAdjustment` 규칙을 동일하게 적용한다.
 
 > 배경: `031-tutorial-sandbox-instruments`가 실제 계좌·주문 API를 그대로 쓰는 튜토리얼 전용 샌드박스

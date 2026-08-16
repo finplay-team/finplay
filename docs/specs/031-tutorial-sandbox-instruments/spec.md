@@ -1,6 +1,6 @@
 # Spec: 튜토리얼 전용 샘플 종목·항시 시세·매도 단계·5분 제한 (Sandbox 실습 확장)
 
-> **후속 delta:** `036-tutorial-flow-redesign`이 샘플 종목의 진행 정본을 영속 attempt·자동 위험 snapshot·
+> **후속 delta:** `039-tutorial-flow-redesign`이 샘플 종목의 진행 정본을 영속 attempt·자동 위험 snapshot·
 > 29+1 라이브 차트로 확장하고 미완료 재시작 계약을 추가한다. 이 문서의 샘플 종목 판별, 5분 제한,
 > 매도·복기 완료 조건은 유지된다.
 
