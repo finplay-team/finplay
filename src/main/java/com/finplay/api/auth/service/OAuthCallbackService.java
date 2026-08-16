@@ -45,7 +45,7 @@ public class OAuthCallbackService {
 		OAuthProviderName provider = OAuthProviderName.from(rawProvider)
 			.orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_ERROR));
 		requireQueryState(queryState);
-		OAuthStateClaims claims = stateGenerator.verify(queryState);
+		OAuthStateClaims claims = verifyState(queryState, cookieState);
 		// REAUTH는 쿠키 이중제출에 의존하지 않는다 — state 자체 만료시각과 AuthService.reauthenticate()의
 		// provider+providerUserId 검증이 CSRF·재생 방어를 대신한다 (spec 039).
 		if (claims.purpose() == OAuthPurpose.LOGIN) {
@@ -98,16 +98,36 @@ public class OAuthCallbackService {
 		}
 	}
 
+	/**
+	 * 서명·purpose·필드개수·만료 검증에 실패하면(purpose를 아직 모르는 상황) 쿠키-쿼리 불일치 자체로도 거부
+	 * 사유가 이미 성립한다 — 그 경우 재인증 실패(403)보다 검증 오류(400)를 우선한다. 쿠키가 쿼리 state와
+	 * 정확히 같을 때만 원래의 재인증 실패를 그대로 드러낸다(LOGIN·REAUTH 공통, purpose 판별 이전 규칙).
+	 */
+	private OAuthStateClaims verifyState(String queryState, String cookieState) {
+		try {
+			return stateGenerator.verify(queryState);
+		} catch (BusinessException ex) {
+			if (!matchesQueryState(queryState, cookieState)) {
+				throw new BusinessException(ErrorCode.VALIDATION_ERROR);
+			}
+			throw ex;
+		}
+	}
+
 	private void validateCookieState(String queryState, String cookieState) {
-		if (cookieState == null || cookieState.isBlank()) {
+		if (!matchesQueryState(queryState, cookieState)) {
 			throw new BusinessException(ErrorCode.VALIDATION_ERROR);
+		}
+	}
+
+	private boolean matchesQueryState(String queryState, String cookieState) {
+		if (cookieState == null || cookieState.isBlank()) {
+			return false;
 		}
 
 		byte[] queryStateBytes = queryState.getBytes(StandardCharsets.UTF_8);
 		byte[] cookieStateBytes = cookieState.getBytes(StandardCharsets.UTF_8);
-		if (!MessageDigest.isEqual(queryStateBytes, cookieStateBytes)) {
-			throw new BusinessException(ErrorCode.VALIDATION_ERROR);
-		}
+		return MessageDigest.isEqual(queryStateBytes, cookieStateBytes);
 	}
 
 	private void validateOAuthUser(OAuthUserDto oauthUser) {
