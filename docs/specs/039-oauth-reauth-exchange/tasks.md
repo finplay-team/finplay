@@ -48,4 +48,4 @@
   세부는 `docs/api-contracts.md`가, 이 spec 자체의 존재는 `docs/specs/039-oauth-reauth-exchange`가 근거로
   남는다).
 
-- [ ] **6. `./gradlew build` 통과 확인**
+- [x] **6. `./gradlew build` 통과 확인** — SHA `b9fe2211d119a2ff38561830fd617aed7e7feff0`
