@@ -13,7 +13,7 @@
   `REAUTHENTICATION_FAILED`를 던진다. 단위 테스트: 만료 이전 정상 검증, TTL 경계 직전·직후(고정 `Clock`),
   기존 `verifyRejectsWrongPayloadFieldCount` 등 필드개수 픽스처를 4필드 기준으로 갱신.
 
-- [ ] **2. `OAuthCallbackService` REAUTH 쿠키 이중제출 제거 (+ 단위 테스트)**
+- [x] **2. `OAuthCallbackService` REAUTH 쿠키 이중제출 제거 (+ 단위 테스트)**
   plan.md §판단 2의 순서로 재작성한다 — `queryState` 존재 확인 → `stateGenerator.verify(queryState)`로 `claims`
   획득 → `claims.purpose() == LOGIN`일 때만 쿠키 일치 검사(400 `VALIDATION_ERROR`) → 이후 단계는 변경 없음.
   LOGIN purpose의 기존 동작(쿠키 누락·불일치 시 400)은 회귀 테스트로 고정한다. REAUTH purpose는 쿠키가 없거나

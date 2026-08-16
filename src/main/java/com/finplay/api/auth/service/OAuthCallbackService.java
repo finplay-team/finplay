@@ -5,6 +5,7 @@ import com.finplay.api.auth.dto.response.TokenResponse;
 import com.finplay.api.auth.oauth.OAuthCallbackProvider;
 import com.finplay.api.auth.oauth.OAuthLoginExchangeStore;
 import com.finplay.api.auth.oauth.OAuthProviderName;
+import com.finplay.api.auth.oauth.OAuthPurpose;
 import com.finplay.api.auth.oauth.OAuthStateClaims;
 import com.finplay.api.auth.oauth.OAuthStateGenerator;
 import com.finplay.api.auth.oauth.OAuthUserDto;
@@ -40,8 +41,13 @@ public class OAuthCallbackService {
 		String authorizationError) {
 		OAuthProviderName provider = OAuthProviderName.from(rawProvider)
 			.orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_ERROR));
-		validateState(queryState, cookieState);
+		requireQueryState(queryState);
 		OAuthStateClaims claims = stateGenerator.verify(queryState);
+		// REAUTH는 쿠키 이중제출에 의존하지 않는다 — state 자체 만료시각과 AuthService.reauthenticate()의
+		// provider+providerUserId 검증이 CSRF·재생 방어를 대신한다 (spec 039).
+		if (claims.purpose() == OAuthPurpose.LOGIN) {
+			validateCookieState(queryState, cookieState);
+		}
 		if (authorizationError != null && !authorizationError.isBlank()) {
 			throw new BusinessException(ErrorCode.OAUTH_AUTHORIZATION_FAILED);
 		}
@@ -72,8 +78,14 @@ public class OAuthCallbackService {
 		return exchangeStore.consume(code).orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_ERROR));
 	}
 
-	private void validateState(String queryState, String cookieState) {
-		if (queryState == null || queryState.isBlank() || cookieState == null || cookieState.isBlank()) {
+	private void requireQueryState(String queryState) {
+		if (queryState == null || queryState.isBlank()) {
+			throw new BusinessException(ErrorCode.VALIDATION_ERROR);
+		}
+	}
+
+	private void validateCookieState(String queryState, String cookieState) {
+		if (cookieState == null || cookieState.isBlank()) {
 			throw new BusinessException(ErrorCode.VALIDATION_ERROR);
 		}
 

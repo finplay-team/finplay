@@ -116,6 +116,36 @@ class OAuthCallbackServiceTest {
 		verify(authService, never()).oauthLogin(any(), any());
 	}
 
+	@Test
+	@DisplayName("REAUTH purpose state는 oauth_state 쿠키가 없어도 통과한다")
+	void callbackAllowsReauthPurposeWithoutCookieState() {
+		String reauthState = STATE_GENERATOR.generate(OAuthPurpose.REAUTH, 7L);
+		OAuthUserDto oauthUser = new OAuthUserDto("provider-user-id", "member@example.com");
+		ReauthTokenResponse expected = new ReauthTokenResponse("raw-reauth-token", 300L);
+		given(kakaoProvider.supports(OAuthProviderName.KAKAO)).willReturn(true);
+		given(kakaoProvider.fetchUser(AUTHORIZATION_CODE, reauthState)).willReturn(oauthUser);
+		given(authService.reauthenticate(7L, OAuthProviderName.KAKAO, oauthUser)).willReturn(expected);
+
+		Object actual = callbackService.callback("kakao", AUTHORIZATION_CODE, reauthState, null);
+
+		assertThat(actual).isEqualTo(expected);
+	}
+
+	@Test
+	@DisplayName("REAUTH purpose state는 oauth_state 쿠키가 query state와 달라도 통과한다")
+	void callbackAllowsReauthPurposeWithMismatchedCookieState() {
+		String reauthState = STATE_GENERATOR.generate(OAuthPurpose.REAUTH, 7L);
+		OAuthUserDto oauthUser = new OAuthUserDto("provider-user-id", "member@example.com");
+		ReauthTokenResponse expected = new ReauthTokenResponse("raw-reauth-token", 300L);
+		given(kakaoProvider.supports(OAuthProviderName.KAKAO)).willReturn(true);
+		given(kakaoProvider.fetchUser(AUTHORIZATION_CODE, reauthState)).willReturn(oauthUser);
+		given(authService.reauthenticate(7L, OAuthProviderName.KAKAO, oauthUser)).willReturn(expected);
+
+		Object actual = callbackService.callback("kakao", AUTHORIZATION_CODE, reauthState, "different-state");
+
+		assertThat(actual).isEqualTo(expected);
+	}
+
 	@ParameterizedTest
 	@MethodSource("tamperedStateAuthorizationErrors")
 	@DisplayName("서명은 유효했으나 위조된 state는 인가 취소 error query·공급자 호출보다 먼저 재인증 실패로 거부한다")
