@@ -66,7 +66,7 @@ class PortfolioSummaryIntegrationTest {
 	// Account.INITIAL_SEED_MONEY(10,000,000)는 STOCK·CRYPTO 계좌 생성 시 항상 고정값이라 두 계좌 합계를
 	// 상수로 둔다 — AccountSummaryResponse가 seedMoney를 노출하지 않으므로(#81 계약) 응답에서 얻을 수 없다.
 	private static final long TOTAL_SEED_MONEY = 20_000_000L;
-	private static final int RETURN_RATE_SCALE = 4;
+	private static final int RETURN_RATE_SCALE = 8; // PortfolioService.RETURN_RATE_SCALE과 동일(이슈 #390)
 
 	@Autowired
 	private MockMvc mockMvc;

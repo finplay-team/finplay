@@ -16,7 +16,10 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class PortfolioService {
 
-	private static final int RETURN_RATE_SCALE = 4;
+	// AccountService.RETURN_RATE_SCALE과 같은 이유로 4 → 8 (이슈 #390). seedMoneyTotal도 소인수 2·5로만
+	// 이뤄진 값이라 scale 8의 HALF_UP이 지금은 실제로 반올림하지 않는다는 전제도 그대로 적용된다 —
+	// 자세한 근거는 AccountService.RETURN_RATE_SCALE 주석 참고(PR #393 리뷰 참고).
+	private static final int RETURN_RATE_SCALE = 8;
 
 	private final AccountService accountService;
 
