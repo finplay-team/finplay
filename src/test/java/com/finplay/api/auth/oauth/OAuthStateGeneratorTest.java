@@ -8,6 +8,10 @@ import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.stream.Stream;
@@ -22,23 +26,64 @@ import org.junit.jupiter.params.provider.MethodSource;
 class OAuthStateGeneratorTest {
 
 	private static final String SECRET = "test-oauth-state-secret-that-is-at-least-32-bytes";
+	// 실제 STATE_TTL(OAuthStateGenerator, 10분)과 같은 값 — 만료 경계 테스트가 실제 유효기간을 근거로 삼는다.
+	private static final Duration STATE_TTL = Duration.ofMinutes(10);
+	private static final Instant ISSUED_AT = Instant.parse("2026-01-01T00:00:00Z");
 
 	@Test
-	@DisplayName("LOGIN state의 payload는 목적·빈 userId·43자 nonce를 담고 검증 시 그대로 복원된다")
+	@DisplayName("LOGIN state의 payload는 목적·빈 userId·43자 nonce·만료시각을 담고 검증 시 그대로 복원된다")
 	void generateSignsLoginPurposeWithoutUserId() {
 		byte[] bytes = new byte[32];
 		for (int index = 0; index < bytes.length; index++) {
 			bytes[index] = (byte)index;
 		}
-		OAuthStateGenerator generator = new OAuthStateGenerator(new FixedSecureRandom(bytes), SECRET);
+		OAuthStateGenerator generator = new OAuthStateGenerator(
+			new FixedSecureRandom(bytes), SECRET, Clock.fixed(ISSUED_AT, ZoneOffset.UTC));
 
 		String state = generator.generate(OAuthPurpose.LOGIN, null);
 
 		String[] parts = state.split("\\.");
 		assertThat(parts).hasSize(2);
+		long expectedExpiresAt = ISSUED_AT.plus(STATE_TTL).getEpochSecond();
 		assertThat(new String(Base64.getUrlDecoder().decode(parts[0]), StandardCharsets.UTF_8))
-			.isEqualTo("LOGIN..AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8");
+			.isEqualTo("LOGIN..AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8." + expectedExpiresAt);
 		assertThat(generator.verify(state)).isEqualTo(new OAuthStateClaims(OAuthPurpose.LOGIN, null));
+	}
+
+	@ParameterizedTest
+	@MethodSource("purposes")
+	@DisplayName("state는 만료 유효기간 이전(TTL 경계 직전 포함)에는 purpose와 무관하게 정상 검증된다")
+	void verifySucceedsBeforeStateExpiry(OAuthPurpose purpose) {
+		Long userId = purpose == OAuthPurpose.REAUTH ? 7L : null;
+		OAuthStateGenerator issuer = new OAuthStateGenerator(
+			new SecureRandom(), SECRET, Clock.fixed(ISSUED_AT, ZoneOffset.UTC));
+		String state = issuer.generate(purpose, userId);
+		OAuthStateGenerator verifierJustBeforeExpiry = new OAuthStateGenerator(
+			new SecureRandom(), SECRET, Clock.fixed(ISSUED_AT.plus(STATE_TTL).minusSeconds(1), ZoneOffset.UTC));
+
+		assertThat(verifierJustBeforeExpiry.verify(state)).isEqualTo(new OAuthStateClaims(purpose, userId));
+	}
+
+	@ParameterizedTest
+	@MethodSource("purposes")
+	@DisplayName("state는 만료 유효기간에 도달하면(TTL 경계 직후) 서명이 유효해도 REAUTHENTICATION_FAILED로 거부된다")
+	void verifyRejectsAtOrAfterStateExpiry(OAuthPurpose purpose) {
+		Long userId = purpose == OAuthPurpose.REAUTH ? 7L : null;
+		OAuthStateGenerator issuer = new OAuthStateGenerator(
+			new SecureRandom(), SECRET, Clock.fixed(ISSUED_AT, ZoneOffset.UTC));
+		String state = issuer.generate(purpose, userId);
+		OAuthStateGenerator verifierAtExpiry = new OAuthStateGenerator(
+			new SecureRandom(), SECRET, Clock.fixed(ISSUED_AT.plus(STATE_TTL), ZoneOffset.UTC));
+
+		assertThatThrownBy(() -> verifierAtExpiry.verify(state))
+			.isInstanceOfSatisfying(
+				BusinessException.class,
+				exception -> assertThat(exception.getErrorCode())
+					.isEqualTo(ErrorCode.REAUTHENTICATION_FAILED));
+	}
+
+	private static Stream<OAuthPurpose> purposes() {
+		return Stream.of(OAuthPurpose.LOGIN, OAuthPurpose.REAUTH);
 	}
 
 	@Test
@@ -97,7 +142,7 @@ class OAuthStateGeneratorTest {
 	@Test
 	@DisplayName("모르는 purpose 문자열은 서명은 유효해도 REAUTHENTICATION_FAILED로 거부된다")
 	void verifyRejectsUnknownPurpose() {
-		String state = signedStateFor("UNKNOWN.123.nonce-value");
+		String state = signedStateFor("UNKNOWN.123.nonce-value.9999999999");
 
 		assertThatThrownBy(() -> new OAuthStateGenerator(new SecureRandom(), SECRET).verify(state))
 			.isInstanceOfSatisfying(

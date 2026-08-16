@@ -3,7 +3,7 @@
 순서대로 진행한다. 1번이 2·3번의 입력이고(state 형식·만료 판정이 먼저 있어야 콜백 검증을 재배치할 수 있다),
 3번은 2번이 끝난 뒤에야 리다이렉트·교환 엔드포인트를 붙일 자리가 명확해진다. 4번은 1~3번 전체의 통합 확인이다.
 
-- [ ] **1. `OAuthStateGenerator` state 자체 만료시각 + `Clock` 도입 (+ 단위 테스트)**
+- [x] **1. `OAuthStateGenerator` state 자체 만료시각 + `Clock` 도입 (+ 단위 테스트)**
   payload를 `purpose.userId.nonce.exp` 4필드로 확장한다(`PAYLOAD_FIELD_COUNT` 3→4, `exp`는 4번째 필드).
   `@Autowired` 생성자에 프로젝트 공용 `Clock` 빈을 주입하고, TTL 상수(10분, plan.md §판단 1 근거)로
   `Clock.instant() + TTL`을 서명 전에 계산해 싣는다. 기존 2-인자 package-private 생성자(`SecureRandom, String`)는
