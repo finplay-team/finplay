@@ -7,10 +7,13 @@ import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.order.domain.ExitPlan;
+import com.finplay.api.order.domain.ExitPlanStatus;
 import com.finplay.api.order.domain.ExitPriceType;
 import com.finplay.api.order.dto.request.ExitPlanCreateRequest;
+import com.finplay.api.order.dto.response.ExitPlanListResponse;
 import com.finplay.api.order.dto.response.ExitPlanResponse;
 import com.finplay.api.order.repository.ExitPlanIdempotencyKeyRepository;
+import com.finplay.api.order.repository.ExitPlanRepository;
 import com.finplay.api.portfolio.domain.Holding;
 import com.finplay.api.portfolio.service.HoldingService;
 import java.math.BigDecimal;
@@ -45,6 +48,7 @@ public class ExitPlanService {
 	private final UserQueryService userQueryService;
 	private final ExitPlanIdempotencyKeyRepository exitPlanIdempotencyKeyRepository;
 	private final ExitPlanIdempotentCreationService exitPlanIdempotentCreationService;
+	private final ExitPlanRepository exitPlanRepository;
 
 	// 021 plan.md "멱등성" 일반 경로: 선제 조회 → 검증 → 생성 시도 → unique 위반 캐치 → 1회 재조회 폴백.
 	public ExitPlanResponse create(Long userId, String idempotencyKey, ExitPlanCreateRequest request) {
@@ -80,6 +84,15 @@ public class ExitPlanService {
 			return findReplayResponse(userId, idempotencyKey, requestHash)
 				.orElseThrow(() -> new BusinessException(ErrorCode.IDEMPOTENCY_CONFLICT));
 		}
+	}
+
+	// 021 plan.md "응답 계약" — 본인 소유 예약만, status 생략 시 PENDING 기본값, 경로(일반/교육) 무관 공통 조회.
+	public ExitPlanListResponse list(Long userId, ExitPlanStatus status) {
+		ExitPlanStatus effectiveStatus = status != null ? status : ExitPlanStatus.PENDING;
+		return ExitPlanListResponse.from(exitPlanRepository.findByUserIdAndStatusOrderByIdDesc(userId, effectiveStatus)
+			.stream()
+			.map(ExitPlanResponse::from)
+			.toList());
 	}
 
 	private void rejectUnsupportedEducationalPath(ExitPlanCreateRequest request) {

@@ -3,11 +3,13 @@ package com.finplay.api.order.controller;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -21,11 +23,13 @@ import com.finplay.api.common.ErrorCode;
 import com.finplay.api.order.domain.ExitPlanStatus;
 import com.finplay.api.order.domain.ExitPriceType;
 import com.finplay.api.order.dto.request.ExitPlanCreateRequest;
+import com.finplay.api.order.dto.response.ExitPlanListResponse;
 import com.finplay.api.order.dto.response.ExitPlanResponse;
 import com.finplay.api.order.service.ExitPlanCancelService;
 import com.finplay.api.order.service.ExitPlanService;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -285,6 +289,64 @@ class ExitPlanControllerTest {
 			.header("Idempotency-Key", IDEMPOTENCY_KEY)
 			.contentType(MediaType.APPLICATION_JSON)
 			.content(VALID_PRICE_BODY))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(exitPlanService);
+	}
+
+	@Test
+	void getMyExitPlansReturnsOkWithContentListOnStatusOmitted() throws Exception {
+		stubAuthenticatedUser();
+		when(exitPlanService.list(eq(USER_ID), isNull()))
+			.thenReturn(ExitPlanListResponse.from(List.of(sampleResponse())));
+
+		mockMvc.perform(get("/api/exit-plans")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.content").isArray())
+			.andExpect(jsonPath("$.content[0].id").value(1))
+			.andExpect(jsonPath("$.content[0].holdingId").value(1))
+			.andExpect(jsonPath("$.content[0].intentionId").doesNotExist())
+			.andExpect(jsonPath("$.content[0].buyTradeId").doesNotExist())
+			.andExpect(jsonPath("$.content[0].status").value("PENDING"));
+
+		verify(exitPlanService).list(eq(USER_ID), isNull());
+	}
+
+	@Test
+	void getMyExitPlansPassesGivenStatusToService() throws Exception {
+		stubAuthenticatedUser();
+		when(exitPlanService.list(eq(USER_ID), eq(ExitPlanStatus.CANCELLED)))
+			.thenReturn(ExitPlanListResponse.from(List.of()));
+
+		mockMvc.perform(get("/api/exit-plans")
+			.param("status", "CANCELLED")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.content").isArray())
+			.andExpect(jsonPath("$.content").isEmpty());
+
+		verify(exitPlanService).list(eq(USER_ID), eq(ExitPlanStatus.CANCELLED));
+	}
+
+	@Test
+	void getMyExitPlansRejectsInvalidStatusValue() throws Exception {
+		stubAuthenticatedUser();
+
+		mockMvc.perform(get("/api/exit-plans")
+			.param("status", "NOT_A_STATUS")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(exitPlanService);
+	}
+
+	@Test
+	void getMyExitPlansRejectsMissingAuthenticationWithoutCallingService() throws Exception {
+		mockMvc.perform(get("/api/exit-plans"))
 			.andExpect(status().isUnauthorized())
 			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
