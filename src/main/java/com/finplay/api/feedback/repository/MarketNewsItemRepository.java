@@ -85,9 +85,16 @@ public interface MarketNewsItemRepository extends JpaRepository<MarketNewsItem, 
 	 *
 	 * <p><b>{@code JOIN FETCH}로 종목을 함께 가져온다.</b> 브리핑 프롬프트는 기사마다 종목명을 붙이므로
 	 * (기사가 어느 종목 소식인지 모델이 알 수 없다) 지연 로딩으로 두면 기사 수만큼 추가 질의가 나간다.
+	 *
+	 * <p><b>샌드박스 튜토리얼 종목을 제외한다</b>(이슈 #406). 수집을 막는 것과 별개로 여기서도 거르는 것은,
+	 * 브리핑이 전 회원 공유 산출물이라 <b>이미 저장돼 있는 행</b>도 새지 않아야 하기 때문이다.
+	 *
+	 * <p><b>그래서 오염 행을 지우는 마이그레이션을 두지 않는다.</b> 이 조건이 질의에 영구적으로 걸려 있어 남은
+	 * 행이 어느 시점에도 결과에 들어오지 않기 때문이지, "시간이 지나면 구간 밖으로 밀려나서"가 아니다 — 그
+	 * 근거였다면 보관 기간이 늘거나 구간이 넓어지는 순간 조용히 깨진다 (PR #411 리뷰 [권장 1]).
 	 */
 	@Query("SELECT n FROM MarketNewsItem n JOIN FETCH n.instrument i "
-		+ "WHERE i.market = :market "
+		+ "WHERE i.market = :market AND i.tutorialSample = false "
 		+ "AND n.type = com.finplay.api.feedback.domain.MarketNewsItemType.NEWS "
 		+ "AND n.publishedAt >= :fromInclusive AND n.publishedAt <= :toInclusive")
 	List<MarketNewsItem> findMarketNewsPublishedBetween(@Param("market")
@@ -101,9 +108,11 @@ public interface MarketNewsItemRepository extends JpaRepository<MarketNewsItem, 
 	 * <p>뉴스와 같은 질의로 합치지 않는 이유는 {@link #findDisclosuresReceivedOn}과 같다 — 공시를 같은
 	 * datetime 구간에 태우면 {@code D-1} 접수분은 전장 시작보다 일러 <b>빠지고</b> {@code D} 접수분은 장중
 	 * 접수분까지 끌고 <b>들어온다.</b> 경계를 반열림으로 두는 이유도 같다.
+	 *
+	 * <p>샌드박스 제외 이유는 {@link #findMarketNewsPublishedBetween}과 같다 (이슈 #406).
 	 */
 	@Query("SELECT n FROM MarketNewsItem n JOIN FETCH n.instrument i "
-		+ "WHERE i.market = :market "
+		+ "WHERE i.market = :market AND i.tutorialSample = false "
 		+ "AND n.type = com.finplay.api.feedback.domain.MarketNewsItemType.DISCLOSURE "
 		+ "AND n.publishedAt >= :fromInclusive AND n.publishedAt < :toExclusive")
 	List<MarketNewsItem> findMarketDisclosuresReceivedOn(@Param("market")
@@ -126,9 +135,13 @@ public interface MarketNewsItemRepository extends JpaRepository<MarketNewsItem, 
 	 *
 	 * <p>{@code created_at}으로 비교하는 이유는 위 {@link #existsByInstrumentIdAndCreatedAtAfter}와 같다.
 	 * 시장 조건이 연관 엔티티에 있어 파생 쿼리 이름 대신 {@code @Query}로 조인을 명시한다.
+	 *
+	 * <p>샌드박스 종목을 제외하는 것은 이 판정의 대상인 브리핑이 그 종목을 담지 않기 때문이다 (이슈 #406) —
+	 * 거르지 않으면 브리핑 내용이 바뀌지 않는데도 재생성이 돌아 LLM 호출만 쓴다.
 	 */
 	@Query("SELECT COUNT(n) > 0 FROM MarketNewsItem n "
-		+ "WHERE n.instrument.market = :market AND n.createdAt > :since")
+		+ "WHERE n.instrument.market = :market AND n.instrument.tutorialSample = false "
+		+ "AND n.createdAt > :since")
 	boolean existsCollectedAfter(@Param("market")
 	Market market, @Param("since")
 	LocalDateTime since);

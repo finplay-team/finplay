@@ -24,6 +24,7 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -453,5 +454,57 @@ class MarketNewsItemRepositoryTest {
 
 		assertThat(found).extracting(MarketNewsItem::getTitle)
 			.containsExactlyInAnyOrder("A D-1 공시", "B D-1 공시");
+	}
+
+	// --- 샌드박스 튜토리얼 종목 제외 (이슈 #406) ---
+	//
+	// 수집 단계에서 이미 막지만 여기서도 거른다. 브리핑은 전 회원이 공유하는 산출물이라 **이미 저장돼 있는
+	// 행**도 새지 않아야 하기 때문이다. 픽스처가 저장까지 하는 이유가 그것이다 — 수집을 막는 것만으로는
+	// 이 단정이 성립하지 않는 상태를 재현한다.
+
+	private Instrument savedSandboxStock() {
+		Instrument sandbox = Instrument.create(
+			Market.STOCK, "NEWSSBX", "알파전자", new BigDecimal("100"), 10000, true, LocalDateTime.now());
+		ReflectionTestUtils.setField(sandbox, "tutorialSample", true);
+		return instrumentRepository.save(sandbox);
+	}
+
+	@Test
+	@DisplayName("findMarketNewsPublishedBetween은 샌드박스 종목의 기사를 제외한다")
+	void findMarketNewsPublishedBetweenExcludesTutorialSampleInstruments() {
+		LocalDateTime from = LocalDateTime.of(PREVIOUS_TRADE_DATE, LocalTime.of(15, 30));
+		LocalDateTime to = LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(9, 0));
+		LocalDateTime publishedAt = LocalDateTime.of(PREVIOUS_TRADE_DATE, LocalTime.of(18, 0));
+		save(instrumentA, MarketNewsItemType.NEWS, "A 전장 뉴스", publishedAt);
+		save(savedSandboxStock(), MarketNewsItemType.NEWS, "알파전자 관련 기사", publishedAt);
+
+		List<MarketNewsItem> found = marketNewsItemRepository.findMarketNewsPublishedBetween(Market.STOCK, from, to);
+
+		assertThat(found).extracting(MarketNewsItem::getTitle).containsExactly("A 전장 뉴스");
+	}
+
+	@Test
+	@DisplayName("findMarketDisclosuresReceivedOn은 샌드박스 종목의 공시를 제외한다")
+	void findMarketDisclosuresReceivedOnExcludesTutorialSampleInstruments() {
+		save(instrumentA, MarketNewsItemType.DISCLOSURE, "A D-1 공시", PREVIOUS_TRADE_DATE.atStartOfDay());
+		save(savedSandboxStock(), MarketNewsItemType.DISCLOSURE, "알파전자 D-1 공시",
+			PREVIOUS_TRADE_DATE.atStartOfDay());
+
+		List<MarketNewsItem> found = marketNewsItemRepository.findMarketDisclosuresReceivedOn(
+			Market.STOCK, PREVIOUS_TRADE_DATE.atStartOfDay(), ORIGIN_TRADE_DATE.atStartOfDay());
+
+		assertThat(found).extracting(MarketNewsItem::getTitle).containsExactly("A D-1 공시");
+	}
+
+	// 브리핑이 담지 않는 기사로 재생성이 돌면 내용이 그대로인데 LLM 호출만 쓴다.
+	@Test
+	@DisplayName("existsCollectedAfter는 샌드박스 종목의 수집분을 세지 않는다")
+	void existsCollectedAfterIgnoresTutorialSampleInstruments() {
+		LocalDateTime lastGeneratedAt = LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(10, 5));
+		saveWithCollectedAt(savedSandboxStock(), "알파전자 새 기사",
+			LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(10, 3)),
+			LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(10, 30)));
+
+		assertThat(marketNewsItemRepository.existsCollectedAfter(Market.STOCK, lastGeneratedAt)).isFalse();
 	}
 }

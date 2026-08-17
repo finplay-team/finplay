@@ -161,4 +161,40 @@ class InstrumentServiceTest {
 		verify(instrumentRepository).findById(1L);
 		verifyNoMoreInteractions(instrumentRepository);
 	}
+
+	// 회귀: 외부 수집·AI 피드백 배치의 시장 단위 순회는 샌드박스 샘플 종목을 빼고 돌아야 한다(이슈 #406).
+	// 두 메서드가 같은 파인더를 부르면 구분 자체가 사라지므로, 어느 파인더를 부르는지까지 단정한다.
+	@Test
+	void getRealInstrumentEntitiesExcludesTutorialSampleInstruments() {
+		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
+		Instrument real = Instrument.create(
+			Market.STOCK, "005930", "삼성전자", BigDecimal.valueOf(100), 70000L, true, LocalDateTime.now());
+		when(instrumentRepository.findByMarketAndTutorialSampleFalseOrderByIdAsc(Market.STOCK))
+			.thenReturn(List.of(real));
+		InstrumentService instrumentService = new InstrumentService(instrumentRepository);
+
+		List<Instrument> result = instrumentService.getRealInstrumentEntities(Market.STOCK);
+
+		assertThat(result).extracting(Instrument::getSymbol).containsExactly("005930");
+		verify(instrumentRepository).findByMarketAndTutorialSampleFalseOrderByIdAsc(Market.STOCK);
+		verifyNoMoreInteractions(instrumentRepository);
+	}
+
+	// 반대 방향 회귀 — 종목 목록(GET /api/instruments)은 샌드박스 종목을 계속 보여줘야 한다
+	// (031 SANDBOX-001). 위 메서드로 합치면 튜토리얼 진입 자체가 막힌다.
+	@Test
+	void getInstrumentEntitiesStillIncludesTutorialSampleInstruments() {
+		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
+		Instrument sandbox = Instrument.create(
+			Market.STOCK, "SANDBOX_STK_1", "알파전자", BigDecimal.valueOf(100), 10000L, true, LocalDateTime.now());
+		ReflectionTestUtils.setField(sandbox, "tutorialSample", true);
+		when(instrumentRepository.findByMarketOrderByIdAsc(Market.STOCK)).thenReturn(List.of(sandbox));
+		InstrumentService instrumentService = new InstrumentService(instrumentRepository);
+
+		List<Instrument> result = instrumentService.getInstrumentEntities(Market.STOCK);
+
+		assertThat(result).extracting(Instrument::getSymbol).containsExactly("SANDBOX_STK_1");
+		verify(instrumentRepository).findByMarketOrderByIdAsc(Market.STOCK);
+		verifyNoMoreInteractions(instrumentRepository);
+	}
 }

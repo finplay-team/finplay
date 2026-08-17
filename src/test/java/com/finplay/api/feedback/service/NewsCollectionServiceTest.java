@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -66,8 +67,8 @@ class NewsCollectionServiceTest {
 
 		samsung = instrument(1L, Market.STOCK, "005930", "삼성전자");
 		bitcoin = instrument(2L, Market.CRYPTO, "BTC", "비트코인");
-		when(instrumentService.getInstrumentEntities(Market.STOCK)).thenReturn(List.of(samsung));
-		when(instrumentService.getInstrumentEntities(Market.CRYPTO)).thenReturn(List.of(bitcoin));
+		when(instrumentService.getRealInstrumentEntities(Market.STOCK)).thenReturn(List.of(samsung));
+		when(instrumentService.getRealInstrumentEntities(Market.CRYPTO)).thenReturn(List.of(bitcoin));
 	}
 
 	// §데이터 모델 — created_at은 발행 시각이 아니라 수집 시각이다. 요약 재생성 판정이 이 값을 본다(FEED-008).
@@ -254,6 +255,31 @@ class NewsCollectionServiceTest {
 			.toList();
 
 		assertThat(repositoryFields).containsExactly("MarketNewsItemRepository");
+	}
+
+	// 회귀: 샌드박스 튜토리얼 종목은 수집 대상이 아니다 (이슈 #406). 목록을 얻는 메서드를 되돌리면
+	// `알파전자` 같은 실사명으로 외부 검색이 나가 무관한 기사가 그 종목의 것으로 저장되고, 저장 단계의
+	// 제목 필터는 자기 이름 등장을 요구하지 않아 거기서도 걸리지 않는다.
+	@Test
+	@DisplayName("뉴스·공시 수집은 샌드박스 종목을 제외한 목록으로만 돈다")
+	void collectsOnlyRealInstruments() {
+		service.collectNews();
+		service.collectDisclosures();
+
+		verify(instrumentService).getRealInstrumentEntities(Market.CRYPTO);
+		verify(instrumentService, times(2)).getRealInstrumentEntities(Market.STOCK);
+		verify(instrumentService, never()).getInstrumentEntities(any());
+	}
+
+	// 온디맨드 수집(ADR-0017)도 같은 규칙이다 — 제목 필터의 비교 대상 이름 목록에 샌드박스 종목명이
+	// 섞이면 그 이름을 담은 정상 기사가 "다른 종목 뉴스"로 걸러진다.
+	@Test
+	@DisplayName("온디맨드 수집의 제목 필터 이름 목록도 샌드박스 종목을 제외한다")
+	void onDemandCollectionAlsoUsesRealInstrumentsForTheTitleFilter() {
+		service.collectForInstrument(bitcoin);
+
+		verify(instrumentService).getRealInstrumentEntities(Market.CRYPTO);
+		verify(instrumentService, never()).getInstrumentEntities(any());
 	}
 
 	private MarketNewsItem captureSaved() {
