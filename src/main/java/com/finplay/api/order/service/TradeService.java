@@ -12,6 +12,7 @@ import com.finplay.api.order.dto.response.TradeListItemResponse;
 import com.finplay.api.order.dto.response.TradeListResponse;
 import com.finplay.api.order.repository.TradeRepository;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -22,6 +23,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class TradeService {
+
+	// 튜토리얼 실행 요약의 평균 체결가 정밀도. trades.price·holding_lots.unit_cost의 scale과 같다.
+	private static final int PRACTICE_PRICE_SCALE = 8;
 
 	private final AccountService accountService;
 	private final TradeRepository tradeRepository;
@@ -124,23 +128,59 @@ public class TradeService {
 			.reduce((first, second) -> second);
 	}
 
+	// 이슈 #421: 수량 합계와 같은 한 번의 순회에서 이번 실행의 체결가·실현손익까지 집계한다. 별도 조회를
+	// 더하지 않으므로 기존 호출부의 쿼리 수는 그대로다.
 	@Transactional(readOnly = true)
 	public PracticeRunTradeSummaryDto summarizePracticeRun(Long attemptId, long runNumber) {
 		BigDecimal buyQuantity = BigDecimal.ZERO;
 		BigDecimal sellQuantity = BigDecimal.ZERO;
+		BigDecimal buyNotional = BigDecimal.ZERO;
+		BigDecimal sellNotional = BigDecimal.ZERO;
+		long realizedPnl = 0L;
+		long soldBuyBasis = 0L;
+		boolean realizedPnlComplete = true;
 		Trade firstSell = null;
 		for (Trade trade : tradeRepository.findFilledPracticeRunTrades(attemptId, runNumber)) {
 			if (trade.getSide() == OrderSide.BUY) {
 				buyQuantity = buyQuantity.add(trade.getQuantity());
+				buyNotional = buyNotional.add(trade.getPrice().multiply(trade.getQuantity()));
 			} else {
 				sellQuantity = sellQuantity.add(trade.getQuantity());
+				sellNotional = sellNotional.add(trade.getPrice().multiply(trade.getQuantity()));
+				if (trade.getRealizedPnl() == null) {
+					realizedPnlComplete = false;
+				} else {
+					realizedPnl += trade.getRealizedPnl();
+					// PortfolioSellService.finalizeSellRealizedPnl이 확정한
+					// realizedPnl = (amount - fee) - buyBasis를 그대로 되돌린 값이다. trade_allocations를 다시
+					// 읽지 않고도 수익률의 분모(배분 매수원가 + 배분 매수수수료)를 원장과 정확히 같은 값으로
+					// 얻는다 — 같은 식의 역이라 두 값이 갈라질 수 없다.
+					soldBuyBasis += (trade.getAmount() - trade.getFee()) - trade.getRealizedPnl();
+				}
 				if (firstSell == null) {
 					firstSell = trade;
 				}
 			}
 		}
 		BigDecimal netQuantity = buyQuantity.subtract(sellQuantity);
+		boolean sold = sellQuantity.signum() > 0 && realizedPnlComplete;
 		return new PracticeRunTradeSummaryDto(
-			buyQuantity, sellQuantity, netQuantity.max(BigDecimal.ZERO), firstSell);
+			buyQuantity,
+			sellQuantity,
+			netQuantity.max(BigDecimal.ZERO),
+			firstSell,
+			averagePrice(buyNotional, buyQuantity),
+			averagePrice(sellNotional, sellQuantity),
+			sold ? Long.valueOf(realizedPnl) : null,
+			sold ? Long.valueOf(soldBuyBasis) : null);
+	}
+
+	// Holding.averagePrice·SellAllocationQueryService의 매수단가와 같은 scale 8 HALF_UP이다. 체결이 1건이면
+	// 나눗셈이 원래 단가를 그대로 돌려준다.
+	private BigDecimal averagePrice(BigDecimal notional, BigDecimal quantity) {
+		if (quantity.signum() <= 0) {
+			return null;
+		}
+		return notional.divide(quantity, PRACTICE_PRICE_SCALE, RoundingMode.HALF_UP);
 	}
 }
