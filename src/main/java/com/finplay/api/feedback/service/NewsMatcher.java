@@ -150,10 +150,17 @@ public class NewsMatcher {
 	 * 2026-08-04 확정). 여기서 같은 규칙을 재사용해 <b>한 저장소에 절단 규칙이 두 벌 생기는 것을 막는다</b> —
 	 * spec §설계 판단이 "절단 규칙은 {@code NewsItemTruncator} 한 곳에 둔다"고 못박은 이유와 같다.
 	 *
-	 * <p><b>정렬이 바뀌지 않는다.</b> 시가 갭 후보의 뉴스는 전부 이벤트({@code D 09:00}) 이전이라
+	 * <p><b>1차 정렬은 바뀌지 않는다.</b> 시가 갭 후보의 뉴스는 전부 이벤트({@code D 09:00}) 이전이라
 	 * "이벤트에 가까운 순"과 "최신순"이 같은 순서다 — 그래서 이 교체로 실제로 달라지는 것은 <b>공시가 살아남는가
-	 * 하나뿐</b>이고 뉴스가 실리는 차례는 그대로다. 장중 카드는 애초에 공시를 매칭하지 않으므로(§C-3) 이 규칙을
-	 * 태우지 않는다 — 그쪽은 근거창이 이벤트 앞뒤 양방향이라 두 정렬이 실제로 갈린다.
+	 * 하나뿐</b>이고 뉴스가 실리는 차례는 그대로다.
+	 *
+	 * <p><b>발행시각까지 같은 동률의 갈림키는 바뀐다</b> — {@link #sortAndTruncate}의 {@code url} 오름차순 대신
+	 * {@code id} 내림차순이 된다. 되돌릴 이유는 없다. 뒤쪽이 spec §뉴스 매칭 범위가 "정렬은 발행시각 내림차순이고
+	 * 동률은 {@code id} 내림차순"으로 정한 <b>정본 키</b>라, 카드와 목록의 갈림키가 오히려 하나로 모인다
+	 * (PR #414 리뷰).
+	 *
+	 * <p>장중 카드는 애초에 공시를 매칭하지 않으므로(§C-3) 이 규칙을 태우지 않는다 — 그쪽은 근거창이 이벤트
+	 * 앞뒤 양방향이라 1차 정렬부터 실제로 갈린다.
 	 */
 	private List<MarketNewsItem> truncateGap(List<MarketNewsItem> candidates) {
 		return NewsItemTruncator.truncateAndSort(candidates, properties.maxSourcesPerCard());
