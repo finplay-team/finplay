@@ -222,4 +222,78 @@ class ExitPlanTriggerFillIntegrationTest {
 			.singleElement()
 			.satisfies(c -> assertThat(c.getStatus()).isEqualTo(ExitPlanConditionStatus.CANCELLED_BY_OCO));
 	}
+
+	// 시나리오(익절과 대칭): 손절가 이하 가격 틱이 오면 plan이 FILLED_STOP_LOSS로 전이하고 holding 예약이 정확히
+	// 소비되며 반대(TAKE_PROFIT) 조건이 자동 취소된다(021 spec.md 비즈니스 규칙 — 익절·손절 각각의 트리거).
+	@Test
+	@DisplayName("손절가 이하 가격 틱이 오면 plan이 FILLED_STOP_LOSS로 전이하고 holding 예약이 정확히 소비되며 반대(TAKE_PROFIT) 조건이 취소된다")
+	void priceTickAtOrBelowStopLossFillsPlanConsumesReservationAndCancelsOppositeCondition() throws Exception {
+		User user = userRepository.saveAndFlush(User.create(EMAIL, "password-hash", "trigger-fill", NOW));
+		Account account = accountRepository.saveAndFlush(
+			Account.create(user, com.finplay.api.account.domain.Market.CRYPTO, NOW));
+		String accessToken = jwtTokenProvider.issue(user.getId(), user.getRole()).accessToken();
+
+		List<Instrument> cryptos = instrumentRepository.findByMarketAndTradableTrueOrderByIdAsc(Market.CRYPTO);
+		assertThat(cryptos).isNotEmpty();
+		Instrument instrument = cryptos.get(0);
+		cryptoPriceKeyToCleanUp = "price:crypto:" + instrument.getSymbol();
+		priceStore.saveTick(instrument.getSymbol(), new BigDecimal("100500.00000000"), LocalDateTime.now(clock));
+
+		String buyBody = """
+			{"market":"CRYPTO","instrumentId":%d,"side":"BUY","orderType":"MARKET","quantity":"10.00000000"}
+			""".formatted(instrument.getId());
+		mockMvc.perform(post("/api/orders")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+			.header("Idempotency-Key", UUID.randomUUID().toString())
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(buyBody))
+			.andExpect(status().isCreated());
+
+		Holding holding = holdingRepository
+			.findByAccountIdAndInstrumentId(account.getId(), instrument.getId())
+			.orElseThrow();
+
+		BigDecimal reservedQuantity = new BigDecimal("1.00000000");
+		BigDecimal stopLossPrice = new BigDecimal("95000.00000000");
+		String createBody = """
+			{"holdingId":%d,"quantity":"%s","exitPriceType":"PRICE",
+			"stopLoss":"%s","takeProfit":"110000.00000000"}
+			""".formatted(holding.getId(), reservedQuantity, stopLossPrice);
+
+		String responseBody = mockMvc.perform(post("/api/exit-plans")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+			.header("Idempotency-Key", UUID.randomUUID().toString())
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(createBody))
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.status").value("PENDING"))
+			.andReturn().getResponse().getContentAsString();
+		Long exitPlanId = ((Number)com.jayway.jsonpath.JsonPath.read(responseBody, "$.id")).longValue();
+
+		Holding afterCreate = holdingRepository.findById(holding.getId()).orElseThrow();
+		assertThat(afterCreate.getReservedQuantity()).isEqualByComparingTo(reservedQuantity);
+
+		// 손절가 이하로 가격 틱을 저장한다 — 이 호출이 반환하면 체결 트랜잭션까지 이미 끝나 있어야 한다.
+		priceStore.saveTick(instrument.getSymbol(), stopLossPrice, LocalDateTime.now(clock));
+
+		ExitPlan filledPlan = exitPlanRepository.findById(exitPlanId).orElseThrow();
+		assertThat(filledPlan.getStatus()).isEqualTo(ExitPlanStatus.FILLED_STOP_LOSS);
+		assertThat(filledPlan.getTriggeredOrder()).isNotNull();
+		assertThat(filledPlan.getClosedAt()).isNotNull();
+
+		Holding afterFill = holdingRepository.findById(holding.getId()).orElseThrow();
+		assertThat(afterFill.getReservedQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
+		assertThat(afterFill.getQuantity()).isEqualByComparingTo("9.00000000");
+
+		List<ExitPlanCondition> conditions = exitPlanConditionRepository.findByExitPlanIdOrderByIdAsc(exitPlanId);
+		assertThat(conditions).hasSize(2);
+		assertThat(conditions)
+			.filteredOn(c -> c.getConditionType() == ExitPlanConditionType.STOP_LOSS)
+			.singleElement()
+			.satisfies(c -> assertThat(c.getStatus()).isEqualTo(ExitPlanConditionStatus.TRIGGERED));
+		assertThat(conditions)
+			.filteredOn(c -> c.getConditionType() == ExitPlanConditionType.TAKE_PROFIT)
+			.singleElement()
+			.satisfies(c -> assertThat(c.getStatus()).isEqualTo(ExitPlanConditionStatus.CANCELLED_BY_OCO));
+	}
 }

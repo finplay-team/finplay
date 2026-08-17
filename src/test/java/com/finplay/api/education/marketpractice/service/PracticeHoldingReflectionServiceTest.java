@@ -534,8 +534,33 @@ class PracticeHoldingReflectionServiceTest {
 		verifyNoInteractions(accountService);
 	}
 
+	// 이슈 #420: evidence를 가진 관찰이 매도 체결 이후에만 존재해도 복기 저장이 완료를 확정해야 한다. hasEvidence의 sellTrade 필터가 되살아나면 이 테스트만 409 PRACTICE_EVIDENCE_MISSING으로 깨진다.
+	// 매도 전 관찰을 함께 두면 필터가 되살아나도 그 관찰로 통과해 버려 회귀를 못 잡으므로, evidence 관찰을 매도 이후 1건으로만 구성한다(통합 테스트에서 겪은 함정과 같은 종류다).
+	@Test
+	void createAttemptReflectionCompletesWhenOnlyObservationAfterSellHasEvidence() {
+		PracticeAttempt attempt = givenAttemptEvidence(NOW.minusSeconds(30));
+		when(practiceCompletionRepository.findByUserIdAndTutorialKey(USER_ID, PracticeIntentionService.TUTORIAL_KEY))
+			.thenReturn(Optional.empty());
+		when(practiceMarketReflectionRepository.save(any(PracticeMarketReflection.class)))
+			.thenAnswer(invocation -> invocation.getArgument(0));
+
+		PracticeHoldingReflectionResponse response = service.createReflection(USER_ID, request());
+
+		assertThat(response.rewardGranted()).isTrue();
+		verify(practiceMarketReflectionRepository).save(any(PracticeMarketReflection.class));
+		verify(practiceCompletionRepository).save(any(PracticeCompletion.class));
+		verify(progress).complete(NOW);
+		verify(attempt).complete(NOW);
+	}
+
 	// attempt 기반 evidence(스냅샷·매도 evidence·5분 기한)와 진입 조건을 함께 세팅한다. 반환값은 검증용 attempt.
+	// 매도 체결은 NOW-1분이므로 기본 관찰 시각(NOW-2분)은 매도 이전이다.
 	private PracticeAttempt givenAttemptEvidence() {
+		return givenAttemptEvidence(NOW.minusMinutes(2));
+	}
+
+	// observedAt만 바꿔 매도 전/후 관찰을 모두 구성할 수 있게 한 오버로드다.
+	private PracticeAttempt givenAttemptEvidence(LocalDateTime observedAt) {
 		when(instrument.isTutorialSample()).thenReturn(true);
 
 		PracticeAttempt attempt = mock(PracticeAttempt.class);
@@ -562,7 +587,7 @@ class PracticeHoldingReflectionServiceTest {
 
 		PracticeMarketObservation withEvidence = mock(PracticeMarketObservation.class);
 		when(withEvidence.getEvidenceType()).thenReturn(PracticeEvidenceType.CLOSER_TO_BOUNDARY);
-		when(withEvidence.getObservedAt()).thenReturn(NOW.minusMinutes(2));
+		when(withEvidence.getObservedAt()).thenReturn(observedAt);
 		when(practiceMarketObservationRepository.findByUserIdAndHoldingIdOrderByObservedAtAsc(USER_ID, HOLDING_ID))
 			.thenReturn(List.of(withEvidence));
 
