@@ -181,8 +181,19 @@ public class CryptoPriceMoveWatcher {
 			BigDecimal detectionScore = scaled(score, DETECTION_SCORE_SCALE);
 			NarrativeResultDto narrative = narrativeService.resolvePriceMoveNarrative(
 				toPrompt(instrument, now, rollingWindowMinutes, changeRate, sources));
+			// occurredAt만 분 경계로 내려 저장한다 (이슈 #407). 크론이 "30 * * * * *"(매 분 30초)라 now는
+			// 운영에서 항상 HH:mm:30.xxxxxx이고 컬럼은 DATETIME(6)이라 그 초가 그대로 남는데, 이 값을 읽는 두
+			// 계산이 서로 다른 규칙을 쓴다 — 본인 값은 PostSellArithmetic.minutesBetween이 양 끝을 분으로 내린
+			// 뒤 빼고, 모집단 중앙값은 HolderPopulationQueryService가 Duration.between(at, 매도).toMinutes()로
+			// 절대 시각 차를 절삭한다. 그래서 매도 초가 30 미만이면(매도 시각의 약 절반) 같은 화면의 "본인 30분"과
+			// "중앙값 29분"이 항상 1분 어긋난다. 주식은 windowEnd가 TIME 컬럼이라 at이 이미 정시여서 두 규칙이
+			// 일치한다 — 어긋나는 것은 코인뿐이고, 여기서 맞추면 양쪽이 같은 T를 본다.
+			//
+			// 탐지에 쓰는 now는 절삭하지 않는다. 스냅샷 조회(nearest)를 분으로 내리면 30초 오래된 가격을 쓰게
+			// 되어 탐지 결과 자체가 달라진다 — 매 분 30초에 도는 이유가 그 신선도다.
+			LocalDateTime occurredAt = PostSellArithmetic.onMinuteBoundary(now);
 			PriceMoveEvent card = PriceMoveEvent.createCrypto(
-				instrument, now, changeRate, detectionScore, narrative.narrative(), narrative.source(), now);
+				instrument, occurredAt, changeRate, detectionScore, narrative.narrative(), narrative.source(), now);
 			priceMoveCardWriter.persist(card, sources);
 			// publish 내부에서 이미 RuntimeException을 삼키지만(CryptoPriceMoveCardPublisher), 그 삼킴이
 			// 나중에 깨지거나 리팩터링되더라도 이미 커밋된 카드가 watch()의 종목별 try-catch(실패 집계)에

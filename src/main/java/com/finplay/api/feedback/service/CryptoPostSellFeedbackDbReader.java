@@ -54,8 +54,14 @@ class CryptoPostSellFeedbackDbReader {
 	 * 성립하지 않는다) 주식이 쓰는 상한 계산이 여기에 나타나지 않는다. 카드를 찾는 축도 다르다: 주식은
 	 * {@code (origin_trade_date, window_end)}이고 코인은 {@code occurred_at} 하나다.
 	 *
-	 * <p>구간 경계는 <b>분으로 내려</b> 넘긴다 — {@code occurred_at}은 정시인데 체결 시각에는 소수 초가 붙어,
-	 * 그대로 넘기면 <b>매수 분과 같은 분에 탐지된 카드가 하한 밖으로 밀린다.</b>
+	 * <p>구간 경계는 <b>분으로 내려</b> 넘긴다 — 체결 시각에는 소수 초가 붙어 있어 그대로 넘기면 <b>매수 분과
+	 * 같은 분에 탐지된 카드가 하한 밖으로 밀린다.</b> 카드 쪽도 분 경계라 양쪽이 같은 축에서 비교된다
+	 * ({@code CryptoPriceMoveWatcher}가 {@code occurred_at}을 분으로 내려 저장한다).
+	 *
+	 * <p><b>2026-08-17 정정 (이슈 #407).</b> 그전까지 이 자리는 "{@code occurred_at}은 정시인데"라고 적었지만
+	 * 사실이 아니었다 — 감시 크론이 매 분 <b>30초</b>에 돌고 컬럼이 {@code DATETIME(6)}이라 저장된 값은
+	 * {@code HH:mm:30.xxxxxx}였다. 그래서 상한이 {@code onMinuteBoundary(sellAt)}인 이 질의에서 <b>매도와 같은
+	 * 분에 탐지된 카드가 오히려 빠지고 있었다.</b> 저장 쪽을 분 경계로 맞추면서 이 전제가 비로소 참이 됐다.
 	 */
 	@Transactional(readOnly = true)
 	List<HeldPriceMoveItem> findHeldPriceMoves(Trade trade, LocalDateTime buyAt, LocalDateTime sellAt) {

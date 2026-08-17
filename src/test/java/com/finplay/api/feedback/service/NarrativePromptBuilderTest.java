@@ -398,6 +398,28 @@ class NarrativePromptBuilderTest {
 		assertThat(prompt).doesNotContain("null");
 	}
 
+	// 회귀(이슈 #407): holderCount >= 5(READY)여도 중앙값은 null일 수 있다 — "모집단 전원이 그 뒤로 매도하지
+	// 않았다"가 정의된 상태다(§C-8). 가드가 holderCount 하나뿐이던 동안 이 값이 %d에 닿았고, Formatter는 예외가
+	// 아니라 "null"을 찍어 "중앙값은 null분입니다"가 그대로 LLM 입력이 됐다.
+	//
+	// 중앙값이 null이면 30분 내 매도 건수도 0이라 비율 절은 같은 사실의 중복이므로 문장에서 뺀다.
+	@Test
+	@DisplayName("집단 비교가 확정돼도 중앙값이 없으면 그 절만 빠지고 문장에 null이 새지 않는다")
+	void postSellPromptOmitsTheMedianClauseWhenNobodySold() {
+		PostSellPromptDto nobodySold = new PostSellPromptDto(
+			"삼성전자", TRADING_DATE.atTime(9, 30), bd("70000"), TRADING_DATE.atTime(14, 40), bd("68500"), bd("10"),
+			bd("-0.0217"), -15207L, bd("70800"), TRADING_DATE.atTime(11, 5), bd("-0.0325"),
+			bd("68100"), TRADING_DATE.atTime(14, 20), bd("0.0059"), null, null, List.of(),
+			bd("69200"), bd("0.0102"), 12, bd("0.0000"), null, 310, false, HoldHighBasis.MINUTE, List.of(), null);
+
+		String prompt = builder.postSellPrompt(nobodySold);
+
+		assertThat(prompt).contains(
+			"같은 변동 구간을 겪은 다른 사용자 12명 중 그 뒤로 매도한 사람은 없었습니다. 본인은 310분이었습니다.");
+		assertThat(prompt).doesNotContain("null");
+		assertThat(prompt).doesNotContain("중앙값");
+	}
+
 	@Test
 	@DisplayName("매수가 첫 근거 기사보다 늦으면 앞섰다가 아니라 지나 이뤄졌다로 갈린다")
 	void buyToNewsLineFlipsWhenBuyHappensAfterTheFirstArticle() {
