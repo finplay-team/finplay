@@ -74,10 +74,11 @@ public class InvestmentPracticeQueryService {
 		Optional<PracticeCompletion> completion = practiceCompletionRepository
 			.findByUserIdAndTutorialKey(userId, tutorialKey);
 		Optional<PracticeAttempt> attempt = practiceAttemptRepository.findByUserIdAndMarket(userId, market);
-		if (completion.isPresent()
-			&& attempt.filter(value -> value.getStatus() == PracticeAttemptStatus.COMPLETED).isEmpty()) {
-			return buildCompletedResponse(userId, tutorialKey, completion.get());
-		}
+		// 이슈 #426: attempt가 있으면 완료 기록보다 attempt를 먼저 본다.
+		// 예전 첫 분기는 "완료 기록이 있고 attempt가 COMPLETED가 아님"을 무조건 예전 완료 응답으로 돌려보냈다.
+		// 040(완료 후 재시작)이 허용한 재시작 직후 attempt가 그 조건에 걸려 살아 있는 실행의 evidence가 사라졌다.
+		// attempt가 아예 없는 legacy 026 chain 완료자만 아래 완료 기록 폴백을 탄다.
+		// 완료 기록 행은 그대로 남아 completedAt·rewardAmount로 계속 노출되고 보상 재지급도 막는다(040 비즈니스 규칙).
 		if (attempt.isPresent()) {
 			if (attempt.get().getStatus() == PracticeAttemptStatus.COMPLETED) {
 				PracticeCompletion completed = completion
@@ -94,7 +95,7 @@ public class InvestmentPracticeQueryService {
 					attempt.get(),
 					completed);
 			}
-			return buildActiveAttemptResponse(userId, tutorialKey, attempt.get());
+			return buildActiveAttemptResponse(userId, tutorialKey, attempt.get(), completion.orElse(null));
 		}
 		if (completion.isPresent()) {
 			return buildCompletedResponse(userId, tutorialKey, completion.get());
@@ -127,8 +128,13 @@ public class InvestmentPracticeQueryService {
 			PracticeAttemptResponse.from(attempt, null));
 	}
 
+	// 이슈 #426: completion은 "이 사용자·market이 예전에 한 번 완료했는가"만 뜻하며 nullable이다.
+	// 재시작해 다시 진행 중이어도 최초 완료 시각과 이미 받은 보상 금액은 계속 노출한다(040 — 재완료는 보상 재지급 없음).
+	// 한 번도 완료한 적이 없으면 지금까지와 동일하게 completedAt·rewardAmount 둘 다 null이다.
 	private InvestmentPracticeResponse buildActiveAttemptResponse(
-		Long userId, String tutorialKey, PracticeAttempt attempt) {
+		Long userId, String tutorialKey, PracticeAttempt attempt, PracticeCompletion completion) {
+		LocalDateTime completedAt = completion == null ? null : completion.getCompletedAt();
+		Long rewardAmount = completion == null ? null : TUTORIAL_COMPLETION_REWARD_AMOUNT;
 		PracticeAttemptResponse attemptResponse;
 		if (attempt.getInstrument() == null) {
 			attemptResponse = PracticeAttemptResponse.from(attempt, null);
@@ -138,7 +144,7 @@ public class InvestmentPracticeQueryService {
 				new PracticeStepResponse(3, STATUS_NOT_STARTED, true, PracticeEvidenceResponse.empty()),
 				new PracticeStepResponse(4, STATUS_NOT_STARTED, true, PracticeEvidenceResponse.empty()));
 			return new InvestmentPracticeResponse(
-				tutorialKey, STATUS_IN_PROGRESS, 1, steps, null, null, attemptResponse);
+				tutorialKey, STATUS_IN_PROGRESS, 1, steps, completedAt, rewardAmount, attemptResponse);
 		}
 
 		Optional<PracticeRiskSnapshot> snapshot = practiceRiskSnapshotRepository
@@ -151,7 +157,7 @@ public class InvestmentPracticeQueryService {
 				new PracticeStepResponse(3, STATUS_NOT_STARTED, true, PracticeEvidenceResponse.empty()),
 				new PracticeStepResponse(4, STATUS_NOT_STARTED, true, PracticeEvidenceResponse.empty()));
 			return new InvestmentPracticeResponse(
-				tutorialKey, STATUS_IN_PROGRESS, 2, steps, null, null, attemptResponse);
+				tutorialKey, STATUS_IN_PROGRESS, 2, steps, completedAt, rewardAmount, attemptResponse);
 		}
 
 		ResolvedPracticeAttemptEvidenceDto resolved = practiceAttemptEvidenceService
@@ -189,7 +195,8 @@ public class InvestmentPracticeQueryService {
 			new PracticeStepResponse(4, stepFourStatus, stepFourLocked, evidence));
 		String overallStatus = STATUS_EXPIRED.equals(stepFourStatus) ? STATUS_EXPIRED : STATUS_IN_PROGRESS;
 		return new InvestmentPracticeResponse(
-			tutorialKey, overallStatus, qualifyingObservation.isPresent() ? 4 : 3, steps, null, null, attemptResponse);
+			tutorialKey, overallStatus, qualifyingObservation.isPresent() ? 4 : 3, steps, completedAt, rewardAmount,
+			attemptResponse);
 	}
 
 	private InvestmentPracticeResponse buildCompletedAttemptResponse(

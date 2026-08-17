@@ -7,10 +7,13 @@ import static org.mockito.Mockito.when;
 
 import com.finplay.api.account.domain.Account;
 import com.finplay.api.auth.domain.User;
+import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
+import com.finplay.api.education.marketpractice.domain.PracticeAttemptStatus;
 import com.finplay.api.education.marketpractice.domain.PracticeCompletion;
 import com.finplay.api.education.marketpractice.domain.PracticeEvidenceType;
 import com.finplay.api.education.marketpractice.domain.PracticeMarketObservation;
 import com.finplay.api.education.marketpractice.domain.PracticeMarketReflection;
+import com.finplay.api.education.marketpractice.domain.PracticeRiskSnapshot;
 import com.finplay.api.education.marketpractice.dto.response.InvestmentPracticeResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeStepResponse;
 import com.finplay.api.education.marketpractice.repository.PracticeCompletionRepository;
@@ -23,6 +26,7 @@ import com.finplay.api.favorite.dto.response.FavoriteResponse;
 import com.finplay.api.favorite.service.FavoriteService;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
+import com.finplay.api.order.domain.Trade;
 import com.finplay.api.portfolio.domain.Holding;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -439,6 +443,147 @@ class InvestmentPracticeQueryServiceTest {
 		assertThat(inProgressResponse.steps()).hasSize(3);
 	}
 
+	// 이슈 #426 (1): 완료 기록이 있어도 attempt가 재시작으로 진행 중이면 그 실행의 evidence를 돌려준다.
+	// 예전 첫 분기는 이 조합을 예전 완료 응답으로 덮어써서 매수 사실·매도 기한이 프론트에 전달되지 않았다.
+	@Test
+	void getProgressReturnsRestartedRunEvidenceWhenCompletionExistsAndAttemptIsInProgress() {
+		Holding holding = holding(40L, 100L, true);
+		PracticeMarketReflection reflection = reflection(50L, holding, NOW.minusDays(1));
+		PracticeCompletion completion = completion(reflection, NOW.minusDays(1));
+		when(practiceCompletionRepository.findByUserIdAndTutorialKey(USER_ID, PracticeIntentionService.TUTORIAL_KEY))
+			.thenReturn(Optional.of(completion));
+
+		PracticeAttempt attempt = attempt(70L, 9L, PracticeAttemptStatus.IN_PROGRESS, instrument(100L));
+		when(practiceAttemptRepository.findByUserIdAndMarket(USER_ID, Market.STOCK))
+			.thenReturn(Optional.of(attempt));
+
+		LocalDateTime buyExecutedAt = NOW.minusMinutes(2);
+		PracticeRiskSnapshot snapshot = riskSnapshot(30L, buyExecutedAt);
+		when(practiceRiskSnapshotRepository.findByAttemptIdAndRunNumber(70L, 9L)).thenReturn(Optional.of(snapshot));
+		ResolvedPracticeAttemptEvidenceDto resolved = new ResolvedPracticeAttemptEvidenceDto(
+			snapshot, 40L, new BigDecimal("3"), BigDecimal.ZERO, new BigDecimal("3"), null);
+		when(practiceAttemptEvidenceService.requireCurrentRun(attempt, USER_ID, null)).thenReturn(resolved);
+		when(practiceMarketObservationRepository.findByUserIdAndHoldingIdOrderByObservedAtAscIdAsc(USER_ID, 40L))
+			.thenReturn(List.of());
+
+		InvestmentPracticeResponse response = service.getProgress(USER_ID, Market.STOCK);
+
+		assertThat(response.status()).isEqualTo("IN_PROGRESS");
+		assertThat(response.currentStep()).isEqualTo(3);
+		assertThat(response.steps()).hasSize(4);
+
+		PracticeStepResponse step2 = response.steps().get(1);
+		assertThat(step2.status()).isEqualTo("COMPLETED");
+		assertThat(step2.evidence().buyTradeId()).isEqualTo(30L);
+		assertThat(step2.evidence().buyTradeExecutedAt()).isEqualTo(buyExecutedAt);
+		assertThat(step2.evidence().buyQuantity()).isEqualByComparingTo("3");
+		assertThat(step2.evidence().sellQuantity()).isEqualByComparingTo("0");
+		assertThat(step2.evidence().remainingQuantity()).isEqualByComparingTo("3");
+		assertThat(step2.evidence().saleDeadlineAt()).isEqualTo(buyExecutedAt.plusMinutes(5));
+		assertThat(step2.evidence().referenceStopLossPrice()).isEqualByComparingTo("97.00000000");
+		assertThat(step2.evidence().referenceTakeProfitPrice()).isEqualByComparingTo("105.00000000");
+
+		// 재시작한 실행의 risk snapshot이 attempt에 실려야 프론트가 매도 단계를 이어갈 수 있다(이슈 #426 증상).
+		assertThat(response.attempt().attemptId()).isEqualTo(70L);
+		assertThat(response.attempt().runNumber()).isEqualTo(9L);
+		assertThat(response.attempt().mode()).isEqualTo("ACTIVE");
+		assertThat(response.attempt().status()).isEqualTo("IN_PROGRESS");
+		assertThat(response.attempt().riskSnapshot()).isNotNull();
+		assertThat(response.attempt().riskSnapshot().buyTradeId()).isEqualTo(30L);
+
+		// 040: 재시작해 다시 진행 중이어도 이미 받은 최초 완료 보상은 그대로 노출된다.
+		assertThat(response.rewardAmount()).isEqualTo(5_000_000L);
+		assertThat(response.completedAt()).isEqualTo(NOW.minusDays(1));
+	}
+
+	// 이슈 #426 (2): 재시작 직후 종목 선택 단계에서도 최초 완료 기록의 보상 금액·완료 시각은 유지된다.
+	@Test
+	void getProgressKeepsFirstCompletionRewardWhenRestartedAttemptIsSelectingInstrument() {
+		Holding holding = holding(40L, 100L, true);
+		PracticeMarketReflection reflection = reflection(50L, holding, NOW.minusDays(1));
+		PracticeCompletion completion = completion(reflection, NOW.minusDays(1));
+		when(practiceCompletionRepository.findByUserIdAndTutorialKey(USER_ID, PracticeIntentionService.TUTORIAL_KEY))
+			.thenReturn(Optional.of(completion));
+
+		PracticeAttempt attempt = attempt(70L, 2L, PracticeAttemptStatus.SELECTING_INSTRUMENT, null);
+		when(practiceAttemptRepository.findByUserIdAndMarket(USER_ID, Market.STOCK))
+			.thenReturn(Optional.of(attempt));
+
+		InvestmentPracticeResponse response = service.getProgress(USER_ID, Market.STOCK);
+
+		assertThat(response.status()).isEqualTo("IN_PROGRESS");
+		assertThat(response.currentStep()).isEqualTo(1);
+		assertThat(response.rewardAmount()).isEqualTo(5_000_000L);
+		assertThat(response.completedAt()).isEqualTo(NOW.minusDays(1));
+		assertThat(response.attempt().status()).isEqualTo("SELECTING_INSTRUMENT");
+		assertThat(response.attempt().instrumentId()).isNull();
+	}
+
+	// 이슈 #426 (3): attempt가 아예 없는 legacy 026 chain 완료자 응답은 이번 변경으로 달라지지 않는다.
+	@Test
+	void getProgressStillReturnsCompletedFallbackWhenCompletionExistsWithoutAttempt() {
+		Holding holding = holding(40L, 100L);
+		PracticeMarketReflection reflection = reflection(50L, holding, NOW.minusMinutes(1));
+		PracticeCompletion completion = completion(reflection, NOW);
+		when(practiceCompletionRepository.findByUserIdAndTutorialKey(USER_ID, PracticeIntentionService.TUTORIAL_KEY))
+			.thenReturn(Optional.of(completion));
+		when(practiceAttemptRepository.findByUserIdAndMarket(USER_ID, Market.STOCK)).thenReturn(Optional.empty());
+		when(chainResolutionService.resolveForInstrument(USER_ID, PracticeIntentionService.TUTORIAL_KEY, 100L))
+			.thenReturn(Optional.empty());
+		when(practiceMarketObservationRepository.findByUserIdAndHoldingIdOrderByObservedAtAscIdAsc(USER_ID, 40L))
+			.thenReturn(List.of());
+
+		InvestmentPracticeResponse response = service.getProgress(USER_ID, Market.STOCK);
+
+		assertThat(response.status()).isEqualTo("COMPLETED");
+		assertThat(response.currentStep()).isNull();
+		assertThat(response.completedAt()).isEqualTo(NOW);
+		assertThat(response.rewardAmount()).isEqualTo(5_000_000L);
+		assertThat(response.steps()).hasSize(3);
+		assertThat(response.steps()).allSatisfy(step -> assertThat(step.status()).isEqualTo("COMPLETED"));
+		assertThat(response.attempt()).isNull();
+	}
+
+	// 이슈 #426 (4): attempt가 COMPLETED인 replay 응답도 이번 변경 전과 동일하다.
+	@Test
+	void getProgressStillReturnsCompletedReplayWhenAttemptIsCompleted() {
+		Holding holding = holding(40L, 100L, true);
+		PracticeMarketReflection reflection = reflection(50L, holding, NOW.minusMinutes(1));
+		PracticeCompletion completion = completion(reflection, NOW);
+		when(practiceCompletionRepository.findByUserIdAndTutorialKey(USER_ID, PracticeIntentionService.TUTORIAL_KEY))
+			.thenReturn(Optional.of(completion));
+
+		PracticeAttempt attempt = attempt(70L, 1L, PracticeAttemptStatus.COMPLETED, instrument(100L));
+		when(practiceAttemptRepository.findByUserIdAndMarket(USER_ID, Market.STOCK))
+			.thenReturn(Optional.of(attempt));
+
+		LocalDateTime buyExecutedAt = NOW.minusMinutes(4);
+		PracticeRiskSnapshot snapshot = riskSnapshot(30L, buyExecutedAt);
+		when(practiceRiskSnapshotRepository.findByAttemptIdAndRunNumber(70L, 1L)).thenReturn(Optional.of(snapshot));
+		Trade sellTrade = mock(Trade.class);
+		when(sellTrade.getId()).thenReturn(35L);
+		when(sellTrade.getExecutedAt()).thenReturn(NOW.minusMinutes(1));
+		ResolvedPracticeAttemptEvidenceDto resolved = new ResolvedPracticeAttemptEvidenceDto(
+			snapshot, 40L, new BigDecimal("3"), new BigDecimal("3"), BigDecimal.ZERO, sellTrade);
+		when(practiceAttemptEvidenceService.requireCurrentRun(attempt, USER_ID, 40L)).thenReturn(resolved);
+		PracticeMarketObservation qualifying = observation(60L, PracticeEvidenceType.CLOSER_TO_BOUNDARY,
+			NOW.minusMinutes(3));
+		when(practiceMarketObservationRepository.findByUserIdAndHoldingIdOrderByObservedAtAscIdAsc(USER_ID, 40L))
+			.thenReturn(List.of(qualifying));
+
+		InvestmentPracticeResponse response = service.getProgress(USER_ID, Market.STOCK);
+
+		assertThat(response.status()).isEqualTo("COMPLETED");
+		assertThat(response.currentStep()).isNull();
+		assertThat(response.completedAt()).isEqualTo(NOW);
+		assertThat(response.rewardAmount()).isEqualTo(5_000_000L);
+		assertThat(response.steps()).hasSize(4);
+		assertThat(response.steps()).allSatisfy(step -> assertThat(step.status()).isEqualTo("COMPLETED"));
+		assertThat(response.attempt().mode()).isEqualTo("REPLAY");
+		assertThat(response.steps().get(3).evidence().sellTradeId()).isEqualTo(35L);
+		assertThat(response.steps().get(3).evidence().observationId()).isEqualTo(60L);
+	}
+
 	private static ResolvedPracticeChainDto chainDto(
 		Long favoriteId, LocalDateTime favoriteCreatedAt, Long intentionId, LocalDateTime intentionCreatedAt,
 		Long buyTradeId, LocalDateTime buyTradeExecutedAt, Long holdingId) {
@@ -457,6 +602,38 @@ class InvestmentPracticeQueryServiceTest {
 			favoriteId, favoriteCreatedAt, intentionId, intentionCreatedAt, new BigDecimal("90"),
 			new BigDecimal("110"), buyTradeId, buyTradeExecutedAt, new BigDecimal("100"), holdingId, sellTradeId,
 			sellTradeExecutedAt, true);
+	}
+
+	// attempt 경로(039/040) 전용 mock — 재시작 실행의 id·세대·상태·선택 종목만 채운다.
+	private static PracticeAttempt attempt(
+		Long attemptId, long runNumber, PracticeAttemptStatus status, Instrument instrument) {
+		PracticeAttempt attempt = mock(PracticeAttempt.class);
+		when(attempt.getId()).thenReturn(attemptId);
+		when(attempt.getMarket()).thenReturn(Market.STOCK);
+		when(attempt.getRunNumber()).thenReturn(runNumber);
+		when(attempt.getStatus()).thenReturn(status);
+		when(attempt.getInstrument()).thenReturn(instrument);
+		return attempt;
+	}
+
+	private static PracticeRiskSnapshot riskSnapshot(Long buyTradeId, LocalDateTime buyExecutedAt) {
+		Trade buyTrade = mock(Trade.class);
+		when(buyTrade.getId()).thenReturn(buyTradeId);
+		when(buyTrade.getExecutedAt()).thenReturn(buyExecutedAt);
+		PracticeRiskSnapshot snapshot = mock(PracticeRiskSnapshot.class);
+		when(snapshot.getBuyTrade()).thenReturn(buyTrade);
+		when(snapshot.getEntryPrice()).thenReturn(new BigDecimal("100.00000000"));
+		when(snapshot.getStopLossPrice()).thenReturn(new BigDecimal("97.00000000"));
+		when(snapshot.getTakeProfitPrice()).thenReturn(new BigDecimal("105.00000000"));
+		when(snapshot.getCreatedAt()).thenReturn(buyExecutedAt);
+		return snapshot;
+	}
+
+	private static Instrument instrument(Long instrumentId) {
+		Instrument instrument = Instrument.create(
+			Market.STOCK, "SANDBOX_STK_1", "샘플종목", new BigDecimal("100"), 0L, true, NOW);
+		ReflectionTestUtils.setField(instrument, "id", instrumentId);
+		return instrument;
 	}
 
 	private static Holding holding(Long holdingId, Long instrumentId) {

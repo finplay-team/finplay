@@ -26,6 +26,7 @@
 | 23:52 | implementer | backend `compileJava`/대상 `spotlessCheck`, frontend `lint`/`build` | legacy completion의 lazy 완료 replay attempt·완료시각 고정 chart와 주문 목록 attempt/run 귀속 노출, frontend 정확한 run pending 복원 구현 검증 |
 | 00:20 | tester | backend `gradlew build`, frontend 17 tests + `lint` + `build` | backend 4,124 tests, 실패 0, skip 1, 3분 49초; frontend 전 게이트 통과 |
 | 00:20 | planner | PRD §3·036 tasks/run-log 최종 동기화 | Backend PR #381 / companion frontend PR #30, TUTORIAL-FLOW-001~012 완료 근거 |
+| 23:35 (08-17) | implementer | Gradle 미실행(오케스트레이터가 순차 단독 실행, agent-mistakes 2026-07-30·08-11) | 이슈 #426 진행 조회 분기 역전 — 근거는 040 spec/plan(완료 후 재시작·보상 1회), 026 spec(완료 evidence 불변), api-contracts "실습 진행 조회(holding 기준)"의 "attempt가 있으면 legacy completion으로 fallback하지 않는다" |
 
 ## 모니터링 (사람용 요약)
 - 21:22 — V36 추가형 migration, attempt·risk 엔티티/Repository, nullable 주문 run 귀속 구현 및 컴파일 통과.
@@ -41,3 +42,4 @@
 - 23:09 — 영속 attempt 존재 여부를 새 흐름의 명시적 경계로 삼아 기존 샘플의 비귀속 주문과 chain 관찰·복기·완료/만료/재시도를 보존하고, attempt가 있는 사용자는 current-run 검증을 우회하지 못하게 고정.
 - 23:52 — migration 이전 completion 사용자는 실제·샘플 reflection 종목으로 완료 replay attempt를 lazy 생성하고 risk snapshot 없이 legacy 완료 evidence를 유지하며, 주문 목록 attempt/run으로 frontend stale pending 채택을 차단.
 - 00:20 — Backend PR #381은 전체 build 4,124 tests(실패 0, skip 1, 3분 49초), companion frontend PR #30은 17 tests·lint·build를 통과했고 TUTORIAL-FLOW-001~012 및 최종 문서/PRD 동기화를 완료.
+- 23:35 (08-17) — 이슈 #426: 진행 조회가 "완료 기록 + 비완료 attempt"를 예전 완료 응답으로 덮어써 040 재시작 사용자의 매수·매도 evidence가 사라지던 분기를 뒤집고(attempt 우선, attempt 없을 때만 완료 폴백), 재시작 중에도 최초 완료의 `completedAt`·`rewardAmount`는 유지하도록 수정.
