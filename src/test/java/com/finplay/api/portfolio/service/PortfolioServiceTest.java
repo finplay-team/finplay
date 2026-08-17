@@ -58,7 +58,7 @@ class PortfolioServiceTest {
 	}
 
 	@Test
-	void getPortfolioSummaryReturnsSummedSeedMoneyWhenBothMarketsHaveNoHoldings() {
+	void getPortfolioSummaryAggregatesTotalValueWhenBothMarketsHaveNoHoldings() {
 		AccountService accountService = mock(AccountService.class);
 		PortfolioService portfolioService = new PortfolioService(accountService);
 
