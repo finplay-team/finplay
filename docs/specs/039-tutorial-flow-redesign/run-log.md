@@ -26,6 +26,7 @@
 | 23:52 | implementer | backend `compileJava`/대상 `spotlessCheck`, frontend `lint`/`build` | legacy completion의 lazy 완료 replay attempt·완료시각 고정 chart와 주문 목록 attempt/run 귀속 노출, frontend 정확한 run pending 복원 구현 검증 |
 | 00:20 | tester | backend `gradlew build`, frontend 17 tests + `lint` + `build` | backend 4,124 tests, 실패 0, skip 1, 3분 49초; frontend 전 게이트 통과 |
 | 00:20 | planner | PRD §3·036 tasks/run-log 최종 동기화 | Backend PR #381 / companion frontend PR #30, TUTORIAL-FLOW-001~012 완료 근거 |
+| - | implementer | (지시로 Gradle 실행 금지 — 컴파일 미검증) `TradeService.summarizePracticeRun` 확장, `PracticeTradeResultCalculator`·`PracticeTradeResultResponse`·`PracticeSellVerdict` 신설, evidence에 `tradeResult` 노출 | 이슈 #421, spec TUTORIAL-FLOW-013, ADR-0002, `PortfolioSellService.finalizeSellRealizedPnl`(수수료 포함 realizedPnl 정의), spec 012 returnRate 식 |
 
 ## 모니터링 (사람용 요약)
 - 21:22 — V36 추가형 migration, attempt·risk 엔티티/Repository, nullable 주문 run 귀속 구현 및 컴파일 통과.
@@ -41,3 +42,4 @@
 - 23:09 — 영속 attempt 존재 여부를 새 흐름의 명시적 경계로 삼아 기존 샘플의 비귀속 주문과 chain 관찰·복기·완료/만료/재시도를 보존하고, attempt가 있는 사용자는 current-run 검증을 우회하지 못하게 고정.
 - 23:52 — migration 이전 completion 사용자는 실제·샘플 reflection 종목으로 완료 replay attempt를 lazy 생성하고 risk snapshot 없이 legacy 완료 evidence를 유지하며, 주문 목록 attempt/run으로 frontend stale pending 채택을 차단.
 - 00:20 — Backend PR #381은 전체 build 4,124 tests(실패 0, skip 1, 3분 49초), companion frontend PR #30은 17 tests·lint·build를 통과했고 TUTORIAL-FLOW-001~012 및 최종 문서/PRD 동기화를 완료.
+- 이번 실행 매매 결과(매수·매도 체결가, 수수료 포함 실현손익, 수익률, 기준선 대비 매도 위치)를 attempt evidence의 `tradeResult`로 노출. 스키마 변경 없이 기존 체결 원장으로 계산하며, 수익률 분모는 `realizedPnl=(매도금액-수수료)-매수원가` 식을 되돌려 배분 테이블 재조회 없이 얻는다. 워크트리 병행 실행 제약으로 Gradle을 돌리지 못해 컴파일·테스트 미검증.

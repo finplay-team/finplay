@@ -213,7 +213,7 @@ class PracticeHoldingObservationServiceTest {
 		when(snapshot.getTakeProfitPrice()).thenReturn(new BigDecimal("120"));
 		when(snapshot.getCreatedAt()).thenReturn(OBSERVED_AT.minusSeconds(1));
 		ResolvedPracticeAttemptEvidenceDto evidence = new ResolvedPracticeAttemptEvidenceDto(
-			snapshot, HOLDING_ID, BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.ONE, null);
+			snapshot, HOLDING_ID, BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.ONE, null, null, null, null, null);
 		when(practiceAttemptEvidenceService.requireCurrentRun(attempt, USER_ID, HOLDING_ID)).thenReturn(evidence);
 		BigDecimal canonicalPrice = new BigDecimal("10932.45600000");
 		when(canonicalPriceService.canonicalPriceForMutation(USER_ID, instrument, OBSERVED_AT))

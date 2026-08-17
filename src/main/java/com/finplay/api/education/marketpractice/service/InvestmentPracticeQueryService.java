@@ -257,7 +257,15 @@ public class InvestmentPracticeQueryService {
 			saleDeadlineAt,
 			resolved.buyQuantity(),
 			resolved.sellQuantity(),
-			resolved.remainingQuantity());
+			resolved.remainingQuantity(),
+			// 이슈 #421: 매도 전이면 매도가·손익·판정이 null인 객체가 나가고 매수가만 채워진다.
+			PracticeTradeResultCalculator.calculate(
+				resolved.averageBuyPrice(),
+				resolved.averageSellPrice(),
+				resolved.realizedPnl(),
+				resolved.soldBuyBasis(),
+				resolved.riskSnapshot().getStopLossPrice(),
+				resolved.riskSnapshot().getTakeProfitPrice()));
 	}
 
 	// 완료 조건 1: practice_completions 행이 있으면 COMPLETED, 1·2·3단계 전부 COMPLETED. evidence는
@@ -299,6 +307,7 @@ public class InvestmentPracticeQueryService {
 			null,
 			null,
 			null,
+			null,
 			null);
 
 		if (!sampleInstrument) {
@@ -324,6 +333,7 @@ public class InvestmentPracticeQueryService {
 			evidence.buyTradeExecutedAt() == null
 				? null
 				: evidence.buyTradeExecutedAt().plusMinutes(SALE_DEADLINE_MINUTES),
+			null,
 			null,
 			null,
 			null);
@@ -363,6 +373,7 @@ public class InvestmentPracticeQueryService {
 			null,
 			null,
 			null,
+			null,
 			null);
 
 		List<PracticeMarketObservation> observations = practiceMarketObservationRepository
@@ -385,6 +396,7 @@ public class InvestmentPracticeQueryService {
 				observation.getId(),
 				observation.getObservedAt(),
 				observation.getEvidenceType().name(),
+				null,
 				null,
 				null,
 				null,
@@ -430,6 +442,7 @@ public class InvestmentPracticeQueryService {
 			chain.sellTradeId(),
 			chain.sellTradeExecutedAt(),
 			saleDeadlineAt,
+			null,
 			null,
 			null,
 			null);
