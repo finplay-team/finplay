@@ -20,6 +20,7 @@ import com.finplay.api.order.repository.TradeRepository;
 import com.finplay.api.portfolio.domain.Holding;
 import com.finplay.api.portfolio.service.PortfolioSellService;
 import com.finplay.api.portfolio.service.SellAllocationDto;
+import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -54,6 +55,7 @@ public class ExitPlanFillService {
 	private final TradeRepository tradeRepository;
 	private final Clock clock;
 	private final ApplicationEventPublisher eventPublisher;
+	private final EntityManager entityManager;
 
 	@Transactional
 	public void fillIfPending(Long exitPlanId, BigDecimal currentPrice) {
@@ -63,10 +65,28 @@ public class ExitPlanFillService {
 			return;
 		}
 
+		// ownershipCheck.getHolding()(non-id 접근)이 holding을 이미 1급 캐시에 올려둔다 — 이후 잠금 쿼리(FOR
+		// UPDATE)가 실행돼도 Hibernate는 이미 세션에 있는 같은 id 인스턴스를 필드 갱신 없이 그대로 반환하므로,
+		// 잠금 직전까지 다른 트랜잭션이 커밋한 변경(reservedQuantity·status)을 보지 못한다(2026-08-17
+		// ExitPlanCancelFillConcurrencyIntegrationTest에서 재현 — "정확히 한 번" 규칙 위반). entityManager.clear()로
+		// 세션 전체를 비우면 이 메서드가 같은 트랜잭션을 공유하는 다른 호출자(OSIV 없는 이 앱에서도 테스트의
+		// @Transactional처럼 더 넓은 트랜잭션 안에서 호출될 수 있다)가 이미 들고 있는 무관한 엔티티까지 분리돼
+		// 500으로 이어질 수 있어(재현 확인), 이 메서드가 직접 로딩한 두 엔티티만 선택적으로 detach한다.
+		Holding preloadedHolding = ownershipCheck.getHolding();
+		Long accountId = preloadedHolding.getAccount().getId();
+		Instrument instrumentRef = ownershipCheck.getInstrument();
+		// detach 전에 반드시 flush한다 — 같은 트랜잭션 안에서 이미 이 두 엔티티에 가해진(예: 테스트의
+		// @Transactional처럼 더 넓은 트랜잭션을 공유할 때 앞서 호출된 생성 로직의 reserveQuantity) 아직 flush되지
+		// 않은 변경을 detach가 그대로 버리면, 아래 재조회가 DB의 예전 값을 읽어 "예약된 수량보다 큰 수량을 해제"
+		// 같은 원장 불일치를 낸다(재현 확인).
+		entityManager.flush();
+		entityManager.detach(ownershipCheck);
+		entityManager.detach(preloadedHolding);
+
 		// 잠금 순서 account → holding → plan — 기존 시장가·지정가 매도와 동일하게 현금 갱신 전에 계좌를 먼저
-		// 잠근다(PR #349 리뷰 차단 수정). getId()는 FK 값만 읽으므로 lazy 프록시 초기화 없이 안전하다.
-		Account account = accountService.getAccountByIdForUpdate(ownershipCheck.getHolding().getAccount().getId());
-		Holding holding = portfolioSellService.getHoldingForUpdate(account, ownershipCheck.getInstrument());
+		// 잠근다(PR #349 리뷰 차단 수정).
+		Account account = accountService.getAccountByIdForUpdate(accountId);
+		Holding holding = portfolioSellService.getHoldingForUpdate(account, instrumentRef);
 
 		ExitPlan plan = exitPlanRepository.findByIdForUpdate(exitPlanId).orElse(null);
 		if (plan == null || !plan.isPending()) {

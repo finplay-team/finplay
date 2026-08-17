@@ -226,14 +226,16 @@ public class InvestmentPracticeQueryService {
 			PracticeAttemptResponse.from(attempt, resolved.riskSnapshot()));
 	}
 
+	// 현재 run 귀속 판정(risk snapshot 생성 시각 이후)만 남긴다. 매도 체결 이후 관찰을 배제하던 필터는
+	// 제거했다 — 026 spec.md "비즈니스 규칙"이 관찰·복기를 "매도 여부와 무관하게" 허용하도록 못박았고 031은
+	// 이 원칙을 그대로 상속한다. 배제하면 매도 후에 채운 evidence가 3·4단계 진행 조회에서 사라져 복기가
+	// 영구히 409 PRACTICE_EVIDENCE_MISSING이 된다(이슈 #420, 프로덕션 재현).
 	private List<PracticeMarketObservation> currentRunObservations(
 		Long userId, ResolvedPracticeAttemptEvidenceDto resolved) {
 		return practiceMarketObservationRepository
 			.findByUserIdAndHoldingIdOrderByObservedAtAscIdAsc(userId, resolved.holdingId())
 			.stream()
 			.filter(observation -> !observation.getObservedAt().isBefore(resolved.riskSnapshot().getCreatedAt()))
-			.filter(observation -> resolved.sellTrade() == null
-				|| !observation.getObservedAt().isAfter(resolved.sellTrade().getExecutedAt()))
 			.toList();
 	}
 

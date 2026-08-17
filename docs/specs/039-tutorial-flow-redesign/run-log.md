@@ -26,6 +26,8 @@
 | 23:52 | implementer | backend `compileJava`/대상 `spotlessCheck`, frontend `lint`/`build` | legacy completion의 lazy 완료 replay attempt·완료시각 고정 chart와 주문 목록 attempt/run 귀속 노출, frontend 정확한 run pending 복원 구현 검증 |
 | 00:20 | tester | backend `gradlew build`, frontend 17 tests + `lint` + `build` | backend 4,124 tests, 실패 0, skip 1, 3분 49초; frontend 전 게이트 통과 |
 | 00:20 | planner | PRD §3·036 tasks/run-log 최종 동기화 | Backend PR #381 / companion frontend PR #30, TUTORIAL-FLOW-001~012 완료 근거 |
+| 2026-08-17 | implementer | 매도 이후 관찰을 막던 세 지점(관찰 서비스의 무조건 차단 가드 1곳 + 복기 서비스·진행 조회의 evidence 배제 필터 2곳) 제거 + api-contracts 동기화 (Gradle 미실행, 검증은 메인 세션 위임) | 026 spec.md "매도 여부와 무관하게" 원칙을 031이 상속, 이슈 #420 프로덕션 재현 |
+| (#422) | implementer | `PracticeHoldingReflectionResponse.PROMPT` 문구 교체 + api-contracts 복기 절 보강 (Gradle 미실행, 병렬 worktree 충돌 방지) | TUTORIAL-FLOW-008(서버 자동 -3%/+5%)·031 SANDBOX-006(4단계 매도 후 복기)와 어긋난 "계획한 손절·익절" 문구 제거 |
 | 23:35 (08-17) | implementer | Gradle 미실행(오케스트레이터가 순차 단독 실행, agent-mistakes 2026-07-30·08-11) | 이슈 #426 진행 조회 분기 역전 — 근거는 040 spec/plan(완료 후 재시작·보상 1회), 026 spec(완료 evidence 불변), api-contracts "실습 진행 조회(holding 기준)"의 "attempt가 있으면 legacy completion으로 fallback하지 않는다" |
 
 ## 모니터링 (사람용 요약)
@@ -42,4 +44,6 @@
 - 23:09 — 영속 attempt 존재 여부를 새 흐름의 명시적 경계로 삼아 기존 샘플의 비귀속 주문과 chain 관찰·복기·완료/만료/재시도를 보존하고, attempt가 있는 사용자는 current-run 검증을 우회하지 못하게 고정.
 - 23:52 — migration 이전 completion 사용자는 실제·샘플 reflection 종목으로 완료 replay attempt를 lazy 생성하고 risk snapshot 없이 legacy 완료 evidence를 유지하며, 주문 목록 attempt/run으로 frontend stale pending 채택을 차단.
 - 00:20 — Backend PR #381은 전체 build 4,124 tests(실패 0, skip 1, 3분 49초), companion frontend PR #30은 17 tests·lint·build를 통과했고 TUTORIAL-FLOW-001~012 및 최종 문서/PRD 동기화를 완료.
+- 2026-08-17 — 이슈 #420: 매도 이후 관찰을 막던 세 지점을 제거했다. 관찰 서비스(`PracticeHoldingObservationService`)의 매도 체결 시 무조건 409 `PRACTICE_STEP_LOCKED` 차단 가드 1곳, 복기 서비스(`PracticeHoldingReflectionService`)와 진행 조회(`InvestmentPracticeQueryService`)에서 매도 체결 이후 관찰을 evidence에서 배제하던 필터 2곳이다. 매도 후 evidence를 채운 사용자의 영구 409를 해소하고 현재 run 귀속(risk snapshot 시각) 판정만 남겼다.
+- (#422) — 복기 고정 프롬프트를 "전량 매도 이후 + 서버 자동 손절·익절선" 전제에 맞게 다시 쓰고, 기존 테스트는 이미 상수를 참조하므로 문구 수정만으로 동기화됨(빌드 검증은 메인 세션 단독 실행 예정).
 - 23:35 (08-17) — 이슈 #426: 진행 조회가 "완료 기록 + 비완료 attempt"를 예전 완료 응답으로 덮어써 040 재시작 사용자의 매수·매도 evidence가 사라지던 분기를 뒤집고(attempt 우선, attempt 없을 때만 완료 폴백), 재시작 중에도 최초 완료의 `completedAt`·`rewardAmount`는 유지하도록 수정.

@@ -22,6 +22,7 @@ import com.finplay.api.order.repository.ExitPlanConditionRepository;
 import com.finplay.api.order.repository.ExitPlanRepository;
 import com.finplay.api.portfolio.domain.Holding;
 import com.finplay.api.portfolio.service.PortfolioSellService;
+import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -44,9 +45,10 @@ class ExitPlanCancelServiceTest {
 	private final ExitPlanConditionRepository exitPlanConditionRepository = mock(ExitPlanConditionRepository.class);
 	private final PortfolioSellService portfolioSellService = mock(PortfolioSellService.class);
 	private final Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
+	private final EntityManager entityManager = mock(EntityManager.class);
 
 	private final ExitPlanCancelService service = new ExitPlanCancelService(
-		exitPlanRepository, exitPlanConditionRepository, portfolioSellService, clock);
+		exitPlanRepository, exitPlanConditionRepository, portfolioSellService, clock, entityManager);
 
 	@Test
 	void cancelReleasesReservedQuantityAndCancelsPendingConditionsForPendingPlan() {
