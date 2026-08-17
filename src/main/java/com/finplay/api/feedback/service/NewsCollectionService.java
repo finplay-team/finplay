@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -52,7 +53,15 @@ import org.springframework.stereotype.Service;
  *
  * <p><b>수집 실패가 다른 경로를 막지 않는다</b>(FEED-001·§실패 처리). 두 수집기 모두 실패를 예외가 아니라 빈
  * 목록으로 돌려주는 것이 계약이고, 이 배치는 자기 스레드에서 독립적으로 돌며 원장에 쓰지 않는다 — 분봉 수집·
- * 재생세션 확정·주식 시장 개장과 공유하는 상태가 없다. 그래서 여기에 방어적인 {@code catch}를 더 두지 않는다.
+ * 재생세션 확정·주식 시장 개장과 공유하는 상태가 없다.
+ *
+ * <p><b>2026-08-17 정정 (이슈 #408).</b> 그전까지 위 문단은 "그래서 여기에 방어적인 {@code catch}를 더 두지
+ * 않는다"로 끝났다. 근거가 어긋나 있었다 — <b>던지는 것은 수집기가 아니라 {@code save}다.</b> 조회-후-삽입
+ * 구조이고 트랜잭션이 없어 건별 커밋되므로, 경합이 나면
+ * {@code uk_market_news_items_instrument_url}에서 {@code DataIntegrityViolationException}이 그 자리에서
+ * 올라온다. {@code Market.values()}가 {@code STOCK → CRYPTO} 순이라 <b>주식 종목 하나의 실패가 남은 주식과
+ * 코인 전 종목 수집을 통째로 건너뛰었고</b>, {@code @Scheduled}가 삼켜 다음 회차까지 드러나지 않았다.
+ * 지금은 종목 루프가 {@code catch}로 격리되고, 저장은 <b>중복 행만</b> 삼킨다(아래 {@code save} 참고).
  */
 @Slf4j
 @Service
@@ -77,18 +86,25 @@ public class NewsCollectionService {
 	 */
 	@Scheduled(cron = "${feedback.news.collect-cron}", zone = "Asia/Seoul")
 	public void collectNews() {
-		LocalDateTime collectedAt = LocalDateTime.now(clock);
 		int saved = 0;
+		int failed = 0;
 		for (Market market : Market.values()) {
 			List<Instrument> instruments = instrumentService.getRealInstrumentEntities(market);
 			// 제목 필터는 같은 시장 안에서만 판정한다 — 시장을 섞으면 종목명이 겹치는 순간 정상 기사가 사라진다.
 			List<String> sameMarketNames = instruments.stream().map(Instrument::getName).toList();
 			for (Instrument instrument : instruments) {
-				List<CollectedNewsDto> collected = newsCollector.collect(instrument, sameMarketNames);
-				saved += save(instrument, MarketNewsItemType.NEWS, collected, collectedAt);
+				// 종목 하나가 실패해도 나머지는 계속한다 (이슈 #408). CryptoPriceMoveWatcher.watch()·
+				// FeedbackBatchService.generateNewsSummaries가 이미 쓰는 형태다.
+				try {
+					List<CollectedNewsDto> collected = newsCollector.collect(instrument, sameMarketNames);
+					saved += save(instrument, MarketNewsItemType.NEWS, collected);
+				} catch (RuntimeException ex) {
+					failed++;
+					log.warn("뉴스 수집 중 종목 하나가 실패해 건너뛴다. 종목={}", instrument.getId(), ex);
+				}
 			}
 		}
-		log.info("뉴스 수집 완료 (신규 저장 {}건)", saved);
+		log.info("뉴스 수집 완료 (신규 저장 {}건, 실패 종목 {}건)", saved, failed);
 	}
 
 	/**
@@ -108,7 +124,7 @@ public class NewsCollectionService {
 		List<Instrument> sameMarket = instrumentService.getRealInstrumentEntities(instrument.getMarket());
 		List<String> sameMarketNames = sameMarket.stream().map(Instrument::getName).toList();
 		List<CollectedNewsDto> collected = newsCollector.collect(instrument, sameMarketNames);
-		return save(instrument, MarketNewsItemType.NEWS, collected, LocalDateTime.now(clock));
+		return save(instrument, MarketNewsItemType.NEWS, collected);
 	}
 
 	/**
@@ -117,14 +133,22 @@ public class NewsCollectionService {
 	 */
 	@Scheduled(cron = "${feedback.news.disclosure-cron}", zone = "Asia/Seoul")
 	public void collectDisclosures() {
-		LocalDateTime collectedAt = LocalDateTime.now(clock);
 		LocalDate collectionDate = LocalDate.now(clock);
 		int saved = 0;
+		int failed = 0;
+		// 샌드박스 제외(#406)와 종목 단위 격리(#408)는 서로 배타적이지 않다 — 목록은 실제 종목만 돌고,
+		// 그 안에서 한 종목이 터져도 나머지는 계속한다.
 		for (Instrument instrument : instrumentService.getRealInstrumentEntities(Market.STOCK)) {
-			List<CollectedNewsDto> collected = disclosureCollector.collect(instrument, collectionDate);
-			saved += save(instrument, MarketNewsItemType.DISCLOSURE, collected, collectedAt);
+			// 뉴스 쪽과 같은 이유로 종목 단위로 격리한다 (이슈 #408).
+			try {
+				List<CollectedNewsDto> collected = disclosureCollector.collect(instrument, collectionDate);
+				saved += save(instrument, MarketNewsItemType.DISCLOSURE, collected);
+			} catch (RuntimeException ex) {
+				failed++;
+				log.warn("공시 수집 중 종목 하나가 실패해 건너뛴다. 종목={}", instrument.getId(), ex);
+			}
 		}
-		log.info("공시 수집 완료 (신규 저장 {}건)", saved);
+		log.info("공시 수집 완료 (신규 저장 {}건, 실패 종목 {}건)", saved, failed);
 	}
 
 	/**
@@ -137,8 +161,7 @@ public class NewsCollectionService {
 	 *
 	 * @return 실제로 새로 저장한 건수
 	 */
-	private int save(
-		Instrument instrument, MarketNewsItemType type, List<CollectedNewsDto> collected, LocalDateTime collectedAt) {
+	private int save(Instrument instrument, MarketNewsItemType type, List<CollectedNewsDto> collected) {
 		if (collected.isEmpty()) {
 			return 0;
 		}
@@ -149,10 +172,46 @@ public class NewsCollectionService {
 			if (!seen.add(item.url())) {
 				continue;
 			}
-			marketNewsItemRepository.save(MarketNewsItem.create(
-				instrument, type, item.title(), item.publisher(), item.url(), item.publishedAt(), collectedAt));
-			saved++;
+			try {
+				marketNewsItemRepository.save(MarketNewsItem.create(
+					instrument, type, item.title(), item.publisher(), item.url(), item.publishedAt(),
+					// 저장 직전에 찍는다 (이슈 #408). 배치 시작 시각을 쓰면 회차가 길어질 때(34종목 × 읽기
+					// 타임아웃 10초) 그 사이에 돈 요약 배치의 generated_at보다 이른 created_at으로 저장돼,
+					// existsByInstrumentIdAndCreatedAtAfter가 그 기사를 잡지 못한다 —
+					// MarketNewsItemRepository가 published_at으로 비교하면 안 된다고 경고한 것과 같은 함정을
+					// 저장 시각 쪽에서 재현하는 셈이다.
+					LocalDateTime.now(clock)));
+				saved++;
+			} catch (DataIntegrityViolationException ex) {
+				absorbOnlyDuplicateRow(instrument, item, ex);
+			}
 		}
 		return saved;
+	}
+
+	/**
+	 * <b>중복 행만</b> 삼키고 그 밖의 무결성 위반은 {@code WARN}으로 남긴다.
+	 *
+	 * <p>삼켜도 되는 경우는 하나다 — 위 {@code findExistingUrls}와 {@code save} 사이에 다른 실행이 같은 기사를
+	 * 먼저 넣는 경우다. 코인 온디맨드 수집({@code CryptoPriceMoveWatcher})이 매 분 30초 스케줄 스레드에서 같은
+	 * 테이블에 쓰므로 이 창은 실재한다. 중복은 이미 FEED-001의 계약이라 조용히 넘긴다.
+	 *
+	 * <p><b>판정을 예외 타입이 아니라 "행이 실제로 있는가"로 한다.</b> 근거는
+	 * {@code PostSellFeedbackService.absorbOnlyDuplicateRow}와 같다 — Hibernate의
+	 * {@code ConstraintViolationException}이 기반 타입으로 번역되는지 {@code DuplicateKeyException}까지 붙는지는
+	 * 환경에 달려 있어, 타입으로 좁히면 정상 경합이 그대로 올라온다.
+	 *
+	 * <p>행 재조회는 원래 막으려던 상태를 정확히 가른다. NOT NULL 위반이나 utf8mb4가 거부하는 문자열(제목 절단이
+	 * 서로게이트 쌍을 가르는 경우)은 행이 안 생기므로 {@code WARN}으로 드러난다 — 조용히 넘기면 그 기사는 매
+	 * 회차 다시 시도되면서 아무 신호도 남지 않는다.
+	 */
+	private void absorbOnlyDuplicateRow(
+		Instrument instrument, CollectedNewsDto item, DataIntegrityViolationException ex) {
+		if (!marketNewsItemRepository.findExistingUrls(instrument.getId(), List.of(item.url())).isEmpty()) {
+			log.debug("같은 기사가 이미 저장돼 있어 이번 저장은 건너뛴다. 종목={} url={}",
+				instrument.getId(), item.url());
+			return;
+		}
+		log.warn("기사 저장이 무결성 위반으로 실패했고 행도 없다. 종목={} url={}", instrument.getId(), item.url(), ex);
 	}
 }
