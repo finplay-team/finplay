@@ -165,21 +165,39 @@ class PracticeAttemptCompletionFlowIntegrationTest {
 		long completionCount = completionRepository.count();
 		long reflectionCount = reflectionRepository.count();
 		long observationCount = observationRepository.count();
+		// rewarded는 이후 restart()가 재사용할 수 있는 영속성 컨텍스트에 attach된 엔티티다 — 원시값으로
+		// 미리 뽑아두지 않으면 restart의 account 변경이 이 참조에도 그대로 반영돼(같은 세션 identity map)
+		// "이전 값"이 오염된다.
+		long cashBeforeRestart = rewarded.getCashBalance();
+		long sandboxBeforeRestart = rewarded.getSandboxCashAdjustment();
+		Long attemptId = attemptRepository.findByUserIdAndMarket(fixture.userId(), market).orElseThrow().getId();
 		PracticeAttemptResponse replayEnsure = practiceAttemptService.ensureAttempt(fixture.userId(), market);
 		PracticeAttemptResponse replayRestart = practiceAttemptRestartService.restart(fixture.userId(), market);
 
+		// ensureAttempt는 완료된 attempt를 여전히 REPLAY로 유지한다(TUTORIAL-RESTART-002, 요구사항 불변).
 		assertThat(replayEnsure.mode()).isEqualTo("REPLAY");
-		assertThat(replayRestart.mode()).isEqualTo("REPLAY");
-		assertThat(replayRestart.runNumber()).isEqualTo(1);
-		assertThat(replayRestart.riskSnapshot()).isEqualTo(completed.attempt().riskSnapshot());
-		assertThat(orderRepository.count()).isEqualTo(orderCount);
-		assertThat(tradeRepository.count()).isEqualTo(tradeCount);
+		// restart는 이제 완료된 attempt도 실제로 정리·재시작한다(TUTORIAL-RESTART-001).
+		assertThat(replayRestart.mode()).isEqualTo("ACTIVE");
+		assertThat(replayRestart.status()).isEqualTo("SELECTING_INSTRUMENT");
+		assertThat(replayRestart.runNumber()).isEqualTo(2);
+		assertThat(replayRestart.instrumentId()).isNull();
+		assertThat(replayRestart.riskSnapshot()).isNull();
+		// 재시작은 completion/reflection/observation evidence는 건드리지 않는다.
 		assertThat(completionRepository.count()).isEqualTo(completionCount);
 		assertThat(reflectionRepository.count()).isEqualTo(reflectionCount);
 		assertThat(observationRepository.count()).isEqualTo(observationCount);
+		// 재시작 시점에 남아 있던 보유 잔량(매수-매도)은 정리 로직이 보상 매도 주문·체결 1건으로 청산한다.
+		com.finplay.api.order.domain.Order compensatingOrder = orderRepository
+			.findByUserIdAndIdempotencyKey(fixture.userId(), "practice-restart:" + attemptId + ":1")
+			.orElseThrow();
+		com.finplay.api.order.domain.Trade compensatingTrade = tradeRepository
+			.findByOrderId(compensatingOrder.getId()).orElseThrow();
+		assertThat(orderRepository.count()).isEqualTo(orderCount + 1);
+		assertThat(tradeRepository.count()).isEqualTo(tradeCount + 1);
+		long expectedCashDelta = compensatingTrade.getAmount() - compensatingTrade.getFee();
 		Account replayed = refreshedAccount(fixture.userId(), market);
-		assertThat(replayed.getCashBalance()).isEqualTo(rewarded.getCashBalance());
-		assertThat(replayed.getSandboxCashAdjustment()).isEqualTo(rewarded.getSandboxCashAdjustment());
+		assertThat(replayed.getCashBalance()).isEqualTo(cashBeforeRestart + expectedCashDelta);
+		assertThat(replayed.getSandboxCashAdjustment()).isEqualTo(sandboxBeforeRestart + expectedCashDelta);
 	}
 
 	@Test
