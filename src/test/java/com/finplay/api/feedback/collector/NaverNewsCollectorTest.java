@@ -358,6 +358,31 @@ class NaverNewsCollectorTest {
 		return "{\"items\":[" + String.join(",", itemJson) + "]}";
 	}
 
+	// 회귀(이슈 #408): 제목 절단이 서로게이트 쌍을 가르면 짝 없는 서로게이트가 남고, utf8mb4가 그 문자열을
+	// 거부해 저장이 예외로 실패한다. 그 예외는 수집기가 아니라 save에서 나므로 "수집기는 빈 목록을 돌려준다"는
+	// 계약으로 막히지 않는다 — 종목 하나의 수집이 통째로 죽는 자리였다.
+	@Test
+	@DisplayName("제목이 500자를 넘고 경계가 서로게이트 쌍의 가운데면 그 글자를 통째로 버린다")
+	void doesNotSplitASurrogatePairWhenTruncatingTheTitle() {
+		// 앞 499자는 BMP 문자, 500번째 코드 단위부터 이모지(서로게이트 쌍) — 경계가 정확히 쌍의 가운데다.
+		String title = "가".repeat(499) + "🚀" + "나".repeat(10);
+
+		String cleaned = NaverNewsCollector.cleanTitle(title);
+
+		assertThat(cleaned).hasSize(499);
+		assertThat(cleaned).isEqualTo("가".repeat(499));
+		// 짝 없는 서로게이트가 남으면 이 단정이 깨진다 — 그 문자열은 유효한 UTF-8로 인코딩되지 않는다.
+		assertThat(cleaned.chars().anyMatch(unit -> Character.isSurrogate((char)unit))).isFalse();
+	}
+
+	@Test
+	@DisplayName("경계가 온전한 글자 사이면 500자를 그대로 담는다")
+	void keepsFiveHundredCharactersWhenTheBoundaryIsClean() {
+		String cleaned = NaverNewsCollector.cleanTitle("가".repeat(600));
+
+		assertThat(cleaned).hasSize(500);
+	}
+
 	// 네이버 items[]의 실제 필드 구성이다 — title·originallink·link·description·pubDate가 전부다(§C-8).
 	private static String item(
 		String title, String originallink, String link, String description, String pubDate) {

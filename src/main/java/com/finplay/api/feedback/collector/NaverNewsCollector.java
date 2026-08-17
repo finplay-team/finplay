@@ -246,7 +246,18 @@ public class NaverNewsCollector implements NewsCollector {
 		}
 		String stripped = HTML_TAG.matcher(rawTitle).replaceAll("");
 		String unescaped = HtmlUtils.htmlUnescape(stripped).trim();
-		return unescaped.length() > TITLE_MAX_LENGTH ? unescaped.substring(0, TITLE_MAX_LENGTH) : unescaped;
+		if (unescaped.length() <= TITLE_MAX_LENGTH) {
+			return unescaped;
+		}
+		// 서로게이트 쌍을 가르지 않는다 (이슈 #408). length()·substring()은 UTF-16 코드 단위 기준이라 경계가
+		// 이모지·일부 한자 한 글자의 가운데면 짝 없는 서로게이트가 남고, utf8mb4가 그 문자열을 거부해 저장이
+		// 예외로 실패한다. 한 글자를 덜 담는 쪽이 맞다 — 제목은 필터·표시용이고 500자 경계 한 글자에 의미가
+		// 걸려 있지 않다.
+		int end = TITLE_MAX_LENGTH;
+		if (Character.isHighSurrogate(unescaped.charAt(end - 1))) {
+			end--;
+		}
+		return unescaped.substring(0, end);
 	}
 
 	// pubDate는 RFC 1123 형식이다(예: "Mon, 03 Aug 2026 14:23:00 +0900"). 오프셋이 무엇으로 오든 KST 벽시계로
