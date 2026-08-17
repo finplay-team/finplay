@@ -423,6 +423,156 @@ class TradeServiceTest {
 			USER_ID, 100L, OrderSide.BUY, after);
 	}
 
+	// 아래는 이슈 #421에서 summarizePracticeRun이 수량 합계에 더해 집계하게 된 이번 실행 매매 결과 —
+	// 가중평균 체결가, 원장 실현손익 합, 수익률 분모(soldBuyBasis) 역산을 검증한다.
+
+	@Test
+	void summarizePracticeRunReturnsBuyTradePriceItselfWhenThereIsExactlyOneBuy() {
+		// 매수 체결이 1건이면 나눗셈이 원래 단가를 그대로 돌려줘야 practice_risk_snapshots.entry_price와 어긋나지
+		// 않는다(같은 scale 8) — 여기서 반올림이 끼면 진행 조회의 buyPrice가 riskSnapshot.entryPrice와 미세하게
+		// 달라져 화면 두 곳이 다른 매수가를 보여준다.
+		BigDecimal price = new BigDecimal("10932.45600000");
+		when(tradeRepository.findFilledPracticeRunTrades(77L, 2L))
+			.thenReturn(List.of(practiceTrade(1L, OrderSide.BUY, price, new BigDecimal("3.00000000"),
+				32_797L, 4L, null)));
+
+		PracticeRunTradeSummaryDto summary = tradeService.summarizePracticeRun(77L, 2L);
+
+		assertThat(summary.averageBuyPrice()).isEqualByComparingTo(price);
+		assertThat(summary.averageBuyPrice().scale()).isEqualTo(8);
+		assertThat(summary.averageSellPrice()).isNull();
+		assertThat(summary.realizedPnl()).isNull();
+		assertThat(summary.soldBuyBasis()).isNull();
+	}
+
+	@Test
+	void summarizePracticeRunWeightsAveragePricesByQuantityNotByTradeCount() {
+		// BUY 100원 1주 + 130원 3주. 수량 가중평균은 122.5이고 단순 산술평균이면 115다 — 두 값이 갈라지는
+		// 입력이라야 "가중"이 실제로 걸려 있는지 확인할 수 있다.
+		// SELL도 마찬가지로 200원 1주 + 240원 3주 → 230, 산술평균이면 220이다.
+		when(tradeRepository.findFilledPracticeRunTrades(77L, 1L)).thenReturn(List.of(
+			practiceTrade(1L, OrderSide.BUY, new BigDecimal("100"), new BigDecimal("1"), 100L, 0L, null),
+			practiceTrade(2L, OrderSide.BUY, new BigDecimal("130"), new BigDecimal("3"), 390L, 0L, null),
+			practiceTrade(3L, OrderSide.SELL, new BigDecimal("200"), new BigDecimal("1"), 200L, 0L, 90L),
+			practiceTrade(4L, OrderSide.SELL, new BigDecimal("240"), new BigDecimal("3"), 720L, 0L, 330L)));
+
+		PracticeRunTradeSummaryDto summary = tradeService.summarizePracticeRun(77L, 1L);
+
+		assertThat(summary.averageBuyPrice()).isEqualByComparingTo(new BigDecimal("122.50000000"));
+		assertThat(summary.averageSellPrice()).isEqualByComparingTo(new BigDecimal("230.00000000"));
+		assertThat(summary.buyQuantity()).isEqualByComparingTo(new BigDecimal("4"));
+		assertThat(summary.sellQuantity()).isEqualByComparingTo(new BigDecimal("4"));
+		assertThat(summary.remainingQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
+	}
+
+	@Test
+	void summarizePracticeRunSumsRealizedPnlAndInvertsSoldBuyBasisFromLedgerAmounts() {
+		// soldBuyBasis는 trade_allocations를 다시 읽지 않고 (amount - fee) - realizedPnl로 역산한다.
+		// sell1: (110000 - 16) - 9984 = 100000, sell2: (55000 - 8) - 4992 = 50000 → 합 150000.
+		when(tradeRepository.findFilledPracticeRunTrades(77L, 3L)).thenReturn(List.of(
+			practiceTrade(1L, OrderSide.BUY, new BigDecimal("100"), new BigDecimal("1500"), 150_000L, 22L, null),
+			practiceTrade(2L, OrderSide.SELL, new BigDecimal("110"), new BigDecimal("1000"), 110_000L, 16L, 9_984L),
+			practiceTrade(3L, OrderSide.SELL, new BigDecimal("110"), new BigDecimal("500"), 55_000L, 8L, 4_992L)));
+
+		PracticeRunTradeSummaryDto summary = tradeService.summarizePracticeRun(77L, 3L);
+
+		assertThat(summary.realizedPnl()).isEqualTo(14_976L);
+		assertThat(summary.soldBuyBasis()).isEqualTo(150_000L);
+	}
+
+	@Test
+	void summarizePracticeRunKeepsPartialSellQuantitiesAndPricesSeparate() {
+		when(tradeRepository.findFilledPracticeRunTrades(77L, 1L)).thenReturn(List.of(
+			practiceTrade(1L, OrderSide.BUY, new BigDecimal("100"), new BigDecimal("10"), 1_000L, 0L, null),
+			practiceTrade(2L, OrderSide.SELL, new BigDecimal("120"), new BigDecimal("4"), 480L, 0L, 80L)));
+
+		PracticeRunTradeSummaryDto summary = tradeService.summarizePracticeRun(77L, 1L);
+
+		assertThat(summary.buyQuantity()).isEqualByComparingTo(new BigDecimal("10"));
+		assertThat(summary.sellQuantity()).isEqualByComparingTo(new BigDecimal("4"));
+		assertThat(summary.remainingQuantity()).isEqualByComparingTo(new BigDecimal("6"));
+		// 부분 매도라도 매도 평균가는 팔린 체결만 보고, 매수 평균가는 매수 체결만 본다 — 섞이면 안 된다.
+		assertThat(summary.averageBuyPrice()).isEqualByComparingTo(new BigDecimal("100"));
+		assertThat(summary.averageSellPrice()).isEqualByComparingTo(new BigDecimal("120"));
+		assertThat(summary.realizedPnl()).isEqualTo(80L);
+		assertThat(summary.soldBuyBasis()).isEqualTo(400L);
+	}
+
+	@Test
+	void summarizePracticeRunLeavesSellSideNullWhenRunHasBuyOnly() {
+		when(tradeRepository.findFilledPracticeRunTrades(77L, 1L)).thenReturn(List.of(
+			practiceTrade(1L, OrderSide.BUY, new BigDecimal("100"), new BigDecimal("10"), 1_000L, 1L, null)));
+
+		PracticeRunTradeSummaryDto summary = tradeService.summarizePracticeRun(77L, 1L);
+
+		assertThat(summary.sellQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
+		assertThat(summary.firstSellTrade()).isNull();
+		assertThat(summary.averageSellPrice()).isNull();
+		assertThat(summary.realizedPnl()).isNull();
+		assertThat(summary.soldBuyBasis()).isNull();
+	}
+
+	@Test
+	void summarizePracticeRunDropsBothPnlFieldsWhenAnySellHasNoLedgerRealizedPnl() {
+		// realized_pnl이 아직 채워지지 않은 SELL이 하나라도 섞이면 합계는 "덜 더해진 값"이라 노출하면 안 된다.
+		// 반쪽 손익을 그대로 내보내면 화면 금액이 조용히 틀린다. 매도 평균가는 원장 단가라 그대로 남는다.
+		when(tradeRepository.findFilledPracticeRunTrades(77L, 1L)).thenReturn(List.of(
+			practiceTrade(1L, OrderSide.BUY, new BigDecimal("100"), new BigDecimal("10"), 1_000L, 0L, null),
+			practiceTrade(2L, OrderSide.SELL, new BigDecimal("120"), new BigDecimal("4"), 480L, 0L, 80L),
+			practiceTrade(3L, OrderSide.SELL, new BigDecimal("120"), new BigDecimal("2"), 240L, 0L, null)));
+
+		PracticeRunTradeSummaryDto summary = tradeService.summarizePracticeRun(77L, 1L);
+
+		assertThat(summary.realizedPnl()).isNull();
+		assertThat(summary.soldBuyBasis()).isNull();
+		assertThat(summary.averageSellPrice()).isEqualByComparingTo(new BigDecimal("120"));
+		assertThat(summary.sellQuantity()).isEqualByComparingTo(new BigDecimal("6"));
+	}
+
+	@Test
+	void summarizePracticeRunReturnsAllNullPricesWhenRunHasNoTradesYet() {
+		when(tradeRepository.findFilledPracticeRunTrades(77L, 1L)).thenReturn(List.of());
+
+		PracticeRunTradeSummaryDto summary = tradeService.summarizePracticeRun(77L, 1L);
+
+		assertThat(summary.buyQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
+		assertThat(summary.sellQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
+		assertThat(summary.remainingQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
+		assertThat(summary.averageBuyPrice()).isNull();
+		assertThat(summary.averageSellPrice()).isNull();
+		assertThat(summary.realizedPnl()).isNull();
+		assertThat(summary.soldBuyBasis()).isNull();
+	}
+
+	@Test
+	void summarizePracticeRunPicksFirstSellInRepositoryOrderAsFirstSellTrade() {
+		Trade earlierSell = practiceTrade(
+			2L, OrderSide.SELL, new BigDecimal("120"), new BigDecimal("4"), 480L, 0L, 80L);
+		Trade laterSell = practiceTrade(
+			3L, OrderSide.SELL, new BigDecimal("130"), new BigDecimal("6"), 780L, 0L, 180L);
+		when(tradeRepository.findFilledPracticeRunTrades(77L, 1L)).thenReturn(List.of(
+			practiceTrade(1L, OrderSide.BUY, new BigDecimal("100"), new BigDecimal("10"), 1_000L, 0L, null),
+			earlierSell, laterSell));
+
+		PracticeRunTradeSummaryDto summary = tradeService.summarizePracticeRun(77L, 1L);
+
+		assertThat(summary.firstSellTrade()).isSameAs(earlierSell);
+	}
+
+	// summarizePracticeRun 전용 — attempt·run 귀속은 repository 쿼리가 걸러주므로 여기서는 side·단가·수량·
+	// 금액·수수료·실현손익만 지정한 체결을 만든다.
+	private static Trade practiceTrade(
+		Long id, OrderSide side, BigDecimal price, BigDecimal quantity, long amount, long fee, Long realizedPnl) {
+		Order order = Order.create(
+			testUser(), account(), stockInstrument(), side, OrderType.MARKET, quantity,
+			"idem-practice-" + id, "h".repeat(64), NOW);
+		Trade trade = Trade.of(
+			order, order.getAccount(), stockInstrument(), stockSession(),
+			side, price, quantity, amount, fee, realizedPnl, NOW, NOW);
+		ReflectionTestUtils.setField(trade, "id", id);
+		return trade;
+	}
+
 	private static Trade buyTrade(Long id, LocalDateTime executedAt, BigDecimal quantity) {
 		Order order = Order.create(
 			testUser(), account(), stockInstrument(), OrderSide.BUY, OrderType.MARKET, quantity,

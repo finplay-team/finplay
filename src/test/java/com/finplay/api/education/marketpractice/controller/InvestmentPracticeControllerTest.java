@@ -16,6 +16,7 @@ import com.finplay.api.education.marketpractice.dto.response.PracticeAttemptResp
 import com.finplay.api.education.marketpractice.dto.response.PracticeEvidenceResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeRiskSnapshotResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeStepResponse;
+import com.finplay.api.education.marketpractice.dto.response.PracticeTradeResultResponse;
 import com.finplay.api.education.marketpractice.service.InvestmentPracticeQueryService;
 import com.finplay.api.market.domain.Market;
 import java.math.BigDecimal;
@@ -77,11 +78,15 @@ class InvestmentPracticeControllerTest {
 	@Test
 	void getProgressReturnsServiceResponseVerbatimWhenCompleted() throws Exception {
 		authenticate();
+		// 이슈 #421: 매도가 끝난 evidence는 tradeResult 다섯 필드가 모두 채워진 채로 직렬화돼야 한다.
+		PracticeTradeResultResponse tradeResult = new PracticeTradeResultResponse(
+			new BigDecimal("10000.00000000"), new BigDecimal("10500.00000000"), 4_985L, new BigDecimal("0.0500"),
+			"ABOVE_TAKE_PROFIT");
 		PracticeEvidenceResponse evidence = new PracticeEvidenceResponse(
 			10L, LocalDateTime.of(2026, 8, 1, 9, 0), 20L, LocalDateTime.of(2026, 8, 2, 9, 0), 30L,
 			LocalDateTime.of(2026, 8, 3, 9, 0), 40L, null, null, 60L,
 			LocalDateTime.of(2026, 8, 9, 9, 0), "CLOSER_TO_BOUNDARY", 70L, LocalDateTime.of(2026, 8, 10, 9, 0),
-			null, null, null, new BigDecimal("10"), new BigDecimal("4"), new BigDecimal("6"));
+			null, null, null, new BigDecimal("10"), new BigDecimal("4"), new BigDecimal("6"), tradeResult);
 		List<PracticeStepResponse> steps = List.of(
 			new PracticeStepResponse(1, "COMPLETED", false, evidence),
 			new PracticeStepResponse(2, "COMPLETED", false, evidence),
@@ -117,6 +122,11 @@ class InvestmentPracticeControllerTest {
 			.andExpect(jsonPath("$.steps[0].evidence.buyQuantity").value(10))
 			.andExpect(jsonPath("$.steps[0].evidence.sellQuantity").value(4))
 			.andExpect(jsonPath("$.steps[0].evidence.remainingQuantity").value(6))
+			.andExpect(jsonPath("$.steps[0].evidence.tradeResult.buyPrice").value(10000.00000000))
+			.andExpect(jsonPath("$.steps[0].evidence.tradeResult.sellPrice").value(10500.00000000))
+			.andExpect(jsonPath("$.steps[0].evidence.tradeResult.realizedPnl").value(4985))
+			.andExpect(jsonPath("$.steps[0].evidence.tradeResult.returnRate").value(0.0500))
+			.andExpect(jsonPath("$.steps[0].evidence.tradeResult.sellVerdict").value("ABOVE_TAKE_PROFIT"))
 			.andExpect(jsonPath("$.attempt.mode").value("REPLAY"))
 			.andExpect(jsonPath("$.attempt.runNumber").value(2))
 			.andExpect(jsonPath("$.attempt.riskSnapshot.entryPrice").value(100.00000000))
@@ -147,8 +157,46 @@ class InvestmentPracticeControllerTest {
 			.andExpect(jsonPath("$.completedAt").doesNotExist())
 			.andExpect(jsonPath("$.steps[0].locked").value(false))
 			.andExpect(jsonPath("$.steps[0].evidence.favoriteId").doesNotExist())
+			// 이슈 #421: 빈 evidence(잠긴 단계·legacy chain)에서는 tradeResult 객체 자체가 없어야 한다.
+			.andExpect(jsonPath("$.steps[0].evidence.tradeResult").doesNotExist())
 			.andExpect(jsonPath("$.steps[1].locked").value(true))
 			.andExpect(jsonPath("$.steps[2].locked").value(true));
+	}
+
+	@Test
+	void getProgressSerializesTradeResultWithOnlyBuyPriceWhileAwaitingSale() throws Exception {
+		authenticate();
+		// 매도 전(AWAITING_SALE)에는 tradeResult 객체는 나가되 buyPrice만 값이 있고 나머지 넷은 null이다 —
+		// 객체가 통째로 null인 legacy·빈 evidence와 구분돼야 프론트가 "매수는 했고 아직 안 팔았다"를 안다.
+		PracticeTradeResultResponse awaitingSale = new PracticeTradeResultResponse(
+			new BigDecimal("10000.00000000"), null, null, null, null);
+		PracticeEvidenceResponse evidence = new PracticeEvidenceResponse(
+			null, null, null, null, 30L, LocalDateTime.of(2026, 8, 3, 9, 0), 40L,
+			new BigDecimal("9700.00000000"), new BigDecimal("10500.00000000"), 60L,
+			LocalDateTime.of(2026, 8, 3, 9, 1), "CLOSER_TO_BOUNDARY", null, null, null, null,
+			LocalDateTime.of(2026, 8, 3, 9, 5), new BigDecimal("10"), BigDecimal.ZERO, new BigDecimal("10"),
+			awaitingSale);
+		List<PracticeStepResponse> steps = List.of(
+			new PracticeStepResponse(1, "COMPLETED", false, PracticeEvidenceResponse.empty()),
+			new PracticeStepResponse(2, "COMPLETED", false, evidence),
+			new PracticeStepResponse(3, "COMPLETED", false, evidence),
+			new PracticeStepResponse(4, "AWAITING_SALE", false, evidence));
+		InvestmentPracticeResponse response = new InvestmentPracticeResponse(
+			"INVESTMENT_PRACTICE_V1", "IN_PROGRESS", 4, steps, null, null, null);
+		when(investmentPracticeQueryService.getProgress(eq(USER_ID), eq(Market.STOCK))).thenReturn(response);
+
+		mockMvc.perform(get("/api/education/practice")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+			.param("market", "STOCK"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.steps[3].status").value("AWAITING_SALE"))
+			.andExpect(jsonPath("$.steps[3].evidence.tradeResult.buyPrice").value(10000.00000000))
+			.andExpect(jsonPath("$.steps[3].evidence.tradeResult.sellPrice").doesNotExist())
+			.andExpect(jsonPath("$.steps[3].evidence.tradeResult.realizedPnl").doesNotExist())
+			.andExpect(jsonPath("$.steps[3].evidence.tradeResult.returnRate").doesNotExist())
+			.andExpect(jsonPath("$.steps[3].evidence.tradeResult.sellVerdict").doesNotExist())
+			// 1단계의 빈 evidence는 같은 응답 안에서도 tradeResult가 없어야 한다.
+			.andExpect(jsonPath("$.steps[0].evidence.tradeResult").doesNotExist());
 	}
 
 	@Test

@@ -18,6 +18,8 @@ import com.finplay.api.education.marketpractice.dto.request.PracticeHoldingRefle
 import com.finplay.api.education.marketpractice.dto.response.InvestmentPracticeResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeAttemptResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeEvidenceResponse;
+import com.finplay.api.education.marketpractice.dto.response.PracticeRiskSnapshotResponse;
+import com.finplay.api.education.marketpractice.dto.response.PracticeTradeResultResponse;
 import com.finplay.api.education.marketpractice.repository.PracticeAttemptRepository;
 import com.finplay.api.education.marketpractice.repository.PracticeCompletionRepository;
 import com.finplay.api.education.marketpractice.repository.PracticeMarketObservationRepository;
@@ -121,6 +123,15 @@ class PracticeAttemptCompletionFlowIntegrationTest {
 			.isEqualByComparingTo(buy.price().multiply(new BigDecimal("0.97")).setScale(8, RoundingMode.HALF_UP));
 		assertThat(afterBuy.attempt().riskSnapshot().takeProfitPrice())
 			.isEqualByComparingTo(buy.price().multiply(new BigDecimal("1.05")).setScale(8, RoundingMode.HALF_UP));
+		// 이슈 #421: 매도 전에는 buyPrice만 채워지고, 매수 체결이 1건이므로 riskSnapshot.entryPrice와 정확히
+		// 같아야 한다 — 두 값이 갈라지면 같은 화면에서 매수가가 두 개로 보인다.
+		PracticeTradeResultResponse beforeSellResult = buyEvidence.tradeResult();
+		assertThat(beforeSellResult).isNotNull();
+		assertThat(beforeSellResult.buyPrice()).isEqualByComparingTo(afterBuy.attempt().riskSnapshot().entryPrice());
+		assertThat(beforeSellResult.sellPrice()).isNull();
+		assertThat(beforeSellResult.realizedPnl()).isNull();
+		assertThat(beforeSellResult.returnRate()).isNull();
+		assertThat(beforeSellResult.sellVerdict()).isNull();
 
 		Holding holding = holdingRepository
 			.findByAccountIdAndInstrumentId(fixture.accountId(), fixture.instrumentId())
@@ -137,6 +148,11 @@ class PracticeAttemptCompletionFlowIntegrationTest {
 		assertThat(sellEvidence.buyQuantity()).isEqualByComparingTo(buyQuantity);
 		assertThat(sellEvidence.sellQuantity()).isEqualByComparingTo(sellQuantity);
 		assertThat(sellEvidence.remainingQuantity()).isEqualByComparingTo(buyQuantity.subtract(sellQuantity));
+		// 이슈 #421: 부분 매도 직후 tradeResult가 원장 값과 일치해야 한다. attempt 가격 seed가 userId에서
+		// 파생돼 실행마다 가격 계열이 달라지므로 가격을 하드코딩하지 않고 주문 응답이 돌려준 체결 원장과의
+		// 관계로만 단정한다.
+		assertTradeResultMatchesLedger(
+			sellEvidence.tradeResult(), buy, sell, afterPartialSell.attempt().riskSnapshot());
 
 		Account beforeReward = refreshedAccount(fixture.userId(), market);
 		long cashBeforeReward = beforeReward.getCashBalance();
@@ -159,6 +175,9 @@ class PracticeAttemptCompletionFlowIntegrationTest {
 		assertThat(completedEvidence.buyQuantity()).isEqualByComparingTo(buyQuantity);
 		assertThat(completedEvidence.sellQuantity()).isEqualByComparingTo(sellQuantity);
 		assertThat(completedEvidence.remainingQuantity()).isEqualByComparingTo(buyQuantity.subtract(sellQuantity));
+		// 완료 REPLAY 재조회도 같은 값을 그대로 돌려준다(api-contracts.md 039 TUTORIAL-FLOW-013).
+		assertTradeResultMatchesLedger(
+			completedEvidence.tradeResult(), buy, sell, completed.attempt().riskSnapshot());
 
 		long orderCount = orderRepository.count();
 		long tradeCount = tradeRepository.count();
@@ -266,6 +285,92 @@ class PracticeAttemptCompletionFlowIntegrationTest {
 		assertThat(evidence.buyQuantity()).isEqualByComparingTo(quantity);
 		assertThat(evidence.sellQuantity()).isEqualByComparingTo(new BigDecimal("1.00000000"));
 		assertThat(evidence.remainingQuantity()).isEqualByComparingTo(new BigDecimal("1.00000000"));
+	}
+
+	// 이슈 #421: 부분 매도 뒤 잔량까지 전량 매도하면 SELL 체결이 2건이 된다. 이 경우 sellPrice가 특정 체결
+	// 1건의 가격이 아니라 수량 가중평균이어야 하고, realizedPnl·수익률 분모도 두 체결의 합이어야 한다.
+	// 기존 파라미터 테스트는 매도 1건 흐름이라 "가중"이 걸려 있는지를 드러내지 못해 별도 시나리오로 둔다.
+	@Test
+	void fullSellAfterPartialSellReportsQuantityWeightedSellPriceAndSummedLedgerPnl() {
+		Market market = Market.STOCK;
+		FlowFixture fixture = createFixture(market, "weighted-sell");
+		BigDecimal buyQuantity = new BigDecimal("10");
+		BigDecimal firstSellQuantity = new BigDecimal("4");
+		BigDecimal secondSellQuantity = new BigDecimal("6");
+
+		practiceAttemptService.ensureAttempt(fixture.userId(), market);
+		practiceAttemptService.selectInstrument(fixture.userId(), market, fixture.instrumentId());
+		clock.set(BASE_NOW.plusSeconds(2));
+		orderService.createOrder(fixture.userId(), idempotency("weighted-buy"),
+			marketOrder(market, fixture.instrumentId(), OrderSide.BUY, buyQuantity));
+		Holding holding = holdingRepository
+			.findByAccountIdAndInstrumentId(fixture.accountId(), fixture.instrumentId())
+			.orElseThrow();
+		createQualifyingObservations(fixture.userId(), holding.getId(), BASE_NOW.plusSeconds(12));
+
+		clock.set(BASE_NOW.plusSeconds(150));
+		OrderResponse firstSell = orderService.createOrder(fixture.userId(), idempotency("weighted-sell-1"),
+			marketOrder(market, fixture.instrumentId(), OrderSide.SELL, firstSellQuantity));
+		clock.set(BASE_NOW.plusSeconds(220));
+		OrderResponse secondSell = orderService.createOrder(fixture.userId(), idempotency("weighted-sell-2"),
+			marketOrder(market, fixture.instrumentId(), OrderSide.SELL, secondSellQuantity));
+
+		InvestmentPracticeResponse afterFullSell = queryService.getProgress(fixture.userId(), market);
+		PracticeTradeResultResponse tradeResult = afterFullSell.steps().get(3).evidence().tradeResult();
+		assertThat(tradeResult).isNotNull();
+
+		BigDecimal expectedSellPrice = firstSell.price().multiply(firstSellQuantity)
+			.add(secondSell.price().multiply(secondSellQuantity))
+			.divide(firstSellQuantity.add(secondSellQuantity), 8, RoundingMode.HALF_UP);
+		assertThat(tradeResult.sellPrice()).isEqualByComparingTo(expectedSellPrice);
+		assertThat(firstSell.realizedPnl()).isNotNull();
+		assertThat(secondSell.realizedPnl()).isNotNull();
+		long expectedRealizedPnl = firstSell.realizedPnl() + secondSell.realizedPnl();
+		assertThat(tradeResult.realizedPnl()).isEqualTo(expectedRealizedPnl);
+		long expectedBasis = (firstSell.amount() - firstSell.fee() - firstSell.realizedPnl())
+			+ (secondSell.amount() - secondSell.fee() - secondSell.realizedPnl());
+		assertThat(expectedBasis).isPositive();
+		assertThat(tradeResult.returnRate()).isEqualByComparingTo(
+			BigDecimal.valueOf(expectedRealizedPnl).divide(BigDecimal.valueOf(expectedBasis), 4, RoundingMode.HALF_UP));
+		// 매도 단가로 손익을 다시 계산한 값과는 수수료만큼 달라야 한다 — realizedPnl이 수수료 차감 후 순손익이라는
+		// 계약(api-contracts.md)이 실제로 지켜지는지 확인한다.
+		assertThat(firstSell.fee() + secondSell.fee()).isPositive();
+		assertThat(afterFullSell.steps().get(3).evidence().remainingQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
+		assertThat(tradeResult.sellVerdict()).isIn("ABOVE_TAKE_PROFIT", "BELOW_STOP_LOSS", "BETWEEN_LINES");
+		assertThat(tradeResult.sellVerdict())
+			.isEqualTo(expectedVerdict(tradeResult.sellPrice(), afterFullSell.attempt().riskSnapshot()));
+	}
+
+	// tradeResult 다섯 필드를 매수·매도 주문 응답(=체결 원장)에서 그대로 유도해 비교한다. 매수 1건·매도 1건
+	// 흐름 전용이다.
+	private static void assertTradeResultMatchesLedger(
+		PracticeTradeResultResponse tradeResult,
+		OrderResponse buy,
+		OrderResponse sell,
+		PracticeRiskSnapshotResponse riskSnapshot) {
+		assertThat(tradeResult).isNotNull();
+		assertThat(tradeResult.buyPrice()).isEqualByComparingTo(buy.price());
+		assertThat(tradeResult.buyPrice()).isEqualByComparingTo(riskSnapshot.entryPrice());
+		assertThat(tradeResult.sellPrice()).isEqualByComparingTo(sell.price());
+		assertThat(sell.realizedPnl()).isNotNull();
+		assertThat(tradeResult.realizedPnl()).isEqualTo(sell.realizedPnl());
+		long expectedBasis = sell.amount() - sell.fee() - sell.realizedPnl();
+		assertThat(expectedBasis).isPositive();
+		assertThat(tradeResult.returnRate()).isEqualByComparingTo(
+			BigDecimal.valueOf(sell.realizedPnl()).divide(BigDecimal.valueOf(expectedBasis), 4, RoundingMode.HALF_UP));
+		assertThat(tradeResult.sellVerdict()).isEqualTo(expectedVerdict(tradeResult.sellPrice(), riskSnapshot));
+	}
+
+	// 서버 판정 규칙(양 끝 포함, 익절선 우선)의 기대값을 스냅샷 기준선에서 유도한다 — 가격 계열이 seed에 따라
+	// 달라지므로 특정 판정값을 고정할 수 없다. 경계 자체의 세부 규칙은 PracticeTradeResultCalculatorTest가 본다.
+	private static String expectedVerdict(BigDecimal sellPrice, PracticeRiskSnapshotResponse riskSnapshot) {
+		if (sellPrice.compareTo(riskSnapshot.takeProfitPrice()) >= 0) {
+			return "ABOVE_TAKE_PROFIT";
+		}
+		if (sellPrice.compareTo(riskSnapshot.stopLossPrice()) <= 0) {
+			return "BELOW_STOP_LOSS";
+		}
+		return "BETWEEN_LINES";
 	}
 
 	private FlowFixture createFixture(Market market, String scenario) {

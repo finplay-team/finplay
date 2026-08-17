@@ -49,7 +49,8 @@ public class PracticeAttemptEvidenceService {
 		}
 		return new ResolvedPracticeAttemptEvidenceDto(
 			snapshot, holdingId, tradeSummary.buyQuantity(), tradeSummary.sellQuantity(),
-			tradeSummary.remainingQuantity(), sellTrade);
+			tradeSummary.remainingQuantity(), sellTrade, tradeSummary.averageBuyPrice(),
+			tradeSummary.averageSellPrice(), tradeSummary.realizedPnl(), tradeSummary.soldBuyBasis());
 	}
 
 	private void validateBuyEvidence(

@@ -582,7 +582,8 @@ class PracticeHoldingReflectionServiceTest {
 		when(sellTrade.getExecutedAt()).thenReturn(NOW.minusMinutes(1));
 
 		ResolvedPracticeAttemptEvidenceDto evidence = new ResolvedPracticeAttemptEvidenceDto(
-			riskSnapshot, HOLDING_ID, BigDecimal.TEN, BigDecimal.TEN, BigDecimal.ZERO, sellTrade);
+			riskSnapshot, HOLDING_ID, BigDecimal.TEN, BigDecimal.TEN, BigDecimal.ZERO, sellTrade, null, null, null,
+			null);
 		when(practiceAttemptEvidenceService.requireCurrentRun(attempt, USER_ID, HOLDING_ID)).thenReturn(evidence);
 
 		PracticeMarketObservation withEvidence = mock(PracticeMarketObservation.class);
