@@ -26,6 +26,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * {@code docs/specs/021-general-risk-management-oco} plan.md "일반 경로 검증 순서" 1~2단계(holding 소유권·시장
@@ -87,6 +88,7 @@ public class ExitPlanService {
 	}
 
 	// 021 plan.md "응답 계약" — 본인 소유 예약만, status 생략 시 PENDING 기본값, 경로(일반/교육) 무관 공통 조회.
+	@Transactional(readOnly = true)
 	public ExitPlanListResponse list(Long userId, ExitPlanStatus status) {
 		ExitPlanStatus effectiveStatus = status != null ? status : ExitPlanStatus.PENDING;
 		return ExitPlanListResponse.from(exitPlanRepository.findByUserIdAndStatusOrderByIdDesc(userId, effectiveStatus)
