@@ -36,6 +36,13 @@ import org.springframework.stereotype.Service;
  * <p><b>{@code createdAt}은 발행 시각이 아니라 수집 시각이다</b>(§데이터 모델). 요약 재생성 판정이 이 값을 직전
  * {@code generated_at}과 비교한다(FEED-008).
  *
+ * <p><b>샌드박스 튜토리얼 종목은 수집하지 않는다</b>(이슈 #406). 종목 목록을
+ * {@code getRealInstrumentEntities}로 얻는 것이 그 구현이며, 같은 목록이 제목 필터의 {@code sameMarketNames}
+ * 로도 쓰인다. {@code V33}이 샘플 종목 이름을 {@code 알파전자}·{@code 알파코인} 같은 실사명으로 바꿔 뒀기
+ * 때문에, 걸러내지 않으면 그 이름으로 검색된 <b>무관한 기사가 그 종목의 것으로 저장되고</b> 전 회원이 공유하는
+ * 개장 전 브리핑과 LLM 프롬프트에 실린다 — 주식 제목 필터는 자기 이름의 등장을 요구하지 않아
+ * ({@code NewsTitleFilter}) 저장 단계에서도 걸리지 않는다.
+ *
  * <p><b>원장에 쓰지 않는다.</b> 이 클래스가 주입받는 리포지토리는 {@code MarketNewsItemRepository} 하나뿐이고
  * {@code instruments}는 {@code InstrumentService}를 통해 <b>읽기만</b> 한다 — 주문·체결·계좌·잔액·보유·손익
  * 테이블에 닿는 경로가 애초에 없다. 종목 목록을 리포지토리가 아니라 서비스로 얻는 것은 §C-6의 규칙이다.
@@ -82,7 +89,7 @@ public class NewsCollectionService {
 		int saved = 0;
 		int failed = 0;
 		for (Market market : Market.values()) {
-			List<Instrument> instruments = instrumentService.getInstrumentEntities(market);
+			List<Instrument> instruments = instrumentService.getRealInstrumentEntities(market);
 			// 제목 필터는 같은 시장 안에서만 판정한다 — 시장을 섞으면 종목명이 겹치는 순간 정상 기사가 사라진다.
 			List<String> sameMarketNames = instruments.stream().map(Instrument::getName).toList();
 			for (Instrument instrument : instruments) {
@@ -114,7 +121,7 @@ public class NewsCollectionService {
 	 * @return 실제로 새로 저장한 건수
 	 */
 	public int collectForInstrument(Instrument instrument) {
-		List<Instrument> sameMarket = instrumentService.getInstrumentEntities(instrument.getMarket());
+		List<Instrument> sameMarket = instrumentService.getRealInstrumentEntities(instrument.getMarket());
 		List<String> sameMarketNames = sameMarket.stream().map(Instrument::getName).toList();
 		List<CollectedNewsDto> collected = newsCollector.collect(instrument, sameMarketNames);
 		return save(instrument, MarketNewsItemType.NEWS, collected);
@@ -129,7 +136,9 @@ public class NewsCollectionService {
 		LocalDate collectionDate = LocalDate.now(clock);
 		int saved = 0;
 		int failed = 0;
-		for (Instrument instrument : instrumentService.getInstrumentEntities(Market.STOCK)) {
+		// 샌드박스 제외(#406)와 종목 단위 격리(#408)는 서로 배타적이지 않다 — 목록은 실제 종목만 돌고,
+		// 그 안에서 한 종목이 터져도 나머지는 계속한다.
+		for (Instrument instrument : instrumentService.getRealInstrumentEntities(Market.STOCK)) {
 			// 뉴스 쪽과 같은 이유로 종목 단위로 격리한다 (이슈 #408).
 			try {
 				List<CollectedNewsDto> collected = disclosureCollector.collect(instrument, collectionDate);

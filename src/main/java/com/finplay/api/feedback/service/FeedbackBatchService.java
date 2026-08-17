@@ -86,7 +86,9 @@ public class FeedbackBatchService {
 		}
 
 		LocalDate originTradeDate = session.sourceTradingDate();
-		List<Instrument> instruments = instrumentService.getInstrumentEntities(Market.STOCK);
+		// 샌드박스 튜토리얼 종목은 제외한다 (이슈 #406) — 수집된 기사가 없어 산출물도 없지만, 그 전에
+		// 종목당 LLM 호출이 그만큼 낭비된다.
+		List<Instrument> instruments = instrumentService.getRealInstrumentEntities(Market.STOCK);
 		log.info("개장 전 배치를 시작한다. 원본 거래일={} 종목={}건", originTradeDate, instruments.size());
 
 		// 소요 시간은 전부 System.nanoTime()으로 잰다 — 이 저장소는 시각을 Clock으로 주입받고 테스트가 그것을

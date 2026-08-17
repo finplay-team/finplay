@@ -139,7 +139,7 @@ class CryptoPriceMoveWatcherTest {
 	}
 
 	private void givenInstruments(Instrument... instruments) {
-		when(instrumentService.getInstrumentEntities(Market.CRYPTO)).thenReturn(List.of(instruments));
+		when(instrumentService.getRealInstrumentEntities(Market.CRYPTO)).thenReturn(List.of(instruments));
 	}
 
 	// --- σ 표본 — rolling-window-minutes 간격의 "겹치지 않는" 구간으로만 만든다 (§탐지 알고리즘(코인)) ---

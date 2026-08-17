@@ -60,7 +60,8 @@ public class CryptoFeedbackBatchService {
 	 */
 	@Scheduled(cron = "${feedback.batch.crypto-cron}", zone = "Asia/Seoul")
 	public void refreshCryptoFeedback() {
-		List<Instrument> instruments = instrumentService.getInstrumentEntities(Market.CRYPTO);
+		// 샌드박스 튜토리얼 종목은 제외한다 (이슈 #406) — 이유는 FeedbackBatchService와 같다.
+		List<Instrument> instruments = instrumentService.getRealInstrumentEntities(Market.CRYPTO);
 		log.info("코인 요약·브리핑 갱신을 시작한다. 종목={}건", instruments.size());
 
 		int refreshed = 0;

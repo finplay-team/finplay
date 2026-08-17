@@ -100,7 +100,10 @@ public class CryptoPriceMoveWatcher {
 	@Scheduled(cron = "${feedback.batch.crypto-watch-cron}", zone = "Asia/Seoul")
 	public void watch() {
 		LocalDateTime now = LocalDateTime.now(clock);
-		List<Instrument> instruments = instrumentService.getInstrumentEntities(Market.CRYPTO);
+		// 샌드박스 튜토리얼 종목은 감시하지 않는다 (이슈 #406). 이 종목들의 가격은 실제 피드가 아니라
+		// TutorialSampleInstrumentPriceService의 결정적 공식이라(031 SANDBOX-004) 변동 카드의 전제인
+		// "시장이 만든 급변"이 성립하지 않고, 근거로 붙일 실제 뉴스도 없다.
+		List<Instrument> instruments = instrumentService.getRealInstrumentEntities(Market.CRYPTO);
 		int created = 0;
 		for (Instrument instrument : instruments) {
 			try {
