@@ -334,9 +334,23 @@ public class NarrativePromptBuilder {
 	}
 
 	// 집단 비교는 관측된 사실이라 서술에 넣어도 된다 (FEED-011). 개인 식별값은 어떤 형태로도 넣지 않는다.
+	//
+	// medianMinutesToSell만 따로 가른다. 호출부의 holderCount != null은 READY(표본 5명 이상)를 뜻하고 그때
+	// soldWithin30MinRate는 반드시 채워지지만(PostSellArithmetic.toPeerComparison), 중앙값은 READY 안에서도
+	// null일 수 있다 — "모집단 전원이 그 구간 뒤로 매도하지 않았다"가 정의된 상태다(§C-8,
+	// HolderPopulationQueryService 계약: 아무도 T 뒤에 팔지 않으면 빈 목록 → median null).
+	//
+	// 이 자리에서 null을 %d에 넘기면 Formatter가 예외가 아니라 "null"을 찍어 "중앙값은 null분입니다"가
+	// 그대로 LLM 입력이 된다 — 폴백도 후검증도 걸리지 않고, 재생성이 성공하면 narrativeFinalized로 굳는다
+	// (이슈 #407).
 	private String peerLine(PostSellPromptDto input) {
 		// 줄바꿈을 format 문자열에 넣지 않는다 — SpotBugs VA_FORMAT_STRING_USES_NEWLINE이 %n을 요구하는데
 		// %n은 플랫폼별로 CRLF가 되어 프롬프트가 OS에 따라 달라진다. 개행은 호출부가 붙인다.
+		if (input.medianMinutesToSell() == null) {
+			// 목록이 비면 30분 내 매도 건수도 0이라 비율 절을 따로 적지 않는다 — 같은 사실의 중복이다.
+			return "같은 변동 구간을 겪은 다른 사용자 %d명 중 그 뒤로 매도한 사람은 없었습니다. 본인은 %d분이었습니다."
+				.formatted(input.holderCount(), input.yourMinutesToSell());
+		}
 		return "같은 변동 구간을 겪은 다른 사용자 %d명 중 %s가 30분 내에 매도했고, 매도까지 걸린 시간의 중앙값은 %d분입니다. 본인은 %d분이었습니다."
 			.formatted(
 				input.holderCount(),
