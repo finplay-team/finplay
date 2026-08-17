@@ -18,10 +18,13 @@ import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.education.domain.PracticeProgress;
 import com.finplay.api.education.domain.PracticeProgressStatus;
+import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
+import com.finplay.api.education.marketpractice.domain.PracticeAttemptStatus;
 import com.finplay.api.education.marketpractice.domain.PracticeCompletion;
 import com.finplay.api.education.marketpractice.domain.PracticeEvidenceType;
 import com.finplay.api.education.marketpractice.domain.PracticeMarketObservation;
 import com.finplay.api.education.marketpractice.domain.PracticeMarketReflection;
+import com.finplay.api.education.marketpractice.domain.PracticeRiskSnapshot;
 import com.finplay.api.education.marketpractice.dto.request.PracticeHoldingReflectionCreateRequest;
 import com.finplay.api.education.marketpractice.dto.response.PracticeHoldingReflectionResponse;
 import com.finplay.api.education.marketpractice.repository.PracticeCompletionRepository;
@@ -32,6 +35,7 @@ import com.finplay.api.education.repository.PracticeProgressRepository;
 import com.finplay.api.education.service.PracticeIntentionService;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
+import com.finplay.api.order.domain.Trade;
 import com.finplay.api.portfolio.domain.Holding;
 import com.finplay.api.portfolio.service.HoldingService;
 import java.math.BigDecimal;
@@ -486,6 +490,86 @@ class PracticeHoldingReflectionServiceTest {
 		verify(practiceMarketReflectionRepository).save(any(PracticeMarketReflection.class));
 		verify(practiceCompletionRepository).save(any(PracticeCompletion.class));
 		verify(progress).complete(NOW);
+	}
+
+	// docs/specs/040-tutorial-restart-after-completion TUTORIAL-RESTART-004~007: attempt 기반 완료 경로의
+	// 최초 완료/재완료 분기. attempt.getStatus()가 COMPLETED가 아니어야(재시작 후 진행 중) 이 분기에 들어온다.
+	@Test
+	void createAttemptReflectionSavesEvidenceAndPaysRewardWhenNoPriorCompletionExists() {
+		PracticeAttempt attempt = givenAttemptEvidence();
+		when(practiceCompletionRepository.findByUserIdAndTutorialKey(USER_ID, PracticeIntentionService.TUTORIAL_KEY))
+			.thenReturn(Optional.empty());
+		when(practiceMarketReflectionRepository.save(any(PracticeMarketReflection.class)))
+			.thenAnswer(invocation -> invocation.getArgument(0));
+
+		PracticeHoldingReflectionResponse response = service.createReflection(USER_ID, request());
+
+		assertThat(response.rewardGranted()).isTrue();
+		assertThat(response.holdingId()).isEqualTo(HOLDING_ID);
+		verify(practiceMarketReflectionRepository).save(any(PracticeMarketReflection.class));
+		verify(practiceCompletionRepository).save(any(PracticeCompletion.class));
+		verify(progress).complete(NOW);
+		verify(attempt).complete(NOW);
+		verify(accountService).getAccountForUpdate(USER_ID, com.finplay.api.account.domain.Market.STOCK);
+		verify(account).addCash(5_000_000L);
+	}
+
+	@Test
+	void createAttemptReflectionSkipsEvidenceWritesAndRewardWhenCompletionAlreadyExists() {
+		PracticeAttempt attempt = givenAttemptEvidence();
+		PracticeCompletion existingCompletion = mock(PracticeCompletion.class);
+		when(practiceCompletionRepository.findByUserIdAndTutorialKey(USER_ID, PracticeIntentionService.TUTORIAL_KEY))
+			.thenReturn(Optional.of(existingCompletion));
+
+		PracticeHoldingReflectionResponse response = service.createReflection(USER_ID, request());
+
+		assertThat(response.rewardGranted()).isFalse();
+		assertThat(response.reflectionId()).isNull();
+		assertThat(response.holdingId()).isEqualTo(HOLDING_ID);
+		assertThat(response.answer()).isEqualTo(ANSWER);
+		verify(practiceMarketReflectionRepository, never()).save(any());
+		verify(practiceCompletionRepository, never()).save(any());
+		verify(progress, never()).complete(any());
+		verify(attempt).complete(NOW);
+		verifyNoInteractions(accountService);
+	}
+
+	// attempt 기반 evidence(스냅샷·매도 evidence·5분 기한)와 진입 조건을 함께 세팅한다. 반환값은 검증용 attempt.
+	private PracticeAttempt givenAttemptEvidence() {
+		when(instrument.isTutorialSample()).thenReturn(true);
+
+		PracticeAttempt attempt = mock(PracticeAttempt.class);
+		when(attempt.getStatus()).thenReturn(PracticeAttemptStatus.IN_PROGRESS);
+		when(attempt.getMarket()).thenReturn(Market.STOCK);
+		when(attempt.getCreatedAt()).thenReturn(NOW.minusDays(1));
+		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.STOCK))
+			.thenReturn(Optional.of(attempt));
+
+		when(holdingService.findHoldingForOwner(USER_ID, HOLDING_ID)).thenReturn(Optional.of(holding));
+
+		PracticeRiskSnapshot riskSnapshot = mock(PracticeRiskSnapshot.class);
+		when(riskSnapshot.getCreatedAt()).thenReturn(NOW.minusMinutes(4));
+		Trade buyTrade = mock(Trade.class);
+		when(buyTrade.getExecutedAt()).thenReturn(NOW.minusMinutes(4));
+		when(riskSnapshot.getBuyTrade()).thenReturn(buyTrade);
+
+		Trade sellTrade = mock(Trade.class);
+		when(sellTrade.getExecutedAt()).thenReturn(NOW.minusMinutes(1));
+
+		ResolvedPracticeAttemptEvidenceDto evidence = new ResolvedPracticeAttemptEvidenceDto(
+			riskSnapshot, HOLDING_ID, BigDecimal.TEN, BigDecimal.TEN, BigDecimal.ZERO, sellTrade);
+		when(practiceAttemptEvidenceService.requireCurrentRun(attempt, USER_ID, HOLDING_ID)).thenReturn(evidence);
+
+		PracticeMarketObservation withEvidence = mock(PracticeMarketObservation.class);
+		when(withEvidence.getEvidenceType()).thenReturn(PracticeEvidenceType.CLOSER_TO_BOUNDARY);
+		when(withEvidence.getObservedAt()).thenReturn(NOW.minusMinutes(2));
+		when(practiceMarketObservationRepository.findByUserIdAndHoldingIdOrderByObservedAtAsc(USER_ID, HOLDING_ID))
+			.thenReturn(List.of(withEvidence));
+
+		when(practiceProgressRepository.findByUserIdAndTutorialKeyForUpdate(
+			USER_ID, PracticeIntentionService.TUTORIAL_KEY)).thenReturn(Optional.of(progress));
+
+		return attempt;
 	}
 
 	private PracticeHoldingReflectionCreateRequest request() {

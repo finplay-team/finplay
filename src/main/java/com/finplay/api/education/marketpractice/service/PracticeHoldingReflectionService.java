@@ -114,7 +114,7 @@ public class PracticeHoldingReflectionService {
 		progress.complete(now);
 		payTutorialCompletionReward(userId, holding.getInstrument().getMarket());
 
-		return PracticeHoldingReflectionResponse.from(reflection);
+		return PracticeHoldingReflectionResponse.from(reflection, true);
 	}
 
 	private PracticeHoldingReflectionResponse createAttemptReflection(
@@ -140,12 +140,25 @@ public class PracticeHoldingReflectionService {
 
 		String tutorialKey = resolveTutorialKey(attempt.getMarket());
 		practiceProgressRepository.insertIfAbsent(userId, tutorialKey, attempt.getCreatedAt());
+		// TUTORIAL-RESTART-006: practice_progresses를 FOR UPDATE로 잠근 뒤(기존 026/031 락 재사용) completion
+		// 존재 여부를 읽는다 — 동시에 들어온 재완료 요청은 이 락으로 직렬화되어 두 번째 트랜잭션은 반드시
+		// "이미 존재함"을 보게 된다(plan.md "동시성 설계").
 		PracticeProgress progress = practiceProgressRepository
 			.findByUserIdAndTutorialKeyForUpdate(userId, tutorialKey)
 			.orElseThrow(() -> new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING));
-		if (progress.getStatus() == PracticeProgressStatus.COMPLETED
-			|| practiceCompletionRepository.findByUserIdAndTutorialKey(userId, tutorialKey).isPresent()) {
-			throw new BusinessException(ErrorCode.PRACTICE_ALREADY_COMPLETED);
+
+		// TUTORIAL-RESTART-004: 최초 완료 여부는 "이번 완료 트랜잭션 시작 시점에 practice_completions 행이
+		// 이미 존재했는가"로만 판정한다(spec.md 비즈니스 규칙, 새 컬럼·백필 불필요).
+		boolean alreadyCompletedBefore = practiceCompletionRepository
+			.findByUserIdAndTutorialKey(userId, tutorialKey)
+			.isPresent();
+
+		if (alreadyCompletedBefore) {
+			// TUTORIAL-RESTART-005/007: 재완료는 practice_completions·practice_market_reflections·
+			// practice_progresses에 쓰지 않고(불변 완료 evidence 유지) 사용자가 입력한 answer도 영속하지
+			// 않는다. attempt.status/completed_at만 갱신하고 보상은 건너뛴다.
+			attempt.complete(now);
+			return PracticeHoldingReflectionResponse.ofRecompletion(holding.getId(), answer, now);
 		}
 
 		PracticeMarketReflection reflection = practiceMarketReflectionRepository.save(
@@ -154,7 +167,7 @@ public class PracticeHoldingReflectionService {
 		progress.complete(now);
 		attempt.complete(now);
 		payTutorialCompletionReward(userId, attempt.getMarket());
-		return PracticeHoldingReflectionResponse.from(reflection);
+		return PracticeHoldingReflectionResponse.from(reflection, true);
 	}
 
 	// 이슈 #343: 시장별 최초 완료에만 500만원을 그 시장 계좌에 지급한다. OrderExecutionService

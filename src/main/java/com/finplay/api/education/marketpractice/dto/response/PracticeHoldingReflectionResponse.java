@@ -9,16 +9,26 @@ public record PracticeHoldingReflectionResponse(
 	Long holdingId,
 	String prompt,
 	String answer,
-	LocalDateTime createdAt) {
+	LocalDateTime createdAt,
+	boolean rewardGranted) {
 
 	public static final String PROMPT = "지금 팔고 싶나요? 그렇다면 왜 그런가요? 계획한 손절·익절 라인과 비교해 적어보세요.";
 
-	public static PracticeHoldingReflectionResponse from(PracticeMarketReflection reflection) {
+	public static PracticeHoldingReflectionResponse from(PracticeMarketReflection reflection, boolean rewardGranted) {
 		return new PracticeHoldingReflectionResponse(
 			reflection.getId(),
 			reflection.getHolding().getId(),
 			PROMPT,
 			reflection.getAnswer(),
-			reflection.getCreatedAt());
+			reflection.getCreatedAt(),
+			rewardGranted);
+	}
+
+	// docs/specs/040-tutorial-restart-after-completion TUTORIAL-RESTART-005/007: 재완료는
+	// practice_market_reflections에 새 행을 만들지 않으므로 reflectionId가 없고, 사용자가 입력한 answer도
+	// 영속되지 않는다(응답에는 evidence 검증을 통과한 이번 요청 값을 그대로 되돌려줄 뿐).
+	public static PracticeHoldingReflectionResponse ofRecompletion(
+		Long holdingId, String answer, LocalDateTime completedAt) {
+		return new PracticeHoldingReflectionResponse(null, holdingId, PROMPT, answer, completedAt, false);
 	}
 }
