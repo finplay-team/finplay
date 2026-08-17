@@ -66,6 +66,23 @@ class PracticeAttemptRestartControllerTest {
 	}
 
 	@Test
+	void restartCompletedAttemptReturnsActiveResetJson() throws Exception {
+		authenticate();
+		PracticeAttemptResponse response = new PracticeAttemptResponse(
+			11L, "CRYPTO", 3L, "ACTIVE", "SELECTING_INSTRUMENT", null, null, null, null, null);
+		when(restartService.restart(USER_ID, Market.CRYPTO)).thenReturn(response);
+
+		mockMvc.perform(post("/api/education/practice/attempts/CRYPTO/restart")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.runNumber").value(3))
+			.andExpect(jsonPath("$.mode").value("ACTIVE"))
+			.andExpect(jsonPath("$.status").value("SELECTING_INSTRUMENT"))
+			.andExpect(jsonPath("$.completedAt").doesNotExist());
+		verify(restartService).restart(USER_ID, Market.CRYPTO);
+	}
+
+	@Test
 	void restartRejectsInvalidMarketPath() throws Exception {
 		authenticate();
 		mockMvc.perform(post("/api/education/practice/attempts/FOREX/restart")

@@ -53,7 +53,7 @@ class PracticeHoldingReflectionControllerTest {
 			any(PracticeHoldingReflectionCreateRequest.class)))
 			.thenReturn(new PracticeHoldingReflectionResponse(
 				30L, 10L, PracticeHoldingReflectionResponse.PROMPT, "손절 라인에 가까워서 팔지 않기로 했다.",
-				LocalDateTime.of(2026, 8, 10, 10, 0)));
+				LocalDateTime.of(2026, 8, 10, 10, 0), true));
 
 		mockMvc.perform(post("/api/education/practice/holding-reflections")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
@@ -63,7 +63,8 @@ class PracticeHoldingReflectionControllerTest {
 			.andExpect(jsonPath("$.holdingId").value(10))
 			.andExpect(jsonPath("$.prompt").value(PracticeHoldingReflectionResponse.PROMPT))
 			.andExpect(jsonPath("$.answer").value("손절 라인에 가까워서 팔지 않기로 했다."))
-			.andExpect(jsonPath("$.createdAt").value("2026-08-10T10:00:00"));
+			.andExpect(jsonPath("$.createdAt").value("2026-08-10T10:00:00"))
+			.andExpect(jsonPath("$.rewardGranted").value(true));
 	}
 
 	@Test

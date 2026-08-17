@@ -3,7 +3,6 @@ package com.finplay.api.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -87,22 +86,26 @@ class PracticeAttemptRestartServiceTest {
 	}
 
 	@Test
-	void restartCompletedAttemptReturnsReplayWithoutCleanupOrRowMutation() {
+	void restartCompletedAttemptPerformsCleanupAndStartsNewRun() {
 		PracticeAttempt attempt = selectedAttempt();
 		ReflectionTestUtils.setField(attempt, "status", PracticeAttemptStatus.COMPLETED);
 		ReflectionTestUtils.setField(attempt, "completedAt", NOW.minusDays(1));
 		when(attemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
 			.thenReturn(Optional.of(attempt));
-		when(riskSnapshotRepository.findByAttemptIdAndRunNumber(ATTEMPT_ID, 1L))
+		when(riskSnapshotRepository.findByAttemptIdAndRunNumber(ATTEMPT_ID, 2L))
 			.thenReturn(Optional.empty());
 
 		PracticeAttemptResponse response = service.restart(USER_ID, Market.CRYPTO);
 
-		assertThat(response.mode()).isEqualTo("REPLAY");
-		assertThat(response.runNumber()).isEqualTo(1L);
-		assertThat(response.completedAt()).isEqualTo(NOW.minusDays(1));
-		verify(orderRestartService, never()).cleanupCurrentRun(org.mockito.ArgumentMatchers.any());
-		verify(attemptRepository, never()).save(org.mockito.ArgumentMatchers.any());
+		assertThat(response.mode()).isEqualTo("ACTIVE");
+		assertThat(response.status()).isEqualTo("SELECTING_INSTRUMENT");
+		assertThat(response.runNumber()).isEqualTo(2L);
+		assertThat(response.completedAt()).isNull();
+		ArgumentCaptor<PracticeRunRestartCommand> commandCaptor = ArgumentCaptor.forClass(
+			PracticeRunRestartCommand.class);
+		verify(orderRestartService).cleanupCurrentRun(commandCaptor.capture());
+		assertThat(commandCaptor.getValue().attemptId()).isEqualTo(ATTEMPT_ID);
+		assertThat(commandCaptor.getValue().runNumber()).isEqualTo(1L);
 	}
 
 	private static PracticeAttempt newAttempt() {

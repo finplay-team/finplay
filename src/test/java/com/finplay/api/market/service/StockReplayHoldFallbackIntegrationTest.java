@@ -31,6 +31,7 @@ import com.finplay.api.order.dto.request.OrderCreateRequest;
 import com.finplay.api.order.repository.OrderRepository;
 import com.finplay.api.order.repository.TradeRepository;
 import com.finplay.api.order.service.OrderService;
+import com.finplay.api.portfolio.domain.Holding;
 import com.finplay.api.portfolio.repository.HoldingLotRepository;
 import com.finplay.api.portfolio.repository.HoldingRepository;
 import java.math.BigDecimal;
@@ -141,15 +142,19 @@ class StockReplayHoldFallbackIntegrationTest {
 	void cleanUp() {
 		if (createdUserId != null) {
 			User user = userRepository.findById(createdUserId).orElseThrow();
-			List<Account> accounts = accountRepository.findAll().stream()
-				.filter(account -> account.getUser().getId().equals(createdUserId)).toList();
+			// findAll()로 전체 테이블을 스캔한 뒤 계좌 ID로 필터링하지 않는다 — 공유 Testcontainers
+			// MySQL(ADR-0003)에는 이 클래스 밖의 다른 테스트가 쌓아 둔 무관한 행이 훨씬 많고, 그 전부를
+			// 프록시로 초기화하려다 LazyInitializationException·타임아웃이 나며 정리 자체가 실패했다
+			// (실측 — 2026-08-17, PR #402/#405 CI에서 재현). 계좌 단위로 좁힌 조회만 쓴다.
+			List<Account> accounts = accountRepository.findAllByUserId(createdUserId);
 			for (Account account : accounts) {
-				holdingLotRepository.deleteAll(holdingLotRepository.findAll().stream()
-					.filter(lot -> lot.getHolding().getAccount().getId().equals(account.getId())).toList());
-				holdingRepository.deleteAll(holdingRepository.findAll().stream()
-					.filter(holding -> holding.getAccount().getId().equals(account.getId())).toList());
-				List<com.finplay.api.order.domain.Order> orders = orderRepository.findAll().stream()
-					.filter(order -> order.getAccount().getId().equals(account.getId())).toList();
+				List<Holding> holdings = holdingRepository.findByAccountId(account.getId());
+				List<Long> holdingIds = holdings.stream().map(Holding::getId).toList();
+				if (!holdingIds.isEmpty()) {
+					holdingLotRepository.deleteAll(holdingLotRepository.findByHoldingIdIn(holdingIds));
+				}
+				holdingRepository.deleteAll(holdings);
+				List<com.finplay.api.order.domain.Order> orders = orderRepository.findByAccountId(account.getId());
 				for (var order : orders) {
 					tradeRepository.findByOrderId(order.getId()).ifPresent(tradeRepository::delete);
 				}

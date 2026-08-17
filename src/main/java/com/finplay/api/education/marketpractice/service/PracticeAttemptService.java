@@ -52,10 +52,11 @@ public class PracticeAttemptService {
 			if (attempt.getStatus() == PracticeAttemptStatus.COMPLETED) {
 				return toResponse(attempt);
 			}
-			if (!inserted) {
-				throw new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING);
+			if (inserted) {
+				initializeCompletedReplay(userId, market, attempt, completion, now);
 			}
-			initializeCompletedReplay(userId, market, attempt, completion, now);
+			// completion evidence는 있지만 attempt가 COMPLETED가 아닌 기존 행은 재시작 후 진행 중인
+			// 상태(TUTORIAL-RESTART-003)이므로 오류로 취급하지 않고 현재 상태를 그대로 반환한다.
 		}
 		return toResponse(attempt);
 	}

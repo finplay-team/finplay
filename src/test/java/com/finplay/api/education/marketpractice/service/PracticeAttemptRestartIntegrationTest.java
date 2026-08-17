@@ -264,7 +264,7 @@ class PracticeAttemptRestartIntegrationTest {
 	}
 
 	@Test
-	void completedRestartReturnsReplayWithoutChangingLedgerOrRewardBalance() {
+	void completedRestartCleansUpAndRestartsLikeIncompleteAttempt() {
 		Fixture fixture = selectedFixture("completed", Market.CRYPTO);
 		fixture.account().reserveCash(100_050L);
 		accountRepository.saveAndFlush(fixture.account());
@@ -279,14 +279,21 @@ class PracticeAttemptRestartIntegrationTest {
 
 		PracticeAttemptResponse response = restartService.restart(fixture.user().getId(), Market.CRYPTO);
 
-		assertThat(response.mode()).isEqualTo("REPLAY");
-		assertThat(response.runNumber()).isEqualTo(1L);
+		assertThat(response.mode()).isEqualTo("ACTIVE");
+		assertThat(response.status()).isEqualTo("SELECTING_INSTRUMENT");
+		assertThat(response.runNumber()).isEqualTo(2L);
+		assertThat(response.instrumentId()).isNull();
+		assertThat(response.completedAt()).isNull();
 		assertThat(orderRepository.count()).isEqualTo(orderCount);
 		assertThat(tradeRepository.count()).isEqualTo(tradeCount);
-		assertThat(orderRepository.findById(pending.getId()).orElseThrow().getStatus()).isEqualTo(OrderStatus.PENDING);
-		Account unchanged = accountRepository.findById(fixture.account().getId()).orElseThrow();
-		assertThat(unchanged.getCashBalance()).isEqualTo(cashBalance);
-		assertThat(unchanged.getReservedCash()).isEqualTo(100_050L);
+		assertThat(orderRepository.findById(pending.getId()).orElseThrow().getStatus())
+			.isEqualTo(OrderStatus.CANCELLED);
+		Account cleaned = accountRepository.findById(fixture.account().getId()).orElseThrow();
+		assertThat(cleaned.getCashBalance()).isEqualTo(cashBalance);
+		assertThat(cleaned.getReservedCash()).isZero();
+		PracticeAttempt persisted = attemptRepository.findById(fixture.attempt().getId()).orElseThrow();
+		assertThat(persisted.getStatus().name()).isEqualTo("SELECTING_INSTRUMENT");
+		assertThat(persisted.getRunNumber()).isEqualTo(2L);
 	}
 
 	@Test
