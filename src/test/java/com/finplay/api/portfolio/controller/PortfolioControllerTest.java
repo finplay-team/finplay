@@ -13,7 +13,6 @@ import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.auth.token.JwtTokenProvider;
 import com.finplay.api.portfolio.dto.response.PortfolioSummaryResponse;
 import com.finplay.api.portfolio.service.PortfolioService;
-import java.math.BigDecimal;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,15 +42,13 @@ class PortfolioControllerTest {
 	void getPortfolioSummaryReturnsOkWithEveryField() throws Exception {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
-		PortfolioSummaryResponse response = PortfolioSummaryResponse.of(
-			20_200_000L, new BigDecimal("0.0100"), 200_000L, 50_000L);
+		PortfolioSummaryResponse response = PortfolioSummaryResponse.of(20_200_000L, 200_000L, 50_000L);
 		when(portfolioService.getPortfolioSummary(USER_ID)).thenReturn(response);
 
 		mockMvc.perform(get("/api/portfolio")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.totalValue").value(20200000))
-			.andExpect(jsonPath("$.returnRate").value(0.0100))
 			.andExpect(jsonPath("$.unrealizedPnl").value(200000))
 			.andExpect(jsonPath("$.realizedPnl").value(50000));
 

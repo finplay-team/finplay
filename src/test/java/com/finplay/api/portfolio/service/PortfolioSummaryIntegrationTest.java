@@ -29,7 +29,6 @@ import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.dto.request.OrderCreateRequest;
 import com.finplay.api.order.service.OrderService;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -66,7 +65,6 @@ class PortfolioSummaryIntegrationTest {
 	// Account.INITIAL_SEED_MONEY(10,000,000)는 STOCK·CRYPTO 계좌 생성 시 항상 고정값이라 두 계좌 합계를
 	// 상수로 둔다 — AccountSummaryResponse가 seedMoney를 노출하지 않으므로(#81 계약) 응답에서 얻을 수 없다.
 	private static final long TOTAL_SEED_MONEY = 20_000_000L;
-	private static final int RETURN_RATE_SCALE = 8; // PortfolioService.RETURN_RATE_SCALE과 동일(이슈 #390)
 
 	@Autowired
 	private MockMvc mockMvc;
@@ -135,8 +133,7 @@ class PortfolioSummaryIntegrationTest {
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.totalValue").value(TOTAL_SEED_MONEY))
 			.andExpect(jsonPath("$.unrealizedPnl").value(0))
-			.andExpect(jsonPath("$.realizedPnl").value(0))
-			.andExpect(jsonPath("$.returnRate").value(0.0));
+			.andExpect(jsonPath("$.realizedPnl").value(0));
 	}
 
 	@Test
@@ -209,10 +206,8 @@ class PortfolioSummaryIntegrationTest {
 			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"));
 	}
 
-	// spec 요구사항: 수동으로 4개 값을 다시 계산하지 않고, 실제 GET /api/accounts/summary(STOCK·CRYPTO) 두 응답을
-	// 합산한 값과 GET /api/portfolio 응답을 대조한다. returnRate만 예외로, "시장별 수익률을 더하거나 평균 내지
-	// 않는다"(이슈 #51 요구사항)는 계약이라 PortfolioService가 실제로 쓰는 것과 동일한 공식(합산된 totalValue 기준
-	// 재계산)으로 검증한다.
+	// spec 요구사항: 수동으로 3개 값을 다시 계산하지 않고, 실제 GET /api/accounts/summary(STOCK·CRYPTO) 두 응답을
+	// 합산한 값과 GET /api/portfolio 응답을 대조한다.
 	private void assertPortfolioMatchesSummedAccountSummaries(String accessToken) throws Exception {
 		JsonNode stockSummary = fetchJson(get("/api/accounts/summary").param("market", "STOCK"), accessToken);
 		JsonNode cryptoSummary = fetchJson(get("/api/accounts/summary").param("market", "CRYPTO"), accessToken);
@@ -222,13 +217,10 @@ class PortfolioSummaryIntegrationTest {
 		long expectedUnrealizedPnl = stockSummary.get("unrealizedPnl").asLong()
 			+ cryptoSummary.get("unrealizedPnl").asLong();
 		long expectedRealizedPnl = stockSummary.get("realizedPnl").asLong() + cryptoSummary.get("realizedPnl").asLong();
-		BigDecimal expectedReturnRate = BigDecimal.valueOf(expectedTotalValue - TOTAL_SEED_MONEY)
-			.divide(BigDecimal.valueOf(TOTAL_SEED_MONEY), RETURN_RATE_SCALE, RoundingMode.HALF_UP);
 
 		assertThat(portfolio.get("totalValue").asLong()).isEqualTo(expectedTotalValue);
 		assertThat(portfolio.get("unrealizedPnl").asLong()).isEqualTo(expectedUnrealizedPnl);
 		assertThat(portfolio.get("realizedPnl").asLong()).isEqualTo(expectedRealizedPnl);
-		assertThat(portfolio.get("returnRate").decimalValue()).isEqualByComparingTo(expectedReturnRate);
 	}
 
 	private JsonNode fetchJson(MockHttpServletRequestBuilder request, String accessToken) throws Exception {
