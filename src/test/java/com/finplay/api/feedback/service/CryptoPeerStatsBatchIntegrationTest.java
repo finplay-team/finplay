@@ -164,6 +164,35 @@ class CryptoPeerStatsBatchIntegrationTest {
 		assertThat(stat.getMedianMinutesToSell()).isEqualTo(37);
 	}
 
+	// 회귀(이슈 #407): 모집단 쪽은 Duration.between(T, 매도).toMinutes()로 절대 시각 차를 절삭하고, 본인 값은
+	// PostSellArithmetic.minutesBetween이 양 끝을 분으로 내린 뒤 뺀다. 이 둘은 <b>T가 분 경계일 때만</b> 항상
+	// 같은 값을 낸다 — T에 초가 붙으면 매도 초가 그보다 작은 경우(매도 시각의 약 절반)에 1분 어긋난다.
+	//
+	// 그래서 CryptoPriceMoveWatcher가 occurred_at을 분 경계로 내려 저장한다. 여기서는 그 전제 위에서 매도 시각에
+	// 초가 붙어도 두 규칙이 갈리지 않음을 못박는다 — 기존 픽스처는 매도까지 정확히 정시라 이 축이 비어 있었다.
+	@Test
+	@DisplayName("T가 분 경계면 매도 시각에 초가 붙어도 30분 경계와 중앙값이 본인 값과 같은 규칙으로 나온다")
+	void secondsInTheSellTimeDoNotShiftTheBoundaryWhenTIsOnTheMinute() {
+		givenCryptoCard(CARD_AT);
+		// 30분 경계 양옆을 초 단위로 스친다 — 29분 40초는 29분, 30분 20초는 30분이라 둘 다 "30분 내"다.
+		givenHolderWhoSellsAt(CARD_AT.plusMinutes(30).plusSeconds(20));
+		givenHolderWhoSellsAt(CARD_AT.plusMinutes(29).plusSeconds(40));
+		// 31분 20초는 31분이라 경계 밖이다.
+		givenHolderWhoSellsAt(CARD_AT.plusMinutes(31).plusSeconds(20));
+		givenHolderWhoSellsAt(CARD_AT.plusMinutes(45).plusSeconds(59));
+		givenHolderWhoNeverSells();
+
+		peerStatsBatchService.runCryptoPeerStatsBatch();
+
+		PriceMovePeerStat stat = priceMovePeerStatRepository.findAll().get(0);
+		assertThat(stat.getHolderCount()).isEqualTo(5);
+		assertThat(stat.getSoldWithin30MinCount())
+			.as("T에 초가 붙어 있었다면 29분 40초 매도가 28분으로 밀려 경계 판정이 달라진다")
+			.isEqualTo(2);
+		// minutesToSell = [30, 29, 31, 45] → 정렬 [29,30,31,45] → median=(30+31)/2=30
+		assertThat(stat.getMedianMinutesToSell()).isEqualTo(30);
+	}
+
 	// --- 조회 키 정합 (이 항목의 핵심 2) ---
 
 	// 저장 키(배치)와 조회 키(리더)가 어긋나도 컴파일·실행이 모두 성공하고 status만 조용히 NOT_YET으로 굳는다.
@@ -338,6 +367,14 @@ class CryptoPeerStatsBatchIntegrationTest {
 		HoldingLot lot = createBuyLot(holding, BigDecimal.valueOf(10), CARD_AT.minusHours(3));
 		Trade sellTrade = createSellTrade(
 			holding.getAccount(), BigDecimal.valueOf(10), CARD_AT.plusMinutes(minutesAfterT));
+		allocate(sellTrade, lot, BigDecimal.valueOf(10));
+	}
+
+	// T 시점 이전에 사서 정확히 그 시각에 파는 보유자 1명을 만든다 — 초 단위 경계를 재는 테스트용이다.
+	private void givenHolderWhoSellsAt(LocalDateTime sellAt) {
+		Holding holding = createHolding();
+		HoldingLot lot = createBuyLot(holding, BigDecimal.valueOf(10), CARD_AT.minusHours(3));
+		Trade sellTrade = createSellTrade(holding.getAccount(), BigDecimal.valueOf(10), sellAt);
 		allocate(sellTrade, lot, BigDecimal.valueOf(10));
 	}
 

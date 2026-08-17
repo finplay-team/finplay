@@ -807,4 +807,47 @@ class CryptoPriceMoveWatcherTest {
 			verify(priceMoveCardWriter).persist(any(), any());
 		}
 	}
+
+	// 회귀(이슈 #407): 감시 크론이 "30 * * * * *"라 운영의 now는 항상 HH:mm:30.xxxxxx이고 컬럼이 DATETIME(6)라
+	// 그 초가 그대로 저장됐다. 그런데 이 값을 읽는 두 계산이 규칙이 달라 — 본인 값은 양 끝을 분으로 내린 뒤 빼고
+	// (PostSellArithmetic.minutesBetween), 모집단 중앙값은 절대 시각 차를 절삭한다(HolderPopulationQueryService)
+	// — 매도 초가 30 미만이면 같은 화면의 두 숫자가 항상 1분 어긋났다.
+	//
+	// 기존 픽스처가 전부 정시(NOW = 10:00)라 이 부류는 구조적으로 잡히지 않는다. 그래서 여기서만 초를 붙인다.
+	@Nested
+	@DisplayName("카드 시각의 분 경계 정렬")
+	class OccurredAtMinuteBoundary {
+
+		private static final LocalDateTime CRON_NOW = LocalDateTime.of(2026, 8, 5, 10, 0, 30, 123_456_000);
+
+		// 다른 중첩 클래스의 픽스처와 달리 스냅샷을 CRON_NOW 기준으로 만든다. 정시 픽스처를 그대로 쓰면
+		// nearest(09:55:30)가 09:55와 09:56 사이 동률이 되어 급등 구간의 어느 쪽을 집는지가 갈리고, 탐지 자체가
+		// 성립하지 않아 이 테스트가 "저장 시각"이 아니라 "탐지 성립"을 재게 된다.
+		private List<PriceSnapshotDto> jumpFixture() {
+			List<PriceSnapshotDto> fixture = new ArrayList<>();
+			for (int agoMinutes = 0; agoMinutes <= 60; agoMinutes++) {
+				fixture.add(
+					snapshot(CRON_NOW.minusMinutes(agoMinutes), agoMinutes < 5 ? 100.0 * Math.exp(0.12) : 100.0));
+			}
+			return fixture;
+		}
+
+		@Test
+		@DisplayName("occurredAt은 분 경계로 내려 저장하고, createdAt은 실제 탐지 시각을 그대로 남긴다")
+		void storesOccurredAtOnTheMinuteBoundaryButKeepsTheRealDetectionInstant() {
+			when(cryptoPriceSnapshotService.getSnapshots(eq("BTC"), any(), any())).thenReturn(jumpFixture());
+			givenInstruments(INSTRUMENT);
+			stubNoCooldownNoLimit();
+			stubOneMatchedSource(CRON_NOW);
+
+			watcher(properties(30, 6, 5, 1, 12, 35), detectionProperties(2.5), fixedClockAt(CRON_NOW)).watch();
+
+			ArgumentCaptor<PriceMoveEvent> captor = ArgumentCaptor.forClass(PriceMoveEvent.class);
+			verify(priceMoveCardWriter).persist(captor.capture(), any());
+			PriceMoveEvent card = captor.getValue();
+			assertThat(card.getOccurredAt()).isEqualTo(LocalDateTime.of(2026, 8, 5, 10, 0, 0));
+			// createdAt까지 함께 내리면 "언제 탐지됐는가"라는 다른 사실이 사라진다 — 절삭 대상은 occurredAt뿐이다.
+			assertThat(card.getCreatedAt()).isEqualTo(CRON_NOW);
+		}
+	}
 }

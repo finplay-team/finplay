@@ -64,6 +64,14 @@ public class HolderPopulationQueryService {
 	 * 회원은 "매도까지 걸린 시간"이 정의되지 않으므로 목록에서 빠진다 — 호출부가 이 목록의 크기와 모집단
 	 * 크기의 차이로 미매도 인원을 유추하지 않는다(그 목적이라면 {@code countHoldersAtTime}과 별도로 판단한다).
 	 *
+	 * <p><b>{@code at}은 반드시 분 경계(초·소수 초가 0)여야 한다</b> (이슈 #407). 여기의 분 계산은
+	 * {@code Duration.between(at, 매도).toMinutes()}라 <b>절대 시각 차를 절삭</b>하는데, 같은 값을 쓰는 본인 쪽
+	 * ({@code PostSellArithmetic.minutesBetween})은 <b>양 끝을 분으로 내린 뒤</b> 뺀다. {@code at}에 초가 붙어
+	 * 있으면 두 규칙이 갈려 같은 화면의 "본인 N분"과 "중앙값 N-1분"이 어긋난다 — 매도 시각의 약 절반에서
+	 * 발생하므로 경계 사례가 아니다. 주식은 {@code windowEnd}가 {@code TIME} 컬럼이라 자연히 정시였고, 코인은
+	 * 감시 크론이 매 분 30초라 어긋나 있던 것을 {@code CryptoPriceMoveWatcher}가 {@code occurred_at}을 분으로
+	 * 내려 저장하는 것으로 맞췄다. <b>초가 붙은 {@code at}을 넘기는 호출부를 새로 만들지 않는다.</b>
+	 *
 	 * <p><b>모집단 크기도 함께 필요하면 {@code countHoldersAtTime}을 따로 부르지 말고
 	 * {@link #populationSnapshotAtTime}을 써라</b> — 둘을 각각 부르면 {@code holderIdsAtTime}이 두 번 계산된다.
 	 *
