@@ -87,8 +87,11 @@ public interface MarketNewsItemRepository extends JpaRepository<MarketNewsItem, 
 	 * (기사가 어느 종목 소식인지 모델이 알 수 없다) 지연 로딩으로 두면 기사 수만큼 추가 질의가 나간다.
 	 *
 	 * <p><b>샌드박스 튜토리얼 종목을 제외한다</b>(이슈 #406). 수집을 막는 것과 별개로 여기서도 거르는 것은,
-	 * 브리핑이 전 회원 공유 산출물이라 <b>이미 저장돼 있는 행</b>도 새지 않아야 하기 때문이다. 수집 차단만으로도
-	 * 이 질의의 구간(전장)이 시간 창이라 하루 안에 저절로 빠지지만, 그 보장이 시각에 의존하게 두지 않는다.
+	 * 브리핑이 전 회원 공유 산출물이라 <b>이미 저장돼 있는 행</b>도 새지 않아야 하기 때문이다.
+	 *
+	 * <p><b>그래서 오염 행을 지우는 마이그레이션을 두지 않는다.</b> 이 조건이 질의에 영구적으로 걸려 있어 남은
+	 * 행이 어느 시점에도 결과에 들어오지 않기 때문이지, "시간이 지나면 구간 밖으로 밀려나서"가 아니다 — 그
+	 * 근거였다면 보관 기간이 늘거나 구간이 넓어지는 순간 조용히 깨진다 (PR #411 리뷰 [권장 1]).
 	 */
 	@Query("SELECT n FROM MarketNewsItem n JOIN FETCH n.instrument i "
 		+ "WHERE i.market = :market AND i.tutorialSample = false "
