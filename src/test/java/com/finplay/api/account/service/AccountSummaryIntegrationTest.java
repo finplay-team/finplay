@@ -125,7 +125,6 @@ class AccountSummaryIntegrationTest {
 		assertThat(response.totalValue()).isEqualTo(10_000_000L);
 		assertThat(response.realizedPnl()).isZero();
 		assertThat(response.unrealizedPnl()).isZero();
-		assertThat(response.returnRate()).isEqualByComparingTo(BigDecimal.ZERO);
 	}
 
 	@Test
@@ -156,8 +155,6 @@ class AccountSummaryIntegrationTest {
 		assertThat(response.totalValue()).isEqualTo(expectedTotalValue);
 		assertThat(response.realizedPnl()).isZero();
 		assertThat(response.unrealizedPnl()).isEqualTo(expectedUnrealizedPnl);
-		// returnRate = (totalValue - seedMoney) / seedMoney = (10099895 - 10000000) / 10000000 = 0.0099895 (scale 8, HALF_UP)
-		assertThat(response.returnRate()).isEqualByComparingTo(new BigDecimal("0.00998950"));
 	}
 
 	@Test
@@ -196,8 +193,6 @@ class AccountSummaryIntegrationTest {
 		assertThat(response.holdingsValue()).isEqualTo(expectedHoldingsValue);
 		assertThat(response.unrealizedPnl()).isZero();
 		assertThat(response.totalValue()).isEqualTo(expectedTotalValue);
-		// returnRate = (9999500 - 10000000) / 10000000 = -0.00005 (scale 8, HALF_UP — 정확히 표현된다)
-		assertThat(response.returnRate()).isEqualByComparingTo(new BigDecimal("-0.00005000"));
 	}
 
 	@Test
@@ -255,8 +250,6 @@ class AccountSummaryIntegrationTest {
 		assertThat(response.holdingsValue()).isEqualTo(expectedHoldingsValue);
 		assertThat(response.unrealizedPnl()).isEqualTo(expectedUnrealizedPnl);
 		assertThat(response.totalValue()).isEqualTo(expectedTotalValue);
-		// returnRate = (10399850 - 10000000) / 10000000 = 0.039985 (scale 8, HALF_UP — 정확히 표현된다)
-		assertThat(response.returnRate()).isEqualByComparingTo(new BigDecimal("0.03998500"));
 	}
 
 	// SANDBOX-EXCL-007 통합 시나리오(plan.md §4-3 수치 예시와 동일 구조): 튜토리얼 완료 보상(500만원, 001
@@ -299,8 +292,6 @@ class AccountSummaryIntegrationTest {
 		assertThat(response.holdingsValue()).isEqualTo(expectedHoldingsValue);
 		assertThat(response.unrealizedPnl()).isEqualTo(expectedUnrealizedPnl);
 		assertThat(response.totalValue()).isEqualTo(expectedTotalValue);
-		// returnRate = (10,999,250 - 10,000,000) / 10,000,000 = 0.099925 (scale 8, HALF_UP — 정확히 표현된다)
-		assertThat(response.returnRate()).isEqualByComparingTo(new BigDecimal("0.09992500"));
 	}
 
 	private OrderCreateRequest buyRequest(Long instrumentId, String quantity) {

@@ -14,7 +14,6 @@ import com.finplay.api.account.service.AccountService;
 import com.finplay.api.auth.config.SecurityConfig;
 import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.auth.token.JwtTokenProvider;
-import java.math.BigDecimal;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,7 +44,7 @@ class AccountControllerTest {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
 		AccountSummaryResponse response = AccountSummaryResponse.of(
-			9_000_000L, 500_000L, 1_200_000L, 10_200_000L, 50_000L, 200_000L, new BigDecimal("0.0200"));
+			9_000_000L, 500_000L, 1_200_000L, 10_200_000L, 50_000L, 200_000L);
 		when(accountService.getAccountSummary(USER_ID, Market.STOCK)).thenReturn(response);
 
 		mockMvc.perform(get("/api/accounts/summary")
@@ -57,8 +56,7 @@ class AccountControllerTest {
 			.andExpect(jsonPath("$.holdingsValue").value(1200000))
 			.andExpect(jsonPath("$.totalValue").value(10200000))
 			.andExpect(jsonPath("$.realizedPnl").value(50000))
-			.andExpect(jsonPath("$.unrealizedPnl").value(200000))
-			.andExpect(jsonPath("$.returnRate").value(0.0200));
+			.andExpect(jsonPath("$.unrealizedPnl").value(200000));
 
 		verify(accountService).getAccountSummary(USER_ID, Market.STOCK);
 	}
@@ -68,7 +66,7 @@ class AccountControllerTest {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
 		AccountSummaryResponse response = AccountSummaryResponse.of(
-			10_000_000L, 0L, 0L, 10_000_000L, 0L, 0L, BigDecimal.ZERO);
+			10_000_000L, 0L, 0L, 10_000_000L, 0L, 0L);
 		when(accountService.getAccountSummary(USER_ID, Market.CRYPTO)).thenReturn(response);
 
 		mockMvc.perform(get("/api/accounts/summary")
@@ -80,8 +78,7 @@ class AccountControllerTest {
 			.andExpect(jsonPath("$.holdingsValue").value(0))
 			.andExpect(jsonPath("$.totalValue").value(10000000))
 			.andExpect(jsonPath("$.realizedPnl").value(0))
-			.andExpect(jsonPath("$.unrealizedPnl").value(0))
-			.andExpect(jsonPath("$.returnRate").value(0));
+			.andExpect(jsonPath("$.unrealizedPnl").value(0));
 
 		verify(accountService).getAccountSummary(USER_ID, Market.CRYPTO);
 	}

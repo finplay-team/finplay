@@ -193,7 +193,7 @@ class AccountServiceTest {
 	}
 
 	@Test
-	void getAccountSummarySumsOnlyAvailablePricedHoldingsAndComputesReturnRate() {
+	void getAccountSummarySumsOnlyAvailablePricedHoldings() {
 		AccountRepository accountRepository = mock(AccountRepository.class);
 		HoldingValuationService holdingValuationService = mock(HoldingValuationService.class);
 		Clock fixedClock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
@@ -222,8 +222,6 @@ class AccountServiceTest {
 		long expectedHoldingsValue = 412_000L;
 		long expectedTotalValue = expectedCashBalance + expectedHoldingsValue;
 		long expectedUnrealizedPnl = -98_000L;
-		BigDecimal expectedReturnRate = BigDecimal.valueOf(expectedTotalValue - 10_000_000L)
-			.divide(BigDecimal.valueOf(10_000_000L), 8, java.math.RoundingMode.HALF_UP);
 
 		assertThat(result.cashBalance()).isEqualTo(expectedCashBalance);
 		assertThat(result.reservedCash()).isEqualTo(1_500_000L);
@@ -231,37 +229,6 @@ class AccountServiceTest {
 		assertThat(result.totalValue()).isEqualTo(expectedTotalValue);
 		assertThat(result.realizedPnl()).isEqualTo(50_000L);
 		assertThat(result.unrealizedPnl()).isEqualTo(expectedUnrealizedPnl);
-		assertThat(result.returnRate()).isEqualByComparingTo(expectedReturnRate);
-	}
-
-	// 이슈 #390 — 시드머니(1,000만원) 대비 작은 실현손실은 scale 4에서 반올림으로 0%가 됐다(실제 리포트 케이스:
-	// 솔라나 매수 106,800원 → 매도 106,600원, 실현손실 306원). scale 8로 올린 뒤에는 0이 아닌 값이어야 한다.
-	@Test
-	void getAccountSummaryPreservesSmallRealizedLossInReturnRateInsteadOfRoundingToZero() {
-		AccountRepository accountRepository = mock(AccountRepository.class);
-		HoldingValuationService holdingValuationService = mock(HoldingValuationService.class);
-		Clock fixedClock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
-		AccountService accountService = new AccountService(accountRepository, holdingValuationService, fixedClock);
-		User user = User.create("user@finplay.com", "password-hash", "finplayer",
-			LocalDateTime.ofInstant(FIXED_INSTANT, ZoneOffset.UTC));
-		Account account = Account.create(user, Market.CRYPTO,
-			LocalDateTime.ofInstant(FIXED_INSTANT, ZoneOffset.UTC));
-		// 매도 체결이 실제로 반영하는 두 값 — 순현금 감소(306원)와 원장 realizedPnl(-306원)을 함께 반영한다.
-		account.deductCash(306L);
-		account.addRealizedPnl(-306L);
-		when(accountRepository.findByUserIdAndMarket(1L, Market.CRYPTO)).thenReturn(Optional.of(account));
-		when(holdingValuationService.evaluateActiveHoldingsForAccount(any())).thenReturn(List.of());
-
-		AccountSummaryResponse result = accountService.getAccountSummary(1L, Market.CRYPTO);
-
-		// -306 ÷ 10,000,000 = -0.0000306 — scale 4였다면 반올림으로 0.0000이 됐을 값이다.
-		BigDecimal expectedReturnRate = BigDecimal.valueOf(-306L)
-			.divide(BigDecimal.valueOf(10_000_000L), 8, java.math.RoundingMode.HALF_UP);
-
-		assertThat(result.totalValue()).isEqualTo(9_999_694L);
-		assertThat(result.realizedPnl()).isEqualTo(-306L);
-		assertThat(result.returnRate()).isEqualByComparingTo(expectedReturnRate);
-		assertThat(result.returnRate()).isNotEqualByComparingTo(BigDecimal.ZERO);
 	}
 
 	@Test
@@ -316,13 +283,12 @@ class AccountServiceTest {
 		assertThat(result.cashBalance()).isEqualTo(10_000_000L);
 		assertThat(result.totalValue()).isEqualTo(10_000_000L);
 		assertThat(result.realizedPnl()).isZero();
-		assertThat(result.returnRate()).isEqualByComparingTo(BigDecimal.ZERO);
 	}
 
-	// SANDBOX-EXCL-007: sandboxCashAdjustment가 있으면 totalValue·returnRate가 그만큼 줄고,
+	// SANDBOX-EXCL-007: sandboxCashAdjustment가 있으면 totalValue가 그만큼 줄고,
 	// cashBalance·holdingsValue·realizedPnl·unrealizedPnl은 그대로여야 한다.
 	@Test
-	void getAccountSummarySubtractsSandboxCashAdjustmentFromTotalValueAndReturnRateOnly() {
+	void getAccountSummarySubtractsSandboxCashAdjustmentFromTotalValueOnly() {
 		AccountRepository accountRepository = mock(AccountRepository.class);
 		HoldingValuationService holdingValuationService = mock(HoldingValuationService.class);
 		Clock fixedClock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
@@ -338,12 +304,9 @@ class AccountServiceTest {
 		AccountSummaryResponse result = accountService.getAccountSummary(1L, Market.STOCK);
 
 		long expectedTotalValue = 10_000_000L - 5_000_000L;
-		BigDecimal expectedReturnRate = BigDecimal.valueOf(expectedTotalValue - 10_000_000L)
-			.divide(BigDecimal.valueOf(10_000_000L), 8, java.math.RoundingMode.HALF_UP);
 		assertThat(result.cashBalance()).isEqualTo(10_000_000L);
 		assertThat(result.holdingsValue()).isZero();
 		assertThat(result.totalValue()).isEqualTo(expectedTotalValue);
-		assertThat(result.returnRate()).isEqualByComparingTo(expectedReturnRate);
 		assertThat(result.realizedPnl()).isZero();
 		assertThat(result.unrealizedPnl()).isZero();
 	}
@@ -377,8 +340,6 @@ class AccountServiceTest {
 		assertThat(result.totalValue()).isEqualTo(expectedTotalValue);
 		assertThat(result.realizedPnl()).isEqualTo(50_000L);
 		assertThat(result.unrealizedPnl()).isEqualTo(2_000L);
-		assertThat(result.returnRate()).isEqualByComparingTo(BigDecimal.valueOf(expectedTotalValue - 10_000_000L)
-			.divide(BigDecimal.valueOf(10_000_000L), 8, java.math.RoundingMode.HALF_UP));
 	}
 
 	@Test

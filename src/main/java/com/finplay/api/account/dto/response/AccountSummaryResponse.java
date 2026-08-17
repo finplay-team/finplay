@@ -1,7 +1,5 @@
-// 시장별 계좌 요약(현금잔고·평가액·손익·수익률)을 노출하는 응답 DTO
+// 시장별 계좌 요약(현금잔고·평가액·손익)을 노출하는 응답 DTO
 package com.finplay.api.account.dto.response;
-
-import java.math.BigDecimal;
 
 public record AccountSummaryResponse(
 	long cashBalance,
@@ -9,8 +7,7 @@ public record AccountSummaryResponse(
 	long holdingsValue,
 	long totalValue,
 	long realizedPnl,
-	long unrealizedPnl,
-	BigDecimal returnRate) {
+	long unrealizedPnl) {
 
 	public static AccountSummaryResponse of(
 		long cashBalance,
@@ -18,9 +15,8 @@ public record AccountSummaryResponse(
 		long holdingsValue,
 		long totalValue,
 		long realizedPnl,
-		long unrealizedPnl,
-		BigDecimal returnRate) {
+		long unrealizedPnl) {
 		return new AccountSummaryResponse(
-			cashBalance, reservedCash, holdingsValue, totalValue, realizedPnl, unrealizedPnl, returnRate);
+			cashBalance, reservedCash, holdingsValue, totalValue, realizedPnl, unrealizedPnl);
 	}
 }
