@@ -108,11 +108,13 @@ public class PracticeHoldingObservationService {
 		if (attempt.getStatus() == PracticeAttemptStatus.COMPLETED) {
 			throw new BusinessException(ErrorCode.PRACTICE_ALREADY_COMPLETED);
 		}
+		// 매도 체결이 있어도 관찰을 막지 않는다 — 026 spec.md "비즈니스 규칙"이 "holding이 존재하는 한 언제든
+		// 호출 가능하며 매도로 수량이 0이 되어도 계속 호출 가능하다"로 못박았고, 031은 이 원칙을 그대로
+		// 상속한다고 명시한다(바꾸는 것은 샘플 종목·4단계 확장·5분 제한 셋뿐). 039 구현에서 근거 없이 들어온
+		// sellTrade 기준 차단은 evidence A·B를 못 채운 채 매도한 사용자의 복구 경로를 영구히 없애
+		// 튜토리얼 완료를 불가능하게 만들었다(이슈 #420, 프로덕션 재현).
 		ResolvedPracticeAttemptEvidenceDto evidence = practiceAttemptEvidenceService
 			.requireCurrentRun(attempt, userId, holding.getId());
-		if (evidence.sellTrade() != null) {
-			throw new BusinessException(ErrorCode.PRACTICE_STEP_LOCKED);
-		}
 		LocalDateTime observedAt = LocalDateTime.now(clock);
 		BigDecimal observedPrice = canonicalPriceService
 			.canonicalPriceForMutation(userId, holding.getInstrument(), observedAt);
