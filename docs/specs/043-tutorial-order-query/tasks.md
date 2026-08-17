@@ -1,6 +1,6 @@
 # Tasks: 튜토리얼 attempt 전용 주문 조회
 
-- [ ] order 도메인 조회 추가 — `OrderRepository.findPracticeRunOrders`(비잠금, instrument fetch join,
+- [x] order 도메인 조회 추가 — `OrderRepository.findPracticeRunOrders`(비잠금, instrument fetch join,
   `id` 오름차순) + `OrderService.getPracticeRunOrders(attemptId, runNumber)` + `@DataJpaTest`(다른
   run/attempt/일반 주문 제외, 정렬) + 단위 테스트(빈 결과·매핑)
 - [ ] education 도메인 조회 서비스·컨트롤러 — `PracticeAttemptOrderQueryService.getCurrentRunOrders`
