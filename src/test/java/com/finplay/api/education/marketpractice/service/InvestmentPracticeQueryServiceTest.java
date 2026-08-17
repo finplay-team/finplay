@@ -470,7 +470,7 @@ class InvestmentPracticeQueryServiceTest {
 		InvestmentPracticeResponse response = service.getProgress(USER_ID, Market.STOCK);
 
 		assertThat(response.status()).isEqualTo("IN_PROGRESS");
-		assertThat(response.currentStep()).isEqualTo(3);
+		assertThat(response.currentStep()).isEqualTo(4);
 		assertThat(response.steps()).hasSize(4);
 
 		PracticeStepResponse step2 = response.steps().get(1);

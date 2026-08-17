@@ -171,32 +171,29 @@ public class InvestmentPracticeQueryService {
 			saleDeadlineAt,
 			null);
 
+		// 4단계(매도)는 031(SANDBOX-006·007)과 동일하게 3단계 관찰 evidence와 무관하게 매수 직후 곧바로
+		// 열린다 — 관찰(3단계)과 매도(4단계)는 5분 창 안에서 순서 없이 병행 가능하다. 이전에는 관찰 evidence가
+		// 있어야만 4단계 잠금이 풀렸는데, 이는 legacy chain 기반 흐름(buildChainResponse)과 어긋나는 회귀였고
+		// 매수 후 관찰·매도 UI가 열리지 않는 것으로 보였다(이슈 보고: "매수 이후 매도 단계로 넘어가지 않음").
 		String stepFourStatus;
-		boolean stepFourLocked;
-		if (qualifyingObservation.isEmpty()) {
-			stepFourStatus = STATUS_NOT_STARTED;
-			stepFourLocked = true;
-		} else if (resolved.sellTrade() != null) {
+		if (resolved.sellTrade() != null) {
 			stepFourStatus = isWithinSaleDeadline(resolved.sellTrade().getExecutedAt(), saleDeadlineAt)
 				? STATUS_IN_PROGRESS
 				: STATUS_EXPIRED;
-			stepFourLocked = false;
 		} else {
 			stepFourStatus = isWithinSaleDeadline(LocalDateTime.now(clock), saleDeadlineAt)
 				? STATUS_AWAITING_SALE
 				: STATUS_EXPIRED;
-			stepFourLocked = false;
 		}
 		List<PracticeStepResponse> steps = List.of(
 			new PracticeStepResponse(1, STATUS_COMPLETED, false, PracticeEvidenceResponse.empty()),
 			new PracticeStepResponse(2, STATUS_COMPLETED, false, evidence),
 			new PracticeStepResponse(
 				3, qualifyingObservation.isPresent() ? STATUS_COMPLETED : STATUS_IN_PROGRESS, false, evidence),
-			new PracticeStepResponse(4, stepFourStatus, stepFourLocked, evidence));
+			new PracticeStepResponse(4, stepFourStatus, false, evidence));
 		String overallStatus = STATUS_EXPIRED.equals(stepFourStatus) ? STATUS_EXPIRED : STATUS_IN_PROGRESS;
 		return new InvestmentPracticeResponse(
-			tutorialKey, overallStatus, qualifyingObservation.isPresent() ? 4 : 3, steps, completedAt, rewardAmount,
-			attemptResponse);
+			tutorialKey, overallStatus, 4, steps, completedAt, rewardAmount, attemptResponse);
 	}
 
 	private InvestmentPracticeResponse buildCompletedAttemptResponse(

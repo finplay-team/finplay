@@ -19,6 +19,7 @@ import com.finplay.api.education.marketpractice.dto.response.InvestmentPracticeR
 import com.finplay.api.education.marketpractice.dto.response.PracticeAttemptResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeEvidenceResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeRiskSnapshotResponse;
+import com.finplay.api.education.marketpractice.dto.response.PracticeStepResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeTradeResultResponse;
 import com.finplay.api.education.marketpractice.repository.PracticeAttemptRepository;
 import com.finplay.api.education.marketpractice.repository.PracticeCompletionRepository;
@@ -271,7 +272,7 @@ class PracticeAttemptCompletionFlowIntegrationTest {
 		InvestmentPracticeResponse restartedProgress = queryService.getProgress(fixture.userId(), market);
 
 		assertThat(restartedProgress.status()).isEqualTo("IN_PROGRESS");
-		assertThat(restartedProgress.currentStep()).isEqualTo(3);
+		assertThat(restartedProgress.currentStep()).isEqualTo(4);
 		assertThat(restartedProgress.steps()).hasSize(4);
 		assertThat(restartedProgress.attempt().mode()).isEqualTo("ACTIVE");
 		assertThat(restartedProgress.attempt().runNumber()).isEqualTo(2);
@@ -287,9 +288,10 @@ class PracticeAttemptCompletionFlowIntegrationTest {
 		// 이전 실행의 매도·관찰은 현재 실행 evidence가 아니다.
 		assertThat(evidence.sellTradeId()).isNull();
 		assertThat(evidence.observationId()).isNull();
-		// 현재 실행에는 아직 qualifying 관찰이 없으므로 4단계는 잠긴 미착수다(039 attempt 경로 계약).
-		assertThat(restartedProgress.steps().get(3).status()).isEqualTo("NOT_STARTED");
-		assertThat(restartedProgress.steps().get(3).locked()).isTrue();
+		// 현재 실행에 아직 qualifying 관찰이 없어도 4단계(매도)는 5분 창 안에서 곧바로 열린다(031
+		// SANDBOX-006·007과 동일 계약, 관찰과 매도는 evidence 순서 없이 병행 가능하다).
+		assertThat(restartedProgress.steps().get(3).status()).isEqualTo("AWAITING_SALE");
+		assertThat(restartedProgress.steps().get(3).locked()).isFalse();
 
 		// 040: 재시작해 다시 진행 중이어도 최초 완료 기록과 이미 받은 보상은 그대로다(재지급도 없다).
 		assertThat(restartedProgress.rewardAmount()).isEqualTo(COMPLETION_REWARD);
@@ -450,6 +452,52 @@ class PracticeAttemptCompletionFlowIntegrationTest {
 			return "BELOW_STOP_LOSS";
 		}
 		return "BETWEEN_LINES";
+	}
+
+	// 회귀 테스트: 매수 직후에는 아직 관찰(3단계) evidence가 없어도 4단계(매도)가 곧바로 열려야 한다(031
+	// SANDBOX-006·007과 동일 계약, buildChainResponse와 동일 규칙). 이전에는 buildActiveAttemptResponse가
+	// 관찰 evidence를 4단계 잠금 해제 조건으로 잘못 요구해, 매수 후 관찰·매도 UI가 열리지 않는 것으로 보이는
+	// 회귀가 있었다.
+	@Test
+	void stepFourUnlocksImmediatelyAfterBuyBeforeAnyObservationExists() {
+		Market market = Market.CRYPTO;
+		FlowFixture fixture = createFixture(market, "sell-before-observe");
+		BigDecimal quantity = new BigDecimal("2.00000000");
+		practiceAttemptService.ensureAttempt(fixture.userId(), market);
+		practiceAttemptService.selectInstrument(fixture.userId(), market, fixture.instrumentId());
+
+		clock.set(BASE_NOW.plusSeconds(2));
+		orderService.createOrder(fixture.userId(), idempotency("buy"),
+			marketOrder(market, fixture.instrumentId(), OrderSide.BUY, quantity));
+
+		InvestmentPracticeResponse afterBuy = queryService.getProgress(fixture.userId(), market);
+		assertThat(afterBuy.currentStep()).isEqualTo(4);
+		PracticeStepResponse stepThree = afterBuy.steps().get(2);
+		assertThat(stepThree.status()).isEqualTo("IN_PROGRESS");
+		assertThat(stepThree.locked()).isFalse();
+		PracticeStepResponse stepFour = afterBuy.steps().get(3);
+		assertThat(stepFour.status()).isEqualTo("AWAITING_SALE");
+		assertThat(stepFour.locked()).isFalse();
+
+		// 관찰 없이도 매도 API 자체는 항상 허용됐지만(이번 버그는 진행 표시에만 있었다), 실제로 매도해
+		// 4단계가 IN_PROGRESS로 넘어가는 것까지 함께 확인한다.
+		clock.set(BASE_NOW.plusSeconds(150));
+		OrderResponse sell = orderService.createOrder(fixture.userId(), idempotency("sell"),
+			marketOrder(market, fixture.instrumentId(), OrderSide.SELL, quantity));
+
+		InvestmentPracticeResponse afterSell = queryService.getProgress(fixture.userId(), market);
+		PracticeStepResponse stepFourAfterSell = afterSell.steps().get(3);
+		assertThat(stepFourAfterSell.status()).isEqualTo("IN_PROGRESS");
+		assertThat(stepFourAfterSell.evidence().sellTradeId()).isEqualTo(sell.tradeId());
+
+		// 매도만으로는 완료되지 않는다 — 관찰(3단계) evidence 요구사항은 그대로 유지된다.
+		Holding holding = holdingRepository
+			.findByAccountIdAndInstrumentId(fixture.accountId(), fixture.instrumentId())
+			.orElseThrow();
+		assertThatThrownBy(() -> reflectionService.createReflection(fixture.userId(),
+			new PracticeHoldingReflectionCreateRequest(holding.getId(), "관찰 없이 매도만 한 상태.")))
+			.isInstanceOfSatisfying(BusinessException.class,
+				exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.PRACTICE_EVIDENCE_MISSING));
 	}
 
 	private FlowFixture createFixture(Market market, String scenario) {
