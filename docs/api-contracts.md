@@ -748,6 +748,8 @@ holding 관찰은 buyTrade→order에서 sessionId를 서버가 역추적한다(
 |---|---|---|---|---|---|
 | POST | /api/education/practice/reflections | `{"exitPlanId":1,"answer":"계획한 손절선에 가까워져 팔고 싶었지만 미리 정한 기준을 확인했다."}` (`PracticeReflectionCreateRequest`) | 최초 201 `{"reflectionId":1,"exitPlanId":1,"prompt":"지금 팔고 싶나요? 그렇다면 왜 그런가요? 계획한 손절·익절 라인과 비교해 적어보세요.","answer":"...","createdAt":"2026-08-03T10:10:00"}` (`PracticeReflectionResponse`) | 400 `VALIDATION_ERROR`; 404 `EXIT_PLAN_NOT_FOUND`; 409 `PRACTICE_EVIDENCE_MISSING`, `PRACTICE_ALREADY_COMPLETED` | 016 candidate 14 |
 
+> **이 절의 프롬프트 문구를 holding 기준 경로에 그대로 쓰지 않는다.** 위 문구는 사용자가 exit plan으로 손절·익절을 **직접 계획하는** 016 OCO 경로(미구현)의 것이다. `POST /api/education/practice/holding-reflections`는 039가 사전 의도 입력을 없애고 서버가 체결가 기준 -3%/+5%를 자동 고정하는 흐름이라 문구가 갈라졌다(이슈 #422). 각 경로의 문구는 해당 절이 정본이다.
+
 `answer`는 whitespace-only가 아닌 raw Java 문자열 길이 1~2000이며 trim 없이 `VARCHAR(2000) NOT NULL`에 원문을 저장한다. A(경계에 가까워짐), B(2분 이상 범위의 서버 관찰 3회), C(체결·주식 만료 final event) 중 하나와 전체 owner·instrument·수량 evidence를 재검증한다. 정답·점수·보상은 없다. 사용자·튜토리얼 최초 요청만 reflection·completion을 원자 저장하고 이후 요청은 답변을 추가 저장하지 않은 채 409다.
 
 ### 투자 실습 공통 인증·오류 및 DTO 규칙
@@ -857,6 +859,8 @@ holding 관찰은 buyTrade→order에서 sessionId를 서버가 역추적한다(
 **영속 attempt 경로(040, Issue #402)**: holding 종목이 샘플이고 attempt가 있으면 위 progress 기반 순서 대신 `PracticeHoldingReflectionService.createAttemptReflection`을 탄다. attempt가 이미 `COMPLETED`면 즉시 409 `PRACTICE_ALREADY_COMPLETED`(재시작 없이 같은 완료를 다시 제출). 아니면 evidence를 검증한 뒤 `practice_progresses`를 `FOR UPDATE`로 잠그고 그 시점에 `practice_completions` 행이 있는지로 최초/재완료를 가른다 — 있으면 재완료(위 표의 쓰기 생략·`reflectionId=null`·`rewardGranted=false`), 없으면 최초 완료(기존 저장·보상 흐름, `rewardGranted=true`). 이 판정은 `practice_progresses` 비관적 락으로 직렬화되어(TUTORIAL-RESTART-006) 동시 재완료 요청도 보상을 두 번 지급하지 않는다.
 
 `(user_id, tutorial_key)` unique(`practice_market_reflections`, `practice_completions` 모두)가 최종 경합 방어선이며, `practice_progresses` 비관적 락으로 동시 복기 요청을 직렬화한다.
+
+응답 `prompt`는 요청과 무관하게 항상 같은 고정 문구다(`PracticeHoldingReflectionResponse.PROMPT`). 현재 문구는 `방금 판 이유가 무엇인가요? 화면에 표시된 손절선·익절선과 비교해서, 지금 돌아보면 그 판단이 어땠는지 한 줄로 적어 보세요.`이며, 이 단계가 전량 매도 이후에 열리고(031 SANDBOX-006) 손절·익절선을 사용자가 아니라 서버가 자동 고정한다는(039 TUTORIAL-FLOW-008) 전제를 반영한다(Issue #422). 앞의 `016` 계획 절(`POST /api/education/practice/reflections`)의 OCO 복기 문구는 사용자가 exit plan을 직접 계획하는 별도 경로이므로 이 문구와 다르다.
 
 | DTO | 필드 순서와 타입 | nullable 규칙 |
 |---|---|---|
