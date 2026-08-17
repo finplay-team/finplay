@@ -20,16 +20,20 @@ import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.order.domain.ExitPlan;
 import com.finplay.api.order.domain.ExitPlanIdempotencyKey;
+import com.finplay.api.order.domain.ExitPlanStatus;
 import com.finplay.api.order.dto.request.ExitPlanCreateRequest;
+import com.finplay.api.order.dto.response.ExitPlanListResponse;
 import com.finplay.api.order.dto.response.ExitPlanResponse;
 import com.finplay.api.order.domain.ExitPriceType;
 import com.finplay.api.order.repository.ExitPlanIdempotencyKeyRepository;
+import com.finplay.api.order.repository.ExitPlanRepository;
 import com.finplay.api.portfolio.domain.Holding;
 import com.finplay.api.portfolio.service.HoldingService;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -49,9 +53,11 @@ class ExitPlanServiceTest {
 		ExitPlanIdempotencyKeyRepository.class);
 	private final ExitPlanIdempotentCreationService exitPlanIdempotentCreationService = mock(
 		ExitPlanIdempotentCreationService.class);
+	private final ExitPlanRepository exitPlanRepository = mock(ExitPlanRepository.class);
 
 	private final ExitPlanService service = new ExitPlanService(
-		holdingService, userQueryService, exitPlanIdempotencyKeyRepository, exitPlanIdempotentCreationService);
+		holdingService, userQueryService, exitPlanIdempotencyKeyRepository, exitPlanIdempotentCreationService,
+		exitPlanRepository);
 
 	@Test
 	void createThrowsValidationErrorWhenIntentionIdProvided() {
@@ -332,6 +338,62 @@ class ExitPlanServiceTest {
 			.isSameAs(unrelated);
 		verify(exitPlanIdempotencyKeyRepository, times(1))
 			.findByUserIdAndIdempotencyKey(USER_ID, IDEMPOTENCY_KEY);
+	}
+
+	@Test
+	void listDefaultsToPendingStatusWhenStatusOmitted() {
+		Holding holding = holdingWithMarket(Market.CRYPTO);
+		ExitPlan plan = generalPlan(holding);
+		when(exitPlanRepository.findByUserIdAndStatusOrderByIdDesc(USER_ID, ExitPlanStatus.PENDING))
+			.thenReturn(List.of(plan));
+
+		ExitPlanListResponse response = service.list(USER_ID, null);
+
+		assertThat(response.content()).containsExactly(ExitPlanResponse.from(plan));
+		verify(exitPlanRepository).findByUserIdAndStatusOrderByIdDesc(USER_ID, ExitPlanStatus.PENDING);
+	}
+
+	@Test
+	void listUsesGivenStatusWhenProvided() {
+		Holding holding = holdingWithMarket(Market.CRYPTO);
+		ExitPlan plan = generalPlan(holding);
+		when(exitPlanRepository.findByUserIdAndStatusOrderByIdDesc(USER_ID, ExitPlanStatus.CANCELLED))
+			.thenReturn(List.of(plan));
+
+		ExitPlanListResponse response = service.list(USER_ID, ExitPlanStatus.CANCELLED);
+
+		assertThat(response.content()).containsExactly(ExitPlanResponse.from(plan));
+		verify(exitPlanRepository).findByUserIdAndStatusOrderByIdDesc(USER_ID, ExitPlanStatus.CANCELLED);
+		verify(exitPlanRepository, times(0)).findByUserIdAndStatusOrderByIdDesc(USER_ID, ExitPlanStatus.PENDING);
+	}
+
+	@Test
+	void listReturnsEmptyContentWhenNoMatchingPlans() {
+		when(exitPlanRepository.findByUserIdAndStatusOrderByIdDesc(USER_ID, ExitPlanStatus.PENDING))
+			.thenReturn(List.of());
+
+		ExitPlanListResponse response = service.list(USER_ID, null);
+
+		assertThat(response.content()).isEmpty();
+	}
+
+	@Test
+	void listOnlyQueriesByRequestingUserIdSoOtherUsersPlansAreExcluded() {
+		Long otherUserId = 999L;
+		Holding holding = holdingWithMarket(Market.CRYPTO);
+		ExitPlan plan = generalPlan(holding);
+		// USER_ID(요청자) 소유 plan은 존재하지만, 다른 사용자(otherUserId)로 조회하면 리포지토리는 그 사용자
+		// 소유 plan만 검색하므로 응답에 섞여 들어오지 않는다는 것을 검증한다.
+		when(exitPlanRepository.findByUserIdAndStatusOrderByIdDesc(USER_ID, ExitPlanStatus.PENDING))
+			.thenReturn(List.of(plan));
+		when(exitPlanRepository.findByUserIdAndStatusOrderByIdDesc(otherUserId, ExitPlanStatus.PENDING))
+			.thenReturn(List.of());
+
+		ExitPlanListResponse response = service.list(otherUserId, null);
+
+		assertThat(response.content()).isEmpty();
+		verify(exitPlanRepository).findByUserIdAndStatusOrderByIdDesc(otherUserId, ExitPlanStatus.PENDING);
+		verify(exitPlanRepository, times(0)).findByUserIdAndStatusOrderByIdDesc(USER_ID, ExitPlanStatus.PENDING);
 	}
 
 	private static ExitPlanCreateRequest priceModeRequest() {
