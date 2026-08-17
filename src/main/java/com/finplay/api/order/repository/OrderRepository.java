@@ -21,6 +21,10 @@ public interface OrderRepository extends JpaRepository<Order, Long>, OrderReposi
 		Long userId, @Param("idempotencyKey")
 		String idempotencyKey);
 
+	// 테스트 정리(cleanup) 전용 — 계좌 하나의 주문만 좁혀 가져온다. findAll() 전체 스캔을 피한다
+	// (HoldingRepository.findByAccountId와 같은 이유).
+	List<Order> findByAccountId(Long accountId);
+
 	// 지정가 체결 시 주문 락(015-limit-order LMT-002, 중복 체결 이벤트 방지)
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("SELECT o FROM Order o WHERE o.id = :id")

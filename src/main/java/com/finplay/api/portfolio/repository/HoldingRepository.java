@@ -14,6 +14,11 @@ public interface HoldingRepository extends JpaRepository<Holding, Long> {
 
 	Optional<Holding> findByAccountIdAndInstrumentId(Long accountId, Long instrumentId);
 
+	// 테스트 정리(cleanup) 전용 — 계좌 하나의 holding만 좁혀 가져온다. findAll()로 전체 테이블을 스캔한 뒤
+	// 계좌 ID로 필터링하면, 공유 Testcontainers MySQL(ADR-0003)에 다른 테스트들이 쌓아 둔 대량의 무관한
+	// 행까지 프록시로 초기화하려다 LazyInitializationException·타임아웃 등 정리 자체가 불안정해진다.
+	List<Holding> findByAccountId(Long accountId);
+
 	// HoldingService.findHoldingForOwner 전용 — 021 PR #368 리뷰 차단 1: open-in-view=false 운영 환경에서
 	// 트랜잭션 종료 후 instrument(LAZY)에 접근하면 LazyInitializationException이 난다. 호출부가 세션이 열린
 	// 트랜잭션 안에서 instrument까지 즉시 로딩해 반환하도록 JOIN FETCH로 조회한다.
