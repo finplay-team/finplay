@@ -104,9 +104,6 @@ public class PracticeAttempt {
 	}
 
 	public void restart(LocalDateTime updatedAt) {
-		if (this.status == PracticeAttemptStatus.COMPLETED) {
-			throw new IllegalStateException("완료한 튜토리얼 attempt는 재시작할 수 없습니다.");
-		}
 		this.runNumber = Math.addExact(this.runNumber, 1L);
 		this.status = PracticeAttemptStatus.SELECTING_INSTRUMENT;
 		this.instrument = null;

@@ -4,7 +4,6 @@ package com.finplay.api.education.marketpractice.service;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
-import com.finplay.api.education.marketpractice.domain.PracticeAttemptStatus;
 import com.finplay.api.education.marketpractice.domain.PracticeRiskSnapshot;
 import com.finplay.api.education.marketpractice.dto.response.PracticeAttemptResponse;
 import com.finplay.api.education.marketpractice.repository.PracticeAttemptRepository;
@@ -32,9 +31,6 @@ public class PracticeAttemptRestartService {
 	public PracticeAttemptResponse restart(Long userId, Market market) {
 		PracticeAttempt attempt = practiceAttemptRepository.findByUserIdAndMarketForUpdate(userId, market)
 			.orElseThrow(() -> new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING));
-		if (attempt.getStatus() == PracticeAttemptStatus.COMPLETED) {
-			return toResponse(attempt);
-		}
 
 		LocalDateTime restartedAt = LocalDateTime.now(clock);
 		practiceRunRestartOrderService.cleanupCurrentRun(new PracticeRunRestartCommand(
