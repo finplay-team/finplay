@@ -105,6 +105,20 @@ class NewsMatcherTest {
 			publishedAt.plusMinutes(30));
 	}
 
+	// 공시의 published_at은 접수일 00:00:00이다 (§C-3) — 이 테스트의 핵심이 그 시각이라 news()와 나눠 둔다.
+	private static MarketNewsItem disclosure(LocalDate receiptDate) {
+		Instrument instrument = Instrument.create(
+			Market.STOCK, "005930", "삼성전자", BigDecimal.ONE, 10000L, true, LocalDateTime.now());
+		return MarketNewsItem.create(
+			instrument,
+			MarketNewsItemType.DISCLOSURE,
+			"공시 " + receiptDate,
+			"DART",
+			"https://dart.fss.or.kr/" + receiptDate,
+			receiptDate.atStartOfDay(),
+			receiptDate.atStartOfDay().plusHours(9));
+	}
+
 	private static List<String> titles(List<MarketNewsItem> items) {
 		return items.stream().map(MarketNewsItem::getTitle).toList();
 	}
@@ -192,6 +206,65 @@ class NewsMatcherTest {
 			eq(MarketNewsItemType.NEWS),
 			any(),
 			eq(LocalDateTime.of(TUESDAY, LocalTime.of(9, 0))));
+	}
+
+	// --- 시가 갭 절단: 공시 우선 (이슈 #409) ---
+
+	// 회귀: 거리순으로만 자르면 공시는 전멸한다. 공시의 published_at은 접수일 00:00:00이고 시가 갭의 이벤트
+	// 시각은 D 09:00이라 거리가 약 33시간인데, 같은 후보의 뉴스는 전부 [D-1 15:30, D 09:00] 안이라 최대
+	// 17.5시간이다 — 공시는 확률이 아니라 순서상 구조로 항상 최하위다.
+	//
+	// 픽스처의 뉴스 수를 반드시 max-sources-per-card 위로 잡아야 한다. 상한 아래면 절단 자체가 일어나지 않아
+	// 규칙의 유무를 구분하지 못한다(§뉴스 매칭 범위가 경고한 그대로다).
+	@Test
+	@DisplayName("시가 갭은 전장 뉴스가 상한을 채워도 D-1 공시를 먼저 남긴다")
+	void openingGapKeepsTheDisclosureEvenWhenPreMarketNewsAlreadyFillsTheCap() {
+		// 상한이 5인데 뉴스만 6건이다 — 거리순이면 공시가 들어갈 자리가 없다.
+		when(marketNewsItemRepository.findByInstrumentIdAndTypeAndPublishedAtBetweenOrderByPublishedAtAsc(
+			any(), any(), any(), any())).thenReturn(List.of(
+				news(LocalDateTime.of(FRIDAY_BEFORE_MONDAY, LocalTime.of(16, 0))),
+				news(LocalDateTime.of(FRIDAY_BEFORE_MONDAY, LocalTime.of(18, 0))),
+				news(LocalDateTime.of(FRIDAY_BEFORE_MONDAY, LocalTime.of(20, 0))),
+				news(LocalDateTime.of(FRIDAY_BEFORE_MONDAY, LocalTime.of(22, 0))),
+				news(LocalDateTime.of(MONDAY, LocalTime.of(7, 0))),
+				news(LocalDateTime.of(MONDAY, LocalTime.of(8, 50)))));
+		when(marketNewsItemRepository.findDisclosuresReceivedOn(any(), any(), any()))
+			.thenReturn(List.of(disclosure(FRIDAY_BEFORE_MONDAY)));
+
+		List<MarketNewsItem> matched = matcher().match(INSTRUMENT_ID, MONDAY, openingGap(LocalTime.of(9, 0)));
+
+		// 공시 1건 + 남은 4자리를 최신 뉴스가 채운다. 시가 갭에서는 "이벤트에 가까운 순"과 "최신순"이 같은
+		// 순서라(후보가 전부 09:00 이전) 뉴스가 실리는 차례는 거리순 절단일 때와 동일하다.
+		assertThat(titles(matched)).containsExactly(
+			LocalDateTime.of(MONDAY, LocalTime.of(8, 50)).toString(),
+			LocalDateTime.of(MONDAY, LocalTime.of(7, 0)).toString(),
+			LocalDateTime.of(FRIDAY_BEFORE_MONDAY, LocalTime.of(22, 0)).toString(),
+			LocalDateTime.of(FRIDAY_BEFORE_MONDAY, LocalTime.of(20, 0)).toString(),
+			"공시 " + FRIDAY_BEFORE_MONDAY);
+	}
+
+	// 공시가 없는 날은 지금까지와 똑같이 최신 5건이다 — "공시 우선"이 뉴스 선택 자체를 바꾸지 않는다.
+	@Test
+	@DisplayName("시가 갭에 공시가 없으면 전장 뉴스 최신 5건만 남는다")
+	void openingGapFallsBackToNewsOnlyWhenThereIsNoDisclosure() {
+		when(marketNewsItemRepository.findByInstrumentIdAndTypeAndPublishedAtBetweenOrderByPublishedAtAsc(
+			any(), any(), any(), any())).thenReturn(List.of(
+				news(LocalDateTime.of(FRIDAY_BEFORE_MONDAY, LocalTime.of(16, 0))),
+				news(LocalDateTime.of(FRIDAY_BEFORE_MONDAY, LocalTime.of(18, 0))),
+				news(LocalDateTime.of(FRIDAY_BEFORE_MONDAY, LocalTime.of(20, 0))),
+				news(LocalDateTime.of(FRIDAY_BEFORE_MONDAY, LocalTime.of(22, 0))),
+				news(LocalDateTime.of(MONDAY, LocalTime.of(7, 0))),
+				news(LocalDateTime.of(MONDAY, LocalTime.of(8, 50)))));
+		when(marketNewsItemRepository.findDisclosuresReceivedOn(any(), any(), any())).thenReturn(List.of());
+
+		List<MarketNewsItem> matched = matcher().match(INSTRUMENT_ID, MONDAY, openingGap(LocalTime.of(9, 0)));
+
+		assertThat(titles(matched)).containsExactly(
+			LocalDateTime.of(MONDAY, LocalTime.of(8, 50)).toString(),
+			LocalDateTime.of(MONDAY, LocalTime.of(7, 0)).toString(),
+			LocalDateTime.of(FRIDAY_BEFORE_MONDAY, LocalTime.of(22, 0)).toString(),
+			LocalDateTime.of(FRIDAY_BEFORE_MONDAY, LocalTime.of(20, 0)).toString(),
+			LocalDateTime.of(FRIDAY_BEFORE_MONDAY, LocalTime.of(18, 0)).toString());
 	}
 
 	// --- 정렬·절단 (§뉴스 매칭 범위) ---

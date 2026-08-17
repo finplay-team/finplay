@@ -55,11 +55,13 @@ public class NewsMatcher {
 	@Transactional(readOnly = true)
 	public List<MarketNewsItem> match(
 		Long instrumentId, LocalDate originTradeDate, PriceMoveDetectionDto detection) {
-		List<MarketNewsItem> candidates = switch (detection.eventType()) {
-			case INTRADAY -> matchIntraday(instrumentId, originTradeDate, detection.windowEnd());
-			case OPENING_GAP -> matchOpeningGap(instrumentId, originTradeDate);
+		LocalDateTime eventAt = LocalDateTime.of(originTradeDate, detection.windowEnd());
+		return switch (detection.eventType()) {
+			case INTRADAY -> sortAndTruncate(
+				matchIntraday(instrumentId, originTradeDate, detection.windowEnd()), eventAt);
+			// 시가 갭만 공시가 후보에 섞이므로 절단 규칙이 갈린다 — 아래 truncateGap 참고.
+			case OPENING_GAP -> truncateGap(matchOpeningGap(instrumentId, originTradeDate));
 		};
-		return sortAndTruncate(candidates, LocalDateTime.of(originTradeDate, detection.windowEnd()));
 	}
 
 	/**
@@ -132,6 +134,29 @@ public class NewsMatcher {
 			previousTradingDate.atStartOfDay(),
 			previousTradingDate.plusDays(1).atStartOfDay()));
 		return candidates;
+	}
+
+	/**
+	 * 시가 갭 근거의 절단 — <b>공시를 먼저 채우고 남은 자리를 뉴스로</b> 채운다 (이슈 #409).
+	 *
+	 * <p>거리순 절단({@link #sortAndTruncate})을 그대로 쓰면 <b>공시는 예외 없이 전멸한다.</b> 공시의
+	 * {@code published_at}은 접수일 {@code 00:00:00}이고(§C-3) 시가 갭의 이벤트 시각은 {@code D 09:00}이라
+	 * 거리가 약 33시간인데, 같은 후보의 뉴스는 전부 {@code [D-1 15:30, D 09:00]} 안이라 최대 17.5시간이다.
+	 * 즉 공시는 <b>순서상 구조로</b> 항상 최하위이고, 전장 뉴스가 {@code max-sources-per-card}만큼만 있어도
+	 * 한 건도 남지 않는다. 그러면 §C-3이 "시가 갭 근거 = {@code rcept_dt D-1}"로 공시를 따로 합류시킨 판정이
+	 * 절단 단계에서 통째로 무효화된다 — 질의 비용만 쓰고 화면·프롬프트에는 도달하지 않는다.
+	 *
+	 * <p>목록 경로는 이 문제를 이미 인정하고 {@link NewsItemTruncator}로 고쳐 뒀다(§뉴스 매칭 범위,
+	 * 2026-08-04 확정). 여기서 같은 규칙을 재사용해 <b>한 저장소에 절단 규칙이 두 벌 생기는 것을 막는다</b> —
+	 * spec §설계 판단이 "절단 규칙은 {@code NewsItemTruncator} 한 곳에 둔다"고 못박은 이유와 같다.
+	 *
+	 * <p><b>정렬이 바뀌지 않는다.</b> 시가 갭 후보의 뉴스는 전부 이벤트({@code D 09:00}) 이전이라
+	 * "이벤트에 가까운 순"과 "최신순"이 같은 순서다 — 그래서 이 교체로 실제로 달라지는 것은 <b>공시가 살아남는가
+	 * 하나뿐</b>이고 뉴스가 실리는 차례는 그대로다. 장중 카드는 애초에 공시를 매칭하지 않으므로(§C-3) 이 규칙을
+	 * 태우지 않는다 — 그쪽은 근거창이 이벤트 앞뒤 양방향이라 두 정렬이 실제로 갈린다.
+	 */
+	private List<MarketNewsItem> truncateGap(List<MarketNewsItem> candidates) {
+		return NewsItemTruncator.truncateAndSort(candidates, properties.maxSourcesPerCard());
 	}
 
 	// 상한을 넘으면 발행시각이 이벤트에 가까운 순으로 자른다 (§뉴스 매칭 범위). 자르지 않는 경우에도 같은
