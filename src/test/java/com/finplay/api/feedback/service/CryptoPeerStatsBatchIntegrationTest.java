@@ -164,12 +164,16 @@ class CryptoPeerStatsBatchIntegrationTest {
 		assertThat(stat.getMedianMinutesToSell()).isEqualTo(37);
 	}
 
-	// 회귀(이슈 #407): 모집단 쪽은 Duration.between(T, 매도).toMinutes()로 절대 시각 차를 절삭하고, 본인 값은
+	// 불변식 고정(이슈 #407): 모집단 쪽은 Duration.between(T, 매도).toMinutes()로 절대 시각 차를 절삭하고, 본인 값은
 	// PostSellArithmetic.minutesBetween이 양 끝을 분으로 내린 뒤 뺀다. 이 둘은 <b>T가 분 경계일 때만</b> 항상
 	// 같은 값을 낸다 — T에 초가 붙으면 매도 초가 그보다 작은 경우(매도 시각의 약 절반)에 1분 어긋난다.
 	//
 	// 그래서 CryptoPriceMoveWatcher가 occurred_at을 분 경계로 내려 저장한다. 여기서는 그 전제 위에서 매도 시각에
 	// 초가 붙어도 두 규칙이 갈리지 않음을 못박는다 — 기존 픽스처는 매도까지 정확히 정시라 이 축이 비어 있었다.
+	//
+	// 다만 이 테스트는 저장 경로의 회귀를 잡지 못한다. givenCryptoCard가 카드를 리포지터리로 직접 넣고 CARD_AT이
+	// 이미 분 경계라, 워처의 절삭을 되돌려도 여기는 초록으로 남는다 — 그쪽 회귀는 CryptoPriceMoveWatcherTest가
+	// 맡는다. 이 자리가 고정하는 것은 "T가 분 경계이면 두 규칙이 일치한다"는 하류 불변식이다 (PR #412 리뷰).
 	@Test
 	@DisplayName("T가 분 경계면 매도 시각에 초가 붙어도 30분 경계와 중앙값이 본인 값과 같은 규칙으로 나온다")
 	void secondsInTheSellTimeDoNotShiftTheBoundaryWhenTIsOnTheMinute() {
