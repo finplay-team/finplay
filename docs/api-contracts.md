@@ -897,7 +897,7 @@ holding 관찰은 buyTrade→order에서 sessionId를 서버가 역추적한다(
 
 샘플 attempt 응답은 4단계다. 1단계는 종목 선택, 2단계는 현재 run 최초 BUY/risk snapshot, 3단계는 snapshot 이후 qualifying 관찰, 4단계는 관찰 이후 같은 run의 5분 내 SELL과 reflection이다. 재시작 전 snapshot·BUY·SELL·관찰은 현재 run evidence에 포함하지 않는다. SELL 뒤 새 관찰도 그대로 저장되고 현재 run evidence로 누적된다(026 spec.md "매도 여부와 무관하게" 원칙을 031이 상속, 이슈 #420). 완료 reflection은 attempt를 먼저 잠근 뒤 completion·legacy progress 호환 행·attempt `COMPLETED`·시장별 500만원 보상을 원자 확정한다.
 
-1. `(userId, tutorialKey)` 완료 행이 있으면 `COMPLETED`, `currentStep=null`이며 저장된 `completedAt`을 반환한다. 완료 evidence 일부가 인메모리 재시작으로 유실돼도 완료 상태는 회귀하지 않는다.
+1. `(userId, tutorialKey)` 완료 행이 있고 attempt가 없거나 attempt가 `COMPLETED`면 `COMPLETED`, `currentStep=null`이며 저장된 `completedAt`을 반환한다. 완료 evidence 일부가 인메모리 재시작으로 유실돼도 완료 상태는 회귀하지 않는다. 완료 행이 있어도 attempt가 040 재시작으로 다시 진행 중이면(`SELECTING_INSTRUMENT`\|`IN_PROGRESS`) 최상위 `status`·`currentStep`·`steps`·evidence는 **그 실행 기준**(`IN_PROGRESS` 또는 4단계 만료 시 `EXPIRED`)이며, `completedAt`·`rewardAmount`는 최초 완료 값을 그대로 유지한다 — `practice_completions` 행은 남아 보상 재지급을 막는다(이슈 #426, 040 비즈니스 규칙).
 2. 완료 전 유효 chain이 있으면 1·2단계는 `COMPLETED`, 3단계는 `IN_PROGRESS`다. 같은 holding의 qualifying observation이 있으면 observation evidence도 채운다.
 3. 유효 chain은 없고 해당 시장 favorite만 있으면 1단계 `COMPLETED`, 2단계 `IN_PROGRESS`, 3단계 `NOT_STARTED`다.
 4. favorite도 없으면 전체 `NOT_STARTED`, `currentStep=1`이다.
@@ -919,7 +919,7 @@ holding 관찰은 buyTrade→order에서 sessionId를 서버가 역추적한다(
 
 | DTO | 필드 순서와 타입 | nullable 규칙 |
 |---|---|---|
-| `InvestmentPracticeResponse` | `String tutorialKey`, `String status`, `Integer currentStep`, `List<PracticeStepResponse> steps`, `LocalDateTime completedAt`, `Long rewardAmount`, nullable `PracticeAttemptResponse attempt` | attempt 흐름이면 `attempt`가 현재 ID/run/mode/status/instrument/anchor/date/risk snapshot을 반환하고 legacy fallback이면 null. `currentStep`은 완료 시 null, `rewardAmount`는 완료 시만 `5000000` |
+| `InvestmentPracticeResponse` | `String tutorialKey`, `String status`, `Integer currentStep`, `List<PracticeStepResponse> steps`, `LocalDateTime completedAt`, `Long rewardAmount`, nullable `PracticeAttemptResponse attempt` | attempt 흐름이면 `attempt`가 현재 ID/run/mode/status/instrument/anchor/date/risk snapshot을 반환하고 legacy fallback이면 null. `currentStep`은 완료 시 null, `rewardAmount`는 `practice_completions` 행이 있으면 `5000000`이고 040 재시작으로 다시 진행 중이어도 유지된다(이슈 #426) |
 | `PracticeStepResponse` | `Integer step`, `String status`, `Boolean locked`, `PracticeEvidenceResponse evidence` | 모두 non-null; locked 단계도 빈 evidence 객체 반환. `status`는 샘플 종목 chain의 4단계에서만 `AWAITING_SALE`·`EXPIRED`일 수 있다(둘 다 `locked=false`) |
 | `PracticeEvidenceResponse` | 기존 favorite/intention/BUY/holding/risk/observation/reflection/SELL/deadline 필드 + nullable `BigDecimal buyQuantity`, `BigDecimal sellQuantity`, `BigDecimal remainingQuantity`, nullable `PracticeTradeResultResponse tradeResult` | attempt 흐름의 BUY 이후에는 `favoriteId|favoriteCreatedAt|intentionId|intentionCreatedAt=null`, 자동 snapshot risk line과 current-run `buyQuantity=FILLED BUY 합`, `sellQuantity=FILLED SELL 합`, `remainingQuantity=max(BUY 합-SELL 합,0)`을 반환한다. 완료 `REPLAY`도 BUY/SELL ID·시각, 세 수량, risk line, `tradeResult`를 유지한다. legacy fallback의 신규 수량과 `tradeResult`는 null |
 | `PracticeTradeResultResponse` | `BigDecimal buyPrice`, `BigDecimal sellPrice`, `Long realizedPnl`, `BigDecimal returnRate`, `String sellVerdict` | 매도 전에는 `buyPrice`만 non-null이고 나머지 넷은 null. `sellVerdict`는 `ABOVE_TAKE_PROFIT|BELOW_STOP_LOSS|BETWEEN_LINES` |

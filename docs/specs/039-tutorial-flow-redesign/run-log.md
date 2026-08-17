@@ -29,6 +29,7 @@
 | 2026-08-17 | implementer | 매도 이후 관찰을 막던 세 지점(관찰 서비스의 무조건 차단 가드 1곳 + 복기 서비스·진행 조회의 evidence 배제 필터 2곳) 제거 + api-contracts 동기화 (Gradle 미실행, 검증은 메인 세션 위임) | 026 spec.md "매도 여부와 무관하게" 원칙을 031이 상속, 이슈 #420 프로덕션 재현 |
 | (#422) | implementer | `PracticeHoldingReflectionResponse.PROMPT` 문구 교체 + api-contracts 복기 절 보강 (Gradle 미실행, 병렬 worktree 충돌 방지) | TUTORIAL-FLOW-008(서버 자동 -3%/+5%)·031 SANDBOX-006(4단계 매도 후 복기)와 어긋난 "계획한 손절·익절" 문구 제거 |
 | - | implementer | (지시로 Gradle 실행 금지 — 컴파일 미검증) `TradeService.summarizePracticeRun` 확장, `PracticeTradeResultCalculator`·`PracticeTradeResultResponse`·`PracticeSellVerdict` 신설, evidence에 `tradeResult` 노출 | 이슈 #421, spec TUTORIAL-FLOW-013, ADR-0002, `PortfolioSellService.finalizeSellRealizedPnl`(수수료 포함 realizedPnl 정의), spec 012 returnRate 식 |
+| 23:35 (08-17) | implementer | Gradle 미실행(오케스트레이터가 순차 단독 실행, agent-mistakes 2026-07-30·08-11) | 이슈 #426 진행 조회 분기 역전 — 근거는 040 spec/plan(완료 후 재시작·보상 1회), 026 spec(완료 evidence 불변), api-contracts "실습 진행 조회(holding 기준)"의 "attempt가 있으면 legacy completion으로 fallback하지 않는다" |
 
 ## 모니터링 (사람용 요약)
 - 21:22 — V36 추가형 migration, attempt·risk 엔티티/Repository, nullable 주문 run 귀속 구현 및 컴파일 통과.
@@ -47,3 +48,4 @@
 - 2026-08-17 — 이슈 #420: 매도 이후 관찰을 막던 세 지점을 제거했다. 관찰 서비스(`PracticeHoldingObservationService`)의 매도 체결 시 무조건 409 `PRACTICE_STEP_LOCKED` 차단 가드 1곳, 복기 서비스(`PracticeHoldingReflectionService`)와 진행 조회(`InvestmentPracticeQueryService`)에서 매도 체결 이후 관찰을 evidence에서 배제하던 필터 2곳이다. 매도 후 evidence를 채운 사용자의 영구 409를 해소하고 현재 run 귀속(risk snapshot 시각) 판정만 남겼다.
 - (#422) — 복기 고정 프롬프트를 "전량 매도 이후 + 서버 자동 손절·익절선" 전제에 맞게 다시 쓰고, 기존 테스트는 이미 상수를 참조하므로 문구 수정만으로 동기화됨(빌드 검증은 메인 세션 단독 실행 예정).
 - 이번 실행 매매 결과(매수·매도 체결가, 수수료 포함 실현손익, 수익률, 기준선 대비 매도 위치)를 attempt evidence의 `tradeResult`로 노출. 스키마 변경 없이 기존 체결 원장으로 계산하며, 수익률 분모는 `realizedPnl=(매도금액-수수료)-매수원가` 식을 되돌려 배분 테이블 재조회 없이 얻는다. 워크트리 병행 실행 제약으로 Gradle을 돌리지 못해 컴파일·테스트 미검증.
+- 23:35 (08-17) — 이슈 #426: 진행 조회가 "완료 기록 + 비완료 attempt"를 예전 완료 응답으로 덮어써 040 재시작 사용자의 매수·매도 evidence가 사라지던 분기를 뒤집고(attempt 우선, attempt 없을 때만 완료 폴백), 재시작 중에도 최초 완료의 `completedAt`·`rewardAmount`는 유지하도록 수정.

@@ -219,6 +219,85 @@ class PracticeAttemptCompletionFlowIntegrationTest {
 		assertThat(replayed.getSandboxCashAdjustment()).isEqualTo(sandboxBeforeRestart + expectedCashDelta);
 	}
 
+	// 이슈 #426: 완료한 시장을 040 재시작으로 다시 진행하면 진행 조회가 예전 완료 응답이 아니라 현재 실행의
+	// evidence를 돌려줘야 한다. 최초 완료 기록은 남아 있으므로 rewardAmount·completedAt은 그대로 유지된다.
+	@Test
+	void restartedRunAfterCompletionReportsCurrentRunEvidenceAndKeepsFirstCompletionReward() {
+		Market market = Market.CRYPTO;
+		FlowFixture fixture = createFixture(market, "restart-progress");
+		BigDecimal quantity = new BigDecimal("2.00000000");
+		practiceAttemptService.ensureAttempt(fixture.userId(), market);
+		practiceAttemptService.selectInstrument(fixture.userId(), market, fixture.instrumentId());
+
+		clock.set(BASE_NOW.plusSeconds(2));
+		orderService.createOrder(fixture.userId(), idempotency("first-buy"),
+			marketOrder(market, fixture.instrumentId(), OrderSide.BUY, quantity));
+		Holding holding = holdingRepository
+			.findByAccountIdAndInstrumentId(fixture.accountId(), fixture.instrumentId())
+			.orElseThrow();
+		createQualifyingObservations(fixture.userId(), holding.getId(), BASE_NOW.plusSeconds(12));
+		clock.set(BASE_NOW.plusSeconds(150));
+		// 부분 매도로 완료한다 — 남은 잔량은 재시작 정리가 보상 매도로 청산한다(039 재시작 규칙, 위 테스트와 동일).
+		orderService.createOrder(fixture.userId(), idempotency("first-sell"),
+			marketOrder(market, fixture.instrumentId(), OrderSide.SELL, new BigDecimal("1.00000000")));
+		clock.set(BASE_NOW.plusSeconds(160));
+		reflectionService.createReflection(fixture.userId(),
+			new PracticeHoldingReflectionCreateRequest(holding.getId(), "최초 완료 복기입니다."));
+
+		InvestmentPracticeResponse completed = queryService.getProgress(fixture.userId(), market);
+		assertThat(completed.status()).isEqualTo("COMPLETED");
+		assertThat(completed.rewardAmount()).isEqualTo(COMPLETION_REWARD);
+		LocalDateTime firstCompletedAt = completed.completedAt();
+		assertThat(firstCompletedAt).isNotNull();
+		long completionCount = completionRepository.count();
+		long reflectionCount = reflectionRepository.count();
+
+		clock.set(BASE_NOW.plusSeconds(170));
+		PracticeAttemptResponse restarted = practiceAttemptRestartService.restart(fixture.userId(), market);
+		assertThat(restarted.runNumber()).isEqualTo(2);
+
+		// 재시작 직후(종목 선택 전)에도 진행 조회는 완료 응답이 아니라 현재 실행 상태를 돌려준다.
+		InvestmentPracticeResponse selecting = queryService.getProgress(fixture.userId(), market);
+		assertThat(selecting.status()).isEqualTo("IN_PROGRESS");
+		assertThat(selecting.attempt().status()).isEqualTo("SELECTING_INSTRUMENT");
+		assertThat(selecting.rewardAmount()).isEqualTo(COMPLETION_REWARD);
+		assertThat(selecting.completedAt()).isEqualTo(firstCompletedAt);
+
+		practiceAttemptService.selectInstrument(fixture.userId(), market, fixture.instrumentId());
+		clock.set(BASE_NOW.plusSeconds(180));
+		OrderResponse secondBuy = orderService.createOrder(fixture.userId(), idempotency("second-buy"),
+			marketOrder(market, fixture.instrumentId(), OrderSide.BUY, quantity));
+
+		InvestmentPracticeResponse restartedProgress = queryService.getProgress(fixture.userId(), market);
+
+		assertThat(restartedProgress.status()).isEqualTo("IN_PROGRESS");
+		assertThat(restartedProgress.currentStep()).isEqualTo(3);
+		assertThat(restartedProgress.steps()).hasSize(4);
+		assertThat(restartedProgress.attempt().mode()).isEqualTo("ACTIVE");
+		assertThat(restartedProgress.attempt().runNumber()).isEqualTo(2);
+		assertThat(restartedProgress.attempt().riskSnapshot()).isNotNull();
+		assertThat(restartedProgress.attempt().riskSnapshot().entryPrice()).isEqualByComparingTo(secondBuy.price());
+
+		PracticeEvidenceResponse evidence = restartedProgress.steps().get(1).evidence();
+		assertThat(evidence.buyTradeId()).isEqualTo(secondBuy.tradeId());
+		assertThat(evidence.buyQuantity()).isEqualByComparingTo(quantity);
+		assertThat(evidence.sellQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
+		assertThat(evidence.remainingQuantity()).isEqualByComparingTo(quantity);
+		assertThat(evidence.saleDeadlineAt()).isEqualTo(evidence.buyTradeExecutedAt().plusMinutes(5));
+		// 이전 실행의 매도·관찰은 현재 실행 evidence가 아니다.
+		assertThat(evidence.sellTradeId()).isNull();
+		assertThat(evidence.observationId()).isNull();
+		// 현재 실행에는 아직 qualifying 관찰이 없으므로 4단계는 잠긴 미착수다(039 attempt 경로 계약).
+		assertThat(restartedProgress.steps().get(3).status()).isEqualTo("NOT_STARTED");
+		assertThat(restartedProgress.steps().get(3).locked()).isTrue();
+
+		// 040: 재시작해 다시 진행 중이어도 최초 완료 기록과 이미 받은 보상은 그대로다(재지급도 없다).
+		assertThat(restartedProgress.rewardAmount()).isEqualTo(COMPLETION_REWARD);
+		assertThat(restartedProgress.completedAt()).isEqualTo(firstCompletedAt);
+		assertThat(completionRepository.count()).isEqualTo(completionCount);
+		assertThat(reflectionRepository.count()).isEqualTo(reflectionCount);
+	}
+
 	@Test
 	void restartedRunRejectsStaleObservationAndSellOnReusedHoldingRow() {
 		Market market = Market.CRYPTO;
