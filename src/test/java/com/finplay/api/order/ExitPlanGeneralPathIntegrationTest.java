@@ -4,6 +4,7 @@ package com.finplay.api.order;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -208,6 +209,151 @@ class ExitPlanGeneralPathIntegrationTest {
 		assertThat(afterAttempt.getReservedQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
 		assertThat(exitPlanRepository.findByUserIdAndStatusOrderByIdDesc(user.getId(), ExitPlanStatus.PENDING))
 			.isEmpty();
+	}
+
+	// 시나리오: PERCENT 방식(holding.averagePrice 대비 손절률·익절률)으로 생성해도 PRICE와 동일하게 예약이 걸리고,
+	// GET 목록 조회에 holdingId·exitPriceType·rate가 그대로 노출되며, 취소 시 예약이 정확히 반환된다(021 plan.md
+	// "테스트 계획" — 일반 경로 전체 흐름 PRICE·PERCENT 각각, 목록 조회).
+	@Test
+	void createWithPercentThenListThenCancelReflectsRateAndReleasesReservation() throws Exception {
+		User user = createUser("exit-plan-percent");
+		Account account = createAccount(user);
+		String accessToken = issueAccessToken(user);
+		Instrument instrument = firstCryptoInstrument();
+		priceStore.saveTick(instrument.getSymbol(), new BigDecimal("100500.00000000"), NOW);
+
+		Holding holding = holdingRepository.saveAndFlush(Holding.create(account, instrument, NOW));
+		holding.applyBuy(new BigDecimal("10.00000000"), new BigDecimal("100000.00000000"), NOW);
+		holdingRepository.saveAndFlush(holding);
+
+		String createBody = """
+			{"holdingId":%d,"quantity":"1.00000000","exitPriceType":"PERCENT",
+			"stopLossRate":"5.0000","takeProfitRate":"10.0000"}
+			""".formatted(holding.getId());
+
+		String responseBody = mockMvc.perform(post("/api/exit-plans")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+			.header("Idempotency-Key", UUID.randomUUID().toString())
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(createBody))
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.exitPriceType").value("PERCENT"))
+			.andExpect(jsonPath("$.stopLossPrice").value(95000.00000000))
+			.andExpect(jsonPath("$.takeProfitPrice").value(110000.00000000))
+			.andReturn().getResponse().getContentAsString();
+		Long exitPlanId = ((Number)com.jayway.jsonpath.JsonPath.read(responseBody, "$.id")).longValue();
+
+		mockMvc.perform(get("/api/exit-plans")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.content[0].id").value(exitPlanId))
+			.andExpect(jsonPath("$.content[0].holdingId").value(holding.getId()))
+			.andExpect(jsonPath("$.content[0].exitPriceType").value("PERCENT"))
+			.andExpect(jsonPath("$.content[0].status").value("PENDING"));
+
+		mockMvc.perform(delete("/api/exit-plans/{exitPlanId}", exitPlanId)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+			.andExpect(status().isNoContent());
+
+		Holding afterCancel = holdingRepository.findById(holding.getId()).orElseThrow();
+		assertThat(afterCancel.getReservedQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
+		assertThat(exitPlanRepository.findById(exitPlanId).orElseThrow().getStatus())
+			.isEqualTo(ExitPlanStatus.CANCELLED);
+	}
+
+	// holding당 PENDING 1건 불변식은 "지금 걸린 게 없어야 한다"는 뜻이지 "다시는 걸 수 없다"는 뜻이 아니다 — 첫
+	// plan이 취소로 종결된 뒤 같은 holding에 새 PENDING plan 생성이 성공해야 한다(021 spec.md 비즈니스 규칙,
+	// plan.md "테스트 계획" 재생성 허용 회귀 방지).
+	@Test
+	void createSucceedsAgainOnSameHoldingAfterPriorPlanIsCancelled() throws Exception {
+		User user = createUser("exit-plan-regen");
+		Account account = createAccount(user);
+		String accessToken = issueAccessToken(user);
+		Instrument instrument = firstCryptoInstrument();
+		priceStore.saveTick(instrument.getSymbol(), new BigDecimal("100500.00000000"), NOW);
+
+		Holding holding = holdingRepository.saveAndFlush(Holding.create(account, instrument, NOW));
+		holding.applyBuy(new BigDecimal("10.00000000"), new BigDecimal("100000.00000000"), NOW);
+		holdingRepository.saveAndFlush(holding);
+
+		String createBody = """
+			{"holdingId":%d,"quantity":"1.00000000","exitPriceType":"PRICE",
+			"stopLoss":"95000.00000000","takeProfit":"110000.00000000"}
+			""".formatted(holding.getId());
+
+		String firstResponse = mockMvc.perform(post("/api/exit-plans")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+			.header("Idempotency-Key", UUID.randomUUID().toString())
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(createBody))
+			.andExpect(status().isCreated())
+			.andReturn().getResponse().getContentAsString();
+		Long firstPlanId = ((Number)com.jayway.jsonpath.JsonPath.read(firstResponse, "$.id")).longValue();
+
+		mockMvc.perform(delete("/api/exit-plans/{exitPlanId}", firstPlanId)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+			.andExpect(status().isNoContent());
+
+		String secondResponse = mockMvc.perform(post("/api/exit-plans")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+			.header("Idempotency-Key", UUID.randomUUID().toString())
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(createBody))
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.status").value("PENDING"))
+			.andReturn().getResponse().getContentAsString();
+		Long secondPlanId = ((Number)com.jayway.jsonpath.JsonPath.read(secondResponse, "$.id")).longValue();
+
+		assertThat(secondPlanId).isNotEqualTo(firstPlanId);
+		Holding afterSecondCreate = holdingRepository.findById(holding.getId()).orElseThrow();
+		assertThat(afterSecondCreate.getReservedQuantity()).isEqualByComparingTo("1.00000000");
+	}
+
+	// 같은 Idempotency-Key로 재요청하면 재조회 폴백이 최초 응답을 그대로 재현하고 두 번째 plan을 만들지 않는다
+	// (021 RISK-OCO-013, plan.md "멱등성" 일반 경로 1번).
+	@Test
+	void replayingSameIdempotencyKeyReturnsIdenticalResponseWithoutCreatingSecondPlan() throws Exception {
+		User user = createUser("exit-plan-idem");
+		Account account = createAccount(user);
+		String accessToken = issueAccessToken(user);
+		Instrument instrument = firstCryptoInstrument();
+		priceStore.saveTick(instrument.getSymbol(), new BigDecimal("100500.00000000"), NOW);
+
+		Holding holding = holdingRepository.saveAndFlush(Holding.create(account, instrument, NOW));
+		holding.applyBuy(new BigDecimal("10.00000000"), new BigDecimal("100000.00000000"), NOW);
+		holdingRepository.saveAndFlush(holding);
+
+		String idempotencyKey = UUID.randomUUID().toString();
+		String createBody = """
+			{"holdingId":%d,"quantity":"1.00000000","exitPriceType":"PRICE",
+			"stopLoss":"95000.00000000","takeProfit":"110000.00000000"}
+			""".formatted(holding.getId());
+
+		String firstResponse = mockMvc.perform(post("/api/exit-plans")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+			.header("Idempotency-Key", idempotencyKey)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(createBody))
+			.andExpect(status().isCreated())
+			.andReturn().getResponse().getContentAsString();
+		Long firstPlanId = ((Number)com.jayway.jsonpath.JsonPath.read(firstResponse, "$.id")).longValue();
+
+		String secondResponse = mockMvc.perform(post("/api/exit-plans")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+			.header("Idempotency-Key", idempotencyKey)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(createBody))
+			.andExpect(status().isCreated())
+			.andReturn().getResponse().getContentAsString();
+		Long secondPlanId = ((Number)com.jayway.jsonpath.JsonPath.read(secondResponse, "$.id")).longValue();
+
+		assertThat(secondPlanId).isEqualTo(firstPlanId);
+		assertThat(secondResponse).isEqualTo(firstResponse);
+		assertThat(exitPlanRepository.findByUserIdAndStatusOrderByIdDesc(user.getId(), ExitPlanStatus.PENDING))
+			.hasSize(1);
+
+		Holding afterReplay = holdingRepository.findById(holding.getId()).orElseThrow();
+		assertThat(afterReplay.getReservedQuantity()).isEqualByComparingTo("1.00000000"); // 재시도로 이중 예약되지 않는다.
 	}
 
 	private Instrument firstCryptoInstrument() {

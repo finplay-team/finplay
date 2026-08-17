@@ -28,6 +28,7 @@ import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.PriceQueryService;
 import com.finplay.api.market.service.PriceQuoteDto;
 import com.finplay.api.market.service.PriceStatus;
+import com.finplay.api.order.domain.Trade;
 import com.finplay.api.portfolio.domain.Holding;
 import com.finplay.api.portfolio.service.HoldingService;
 import java.math.BigDecimal;
@@ -237,6 +238,54 @@ class PracticeHoldingObservationServiceTest {
 	}
 
 	@Test
+	void createObservationSavesAfterFullSellSoEvidenceKeepsAccumulating() {
+		// 이슈 #420 회귀: 전량 매도(sellTrade 존재, 잔량 0) 이후에도 관찰은 그대로 저장돼야 한다. 026 spec.md
+		// "비즈니스 규칙"이 "관찰은 ... holding이 존재하는 한 언제든 호출 가능하며 매도로 수량이 0이 되어도 계속
+		// 호출 가능하다"로 못박았고, 031 spec.md 도입부가 그 원칙을 변경 없이 상속한다고 명시한다. 매도 직후
+		// 관찰이 409 PRACTICE_STEP_LOCKED로 막히면 evidence A·B를 못 채운 채 매도한 사용자는 복기가 영구히
+		// PRACTICE_EVIDENCE_MISSING이 되어 튜토리얼을 완료할 방법이 없어진다.
+		when(instrument.getMarket()).thenReturn(Market.CRYPTO);
+		when(instrument.isTutorialSample()).thenReturn(true);
+		when(holdingService.findHoldingForOwner(USER_ID, HOLDING_ID)).thenReturn(Optional.of(holding));
+		PracticeAttempt attempt = mock(PracticeAttempt.class);
+		when(practiceAttemptRepository.findByUserIdAndMarket(USER_ID, Market.CRYPTO)).thenReturn(Optional.of(attempt));
+		PracticeRiskSnapshot snapshot = mock(PracticeRiskSnapshot.class);
+		when(snapshot.getEntryPrice()).thenReturn(new BigDecimal("100"));
+		when(snapshot.getStopLossPrice()).thenReturn(new BigDecimal("97"));
+		when(snapshot.getTakeProfitPrice()).thenReturn(new BigDecimal("105"));
+		when(snapshot.getCreatedAt()).thenReturn(OBSERVED_AT.minusMinutes(3));
+		// 이슈 #421의 매매 결과 4값은 관찰 저장 경로가 읽지 않으므로(진행 조회만 쓴다) 이 테스트에서도 null로 둔다 — 같은 파일 위쪽 fixture와 같은 관례다.
+		ResolvedPracticeAttemptEvidenceDto soldOutEvidence = new ResolvedPracticeAttemptEvidenceDto(
+			snapshot, HOLDING_ID, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ZERO, mock(Trade.class), null, null,
+			null, null);
+		when(practiceAttemptEvidenceService.requireCurrentRun(attempt, USER_ID, HOLDING_ID))
+			.thenReturn(soldOutEvidence);
+		BigDecimal canonicalPrice = new BigDecimal("100.50000000");
+		when(canonicalPriceService.canonicalPriceForMutation(USER_ID, instrument, OBSERVED_AT))
+			.thenReturn(canonicalPrice);
+		// snapshot 이후 관찰 2건은 매도 여부와 무관하게 evidence B(3회 + 2분 범위) 누적 대상으로 남는다.
+		List<PracticeMarketObservation> existing = List.of(
+			observationAt(OBSERVED_AT.minusMinutes(2)), observationAt(OBSERVED_AT.minusMinutes(1)));
+		when(observationRepository.findByUserIdAndHoldingIdOrderByObservedAtAsc(USER_ID, HOLDING_ID))
+			.thenReturn(existing);
+		ObservationEvidenceJudgment judgment = new ObservationEvidenceJudgment(
+			false, null, PracticeEvidenceType.TIMED_REPETITION);
+		when(evidenceJudgmentService.judgeObservationEvidence(
+			snapshot.getEntryPrice(), snapshot.getStopLossPrice(), snapshot.getTakeProfitPrice(), canonicalPrice,
+			existing, OBSERVED_AT))
+			.thenReturn(judgment);
+		when(observationRepository.save(any(PracticeMarketObservation.class)))
+			.thenAnswer(invocation -> invocation.getArgument(0));
+
+		PracticeHoldingObservationResponse response = service.createObservation(
+			USER_ID, new PracticeHoldingObservationCreateRequest(HOLDING_ID));
+
+		assertThat(response.evidenceType()).isEqualTo("TIMED_REPETITION");
+		assertThat(response.currentPrice()).isEqualByComparingTo(canonicalPrice);
+		verify(observationRepository).save(any(PracticeMarketObservation.class));
+	}
+
+	@Test
 	void createObservationUsesLastKnownPriceRegardlessOfObservationAge() {
 		// 036-remove-crypto-stale-status: getPrice()가 표시 경로라 코인이 연결 유지 상태면 관측 시각이
 		// 얼마나 오래됐든(과거 032 시절엔 stale) 항상 AVAILABLE로 마지막 실제 가격을 반환한다 — 이 서비스는
@@ -328,6 +377,11 @@ class PracticeHoldingObservationServiceTest {
 
 		verify(chainResolutionService).resolveForInstrument(
 			USER_ID, PracticeIntentionService.COIN_TUTORIAL_KEY, INSTRUMENT_ID);
+	}
+
+	private PracticeMarketObservation observationAt(LocalDateTime observedAt) {
+		return PracticeMarketObservation.create(
+			USER_ID, holding, INSTRUMENT_ID, new BigDecimal("100"), false, null, null, observedAt);
 	}
 
 	private ResolvedPracticeChainDto completedChain() {

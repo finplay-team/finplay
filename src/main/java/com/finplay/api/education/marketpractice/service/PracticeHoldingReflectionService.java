@@ -127,12 +127,14 @@ public class PracticeHoldingReflectionService {
 		LocalDateTime now = LocalDateTime.now(clock);
 		verifyAttemptSaleEvidence(evidence, now);
 
+		// 현재 run 귀속 판정(risk snapshot 생성 시각 이후)만 남긴다. 매도 체결 이후 관찰을 배제하던 필터는
+		// 제거했다 — 026 spec.md "비즈니스 규칙"이 "복기는 매도 여부와 무관하게 저장할 수 있다"로 못박았고
+		// 031은 이 원칙을 그대로 상속한다. 그 필터 때문에 매도 후에 evidence를 채운 사용자는 관찰이 집계되지
+		// 않아 영구히 409 PRACTICE_EVIDENCE_MISSING이었다(이슈 #420, 프로덕션 재현).
 		boolean hasEvidence = practiceMarketObservationRepository
 			.findByUserIdAndHoldingIdOrderByObservedAtAsc(userId, holding.getId())
 			.stream()
 			.filter(observation -> !observation.getObservedAt().isBefore(evidence.riskSnapshot().getCreatedAt()))
-			.filter(observation -> evidence.sellTrade() == null
-				|| !observation.getObservedAt().isAfter(evidence.sellTrade().getExecutedAt()))
 			.anyMatch(observation -> observation.getEvidenceType() != null);
 		if (!hasEvidence) {
 			throw new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING);
