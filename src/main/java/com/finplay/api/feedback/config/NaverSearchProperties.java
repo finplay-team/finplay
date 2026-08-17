@@ -10,7 +10,16 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 // oauth.naver(NAVER_CLIENT_ID·NAVER_CLIENT_SECRET)와 별개 애플리케이션의 키다(§외부 API 호출 상세).
 // 로그인용 값을 재사용하면 검색과 로그인 중 하나가 조용히 깨지므로 프리픽스를 naver가 아니라 naver-search로 둔다.
 //
-// 값이 없으면 빈 문자열로 바인딩되고, 그때는 실제 수집기 대신 Fake가 빈 목록을 반환한다(§실패 처리).
+// 값이 없으면 빈 문자열로 바인딩된다. 그 빈 값이 수집기 선택을 바꾸지는 않는다 — 어느 수집기가 뜨는지는
+// 프로필 단독으로 정해진다(NaverNewsCollector가 @Profile({"prod","news-real"}), FakeNewsCollector가
+// @Profile("!prod & !news-real")). @ConditionalOnProperty도 키 공백 검사도 없다.
+//
+// 그래서 로컬·테스트에서는 키가 있든 없든 Fake가 뜨고, 운영 프로필에서는 키가 비어도 실제 수집기가 그대로 떠
+// 매 호출이 401로 실패하며 §실패 처리의 "그 종목만 건너뜀"으로 흡수된다(NaverNewsCollector javadoc).
+//
+// 2026-08-17 정정 (이슈 #410) — 그전까지 이 자리는 "값이 없으면 실제 수집기 대신 Fake가 빈 목록을 반환한다"고
+// 적었으나 사실이 아니었다. 운영에서 키가 빠진 상태를 "Fake가 대신 돈다"로 오해하면, 30분마다 34종목이 조용히
+// 401로 실패하는 상태를 정상으로 읽게 된다(이슈 #273 류의 오진단).
 @ConfigurationProperties(prefix = "naver-search")
 public record NaverSearchProperties(String clientId, String clientSecret) {
 }
