@@ -72,6 +72,14 @@ URL·HTTP 메서드·요청 바디는 변경하지 않는다. `docs/api-routes.m
   `attempt.restart(...)`)를 타게 한다. `PracticeRunRestartOrderService.cleanupCurrentRun`은 이미 "현재
   run의 순체결수량만 보상매도"로 설계돼 있어 완료된 run에도 그대로 적용 가능하다(코드 변경 불필요, 회귀
   테스트만 추가).
+  - **정정(이슈 #433, 2026-08-17)**: 위 "코드 변경 불필요" 판단은 legacy 완료자 케이스를 빠뜨렸다.
+    `cleanupCurrentRun`은 넘겨받은 종목이 샌드박스 샘플이 아니면 409 `PRACTICE_EVIDENCE_MISSING`을 던지는데
+    (`validateInstrument`), V32 이전에 실제 종목으로 완료한 사용자는 진입이 실제 종목을 심은 `COMPLETED`
+    attempt를 갖고 있어 재시작이 항상 이 검증에 막혔다. `validateInstrument` 자체는 "재시작 정리가 실제
+    포트폴리오를 건드리지 못하게 막는 방어선"이므로 완화하지 않고, `PracticeAttemptRestartService.restart`가
+    legacy replay(= `COMPLETED` + 선택 종목이 샌드박스 샘플 아님)일 때 `instrumentId`·`canonicalPrice`를
+    null로 넘겨 "종목 미선택" 분기를 타게 했다. 그 분기도 현재 run 귀속 주문이 있으면 여전히 409다.
+    자세한 계약은 spec.md "비즈니스 규칙"의 경계 조건과 `docs/api-contracts.md` restart 행 참고.
 - `PracticeAttemptService.ensureAttempt(Long, Long, Market)`: `completion != null && attempt.getStatus() !=
   COMPLETED && !inserted` 조합을 더 이상 `PRACTICE_EVIDENCE_MISSING`으로 처리하지 않는다. 재시작 후
   진행 중인 attempt를 다시 진입 조회하면 이 조합이 정상적으로 발생하므로(completion evidence는 남아있지만
