@@ -51,7 +51,7 @@ class CryptoFeedbackBatchServiceTest {
 
 	@BeforeEach
 	void setUp() {
-		when(instrumentService.getInstrumentEntities(Market.CRYPTO))
+		when(instrumentService.getRealInstrumentEntities(Market.CRYPTO))
 			.thenReturn(List.of(bitcoin, ethereum));
 		when(instrumentNewsSummaryService.refreshCryptoSummary(any()))
 			.thenReturn(Optional.of(mock(InstrumentNewsSummary.class)));
@@ -75,8 +75,8 @@ class CryptoFeedbackBatchServiceTest {
 	void neverTouchesStockInstruments() {
 		service.refreshCryptoFeedback();
 
-		verify(instrumentService).getInstrumentEntities(Market.CRYPTO);
-		verify(instrumentService, never()).getInstrumentEntities(Market.STOCK);
+		verify(instrumentService).getRealInstrumentEntities(Market.CRYPTO);
+		verify(instrumentService, never()).getRealInstrumentEntities(Market.STOCK);
 	}
 
 	// 코인은 재생 시간축이 없어 주식의 READY 확인이 성립하지 않는다 — 세션을 보면 재생세션이 없는 날

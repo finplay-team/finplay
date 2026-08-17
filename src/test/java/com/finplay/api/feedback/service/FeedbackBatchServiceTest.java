@@ -113,7 +113,7 @@ class FeedbackBatchServiceTest {
 	private void givenReadySessionWithTwoStocks() {
 		when(stockReplayService.getCurrentReplaySession())
 			.thenReturn(new StockReplaySessionDto(true, ORIGIN_TRADE_DATE));
-		when(instrumentService.getInstrumentEntities(Market.STOCK))
+		when(instrumentService.getRealInstrumentEntities(Market.STOCK))
 			.thenReturn(List.of(instrumentA, instrumentB));
 		when(stockReplayService.getFullDayCandles(anyLong(), any())).thenReturn(someCandles());
 		when(stockReplayService.getPreviousTradingDayClose(anyLong(), any()))
