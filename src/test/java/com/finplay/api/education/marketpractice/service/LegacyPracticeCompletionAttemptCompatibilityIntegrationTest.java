@@ -2,7 +2,6 @@
 package com.finplay.api.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finplay.api.TestcontainersConfiguration;
 import com.finplay.api.account.domain.Account;
@@ -11,8 +10,6 @@ import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.common.TestClock;
 import com.finplay.api.common.TestClockConfig;
-import com.finplay.api.common.BusinessException;
-import com.finplay.api.common.ErrorCode;
 import com.finplay.api.education.marketpractice.domain.PracticeCompletion;
 import com.finplay.api.education.marketpractice.domain.PracticeMarketReflection;
 import com.finplay.api.education.marketpractice.dto.response.InvestmentPracticeResponse;
@@ -170,7 +167,9 @@ class LegacyPracticeCompletionAttemptCompatibilityIntegrationTest {
 	}
 
 	@Test
-	void ensureRejectsPreexistingNonCompletedAttemptWithLegacyCompletionWithoutChangingPendingReservation() {
+	void ensureReturnsCurrentInProgressStateWhenCompletionCoexistsWithNonCompletedAttemptWithoutChangingPendingReservation() {
+		// TUTORIAL-RESTART-003: completion evidence가 있어도 attempt가 COMPLETED가 아니면(재시작 후 진행 중)
+		// 더 이상 데이터 정합성 오류로 취급하지 않고 attempt의 현재 상태를 그대로 반환한다.
 		String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 8);
 		User user = userRepository.saveAndFlush(User.create(
 			"reconcile-" + suffix + "@finplay.com", "password-hash", "reconcile-" + suffix,
@@ -182,7 +181,8 @@ class LegacyPracticeCompletionAttemptCompatibilityIntegrationTest {
 			.orElseThrow();
 
 		PracticeAttemptResponse active = attemptService.ensureAttempt(user.getId(), Market.CRYPTO);
-		attemptService.selectInstrument(user.getId(), Market.CRYPTO, instrument.getId());
+		PracticeAttemptResponse selected = attemptService.selectInstrument(user.getId(), Market.CRYPTO,
+			instrument.getId());
 		account.reserveCash(100_050L);
 		accountRepository.saveAndFlush(account);
 		Order pending = orderRepository.saveAndFlush(Order.createLimitPendingForPracticeAttempt(
@@ -200,15 +200,21 @@ class LegacyPracticeCompletionAttemptCompatibilityIntegrationTest {
 			.saveAndFlush(PracticeCompletion.create(user.getId(), tutorialKey, reflection, COMPLETED_AT));
 
 		long orderCount = orderRepository.count();
+		long completionCount = completionRepository.count();
+		long reflectionCount = reflectionRepository.count();
 
-		assertThatThrownBy(() -> attemptService.ensureAttempt(user.getId(), Market.CRYPTO))
-			.isInstanceOfSatisfying(BusinessException.class,
-				exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.PRACTICE_EVIDENCE_MISSING));
+		PracticeAttemptResponse ensured = attemptService.ensureAttempt(user.getId(), Market.CRYPTO);
 
+		assertThat(ensured.status()).isEqualTo("IN_PROGRESS");
+		assertThat(ensured.attemptId()).isEqualTo(selected.attemptId());
+		assertThat(ensured.runNumber()).isEqualTo(selected.runNumber());
+		assertThat(ensured.instrumentId()).isEqualTo(instrument.getId());
 		assertThat(orderRepository.findById(pending.getId()).orElseThrow().getStatus())
 			.isEqualTo(OrderStatus.PENDING);
 		assertThat(accountRepository.findById(account.getId()).orElseThrow().getReservedCash()).isEqualTo(100_050L);
 		assertThat(orderRepository.count()).isEqualTo(orderCount);
+		assertThat(completionRepository.count()).isEqualTo(completionCount);
+		assertThat(reflectionRepository.count()).isEqualTo(reflectionCount);
 	}
 
 	private PracticeAttemptResponse ensureAfterBarrier(

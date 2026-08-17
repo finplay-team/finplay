@@ -12,6 +12,7 @@ import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
 import com.finplay.api.education.marketpractice.domain.PracticeAttemptStatus;
+import com.finplay.api.education.marketpractice.domain.PracticeCompletion;
 import com.finplay.api.education.marketpractice.dto.response.PracticeAttemptResponse;
 import com.finplay.api.education.marketpractice.repository.PracticeAttemptRepository;
 import com.finplay.api.education.marketpractice.repository.PracticeCompletionRepository;
@@ -96,6 +97,32 @@ class PracticeAttemptServiceTest {
 		assertThat(response.mode()).isEqualTo("REPLAY");
 		assertThat(response.status()).isEqualTo("COMPLETED");
 		assertThat(response.completedAt()).isEqualTo(NOW.minusDays(1));
+		verify(practiceAttemptRepository, never()).save(org.mockito.ArgumentMatchers.any());
+	}
+
+	@ParameterizedTest
+	@EnumSource(value = PracticeAttemptStatus.class, names = {"SELECTING_INSTRUMENT", "IN_PROGRESS", "EXPIRED"})
+	void ensureAttemptWithCoexistingCompletionAndNonCompletedAttemptReturnsCurrentStateWithoutError(
+		PracticeAttemptStatus status) {
+		PracticeAttempt attempt = selectingAttempt(Market.STOCK);
+		Instrument instrument = tutorialInstrument(Market.STOCK, true);
+		attempt.selectInstrument(instrument, NOW.minusMinutes(10), NOW.toLocalDate(), 999L, (short)1,
+			NOW.minusMinutes(10));
+		ReflectionTestUtils.setField(attempt, "status", status);
+		PracticeCompletion completion = mock(PracticeCompletion.class);
+		when(practiceAttemptRepository.insertIfAbsent(USER_ID, Market.STOCK.name(), NOW)).thenReturn(0);
+		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.STOCK))
+			.thenReturn(Optional.of(attempt));
+		when(practiceCompletionRepository.findByUserIdAndTutorialKey(USER_ID, "INVESTMENT_PRACTICE_V1"))
+			.thenReturn(Optional.of(completion));
+		when(practiceRiskSnapshotRepository.findByAttemptIdAndRunNumber(ATTEMPT_ID, 1L))
+			.thenReturn(Optional.empty());
+
+		PracticeAttemptResponse response = service.ensureAttempt(USER_ID, Market.STOCK);
+
+		assertThat(response.status()).isEqualTo(status.name());
+		assertThat(response.instrumentId()).isEqualTo(INSTRUMENT_ID);
+		assertThat(response.anchorAt()).isEqualTo(NOW.minusMinutes(10));
 		verify(practiceAttemptRepository, never()).save(org.mockito.ArgumentMatchers.any());
 	}
 
