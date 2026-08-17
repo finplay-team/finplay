@@ -30,6 +30,7 @@ import com.finplay.api.order.repository.TradeRepository;
 import com.finplay.api.portfolio.domain.Holding;
 import com.finplay.api.portfolio.service.PortfolioSellService;
 import com.finplay.api.portfolio.service.SellAllocationDto;
+import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -60,10 +61,11 @@ class ExitPlanFillServiceTest {
 	private final TradeRepository tradeRepository = mock(TradeRepository.class);
 	private final Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
 	private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
+	private final EntityManager entityManager = mock(EntityManager.class);
 
 	private final ExitPlanFillService service = new ExitPlanFillService(
 		exitPlanRepository, exitPlanConditionRepository, accountService, portfolioSellService, orderRepository,
-		tradeRepository, clock, eventPublisher);
+		tradeRepository, clock, eventPublisher, entityManager);
 
 	private Holding holding;
 	private ExitPlan plan;
