@@ -858,6 +858,8 @@ holding 관찰은 buyTrade→order에서 sessionId를 서버가 역추적한다(
 
 `(user_id, tutorial_key)` unique(`practice_market_reflections`, `practice_completions` 모두)가 최종 경합 방어선이며, `practice_progresses` 비관적 락으로 동시 복기 요청을 직렬화한다.
 
+응답 `prompt`는 요청과 무관하게 항상 같은 고정 문구다(`PracticeHoldingReflectionResponse.PROMPT`). 현재 문구는 `방금 판 이유가 무엇인가요? 화면에 표시된 손절선·익절선과 비교해서, 지금 돌아보면 그 판단이 어땠는지 한 줄로 적어 보세요.`이며, 이 단계가 전량 매도 이후에 열리고(031 SANDBOX-006) 손절·익절선을 사용자가 아니라 서버가 자동 고정한다는(039 TUTORIAL-FLOW-008) 전제를 반영한다(Issue #422). 앞의 `016` 계획 절(`POST /api/education/practice/reflections`)의 OCO 복기 문구는 사용자가 exit plan을 직접 계획하는 별도 경로이므로 이 문구와 다르다.
+
 | DTO | 필드 순서와 타입 | nullable 규칙 |
 |---|---|---|
 | `PracticeHoldingReflectionCreateRequest` | `Long holdingId`, `String answer` | `holdingId` non-null·양수; `answer`는 non-blank·2000자 이하 |

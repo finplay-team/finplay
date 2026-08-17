@@ -26,6 +26,7 @@
 | 23:52 | implementer | backend `compileJava`/대상 `spotlessCheck`, frontend `lint`/`build` | legacy completion의 lazy 완료 replay attempt·완료시각 고정 chart와 주문 목록 attempt/run 귀속 노출, frontend 정확한 run pending 복원 구현 검증 |
 | 00:20 | tester | backend `gradlew build`, frontend 17 tests + `lint` + `build` | backend 4,124 tests, 실패 0, skip 1, 3분 49초; frontend 전 게이트 통과 |
 | 00:20 | planner | PRD §3·036 tasks/run-log 최종 동기화 | Backend PR #381 / companion frontend PR #30, TUTORIAL-FLOW-001~012 완료 근거 |
+| (#422) | implementer | `PracticeHoldingReflectionResponse.PROMPT` 문구 교체 + api-contracts 복기 절 보강 (Gradle 미실행, 병렬 worktree 충돌 방지) | TUTORIAL-FLOW-008(서버 자동 -3%/+5%)·031 SANDBOX-006(4단계 매도 후 복기)와 어긋난 "계획한 손절·익절" 문구 제거 |
 
 ## 모니터링 (사람용 요약)
 - 21:22 — V36 추가형 migration, attempt·risk 엔티티/Repository, nullable 주문 run 귀속 구현 및 컴파일 통과.
@@ -41,3 +42,4 @@
 - 23:09 — 영속 attempt 존재 여부를 새 흐름의 명시적 경계로 삼아 기존 샘플의 비귀속 주문과 chain 관찰·복기·완료/만료/재시도를 보존하고, attempt가 있는 사용자는 current-run 검증을 우회하지 못하게 고정.
 - 23:52 — migration 이전 completion 사용자는 실제·샘플 reflection 종목으로 완료 replay attempt를 lazy 생성하고 risk snapshot 없이 legacy 완료 evidence를 유지하며, 주문 목록 attempt/run으로 frontend stale pending 채택을 차단.
 - 00:20 — Backend PR #381은 전체 build 4,124 tests(실패 0, skip 1, 3분 49초), companion frontend PR #30은 17 tests·lint·build를 통과했고 TUTORIAL-FLOW-001~012 및 최종 문서/PRD 동기화를 완료.
+- (#422) — 복기 고정 프롬프트를 "전량 매도 이후 + 서버 자동 손절·익절선" 전제에 맞게 다시 쓰고, 기존 테스트는 이미 상수를 참조하므로 문구 수정만으로 동기화됨(빌드 검증은 메인 세션 단독 실행 예정).
