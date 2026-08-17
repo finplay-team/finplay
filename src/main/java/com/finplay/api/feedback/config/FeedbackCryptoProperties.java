@@ -34,10 +34,19 @@ public record FeedbackCryptoProperties(
 	@DefaultValue("35")
 	int matchBeforeMinutes,
 	// 종목 단위 Redis 락(CryptoWatchLock)의 TTL(초). 다중 인스턴스 중복 감시 방어선이다(ADR-0014).
-	// feedback.llm.timeout-seconds(20, FeedbackLlmProperties)보다 커야 한다 — 락 안에서 LLM 호출이 최악
-	// 그 시간까지 걸릴 수 있고, TTL이 그보다 짧으면 처리 중에 락이 스스로 풀려 다른 인스턴스가 같은 종목을
-	// 다시 시작할 수 있다. 45는 20 대비 약 2배(여유 25초)로 잡은 값이다(PR #254 리뷰 [권장 2·3]). 레코드가
-	// 서로 달라 기동 시점 교차 검증은 하지 않는다 — 이 주석이 유일한 근거다.
+	//
+	// 하한은 "락 안에서 순차로 일어나는 외부 호출의 합"이다 —
+	//   naver connect(5) + naver read(10) + feedback.llm.timeout-seconds(20) = 35초 < TTL 45초 (여유 10초).
+	// 온디맨드 수집이 매칭과 재매칭 사이에 들어가면서 두 호출이 순차로 더해지기 때문이다(ADR-0017 §결정 4).
+	// TTL이 이 합보다 짧으면 처리 중에 락이 스스로 풀려 다른 인스턴스가 같은 종목을 다시 시작하는데, 코인 카드는
+	// window_start가 NULL이라 유니크 제약도 걸리지 않아 중복 카드와 LLM 중복 호출이 그대로 난다.
+	//
+	// 레코드가 서로 달라 기동 시점 교차 검증은 하지 않는다. 그러므로 llm.timeout-seconds나 수집기 타임아웃을
+	// 올릴 때 이 값을 함께 보는 것은 사람의 몫이다 (ADR-0014 §후속·ADR-0017 §결정 4).
+	//
+	// 2026-08-17 정정 (이슈 #410) — 그전까지 이 자리는 "45는 20 대비 약 2배(여유 25초)"에 "이 주석이 유일한
+	// 근거다"라고 적었다. 둘 다 사실이 아니었다. ADR-0017이 락 범위를 넓히며 위 식으로 다시 계산해 뒀고, 낡은
+	// 식(여유 25초)을 믿고 llm.timeout-seconds를 30으로 올리면 실제 최악은 15+30=45초로 TTL과 같아진다.
 	@DefaultValue("45")
 	int watchLockTtlSeconds) {
 
