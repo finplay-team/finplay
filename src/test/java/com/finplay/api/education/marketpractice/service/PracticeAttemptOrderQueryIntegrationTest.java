@@ -75,6 +75,10 @@ class PracticeAttemptOrderQueryIntegrationTest {
 				"DELETE FROM practice_risk_snapshots WHERE attempt_id IN "
 					+ "(SELECT id FROM practice_attempts WHERE user_id = ?)",
 				userId);
+			// 047 이후 이 테스트가 쓰는 attempt 흐름(ensureAttempt·restart)이 항상 튜토리얼 계좌를 get-or-create해
+			// tutorial_accounts 행을 남긴다(047 tasks.md 8번, 이슈 #450 회귀 확인 중 발견) — 047 이전에 작성된 이
+			// 정리 루프에는 없었고, 빠뜨리면 사용자 삭제 시 fk_tutorial_accounts_user 위반으로 실패한다.
+			jdbcTemplate.update("DELETE FROM tutorial_accounts WHERE user_id = ?", userId);
 		}
 		for (Long accountId : accountIds) {
 			jdbcTemplate.update(

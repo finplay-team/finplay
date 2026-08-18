@@ -110,7 +110,10 @@ public class AccountService {
 		}
 
 		long cashBalance = account.getCashBalance();
-		long totalValue = cashBalance + holdingsValue - account.getSandboxCashAdjustment();
+		// 047 TUTORIAL-CASH-ISOL-007: 샌드박스 매매·완료 보상이 더 이상 실제 Account.cashBalance를
+		// 건드리지 않으므로, sandboxCashAdjustment를 빼는 033의 표시 보정도 폐지하고 033 이전 공식으로
+		// 되돌린다(sandboxCashAdjustment 필드·컬럼 자체의 물리적 제거는 이 spec의 범위 밖).
+		long totalValue = cashBalance + holdingsValue;
 		long realizedPnl = account.getRealizedPnl();
 
 		return AccountSummaryResponse.of(cashBalance, account.getReservedCash(), holdingsValue, totalValue,

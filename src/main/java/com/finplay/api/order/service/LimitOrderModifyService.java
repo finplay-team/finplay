@@ -2,7 +2,9 @@
 package com.finplay.api.order.service;
 
 import com.finplay.api.account.domain.Account;
+import com.finplay.api.account.domain.TutorialAccount;
 import com.finplay.api.account.service.AccountService;
+import com.finplay.api.account.service.TutorialAccountService;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.market.domain.Instrument;
@@ -15,6 +17,8 @@ import com.finplay.api.order.repository.OrderRepository;
 import com.finplay.api.portfolio.domain.Holding;
 import com.finplay.api.portfolio.service.PortfolioSellService;
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,7 +29,9 @@ public class LimitOrderModifyService {
 
 	private final OrderRepository orderRepository;
 	private final AccountService accountService;
+	private final TutorialAccountService tutorialAccountService;
 	private final PortfolioSellService portfolioSellService;
+	private final Clock clock;
 
 	// plan.md "수정 흐름" — 0.요청 형식(400) → 1.order 락+존재(404) → 2.소유(403) → 3.상태(409)
 	// → 4.최종값 합성 → 5.형식·최소주문금액 재검증 → 6.account 락
@@ -72,11 +78,24 @@ public class LimitOrderModifyService {
 				order.getQuantity(), order.getLimitPrice());
 			LimitOrderFeeCalculator.Reservation newReservation = LimitOrderFeeCalculator.calculate(
 				finalQuantity, finalLimitPrice);
-			account.releaseReservedCash(oldReservation.total());
-			if (account.getAvailableCash() < newReservation.total()) {
-				throw new BusinessException(ErrorCode.INSUFFICIENT_CASH);
+			// 샌드박스(튜토리얼) 종목의 지정가 매수 재예약은 실제 Account 대신 튜토리얼 계좌를 대상으로
+			// 한다(047 TUTORIAL-CASH-ISOL-002·005) — 생성 시점(LimitOrderCreationService 등)에 이미
+			// 그 계좌에 예약이 걸려 있으므로, 수정도 같은 계좌에서 해제·재예약해야 일관된다.
+			if (order.getInstrument().isTutorialSample()) {
+				TutorialAccount tutorialAccount = tutorialAccountService.getOrCreateForUpdate(
+					account.getUser().getId(), account.getMarket(), LocalDateTime.now(clock));
+				tutorialAccount.releaseReservedCash(oldReservation.total());
+				if (tutorialAccount.getAvailableCash() < newReservation.total()) {
+					throw new BusinessException(ErrorCode.TUTORIAL_INSUFFICIENT_CASH);
+				}
+				tutorialAccount.reserveCash(newReservation.total());
+			} else {
+				account.releaseReservedCash(oldReservation.total());
+				if (account.getAvailableCash() < newReservation.total()) {
+					throw new BusinessException(ErrorCode.INSUFFICIENT_CASH);
+				}
+				account.reserveCash(newReservation.total());
 			}
-			account.reserveCash(newReservation.total());
 		}
 
 		order.modify(finalQuantity, finalLimitPrice);

@@ -5,14 +5,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.finplay.api.account.domain.Account;
+import com.finplay.api.account.domain.TutorialAccount;
 import com.finplay.api.account.service.AccountService;
+import com.finplay.api.account.service.TutorialAccountService;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
@@ -37,6 +41,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 class PracticeRunRestartOrderServiceTest {
@@ -49,16 +54,23 @@ class PracticeRunRestartOrderServiceTest {
 	private final OrderRepository orderRepository = mock(OrderRepository.class);
 	private final TradeRepository tradeRepository = mock(TradeRepository.class);
 	private final AccountService accountService = mock(AccountService.class);
+	private final TutorialAccountService tutorialAccountService = mock(TutorialAccountService.class);
 	private final InstrumentService instrumentService = mock(InstrumentService.class);
 	private final PriceQueryService priceQueryService = mock(PriceQueryService.class);
 	private final PortfolioSellService portfolioSellService = mock(PortfolioSellService.class);
 	private final PracticeRunRestartOrderService service = new PracticeRunRestartOrderService(
-		orderRepository, tradeRepository, accountService, instrumentService, portfolioSellService);
+		orderRepository, tradeRepository, accountService, tutorialAccountService, instrumentService,
+		portfolioSellService);
 
 	@Test
 	void cleanupCurrentRunCancelsPendingBuyAndSellAndReturnsReservationsExactlyOnce() {
 		Fixture fixture = fixture();
-		fixture.account().reserveCash(100_050L);
+		// PR #452 리뷰 차단 1번: validateInstrument가 이 메서드 도달 전 isTutorialSample()을 강제하므로,
+		// PENDING 지정가 매수 예약은 실제 Account가 아니라 튜토리얼 계좌에 걸려 있어야 한다.
+		when(tutorialAccountService.getOrCreateForUpdate(
+			USER_ID, com.finplay.api.account.domain.Market.CRYPTO, NOW))
+			.thenReturn(fixture.tutorialAccount());
+		fixture.tutorialAccount().reserveCash(100_050L);
 		fixture.holding().applyBuy(BigDecimal.ONE, BigDecimal.valueOf(900_000), NOW.minusHours(1));
 		fixture.holding().reserveQuantity(BigDecimal.ONE);
 		Order pendingBuy = attributedPendingOrder(
@@ -72,9 +84,13 @@ class PracticeRunRestartOrderServiceTest {
 
 		assertThat(pendingBuy.getStatus()).isEqualTo(OrderStatus.CANCELLED);
 		assertThat(pendingSell.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+		assertThat(fixture.tutorialAccount().getReservedCash()).isZero();
 		assertThat(fixture.account().getReservedCash()).isZero();
 		assertThat(fixture.holding().getReservedQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
 		verifyNoInteractions(priceQueryService);
+		// TUTORIAL-CASH-ISOL-006: 순체결수량 0 즉시 반환 경로도 재시작마다 튜토리얼 계좌를 리셋해야 한다.
+		verify(tutorialAccountService, times(2))
+			.resetForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO, NOW);
 	}
 
 	@Test
@@ -109,7 +125,16 @@ class PracticeRunRestartOrderServiceTest {
 		assertThat(auditTrade.getFee()).isEqualTo(75L);
 		verify(portfolioSellService).applySellTrade(fixture.holding(), auditTrade, new BigDecimal("1.5"), NOW);
 		verify(portfolioSellService).finalizeSellRealizedPnl(
-			fixture.account(), auditTrade, 150_000L, 75L, allocation);
+			fixture.account(), auditTrade, 150_000L, 75L, allocation, NOW);
+		// TUTORIAL-CASH-ISOL-006: 보상매도가 튜토리얼 계좌에 반영된 뒤(finalizeSellRealizedPnl) 리셋이
+		// 마지막에 호출돼야 한다 — 순서가 바뀌면 보상매도 증가분이 리셋 이후에 남아 초기값(1000만원)을 넘어선다.
+		verify(tutorialAccountService)
+			.resetForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO, NOW);
+		InOrder order = inOrder(portfolioSellService, tutorialAccountService);
+		order.verify(portfolioSellService).finalizeSellRealizedPnl(
+			fixture.account(), auditTrade, 150_000L, 75L, allocation, NOW);
+		order.verify(tutorialAccountService)
+			.resetForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO, NOW);
 	}
 
 	@Test
@@ -122,6 +147,9 @@ class PracticeRunRestartOrderServiceTest {
 		verify(orderRepository, never()).save(any());
 		verify(tradeRepository, never()).save(any());
 		verifyNoInteractions(priceQueryService, portfolioSellService);
+		// TUTORIAL-CASH-ISOL-006: 보상매도가 없어도(순체결수량 0) 리셋은 여전히 일어나야 한다.
+		verify(tutorialAccountService)
+			.resetForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO, NOW);
 	}
 
 	@Test
@@ -137,6 +165,9 @@ class PracticeRunRestartOrderServiceTest {
 		verify(orderRepository, never()).save(any());
 		verify(tradeRepository, never()).save(any());
 		verifyNoInteractions(priceQueryService);
+		// TUTORIAL-CASH-ISOL-006: 정리 자체가 실패(BusinessException)하면 재시작이 완료된 게 아니므로
+		// 튜토리얼 계좌 리셋도 일어나지 않아야 한다.
+		verifyNoInteractions(tutorialAccountService);
 	}
 
 	// 실제 종목이 정리 대상으로 넘어오면 계좌·holding에 손대기 전에 막는다 — 이 방어선이 이슈 #433 수정의 전제다.
@@ -152,7 +183,8 @@ class PracticeRunRestartOrderServiceTest {
 				exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.PRACTICE_EVIDENCE_MISSING));
 
 		verify(orderRepository, never()).save(any());
-		verifyNoInteractions(tradeRepository, accountService, portfolioSellService, priceQueryService);
+		verifyNoInteractions(tradeRepository, accountService, portfolioSellService, priceQueryService,
+			tutorialAccountService);
 	}
 
 	@Test
@@ -165,6 +197,9 @@ class PracticeRunRestartOrderServiceTest {
 
 		verifyNoInteractions(tradeRepository, accountService, instrumentService, priceQueryService,
 			portfolioSellService);
+		// TUTORIAL-CASH-ISOL-006: 종목 미선택(instrumentId == null) 즉시 반환 경로도 리셋 대상이다.
+		verify(tutorialAccountService)
+			.resetForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO, NOW);
 	}
 
 	private void stubRun(Fixture fixture, List<Order> orders, List<Trade> trades) {
@@ -193,7 +228,9 @@ class PracticeRunRestartOrderServiceTest {
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
 		Holding holding = Holding.create(account, instrument, NOW);
 		ReflectionTestUtils.setField(holding, "id", 41L);
-		return new Fixture(account, instrument, holding);
+		TutorialAccount tutorialAccount = TutorialAccount.create(
+			user, com.finplay.api.account.domain.Market.CRYPTO, NOW);
+		return new Fixture(account, instrument, holding, tutorialAccount);
 	}
 
 	private static Order attributedPendingOrder(
@@ -215,6 +252,6 @@ class PracticeRunRestartOrderServiceTest {
 			new PriceQuoteDto(new BigDecimal(price), NOW, PriceStatus.AVAILABLE, null), null);
 	}
 
-	private record Fixture(Account account, Instrument instrument, Holding holding) {
+	private record Fixture(Account account, Instrument instrument, Holding holding, TutorialAccount tutorialAccount) {
 	}
 }

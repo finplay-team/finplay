@@ -2,8 +2,10 @@
 package com.finplay.api.order.service;
 
 import com.finplay.api.account.domain.Account;
+import com.finplay.api.account.domain.TutorialAccount;
 import com.finplay.api.account.event.RealizedPnlUpdatedEvent;
 import com.finplay.api.account.service.AccountService;
+import com.finplay.api.account.service.TutorialAccountService;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.market.domain.Instrument;
@@ -34,6 +36,7 @@ public class LimitOrderFillService {
 	private final OrderRepository orderRepository;
 	private final TradeRepository tradeRepository;
 	private final AccountService accountService;
+	private final TutorialAccountService tutorialAccountService;
 	private final PortfolioBuyService portfolioBuyService;
 	private final PortfolioSellService portfolioSellService;
 	private final PracticeOrderAttributionPort practiceOrderAttributionPort;
@@ -115,15 +118,26 @@ public class LimitOrderFillService {
 		long reservedCash, boolean canonicalPracticeFill, LocalDateTime now) {
 		Instrument instrument = order.getInstrument();
 
-		if (canonicalPracticeFill) {
-			account.releaseReservedCash(reservedCash);
-			account.deductCash(amount + fee);
-		} else {
-			account.confirmReservedCash(amount + fee);
-		}
-		// 샌드박스(튜토리얼) 종목 지정가 매수 체결의 현금 순변동도 별도로 누적한다(spec 033 SANDBOX-EXCL-006).
+		// 샌드박스(튜토리얼) 종목 지정가 매수 체결은 실제 Account 대신 같은 사용자·시장의 튜토리얼 계좌
+		// 현금을 예약해제·차감(또는 확정)한다(047 TUTORIAL-CASH-ISOL-002, plan.md "호출부 변경 지점" 4번).
 		if (instrument.isTutorialSample()) {
-			account.addSandboxCashAdjustment(-(amount + fee));
+			TutorialAccount tutorialAccount = tutorialAccountService
+				.getOrCreateForUpdate(account.getUser().getId(), account.getMarket(), now);
+			if (canonicalPracticeFill) {
+				tutorialAccount.releaseReservedCash(reservedCash);
+				tutorialAccount.deductCash(amount + fee);
+			} else {
+				tutorialAccount.confirmReservedCash(amount + fee);
+			}
+			// 047 TUTORIAL-CASH-ISOL-002·007: 샌드박스 지정가 매수 체결은 튜토리얼 계좌 현금만 갱신한다 —
+			// 실제 Account.cashBalance는 변하지 않으므로 sandboxCashAdjustment 누적은 더 이상 필요하지 않다.
+		} else {
+			if (canonicalPracticeFill) {
+				account.releaseReservedCash(reservedCash);
+				account.deductCash(amount + fee);
+			} else {
+				account.confirmReservedCash(amount + fee);
+			}
 		}
 
 		Trade trade = Trade.of(
@@ -155,7 +169,7 @@ public class LimitOrderFillService {
 		SellAllocationDto allocation = portfolioSellService.applySellTrade(holding, trade, quantity, now);
 
 		// 기존 시장가 매도(OrderExecutionService)와 동일한 실현손익 공식·반영을 공유 메서드로 재사용한다.
-		portfolioSellService.finalizeSellRealizedPnl(account, trade, amount, fee, allocation);
+		portfolioSellService.finalizeSellRealizedPnl(account, trade, amount, fee, allocation, now);
 
 		order.markFilled();
 		// 커밋 이후(after-commit)에만 랭킹에 반영되도록 이벤트만 발행한다 — 기존 시장가 매도와 동일 훅 재사용.

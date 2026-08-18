@@ -2,7 +2,9 @@
 package com.finplay.api.order.service;
 
 import com.finplay.api.account.domain.Account;
+import com.finplay.api.account.domain.TutorialAccount;
 import com.finplay.api.account.service.AccountService;
+import com.finplay.api.account.service.TutorialAccountService;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.service.UserQueryService;
 import com.finplay.api.common.BusinessException;
@@ -31,6 +33,7 @@ public class LimitOrderCreationService {
 
 	private final UserQueryService userQueryService;
 	private final AccountService accountService;
+	private final TutorialAccountService tutorialAccountService;
 	private final InstrumentService instrumentService;
 	private final PortfolioSellService portfolioSellService;
 	private final OrderRepository orderRepository;
@@ -60,14 +63,31 @@ public class LimitOrderCreationService {
 		BigDecimal quantity = request.quantity();
 		BigDecimal limitPrice = request.limitPrice();
 
-		// LMT-001 BUY: account 락만 잡는다(holding은 건드리지 않는다).
+		// LMT-001 BUY: account 락만 잡는다(holding은 건드리지 않는다). Order·Trade의 계좌 FK는 항상 실제
+		// Account를 가리켜야 하므로 이 조회는 종목 종류와 무관하게 유지한다.
 		Account account = accountService.getAccountForUpdate(userId, toAccountMarket(request.market()));
 
 		long cashRequired = LimitOrderFeeCalculator.calculate(quantity, limitPrice).total();
-		if (account.getAvailableCash() < cashRequired) {
-			throw new BusinessException(ErrorCode.INSUFFICIENT_CASH);
+		// 샌드박스(튜토리얼) 종목의 지정가 매수 예약은 실제 Account 대신 튜토리얼 계좌를 대상으로 한다
+		// (047 TUTORIAL-CASH-ISOL-002·005). PracticeAttemptOrderAttributionService.lockForOrder는
+		// instrument.isTutorialSample()이 아니면 항상 Optional.empty()를 반환하므로, 이 일반 지정가
+		// 경로로 들어오는 샌드박스 종목 매수도 실거래와 동일하게 정상적으로 다뤄야 하는 경로다 — 이
+		// 예약을 실제 Account에 남기면 이후 LimitOrderFillService.fillBuy가 튜토리얼 계좌에서 확정을
+		// 시도해 예약 불일치 예외가 난다.
+		if (instrument.isTutorialSample()) {
+			LocalDateTime now = LocalDateTime.now(clock);
+			TutorialAccount tutorialAccount = tutorialAccountService.getOrCreateForUpdate(
+				userId, toAccountMarket(request.market()), now);
+			if (tutorialAccount.getAvailableCash() < cashRequired) {
+				throw new BusinessException(ErrorCode.TUTORIAL_INSUFFICIENT_CASH);
+			}
+			tutorialAccount.reserveCash(cashRequired);
+		} else {
+			if (account.getAvailableCash() < cashRequired) {
+				throw new BusinessException(ErrorCode.INSUFFICIENT_CASH);
+			}
+			account.reserveCash(cashRequired);
 		}
-		account.reserveCash(cashRequired);
 
 		Order order = saveLimitPendingOrder(
 			userId, idempotencyKey, requestHash, request, instrument, account, quantity, limitPrice,

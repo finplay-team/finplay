@@ -7,6 +7,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.finplay.api.account.domain.TutorialAccount;
+import com.finplay.api.account.service.TutorialAccountService;
 import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
 import com.finplay.api.education.marketpractice.domain.PracticeAttemptStatus;
 import com.finplay.api.education.marketpractice.dto.response.PracticeAttemptResponse;
@@ -41,9 +43,24 @@ class PracticeAttemptRestartServiceTest {
 	private final PracticeRunRestartOrderService orderRestartService = mock(PracticeRunRestartOrderService.class);
 	private final PracticeAttemptCanonicalPriceService canonicalPriceService = mock(
 		PracticeAttemptCanonicalPriceService.class);
+	private final TutorialAccountService tutorialAccountService = mock(TutorialAccountService.class);
 	private final PracticeAttemptRestartService service = new PracticeAttemptRestartService(
 		attemptRepository, riskSnapshotRepository, orderRestartService, canonicalPriceService,
-		Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC));
+		tutorialAccountService, Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC));
+
+	// cleanupCurrentRun(TUTORIAL-CASH-ISOL-006)이 같은 트랜잭션 안에서 이미 튜토리얼 계좌를 리셋했다고
+	// 가정하고, restart()는 그 결과를 다시 조회(getOrCreateForUpdate)해 응답에 싣는다 — 리셋 직후 값
+	// (1000만원/1000만원/0원)을 반환하도록 스텁한다.
+	private TutorialAccount resetTutorialAccountStub() {
+		TutorialAccount account = mock(TutorialAccount.class);
+		when(account.getCashBalance()).thenReturn(10_000_000L);
+		when(account.getAvailableCash()).thenReturn(10_000_000L);
+		when(account.getRealizedPnl()).thenReturn(0L);
+		when(tutorialAccountService.getOrCreateForUpdate(
+			USER_ID, com.finplay.api.account.domain.Market.CRYPTO, NOW))
+			.thenReturn(account);
+		return account;
+	}
 
 	@Test
 	void restartIncrementsRunAndResetsSelectedInstrumentState() {
@@ -52,6 +69,7 @@ class PracticeAttemptRestartServiceTest {
 			.thenReturn(Optional.of(attempt));
 		when(riskSnapshotRepository.findByAttemptIdAndRunNumber(ATTEMPT_ID, 2L))
 			.thenReturn(Optional.empty());
+		resetTutorialAccountStub();
 
 		PracticeAttemptResponse response = service.restart(USER_ID, Market.CRYPTO);
 
@@ -60,6 +78,10 @@ class PracticeAttemptRestartServiceTest {
 		assertThat(response.instrumentId()).isNull();
 		assertThat(response.anchorAt()).isNull();
 		assertThat(response.tutorialDate()).isNull();
+		// TUTORIAL-CASH-ISOL-011 — 재시작 응답이 리셋 직후 값(1000만원/1000만원/0원)을 정확히 반영한다.
+		assertThat(response.tutorialCashBalance()).isEqualTo(10_000_000L);
+		assertThat(response.tutorialAvailableCash()).isEqualTo(10_000_000L);
+		assertThat(response.tutorialRealizedPnl()).isEqualTo(0L);
 		ArgumentCaptor<PracticeRunRestartCommand> commandCaptor = ArgumentCaptor.forClass(
 			PracticeRunRestartCommand.class);
 		verify(orderRestartService).cleanupCurrentRun(commandCaptor.capture());
@@ -69,6 +91,26 @@ class PracticeAttemptRestartServiceTest {
 		assertThat(commandCaptor.getValue().restartedAt()).isEqualTo(NOW);
 	}
 
+	// restart()는 cleanupCurrentRun(mock) 이후 getOrCreateForUpdate로 재조회한 결과를 그대로 싣는다는 배선을
+	// 검증한다 — cleanupCurrentRun 내부에서 실제로 resetForUpdate가 호출되는지는 이 서비스가 mock으로 격리한
+	// 협력자이므로 이 단위 테스트로는 검증할 수 없고, TutorialAccountServiceTest·통합 테스트가 담당한다.
+	@Test
+	void restartQueriesTutorialAccountAfterCleanupDelegatesToOrderRestartService() {
+		PracticeAttempt attempt = selectedAttempt();
+		when(attemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
+			.thenReturn(Optional.of(attempt));
+		when(riskSnapshotRepository.findByAttemptIdAndRunNumber(ATTEMPT_ID, 2L))
+			.thenReturn(Optional.empty());
+		resetTutorialAccountStub();
+
+		service.restart(USER_ID, Market.CRYPTO);
+
+		org.mockito.InOrder inOrder = org.mockito.Mockito.inOrder(orderRestartService, tutorialAccountService);
+		inOrder.verify(orderRestartService).cleanupCurrentRun(org.mockito.ArgumentMatchers.any());
+		inOrder.verify(tutorialAccountService)
+			.getOrCreateForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO, NOW);
+	}
+
 	@Test
 	void restartWithoutInstrumentStillDelegatesEmptyRunCleanupThenIncrementsRun() {
 		PracticeAttempt attempt = newAttempt();
@@ -76,6 +118,7 @@ class PracticeAttemptRestartServiceTest {
 			.thenReturn(Optional.of(attempt));
 		when(riskSnapshotRepository.findByAttemptIdAndRunNumber(ATTEMPT_ID, 2L))
 			.thenReturn(Optional.empty());
+		resetTutorialAccountStub();
 
 		PracticeAttemptResponse response = service.restart(USER_ID, Market.CRYPTO);
 
@@ -96,6 +139,7 @@ class PracticeAttemptRestartServiceTest {
 			.thenReturn(Optional.of(attempt));
 		when(riskSnapshotRepository.findByAttemptIdAndRunNumber(ATTEMPT_ID, 2L))
 			.thenReturn(Optional.empty());
+		resetTutorialAccountStub();
 
 		PracticeAttemptResponse response = service.restart(USER_ID, Market.CRYPTO);
 
@@ -118,6 +162,7 @@ class PracticeAttemptRestartServiceTest {
 			.thenReturn(Optional.of(attempt));
 		when(riskSnapshotRepository.findByAttemptIdAndRunNumber(ATTEMPT_ID, 2L))
 			.thenReturn(Optional.empty());
+		resetTutorialAccountStub();
 
 		PracticeAttemptResponse response = service.restart(USER_ID, Market.CRYPTO);
 

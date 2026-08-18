@@ -2,7 +2,9 @@
 package com.finplay.api.order.service;
 
 import com.finplay.api.account.domain.Account;
+import com.finplay.api.account.domain.TutorialAccount;
 import com.finplay.api.account.service.AccountService;
+import com.finplay.api.account.service.TutorialAccountService;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.order.domain.Order;
@@ -12,6 +14,8 @@ import com.finplay.api.order.repository.OrderRepository;
 import com.finplay.api.portfolio.domain.Holding;
 import com.finplay.api.portfolio.service.PortfolioSellService;
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,7 +26,9 @@ public class LimitOrderCancelService {
 
 	private final OrderRepository orderRepository;
 	private final AccountService accountService;
+	private final TutorialAccountService tutorialAccountService;
 	private final PortfolioSellService portfolioSellService;
+	private final Clock clock;
 
 	// plan.md "취소 흐름" — order(자기 자신) → account → (SELL만) holding 순으로 잠근다.
 	// 검증 순서는 반드시 존재(404) → 소유(403) → 상태(409)여야 한다(spec.md LMT-003).
@@ -53,6 +59,12 @@ public class LimitOrderCancelService {
 			// SELL만 holding을 잠근다(잠금 순서 order → account → holding). BUY는 holding을 잠그지 않는다(plan.md).
 			Holding holding = portfolioSellService.getHoldingForUpdate(account, order.getInstrument());
 			holding.releaseReservedQuantity(quantity);
+		} else if (order.getInstrument().isTutorialSample()) {
+			// 샌드박스(튜토리얼) 종목의 지정가 매수 취소는 실제 Account 대신 튜토리얼 계좌의 예약을
+			// 해제한다(047 TUTORIAL-CASH-ISOL-002 — 생성 시점에 이미 그 계좌에 예약이 걸려 있다).
+			TutorialAccount tutorialAccount = tutorialAccountService.getOrCreateForUpdate(
+				account.getUser().getId(), account.getMarket(), LocalDateTime.now(clock));
+			tutorialAccount.releaseReservedCash(reservation.total());
 		} else {
 			account.releaseReservedCash(reservation.total());
 		}

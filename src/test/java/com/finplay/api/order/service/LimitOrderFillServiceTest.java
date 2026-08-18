@@ -14,8 +14,10 @@ import static org.mockito.Mockito.when;
 
 import com.finplay.api.account.domain.Account;
 import com.finplay.api.account.domain.Market;
+import com.finplay.api.account.domain.TutorialAccount;
 import com.finplay.api.account.event.RealizedPnlUpdatedEvent;
 import com.finplay.api.account.service.AccountService;
+import com.finplay.api.account.service.TutorialAccountService;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
@@ -51,6 +53,7 @@ class LimitOrderFillServiceTest {
 	private final OrderRepository orderRepository = mock(OrderRepository.class);
 	private final TradeRepository tradeRepository = mock(TradeRepository.class);
 	private final AccountService accountService = mock(AccountService.class);
+	private final TutorialAccountService tutorialAccountService = mock(TutorialAccountService.class);
 	private final PortfolioBuyService portfolioBuyService = mock(PortfolioBuyService.class);
 	private final PortfolioSellService portfolioSellService = mock(PortfolioSellService.class);
 	private final PracticeOrderAttributionPort practiceOrderAttributionPort = mock(
@@ -59,8 +62,8 @@ class LimitOrderFillServiceTest {
 	private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
 
 	private final LimitOrderFillService service = new LimitOrderFillService(
-		orderRepository, tradeRepository, accountService, portfolioBuyService, portfolioSellService,
-		practiceOrderAttributionPort, clock, eventPublisher);
+		orderRepository, tradeRepository, accountService, tutorialAccountService, portfolioBuyService,
+		portfolioSellService, practiceOrderAttributionPort, clock, eventPublisher);
 
 	@Test
 	void fillIfPendingFillsBuyOrderConfirmsReservedCashAndAppliesBuyTrade() {
@@ -154,20 +157,61 @@ class LimitOrderFillServiceTest {
 	}
 
 	@Test
-	void fillIfPendingBuyAccumulatesSandboxCashAdjustmentWhenInstrumentIsTutorialSample() {
-		// spec 033 SANDBOX-EXCL-006 call site #4: 샌드박스 종목 지정가 매수 체결은 confirmReservedCash와
-		// 별도로 sandboxCashAdjustment에 음수로 누적된다.
+	void fillIfPendingBuyConfirmsReservedCashInTutorialAccountOnlyWhenInstrumentIsTutorialSample() {
+		// 047 TUTORIAL-CASH-ISOL-002: 샌드박스 종목 지정가 매수 체결은 실제 Account가 아니라 같은 사용자·
+		// 시장의 튜토리얼 계좌에서 예약을 확정(confirmReservedCash)한다 — 실제 Account.cashBalance·
+		// reservedCash는 전혀 변하지 않는다. spec 047 TUTORIAL-CASH-ISOL-007(033 SANDBOX-EXCL-006 call site #4
+		// 폐지): sandboxCashAdjustment는 더 이상 누적되지 않는다.
 		Instrument instrument = cryptoInstrument();
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
 		Account account = account();
-		account.reserveCash(100_050L);
+		TutorialAccount tutorialAccount = tutorialAccount();
+		// quantity=0.1 * limitPrice=1,000,000 => amount=100,000, fee=floor(100,000*0.0005)=50
+		tutorialAccount.reserveCash(100_050L); // 생성 시점(LimitOrderCreationService)에 이미 예약된 상태를 재현
 		Order order = limitPendingOrder(account, instrument, OrderSide.BUY, "0.1", "1000000");
 		when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
 		when(accountService.getAccountByIdForUpdate(account.getId())).thenReturn(account);
+		when(tutorialAccountService.getOrCreateForUpdate(any(), eq(Market.CRYPTO), eq(NOW)))
+			.thenReturn(tutorialAccount);
 
 		service.fillIfPending(order.getId());
 
-		assertThat(account.getSandboxCashAdjustment()).isEqualTo(-100_050L);
+		assertThat(order.getStatus()).isEqualTo(OrderStatus.FILLED);
+		assertThat(tutorialAccount.getReservedCash()).isZero();
+		assertThat(tutorialAccount.getCashBalance()).isEqualTo(10_000_000L - 100_050L);
+		assertThat(account.getReservedCash()).isZero(); // 실제 계좌는 예약된 적이 없다
+		assertThat(account.getCashBalance()).isEqualTo(10_000_000L); // 실제 계좌 현금은 전혀 변하지 않는다
+		assertThat(account.getSandboxCashAdjustment()).isEqualTo(0L);
+	}
+
+	@Test
+	void fillIfPendingBuyForAttributedTutorialSampleReleasesAndDeductsInTutorialAccountOnly() {
+		// 047 TUTORIAL-CASH-ISOL-002: canonicalPracticeFill(attempt 귀속 체결) 분기도 튜토리얼 계좌만
+		// 움직여야 한다 — fillIfPendingLocksAttemptBeforeAttributedOrder(실제 계좌 경로)와 동일한 수치를
+		// 튜토리얼 계좌 기준으로 검증한다.
+		Instrument instrument = cryptoInstrument();
+		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
+		Account account = account();
+		TutorialAccount tutorialAccount = tutorialAccount();
+		tutorialAccount.reserveCash(100_050L);
+		Order order = attributedLimitPendingBuyOrder(account, instrument);
+		PracticeOrderFillAttributionDto attribution = new PracticeOrderFillAttributionDto(
+			20L, 1L, 30L, instrument.getId());
+		when(orderRepository.findPracticeFillAttribution(order.getId())).thenReturn(Optional.of(attribution));
+		when(practiceOrderAttributionPort.lockForFill(attribution, NOW))
+			.thenReturn(new PracticeOrderFillContextDto(true, new BigDecimal("900000")));
+		when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+		when(accountService.getAccountByIdForUpdate(account.getId())).thenReturn(account);
+		when(tutorialAccountService.getOrCreateForUpdate(any(), eq(Market.CRYPTO), eq(NOW)))
+			.thenReturn(tutorialAccount);
+
+		service.fillIfPending(order.getId());
+
+		// executionPrice=900,000, amount=0.1*900,000=90,000, fee=floor(90,000*0.0005)=45
+		assertThat(tutorialAccount.getReservedCash()).isZero();
+		assertThat(tutorialAccount.getCashBalance()).isEqualTo(10_000_000L - 90_045L);
+		assertThat(account.getReservedCash()).isZero();
+		assertThat(account.getCashBalance()).isEqualTo(10_000_000L);
 	}
 
 	@Test
@@ -182,6 +226,7 @@ class LimitOrderFillServiceTest {
 		service.fillIfPending(order.getId());
 
 		assertThat(account.getSandboxCashAdjustment()).isEqualTo(0L);
+		verifyNoInteractions(tutorialAccountService); // 047 회귀 방지: 실제 종목 체결은 튜토리얼 계좌를 전혀 조회하지 않는다
 	}
 
 	@Test
@@ -218,7 +263,7 @@ class LimitOrderFillServiceTest {
 		when(portfolioSellService.applySellTrade(eq(holding), any(Trade.class), eq(new BigDecimal("0.1")), eq(NOW)))
 			.thenReturn(allocation);
 		when(portfolioSellService.finalizeSellRealizedPnl(eq(account), any(Trade.class), eq(100_000L), eq(50L),
-			eq(allocation))).thenReturn(9_910L);
+			eq(allocation), eq(NOW))).thenReturn(9_910L);
 
 		service.fillIfPending(order.getId());
 
@@ -233,7 +278,7 @@ class LimitOrderFillServiceTest {
 		assertThat(savedTrade.getFee()).isEqualTo(50L);
 
 		verify(portfolioSellService).applySellTrade(holding, savedTrade, new BigDecimal("0.1"), NOW);
-		verify(portfolioSellService).finalizeSellRealizedPnl(account, savedTrade, 100_000L, 50L, allocation);
+		verify(portfolioSellService).finalizeSellRealizedPnl(account, savedTrade, 100_000L, 50L, allocation, NOW);
 		ArgumentCaptor<RealizedPnlUpdatedEvent> eventCaptor = ArgumentCaptor.forClass(RealizedPnlUpdatedEvent.class);
 		verify(eventPublisher).publishEvent(eventCaptor.capture());
 		assertThat(eventCaptor.getValue().accountId()).isEqualTo(account.getId());
@@ -354,5 +399,10 @@ class LimitOrderFillServiceTest {
 		Account account = Account.create(user, Market.CRYPTO, NOW);
 		ReflectionTestUtils.setField(account, "id", 10L);
 		return account;
+	}
+
+	private static TutorialAccount tutorialAccount() {
+		User user = User.create("trader@finplay.com", "password-hash", "trader", NOW);
+		return TutorialAccount.create(user, Market.CRYPTO, NOW);
 	}
 }

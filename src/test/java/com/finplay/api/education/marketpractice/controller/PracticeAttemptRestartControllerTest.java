@@ -51,7 +51,8 @@ class PracticeAttemptRestartControllerTest {
 	void restartReturnsResetAttemptJson() throws Exception {
 		authenticate();
 		PracticeAttemptResponse response = new PracticeAttemptResponse(
-			11L, "CRYPTO", 2L, "ACTIVE", "SELECTING_INSTRUMENT", null, null, null, null, null);
+			11L, "CRYPTO", 2L, "ACTIVE", "SELECTING_INSTRUMENT", null, null, null, null, null,
+			10_000_000L, 10_000_000L, 0L);
 		when(restartService.restart(USER_ID, Market.CRYPTO)).thenReturn(response);
 
 		mockMvc.perform(post("/api/education/practice/attempts/CRYPTO/restart")
@@ -61,7 +62,10 @@ class PracticeAttemptRestartControllerTest {
 			.andExpect(jsonPath("$.market").value("CRYPTO"))
 			.andExpect(jsonPath("$.runNumber").value(2))
 			.andExpect(jsonPath("$.mode").value("ACTIVE"))
-			.andExpect(jsonPath("$.status").value("SELECTING_INSTRUMENT"));
+			.andExpect(jsonPath("$.status").value("SELECTING_INSTRUMENT"))
+			.andExpect(jsonPath("$.tutorialCashBalance").value(10_000_000))
+			.andExpect(jsonPath("$.tutorialAvailableCash").value(10_000_000))
+			.andExpect(jsonPath("$.tutorialRealizedPnl").value(0));
 		verify(restartService).restart(USER_ID, Market.CRYPTO);
 	}
 
@@ -69,7 +73,8 @@ class PracticeAttemptRestartControllerTest {
 	void restartCompletedAttemptReturnsActiveResetJson() throws Exception {
 		authenticate();
 		PracticeAttemptResponse response = new PracticeAttemptResponse(
-			11L, "CRYPTO", 3L, "ACTIVE", "SELECTING_INSTRUMENT", null, null, null, null, null);
+			11L, "CRYPTO", 3L, "ACTIVE", "SELECTING_INSTRUMENT", null, null, null, null, null,
+			10_000_000L, 10_000_000L, 0L);
 		when(restartService.restart(USER_ID, Market.CRYPTO)).thenReturn(response);
 
 		mockMvc.perform(post("/api/education/practice/attempts/CRYPTO/restart")

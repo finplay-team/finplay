@@ -131,6 +131,10 @@ class SandboxDataCrossDomainExclusionIntegrationTest {
 		}
 		if (!createdUserIds.isEmpty()) {
 			String userIdIn = createdUserIds.stream().map(String::valueOf).collect(Collectors.joining(","));
+			// 047 이후 이 테스트가 쓰는 튜토리얼 종목 매수(isTutorialSample()) 흐름이 튜토리얼 계좌를
+			// get-or-create하면서 남기는 행이다 — 정리하지 않으면 users 삭제가 fk_tutorial_accounts_user
+			// 위반으로 실패한다(이슈 #450 후속 회귀 확인 중 발견, 다른 3개 클래스와 동일한 정리 누락).
+			jdbcTemplate.update("delete from tutorial_accounts where user_id in (" + userIdIn + ")");
 			jdbcTemplate.update("delete from accounts where user_id in (" + userIdIn + ")");
 			jdbcTemplate.update("delete from users where id in (" + userIdIn + ")");
 			createdUserIds.clear();

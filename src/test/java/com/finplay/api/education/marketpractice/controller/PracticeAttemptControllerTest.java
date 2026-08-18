@@ -57,7 +57,8 @@ class PracticeAttemptControllerTest {
 	void ensureAttemptReturnsActiveAttemptJson() throws Exception {
 		authenticate();
 		PracticeAttemptResponse response = new PracticeAttemptResponse(
-			11L, "STOCK", 1L, "ACTIVE", "SELECTING_INSTRUMENT", null, null, null, null, null);
+			11L, "STOCK", 1L, "ACTIVE", "SELECTING_INSTRUMENT", null, null, null, null, null,
+			10_000_000L, 10_000_000L, 0L);
 		when(practiceAttemptService.ensureAttempt(USER_ID, Market.STOCK)).thenReturn(response);
 
 		mockMvc.perform(put("/api/education/practice/attempts/STOCK")
@@ -67,7 +68,10 @@ class PracticeAttemptControllerTest {
 			.andExpect(jsonPath("$.market").value("STOCK"))
 			.andExpect(jsonPath("$.runNumber").value(1))
 			.andExpect(jsonPath("$.mode").value("ACTIVE"))
-			.andExpect(jsonPath("$.status").value("SELECTING_INSTRUMENT"));
+			.andExpect(jsonPath("$.status").value("SELECTING_INSTRUMENT"))
+			.andExpect(jsonPath("$.tutorialCashBalance").value(10_000_000))
+			.andExpect(jsonPath("$.tutorialAvailableCash").value(10_000_000))
+			.andExpect(jsonPath("$.tutorialRealizedPnl").value(0));
 
 		verify(practiceAttemptService).ensureAttempt(USER_ID, Market.STOCK);
 	}
@@ -97,7 +101,10 @@ class PracticeAttemptControllerTest {
 			LocalDateTime.of(2026, 8, 14, 12, 0),
 			LocalDate.of(2026, 8, 14),
 			null,
-			null);
+			null,
+			0L,
+			0L,
+			0L);
 		when(practiceAttemptService.selectInstrument(USER_ID, Market.CRYPTO, 21L)).thenReturn(response);
 
 		mockMvc.perform(put("/api/education/practice/attempts/CRYPTO/instrument")
@@ -110,7 +117,12 @@ class PracticeAttemptControllerTest {
 			.andExpect(jsonPath("$.status").value("IN_PROGRESS"))
 			.andExpect(jsonPath("$.instrumentId").value(21))
 			.andExpect(jsonPath("$.anchorAt").value("2026-08-14T12:00:00"))
-			.andExpect(jsonPath("$.tutorialDate").value("2026-08-14"));
+			.andExpect(jsonPath("$.tutorialDate").value("2026-08-14"))
+			// TUTORIAL-CASH-ISOL-011 범위는 진입·재시작 응답 한정 — 종목 선택 응답은 튜토리얼 계좌를
+			// 다시 조회하지 않으므로 세 필드 모두 0을 반환하는 것이 설계 의도다(api-contracts.md 명시).
+			.andExpect(jsonPath("$.tutorialCashBalance").value(0))
+			.andExpect(jsonPath("$.tutorialAvailableCash").value(0))
+			.andExpect(jsonPath("$.tutorialRealizedPnl").value(0));
 
 		verify(practiceAttemptService).selectInstrument(USER_ID, Market.CRYPTO, 21L);
 	}

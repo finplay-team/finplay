@@ -2,7 +2,9 @@
 package com.finplay.api.order.service;
 
 import com.finplay.api.account.domain.Account;
+import com.finplay.api.account.domain.TutorialAccount;
 import com.finplay.api.account.service.AccountService;
+import com.finplay.api.account.service.TutorialAccountService;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.market.domain.Instrument;
@@ -39,6 +41,7 @@ public class PracticeRunRestartOrderService {
 	private final OrderRepository orderRepository;
 	private final TradeRepository tradeRepository;
 	private final AccountService accountService;
+	private final TutorialAccountService tutorialAccountService;
 	private final InstrumentService instrumentService;
 	private final PortfolioSellService portfolioSellService;
 
@@ -51,6 +54,7 @@ public class PracticeRunRestartOrderService {
 			if (!orders.isEmpty()) {
 				throw new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING);
 			}
+			resetTutorialAccount(command);
 			return;
 		}
 
@@ -68,11 +72,12 @@ public class PracticeRunRestartOrderService {
 			? portfolioSellService.getHoldingForUpdate(account, instrument)
 			: null;
 
-		cancelPendingOrders(orders, account, holding);
+		cancelPendingOrders(command, orders, holding);
 		if (netFilledQuantity.signum() < 0) {
 			throw new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING);
 		}
 		if (netFilledQuantity.signum() == 0) {
+			resetTutorialAccount(command);
 			return;
 		}
 		if (holding == null || holding.getAvailableQuantity().compareTo(netFilledQuantity) != 0) {
@@ -80,6 +85,18 @@ public class PracticeRunRestartOrderService {
 		}
 
 		createCompensatingSell(command, account, instrument, holding, netFilledQuantity);
+		// 보상매도(튜토리얼 종목이면 튜토리얼 계좌 현금·realizedPnl 증가, 직전 항목에서 완료)가 반영된 뒤
+		// 절대값 리셋을 마지막에 걸어, 그 증가분까지 포함해 정확히 초기값으로 되돌린다(TUTORIAL-CASH-ISOL-006).
+		resetTutorialAccount(command);
+	}
+
+	// 재시작마다 그 사용자·시장의 튜토리얼 계좌를 현금 1000만원·예약 현금 0원·realizedPnl 0원으로 초기화한다.
+	// cleanupCurrentRun의 모든 성공 경로(주문 미선택/순체결수량 0/보상매도 완료) 끝에서 호출된다.
+	private void resetTutorialAccount(PracticeRunRestartCommand command) {
+		tutorialAccountService.resetForUpdate(
+			command.userId(),
+			com.finplay.api.account.domain.Market.valueOf(command.market().name()),
+			command.restartedAt());
 	}
 
 	private BigDecimal calculateNetFilledQuantity(PracticeRunRestartCommand command) {
@@ -92,7 +109,8 @@ public class PracticeRunRestartOrderService {
 		return net;
 	}
 
-	private void cancelPendingOrders(List<Order> orders, Account account, Holding holding) {
+	private void cancelPendingOrders(PracticeRunRestartCommand command, List<Order> orders, Holding holding) {
+		TutorialAccount tutorialAccount = null;
 		for (Order order : orders) {
 			if (order.getStatus() != OrderStatus.PENDING) {
 				continue;
@@ -106,7 +124,16 @@ public class PracticeRunRestartOrderService {
 				}
 				holding.releaseReservedQuantity(order.getQuantity());
 			} else {
-				account.releaseReservedCash(
+				// validateInstrument가 이 메서드 도달 전 instrument.isTutorialSample()을 이미 강제하므로,
+				// 여기 도달하는 지정가 매수 PENDING 예약은 전부 튜토리얼 계좌에 걸려 있다(PR #452 리뷰 차단 1번 —
+				// PracticeLimitOrderCreationService/LimitOrderCreationService가 샌드박스 매수 예약을 튜토리얼
+				// 계좌로 옮긴 것과 짝이 맞아야 한다).
+				if (tutorialAccount == null) {
+					tutorialAccount = tutorialAccountService.getOrCreateForUpdate(
+						command.userId(), com.finplay.api.account.domain.Market.valueOf(command.market().name()),
+						command.restartedAt());
+				}
+				tutorialAccount.releaseReservedCash(
 					LimitOrderFeeCalculator.calculate(order.getQuantity(), order.getLimitPrice()).total());
 			}
 			order.cancel();
@@ -140,7 +167,7 @@ public class PracticeRunRestartOrderService {
 
 		SellAllocationDto allocation = portfolioSellService.applySellTrade(
 			holding, trade, quantity, command.restartedAt());
-		portfolioSellService.finalizeSellRealizedPnl(account, trade, amount, fee, allocation);
+		portfolioSellService.finalizeSellRealizedPnl(account, trade, amount, fee, allocation, command.restartedAt());
 	}
 
 	private void validateInstrument(PracticeRunRestartCommand command, Instrument instrument) {

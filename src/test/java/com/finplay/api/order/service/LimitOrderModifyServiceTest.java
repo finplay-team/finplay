@@ -13,7 +13,9 @@ import static org.mockito.Mockito.when;
 
 import com.finplay.api.account.domain.Account;
 import com.finplay.api.account.domain.Market;
+import com.finplay.api.account.domain.TutorialAccount;
 import com.finplay.api.account.service.AccountService;
+import com.finplay.api.account.service.TutorialAccountService;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
@@ -26,6 +28,7 @@ import com.finplay.api.order.repository.OrderRepository;
 import com.finplay.api.portfolio.domain.Holding;
 import com.finplay.api.portfolio.service.PortfolioSellService;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -45,10 +48,12 @@ class LimitOrderModifyServiceTest {
 
 	private final OrderRepository orderRepository = mock(OrderRepository.class);
 	private final AccountService accountService = mock(AccountService.class);
+	private final TutorialAccountService tutorialAccountService = mock(TutorialAccountService.class);
 	private final PortfolioSellService portfolioSellService = mock(PortfolioSellService.class);
+	private final Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
 
 	private final LimitOrderModifyService service = new LimitOrderModifyService(
-		orderRepository, accountService, portfolioSellService);
+		orderRepository, accountService, tutorialAccountService, portfolioSellService, clock);
 
 	@Test
 	void modifyOrderBuyReleasesOldReservationThenReservesNewReservationInOrder() {
@@ -69,6 +74,60 @@ class LimitOrderModifyServiceTest {
 		inOrder.verify(account).releaseReservedCash(100_050L);
 		inOrder.verify(account).reserveCash(400_200L);
 		verifyNoInteractions(portfolioSellService);
+	}
+
+	@Test
+	void modifyOrderBuyForTutorialSampleReleasesOldReservationThenReservesNewInTutorialAccountOnly() {
+		// 047 TUTORIAL-CASH-ISOL-002: 샌드박스 종목의 지정가 매수 재예약은 튜토리얼 계좌에서만 일어나고
+		// 실제 Account.reservedCash·cashBalance는 전혀 변하지 않는다.
+		Instrument instrument = cryptoInstrument();
+		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
+		Account account = account();
+		TutorialAccount tutorialAccount = tutorialAccount();
+		// old: quantity=0.1 * limitPrice=1,000,000 => total=100,050 (생성 시점에 이미 예약된 상태를 재현)
+		tutorialAccount.reserveCash(100_050L);
+		Order order = limitPendingOrder(owner(), account, instrument, OrderSide.BUY, "0.1", "1000000");
+		when(orderRepository.findByIdForUpdate(ORDER_ID)).thenReturn(Optional.of(order));
+		when(accountService.getAccountByIdForUpdate(ACCOUNT_ID)).thenReturn(account);
+		when(tutorialAccountService.getOrCreateForUpdate(OWNER_USER_ID, Market.CRYPTO, NOW))
+			.thenReturn(tutorialAccount);
+		LimitOrderUpdateRequest request = new LimitOrderUpdateRequest(new BigDecimal("2000000"), new BigDecimal("0.2"));
+
+		service.modifyOrder(OWNER_USER_ID, ORDER_ID, request);
+
+		// new: quantity=0.2 * limitPrice=2,000,000 => amount=400,000, fee=200, total=400,200
+		assertThat(tutorialAccount.getReservedCash()).isEqualTo(400_200L);
+		assertThat(account.getReservedCash()).isZero();
+		assertThat(account.getCashBalance()).isEqualTo(10_000_000L);
+		assertThat(order.getQuantity()).isEqualByComparingTo("0.2");
+		assertThat(order.getLimitPrice()).isEqualByComparingTo("2000000");
+	}
+
+	@Test
+	void modifyOrderBuyForTutorialSampleThrowsTutorialInsufficientCashRegardlessOfRealAccountBalanceAndNeverReReserves() {
+		// 047 TUTORIAL-CASH-ISOL-005: 실제 계좌 잔고가 넉넉해도 튜토리얼 계좌 잔고만 보고 거부해야 한다.
+		Instrument instrument = cryptoInstrument();
+		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
+		Account account = account();
+		account.addCash(100_000_000L); // 실제 계좌는 넉넉하다 — 그래도 거부돼야 한다.
+		TutorialAccount tutorialAccount = tutorialAccount(); // 기본 1000만원
+		tutorialAccount.reserveCash(100_050L); // 기존 예약(해제 대상)
+		Order order = limitPendingOrder(owner(), account, instrument, OrderSide.BUY, "0.1", "1000000");
+		when(orderRepository.findByIdForUpdate(ORDER_ID)).thenReturn(Optional.of(order));
+		when(accountService.getAccountByIdForUpdate(ACCOUNT_ID)).thenReturn(account);
+		when(tutorialAccountService.getOrCreateForUpdate(OWNER_USER_ID, Market.CRYPTO, NOW))
+			.thenReturn(tutorialAccount);
+		// new: quantity=1 * limitPrice=15,000,000 => total=15,007,500 > 튜토리얼 계좌 가용 현금 10,000,000
+		LimitOrderUpdateRequest request = new LimitOrderUpdateRequest(new BigDecimal("15000000"), new BigDecimal("1"));
+
+		assertThatThrownBy(() -> service.modifyOrder(OWNER_USER_ID, ORDER_ID, request))
+			.isInstanceOf(BusinessException.class)
+			.extracting(ex -> ((BusinessException)ex).getErrorCode())
+			.isEqualTo(ErrorCode.TUTORIAL_INSUFFICIENT_CASH);
+
+		assertThat(tutorialAccount.getReservedCash()).isZero(); // 해제는 이미 수행됨, 재예약은 실패해 반영 안 됨
+		assertThat(account.getReservedCash()).isZero();
+		assertThat(account.getCashBalance()).isEqualTo(110_000_000L); // 실제 계좌 현금 불변
 	}
 
 	@Test
@@ -396,6 +455,10 @@ class LimitOrderModifyServiceTest {
 		Account account = Account.create(owner(), Market.CRYPTO, NOW);
 		ReflectionTestUtils.setField(account, "id", ACCOUNT_ID);
 		return account;
+	}
+
+	private static TutorialAccount tutorialAccount() {
+		return TutorialAccount.create(owner(), Market.CRYPTO, NOW);
 	}
 
 	private static User owner() {

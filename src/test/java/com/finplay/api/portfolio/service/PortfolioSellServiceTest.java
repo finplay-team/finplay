@@ -3,10 +3,15 @@ package com.finplay.api.portfolio.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.finplay.api.account.domain.Account;
+import com.finplay.api.account.domain.TutorialAccount;
+import com.finplay.api.account.service.TutorialAccountService;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
@@ -40,8 +45,9 @@ class PortfolioSellServiceTest {
 	private final HoldingRepository holdingRepository = Mockito.mock(HoldingRepository.class);
 	private final HoldingLotRepository holdingLotRepository = Mockito.mock(HoldingLotRepository.class);
 	private final TradeAllocationRepository tradeAllocationRepository = Mockito.mock(TradeAllocationRepository.class);
+	private final TutorialAccountService tutorialAccountService = Mockito.mock(TutorialAccountService.class);
 	private final PortfolioSellService service = new PortfolioSellService(holdingRepository, holdingLotRepository,
-		tradeAllocationRepository);
+		tradeAllocationRepository, tutorialAccountService);
 
 	// getHoldingOrThrow(availableQuantity 미검증 구버전)는 015-limit-order 항목5에서 유일 호출부(시장가 매도)가
 	// getHoldingForUpdateOrThrow로 대체되며 프로덕션 코드에서 완전히 제거됐다 — 이 테스트들도 함께 제거한다.
@@ -127,19 +133,23 @@ class PortfolioSellServiceTest {
 		long cashBeforeSell = account.getCashBalance();
 		long realizedPnlBeforeSell = account.getRealizedPnl();
 
-		long realizedPnl = service.finalizeSellRealizedPnl(account, sellTrade, 1500L, 4L, allocation);
+		long realizedPnl = service.finalizeSellRealizedPnl(account, sellTrade, 1500L, 4L, allocation, NOW);
 
 		// realizedPnl = (매도금액 - 매도수수료) - (배분원가 + 배분매수수수료) = (1500-4) - (1000+30) = 466
 		assertThat(realizedPnl).isEqualTo(466L);
 		assertThat(sellTrade.getRealizedPnl()).isEqualTo(466L);
 		assertThat(account.getCashBalance()).isEqualTo(cashBeforeSell + 1500L - 4L);
 		assertThat(account.getRealizedPnl()).isEqualTo(realizedPnlBeforeSell + 466L);
+		// 047 회귀 방지: 실제 종목 매도는 튜토리얼 계좌를 전혀 조회·갱신하지 않는다.
+		verifyNoInteractions(tutorialAccountService);
 	}
 
 	@Test
-	void finalizeSellRealizedPnlSkipsAccountRealizedPnlWhenInstrumentIsTutorialSample() {
-		// spec 033 SANDBOX-EXCL-004: 샌드박스 종목 매도는 account.realizedPnl에 반영하지 않지만
-		// trade.realizedPnl·account.cashBalance는 항상 그대로 반영된다.
+	void finalizeSellRealizedPnlCreditsTutorialAccountAndLeavesRealAccountCashAndRealizedPnlUnchangedWhenInstrumentIsTutorialSample() {
+		// spec 047 TUTORIAL-CASH-ISOL-003(033 SANDBOX-EXCL-006 대체): 샌드박스 종목 매도는 실제
+		// Account.cashBalance·realizedPnl을 전혀 증가시키지 않는다 — 대신 같은 사용자·시장의 튜토리얼 계좌
+		// 현금·realizedPnl이 같은 트랜잭션에서 갱신된다. trade.realizedPnl(원장 값)은 033의 원칙대로 종목
+		// 종류와 무관하게 항상 채워진다.
 		Account account = testAccount();
 		Instrument instrument = testInstrument();
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
@@ -148,15 +158,25 @@ class PortfolioSellServiceTest {
 		SellAllocationDto allocation = new SellAllocationDto(1000L, 30L);
 		long cashBeforeSell = account.getCashBalance();
 		long realizedPnlBeforeSell = account.getRealizedPnl();
+		TutorialAccount tutorialAccount = TutorialAccount.create(
+			account.getUser(), com.finplay.api.account.domain.Market.STOCK, EARLIER);
+		when(tutorialAccountService.getOrCreateForUpdate(
+			any(), eq(com.finplay.api.account.domain.Market.STOCK), eq(NOW)))
+			.thenReturn(tutorialAccount);
+		long tutorialCashBeforeSell = tutorialAccount.getCashBalance();
 
-		long realizedPnl = service.finalizeSellRealizedPnl(account, sellTrade, 1500L, 4L, allocation);
+		long realizedPnl = service.finalizeSellRealizedPnl(account, sellTrade, 1500L, 4L, allocation, NOW);
 
 		assertThat(realizedPnl).isEqualTo(466L);
 		assertThat(sellTrade.getRealizedPnl()).isEqualTo(466L);
-		assertThat(account.getCashBalance()).isEqualTo(cashBeforeSell + 1500L - 4L);
+		// 실제 Account는 현금·실현손익 모두 전혀 변하지 않는다(047의 핵심 전제 — 이슈 #450 재발 방지).
+		assertThat(account.getCashBalance()).isEqualTo(cashBeforeSell);
 		assertThat(account.getRealizedPnl()).isEqualTo(realizedPnlBeforeSell);
-		// spec 033 SANDBOX-EXCL-006 call site #3: 샌드박스 매도 입금은 sandboxCashAdjustment에 누적된다.
-		assertThat(account.getSandboxCashAdjustment()).isEqualTo(1500L - 4L);
+		// 튜토리얼 계좌만 매도 대금·실현손익을 반영한다.
+		assertThat(tutorialAccount.getCashBalance()).isEqualTo(tutorialCashBeforeSell + 1500L - 4L);
+		assertThat(tutorialAccount.getRealizedPnl()).isEqualTo(466L);
+		// spec 047 TUTORIAL-CASH-ISOL-007: sandboxCashAdjustment 누적 호출부가 폐지되어 더 이상 쌓이지 않는다.
+		assertThat(account.getSandboxCashAdjustment()).isEqualTo(0L);
 	}
 
 	@Test
@@ -167,7 +187,7 @@ class PortfolioSellServiceTest {
 			new BigDecimal("10"), 1500L, 4L, NOW);
 		SellAllocationDto allocation = new SellAllocationDto(1000L, 30L);
 
-		service.finalizeSellRealizedPnl(account, sellTrade, 1500L, 4L, allocation);
+		service.finalizeSellRealizedPnl(account, sellTrade, 1500L, 4L, allocation, NOW);
 
 		assertThat(account.getSandboxCashAdjustment()).isEqualTo(0L);
 	}

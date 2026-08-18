@@ -8,6 +8,9 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.finplay.api.account.domain.TutorialAccount;
+import com.finplay.api.account.service.TutorialAccountService;
+import com.finplay.api.auth.domain.User;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
@@ -46,12 +49,14 @@ class PracticeAttemptServiceTest {
 		PracticeRiskSnapshotRepository.class);
 	private final PracticeProgressRepository practiceProgressRepository = mock(PracticeProgressRepository.class);
 	private final InstrumentService instrumentService = mock(InstrumentService.class);
+	private final TutorialAccountService tutorialAccountService = mock(TutorialAccountService.class);
 	private final PracticeAttemptService service = new PracticeAttemptService(
 		practiceAttemptRepository,
 		practiceCompletionRepository,
 		practiceRiskSnapshotRepository,
 		practiceProgressRepository,
 		instrumentService,
+		tutorialAccountService,
 		Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC));
 
 	@Test
@@ -67,6 +72,8 @@ class PracticeAttemptServiceTest {
 			.thenReturn(Optional.of(attempt));
 		when(practiceRiskSnapshotRepository.findByAttemptIdAndRunNumber(ATTEMPT_ID, 1L))
 			.thenReturn(Optional.empty());
+		// 최초 진입 — 튜토리얼 계좌가 이번에 새로 생성됐다고 가정해 초기값(1000만원/1000만원/0원)을 스텁한다.
+		stubTutorialAccount(com.finplay.api.account.domain.Market.STOCK, freshTutorialAccount());
 
 		PracticeAttemptResponse response = service.ensureAttempt(USER_ID, Market.STOCK);
 
@@ -74,7 +81,42 @@ class PracticeAttemptServiceTest {
 		assertThat(response.status()).isEqualTo("IN_PROGRESS");
 		assertThat(response.instrumentId()).isEqualTo(INSTRUMENT_ID);
 		assertThat(response.anchorAt()).isEqualTo(NOW.minusMinutes(3));
+		// TUTORIAL-CASH-ISOL-011 — 최초 진입 응답은 신규 생성된 튜토리얼 계좌의 초기값을 그대로 반영한다.
+		assertThat(response.tutorialCashBalance()).isEqualTo(10_000_000L);
+		assertThat(response.tutorialAvailableCash()).isEqualTo(10_000_000L);
+		assertThat(response.tutorialRealizedPnl()).isZero();
 		verify(practiceAttemptRepository, never()).save(org.mockito.ArgumentMatchers.any());
+		verify(tutorialAccountService)
+			.getOrCreateForUpdate(USER_ID, com.finplay.api.account.domain.Market.STOCK, NOW);
+	}
+
+	// TUTORIAL-CASH-ISOL-011 — 이미 매매로 값이 바뀐 튜토리얼 계좌(신규 생성이 아닌 재진입)를 다시 조회하면
+	// 그 시점의 실제 cashBalance·availableCash(=cashBalance-reservedCash)·realizedPnl이 그대로 반영돼야 한다.
+	// 예약 현금(코인 지정가 매수 대기 중)이 있는 상태에서도 availableCash 공식이 정확한지 함께 확인한다.
+	@Test
+	void ensureAttemptOnReentryReflectsMutatedTutorialAccountIncludingReservedCash() {
+		PracticeAttempt attempt = selectingAttempt(Market.STOCK);
+		Instrument instrument = tutorialInstrument(Market.STOCK, true);
+		attempt.selectInstrument(instrument, NOW.minusMinutes(3), NOW.toLocalDate(), 123L, (short)1,
+			NOW.minusMinutes(3));
+		when(practiceAttemptRepository.insertIfAbsent(USER_ID, Market.STOCK.name(), NOW)).thenReturn(0);
+		when(practiceAttemptRepository.findByUserIdAndMarket(USER_ID, Market.STOCK))
+			.thenReturn(Optional.of(attempt));
+		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.STOCK))
+			.thenReturn(Optional.of(attempt));
+		when(practiceRiskSnapshotRepository.findByAttemptIdAndRunNumber(ATTEMPT_ID, 1L))
+			.thenReturn(Optional.empty());
+		TutorialAccount mutated = freshTutorialAccount();
+		mutated.deductCash(2_000_000L); // 매수 체결로 800만원까지 감소
+		mutated.reserveCash(500_000L); // 코인 지정가 매수 대기 중 — 예약 현금 50만원
+		mutated.addRealizedPnl(300_000L); // 이전 매도로 누적된 실현손익 30만원
+		stubTutorialAccount(com.finplay.api.account.domain.Market.STOCK, mutated);
+
+		PracticeAttemptResponse response = service.ensureAttempt(USER_ID, Market.STOCK);
+
+		assertThat(response.tutorialCashBalance()).isEqualTo(8_000_000L);
+		assertThat(response.tutorialAvailableCash()).isEqualTo(7_500_000L); // 800만원 - 예약 50만원
+		assertThat(response.tutorialRealizedPnl()).isEqualTo(300_000L);
 	}
 
 	@Test
@@ -91,6 +133,7 @@ class PracticeAttemptServiceTest {
 			.thenReturn(Optional.of(attempt));
 		when(practiceRiskSnapshotRepository.findByAttemptIdAndRunNumber(ATTEMPT_ID, 1L))
 			.thenReturn(Optional.empty());
+		stubTutorialAccount(com.finplay.api.account.domain.Market.CRYPTO, freshTutorialAccount());
 
 		PracticeAttemptResponse response = service.ensureAttempt(USER_ID, Market.CRYPTO);
 
@@ -98,6 +141,8 @@ class PracticeAttemptServiceTest {
 		assertThat(response.status()).isEqualTo("COMPLETED");
 		assertThat(response.completedAt()).isEqualTo(NOW.minusDays(1));
 		verify(practiceAttemptRepository, never()).save(org.mockito.ArgumentMatchers.any());
+		verify(tutorialAccountService)
+			.getOrCreateForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO, NOW);
 	}
 
 	@ParameterizedTest
@@ -117,6 +162,7 @@ class PracticeAttemptServiceTest {
 			.thenReturn(Optional.of(completion));
 		when(practiceRiskSnapshotRepository.findByAttemptIdAndRunNumber(ATTEMPT_ID, 1L))
 			.thenReturn(Optional.empty());
+		stubTutorialAccount(com.finplay.api.account.domain.Market.STOCK, freshTutorialAccount());
 
 		PracticeAttemptResponse response = service.ensureAttempt(USER_ID, Market.STOCK);
 
@@ -124,6 +170,8 @@ class PracticeAttemptServiceTest {
 		assertThat(response.instrumentId()).isEqualTo(INSTRUMENT_ID);
 		assertThat(response.anchorAt()).isEqualTo(NOW.minusMinutes(10));
 		verify(practiceAttemptRepository, never()).save(org.mockito.ArgumentMatchers.any());
+		verify(tutorialAccountService)
+			.getOrCreateForUpdate(USER_ID, com.finplay.api.account.domain.Market.STOCK, NOW);
 	}
 
 	@ParameterizedTest
@@ -186,6 +234,15 @@ class PracticeAttemptServiceTest {
 		assertThatThrownBy(() -> service.selectInstrument(USER_ID, Market.CRYPTO, INSTRUMENT_ID))
 			.isInstanceOfSatisfying(BusinessException.class,
 				exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.INSTRUMENT_NOT_TRADABLE));
+	}
+
+	private void stubTutorialAccount(com.finplay.api.account.domain.Market market, TutorialAccount account) {
+		when(tutorialAccountService.getOrCreateForUpdate(USER_ID, market, NOW)).thenReturn(account);
+	}
+
+	private static TutorialAccount freshTutorialAccount() {
+		User user = User.create("tutorial-trader@finplay.com", "password-hash", "tutorial-trader", NOW);
+		return TutorialAccount.create(user, com.finplay.api.account.domain.Market.STOCK, NOW);
 	}
 
 	private static PracticeAttempt selectingAttempt(Market market) {

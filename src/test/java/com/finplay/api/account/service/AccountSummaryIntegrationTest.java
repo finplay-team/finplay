@@ -252,16 +252,19 @@ class AccountSummaryIntegrationTest {
 		assertThat(response.totalValue()).isEqualTo(expectedTotalValue);
 	}
 
-	// SANDBOX-EXCL-007 통합 시나리오(plan.md §4-3 수치 예시와 동일 구조): 튜토리얼 완료 보상(500만원, 001
-	// sandboxCashAdjustment 누적은 004 항목에서 이미 검증됨)을 받은 뒤 그 현금으로 실제 종목을 사서 평가차익을
-	// 내면, totalValue는 "보상 원금은 제외하고 실거래 평가차익만 반영"해야 한다.
+	// spec 047 TUTORIAL-CASH-ISOL-007(SANDBOX-EXCL-007 대체): totalValue 공식은 sandboxCashAdjustment를
+	// 더 이상 빼지 않는다 — "현금 + 보유종목 평가금액"만으로 계산한다. sandboxCashAdjustment 컬럼 자체는
+	// 아직 물리적으로 제거되지 않았으므로(이 spec의 범위 밖), 컬럼에 잔여값(예: 백필 이전 레코드)이 남아
+	// 있어도 totalValue가 그 값을 무시함을 직접 검증한다.
 	@Test
-	void totalValueExcludesTutorialRewardPrincipalButIncludesRealTradeGainOnThatMoney() {
+	void totalValueIgnoresSandboxCashAdjustmentEvenWhenColumnHasLeftoverValue() {
 		User user = createUser("summary-reward-gain");
 		Account account = createAccount(user);
 
-		// 튜토리얼 완료 보상 지급을 직접 재현한다(PracticeHoldingReflectionService.
-		// payTutorialCompletionReward와 정확히 같은 두 호출 — cashBalance·sandboxCashAdjustment 모두 +500만).
+		// 튜토리얼 완료 보상 지급(PracticeHoldingReflectionService.payTutorialCompletionReward)은 이제
+		// addCash만 호출한다(addSandboxCashAdjustment 호출부는 폐지됨, TUTORIAL-CASH-ISOL-007). 여기서는
+		// 그 보상 지급을 재현하되, sandboxCashAdjustment 컬럼에는 배포 이전 레코드처럼 잔여값이 남아 있는
+		// 상태를 별도로 흉내 내 totalValue가 이를 무시하는지 확인한다.
 		account.addCash(5_000_000L);
 		account.addSandboxCashAdjustment(5_000_000L);
 		accountRepository.saveAndFlush(account);
@@ -284,9 +287,9 @@ class AccountSummaryIntegrationTest {
 		// holdingsValue = 10주 * 60만원 = 6,000,000, unrealizedPnl = 6,000,000 - 5,000,000(원가) = 1,000,000
 		long expectedHoldingsValue = 6_000_000L;
 		long expectedUnrealizedPnl = 1_000_000L;
-		// totalValue = cashBalance + holdingsValue - sandboxCashAdjustment(500만, 보상 원금만 남음)
-		//            = 9,999,250 + 6,000,000 - 5,000,000 = 10,999,250
-		long expectedTotalValue = 10_999_250L;
+		// totalValue = cashBalance + holdingsValue (sandboxCashAdjustment는 더 이상 빼지 않는다)
+		//            = 9,999,250 + 6,000,000 = 15,999,250
+		long expectedTotalValue = 15_999_250L;
 
 		assertThat(response.cashBalance()).isEqualTo(expectedCashBalance);
 		assertThat(response.holdingsValue()).isEqualTo(expectedHoldingsValue);

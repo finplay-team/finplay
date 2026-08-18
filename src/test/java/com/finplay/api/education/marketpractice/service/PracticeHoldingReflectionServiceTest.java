@@ -5,6 +5,7 @@ package com.finplay.api.education.marketpractice.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -266,8 +267,9 @@ class PracticeHoldingReflectionServiceTest {
 
 		verify(accountService).getAccountForUpdate(USER_ID, com.finplay.api.account.domain.Market.STOCK);
 		verify(account).addCash(5_000_000L);
-		// spec 033 SANDBOX-EXCL-006 call site #5: 튜토리얼 완료 보상은 종목 조건 없이 항상 누적된다.
-		verify(account).addSandboxCashAdjustment(5_000_000L);
+		// spec 047 TUTORIAL-CASH-ISOL-007(033 SANDBOX-EXCL-006 call site #5 폐지): 완료 보상 지급은 그대로
+		// 유지되지만(addCash) sandboxCashAdjustment 누적 호출은 더 이상 일어나지 않는다.
+		verify(account, never()).addSandboxCashAdjustment(anyLong());
 	}
 
 	// 이슈 #343: instrument.getMarket()이 CRYPTO면 코인 계좌(com.finplay.api.account.domain.Market.CRYPTO)에
@@ -294,7 +296,7 @@ class PracticeHoldingReflectionServiceTest {
 
 		verify(accountService).getAccountForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO);
 		verify(account).addCash(5_000_000L);
-		verify(account).addSandboxCashAdjustment(5_000_000L);
+		verify(account, never()).addSandboxCashAdjustment(anyLong());
 	}
 
 	@Test

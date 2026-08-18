@@ -163,7 +163,9 @@ class PracticeAttemptCompletionFlowIntegrationTest {
 
 		Account rewarded = refreshedAccount(fixture.userId(), market);
 		assertThat(rewarded.getCashBalance()).isEqualTo(cashBeforeReward + COMPLETION_REWARD);
-		assertThat(rewarded.getSandboxCashAdjustment()).isEqualTo(adjustmentBeforeReward + COMPLETION_REWARD);
+		// spec 047 TUTORIAL-CASH-ISOL-007: 완료 보상의 sandboxCashAdjustment 누적 호출부가 폐지되어
+		// 더 이상 증가하지 않는다(불변).
+		assertThat(rewarded.getSandboxCashAdjustment()).isEqualTo(adjustmentBeforeReward);
 		InvestmentPracticeResponse completed = queryService.getProgress(fixture.userId(), market);
 		assertThat(completed.status()).isEqualTo("COMPLETED");
 		assertThat(completed.rewardAmount()).isEqualTo(COMPLETION_REWARD);
@@ -209,14 +211,15 @@ class PracticeAttemptCompletionFlowIntegrationTest {
 		com.finplay.api.order.domain.Order compensatingOrder = orderRepository
 			.findByUserIdAndIdempotencyKey(fixture.userId(), "practice-restart:" + attemptId + ":1")
 			.orElseThrow();
-		com.finplay.api.order.domain.Trade compensatingTrade = tradeRepository
-			.findByOrderId(compensatingOrder.getId()).orElseThrow();
+		assertThat(tradeRepository.findByOrderId(compensatingOrder.getId())).isPresent();
 		assertThat(orderRepository.count()).isEqualTo(orderCount + 1);
 		assertThat(tradeRepository.count()).isEqualTo(tradeCount + 1);
-		long expectedCashDelta = compensatingTrade.getAmount() - compensatingTrade.getFee();
+		// 보상매도는 튜토리얼 종목 매도이므로 PortfolioSellService.finalizeSellRealizedPnl이 같은 사용자·
+		// 시장의 튜토리얼 계좌만 갱신한다(047 TUTORIAL-CASH-ISOL-003) — 실제 Account.cashBalance는 전혀
+		// 변하지 않는다. sandboxCashAdjustment 누적 호출부도 폐지됐으므로(TUTORIAL-CASH-ISOL-007) 그대로다.
 		Account replayed = refreshedAccount(fixture.userId(), market);
-		assertThat(replayed.getCashBalance()).isEqualTo(cashBeforeRestart + expectedCashDelta);
-		assertThat(replayed.getSandboxCashAdjustment()).isEqualTo(sandboxBeforeRestart + expectedCashDelta);
+		assertThat(replayed.getCashBalance()).isEqualTo(cashBeforeRestart);
+		assertThat(replayed.getSandboxCashAdjustment()).isEqualTo(sandboxBeforeRestart);
 	}
 
 	// 이슈 #426: 완료한 시장을 040 재시작으로 다시 진행하면 진행 조회가 예전 완료 응답이 아니라 현재 실행의

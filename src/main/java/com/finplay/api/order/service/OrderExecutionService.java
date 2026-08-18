@@ -2,8 +2,10 @@
 package com.finplay.api.order.service;
 
 import com.finplay.api.account.domain.Account;
+import com.finplay.api.account.domain.TutorialAccount;
 import com.finplay.api.account.event.RealizedPnlUpdatedEvent;
 import com.finplay.api.account.service.AccountService;
+import com.finplay.api.account.service.TutorialAccountService;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.service.UserQueryService;
 import com.finplay.api.common.BusinessException;
@@ -45,6 +47,7 @@ public class OrderExecutionService {
 
 	private final UserQueryService userQueryService;
 	private final AccountService accountService;
+	private final TutorialAccountService tutorialAccountService;
 	private final InstrumentService instrumentService;
 	private final PriceQueryService priceQueryService;
 	private final PortfolioBuyService portfolioBuyService;
@@ -59,6 +62,7 @@ public class OrderExecutionService {
 	public OrderExecutionService(
 		UserQueryService userQueryService,
 		AccountService accountService,
+		TutorialAccountService tutorialAccountService,
 		InstrumentService instrumentService,
 		PriceQueryService priceQueryService,
 		PortfolioBuyService portfolioBuyService,
@@ -70,6 +74,7 @@ public class OrderExecutionService {
 		ApplicationEventPublisher eventPublisher) {
 		this.userQueryService = userQueryService;
 		this.accountService = accountService;
+		this.tutorialAccountService = tutorialAccountService;
 		this.instrumentService = instrumentService;
 		this.priceQueryService = priceQueryService;
 		this.portfolioBuyService = portfolioBuyService;
@@ -111,12 +116,25 @@ public class OrderExecutionService {
 		// 설계 노트 2: 매수 최소구현 견본 — marketStatus·가격·세션 단일 관측→최소금액→amount/fee 계산(공유)
 		OrderPricing pricing = priceOrder(request.market(), instrument, quantity, practiceAttribution);
 		long cashRequired = pricing.amount() + pricing.fee();
-		if (account.getAvailableCash() < cashRequired) {
+
+		LocalDateTime now = LocalDateTime.now(clock);
+
+		// 샌드박스(튜토리얼) 종목 매수는 실제 Account 대신 같은 사용자·시장의 튜토리얼 계좌 현금을
+		// 검증·차감한다(047 TUTORIAL-CASH-ISOL-002·005, 이슈 #450 — 실제 계좌 잔고와 무관하게 거부돼야 한다).
+		TutorialAccount tutorialAccount = instrument.isTutorialSample()
+			? tutorialAccountService.getOrCreateForUpdate(userId, toAccountMarket(request.market()), now)
+			: null;
+		if (tutorialAccount != null) {
+			if (tutorialAccount.getAvailableCash() < cashRequired) {
+				throw new BusinessException(ErrorCode.TUTORIAL_INSUFFICIENT_CASH);
+			}
+		} else if (account.getAvailableCash() < cashRequired) {
 			throw new BusinessException(ErrorCode.INSUFFICIENT_CASH);
 		}
 
+		// 현금 검증(실제·튜토리얼 계좌 공통)을 모두 통과한 뒤에만 사용자 조회를 한다 — 실패 시 무흔적
+		// 원칙(기존 계약)을 지키기 위해, 튜토리얼 분기를 추가하며 옮겨졌던 호출을 원래 위치로 되돌린다.
 		User user = userQueryService.getUser(userId);
-		LocalDateTime now = LocalDateTime.now(clock);
 
 		Order order = createOrder(
 			user, account, instrument, request, quantity, practiceAttribution, idempotencyKey, requestHash, now);
@@ -128,11 +146,13 @@ public class OrderExecutionService {
 			null, now, now);
 		tradeRepository.save(trade);
 
-		account.deductCash(cashRequired);
-		// 샌드박스(튜토리얼) 종목 매수의 현금 순변동은 사용자에게 보이는 평가자산에서 나중에 제외할 수
-		// 있도록 별도로 누적해 둔다(spec 033 SANDBOX-EXCL-006).
-		if (instrument.isTutorialSample()) {
-			account.addSandboxCashAdjustment(-cashRequired);
+		if (tutorialAccount != null) {
+			tutorialAccount.deductCash(cashRequired);
+			// 047 TUTORIAL-CASH-ISOL-002·007: 샌드박스 매수는 튜토리얼 계좌 현금만 차감한다 — 실제
+			// Account.cashBalance는 전혀 변하지 않으므로 sandboxCashAdjustment 누적(033의 표시 보정 전제)은
+			// 더 이상 필요하지 않다(sandboxCashAdjustment 폐지).
+		} else {
+			account.deductCash(cashRequired);
 		}
 
 		portfolioBuyService.applyBuyTrade(account, instrument, trade, quantity, pricing.price(), pricing.fee(), now);
@@ -181,14 +201,24 @@ public class OrderExecutionService {
 			- (allocation.totalAllocatedCost() + allocation.totalAllocatedBuyFee());
 		trade.fillRealizedPnl(realizedPnl);
 
-		account.addCash(pricing.amount() - pricing.fee());
-		// 샌드박스(튜토리얼) 종목 매도 손익은 계좌 집계(랭킹 score)에 반영하지 않는다(spec 033
-		// SANDBOX-EXCL-004). trade.realizedPnl은 원장 값이라 항상 채운다.
+		// trade.realizedPnl(원장 값)은 033의 원칙대로 종목 종류와 무관하게 항상 채운다(위에서 이미 완료).
 		if (!instrument.isTutorialSample()) {
+			account.addCash(pricing.amount() - pricing.fee());
+			// 샌드박스(튜토리얼) 종목 매도 손익은 계좌 집계(랭킹 score)에 반영하지 않는다(spec 033
+			// SANDBOX-EXCL-004) — 이 분기는 실제 종목이므로 그대로 반영한다.
 			account.addRealizedPnl(realizedPnl);
 		} else {
-			// 샌드박스 매도의 현금 입금도 같은 조건으로 별도 누적한다(spec 033 SANDBOX-EXCL-006).
-			account.addSandboxCashAdjustment(pricing.amount() - pricing.fee());
+			// 샌드박스(튜토리얼) 종목 매도는 실제 Account.cashBalance를 증가시키지 않는다(047
+			// TUTORIAL-CASH-ISOL-003) — 대신 같은 사용자·시장의 튜토리얼 계좌 현금·realizedPnl을 함께
+			// 갱신한다. 이 시장가 매도 경로는 PortfolioSellService.finalizeSellRealizedPnl을 거치지 않고
+			// 기존 동작·테스트 보존을 위해 인라인 계산을 유지하므로(위 설계 노트 4), 이 분기도 동일하게
+			// 인라인으로 유지한다.
+			TutorialAccount tutorialAccount = tutorialAccountService
+				.getOrCreateForUpdate(userId, toAccountMarket(request.market()), now);
+			tutorialAccount.addCash(pricing.amount() - pricing.fee());
+			tutorialAccount.addRealizedPnl(realizedPnl);
+			// 047 TUTORIAL-CASH-ISOL-003·007: 샌드박스 매도는 튜토리얼 계좌 현금·realizedPnl만 갱신한다 —
+			// 실제 Account.cashBalance는 변하지 않으므로 sandboxCashAdjustment 누적은 더 이상 필요하지 않다.
 		}
 		// 커밋 이후(after-commit)에만 랭킹에 반영되도록 이벤트만 발행한다 — 손익값을 싣지 않고 이벤트 처리 시점에
 		// DB에서 최신 realizedPnl을 다시 조회한다(동시성 경합 Decision Gate, plan.md).
@@ -268,9 +298,13 @@ public class OrderExecutionService {
 	// 시장가 매수·매도 모두 계좌를 잠가 조회한다(015-limit-order 항목5, 이슈 #224) — 지정가 체결
 	// (LimitOrderFillService)과 account→holding 잠금 순서를 맞춰 ABBA 데드락을 막는다.
 	private Account getAccountForUpdateFor(Long userId, Market market) {
-		com.finplay.api.account.domain.Market accountMarket = com.finplay.api.account.domain.Market
-			.valueOf(market.name());
-		return accountService.getAccountForUpdate(userId, accountMarket);
+		return accountService.getAccountForUpdate(userId, toAccountMarket(market));
+	}
+
+	// 계좌 조회 시에만 order.market.domain.Market ↔ account.domain.Market을 값 기반으로 변환한다
+	// (047 TUTORIAL-CASH-ISOL-002 — 튜토리얼 계좌 조회에도 동일한 변환이 필요해 헬퍼로 추출).
+	private com.finplay.api.account.domain.Market toAccountMarket(Market market) {
+		return com.finplay.api.account.domain.Market.valueOf(market.name());
 	}
 
 	// 설계 노트 1: getOrderExecutionPrice 한 관측에서 marketStatus·가격·세션을 확정한 뒤 최소주문금액 검증과

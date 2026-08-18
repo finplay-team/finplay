@@ -117,8 +117,10 @@ class PracticeAttemptRestartRecompletionIntegrationTest {
 		assertThat(firstRun.response().reflectionId()).isNotNull();
 		Account afterFirstReward = refreshedAccount(fixture.userId(), market);
 		assertThat(afterFirstReward.getCashBalance()).isEqualTo(firstRun.cashBeforeCompletion() + COMPLETION_REWARD);
+		// spec 047 TUTORIAL-CASH-ISOL-007: 완료 보상의 sandboxCashAdjustment 누적 호출부가 폐지되어
+		// 더 이상 증가하지 않는다(불변).
 		assertThat(afterFirstReward.getSandboxCashAdjustment())
-			.isEqualTo(firstRun.sandboxAdjustmentBeforeCompletion() + COMPLETION_REWARD);
+			.isEqualTo(firstRun.sandboxAdjustmentBeforeCompletion());
 
 		long completionCountAfterFirst = completionRepository.count();
 		long reflectionCountAfterFirst = reflectionRepository.count();

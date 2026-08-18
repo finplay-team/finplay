@@ -151,7 +151,7 @@ public class ExitPlanFillService {
 
 		holding.releaseReservedQuantity(quantity);
 		SellAllocationDto allocation = portfolioSellService.applySellTrade(holding, trade, quantity, now);
-		portfolioSellService.finalizeSellRealizedPnl(account, trade, amount, fee, allocation);
+		portfolioSellService.finalizeSellRealizedPnl(account, trade, amount, fee, allocation, now);
 
 		// 커밋 이후(after-commit)에만 랭킹에 반영되도록 이벤트만 발행한다 — 기존 시장가·지정가 매도와 동일 훅 재사용.
 		eventPublisher.publishEvent(new RealizedPnlUpdatedEvent(account.getId()));
