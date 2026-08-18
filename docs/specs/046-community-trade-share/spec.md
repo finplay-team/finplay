@@ -23,7 +23,7 @@
 
 ## 데이터 모델
 
-- `community_posts.shared_trade_id`(nullable, `trades.id` FK, 인덱스) 추가. 마이그레이션 `V42__add_shared_trade_id_to_community_posts.sql`.
+- `community_posts.shared_trade_id`(nullable, `trades.id` FK, 인덱스) 추가. 마이그레이션 `V45__add_shared_trade_id_to_community_posts.sql`(작성 당시 `V42`).
 - 원장(trade) 자체는 불변이라 별도 스냅샷 컬럼을 두지 않는다 — 조회 시점에 `PostSellFeedbackService`의 가벼운 메서드로 매번 다시 계산한다(값은 항상 같다, 체결은 안 바뀌므로).
 
 ## 비즈니스 규칙
