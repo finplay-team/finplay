@@ -26,7 +26,9 @@ import java.time.ZoneOffset;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mockito;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 
 class CommunityPostLikeServiceTest {
@@ -46,8 +48,7 @@ class CommunityPostLikeServiceTest {
 		User liker = User.create("liker@finplay.com", "hash", "liker", LocalDateTime.now(CLOCK));
 		ReflectionTestUtils.setField(liker, "id", 42L);
 		CommunityPost post = CommunityPost.create(author, "title", "content", null, LocalDateTime.now(CLOCK));
-		when(communityPostRepository.existsById(7L)).thenReturn(true);
-		when(communityPostRepository.getReferenceById(7L)).thenReturn(post);
+		when(communityPostRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(post));
 		when(communityPostLikeRepository.existsByPost_IdAndUser_Id(7L, 42L)).thenReturn(false);
 		when(userQueryService.getUser(42L)).thenReturn(liker);
 
@@ -67,8 +68,7 @@ class CommunityPostLikeServiceTest {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
 		CommunityPost post = CommunityPost.create(author, "title", "content", null, LocalDateTime.now(CLOCK));
 		ReflectionTestUtils.setField(post, "likeCount", 5L);
-		when(communityPostRepository.existsById(7L)).thenReturn(true);
-		when(communityPostRepository.getReferenceById(7L)).thenReturn(post);
+		when(communityPostRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(post));
 		when(communityPostLikeRepository.existsByPost_IdAndUser_Id(7L, 42L)).thenReturn(true);
 
 		CommunityPostLikeOutcome outcome = service.likePost(7L, 42L);
@@ -82,7 +82,7 @@ class CommunityPostLikeServiceTest {
 
 	@Test
 	void likePostThrowsNotFoundAndDoesNotSaveOrIncrementWhenPostDoesNotExist() {
-		when(communityPostRepository.existsById(404L)).thenReturn(false);
+		when(communityPostRepository.findByIdForUpdate(404L)).thenReturn(Optional.empty());
 
 		assertThatThrownBy(() -> service.likePost(404L, 42L))
 			.isInstanceOf(BusinessException.class)
@@ -99,8 +99,7 @@ class CommunityPostLikeServiceTest {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
 		ReflectionTestUtils.setField(author, "id", 42L);
 		CommunityPost post = CommunityPost.create(author, "title", "content", null, LocalDateTime.now(CLOCK));
-		when(communityPostRepository.existsById(7L)).thenReturn(true);
-		when(communityPostRepository.getReferenceById(7L)).thenReturn(post);
+		when(communityPostRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(post));
 		when(communityPostLikeRepository.existsByPost_IdAndUser_Id(7L, 42L)).thenReturn(false);
 		when(userQueryService.getUser(42L)).thenReturn(author);
 
@@ -110,13 +109,49 @@ class CommunityPostLikeServiceTest {
 		verify(communityPostRepository).incrementLikeCount(7L);
 	}
 
+	// 게시물 행 락을 트랜잭션 첫 문장으로 잡는다(PR #442 2차 리뷰) — 락보다 먼저 좋아요 존재를 조회하면
+	// 동시 요청이 락 없이 갈라지므로, 호출 순서 자체를 단위 레벨에서 고정한다.
+	@Test
+	void likePostAcquiresPostRowLockBeforeReadingLikeExistence() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(author, "title", "content", null, LocalDateTime.now(CLOCK));
+		when(communityPostRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(post));
+		when(communityPostLikeRepository.existsByPost_IdAndUser_Id(7L, 42L)).thenReturn(true);
+
+		service.likePost(7L, 42L);
+
+		InOrder inOrder = Mockito.inOrder(communityPostRepository, communityPostLikeRepository);
+		inOrder.verify(communityPostRepository).findByIdForUpdate(7L);
+		inOrder.verify(communityPostLikeRepository).existsByPost_IdAndUser_Id(7L, 42L);
+	}
+
+	// 유니크 제약이 최후 방어선으로 걸린 경우에도 500 대신 현재 상태를 돌려준다(LIKE-001 멱등 요구).
+	@Test
+	void likePostReturnsCurrentStateWhenUniqueConstraintRejectsConcurrentDuplicate() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		User liker = User.create("liker@finplay.com", "hash", "liker", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(author, "title", "content", null, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(post, "likeCount", 3L);
+		when(communityPostRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(post));
+		when(communityPostLikeRepository.existsByPost_IdAndUser_Id(7L, 42L)).thenReturn(false);
+		when(userQueryService.getUser(42L)).thenReturn(liker);
+		when(communityPostLikeRepository.saveAndFlush(any(CommunityPostLike.class)))
+			.thenThrow(new DataIntegrityViolationException("duplicate key"));
+
+		CommunityPostLikeOutcome outcome = service.likePost(7L, 42L);
+
+		assertThat(outcome.created()).isFalse();
+		assertThat(outcome.response()).isEqualTo(new CommunityPostLikeResponse(7L, 3L, true));
+		verify(communityPostRepository, never()).incrementLikeCount(any());
+	}
+
 	@Test
 	void unlikePostDeletesLikeAndDecrementsCountWhenLikeExists() {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
 		User liker = User.create("liker@finplay.com", "hash", "liker", LocalDateTime.now(CLOCK));
 		CommunityPost post = CommunityPost.create(author, "title", "content", null, LocalDateTime.now(CLOCK));
 		CommunityPostLike like = CommunityPostLike.create(post, liker, LocalDateTime.now(CLOCK));
-		when(communityPostRepository.existsById(7L)).thenReturn(true);
+		when(communityPostRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(post));
 		when(communityPostLikeRepository.findByPost_IdAndUser_Id(7L, 42L)).thenReturn(Optional.of(like));
 
 		service.unlikePost(7L, 42L);
@@ -127,7 +162,9 @@ class CommunityPostLikeServiceTest {
 
 	@Test
 	void unlikePostDoesNothingWhenLikeDoesNotExist() {
-		when(communityPostRepository.existsById(7L)).thenReturn(true);
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(author, "title", "content", null, LocalDateTime.now(CLOCK));
+		when(communityPostRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(post));
 		when(communityPostLikeRepository.findByPost_IdAndUser_Id(7L, 42L)).thenReturn(Optional.empty());
 
 		assertThatCode(() -> service.unlikePost(7L, 42L)).doesNotThrowAnyException();
@@ -138,7 +175,7 @@ class CommunityPostLikeServiceTest {
 
 	@Test
 	void unlikePostThrowsNotFoundAndDoesNotQueryLikesWhenPostDoesNotExist() {
-		when(communityPostRepository.existsById(404L)).thenReturn(false);
+		when(communityPostRepository.findByIdForUpdate(404L)).thenReturn(Optional.empty());
 
 		assertThatThrownBy(() -> service.unlikePost(404L, 42L))
 			.isInstanceOf(BusinessException.class)

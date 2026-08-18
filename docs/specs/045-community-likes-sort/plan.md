@@ -80,6 +80,7 @@ ALTER TABLE community_posts
   - **비정규화 카운터(채택)**: `ORDER BY like_count`가 단순 컬럼 정렬이라 위 복합 인덱스로 바로 처리된다. 대신 카운터 갱신이 게시물 행 갱신과 별도 시점에 일어나므로 드리프트 가능성이 이론상 있다 — 아래 "동시성" 항목에서 그 위험을 원자적 UPDATE로 좁힌다.
   - 커뮤니티 게시물 조회는 이 프로젝트에서 가장 자주 호출되는 목록 API 중 하나이고 정렬 기준으로 즉시 쓰이므로, 조회 비용을 낮추는 비정규화 쪽이 이 spec의 목적(인기순 정렬)에 더 맞는다고 판단했다.
 - **동시성**: `like_count` 증감은 엔티티를 읽어 `+1`/`-1` 한 뒤 dirty checking으로 반영하지 않는다 — 같은 게시물에 여러 요청이 동시에 들어오면 lost update가 발생할 수 있다. 대신 `CommunityPostRepository`에 원자적 `UPDATE community_posts SET like_count = like_count + 1 WHERE id = :postId` 형태의 `@Modifying @Query` 메서드를 둔다(증가·감소 각각). 별도 락(비관적 락, `@Version` 낙관적 락)은 추가하지 않는다 — 좋아요 개수는 현금·보유수량 같은 원장 데이터가 아니라 정렬용 지표라 잠깐의 경합보다 구현 단순성을 우선했다(C-002 최소 구현). 감소 쿼리에 `WHERE like_count > 0` 같은 하한 가드는 두지 않는다 — 감소는 항상 같은 트랜잭션에서 좋아요 행 존재를 먼저 확인한 뒤에만 실행되므로 음수로 내려갈 경로가 없다.
+  - **정정 (PR #442 2차 리뷰, 실측으로 반박됨)**: 위 두 판단은 틀렸다. 원자적 UPDATE만으로는 부족했다 — 같은 게시물 동시 좋아요가 유니크 인덱스와 게시물 행 락을 엇갈린 순서로 잡아 InnoDB 데드락(`CannotAcquireLockException`, SQLState 40001)으로 500이 났고(재현 4/4), 동시 취소는 두 요청이 각자 좋아요 행 존재를 확인한 뒤 감소 쿼리를 실행해 `like_count`를 -1까지 떨어뜨렸다. 따라서 `CommunityPostRepository.findByIdForUpdate`(`SELECT ... FOR UPDATE`)를 추가해 `likePost`·`unlikePost` 양쪽이 트랜잭션 첫 문장으로 게시물 행을 잡아 락 획득 순서를 통일하고, 감소 쿼리에 `like_count > 0` 하한 가드를 방어 심층화로 둔다. 데드락은 InnoDB가 트랜잭션을 이미 롤백한 뒤 던지므로 catch로 사후 수습할 수 없다.
 - CHECK 제약은 두지 않는다(코드베이스 전례 없음 — 022·044와 동일 판단).
 
 ### 엔티티 변경

@@ -418,6 +418,33 @@ class CommunityPostRepositoryTest {
 		assertThat(found.getLikeCount()).isEqualTo(1L);
 	}
 
+	// like_count > 0 하한 가드(PR #442 2차 리뷰) — 가드가 없으면 이 호출이 like_count를 -1로 내린다.
+	@Test
+	void decrementLikeCountLeavesZeroUntouchedInsteadOfGoingNegative() {
+		User author = userRepository.saveAndFlush(User.create("decrzero@finplay.com", "hash", "decrzero", NOW));
+		CommunityPost post = repository.saveAndFlush(CommunityPost.create(author, "title", "content", null, NOW));
+
+		repository.decrementLikeCount(post.getId());
+
+		CommunityPost found = repository.findById(post.getId()).orElseThrow();
+		assertThat(found.getLikeCount()).isZero();
+	}
+
+	// 좋아요 표시·취소가 락 획득 순서를 통일하려고 쓰는 조회다(PR #442 2차 리뷰). @EntityGraph를 붙이지 않아
+	// findById와 달리 연관을 즉시 로딩하지 않는다.
+	@Test
+	void findByIdForUpdateReturnsPostAndEmptyForMissingId() {
+		User author = userRepository.saveAndFlush(User.create("lock@finplay.com", "hash", "locker", NOW));
+		CommunityPost post = repository.saveAndFlush(CommunityPost.create(author, "title", "content", null, NOW));
+		repository.incrementLikeCount(post.getId());
+
+		CommunityPost locked = repository.findByIdForUpdate(post.getId()).orElseThrow();
+
+		assertThat(locked.getId()).isEqualTo(post.getId());
+		assertThat(locked.getLikeCount()).isEqualTo(1L);
+		assertThat(repository.findByIdForUpdate(Long.MAX_VALUE)).isEmpty();
+	}
+
 	@Test
 	void newlyCreatedPostStartsWithZeroLikeCount() {
 		User author = userRepository.saveAndFlush(User.create("zero@finplay.com", "hash", "zeroer", NOW));
