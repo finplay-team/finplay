@@ -10,7 +10,9 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.finplay.api.account.domain.Account;
+import com.finplay.api.account.domain.TutorialAccount;
 import com.finplay.api.account.service.AccountService;
+import com.finplay.api.account.service.TutorialAccountService;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.service.UserQueryService;
 import com.finplay.api.common.BusinessException;
@@ -42,6 +44,7 @@ class PracticeLimitOrderCreationServiceTest {
 
 	private final UserQueryService userQueryService = mock(UserQueryService.class);
 	private final AccountService accountService = mock(AccountService.class);
+	private final TutorialAccountService tutorialAccountService = mock(TutorialAccountService.class);
 	private final InstrumentService instrumentService = mock(InstrumentService.class);
 	private final OrderRepository orderRepository = mock(OrderRepository.class);
 	private final PracticeOrderAttributionPort practiceOrderAttributionPort = mock(
@@ -49,24 +52,32 @@ class PracticeLimitOrderCreationServiceTest {
 	private final Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
 
 	private final PracticeLimitOrderCreationService service = new PracticeLimitOrderCreationService(
-		userQueryService, accountService, instrumentService, orderRepository, practiceOrderAttributionPort, clock);
+		userQueryService, accountService, tutorialAccountService, instrumentService, orderRepository,
+		practiceOrderAttributionPort, clock);
 
 	@Test
-	void createSessionBuyOrderReservesCashAndCreatesPendingBuyOrderWithSessionId() {
+	void createSessionBuyOrderReservesCashInTutorialAccountOnlyAndCreatesPendingBuyOrderWithSessionId() {
+		// 047 TUTORIAL-CASH-ISOL-002: 이 엔드포인트는 항상 튜토리얼 전용이므로 현금 예약은 튜토리얼 계좌에서만
+		// 일어나고 실제 Account.reservedCash는 전혀 변하지 않는다.
 		Instrument instrument = cryptoInstrument(5_000L);
 		Account account = account();
+		TutorialAccount tutorialAccount = tutorialAccount();
 		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID)).thenReturn(instrument);
 		when(orderRepository.existsByPracticePriceSessionIdAndStatus(SESSION_ID, OrderStatus.PENDING))
 			.thenReturn(false);
 		when(accountService.getAccountForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO))
 			.thenReturn(account);
+		when(tutorialAccountService.getOrCreateForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO, NOW))
+			.thenReturn(tutorialAccount);
 		when(userQueryService.getUser(USER_ID)).thenReturn(testUser());
 
 		LimitOrderResponse response = service.createSessionBuyOrder(
 			USER_ID, SESSION_ID, INSTRUMENT_ID, new BigDecimal("0.1"), new BigDecimal("1000000"));
 
 		// amount = 0.1 * 1,000,000 = 100,000, fee = floor(100,000*0.0005) = 50
-		assertThat(account.getReservedCash()).isEqualTo(100_050L);
+		assertThat(tutorialAccount.getReservedCash()).isEqualTo(100_050L);
+		assertThat(account.getReservedCash()).isZero(); // 실제 계좌는 전혀 예약되지 않는다
+		assertThat(account.getCashBalance()).isEqualTo(10_000_000L);
 		assertThat(response.side()).isEqualTo("BUY");
 		assertThat(response.status()).isEqualTo("PENDING");
 		assertThat(response.orderType()).isEqualTo("LIMIT");
@@ -83,6 +94,7 @@ class PracticeLimitOrderCreationServiceTest {
 		Instrument instrument = cryptoInstrument(5_000L);
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
 		Account account = account();
+		TutorialAccount tutorialAccount = tutorialAccount();
 		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID)).thenReturn(instrument);
 		when(practiceOrderAttributionPort.lockForOrder(USER_ID, instrument))
 			.thenReturn(Optional.of(new PracticeOrderAttributionDto(50L, 3L, new BigDecimal("1000000"))));
@@ -90,6 +102,8 @@ class PracticeLimitOrderCreationServiceTest {
 			.thenReturn(false);
 		when(accountService.getAccountForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO))
 			.thenReturn(account);
+		when(tutorialAccountService.getOrCreateForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO, NOW))
+			.thenReturn(tutorialAccount);
 		when(userQueryService.getUser(USER_ID)).thenReturn(testUser());
 
 		service.createSessionBuyOrder(
@@ -100,6 +114,8 @@ class PracticeLimitOrderCreationServiceTest {
 		assertThat(orderCaptor.getValue().getPracticePriceSessionId()).isEqualTo(SESSION_ID);
 		assertThat(orderCaptor.getValue().getPracticeAttemptId()).isEqualTo(50L);
 		assertThat(orderCaptor.getValue().getPracticeAttemptRunNumber()).isEqualTo(3L);
+		assertThat(tutorialAccount.getReservedCash()).isEqualTo(100_050L);
+		assertThat(account.getReservedCash()).isZero();
 	}
 
 	@Test
@@ -115,25 +131,32 @@ class PracticeLimitOrderCreationServiceTest {
 				exception -> assertThat(exception.getErrorCode())
 					.isEqualTo(ErrorCode.PRACTICE_LIMIT_ORDER_ALREADY_PENDING));
 
-		verifyNoInteractions(accountService, userQueryService);
+		verifyNoInteractions(accountService, userQueryService, tutorialAccountService);
 		verify(orderRepository, org.mockito.Mockito.never()).save(any());
 	}
 
 	@Test
-	void createSessionBuyOrderThrowsInsufficientCashWhenAvailableCashBelowRequired() {
+	void createSessionBuyOrderThrowsTutorialInsufficientCashRegardlessOfRealAccountBalance() {
+		// 047 TUTORIAL-CASH-ISOL-002·005: 튜토리얼 계좌 잔고만 보고 거부해야 하며, 오류 코드도 실제 계좌
+		// 부족(INSUFFICIENT_CASH)과 구분되는 TUTORIAL_INSUFFICIENT_CASH여야 한다.
 		Instrument instrument = cryptoInstrument(5_000L);
 		Account account = account();
+		account.addCash(100_000_000L); // 실제 계좌는 넉넉하다 — 그래도 거부돼야 한다.
+		TutorialAccount tutorialAccount = tutorialAccount(); // 기본 1000만원
 		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID)).thenReturn(instrument);
 		when(orderRepository.existsByPracticePriceSessionIdAndStatus(SESSION_ID, OrderStatus.PENDING))
 			.thenReturn(false);
 		when(accountService.getAccountForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO))
 			.thenReturn(account);
+		when(tutorialAccountService.getOrCreateForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO, NOW))
+			.thenReturn(tutorialAccount);
 
 		assertThatThrownBy(() -> service.createSessionBuyOrder(
 			USER_ID, SESSION_ID, INSTRUMENT_ID, new BigDecimal("1"), new BigDecimal("50000000000")))
 			.isInstanceOfSatisfying(BusinessException.class,
-				exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.INSUFFICIENT_CASH));
+				exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.TUTORIAL_INSUFFICIENT_CASH));
 
+		assertThat(tutorialAccount.getReservedCash()).isZero();
 		assertThat(account.getReservedCash()).isZero();
 		verifyNoInteractions(userQueryService);
 		verify(orderRepository, org.mockito.Mockito.never()).save(any());
@@ -203,6 +226,10 @@ class PracticeLimitOrderCreationServiceTest {
 
 	private static Account account() {
 		return Account.create(testUser(), com.finplay.api.account.domain.Market.CRYPTO, NOW);
+	}
+
+	private static TutorialAccount tutorialAccount() {
+		return TutorialAccount.create(testUser(), com.finplay.api.account.domain.Market.CRYPTO, NOW);
 	}
 
 	private static User testUser() {

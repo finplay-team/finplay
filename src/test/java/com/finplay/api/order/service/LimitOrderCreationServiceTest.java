@@ -11,7 +11,9 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.finplay.api.account.domain.Account;
+import com.finplay.api.account.domain.TutorialAccount;
 import com.finplay.api.account.service.AccountService;
+import com.finplay.api.account.service.TutorialAccountService;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.service.UserQueryService;
 import com.finplay.api.common.BusinessException;
@@ -47,6 +49,7 @@ class LimitOrderCreationServiceTest {
 
 	private final UserQueryService userQueryService = mock(UserQueryService.class);
 	private final AccountService accountService = mock(AccountService.class);
+	private final TutorialAccountService tutorialAccountService = mock(TutorialAccountService.class);
 	private final InstrumentService instrumentService = mock(InstrumentService.class);
 	private final PortfolioSellService portfolioSellService = mock(PortfolioSellService.class);
 	private final OrderRepository orderRepository = mock(OrderRepository.class);
@@ -55,8 +58,8 @@ class LimitOrderCreationServiceTest {
 	private final Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
 
 	private final LimitOrderCreationService service = new LimitOrderCreationService(
-		userQueryService, accountService, instrumentService, portfolioSellService, orderRepository,
-		practiceOrderAttributionPort, clock);
+		userQueryService, accountService, tutorialAccountService, instrumentService, portfolioSellService,
+		orderRepository, practiceOrderAttributionPort, clock);
 
 	@Test
 	void createLimitOrderBuyReservesCashRequiredAndCreatesPendingOrder() {
@@ -89,15 +92,22 @@ class LimitOrderCreationServiceTest {
 		Instrument instrument = cryptoInstrument(5_000L);
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
 		Account account = account();
+		TutorialAccount tutorialAccount = tutorialAccount();
 		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
 		when(practiceOrderAttributionPort.lockForOrder(USER_ID, instrument))
 			.thenReturn(Optional.of(new PracticeOrderAttributionDto(50L, 3L, new BigDecimal("1000000"))));
 		when(accountService.getAccountForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO))
 			.thenReturn(account);
+		when(tutorialAccountService.getOrCreateForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO, NOW))
+			.thenReturn(tutorialAccount);
 		when(userQueryService.getUser(USER_ID)).thenReturn(testUser());
 
 		service.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, buyRequest("0.1", "1000000"));
 
+		// 047 TUTORIAL-CASH-ISOL-002: 샌드박스 종목의 지정가 매수 예약은 튜토리얼 계좌만 움직이고
+		// 실제 Account.reservedCash는 전혀 변하지 않는다. amount = 0.1*1,000,000=100,000, fee=50.
+		assertThat(tutorialAccount.getReservedCash()).isEqualTo(100_050L);
+		assertThat(account.getReservedCash()).isZero();
 		ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
 		verify(orderRepository).save(orderCaptor.capture());
 		assertThat(orderCaptor.getValue().getPracticeAttemptId()).isEqualTo(50L);
@@ -106,6 +116,33 @@ class LimitOrderCreationServiceTest {
 		lockOrder.verify(practiceOrderAttributionPort).lockForOrder(USER_ID, instrument);
 		lockOrder.verify(accountService)
 			.getAccountForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO);
+	}
+
+	@Test
+	void createLimitBuyForTutorialSampleThrowsTutorialInsufficientCashRegardlessOfRealAccountBalance() {
+		// 047 TUTORIAL-CASH-ISOL-005: 실제 계좌 잔고가 충분해도 튜토리얼 계좌 잔고만 보고 거부해야 한다.
+		Instrument instrument = cryptoInstrument(5_000L);
+		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
+		Account account = account();
+		account.addCash(100_000_000L); // 실제 계좌는 넉넉하다(1억 1천만원) — 그래도 거부돼야 한다.
+		TutorialAccount tutorialAccount = tutorialAccount(); // 기본 1000만원
+		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
+		when(practiceOrderAttributionPort.lockForOrder(USER_ID, instrument)).thenReturn(Optional.empty());
+		when(accountService.getAccountForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO))
+			.thenReturn(account);
+		when(tutorialAccountService.getOrCreateForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO, NOW))
+			.thenReturn(tutorialAccount);
+		// amount = 1 * 15,000,000 = 15,000,000 + fee 7,500 > 튜토리얼 계좌 잔고 10,000,000
+		LimitOrderCreateRequest request = buyRequest("1", "15000000");
+
+		assertThatThrownBy(() -> service.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, request))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
+				.isEqualTo(ErrorCode.TUTORIAL_INSUFFICIENT_CASH));
+
+		assertThat(tutorialAccount.getReservedCash()).isZero();
+		assertThat(account.getReservedCash()).isZero();
+		verifyNoInteractions(userQueryService, orderRepository);
 	}
 
 	@Test
@@ -306,6 +343,10 @@ class LimitOrderCreationServiceTest {
 
 	private static Account account() {
 		return Account.create(testUser(), com.finplay.api.account.domain.Market.CRYPTO, NOW);
+	}
+
+	private static TutorialAccount tutorialAccount() {
+		return TutorialAccount.create(testUser(), com.finplay.api.account.domain.Market.CRYPTO, NOW);
 	}
 
 	private static User testUser() {

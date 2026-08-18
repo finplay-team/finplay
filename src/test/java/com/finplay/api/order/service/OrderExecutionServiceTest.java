@@ -12,8 +12,10 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.finplay.api.account.domain.Account;
+import com.finplay.api.account.domain.TutorialAccount;
 import com.finplay.api.account.event.RealizedPnlUpdatedEvent;
 import com.finplay.api.account.service.AccountService;
+import com.finplay.api.account.service.TutorialAccountService;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.service.UserQueryService;
 import com.finplay.api.common.BusinessException;
@@ -58,6 +60,7 @@ class OrderExecutionServiceTest {
 
 	private final UserQueryService userQueryService = mock(UserQueryService.class);
 	private final AccountService accountService = mock(AccountService.class);
+	private final TutorialAccountService tutorialAccountService = mock(TutorialAccountService.class);
 	private final InstrumentService instrumentService = mock(InstrumentService.class);
 	private final PriceQueryService priceQueryService = mock(PriceQueryService.class);
 	private final PortfolioBuyService portfolioBuyService = mock(PortfolioBuyService.class);
@@ -77,6 +80,7 @@ class OrderExecutionServiceTest {
 		orderExecutionService = new OrderExecutionService(
 			userQueryService,
 			accountService,
+			tutorialAccountService,
 			instrumentService,
 			priceQueryService,
 			portfolioBuyService,
@@ -163,19 +167,56 @@ class OrderExecutionServiceTest {
 
 	@Test
 	void createOrderBuyAccumulatesSandboxCashAdjustmentWhenInstrumentIsTutorialSample() {
-		// spec 033 SANDBOX-EXCL-006 call site #1: 샌드박스 종목 매수는 deductCash와 별도로
-		// sandboxCashAdjustment에 음수로 누적된다.
+		// spec 033 SANDBOX-EXCL-006 call site #1(폐지는 tasks.md 항목6 몫, 현재는 유지): 샌드박스 종목 매수는
+		// sandboxCashAdjustment에 음수로 누적된다. spec 047 TUTORIAL-CASH-ISOL-002: 실제 현금 차감 자체는
+		// 더 이상 실제 Account가 아니라 같은 사용자·시장의 튜토리얼 계좌에서 일어난다.
 		Instrument instrument = stockInstrument();
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
 		Account account = account(com.finplay.api.account.domain.Market.STOCK);
 		User user = testUser();
+		TutorialAccount tutorialAccount = TutorialAccount.create(
+			user, com.finplay.api.account.domain.Market.STOCK, NOW);
 		stubHappyPath(instrument, account, user, new BigDecimal("10000.33"));
+		when(tutorialAccountService.getOrCreateForUpdate(USER_ID, com.finplay.api.account.domain.Market.STOCK, NOW))
+			.thenReturn(tutorialAccount);
 		OrderCreateRequest request = buyRequest(Market.STOCK, instrument.getId(), "3");
 
 		orderExecutionService.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, request);
 
 		// cashRequired = amount(30000) + fee(4) = 30004
 		assertThat(account.getSandboxCashAdjustment()).isEqualTo(-30004L);
+		assertThat(account.getCashBalance()).isEqualTo(10_000_000L); // 실제 계좌 현금은 전혀 변하지 않는다
+		assertThat(account.getReservedCash()).isZero();
+		assertThat(tutorialAccount.getCashBalance()).isEqualTo(10_000_000L - 30004L); // 튜토리얼 계좌에서만 차감
+	}
+
+	@Test
+	void createOrderBuyThrowsTutorialInsufficientCashRegardlessOfRealAccountBalanceAndLeavesBothAccountsUntouched() {
+		// 047 TUTORIAL-CASH-ISOL-002·005: 샌드박스 매수는 실제 계좌 잔고가 넉넉해도 튜토리얼 계좌 잔고만
+		// 보고 거부해야 하고, 오류 코드도 실제 계좌 부족(INSUFFICIENT_CASH)과 구분되는 TUTORIAL_INSUFFICIENT_CASH여야 한다.
+		Instrument instrument = stockInstrument();
+		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
+		Account account = account(com.finplay.api.account.domain.Market.STOCK);
+		account.addCash(50_000_000L); // 실제 계좌는 넉넉하다(6천만원) — 그래도 거부돼야 한다.
+		User user = testUser();
+		TutorialAccount tutorialAccount = TutorialAccount.create(
+			user, com.finplay.api.account.domain.Market.STOCK, NOW); // 기본 1000만원
+		// amount = 12,000,000 * 1 = 12,000,000, fee = floor(12,000,000*0.00015) = 1800
+		// cashRequired = 12,001,800 > 튜토리얼 계좌 잔고 10,000,000 (실제 계좌 잔고 60,000,000과는 무관)
+		stubHappyPath(instrument, account, user, new BigDecimal("12000000"));
+		when(tutorialAccountService.getOrCreateForUpdate(USER_ID, com.finplay.api.account.domain.Market.STOCK, NOW))
+			.thenReturn(tutorialAccount);
+		OrderCreateRequest request = buyRequest(Market.STOCK, instrument.getId(), "1");
+
+		assertThatThrownBy(() -> orderExecutionService.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, request))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
+				.isEqualTo(ErrorCode.TUTORIAL_INSUFFICIENT_CASH));
+
+		assertThat(account.getCashBalance()).isEqualTo(60_000_000L); // 실제 계좌 현금 불변
+		assertThat(tutorialAccount.getCashBalance()).isEqualTo(10_000_000L); // 튜토리얼 계좌도 차감되지 않음
+		verify(orderRepository, never()).save(any());
+		verify(tradeRepository, never()).save(any());
 	}
 
 	@Test
@@ -229,6 +270,7 @@ class OrderExecutionServiceTest {
 		orderExecutionService.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, request);
 
 		assertThat(account.getSandboxCashAdjustment()).isEqualTo(0L);
+		verifyNoInteractions(tutorialAccountService); // 047 회귀 방지: 실제 종목 매수는 튜토리얼 계좌를 전혀 조회하지 않는다
 	}
 
 	@Test
@@ -372,6 +414,7 @@ class OrderExecutionServiceTest {
 
 		assertBusinessExceptionAndNoSideEffects(request, ErrorCode.INSUFFICIENT_CASH);
 		assertThat(account.getCashBalance()).isEqualTo(10_000_000L);
+		verifyNoInteractions(tutorialAccountService); // 047 회귀 방지: 실제 종목 매수는 튜토리얼 계좌를 전혀 조회하지 않는다
 	}
 
 	@Test

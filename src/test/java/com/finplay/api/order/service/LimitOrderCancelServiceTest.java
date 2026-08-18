@@ -12,7 +12,9 @@ import static org.mockito.Mockito.when;
 
 import com.finplay.api.account.domain.Account;
 import com.finplay.api.account.domain.Market;
+import com.finplay.api.account.domain.TutorialAccount;
 import com.finplay.api.account.service.AccountService;
+import com.finplay.api.account.service.TutorialAccountService;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
@@ -24,6 +26,7 @@ import com.finplay.api.order.repository.OrderRepository;
 import com.finplay.api.portfolio.domain.Holding;
 import com.finplay.api.portfolio.service.PortfolioSellService;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -41,10 +44,12 @@ class LimitOrderCancelServiceTest {
 
 	private final OrderRepository orderRepository = mock(OrderRepository.class);
 	private final AccountService accountService = mock(AccountService.class);
+	private final TutorialAccountService tutorialAccountService = mock(TutorialAccountService.class);
 	private final PortfolioSellService portfolioSellService = mock(PortfolioSellService.class);
+	private final Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
 
 	private final LimitOrderCancelService service = new LimitOrderCancelService(
-		orderRepository, accountService, portfolioSellService);
+		orderRepository, accountService, tutorialAccountService, portfolioSellService, clock);
 
 	@Test
 	void cancelOrderReleasesReservedCashWhenSideIsBuy() {
@@ -61,6 +66,31 @@ class LimitOrderCancelServiceTest {
 		assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
 		assertThat(account.getReservedCash()).isZero();
 		assertThat(account.getCashBalance()).isEqualTo(10_000_000L); // 실제 현금은 불변
+		verifyNoInteractions(portfolioSellService);
+	}
+
+	@Test
+	void cancelOrderForTutorialSampleReleasesReservedCashInTutorialAccountOnlyWhenSideIsBuy() {
+		// 047 TUTORIAL-CASH-ISOL-002: 샌드박스 종목의 지정가 매수 취소는 튜토리얼 계좌의 예약만 해제하고
+		// 실제 Account.reservedCash·cashBalance는 전혀 변하지 않는다.
+		Instrument instrument = cryptoInstrument();
+		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
+		Account account = account();
+		TutorialAccount tutorialAccount = tutorialAccount();
+		// quantity=0.1 * limitPrice=1,000,000 => amount=100,000, fee=50, total=100,050 (생성 시점 예약을 재현)
+		tutorialAccount.reserveCash(100_050L);
+		Order order = limitPendingOrder(owner(), account, instrument, OrderSide.BUY, "0.1", "1000000");
+		when(orderRepository.findByIdForUpdate(ORDER_ID)).thenReturn(Optional.of(order));
+		when(accountService.getAccountByIdForUpdate(account.getId())).thenReturn(account);
+		when(tutorialAccountService.getOrCreateForUpdate(OWNER_USER_ID, Market.CRYPTO, NOW))
+			.thenReturn(tutorialAccount);
+
+		service.cancelOrder(OWNER_USER_ID, ORDER_ID);
+
+		assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+		assertThat(tutorialAccount.getReservedCash()).isZero();
+		assertThat(account.getReservedCash()).isZero(); // 실제 계좌는 예약된 적이 없다
+		assertThat(account.getCashBalance()).isEqualTo(10_000_000L); // 실제 계좌 현금은 전혀 변하지 않는다
 		verifyNoInteractions(portfolioSellService);
 	}
 
@@ -196,6 +226,10 @@ class LimitOrderCancelServiceTest {
 		Account account = Account.create(owner(), Market.CRYPTO, NOW);
 		ReflectionTestUtils.setField(account, "id", 10L);
 		return account;
+	}
+
+	private static TutorialAccount tutorialAccount() {
+		return TutorialAccount.create(owner(), Market.CRYPTO, NOW);
 	}
 
 	private static User owner() {
