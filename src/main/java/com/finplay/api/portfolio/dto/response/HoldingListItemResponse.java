@@ -6,6 +6,7 @@ import com.finplay.api.portfolio.service.HoldingValuationDto;
 import java.math.BigDecimal;
 
 public record HoldingListItemResponse(
+	Long holdingId,
 	Long instrumentId,
 	String symbol,
 	String name,
@@ -20,6 +21,7 @@ public record HoldingListItemResponse(
 
 	public static HoldingListItemResponse of(Holding holding, HoldingValuationDto valuation) {
 		return new HoldingListItemResponse(
+			holding.getId(),
 			holding.getInstrument().getId(),
 			holding.getInstrument().getSymbol(),
 			holding.getInstrument().getName(),
