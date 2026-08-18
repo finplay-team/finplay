@@ -16,10 +16,10 @@
 
 ## 요구사항
 
-- [ ] TRADESHARE-001: `POST /api/community/posts`가 선택적 `sharedTradeId`를 받는다. 값이 있으면 그 tradeId가 (a) 인증 사용자 본인 소유, (b) `side=SELL`인지 검증한다. 아니면 403(타인 소유) 또는 400(매수 체결)으로 거부한다. 존재하지 않는 tradeId는 404.
-- [ ] TRADESHARE-002: 게시물 응답(`CommunityPostResponse`/`CommunityPostListResponse`)에 `sharedTrade`(nullable) 필드를 추가한다 — `symbol`·`name`·`market`(`STOCK`|`CRYPTO`)·`buyPrice`·`sellPrice`·`quantity`·`realizedPnl`·`returnRate`를 담는다. `sharedTradeId`가 없는 게시물은 `sharedTrade=null`.
-- [ ] TRADESHARE-003: `buyPrice`·`returnRate` 계산은 기존 `PostSellFeedbackService`가 이미 갖고 있는 FIFO 가중평균 로직을 재사용한다(코인·주식 모두 지원됨, 이슈 #275) — **재계산하지 않는다**(PRD C-004 원칙과 동일). `PostSellFeedbackService`에 뉴스·서술·반사실·집단 비교를 건너뛰는 가벼운 공개 메서드(`getTradeShareSummary` 등, 이름은 구현 시 확정)를 신설해 `community` 도메인이 그것만 호출한다 — 무거운 `getFeedback()` 전체를 부르지 않는다.
-- [ ] TRADESHARE-004: 이미지 첨부(`imageId`)와 매매 카드(`sharedTradeId`)는 같은 게시물에 동시에 넣을 수 없다(둘 다 지정하면 400) — 한 게시물은 사진 또는 매매 카드 중 하나만 붙인다.
+- [x] TRADESHARE-001: `POST /api/community/posts`가 선택적 `sharedTradeId`를 받는다. 값이 있으면 그 tradeId가 (a) 인증 사용자 본인 소유, (b) `side=SELL`인지 검증한다. 아니면 403(타인 소유) 또는 400(매수 체결)으로 거부한다. 존재하지 않는 tradeId는 404.
+- [x] TRADESHARE-002: 게시물 응답(`CommunityPostResponse`/`CommunityPostListResponse`)에 `sharedTrade`(nullable) 필드를 추가한다 — `symbol`·`name`·`market`(`STOCK`|`CRYPTO`)·`buyPrice`·`sellPrice`·`quantity`·`realizedPnl`·`returnRate`를 담는다. `sharedTradeId`가 없는 게시물은 `sharedTrade=null`.
+- [x] TRADESHARE-003: `buyPrice`·`returnRate` 계산은 기존 `PostSellFeedbackService`가 이미 갖고 있는 FIFO 가중평균 로직을 재사용한다(코인·주식 모두 지원됨, 이슈 #275) — **재계산하지 않는다**(PRD C-004 원칙과 동일). `PostSellFeedbackService`에 뉴스·서술·반사실·집단 비교를 건너뛰는 가벼운 공개 메서드(`getTradeShareSummary` 등, 이름은 구현 시 확정)를 신설해 `community` 도메인이 그것만 호출한다 — 무거운 `getFeedback()` 전체를 부르지 않는다.
+- [x] TRADESHARE-004: 이미지 첨부(`imageId`)와 매매 카드(`sharedTradeId`)는 같은 게시물에 동시에 넣을 수 없다(둘 다 지정하면 400) — 한 게시물은 사진 또는 매매 카드 중 하나만 붙인다.
 
 ## 데이터 모델
 
@@ -38,7 +38,7 @@
 
 ## 완료 조건
 
-- [ ] 본인 매도 체결로 게시물을 만들면 응답에 `sharedTrade`가 정확한 수치로 채워진다(코인·주식 둘 다, 자동 테스트로 확인).
-- [ ] 타인 체결·매수 체결·존재하지 않는 tradeId로 시도하면 각각 403·400·404.
-- [ ] `imageId`와 `sharedTradeId`를 동시에 주면 400.
-- [ ] 기존 이미지 첨부 게시물·매매 카드 없는 일반 게시물 회귀 없음.
+- [x] 본인 매도 체결로 게시물을 만들면 응답에 `sharedTrade`가 정확한 수치로 채워진다(코인·주식 둘 다, 자동 테스트로 확인).
+- [x] 타인 체결·매수 체결·존재하지 않는 tradeId로 시도하면 각각 403·400·404.
+- [x] `imageId`와 `sharedTradeId`를 동시에 주면 400.
+- [x] 기존 이미지 첨부 게시물·매매 카드 없는 일반 게시물 회귀 없음.
