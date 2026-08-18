@@ -6,7 +6,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finplay.api.TestcontainersConfiguration;
 import com.finplay.api.account.domain.Account;
+import com.finplay.api.account.domain.TutorialAccount;
 import com.finplay.api.account.repository.AccountRepository;
+import com.finplay.api.account.repository.TutorialAccountRepository;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.common.BusinessException;
@@ -78,6 +80,8 @@ class PracticeAttemptRestartIntegrationTest {
 	@Autowired
 	private TradeAllocationRepository tradeAllocationRepository;
 	@Autowired
+	private TutorialAccountRepository tutorialAccountRepository;
+	@Autowired
 	private JdbcTemplate jdbcTemplate;
 
 	private final Set<Long> userIds = new HashSet<>();
@@ -87,6 +91,7 @@ class PracticeAttemptRestartIntegrationTest {
 	@AfterEach
 	void cleanUp() {
 		for (Long userId : userIds) {
+			jdbcTemplate.update("DELETE FROM tutorial_accounts WHERE user_id = ?", userId);
 			jdbcTemplate.update(
 				"DELETE FROM practice_risk_snapshots WHERE attempt_id IN "
 					+ "(SELECT id FROM practice_attempts WHERE user_id = ?)",
@@ -230,6 +235,49 @@ class PracticeAttemptRestartIntegrationTest {
 		Holding emptied = holdingRepository.findById(holding.getId()).orElseThrow();
 		assertThat(emptied.getQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
 		assertThat(emptied.isActive()).isFalse();
+	}
+
+	// 047 TUTORIAL-CASH-ISOL-003: 재시작 보상매도(PracticeRunRestartOrderService.createCompensatingSell)도
+	// PortfolioSellService.finalizeSellRealizedPnl을 공유하므로, 샌드박스 종목(selectedFixture()가 만드는
+	// instrument는 항상 tutorialSample=true)이면 실제 Account.cashBalance·realizedPnl은 전혀 변하지 않고
+	// 튜토리얼 계좌의 현금·realizedPnl만 매도 체결만큼 갱신돼야 한다 — 이슈 #450 재발 방지 회귀 검증이다.
+	@Test
+	void restartWithExactAvailableHoldingCreditsTutorialAccountAndLeavesRealAccountCashAndRealizedPnlUnchanged() {
+		Fixture fixture = selectedFixture("tutorial-cash-compensation", Market.CRYPTO);
+		BigDecimal quantity = new BigDecimal("1.5");
+		Holding holding = holding(fixture, quantity);
+		holdingRepository.saveAndFlush(holding);
+		Order filledBuy = orderRepository.saveAndFlush(Order.createForPracticeAttempt(
+			fixture.user(), fixture.account(), fixture.instrument(), OrderSide.BUY, OrderType.MARKET,
+			quantity, fixture.attempt().getId(), 1L, "tutorial-cash-compensation-filled", "e".repeat(64),
+			NOW.minusMinutes(1)));
+		Trade buyTrade = tradeRepository.saveAndFlush(Trade.of(
+			filledBuy, fixture.account(), fixture.instrument(), null, OrderSide.BUY, BigDecimal.valueOf(90_000),
+			quantity, 135_000L, 67L, null, NOW.minusMinutes(1), NOW.minusMinutes(1)));
+		holdingLotRepository.saveAndFlush(HoldingLot.create(
+			holding, buyTrade, quantity, BigDecimal.valueOf(90_000), 67L, NOW.minusMinutes(1), NOW.minusMinutes(1)));
+		long realAccountCashBefore = fixture.account().getCashBalance();
+		long realAccountRealizedPnlBefore = fixture.account().getRealizedPnl();
+
+		restartService.restart(fixture.user().getId(), Market.CRYPTO);
+
+		Order auditOrder = orderRepository.findByUserIdAndIdempotencyKey(
+			fixture.user().getId(), "practice-restart:" + fixture.attempt().getId() + ":1").orElseThrow();
+		Trade auditTrade = tradeRepository.findByOrderId(auditOrder.getId()).orElseThrow();
+		assertThat(auditTrade.getRealizedPnl()).isNotNull();
+
+		// 실제 Account는 이 보상매도로 현금·실현손익 모두 전혀 변하지 않는다.
+		Account realAccountAfter = accountRepository.findById(fixture.account().getId()).orElseThrow();
+		assertThat(realAccountAfter.getCashBalance()).isEqualTo(realAccountCashBefore);
+		assertThat(realAccountAfter.getRealizedPnl()).isEqualTo(realAccountRealizedPnlBefore);
+
+		// 튜토리얼 계좌만 보상매도 대금·실현손익을 반영한다(047 설계 판단 "계좌 생성 시점" — 여기서 최초 생성됨).
+		TutorialAccount tutorialAccount = tutorialAccountRepository
+			.findByUserIdAndMarket(fixture.user().getId(), com.finplay.api.account.domain.Market.CRYPTO)
+			.orElseThrow();
+		assertThat(tutorialAccount.getCashBalance())
+			.isEqualTo(10_000_000L + auditTrade.getAmount() - auditTrade.getFee());
+		assertThat(tutorialAccount.getRealizedPnl()).isEqualTo(auditTrade.getRealizedPnl());
 	}
 
 	@Test

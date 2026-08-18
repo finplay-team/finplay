@@ -470,27 +470,36 @@ class OrderExecutionServiceTest {
 	}
 
 	@Test
-	void createOrderSellSkipsAccountRealizedPnlWhenInstrumentIsTutorialSampleButTradeRealizedPnlIsAlwaysFilled() {
-		// spec 033 SANDBOX-EXCL-004: 샌드박스 종목 시장가 매도는 account.realizedPnl에 반영하지 않지만
-		// trade.realizedPnl·account.cashBalance는 항상 그대로 반영된다.
+	void createOrderSellCreditsTutorialAccountAndLeavesRealAccountCashAndRealizedPnlUnchangedWhenInstrumentIsTutorialSample() {
+		// spec 047 TUTORIAL-CASH-ISOL-003(033 SANDBOX-EXCL-004·006 대체): 샌드박스 종목 시장가 매도는 실제
+		// Account.cashBalance·realizedPnl을 전혀 증가시키지 않는다 — 대신 같은 사용자·시장의 튜토리얼 계좌
+		// 현금·realizedPnl이 갱신된다. trade.realizedPnl(원장 값)은 종목 종류와 무관하게 항상 채워진다.
 		Instrument instrument = stockInstrument();
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
 		Account account = account(com.finplay.api.account.domain.Market.STOCK);
 		Holding holding = mock(Holding.class);
 		User user = testUser();
+		TutorialAccount tutorialAccount = TutorialAccount.create(
+			user, com.finplay.api.account.domain.Market.STOCK, NOW);
 		BigDecimal quantity = new BigDecimal("3");
 		// price 10000 * 3 = amount 30000, fee = floor(30000*0.00015)=4
 		stubSellHappyPath(instrument, account, user, new BigDecimal("10000"));
 		when(portfolioSellService.getHoldingForUpdateOrThrow(account, instrument, quantity)).thenReturn(holding);
 		when(portfolioSellService.applySellTrade(eq(holding), any(Trade.class), eq(quantity), eq(NOW)))
 			.thenReturn(new SellAllocationDto(20_000L, 3L));
+		when(tutorialAccountService.getOrCreateForUpdate(USER_ID, com.finplay.api.account.domain.Market.STOCK, NOW))
+			.thenReturn(tutorialAccount);
 		OrderCreateRequest request = sellRequest(Market.STOCK, instrument.getId(), "3");
 
 		orderExecutionService.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, request);
 
 		assertThat(account.getRealizedPnl()).isEqualTo(0L);
-		assertThat(account.getCashBalance()).isEqualTo(10_000_000L + 30000L - 4L);
-		// spec 033 SANDBOX-EXCL-006 call site #2: 샌드박스 매도 입금은 sandboxCashAdjustment에도 반영된다.
+		// 실제 Account 현금은 이슈 #450 재발 방지 핵심 전제대로 전혀 변하지 않는다.
+		assertThat(account.getCashBalance()).isEqualTo(10_000_000L);
+		// 튜토리얼 계좌만 매도 대금·실현손익을 반영한다.
+		assertThat(tutorialAccount.getCashBalance()).isEqualTo(10_000_000L + 30000L - 4L);
+		assertThat(tutorialAccount.getRealizedPnl()).isEqualTo(9993L);
+		// spec 033 SANDBOX-EXCL-006 call site #2(폐지는 tasks.md 항목6 몫): 현재도 유지되어 그대로 누적된다.
 		assertThat(account.getSandboxCashAdjustment()).isEqualTo(30000L - 4L);
 		ArgumentCaptor<Trade> tradeCaptor = ArgumentCaptor.forClass(Trade.class);
 		verify(tradeRepository).save(tradeCaptor.capture());

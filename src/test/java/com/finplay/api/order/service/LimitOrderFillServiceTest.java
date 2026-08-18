@@ -263,7 +263,7 @@ class LimitOrderFillServiceTest {
 		when(portfolioSellService.applySellTrade(eq(holding), any(Trade.class), eq(new BigDecimal("0.1")), eq(NOW)))
 			.thenReturn(allocation);
 		when(portfolioSellService.finalizeSellRealizedPnl(eq(account), any(Trade.class), eq(100_000L), eq(50L),
-			eq(allocation))).thenReturn(9_910L);
+			eq(allocation), eq(NOW))).thenReturn(9_910L);
 
 		service.fillIfPending(order.getId());
 
@@ -278,7 +278,7 @@ class LimitOrderFillServiceTest {
 		assertThat(savedTrade.getFee()).isEqualTo(50L);
 
 		verify(portfolioSellService).applySellTrade(holding, savedTrade, new BigDecimal("0.1"), NOW);
-		verify(portfolioSellService).finalizeSellRealizedPnl(account, savedTrade, 100_000L, 50L, allocation);
+		verify(portfolioSellService).finalizeSellRealizedPnl(account, savedTrade, 100_000L, 50L, allocation, NOW);
 		ArgumentCaptor<RealizedPnlUpdatedEvent> eventCaptor = ArgumentCaptor.forClass(RealizedPnlUpdatedEvent.class);
 		verify(eventPublisher).publishEvent(eventCaptor.capture());
 		assertThat(eventCaptor.getValue().accountId()).isEqualTo(account.getId());

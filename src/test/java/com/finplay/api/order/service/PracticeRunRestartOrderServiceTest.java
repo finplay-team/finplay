@@ -109,7 +109,7 @@ class PracticeRunRestartOrderServiceTest {
 		assertThat(auditTrade.getFee()).isEqualTo(75L);
 		verify(portfolioSellService).applySellTrade(fixture.holding(), auditTrade, new BigDecimal("1.5"), NOW);
 		verify(portfolioSellService).finalizeSellRealizedPnl(
-			fixture.account(), auditTrade, 150_000L, 75L, allocation);
+			fixture.account(), auditTrade, 150_000L, 75L, allocation, NOW);
 	}
 
 	@Test
