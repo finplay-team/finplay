@@ -458,7 +458,7 @@ class CommunityPostControllerTest {
 		LocalDateTime now = LocalDateTime.of(2026, 7, 27, 12, 0);
 		CommunityPostResponse item = new CommunityPostResponse(
 			7L, "author", "title", "content", now, now, null, null, null, null, null);
-		when(service.getPosts(0, 10, null))
+		when(service.getPosts(0, 10, null, "latest"))
 			.thenReturn(new CommunityPostListResponse(List.of(item), 0, 10, 1, 1, false));
 
 		mockMvc.perform(get("/api/community/posts")
@@ -471,14 +471,14 @@ class CommunityPostControllerTest {
 			.andExpect(jsonPath("$.totalPages").value(1))
 			.andExpect(jsonPath("$.hasNext").value(false));
 
-		verify(service).getPosts(0, 10, null);
+		verify(service).getPosts(0, 10, null, "latest");
 	}
 
 	@Test
 	void getPostsPassesExplicitPageAndSizeToService() throws Exception {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
-		when(service.getPosts(2, 5, null))
+		when(service.getPosts(2, 5, null, "latest"))
 			.thenReturn(new CommunityPostListResponse(List.of(), 2, 5, 0, 0, false));
 
 		mockMvc.perform(get("/api/community/posts")
@@ -489,14 +489,14 @@ class CommunityPostControllerTest {
 			.andExpect(jsonPath("$.content").isArray())
 			.andExpect(jsonPath("$.content").isEmpty());
 
-		verify(service).getPosts(2, 5, null);
+		verify(service).getPosts(2, 5, null, "latest");
 	}
 
 	@Test
 	void getPostsPassesInstrumentIdQueryParameterToService() throws Exception {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
-		when(service.getPosts(0, 10, 9L))
+		when(service.getPosts(0, 10, 9L, "latest"))
 			.thenReturn(new CommunityPostListResponse(List.of(), 0, 10, 0, 0, false));
 
 		mockMvc.perform(get("/api/community/posts")
@@ -504,21 +504,21 @@ class CommunityPostControllerTest {
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
 			.andExpect(status().isOk());
 
-		verify(service).getPosts(0, 10, 9L);
+		verify(service).getPosts(0, 10, 9L, "latest");
 	}
 
 	@Test
 	void getPostsPassesNullInstrumentIdToServiceWhenParameterOmitted() throws Exception {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
-		when(service.getPosts(0, 10, null))
+		when(service.getPosts(0, 10, null, "latest"))
 			.thenReturn(new CommunityPostListResponse(List.of(), 0, 10, 0, 0, false));
 
 		mockMvc.perform(get("/api/community/posts")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
 			.andExpect(status().isOk());
 
-		verify(service).getPosts(0, 10, null);
+		verify(service).getPosts(0, 10, null, "latest");
 	}
 
 	@ParameterizedTest(name = "{0}")
@@ -534,6 +534,53 @@ class CommunityPostControllerTest {
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
 			.andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(service);
+	}
+
+	@Test
+	void getPostsPassesPopularSortQueryParameterToService() throws Exception {
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+		when(service.getPosts(0, 10, null, "popular"))
+			.thenReturn(new CommunityPostListResponse(List.of(), 0, 10, 0, 0, false));
+
+		mockMvc.perform(get("/api/community/posts")
+			.param("sort", "popular")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk());
+
+		verify(service).getPosts(0, 10, null, "popular");
+	}
+
+	@Test
+	void getPostsCombinesPopularSortWithInstrumentIdQueryParameter() throws Exception {
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+		when(service.getPosts(0, 10, 9L, "popular"))
+			.thenReturn(new CommunityPostListResponse(List.of(), 0, 10, 0, 0, false));
+
+		mockMvc.perform(get("/api/community/posts")
+			.param("sort", "popular")
+			.param("instrumentId", "9")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk());
+
+		verify(service).getPosts(0, 10, 9L, "popular");
+	}
+
+	@Test
+	void getPostsRejectsUnsupportedSortValueWithoutCallingService() throws Exception {
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+
+		mockMvc.perform(get("/api/community/posts")
+			.param("sort", "trending")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.message").value("sort는 latest 또는 popular만 지정할 수 있습니다."))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
 		verifyNoInteractions(service);

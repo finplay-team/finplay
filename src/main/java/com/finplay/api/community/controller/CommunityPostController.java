@@ -33,6 +33,8 @@ public class CommunityPostController {
 	private static final int DEFAULT_SIZE = 10;
 	private static final int MIN_SIZE = 1;
 	private static final int MAX_SIZE = 50;
+	private static final String SORT_LATEST = "latest";
+	private static final String SORT_POPULAR = "popular";
 
 	private final CommunityPostService communityPostService;
 
@@ -83,9 +85,12 @@ public class CommunityPostController {
 		@RequestParam(defaultValue = "" + DEFAULT_SIZE)
 		int size,
 		@RequestParam(required = false)
-		Long instrumentId) {
+		Long instrumentId,
+		@RequestParam(defaultValue = SORT_LATEST)
+		String sort) {
 		validatePageAndSize(page, size);
-		CommunityPostListResponse response = communityPostService.getPosts(page, size, instrumentId);
+		validateSort(sort);
+		CommunityPostListResponse response = communityPostService.getPosts(page, size, instrumentId, sort);
 		return ResponseEntity.ok(response);
 	}
 
@@ -93,6 +98,13 @@ public class CommunityPostController {
 		if (page < 0 || size < MIN_SIZE || size > MAX_SIZE) {
 			throw new BusinessException(
 				ErrorCode.VALIDATION_ERROR, "page는 0 이상, size는 1~50 사이여야 합니다.");
+		}
+	}
+
+	private void validateSort(String sort) {
+		if (!SORT_LATEST.equals(sort) && !SORT_POPULAR.equals(sort)) {
+			throw new BusinessException(
+				ErrorCode.VALIDATION_ERROR, "sort는 latest 또는 popular만 지정할 수 있습니다.");
 		}
 	}
 }

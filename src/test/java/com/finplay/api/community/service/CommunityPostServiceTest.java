@@ -372,9 +372,9 @@ class CommunityPostServiceTest {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
 		CommunityPost post = CommunityPost.create(author, "title", "content", null, LocalDateTime.now(CLOCK));
 		Page<CommunityPost> page = new PageImpl<>(List.of(post), PageRequest.of(0, 10), 1);
-		when(repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10), null)).thenReturn(page);
+		when(repository.findPosts(PageRequest.of(0, 10), null, "latest")).thenReturn(page);
 
-		CommunityPostListResponse response = service.getPosts(0, 10, null);
+		CommunityPostListResponse response = service.getPosts(0, 10, null, "latest");
 
 		assertThat(response.content()).hasSize(1);
 		assertThat(response.content().get(0).authorNickname()).isEqualTo("author");
@@ -393,21 +393,34 @@ class CommunityPostServiceTest {
 		CommunityPost post = CommunityPost.create(
 			author, "tagged title", "content", instrument, LocalDateTime.now(CLOCK));
 		Page<CommunityPost> page = new PageImpl<>(List.of(post), PageRequest.of(0, 10), 1);
-		when(repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10), 9L)).thenReturn(page);
+		when(repository.findPosts(PageRequest.of(0, 10), 9L, "latest")).thenReturn(page);
 
-		CommunityPostListResponse response = service.getPosts(0, 10, 9L);
+		CommunityPostListResponse response = service.getPosts(0, 10, 9L, "latest");
 
 		assertThat(response.content()).hasSize(1);
 		assertThat(response.content().get(0).instrumentId()).isEqualTo(9L);
-		verify(repository).findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10), 9L);
+		verify(repository).findPosts(PageRequest.of(0, 10), 9L, "latest");
+	}
+
+	@Test
+	void getPostsPassesPopularSortToRepositoryWhenProvided() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(author, "title", "content", null, LocalDateTime.now(CLOCK));
+		Page<CommunityPost> page = new PageImpl<>(List.of(post), PageRequest.of(0, 10), 1);
+		when(repository.findPosts(PageRequest.of(0, 10), null, "popular")).thenReturn(page);
+
+		CommunityPostListResponse response = service.getPosts(0, 10, null, "popular");
+
+		assertThat(response.content()).hasSize(1);
+		verify(repository).findPosts(PageRequest.of(0, 10), null, "popular");
 	}
 
 	@Test
 	void getPostsReturnsEmptyContentWhenNoPostsExist() {
 		Page<CommunityPost> emptyPage = new PageImpl<>(List.of(), PageRequest.of(0, 10), 0);
-		when(repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10), null)).thenReturn(emptyPage);
+		when(repository.findPosts(PageRequest.of(0, 10), null, "latest")).thenReturn(emptyPage);
 
-		CommunityPostListResponse response = service.getPosts(0, 10, null);
+		CommunityPostListResponse response = service.getPosts(0, 10, null, "latest");
 
 		assertThat(response.content()).isEmpty();
 		assertThat(response.totalElements()).isEqualTo(0);

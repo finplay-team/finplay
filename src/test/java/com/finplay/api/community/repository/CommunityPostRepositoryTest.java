@@ -126,7 +126,7 @@ class CommunityPostRepositoryTest {
 		CommunityPost newest = repository.saveAndFlush(
 			CommunityPost.create(author, "newest", "content", null, NOW));
 
-		Page<CommunityPost> page = repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10), null);
+		Page<CommunityPost> page = repository.findPosts(PageRequest.of(0, 10), null, "latest");
 
 		assertThat(page.getContent())
 			.extracting(CommunityPost::getId)
@@ -139,7 +139,7 @@ class CommunityPostRepositoryTest {
 		CommunityPost first = repository.saveAndFlush(CommunityPost.create(author, "first", "content", null, NOW));
 		CommunityPost second = repository.saveAndFlush(CommunityPost.create(author, "second", "content", null, NOW));
 
-		Page<CommunityPost> page = repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10), null);
+		Page<CommunityPost> page = repository.findPosts(PageRequest.of(0, 10), null, "latest");
 
 		assertThat(page.getContent())
 			.extracting(CommunityPost::getId)
@@ -157,7 +157,7 @@ class CommunityPostRepositoryTest {
 		statistics.setStatisticsEnabled(true);
 		statistics.clear();
 
-		Page<CommunityPost> page = repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 1), null);
+		Page<CommunityPost> page = repository.findPosts(PageRequest.of(0, 1), null, "latest");
 		page.getContent().forEach(post -> assertThat(post.getAuthor().getNickname()).isEqualTo("fetcher"));
 
 		assertThat(statistics.getPrepareStatementCount()).isEqualTo(2);
@@ -173,8 +173,8 @@ class CommunityPostRepositoryTest {
 			repository.saveAndFlush(CommunityPost.create(author, "p4", "content", null, NOW.minusMinutes(1))).getId(),
 			repository.saveAndFlush(CommunityPost.create(author, "p5", "content", null, NOW)).getId());
 
-		Page<CommunityPost> firstPage = repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 3), null);
-		Page<CommunityPost> secondPage = repository.findPostsOrderByCreatedAtDesc(PageRequest.of(1, 3), null);
+		Page<CommunityPost> firstPage = repository.findPosts(PageRequest.of(0, 3), null, "latest");
+		Page<CommunityPost> secondPage = repository.findPosts(PageRequest.of(1, 3), null, "latest");
 
 		assertThat(firstPage.getTotalElements()).isEqualTo(5);
 		assertThat(firstPage.getTotalPages()).isEqualTo(2);
@@ -191,7 +191,7 @@ class CommunityPostRepositoryTest {
 
 	@Test
 	void findPostsOrderByCreatedAtDescReturnsEmptyPageWhenNoPostsExist() {
-		Page<CommunityPost> page = repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10), null);
+		Page<CommunityPost> page = repository.findPosts(PageRequest.of(0, 10), null, "latest");
 
 		assertThat(page.getContent()).isEmpty();
 		assertThat(page.getTotalElements()).isEqualTo(0);
@@ -274,7 +274,7 @@ class CommunityPostRepositoryTest {
 		repository.saveAndFlush(CommunityPost.create(author, "hynix post", "content", hynix, NOW.minusMinutes(1)));
 		repository.saveAndFlush(CommunityPost.create(author, "untagged post", "content", null, NOW));
 
-		Page<CommunityPost> page = repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10), samsung.getId());
+		Page<CommunityPost> page = repository.findPosts(PageRequest.of(0, 10), samsung.getId(), "latest");
 
 		assertThat(page.getContent()).extracting(CommunityPost::getId).containsExactly(taggedSamsung.getId());
 		assertThat(page.getTotalElements()).isEqualTo(1);
@@ -290,7 +290,7 @@ class CommunityPostRepositoryTest {
 		CommunityPost untagged = repository.saveAndFlush(
 			CommunityPost.create(author, "untagged", "content", null, NOW));
 
-		Page<CommunityPost> page = repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10), null);
+		Page<CommunityPost> page = repository.findPosts(PageRequest.of(0, 10), null, "latest");
 
 		assertThat(page.getContent())
 			.extracting(CommunityPost::getId)
@@ -312,7 +312,7 @@ class CommunityPostRepositoryTest {
 		statistics.setStatisticsEnabled(true);
 		statistics.clear();
 
-		Page<CommunityPost> page = repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10), samsung.getId());
+		Page<CommunityPost> page = repository.findPosts(PageRequest.of(0, 10), samsung.getId(), "latest");
 		page.getContent().forEach(post -> assertThat(post.getInstrument().getSymbol())
 			.isEqualTo(samsung.getSymbol()));
 
@@ -369,7 +369,7 @@ class CommunityPostRepositoryTest {
 		statistics.setStatisticsEnabled(true);
 		statistics.clear();
 
-		Page<CommunityPost> page = repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10), null);
+		Page<CommunityPost> page = repository.findPosts(PageRequest.of(0, 10), null, "latest");
 
 		assertThat(page.getContent()).hasSize(2);
 		CommunityPost fetchedWithImage = page.getContent().stream()
@@ -425,6 +425,72 @@ class CommunityPostRepositoryTest {
 		CommunityPost post = repository.saveAndFlush(CommunityPost.create(author, "title", "content", null, NOW));
 
 		assertThat(post.getLikeCount()).isEqualTo(0L);
+	}
+
+	@Test
+	void findPostsOrdersByLikeCountDescendingForPopularSort() {
+		User author = userRepository.saveAndFlush(User.create("popular@finplay.com", "hash", "popularer", NOW));
+		CommunityPost fewLikes = repository.saveAndFlush(
+			CommunityPost.create(author, "few likes", "content", null, NOW.minusMinutes(3)));
+		CommunityPost manyLikes = repository.saveAndFlush(
+			CommunityPost.create(author, "many likes", "content", null, NOW.minusMinutes(2)));
+		CommunityPost midLikes = repository.saveAndFlush(
+			CommunityPost.create(author, "mid likes", "content", null, NOW.minusMinutes(1)));
+		repository.incrementLikeCount(fewLikes.getId());
+		repository.incrementLikeCount(manyLikes.getId());
+		repository.incrementLikeCount(manyLikes.getId());
+		repository.incrementLikeCount(manyLikes.getId());
+		repository.incrementLikeCount(midLikes.getId());
+		repository.incrementLikeCount(midLikes.getId());
+
+		Page<CommunityPost> page = repository.findPosts(PageRequest.of(0, 10), null, "popular");
+
+		assertThat(page.getContent())
+			.extracting(CommunityPost::getId)
+			.containsExactly(manyLikes.getId(), midLikes.getId(), fewLikes.getId());
+	}
+
+	@Test
+	void findPostsBreaksLikeCountTiesByCreatedAtDescendingForPopularSort() {
+		User author = userRepository.saveAndFlush(User.create("tiepopular@finplay.com", "hash", "tiepopularer", NOW));
+		CommunityPost older = repository.saveAndFlush(
+			CommunityPost.create(author, "older", "content", null, NOW.minusDays(1)));
+		CommunityPost newer = repository.saveAndFlush(
+			CommunityPost.create(author, "newer", "content", null, NOW));
+		repository.incrementLikeCount(older.getId());
+		repository.incrementLikeCount(newer.getId());
+
+		Page<CommunityPost> page = repository.findPosts(PageRequest.of(0, 10), null, "popular");
+
+		assertThat(page.getContent())
+			.extracting(CommunityPost::getId)
+			.containsExactly(newer.getId(), older.getId());
+	}
+
+	@Test
+	void findPostsPopularSortReturnsOnlyPostsTaggedWithGivenInstrumentId() {
+		User author = userRepository.saveAndFlush(
+			User.create("popularfilter@finplay.com", "hash", "popularfilterer", NOW));
+		Instrument samsung = instrumentRepository.saveAndFlush(
+			Instrument.create(Market.STOCK, uniqueSymbol(), "삼성전자", BigDecimal.valueOf(100), 70000L, true, NOW));
+		CommunityPost taggedFewLikes = repository.saveAndFlush(
+			CommunityPost.create(author, "tagged few likes", "content", samsung, NOW.minusMinutes(2)));
+		CommunityPost taggedManyLikes = repository.saveAndFlush(
+			CommunityPost.create(author, "tagged many likes", "content", samsung, NOW.minusMinutes(1)));
+		CommunityPost untaggedManyLikes = repository.saveAndFlush(
+			CommunityPost.create(author, "untagged many likes", "content", null, NOW));
+		repository.incrementLikeCount(taggedFewLikes.getId());
+		repository.incrementLikeCount(taggedManyLikes.getId());
+		repository.incrementLikeCount(taggedManyLikes.getId());
+		repository.incrementLikeCount(untaggedManyLikes.getId());
+		repository.incrementLikeCount(untaggedManyLikes.getId());
+		repository.incrementLikeCount(untaggedManyLikes.getId());
+
+		Page<CommunityPost> page = repository.findPosts(PageRequest.of(0, 10), samsung.getId(), "popular");
+
+		assertThat(page.getContent())
+			.extracting(CommunityPost::getId)
+			.containsExactly(taggedManyLikes.getId(), taggedFewLikes.getId());
 	}
 
 	private static String uniqueSymbol() {

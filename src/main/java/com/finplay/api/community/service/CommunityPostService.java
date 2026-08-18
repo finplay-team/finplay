@@ -95,9 +95,9 @@ public class CommunityPostService {
 	}
 
 	@Transactional(readOnly = true)
-	public CommunityPostListResponse getPosts(int page, int size, Long instrumentId) {
+	public CommunityPostListResponse getPosts(int page, int size, Long instrumentId, String sort) {
 		Pageable pageable = PageRequest.of(page, size);
-		Page<CommunityPost> posts = communityPostRepository.findPostsOrderByCreatedAtDesc(pageable, instrumentId);
+		Page<CommunityPost> posts = communityPostRepository.findPosts(pageable, instrumentId, sort);
 		return CommunityPostListResponse.from(posts);
 	}
 }
