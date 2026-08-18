@@ -17,6 +17,7 @@
 | 21:53 | implementer | (문서 갱신, 테스트 실행 없음) | CLAUDE.md 규칙 10, tasks.md 9번 |
 | 02:16 | implementer | (문서 갱신, 테스트 실행 없음) | 이슈 #459 PR #460 리뷰 권장사항, ADR-0021 §결정 6·7 |
 | 18:18 | implementer | `./gradlew build` | 이슈 #459 코멘트 "PR-B(컬럼 DROP)로 진행해줘", ADR-0021 §결정 7 |
+| (이슈 #461) | 메인 세션 | `./gradlew --no-daemon --max-workers=1 build` | 이슈 #461 코멘트 "1안으로 구현해줘", TUTORIAL-CASH-ISOL-010 결정 |
 
 ## 모니터링 (사람용 요약)
 - 18:52 — TutorialAccount 엔티티·Repository·V46 마이그레이션·TUTORIAL_INSUFFICIENT_CASH 추가, DataJpaTest 6건 통과.
@@ -36,3 +37,4 @@
 
 - 02:16 — 이슈 #459(`sandbox_cash_adjustment` 컬럼 물리적 삭제, spec 047 "제외 범위" 후속) PR-A(#460, `Account.sandboxCashAdjustment` 매핑·`addSandboxCashAdjustment()` 제거, 마이그레이션 미포함) 완료·머지 대기 상태를 기록. ADR-0021 §결정 7에 따라 PR-B(컬럼 `DROP`)는 이 PR 배포 확인 후 별도로 진행한다(§결정 6의 자동 롤백 창 회피).
 - 18:18 — PR-A(#460) 배포 확인 후 PR-B를 진행했다(이슈 #459 코멘트). `V47__drop_sandbox_cash_adjustment.sql`로 `accounts.sandbox_cash_adjustment` 컬럼을 삭제했다. `TutorialAccountBackfillMigrationTest`(V46 replay)는 컬럼 의존 테스트 4건(현금 원복·완료 보상 제외·0원 하한·멱등성)을 제거하고 컬럼과 무관한 PENDING 매수 취소·매도 미대상 2건만 남겼다 — "UPDATE 필터를 좁혀 예약 현금·PENDING 취소 케이스만 남기는" 안(이슈 #459 분석 공통 결정 사항 1). `SandboxCashAdjustmentBackfillMigrationTest`는 `RealizedPnlBackfillMigrationTest`로 이름을 바꾸고 sandbox_cash_adjustment 관련 검증을 제거해 realized_pnl 재계산(033/#366) 커버리지만 남겼다(공통 결정 사항 2). `docs/prd.md` §3 TUTORIAL-CASH-ISOL 행의 "컬럼 자체는 존치, 물리적 DROP은 후속 이슈" 문장을 실제 완료 사실로 갱신했다(공통 결정 사항 3). `./gradlew build` BUILD SUCCESSFUL(전체 테스트·spotless·spotbugs·jacoco 포함).
+- (이슈 #461) TUTORIAL-CASH-ISOL-010을 결정 완료로 갱신했다 — 1안(생성 자체 차단)이 채택돼 `021` spec RISK-OCO-014로 구현됐다(`ExitPlanService`가 샌드박스 holding의 일반 OCO 생성을 409 `EXIT_PLAN_TUTORIAL_INSTRUMENT_NOT_ALLOWED`로 거부, 상세는 `021` run-log). "범위 제외" 절의 관련 문장도 함께 갱신. `docs/prd.md` §3 TUTORIAL-CASH-ISOL 행 판정을 일부 완료→완료로 올렸다(010이 마지막 미해결 항목이었다). `./gradlew --no-daemon --max-workers=1 build` 전체 통과.

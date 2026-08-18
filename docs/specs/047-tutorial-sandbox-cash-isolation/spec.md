@@ -104,15 +104,18 @@
   `Account.reservedCash` 동작은 이 spec으로 전혀 바뀌지 않는다. `033`의 포트폴리오·투자일기·랭킹 제외
   (SANDBOX-EXCL-001~004), `accounts.realized_pnl` 백필(SANDBOX-EXCL-005), `trades.realized_pnl` 원장 유지
   원칙(SANDBOX-EXCL-009 상당)도 이 spec으로 바뀌지 않는다.
-- [ ] TUTORIAL-CASH-ISOL-010 (확인 필요): `intentionId` 없는 일반 리스크관리 OCO(`021`)는 이미 production에
-  있고, `ExitPlanCreationService`에는 대상 holding이 샌드박스 종목인지 판정하는 코드가 없다(직접 확인
-  결과 — `getHoldingForUpdateForExitPlanCreation` 호출부에 `isTutorialSample()` 분기가 존재하지 않는다).
-  즉 튜토리얼과의 공식 연결(`intentionId` 재접합)이 아직 없어도, 튜토리얼 보유 종목에 `intentionId` 없이
-  OCO를 거는 시도 자체는 이미 통과할 수 있다. 이 spec은 그 OCO가 **체결될 때**의 현금 처리(`ExitPlanFillService`
-  → `finalizeSellRealizedPnl`, TUTORIAL-CASH-ISOL-003으로 커버)만 격리하며, "샌드박스 holding에 OCO 생성
-  자체를 막을지"는 이 spec의 결정 범위 밖이다 — 현금이 완전히 격리되면 그 OCO가 체결돼도 실제 현금
-  익스플로잇은 성립하지 않으므로 이 spec 하나로 막을 필요는 없지만, 그 OCO 체결이 진행 판정(`practice_progresses`
-  등)에 원치 않는 영향을 주는지는 별도로 확인이 필요하다(이 spec의 범위 밖, 후속 확인 이슈로 넘긴다).
+- [x] TUTORIAL-CASH-ISOL-010 (결정 완료, 이슈 #461): `intentionId` 없는 일반 리스크관리 OCO(`021`)는 이미
+  production에 있었고, 생성 시점에는 대상 holding이 샌드박스 종목인지 판정하는 코드가 없었다(직접 확인
+  결과 — `ExitPlanCreationService` 호출부에 `isTutorialSample()` 분기가 존재하지 않았다). 이 spec은 그
+  OCO가 **체결될 때**의 현금 처리(`ExitPlanFillService` → `finalizeSellRealizedPnl`, TUTORIAL-CASH-ISOL-003으로
+  커버)만 격리했고, "샌드박스 holding에 OCO 생성 자체를 막을지"는 이 spec의 결정 범위 밖으로 남겨 뒀었다.
+  이슈 #461에서 추적한 결과, 현금은 격리돼도 그 OCO 체결이 `Order.create(...)`(교육 attempt 귀속 없음)로
+  진행돼 재시작·진행 판정(`practiceAttemptId` 기반 순체결수량 계산, `PracticeRunRestartOrderService`)이
+  복구 불가능하게 깨진다는 것이 확인됐다 — "현금은 안전하니 막을 필요 없다"는 이 spec의 잠정 판단은 현금
+  축에서는 맞지만 진행 판정 축에서는 틀렸다. **1안(생성 자체 차단)으로 결정** — `ExitPlanService`가
+  `validateMarketIsCrypto` 옆에서 대상 holding이 샌드박스 종목이면 409 `EXIT_PLAN_TUTORIAL_INSTRUMENT_NOT_ALLOWED`로
+  거부한다(`021` spec RISK-OCO-014가 정본). 이미 걸려 있는 PENDING plan이나 이미 전량 체결돼 잠긴 attempt를
+  구제하는 것은 이 결정의 범위가 아니다(1안의 알려진 한계 — 앞으로만 막는다).
 - [ ] TUTORIAL-CASH-ISOL-011: 튜토리얼 진입·재시작 응답(후보: `PracticeAttemptResponse` — 확정은 구현 PR
   몫, 아래 "설계 판단 — API 노출" 참고)이 그 시장의 튜토리얼 계좌 현재 `cashBalance`·`availableCash`
   (`cashBalance - reservedCash`)·`realizedPnl`을 노출하는 필드를 포함한다. 이 응답들은 이미 같은 트랜잭션
@@ -231,8 +234,9 @@
 - **`sandbox_cash_adjustment` 컬럼의 물리적 `DROP`** — 이번 배포는 쓰기·읽기만 중단한다. 파괴적 스키마
   변경 2단계 배포 원칙(CLAUDE.md 규칙 8)에 따라 물리적 제거는 후속 spec/이슈로 분리한다. (신설하는
   튜토리얼 계좌 테이블·컬럼 자체는 파괴적 변경이 아니므로 이 원칙과 무관하다.)
-- **샌드박스 holding에 `intentionId` 없는 일반 OCO 생성을 막을지 여부** — TUTORIAL-CASH-ISOL-010(확인
-  필요)에서 다루듯, 이 spec은 현금 격리만 다루고 생성 자체의 차단 여부는 결정하지 않는다.
+- **샌드박스 holding에 `intentionId` 없는 일반 OCO 생성을 막을지 여부** — 이 spec 작성 시점에는 결정하지
+  않고 현금 격리만 다뤘으나, TUTORIAL-CASH-ISOL-010에 기록한 대로 이슈 #461이 후속으로 결정·구현했다
+  (`021` spec RISK-OCO-014, `ExitPlanService`의 생성 시점 차단).
 - **"옵션 2"(호출 자체를 생략)와의 차이 — 현금 부족 개념의 존속.** 이 spec 준비 초기에는 "샌드박스 매매는
   현금 변경 메서드 호출 자체를 생략한다"는 대안(호출 생략)도 검토됐으나, 사용자와의 논의 끝에 기각됐다 —
   분리된 계좌를 두는 이유 자체가 "진짜 계좌처럼" 예산 제약을 실감나게 두기 위함이므로, 호출을 생략해
