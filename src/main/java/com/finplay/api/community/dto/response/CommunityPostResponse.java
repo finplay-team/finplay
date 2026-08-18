@@ -3,6 +3,7 @@ package com.finplay.api.community.dto.response;
 
 import com.finplay.api.community.domain.CommunityPost;
 import com.finplay.api.community.domain.CommunityPostImage;
+import com.finplay.api.feedback.dto.response.TradeShareSummaryResponse;
 import com.finplay.api.market.domain.Instrument;
 import java.time.LocalDateTime;
 
@@ -19,11 +20,15 @@ public record CommunityPostResponse(
 	Long imageId,
 	String imageUrl,
 	long likeCount,
-	boolean likedByMe) {
+	boolean likedByMe,
+	TradeShareSummaryResponse sharedTrade) {
 
-	// 좋아요 여부는 요청자 컨텍스트가 있어야 결정되므로 인자 없는 from(post) 오버로드는 두지 않는다 —
-	// 호출부가 실제 좋아요 상태를 넘기지 않고 false로 하드코딩하는 실수를 막기 위함(spec 045 plan.md).
-	public static CommunityPostResponse from(CommunityPost post, boolean likedByMe) {
+	// 좋아요 여부·매매 카드 요약 둘 다 요청자 컨텍스트·서비스 호출이 있어야 결정되므로 인자 없는 from(post)
+	// 오버로드는 두지 않는다 — 호출부가 실제 값을 넘기지 않고 하드코딩하는 실수를 막기 위함(spec 045 plan.md,
+	// spec 046 TRADESHARE-003). sharedTrade는 엔티티 필드가 아니라 PostSellFeedbackService 호출 결과라 이 record가
+	// 직접 계산하지 않고 호출부(CommunityPostService)가 조립해 넘긴다.
+	public static CommunityPostResponse of(
+		CommunityPost post, boolean likedByMe, TradeShareSummaryResponse sharedTrade) {
 		Instrument instrument = post.getInstrument();
 		CommunityPostImage image = post.getImage();
 		return new CommunityPostResponse(
@@ -39,6 +44,7 @@ public record CommunityPostResponse(
 			image == null ? null : image.getId(),
 			image == null ? null : CommunityPostImageResponse.toImageUrl(image.getId()),
 			post.getLikeCount(),
-			likedByMe);
+			likedByMe,
+			sharedTrade);
 	}
 }

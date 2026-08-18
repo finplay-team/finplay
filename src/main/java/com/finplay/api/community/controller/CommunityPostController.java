@@ -54,7 +54,7 @@ public class CommunityPostController {
 		@Valid @RequestBody
 		CommunityPostCreateRequest request) {
 		CommunityPostResponse response = communityPostService.createPost(principal.userId(), request.title(),
-			request.content(), request.instrumentId(), request.imageId());
+			request.content(), request.instrumentId(), request.imageId(), request.sharedTradeId());
 		return ResponseEntity.status(HttpStatus.CREATED).body(response);
 	}
 

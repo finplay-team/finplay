@@ -28,7 +28,12 @@ import com.finplay.api.feedback.dto.response.NewsItem;
 import com.finplay.api.feedback.dto.response.PeerComparison;
 import com.finplay.api.feedback.dto.response.PostSellFeedbackResponse;
 import com.finplay.api.feedback.dto.response.PostSellFlow;
+import com.finplay.api.feedback.dto.response.TradeShareSummaryResponse;
 import com.finplay.api.feedback.repository.TradeFeedbackRepository;
+import com.finplay.api.market.domain.Instrument;
+import com.finplay.api.market.domain.Market;
+import com.finplay.api.order.domain.Trade;
+import com.finplay.api.portfolio.service.SellAllocationSummaryDto;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -86,6 +91,9 @@ class PostSellFeedbackServiceTest {
 
 	private final PostSellFeedbackReader postSellFeedbackReader = mock(PostSellFeedbackReader.class);
 
+	private final PostSellFeedbackContextReader postSellFeedbackContextReader = mock(
+		PostSellFeedbackContextReader.class);
+
 	// 이 파일의 픽스처에는 투자일기가 없다 — 저장된 지문도 현재 지문도 null이라 일기 사유는 성립하지 않고,
 	// 기존 케이스가 재현하던 흐름·집단 사유만 남는다(§FEED-013 결정 3).
 	private final PostSellJournalReader postSellJournalReader = mock(PostSellJournalReader.class);
@@ -101,8 +109,8 @@ class PostSellFeedbackServiceTest {
 		3, 3);
 
 	private final PostSellFeedbackService postSellFeedbackService = new PostSellFeedbackService(
-		postSellFeedbackReader, postSellJournalReader, narrativeService, tradeFeedbackWriter, tradeFeedbackRepository,
-		LLM_PROPERTIES, Clock.fixed(NOW.atZone(KST).toInstant(), KST));
+		postSellFeedbackReader, postSellFeedbackContextReader, postSellJournalReader, narrativeService,
+		tradeFeedbackWriter, tradeFeedbackRepository, LLM_PROPERTIES, Clock.fixed(NOW.atZone(KST).toInstant(), KST));
 
 	@BeforeEach
 	void stubEmptyJournals() {
@@ -799,6 +807,41 @@ class PostSellFeedbackServiceTest {
 		assertThat(entryPoint.getAnnotation(jakarta.transaction.Transactional.class)).isNull();
 	}
 
+	// spec 046 TRADESHARE-002·003 — 커뮤니티 매매 카드 요약은 loadContext(순수 DB 조회)만으로 조립하고
+	// postSellFeedbackReader.read()(뉴스·가격변동카드·반사실·집단비교, 코인이면 빗썸 REST까지)는 절대 부르지
+	// 않는다 — 그 경로를 타면 CommunityPostService의 @Transactional 메서드가 REST 호출 내내 DB 커넥션을
+	// 쥐는 문제가 재현된다(이슈 #282와 같은 종류).
+	@Test
+	@DisplayName("커뮤니티 매매 카드 요약은 loadContext의 원장 값만 조립하고 reader.read()를 부르지 않는다")
+	void getTradeShareSummaryMapsFactsFromLoadContextWithoutCallingReader() {
+		// Trade는 Order·Account까지 갖춰야 하는 무거운 엔티티라, 이 테스트가 실제로 읽는 필드만 스텁한다 —
+		// Instrument는 실제 팩토리로 만든다(docs/conventions.md).
+		Trade trade = mock(Trade.class);
+		Instrument instrument = Instrument.create(
+			Market.STOCK, "005930", "삼성전자", BigDecimal.ONE, 1_000L, true, NOW);
+		when(trade.getInstrument()).thenReturn(instrument);
+		when(trade.getPrice()).thenReturn(new BigDecimal("68500"));
+		when(trade.getQuantity()).thenReturn(new BigDecimal("10"));
+		when(trade.getRealizedPnl()).thenReturn(-15_207L);
+		SellAllocationSummaryDto allocation = new SellAllocationSummaryDto(
+			new BigDecimal("70000.00000000"), NOW.minusDays(1), null, 700_000L, 105L, new BigDecimal("10"),
+			List.of());
+		when(postSellFeedbackContextReader.loadContext(USER_ID, SELL_TRADE_ID))
+			.thenReturn(new PostSellFeedbackContext(trade, allocation));
+
+		TradeShareSummaryResponse response = newService().getTradeShareSummary(USER_ID, SELL_TRADE_ID);
+
+		assertThat(response.symbol()).isEqualTo("005930");
+		assertThat(response.name()).isEqualTo("삼성전자");
+		assertThat(response.market()).isEqualTo(Market.STOCK);
+		assertThat(response.buyPrice()).isEqualByComparingTo("70000.00000000");
+		assertThat(response.sellPrice()).isEqualByComparingTo("68500");
+		assertThat(response.quantity()).isEqualByComparingTo("10");
+		assertThat(response.realizedPnl()).isEqualTo(-15_207L);
+		assertThat(response.returnRate()).isEqualByComparingTo("-0.0217");
+		verifyNoInteractions(postSellFeedbackReader);
+	}
+
 	// --- 픽스처 ---
 
 	private void givenFacts(PostSellFeedbackResponse facts) {
@@ -828,8 +871,9 @@ class PostSellFeedbackServiceTest {
 
 	private PostSellFeedbackService newService() {
 		return new PostSellFeedbackService(
-			postSellFeedbackReader, postSellJournalReader, narrativeService, tradeFeedbackWriter,
-			tradeFeedbackRepository, LLM_PROPERTIES, Clock.fixed(NOW.atZone(KST).toInstant(), KST));
+			postSellFeedbackReader, postSellFeedbackContextReader, postSellJournalReader, narrativeService,
+			tradeFeedbackWriter, tradeFeedbackRepository, LLM_PROPERTIES,
+			Clock.fixed(NOW.atZone(KST).toInstant(), KST));
 	}
 
 	private void givenStored(TradeFeedback feedback) {

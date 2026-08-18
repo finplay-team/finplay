@@ -3,7 +3,6 @@ package com.finplay.api.community.dto.response;
 
 import com.finplay.api.community.domain.CommunityPost;
 import java.util.List;
-import java.util.Set;
 import org.springframework.data.domain.Page;
 
 public record CommunityPostListResponse(
@@ -18,12 +17,9 @@ public record CommunityPostListResponse(
 		content = List.copyOf(content);
 	}
 
-	// likedPostIds: 이 페이지에 실린 게시물 중 요청자가 좋아요한 postId 집합(배치 조회 결과) — 게시물마다
-	// 좋아요 여부를 따로 조회하지 않고 N+1을 방지한다(spec 045 plan.md).
-	public static CommunityPostListResponse from(Page<CommunityPost> page, Set<Long> likedPostIds) {
-		List<CommunityPostResponse> content = page.getContent().stream()
-			.map(post -> CommunityPostResponse.from(post, likedPostIds.contains(post.getId())))
-			.toList();
+	// content는 호출부(CommunityPostService)가 좋아요 여부(배치 조회, spec 045 plan.md)·sharedTrade(게시물별
+	// tradeId 조회, TRADESHARE-002)까지 이미 채워 만든 응답 목록이다 — 이 record는 페이지 메타데이터만 덧붙인다.
+	public static CommunityPostListResponse of(List<CommunityPostResponse> content, Page<CommunityPost> page) {
 		return new CommunityPostListResponse(
 			content,
 			page.getNumber(),
