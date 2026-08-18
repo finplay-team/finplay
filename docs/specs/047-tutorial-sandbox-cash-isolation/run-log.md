@@ -16,6 +16,7 @@
 | 21:48 | implementer | `./gradlew test --tests "com.finplay.api.order.*" --tests "com.finplay.api.portfolio.*" --tests "com.finplay.api.education.*" --tests "com.finplay.api.account.*"` | tester가 남긴 구현 버그(위 행), 사용자 승인 후 `PracticeLimitOrderCreationService.createSessionBuyOrder`에 isTutorialSample 분기 추가 |
 | 21:53 | implementer | (문서 갱신, 테스트 실행 없음) | CLAUDE.md 규칙 10, tasks.md 9번 |
 | 02:16 | implementer | (문서 갱신, 테스트 실행 없음) | 이슈 #459 PR #460 리뷰 권장사항, ADR-0021 §결정 6·7 |
+| 18:18 | implementer | `./gradlew build` | 이슈 #459 코멘트 "PR-B(컬럼 DROP)로 진행해줘", ADR-0021 §결정 7 |
 
 ## 모니터링 (사람용 요약)
 - 18:52 — TutorialAccount 엔티티·Repository·V46 마이그레이션·TUTORIAL_INSUFFICIENT_CASH 추가, DataJpaTest 6건 통과.
@@ -34,3 +35,4 @@
 - 21:53 — 마지막 항목(9번, `docs/prd.md` §3 구현 현황 갱신)을 완료했다. `TUTORIAL-ORDER-001~004` 행 뒤에 `TUTORIAL-CASH-ISOL-001~011` 행을 신설했다. 판정은 **일부 완료**다 — 001~009·011은 이 spec에서 구현·검증됐지만, `TUTORIAL-CASH-ISOL-010`(확인 필요)이 spec.md에서 "후속 확인 이슈로 넘긴다"고 명시한 채 실제로는 그 후속 이슈가 아직 생성되지 않았다(`intentionId` 없는 일반 리스크관리 OCO가 샌드박스 holding에도 생성될 수 있는 gap — 현금은 격리되지만 튜토리얼 진행 판정에 미치는 영향은 미확인). 이걸 근거 없이 "완료"로 적으면 CLAUDE.md 규칙 10(판정과 근거를 함께 적는다)을 어기므로 그대로 반영했다. 이번 브랜치에서 함께 고친 `createSessionBuyOrder` 회귀도 같은 행에 근거로 남겼다.
 
 - 02:16 — 이슈 #459(`sandbox_cash_adjustment` 컬럼 물리적 삭제, spec 047 "제외 범위" 후속) PR-A(#460, `Account.sandboxCashAdjustment` 매핑·`addSandboxCashAdjustment()` 제거, 마이그레이션 미포함) 완료·머지 대기 상태를 기록. ADR-0021 §결정 7에 따라 PR-B(컬럼 `DROP`)는 이 PR 배포 확인 후 별도로 진행한다(§결정 6의 자동 롤백 창 회피).
+- 18:18 — PR-A(#460) 배포 확인 후 PR-B를 진행했다(이슈 #459 코멘트). `V47__drop_sandbox_cash_adjustment.sql`로 `accounts.sandbox_cash_adjustment` 컬럼을 삭제했다. `TutorialAccountBackfillMigrationTest`(V46 replay)는 컬럼 의존 테스트 4건(현금 원복·완료 보상 제외·0원 하한·멱등성)을 제거하고 컬럼과 무관한 PENDING 매수 취소·매도 미대상 2건만 남겼다 — "UPDATE 필터를 좁혀 예약 현금·PENDING 취소 케이스만 남기는" 안(이슈 #459 분석 공통 결정 사항 1). `SandboxCashAdjustmentBackfillMigrationTest`는 `RealizedPnlBackfillMigrationTest`로 이름을 바꾸고 sandbox_cash_adjustment 관련 검증을 제거해 realized_pnl 재계산(033/#366) 커버리지만 남겼다(공통 결정 사항 2). `docs/prd.md` §3 TUTORIAL-CASH-ISOL 행의 "컬럼 자체는 존치, 물리적 DROP은 후속 이슈" 문장을 실제 완료 사실로 갱신했다(공통 결정 사항 3). `./gradlew build` BUILD SUCCESSFUL(전체 테스트·spotless·spotbugs·jacoco 포함).
