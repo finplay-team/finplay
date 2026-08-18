@@ -39,9 +39,12 @@ public class CommunityPostController {
 	private final CommunityPostService communityPostService;
 
 	@GetMapping("/{postId}")
-	public ResponseEntity<CommunityPostResponse> getPost(@PathVariable
-	Long postId) {
-		return ResponseEntity.ok(communityPostService.getPost(postId));
+	public ResponseEntity<CommunityPostResponse> getPost(
+		@AuthenticationPrincipal
+		AuthenticatedUser principal,
+		@PathVariable
+		Long postId) {
+		return ResponseEntity.ok(communityPostService.getPost(postId, principal.userId()));
 	}
 
 	@PostMapping
@@ -80,6 +83,8 @@ public class CommunityPostController {
 
 	@GetMapping
 	public ResponseEntity<CommunityPostListResponse> getPosts(
+		@AuthenticationPrincipal
+		AuthenticatedUser principal,
 		@RequestParam(defaultValue = "" + DEFAULT_PAGE)
 		int page,
 		@RequestParam(defaultValue = "" + DEFAULT_SIZE)
@@ -90,7 +95,8 @@ public class CommunityPostController {
 		String sort) {
 		validatePageAndSize(page, size);
 		validateSort(sort);
-		CommunityPostListResponse response = communityPostService.getPosts(page, size, instrumentId, sort);
+		CommunityPostListResponse response = communityPostService.getPosts(
+			page, size, instrumentId, sort, principal.userId());
 		return ResponseEntity.ok(response);
 	}
 

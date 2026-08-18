@@ -10,9 +10,12 @@ import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.community.domain.CommunityPost;
 import com.finplay.api.community.domain.CommunityPostLike;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityManagerFactory;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,6 +46,9 @@ class CommunityPostLikeRepositoryTest {
 
 	@Autowired
 	private EntityManager entityManager;
+
+	@Autowired
+	private EntityManagerFactory entityManagerFactory;
 
 	@BeforeEach
 	void cleanSharedTablesInForeignKeySafeOrder() {
@@ -147,6 +153,31 @@ class CommunityPostLikeRepositoryTest {
 		List<Long> likedPostIds = repository.findLikedPostIds(liker.getId(), List.of(post.getId()));
 
 		assertThat(likedPostIds).isEmpty();
+	}
+
+	// N+1 방지 근거: 여러 게시물의 좋아요 여부를 게시물마다 따로 쿼리하지 않고, findLikedPostIds
+	// 하나의 IN 쿼리로 해결한다는 것을 실제 준비된 SQL 문 개수로 증명한다(spec 045 plan.md).
+	@Test
+	void findLikedPostIdsExecutesExactlyOneQueryRegardlessOfPostIdCount() {
+		User author = userRepository.saveAndFlush(
+			User.create("statcount-author@finplay.com", "hash", "statcountauthor", NOW));
+		User liker = userRepository.saveAndFlush(User.create("statcount-user@finplay.com", "hash", "statcounter", NOW));
+		CommunityPost post1 = postRepository.saveAndFlush(CommunityPost.create(author, "p1", "content", null, NOW));
+		CommunityPost post2 = postRepository.saveAndFlush(CommunityPost.create(author, "p2", "content", null, NOW));
+		CommunityPost post3 = postRepository.saveAndFlush(CommunityPost.create(author, "p3", "content", null, NOW));
+		repository.saveAndFlush(CommunityPostLike.create(post1, liker, NOW));
+		repository.saveAndFlush(CommunityPostLike.create(post3, liker, NOW));
+		entityManager.clear();
+
+		Statistics statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+		statistics.setStatisticsEnabled(true);
+		statistics.clear();
+
+		List<Long> likedPostIds = repository.findLikedPostIds(
+			liker.getId(), List.of(post1.getId(), post2.getId(), post3.getId()));
+
+		assertThat(likedPostIds).containsExactlyInAnyOrder(post1.getId(), post3.getId());
+		assertThat(statistics.getPrepareStatementCount()).isEqualTo(1);
 	}
 
 	@Test
