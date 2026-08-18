@@ -119,7 +119,15 @@ class LegacyPracticeCompletionAttemptCompatibilityIntegrationTest {
 		assertThat(after.completedAt()).isEqualTo(before.completedAt());
 		assertThat(after.rewardAmount()).isEqualTo(before.rewardAmount());
 		assertThat(after.steps()).isEqualTo(before.steps());
-		assertThat(after.attempt()).isEqualTo(ensured);
+		// tutorialCashBalance·tutorialAvailableCash·tutorialRealizedPnl은 진입·재시작 응답에만 실제 값을 싣는다
+		// (047 TUTORIAL-CASH-ISOL-011, plan.md "API 설계" — PracticeAttemptResponse.from(attempt, snapshot)
+		// 2-인자 오버로드는 진입·재시작이 아닌 호출부용으로 항상 0을 채운다). getProgress가 감싸는 attempt 응답은
+		// 이 2-인자 경로를 쓰므로 ensureAttempt(진입) 응답과 세 필드가 항상 다르다 — 이 spec 이전(그 필드가 없던
+		// 시절)에는 완전 동일 비교가 성립했지만, 필드 추가 이후에는 의도적으로 달라지는 부분이라 그 셋을 제외하고
+		// 나머지 필드만 비교한다.
+		assertThat(after.attempt()).usingRecursiveComparison()
+			.ignoringFields("tutorialCashBalance", "tutorialAvailableCash", "tutorialRealizedPnl")
+			.isEqualTo(ensured);
 
 		PracticeTutorialChartResponse chart = chartService.getChart(fixture.userId(), Market.CRYPTO);
 		assertThat(chart.attemptId()).isEqualTo(ensured.attemptId());
