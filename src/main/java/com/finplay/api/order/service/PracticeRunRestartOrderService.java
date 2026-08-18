@@ -2,6 +2,7 @@
 package com.finplay.api.order.service;
 
 import com.finplay.api.account.domain.Account;
+import com.finplay.api.account.domain.TutorialAccount;
 import com.finplay.api.account.service.AccountService;
 import com.finplay.api.account.service.TutorialAccountService;
 import com.finplay.api.common.BusinessException;
@@ -71,7 +72,7 @@ public class PracticeRunRestartOrderService {
 			? portfolioSellService.getHoldingForUpdate(account, instrument)
 			: null;
 
-		cancelPendingOrders(orders, account, holding);
+		cancelPendingOrders(command, orders, holding);
 		if (netFilledQuantity.signum() < 0) {
 			throw new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING);
 		}
@@ -108,7 +109,8 @@ public class PracticeRunRestartOrderService {
 		return net;
 	}
 
-	private void cancelPendingOrders(List<Order> orders, Account account, Holding holding) {
+	private void cancelPendingOrders(PracticeRunRestartCommand command, List<Order> orders, Holding holding) {
+		TutorialAccount tutorialAccount = null;
 		for (Order order : orders) {
 			if (order.getStatus() != OrderStatus.PENDING) {
 				continue;
@@ -122,7 +124,16 @@ public class PracticeRunRestartOrderService {
 				}
 				holding.releaseReservedQuantity(order.getQuantity());
 			} else {
-				account.releaseReservedCash(
+				// validateInstrument가 이 메서드 도달 전 instrument.isTutorialSample()을 이미 강제하므로,
+				// 여기 도달하는 지정가 매수 PENDING 예약은 전부 튜토리얼 계좌에 걸려 있다(PR #452 리뷰 차단 1번 —
+				// PracticeLimitOrderCreationService/LimitOrderCreationService가 샌드박스 매수 예약을 튜토리얼
+				// 계좌로 옮긴 것과 짝이 맞아야 한다).
+				if (tutorialAccount == null) {
+					tutorialAccount = tutorialAccountService.getOrCreateForUpdate(
+						command.userId(), com.finplay.api.account.domain.Market.valueOf(command.market().name()),
+						command.restartedAt());
+				}
+				tutorialAccount.releaseReservedCash(
 					LimitOrderFeeCalculator.calculate(order.getQuantity(), order.getLimitPrice()).total());
 			}
 			order.cancel();

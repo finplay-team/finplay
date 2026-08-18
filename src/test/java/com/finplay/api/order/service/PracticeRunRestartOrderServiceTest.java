@@ -14,6 +14,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.finplay.api.account.domain.Account;
+import com.finplay.api.account.domain.TutorialAccount;
 import com.finplay.api.account.service.AccountService;
 import com.finplay.api.account.service.TutorialAccountService;
 import com.finplay.api.auth.domain.User;
@@ -64,7 +65,12 @@ class PracticeRunRestartOrderServiceTest {
 	@Test
 	void cleanupCurrentRunCancelsPendingBuyAndSellAndReturnsReservationsExactlyOnce() {
 		Fixture fixture = fixture();
-		fixture.account().reserveCash(100_050L);
+		// PR #452 리뷰 차단 1번: validateInstrument가 이 메서드 도달 전 isTutorialSample()을 강제하므로,
+		// PENDING 지정가 매수 예약은 실제 Account가 아니라 튜토리얼 계좌에 걸려 있어야 한다.
+		when(tutorialAccountService.getOrCreateForUpdate(
+			USER_ID, com.finplay.api.account.domain.Market.CRYPTO, NOW))
+			.thenReturn(fixture.tutorialAccount());
+		fixture.tutorialAccount().reserveCash(100_050L);
 		fixture.holding().applyBuy(BigDecimal.ONE, BigDecimal.valueOf(900_000), NOW.minusHours(1));
 		fixture.holding().reserveQuantity(BigDecimal.ONE);
 		Order pendingBuy = attributedPendingOrder(
@@ -78,6 +84,7 @@ class PracticeRunRestartOrderServiceTest {
 
 		assertThat(pendingBuy.getStatus()).isEqualTo(OrderStatus.CANCELLED);
 		assertThat(pendingSell.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+		assertThat(fixture.tutorialAccount().getReservedCash()).isZero();
 		assertThat(fixture.account().getReservedCash()).isZero();
 		assertThat(fixture.holding().getReservedQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
 		verifyNoInteractions(priceQueryService);
@@ -221,7 +228,9 @@ class PracticeRunRestartOrderServiceTest {
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
 		Holding holding = Holding.create(account, instrument, NOW);
 		ReflectionTestUtils.setField(holding, "id", 41L);
-		return new Fixture(account, instrument, holding);
+		TutorialAccount tutorialAccount = TutorialAccount.create(
+			user, com.finplay.api.account.domain.Market.CRYPTO, NOW);
+		return new Fixture(account, instrument, holding, tutorialAccount);
 	}
 
 	private static Order attributedPendingOrder(
@@ -243,6 +252,6 @@ class PracticeRunRestartOrderServiceTest {
 			new PriceQuoteDto(new BigDecimal(price), NOW, PriceStatus.AVAILABLE, null), null);
 	}
 
-	private record Fixture(Account account, Instrument instrument, Holding holding) {
+	private record Fixture(Account account, Instrument instrument, Holding holding, TutorialAccount tutorialAccount) {
 	}
 }

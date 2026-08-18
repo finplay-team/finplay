@@ -112,6 +112,73 @@ class TutorialAccountBackfillMigrationTest {
 	}
 
 	@Test
+	@DisplayName("완료 보상으로 늘어난 조정값은 원복 대상에서 제외돼, 보상을 실제 매매에 쓴 계좌도 음수가 되지 않는다")
+	void backfillExcludesCompletionRewardSoAccountThatSpentTheRewardDoesNotGoNegative() {
+		// PR #452 리뷰 차단 2번 재현: 초기 1000만원 → STOCK 튜토리얼 완료 보상 500만원(adjustment도 함께
+		// +500만원 누적, addSandboxCashAdjustment가 종목 조건 없이 항상 호출됐으므로) → 실제 주식을
+		// 1200만원어치 매수해 현금 300만원. 옛 백필(adjustment 전액 차감)이면 300만원 - 500만원 = -200만원이
+		// 되지만, 완료 보상분(500만원)은 원복 대상이 아니므로 차감량이 0이 돼 300만원 그대로여야 한다.
+		User user = userRepository.saveAndFlush(
+			User.create("v46-backfill-reward@finplay.com", "hash", "v46reward", NOW));
+		Account account = accountRepository.saveAndFlush(Account.create(user, Market.STOCK, NOW));
+		account.addCash(5_000_000L);
+		account.addSandboxCashAdjustment(5_000_000L);
+		account.deductCash(12_000_000L);
+		accountRepository.saveAndFlush(account);
+		insertStockCompletionRecord(account, user, "INVESTMENT_PRACTICE_V1");
+
+		runBackfillUpdate();
+
+		Account result = accountRepository.findById(account.getId()).orElseThrow();
+		assertThat(result.getCashBalance()).isEqualTo(3_000_000L);
+		assertThat(result.getSandboxCashAdjustment()).isZero();
+	}
+
+	@Test
+	@DisplayName("완료 보상 이외의 사유로 조정값이 남은 현금보다 커도 cash_balance는 0 밑으로 내려가지 않는다")
+	void backfillNeverDrivesCashBalanceBelowZero() {
+		User user = userRepository.saveAndFlush(
+			User.create("v46-backfill-floor@finplay.com", "hash", "v46floor", NOW));
+		Account account = accountRepository.saveAndFlush(Account.create(user, Market.STOCK, NOW));
+		// 완료 기록 없이(reward_component=0) adjustment가 남은 현금보다 크게 만든다 — 방어적 GREATEST(0, ...)
+		// 없이는 8,000,000 - 9,000,000 = -1,000,000이 된다.
+		account.addSandboxCashAdjustment(9_000_000L);
+		account.deductCash(2_000_000L);
+		accountRepository.saveAndFlush(account);
+
+		runBackfillUpdate();
+
+		Account result = accountRepository.findById(account.getId()).orElseThrow();
+		assertThat(result.getCashBalance()).isZero();
+		assertThat(result.getSandboxCashAdjustment()).isZero();
+	}
+
+	// practice_completions(→ practice_market_reflections → holdings → 시드 instrument)까지의 FK 체인을
+	// 최소 값으로 채워, V46 백필의 LEFT JOIN이 "그 시장 튜토리얼을 완료한 사용자"로 인식하게 만든다.
+	private void insertStockCompletionRecord(Account account, User user, String tutorialKey) {
+		Long instrumentId = jdbcTemplate.queryForObject(
+			"SELECT id FROM instruments WHERE symbol = '005930'", Long.class);
+		jdbcTemplate.update(
+			"INSERT INTO holdings (account_id, instrument_id, quantity, average_price, is_active, "
+				+ "created_at, updated_at) VALUES (?, ?, 0, 0, false, ?, ?)",
+			account.getId(), instrumentId, NOW, NOW);
+		Long holdingId = jdbcTemplate.queryForObject(
+			"SELECT id FROM holdings WHERE account_id = ? AND instrument_id = ?", Long.class,
+			account.getId(), instrumentId);
+		jdbcTemplate.update(
+			"INSERT INTO practice_market_reflections (user_id, holding_id, tutorial_key, answer, created_at) "
+				+ "VALUES (?, ?, ?, 'v46 backfill test fixture', ?)",
+			user.getId(), holdingId, tutorialKey, NOW);
+		Long reflectionId = jdbcTemplate.queryForObject(
+			"SELECT id FROM practice_market_reflections WHERE user_id = ? AND tutorial_key = ?", Long.class,
+			user.getId(), tutorialKey);
+		jdbcTemplate.update(
+			"INSERT INTO practice_completions (user_id, tutorial_key, reflection_id, completed_at) "
+				+ "VALUES (?, ?, ?, ?)",
+			user.getId(), tutorialKey, reflectionId, NOW);
+	}
+
+	@Test
 	@DisplayName("백필 UPDATE를 두 번 실행해도(재실행 시뮬레이션) 같은 결과가 나온다 (TUTORIAL-CASH-ISOL-008 멱등성)")
 	void backfillIsIdempotentAcrossReruns() {
 		User user = userRepository.saveAndFlush(

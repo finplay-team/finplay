@@ -124,7 +124,9 @@ class PracticeAttemptRestartIntegrationTest {
 	void restartCancelsOnlyCurrentRunOrdersAndKeepsOtherUserMarketRunAndGeneralOrders() {
 		Fixture fixture = selectedFixture("isolation", Market.CRYPTO);
 		Holding holding = holding(fixture, new BigDecimal("3"));
-		fixture.account().reserveCash(600_300L);
+		// currentBuy(100,050)는 튜토리얼 계좌 예약이라 실제 계좌 예약에서는 빼야 한다(PR #452 리뷰 차단 1번).
+		reservedTutorialAccount(fixture.user(), Market.CRYPTO, 100_050L);
+		fixture.account().reserveCash(500_250L);
 		accountRepository.saveAndFlush(fixture.account());
 		holding.reserveQuantity(new BigDecimal("2"));
 		holdingRepository.saveAndFlush(holding);
@@ -174,8 +176,9 @@ class PracticeAttemptRestartIntegrationTest {
 		Fixture fixture = selectedFixture("rollback", Market.CRYPTO);
 		Holding holding = holding(fixture, BigDecimal.ONE);
 		holdingRepository.saveAndFlush(holding);
-		fixture.account().reserveCash(100_050L);
-		accountRepository.saveAndFlush(fixture.account());
+		// pending 매수 예약은 튜토리얼 계좌에 걸려 있다(PR #452 리뷰 차단 1번) — 롤백되면 그대로 남아야 한다.
+		TutorialAccount tutorialAccount = reservedTutorialAccount(fixture.user(), Market.CRYPTO, 100_050L);
+		Long tutorialAccountId = tutorialAccount.getId();
 		Order pending = orderRepository.saveAndFlush(
 			attributedPending(fixture, OrderSide.BUY, "0.1", 1L, "rollback-pending"));
 		Order filledBuy = orderRepository.saveAndFlush(Order.createForPracticeAttempt(
@@ -191,7 +194,8 @@ class PracticeAttemptRestartIntegrationTest {
 
 		assertThat(attemptRepository.findById(fixture.attempt().getId()).orElseThrow().getRunNumber()).isEqualTo(1L);
 		assertThat(orderRepository.findById(pending.getId()).orElseThrow().getStatus()).isEqualTo(OrderStatus.PENDING);
-		assertThat(accountRepository.findById(fixture.account().getId()).orElseThrow().getReservedCash())
+		assertThat(accountRepository.findById(fixture.account().getId()).orElseThrow().getReservedCash()).isZero();
+		assertThat(tutorialAccountRepository.findById(tutorialAccountId).orElseThrow().getReservedCash())
 			.isEqualTo(100_050L);
 		assertThat(orderRepository.count()).isGreaterThanOrEqualTo(2L);
 	}
@@ -425,11 +429,21 @@ class PracticeAttemptRestartIntegrationTest {
 		return account;
 	}
 
+	// PENDING 지정가 매수의 현금 예약이 튜토리얼 계좌에 걸려 있는 상태를 만든다 — validateInstrument가
+	// cancelPendingOrders 도달 전 isTutorialSample()을 강제하므로 실제 코드 경로와 일치한다(PR #452 리뷰
+	// 차단 1번, PracticeRunRestartOrderService.cancelPendingOrders).
+	private TutorialAccount reservedTutorialAccount(User user, Market market, long reservedCash) {
+		TutorialAccount account = TutorialAccount.create(
+			user, com.finplay.api.account.domain.Market.valueOf(market.name()), NOW.minusMinutes(30));
+		account.reserveCash(reservedCash);
+		return tutorialAccountRepository.saveAndFlush(account);
+	}
+
 	@Test
 	void twoConcurrentRestartsSerializeAndCancelCurrentRunOnlyOnce() throws Exception {
 		Fixture fixture = selectedFixture("concurrent", Market.CRYPTO);
-		fixture.account().reserveCash(100_050L);
-		accountRepository.saveAndFlush(fixture.account());
+		// pending 매수 예약은 튜토리얼 계좌에 걸려 있다(PR #452 리뷰 차단 1번).
+		reservedTutorialAccount(fixture.user(), Market.CRYPTO, 100_050L);
 		Order pending = orderRepository.saveAndFlush(
 			attributedPending(fixture, OrderSide.BUY, "0.1", 1L, "concurrent-pending"));
 		CountDownLatch start = new CountDownLatch(1);
@@ -459,8 +473,8 @@ class PracticeAttemptRestartIntegrationTest {
 	@Test
 	void completedRestartCleansUpAndRestartsLikeIncompleteAttempt() {
 		Fixture fixture = selectedFixture("completed", Market.CRYPTO);
-		fixture.account().reserveCash(100_050L);
-		accountRepository.saveAndFlush(fixture.account());
+		// pending 매수 예약은 튜토리얼 계좌에 걸려 있다(PR #452 리뷰 차단 1번).
+		reservedTutorialAccount(fixture.user(), Market.CRYPTO, 100_050L);
 		Order pending = orderRepository.saveAndFlush(
 			attributedPending(fixture, OrderSide.BUY, "0.1", 1L, "completed-pending"));
 		jdbcTemplate.update(
