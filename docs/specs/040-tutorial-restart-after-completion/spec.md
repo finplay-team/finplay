@@ -21,6 +21,11 @@
 > `practice_market_reflections`)에 대한 것이며, 이 spec은 그 evidence 테이블에 새 행을 추가하거나 기존 행을
 > 수정하지 않는다. attempt별 "현재 실행이 완료됐는가"는 `practice_attempts.status`/`completed_at`으로만
 > 표현하고, 이 값은 재시작마다 재설정된다 — 이 구분이 이 spec의 핵심이다.
+>
+> **재시작 시 튜토리얼 계좌 리셋은 `047-tutorial-sandbox-cash-isolation`이 정본이다.** 이 spec은 재시작
+> 절차(정리 순서·잠금·완료 보상 1회 캡)의 정본으로 계속 남아 있고, `047`은 그 절차(`PracticeRunRestartOrderService.cleanupCurrentRun`)
+> 안에 "그 시장의 튜토리얼 전용 계좌를 1000만원으로 초기화한다"는 단계 하나만 추가한다 — 이 spec이 정의한
+> 재시작 가능 여부·정리 대상·완료 보상 지급 규칙 자체는 바뀌지 않는다.
 
 ## 개요
 
