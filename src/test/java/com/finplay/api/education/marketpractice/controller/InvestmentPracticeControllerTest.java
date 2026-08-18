@@ -97,7 +97,7 @@ class InvestmentPracticeControllerTest {
 			new PracticeRiskSnapshotResponse(
 				new BigDecimal("100.00000000"), new BigDecimal("97.00000000"),
 				new BigDecimal("105.00000000"), 30L, LocalDateTime.of(2026, 8, 3, 9, 0)),
-			LocalDateTime.of(2026, 8, 10, 9, 0));
+			LocalDateTime.of(2026, 8, 10, 9, 0), 0L, 0L, 0L);
 		InvestmentPracticeResponse response = new InvestmentPracticeResponse(
 			"INVESTMENT_PRACTICE_V1", "COMPLETED", null, steps, LocalDateTime.of(2026, 8, 10, 9, 0), 5_000_000L,
 			attempt);

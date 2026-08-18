@@ -264,7 +264,13 @@ class PracticeAttemptRestartIntegrationTest {
 		long realAccountCashBefore = fixture.account().getCashBalance();
 		long realAccountRealizedPnlBefore = fixture.account().getRealizedPnl();
 
-		restartService.restart(fixture.user().getId(), Market.CRYPTO);
+		PracticeAttemptResponse response = restartService.restart(fixture.user().getId(), Market.CRYPTO);
+
+		// TUTORIAL-CASH-ISOL-011 — 재시작 직전 보상매도로 흔들렸던 잔고와 무관하게, 재시작 응답 자체가
+		// 리셋 직후 값(1000만원/1000만원/0원)을 정확히 반영해야 한다.
+		assertThat(response.tutorialCashBalance()).isEqualTo(10_000_000L);
+		assertThat(response.tutorialAvailableCash()).isEqualTo(10_000_000L);
+		assertThat(response.tutorialRealizedPnl()).isZero();
 
 		Order auditOrder = orderRepository.findByUserIdAndIdempotencyKey(
 			fixture.user().getId(), "practice-restart:" + fixture.attempt().getId() + ":1").orElseThrow();
