@@ -52,9 +52,8 @@ public class CommunityPostService {
 			image.assignToPost(savedPost);
 			savedPost.attachImage(image);
 		}
-		boolean likedByMe = communityPostLikeRepository.existsByPost_IdAndUser_Id(
-			savedPost.getId(), authenticatedUserId);
-		return CommunityPostResponse.from(savedPost, likedByMe);
+		// 방금 만든 게시물이라 좋아요가 있을 수 없다 — 조회 없이 항상 false.
+		return CommunityPostResponse.from(savedPost, false);
 	}
 
 	@Transactional(readOnly = true)

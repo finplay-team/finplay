@@ -198,7 +198,7 @@ class CommunityPostServiceTest {
 	// 신규 게시물은 방금 저장돼 좋아요 행이 있을 수 없지만, 특수 분기 없이 동일한 조회 경로를 태우는
 	// 설계(spec 045 plan.md)를 그대로 검증한다 — 저장된 postId로 좋아요 여부를 조회해 응답에 반영한다.
 	@Test
-	void createPostQueriesLikeStateForSavedPostIdAndReturnsLikedByMeFalseByDefault() {
+	void createPostReturnsLikedByMeFalseWithoutQueryingLikeStateForBrandNewPost() {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
 		when(userQueryService.getUser(42L)).thenReturn(author);
 		when(repository.save(any(CommunityPost.class))).thenAnswer(invocation -> {
@@ -206,13 +206,13 @@ class CommunityPostServiceTest {
 			ReflectionTestUtils.setField(saved, "id", 7L);
 			return saved;
 		});
-		when(communityPostLikeRepository.existsByPost_IdAndUser_Id(7L, 42L)).thenReturn(false);
 
 		CommunityPostResponse response = service.createPost(42L, "title", "content", null, null);
 
 		assertThat(response.likeCount()).isEqualTo(0L);
 		assertThat(response.likedByMe()).isFalse();
-		verify(communityPostLikeRepository).existsByPost_IdAndUser_Id(7L, 42L);
+		// 방금 만든 게시물은 좋아요가 있을 수 없다 — 조회 자체를 생략한다(리뷰 참고).
+		verifyNoInteractions(communityPostLikeRepository);
 	}
 
 	@Test

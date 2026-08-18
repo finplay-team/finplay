@@ -46,14 +46,15 @@ class CommunityPostLikeServiceTest {
 		User liker = User.create("liker@finplay.com", "hash", "liker", LocalDateTime.now(CLOCK));
 		ReflectionTestUtils.setField(liker, "id", 42L);
 		CommunityPost post = CommunityPost.create(author, "title", "content", null, LocalDateTime.now(CLOCK));
-		when(communityPostRepository.findById(7L)).thenReturn(Optional.of(post));
+		when(communityPostRepository.existsById(7L)).thenReturn(true);
+		when(communityPostRepository.getReferenceById(7L)).thenReturn(post);
 		when(communityPostLikeRepository.existsByPost_IdAndUser_Id(7L, 42L)).thenReturn(false);
 		when(userQueryService.getUser(42L)).thenReturn(liker);
 
 		CommunityPostLikeOutcome outcome = service.likePost(7L, 42L);
 
 		ArgumentCaptor<CommunityPostLike> captor = ArgumentCaptor.forClass(CommunityPostLike.class);
-		verify(communityPostLikeRepository).save(captor.capture());
+		verify(communityPostLikeRepository).saveAndFlush(captor.capture());
 		assertThat(captor.getValue().getPost()).isSameAs(post);
 		assertThat(captor.getValue().getUser()).isSameAs(liker);
 		verify(communityPostRepository).incrementLikeCount(7L);
@@ -66,21 +67,22 @@ class CommunityPostLikeServiceTest {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
 		CommunityPost post = CommunityPost.create(author, "title", "content", null, LocalDateTime.now(CLOCK));
 		ReflectionTestUtils.setField(post, "likeCount", 5L);
-		when(communityPostRepository.findById(7L)).thenReturn(Optional.of(post));
+		when(communityPostRepository.existsById(7L)).thenReturn(true);
+		when(communityPostRepository.getReferenceById(7L)).thenReturn(post);
 		when(communityPostLikeRepository.existsByPost_IdAndUser_Id(7L, 42L)).thenReturn(true);
 
 		CommunityPostLikeOutcome outcome = service.likePost(7L, 42L);
 
 		assertThat(outcome.created()).isFalse();
 		assertThat(outcome.response()).isEqualTo(new CommunityPostLikeResponse(7L, 5L, true));
-		verify(communityPostLikeRepository, never()).save(any());
+		verify(communityPostLikeRepository, never()).saveAndFlush(any());
 		verify(communityPostRepository, never()).incrementLikeCount(any());
 		verifyNoInteractions(userQueryService);
 	}
 
 	@Test
 	void likePostThrowsNotFoundAndDoesNotSaveOrIncrementWhenPostDoesNotExist() {
-		when(communityPostRepository.findById(404L)).thenReturn(Optional.empty());
+		when(communityPostRepository.existsById(404L)).thenReturn(false);
 
 		assertThatThrownBy(() -> service.likePost(404L, 42L))
 			.isInstanceOf(BusinessException.class)
@@ -97,13 +99,14 @@ class CommunityPostLikeServiceTest {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
 		ReflectionTestUtils.setField(author, "id", 42L);
 		CommunityPost post = CommunityPost.create(author, "title", "content", null, LocalDateTime.now(CLOCK));
-		when(communityPostRepository.findById(7L)).thenReturn(Optional.of(post));
+		when(communityPostRepository.existsById(7L)).thenReturn(true);
+		when(communityPostRepository.getReferenceById(7L)).thenReturn(post);
 		when(communityPostLikeRepository.existsByPost_IdAndUser_Id(7L, 42L)).thenReturn(false);
 		when(userQueryService.getUser(42L)).thenReturn(author);
 
 		assertThatCode(() -> service.likePost(7L, 42L)).doesNotThrowAnyException();
 
-		verify(communityPostLikeRepository).save(any(CommunityPostLike.class));
+		verify(communityPostLikeRepository).saveAndFlush(any(CommunityPostLike.class));
 		verify(communityPostRepository).incrementLikeCount(7L);
 	}
 
