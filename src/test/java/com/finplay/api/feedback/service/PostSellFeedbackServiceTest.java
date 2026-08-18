@@ -33,6 +33,7 @@ import com.finplay.api.feedback.repository.TradeFeedbackRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.order.domain.Trade;
+import com.finplay.api.portfolio.service.SellAllocationSummaryDto;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -806,32 +807,39 @@ class PostSellFeedbackServiceTest {
 		assertThat(entryPoint.getAnnotation(jakarta.transaction.Transactional.class)).isNull();
 	}
 
-	// spec 046 TRADESHARE-002·003 — 커뮤니티 매매 카드 요약이 reader.read()의 원장 수치만 옮기고 뉴스·서술·
-	// 반사실·집단 비교는 담지 않는지 본다.
+	// spec 046 TRADESHARE-002·003 — 커뮤니티 매매 카드 요약은 loadContext(순수 DB 조회)만으로 조립하고
+	// postSellFeedbackReader.read()(뉴스·가격변동카드·반사실·집단비교, 코인이면 빗썸 REST까지)는 절대 부르지
+	// 않는다 — 그 경로를 타면 CommunityPostService의 @Transactional 메서드가 REST 호출 내내 DB 커넥션을
+	// 쥐는 문제가 재현된다(이슈 #282와 같은 종류).
 	@Test
-	@DisplayName("커뮤니티 매매 카드 요약은 reader.read()의 원장 수치와 market만 담는다")
-	void getTradeShareSummaryMapsFactsAndMarketWithoutNarrativeFields() {
-		PostSellFeedbackResponse facts = factsWithoutNarrative();
-		givenFacts(facts);
-		// Trade는 Order·Account까지 갖춰야 하는 무거운 엔티티라, 이 테스트가 실제로 읽는 필드(instrument.market)만
-		// 스텁한다 — Instrument는 실제 팩토리로 만든다(docs/conventions.md).
+	@DisplayName("커뮤니티 매매 카드 요약은 loadContext의 원장 값만 조립하고 reader.read()를 부르지 않는다")
+	void getTradeShareSummaryMapsFactsFromLoadContextWithoutCallingReader() {
+		// Trade는 Order·Account까지 갖춰야 하는 무거운 엔티티라, 이 테스트가 실제로 읽는 필드만 스텁한다 —
+		// Instrument는 실제 팩토리로 만든다(docs/conventions.md).
 		Trade trade = mock(Trade.class);
 		Instrument instrument = Instrument.create(
 			Market.STOCK, "005930", "삼성전자", BigDecimal.ONE, 1_000L, true, NOW);
 		when(trade.getInstrument()).thenReturn(instrument);
+		when(trade.getPrice()).thenReturn(new BigDecimal("68500"));
+		when(trade.getQuantity()).thenReturn(new BigDecimal("10"));
+		when(trade.getRealizedPnl()).thenReturn(-15_207L);
+		SellAllocationSummaryDto allocation = new SellAllocationSummaryDto(
+			new BigDecimal("70000.00000000"), NOW.minusDays(1), null, 700_000L, 105L, new BigDecimal("10"),
+			List.of());
 		when(postSellFeedbackContextReader.loadContext(USER_ID, SELL_TRADE_ID))
-			.thenReturn(new PostSellFeedbackContext(trade, null));
+			.thenReturn(new PostSellFeedbackContext(trade, allocation));
 
 		TradeShareSummaryResponse response = newService().getTradeShareSummary(USER_ID, SELL_TRADE_ID);
 
-		assertThat(response.symbol()).isEqualTo(facts.symbol());
-		assertThat(response.name()).isEqualTo(facts.name());
+		assertThat(response.symbol()).isEqualTo("005930");
+		assertThat(response.name()).isEqualTo("삼성전자");
 		assertThat(response.market()).isEqualTo(Market.STOCK);
-		assertThat(response.buyPrice()).isEqualByComparingTo(facts.buyPrice());
-		assertThat(response.sellPrice()).isEqualByComparingTo(facts.sellPrice());
-		assertThat(response.quantity()).isEqualByComparingTo(facts.quantity());
-		assertThat(response.realizedPnl()).isEqualTo(facts.realizedPnl());
-		assertThat(response.returnRate()).isEqualByComparingTo(facts.returnRate());
+		assertThat(response.buyPrice()).isEqualByComparingTo("70000.00000000");
+		assertThat(response.sellPrice()).isEqualByComparingTo("68500");
+		assertThat(response.quantity()).isEqualByComparingTo("10");
+		assertThat(response.realizedPnl()).isEqualTo(-15_207L);
+		assertThat(response.returnRate()).isEqualByComparingTo("-0.0217");
+		verifyNoInteractions(postSellFeedbackReader);
 	}
 
 	// --- 픽스처 ---

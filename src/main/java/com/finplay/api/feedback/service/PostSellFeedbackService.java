@@ -13,7 +13,10 @@ import com.finplay.api.feedback.dto.response.PostSellFeedbackResponse;
 import com.finplay.api.feedback.dto.response.PostSellFlow;
 import com.finplay.api.feedback.dto.response.TradeShareSummaryResponse;
 import com.finplay.api.feedback.repository.TradeFeedbackRepository;
-import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.domain.Instrument;
+import com.finplay.api.order.domain.Trade;
+import com.finplay.api.portfolio.service.SellAllocationSummaryDto;
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Comparator;
@@ -108,17 +111,37 @@ public class PostSellFeedbackService {
 	}
 
 	/**
-	 * 커뮤니티 매매 카드 공유용 가벼운 요약이다(spec 046 TRADESHARE-002·003). {@code postSellFeedbackReader.read()}가
-	 * 이미 계산한 원장 수치를 그대로 옮길 뿐 뉴스·서술·반사실·집단 비교는 만들지 않는다 — LLM·뉴스 조회가 전혀
-	 * 없다.
+	 * 커뮤니티 매매 카드 공유용 가벼운 요약이다(spec 046 TRADESHARE-002·003). <b>{@code postSellFeedbackReader.read()}를
+	 * 부르지 않는다</b> — 그 경로는 가격 변동 카드·뉴스·반사실·집단 비교를 전부 계산하고 코인이면 그 안에서
+	 * 빗썸 REST를 최대 4회(최악 ~20초) 부르는 무거운 경로이고, 결국 쓰는 값은 8개뿐이다. 이 메서드는
+	 * {@link CommunityPostService}의 {@code @Transactional} 메서드에서 호출되므로, 그 REST 호출을 트랜잭션
+	 * 안에 가두면 DB 커넥션을 수십 초씩 쥐는 문제가 재현된다(이슈 #282가 코인 리더를 무트랜잭션으로 뺀 이유와
+	 * 정확히 같다) — 그래서 {@link PostSellFeedbackContextReader#loadContext}(순수 DB 조회, 존재·소유·매수
+	 * 체결 검증까지 이미 함) <b>하나만</b> 타고 나머지는 여기서 직접 조립한다.
+	 *
+	 * <p>{@code buyPrice}는 {@code allocation.buyPrice()}(FIFO 배분 가중평균, 재계산 아님), {@code sellPrice}·
+	 * {@code quantity}·{@code realizedPnl}은 {@code trades} 행 그대로, {@code returnRate}는
+	 * {@link PostSellArithmetic#returnRate}로 매도 직후 피드백과 <b>같은 식</b>을 재사용한다(PRD C-004).
 	 *
 	 * @param tradeId 미존재는 404 {@code NOT_FOUND}, 타인 체결은 403 {@code FORBIDDEN}, 매수 체결은 400
-	 *     {@code VALIDATION_ERROR}다 — 판정은 {@code reader}가 한다({@link #getPostSellFeedback}과 동일 순서)
+	 *     {@code VALIDATION_ERROR}다 — 판정은 {@code loadContext}가 한다({@link #getPostSellFeedback}과 동일 순서)
 	 */
 	public TradeShareSummaryResponse getTradeShareSummary(Long userId, Long tradeId) {
-		PostSellFeedbackResponse facts = postSellFeedbackReader.read(userId, tradeId);
-		Market market = postSellFeedbackContextReader.loadContext(userId, tradeId).trade().getInstrument().getMarket();
-		return TradeShareSummaryResponse.from(facts, market);
+		PostSellFeedbackContext context = postSellFeedbackContextReader.loadContext(userId, tradeId);
+		Trade trade = context.trade();
+		SellAllocationSummaryDto allocation = context.allocation();
+		Instrument instrument = trade.getInstrument();
+		long buyBasis = allocation.allocatedCost() + allocation.allocatedBuyFee();
+		BigDecimal returnRate = PostSellArithmetic.returnRate(trade.getRealizedPnl(), buyBasis);
+		return new TradeShareSummaryResponse(
+			instrument.getSymbol(),
+			instrument.getName(),
+			instrument.getMarket(),
+			allocation.buyPrice(),
+			trade.getPrice(),
+			trade.getQuantity(),
+			trade.getRealizedPnl(),
+			returnRate);
 	}
 
 	/**
