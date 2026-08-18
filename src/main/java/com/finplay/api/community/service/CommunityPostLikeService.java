@@ -31,6 +31,8 @@ public class CommunityPostLikeService {
 		// 트랜잭션의 첫 문장으로 게시물 행을 비관적 락으로 잡아 같은 게시물의 좋아요·취소를 직렬화한다 —
 		// 락 획득 순서가 통일되므로 동시 요청이 InnoDB 데드락(CannotAcquireLockException)으로 500이 나던
 		// 문제가 사라진다(PR #442 2차 리뷰). 데드락은 InnoDB가 트랜잭션을 이미 롤백한 뒤라 catch로 수습할 수 없다.
+		// 이 앞에 어떤 조회도 넣지 말 것 — 비잠금 조회가 먼저 나가면 REPEATABLE_READ read view가 그 시점에
+		// 열려, 아래 existsByPost_IdAndUser_Id가 앞선 트랜잭션의 커밋을 못 보고 stale해진다.
 		CommunityPost post = communityPostRepository.findByIdForUpdate(postId)
 			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
 

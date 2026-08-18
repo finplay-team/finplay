@@ -378,7 +378,7 @@ PR #49 차단 리뷰 후속 Fake 재사용·동시성·DB 불변 자동 회귀�
 |---|---|---|---|---|---|---|
 | POST | /api/community/posts/{postId}/likes | Access Bearer 필수 | 경로 변수 `postId`, 본문 없음 | 신규 좋아요 생성 시 201 `{"postId":1,"likeCount":1,"likedByMe":true}`. 이미 좋아요한 상태로 재요청하면 오류 없이 200으로 현재 상태(`likeCount`·`likedByMe` 불변)를 그대로 반환(멱등) | Access 인증 실패는 401 `UNAUTHORIZED`. 게시물 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 045 LIKE-001, LIKE-002 |
 
-본인이 작성한 게시물에도 좋아요를 표시할 수 있다(차단 로직 없음). 회원 1인당 게시물 1개에 좋아요는 최대 1개이며(`community_post_likes` 유니크 제약으로 DB 레벨에서도 강제), 이미 좋아요한 상태에서 다시 호출해도 새 행을 만들거나 오류를 내지 않고 현재 상태만 반환한다. `likeCount`는 `community_posts.like_count` 비정규화 카운터를 원자적 `UPDATE`(`p.likeCount = p.likeCount + 1`)로 증가시킨 값이다.
+본인이 작성한 게시물에도 좋아요를 표시할 수 있다(차단 로직 없음). 회원 1인당 게시물 1개에 좋아요는 최대 1개이며(`community_post_likes` 유니크 제약으로 DB 레벨에서도 강제), 이미 좋아요한 상태에서 다시 호출해도 새 행을 만들거나 오류를 내지 않고 현재 상태만 반환한다. `likeCount`는 `community_posts.like_count` 비정규화 카운터를 원자적 `UPDATE`(`p.likeCount = p.likeCount + 1`)로 증가시킨 값이다. 같은 게시물의 좋아요 표시·취소는 게시물 행 비관적 락(`SELECT ... FOR UPDATE`)을 트랜잭션 첫 문장으로 잡아 직렬화한다 — 동시 요청이 InnoDB 데드락으로 500을 내던 것을 PR #442 리뷰가 실측 재현해 도입했다.
 
 ### 커뮤니티 게시물 좋아요 취소
 
@@ -386,7 +386,7 @@ PR #49 차단 리뷰 후속 Fake 재사용·동시성·DB 불변 자동 회귀�
 |---|---|---|---|---|---|---|
 | DELETE | /api/community/posts/{postId}/likes | Access Bearer 필수 | 경로 변수 `postId`, 본문 없음 | 204 (본문 없음). 좋아요한 적 없는 상태에서 취소해도 오류 없이 204(no-op, 멱등) | Access 인증 실패는 401 `UNAUTHORIZED`. 게시물 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 045 LIKE-001 |
 
-좋아요 취소는 `community_post_likes` 행을 실제로 삭제하고(tombstone 아님 — 좋아요를 눌렀던 이력을 보존할 요구가 없음), `community_posts.like_count`를 원자적 `UPDATE`로 감소시킨다. 좋아요한 적이 없는 사용자가 취소를 요청해도 오류 없이 204를 반환하며 카운터는 변하지 않는다.
+좋아요 취소는 `community_post_likes` 행을 실제로 삭제하고(tombstone 아님 — 좋아요를 눌렀던 이력을 보존할 요구가 없음), `community_posts.like_count`를 원자적 `UPDATE`로 감소시킨다. 좋아요한 적이 없는 사용자가 취소를 요청해도 오류 없이 204를 반환하며 카운터는 변하지 않는다. 표시와 마찬가지로 게시물 행 비관적 락으로 직렬화하며, 감소 쿼리에 `like_count > 0` 하한 가드가 있어 `like_count`는 어떤 경합에서도 0 미만으로 내려가지 않는다(인기순 정렬 SORT-001의 기준값이라 오염되면 정렬을 못 믿게 된다).
 
 ---
 

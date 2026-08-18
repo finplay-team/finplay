@@ -21,6 +21,8 @@ public interface CommunityPostRepository
 	// 좋아요 표시·취소가 게시물 행을 먼저 잡아 락 획득 순서를 통일한다(PR #442 2차 리뷰: 통일 전에는
 	// 같은 게시물 동시 요청이 유니크 인덱스와 행 락을 엇갈린 순서로 잡아 InnoDB 데드락 → 500이 났다).
 	// findById와 달리 @EntityGraph를 붙이지 않는다 — 좋아요 응답에 author·instrument·image가 필요 없다.
+	// (image는 @OneToOne(mappedBy) 역방향이라 바이트코드 인핸스먼트 없이는 지연되지 않아 보조 SELECT가 1회
+	// 더 나간다. author·instrument는 실제로 지연된다.)
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select p from CommunityPost p where p.id = :postId")
 	Optional<CommunityPost> findByIdForUpdate(@Param("postId")
