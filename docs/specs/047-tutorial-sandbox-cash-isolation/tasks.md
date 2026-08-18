@@ -22,7 +22,7 @@
   `tutorialAvailableCash`·`tutorialRealizedPnl` 필드 추가(TUTORIAL-CASH-ISOL-011), 진입·재시작 양쪽 응답에서
   값이 정확히 채워짐을 슬라이스/통합 테스트로 확인 + `docs/api-routes.md`·`docs/api-contracts.md` 갱신
   (CLAUDE.md 규칙 7 — 이 커밋이 실제 컨트롤러·DTO 변경을 담는 커밋이므로 두 문서를 함께 갱신).
-- [ ] 통합 테스트(Testcontainers) — 이슈 #450 재현 시나리오 역-검증(매수→관찰→매도→재시작 반복 후 실제
+- [x] 통합 테스트(Testcontainers) — 이슈 #450 재현 시나리오 역-검증(매수→관찰→매도→재시작 반복 후 실제
   계좌 잔고 불변), 배포 백필 마이그레이션 멱등성 검증.
 - [ ] `docs/prd.md` §3 구현 현황 갱신 — 이 spec 관련 요구사항 ID(TUTORIAL-CASH-ISOL-001~011)의 구현 상태를
   근거 PR 번호와 함께 반영(CLAUDE.md 규칙 10, 구현 PR 몫).
