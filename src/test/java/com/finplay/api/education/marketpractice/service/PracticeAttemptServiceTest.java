@@ -8,6 +8,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.finplay.api.account.service.TutorialAccountService;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
@@ -46,12 +47,14 @@ class PracticeAttemptServiceTest {
 		PracticeRiskSnapshotRepository.class);
 	private final PracticeProgressRepository practiceProgressRepository = mock(PracticeProgressRepository.class);
 	private final InstrumentService instrumentService = mock(InstrumentService.class);
+	private final TutorialAccountService tutorialAccountService = mock(TutorialAccountService.class);
 	private final PracticeAttemptService service = new PracticeAttemptService(
 		practiceAttemptRepository,
 		practiceCompletionRepository,
 		practiceRiskSnapshotRepository,
 		practiceProgressRepository,
 		instrumentService,
+		tutorialAccountService,
 		Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC));
 
 	@Test
@@ -75,6 +78,8 @@ class PracticeAttemptServiceTest {
 		assertThat(response.instrumentId()).isEqualTo(INSTRUMENT_ID);
 		assertThat(response.anchorAt()).isEqualTo(NOW.minusMinutes(3));
 		verify(practiceAttemptRepository, never()).save(org.mockito.ArgumentMatchers.any());
+		verify(tutorialAccountService)
+			.getOrCreateForUpdate(USER_ID, com.finplay.api.account.domain.Market.STOCK, NOW);
 	}
 
 	@Test
@@ -98,6 +103,8 @@ class PracticeAttemptServiceTest {
 		assertThat(response.status()).isEqualTo("COMPLETED");
 		assertThat(response.completedAt()).isEqualTo(NOW.minusDays(1));
 		verify(practiceAttemptRepository, never()).save(org.mockito.ArgumentMatchers.any());
+		verify(tutorialAccountService)
+			.getOrCreateForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO, NOW);
 	}
 
 	@ParameterizedTest
@@ -124,6 +131,8 @@ class PracticeAttemptServiceTest {
 		assertThat(response.instrumentId()).isEqualTo(INSTRUMENT_ID);
 		assertThat(response.anchorAt()).isEqualTo(NOW.minusMinutes(10));
 		verify(practiceAttemptRepository, never()).save(org.mockito.ArgumentMatchers.any());
+		verify(tutorialAccountService)
+			.getOrCreateForUpdate(USER_ID, com.finplay.api.account.domain.Market.STOCK, NOW);
 	}
 
 	@ParameterizedTest
