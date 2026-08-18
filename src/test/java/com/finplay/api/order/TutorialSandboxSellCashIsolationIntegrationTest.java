@@ -4,6 +4,9 @@
 // 항목4), 이 클래스가 검증하는 것은 그 공유 메서드 자체가 아니라 각 호출부(LimitOrderFillService.fillSell,
 // ExitPlanFillService.executeMarketSell)가 실제로 그 메서드까지 올바르게 배선돼 있는지다 — 특히
 // ExitPlanFillService는 047 이전까지 isTutorialSample 분기가 전혀 없던 경로였다(spec.md TUTORIAL-CASH-ISOL-010).
+// 이슈 #461 이후 샌드박스 holding의 일반 OCO 생성 자체는 ExitPlanService가 막지만, 이미 존재하는 plan의 체결
+// 현금 격리(이 파일이 검증하는 대상)는 여전히 유효해야 하므로 아래 테스트는 ExitPlanCreationService를 직접
+// 호출해 plan을 만든다.
 package com.finplay.api.order;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -19,16 +22,15 @@ import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.repository.InstrumentRepository;
 import com.finplay.api.order.domain.OrderSide;
-import com.finplay.api.order.dto.request.ExitPlanCreateRequest;
 import com.finplay.api.order.dto.request.LimitOrderCreateRequest;
 import com.finplay.api.order.dto.request.OrderCreateRequest;
-import com.finplay.api.order.dto.response.ExitPlanResponse;
 import com.finplay.api.order.dto.response.LimitOrderResponse;
-import com.finplay.api.order.domain.ExitPriceType;
 import com.finplay.api.order.domain.Trade;
 import com.finplay.api.order.repository.TradeRepository;
+import com.finplay.api.order.service.ExitPlanCreateCommandDto;
+import com.finplay.api.order.service.ExitPlanCreationService;
 import com.finplay.api.order.service.ExitPlanFillService;
-import com.finplay.api.order.service.ExitPlanService;
+import com.finplay.api.order.service.ExitPriceInputDto;
 import com.finplay.api.order.service.LimitOrderFillService;
 import com.finplay.api.order.service.LimitOrderService;
 import com.finplay.api.order.service.OrderService;
@@ -72,7 +74,7 @@ class TutorialSandboxSellCashIsolationIntegrationTest {
 	@Autowired
 	private LimitOrderFillService limitOrderFillService;
 	@Autowired
-	private ExitPlanService exitPlanService;
+	private ExitPlanCreationService exitPlanCreationService;
 	@Autowired
 	private ExitPlanFillService exitPlanFillService;
 	@Autowired
@@ -160,12 +162,16 @@ class TutorialSandboxSellCashIsolationIntegrationTest {
 		assertThat(tutorialAccountAfterSell.getRealizedPnl()).isEqualTo(sellTrade.getRealizedPnl());
 	}
 
-	// 시나리오: 샌드박스 종목 시장가 매수 → holding에 일반 OCO(익절·손절) 생성(intentionId 없음, 021 경로) →
-	// ExitPlanFillService.fillIfPending을 익절가 이상 currentPrice로 직접 호출해 결정적으로 체결(가격 피드·
-	// 리스너 배선은 ExitPlanTriggerFillIntegrationTest가 이미 별도로 검증하므로 여기서는 체결 서비스 자체의
+	// 시나리오: 샌드박스 종목 시장가 매수 → holding에 일반 OCO(익절·손절) plan을 엔진(ExitPlanCreationService)으로
+	// 직접 생성 → ExitPlanFillService.fillIfPending을 익절가 이상 currentPrice로 직접 호출해 결정적으로 체결(가격
+	// 피드·리스너 배선은 ExitPlanTriggerFillIntegrationTest가 이미 별도로 검증하므로 여기서는 체결 서비스 자체의
 	// 현금 격리만 본다). 047 이전까지 ExitPlanFillService·ExitPlanCreationService에는 isTutorialSample 분기가
 	// 전혀 없었다(spec.md TUTORIAL-CASH-ISOL-010) — 이 테스트가 047 이후 실제로 튜토리얼 계좌로 격리되는지의
-	// 직접 회귀 근거다.
+	// 직접 회귀 근거다. 이슈 #461(021 RISK-OCO-014)로 `ExitPlanService.create`가 샌드박스 holding의 생성 자체를
+	// 409로 막게 됐으므로, 여기서는 그 호출부(`ExitPlanService`)를 우회하고 공용 엔진(`ExitPlanCreationService`)을
+	// 직접 호출해 "이미 존재하는 plan의 체결 시 현금 격리"만 검증한다 — 이미 걸려 있던 legacy PENDING plan이
+	// 체결될 때도 이 격리가 유지돼야 하기 때문이다(1안의 알려진 한계: 기존 plan은 구제 대상이 아니라 계속 존재할
+	// 수 있다).
 	@Test
 	void exitPlanTakeProfitFillCreditsTutorialAccountAndLeavesRealAccountCashAndRealizedPnlUnchangedForTutorialSampleInstrument() {
 		User user = createUser("tutorial-oco-fill");
@@ -190,14 +196,13 @@ class TutorialSandboxSellCashIsolationIntegrationTest {
 		// 명시적으로 8자리로 맞추지 않으면 MySQL(strict mode)이 MysqlDataTruncation으로 거부한다(직접 재현).
 		BigDecimal stopLoss = entryPrice.multiply(new BigDecimal("0.9")).setScale(8, java.math.RoundingMode.HALF_UP);
 		BigDecimal takeProfit = entryPrice.multiply(new BigDecimal("1.1")).setScale(8, java.math.RoundingMode.HALF_UP);
-		// exit_plan_idempotency_keys.idempotency_key는 VARCHAR(36)이다 — 순수 UUID 문자열만 허용된다(V35 마이그레이션).
-		ExitPlanResponse exitPlan = exitPlanService.create(user.getId(), UUID.randomUUID().toString(),
-			new ExitPlanCreateRequest(
-				null, null, null, holding.getId(), new BigDecimal("1"), ExitPriceType.PRICE, stopLoss, takeProfit,
-				null, null));
+		ExitPlanCreateCommandDto command = ExitPlanCreateCommandDto.general(
+			user, holding, new BigDecimal("1"), ExitPriceInputDto.ofPrice(entryPrice, stopLoss, takeProfit),
+			"h".repeat(64));
+		var exitPlan = exitPlanCreationService.create(command);
 
 		BigDecimal triggerPrice = takeProfit.add(BigDecimal.ONE);
-		exitPlanFillService.fillIfPending(exitPlan.id(), triggerPrice);
+		exitPlanFillService.fillIfPending(exitPlan.getId(), triggerPrice);
 
 		Account realAccountAfterFill = accountRepository.findById(account.getId()).orElseThrow();
 		assertThat(realAccountAfterFill.getCashBalance()).isEqualTo(realCashAfterBuy);

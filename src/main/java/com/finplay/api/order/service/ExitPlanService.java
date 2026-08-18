@@ -30,8 +30,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * {@code docs/specs/021-general-risk-management-oco} plan.md "일반 경로 검증 순서" 1~2단계(holding 소유권·시장
- * 제한)와 "멱등성" 일반 경로 알고리즘을 담당한다. 3~9단계(잠금·예약·저장)는 {@link ExitPlanCreationService}에
- * 위임한다.
+ * 제한·샌드박스 종목 제외)와 "멱등성" 일반 경로 알고리즘을 담당한다. 3~9단계(잠금·예약·저장)는
+ * {@link ExitPlanCreationService}에 위임한다.
  *
  * <p>{@code intentionId}를 지정하는 교육 경로는 이 이슈(#348) 범위가 아니다 — 후속 이슈("교육 경로 재접합")가
  * 채우기 전까지는 값이 오면 400 {@code VALIDATION_ERROR}로 명확히 거부한다(plan.md "라우트 재사용 결정").
@@ -66,6 +66,7 @@ public class ExitPlanService {
 		Holding holding = holdingService.findHoldingForOwner(userId, request.holdingId())
 			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
 		validateMarketIsCrypto(holding);
+		validateNotTutorialSample(holding);
 
 		User user = userQueryService.getUser(userId);
 		ExitPriceInputDto priceInput = buildPriceInput(request, holding.getAveragePrice());
@@ -147,6 +148,14 @@ public class ExitPlanService {
 	private void validateMarketIsCrypto(Holding holding) {
 		if (holding.getInstrument().getMarket() != Market.CRYPTO) {
 			throw new BusinessException(ErrorCode.VALIDATION_ERROR, "코인 종목만 일반 리스크관리 OCO를 지원합니다.");
+		}
+	}
+
+	// 021 plan.md "일반 경로 검증 순서" 2단계 — 샌드박스 종목(투자 실습 튜토리얼 전용)은 intentionId 재접합
+	// 전까지 일반 경로 대상이 아니다(이슈 #461, 047 spec TUTORIAL-CASH-ISOL-010 1안).
+	private void validateNotTutorialSample(Holding holding) {
+		if (holding.getInstrument().isTutorialSample()) {
+			throw new BusinessException(ErrorCode.EXIT_PLAN_TUTORIAL_INSTRUMENT_NOT_ALLOWED);
 		}
 	}
 

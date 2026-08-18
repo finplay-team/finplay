@@ -231,6 +231,22 @@ class ExitPlanServiceTest {
 	}
 
 	@Test
+	void createThrowsTutorialInstrumentNotAllowedWhenHoldingInstrumentIsTutorialSample() {
+		when(exitPlanIdempotencyKeyRepository.findByUserIdAndIdempotencyKey(USER_ID, IDEMPOTENCY_KEY))
+			.thenReturn(Optional.empty());
+		Holding tutorialHolding = holdingWithMarket(Market.CRYPTO);
+		ReflectionTestUtils.setField(tutorialHolding.getInstrument(), "tutorialSample", true);
+		when(holdingService.findHoldingForOwner(USER_ID, HOLDING_ID)).thenReturn(Optional.of(tutorialHolding));
+		ExitPlanCreateRequest request = priceModeRequest();
+
+		assertThatThrownBy(() -> service.create(USER_ID, IDEMPOTENCY_KEY, request))
+			.isInstanceOf(BusinessException.class)
+			.extracting(ex -> ((BusinessException)ex).getErrorCode())
+			.isEqualTo(ErrorCode.EXIT_PLAN_TUTORIAL_INSTRUMENT_NOT_ALLOWED);
+		verifyNoInteractions(exitPlanIdempotentCreationService);
+	}
+
+	@Test
 	void createReplaysExistingResponseWhenIdempotencyKeyMatchesSameRequestHash() {
 		ExitPlanCreateRequest request = priceModeRequest();
 		String matchingHash = ReflectionTestUtils.invokeMethod(service, "calculateRequestHash", request);

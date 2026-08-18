@@ -11,7 +11,7 @@ class ErrorCodeTest {
 
 	@Test
 	void declaresEveryErrorCodeFromPrdAndOAuthSpecWithoutUnlistedOnes() {
-		assertThat(ErrorCode.values()).hasSize(42);
+		assertThat(ErrorCode.values()).hasSize(43);
 	}
 
 	@Test
@@ -48,6 +48,7 @@ class ErrorCodeTest {
 			Map.entry(ErrorCode.PRACTICE_LIMIT_ORDER_ALREADY_PENDING, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.PRACTICE_PRICE_SESSION_MISMATCH, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.EXIT_PLAN_ALREADY_EXISTS, HttpStatus.CONFLICT),
+			Map.entry(ErrorCode.EXIT_PLAN_TUTORIAL_INSTRUMENT_NOT_ALLOWED, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.EXIT_PLAN_INVALID_PRICE_RANGE, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.EXIT_PLAN_NOT_FOUND, HttpStatus.NOT_FOUND),
 			Map.entry(ErrorCode.EXIT_PLAN_NOT_PENDING, HttpStatus.CONFLICT),
@@ -115,6 +116,8 @@ class ErrorCodeTest {
 	void exitPlanErrorsKeepPublicDefaultMessages() {
 		assertThat(ErrorCode.EXIT_PLAN_ALREADY_EXISTS.getDefaultMessage())
 			.isEqualTo("이미 대기 중인 손절·익절 예약이 있습니다.");
+		assertThat(ErrorCode.EXIT_PLAN_TUTORIAL_INSTRUMENT_NOT_ALLOWED.getDefaultMessage())
+			.isEqualTo("샌드박스 종목은 일반 리스크관리 OCO를 지원하지 않습니다.");
 		assertThat(ErrorCode.EXIT_PLAN_INVALID_PRICE_RANGE.getDefaultMessage())
 			.isEqualTo("손절가와 익절가의 범위가 올바르지 않습니다.");
 		assertThat(ErrorCode.EXIT_PLAN_NOT_FOUND.getDefaultMessage())

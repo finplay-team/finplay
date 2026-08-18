@@ -813,7 +813,7 @@ holding 관찰은 buyTrade→order에서 sessionId를 서버가 역추적한다(
 
 | Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|
-| POST | /api/exit-plans | 필수 `Idempotency-Key: <UUID>`(공백 불가, 최대 36자); body `{"holdingId":1,"quantity":10,"exitPriceType":"PRICE","stopLoss":65000,"takeProfit":75000}` 또는 `exitPriceType":"PERCENT"`면 `stopLossRate`·`takeProfitRate` (`ExitPlanCreateRequest`) | 최초 201, 같은 key 재요청 수렴 200 `ExitPlanResponse` | 400 `VALIDATION_ERROR`; 404 `NOT_FOUND`(holding 없음/타인 소유); 409 `EXIT_PLAN_ALREADY_EXISTS`, `INSUFFICIENT_QTY`, `EXIT_PLAN_INVALID_PRICE_RANGE`, `PRICE_UNAVAILABLE`, `IDEMPOTENCY_CONFLICT` | 021, Issue #348 |
+| POST | /api/exit-plans | 필수 `Idempotency-Key: <UUID>`(공백 불가, 최대 36자); body `{"holdingId":1,"quantity":10,"exitPriceType":"PRICE","stopLoss":65000,"takeProfit":75000}` 또는 `exitPriceType":"PERCENT"`면 `stopLossRate`·`takeProfitRate` (`ExitPlanCreateRequest`) | 최초 201, 같은 key 재요청 수렴 200 `ExitPlanResponse` | 400 `VALIDATION_ERROR`; 404 `NOT_FOUND`(holding 없음/타인 소유); 409 `EXIT_PLAN_ALREADY_EXISTS`, `EXIT_PLAN_TUTORIAL_INSTRUMENT_NOT_ALLOWED`, `INSUFFICIENT_QTY`, `EXIT_PLAN_INVALID_PRICE_RANGE`, `PRICE_UNAVAILABLE`, `IDEMPOTENCY_CONFLICT` | 021, Issue #348, Issue #461 |
 
 **요청 필드 (일반 경로 필수·금지, plan.md 필드 표)**
 
@@ -822,6 +822,7 @@ holding 관찰은 buyTrade→order에서 sessionId를 서버가 역추적한다(
 - `exitPriceType=PRICE`면 `stopLoss`·`takeProfit`이 둘 다 필수이고 `stopLossRate`·`takeProfitRate`는 금지(포함 시 400). `PERCENT`면 반대다.
 - `holding`이 존재하지 않거나 본인 소유가 아니면 404 `NOT_FOUND`(소유 여부 비노출).
 - `holding.instrument.market != CRYPTO`(주식 holding)면 400 `VALIDATION_ERROR`("코인 종목만 일반 리스크관리 OCO를 지원합니다.") — 이 spec 범위는 코인 전용이다.
+- `holding.instrument.isTutorialSample()`(투자 실습 튜토리얼 전용 샌드박스 종목)이면 409 `EXIT_PLAN_TUTORIAL_INSTRUMENT_NOT_ALLOWED`("샌드박스 종목은 일반 리스크관리 OCO를 지원하지 않습니다.") — `intentionId` 재접합 전까지 샌드박스 holding은 일반 경로 대상이 아니다(Issue #461, RISK-OCO-014).
 - 같은 holding에 이미 `PENDING` exit plan이 있으면(멱등 재현이 아닌 한) 409 `EXIT_PLAN_ALREADY_EXISTS`(이 판정이 아래 수량 판정보다 먼저다 — 기존 예약이 원인인데 `INSUFFICIENT_QTY`로 가려지지 않게).
 - `holding.getAvailableQuantity() < quantity`면 409 `INSUFFICIENT_QTY`.
 - 계산된 `stopLossPrice`·`takeProfitPrice`가 `0 < stopLossPrice < entryPrice < takeProfitPrice` 또는 `DECIMAL(18,8)` 상한을 벗어나면 409 `EXIT_PLAN_INVALID_PRICE_RANGE`.
@@ -845,7 +846,7 @@ holding 관찰은 buyTrade→order에서 sessionId를 서버가 역추적한다(
 
 `ExitPlanService.list`가 `ExitPlanRepository.findByUserIdAndStatusOrderByIdDesc(userId, status)`로 인증 사용자 본인 소유 plan만 `id` 내림차순 조회한다(페이지네이션 없음). `status`는 controller가 `@RequestParam(required = false) ExitPlanStatus`로 바인딩하며, `ExitPlanStatus` 리터럴이 아닌 값은 Spring 타입 변환 실패로 전역 예외 핸들러가 400 `VALIDATION_ERROR`로 응답한다(다른 도메인의 잘못된 enum 쿼리 파라미터와 동일한 처리 — 신규 오류 코드 없음). 응답 항목은 생성·취소가 이미 쓰는 `ExitPlanResponse`를 그대로 재사용하므로 `holdingId`는 항상 non-null, `intentionId`·`buyTradeId`는 일반 경로 plan에서 항상 null이다(교육 경로 plan이 이후 함께 나타나면 그때 non-null이 될 수 있다).
 
-이 절이 참조하는 `EXIT_PLAN_ALREADY_EXISTS`(409)·`EXIT_PLAN_INVALID_PRICE_RANGE`(409)·`EXIT_PLAN_NOT_FOUND`(404)·`EXIT_PLAN_NOT_PENDING`(409)은 모두 `ErrorCode` enum에 이미 존재한다.
+이 절이 참조하는 `EXIT_PLAN_ALREADY_EXISTS`(409)·`EXIT_PLAN_TUTORIAL_INSTRUMENT_NOT_ALLOWED`(409)·`EXIT_PLAN_INVALID_PRICE_RANGE`(409)·`EXIT_PLAN_NOT_FOUND`(404)·`EXIT_PLAN_NOT_PENDING`(409)은 모두 `ErrorCode` enum에 이미 존재한다.
 
 ## 026 시장가/지정가 매매 기반 투자 실습 (OCO 없이, holding-observations)
 

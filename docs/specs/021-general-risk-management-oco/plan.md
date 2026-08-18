@@ -48,7 +48,7 @@
 ## 일반 경로 검증 순서 (`POST /api/exit-plans`, `intentionId` 생략)
 
 1. `holdingId`로 holding을 조회한다. 없으면 404 `NOT_FOUND`, 본인 소유가 아니면 존재를 숨겨 같은 404다.
-2. `holding.instrument.market != CRYPTO`면 400 `VALIDATION_ERROR`("코인 종목만 일반 리스크관리 OCO를 지원합니다.") — 기존 `015`가 지정가 생성에서 쓴 시장 제한 패턴과 동일하다.
+2. `holding.instrument.market != CRYPTO`면 400 `VALIDATION_ERROR`("코인 종목만 일반 리스크관리 OCO를 지원합니다.") — 기존 `015`가 지정가 생성에서 쓴 시장 제한 패턴과 동일하다. 같은 단계에서 `holding.instrument.isTutorialSample()`이면 409 `EXIT_PLAN_TUTORIAL_INSTRUMENT_NOT_ALLOWED`("샌드박스 종목은 일반 리스크관리 OCO를 지원하지 않습니다.")로 거부한다(이슈 #461, RISK-OCO-014) — `ExitPlanCreationService`가 아니라 `ExitPlanService`에 두어, 교육 경로(`intentionId` 지정)가 재접합돼도 이 판정이 자기 자신을 막지 않게 한다.
 3. `holding`을 잠근다(`SELECT ... FOR UPDATE`, 세션 없음).
 4. 그 holding에 이미 `PENDING` exit plan이 있는지 조회한다. 있으면(이 요청이 그 plan의 멱등 재현이 아닌 한) 409 `EXIT_PLAN_ALREADY_EXISTS`로 plan·condition·예약 흔적 없이 거부한다.
 5. `holding.getAvailableQuantity() < request.quantity`면 409 `INSUFFICIENT_QTY`.

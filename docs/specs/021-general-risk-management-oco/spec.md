@@ -61,6 +61,7 @@
 - [ ] RISK-OCO-011: 일반 경로에는 튜토리얼 진행 판정(단계 완료, 관찰 A·B·C, 복기)이 전혀 개입하지 않는다. `intentionId` 지정 시에만 016의 진행 판정 대상이 된다.
 - [ ] RISK-OCO-012: 클라이언트가 단계 완료·현재가·보상을 직접 지정하는 입력은 어느 경로에도 없다. LLM·투자 추천을 사용하지 않는다(PRD C-004 상속).
 - [ ] RISK-OCO-013: `Idempotency-Key` header는 두 경로 모두 필수이며, 재시도는 최초 결과를 그대로 재현한다.
+- [x] RISK-OCO-014: 대상 holding의 종목이 샌드박스 종목(`instrument.isTutorialSample()=true`)이면 일반 경로 생성은 409 `EXIT_PLAN_TUTORIAL_INSTRUMENT_NOT_ALLOWED`로 흔적 없이 거부한다. `intentionId` 재접합 전까지 샌드박스 holding은 일반 경로 대상이 아니다(이슈 #461, `047` spec TUTORIAL-CASH-ISOL-010 1안 결정).
 
 ## 비즈니스 규칙
 
@@ -74,6 +75,7 @@
 - 가격 트리거는 익절 `currentPrice >= takeProfitPrice`, 손절 `currentPrice <= stopLossPrice`이며 트리거 시점 현재가로 시장가 청산한다. 두 경로가 완전히 같은 트리거·체결·반대 조건 취소 로직을 공유한다.
 - 취소·체결·만료 경합에서 예약 수량은 항상 정확히 한 번 소비되거나 반환된다. 기존 시장가·지정가 SELL은 공통 예약 원장(`Holding.getAvailableQuantity()`, `reserveQuantity()`, `releaseReservedQuantity()` — `docs/specs/015-limit-order`가 이미 구현)에서 `availableQuantity`만 검증한다. 이 원장은 새로 만들지 않고 그대로 재사용한다.
 - 일반 경로 생성·취소는 `Idempotency-Key` 재시도에서 최초 결과를 그대로 재현한다. 일반 경로는 holding이 영속 DB 행이라 ADR-0012의 재시작 인스턴스 재사용 문제가 없으므로, 교육 경로처럼 복잡한 key-first 재해석 coordinator가 필요하지 않다(`plan.md` 참고).
+- **샌드박스 종목 holding은 일반 경로 대상이 아니다.** `047` spec이 다루는 튜토리얼 현금 격리와 별개로, `intentionId` 없는 일반 OCO가 샌드박스 holding(투자 실습 튜토리얼 전용 종목)에 걸리면 그 OCO 체결이 `Order.create(...)`(교육 attempt 귀속 없음)로 진행돼 실습 재시작·진행 판정(`practiceAttemptId` 기반 순체결수량 계산)이 깨진다(이슈 #461 코드 확인 결과). `ExitPlanService`가 `validateMarketIsCrypto` 옆에서 이 판정을 맡는다 — 경로 공용 엔진(`ExitPlanCreationService`)에 두지 않는 이유는 향후 교육 경로(`intentionId` 지정, `016` EDU-PRACTICE-005·006)가 재접합될 때 그 경로 자신이 이 차단에 막히지 않아야 하기 때문이다.
 
 ## 범위 제외
 

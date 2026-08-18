@@ -39,6 +39,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -211,6 +212,39 @@ class ExitPlanGeneralPathIntegrationTest {
 			.isEmpty();
 	}
 
+	// 샌드박스 종목(투자 실습 튜토리얼 전용) holding으로 일반 경로 OCO 생성을 시도하면 409로 거부되고 흔적을
+	// 남기지 않는다(이슈 #461, 047 spec TUTORIAL-CASH-ISOL-010 1안).
+	@Test
+	void createRejectsTutorialSampleInstrumentHoldingWithoutReservingOrPersistingAnything() throws Exception {
+		User user = createUser("exit-plan-tutorial-sample");
+		Account account = createAccount(user);
+		String accessToken = issueAccessToken(user);
+		Instrument tutorialInstrument = createTutorialSampleCryptoInstrument();
+		priceStore.saveTick(tutorialInstrument.getSymbol(), new BigDecimal("100500.00000000"), NOW);
+
+		Holding holding = holdingRepository.saveAndFlush(Holding.create(account, tutorialInstrument, NOW));
+		holding.applyBuy(new BigDecimal("10.00000000"), new BigDecimal("100000.00000000"), NOW);
+		holdingRepository.saveAndFlush(holding);
+
+		String createBody = """
+			{"holdingId":%d,"quantity":"1.00000000","exitPriceType":"PRICE",
+			"stopLoss":"95000.00000000","takeProfit":"110000.00000000"}
+			""".formatted(holding.getId());
+
+		mockMvc.perform(post("/api/exit-plans")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+			.header("Idempotency-Key", UUID.randomUUID().toString())
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(createBody))
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.error.code").value("EXIT_PLAN_TUTORIAL_INSTRUMENT_NOT_ALLOWED"));
+
+		Holding afterAttempt = holdingRepository.findById(holding.getId()).orElseThrow();
+		assertThat(afterAttempt.getReservedQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
+		assertThat(exitPlanRepository.findByUserIdAndStatusOrderByIdDesc(user.getId(), ExitPlanStatus.PENDING))
+			.isEmpty();
+	}
+
 	// 시나리오: PERCENT 방식(holding.averagePrice 대비 손절률·익절률)으로 생성해도 PRICE와 동일하게 예약이 걸리고,
 	// GET 목록 조회에 holdingId·exitPriceType·rate가 그대로 노출되며, 취소 시 예약이 정확히 반환된다(021 plan.md
 	// "테스트 계획" — 일반 경로 전체 흐름 PRICE·PERCENT 각각, 목록 조회).
@@ -360,6 +394,16 @@ class ExitPlanGeneralPathIntegrationTest {
 		List<Instrument> cryptos = instrumentRepository.findByMarketAndTradableTrueOrderByIdAsc(Market.CRYPTO);
 		assertThat(cryptos).isNotEmpty();
 		return cryptos.get(0);
+	}
+
+	// tutorialSample=true·tradable=true인 신규 CRYPTO 종목을 만든다(TutorialSandboxSellCashIsolationIntegrationTest의
+	// fixture 관례와 동일).
+	private Instrument createTutorialSampleCryptoInstrument() {
+		Instrument instrument = Instrument.create(
+			Market.CRYPTO, "T" + UUID.randomUUID().toString().replace("-", "").substring(0, 8), "샌드박스코인",
+			BigDecimal.ONE, 0L, true, NOW);
+		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
+		return instrumentRepository.saveAndFlush(instrument);
 	}
 
 	private String issueAccessToken(User user) {
