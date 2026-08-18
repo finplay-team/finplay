@@ -45,7 +45,11 @@ WHERE a.sandbox_cash_adjustment <> 0;
 -- 실제 계좌 예약도 영구히 묶인다(TutorialLegacyPendingOrderPostMigrationIntegrationTest로 재현 확인). 매도
 -- PENDING은 현금이 아니라 holdings.reserved_quantity를 쓰고 이 spec이 건드리지 않는 영역이라 대상이 아니다.
 -- 예약액 계산은 LimitOrderFeeCalculator.calculate와 동일한 공식이다: FLOOR(수량×지정가) +
--- FLOOR(FLOOR(수량×지정가)×0.0005). 해당 행이 없으면 두 UPDATE 모두 자연히 0건 적용된다(멱등).
+-- FLOOR(FLOOR(수량×지정가)×0.0005). 해당 행이 없으면 두 UPDATE 모두 자연히 0건 적용된다(멱등). reserved_cash
+-- 차감에도 위 cash_balance와 동일하게 GREATEST(0, ...)를 건다(PR #452 재리뷰 권장 2번) — 정상 데이터라면
+-- 계좌의 reserved_cash는 이 계좌의 모든 PENDING 지정가 매수(샌드박스+실제 종목) 예약의 합이라 이 서브쿼리가
+-- 구한 샌드박스분만 빼도 음수가 될 수 없지만, 만에 하나 음수가 되면 getAvailableCash()(cashBalance-reservedCash)가
+-- 실제 현금보다 커져 없는 돈을 예약할 수 있게 되는 더 위험한 실패 방향이라 대칭으로 막아 둔다.
 UPDATE accounts a
 JOIN (
     SELECT o.account_id AS account_id,
@@ -59,7 +63,7 @@ JOIN (
       AND i.is_tutorial_sample = TRUE
     GROUP BY o.account_id
 ) legacy ON legacy.account_id = a.id
-SET a.reserved_cash = a.reserved_cash - legacy.total_reserved;
+SET a.reserved_cash = GREATEST(0, a.reserved_cash - legacy.total_reserved);
 
 UPDATE orders o
 JOIN instruments i ON i.id = o.instrument_id
