@@ -111,6 +111,23 @@ non-null, run > 0)로 만든다. 039가 주문 귀속에 쓴 패턴을 그대로
 두 배포 사이의 창에서도 중복 snapshot은 생길 수 없다. 그 시점의 코드는 항상 `entry_sequence = 1`을 쓰고,
 새 UNIQUE가 기존 UNIQUE와 동일한 보호를 하기 때문이다.
 
+### 제약 교체만으로는 부족하다 — 단건 조회를 함께 고쳐야 한다
+
+`PracticeRiskSnapshotRepository.findByAttemptIdAndRunNumber(Long, long)`가 **`Optional`을 반환**하고
+호출 지점이 7곳이다(`InvestmentPracticeQueryService` 2곳, `PracticeAttemptEvidenceService`,
+`PracticeAttemptOrderAttributionService`, `PracticeAttemptRestartService`, `PracticeAttemptService`).
+
+**`SNAP-2`로 DB 제약만 풀고 이 쿼리를 그대로 두면, 재진입 매수 직후 진행 조회·복기·재시작·완료가 전부
+`IncorrectResultSizeDataAccessException`으로 죽는다.** 초판은 `SNAP-1`·`SNAP-2`를 "코드 변경 없음"이라
+적었는데 사실이 아니다.
+
+- 쿼리를 `findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc`(최신 진입)로 바꾼다.
+- **7개 호출 지점마다 "현재 진입"인지 "그 run의 첫 진입"인지 판정해야 한다.** 특히
+  `PracticeAttemptEvidenceService`가 반환하는 snapshot은 관찰 필터(`observedAt >= snapshot.createdAt`)와
+  evidence A 기준선의 정본이므로, 어느 것을 쓸지 정하지 않으면 evidence 판정이 미정의가 된다.
+  기본 방침은 **전부 최신 진입**이며, 예외가 필요한 곳은 구현 중 판정해 기록한다.
+- 이 작업은 `SNAP-2` **배포 전에** 끝나야 한다. 순서가 뒤집히면 재진입한 사용자가 500을 본다.
+
 > 대안으로 "재진입을 새 실행 세대(run+1)로 취급"을 검토했다. 스키마를 안 건드려도 되지만, 재시작이 아닌
 > 재매수가 run을 올리면 `039`의 실행 세대 의미(재시작 단위)가 무너지고 주문 귀속·재시작 정리·완료 판정이
 > 전부 흔들린다. **채택하지 않는다.** 파괴적 변경 2단계가 더 싸다.
@@ -129,21 +146,47 @@ non-null, run > 0)로 만든다. 039가 주문 귀속에 쓴 패턴을 그대로
 ```
 onBuyFill(order, trade):
   1. attempt 잠금 (기존)
-  2. preset = attempt.exitPreset ?? BALANCED
-  3. lines = ReferencePriceCalculator.calculateFromPercent(trade.price, preset.s, preset.t)
-  4. snapshot 저장 (entry_sequence = 기존 수 + 1, exit_preset = preset)
-  5. market == CRYPTO 이면:
+  2. 이번 체결 직전 순보유수량이 0이 아니었으면 → 아무것도 하지 않고 반환   # EXITPRESET-020
+  3. preset = attempt.exitPreset ?? BALANCED
+  4. lines = ReferencePriceCalculator.calculateFromPercent(trade.price, preset.s, preset.t)
+  5. snapshot 저장 (entry_sequence = 기존 수 + 1, exit_preset = preset)
+  6. market == CRYPTO 이면:
          holding 조회·잠금
-         ExitPlanCreationService.create(practice(user, holding, trade.quantity, lines, hash, attempt, run))
-  # market == STOCK 이면 4번까지만 (EXITPRESET-018)
+         baseline = 041의 대본 canonical price          # 사인파 항시 시세를 쓰지 않는다
+         ExitPlanCreationService.create(practice(user, holding, trade.quantity, lines, hash, attempt, run, baseline))
+  # market == STOCK 이면 5번까지만 (EXITPRESET-018)
 ```
 
-`ExitPlanCreateCommandDto`에 팩토리 `practice(...)`를 더한다. `general(...)`과 같되 attempt·run을 함께
-받아 생성된 plan에 귀속 컬럼을 채운다. **엔진(`ExitPlanCreationService`)의 검증·예약·저장 로직은 바꾸지
-않는다** — holding 잠금, `availableQuantity` 검증, `holding.reserveQuantity()` 호출이 그대로다.
+**2단계 가드가 이 plan에서 가장 중요한 한 줄이다.** 초판에는 이 가드가 없어 보유 중 추가 매수가
+(1) `validateNoPendingPlan` 409로 매수를 통째로 실패시키고, (2) 새 snapshot으로 기준선을 갱신해 039의
+고정 규칙을 깨고, (3) 평단 이동으로 `041` SCENARIO-006a의 루머 분기를 무너뜨렸다. "직전 순보유수량이
+0이었는가"는 체결 트랜잭션 안에서 판정 가능하다.
 
-`requestHash`는 `attemptId:runNumber:entrySequence`로 만든다. 같은 매수 체결이 재시도돼도 중복 예약이
-생기지 않게 하는 멱등키이며, 021이 이미 `request_hash NOT NULL`을 요구한다.
+`ExitPlanCreateCommandDto`에 팩토리 `practice(...)`를 더한다. **엔진의 변경 범위를 정직하게 적는다** —
+초판은 "엔진은 바꾸지 않는다"고 했으나 사실이 아니다. 귀속 컬럼을 채우려면 record 컴포넌트,
+`ExitPlan` 생성 팩토리, `ExitPlanCreationService.newExitPlan`이 함께 바뀌어야 하고, baseline 주입을 위해
+8단계도 바뀐다.
+
+**바뀌지 않는 것**은 검증 순서와 예약 원장 취급이다 — holding 잠금, `availableQuantity` 검증,
+`validateNoPendingPlan`, `holding.reserveQuantity()` 호출은 그대로다.
+
+**baseline은 반드시 주입해야 한다.** 현재 엔진 8단계가 `priceQueryService.getPrice(instrumentId)`로
+baseline을 확정하는데, `PriceQueryService`는 튜토리얼 샘플이면 `TutorialSampleInstrumentPriceService`
+(주기 180초·진폭 ±3%의 **벽시계 사인파**)로 분기한다. 대본과 아무 관계 없는 값이 `baseline_price`·
+`baseline_observed_at`에 영속되고, `039` TUTORIAL-FLOW-011("화면 현재가·체결 판정·tick 정산이 같은 값")과
+어긋난다. 매수가 실패하지는 않지만(`validateRange`가 baseline을 검증하지 않는다) 거짓 데이터가 남는다.
+
+`requestHash`는 `attemptId:runNumber:entrySequence`의 SHA-256으로 만든다(컬럼이 `CHAR(64)`다).
+**이것은 멱등키가 아니다** — `exit_plans.request_hash`에 UNIQUE 제약이 없고 엔진도 이 값을 읽지 않는다
+(멱등성은 별도 테이블 `exit_plan_idempotency_keys`가 `ExitPlanIdempotentCreationService`를 통할 때만
+동작하는데, 튜토리얼 경로는 그 서비스를 거치지 않는다). 실제 중복 방어는 아래 두 가지다.
+
+- 엔진 4단계의 `validateNoPendingPlan`(holding당 PENDING 1건) — **초판이 "엔진은 안 바꾼다"고 적으면서
+  이 검증만 언급에서 빠뜨렸다.** 보유 중 추가 매수가 예약을 또 만들려 하면 이 검증이 409를 던져 매수
+  트랜잭션 전체가 롤백된다. EXITPRESET-020의 "진입당 1회" 가드가 그 상황을 애초에 만들지 않는다.
+- `entry_sequence` 산출이 attempt를 잠근 트랜잭션 안에서 이뤄지므로 동시 요청이 직렬화된다.
+
+`request_hash`는 감사용 snapshot으로만 남긴다.
 
 ### `exitPriceType`
 
@@ -180,6 +223,10 @@ for (Long exitPlanId : exitPlanRepository.findPendingPracticeRunExitPlanIds(atte
 `exitPlanFillService.fillIfPending`은 가격(`currentPrice`)을 받는다. 041의 tick이 이미 진행 후 canonical
 price를 손에 들고 있으므로 그 값을 그대로 넘긴다 — **차트와 체결이 같은 값을 쓴다**는 039
 TUTORIAL-FLOW-011이 여기서 지켜진다.
+
+**정산은 tick 종점 가격 하나가 아니라 건너뛴 가상 분마다 호출한다**(`041` SCENARIO-013). 041의 tick
+알고리즘이 이미 분 단위로 순회하므로, 이 루프는 그 순회 안에서 분마다 돈다. tick 종점 가격만 쓰면
+30초 간격에서 `−3%` 손절이 `−10%` 넘는 가격에 체결되고 루머 분기가 무작위가 된다.
 
 **중복 tick 방어**는 `fillIfPending`의 이름 그대로 PENDING일 때만 체결하는 성질에 기댄다. 같은 가상 분에
 tick이 두 번 와도 첫 번째에서 terminal이 된 plan은 두 번째에 잡히지 않는다. 지정가 주문과 같은 패턴이다.
@@ -326,6 +373,8 @@ snapshot으로 만들어진 예약(이미 체결·취소됨)은 그대로 남는
 | 수동 매도와 예약 공존 | 통합 테스트. 전량 예약 상태에서 시장가 매도가 정상 체결 |
 | 재시작의 예약 정리 | 통합 테스트. 취소 순서(예약 → 주문 → 보상매도)와 예약 수량 정확히 1회 반환 |
 | 재진입 재예약 | Testcontainers 통합. **`SNAP-2` 배포 이후에만 통과한다** |
+| snapshot 단건 조회 7곳 | 슬라이스 + 통합. run 안에 snapshot이 2건일 때 조회·복기·재시작·완료가 모두 정상 동작 |
+| 보유 중 추가 매수 | 통합. 체결은 되고 snapshot·예약은 새로 생기지 않으며 기준선이 그대로임 |
 | `sellCause` 판정 | `@WebMvcTest` + 통합 |
 | 기존 데이터 호환 | `exit_preset`이 null인 snapshot이 `BALANCED`로 해석됨 |
 | 일반 경로 OCO 회귀 | 기존 테스트 전부 |
