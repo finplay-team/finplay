@@ -13,7 +13,7 @@
   튜토리얼 계좌는 현금과 `realizedPnl`을 함께 갱신), `OrderExecutionService.createSellOrder` 인라인 분기
   (TUTORIAL-CASH-ISOL-003) + 단위 테스트. 이 변경만으로 지정가 매도 체결·재시작 보상매도·OCO 체결이 함께
   반영됨을 통합 테스트로 확인.
-- [ ] 재시작 리셋 — `PracticeRunRestartOrderService.cleanupCurrentRun`(또는 `PracticeAttemptRestartService.restart`)에
+- [x] 재시작 리셋 — `PracticeRunRestartOrderService.cleanupCurrentRun`(또는 `PracticeAttemptRestartService.restart`)에
   `TutorialAccountService.resetForUpdate` 호출 추가(TUTORIAL-CASH-ISOL-006, 현금·예약 현금·`realizedPnl`
   동시 리셋) + 통합 테스트.
 - [ ] `sandboxCashAdjustment` 폐지 — 5개 호출부의 `addSandboxCashAdjustment(...)` 제거, `AccountService`의
