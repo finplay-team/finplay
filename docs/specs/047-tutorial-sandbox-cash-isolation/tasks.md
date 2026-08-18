@@ -18,7 +18,7 @@
   동시 리셋) + 통합 테스트.
 - [x] `sandboxCashAdjustment` 폐지 — 5개 호출부의 `addSandboxCashAdjustment(...)` 제거, `AccountService`의
   `totalValue` 공식 원복(TUTORIAL-CASH-ISOL-007) + 계좌/포트폴리오 요약 테스트 갱신.
-- [ ] 튜토리얼 잔고 API 노출 — `PracticeAttemptResponse`(또는 확정된 동등 응답)에 `tutorialCashBalance`·
+- [x] 튜토리얼 잔고 API 노출 — `PracticeAttemptResponse`(또는 확정된 동등 응답)에 `tutorialCashBalance`·
   `tutorialAvailableCash`·`tutorialRealizedPnl` 필드 추가(TUTORIAL-CASH-ISOL-011), 진입·재시작 양쪽 응답에서
   값이 정확히 채워짐을 슬라이스/통합 테스트로 확인 + `docs/api-routes.md`·`docs/api-contracts.md` 갱신
   (CLAUDE.md 규칙 7 — 이 커밋이 실제 컨트롤러·DTO 변경을 담는 커밋이므로 두 문서를 함께 갱신).

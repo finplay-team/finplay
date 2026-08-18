@@ -1,6 +1,8 @@
 // 완료 attempt replay와 미완료 attempt의 원자적 실행 세대 재시작을 조정하는 교육 서비스
 package com.finplay.api.education.marketpractice.service;
 
+import com.finplay.api.account.domain.TutorialAccount;
+import com.finplay.api.account.service.TutorialAccountService;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
@@ -27,6 +29,7 @@ public class PracticeAttemptRestartService {
 	private final PracticeRiskSnapshotRepository practiceRiskSnapshotRepository;
 	private final PracticeRunRestartOrderService practiceRunRestartOrderService;
 	private final PracticeAttemptCanonicalPriceService canonicalPriceService;
+	private final TutorialAccountService tutorialAccountService;
 	private final Clock clock;
 
 	@Transactional
@@ -42,7 +45,17 @@ public class PracticeAttemptRestartService {
 			cleanupTarget == null ? null : canonicalPriceService.canonicalPrice(attempt, restartedAt),
 			restartedAt));
 		attempt.restart(restartedAt);
-		return toResponse(attempt);
+		// cleanupCurrentRun이 같은 트랜잭션 안에서 튜토리얼 계좌를 이미 리셋했으므로(TUTORIAL-CASH-ISOL-006),
+		// 여기서는 그 결과를 다시 조회해 응답에 실어 보낸다(TUTORIAL-CASH-ISOL-011).
+		TutorialAccount tutorialAccount = tutorialAccountService.getOrCreateForUpdate(
+			userId, toAccountMarket(market), restartedAt);
+		return toResponse(attempt, tutorialAccount);
+	}
+
+	// PracticeAttemptService.toAccountMarket과 동일한 패턴 — 교육 도메인의 Market을 계좌 도메인의 Market으로
+	// 값 기반 변환한다(두 Market은 값 집합이 같지만 서로 다른 열거형이다).
+	private com.finplay.api.account.domain.Market toAccountMarket(Market market) {
+		return com.finplay.api.account.domain.Market.valueOf(market.name());
 	}
 
 	// 샌드박스 종목 도입(V32) 이전에 실제 종목으로 완료한 legacy 완료자는 진입 시 실제 종목을 심은 replay
@@ -59,10 +72,15 @@ public class PracticeAttemptRestartService {
 		return instrument;
 	}
 
-	private PracticeAttemptResponse toResponse(PracticeAttempt attempt) {
+	private PracticeAttemptResponse toResponse(PracticeAttempt attempt, TutorialAccount tutorialAccount) {
 		PracticeRiskSnapshot snapshot = practiceRiskSnapshotRepository
 			.findByAttemptIdAndRunNumber(attempt.getId(), attempt.getRunNumber())
 			.orElse(null);
-		return PracticeAttemptResponse.from(attempt, snapshot);
+		return PracticeAttemptResponse.from(
+			attempt,
+			snapshot,
+			tutorialAccount.getCashBalance(),
+			tutorialAccount.getAvailableCash(),
+			tutorialAccount.getRealizedPnl());
 	}
 }

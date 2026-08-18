@@ -1,6 +1,7 @@
 // 튜토리얼 attempt의 멱등 진입 조회와 현재 실행 종목 선택을 처리하는 서비스
 package com.finplay.api.education.marketpractice.service;
 
+import com.finplay.api.account.domain.TutorialAccount;
 import com.finplay.api.account.service.TutorialAccountService;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
@@ -47,15 +48,17 @@ public class PracticeAttemptService {
 		PracticeAttempt attempt = practiceAttemptRepository.findByUserIdAndMarketForUpdate(userId, market)
 			.orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_ERROR));
 		// PracticeAttempt 행 잠금이 이미 사용자·시장 조합을 직렬화하므로, 같은 트랜잭션 안에서 튜토리얼 계좌도
-		// 함께 get-or-create한다(TUTORIAL-CASH-ISOL-001, 설계 판단 — 계좌 생성 시점). 응답 노출은 후속 작업.
-		tutorialAccountService.getOrCreateForUpdate(userId, toAccountMarket(market), now);
+		// 함께 get-or-create한다(TUTORIAL-CASH-ISOL-001, 설계 판단 — 계좌 생성 시점). 그 결과를 응답에도 그대로
+		// 실어 보낸다(TUTORIAL-CASH-ISOL-011).
+		TutorialAccount tutorialAccount = tutorialAccountService.getOrCreateForUpdate(
+			userId, toAccountMarket(market), now);
 		practiceProgressRepository.findByUserIdAndTutorialKeyForUpdate(userId, tutorialKey);
 		PracticeCompletion completion = practiceCompletionRepository
 			.findByUserIdAndTutorialKey(userId, tutorialKey)
 			.orElse(null);
 		if (completion != null) {
 			if (attempt.getStatus() == PracticeAttemptStatus.COMPLETED) {
-				return toResponse(attempt);
+				return toResponse(attempt, tutorialAccount);
 			}
 			if (inserted) {
 				initializeCompletedReplay(userId, market, attempt, completion, now);
@@ -63,7 +66,7 @@ public class PracticeAttemptService {
 			// completion evidence는 있지만 attempt가 COMPLETED가 아닌 기존 행은 재시작 후 진행 중인
 			// 상태(TUTORIAL-RESTART-003)이므로 오류로 취급하지 않고 현재 상태를 그대로 반환한다.
 		}
-		return toResponse(attempt);
+		return toResponse(attempt, tutorialAccount);
 	}
 
 	private void initializeCompletedReplay(
@@ -146,5 +149,19 @@ public class PracticeAttemptService {
 			.findByAttemptIdAndRunNumber(attempt.getId(), attempt.getRunNumber())
 			.orElse(null);
 		return PracticeAttemptResponse.from(attempt, snapshot);
+	}
+
+	// 진입 응답(ensureAttempt)은 같은 트랜잭션에서 이미 get-or-create한 튜토리얼 계좌 값을 그대로 실어
+	// 보낸다(TUTORIAL-CASH-ISOL-011) — 추가 조회 없이 진입 시점 잔고·손익을 정확히 노출한다.
+	private PracticeAttemptResponse toResponse(PracticeAttempt attempt, TutorialAccount tutorialAccount) {
+		PracticeRiskSnapshot snapshot = practiceRiskSnapshotRepository
+			.findByAttemptIdAndRunNumber(attempt.getId(), attempt.getRunNumber())
+			.orElse(null);
+		return PracticeAttemptResponse.from(
+			attempt,
+			snapshot,
+			tutorialAccount.getCashBalance(),
+			tutorialAccount.getAvailableCash(),
+			tutorialAccount.getRealizedPnl());
 	}
 }
