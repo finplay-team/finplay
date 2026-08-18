@@ -94,10 +94,9 @@ class PracticeAttemptOrderAttributionServiceTest {
 		PracticeAttempt attempt = inProgressAttempt(instrument);
 		Order order = attributedBuyOrder(instrument);
 		Trade trade = buyTrade(order, instrument, new BigDecimal("100.123456785"));
-		PracticeRiskSnapshot existingSnapshot = mock(PracticeRiskSnapshot.class);
 		when(practiceAttemptRepository.findByIdForUpdate(ATTEMPT_ID)).thenReturn(Optional.of(attempt));
-		when(practiceRiskSnapshotRepository.findByAttemptIdAndRunNumber(ATTEMPT_ID, 1L))
-			.thenReturn(Optional.empty(), Optional.of(existingSnapshot));
+		when(practiceRiskSnapshotRepository.countByAttemptIdAndRunNumber(ATTEMPT_ID, 1L))
+			.thenReturn(0L, 1L);
 
 		service.createFirstBuyRiskSnapshot(order, trade, NOW);
 		service.createFirstBuyRiskSnapshot(order, trade, NOW.plusSeconds(1));

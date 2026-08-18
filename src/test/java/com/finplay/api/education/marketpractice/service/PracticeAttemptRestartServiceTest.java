@@ -67,7 +67,7 @@ class PracticeAttemptRestartServiceTest {
 		PracticeAttempt attempt = selectedAttempt();
 		when(attemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
 			.thenReturn(Optional.of(attempt));
-		when(riskSnapshotRepository.findByAttemptIdAndRunNumber(ATTEMPT_ID, 2L))
+		when(riskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(ATTEMPT_ID, 2L))
 			.thenReturn(Optional.empty());
 		resetTutorialAccountStub();
 
@@ -116,7 +116,7 @@ class PracticeAttemptRestartServiceTest {
 		PracticeAttempt attempt = newAttempt();
 		when(attemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
 			.thenReturn(Optional.of(attempt));
-		when(riskSnapshotRepository.findByAttemptIdAndRunNumber(ATTEMPT_ID, 2L))
+		when(riskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(ATTEMPT_ID, 2L))
 			.thenReturn(Optional.empty());
 		resetTutorialAccountStub();
 
@@ -137,7 +137,7 @@ class PracticeAttemptRestartServiceTest {
 		ReflectionTestUtils.setField(attempt, "completedAt", NOW.minusDays(1));
 		when(attemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
 			.thenReturn(Optional.of(attempt));
-		when(riskSnapshotRepository.findByAttemptIdAndRunNumber(ATTEMPT_ID, 2L))
+		when(riskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(ATTEMPT_ID, 2L))
 			.thenReturn(Optional.empty());
 		resetTutorialAccountStub();
 
@@ -160,7 +160,7 @@ class PracticeAttemptRestartServiceTest {
 		PracticeAttempt attempt = legacyCompletedReplayAttempt();
 		when(attemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
 			.thenReturn(Optional.of(attempt));
-		when(riskSnapshotRepository.findByAttemptIdAndRunNumber(ATTEMPT_ID, 2L))
+		when(riskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(ATTEMPT_ID, 2L))
 			.thenReturn(Optional.empty());
 		resetTutorialAccountStub();
 

@@ -214,7 +214,8 @@ class PracticeHoldingObservationServiceTest {
 		when(snapshot.getTakeProfitPrice()).thenReturn(new BigDecimal("120"));
 		when(snapshot.getCreatedAt()).thenReturn(OBSERVED_AT.minusSeconds(1));
 		ResolvedPracticeAttemptEvidenceDto evidence = new ResolvedPracticeAttemptEvidenceDto(
-			snapshot, HOLDING_ID, BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.ONE, null, null, null, null, null);
+			snapshot, snapshot, HOLDING_ID, BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.ONE, null, null, null, null,
+			null);
 		when(practiceAttemptEvidenceService.requireCurrentRun(attempt, USER_ID, HOLDING_ID)).thenReturn(evidence);
 		BigDecimal canonicalPrice = new BigDecimal("10932.45600000");
 		when(canonicalPriceService.canonicalPriceForMutation(USER_ID, instrument, OBSERVED_AT))
@@ -256,7 +257,8 @@ class PracticeHoldingObservationServiceTest {
 		when(snapshot.getCreatedAt()).thenReturn(OBSERVED_AT.minusMinutes(3));
 		// 이슈 #421의 매매 결과 4값은 관찰 저장 경로가 읽지 않으므로(진행 조회만 쓴다) 이 테스트에서도 null로 둔다 — 같은 파일 위쪽 fixture와 같은 관례다.
 		ResolvedPracticeAttemptEvidenceDto soldOutEvidence = new ResolvedPracticeAttemptEvidenceDto(
-			snapshot, HOLDING_ID, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ZERO, mock(Trade.class), null, null,
+			snapshot, snapshot, HOLDING_ID, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ZERO, mock(Trade.class), null,
+			null,
 			null, null);
 		when(practiceAttemptEvidenceService.requireCurrentRun(attempt, USER_ID, HOLDING_ID))
 			.thenReturn(soldOutEvidence);

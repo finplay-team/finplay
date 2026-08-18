@@ -459,10 +459,12 @@ class InvestmentPracticeQueryServiceTest {
 
 		LocalDateTime buyExecutedAt = NOW.minusMinutes(2);
 		PracticeRiskSnapshot snapshot = riskSnapshot(30L, buyExecutedAt);
-		when(practiceRiskSnapshotRepository.findByAttemptIdAndRunNumber(70L, 9L)).thenReturn(Optional.of(snapshot));
+		when(practiceRiskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(70L, 9L))
+			.thenReturn(Optional.of(snapshot));
 		// 이슈 #421의 매매 결과 4값(averageBuyPrice·averageSellPrice·realizedPnl·soldBuyBasis)은 이 테스트의 단정 대상이 아니라 null로 둔다 — 매도 전 상태이고 이 테스트는 단계·evidence 판정만 본다.
 		ResolvedPracticeAttemptEvidenceDto resolved = new ResolvedPracticeAttemptEvidenceDto(
-			snapshot, 40L, new BigDecimal("3"), BigDecimal.ZERO, new BigDecimal("3"), null, null, null, null, null);
+			snapshot, snapshot, 40L, new BigDecimal("3"), BigDecimal.ZERO, new BigDecimal("3"), null, null, null, null,
+			null);
 		when(practiceAttemptEvidenceService.requireCurrentRun(attempt, USER_ID, null)).thenReturn(resolved);
 		when(practiceMarketObservationRepository.findByUserIdAndHoldingIdOrderByObservedAtAscIdAsc(USER_ID, 40L))
 			.thenReturn(List.of());
@@ -560,13 +562,15 @@ class InvestmentPracticeQueryServiceTest {
 
 		LocalDateTime buyExecutedAt = NOW.minusMinutes(4);
 		PracticeRiskSnapshot snapshot = riskSnapshot(30L, buyExecutedAt);
-		when(practiceRiskSnapshotRepository.findByAttemptIdAndRunNumber(70L, 1L)).thenReturn(Optional.of(snapshot));
+		when(practiceRiskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(70L, 1L))
+			.thenReturn(Optional.of(snapshot));
 		Trade sellTrade = mock(Trade.class);
 		when(sellTrade.getId()).thenReturn(35L);
 		when(sellTrade.getExecutedAt()).thenReturn(NOW.minusMinutes(1));
 		// 이슈 #421의 매매 결과 4값은 이 테스트의 단정 대상이 아니라 null로 둔다 — 이 테스트는 replay 응답의 단계·evidence 불변만 본다.
 		ResolvedPracticeAttemptEvidenceDto resolved = new ResolvedPracticeAttemptEvidenceDto(
-			snapshot, 40L, new BigDecimal("3"), new BigDecimal("3"), BigDecimal.ZERO, sellTrade, null, null, null,
+			snapshot, snapshot, 40L, new BigDecimal("3"), new BigDecimal("3"), BigDecimal.ZERO, sellTrade, null, null,
+			null,
 			null);
 		when(practiceAttemptEvidenceService.requireCurrentRun(attempt, USER_ID, 40L)).thenReturn(resolved);
 		PracticeMarketObservation qualifying = observation(60L, PracticeEvidenceType.CLOSER_TO_BOUNDARY,
@@ -611,7 +615,8 @@ class InvestmentPracticeQueryServiceTest {
 		PracticeRiskSnapshot snapshot = mock(PracticeRiskSnapshot.class);
 		when(snapshot.getBuyTrade()).thenReturn(buyTrade);
 		when(snapshot.getCreatedAt()).thenReturn(buyExecutedAt);
-		when(practiceRiskSnapshotRepository.findByAttemptIdAndRunNumber(7L, 1L)).thenReturn(Optional.of(snapshot));
+		when(practiceRiskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(7L, 1L))
+			.thenReturn(Optional.of(snapshot));
 
 		LocalDateTime sellExecutedAt = NOW.minusMinutes(3);
 		Trade sellTrade = mock(Trade.class);
@@ -619,7 +624,8 @@ class InvestmentPracticeQueryServiceTest {
 		when(sellTrade.getExecutedAt()).thenReturn(sellExecutedAt);
 		// 이슈 #421의 매매 결과 4값은 이 테스트의 단정 대상이 아니라 null로 둔다 — 이 fixture는 snapshot에 손절·익절가를 스텁하지 않아 어떤 체결가를 넣어도 sellVerdict가 null로 나오므로, 값을 지어내면 오히려 앞뒤가 안 맞는 tradeResult가 된다.
 		ResolvedPracticeAttemptEvidenceDto resolved = new ResolvedPracticeAttemptEvidenceDto(
-			snapshot, 40L, BigDecimal.TEN, BigDecimal.TEN, BigDecimal.ZERO, sellTrade, null, null, null, null);
+			snapshot, snapshot, 40L, BigDecimal.TEN, BigDecimal.TEN, BigDecimal.ZERO, sellTrade, null, null, null,
+			null);
 		when(practiceAttemptEvidenceService.requireCurrentRun(attempt, USER_ID, null)).thenReturn(resolved);
 
 		// observation(...) 헬퍼가 내부에서 mock·when을 호출하므로 바깥 when(...)이 .thenReturn()으로 닫히기 전에 실행되면 Mockito가 중첩 스터빙으로 보고 UnfinishedStubbingException을 던진다 — 이 파일의 다른 테스트들처럼 지역 변수로 먼저 뽑아 둔다.
