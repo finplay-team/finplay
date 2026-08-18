@@ -82,9 +82,10 @@ public class PracticeAttemptOrderAttributionService implements PracticeOrderAttr
 		PracticeAttempt attempt = practiceAttemptRepository.findByIdForUpdate(order.getPracticeAttemptId())
 			.orElseThrow(() -> new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING));
 		validateCurrentRun(attempt, order.getInstrument(), order.getPracticeAttemptRunNumber());
+		// 진입 개수로 판정한다 — 재진입이 도입되면 "있으면 만들지 않는다"가 아니라 다음 entry_sequence를
+		// 산출하는 자리가 된다(042 tasks 4번). 지금은 한 실행 세대에 진입이 하나뿐이라 동작이 같다.
 		if (practiceRiskSnapshotRepository
-			.findByAttemptIdAndRunNumber(attempt.getId(), attempt.getRunNumber())
-			.isPresent()) {
+			.countByAttemptIdAndRunNumber(attempt.getId(), attempt.getRunNumber()) > 0) {
 			return;
 		}
 

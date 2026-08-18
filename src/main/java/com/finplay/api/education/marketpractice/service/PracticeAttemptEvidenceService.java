@@ -28,8 +28,14 @@ public class PracticeAttemptEvidenceService {
 		if (attempt.getInstrument() == null || !attempt.getInstrument().isTutorialSample()) {
 			throw new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING);
 		}
+		// 최신 진입 — 화면 기준선 표시와 매수 evidence 검증(지금 진입의 체결이 내 것인가)에 쓴다.
 		PracticeRiskSnapshot snapshot = practiceRiskSnapshotRepository
-			.findByAttemptIdAndRunNumber(attempt.getId(), attempt.getRunNumber())
+			.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(attempt.getId(), attempt.getRunNumber())
+			.orElseThrow(() -> new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING));
+		// 첫 진입 — 관찰 필터 기준선. 이 자리에 최신 진입을 쓰면 재매수 순간 이전 관찰이 사라진다.
+		PracticeRiskSnapshot observationBaseline = practiceRiskSnapshotRepository
+			.findByAttemptIdAndRunNumberAndEntrySequence(
+				attempt.getId(), attempt.getRunNumber(), PracticeRiskSnapshot.FIRST_ENTRY_SEQUENCE)
 			.orElseThrow(() -> new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING));
 		validateBuyEvidence(attempt, userId, snapshot);
 
@@ -48,7 +54,7 @@ public class PracticeAttemptEvidenceService {
 			throw new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING);
 		}
 		return new ResolvedPracticeAttemptEvidenceDto(
-			snapshot, holdingId, tradeSummary.buyQuantity(), tradeSummary.sellQuantity(),
+			snapshot, observationBaseline, holdingId, tradeSummary.buyQuantity(), tradeSummary.sellQuantity(),
 			tradeSummary.remainingQuantity(), sellTrade, tradeSummary.averageBuyPrice(),
 			tradeSummary.averageSellPrice(), tradeSummary.realizedPnl(), tradeSummary.soldBuyBasis());
 	}

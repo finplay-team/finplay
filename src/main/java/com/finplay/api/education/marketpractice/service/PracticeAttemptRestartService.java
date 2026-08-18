@@ -74,7 +74,7 @@ public class PracticeAttemptRestartService {
 
 	private PracticeAttemptResponse toResponse(PracticeAttempt attempt, TutorialAccount tutorialAccount) {
 		PracticeRiskSnapshot snapshot = practiceRiskSnapshotRepository
-			.findByAttemptIdAndRunNumber(attempt.getId(), attempt.getRunNumber())
+			.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(attempt.getId(), attempt.getRunNumber())
 			.orElse(null);
 		return PracticeAttemptResponse.from(
 			attempt,

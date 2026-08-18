@@ -23,6 +23,8 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class PracticeRiskSnapshot {
 
+	public static final int FIRST_ENTRY_SEQUENCE = 1;
+
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
@@ -33,6 +35,11 @@ public class PracticeRiskSnapshot {
 
 	@Column(name = "run_number", nullable = false)
 	private long runNumber;
+
+	// 한 실행 세대 안의 몇 번째 진입인가. 재진입(손절 후 재매수) 도입 전까지는 항상 1이다.
+	// 값을 실제로 채우는 것은 042 tasks 4번이며, 여기서는 조회를 진입 단위로 나누기 위한 매핑만 더한다.
+	@Column(name = "entry_sequence", nullable = false)
+	private int entrySequence = FIRST_ENTRY_SEQUENCE;
 
 	@ManyToOne(fetch = FetchType.LAZY, optional = false)
 	@JoinColumn(name = "buy_trade_id", nullable = false)

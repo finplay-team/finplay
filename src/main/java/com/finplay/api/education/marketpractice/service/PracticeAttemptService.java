@@ -146,7 +146,7 @@ public class PracticeAttemptService {
 
 	private PracticeAttemptResponse toResponse(PracticeAttempt attempt) {
 		PracticeRiskSnapshot snapshot = practiceRiskSnapshotRepository
-			.findByAttemptIdAndRunNumber(attempt.getId(), attempt.getRunNumber())
+			.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(attempt.getId(), attempt.getRunNumber())
 			.orElse(null);
 		return PracticeAttemptResponse.from(attempt, snapshot);
 	}
