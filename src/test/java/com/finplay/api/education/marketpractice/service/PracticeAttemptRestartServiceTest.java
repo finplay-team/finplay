@@ -4,6 +4,7 @@ package com.finplay.api.education.marketpractice.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
@@ -30,6 +31,7 @@ class PracticeAttemptRestartServiceTest {
 	private static final Long USER_ID = 7L;
 	private static final Long ATTEMPT_ID = 11L;
 	private static final Long INSTRUMENT_ID = 21L;
+	private static final Long REAL_INSTRUMENT_ID = 19L;
 	private static final Instant FIXED_INSTANT = Instant.parse("2026-08-14T06:00:00Z");
 	private static final LocalDateTime NOW = LocalDateTime.ofInstant(FIXED_INSTANT, ZoneOffset.UTC);
 
@@ -106,6 +108,33 @@ class PracticeAttemptRestartServiceTest {
 		verify(orderRestartService).cleanupCurrentRun(commandCaptor.capture());
 		assertThat(commandCaptor.getValue().attemptId()).isEqualTo(ATTEMPT_ID);
 		assertThat(commandCaptor.getValue().runNumber()).isEqualTo(1L);
+		assertThat(commandCaptor.getValue().instrumentId()).isEqualTo(INSTRUMENT_ID);
+	}
+
+	@Test
+	void restartLegacyCompletedRealInstrumentAttemptSkipsInstrumentCleanupAndStartsNewRun() {
+		PracticeAttempt attempt = legacyCompletedReplayAttempt();
+		when(attemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
+			.thenReturn(Optional.of(attempt));
+		when(riskSnapshotRepository.findByAttemptIdAndRunNumber(ATTEMPT_ID, 2L))
+			.thenReturn(Optional.empty());
+
+		PracticeAttemptResponse response = service.restart(USER_ID, Market.CRYPTO);
+
+		ArgumentCaptor<PracticeRunRestartCommand> commandCaptor = ArgumentCaptor.forClass(
+			PracticeRunRestartCommand.class);
+		verify(orderRestartService).cleanupCurrentRun(commandCaptor.capture());
+		assertThat(commandCaptor.getValue().attemptId()).isEqualTo(ATTEMPT_ID);
+		assertThat(commandCaptor.getValue().runNumber()).isEqualTo(1L);
+		// 실제 종목을 정리 대상으로 넘기지 않으므로 보상 매도가 실제 holding에 찍힐 수 없다.
+		assertThat(commandCaptor.getValue().instrumentId()).isNull();
+		assertThat(commandCaptor.getValue().canonicalPrice()).isNull();
+		verifyNoInteractions(canonicalPriceService);
+		assertThat(response.mode()).isEqualTo("ACTIVE");
+		assertThat(response.status()).isEqualTo("SELECTING_INSTRUMENT");
+		assertThat(response.runNumber()).isEqualTo(2L);
+		assertThat(response.instrumentId()).isNull();
+		assertThat(response.completedAt()).isNull();
 	}
 
 	private static PracticeAttempt newAttempt() {
@@ -122,6 +151,19 @@ class PracticeAttemptRestartServiceTest {
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
 		attempt.selectInstrument(instrument, NOW.minusMinutes(10), NOW.toLocalDate(), 123L, (short)1,
 			NOW.minusMinutes(10));
+		return attempt;
+	}
+
+	// V32 샌드박스 종목 도입 이전에 실제 종목으로 완료해 진입 시 실제 종목이 심어진 replay attempt다 (이슈 #433).
+	private static PracticeAttempt legacyCompletedReplayAttempt() {
+		PracticeAttempt attempt = newAttempt();
+		Instrument realInstrument = Instrument.create(
+			Market.CRYPTO, "BTC", "비트코인", BigDecimal.ONE, 5_000L, true, NOW);
+		ReflectionTestUtils.setField(realInstrument, "id", REAL_INSTRUMENT_ID);
+		attempt.selectInstrument(realInstrument, NOW.minusDays(1), NOW.toLocalDate().minusDays(1), 456L, (short)1,
+			NOW.minusDays(1));
+		ReflectionTestUtils.setField(attempt, "status", PracticeAttemptStatus.COMPLETED);
+		ReflectionTestUtils.setField(attempt, "completedAt", NOW.minusDays(1));
 		return attempt;
 	}
 }

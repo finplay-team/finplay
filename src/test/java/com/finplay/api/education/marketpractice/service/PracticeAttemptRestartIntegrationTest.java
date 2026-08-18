@@ -296,6 +296,47 @@ class PracticeAttemptRestartIntegrationTest {
 		assertThat(persisted.getRunNumber()).isEqualTo(2L);
 	}
 
+	// V32 샌드박스 종목 도입 이전에 실제 종목으로 완료한 legacy 완료자 재현이다 (이슈 #433).
+	@Test
+	void legacyCompletedRealInstrumentRestartKeepsRealPortfolioAndStartsNewRun() {
+		User user = user("legacy-real");
+		Account account = account(user, Market.CRYPTO);
+		Instrument realInstrument = realInstrument("legacy-real", Market.CRYPTO);
+		PracticeAttempt attempt = PracticeAttempt.create(user.getId(), Market.CRYPTO, NOW.minusDays(2));
+		attempt.selectInstrument(
+			realInstrument, NOW.minusDays(1), NOW.toLocalDate().minusDays(1), 456L, (short)1, NOW.minusDays(1));
+		attemptRepository.saveAndFlush(attempt);
+		jdbcTemplate.update(
+			"UPDATE practice_attempts SET status = 'COMPLETED', completed_at = ?, updated_at = ? WHERE id = ?",
+			NOW.minusDays(1), NOW.minusDays(1), attempt.getId());
+		Holding realHolding = Holding.create(account, realInstrument, NOW.minusDays(1));
+		realHolding.applyBuy(new BigDecimal("2"), BigDecimal.valueOf(900_000), NOW.minusDays(1));
+		holdingRepository.saveAndFlush(realHolding);
+		Order generalOrder = orderRepository.saveAndFlush(Order.createLimitPending(
+			user, account, realInstrument, OrderSide.BUY, new BigDecimal("0.3"), LIMIT_PRICE,
+			"legacy-general" + UUID.randomUUID(), "d".repeat(64), NOW));
+		long orderCount = orderRepository.count();
+		long tradeCount = tradeRepository.count();
+
+		PracticeAttemptResponse response = restartService.restart(user.getId(), Market.CRYPTO);
+
+		assertThat(response.mode()).isEqualTo("ACTIVE");
+		assertThat(response.status()).isEqualTo("SELECTING_INSTRUMENT");
+		assertThat(response.runNumber()).isEqualTo(2L);
+		assertThat(response.instrumentId()).isNull();
+		assertThat(response.completedAt()).isNull();
+		PracticeAttempt persisted = attemptRepository.findById(attempt.getId()).orElseThrow();
+		assertThat(persisted.getStatus().name()).isEqualTo("SELECTING_INSTRUMENT");
+		assertThat(persisted.getRunNumber()).isEqualTo(2L);
+		Holding untouched = holdingRepository.findById(realHolding.getId()).orElseThrow();
+		assertThat(untouched.getQuantity()).isEqualByComparingTo("2");
+		assertThat(untouched.isActive()).isTrue();
+		assertThat(orderRepository.findById(generalOrder.getId()).orElseThrow().getStatus())
+			.isEqualTo(OrderStatus.PENDING);
+		assertThat(orderRepository.count()).isEqualTo(orderCount);
+		assertThat(tradeRepository.count()).isEqualTo(tradeCount);
+	}
+
 	@Test
 	void restartWithoutSelectedInstrumentIncrementsRunWithNoLedgerRows() {
 		User user = user("no-instrument");
@@ -347,6 +388,15 @@ class PracticeAttemptRestartIntegrationTest {
 			market, "T" + UUID.randomUUID().toString().substring(0, 8), scenario,
 			BigDecimal.ONE, 5_000L, true, NOW);
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
+		instrumentRepository.saveAndFlush(instrument);
+		instrumentIds.add(instrument.getId());
+		return instrument;
+	}
+
+	private Instrument realInstrument(String scenario, Market market) {
+		Instrument instrument = Instrument.create(
+			market, "R" + UUID.randomUUID().toString().substring(0, 8), scenario,
+			BigDecimal.ONE, 5_000L, true, NOW);
 		instrumentRepository.saveAndFlush(instrument);
 		instrumentIds.add(instrument.getId());
 		return instrument;

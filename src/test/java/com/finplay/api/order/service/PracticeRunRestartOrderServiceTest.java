@@ -139,6 +139,22 @@ class PracticeRunRestartOrderServiceTest {
 		verifyNoInteractions(priceQueryService);
 	}
 
+	// 실제 종목이 정리 대상으로 넘어오면 계좌·holding에 손대기 전에 막는다 — 이 방어선이 이슈 #433 수정의 전제다.
+	@Test
+	void cleanupCurrentRunRejectsRealInstrumentBeforeTouchingAccountOrHolding() {
+		Fixture fixture = fixture();
+		ReflectionTestUtils.setField(fixture.instrument(), "tutorialSample", false);
+		when(orderRepository.findPracticeRunOrdersForUpdate(ATTEMPT_ID, 1L)).thenReturn(List.of());
+		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID)).thenReturn(fixture.instrument());
+
+		assertThatThrownBy(() -> service.cleanupCurrentRun(command()))
+			.isInstanceOfSatisfying(BusinessException.class,
+				exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.PRACTICE_EVIDENCE_MISSING));
+
+		verify(orderRepository, never()).save(any());
+		verifyNoInteractions(tradeRepository, accountService, portfolioSellService, priceQueryService);
+	}
+
 	@Test
 	void cleanupCurrentRunWithoutInstrumentAllowsOnlyEmptyOrderSet() {
 		when(orderRepository.findPracticeRunOrdersForUpdate(ATTEMPT_ID, 1L)).thenReturn(List.of());
