@@ -90,9 +90,8 @@ public class PortfolioSellService {
 				.getOrCreateForUpdate(account.getUser().getId(), account.getMarket(), now);
 			tutorialAccount.addCash(amount - fee);
 			tutorialAccount.addRealizedPnl(realizedPnl);
-			// 샌드박스 매도의 현금 순변동도 매수와 동일하게 별도로 누적해 둔다(spec 033 SANDBOX-EXCL-006,
-			// 이 spec의 후속 작업(sandboxCashAdjustment 폐지)에서 제거될 예정).
-			account.addSandboxCashAdjustment(amount - fee);
+			// 047 TUTORIAL-CASH-ISOL-003·007: 샌드박스 매도는 튜토리얼 계좌 현금·realizedPnl만 갱신한다 —
+			// 실제 Account.cashBalance는 변하지 않으므로 sandboxCashAdjustment 누적은 더 이상 필요하지 않다.
 		}
 		return realizedPnl;
 	}

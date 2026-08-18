@@ -160,8 +160,8 @@ class LimitOrderFillServiceTest {
 	void fillIfPendingBuyConfirmsReservedCashInTutorialAccountOnlyWhenInstrumentIsTutorialSample() {
 		// 047 TUTORIAL-CASH-ISOL-002: 샌드박스 종목 지정가 매수 체결은 실제 Account가 아니라 같은 사용자·
 		// 시장의 튜토리얼 계좌에서 예약을 확정(confirmReservedCash)한다 — 실제 Account.cashBalance·
-		// reservedCash는 전혀 변하지 않는다. spec 033 SANDBOX-EXCL-006 call site #4(폐지는 tasks.md 항목6
-		// 몫)는 현재도 유지되어 sandboxCashAdjustment에 음수로 누적된다.
+		// reservedCash는 전혀 변하지 않는다. spec 047 TUTORIAL-CASH-ISOL-007(033 SANDBOX-EXCL-006 call site #4
+		// 폐지): sandboxCashAdjustment는 더 이상 누적되지 않는다.
 		Instrument instrument = cryptoInstrument();
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
 		Account account = account();
@@ -181,7 +181,7 @@ class LimitOrderFillServiceTest {
 		assertThat(tutorialAccount.getCashBalance()).isEqualTo(10_000_000L - 100_050L);
 		assertThat(account.getReservedCash()).isZero(); // 실제 계좌는 예약된 적이 없다
 		assertThat(account.getCashBalance()).isEqualTo(10_000_000L); // 실제 계좌 현금은 전혀 변하지 않는다
-		assertThat(account.getSandboxCashAdjustment()).isEqualTo(-100_050L);
+		assertThat(account.getSandboxCashAdjustment()).isEqualTo(0L);
 	}
 
 	@Test

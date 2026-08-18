@@ -129,9 +129,8 @@ public class LimitOrderFillService {
 			} else {
 				tutorialAccount.confirmReservedCash(amount + fee);
 			}
-			// 샌드박스(튜토리얼) 종목 지정가 매수 체결의 현금 순변동도 별도로 누적한다(spec 033
-			// SANDBOX-EXCL-006, 이 spec의 후속 작업에서 폐지 예정).
-			account.addSandboxCashAdjustment(-(amount + fee));
+			// 047 TUTORIAL-CASH-ISOL-002·007: 샌드박스 지정가 매수 체결은 튜토리얼 계좌 현금만 갱신한다 —
+			// 실제 Account.cashBalance는 변하지 않으므로 sandboxCashAdjustment 누적은 더 이상 필요하지 않다.
 		} else {
 			if (canonicalPracticeFill) {
 				account.releaseReservedCash(reservedCash);

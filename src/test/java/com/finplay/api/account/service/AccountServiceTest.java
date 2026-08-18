@@ -285,10 +285,12 @@ class AccountServiceTest {
 		assertThat(result.realizedPnl()).isZero();
 	}
 
-	// SANDBOX-EXCL-007: sandboxCashAdjustment가 있으면 totalValue가 그만큼 줄고,
-	// cashBalance·holdingsValue·realizedPnl·unrealizedPnl은 그대로여야 한다.
+	// spec 047 TUTORIAL-CASH-ISOL-007(SANDBOX-EXCL-007 대체): totalValue 공식은 sandboxCashAdjustment를
+	// 더 이상 빼지 않는다. sandboxCashAdjustment 컬럼 자체는 물리적으로 제거되지 않았으므로(이 spec의 범위
+	// 밖), 컬럼에 잔여값이 남아 있어도 totalValue가 이를 무시하고 "현금 + 보유종목 평가금액"만으로
+	// 계산되는지 직접 검증한다.
 	@Test
-	void getAccountSummarySubtractsSandboxCashAdjustmentFromTotalValueOnly() {
+	void getAccountSummaryIgnoresSandboxCashAdjustmentEvenWhenColumnHasLeftoverValue() {
 		AccountRepository accountRepository = mock(AccountRepository.class);
 		HoldingValuationService holdingValuationService = mock(HoldingValuationService.class);
 		Clock fixedClock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
@@ -303,10 +305,10 @@ class AccountServiceTest {
 
 		AccountSummaryResponse result = accountService.getAccountSummary(1L, Market.STOCK);
 
-		long expectedTotalValue = 10_000_000L - 5_000_000L;
 		assertThat(result.cashBalance()).isEqualTo(10_000_000L);
 		assertThat(result.holdingsValue()).isZero();
-		assertThat(result.totalValue()).isEqualTo(expectedTotalValue);
+		// totalValue = cashBalance + holdingsValue = 10,000,000 (sandboxCashAdjustment 5,000,000은 무시된다)
+		assertThat(result.totalValue()).isEqualTo(10_000_000L);
 		assertThat(result.realizedPnl()).isZero();
 		assertThat(result.unrealizedPnl()).isZero();
 	}

@@ -175,8 +175,8 @@ class PortfolioSellServiceTest {
 		// 튜토리얼 계좌만 매도 대금·실현손익을 반영한다.
 		assertThat(tutorialAccount.getCashBalance()).isEqualTo(tutorialCashBeforeSell + 1500L - 4L);
 		assertThat(tutorialAccount.getRealizedPnl()).isEqualTo(466L);
-		// spec 033 SANDBOX-EXCL-006 call site #3(폐지는 tasks.md 항목6 몫): 현재도 유지되어 그대로 누적된다.
-		assertThat(account.getSandboxCashAdjustment()).isEqualTo(1500L - 4L);
+		// spec 047 TUTORIAL-CASH-ISOL-007: sandboxCashAdjustment 누적 호출부가 폐지되어 더 이상 쌓이지 않는다.
+		assertThat(account.getSandboxCashAdjustment()).isEqualTo(0L);
 	}
 
 	@Test

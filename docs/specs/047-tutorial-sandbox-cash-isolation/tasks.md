@@ -16,7 +16,7 @@
 - [x] 재시작 리셋 — `PracticeRunRestartOrderService.cleanupCurrentRun`(또는 `PracticeAttemptRestartService.restart`)에
   `TutorialAccountService.resetForUpdate` 호출 추가(TUTORIAL-CASH-ISOL-006, 현금·예약 현금·`realizedPnl`
   동시 리셋) + 통합 테스트.
-- [ ] `sandboxCashAdjustment` 폐지 — 5개 호출부의 `addSandboxCashAdjustment(...)` 제거, `AccountService`의
+- [x] `sandboxCashAdjustment` 폐지 — 5개 호출부의 `addSandboxCashAdjustment(...)` 제거, `AccountService`의
   `totalValue` 공식 원복(TUTORIAL-CASH-ISOL-007) + 계좌/포트폴리오 요약 테스트 갱신.
 - [ ] 튜토리얼 잔고 API 노출 — `PracticeAttemptResponse`(또는 확정된 동등 응답)에 `tutorialCashBalance`·
   `tutorialAvailableCash`·`tutorialRealizedPnl` 필드 추가(TUTORIAL-CASH-ISOL-011), 진입·재시작 양쪽 응답에서
