@@ -370,6 +370,22 @@ PR #49 차단 리뷰 후속 Fake 재사용·동시성·DB 불변 자동 회귀�
 
 댓글 삭제는 소유자만 가능하며 `CommentController`(`/api/community/comments`)로 분리되어 있다. Security 공개 화이트리스트에 포함되지 않은 인증 필요 경로다. 부모 댓글(`parentCommentId=null`, 자식 유무 무관) 삭제는 이슈 #277로 CASCADE 하드 삭제에서 tombstone으로 전환됐다 — 소유자 검증(403) 통과 후 행을 실제로 지우지 않고 `content`를 `"삭제된 댓글입니다"`로, `authorNickname`을 `"(삭제됨)"`으로 치환한다(`GET /api/community/posts/{postId}/comments` 응답에 그대로 반영). `parentCommentId`·`replies`는 영향받지 않으며, 자식 대댓글은 원래 내용 그대로 보존된다. 반대로 대댓글(자식, `parentCommentId != null`) 자신을 삭제하면 기존과 동일하게 하드 삭제되어 부모의 `replies`에서 사라진다. **이미 tombstone된 부모 댓글을 소유자가 다시 삭제 요청해도 404가 아니라 204를 반환한다** — `deletedAt`만 멱등하게 갱신되며 `content`·`authorNickname` 표시는 그대로 유지된다(PR #331 리뷰 확정, 새 오류 코드 없음).
 
+### 커뮤니티 게시물 좋아요 표시
+
+| Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|---|
+| POST | /api/community/posts/{postId}/likes | Access Bearer 필수 | 경로 변수 `postId`, 본문 없음 | 신규 좋아요 생성 시 201 `{"postId":1,"likeCount":1,"likedByMe":true}`. 이미 좋아요한 상태로 재요청하면 오류 없이 200으로 현재 상태(`likeCount`·`likedByMe` 불변)를 그대로 반환(멱등) | Access 인증 실패는 401 `UNAUTHORIZED`. 게시물 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 045 LIKE-001, LIKE-002 |
+
+본인이 작성한 게시물에도 좋아요를 표시할 수 있다(차단 로직 없음). 회원 1인당 게시물 1개에 좋아요는 최대 1개이며(`community_post_likes` 유니크 제약으로 DB 레벨에서도 강제), 이미 좋아요한 상태에서 다시 호출해도 새 행을 만들거나 오류를 내지 않고 현재 상태만 반환한다. `likeCount`는 `community_posts.like_count` 비정규화 카운터를 원자적 `UPDATE`(`p.likeCount = p.likeCount + 1`)로 증가시킨 값이다.
+
+### 커뮤니티 게시물 좋아요 취소
+
+| Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|---|
+| DELETE | /api/community/posts/{postId}/likes | Access Bearer 필수 | 경로 변수 `postId`, 본문 없음 | 204 (본문 없음). 좋아요한 적 없는 상태에서 취소해도 오류 없이 204(no-op, 멱등) | Access 인증 실패는 401 `UNAUTHORIZED`. 게시물 미존재는 404 `NOT_FOUND` 공통 오류 형식 | 045 LIKE-001 |
+
+좋아요 취소는 `community_post_likes` 행을 실제로 삭제하고(tombstone 아님 — 좋아요를 눌렀던 이력을 보존할 요구가 없음), `community_posts.like_count`를 원자적 `UPDATE`로 감소시킨다. 좋아요한 적이 없는 사용자가 취소를 요청해도 오류 없이 204를 반환하며 카운터는 변하지 않는다.
+
 ---
 
 ## order
