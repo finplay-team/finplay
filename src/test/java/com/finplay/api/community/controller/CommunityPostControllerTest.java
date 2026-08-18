@@ -21,6 +21,9 @@ import com.finplay.api.common.ErrorCode;
 import com.finplay.api.community.dto.response.CommunityPostListResponse;
 import com.finplay.api.community.dto.response.CommunityPostResponse;
 import com.finplay.api.community.service.CommunityPostService;
+import com.finplay.api.feedback.dto.response.TradeShareSummaryResponse;
+import com.finplay.api.market.domain.Market;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -58,9 +61,9 @@ class CommunityPostControllerTest {
 		LocalDateTime now = LocalDateTime.of(2026, 7, 27, 12, 0);
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
-		when(service.createPost(USER_ID, "title", "content", null, null))
+		when(service.createPost(USER_ID, "title", "content", null, null, null))
 			.thenReturn(new CommunityPostResponse(
-				7L, "author", "title", "content", now, now, null, null, null, null, null));
+				7L, "author", "title", "content", now, now, null, null, null, null, null, null));
 
 		mockMvc.perform(post("/api/community/posts")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
@@ -81,7 +84,7 @@ class CommunityPostControllerTest {
 			.andExpect(jsonPath("$.imageId").doesNotExist())
 			.andExpect(jsonPath("$.imageUrl").doesNotExist());
 
-		verify(service).createPost(USER_ID, "title", "content", null, null);
+		verify(service).createPost(USER_ID, "title", "content", null, null, null);
 	}
 
 	@Test
@@ -89,9 +92,9 @@ class CommunityPostControllerTest {
 		LocalDateTime now = LocalDateTime.of(2026, 7, 27, 12, 0);
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
-		when(service.createPost(USER_ID, "title", "content", 9L, null))
+		when(service.createPost(USER_ID, "title", "content", 9L, null, null))
 			.thenReturn(new CommunityPostResponse(
-				7L, "author", "title", "content", now, now, 9L, "BTC", "비트코인", null, null));
+				7L, "author", "title", "content", now, now, 9L, "BTC", "비트코인", null, null, null));
 
 		mockMvc.perform(post("/api/community/posts")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
@@ -105,14 +108,14 @@ class CommunityPostControllerTest {
 			.andExpect(jsonPath("$.instrumentSymbol").value("BTC"))
 			.andExpect(jsonPath("$.instrumentName").value("비트코인"));
 
-		verify(service).createPost(USER_ID, "title", "content", 9L, null);
+		verify(service).createPost(USER_ID, "title", "content", 9L, null, null);
 	}
 
 	@Test
 	void createPostReturnsCommonValidationErrorWhenServiceRejectsInstrumentTag() throws Exception {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
-		when(service.createPost(USER_ID, "title", "content", 999L, null))
+		when(service.createPost(USER_ID, "title", "content", 999L, null, null))
 			.thenThrow(new BusinessException(ErrorCode.VALIDATION_ERROR, "존재하지 않거나 비활성인 종목은 태그할 수 없습니다."));
 
 		mockMvc.perform(post("/api/community/posts")
@@ -126,7 +129,7 @@ class CommunityPostControllerTest {
 			.andExpect(jsonPath("$.error.message").value("존재하지 않거나 비활성인 종목은 태그할 수 없습니다."))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
-		verify(service).createPost(USER_ID, "title", "content", 999L, null);
+		verify(service).createPost(USER_ID, "title", "content", 999L, null, null);
 	}
 
 	@Test
@@ -134,9 +137,9 @@ class CommunityPostControllerTest {
 		LocalDateTime now = LocalDateTime.of(2026, 7, 27, 12, 0);
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
-		when(service.createPost(USER_ID, "title", "content", null, 5L))
+		when(service.createPost(USER_ID, "title", "content", null, 5L, null))
 			.thenReturn(new CommunityPostResponse(7L, "author", "title", "content", now, now, null, null, null,
-				5L, "/api/community/posts/images/5/file"));
+				5L, "/api/community/posts/images/5/file", null));
 
 		mockMvc.perform(post("/api/community/posts")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
@@ -149,14 +152,14 @@ class CommunityPostControllerTest {
 			.andExpect(jsonPath("$.imageId").value(5))
 			.andExpect(jsonPath("$.imageUrl").value("/api/community/posts/images/5/file"));
 
-		verify(service).createPost(USER_ID, "title", "content", null, 5L);
+		verify(service).createPost(USER_ID, "title", "content", null, 5L, null);
 	}
 
 	@Test
 	void createPostReturnsCommonNotFoundErrorWhenServiceRejectsUnknownImageId() throws Exception {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
-		when(service.createPost(USER_ID, "title", "content", null, 404L))
+		when(service.createPost(USER_ID, "title", "content", null, 404L, null))
 			.thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
 
 		mockMvc.perform(post("/api/community/posts")
@@ -169,14 +172,14 @@ class CommunityPostControllerTest {
 			.andExpect(jsonPath("$.error.code").value("NOT_FOUND"))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
-		verify(service).createPost(USER_ID, "title", "content", null, 404L);
+		verify(service).createPost(USER_ID, "title", "content", null, 404L, null);
 	}
 
 	@Test
 	void createPostReturnsCommonForbiddenErrorWhenServiceRejectsImageOwnedByAnotherUser() throws Exception {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
-		when(service.createPost(USER_ID, "title", "content", null, 5L))
+		when(service.createPost(USER_ID, "title", "content", null, 5L, null))
 			.thenThrow(new BusinessException(ErrorCode.FORBIDDEN, "본인이 업로드한 이미지만 사용할 수 있습니다."));
 
 		mockMvc.perform(post("/api/community/posts")
@@ -190,14 +193,14 @@ class CommunityPostControllerTest {
 			.andExpect(jsonPath("$.error.message").value("본인이 업로드한 이미지만 사용할 수 있습니다."))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
-		verify(service).createPost(USER_ID, "title", "content", null, 5L);
+		verify(service).createPost(USER_ID, "title", "content", null, 5L, null);
 	}
 
 	@Test
 	void createPostReturnsCommonValidationErrorWhenServiceRejectsAlreadyAssignedImageId() throws Exception {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
-		when(service.createPost(USER_ID, "title", "content", null, 5L))
+		when(service.createPost(USER_ID, "title", "content", null, 5L, null))
 			.thenThrow(new BusinessException(ErrorCode.VALIDATION_ERROR, "이미 다른 게시물에 사용된 이미지입니다."));
 
 		mockMvc.perform(post("/api/community/posts")
@@ -211,7 +214,62 @@ class CommunityPostControllerTest {
 			.andExpect(jsonPath("$.error.message").value("이미 다른 게시물에 사용된 이미지입니다."))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
-		verify(service).createPost(USER_ID, "title", "content", null, 5L);
+		verify(service).createPost(USER_ID, "title", "content", null, 5L, null);
+	}
+
+	// TRADESHARE-001·002 — sharedTradeId를 서비스에 그대로 전달하고, 응답의 sharedTrade 객체를 노출한다.
+	@Test
+	void createPostPassesSharedTradeIdToServiceAndReturnsSharedTradeFieldsWhenProvided() throws Exception {
+		LocalDateTime now = LocalDateTime.of(2026, 7, 27, 12, 0);
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+		TradeShareSummaryResponse sharedTrade = new TradeShareSummaryResponse(
+			"BTC", "비트코인", Market.CRYPTO, new BigDecimal("70000"), new BigDecimal("68500"), new BigDecimal("10"),
+			-15_207L, new BigDecimal("-0.0217"));
+		when(service.createPost(USER_ID, "title", "content", null, null, 77L))
+			.thenReturn(new CommunityPostResponse(
+				7L, "author", "title", "content", now, now, null, null, null, null, null, sharedTrade));
+
+		mockMvc.perform(post("/api/community/posts")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("""
+				{"title":"title","content":"content","sharedTradeId":77}
+				"""))
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.sharedTrade.symbol").value("BTC"))
+			.andExpect(jsonPath("$.sharedTrade.name").value("비트코인"))
+			.andExpect(jsonPath("$.sharedTrade.market").value("CRYPTO"))
+			.andExpect(jsonPath("$.sharedTrade.buyPrice").value(70000))
+			.andExpect(jsonPath("$.sharedTrade.sellPrice").value(68500))
+			.andExpect(jsonPath("$.sharedTrade.quantity").value(10))
+			.andExpect(jsonPath("$.sharedTrade.realizedPnl").value(-15207))
+			.andExpect(jsonPath("$.sharedTrade.returnRate").value(-0.0217));
+
+		verify(service).createPost(USER_ID, "title", "content", null, null, 77L);
+	}
+
+	// TRADESHARE-004 — 컨트롤러는 판단하지 않는다. 서비스가 던진 400을 그대로 전달만 한다.
+	@Test
+	void createPostReturnsCommonValidationErrorWhenServiceRejectsSimultaneousImageAndSharedTrade() throws Exception {
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+		when(service.createPost(USER_ID, "title", "content", null, 5L, 77L))
+			.thenThrow(new BusinessException(
+				ErrorCode.VALIDATION_ERROR, "이미지와 매매 카드는 같은 게시물에 함께 첨부할 수 없습니다."));
+
+		mockMvc.perform(post("/api/community/posts")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("""
+				{"title":"title","content":"content","imageId":5,"sharedTradeId":77}
+				"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.message").value("이미지와 매매 카드는 같은 게시물에 함께 첨부할 수 없습니다."))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(service).createPost(USER_ID, "title", "content", null, 5L, 77L);
 	}
 
 	@ParameterizedTest(name = "{0}")
@@ -272,7 +330,7 @@ class CommunityPostControllerTest {
 		when(service.getPost(73L))
 			.thenReturn(new CommunityPostResponse(
 				73L, "detail-author", "detail title", "detail content", createdAt, updatedAt, 9L, "BTC", "비트코인",
-				null, null));
+				null, null, null));
 
 		mockMvc.perform(get("/api/community/posts/73")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
@@ -324,7 +382,7 @@ class CommunityPostControllerTest {
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
 		when(service.updatePost(USER_ID, 73L, "new title", "new content", false, null))
 			.thenReturn(new CommunityPostResponse(
-				73L, "author", "new title", "new content", createdAt, updatedAt, null, null, null, null, null));
+				73L, "author", "new title", "new content", createdAt, updatedAt, null, null, null, null, null, null));
 
 		mockMvc.perform(patch("/api/community/posts/73")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
@@ -354,7 +412,7 @@ class CommunityPostControllerTest {
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
 		when(service.updatePost(USER_ID, 73L, "new title", "new content", true, null))
 			.thenReturn(new CommunityPostResponse(
-				73L, "author", "new title", "new content", createdAt, updatedAt, null, null, null, null, null));
+				73L, "author", "new title", "new content", createdAt, updatedAt, null, null, null, null, null, null));
 
 		mockMvc.perform(patch("/api/community/posts/73")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
@@ -378,7 +436,7 @@ class CommunityPostControllerTest {
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
 		when(service.updatePost(USER_ID, 73L, "new title", "new content", true, 9L))
 			.thenReturn(new CommunityPostResponse(
-				73L, "author", "new title", "new content", createdAt, updatedAt, 9L, "BTC", "비트코인", null, null));
+				73L, "author", "new title", "new content", createdAt, updatedAt, 9L, "BTC", "비트코인", null, null, null));
 
 		mockMvc.perform(patch("/api/community/posts/73")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
@@ -457,7 +515,7 @@ class CommunityPostControllerTest {
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
 		LocalDateTime now = LocalDateTime.of(2026, 7, 27, 12, 0);
 		CommunityPostResponse item = new CommunityPostResponse(
-			7L, "author", "title", "content", now, now, null, null, null, null, null);
+			7L, "author", "title", "content", now, now, null, null, null, null, null, null);
 		when(service.getPosts(0, 10, null))
 			.thenReturn(new CommunityPostListResponse(List.of(item), 0, 10, 1, 1, false));
 

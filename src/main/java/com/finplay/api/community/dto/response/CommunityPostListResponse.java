@@ -17,10 +17,9 @@ public record CommunityPostListResponse(
 		content = List.copyOf(content);
 	}
 
-	public static CommunityPostListResponse from(Page<CommunityPost> page) {
-		List<CommunityPostResponse> content = page.getContent().stream()
-			.map(CommunityPostResponse::from)
-			.toList();
+	// content는 호출부(CommunityPostService)가 이미 sharedTrade까지 채워 만든 응답 목록이다 — 게시물별로 다른
+	// tradeId를 조회해야 해서(TRADESHARE-002) 이 record가 직접 CommunityPostResponse::from을 매핑하지 않는다.
+	public static CommunityPostListResponse of(List<CommunityPostResponse> content, Page<CommunityPost> page) {
 		return new CommunityPostListResponse(
 			content,
 			page.getNumber(),

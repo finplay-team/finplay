@@ -11,7 +11,9 @@ import com.finplay.api.feedback.dto.response.NewsItem;
 import com.finplay.api.feedback.dto.response.PeerComparison;
 import com.finplay.api.feedback.dto.response.PostSellFeedbackResponse;
 import com.finplay.api.feedback.dto.response.PostSellFlow;
+import com.finplay.api.feedback.dto.response.TradeShareSummaryResponse;
 import com.finplay.api.feedback.repository.TradeFeedbackRepository;
+import com.finplay.api.market.domain.Market;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Comparator;
@@ -73,6 +75,8 @@ public class PostSellFeedbackService {
 
 	private final PostSellFeedbackReader postSellFeedbackReader;
 
+	private final PostSellFeedbackContextReader postSellFeedbackContextReader;
+
 	private final PostSellJournalReader postSellJournalReader;
 
 	private final NarrativeService narrativeService;
@@ -101,6 +105,20 @@ public class PostSellFeedbackService {
 		// narrativeStatus는 상수 READY다 — 위 클래스 주석의 근거이며 분기가 없는 것이 의도다.
 		return facts.withNarrative(
 			narrative.narrative(), narrative.source(), PostSellFeedbackStatus.READY);
+	}
+
+	/**
+	 * 커뮤니티 매매 카드 공유용 가벼운 요약이다(spec 046 TRADESHARE-002·003). {@code postSellFeedbackReader.read()}가
+	 * 이미 계산한 원장 수치를 그대로 옮길 뿐 뉴스·서술·반사실·집단 비교는 만들지 않는다 — LLM·뉴스 조회가 전혀
+	 * 없다.
+	 *
+	 * @param tradeId 미존재는 404 {@code NOT_FOUND}, 타인 체결은 403 {@code FORBIDDEN}, 매수 체결은 400
+	 *     {@code VALIDATION_ERROR}다 — 판정은 {@code reader}가 한다({@link #getPostSellFeedback}과 동일 순서)
+	 */
+	public TradeShareSummaryResponse getTradeShareSummary(Long userId, Long tradeId) {
+		PostSellFeedbackResponse facts = postSellFeedbackReader.read(userId, tradeId);
+		Market market = postSellFeedbackContextReader.loadContext(userId, tradeId).trade().getInstrument().getMarket();
+		return TradeShareSummaryResponse.from(facts, market);
 	}
 
 	/**

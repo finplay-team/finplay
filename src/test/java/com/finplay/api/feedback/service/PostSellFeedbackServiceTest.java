@@ -28,7 +28,11 @@ import com.finplay.api.feedback.dto.response.NewsItem;
 import com.finplay.api.feedback.dto.response.PeerComparison;
 import com.finplay.api.feedback.dto.response.PostSellFeedbackResponse;
 import com.finplay.api.feedback.dto.response.PostSellFlow;
+import com.finplay.api.feedback.dto.response.TradeShareSummaryResponse;
 import com.finplay.api.feedback.repository.TradeFeedbackRepository;
+import com.finplay.api.market.domain.Instrument;
+import com.finplay.api.market.domain.Market;
+import com.finplay.api.order.domain.Trade;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -86,6 +90,9 @@ class PostSellFeedbackServiceTest {
 
 	private final PostSellFeedbackReader postSellFeedbackReader = mock(PostSellFeedbackReader.class);
 
+	private final PostSellFeedbackContextReader postSellFeedbackContextReader = mock(
+		PostSellFeedbackContextReader.class);
+
 	// 이 파일의 픽스처에는 투자일기가 없다 — 저장된 지문도 현재 지문도 null이라 일기 사유는 성립하지 않고,
 	// 기존 케이스가 재현하던 흐름·집단 사유만 남는다(§FEED-013 결정 3).
 	private final PostSellJournalReader postSellJournalReader = mock(PostSellJournalReader.class);
@@ -101,8 +108,8 @@ class PostSellFeedbackServiceTest {
 		3, 3);
 
 	private final PostSellFeedbackService postSellFeedbackService = new PostSellFeedbackService(
-		postSellFeedbackReader, postSellJournalReader, narrativeService, tradeFeedbackWriter, tradeFeedbackRepository,
-		LLM_PROPERTIES, Clock.fixed(NOW.atZone(KST).toInstant(), KST));
+		postSellFeedbackReader, postSellFeedbackContextReader, postSellJournalReader, narrativeService,
+		tradeFeedbackWriter, tradeFeedbackRepository, LLM_PROPERTIES, Clock.fixed(NOW.atZone(KST).toInstant(), KST));
 
 	@BeforeEach
 	void stubEmptyJournals() {
@@ -799,6 +806,34 @@ class PostSellFeedbackServiceTest {
 		assertThat(entryPoint.getAnnotation(jakarta.transaction.Transactional.class)).isNull();
 	}
 
+	// spec 046 TRADESHARE-002·003 — 커뮤니티 매매 카드 요약이 reader.read()의 원장 수치만 옮기고 뉴스·서술·
+	// 반사실·집단 비교는 담지 않는지 본다.
+	@Test
+	@DisplayName("커뮤니티 매매 카드 요약은 reader.read()의 원장 수치와 market만 담는다")
+	void getTradeShareSummaryMapsFactsAndMarketWithoutNarrativeFields() {
+		PostSellFeedbackResponse facts = factsWithoutNarrative();
+		givenFacts(facts);
+		// Trade는 Order·Account까지 갖춰야 하는 무거운 엔티티라, 이 테스트가 실제로 읽는 필드(instrument.market)만
+		// 스텁한다 — Instrument는 실제 팩토리로 만든다(docs/conventions.md).
+		Trade trade = mock(Trade.class);
+		Instrument instrument = Instrument.create(
+			Market.STOCK, "005930", "삼성전자", BigDecimal.ONE, 1_000L, true, NOW);
+		when(trade.getInstrument()).thenReturn(instrument);
+		when(postSellFeedbackContextReader.loadContext(USER_ID, SELL_TRADE_ID))
+			.thenReturn(new PostSellFeedbackContext(trade, null));
+
+		TradeShareSummaryResponse response = newService().getTradeShareSummary(USER_ID, SELL_TRADE_ID);
+
+		assertThat(response.symbol()).isEqualTo(facts.symbol());
+		assertThat(response.name()).isEqualTo(facts.name());
+		assertThat(response.market()).isEqualTo(Market.STOCK);
+		assertThat(response.buyPrice()).isEqualByComparingTo(facts.buyPrice());
+		assertThat(response.sellPrice()).isEqualByComparingTo(facts.sellPrice());
+		assertThat(response.quantity()).isEqualByComparingTo(facts.quantity());
+		assertThat(response.realizedPnl()).isEqualTo(facts.realizedPnl());
+		assertThat(response.returnRate()).isEqualByComparingTo(facts.returnRate());
+	}
+
 	// --- 픽스처 ---
 
 	private void givenFacts(PostSellFeedbackResponse facts) {
@@ -828,8 +863,9 @@ class PostSellFeedbackServiceTest {
 
 	private PostSellFeedbackService newService() {
 		return new PostSellFeedbackService(
-			postSellFeedbackReader, postSellJournalReader, narrativeService, tradeFeedbackWriter,
-			tradeFeedbackRepository, LLM_PROPERTIES, Clock.fixed(NOW.atZone(KST).toInstant(), KST));
+			postSellFeedbackReader, postSellFeedbackContextReader, postSellJournalReader, narrativeService,
+			tradeFeedbackWriter, tradeFeedbackRepository, LLM_PROPERTIES,
+			Clock.fixed(NOW.atZone(KST).toInstant(), KST));
 	}
 
 	private void givenStored(TradeFeedback feedback) {

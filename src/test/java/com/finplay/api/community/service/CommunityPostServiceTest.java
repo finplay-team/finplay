@@ -20,6 +20,8 @@ import com.finplay.api.community.dto.response.CommunityPostListResponse;
 import com.finplay.api.community.dto.response.CommunityPostResponse;
 import com.finplay.api.community.repository.CommunityPostRepository;
 import com.finplay.api.community.repository.PostCommentRepository;
+import com.finplay.api.feedback.dto.response.TradeShareSummaryResponse;
+import com.finplay.api.feedback.service.PostSellFeedbackService;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.InstrumentService;
@@ -49,8 +51,10 @@ class CommunityPostServiceTest {
 	private final UserQueryService userQueryService = Mockito.mock(UserQueryService.class);
 	private final InstrumentService instrumentService = Mockito.mock(InstrumentService.class);
 	private final CommunityPostImageService communityPostImageService = Mockito.mock(CommunityPostImageService.class);
+	private final PostSellFeedbackService postSellFeedbackService = Mockito.mock(PostSellFeedbackService.class);
 	private final CommunityPostService service = new CommunityPostService(
-		repository, postCommentRepository, userQueryService, instrumentService, communityPostImageService, CLOCK);
+		repository, postCommentRepository, userQueryService, instrumentService, communityPostImageService,
+		postSellFeedbackService, CLOCK);
 
 	private static Instrument instrument(Long id) {
 		Instrument instrument = Instrument.create(
@@ -65,7 +69,7 @@ class CommunityPostServiceTest {
 		when(userQueryService.getUser(42L)).thenReturn(author);
 		when(repository.save(any(CommunityPost.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-		CommunityPostResponse response = service.createPost(42L, "title", "content", null, null);
+		CommunityPostResponse response = service.createPost(42L, "title", "content", null, null, null);
 
 		ArgumentCaptor<CommunityPost> postCaptor = ArgumentCaptor.forClass(CommunityPost.class);
 		verify(repository).save(postCaptor.capture());
@@ -89,7 +93,7 @@ class CommunityPostServiceTest {
 		when(userQueryService.getUser(404L))
 			.thenThrow(new BusinessException(ErrorCode.UNAUTHORIZED));
 
-		assertThatThrownBy(() -> service.createPost(404L, "title", "content", null, null))
+		assertThatThrownBy(() -> service.createPost(404L, "title", "content", null, null, null))
 			.isInstanceOf(BusinessException.class)
 			.extracting(exception -> ((BusinessException)exception).getErrorCode())
 			.isEqualTo(ErrorCode.UNAUTHORIZED);
@@ -104,7 +108,7 @@ class CommunityPostServiceTest {
 		when(instrumentService.getTradableInstrumentEntity(9L)).thenReturn(instrument);
 		when(repository.save(any(CommunityPost.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-		CommunityPostResponse response = service.createPost(42L, "title", "content", 9L, null);
+		CommunityPostResponse response = service.createPost(42L, "title", "content", 9L, null, null);
 
 		ArgumentCaptor<CommunityPost> postCaptor = ArgumentCaptor.forClass(CommunityPost.class);
 		verify(repository).save(postCaptor.capture());
@@ -121,7 +125,7 @@ class CommunityPostServiceTest {
 		when(instrumentService.getTradableInstrumentEntity(999L))
 			.thenThrow(new BusinessException(ErrorCode.VALIDATION_ERROR, "존재하지 않거나 비활성인 종목은 태그할 수 없습니다."));
 
-		assertThatThrownBy(() -> service.createPost(42L, "title", "content", 999L, null))
+		assertThatThrownBy(() -> service.createPost(42L, "title", "content", 999L, null, null))
 			.isInstanceOf(BusinessException.class)
 			.extracting(exception -> ((BusinessException)exception).getErrorCode())
 			.isEqualTo(ErrorCode.VALIDATION_ERROR);
@@ -137,7 +141,7 @@ class CommunityPostServiceTest {
 		when(communityPostImageService.resolveImageForPost(42L, 5L)).thenReturn(image);
 		when(repository.save(any(CommunityPost.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-		CommunityPostResponse response = service.createPost(42L, "title", "content", null, 5L);
+		CommunityPostResponse response = service.createPost(42L, "title", "content", null, 5L, null);
 
 		ArgumentCaptor<CommunityPost> postCaptor = ArgumentCaptor.forClass(CommunityPost.class);
 		verify(repository).save(postCaptor.capture());
@@ -156,7 +160,7 @@ class CommunityPostServiceTest {
 		when(userQueryService.getUser(42L)).thenReturn(author);
 		when(repository.save(any(CommunityPost.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-		CommunityPostResponse response = service.createPost(42L, "title", "content", null, null);
+		CommunityPostResponse response = service.createPost(42L, "title", "content", null, null, null);
 
 		assertThat(response.imageId()).isNull();
 		assertThat(response.imageUrl()).isNull();
@@ -170,7 +174,7 @@ class CommunityPostServiceTest {
 		when(communityPostImageService.resolveImageForPost(42L, 404L))
 			.thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
 
-		assertThatThrownBy(() -> service.createPost(42L, "title", "content", null, 404L))
+		assertThatThrownBy(() -> service.createPost(42L, "title", "content", null, 404L, null))
 			.isInstanceOf(BusinessException.class)
 			.extracting(exception -> ((BusinessException)exception).getErrorCode())
 			.isEqualTo(ErrorCode.NOT_FOUND);
@@ -184,7 +188,7 @@ class CommunityPostServiceTest {
 		when(communityPostImageService.resolveImageForPost(42L, 5L))
 			.thenThrow(new BusinessException(ErrorCode.FORBIDDEN, "본인이 업로드한 이미지만 사용할 수 있습니다."));
 
-		assertThatThrownBy(() -> service.createPost(42L, "title", "content", null, 5L))
+		assertThatThrownBy(() -> service.createPost(42L, "title", "content", null, 5L, null))
 			.isInstanceOf(BusinessException.class)
 			.extracting(exception -> ((BusinessException)exception).getErrorCode())
 			.isEqualTo(ErrorCode.FORBIDDEN);
@@ -198,7 +202,66 @@ class CommunityPostServiceTest {
 		when(communityPostImageService.resolveImageForPost(42L, 5L))
 			.thenThrow(new BusinessException(ErrorCode.VALIDATION_ERROR, "이미 다른 게시물에 사용된 이미지입니다."));
 
-		assertThatThrownBy(() -> service.createPost(42L, "title", "content", null, 5L))
+		assertThatThrownBy(() -> service.createPost(42L, "title", "content", null, 5L, null))
+			.isInstanceOf(BusinessException.class)
+			.extracting(exception -> ((BusinessException)exception).getErrorCode())
+			.isEqualTo(ErrorCode.VALIDATION_ERROR);
+		verify(repository, never()).save(any());
+	}
+
+	// TRADESHARE-004 — 이미지와 매매 카드를 동시에 주면 400이고, DB 조회 전에 거른다.
+	@Test
+	void createPostFailsWithValidationErrorAndDoesNotCallAnyCollaboratorWhenImageAndSharedTradeAreBothProvided() {
+		assertThatThrownBy(() -> service.createPost(42L, "title", "content", null, 5L, 77L))
+			.isInstanceOf(BusinessException.class)
+			.extracting(exception -> ((BusinessException)exception).getErrorCode())
+			.isEqualTo(ErrorCode.VALIDATION_ERROR);
+		verifyNoInteractions(userQueryService, communityPostImageService, postSellFeedbackService, repository);
+	}
+
+	// TRADESHARE-001·002·003 — 소유권·side=SELL 검증은 postSellFeedbackService에 위임하고, 그 결과를 응답에도
+	// 그대로 재사용한다(같은 계산을 두 번 하지 않는다).
+	@Test
+	void createPostAttachesSharedTradeAndIncludesSummaryInResponseWhenSharedTradeIdProvided() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		when(userQueryService.getUser(42L)).thenReturn(author);
+		TradeShareSummaryResponse summary = new TradeShareSummaryResponse(
+			"BTC", "비트코인", Market.CRYPTO, new BigDecimal("70000"), new BigDecimal("68500"),
+			new BigDecimal("10"), -15_207L, new BigDecimal("-0.0217"));
+		when(postSellFeedbackService.getTradeShareSummary(42L, 77L)).thenReturn(summary);
+		when(repository.save(any(CommunityPost.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		CommunityPostResponse response = service.createPost(42L, "title", "content", null, null, 77L);
+
+		ArgumentCaptor<CommunityPost> postCaptor = ArgumentCaptor.forClass(CommunityPost.class);
+		verify(repository).save(postCaptor.capture());
+		assertThat(postCaptor.getValue().getSharedTradeId()).isEqualTo(77L);
+		assertThat(response.sharedTrade()).isSameAs(summary);
+		verifyNoInteractions(communityPostImageService);
+	}
+
+	@Test
+	void createPostPropagatesForbiddenAndDoesNotSaveWhenSharedTradeBelongsToAnotherUser() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		when(userQueryService.getUser(42L)).thenReturn(author);
+		when(postSellFeedbackService.getTradeShareSummary(42L, 77L))
+			.thenThrow(new BusinessException(ErrorCode.FORBIDDEN));
+
+		assertThatThrownBy(() -> service.createPost(42L, "title", "content", null, null, 77L))
+			.isInstanceOf(BusinessException.class)
+			.extracting(exception -> ((BusinessException)exception).getErrorCode())
+			.isEqualTo(ErrorCode.FORBIDDEN);
+		verify(repository, never()).save(any());
+	}
+
+	@Test
+	void createPostPropagatesValidationErrorAndDoesNotSaveWhenSharedTradeIsABuyTrade() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		when(userQueryService.getUser(42L)).thenReturn(author);
+		when(postSellFeedbackService.getTradeShareSummary(42L, 77L))
+			.thenThrow(new BusinessException(ErrorCode.VALIDATION_ERROR));
+
+		assertThatThrownBy(() -> service.createPost(42L, "title", "content", null, null, 77L))
 			.isInstanceOf(BusinessException.class)
 			.extracting(exception -> ((BusinessException)exception).getErrorCode())
 			.isEqualTo(ErrorCode.VALIDATION_ERROR);
@@ -234,6 +297,40 @@ class CommunityPostServiceTest {
 			.isEqualTo(ErrorCode.NOT_FOUND);
 
 		verify(repository).findById(404L);
+	}
+
+	// TRADESHARE-002 — 조회 시점의 userId는 뷰어가 아니라 게시물 작성자다(다른 사용자가 봐도 403이 나지 않는다).
+	@Test
+	void getPostIncludesSharedTradeSummaryWhenPostHasSharedTradeId() {
+		User author = User.create("reader@finplay.com", "hash", "reader", LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(author, "id", 42L);
+		CommunityPost post = CommunityPost.create(
+			author, "detail title", "detail content", null, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(post, "id", 73L);
+		post.attachSharedTrade(77L);
+		when(repository.findById(73L)).thenReturn(Optional.of(post));
+		TradeShareSummaryResponse summary = new TradeShareSummaryResponse(
+			"BTC", "비트코인", Market.CRYPTO, new BigDecimal("70000"), new BigDecimal("68500"),
+			new BigDecimal("10"), -15_207L, new BigDecimal("-0.0217"));
+		when(postSellFeedbackService.getTradeShareSummary(42L, 77L)).thenReturn(summary);
+
+		CommunityPostResponse response = service.getPost(73L);
+
+		assertThat(response.sharedTrade()).isSameAs(summary);
+	}
+
+	@Test
+	void getPostReturnsNullSharedTradeWithoutCallingServiceWhenPostHasNoSharedTradeId() {
+		User author = User.create("reader@finplay.com", "hash", "reader", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(
+			author, "detail title", "detail content", null, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(post, "id", 73L);
+		when(repository.findById(73L)).thenReturn(Optional.of(post));
+
+		CommunityPostResponse response = service.getPost(73L);
+
+		assertThat(response.sharedTrade()).isNull();
+		verifyNoInteractions(postSellFeedbackService);
 	}
 
 	@Test
