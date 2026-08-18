@@ -15,6 +15,7 @@
 | 21:20 | tester | `./gradlew test --tests "com.finplay.api.order.*" --tests "com.finplay.api.portfolio.*" --tests "com.finplay.api.education.*" --tests "com.finplay.api.account.*"` | 테스트 정리 누락 3건 수정 후 전체 도메인 재확인(1107건 중 2건만 잔존 — 구현 버그, src/main 미수정) |
 | 21:48 | implementer | `./gradlew test --tests "com.finplay.api.order.*" --tests "com.finplay.api.portfolio.*" --tests "com.finplay.api.education.*" --tests "com.finplay.api.account.*"` | tester가 남긴 구현 버그(위 행), 사용자 승인 후 `PracticeLimitOrderCreationService.createSessionBuyOrder`에 isTutorialSample 분기 추가 |
 | 21:53 | implementer | (문서 갱신, 테스트 실행 없음) | CLAUDE.md 규칙 10, tasks.md 9번 |
+| 02:16 | implementer | (문서 갱신, 테스트 실행 없음) | 이슈 #459 PR #460 리뷰 권장사항, ADR-0021 §결정 6·7 |
 
 ## 모니터링 (사람용 요약)
 - 18:52 — TutorialAccount 엔티티·Repository·V46 마이그레이션·TUTORIAL_INSUFFICIENT_CASH 추가, DataJpaTest 6건 통과.
@@ -32,10 +33,4 @@
 - 21:48 — 위에서 발견된 구현 버그를 이 브랜치에서 마저 수정했다(사용자 승인). `PracticeLimitOrderCreationService.createSessionBuyOrder`에 `instrument.isTutorialSample()` 분기를 추가해 `LimitOrderCreationService.createBuyOrder`·`LimitOrderFillService.fillBuy`와 동일한 패턴으로 맞췄다 — 샌드박스 종목은 기존대로 튜토리얼 계좌에서 검증·예약(`TUTORIAL_INSUFFICIENT_CASH`)하고, 실제 종목(030 코인 연습의 BTC·ETH 등)은 실제 `Account`에서 검증·예약(`INSUFFICIENT_CASH`)한다. `./gradlew compileJava` 통과. `PracticeHoldingObservationIntegrationTest`·`PracticeLimitOrderTickIntegrationTest` 재실행으로 두 회귀가 모두 해소됐음을 확인했다. 기존 단위 테스트 `PracticeLimitOrderCreationServiceTest`의 두 테스트(`...ReservesCashInTutorialAccountOnlyAndCreatesPendingBuyOrderWithSessionId`, `...ThrowsTutorialInsufficientCashRegardlessOfRealAccountBalance`)는 instrument에 `tutorialSample=true`를 명시하지 않고도 우연히 통과하던 낡은 픽스처였음이 드러나 `ReflectionTestUtils.setField(instrument, "tutorialSample", true)`를 추가했고, 실제 종목 경로를 검증하는 신규 테스트 2건(`...ForRealInstrumentReservesCashInRealAccountOnly`, `...ForRealInstrumentThrowsInsufficientCashWhenRealAccountBalanceInsufficient`)을 추가했다(총 8→10건). `order`·`portfolio`·`education`·`account` 전체 재실행(1109건)에서 실패 0건.
 - 21:53 — 마지막 항목(9번, `docs/prd.md` §3 구현 현황 갱신)을 완료했다. `TUTORIAL-ORDER-001~004` 행 뒤에 `TUTORIAL-CASH-ISOL-001~011` 행을 신설했다. 판정은 **일부 완료**다 — 001~009·011은 이 spec에서 구현·검증됐지만, `TUTORIAL-CASH-ISOL-010`(확인 필요)이 spec.md에서 "후속 확인 이슈로 넘긴다"고 명시한 채 실제로는 그 후속 이슈가 아직 생성되지 않았다(`intentionId` 없는 일반 리스크관리 OCO가 샌드박스 holding에도 생성될 수 있는 gap — 현금은 격리되지만 튜토리얼 진행 판정에 미치는 영향은 미확인). 이걸 근거 없이 "완료"로 적으면 CLAUDE.md 규칙 10(판정과 근거를 함께 적는다)을 어기므로 그대로 반영했다. 이번 브랜치에서 함께 고친 `createSessionBuyOrder` 회귀도 같은 행에 근거로 남겼다.
 
-## 후속 — `sandbox_cash_adjustment` 컬럼 물리적 삭제 (이슈 #459)
-
-spec 047 본문의 "제외 범위"(`Account.sandboxCashAdjustment` 컬럼은 파괴적 변경 2단계 배포 원칙에 따라 존치)에
-따른 후속 정리를 이슈 #459로 분리해 추적한다. ADR-0021 §결정 7을 그대로 따르기 위해 PR 2개로 나눈다(PR #460
-리뷰 코멘트에서 팀 자동 리뷰가 권장한 추적 메모).
-
-- 02:16 — **PR-A(#460, `fix: Account에서 sandboxCashAdjustment 매핑 제거`) 완료·머지 대기.** `Account.sandboxCashAdjustment` 필드·`addSandboxCashAdjustment()` 메서드와 잔여 주석 4곳을 제거하고, 필드 제거로 깨지는 테스트 9개를 정리했다(컬럼이 아직 존재하는 마이그레이션 replay 테스트 2개는 엔티티 getter 대신 raw JDBC로 전환해 커버리지 유지). 마이그레이션은 포함하지 않는다 — 컬럼 자체는 이 배포 이후에도 DB에 남지만 앱은 더 이상 참조하지 않는다. **PR-B(컬럼 `DROP`, 새 Flyway 마이그레이션 + replay 테스트 정리)는 이 PR의 배포가 실제로 나간 것을 확인한 뒤에만 진행한다** — ADR-0021 §결정 6의 자동 롤백 창(직전 색 앱이 없는 컬럼을 조회하게 되는 상황)을 피하기 위함이다.
+- 02:16 — 이슈 #459(`sandbox_cash_adjustment` 컬럼 물리적 삭제, spec 047 "제외 범위" 후속) PR-A(#460, `Account.sandboxCashAdjustment` 매핑·`addSandboxCashAdjustment()` 제거, 마이그레이션 미포함) 완료·머지 대기 상태를 기록. ADR-0021 §결정 7에 따라 PR-B(컬럼 `DROP`)는 이 PR 배포 확인 후 별도로 진행한다(§결정 6의 자동 롤백 창 회피).
