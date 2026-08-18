@@ -2,7 +2,7 @@
 
 > 이 spec은 `../041-tutorial-market-scenario`와 같은 코드를 건드린다. **배포 순서는
 > `../041-tutorial-market-scenario/tasks.md` §교차 순서가 정본이다.** 아래 항목의 `SNAP-1`·`SNAP-2`가
-> `SNAP-1b`가 전체에서 가장 먼저 나가야 하고, 3~7번은 041의 tick 작업 뒤에 온다.
+> `SNAP-1`·`SNAP-1b`·`SNAP-2`가 전체에서 가장 먼저 나가야 하고, 3~7번은 041의 tick 작업 뒤에 온다.
 
 ## 스키마 선행 작업 — 재진입 snapshot을 위한 2단계 배포
 
@@ -10,15 +10,16 @@
 041의 재진입 흐름은 매수가 두 번 생기므로 이 제약을 교체해야 하는데, 제약 삭제는 파괴적 변경이라 한
 배포에 담을 수 없다(ADR-0021 §결정 7).
 
-**두 항목 모두 어떤 코드도 의존하지 않는다. 그래서 전체 작업의 맨 앞에 둔다** — 뒤로 미루면 "041의
+**세 항목 모두 뒤따르는 기능 코드가 의존하지 않는다. 그래서 전체 작업의 맨 앞에 둔다** — 뒤로 미루면 "041의
 재진입이 이것보다 먼저 나가면 깨진다"는 순서 의존을 사람이 계속 챙겨야 한다.
 
 - [ ] **SNAP-1** — 마이그레이션: `practice_risk_snapshots`에 `entry_sequence INT NOT NULL DEFAULT 1`
   추가 + `uk_practice_risk_snapshots_attempt_run_seq(attempt_id, run_number, entry_sequence)` 추가.
   **기존 UNIQUE는 그대로 둔다.** 코드 변경 없음.
 - [ ] **SNAP-1b** — `PracticeRiskSnapshotRepository.findByAttemptIdAndRunNumber`를
-  `findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc`로 바꾸고 **호출 지점 7곳**의 의미를 각각
-  판정한다(기본은 최신 진입). **`SNAP-2`보다 먼저 끝나야 한다** — 제약만 풀고 쿼리를 두면 재진입 직후
+  `findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc`로 바꾸고 **호출 지점 6곳**의 의미를 각각 판정한다.
+  **판정표는 plan §제약 교체만으로는 부족하다에 있다** — 관찰 필터 기준선만 "첫 진입"이고 나머지는 최신
+  진입이다. 이 하나를 틀리면 재매수 순간 3단계가 미완료로 되돌아간다(이슈 #420과 같은 유형). **`SNAP-2`보다 먼저 끝나야 한다** — 제약만 풀고 쿼리를 두면 재진입 직후
   조회·복기·재시작·완료가 `IncorrectResultSizeDataAccessException`으로 죽는다.
 - [ ] **SNAP-2** — 마이그레이션: 기존 `uk_practice_risk_snapshots_attempt_run` 삭제.
   **별도 PR·별도 배포다.** 새 UNIQUE가 같은 보호를 하므로(코드가 항상 `entry_sequence = 1`을 쓴다)
@@ -70,7 +71,9 @@
   기존 인스턴스를 재사용하면 수량 변경이 조용히 유실된다(plan 잔여 위험).
 
 - [ ] **7. 매도 원인과 완료 대조** — `PracticeTradeResultResponse`에 `sellCause`
-  (`STOP_LOSS`\|`TAKE_PROFIT`\|`MANUAL`) 추가. `exit_plans.triggered_order_id` 역참조로 판정한다.
+  (`STOP_LOSS`\|`TAKE_PROFIT`\|`MANUAL`) 추가하고, **진입별 대조를 배열로 제공**한다(041 SCENARIO-019b).
+  현재 `PracticeAttemptEvidenceService`가 `tradeSummary.firstSellTrade()` 하나만 쓰므로, 재진입하면 완료
+  화면에 2막 손절만 뜨고 3막 익절이 사라진다. `exit_plans.triggered_order_id` 역참조로 판정한다.
   나머지 대조 값(`sellPrice`·`realizedPnl`·`returnRate`·`sellVerdict`)은 이슈 #421로 이미 있다.
   `docs/prd.md` §3에 `EXITPRESET-001~020` 행 추가.
 

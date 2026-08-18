@@ -3,7 +3,7 @@
 ## 관련 문서
 
 - Spec: `./spec.md` (2026-08-18 개정판)
-- 병행 spec/plan: `../041-tutorial-market-scenario` — 대본과 포지션 앵커. 이 plan의 프리셋 수치는
+- 병행 spec/plan: `../041-tutorial-market-scenario` — 대본과 구간 종류 규칙. 이 plan의 프리셋 수치는
   041 plan §프리셋 도달 조건 검증의 도달 부등식으로 정당화된다.
 - Delta 정본: `../039-tutorial-flow-redesign`, `../021-general-risk-management-oco`,
   `../019-exit-price-policy`, `../026-market-order-practice-tutorial`
@@ -114,18 +114,29 @@ non-null, run > 0)로 만든다. 039가 주문 귀속에 쓴 패턴을 그대로
 ### 제약 교체만으로는 부족하다 — 단건 조회를 함께 고쳐야 한다
 
 `PracticeRiskSnapshotRepository.findByAttemptIdAndRunNumber(Long, long)`가 **`Optional`을 반환**하고
-호출 지점이 7곳이다(`InvestmentPracticeQueryService` 2곳, `PracticeAttemptEvidenceService`,
+호출 지점이 6곳이다(`InvestmentPracticeQueryService` 2곳, `PracticeAttemptEvidenceService`,
 `PracticeAttemptOrderAttributionService`, `PracticeAttemptRestartService`, `PracticeAttemptService`).
 
 **`SNAP-2`로 DB 제약만 풀고 이 쿼리를 그대로 두면, 재진입 매수 직후 진행 조회·복기·재시작·완료가 전부
 `IncorrectResultSizeDataAccessException`으로 죽는다.** 초판은 `SNAP-1`·`SNAP-2`를 "코드 변경 없음"이라
 적었는데 사실이 아니다.
 
-- 쿼리를 `findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc`(최신 진입)로 바꾼다.
+- 쿼리를 **두 개로 나눈다** — `findTopBy...OrderByEntrySequenceDesc`(최신 진입)와
+  `findBy...AndEntrySequence(1)`(첫 진입).
 - **7개 호출 지점마다 "현재 진입"인지 "그 run의 첫 진입"인지 판정해야 한다.** 특히
   `PracticeAttemptEvidenceService`가 반환하는 snapshot은 관찰 필터(`observedAt >= snapshot.createdAt`)와
   evidence A 기준선의 정본이므로, 어느 것을 쓸지 정하지 않으면 evidence 판정이 미정의가 된다.
-  기본 방침은 **전부 최신 진입**이며, 예외가 필요한 곳은 구현 중 판정해 기록한다.
+  **판정을 미루지 않고 여기서 정한다.**
+
+  | 호출 지점 | 무엇을 써야 하는가 | 이유 |
+  |---|---|---|
+  | `PracticeAttemptEvidenceService` (관찰 필터 기준선) | **첫 진입** | 최신을 쓰면 재매수 순간 이전 관찰이 필터에서 사라져 3단계가 미완료로 되돌아간다. 같은 유형이 이슈 #420으로 프로덕션에서 재현된 적 있다 |
+  | `PracticeAttemptOrderAttributionService` (다음 snapshot 생성) | 개수만 필요 | `entry_sequence` 산출용 |
+  | `PracticeAttemptRestartService` (정리) | 전체 | run의 모든 진입을 정리한다 |
+  | `InvestmentPracticeQueryService` ×2, `PracticeAttemptService` (기준선 표시) | **최신 진입** | 화면의 "지금 내 기준선" |
+
+  **evidence는 실행 세대 단위 개념이고 snapshot은 진입 단위 개념이다.** 둘을 같은 객체로 다루던 것이
+  재진입 도입으로 처음 드러났다(041 SCENARIO-019a).
 - 이 작업은 `SNAP-2` **배포 전에** 끝나야 한다. 순서가 뒤집히면 재진입한 사용자가 500을 본다.
 
 > 대안으로 "재진입을 새 실행 세대(run+1)로 취급"을 검토했다. 스키마를 안 건드려도 되지만, 재시작이 아닌
@@ -156,6 +167,11 @@ onBuyFill(order, trade):
          ExitPlanCreationService.create(practice(user, holding, trade.quantity, lines, hash, attempt, run, baseline))
   # market == STOCK 이면 5번까지만 (EXITPRESET-018)
 ```
+
+**"직전 순보유수량"의 산출을 한 곳에서 정의한다.** `OrderExecutionService`·`LimitOrderFillService` 모두
+`applyBuyTrade`를 **먼저** 호출한 뒤 snapshot 생성을 부르므로, 가드가 도는 시점에 holding에는 이번 체결이
+이미 반영돼 있다. 따라서 "직전"은 `현재 순보유수량 − 이번 체결 수량`으로 역산한다. 042의 프리셋 잠금
+조건(§프리셋 잠금 조건)과 041의 대기 탈출 판정도 같은 산출식을 공유해야 하며, 구현에서 한 메서드로 모은다.
 
 **2단계 가드가 이 plan에서 가장 중요한 한 줄이다.** 초판에는 이 가드가 없어 보유 중 추가 매수가
 (1) `validateNoPendingPlan` 409로 매수를 통째로 실패시키고, (2) 새 snapshot으로 기준선을 갱신해 039의
@@ -279,7 +295,7 @@ restart:
 
 | Method | URL | 요청 | 응답 | 설명 |
 |---|---|---|---|---|
-| PUT | `/api/education/practice/attempts/{market}/exit-preset` | `{ "preset": "CAUTIOUS" }` | 200 `PracticeAttemptResponse` | 현재 실행 세대의 프리셋 선택. 최초 BUY 체결 전에만 |
+| PUT | `/api/education/practice/attempts/{market}/exit-preset` | `{ "preset": "CAUTIOUS" }` | 200 `PracticeAttemptResponse` | 현재 실행 세대의 프리셋 선택. 순보유수량이 0인 동안에만(매수 전·재진입 대기 중) |
 
 `PUT`인 이유는 자연 멱등이기 때문이다 — 같은 값을 몇 번 보내도 결과가 같고, 체결 전이면 몇 번이든 바꿀 수
 있다(EXITPRESET-003). `Idempotency-Key`는 요구하지 않는다(015 LMT-005의 `PATCH`와 같은 판단).
@@ -297,9 +313,9 @@ restart:
 - 손절·익절·수동 매도로 포지션 정리 후 재진입 대기 → **다시 허용**
 - 완료 후 → 거부 (`PRACTICE_ALREADY_COMPLETED`)
 
-**이 조건은 041의 대기 구간 판정과 정확히 같은 값을 본다.** 041 plan의 진행 계산이 매 tick 순보유수량을
-읽어 진행 여부를 정하는데, 프리셋 잠금도 같은 값이다. 즉 **"시나리오가 멈춰 있으면 기준을 고칠 수 있다"**
-가 한 문장으로 성립하며, 화면에서도 그렇게 설명할 수 있다.
+**이 조건을 "시나리오가 멈춰 있으면 기준을 고칠 수 있다"로 설명하면 안 된다.** 041이 진행 조건을 구간
+종류로 바꾸면서 그 등식이 깨졌다 — 4막을 관전 중인 미보유 사용자는 대본이 흐르는 중인데도 프리셋을 바꿀
+수 있다. 화면 문구는 **"들고 있지 않을 때만 기준을 바꿀 수 있다"**로 적어야 한다.
 
 교육적 근거는 두 방향이 한 조건으로 갈린다는 데 있다. 손절을 겪은 사용자가 다음 진입의 기준을 다시 정하는
 것은 이 기능이 훈련시키려는 판단 그 자체이고, 손실 중에 손절선을 내리는 사후 합리화는 039가 막으려 한
@@ -398,7 +414,7 @@ snapshot으로 만들어진 예약(이미 체결·취소됨)은 그대로 남는
 생겼을 때 어느 쪽인지 가르는 데 시간이 든다.
 
 **041과의 순서는 `../041-tutorial-market-scenario/tasks.md` §교차 순서가 정본이다.** 요지는 둘이다 —
-스키마 선행 작업(`SNAP-1`·`SNAP-2`)을 맨 앞으로 빼고, 자동 예약과 tick 정산은 041이 tick 코드를 자리잡게
+스키마 선행 작업(`SNAP-1`·`SNAP-1b`·`SNAP-2`)을 맨 앞으로 빼고, 자동 예약과 tick 정산은 041이 tick 코드를 자리잡게
 한 뒤에 얹는다.
 
 ## 열린 질문 — 이 plan에서 정하지 않은 것
@@ -429,5 +445,5 @@ snapshot으로 만들어진 예약(이미 체결·취소됨)은 그대로 남는
 - **CAUTIOUS가 2막 루머에서 먼저 털린다는 사실 자체의 양면성.** 이 분기가 이 기능의 교육적 핵심이지만
   (041 SCENARIO-006a), 사용자가 "조심스럽게를 고르면 손해"로 일반화할 위험도 같이 생긴다. 실제 시장에서
   좁은 손절선은 자주 털리는 대신 크게 잃지 않는 것이고, 그 대가 관계가 화면에 함께 보여야 한다 —
-  루머에서 나간 사용자는 확정 다이빙(−12%)을 피했다는 사실이 완료 화면의 사후 대조(041 SCENARIO-019)에
+  루머에서 나간 사용자는 확정 다이빙(−12%)을 피했다는 사실이 완료 화면의 사후 대조(041 SCENARIO-021)에
   반드시 나타나야 한다. **없으면 이 분기는 그냥 "좁게 잡으면 손해"만 가르친다.**
