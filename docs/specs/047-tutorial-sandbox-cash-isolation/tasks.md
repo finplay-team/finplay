@@ -4,7 +4,7 @@
   (`findByUserIdAndMarketForUpdate` 포함) + `V46__create_tutorial_accounts_and_backfill_cash.sql`(테이블
   신설 + `sandbox_cash_adjustment` 백필, 버전 번호는 착수 시점 `origin/dev` 재확인 후 확정) +
   `common.ErrorCode`에 `TUTORIAL_INSUFFICIENT_CASH` 추가 + `@DataJpaTest`.
-- [ ] `TutorialAccountService`(get-or-create, reset — 현금·예약 현금·`realizedPnl` 동시 초기화) + 단위
+- [x] `TutorialAccountService`(get-or-create, reset — 현금·예약 현금·`realizedPnl` 동시 초기화) + 단위
   테스트. `PracticeAttemptService.ensureAttempt`에 get-or-create 연결.
 - [ ] 매수 경로 전환 — `OrderExecutionService.createBuyOrder`, `PracticeLimitOrderCreationService.createSessionBuyOrder`,
   `LimitOrderFillService.fillBuy`가 샌드박스 종목일 때 튜토리얼 계좌를 대상으로 하도록 수정(현금 부족 검증을

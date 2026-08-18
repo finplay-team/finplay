@@ -1,6 +1,7 @@
 // 튜토리얼 attempt의 멱등 진입 조회와 현재 실행 종목 선택을 처리하는 서비스
 package com.finplay.api.education.marketpractice.service;
 
+import com.finplay.api.account.service.TutorialAccountService;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
@@ -34,6 +35,7 @@ public class PracticeAttemptService {
 	private final PracticeRiskSnapshotRepository practiceRiskSnapshotRepository;
 	private final PracticeProgressRepository practiceProgressRepository;
 	private final InstrumentService instrumentService;
+	private final TutorialAccountService tutorialAccountService;
 	private final Clock clock;
 	private final SecureRandom secureRandom = new SecureRandom();
 
@@ -44,6 +46,9 @@ public class PracticeAttemptService {
 		boolean inserted = practiceAttemptRepository.insertIfAbsent(userId, market.name(), now) == 1;
 		PracticeAttempt attempt = practiceAttemptRepository.findByUserIdAndMarketForUpdate(userId, market)
 			.orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_ERROR));
+		// PracticeAttempt 행 잠금이 이미 사용자·시장 조합을 직렬화하므로, 같은 트랜잭션 안에서 튜토리얼 계좌도
+		// 함께 get-or-create한다(TUTORIAL-CASH-ISOL-001, 설계 판단 — 계좌 생성 시점). 응답 노출은 후속 작업.
+		tutorialAccountService.getOrCreateForUpdate(userId, toAccountMarket(market), now);
 		practiceProgressRepository.findByUserIdAndTutorialKeyForUpdate(userId, tutorialKey);
 		PracticeCompletion completion = practiceCompletionRepository
 			.findByUserIdAndTutorialKey(userId, tutorialKey)
@@ -89,6 +94,12 @@ public class PracticeAttemptService {
 		seed = (seed ^ market.ordinal()) * 0x100000001b3L;
 		seed = (seed ^ completionId) * 0x100000001b3L;
 		return (seed ^ instrumentId) * 0x100000001b3L;
+	}
+
+	// PracticeHoldingReflectionService.payTutorialCompletionReward와 동일 패턴으로 market 도메인의 Market을
+	// account 도메인의 Market으로 변환한다(두 Market은 값 집합이 같지만 서로 다른 열거형이다).
+	private com.finplay.api.account.domain.Market toAccountMarket(Market market) {
+		return com.finplay.api.account.domain.Market.valueOf(market.name());
 	}
 
 	private String resolveTutorialKey(Market market) {
