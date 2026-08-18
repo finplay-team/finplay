@@ -381,6 +381,52 @@ class CommunityPostRepositoryTest {
 		assertThat(statistics.getPrepareStatementCount()).isEqualTo(2);
 	}
 
+	@Test
+	void incrementLikeCountIncreasesLikeCountByOneAndPersists() {
+		User author = userRepository.saveAndFlush(User.create("incr@finplay.com", "hash", "incrementer", NOW));
+		CommunityPost post = repository.saveAndFlush(CommunityPost.create(author, "title", "content", null, NOW));
+
+		repository.incrementLikeCount(post.getId());
+
+		CommunityPost found = repository.findById(post.getId()).orElseThrow();
+		assertThat(found.getLikeCount()).isEqualTo(1L);
+	}
+
+	@Test
+	void incrementLikeCountAppliesRepeatedCallsCumulatively() {
+		User author = userRepository.saveAndFlush(User.create("incrmulti@finplay.com", "hash", "incrmulti", NOW));
+		CommunityPost post = repository.saveAndFlush(CommunityPost.create(author, "title", "content", null, NOW));
+
+		repository.incrementLikeCount(post.getId());
+		repository.incrementLikeCount(post.getId());
+		repository.incrementLikeCount(post.getId());
+
+		CommunityPost found = repository.findById(post.getId()).orElseThrow();
+		assertThat(found.getLikeCount()).isEqualTo(3L);
+	}
+
+	@Test
+	void decrementLikeCountDecreasesLikeCountByOneAndPersists() {
+		User author = userRepository.saveAndFlush(User.create("decr@finplay.com", "hash", "decrementer", NOW));
+		CommunityPost post = repository.saveAndFlush(CommunityPost.create(author, "title", "content", null, NOW));
+		repository.incrementLikeCount(post.getId());
+		repository.incrementLikeCount(post.getId());
+
+		repository.decrementLikeCount(post.getId());
+
+		CommunityPost found = repository.findById(post.getId()).orElseThrow();
+		assertThat(found.getLikeCount()).isEqualTo(1L);
+	}
+
+	@Test
+	void newlyCreatedPostStartsWithZeroLikeCount() {
+		User author = userRepository.saveAndFlush(User.create("zero@finplay.com", "hash", "zeroer", NOW));
+
+		CommunityPost post = repository.saveAndFlush(CommunityPost.create(author, "title", "content", null, NOW));
+
+		assertThat(post.getLikeCount()).isEqualTo(0L);
+	}
+
 	private static String uniqueSymbol() {
 		return "T" + UUID.randomUUID().toString().replace("-", "").substring(0, 10);
 	}
