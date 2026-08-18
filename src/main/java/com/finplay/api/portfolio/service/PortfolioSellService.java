@@ -2,6 +2,8 @@
 package com.finplay.api.portfolio.service;
 
 import com.finplay.api.account.domain.Account;
+import com.finplay.api.account.domain.TutorialAccount;
+import com.finplay.api.account.service.TutorialAccountService;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.market.domain.Instrument;
@@ -26,6 +28,7 @@ public class PortfolioSellService {
 	private final HoldingRepository holdingRepository;
 	private final HoldingLotRepository holdingLotRepository;
 	private final TradeAllocationRepository tradeAllocationRepository;
+	private final TutorialAccountService tutorialAccountService;
 
 	// 지정가 매도 생성 시 holding을 잠그고 availableQuantity(=quantity-reservedQuantity) 기준으로 검증한다
 	// (015-limit-order LMT-001). 다른 도메인 서비스가 HoldingRepository를 직접 주입하지 않게 한다(ADR-0002).
@@ -65,18 +68,30 @@ public class PortfolioSellService {
 	}
 
 	// 매도 체결의 실현손익 계산·반영(시장가·지정가 공통, ORD-005 공식 그대로 재사용) — Trade.realizedPnl 확정 +
-	// Account 현금·실현손익 갱신까지 원자적으로 수행한다. 이벤트 발행은 호출부 책임으로 남긴다.
+	// Account(또는 샌드박스면 TutorialAccount) 현금·실현손익 갱신까지 원자적으로 수행한다. 이 메서드 하나를
+	// 시장가·지정가 매도 체결·재시작 보상매도·OCO 체결이 공유하므로, 여기 분기 하나만으로 네 경로 전부가
+	// 튜토리얼 계좌 전환의 적용을 받는다(047 TUTORIAL-CASH-ISOL-003, plan.md "호출부 변경 지점" 2번).
+	// 이벤트 발행은 호출부 책임으로 남긴다.
 	public long finalizeSellRealizedPnl(
-		Account account, Trade sellTrade, long amount, long fee, SellAllocationDto allocation) {
+		Account account, Trade sellTrade, long amount, long fee, SellAllocationDto allocation, LocalDateTime now) {
 		long realizedPnl = (amount - fee) - (allocation.totalAllocatedCost() + allocation.totalAllocatedBuyFee());
+		// Trade.realizedPnl(체결 원장 값)은 033의 원칙대로 종목 종류와 무관하게 항상 채운다.
 		sellTrade.fillRealizedPnl(realizedPnl);
-		account.addCash(amount - fee);
-		// 샌드박스(튜토리얼) 종목 매도 손익은 계좌 집계(랭킹 score)에 반영하지 않는다(spec 033
-		// SANDBOX-EXCL-004). trade.realizedPnl은 원장 값이라 항상 채운다.
 		if (!sellTrade.getInstrument().isTutorialSample()) {
+			account.addCash(amount - fee);
+			// 샌드박스(튜토리얼) 종목 매도 손익은 계좌 집계(랭킹 score)에 반영하지 않는다(spec 033
+			// SANDBOX-EXCL-004) — 이 분기는 실제 종목이므로 그대로 반영한다.
 			account.addRealizedPnl(realizedPnl);
 		} else {
-			// 샌드박스 매도의 현금 입금도 같은 조건으로 별도 누적한다(spec 033 SANDBOX-EXCL-006).
+			// 샌드박스(튜토리얼) 종목 매도는 실제 Account.cashBalance를 증가시키지 않는다(047
+			// TUTORIAL-CASH-ISOL-003) — 대신 같은 사용자·시장의 튜토리얼 계좌 현금·realizedPnl을 같은
+			// 트랜잭션에서 함께 갱신한다.
+			TutorialAccount tutorialAccount = tutorialAccountService
+				.getOrCreateForUpdate(account.getUser().getId(), account.getMarket(), now);
+			tutorialAccount.addCash(amount - fee);
+			tutorialAccount.addRealizedPnl(realizedPnl);
+			// 샌드박스 매도의 현금 순변동도 매수와 동일하게 별도로 누적해 둔다(spec 033 SANDBOX-EXCL-006,
+			// 이 spec의 후속 작업(sandboxCashAdjustment 폐지)에서 제거될 예정).
 			account.addSandboxCashAdjustment(amount - fee);
 		}
 		return realizedPnl;

@@ -9,7 +9,7 @@
 - [x] 매수 경로 전환 — `OrderExecutionService.createBuyOrder`, `PracticeLimitOrderCreationService.createSessionBuyOrder`,
   `LimitOrderFillService.fillBuy`가 샌드박스 종목일 때 튜토리얼 계좌를 대상으로 하도록 수정(현금 부족 검증을
   `TUTORIAL_INSUFFICIENT_CASH`로 전환, TUTORIAL-CASH-ISOL-002·005) + 단위/슬라이스 테스트.
-- [ ] 매도 경로 전환 — `PortfolioSellService.finalizeSellRealizedPnl` 분기 추가(실제 계좌 vs 튜토리얼 계좌,
+- [x] 매도 경로 전환 — `PortfolioSellService.finalizeSellRealizedPnl` 분기 추가(실제 계좌 vs 튜토리얼 계좌,
   튜토리얼 계좌는 현금과 `realizedPnl`을 함께 갱신), `OrderExecutionService.createSellOrder` 인라인 분기
   (TUTORIAL-CASH-ISOL-003) + 단위 테스트. 이 변경만으로 지정가 매도 체결·재시작 보상매도·OCO 체결이 함께
   반영됨을 통합 테스트로 확인.

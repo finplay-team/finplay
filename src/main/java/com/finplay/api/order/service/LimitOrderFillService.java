@@ -170,7 +170,7 @@ public class LimitOrderFillService {
 		SellAllocationDto allocation = portfolioSellService.applySellTrade(holding, trade, quantity, now);
 
 		// 기존 시장가 매도(OrderExecutionService)와 동일한 실현손익 공식·반영을 공유 메서드로 재사용한다.
-		portfolioSellService.finalizeSellRealizedPnl(account, trade, amount, fee, allocation);
+		portfolioSellService.finalizeSellRealizedPnl(account, trade, amount, fee, allocation, now);
 
 		order.markFilled();
 		// 커밋 이후(after-commit)에만 랭킹에 반영되도록 이벤트만 발행한다 — 기존 시장가 매도와 동일 훅 재사용.

@@ -201,13 +201,24 @@ public class OrderExecutionService {
 			- (allocation.totalAllocatedCost() + allocation.totalAllocatedBuyFee());
 		trade.fillRealizedPnl(realizedPnl);
 
-		account.addCash(pricing.amount() - pricing.fee());
-		// 샌드박스(튜토리얼) 종목 매도 손익은 계좌 집계(랭킹 score)에 반영하지 않는다(spec 033
-		// SANDBOX-EXCL-004). trade.realizedPnl은 원장 값이라 항상 채운다.
+		// trade.realizedPnl(원장 값)은 033의 원칙대로 종목 종류와 무관하게 항상 채운다(위에서 이미 완료).
 		if (!instrument.isTutorialSample()) {
+			account.addCash(pricing.amount() - pricing.fee());
+			// 샌드박스(튜토리얼) 종목 매도 손익은 계좌 집계(랭킹 score)에 반영하지 않는다(spec 033
+			// SANDBOX-EXCL-004) — 이 분기는 실제 종목이므로 그대로 반영한다.
 			account.addRealizedPnl(realizedPnl);
 		} else {
-			// 샌드박스 매도의 현금 입금도 같은 조건으로 별도 누적한다(spec 033 SANDBOX-EXCL-006).
+			// 샌드박스(튜토리얼) 종목 매도는 실제 Account.cashBalance를 증가시키지 않는다(047
+			// TUTORIAL-CASH-ISOL-003) — 대신 같은 사용자·시장의 튜토리얼 계좌 현금·realizedPnl을 함께
+			// 갱신한다. 이 시장가 매도 경로는 PortfolioSellService.finalizeSellRealizedPnl을 거치지 않고
+			// 기존 동작·테스트 보존을 위해 인라인 계산을 유지하므로(위 설계 노트 4), 이 분기도 동일하게
+			// 인라인으로 유지한다.
+			TutorialAccount tutorialAccount = tutorialAccountService
+				.getOrCreateForUpdate(userId, toAccountMarket(request.market()), now);
+			tutorialAccount.addCash(pricing.amount() - pricing.fee());
+			tutorialAccount.addRealizedPnl(realizedPnl);
+			// 샌드박스 매도의 현금 순변동도 매수와 동일하게 별도로 누적해 둔다(spec 033 SANDBOX-EXCL-006,
+			// 이 spec의 후속 작업(sandboxCashAdjustment 폐지)에서 제거될 예정).
 			account.addSandboxCashAdjustment(pricing.amount() - pricing.fee());
 		}
 		// 커밋 이후(after-commit)에만 랭킹에 반영되도록 이벤트만 발행한다 — 손익값을 싣지 않고 이벤트 처리 시점에

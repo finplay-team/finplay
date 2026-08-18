@@ -140,7 +140,7 @@ public class PracticeRunRestartOrderService {
 
 		SellAllocationDto allocation = portfolioSellService.applySellTrade(
 			holding, trade, quantity, command.restartedAt());
-		portfolioSellService.finalizeSellRealizedPnl(account, trade, amount, fee, allocation);
+		portfolioSellService.finalizeSellRealizedPnl(account, trade, amount, fee, allocation, command.restartedAt());
 	}
 
 	private void validateInstrument(PracticeRunRestartCommand command, Instrument instrument) {
