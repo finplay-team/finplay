@@ -64,7 +64,7 @@
 
 - [ ] **6. 사건 노출** — `PracticeTutorialChartResponse`에 `scenarioStage`(act 단위)·`scenarioProgressing`·
   `causeStatus`·`revealedEvents` 추가, `GET /api/education/practice`에 `revealedEvents`·`priceAfterSell`
-  (대본 lookahead) 추가. `causeStatus`는 `REVEALED`·`NONE_KNOWN` 둘뿐이며 **미공개 사건은 `NONE_KNOWN`과
+  (대본 lookahead)와 **진입별 `entries` 배열**(SCENARIO-019b·021a — "안 팔았다면" 선의 재료) 추가. `causeStatus`는 `REVEALED`·`NONE_KNOWN` 둘뿐이며 **미공개 사건은 `NONE_KNOWN`과
   구분 불가능해야 한다**(SCENARIO-015·016). `docs/api-contracts.md`를 **같은 커밋에서** 갱신한다.
   **테스트**: `@WebMvcTest` — 공개 시점 이전 응답에 문안·시각·개수·자리표시자 어떤 형태로도 없음.
 

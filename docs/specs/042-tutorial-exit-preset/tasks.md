@@ -74,7 +74,7 @@
   (`STOP_LOSS`\|`TAKE_PROFIT`\|`MANUAL`) 추가하고, **진입별 대조를 배열로 제공**한다(041 SCENARIO-019b).
   현재 `PracticeAttemptEvidenceService`가 `tradeSummary.firstSellTrade()` 하나만 쓰므로, 재진입하면 완료
   화면에 2막 손절만 뜨고 3막 익절이 사라진다. `exit_plans.triggered_order_id` 역참조로 판정한다.
-  나머지 대조 값(`sellPrice`·`realizedPnl`·`returnRate`·`sellVerdict`)은 이슈 #421로 이미 있다.
+  나머지 대조 값(`sellPrice`·`realizedPnl`·`returnRate`·`sellVerdict`)은 이슈 #421로 이미 있다. 이 배열이 041의 "안 팔았다면" 선 재료도 겸한다.
   `docs/prd.md` §3에 `EXITPRESET-001~020` 행 추가.
 
 > **API 문서는 각 항목이 자기 커밋에서 갱신한다**(CLAUDE.md 규칙 7). 3번은 새 엔드포인트를 만들므로
