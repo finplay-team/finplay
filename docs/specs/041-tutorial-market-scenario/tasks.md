@@ -18,6 +18,7 @@
 | 5 | 041 | 4·5번 (진행 계산·tick 통합) | tick 코드를 먼저 자리잡게 한다 |
 | 6 | 042 | 3~7번 (선택 API·자동 예약·tick OCO 정산) | 5번이 만든 tick 위에 얹는다 |
 | 7 | 041 | 6·7번 (사건 노출·통합 시나리오·문서) | 마지막에 전체를 관통해 확인한다 |
+| 8 | 042 | 8번 (재진입 재예약 통합 테스트) | `SNAP-2`(2번)와 042 5~7번이 모두 나간 뒤에야 통과한다 |
 
 **1~2번을 맨 앞으로 뺀 것이 plan에서 바뀐 점이다.** plan은 042의 마지막 작업으로 뒀는데, 그러면
 "041의 재진입이 042의 2차 배포보다 먼저 나가면 깨진다"는 순서 의존을 사람이 계속 챙겨야 한다. 두 마이그
@@ -64,12 +65,12 @@
 
 - [ ] **6. 사건 노출** — `PracticeTutorialChartResponse`에 `scenarioStage`(act 단위)·`scenarioProgressing`·
   `causeStatus`·`revealedEvents` 추가, `GET /api/education/practice`에 `revealedEvents`·`priceAfterSell`
-  (대본 lookahead)와 **진입별 `entries` 배열**(SCENARIO-019b·021a — "안 팔았다면" 선의 재료) 추가. `causeStatus`는 `REVEALED`·`NONE_KNOWN` 둘뿐이며 **미공개 사건은 `NONE_KNOWN`과
+  (대본 lookahead)와 **진입별 `entries` 배열** 추가 — 각 항목에 `unrealizedPnlIfHeld`("안 팔았다면" 평가손익)를 **서버가 계산해** 담는다. 공식은 `PostSellArithmetic`을 재사용하고 매도 수수료를 뺀 기준으로 맞춘다(SCENARIO-019b·021a). `causeStatus`는 `REVEALED`·`NONE_KNOWN` 둘뿐이며 **미공개 사건은 `NONE_KNOWN`과
   구분 불가능해야 한다**(SCENARIO-015·016). `docs/api-contracts.md`를 **같은 커밋에서** 갱신한다.
   **테스트**: `@WebMvcTest` — 공개 시점 이전 응답에 문안·시각·개수·자리표시자 어떤 형태로도 없음.
 
-- [ ] **7. 통합 시나리오와 문서** — Testcontainers 통합 테스트로 **0막 대기 → 매수 → 1막 → 2막 손절 →
-  2막 손절 → **확정 하락 관전** → 재진입 대기 → 재매수 → 3막 익절 → 4막 관전 → 복기 → 완료** 완주.
+- [ ] **7. 통합 시나리오와 문서** — Testcontainers 통합 테스트로 **0막 대기 → 매수 → 1막 →
+  2막 손절 → 확정 하락 관전 → 재진입 대기 → 재매수 → 3막 익절 → 4막 관전 → 복기 → 완료** 완주.
   `CAUTIOUS`가 루머에서, `BALANCED`가 확정에서 손절되는 분기와 **재매수 후에도 관찰 evidence가 유지되는
   것**을 함께 확인. `docs/api-routes.md` 최종 확인, `docs/prd.md` §3에 `SCENARIO-001~024` 행 추가 + **SANDBOX 행의 5분 만료
   서술 갱신**(SCENARIO-014가 폐지한다).
