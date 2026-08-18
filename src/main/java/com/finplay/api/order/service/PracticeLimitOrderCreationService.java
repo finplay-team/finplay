@@ -2,7 +2,9 @@
 package com.finplay.api.order.service;
 
 import com.finplay.api.account.domain.Account;
+import com.finplay.api.account.domain.TutorialAccount;
 import com.finplay.api.account.service.AccountService;
+import com.finplay.api.account.service.TutorialAccountService;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.service.UserQueryService;
 import com.finplay.api.common.BusinessException;
@@ -32,6 +34,7 @@ public class PracticeLimitOrderCreationService {
 
 	private final UserQueryService userQueryService;
 	private final AccountService accountService;
+	private final TutorialAccountService tutorialAccountService;
 	private final InstrumentService instrumentService;
 	private final OrderRepository orderRepository;
 	private final PracticeOrderAttributionPort practiceOrderAttributionPort;
@@ -41,12 +44,14 @@ public class PracticeLimitOrderCreationService {
 	public PracticeLimitOrderCreationService(
 		UserQueryService userQueryService,
 		AccountService accountService,
+		TutorialAccountService tutorialAccountService,
 		InstrumentService instrumentService,
 		OrderRepository orderRepository,
 		PracticeOrderAttributionPort practiceOrderAttributionPort,
 		Clock clock) {
 		this.userQueryService = userQueryService;
 		this.accountService = accountService;
+		this.tutorialAccountService = tutorialAccountService;
 		this.instrumentService = instrumentService;
 		this.orderRepository = orderRepository;
 		this.practiceOrderAttributionPort = practiceOrderAttributionPort;
@@ -70,15 +75,22 @@ public class PracticeLimitOrderCreationService {
 			throw new BusinessException(ErrorCode.PRACTICE_LIMIT_ORDER_ALREADY_PENDING);
 		}
 
+		// Order·Trade의 계좌 FK는 여전히 실제 Account를 가리켜야 하므로 조회는 유지한다(plan.md "호출부
+		// 변경 지점" 3번 — 다만 현금 검증·예약은 더 이상 이 account를 대상으로 하지 않는다).
 		Account account = accountService.getAccountForUpdate(userId, com.finplay.api.account.domain.Market.CRYPTO);
 		long cashRequired = LimitOrderFeeCalculator.calculate(quantity, limitPrice).total();
-		if (account.getAvailableCash() < cashRequired) {
-			throw new BusinessException(ErrorCode.INSUFFICIENT_CASH);
+
+		LocalDateTime now = LocalDateTime.now(clock);
+		// 이 엔드포인트는 항상 튜토리얼(교육) 전용이므로 instrument.isTutorialSample() 분기 없이 무조건
+		// 튜토리얼 계좌의 현금을 검증·예약한다(047 TUTORIAL-CASH-ISOL-002·005, 이슈 #450).
+		TutorialAccount tutorialAccount = tutorialAccountService.getOrCreateForUpdate(
+			userId, com.finplay.api.account.domain.Market.CRYPTO, now);
+		if (tutorialAccount.getAvailableCash() < cashRequired) {
+			throw new BusinessException(ErrorCode.TUTORIAL_INSUFFICIENT_CASH);
 		}
-		account.reserveCash(cashRequired);
+		tutorialAccount.reserveCash(cashRequired);
 
 		User user = userQueryService.getUser(userId);
-		LocalDateTime now = LocalDateTime.now(clock);
 		String idempotencyKey = "practice:%d:%s".formatted(practicePriceSessionId, UUID.randomUUID());
 		String requestHash = calculateRequestHash(practicePriceSessionId, instrumentId, quantity, limitPrice);
 

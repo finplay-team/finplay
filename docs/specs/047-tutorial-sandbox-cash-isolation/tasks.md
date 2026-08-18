@@ -6,7 +6,7 @@
   `common.ErrorCode`에 `TUTORIAL_INSUFFICIENT_CASH` 추가 + `@DataJpaTest`.
 - [x] `TutorialAccountService`(get-or-create, reset — 현금·예약 현금·`realizedPnl` 동시 초기화) + 단위
   테스트. `PracticeAttemptService.ensureAttempt`에 get-or-create 연결.
-- [ ] 매수 경로 전환 — `OrderExecutionService.createBuyOrder`, `PracticeLimitOrderCreationService.createSessionBuyOrder`,
+- [x] 매수 경로 전환 — `OrderExecutionService.createBuyOrder`, `PracticeLimitOrderCreationService.createSessionBuyOrder`,
   `LimitOrderFillService.fillBuy`가 샌드박스 종목일 때 튜토리얼 계좌를 대상으로 하도록 수정(현금 부족 검증을
   `TUTORIAL_INSUFFICIENT_CASH`로 전환, TUTORIAL-CASH-ISOL-002·005) + 단위/슬라이스 테스트.
 - [ ] 매도 경로 전환 — `PortfolioSellService.finalizeSellRealizedPnl` 분기 추가(실제 계좌 vs 튜토리얼 계좌,

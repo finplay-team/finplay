@@ -2,8 +2,10 @@
 package com.finplay.api.order.service;
 
 import com.finplay.api.account.domain.Account;
+import com.finplay.api.account.domain.TutorialAccount;
 import com.finplay.api.account.event.RealizedPnlUpdatedEvent;
 import com.finplay.api.account.service.AccountService;
+import com.finplay.api.account.service.TutorialAccountService;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.service.UserQueryService;
 import com.finplay.api.common.BusinessException;
@@ -45,6 +47,7 @@ public class OrderExecutionService {
 
 	private final UserQueryService userQueryService;
 	private final AccountService accountService;
+	private final TutorialAccountService tutorialAccountService;
 	private final InstrumentService instrumentService;
 	private final PriceQueryService priceQueryService;
 	private final PortfolioBuyService portfolioBuyService;
@@ -59,6 +62,7 @@ public class OrderExecutionService {
 	public OrderExecutionService(
 		UserQueryService userQueryService,
 		AccountService accountService,
+		TutorialAccountService tutorialAccountService,
 		InstrumentService instrumentService,
 		PriceQueryService priceQueryService,
 		PortfolioBuyService portfolioBuyService,
@@ -70,6 +74,7 @@ public class OrderExecutionService {
 		ApplicationEventPublisher eventPublisher) {
 		this.userQueryService = userQueryService;
 		this.accountService = accountService;
+		this.tutorialAccountService = tutorialAccountService;
 		this.instrumentService = instrumentService;
 		this.priceQueryService = priceQueryService;
 		this.portfolioBuyService = portfolioBuyService;
@@ -111,12 +116,25 @@ public class OrderExecutionService {
 		// 설계 노트 2: 매수 최소구현 견본 — marketStatus·가격·세션 단일 관측→최소금액→amount/fee 계산(공유)
 		OrderPricing pricing = priceOrder(request.market(), instrument, quantity, practiceAttribution);
 		long cashRequired = pricing.amount() + pricing.fee();
-		if (account.getAvailableCash() < cashRequired) {
+
+		LocalDateTime now = LocalDateTime.now(clock);
+
+		// 샌드박스(튜토리얼) 종목 매수는 실제 Account 대신 같은 사용자·시장의 튜토리얼 계좌 현금을
+		// 검증·차감한다(047 TUTORIAL-CASH-ISOL-002·005, 이슈 #450 — 실제 계좌 잔고와 무관하게 거부돼야 한다).
+		TutorialAccount tutorialAccount = instrument.isTutorialSample()
+			? tutorialAccountService.getOrCreateForUpdate(userId, toAccountMarket(request.market()), now)
+			: null;
+		if (tutorialAccount != null) {
+			if (tutorialAccount.getAvailableCash() < cashRequired) {
+				throw new BusinessException(ErrorCode.TUTORIAL_INSUFFICIENT_CASH);
+			}
+		} else if (account.getAvailableCash() < cashRequired) {
 			throw new BusinessException(ErrorCode.INSUFFICIENT_CASH);
 		}
 
+		// 현금 검증(실제·튜토리얼 계좌 공통)을 모두 통과한 뒤에만 사용자 조회를 한다 — 실패 시 무흔적
+		// 원칙(기존 계약)을 지키기 위해, 튜토리얼 분기를 추가하며 옮겨졌던 호출을 원래 위치로 되돌린다.
 		User user = userQueryService.getUser(userId);
-		LocalDateTime now = LocalDateTime.now(clock);
 
 		Order order = createOrder(
 			user, account, instrument, request, quantity, practiceAttribution, idempotencyKey, requestHash, now);
@@ -128,11 +146,13 @@ public class OrderExecutionService {
 			null, now, now);
 		tradeRepository.save(trade);
 
-		account.deductCash(cashRequired);
-		// 샌드박스(튜토리얼) 종목 매수의 현금 순변동은 사용자에게 보이는 평가자산에서 나중에 제외할 수
-		// 있도록 별도로 누적해 둔다(spec 033 SANDBOX-EXCL-006).
-		if (instrument.isTutorialSample()) {
+		if (tutorialAccount != null) {
+			tutorialAccount.deductCash(cashRequired);
+			// 샌드박스(튜토리얼) 종목 매수의 현금 순변동은 사용자에게 보이는 평가자산에서 나중에 제외할 수
+			// 있도록 별도로 누적해 둔다(spec 033 SANDBOX-EXCL-006, 이 spec의 후속 작업에서 폐지 예정).
 			account.addSandboxCashAdjustment(-cashRequired);
+		} else {
+			account.deductCash(cashRequired);
 		}
 
 		portfolioBuyService.applyBuyTrade(account, instrument, trade, quantity, pricing.price(), pricing.fee(), now);
@@ -268,9 +288,13 @@ public class OrderExecutionService {
 	// 시장가 매수·매도 모두 계좌를 잠가 조회한다(015-limit-order 항목5, 이슈 #224) — 지정가 체결
 	// (LimitOrderFillService)과 account→holding 잠금 순서를 맞춰 ABBA 데드락을 막는다.
 	private Account getAccountForUpdateFor(Long userId, Market market) {
-		com.finplay.api.account.domain.Market accountMarket = com.finplay.api.account.domain.Market
-			.valueOf(market.name());
-		return accountService.getAccountForUpdate(userId, accountMarket);
+		return accountService.getAccountForUpdate(userId, toAccountMarket(market));
+	}
+
+	// 계좌 조회 시에만 order.market.domain.Market ↔ account.domain.Market을 값 기반으로 변환한다
+	// (047 TUTORIAL-CASH-ISOL-002 — 튜토리얼 계좌 조회에도 동일한 변환이 필요해 헬퍼로 추출).
+	private com.finplay.api.account.domain.Market toAccountMarket(Market market) {
+		return com.finplay.api.account.domain.Market.valueOf(market.name());
 	}
 
 	// 설계 노트 1: getOrderExecutionPrice 한 관측에서 marketStatus·가격·세션을 확정한 뒤 최소주문금액 검증과
