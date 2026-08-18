@@ -80,7 +80,8 @@ class TutorialCashIsolationFullCycleIntegrationTest {
 			jdbcTemplate.update("DELETE FROM practice_market_observations WHERE user_id = ?", userId);
 			jdbcTemplate.update(
 				"DELETE FROM practice_risk_snapshots WHERE attempt_id IN "
-					+ "(SELECT id FROM practice_attempts WHERE user_id = ?)", userId);
+					+ "(SELECT id FROM practice_attempts WHERE user_id = ?)",
+				userId);
 			jdbcTemplate.update("DELETE FROM tutorial_accounts WHERE user_id = ?", userId);
 		}
 		for (Long userId : userIds) {
