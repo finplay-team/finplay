@@ -17,6 +17,7 @@
 - `CommunityPost.getAuthor()`는 `User` 엔티티(내부 PK 보유)를 반환하지만 `CommunityPostResponse`·`PostCommentResponse`는 `authorNickname`(String)만 노출하고 `userId`를 응답에 싣지 않는다(랭킹과 동일한 최소 노출 원칙, 014 plan.md 33행). 배지 요약을 응답에 실으려면 서비스 계층에서 `author.getId()`로 배치 조회한 뒤 DTO에 반영해야 한다 — 컨트롤러·응답 계약에는 `userId`를 노출하지 않는다.
 - "배웠어요" 반응·배지 저장 테이블은 존재하지 않는다(둘 다 신규).
 - Flyway 최신 버전은 `V38`(`ls src/main/resources/db/migration` 확인) — 다음 버전은 `V39`.
+  - **정정(2026-08-18)**: 작성 후 PR #442(`V41`)가 먼저 `dev`에 머지돼 이 spec의 마이그레이션은 `V43`·`V44`로 올렸다. CI의 마이그레이션 번호 역전 검사가 base(`origin/dev`)의 최고 번호 이하를 막는다. `V42`를 건너뛴 것은 열려 있는 PR #446(`feat/shared-trade-card`)이 이미 그 번호를 쓰고 있어서다 — **번호는 로컬 `dev`만 보지 말고 열려 있는 모든 PR 브랜치를 확인하고 정한다.**
 
 ## API 설계
 
@@ -45,7 +46,7 @@
 
 ## 데이터 모델
 
-### `V39__create_community_post_learned_reactions.sql`
+### `V43__create_community_post_learned_reactions.sql`
 
 ```sql
 -- 커뮤니티 게시물에 대한 "배웠어요" 반응(회원당 게시물 1회)을 저장한다.
@@ -66,7 +67,7 @@ CREATE TABLE community_post_learned_reactions (
 - `post_id`는 `ON DELETE CASCADE` — 게시물 삭제 시 반응도 함께 제거한다(COM-006 이미지 삭제와 동일한 "고아 데이터 방지" 원칙).
 - `uk_learned_reactions_post_user`가 "회원당 게시물 1회" 제약을 DB 레벨에서 강제한다. 취소(DELETE)는 이 행을 실제로 지운다(soft delete 불필요 — tombstone처럼 원문 보존이 필요한 대상이 아니다).
 
-### `V40__create_member_badges.sql`
+### `V44__create_member_badges.sql`
 
 ```sql
 -- 회원별 배지 카테고리마다 현재 달성한 최고 등급 하나만 저장한다(하락 없음, 이력 없음).
