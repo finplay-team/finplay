@@ -37,3 +37,34 @@ SET a.cash_balance = GREATEST(
     ),
     a.sandbox_cash_adjustment = 0
 WHERE a.sandbox_cash_adjustment <> 0;
+
+-- 배포 시점에 이미 존재하는 샌드박스 지정가 매수 PENDING 주문을 취소하고 실제 계좌 예약을 반환한다(PR #452
+-- 리뷰 권장 1번). 047 이전 코드는 이런 주문의 현금을 실제 Account에 예약해 뒀는데, 047 이후 체결·취소·수정
+-- 경로(LimitOrderFillService·LimitOrderCancelService·LimitOrderModifyService)는 샌드박스 종목이면 항상
+-- 튜토리얼 계좌(이 시점 예약 0원)를 대상으로 하므로, 정리하지 않으면 그 주문은 영구히 체결도 취소도 안 되고
+-- 실제 계좌 예약도 영구히 묶인다(TutorialLegacyPendingOrderPostMigrationIntegrationTest로 재현 확인). 매도
+-- PENDING은 현금이 아니라 holdings.reserved_quantity를 쓰고 이 spec이 건드리지 않는 영역이라 대상이 아니다.
+-- 예약액 계산은 LimitOrderFeeCalculator.calculate와 동일한 공식이다: FLOOR(수량×지정가) +
+-- FLOOR(FLOOR(수량×지정가)×0.0005). 해당 행이 없으면 두 UPDATE 모두 자연히 0건 적용된다(멱등).
+UPDATE accounts a
+JOIN (
+    SELECT o.account_id AS account_id,
+           SUM(FLOOR(o.quantity * o.limit_price)
+               + FLOOR(FLOOR(o.quantity * o.limit_price) * 0.0005)) AS total_reserved
+    FROM orders o
+    JOIN instruments i ON i.id = o.instrument_id
+    WHERE o.status = 'PENDING'
+      AND o.side = 'BUY'
+      AND o.order_type = 'LIMIT'
+      AND i.is_tutorial_sample = TRUE
+    GROUP BY o.account_id
+) legacy ON legacy.account_id = a.id
+SET a.reserved_cash = a.reserved_cash - legacy.total_reserved;
+
+UPDATE orders o
+JOIN instruments i ON i.id = o.instrument_id
+SET o.status = 'CANCELLED'
+WHERE o.status = 'PENDING'
+  AND o.side = 'BUY'
+  AND o.order_type = 'LIMIT'
+  AND i.is_tutorial_sample = TRUE;

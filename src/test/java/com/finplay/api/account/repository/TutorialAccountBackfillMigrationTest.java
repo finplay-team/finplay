@@ -12,12 +12,20 @@ import com.finplay.api.account.domain.Account;
 import com.finplay.api.account.domain.Market;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
+import com.finplay.api.market.domain.Instrument;
+import com.finplay.api.market.repository.InstrumentRepository;
+import com.finplay.api.order.domain.Order;
+import com.finplay.api.order.domain.OrderSide;
+import com.finplay.api.order.domain.OrderStatus;
+import com.finplay.api.order.repository.OrderRepository;
 import jakarta.persistence.EntityManager;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,6 +34,7 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
 import org.springframework.context.annotation.Import;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.util.StreamUtils;
 
 @DataJpaTest
@@ -41,6 +50,12 @@ class TutorialAccountBackfillMigrationTest {
 
 	@Autowired
 	private AccountRepository accountRepository;
+
+	@Autowired
+	private InstrumentRepository instrumentRepository;
+
+	@Autowired
+	private OrderRepository orderRepository;
 
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
@@ -176,6 +191,55 @@ class TutorialAccountBackfillMigrationTest {
 			"INSERT INTO practice_completions (user_id, tutorial_key, reflection_id, completed_at) "
 				+ "VALUES (?, ?, ?, ?)",
 			user.getId(), tutorialKey, reflectionId, NOW);
+	}
+
+	@Test
+	@DisplayName("배포 시점에 이미 존재하는 샌드박스 지정가 매수 PENDING 주문은 취소되고 실제 계좌 예약이 반환된다")
+	void backfillCancelsLegacyPendingSandboxBuyOrdersAndReturnsRealAccountReservation() {
+		// PR #452 리뷰 권장 1번: 047 이전 코드가 실제 계좌에 현금을 예약해 만든 PENDING 지정가 매수를 그대로
+		// 재현한다 — 정리하지 않으면 TutorialLegacyPendingOrderPostMigrationIntegrationTest가 재현한 대로
+		// 체결·취소 모두 IllegalStateException으로 영구히 막힌다.
+		User user = userRepository.saveAndFlush(
+			User.create("v46-backfill-legacy-order@finplay.com", "hash", "v46legacy", NOW));
+		Account account = accountRepository.saveAndFlush(Account.create(user, Market.CRYPTO, NOW));
+		Instrument instrument = createTutorialSampleCryptoInstrument("v46-legacy-buy");
+		account.reserveCash(100_050L);
+		accountRepository.saveAndFlush(account);
+		Order legacyBuy = orderRepository.saveAndFlush(Order.createLimitPending(
+			user, account, instrument, OrderSide.BUY, new BigDecimal("0.1"), new BigDecimal("1000000"),
+			"v46-legacy-buy-" + UUID.randomUUID(), "a".repeat(64), NOW));
+
+		runBackfillUpdate();
+
+		assertThat(orderRepository.findById(legacyBuy.getId()).orElseThrow().getStatus())
+			.isEqualTo(OrderStatus.CANCELLED);
+		assertThat(accountRepository.findById(account.getId()).orElseThrow().getReservedCash()).isZero();
+	}
+
+	@Test
+	@DisplayName("샌드박스 지정가 매도 PENDING 주문은 현금 예약이 아니라 holdings.reservedQuantity를 쓰므로 백필 대상이 아니다")
+	void backfillDoesNotTouchPendingSandboxSellOrders() {
+		User user = userRepository.saveAndFlush(
+			User.create("v46-backfill-legacy-sell@finplay.com", "hash", "v46legacysell", NOW));
+		Account account = accountRepository.saveAndFlush(Account.create(user, Market.CRYPTO, NOW));
+		Instrument instrument = createTutorialSampleCryptoInstrument("v46-legacy-sell");
+		Order legacySell = orderRepository.saveAndFlush(Order.createLimitPending(
+			user, account, instrument, OrderSide.SELL, new BigDecimal("0.1"), new BigDecimal("1000000"),
+			"v46-legacy-sell-" + UUID.randomUUID(), "b".repeat(64), NOW));
+
+		runBackfillUpdate();
+
+		assertThat(orderRepository.findById(legacySell.getId()).orElseThrow().getStatus())
+			.isEqualTo(OrderStatus.PENDING);
+		assertThat(accountRepository.findById(account.getId()).orElseThrow().getReservedCash()).isZero();
+	}
+
+	private Instrument createTutorialSampleCryptoInstrument(String scenario) {
+		Instrument instrument = Instrument.create(
+			com.finplay.api.market.domain.Market.CRYPTO, "T" + UUID.randomUUID().toString().substring(0, 8),
+			scenario, BigDecimal.ONE, 0L, true, NOW);
+		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
+		return instrumentRepository.saveAndFlush(instrument);
 	}
 
 	@Test
