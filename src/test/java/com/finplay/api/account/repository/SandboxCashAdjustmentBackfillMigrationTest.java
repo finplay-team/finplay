@@ -115,6 +115,13 @@ class SandboxCashAdjustmentBackfillMigrationTest {
 		entityManager.clear();
 	}
 
+	// Account 엔티티는 더 이상 sandbox_cash_adjustment를 매핑하지 않으므로(#459, PR-A: 엔티티 매핑 제거),
+	// 컬럼이 아직 남아 있는 이 단계에서는 백필 결과를 raw JDBC로 직접 읽는다.
+	private long readSandboxCashAdjustment(Long accountId) {
+		return jdbcTemplate.queryForObject(
+			"SELECT sandbox_cash_adjustment FROM accounts WHERE id = ?", Long.class, accountId);
+	}
+
 	private List<String> readBackfillUpdateStatements() {
 		try {
 			String sql = StreamUtils.copyToString(
@@ -185,7 +192,7 @@ class SandboxCashAdjustmentBackfillMigrationTest {
 		runBackfillUpdates();
 
 		Account result = accountRepository.findById(account.getId()).orElseThrow();
-		assertThat(result.getSandboxCashAdjustment()).isEqualTo(-10_010L + 11_988L + 5_000_000L);
+		assertThat(readSandboxCashAdjustment(account.getId())).isEqualTo(-10_010L + 11_988L + 5_000_000L);
 		assertThat(result.getRealizedPnl()).isEqualTo(5_000L);
 	}
 
@@ -203,7 +210,7 @@ class SandboxCashAdjustmentBackfillMigrationTest {
 		runBackfillUpdates();
 
 		Account result = accountRepository.findById(account.getId()).orElseThrow();
-		assertThat(result.getSandboxCashAdjustment()).isZero();
+		assertThat(readSandboxCashAdjustment(account.getId())).isZero();
 		assertThat(result.getRealizedPnl()).isEqualTo(7_000L);
 	}
 
@@ -223,13 +230,13 @@ class SandboxCashAdjustmentBackfillMigrationTest {
 
 		runBackfillUpdates();
 		Account firstRun = accountRepository.findById(account.getId()).orElseThrow();
-		long firstAdjustment = firstRun.getSandboxCashAdjustment();
+		long firstAdjustment = readSandboxCashAdjustment(account.getId());
 		long firstRealizedPnl = firstRun.getRealizedPnl();
 
 		runBackfillUpdates();
 		Account secondRun = accountRepository.findById(account.getId()).orElseThrow();
 
-		assertThat(secondRun.getSandboxCashAdjustment()).isEqualTo(firstAdjustment);
+		assertThat(readSandboxCashAdjustment(account.getId())).isEqualTo(firstAdjustment);
 		assertThat(secondRun.getRealizedPnl()).isEqualTo(firstRealizedPnl);
 	}
 }

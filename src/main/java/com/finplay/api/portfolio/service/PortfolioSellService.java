@@ -90,8 +90,6 @@ public class PortfolioSellService {
 				.getOrCreateForUpdate(account.getUser().getId(), account.getMarket(), now);
 			tutorialAccount.addCash(amount - fee);
 			tutorialAccount.addRealizedPnl(realizedPnl);
-			// 047 TUTORIAL-CASH-ISOL-003·007: 샌드박스 매도는 튜토리얼 계좌 현금·realizedPnl만 갱신한다 —
-			// 실제 Account.cashBalance는 변하지 않으므로 sandboxCashAdjustment 누적은 더 이상 필요하지 않다.
 		}
 		return realizedPnl;
 	}

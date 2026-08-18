@@ -175,21 +175,6 @@ class PortfolioSellServiceTest {
 		// 튜토리얼 계좌만 매도 대금·실현손익을 반영한다.
 		assertThat(tutorialAccount.getCashBalance()).isEqualTo(tutorialCashBeforeSell + 1500L - 4L);
 		assertThat(tutorialAccount.getRealizedPnl()).isEqualTo(466L);
-		// spec 047 TUTORIAL-CASH-ISOL-007: sandboxCashAdjustment 누적 호출부가 폐지되어 더 이상 쌓이지 않는다.
-		assertThat(account.getSandboxCashAdjustment()).isEqualTo(0L);
-	}
-
-	@Test
-	void finalizeSellRealizedPnlDoesNotAccumulateSandboxCashAdjustmentWhenInstrumentIsReal() {
-		Account account = testAccount();
-		Instrument instrument = testInstrument();
-		Trade sellTrade = testTrade(account, instrument, OrderSide.SELL, new BigDecimal("150"),
-			new BigDecimal("10"), 1500L, 4L, NOW);
-		SellAllocationDto allocation = new SellAllocationDto(1000L, 30L);
-
-		service.finalizeSellRealizedPnl(account, sellTrade, 1500L, 4L, allocation, NOW);
-
-		assertThat(account.getSandboxCashAdjustment()).isEqualTo(0L);
 	}
 
 	@Test

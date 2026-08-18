@@ -285,37 +285,8 @@ class AccountServiceTest {
 		assertThat(result.realizedPnl()).isZero();
 	}
 
-	// spec 047 TUTORIAL-CASH-ISOL-007(SANDBOX-EXCL-007 대체): totalValue 공식은 sandboxCashAdjustment를
-	// 더 이상 빼지 않는다. sandboxCashAdjustment 컬럼 자체는 물리적으로 제거되지 않았으므로(이 spec의 범위
-	// 밖), 컬럼에 잔여값이 남아 있어도 totalValue가 이를 무시하고 "현금 + 보유종목 평가금액"만으로
-	// 계산되는지 직접 검증한다.
 	@Test
-	void getAccountSummaryIgnoresSandboxCashAdjustmentEvenWhenColumnHasLeftoverValue() {
-		AccountRepository accountRepository = mock(AccountRepository.class);
-		HoldingValuationService holdingValuationService = mock(HoldingValuationService.class);
-		Clock fixedClock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
-		AccountService accountService = new AccountService(accountRepository, holdingValuationService, fixedClock);
-		User user = User.create("user@finplay.com", "password-hash", "finplayer",
-			LocalDateTime.ofInstant(FIXED_INSTANT, ZoneOffset.UTC));
-		Account account = Account.create(user, Market.STOCK,
-			LocalDateTime.ofInstant(FIXED_INSTANT, ZoneOffset.UTC));
-		account.addSandboxCashAdjustment(5_000_000L);
-		when(accountRepository.findByUserIdAndMarket(1L, Market.STOCK)).thenReturn(Optional.of(account));
-		when(holdingValuationService.evaluateActiveHoldingsForAccount(any())).thenReturn(List.of());
-
-		AccountSummaryResponse result = accountService.getAccountSummary(1L, Market.STOCK);
-
-		assertThat(result.cashBalance()).isEqualTo(10_000_000L);
-		assertThat(result.holdingsValue()).isZero();
-		// totalValue = cashBalance + holdingsValue = 10,000,000 (sandboxCashAdjustment 5,000,000은 무시된다)
-		assertThat(result.totalValue()).isEqualTo(10_000_000L);
-		assertThat(result.realizedPnl()).isZero();
-		assertThat(result.unrealizedPnl()).isZero();
-	}
-
-	// SANDBOX-EXCL-007 회귀: sandboxCashAdjustment가 0이면 이 spec 이전과 결과가 완전히 같아야 한다.
-	@Test
-	void getAccountSummaryMatchesPreExistingBehaviorWhenSandboxCashAdjustmentIsZero() {
+	void getAccountSummaryComputesTotalValueAsCashPlusHoldingsValue() {
 		AccountRepository accountRepository = mock(AccountRepository.class);
 		HoldingValuationService holdingValuationService = mock(HoldingValuationService.class);
 		Clock fixedClock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);

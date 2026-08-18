@@ -73,6 +73,18 @@ class TutorialAccountBackfillMigrationTest {
 		entityManager.clear();
 	}
 
+	// Account 엔티티는 더 이상 sandbox_cash_adjustment를 매핑하지 않으므로(#459, PR-A: 엔티티 매핑 제거),
+	// 컬럼이 아직 남아 있는 이 단계에서는 백필 이전 오염 상태를 흉내내거나 백필 결과를 확인할 때 raw JDBC로
+	// 직접 그 컬럼을 다룬다.
+	private void setSandboxCashAdjustment(Long accountId, long amount) {
+		jdbcTemplate.update("UPDATE accounts SET sandbox_cash_adjustment = ? WHERE id = ?", amount, accountId);
+	}
+
+	private long readSandboxCashAdjustment(Long accountId) {
+		return jdbcTemplate.queryForObject(
+			"SELECT sandbox_cash_adjustment FROM accounts WHERE id = ?", Long.class, accountId);
+	}
+
 	private List<String> readBackfillUpdateStatements() {
 		try {
 			String sql = StreamUtils.copyToString(
@@ -99,15 +111,15 @@ class TutorialAccountBackfillMigrationTest {
 		User user = userRepository.saveAndFlush(
 			User.create("v46-backfill-contaminated@finplay.com", "hash", "v46contam", NOW));
 		Account account = accountRepository.saveAndFlush(Account.create(user, Market.STOCK, NOW));
-		account.addSandboxCashAdjustment(1_988L);
 		account.addCash(1_988L);
 		accountRepository.saveAndFlush(account);
+		setSandboxCashAdjustment(account.getId(), 1_988L);
 
 		runBackfillUpdate();
 
 		Account result = accountRepository.findById(account.getId()).orElseThrow();
 		assertThat(result.getCashBalance()).isEqualTo(10_000_000L);
-		assertThat(result.getSandboxCashAdjustment()).isZero();
+		assertThat(readSandboxCashAdjustment(account.getId())).isZero();
 	}
 
 	@Test
@@ -123,7 +135,7 @@ class TutorialAccountBackfillMigrationTest {
 
 		Account result = accountRepository.findById(account.getId()).orElseThrow();
 		assertThat(result.getCashBalance()).isEqualTo(8_000_000L);
-		assertThat(result.getSandboxCashAdjustment()).isZero();
+		assertThat(readSandboxCashAdjustment(account.getId())).isZero();
 	}
 
 	@Test
@@ -137,16 +149,16 @@ class TutorialAccountBackfillMigrationTest {
 			User.create("v46-backfill-reward@finplay.com", "hash", "v46reward", NOW));
 		Account account = accountRepository.saveAndFlush(Account.create(user, Market.STOCK, NOW));
 		account.addCash(5_000_000L);
-		account.addSandboxCashAdjustment(5_000_000L);
 		account.deductCash(12_000_000L);
 		accountRepository.saveAndFlush(account);
+		setSandboxCashAdjustment(account.getId(), 5_000_000L);
 		insertStockCompletionRecord(account, user, "INVESTMENT_PRACTICE_V1");
 
 		runBackfillUpdate();
 
 		Account result = accountRepository.findById(account.getId()).orElseThrow();
 		assertThat(result.getCashBalance()).isEqualTo(3_000_000L);
-		assertThat(result.getSandboxCashAdjustment()).isZero();
+		assertThat(readSandboxCashAdjustment(account.getId())).isZero();
 	}
 
 	@Test
@@ -157,15 +169,15 @@ class TutorialAccountBackfillMigrationTest {
 		Account account = accountRepository.saveAndFlush(Account.create(user, Market.STOCK, NOW));
 		// 완료 기록 없이(reward_component=0) adjustment가 남은 현금보다 크게 만든다 — 방어적 GREATEST(0, ...)
 		// 없이는 8,000,000 - 9,000,000 = -1,000,000이 된다.
-		account.addSandboxCashAdjustment(9_000_000L);
 		account.deductCash(2_000_000L);
 		accountRepository.saveAndFlush(account);
+		setSandboxCashAdjustment(account.getId(), 9_000_000L);
 
 		runBackfillUpdate();
 
 		Account result = accountRepository.findById(account.getId()).orElseThrow();
 		assertThat(result.getCashBalance()).isZero();
-		assertThat(result.getSandboxCashAdjustment()).isZero();
+		assertThat(readSandboxCashAdjustment(account.getId())).isZero();
 	}
 
 	// practice_completions(→ practice_market_reflections → holdings → 시드 instrument)까지의 FK 체인을
@@ -248,14 +260,14 @@ class TutorialAccountBackfillMigrationTest {
 		User user = userRepository.saveAndFlush(
 			User.create("v46-backfill-idempotent@finplay.com", "hash", "v46idem", NOW));
 		Account account = accountRepository.saveAndFlush(Account.create(user, Market.STOCK, NOW));
-		account.addSandboxCashAdjustment(5_012_000L);
 		account.addCash(5_012_000L);
 		accountRepository.saveAndFlush(account);
+		setSandboxCashAdjustment(account.getId(), 5_012_000L);
 
 		runBackfillUpdate();
 		Account firstRun = accountRepository.findById(account.getId()).orElseThrow();
 		long firstCashBalance = firstRun.getCashBalance();
-		long firstAdjustment = firstRun.getSandboxCashAdjustment();
+		long firstAdjustment = readSandboxCashAdjustment(account.getId());
 		assertThat(firstCashBalance).isEqualTo(10_000_000L);
 		assertThat(firstAdjustment).isZero();
 
@@ -263,6 +275,6 @@ class TutorialAccountBackfillMigrationTest {
 		Account secondRun = accountRepository.findById(account.getId()).orElseThrow();
 
 		assertThat(secondRun.getCashBalance()).isEqualTo(firstCashBalance);
-		assertThat(secondRun.getSandboxCashAdjustment()).isEqualTo(firstAdjustment);
+		assertThat(readSandboxCashAdjustment(account.getId())).isEqualTo(firstAdjustment);
 	}
 }

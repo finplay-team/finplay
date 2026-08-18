@@ -98,8 +98,6 @@ class LegacyPracticeCompletionAttemptCompatibilityIntegrationTest {
 		long completionCount = completionRepository.count();
 		long reflectionCount = reflectionRepository.count();
 		long cashBefore = accountRepository.findById(fixture.accountId()).orElseThrow().getCashBalance();
-		long adjustmentBefore = accountRepository.findById(fixture.accountId()).orElseThrow()
-			.getSandboxCashAdjustment();
 
 		PracticeAttemptResponse ensured = attemptService.ensureAttempt(fixture.userId(), Market.CRYPTO);
 
@@ -112,7 +110,6 @@ class LegacyPracticeCompletionAttemptCompatibilityIntegrationTest {
 		assertThat(reflectionRepository.count()).isEqualTo(reflectionCount);
 		Account unchanged = accountRepository.findById(fixture.accountId()).orElseThrow();
 		assertThat(unchanged.getCashBalance()).isEqualTo(cashBefore);
-		assertThat(unchanged.getSandboxCashAdjustment()).isEqualTo(adjustmentBefore);
 
 		InvestmentPracticeResponse after = queryService.getProgress(fixture.userId(), Market.CRYPTO);
 		assertThat(after.status()).isEqualTo("COMPLETED");
@@ -242,7 +239,6 @@ class LegacyPracticeCompletionAttemptCompatibilityIntegrationTest {
 		Account account = Account.create(
 			user, com.finplay.api.account.domain.Market.valueOf(market.name()), NOW.minusDays(2));
 		account.addCash(REWARD);
-		account.addSandboxCashAdjustment(REWARD);
 		account = accountRepository.saveAndFlush(account);
 		Instrument instrument;
 		if (tutorialSample) {
