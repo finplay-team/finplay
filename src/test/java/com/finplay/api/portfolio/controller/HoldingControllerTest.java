@@ -47,6 +47,7 @@ class HoldingControllerTest {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
 		HoldingListItemResponse holding = new HoldingListItemResponse(
+			101L,
 			1L,
 			"005930",
 			"삼성전자",
@@ -64,6 +65,7 @@ class HoldingControllerTest {
 			.param("market", "STOCK")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
 			.andExpect(status().isOk())
+			.andExpect(jsonPath("$[0].holdingId").value(101))
 			.andExpect(jsonPath("$[0].instrumentId").value(1))
 			.andExpect(jsonPath("$[0].symbol").value("005930"))
 			.andExpect(jsonPath("$[0].name").value("삼성전자"))
@@ -84,6 +86,7 @@ class HoldingControllerTest {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
 		HoldingListItemResponse holding = new HoldingListItemResponse(
+			102L,
 			2L,
 			"BTC",
 			"비트코인",
@@ -101,6 +104,7 @@ class HoldingControllerTest {
 			.param("market", "CRYPTO")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
 			.andExpect(status().isOk())
+			.andExpect(jsonPath("$[0].holdingId").value(102))
 			.andExpect(jsonPath("$[0].instrumentId").value(2))
 			.andExpect(jsonPath("$[0].symbol").value("BTC"))
 			.andExpect(jsonPath("$[0].name").value("비트코인"))
