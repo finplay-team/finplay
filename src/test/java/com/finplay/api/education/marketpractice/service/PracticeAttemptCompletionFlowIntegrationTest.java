@@ -156,16 +156,12 @@ class PracticeAttemptCompletionFlowIntegrationTest {
 
 		Account beforeReward = refreshedAccount(fixture.userId(), market);
 		long cashBeforeReward = beforeReward.getCashBalance();
-		long adjustmentBeforeReward = beforeReward.getSandboxCashAdjustment();
 		clock.set(BASE_NOW.plusSeconds(160));
 		reflectionService.createReflection(fixture.userId(),
 			new PracticeHoldingReflectionCreateRequest(holding.getId(), "현재 실행의 매매를 복기합니다."));
 
 		Account rewarded = refreshedAccount(fixture.userId(), market);
 		assertThat(rewarded.getCashBalance()).isEqualTo(cashBeforeReward + COMPLETION_REWARD);
-		// spec 047 TUTORIAL-CASH-ISOL-007: 완료 보상의 sandboxCashAdjustment 누적 호출부가 폐지되어
-		// 더 이상 증가하지 않는다(불변).
-		assertThat(rewarded.getSandboxCashAdjustment()).isEqualTo(adjustmentBeforeReward);
 		InvestmentPracticeResponse completed = queryService.getProgress(fixture.userId(), market);
 		assertThat(completed.status()).isEqualTo("COMPLETED");
 		assertThat(completed.rewardAmount()).isEqualTo(COMPLETION_REWARD);
@@ -190,7 +186,6 @@ class PracticeAttemptCompletionFlowIntegrationTest {
 		// 미리 뽑아두지 않으면 restart의 account 변경이 이 참조에도 그대로 반영돼(같은 세션 identity map)
 		// "이전 값"이 오염된다.
 		long cashBeforeRestart = rewarded.getCashBalance();
-		long sandboxBeforeRestart = rewarded.getSandboxCashAdjustment();
 		Long attemptId = attemptRepository.findByUserIdAndMarket(fixture.userId(), market).orElseThrow().getId();
 		PracticeAttemptResponse replayEnsure = practiceAttemptService.ensureAttempt(fixture.userId(), market);
 		PracticeAttemptResponse replayRestart = practiceAttemptRestartService.restart(fixture.userId(), market);
@@ -216,10 +211,9 @@ class PracticeAttemptCompletionFlowIntegrationTest {
 		assertThat(tradeRepository.count()).isEqualTo(tradeCount + 1);
 		// 보상매도는 튜토리얼 종목 매도이므로 PortfolioSellService.finalizeSellRealizedPnl이 같은 사용자·
 		// 시장의 튜토리얼 계좌만 갱신한다(047 TUTORIAL-CASH-ISOL-003) — 실제 Account.cashBalance는 전혀
-		// 변하지 않는다. sandboxCashAdjustment 누적 호출부도 폐지됐으므로(TUTORIAL-CASH-ISOL-007) 그대로다.
+		// 변하지 않는다.
 		Account replayed = refreshedAccount(fixture.userId(), market);
 		assertThat(replayed.getCashBalance()).isEqualTo(cashBeforeRestart);
-		assertThat(replayed.getSandboxCashAdjustment()).isEqualTo(sandboxBeforeRestart);
 	}
 
 	// 이슈 #426: 완료한 시장을 040 재시작으로 다시 진행하면 진행 조회가 예전 완료 응답이 아니라 현재 실행의

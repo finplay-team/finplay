@@ -148,9 +148,6 @@ public class OrderExecutionService {
 
 		if (tutorialAccount != null) {
 			tutorialAccount.deductCash(cashRequired);
-			// 047 TUTORIAL-CASH-ISOL-002·007: 샌드박스 매수는 튜토리얼 계좌 현금만 차감한다 — 실제
-			// Account.cashBalance는 전혀 변하지 않으므로 sandboxCashAdjustment 누적(033의 표시 보정 전제)은
-			// 더 이상 필요하지 않다(sandboxCashAdjustment 폐지).
 		} else {
 			account.deductCash(cashRequired);
 		}
@@ -217,8 +214,6 @@ public class OrderExecutionService {
 				.getOrCreateForUpdate(userId, toAccountMarket(request.market()), now);
 			tutorialAccount.addCash(pricing.amount() - pricing.fee());
 			tutorialAccount.addRealizedPnl(realizedPnl);
-			// 047 TUTORIAL-CASH-ISOL-003·007: 샌드박스 매도는 튜토리얼 계좌 현금·realizedPnl만 갱신한다 —
-			// 실제 Account.cashBalance는 변하지 않으므로 sandboxCashAdjustment 누적은 더 이상 필요하지 않다.
 		}
 		// 커밋 이후(after-commit)에만 랭킹에 반영되도록 이벤트만 발행한다 — 손익값을 싣지 않고 이벤트 처리 시점에
 		// DB에서 최신 realizedPnl을 다시 조회한다(동시성 경합 Decision Gate, plan.md).

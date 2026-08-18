@@ -129,8 +129,6 @@ public class LimitOrderFillService {
 			} else {
 				tutorialAccount.confirmReservedCash(amount + fee);
 			}
-			// 047 TUTORIAL-CASH-ISOL-002·007: 샌드박스 지정가 매수 체결은 튜토리얼 계좌 현금만 갱신한다 —
-			// 실제 Account.cashBalance는 변하지 않으므로 sandboxCashAdjustment 누적은 더 이상 필요하지 않다.
 		} else {
 			if (canonicalPracticeFill) {
 				account.releaseReservedCash(reservedCash);

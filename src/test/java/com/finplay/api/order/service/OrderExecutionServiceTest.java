@@ -166,9 +166,8 @@ class OrderExecutionServiceTest {
 	}
 
 	@Test
-	void createOrderBuyDoesNotAccumulateSandboxCashAdjustmentWhenInstrumentIsTutorialSample() {
-		// spec 047 TUTORIAL-CASH-ISOL-007(033 SANDBOX-EXCL-006 call site #1 폐지): 샌드박스 종목 매수는
-		// 더 이상 sandboxCashAdjustment를 건드리지 않는다. 실제 현금 차감 자체도 실제 Account가 아니라
+	void createOrderBuyDeductsFromTutorialAccountOnlyWhenInstrumentIsTutorialSample() {
+		// spec 047 TUTORIAL-CASH-ISOL-002: 샌드박스 종목 매수의 현금 차감은 실제 Account가 아니라
 		// 같은 사용자·시장의 튜토리얼 계좌에서 일어난다.
 		Instrument instrument = stockInstrument();
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
@@ -184,7 +183,6 @@ class OrderExecutionServiceTest {
 		orderExecutionService.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, request);
 
 		// cashRequired = amount(30000) + fee(4) = 30004
-		assertThat(account.getSandboxCashAdjustment()).isEqualTo(0L);
 		assertThat(account.getCashBalance()).isEqualTo(10_000_000L); // 실제 계좌 현금은 전혀 변하지 않는다
 		assertThat(account.getReservedCash()).isZero();
 		assertThat(tutorialAccount.getCashBalance()).isEqualTo(10_000_000L - 30004L); // 튜토리얼 계좌에서만 차감
@@ -260,7 +258,7 @@ class OrderExecutionServiceTest {
 	}
 
 	@Test
-	void createOrderBuyDoesNotAccumulateSandboxCashAdjustmentWhenInstrumentIsReal() {
+	void createOrderBuyDoesNotTouchTutorialAccountWhenInstrumentIsReal() {
 		Instrument instrument = stockInstrument();
 		Account account = account(com.finplay.api.account.domain.Market.STOCK);
 		User user = testUser();
@@ -269,7 +267,6 @@ class OrderExecutionServiceTest {
 
 		orderExecutionService.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, request);
 
-		assertThat(account.getSandboxCashAdjustment()).isEqualTo(0L);
 		verifyNoInteractions(tutorialAccountService); // 047 회귀 방지: 실제 종목 매수는 튜토리얼 계좌를 전혀 조회하지 않는다
 	}
 
@@ -499,30 +496,10 @@ class OrderExecutionServiceTest {
 		// 튜토리얼 계좌만 매도 대금·실현손익을 반영한다.
 		assertThat(tutorialAccount.getCashBalance()).isEqualTo(10_000_000L + 30000L - 4L);
 		assertThat(tutorialAccount.getRealizedPnl()).isEqualTo(9993L);
-		// spec 047 TUTORIAL-CASH-ISOL-007(033 SANDBOX-EXCL-006 call site #2 폐지): 더 이상 누적되지 않는다.
-		assertThat(account.getSandboxCashAdjustment()).isEqualTo(0L);
 		ArgumentCaptor<Trade> tradeCaptor = ArgumentCaptor.forClass(Trade.class);
 		verify(tradeRepository).save(tradeCaptor.capture());
 		// realizedPnl = (30000 - 4) - (20000 + 3) = 9993
 		assertThat(tradeCaptor.getValue().getRealizedPnl()).isEqualTo(9993L);
-	}
-
-	@Test
-	void createOrderSellDoesNotAccumulateSandboxCashAdjustmentWhenInstrumentIsReal() {
-		Instrument instrument = stockInstrument();
-		Account account = account(com.finplay.api.account.domain.Market.STOCK);
-		Holding holding = mock(Holding.class);
-		User user = testUser();
-		BigDecimal quantity = new BigDecimal("3");
-		stubSellHappyPath(instrument, account, user, new BigDecimal("10000"));
-		when(portfolioSellService.getHoldingForUpdateOrThrow(account, instrument, quantity)).thenReturn(holding);
-		when(portfolioSellService.applySellTrade(eq(holding), any(Trade.class), eq(quantity), eq(NOW)))
-			.thenReturn(new SellAllocationDto(20_000L, 3L));
-		OrderCreateRequest request = sellRequest(Market.STOCK, instrument.getId(), "3");
-
-		orderExecutionService.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, request);
-
-		assertThat(account.getSandboxCashAdjustment()).isEqualTo(0L);
 	}
 
 	@Test

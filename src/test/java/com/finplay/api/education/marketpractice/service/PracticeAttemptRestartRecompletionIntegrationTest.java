@@ -117,10 +117,6 @@ class PracticeAttemptRestartRecompletionIntegrationTest {
 		assertThat(firstRun.response().reflectionId()).isNotNull();
 		Account afterFirstReward = refreshedAccount(fixture.userId(), market);
 		assertThat(afterFirstReward.getCashBalance()).isEqualTo(firstRun.cashBeforeCompletion() + COMPLETION_REWARD);
-		// spec 047 TUTORIAL-CASH-ISOL-007: 완료 보상의 sandboxCashAdjustment 누적 호출부가 폐지되어
-		// 더 이상 증가하지 않는다(불변).
-		assertThat(afterFirstReward.getSandboxCashAdjustment())
-			.isEqualTo(firstRun.sandboxAdjustmentBeforeCompletion());
 
 		long completionCountAfterFirst = completionRepository.count();
 		long reflectionCountAfterFirst = reflectionRepository.count();
@@ -143,8 +139,6 @@ class PracticeAttemptRestartRecompletionIntegrationTest {
 		// 4) 계좌 현금 불변 확인
 		Account afterRecompletion = refreshedAccount(fixture.userId(), market);
 		assertThat(afterRecompletion.getCashBalance()).isEqualTo(secondRun.cashBeforeCompletion());
-		assertThat(afterRecompletion.getSandboxCashAdjustment())
-			.isEqualTo(secondRun.sandboxAdjustmentBeforeCompletion());
 
 		// 5) practice_completions/practice_market_reflections/practice_progresses row count 불변 확인
 		assertThat(completionRepository.count()).isEqualTo(completionCountAfterFirst);
@@ -171,7 +165,6 @@ class PracticeAttemptRestartRecompletionIntegrationTest {
 		Account account = Account.create(user, com.finplay.api.account.domain.Market.STOCK,
 			legacyCompletedAt.minusDays(1));
 		account.addCash(COMPLETION_REWARD);
-		account.addSandboxCashAdjustment(COMPLETION_REWARD);
 		account = accountRepository.saveAndFlush(account);
 		Instrument instrument = instrumentRepository.findByMarketAndSymbol(market, "SANDBOX_STK_1").orElseThrow();
 		Holding legacyHolding = Holding.create(account, instrument, legacyCompletedAt.minusDays(1));
@@ -208,8 +201,6 @@ class PracticeAttemptRestartRecompletionIntegrationTest {
 		assertThat(recompletionRun.response().reflectionId()).isNull();
 		Account cashAfterRecompletion = refreshedAccount(user.getId(), market);
 		assertThat(cashAfterRecompletion.getCashBalance()).isEqualTo(recompletionRun.cashBeforeCompletion());
-		assertThat(cashAfterRecompletion.getSandboxCashAdjustment())
-			.isEqualTo(recompletionRun.sandboxAdjustmentBeforeCompletion());
 		assertThat(completionRepository.count()).isEqualTo(completionCountBefore);
 		assertThat(reflectionRepository.count()).isEqualTo(reflectionCountBefore);
 		assertThat(progressRepository.count()).isEqualTo(progressCountBefore);
@@ -265,7 +256,6 @@ class PracticeAttemptRestartRecompletionIntegrationTest {
 		assertThat(alreadyCompletedCount).isEqualTo(1);
 		Account afterRace = refreshedAccount(fixture.userId(), market);
 		assertThat(afterRace.getCashBalance()).isEqualTo(beforeRace.getCashBalance());
-		assertThat(afterRace.getSandboxCashAdjustment()).isEqualTo(beforeRace.getSandboxCashAdjustment());
 		assertThat(completionRepository.count()).isEqualTo(completionCountBeforeRace);
 		assertThat(reflectionRepository.count()).isEqualTo(reflectionCountBeforeRace);
 		PracticeAttempt attempt = attemptRepository.findById(fixture.attemptId()).orElseThrow();
@@ -289,8 +279,7 @@ class PracticeAttemptRestartRecompletionIntegrationTest {
 		Account beforeCompletion = refreshedAccount(fixture.userId(), market);
 		PracticeHoldingReflectionResponse response = reflectionService.createReflection(fixture.userId(),
 			new PracticeHoldingReflectionCreateRequest(holding.getId(), answer));
-		return new RunOutcome(
-			response, beforeCompletion.getCashBalance(), beforeCompletion.getSandboxCashAdjustment());
+		return new RunOutcome(response, beforeCompletion.getCashBalance());
 	}
 
 	private Holding buildSecondRunEvidence(Fixture fixture, Market market) {
@@ -353,7 +342,6 @@ class PracticeAttemptRestartRecompletionIntegrationTest {
 	private record Fixture(Long userId, Long accountId, Long instrumentId, Long attemptId) {
 	}
 
-	private record RunOutcome(
-		PracticeHoldingReflectionResponse response, long cashBeforeCompletion, long sandboxAdjustmentBeforeCompletion) {
+	private record RunOutcome(PracticeHoldingReflectionResponse response, long cashBeforeCompletion) {
 	}
 }

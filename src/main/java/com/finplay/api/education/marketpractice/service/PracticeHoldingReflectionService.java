@@ -178,9 +178,6 @@ public class PracticeHoldingReflectionService {
 		com.finplay.api.account.domain.Market accountMarket = com.finplay.api.account.domain.Market
 			.valueOf(market.name());
 		Account account = accountService.getAccountForUpdate(userId, accountMarket);
-		// 047 TUTORIAL-CASH-ISOL-004·007: 완료 보상은 지금과 동일하게 실제 Account.cashBalance로 들어간다
-		// (튜토리얼 계좌는 관여하지 않는다). sandboxCashAdjustment 누적은 033의 표시 보정 전제가 폐지되며
-		// 더 이상 필요하지 않다.
 		account.addCash(TUTORIAL_COMPLETION_REWARD_AMOUNT);
 	}
 

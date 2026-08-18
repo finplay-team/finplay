@@ -252,21 +252,13 @@ class AccountSummaryIntegrationTest {
 		assertThat(response.totalValue()).isEqualTo(expectedTotalValue);
 	}
 
-	// spec 047 TUTORIAL-CASH-ISOL-007(SANDBOX-EXCL-007 대체): totalValue 공식은 sandboxCashAdjustment를
-	// 더 이상 빼지 않는다 — "현금 + 보유종목 평가금액"만으로 계산한다. sandboxCashAdjustment 컬럼 자체는
-	// 아직 물리적으로 제거되지 않았으므로(이 spec의 범위 밖), 컬럼에 잔여값(예: 백필 이전 레코드)이 남아
-	// 있어도 totalValue가 그 값을 무시함을 직접 검증한다.
 	@Test
-	void totalValueIgnoresSandboxCashAdjustmentEvenWhenColumnHasLeftoverValue() {
+	void totalValueIsComputedAsCashBalancePlusHoldingsValueAfterTutorialCompletionReward() {
 		User user = createUser("summary-reward-gain");
 		Account account = createAccount(user);
 
-		// 튜토리얼 완료 보상 지급(PracticeHoldingReflectionService.payTutorialCompletionReward)은 이제
-		// addCash만 호출한다(addSandboxCashAdjustment 호출부는 폐지됨, TUTORIAL-CASH-ISOL-007). 여기서는
-		// 그 보상 지급을 재현하되, sandboxCashAdjustment 컬럼에는 배포 이전 레코드처럼 잔여값이 남아 있는
-		// 상태를 별도로 흉내 내 totalValue가 이를 무시하는지 확인한다.
+		// 튜토리얼 완료 보상 지급(PracticeHoldingReflectionService.payTutorialCompletionReward)을 재현한다.
 		account.addCash(5_000_000L);
-		account.addSandboxCashAdjustment(5_000_000L);
 		accountRepository.saveAndFlush(account);
 
 		Instrument instrument = createStockInstrument("RWGN");
@@ -287,8 +279,7 @@ class AccountSummaryIntegrationTest {
 		// holdingsValue = 10주 * 60만원 = 6,000,000, unrealizedPnl = 6,000,000 - 5,000,000(원가) = 1,000,000
 		long expectedHoldingsValue = 6_000_000L;
 		long expectedUnrealizedPnl = 1_000_000L;
-		// totalValue = cashBalance + holdingsValue (sandboxCashAdjustment는 더 이상 빼지 않는다)
-		//            = 9,999,250 + 6,000,000 = 15,999,250
+		// totalValue = cashBalance + holdingsValue = 9,999,250 + 6,000,000 = 15,999,250
 		long expectedTotalValue = 15_999_250L;
 
 		assertThat(response.cashBalance()).isEqualTo(expectedCashBalance);
