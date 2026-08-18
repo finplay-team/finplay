@@ -125,6 +125,15 @@ public class OrderService {
 		return OrderListResponse.of(content, nextCursor, hasNext);
 	}
 
+	// 043 — 튜토리얼 education 도메인이 호출하는 attempt 전용 조회. attemptId·runNumber만 받고 education의
+	// 어떤 타입도 알지 않는다(TradeService.summarizePracticeRun과 동일 경계).
+	@Transactional(readOnly = true)
+	public List<OrderListItemResponse> getPracticeRunOrders(Long attemptId, long runNumber) {
+		return orderRepository.findPracticeRunOrders(attemptId, runNumber).stream()
+			.map(OrderListItemResponse::from)
+			.toList();
+	}
+
 	// 설계 노트 8: market:instrumentId:side:orderType:quantity 형식 문자열을 SHA-256 hex로 해시한다.
 	private String calculateRequestHash(OrderCreateRequest request) {
 		String raw = "%s:%d:%s:%s:%s".formatted(
