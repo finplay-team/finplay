@@ -75,20 +75,29 @@ public class PracticeLimitOrderCreationService {
 			throw new BusinessException(ErrorCode.PRACTICE_LIMIT_ORDER_ALREADY_PENDING);
 		}
 
-		// Order·Trade의 계좌 FK는 여전히 실제 Account를 가리켜야 하므로 조회는 유지한다(plan.md "호출부
-		// 변경 지점" 3번 — 다만 현금 검증·예약은 더 이상 이 account를 대상으로 하지 않는다).
+		// Order·Trade의 계좌 FK는 항상 실제 Account를 가리켜야 하므로 이 조회는 종목 종류와 무관하게
+		// 유지한다(plan.md "호출부 변경 지점" 3번).
 		Account account = accountService.getAccountForUpdate(userId, com.finplay.api.account.domain.Market.CRYPTO);
 		long cashRequired = LimitOrderFeeCalculator.calculate(quantity, limitPrice).total();
 
 		LocalDateTime now = LocalDateTime.now(clock);
-		// 이 엔드포인트는 항상 튜토리얼(교육) 전용이므로 instrument.isTutorialSample() 분기 없이 무조건
-		// 튜토리얼 계좌의 현금을 검증·예약한다(047 TUTORIAL-CASH-ISOL-002·005, 이슈 #450).
-		TutorialAccount tutorialAccount = tutorialAccountService.getOrCreateForUpdate(
-			userId, com.finplay.api.account.domain.Market.CRYPTO, now);
-		if (tutorialAccount.getAvailableCash() < cashRequired) {
-			throw new BusinessException(ErrorCode.TUTORIAL_INSUFFICIENT_CASH);
+		// 이 세션(030 코인 연습)은 샌드박스 종목뿐 아니라 실제 종목(BTC·ETH)도 다룬다 — 현금 검증·예약도
+		// LimitOrderCreationService·LimitOrderFillService와 동일하게 instrument.isTutorialSample()로
+		// 분기해야 한다. 무조건 튜토리얼 계좌로 보내면 실제 종목 체결·취소가 실제 Account(예약 0원)를
+		// 대상으로 확정·해제를 시도해 예약 불일치 예외가 난다(047 TUTORIAL-CASH-ISOL-002·005 후속 회귀, 이슈 #450).
+		if (instrument.isTutorialSample()) {
+			TutorialAccount tutorialAccount = tutorialAccountService.getOrCreateForUpdate(
+				userId, com.finplay.api.account.domain.Market.CRYPTO, now);
+			if (tutorialAccount.getAvailableCash() < cashRequired) {
+				throw new BusinessException(ErrorCode.TUTORIAL_INSUFFICIENT_CASH);
+			}
+			tutorialAccount.reserveCash(cashRequired);
+		} else {
+			if (account.getAvailableCash() < cashRequired) {
+				throw new BusinessException(ErrorCode.INSUFFICIENT_CASH);
+			}
+			account.reserveCash(cashRequired);
 		}
-		tutorialAccount.reserveCash(cashRequired);
 
 		User user = userQueryService.getUser(userId);
 		String idempotencyKey = "practice:%d:%s".formatted(practicePriceSessionId, UUID.randomUUID());

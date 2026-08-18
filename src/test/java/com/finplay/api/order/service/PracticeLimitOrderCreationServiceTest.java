@@ -57,9 +57,10 @@ class PracticeLimitOrderCreationServiceTest {
 
 	@Test
 	void createSessionBuyOrderReservesCashInTutorialAccountOnlyAndCreatesPendingBuyOrderWithSessionId() {
-		// 047 TUTORIAL-CASH-ISOL-002: 이 엔드포인트는 항상 튜토리얼 전용이므로 현금 예약은 튜토리얼 계좌에서만
-		// 일어나고 실제 Account.reservedCash는 전혀 변하지 않는다.
+		// 047 TUTORIAL-CASH-ISOL-002: 샌드박스 종목 세션 매수는 현금 예약이 튜토리얼 계좌에서만 일어나고
+		// 실제 Account.reservedCash는 전혀 변하지 않는다.
 		Instrument instrument = cryptoInstrument(5_000L);
+		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
 		Account account = account();
 		TutorialAccount tutorialAccount = tutorialAccount();
 		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID)).thenReturn(instrument);
@@ -119,6 +120,49 @@ class PracticeLimitOrderCreationServiceTest {
 	}
 
 	@Test
+	void createSessionBuyOrderForRealInstrumentReservesCashInRealAccountOnly() {
+		// 이슈 #450 후속 회귀: 030 코인 연습 세션은 샌드박스 종목뿐 아니라 실제 종목(BTC 등)도 다룬다 — 이
+		// 경우 현금 예약은 실제 Account에서만 일어나야, 체결·취소(LimitOrderFillService.fillBuy·
+		// LimitOrderCancelService.cancelOrder, 둘 다 isTutorialSample()로만 분기)와 예약 계좌가 일치한다.
+		Instrument instrument = cryptoInstrument(5_000L); // tutorialSample 기본값 false
+		Account account = account();
+		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID)).thenReturn(instrument);
+		when(orderRepository.existsByPracticePriceSessionIdAndStatus(SESSION_ID, OrderStatus.PENDING))
+			.thenReturn(false);
+		when(accountService.getAccountForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO))
+			.thenReturn(account);
+		when(userQueryService.getUser(USER_ID)).thenReturn(testUser());
+
+		LimitOrderResponse response = service.createSessionBuyOrder(
+			USER_ID, SESSION_ID, INSTRUMENT_ID, new BigDecimal("0.1"), new BigDecimal("1000000"));
+
+		// amount = 0.1 * 1,000,000 = 100,000, fee = floor(100,000*0.0005) = 50
+		assertThat(account.getReservedCash()).isEqualTo(100_050L);
+		assertThat(response.side()).isEqualTo("BUY");
+		verifyNoInteractions(tutorialAccountService);
+	}
+
+	@Test
+	void createSessionBuyOrderForRealInstrumentThrowsInsufficientCashWhenRealAccountBalanceInsufficient() {
+		Instrument instrument = cryptoInstrument(5_000L); // tutorialSample 기본값 false
+		Account account = account(); // 기본 1000만원
+		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID)).thenReturn(instrument);
+		when(orderRepository.existsByPracticePriceSessionIdAndStatus(SESSION_ID, OrderStatus.PENDING))
+			.thenReturn(false);
+		when(accountService.getAccountForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO))
+			.thenReturn(account);
+
+		assertThatThrownBy(() -> service.createSessionBuyOrder(
+			USER_ID, SESSION_ID, INSTRUMENT_ID, new BigDecimal("1"), new BigDecimal("50000000000")))
+			.isInstanceOfSatisfying(BusinessException.class,
+				exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.INSUFFICIENT_CASH));
+
+		assertThat(account.getReservedCash()).isZero();
+		verifyNoInteractions(userQueryService, tutorialAccountService);
+		verify(orderRepository, org.mockito.Mockito.never()).save(any());
+	}
+
+	@Test
 	void createSessionBuyOrderThrowsAlreadyPendingWhenSessionHasPendingOrder() {
 		Instrument instrument = cryptoInstrument(5_000L);
 		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID)).thenReturn(instrument);
@@ -137,9 +181,10 @@ class PracticeLimitOrderCreationServiceTest {
 
 	@Test
 	void createSessionBuyOrderThrowsTutorialInsufficientCashRegardlessOfRealAccountBalance() {
-		// 047 TUTORIAL-CASH-ISOL-002·005: 튜토리얼 계좌 잔고만 보고 거부해야 하며, 오류 코드도 실제 계좌
-		// 부족(INSUFFICIENT_CASH)과 구분되는 TUTORIAL_INSUFFICIENT_CASH여야 한다.
+		// 047 TUTORIAL-CASH-ISOL-002·005: 샌드박스 종목은 튜토리얼 계좌 잔고만 보고 거부해야 하며, 오류
+		// 코드도 실제 계좌 부족(INSUFFICIENT_CASH)과 구분되는 TUTORIAL_INSUFFICIENT_CASH여야 한다.
 		Instrument instrument = cryptoInstrument(5_000L);
+		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
 		Account account = account();
 		account.addCash(100_000_000L); // 실제 계좌는 넉넉하다 — 그래도 거부돼야 한다.
 		TutorialAccount tutorialAccount = tutorialAccount(); // 기본 1000만원
