@@ -17,9 +17,13 @@ public record CommunityPostResponse(
 	String instrumentSymbol,
 	String instrumentName,
 	Long imageId,
-	String imageUrl) {
+	String imageUrl,
+	long likeCount,
+	boolean likedByMe) {
 
-	public static CommunityPostResponse from(CommunityPost post) {
+	// 좋아요 여부는 요청자 컨텍스트가 있어야 결정되므로 인자 없는 from(post) 오버로드는 두지 않는다 —
+	// 호출부가 실제 좋아요 상태를 넘기지 않고 false로 하드코딩하는 실수를 막기 위함(spec 045 plan.md).
+	public static CommunityPostResponse from(CommunityPost post, boolean likedByMe) {
 		Instrument instrument = post.getInstrument();
 		CommunityPostImage image = post.getImage();
 		return new CommunityPostResponse(
@@ -33,6 +37,8 @@ public record CommunityPostResponse(
 			instrument == null ? null : instrument.getSymbol(),
 			instrument == null ? null : instrument.getName(),
 			image == null ? null : image.getId(),
-			image == null ? null : CommunityPostImageResponse.toImageUrl(image.getId()));
+			image == null ? null : CommunityPostImageResponse.toImageUrl(image.getId()),
+			post.getLikeCount(),
+			likedByMe);
 	}
 }

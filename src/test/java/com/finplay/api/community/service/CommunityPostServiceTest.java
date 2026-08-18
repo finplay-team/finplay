@@ -18,6 +18,7 @@ import com.finplay.api.community.domain.CommunityPostImage;
 import com.finplay.api.community.dto.response.CommunityPostImageResponse;
 import com.finplay.api.community.dto.response.CommunityPostListResponse;
 import com.finplay.api.community.dto.response.CommunityPostResponse;
+import com.finplay.api.community.repository.CommunityPostLikeRepository;
 import com.finplay.api.community.repository.CommunityPostRepository;
 import com.finplay.api.community.repository.PostCommentRepository;
 import com.finplay.api.market.domain.Instrument;
@@ -45,12 +46,15 @@ class CommunityPostServiceTest {
 	private static final Clock CLOCK = Clock.fixed(NOW, ZoneOffset.UTC);
 
 	private final CommunityPostRepository repository = Mockito.mock(CommunityPostRepository.class);
+	private final CommunityPostLikeRepository communityPostLikeRepository = Mockito
+		.mock(CommunityPostLikeRepository.class);
 	private final PostCommentRepository postCommentRepository = Mockito.mock(PostCommentRepository.class);
 	private final UserQueryService userQueryService = Mockito.mock(UserQueryService.class);
 	private final InstrumentService instrumentService = Mockito.mock(InstrumentService.class);
 	private final CommunityPostImageService communityPostImageService = Mockito.mock(CommunityPostImageService.class);
 	private final CommunityPostService service = new CommunityPostService(
-		repository, postCommentRepository, userQueryService, instrumentService, communityPostImageService, CLOCK);
+		repository, communityPostLikeRepository, postCommentRepository, userQueryService, instrumentService,
+		communityPostImageService, CLOCK);
 
 	private static Instrument instrument(Long id) {
 		Instrument instrument = Instrument.create(
@@ -191,6 +195,26 @@ class CommunityPostServiceTest {
 		verify(repository, never()).save(any());
 	}
 
+	// 신규 게시물은 방금 저장돼 좋아요 행이 있을 수 없지만, 특수 분기 없이 동일한 조회 경로를 태우는
+	// 설계(spec 045 plan.md)를 그대로 검증한다 — 저장된 postId로 좋아요 여부를 조회해 응답에 반영한다.
+	@Test
+	void createPostReturnsLikedByMeFalseWithoutQueryingLikeStateForBrandNewPost() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		when(userQueryService.getUser(42L)).thenReturn(author);
+		when(repository.save(any(CommunityPost.class))).thenAnswer(invocation -> {
+			CommunityPost saved = invocation.getArgument(0);
+			ReflectionTestUtils.setField(saved, "id", 7L);
+			return saved;
+		});
+
+		CommunityPostResponse response = service.createPost(42L, "title", "content", null, null);
+
+		assertThat(response.likeCount()).isEqualTo(0L);
+		assertThat(response.likedByMe()).isFalse();
+		// 방금 만든 게시물은 좋아요가 있을 수 없다 — 조회 자체를 생략한다(리뷰 참고).
+		verifyNoInteractions(communityPostLikeRepository);
+	}
+
 	@Test
 	void createPostFailsWithValidationErrorAndDoesNotSaveWhenImageIsAlreadyAssigned() {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
@@ -213,7 +237,7 @@ class CommunityPostServiceTest {
 		ReflectionTestUtils.setField(post, "id", 73L);
 		when(repository.findById(73L)).thenReturn(Optional.of(post));
 
-		CommunityPostResponse response = service.getPost(73L);
+		CommunityPostResponse response = service.getPost(73L, 42L);
 
 		assertThat(response.postId()).isEqualTo(73L);
 		assertThat(response.authorNickname()).isEqualTo("reader");
@@ -225,10 +249,42 @@ class CommunityPostServiceTest {
 	}
 
 	@Test
+	void getPostReturnsLikeCountAndLikedByMeTrueWhenAuthenticatedUserHasLikedPost() {
+		User author = User.create("reader@finplay.com", "hash", "reader", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(
+			author, "detail title", "detail content", null, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(post, "id", 73L);
+		ReflectionTestUtils.setField(post, "likeCount", 5L);
+		when(repository.findById(73L)).thenReturn(Optional.of(post));
+		when(communityPostLikeRepository.existsByPost_IdAndUser_Id(73L, 42L)).thenReturn(true);
+
+		CommunityPostResponse response = service.getPost(73L, 42L);
+
+		assertThat(response.likeCount()).isEqualTo(5L);
+		assertThat(response.likedByMe()).isTrue();
+	}
+
+	@Test
+	void getPostReturnsLikeCountAndLikedByMeFalseWhenAuthenticatedUserHasNotLikedPost() {
+		User author = User.create("reader@finplay.com", "hash", "reader", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(
+			author, "detail title", "detail content", null, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(post, "id", 73L);
+		ReflectionTestUtils.setField(post, "likeCount", 5L);
+		when(repository.findById(73L)).thenReturn(Optional.of(post));
+		when(communityPostLikeRepository.existsByPost_IdAndUser_Id(73L, 42L)).thenReturn(false);
+
+		CommunityPostResponse response = service.getPost(73L, 42L);
+
+		assertThat(response.likeCount()).isEqualTo(5L);
+		assertThat(response.likedByMe()).isFalse();
+	}
+
+	@Test
 	void getPostFailsWithNotFoundWhenPostDoesNotExist() {
 		when(repository.findById(404L)).thenReturn(Optional.empty());
 
-		assertThatThrownBy(() -> service.getPost(404L))
+		assertThatThrownBy(() -> service.getPost(404L, 42L))
 			.isInstanceOf(BusinessException.class)
 			.extracting(exception -> ((BusinessException)exception).getErrorCode())
 			.isEqualTo(ErrorCode.NOT_FOUND);
@@ -337,6 +393,23 @@ class CommunityPostServiceTest {
 	}
 
 	@Test
+	void updatePostReflectsAuthenticatedUserExistingLikeStateInResponse() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(author, "id", 42L);
+		LocalDateTime createdAt = LocalDateTime.of(2026, 7, 1, 0, 0);
+		CommunityPost post = CommunityPost.create(author, "old title", "old content", null, createdAt);
+		ReflectionTestUtils.setField(post, "id", 73L);
+		ReflectionTestUtils.setField(post, "likeCount", 2L);
+		when(repository.findById(73L)).thenReturn(Optional.of(post));
+		when(communityPostLikeRepository.existsByPost_IdAndUser_Id(73L, 42L)).thenReturn(true);
+
+		CommunityPostResponse response = service.updatePost(42L, 73L, "new title", "new content", false, null);
+
+		assertThat(response.likeCount()).isEqualTo(2L);
+		assertThat(response.likedByMe()).isTrue();
+	}
+
+	@Test
 	void updatePostFailsWithNotFoundWhenPostDoesNotExist() {
 		when(repository.findById(404L)).thenReturn(Optional.empty());
 
@@ -371,10 +444,12 @@ class CommunityPostServiceTest {
 	void getPostsMapsRepositoryPageToListResponseWithPageMetadata() {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
 		CommunityPost post = CommunityPost.create(author, "title", "content", null, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(post, "id", 1L);
 		Page<CommunityPost> page = new PageImpl<>(List.of(post), PageRequest.of(0, 10), 1);
-		when(repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10), null)).thenReturn(page);
+		when(repository.findPosts(PageRequest.of(0, 10), null, "latest")).thenReturn(page);
+		when(communityPostLikeRepository.findLikedPostIds(42L, List.of(1L))).thenReturn(List.of());
 
-		CommunityPostListResponse response = service.getPosts(0, 10, null);
+		CommunityPostListResponse response = service.getPosts(0, 10, null, "latest", 42L);
 
 		assertThat(response.content()).hasSize(1);
 		assertThat(response.content().get(0).authorNickname()).isEqualTo("author");
@@ -392,26 +467,76 @@ class CommunityPostServiceTest {
 		Instrument instrument = instrument(9L);
 		CommunityPost post = CommunityPost.create(
 			author, "tagged title", "content", instrument, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(post, "id", 1L);
 		Page<CommunityPost> page = new PageImpl<>(List.of(post), PageRequest.of(0, 10), 1);
-		when(repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10), 9L)).thenReturn(page);
+		when(repository.findPosts(PageRequest.of(0, 10), 9L, "latest")).thenReturn(page);
+		when(communityPostLikeRepository.findLikedPostIds(42L, List.of(1L))).thenReturn(List.of());
 
-		CommunityPostListResponse response = service.getPosts(0, 10, 9L);
+		CommunityPostListResponse response = service.getPosts(0, 10, 9L, "latest", 42L);
 
 		assertThat(response.content()).hasSize(1);
 		assertThat(response.content().get(0).instrumentId()).isEqualTo(9L);
-		verify(repository).findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10), 9L);
+		verify(repository).findPosts(PageRequest.of(0, 10), 9L, "latest");
+	}
+
+	@Test
+	void getPostsPassesPopularSortToRepositoryWhenProvided() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		CommunityPost post = CommunityPost.create(author, "title", "content", null, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(post, "id", 1L);
+		Page<CommunityPost> page = new PageImpl<>(List.of(post), PageRequest.of(0, 10), 1);
+		when(repository.findPosts(PageRequest.of(0, 10), null, "popular")).thenReturn(page);
+		when(communityPostLikeRepository.findLikedPostIds(42L, List.of(1L))).thenReturn(List.of());
+
+		CommunityPostListResponse response = service.getPosts(0, 10, null, "popular", 42L);
+
+		assertThat(response.content()).hasSize(1);
+		verify(repository).findPosts(PageRequest.of(0, 10), null, "popular");
 	}
 
 	@Test
 	void getPostsReturnsEmptyContentWhenNoPostsExist() {
 		Page<CommunityPost> emptyPage = new PageImpl<>(List.of(), PageRequest.of(0, 10), 0);
-		when(repository.findPostsOrderByCreatedAtDesc(PageRequest.of(0, 10), null)).thenReturn(emptyPage);
+		when(repository.findPosts(PageRequest.of(0, 10), null, "latest")).thenReturn(emptyPage);
 
-		CommunityPostListResponse response = service.getPosts(0, 10, null);
+		CommunityPostListResponse response = service.getPosts(0, 10, null, "latest", 42L);
 
 		assertThat(response.content()).isEmpty();
 		assertThat(response.totalElements()).isEqualTo(0);
 		assertThat(response.totalPages()).isEqualTo(0);
+	}
+
+	// N+1 방지 회귀: 게시물마다 existsByPost_IdAndUser_Id를 따로 호출하지 않고 findLikedPostIds
+	// 배치 조회 한 번으로 여러 게시물의 likedByMe를 정확히 매핑하는지 확인한다(spec 045 plan.md).
+	@Test
+	void getPostsMapsLikedByMeUsingSingleBatchQueryAcrossMultiplePosts() {
+		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
+		CommunityPost likedPost = CommunityPost.create(author, "liked", "content", null, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(likedPost, "id", 1L);
+		CommunityPost notLikedPost = CommunityPost.create(
+			author, "not liked", "content", null, LocalDateTime.now(CLOCK));
+		ReflectionTestUtils.setField(notLikedPost, "id", 2L);
+		Page<CommunityPost> page = new PageImpl<>(List.of(likedPost, notLikedPost), PageRequest.of(0, 10), 2);
+		when(repository.findPosts(PageRequest.of(0, 10), null, "latest")).thenReturn(page);
+		when(communityPostLikeRepository.findLikedPostIds(42L, List.of(1L, 2L))).thenReturn(List.of(1L));
+
+		CommunityPostListResponse response = service.getPosts(0, 10, null, "latest", 42L);
+
+		assertThat(response.content()).extracting(CommunityPostResponse::postId).containsExactly(1L, 2L);
+		assertThat(response.content().get(0).likedByMe()).isTrue();
+		assertThat(response.content().get(1).likedByMe()).isFalse();
+		verify(communityPostLikeRepository).findLikedPostIds(42L, List.of(1L, 2L));
+		verify(communityPostLikeRepository, never()).existsByPost_IdAndUser_Id(any(), any());
+	}
+
+	@Test
+	void getPostsSkipsBatchLikeQueryWhenNoPostsExist() {
+		Page<CommunityPost> emptyPage = new PageImpl<>(List.of(), PageRequest.of(0, 10), 0);
+		when(repository.findPosts(PageRequest.of(0, 10), null, "latest")).thenReturn(emptyPage);
+
+		service.getPosts(0, 10, null, "latest", 42L);
+
+		verifyNoInteractions(communityPostLikeRepository);
 	}
 
 	@Test

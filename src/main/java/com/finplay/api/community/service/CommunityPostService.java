@@ -9,12 +9,15 @@ import com.finplay.api.community.domain.CommunityPost;
 import com.finplay.api.community.domain.CommunityPostImage;
 import com.finplay.api.community.dto.response.CommunityPostListResponse;
 import com.finplay.api.community.dto.response.CommunityPostResponse;
+import com.finplay.api.community.repository.CommunityPostLikeRepository;
 import com.finplay.api.community.repository.CommunityPostRepository;
 import com.finplay.api.community.repository.PostCommentRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.service.InstrumentService;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -27,6 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class CommunityPostService {
 
 	private final CommunityPostRepository communityPostRepository;
+	private final CommunityPostLikeRepository communityPostLikeRepository;
 	private final PostCommentRepository postCommentRepository;
 	private final UserQueryService userQueryService;
 	private final InstrumentService instrumentService;
@@ -48,14 +52,16 @@ public class CommunityPostService {
 			image.assignToPost(savedPost);
 			savedPost.attachImage(image);
 		}
-		return CommunityPostResponse.from(savedPost);
+		// 방금 만든 게시물이라 좋아요가 있을 수 없다 — 조회 없이 항상 false.
+		return CommunityPostResponse.from(savedPost, false);
 	}
 
 	@Transactional(readOnly = true)
-	public CommunityPostResponse getPost(Long postId) {
+	public CommunityPostResponse getPost(Long postId, Long authenticatedUserId) {
 		CommunityPost post = communityPostRepository.findById(postId)
 			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
-		return CommunityPostResponse.from(post);
+		boolean likedByMe = communityPostLikeRepository.existsByPost_IdAndUser_Id(postId, authenticatedUserId);
+		return CommunityPostResponse.from(post, likedByMe);
 	}
 
 	@Transactional
@@ -69,7 +75,8 @@ public class CommunityPostService {
 		}
 		Instrument instrument = instrumentIdProvided ? resolveInstrument(instrumentId) : post.getInstrument();
 		post.update(title, content, instrument, LocalDateTime.now(clock));
-		return CommunityPostResponse.from(post);
+		boolean likedByMe = communityPostLikeRepository.existsByPost_IdAndUser_Id(postId, authenticatedUserId);
+		return CommunityPostResponse.from(post, likedByMe);
 	}
 
 	private Instrument resolveInstrument(Long instrumentId) {
@@ -95,9 +102,16 @@ public class CommunityPostService {
 	}
 
 	@Transactional(readOnly = true)
-	public CommunityPostListResponse getPosts(int page, int size, Long instrumentId) {
+	public CommunityPostListResponse getPosts(
+		int page, int size, Long instrumentId, String sort, Long authenticatedUserId) {
 		Pageable pageable = PageRequest.of(page, size);
-		Page<CommunityPost> posts = communityPostRepository.findPostsOrderByCreatedAtDesc(pageable, instrumentId);
-		return CommunityPostListResponse.from(posts);
+		Page<CommunityPost> posts = communityPostRepository.findPosts(pageable, instrumentId, sort);
+		List<Long> postIds = posts.getContent().stream().map(CommunityPost::getId).toList();
+		// findLikedPostIds는 빈 목록으로 호출하지 않는다(BuyTradeJournalRepository.findAllByBuyTradeIdIn과
+		// 동일 관례) — 게시물이 없는 페이지는 조회 없이 빈 Set으로 처리한다.
+		Set<Long> likedPostIds = postIds.isEmpty()
+			? Set.of()
+			: Set.copyOf(communityPostLikeRepository.findLikedPostIds(authenticatedUserId, postIds));
+		return CommunityPostListResponse.from(posts, likedPostIds);
 	}
 }

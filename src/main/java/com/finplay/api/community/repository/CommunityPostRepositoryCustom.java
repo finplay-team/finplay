@@ -7,5 +7,6 @@ import org.springframework.data.domain.Pageable;
 
 public interface CommunityPostRepositoryCustom {
 
-	Page<CommunityPost> findPostsOrderByCreatedAtDesc(Pageable pageable, Long instrumentId);
+	// sort: "popular"(좋아요 내림차순, 동률은 최신순) | 그 외(기본 "latest", 최신순). 값 검증은 컨트롤러 책임.
+	Page<CommunityPost> findPosts(Pageable pageable, Long instrumentId, String sort);
 }
