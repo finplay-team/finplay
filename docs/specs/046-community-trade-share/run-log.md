@@ -21,6 +21,11 @@
 | 14:15 | implementer | `.\gradlew.bat test --tests CommunityPostShareTradeIntegrationTest --tests CommunityPostLikeSortIntegrationTest --tests CommunityPostLikeConcurrencyIntegrationTest` | ADR-0003 Testcontainers, 병합 검증 |
 
 ## 모니터링 (사람용 요약)
-- 13:22 — V42 마이그레이션 + community/feedback 구현 완료, 단위·슬라이스·통합 테스트 전부 통과(community+feedback 181 suite 회귀 포함), docs 3종 동기화.
+- 13:22 — V45(작성 당시 V42) 마이그레이션 + community/feedback 구현 완료, 단위·슬라이스·통합 테스트 전부 통과(community+feedback 181 suite 회귀 포함), docs 3종 동기화.
 - 13:42 — 리뷰 차단 2건 반영: `getTradeShareSummary`가 `PostSellFeedbackContextReader.loadContext`만 쓰도록 재구현(무거운 `reader.read()`·빗썸 REST 호출 제거), 관련 테스트 전부 재통과.
 - 14:15 — PR #442(좋아요·정렬) merge 충돌 해소. `CommunityPostResponse`에 `likeCount`·`likedByMe`·`sharedTrade` 셋 다 유지, `CommunityPostService.createPost/getPost/getPosts`에 좋아요 배치 조회와 sharedTrade 개별 조회를 함께 유지. docs 4곳(작성·단건·목록·수정) 병합. 관련 테스트(서비스·컨트롤러·좋아요·sharedTrade 통합) 전부 통과.
+
+## 배포 후속 (2026-08-18)
+
+- `V42__add_shared_trade_id_to_community_posts.sql` → `V45__...`로 리네임. #446이 머지될 때 이미 배지 PR #439(V43·V44)가 먼저 머지돼 운영 DB가 V44까지 올라간 상태였고, 뒤늦게 들어온 V42가 과거 번호가 돼 Flyway가 `Detected resolved migration not applied to database: 42`로 기동을 거부했다(배포 실패, 라이브 색은 유지됨). V42는 검증 단계에서 막혀 **어떤 DB에도 적용된 적이 없어** 리네임이 안전하다(ADR-0004가 금지하는 "적용된 마이그레이션 수정"에 해당하지 않음).
+- 교훈: 마이그레이션 번호는 열린 PR과 겹치지 않게 정하는 것만으로 부족하다 — **머지 순서가 뒤바뀌면 낮은 번호를 든 쪽이 반드시 깨진다.** 번호를 띄워 잡았으면 어느 PR이 먼저 머지돼야 하는지도 PR 본문에 남긴다.
