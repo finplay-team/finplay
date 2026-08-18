@@ -11,7 +11,7 @@ class ErrorCodeTest {
 
 	@Test
 	void declaresEveryErrorCodeFromPrdAndOAuthSpecWithoutUnlistedOnes() {
-		assertThat(ErrorCode.values()).hasSize(41);
+		assertThat(ErrorCode.values()).hasSize(42);
 	}
 
 	@Test
@@ -38,6 +38,7 @@ class ErrorCodeTest {
 			Map.entry(ErrorCode.ACCOUNT_LINK_REQUIRED, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.SOCIAL_ACCOUNT_ONLY, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.INSUFFICIENT_CASH, HttpStatus.CONFLICT),
+			Map.entry(ErrorCode.TUTORIAL_INSUFFICIENT_CASH, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.INSUFFICIENT_QTY, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.MARKET_CLOSED, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.PRICE_UNAVAILABLE, HttpStatus.CONFLICT),
@@ -120,6 +121,17 @@ class ErrorCodeTest {
 			.isEqualTo("손절·익절 예약을 찾을 수 없습니다.");
 		assertThat(ErrorCode.EXIT_PLAN_NOT_PENDING.getDefaultMessage())
 			.isEqualTo("대기 중인 예약만 취소할 수 있습니다.");
+	}
+
+	@Test
+	void tutorialInsufficientCashIsADistinctCodeFromInsufficientCash() {
+		// TUTORIAL-CASH-ISOL-005: 튜토리얼 계좌 현금 부족은 실제 계좌의 INSUFFICIENT_CASH와 별개 코드여야
+		// 한다 — 코드·메시지 모두 실제 계좌 부족과 구별돼야 클라이언트가 안내 문구를 분기할 수 있다.
+		assertThat(ErrorCode.TUTORIAL_INSUFFICIENT_CASH).isNotEqualTo(ErrorCode.INSUFFICIENT_CASH);
+		assertThat(ErrorCode.TUTORIAL_INSUFFICIENT_CASH.getDefaultMessage())
+			.isNotEqualTo(ErrorCode.INSUFFICIENT_CASH.getDefaultMessage())
+			.isEqualTo("튜토리얼 계좌의 현금 잔고가 부족합니다.");
+		assertThat(ErrorCode.TUTORIAL_INSUFFICIENT_CASH.getHttpStatus()).isEqualTo(HttpStatus.CONFLICT);
 	}
 
 	@Test
