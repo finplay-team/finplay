@@ -1,6 +1,6 @@
 # Tasks: 튜토리얼 전용 계좌 신설을 통한 샌드박스 매매·완료 보상 현금 격리
 
-- [ ] `TutorialAccount` 엔티티(`cashBalance`·`reservedCash`·`realizedPnl`) + `TutorialAccountRepository`
+- [x] `TutorialAccount` 엔티티(`cashBalance`·`reservedCash`·`realizedPnl`) + `TutorialAccountRepository`
   (`findByUserIdAndMarketForUpdate` 포함) + `V46__create_tutorial_accounts_and_backfill_cash.sql`(테이블
   신설 + `sandbox_cash_adjustment` 백필, 버전 번호는 착수 시점 `origin/dev` 재확인 후 확정) +
   `common.ErrorCode`에 `TUTORIAL_INSUFFICIENT_CASH` 추가 + `@DataJpaTest`.

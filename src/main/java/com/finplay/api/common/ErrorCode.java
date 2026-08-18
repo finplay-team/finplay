@@ -26,6 +26,7 @@ public enum ErrorCode {
 	ACCOUNT_LINK_REQUIRED(HttpStatus.CONFLICT, "같은 이메일의 일반 회원이 있어 계정 연결이 필요합니다."),
 	SOCIAL_ACCOUNT_ONLY(HttpStatus.CONFLICT, "소셜 로그인 전용 계정입니다. 카카오 또는 네이버 로그인을 이용해 주세요."),
 	INSUFFICIENT_CASH(HttpStatus.CONFLICT, "현금 잔고가 부족합니다."),
+	TUTORIAL_INSUFFICIENT_CASH(HttpStatus.CONFLICT, "튜토리얼 계좌의 현금 잔고가 부족합니다."),
 	INSUFFICIENT_QTY(HttpStatus.CONFLICT, "매도 가능 수량이 부족합니다."),
 	MARKET_CLOSED(HttpStatus.CONFLICT, "장이 종료되었습니다."),
 	PRICE_UNAVAILABLE(HttpStatus.CONFLICT, "최신 시세를 조회할 수 없습니다."),
