@@ -11,4 +11,7 @@
 ALTER TABLE practice_risk_snapshots
     ADD COLUMN entry_sequence INT NOT NULL DEFAULT 1 AFTER run_number,
     ADD CONSTRAINT uk_practice_risk_snapshots_attempt_run_seq
-        UNIQUE (attempt_id, run_number, entry_sequence);
+        UNIQUE (attempt_id, run_number, entry_sequence),
+    -- 같은 테이블의 run_number가 이미 같은 성격의 CHECK를 갖고 있다(V38). 지금은 DEFAULT 1만 쓰이지만
+    -- 후속 작업에서 코드가 이 값을 직접 채번하기 시작하므로 0·음수를 스키마에서 막아 둔다.
+    ADD CONSTRAINT chk_practice_risk_snapshots_entry_sequence CHECK (entry_sequence > 0);
