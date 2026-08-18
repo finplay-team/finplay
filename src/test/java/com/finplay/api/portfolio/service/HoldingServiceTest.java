@@ -44,8 +44,10 @@ class HoldingServiceTest {
 		Holding availableHolding = Holding.create(account, availableInstrument, NOW);
 		availableHolding.applyBuy(BigDecimal.TEN, BigDecimal.valueOf(1_000), NOW);
 		availableHolding.reserveQuantity(BigDecimal.valueOf(4));
+		org.springframework.test.util.ReflectionTestUtils.setField(availableHolding, "id", 101L);
 		Holding unavailableHolding = Holding.create(account, unavailableInstrument, NOW);
 		unavailableHolding.applyBuy(BigDecimal.ONE, BigDecimal.valueOf(500_000), NOW);
+		org.springframework.test.util.ReflectionTestUtils.setField(unavailableHolding, "id", 102L);
 
 		when(holdingRepository.findAllByAccountIdAndIsActiveTrue(account.getId()))
 			.thenReturn(List.of(availableHolding, unavailableHolding));
@@ -64,6 +66,7 @@ class HoldingServiceTest {
 		assertThat(result).hasSize(2);
 
 		HoldingListItemResponse available = result.get(0);
+		assertThat(available.holdingId()).isEqualTo(availableHolding.getId());
 		assertThat(available.instrumentId()).isEqualTo(availableInstrument.getId());
 		assertThat(available.symbol()).isEqualTo("AAPL");
 		assertThat(available.name()).isEqualTo("애플");
@@ -77,6 +80,7 @@ class HoldingServiceTest {
 		assertThat(available.priceStatus()).isEqualTo("AVAILABLE");
 
 		HoldingListItemResponse unavailable = result.get(1);
+		assertThat(unavailable.holdingId()).isEqualTo(unavailableHolding.getId());
 		assertThat(unavailable.symbol()).isEqualTo("TSLA");
 		assertThat(unavailable.reservedQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
 		assertThat(unavailable.currentPrice()).isNull();
