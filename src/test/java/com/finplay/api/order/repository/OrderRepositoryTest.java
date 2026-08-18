@@ -8,6 +8,7 @@ import com.finplay.api.account.domain.Account;
 import com.finplay.api.account.repository.AccountRepository;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
+import com.finplay.api.education.marketpractice.repository.PracticeAttemptRepository;
 import com.finplay.api.education.priceruntime.domain.PracticePriceSession;
 import com.finplay.api.education.priceruntime.repository.PracticePriceSessionRepository;
 import com.finplay.api.market.domain.Instrument;
@@ -50,6 +51,9 @@ class OrderRepositoryTest {
 
 	@Autowired
 	private PracticePriceSessionRepository practicePriceSessionRepository;
+
+	@Autowired
+	private PracticeAttemptRepository practiceAttemptRepository;
 
 	@Autowired
 	private EntityManager entityManager;
@@ -536,5 +540,76 @@ class OrderRepositoryTest {
 
 		assertThat(result).extracting(Order::getId).containsExactly(first.getId(), second.getId());
 		assertThat(result).extracting(Order::getId).doesNotContain(otherSession.getId());
+	}
+
+	// 튜토리얼 attempt 전용 주문 조회(043) — 다른 run/attempt/일반 주문 제외, 정렬, fetch join 검증.
+	// orders.practice_attempt_id는 practice_attempts(id) FK다(V38) — 존재하는 attempt 행이 있어야 한다.
+	// uk_practice_attempts_user_market(user_id, market) 유일 제약 때문에 "다른 attempt"는 다른 market으로 만든다.
+	private Long createPracticeAttempt(Market market) {
+		return practiceAttemptRepository.saveAndFlush(
+			com.finplay.api.education.marketpractice.domain.PracticeAttempt.create(owner.getId(), market, NOW))
+			.getId();
+	}
+
+	private Order createPracticeRunPendingOrder(Long attemptId, long runNumber, String idempotencySuffix) {
+		idempotencySequence++;
+		char hashChar = (char)('a' + idempotencySequence);
+		return orderRepository.saveAndFlush(Order.createLimitPendingForPracticeAttempt(
+			owner, ownerAccount, instrument, OrderSide.BUY,
+			BigDecimal.valueOf(1), BigDecimal.valueOf(70_000),
+			attemptId, runNumber,
+			"practice-run-idem-" + idempotencySuffix,
+			String.valueOf(hashChar).repeat(64), NOW));
+	}
+
+	private Order createPracticeRunFilledOrder(Long attemptId, long runNumber, String idempotencySuffix) {
+		idempotencySequence++;
+		char hashChar = (char)('a' + idempotencySequence);
+		return orderRepository.saveAndFlush(Order.createForPracticeAttempt(
+			owner, ownerAccount, instrument, OrderSide.SELL, OrderType.MARKET,
+			BigDecimal.valueOf(2), attemptId, runNumber,
+			"practice-run-idem-" + idempotencySuffix,
+			String.valueOf(hashChar).repeat(64), NOW));
+	}
+
+	@Test
+	@DisplayName("현재 attempt·run 주문만 id 오름차순으로 반환하고 이전 run·다른 attempt·일반 주문은 제외한다 (043)")
+	void findPracticeRunOrdersReturnsOnlyCurrentAttemptAndRunOrdersSortedByIdAscending() {
+		Long attemptId = createPracticeAttempt(Market.STOCK);
+		Long otherAttemptId = createPracticeAttempt(Market.CRYPTO);
+
+		Order currentRunOrder1 = createPracticeRunPendingOrder(attemptId, 2L, "1");
+		Order currentRunOrder2 = createPracticeRunFilledOrder(attemptId, 2L, "2");
+		createPracticeRunFilledOrder(attemptId, 1L, "3"); // 같은 attempt의 이전 run
+		createPracticeRunFilledOrder(otherAttemptId, 2L, "4"); // 다른 attempt, 같은 run 번호
+		createOrder(owner, ownerAccount, NOW); // 일반 주문(practiceAttemptId=null)
+
+		List<Order> result = orderRepository.findPracticeRunOrders(attemptId, 2L);
+
+		assertThat(result).extracting(Order::getId)
+			.containsExactly(currentRunOrder1.getId(), currentRunOrder2.getId());
+	}
+
+	@Test
+	@DisplayName("귀속된 주문이 없으면 빈 목록을 반환한다 (043)")
+	void findPracticeRunOrdersReturnsEmptyListWhenNoMatchingOrders() {
+		Long attemptId = createPracticeAttempt(Market.STOCK);
+
+		List<Order> result = orderRepository.findPracticeRunOrders(attemptId, 1L);
+
+		assertThat(result).isEmpty();
+	}
+
+	@Test
+	@DisplayName("JOIN FETCH로 instrument를 함께 조회해 지연 로딩 예외 없이 접근할 수 있다 (043)")
+	void findPracticeRunOrdersFetchesInstrumentWithoutLazyInitException() {
+		Long attemptId = createPracticeAttempt(Market.STOCK);
+		createPracticeRunPendingOrder(attemptId, 1L, "5");
+		entityManager.clear();
+
+		List<Order> result = orderRepository.findPracticeRunOrders(attemptId, 1L);
+
+		assertThat(result).extracting(order -> order.getInstrument().getSymbol())
+			.containsExactly(instrument.getSymbol());
 	}
 }

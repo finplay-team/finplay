@@ -130,9 +130,9 @@ class CommunityPostShareTradeIntegrationTest {
 		assertThat(response.sharedTrade().realizedPnl()).isEqualTo(REALIZED_PNL);
 		assertThat(response.sharedTrade().returnRate()).isEqualByComparingTo(expectedReturnRate());
 
-		// 다른 사용자가 조회해도(getPost는 인증 사용자를 받지 않는다) 같은 값이 보인다 — userId는 뷰어가 아니라
+		// 다른 사용자(otherUserId)가 조회해도 같은 값이 보인다 — sharedTrade 계산의 userId는 뷰어가 아니라
 		// 게시물 작성자다(TRADESHARE-002).
-		CommunityPostResponse reloaded = communityPostService.getPost(response.postId());
+		CommunityPostResponse reloaded = communityPostService.getPost(response.postId(), otherUserId);
 		assertThat(reloaded.sharedTrade()).isNotNull();
 		assertThat(reloaded.sharedTrade().returnRate()).isEqualByComparingTo(expectedReturnRate());
 	}

@@ -9,6 +9,7 @@ import com.finplay.api.community.domain.CommunityPost;
 import com.finplay.api.community.domain.CommunityPostImage;
 import com.finplay.api.community.dto.response.CommunityPostListResponse;
 import com.finplay.api.community.dto.response.CommunityPostResponse;
+import com.finplay.api.community.repository.CommunityPostLikeRepository;
 import com.finplay.api.community.repository.CommunityPostRepository;
 import com.finplay.api.community.repository.PostCommentRepository;
 import com.finplay.api.feedback.dto.response.TradeShareSummaryResponse;
@@ -18,6 +19,7 @@ import com.finplay.api.market.service.InstrumentService;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -30,6 +32,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class CommunityPostService {
 
 	private final CommunityPostRepository communityPostRepository;
+	private final CommunityPostLikeRepository communityPostLikeRepository;
 	private final PostCommentRepository postCommentRepository;
 	private final UserQueryService userQueryService;
 	private final InstrumentService instrumentService;
@@ -65,14 +68,16 @@ public class CommunityPostService {
 			image.assignToPost(savedPost);
 			savedPost.attachImage(image);
 		}
-		return CommunityPostResponse.of(savedPost, sharedTrade);
+		// 방금 만든 게시물이라 좋아요가 있을 수 없다 — 조회 없이 항상 false.
+		return CommunityPostResponse.of(savedPost, false, sharedTrade);
 	}
 
 	@Transactional(readOnly = true)
-	public CommunityPostResponse getPost(Long postId) {
+	public CommunityPostResponse getPost(Long postId, Long authenticatedUserId) {
 		CommunityPost post = communityPostRepository.findById(postId)
 			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
-		return CommunityPostResponse.of(post, resolveSharedTrade(post));
+		boolean likedByMe = communityPostLikeRepository.existsByPost_IdAndUser_Id(postId, authenticatedUserId);
+		return CommunityPostResponse.of(post, likedByMe, resolveSharedTrade(post));
 	}
 
 	@Transactional
@@ -86,7 +91,8 @@ public class CommunityPostService {
 		}
 		Instrument instrument = instrumentIdProvided ? resolveInstrument(instrumentId) : post.getInstrument();
 		post.update(title, content, instrument, LocalDateTime.now(clock));
-		return CommunityPostResponse.of(post, resolveSharedTrade(post));
+		boolean likedByMe = communityPostLikeRepository.existsByPost_IdAndUser_Id(postId, authenticatedUserId);
+		return CommunityPostResponse.of(post, likedByMe, resolveSharedTrade(post));
 	}
 
 	// sharedTradeId가 없는 게시물이 대부분이라 이 경우에만 PostSellFeedbackService를 부른다 — 원장은 불변이라
@@ -121,11 +127,20 @@ public class CommunityPostService {
 	}
 
 	@Transactional(readOnly = true)
-	public CommunityPostListResponse getPosts(int page, int size, Long instrumentId) {
+	public CommunityPostListResponse getPosts(
+		int page, int size, Long instrumentId, String sort, Long authenticatedUserId) {
 		Pageable pageable = PageRequest.of(page, size);
-		Page<CommunityPost> posts = communityPostRepository.findPostsOrderByCreatedAtDesc(pageable, instrumentId);
+		Page<CommunityPost> posts = communityPostRepository.findPosts(pageable, instrumentId, sort);
+		List<Long> postIds = posts.getContent().stream().map(CommunityPost::getId).toList();
+		// findLikedPostIds는 빈 목록으로 호출하지 않는다(BuyTradeJournalRepository.findAllByBuyTradeIdIn과
+		// 동일 관례) — 게시물이 없는 페이지는 조회 없이 빈 Set으로 처리한다.
+		Set<Long> likedPostIds = postIds.isEmpty()
+			? Set.of()
+			: Set.copyOf(communityPostLikeRepository.findLikedPostIds(authenticatedUserId, postIds));
+		// sharedTrade는 게시물별로 다른 tradeId를 조회해야 해서(TRADESHARE-002) likedPostIds처럼 배치 조회할 수
+		// 없다 — resolveSharedTrade가 sharedTradeId 있는 게시물에서만 개별 호출한다(대부분 null이라 호출 자체가 없다).
 		List<CommunityPostResponse> content = posts.getContent().stream()
-			.map(post -> CommunityPostResponse.of(post, resolveSharedTrade(post)))
+			.map(post -> CommunityPostResponse.of(post, likedPostIds.contains(post.getId()), resolveSharedTrade(post)))
 			.toList();
 		return CommunityPostListResponse.of(content, posts);
 	}

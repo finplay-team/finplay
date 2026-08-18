@@ -33,13 +33,18 @@ public class CommunityPostController {
 	private static final int DEFAULT_SIZE = 10;
 	private static final int MIN_SIZE = 1;
 	private static final int MAX_SIZE = 50;
+	private static final String SORT_LATEST = "latest";
+	private static final String SORT_POPULAR = "popular";
 
 	private final CommunityPostService communityPostService;
 
 	@GetMapping("/{postId}")
-	public ResponseEntity<CommunityPostResponse> getPost(@PathVariable
-	Long postId) {
-		return ResponseEntity.ok(communityPostService.getPost(postId));
+	public ResponseEntity<CommunityPostResponse> getPost(
+		@AuthenticationPrincipal
+		AuthenticatedUser principal,
+		@PathVariable
+		Long postId) {
+		return ResponseEntity.ok(communityPostService.getPost(postId, principal.userId()));
 	}
 
 	@PostMapping
@@ -78,14 +83,20 @@ public class CommunityPostController {
 
 	@GetMapping
 	public ResponseEntity<CommunityPostListResponse> getPosts(
+		@AuthenticationPrincipal
+		AuthenticatedUser principal,
 		@RequestParam(defaultValue = "" + DEFAULT_PAGE)
 		int page,
 		@RequestParam(defaultValue = "" + DEFAULT_SIZE)
 		int size,
 		@RequestParam(required = false)
-		Long instrumentId) {
+		Long instrumentId,
+		@RequestParam(defaultValue = SORT_LATEST)
+		String sort) {
 		validatePageAndSize(page, size);
-		CommunityPostListResponse response = communityPostService.getPosts(page, size, instrumentId);
+		validateSort(sort);
+		CommunityPostListResponse response = communityPostService.getPosts(
+			page, size, instrumentId, sort, principal.userId());
 		return ResponseEntity.ok(response);
 	}
 
@@ -93,6 +104,13 @@ public class CommunityPostController {
 		if (page < 0 || size < MIN_SIZE || size > MAX_SIZE) {
 			throw new BusinessException(
 				ErrorCode.VALIDATION_ERROR, "page는 0 이상, size는 1~50 사이여야 합니다.");
+		}
+	}
+
+	private void validateSort(String sort) {
+		if (!SORT_LATEST.equals(sort) && !SORT_POPULAR.equals(sort)) {
+			throw new BusinessException(
+				ErrorCode.VALIDATION_ERROR, "sort는 latest 또는 popular만 지정할 수 있습니다.");
 		}
 	}
 }

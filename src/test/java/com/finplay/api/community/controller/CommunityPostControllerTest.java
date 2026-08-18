@@ -63,7 +63,7 @@ class CommunityPostControllerTest {
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
 		when(service.createPost(USER_ID, "title", "content", null, null, null))
 			.thenReturn(new CommunityPostResponse(
-				7L, "author", "title", "content", now, now, null, null, null, null, null, null));
+				7L, "author", "title", "content", now, now, null, null, null, null, null, 0L, false, null));
 
 		mockMvc.perform(post("/api/community/posts")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
@@ -94,7 +94,7 @@ class CommunityPostControllerTest {
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
 		when(service.createPost(USER_ID, "title", "content", 9L, null, null))
 			.thenReturn(new CommunityPostResponse(
-				7L, "author", "title", "content", now, now, 9L, "BTC", "비트코인", null, null, null));
+				7L, "author", "title", "content", now, now, 9L, "BTC", "비트코인", null, null, 0L, false, null));
 
 		mockMvc.perform(post("/api/community/posts")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
@@ -139,7 +139,7 @@ class CommunityPostControllerTest {
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
 		when(service.createPost(USER_ID, "title", "content", null, 5L, null))
 			.thenReturn(new CommunityPostResponse(7L, "author", "title", "content", now, now, null, null, null,
-				5L, "/api/community/posts/images/5/file", null));
+				5L, "/api/community/posts/images/5/file", 0L, false, null));
 
 		mockMvc.perform(post("/api/community/posts")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
@@ -228,7 +228,7 @@ class CommunityPostControllerTest {
 			-15_207L, new BigDecimal("-0.0217"));
 		when(service.createPost(USER_ID, "title", "content", null, null, 77L))
 			.thenReturn(new CommunityPostResponse(
-				7L, "author", "title", "content", now, now, null, null, null, null, null, sharedTrade));
+				7L, "author", "title", "content", now, now, null, null, null, null, null, 0L, false, sharedTrade));
 
 		mockMvc.perform(post("/api/community/posts")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
@@ -327,10 +327,10 @@ class CommunityPostControllerTest {
 		LocalDateTime updatedAt = LocalDateTime.of(2026, 7, 27, 12, 0);
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
-		when(service.getPost(73L))
+		when(service.getPost(73L, USER_ID))
 			.thenReturn(new CommunityPostResponse(
 				73L, "detail-author", "detail title", "detail content", createdAt, updatedAt, 9L, "BTC", "비트코인",
-				null, null, null));
+				null, null, 0L, false, null));
 
 		mockMvc.perform(get("/api/community/posts/73")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
@@ -345,14 +345,75 @@ class CommunityPostControllerTest {
 			.andExpect(jsonPath("$.instrumentSymbol").value("BTC"))
 			.andExpect(jsonPath("$.instrumentName").value("비트코인"));
 
-		verify(service).getPost(73L);
+		verify(service).getPost(73L, USER_ID);
+	}
+
+	@Test
+	void getPostReturnsLikeCountAndLikedByMeTrueWhenAuthenticatedUserHasLikedPost() throws Exception {
+		LocalDateTime createdAt = LocalDateTime.of(2026, 7, 26, 10, 30);
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+		when(service.getPost(73L, USER_ID))
+			.thenReturn(new CommunityPostResponse(
+				73L, "detail-author", "title", "content", createdAt, createdAt, null, null, null, null, null,
+				5L, true, null));
+
+		mockMvc.perform(get("/api/community/posts/73")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.likeCount").value(5))
+			.andExpect(jsonPath("$.likedByMe").value(true));
+
+		verify(service).getPost(73L, USER_ID);
+	}
+
+	@Test
+	void getPostReturnsLikeCountAndLikedByMeFalseWhenAuthenticatedUserHasNotLikedPost() throws Exception {
+		LocalDateTime createdAt = LocalDateTime.of(2026, 7, 26, 10, 30);
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+		when(service.getPost(73L, USER_ID))
+			.thenReturn(new CommunityPostResponse(
+				73L, "detail-author", "title", "content", createdAt, createdAt, null, null, null, null, null,
+				5L, false, null));
+
+		mockMvc.perform(get("/api/community/posts/73")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.likeCount").value(5))
+			.andExpect(jsonPath("$.likedByMe").value(false));
+
+		verify(service).getPost(73L, USER_ID);
+	}
+
+	// TRADESHARE-002 — 단건 조회 응답에 sharedTrade가 실린다(없으면 null).
+	@Test
+	void getPostReturnsSharedTradeFieldsWhenPostHasSharedTrade() throws Exception {
+		LocalDateTime createdAt = LocalDateTime.of(2026, 7, 26, 10, 30);
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+		TradeShareSummaryResponse sharedTrade = new TradeShareSummaryResponse(
+			"005930", "삼성전자", Market.STOCK, new BigDecimal("70000"), new BigDecimal("68500"),
+			new BigDecimal("10"), -15_207L, new BigDecimal("-0.0217"));
+		when(service.getPost(73L, USER_ID))
+			.thenReturn(new CommunityPostResponse(
+				73L, "detail-author", "title", "content", createdAt, createdAt, null, null, null, null, null,
+				0L, false, sharedTrade));
+
+		mockMvc.perform(get("/api/community/posts/73")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.sharedTrade.symbol").value("005930"))
+			.andExpect(jsonPath("$.sharedTrade.market").value("STOCK"));
+
+		verify(service).getPost(73L, USER_ID);
 	}
 
 	@Test
 	void getPostReturnsCommonNotFoundErrorWhenServiceCannotFindPost() throws Exception {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
-		when(service.getPost(404L)).thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
+		when(service.getPost(404L, USER_ID)).thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
 
 		mockMvc.perform(get("/api/community/posts/404")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
@@ -361,7 +422,7 @@ class CommunityPostControllerTest {
 			.andExpect(jsonPath("$.error.message").value("대상을 찾을 수 없습니다."))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
-		verify(service).getPost(404L);
+		verify(service).getPost(404L, USER_ID);
 	}
 
 	@Test
@@ -382,7 +443,8 @@ class CommunityPostControllerTest {
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
 		when(service.updatePost(USER_ID, 73L, "new title", "new content", false, null))
 			.thenReturn(new CommunityPostResponse(
-				73L, "author", "new title", "new content", createdAt, updatedAt, null, null, null, null, null, null));
+				73L, "author", "new title", "new content", createdAt, updatedAt, null, null, null, null, null,
+				0L, false, null));
 
 		mockMvc.perform(patch("/api/community/posts/73")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
@@ -412,7 +474,8 @@ class CommunityPostControllerTest {
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
 		when(service.updatePost(USER_ID, 73L, "new title", "new content", true, null))
 			.thenReturn(new CommunityPostResponse(
-				73L, "author", "new title", "new content", createdAt, updatedAt, null, null, null, null, null, null));
+				73L, "author", "new title", "new content", createdAt, updatedAt, null, null, null, null, null,
+				0L, false, null));
 
 		mockMvc.perform(patch("/api/community/posts/73")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
@@ -436,7 +499,8 @@ class CommunityPostControllerTest {
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
 		when(service.updatePost(USER_ID, 73L, "new title", "new content", true, 9L))
 			.thenReturn(new CommunityPostResponse(
-				73L, "author", "new title", "new content", createdAt, updatedAt, 9L, "BTC", "비트코인", null, null, null));
+				73L, "author", "new title", "new content", createdAt, updatedAt, 9L, "BTC", "비트코인", null, null,
+				0L, false, null));
 
 		mockMvc.perform(patch("/api/community/posts/73")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
@@ -515,8 +579,8 @@ class CommunityPostControllerTest {
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
 		LocalDateTime now = LocalDateTime.of(2026, 7, 27, 12, 0);
 		CommunityPostResponse item = new CommunityPostResponse(
-			7L, "author", "title", "content", now, now, null, null, null, null, null, null);
-		when(service.getPosts(0, 10, null))
+			7L, "author", "title", "content", now, now, null, null, null, null, null, 0L, false, null);
+		when(service.getPosts(0, 10, null, "latest", USER_ID))
 			.thenReturn(new CommunityPostListResponse(List.of(item), 0, 10, 1, 1, false));
 
 		mockMvc.perform(get("/api/community/posts")
@@ -529,14 +593,39 @@ class CommunityPostControllerTest {
 			.andExpect(jsonPath("$.totalPages").value(1))
 			.andExpect(jsonPath("$.hasNext").value(false));
 
-		verify(service).getPosts(0, 10, null);
+		verify(service).getPosts(0, 10, null, "latest", USER_ID);
+	}
+
+	@Test
+	void getPostsReturnsLikeCountAndLikedByMePerItemForBatchLikedPosts() throws Exception {
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+		LocalDateTime now = LocalDateTime.of(2026, 7, 27, 12, 0);
+		CommunityPostResponse likedItem = new CommunityPostResponse(
+			1L, "author", "liked title", "content", now, now, null, null, null, null, null, 3L, true, null);
+		CommunityPostResponse notLikedItem = new CommunityPostResponse(
+			2L, "author", "not liked title", "content", now, now, null, null, null, null, null, 1L, false, null);
+		when(service.getPosts(0, 10, null, "latest", USER_ID))
+			.thenReturn(new CommunityPostListResponse(List.of(likedItem, notLikedItem), 0, 10, 2, 1, false));
+
+		mockMvc.perform(get("/api/community/posts")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.content[0].postId").value(1))
+			.andExpect(jsonPath("$.content[0].likeCount").value(3))
+			.andExpect(jsonPath("$.content[0].likedByMe").value(true))
+			.andExpect(jsonPath("$.content[1].postId").value(2))
+			.andExpect(jsonPath("$.content[1].likeCount").value(1))
+			.andExpect(jsonPath("$.content[1].likedByMe").value(false));
+
+		verify(service).getPosts(0, 10, null, "latest", USER_ID);
 	}
 
 	@Test
 	void getPostsPassesExplicitPageAndSizeToService() throws Exception {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
-		when(service.getPosts(2, 5, null))
+		when(service.getPosts(2, 5, null, "latest", USER_ID))
 			.thenReturn(new CommunityPostListResponse(List.of(), 2, 5, 0, 0, false));
 
 		mockMvc.perform(get("/api/community/posts")
@@ -547,14 +636,14 @@ class CommunityPostControllerTest {
 			.andExpect(jsonPath("$.content").isArray())
 			.andExpect(jsonPath("$.content").isEmpty());
 
-		verify(service).getPosts(2, 5, null);
+		verify(service).getPosts(2, 5, null, "latest", USER_ID);
 	}
 
 	@Test
 	void getPostsPassesInstrumentIdQueryParameterToService() throws Exception {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
-		when(service.getPosts(0, 10, 9L))
+		when(service.getPosts(0, 10, 9L, "latest", USER_ID))
 			.thenReturn(new CommunityPostListResponse(List.of(), 0, 10, 0, 0, false));
 
 		mockMvc.perform(get("/api/community/posts")
@@ -562,21 +651,21 @@ class CommunityPostControllerTest {
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
 			.andExpect(status().isOk());
 
-		verify(service).getPosts(0, 10, 9L);
+		verify(service).getPosts(0, 10, 9L, "latest", USER_ID);
 	}
 
 	@Test
 	void getPostsPassesNullInstrumentIdToServiceWhenParameterOmitted() throws Exception {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
-		when(service.getPosts(0, 10, null))
+		when(service.getPosts(0, 10, null, "latest", USER_ID))
 			.thenReturn(new CommunityPostListResponse(List.of(), 0, 10, 0, 0, false));
 
 		mockMvc.perform(get("/api/community/posts")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
 			.andExpect(status().isOk());
 
-		verify(service).getPosts(0, 10, null);
+		verify(service).getPosts(0, 10, null, "latest", USER_ID);
 	}
 
 	@ParameterizedTest(name = "{0}")
@@ -592,6 +681,53 @@ class CommunityPostControllerTest {
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
 			.andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verifyNoInteractions(service);
+	}
+
+	@Test
+	void getPostsPassesPopularSortQueryParameterToService() throws Exception {
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+		when(service.getPosts(0, 10, null, "popular", USER_ID))
+			.thenReturn(new CommunityPostListResponse(List.of(), 0, 10, 0, 0, false));
+
+		mockMvc.perform(get("/api/community/posts")
+			.param("sort", "popular")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk());
+
+		verify(service).getPosts(0, 10, null, "popular", USER_ID);
+	}
+
+	@Test
+	void getPostsCombinesPopularSortWithInstrumentIdQueryParameter() throws Exception {
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+		when(service.getPosts(0, 10, 9L, "popular", USER_ID))
+			.thenReturn(new CommunityPostListResponse(List.of(), 0, 10, 0, 0, false));
+
+		mockMvc.perform(get("/api/community/posts")
+			.param("sort", "popular")
+			.param("instrumentId", "9")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isOk());
+
+		verify(service).getPosts(0, 10, 9L, "popular", USER_ID);
+	}
+
+	@Test
+	void getPostsRejectsUnsupportedSortValueWithoutCallingService() throws Exception {
+		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
+			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
+
+		mockMvc.perform(get("/api/community/posts")
+			.param("sort", "trending")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.error.message").value("sort는 latest 또는 popular만 지정할 수 있습니다."))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
 		verifyNoInteractions(service);

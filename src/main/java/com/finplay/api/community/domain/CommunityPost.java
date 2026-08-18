@@ -50,6 +50,9 @@ public class CommunityPost {
 	@Column(nullable = false, length = 5000)
 	private String content;
 
+	@Column(name = "like_count", nullable = false)
+	private long likeCount;
+
 	@Column(name = "created_at", nullable = false)
 	private LocalDateTime createdAt;
 

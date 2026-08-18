@@ -438,6 +438,51 @@ class OrderServiceTest {
 			.findByAccountIdAndStatusWithCursor(any(), any(), any(), any(), anyInt());
 	}
 
+	// 043 — getPracticeRunOrders(attempt 전용 조회)의 매핑·빈 결과 검증.
+	@Test
+	void getPracticeRunOrdersMapsRepositoryOrdersToOrderListItemResponseFields() {
+		Instrument instrument = cryptoInstrument();
+		ReflectionTestUtils.setField(instrument, "id", 42L);
+		Order order = Order.createLimitPendingForPracticeAttempt(
+			testUser(),
+			account(com.finplay.api.account.domain.Market.CRYPTO),
+			instrument,
+			OrderSide.BUY,
+			new BigDecimal("1"),
+			new BigDecimal("70000000"),
+			5L,
+			3L,
+			IDEMPOTENCY_KEY,
+			"h".repeat(64),
+			NOW);
+		ReflectionTestUtils.setField(order, "id", 100L);
+		when(orderRepository.findPracticeRunOrders(5L, 3L)).thenReturn(List.of(order));
+
+		List<OrderListItemResponse> result = orderService.getPracticeRunOrders(5L, 3L);
+
+		assertThat(result).hasSize(1);
+		OrderListItemResponse itemResponse = result.get(0);
+		assertThat(itemResponse.orderId()).isEqualTo(100L);
+		assertThat(itemResponse.market()).isEqualTo("CRYPTO");
+		assertThat(itemResponse.instrumentId()).isEqualTo(42L);
+		assertThat(itemResponse.side()).isEqualTo("BUY");
+		assertThat(itemResponse.orderType()).isEqualTo("LIMIT");
+		assertThat(itemResponse.status()).isEqualTo("PENDING");
+		assertThat(itemResponse.quantity()).isEqualByComparingTo(new BigDecimal("1"));
+		assertThat(itemResponse.requestedAt()).isEqualTo(NOW);
+		assertThat(itemResponse.practiceAttemptId()).isEqualTo(5L);
+		assertThat(itemResponse.practiceAttemptRunNumber()).isEqualTo(3L);
+	}
+
+	@Test
+	void getPracticeRunOrdersReturnsEmptyListWhenRepositoryReturnsEmpty() {
+		when(orderRepository.findPracticeRunOrders(5L, 3L)).thenReturn(List.of());
+
+		List<OrderListItemResponse> result = orderService.getPracticeRunOrders(5L, 3L);
+
+		assertThat(result).isEmpty();
+	}
+
 	private static Order pendingOrder(Long id, LocalDateTime requestedAt) {
 		Instrument instrument = cryptoInstrument();
 		ReflectionTestUtils.setField(instrument, "id", 42L);

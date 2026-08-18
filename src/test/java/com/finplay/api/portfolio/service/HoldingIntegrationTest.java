@@ -100,7 +100,7 @@ class HoldingIntegrationTest {
 	@Test
 	void fullySoldInstrumentIsExcludedAndRemainingHoldingHasAccurateSixValues() throws Exception {
 		User user = createUser("hld-owner");
-		createAccount(user);
+		Account account = createAccount(user);
 		String accessToken = issueAccessToken(user);
 
 		Instrument sold = createStockInstrument("HOLDA");
@@ -119,11 +119,17 @@ class HoldingIntegrationTest {
 		clock.set(BASE_NOW.plusMinutes(1));
 		orderService.createOrder(user.getId(), "holding-sell-sold", sellRequest(sold.getId(), "10"));
 
+		Long remainingHoldingId = holdingRepository
+			.findByAccountIdAndInstrumentId(account.getId(), remaining.getId())
+			.orElseThrow()
+			.getId();
+
 		mockMvc.perform(get("/api/holdings")
 			.param("market", "STOCK")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.length()").value(1))
+			.andExpect(jsonPath("$[0].holdingId").value(remainingHoldingId))
 			.andExpect(jsonPath("$[0].instrumentId").value(remaining.getId()))
 			.andExpect(jsonPath("$[0].quantity").value(5))
 			.andExpect(jsonPath("$[0].averagePrice").value(70000))
@@ -156,18 +162,25 @@ class HoldingIntegrationTest {
 		holding.applyBuy(BigDecimal.valueOf(7), new BigDecimal("55000"), BASE_NOW);
 		holdingRepository.saveAndFlush(holding);
 
+		Long availableHoldingId = holdingRepository
+			.findByAccountIdAndInstrumentId(account.getId(), available.getId())
+			.orElseThrow()
+			.getId();
+
 		mockMvc.perform(get("/api/holdings")
 			.param("market", "STOCK")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.length()").value(2))
 			// ORDER BY symbol ASC: "HOLDAVAIL..." < "HOLDBADPX..." (다섯째 글자 'A' < 'B')
+			.andExpect(jsonPath("$[0].holdingId").value(availableHoldingId))
 			.andExpect(jsonPath("$[0].instrumentId").value(available.getId()))
 			.andExpect(jsonPath("$[0].currentPrice").value(60000))
 			.andExpect(jsonPath("$[0].evaluationAmount").value(600000))
 			.andExpect(jsonPath("$[0].unrealizedPnl").value(0))
 			.andExpect(jsonPath("$[0].returnRate").value(0.0000))
 			.andExpect(jsonPath("$[0].priceStatus").value("AVAILABLE"))
+			.andExpect(jsonPath("$[1].holdingId").value(holding.getId()))
 			.andExpect(jsonPath("$[1].instrumentId").value(priceless.getId()))
 			.andExpect(jsonPath("$[1].quantity").value(7))
 			.andExpect(jsonPath("$[1].averagePrice").value(55000))

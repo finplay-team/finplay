@@ -6,6 +6,7 @@ import com.finplay.api.community.domain.CommunityPost;
 import com.finplay.api.community.domain.QCommunityPost;
 import com.finplay.api.community.domain.QCommunityPostImage;
 import com.finplay.api.market.domain.QInstrument;
+import com.querydsl.core.types.OrderSpecifier;
 import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import jakarta.persistence.EntityManager;
@@ -16,6 +17,8 @@ import org.springframework.data.domain.Pageable;
 
 public class CommunityPostRepositoryImpl implements CommunityPostRepositoryCustom {
 
+	private static final String SORT_POPULAR = "popular";
+
 	private final JPAQueryFactory queryFactory;
 
 	public CommunityPostRepositoryImpl(EntityManager entityManager) {
@@ -23,7 +26,7 @@ public class CommunityPostRepositoryImpl implements CommunityPostRepositoryCusto
 	}
 
 	@Override
-	public Page<CommunityPost> findPostsOrderByCreatedAtDesc(Pageable pageable, Long instrumentId) {
+	public Page<CommunityPost> findPosts(Pageable pageable, Long instrumentId, String sort) {
 		QCommunityPost post = QCommunityPost.communityPost;
 		QUser author = QUser.user;
 		QInstrument instrument = QInstrument.instrument;
@@ -33,13 +36,17 @@ public class CommunityPostRepositoryImpl implements CommunityPostRepositoryCusto
 			? null
 			: post.instrument.id.eq(instrumentId);
 
+		OrderSpecifier<?>[] orderSpecifiers = SORT_POPULAR.equals(sort)
+			? new OrderSpecifier<?>[] {post.likeCount.desc(), post.createdAt.desc(), post.id.desc()}
+			: new OrderSpecifier<?>[] {post.createdAt.desc(), post.id.desc()};
+
 		List<CommunityPost> content = queryFactory
 			.selectFrom(post)
 			.join(post.author, author).fetchJoin()
 			.leftJoin(post.instrument, instrument).fetchJoin()
 			.leftJoin(post.image, image).fetchJoin()
 			.where(instrumentCondition)
-			.orderBy(post.createdAt.desc(), post.id.desc())
+			.orderBy(orderSpecifiers)
 			.offset(pageable.getOffset())
 			.limit(pageable.getPageSize())
 			.fetch();

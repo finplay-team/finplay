@@ -19,16 +19,16 @@ public record CommunityPostResponse(
 	String instrumentName,
 	Long imageId,
 	String imageUrl,
+	long likeCount,
+	boolean likedByMe,
 	TradeShareSummaryResponse sharedTrade) {
 
-	// sharedTradeId가 없는 게시물(대부분)이 이 정적 팩토리를 쓴다 — sharedTrade는 항상 null이다.
-	public static CommunityPostResponse from(CommunityPost post) {
-		return of(post, null);
-	}
-
-	// sharedTrade는 엔티티 필드가 아니라 PostSellFeedbackService 호출 결과다(TRADESHARE-003) — 그래서 이 record가
+	// 좋아요 여부·매매 카드 요약 둘 다 요청자 컨텍스트·서비스 호출이 있어야 결정되므로 인자 없는 from(post)
+	// 오버로드는 두지 않는다 — 호출부가 실제 값을 넘기지 않고 하드코딩하는 실수를 막기 위함(spec 045 plan.md,
+	// spec 046 TRADESHARE-003). sharedTrade는 엔티티 필드가 아니라 PostSellFeedbackService 호출 결과라 이 record가
 	// 직접 계산하지 않고 호출부(CommunityPostService)가 조립해 넘긴다.
-	public static CommunityPostResponse of(CommunityPost post, TradeShareSummaryResponse sharedTrade) {
+	public static CommunityPostResponse of(
+		CommunityPost post, boolean likedByMe, TradeShareSummaryResponse sharedTrade) {
 		Instrument instrument = post.getInstrument();
 		CommunityPostImage image = post.getImage();
 		return new CommunityPostResponse(
@@ -43,6 +43,8 @@ public record CommunityPostResponse(
 			instrument == null ? null : instrument.getName(),
 			image == null ? null : image.getId(),
 			image == null ? null : CommunityPostImageResponse.toImageUrl(image.getId()),
+			post.getLikeCount(),
+			likedByMe,
 			sharedTrade);
 	}
 }

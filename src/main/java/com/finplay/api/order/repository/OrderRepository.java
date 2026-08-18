@@ -56,6 +56,22 @@ public interface OrderRepository extends JpaRepository<Order, Long>, OrderReposi
 		@Param("runNumber")
 		long runNumber);
 
+	// 튜토리얼 attempt 전용 주문 조회(GET .../attempts/{market}/orders, 043) — 잠금 없는 순수 조회.
+	// findPracticeRunOrdersForUpdate(재시작 정리용, 039)와 조건은 동일하되 FOR UPDATE를 걸지 않고
+	// instrument를 fetch join한다(OrderListItemResponse가 instrument.market을 읽으므로).
+	@Query("""
+		select o from Order o
+		join fetch o.instrument
+		where o.practiceAttemptId = :attemptId
+		  and o.practiceAttemptRunNumber = :runNumber
+		order by o.id asc
+		""")
+	List<Order> findPracticeRunOrders(
+		@Param("attemptId")
+		Long attemptId,
+		@Param("runNumber")
+		long runNumber);
+
 	// 가격 갱신 시 체결 후보 지정가 주문 조회(015-limit-order LMT-002) — idx_orders_limit_fill 인덱스 활용
 	// practicePriceSessionId is null 조건으로 교육 세션 주문을 제외한다(030 역방향 오염 차단 — 실제 빗썸 시세 tick이
 	// 교육 주문을 체결하지 않는다). 교육 주문은 전용 이벤트(PracticeOrderSettlementService)로만 체결한다.
