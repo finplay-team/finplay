@@ -28,7 +28,6 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mockito;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 
 class CommunityPostLikeServiceTest {
@@ -123,26 +122,6 @@ class CommunityPostLikeServiceTest {
 		InOrder inOrder = Mockito.inOrder(communityPostRepository, communityPostLikeRepository);
 		inOrder.verify(communityPostRepository).findByIdForUpdate(7L);
 		inOrder.verify(communityPostLikeRepository).existsByPost_IdAndUser_Id(7L, 42L);
-	}
-
-	// 유니크 제약이 최후 방어선으로 걸린 경우에도 500 대신 현재 상태를 돌려준다(LIKE-001 멱등 요구).
-	@Test
-	void likePostReturnsCurrentStateWhenUniqueConstraintRejectsConcurrentDuplicate() {
-		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
-		User liker = User.create("liker@finplay.com", "hash", "liker", LocalDateTime.now(CLOCK));
-		CommunityPost post = CommunityPost.create(author, "title", "content", null, LocalDateTime.now(CLOCK));
-		ReflectionTestUtils.setField(post, "likeCount", 3L);
-		when(communityPostRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(post));
-		when(communityPostLikeRepository.existsByPost_IdAndUser_Id(7L, 42L)).thenReturn(false);
-		when(userQueryService.getUser(42L)).thenReturn(liker);
-		when(communityPostLikeRepository.saveAndFlush(any(CommunityPostLike.class)))
-			.thenThrow(new DataIntegrityViolationException("duplicate key"));
-
-		CommunityPostLikeOutcome outcome = service.likePost(7L, 42L);
-
-		assertThat(outcome.created()).isFalse();
-		assertThat(outcome.response()).isEqualTo(new CommunityPostLikeResponse(7L, 3L, true));
-		verify(communityPostRepository, never()).incrementLikeCount(any());
 	}
 
 	@Test

@@ -13,7 +13,6 @@ import com.finplay.api.community.repository.CommunityPostRepository;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -42,15 +41,11 @@ public class CommunityPostLikeService {
 		}
 
 		User user = userQueryService.getUser(authenticatedUserId);
-		try {
-			communityPostLikeRepository.saveAndFlush(CommunityPostLike.create(post, user, LocalDateTime.now(clock)));
-		} catch (DataIntegrityViolationException concurrentDuplicate) {
-			// 위 행 락으로 같은 게시물의 좋아요는 직렬화되지만, REPEATABLE_READ에서 위 existsBy...는 비잠금
-			// consistent read라 스냅샷 시점이 기대와 다를 여지가 남는다. 그때 유니크 제약이 최후 방어선이 되고,
-			// 이 catch는 그 경우에도 에러 대신 현재 상태로 응답하기 위한 안전망이다(LIKE-001 멱등 요구).
-			CommunityPostLikeResponse response = new CommunityPostLikeResponse(postId, post.getLikeCount(), true);
-			return new CommunityPostLikeOutcome(response, false);
-		}
+		// 중복 좋아요를 막는 건 위 행 락이다 — 락이 직렬화한 뒤의 existsBy...는 앞선 트랜잭션의 커밋을 보므로
+		// (InnoDB에서 잠금 읽기는 consistent read view를 만들지 않는다) 유니크 제약 위반 경로로 들어오지 않는다.
+		// 그래서 DataIntegrityViolationException을 잡지 않는다. 유니크 제약은 데이터 정합성의 최후 방어선으로
+		// 남아 있어, 설령 뚫리더라도 중복 행이 조용히 생기는 대신 오류로 드러난다.
+		communityPostLikeRepository.saveAndFlush(CommunityPostLike.create(post, user, LocalDateTime.now(clock)));
 		// incrementLikeCount의 clearAutomatically가 영속성 컨텍스트를 비워 post를 준영속으로 만들기 전에
 		// 값을 읽어 둔다.
 		long likeCountBeforeIncrement = post.getLikeCount();
