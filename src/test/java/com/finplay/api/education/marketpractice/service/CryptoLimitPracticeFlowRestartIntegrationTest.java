@@ -293,9 +293,9 @@ class CryptoLimitPracticeFlowRestartIntegrationTest {
 		// (사용자 루프, holdings보다 먼저) → orders/holdings/accounts(계좌 루프) → practice_price_sessions(orders가
 		// 참조하므로 orders 삭제 뒤, 사용자 루프) → instruments → users. 역순이면 "부모 행 삭제 불가" 제약 위반으로
 		// 실패한다. tutorial_accounts는 047 이후 이 클래스가 쓰는 coin-practice 세션 매수 경로(createSessionBuyOrder)가
-		// isTutorialSample() 여부와 무관하게 항상 튜토리얼 계좌를 get-or-create하면서(047 tasks.md 8번, 이슈 #450
-		// 회귀 확인 중 발견) 새로 생기는 행이라 047 이전에 작성된 이 정리 루프에는 없었다 — 빠뜨리면 사용자 삭제 시
-		// fk_tutorial_accounts_user 위반으로 실패한다.
+		// 샌드박스 종목(instrument.isTutorialSample()=true, 이 클래스가 쓰는 시드 종목이 여기 해당)이면 튜토리얼
+		// 계좌를 get-or-create하면서(047 tasks.md 8번, 이슈 #450 회귀 확인 중 발견) 새로 생기는 행이라 047 이전에
+		// 작성된 이 정리 루프에는 없었다 — 빠뜨리면 사용자 삭제 시 fk_tutorial_accounts_user 위반으로 실패한다.
 		for (Long userId : createdUserIds) {
 			jdbcTemplate.update("DELETE FROM practice_completions WHERE user_id = ?", userId);
 			jdbcTemplate.update("DELETE FROM practice_market_reflections WHERE user_id = ?", userId);
