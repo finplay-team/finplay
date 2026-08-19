@@ -291,7 +291,7 @@ class PriceStoreTest {
 
 	// 034-crypto-price-rest-backup tasks.md 항목 3 — recordObservation의 이벤트 발행 조건. 가격이 실제로
 	// 바뀌었을 때만 CryptoPriceUpdatedEvent를 publish한다(관측 시각만 갱신된 경우는 미발행) — 같은 값으로
-	// LimitOrderTriggerListener·CryptoPriceStreamService를 3초마다 다시 도는 것은 순수한 낭비이기 때문이다
+	// LimitOrderTriggerListener를 3초마다 다시 도는 것은 순수한 낭비이기 때문이다
 	// (plan.md "컴포넌트 설계 — PriceStore" §이벤트 발행).
 
 	@Test
