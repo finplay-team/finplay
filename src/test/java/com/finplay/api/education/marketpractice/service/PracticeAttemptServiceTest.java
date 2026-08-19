@@ -3,7 +3,7 @@ package com.finplay.api.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -28,7 +28,7 @@ import com.finplay.api.portfolio.domain.Holding;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.InstrumentService;
-import com.finplay.api.portfolio.service.HoldingService;
+import com.finplay.api.order.service.TradeService;
 import com.finplay.api.market.service.TutorialPriceGenerator;
 import com.finplay.api.market.service.TutorialScenarioScriptLoader;
 import java.math.BigDecimal;
@@ -57,7 +57,7 @@ class PracticeAttemptServiceTest {
 		PracticeRiskSnapshotRepository.class);
 	private final PracticeProgressRepository practiceProgressRepository = mock(PracticeProgressRepository.class);
 	private final InstrumentService instrumentService = mock(InstrumentService.class);
-	private final HoldingService holdingService = mock(HoldingService.class);
+	private final TradeService tradeService = mock(TradeService.class);
 	private final TutorialAccountService tutorialAccountService = mock(TutorialAccountService.class);
 	// 대본이 저작된 시장에서만 생성기 버전 2를 준다 — 실제 로더를 써야 이 판정이 대본 파일과 함께 움직인다.
 	private final TutorialScenarioScriptLoader tutorialScenarioScriptLoader = new TutorialScenarioScriptLoader(
@@ -68,7 +68,7 @@ class PracticeAttemptServiceTest {
 		practiceRiskSnapshotRepository,
 		practiceProgressRepository,
 		instrumentService,
-		holdingService,
+		tradeService,
 		tutorialScenarioScriptLoader,
 		tutorialAccountService,
 		Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC));
@@ -77,7 +77,7 @@ class PracticeAttemptServiceTest {
 	// 아니므로 기본을 "미보유"로 두고, 잠금을 보는 테스트만 따로 덮어쓴다.
 	@BeforeEach
 	void stubNoHolding() {
-		when(holdingService.findNetQuantity(any(), any(), any())).thenReturn(BigDecimal.ZERO);
+		when(tradeService.netFilledQuantity(anyLong(), anyLong())).thenReturn(BigDecimal.ZERO);
 	}
 
 	@Test
@@ -321,8 +321,7 @@ class PracticeAttemptServiceTest {
 		attempt.selectInstrument(tutorialInstrument(Market.CRYPTO, true), NOW, NOW.toLocalDate(), 1L, (short)2, NOW);
 		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
 			.thenReturn(Optional.of(attempt));
-		when(holdingService.findNetQuantity(USER_ID, Market.CRYPTO, INSTRUMENT_ID))
-			.thenReturn(new BigDecimal("2"));
+		when(tradeService.netFilledQuantity(ATTEMPT_ID, 1L)).thenReturn(new BigDecimal("2"));
 
 		assertThatThrownBy(() -> service.selectExitPreset(USER_ID, Market.CRYPTO, ExitPreset.RELAXED))
 			.isInstanceOfSatisfying(BusinessException.class, exception -> assertThat(exception.getErrorCode())

@@ -91,6 +91,16 @@ class PracticeAttemptOrderQueryIntegrationTest {
 				accountId);
 			jdbcTemplate.update("DELETE FROM trades WHERE account_id = ?", accountId);
 			jdbcTemplate.update("DELETE FROM orders WHERE account_id = ?", accountId);
+			// 042 5번부터 튜토리얼 매수가 OCO 예약을 함께 만들므로 holdings보다 exit_plans를 먼저 지운다
+			// (fk_exit_plans_holding).
+			jdbcTemplate.update(
+				"DELETE FROM exit_plan_conditions WHERE exit_plan_id IN "
+					+ "(SELECT id FROM exit_plans WHERE holding_id IN "
+					+ "(SELECT id FROM holdings WHERE account_id = ?))",
+				accountId);
+			jdbcTemplate.update(
+				"DELETE FROM exit_plans WHERE holding_id IN (SELECT id FROM holdings WHERE account_id = ?)",
+				accountId);
 			jdbcTemplate.update("DELETE FROM holdings WHERE account_id = ?", accountId);
 		}
 		userIds.forEach(userId -> jdbcTemplate.update("DELETE FROM practice_attempts WHERE user_id = ?", userId));
@@ -137,7 +147,7 @@ class PracticeAttemptOrderQueryIntegrationTest {
 			fixture.user().getId(), com.finplay.api.account.domain.Market.CRYPTO, null, 100).content()).isEmpty();
 
 		practiceOrderSettlementService.settleCurrentRun(
-			fixture.attempt().getId(), fixture.attempt().getRunNumber(), NOW.plusMinutes(1));
+			fixture.attempt().getId(), fixture.attempt().getRunNumber(), NOW.plusMinutes(1), null);
 
 		List<OrderListItemResponse> filled = orderQueryService.getCurrentRunOrders(
 			fixture.user().getId(), Market.CRYPTO);

@@ -66,7 +66,9 @@ class PracticeAttemptChartServiceTest {
 
 		PracticeTutorialChartResponse response = service.tick(USER_ID, Market.CRYPTO);
 
-		verify(settlementService).settleCurrentRun(attempt.getId(), attempt.getRunNumber(), NOW);
+		verify(settlementService).settleCurrentRun(
+			attempt.getId(), attempt.getRunNumber(), NOW,
+			canonicalPriceService.canonicalPrice(attempt, NOW));
 		assertThat(response.candles().get(29).close())
 			.isEqualByComparingTo(canonicalPriceService.canonicalPrice(attempt, NOW));
 	}
@@ -94,7 +96,7 @@ class PracticeAttemptChartServiceTest {
 
 		verify(settlementService, never()).settleCurrentRun(
 			org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyLong(),
-			org.mockito.ArgumentMatchers.any());
+			org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
 	}
 
 	// 041 5번 — 생성기 버전 2는 진행 계산이 커서를 밀면서 분마다 정산한다. 여기서 settleCurrentRun을 한 번

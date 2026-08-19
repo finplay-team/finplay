@@ -29,6 +29,20 @@ public interface ExitPlanRepository extends JpaRepository<ExitPlan, Long> {
 	Optional<ExitPlan> findByIdForUpdate(@Param("id")
 	Long id);
 
+	// 042 EXITPRESET-014·015·016 — 현재 튜토리얼 실행 세대에 귀속된 PENDING 예약의 id만 읽는다.
+	// 종목 단위인 findPendingExitPlansToFill을 쓰지 않는 이유는 그것이 다른 실행 세대·다른 사용자의 예약까지
+	// 함께 잡기 때문이다. id만 프로젝션하는 것은 체결·취소 서비스가 각자 잠금 순서대로 다시 조회하기 때문이다.
+	@Query("""
+		select p.id from ExitPlan p
+		where p.practiceAttemptId = :attemptId
+		  and p.practiceAttemptRunNumber = :runNumber
+		  and p.status = com.finplay.api.order.domain.ExitPlanStatus.PENDING
+		order by p.id asc
+		""")
+	List<Long> findPendingPracticeRunExitPlanIds(@Param("attemptId")
+	Long attemptId, @Param("runNumber")
+	long runNumber);
+
 	// 가격 갱신 시 체결 후보 OCO 예약 조회(021 plan.md "가격 트리거"). 익절·손절 방향이 반대라 두 조건을 OR로
 	// 묶는다 — 생성 시 0 < stopLossPrice < entryPrice < takeProfitPrice가 보장되므로 한 plan이 두 방향을 동시에
 	// 만족하지 않는다(체결 서비스가 잠근 뒤 재판정한다, LimitOrderTriggerListener의 findPendingLimitOrdersToFill과

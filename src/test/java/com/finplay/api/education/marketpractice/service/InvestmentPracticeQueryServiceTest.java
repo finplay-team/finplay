@@ -2,7 +2,7 @@
 package com.finplay.api.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -29,7 +29,7 @@ import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.order.domain.Trade;
 import com.finplay.api.portfolio.domain.Holding;
-import com.finplay.api.portfolio.service.HoldingService;
+import com.finplay.api.order.service.TradeService;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -53,7 +53,7 @@ class InvestmentPracticeQueryServiceTest {
 		PracticeAttemptEvidenceService.class);
 	private final MarketPracticeChainResolutionService chainResolutionService = mock(
 		MarketPracticeChainResolutionService.class);
-	private final HoldingService holdingService = mock(HoldingService.class);
+	private final TradeService tradeService = mock(TradeService.class);
 	private final ReferencePriceCalculator referencePriceCalculator = mock(ReferencePriceCalculator.class);
 	private final PracticeMarketObservationRepository practiceMarketObservationRepository = mock(
 		PracticeMarketObservationRepository.class);
@@ -63,14 +63,14 @@ class InvestmentPracticeQueryServiceTest {
 
 	private final InvestmentPracticeQueryService service = new InvestmentPracticeQueryService(
 		favoriteService, practiceAttemptRepository, practiceRiskSnapshotRepository, practiceAttemptEvidenceService,
-		holdingService, chainResolutionService, referencePriceCalculator, practiceMarketObservationRepository,
+		tradeService, chainResolutionService, referencePriceCalculator, practiceMarketObservationRepository,
 		practiceCompletionRepository, clock);
 
 	// 프리셋 잠금 판정이 매 응답에서 순보유수량을 읽는다(042 EXITPRESET-003). 이 테스트들의 대상은 잠금이
 	// 아니므로 기본을 "미보유"로 두고, 잠금을 보는 테스트만 따로 덮어쓴다.
 	@BeforeEach
 	void stubNoHolding() {
-		when(holdingService.findNetQuantity(any(), any(), any())).thenReturn(BigDecimal.ZERO);
+		when(tradeService.netFilledQuantity(anyLong(), anyLong())).thenReturn(BigDecimal.ZERO);
 	}
 
 	@Test

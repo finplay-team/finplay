@@ -13,7 +13,7 @@ import java.math.BigDecimal;
  * plan snapshot에 그대로 저장한다.
  */
 public record ExitPlanCreateCommandDto(User user, Holding holding, BigDecimal quantity, ExitPriceInputDto priceInput,
-	String requestHash, ExitPlanEducationalOriginDto educationalOrigin) {
+	String requestHash, ExitPlanEducationalOriginDto educationalOrigin, ExitPlanPracticeOriginDto practiceOrigin) {
 
 	public ExitPlanCreateCommandDto {
 		if (user == null || holding == null || priceInput == null || requestHash == null) {
@@ -22,12 +22,15 @@ public record ExitPlanCreateCommandDto(User user, Holding holding, BigDecimal qu
 		if (quantity == null || quantity.signum() <= 0) {
 			throw new IllegalArgumentException("quantity는 0보다 커야 합니다.");
 		}
+		if (educationalOrigin != null && practiceOrigin != null) {
+			throw new IllegalArgumentException("교육 경로와 튜토리얼 자동 예약 경로는 함께 쓸 수 없습니다.");
+		}
 	}
 
 	// 일반 경로(intentionId 생략) — entryPrice는 생성 시점 holding.averagePrice snapshot이다(021 RISK-OCO-007).
 	public static ExitPlanCreateCommandDto general(
 		User user, Holding holding, BigDecimal quantity, ExitPriceInputDto priceInput, String requestHash) {
-		return new ExitPlanCreateCommandDto(user, holding, quantity, priceInput, requestHash, null);
+		return new ExitPlanCreateCommandDto(user, holding, quantity, priceInput, requestHash, null, null);
 	}
 
 	// 교육 경로(intentionId 지정) — entryPrice는 buyTrade의 불변 체결가다(019 EXIT-PRICE-004).
@@ -37,10 +40,28 @@ public record ExitPlanCreateCommandDto(User user, Holding holding, BigDecimal qu
 		if (educationalOrigin == null) {
 			throw new IllegalArgumentException("교육 경로는 educationalOrigin이 필수입니다.");
 		}
-		return new ExitPlanCreateCommandDto(user, holding, quantity, priceInput, requestHash, educationalOrigin);
+		return new ExitPlanCreateCommandDto(user, holding, quantity, priceInput, requestHash, educationalOrigin, null);
+	}
+
+	/**
+	 * 튜토리얼 자동 예약 경로(042 EXITPRESET-005) — 매수 체결 트랜잭션 안에서 서버가 만든다. 사용자가
+	 * 직접 호출하는 경로가 아니라 {@code intentionId}가 없고(039가 사전 의도를 없앴다) attempt·실행 세대로
+	 * 귀속한다.
+	 */
+	public static ExitPlanCreateCommandDto practice(
+		User user, Holding holding, BigDecimal quantity, ExitPriceInputDto priceInput, String requestHash,
+		ExitPlanPracticeOriginDto practiceOrigin) {
+		if (practiceOrigin == null) {
+			throw new IllegalArgumentException("튜토리얼 자동 예약 경로는 practiceOrigin이 필수입니다.");
+		}
+		return new ExitPlanCreateCommandDto(user, holding, quantity, priceInput, requestHash, null, practiceOrigin);
 	}
 
 	public boolean isEducationalPath() {
 		return educationalOrigin != null;
+	}
+
+	public boolean isPracticePath() {
+		return practiceOrigin != null;
 	}
 }

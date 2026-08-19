@@ -22,7 +22,7 @@ import com.finplay.api.favorite.dto.response.FavoriteResponse;
 import com.finplay.api.favorite.service.FavoriteService;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.portfolio.domain.Holding;
-import com.finplay.api.portfolio.service.HoldingService;
+import com.finplay.api.order.service.TradeService;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Comparator;
@@ -62,7 +62,7 @@ public class InvestmentPracticeQueryService {
 	private final PracticeAttemptRepository practiceAttemptRepository;
 	private final PracticeRiskSnapshotRepository practiceRiskSnapshotRepository;
 	private final PracticeAttemptEvidenceService practiceAttemptEvidenceService;
-	private final HoldingService holdingService;
+	private final TradeService tradeService;
 	private final MarketPracticeChainResolutionService chainResolutionService;
 	private final ReferencePriceCalculator referencePriceCalculator;
 	private final PracticeMarketObservationRepository practiceMarketObservationRepository;
@@ -247,14 +247,12 @@ public class InvestmentPracticeQueryService {
 	// 내리고, 그 결과 isWithinSaleDeadline의 null 가드가 4단계 상태를 EXPIRED로 만들지 않는다. 버전 1 attempt와
 	// legacy chain은 기존 값을 그대로 유지한다(041 plan §시간 게이트 제거).
 	// 042 EXITPRESET-003 — 프리셋 잠금 기준은 "지금 들고 있는가"다. 041의 대기 구간 탈출 판정과 같은
-	// 산출식(HoldingService.findNetQuantity)을 쓴다(042 plan §자동 예약 생성).
+	// 산출식(TradeService.netFilledQuantity)을 쓴다 — **현재 실행 세대의** 순량이다.
 	private boolean exitPresetLocked(PracticeAttempt attempt) {
 		if (attempt.getInstrument() == null) {
 			return false;
 		}
-		return holdingService
-			.findNetQuantity(attempt.getUserId(), attempt.getMarket(), attempt.getInstrument().getId())
-			.signum() > 0;
+		return tradeService.netFilledQuantity(attempt.getId(), attempt.getRunNumber()).signum() > 0;
 	}
 
 	private LocalDateTime attemptSaleDeadlineAt(PracticeAttempt attempt, PracticeRiskSnapshot snapshot) {

@@ -20,4 +20,5 @@ public interface PracticeOrderAttributionPort {
 	 * 재진입(손절 후 재매수)에서도 새 snapshot이 생기기 때문이다.
 	 */
 	void createRiskSnapshotOnBuyFill(Order order, Trade trade, LocalDateTime createdAt);
+
 }

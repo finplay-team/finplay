@@ -21,7 +21,11 @@ import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.domain.OrderType;
 import com.finplay.api.order.domain.Trade;
+import com.finplay.api.order.service.ExitPlanCreateCommandDto;
+import com.finplay.api.order.service.ExitPlanCreationService;
 import com.finplay.api.order.service.PracticeOrderAttributionDto;
+import com.finplay.api.order.service.TradeService;
+import com.finplay.api.portfolio.domain.Holding;
 import com.finplay.api.portfolio.service.HoldingService;
 import com.finplay.api.order.service.PracticeOrderFillAttributionDto;
 import com.finplay.api.order.service.PracticeOrderFillContextDto;
@@ -44,10 +48,12 @@ class PracticeAttemptOrderAttributionServiceTest {
 		PracticeRiskSnapshotRepository.class);
 	private final PracticeAttemptCanonicalPriceService canonicalPriceService = mock(
 		PracticeAttemptCanonicalPriceService.class);
+	private final TradeService tradeService = mock(TradeService.class);
 	private final HoldingService holdingService = mock(HoldingService.class);
+	private final ExitPlanCreationService exitPlanCreationService = mock(ExitPlanCreationService.class);
 	private final PracticeAttemptOrderAttributionService service = new PracticeAttemptOrderAttributionService(
 		practiceAttemptRepository, practiceRiskSnapshotRepository, canonicalPriceService,
-		new ReferencePriceCalculator(), holdingService,
+		new ReferencePriceCalculator(), tradeService, holdingService, exitPlanCreationService,
 		java.time.Clock.fixed(NOW.toInstant(java.time.ZoneOffset.UTC), java.time.ZoneOffset.UTC));
 
 	@Test
@@ -101,8 +107,11 @@ class PracticeAttemptOrderAttributionServiceTest {
 		when(practiceAttemptRepository.findByIdForUpdate(ATTEMPT_ID)).thenReturn(Optional.of(attempt));
 		when(practiceRiskSnapshotRepository.countByAttemptIdAndRunNumber(ATTEMPT_ID, 1L)).thenReturn(0L, 1L);
 		// 첫 호출은 직전 보유 0(= 이번 체결분만), 두 번째는 이미 들고 있는 상태에서의 추가 매수다.
-		when(holdingService.findNetQuantity(USER_ID, Market.CRYPTO, INSTRUMENT_ID))
+		when(tradeService.netFilledQuantity(ATTEMPT_ID, 1L))
 			.thenReturn(trade.getQuantity(), trade.getQuantity().add(trade.getQuantity()));
+		when(holdingService.findHoldingId(USER_ID, Market.CRYPTO, INSTRUMENT_ID)).thenReturn(Optional.of(77L));
+		when(holdingService.findHoldingForOwner(USER_ID, 77L)).thenReturn(Optional.of(mock(Holding.class)));
+		when(canonicalPriceService.canonicalPrice(attempt, NOW)).thenReturn(new BigDecimal("100.00000000"));
 
 		service.createRiskSnapshotOnBuyFill(order, trade, NOW);
 		service.createRiskSnapshotOnBuyFill(order, trade, NOW.plusSeconds(1));
@@ -120,6 +129,23 @@ class PracticeAttemptOrderAttributionServiceTest {
 		// 바꿔도 이미 만들어진 진입의 기준선이 흔들리지 않는다.
 		assertThat(snapshot.getExitPreset()).isEqualTo(ExitPreset.BALANCED);
 		assertThat(snapshot.getEntrySequence()).isEqualTo(1);
+
+		// 042 5번 — CRYPTO는 같은 트랜잭션에서 예약까지 만든다. 진입당 1회 가드가 두 번째 호출을 막으므로
+		// 예약도 한 번만 생긴다(엔진의 validateNoPendingPlan 409로 매수가 통째로 실패하는 것을 예방한다).
+		ArgumentCaptor<ExitPlanCreateCommandDto> commandCaptor = ArgumentCaptor
+			.forClass(ExitPlanCreateCommandDto.class);
+		verify(exitPlanCreationService).create(commandCaptor.capture());
+		ExitPlanCreateCommandDto command = commandCaptor.getValue();
+		assertThat(command.isPracticePath()).isTrue();
+		assertThat(command.practiceOrigin().attemptId()).isEqualTo(ATTEMPT_ID);
+		assertThat(command.practiceOrigin().runNumber()).isEqualTo(1L);
+		// 대본 canonical price가 baseline이다 — 엔진 기본 경로의 사인파 항시 시세가 아니다.
+		assertThat(command.practiceOrigin().baselinePrice()).isEqualByComparingTo("100.00000000");
+		// 예약에 넘기는 체결가도 snapshot과 같은 scale 8 값이어야 화면 기준선과 실제 체결선이 갈리지 않는다.
+		assertThat(command.priceInput().entryPrice()).isEqualByComparingTo("100.12345679");
+		assertThat(command.priceInput().stopLossRate()).isEqualByComparingTo("3");
+		assertThat(command.priceInput().takeProfitRate()).isEqualByComparingTo("5");
+		assertThat(command.requestHash()).hasSize(64);
 	}
 
 	@Test

@@ -18,7 +18,7 @@ import com.finplay.api.education.repository.PracticeProgressRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.InstrumentService;
-import com.finplay.api.portfolio.service.HoldingService;
+import com.finplay.api.order.service.TradeService;
 import com.finplay.api.market.service.TutorialPriceGenerator;
 import com.finplay.api.market.service.TutorialScenarioScriptLoader;
 import java.security.SecureRandom;
@@ -52,7 +52,7 @@ public class PracticeAttemptService {
 	private final PracticeRiskSnapshotRepository practiceRiskSnapshotRepository;
 	private final PracticeProgressRepository practiceProgressRepository;
 	private final InstrumentService instrumentService;
-	private final HoldingService holdingService;
+	private final TradeService tradeService;
 	private final TutorialScenarioScriptLoader tutorialScenarioScriptLoader;
 	private final TutorialAccountService tutorialAccountService;
 	private final Clock clock;
@@ -184,15 +184,13 @@ public class PracticeAttemptService {
 		return toResponse(attempt, false);
 	}
 
-	// 042 EXITPRESET-003의 잠금 판정과 041의 대기 구간 탈출 판정은 같은 산출식을 써야 한다
-	// (042 plan §자동 예약 생성). 그 한 곳이 HoldingService.findNetQuantity다.
+	// 042 EXITPRESET-003의 잠금 판정, EXITPRESET-020의 진입 가드, 041의 대기 구간 탈출 판정이 같은 산출식을
+	// 써야 한다(042 plan §자동 예약 생성). 그 한 곳이 TradeService.netFilledQuantity다.
 	private boolean exitPresetLocked(PracticeAttempt attempt) {
 		if (attempt.getInstrument() == null) {
 			return false;
 		}
-		return holdingService
-			.findNetQuantity(attempt.getUserId(), attempt.getMarket(), attempt.getInstrument().getId())
-			.signum() > 0;
+		return tradeService.netFilledQuantity(attempt.getId(), attempt.getRunNumber()).signum() > 0;
 	}
 
 	private void validateTutorialInstrument(Market market, Instrument instrument) {

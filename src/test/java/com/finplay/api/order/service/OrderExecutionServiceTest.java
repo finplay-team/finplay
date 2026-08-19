@@ -67,6 +67,8 @@ class OrderExecutionServiceTest {
 	private final PortfolioSellService portfolioSellService = mock(PortfolioSellService.class);
 	private final OrderRepository orderRepository = mock(OrderRepository.class);
 	private final TradeRepository tradeRepository = mock(TradeRepository.class);
+	private final PracticeOrderSettlementService practiceOrderSettlementService = mock(
+		PracticeOrderSettlementService.class);
 	private final PracticeOrderAttributionPort practiceOrderAttributionPort = mock(
 		PracticeOrderAttributionPort.class);
 	private final Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
@@ -88,6 +90,7 @@ class OrderExecutionServiceTest {
 			orderRepository,
 			tradeRepository,
 			practiceOrderAttributionPort,
+			practiceOrderSettlementService,
 			clock,
 			eventPublisher);
 	}

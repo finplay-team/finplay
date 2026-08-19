@@ -5,6 +5,7 @@ import com.finplay.api.account.domain.Market;
 import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.domain.Trade;
 import java.time.LocalDateTime;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.EntityGraph;
@@ -66,6 +67,21 @@ public interface TradeRepository extends JpaRepository<Trade, Long>, TradeReposi
 		Long attemptId,
 		@Param("runNumber")
 		long runNumber);
+
+	// 042 EXITPRESET-003·020, 041 대기 구간 탈출 — **현재 실행 세대의** 순보유수량이다. holdings 행의 수량을
+	// 쓰면 이전 실행에서 넘어온 보유(재시작이 청산하지 못한 legacy holding 등)까지 세어, 새 진입인데도
+	// "이미 들고 있다"로 판정된다(통합 테스트에서 재현). 스칼라 집계 한 줄이라 체결을 엔티티로 훑지 않는다.
+	@Query("""
+		select coalesce(sum(case when t.side = com.finplay.api.order.domain.OrderSide.BUY
+			then t.quantity else -t.quantity end), 0)
+		from Trade t
+		where t.order.practiceAttemptId = :attemptId
+		  and t.order.practiceAttemptRunNumber = :runNumber
+		  and t.order.status = com.finplay.api.order.domain.OrderStatus.FILLED
+		""")
+	BigDecimal sumNetFilledPracticeRunQuantity(@Param("attemptId")
+	Long attemptId, @Param("runNumber")
+	long runNumber);
 
 	// 041 대기 구간 탈출 시 delta를 자를 기준 시각 — 남은 delta를 전부 이월하면 사용자가 매수 직후 처음 보는
 	// 화면이 진행 구간 한참 뒤가 되어 가격이 튄다(041 plan §상태 전이표). 순회 중 체결도 그 시점 시각으로
