@@ -485,20 +485,7 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 조회 대상은 요청에서 받지 않고 Access Token의 인증 사용자 본인 소유의 해당 시장 계좌(`AccountService.getAccountFor`로 소유권+시장 스코프 검증)가 쓴 매수 회고(`buy_trade_journals`)와 매도 회고(`sell_trade_journals`)를 **한 목록에 섞어** 반환한다 — 두 종류를 따로 조회하는 엔드포인트는 없다. 정렬 기준은 **회고를 처음 쓴 시점(`createdAt`) 내림차순**이며 동시각은 체결 ID 내림차순으로 끊는다(`updatedAt` 기준 정렬 아님 — 방금 수정한 오래된 회고가 목록 맨 위로 튀지 않도록). 커서는 "이전 페이지 마지막 행보다 이 시각 이전이거나(동시각이면 이 체결 ID보다 작은)" 조건으로 다음 페이지를 이어받아 페이지 경계에서 중복·누락이 없다.
 
-응답 항목 필드는 `journalType`(`"BUY"`\|`"SELL"`)·`buyTradeId`·`sellTradeId`·`content`·`createdAt`·`updatedAt` 6개로 고정이다. 매수 항목은 `sellTradeId`가, 매도 항목은 `buyTradeId`가 `null`이다. **통합 `journalId`는 노출하지 않는다** — 아래 "투자일기 상세 조회(매수·매도)" 절이 확정한 JOUR-005 식별자 체계(타입별 경로 분리)를 선점하지 않기 위해서다. 종목·가격·수량·실현손익 등 체결 정보는 포함하지 않는다(`GET /api/trades`가 정본). wrapper는 형제 API(`GET /api/trades`·`GET /api/orders`)와 같은 `content`·`nextCursor`·`hasNext` 3필드다.
-
-### 투자일기 상세 조회(매수·매도)
-
-| Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
-|---|---|---|---|---|---|---|
-| GET | /api/journal/buy/{buyTradeId} | Access Bearer 필수 | 경로 변수 `buyTradeId`(숫자), 본문 없음 | 200 `{"journalId":1,"buyTradeId":12,"content":"실적 발표 전 분할 매수. 5% 빠지면 손절 계획.","createdAt":"2026-08-04T10:12:33","updatedAt":"2026-08-05T09:03:12"}` (`BuyJournalDetailResponse`, 5개 필드 고정) | `buyTradeId` 타입 불일치(숫자 파싱 실패)는 400 `VALIDATION_ERROR`. 대상 체결의 `side`가 `BUY`가 아님(매도 체결)도 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED`. 타인 소유 체결은 403 `FORBIDDEN`. `buyTradeId`에 해당하는 체결 없음은 404 `NOT_FOUND`. 체결은 있으나 매수 회고가 아직 없으면 404 `NOT_FOUND` | 007 JOUR-005, Issue #217 |
-| GET | /api/journal/sell/{sellTradeId} | Access Bearer 필수 | 경로 변수 `sellTradeId`(숫자), 본문 없음 | 200 `{"journalId":1,"sellTradeId":34,"content":"목표가 도달해서 전량 매도. 다음엔 분할 매도 시도.","createdAt":"2026-08-04T15:20:41","updatedAt":"2026-08-04T15:20:41"}` (`SellJournalDetailResponse`, 5개 필드 고정) | `sellTradeId` 타입 불일치는 400 `VALIDATION_ERROR`. 대상 체결의 `side`가 `SELL`이 아님(매수 체결)도 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED`. 타인 소유 체결은 403 `FORBIDDEN`. `sellTradeId`에 해당하는 체결 없음은 404 `NOT_FOUND`. 체결은 있으나 매도 회고가 아직 없으면 404 `NOT_FOUND` | 007 JOUR-005, Issue #217 |
-
-**경로를 타입별로 분리한다** — 단일 경로 `GET /api/journal/{journalId}`는 만들지 않는다(2026-08-05 이슈 #217 확정, JOUR-005 식별자 체계 Decision Gate 해제). `buy_trade_journals.id`·`sell_trade_journals.id`는 서로 다른 AUTO_INCREMENT 시퀀스라 **같은 값이 두 테이블에 겹칠 수 있고**, 숫자 하나만으로는 어느 테이블인지 정해지지 않는다. 경로 변수는 회고 자체의 PK가 아니라 **그 회고가 달린 체결 ID**(`buyTradeId`/`sellTradeId`)다 — 작성·수정 계약 4개와 목록 항목이 이미 쓰는 식별자를 그대로 재사용한다. `journalId`는 응답 본문에만 남는다.
-
-**검증 순서는 수정 계약(JOUR-002·004)과 같다** — `체결 존재(404) → 소유(403) → 체결 구분(400) → 회고 존재(404)`. 타인 체결이면 그 체결의 매수·매도 속성과 회고 존재 여부를 흘리기 전에 403이 먼저다. 경로와 체결 구분이 어긋나면(매수 경로에 매도 체결 ID, 매도 경로에 매수 체결 ID) **404가 아니라 400**이다 — 리소스가 없는 게 아니라 클라이언트가 경로를 잘못 고른 것으로 취급한다. **이 엔드포인트에 409는 없다**(새 행을 만들지 않는다).
-
-응답은 같은 회고의 수정 응답(`BuyJournalUpdateResponse`·`SellJournalUpdateResponse`)과 필드 구성이 1:1로 같은 5개 고정(`journalId`·`buyTradeId` 또는 `sellTradeId`·`content`·`createdAt`·`updatedAt`)이다. **두 응답의 `journalId`는 서로 다른 테이블의 시퀀스에서 채번되므로 값이 겹칠 수 있다** — 같은 `journalId`가 매수 응답과 매도 응답에 동시에 나타나도 서로 다른 회고를 가리킨다. 종목·가격·수량·실현손익 등 체결 정보는 포함하지 않는다(`GET /api/trades`가 정본). 조회는 읽기 전용이며(`@Transactional(readOnly = true)`), 신규 Flyway 마이그레이션 없이 기존 `findByBuyTradeId`·`findBySellTradeId`를 그대로 재사용한다 — 스키마 변경이 없다.
+응답 항목 필드는 `journalType`(`"BUY"`\|`"SELL"`)·`buyTradeId`·`sellTradeId`·`content`·`createdAt`·`updatedAt` 6개로 고정이다. 매수 항목은 `sellTradeId`가, 매도 항목은 `buyTradeId`가 `null`이다. **통합 `journalId`는 노출하지 않는다** — `buy_trade_journals.id`·`sell_trade_journals.id`는 서로 다른 AUTO_INCREMENT 시퀀스라 같은 값이 두 테이블에 겹칠 수 있어 식별자로 쓸 수 없다. 종목·가격·수량·실현손익 등 체결 정보는 포함하지 않는다(`GET /api/trades`가 정본). wrapper는 형제 API(`GET /api/trades`·`GET /api/orders`)와 같은 `content`·`nextCursor`·`hasNext` 3필드다.
 
 ### 매수 체결 투자일기 작성
 
@@ -506,7 +493,7 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 |---|---|---|---|---|---|---|
 | POST | /api/trades/{buyTradeId}/journal | Access Bearer 필수 | 경로 변수 `buyTradeId`(숫자) + 본문 `{"content":"실적 발표 전 분할 매수. 5% 빠지면 손절 계획."}`(`BuyJournalCreateRequest`, `content`는 `@NotBlank` + `@Size(max=5000)`) | 201 `{"journalId":1,"buyTradeId":12,"content":"실적 발표 전 분할 매수. 5% 빠지면 손절 계획.","createdAt":"2026-08-04T10:12:33"}` (`BuyJournalResponse`, 4개 필드 고정) | `content` 누락·공백·5000자 초과, `buyTradeId` 타입 불일치(숫자 파싱 실패), 대상 체결의 `side`가 `BUY`가 아님(매도 체결)은 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED`. 타인 소유 체결은 403 `FORBIDDEN`. `buyTradeId`에 해당하는 체결 없음은 404 `NOT_FOUND`. 해당 매수 체결에 투자일기가 이미 존재(선제 조회 또는 유니크 위반)하면 409 `DUPLICATE_RESOURCE` 공통 오류 형식 | 007 JOUR-001, Issue #159 |
 
-작성자는 요청 본문이 아니라 Access Token의 인증 사용자(`AuthenticatedUser#userId`)로 결정한다. 응답 필드는 `journalId`·`buyTradeId`·`content`·`createdAt` 4개로 고정이며, 종목·가격·수량 등 체결 정보는 포함하지 않는다(`GET /api/trades`가 이미 제공한다). 목표가·손절가·예상보유기간 등 구조화 필드는 이번 범위가 아니다. `Location` 헤더는 포함하지 않는다 — 단건 조회는 위 "투자일기 상세 조회(매수·매도)" 절이 담당하며 별도 URL로 가리킨다.
+작성자는 요청 본문이 아니라 Access Token의 인증 사용자(`AuthenticatedUser#userId`)로 결정한다. 응답 필드는 `journalId`·`buyTradeId`·`content`·`createdAt` 4개로 고정이며, 종목·가격·수량 등 체결 정보는 포함하지 않는다(`GET /api/trades`가 이미 제공한다). 목표가·손절가·예상보유기간 등 구조화 필드는 이번 범위가 아니다. `Location` 헤더는 포함하지 않는다.
 
 **본문 검증이 경로 검증보다 먼저 일어난다.** `@Valid`는 컨트롤러 메서드 진입 전에 평가되므로, 없는 체결 + 공백 본문 요청은 404가 아니라 **400**이다.
 
@@ -1054,7 +1041,7 @@ holding 관찰은 buyTrade→order에서 sessionId를 서버가 역추적한다(
 
 **`narrative_finalized`는 이 판정에 쓰지 않는다.** 그 플래그는 "매도 후 흐름·집단 비교까지 반영된 서술인가"이지 "일기까지 반영됐는가"가 아니다. 얹으면 게이트를 이미 통과한 체결에서 일기를 나중에 써도 영원히 반영되지 않는다. 같은 이유로 **누적 상한도 따로 센다** — 일기 사유는 `journal_regenerations`·`max-journal-regeneration`, 흐름·집단 사유는 `regeneration_attempts`·`max-narrative-retry`이고 **서로를 소모하지 않는다**(두 값의 정본은 `spec.md` §C-7이다 — 여기 옮겨 적지 않는다). **두 사유가 동시에 성립해도 LLM은 한 번만 부른다** — 한 번의 생성에 매도 후 흐름·집단 비교·일기가 모두 실린다. **지문이 달라졌는데 일기 상한을 이미 썼으면 오류가 아니라 저장된 서술을 그대로 재사용한다.** 실패 처리는 흐름·집단 사유와 같다 — 템플릿으로 폴백하면 실패로 쳐서 기존 서술과 지문을 유지한 채 `journal_regenerations`만 올린다.
 
-**이 변경으로 엔드포인트·요청·응답 필드가 하나도 바뀌지 않는다.** 상태값도 늘지 않아 `narrativeStatus`는 여전히 항상 `READY`이고 응답은 항상 200이며, `narrativeSource`(`LLM`|`TEMPLATE`) 구분도 그대로다. 달라진 것은 **`narrative` 문자열이 무엇을 재료로 만들어지고 언제 다시 만들어지는가**뿐이다. **일기 본문은 응답에 실리지 않는다** — 프론트는 `GET /api/journal/buy/{buyTradeId}`·`GET /api/journal/sell/{sellTradeId}`로 읽는다(JOUR-005). 응답에 넣으면 같은 데이터의 정본이 둘이 된다. 서술의 길이도 여기서 규정하지 않는다 — 프롬프트의 자연어 지시일 뿐 응답 검증 대상이 아니다. 이 엔드포인트는 두 일기 테이블을 **읽기만 하며 `updated_at`도 건드리지 않는다.**
+**이 변경으로 엔드포인트·요청·응답 필드가 하나도 바뀌지 않는다.** 상태값도 늘지 않아 `narrativeStatus`는 여전히 항상 `READY`이고 응답은 항상 200이며, `narrativeSource`(`LLM`|`TEMPLATE`) 구분도 그대로다. 달라진 것은 **`narrative` 문자열이 무엇을 재료로 만들어지고 언제 다시 만들어지는가**뿐이다. **일기 본문은 응답에 실리지 않는다** — 프론트는 목록 조회(`GET /api/journal`) 응답에 이미 포함된 본문을 사용한다. 응답에 넣으면 같은 데이터의 정본이 둘이 된다. 서술의 길이도 여기서 규정하지 않는다 — 프롬프트의 자연어 지시일 뿐 응답 검증 대상이 아니다. 이 엔드포인트는 두 일기 테이블을 **읽기만 하며 `updated_at`도 건드리지 않는다.**
 
 **문구 제약**: 인과 단정("~때문에"), 투자 권유("매수", "주목"), 가격 예측("오를 것"), 조언·후회 유도("~하세요", "~했으면 좋았을"), **판단·훈수("버티셨네요", "놓치셨", "더 기다렸다면")**를 쓰지 않는다. "하락 이후에도 3시간 보유했습니다"는 사실이고 "3시간이나 버티셨네요"는 판단이다 — 파생 사실이 늘어날수록 이 경계를 넘기 쉬워지므로 가정법 어미(`~다면`)까지 막는다. 서버가 LLM 출력을 후검증해 위반 시 템플릿 문장으로 대체한다 (C-004, FEED-003). **일기 본문에 지시문이 적혀 있어도 이 제약이 우선한다** — 일기는 지시가 아니라 인용 자료로 넘어가고, 그래도 서술이 권유가 되면 후검증이 잡아 템플릿으로 떨어뜨린다(그때도 200·`READY`이며 `narrativeSource`가 `TEMPLATE`이 된다).
 
