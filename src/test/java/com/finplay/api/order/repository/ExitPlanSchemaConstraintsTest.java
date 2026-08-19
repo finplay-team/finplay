@@ -56,6 +56,8 @@ class ExitPlanSchemaConstraintsTest {
 			"closed_at", "YES",
 			"triggered_order_id", "YES",
 			"replay_session_id", "YES",
+			"practice_attempt_id", "YES",
+			"practice_attempt_run_number", "YES",
 			"request_hash", "NO"));
 	}
 
@@ -118,16 +120,27 @@ class ExitPlanSchemaConstraintsTest {
 	}
 
 	@Test
-	@DisplayName("exit_plans는 holding·status와 user·status 조회 인덱스를 갖는다")
-	void exitPlansHasLookupIndexesForHoldingAndUserStatus() {
-		Map<String, String> indexes = allIndexesOf("exit_plans");
-
-		assertThat(indexes).containsEntry("idx_exit_plans_holding_status", "holding_id,status");
-		assertThat(indexes).containsEntry("idx_exit_plans_user_status", "user_id,status");
+	// 클래스 javadoc이 선언한 대로 맵 전체를 비교한다 — 여분 인덱스가 조용히 생기는 것까지 잡는다.
+	// idx_exit_plans_practice_attempt_run_status는 042 6번의 "현재 실행 세대의 PENDING 예약" 조회용이고,
+	// 선두 컬럼이 practice_attempt_id라 fk_exit_plans_practice_attempt가 이 인덱스를 그대로 쓴다. FK 이름의
+	// 단일 컬럼 인덱스가 목록에 없는 것이 인덱스를 FK보다 먼저 만든 이유다(다른 FK 넷에는 그 인덱스가 있다).
+	@DisplayName("exit_plans의 인덱스 구성이 확정 스키마와 일치한다 — 튜토리얼 귀속 FK는 복합 인덱스를 재사용한다")
+	void exitPlansIndexesMatchPlannedLookups() {
+		assertThat(allIndexesOf("exit_plans")).isEqualTo(expected(
+			"PRIMARY", "id",
+			"uk_exit_plans_user_intention_instance", "user_id,intention_instance_key",
+			"idx_exit_plans_holding_status", "holding_id,status",
+			"idx_exit_plans_user_status", "user_id,status",
+			"idx_exit_plans_practice_attempt_run_status",
+			"practice_attempt_id,practice_attempt_run_number,status,id",
+			"fk_exit_plans_buy_trade", "buy_trade_id",
+			"fk_exit_plans_instrument", "instrument_id",
+			"fk_exit_plans_triggered_order", "triggered_order_id",
+			"fk_exit_plans_replay_session", "replay_session_id"));
 	}
 
 	@Test
-	@DisplayName("exit_plans의 FK는 여섯 개이고 intention_id는 FK가 아니다 — 숫자 snapshot일 뿐이다")
+	@DisplayName("exit_plans의 FK는 일곱 개이고 intention_id는 FK가 아니다 — 숫자 snapshot일 뿐이다")
 	void exitPlansForeignKeysMatchPlannedReferences() {
 		assertThat(foreignKeysOf("exit_plans")).isEqualTo(expected(
 			"user_id", "users",
@@ -135,7 +148,8 @@ class ExitPlanSchemaConstraintsTest {
 			"buy_trade_id", "trades",
 			"instrument_id", "instruments",
 			"triggered_order_id", "orders",
-			"replay_session_id", "stock_replay_sessions"));
+			"replay_session_id", "stock_replay_sessions",
+			"practice_attempt_id", "practice_attempts"));
 	}
 
 	@Test

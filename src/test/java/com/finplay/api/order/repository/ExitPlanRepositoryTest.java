@@ -9,6 +9,8 @@ import com.finplay.api.account.domain.Account;
 import com.finplay.api.account.repository.AccountRepository;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
+import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
+import com.finplay.api.education.marketpractice.repository.PracticeAttemptRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.repository.InstrumentRepository;
@@ -22,6 +24,7 @@ import com.finplay.api.order.domain.Trade;
 import com.finplay.api.portfolio.domain.Holding;
 import com.finplay.api.portfolio.repository.HoldingRepository;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceException;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -34,6 +37,7 @@ import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -57,6 +61,8 @@ class ExitPlanRepositoryTest {
 	private InstrumentRepository instrumentRepository;
 	@Autowired
 	private HoldingRepository holdingRepository;
+	@Autowired
+	private PracticeAttemptRepository practiceAttemptRepository;
 	@Autowired
 	private EntityManager entityManager;
 
@@ -369,6 +375,66 @@ class ExitPlanRepositoryTest {
 
 		assertThat(result).extracting(ExitPlan::getId)
 			.containsExactly(older.getId(), sameTimeFirst.getId(), sameTimeSecond.getId());
+	}
+
+	// 튜토리얼 자동 예약은 실행 세대에 귀속된다(042 EXITPRESET-015) — tick 정산 대상 선별과 재시작 정리가
+	// 이 두 컬럼으로 이뤄진다. 값을 채우는 것은 042 5번이라 여기서는 스키마와 매핑만 잠근다.
+	@Test
+	@DisplayName("튜토리얼 귀속 컬럼이 함께 채워진 예약은 저장되고 재조회된다")
+	void savesPlanWithPracticeAttemptAttribution() {
+		PracticeAttempt attempt = practiceAttemptRepository.saveAndFlush(
+			PracticeAttempt.create(user.getId(), Market.CRYPTO, NOW));
+		ExitPlan plan = generalPlan(hash("p"));
+		ReflectionTestUtils.setField(plan, "practiceAttemptId", attempt.getId());
+		ReflectionTestUtils.setField(plan, "practiceAttemptRunNumber", attempt.getRunNumber());
+		ExitPlan saved = exitPlanRepository.saveAndFlush(plan);
+		entityManager.clear();
+
+		ExitPlan reloaded = exitPlanRepository.findById(saved.getId()).orElseThrow();
+
+		assertThat(reloaded.getPracticeAttemptId()).isEqualTo(attempt.getId());
+		assertThat(reloaded.getPracticeAttemptRunNumber()).isEqualTo(attempt.getRunNumber());
+	}
+
+	@Test
+	@DisplayName("일반 경로 예약은 튜토리얼 귀속 컬럼이 둘 다 null인 채로 저장된다")
+	void savesGeneralPathPlanWithoutPracticeAttemptAttribution() {
+		ExitPlan saved = exitPlanRepository.saveAndFlush(generalPlan(hash("q")));
+		entityManager.clear();
+
+		ExitPlan reloaded = exitPlanRepository.findById(saved.getId()).orElseThrow();
+
+		assertThat(reloaded.getPracticeAttemptId()).isNull();
+		assertThat(reloaded.getPracticeAttemptRunNumber()).isNull();
+	}
+
+	@Test
+	@DisplayName("attempt ID만 있는 예약은 DB check constraint가 거부한다")
+	void planWithAttemptIdOnlyFailsWithCheckConstraint() {
+		PracticeAttempt attempt = practiceAttemptRepository.saveAndFlush(
+			PracticeAttempt.create(user.getId(), Market.CRYPTO, NOW));
+		ExitPlan saved = exitPlanRepository.saveAndFlush(generalPlan(hash("r")));
+		entityManager.flush();
+
+		assertThatThrownBy(() -> entityManager.createNativeQuery(
+			"UPDATE exit_plans SET practice_attempt_id = :attemptId WHERE id = :planId")
+			.setParameter("attemptId", attempt.getId())
+			.setParameter("planId", saved.getId())
+			.executeUpdate())
+			.isInstanceOf(PersistenceException.class);
+	}
+
+	@Test
+	@DisplayName("실행 세대만 있는 예약은 DB check constraint가 거부한다")
+	void planWithRunNumberOnlyFailsWithCheckConstraint() {
+		ExitPlan saved = exitPlanRepository.saveAndFlush(generalPlan(hash("s")));
+		entityManager.flush();
+
+		assertThatThrownBy(() -> entityManager.createNativeQuery(
+			"UPDATE exit_plans SET practice_attempt_run_number = 1 WHERE id = :planId")
+			.setParameter("planId", saved.getId())
+			.executeUpdate())
+			.isInstanceOf(PersistenceException.class);
 	}
 
 	private void closePlan(Long planId, ExitPlanStatus status) {

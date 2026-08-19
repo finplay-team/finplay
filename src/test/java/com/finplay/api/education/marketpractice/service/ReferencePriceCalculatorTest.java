@@ -2,10 +2,16 @@
 package com.finplay.api.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.finplay.api.education.marketpractice.domain.ExitPreset;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class ReferencePriceCalculatorTest {
 
@@ -140,5 +146,78 @@ class ReferencePriceCalculatorTest {
 			new BigDecimal("3"), null);
 
 		assertThat(result).isEmpty();
+	}
+
+	// EXITPRESET-002 — 아무 조작도 하지 않은 사용자의 결과는 이 기능 도입 전과 같아야 한다. 비교 대상 배율을
+	// 복사해 적지 않고 PracticeAttemptOrderAttributionService의 상수를 직접 읽는다. 복사하면 상수 쪽만 바뀌어도
+	// 이 테스트가 초록으로 남는다. 프리셋이 그 자리를 대체하는 042 tasks 4번에서 상수가 사라지면 필드명을
+	// 문자열로 찾는 이 테스트가 실행 단계에서 빨간불이 되어(컴파일이 아니다) 이 보증을 다시 보게 만든다.
+	// 근사가 아니라 BigDecimal 동등성(scale까지 같음)으로 본다 — 기준선은 화면에 그대로 찍히는 숫자다.
+	@ParameterizedTest
+	@ValueSource(strings = {
+		"100", "51234.12345678", "0.00012345", "3.33333333", "87654321.87654321", "1"})
+	void balancedPresetProducesExactlyTheSameLinesAsTheCurrentHardcodedMultipliers(String rawEntryPrice) {
+		BigDecimal entryPrice = new BigDecimal(rawEntryPrice).setScale(8, RoundingMode.HALF_UP);
+
+		ReferencePriceLines lines = calculator.calculateFromPreset(entryPrice, ExitPreset.BALANCED);
+
+		assertThat(lines.referenceStopLossPrice())
+			.isEqualTo(entryPrice.multiply(currentMultiplier("STOP_LOSS_MULTIPLIER"))
+				.setScale(8, RoundingMode.HALF_UP));
+		assertThat(lines.referenceTakeProfitPrice())
+			.isEqualTo(entryPrice.multiply(currentMultiplier("TAKE_PROFIT_MULTIPLIER"))
+				.setScale(8, RoundingMode.HALF_UP));
+	}
+
+	/** 현행 하드코딩 배율을 그 상수가 살아 있는 동안 직접 읽는다(042 tasks 4번이 이 상수를 대체한다). */
+	private static BigDecimal currentMultiplier(String fieldName) {
+		Object value = ReflectionTestUtils.getField(PracticeAttemptOrderAttributionService.class, fieldName);
+		assertThat(value).as("%s 상수", fieldName).isInstanceOf(BigDecimal.class);
+		return (BigDecimal)value;
+	}
+
+	@Test
+	void balancedIsTheDefaultPresetSoUnselectedUsersKeepTheCurrentLines() {
+		BigDecimal entryPrice = new BigDecimal("51234.12345678");
+
+		ReferencePriceLines unselected = calculator.calculateFromPreset(entryPrice, null);
+
+		assertThat(ExitPreset.DEFAULT).isEqualTo(ExitPreset.BALANCED);
+		assertThat(unselected).isEqualTo(calculator.calculateFromPreset(entryPrice, ExitPreset.BALANCED));
+	}
+
+	@Test
+	void everyPresetAppliesItsOwnRatesAsPercentNumbers() {
+		// 프리셋의 비율은 분수가 아니라 퍼센트 수다(2%는 0.02가 아니라 2). 계산기가 다시 100으로 나누므로
+		// 분수로 적으면 손절선이 진입가의 99.98%가 되어도 아무 테스트도 깨지지 않는다 — 여기서 못박는다.
+		BigDecimal entryPrice = new BigDecimal("1000.00000000");
+
+		assertThat(calculator.calculateFromPreset(entryPrice, ExitPreset.CAUTIOUS))
+			.isEqualTo(new ReferencePriceLines(
+				new BigDecimal("980.00000000"), new BigDecimal("1030.00000000")));
+		assertThat(calculator.calculateFromPreset(entryPrice, ExitPreset.RELAXED))
+			.isEqualTo(new ReferencePriceLines(
+				new BigDecimal("950.00000000"), new BigDecimal("1080.00000000")));
+	}
+
+	@Test
+	void calculateFromPresetNormalizesEntryPriceBeforeApplyingTheRates() {
+		// 현행 코드는 체결가를 scale 8로 먼저 반올림하고 곱한다. 계산기가 그 정규화를 하지 않으면 scale 9
+		// 이하 자리를 가진 체결가에서 두 경로가 갈린다 — 0.000000005는 선반올림이 0.00000001, 아니면 0이다.
+		BigDecimal rawEntryPrice = new BigDecimal("100.000000005");
+		BigDecimal preRounded = rawEntryPrice.setScale(8, RoundingMode.HALF_UP);
+
+		ReferencePriceLines lines = calculator.calculateFromPreset(rawEntryPrice, ExitPreset.BALANCED);
+
+		assertThat(lines).isEqualTo(calculator.calculateFromPreset(preRounded, ExitPreset.BALANCED));
+		assertThat(lines.referenceStopLossPrice())
+			.isEqualTo(preRounded.multiply(currentMultiplier("STOP_LOSS_MULTIPLIER"))
+				.setScale(8, RoundingMode.HALF_UP));
+	}
+
+	@Test
+	void calculateFromPresetFailsLoudlyWhenEntryPriceIsMissing() {
+		assertThatThrownBy(() -> calculator.calculateFromPreset(null, ExitPreset.BALANCED))
+			.isInstanceOf(IllegalArgumentException.class);
 	}
 }

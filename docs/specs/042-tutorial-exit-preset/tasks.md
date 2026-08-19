@@ -21,21 +21,40 @@
   **판정표는 plan §제약 교체만으로는 부족하다에 있다** — 관찰 필터 기준선만 "첫 진입"이고 나머지는 최신
   진입이다. 이 하나를 틀리면 재매수 순간 3단계가 미완료로 되돌아간다(이슈 #420과 같은 유형). **`SNAP-2`보다 먼저 끝나야 한다** — 제약만 풀고 쿼리를 두면 재진입 직후
   조회·복기·재시작·완료가 `IncorrectResultSizeDataAccessException`으로 죽는다.
-- [ ] **SNAP-2** — 마이그레이션: 기존 `uk_practice_risk_snapshots_attempt_run` 삭제.
+- [x] **SNAP-2** — 마이그레이션: 기존 `uk_practice_risk_snapshots_attempt_run` 삭제 (V49 · PR #458 머지 완료).
   **별도 PR·별도 배포다.** 새 UNIQUE가 같은 보호를 하므로(코드가 항상 `entry_sequence = 1`을 쓴다)
   이 창에서 중복 snapshot이 생길 수 없다.
 
 ## 작업 항목
 
-- [ ] **1. 프리셋 상수와 계산** — `ExitPreset` enum(`CAUTIOUS` 2/3, `BALANCED` 3/5, `RELAXED` 5/8,
+- [x] **1. 프리셋 상수와 계산** — `ExitPreset` enum(`CAUTIOUS` 2/3, `BALANCED` 3/5, `RELAXED` 5/8,
   기본값 `BALANCED`) + `ReferencePriceCalculator.calculateFromPercent` 연결.
   **테스트**: `BALANCED`로 계산한 `stopLossPrice`·`takeProfitPrice`가 현행 `entryPrice × 0.97`·`× 1.05`와
-  **정확히 같은 값**임(EXITPRESET-002). 041 대본을 읽어 세 프리셋의 도달 부등식 판정(041 tasks 1번과
-  같은 대상을 반대편에서 검사한다).
+  **정확히 같은 값**임(EXITPRESET-002). 041 대본을 읽어 세 프리셋의 도달 부등식 판정.
+  > **구현에서 정한 것 (이슈 #470).**
+  > - **판정 위치.** "041 tasks 1번과 같은 대상을 반대편에서 검사한다"를 그대로 하면 같은 조건이 두 곳에
+  >   남아 한쪽만 고쳐도 초록이 유지된다. 프리셋이 걸린 부등식은 전부
+  >   `ExitPresetScenarioReachabilityTest`(042)로 옮기고 041 테스트에는 대본 내부 성질만 남겼다.
+  > - **비율 단위는 퍼센트 수다**(3%는 `3`). `calculateFromPercent`가 내부에서 100으로 나누고
+  >   `exit_plans.stop_loss_rate DECIMAL(7,4)`도 같은 단위다. 분수로 넘기면 예외 없이 100배 틀린다.
+  > - **표시 이름(조심스럽게·보통·느긋하게)은 만들지 않았다.** plan §API 계약의 `availableExitPresets`가
+  >   식별자·비율만 내려보내므로 서버가 쓰지 않는 문구를 열거형에 두지 않았다. **필요하면 3번에서 응답
+  >   계약과 함께 정한다.**
+  > - `calculateFromPreset`이 체결가를 scale 8로 **먼저** 반올림한다. 현행 코드가 그렇게 하고 있어
+  >   EXITPRESET-002의 "정확히 같은 값"이 그 위에 서 있다 — 4번에서 `trade.getPrice()`를 그대로 넘겨도
+  >   안전하다.
 
-- [ ] **2. 스키마와 엔티티** — 마이그레이션: `practice_attempts.exit_preset`,
+- [x] **2. 스키마와 엔티티** — 마이그레이션: `practice_attempts.exit_preset`,
   `practice_risk_snapshots.exit_preset`, `exit_plans.practice_attempt_id`·`practice_attempt_run_number`
   (+ `orders`와 같은 모양의 CHECK: 둘 다 null이거나 둘 다 non-null, run > 0). 대응 엔티티 필드.
+  > **구현에서 정한 것 (이슈 #470, V51).** plan에 없는 것을 둘 더했고 근거는 V51 주석에 있다 —
+  > ① `exit_preset` 값 집합 CHECK(V38이 `market`·`status`를 같은 방식으로 막는다),
+  > ② `idx_exit_plans_practice_attempt_run_status`(6번의 PENDING 예약 조회용).
+  > **인덱스를 FK보다 먼저 만든다** — 선두 컬럼이 `practice_attempt_id`라 FK가 이 인덱스를 그대로 쓴다.
+  > (`orders`는 FK → 인덱스 순서인데도 여분 인덱스가 없다 — MySQL 8.4 실측: FK는 있고 같은 이름의 인덱스만
+  > 없다. 이 버전이 뒤늦게 생긴 적합한 인덱스를 보고 자동 인덱스를 정리한다는 뜻이며, 순서를 명시한 것은 그
+  > 정리 동작에 기대지 않기 위해서다. 단언은 `exit_plans` 쪽에만 있고 `orders`에는 스키마 테스트가 없다.)
+  > `restart()`의 `exit_preset` 초기화도 여기서 함께 했다(6번에 적혀 있으나 필드를 만드는 자리가 여기다).
 
 - [ ] **3. 선택 API와 잠금** — `PUT /api/education/practice/attempts/{market}/exit-preset`.
   **`PracticeAttemptResponse`는 `047`(TUTORIAL-CASH-ISOL-011)도 건드린다** — 튜토리얼 계좌 잔고 필드가
@@ -58,6 +77,16 @@
   호출부 `ExitPlanService`에는 `047`이 넣은 샌드박스 차단이 있고, 그 차단은 이 경로를 막지 않도록
   의도적으로 호출부에만 있다(plan §자동 예약 생성). **baseline을 041의 대본 canonical price로 주입한다** —
   엔진 기본 경로는 사인파 항시 시세를 읽는다. **STOCK은 snapshot까지만**(EXITPRESET-018).
+  > **1·2번이 남긴 함정 (이슈 #470).** `ExitPricePolicy`의 PERCENT 경로는 체결가를 정규화하지 않고 그대로
+  > 곱하는데, snapshot을 만드는 `ReferencePriceCalculator.calculateFromPreset`은 scale 8로 먼저 반올림한다.
+  > **예약에 넘기는 체결가도 같은 scale 8 값이어야** 화면의 기준선과 실제 체결선이 scale 9 이하 자리에서
+  > 갈리지 않는다. 두 경로가 같은 값을 내는지 통합 테스트에서 함께 확인해라.
+  >
+  > **귀속 컬럼의 애플리케이션 레벨 검증을 넣을지 여기서 정한다 (PR #471 리뷰 참고).** 2번은 매핑과 DB CHECK만
+  > 만들었고, `ExitPlan`에는 `Order.createPracticeFilled`가 쓰는
+  > `validatePracticeAttemptAttribution`(둘 다 non-null·양수) 같은 팩토리 검증이 없다. 값을 넣는 것이 이
+  > 항목이므로, `ExitPlan`의 생성 팩토리를 고칠 때 `Order`와 대칭으로 검증을 둘지 함께 판단해라 —
+  > 두지 않으면 이 불변식을 지키는 것은 DB CHECK 하나뿐이고, 위반이 트랜잭션 커밋 시점에야 드러난다.
   귀속 컬럼·baseline 주입 때문에 `ExitPlan` 생성 팩토리와 `newExitPlan`도 함께 바뀐다.
   **테스트**: 통합 — snapshot과 예약이 같은 트랜잭션에서 생기고 **실패 시 둘 다 남지 않음**.
 

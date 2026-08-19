@@ -36,6 +36,10 @@
   구간 내, LOOP 구간의 첫·끝 배율 일치). 잘못된 대본이면 기동을 실패시킨다.
   **테스트**: 대본을 읽어 판정하는 단위 테스트 — plan §프리셋 도달 조건의 부등식 전부, 특히 루머 저점
   0.975가 `CAUTIOUS`·`BALANCED` 손절선 구간 사이에 들어가고 세 구간이 겹치지 않음. 무귀속 분 > 귀속 분.
+  > **판정 위치가 옮겨졌다 (042 1번, 이슈 #470).** 프리셋이 걸린 부등식은 042가 프리셋을 상수로 확정하면서
+  > `ExitPresetScenarioReachabilityTest`(`education.marketpractice.domain`)로 전부 이동했다 — 같은 조건을 두
+  > 곳에서 검사하면 한쪽만 고쳐도 초록이 남기 때문이다. `TutorialScenarioScriptIntegrityTest`에는 대본 내부
+  > 성질(구간 배분·극값·사건 배치·무귀속 > 귀속)만 있다. **대본 배율을 손보면 두 테스트를 함께 본다.**
 
 - [x] **2. 생성기 V2** — 대본 위치(`stageId`, `stageMinute`) → 가격 변환을 별도 클래스로 만들고
   `TutorialPriceGenerator` 진입점에서 `generatorVersion`으로 분기. `validate`가 1·2를 모두 허용.

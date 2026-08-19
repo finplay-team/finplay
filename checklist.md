@@ -332,7 +332,18 @@
 - [x] `scenario-crypto-v1.json` 저작 — 8개 구간 120개 배율, 사건 5개
 - [x] 파서·로더와 기동 시점 정합성 검증 (배열 길이, 사건 `stageId` 실재, 영향 구간, LOOP 첫·끝 배율)
 - [x] 도달 부등식 정합성 테스트 — 1막 익절 미발동, 루머 분기 비겹침, 확정 손절, 3막 익절·4막 손절, 무귀속 > 귀속
+  - 이 중 **프리셋이 걸린 부등식은 이슈 #470에서 `ExitPresetScenarioReachabilityTest`(042)로 옮겼다.** `TutorialScenarioScriptIntegrityTest`에는 대본 내부 성질(구간 배분·극값·사건 배치·무귀속 > 귀속)만 남아 있다
 - [x] 생성기 V2(대본 위치 → 가격) + V2 golden vector, V1 golden vector 무변경 통과
 - [x] `practice_attempts` 컬럼 5개(V50) + 엔티티 + `selectInstrument()`·`restart()` 초기화 + `@DataJpaTest`
 - [ ] **후속(041 4·5번)**: 새 attempt를 V2로 전환, `progress_updated_at` 결정, `canonicalPrice`를 커서 기반으로 교체
 
+## 이슈 #470 — 튜토리얼 손절·익절 프리셋 상수와 스키마 (042 1~2번, 2026-08-19)
+
+- [x] `ExitPreset` 열거형 — `CAUTIOUS` 2/3, `BALANCED` 3/5, `RELAXED` 5/8, 기본값 `BALANCED`. 비율은 퍼센트 수
+- [x] `ReferencePriceCalculator.calculateFromPreset` — `calculateFromPercent`의 첫 production 소비자. 체결가를 scale 8로 선정규화
+- [x] `BALANCED` = 현행 `×0.97`·`×1.05` 동치 테스트 — 현행 상수를 리플렉션으로 직접 읽어 `BigDecimal` 동등성으로 고정
+- [x] 도달 부등식 판정을 042 쪽 새 테스트 한 곳으로 이동 (프리셋 리터럴 제거)
+- [x] V51 — `practice_attempts.exit_preset`, `practice_risk_snapshots.exit_preset`, `exit_plans` 귀속 컬럼 2개 + CHECK·FK·조회 인덱스
+- [x] 엔티티 필드 3곳 + `restart()`의 프리셋 초기화 + `@DataJpaTest` 왕복·CHECK 검증
+- [ ] **후속(042 3번)**: 선택 API `PUT .../exit-preset`, 잠금 조건(순보유수량 0), 응답 3개 필드, 표시 이름 형식을 프론트와 합의
+- [ ] **후속(042 4·5번)**: snapshot 생성에 프리셋·`entry_sequence` 반영, CRYPTO 자동 예약. **예약에 넘기는 체결가도 scale 8이어야 한다** — `ExitPricePolicy`는 선정규화를 하지 않는다

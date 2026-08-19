@@ -9,6 +9,7 @@ import com.finplay.api.account.domain.Account;
 import com.finplay.api.account.repository.AccountRepository;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
+import com.finplay.api.education.marketpractice.domain.ExitPreset;
 import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
 import com.finplay.api.education.marketpractice.domain.PracticeRiskSnapshot;
 import com.finplay.api.market.domain.Instrument;
@@ -27,6 +28,8 @@ import java.time.LocalDateTime;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
@@ -357,6 +360,66 @@ class PracticeAttemptRepositoryTest {
 			null,
 			NOW,
 			NOW));
+	}
+
+	// 프리셋은 실행 세대의 선택값이고 snapshot의 프리셋은 그 진입에 확정된 값이다. 둘 다 nullable이며
+	// null은 "미선택"으로 기본 프리셋과 같게 해석한다(042 EXITPRESET-002) — 그래서 백필하지 않는다.
+	//
+	// 세 값을 전부 실제로 저장한다. 하나만 넣으면 열거형에 값을 더하고 V51의 CHECK를 빠뜨린 변경이 런타임에야
+	// 드러난다 — 값 집합을 스키마에서도 막기로 한 이상 그 대가를 테스트가 치러야 한다.
+	@ParameterizedTest
+	@EnumSource(ExitPreset.class)
+	@DisplayName("attempt와 위험 스냅샷의 프리셋이 값마다 영속되고 재조회된다")
+	void exitPresetColumnsRoundTrip(ExitPreset preset) {
+		ReflectionTestUtils.setField(attempt, "exitPreset", preset);
+		practiceAttemptRepository.saveAndFlush(attempt);
+		Trade buyTrade = createBuyTrade("exit-preset-order-" + preset.name());
+		PracticeRiskSnapshot snapshot = createRiskSnapshot(buyTrade, NOW.plusSeconds(1));
+		ReflectionTestUtils.setField(snapshot, "exitPreset", preset);
+		PracticeRiskSnapshot savedSnapshot = practiceRiskSnapshotRepository.saveAndFlush(snapshot);
+		entityManager.clear();
+
+		assertThat(practiceAttemptRepository.findById(attempt.getId()).orElseThrow().getExitPreset())
+			.isEqualTo(preset);
+		assertThat(practiceRiskSnapshotRepository.findById(savedSnapshot.getId()).orElseThrow().getExitPreset())
+			.isEqualTo(preset);
+	}
+
+	@Test
+	@DisplayName("프리셋을 고르지 않은 attempt와 기존 스냅샷은 프리셋이 NULL인 채로 저장된다")
+	void unselectedExitPresetStaysNull() {
+		Trade buyTrade = createBuyTrade("exit-preset-null-order");
+		PracticeRiskSnapshot savedSnapshot = practiceRiskSnapshotRepository.saveAndFlush(
+			createRiskSnapshot(buyTrade, NOW.plusSeconds(1)));
+		entityManager.clear();
+
+		assertThat(practiceAttemptRepository.findById(attempt.getId()).orElseThrow().getExitPreset()).isNull();
+		assertThat(practiceRiskSnapshotRepository.findById(savedSnapshot.getId()).orElseThrow().getExitPreset())
+			.isNull();
+	}
+
+	// 열거형 밖의 값은 엔티티로는 만들 수 없으므로 네이티브 UPDATE로 스키마를 직접 찌른다. V51이 CHECK를
+	// 두 테이블에 하나씩 만들었으므로 양쪽을 다 찌른다 — 한쪽만 보면 snapshot 쪽 CHECK를 빠뜨린 수정이
+	// 초록으로 통과한다. 제약 이름까지 확인해 FK 같은 다른 이유로 실패한 것을 통과로 세지 않는다.
+	@Test
+	@DisplayName("정의 밖 프리셋 식별자는 attempt·스냅샷 양쪽에서 DB check constraint가 거부한다")
+	void unknownExitPresetFailsWithCheckConstraint() {
+		Trade buyTrade = createBuyTrade("exit-preset-check-order");
+		PracticeRiskSnapshot snapshot = practiceRiskSnapshotRepository.saveAndFlush(
+			createRiskSnapshot(buyTrade, NOW.plusSeconds(1)));
+
+		assertThatThrownBy(() -> entityManager.createNativeQuery(
+			"UPDATE practice_attempts SET exit_preset = 'AGGRESSIVE' WHERE id = :attemptId")
+			.setParameter("attemptId", attempt.getId())
+			.executeUpdate())
+			.isInstanceOf(PersistenceException.class)
+			.hasMessageContaining("chk_practice_attempts_exit_preset");
+		assertThatThrownBy(() -> entityManager.createNativeQuery(
+			"UPDATE practice_risk_snapshots SET exit_preset = 'AGGRESSIVE' WHERE id = :snapshotId")
+			.setParameter("snapshotId", snapshot.getId())
+			.executeUpdate())
+			.isInstanceOf(PersistenceException.class)
+			.hasMessageContaining("chk_practice_risk_snapshots_exit_preset");
 	}
 
 	private PracticeRiskSnapshot createRiskSnapshot(Trade buyTrade, LocalDateTime createdAt) {

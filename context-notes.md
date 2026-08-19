@@ -1012,3 +1012,26 @@ ADR-0021을 읽지 않는다(`docs/context-router.md`의 "엔티티/스키마 �
 - **구간 경계 연속성(앞 구간 끝 배율 = 다음 구간 첫 배율)은 로더가 아니라 정합성 테스트가 검사한다.** plan이 기동
   검증 항목으로 넷만 열거해 그 범위를 넓히지 않았다. 대본이 하나뿐인 지금은 테스트가 같은 보호를 한다.
 
+## 2026-08-19 — 042 1·2번: 프리셋 상수와 스키마 (이슈 #470)
+
+- **도달 부등식 판정을 042 한 곳으로 모았다.** 041 1번이 `TutorialScenarioScriptIntegrityTest`에 프리셋 값을
+  리터럴로 넣어 뒀고 042 tasks 1번은 "같은 대상을 반대편에서 검사한다"고 적었는데, 그대로 하면 같은 조건이 두
+  곳에 남아 **한쪽만 고쳐도 초록이 유지된다.** 프리셋이 걸린 부등식은 전부
+  `ExitPresetScenarioReachabilityTest`로 옮기고 041 테스트에는 대본 내부 성질만 남겼다. 041 tasks.md·checklist.md에도
+  이동을 적었다 — 대본 배율을 손보는 사람이 041 문서만 읽기 때문이다.
+- **비율은 분수가 아니라 퍼센트 수다**(3%는 `3`). `ReferencePriceCalculator.calculateFromPercent`가 내부에서
+  100으로 나누므로 `0.03`을 넘기면 예외 없이 100배 틀린 값이 나온다. 이 메서드는 이번이 첫 production 사용이다.
+- **`calculateFromPreset`이 체결가를 scale 8로 먼저 반올림한다.** EXITPRESET-002의 "현행과 정확히 같은 값"이
+  현행 코드의 선반올림 위에 서 있어서, 전제를 호출자에게 맡기면 4번에서 조용히 깨진다.
+  **⚠️ 5번(자동 예약)이 부를 `ExitPricePolicy`의 PERCENT 경로는 선정규화를 하지 않는다** — 그쪽에 넘기는
+  체결가도 scale 8이어야 화면 기준선(snapshot)과 실제 체결선(`exit_plan_conditions`)이 갈리지 않는다.
+- **plan에 없는 것 둘을 더했다.** `exit_preset` 값 집합 CHECK(V38의 `market`·`status` 방식)와
+  `idx_exit_plans_practice_attempt_run_status`(6번의 PENDING 예약 조회용). 인덱스를 FK보다 먼저 만들어 여분
+  단일 컬럼 인덱스가 남지 않게 했고, 그것을 스키마 테스트가 단언한다.
+- **프리셋 표시 이름(조심스럽게·보통·느긋하게)은 만들지 않았다.** plan §API 계약의 `availableExitPresets`가
+  식별자·비율만 내려보내므로 서버가 쓰지 않는 문구를 열거형에 두지 않았다. **3번에서 응답 계약과 함께 정한다.**
+- **`GENERATOR_VERSION`은 `1` 그대로다**(041 4·5번 소관). `docs/prd.md` §3도 갱신하지 않았다 — 제공 기능이
+  그대로이고 EXITPRESET 행 신설은 042 7번 소관이다.
+- **`SNAP-2` 체크박스가 실제 상태와 어긋나 있어 바로잡았다** — V49로 이미 머지됐는데(PR #458) `[ ]`로 남아
+  있었다.
+
