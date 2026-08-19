@@ -81,6 +81,12 @@
   > 곱하는데, snapshot을 만드는 `ReferencePriceCalculator.calculateFromPreset`은 scale 8로 먼저 반올림한다.
   > **예약에 넘기는 체결가도 같은 scale 8 값이어야** 화면의 기준선과 실제 체결선이 scale 9 이하 자리에서
   > 갈리지 않는다. 두 경로가 같은 값을 내는지 통합 테스트에서 함께 확인해라.
+  >
+  > **귀속 컬럼의 애플리케이션 레벨 검증을 넣을지 여기서 정한다 (PR #471 리뷰 참고).** 2번은 매핑과 DB CHECK만
+  > 만들었고, `ExitPlan`에는 `Order.createPracticeFilled`가 쓰는
+  > `validatePracticeAttemptAttribution`(둘 다 non-null·양수) 같은 팩토리 검증이 없다. 값을 넣는 것이 이
+  > 항목이므로, `ExitPlan`의 생성 팩토리를 고칠 때 `Order`와 대칭으로 검증을 둘지 함께 판단해라 —
+  > 두지 않으면 이 불변식을 지키는 것은 DB CHECK 하나뿐이고, 위반이 트랜잭션 커밋 시점에야 드러난다.
   귀속 컬럼·baseline 주입 때문에 `ExitPlan` 생성 팩토리와 `newExitPlan`도 함께 바뀐다.
   **테스트**: 통합 — snapshot과 예약이 같은 트랜잭션에서 생기고 **실패 시 둘 다 남지 않음**.
 
