@@ -104,7 +104,7 @@ class PracticeAttemptServiceTest {
 			.thenReturn(Optional.of(attempt));
 		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.STOCK))
 			.thenReturn(Optional.of(attempt));
-		when(practiceRiskSnapshotRepository.findByAttemptIdAndRunNumber(ATTEMPT_ID, 1L))
+		when(practiceRiskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(ATTEMPT_ID, 1L))
 			.thenReturn(Optional.empty());
 		TutorialAccount mutated = freshTutorialAccount();
 		mutated.deductCash(2_000_000L); // 매수 체결로 800만원까지 감소

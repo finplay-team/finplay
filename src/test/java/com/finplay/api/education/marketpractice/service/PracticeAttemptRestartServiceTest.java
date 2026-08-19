@@ -99,7 +99,7 @@ class PracticeAttemptRestartServiceTest {
 		PracticeAttempt attempt = selectedAttempt();
 		when(attemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
 			.thenReturn(Optional.of(attempt));
-		when(riskSnapshotRepository.findByAttemptIdAndRunNumber(ATTEMPT_ID, 2L))
+		when(riskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(ATTEMPT_ID, 2L))
 			.thenReturn(Optional.empty());
 		resetTutorialAccountStub();
 

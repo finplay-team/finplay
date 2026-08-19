@@ -155,7 +155,7 @@ public class PracticeAttemptService {
 	// 보낸다(TUTORIAL-CASH-ISOL-011) — 추가 조회 없이 진입 시점 잔고·손익을 정확히 노출한다.
 	private PracticeAttemptResponse toResponse(PracticeAttempt attempt, TutorialAccount tutorialAccount) {
 		PracticeRiskSnapshot snapshot = practiceRiskSnapshotRepository
-			.findByAttemptIdAndRunNumber(attempt.getId(), attempt.getRunNumber())
+			.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(attempt.getId(), attempt.getRunNumber())
 			.orElse(null);
 		return PracticeAttemptResponse.from(
 			attempt,
