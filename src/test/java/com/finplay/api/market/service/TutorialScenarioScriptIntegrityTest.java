@@ -61,18 +61,6 @@ class TutorialScenarioScriptIntegrityTest {
 		assertStageBand("ACT4_CRASH", "0.790", "1.010");
 	}
 
-	// 구간이 바뀌는 자리에서 가격이 튀면 사용자에게는 원인 없는 갭으로 보인다.
-	@Test
-	void stageBoundariesAreContinuous() {
-		List<TutorialScenarioStage> stages = script.stages();
-		for (int index = 0; index < stages.size() - 1; index++) {
-			List<BigDecimal> current = stages.get(index).ratios();
-			assertThat(current.get(current.size() - 1))
-				.as("%s -> %s", stages.get(index).id(), stages.get(index + 1).id())
-				.isEqualByComparingTo(stages.get(index + 1).ratios().get(0));
-		}
-	}
-
 	@Test
 	void firstActNeverReachesTheNarrowestTakeProfitLine() {
 		// 1막에서 익절이 터지면 2막 손절 학습을 통째로 못 한다. 가장 좁은 익절률이 +3%인 이상

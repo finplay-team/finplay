@@ -71,6 +71,7 @@ class TutorialScenarioScriptLoaderTest {
 		"wrong-market.json",
 		"ratio-count-mismatch.json",
 		"loop-endpoints-differ.json",
+		"stage-boundary-gap.json",
 		"unknown-event-stage.json",
 		"reveal-delay-zero.json",
 		"event-impact-overflows.json"

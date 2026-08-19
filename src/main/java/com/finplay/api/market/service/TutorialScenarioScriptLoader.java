@@ -80,6 +80,19 @@ public final class TutorialScenarioScriptLoader {
 				"대기 구간의 첫 배율과 끝 배율이 다릅니다: " + stage.id());
 		}
 
+		// 구간이 바뀌는 자리에서 배율이 튀면 사용자에게는 원인 없는 갭으로 보인다. 시장마다 대본이 하나씩
+		// 늘어나도 이 검사가 함께 따라가도록 정합성 테스트가 아니라 기동 검증에 둔다(PR #469 리뷰 권장).
+		for (int index = 0; index < script.stages().size() - 1; index++) {
+			TutorialScenarioStage current = script.stages().get(index);
+			TutorialScenarioStage next = script.stages().get(index + 1);
+			require(
+				current.ratios()
+					.get(current.minutes() - 1)
+					.compareTo(next.ratios().get(0)) == 0,
+				resourcePath,
+				"구간 경계에서 배율이 이어지지 않습니다: " + current.id() + " -> " + next.id());
+		}
+
 		for (TutorialScenarioEvent event : script.events()) {
 			require(
 				event.stageId() != null && stageIds.contains(event.stageId()),
