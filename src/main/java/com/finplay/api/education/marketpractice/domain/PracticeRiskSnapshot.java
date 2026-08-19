@@ -4,6 +4,8 @@ package com.finplay.api.education.marketpractice.domain;
 import com.finplay.api.order.domain.Trade;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -53,6 +55,13 @@ public class PracticeRiskSnapshot {
 
 	@Column(name = "take_profit_price", nullable = false, precision = 18, scale = 8)
 	private BigDecimal takeProfitPrice;
+
+	// 이 진입에 적용된 프리셋. null은 기능 도입 전에 만들어진 행이며 기본 프리셋으로 해석한다
+	// (042 EXITPRESET-002). 값을 실제로 채우는 것은 042 tasks 4번이다 — entry_sequence와 같은 이유로
+	// 여기서는 매핑만 더한다.
+	@Enumerated(EnumType.STRING)
+	@Column(name = "exit_preset", length = 20)
+	private ExitPreset exitPreset;
 
 	@Column(name = "created_at", nullable = false)
 	private LocalDateTime createdAt;

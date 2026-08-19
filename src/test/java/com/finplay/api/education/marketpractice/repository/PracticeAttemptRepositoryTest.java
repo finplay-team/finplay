@@ -9,6 +9,7 @@ import com.finplay.api.account.domain.Account;
 import com.finplay.api.account.repository.AccountRepository;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
+import com.finplay.api.education.marketpractice.domain.ExitPreset;
 import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
 import com.finplay.api.education.marketpractice.domain.PracticeRiskSnapshot;
 import com.finplay.api.market.domain.Instrument;
@@ -357,6 +358,49 @@ class PracticeAttemptRepositoryTest {
 			null,
 			NOW,
 			NOW));
+	}
+
+	// 프리셋은 실행 세대의 선택값이고 snapshot의 프리셋은 그 진입에 확정된 값이다. 둘 다 nullable이며
+	// null은 "미선택"으로 기본 프리셋과 같게 해석한다(042 EXITPRESET-002) — 그래서 백필하지 않는다.
+	@Test
+	@DisplayName("attempt와 위험 스냅샷의 프리셋이 영속되고 재조회된다")
+	void exitPresetColumnsRoundTrip() {
+		ReflectionTestUtils.setField(attempt, "exitPreset", ExitPreset.CAUTIOUS);
+		practiceAttemptRepository.saveAndFlush(attempt);
+		Trade buyTrade = createBuyTrade("exit-preset-order");
+		PracticeRiskSnapshot snapshot = createRiskSnapshot(buyTrade, NOW.plusSeconds(1));
+		ReflectionTestUtils.setField(snapshot, "exitPreset", ExitPreset.RELAXED);
+		PracticeRiskSnapshot savedSnapshot = practiceRiskSnapshotRepository.saveAndFlush(snapshot);
+		entityManager.clear();
+
+		assertThat(practiceAttemptRepository.findById(attempt.getId()).orElseThrow().getExitPreset())
+			.isEqualTo(ExitPreset.CAUTIOUS);
+		assertThat(practiceRiskSnapshotRepository.findById(savedSnapshot.getId()).orElseThrow().getExitPreset())
+			.isEqualTo(ExitPreset.RELAXED);
+	}
+
+	@Test
+	@DisplayName("프리셋을 고르지 않은 attempt와 기존 스냅샷은 프리셋이 NULL인 채로 저장된다")
+	void unselectedExitPresetStaysNull() {
+		Trade buyTrade = createBuyTrade("exit-preset-null-order");
+		PracticeRiskSnapshot savedSnapshot = practiceRiskSnapshotRepository.saveAndFlush(
+			createRiskSnapshot(buyTrade, NOW.plusSeconds(1)));
+		entityManager.clear();
+
+		assertThat(practiceAttemptRepository.findById(attempt.getId()).orElseThrow().getExitPreset()).isNull();
+		assertThat(practiceRiskSnapshotRepository.findById(savedSnapshot.getId()).orElseThrow().getExitPreset())
+			.isNull();
+	}
+
+	// 열거형 밖의 값은 엔티티로는 만들 수 없으므로 네이티브 UPDATE로 스키마를 직접 찌른다.
+	@Test
+	@DisplayName("정의 밖 프리셋 식별자는 DB check constraint가 거부한다")
+	void unknownExitPresetFailsWithCheckConstraint() {
+		assertThatThrownBy(() -> entityManager.createNativeQuery(
+			"UPDATE practice_attempts SET exit_preset = 'AGGRESSIVE' WHERE id = :attemptId")
+			.setParameter("attemptId", attempt.getId())
+			.executeUpdate())
+			.isInstanceOf(PersistenceException.class);
 	}
 
 	private PracticeRiskSnapshot createRiskSnapshot(Trade buyTrade, LocalDateTime createdAt) {

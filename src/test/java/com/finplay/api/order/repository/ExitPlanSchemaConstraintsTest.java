@@ -56,6 +56,8 @@ class ExitPlanSchemaConstraintsTest {
 			"closed_at", "YES",
 			"triggered_order_id", "YES",
 			"replay_session_id", "YES",
+			"practice_attempt_id", "YES",
+			"practice_attempt_run_number", "YES",
 			"request_hash", "NO"));
 	}
 
@@ -118,16 +120,21 @@ class ExitPlanSchemaConstraintsTest {
 	}
 
 	@Test
-	@DisplayName("exit_plans는 holding·status와 user·status 조회 인덱스를 갖는다")
+	@DisplayName("exit_plans는 holding·status, user·status, 튜토리얼 실행 세대 조회 인덱스를 갖는다")
 	void exitPlansHasLookupIndexesForHoldingAndUserStatus() {
 		Map<String, String> indexes = allIndexesOf("exit_plans");
 
 		assertThat(indexes).containsEntry("idx_exit_plans_holding_status", "holding_id,status");
 		assertThat(indexes).containsEntry("idx_exit_plans_user_status", "user_id,status");
+		// 042 6번의 "현재 실행 세대의 PENDING 예약" 조회용. 선두 컬럼이 practice_attempt_id라
+		// fk_exit_plans_practice_attempt가 이 인덱스를 그대로 쓰며, 단일 컬럼 인덱스가 따로 생기지 않는다.
+		assertThat(indexes).containsEntry(
+			"idx_exit_plans_practice_attempt_run_status",
+			"practice_attempt_id,practice_attempt_run_number,status,id");
 	}
 
 	@Test
-	@DisplayName("exit_plans의 FK는 여섯 개이고 intention_id는 FK가 아니다 — 숫자 snapshot일 뿐이다")
+	@DisplayName("exit_plans의 FK는 일곱 개이고 intention_id는 FK가 아니다 — 숫자 snapshot일 뿐이다")
 	void exitPlansForeignKeysMatchPlannedReferences() {
 		assertThat(foreignKeysOf("exit_plans")).isEqualTo(expected(
 			"user_id", "users",
@@ -135,7 +142,8 @@ class ExitPlanSchemaConstraintsTest {
 			"buy_trade_id", "trades",
 			"instrument_id", "instruments",
 			"triggered_order_id", "orders",
-			"replay_session_id", "stock_replay_sessions"));
+			"replay_session_id", "stock_replay_sessions",
+			"practice_attempt_id", "practice_attempts"));
 	}
 
 	@Test

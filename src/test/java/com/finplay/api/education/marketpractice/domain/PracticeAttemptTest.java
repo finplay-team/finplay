@@ -66,6 +66,18 @@ class PracticeAttemptTest {
 		assertScenarioProgressCleared(attempt);
 	}
 
+	// 프리셋 선택은 실행 세대에 귀속된다(042 EXITPRESET-009). 재시작이 지우지 않으면 이전 실행에서 고른
+	// 기준이 새 실행에 조용히 따라붙어, 사용자가 고르지 않은 기준으로 손절선이 잡힌다.
+	@Test
+	void restartClearsSelectedExitPreset() {
+		PracticeAttempt attempt = selectedAttempt();
+		ReflectionTestUtils.setField(attempt, "exitPreset", ExitPreset.RELAXED);
+
+		attempt.restart(NOW);
+
+		assertThat(attempt.getExitPreset()).isNull();
+	}
+
 	private static void putScenarioProgress(PracticeAttempt attempt) {
 		ReflectionTestUtils.setField(attempt, "scenarioStageId", "ACT4_CRASH");
 		ReflectionTestUtils.setField(attempt, "scenarioStageElapsedSeconds", 57L);

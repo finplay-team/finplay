@@ -108,6 +108,16 @@ public class ExitPlan {
 	@Column(name = "request_hash", nullable = false, length = 64, columnDefinition = "CHAR(64)")
 	private String requestHash;
 
+	// 두 값이 함께 null이면 일반 경로 예약, 함께 non-null이면 해당 튜토리얼 attempt 실행 세대에 귀속된
+	// 자동 예약이다. orders의 같은 이름 두 컬럼과 같은 규칙이며(042 plan §데이터 모델), 값을 채우는 것은
+	// 자동 예약 생성(042 tasks 5번)이다. ExitPlanEducationalOriginDto는 이 경로에 쓰지 않는다 —
+	// intentionId를 필수로 요구하는데 039가 사전 의도를 없애 줄 값이 없다.
+	@Column(name = "practice_attempt_id")
+	private Long practiceAttemptId;
+
+	@Column(name = "practice_attempt_run_number")
+	private Long practiceAttemptRunNumber;
+
 	private ExitPlan(
 		User user,
 		Holding holding,

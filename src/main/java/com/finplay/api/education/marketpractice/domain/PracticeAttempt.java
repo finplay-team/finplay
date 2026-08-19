@@ -80,6 +80,12 @@ public class PracticeAttempt {
 	@Column(name = "scenario_candle_low", precision = 18, scale = 8)
 	private BigDecimal scenarioCandleLow;
 
+	// 현재 실행 세대의 손절·익절 프리셋 선택값. null이면 미선택이며 기본 프리셋으로 해석한다
+	// (042 EXITPRESET-002). 값을 채우는 것은 선택 API(042 tasks 3번)이고 여기서는 매핑만 더한다.
+	@Enumerated(EnumType.STRING)
+	@Column(name = "exit_preset", length = 20)
+	private ExitPreset exitPreset;
+
 	@Column(name = "created_at", nullable = false)
 	private LocalDateTime createdAt;
 
@@ -132,6 +138,8 @@ public class PracticeAttempt {
 		this.generatorVersion = null;
 		this.completedAt = null;
 		this.updatedAt = updatedAt;
+		// 프리셋 선택은 실행 세대에 귀속된다 — 재시작하면 기본값으로 되돌아간다(042 EXITPRESET-009).
+		this.exitPreset = null;
 		clearScenarioProgress();
 	}
 
