@@ -500,6 +500,8 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 정렬 기준: 응답 배열은 종목 심볼(`symbol`) 오름차순으로 고정된다(`HoldingRepository.findAllByAccountIdAndIsActiveTrue`의 `ORDER BY h.instrument.symbol`, PR #97 리뷰 권장사항 1).
 
+---
+
 ## journal
 
 ### 투자일기 목록 조회
