@@ -28,6 +28,7 @@ public class TutorialPriceGenerator {
 
 	public TutorialPriceSeriesDto generate(TutorialPriceGenerationInput input, long publishedMinute) {
 		validate(input, publishedMinute);
+		requireVersion(input, VERSION_1);
 		long mixedSeed = mixSeed(input);
 		List<TutorialPriceCandleDto> candles = new ArrayList<>(HISTORY_CANDLE_COUNT + 1);
 		for (int index = 0; index < HISTORY_CANDLE_COUNT; index++) {
@@ -51,7 +52,23 @@ public class TutorialPriceGenerator {
 
 	public BigDecimal canonicalPrice(TutorialPriceGenerationInput input, long publishedMinute) {
 		validate(input, publishedMinute);
+		requireVersion(input, VERSION_1);
 		return currentMinutePrice(input.market(), mixSeed(input), publishedMinute);
+	}
+
+	// 생성기 버전 2는 벽시계가 아니라 대본 위치에서 가격이 나온다 — 가상 분에 해당하는 시각이 존재하지 않으므로
+	// 버전 1의 publishedMinute 진입점을 쓸 수 없다(041 plan §`order` 인터페이스 변경).
+	public BigDecimal canonicalPrice(
+		TutorialPriceGenerationInput input, TutorialScenarioScript script, TutorialScenarioCursor cursor) {
+		validateInput(input);
+		requireVersion(input, VERSION_2);
+		if (script == null || cursor == null) {
+			throw new IllegalArgumentException("튜토리얼 대본 또는 대본 위치가 비어 있습니다.");
+		}
+		if (script.market() != input.market()) {
+			throw new IllegalArgumentException("attempt의 시장과 다른 대본입니다.");
+		}
+		return TutorialScenarioPriceGenerator.canonicalPrice(script, cursor, basePrice(input.market()));
 	}
 
 	private TutorialPriceCandleDto generateHistoryCandle(
@@ -75,9 +92,13 @@ public class TutorialPriceGenerator {
 	}
 
 	private BigDecimal price(Market market, long mixedSeed, long coordinate) {
-		BigDecimal base = market == Market.STOCK ? STOCK_BASE_PRICE : CRYPTO_BASE_PRICE;
+		BigDecimal base = basePrice(market);
 		BigDecimal factor = MIN_FACTOR.add(unit(mixedSeed, coordinate).multiply(FACTOR_RANGE));
 		return base.multiply(factor).setScale(PRICE_SCALE, RoundingMode.HALF_UP);
+	}
+
+	private BigDecimal basePrice(Market market) {
+		return market == Market.STOCK ? STOCK_BASE_PRICE : CRYPTO_BASE_PRICE;
 	}
 
 	private BigDecimal unit(long mixedSeed, long coordinate) {
@@ -100,12 +121,25 @@ public class TutorialPriceGenerator {
 	}
 
 	private void validate(TutorialPriceGenerationInput input, long publishedMinute) {
-		if (input.generatorVersion() != VERSION_1) {
+		validateInput(input);
+		if (publishedMinute < 0) {
+			throw new IllegalArgumentException("튜토리얼 가격 생성 입력이 올바르지 않습니다.");
+		}
+	}
+
+	private void validateInput(TutorialPriceGenerationInput input) {
+		if (input.generatorVersion() != VERSION_1 && input.generatorVersion() != VERSION_2) {
 			throw new IllegalArgumentException("지원하지 않는 튜토리얼 가격 생성기 버전입니다.");
 		}
 		if (input.instrumentId() == null || input.instrumentId() <= 0 || input.runNumber() <= 0
-			|| input.market() == null || input.tutorialDate() == null || publishedMinute < 0) {
+			|| input.market() == null || input.tutorialDate() == null) {
 			throw new IllegalArgumentException("튜토리얼 가격 생성 입력이 올바르지 않습니다.");
+		}
+	}
+
+	private void requireVersion(TutorialPriceGenerationInput input, short expected) {
+		if (input.generatorVersion() != expected) {
+			throw new IllegalArgumentException("생성기 버전 " + expected + " 전용 경로입니다.");
 		}
 	}
 }
