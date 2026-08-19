@@ -82,7 +82,7 @@ class InvestmentPracticeControllerTest {
 		// 이슈 #421: 매도가 끝난 evidence는 tradeResult 다섯 필드가 모두 채워진 채로 직렬화돼야 한다.
 		PracticeTradeResultResponse tradeResult = new PracticeTradeResultResponse(
 			new BigDecimal("10000.00000000"), new BigDecimal("10500.00000000"), 4_985L, new BigDecimal("0.0500"),
-			"ABOVE_TAKE_PROFIT");
+			"ABOVE_TAKE_PROFIT", "MANUAL");
 		PracticeEvidenceResponse evidence = new PracticeEvidenceResponse(
 			10L, LocalDateTime.of(2026, 8, 1, 9, 0), 20L, LocalDateTime.of(2026, 8, 2, 9, 0), 30L,
 			LocalDateTime.of(2026, 8, 3, 9, 0), 40L, null, null, 60L,
@@ -172,7 +172,7 @@ class InvestmentPracticeControllerTest {
 		// 매도 전(AWAITING_SALE)에는 tradeResult 객체는 나가되 buyPrice만 값이 있고 나머지 넷은 null이다 —
 		// 객체가 통째로 null인 legacy·빈 evidence와 구분돼야 프론트가 "매수는 했고 아직 안 팔았다"를 안다.
 		PracticeTradeResultResponse awaitingSale = new PracticeTradeResultResponse(
-			new BigDecimal("10000.00000000"), null, null, null, null);
+			new BigDecimal("10000.00000000"), null, null, null, null, "MANUAL");
 		PracticeEvidenceResponse evidence = new PracticeEvidenceResponse(
 			null, null, null, null, 30L, LocalDateTime.of(2026, 8, 3, 9, 0), 40L,
 			new BigDecimal("9700.00000000"), new BigDecimal("10500.00000000"), 60L,

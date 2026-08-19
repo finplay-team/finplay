@@ -296,7 +296,8 @@ public class InvestmentPracticeQueryService {
 				resolved.realizedPnl(),
 				resolved.soldBuyBasis(),
 				resolved.riskSnapshot().getStopLossPrice(),
-				resolved.riskSnapshot().getTakeProfitPrice()));
+				resolved.riskSnapshot().getTakeProfitPrice(),
+				resolved.sellCause()));
 	}
 
 	// 완료 조건 1: practice_completions 행이 있으면 COMPLETED, 1·2·3단계 전부 COMPLETED. evidence는

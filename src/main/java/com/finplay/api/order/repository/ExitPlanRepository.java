@@ -29,6 +29,11 @@ public interface ExitPlanRepository extends JpaRepository<ExitPlan, Long> {
 	Optional<ExitPlan> findByIdForUpdate(@Param("id")
 	Long id);
 
+	// 042 EXITPRESET-008 — 매도 원인(손절·익절·수동) 역참조용. 상태와 무관하게 그 실행 세대의 예약을 전부
+	// 읽는다 — 이미 체결·취소된 예약이어야 triggered_order_id가 채워져 있다.
+	List<ExitPlan> findByPracticeAttemptIdAndPracticeAttemptRunNumber(Long practiceAttemptId,
+		Long practiceAttemptRunNumber);
+
 	// 042 EXITPRESET-014·015·016 — 현재 튜토리얼 실행 세대에 귀속된 PENDING 예약의 id만 읽는다.
 	// 종목 단위인 findPendingExitPlansToFill을 쓰지 않는 이유는 그것이 다른 실행 세대·다른 사용자의 예약까지
 	// 함께 잡기 때문이다. id만 프로젝션하는 것은 체결·취소 서비스가 각자 잠금 순서대로 다시 조회하기 때문이다.
