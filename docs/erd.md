@@ -38,7 +38,7 @@ FinPlay 백엔드의 JPA 엔티티와 실제 DB 테이블 구조를 도메인별
 | education | `PracticeMarketObservation` | `practice_market_observations` | |
 | education | `PracticeMarketReflection` | `practice_market_reflections` | |
 | education | `PracticeRiskSnapshot` | `practice_risk_snapshots` | |
-| education | `PracticePriceSession` | `practice_price_sessions` | User/Instrument와 FK 없음 |
+| education | `PracticePriceSession` | `practice_price_sessions` | User/Instrument와 JPA 매핑 없음 (DB FK는 있음) |
 | feedback | `InstrumentNewsSummary` | `instrument_news_summaries` | |
 | feedback | `MarketBriefing` | `market_briefings` | `market`은 값 타입 enum, 엔티티 아님 |
 | feedback | `MarketNewsItem` | `market_news_items` | |
@@ -50,13 +50,13 @@ FinPlay 백엔드의 JPA 엔티티와 실제 DB 테이블 구조를 도메인별
 | community | `CommunityPostImage` | `community_post_images` | |
 | community | `CommunityPostLike` | `community_post_likes` | |
 | community | `PostComment` | `post_comments` | 자기참조(대댓글 1단계) |
-| watchlist | `WatchlistItem` | `watchlist_items` | User와 FK 없음 |
+| watchlist | `WatchlistItem` | `watchlist_items` | User와 JPA 매핑 없음 (DB FK는 있음) |
 
 ## 관계 표기 범례
 
 - `A ||--o{ B` : 1:N, `B`가 FK로 `A`를 참조 (일반적인 `@ManyToOne`)
 - `A ||--o| B` : 1:0..1, FK 컬럼에 `UNIQUE` 제약이 걸려 있어 사실상 1:1에 가까움
-- `A ||..o{ B` (점선) : `B`가 `A`의 PK 값을 컬럼에 저장할 뿐 `@ManyToOne`/FK 매핑이 없는 논리적 참조. `education` 도메인 다수 엔티티의 `user_id`, `CommunityPost.sharedTradeId`, `WatchlistItem.userId`가 이 패턴이다.
+- `A ||..o{ B` (점선) : `B`가 `A`의 PK 값을 컬럼에 저장하지만 `@ManyToOne` 같은 **JPA 연관관계 매핑은 없는** 참조. **DB에는 실제 `FOREIGN KEY` 제약이 걸려 있다** — 없는 것은 JPA 매핑뿐이지 참조 무결성이 아니다(유일한 예외는 `practice_market_observations.instrument_id`로, 이 컬럼만 FK 제약 자체가 없다). `education` 도메인 다수 엔티티의 `user_id`, `CommunityPost.sharedTradeId`, `WatchlistItem.userId`가 이 패턴이다.
 - 조인 엔티티(`price_move_event_sources`)로 구현된 M:N은 두 개의 `||--o{` 관계로 풀어서 표시한다.
 
 각 다이어그램의 속성 목록은 실제 컬럼 전체가 아니라 ERD 이해에 필요한 주요 컬럼 위주로 추렸다. `PK`/`FK`/`UK` 표시는 각각 기본키, 외래키, (단일 또는 복합)유니크 제약을 뜻하며, 복합 유니크는 컬럼 옆 주석으로 함께 적었다. `users`, `instruments`, `trades`, `accounts`, `holdings`, `orders`는 여러 다이어그램에 허브로 반복 등장하는 동일 엔티티다.
@@ -323,18 +323,18 @@ erDiagram
 ```mermaid
 erDiagram
     users ||--o{ practice_progresses : has
-    users ||..o{ practice_attempts : "user_id (FK 아님)"
+    users ||..o{ practice_attempts : "user_id (JPA 매핑 없음)"
     instruments |o--o{ practice_attempts : optional
-    users ||..o{ practice_completions : "user_id (FK 아님)"
+    users ||..o{ practice_completions : "user_id (JPA 매핑 없음)"
     practice_market_reflections ||--o{ practice_completions : finalizes
-    users ||..o{ practice_market_observations : "user_id (FK 아님)"
+    users ||..o{ practice_market_observations : "user_id (JPA 매핑 없음)"
     holdings ||--o{ practice_market_observations : observed_via
-    users ||..o{ practice_market_reflections : "user_id (FK 아님)"
+    users ||..o{ practice_market_reflections : "user_id (JPA 매핑 없음)"
     holdings ||--o{ practice_market_reflections : reflected_via
     practice_attempts ||--o{ practice_risk_snapshots : has
     trades ||--o{ practice_risk_snapshots : "매수 체결로 진입"
-    users ||..o{ practice_price_sessions : "user_id (FK 아님)"
-    instruments ||..o{ practice_price_sessions : "instrument_id (FK 아님)"
+    users ||..o{ practice_price_sessions : "user_id (JPA 매핑 없음)"
+    instruments ||..o{ practice_price_sessions : "instrument_id (JPA 매핑 없음)"
 
     practice_progresses {
         bigint id PK
@@ -346,7 +346,7 @@ erDiagram
     }
     practice_attempts {
         bigint id PK
-        bigint user_id "UK(user_id, market), FK 아님"
+        bigint user_id "UK(user_id, market), JPA 매핑 없음"
         enum market "UK(user_id, market)"
         bigint instrument_id FK "nullable"
         bigint run_number
@@ -357,23 +357,23 @@ erDiagram
     }
     practice_completions {
         bigint id PK
-        bigint user_id "UK(user_id, tutorial_key), FK 아님"
+        bigint user_id "UK(user_id, tutorial_key), JPA 매핑 없음"
         varchar tutorial_key "UK(user_id, tutorial_key)"
         bigint reflection_id FK
         datetime completed_at
     }
     practice_market_observations {
         bigint id PK
-        bigint user_id "FK 아님"
+        bigint user_id "JPA 매핑 없음"
         bigint holding_id FK
-        bigint instrument_id "holding에서 유도 가능한 비정규화 값, FK 아님"
+        bigint instrument_id "holding에서 유도 가능한 비정규화 값, FK 없음"
         decimal current_price
         boolean closer_to_boundary
         enum evidence_type
     }
     practice_market_reflections {
         bigint id PK
-        bigint user_id "UK(user_id, tutorial_key), FK 아님"
+        bigint user_id "UK(user_id, tutorial_key), JPA 매핑 없음"
         bigint holding_id FK
         varchar tutorial_key "UK(user_id, tutorial_key)"
         varchar answer
@@ -390,8 +390,8 @@ erDiagram
     }
     practice_price_sessions {
         bigint id PK
-        bigint user_id "UK(user_id, instrument_id, active_slot), FK 아님"
-        bigint instrument_id "UK, FK 아님"
+        bigint user_id "UK(user_id, instrument_id, active_slot), JPA 매핑 없음"
+        bigint instrument_id "UK, JPA 매핑 없음"
         enum status
         bigint seed
         decimal start_price
@@ -399,7 +399,7 @@ erDiagram
     }
 ```
 
-교육 도메인의 특징: `instrument_id`(일부), `buy_trade_id`, `holding_id`, `reflection_id`처럼 실제 FK로 매핑된 컬럼도 있지만, `user_id`와 `practice_price_sessions.instrument_id`는 어느 엔티티에서도 `@ManyToOne`이 아니라 순수 `Long`/원시 값 컬럼이다. 그럼에도 `practice_progresses`, `practice_attempts`, `practice_completions`, `practice_market_reflections`, `practice_price_sessions`는 이 값에 대해 DB 레벨 `UNIQUE` 제약을 걸어 정합성을 지킨다 — FK 매핑만 없을 뿐 무결성 자체는 포기하지 않은 설계다.
+교육 도메인의 특징: `practice_progresses.user`만 `@ManyToOne`으로 매핑돼 실선이고, 나머지 `practice_attempts`·`practice_completions`·`practice_market_observations`·`practice_market_reflections`·`practice_price_sessions`의 `user_id`(그리고 `practice_price_sessions.instrument_id`)는 순수 `Long` 컬럼이라 점선이다. **점선은 JPA 매핑이 없다는 뜻일 뿐 DB 제약이 없다는 뜻은 아니다** — 이 컬럼들에는 전부 실제 `FOREIGN KEY`가 걸려 있다(예: `fk_practice_attempts_user`, `fk_practice_price_sessions_instrument`). 유일한 예외는 `practice_market_observations.instrument_id`로, holding에서 유도 가능한 비정규화 값이라 FK 제약 자체가 없다. `practice_progresses`, `practice_attempts`, `practice_completions`, `practice_market_reflections`, `practice_price_sessions`는 여기에 더해 DB 레벨 `UNIQUE` 제약도 걸어 정합성을 지킨다 — JPA 매핑만 생략했을 뿐 무결성은 `UNIQUE`·`FOREIGN KEY` 둘 다로 지키는 설계다.
 
 ## 6. 피드백 · AI 내러티브
 
@@ -481,8 +481,8 @@ erDiagram
     trades ||--o| sell_trade_journals : has
     users ||--o{ community_posts : authors
     instruments |o--o{ community_posts : optional
-    trades ||..o{ community_posts : "shared_trade_id (FK 아님)"
-    community_posts ||--o| community_post_images : has
+    trades ||..o{ community_posts : "shared_trade_id (JPA 매핑 없음)"
+    community_posts |o--o| community_post_images : has
     users ||--o{ community_post_images : uploads
     community_posts ||--o{ community_post_likes : liked_by
     users ||--o{ community_post_likes : likes
@@ -490,7 +490,7 @@ erDiagram
     users ||--o{ post_comments : writes
     post_comments ||--o{ post_comments : replies_to
     instruments ||--o{ watchlist_items : watched_as
-    users ||..o{ watchlist_items : "user_id (FK 아님), UK(user_id, instrument_id)"
+    users ||..o{ watchlist_items : "user_id (JPA 매핑 없음), UK(user_id, instrument_id)"
 
     buy_trade_journals {
         bigint id PK
@@ -506,7 +506,7 @@ erDiagram
         bigint id PK
         bigint author_id FK
         bigint instrument_id FK "nullable"
-        bigint shared_trade_id "FK 아님, nullable"
+        bigint shared_trade_id "JPA 매핑 없음, nullable"
         varchar title
         varchar content
         bigint like_count
@@ -514,7 +514,7 @@ erDiagram
     community_post_images {
         bigint id PK
         bigint uploader_id FK
-        bigint post_id FK, UK
+        bigint post_id FK, UK "nullable — 선업로드 후 참조"
         varchar stored_filename
         varchar content_type
         bigint size_bytes
@@ -534,7 +534,7 @@ erDiagram
     }
     watchlist_items {
         bigint id PK
-        bigint user_id "UK(user_id, instrument_id), FK 아님"
+        bigint user_id "UK(user_id, instrument_id), JPA 매핑 없음"
         bigint instrument_id FK "UK"
     }
 ```
