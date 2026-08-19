@@ -386,11 +386,13 @@ class PracticeAttemptRepositoryTest {
 	}
 
 	@Test
-	@DisplayName("프리셋을 고르지 않은 attempt와 기존 스냅샷은 프리셋이 NULL인 채로 저장된다")
+	@DisplayName("프리셋을 고르지 않은 attempt와 기능 도입 전 스냅샷은 프리셋이 NULL인 채로 저장된다")
 	void unselectedExitPresetStaysNull() {
 		Trade buyTrade = createBuyTrade("exit-preset-null-order");
+		// 042 4번부터 새로 만드는 스냅샷은 미선택 사용자도 기본 프리셋으로 채워진다. NULL이 남는 것은
+		// 기능 도입 전에 만들어진 행뿐이며, 그 행이 계속 읽히는지 확인하려고 여기서만 null로 만든다.
 		PracticeRiskSnapshot savedSnapshot = practiceRiskSnapshotRepository.saveAndFlush(
-			createRiskSnapshot(buyTrade, NOW.plusSeconds(1)));
+			createRiskSnapshot(buyTrade, NOW.plusSeconds(1), null));
 		entityManager.clear();
 
 		assertThat(practiceAttemptRepository.findById(attempt.getId()).orElseThrow().getExitPreset()).isNull();
@@ -423,9 +425,16 @@ class PracticeAttemptRepositoryTest {
 	}
 
 	private PracticeRiskSnapshot createRiskSnapshot(Trade buyTrade, LocalDateTime createdAt) {
+		return createRiskSnapshot(buyTrade, createdAt, ExitPreset.BALANCED);
+	}
+
+	private PracticeRiskSnapshot createRiskSnapshot(
+		Trade buyTrade, LocalDateTime createdAt, ExitPreset exitPreset) {
 		return PracticeRiskSnapshot.create(
 			attempt,
 			attempt.getRunNumber(),
+			PracticeRiskSnapshot.FIRST_ENTRY_SEQUENCE,
+			exitPreset,
 			buyTrade,
 			new BigDecimal("100.00000000"),
 			new BigDecimal("97.00000000"),

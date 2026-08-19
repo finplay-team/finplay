@@ -72,6 +72,15 @@ public class ReferencePriceCalculator {
 	}
 
 	/**
+	 * 프리셋 기준선의 기준이 되는 진입 체결가 정규화. {@link #calculateFromPreset}이 내부에서 하는 것과
+	 * 같은 한 줄이며, 호출자가 snapshot의 {@code entry_price}나 042 5번의 예약에 <b>같은 값</b>을 넘겨야
+	 * 할 때 쓴다 — 각자 {@code setScale}을 다시 적으면 그 규칙이 호출 지점마다 흩어진다.
+	 */
+	public BigDecimal normalizeEntryPrice(BigDecimal entryPrice) {
+		return entryPrice == null ? null : entryPrice.setScale(PRICE_SCALE, ROUNDING_MODE);
+	}
+
+	/**
 	 * 튜토리얼 프리셋({@link ExitPreset})의 손절률·익절률을 진입 체결가에 적용해 기준선을 계산한다
 	 * (042 EXITPRESET-004). {@code preset}이 null이면 미선택으로 보고 기본 프리셋을 적용한다
 	 * (EXITPRESET-002).
@@ -91,9 +100,7 @@ public class ReferencePriceCalculator {
 	 */
 	public ReferencePriceLines calculateFromPreset(BigDecimal entryPrice, ExitPreset preset) {
 		ExitPreset applied = preset == null ? ExitPreset.DEFAULT : preset;
-		BigDecimal normalizedEntryPrice = entryPrice == null
-			? null
-			: entryPrice.setScale(PRICE_SCALE, ROUNDING_MODE);
+		BigDecimal normalizedEntryPrice = normalizeEntryPrice(entryPrice);
 		return calculateFromPercent(normalizedEntryPrice, applied.stopLossRate(), applied.takeProfitRate())
 			.orElseThrow(() -> new IllegalArgumentException("진입 체결가 없이 손절·익절 기준선을 계산할 수 없습니다."));
 	}

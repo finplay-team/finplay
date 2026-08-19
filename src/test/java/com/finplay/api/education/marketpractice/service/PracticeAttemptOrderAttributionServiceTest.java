@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 
 import com.finplay.api.account.domain.Account;
 import com.finplay.api.auth.domain.User;
+import com.finplay.api.education.marketpractice.domain.ExitPreset;
 import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
 import com.finplay.api.education.marketpractice.domain.PracticeRiskSnapshot;
 import com.finplay.api.education.marketpractice.repository.PracticeAttemptRepository;
@@ -21,6 +22,7 @@ import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.domain.OrderType;
 import com.finplay.api.order.domain.Trade;
 import com.finplay.api.order.service.PracticeOrderAttributionDto;
+import com.finplay.api.portfolio.service.HoldingService;
 import com.finplay.api.order.service.PracticeOrderFillAttributionDto;
 import com.finplay.api.order.service.PracticeOrderFillContextDto;
 import java.math.BigDecimal;
@@ -42,8 +44,10 @@ class PracticeAttemptOrderAttributionServiceTest {
 		PracticeRiskSnapshotRepository.class);
 	private final PracticeAttemptCanonicalPriceService canonicalPriceService = mock(
 		PracticeAttemptCanonicalPriceService.class);
+	private final HoldingService holdingService = mock(HoldingService.class);
 	private final PracticeAttemptOrderAttributionService service = new PracticeAttemptOrderAttributionService(
 		practiceAttemptRepository, practiceRiskSnapshotRepository, canonicalPriceService,
+		new ReferencePriceCalculator(), holdingService,
 		java.time.Clock.fixed(NOW.toInstant(java.time.ZoneOffset.UTC), java.time.ZoneOffset.UTC));
 
 	@Test
@@ -89,17 +93,19 @@ class PracticeAttemptOrderAttributionServiceTest {
 	}
 
 	@Test
-	void createFirstBuyRiskSnapshotRoundsPricesToScaleEightAndWritesOnlyOnce() {
+	void createRiskSnapshotOnBuyFillRoundsPricesToScaleEightAndWritesOncePerEntry() {
 		Instrument instrument = tutorialInstrument();
 		PracticeAttempt attempt = inProgressAttempt(instrument);
 		Order order = attributedBuyOrder(instrument);
 		Trade trade = buyTrade(order, instrument, new BigDecimal("100.123456785"));
 		when(practiceAttemptRepository.findByIdForUpdate(ATTEMPT_ID)).thenReturn(Optional.of(attempt));
-		when(practiceRiskSnapshotRepository.countByAttemptIdAndRunNumber(ATTEMPT_ID, 1L))
-			.thenReturn(0L, 1L);
+		when(practiceRiskSnapshotRepository.countByAttemptIdAndRunNumber(ATTEMPT_ID, 1L)).thenReturn(0L, 1L);
+		// 첫 호출은 직전 보유 0(= 이번 체결분만), 두 번째는 이미 들고 있는 상태에서의 추가 매수다.
+		when(holdingService.findNetQuantity(USER_ID, Market.CRYPTO, INSTRUMENT_ID))
+			.thenReturn(trade.getQuantity(), trade.getQuantity().add(trade.getQuantity()));
 
-		service.createFirstBuyRiskSnapshot(order, trade, NOW);
-		service.createFirstBuyRiskSnapshot(order, trade, NOW.plusSeconds(1));
+		service.createRiskSnapshotOnBuyFill(order, trade, NOW);
+		service.createRiskSnapshotOnBuyFill(order, trade, NOW.plusSeconds(1));
 
 		ArgumentCaptor<PracticeRiskSnapshot> snapshotCaptor = ArgumentCaptor.forClass(PracticeRiskSnapshot.class);
 		verify(practiceRiskSnapshotRepository).save(snapshotCaptor.capture());
@@ -110,10 +116,14 @@ class PracticeAttemptOrderAttributionServiceTest {
 		assertThat(snapshot.getRunNumber()).isEqualTo(1L);
 		assertThat(snapshot.getBuyTrade()).isSameAs(trade);
 		assertThat(snapshot.getCreatedAt()).isEqualTo(NOW);
+		// 미선택 사용자도 기본 프리셋이 확정된다(EXITPRESET-002) — 값이 여기서 정해져야 뒤에 프리셋을
+		// 바꿔도 이미 만들어진 진입의 기준선이 흔들리지 않는다.
+		assertThat(snapshot.getExitPreset()).isEqualTo(ExitPreset.BALANCED);
+		assertThat(snapshot.getEntrySequence()).isEqualTo(1);
 	}
 
 	@Test
-	void createFirstBuyRiskSnapshotIgnoresOrdinaryOrder() {
+	void createRiskSnapshotOnBuyFillIgnoresOrdinaryOrder() {
 		Instrument instrument = tutorialInstrument();
 		User user = testUser();
 		Account account = account(user);
@@ -122,7 +132,7 @@ class PracticeAttemptOrderAttributionServiceTest {
 			"ordinary", "b".repeat(64), NOW);
 		Trade trade = buyTrade(ordinaryOrder, instrument, BigDecimal.valueOf(100));
 
-		service.createFirstBuyRiskSnapshot(ordinaryOrder, trade, NOW);
+		service.createRiskSnapshotOnBuyFill(ordinaryOrder, trade, NOW);
 
 		verify(practiceAttemptRepository, never()).findByIdForUpdate(org.mockito.ArgumentMatchers.any());
 		verifyNoInteractions(practiceRiskSnapshotRepository);

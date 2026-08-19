@@ -153,7 +153,7 @@ public class OrderExecutionService {
 		}
 
 		portfolioBuyService.applyBuyTrade(account, instrument, trade, quantity, pricing.price(), pricing.fee(), now);
-		practiceOrderAttributionPort.createFirstBuyRiskSnapshot(order, trade, now);
+		practiceOrderAttributionPort.createRiskSnapshotOnBuyFill(order, trade, now);
 
 		return OrderResponse.of(order, trade);
 	}

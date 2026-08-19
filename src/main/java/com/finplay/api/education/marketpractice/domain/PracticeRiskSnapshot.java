@@ -38,8 +38,7 @@ public class PracticeRiskSnapshot {
 	@Column(name = "run_number", nullable = false)
 	private long runNumber;
 
-	// 한 실행 세대 안의 몇 번째 진입인가. 재진입(손절 후 재매수) 도입 전까지는 항상 1이다.
-	// 값을 실제로 채우는 것은 042 tasks 4번이며, 여기서는 조회를 진입 단위로 나누기 위한 매핑만 더한다.
+	// 한 실행 세대 안의 몇 번째 진입인가. 손절 후 재매수하면 2가 된다(042 EXITPRESET-019).
 	@Column(name = "entry_sequence", nullable = false)
 	private int entrySequence = FIRST_ENTRY_SEQUENCE;
 
@@ -57,8 +56,7 @@ public class PracticeRiskSnapshot {
 	private BigDecimal takeProfitPrice;
 
 	// 이 진입에 적용된 프리셋. null은 기능 도입 전에 만들어진 행이며 기본 프리셋으로 해석한다
-	// (042 EXITPRESET-002). 값을 실제로 채우는 것은 042 tasks 4번이다 — entry_sequence와 같은 이유로
-	// 여기서는 매핑만 더한다.
+	// (042 EXITPRESET-002). 새로 만드는 행은 항상 채워진다 — 미선택 사용자도 기본 프리셋이 확정된다.
 	@Enumerated(EnumType.STRING)
 	@Column(name = "exit_preset", length = 20)
 	private ExitPreset exitPreset;
@@ -69,6 +67,8 @@ public class PracticeRiskSnapshot {
 	private PracticeRiskSnapshot(
 		PracticeAttempt attempt,
 		long runNumber,
+		int entrySequence,
+		ExitPreset exitPreset,
 		Trade buyTrade,
 		BigDecimal entryPrice,
 		BigDecimal stopLossPrice,
@@ -76,6 +76,8 @@ public class PracticeRiskSnapshot {
 		LocalDateTime createdAt) {
 		this.attempt = attempt;
 		this.runNumber = runNumber;
+		this.entrySequence = entrySequence;
+		this.exitPreset = exitPreset;
 		this.buyTrade = buyTrade;
 		this.entryPrice = entryPrice;
 		this.stopLossPrice = stopLossPrice;
@@ -86,12 +88,18 @@ public class PracticeRiskSnapshot {
 	public static PracticeRiskSnapshot create(
 		PracticeAttempt attempt,
 		long runNumber,
+		int entrySequence,
+		ExitPreset exitPreset,
 		Trade buyTrade,
 		BigDecimal entryPrice,
 		BigDecimal stopLossPrice,
 		BigDecimal takeProfitPrice,
 		LocalDateTime createdAt) {
+		if (entrySequence < FIRST_ENTRY_SEQUENCE) {
+			throw new IllegalArgumentException("진입 순번은 1 이상이어야 합니다.");
+		}
 		return new PracticeRiskSnapshot(
-			attempt, runNumber, buyTrade, entryPrice, stopLossPrice, takeProfitPrice, createdAt);
+			attempt, runNumber, entrySequence, exitPreset, buyTrade, entryPrice, stopLossPrice, takeProfitPrice,
+			createdAt);
 	}
 }
