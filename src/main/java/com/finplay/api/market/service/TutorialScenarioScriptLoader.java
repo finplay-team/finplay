@@ -19,6 +19,9 @@ import tools.jackson.databind.ObjectMapper;
 @Component
 public final class TutorialScenarioScriptLoader {
 
+	// **구간 id는 사실상 스키마다.** 진행 중인 attempt가 practice_attempts.scenario_stage_id에 이 리터럴을
+	// 들고 있으므로, 배포된 대본에서 id를 바꾸거나 지우면 그 사용자는 "대본에 없는 구간입니다"로 500에
+	// 갇힌다(재시작 외에 회복 수단이 없다). 문안·배율은 재배포로 고칠 수 있지만 id는 고치지 않는다.
 	private static final Map<Market, String> SCRIPT_RESOURCE_PATHS = Map.of(Market.CRYPTO,
 		"/tutorial/scenario-crypto-v1.json");
 
@@ -86,6 +89,14 @@ public final class TutorialScenarioScriptLoader {
 				resourcePath,
 				"대기 구간의 첫 배율과 끝 배율이 다릅니다: " + stage.id());
 		}
+
+		// 마지막 구간이 대기 루프면 그 구간에서 보유가 생긴 사용자는 나갈 다음 진행 구간이 없어 커서가
+		// 영구 정지한다(진행 계산이 delta를 소비하지 못한 채 멈춘다). 현행 CRYPTO 대본은 마지막이
+		// ACT4_CRASH라 도달 불가지만, STOCK 대본(SCENARIO-024)이 들어올 때 구조적으로 막아 둔다.
+		require(
+			script.stages().get(script.stages().size() - 1).kind() == TutorialScenarioStageKind.PROGRESS,
+			resourcePath,
+			"마지막 구간이 진행 구간이 아닙니다.");
 
 		// 구간이 바뀌는 자리에서 배율이 튀면 사용자에게는 원인 없는 갭으로 보인다. 시장마다 대본이 하나씩
 		// 늘어나도 이 검사가 함께 따라가도록 정합성 테스트가 아니라 기동 검증에 둔다(PR #469 리뷰 권장).

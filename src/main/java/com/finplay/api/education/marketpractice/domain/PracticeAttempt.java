@@ -3,6 +3,7 @@ package com.finplay.api.education.marketpractice.domain;
 
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.service.TutorialPriceGenerator;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -146,6 +147,12 @@ public class PracticeAttempt {
 		// 프리셋 선택은 실행 세대에 귀속된다 — 재시작하면 기본값으로 되돌아간다(042 EXITPRESET-009).
 		this.exitPreset = null;
 		clearScenarioProgress();
+	}
+
+	// 이 실행이 저작 대본으로 가격을 만드는가. 대본은 커서가 시계를 정하므로 벽시계 마감(031 SANDBOX-008의
+	// 5분 제한)이 성립하지 않는다 — 조회·복기·진행 계산이 모두 이 판정 하나로 갈린다(041 SCENARIO-014).
+	public boolean usesScenarioScript() {
+		return generatorVersion != null && generatorVersion == TutorialPriceGenerator.VERSION_2;
 	}
 
 	// 종목 선택과 재시작 양쪽에서 대본 위치를 지운다. 재시작이 빠뜨리면 재시작한 사용자가 이전 실행의 위치와

@@ -94,6 +94,28 @@ class PracticeScenarioTickIntegrationTest {
 		assertThat(advanced.getScenarioCandleLow()).isEqualByComparingTo(RUMOR_STAGE_LOW);
 	}
 
+	// 세 리뷰어가 함께 찾은 결함의 통합 회귀 방어 — 대본이 끝난 뒤 접수한 지정가도 tick이 체결한다.
+	@Test
+	void limitOrderPlacedAfterTheScriptFinishedIsStillSettledByTick() {
+		Fixture fixture = scenarioFixture("scenario-finished", "ACT4_CRASH");
+		// 4막 20분 = 60초를 다 쓴 FINISHED 상태를 만든다.
+		fixture.attempt().moveScenarioCursor("ACT4_CRASH", 60L);
+		attemptRepository.saveAndFlush(fixture.attempt());
+
+		LimitOrderResponse created = limitOrderService.createLimitOrder(
+			fixture.user().getId(), "scenario-finished-buy-" + UUID.randomUUID(),
+			new LimitOrderCreateRequest(
+				Market.CRYPTO, fixture.instrument().getId(), OrderSide.BUY, QUANTITY, new BigDecimal("8000")));
+
+		clock.set(BASE_NOW.plusSeconds(22));
+		chartService.tick(fixture.user().getId(), Market.CRYPTO);
+
+		// 마지막 구간의 마지막 분 가격(10,000 × 0.790)으로 체결된다.
+		assertThat(tradeRepository.findByOrderId(created.orderId()))
+			.get()
+			.satisfies(trade -> assertThat(trade.getPrice()).isEqualByComparingTo(new BigDecimal("7900.00000000")));
+	}
+
 	// GET chart는 순수 조회다 — tick을 부르지 않으면 대본이 진행하지 않는다(041 plan §잔여 위험).
 	@Test
 	void chartQueryDoesNotAdvanceTheCursor() {

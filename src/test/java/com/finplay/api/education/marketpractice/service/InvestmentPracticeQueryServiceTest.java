@@ -57,12 +57,9 @@ class InvestmentPracticeQueryServiceTest {
 		PracticeCompletionRepository.class);
 	private final Clock clock = Clock.fixed(NOW.atZone(ZoneId.systemDefault()).toInstant(), ZoneId.systemDefault());
 
-	private final PracticeAttemptCanonicalPriceService canonicalPriceService = mock(
-		PracticeAttemptCanonicalPriceService.class);
-
 	private final InvestmentPracticeQueryService service = new InvestmentPracticeQueryService(
 		favoriteService, practiceAttemptRepository, practiceRiskSnapshotRepository, practiceAttemptEvidenceService,
-		canonicalPriceService, chainResolutionService, referencePriceCalculator, practiceMarketObservationRepository,
+		chainResolutionService, referencePriceCalculator, practiceMarketObservationRepository,
 		practiceCompletionRepository, clock);
 
 	@Test
@@ -539,13 +536,16 @@ class InvestmentPracticeQueryServiceTest {
 	// 아무리 오래 지나도 4단계가 EXPIRED가 되지 않는다. 프론트가 분기하는 것은 enum이 아니라 이 문자열이다.
 	@Test
 	void getProgressDropsSaleDeadlineAndNeverExpiresForScenarioAttempts() {
-		when(practiceCompletionRepository.findByUserIdAndTutorialKey(USER_ID, PracticeIntentionService.TUTORIAL_KEY))
+		// 대본이 저작된 시장은 CRYPTO뿐이다 — STOCK에 대본 실행을 세우면 프로덕션에 없는 조합이 된다.
+		when(practiceCompletionRepository
+			.findByUserIdAndTutorialKey(USER_ID, PracticeIntentionService.COIN_TUTORIAL_KEY))
 			.thenReturn(Optional.empty());
 
 		PracticeAttempt attempt = attempt(70L, 1L, PracticeAttemptStatus.IN_PROGRESS, instrument(100L));
-		when(practiceAttemptRepository.findByUserIdAndMarket(USER_ID, Market.STOCK))
+		when(attempt.getMarket()).thenReturn(Market.CRYPTO);
+		when(practiceAttemptRepository.findByUserIdAndMarket(USER_ID, Market.CRYPTO))
 			.thenReturn(Optional.of(attempt));
-		when(canonicalPriceService.isScenarioVersion(attempt)).thenReturn(true);
+		when(attempt.usesScenarioScript()).thenReturn(true);
 
 		PracticeRiskSnapshot snapshot = riskSnapshot(30L, NOW.minusHours(3));
 		when(practiceRiskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(70L, 1L))
@@ -559,7 +559,7 @@ class InvestmentPracticeQueryServiceTest {
 		when(practiceMarketObservationRepository.findByUserIdAndHoldingIdOrderByObservedAtAscIdAsc(USER_ID, 40L))
 			.thenReturn(List.of(observation));
 
-		InvestmentPracticeResponse response = service.getProgress(USER_ID, Market.STOCK);
+		InvestmentPracticeResponse response = service.getProgress(USER_ID, Market.CRYPTO);
 
 		PracticeStepResponse step4 = response.steps().get(3);
 		assertThat(step4.evidence().saleDeadlineAt()).isNull();

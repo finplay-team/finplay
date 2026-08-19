@@ -50,7 +50,6 @@ public class PracticeHoldingReflectionService {
 	private final HoldingService holdingService;
 	private final PracticeAttemptRepository practiceAttemptRepository;
 	private final PracticeAttemptEvidenceService practiceAttemptEvidenceService;
-	private final PracticeAttemptCanonicalPriceService canonicalPriceService;
 	private final MarketPracticeChainResolutionService chainResolutionService;
 	private final PracticeProgressRepository practiceProgressRepository;
 	private final PracticeMarketObservationRepository practiceMarketObservationRepository;
@@ -212,7 +211,7 @@ public class PracticeHoldingReflectionService {
 	// 아니라 evidence 부재다. 버전 1 attempt와 legacy chain은 기존 동작 그대로다.
 	private void verifyAttemptSaleEvidence(
 		PracticeAttempt attempt, ResolvedPracticeAttemptEvidenceDto evidence, LocalDateTime now) {
-		if (canonicalPriceService.isScenarioVersion(attempt)) {
+		if (attempt.usesScenarioScript()) {
 			if (evidence.sellTrade() == null) {
 				throw new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING);
 			}

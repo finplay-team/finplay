@@ -28,7 +28,7 @@ public class PracticeScenarioProgressService {
 
 	// 탭을 닫았다 돌아온 사용자가 그 사이 시간을 통째로 소비하지 않게 한다. 시간 제한이 폐지된 지금 이 clamp의
 	// 효과는 예산 절약이 아니라 "이야기를 건너뛰지 않는다" 하나다(041 plan §tick 알고리즘).
-	static final long MAX_TICK_GAP_SECONDS = 30L;
+	private static final long MAX_TICK_GAP_SECONDS = 30L;
 	private static final int SECONDS_PER_VIRTUAL_MINUTE = PracticeAttemptCanonicalPriceService.SECONDS_PER_VIRTUAL_MINUTE;
 
 	private final PracticeAttemptCanonicalPriceService canonicalPriceService;
@@ -42,7 +42,7 @@ public class PracticeScenarioProgressService {
 	 */
 	@Transactional
 	public void advance(PracticeAttempt attempt, LocalDateTime now) {
-		if (!canonicalPriceService.isScenarioVersion(attempt)) {
+		if (!attempt.usesScenarioScript()) {
 			return;
 		}
 		TutorialScenarioScript script = canonicalPriceService.script(attempt);
@@ -57,7 +57,13 @@ public class PracticeScenarioProgressService {
 		LocalDateTime base = attempt.getScenarioProgressUpdatedAt();
 		long gapSeconds = Math.max(0L, Duration.between(base, now).getSeconds());
 		boolean clamped = gapSeconds > MAX_TICK_GAP_SECONDS;
-		traverse(attempt, script, now, clamped ? MAX_TICK_GAP_SECONDS : gapSeconds);
+		boolean enteredAnyMinute = traverse(attempt, script, now, clamped ? MAX_TICK_GAP_SECONDS : gapSeconds);
+		if (!enteredAnyMinute) {
+			// 한 가상 분도 새로 진입하지 않은 tick(대본이 끝난 뒤, 같은 초의 재요청, 3초 미만 간격)도 정산은
+			// 한다 — 생성기 버전 1은 tick마다 무조건 settleCurrentRun을 불렀고 그 보장을 잃으면 안 된다.
+			// 이것이 없으면 대본 종료 후 접수한 지정가가 조건을 만족해도 영구히 PENDING으로 남는다.
+			settle(attempt, now);
+		}
 		// clamp되지 않았으면 소비한 초만큼만 기준을 민다 — now로 밀면 1초 미만 나머지가 매 tick 버려져
 		// 3초의 배수가 아닌 간격으로 tick하는 클라이언트에서 대본이 조금씩 느려진다.
 		attempt.markScenarioProgressed(clamped ? now : base.plusSeconds(gapSeconds));
@@ -71,26 +77,26 @@ public class PracticeScenarioProgressService {
 		settle(attempt, now);
 	}
 
-	private void traverse(PracticeAttempt attempt, TutorialScenarioScript script, LocalDateTime now, long delta) {
+	// 이번 호출에서 새 가상 분에 한 번이라도 진입했으면 true. 호출자가 진입 없는 tick의 정산을 보장한다.
+	private boolean traverse(PracticeAttempt attempt, TutorialScenarioScript script, LocalDateTime now, long delta) {
 		long remaining = delta;
+		boolean entered = false;
 		BigDecimal netQuantity = netQuantity(attempt);
 		while (remaining > 0) {
 			TutorialScenarioStage stage = script.stage(attempt.getScenarioStageId());
+			// 구간 길이가 0이면 이 순회가 끝나지 않는다 — 로더의 `minutes > 0` 기동 검증이 그것을 막는다.
 			long stageSeconds = (long)stage.minutes() * SECONDS_PER_VIRTUAL_MINUTE;
 
 			// 표 2행 — 대기 구간에서 보유가 생기면 시간을 소비하지 않고 다음 진행 구간의 0분으로 이동한다.
 			// 이 전이가 없으면 사용자는 매수해도 0막을 영원히 돌고, 042의 도달 부등식이 가정한 진입 배율도
 			// 무너진다.
 			if (stage.kind() == TutorialScenarioStageKind.LOOP && netQuantity.signum() > 0) {
-				Optional<TutorialScenarioStage> nextProgress = script.nextProgressStage(stage.id());
-				if (nextProgress.isEmpty()) {
+				long truncated = exitIdleLoop(attempt, script, stage, now, remaining);
+				if (truncated < 0) {
 					break;
 				}
-				// 남은 delta를 전부 이월하면 매수 직후 첫 화면이 진행 구간 한참 뒤가 되어 가격이 튄다.
-				remaining = Math.min(remaining, secondsSinceLatestBuy(attempt, now, remaining));
-				// 이동 자체는 시간을 소비하지 않으므로 절단 결과와 무관하게 먼저 한다 — 체결이 방금 일어나
-				// 남은 시간이 0이어도 사용자는 이번 tick에서 진행 구간 0분을 본다.
-				enterMinute(attempt, nextProgress.get().id(), 0L, now, remaining);
+				entered = true;
+				remaining = truncated;
 				netQuantity = netQuantity(attempt);
 				if (remaining <= 0) {
 					break;
@@ -99,7 +105,10 @@ public class PracticeScenarioProgressService {
 			}
 
 			long elapsed = attempt.getScenarioStageElapsedSeconds();
-			long step = Math.min(remaining, stageSeconds - elapsed);
+			// 대본을 편집해 구간을 짧게 줄이면 영속된 커서가 새 길이를 넘을 수 있다. 음수 step은 아래
+			// `remaining -= consumed`를 덧셈으로 만들어 30초 clamp를 무력화하므로 0으로 막고, 아래 롤오버가
+			// 커서를 다음 구간으로 정리하게 둔다.
+			long step = Math.min(remaining, Math.max(0L, stageSeconds - elapsed));
 			long target = elapsed + step;
 			long consumed = 0L;
 			boolean leftLoopEarly = false;
@@ -118,6 +127,7 @@ public class PracticeScenarioProgressService {
 				// SCENARIO-013 — 건너뛴 가상 분마다 순차 정산한다. tick 종점 가격 하나로만 판정하면 그 사이
 				// 10 가상 분의 극값을 못 봐 -3%로 걸어 둔 손절이 -10% 넘는 가격에 체결된다.
 				enterMinute(attempt, stage.id(), elapsed, now, remaining - consumed);
+				entered = true;
 				netQuantity = netQuantity(attempt);
 				if (stage.kind() == TutorialScenarioStageKind.LOOP && netQuantity.signum() > 0) {
 					leftLoopEarly = true;
@@ -135,6 +145,18 @@ public class PracticeScenarioProgressService {
 			// 그대로 빼면 소비하지 않은 시간이 조용히 사라져 대본이 느려진다.
 			remaining -= consumed;
 			if (leftLoopEarly) {
+				// 남은 시간이 0이어도 이번 tick에서 진행 구간으로 나간다. while 조건에 맡기면 이동이 다음
+				// tick으로 밀리는데, 3초 간격 클라이언트에서는 delta도 경과도 3의 배수라 그 조합이 예외가
+				// 아니라 일반 경로다.
+				long truncated = exitIdleLoop(attempt, script, stage, now, remaining);
+				if (truncated < 0) {
+					break;
+				}
+				remaining = truncated;
+				netQuantity = netQuantity(attempt);
+				if (remaining <= 0) {
+					break;
+				}
 				continue;
 			}
 			if (elapsed >= stageSeconds) {
@@ -149,9 +171,27 @@ public class PracticeScenarioProgressService {
 					}
 					enterMinute(attempt, nextStage.get().id(), 0L, now, remaining);
 				}
+				entered = true;
 				netQuantity = netQuantity(attempt);
 			}
 		}
+		return entered;
+	}
+
+	// 대기 구간 탈출을 한 곳에 모은다 — 순회 시작 시점에 이미 보유가 있는 경우와 순회 도중 체결로 보유가
+	// 생기는 경우가 같은 규칙을 따라야 한다. 반환은 이동 뒤 남은 초이며, 다음 진행 구간이 없으면 -1이다.
+	private long exitIdleLoop(
+		PracticeAttempt attempt, TutorialScenarioScript script, TutorialScenarioStage stage, LocalDateTime now,
+		long remaining) {
+		Optional<TutorialScenarioStage> nextProgress = script.nextProgressStage(stage.id());
+		if (nextProgress.isEmpty()) {
+			return -1L;
+		}
+		// 남은 delta를 전부 이월하면 매수 직후 첫 화면이 진행 구간 한참 뒤가 되어 가격이 튄다.
+		long truncated = Math.max(0L, Math.min(remaining, secondsSinceLatestBuy(attempt, now, remaining)));
+		// 이동 자체는 시간을 소비하지 않으므로 절단 결과와 무관하게 수행한다.
+		enterMinute(attempt, nextProgress.get().id(), 0L, now, truncated);
+		return truncated;
 	}
 
 	// 커서를 실제로 밀고 나서 가격을 읽는다. 지정가 체결이 canonical 가격을 이 커서에서 파생하므로, 순회가

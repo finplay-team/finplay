@@ -27,10 +27,6 @@ public record TutorialScenarioScript(
 		return stages.get(0);
 	}
 
-	public boolean isLastStage(String stageId) {
-		return indexOf(stageId) == stages.size() - 1;
-	}
-
 	// 구간을 다 쓰면 목록 순서대로 다음 구간으로 넘어간다. 마지막 구간이면 비어 있고 호출자가 FINISHED로
 	// 판정한다(041 plan §상태 전이표 4행).
 	public Optional<TutorialScenarioStage> nextStage(String stageId) {

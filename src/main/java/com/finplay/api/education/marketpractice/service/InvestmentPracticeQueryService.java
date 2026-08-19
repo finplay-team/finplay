@@ -61,7 +61,6 @@ public class InvestmentPracticeQueryService {
 	private final PracticeAttemptRepository practiceAttemptRepository;
 	private final PracticeRiskSnapshotRepository practiceRiskSnapshotRepository;
 	private final PracticeAttemptEvidenceService practiceAttemptEvidenceService;
-	private final PracticeAttemptCanonicalPriceService canonicalPriceService;
 	private final MarketPracticeChainResolutionService chainResolutionService;
 	private final ReferencePriceCalculator referencePriceCalculator;
 	private final PracticeMarketObservationRepository practiceMarketObservationRepository;
@@ -245,7 +244,7 @@ public class InvestmentPracticeQueryService {
 	// 내리고, 그 결과 isWithinSaleDeadline의 null 가드가 4단계 상태를 EXPIRED로 만들지 않는다. 버전 1 attempt와
 	// legacy chain은 기존 값을 그대로 유지한다(041 plan §시간 게이트 제거).
 	private LocalDateTime attemptSaleDeadlineAt(PracticeAttempt attempt, PracticeRiskSnapshot snapshot) {
-		return canonicalPriceService.isScenarioVersion(attempt)
+		return attempt.usesScenarioScript()
 			? null
 			: snapshot.getBuyTrade().getExecutedAt().plusMinutes(SALE_DEADLINE_MINUTES);
 	}

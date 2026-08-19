@@ -25,6 +25,7 @@ import java.time.LocalDateTime;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.ObjectMapper;
 
@@ -121,6 +122,41 @@ class PracticeScenarioProgressServiceTest {
 		assertThat(attempt.getScenarioStageElapsedSeconds()).isEqualTo(3L);
 	}
 
+	// 순회 도중에 지정가 매수가 체결돼 대기 구간을 벗어나는 경로다. 대기 구간에 걸어 둔 지정가는 주
+	// 사용자 경로이고, 이 경로에서만 `consumed`가 `step`과 달라진다.
+	@Test
+	void buyFilledMidTraversalLeavesTheIdleLoopWithinTheSameTick() {
+		PracticeAttempt attempt = startedAt("IDLE_ENTRY", 0L, ANCHOR);
+		// 순회 시작에 1회, 진입한 가상 분마다 1회 조회한다 — 두 번째 조회(1분 진입 직후)에서 보유가 생긴다.
+		when(holdingService.findNetQuantity(USER_ID, Market.CRYPTO, INSTRUMENT_ID))
+			.thenReturn(BigDecimal.ZERO, new BigDecimal("1"));
+		when(tradeService.findLatestPracticeRunBuyExecutedAt(ATTEMPT_ID, 1L))
+			.thenReturn(Optional.of(ANCHOR.plusSeconds(3)));
+
+		service.advance(attempt, ANCHOR.plusSeconds(3));
+
+		// 다음 tick으로 밀리지 않고 이번 tick에서 1막 0분에 선다.
+		assertThat(attempt.getScenarioStageId()).isEqualTo("ACT1_RISE");
+		assertThat(attempt.getScenarioStageElapsedSeconds()).isZero();
+	}
+
+	// 소비하지 않은 초가 차감되지 않아야 한다 — 대기 구간을 벗어나며 버린 시간은 다음 tick에 되살아나지
+	// 않지만, 체결 이후 남은 시간은 새 구간에서 그대로 쓰여야 한다.
+	@Test
+	void secondsLeftAfterTheMidTraversalFillAreSpentInTheNextProgressStage() {
+		PracticeAttempt attempt = startedAt("IDLE_ENTRY", 0L, ANCHOR);
+		when(holdingService.findNetQuantity(USER_ID, Market.CRYPTO, INSTRUMENT_ID))
+			.thenReturn(BigDecimal.ZERO, new BigDecimal("1"));
+		// 3초 지점에 체결되고 9초에 tick이 왔다 — 체결 이후 6초가 1막에서 쓰인다.
+		when(tradeService.findLatestPracticeRunBuyExecutedAt(ATTEMPT_ID, 1L))
+			.thenReturn(Optional.of(ANCHOR.plusSeconds(3)));
+
+		service.advance(attempt, ANCHOR.plusSeconds(9));
+
+		assertThat(attempt.getScenarioStageId()).isEqualTo("ACT1_RISE");
+		assertThat(attempt.getScenarioStageElapsedSeconds()).isEqualTo(6L);
+	}
+
 	// 표 3행 — 진행 구간은 보유 여부와 무관하게 진행한다. 4막을 관전 중인 미보유 사용자도 이 행이다.
 	@Test
 	void progressStageAdvancesWithoutHolding() {
@@ -137,6 +173,10 @@ class PracticeScenarioProgressServiceTest {
 	@Test
 	void sellingDoesNotMoveTheCursorToTheReentryIdleStage() {
 		PracticeAttempt attempt = startedAt("ACT2_CONFIRM", 0L, ANCHOR);
+		// 2막 확정 하락 도중 손절돼 보유가 0이 된다 — 초판에는 여기서 재진입 대기로 순간이동하는 네 번째
+		// 행이 있었고, 그것이 손절한 사용자에게서 확정 하락 관전을 빼앗았다.
+		when(holdingService.findNetQuantity(USER_ID, Market.CRYPTO, INSTRUMENT_ID))
+			.thenReturn(new BigDecimal("2"), new BigDecimal("2"), BigDecimal.ZERO);
 
 		service.advance(attempt, ANCHOR.plusSeconds(30));
 
@@ -185,7 +225,37 @@ class PracticeScenarioProgressServiceTest {
 
 		service.advance(attempt, ANCHOR.plusSeconds(30));
 
-		verify(settlementService, times(10)).settleCurrentRun(eq(ATTEMPT_ID), eq(1L), any(LocalDateTime.class));
+		ArgumentCaptor<LocalDateTime> pricedAt = ArgumentCaptor.forClass(LocalDateTime.class);
+		verify(settlementService, times(10)).settleCurrentRun(eq(ATTEMPT_ID), eq(1L), pricedAt.capture());
+		// 정산 시각은 순회 순서대로 엄격히 증가하고 [직전 tick, 이번 tick] 안에 든다 — 뒤섞이면 지정가가
+		// 미래 가격으로 체결된 것처럼 원장에 남는다.
+		assertThat(pricedAt.getAllValues()).isSorted().doesNotHaveDuplicates()
+			.allSatisfy(at -> assertThat(at).isBetween(ANCHOR, ANCHOR.plusSeconds(30)));
+		assertThat(pricedAt.getAllValues().get(9)).isEqualTo(ANCHOR.plusSeconds(30));
+	}
+
+	// 세 리뷰어가 함께 찾은 결함의 회귀 방어 — 대본이 끝난 뒤의 tick은 새 가상 분에 진입하지 않으므로
+	// 정산 호출점이 사라진다. 버전 1은 tick마다 무조건 정산했고, 그 보장을 잃으면 종료 후 접수한 지정가가
+	// 조건을 만족해도 영구히 PENDING으로 남는다.
+	@Test
+	void tickAfterTheScriptFinishedStillSettlesOnce() {
+		PracticeAttempt attempt = startedAt("ACT4_CRASH", 60L, ANCHOR);
+
+		service.advance(attempt, ANCHOR.plusSeconds(30));
+
+		verify(settlementService, times(1))
+			.settleCurrentRun(ATTEMPT_ID, 1L, ANCHOR.plusSeconds(30));
+		assertThat(attempt.getScenarioStageElapsedSeconds()).isEqualTo(60L);
+	}
+
+	// 같은 초에 두 번 온 tick도 정산은 한다(가상 분 진입이 없다).
+	@Test
+	void tickWithoutElapsedTimeStillSettlesOnce() {
+		PracticeAttempt attempt = startedAt("ACT1_RISE", 0L, ANCHOR);
+
+		service.advance(attempt, ANCHOR);
+
+		verify(settlementService, times(1)).settleCurrentRun(ATTEMPT_ID, 1L, ANCHOR);
 	}
 
 	// 순회가 지나간 모든 가상 분의 극값이 진행 중 봉에 담긴다 — 지나온 경로를 복원할 수 없으므로 누적한다.
@@ -193,12 +263,16 @@ class PracticeScenarioProgressServiceTest {
 	void candleHighAndLowAccumulateAcrossSkippedMinutes() {
 		PracticeAttempt attempt = startedAt("ACT2_RUMOR", 0L, ANCHOR);
 
-		service.advance(attempt, ANCHOR.plusSeconds(24));
+		// 루머 8분(24초)을 다 쓰고 속임수 반등 2분까지 들어간다 — 종점 가격이 저점보다 위라 "종점 하나만
+		// 반영"하는 구현으로는 아래 저가 단정이 통과하지 못한다.
+		service.advance(attempt, ANCHOR.plusSeconds(30));
 
-		// 루머 구간의 저점 배율 0.975가 저가로 남는다(구간 끝 값이자 최저값).
-		assertThat(attempt.getScenarioCandleLow())
-			.isEqualByComparingTo(CRYPTO_BASE_PRICE.multiply(new BigDecimal("0.975")));
-		assertThat(attempt.getScenarioCandleHigh()).isGreaterThanOrEqualTo(attempt.getScenarioCandleOpen());
+		assertThat(attempt.getScenarioStageId()).isEqualTo("ACT2_FAKEOUT");
+		assertThat(attempt.getScenarioCandleLow()).isEqualByComparingTo(new BigDecimal("9750.00000000"));
+		assertThat(attempt.getScenarioCandleHigh()).isEqualByComparingTo(new BigDecimal("10147.91000000"));
+		// 종점 가격(속임수 반등 2분 = 9888.41)은 저가·고가 어느 쪽과도 다르다.
+		assertThat(canonicalPriceService.canonicalPrice(attempt, ANCHOR.plusSeconds(30)))
+			.isEqualByComparingTo(new BigDecimal("9888.41000000"));
 	}
 
 	@Test

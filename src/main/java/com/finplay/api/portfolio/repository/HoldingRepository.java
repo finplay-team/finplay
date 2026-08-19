@@ -2,6 +2,7 @@
 package com.finplay.api.portfolio.repository;
 
 import com.finplay.api.portfolio.domain.Holding;
+import java.math.BigDecimal;
 import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
@@ -38,7 +39,7 @@ public interface HoldingRepository extends JpaRepository<Holding, Long> {
 	// 재사용하면 낡은 수량을 읽는다(041 plan §tick 알고리즘). 체결을 전부 다시 스캔하지 않는 인덱스 조회다.
 	@Query("SELECT h.quantity FROM Holding h WHERE h.account.user.id = :userId AND h.account.market = :market "
 		+ "AND h.instrument.id = :instrumentId")
-	Optional<java.math.BigDecimal> findQuantityByOwnerAndInstrument(@Param("userId")
+	Optional<BigDecimal> findQuantityByOwnerAndInstrument(@Param("userId")
 	Long userId, @Param("market")
 	com.finplay.api.account.domain.Market market, @Param("instrumentId")
 	Long instrumentId);

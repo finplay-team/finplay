@@ -77,7 +77,7 @@ public interface TradeRepository extends JpaRepository<Trade, Long>, TradeReposi
 		  and t.order.status = com.finplay.api.order.domain.OrderStatus.FILLED
 		  and t.side = com.finplay.api.order.domain.OrderSide.BUY
 		""")
-	Optional<java.time.LocalDateTime> findLatestPracticeRunBuyExecutedAt(
+	Optional<LocalDateTime> findLatestPracticeRunBuyExecutedAt(
 		@Param("attemptId")
 		Long attemptId,
 		@Param("runNumber")

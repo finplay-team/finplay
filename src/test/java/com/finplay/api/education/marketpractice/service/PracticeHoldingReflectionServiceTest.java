@@ -72,12 +72,8 @@ class PracticeHoldingReflectionServiceTest {
 	private final AccountService accountService = mock(AccountService.class);
 	private final Clock clock = Clock.fixed(NOW.toInstant(ZoneOffset.UTC), ZoneOffset.UTC);
 
-	private final PracticeAttemptCanonicalPriceService canonicalPriceService = mock(
-		PracticeAttemptCanonicalPriceService.class);
-
 	private final PracticeHoldingReflectionService service = new PracticeHoldingReflectionService(
-		holdingService, practiceAttemptRepository, practiceAttemptEvidenceService, canonicalPriceService,
-		chainResolutionService,
+		holdingService, practiceAttemptRepository, practiceAttemptEvidenceService, chainResolutionService,
 		practiceProgressRepository, practiceMarketObservationRepository,
 		practiceMarketReflectionRepository, practiceCompletionRepository, accountService, clock);
 
@@ -611,7 +607,7 @@ class PracticeHoldingReflectionServiceTest {
 		Trade lateSell = mock(Trade.class);
 		when(lateSell.getExecutedAt()).thenReturn(NOW.plusMinutes(10));
 		PracticeAttempt attempt = givenAttemptEvidence(NOW.minusMinutes(2), lateSell);
-		when(canonicalPriceService.isScenarioVersion(attempt)).thenReturn(false);
+		when(attempt.usesScenarioScript()).thenReturn(false);
 
 		assertThatThrownBy(() -> service.createReflection(USER_ID, request()))
 			.isInstanceOfSatisfying(BusinessException.class, exception -> assertThat(exception.getErrorCode())
@@ -623,7 +619,7 @@ class PracticeHoldingReflectionServiceTest {
 		Trade lateSell = mock(Trade.class);
 		when(lateSell.getExecutedAt()).thenReturn(NOW.plusMinutes(10));
 		PracticeAttempt attempt = givenAttemptEvidence(NOW.minusMinutes(2), lateSell);
-		when(canonicalPriceService.isScenarioVersion(attempt)).thenReturn(true);
+		when(attempt.usesScenarioScript()).thenReturn(true);
 		when(practiceMarketReflectionRepository.save(org.mockito.ArgumentMatchers.any(PracticeMarketReflection.class)))
 			.thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -634,7 +630,7 @@ class PracticeHoldingReflectionServiceTest {
 	@Test
 	void attemptReflectionStillRequiresSaleEvidenceForGeneratorVersionTwo() {
 		PracticeAttempt attempt = givenAttemptEvidence(NOW.minusMinutes(2), null);
-		when(canonicalPriceService.isScenarioVersion(attempt)).thenReturn(true);
+		when(attempt.usesScenarioScript()).thenReturn(true);
 
 		assertThatThrownBy(() -> service.createReflection(USER_ID, request()))
 			.isInstanceOfSatisfying(BusinessException.class, exception -> assertThat(exception.getErrorCode())

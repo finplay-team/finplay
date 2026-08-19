@@ -37,7 +37,7 @@ public class PracticeAttemptCanonicalPriceService {
 	// 벽시계 시각"이 존재하지 않기 때문이다. 시그니처를 유지한 채 내부 파생만 바꿨으므로 order 도메인의 공개
 	// 계약(lockForFill → canonicalPrice)은 그대로다(041 plan §`order` 인터페이스 변경).
 	public BigDecimal canonicalPrice(PracticeAttempt attempt, LocalDateTime observedAt) {
-		if (isScenarioVersion(attempt)) {
+		if (attempt.usesScenarioScript()) {
 			TutorialScenarioScript script = script(attempt);
 			return tutorialPriceGenerator.canonicalPrice(toInput(attempt), script, cursor(attempt, script));
 		}
@@ -45,7 +45,7 @@ public class PracticeAttemptCanonicalPriceService {
 	}
 
 	public TutorialPriceSeriesDto priceSeries(PracticeAttempt attempt, LocalDateTime observedAt) {
-		if (isScenarioVersion(attempt)) {
+		if (attempt.usesScenarioScript()) {
 			return scenarioSeries(attempt);
 		}
 		return tutorialPriceGenerator.generate(toInput(attempt), publishedMinute(attempt, observedAt));
@@ -60,11 +60,6 @@ public class PracticeAttemptCanonicalPriceService {
 		}
 		validateSelectedInstrument(attempt, instrument.getId());
 		return canonicalPrice(attempt, observedAt);
-	}
-
-	public boolean isScenarioVersion(PracticeAttempt attempt) {
-		return attempt.getGeneratorVersion() != null
-			&& attempt.getGeneratorVersion() == TutorialPriceGenerator.VERSION_2;
 	}
 
 	public TutorialScenarioScript script(PracticeAttempt attempt) {
