@@ -1,7 +1,6 @@
 // 시장별 튜토리얼 대본 파일을 기동 시 1회 읽어 정합성을 검증하고 불변 객체로 보관하는 컴포넌트
 package com.finplay.api.market.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.finplay.api.market.domain.Market;
 import java.io.IOException;
 import java.io.InputStream;
@@ -11,6 +10,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import org.springframework.stereotype.Component;
+import tools.jackson.databind.ObjectMapper;
 
 // 대본은 DB가 아니라 클래스패스 리소스다 — 문안 한 줄을 고치는 데 마이그레이션이 필요해지는 것을 피하기
 // 위해서다(041 plan §대본 설계). 검증을 기동 시점에 두는 이유는 깨진 대본으로 서비스가 뜨면 사용자가 깨진
@@ -24,14 +24,11 @@ public final class TutorialScenarioScriptLoader {
 
 	private final Map<Market, TutorialScenarioScript> scripts;
 
+	// 생성자는 하나만 둔다 — 둘이면 Spring이 어느 쪽으로 주입할지 정하지 못해 빈 생성 자체가 실패한다.
+	// 깨진 대본으로 기동이 실패하는지 검증하는 테스트는 아래 load를 직접 부른다.
 	public TutorialScenarioScriptLoader(ObjectMapper objectMapper) {
-		this(objectMapper, SCRIPT_RESOURCE_PATHS);
-	}
-
-	// 깨진 대본으로 기동이 실패하는지 검증하는 테스트가 임의 경로를 주입한다.
-	TutorialScenarioScriptLoader(ObjectMapper objectMapper, Map<Market, String> resourcePaths) {
 		Map<Market, TutorialScenarioScript> loaded = new EnumMap<>(Market.class);
-		resourcePaths.forEach((market, path) -> loaded.put(market, load(objectMapper, market, path)));
+		SCRIPT_RESOURCE_PATHS.forEach((market, path) -> loaded.put(market, load(objectMapper, market, path)));
 		this.scripts = Map.copyOf(loaded);
 	}
 
@@ -43,7 +40,7 @@ public final class TutorialScenarioScriptLoader {
 		return script;
 	}
 
-	private static TutorialScenarioScript load(ObjectMapper objectMapper, Market market, String resourcePath) {
+	static TutorialScenarioScript load(ObjectMapper objectMapper, Market market, String resourcePath) {
 		try (InputStream inputStream = TutorialScenarioScriptLoader.class.getResourceAsStream(resourcePath)) {
 			if (inputStream == null) {
 				throw new IllegalStateException("튜토리얼 대본 파일을 찾을 수 없습니다: " + resourcePath);
@@ -93,7 +90,9 @@ public final class TutorialScenarioScriptLoader {
 				resourcePath,
 				"사건 문안이 비어 있습니다: " + event.stageId());
 			require(
-				event.impactStartMinute() >= 0 && event.impactMinutes() > 0 && event.revealDelayMinutes() >= 0,
+				// 공개 지연이 0이면 원인이 가격과 동시에 열린다. spec §비즈니스 규칙은 두 값이 같아지는
+				// 대본을 무효로 못박았다(SCENARIO-015) — 원인은 사후에만 열려야 한다.
+				event.impactStartMinute() >= 0 && event.impactMinutes() > 0 && event.revealDelayMinutes() > 0,
 				resourcePath,
 				"사건의 영향·공개 지연 값이 올바르지 않습니다: " + event.stageId());
 			require(

@@ -3,12 +3,12 @@ package com.finplay.api.market.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.finplay.api.market.domain.Market;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.ObjectMapper;
 
 // 이 테스트는 대본 배율과 042 프리셋 수치가 조용히 어긋나는 것을 막는 장치다. 둘 중 하나만 바뀌어도 깨진다.
 // 프리셋 값은 042가 상수로 확정하기 전이라 여기서는 plan §프리셋 도달 조건의 표를 리터럴로 적는다 —
@@ -121,6 +121,24 @@ class TutorialScenarioScriptIntegrityTest {
 			assertThat(reentryLow().multiply(BigDecimal.ONE.subtract(rates[0])))
 				.as("%s 재진입 손절선", name)
 				.isGreaterThan(low("ACT4_CRASH"));
+		});
+	}
+
+	// SCENARIO-004·006 상한 — 4막 하락폭이 익절한 사용자가 놓친 상승분보다 커야 "익절이 옳았다"가 결과로
+	// 증명된다. 이 조건이 없으면 4막만 얕게 손보는 수정이 아무 테스트도 깨지 않고 통과한다
+	// (plan §잔여 위험: "4막을 얕게 만드는 수정은 단독으로 하면 안 된다").
+	@Test
+	void fourthActFallsFurtherThanTheUpsideMissedByTakingProfit() {
+		BigDecimal crashDrop = BigDecimal.ONE.subtract(
+			low("ACT4_CRASH").divide(high("ACT4_CRASH"), 8, java.math.RoundingMode.HALF_UP));
+
+		PRESETS.forEach((name, rates) -> {
+			BigDecimal takeProfitPrice = reentryLow().multiply(BigDecimal.ONE.add(rates[1]));
+			BigDecimal missedUpside = high("ACT3_REBOUND")
+				.subtract(takeProfitPrice)
+				.divide(takeProfitPrice, 8, java.math.RoundingMode.HALF_UP);
+
+			assertThat(missedUpside).as("%s 익절 후 놓친 상승분", name).isLessThan(crashDrop);
 		});
 	}
 
