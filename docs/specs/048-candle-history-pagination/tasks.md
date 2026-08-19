@@ -6,7 +6,7 @@
 >
 > **이 spec은 백엔드 커밋만으로 끝나지 않는다.** 맨 아래 "머지 전 확인" 절을 6번 항목에서 함께 처리한다.
 
-- [ ] **1. 커서 값 객체 + 봉투 DTO (순수 추가, 기존 경로 무변경)**
+- [x] **1. 커서 값 객체 + 봉투 DTO (순수 추가, 기존 경로 무변경)**
   `CandleCursor`(`com.finplay.api.market.service`, plan §6-2) — `parse`는 `DateTimeFormatter.ISO_LOCAL_DATE_TIME`,
   실패 시 `BusinessException(VALIDATION_ERROR)`. **`encode`는 `toString()`을 쓰지 않고 `yyyy-MM-dd'T'HH:mm:ss`로
   초를 항상 찍는다** — `sourceTime` 직렬화 표기와 갈리면 CANDLE-PAGE-001 위반이다.
