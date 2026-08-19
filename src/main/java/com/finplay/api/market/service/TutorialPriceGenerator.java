@@ -12,6 +12,8 @@ import org.springframework.stereotype.Service;
 public class TutorialPriceGenerator {
 
 	public static final short VERSION_1 = 1;
+	// 대본 파일의 version과 같은 값이다 — 대본이 곧 이 버전의 입력이다(041 plan §생성기 버전 2).
+	public static final short VERSION_2 = 2;
 	private static final int HISTORY_CANDLE_COUNT = 29;
 	private static final int PRICE_SCALE = 8;
 	private static final long CURRENT_PRICE_PERIOD_MINUTES = 240L;
