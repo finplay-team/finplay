@@ -2,10 +2,15 @@
 package com.finplay.api.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.finplay.api.education.marketpractice.domain.ExitPreset;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class ReferencePriceCalculatorTest {
 
@@ -140,5 +145,53 @@ class ReferencePriceCalculatorTest {
 			new BigDecimal("3"), null);
 
 		assertThat(result).isEmpty();
+	}
+
+	// EXITPRESET-002 — 아무 조작도 하지 않은 사용자의 결과는 이 기능 도입 전과 같아야 한다. 아래 두 배율은
+	// PracticeAttemptOrderAttributionService가 지금 들고 있는 상수를 그대로 옮겨 적은 것이며, 프리셋이 그
+	// 자리를 대체할 때(042 tasks 4번) 값이 달라지면 이 테스트가 깨진다. 근사가 아니라 BigDecimal 동등성
+	// (scale까지 같음)으로 본다 — 기준선은 화면에 그대로 찍히는 숫자라 마지막 자리가 달라도 다른 값이다.
+	@ParameterizedTest
+	@ValueSource(strings = {
+		"100", "51234.12345678", "0.00012345", "3.33333333", "87654321.87654321", "1"})
+	void balancedPresetProducesExactlyTheSameLinesAsTheCurrentHardcodedMultipliers(String rawEntryPrice) {
+		BigDecimal entryPrice = new BigDecimal(rawEntryPrice).setScale(8, RoundingMode.HALF_UP);
+
+		ReferencePriceLines lines = calculator.calculateFromPreset(entryPrice, ExitPreset.BALANCED);
+
+		assertThat(lines.referenceStopLossPrice())
+			.isEqualTo(entryPrice.multiply(new BigDecimal("0.97")).setScale(8, RoundingMode.HALF_UP));
+		assertThat(lines.referenceTakeProfitPrice())
+			.isEqualTo(entryPrice.multiply(new BigDecimal("1.05")).setScale(8, RoundingMode.HALF_UP));
+	}
+
+	@Test
+	void balancedIsTheDefaultPresetSoUnselectedUsersKeepTheCurrentLines() {
+		BigDecimal entryPrice = new BigDecimal("51234.12345678");
+
+		ReferencePriceLines unselected = calculator.calculateFromPreset(entryPrice, null);
+
+		assertThat(ExitPreset.DEFAULT).isEqualTo(ExitPreset.BALANCED);
+		assertThat(unselected).isEqualTo(calculator.calculateFromPreset(entryPrice, ExitPreset.BALANCED));
+	}
+
+	@Test
+	void everyPresetAppliesItsOwnRatesAsPercentNumbers() {
+		// 프리셋의 비율은 분수가 아니라 퍼센트 수다(2%는 0.02가 아니라 2). 계산기가 다시 100으로 나누므로
+		// 분수로 적으면 손절선이 진입가의 99.98%가 되어도 아무 테스트도 깨지지 않는다 — 여기서 못박는다.
+		BigDecimal entryPrice = new BigDecimal("1000.00000000");
+
+		assertThat(calculator.calculateFromPreset(entryPrice, ExitPreset.CAUTIOUS))
+			.isEqualTo(new ReferencePriceLines(
+				new BigDecimal("980.00000000"), new BigDecimal("1030.00000000")));
+		assertThat(calculator.calculateFromPreset(entryPrice, ExitPreset.RELAXED))
+			.isEqualTo(new ReferencePriceLines(
+				new BigDecimal("950.00000000"), new BigDecimal("1080.00000000")));
+	}
+
+	@Test
+	void calculateFromPresetFailsLoudlyWhenEntryPriceIsMissing() {
+		assertThatThrownBy(() -> calculator.calculateFromPreset(null, ExitPreset.BALANCED))
+			.isInstanceOf(IllegalArgumentException.class);
 	}
 }
