@@ -28,6 +28,8 @@ import java.time.LocalDateTime;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
@@ -362,21 +364,25 @@ class PracticeAttemptRepositoryTest {
 
 	// 프리셋은 실행 세대의 선택값이고 snapshot의 프리셋은 그 진입에 확정된 값이다. 둘 다 nullable이며
 	// null은 "미선택"으로 기본 프리셋과 같게 해석한다(042 EXITPRESET-002) — 그래서 백필하지 않는다.
-	@Test
-	@DisplayName("attempt와 위험 스냅샷의 프리셋이 영속되고 재조회된다")
-	void exitPresetColumnsRoundTrip() {
-		ReflectionTestUtils.setField(attempt, "exitPreset", ExitPreset.CAUTIOUS);
+	//
+	// 세 값을 전부 실제로 저장한다. 하나만 넣으면 열거형에 값을 더하고 V51의 CHECK를 빠뜨린 변경이 런타임에야
+	// 드러난다 — 값 집합을 스키마에서도 막기로 한 이상 그 대가를 테스트가 치러야 한다.
+	@ParameterizedTest
+	@EnumSource(ExitPreset.class)
+	@DisplayName("attempt와 위험 스냅샷의 프리셋이 값마다 영속되고 재조회된다")
+	void exitPresetColumnsRoundTrip(ExitPreset preset) {
+		ReflectionTestUtils.setField(attempt, "exitPreset", preset);
 		practiceAttemptRepository.saveAndFlush(attempt);
-		Trade buyTrade = createBuyTrade("exit-preset-order");
+		Trade buyTrade = createBuyTrade("exit-preset-order-" + preset.name());
 		PracticeRiskSnapshot snapshot = createRiskSnapshot(buyTrade, NOW.plusSeconds(1));
-		ReflectionTestUtils.setField(snapshot, "exitPreset", ExitPreset.RELAXED);
+		ReflectionTestUtils.setField(snapshot, "exitPreset", preset);
 		PracticeRiskSnapshot savedSnapshot = practiceRiskSnapshotRepository.saveAndFlush(snapshot);
 		entityManager.clear();
 
 		assertThat(practiceAttemptRepository.findById(attempt.getId()).orElseThrow().getExitPreset())
-			.isEqualTo(ExitPreset.CAUTIOUS);
+			.isEqualTo(preset);
 		assertThat(practiceRiskSnapshotRepository.findById(savedSnapshot.getId()).orElseThrow().getExitPreset())
-			.isEqualTo(ExitPreset.RELAXED);
+			.isEqualTo(preset);
 	}
 
 	@Test

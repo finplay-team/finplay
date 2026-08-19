@@ -33,9 +33,10 @@ ALTER TABLE exit_plans
     ADD COLUMN practice_attempt_run_number BIGINT NULL AFTER practice_attempt_id;
 
 -- 정산·정리가 "현재 실행 세대의 PENDING 예약"만 훑는다(042 6번의 findPendingPracticeRunExitPlanIds).
--- orders의 idx_orders_practice_attempt_run_status와 같은 컬럼 순서다. FK보다 **먼저** 만드는 이유는
--- MySQL이 FK가 쓸 인덱스를 요구하는데, 이 인덱스의 선두 컬럼이 practice_attempt_id라 그 역할을 겸하기
--- 때문이다 — 순서를 뒤집으면 FK 생성 시 단일 컬럼 인덱스가 하나 더 만들어져 남는다.
+-- orders의 idx_orders_practice_attempt_run_status와 같은 컬럼 순서다. FK보다 먼저 만드는 이유는 MySQL이
+-- FK가 쓸 인덱스를 요구하는데 이 인덱스의 선두 컬럼이 practice_attempt_id라 그 역할을 겸하기 때문이다.
+-- (orders는 FK → 인덱스 순서인데도 현재 MySQL 8.4에서는 단일 컬럼 인덱스가 남지 않는다 — 실측으로 확인했다.
+-- 순서를 명시한 것은 그 동작이 버전에 따라 달라져도 결과가 같도록 하기 위해서다.)
 ALTER TABLE exit_plans
     ADD INDEX idx_exit_plans_practice_attempt_run_status
         (practice_attempt_id, practice_attempt_run_number, status, id);

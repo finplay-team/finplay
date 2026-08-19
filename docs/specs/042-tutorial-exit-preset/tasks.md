@@ -31,14 +31,29 @@
   기본값 `BALANCED`) + `ReferencePriceCalculator.calculateFromPercent` 연결.
   **테스트**: `BALANCED`로 계산한 `stopLossPrice`·`takeProfitPrice`가 현행 `entryPrice × 0.97`·`× 1.05`와
   **정확히 같은 값**임(EXITPRESET-002). 041 대본을 읽어 세 프리셋의 도달 부등식 판정.
-  > **구현에서 정한 것 (이슈 #470).** "041 tasks 1번과 같은 대상을 반대편에서 검사한다"를 그대로 하면 같은
-  > 조건이 두 곳에 남아 한쪽만 고쳐도 초록이 유지된다. 프리셋이 걸린 부등식은 전부
-  > `ExitPresetScenarioReachabilityTest`(042)로 옮기고 041 테스트에는 대본 내부 성질만 남겼다.
-  > 근거는 `run-log.md` §판단 기록.
+  > **구현에서 정한 것 (이슈 #470).**
+  > - **판정 위치.** "041 tasks 1번과 같은 대상을 반대편에서 검사한다"를 그대로 하면 같은 조건이 두 곳에
+  >   남아 한쪽만 고쳐도 초록이 유지된다. 프리셋이 걸린 부등식은 전부
+  >   `ExitPresetScenarioReachabilityTest`(042)로 옮기고 041 테스트에는 대본 내부 성질만 남겼다.
+  > - **비율 단위는 퍼센트 수다**(3%는 `3`). `calculateFromPercent`가 내부에서 100으로 나누고
+  >   `exit_plans.stop_loss_rate DECIMAL(7,4)`도 같은 단위다. 분수로 넘기면 예외 없이 100배 틀린다.
+  > - **표시 이름(조심스럽게·보통·느긋하게)은 만들지 않았다.** plan §API 계약의 `availableExitPresets`가
+  >   식별자·비율만 내려보내므로 서버가 쓰지 않는 문구를 열거형에 두지 않았다. **필요하면 3번에서 응답
+  >   계약과 함께 정한다.**
+  > - `calculateFromPreset`이 체결가를 scale 8로 **먼저** 반올림한다. 현행 코드가 그렇게 하고 있어
+  >   EXITPRESET-002의 "정확히 같은 값"이 그 위에 서 있다 — 4번에서 `trade.getPrice()`를 그대로 넘겨도
+  >   안전하다.
 
 - [x] **2. 스키마와 엔티티** — 마이그레이션: `practice_attempts.exit_preset`,
   `practice_risk_snapshots.exit_preset`, `exit_plans.practice_attempt_id`·`practice_attempt_run_number`
   (+ `orders`와 같은 모양의 CHECK: 둘 다 null이거나 둘 다 non-null, run > 0). 대응 엔티티 필드.
+  > **구현에서 정한 것 (이슈 #470, V51).** plan에 없는 것을 둘 더했고 근거는 V51 주석에 있다 —
+  > ① `exit_preset` 값 집합 CHECK(V38이 `market`·`status`를 같은 방식으로 막는다),
+  > ② `idx_exit_plans_practice_attempt_run_status`(6번의 PENDING 예약 조회용).
+  > **인덱스를 FK보다 먼저 만든다** — 선두 컬럼이 `practice_attempt_id`라 FK가 이 인덱스를 그대로 쓴다.
+  > (`orders`는 FK → 인덱스 순서인데도 MySQL 8.4에서는 여분 인덱스가 남지 않았다. 순서를 명시한 것은 그
+  > 동작에 기대지 않기 위해서고, 남지 않는 것은 스키마 테스트가 단언한다.)
+  > `restart()`의 `exit_preset` 초기화도 여기서 함께 했다(6번에 적혀 있으나 필드를 만드는 자리가 여기다).
 
 - [ ] **3. 선택 API와 잠금** — `PUT /api/education/practice/attempts/{market}/exit-preset`.
   **`PracticeAttemptResponse`는 `047`(TUTORIAL-CASH-ISOL-011)도 건드린다** — 튜토리얼 계좌 잔고 필드가

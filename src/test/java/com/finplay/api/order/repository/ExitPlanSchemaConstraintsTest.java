@@ -127,10 +127,12 @@ class ExitPlanSchemaConstraintsTest {
 		assertThat(indexes).containsEntry("idx_exit_plans_holding_status", "holding_id,status");
 		assertThat(indexes).containsEntry("idx_exit_plans_user_status", "user_id,status");
 		// 042 6번의 "현재 실행 세대의 PENDING 예약" 조회용. 선두 컬럼이 practice_attempt_id라
-		// fk_exit_plans_practice_attempt가 이 인덱스를 그대로 쓰며, 단일 컬럼 인덱스가 따로 생기지 않는다.
+		// fk_exit_plans_practice_attempt가 이 인덱스를 그대로 쓰고 여분의 단일 컬럼 인덱스가 남지 않는다 —
+		// 인덱스를 FK보다 먼저 만든 이유이므로 "생기지 않았다"까지 단언한다.
 		assertThat(indexes).containsEntry(
 			"idx_exit_plans_practice_attempt_run_status",
 			"practice_attempt_id,practice_attempt_run_number,status,id");
+		assertThat(indexes).doesNotContainKey("fk_exit_plans_practice_attempt");
 	}
 
 	@Test

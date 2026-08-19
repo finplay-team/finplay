@@ -60,10 +60,14 @@ class ExitPresetScenarioReachabilityTest {
 	void cautiousStopsOutAfterTheRumorHeadlineOpens() {
 		List<BigDecimal> ratios = script.stage("ACT2_RUMOR").ratios();
 		BigDecimal widestCautiousLine = stopLossHigh(ExitPreset.CAUTIOUS);
+		// 손절선에 닿는 분을 못 찾아도 인덱스를 넘겨 죽지 않게 한다 — 그 경우는 "루머에서 CAUTIOUS가 털린다"가
+		// 무너진 것이므로 스택트레이스가 아니라 단언 실패로 보여야 원인이 바로 읽힌다.
 		int stopOutMinute = 0;
-		while (ratios.get(stopOutMinute).compareTo(widestCautiousLine) > 0) {
+		while (stopOutMinute < ratios.size() && ratios.get(stopOutMinute).compareTo(widestCautiousLine) > 0) {
 			stopOutMinute++;
 		}
+		assertThat(stopOutMinute).as("CAUTIOUS 손절 분").isLessThan(ratios.size());
+
 		TutorialScenarioEvent rumor = script.events().stream()
 			.filter(event -> event.stageId().equals("ACT2_RUMOR"))
 			.findFirst()
@@ -71,8 +75,10 @@ class ExitPresetScenarioReachabilityTest {
 		assertThat(stopOutMinute).isGreaterThanOrEqualTo(rumor.revealMinute());
 	}
 
+	// 이름을 내용과 맞춘다 — 첫 단언은 "아무도 구제되지 않는다"가 아니라 반등 고점이 세 손절선 위로 올라온다는
+	// 것이고(속임수처럼 보이는 이유), 실제로 아무 일도 일어나지 않게 하는 것은 두 번째 단언이다.
 	@Test
-	void fakeoutReboundRescuesNobodyAndTriggersNoTakeProfit() {
+	void fakeoutReboundClimbsBackAboveEveryStopLineButReachesNoTakeProfitLine() {
 		forEachPreset(preset -> {
 			assertThat(stopLossHigh(preset)).as("%s 손절선", preset).isLessThan(high("ACT2_FAKEOUT"));
 			assertThat(takeProfitLow(preset)).as("%s 익절선", preset).isGreaterThan(high("ACT2_FAKEOUT"));

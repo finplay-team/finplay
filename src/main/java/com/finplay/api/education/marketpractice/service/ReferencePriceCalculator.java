@@ -78,10 +78,18 @@ public class ReferencePriceCalculator {
 	 *
 	 * <p>여기만 {@link Optional}이 아니라 값을 그대로 돌려준다 — 호출 자리가 매수 체결 트랜잭션이라 체결가가
 	 * 항상 있고, 없다면 그 자리에서 실패해야 할 결함이지 빈 값으로 흘려보낼 상태가 아니다.
+	 *
+	 * <p><b>체결가를 먼저 scale 8로 정규화한다.</b> EXITPRESET-002의 "현행과 정확히 같은 값"은 현행 코드가
+	 * {@code trade.getPrice().setScale(8, HALF_UP)}을 <b>먼저</b> 하고 곱하기 때문에 성립한다. 정규화를
+	 * 호출자에게 맡기면 그 전제가 호출 지점마다 다시 지켜져야 하고, 어기면 scale 9 이하 자리에서 조용히
+	 * 갈린다. snapshot의 {@code entry_price}가 DECIMAL(18,8)이라 어차피 저장되는 값도 이 값이다.
 	 */
 	public ReferencePriceLines calculateFromPreset(BigDecimal entryPrice, ExitPreset preset) {
 		ExitPreset applied = preset == null ? ExitPreset.DEFAULT : preset;
-		return calculateFromPercent(entryPrice, applied.stopLossRate(), applied.takeProfitRate())
+		BigDecimal normalizedEntryPrice = entryPrice == null
+			? null
+			: entryPrice.setScale(PRICE_SCALE, ROUNDING_MODE);
+		return calculateFromPercent(normalizedEntryPrice, applied.stopLossRate(), applied.takeProfitRate())
 			.orElseThrow(() -> new IllegalArgumentException("진입 체결가 없이 손절·익절 기준선을 계산할 수 없습니다."));
 	}
 }

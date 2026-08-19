@@ -11,6 +11,7 @@ import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class ReferencePriceCalculatorTest {
 
@@ -147,10 +148,11 @@ class ReferencePriceCalculatorTest {
 		assertThat(result).isEmpty();
 	}
 
-	// EXITPRESET-002 — 아무 조작도 하지 않은 사용자의 결과는 이 기능 도입 전과 같아야 한다. 아래 두 배율은
-	// PracticeAttemptOrderAttributionService가 지금 들고 있는 상수를 그대로 옮겨 적은 것이며, 프리셋이 그
-	// 자리를 대체할 때(042 tasks 4번) 값이 달라지면 이 테스트가 깨진다. 근사가 아니라 BigDecimal 동등성
-	// (scale까지 같음)으로 본다 — 기준선은 화면에 그대로 찍히는 숫자라 마지막 자리가 달라도 다른 값이다.
+	// EXITPRESET-002 — 아무 조작도 하지 않은 사용자의 결과는 이 기능 도입 전과 같아야 한다. 비교 대상 배율을
+	// 복사해 적지 않고 PracticeAttemptOrderAttributionService의 상수를 직접 읽는다. 복사하면 상수 쪽만 바뀌어도
+	// 이 테스트가 초록으로 남고, 프리셋이 그 자리를 대체하는 042 tasks 4번에서는 상수가 사라지면서 이 테스트가
+	// 컴파일 단계에서 걸려 "그때 이 보증을 어떻게 이어갈지"를 강제로 다시 보게 한다.
+	// 근사가 아니라 BigDecimal 동등성(scale까지 같음)으로 본다 — 기준선은 화면에 그대로 찍히는 숫자다.
 	@ParameterizedTest
 	@ValueSource(strings = {
 		"100", "51234.12345678", "0.00012345", "3.33333333", "87654321.87654321", "1"})
@@ -160,9 +162,18 @@ class ReferencePriceCalculatorTest {
 		ReferencePriceLines lines = calculator.calculateFromPreset(entryPrice, ExitPreset.BALANCED);
 
 		assertThat(lines.referenceStopLossPrice())
-			.isEqualTo(entryPrice.multiply(new BigDecimal("0.97")).setScale(8, RoundingMode.HALF_UP));
+			.isEqualTo(entryPrice.multiply(currentMultiplier("STOP_LOSS_MULTIPLIER"))
+				.setScale(8, RoundingMode.HALF_UP));
 		assertThat(lines.referenceTakeProfitPrice())
-			.isEqualTo(entryPrice.multiply(new BigDecimal("1.05")).setScale(8, RoundingMode.HALF_UP));
+			.isEqualTo(entryPrice.multiply(currentMultiplier("TAKE_PROFIT_MULTIPLIER"))
+				.setScale(8, RoundingMode.HALF_UP));
+	}
+
+	/** 현행 하드코딩 배율을 그 상수가 살아 있는 동안 직접 읽는다(042 tasks 4번이 이 상수를 대체한다). */
+	private static BigDecimal currentMultiplier(String fieldName) {
+		Object value = ReflectionTestUtils.getField(PracticeAttemptOrderAttributionService.class, fieldName);
+		assertThat(value).as("%s 상수", fieldName).isInstanceOf(BigDecimal.class);
+		return (BigDecimal)value;
 	}
 
 	@Test
@@ -187,6 +198,21 @@ class ReferencePriceCalculatorTest {
 		assertThat(calculator.calculateFromPreset(entryPrice, ExitPreset.RELAXED))
 			.isEqualTo(new ReferencePriceLines(
 				new BigDecimal("950.00000000"), new BigDecimal("1080.00000000")));
+	}
+
+	@Test
+	void calculateFromPresetNormalizesEntryPriceBeforeApplyingTheRates() {
+		// 현행 코드는 체결가를 scale 8로 먼저 반올림하고 곱한다. 계산기가 그 정규화를 하지 않으면 scale 9
+		// 이하 자리를 가진 체결가에서 두 경로가 갈린다 — 0.000000005는 선반올림이 0.00000001, 아니면 0이다.
+		BigDecimal rawEntryPrice = new BigDecimal("100.000000005");
+		BigDecimal preRounded = rawEntryPrice.setScale(8, RoundingMode.HALF_UP);
+
+		ReferencePriceLines lines = calculator.calculateFromPreset(rawEntryPrice, ExitPreset.BALANCED);
+
+		assertThat(lines).isEqualTo(calculator.calculateFromPreset(preRounded, ExitPreset.BALANCED));
+		assertThat(lines.referenceStopLossPrice())
+			.isEqualTo(preRounded.multiply(currentMultiplier("STOP_LOSS_MULTIPLIER"))
+				.setScale(8, RoundingMode.HALF_UP));
 	}
 
 	@Test
