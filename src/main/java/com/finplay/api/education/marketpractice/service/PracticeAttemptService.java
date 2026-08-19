@@ -29,7 +29,14 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class PracticeAttemptService {
 
-	private static final short GENERATOR_VERSION = 1;
+	// 041 5번에서 1 -> 2. 커서를 전진시키는 진행 계산(PracticeScenarioProgressService)이 생긴 지금이 그
+	// 시점이다 — 그전에 올렸으면 새 사용자의 가격이 0막 0분에 고정되고 지정가 정산도 대본 위치를 못 읽었다.
+	// 배포 시점에 진행 중이던 버전 1 attempt는 재시작을 강제하지 않고 그대로 버전 1로 재현한다
+	// (041 plan §생성기 버전 2) — 새 attempt와 재시작 후 다시 종목을 고른 attempt만 버전 2를 받는다.
+	private static final short GENERATOR_VERSION = 2;
+	// legacy completion만 있는 사용자에게 만들어 주는 읽기 전용 replay attempt는 대본 커서가 없고 tick도
+	// 돌지 않는다. 버전 2를 주면 대본 첫 구간 0분에 고정된 평평한 차트가 되므로 기존 재현을 그대로 둔다.
+	private static final short REPLAY_GENERATOR_VERSION = 1;
 
 	private final PracticeAttemptRepository practiceAttemptRepository;
 	private final PracticeCompletionRepository practiceCompletionRepository;
@@ -78,7 +85,7 @@ public class PracticeAttemptService {
 			completedAt,
 			completedAt.toLocalDate(),
 			deterministicReplaySeed(userId, market, completion.getId(), instrument.getId()),
-			GENERATOR_VERSION,
+			REPLAY_GENERATOR_VERSION,
 			completedAt,
 			updatedAt);
 	}

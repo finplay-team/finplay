@@ -23,6 +23,7 @@ public class PracticeAttemptChartService {
 
 	private final PracticeAttemptRepository practiceAttemptRepository;
 	private final PracticeAttemptCanonicalPriceService canonicalPriceService;
+	private final PracticeScenarioProgressService practiceScenarioProgressService;
 	private final PracticeOrderSettlementService practiceOrderSettlementService;
 	private final Clock clock;
 
@@ -44,8 +45,15 @@ public class PracticeAttemptChartService {
 			throw new BusinessException(ErrorCode.PRACTICE_ALREADY_COMPLETED);
 		}
 		LocalDateTime now = LocalDateTime.now(clock);
+		// 선택 상태 검증을 겸한다 — 종목 미선택 attempt는 여기서 PRACTICE_STEP_LOCKED로 걸린다.
 		canonicalPriceService.publishedMinute(attempt, now);
-		practiceOrderSettlementService.settleCurrentRun(attempt.getId(), attempt.getRunNumber(), now);
+		if (canonicalPriceService.isScenarioVersion(attempt)) {
+			// 생성기 버전 2는 진행 계산이 커서를 밀면서 건너뛴 가상 분마다 정산한다(SCENARIO-013). 여기서
+			// settleCurrentRun을 한 번 더 부르면 같은 tick의 마지막 분이 두 번 판정된다.
+			practiceScenarioProgressService.advance(attempt, now);
+		} else {
+			practiceOrderSettlementService.settleCurrentRun(attempt.getId(), attempt.getRunNumber(), now);
+		}
 		return toResponse(attempt, now);
 	}
 
