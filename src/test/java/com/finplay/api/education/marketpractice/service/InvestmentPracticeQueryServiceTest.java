@@ -57,9 +57,12 @@ class InvestmentPracticeQueryServiceTest {
 		PracticeCompletionRepository.class);
 	private final Clock clock = Clock.fixed(NOW.atZone(ZoneId.systemDefault()).toInstant(), ZoneId.systemDefault());
 
+	private final PracticeAttemptCanonicalPriceService canonicalPriceService = mock(
+		PracticeAttemptCanonicalPriceService.class);
+
 	private final InvestmentPracticeQueryService service = new InvestmentPracticeQueryService(
 		favoriteService, practiceAttemptRepository, practiceRiskSnapshotRepository, practiceAttemptEvidenceService,
-		chainResolutionService, referencePriceCalculator, practiceMarketObservationRepository,
+		canonicalPriceService, chainResolutionService, referencePriceCalculator, practiceMarketObservationRepository,
 		practiceCompletionRepository, clock);
 
 	@Test
@@ -530,6 +533,38 @@ class InvestmentPracticeQueryServiceTest {
 		// 040: 재시작해 다시 진행 중이어도 이미 받은 최초 완료 보상은 그대로 노출된다.
 		assertThat(response.rewardAmount()).isEqualTo(5_000_000L);
 		assertThat(response.completedAt()).isEqualTo(NOW.minusDays(1));
+	}
+
+	// 041 SCENARIO-014 — 생성기 버전 2 attempt는 마감이 없으므로 saleDeadlineAt이 null로 내려가고, 매수 후
+	// 아무리 오래 지나도 4단계가 EXPIRED가 되지 않는다. 프론트가 분기하는 것은 enum이 아니라 이 문자열이다.
+	@Test
+	void getProgressDropsSaleDeadlineAndNeverExpiresForScenarioAttempts() {
+		when(practiceCompletionRepository.findByUserIdAndTutorialKey(USER_ID, PracticeIntentionService.TUTORIAL_KEY))
+			.thenReturn(Optional.empty());
+
+		PracticeAttempt attempt = attempt(70L, 1L, PracticeAttemptStatus.IN_PROGRESS, instrument(100L));
+		when(practiceAttemptRepository.findByUserIdAndMarket(USER_ID, Market.STOCK))
+			.thenReturn(Optional.of(attempt));
+		when(canonicalPriceService.isScenarioVersion(attempt)).thenReturn(true);
+
+		PracticeRiskSnapshot snapshot = riskSnapshot(30L, NOW.minusHours(3));
+		when(practiceRiskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(70L, 1L))
+			.thenReturn(Optional.of(snapshot));
+		ResolvedPracticeAttemptEvidenceDto resolved = new ResolvedPracticeAttemptEvidenceDto(
+			snapshot, snapshot, 40L, new BigDecimal("3"), BigDecimal.ZERO, new BigDecimal("3"), null, null, null, null,
+			null);
+		when(practiceAttemptEvidenceService.requireCurrentRun(attempt, USER_ID, null)).thenReturn(resolved);
+		PracticeMarketObservation observation = observation(
+			60L, PracticeEvidenceType.CLOSER_TO_BOUNDARY, NOW.minusHours(2));
+		when(practiceMarketObservationRepository.findByUserIdAndHoldingIdOrderByObservedAtAscIdAsc(USER_ID, 40L))
+			.thenReturn(List.of(observation));
+
+		InvestmentPracticeResponse response = service.getProgress(USER_ID, Market.STOCK);
+
+		PracticeStepResponse step4 = response.steps().get(3);
+		assertThat(step4.evidence().saleDeadlineAt()).isNull();
+		assertThat(step4.status()).isEqualTo("AWAITING_SALE");
+		assertThat(response.status()).isEqualTo("IN_PROGRESS");
 	}
 
 	// 이슈 #426 (2): 재시작 직후 종목 선택 단계에서도 최초 완료 기록의 보상 금액·완료 시각은 유지된다.
