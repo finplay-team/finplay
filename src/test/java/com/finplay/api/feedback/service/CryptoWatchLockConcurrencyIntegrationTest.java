@@ -22,7 +22,6 @@ import com.finplay.api.feedback.repository.PriceMoveEventRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.repository.InstrumentRepository;
-import com.finplay.api.market.service.CryptoPriceMoveCardPublisher;
 import com.finplay.api.market.service.CryptoPriceSnapshotService;
 import com.finplay.api.market.service.InstrumentService;
 import com.finplay.api.market.store.PriceStore;
@@ -90,9 +89,6 @@ class CryptoWatchLockConcurrencyIntegrationTest {
 
 	@Autowired
 	private PriceMoveCardWriter priceMoveCardWriter;
-
-	@Autowired
-	private CryptoPriceMoveCardPublisher cryptoPriceMoveCardPublisher;
 
 	@Autowired
 	private NewsMatcher newsMatcher;
@@ -225,7 +221,7 @@ class CryptoWatchLockConcurrencyIntegrationTest {
 		});
 		CryptoPriceMoveWatcher watcherWithoutRealLock = new CryptoPriceMoveWatcher(
 			instrumentService, cryptoPriceSnapshotService, priceMoveEventRepository, priceMoveCardWriter,
-			cryptoPriceMoveCardPublisher, alwaysSucceedingLockWithFreshTokens(), newsMatcher, newsCollectionService,
+			alwaysSucceedingLockWithFreshTokens(), newsMatcher, newsCollectionService,
 			narrativeService, cryptoProperties, detectionProperties, clock);
 
 		runConcurrently(watcherWithoutRealLock::watch, watcherWithoutRealLock::watch);

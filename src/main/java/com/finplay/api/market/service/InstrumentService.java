@@ -29,11 +29,6 @@ public class InstrumentService {
 			.toList();
 	}
 
-	@Transactional(readOnly = true)
-	public InstrumentResponse getInstrument(Long instrumentId) {
-		return InstrumentResponse.from(getInstrumentEntity(instrumentId));
-	}
-
 	// 다른 도메인(order 등)이 Instrument 엔티티가 필요할 때 InstrumentRepository를 직접 주입하지 않고 이 메서드만 거치게 한다 (ADR-0002).
 	@Transactional(readOnly = true)
 	public Instrument getInstrumentEntity(Long instrumentId) {

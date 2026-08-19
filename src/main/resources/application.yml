@@ -83,9 +83,9 @@ spring:
       timeout: ${feedback.llm.timeout-seconds}s
   task:
     scheduling:
-      # 코드베이스 전체의 @Scheduled 메서드는 18개다 — 기존 5개에 뉴스·공시 수집 2개, 개장 전 배치 1개,
+      # 코드베이스 전체의 @Scheduled 메서드는 17개다 — 기존 5개에 뉴스·공시 수집 2개, 개장 전 배치 1개,
       # 코인 요약·브리핑 배치 1개, 장 마감 집단 비교 배치 1개, 코인 가격 스냅샷 기록 1개, 코인 변동 감시 1개,
-      # 코인 집단 비교 배치 1개, 랭킹 재구성 배치 1개, 코인 SSE 연결상태 push 1개, 빗썸 연결상태 재기록 1개,
+      # 코인 집단 비교 배치 1개, 랭킹 재구성 배치 1개, 빗썸 연결상태 재기록 1개,
       # 빗썸 REST ticker 폴링 1개, 주식 수집 당일 재시도 1개가 더해졌다.
       #   기존 5   SseEmitterRegistry heartbeat · StockPriceStreamService · KisHistoricalCandleCollector
       #            StockReplaySessionScheduler · BithumbFeedSimulator
@@ -97,25 +97,25 @@ spring:
       #   신설 1   CryptoPriceMoveWatcher.watch (spec 012 §탐지 알고리즘(코인), 이슈 #225)
       #   신설 1   PeerStatsBatchService.runCryptoPeerStatsBatch (spec 012 §FEED-012, 이슈 #275)
       #   신설 1   RankingRebuildService.rebuildOnSchedule (spec 014 랭킹 재구성, 이슈 #279)
-      #   신설 1   CryptoPriceStreamService.publishConnectionStatusIfChanged (spec 028, 이슈 #286)
       #   신설 1   BithumbFeedStatusReconciler.reconcileConnectionStatus (이슈 #299)
       #   신설 1   BithumbRestTickerPoller.pollTickers (spec 034 PRICE-REST-002, 이슈 #369)
       #   신설 1   KisHistoricalCandleCollector.retryPendingInstruments (spec 035, 이슈 #370)
-      #   합계 18
+      #   합계 17
       # 시뮬레이터는 @Profile("!prod") + matchIfMissing=true라 별도 설정 없이 기본 활성이며, 이전 주석은 이걸
-      # 빠뜨리고 4로 세고 있었다 (이슈 #125). 위 18개가 전부 동시에 한 프로필에서 뜨는 것은 아니다 —
+      # 빠뜨리고 4로 세고 있었다 (이슈 #125). 위 17개가 전부 동시에 한 프로필에서 뜨는 것은 아니다 —
       # 시뮬레이터(BithumbFeedSimulator)와 폴러(BithumbRestTickerPoller)는 프로필이 갈리는 반면(이슈 #369),
       # retryPendingInstruments(이슈 #370)는 프로필과 무관하게 항상 뜬다.
-      #   기본(local, crypto-real 없음) — 시뮬레이터 O, 폴러 X, 재시도 O → 17개
-      #   crypto-real                  — 시뮬레이터 X, 폴러 O, 재시도 O → 17개
-      #   prod                         — 시뮬레이터 X, 폴러 O, 재시도 O(이슈 #369부터, 이전엔 폴러가 없어 16개였다) → 17개
-      # 세 프로필 모두 실제 필요 스레드는 17개로 같다. 풀을 18로 두어 스레드 하나를 여유로 남긴다(이슈 #369
-      # 이전에도 prod는 16 대 실제 15로 같은 여유 1개를 유지하고 있었다 — 그 여유를 그대로 유지하는 것이다).
+      #   기본(local, crypto-real 없음) — 시뮬레이터 O, 폴러 X, 재시도 O → 16개
+      #   crypto-real                  — 시뮬레이터 X, 폴러 O, 재시도 O → 16개
+      #   prod                         — 시뮬레이터 X, 폴러 O, 재시도 O(이슈 #369부터, 이전엔 폴러가 없어 15개였다) → 16개
+      # 세 프로필 모두 실제 필요 스레드는 16개로 같다. 풀을 18로 두어 스레드 둘을 여유로 남긴다(이슈 #369
+      # 이전에도 prod는 16 대 실제 15로 여유 1개를 유지하고 있었다 — 이슈 #476로 코인 SSE 연결상태 push
+      # 스케줄이 없어지며 여유가 하나 더 늘었다).
       # 풀은 앱 전역 단일 풀이라 소유 도메인과 무관하게 전부 센다 — price-snapshot-cron이 market 소유라고
       # 빼지 않는다. spec 012의 스케줄 8개(§C-1)가 이슈 #275의 crypto-peer-stats까지 전부 들어온 뒤, spec 014의
-      # 랭킹 재구성 배치(이슈 #279)와 spec 028의 코인 SSE 연결상태 push(이슈 #286), 이슈 #299의 빗썸 연결상태
-      # 재기록, 이슈 #369의 REST ticker 폴링, 이슈 #370의 주식 수집 당일 재시도가 더해져 최종 18이 됐다.
-      # application-crypto-real.yml의 카운트 주석은 이 변경 시점 기준 아직 갱신 전이다.
+      # 랭킹 재구성 배치(이슈 #279)와 이슈 #299의 빗썸 연결상태 재기록, 이슈 #369의 REST ticker 폴링, 이슈
+      # #370의 주식 수집 당일 재시도가 더해져 18까지 늘었다가, 이슈 #476이 spec 028의 코인 SSE 연결상태
+      # push(이슈 #286)를 제거하며 다시 17이 됐다.
       # 풀이 부족하면 개장 시간대에 SSE heartbeat와 매분 가격 push가 밀린다. 이 숫자는 @Scheduled를 추가할
       # 때마다 함께 올려야 한다 —
       # NewsCollectionIntegrationTest.schedulingPoolIsLargeEnoughForEveryScheduledTask가 전체 빌드에서 검증한다.

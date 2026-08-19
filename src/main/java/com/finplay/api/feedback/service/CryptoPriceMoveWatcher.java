@@ -9,7 +9,6 @@ import com.finplay.api.feedback.domain.PriceMoveEvent;
 import com.finplay.api.feedback.repository.PriceMoveEventRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
-import com.finplay.api.market.service.CryptoPriceMoveCardPublisher;
 import com.finplay.api.market.service.CryptoPriceSnapshotService;
 import com.finplay.api.market.service.InstrumentService;
 import com.finplay.api.market.store.PriceSnapshotDto;
@@ -71,8 +70,6 @@ public class CryptoPriceMoveWatcher {
 	private final PriceMoveEventRepository priceMoveEventRepository;
 
 	private final PriceMoveCardWriter priceMoveCardWriter;
-
-	private final CryptoPriceMoveCardPublisher cryptoPriceMoveCardPublisher;
 
 	private final CryptoWatchLock cryptoWatchLock;
 
@@ -195,15 +192,6 @@ public class CryptoPriceMoveWatcher {
 			PriceMoveEvent card = PriceMoveEvent.createCrypto(
 				instrument, occurredAt, changeRate, detectionScore, narrative.narrative(), narrative.source(), now);
 			priceMoveCardWriter.persist(card, sources);
-			// publish 내부에서 이미 RuntimeException을 삼키지만(CryptoPriceMoveCardPublisher), 그 삼킴이
-			// 나중에 깨지거나 리팩터링되더라도 이미 커밋된 카드가 watch()의 종목별 try-catch(실패 집계)에
-			// 걸리지 않도록 여기서도 한 번 더 방어한다 — "push 실패가 카드 생성을 실패시키지 않는다"의 이중 보장.
-			try {
-				cryptoPriceMoveCardPublisher.publish(instrument.getId(), card.getId());
-			} catch (RuntimeException ex) {
-				log.warn("코인 변동 카드 push 호출이 예외를 던졌다(카드 저장은 이미 완료). 종목={}, 카드={}",
-					instrument.getId(), card.getId(), ex);
-			}
 			return true;
 		} finally {
 			cryptoWatchLock.unlock(instrument.getId(), lockToken.get());

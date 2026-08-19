@@ -35,13 +35,6 @@ public class InstrumentController {
 		return ResponseEntity.ok(instrumentService.getInstruments(market));
 	}
 
-	@GetMapping("/{instrumentId}")
-	public ResponseEntity<InstrumentResponse> getInstrument(
-		@PathVariable
-		Long instrumentId) {
-		return ResponseEntity.ok(instrumentService.getInstrument(instrumentId));
-	}
-
 	@GetMapping("/{instrumentId}/price")
 	public ResponseEntity<PriceResponse> getPrice(
 		@PathVariable
