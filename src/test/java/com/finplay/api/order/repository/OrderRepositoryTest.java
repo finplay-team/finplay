@@ -2,6 +2,7 @@
 package com.finplay.api.order.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.finplay.api.TestcontainersConfiguration;
 import com.finplay.api.account.domain.Account;
@@ -611,5 +612,29 @@ class OrderRepositoryTest {
 
 		assertThat(result).extracting(order -> order.getInstrument().getSymbol())
 			.containsExactly(instrument.getSymbol());
+	}
+
+	// 이슈 #441: 043 spec의 완료 조건 — "체결·취소된 뒤에는 같은 주문이 각각 FILLED·CANCELLED 상태로 계속 보인다".
+	// 이 쿼리는 status로 필터링하지 않으므로 세 상태가 그대로 노출돼야 한다. 기존 케이스는 PENDING·FILLED만
+	// 다뤄 CANCELLED가 비어 있었다.
+	@Test
+	@DisplayName("취소된 주문도 CANCELLED 상태 그대로 현재 attempt·run 조회 결과에 남는다 (043, 이슈 #441)")
+	void findPracticeRunOrdersKeepsCancelledOrdersWithCancelledStatus() {
+		Long attemptId = createPracticeAttempt(Market.STOCK);
+		Order pending = createPracticeRunPendingOrder(attemptId, 1L, "6");
+		Order cancelled = createPracticeRunPendingOrder(attemptId, 1L, "7");
+		cancelled.cancel();
+		orderRepository.saveAndFlush(cancelled);
+		Order filled = createPracticeRunFilledOrder(attemptId, 1L, "8");
+		entityManager.clear();
+
+		List<Order> result = orderRepository.findPracticeRunOrders(attemptId, 1L);
+
+		assertThat(result)
+			.extracting(Order::getId, Order::getStatus)
+			.containsExactly(
+				tuple(pending.getId(), com.finplay.api.order.domain.OrderStatus.PENDING),
+				tuple(cancelled.getId(), com.finplay.api.order.domain.OrderStatus.CANCELLED),
+				tuple(filled.getId(), com.finplay.api.order.domain.OrderStatus.FILLED));
 	}
 }

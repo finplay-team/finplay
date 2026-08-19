@@ -202,6 +202,30 @@ class PracticeRunRestartOrderServiceTest {
 			.resetForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO, NOW);
 	}
 
+	// 이슈 #440: instrumentId == null인데 현재 attempt·run에 귀속된 주문이 남아 있으면 409로 막는다.
+	// PR #434가 legacy 실제 종목 재시작을 허용한 뒤로 이 분기가 유일한 안전망이 됐는데, 위
+	// cleanupCurrentRunWithoutInstrumentAllowsOnlyEmptyOrderSet은 주문이 비어 있는 경우만 다뤄
+	// "주문이 남아 있으면 막힌다" 쪽이 비어 있었다.
+	@Test
+	void cleanupCurrentRunWithoutInstrumentRejectsWhenOrdersExist() {
+		Fixture fixture = fixture();
+		Order leftover = attributedPendingOrder(
+			fixture, OrderSide.BUY, BigDecimal.ONE, new BigDecimal("70000000"), "leftover");
+		when(orderRepository.findPracticeRunOrdersForUpdate(ATTEMPT_ID, 1L)).thenReturn(List.of(leftover));
+		PracticeRunRestartCommand command = new PracticeRunRestartCommand(
+			ATTEMPT_ID, 1L, USER_ID, Market.CRYPTO, null, null, NOW);
+
+		assertThatThrownBy(() -> service.cleanupCurrentRun(command))
+			.isInstanceOfSatisfying(BusinessException.class,
+				exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.PRACTICE_EVIDENCE_MISSING));
+
+		// 막힌 뒤에는 계좌·holding·원장 어느 쪽도 건드리지 않고, 튜토리얼 계좌 리셋도 일어나지 않아야 한다.
+		assertThat(leftover.getStatus()).isEqualTo(OrderStatus.PENDING);
+		verify(orderRepository, never()).save(any());
+		verifyNoInteractions(tradeRepository, accountService, instrumentService, priceQueryService,
+			portfolioSellService, tutorialAccountService);
+	}
+
 	private void stubRun(Fixture fixture, List<Order> orders, List<Trade> trades) {
 		when(orderRepository.findPracticeRunOrdersForUpdate(ATTEMPT_ID, 1L)).thenReturn(orders);
 		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID)).thenReturn(fixture.instrument());

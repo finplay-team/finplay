@@ -317,6 +317,30 @@ class ExitPlanRepositoryTest {
 		assertThat(result).extracting(ExitPlan::getId).containsExactly(plan.getId());
 	}
 
+	// 경계 비교가 `=`가 아니라 `<=`·`>=`임을 잠근다 — 위 두 테스트는 정확히 일치하는 값만 쓰므로 쿼리가
+	// 등호 비교로 바뀌어도 통과한다. 이슈 #382의 "경계 비교" 항목은 이 두 케이스까지 있어야 닫힌다.
+	@Test
+	@DisplayName("findPendingExitPlansToFill은 현재가가 익절가를 넘어서도 익절 방향 후보로 반환한다 (이슈 #382)")
+	void findPendingExitPlansToFillReturnsCandidateWhenPriceAboveTakeProfitPrice() {
+		ExitPlan plan = exitPlanRepository.saveAndFlush(generalPlan(hash("a")));
+
+		List<ExitPlan> result = exitPlanRepository.findPendingExitPlansToFill(
+			instrument.getId(), TAKE_PROFIT_PRICE.add(new BigDecimal("1000.00000000")));
+
+		assertThat(result).extracting(ExitPlan::getId).containsExactly(plan.getId());
+	}
+
+	@Test
+	@DisplayName("findPendingExitPlansToFill은 현재가가 손절가 아래로 내려가도 손절 방향 후보로 반환한다 (이슈 #382)")
+	void findPendingExitPlansToFillReturnsCandidateWhenPriceBelowStopLossPrice() {
+		ExitPlan plan = exitPlanRepository.saveAndFlush(generalPlan(hash("a")));
+
+		List<ExitPlan> result = exitPlanRepository.findPendingExitPlansToFill(
+			instrument.getId(), STOP_LOSS_PRICE.subtract(new BigDecimal("1000.00000000")));
+
+		assertThat(result).extracting(ExitPlan::getId).containsExactly(plan.getId());
+	}
+
 	@Test
 	@DisplayName("findPendingExitPlansToFill은 현재가가 손절가 이하이면 손절 방향 후보로 반환한다 (PR #371 리뷰 권장)")
 	void findPendingExitPlansToFillReturnsCandidateWhenPriceAtOrBelowStopLossPrice() {
@@ -367,14 +391,18 @@ class ExitPlanRepositoryTest {
 	@DisplayName("findPendingExitPlansToFill은 reservedAt 오름차순, 동시각이면 id 오름차순으로 여러 후보를 정렬한다 (PR #371 리뷰 권장)")
 	void findPendingExitPlansToFillSortedByReservedAtThenIdAscending() {
 		// holding당 PENDING 1건 불변식은 앱 계층 검증이라 리포지터리 테스트는 우회해 같은 holding에 여러 PENDING plan을 직접 저장한다.
-		ExitPlan older = exitPlanRepository.saveAndFlush(generalPlanAt(holding, hash("a"), NOW.minusMinutes(10)));
+		// reservedAt이 가장 이른 plan을 일부러 가장 나중에 저장한다(= id가 가장 크다) — 저장 순서와 예약 시각 순서를
+		// 어긋나게 두지 않으면 `order by reservedAt asc, id asc`와 `order by id asc`가 같은 결과를 내 정렬 조건을
+		// 검증하지 못한다 (이슈 #382).
 		ExitPlan sameTimeFirst = exitPlanRepository.saveAndFlush(generalPlanAt(holding, hash("b"), NOW));
 		ExitPlan sameTimeSecond = exitPlanRepository.saveAndFlush(generalPlanAt(holding, hash("c"), NOW));
+		ExitPlan older = exitPlanRepository.saveAndFlush(generalPlanAt(holding, hash("a"), NOW.minusMinutes(10)));
 
 		List<ExitPlan> result = exitPlanRepository.findPendingExitPlansToFill(instrument.getId(), TAKE_PROFIT_PRICE);
 
 		assertThat(result).extracting(ExitPlan::getId)
 			.containsExactly(older.getId(), sameTimeFirst.getId(), sameTimeSecond.getId());
+		assertThat(older.getId()).isGreaterThan(sameTimeSecond.getId());
 	}
 
 	// 튜토리얼 자동 예약은 실행 세대에 귀속된다(042 EXITPRESET-015) — tick 정산 대상 선별과 재시작 정리가
