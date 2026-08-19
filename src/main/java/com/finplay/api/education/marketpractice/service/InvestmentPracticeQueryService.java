@@ -84,7 +84,8 @@ public class InvestmentPracticeQueryService {
 				PracticeCompletion completed = completion
 					.orElseThrow(() -> new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING));
 				if (practiceRiskSnapshotRepository
-					.findByAttemptIdAndRunNumber(attempt.get().getId(), attempt.get().getRunNumber())
+					.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(
+						attempt.get().getId(), attempt.get().getRunNumber())
 					.isEmpty()) {
 					return attachReplayAttempt(
 						buildCompletedResponse(userId, tutorialKey, completed), attempt.get());
@@ -148,7 +149,8 @@ public class InvestmentPracticeQueryService {
 		}
 
 		Optional<PracticeRiskSnapshot> snapshot = practiceRiskSnapshotRepository
-			.findByAttemptIdAndRunNumber(attempt.getId(), attempt.getRunNumber());
+			.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(
+				attempt.getId(), attempt.getRunNumber());
 		attemptResponse = PracticeAttemptResponse.from(attempt, snapshot.orElse(null));
 		if (snapshot.isEmpty()) {
 			List<PracticeStepResponse> steps = List.of(
@@ -235,7 +237,8 @@ public class InvestmentPracticeQueryService {
 		return practiceMarketObservationRepository
 			.findByUserIdAndHoldingIdOrderByObservedAtAscIdAsc(userId, resolved.holdingId())
 			.stream()
-			.filter(observation -> !observation.getObservedAt().isBefore(resolved.riskSnapshot().getCreatedAt()))
+			.filter(observation -> !observation.getObservedAt()
+				.isBefore(resolved.observationBaseline().getCreatedAt()))
 			.toList();
 	}
 

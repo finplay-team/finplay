@@ -32,6 +32,7 @@ import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -114,6 +115,66 @@ class PracticeAttemptRepositoryTest {
 		assertThatThrownBy(() -> practiceRiskSnapshotRepository.saveAndFlush(
 			createRiskSnapshot(buyTrade, NOW.plusSeconds(2))))
 			.isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	@Test
+	@DisplayName("위험 스냅샷은 entry_sequence 기본값 1로 저장된다")
+	void riskSnapshotIsStoredWithFirstEntrySequenceByDefault() {
+		Trade buyTrade = createBuyTrade("entry-sequence-default-order");
+		PracticeRiskSnapshot saved = practiceRiskSnapshotRepository.saveAndFlush(
+			createRiskSnapshot(buyTrade, NOW.plusSeconds(1)));
+		entityManager.clear();
+
+		PracticeRiskSnapshot reloaded = practiceRiskSnapshotRepository.findById(saved.getId()).orElseThrow();
+
+		assertThat(reloaded.getEntrySequence()).isEqualTo(PracticeRiskSnapshot.FIRST_ENTRY_SEQUENCE);
+	}
+
+	// 재진입이 도입되기 전이라 한 실행 세대의 진입은 아직 하나뿐이다(기존 UNIQUE가 둘째를 막는다).
+	// 여기서는 두 조회가 같은 행을 가리키는 회귀만 잠근다 — 진입이 여럿일 때 갈라지는 것은
+	// 기존 UNIQUE를 삭제한 뒤에야 검증할 수 있다.
+	@Test
+	@DisplayName("진입이 하나면 최신 진입 조회와 첫 진입 조회가 같은 스냅샷을 돌려준다")
+	void latestAndFirstEntryLookupsReturnSameSnapshotWhenSingleEntry() {
+		Trade buyTrade = createBuyTrade("entry-sequence-lookup-order");
+		PracticeRiskSnapshot saved = practiceRiskSnapshotRepository.saveAndFlush(
+			createRiskSnapshot(buyTrade, NOW.plusSeconds(1)));
+		entityManager.clear();
+
+		var latest = practiceRiskSnapshotRepository
+			.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(attempt.getId(), attempt.getRunNumber());
+		var first = practiceRiskSnapshotRepository.findByAttemptIdAndRunNumberAndEntrySequence(
+			attempt.getId(), attempt.getRunNumber(), PracticeRiskSnapshot.FIRST_ENTRY_SEQUENCE);
+
+		assertThat(latest).isPresent();
+		assertThat(latest.get().getId()).isEqualTo(saved.getId());
+		assertThat(first).isPresent();
+		assertThat(first.get().getId()).isEqualTo(saved.getId());
+		assertThat(practiceRiskSnapshotRepository
+			.countByAttemptIdAndRunNumber(attempt.getId(), attempt.getRunNumber())).isEqualTo(1L);
+	}
+
+	@Test
+	@DisplayName("entry_sequence가 0 이하면 CHECK 제약이 거부한다")
+	void savingNonPositiveEntrySequenceFailsWithCheckConstraint() {
+		Trade buyTrade = createBuyTrade("entry-sequence-check-order");
+		PracticeRiskSnapshot invalid = createRiskSnapshot(buyTrade, NOW.plusSeconds(1));
+		ReflectionTestUtils.setField(invalid, "entrySequence", 0);
+
+		assertThatThrownBy(() -> practiceRiskSnapshotRepository.saveAndFlush(invalid))
+			.isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	@Test
+	@DisplayName("스냅샷이 없으면 두 조회 모두 비어 있고 개수는 0이다")
+	void entryLookupsReturnEmptyWhenNoSnapshotExists() {
+		assertThat(practiceRiskSnapshotRepository
+			.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(attempt.getId(), attempt.getRunNumber()))
+			.isEmpty();
+		assertThat(practiceRiskSnapshotRepository.findByAttemptIdAndRunNumberAndEntrySequence(
+			attempt.getId(), attempt.getRunNumber(), PracticeRiskSnapshot.FIRST_ENTRY_SEQUENCE)).isEmpty();
+		assertThat(practiceRiskSnapshotRepository
+			.countByAttemptIdAndRunNumber(attempt.getId(), attempt.getRunNumber())).isZero();
 	}
 
 	@Test

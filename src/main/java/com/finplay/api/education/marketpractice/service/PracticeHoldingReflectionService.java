@@ -134,7 +134,8 @@ public class PracticeHoldingReflectionService {
 		boolean hasEvidence = practiceMarketObservationRepository
 			.findByUserIdAndHoldingIdOrderByObservedAtAsc(userId, holding.getId())
 			.stream()
-			.filter(observation -> !observation.getObservedAt().isBefore(evidence.riskSnapshot().getCreatedAt()))
+			.filter(observation -> !observation.getObservedAt()
+				.isBefore(evidence.observationBaseline().getCreatedAt()))
 			.anyMatch(observation -> observation.getEvidenceType() != null);
 		if (!hasEvidence) {
 			throw new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING);

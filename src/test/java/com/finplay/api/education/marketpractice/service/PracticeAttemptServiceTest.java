@@ -70,7 +70,7 @@ class PracticeAttemptServiceTest {
 			.thenReturn(Optional.of(attempt));
 		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.STOCK))
 			.thenReturn(Optional.of(attempt));
-		when(practiceRiskSnapshotRepository.findByAttemptIdAndRunNumber(ATTEMPT_ID, 1L))
+		when(practiceRiskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(ATTEMPT_ID, 1L))
 			.thenReturn(Optional.empty());
 		// 최초 진입 — 튜토리얼 계좌가 이번에 새로 생성됐다고 가정해 초기값(1000만원/1000만원/0원)을 스텁한다.
 		stubTutorialAccount(com.finplay.api.account.domain.Market.STOCK, freshTutorialAccount());
@@ -104,7 +104,7 @@ class PracticeAttemptServiceTest {
 			.thenReturn(Optional.of(attempt));
 		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.STOCK))
 			.thenReturn(Optional.of(attempt));
-		when(practiceRiskSnapshotRepository.findByAttemptIdAndRunNumber(ATTEMPT_ID, 1L))
+		when(practiceRiskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(ATTEMPT_ID, 1L))
 			.thenReturn(Optional.empty());
 		TutorialAccount mutated = freshTutorialAccount();
 		mutated.deductCash(2_000_000L); // 매수 체결로 800만원까지 감소
@@ -131,7 +131,7 @@ class PracticeAttemptServiceTest {
 			.thenReturn(Optional.of(attempt));
 		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
 			.thenReturn(Optional.of(attempt));
-		when(practiceRiskSnapshotRepository.findByAttemptIdAndRunNumber(ATTEMPT_ID, 1L))
+		when(practiceRiskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(ATTEMPT_ID, 1L))
 			.thenReturn(Optional.empty());
 		stubTutorialAccount(com.finplay.api.account.domain.Market.CRYPTO, freshTutorialAccount());
 
@@ -160,7 +160,7 @@ class PracticeAttemptServiceTest {
 			.thenReturn(Optional.of(attempt));
 		when(practiceCompletionRepository.findByUserIdAndTutorialKey(USER_ID, "INVESTMENT_PRACTICE_V1"))
 			.thenReturn(Optional.of(completion));
-		when(practiceRiskSnapshotRepository.findByAttemptIdAndRunNumber(ATTEMPT_ID, 1L))
+		when(practiceRiskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(ATTEMPT_ID, 1L))
 			.thenReturn(Optional.empty());
 		stubTutorialAccount(com.finplay.api.account.domain.Market.STOCK, freshTutorialAccount());
 
@@ -182,7 +182,7 @@ class PracticeAttemptServiceTest {
 		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, market))
 			.thenReturn(Optional.of(attempt));
 		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID)).thenReturn(instrument);
-		when(practiceRiskSnapshotRepository.findByAttemptIdAndRunNumber(ATTEMPT_ID, 1L))
+		when(practiceRiskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(ATTEMPT_ID, 1L))
 			.thenReturn(Optional.empty());
 
 		PracticeAttemptResponse response = service.selectInstrument(USER_ID, market, INSTRUMENT_ID);

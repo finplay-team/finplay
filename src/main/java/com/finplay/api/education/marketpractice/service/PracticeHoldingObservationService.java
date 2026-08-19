@@ -122,7 +122,8 @@ public class PracticeHoldingObservationService {
 		List<PracticeMarketObservation> existingObservations = practiceMarketObservationRepository
 			.findByUserIdAndHoldingIdOrderByObservedAtAsc(userId, holding.getId())
 			.stream()
-			.filter(observation -> !observation.getObservedAt().isBefore(evidence.riskSnapshot().getCreatedAt()))
+			.filter(observation -> !observation.getObservedAt()
+				.isBefore(evidence.observationBaseline().getCreatedAt()))
 			.toList();
 		ObservationEvidenceJudgment judgment = evidenceJudgmentService.judgeObservationEvidence(
 			evidence.riskSnapshot().getEntryPrice(),
