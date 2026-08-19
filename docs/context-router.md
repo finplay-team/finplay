@@ -8,7 +8,7 @@ AI 에이전트는 **docs/ 전체를 순회하지 않는다.** 작업 유형에 
 | 기능 구현 | 해당 `docs/specs/NNN-*/` (spec, plan, tasks) + `docs/conventions.md` + `docs/adr/0002-architecture.md`. **요구사항 ID의 구현 상태가 바뀌면 `docs/prd.md` §3 "구현 현황" 행도 같은 커밋에서 갱신한다** (CLAUDE.md 규칙 10) — PRD 전체가 아니라 그 절만 읽으면 된다 |
 | LLM·AI 기능 구현 | 위 목록 + `docs/adr/0011-llm-provider-integration.md` (프로바이더 추상화, 실패 시 템플릿 폴백, Fake 테스트 방침) |
 | 투자 실습 튜토리얼 (education·practice·즐겨찾기·OCO) | **`docs/specs/026-market-order-practice-tutorial`을 먼저 읽는다** — holding 기반 완료 경로·진행 조회 정본. 코인 가상 가격 세션·교육 지정가·관찰 가격원은 **`030-coin-practice-price-runtime`**이 부분 대체 정본이다. 그다음 필요에 따라: `016-investment-education-policy`(3단계 모델·1단계·사전 의도, OCO는 3차), `020-coin-practice-tutorial`(코인 OCO delta·key), `019-exit-price-policy`, `021-general-risk-management-oco`(OCO 생성·트리거·취소 엔진 구조), `040-tutorial-restart-after-completion`(재시작 절차·완료 보상 1회 캡), `047-tutorial-sandbox-cash-isolation`(샌드박스 매매·완료 보상의 현금 처리 대상 — 튜토리얼 전용 계좌 분리). **021·040·047은 서로 다른 겹을 소유한다** — 021은 OCO 엔진 구조, 040은 재시작 절차, 047은 그 위에서 현금이 실제 계좌·튜토리얼 계좌 중 어디로 가는지. 셋 다 상대방을 대체하지 않고 서로 참조한다. **+ ADR-0012 필수** — 즐겨찾기·사전 의도만 인메모리이며 030 가격 세션·047 튜토리얼 계좌는 DB 영속이다 |
-| 엔티티/스키마 변경 | 위 + `docs/adr/0004-flyway-migrations.md` |
+| 엔티티/스키마 변경 | 위 + `docs/adr/0004-flyway-migrations.md` + `docs/erd.md`(전체 테이블·컬럼·연관관계 지도, 엔티티를 추가·삭제하면 같은 커밋에서 갱신) |
 | 테스트 작성 | `docs/adr/0003-testing-strategy.md` |
 | 코드 리뷰 | `docs/conventions.md`(리뷰 체크 질문 포함) + `docs/adr/0002-architecture.md` + `docs/adr/0003-testing-strategy.md` + `docs/adr/0004-flyway-migrations.md` + `docs/api-routes.md` + `docs/api-contracts.md`. 새 엔드포인트·요구사항 완료가 있으면 `docs/prd.md` §3 갱신 여부도 본다 (CLAUDE.md 규칙 10) |
 | 블랙박스 QA | 해당 spec의 `spec.md` + `docs/api-contracts.md` — **구현 코드(src/main) 금지**. 계약 절 제목의 "(계획)" 표시는 controller가 없다는 뜻이니 실행 근거로 쓰지 않는다 |
