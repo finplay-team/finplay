@@ -1,6 +1,8 @@
 # Tasks: 커뮤니티 배지 (참여형 + 수익형)
 
-- [x] `badge` 도메인 기반 — `MemberBadge` 엔티티·`BadgeType`·`BadgeTier` enum·`MemberBadgeRepository`·`V43`/`V44` 마이그레이션 (+ `@DataJpaTest`)
+> **⚠️ 철회됨 (2026-08-20, 이슈 #481). 아래 미완료 항목은 진행하지 않는다.** 사유와 정리 범위는 `spec.md` 머리말 참고. 1번 항목으로 만든 코드는 이슈 #481 1차에서 삭제했고, 테이블 2개는 2차에서 `DROP`한다.
+
+- [x] ~~`badge` 도메인 기반~~ (철회 — 이슈 #481 1차에서 삭제) — `MemberBadge` 엔티티·`BadgeType`·`BadgeTier` enum·`MemberBadgeRepository`·`V43`/`V44` 마이그레이션 (+ `@DataJpaTest`)
 - [ ] "배웠어요" 반응 — `community_post_learned_reactions` 연동, `PostLearnedReactionService`(본인 게시물 차단·멱등 표시/취소), `POST`/`DELETE /api/community/posts/{postId}/reactions/learned` (+ 단위·`@WebMvcTest`)
 - [ ] 배지 이벤트·재계산 — `TutorialAttemptCompletedEvent`·`MarketReflectionCreatedEvent`·`PostLearnedReactionChangedEvent` 신규 + 기존 `RealizedPnlUpdatedEvent` 구독, `BadgeEventListener`(AFTER_COMMIT, 예외 흡수), `BadgeService` 4종 재계산 메서드(하락 없음 upsert) (+ 단위 테스트)
 - [ ] `GET /api/badges/me` — `BadgeController`·`BadgeService.getMyBadges`(진행률 포함)·`MyBadgeListResponse` (+ `@WebMvcTest`)
