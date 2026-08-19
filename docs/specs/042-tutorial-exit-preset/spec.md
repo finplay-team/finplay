@@ -383,8 +383,9 @@ EXITPRESET-010이고, 대칭 조항이 `041` SCENARIO-006이다. **이 변경은
 
 1. **OCO 생성 차단(TUTORIAL-CASH-ISOL-010 → `021` RISK-OCO-014).** 샌드박스 holding에 일반 경로 OCO를
    만드는 것이 409로 차단됐다. **이 spec의 자동 예약은 차단 대상이 아니다** — 차단이 호출부
-   (`ExitPlanService`)에만 있고 공용 엔진에는 없으며, 047 plan이 "교육 경로 재접합을 막지 않기 위해"
-   그렇게 뒀다고 명시했다. 게다가 차단의 근거였던 파손("attempt 귀속 없이 체결돼 진행 판정이 깨진다")은
+   (`ExitPlanService`)에만 있고 공용 엔진에는 없으며, **그 배치 이유는 `021` RISK-OCO-014가 명시한다**
+   — "교육 경로가 재접합될 때 그 경로 자신이 이 차단에 막히지 않아야 하기 때문"(`021/spec.md`
+   §비즈니스 규칙, `021/plan.md` §검증 순서 2단계). 게다가 차단의 근거였던 파손("attempt 귀속 없이 체결돼 진행 판정이 깨진다")은
    이 spec의 예약에는 해당하지 않는다(EXITPRESET-015의 귀속 컬럼). 상세는 `plan.md` §자동 예약 생성.
 2. **매도 체결의 현금 처리는 이미 격리됐다.** TUTORIAL-CASH-ISOL-003이 `ExitPlanFillService` →
    `finalizeSellRealizedPnl` 경로를 튜토리얼 계좌로 돌렸다. 이 spec의 자동 예약이 체결될 때의 현금도

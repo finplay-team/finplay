@@ -196,8 +196,11 @@ PR #463)이 **호출부인 `ExitPlanService.create`에 샌드박스 종목 차�
 `validateNotTutorialSample`이 대상 holding의 종목이 `isTutorialSample()`이면 409
 `EXIT_PLAN_TUTORIAL_INSTRUMENT_NOT_ALLOWED`로 거부한다(`021` RISK-OCO-014가 정본).
 
-- 그 차단은 **공용 엔진(`ExitPlanCreationService`)에는 없다.** 047 plan이 "향후 교육 경로 재접합 시 그
-  경로가 이 차단에 스스로 막히지 않게" 호출부에 둔다고 명시했다. 즉 이 자리는 042를 위해 비워 둔 것이다.
+- 그 차단은 **공용 엔진(`ExitPlanCreationService`)에는 없다.** 배치 이유는 `021` RISK-OCO-014가 명시한다
+  — "경로 공용 엔진(`ExitPlanCreationService`)에 두지 않는 이유는 향후 교육 경로(`intentionId` 지정,
+  `016` EDU-PRACTICE-005·006)가 재접합될 때 그 경로 자신이 이 차단에 막히지 않아야 하기 때문이다"
+  (`021/spec.md` §비즈니스 규칙, 같은 취지가 `021/plan.md` §일반 경로 검증 순서 2단계에도 있다).
+  즉 이 자리는 교육 경로를 위해 의도적으로 비워 둔 것이다.
 - **그리고 042는 그 차단이 막으려던 문제를 애초에 만들지 않는다.** 047이 든 근거는 "일반 경로 OCO가
   체결되면 `Order.create(...)`로 진행돼 attempt 귀속이 없어 재시작·진행 판정이 복구 불가능하게 깨진다"인데,
   042의 예약은 `practice_attempt_id`·`practice_attempt_run_number`를 갖고 체결도 tick 정산 경로를 탄다.
