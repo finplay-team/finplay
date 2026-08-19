@@ -22,6 +22,7 @@ import com.finplay.api.favorite.dto.response.FavoriteResponse;
 import com.finplay.api.favorite.service.FavoriteService;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.portfolio.domain.Holding;
+import com.finplay.api.portfolio.service.HoldingService;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Comparator;
@@ -61,6 +62,7 @@ public class InvestmentPracticeQueryService {
 	private final PracticeAttemptRepository practiceAttemptRepository;
 	private final PracticeRiskSnapshotRepository practiceRiskSnapshotRepository;
 	private final PracticeAttemptEvidenceService practiceAttemptEvidenceService;
+	private final HoldingService holdingService;
 	private final MarketPracticeChainResolutionService chainResolutionService;
 	private final ReferencePriceCalculator referencePriceCalculator;
 	private final PracticeMarketObservationRepository practiceMarketObservationRepository;
@@ -126,7 +128,7 @@ public class InvestmentPracticeQueryService {
 			response.steps(),
 			response.completedAt(),
 			response.rewardAmount(),
-			PracticeAttemptResponse.from(attempt, null));
+			PracticeAttemptResponse.from(attempt, null, exitPresetLocked(attempt)));
 	}
 
 	// 이슈 #426: completion은 "이 사용자·market이 예전에 한 번 완료했는가"만 뜻하며 nullable이다.
@@ -138,7 +140,8 @@ public class InvestmentPracticeQueryService {
 		Long rewardAmount = completion == null ? null : TUTORIAL_COMPLETION_REWARD_AMOUNT;
 		PracticeAttemptResponse attemptResponse;
 		if (attempt.getInstrument() == null) {
-			attemptResponse = PracticeAttemptResponse.from(attempt, null);
+			// 종목 미선택이면 보유가 있을 수 없어 조회 없이 false다.
+			attemptResponse = PracticeAttemptResponse.from(attempt, null, false);
 			List<PracticeStepResponse> steps = List.of(
 				new PracticeStepResponse(1, STATUS_IN_PROGRESS, false, PracticeEvidenceResponse.empty()),
 				new PracticeStepResponse(2, STATUS_NOT_STARTED, true, PracticeEvidenceResponse.empty()),
@@ -151,7 +154,7 @@ public class InvestmentPracticeQueryService {
 		Optional<PracticeRiskSnapshot> snapshot = practiceRiskSnapshotRepository
 			.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(
 				attempt.getId(), attempt.getRunNumber());
-		attemptResponse = PracticeAttemptResponse.from(attempt, snapshot.orElse(null));
+		attemptResponse = PracticeAttemptResponse.from(attempt, snapshot.orElse(null), exitPresetLocked(attempt));
 		if (snapshot.isEmpty()) {
 			List<PracticeStepResponse> steps = List.of(
 				new PracticeStepResponse(1, STATUS_COMPLETED, false, PracticeEvidenceResponse.empty()),
@@ -223,7 +226,7 @@ public class InvestmentPracticeQueryService {
 			steps,
 			completion.getCompletedAt(),
 			TUTORIAL_COMPLETION_REWARD_AMOUNT,
-			PracticeAttemptResponse.from(attempt, resolved.riskSnapshot()));
+			PracticeAttemptResponse.from(attempt, resolved.riskSnapshot(), exitPresetLocked(attempt)));
 	}
 
 	// 현재 run 귀속 판정(risk snapshot 생성 시각 이후)만 남긴다. 매도 체결 이후 관찰을 배제하던 필터는
@@ -243,6 +246,17 @@ public class InvestmentPracticeQueryService {
 	// SCENARIO-014로 시간 제한을 폐지했다 — 생성기 버전 2 attempt는 마감이 없으므로 saleDeadlineAt을 null로
 	// 내리고, 그 결과 isWithinSaleDeadline의 null 가드가 4단계 상태를 EXPIRED로 만들지 않는다. 버전 1 attempt와
 	// legacy chain은 기존 값을 그대로 유지한다(041 plan §시간 게이트 제거).
+	// 042 EXITPRESET-003 — 프리셋 잠금 기준은 "지금 들고 있는가"다. 041의 대기 구간 탈출 판정과 같은
+	// 산출식(HoldingService.findNetQuantity)을 쓴다(042 plan §자동 예약 생성).
+	private boolean exitPresetLocked(PracticeAttempt attempt) {
+		if (attempt.getInstrument() == null) {
+			return false;
+		}
+		return holdingService
+			.findNetQuantity(attempt.getUserId(), attempt.getMarket(), attempt.getInstrument().getId())
+			.signum() > 0;
+	}
+
 	private LocalDateTime attemptSaleDeadlineAt(PracticeAttempt attempt, PracticeRiskSnapshot snapshot) {
 		return attempt.usesScenarioScript()
 			? null

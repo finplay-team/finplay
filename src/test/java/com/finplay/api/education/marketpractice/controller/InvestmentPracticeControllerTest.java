@@ -12,6 +12,7 @@ import com.finplay.api.auth.config.SecurityConfig;
 import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.auth.token.JwtTokenProvider;
 import com.finplay.api.education.marketpractice.dto.response.InvestmentPracticeResponse;
+import com.finplay.api.education.marketpractice.dto.response.ExitPresetResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeAttemptResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeEvidenceResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeRiskSnapshotResponse;
@@ -97,7 +98,8 @@ class InvestmentPracticeControllerTest {
 			new PracticeRiskSnapshotResponse(
 				new BigDecimal("100.00000000"), new BigDecimal("97.00000000"),
 				new BigDecimal("105.00000000"), 30L, LocalDateTime.of(2026, 8, 3, 9, 0)),
-			LocalDateTime.of(2026, 8, 10, 9, 0), 0L, 0L, 0L);
+			LocalDateTime.of(2026, 8, 10, 9, 0), 0L, 0L, 0L,
+			"BALANCED", false, ExitPresetResponse.all());
 		InvestmentPracticeResponse response = new InvestmentPracticeResponse(
 			"INVESTMENT_PRACTICE_V1", "COMPLETED", null, steps, LocalDateTime.of(2026, 8, 10, 9, 0), 5_000_000L,
 			attempt);

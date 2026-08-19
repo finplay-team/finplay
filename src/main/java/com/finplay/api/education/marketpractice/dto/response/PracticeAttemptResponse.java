@@ -1,12 +1,14 @@
 // 튜토리얼 attempt의 현재 실행 세대·선택 상태·위험 근거를 반환하는 응답 DTO
 package com.finplay.api.education.marketpractice.dto.response;
 
+import com.finplay.api.education.marketpractice.domain.ExitPreset;
 import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
 import com.finplay.api.education.marketpractice.domain.PracticeAttemptMode;
 import com.finplay.api.education.marketpractice.domain.PracticeAttemptStatus;
 import com.finplay.api.education.marketpractice.domain.PracticeRiskSnapshot;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 public record PracticeAttemptResponse(
 	Long attemptId,
@@ -21,17 +23,26 @@ public record PracticeAttemptResponse(
 	LocalDateTime completedAt,
 	long tutorialCashBalance,
 	long tutorialAvailableCash,
-	long tutorialRealizedPnl) {
+	long tutorialRealizedPnl,
+	String selectedExitPreset,
+	boolean exitPresetLocked,
+	List<ExitPresetResponse> availableExitPresets) {
 
 	// 진입·재시작이 아닌 호출부(종목 선택 등)는 그 시점 튜토리얼 계좌를 새로 조회하지 않으므로 0으로 채운다
 	// (TUTORIAL-CASH-ISOL-011 범위는 진입·재시작 응답 한정, plan.md "API 설계" 참고).
-	public static PracticeAttemptResponse from(PracticeAttempt attempt, PracticeRiskSnapshot snapshot) {
-		return from(attempt, snapshot, 0L, 0L, 0L);
+	//
+	// exitPresetLocked만은 기본값을 두지 않고 호출부가 반드시 넘기게 한다(042 EXITPRESET-003). 잠금 여부는
+	// 현재 순보유수량을 조회해야 알 수 있고, 잘못 false로 내리면 클라이언트가 바꿀 수 없는 프리셋 선택
+	// 컨트롤을 열어 준다 — 계좌 잔고 0처럼 "이 호출부는 모른다"로 넘길 수 있는 값이 아니다.
+	public static PracticeAttemptResponse from(
+		PracticeAttempt attempt, PracticeRiskSnapshot snapshot, boolean exitPresetLocked) {
+		return from(attempt, snapshot, exitPresetLocked, 0L, 0L, 0L);
 	}
 
 	public static PracticeAttemptResponse from(
 		PracticeAttempt attempt,
 		PracticeRiskSnapshot snapshot,
+		boolean exitPresetLocked,
 		long tutorialCashBalance,
 		long tutorialAvailableCash,
 		long tutorialRealizedPnl) {
@@ -51,6 +62,11 @@ public record PracticeAttemptResponse(
 			attempt.getCompletedAt(),
 			tutorialCashBalance,
 			tutorialAvailableCash,
-			tutorialRealizedPnl);
+			tutorialRealizedPnl,
+			// 미선택은 기본 프리셋으로 해석해 내려보낸다(EXITPRESET-002) — 클라이언트가 null 분기를 갖지
+			// 않도록, 그리고 실제로 적용될 값과 화면에 보이는 값이 같도록.
+			(attempt.getExitPreset() == null ? ExitPreset.DEFAULT : attempt.getExitPreset()).name(),
+			exitPresetLocked,
+			ExitPresetResponse.all());
 	}
 }

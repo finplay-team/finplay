@@ -3,6 +3,7 @@ package com.finplay.api.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -13,6 +14,7 @@ import com.finplay.api.account.service.TutorialAccountService;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
+import com.finplay.api.education.marketpractice.domain.ExitPreset;
 import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
 import com.finplay.api.education.marketpractice.domain.PracticeAttemptStatus;
 import com.finplay.api.education.marketpractice.domain.PracticeCompletion;
@@ -26,6 +28,7 @@ import com.finplay.api.portfolio.domain.Holding;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.InstrumentService;
+import com.finplay.api.portfolio.service.HoldingService;
 import com.finplay.api.market.service.TutorialPriceGenerator;
 import com.finplay.api.market.service.TutorialScenarioScriptLoader;
 import java.math.BigDecimal;
@@ -34,6 +37,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -53,6 +57,7 @@ class PracticeAttemptServiceTest {
 		PracticeRiskSnapshotRepository.class);
 	private final PracticeProgressRepository practiceProgressRepository = mock(PracticeProgressRepository.class);
 	private final InstrumentService instrumentService = mock(InstrumentService.class);
+	private final HoldingService holdingService = mock(HoldingService.class);
 	private final TutorialAccountService tutorialAccountService = mock(TutorialAccountService.class);
 	// 대본이 저작된 시장에서만 생성기 버전 2를 준다 — 실제 로더를 써야 이 판정이 대본 파일과 함께 움직인다.
 	private final TutorialScenarioScriptLoader tutorialScenarioScriptLoader = new TutorialScenarioScriptLoader(
@@ -63,9 +68,17 @@ class PracticeAttemptServiceTest {
 		practiceRiskSnapshotRepository,
 		practiceProgressRepository,
 		instrumentService,
+		holdingService,
 		tutorialScenarioScriptLoader,
 		tutorialAccountService,
 		Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC));
+
+	// 프리셋 잠금 판정이 매 응답에서 순보유수량을 읽는다(042 EXITPRESET-003). 이 테스트들의 대상은 잠금이
+	// 아니므로 기본을 "미보유"로 두고, 잠금을 보는 테스트만 따로 덮어쓴다.
+	@BeforeEach
+	void stubNoHolding() {
+		when(holdingService.findNetQuantity(any(), any(), any())).thenReturn(BigDecimal.ZERO);
+	}
 
 	@Test
 	void ensureAttemptReturnsExistingRunWithoutRestartingIt() {
@@ -281,6 +294,71 @@ class PracticeAttemptServiceTest {
 
 		assertThat(response.mode()).isEqualTo("REPLAY");
 		assertThat(attempt.getGeneratorVersion()).isEqualTo(TutorialPriceGenerator.VERSION_1);
+	}
+
+	// 042 EXITPRESET-003 — 잠금 기준은 "최초 매수 여부"가 아니라 "지금 들고 있는가"다. 손절 뒤 재진입
+	// 대기 중에는 다시 바꿀 수 있어야 한다.
+	@Test
+	void selectExitPresetIsAllowedWhileNothingIsHeld() {
+		PracticeAttempt attempt = selectingAttempt(Market.CRYPTO);
+		attempt.selectInstrument(tutorialInstrument(Market.CRYPTO, true), NOW, NOW.toLocalDate(), 1L, (short)2, NOW);
+		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
+			.thenReturn(Optional.of(attempt));
+		when(practiceRiskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(ATTEMPT_ID, 1L))
+			.thenReturn(Optional.empty());
+
+		PracticeAttemptResponse response = service.selectExitPreset(USER_ID, Market.CRYPTO, ExitPreset.CAUTIOUS);
+
+		assertThat(attempt.getExitPreset()).isEqualTo(ExitPreset.CAUTIOUS);
+		assertThat(response.selectedExitPreset()).isEqualTo("CAUTIOUS");
+		assertThat(response.exitPresetLocked()).isFalse();
+		assertThat(response.availableExitPresets()).hasSize(3);
+	}
+
+	@Test
+	void selectExitPresetIsRejectedWhileHolding() {
+		PracticeAttempt attempt = selectingAttempt(Market.CRYPTO);
+		attempt.selectInstrument(tutorialInstrument(Market.CRYPTO, true), NOW, NOW.toLocalDate(), 1L, (short)2, NOW);
+		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
+			.thenReturn(Optional.of(attempt));
+		when(holdingService.findNetQuantity(USER_ID, Market.CRYPTO, INSTRUMENT_ID))
+			.thenReturn(new BigDecimal("2"));
+
+		assertThatThrownBy(() -> service.selectExitPreset(USER_ID, Market.CRYPTO, ExitPreset.RELAXED))
+			.isInstanceOfSatisfying(BusinessException.class, exception -> assertThat(exception.getErrorCode())
+				.isEqualTo(ErrorCode.PRACTICE_STEP_LOCKED));
+		assertThat(attempt.getExitPreset()).isNull();
+	}
+
+	@Test
+	void selectExitPresetIsRejectedAfterCompletion() {
+		PracticeAttempt attempt = selectingAttempt(Market.CRYPTO);
+		attempt.selectInstrument(tutorialInstrument(Market.CRYPTO, true), NOW, NOW.toLocalDate(), 1L, (short)2, NOW);
+		ReflectionTestUtils.setField(attempt, "status", PracticeAttemptStatus.COMPLETED);
+		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
+			.thenReturn(Optional.of(attempt));
+
+		assertThatThrownBy(() -> service.selectExitPreset(USER_ID, Market.CRYPTO, ExitPreset.RELAXED))
+			.isInstanceOfSatisfying(BusinessException.class, exception -> assertThat(exception.getErrorCode())
+				.isEqualTo(ErrorCode.PRACTICE_ALREADY_COMPLETED));
+	}
+
+	// 미선택 사용자의 응답도 기본 프리셋으로 채워 내려간다(EXITPRESET-002) — 클라이언트가 null 분기를
+	// 갖지 않고, 화면에 보이는 값과 실제로 적용될 값이 같다.
+	@Test
+	void unselectedAttemptReportsTheDefaultPreset() {
+		PracticeAttempt attempt = selectingAttempt(Market.CRYPTO);
+		Instrument instrument = tutorialInstrument(Market.CRYPTO, true);
+		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
+			.thenReturn(Optional.of(attempt));
+		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID)).thenReturn(instrument);
+		when(practiceRiskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(ATTEMPT_ID, 1L))
+			.thenReturn(Optional.empty());
+
+		PracticeAttemptResponse response = service.selectInstrument(USER_ID, Market.CRYPTO, INSTRUMENT_ID);
+
+		assertThat(attempt.getExitPreset()).isNull();
+		assertThat(response.selectedExitPreset()).isEqualTo("BALANCED");
 	}
 
 	private static TutorialAccount freshTutorialAccount() {

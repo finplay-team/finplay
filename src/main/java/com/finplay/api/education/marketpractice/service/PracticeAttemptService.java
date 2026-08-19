@@ -5,6 +5,7 @@ import com.finplay.api.account.domain.TutorialAccount;
 import com.finplay.api.account.service.TutorialAccountService;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
+import com.finplay.api.education.marketpractice.domain.ExitPreset;
 import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
 import com.finplay.api.education.marketpractice.domain.PracticeCompletion;
 import com.finplay.api.education.marketpractice.domain.PracticeAttemptStatus;
@@ -17,6 +18,7 @@ import com.finplay.api.education.repository.PracticeProgressRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.InstrumentService;
+import com.finplay.api.portfolio.service.HoldingService;
 import com.finplay.api.market.service.TutorialPriceGenerator;
 import com.finplay.api.market.service.TutorialScenarioScriptLoader;
 import java.security.SecureRandom;
@@ -50,6 +52,7 @@ public class PracticeAttemptService {
 	private final PracticeRiskSnapshotRepository practiceRiskSnapshotRepository;
 	private final PracticeProgressRepository practiceProgressRepository;
 	private final InstrumentService instrumentService;
+	private final HoldingService holdingService;
 	private final TutorialScenarioScriptLoader tutorialScenarioScriptLoader;
 	private final TutorialAccountService tutorialAccountService;
 	private final Clock clock;
@@ -157,6 +160,41 @@ public class PracticeAttemptService {
 		return toResponse(attempt);
 	}
 
+	/**
+	 * 현재 실행 세대의 손절·익절 프리셋을 고른다(042 EXITPRESET-003).
+	 *
+	 * <p>잠금 기준은 "최초 매수 여부"가 아니라 <b>지금 들고 있는가</b>다. 손절을 겪은 사용자가 다음 진입의
+	 * 기준을 다시 정하는 것은 이 기능이 훈련시키려는 판단 그 자체이고, 손실 중에 손절선을 내리는 사후
+	 * 합리화는 039가 막으려 한 것이다 — 보유 중 잠금이 후자만 정확히 막는다. 이미 확정된 snapshot과 그
+	 * snapshot으로 만들어진 예약은 어떤 경우에도 바뀌지 않으며 다음 진입에만 적용된다.
+	 */
+	@Transactional
+	public PracticeAttemptResponse selectExitPreset(Long userId, Market market, ExitPreset preset) {
+		PracticeAttempt attempt = practiceAttemptRepository.findByUserIdAndMarketForUpdate(userId, market)
+			.orElseThrow(() -> new BusinessException(ErrorCode.PRACTICE_STEP_LOCKED));
+		if (attempt.getStatus() == PracticeAttemptStatus.COMPLETED) {
+			throw new BusinessException(ErrorCode.PRACTICE_ALREADY_COMPLETED);
+		}
+		if (exitPresetLocked(attempt)) {
+			throw new BusinessException(ErrorCode.PRACTICE_STEP_LOCKED);
+		}
+		attempt.selectExitPreset(preset, LocalDateTime.now(clock));
+		// 방금 잠금이 아님을 확인했으므로 다시 조회하지 않는다 — attempt를 잠근 트랜잭션 안이라 그 사이
+		// 매수 체결이 끼어들 수 없다.
+		return toResponse(attempt, false);
+	}
+
+	// 042 EXITPRESET-003의 잠금 판정과 041의 대기 구간 탈출 판정은 같은 산출식을 써야 한다
+	// (042 plan §자동 예약 생성). 그 한 곳이 HoldingService.findNetQuantity다.
+	private boolean exitPresetLocked(PracticeAttempt attempt) {
+		if (attempt.getInstrument() == null) {
+			return false;
+		}
+		return holdingService
+			.findNetQuantity(attempt.getUserId(), attempt.getMarket(), attempt.getInstrument().getId())
+			.signum() > 0;
+	}
+
 	private void validateTutorialInstrument(Market market, Instrument instrument) {
 		if (instrument.getMarket() != market || !instrument.isTutorialSample() || !instrument.isTradable()) {
 			throw new BusinessException(ErrorCode.INSTRUMENT_NOT_TRADABLE);
@@ -164,10 +202,14 @@ public class PracticeAttemptService {
 	}
 
 	private PracticeAttemptResponse toResponse(PracticeAttempt attempt) {
+		return toResponse(attempt, exitPresetLocked(attempt));
+	}
+
+	private PracticeAttemptResponse toResponse(PracticeAttempt attempt, boolean exitPresetLocked) {
 		PracticeRiskSnapshot snapshot = practiceRiskSnapshotRepository
 			.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(attempt.getId(), attempt.getRunNumber())
 			.orElse(null);
-		return PracticeAttemptResponse.from(attempt, snapshot);
+		return PracticeAttemptResponse.from(attempt, snapshot, exitPresetLocked);
 	}
 
 	// 진입 응답(ensureAttempt)은 같은 트랜잭션에서 이미 get-or-create한 튜토리얼 계좌 값을 그대로 실어
@@ -179,6 +221,7 @@ public class PracticeAttemptService {
 		return PracticeAttemptResponse.from(
 			attempt,
 			snapshot,
+			exitPresetLocked(attempt),
 			tutorialAccount.getCashBalance(),
 			tutorialAccount.getAvailableCash(),
 			tutorialAccount.getRealizedPnl());

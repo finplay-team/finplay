@@ -1,7 +1,8 @@
-// 인증 사용자의 튜토리얼 attempt 진입 조회와 샘플 종목 선택 요청을 처리하는 컨트롤러
+// 인증 사용자의 튜토리얼 attempt 진입 조회·샘플 종목 선택·손절익절 프리셋 선택 요청을 처리하는 컨트롤러
 package com.finplay.api.education.marketpractice.controller;
 
 import com.finplay.api.auth.token.AuthenticatedUser;
+import com.finplay.api.education.marketpractice.dto.request.PracticeAttemptExitPresetUpdateRequest;
 import com.finplay.api.education.marketpractice.dto.request.PracticeAttemptInstrumentUpdateRequest;
 import com.finplay.api.education.marketpractice.dto.response.PracticeAttemptResponse;
 import com.finplay.api.education.marketpractice.service.PracticeAttemptService;
@@ -30,6 +31,20 @@ public class PracticeAttemptController {
 		@PathVariable
 		Market market) {
 		return ResponseEntity.ok(practiceAttemptService.ensureAttempt(principal.userId(), market));
+	}
+
+	// PUT인 이유는 자연 멱등이기 때문이다 — 같은 값을 몇 번 보내도 결과가 같고 체결 전이면 몇 번이든 바꿀
+	// 수 있다(042 EXITPRESET-003). Idempotency-Key는 요구하지 않는다(015 LMT-005의 PATCH와 같은 판단).
+	@PutMapping("/{market}/exit-preset")
+	public ResponseEntity<PracticeAttemptResponse> selectExitPreset(
+		@AuthenticationPrincipal
+		AuthenticatedUser principal,
+		@PathVariable
+		Market market,
+		@RequestBody @Valid
+		PracticeAttemptExitPresetUpdateRequest request) {
+		return ResponseEntity.ok(
+			practiceAttemptService.selectExitPreset(principal.userId(), market, request.preset()));
 	}
 
 	@PutMapping("/{market}/instrument")

@@ -152,6 +152,17 @@ public class PracticeAttempt {
 		clearScenarioProgress();
 	}
 
+	// 현재 실행 세대의 손절·익절 기준을 고른다. 잠금 판정(순보유수량 0)은 호출자가 한다 — 엔티티가
+	// holding 원장을 볼 수 없기 때문이다(042 EXITPRESET-003).
+	public void selectExitPreset(ExitPreset exitPreset, LocalDateTime updatedAt) {
+		if (this.status != PracticeAttemptStatus.IN_PROGRESS
+			&& this.status != PracticeAttemptStatus.SELECTING_INSTRUMENT) {
+			throw new IllegalStateException("진행 중인 튜토리얼 attempt만 손절·익절 기준을 고칠 수 있습니다.");
+		}
+		this.exitPreset = exitPreset;
+		this.updatedAt = updatedAt;
+	}
+
 	// 이 실행이 저작 대본으로 가격을 만드는가. 대본은 커서가 시계를 정하므로 벽시계 마감(031 SANDBOX-008의
 	// 5분 제한)이 성립하지 않는다 — 조회·복기·진행 계산이 모두 이 판정 하나로 갈린다(041 SCENARIO-014).
 	public boolean usesScenarioScript() {
