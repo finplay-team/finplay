@@ -987,3 +987,28 @@ ADR-0021을 읽지 않는다(`docs/context-router.md`의 "엔티티/스키마 �
 - **⚠️ 발견: PR #381 머지 직후 백엔드 배포가 실패했고, 이후 머지(#371·#391·#392)도 전부 연쇄 실패해 프로덕션이 여전히 PR #380/#387 시점 코드로 멈춰 있다.** `gh run list --workflow=deploy.yml`로 확인 — `e671d083`(#381 머지 커밋) 배포가 컨테이너 헬스체크에서 `unhealthy` 판정으로 실패(블루-그린이라 라이브 색은 안 건드림, 롤백 불필요하나 신규 기능도 배포 안 됨). 사용자가 라이브 사이트(`finplay-frontend` S3)에서 튜토리얼을 테스트했을 때 "프론트가 반영 안 된 것 같다"고 느낀 원인은 **프론트가 아니라 백엔드 미배포**였다 — 프론트 PR #30은 정상 배포됐고(`deploy.yml` 성공, 08:46:46) 코드도 소스 레벨에서 전부 확인됨.
 - **원인 미확정 — AWS 접근 권한 없어 컨테이너 로그 직접 확인 불가**: `deploy.yml`의 SSM 스텝은 `docker inspect Health.Status`만 폴링하고 실패 시 앱 stdout을 job 로그에 남기지 않는다. `application.yml`/`application-prod.yml` diff는 PR #381에서 **변화 없음**(설정 문제 가능성 낮음) — 유력 가설은 `V36__create_practice_attempts_and_risk_snapshots.sql`의 `orders` 테이블 `ALTER`(컬럼 2개+FK+CHECK+복합 인덱스 1건, 단일 statement)가 실제 프로덕션 `orders` 테이블 행 수 기준으로 헬스체크 타임아웃(`start_period 90s` + `retries 6 × interval 10s` ≈ 150s)보다 오래 걸렸을 가능성 — 확정하려면 EC2 SSM 또는 RDS 슬로우 쿼리 로그 확인이 필요하다(이 세션엔 `aws` CLI 미설치·자격증명 없음).
 - **다음 조치는 사용자 판단 필요**: workflow_dispatch로 재배포를 재시도하거나(단순 타임아웃이면 두 번째 시도는 성공할 수 있음), AWS 콘솔/SSM으로 실패 시점 컨테이너 로그를 직접 확인해야 한다. 이건 프로덕션에 영향을 주는 배포 트리거라 사용자 확인 없이 재시도하지 않았다.
+
+## 2026-08-19 — 041 1~3번: 튜토리얼 대본·생성기 V2·attempt 진행 컬럼 (이슈 #467)
+
+- **새 attempt를 아직 V2로 올리지 않았다.** `PracticeAttemptService.GENERATOR_VERSION`은 `1` 그대로다. 커서를
+  전진시키는 진행 계산이 041 4·5번이라, 지금 올리면 새 사용자의 가격이 0막 0분에 고정되고 지정가·OCO 정산도
+  대본 위치를 못 읽는다. **전환은 tick 통합 PR에서 한 줄로 한다** — 그때 이 줄을 지운다.
+- **생성기 V2 진입점을 `canonicalPrice(input, script, cursor)`로 뒀다.** 대본을 호출자가 넘기고 변환기는
+  정적 순수 함수다. 진입점이 대본 로더에 의존하면 버전 1만 쓰는 기존 호출부(`PracticeAttemptChartService` 등)까지
+  로더를 함께 들고 다녀야 해서 피했다. 5번에서 `PracticeAttemptCanonicalPriceService`가 로더를 주입받아
+  `observedAt` 자리에 커서를 넣으면 된다.
+- **`selectInstrument()`·`restart()`는 대본 컬럼을 `null`로 지운다.** plan은 "select에서 `IDLE_ENTRY`, 0으로"라고
+  적었지만 엔티티에 대본 구간 id 리터럴을 박지 않았다. 버전 1 attempt도 같은 메서드를 타므로 의미 없는 값이
+  들어간다. **`null` = 미시작으로 읽고, 4번의 진행 계산이 첫 tick에서 대본의 첫 구간으로 초기화한다.**
+- **`progress_updated_at`이 plan의 컬럼 표에 없다.** §tick 알고리즘은 `remaining = min(now - progress_updated_at,
+  MAX_TICK_GAP)`을 쓰는데 §데이터 모델의 컬럼은 5개뿐이고 그 안에 없다. 이번 PR은 문서대로 5개만 넣었으므로
+  **4·5번이 컬럼을 하나 더 추가하거나 `updated_at`을 쓸지 정해야 한다.** `updated_at`은 attempt를 건드리는 모든
+  경로가 갱신하므로 그대로 쓰면 delta가 짧아진다 — 별도 컬럼 추가를 권한다.
+- **배율은 키프레임 보간 + 결정적 미세 진동(진행 구간 ±0.12%, 1막 ±0.08%)으로 만들고 구간 극값으로 clamp했다.**
+  clamp 덕에 각 구간의 min/max가 문서 극값과 정확히 일치하고, 그 성질이 도달 부등식을 자동으로 보호한다 —
+  예를 들어 루머 구간의 어떤 분도 0.975 밑으로 내려갈 수 없어 BALANCED가 소문 단계에서 털리지 않는다.
+  생성 스크립트는 커밋하지 않았다(저작 도구). 배율을 손볼 때는 파일을 직접 고치고 정합성 테스트를 돌린다.
+- **대본 파일에는 한 줄 한국어 헤더 주석을 넣지 못했다** — JSON은 주석을 허용하지 않는다(CLAUDE.md 규칙 6의 예외).
+- **구간 경계 연속성(앞 구간 끝 배율 = 다음 구간 첫 배율)은 로더가 아니라 정합성 테스트가 검사한다.** plan이 기동
+  검증 항목으로 넷만 열거해 그 범위를 넓히지 않았다. 대본이 하나뿐인 지금은 테스트가 같은 보호를 한다.
+
