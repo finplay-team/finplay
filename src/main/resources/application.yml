@@ -116,7 +116,6 @@ spring:
       # 랭킹 재구성 배치(이슈 #279)와 이슈 #299의 빗썸 연결상태 재기록, 이슈 #369의 REST ticker 폴링, 이슈
       # #370의 주식 수집 당일 재시도가 더해져 18까지 늘었다가, 이슈 #476이 spec 028의 코인 SSE 연결상태
       # push(이슈 #286)를 제거하며 다시 17이 됐다.
-      # application-crypto-real.yml의 카운트 주석은 이 변경 시점 기준 아직 갱신 전이다.
       # 풀이 부족하면 개장 시간대에 SSE heartbeat와 매분 가격 push가 밀린다. 이 숫자는 @Scheduled를 추가할
       # 때마다 함께 올려야 한다 —
       # NewsCollectionIntegrationTest.schedulingPoolIsLargeEnoughForEveryScheduledTask가 전체 빌드에서 검증한다.
