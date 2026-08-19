@@ -335,7 +335,22 @@
   - 이 중 **프리셋이 걸린 부등식은 이슈 #470에서 `ExitPresetScenarioReachabilityTest`(042)로 옮겼다.** `TutorialScenarioScriptIntegrityTest`에는 대본 내부 성질(구간 배분·극값·사건 배치·무귀속 > 귀속)만 남아 있다
 - [x] 생성기 V2(대본 위치 → 가격) + V2 golden vector, V1 golden vector 무변경 통과
 - [x] `practice_attempts` 컬럼 5개(V50) + 엔티티 + `selectInstrument()`·`restart()` 초기화 + `@DataJpaTest`
-- [ ] **후속(041 4·5번)**: 새 attempt를 V2로 전환, `progress_updated_at` 결정, `canonicalPrice`를 커서 기반으로 교체
+- [x] **후속(041 4·5번)** — 이슈 #472에서 완료. 아래 항목 참고
+
+## 이슈 #472 — 튜토리얼 진행 계산 서비스와 tick 통합·시간 게이트 제거 (041 4~5번, 2026-08-19)
+
+- [x] `PracticeScenarioProgressService` — 상태 전이표 3행, `MAX_TICK_GAP = 30초` clamp, 초 단위 누적, 봉 3값 갱신
+- [x] 대기 구간 매수 시 다음 진행 구간 0분 점프 + 체결 시각 기준 delta 절단. 매도는 커서를 옮기지 않는다
+- [x] 건너뛴 가상 분마다 순차 정산 + 분마다 순보유수량 스칼라 재조회(detach 대응)
+- [x] `progress_updated_at`은 **새 컬럼 V52**(`scenario_progress_updated_at`). `updated_at` 재사용은 하지 않았다 — 대본 진행과 무관한 경로가 갱신해 delta를 0으로 만든다
+- [x] `canonicalPrice`가 시각이 아니라 커서를 읽는다(오버로드 추가 대신). `order`의 공개 시그니처는 그대로다
+- [x] `POST .../tick`이 진행 계산을 호출하고 `GET .../chart`는 순수 조회 유지. V2 차트는 과거 29봉(V1 방식) + 커서 기반 진행 중 1봉
+- [x] `verifyAttemptSaleEvidence`의 5분 게이트를 V2에서 제거하고 `saleDeadlineAt`을 null로. V1·legacy는 유지
+- [x] `GENERATOR_VERSION` 전환 — **대본이 저작된 시장(CRYPTO)만.** STOCK은 대본이 없어 버전 1이다
+- [x] `docs/api-contracts.md` 갱신 — tick의 대본 전진, chart의 커서 기반 봉, 409·`"EXPIRED"`의 V2 도달 불가
+- [ ] **후속(041 6번)**: 사건 노출(`scenarioStage`·`scenarioProgressing`·`causeStatus`·`revealedEvents`·`entries`)
+- [ ] **후속(041 7번)**: 통합 시나리오 완주 테스트, `docs/prd.md` §3에 SCENARIO 행 추가 + **SANDBOX 행의 5분 만료 서술 갱신**(이 PR이 CRYPTO에서 폐지했으므로 그 표는 아직 옛 서술이다)
+- [ ] **후속(042 6번)**: OCO 정산 루프를 `PracticeOrderSettlementService.settleCurrentRun` 안에 얹는다 — 진행 계산이 가상 분마다 그 메서드 하나만 부르므로 지정가와 같은 순서로 판정된다
 
 ## 이슈 #470 — 튜토리얼 손절·익절 프리셋 상수와 스키마 (042 1~2번, 2026-08-19)
 

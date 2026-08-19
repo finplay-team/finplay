@@ -51,7 +51,7 @@
   사용자가 이전 실행의 대본 위치를 물려받는다. **`047`이 같은 재시작 흐름에 튜토리얼 계좌 리셋을
   추가해 뒀으니(TUTORIAL-CASH-ISOL-006) 충돌을 예상하고 rebase한다.**
 
-- [ ] **4. 진행 계산 서비스** — plan §상태 전이표 전 항목. 특히 **대기 구간에서 매수 시 다음 진행 구간
+- [x] **4. 진행 계산 서비스** — plan §상태 전이표 전 항목. 특히 **대기 구간에서 매수 시 다음 진행 구간
   0분으로 점프**(초판이 빠뜨린 전이), 대기 구간의 벽시계 진행·되감기, 진행 구간은 미보유여도 진행,
   **매도해도 위치를 옮기지 않음**(SCENARIO-010 — 순간이동 제거), `MAX_TICK_GAP = 30초` clamp,
   대기 탈출 시 체결 시각 기준으로 delta 절단, 초 단위 누적, 봉 3값 갱신,
@@ -63,8 +63,11 @@
   > 대본의 첫 구간으로 초기화한다. (b) plan §tick 알고리즘이 쓰는 `progress_updated_at`은 **컬럼으로 존재하지
   > 않는다**(plan §데이터 모델의 표에 없다). 컬럼을 하나 더 추가할지 `updated_at`을 쓸지 이 항목에서 정한다 —
   > `updated_at`은 attempt를 건드리는 모든 경로가 갱신하므로 delta가 짧아진다.
+  > **결정됨 (이슈 #472).** (a)는 그대로 첫 tick에서 초기화한다. (b)는 **새 컬럼**
+  > `scenario_progress_updated_at`(V52)이다 — `updated_at`은 재시작·완료·프리셋 선택·완료 replay 조정처럼
+  > 대본 진행과 무관한 경로가 갱신해 그 한 번이 사용자가 실제로 기다린 시간을 0으로 만든다.
 
-- [ ] **5. tick 통합·`order` 인터페이스 변경·시간 게이트 제거** — `POST .../tick`이 진행 계산을 호출하고
+- [x] **5. tick 통합·`order` 인터페이스 변경·시간 게이트 제거** — `POST .../tick`이 진행 계산을 호출하고
   `GET .../chart`는 순수 조회를 유지한다. **V2의 `canonicalPrice`가 시각이 아니라 커서를 읽도록 바꾼다**
   (plan §`order` 인터페이스 변경 — 이것 없이는 SCENARIO-013을 구현할 수 없다).
   **`PracticeHoldingReflectionService.verifyAttemptSaleEvidence`의 시간 게이트를 V2에서 제거**하고
@@ -72,6 +75,12 @@
   갱신한다 — 409 계약과 `"EXPIRED"` 응답 문자열의 V2 도달 불가를 함께 적는다.
   **테스트**: 통합 — 대기 구간에서 아무리 오래 있어도, **복기 저장 시점에도** 시간으로 막히지 않음,
   2막 손절 후 그 자리에서 확정 하락을 관전함, 3막 익절 후에도 4막이 재생됨.
+  > **판정 (이슈 #472).** `canonicalPrice` 커서화를 택했다 — 오버로드를 더해도 `lockForFill`이 여전히
+  > `pricedAt`에서 가격을 파생하므로 그 경로를 함께 고쳐야 하고, 그러면 `order`의 공개 계약만 넓히고
+  > 문제는 그대로 남는다. **`GENERATOR_VERSION` 전환은 대본이 저작된 시장에서만 한다** — CRYPTO 대본
+  > 하나뿐이라 시장을 가리지 않고 2를 주면 STOCK 튜토리얼이 모든 가격 조회에서 터진다(통합 테스트에서
+  > 재현). STOCK 대본(SCENARIO-024)이 들어오면 `TutorialScenarioScriptLoader.hasScript` 판정이 자동으로
+  > 따라간다.
 
 - [ ] **6. 사건 노출** — `PracticeTutorialChartResponse`에 `scenarioStage`(act 단위)·`scenarioProgressing`·
   `causeStatus`·`revealedEvents` 추가, `GET /api/education/practice`에 `revealedEvents`·`priceAfterSell`
