@@ -27,6 +27,7 @@ import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.InstrumentService;
 import com.finplay.api.market.service.TutorialPriceGenerator;
+import com.finplay.api.market.service.TutorialScenarioScriptLoader;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -53,12 +54,16 @@ class PracticeAttemptServiceTest {
 	private final PracticeProgressRepository practiceProgressRepository = mock(PracticeProgressRepository.class);
 	private final InstrumentService instrumentService = mock(InstrumentService.class);
 	private final TutorialAccountService tutorialAccountService = mock(TutorialAccountService.class);
+	// 대본이 저작된 시장에서만 생성기 버전 2를 준다 — 실제 로더를 써야 이 판정이 대본 파일과 함께 움직인다.
+	private final TutorialScenarioScriptLoader tutorialScenarioScriptLoader = new TutorialScenarioScriptLoader(
+		new tools.jackson.databind.ObjectMapper());
 	private final PracticeAttemptService service = new PracticeAttemptService(
 		practiceAttemptRepository,
 		practiceCompletionRepository,
 		practiceRiskSnapshotRepository,
 		practiceProgressRepository,
 		instrumentService,
+		tutorialScenarioScriptLoader,
 		tutorialAccountService,
 		Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC));
 
@@ -195,8 +200,10 @@ class PracticeAttemptServiceTest {
 		assertThat(response.instrumentId()).isEqualTo(INSTRUMENT_ID);
 		assertThat(response.anchorAt()).isEqualTo(NOW);
 		assertThat(response.tutorialDate()).isEqualTo(NOW.toLocalDate());
-		// 041 5번 — 새 실행은 대본(생성기 버전 2)을 받는다. 커서를 전진시키는 진행 계산이 생긴 시점이다.
-		assertThat(attempt.getGeneratorVersion()).isEqualTo(TutorialPriceGenerator.VERSION_2);
+		// 041 5번 — 대본이 저작된 시장(CRYPTO)만 생성기 버전 2를 받는다. STOCK 대본은 SCENARIO-024의
+		// 후속이라 아직 없고, 시장을 가리지 않고 2를 주면 STOCK 튜토리얼이 가격 조회에서 통째로 터진다.
+		assertThat(attempt.getGeneratorVersion()).isEqualTo(
+			market == Market.CRYPTO ? TutorialPriceGenerator.VERSION_2 : TutorialPriceGenerator.VERSION_1);
 		// 대본 위치는 여전히 비어 있다 — 첫 tick이 대본의 첫 구간으로 초기화한다(041 3번이 남긴 계약).
 		assertThat(attempt.getScenarioStageId()).isNull();
 	}

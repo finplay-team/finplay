@@ -32,6 +32,13 @@ public final class TutorialScenarioScriptLoader {
 		this.scripts = Map.copyOf(loaded);
 	}
 
+	// 대본이 저작된 시장에서만 생성기 버전 2를 쓴다 — 041은 CRYPTO 대본 하나만 저작했고 STOCK 대본은
+	// SCENARIO-024의 후속이다. 호출부가 시장 목록을 따로 들고 있으면 STOCK 대본이 추가될 때 그 목록을
+	// 함께 고치지 않아 조용히 버전 1에 머문다.
+	public boolean hasScript(Market market) {
+		return scripts.containsKey(market);
+	}
+
 	public TutorialScenarioScript script(Market market) {
 		TutorialScenarioScript script = scripts.get(market);
 		if (script == null) {

@@ -17,6 +17,8 @@ import com.finplay.api.education.repository.PracticeProgressRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.InstrumentService;
+import com.finplay.api.market.service.TutorialPriceGenerator;
+import com.finplay.api.market.service.TutorialScenarioScriptLoader;
 import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -33,16 +35,22 @@ public class PracticeAttemptService {
 	// 시점이다 — 그전에 올렸으면 새 사용자의 가격이 0막 0분에 고정되고 지정가 정산도 대본 위치를 못 읽었다.
 	// 배포 시점에 진행 중이던 버전 1 attempt는 재시작을 강제하지 않고 그대로 버전 1로 재현한다
 	// (041 plan §생성기 버전 2) — 새 attempt와 재시작 후 다시 종목을 고른 attempt만 버전 2를 받는다.
-	private static final short GENERATOR_VERSION = 2;
+	//
+	// **대본이 저작된 시장에서만 준다.** 041은 CRYPTO 대본 하나만 저작했고 STOCK 대본은 SCENARIO-024의
+	// 후속이다. 시장을 가리지 않고 2를 주면 STOCK 튜토리얼이 모든 가격 조회에서 "대본이 저작되지 않은
+	// 시장입니다"로 터진다(통합 테스트에서 재현). STOCK 대본이 들어오면 이 판정이 자동으로 따라간다.
+	private static final short SCENARIO_GENERATOR_VERSION = TutorialPriceGenerator.VERSION_2;
+	private static final short LEGACY_GENERATOR_VERSION = TutorialPriceGenerator.VERSION_1;
 	// legacy completion만 있는 사용자에게 만들어 주는 읽기 전용 replay attempt는 대본 커서가 없고 tick도
 	// 돌지 않는다. 버전 2를 주면 대본 첫 구간 0분에 고정된 평평한 차트가 되므로 기존 재현을 그대로 둔다.
-	private static final short REPLAY_GENERATOR_VERSION = 1;
+	private static final short REPLAY_GENERATOR_VERSION = TutorialPriceGenerator.VERSION_1;
 
 	private final PracticeAttemptRepository practiceAttemptRepository;
 	private final PracticeCompletionRepository practiceCompletionRepository;
 	private final PracticeRiskSnapshotRepository practiceRiskSnapshotRepository;
 	private final PracticeProgressRepository practiceProgressRepository;
 	private final InstrumentService instrumentService;
+	private final TutorialScenarioScriptLoader tutorialScenarioScriptLoader;
 	private final TutorialAccountService tutorialAccountService;
 	private final Clock clock;
 	private final SecureRandom secureRandom = new SecureRandom();
@@ -112,6 +120,10 @@ public class PracticeAttemptService {
 		return com.finplay.api.account.domain.Market.valueOf(market.name());
 	}
 
+	private short generatorVersionFor(Market market) {
+		return tutorialScenarioScriptLoader.hasScript(market) ? SCENARIO_GENERATOR_VERSION : LEGACY_GENERATOR_VERSION;
+	}
+
 	private String resolveTutorialKey(Market market) {
 		return switch (market) {
 			case STOCK -> "INVESTMENT_PRACTICE_V1";
@@ -141,7 +153,7 @@ public class PracticeAttemptService {
 
 		LocalDateTime now = LocalDateTime.now(clock);
 		attempt.selectInstrument(
-			instrument, now, LocalDate.now(clock), secureRandom.nextLong(), GENERATOR_VERSION, now);
+			instrument, now, LocalDate.now(clock), secureRandom.nextLong(), generatorVersionFor(market), now);
 		return toResponse(attempt);
 	}
 
