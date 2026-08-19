@@ -27,7 +27,7 @@ import java.time.temporal.ChronoUnit;
  */
 final class PostSellArithmetic {
 
-	// 계약이 정한 수익률 scale·라운딩. PortfolioService·HoldingValuationService와 같은 값이다.
+	// 계약이 정한 수익률 scale·라운딩. HoldingValuationService와 같은 값이다.
 	static final int RETURN_RATE_SCALE = 4;
 
 	// 파생 사실 비율(sellVsHighRate·sellVsLowRate·sellToCloseRate)의 scale. 계약 예시(-0.0325·0.0059)가 소수

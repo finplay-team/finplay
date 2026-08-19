@@ -20,7 +20,7 @@ import java.math.RoundingMode;
  */
 final class PracticeTradeResultCalculator {
 
-	// PostSellArithmetic.RETURN_RATE_SCALE·PortfolioService의 수익률과 같은 값이다.
+	// PostSellArithmetic.RETURN_RATE_SCALE과 같은 값이다.
 	private static final int RETURN_RATE_SCALE = 4;
 
 	private PracticeTradeResultCalculator() {}

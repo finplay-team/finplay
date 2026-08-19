@@ -500,18 +500,6 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 정렬 기준: 응답 배열은 종목 심볼(`symbol`) 오름차순으로 고정된다(`HoldingRepository.findAllByAccountIdAndIsActiveTrue`의 `ORDER BY h.instrument.symbol`, PR #97 리뷰 권장사항 1).
 
-### 전체 포트폴리오 합산 요약 조회
-
-| Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
-|---|---|---|---|---|---|---|
-| GET | /api/portfolio | Access Bearer 필수 | 없음(쿼리·본문 모두 없음) | 200 `{"totalValue":20200000,"unrealizedPnl":200000,"realizedPnl":50000}` (`PortfolioSummaryResponse`, 3개 필드 고정) | Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식만(`market` 관련 400 케이스 없음 — 이 API에 쿼리 파라미터가 없음) | 006 ACCT-003, Issue #51 |
-
-조회 대상은 요청에서 받지 않고 Access Token의 인증 사용자 본인 소유의 `STOCK`·`CRYPTO` 계좌 전체를 항상 합산한다(`market` 토글 없음 — 시장 하나만 고르는 것이 아니라 두 시장을 합친 뷰이므로 `## account` 절의 `GET /api/accounts/summary?market=`와 달리 쿼리 파라미터가 존재하지 않는다). 한 시장만 보유 종목이 있거나 두 시장 모두 보유 종목이 없어도 예외 없이 200과 0을 포함한 합산 결과를 반환한다.
-
-응답 3개 필드: `totalValue`(두 시장 `totalValue`의 합) · `unrealizedPnl`(두 시장 `unrealizedPnl`의 합, `## account`의 시세 무효 폴백 정책이 이미 반영된 값) · `realizedPnl`(두 시장 `realizedPnl`의 합 — 계좌 원장 값 그대로이며 체결 내역(`## order`의 `GET /api/trades`)을 재계산하지 않는다). `returnRate`는 `## account`와 같은 이유로 응답에서 제거했다. `cashBalance`·`holdingsValue` 등 `AccountSummaryResponse`의 중간값과 시장별 breakdown은 포함하지 않는다 — 시장별 세부값이 필요하면 `GET /api/accounts/summary?market=`를 시장별로 호출한다.
-
----
-
 ## journal
 
 ### 투자일기 목록 조회
