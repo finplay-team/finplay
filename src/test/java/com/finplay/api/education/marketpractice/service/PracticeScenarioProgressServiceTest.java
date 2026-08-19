@@ -295,6 +295,21 @@ class PracticeScenarioProgressServiceTest {
 		assertThat(attempt.getScenarioStageElapsedSeconds()).isEqualTo(3L);
 	}
 
+	// 대본을 편집해 구간을 짧게 줄이면 이미 영속된 커서가 새 길이를 넘는다. 방어(step을 0으로 clamp)가
+	// 없으면 `remaining -= consumed`가 덧셈이 되어 그 tick이 30초 상한을 넘겨 대본을 앞당긴다.
+	// 루머 구간은 8분(24초)인데 커서를 30초에 세워 "구간이 줄어든 뒤" 상태를 만든다.
+	@Test
+	void cursorBeyondAShortenedStageIsCleanedUpWithoutInflatingRemainingTime() {
+		PracticeAttempt attempt = startedAt("ACT2_RUMOR", 30L, ANCHOR);
+
+		service.advance(attempt, ANCHOR.plusSeconds(3));
+
+		// 다음 구간으로 정리되고, 소비한 시간은 정확히 3초다(방어가 없으면 9초를 소비해 6초 앞선다).
+		assertThat(attempt.getScenarioStageId()).isEqualTo("ACT2_FAKEOUT");
+		assertThat(attempt.getScenarioStageElapsedSeconds()).isEqualTo(3L);
+		assertThat(attempt.getScenarioProgressUpdatedAt()).isEqualTo(ANCHOR.plusSeconds(3));
+	}
+
 	// 표 4행 — 마지막 구간 끝에서는 더 진행하지 않고 마지막 가격을 유지한다.
 	@Test
 	void lastStageStopsAtFinishedAndKeepsTheFinalPrice() {

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.service.TutorialPriceGenerator;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.Test;
@@ -13,6 +14,26 @@ import org.springframework.test.util.ReflectionTestUtils;
 class PracticeAttemptTest {
 
 	private static final LocalDateTime NOW = LocalDateTime.of(2026, 8, 17, 10, 0, 0);
+
+	// 엔티티는 의존 방향 때문에 market.service의 상수를 import하지 않고 같은 값을 자기 안에 선언한다
+	// (PR #474 리뷰). 두 값이 조용히 갈라지면 대본 실행이 버전 1로 취급돼 5분 마감이 되살아나므로,
+	// 그 동등성을 여기서 고정한다 — 테스트는 두 도메인을 모두 볼 수 있다.
+	@Test
+	void scenarioGeneratorVersionMatchesTheMarketGeneratorConstant() {
+		assertThat(usesScenarioScriptFor(TutorialPriceGenerator.VERSION_2)).isTrue();
+		assertThat(usesScenarioScriptFor(TutorialPriceGenerator.VERSION_1)).isFalse();
+	}
+
+	@Test
+	void attemptWithoutGeneratorVersionDoesNotUseTheScript() {
+		assertThat(PracticeAttempt.create(1L, Market.CRYPTO, NOW).usesScenarioScript()).isFalse();
+	}
+
+	private static boolean usesScenarioScriptFor(short generatorVersion) {
+		PracticeAttempt attempt = PracticeAttempt.create(1L, Market.CRYPTO, NOW);
+		ReflectionTestUtils.setField(attempt, "generatorVersion", generatorVersion);
+		return attempt.usesScenarioScript();
+	}
 
 	@Test
 	void restartFromCompletedIncrementsRunAndResetsToSelectingInstrument() {

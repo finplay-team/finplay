@@ -3,7 +3,6 @@ package com.finplay.api.education.marketpractice.domain;
 
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
-import com.finplay.api.market.service.TutorialPriceGenerator;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -29,6 +28,10 @@ import lombok.NoArgsConstructor;
 public class PracticeAttempt {
 
 	private static final long INITIAL_RUN_NUMBER = 1L;
+	// market.service.TutorialPriceGenerator.VERSION_2와 같은 값이다. 그 상수를 직접 import하지 않는 이유는
+	// 의존 방향 때문이다 — 도메인 엔티티가 다른 도메인의 서비스를 가리키면 보통의 service → domain 방향이
+	// 거꾸로 선다(PR #474 리뷰). 두 값이 갈라지지 않는 것은 PracticeAttemptTest가 동등성으로 고정한다.
+	private static final short SCENARIO_GENERATOR_VERSION = 2;
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -152,7 +155,7 @@ public class PracticeAttempt {
 	// 이 실행이 저작 대본으로 가격을 만드는가. 대본은 커서가 시계를 정하므로 벽시계 마감(031 SANDBOX-008의
 	// 5분 제한)이 성립하지 않는다 — 조회·복기·진행 계산이 모두 이 판정 하나로 갈린다(041 SCENARIO-014).
 	public boolean usesScenarioScript() {
-		return generatorVersion != null && generatorVersion == TutorialPriceGenerator.VERSION_2;
+		return generatorVersion != null && generatorVersion == SCENARIO_GENERATOR_VERSION;
 	}
 
 	// 종목 선택과 재시작 양쪽에서 대본 위치를 지운다. 재시작이 빠뜨리면 재시작한 사용자가 이전 실행의 위치와
