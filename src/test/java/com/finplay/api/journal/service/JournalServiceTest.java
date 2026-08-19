@@ -661,7 +661,7 @@ class JournalServiceTest {
 
 	// --- spec 012 §C-6 조회 경로 (4차 §FEED-013) ---
 	//
-	// 이 둘은 getBuyJournal·getSellJournal과 계약이 반대다 — 일기가 없는 것이 정상 상태라 404가 아니다.
+	// 일기가 없는 것이 정상 상태라 404가 아니다.
 	// 소유권 검증(getOwnedTrade)을 부르지 않는 것도 계약이므로 tradeService 무호출까지 단정한다(§C-6).
 
 	@Test
