@@ -27,13 +27,16 @@
 
 ## 작업 항목
 
-- [ ] **1. 프리셋 상수와 계산** — `ExitPreset` enum(`CAUTIOUS` 2/3, `BALANCED` 3/5, `RELAXED` 5/8,
+- [x] **1. 프리셋 상수와 계산** — `ExitPreset` enum(`CAUTIOUS` 2/3, `BALANCED` 3/5, `RELAXED` 5/8,
   기본값 `BALANCED`) + `ReferencePriceCalculator.calculateFromPercent` 연결.
   **테스트**: `BALANCED`로 계산한 `stopLossPrice`·`takeProfitPrice`가 현행 `entryPrice × 0.97`·`× 1.05`와
-  **정확히 같은 값**임(EXITPRESET-002). 041 대본을 읽어 세 프리셋의 도달 부등식 판정(041 tasks 1번과
-  같은 대상을 반대편에서 검사한다).
+  **정확히 같은 값**임(EXITPRESET-002). 041 대본을 읽어 세 프리셋의 도달 부등식 판정.
+  > **구현에서 정한 것 (이슈 #470).** "041 tasks 1번과 같은 대상을 반대편에서 검사한다"를 그대로 하면 같은
+  > 조건이 두 곳에 남아 한쪽만 고쳐도 초록이 유지된다. 프리셋이 걸린 부등식은 전부
+  > `ExitPresetScenarioReachabilityTest`(042)로 옮기고 041 테스트에는 대본 내부 성질만 남겼다.
+  > 근거는 `run-log.md` §판단 기록.
 
-- [ ] **2. 스키마와 엔티티** — 마이그레이션: `practice_attempts.exit_preset`,
+- [x] **2. 스키마와 엔티티** — 마이그레이션: `practice_attempts.exit_preset`,
   `practice_risk_snapshots.exit_preset`, `exit_plans.practice_attempt_id`·`practice_attempt_run_number`
   (+ `orders`와 같은 모양의 CHECK: 둘 다 null이거나 둘 다 non-null, run > 0). 대응 엔티티 필드.
 
