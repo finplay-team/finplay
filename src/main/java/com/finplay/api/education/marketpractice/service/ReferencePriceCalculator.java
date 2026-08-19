@@ -83,6 +83,11 @@ public class ReferencePriceCalculator {
 	 * {@code trade.getPrice().setScale(8, HALF_UP)}을 <b>먼저</b> 하고 곱하기 때문에 성립한다. 정규화를
 	 * 호출자에게 맡기면 그 전제가 호출 지점마다 다시 지켜져야 하고, 어기면 scale 9 이하 자리에서 조용히
 	 * 갈린다. snapshot의 {@code entry_price}가 DECIMAL(18,8)이라 어차피 저장되는 값도 이 값이다.
+	 *
+	 * <p><b>042 5번(자동 예약)에 주의.</b> 예약을 만드는
+	 * {@link com.finplay.api.order.service.ExitPricePolicy}의 PERCENT 경로는 체결가를 <b>정규화하지 않고</b>
+	 * 그대로 곱한다(019 규칙 그대로다). 그래서 그쪽에 넘기는 체결가도 여기와 같은 scale 8 값이어야 화면에
+	 * 보이는 기준선(snapshot)과 실제로 체결되는 기준선({@code exit_plan_conditions})이 어긋나지 않는다.
 	 */
 	public ReferencePriceLines calculateFromPreset(BigDecimal entryPrice, ExitPreset preset) {
 		ExitPreset applied = preset == null ? ExitPreset.DEFAULT : preset;

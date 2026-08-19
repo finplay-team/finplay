@@ -398,15 +398,28 @@ class PracticeAttemptRepositoryTest {
 			.isNull();
 	}
 
-	// 열거형 밖의 값은 엔티티로는 만들 수 없으므로 네이티브 UPDATE로 스키마를 직접 찌른다.
+	// 열거형 밖의 값은 엔티티로는 만들 수 없으므로 네이티브 UPDATE로 스키마를 직접 찌른다. V51이 CHECK를
+	// 두 테이블에 하나씩 만들었으므로 양쪽을 다 찌른다 — 한쪽만 보면 snapshot 쪽 CHECK를 빠뜨린 수정이
+	// 초록으로 통과한다. 제약 이름까지 확인해 FK 같은 다른 이유로 실패한 것을 통과로 세지 않는다.
 	@Test
-	@DisplayName("정의 밖 프리셋 식별자는 DB check constraint가 거부한다")
+	@DisplayName("정의 밖 프리셋 식별자는 attempt·스냅샷 양쪽에서 DB check constraint가 거부한다")
 	void unknownExitPresetFailsWithCheckConstraint() {
+		Trade buyTrade = createBuyTrade("exit-preset-check-order");
+		PracticeRiskSnapshot snapshot = practiceRiskSnapshotRepository.saveAndFlush(
+			createRiskSnapshot(buyTrade, NOW.plusSeconds(1)));
+
 		assertThatThrownBy(() -> entityManager.createNativeQuery(
 			"UPDATE practice_attempts SET exit_preset = 'AGGRESSIVE' WHERE id = :attemptId")
 			.setParameter("attemptId", attempt.getId())
 			.executeUpdate())
-			.isInstanceOf(PersistenceException.class);
+			.isInstanceOf(PersistenceException.class)
+			.hasMessageContaining("chk_practice_attempts_exit_preset");
+		assertThatThrownBy(() -> entityManager.createNativeQuery(
+			"UPDATE practice_risk_snapshots SET exit_preset = 'AGGRESSIVE' WHERE id = :snapshotId")
+			.setParameter("snapshotId", snapshot.getId())
+			.executeUpdate())
+			.isInstanceOf(PersistenceException.class)
+			.hasMessageContaining("chk_practice_risk_snapshots_exit_preset");
 	}
 
 	private PracticeRiskSnapshot createRiskSnapshot(Trade buyTrade, LocalDateTime createdAt) {

@@ -150,8 +150,8 @@ class ReferencePriceCalculatorTest {
 
 	// EXITPRESET-002 — 아무 조작도 하지 않은 사용자의 결과는 이 기능 도입 전과 같아야 한다. 비교 대상 배율을
 	// 복사해 적지 않고 PracticeAttemptOrderAttributionService의 상수를 직접 읽는다. 복사하면 상수 쪽만 바뀌어도
-	// 이 테스트가 초록으로 남고, 프리셋이 그 자리를 대체하는 042 tasks 4번에서는 상수가 사라지면서 이 테스트가
-	// 컴파일 단계에서 걸려 "그때 이 보증을 어떻게 이어갈지"를 강제로 다시 보게 한다.
+	// 이 테스트가 초록으로 남는다. 프리셋이 그 자리를 대체하는 042 tasks 4번에서 상수가 사라지면 필드명을
+	// 문자열로 찾는 이 테스트가 실행 단계에서 빨간불이 되어(컴파일이 아니다) 이 보증을 다시 보게 만든다.
 	// 근사가 아니라 BigDecimal 동등성(scale까지 같음)으로 본다 — 기준선은 화면에 그대로 찍히는 숫자다.
 	@ParameterizedTest
 	@ValueSource(strings = {
