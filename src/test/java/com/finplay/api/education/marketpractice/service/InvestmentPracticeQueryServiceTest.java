@@ -443,6 +443,39 @@ class InvestmentPracticeQueryServiceTest {
 		assertThat(inProgressResponse.steps()).hasSize(3);
 	}
 
+	// 관찰 필터 기준선은 riskSnapshot(최신 진입)이 아니라 observationBaseline(첫 진입)이어야 한다.
+	// 두 필드에 서로 다른 createdAt을 넣고, 그 사이에 있는 관찰이 살아남는지로 소비 측 배선을 잠근다 —
+	// riskSnapshot으로 되돌리면 이 관찰이 필터에서 잘려 3단계가 미완료로 떨어진다(이슈 #420과 같은 유형).
+	@Test
+	void getProgressFiltersObservationsByFirstEntryBaselineNotLatestEntry() {
+		PracticeAttempt attempt = attempt(70L, 1L, PracticeAttemptStatus.IN_PROGRESS, instrument(100L));
+		when(practiceAttemptRepository.findByUserIdAndMarket(USER_ID, Market.STOCK))
+			.thenReturn(Optional.of(attempt));
+
+		LocalDateTime firstEntryAt = NOW.minusMinutes(30);
+		LocalDateTime latestEntryAt = NOW.minusMinutes(2);
+		PracticeRiskSnapshot firstEntry = riskSnapshot(30L, firstEntryAt);
+		PracticeRiskSnapshot latestEntry = riskSnapshot(31L, latestEntryAt);
+		when(practiceRiskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(70L, 1L))
+			.thenReturn(Optional.of(latestEntry));
+		ResolvedPracticeAttemptEvidenceDto resolved = new ResolvedPracticeAttemptEvidenceDto(
+			latestEntry, firstEntry, 40L, new BigDecimal("3"), BigDecimal.ZERO, new BigDecimal("3"), null, null,
+			null, null, null);
+		when(practiceAttemptEvidenceService.requireCurrentRun(attempt, USER_ID, null)).thenReturn(resolved);
+		// 첫 진입 이후·최신 진입 이전에 채운 관찰 — 기준선을 최신으로 잡으면 이 행이 사라진다.
+		PracticeMarketObservation betweenEntries = observation(
+			60L, PracticeEvidenceType.CLOSER_TO_BOUNDARY, NOW.minusMinutes(10));
+		when(practiceMarketObservationRepository.findByUserIdAndHoldingIdOrderByObservedAtAscIdAsc(USER_ID, 40L))
+			.thenReturn(List.of(betweenEntries));
+
+		InvestmentPracticeResponse response = service.getProgress(USER_ID, Market.STOCK);
+
+		assertThat(response.currentStep()).isEqualTo(4);
+		PracticeStepResponse step3 = response.steps().get(2);
+		assertThat(step3.status()).isEqualTo("COMPLETED");
+		assertThat(step3.evidence().observationId()).isEqualTo(60L);
+	}
+
 	// 이슈 #426 (1): 완료 기록이 있어도 attempt가 재시작으로 진행 중이면 그 실행의 evidence를 돌려준다.
 	// 예전 첫 분기는 이 조합을 예전 완료 응답으로 덮어써서 매수 사실·매도 기한이 프론트에 전달되지 않았다.
 	@Test

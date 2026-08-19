@@ -13,10 +13,10 @@
 **세 항목 모두 뒤따르는 기능 코드가 의존하지 않는다. 그래서 전체 작업의 맨 앞에 둔다** — 뒤로 미루면 "041의
 재진입이 이것보다 먼저 나가면 깨진다"는 순서 의존을 사람이 계속 챙겨야 한다.
 
-- [ ] **SNAP-1** — 마이그레이션: `practice_risk_snapshots`에 `entry_sequence INT NOT NULL DEFAULT 1`
+- [x] **SNAP-1** — 마이그레이션: `practice_risk_snapshots`에 `entry_sequence INT NOT NULL DEFAULT 1`
   추가 + `uk_practice_risk_snapshots_attempt_run_seq(attempt_id, run_number, entry_sequence)` 추가.
   **기존 UNIQUE는 그대로 둔다.** 코드 변경 없음.
-- [ ] **SNAP-1b** — `PracticeRiskSnapshotRepository.findByAttemptIdAndRunNumber`를
+- [x] **SNAP-1b** — `PracticeRiskSnapshotRepository.findByAttemptIdAndRunNumber`를
   `findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc`로 바꾸고 **호출 지점 6곳**의 의미를 각각 판정한다.
   **판정표는 plan §제약 교체만으로는 부족하다에 있다** — 관찰 필터 기준선만 "첫 진입"이고 나머지는 최신
   진입이다. 이 하나를 틀리면 재매수 순간 3단계가 미완료로 되돌아간다(이슈 #420과 같은 유형). **`SNAP-2`보다 먼저 끝나야 한다** — 제약만 풀고 쿼리를 두면 재진입 직후

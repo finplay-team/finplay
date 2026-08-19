@@ -123,7 +123,7 @@ non-null, run > 0)로 만든다. 039가 주문 귀속에 쓴 패턴을 그대로
 
 - 쿼리를 **두 개로 나눈다** — `findTopBy...OrderByEntrySequenceDesc`(최신 진입)와
   `findBy...AndEntrySequence(1)`(첫 진입).
-- **7개 호출 지점마다 "현재 진입"인지 "그 run의 첫 진입"인지 판정해야 한다.** 특히
+- **6개 호출 지점마다 "현재 진입"인지 "그 run의 첫 진입"인지 판정해야 한다.** 특히
   `PracticeAttemptEvidenceService`가 반환하는 snapshot은 관찰 필터(`observedAt >= snapshot.createdAt`)와
   evidence A 기준선의 정본이므로, 어느 것을 쓸지 정하지 않으면 evidence 판정이 미정의가 된다.
   **판정을 미루지 않고 여기서 정한다.**
@@ -131,9 +131,14 @@ non-null, run > 0)로 만든다. 039가 주문 귀속에 쓴 패턴을 그대로
   | 호출 지점 | 무엇을 써야 하는가 | 이유 |
   |---|---|---|
   | `PracticeAttemptEvidenceService` (관찰 필터 기준선) | **첫 진입** | 최신을 쓰면 재매수 순간 이전 관찰이 필터에서 사라져 3단계가 미완료로 되돌아간다. 같은 유형이 이슈 #420으로 프로덕션에서 재현된 적 있다 |
+  | `PracticeAttemptEvidenceService` (매수 evidence 검증·화면 표시) | **최신 진입** | "지금 진입의 체결이 내 것인가"를 보는 자리다. 이 서비스가 돌려주는 snapshot 하나가 하류에서 두 용도로 쓰이므로 `ResolvedPracticeAttemptEvidenceDto`가 `riskSnapshot`(최신)과 `observationBaseline`(첫 진입)을 **둘 다** 들고 다닌다 |
   | `PracticeAttemptOrderAttributionService` (다음 snapshot 생성) | 개수만 필요 | `entry_sequence` 산출용 |
-  | `PracticeAttemptRestartService` (정리) | 전체 | run의 모든 진입을 정리한다 |
+  | `PracticeAttemptRestartService` (응답 조립) | **최신 진입** | `toResponse()`에서 `PracticeAttemptResponse.from(attempt, snapshot)`에 넘길 단건이다. 초판은 이 자리를 "정리 → 전체"로 적었으나 **정리는 `PracticeRunRestartOrderService.cleanupCurrentRun`이 맡고 이 서비스에는 벌크 조회 지점이 없다**(PR #456에서 코드와 대조해 정정) |
   | `InvestmentPracticeQueryService` ×2, `PracticeAttemptService` (기준선 표시) | **최신 진입** | 화면의 "지금 내 기준선" |
+
+  > 위 표는 **PR #456이 실제 구현으로 확정한 결과**다. 초판의 "정리 → 전체" 행과 "7개 호출 지점" 표기는
+  > 코드와 맞지 않아 정정했다(실제 호출 지점은 6곳이고, `PracticeAttemptEvidenceService`가 그중 하나를
+  > 두 용도로 쓴다).
 
   **evidence는 실행 세대 단위 개념이고 snapshot은 진입 단위 개념이다.** 둘을 같은 객체로 다루던 것이
   재진입 도입으로 처음 드러났다(041 SCENARIO-019a).
