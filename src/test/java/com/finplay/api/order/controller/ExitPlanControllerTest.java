@@ -25,7 +25,6 @@ import com.finplay.api.order.domain.ExitPriceType;
 import com.finplay.api.order.dto.request.ExitPlanCreateRequest;
 import com.finplay.api.order.dto.response.ExitPlanListResponse;
 import com.finplay.api.order.dto.response.ExitPlanResponse;
-import com.finplay.api.order.service.ExitPlanCancelService;
 import com.finplay.api.order.service.ExitPlanService;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -59,9 +58,6 @@ class ExitPlanControllerTest {
 
 	@MockitoBean
 	private ExitPlanService exitPlanService;
-
-	@MockitoBean
-	private ExitPlanCancelService exitPlanCancelService;
 
 	@MockitoBean
 	private JwtTokenProvider jwtTokenProvider;
@@ -363,14 +359,14 @@ class ExitPlanControllerTest {
 			.andExpect(status().isNoContent())
 			.andExpect(content().string(""));
 
-		verify(exitPlanCancelService).cancel(USER_ID, 1L);
+		verify(exitPlanService).cancel(USER_ID, 1L);
 	}
 
 	@Test
 	void cancelExitPlanReturnsExitPlanNotFoundWhenPlanDoesNotExistOrIsForeign() throws Exception {
 		stubAuthenticatedUser();
 		doThrow(new BusinessException(ErrorCode.EXIT_PLAN_NOT_FOUND))
-			.when(exitPlanCancelService).cancel(USER_ID, 999L);
+			.when(exitPlanService).cancel(USER_ID, 999L);
 
 		mockMvc.perform(delete("/api/exit-plans/{exitPlanId}", 999L)
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
@@ -378,14 +374,14 @@ class ExitPlanControllerTest {
 			.andExpect(jsonPath("$.error.code").value("EXIT_PLAN_NOT_FOUND"))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
-		verify(exitPlanCancelService).cancel(USER_ID, 999L);
+		verify(exitPlanService).cancel(USER_ID, 999L);
 	}
 
 	@Test
 	void cancelExitPlanReturnsExitPlanNotPendingWhenPlanIsAlreadyTerminal() throws Exception {
 		stubAuthenticatedUser();
 		doThrow(new BusinessException(ErrorCode.EXIT_PLAN_NOT_PENDING))
-			.when(exitPlanCancelService).cancel(USER_ID, 2L);
+			.when(exitPlanService).cancel(USER_ID, 2L);
 
 		mockMvc.perform(delete("/api/exit-plans/{exitPlanId}", 2L)
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
@@ -393,7 +389,7 @@ class ExitPlanControllerTest {
 			.andExpect(jsonPath("$.error.code").value("EXIT_PLAN_NOT_PENDING"))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
-		verify(exitPlanCancelService).cancel(USER_ID, 2L);
+		verify(exitPlanService).cancel(USER_ID, 2L);
 	}
 
 	@Test
@@ -403,6 +399,6 @@ class ExitPlanControllerTest {
 			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 
-		verifyNoInteractions(exitPlanCancelService);
+		verifyNoInteractions(exitPlanService);
 	}
 }
