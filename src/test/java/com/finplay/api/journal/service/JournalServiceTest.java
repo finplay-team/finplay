@@ -1,4 +1,4 @@
-// JournalService.createBuyJournal·createSellJournal·updateSellJournal·updateBuyJournal·getBuyJournal·getSellJournal의 검증 순서·저장 인자·예외 변환을 검증하는 단위 테스트다.
+// JournalService.createBuyJournal·createSellJournal·updateSellJournal·updateBuyJournal의 검증 순서·저장 인자·예외 변환을 검증하는 단위 테스트다.
 package com.finplay.api.journal.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -21,12 +21,10 @@ import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.journal.domain.BuyTradeJournal;
 import com.finplay.api.journal.domain.SellTradeJournal;
-import com.finplay.api.journal.dto.response.BuyJournalDetailResponse;
 import com.finplay.api.journal.dto.response.BuyJournalResponse;
 import com.finplay.api.journal.dto.response.BuyJournalUpdateResponse;
 import com.finplay.api.journal.dto.response.JournalListItemResponse;
 import com.finplay.api.journal.dto.response.JournalListResponse;
-import com.finplay.api.journal.dto.response.SellJournalDetailResponse;
 import com.finplay.api.journal.dto.response.SellJournalResponse;
 import com.finplay.api.journal.dto.response.SellJournalUpdateResponse;
 import com.finplay.api.journal.repository.BuyTradeJournalRepository;
@@ -519,199 +517,6 @@ class JournalServiceTest {
 	}
 
 	@Test
-	void getBuyJournalReturnsAllFieldsAndDoesNotWriteAnything() {
-		Trade trade = buyTrade(BUY_TRADE_ID);
-		LocalDateTime originalCreatedAt = NOW.minusDays(3);
-		LocalDateTime lastUpdatedAt = NOW.minusHours(2);
-		BuyTradeJournal realJournal = BuyTradeJournal.of(trade, "매수 회고 원문", originalCreatedAt);
-		ReflectionTestUtils.setField(realJournal, "id", 500L);
-		ReflectionTestUtils.setField(realJournal, "updatedAt", lastUpdatedAt);
-		BuyTradeJournal journal = spy(realJournal);
-		when(tradeService.getOwnedTrade(USER_ID, BUY_TRADE_ID)).thenReturn(trade);
-		when(buyTradeJournalRepository.findByBuyTradeId(BUY_TRADE_ID)).thenReturn(Optional.of(journal));
-
-		BuyJournalDetailResponse response = journalService.getBuyJournal(USER_ID, BUY_TRADE_ID);
-
-		assertThat(response.journalId()).isEqualTo(500L);
-		assertThat(response.buyTradeId()).isEqualTo(BUY_TRADE_ID);
-		assertThat(response.content()).isEqualTo("매수 회고 원문");
-		assertThat(response.createdAt()).isEqualTo(originalCreatedAt);
-		assertThat(response.updatedAt()).isEqualTo(lastUpdatedAt);
-
-		verify(journal, never()).updateContent(any(), any());
-		verify(buyTradeJournalRepository, never()).save(any());
-		verify(buyTradeJournalRepository, never()).saveAndFlush(any());
-	}
-
-	@Test
-	void getBuyJournalPropagatesNotFoundWhenTradeDoesNotExist() {
-		when(tradeService.getOwnedTrade(USER_ID, BUY_TRADE_ID)).thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
-
-		assertThatThrownBy(() -> journalService.getBuyJournal(USER_ID, BUY_TRADE_ID))
-			.isInstanceOf(BusinessException.class)
-			.satisfies(exception -> assertThat(((BusinessException)exception).getErrorCode())
-				.isEqualTo(ErrorCode.NOT_FOUND));
-
-		verify(buyTradeJournalRepository, never()).findByBuyTradeId(any());
-	}
-
-	@Test
-	void getBuyJournalPropagatesForbiddenWhenTradeOwnedByAnotherUser() {
-		when(tradeService.getOwnedTrade(USER_ID, BUY_TRADE_ID)).thenThrow(new BusinessException(ErrorCode.FORBIDDEN));
-
-		assertThatThrownBy(() -> journalService.getBuyJournal(USER_ID, BUY_TRADE_ID))
-			.isInstanceOf(BusinessException.class)
-			.satisfies(exception -> assertThat(((BusinessException)exception).getErrorCode())
-				.isEqualTo(ErrorCode.FORBIDDEN));
-
-		verify(buyTradeJournalRepository, never()).findByBuyTradeId(any());
-	}
-
-	// 검증 순서 확인 — 타인 소유의 매도 체결은 getOwnedTrade 단계에서 403으로 끝나야 한다.
-	// side 검사(400)나 회고 조회(404)까지 도달하면 이 테스트가 실패해 검증 순서 위반을 드러낸다.
-	@Test
-	void getBuyJournalReturnsForbiddenNotValidationErrorForOtherUsersSellTrade() {
-		when(tradeService.getOwnedTrade(USER_ID, BUY_TRADE_ID)).thenThrow(new BusinessException(ErrorCode.FORBIDDEN));
-
-		assertThatThrownBy(() -> journalService.getBuyJournal(USER_ID, BUY_TRADE_ID))
-			.isInstanceOf(BusinessException.class)
-			.satisfies(exception -> assertThat(((BusinessException)exception).getErrorCode())
-				.isEqualTo(ErrorCode.FORBIDDEN)
-				.isNotEqualTo(ErrorCode.VALIDATION_ERROR));
-
-		verify(buyTradeJournalRepository, never()).findByBuyTradeId(any());
-	}
-
-	@Test
-	void getBuyJournalThrowsValidationErrorWhenTradeIsNotBuySide() {
-		Trade sellTrade = sellTrade(BUY_TRADE_ID);
-		when(tradeService.getOwnedTrade(USER_ID, BUY_TRADE_ID)).thenReturn(sellTrade);
-
-		assertThatThrownBy(() -> journalService.getBuyJournal(USER_ID, BUY_TRADE_ID))
-			.isInstanceOf(BusinessException.class)
-			.satisfies(exception -> assertThat(((BusinessException)exception).getErrorCode())
-				.isEqualTo(ErrorCode.VALIDATION_ERROR));
-
-		verify(buyTradeJournalRepository, never()).findByBuyTradeId(any());
-	}
-
-	// 체결이 없는 404(getOwnedTrade 단계)와 회고가 없는 404(findByBuyTradeId 단계)는
-	// 같은 ErrorCode.NOT_FOUND를 쓰지만 트리거 지점이 다르다 — 바로 위 트레이드 미존재 테스트와 대비해서 본다.
-	// 이 테스트는 본인 소유의 매수 체결까지는 통과했는데 회고가 없어서 실패하는 경로를 확인한다.
-	@Test
-	void getBuyJournalThrowsNotFoundWhenJournalDoesNotExistEvenThoughTradeIsOwnedBuyTrade() {
-		Trade trade = buyTrade(BUY_TRADE_ID);
-		when(tradeService.getOwnedTrade(USER_ID, BUY_TRADE_ID)).thenReturn(trade);
-		when(buyTradeJournalRepository.findByBuyTradeId(BUY_TRADE_ID)).thenReturn(Optional.empty());
-
-		assertThatThrownBy(() -> journalService.getBuyJournal(USER_ID, BUY_TRADE_ID))
-			.isInstanceOf(BusinessException.class)
-			.satisfies(exception -> assertThat(((BusinessException)exception).getErrorCode())
-				.isEqualTo(ErrorCode.NOT_FOUND));
-
-		verify(tradeService).getOwnedTrade(USER_ID, BUY_TRADE_ID);
-		verify(buyTradeJournalRepository).findByBuyTradeId(BUY_TRADE_ID);
-	}
-
-	@Test
-	void getSellJournalReturnsAllFieldsAndDoesNotWriteAnything() {
-		Trade trade = sellTrade(SELL_TRADE_ID);
-		LocalDateTime originalCreatedAt = NOW.minusDays(3);
-		LocalDateTime lastUpdatedAt = NOW.minusHours(2);
-		SellTradeJournal realJournal = SellTradeJournal.of(trade, "매도 회고 원문", originalCreatedAt);
-		ReflectionTestUtils.setField(realJournal, "id", 600L);
-		ReflectionTestUtils.setField(realJournal, "updatedAt", lastUpdatedAt);
-		SellTradeJournal journal = spy(realJournal);
-		when(tradeService.getOwnedTrade(USER_ID, SELL_TRADE_ID)).thenReturn(trade);
-		when(sellTradeJournalRepository.findBySellTradeId(SELL_TRADE_ID)).thenReturn(Optional.of(journal));
-
-		SellJournalDetailResponse response = journalService.getSellJournal(USER_ID, SELL_TRADE_ID);
-
-		assertThat(response.journalId()).isEqualTo(600L);
-		assertThat(response.sellTradeId()).isEqualTo(SELL_TRADE_ID);
-		assertThat(response.content()).isEqualTo("매도 회고 원문");
-		assertThat(response.createdAt()).isEqualTo(originalCreatedAt);
-		assertThat(response.updatedAt()).isEqualTo(lastUpdatedAt);
-
-		verify(journal, never()).updateContent(any(), any());
-		verify(sellTradeJournalRepository, never()).save(any());
-		verify(sellTradeJournalRepository, never()).saveAndFlush(any());
-	}
-
-	@Test
-	void getSellJournalPropagatesNotFoundWhenTradeDoesNotExist() {
-		when(tradeService.getOwnedTrade(USER_ID, SELL_TRADE_ID))
-			.thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
-
-		assertThatThrownBy(() -> journalService.getSellJournal(USER_ID, SELL_TRADE_ID))
-			.isInstanceOf(BusinessException.class)
-			.satisfies(exception -> assertThat(((BusinessException)exception).getErrorCode())
-				.isEqualTo(ErrorCode.NOT_FOUND));
-
-		verify(sellTradeJournalRepository, never()).findBySellTradeId(any());
-	}
-
-	@Test
-	void getSellJournalPropagatesForbiddenWhenTradeOwnedByAnotherUser() {
-		when(tradeService.getOwnedTrade(USER_ID, SELL_TRADE_ID))
-			.thenThrow(new BusinessException(ErrorCode.FORBIDDEN));
-
-		assertThatThrownBy(() -> journalService.getSellJournal(USER_ID, SELL_TRADE_ID))
-			.isInstanceOf(BusinessException.class)
-			.satisfies(exception -> assertThat(((BusinessException)exception).getErrorCode())
-				.isEqualTo(ErrorCode.FORBIDDEN));
-
-		verify(sellTradeJournalRepository, never()).findBySellTradeId(any());
-	}
-
-	// 검증 순서 확인 — 타인 소유의 매수 체결은 getOwnedTrade 단계에서 403으로 끝나야 한다.
-	// side 검사(400)나 회고 조회(404)까지 도달하면 이 테스트가 실패해 검증 순서 위반을 드러낸다.
-	@Test
-	void getSellJournalReturnsForbiddenNotValidationErrorForOtherUsersBuyTrade() {
-		when(tradeService.getOwnedTrade(USER_ID, SELL_TRADE_ID))
-			.thenThrow(new BusinessException(ErrorCode.FORBIDDEN));
-
-		assertThatThrownBy(() -> journalService.getSellJournal(USER_ID, SELL_TRADE_ID))
-			.isInstanceOf(BusinessException.class)
-			.satisfies(exception -> assertThat(((BusinessException)exception).getErrorCode())
-				.isEqualTo(ErrorCode.FORBIDDEN)
-				.isNotEqualTo(ErrorCode.VALIDATION_ERROR));
-
-		verify(sellTradeJournalRepository, never()).findBySellTradeId(any());
-	}
-
-	@Test
-	void getSellJournalThrowsValidationErrorWhenTradeIsNotSellSide() {
-		Trade buyTrade = buyTrade(SELL_TRADE_ID);
-		when(tradeService.getOwnedTrade(USER_ID, SELL_TRADE_ID)).thenReturn(buyTrade);
-
-		assertThatThrownBy(() -> journalService.getSellJournal(USER_ID, SELL_TRADE_ID))
-			.isInstanceOf(BusinessException.class)
-			.satisfies(exception -> assertThat(((BusinessException)exception).getErrorCode())
-				.isEqualTo(ErrorCode.VALIDATION_ERROR));
-
-		verify(sellTradeJournalRepository, never()).findBySellTradeId(any());
-	}
-
-	// 체결이 없는 404(getOwnedTrade 단계)와 회고가 없는 404(findBySellTradeId 단계)는
-	// 같은 ErrorCode.NOT_FOUND를 쓰지만 트리거 지점이 다르다 — 바로 위 트레이드 미존재 테스트와 대비해서 본다.
-	// 이 테스트는 본인 소유의 매도 체결까지는 통과했는데 회고가 없어서 실패하는 경로를 확인한다.
-	@Test
-	void getSellJournalThrowsNotFoundWhenJournalDoesNotExistEvenThoughTradeIsOwnedSellTrade() {
-		Trade trade = sellTrade(SELL_TRADE_ID);
-		when(tradeService.getOwnedTrade(USER_ID, SELL_TRADE_ID)).thenReturn(trade);
-		when(sellTradeJournalRepository.findBySellTradeId(SELL_TRADE_ID)).thenReturn(Optional.empty());
-
-		assertThatThrownBy(() -> journalService.getSellJournal(USER_ID, SELL_TRADE_ID))
-			.isInstanceOf(BusinessException.class)
-			.satisfies(exception -> assertThat(((BusinessException)exception).getErrorCode())
-				.isEqualTo(ErrorCode.NOT_FOUND));
-
-		verify(tradeService).getOwnedTrade(USER_ID, SELL_TRADE_ID);
-		verify(sellTradeJournalRepository).findBySellTradeId(SELL_TRADE_ID);
-	}
-
-	@Test
 	void getMyJournalEntriesPropagatesNotFoundWhenAccountDoesNotExist() {
 		when(accountService.getAccountFor(USER_ID, Market.STOCK)).thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
 
@@ -856,7 +661,7 @@ class JournalServiceTest {
 
 	// --- spec 012 §C-6 조회 경로 (4차 §FEED-013) ---
 	//
-	// 이 둘은 getBuyJournal·getSellJournal과 계약이 반대다 — 일기가 없는 것이 정상 상태라 404가 아니다.
+	// 일기가 없는 것이 정상 상태라 404가 아니다.
 	// 소유권 검증(getOwnedTrade)을 부르지 않는 것도 계약이므로 tradeService 무호출까지 단정한다(§C-6).
 
 	@Test

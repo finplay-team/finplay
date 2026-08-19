@@ -8,12 +8,10 @@ import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.journal.domain.BuyTradeJournal;
 import com.finplay.api.journal.domain.SellTradeJournal;
-import com.finplay.api.journal.dto.response.BuyJournalDetailResponse;
 import com.finplay.api.journal.dto.response.BuyJournalResponse;
 import com.finplay.api.journal.dto.response.BuyJournalUpdateResponse;
 import com.finplay.api.journal.dto.response.JournalListItemResponse;
 import com.finplay.api.journal.dto.response.JournalListResponse;
-import com.finplay.api.journal.dto.response.SellJournalDetailResponse;
 import com.finplay.api.journal.dto.response.SellJournalResponse;
 import com.finplay.api.journal.dto.response.SellJournalUpdateResponse;
 import com.finplay.api.journal.repository.BuyTradeJournalRepository;
@@ -107,37 +105,11 @@ public class JournalService {
 		return BuyJournalUpdateResponse.from(journal);
 	}
 
-	@Transactional(readOnly = true)
-	public BuyJournalDetailResponse getBuyJournal(Long userId, Long buyTradeId) {
-		Trade trade = tradeService.getOwnedTrade(userId, buyTradeId);
-		if (trade.getSide() != OrderSide.BUY) {
-			throw new BusinessException(ErrorCode.VALIDATION_ERROR);
-		}
-		BuyTradeJournal journal = buyTradeJournalRepository
-			.findByBuyTradeId(buyTradeId)
-			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
-
-		return BuyJournalDetailResponse.from(journal);
-	}
-
-	@Transactional(readOnly = true)
-	public SellJournalDetailResponse getSellJournal(Long userId, Long sellTradeId) {
-		Trade trade = tradeService.getOwnedTrade(userId, sellTradeId);
-		if (trade.getSide() != OrderSide.SELL) {
-			throw new BusinessException(ErrorCode.VALIDATION_ERROR);
-		}
-		SellTradeJournal journal = sellTradeJournalRepository
-			.findBySellTradeId(sellTradeId)
-			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
-
-		return SellJournalDetailResponse.from(journal);
-	}
-
 	/**
 	 * 매도 체결 1건의 매도 회고를 읽는다 — 없으면 {@link Optional#empty()}다 (spec 012 §C-6, 4차 §FEED-013).
 	 *
-	 * <p><b>{@link #getSellJournal}을 재사용하지 않는다.</b> 그쪽은 소유권 검증과 "없으면 404"가 계약인데, 매도
-	 * 회고 서술 경로에서는 <b>일기가 없는 것이 정상 상태</b>라 예외로 다룰 수 없다.
+	 * <p><b>일기가 없는 것을 예외로 다루지 않는다.</b> 매도 회고 서술 경로에서는 <b>일기가 없는 것이 정상 상태</b>이며,
+	 * 소유권 검증({@code getOwnedTrade})도 호출하지 않는다.
 	 *
 	 * <p><b>회원 id를 인자로 받지 않는다</b>(§C-6). 호출부({@code PostSellFeedbackService} 경로)가
 	 * {@code getOwnedTrade}로 이미 확인한 체결의 id만 넘긴다 — 여기서 회원 id를 받으면 검증하는 것처럼 보이는데

@@ -56,8 +56,6 @@
 | GET | /api/holdings?market= | portfolio | 인증 사용자 본인의 시장별(`STOCK`\|`CRYPTO`) 활성 보유 종목 목록(holding PK·수량·예약수량·평균단가·현재가·평가금액·미실현손익·수익률·시세 상태 + 종목 표시 정보) 조회. `market` 쿼리 파라미터 필수, 전량 매도 종목은 목록에서 제외 | 006 PORT-001, Issue #52, 015 LMT-004(reservedQuantity), Issue #235, Issue #444(holdingId) |
 | GET | /api/trades?market=&cursor=&limit= | order | 인증 사용자 본인의 시장별(`STOCK`\|`CRYPTO`) 체결 내역을 `executedAt` 내림차순(동시각 `id` 내림차순)으로 커서 페이지네이션 조회. `market` 쿼리 파라미터 필수, `cursor`·`limit`(기본 20, 1~100) 선택. 매도 건은 실현손익 포함 | 006 PORT-002, Issue #82 |
 | GET | /api/journal?market=&cursor=&limit= | journal | 인증 사용자 본인의 매수·매도 회고를 한 목록으로 병합해 `createdAt` 내림차순(동시각 체결 ID 내림차순)으로 커서 페이지네이션 조회. `market` 쿼리 파라미터 필수, `cursor`·`limit`(기본 20, 1~100) 선택. 통합 `journalId`는 노출하지 않고 `journalType`+원래 체결 ID로 식별 | 007 JOUR-006, Issue #203 |
-| GET | /api/journal/buy/{buyTradeId} | journal | 본인 소유 매수 체결 1건에 달린 매수 회고 1건을 단건 조회 (200, 5필드). 체결 없음 404, 타인 소유 403, 매도 체결이면 400, 회고 미작성 404 | 007 JOUR-005, Issue #217 |
-| GET | /api/journal/sell/{sellTradeId} | journal | 본인 소유 매도 체결 1건에 달린 매도 회고 1건을 단건 조회 (200, 5필드). 체결 없음 404, 타인 소유 403, 매수 체결이면 400, 회고 미작성 404 | 007 JOUR-005, Issue #217 |
 | POST | /api/trades/{buyTradeId}/journal | journal | 본인 소유 매수 체결 1건에 투자일기(자유 텍스트 `content`) 1건 작성 (201). 매수 체결이 아니거나 이미 일기가 있으면 실패 | 007 JOUR-001, Issue #159 |
 | POST | /api/trades/{sellTradeId}/sell-journal | journal | 본인 소유 매도 체결 1건에 매도 회고(자유 텍스트 `content`) 1건 작성 (201). 매도 체결이 아니거나 이미 회고가 있으면 실패 | 007 JOUR-003, Issue #183 |
 | PATCH | /api/trades/{sellTradeId}/sell-journal | journal | 본인 소유 매도 체결 1건에 이미 작성된 매도 회고의 본문을 교체 (200). 매도 체결이 아니거나 회고가 아직 없으면 실패, 잠금 없음(횟수 제한 없이 수정 가능) | 007 JOUR-004, Issue #190 |
