@@ -14,6 +14,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
@@ -62,6 +63,23 @@ public class PracticeAttempt {
 	@Column(name = "generator_version")
 	private Short generatorVersion;
 
+	// 대본 위치 (구간 id, 구간 내 경과 실제 초). 생성기 버전 1 attempt에서는 계속 null이다.
+	@Column(name = "scenario_stage_id", length = 32)
+	private String scenarioStageId;
+
+	@Column(name = "scenario_stage_elapsed_seconds")
+	private Long scenarioStageElapsedSeconds;
+
+	// 진행 중 봉의 누적 3값. 대본 위치가 단조가 아니라 지나온 경로를 복원할 수 없으므로 직접 들고 있는다.
+	@Column(name = "scenario_candle_open", precision = 18, scale = 8)
+	private BigDecimal scenarioCandleOpen;
+
+	@Column(name = "scenario_candle_high", precision = 18, scale = 8)
+	private BigDecimal scenarioCandleHigh;
+
+	@Column(name = "scenario_candle_low", precision = 18, scale = 8)
+	private BigDecimal scenarioCandleLow;
+
 	@Column(name = "created_at", nullable = false)
 	private LocalDateTime createdAt;
 
@@ -101,6 +119,7 @@ public class PracticeAttempt {
 		this.generatorVersion = generatorVersion;
 		this.status = PracticeAttemptStatus.IN_PROGRESS;
 		this.updatedAt = updatedAt;
+		clearScenarioProgress();
 	}
 
 	public void restart(LocalDateTime updatedAt) {
@@ -113,6 +132,17 @@ public class PracticeAttempt {
 		this.generatorVersion = null;
 		this.completedAt = null;
 		this.updatedAt = updatedAt;
+		clearScenarioProgress();
+	}
+
+	// 종목 선택과 재시작 양쪽에서 대본 위치를 지운다. 재시작이 빠뜨리면 재시작한 사용자가 이전 실행의 위치와
+	// 봉을 그대로 물려받아 첫 화면에 지난 실행의 4막 저점이 노출된다(041 plan §재시작 시 초기화).
+	private void clearScenarioProgress() {
+		this.scenarioStageId = null;
+		this.scenarioStageElapsedSeconds = null;
+		this.scenarioCandleOpen = null;
+		this.scenarioCandleHigh = null;
+		this.scenarioCandleLow = null;
 	}
 
 	public void complete(LocalDateTime completedAt) {

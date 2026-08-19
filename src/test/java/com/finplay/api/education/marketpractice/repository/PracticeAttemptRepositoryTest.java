@@ -204,6 +204,71 @@ class PracticeAttemptRepositoryTest {
 			.countByAttemptIdAndRunNumber(attempt.getId(), attempt.getRunNumber())).isZero();
 	}
 
+	// 대본 위치는 벽시계에서 파생할 수 없다 — 대기 구간은 되감기고 재진입은 점프하므로 단조가 아니다.
+	// 재기동 후에도 같은 위치가 나와야 하므로(041 SCENARIO-002) 영속과 재조회를 함께 확인한다.
+	@Test
+	@DisplayName("대본 위치와 진행 중 봉 3값이 영속되고 재조회된다")
+	void scenarioProgressColumnsRoundTrip() {
+		putScenarioProgress(attempt, 57L, "9800.00000000", "10180.00000000", "9750.00000000");
+		practiceAttemptRepository.saveAndFlush(attempt);
+		entityManager.clear();
+
+		PracticeAttempt reloaded = practiceAttemptRepository.findById(attempt.getId()).orElseThrow();
+
+		assertThat(reloaded.getScenarioStageId()).isEqualTo("ACT2_RUMOR");
+		assertThat(reloaded.getScenarioStageElapsedSeconds()).isEqualTo(57L);
+		assertThat(reloaded.getScenarioCandleOpen()).isEqualByComparingTo("9800.00000000");
+		assertThat(reloaded.getScenarioCandleHigh()).isEqualByComparingTo("10180.00000000");
+		assertThat(reloaded.getScenarioCandleLow()).isEqualByComparingTo("9750.00000000");
+	}
+
+	@Test
+	@DisplayName("생성기 버전 1 attempt는 대본 컬럼이 NULL인 채로 저장된다")
+	void versionOneAttemptKeepsScenarioColumnsNull() {
+		entityManager.clear();
+
+		PracticeAttempt reloaded = practiceAttemptRepository.findById(attempt.getId()).orElseThrow();
+
+		assertThat(reloaded.getScenarioStageId()).isNull();
+		assertThat(reloaded.getScenarioCandleOpen()).isNull();
+	}
+
+	@Test
+	@DisplayName("진행 중 봉 3값 중 일부만 채우면 CHECK 제약이 거부한다")
+	void savingPartialScenarioCandleFailsWithCheckConstraint() {
+		putScenarioProgress(attempt, 3L, "9800.00000000", "10180.00000000", null);
+
+		assertThatThrownBy(() -> practiceAttemptRepository.saveAndFlush(attempt))
+			.isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	@Test
+	@DisplayName("시가가 고가·저가 밖에 있으면 CHECK 제약이 거부한다")
+	void savingScenarioCandleWithOpenOutsideRangeFailsWithCheckConstraint() {
+		putScenarioProgress(attempt, 3L, "10500.00000000", "10180.00000000", "9750.00000000");
+
+		assertThatThrownBy(() -> practiceAttemptRepository.saveAndFlush(attempt))
+			.isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	@Test
+	@DisplayName("구간 경과 초가 음수면 CHECK 제약이 거부한다")
+	void savingNegativeScenarioElapsedSecondsFailsWithCheckConstraint() {
+		putScenarioProgress(attempt, -1L, null, null, null);
+
+		assertThatThrownBy(() -> practiceAttemptRepository.saveAndFlush(attempt))
+			.isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	private static void putScenarioProgress(
+		PracticeAttempt target, long elapsedSeconds, String open, String high, String low) {
+		ReflectionTestUtils.setField(target, "scenarioStageId", "ACT2_RUMOR");
+		ReflectionTestUtils.setField(target, "scenarioStageElapsedSeconds", elapsedSeconds);
+		ReflectionTestUtils.setField(target, "scenarioCandleOpen", open == null ? null : new BigDecimal(open));
+		ReflectionTestUtils.setField(target, "scenarioCandleHigh", high == null ? null : new BigDecimal(high));
+		ReflectionTestUtils.setField(target, "scenarioCandleLow", low == null ? null : new BigDecimal(low));
+	}
+
 	@Test
 	@DisplayName("attempt 주문은 attempt ID와 실행 세대를 함께 저장한다")
 	void practiceAttemptOrderStoresBothAttributionColumns() {
