@@ -71,7 +71,7 @@ public class PriceStore {
 	// 딱 한 번 "받은 적 없음" 상태를 벗어나게 할 뿐이다 — 그 뒤 실제 웹소켓 체결이 도착하면 부트스트랩 시각보다
 	// 나중이므로 MKT-003 가드가 정상적으로 덮어쓴다.
 	// CryptoPriceUpdatedEvent는 가격이 실제로 바뀌었을 때만 publish한다 — 관측 시각만 갱신한 호출은 소비자
-	// (LimitOrderTriggerListener·CryptoPriceStreamService) 입장에서 같은 값을 3초마다 재처리·재전송하는 순수한
+	// (LimitOrderTriggerListener) 입장에서 같은 값을 3초마다 재처리하는 순수한
 	// 낭비이기 때문이다(plan.md "컴포넌트 설계 — PriceStore" §이벤트 발행). 신규 심볼의 첫 관측은 price가 null에서
 	// 값이 생기는 것이므로 항상 priceChanged=true라 이 조건에 자연히 포함된다. 이벤트의 receivedAt은 이 메서드가
 	// 건드리지 않는 기존 체결 시각을 그대로 실어 보낸다 — receivedAt이 아예 없던 심볼은 방금 부트스트랩한 값(=observedAt)을 쓴다.
