@@ -15,9 +15,11 @@ import java.util.List;
  */
 public record ExitPresetResponse(String preset, BigDecimal stopLossRate, BigDecimal takeProfitRate) {
 
-	private static final List<ExitPresetResponse> ALL = Arrays.stream(ExitPreset.values())
+	// List.copyOf로 감싸는 것은 형식이 아니라 실제 요구다 — 정적 필드를 그대로 돌려주면 호출자가 목록을
+	// 바꿔 다른 요청에 영향을 준다(SpotBugs MS_EXPOSE_REP).
+	private static final List<ExitPresetResponse> ALL = List.copyOf(Arrays.stream(ExitPreset.values())
 		.map(ExitPresetResponse::from)
-		.toList();
+		.toList());
 
 	public static ExitPresetResponse from(ExitPreset preset) {
 		return new ExitPresetResponse(preset.name(), preset.stopLossRate(), preset.takeProfitRate());

@@ -28,6 +28,10 @@ public record PracticeAttemptResponse(
 	boolean exitPresetLocked,
 	List<ExitPresetResponse> availableExitPresets) {
 
+	public PracticeAttemptResponse {
+		availableExitPresets = availableExitPresets == null ? List.of() : List.copyOf(availableExitPresets);
+	}
+
 	// 진입·재시작이 아닌 호출부(종목 선택 등)는 그 시점 튜토리얼 계좌를 새로 조회하지 않으므로 0으로 채운다
 	// (TUTORIAL-CASH-ISOL-011 범위는 진입·재시작 응답 한정, plan.md "API 설계" 참고).
 	//

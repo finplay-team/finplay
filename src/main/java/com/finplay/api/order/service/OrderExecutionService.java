@@ -32,12 +32,13 @@ import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Optional;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@RequiredArgsConstructor
 public class OrderExecutionService {
 
 	private static final String MARKET_ORDER_TYPE = "MARKET";
@@ -58,36 +59,6 @@ public class OrderExecutionService {
 	private final PracticeOrderSettlementService practiceOrderSettlementService;
 	private final Clock clock;
 	private final ApplicationEventPublisher eventPublisher;
-
-	@Autowired
-	public OrderExecutionService(
-		UserQueryService userQueryService,
-		AccountService accountService,
-		TutorialAccountService tutorialAccountService,
-		InstrumentService instrumentService,
-		PriceQueryService priceQueryService,
-		PortfolioBuyService portfolioBuyService,
-		PortfolioSellService portfolioSellService,
-		OrderRepository orderRepository,
-		TradeRepository tradeRepository,
-		PracticeOrderAttributionPort practiceOrderAttributionPort,
-		PracticeOrderSettlementService practiceOrderSettlementService,
-		Clock clock,
-		ApplicationEventPublisher eventPublisher) {
-		this.userQueryService = userQueryService;
-		this.accountService = accountService;
-		this.tutorialAccountService = tutorialAccountService;
-		this.instrumentService = instrumentService;
-		this.priceQueryService = priceQueryService;
-		this.portfolioBuyService = portfolioBuyService;
-		this.portfolioSellService = portfolioSellService;
-		this.orderRepository = orderRepository;
-		this.tradeRepository = tradeRepository;
-		this.practiceOrderAttributionPort = practiceOrderAttributionPort;
-		this.practiceOrderSettlementService = practiceOrderSettlementService;
-		this.clock = clock;
-		this.eventPublisher = eventPublisher;
-	}
 
 	@Transactional
 	public OrderResponse execute(
