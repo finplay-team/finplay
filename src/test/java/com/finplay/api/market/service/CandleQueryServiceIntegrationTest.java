@@ -127,7 +127,7 @@ class CandleQueryServiceIntegrationTest {
 		saveReadySession(serviceDate);
 
 		CandleQueryService service = candleQueryServiceAt(clockAt(serviceDate, LocalTime.of(9, 5)));
-		List<CandleResponse> candles = service.getCandles(instrument.getId(), "1m", null, null);
+		List<CandleResponse> candles = service.getCandles(instrument.getId(), "1m", null, null, null).content();
 
 		assertThat(candles).extracting(CandleResponse::sourceTime)
 			.containsExactly(
@@ -147,7 +147,7 @@ class CandleQueryServiceIntegrationTest {
 		saveReadySession(serviceDate);
 
 		CandleQueryService service = candleQueryServiceAt(clockAt(serviceDate, LocalTime.of(9, 0, 30)));
-		List<CandleResponse> candles = service.getCandles(instrument.getId(), "1m", null, null);
+		List<CandleResponse> candles = service.getCandles(instrument.getId(), "1m", null, null, null).content();
 
 		assertThat(candles).isEmpty();
 	}
@@ -161,7 +161,7 @@ class CandleQueryServiceIntegrationTest {
 		saveReadySession(serviceDate);
 
 		CandleQueryService service = candleQueryServiceAt(clockAt(serviceDate, LocalTime.of(9, 1, 0)));
-		List<CandleResponse> candles = service.getCandles(instrument.getId(), "1m", null, null);
+		List<CandleResponse> candles = service.getCandles(instrument.getId(), "1m", null, null, null).content();
 
 		assertThat(candles).hasSize(1);
 		assertThat(candles.get(0).sourceTime()).isEqualTo(LocalDateTime.of(SOURCE_TRADING_DATE, LocalTime.of(9, 0)));
@@ -177,7 +177,7 @@ class CandleQueryServiceIntegrationTest {
 		saveReadySession(serviceDate);
 
 		CandleQueryService service = candleQueryServiceAt(clockAt(serviceDate, LocalTime.of(15, 30)));
-		List<CandleResponse> candles = service.getCandles(instrument.getId(), "1m", null, null);
+		List<CandleResponse> candles = service.getCandles(instrument.getId(), "1m", null, null, null).content();
 
 		assertThat(candles).extracting(CandleResponse::sourceTime)
 			.containsExactly(
@@ -198,7 +198,7 @@ class CandleQueryServiceIntegrationTest {
 			serviceDateNoSession, PreparationStatus.READY)).isEmpty();
 
 		CandleQueryService service = candleQueryServiceAt(clockAt(serviceDateNoSession, LocalTime.of(9, 5)));
-		List<CandleResponse> candles = service.getCandles(instrument.getId(), "1m", null, null);
+		List<CandleResponse> candles = service.getCandles(instrument.getId(), "1m", null, null, null).content();
 
 		assertThat(candles).isEmpty();
 	}
@@ -217,7 +217,7 @@ class CandleQueryServiceIntegrationTest {
 			serviceDatePreparing, PreparationStatus.READY)).isEmpty();
 
 		CandleQueryService service = candleQueryServiceAt(clockAt(serviceDatePreparing, LocalTime.of(9, 5)));
-		List<CandleResponse> candles = service.getCandles(instrument.getId(), "1m", null, null);
+		List<CandleResponse> candles = service.getCandles(instrument.getId(), "1m", null, null, null).content();
 
 		assertThat(candles).isEmpty();
 	}
@@ -238,7 +238,7 @@ class CandleQueryServiceIntegrationTest {
 		LocalDateTime from = LocalDateTime.of(SOURCE_TRADING_DATE, LocalTime.of(9, 1));
 		LocalDateTime to = LocalDateTime.of(SOURCE_TRADING_DATE, LocalTime.of(9, 3));
 
-		List<CandleResponse> candles = service.getCandles(instrument.getId(), "1m", from, to);
+		List<CandleResponse> candles = service.getCandles(instrument.getId(), "1m", from, to, null).content();
 
 		assertThat(candles).extracting(CandleResponse::sourceTime)
 			.containsExactly(
@@ -273,7 +273,7 @@ class CandleQueryServiceIntegrationTest {
 		// 15:30(마감 후) — td4(재생거래일)의 09:00·09:01 분봉까지 전부 공개된 상태.
 		CandleQueryService service = candleQueryServiceAt(clockAt(aggServiceDate, LocalTime.of(15, 30)));
 
-		List<CandleResponse> daily = service.getCandles(instrument.getId(), "1d", null, null);
+		List<CandleResponse> daily = service.getCandles(instrument.getId(), "1d", null, null, null).content();
 		assertThat(daily).extracting(CandleResponse::sourceTime)
 			.containsExactly(
 				LocalDateTime.of(td1, LocalTime.MIDNIGHT),
@@ -291,7 +291,7 @@ class CandleQueryServiceIntegrationTest {
 		assertThat(daily.get(3).close()).isEqualByComparingTo("40300");
 		assertThat(daily.get(3).volume()).isEqualByComparingTo("850");
 
-		List<CandleResponse> weekly = service.getCandles(instrument.getId(), "1w", null, null);
+		List<CandleResponse> weekly = service.getCandles(instrument.getId(), "1w", null, null, null).content();
 		assertThat(weekly).extracting(CandleResponse::sourceTime)
 			.containsExactly(
 				LocalDateTime.of(LocalDate.of(2026, 3, 2), LocalTime.MIDNIGHT), // td1·td2가 속한 주(월요일)
@@ -303,7 +303,7 @@ class CandleQueryServiceIntegrationTest {
 		assertThat(weekly.get(0).close()).isEqualByComparingTo("20100"); // td2(가장 늦은 분봉)의 close
 		assertThat(weekly.get(0).volume()).isEqualByComparingTo("450"); // 100+150+200
 
-		List<CandleResponse> monthly = service.getCandles(instrument.getId(), "1M", null, null);
+		List<CandleResponse> monthly = service.getCandles(instrument.getId(), "1M", null, null, null).content();
 		assertThat(monthly).extracting(CandleResponse::sourceTime)
 			.containsExactly(
 				LocalDateTime.of(LocalDate.of(2026, 3, 1), LocalTime.MIDNIGHT), // td1·td2·td3 묶음(3월)
@@ -319,7 +319,7 @@ class CandleQueryServiceIntegrationTest {
 
 		// 회귀 — 같은 테스트에서 interval=1m 응답이 기존 계약(재생거래일 td4의 분봉을 컷오프까지 그대로 노출) 그대로인지 확인한다.
 		// 집계 경로(getRevealedAggregatedCandles)가 아니라 1m 전용 경로(getRevealedCandles)를 그대로 타는지가 핵심이다.
-		List<CandleResponse> minute = service.getCandles(instrument.getId(), "1m", null, null);
+		List<CandleResponse> minute = service.getCandles(instrument.getId(), "1m", null, null, null).content();
 		assertThat(minute).extracting(CandleResponse::sourceTime)
 			.containsExactly(
 				LocalDateTime.of(td4, LocalTime.of(9, 0)),
@@ -356,7 +356,7 @@ class CandleQueryServiceIntegrationTest {
 			StockReplaySession.ready(aggServiceDate, sourceTradingDate, LocalDateTime.now(), LocalDateTime.now()));
 
 		CandleQueryService service = candleQueryServiceAt(clockAt(aggServiceDate, LocalTime.of(15, 30)));
-		List<CandleResponse> daily = service.getCandles(instrument.getId(), "1d", null, null);
+		List<CandleResponse> daily = service.getCandles(instrument.getId(), "1d", null, null, null).content();
 
 		assertThat(daily).hasSize(200);
 		// 210일 중 가장 오래된 10일(인덱스 0~9)은 200개 캡에 밀려 빠지고, 인덱스 10부터가 응답의 첫 봉이어야 한다.
@@ -396,7 +396,7 @@ class CandleQueryServiceIntegrationTest {
 
 		CandleQueryService service = candleQueryServiceAt(clockAt(aggServiceDate, LocalTime.of(15, 30)));
 		List<CandleResponse> weekly = service.getCandles(
-			instrument.getId(), "1w", explicitFrom.atStartOfDay(), null);
+			instrument.getId(), "1w", explicitFrom.atStartOfDay(), null, null).content();
 
 		assertThat(weekly).hasSize(200);
 		// 205주 중 가장 오래된 5주(인덱스 0~4)는 200개 캡에 밀려 빠지고, 인덱스 5(그 주 월요일)가 응답의 첫 봉이다.
@@ -444,23 +444,23 @@ class CandleQueryServiceIntegrationTest {
 		CandleQueryService service = candleQueryServiceAt(
 			clockAt(LocalDate.of(2026, 5, 20), LocalTime.of(12, 0)), cryptoCandleProvider);
 
-		List<CandleResponse> daily = service.getCandles(coinInstrument.getId(), "1d", null, null);
+		List<CandleResponse> daily = service.getCandles(coinInstrument.getId(), "1d", null, null, null).content();
 		assertThat(daily).hasSize(1);
 		assertThat(daily.get(0).sourceTime()).isEqualTo(dailySourceTime);
 		assertThat(daily.get(0).close()).isEqualByComparingTo("50800");
 
-		List<CandleResponse> weekly = service.getCandles(coinInstrument.getId(), "1w", null, null);
+		List<CandleResponse> weekly = service.getCandles(coinInstrument.getId(), "1w", null, null, null).content();
 		assertThat(weekly).hasSize(1);
 		assertThat(weekly.get(0).sourceTime()).isEqualTo(weeklySourceTime);
 		assertThat(weekly.get(0).close()).isEqualByComparingTo("52000");
 
-		List<CandleResponse> monthly = service.getCandles(coinInstrument.getId(), "1M", null, null);
+		List<CandleResponse> monthly = service.getCandles(coinInstrument.getId(), "1M", null, null, null).content();
 		assertThat(monthly).hasSize(1);
 		assertThat(monthly.get(0).sourceTime()).isEqualTo(monthlySourceTime);
 		assertThat(monthly.get(0).close()).isEqualByComparingTo("53500");
 
 		// 1d 시드만 있는 상태에서 1m을 요청하면(다른 interval 시드) 빈 배열이어야 한다 — interval별 맵이 서로 새지 않는다.
-		List<CandleResponse> minute = service.getCandles(coinInstrument.getId(), "1m", null, null);
+		List<CandleResponse> minute = service.getCandles(coinInstrument.getId(), "1m", null, null, null).content();
 		assertThat(minute).isEmpty();
 	}
 }

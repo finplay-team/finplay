@@ -11,7 +11,7 @@ import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
-import com.finplay.api.market.dto.response.CandleResponse;
+import com.finplay.api.market.dto.response.CandleListResponse;
 import com.finplay.api.market.repository.InstrumentRepository;
 import com.finplay.api.market.store.CryptoPriceDto;
 import com.finplay.api.market.store.FeedConnectionStatus;
@@ -55,8 +55,8 @@ class CryptoCandleAndPriceIndependenceTest {
 				.isEqualTo(ErrorCode.PRICE_UNAVAILABLE));
 
 		// 그럼에도 캔들 조회 경로는 완전히 독립적이므로 정상 성공해야 한다.
-		List<CandleResponse> candles = candleQueryService.getCandles(BTC_INSTRUMENT_ID, "1m", null, null);
-		assertThat(candles).hasSize(1);
+		CandleListResponse response = candleQueryService.getCandles(BTC_INSTRUMENT_ID, "1m", null, null, null);
+		assertThat(response.content()).hasSize(1);
 	}
 
 	@Test
@@ -83,7 +83,7 @@ class CryptoCandleAndPriceIndependenceTest {
 			cryptoCandleProvider);
 
 		// 캔들 조회 경로는 빗썸 장애로 502가 돼야 한다.
-		assertThatThrownBy(() -> candleQueryService.getCandles(BTC_INSTRUMENT_ID, "1m", null, null))
+		assertThatThrownBy(() -> candleQueryService.getCandles(BTC_INSTRUMENT_ID, "1m", null, null, null))
 			.isInstanceOf(BusinessException.class)
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
 				.isEqualTo(ErrorCode.MARKET_DATA_PROVIDER_ERROR));

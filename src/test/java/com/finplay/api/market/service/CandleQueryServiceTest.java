@@ -1,9 +1,10 @@
-// 캔들 API 요청 검증 순서(interval → instrumentId 존재 → from/to → 시장별 provider 위임)를 검증하는 단위 테스트
+// 캔들 API 요청 검증 순서(interval → instrumentId 존재 → 시장 판정 → 커서/from/to)와 커서 페이지네이션(048)을 검증하는 단위 테스트
 package com.finplay.api.market.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -14,6 +15,7 @@ import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.dto.response.CandleListResponse;
 import com.finplay.api.market.dto.response.CandleResponse;
 import com.finplay.api.market.repository.InstrumentRepository;
 import java.math.BigDecimal;
@@ -22,7 +24,9 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 class CandleQueryServiceTest {
 
@@ -44,9 +48,25 @@ class CandleQueryServiceTest {
 		return Instrument.create(Market.CRYPTO, "BTC", "비트코인", BigDecimal.ONE, 5000L, true, LocalDateTime.now());
 	}
 
+	private static List<CryptoCandleDto> ascendingCryptoCandles(int count, LocalDateTime oldest) {
+		return IntStream.range(0, count)
+			.mapToObj(i -> new CryptoCandleDto(
+				oldest.plusMinutes(i), BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE,
+				BigDecimal.ONE))
+			.toList();
+	}
+
+	private static List<StockCandleDto> ascendingStockCandles(int count, LocalDate tradingDate, LocalTime oldest) {
+		return IntStream.range(0, count)
+			.mapToObj(i -> new StockCandleDto(
+				tradingDate, oldest.plusMinutes(i), BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE,
+				1L))
+			.toList();
+	}
+
 	@Test
 	void getCandlesRejectsUnsupportedIntervalBeforeTouchingRepositoryOrProvider() {
-		assertThatThrownBy(() -> service.getCandles(STOCK_INSTRUMENT_ID, "5m", null, null))
+		assertThatThrownBy(() -> service.getCandles(STOCK_INSTRUMENT_ID, "5m", null, null, null))
 			.isInstanceOf(BusinessException.class)
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
 				.isEqualTo(ErrorCode.VALIDATION_ERROR));
@@ -60,7 +80,7 @@ class CandleQueryServiceTest {
 	void getCandlesThrowsNotFoundWhenInstrumentDoesNotExist() {
 		when(instrumentRepository.findById(999L)).thenReturn(Optional.empty());
 
-		assertThatThrownBy(() -> service.getCandles(999L, "1m", null, null))
+		assertThatThrownBy(() -> service.getCandles(999L, "1m", null, null, null))
 			.isInstanceOf(BusinessException.class)
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
 				.isEqualTo(ErrorCode.NOT_FOUND));
@@ -78,7 +98,7 @@ class CandleQueryServiceTest {
 		LocalDateTime to = LocalDateTime.of(2026, 7, 27, 9, 0);
 		when(instrumentRepository.findById(STOCK_INSTRUMENT_ID)).thenReturn(Optional.of(stockInstrument()));
 
-		assertThatThrownBy(() -> service.getCandles(STOCK_INSTRUMENT_ID, "1m", from, to))
+		assertThatThrownBy(() -> service.getCandles(STOCK_INSTRUMENT_ID, "1m", from, to, null))
 			.isInstanceOf(BusinessException.class)
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
 				.isEqualTo(ErrorCode.VALIDATION_ERROR));
@@ -96,7 +116,7 @@ class CandleQueryServiceTest {
 		LocalDateTime to = LocalDateTime.of(2026, 7, 23, 9, 0);
 		when(instrumentRepository.findById(STOCK_INSTRUMENT_ID)).thenReturn(Optional.of(stockInstrument()));
 
-		assertThatThrownBy(() -> service.getCandles(STOCK_INSTRUMENT_ID, "1m", from, to))
+		assertThatThrownBy(() -> service.getCandles(STOCK_INSTRUMENT_ID, "1m", from, to, null))
 			.isInstanceOf(BusinessException.class)
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
 				.isEqualTo(ErrorCode.VALIDATION_ERROR));
@@ -114,9 +134,9 @@ class CandleQueryServiceTest {
 		when(stockPriceProvider.getCandles(STOCK_INSTRUMENT_ID, CandleInterval.ONE_MINUTE, from, to))
 			.thenReturn(List.of());
 
-		List<CandleResponse> result = service.getCandles(STOCK_INSTRUMENT_ID, "1m", from, to);
+		CandleListResponse response = service.getCandles(STOCK_INSTRUMENT_ID, "1m", from, to, null);
 
-		assertThat(result).isEmpty();
+		assertThat(response.content()).isEmpty();
 	}
 
 	@Test
@@ -126,9 +146,9 @@ class CandleQueryServiceTest {
 		when(stockPriceProvider.getCandles(STOCK_INSTRUMENT_ID, CandleInterval.ONE_MINUTE, sameInstant, sameInstant))
 			.thenReturn(List.of());
 
-		List<CandleResponse> result = service.getCandles(STOCK_INSTRUMENT_ID, "1m", sameInstant, sameInstant);
+		CandleListResponse response = service.getCandles(STOCK_INSTRUMENT_ID, "1m", sameInstant, sameInstant, null);
 
-		assertThat(result).isEmpty();
+		assertThat(response.content()).isEmpty();
 	}
 
 	@Test
@@ -141,17 +161,17 @@ class CandleQueryServiceTest {
 		when(stockPriceProvider.getCandles(STOCK_INSTRUMENT_ID, CandleInterval.ONE_MINUTE, null, null))
 			.thenReturn(List.of(candleDto));
 
-		List<CandleResponse> result = service.getCandles(STOCK_INSTRUMENT_ID, "1m", null, null);
+		CandleListResponse response = service.getCandles(STOCK_INSTRUMENT_ID, "1m", null, null, null);
 
-		assertThat(result).hasSize(1);
-		CandleResponse response = result.get(0);
-		assertThat(response.sourceTime()).isEqualTo(LocalDateTime.of(tradingDate, LocalTime.of(9, 0)));
-		assertThat(response.open()).isEqualByComparingTo("70000");
-		assertThat(response.high()).isEqualByComparingTo("70500");
-		assertThat(response.low()).isEqualByComparingTo("69900");
-		assertThat(response.close()).isEqualByComparingTo("70200");
+		assertThat(response.content()).hasSize(1);
+		CandleResponse candle = response.content().get(0);
+		assertThat(candle.sourceTime()).isEqualTo(LocalDateTime.of(tradingDate, LocalTime.of(9, 0)));
+		assertThat(candle.open()).isEqualByComparingTo("70000");
+		assertThat(candle.high()).isEqualByComparingTo("70500");
+		assertThat(candle.low()).isEqualByComparingTo("69900");
+		assertThat(candle.close()).isEqualByComparingTo("70200");
 		// 회귀 확인(MKT-008): volume이 long→BigDecimal로 넓어진 뒤에도 주식 정수 거래량 값은 그대로다.
-		assertThat(response.volume()).isEqualByComparingTo(BigDecimal.valueOf(12345L));
+		assertThat(candle.volume()).isEqualByComparingTo(BigDecimal.valueOf(12345L));
 	}
 
 	@Test
@@ -162,7 +182,7 @@ class CandleQueryServiceTest {
 		when(stockPriceProvider.getCandles(STOCK_INSTRUMENT_ID, CandleInterval.ONE_MINUTE, from, to))
 			.thenReturn(List.of());
 
-		service.getCandles(STOCK_INSTRUMENT_ID, "1m", from, to);
+		service.getCandles(STOCK_INSTRUMENT_ID, "1m", from, to, null);
 
 		verify(stockPriceProvider).getCandles(STOCK_INSTRUMENT_ID, CandleInterval.ONE_MINUTE, from, to);
 	}
@@ -177,7 +197,7 @@ class CandleQueryServiceTest {
 		LocalDateTime to = LocalDateTime.of(2026, 7, 27, 10, 0);
 		when(instrumentRepository.findById(STOCK_INSTRUMENT_ID)).thenReturn(Optional.of(stockInstrument()));
 
-		assertThatThrownBy(() -> service.getCandles(STOCK_INSTRUMENT_ID, "1d", from, to))
+		assertThatThrownBy(() -> service.getCandles(STOCK_INSTRUMENT_ID, "1d", from, to, null))
 			.isInstanceOf(BusinessException.class)
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
 				.isEqualTo(ErrorCode.VALIDATION_ERROR));
@@ -195,9 +215,9 @@ class CandleQueryServiceTest {
 		when(stockPriceProvider.getCandles(STOCK_INSTRUMENT_ID, CandleInterval.ONE_DAY, from, to))
 			.thenReturn(List.of());
 
-		List<CandleResponse> result = service.getCandles(STOCK_INSTRUMENT_ID, "1d", from, to);
+		CandleListResponse response = service.getCandles(STOCK_INSTRUMENT_ID, "1d", from, to, null);
 
-		assertThat(result).isEmpty();
+		assertThat(response.content()).isEmpty();
 	}
 
 	@Test
@@ -208,9 +228,9 @@ class CandleQueryServiceTest {
 		when(stockPriceProvider.getCandles(STOCK_INSTRUMENT_ID, CandleInterval.ONE_WEEK, from, to))
 			.thenReturn(List.of());
 
-		List<CandleResponse> result = service.getCandles(STOCK_INSTRUMENT_ID, "1w", from, to);
+		CandleListResponse response = service.getCandles(STOCK_INSTRUMENT_ID, "1w", from, to, null);
 
-		assertThat(result).isEmpty();
+		assertThat(response.content()).isEmpty();
 	}
 
 	@Test
@@ -221,7 +241,7 @@ class CandleQueryServiceTest {
 		when(stockPriceProvider.getCandles(STOCK_INSTRUMENT_ID, CandleInterval.ONE_DAY, from, to))
 			.thenReturn(List.of());
 
-		service.getCandles(STOCK_INSTRUMENT_ID, "1d", from, to);
+		service.getCandles(STOCK_INSTRUMENT_ID, "1d", from, to, null);
 
 		verify(stockPriceProvider).getCandles(STOCK_INSTRUMENT_ID, CandleInterval.ONE_DAY, from, to);
 	}
@@ -232,7 +252,7 @@ class CandleQueryServiceTest {
 		when(stockPriceProvider.getCandles(STOCK_INSTRUMENT_ID, CandleInterval.ONE_WEEK, null, null))
 			.thenReturn(List.of());
 
-		service.getCandles(STOCK_INSTRUMENT_ID, "1w", null, null);
+		service.getCandles(STOCK_INSTRUMENT_ID, "1w", null, null, null);
 
 		verify(stockPriceProvider).getCandles(STOCK_INSTRUMENT_ID, CandleInterval.ONE_WEEK, null, null);
 	}
@@ -243,7 +263,7 @@ class CandleQueryServiceTest {
 		when(stockPriceProvider.getCandles(STOCK_INSTRUMENT_ID, CandleInterval.ONE_MONTH, null, null))
 			.thenReturn(List.of());
 
-		service.getCandles(STOCK_INSTRUMENT_ID, "1M", null, null);
+		service.getCandles(STOCK_INSTRUMENT_ID, "1M", null, null, null);
 
 		verify(stockPriceProvider).getCandles(STOCK_INSTRUMENT_ID, CandleInterval.ONE_MONTH, null, null);
 	}
@@ -251,7 +271,7 @@ class CandleQueryServiceTest {
 	@Test
 	void getCandlesRejectsUppercaseDIntervalVariantBeforeTouchingRepositoryOrProvider() {
 		// "1D"는 spec상 "1d"의 대소문자 변형으로 여전히 거부되어야 한다(대소문자 미정규화).
-		assertThatThrownBy(() -> service.getCandles(STOCK_INSTRUMENT_ID, "1D", null, null))
+		assertThatThrownBy(() -> service.getCandles(STOCK_INSTRUMENT_ID, "1D", null, null, null))
 			.isInstanceOf(BusinessException.class)
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
 				.isEqualTo(ErrorCode.VALIDATION_ERROR));
@@ -263,7 +283,7 @@ class CandleQueryServiceTest {
 
 	@Test
 	void getCandlesRejectsBlankIntervalBeforeTouchingRepositoryOrProvider() {
-		assertThatThrownBy(() -> service.getCandles(STOCK_INSTRUMENT_ID, "", null, null))
+		assertThatThrownBy(() -> service.getCandles(STOCK_INSTRUMENT_ID, "", null, null, null))
 			.isInstanceOf(BusinessException.class)
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
 				.isEqualTo(ErrorCode.VALIDATION_ERROR));
@@ -285,17 +305,17 @@ class CandleQueryServiceTest {
 		when(cryptoCandleProvider.getCandles("BTC", CandleInterval.ONE_MINUTE, null, null))
 			.thenReturn(List.of(candleDto));
 
-		List<CandleResponse> result = service.getCandles(CRYPTO_INSTRUMENT_ID, "1m", null, null);
+		CandleListResponse response = service.getCandles(CRYPTO_INSTRUMENT_ID, "1m", null, null, null);
 
-		assertThat(result).hasSize(1);
-		CandleResponse response = result.get(0);
-		assertThat(response.sourceTime()).isEqualTo(sourceTime);
-		assertThat(response.open()).isEqualByComparingTo("95000000");
-		assertThat(response.high()).isEqualByComparingTo("95100000");
-		assertThat(response.low()).isEqualByComparingTo("94900000");
-		assertThat(response.close()).isEqualByComparingTo("95050000");
+		assertThat(response.content()).hasSize(1);
+		CandleResponse candle = response.content().get(0);
+		assertThat(candle.sourceTime()).isEqualTo(sourceTime);
+		assertThat(candle.open()).isEqualByComparingTo("95000000");
+		assertThat(candle.high()).isEqualByComparingTo("95100000");
+		assertThat(candle.low()).isEqualByComparingTo("94900000");
+		assertThat(candle.close()).isEqualByComparingTo("95050000");
 		// 코인 volume은 소수 수량이므로 잘리지 않고 그대로 전달돼야 한다.
-		assertThat(response.volume()).isEqualByComparingTo("0.26725783");
+		assertThat(candle.volume()).isEqualByComparingTo("0.26725783");
 		verify(cryptoCandleProvider).getCandles("BTC", CandleInterval.ONE_MINUTE, null, null);
 		verifyNoInteractions(stockPriceProvider);
 	}
@@ -307,7 +327,7 @@ class CandleQueryServiceTest {
 		LocalDateTime to = LocalDateTime.of(2026, 7, 30, 11, 43);
 		when(cryptoCandleProvider.getCandles("BTC", CandleInterval.ONE_MINUTE, from, to)).thenReturn(List.of());
 
-		service.getCandles(CRYPTO_INSTRUMENT_ID, "1m", from, to);
+		service.getCandles(CRYPTO_INSTRUMENT_ID, "1m", from, to, null);
 
 		verify(cryptoCandleProvider).getCandles("BTC", CandleInterval.ONE_MINUTE, from, to);
 	}
@@ -318,7 +338,7 @@ class CandleQueryServiceTest {
 		LocalDateTime to = LocalDateTime.of(2026, 7, 30, 9, 0);
 		when(instrumentRepository.findById(CRYPTO_INSTRUMENT_ID)).thenReturn(Optional.of(cryptoInstrument()));
 
-		assertThatThrownBy(() -> service.getCandles(CRYPTO_INSTRUMENT_ID, "1m", from, to))
+		assertThatThrownBy(() -> service.getCandles(CRYPTO_INSTRUMENT_ID, "1m", from, to, null))
 			.isInstanceOf(BusinessException.class)
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
 				.isEqualTo(ErrorCode.VALIDATION_ERROR));
@@ -336,9 +356,9 @@ class CandleQueryServiceTest {
 		when(instrumentRepository.findById(CRYPTO_INSTRUMENT_ID)).thenReturn(Optional.of(cryptoInstrument()));
 		when(cryptoCandleProvider.getCandles("BTC", CandleInterval.ONE_MINUTE, from, to)).thenReturn(List.of());
 
-		List<CandleResponse> result = service.getCandles(CRYPTO_INSTRUMENT_ID, "1m", from, to);
+		CandleListResponse response = service.getCandles(CRYPTO_INSTRUMENT_ID, "1m", from, to, null);
 
-		assertThat(result).isEmpty();
+		assertThat(response.content()).isEmpty();
 		verify(cryptoCandleProvider).getCandles("BTC", CandleInterval.ONE_MINUTE, from, to);
 	}
 
@@ -350,7 +370,7 @@ class CandleQueryServiceTest {
 		LocalDateTime to = LocalDateTime.of(2026, 7, 30, 20, 0);
 		when(instrumentRepository.findById(CRYPTO_INSTRUMENT_ID)).thenReturn(Optional.of(cryptoInstrument()));
 
-		assertThatThrownBy(() -> service.getCandles(CRYPTO_INSTRUMENT_ID, "1m", from, to))
+		assertThatThrownBy(() -> service.getCandles(CRYPTO_INSTRUMENT_ID, "1m", from, to, null))
 			.isInstanceOf(BusinessException.class)
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
 				.isEqualTo(ErrorCode.VALIDATION_ERROR));
@@ -365,9 +385,9 @@ class CandleQueryServiceTest {
 		when(cryptoCandleProvider.getCandles("BTC", CandleInterval.ONE_MINUTE, sameInstant, sameInstant))
 			.thenReturn(List.of());
 
-		List<CandleResponse> result = service.getCandles(CRYPTO_INSTRUMENT_ID, "1m", sameInstant, sameInstant);
+		CandleListResponse response = service.getCandles(CRYPTO_INSTRUMENT_ID, "1m", sameInstant, sameInstant, null);
 
-		assertThat(result).isEmpty();
+		assertThat(response.content()).isEmpty();
 	}
 
 	// --- 코인 캔들 경로와 현재가(PriceStore/PriceQueryService) 경로의 독립성 ---
@@ -379,7 +399,7 @@ class CandleQueryServiceTest {
 		when(instrumentRepository.findById(CRYPTO_INSTRUMENT_ID)).thenReturn(Optional.of(cryptoInstrument()));
 		when(cryptoCandleProvider.getCandles(any(), any(), any(), any())).thenReturn(List.of());
 
-		service.getCandles(CRYPTO_INSTRUMENT_ID, "1m", null, null);
+		service.getCandles(CRYPTO_INSTRUMENT_ID, "1m", null, null, null);
 
 		verifyNoInteractions(stockPriceProvider);
 	}
@@ -391,7 +411,7 @@ class CandleQueryServiceTest {
 		when(cryptoCandleProvider.getCandles(any(), any(), any(), any()))
 			.thenThrow(new BusinessException(ErrorCode.MARKET_DATA_PROVIDER_ERROR));
 
-		assertThatThrownBy(() -> service.getCandles(CRYPTO_INSTRUMENT_ID, "1m", null, null))
+		assertThatThrownBy(() -> service.getCandles(CRYPTO_INSTRUMENT_ID, "1m", null, null, null))
 			.isInstanceOf(BusinessException.class)
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
 				.isEqualTo(ErrorCode.MARKET_DATA_PROVIDER_ERROR));
@@ -400,9 +420,9 @@ class CandleQueryServiceTest {
 		when(stockPriceProvider.getCandles(STOCK_INSTRUMENT_ID, CandleInterval.ONE_MINUTE, null, null))
 			.thenReturn(List.of());
 
-		List<CandleResponse> stockResult = service.getCandles(STOCK_INSTRUMENT_ID, "1m", null, null);
+		CandleListResponse stockResponse = service.getCandles(STOCK_INSTRUMENT_ID, "1m", null, null, null);
 
-		assertThat(stockResult).isEmpty();
+		assertThat(stockResponse.content()).isEmpty();
 	}
 
 	@Test
@@ -412,7 +432,212 @@ class CandleQueryServiceTest {
 		when(instrumentRepository.findById(CRYPTO_INSTRUMENT_ID)).thenReturn(Optional.of(cryptoInstrument()));
 		when(cryptoCandleProvider.getCandles(any(), any(), any(), any())).thenReturn(List.of());
 
-		assertThat(service.getCandles(CRYPTO_INSTRUMENT_ID, "1m", null, null)).isNotNull();
+		assertThat(service.getCandles(CRYPTO_INSTRUMENT_ID, "1m", null, null, null)).isNotNull();
 		verify(stockPriceProvider, never()).getCandles(any(), any(), any(), any());
+	}
+
+	// =====================================================================================
+	// 커서 페이지네이션(048, CANDLE-PAGE-001~012·025·026) — plan §7·§12-1
+	// =====================================================================================
+
+	@Test
+	void getCandlesRejectsInvalidCursorFormatWithValidationError() {
+		when(instrumentRepository.findById(STOCK_INSTRUMENT_ID)).thenReturn(Optional.of(stockInstrument()));
+
+		assertThatThrownBy(
+			() -> service.getCandles(STOCK_INSTRUMENT_ID, "1m", null, null, "not-a-valid-cursor"))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
+				.isEqualTo(ErrorCode.VALIDATION_ERROR));
+
+		verifyNoInteractions(stockPriceProvider);
+		verifyNoInteractions(cryptoCandleProvider);
+	}
+
+	@Test
+	void getCandlesRejectsUnsupportedIntervalBeforeCursorValidationEvenWithInvalidCursor() {
+		// 검증 순서(CANDLE-PAGE-010): interval(400)이 커서보다 먼저 판정되므로 잘못된 커서와 무관하게 여전히 400이다.
+		assertThatThrownBy(
+			() -> service.getCandles(STOCK_INSTRUMENT_ID, "5m", null, null, "also-not-a-cursor"))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
+				.isEqualTo(ErrorCode.VALIDATION_ERROR));
+
+		verifyNoInteractions(instrumentRepository);
+	}
+
+	@Test
+	void getCandlesThrowsNotFoundForMissingInstrumentEvenWithInvalidCursorFormat() {
+		// 검증 순서(CANDLE-PAGE-010): instrumentId 존재(404)가 커서 형식 검증(400)보다 먼저다.
+		when(instrumentRepository.findById(999L)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(
+			() -> service.getCandles(999L, "1m", null, null, "not-a-valid-cursor"))
+			.isInstanceOf(BusinessException.class)
+			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
+				.isEqualTo(ErrorCode.NOT_FOUND));
+
+		verifyNoInteractions(stockPriceProvider);
+		verifyNoInteractions(cryptoCandleProvider);
+	}
+
+	@Test
+	void getCandlesOverridesCryptoToWithCursorMinusOneMinuteIgnoringOriginalTo() {
+		// cursorApplies 판정: 코인은 커서가 있으면 항상 적용된다. cursor+to가 함께 오면 to는 무시되고
+		// cursor-1분이 상한이 된다(CANDLE-PAGE-012).
+		when(instrumentRepository.findById(CRYPTO_INSTRUMENT_ID)).thenReturn(Optional.of(cryptoInstrument()));
+		LocalDateTime from = LocalDateTime.of(2026, 7, 20, 0, 0);
+		LocalDateTime ignoredTo = LocalDateTime.of(2026, 7, 25, 0, 0);
+		LocalDateTime cursor = LocalDateTime.of(2026, 7, 30, 9, 0);
+		LocalDateTime expectedTo = cursor.minusMinutes(1);
+		when(cryptoCandleProvider.getCandles(eq("BTC"), eq(CandleInterval.ONE_MINUTE), eq(from), any()))
+			.thenReturn(List.of());
+
+		service.getCandles(CRYPTO_INSTRUMENT_ID, "1m", from, ignoredTo, cursor.toString());
+
+		ArgumentCaptor<LocalDateTime> toCaptor = ArgumentCaptor.forClass(LocalDateTime.class);
+		verify(cryptoCandleProvider).getCandles(eq("BTC"), eq(CandleInterval.ONE_MINUTE), eq(from), toCaptor.capture());
+		assertThat(toCaptor.getValue()).isEqualTo(expectedTo);
+	}
+
+	@Test
+	void getCandlesOverridesStockAggregatedToWithCursorMinusOneMinute() {
+		// cursorApplies 판정: 집계봉(1d·1w·1M)도 커서가 있으면 항상 적용된다(주식·코인 공통, CANDLE-PAGE-024).
+		when(instrumentRepository.findById(STOCK_INSTRUMENT_ID)).thenReturn(Optional.of(stockInstrument()));
+		LocalDateTime cursor = LocalDateTime.of(2026, 7, 28, 0, 0);
+		LocalDateTime expectedTo = cursor.minusMinutes(1);
+		when(stockPriceProvider.getCandles(eq(STOCK_INSTRUMENT_ID), eq(CandleInterval.ONE_DAY), eq(null), any()))
+			.thenReturn(List.of());
+
+		service.getCandles(STOCK_INSTRUMENT_ID, "1d", null, null, cursor.toString());
+
+		ArgumentCaptor<LocalDateTime> toCaptor = ArgumentCaptor.forClass(LocalDateTime.class);
+		verify(stockPriceProvider)
+			.getCandles(eq(STOCK_INSTRUMENT_ID), eq(CandleInterval.ONE_DAY), eq(null), toCaptor.capture());
+		assertThat(toCaptor.getValue()).isEqualTo(expectedTo);
+	}
+
+	@Test
+	void getCandlesDoesNotApplyCursorForStockOneMinuteAndPassesOriginalToUnchanged() {
+		// cursorApplies 판정: 주식 1m은 제외된다(CANDLE-PAGE-025·026, plan §10). 커서가 형식은 유효해도
+		// to는 원래 값(여기서는 null) 그대로 provider에 전달돼야 한다 — 봉 조회 자체가 한 글자도 바뀌지 않는다.
+		when(instrumentRepository.findById(STOCK_INSTRUMENT_ID)).thenReturn(Optional.of(stockInstrument()));
+		when(stockPriceProvider.getCandles(STOCK_INSTRUMENT_ID, CandleInterval.ONE_MINUTE, null, null))
+			.thenReturn(List.of());
+
+		service.getCandles(
+			STOCK_INSTRUMENT_ID, "1m", null, null, LocalDateTime.of(2026, 7, 27, 9, 0).toString());
+
+		verify(stockPriceProvider).getCandles(STOCK_INSTRUMENT_ID, CandleInterval.ONE_MINUTE, null, null);
+	}
+
+	@Test
+	void getCandlesSetsHasNextTrueAndNextCursorToOldestCandleWhenContentIsFullPage() {
+		// hasNext/nextCursor 규칙: content.size()==200 → hasNext=true, nextCursor=content.get(0).sourceTime() 인코딩.
+		when(instrumentRepository.findById(CRYPTO_INSTRUMENT_ID)).thenReturn(Optional.of(cryptoInstrument()));
+		LocalDateTime oldest = LocalDateTime.of(2026, 7, 1, 0, 0);
+		List<CryptoCandleDto> fullPage = ascendingCryptoCandles(200, oldest);
+		when(cryptoCandleProvider.getCandles(eq("BTC"), eq(CandleInterval.ONE_MINUTE), any(), any()))
+			.thenReturn(fullPage);
+
+		CandleListResponse response = service.getCandles(CRYPTO_INSTRUMENT_ID, "1m", null, null, null);
+
+		assertThat(response.content()).hasSize(200);
+		assertThat(response.hasNext()).isTrue();
+		assertThat(response.nextCursor()).isEqualTo(CandleCursor.encode(oldest));
+	}
+
+	@Test
+	void getCandlesSetsHasNextFalseAndNextCursorNullWhenContentIsUnderFullPage() {
+		// hasNext/nextCursor 규칙: 200개 미만이면 hasNext=false·nextCursor=null.
+		when(instrumentRepository.findById(CRYPTO_INSTRUMENT_ID)).thenReturn(Optional.of(cryptoInstrument()));
+		LocalDateTime oldest = LocalDateTime.of(2026, 7, 1, 0, 0);
+		List<CryptoCandleDto> partialPage = ascendingCryptoCandles(5, oldest);
+		when(cryptoCandleProvider.getCandles(eq("BTC"), eq(CandleInterval.ONE_MINUTE), any(), any()))
+			.thenReturn(partialPage);
+
+		CandleListResponse response = service.getCandles(CRYPTO_INSTRUMENT_ID, "1m", null, null, null);
+
+		assertThat(response.content()).hasSize(5);
+		assertThat(response.hasNext()).isFalse();
+		assertThat(response.nextCursor()).isNull();
+	}
+
+	@Test
+	void getCandlesForcesHasNextFalseAndNextCursorNullForStockOneMinuteEvenWithFullPage() {
+		// CANDLE-PAGE-026: 주식 1m은 200개가 꽉 차도 hasNext=false·nextCursor=null이 강제된다(유일한 예외).
+		when(instrumentRepository.findById(STOCK_INSTRUMENT_ID)).thenReturn(Optional.of(stockInstrument()));
+		LocalDate tradingDate = LocalDate.of(2026, 7, 27);
+		List<StockCandleDto> fullPage = ascendingStockCandles(200, tradingDate, LocalTime.of(9, 0));
+		when(stockPriceProvider.getCandles(eq(STOCK_INSTRUMENT_ID), eq(CandleInterval.ONE_MINUTE), any(), any()))
+			.thenReturn(fullPage);
+
+		CandleListResponse response = service.getCandles(STOCK_INSTRUMENT_ID, "1m", null, null, null);
+
+		assertThat(response.content()).hasSize(200);
+		assertThat(response.hasNext()).isFalse();
+		assertThat(response.nextCursor()).isNull();
+	}
+
+	@Test
+	void getCandlesReturns200WithHasNextFalseForStockOneMinuteWhenCursorIsGiven() {
+		// tasks.md 명시 케이스: 주식 1m + 커서 → 200, hasNext=false (WebMvc 계약과 동일한 서비스 레벨 확인).
+		when(instrumentRepository.findById(STOCK_INSTRUMENT_ID)).thenReturn(Optional.of(stockInstrument()));
+		when(stockPriceProvider.getCandles(STOCK_INSTRUMENT_ID, CandleInterval.ONE_MINUTE, null, null))
+			.thenReturn(List.of());
+
+		CandleListResponse response = service.getCandles(
+			STOCK_INSTRUMENT_ID, "1m", null, null, LocalDateTime.of(2026, 7, 27, 9, 0).toString());
+
+		assertThat(response.hasNext()).isFalse();
+		assertThat(response.nextCursor()).isNull();
+	}
+
+	@Test
+	void getCandlesReturnsEmptyEnvelopeWithoutCallingCryptoProviderWhenFromIsAfterNormalizedCursorUpperBound() {
+		// D-1(plan §5): cursorApplies && from이 정규화된 상한(cursor-1분)보다 뒤면 provider를 부르지 않고
+		// 빈 봉투를 즉시 반환한다(400이 아니라 정상 200).
+		when(instrumentRepository.findById(CRYPTO_INSTRUMENT_ID)).thenReturn(Optional.of(cryptoInstrument()));
+		LocalDateTime cursor = LocalDateTime.of(2026, 7, 30, 9, 0);
+		// effectiveTo = cursor - 1분 = 08:59. from = 09:00 > 08:59 → 하한 역전.
+		LocalDateTime from = LocalDateTime.of(2026, 7, 30, 9, 0);
+
+		CandleListResponse response = service.getCandles(CRYPTO_INSTRUMENT_ID, "1m", from, null, cursor.toString());
+
+		assertThat(response.content()).isEmpty();
+		assertThat(response.hasNext()).isFalse();
+		assertThat(response.nextCursor()).isNull();
+		verify(cryptoCandleProvider, never()).getCandles(any(), any(), any(), any());
+	}
+
+	@Test
+	void getCandlesReturnsEmptyEnvelopeWithoutCallingStockProviderWhenFromIsAfterNormalizedCursorUpperBoundForAggregated() {
+		// D-1이 주식 집계 경로(날짜 성분 비교)에서도 동일하게 동작하는지 확인한다.
+		when(instrumentRepository.findById(STOCK_INSTRUMENT_ID)).thenReturn(Optional.of(stockInstrument()));
+		LocalDateTime cursor = LocalDateTime.of(2026, 7, 28, 0, 0);
+		// effectiveTo = cursor - 1분 = 2026-07-27T23:59 (날짜 2026-07-27). from 날짜(2026-07-28)가 더 늦다 → 역전.
+		LocalDateTime from = LocalDateTime.of(2026, 7, 28, 0, 0);
+
+		CandleListResponse response = service.getCandles(STOCK_INSTRUMENT_ID, "1d", from, null, cursor.toString());
+
+		assertThat(response.content()).isEmpty();
+		assertThat(response.hasNext()).isFalse();
+		assertThat(response.nextCursor()).isNull();
+		verify(stockPriceProvider, never()).getCandles(any(), any(), any(), any());
+	}
+
+	@Test
+	void getCandlesDoesNotEarlyReturnWhenFromEqualsNormalizedCursorUpperBound() {
+		// from == effectiveTo(cursor-1분)는 역전이 아니다(isAfter는 초과만 판정) — provider가 정상 호출돼야 한다.
+		when(instrumentRepository.findById(CRYPTO_INSTRUMENT_ID)).thenReturn(Optional.of(cryptoInstrument()));
+		LocalDateTime cursor = LocalDateTime.of(2026, 7, 30, 9, 0);
+		LocalDateTime from = cursor.minusMinutes(1);
+		when(cryptoCandleProvider.getCandles(eq("BTC"), eq(CandleInterval.ONE_MINUTE), eq(from), eq(from)))
+			.thenReturn(List.of());
+
+		CandleListResponse response = service.getCandles(CRYPTO_INSTRUMENT_ID, "1m", from, null, cursor.toString());
+
+		assertThat(response.content()).isEmpty();
+		verify(cryptoCandleProvider).getCandles("BTC", CandleInterval.ONE_MINUTE, from, from);
 	}
 }

@@ -16,7 +16,7 @@
   대응: CANDLE-PAGE-001·005·009 / plan §6-1·6-2·12-1.
   **완료 판정**: `CandleCursorTest`가 통과하고, 두 신규 타입이 아직 어디에서도 참조되지 않은 채 기존 테스트가 전부 그대로 통과한다.
 
-- [ ] **2. `CandleQueryService` 커서 정규화·봉투 조립 + 컨트롤러 파라미터 + API 문서 동기화**
+- [x] **2. `CandleQueryService` 커서 정규화·봉투 조립 + 컨트롤러 파라미터 + API 문서 동기화**
   `CandleQueryService.getCandles`에 `cursor`(String) 파라미터를 더하고 plan §7의 ①~⑨ 순서를 그대로 구현한다 —
   `interval` 400 → 종목 404 → 시장 판정 → 커서 파싱 400 → `cursorApplies`(주식 `1m` 제외, plan §10) →
   `to := cursor.minusMinutes(1)`(원래 `to`는 값·검증 모두에서 버린다) → **D-1 하한 역전 시 provider를 부르지 않고
