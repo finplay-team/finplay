@@ -6,7 +6,6 @@
 - 관련 ADR: [ADR-0002](../../adr/0002-architecture.md)(레이어드, 도메인 간 참조는 service 레이어만), [ADR-0004](../../adr/0004-flyway-migrations.md)(신규 테이블·컬럼은 Flyway로만, 머지된 마이그레이션은 수정하지 않고 새 버전 추가)
 - 선행 구현 참고
   - `022-community-enhancement`: `CommunityPost`(`author`·`instrument`·`image` 연관, protected 생성자 + 정적 팩토리), `CommunityPostResponse.from(entity)` 패턴, COM-006의 "게시물 삭제 시 연관 데이터 함께 제거" 선례, `CommunityPostRepositoryImpl`의 QueryDSL 목록 조회·페이지네이션 구조.
-  - `044-community-badges`(PR #439, 미병합): "배웠어요" 반응(`community_post_learned_reactions`, 멱등 POST/DELETE, 회원×게시물 유니크) — 이 spec의 좋아요와 테이블·개념을 분리하되 멱등 처리 패턴은 그대로 재사용한다.
 
 ## 기존 코드 현황 (계획 시점 확인한 사실)
 
@@ -14,7 +13,7 @@
 - `CommunityPostResponse.from(CommunityPost post)`는 인자를 엔티티 하나만 받는다 — 요청자(viewer) 컨텍스트를 모른다. `likedByMe`를 추가하려면 이 팩토리에 인증 사용자 ID(또는 그 결과인 boolean)를 추가로 넘겨야 한다.
 - `CommunityPostController.getPost`·`getPosts`는 현재 `@AuthenticationPrincipal`을 전혀 받지 않는다 — 인증은 필터 단에서 걸리지만 컨트롤러가 principal을 쓰지 않았다. `likedByMe`를 위해 두 메서드 모두 `@AuthenticationPrincipal AuthenticatedUser principal`을 추가해야 한다(기존 `createPost`/`updatePost`/`deletePost`가 이미 쓰는 패턴 그대로 재사용).
 - `CommunityPostRepositoryImpl.findPostsOrderByCreatedAtDesc(Pageable, Long instrumentId)`는 이름 자체가 "생성일 내림차순"을 박아뒀다 — 인기순을 추가하면 이 이름이 더 이상 정확하지 않으므로 `findPosts(Pageable, Long instrumentId, String sort)`로 이름·시그니처를 바꾼다(호출부는 `CommunityPostService.getPosts` 한 곳뿐).
-- Flyway 최신 버전은 로컬 `dev` 기준 `V38`(`ls src/main/resources/db/migration` 확인)이다. **다만 미병합 PR #439(`044-community-badges`)가 이미 `V39__create_community_post_learned_reactions.sql`·`V40__create_member_badges.sql`을 구현해 사용 중이다** (`docs/specs/README.md`의 "진행 중인 PR이 번호를 쓰고 있을 수 있다" 규칙에 따라 `gh pr diff 439`로 직접 확인). 번호 충돌을 피하기 위해 이 spec은 **`V41`**부터 쓴다. 착수 시점에 `044`가 먼저 머지됐다면 `ls db/migration`으로 실제 최신 번호를 재확인하고, 그보다 낮으면 다음 빈 번호로 옮긴다(specs/README.md 번호 규칙).
+- 착수 시점에 `ls src/main/resources/db/migration`으로 실제 최신 번호를 확인하고 그 다음 빈 번호부터 쓴다(specs/README.md 번호 규칙). 이 spec은 **`V41`**부터 썼다.
 - `ErrorCode`에 좋아요 전용 코드는 없다 — `NOT_FOUND`(게시물 없음)·`VALIDATION_ERROR`(잘못된 정렬 값)만으로 충분하다. 신규 `ErrorCode` 추가 없음.
 
 ## API 설계
@@ -26,7 +25,7 @@
 | GET | /api/community/posts?page=&size=&instrumentId=&sort= | - | `CommunityPostListResponse`(항목에 필드 추가) | `sort=latest`(기본값, 생략 시 기존과 동일)\|`popular`. `popular`는 `likeCount desc, createdAt desc, id desc`. 그 외 값은 400 `VALIDATION_ERROR`. `instrumentId`와 함께 사용 가능 |
 | GET | /api/community/posts/{postId} | - | `CommunityPostResponse`(필드 추가) | `likeCount`·`likedByMe` 필드 추가 |
 
-**멱등성**: 좋아요 표시(POST)를 이미 표시한 상태에서 다시 호출하면 새 오류 코드를 만들지 않고 현재 상태(`CommunityPostLikeResponse`)를 그대로 200으로 반환한다 — `044`의 "배웠어요" 반응이 확정한 것과 동일한 판단 기준(새 오류 코드 비용 대비 클라이언트가 구분해야 할 실사용 요구가 없음), COM-005 tombstone 재삭제 멱등 결정과도 같은 계열이다. 신규 생성 시에는 201을 유지한다.
+**멱등성**: 좋아요 표시(POST)를 이미 표시한 상태에서 다시 호출하면 새 오류 코드를 만들지 않고 현재 상태(`CommunityPostLikeResponse`)를 그대로 200으로 반환한다 — 새 오류 코드 비용 대비 클라이언트가 구분해야 할 실사용 요구가 없다는 판단이며, COM-005 tombstone 재삭제 멱등 결정과도 같은 계열이다. 신규 생성 시에는 201을 유지한다.
 
 ## 입력 명세
 
@@ -73,7 +72,7 @@ ALTER TABLE community_posts
     ADD INDEX idx_community_posts_like_count_created (like_count, created_at, id);
 ```
 
-- `post_id`는 `ON DELETE CASCADE` — 게시물 삭제 시 좋아요도 함께 제거한다(spec.md 비즈니스 규칙, COM-006·044와 동일 원칙).
+- `post_id`는 `ON DELETE CASCADE` — 게시물 삭제 시 좋아요도 함께 제거한다(spec.md 비즈니스 규칙, COM-006과 동일 원칙).
 - `uk_community_post_likes_post_user`가 "회원당 게시물 1개당 최대 1회" 제약을 DB 레벨에서 강제한다. 취소(DELETE)는 이 행을 실제로 지운다 — tombstone처럼 원문 보존이 필요한 대상이 아니다(COM-005 대댓글과 달리 "누가 좋아요했었는지" 이력을 남길 요구가 spec에 없다).
 - `community_posts.like_count`는 **비정규화 카운터**로 둔다(매 조회마다 `COUNT(*)` 서브쿼리를 하지 않는다). 트레이드오프:
   - **COUNT 방식(채택 안 함)**: 정합성이 항상 보장되지만, 인기순 목록 조회마다 정렬·페이지네이션에 집계(`GROUP BY` 또는 상관 서브쿼리)가 필요해 `CommunityPostRepositoryImpl`의 기존 offset 페이지네이션 구조와 맞물리기 복잡해지고, 게시물이 많아질수록 목록 조회 비용이 커진다.
@@ -81,7 +80,7 @@ ALTER TABLE community_posts
   - 커뮤니티 게시물 조회는 이 프로젝트에서 가장 자주 호출되는 목록 API 중 하나이고 정렬 기준으로 즉시 쓰이므로, 조회 비용을 낮추는 비정규화 쪽이 이 spec의 목적(인기순 정렬)에 더 맞는다고 판단했다.
 - **동시성**: `like_count` 증감은 엔티티를 읽어 `+1`/`-1` 한 뒤 dirty checking으로 반영하지 않는다 — 같은 게시물에 여러 요청이 동시에 들어오면 lost update가 발생할 수 있다. 대신 `CommunityPostRepository`에 원자적 `UPDATE community_posts SET like_count = like_count + 1 WHERE id = :postId` 형태의 `@Modifying @Query` 메서드를 둔다(증가·감소 각각). 별도 락(비관적 락, `@Version` 낙관적 락)은 추가하지 않는다 — 좋아요 개수는 현금·보유수량 같은 원장 데이터가 아니라 정렬용 지표라 잠깐의 경합보다 구현 단순성을 우선했다(C-002 최소 구현). 감소 쿼리에 `WHERE like_count > 0` 같은 하한 가드는 두지 않는다 — 감소는 항상 같은 트랜잭션에서 좋아요 행 존재를 먼저 확인한 뒤에만 실행되므로 음수로 내려갈 경로가 없다.
   - **정정 (PR #442 2차 리뷰, 실측으로 반박됨)**: 위 두 판단은 틀렸다. 원자적 UPDATE만으로는 부족했다 — 같은 게시물 동시 좋아요가 유니크 인덱스와 게시물 행 락을 엇갈린 순서로 잡아 InnoDB 데드락(`CannotAcquireLockException`, SQLState 40001)으로 500이 났고(재현 4/4), 동시 취소는 두 요청이 각자 좋아요 행 존재를 확인한 뒤 감소 쿼리를 실행해 `like_count`를 -1까지 떨어뜨렸다. 따라서 `CommunityPostRepository.findByIdForUpdate`(`SELECT ... FOR UPDATE`)를 추가해 `likePost`·`unlikePost` 양쪽이 트랜잭션 첫 문장으로 게시물 행을 잡아 락 획득 순서를 통일하고, 감소 쿼리에 `like_count > 0` 하한 가드를 방어 심층화로 둔다. 데드락은 InnoDB가 트랜잭션을 이미 롤백한 뒤 던지므로 catch로 사후 수습할 수 없다.
-- CHECK 제약은 두지 않는다(코드베이스 전례 없음 — 022·044와 동일 판단).
+- CHECK 제약은 두지 않는다(코드베이스 전례 없음 — 022와 동일 판단).
 
 ### 엔티티 변경
 
@@ -134,7 +133,7 @@ public class CommunityPostLike {
 |---|---|---|
 | `CommunityPostLike` | `community.domain` | 신규 엔티티(위) |
 | `CommunityPost` | `community.domain` | `likeCount` 필드 추가(위) |
-| `CommunityPostLikeRepository` | `community.repository` | 신규. `existsByPost_IdAndUser_Id`, `Optional<CommunityPostLike> findByPost_IdAndUser_Id`, 배치 조회 `@Query("SELECT l.post.id FROM CommunityPostLike l WHERE l.user.id = :userId AND l.post.id IN :postIds") List<Long> findLikedPostIds(Long userId, List<Long> postIds)`(목록 응답의 `likedByMe` N+1 방지용, `044`의 `findAllByUserIdIn` 배치 조회와 동일 원칙) |
+| `CommunityPostLikeRepository` | `community.repository` | 신규. `existsByPost_IdAndUser_Id`, `Optional<CommunityPostLike> findByPost_IdAndUser_Id`, 배치 조회 `@Query("SELECT l.post.id FROM CommunityPostLike l WHERE l.user.id = :userId AND l.post.id IN :postIds") List<Long> findLikedPostIds(Long userId, List<Long> postIds)`(목록 응답의 `likedByMe` N+1 방지용) |
 | `CommunityPostRepository` | `community.repository` | 원자적 증감 메서드 추가 — `@Modifying @Query("UPDATE CommunityPost p SET p.likeCount = p.likeCount + 1 WHERE p.id = :postId") void incrementLikeCount(Long postId)`, 대칭되는 `decrementLikeCount` |
 | `CommunityPostRepositoryCustom`/`Impl` | `community.repository` | `findPostsOrderByCreatedAtDesc(Pageable, Long instrumentId)` → `findPosts(Pageable pageable, Long instrumentId, String sort)`로 시그니처 변경. `"popular".equals(sort)`이면 `post.likeCount.desc(), post.createdAt.desc(), post.id.desc()`, 아니면 기존 `post.createdAt.desc(), post.id.desc()`로 `orderBy` 분기 |
 | `CommunityPostLikeService` | `community.service` | 신규. `likePost(Long postId, Long authenticatedUserId)` — 게시물 조회(404), `communityPostLikeRepository.existsByPost_IdAndUser_Id`로 기존 상태 확인 후 있으면 현재 상태 반환(200 판단은 컨트롤러), 없으면 `CommunityPostLike.create` 저장 + `communityPostRepository.incrementLikeCount(postId)` 호출 후 신규 상태 반환(201 판단은 컨트롤러). `unlikePost(Long postId, Long authenticatedUserId)` — 게시물 조회(404), 좋아요 행 있으면 삭제 + `decrementLikeCount`, 없으면 그대로 반환(204, no-op) |
