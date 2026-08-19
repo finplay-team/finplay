@@ -2,6 +2,7 @@
 package com.finplay.api.portfolio.repository;
 
 import com.finplay.api.portfolio.domain.Holding;
+import java.math.BigDecimal;
 import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
@@ -32,6 +33,16 @@ public interface HoldingRepository extends JpaRepository<Holding, Long> {
 		+ "AND h.instrument.tutorialSample = false ORDER BY h.instrument.symbol ASC")
 	List<Holding> findAllByAccountIdAndIsActiveTrue(@Param("accountId")
 	Long accountId);
+
+	// 041 tick 순회 전용 — 건너뛴 가상 분마다 순보유수량을 다시 읽는다. 엔티티가 아니라 스칼라로 읽는 이유는
+	// ExitPlanFillService·ExitPlanCancelService가 flush() 후 holding을 detach하기 때문이다. 분리된 인스턴스를
+	// 재사용하면 낡은 수량을 읽는다(041 plan §tick 알고리즘). 체결을 전부 다시 스캔하지 않는 인덱스 조회다.
+	@Query("SELECT h.quantity FROM Holding h WHERE h.account.user.id = :userId AND h.account.market = :market "
+		+ "AND h.instrument.id = :instrumentId")
+	Optional<BigDecimal> findQuantityByOwnerAndInstrument(@Param("userId")
+	Long userId, @Param("market")
+	com.finplay.api.account.domain.Market market, @Param("instrumentId")
+	Long instrumentId);
 
 	// 지정가 매도 생성·체결(015-limit-order LMT-001·LMT-002) + 시장가·지정가 매수 체결 공통(PortfolioBuyService.
 	// applyBuyTrade, 이슈 #224) holding 락

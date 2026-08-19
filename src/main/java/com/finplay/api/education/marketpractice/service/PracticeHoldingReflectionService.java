@@ -125,7 +125,7 @@ public class PracticeHoldingReflectionService {
 		ResolvedPracticeAttemptEvidenceDto evidence = practiceAttemptEvidenceService
 			.requireCurrentRun(attempt, userId, holding.getId());
 		LocalDateTime now = LocalDateTime.now(clock);
-		verifyAttemptSaleEvidence(evidence, now);
+		verifyAttemptSaleEvidence(attempt, evidence, now);
 
 		// 현재 run 귀속 판정(risk snapshot 생성 시각 이후)만 남긴다. 매도 체결 이후 관찰을 배제하던 필터는
 		// 제거했다 — 026 spec.md "비즈니스 규칙"이 "복기는 매도 여부와 무관하게 저장할 수 있다"로 못박았고
@@ -205,7 +205,18 @@ public class PracticeHoldingReflectionService {
 		}
 	}
 
-	private void verifyAttemptSaleEvidence(ResolvedPracticeAttemptEvidenceDto evidence, LocalDateTime now) {
+	// 031 SANDBOX-008의 5분 마감을 실제로 강제하는 자리다 — 응답의 saleDeadlineAt이 아니라 이 자체 상수가
+	// 완료를 막는다. 041 SCENARIO-014가 시간 제한을 폐지했으므로 생성기 버전 2 attempt에서는 이 검증을
+	// 수행하지 않는다. 매도 체결 자체가 없을 때 던지는 PRACTICE_EVIDENCE_MISSING은 유지한다 — 그건 시간이
+	// 아니라 evidence 부재다. 버전 1 attempt와 legacy chain은 기존 동작 그대로다.
+	private void verifyAttemptSaleEvidence(
+		PracticeAttempt attempt, ResolvedPracticeAttemptEvidenceDto evidence, LocalDateTime now) {
+		if (attempt.usesScenarioScript()) {
+			if (evidence.sellTrade() == null) {
+				throw new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING);
+			}
+			return;
+		}
 		LocalDateTime saleDeadlineAt = evidence.riskSnapshot().getBuyTrade().getExecutedAt()
 			.plusMinutes(SALE_DEADLINE_MINUTES);
 		if (evidence.sellTrade() == null) {

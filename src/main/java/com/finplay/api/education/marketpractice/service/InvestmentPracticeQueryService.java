@@ -167,8 +167,7 @@ public class InvestmentPracticeQueryService {
 		Optional<PracticeMarketObservation> qualifyingObservation = currentRunObservations(userId, resolved).stream()
 			.filter(observation -> observation.getEvidenceType() != null)
 			.findFirst();
-		LocalDateTime saleDeadlineAt = snapshot.get().getBuyTrade().getExecutedAt()
-			.plusMinutes(SALE_DEADLINE_MINUTES);
+		LocalDateTime saleDeadlineAt = attemptSaleDeadlineAt(attempt, snapshot.get());
 		PracticeEvidenceResponse evidence = attemptEvidence(resolved, qualifyingObservation.orElse(null),
 			saleDeadlineAt,
 			null);
@@ -209,8 +208,7 @@ public class InvestmentPracticeQueryService {
 			.filter(candidate -> candidate.getEvidenceType() != null)
 			.findFirst()
 			.orElse(null);
-		LocalDateTime saleDeadlineAt = resolved.riskSnapshot().getBuyTrade().getExecutedAt()
-			.plusMinutes(SALE_DEADLINE_MINUTES);
+		LocalDateTime saleDeadlineAt = attemptSaleDeadlineAt(attempt, resolved.riskSnapshot());
 		PracticeEvidenceResponse evidence = attemptEvidence(
 			resolved, observation, saleDeadlineAt, completion.getReflection());
 		List<PracticeStepResponse> steps = List.of(
@@ -240,6 +238,15 @@ public class InvestmentPracticeQueryService {
 			.filter(observation -> !observation.getObservedAt()
 				.isBefore(resolved.observationBaseline().getCreatedAt()))
 			.toList();
+	}
+
+	// SCENARIO-014로 시간 제한을 폐지했다 — 생성기 버전 2 attempt는 마감이 없으므로 saleDeadlineAt을 null로
+	// 내리고, 그 결과 isWithinSaleDeadline의 null 가드가 4단계 상태를 EXPIRED로 만들지 않는다. 버전 1 attempt와
+	// legacy chain은 기존 값을 그대로 유지한다(041 plan §시간 게이트 제거).
+	private LocalDateTime attemptSaleDeadlineAt(PracticeAttempt attempt, PracticeRiskSnapshot snapshot) {
+		return attempt.usesScenarioScript()
+			? null
+			: snapshot.getBuyTrade().getExecutedAt().plusMinutes(SALE_DEADLINE_MINUTES);
 	}
 
 	private PracticeEvidenceResponse attemptEvidence(

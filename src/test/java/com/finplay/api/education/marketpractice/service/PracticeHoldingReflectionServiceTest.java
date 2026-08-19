@@ -558,6 +558,13 @@ class PracticeHoldingReflectionServiceTest {
 
 	// observedAt만 바꿔 매도 전/후 관찰을 모두 구성할 수 있게 한 오버로드다.
 	private PracticeAttempt givenAttemptEvidence(LocalDateTime observedAt) {
+		Trade sellTrade = mock(Trade.class);
+		when(sellTrade.getExecutedAt()).thenReturn(NOW.minusMinutes(1));
+		return givenAttemptEvidence(observedAt, sellTrade);
+	}
+
+	// 매도 체결 자체를 바꿔야 하는 시간 게이트 테스트용 오버로드다 — null이면 매도가 없는 경우다.
+	private PracticeAttempt givenAttemptEvidence(LocalDateTime observedAt, Trade sellTrade) {
 		when(instrument.isTutorialSample()).thenReturn(true);
 
 		PracticeAttempt attempt = mock(PracticeAttempt.class);
@@ -575,9 +582,6 @@ class PracticeHoldingReflectionServiceTest {
 		when(buyTrade.getExecutedAt()).thenReturn(NOW.minusMinutes(4));
 		when(riskSnapshot.getBuyTrade()).thenReturn(buyTrade);
 
-		Trade sellTrade = mock(Trade.class);
-		when(sellTrade.getExecutedAt()).thenReturn(NOW.minusMinutes(1));
-
 		ResolvedPracticeAttemptEvidenceDto evidence = new ResolvedPracticeAttemptEvidenceDto(
 			riskSnapshot, riskSnapshot, HOLDING_ID, BigDecimal.TEN, BigDecimal.TEN, BigDecimal.ZERO, sellTrade, null,
 			null, null,
@@ -594,6 +598,43 @@ class PracticeHoldingReflectionServiceTest {
 			USER_ID, PracticeIntentionService.TUTORIAL_KEY)).thenReturn(Optional.of(progress));
 
 		return attempt;
+	}
+
+	// 041 SCENARIO-014 — 시간 제한 폐지의 실제 강제 지점이 여기다. 응답의 saleDeadlineAt이 아니라 이 서비스의
+	// 자체 상수가 완료를 막는다.
+	@Test
+	void attemptReflectionRejectsLateSaleForGeneratorVersionOne() {
+		Trade lateSell = mock(Trade.class);
+		when(lateSell.getExecutedAt()).thenReturn(NOW.plusMinutes(10));
+		PracticeAttempt attempt = givenAttemptEvidence(NOW.minusMinutes(2), lateSell);
+		when(attempt.usesScenarioScript()).thenReturn(false);
+
+		assertThatThrownBy(() -> service.createReflection(USER_ID, request()))
+			.isInstanceOfSatisfying(BusinessException.class, exception -> assertThat(exception.getErrorCode())
+				.isEqualTo(ErrorCode.PRACTICE_SANDBOX_TIME_EXPIRED));
+	}
+
+	@Test
+	void attemptReflectionAcceptsLateSaleForGeneratorVersionTwo() {
+		Trade lateSell = mock(Trade.class);
+		when(lateSell.getExecutedAt()).thenReturn(NOW.plusMinutes(10));
+		PracticeAttempt attempt = givenAttemptEvidence(NOW.minusMinutes(2), lateSell);
+		when(attempt.usesScenarioScript()).thenReturn(true);
+		when(practiceMarketReflectionRepository.save(org.mockito.ArgumentMatchers.any(PracticeMarketReflection.class)))
+			.thenAnswer(invocation -> invocation.getArgument(0));
+
+		assertThat(service.createReflection(USER_ID, request())).isNotNull();
+	}
+
+	// 매도 체결이 없을 때 던지는 PRACTICE_EVIDENCE_MISSING은 유지한다 — 그건 시간이 아니라 evidence 부재다.
+	@Test
+	void attemptReflectionStillRequiresSaleEvidenceForGeneratorVersionTwo() {
+		PracticeAttempt attempt = givenAttemptEvidence(NOW.minusMinutes(2), null);
+		when(attempt.usesScenarioScript()).thenReturn(true);
+
+		assertThatThrownBy(() -> service.createReflection(USER_ID, request()))
+			.isInstanceOfSatisfying(BusinessException.class, exception -> assertThat(exception.getErrorCode())
+				.isEqualTo(ErrorCode.PRACTICE_EVIDENCE_MISSING));
 	}
 
 	private PracticeHoldingReflectionCreateRequest request() {

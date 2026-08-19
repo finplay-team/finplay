@@ -74,7 +74,9 @@ class TutorialScenarioScriptLoaderTest {
 		"stage-boundary-gap.json",
 		"unknown-event-stage.json",
 		"reveal-delay-zero.json",
-		"event-impact-overflows.json"
+		"event-impact-overflows.json",
+		// 마지막 구간이 대기 루프면 거기서 보유가 생긴 사용자는 나갈 진행 구간이 없어 커서가 영구 정지한다.
+		"last-stage-is-loop.json"
 	})
 	void failsFastOnBrokenScript(String fileName) {
 		assertThatThrownBy(() -> load(fileName))

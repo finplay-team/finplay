@@ -128,6 +128,12 @@ public class TradeService {
 			.reduce((first, second) -> second);
 	}
 
+	// 041 대기 구간 탈출용 — 진행 계산이 delta를 자를 기준 시각 하나만 읽는다(체결 목록 전체를 읽지 않는다).
+	@Transactional(readOnly = true)
+	public Optional<LocalDateTime> findLatestPracticeRunBuyExecutedAt(Long attemptId, long runNumber) {
+		return tradeRepository.findLatestPracticeRunBuyExecutedAt(attemptId, runNumber);
+	}
+
 	// 이슈 #421: 수량 합계와 같은 한 번의 순회에서 이번 실행의 체결가·실현손익까지 집계한다. 별도 조회를
 	// 더하지 않으므로 기존 호출부의 쿼리 수는 그대로다.
 	@Transactional(readOnly = true)

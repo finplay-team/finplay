@@ -36,9 +36,12 @@ class PracticeAttemptChartServiceTest {
 	private final PracticeAttemptRepository attemptRepository = mock(PracticeAttemptRepository.class);
 	private final PracticeOrderSettlementService settlementService = mock(PracticeOrderSettlementService.class);
 	private final PracticeAttemptCanonicalPriceService canonicalPriceService = new PracticeAttemptCanonicalPriceService(
-		attemptRepository, new TutorialPriceGenerator());
+		attemptRepository, new TutorialPriceGenerator(),
+		new com.finplay.api.market.service.TutorialScenarioScriptLoader(new tools.jackson.databind.ObjectMapper()));
+	private final PracticeScenarioProgressService progressService = mock(PracticeScenarioProgressService.class);
 	private final PracticeAttemptChartService service = new PracticeAttemptChartService(
-		attemptRepository, canonicalPriceService, settlementService, Clock.fixed(NOW_INSTANT, ZoneOffset.UTC));
+		attemptRepository, canonicalPriceService, progressService, settlementService,
+		Clock.fixed(NOW_INSTANT, ZoneOffset.UTC));
 
 	@Test
 	void getChartReturnsExactCanonicalCurrentCloseWithoutSettlingOrders() {
@@ -94,7 +97,62 @@ class PracticeAttemptChartServiceTest {
 			org.mockito.ArgumentMatchers.any());
 	}
 
+	// 041 5번 — 생성기 버전 2는 진행 계산이 커서를 밀면서 분마다 정산한다. 여기서 settleCurrentRun을 한 번
+	// 더 부르면 같은 tick의 마지막 분이 두 번 판정된다.
+	@Test
+	void tickDelegatesToScenarioProgressForVersionTwoAttemptsInsteadOfSettlingOnce() {
+		PracticeAttempt attempt = scenarioAttempt();
+		when(attemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
+			.thenReturn(Optional.of(attempt));
+
+		service.tick(USER_ID, Market.CRYPTO);
+
+		verify(progressService).advance(attempt, NOW);
+		verifyNoInteractions(settlementService);
+	}
+
+	// GET chart는 순수 조회다 — 진행 계산을 부르지 않으므로 tick 없이 새로고침해도 대본이 진행하지 않는다.
+	@Test
+	void getChartDoesNotAdvanceTheScenarioCursor() {
+		PracticeAttempt attempt = scenarioAttempt();
+		when(attemptRepository.findByUserIdAndMarket(USER_ID, Market.CRYPTO)).thenReturn(Optional.of(attempt));
+
+		PracticeTutorialChartResponse response = service.getChart(USER_ID, Market.CRYPTO);
+
+		assertThat(response.candles()).hasSize(30);
+		assertThat(response.candles().get(29).close())
+			.isEqualByComparingTo(canonicalPriceService.canonicalPrice(attempt, NOW));
+		assertThat(response.candles().get(29).open()).isEqualByComparingTo(attempt.getScenarioCandleOpen());
+		verifyNoInteractions(progressService, settlementService);
+	}
+
+	// 진행 중 봉의 고가·저가는 attempt에 누적된 값을 그대로 쓴다 — 대본 위치가 단조가 아니라 지나온 경로를
+	// 되접어 만들 수 없다(041 plan §데이터 모델).
+	@Test
+	void scenarioChartUsesPersistedCandleExtremes() {
+		PracticeAttempt attempt = scenarioAttempt();
+		attempt.extendScenarioCandle(new BigDecimal("12000.00000000"));
+		attempt.extendScenarioCandle(new BigDecimal("8000.00000000"));
+		when(attemptRepository.findByUserIdAndMarket(USER_ID, Market.CRYPTO)).thenReturn(Optional.of(attempt));
+
+		PracticeTutorialChartResponse response = service.getChart(USER_ID, Market.CRYPTO);
+
+		assertThat(response.candles().get(29).high()).isEqualByComparingTo(new BigDecimal("12000.00000000"));
+		assertThat(response.candles().get(29).low()).isEqualByComparingTo(new BigDecimal("8000.00000000"));
+	}
+
+	private static PracticeAttempt scenarioAttempt() {
+		PracticeAttempt attempt = attempt(TutorialPriceGenerator.VERSION_2);
+		attempt.startScenarioProgress("ACT1_RISE", new BigDecimal("10000.00000000"), NOW.minusSeconds(3));
+		attempt.moveScenarioCursor("ACT1_RISE", 12L);
+		return attempt;
+	}
+
 	private static PracticeAttempt selectedAttempt() {
+		return attempt(TutorialPriceGenerator.VERSION_1);
+	}
+
+	private static PracticeAttempt attempt(short generatorVersion) {
 		LocalDateTime anchor = NOW.minusSeconds(5);
 		PracticeAttempt attempt = PracticeAttempt.create(USER_ID, Market.CRYPTO, NOW.minusHours(1));
 		ReflectionTestUtils.setField(attempt, "id", 11L);
@@ -102,7 +160,7 @@ class PracticeAttemptChartServiceTest {
 			Market.CRYPTO, "TUTORIAL-BTC", "튜토리얼 비트코인", BigDecimal.ONE, 5_000L, true, NOW);
 		ReflectionTestUtils.setField(instrument, "id", 21L);
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
-		attempt.selectInstrument(instrument, anchor, NOW.toLocalDate(), 123_456_789L, (short)1, anchor);
+		attempt.selectInstrument(instrument, anchor, NOW.toLocalDate(), 123_456_789L, generatorVersion, anchor);
 		return attempt;
 	}
 }

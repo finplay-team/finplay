@@ -21,9 +21,13 @@ import com.finplay.api.education.marketpractice.repository.PracticeAttemptReposi
 import com.finplay.api.education.marketpractice.repository.PracticeCompletionRepository;
 import com.finplay.api.education.marketpractice.repository.PracticeRiskSnapshotRepository;
 import com.finplay.api.education.repository.PracticeProgressRepository;
+import com.finplay.api.education.marketpractice.domain.PracticeMarketReflection;
+import com.finplay.api.portfolio.domain.Holding;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.InstrumentService;
+import com.finplay.api.market.service.TutorialPriceGenerator;
+import com.finplay.api.market.service.TutorialScenarioScriptLoader;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -50,12 +54,16 @@ class PracticeAttemptServiceTest {
 	private final PracticeProgressRepository practiceProgressRepository = mock(PracticeProgressRepository.class);
 	private final InstrumentService instrumentService = mock(InstrumentService.class);
 	private final TutorialAccountService tutorialAccountService = mock(TutorialAccountService.class);
+	// 대본이 저작된 시장에서만 생성기 버전 2를 준다 — 실제 로더를 써야 이 판정이 대본 파일과 함께 움직인다.
+	private final TutorialScenarioScriptLoader tutorialScenarioScriptLoader = new TutorialScenarioScriptLoader(
+		new tools.jackson.databind.ObjectMapper());
 	private final PracticeAttemptService service = new PracticeAttemptService(
 		practiceAttemptRepository,
 		practiceCompletionRepository,
 		practiceRiskSnapshotRepository,
 		practiceProgressRepository,
 		instrumentService,
+		tutorialScenarioScriptLoader,
 		tutorialAccountService,
 		Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC));
 
@@ -192,6 +200,12 @@ class PracticeAttemptServiceTest {
 		assertThat(response.instrumentId()).isEqualTo(INSTRUMENT_ID);
 		assertThat(response.anchorAt()).isEqualTo(NOW);
 		assertThat(response.tutorialDate()).isEqualTo(NOW.toLocalDate());
+		// 041 5번 — 대본이 저작된 시장(CRYPTO)만 생성기 버전 2를 받는다. STOCK 대본은 SCENARIO-024의
+		// 후속이라 아직 없고, 시장을 가리지 않고 2를 주면 STOCK 튜토리얼이 가격 조회에서 통째로 터진다.
+		assertThat(attempt.getGeneratorVersion()).isEqualTo(
+			market == Market.CRYPTO ? TutorialPriceGenerator.VERSION_2 : TutorialPriceGenerator.VERSION_1);
+		// 대본 위치는 여전히 비어 있다 — 첫 tick이 대본의 첫 구간으로 초기화한다(041 3번이 남긴 계약).
+		assertThat(attempt.getScenarioStageId()).isNull();
 	}
 
 	@ParameterizedTest
@@ -238,6 +252,35 @@ class PracticeAttemptServiceTest {
 
 	private void stubTutorialAccount(com.finplay.api.account.domain.Market market, TutorialAccount account) {
 		when(tutorialAccountService.getOrCreateForUpdate(USER_ID, market, NOW)).thenReturn(account);
+	}
+
+	// legacy completion만 있는 사용자에게 만들어 주는 읽기 전용 replay는 대본 커서가 없고 tick도 돌지 않는다.
+	// 버전 2를 주면 대본 첫 구간 0분에 고정된 평평한 차트가 되므로 기존 재현(버전 1)을 그대로 둔다.
+	@Test
+	void completedReplayInitializationKeepsGeneratorVersionOne() {
+		PracticeAttempt attempt = selectingAttempt(Market.CRYPTO);
+		Instrument instrument = tutorialInstrument(Market.CRYPTO, true);
+		Holding holding = mock(Holding.class);
+		when(holding.getInstrument()).thenReturn(instrument);
+		PracticeMarketReflection reflection = mock(PracticeMarketReflection.class);
+		when(reflection.getHolding()).thenReturn(holding);
+		PracticeCompletion completion = mock(PracticeCompletion.class);
+		when(completion.getReflection()).thenReturn(reflection);
+		when(completion.getCompletedAt()).thenReturn(NOW.minusDays(1));
+		when(completion.getId()).thenReturn(77L);
+		when(practiceAttemptRepository.insertIfAbsent(USER_ID, Market.CRYPTO.name(), NOW)).thenReturn(1);
+		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
+			.thenReturn(Optional.of(attempt));
+		when(practiceCompletionRepository.findByUserIdAndTutorialKey(USER_ID, "COIN_PRACTICE_V1"))
+			.thenReturn(Optional.of(completion));
+		when(practiceRiskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(ATTEMPT_ID, 1L))
+			.thenReturn(Optional.empty());
+		stubTutorialAccount(com.finplay.api.account.domain.Market.CRYPTO, freshTutorialAccount());
+
+		PracticeAttemptResponse response = service.ensureAttempt(USER_ID, Market.CRYPTO);
+
+		assertThat(response.mode()).isEqualTo("REPLAY");
+		assertThat(attempt.getGeneratorVersion()).isEqualTo(TutorialPriceGenerator.VERSION_1);
 	}
 
 	private static TutorialAccount freshTutorialAccount() {

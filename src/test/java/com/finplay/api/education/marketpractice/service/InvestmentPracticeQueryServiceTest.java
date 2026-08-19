@@ -532,6 +532,41 @@ class InvestmentPracticeQueryServiceTest {
 		assertThat(response.completedAt()).isEqualTo(NOW.minusDays(1));
 	}
 
+	// 041 SCENARIO-014 — 생성기 버전 2 attempt는 마감이 없으므로 saleDeadlineAt이 null로 내려가고, 매수 후
+	// 아무리 오래 지나도 4단계가 EXPIRED가 되지 않는다. 프론트가 분기하는 것은 enum이 아니라 이 문자열이다.
+	@Test
+	void getProgressDropsSaleDeadlineAndNeverExpiresForScenarioAttempts() {
+		// 대본이 저작된 시장은 CRYPTO뿐이다 — STOCK에 대본 실행을 세우면 프로덕션에 없는 조합이 된다.
+		when(practiceCompletionRepository
+			.findByUserIdAndTutorialKey(USER_ID, PracticeIntentionService.COIN_TUTORIAL_KEY))
+			.thenReturn(Optional.empty());
+
+		PracticeAttempt attempt = attempt(70L, 1L, PracticeAttemptStatus.IN_PROGRESS, instrument(100L));
+		when(attempt.getMarket()).thenReturn(Market.CRYPTO);
+		when(practiceAttemptRepository.findByUserIdAndMarket(USER_ID, Market.CRYPTO))
+			.thenReturn(Optional.of(attempt));
+		when(attempt.usesScenarioScript()).thenReturn(true);
+
+		PracticeRiskSnapshot snapshot = riskSnapshot(30L, NOW.minusHours(3));
+		when(practiceRiskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(70L, 1L))
+			.thenReturn(Optional.of(snapshot));
+		ResolvedPracticeAttemptEvidenceDto resolved = new ResolvedPracticeAttemptEvidenceDto(
+			snapshot, snapshot, 40L, new BigDecimal("3"), BigDecimal.ZERO, new BigDecimal("3"), null, null, null, null,
+			null);
+		when(practiceAttemptEvidenceService.requireCurrentRun(attempt, USER_ID, null)).thenReturn(resolved);
+		PracticeMarketObservation observation = observation(
+			60L, PracticeEvidenceType.CLOSER_TO_BOUNDARY, NOW.minusHours(2));
+		when(practiceMarketObservationRepository.findByUserIdAndHoldingIdOrderByObservedAtAscIdAsc(USER_ID, 40L))
+			.thenReturn(List.of(observation));
+
+		InvestmentPracticeResponse response = service.getProgress(USER_ID, Market.CRYPTO);
+
+		PracticeStepResponse step4 = response.steps().get(3);
+		assertThat(step4.evidence().saleDeadlineAt()).isNull();
+		assertThat(step4.status()).isEqualTo("AWAITING_SALE");
+		assertThat(response.status()).isEqualTo("IN_PROGRESS");
+	}
+
 	// 이슈 #426 (2): 재시작 직후 종목 선택 단계에서도 최초 완료 기록의 보상 금액·완료 시각은 유지된다.
 	@Test
 	void getProgressKeepsFirstCompletionRewardWhenRestartedAttemptIsSelectingInstrument() {

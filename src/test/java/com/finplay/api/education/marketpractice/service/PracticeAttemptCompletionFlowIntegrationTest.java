@@ -216,6 +216,42 @@ class PracticeAttemptCompletionFlowIntegrationTest {
 		assertThat(replayed.getCashBalance()).isEqualTo(cashBeforeRestart);
 	}
 
+	// 041 SCENARIO-014, 이슈 #472: 시간 제한 폐지의 실제 강제 지점은 복기 저장이다. 생성기 버전 2 실행은
+	// 매수 후 한 시간이 지나 매도해도 409로 막히지 않고, 진행 조회의 마감 값도 내려가지 않는다.
+	@Test
+	void scenarioRunCompletesWithoutTimeGateEvenWhenSaleHappensLongAfterTheOldFiveMinuteDeadline() {
+		Market market = Market.CRYPTO;
+		FlowFixture fixture = createFixture(market, "no-time-gate");
+		BigDecimal quantity = new BigDecimal("2.00000000");
+		practiceAttemptService.ensureAttempt(fixture.userId(), market);
+		practiceAttemptService.selectInstrument(fixture.userId(), market, fixture.instrumentId());
+
+		clock.set(BASE_NOW.plusSeconds(2));
+		orderService.createOrder(fixture.userId(), idempotency("late-buy"),
+			marketOrder(market, fixture.instrumentId(), OrderSide.BUY, quantity));
+		Holding holding = holdingRepository
+			.findByAccountIdAndInstrumentId(fixture.accountId(), fixture.instrumentId())
+			.orElseThrow();
+		createQualifyingObservations(fixture.userId(), holding.getId(), BASE_NOW.plusSeconds(12));
+
+		// 옛 마감(매수 + 5분)을 한참 넘긴 시각에 매도한다.
+		clock.set(BASE_NOW.plusHours(1));
+		orderService.createOrder(fixture.userId(), idempotency("late-sell"),
+			marketOrder(market, fixture.instrumentId(), OrderSide.SELL, quantity));
+
+		InvestmentPracticeResponse beforeReflection = queryService.getProgress(fixture.userId(), market);
+		assertThat(beforeReflection.status()).isNotEqualTo("EXPIRED");
+		assertThat(beforeReflection.steps().get(3).evidence().saleDeadlineAt()).isNull();
+
+		clock.set(BASE_NOW.plusHours(1).plusSeconds(10));
+		reflectionService.createReflection(fixture.userId(),
+			new PracticeHoldingReflectionCreateRequest(holding.getId(), "한참 뒤에 팔았지만 막히지 않는다."));
+
+		InvestmentPracticeResponse completed = queryService.getProgress(fixture.userId(), market);
+		assertThat(completed.status()).isEqualTo("COMPLETED");
+		assertThat(completed.steps()).hasSize(4).allSatisfy(step -> assertThat(step.status()).isEqualTo("COMPLETED"));
+	}
+
 	// 이슈 #426: 완료한 시장을 040 재시작으로 다시 진행하면 진행 조회가 예전 완료 응답이 아니라 현재 실행의
 	// evidence를 돌려줘야 한다. 최초 완료 기록은 남아 있으므로 rewardAmount·completedAt은 그대로 유지된다.
 	@Test
@@ -280,7 +316,9 @@ class PracticeAttemptCompletionFlowIntegrationTest {
 		assertThat(evidence.buyQuantity()).isEqualByComparingTo(quantity);
 		assertThat(evidence.sellQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
 		assertThat(evidence.remainingQuantity()).isEqualByComparingTo(quantity);
-		assertThat(evidence.saleDeadlineAt()).isEqualTo(evidence.buyTradeExecutedAt().plusMinutes(5));
+		// 041 SCENARIO-014: 대본을 쓰는 CRYPTO 실행은 마감이 없다 — 이 값이 null이어야 프론트가 남은 시간
+		// 표시를 숨긴다(이슈 #472).
+		assertThat(evidence.saleDeadlineAt()).isNull();
 		// 이전 실행의 매도·관찰은 현재 실행 evidence가 아니다.
 		assertThat(evidence.sellTradeId()).isNull();
 		assertThat(evidence.observationId()).isNull();
