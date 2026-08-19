@@ -80,6 +80,11 @@ public class PracticeAttempt {
 	@Column(name = "scenario_candle_low", precision = 18, scale = 8)
 	private BigDecimal scenarioCandleLow;
 
+	// 대본 진행 계산이 delta를 재는 기준 시각. updated_at을 쓰지 않는 이유는 그것이 대본 진행과 무관한
+	// 경로에서도 갱신돼 사용자가 실제로 기다린 시간을 0으로 만들기 때문이다(041 4번 판정, V52).
+	@Column(name = "scenario_progress_updated_at")
+	private LocalDateTime scenarioProgressUpdatedAt;
+
 	// 현재 실행 세대의 손절·익절 프리셋 선택값. null이면 미선택이며 기본 프리셋으로 해석한다
 	// (042 EXITPRESET-002). 값을 채우는 것은 선택 API(042 tasks 3번)이고 여기서는 매핑만 더한다.
 	@Enumerated(EnumType.STRING)
@@ -151,6 +156,41 @@ public class PracticeAttempt {
 		this.scenarioCandleOpen = null;
 		this.scenarioCandleHigh = null;
 		this.scenarioCandleLow = null;
+		this.scenarioProgressUpdatedAt = null;
+	}
+
+	// 첫 tick이 대본의 첫 구간으로 커서를 세우고 진행 중 봉을 연다. 종목 선택·재시작은 다섯 컬럼을 전부
+	// null로 지우므로(= 미시작) 대본 구간 id 리터럴이 엔티티에 들어오지 않는다(041 3번이 남긴 계약).
+	public void startScenarioProgress(String stageId, BigDecimal openPrice, LocalDateTime progressUpdatedAt) {
+		this.scenarioStageId = stageId;
+		this.scenarioStageElapsedSeconds = 0L;
+		this.scenarioCandleOpen = openPrice;
+		this.scenarioCandleHigh = openPrice;
+		this.scenarioCandleLow = openPrice;
+		this.scenarioProgressUpdatedAt = progressUpdatedAt;
+		this.updatedAt = progressUpdatedAt;
+	}
+
+	// 순회 도중에 커서를 실제로 민다. 지정가 체결이 canonical 가격을 이 커서에서 읽으므로 순회가 끝난 뒤
+	// 한 번에 저장하면 건너뛴 분의 가격으로 정산할 수 없다(041 plan §`order` 인터페이스 변경).
+	public void moveScenarioCursor(String stageId, long elapsedSeconds) {
+		this.scenarioStageId = stageId;
+		this.scenarioStageElapsedSeconds = elapsedSeconds;
+	}
+
+	// 진행 중 봉의 고가·저가만 넓힌다. 시가는 종목 선택 시점의 첫 가격으로 한 번 정하고 바꾸지 않는다
+	// (041 plan §데이터 모델, chk_practice_attempts_scenario_candle이 low <= open <= high를 요구한다).
+	public void extendScenarioCandle(BigDecimal price) {
+		if (this.scenarioCandleHigh == null || this.scenarioCandleLow == null) {
+			throw new IllegalStateException("진행 중 봉이 열리지 않은 attempt입니다.");
+		}
+		this.scenarioCandleHigh = this.scenarioCandleHigh.max(price);
+		this.scenarioCandleLow = this.scenarioCandleLow.min(price);
+	}
+
+	public void markScenarioProgressed(LocalDateTime progressUpdatedAt) {
+		this.scenarioProgressUpdatedAt = progressUpdatedAt;
+		this.updatedAt = progressUpdatedAt;
 	}
 
 	public void complete(LocalDateTime completedAt) {

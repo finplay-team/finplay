@@ -45,6 +45,16 @@ public class HoldingService {
 		return holdingRepository.findByAccountIdAndInstrumentId(account.getId(), instrumentId).map(Holding::getId);
 	}
 
+	// 041 tick 진행 계산용 — 대기 구간 탈출 판정에 쓰는 순보유수량을 가상 분마다 다시 읽는다. education이
+	// HoldingRepository를 직접 주입하지 않도록 이 서비스만 거치게 한다(ADR-0002, findHoldingId와 같은 관례).
+	@Transactional(readOnly = true)
+	public java.math.BigDecimal findNetQuantity(
+		Long userId, com.finplay.api.market.domain.Market market, Long instrumentId) {
+		return holdingRepository
+			.findQuantityByOwnerAndInstrument(userId, Market.valueOf(market.name()), instrumentId)
+			.orElse(java.math.BigDecimal.ZERO);
+	}
+
 	// 026-market-order-practice-tutorial 3단계 관찰 API용 — holdingId로 조회하되 계좌 소유자가 본인이 아니면
 	// 존재를 숨겨 빈 값을 반환한다(호출측이 404 NOT_FOUND로 매핑).
 	// 021 PR #368 리뷰 차단 1: instrument는 LAZY라 open-in-view=false 환경에서 이 메서드가 반환한 뒤(트랜잭션

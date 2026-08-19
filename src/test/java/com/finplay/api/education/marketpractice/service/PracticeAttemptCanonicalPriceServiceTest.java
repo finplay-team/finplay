@@ -9,6 +9,7 @@ import com.finplay.api.education.marketpractice.repository.PracticeAttemptReposi
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.TutorialPriceGenerator;
+import com.finplay.api.market.service.TutorialScenarioScriptLoader;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.Test;
@@ -18,7 +19,8 @@ class PracticeAttemptCanonicalPriceServiceTest {
 
 	private static final LocalDateTime ANCHOR = LocalDateTime.of(2026, 8, 14, 12, 0);
 	private final PracticeAttemptCanonicalPriceService service = new PracticeAttemptCanonicalPriceService(
-		mock(PracticeAttemptRepository.class), new TutorialPriceGenerator());
+		mock(PracticeAttemptRepository.class), new TutorialPriceGenerator(),
+		new TutorialScenarioScriptLoader(new tools.jackson.databind.ObjectMapper()));
 
 	@Test
 	void publishedMinuteChangesOnlyOnThreeSecondBoundariesAndClampsClockReversalToZero() {

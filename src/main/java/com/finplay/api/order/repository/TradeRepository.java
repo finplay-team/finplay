@@ -66,4 +66,20 @@ public interface TradeRepository extends JpaRepository<Trade, Long>, TradeReposi
 		Long attemptId,
 		@Param("runNumber")
 		long runNumber);
+
+	// 041 대기 구간 탈출 시 delta를 자를 기준 시각 — 남은 delta를 전부 이월하면 사용자가 매수 직후 처음 보는
+	// 화면이 진행 구간 한참 뒤가 되어 가격이 튄다(041 plan §상태 전이표). 순회 중 체결도 그 시점 시각으로
+	// 기록되므로 이 한 값이 두 경우를 모두 덮는다.
+	@Query("""
+		select max(t.executedAt) from Trade t
+		where t.order.practiceAttemptId = :attemptId
+		  and t.order.practiceAttemptRunNumber = :runNumber
+		  and t.order.status = com.finplay.api.order.domain.OrderStatus.FILLED
+		  and t.side = com.finplay.api.order.domain.OrderSide.BUY
+		""")
+	Optional<java.time.LocalDateTime> findLatestPracticeRunBuyExecutedAt(
+		@Param("attemptId")
+		Long attemptId,
+		@Param("runNumber")
+		long runNumber);
 }

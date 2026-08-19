@@ -31,9 +31,7 @@ public class TutorialPriceGenerator {
 		requireVersion(input, VERSION_1);
 		long mixedSeed = mixSeed(input);
 		List<TutorialPriceCandleDto> candles = new ArrayList<>(HISTORY_CANDLE_COUNT + 1);
-		for (int index = 0; index < HISTORY_CANDLE_COUNT; index++) {
-			candles.add(generateHistoryCandle(input, mixedSeed, index));
-		}
+		candles.addAll(generateHistory(input));
 
 		BigDecimal open = currentMinutePrice(input.market(), mixedSeed, 0L);
 		BigDecimal high = open;
@@ -54,6 +52,18 @@ public class TutorialPriceGenerator {
 		validate(input, publishedMinute);
 		requireVersion(input, VERSION_1);
 		return currentMinutePrice(input.market(), mixSeed(input), publishedMinute);
+	}
+
+	// 과거 29개 완결 일봉은 대본 대상이 아니다 — 039의 배경 정보이고 사건과 무관하므로 버전 2도 같은 seed
+	// 생성 방식을 그대로 쓴다(041 plan §대본 설계). 버전 2는 진행 중 1봉만 대본에서 만들어 붙인다.
+	public List<TutorialPriceCandleDto> generateHistory(TutorialPriceGenerationInput input) {
+		validateInput(input);
+		long mixedSeed = mixSeed(input);
+		List<TutorialPriceCandleDto> candles = new ArrayList<>(HISTORY_CANDLE_COUNT);
+		for (int index = 0; index < HISTORY_CANDLE_COUNT; index++) {
+			candles.add(generateHistoryCandle(input, mixedSeed, index));
+		}
+		return candles;
 	}
 
 	// 생성기 버전 2는 벽시계가 아니라 대본 위치에서 가격이 나온다 — 가상 분에 해당하는 시각이 존재하지 않으므로
