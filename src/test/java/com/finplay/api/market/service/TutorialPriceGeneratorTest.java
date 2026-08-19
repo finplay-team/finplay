@@ -2,17 +2,23 @@
 package com.finplay.api.market.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finplay.api.market.domain.Market;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.ObjectMapper;
 
 class TutorialPriceGeneratorTest {
 
 	private static final TutorialPriceGenerationInput INPUT = new TutorialPriceGenerationInput(
 		(short)1, 123_456_789L, 42L, 3L, Market.CRYPTO, LocalDate.of(2026, 8, 14));
+	private static final TutorialPriceGenerationInput SCENARIO_INPUT = new TutorialPriceGenerationInput(
+		TutorialPriceGenerator.VERSION_2, 123_456_789L, 42L, 3L, Market.CRYPTO, LocalDate.of(2026, 8, 14));
 	private final TutorialPriceGenerator generator = new TutorialPriceGenerator();
+	private final TutorialScenarioScript script = new TutorialScenarioScriptLoader(new ObjectMapper())
+		.script(Market.CRYPTO);
 
 	@Test
 	void generateMatchesVersionOneGoldenVector() {
@@ -74,5 +80,62 @@ class TutorialPriceGeneratorTest {
 		assertThat(repeated).isEqualByComparingTo(first);
 		assertThat(generator.canonicalPrice(otherRun, 17L)).isNotEqualByComparingTo(first);
 		assertThat(generator.canonicalPrice(otherSeed, 17L)).isNotEqualByComparingTo(first);
+	}
+
+	// 생성기 버전 2는 대본 위치에서만 가격이 나온다. 두 진입점이 서로의 입력을 받으면 조용히 다른 가격을
+	// 내는 대신 즉시 실패해야 한다.
+	@Test
+	void wallClockEntryPointRejectsVersionTwoInput() {
+		assertThatThrownBy(() -> generator.canonicalPrice(SCENARIO_INPUT, 7L))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("생성기 버전 1 전용");
+	}
+
+	@Test
+	void cursorEntryPointRejectsVersionOneInput() {
+		TutorialScenarioCursor cursor = new TutorialScenarioCursor("ACT1_RISE", 14);
+
+		assertThatThrownBy(() -> generator.canonicalPrice(INPUT, script, cursor))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("생성기 버전 2 전용");
+	}
+
+	@Test
+	void cursorEntryPointReadsScriptRatioAtMarketBasePrice() {
+		BigDecimal price = generator.canonicalPrice(SCENARIO_INPUT, script,
+			new TutorialScenarioCursor("ACT1_RISE", 14));
+
+		assertThat(price).isEqualByComparingTo("10180.00000000");
+	}
+
+	@Test
+	void cursorEntryPointRejectsScriptOfAnotherMarket() {
+		TutorialPriceGenerationInput stockInput = new TutorialPriceGenerationInput(
+			TutorialPriceGenerator.VERSION_2,
+			INPUT.priceSeed(),
+			INPUT.instrumentId(),
+			INPUT.runNumber(),
+			Market.STOCK,
+			INPUT.tutorialDate());
+		TutorialScenarioCursor cursor = new TutorialScenarioCursor("ACT1_RISE", 14);
+
+		assertThatThrownBy(() -> generator.canonicalPrice(stockInput, script, cursor))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("다른 대본");
+	}
+
+	@Test
+	void unsupportedGeneratorVersionIsRejected() {
+		TutorialPriceGenerationInput unsupported = new TutorialPriceGenerationInput(
+			(short)3,
+			INPUT.priceSeed(),
+			INPUT.instrumentId(),
+			INPUT.runNumber(),
+			INPUT.market(),
+			INPUT.tutorialDate());
+
+		assertThatThrownBy(() -> generator.canonicalPrice(unsupported, 7L))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("지원하지 않는 튜토리얼 가격 생성기 버전");
 	}
 }

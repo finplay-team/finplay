@@ -1,4 +1,4 @@
-// PracticeAttempt의 재시작 전이(완료 attempt 포함)를 검증한다.
+// PracticeAttempt의 재시작 전이(완료 attempt 포함)와 대본 위치 초기화를 검증한다.
 package com.finplay.api.education.marketpractice.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -44,14 +44,56 @@ class PracticeAttemptTest {
 		assertThat(attempt.getInstrument()).isNull();
 	}
 
+	// 재시작이 대본 위치를 지우지 않으면 재시작한 사용자의 첫 화면에 이전 실행의 4막 저점이 그대로 남는다
+	// (041 plan §재시작 시 초기화).
+	@Test
+	void restartClearsScenarioProgressAndInProgressCandle() {
+		PracticeAttempt attempt = selectedAttempt();
+		putScenarioProgress(attempt);
+
+		attempt.restart(NOW);
+
+		assertScenarioProgressCleared(attempt);
+	}
+
+	@Test
+	void selectInstrumentClearsScenarioProgressLeftFromPreviousRun() {
+		PracticeAttempt attempt = PracticeAttempt.create(1L, Market.CRYPTO, NOW.minusHours(1));
+		putScenarioProgress(attempt);
+
+		selectInstrument(attempt);
+
+		assertScenarioProgressCleared(attempt);
+	}
+
+	private static void putScenarioProgress(PracticeAttempt attempt) {
+		ReflectionTestUtils.setField(attempt, "scenarioStageId", "ACT4_CRASH");
+		ReflectionTestUtils.setField(attempt, "scenarioStageElapsedSeconds", 57L);
+		ReflectionTestUtils.setField(attempt, "scenarioCandleOpen", new BigDecimal("10000.00000000"));
+		ReflectionTestUtils.setField(attempt, "scenarioCandleHigh", new BigDecimal("10180.00000000"));
+		ReflectionTestUtils.setField(attempt, "scenarioCandleLow", new BigDecimal("7900.00000000"));
+	}
+
+	private static void assertScenarioProgressCleared(PracticeAttempt attempt) {
+		assertThat(attempt.getScenarioStageId()).isNull();
+		assertThat(attempt.getScenarioStageElapsedSeconds()).isNull();
+		assertThat(attempt.getScenarioCandleOpen()).isNull();
+		assertThat(attempt.getScenarioCandleHigh()).isNull();
+		assertThat(attempt.getScenarioCandleLow()).isNull();
+	}
+
 	private static PracticeAttempt selectedAttempt() {
 		PracticeAttempt attempt = PracticeAttempt.create(1L, Market.CRYPTO, NOW.minusHours(1));
+		selectInstrument(attempt);
+		return attempt;
+	}
+
+	private static void selectInstrument(PracticeAttempt attempt) {
 		Instrument instrument = Instrument.create(
 			Market.CRYPTO, "TUTORIAL-BTC", "튜토리얼 비트코인", BigDecimal.ONE, 5_000L, true, NOW);
 		ReflectionTestUtils.setField(instrument, "id", 21L);
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
 		attempt.selectInstrument(instrument, NOW.minusMinutes(10), NOW.toLocalDate(), 123L, (short)1,
 			NOW.minusMinutes(10));
-		return attempt;
 	}
 }

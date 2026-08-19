@@ -31,17 +31,17 @@
 
 ## 작업 항목
 
-- [ ] **1. 대본 파일과 로더** — `scenario-crypto-v1.json` 저작(8개 stage / 120개 배율 / 사건 5개),
+- [x] **1. 대본 파일과 로더** — `scenario-crypto-v1.json` 저작(8개 stage / 120개 배율 / 사건 5개),
   파서, 기동 시점 정합성 검증(배열 길이 = `minutes`, 사건 `stageId` 실재, `impactStart + impactMinutes`가
   구간 내, LOOP 구간의 첫·끝 배율 일치). 잘못된 대본이면 기동을 실패시킨다.
   **테스트**: 대본을 읽어 판정하는 단위 테스트 — plan §프리셋 도달 조건의 부등식 전부, 특히 루머 저점
   0.975가 `CAUTIOUS`·`BALANCED` 손절선 구간 사이에 들어가고 세 구간이 겹치지 않음. 무귀속 분 > 귀속 분.
 
-- [ ] **2. 생성기 V2** — 대본 위치(`stageId`, `stageMinute`) → 가격 변환을 별도 클래스로 만들고
+- [x] **2. 생성기 V2** — 대본 위치(`stageId`, `stageMinute`) → 가격 변환을 별도 클래스로 만들고
   `TutorialPriceGenerator` 진입점에서 `generatorVersion`으로 분기. `validate`가 1·2를 모두 허용.
   **테스트**: V2 golden vector 신규 + **V1 golden vector 무변경 통과**(SCENARIO-023).
 
-- [ ] **3. attempt 진행 컬럼** — 마이그레이션(`scenario_stage_id`, `scenario_stage_elapsed_seconds`,
+- [x] **3. attempt 진행 컬럼** — 마이그레이션(`scenario_stage_id`, `scenario_stage_elapsed_seconds`,
   `scenario_candle_open/high/low` 5개 nullable 추가) + `PracticeAttempt` 엔티티 필드.
   **`select()`와 `restart()` 양쪽의 초기화 대상에 새 컬럼을 추가한다** — `restart()`가 빠뜨리면 재시작한
   사용자가 이전 실행의 대본 위치를 물려받는다. **`047`이 같은 재시작 흐름에 튜토리얼 계좌 리셋을
@@ -54,6 +54,11 @@
   **건너뛴 가상 분마다 순차 정산 + 분마다 `holding` 재조회**(SCENARIO-013).
   **테스트**: 시각 주입 단위 테스트 — 전이표 3행, 2초 간격 tick에서도 드리프트 없음,
   tick 간격을 가상 10분으로 벌려도 루머 손절이 재현됨, 소비하지 않은 초가 차감되지 않음.
+  > **3번이 남긴 계약 둘.** (a) `scenario_stage_id`가 `null`이면 **미시작**이다 — 3번은 엔티티에 대본 구간 id
+  > 리터럴을 박지 않으려고 종목 선택·재시작에서 다섯 컬럼을 전부 `null`로 지운다. 이 항목이 첫 tick에서
+  > 대본의 첫 구간으로 초기화한다. (b) plan §tick 알고리즘이 쓰는 `progress_updated_at`은 **컬럼으로 존재하지
+  > 않는다**(plan §데이터 모델의 표에 없다). 컬럼을 하나 더 추가할지 `updated_at`을 쓸지 이 항목에서 정한다 —
+  > `updated_at`은 attempt를 건드리는 모든 경로가 갱신하므로 delta가 짧아진다.
 
 - [ ] **5. tick 통합·`order` 인터페이스 변경·시간 게이트 제거** — `POST .../tick`이 진행 계산을 호출하고
   `GET .../chart`는 순수 조회를 유지한다. **V2의 `canonicalPrice`가 시각이 아니라 커서를 읽도록 바꾼다**

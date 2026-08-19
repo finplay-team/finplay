@@ -326,3 +326,13 @@
 - [ ] `ubuntu-24.04-arm` 러너가 이 레포에서 실제로 잡히는지 — 공개 레포라 쓸 수 있다고 적었으나 **실행으로 확인한 적 없다**
 - [ ] ALB·타깃 그룹·ACM이 아직 없다 — 이 파이프라인의 **선행 조건**이며 별도 이슈
 - [ ] 전환 순간 SSE(`/api/stocks/stream`) 연결이 어떻게 끊기고 재연결되는지
+
+## 이슈 #467 — 튜토리얼 대본·생성기 V2·attempt 진행 컬럼 (041 1~3번, 2026-08-19)
+
+- [x] `scenario-crypto-v1.json` 저작 — 8개 구간 120개 배율, 사건 5개
+- [x] 파서·로더와 기동 시점 정합성 검증 (배열 길이, 사건 `stageId` 실재, 영향 구간, LOOP 첫·끝 배율)
+- [x] 도달 부등식 정합성 테스트 — 1막 익절 미발동, 루머 분기 비겹침, 확정 손절, 3막 익절·4막 손절, 무귀속 > 귀속
+- [x] 생성기 V2(대본 위치 → 가격) + V2 golden vector, V1 golden vector 무변경 통과
+- [x] `practice_attempts` 컬럼 5개(V50) + 엔티티 + `selectInstrument()`·`restart()` 초기화 + `@DataJpaTest`
+- [ ] **후속(041 4·5번)**: 새 attempt를 V2로 전환, `progress_updated_at` 결정, `canonicalPrice`를 커서 기반으로 교체
+
