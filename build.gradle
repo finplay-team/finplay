@@ -153,6 +153,21 @@ tasks.withType(Test).configureEach {
 		systemProperty 'logging.level.org.springframework.test.context.cache', 'DEBUG'
 		testLogging.showStandardStreams = true
 	}
+	// 테스트 워커 JVM 힙 부족으로 전체 스위트 막판(리포트 생성 직전)에 죽는 문제 (agent-mistakes.md
+	// 2026-08-11 행 — 로컬에서 `OutOfMemoryError`가 연쇄 발생. PR #482 CI run 32284448720에서
+	// GitHub Actions 러너(ubuntu-latest)에서도 동일 시그니처 `Java heap space`로 재현 — 이전엔
+	// "이 로컬 머신의 한계"로 오진했으나 원인은 머신이 아니라 이 설정 자체였다). maxParallelForks
+	// 기본값 1·forkEvery 기본값 0을 `./gradlew test -I`로 직접 확인했다 — 테스트 클래스 465개
+	// (약 3046건)를 JVM 하나가 재시작 없이 전부 처리하는데, maxHeapSize를 지정하지 않으면 JVM
+	// 에르고노믹 기본값(호스트 총 메모리의 1/4, 16GB 머신에서 약 4GB)에 묶인다. 클래스마다 다른
+	// @SpringBootTest/@DataJpaTest/@WebMvcTest 조합이 스프링 테스트 컨텍스트 캐시에 계속 쌓이며
+	// 스위트 끝 무렵 그 한도를 넘겨 `Could not complete execution for Gradle Test Executor N >
+	// Java heap space`로 죽는다 — 개별 테스트 실패가 아니라 워커 프로세스 자체의 메모리 고갈이라
+	// 실패 테스트 이름이 하나도 안 남는 것이 특징이다.
+	maxHeapSize = '4g'
+	// 100클래스마다 워커를 재시작해 누적된 컨텍스트 캐시를 주기적으로 비운다. 0(재시작 없음)이면
+	// 힙을 아무리 키워도 스위트가 더 자라면 같은 자리에서 다시 죽는다.
+	forkEvery = 100
 	finalizedBy tasks.jacocoTestReport
 }
 
