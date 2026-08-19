@@ -38,6 +38,7 @@ public class LimitOrderCreationService {
 	private final PortfolioSellService portfolioSellService;
 	private final OrderRepository orderRepository;
 	private final PracticeOrderAttributionPort practiceOrderAttributionPort;
+	private final PracticeOrderSettlementService practiceOrderSettlementService;
 	private final Clock clock;
 
 	// plan.md "지정가 생성 흐름" — BUY는 account 락만, SELL은 holding 락만 잡는다.
@@ -103,6 +104,13 @@ public class LimitOrderCreationService {
 
 		// LMT-001 SELL: 계좌 락 없이 holding 락만 잡는다 — 두 자원을 동시에 들지 않으므로 ABBA 위험이 없다(plan.md).
 		Account account = accountService.getAccountFor(userId, toAccountMarket(request.market()));
+		// 042 EXITPRESET-016 — 튜토리얼 자동 예약이 체결 수량 전량을 잡고 있으면 availableQuantity가 0이라
+		// 아래 검증이 매도를 거부한다. 시장가 매도(OrderExecutionService)와 같은 처리를 지정가에도 한다 —
+		// 043이 튜토리얼 지정가 예약 카드를 계약으로 갖고 있어 이 경로가 실제로 쓰인다. 같은 트랜잭션이라
+		// 매도 접수가 실패하면 취소도 함께 롤백된다. holding을 이 호출 뒤에 처음 잡는 이유이기도 하다 —
+		// 취소 서비스가 flush 후 holding을 detach한다.
+		practiceAttribution.ifPresent(attribution -> practiceOrderSettlementService.cancelCurrentRunExitPlans(
+			userId, attribution.attemptId(), attribution.runNumber()));
 		Holding holding = portfolioSellService.getHoldingForUpdateOrThrow(account, instrument, quantity);
 		holding.reserveQuantity(quantity);
 

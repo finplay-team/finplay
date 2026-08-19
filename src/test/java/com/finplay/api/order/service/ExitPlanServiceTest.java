@@ -54,10 +54,11 @@ class ExitPlanServiceTest {
 	private final ExitPlanIdempotentCreationService exitPlanIdempotentCreationService = mock(
 		ExitPlanIdempotentCreationService.class);
 	private final ExitPlanRepository exitPlanRepository = mock(ExitPlanRepository.class);
+	private final ExitPlanCancelService exitPlanCancelService = mock(ExitPlanCancelService.class);
 
 	private final ExitPlanService service = new ExitPlanService(
 		holdingService, userQueryService, exitPlanIdempotencyKeyRepository, exitPlanIdempotentCreationService,
-		exitPlanRepository);
+		exitPlanRepository, exitPlanCancelService);
 
 	@Test
 	void createThrowsValidationErrorWhenIntentionIdProvided() {

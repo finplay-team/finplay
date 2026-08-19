@@ -38,7 +38,7 @@ public class PracticeRiskSnapshot {
 	@Column(name = "run_number", nullable = false)
 	private long runNumber;
 
-	// 한 실행 세대 안의 몇 번째 진입인가. 손절 후 재매수하면 2가 된다(042 EXITPRESET-019).
+	// 한 실행 세대 안의 몇 번째 진입인가. 손절 후 재매수하면 2가 된다(042 EXITPRESET-017·020).
 	@Column(name = "entry_sequence", nullable = false)
 	private int entrySequence = FIRST_ENTRY_SEQUENCE;
 

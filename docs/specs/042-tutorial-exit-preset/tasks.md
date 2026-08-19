@@ -59,6 +59,10 @@
 - [x] **3. 선택 API와 잠금** — `PUT /api/education/practice/attempts/{market}/exit-preset`.
   **`PracticeAttemptResponse`는 `047`(TUTORIAL-CASH-ISOL-011)도 건드린다** — 튜토리얼 계좌 잔고 필드가
   추가되므로 충돌을 예상하고 먼저 머지된 쪽에 맞춰 rebase한다.
+  > **구현에서 정한 것 (이슈 #477).** plan §오류 계약은 "종목 선택 전 프리셋 변경 → 409"로 읽히는데
+  > 구현은 200을 반환한다. 종목 선택 전에는 보유가 있을 수 없어 잠금 조건("지금 들고 있는가")이 성립하지
+  > 않기 때문이고, 프리셋은 실행 세대에 귀속되므로 미리 골라 두는 것이 해롭지 않다. `docs/api-contracts.md`가
+  > 구현 쪽으로 적혀 있다.
   **잠금 기준은 "현재 실행 세대의 순보유수량 == 0"이다** — 매수 전과 재진입 대기 중에는 허용, 보유 중에는
   409 `PRACTICE_STEP_LOCKED`. `PracticeAttemptResponse`에 `selectedExitPreset`·`exitPresetLocked`·
   `availableExitPresets` 추가.

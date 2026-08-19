@@ -6,7 +6,6 @@ import com.finplay.api.order.domain.ExitPlanStatus;
 import com.finplay.api.order.dto.request.ExitPlanCreateRequest;
 import com.finplay.api.order.dto.response.ExitPlanListResponse;
 import com.finplay.api.order.dto.response.ExitPlanResponse;
-import com.finplay.api.order.service.ExitPlanCancelService;
 import com.finplay.api.order.service.ExitPlanService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -33,7 +32,6 @@ import org.springframework.web.bind.annotation.RestController;
 public class ExitPlanController {
 
 	private final ExitPlanService exitPlanService;
-	private final ExitPlanCancelService exitPlanCancelService;
 
 	// intentionId를 지정하는 교육 경로는 아직 지원하지 않는다(#348 범위는 일반 경로만, service가 400으로 거부한다).
 	@PostMapping
@@ -64,7 +62,7 @@ public class ExitPlanController {
 		AuthenticatedUser principal,
 		@PathVariable
 		Long exitPlanId) {
-		exitPlanCancelService.cancel(principal.userId(), exitPlanId);
+		exitPlanService.cancel(principal.userId(), exitPlanId);
 		return ResponseEntity.noContent().build();
 	}
 }

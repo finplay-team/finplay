@@ -69,6 +69,8 @@ public class PracticeOrderSettlementService {
 		for (Long orderId : orderRepository.findPendingPracticeRunOrderIds(attemptId, runNumber)) {
 			limitOrderFillService.fillIfPending(orderId, pricedAt);
 		}
+		// null은 "가격을 모른다"가 아니라 "이 호출에서는 OCO를 판정하지 않는다"는 뜻이다. production 호출부
+		// 둘은 항상 값을 넘기므로 실제로는 테스트가 지정가만 검증할 때만 쓰인다.
 		if (canonicalPrice == null) {
 			return;
 		}

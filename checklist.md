@@ -370,7 +370,10 @@
 - [x] 매수 체결에 프리셋·`entry_sequence` 반영 + **진입당 1회 가드**(보유 중 추가 매수는 기준선을 안 움직인다)
 - [x] CRYPTO 자동 OCO 예약 — 공용 엔진 직접 호출, **baseline에 대본 canonical price 주입**, `ExitPlan.createPractice`가 귀속 두 값을 검증
 - [x] tick 정산에 OCO 루프(지정가 → OCO 순서 고정), 재시작이 예약을 주문보다 먼저 취소, 매도 접수 전 예약 취소
-- [x] `sellCause`(`STOP_LOSS`\|`TAKE_PROFIT`\|`MANUAL`) — `exit_plans.triggered_order_id` 역참조
+- [x] `sellCause`(`STOP_LOSS`\|`TAKE_PROFIT`\|`MANUAL`) — `exit_plans.triggered_order_id` 역참조. **그 실행의 첫 매도 기준**이라는 한계를 계약 문서에 적었다
+- [x] 사전 리뷰 차단 2건 반영 — 자동 청산 매도의 attempt 귀속, 지정가 매도의 예약 취소
+- [x] 튜토리얼 예약을 일반 OCO 목록·취소에서 제외
+- [x] 회귀 방어 통합 테스트 — 매수 → tick 손절 체결 → 원장 확인 → 재선택 → 재매수 → 재시작
 - [x] `docs/prd.md` §3 EXITPRESET 행 신설(일부 완료로 판정), `api-routes.md`·`api-contracts.md` 갱신
 - [ ] **후속(041 6번)**: 진입별 대조 배열 — 042가 만들지 않고 넘겼다. 그때까지 **재진입한 사용자의 완료 화면은 첫 매도만 가리킨다**(금액은 맞다)
 - [ ] **후속(042 8번)**: 재진입 재예약 통합 테스트 — 손절 → 재진입 → 프리셋 변경 → 재매수에서 새 snapshot·새 예약이 바뀐 프리셋으로 생성되는지

@@ -50,6 +50,7 @@ public class ExitPlanService {
 	private final ExitPlanIdempotencyKeyRepository exitPlanIdempotencyKeyRepository;
 	private final ExitPlanIdempotentCreationService exitPlanIdempotentCreationService;
 	private final ExitPlanRepository exitPlanRepository;
+	private final ExitPlanCancelService exitPlanCancelService;
 
 	// 021 plan.md "멱등성" 일반 경로: 선제 조회 → 검증 → 생성 시도 → unique 위반 캐치 → 1회 재조회 폴백.
 	public ExitPlanResponse create(Long userId, String idempotencyKey, ExitPlanCreateRequest request) {
@@ -89,13 +90,36 @@ public class ExitPlanService {
 	}
 
 	// 021 plan.md "응답 계약" — 본인 소유 예약만, status 생략 시 PENDING 기본값, 경로(일반/교육) 무관 공통 조회.
+	//
+	// **(042, 이슈 #477) 튜토리얼 자동 예약은 제외한다.** 042 전에는 create가 샌드박스 holding을 막아
+	// 튜토리얼 exit_plan 행 자체가 없었는데, 042가 매수 체결 트랜잭션에서 처음으로 만든다. 그 예약이 걸린
+	// holding은 033 SANDBOX-EXCL-001이 GET /api/holdings에서 이미 감추므로, 걸러 내지 않으면 실거래 화면에
+	// **대응 보유가 없는 유령 예약**이 뜬다. 주문·체결 내역을 감추는 것과 같은 원칙이다.
 	@Transactional(readOnly = true)
 	public ExitPlanListResponse list(Long userId, ExitPlanStatus status) {
 		ExitPlanStatus effectiveStatus = status != null ? status : ExitPlanStatus.PENDING;
 		return ExitPlanListResponse.from(exitPlanRepository.findByUserIdAndStatusOrderByIdDesc(userId, effectiveStatus)
 			.stream()
+			.filter(plan -> !plan.getInstrument().isTutorialSample())
 			.map(ExitPlanResponse::from)
 			.toList());
+	}
+
+	/**
+	 * 사용자 취소(021 RISK-OCO 취소 경로). <b>튜토리얼 자동 예약은 이 경로로 취소할 수 없다</b> —
+	 * 그것을 허용하면 실거래 화면에서 튜토리얼 손절을 조용히 해제할 수 있고, 042가 tick 정산·재시작·매도
+	 * 접수에서 관리하는 예약 생명주기가 밖에서 깨진다. 차단을 엔진({@link ExitPlanCancelService})이 아니라
+	 * 이 호출부에 두는 것은 {@code create}의 샌드박스 차단과 같은 이유다(021 RISK-OCO-014) — 042의 내부
+	 * 취소 경로는 엔진을 직접 부르므로 이 차단에 막히지 않는다.
+	 */
+	@Transactional
+	public void cancel(Long userId, Long exitPlanId) {
+		ExitPlan plan = exitPlanRepository.findByIdAndUserId(exitPlanId, userId)
+			.orElseThrow(() -> new BusinessException(ErrorCode.EXIT_PLAN_NOT_FOUND));
+		if (plan.getInstrument().isTutorialSample()) {
+			throw new BusinessException(ErrorCode.EXIT_PLAN_TUTORIAL_INSTRUMENT_NOT_ALLOWED);
+		}
+		exitPlanCancelService.cancel(userId, exitPlanId);
 	}
 
 	private void rejectUnsupportedEducationalPath(ExitPlanCreateRequest request) {

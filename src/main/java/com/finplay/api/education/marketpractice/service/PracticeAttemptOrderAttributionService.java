@@ -93,9 +93,11 @@ public class PracticeAttemptOrderAttributionService implements PracticeOrderAttr
 	 * {@code validateNoPendingPlan} 409로 매수를 통째로 실패시키고, (2) 새 snapshot으로 기준선을 갱신해
 	 * 039의 "체결가 기준 고정" 규칙을 깨고, (3) 평단 이동으로 041 SCENARIO-006a의 루머 분기를 무너뜨린다.
 	 *
-	 * <p><b>"직전 순보유수량"은 역산한다.</b> {@code OrderExecutionService}·{@code LimitOrderFillService}가
-	 * 모두 {@code applyBuyTrade}를 <b>먼저</b> 부른 뒤 여기로 오므로, 이 시점 holding에는 이번 체결이 이미
-	 * 반영돼 있다. 따라서 직전 값은 {@code 현재 순보유수량 − 이번 체결 수량}이다.
+	 * <p><b>"직전 순보유수량"은 역산한다.</b> 판정은 holding 행이 아니라 <b>현재 실행 세대의 체결 원장</b>을
+	 * 읽으므로(실행 세대를 넘어 누적되는 값을 쓰면 이전 실행의 잔여 보유가 새 진입을 추가 매수로 오판한다),
+	 * 성립해야 하는 전제는 "두 체결 경로가 모두 {@code tradeRepository.save(trade)}를 이 호출보다 <b>먼저</b>
+	 * 한다"이다 — {@code OrderExecutionService}·{@code LimitOrderFillService} 둘 다 만족한다. 따라서 직전
+	 * 값은 {@code 현재 실행 세대 순량 − 이번 체결 수량}이다.
 	 */
 	@Transactional
 	@Override
