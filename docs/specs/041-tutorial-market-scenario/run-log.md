@@ -5,8 +5,15 @@
 |---|---|---|---|
 | 16:25 | reviewer(리뷰) | `git diff origin/dev...HEAD` (041 1~3번) | conventions.md, ADR-0002·0003·0004·0021, 041 spec·plan·tasks |
 | 22:10 | 메인 세션 | `./gradlew test --tests "*Practice*" --tests "*Tutorial*" --tests "*Scenario*"` (041 4~5번) | 경량 경로 — 전체 빌드는 PR 직전 1회 |
+| 22:34 | reviewer(리뷰) | `git diff origin/dev...HEAD` (041 4~5번, 브랜치 `feat/472-tutorial-progress-tick`) | conventions.md, ADR-0002·0003·0004, CLAUDE.md 3·6·7·10, agent-mistakes.md, 041 tasks·plan, `scenario-crypto-v1.json` |
+| 22:34 | reviewer(리뷰, 순회 알고리즘 관점) | `git diff origin/dev...HEAD` (041 4~5번) | 041 plan §상태 전이표·§tick 알고리즘·§데이터 모델 |
+| 22:34 | reviewer(리뷰, 회귀·통합 관점) | `git diff origin/dev...HEAD` (041 4~5번) | 가격 경로 전수 grep, ADR-0004·0021 §결정 7, api-contracts 대조 |
+| 23:20 | reviewer(리뷰, 2차) | `git diff origin/dev...HEAD` + `git show d64b7ca6` | 1차 반영 재확인, 042 6번이 얹힐 자리, 테스트가 잡는 것 |
 
 ## 모니터링 (사람용 요약)
+- 23:20 — 2차 리뷰(1차 반영 재확인): **차단 0건**, 권장 2건(문서 정합성), 참고 4건. 폴백 정산이 진입 있는 tick에서 이중으로 돌지 않음, `exitIdleLoop` 두 호출점의 규칙 일치, `step` 음수 방어의 커서 정리, 버전 판정 호출부 전수, 로더 새 규칙과 현행 대본, 문서 4종의 코드 일치를 각각 반례 시도로 확인했다.
+- 22:34 — 041 4~5번 1차 리뷰 3건(관점 분리: 순회 알고리즘 / 회귀·통합 / 컨벤션·테스트). **셋이 각각 같은 차단 하나를 찾았다** — 진행 계산이 가상 분 진입 때만 정산해 대본 종료 후 PENDING 지정가가 영구 미체결. 추가 차단 1건은 문서(`api-contracts.md`가 generator version 2를 시장 구분 없이 서술). 순회 관점 리뷰어는 무한 루프·소비 초·`pricedAt` 단조성·봉 불변식을 반례 구성으로 검증해 전부 확인함으로 판정했다.
+- 22:34 — 041 4~5번 리뷰(컨벤션·테스트 관점): 차단 1건(진행 계산이 가상 분 진입 때만 정산해 FINISHED 이후 PENDING 지정가가 영구 미체결), 권장 5건, 참고 8건. 레이어·V52·문서 동기화·Jackson 3은 문제 없음. 통합 테스트의 `9941.58`은 대본 배율로 검산해 4번째 분에서만 최초 충족(종점은 9750)임을 확인했다.
 - 16:25 — 041 1~3번 리뷰: 차단 1건(대본 로더가 Jackson 2 `ObjectMapper`를 주입받아 Boot 4.1 컨텍스트에 후보 빈이 없음), 권장 2건. 대본 값·문안·도달 부등식·V50 마이그레이션은 문서와 일치.
 
 ## 041 4~5번 판정 기록 (이슈 #472, 2026-08-19)
@@ -60,3 +67,22 @@ plan이 "구현 착수 시 판정하고 run-log에 남긴다"고 지시한 두 �
 진행 계산은 가상 분마다 `PracticeOrderSettlementService.settleCurrentRun(attemptId, runNumber,
 pricedAt)` **하나만** 부른다. 042의 OCO 정산 루프를 그 메서드 안에 얹으면 지정가와 OCO가 같은 가상 분에
 같은 순서로 판정된다 — 진행 계산 쪽은 손대지 않아도 된다.
+
+## 2차 리뷰가 남긴 것 (다음 작업으로 넘김)
+
+차단은 없었고, 아래 셋은 **041 6번과 042 6번이 각각 받아야 할 항목**이다.
+
+- **대기 루프 되감기 지점의 체결도 한 tick 밀린다 (041 6번).** 순회 도중 체결 경로는 이번에 통일했지만,
+  구간 끝에 닿아 0으로 되감는 `enterMinute`에서 체결되면 그때 `remaining`이 0이라 탈출이 다음 tick으로
+  간다. 시간 손실은 없고 LOOP은 첫·끝 배율이 같아 가격도 튀지 않는다. **다만 6번이
+  `scenarioProgressing`("대기 중 / 진행 중")을 응답에 싣기 시작하면 이 한 tick이 화면에 보인다** — 그때
+  함께 본다.
+- **대기 탈출 tick은 같은 `pricedAt`으로 정산을 두 번 부른다 (042 6번).** 대기 구간의 체결 분에서 1회,
+  이동 직후 진행 구간 0분에서 1회다. 커서와 가격은 다르고 시각만 같다. 지정가는 `fillIfPending`의 PENDING
+  재확인으로 멱등이라 지금은 무해하지만, **OCO 정산을 `settleCurrentRun` 안에 넣으면 같은 가상 시각이 두
+  번 판정되고 두 체결의 `executedAt`이 같아진다.** 042가 진입 시퀀스나 체결 순서를 `executedAt`으로
+  정렬한다면 tie-break(주문 id)를 함께 정한다.
+- **버전 1 attempt 경로의 5분 만료를 통합으로 검증하는 자리가 없어졌다.** `TutorialSandboxPracticeIntegrationTest`의
+  만료 시나리오는 attempt를 만들지 않는 legacy chain이라 이번 변경의 영향을 받지 않는 것을 확인했다(회귀
+  없음). attempt 경로의 `EXPIRED`는 단위 테스트로만 남는다 — STOCK 대본(SCENARIO-024)이 들어오면 그
+  경로 자체가 사라지므로 지금 추가하지 않았다.

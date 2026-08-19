@@ -138,6 +138,9 @@ class PracticeScenarioProgressServiceTest {
 		// 다음 tick으로 밀리지 않고 이번 tick에서 1막 0분에 선다.
 		assertThat(attempt.getScenarioStageId()).isEqualTo("ACT1_RISE");
 		assertThat(attempt.getScenarioStageElapsedSeconds()).isZero();
+		// 최종 커서만 보면 "순회 시작 시점에 이미 보유" 경로와 구별되지 않는다 — 대기 구간에서 한 번
+		// 정산한 뒤 진행 구간에서 다시 정산했다는 사실이 이 경로를 특정한다.
+		verify(settlementService, times(2)).settleCurrentRun(eq(ATTEMPT_ID), eq(1L), any(LocalDateTime.class));
 	}
 
 	// 소비하지 않은 초가 차감되지 않아야 한다 — 대기 구간을 벗어나며 버린 시간은 다음 tick에 되살아나지
@@ -155,6 +158,12 @@ class PracticeScenarioProgressServiceTest {
 
 		assertThat(attempt.getScenarioStageId()).isEqualTo("ACT1_RISE");
 		assertThat(attempt.getScenarioStageElapsedSeconds()).isEqualTo(6L);
+		ArgumentCaptor<LocalDateTime> pricedAt = ArgumentCaptor.forClass(LocalDateTime.class);
+		verify(settlementService, times(4)).settleCurrentRun(eq(ATTEMPT_ID), eq(1L), pricedAt.capture());
+		// 대기 구간 1분(체결) → 진행 구간 0·1·2분. 첫 두 건이 같은 시각인 것은 이동이 시간을 소비하지
+		// 않기 때문이고, 이 시퀀스가 "순회 도중 체결"을 다른 경로와 갈라 놓는다.
+		assertThat(pricedAt.getAllValues()).containsExactly(
+			ANCHOR.plusSeconds(3), ANCHOR.plusSeconds(3), ANCHOR.plusSeconds(6), ANCHOR.plusSeconds(9));
 	}
 
 	// 표 3행 — 진행 구간은 보유 여부와 무관하게 진행한다. 4막을 관전 중인 미보유 사용자도 이 행이다.

@@ -349,7 +349,8 @@
 - [x] `GENERATOR_VERSION` 전환 — **대본이 저작된 시장(CRYPTO)만.** STOCK은 대본이 없어 버전 1이다
 - [x] `docs/api-contracts.md` 갱신 — tick의 대본 전진, chart의 커서 기반 봉, 409·`"EXPIRED"`의 V2 도달 불가
 - [ ] **후속(041 6번)**: 사건 노출(`scenarioStage`·`scenarioProgressing`·`causeStatus`·`revealedEvents`·`entries`)
-- [ ] **후속(041 7번)**: 통합 시나리오 완주 테스트, `docs/prd.md` §3에 SCENARIO 행 추가 + **SANDBOX 행의 5분 만료 서술 갱신**(이 PR이 CRYPTO에서 폐지했으므로 그 표는 아직 옛 서술이다)
+- [x] `docs/prd.md` §3 SANDBOX 행에 CRYPTO 버전 2의 5분 마감 폐지를 명시 (1차 리뷰 반영, 규칙 10)
+- [ ] **후속(041 7번)**: 통합 시나리오 완주 테스트, `docs/prd.md` §3에 **SCENARIO 행 신설**(SANDBOX 행 갱신은 이 이슈에서 끝냈다)
 - [ ] **후속(042 6번)**: OCO 정산 루프를 `PracticeOrderSettlementService.settleCurrentRun` 안에 얹는다 — 진행 계산이 가상 분마다 그 메서드 하나만 부르므로 지정가와 같은 순서로 판정된다
 
 ## 이슈 #470 — 튜토리얼 손절·익절 프리셋 상수와 스키마 (042 1~2번, 2026-08-19)
