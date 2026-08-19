@@ -38,6 +38,8 @@
   (+ `orders`와 같은 모양의 CHECK: 둘 다 null이거나 둘 다 non-null, run > 0). 대응 엔티티 필드.
 
 - [ ] **3. 선택 API와 잠금** — `PUT /api/education/practice/attempts/{market}/exit-preset`.
+  **`PracticeAttemptResponse`는 `047`(TUTORIAL-CASH-ISOL-011)도 건드린다** — 튜토리얼 계좌 잔고 필드가
+  추가되므로 충돌을 예상하고 먼저 머지된 쪽에 맞춰 rebase한다.
   **잠금 기준은 "현재 실행 세대의 순보유수량 == 0"이다** — 매수 전과 재진입 대기 중에는 허용, 보유 중에는
   409 `PRACTICE_STEP_LOCKED`. `PracticeAttemptResponse`에 `selectedExitPreset`·`exitPresetLocked`·
   `availableExitPresets` 추가.
@@ -52,7 +54,9 @@
 
 - [ ] **5. CRYPTO 자동 예약 생성** — `ExitPlanCreateCommandDto.practice(...)` 팩토리 추가(attempt·run
   귀속), `market == CRYPTO`일 때만 같은 트랜잭션에서 `ExitPlanCreationService.create` 호출.
-  `exitPriceType = PERCENT`로 비율을 함께 저장. **baseline을 041의 대본 canonical price로 주입한다** —
+  `exitPriceType = PERCENT`로 비율을 함께 저장. **공용 엔진(`ExitPlanCreationService`)을 직접 부른다** —
+  호출부 `ExitPlanService`에는 `047`이 넣은 샌드박스 차단이 있고, 그 차단은 이 경로를 막지 않도록
+  의도적으로 호출부에만 있다(plan §자동 예약 생성). **baseline을 041의 대본 canonical price로 주입한다** —
   엔진 기본 경로는 사인파 항시 시세를 읽는다. **STOCK은 snapshot까지만**(EXITPRESET-018).
   귀속 컬럼·baseline 주입 때문에 `ExitPlan` 생성 팩토리와 `newExitPlan`도 함께 바뀐다.
   **테스트**: 통합 — snapshot과 예약이 같은 트랜잭션에서 생기고 **실패 시 둘 다 남지 않음**.
@@ -63,6 +67,8 @@
     순서는 지정가 → OCO로 고정.
   - `PracticeRunRestartOrderService`에 예약 취소를 **주문 취소보다 먼저** 넣는다(예약 수량이 남아 있으면
     보상 매도가 `availableQuantity` 부족으로 실패한다). `exit_preset`도 null로 초기화.
+    **`047`이 같은 트랜잭션 끝에 튜토리얼 계좌 리셋을 추가해 뒀다(TUTORIAL-CASH-ISOL-006).
+    예약 취소가 그 리셋보다 앞이어야 한다.**
   - 튜토리얼 샘플 매도 주문 접수 전에 현재 run의 PENDING 예약을 같은 트랜잭션에서 전부 취소.
   **테스트**: 통합 — 대본이 손절선을 지날 때 체결되고 익절 예약이 자동 취소됨, 같은 가상 분 중복 tick이
   중복 체결을 안 만듦, 전량 예약 상태에서 시장가 매도가 정상 체결됨, 재시작이 예약 수량을 정확히 1회

@@ -191,6 +191,24 @@ onBuyFill(order, trade):
 **바뀌지 않는 것**은 검증 순서와 예약 원장 취급이다 — holding 잠금, `availableQuantity` 검증,
 `validateNoPendingPlan`, `holding.reserveQuantity()` 호출은 그대로다.
 
+**엔진을 직접 부르는 이유가 하나 더 생겼다(2026-08-19).** `047` TUTORIAL-CASH-ISOL-010(이슈 #461,
+PR #463)이 **호출부인 `ExitPlanService.create`에 샌드박스 종목 차단을 넣었다** —
+`validateNotTutorialSample`이 대상 holding의 종목이 `isTutorialSample()`이면 409
+`EXIT_PLAN_TUTORIAL_INSTRUMENT_NOT_ALLOWED`로 거부한다(`021` RISK-OCO-014가 정본).
+
+- 그 차단은 **공용 엔진(`ExitPlanCreationService`)에는 없다.** 배치 이유는 `021` RISK-OCO-014가 명시한다
+  — "경로 공용 엔진(`ExitPlanCreationService`)에 두지 않는 이유는 향후 교육 경로(`intentionId` 지정,
+  `016` EDU-PRACTICE-005·006)가 재접합될 때 그 경로 자신이 이 차단에 막히지 않아야 하기 때문이다"
+  (`021/spec.md` §비즈니스 규칙, 같은 취지가 `021/plan.md` §일반 경로 검증 순서 2단계에도 있다).
+  즉 이 자리는 교육 경로를 위해 의도적으로 비워 둔 것이다.
+- **그리고 042는 그 차단이 막으려던 문제를 애초에 만들지 않는다.** 047이 든 근거는 "일반 경로 OCO가
+  체결되면 `Order.create(...)`로 진행돼 attempt 귀속이 없어 재시작·진행 판정이 복구 불가능하게 깨진다"인데,
+  042의 예약은 `practice_attempt_id`·`practice_attempt_run_number`를 갖고 체결도 tick 정산 경로를 탄다.
+  귀속이 있으므로 그 파손이 일어나지 않는다.
+
+**이 근거를 문서에 남기는 이유는 방어다.** 지금은 차단이 호출부에만 있지만, 나중에 누군가 "엔진에서
+막는 게 맞지 않나" 하고 옮기면 042가 통째로 깨진다. 그때 이 문단이 왜 옮기면 안 되는지의 근거가 된다.
+
 **baseline은 반드시 주입해야 한다.** 현재 엔진 8단계가 `priceQueryService.getPrice(instrumentId)`로
 baseline을 확정하는데, `PriceQueryService`는 튜토리얼 샘플이면 `TutorialSampleInstrumentPriceService`
 (주기 180초·진폭 ±3%의 **벽시계 사인파**)로 분기한다. 대본과 아무 관계 없는 값이 `baseline_price`·

@@ -376,6 +376,31 @@ EXITPRESET-010이고, 대칭 조항이 `041` SCENARIO-006이다. **이 변경은
 4. **`plan.md` 착수 전에 상호 확인한다.** 두 spec 중 어느 쪽이든 `plan.md`를 쓰기 전에 상대 문서의
    대본·프리셋 가정이 그 사이에 바뀌지 않았는지 확인한다.
 
+### `047-tutorial-sandbox-cash-isolation` — 이 spec 작성 이후 머지됐다. 겹치는 지점 셋
+
+`047`(튜토리얼 전용 계좌로 샌드박스 현금 격리, 이슈 #450)은 이 문서의 초판·개정판을 쓸 당시 아직 없었고
+그 사이 `dev`에 머지됐다. 2026-08-19에 대조한 결과 **충돌은 없고 이어 붙일 지점이 셋 있다.**
+
+1. **OCO 생성 차단(TUTORIAL-CASH-ISOL-010 → `021` RISK-OCO-014).** 샌드박스 holding에 일반 경로 OCO를
+   만드는 것이 409로 차단됐다. **이 spec의 자동 예약은 차단 대상이 아니다** — 차단이 호출부
+   (`ExitPlanService`)에만 있고 공용 엔진에는 없으며, **그 배치 이유는 `021` RISK-OCO-014가 명시한다**
+   — "교육 경로가 재접합될 때 그 경로 자신이 이 차단에 막히지 않아야 하기 때문"(`021/spec.md`
+   §비즈니스 규칙, `021/plan.md` §검증 순서 2단계). 게다가 차단의 근거였던 파손("attempt 귀속 없이 체결돼 진행 판정이 깨진다")은
+   이 spec의 예약에는 해당하지 않는다(EXITPRESET-015의 귀속 컬럼). 상세는 `plan.md` §자동 예약 생성.
+2. **매도 체결의 현금 처리는 이미 격리됐다.** TUTORIAL-CASH-ISOL-003이 `ExitPlanFillService` →
+   `finalizeSellRealizedPnl` 경로를 튜토리얼 계좌로 돌렸다. 이 spec의 자동 예약이 체결될 때의 현금도
+   그 경로를 그대로 탄다 — **이 spec이 따로 할 일이 없다.**
+3. **재시작 정리와 응답 DTO를 둘이 같이 건드린다.**
+   - TUTORIAL-CASH-ISOL-006이 `cleanupCurrentRun` 트랜잭션 끝에 튜토리얼 계좌 리셋을 추가했다. 이 spec의
+     EXITPRESET-015(현재 실행 세대 PENDING 예약 취소)는 **그 리셋보다 앞에 와야 한다** — 예약 수량이 남은
+     채로 계좌를 리셋하면 보상 매도가 `availableQuantity` 부족으로 실패한다.
+   - TUTORIAL-CASH-ISOL-011이 `PracticeAttemptResponse`에 튜토리얼 계좌 잔고 필드를 추가한다. 이 spec도
+     같은 DTO에 `selectedExitPreset`·`exitPresetLocked`·`availableExitPresets`를 더한다. **같은 파일을
+     두 작업이 건드리므로 구현 시 충돌을 예상하고, 먼저 머지된 쪽에 맞춰 rebase한다.**
+
+`047`이 대체한 `033` SANDBOX-EXCL-006·007(`sandboxCashAdjustment`)은 이 문서 어디에서도 참조하지 않으므로
+낡은 서술이 남아 있지 않다(확인함).
+
 ### `031-tutorial-sandbox-instruments` — 긴장이 해소된다
 
 - SANDBOX-004는 샘플 종목 가격이 변동하는 이유를 "`026`의 evidence A가 원칙적으로 도달 가능해야 하기

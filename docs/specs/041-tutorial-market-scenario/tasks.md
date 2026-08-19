@@ -44,7 +44,8 @@
 - [ ] **3. attempt 진행 컬럼** — 마이그레이션(`scenario_stage_id`, `scenario_stage_elapsed_seconds`,
   `scenario_candle_open/high/low` 5개 nullable 추가) + `PracticeAttempt` 엔티티 필드.
   **`select()`와 `restart()` 양쪽의 초기화 대상에 새 컬럼을 추가한다** — `restart()`가 빠뜨리면 재시작한
-  사용자가 이전 실행의 대본 위치를 물려받는다.
+  사용자가 이전 실행의 대본 위치를 물려받는다. **`047`이 같은 재시작 흐름에 튜토리얼 계좌 리셋을
+  추가해 뒀으니(TUTORIAL-CASH-ISOL-006) 충돌을 예상하고 rebase한다.**
 
 - [ ] **4. 진행 계산 서비스** — plan §상태 전이표 전 항목. 특히 **대기 구간에서 매수 시 다음 진행 구간
   0분으로 점프**(초판이 빠뜨린 전이), 대기 구간의 벽시계 진행·되감기, 진행 구간은 미보유여도 진행,
