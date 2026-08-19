@@ -50,7 +50,6 @@ FinPlay 백엔드의 JPA 엔티티와 실제 DB 테이블 구조를 도메인별
 | community | `CommunityPostImage` | `community_post_images` | |
 | community | `CommunityPostLike` | `community_post_likes` | |
 | community | `PostComment` | `post_comments` | 자기참조(대댓글 1단계) |
-| badge | `MemberBadge` | `member_badges` | |
 | watchlist | `WatchlistItem` | `watchlist_items` | User와 FK 없음 |
 
 ## 관계 표기 범례
@@ -474,7 +473,7 @@ erDiagram
 
 `price_move_event_sources`는 "기사 하나가 여러 카드의 근거가 되고, 카드 하나가 여러 기사를 근거로 둔다"는 N:M을 명시적 조인 엔티티로 구현한 것이다. `market_briefings.market`은 `Instrument.market`과 값이 같은 별도 enum일 뿐 엔티티 참조가 아니라서 관계선이 없다.
 
-## 7. 매매일지 · 커뮤니티 · 배지 · 관심종목
+## 7. 매매일지 · 커뮤니티 · 관심종목
 
 ```mermaid
 erDiagram
@@ -490,7 +489,6 @@ erDiagram
     community_posts ||--o{ post_comments : has
     users ||--o{ post_comments : writes
     post_comments ||--o{ post_comments : replies_to
-    users ||--o{ member_badges : grants
     instruments ||--o{ watchlist_items : watched_as
     users ||..o{ watchlist_items : "user_id (FK 아님), UK(user_id, instrument_id)"
 
@@ -533,13 +531,6 @@ erDiagram
         bigint parent_comment_id FK "nullable, 자기참조"
         varchar content
         datetime deleted_at "soft delete"
-    }
-    member_badges {
-        bigint id PK
-        bigint user_id FK "UK(user_id, badge_type)"
-        enum badge_type "UK"
-        enum tier
-        datetime achieved_at
     }
     watchlist_items {
         bigint id PK
