@@ -13,7 +13,7 @@
 - `CommunityPostResponse.from(CommunityPost post)`는 인자를 엔티티 하나만 받는다 — 요청자(viewer) 컨텍스트를 모른다. `likedByMe`를 추가하려면 이 팩토리에 인증 사용자 ID(또는 그 결과인 boolean)를 추가로 넘겨야 한다.
 - `CommunityPostController.getPost`·`getPosts`는 현재 `@AuthenticationPrincipal`을 전혀 받지 않는다 — 인증은 필터 단에서 걸리지만 컨트롤러가 principal을 쓰지 않았다. `likedByMe`를 위해 두 메서드 모두 `@AuthenticationPrincipal AuthenticatedUser principal`을 추가해야 한다(기존 `createPost`/`updatePost`/`deletePost`가 이미 쓰는 패턴 그대로 재사용).
 - `CommunityPostRepositoryImpl.findPostsOrderByCreatedAtDesc(Pageable, Long instrumentId)`는 이름 자체가 "생성일 내림차순"을 박아뒀다 — 인기순을 추가하면 이 이름이 더 이상 정확하지 않으므로 `findPosts(Pageable, Long instrumentId, String sort)`로 이름·시그니처를 바꾼다(호출부는 `CommunityPostService.getPosts` 한 곳뿐).
-- 착수 시점에 `ls src/main/resources/db/migration`으로 실제 최신 번호를 확인하고 그 다음 빈 번호부터 쓴다(specs/README.md 번호 규칙). 이 spec은 **`V41`**부터 썼다.
+- 착수 시점 `dev` 최신은 `V38`이었다. `V39`·`V40`은 착수 시점에 이미 다른 PR이 선점해 사용 중이었으나 그 PR이 나중에 `V43`·`V44`로 번호를 옮겨 결번이 됐다 — 재사용하지 않는다. 착수 시점에 `ls src/main/resources/db/migration`으로 실제 최신 번호를 확인하고 그 다음 빈 번호부터 쓴다(specs/README.md 번호 규칙). 이 spec은 다음 빈 번호인 **`V41`**부터 썼다.
 - `ErrorCode`에 좋아요 전용 코드는 없다 — `NOT_FOUND`(게시물 없음)·`VALIDATION_ERROR`(잘못된 정렬 값)만으로 충분하다. 신규 `ErrorCode` 추가 없음.
 
 ## API 설계
