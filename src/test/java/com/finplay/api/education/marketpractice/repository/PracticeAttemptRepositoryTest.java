@@ -32,6 +32,7 @@ import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -151,6 +152,17 @@ class PracticeAttemptRepositoryTest {
 		assertThat(first.get().getId()).isEqualTo(saved.getId());
 		assertThat(practiceRiskSnapshotRepository
 			.countByAttemptIdAndRunNumber(attempt.getId(), attempt.getRunNumber())).isEqualTo(1L);
+	}
+
+	@Test
+	@DisplayName("entry_sequence가 0 이하면 CHECK 제약이 거부한다")
+	void savingNonPositiveEntrySequenceFailsWithCheckConstraint() {
+		Trade buyTrade = createBuyTrade("entry-sequence-check-order");
+		PracticeRiskSnapshot invalid = createRiskSnapshot(buyTrade, NOW.plusSeconds(1));
+		ReflectionTestUtils.setField(invalid, "entrySequence", 0);
+
+		assertThatThrownBy(() -> practiceRiskSnapshotRepository.saveAndFlush(invalid))
+			.isInstanceOf(DataIntegrityViolationException.class);
 	}
 
 	@Test
