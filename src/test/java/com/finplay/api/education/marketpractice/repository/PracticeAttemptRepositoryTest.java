@@ -106,15 +106,42 @@ class PracticeAttemptRepositoryTest {
 		assertThat(result.get().getRunNumber()).isEqualTo(1L);
 	}
 
+	// 기존 UNIQUE(attempt_id, run_number)는 삭제됐다. 같은 진입 순번의 중복을 막는 것은 이제
+	// uk_practice_risk_snapshots_attempt_run_seq다 — 보호 범위가 같은지 확인한다.
 	@Test
-	@DisplayName("같은 attempt와 실행 세대에는 위험 스냅샷 하나만 저장된다")
-	void savingDuplicateAttemptAndRunRiskSnapshotFailsWithUniqueConstraint() {
+	@DisplayName("같은 attempt·실행 세대·진입 순번에는 위험 스냅샷 하나만 저장된다")
+	void savingDuplicateEntrySequenceRiskSnapshotFailsWithUniqueConstraint() {
 		Trade buyTrade = createBuyTrade("risk-snapshot-order");
 		practiceRiskSnapshotRepository.saveAndFlush(createRiskSnapshot(buyTrade, NOW.plusSeconds(1)));
 
 		assertThatThrownBy(() -> practiceRiskSnapshotRepository.saveAndFlush(
 			createRiskSnapshot(buyTrade, NOW.plusSeconds(2))))
 			.isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	// 이 PR이 여는 것 — 재진입(손절 후 재매수)의 전제다.
+	@Test
+	@DisplayName("같은 실행 세대라도 진입 순번이 다르면 위험 스냅샷을 여럿 저장할 수 있다")
+	void savingMultipleEntriesInSameRunSucceedsWhenEntrySequenceDiffers() {
+		Trade firstBuy = createBuyTrade("reentry-first-order");
+		Trade secondBuy = createBuyTrade("reentry-second-order");
+		practiceRiskSnapshotRepository.saveAndFlush(createRiskSnapshot(firstBuy, NOW.plusSeconds(1)));
+		PracticeRiskSnapshot reentry = createRiskSnapshot(secondBuy, NOW.plusSeconds(2));
+		ReflectionTestUtils.setField(reentry, "entrySequence", 2);
+
+		practiceRiskSnapshotRepository.saveAndFlush(reentry);
+		entityManager.clear();
+
+		assertThat(practiceRiskSnapshotRepository
+			.countByAttemptIdAndRunNumber(attempt.getId(), attempt.getRunNumber())).isEqualTo(2L);
+		var latest = practiceRiskSnapshotRepository
+			.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(attempt.getId(), attempt.getRunNumber());
+		var first = practiceRiskSnapshotRepository.findByAttemptIdAndRunNumberAndEntrySequence(
+			attempt.getId(), attempt.getRunNumber(), PracticeRiskSnapshot.FIRST_ENTRY_SEQUENCE);
+		assertThat(latest).isPresent();
+		assertThat(latest.get().getEntrySequence()).isEqualTo(2);
+		assertThat(first).isPresent();
+		assertThat(first.get().getEntrySequence()).isEqualTo(PracticeRiskSnapshot.FIRST_ENTRY_SEQUENCE);
 	}
 
 	@Test
