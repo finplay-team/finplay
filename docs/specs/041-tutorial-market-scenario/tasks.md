@@ -87,6 +87,13 @@
   (대본 lookahead)와 **진입별 `entries` 배열** 추가 — 각 항목에 `unrealizedPnlIfHeld`("안 팔았다면" 평가손익)를 **서버가 계산해** 담는다. 공식은 `PostSellArithmetic`을 재사용하고 매도 수수료를 뺀 기준으로 맞춘다(SCENARIO-019b·021a). `causeStatus`는 `REVEALED`·`NONE_KNOWN` 둘뿐이며 **미공개 사건은 `NONE_KNOWN`과
   구분 불가능해야 한다**(SCENARIO-015·016). `docs/api-contracts.md`를 **같은 커밋에서** 갱신한다.
   **테스트**: `@WebMvcTest` — 공개 시점 이전 응답에 문안·시각·개수·자리표시자 어떤 형태로도 없음.
+  > **042가 넘긴 것 (이슈 #477).** 042 tasks 7번의 "진입별 대조 배열"을 여기로 합쳤다 — 같은 배열이고,
+  > 042가 혼자 모양을 정하면 이 항목이 그 모양에 묶이거나 다시 고쳐야 하기 때문이다. **042는 `sellCause`만
+  > 넣었다.** 이 항목이 만들 배열에 진입별 `entrySequence`·`exitPreset`·매수가·수량·매도가·매도 시각·
+  > `sellCause`·`realizedPnl`을 담고, 그 위에 `unrealizedPnlIfHeld`를 얹는다.
+  > **지금 상태의 결함을 명시한다** — 재진입한 사용자의 완료 화면은 `sellTradeId`·매도 시각·`sellCause`가
+  > `firstSellTrade` 기준이라 첫 매도만 가리킨다. 금액(`realizedPnl`·가중평균 매도가)은 맞고, 틀리는 것은
+  > 2막 손절 → 3막 익절이 손절 하나로 보이는 것이다. **이 항목이 그 결함을 닫는다.**
 
 - [ ] **7. 통합 시나리오와 문서** — Testcontainers 통합 테스트로 **0막 대기 → 매수 → 1막 →
   2막 손절 → 확정 하락 관전 → 재진입 대기 → 재매수 → 3막 익절 → 4막 관전 → 복기 → 완료** 완주.
