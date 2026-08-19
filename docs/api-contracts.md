@@ -168,12 +168,6 @@ PR #49 차단 리뷰 후속 Fake 재사용·동시성·DB 불변 자동 회귀�
 
 `market` 생략·빈 값 시 시드된 주식 16종·코인 12종에 더해 031의 튜토리얼 전용 샘플 종목(`SANDBOX_STK_1~3`·`SANDBOX_COIN_1~3`, `isTutorialSample=true`, 시장당 1번째만 `tradable=true`)을 `id` 오름차순으로 반환한다. `isTutorialSample`은 목록·단건 응답 모두에 존재하는 추가 전용 필드다(기존 소비자에게 breaking change 없음).
 
-### 종목 단건 조회
-
-| Method | URL | 인증 | 경로 변수 | 성공 응답 | 오류 응답 | Spec |
-|---|---|---|---|---|---|---|
-| GET | /api/instruments/{instrumentId} | Access Bearer 필수 | `instrumentId` | 200 `{"instrumentId":1,"market":"STOCK","symbol":"005930","name":"삼성전자","tickSize":100,"minOrderAmount":70000,"tradable":true,"isTutorialSample":false}` (`InstrumentResponse`, 목록 API와 동일 DTO) | 존재하지 않는 `instrumentId`는 404 `NOT_FOUND`. 숫자가 아닌 `instrumentId`는 400 `VALIDATION_ERROR`. Access 인증 실패는 401 `UNAUTHORIZED` 공통 오류 형식 | 003 MKT-001, Issue #15, 031 SANDBOX-001 |
-
 ### 종목 현재가 조회
 
 | Method | URL | 인증 | 경로 변수 | 성공 응답 | 오류 응답 | Spec |
