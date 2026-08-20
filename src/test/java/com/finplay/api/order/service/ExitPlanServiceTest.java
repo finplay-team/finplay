@@ -413,6 +413,70 @@ class ExitPlanServiceTest {
 		verify(exitPlanRepository, times(0)).findByUserIdAndStatusOrderByIdDesc(USER_ID, ExitPlanStatus.PENDING);
 	}
 
+	// PR #487 리뷰 지적 — list의 튜토리얼 제외 필터와 cancel의 튜토리얼 거부에 테스트가 없었다.
+	// 두 동작 모두 042 5번이 요구하는 안전장치라 회귀를 잡을 단위 테스트를 남긴다.
+	@Test
+	void listExcludesTutorialSamplePlanSoRealTradingScreenHasNoGhostReservation() {
+		Holding tutorialHolding = holdingWithMarket(Market.CRYPTO);
+		ReflectionTestUtils.setField(tutorialHolding.getInstrument(), "tutorialSample", true);
+		when(exitPlanRepository.findByUserIdAndStatusOrderByIdDesc(USER_ID, ExitPlanStatus.PENDING))
+			.thenReturn(List.of(generalPlan(tutorialHolding)));
+
+		ExitPlanListResponse response = service.list(USER_ID, null);
+
+		assertThat(response.content()).isEmpty();
+	}
+
+	@Test
+	void listKeepsRealInstrumentPlanWhenTutorialPlanCoexists() {
+		Holding tutorialHolding = holdingWithMarket(Market.CRYPTO);
+		ReflectionTestUtils.setField(tutorialHolding.getInstrument(), "tutorialSample", true);
+		Holding realHolding = holdingWithMarket(Market.CRYPTO);
+		ExitPlan realPlan = generalPlan(realHolding);
+		when(exitPlanRepository.findByUserIdAndStatusOrderByIdDesc(USER_ID, ExitPlanStatus.PENDING))
+			.thenReturn(List.of(generalPlan(tutorialHolding), realPlan));
+
+		ExitPlanListResponse response = service.list(USER_ID, null);
+
+		assertThat(response.content()).containsExactly(ExitPlanResponse.from(realPlan));
+	}
+
+	@Test
+	void cancelThrowsTutorialInstrumentNotAllowedAndDoesNotReachEngineWhenPlanIsTutorialReservation() {
+		Holding tutorialHolding = holdingWithMarket(Market.CRYPTO);
+		ReflectionTestUtils.setField(tutorialHolding.getInstrument(), "tutorialSample", true);
+		ExitPlan tutorialPlan = generalPlan(tutorialHolding);
+		when(exitPlanRepository.findByIdAndUserId(tutorialPlan.getId(), USER_ID))
+			.thenReturn(Optional.of(tutorialPlan));
+
+		assertThatThrownBy(() -> service.cancel(USER_ID, tutorialPlan.getId()))
+			.isInstanceOf(BusinessException.class)
+			.extracting(ex -> ((BusinessException)ex).getErrorCode())
+			.isEqualTo(ErrorCode.EXIT_PLAN_TUTORIAL_INSTRUMENT_NOT_ALLOWED);
+		verifyNoInteractions(exitPlanCancelService);
+	}
+
+	@Test
+	void cancelThrowsNotFoundWhenPlanIsMissingOrNotOwnedByRequester() {
+		when(exitPlanRepository.findByIdAndUserId(500L, USER_ID)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> service.cancel(USER_ID, 500L))
+			.isInstanceOf(BusinessException.class)
+			.extracting(ex -> ((BusinessException)ex).getErrorCode())
+			.isEqualTo(ErrorCode.EXIT_PLAN_NOT_FOUND);
+		verifyNoInteractions(exitPlanCancelService);
+	}
+
+	@Test
+	void cancelDelegatesToEngineWhenPlanIsRealInstrumentReservation() {
+		ExitPlan realPlan = generalPlan(holdingWithMarket(Market.CRYPTO));
+		when(exitPlanRepository.findByIdAndUserId(realPlan.getId(), USER_ID)).thenReturn(Optional.of(realPlan));
+
+		service.cancel(USER_ID, realPlan.getId());
+
+		verify(exitPlanCancelService).cancel(USER_ID, realPlan.getId());
+	}
+
 	private static ExitPlanCreateRequest priceModeRequest() {
 		return new ExitPlanCreateRequest(
 			null, null, null, HOLDING_ID, new BigDecimal("1"), ExitPriceType.PRICE,
