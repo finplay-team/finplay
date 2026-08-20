@@ -15,4 +15,7 @@ public interface StockDailyCandleRepository extends JpaRepository<StockDailyCand
 	// 기간(구간, 양끝 포함) 조회 — 거래일 오름차순.
 	List<StockDailyCandle> findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAsc(
 		Long instrumentId, LocalDate from, LocalDate to);
+
+	// 로컬 실수집 트리거(StockDailyImportTriggerWriter) 전용 — 누적 저장된 전체 일봉 수를 보고한다.
+	long countByDataSource(String dataSource);
 }

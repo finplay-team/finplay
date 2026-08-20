@@ -120,3 +120,19 @@ market 도메인의 API 계약 상세다. 전체 라우트를 한눈에 보는 �
 | 실전투자 | `https://openapi.koreainvestment.com:9443` |
 
 **2026-07-30 실측 결과.** 19:50 KST(장외)에 시드 → `marketStatus: OPEN`, 삼성전자 현재가 `70900.0000`(`sourceTime` `2026-07-29T15:30:00`), 캔들 391건(09:00~15:30), 16종목·6,256건 삽입. 이어서 10주 매수(`amount` 709,000 / `fee` 106) → 4주 매도(`realizedPnl` -84) → `cashBalance` 9,574,452로 정산까지 확인했다. 시드 전에는 현재가 409 `PRICE_UNAVAILABLE`·캔들 `200 []`·주문 409 `MARKET_CLOSED`였다.
+
+### 로컬 KIS 일봉 아카이브 실수집 트리거 (local 프로필 전용, 050)
+
+| Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|---|
+| POST | /api/dev/stock-daily-imports | Access Bearer 필수 | 본문 없음 | 200 `{"serviceDate":"2026-07-30","targetEndDate":"2026-07-29","newlyCollectedCount":12000,"totalArchivedCount":12000,"importStatus":"SUCCESS","failureReason":null}` (`StockDailyImportTriggerResponse`) | `local` 프로필이 아니면 404. Access 인증 실패는 401 `UNAUTHORIZED` | 050 MKT-011 (개발 도구) |
+
+**왜 있나.** 위 "로컬 KIS 실수집 트리거"와 같은 성격이지만 대상이 다르다 — 저 트리거는 1분봉(재생용, `stock_candles`)을, 이 트리거는 **일봉 아카이브**(장기 차트용, `stock_daily_candles`)를 채운다. 실제 일봉은 평일 08:25 배치(`StockDailyCandleCollector`)가 종목별 빈 구간만 채우는데, 그 시각을 기다리지 않거나 앱이 그 시각에 꺼져 있어 건너뛴 날에 즉시 채우기 위한 트리거다.
+
+**무엇을 하나.** ① `StockDailyCandleCollector.collect()`를 한 번 실행한다 — 종목마다 "있어야 할 구간(3년 전 ~ 직전 영업일) − 이미 저장된 구간"만 계산해 빈 구간이 있는 종목만 KIS를 호출한다(이미 최신까지 저장된 종목은 호출 자체가 없다 — 멱등). ② 결과(신규 저장 건수·누적 총량·이력 상태)를 돌려준다. 재생세션(`StockReplaySession`)은 건드리지 않는다 — 이 spec의 범위가 아니다(spec 050 §범위 제외, 캔들 조회 API 연결은 후속).
+
+- **`newlyCollectedCount`는 이번 호출로 새로 저장된 일봉 수다** (위 1분봉 트리거의 `collectedKisCandleCount`와 달리 "그 시점의 총량"이 아니라 "이번 실행의 증가분"이다 — 트리거 호출 전후로 `totalArchivedCount`를 비교해 계산한다). 최초 호출은 종목별 최대 3년치(약 750영업일)를 순차 조회하므로 16종목 기준 수 분 이상 걸릴 수 있다.
+- **`totalArchivedCount`는 `stock_daily_candles`에 `KIS_DAILY`로 누적 저장된 전체 일봉 수**(전 종목 합계)다. 이미 최신까지 채워진 상태에서 재호출하면 `newlyCollectedCount`는 0이고 `totalArchivedCount`는 이전과 동일하다 — **정상이다**(STOCK-DAILY-007 재실행 멱등).
+- **`importStatus`·`failureReason`은 `targetEndDate`(이번 실행의 직전 영업일) 기준 가장 최근 수집 이력**(`market_data_imports`, `source=KIS_DAILY`)이다. 이력이 아직 없으면(락을 얻지 못해 이번 실행이 조용히 스킵된 경우 등) 둘 다 `null`이다.
+- **트랜잭션을 열지 않는다** — 위 1분봉 트리거와 같은 이유(종목별 순차 HTTP 호출 동안 DB 커넥션을 점유하지 않기 위해). DB 조회는 `StockDailyImportTriggerWriter`의 별도 트랜잭션 메서드로 분리했다.
+- KIS 앱키 환경·도메인 짝(위 표), 오류 코드 판별(`EGW02004`·`EGW00133`·`EGW00201`)은 1분봉 트리거와 동일하다 — 같은 `KisProperties`·레이트리밋 재시도 패턴을 쓴다.
