@@ -10,9 +10,10 @@ import java.util.List;
  * {@code revealedEvents}가 빈 목록이다. 클라이언트는 {@code scenarioStage == null}로 "대본 UI 없음"을
  * 판정한다.
  *
- * @param scenarioStage       {@code IDLE_ENTRY|ACT1|ACT2|IDLE_REENTRY|ACT3|ACT4|FINISHED}. 대본 내부
- *                            구간이 아니라 act 단위다. {@code FINISHED}가 대본 종료 알림이며 서버에 별도
- *                            완료 플래그를 두지 않는다
+ * @param scenarioStage       {@code IDLE_ENTRY|ACT1|ACT2|IDLE_REENTRY|ACT3|ACT4|FINISHED|ORDER_BASICS}.
+ *                            대본 내부 구간이 아니라 act 단위다. {@code ORDER_BASICS}는 049 2단계 대본의
+ *                            유일한 구간 id를 act 없이 그대로 내보낸 값이다. {@code FINISHED}가 대본 종료
+ *                            알림이며 서버에 별도 완료 플래그를 두지 않는다
  * @param scenarioProgressing 현재 구간이 진행 구간인가. {@code false}면 대기 구간이고 보유 여부와 무관하다
  * @param causeStatus         {@code REVEALED|NONE_KNOWN} 둘뿐이다. 미공개 사건이 있는 구간도
  *                            {@code NONE_KNOWN}이라 두 경우를 구분할 수 없다(SCENARIO-015·016)
