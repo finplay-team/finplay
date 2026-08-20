@@ -16,18 +16,27 @@ import java.util.List;
  *                        실제로 그 지점까지 진행했는지와 무관하다(SCENARIO-021). 대본을 쓰지 않는 실행은
  *                        {@code null}
  * @param entries         진입별 대조 배열. 매수 전이거나 attempt가 없는 legacy 경로는 빈 목록이다
+ *
+ * @param tutorialStageProgress 이슈 #503에서 더했다. 튜토리얼 5단계(종목 고르기 → 시장가 → 지정가 →
+ *                        프리셋 → 복기) 중 <b>주문 방법·프리셋 단계를 그 실행에서 실제로 마쳤는지</b>를
+ *                        서버가 체결 원장으로 판정해 내려보낸다. 화면이 스스로 세면 새로고침에 날아간다.
+ *                        판정하지 않는 경로(attempt 없음, 종목 미선택)는 세 값 모두 {@code false}이며
+ *                        <b>{@code null}이 되지 않는다</b> — 클라이언트가 null 분기를 갖지 않게 한다
  */
 public record InvestmentPracticeResponse(
 	String tutorialKey, String status, Integer currentStep, List<PracticeStepResponse> steps,
 	LocalDateTime completedAt, Long rewardAmount, PracticeAttemptResponse attempt,
 	List<PracticeScenarioEventResponse> revealedEvents, BigDecimal priceAfterSell,
-	List<PracticeEntryResponse> entries) {
+	List<PracticeEntryResponse> entries, PracticeStageProgressResponse tutorialStageProgress) {
 
 	public InvestmentPracticeResponse {
 		// steps는 List 필드라 방어적 복사 없이는 SpotBugs EI_EXPOSE_REP/REP2로 잡힌다(agent-mistakes.md 2026-07-29).
 		steps = List.copyOf(steps);
 		revealedEvents = revealedEvents == null ? List.of() : List.copyOf(revealedEvents);
 		entries = entries == null ? List.of() : List.copyOf(entries);
+		tutorialStageProgress = tutorialStageProgress == null
+			? PracticeStageProgressResponse.none()
+			: tutorialStageProgress;
 	}
 
 	/**
@@ -40,6 +49,8 @@ public record InvestmentPracticeResponse(
 	public InvestmentPracticeResponse(
 		String tutorialKey, String status, Integer currentStep, List<PracticeStepResponse> steps,
 		LocalDateTime completedAt, Long rewardAmount, PracticeAttemptResponse attempt) {
-		this(tutorialKey, status, currentStep, steps, completedAt, rewardAmount, attempt, List.of(), null, List.of());
+		this(
+			tutorialKey, status, currentStep, steps, completedAt, rewardAmount, attempt, List.of(), null, List.of(),
+			PracticeStageProgressResponse.none());
 	}
 }

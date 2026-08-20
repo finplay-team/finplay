@@ -15,6 +15,7 @@ import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.TutorialPriceGenerator;
 import com.finplay.api.order.domain.ExitPlanStatus;
 import com.finplay.api.order.domain.Order;
+import com.finplay.api.order.domain.OrderType;
 import com.finplay.api.order.domain.Trade;
 import com.finplay.api.order.service.PracticeExitPlanQueryService;
 import com.finplay.api.order.service.PracticeRunTradeSummaryDto;
@@ -45,7 +46,9 @@ class PracticeEntryComparisonServiceTest {
 		Trade stopLossSell = sellTrade(102L, 501L, NOW.minusMinutes(10));
 		Trade takeProfitSell = sellTrade(104L, 502L, NOW.minusMinutes(2));
 		PracticeRiskSnapshot first = snapshot(attempt, 1, ExitPreset.CAUTIOUS, buyTrade(101L), "9700", "10500");
-		PracticeRiskSnapshot second = snapshot(attempt, 2, ExitPreset.BALANCED, buyTrade(103L), "8439", "9135");
+		// 두 진입의 주문 유형을 일부러 다르게 둔다 — 배열 전체에 한 값을 복사해 붙이는 구현이면 여기서 깨진다.
+		PracticeRiskSnapshot second = snapshot(
+			attempt, 2, ExitPreset.BALANCED, buyTrade(103L, OrderType.LIMIT), "8439", "9135");
 		when(snapshotRepository.findByAttemptIdAndRunNumberOrderByEntrySequenceAsc(ATTEMPT_ID, 1L))
 			.thenReturn(List.of(first, second));
 		when(tradeService.summarizePracticeRunEntries(ATTEMPT_ID, 1L, List.of(101L, 103L))).thenReturn(List.of(
@@ -67,6 +70,8 @@ class PracticeEntryComparisonServiceTest {
 		assertThat(entries.get(1).sellCause()).isEqualTo("TAKE_PROFIT");
 		assertThat(entries.get(1).sellAt()).isEqualTo(NOW.minusMinutes(2));
 		assertThat(entries.get(1).realizedPnl()).isEqualTo(4_341L);
+		assertThat(entries.get(0).buyOrderType()).isEqualTo("MARKET");
+		assertThat(entries.get(1).buyOrderType()).isEqualTo("LIMIT");
 		// 대본 기준가가 없으면(생성기 버전 1) 이 값만 비어 나가고 나머지는 그대로 채워진다.
 		assertThat(entries).extracting(PracticeEntryResponse::unrealizedPnlIfHeld).containsOnlyNulls();
 	}
@@ -151,8 +156,16 @@ class PracticeEntryComparisonServiceTest {
 	}
 
 	private static Trade buyTrade(long id) {
+		return buyTrade(id, OrderType.MARKET);
+	}
+
+	// 이슈 #503 — 진입 응답이 그 진입을 연 매수 주문의 유형을 싣는다. 매수 체결에도 주문이 붙어 있어야 한다.
+	private static Trade buyTrade(long id, OrderType orderType) {
+		Order order = mock(Order.class);
+		when(order.getOrderType()).thenReturn(orderType);
 		Trade trade = mock(Trade.class);
 		when(trade.getId()).thenReturn(id);
+		when(trade.getOrder()).thenReturn(order);
 		when(trade.getExecutedAt()).thenReturn(NOW.minusMinutes(30));
 		return trade;
 	}

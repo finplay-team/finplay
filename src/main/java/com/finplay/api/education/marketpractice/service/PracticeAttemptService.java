@@ -143,7 +143,7 @@ public class PracticeAttemptService {
 
 		if (attempt.getStatus() == PracticeAttemptStatus.IN_PROGRESS) {
 			if (attempt.getInstrument().getId().equals(instrumentId)) {
-				return toResponse(attempt);
+				return toResponse(attempt, tutorialAccountFor(userId, market));
 			}
 			throw new BusinessException(ErrorCode.PRACTICE_STEP_LOCKED);
 		}
@@ -157,7 +157,7 @@ public class PracticeAttemptService {
 		LocalDateTime now = LocalDateTime.now(clock);
 		attempt.selectInstrument(
 			instrument, now, LocalDate.now(clock), secureRandom.nextLong(), generatorVersionFor(market), now);
-		return toResponse(attempt);
+		return toResponse(attempt, tutorialAccountFor(userId, market));
 	}
 
 	/**
@@ -181,7 +181,7 @@ public class PracticeAttemptService {
 		attempt.selectExitPreset(preset, LocalDateTime.now(clock));
 		// 방금 잠금이 아님을 확인했으므로 다시 조회하지 않는다 — attempt를 잠근 트랜잭션 안이라 그 사이
 		// 매수 체결이 끼어들 수 없다.
-		return toResponse(attempt, false);
+		return toResponse(attempt, tutorialAccountFor(userId, market), false);
 	}
 
 	// 042 EXITPRESET-003의 잠금 판정, EXITPRESET-020의 진입 가드, 041의 대기 구간 탈출 판정이 같은 산출식을
@@ -199,29 +199,42 @@ public class PracticeAttemptService {
 		}
 	}
 
-	private PracticeAttemptResponse toResponse(PracticeAttempt attempt) {
-		return toResponse(attempt, exitPresetLocked(attempt));
-	}
-
-	private PracticeAttemptResponse toResponse(PracticeAttempt attempt, boolean exitPresetLocked) {
-		PracticeRiskSnapshot snapshot = practiceRiskSnapshotRepository
-			.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(attempt.getId(), attempt.getRunNumber())
-			.orElse(null);
-		return PracticeAttemptResponse.from(attempt, snapshot, exitPresetLocked);
-	}
-
 	// 진입 응답(ensureAttempt)은 같은 트랜잭션에서 이미 get-or-create한 튜토리얼 계좌 값을 그대로 실어
 	// 보낸다(TUTORIAL-CASH-ISOL-011) — 추가 조회 없이 진입 시점 잔고·손익을 정확히 노출한다.
 	private PracticeAttemptResponse toResponse(PracticeAttempt attempt, TutorialAccount tutorialAccount) {
+		return toResponse(attempt, tutorialAccount, exitPresetLocked(attempt));
+	}
+
+	private PracticeAttemptResponse toResponse(
+		PracticeAttempt attempt, TutorialAccount tutorialAccount, boolean exitPresetLocked) {
 		PracticeRiskSnapshot snapshot = practiceRiskSnapshotRepository
 			.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(attempt.getId(), attempt.getRunNumber())
 			.orElse(null);
 		return PracticeAttemptResponse.from(
 			attempt,
 			snapshot,
-			exitPresetLocked(attempt),
+			exitPresetLocked,
 			tutorialAccount.getCashBalance(),
 			tutorialAccount.getAvailableCash(),
 			tutorialAccount.getRealizedPnl());
+	}
+
+	/**
+	 * 종목 선택·프리셋 선택 응답이 실을 튜토리얼 계좌를 읽는다(이슈 #502).
+	 *
+	 * <p><b>잠금 없이 먼저 읽고, 없을 때만 get-or-create로 떨어진다.</b> 이 두 호출부는 계좌를 한 글자도
+	 * 바꾸지 않으므로 X 잠금을 걸 이유가 없다 — 걸면 무변경 응답이 지정가 취소·정정이나 예약 청산 정산과
+	 * 경합해 대기한다(attempt 잠금은 그 트랜잭션들을 직렬화하지 못한다). 폴백을 남겨 두는 것은 계좌가
+	 * 아직 없는 예외 경우(계좌 도입 이전 attempt)에도 0원을 내려보내지 않기 위해서이고, 그 경로는 진입이
+	 * 이미 계좌를 만들어 두므로 사실상 도달하지 않는다.
+	 *
+	 * <p>진입 경로와 잠금 순서(attempt → tutorial account)는 폴백에서도 같다 — 순서가 같아야 이슈 #491류
+	 * 교착을 새로 만들지 않는다.
+	 */
+	private TutorialAccount tutorialAccountFor(Long userId, Market market) {
+		com.finplay.api.account.domain.Market accountMarket = toAccountMarket(market);
+		return tutorialAccountService.find(userId, accountMarket)
+			.orElseGet(() -> tutorialAccountService.getOrCreateForUpdate(
+				userId, accountMarket, LocalDateTime.now(clock)));
 	}
 }

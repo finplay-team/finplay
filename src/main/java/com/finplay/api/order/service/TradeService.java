@@ -144,6 +144,19 @@ public class TradeService {
 		return net == null ? BigDecimal.ZERO : net;
 	}
 
+	/**
+	 * 현재 실행 세대에서 체결된 주문들의 방향·유형(이슈 #503, 튜토리얼 5단계 진행 판정).
+	 *
+	 * <p>주문 하나에 체결은 최대 하나다({@code trades.uk_trades_order} 유니크 제약)라서 중복 제거를
+	 * 하지 않는다 — 그 제약이 사라지면 이 메서드는 같은 주문을 여러 번 담는다. <b>예약 발동 매도를 이 메서드가 걸러내지
+	 * 않는다</b> — 어떤 주문이 발동분인지는 {@code exit_plans}만 알고 그 조회는 education이 하므로
+	 * (`PracticeEntryComparisonService`가 매도 원인을 붙일 때와 같은 분담), 여기서는 주문 id를 그대로 준다.
+	 */
+	@Transactional(readOnly = true)
+	public List<PracticeRunFillKindDto> findPracticeRunFillKinds(Long attemptId, long runNumber) {
+		return tradeRepository.findPracticeRunFillKinds(attemptId, runNumber);
+	}
+
 	// 041 대기 구간 탈출용 — 진행 계산이 delta를 자를 기준 시각 하나만 읽는다(체결 목록 전체를 읽지 않는다).
 	@Transactional(readOnly = true)
 	public Optional<LocalDateTime> findLatestPracticeRunBuyExecutedAt(Long attemptId, long runNumber) {

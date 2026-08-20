@@ -209,6 +209,18 @@ class PracticeScenarioFullJourneyIntegrationTest {
 		assertThat(entryTwo.entrySequence()).isEqualTo(2);
 		assertThat(entryTwo.exitPreset()).isEqualTo("BALANCED");
 		assertThat(entryTwo.sellCause()).isEqualTo("TAKE_PROFIT");
+		// 이슈 #503 — 두 진입 모두 시장가로 열렸다.
+		assertThat(entryOne.buyOrderType()).isEqualTo("MARKET");
+		assertThat(entryTwo.buyOrderType()).isEqualTo("MARKET");
+
+		// **이 대본은 사용자가 한 번도 직접 팔지 않는다** — 두 매도 모두 예약이 발동시킨 것이다. 그래서
+		// 대본을 끝까지 완주해 완료했는데도 "시장가로 사고팔기" 단계는 열리지 않는다(이슈 #503). 주문
+		// 유형만 보고 판정하는 구현은 여기서 정확히 틀린다.
+		assertThat(completed.tutorialStageProgress().marketBuySellCompleted()).isFalse();
+		assertThat(completed.tutorialStageProgress().limitBuySellCompleted()).isFalse();
+		// 프리셋은 직접 골랐다(이 대본은 CAUTIOUS로 시작해 BALANCED로 바꾼다) — 판정 기준이 "골랐는가"라
+		// 중간에 프리셋을 바꿔도 통과가 취소되지 않는다.
+		assertThat(completed.tutorialStageProgress().exitPresetSelected()).isTrue();
 
 		// 완료 대조의 기준가는 대본 종점이다 — 사용자가 실제로 어디까지 갔는지와 무관하다(SCENARIO-021).
 		assertThat(completed.priceAfterSell()).isEqualByComparingTo(SCRIPT_FINAL_PRICE);

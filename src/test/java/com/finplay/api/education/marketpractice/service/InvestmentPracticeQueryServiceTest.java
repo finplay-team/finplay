@@ -66,12 +66,15 @@ class InvestmentPracticeQueryServiceTest {
 		PracticeAttemptCanonicalPriceService.class);
 	private final PracticeEntryComparisonService practiceEntryComparisonService = mock(
 		PracticeEntryComparisonService.class);
+	private final PracticeStageProgressCalculationService practiceStageProgressCalculationService = mock(
+		PracticeStageProgressCalculationService.class);
 	private final Clock clock = Clock.fixed(NOW.atZone(ZoneId.systemDefault()).toInstant(), ZoneId.systemDefault());
 
 	private final InvestmentPracticeQueryService service = new InvestmentPracticeQueryService(
 		favoriteService, practiceAttemptRepository, practiceRiskSnapshotRepository, practiceAttemptEvidenceService,
 		tradeService, chainResolutionService, referencePriceCalculator, practiceMarketObservationRepository,
-		canonicalPriceService, practiceEntryComparisonService, practiceCompletionRepository, clock);
+		canonicalPriceService, practiceEntryComparisonService, practiceStageProgressCalculationService,
+		practiceCompletionRepository, clock);
 
 	// 프리셋 잠금 판정이 매 응답에서 순보유수량을 읽는다(042 EXITPRESET-003). 이 테스트들의 대상은 잠금이
 	// 아니므로 기본을 "미보유"로 두고, 잠금을 보는 테스트만 따로 덮어쓴다.

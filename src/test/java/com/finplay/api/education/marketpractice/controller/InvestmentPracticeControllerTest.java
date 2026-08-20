@@ -21,6 +21,7 @@ import com.finplay.api.education.marketpractice.dto.response.PracticeEntryRespon
 import com.finplay.api.education.marketpractice.dto.response.PracticeEvidenceResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeScenarioEventResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeRiskSnapshotResponse;
+import com.finplay.api.education.marketpractice.dto.response.PracticeStageProgressResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeStepResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeTradeResultResponse;
 import com.finplay.api.education.marketpractice.service.InvestmentPracticeQueryService;
@@ -244,14 +245,15 @@ class InvestmentPracticeControllerTest {
 			List.of(new PracticeScenarioEventResponse("ACT1", "[연습] 첫 소식")),
 			new BigDecimal("7900.00000000"),
 			List.of(
-				new PracticeEntryResponse(1, "CAUTIOUS", LocalDateTime.of(2026, 8, 20, 11, 0),
+				new PracticeEntryResponse(1, "CAUTIOUS", "MARKET", LocalDateTime.of(2026, 8, 20, 11, 0),
 					new BigDecimal("10000.00000000"), new BigDecimal("1"), new BigDecimal("9800.00000000"),
 					new BigDecimal("10300.00000000"), new BigDecimal("9750.00000000"), new BigDecimal("1"),
 					LocalDateTime.of(2026, 8, 20, 11, 10), "STOP_LOSS", -260L, -2108L),
-				new PracticeEntryResponse(2, "BALANCED", LocalDateTime.of(2026, 8, 20, 11, 20),
+				new PracticeEntryResponse(2, "BALANCED", "LIMIT", LocalDateTime.of(2026, 8, 20, 11, 20),
 					new BigDecimal("8700.00000000"), new BigDecimal("1"), new BigDecimal("8439.00000000"),
 					new BigDecimal("9135.00000000"), new BigDecimal("9135.00000000"), new BigDecimal("1"),
-					LocalDateTime.of(2026, 8, 20, 11, 40), "TAKE_PROFIT", 422L, -807L)));
+					LocalDateTime.of(2026, 8, 20, 11, 40), "TAKE_PROFIT", 422L, -807L)),
+			new PracticeStageProgressResponse(true, true, true));
 		when(investmentPracticeQueryService.getProgress(eq(USER_ID), eq(Market.CRYPTO))).thenReturn(response);
 
 		mockMvc.perform(get("/api/education/practice")
@@ -270,7 +272,14 @@ class InvestmentPracticeControllerTest {
 			.andExpect(jsonPath("$.entries[0].unrealizedPnlIfHeld").value(-2108))
 			.andExpect(jsonPath("$.entries[1].entrySequence").value(2))
 			.andExpect(jsonPath("$.entries[1].sellCause").value("TAKE_PROFIT"))
-			.andExpect(jsonPath("$.entries[1].unrealizedPnlIfHeld").value(-807));
+			.andExpect(jsonPath("$.entries[1].unrealizedPnlIfHeld").value(-807))
+			// 이슈 #503 — 진입마다 매수의 주문 유형이 따로 나간다. 완료 화면이 "이 진입은 시장가,
+			// 저 진입은 지정가"를 구분해 그리는 근거다.
+			.andExpect(jsonPath("$.entries[0].buyOrderType").value("MARKET"))
+			.andExpect(jsonPath("$.entries[1].buyOrderType").value("LIMIT"))
+			.andExpect(jsonPath("$.tutorialStageProgress.marketBuySellCompleted").value(true))
+			.andExpect(jsonPath("$.tutorialStageProgress.limitBuySellCompleted").value(true))
+			.andExpect(jsonPath("$.tutorialStageProgress.exitPresetSelected").value(true));
 	}
 
 	// SCENARIO-015 — 공개 전 구간의 진행 조회에도 문안·개수·자리표시자가 남지 않는다.
@@ -280,7 +289,8 @@ class InvestmentPracticeControllerTest {
 		InvestmentPracticeResponse response = new InvestmentPracticeResponse(
 			"COIN_PRACTICE_V1", "IN_PROGRESS", 3,
 			List.of(new PracticeStepResponse(1, "COMPLETED", false, PracticeEvidenceResponse.empty())),
-			null, null, null, List.of(), new BigDecimal("9950.00000000"), List.of());
+			null, null, null, List.of(), new BigDecimal("9950.00000000"), List.of(),
+			new PracticeStageProgressResponse(true, false, false));
 		when(investmentPracticeQueryService.getProgress(eq(USER_ID), eq(Market.CRYPTO))).thenReturn(response);
 
 		mockMvc.perform(get("/api/education/practice")
@@ -289,6 +299,10 @@ class InvestmentPracticeControllerTest {
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.revealedEvents.length()").value(0))
 			.andExpect(jsonPath("$.entries.length()").value(0))
+			// 시장가만 마친 진행 중 화면 — 지정가·프리셋 단계는 아직 잠겨 있어야 한다.
+			.andExpect(jsonPath("$.tutorialStageProgress.marketBuySellCompleted").value(true))
+			.andExpect(jsonPath("$.tutorialStageProgress.limitBuySellCompleted").value(false))
+			.andExpect(jsonPath("$.tutorialStageProgress.exitPresetSelected").value(false))
 			.andExpect(content().string(not(containsString("[연습]"))));
 	}
 
@@ -308,7 +322,13 @@ class InvestmentPracticeControllerTest {
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.entries.length()").value(0))
 			.andExpect(jsonPath("$.revealedEvents.length()").value(0))
-			.andExpect(jsonPath("$.priceAfterSell").doesNotExist());
+			.andExpect(jsonPath("$.priceAfterSell").doesNotExist())
+			// 이슈 #503 — attempt가 없는 경로도 `null`이 아니라 세 값 모두 false인 객체로 나간다.
+			// 짧은 생성자가 채우는 값이라 여기서만 계약이 고정된다(다른 두 테스트는 값을 채워 stub한다).
+			.andExpect(jsonPath("$.tutorialStageProgress").exists())
+			.andExpect(jsonPath("$.tutorialStageProgress.marketBuySellCompleted").value(false))
+			.andExpect(jsonPath("$.tutorialStageProgress.limitBuySellCompleted").value(false))
+			.andExpect(jsonPath("$.tutorialStageProgress.exitPresetSelected").value(false));
 	}
 
 	private void authenticate() {

@@ -19,6 +19,11 @@ import java.time.LocalDateTime;
  *
  * @param entrySequence       실행 세대 안의 몇 번째 진입인가(1부터). 손절 후 재매수하면 2다
  * @param exitPreset          그 진입에 적용된 프리셋. 기능 도입 전 행은 기본 프리셋으로 해석해 내려보낸다
+ * @param buyOrderType        그 진입을 연 매수의 주문 유형({@code MARKET|LIMIT}, 이슈 #503). 진입 경계인
+ *                            위험 snapshot의 매수 체결이 가리키는 주문에서 읽는다. <b>매도의 유형이
+ *                            아니다</b> — 시장가로 산 포지션을 지정가로 팔거나 예약이 청산할 수 있어 둘이
+ *                            같다는 보장이 없다. 완료 화면이 "이 진입은 시장가, 저 진입은 지정가"를
+ *                            구분해 보여 주는 근거다
  * @param buyAt               그 진입의 최초 매수 체결 시각(기준선이 만들어진 시각)
  * @param buyPrice            그 진입 매수 체결의 수량 가중평균 단가, scale 8. 수수료를 포함하지 않는다
  * @param buyQuantity         그 진입의 매수 수량 합
@@ -41,6 +46,7 @@ import java.time.LocalDateTime;
 public record PracticeEntryResponse(
 	int entrySequence,
 	String exitPreset,
+	String buyOrderType,
 	LocalDateTime buyAt,
 	BigDecimal buyPrice,
 	BigDecimal buyQuantity,
