@@ -567,7 +567,8 @@ class CandleQueryServiceIntegrationTest {
 		List<LocalDateTime> combined = new ArrayList<>();
 		combined.addAll(page2.content().stream().map(CandleResponse::sourceTime).toList());
 		combined.addAll(page1.content().stream().map(CandleResponse::sourceTime).toList());
-		List<LocalDateTime> expected = mondays.stream().map(date -> LocalDateTime.of(date, LocalTime.MIDNIGHT)).toList();
+		List<LocalDateTime> expected = mondays.stream().map(date -> LocalDateTime.of(date, LocalTime.MIDNIGHT))
+			.toList();
 		assertThat(combined).containsExactlyElementsOf(expected);
 		assertThat(combined).doesNotHaveDuplicates();
 	}
