@@ -297,6 +297,8 @@ erDiagram
 
 `stock_replay_sessions`, `market_data_imports`는 다른 엔티티를 FK로 참조하지 않는 독립 테이블이다(리플레이 세션·수집 배치 자체의 상태 기록용). `Trade`, `ExitPlan`이 `stock_replay_sessions`를 선택적으로 참조하는 것은 3번 다이어그램에서 다룬다.
 
+**`stock_candles`는 1분봉이며 재생(replay)용이다** — 최근 20영업일만 보관하는 롤링 윈도우다(PRD MKT-005). 장기 차트용 **일봉**은 여기에 없다. 별도 테이블 `stock_daily_candles`에 3년치를 보관하는 것이 **MKT-011(`ai/specs/050-stock-daily-archive`, 이슈 #506)이며 아직 구현 전이라 위 다이어그램에 없다** — 착수 시 이 절과 엔티티 목록에 함께 추가한다.
+
 ## 3. 주문 · 체결 · 포트폴리오
 
 ```mermaid
