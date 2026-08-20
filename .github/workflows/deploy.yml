@@ -71,7 +71,9 @@ jobs:
             exit 0
           fi
 
-          MAX_BEFORE=$(git ls-tree -r --name-only "$BEFORE" -- "$MIGRATION_DIR" | grep -oE '/V[0-9]+__' | grep -oE '[0-9]+' | sort -n | tail -1)
+          # || true — 이 스텝의 셸은 bash -eo pipefail이다(Actions 기본). grep이 무매치로 exit 1을
+          # 내면 대입문 자체가 실패해 아래 폴백 줄에 닿기 전에 스텝이 죽는다 (PR #493 리뷰에서 재현).
+          MAX_BEFORE=$(git ls-tree -r --name-only "$BEFORE" -- "$MIGRATION_DIR" | grep -oE '/V[0-9]+__' | grep -oE '[0-9]+' | sort -n | tail -1 || true)
           MAX_BEFORE=${MAX_BEFORE:-0}
           echo "직전 dev($BEFORE) 최고 마이그레이션 번호: V$MAX_BEFORE"
 
@@ -82,15 +84,23 @@ jobs:
           fi
 
           INVERTED=""
-          for f in $NEW_FILES; do
-            NUM=$(basename "$f" | grep -oE '^V[0-9]+' | grep -oE '[0-9]+')
-            [ -z "$NUM" ] && continue
+          # 한 줄씩 읽는다 — 공백이 든 파일명이 워드 스플리팅으로 쪼개지지 않게 한다.
+          # NUM의 || true도 위와 같은 이유다. 마이그레이션 디렉터리에는 V{N}__ 규칙과 무관한
+          # 파일(Flyway 콜백 afterMigrate.sql, README 등)이 들어올 수 있고, 그때 조용히 죽는 대신
+          # 그 파일만 건너뛰어야 한다.
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            NUM=$(basename "$f" | grep -oE '^V[0-9]+' | grep -oE '[0-9]+' || true)
+            if [ -z "$NUM" ]; then
+              echo "번호 없는 파일 — 검사 대상 아님: $f"
+              continue
+            fi
             echo "이 푸시가 추가한 마이그레이션: $f (V$NUM)"
             if [ "$NUM" -le "$MAX_BEFORE" ]; then
               echo "::error file=$f::V$NUM이 직전 dev 최고 번호(V$MAX_BEFORE) 이하다 — 이 상태로 배포하면 Flyway가 validate에서 'Detected resolved migration not applied to database: $NUM'으로 멈춘다. 리뷰 대기 중 다른 PR이 먼저 그 번호대를 차지한 경우다."
               INVERTED="$INVERTED $f(V$NUM)"
             fi
-          done
+          done <<< "$NEW_FILES"
 
           if [ -n "$INVERTED" ]; then
             {
@@ -280,7 +290,10 @@ jobs:
           # 원인 문장은 위 stdout 안에 묻힌다. 2026-08-18 배포 실패 때 원인을 찾는 데 시간이
           # 걸린 자리가 정확히 여기다. 서명이 보이면 이름을 붙여 준다.
           if grep -qE "Detected resolved migration not applied to database|FlywayValidateException|Migrations have failed validation" ssm-stdout.txt ssm-stderr.txt; then
-            DETAIL=$(grep -hoE "Detected resolved migration not applied to database: [0-9]+" ssm-stdout.txt ssm-stderr.txt | head -1)
+            # || true — grep이 무매치면 대입문이 실패해(bash -eo pipefail) 아래 폴백과 ::error::,
+            # job summary가 통째로 건너뛰어진다. 이 if에 들어온 이유가 다른 서명일 수 있으므로
+            # 무매치는 정상 경로다 (PR #493 리뷰에서 재현).
+            DETAIL=$(grep -hoE "Detected resolved migration not applied to database: [0-9]+" ssm-stdout.txt ssm-stderr.txt | head -1 || true)
             DETAIL=${DETAIL:-"Flyway validate 실패 (자세한 문장은 위 stdout 참고)"}
             echo "::error::원인은 Flyway 마이그레이션이다 — $DETAIL. 앱 코드가 아니라 마이그레이션 번호·체크섬 문제다."
             {
