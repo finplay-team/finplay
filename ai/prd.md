@@ -632,7 +632,14 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 - **코인 일봉.** 계속 빗썸 위임이다(MKT-009).
 - 실시간 시세 — C-007 Decision Gate는 실시간 한정이며 과거 데이터는 공공데이터로 확인되어 이 요구사항의 제약이 아니다(C-006).
 
-- 범위: 2차 고도화(3차 MVP). 이슈 [#506](https://github.com/finplay-team/finplay-backend/issues/506).
+**구현 완료 — 수집·저장 범위 (2026-08-20, `050-stock-daily-archive`, PR [#508](https://github.com/finplay-team/finplay-backend/pull/508))**
+
+- 위 "무엇을 하나"에 적은 내용을 그대로 구현했다. `stock_daily_candles`(`V53__create_stock_daily_candles.sql`), `KisDailyCandleClient`/`KisDailyCandleClientImpl`(날짜 커서 역방향 페이징, 1회 100행 상한 — 실제 KIS 호출로 확인), `StockDailyCandleCollector`(평일 08:25 KST, 종목별 빈 구간만 채움, 기존 `StockCollectionLock` 재사용).
+- **수정주가 결정**: `FID_ORG_ADJ_PRC=0`(수정주가)으로 고정한다. 삼성전자 2018년 액면분할 구간을 실제 호출로 대조해 원주가(`=1`)는 분할 경계에서 50배 단절이 생기는 것을 확인하고 확정했다(`plan.md` "Decision Gate 해소" 절).
+- Testcontainers 통합 테스트로 최초 전량 적재 → 증분 → 재실행 멱등, 종목 단위 실패 격리, **`stock_candles`(1분봉) 행 수 무변경**을 검증했다.
+- **"이번 범위가 아닌 것"에 적은 항목은 여전히 미착수다** — 특히 캔들 조회 API 연결은 이 PR 이후에도 그대로 `stock_candles` 1분봉 집계로 응답하며, 이 절이 정의한 범위 경계가 그대로 유지된다.
+
+- 범위: 2차 고도화(3차 MVP). 이슈 [#506](https://github.com/finplay-team/finplay-backend/issues/506)(참조만, 미종료).
 
 ### 시장가 주문·체결
 
