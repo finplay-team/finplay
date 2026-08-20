@@ -9,6 +9,10 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.finplay.api.market.config.KisProperties;
 import java.time.Clock;
 import java.time.Instant;
@@ -18,6 +22,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -210,6 +215,84 @@ class KisDailyCandleClientImplTest {
 		assertThat(candles.get(0).tradingDate()).isEqualTo(to.minusDays(11));
 		assertThat(candles.get(candles.size() - 1).tradingDate()).isEqualTo(to);
 		server.verify();
+	}
+
+	// 진짜로 페이지 상한을 다 써서 끝난 경우에만 "페이지 상한 도달" 경고가 찍히는지 검증한다(재리뷰 지적 반영).
+	@Test
+	void fetchDailyCandlesLogsPageLimitWarningOnlyWhenAllTwelvePagesAreExhausted() {
+		RestClient.Builder builder = newBuilder();
+		MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+		KisDailyCandleClientImpl client = newClient(builder);
+		LocalDate from = LocalDate.of(2000, 1, 1);
+		LocalDate to = LocalDate.of(2026, 8, 20);
+
+		expectTokenExchange(server);
+		for (int page = 0; page < 12; page++) {
+			LocalDate cursorEnd = to.minusDays(page);
+			server.expect(requestTo(dailyCandleUri(from, cursorEnd)))
+				.andExpect(method(HttpMethod.GET))
+				.andRespond(withSuccess(
+					dailyPageJson(dailyRow(cursorEnd, "71000", "71500", "70900", "71200", "100")),
+					MediaType.APPLICATION_JSON));
+		}
+
+		List<ILoggingEvent> logs = capturingLogs(() -> client.fetchDailyCandles(SYMBOL, from, to));
+
+		assertThat(logs)
+			.anyMatch(event -> event.getFormattedMessage().contains("KIS 일봉 페이지 상한(12)에 도달"));
+		server.verify();
+	}
+
+	// 상장 이력이 짧은 종목처럼 일부 페이지만 데이터를 모으고 빈 응답으로 정상 종료되는 경우, "페이지 상한 도달"
+	// 경고가 찍히면 안 된다 — 재리뷰가 지적한 문제(알림 피로) 그 자체의 회귀 테스트다.
+	@Test
+	void fetchDailyCandlesDoesNotLogPageLimitWarningWhenTerminatedNaturallyByEmptyPageAfterPartialData() {
+		RestClient.Builder builder = newBuilder();
+		MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+		KisDailyCandleClientImpl client = newClient(builder);
+		LocalDate from = LocalDate.of(2000, 1, 1);
+		LocalDate day1 = LocalDate.of(2026, 8, 19);
+		LocalDate day2 = LocalDate.of(2026, 8, 20);
+
+		expectTokenExchange(server);
+		// 첫 페이지는 이틀치를 반환하고, 두 번째 페이지에서 그 종목의 상장일 이전이라 빈 응답을 받는다(자연 종료).
+		server.expect(requestTo(dailyCandleUri(from, day2)))
+			.andExpect(method(HttpMethod.GET))
+			.andRespond(withSuccess(
+				dailyPageJson(
+					dailyRow(day2, "71000", "71500", "70900", "71200", "100"),
+					dailyRow(day1, "70500", "70900", "70400", "70800", "100")),
+				MediaType.APPLICATION_JSON));
+		server.expect(requestTo(dailyCandleUri(from, day1.minusDays(1))))
+			.andExpect(method(HttpMethod.GET))
+			.andRespond(withSuccess("{\"output2\":[]}", MediaType.APPLICATION_JSON));
+
+		List<ILoggingEvent> logs = capturingLogs(() -> {
+			List<RawDailyCandleDto> candles = client.fetchDailyCandles(SYMBOL, from, day2);
+			assertThat(candles).hasSize(2);
+		});
+
+		assertThat(logs)
+			.noneMatch(event -> event.getFormattedMessage().contains("페이지 상한"));
+		server.verify();
+	}
+
+	// 로그가 종료 사유 구분의 유일한 외부 관찰점이라 로거에 임시 appender를 붙인다 (RankingRebuildServiceTest와 같은 방식).
+	private static List<ILoggingEvent> capturingLogs(Runnable action) {
+		Logger logger = (Logger)LoggerFactory.getLogger(KisDailyCandleClientImpl.class);
+		ListAppender<ILoggingEvent> appender = new ListAppender<>();
+		appender.start();
+		Level originalLevel = logger.getLevel();
+		logger.setLevel(Level.DEBUG);
+		logger.addAppender(appender);
+		try {
+			action.run();
+			return List.copyOf(appender.list);
+		} finally {
+			logger.detachAppender(appender);
+			logger.setLevel(originalLevel);
+			appender.stop();
+		}
 	}
 
 	// --- 응답 검증 규칙(행 단위 폐기 — 종목 전체가 아니라 위반 행만 버린다) ---
