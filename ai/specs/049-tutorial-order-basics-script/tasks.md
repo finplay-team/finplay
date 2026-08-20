@@ -51,6 +51,27 @@
 
 ---
 
+## 2-A. 2단계 대본 실행에서 자동 OCO 예약을 만들지 않는다 (ORDERBASICS-022)
+
+2번(대본 식별자 영속)이 끝나야 분기 조건이 생긴다. 그 뒤에 한다.
+
+- `PracticeAttemptOrderAttributionService.createRiskSnapshotOnBuyFill`에서 **snapshot은 그대로 만들고**
+  `createAutomaticExitPlan` 호출만 건너뛴다. 조건은 그 run의 대본이 2단계용인가다(CRYPTO 조건 옆).
+- **기준선까지 빼면 안 된다** — `PracticeAttemptEvidenceService.requireCurrentRun`이
+  `PRACTICE_EVIDENCE_MISSING`으로 던져 관찰·복기가 통째로 깨진다.
+- `ExitPlan.createPractice`의 귀속 검증과 `findPendingExitPlansToFill`의 `practiceAttemptId is null`
+  불변식(PR #487)은 건드리지 않는다.
+
+**검증**
+
+- 통합: 2단계 대본 실행에서 매수 → `exit_plans`가 0건 → tick을 여러 바퀴 돌려도 자동 청산이 없다 →
+  직접 시장가 매도 → `marketBuySellCompleted`가 `true`. **tick을 최소 한 바퀴(가상 20분) 이상 돌려라**
+  — 기본 프리셋이 살아 있으면 6~9초 만에 발동하므로 짧게 돌리면 회귀를 놓친다.
+- 통합: 같은 실행에서 `PracticeRiskSnapshot`은 정상 생성되고 관찰·복기가 끝까지 돈다.
+- 3단계 대본 실행에서는 예약이 여전히 생기는지 회귀로 함께 본다.
+- 예약 부재가 기존 경로에 무해하다는 것은 spec §비즈니스 규칙에 전수 확인 결과가 있다. **그 조사를
+  반복하지 말고** 위 두 통합 테스트로 실제 동작만 고정해라.
+
 ## 3. 대본 가격 안내 범위를 차트 응답에 싣는다
 
 - `market.service`에 순수 계산 함수 추가(plan §5의 일반식). 상수 1,000을 박지 않는다.
