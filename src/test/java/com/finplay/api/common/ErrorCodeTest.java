@@ -11,7 +11,7 @@ class ErrorCodeTest {
 
 	@Test
 	void declaresEveryErrorCodeFromPrdAndOAuthSpecWithoutUnlistedOnes() {
-		assertThat(ErrorCode.values()).hasSize(43);
+		assertThat(ErrorCode.values()).hasSize(44);
 	}
 
 	@Test
@@ -30,6 +30,7 @@ class ErrorCodeTest {
 			Map.entry(ErrorCode.WATCHLIST_ITEM_NOT_FOUND, HttpStatus.NOT_FOUND),
 			Map.entry(ErrorCode.DUPLICATE_RESOURCE, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.PRACTICE_STEP_LOCKED, HttpStatus.CONFLICT),
+			Map.entry(ErrorCode.PRACTICE_STAGE_LOCKED, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.PRACTICE_ALREADY_COMPLETED, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.PRACTICE_EVIDENCE_MISSING, HttpStatus.CONFLICT),
 			Map.entry(ErrorCode.PRACTICE_SANDBOX_TIME_EXPIRED, HttpStatus.CONFLICT),
@@ -94,6 +95,8 @@ class ErrorCodeTest {
 	void practiceErrorsKeepPublicDefaultMessages() {
 		assertThat(ErrorCode.PRACTICE_STEP_LOCKED.getDefaultMessage())
 			.isEqualTo("선행 실습 단계를 완료해야 합니다.");
+		assertThat(ErrorCode.PRACTICE_STAGE_LOCKED.getDefaultMessage())
+			.isEqualTo("앞 단계를 먼저 마쳐야 합니다.");
 		assertThat(ErrorCode.PRACTICE_ALREADY_COMPLETED.getDefaultMessage())
 			.isEqualTo("이미 완료한 실습입니다.");
 		assertThat(ErrorCode.PRACTICE_EVIDENCE_MISSING.getDefaultMessage())

@@ -11,6 +11,7 @@ import com.finplay.api.education.marketpractice.domain.PracticeCompletion;
 import com.finplay.api.education.marketpractice.domain.PracticeAttemptStatus;
 import com.finplay.api.education.marketpractice.domain.PracticeRiskSnapshot;
 import com.finplay.api.education.marketpractice.dto.response.PracticeAttemptResponse;
+import com.finplay.api.education.marketpractice.dto.response.PracticeStageProgressResponse;
 import com.finplay.api.education.marketpractice.repository.PracticeAttemptRepository;
 import com.finplay.api.education.marketpractice.repository.PracticeCompletionRepository;
 import com.finplay.api.education.marketpractice.repository.PracticeRiskSnapshotRepository;
@@ -56,6 +57,8 @@ public class PracticeAttemptService {
 	private final TradeService tradeService;
 	private final TutorialScenarioScriptLoader tutorialScenarioScriptLoader;
 	private final TutorialAccountService tutorialAccountService;
+	// 049 ORDERBASICS-015 — 프리셋 선택도 lockForOrder와 같은 판정식을 쓴다(#503 재사용).
+	private final PracticeStageProgressCalculationService practiceStageProgressCalculationService;
 	private final Clock clock;
 	private final SecureRandom secureRandom = new SecureRandom();
 
@@ -203,6 +206,7 @@ public class PracticeAttemptService {
 		if (attempt.getStatus() == PracticeAttemptStatus.COMPLETED) {
 			throw new BusinessException(ErrorCode.PRACTICE_ALREADY_COMPLETED);
 		}
+		requireStageUnlockedForPresetSelection(attempt);
 		if (exitPresetLocked(attempt)) {
 			throw new BusinessException(ErrorCode.PRACTICE_STEP_LOCKED);
 		}
@@ -210,6 +214,21 @@ public class PracticeAttemptService {
 		// 방금 잠금이 아님을 확인했으므로 다시 조회하지 않는다 — attempt를 잠근 트랜잭션 안이라 그 사이
 		// 매수 체결이 끼어들 수 없다.
 		return toResponse(attempt, tutorialAccountFor(userId, market), false);
+	}
+
+	/**
+	 * 049 ORDERBASICS-015 — 지정가 왕복을 마치기 전 프리셋 선택을 409로 거부한다. 대본을 쓰지 않는 실행은
+	 * 항상 통과한다. 보유 중 잠금(exitPresetLocked)보다 <b>앞에</b> 검사한다 — 두 조건이 동시에 걸릴 때
+	 * "앞 단계를 먼저 마쳐야 합니다"가 사용자에게 더 정확한 안내다(plan §4).
+	 */
+	private void requireStageUnlockedForPresetSelection(PracticeAttempt attempt) {
+		if (!attempt.usesScenarioScript()) {
+			return;
+		}
+		PracticeStageProgressResponse progress = practiceStageProgressCalculationService.calculate(attempt);
+		if (!progress.marketBuySellCompleted() || !progress.limitBuySellCompleted()) {
+			throw new BusinessException(ErrorCode.PRACTICE_STAGE_LOCKED);
+		}
 	}
 
 	// 042 EXITPRESET-003의 잠금 판정, EXITPRESET-020의 진입 가드, 041의 대기 구간 탈출 판정이 같은 산출식을

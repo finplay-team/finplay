@@ -14,6 +14,7 @@ import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.InstrumentService;
 import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderStatus;
+import com.finplay.api.order.domain.OrderType;
 import com.finplay.api.order.dto.response.LimitOrderResponse;
 import com.finplay.api.order.repository.OrderRepository;
 import java.math.BigDecimal;
@@ -66,7 +67,7 @@ public class PracticeLimitOrderCreationService {
 		Long userId, Long practicePriceSessionId, Long instrumentId, BigDecimal quantity, BigDecimal limitPrice) {
 		Instrument instrument = getValidatedInstrument(instrumentId);
 		Optional<PracticeOrderAttributionDto> practiceAttribution = practiceOrderAttributionPort
-			.lockForOrder(userId, instrument);
+			.lockForOrder(userId, instrument, OrderType.LIMIT);
 		LimitOrderCreationService.validateQuantityFormat(quantity);
 		LimitOrderCreationService.validateLimitPrice(limitPrice);
 		LimitOrderCreationService.validateMinOrderAmount(quantity, limitPrice, instrument);

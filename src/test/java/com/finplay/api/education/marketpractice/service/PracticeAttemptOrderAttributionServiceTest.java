@@ -2,6 +2,7 @@
 package com.finplay.api.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -10,9 +11,12 @@ import static org.mockito.Mockito.when;
 
 import com.finplay.api.account.domain.Account;
 import com.finplay.api.auth.domain.User;
+import com.finplay.api.common.BusinessException;
+import com.finplay.api.common.ErrorCode;
 import com.finplay.api.education.marketpractice.domain.ExitPreset;
 import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
 import com.finplay.api.education.marketpractice.domain.PracticeRiskSnapshot;
+import com.finplay.api.education.marketpractice.dto.response.PracticeStageProgressResponse;
 import com.finplay.api.education.marketpractice.repository.PracticeAttemptRepository;
 import com.finplay.api.education.marketpractice.repository.PracticeRiskSnapshotRepository;
 import com.finplay.api.market.domain.Instrument;
@@ -52,9 +56,12 @@ class PracticeAttemptOrderAttributionServiceTest {
 	private final TradeService tradeService = mock(TradeService.class);
 	private final HoldingService holdingService = mock(HoldingService.class);
 	private final ExitPlanCreationService exitPlanCreationService = mock(ExitPlanCreationService.class);
+	private final PracticeStageProgressCalculationService practiceStageProgressCalculationService = mock(
+		PracticeStageProgressCalculationService.class);
 	private final PracticeAttemptOrderAttributionService service = new PracticeAttemptOrderAttributionService(
 		practiceAttemptRepository, practiceRiskSnapshotRepository, canonicalPriceService,
 		new ReferencePriceCalculator(), tradeService, holdingService, exitPlanCreationService,
+		practiceStageProgressCalculationService,
 		java.time.Clock.fixed(NOW.toInstant(java.time.ZoneOffset.UTC), java.time.ZoneOffset.UTC));
 
 	@Test
@@ -65,7 +72,7 @@ class PracticeAttemptOrderAttributionServiceTest {
 			.thenReturn(Optional.of(attempt));
 		when(canonicalPriceService.canonicalPrice(attempt, NOW)).thenReturn(new BigDecimal("100.00000000"));
 
-		Optional<PracticeOrderAttributionDto> result = service.lockForOrder(USER_ID, instrument);
+		Optional<PracticeOrderAttributionDto> result = service.lockForOrder(USER_ID, instrument, OrderType.MARKET);
 
 		assertThat(result).contains(new PracticeOrderAttributionDto(ATTEMPT_ID, 1L, new BigDecimal("100.00000000")));
 	}
@@ -75,10 +82,71 @@ class PracticeAttemptOrderAttributionServiceTest {
 		Instrument ordinaryInstrument = Instrument.create(
 			Market.CRYPTO, "BTC", "비트코인", BigDecimal.ONE, 5_000L, true, NOW);
 
-		Optional<PracticeOrderAttributionDto> result = service.lockForOrder(USER_ID, ordinaryInstrument);
+		Optional<PracticeOrderAttributionDto> result = service.lockForOrder(USER_ID, ordinaryInstrument,
+			OrderType.MARKET);
 
 		assertThat(result).isEmpty();
 		verifyNoInteractions(practiceAttemptRepository, practiceRiskSnapshotRepository);
+	}
+
+	// 049 ORDERBASICS-015 게이트 규칙표.
+	@Test
+	void lockForOrderAlwaysAllowsMarketOrderEvenWhenStageIsLocked() {
+		Instrument instrument = tutorialInstrument();
+		PracticeAttempt attempt = scriptAttempt(instrument, TutorialScenarioScriptId.CRYPTO_ORDER_BASICS_V1);
+		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
+			.thenReturn(Optional.of(attempt));
+		when(canonicalPriceService.canonicalPrice(attempt, NOW)).thenReturn(new BigDecimal("100.00000000"));
+
+		Optional<PracticeOrderAttributionDto> result = service.lockForOrder(USER_ID, instrument, OrderType.MARKET);
+
+		assertThat(result).isPresent();
+		verifyNoInteractions(practiceStageProgressCalculationService);
+	}
+
+	@Test
+	void lockForOrderRejectsLimitOrderWhenMarketRoundTripNotCompleted() {
+		Instrument instrument = tutorialInstrument();
+		PracticeAttempt attempt = scriptAttempt(instrument, TutorialScenarioScriptId.CRYPTO_ORDER_BASICS_V1);
+		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
+			.thenReturn(Optional.of(attempt));
+		when(practiceStageProgressCalculationService.calculate(attempt))
+			.thenReturn(new PracticeStageProgressResponse(false, false, false));
+
+		assertThatThrownBy(() -> service.lockForOrder(USER_ID, instrument, OrderType.LIMIT))
+			.isInstanceOfSatisfying(BusinessException.class, exception -> assertThat(exception.getErrorCode())
+				.isEqualTo(ErrorCode.PRACTICE_STAGE_LOCKED));
+	}
+
+	@Test
+	void lockForOrderAllowsLimitOrderWhenMarketRoundTripCompleted() {
+		Instrument instrument = tutorialInstrument();
+		PracticeAttempt attempt = scriptAttempt(instrument, TutorialScenarioScriptId.CRYPTO_ORDER_BASICS_V1);
+		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
+			.thenReturn(Optional.of(attempt));
+		when(practiceStageProgressCalculationService.calculate(attempt))
+			.thenReturn(new PracticeStageProgressResponse(true, false, false));
+		when(canonicalPriceService.canonicalPrice(attempt, NOW)).thenReturn(new BigDecimal("100.00000000"));
+
+		Optional<PracticeOrderAttributionDto> result = service.lockForOrder(USER_ID, instrument, OrderType.LIMIT);
+
+		assertThat(result).isPresent();
+	}
+
+	// 대본을 쓰지 않는 실행(생성기 버전 1)은 왕복 여부와 무관하게 지정가도 항상 통과한다 — 게이트 판정
+	// 서비스를 아예 부르지 않는다.
+	@Test
+	void lockForOrderAllowsLimitOrderForNonScenarioScriptAttempt() {
+		Instrument instrument = tutorialInstrument();
+		PracticeAttempt attempt = inProgressAttempt(instrument);
+		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
+			.thenReturn(Optional.of(attempt));
+		when(canonicalPriceService.canonicalPrice(attempt, NOW)).thenReturn(new BigDecimal("100.00000000"));
+
+		Optional<PracticeOrderAttributionDto> result = service.lockForOrder(USER_ID, instrument, OrderType.LIMIT);
+
+		assertThat(result).isPresent();
+		verifyNoInteractions(practiceStageProgressCalculationService);
 	}
 
 	@Test

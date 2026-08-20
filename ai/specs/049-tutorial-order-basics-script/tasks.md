@@ -87,7 +87,7 @@
 
 ---
 
-## 4. 단계 순서 강제를 넣는다 (409)
+## 4. 단계 순서 강제를 넣는다 (409) ✅
 
 - `ErrorCode`에 `PRACTICE_STAGE_LOCKED(CONFLICT, "앞 단계를 먼저 마쳐야 합니다.")` 추가 +
   `ErrorCodeTest` 표에 행 추가.

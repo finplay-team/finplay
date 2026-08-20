@@ -30,6 +30,7 @@ import com.finplay.api.market.service.PriceQuoteDto;
 import com.finplay.api.market.service.PriceStatus;
 import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderSide;
+import com.finplay.api.order.domain.OrderType;
 import com.finplay.api.order.domain.Trade;
 import com.finplay.api.order.dto.request.OrderCreateRequest;
 import com.finplay.api.order.dto.response.OrderResponse;
@@ -227,7 +228,7 @@ class OrderExecutionServiceTest {
 		Account account = account(com.finplay.api.account.domain.Market.CRYPTO);
 		User user = testUser();
 		stubHappyPath(instrument, account, user, new BigDecimal("10000"));
-		when(practiceOrderAttributionPort.lockForOrder(USER_ID, instrument))
+		when(practiceOrderAttributionPort.lockForOrder(USER_ID, instrument, OrderType.MARKET))
 			.thenReturn(Optional.of(new PracticeOrderAttributionDto(50L, 3L, new BigDecimal("10000"))));
 		OrderCreateRequest request = buyRequest(Market.CRYPTO, instrument.getId(), "1");
 
@@ -249,7 +250,8 @@ class OrderExecutionServiceTest {
 		Account account = account(com.finplay.api.account.domain.Market.CRYPTO);
 		User user = testUser();
 		stubHappyPath(instrument, account, user, new BigDecimal("10000"));
-		when(practiceOrderAttributionPort.lockForOrder(USER_ID, instrument)).thenReturn(Optional.empty());
+		when(practiceOrderAttributionPort.lockForOrder(USER_ID, instrument, OrderType.MARKET))
+			.thenReturn(Optional.empty());
 		OrderCreateRequest request = buyRequest(Market.CRYPTO, instrument.getId(), "1");
 
 		orderExecutionService.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, request);
