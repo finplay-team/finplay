@@ -227,8 +227,8 @@ Optional<PracticeOrderAttributionDto> lockForOrder(
     Long userId, Instrument instrument, OrderSide side, OrderType orderType);
 ```
 
-`OrderSide`·`OrderType`은 `com.finplay.api.order.domain`이고 구현체(education)가 **이미 둘 다
-import하고 있다**(`OrderSide`는 `createRiskSnapshotOnBuyFill`, `OrderType`은
+`OrderSide`·`OrderType`은 `com.finplay.api.order.domain`이고 education 패키지가 **이미 둘 다
+쓴다**(`OrderSide`는 `createRiskSnapshotOnBuyFill`, `OrderType`은
 `PracticeStageProgressCalculationService`). 새 의존 방향이 생기지 않는다.
 
 `side`는 지금 규칙에 쓰이지 않지만(§규칙 표는 주문 유형만 본다) 함께 넘긴다 — "매수는 되고 매도는 안 되는"

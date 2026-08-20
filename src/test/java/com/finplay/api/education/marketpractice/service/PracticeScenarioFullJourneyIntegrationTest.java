@@ -218,7 +218,8 @@ class PracticeScenarioFullJourneyIntegrationTest {
 		// 유형만 보고 판정하는 구현은 여기서 정확히 틀린다.
 		assertThat(completed.tutorialStageProgress().marketBuySellCompleted()).isFalse();
 		assertThat(completed.tutorialStageProgress().limitBuySellCompleted()).isFalse();
-		// 프리셋은 직접 골랐고 그 프리셋으로 진입까지 했다.
+		// 프리셋은 직접 골랐다(이 대본은 CAUTIOUS로 시작해 BALANCED로 바꾼다) — 판정 기준이 "골랐는가"라
+		// 중간에 프리셋을 바꿔도 통과가 취소되지 않는다.
 		assertThat(completed.tutorialStageProgress().exitPresetSelected()).isTrue();
 
 		// 완료 대조의 기준가는 대본 종점이다 — 사용자가 실제로 어디까지 갔는지와 무관하다(SCENARIO-021).

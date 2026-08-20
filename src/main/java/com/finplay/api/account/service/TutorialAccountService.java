@@ -41,8 +41,11 @@ public class TutorialAccountService {
 	 *
 	 * <p>{@link #getOrCreateForUpdate}를 쓰면 무변경 응답이 계좌 행에 X 잠금을 걸어, attempt 잠금이
 	 * 직렬화하지 못하는 트랜잭션(지정가 취소·정정, 예약 청산의 매도 정산)과 실제로 경합해 대기한다.
-	 * 교착이 되지는 않지만(모든 경로가 attempt를 먼저 잡는다) 사용자가 한 번 부르는 호출이 진행 중인
-	 * 체결 뒤에 줄을 설 이유가 없다.
+	 * 교착이 되지는 않는다 — 두 부류의 잠금 집합이 역순으로 겹치지 않기 때문이다(한쪽은 attempt를
+	 * 잡고 계좌로 가고, 다른 쪽은 attempt를 아예 잡지 않는다). <b>"모든 경로가 attempt를 먼저 잡는다"는
+	 * 아니다</b> — {@code LimitOrderCancelService}는 order → account → tutorial account 순으로만 잠근다.
+	 * 다만 교착이 없다는 것과 대기가 없다는 것은 다르고, 사용자가 한 번 부르는 호출이 진행 중인 체결
+	 * 뒤에 줄을 설 이유가 없다.
 	 */
 	@Transactional(readOnly = true)
 	public Optional<TutorialAccount> find(Long userId, Market market) {

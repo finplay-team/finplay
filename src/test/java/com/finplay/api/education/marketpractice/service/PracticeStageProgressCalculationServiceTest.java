@@ -165,11 +165,11 @@ class PracticeStageProgressCalculationServiceTest {
 			fill(101L, OrderSide.BUY, OrderType.MARKET),
 			fill(102L, OrderSide.SELL, OrderType.MARKET));
 		PracticeAttempt attempt = startedAttempt(ExitPreset.CAUTIOUS);
+		assertThat(service.calculate(attempt).exitPresetSelected()).isTrue();
+
 		attempt.selectExitPreset(ExitPreset.RELAXED, NOW);
 
-		PracticeStageProgressResponse progress = service.calculate(attempt);
-
-		assertThat(progress.exitPresetSelected()).isTrue();
+		assertThat(service.calculate(attempt).exitPresetSelected()).isTrue();
 	}
 
 	private void stubFills(PracticeRunFillKindDto... fills) {

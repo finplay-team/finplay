@@ -15,7 +15,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 이슈 #503. <b>어떤 것도 저장하지 않는다</b> — 체결 원장, 예약 발동 이력, 위험 snapshot만 읽는다.
+ * 이슈 #503. <b>어떤 것도 저장하지 않는다</b> — 체결 원장과 예약 발동 이력, 그리고 attempt에 이미
+ * 실려 있는 프리셋 선택값만 읽는다. <b>세 값의 근거가 같지 않다</b> — 왕복 둘은 체결 원장에서 나오고
+ * 프리셋은 {@code attempt.exit_preset}에서 나온다.
  *
  * <p><b>판정만 하고 강제하지 않는다.</b> 잘못된 순서의 주문을 거부하는 것은 주문 생성 경로에 새 검증을
  * 넣는 일이라 이 서비스의 범위가 아니다. 사용자가 API를 직접 불러 순서를 건너뛸 수는 있지만 이것은 보안이
@@ -36,7 +38,12 @@ public class PracticeStageProgressCalculationService {
 		Long attemptId = attempt.getId();
 		long runNumber = attempt.getRunNumber();
 
-		// 예약이 발동시킨 매도 주문 id. 042가 매도 원인을 붙일 때 쓰는 것과 같은 조회라 새 쿼리가 아니다.
+		// 예약이 발동시킨 매도 주문 id.
+		//
+		// **같은 요청에서 이 조회가 한 번 더 나간다.** 진입이 하나라도 있으면
+		// PracticeEntryComparisonService가 매도 원인을 붙이려고 같은 인자로 먼저 부른다. 파생 쿼리라
+		// 영속성 컨텍스트가 SQL을 막아 주지 않는다. 두 서비스가 서로를 모르게 두는 값이 인덱스 조회
+		// 하나보다 크다고 보고 그대로 둔다 — 없애려면 호출부가 map을 조회해 둘에 넘겨야 한다.
 		Set<Long> triggeredSellOrderIds = practiceExitPlanQueryService
 			.findTriggeredSellOrderStatuses(attemptId, runNumber)
 			.keySet();

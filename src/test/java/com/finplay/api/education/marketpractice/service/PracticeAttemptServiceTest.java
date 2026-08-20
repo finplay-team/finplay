@@ -482,6 +482,11 @@ class PracticeAttemptServiceTest {
 		assertThat(response.selectedExitPreset()).isEqualTo("CAUTIOUS");
 		assertThat(response.tutorialCashBalance()).isEqualTo(6_000_000L);
 		assertThat(response.tutorialAvailableCash()).isEqualTo(6_000_000L);
+		// 종목 선택과 같은 이유로 이 경로도 계좌에 X 잠금을 걸지 않는다. 공용 스텁이 두 메서드를 모두
+		// 답해 주므로 이 단언이 없으면 잠금 조회로 되돌려도 테스트가 초록으로 남는다.
+		verify(tutorialAccountService).find(USER_ID, com.finplay.api.account.domain.Market.CRYPTO);
+		verify(tutorialAccountService, never())
+			.getOrCreateForUpdate(anyLong(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
 	}
 
 	private static TutorialAccount freshTutorialAccount() {

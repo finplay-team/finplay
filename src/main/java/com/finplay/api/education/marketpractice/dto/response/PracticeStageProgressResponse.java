@@ -21,6 +21,10 @@ package com.finplay.api.education.marketpractice.dto.response;
  * @param exitPresetSelected     이 실행에서 손절·익절 프리셋을 <b>직접 골랐는가</b>
  *                               ({@code PUT .../attempts/{market}/exit-preset}). 재시작이
  *                               {@code attempt.exit_preset}을 지우므로 실행 안에서 단조롭게 증가한다.
+ *                               <b>반례가 하나 있다</b> — 종목을 고르기 전에는 판정 자체를 하지 않아
+ *                               셋 다 {@code false}이므로, 재시작 직후 종목보다 프리셋을 먼저 고르면
+ *                               종목 선택 전까지 {@code false}였다가 뒤늦게 {@code true}가 된다.
+ *                               그 구간은 화면상 1단계라 잠금 UI에 영향이 없다
  *
  *                               <p><b>"고른 프리셋으로 진입까지 했는가"로 판정하지 않는다.</b> 그렇게
  *                               하면 두 방향으로 틀렸다. (1) 고르지 않은 사용자의 진입에도 snapshot에는

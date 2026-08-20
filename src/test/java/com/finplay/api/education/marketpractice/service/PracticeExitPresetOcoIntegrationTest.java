@@ -257,8 +257,14 @@ class PracticeExitPresetOcoIntegrationTest {
 	 * 한쪽에서 귀속이 빠지면 {@code limitBuySellCompleted}는 <b>영원히 false</b>가 되는데, 단위 테스트와
 	 * 리포지터리 슬라이스는 주문 행을 직접 만들어 넣으므로 전부 초록으로 남는다.
 	 *
+	 * <p><b>커버 공백 하나를 남겨 둔다.</b> 여기서 지정가 매수는 {@code POST /api/orders/limit} 경로로
+	 * 넣는데, 계약이 튜토리얼 지정가 매수로 못박은 것은 {@code POST .../practice/limit-orders}다
+	 * (가상 가격 세션이 필요해 픽스처가 커진다). 두 경로 모두 같은 {@code lockForOrder}로 귀속하는 것은
+	 * 코드로 확인했지만, 세션 경로만 귀속이 빠지면 이 테스트는 그것을 못 잡는다.
+	 *
 	 * <p>2막-a 루머 구간은 10180에서 9750까지 내려간다. 매수는 10,000에 걸면 가격이 그 아래로 내려올 때
-	 * 체결되고, 매도는 9,800에 걸면 아직 그 위인 분에서 체결된다.
+	 * 체결된다. 매도는 <b>구간 최저(9750)보다 낮은 9,700</b>에 건다 — 9,800으로 걸면 체결 분(9807.62)과의
+	 * 여유가 7원뿐이라 tick이 한 가상 분만 어긋나도(다음 분이 9750) 조용히 깨진다.
 	 */
 	@Test
 	void aLimitRoundTripCompletesTheLimitStageAndTagsTheEntry() {
@@ -282,7 +288,7 @@ class PracticeExitPresetOcoIntegrationTest {
 			.satisfies(entry -> assertThat(entry.buyOrderType()).isEqualTo("LIMIT"));
 
 		// 지정가 매도 접수 — 전량이 자동 예약에 잡혀 있어도 접수된다(042 EXITPRESET-016).
-		limitOrder(fixture, OrderSide.SELL, new BigDecimal("9800"));
+		limitOrder(fixture, OrderSide.SELL, new BigDecimal("9700"));
 		clock.set(BASE_NOW.plusSeconds(18));
 		chartService.tick(fixture.userId(), Market.CRYPTO);
 

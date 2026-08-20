@@ -572,6 +572,10 @@ class TradeRepositoryTest {
 		List<PracticeRunFillKindDto> kinds = tradeRepository.findPracticeRunFillKinds(practiceAttemptId, 2L);
 
 		assertThat(kinds).isEmpty();
+		// 양성 대조 — 빈 결과만 보면 where 절이 통째로 아무것도 못 맞추는 회귀에서도 통과한다.
+		// 같은 픽스처를 run 1로 조회하면 이전 세대 체결이 그대로 나와야 "배제가 선택적으로 작동한다"가 된다.
+		assertThat(tradeRepository.findPracticeRunFillKinds(practiceAttemptId, 1L))
+			.containsExactly(new PracticeRunFillKindDto(previousRun.getId(), OrderSide.SELL, OrderType.MARKET));
 	}
 
 	private Instrument tutorialSampleInstrument(String code) {

@@ -22,9 +22,13 @@ import com.finplay.api.order.domain.Trade;
 import com.finplay.api.order.repository.OrderRepository;
 import com.finplay.api.order.repository.TradeRepository;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.PersistenceException;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -67,6 +71,9 @@ class PracticeAttemptRepositoryTest {
 
 	@Autowired
 	private EntityManager entityManager;
+
+	@Autowired
+	private EntityManagerFactory entityManagerFactory;
 
 	private User user;
 	private Account account;
@@ -330,6 +337,39 @@ class PracticeAttemptRepositoryTest {
 
 		assertThat(saved.getPracticeAttemptId()).isNull();
 		assertThat(saved.getPracticeAttemptRunNumber()).isNull();
+	}
+
+	/**
+	 * 진입 대조 조회가 매수 체결과 <b>그 주문까지</b> 쿼리 한 번으로 읽는지 본다(이슈 #503).
+	 *
+	 * <p>{@code buyOrderType}이 {@code snapshot.getBuyTrade().getOrder().getOrderType()}이라
+	 * {@code @EntityGraph}가 빠지면 진입 하나마다 조회가 두 번씩 붙는다. 그런데 <b>그래프가 조용히
+	 * 무시돼도 기능은 그대로 동작해서</b> 다른 어떤 테스트도 이것을 잡지 못한다 — 유일한 호출부의
+	 * 단위 테스트는 리포지터리를 mock하고, 통합 테스트는 같은 트랜잭션이라 이미 1차 캐시에 올라와 있다.
+	 * {@code BuyTradeJournalRepositoryTest}의 Statistics 선례를 따른다.
+	 */
+	@Test
+	@DisplayName("진입 대조 조회는 매수 체결과 그 주문까지 쿼리 1회로 읽는다")
+	void findByAttemptIdAndRunNumberOrderByEntrySequenceAscFetchesBuyTradeAndItsOrderInOneQuery() {
+		for (int sequence = 1; sequence <= 3; sequence++) {
+			practiceRiskSnapshotRepository.saveAndFlush(PracticeRiskSnapshot.create(
+				attempt, attempt.getRunNumber(), sequence, ExitPreset.BALANCED,
+				createBuyTrade("graph-idem-" + sequence), BigDecimal.valueOf(100),
+				BigDecimal.valueOf(97), BigDecimal.valueOf(105), NOW));
+		}
+		entityManager.clear();
+		Statistics statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+		statistics.setStatisticsEnabled(true);
+		statistics.clear();
+
+		List<PracticeRiskSnapshot> snapshots = practiceRiskSnapshotRepository
+			.findByAttemptIdAndRunNumberOrderByEntrySequenceAsc(attempt.getId(), attempt.getRunNumber());
+
+		assertThat(snapshots)
+			.hasSize(3)
+			.allSatisfy(
+				snapshot -> assertThat(snapshot.getBuyTrade().getOrder().getOrderType()).isEqualTo(OrderType.MARKET));
+		assertThat(statistics.getPrepareStatementCount()).isEqualTo(1);
 	}
 
 	private Order createOrdinaryOrder(String idempotencyKey) {
