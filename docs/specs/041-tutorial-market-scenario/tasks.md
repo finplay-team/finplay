@@ -17,7 +17,7 @@
 | 4 | 042 | 1·2번 (프리셋 상수·엔티티) | 3번의 대본이 있어야 도달 부등식 테스트가 돈다 |
 | 5 | 041 | 4·5번 (진행 계산·tick 통합) | tick 코드를 먼저 자리잡게 한다 |
 | 6 | 042 | 3~7번 (선택 API·자동 예약·tick OCO 정산) | 5번이 만든 tick 위에 얹는다 |
-| 7 | 041 | 6·7번 (사건 노출·통합 시나리오·문서) | 마지막에 전체를 관통해 확인한다 |
+| 7 | 041 | 6·7번 (사건 노출·통합 시나리오·문서) — **PR #494로 머지 대기** | 마지막에 전체를 관통해 확인한다 |
 | 8 | 042 | 8번 (재진입 재예약 통합 테스트) | `SNAP-2`(2번)와 042 5~7번이 모두 나간 뒤에야 통과한다 |
 
 **1~2번을 맨 앞으로 뺀 것이 plan에서 바뀐 점이다.** plan은 042의 마지막 작업으로 뒀는데, 그러면
@@ -82,11 +82,17 @@
   > 재현). STOCK 대본(SCENARIO-024)이 들어오면 `TutorialScenarioScriptLoader.hasScript` 판정이 자동으로
   > 따라간다.
 
-- [ ] **6. 사건 노출** — `PracticeTutorialChartResponse`에 `scenarioStage`(act 단위)·`scenarioProgressing`·
+- [x] **6. 사건 노출** — `PracticeTutorialChartResponse`에 `scenarioStage`(act 단위)·`scenarioProgressing`·
   `causeStatus`·`revealedEvents` 추가, `GET /api/education/practice`에 `revealedEvents`·`priceAfterSell`
   (대본 lookahead)와 **진입별 `entries` 배열** 추가 — 각 항목에 `unrealizedPnlIfHeld`("안 팔았다면" 평가손익)를 **서버가 계산해** 담는다. 공식은 `PostSellArithmetic`을 재사용하고 매도 수수료를 뺀 기준으로 맞춘다(SCENARIO-019b·021a). `causeStatus`는 `REVEALED`·`NONE_KNOWN` 둘뿐이며 **미공개 사건은 `NONE_KNOWN`과
   구분 불가능해야 한다**(SCENARIO-015·016). `docs/api-contracts.md`를 **같은 커밋에서** 갱신한다.
   **테스트**: `@WebMvcTest` — 공개 시점 이전 응답에 문안·시각·개수·자리표시자 어떤 형태로도 없음.
+  > **구현에서 정한 것 (이슈 #488).** 사건 항목은 `{stage, headline}`이고 **시각을 담지 않는다** —
+  > plan의 `revealedAtVirtualMinute`은 원점이 필요하고, 원점을 정하는 순간 대본 커서와 벽시계
+  > `virtualDateTime`을 맞추는 문제로 되돌아온다. 목록 순서가 공개 순서이며 화면이 상대 표현으로 그린다.
+  > `causeStatus` 판정 단위는 **막이 아니라 대본 구간**이다 — 막으로 보면 2막-b 속임수 반등이 앞 구간
+  > 루머 때문에 `REVEALED`가 되어 "원인 없는 변동"이라는 설계가 사라진다. `priceAfterSell`은 진행 중에는
+  > 현재 대본가, 완료에서는 대본 종점가다(진행 중 종점은 결말 누설, 완료 시 커서는 대조의 항등식화).
   > **042가 넘긴 것 (이슈 #477).** 042 tasks 7번의 "진입별 대조 배열"을 여기로 합쳤다 — 같은 배열이고,
   > 042가 혼자 모양을 정하면 이 항목이 그 모양에 묶이거나 다시 고쳐야 하기 때문이다. **042는 `sellCause`만
   > 넣었다.** 이 항목이 만들 배열에 진입별 `entrySequence`·`exitPreset`·매수가·수량·매도가·매도 시각·
@@ -95,12 +101,15 @@
   > `firstSellTrade` 기준이라 첫 매도만 가리킨다. 금액(`realizedPnl`·가중평균 매도가)은 맞고, 틀리는 것은
   > 2막 손절 → 3막 익절이 손절 하나로 보이는 것이다. **이 항목이 그 결함을 닫는다.**
 
-- [ ] **7. 통합 시나리오와 문서** — Testcontainers 통합 테스트로 **0막 대기 → 매수 → 1막 →
+- [x] **7. 통합 시나리오와 문서** — Testcontainers 통합 테스트로 **0막 대기 → 매수 → 1막 →
   2막 손절 → 확정 하락 관전 → 재진입 대기 → 재매수 → 3막 익절 → 4막 관전 → 복기 → 완료** 완주.
   `CAUTIOUS`가 루머에서, `BALANCED`가 확정에서 손절되는 분기와 **재매수 후에도 관찰 evidence가 유지되는
   것**을 함께 확인. `docs/api-routes.md` 최종 확인, `docs/prd.md` §3에 `SCENARIO-001~024` 행 추가.
   > **SANDBOX 행의 5분 만료 서술은 이슈 #472(4·5번)에서 이미 갱신했다** — 그 PR이 CRYPTO 버전 2에서
   > 마감을 실제로 폐지했으므로 규칙 10의 갱신 대상이었다. 여기 남은 것은 SCENARIO 행 신설뿐이다.
+  > **완료 (이슈 #488).** `PracticeScenarioFullJourneyIntegrationTest`가 완주와 프리셋 분기를 함께 본다.
+  > `docs/prd.md` §3에 SCENARIO 행을 신설하고 042의 EXITPRESET 행을 "일부 완료 → 완료"로 바꿨다 —
+  > 남아 있던 미완료가 이 작업의 진입별 배열이었다.
 
 > **API 문서는 각 항목이 자기 커밋에서 갱신한다**(CLAUDE.md 규칙 7). 5·6번이 응답 계약을 바꾸므로 각자
 > 그 커밋에서 `docs/api-contracts.md`를 갱신하고, 이 항목으로 미루지 않는다.

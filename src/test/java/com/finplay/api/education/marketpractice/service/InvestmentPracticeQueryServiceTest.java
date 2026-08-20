@@ -2,6 +2,7 @@
 package com.finplay.api.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -27,6 +28,7 @@ import com.finplay.api.favorite.dto.response.FavoriteResponse;
 import com.finplay.api.favorite.service.FavoriteService;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.service.TutorialScenarioScriptLoader;
 import com.finplay.api.order.domain.Trade;
 import com.finplay.api.portfolio.domain.Holding;
 import com.finplay.api.order.service.TradeService;
@@ -39,6 +41,7 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
+import tools.jackson.databind.ObjectMapper;
 
 class InvestmentPracticeQueryServiceTest {
 
@@ -59,18 +62,25 @@ class InvestmentPracticeQueryServiceTest {
 		PracticeMarketObservationRepository.class);
 	private final PracticeCompletionRepository practiceCompletionRepository = mock(
 		PracticeCompletionRepository.class);
+	private final PracticeAttemptCanonicalPriceService canonicalPriceService = mock(
+		PracticeAttemptCanonicalPriceService.class);
+	private final PracticeEntryComparisonService practiceEntryComparisonService = mock(
+		PracticeEntryComparisonService.class);
 	private final Clock clock = Clock.fixed(NOW.atZone(ZoneId.systemDefault()).toInstant(), ZoneId.systemDefault());
 
 	private final InvestmentPracticeQueryService service = new InvestmentPracticeQueryService(
 		favoriteService, practiceAttemptRepository, practiceRiskSnapshotRepository, practiceAttemptEvidenceService,
 		tradeService, chainResolutionService, referencePriceCalculator, practiceMarketObservationRepository,
-		practiceCompletionRepository, clock);
+		canonicalPriceService, practiceEntryComparisonService, practiceCompletionRepository, clock);
 
 	// 프리셋 잠금 판정이 매 응답에서 순보유수량을 읽는다(042 EXITPRESET-003). 이 테스트들의 대상은 잠금이
 	// 아니므로 기본을 "미보유"로 두고, 잠금을 보는 테스트만 따로 덮어쓴다.
 	@BeforeEach
 	void stubNoHolding() {
 		when(tradeService.netFilledQuantity(anyLong(), anyLong())).thenReturn(BigDecimal.ZERO);
+		// 041 6번의 진입별 대조는 attempt 경로에서만 얹히고 이 테스트들의 대상이 아니다 — 기본을 "없음"으로
+		// 둔다. 배열의 내용은 PracticeEntryComparisonServiceTest와 통합 테스트가 본다.
+		when(practiceEntryComparisonService.findCurrentRunEntries(any(), any())).thenReturn(List.of());
 	}
 
 	@Test
@@ -557,6 +567,10 @@ class InvestmentPracticeQueryServiceTest {
 		when(practiceAttemptRepository.findByUserIdAndMarket(USER_ID, Market.CRYPTO))
 			.thenReturn(Optional.of(attempt));
 		when(attempt.usesScenarioScript()).thenReturn(true);
+		// 041 6번 — 대본 실행이면 응답에 공개된 사건이 함께 실린다. 이 테스트의 대상은 마감 폐지이므로
+		// 배포되는 대본을 그대로 물려 실제 게이트가 돌게 두고, 사건 목록 자체는 전용 테스트가 본다.
+		when(canonicalPriceService.script(attempt))
+			.thenReturn(new TutorialScenarioScriptLoader(new ObjectMapper()).script(Market.CRYPTO));
 
 		PracticeRiskSnapshot snapshot = riskSnapshot(30L, NOW.minusHours(3));
 		when(practiceRiskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(70L, 1L))

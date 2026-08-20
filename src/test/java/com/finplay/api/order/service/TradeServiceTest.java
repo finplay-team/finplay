@@ -561,6 +561,78 @@ class TradeServiceTest {
 
 	// summarizePracticeRun 전용 — attempt·run 귀속은 repository 쿼리가 걸러주므로 여기서는 side·단가·수량·
 	// 금액·수수료·실현손익만 지정한 체결을 만든다.
+	// 041 SCENARIO-019b — 진입별 대조 배열은 같은 실행 세대의 체결을 진입 매수 체결 id로 쪼갠 합을 쓴다.
+	@Test
+	void summarizePracticeRunEntriesSplitsTheLedgerAtEachEntryBuyTrade() {
+		// 1번 진입: 100원 10주 매수 → 97원 10주 손절. 2번 진입: 90원 10주 매수 → 105원 10주 익절.
+		when(tradeRepository.findFilledPracticeRunTrades(77L, 1L)).thenReturn(List.of(
+			practiceTrade(1L, OrderSide.BUY, new BigDecimal("100"), new BigDecimal("10"), 1_000L, 0L, null),
+			practiceTrade(2L, OrderSide.SELL, new BigDecimal("97"), new BigDecimal("10"), 970L, 0L, -30L),
+			practiceTrade(3L, OrderSide.BUY, new BigDecimal("90"), new BigDecimal("10"), 900L, 0L, null),
+			practiceTrade(4L, OrderSide.SELL, new BigDecimal("105"), new BigDecimal("10"), 1_050L, 0L, 150L)));
+
+		List<PracticeRunTradeSummaryDto> entries = tradeService.summarizePracticeRunEntries(
+			77L, 1L, List.of(1L, 3L));
+
+		assertThat(entries).hasSize(2);
+		assertThat(entries.get(0).averageBuyPrice()).isEqualByComparingTo(new BigDecimal("100"));
+		assertThat(entries.get(0).averageSellPrice()).isEqualByComparingTo(new BigDecimal("97"));
+		assertThat(entries.get(0).realizedPnl()).isEqualTo(-30L);
+		assertThat(entries.get(0).firstSellTrade().getId()).isEqualTo(2L);
+		assertThat(entries.get(1).averageBuyPrice()).isEqualByComparingTo(new BigDecimal("90"));
+		assertThat(entries.get(1).averageSellPrice()).isEqualByComparingTo(new BigDecimal("105"));
+		assertThat(entries.get(1).realizedPnl()).isEqualTo(150L);
+		assertThat(entries.get(1).firstSellTrade().getId()).isEqualTo(4L);
+	}
+
+	// 마지막 진입은 상한이 없다 — 그 뒤 체결(부분 매도의 나머지 등)이 통째로 빠지면 금액이 틀린다.
+	@Test
+	void summarizePracticeRunEntriesGivesEveryLaterTradeToTheLastEntry() {
+		when(tradeRepository.findFilledPracticeRunTrades(77L, 1L)).thenReturn(List.of(
+			practiceTrade(1L, OrderSide.BUY, new BigDecimal("100"), new BigDecimal("10"), 1_000L, 0L, null),
+			practiceTrade(2L, OrderSide.SELL, new BigDecimal("120"), new BigDecimal("4"), 480L, 0L, 80L),
+			practiceTrade(3L, OrderSide.SELL, new BigDecimal("130"), new BigDecimal("6"), 780L, 0L, 180L)));
+
+		List<PracticeRunTradeSummaryDto> entries = tradeService.summarizePracticeRunEntries(77L, 1L, List.of(1L));
+
+		assertThat(entries).hasSize(1);
+		assertThat(entries.get(0).sellQuantity()).isEqualByComparingTo(new BigDecimal("10"));
+		assertThat(entries.get(0).realizedPnl()).isEqualTo(260L);
+		// 진입 안에서도 첫 매도를 쓴다 — 실행 전체(tradeResult)와 같은 규칙을 진입 범위로 좁힌 것이다.
+		assertThat(entries.get(0).firstSellTrade().getId()).isEqualTo(2L);
+	}
+
+	// 첫 진입 매수보다 이른 체결이 어디에도 속하지 않고 사라지면 진입별 합과 실행 전체 합이 예외도 로그도
+	// 없이 갈린다 — 첫 진입에 하한을 두지 않아 구간이 원장을 빠짐없이 나눈다.
+	@Test
+	void summarizePracticeRunEntriesGivesEveryEarlierTradeToTheFirstEntry() {
+		when(tradeRepository.findFilledPracticeRunTrades(77L, 1L)).thenReturn(List.of(
+			practiceTrade(1L, OrderSide.SELL, new BigDecimal("100"), new BigDecimal("2"), 200L, 0L, 20L),
+			practiceTrade(2L, OrderSide.BUY, new BigDecimal("100"), new BigDecimal("10"), 1_000L, 0L, null),
+			practiceTrade(3L, OrderSide.SELL, new BigDecimal("97"), new BigDecimal("10"), 970L, 0L, -30L)));
+
+		List<PracticeRunTradeSummaryDto> entries = tradeService.summarizePracticeRunEntries(77L, 1L, List.of(2L));
+
+		assertThat(entries).hasSize(1);
+		assertThat(entries.get(0).sellQuantity()).isEqualByComparingTo(new BigDecimal("12"));
+		assertThat(entries.get(0).realizedPnl()).isEqualTo(-10L);
+	}
+
+	// 경계가 오름차순이 아니면 구간이 겹치거나 비어 금액이 조용히 틀린다 — 계약으로만 두지 않고 막는다.
+	@Test
+	void summarizePracticeRunEntriesRejectsBoundariesThatAreNotAscending() {
+		assertThatThrownBy(() -> tradeService.summarizePracticeRunEntries(77L, 1L, List.of(3L, 1L)))
+			.isInstanceOf(IllegalArgumentException.class);
+		verify(tradeRepository, never()).findFilledPracticeRunTrades(77L, 1L);
+	}
+
+	// 매수 전에는 진입 자체가 없다 — 원장을 읽지 않고 빈 목록을 돌려준다.
+	@Test
+	void summarizePracticeRunEntriesReadsNothingWhenThereIsNoEntry() {
+		assertThat(tradeService.summarizePracticeRunEntries(77L, 1L, List.of())).isEmpty();
+		verify(tradeRepository, never()).findFilledPracticeRunTrades(77L, 1L);
+	}
+
 	private static Trade practiceTrade(
 		Long id, OrderSide side, BigDecimal price, BigDecimal quantity, long amount, long fee, Long realizedPnl) {
 		Order order = Order.create(

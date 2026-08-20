@@ -337,6 +337,24 @@
 - [x] `practice_attempts` 컬럼 5개(V50) + 엔티티 + `selectInstrument()`·`restart()` 초기화 + `@DataJpaTest`
 - [x] **후속(041 4·5번)** — 이슈 #472에서 완료. 아래 항목 참고
 
+## 이슈 #488 — 튜토리얼 사건 노출·진입별 완료 대조·통합 시나리오 (041 6~7번, 2026-08-20)
+
+- [x] `PracticeTutorialChartResponse`에 `scenarioStage`(act 단위)·`scenarioProgressing`·`causeStatus`·`revealedEvents`. 대본을 쓰지 않는 attempt는 앞 3필드 null·목록 빈 배열
+- [x] 공개 게이트를 `PracticeScenarioNarrativeCalculator` 하나에 뒀다 — GET chart·POST tick·GET practice가 같은 계산을 쓰므로 한 창구만 막고 다른 쪽으로 새지 않는다
+- [x] `causeStatus` 판정 단위는 **막이 아니라 대본 구간**. 막으로 보면 2막-b 속임수 반등이 앞 구간 루머 때문에 REVEALED가 되어 "원인 없는 변동"이라는 설계가 사라진다
+- [x] 사건에 **시각을 붙이지 않는다** — 공개 시점은 대본 커서가, `virtualDateTime`은 벽시계가 정해 두 시계가 어긋난다. 목록 순서가 공개 순서이고 화면은 "방금"·"조금 전"으로 그린다
+- [x] `GET /api/education/practice`에 진입별 `entries`·`priceAfterSell`·`revealedEvents`. **042가 넘긴 결함(완료 화면이 첫 매도만 가리킴)을 닫는다**
+- [x] 진입 경계는 위험 snapshot의 매수 체결 id이고 집계는 `TradeService.summarizePracticeRun`과 **같은 코드**(두 벌이면 진입별 합과 실행 전체 합이 조용히 어긋난다)
+- [x] `priceAfterSell` — 진행 중에는 현재 대본가, 완료에서는 대본 종점가. 진행 중에 종점을 쓰면 결말이 새고, 완료에서 커서를 쓰면 손절 뒤 나간 사용자의 대조가 항등식이 된다
+- [x] `unrealizedPnlIfHeld` — `OrderExecutionService.priceOrder`와 같은 식·라운딩으로 **매도 수수료를 뺀다**. 빼지 않으면 가상 보유 쪽이 항상 유리해 보인다
+- [x] 매도 원인 판정을 `PracticeSellCause.from`으로 모아 실행 전체와 진입별이 같은 판정을 쓴다
+- [x] 통합 완주 테스트 — 0막 대기 → 매수 → 1막 → 2막 손절 → 확정 하락 관전 → 재진입 대기 → 재매수 → 3막 익절 → 4막 → 복기 → 완료. 관찰 evidence가 재매수를 건너 살아남는 것도 함께 확인
+- [x] 프리셋 분기 — 같은 대본·같은 진입가에서 `CAUTIOUS`는 루머 저점 위에서, `BALANCED`는 그 아래(2막 확정)에서 잘린다
+- [x] `docs/prd.md` §3에 SCENARIO 행 신설 + EXITPRESET 행을 완료로, `api-routes.md`·`api-contracts.md` 갱신
+- [x] PR #494 리뷰 반영 — 매수 직후 첫 tick과 대기 구간 되감기 지점에서 진행 구간 이동이 한 tick 밀리던 것을 닫았다(`leaveIdleLoopIfHolding`). 수수료율 상수 통합은 이슈 #498로 추적
+- [ ] **후속(사람 확인)**: 041 tasks §"사람이 직접 확인할 것" 4항목 — 배포본에서 눈으로 본다
+- [ ] **후속(SCENARIO-024)**: STOCK 대본. 계약은 시장 중립이라 대본 파일만 추가하면 버전 전환이 자동으로 따라간다
+
 ## 이슈 #472 — 튜토리얼 진행 계산 서비스와 tick 통합·시간 게이트 제거 (041 4~5번, 2026-08-19)
 
 - [x] `PracticeScenarioProgressService` — 상태 전이표 3행, `MAX_TICK_GAP = 30초` clamp, 초 단위 누적, 봉 3값 갱신
@@ -348,10 +366,10 @@
 - [x] `verifyAttemptSaleEvidence`의 5분 게이트를 V2에서 제거하고 `saleDeadlineAt`을 null로. V1·legacy는 유지
 - [x] `GENERATOR_VERSION` 전환 — **대본이 저작된 시장(CRYPTO)만.** STOCK은 대본이 없어 버전 1이다
 - [x] `docs/api-contracts.md` 갱신 — tick의 대본 전진, chart의 커서 기반 봉, 409·`"EXPIRED"`의 V2 도달 불가
-- [ ] **후속(041 6번)**: 사건 노출(`scenarioStage`·`scenarioProgressing`·`causeStatus`·`revealedEvents`·`entries`)
+- [x] **후속(041 6번)** — 이슈 #488에서 완료. 아래 항목 참고
 - [x] `docs/prd.md` §3 SANDBOX 행에 CRYPTO 버전 2의 5분 마감 폐지를 명시 (1차 리뷰 반영, 규칙 10)
-- [ ] **후속(041 7번)**: 통합 시나리오 완주 테스트, `docs/prd.md` §3에 **SCENARIO 행 신설**(SANDBOX 행 갱신은 이 이슈에서 끝냈다)
-- [ ] **후속(042 6번)**: OCO 정산 루프를 `PracticeOrderSettlementService.settleCurrentRun` 안에 얹는다 — 진행 계산이 가상 분마다 그 메서드 하나만 부르므로 지정가와 같은 순서로 판정된다
+- [x] **후속(041 7번)** — 이슈 #488에서 완료. 아래 항목 참고
+- [x] **후속(042 6번)** — 이슈 #477에서 완료. `settleCurrentRun`이 지정가 → OCO 순으로 판정한다
 
 ## 이슈 #470 — 튜토리얼 손절·익절 프리셋 상수와 스키마 (042 1~2번, 2026-08-19)
 
@@ -375,5 +393,5 @@
 - [x] 튜토리얼 예약을 일반 OCO 목록·취소에서 제외
 - [x] 회귀 방어 통합 테스트 — 매수 → tick 손절 체결 → 원장 확인 → 재선택 → 재매수 → 재시작
 - [x] `docs/prd.md` §3 EXITPRESET 행 신설(일부 완료로 판정), `api-routes.md`·`api-contracts.md` 갱신
-- [ ] **후속(041 6번)**: 진입별 대조 배열 — 042가 만들지 않고 넘겼다. 그때까지 **재진입한 사용자의 완료 화면은 첫 매도만 가리킨다**(금액은 맞다)
-- [ ] **후속(042 8번)**: 재진입 재예약 통합 테스트 — 손절 → 재진입 → 프리셋 변경 → 재매수에서 새 snapshot·새 예약이 바뀐 프리셋으로 생성되는지
+- [x] **후속(041 6번)** — 이슈 #488에서 완료. `entries` 배열이 진입마다 매도 원인을 따로 담아 2막 손절과 3막 익절이 둘 다 보인다
+- [x] **후속(042 8번)** — PR #487 리뷰 권장으로 그 PR 안에서 닫았다. `PracticeExitPresetOcoIntegrationTest`의 재예약 단언에 **가격**을 더해(개수만 세면 프리셋이 굳어 있어도 통과한다) 042 tasks 8번을 완료로 표시했다

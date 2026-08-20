@@ -1,10 +1,13 @@
 // 실습 진행 조회 API(GET /api/education/practice)의 인증·검증·응답 매핑을 검증하는 WebMvc 테스트다.
 package com.finplay.api.education.marketpractice.controller;
 
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -14,7 +17,9 @@ import com.finplay.api.auth.token.JwtTokenProvider;
 import com.finplay.api.education.marketpractice.dto.response.InvestmentPracticeResponse;
 import com.finplay.api.education.marketpractice.dto.response.ExitPresetResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeAttemptResponse;
+import com.finplay.api.education.marketpractice.dto.response.PracticeEntryResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeEvidenceResponse;
+import com.finplay.api.education.marketpractice.dto.response.PracticeScenarioEventResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeRiskSnapshotResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeStepResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeTradeResultResponse;
@@ -225,6 +230,85 @@ class InvestmentPracticeControllerTest {
 			.andExpect(jsonPath("$.steps[1].evidence.favoriteId").value(10))
 			.andExpect(jsonPath("$.steps[1].evidence.intentionId").doesNotExist())
 			.andExpect(jsonPath("$.steps[2].locked").value(true));
+	}
+
+	// 041 6번 — 진입별 대조 배열이 실제 JSON으로 나가는지 본다. 계산은 서비스가 하지만 **재조립 경로가
+	// chart와 달라**(withEntryComparison이 응답을 통째로 다시 만든다) 여기서 한 번 더 계약을 고정한다.
+	@Test
+	void getProgressSerializesPerEntryComparisonWithRevealedEventsAndPriceAfterSell() throws Exception {
+		authenticate();
+		InvestmentPracticeResponse response = new InvestmentPracticeResponse(
+			"COIN_PRACTICE_V1", "COMPLETED", null,
+			List.of(new PracticeStepResponse(1, "COMPLETED", false, PracticeEvidenceResponse.empty())),
+			LocalDateTime.of(2026, 8, 20, 12, 0), 5_000_000L, null,
+			List.of(new PracticeScenarioEventResponse("ACT1", "[연습] 첫 소식")),
+			new BigDecimal("7900.00000000"),
+			List.of(
+				new PracticeEntryResponse(1, "CAUTIOUS", LocalDateTime.of(2026, 8, 20, 11, 0),
+					new BigDecimal("10000.00000000"), new BigDecimal("1"), new BigDecimal("9800.00000000"),
+					new BigDecimal("10300.00000000"), new BigDecimal("9750.00000000"), new BigDecimal("1"),
+					LocalDateTime.of(2026, 8, 20, 11, 10), "STOP_LOSS", -260L, -2108L),
+				new PracticeEntryResponse(2, "BALANCED", LocalDateTime.of(2026, 8, 20, 11, 20),
+					new BigDecimal("8700.00000000"), new BigDecimal("1"), new BigDecimal("8439.00000000"),
+					new BigDecimal("9135.00000000"), new BigDecimal("9135.00000000"), new BigDecimal("1"),
+					LocalDateTime.of(2026, 8, 20, 11, 40), "TAKE_PROFIT", 422L, -807L)));
+		when(investmentPracticeQueryService.getProgress(eq(USER_ID), eq(Market.CRYPTO))).thenReturn(response);
+
+		mockMvc.perform(get("/api/education/practice")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+			.param("market", "CRYPTO"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.priceAfterSell").value(7900.00000000))
+			.andExpect(jsonPath("$.revealedEvents.length()").value(1))
+			.andExpect(jsonPath("$.revealedEvents[0].stage").value("ACT1"))
+			.andExpect(jsonPath("$.entries.length()").value(2))
+			// 재진입한 실행의 두 매도가 각각 보인다 — 실행 전체 요약은 첫 매도만 가리킨다.
+			.andExpect(jsonPath("$.entries[0].entrySequence").value(1))
+			.andExpect(jsonPath("$.entries[0].exitPreset").value("CAUTIOUS"))
+			.andExpect(jsonPath("$.entries[0].sellCause").value("STOP_LOSS"))
+			.andExpect(jsonPath("$.entries[0].sellQuantity").value(1))
+			.andExpect(jsonPath("$.entries[0].unrealizedPnlIfHeld").value(-2108))
+			.andExpect(jsonPath("$.entries[1].entrySequence").value(2))
+			.andExpect(jsonPath("$.entries[1].sellCause").value("TAKE_PROFIT"))
+			.andExpect(jsonPath("$.entries[1].unrealizedPnlIfHeld").value(-807));
+	}
+
+	// SCENARIO-015 — 공개 전 구간의 진행 조회에도 문안·개수·자리표시자가 남지 않는다.
+	@Test
+	void getProgressCarriesNoTraceOfUnrevealedEvents() throws Exception {
+		authenticate();
+		InvestmentPracticeResponse response = new InvestmentPracticeResponse(
+			"COIN_PRACTICE_V1", "IN_PROGRESS", 3,
+			List.of(new PracticeStepResponse(1, "COMPLETED", false, PracticeEvidenceResponse.empty())),
+			null, null, null, List.of(), new BigDecimal("9950.00000000"), List.of());
+		when(investmentPracticeQueryService.getProgress(eq(USER_ID), eq(Market.CRYPTO))).thenReturn(response);
+
+		mockMvc.perform(get("/api/education/practice")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+			.param("market", "CRYPTO"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.revealedEvents.length()").value(0))
+			.andExpect(jsonPath("$.entries.length()").value(0))
+			.andExpect(content().string(not(containsString("[연습]"))));
+	}
+
+	// legacy chain 경로는 편의 생성자를 쓴다 — 세 필드가 "이 경로에는 없다"로 나가는지 고정한다.
+	@Test
+	void getProgressLeavesComparisonFieldsEmptyForLegacyChainResponses() throws Exception {
+		authenticate();
+		InvestmentPracticeResponse response = new InvestmentPracticeResponse(
+			"INVESTMENT_PRACTICE_V1", "IN_PROGRESS", 2,
+			List.of(new PracticeStepResponse(1, "COMPLETED", false, PracticeEvidenceResponse.empty())),
+			null, null, null);
+		when(investmentPracticeQueryService.getProgress(eq(USER_ID), eq(Market.STOCK))).thenReturn(response);
+
+		mockMvc.perform(get("/api/education/practice")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+			.param("market", "STOCK"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.entries.length()").value(0))
+			.andExpect(jsonPath("$.revealedEvents.length()").value(0))
+			.andExpect(jsonPath("$.priceAfterSell").doesNotExist());
 	}
 
 	private void authenticate() {

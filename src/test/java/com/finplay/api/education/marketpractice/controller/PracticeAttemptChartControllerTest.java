@@ -1,11 +1,15 @@
 // 튜토리얼 차트 조회·tick API의 인증, JSON 계약과 잠금 오류 매핑을 검증한다.
 package com.finplay.api.education.marketpractice.controller;
 
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -14,6 +18,7 @@ import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.auth.token.JwtTokenProvider;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
+import com.finplay.api.education.marketpractice.dto.response.PracticeScenarioEventResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeTutorialCandleResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeTutorialChartResponse;
 import com.finplay.api.education.marketpractice.service.PracticeAttemptChartService;
@@ -110,12 +115,70 @@ class PracticeAttemptChartControllerTest {
 			.andExpect(jsonPath("$.error.code").value("PRACTICE_ALREADY_COMPLETED"));
 	}
 
+	// 041 SCENARIO-015 — 공개 전 구간의 응답에는 문안뿐 아니라 **개수·자리표시자도** 없어야 한다. 빈 배열은
+	// 사건이 없는 구간과 아직 열리지 않은 구간에서 똑같이 나가므로 둘을 구분할 수 없다(SCENARIO-016).
+	@Test
+	void chartJsonCarriesNoTraceOfUnrevealedEvents() throws Exception {
+		authenticate();
+		when(chartService.getChart(USER_ID, Market.CRYPTO))
+			.thenReturn(chartResponse("ACT2", true, "NONE_KNOWN", List.of()));
+
+		mockMvc.perform(get("/api/education/practice/attempts/CRYPTO/chart")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.scenarioStage").value("ACT2"))
+			.andExpect(jsonPath("$.scenarioProgressing").value(true))
+			.andExpect(jsonPath("$.causeStatus").value("NONE_KNOWN"))
+			.andExpect(jsonPath("$.revealedEvents.length()").value(0))
+			.andExpect(content().string(not(containsString("[연습]"))));
+	}
+
+	@Test
+	void chartJsonExposesRevealedEventsWithoutAnyTimestamp() throws Exception {
+		authenticate();
+		when(chartService.getChart(USER_ID, Market.CRYPTO)).thenReturn(chartResponse(
+			"ACT2", true, "REVEALED",
+			List.of(new PracticeScenarioEventResponse("ACT1", "[연습] 첫 소식"),
+				new PracticeScenarioEventResponse("ACT2", "[연습] 두 번째 소식"))));
+
+		mockMvc.perform(get("/api/education/practice/attempts/CRYPTO/chart")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.causeStatus").value("REVEALED"))
+			.andExpect(jsonPath("$.revealedEvents.length()").value(2))
+			.andExpect(jsonPath("$.revealedEvents[0].stage").value("ACT1"))
+			.andExpect(jsonPath("$.revealedEvents[0].headline").value("[연습] 첫 소식"))
+			// 마지막 항목이 가장 최근 공개다 — 시각 필드가 없으므로 순서가 유일한 시간 정보다.
+			.andExpect(jsonPath("$.revealedEvents[1].headline").value("[연습] 두 번째 소식"))
+			.andExpect(jsonPath("$.revealedEvents[0].length()").value(2));
+	}
+
+	// 생성기 버전 1(대본 없음) attempt는 네 필드가 비어 나간다 — 클라이언트가 scenarioStage로 분기한다.
+	@Test
+	void chartJsonLeavesScenarioFieldsNullForNonScriptAttempts() throws Exception {
+		authenticate();
+		when(chartService.getChart(USER_ID, Market.STOCK)).thenReturn(chartResponse(null, null, null, List.of()));
+
+		mockMvc.perform(get("/api/education/practice/attempts/STOCK/chart")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.scenarioStage").value(nullValue()))
+			.andExpect(jsonPath("$.scenarioProgressing").value(nullValue()))
+			.andExpect(jsonPath("$.causeStatus").value(nullValue()))
+			.andExpect(jsonPath("$.revealedEvents.length()").value(0));
+	}
+
 	private void authenticate() {
 		when(jwtTokenProvider.parseAccessToken(TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
 	}
 
 	private static PracticeTutorialChartResponse chartResponse() {
+		return chartResponse("ACT2", false, "NONE_KNOWN", List.of());
+	}
+
+	private static PracticeTutorialChartResponse chartResponse(
+		String scenarioStage, Boolean progressing, String causeStatus, List<PracticeScenarioEventResponse> events) {
 		List<PracticeTutorialCandleResponse> candles = IntStream.range(0, 30)
 			.mapToObj(index -> new PracticeTutorialCandleResponse(
 				LocalDate.of(2026, 7, 16).plusDays(index),
@@ -126,6 +189,7 @@ class PracticeAttemptChartControllerTest {
 				index == 29))
 			.toList();
 		return new PracticeTutorialChartResponse(
-			11L, 3L, 21L, LocalDateTime.of(2026, 8, 14, 12, 7), 3, candles);
+			11L, 3L, 21L, LocalDateTime.of(2026, 8, 14, 12, 7), 3, candles,
+			scenarioStage, progressing, causeStatus, events);
 	}
 }

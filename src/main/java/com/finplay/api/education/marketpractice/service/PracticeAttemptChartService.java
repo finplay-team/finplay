@@ -63,12 +63,21 @@ public class PracticeAttemptChartService {
 	private PracticeTutorialChartResponse toResponse(PracticeAttempt attempt, LocalDateTime now) {
 		long publishedMinute = canonicalPriceService.publishedMinute(attempt, now);
 		TutorialPriceSeriesDto series = canonicalPriceService.priceSeries(attempt, now);
+		// 041 6번 — 대본을 쓰지 않는 attempt는 네 필드가 비어 나간다. 조회 시점에 커서를 읽기만 하므로
+		// GET chart의 "부수효과 없음" 계약(SCENARIO-022)은 그대로다.
+		PracticeScenarioNarrativeDto narrative = attempt.usesScenarioScript()
+			? PracticeScenarioNarrativeCalculator.calculate(attempt, canonicalPriceService.script(attempt))
+			: PracticeScenarioNarrativeDto.EMPTY;
 		return new PracticeTutorialChartResponse(
 			attempt.getId(),
 			attempt.getRunNumber(),
 			attempt.getInstrument().getId(),
 			attempt.getTutorialDate().atTime(12, 0).plusMinutes(publishedMinute),
 			PracticeAttemptCanonicalPriceService.SECONDS_PER_VIRTUAL_MINUTE,
-			series.candles().stream().map(PracticeTutorialCandleResponse::from).toList());
+			series.candles().stream().map(PracticeTutorialCandleResponse::from).toList(),
+			narrative.scenarioStage(),
+			narrative.scenarioProgressing(),
+			narrative.causeStatus(),
+			narrative.revealedEvents());
 	}
 }

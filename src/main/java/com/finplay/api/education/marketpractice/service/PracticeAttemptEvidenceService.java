@@ -7,7 +7,6 @@ import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
 import com.finplay.api.education.marketpractice.domain.PracticeRiskSnapshot;
 import com.finplay.api.education.marketpractice.domain.PracticeSellCause;
 import com.finplay.api.education.marketpractice.repository.PracticeRiskSnapshotRepository;
-import com.finplay.api.order.domain.ExitPlanStatus;
 import com.finplay.api.order.domain.Trade;
 import com.finplay.api.order.service.PracticeExitPlanQueryService;
 import com.finplay.api.order.service.PracticeRunTradeSummaryDto;
@@ -64,22 +63,15 @@ public class PracticeAttemptEvidenceService {
 			resolveSellCause(attempt, sellTrade));
 	}
 
-	// 042 EXITPRESET-008 — 예약이 발동시킨 매도 주문인지 되짚는다. 예약이 가리키지 않는 매도는 전부 MANUAL
-	// 이며, 예약 자체가 없는 STOCK 튜토리얼과 기능 도입 전 실행도 여기 들어간다.
+	// 042 EXITPRESET-008 — 예약이 발동시킨 매도 주문인지 되짚는다. 판정은 PracticeSellCause.from에 있고
+	// 041 6번의 진입별 배열이 같은 메서드를 쓴다 — 같은 매도가 화면 두 곳에서 다른 원인으로 보이지 않도록.
 	private PracticeSellCause resolveSellCause(PracticeAttempt attempt, Trade sellTrade) {
 		if (sellTrade == null) {
 			return null;
 		}
-		ExitPlanStatus status = practiceExitPlanQueryService
+		return PracticeSellCause.from(practiceExitPlanQueryService
 			.findTriggeredSellOrderStatuses(attempt.getId(), attempt.getRunNumber())
-			.get(sellTrade.getOrder().getId());
-		if (status == ExitPlanStatus.FILLED_STOP_LOSS) {
-			return PracticeSellCause.STOP_LOSS;
-		}
-		if (status == ExitPlanStatus.FILLED_TAKE_PROFIT) {
-			return PracticeSellCause.TAKE_PROFIT;
-		}
-		return PracticeSellCause.MANUAL;
+			.get(sellTrade.getOrder().getId()));
 	}
 
 	private void validateBuyEvidence(

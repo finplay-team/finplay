@@ -12,6 +12,7 @@ import com.finplay.api.education.marketpractice.domain.PracticeMarketReflection;
 import com.finplay.api.education.marketpractice.dto.response.InvestmentPracticeResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeAttemptResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeEvidenceResponse;
+import com.finplay.api.education.marketpractice.dto.response.PracticeScenarioEventResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeStepResponse;
 import com.finplay.api.education.marketpractice.repository.PracticeCompletionRepository;
 import com.finplay.api.education.marketpractice.repository.PracticeAttemptRepository;
@@ -23,6 +24,7 @@ import com.finplay.api.favorite.service.FavoriteService;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.portfolio.domain.Holding;
 import com.finplay.api.order.service.TradeService;
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Comparator;
@@ -66,6 +68,8 @@ public class InvestmentPracticeQueryService {
 	private final MarketPracticeChainResolutionService chainResolutionService;
 	private final ReferencePriceCalculator referencePriceCalculator;
 	private final PracticeMarketObservationRepository practiceMarketObservationRepository;
+	private final PracticeAttemptCanonicalPriceService canonicalPriceService;
+	private final PracticeEntryComparisonService practiceEntryComparisonService;
 	private final PracticeCompletionRepository practiceCompletionRepository;
 	private final Clock clock;
 
@@ -82,6 +86,8 @@ public class InvestmentPracticeQueryService {
 		// attempt가 아예 없는 legacy 026 chain 완료자만 아래 완료 기록 폴백을 탄다.
 		// 완료 기록 행은 그대로 남아 completedAt·rewardAmount로 계속 노출되고 보상 재지급도 막는다(040 비즈니스 규칙).
 		if (attempt.isPresent()) {
+			// 041 6번 — attempt 경로의 세 응답 모두 진입별 대조와 공개된 사건을 함께 싣는다. 한 곳만 얹으면
+			// 진행 중 화면과 완료 화면이 서로 다른 이야기를 하게 된다.
 			if (attempt.get().getStatus() == PracticeAttemptStatus.COMPLETED) {
 				PracticeCompletion completed = completion
 					.orElseThrow(() -> new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING));
@@ -89,16 +95,18 @@ public class InvestmentPracticeQueryService {
 					.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(
 						attempt.get().getId(), attempt.get().getRunNumber())
 					.isEmpty()) {
-					return attachReplayAttempt(
-						buildCompletedResponse(userId, tutorialKey, completed), attempt.get());
+					return withEntryComparison(attachReplayAttempt(
+						buildCompletedResponse(userId, tutorialKey, completed), attempt.get()), attempt.get());
 				}
-				return buildCompletedAttemptResponse(
+				return withEntryComparison(buildCompletedAttemptResponse(
 					userId,
 					tutorialKey,
 					attempt.get(),
-					completed);
+					completed), attempt.get());
 			}
-			return buildActiveAttemptResponse(userId, tutorialKey, attempt.get(), completion.orElse(null));
+			return withEntryComparison(
+				buildActiveAttemptResponse(userId, tutorialKey, attempt.get(), completion.orElse(null)),
+				attempt.get());
 		}
 		if (completion.isPresent()) {
 			return buildCompletedResponse(userId, tutorialKey, completion.get());
@@ -117,6 +125,37 @@ public class InvestmentPracticeQueryService {
 		}
 
 		return buildNotStartedResponse(tutorialKey);
+	}
+
+	/**
+	 * 041 SCENARIO-019b·020·021 — 진입별 대조 배열과 공개된 사건, "안 팔았다면"의 기준 가격을 얹는다.
+	 *
+	 * <p><b>진입 배열은 대본 여부와 무관하게 채운다.</b> 재진입은 042가 시장을 가리지 않고 열었으므로
+	 * 버전 1 실행에도 진입이 둘 생길 수 있고, "첫 매도만 보인다"는 결함도 그쪽에 똑같이 있다. 대본이 없으면
+	 * {@code priceAfterSell}이 {@code null}이라 {@code unrealizedPnlIfHeld}만 비어 나간다.
+	 */
+	private InvestmentPracticeResponse withEntryComparison(
+		InvestmentPracticeResponse response, PracticeAttempt attempt) {
+		if (attempt.getInstrument() == null) {
+			return response;
+		}
+		BigDecimal priceAfterSell = canonicalPriceService.postSellComparisonPrice(attempt);
+		List<PracticeScenarioEventResponse> revealedEvents = attempt.usesScenarioScript()
+			? PracticeScenarioNarrativeCalculator
+				.calculate(attempt, canonicalPriceService.script(attempt))
+				.revealedEvents()
+			: List.of();
+		return new InvestmentPracticeResponse(
+			response.tutorialKey(),
+			response.status(),
+			response.currentStep(),
+			response.steps(),
+			response.completedAt(),
+			response.rewardAmount(),
+			response.attempt(),
+			revealedEvents,
+			priceAfterSell,
+			practiceEntryComparisonService.findCurrentRunEntries(attempt, priceAfterSell));
 	}
 
 	private InvestmentPracticeResponse attachReplayAttempt(
