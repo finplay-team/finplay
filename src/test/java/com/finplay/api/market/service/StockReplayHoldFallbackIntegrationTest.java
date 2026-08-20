@@ -21,6 +21,7 @@ import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.domain.StockCandle;
 import com.finplay.api.market.domain.StockReplaySession;
+import com.finplay.api.market.dto.response.CandleListResponse;
 import com.finplay.api.market.dto.sse.MarketSnapshotEvent;
 import com.finplay.api.market.repository.InstrumentRepository;
 import com.finplay.api.market.repository.StockCandleRepository;
@@ -305,6 +306,43 @@ class StockReplayHoldFallbackIntegrationTest {
 		assertThat(fridayDaily.low()).isEqualByComparingTo("70000");
 		assertThat(fridayDaily.close()).isEqualByComparingTo("71200");
 		assertThat(fridayDaily.volume()).isEqualTo(500L);
+	}
+
+	// 048 항목5·plan §8-6: CLOSED 폴백 경로도 커서가 두 분기(오늘 세션·폴백)가 공유하는 buildAggregatedCandles의
+	// toDate 인자로만 들어가므로, 폴백이 커서 상한을 넘는 봉을 만들어 낼 수 없다는 성질을 실 MySQL로 고정한다.
+	// CandleQueryService를 CandleQueryServiceIntegrationTest와 같은 방식(직접 조립)으로 만들어, 이 클래스가 이미
+	// TestClock으로 굴리고 있는 stockReplayService를 그대로 재사용한다 — 새 Instrument를 만들지 않고 @BeforeEach가
+	// 시딩한 금요일 세션·분봉을 그대로 쓴다.
+	@Test
+	void closedFallbackAggregatedDailyCandlesRespectCursorUpperBoundAndSignalDataEnd() {
+		setClock(SATURDAY, LocalTime.of(14, 0));
+		KisHistoricalReplayPriceProvider stockPriceProvider = new KisHistoricalReplayPriceProvider(stockReplayService);
+		CandleQueryService candleQueryService = new CandleQueryService(
+			instrumentRepository, stockPriceProvider, new FakeCryptoCandleProvider());
+
+		// 커서가 토요일 자정을 가리키면 상한이 금요일 23:59로 정규화되어, 폴백 거래일(금요일)의 일봉이 그대로 나온다.
+		String cursorAfterFriday = CandleCursor.encode(LocalDateTime.of(SATURDAY, LocalTime.MIDNIGHT));
+		CandleListResponse afterFriday = candleQueryService.getCandles(
+			instrument.getId(), "1d", null, null, cursorAfterFriday);
+		assertThat(afterFriday.content()).hasSize(1);
+		assertThat(afterFriday.content().get(0).sourceTime()).isEqualTo(LocalDateTime.of(FRIDAY, LocalTime.MIDNIGHT));
+		assertThat(afterFriday.hasNext()).isFalse();
+		assertThat(afterFriday.nextCursor()).isNull();
+
+		// 커서가 금요일 자정을 가리키면 상한이 목요일 23:59로 정규화되어 금요일 당일 집계봉조차 상한을 넘어가므로
+		// 폴백이라도 새어 나가지 않고 데이터 끝(빈 content·hasNext=false)으로 판정된다(plan §8-6 핵심 주장).
+		String cursorAtFriday = CandleCursor.encode(LocalDateTime.of(FRIDAY, LocalTime.MIDNIGHT));
+		CandleListResponse beforeFriday = candleQueryService.getCandles(
+			instrument.getId(), "1d", null, null, cursorAtFriday);
+		assertThat(beforeFriday.content()).isEmpty();
+		assertThat(beforeFriday.hasNext()).isFalse();
+		assertThat(beforeFriday.nextCursor()).isNull();
+
+		// 데이터 끝에서 같은 커서로 재요청해도 결과가 바뀌지 않는다 — 무한 루프 방지 확인.
+		CandleListResponse repeated = candleQueryService.getCandles(
+			instrument.getId(), "1d", null, null, cursorAtFriday);
+		assertThat(repeated.content()).isEmpty();
+		assertThat(repeated.hasNext()).isFalse();
 	}
 
 	@Test
