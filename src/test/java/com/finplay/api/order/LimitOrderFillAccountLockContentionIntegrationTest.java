@@ -27,18 +27,25 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Transactional;
 
 // LimitOrderFillExecutorRouter(ADR-0024)의 파티션 8개가 동시에 트리거되되, 그중 여러 파티션이 같은 계좌의
 // 서로 다른 종목 주문을 동시에 체결하려는 최악의 경우를 fillIfPending 직접 동시 호출로 재현한다. 파티션
 // 라우팅·배치(ADR-0025) 자체는 이 측정의 관심사가 아니라서 실행기를 거치지 않고 락 경합만 격리한다.
 @SpringBootTest
-@Import(TestcontainersConfiguration.class)
+@Import({TestcontainersConfiguration.class,
+	LimitOrderFillAccountLockContentionIntegrationTest.TransactionJoinHarnessConfig.class})
 class LimitOrderFillAccountLockContentionIntegrationTest {
 
 	private static final Logger log = LoggerFactory.getLogger(LimitOrderFillAccountLockContentionIntegrationTest.class);
@@ -61,6 +68,9 @@ class LimitOrderFillAccountLockContentionIntegrationTest {
 
 	@Autowired
 	private LimitOrderFillService limitOrderFillService;
+
+	@Autowired
+	private TransactionJoinHarness transactionJoinHarness;
 
 	@Test
 	void accountLockContentionUnderConcurrentCrossInstrumentFillsIsMeasured() throws Exception {
@@ -100,6 +110,20 @@ class LimitOrderFillAccountLockContentionIntegrationTest {
 		assertThat(baselineOtherFailures).isZero();
 	}
 
+	// PR #514 리뷰 차단사항 — fillIfPending 자신의 @Transactional(isolation=READ_COMMITTED) 선언은 이미 열려
+	// 있는 트랜잭션에 합류(REQUIRED)할 때 Spring이 조용히 무시한다(validateExistingTransaction 기본값
+	// false). 튜토리얼 경로(PracticeOrderSettlementService)가 정확히 이 패턴이었다. 실제 데드락 재현으로
+	// 증명하려 했으나(동시 실행 스레드 수에 좌우되는 확률적 재현이라 다른 테스트와 같이 돌 때 0건이 나오는
+	// flaky 결과가 실제로 관측됨) 대신 결정론적으로 확인한다 — 같은 중첩 구조(외부 @Transactional이 안쪽
+	// @Transactional(isolation=READ_COMMITTED)을 감싸는 것)에서 실제 DB 세션의 격리수준이 무엇인지
+	// SELECT @@transaction_isolation으로 직접 읽는다. fillIfPending의 구체적인 비즈니스 로직과 무관하게
+	// Spring 트랜잭션 전파 규칙만으로 결정되는 사실이라, 이 대체가 원래 주장을 약화시키지 않는다.
+	@Test
+	void innerReadCommittedDeclarationIsIgnoredWhenJoiningAnAlreadyOpenDefaultIsolationTransaction() {
+		assertThat(transactionJoinHarness.isolationWhenOuterIsDefault()).isEqualTo("REPEATABLE-READ");
+		assertThat(transactionJoinHarness.isolationWhenOuterIsReadCommitted()).isEqualTo("READ-COMMITTED");
+	}
+
 	// 계좌 1개에 서로 다른 종목 CONCURRENCY개의 PENDING 지정가 매수를 걸어두고 전부 동시에 체결한다.
 	private Measurement runContendedScenario() throws Exception {
 		User user = createUser("contended");
@@ -136,9 +160,15 @@ class LimitOrderFillAccountLockContentionIntegrationTest {
 		return created.orderId();
 	}
 
+	private Measurement runConcurrentlyAndMeasure(List<Long> orderIds) throws Exception {
+		return runConcurrentlyAndMeasure(orderIds, limitOrderFillService::fillIfPending);
+	}
+
 	// ready/start 래치로 모든 스레드를 동시에 출발시키고, start 이후 전부 완료(성공이든 실패든)될 때까지의
 	// 벽시계 시간을 잰다. 개별 건의 데드락·실패로 측정 자체가 끊기지 않도록 future마다 개별 try/catch한다.
-	private Measurement runConcurrentlyAndMeasure(List<Long> orderIds) throws Exception {
+	// action은 기본적으로 limitOrderFillService.fillIfPending이지만, 트랜잭션 합류 재현 테스트는 대신
+	// TransactionJoinHarness의 래퍼 메서드를 넘겨 외부 트랜잭션 격리수준만 바꿔 같은 부하를 재사용한다.
+	private Measurement runConcurrentlyAndMeasure(List<Long> orderIds, Consumer<Long> action) throws Exception {
 		CountDownLatch ready = new CountDownLatch(orderIds.size());
 		CountDownLatch start = new CountDownLatch(1);
 		ExecutorService executor = Executors.newFixedThreadPool(orderIds.size());
@@ -148,7 +178,7 @@ class LimitOrderFillAccountLockContentionIntegrationTest {
 				futures.add(executor.submit(() -> {
 					ready.countDown();
 					start.await();
-					limitOrderFillService.fillIfPending(orderId);
+					action.accept(orderId);
 					return null;
 				}));
 			}
@@ -219,5 +249,44 @@ class LimitOrderFillAccountLockContentionIntegrationTest {
 
 	private static String uniqueNickname(String scenario) {
 		return scenario + "-" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+	}
+
+	@TestConfiguration
+	static class TransactionJoinHarnessConfig {
+
+		@Bean
+		TransactionJoinHarness transactionJoinHarness(JdbcTemplate jdbcTemplate) {
+			return new TransactionJoinHarness(jdbcTemplate);
+		}
+	}
+
+	// PracticeOrderSettlementService.settleOnTick/settleCurrentRun(수정 전, 외부 트랜잭션 격리수준 미지정)과
+	// PracticePriceTickService.advanceTick·PracticeAttemptChartService.tick(수정 후, READ COMMITTED 명시)이
+	// fillIfPending을 감싸는 실제 중첩 구조를 최소로 재현하는 테스트 전용 래퍼. Spring 빈으로 등록돼야
+	// @Transactional AOP 프록시가 걸린다.
+	static class TransactionJoinHarness {
+
+		private final JdbcTemplate jdbcTemplate;
+
+		TransactionJoinHarness(JdbcTemplate jdbcTemplate) {
+			this.jdbcTemplate = jdbcTemplate;
+		}
+
+		@Transactional
+		String isolationWhenOuterIsDefault() {
+			return innerReadCommitted();
+		}
+
+		@Transactional(isolation = Isolation.READ_COMMITTED)
+		String isolationWhenOuterIsReadCommitted() {
+			return innerReadCommitted();
+		}
+
+		// fillIfPending과 동일한 선언(REQUIRED 전파 + isolation=READ_COMMITTED)이다 — 바깥 트랜잭션에 합류할
+		// 때 이 선언이 무시되는지가 검증 대상이므로, 실제 DB 세션의 격리수준을 직접 읽어 확인한다.
+		@Transactional(isolation = Isolation.READ_COMMITTED)
+		String innerReadCommitted() {
+			return jdbcTemplate.queryForObject("SELECT @@transaction_isolation", String.class);
+		}
 	}
 }
