@@ -41,8 +41,7 @@ import org.springframework.context.annotation.Import;
 @Import(TestcontainersConfiguration.class)
 class LimitOrderFillAccountLockContentionIntegrationTest {
 
-	private static final Logger log =
-		LoggerFactory.getLogger(LimitOrderFillAccountLockContentionIntegrationTest.class);
+	private static final Logger log = LoggerFactory.getLogger(LimitOrderFillAccountLockContentionIntegrationTest.class);
 	private static final LocalDateTime NOW = LocalDateTime.of(2026, 8, 21, 12, 0, 0);
 	// order.limit-fill-executor.partition-count 기본값(8)과 맞춘다 — 한 계좌가 가질 수 있는 최대 동시 경합 수.
 	private static final int CONCURRENCY = 8;
@@ -92,9 +91,13 @@ class LimitOrderFillAccountLockContentionIntegrationTest {
 			CONCURRENCY, baselineMedianMs, baseline.stream().map(Measurement::elapsedMs).toList(),
 			baselineDeadlocks, baselineOtherFailures);
 
-		// 정답이 정해진 회귀 테스트가 아니라 실측 도구다 — 두 값이 음수가 아님만 확인하고, 판단은 로그의 수치로 한다.
-		assertThat(contendedMedianMs).isGreaterThanOrEqualTo(0L);
-		assertThat(baselineMedianMs).isGreaterThanOrEqualTo(0L);
+		// ADR-0028 — 격리수준을 READ COMMITTED로 좁혀 적용한 뒤에는 baseline(서로 다른 계좌·종목의 동시
+		// 첫 매수)에서 holdings INSERT 데드락이 나지 않아야 한다(수정 전 40건 중 32건 재현, 이 파일 커밋
+		// 이력 참고). contended는 애초에 계좌 락으로 직렬화돼 데드락이 나지 않던 시나리오라 함께 확인한다.
+		assertThat(contendedDeadlocks).isZero();
+		assertThat(baselineDeadlocks).isZero();
+		assertThat(contendedOtherFailures).isZero();
+		assertThat(baselineOtherFailures).isZero();
 	}
 
 	// 계좌 1개에 서로 다른 종목 CONCURRENCY개의 PENDING 지정가 매수를 걸어두고 전부 동시에 체결한다.
