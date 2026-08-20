@@ -14,6 +14,7 @@ import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
 import com.finplay.api.education.marketpractice.domain.PracticeRiskSnapshot;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.domain.TutorialScenarioScriptId;
 import com.finplay.api.market.repository.InstrumentRepository;
 import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderSide;
@@ -268,6 +269,80 @@ class PracticeAttemptRepositoryTest {
 
 		assertThatThrownBy(() -> practiceAttemptRepository.saveAndFlush(attempt))
 			.isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	// 대본 식별자는 커서만큼 내구적이어야 한다 — 재기동·재조회 뒤에도 같은 대본을 봐야 가격이 이어진다.
+	@Test
+	@DisplayName("대본 식별자가 영속되고 재조회된다")
+	void scenarioScriptIdColumnRoundTrips() {
+		selectScenarioInstrument(TutorialScenarioScriptId.CRYPTO_ORDER_BASICS_V1);
+		practiceAttemptRepository.saveAndFlush(attempt);
+		entityManager.clear();
+
+		PracticeAttempt reloaded = practiceAttemptRepository.findById(attempt.getId()).orElseThrow();
+
+		assertThat(reloaded.scenarioScriptId()).isEqualTo(TutorialScenarioScriptId.CRYPTO_ORDER_BASICS_V1);
+		assertThat(readScriptIdColumn()).isEqualTo("CRYPTO_ORDER_BASICS_V1");
+	}
+
+	/**
+	 * <b>파생 접근자로는 이 회귀를 잡을 수 없다.</b> {@code restart()}가 {@code generatorVersion}도 함께
+	 * 지우므로, 컬럼에 값이 그대로 남아 있어도 {@code scenarioScriptId()}는 {@code null}을 돌려준다.
+	 * 컬럼이 안 지워지면 재시작한 사용자가 다음 종목 선택에서 이전 대본을 물려받으므로 DB 값을 직접 읽는다.
+	 */
+	@Test
+	@DisplayName("재시작하면 대본 식별자 컬럼이 DB에서 NULL이 된다")
+	void restartNullsTheScenarioScriptIdColumnInTheDatabase() {
+		selectScenarioInstrument(TutorialScenarioScriptId.CRYPTO_ORDER_BASICS_V1);
+		practiceAttemptRepository.saveAndFlush(attempt);
+		assertThat(readScriptIdColumn()).isEqualTo("CRYPTO_ORDER_BASICS_V1");
+
+		attempt.restart(NOW.plusMinutes(1));
+		practiceAttemptRepository.saveAndFlush(attempt);
+		entityManager.clear();
+
+		assertThat(readScriptIdColumn()).isNull();
+	}
+
+	// 049 배포 순간 진행 중이던 행이다 — 백필하지 않기로 했으므로 이 조합이 실제로 DB에 남는다.
+	@Test
+	@DisplayName("버전 2 + 식별자 NULL 행은 041 대본으로 읽힌다")
+	void scriptRunWithNullScriptIdColumnReadsAsTheStoryScript() {
+		selectScenarioInstrument(TutorialScenarioScriptId.CRYPTO_ORDER_BASICS_V1);
+		practiceAttemptRepository.saveAndFlush(attempt);
+		entityManager.createNativeQuery(
+			"UPDATE practice_attempts SET scenario_script_id = NULL, scenario_stage_id = 'ACT2_RUMOR' "
+				+ "WHERE id = :attemptId")
+			.setParameter("attemptId", attempt.getId())
+			.executeUpdate();
+		entityManager.clear();
+
+		PracticeAttempt reloaded = practiceAttemptRepository.findById(attempt.getId()).orElseThrow();
+
+		assertThat(readScriptIdColumn()).isNull();
+		assertThat(reloaded.getScenarioStageId()).isEqualTo("ACT2_RUMOR");
+		assertThat(reloaded.scenarioScriptId()).isEqualTo(TutorialScenarioScriptId.CRYPTO_STORY_V1);
+	}
+
+	// 열거형 이름이 곧 컬럼 값이다(VARCHAR(32)). 넘치는 이름을 더하면 그 대본을 쓰는 실행만 저장에서
+	// 터지므로, 이름 길이를 스키마 폭과 함께 고정한다.
+	@Test
+	@DisplayName("모든 대본 식별자 이름이 VARCHAR(32) 안에 들어간다")
+	void everyScriptIdNameFitsTheColumnWidth() {
+		assertThat(TutorialScenarioScriptId.values())
+			.allSatisfy(scriptId -> assertThat(scriptId.name().length()).isLessThanOrEqualTo(32));
+	}
+
+	private void selectScenarioInstrument(TutorialScenarioScriptId scriptId) {
+		attempt.selectInstrument(
+			instrument, NOW, NOW.toLocalDate(), 123_456_789L, (short)2, scriptId, NOW);
+	}
+
+	private String readScriptIdColumn() {
+		return (String)entityManager
+			.createNativeQuery("SELECT scenario_script_id FROM practice_attempts WHERE id = :attemptId")
+			.setParameter("attemptId", attempt.getId())
+			.getSingleResult();
 	}
 
 	private static void putScenarioProgress(

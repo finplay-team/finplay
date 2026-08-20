@@ -2,6 +2,7 @@
 package com.finplay.api.market.service;
 
 import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.domain.TutorialScenarioScriptId;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;

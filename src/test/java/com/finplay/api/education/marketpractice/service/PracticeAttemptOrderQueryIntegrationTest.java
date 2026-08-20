@@ -178,7 +178,7 @@ class PracticeAttemptOrderQueryIntegrationTest {
 		instrumentRepository.saveAndFlush(instrument);
 		instrumentIds.add(instrument.getId());
 		PracticeAttempt attempt = PracticeAttempt.create(user.getId(), market, NOW.minusHours(1));
-		attempt.selectInstrument(instrument, NOW.minusMinutes(10), NOW.toLocalDate(), 123L, (short)1,
+		attempt.selectInstrument(instrument, NOW.minusMinutes(10), NOW.toLocalDate(), 123L, (short)1, null,
 			NOW.minusMinutes(10));
 		attemptRepository.saveAndFlush(attempt);
 		return new Fixture(user, account, instrument, attempt);

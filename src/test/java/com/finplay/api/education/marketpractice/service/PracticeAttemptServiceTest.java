@@ -27,6 +27,7 @@ import com.finplay.api.education.marketpractice.domain.PracticeMarketReflection;
 import com.finplay.api.portfolio.domain.Holding;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.domain.TutorialScenarioScriptId;
 import com.finplay.api.market.service.InstrumentService;
 import com.finplay.api.order.service.TradeService;
 import com.finplay.api.market.service.TutorialPriceGenerator;
@@ -93,7 +94,7 @@ class PracticeAttemptServiceTest {
 	void ensureAttemptReturnsExistingRunWithoutRestartingIt() {
 		PracticeAttempt attempt = selectingAttempt(Market.STOCK);
 		Instrument instrument = tutorialInstrument(Market.STOCK, true);
-		attempt.selectInstrument(instrument, NOW.minusMinutes(3), NOW.toLocalDate(), 123L, (short)1,
+		attempt.selectInstrument(instrument, NOW.minusMinutes(3), NOW.toLocalDate(), 123L, (short)1, null,
 			NOW.minusMinutes(3));
 		when(practiceAttemptRepository.insertIfAbsent(USER_ID, Market.STOCK.name(), NOW)).thenReturn(0);
 		when(practiceAttemptRepository.findByUserIdAndMarket(USER_ID, Market.STOCK))
@@ -127,7 +128,7 @@ class PracticeAttemptServiceTest {
 	void ensureAttemptOnReentryReflectsMutatedTutorialAccountIncludingReservedCash() {
 		PracticeAttempt attempt = selectingAttempt(Market.STOCK);
 		Instrument instrument = tutorialInstrument(Market.STOCK, true);
-		attempt.selectInstrument(instrument, NOW.minusMinutes(3), NOW.toLocalDate(), 123L, (short)1,
+		attempt.selectInstrument(instrument, NOW.minusMinutes(3), NOW.toLocalDate(), 123L, (short)1, null,
 			NOW.minusMinutes(3));
 		when(practiceAttemptRepository.insertIfAbsent(USER_ID, Market.STOCK.name(), NOW)).thenReturn(0);
 		when(practiceAttemptRepository.findByUserIdAndMarket(USER_ID, Market.STOCK))
@@ -153,7 +154,7 @@ class PracticeAttemptServiceTest {
 	void ensureCompletedAttemptReturnsReplayWithoutWritingAttempt() {
 		PracticeAttempt attempt = selectingAttempt(Market.CRYPTO);
 		attempt.selectInstrument(tutorialInstrument(Market.CRYPTO, true), NOW.minusDays(2),
-			NOW.minusDays(2).toLocalDate(), 456L, (short)1, NOW.minusDays(2));
+			NOW.minusDays(2).toLocalDate(), 456L, (short)1, null, NOW.minusDays(2));
 		ReflectionTestUtils.setField(attempt, "status", PracticeAttemptStatus.COMPLETED);
 		ReflectionTestUtils.setField(attempt, "completedAt", NOW.minusDays(1));
 		when(practiceAttemptRepository.insertIfAbsent(USER_ID, Market.CRYPTO.name(), NOW)).thenReturn(0);
@@ -181,7 +182,7 @@ class PracticeAttemptServiceTest {
 		PracticeAttemptStatus status) {
 		PracticeAttempt attempt = selectingAttempt(Market.STOCK);
 		Instrument instrument = tutorialInstrument(Market.STOCK, true);
-		attempt.selectInstrument(instrument, NOW.minusMinutes(10), NOW.toLocalDate(), 999L, (short)1,
+		attempt.selectInstrument(instrument, NOW.minusMinutes(10), NOW.toLocalDate(), 999L, (short)1, null,
 			NOW.minusMinutes(10));
 		ReflectionTestUtils.setField(attempt, "status", status);
 		PracticeCompletion completion = mock(PracticeCompletion.class);
@@ -228,6 +229,11 @@ class PracticeAttemptServiceTest {
 			market == Market.CRYPTO ? TutorialPriceGenerator.VERSION_2 : TutorialPriceGenerator.VERSION_1);
 		// 대본 위치는 여전히 비어 있다 — 첫 tick이 대본의 첫 구간으로 초기화한다(041 3번이 남긴 계약).
 		assertThat(attempt.getScenarioStageId()).isNull();
+		// **진입 대본은 041 고정이다**(2026-08-20 사용자 결정). 전환 엔드포인트(049 tasks 5번)가 없는 채로
+		// 진입만 2단계로 바꾸면 dev 머지가 곧 배포인 이 레포에서 041 이야기가 통째로 도달 불가가 된다.
+		// 대본을 쓰지 않는 STOCK은 식별자도 없다.
+		assertThat(attempt.scenarioScriptId()).isEqualTo(
+			market == Market.CRYPTO ? TutorialScenarioScriptId.CRYPTO_STORY_V1 : null);
 	}
 
 	@ParameterizedTest
@@ -313,7 +319,8 @@ class PracticeAttemptServiceTest {
 	@Test
 	void selectExitPresetIsAllowedWhileNothingIsHeld() {
 		PracticeAttempt attempt = selectingAttempt(Market.CRYPTO);
-		attempt.selectInstrument(tutorialInstrument(Market.CRYPTO, true), NOW, NOW.toLocalDate(), 1L, (short)2, NOW);
+		attempt.selectInstrument(tutorialInstrument(Market.CRYPTO, true), NOW, NOW.toLocalDate(), 1L, (short)2, null,
+			NOW);
 		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
 			.thenReturn(Optional.of(attempt));
 		when(practiceRiskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(ATTEMPT_ID, 1L))
@@ -330,7 +337,8 @@ class PracticeAttemptServiceTest {
 	@Test
 	void selectExitPresetIsRejectedWhileHolding() {
 		PracticeAttempt attempt = selectingAttempt(Market.CRYPTO);
-		attempt.selectInstrument(tutorialInstrument(Market.CRYPTO, true), NOW, NOW.toLocalDate(), 1L, (short)2, NOW);
+		attempt.selectInstrument(tutorialInstrument(Market.CRYPTO, true), NOW, NOW.toLocalDate(), 1L, (short)2, null,
+			NOW);
 		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
 			.thenReturn(Optional.of(attempt));
 		when(tradeService.netFilledQuantity(ATTEMPT_ID, 1L)).thenReturn(new BigDecimal("2"));
@@ -344,7 +352,8 @@ class PracticeAttemptServiceTest {
 	@Test
 	void selectExitPresetIsRejectedAfterCompletion() {
 		PracticeAttempt attempt = selectingAttempt(Market.CRYPTO);
-		attempt.selectInstrument(tutorialInstrument(Market.CRYPTO, true), NOW, NOW.toLocalDate(), 1L, (short)2, NOW);
+		attempt.selectInstrument(tutorialInstrument(Market.CRYPTO, true), NOW, NOW.toLocalDate(), 1L, (short)2, null,
+			NOW);
 		ReflectionTestUtils.setField(attempt, "status", PracticeAttemptStatus.COMPLETED);
 		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
 			.thenReturn(Optional.of(attempt));
@@ -403,7 +412,7 @@ class PracticeAttemptServiceTest {
 	void reselectingTheSameInstrumentAlsoReflectsTheTutorialAccount() {
 		PracticeAttempt attempt = selectingAttempt(Market.CRYPTO);
 		Instrument instrument = tutorialInstrument(Market.CRYPTO, true);
-		attempt.selectInstrument(instrument, NOW.minusMinutes(3), NOW.toLocalDate(), 1L, (short)2,
+		attempt.selectInstrument(instrument, NOW.minusMinutes(3), NOW.toLocalDate(), 1L, (short)2, null,
 			NOW.minusMinutes(3));
 		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
 			.thenReturn(Optional.of(attempt));
@@ -468,7 +477,8 @@ class PracticeAttemptServiceTest {
 	@Test
 	void selectExitPresetReflectsTheCurrentTutorialAccount() {
 		PracticeAttempt attempt = selectingAttempt(Market.CRYPTO);
-		attempt.selectInstrument(tutorialInstrument(Market.CRYPTO, true), NOW, NOW.toLocalDate(), 1L, (short)2, NOW);
+		attempt.selectInstrument(tutorialInstrument(Market.CRYPTO, true), NOW, NOW.toLocalDate(), 1L, (short)2, null,
+			NOW);
 		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
 			.thenReturn(Optional.of(attempt));
 		when(practiceRiskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(ATTEMPT_ID, 1L))

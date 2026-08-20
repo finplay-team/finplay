@@ -1,6 +1,7 @@
 // 저작된 두 대본이 실제 애플리케이션 기동에서 로더의 검증을 통과하는지 확인한다.
 package com.finplay.api.market.service;
 
+import com.finplay.api.market.domain.TutorialScenarioScriptId;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finplay.api.TestcontainersConfiguration;

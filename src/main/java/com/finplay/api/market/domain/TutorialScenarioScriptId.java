@@ -1,11 +1,13 @@
 // 튜토리얼 대본 파일 하나하나를 가리키는 식별자 — attempt가 어느 대본을 쓰는지 이 값으로 정해진다
-package com.finplay.api.market.service;
+package com.finplay.api.market.domain;
 
-import com.finplay.api.market.domain.Market;
 import java.util.Arrays;
 
 // 시장 하나에 대본이 여럿이므로 Market을 키로 쓸 수 없다(049 plan §1). 이 이름은 practice_attempts의
 // 컬럼 값으로 영속되므로 **구간 id와 같은 등급의 스키마**다 — 배포된 뒤에는 바꾸지 않는다.
+//
+// service가 아니라 domain에 두는 이유는 PracticeAttempt가 이 값을 @Enumerated로 매핑하기 때문이다 —
+// 도메인 엔티티가 다른 도메인의 service를 가리키면 service -> domain 방향이 거꾸로 선다(PR #474 리뷰).
 public enum TutorialScenarioScriptId {
 
 	// 선언 순서가 곧 단계 순서다 — firstScriptId(market)가 그 시장의 첫 대본을 고른다.

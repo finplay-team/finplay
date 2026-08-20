@@ -1,6 +1,7 @@
 // 저작된 CRYPTO 대본이 041 plan의 구간 배분·극값·사건 배치를 만족하는지 파일을 읽어 판정한다.
 package com.finplay.api.market.service;
 
+import com.finplay.api.market.domain.TutorialScenarioScriptId;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.math.BigDecimal;

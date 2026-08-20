@@ -1,6 +1,7 @@
 // 대본 커서에서 파생하는 막·진행 여부·원인 상태와 사건 공개 게이트를 실제 대본으로 검증한다.
 package com.finplay.api.education.marketpractice.service;
 
+import com.finplay.api.market.domain.TutorialScenarioScriptId;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
@@ -8,7 +9,6 @@ import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.TutorialPriceGenerator;
 import com.finplay.api.market.service.TutorialScenarioScript;
-import com.finplay.api.market.service.TutorialScenarioScriptId;
 import com.finplay.api.market.service.TutorialScenarioScriptLoader;
 import com.finplay.api.market.service.TutorialScenarioStage;
 import java.math.BigDecimal;
@@ -122,7 +122,7 @@ class PracticeScenarioNarrativeCalculatorTest {
 		ReflectionTestUtils.setField(instrument, "id", 21L);
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
 		attempt.selectInstrument(
-			instrument, NOW, NOW.toLocalDate(), 1L, TutorialPriceGenerator.VERSION_2, NOW);
+			instrument, NOW, NOW.toLocalDate(), 1L, TutorialPriceGenerator.VERSION_2, null, NOW);
 		return attempt;
 	}
 }

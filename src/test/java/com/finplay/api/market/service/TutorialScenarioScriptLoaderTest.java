@@ -1,6 +1,7 @@
 // 깨진 대본이 기동을 실패시키는지, 정상 대본은 그대로 읽히는지 검증한다.
 package com.finplay.api.market.service;
 
+import com.finplay.api.market.domain.TutorialScenarioScriptId;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 

@@ -167,7 +167,7 @@ class PracticeAttemptOrderAttributionServiceTest {
 	private static PracticeAttempt inProgressAttempt(Instrument instrument) {
 		PracticeAttempt attempt = PracticeAttempt.create(USER_ID, Market.CRYPTO, NOW.minusHours(1));
 		ReflectionTestUtils.setField(attempt, "id", ATTEMPT_ID);
-		attempt.selectInstrument(instrument, NOW.minusMinutes(10), NOW.toLocalDate(), 123L, (short)1,
+		attempt.selectInstrument(instrument, NOW.minusMinutes(10), NOW.toLocalDate(), 123L, (short)1, null,
 			NOW.minusMinutes(10));
 		return attempt;
 	}

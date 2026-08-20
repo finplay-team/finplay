@@ -1,6 +1,7 @@
 // 2단계(주문 방법 학습) 대본이 049 plan의 구조·극값·사건 부재를 만족하는지 파일을 읽어 판정한다.
 package com.finplay.api.market.service;
 
+import com.finplay.api.market.domain.TutorialScenarioScriptId;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finplay.api.market.domain.Market;

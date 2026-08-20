@@ -8,6 +8,7 @@ import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
 import com.finplay.api.education.marketpractice.repository.PracticeAttemptRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.domain.TutorialScenarioScriptId;
 import com.finplay.api.market.service.TutorialPriceGenerator;
 import com.finplay.api.market.service.TutorialPriceSeriesDto;
 import com.finplay.api.market.service.TutorialScenarioScriptLoader;
@@ -66,7 +67,44 @@ class PracticeAttemptCanonicalPriceServiceTest {
 		assertThat(series.candles().get(29).close()).isEqualByComparingTo("10000.00000000");
 	}
 
+	/**
+	 * <b>049 배포 순간 진행 중이던 사용자의 상태다.</b> 생성기 버전 2인데 {@code scenario_script_id}는
+	 * {@code NULL}이고 커서에는 041 대본의 구간 id가 살아 있다(백필하지 않기로 했다). 이 조합이
+	 * "대본이 저작되지 않은 식별자입니다"로 터지면 그 사용자는 재시작 외에 회복 수단이 없다.
+	 */
+	@Test
+	void scriptRunWithoutPersistedScriptIdStillGetsTheStoryScriptPrice() {
+		PracticeAttempt attempt = scenarioAttempt(null);
+		putCursor(attempt, "ACT2_RUMOR", 21L);
+
+		assertThat(attempt.scenarioScriptId()).isEqualTo(TutorialScenarioScriptId.CRYPTO_STORY_V1);
+		// ACT2_RUMOR 7분의 배율 0.975 × 041 기준가 10,000원.
+		assertThat(service.canonicalPrice(attempt, ANCHOR)).isEqualByComparingTo("9750.00000000");
+	}
+
+	// 위 테스트만 있으면 script(attempt)가 041 고정으로 되돌아가도 초록이다. 영속된 식별자를 실제로 읽는지
+	// 2단계 대본으로 확인한다 — 두 대본은 자릿수가 달라 섞이면 즉시 드러난다.
+	@Test
+	void scriptRunWithPersistedOrderBasicsIdGetsThatScriptsPrice() {
+		PracticeAttempt attempt = scenarioAttempt(TutorialScenarioScriptId.CRYPTO_ORDER_BASICS_V1);
+		putCursor(attempt, "ORDER_BASICS", 15L);
+
+		// ORDER_BASICS 5분의 배율 1.120000 × 2단계 기준가 100,000원.
+		assertThat(service.canonicalPrice(attempt, ANCHOR)).isEqualByComparingTo("112000.00000000");
+		assertThat(service.priceSeries(attempt, ANCHOR).candles())
+			.allSatisfy(candle -> assertThat(candle.low()).isGreaterThan(new BigDecimal("80000")));
+	}
+
+	private static void putCursor(PracticeAttempt attempt, String stageId, long elapsedSeconds) {
+		ReflectionTestUtils.setField(attempt, "scenarioStageId", stageId);
+		ReflectionTestUtils.setField(attempt, "scenarioStageElapsedSeconds", elapsedSeconds);
+	}
+
 	private static PracticeAttempt scenarioAttempt() {
+		return scenarioAttempt(null);
+	}
+
+	private static PracticeAttempt scenarioAttempt(TutorialScenarioScriptId scriptId) {
 		PracticeAttempt attempt = PracticeAttempt.create(7L, Market.CRYPTO, ANCHOR.minusHours(1));
 		ReflectionTestUtils.setField(attempt, "id", 11L);
 		Instrument instrument = Instrument.create(
@@ -74,7 +112,8 @@ class PracticeAttemptCanonicalPriceServiceTest {
 		ReflectionTestUtils.setField(instrument, "id", 21L);
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
 		attempt.selectInstrument(
-			instrument, ANCHOR, ANCHOR.toLocalDate(), 123_456_789L, TutorialPriceGenerator.VERSION_2, ANCHOR);
+			instrument, ANCHOR, ANCHOR.toLocalDate(), 123_456_789L, TutorialPriceGenerator.VERSION_2, scriptId,
+			ANCHOR);
 		return attempt;
 	}
 
@@ -85,7 +124,7 @@ class PracticeAttemptCanonicalPriceServiceTest {
 			Market.CRYPTO, "TUTORIAL-BTC", "튜토리얼 비트코인", BigDecimal.ONE, 5_000L, true, ANCHOR);
 		ReflectionTestUtils.setField(instrument, "id", 21L);
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
-		attempt.selectInstrument(instrument, ANCHOR, ANCHOR.toLocalDate(), 123_456_789L, (short)1, ANCHOR);
+		attempt.selectInstrument(instrument, ANCHOR, ANCHOR.toLocalDate(), 123_456_789L, (short)1, null, ANCHOR);
 		return attempt;
 	}
 }

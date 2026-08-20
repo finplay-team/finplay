@@ -1,12 +1,12 @@
 // 프리셋 세 개의 손절·익절선이 041 대본에서 실제로 닿는지를 대본 파일과 상수로 판정한다 (EXITPRESET-010).
 package com.finplay.api.education.marketpractice.domain;
 
+import com.finplay.api.market.domain.TutorialScenarioScriptId;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finplay.api.education.marketpractice.service.ReferencePriceCalculator;
 import com.finplay.api.market.service.TutorialScenarioEvent;
 import com.finplay.api.market.service.TutorialScenarioScript;
-import com.finplay.api.market.service.TutorialScenarioScriptId;
 import com.finplay.api.market.service.TutorialScenarioScriptLoader;
 import java.math.BigDecimal;
 import java.math.RoundingMode;

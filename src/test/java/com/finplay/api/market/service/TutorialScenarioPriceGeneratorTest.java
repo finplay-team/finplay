@@ -1,6 +1,7 @@
 // 대본 위치를 가격으로 바꾸는 생성기 버전 2의 고정 벡터와 경계 처리를 검증한다.
 package com.finplay.api.market.service;
 
+import com.finplay.api.market.domain.TutorialScenarioScriptId;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 

@@ -192,7 +192,7 @@ class PracticeStageProgressCalculationServiceTest {
 			Market.CRYPTO, "SAMPLE", "튜토리얼 샘플", BigDecimal.ONE, 0L, true, NOW);
 		ReflectionTestUtils.setField(instrument, "id", 21L);
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
-		attempt.selectInstrument(instrument, NOW, LocalDate.from(NOW), 1L, (short)2, NOW);
+		attempt.selectInstrument(instrument, NOW, LocalDate.from(NOW), 1L, (short)2, null, NOW);
 		if (preset != null) {
 			attempt.selectExitPreset(preset, NOW);
 		}

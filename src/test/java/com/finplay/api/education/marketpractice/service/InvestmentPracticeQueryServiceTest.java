@@ -1,6 +1,7 @@
 // InvestmentPracticeQueryService의 GET /api/education/practice 5가지 상태 판정을 검증하는 단위 테스트다.
 package com.finplay.api.education.marketpractice.service;
 
+import com.finplay.api.market.domain.TutorialScenarioScriptId;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -28,7 +29,6 @@ import com.finplay.api.favorite.dto.response.FavoriteResponse;
 import com.finplay.api.favorite.service.FavoriteService;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
-import com.finplay.api.market.service.TutorialScenarioScriptId;
 import com.finplay.api.market.service.TutorialScenarioScriptLoader;
 import com.finplay.api.order.domain.Trade;
 import com.finplay.api.portfolio.domain.Holding;
