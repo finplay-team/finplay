@@ -11,6 +11,7 @@
 | 23:15 | implementer | `.\gradlew.bat spotlessApply compileJava compileTestJava` | tasks.md 3번, plan.md §5(안내 범위 일반식), ADR-0002 |
 | 23:40 | implementer | `.\gradlew.bat spotlessApply compileJava compileTestJava` 후 `.\gradlew.bat test --tests FinPlayApiApplicationTests` | tasks.md 4번, plan.md §4(순환 참조 회피 — 포트 인자만 증가) |
 | 00:05 | implementer | `.\gradlew.bat spotlessApply compileJava compileTestJava` | tasks.md 5번, plan.md §3(전환 절차·잠금 순서), CLAUDE.md 규칙 7 |
+| 00:30 | implementer | `.\gradlew.bat spotlessApply compileJava compileTestJava` (compileJava 통과, compileTestJava는 기존 테스트 시그니처 불일치로 실패) | tasks.md 5-A번, plan.md §3-A(진입별 대본 식별자·V55·NULL 해석 위치), CLAUDE.md 규칙 7·8 |
 
 ## 모니터링 (사람용 요약)
 - 21:20 — `basePrice`를 대본 파일 필드로 옮기고 `TutorialScenarioScriptId`로 대본 2개를 등록, 041 대본의 canonical 가격 120분·과거 29봉×18조합을 커밋 전후 값으로 대조해 전부 동일함을 확인, 컴파일 통과.
@@ -21,3 +22,4 @@
 - 23:15 — `market.service`에 안내 범위 순수 함수(단위 1,000 미고정), `PracticeTutorialChartResponse`에 `priceGuideRange` 추가, 판정은 `script.events().isEmpty()` 하나. 2단계 대본 값(90000~110000)을 별도 계산으로 검증, 컴파일 통과.
 - 23:40 — `PRACTICE_STAGE_LOCKED` 추가, `lockForOrder`에 `OrderType` 인자만 늘리고(포트 메서드 신설 없음) 게이트는 education 구현체 안에서 `PracticeStageProgressCalculationService`를 불러 끝냈다, `selectExitPreset`에도 보유 중 잠금보다 앞서 같은 게이트를 넣었다. `FinPlayApiApplicationTests`로 컨텍스트가 실제로 뜨는 것까지 확인(순환 참조 없음), 컴파일 통과.
 - 00:05 — `POST .../advance-script` 신설(거부 5가지 → 예약·지정가 정리 → `scenario_script_id` 교체 + 커서 전체 초기화, run·계좌·`exitPreset` 무변경). 정리는 `PracticeRunRestartOrderService.cleanupCurrentRun`을 재사용하지 않고 `PracticeOrderSettlementService`에 개별 지정가 취소 메서드를 새로 뽑아 썼다(홀딩 0 보장 전제라 계좌 리셋·보상매도 로직이 불필요). `PracticeAttemptService.scenarioScriptIdFor`를 `firstScriptId(market)`로 되돌려 진입을 2단계로 열었다. `ai/api-routes.md`·`docs/api/education.md`에 advance-script 계약 추가, 컴파일 통과.
+- 00:30 — V55로 `practice_risk_snapshots.scenario_script_id`를 추가(로컬·origin/dev 둘 다 최고 V54라 산술대로 V55 확정). `PracticeRiskSnapshot`은 원본 컬럼·평범한 getter만 추가(NULL 해석 없음). `createRiskSnapshotOnBuyFill`이 이미 로드된 `attempt.scenarioScriptId()`를 스냅샷 생성 인자로 그대로 넘겨 추가 조회 없음. `PracticeEntryResponse`에 `scenarioScriptId` 필드 추가, `PracticeEntryComparisonService.toEntry`가 `exitPreset`과 같은 자리·같은 패턴으로 NULL을 해석(`!usesScenarioScript()`→null, 스냅샷 NULL→`CRYPTO_STORY_V1`, 그 외 스냅샷 값). `ai/api-routes.md`·`docs/api/education.md`의 `entries[]` 계약에 필드 반영. `compileJava` 통과, `compileTestJava`는 생성자 시그니처가 바뀐 기존 테스트 3개 파일이 실패 — tester 몫으로 남김.

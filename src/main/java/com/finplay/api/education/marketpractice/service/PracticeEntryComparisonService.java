@@ -8,6 +8,7 @@ import com.finplay.api.education.marketpractice.domain.PracticeSellCause;
 import com.finplay.api.education.marketpractice.dto.response.PracticeEntryResponse;
 import com.finplay.api.education.marketpractice.repository.PracticeRiskSnapshotRepository;
 import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.domain.TutorialScenarioScriptId;
 import com.finplay.api.order.domain.ExitPlanStatus;
 import com.finplay.api.order.domain.Trade;
 import com.finplay.api.order.service.PracticeExitPlanQueryService;
@@ -65,8 +66,7 @@ public class PracticeEntryComparisonService {
 
 		List<PracticeEntryResponse> entries = new ArrayList<>(snapshots.size());
 		for (int index = 0; index < snapshots.size(); index++) {
-			entries.add(toEntry(
-				snapshots.get(index), summaries.get(index), triggered, attempt.getMarket(), comparisonPrice));
+			entries.add(toEntry(snapshots.get(index), summaries.get(index), triggered, attempt, comparisonPrice));
 		}
 		return List.copyOf(entries);
 	}
@@ -75,9 +75,10 @@ public class PracticeEntryComparisonService {
 		PracticeRiskSnapshot snapshot,
 		PracticeRunTradeSummaryDto summary,
 		Map<Long, ExitPlanStatus> triggeredSellOrderStatuses,
-		Market market,
+		PracticeAttempt attempt,
 		BigDecimal comparisonPrice) {
 		Trade sellTrade = summary.firstSellTrade();
+		Market market = attempt.getMarket();
 		return new PracticeEntryResponse(
 			snapshot.getEntrySequence(),
 			// 기능 도입 전에 만들어진 행은 exit_preset이 null이며 기본 프리셋으로 해석한다(042 EXITPRESET-002).
@@ -99,7 +100,22 @@ public class PracticeEntryComparisonService {
 				? null
 				: PracticeSellCause.from(triggeredSellOrderStatuses.get(sellTrade.getOrder().getId())).name(),
 			summary.realizedPnl(),
-			unrealizedPnlIfHeld(summary, market, comparisonPrice));
+			unrealizedPnlIfHeld(summary, market, comparisonPrice),
+			scenarioScriptIdOf(attempt, snapshot));
+	}
+
+	/**
+	 * 049 ORDERBASICS-023 — 이 진입이 열릴 때 attempt가 쓰던 대본. NULL 해석을 엔티티가 아니라 여기 두는
+	 * 이유는 {@code PracticeRiskSnapshot.attempt}가 지연 로딩이고, 판정에 필요한
+	 * {@code attempt.usesScenarioScript()}를 호출자가 이미 인자로 든 {@code attempt}로 공짜로 얻을 수 있기
+	 * 때문이다(plan.md §3-A) — {@code exitPreset}이 같은 자리에서 쓰는 것과 같은 패턴이다.
+	 */
+	private String scenarioScriptIdOf(PracticeAttempt attempt, PracticeRiskSnapshot snapshot) {
+		if (!attempt.usesScenarioScript()) {
+			return null;
+		}
+		TutorialScenarioScriptId scenarioScriptId = snapshot.getScenarioScriptId();
+		return (scenarioScriptId == null ? TutorialScenarioScriptId.CRYPTO_STORY_V1 : scenarioScriptId).name();
 	}
 
 	/**

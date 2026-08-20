@@ -42,6 +42,12 @@ import java.time.LocalDateTime;
  *                            기준 가격은 같은 응답의 {@code priceAfterSell}이며 <b>매도 수수료를 뺀</b>
  *                            같은 기준이라 {@code realizedPnl}과 나란히 놓을 수 있다(SCENARIO-021a).
  *                            매도 전이거나 대본을 쓰지 않는 실행이면 {@code null}
+ * @param scenarioScriptId    이 진입이 열릴 때 attempt가 쓰던 대본 식별자(049 ORDERBASICS-023). 대본을
+ *                            쓰지 않는 실행(생성기 버전 1·legacy)이면 {@code null}. 대본을 쓰는 실행에서
+ *                            스냅샷 컬럼이 비어 있으면(049 이전 진입) {@code CRYPTO_STORY_V1}로 해석한다.
+ *                            전환({@code advance-script})이 같은 run 안에서 대본을 갈아끼우므로, 한 실행
+ *                            세대 안에서도 진입마다 다른 값을 가질 수 있다 — 화면이 대본별로 끊어 그리는
+ *                            근거다
  */
 public record PracticeEntryResponse(
 	int entrySequence,
@@ -57,5 +63,6 @@ public record PracticeEntryResponse(
 	LocalDateTime sellAt,
 	String sellCause,
 	Long realizedPnl,
-	Long unrealizedPnlIfHeld) {
+	Long unrealizedPnlIfHeld,
+	String scenarioScriptId) {
 }

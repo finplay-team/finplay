@@ -156,6 +156,9 @@ public class PracticeAttemptOrderAttributionService implements PracticeOrderAttr
 			referencePriceCalculator.normalizeEntryPrice(trade.getPrice()),
 			lines.referenceStopLossPrice(),
 			lines.referenceTakeProfitPrice(),
+			// 049 ORDERBASICS-023 — 진입이 열릴 때 attempt가 쓰던 대본을 진입에 고정한다. attempt는 위에서
+			// findByIdForUpdate로 이미 완전히 로드돼 있어 추가 조회가 없다(plan.md §3-A).
+			attempt.scenarioScriptId(),
 			createdAt));
 
 		// STOCK은 snapshot(참조선)까지만이다(EXITPRESET-018) — 실제 거래 화면에서도 OCO는 코인 전용이고

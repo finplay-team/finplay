@@ -17,6 +17,7 @@ import com.finplay.api.common.TestClockConfig;
 import com.finplay.api.education.marketpractice.domain.ExitPreset;
 import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
 import com.finplay.api.education.marketpractice.dto.response.PracticeAttemptResponse;
+import com.finplay.api.education.marketpractice.dto.response.PracticeEntryResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeStageProgressResponse;
 import com.finplay.api.education.marketpractice.repository.PracticeAttemptRepository;
 import com.finplay.api.market.domain.Instrument;
@@ -34,6 +35,7 @@ import com.finplay.api.order.service.OrderService;
 import com.finplay.api.order.service.TradeService;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -94,6 +96,8 @@ class PracticeAttemptScriptAdvanceIntegrationTest {
 	@Autowired
 	private TutorialAccountService tutorialAccountService;
 	@Autowired
+	private PracticeEntryComparisonService entryComparisonService;
+	@Autowired
 	private TestClock clock;
 
 	@BeforeEach
@@ -144,6 +148,38 @@ class PracticeAttemptScriptAdvanceIntegrationTest {
 		PracticeAttemptResponse presetResponse = attemptService
 			.selectExitPreset(fixture.userId(), Market.CRYPTO, ExitPreset.BALANCED);
 		assertThat(presetResponse.selectedExitPreset()).isEqualTo("BALANCED");
+	}
+
+	// 049 ORDERBASICS-023 — 완료 대조 배열이 진입마다 그 진입이 열릴 때의 대본을 싣는지 실제 원장으로
+	// 확인한다. 2단계 진입(시장가·지정가 왕복)과 3단계 진입(전환 뒤 매수)이 같은 run 안에 섞여도 각자의
+	// scenario_script_id를 유지해야 한다(plan.md §3-A). advance-script는 두 왕복을 모두 요구하므로
+	// (progress.marketBuySellCompleted() && limitBuySellCompleted()) 전환 전에 이미 진입이 둘 생긴다.
+	@Test
+	void entriesCarryTheScriptIdOfTheStageTheyWereOpenedIn() {
+		Fixture fixture = orderBasicsRun("advance-entries");
+
+		marketRoundTrip(fixture);
+		limitRoundTrip(fixture);
+		assertThat(stageProgress(fixture).marketBuySellCompleted()).isTrue();
+		assertThat(stageProgress(fixture).limitBuySellCompleted()).isTrue();
+		assertThat(tradeService.netFilledQuantity(fixture.attemptId(), 1L)).isEqualByComparingTo(BigDecimal.ZERO);
+
+		scriptAdvanceService.advanceScript(fixture.userId(), Market.CRYPTO);
+		PracticeAttempt advanced = attemptRepository.findById(fixture.attemptId()).orElseThrow();
+		assertThat(advanced.scenarioScriptId()).isEqualTo(TutorialScenarioScriptId.CRYPTO_STORY_V1);
+
+		clock.set(BASE_NOW.plusSeconds(50));
+		buy(fixture);
+
+		List<PracticeEntryResponse> entries = entryComparisonService.findCurrentRunEntries(advanced, null);
+
+		assertThat(entries).hasSize(3);
+		assertThat(entries.get(0).entrySequence()).isEqualTo(1);
+		assertThat(entries.get(0).scenarioScriptId()).isEqualTo("CRYPTO_ORDER_BASICS_V1");
+		assertThat(entries.get(1).entrySequence()).isEqualTo(2);
+		assertThat(entries.get(1).scenarioScriptId()).isEqualTo("CRYPTO_ORDER_BASICS_V1");
+		assertThat(entries.get(2).entrySequence()).isEqualTo(3);
+		assertThat(entries.get(2).scenarioScriptId()).isEqualTo("CRYPTO_STORY_V1");
 	}
 
 	// ORDERBASICS-020 — 진행 조건은 이미 갖췄더라도(두 왕복 모두 완료) 지금 순보유수량이 0이 아니면 막는다.
