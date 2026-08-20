@@ -208,7 +208,7 @@ public class ExitPlan {
 	}
 
 	// 튜토리얼 자동 예약(042 EXITPRESET-005) 생성 — intentionId 없이 attempt·실행 세대로 귀속한다.
-	// 두 귀속 값을 여기서 검증하는 것은 Order.createPracticeFilled와 대칭을 맞추기 위해서다. 두지 않으면
+	// 두 귀속 값을 여기서 검증하는 것은 Order.createForPracticeAttempt와 대칭을 맞추기 위해서다. 두지 않으면
 	// 이 불변식을 지키는 것이 DB CHECK 하나뿐이고, 위반이 트랜잭션 커밋 시점에야 드러난다(PR #471 리뷰).
 	public static ExitPlan createPractice(
 		User user,

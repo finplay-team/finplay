@@ -40,7 +40,7 @@ plan §자동 예약 생성은 "직전 순보유수량 = 현재 순보유수량 
 ### 귀속 컬럼의 애플리케이션 레벨 검증 — 두기로 했다
 
 plan이 "5번에서 판정하라"고 남긴 항목이다. `ExitPlan.createPractice`가 두 귀속 값(attempt id·양의 실행
-세대 번호)을 검증한다 — `Order.createPracticeFilled`의 `validatePracticeAttemptAttribution`과 대칭이다.
+세대 번호)을 검증한다 — `Order.createForPracticeAttempt`의 `validatePracticeAttemptAttribution`과 대칭이다.
 두지 않으면 이 불변식을 지키는 것이 DB CHECK 하나뿐이고, 위반이 트랜잭션 커밋 시점에야 드러난다.
 
 ### 진입별 대조 배열은 041 6번으로 넘겼다
@@ -97,3 +97,61 @@ EXITPRESET-016의 "매도 접수 전 예약 취소"를 시장가 경로에만 �
   `DELETE`도 거부한다 — 차단을 엔진이 아니라 호출부에 두는 것은 047·021 RISK-OCO-014와 같은 이유다.
 - 회귀 방어로 `PracticeExitPresetOcoIntegrationTest`를 넣었다. 매수 → tick 손절 체결 → 원장 3종 확인 →
   프리셋 재선택 → 재매수(새 진입) → 재시작까지 한 번에 돌고, **전량 예약 상태의 수동 매도**도 함께 본다.
+
+## PR #487 리뷰 반영 (차단 1건 / 권장 3건)
+
+### 차단 3 — 튜토리얼 자동 예약이 실시간 시세 피드로 체결됐다
+
+리뷰 QA가 블랙박스로 3회 재현했다. CRYPTO 샌드박스 종목을 매수하면 **tick을 한 번도 부르지 않았는데
+2~3초 뒤 예약이 `FILLED_TAKE_PROFIT`으로 체결**되고, 체결가가 `entryPrice`와 무관한 값이었다.
+
+원인은 `ExitPlanRepository.findPendingExitPlansToFill`이 **종목 단위로만** 후보를 고른 것이다. 경로를
+추적하면 이렇다.
+
+1. `BithumbFeedSimulator`(`@Profile("!prod")`)가 3초마다
+   `findByMarketAndTradableTrueOrderByIdAsc(CRYPTO)`로 코인 종목을 훑는데, `SANDBOX_COIN_1`도
+   `market=CRYPTO`·`tradable=true`라 **함께 잡힌다**.
+2. 그 종목에 10만~1000만원 범위의 합성 틱이 들어가 `PriceStore.saveTick` → `CryptoPriceUpdatedEvent` 발행.
+3. `ExitPlanTriggerListener`가 그 심볼의 instrument를 찾아 `findPendingExitPlansToFill`을 부르고,
+   튜토리얼 예약(익절선 1만원대)이 후보로 걸려 즉시 체결된다.
+
+**같은 위험을 지정가 주문은 이미 막고 있었다.** `findPendingLimitOrdersToFill`에는
+`practicePriceSessionId is null and practiceAttemptId is null`이 있고 주석이 "030 역방향 오염 차단 — 실제
+빗썸 시세 tick이 교육 주문을 체결하지 않는다"라고 적혀 있다. **이 PR이 OCO 예약이라는 새 트리거 대상을
+만들면서 같은 방어를 복제하지 않은 것**이 결함의 실체다.
+
+`findPendingExitPlansToFill`에 `p.practiceAttemptId is null`을 더했다. 종목(`isTutorialSample`)이 아니라
+**귀속**으로 거르는 이유는 지정가 쪽 선례와 같고, 불변식 자체가 "교육 예약은 전용 경로로만 체결된다"이기
+때문이다. 튜토리얼 예약은 `PracticeOrderSettlementService.settleCurrentRun`이 attempt·실행 세대로 좁힌
+`findPendingPracticeRunExitPlanIds`로 따로 읽으므로 **canonical 경로는 영향을 받지 않는다**(이 쿼리의
+production 호출부는 `ExitPlanTriggerListener` 하나뿐임을 확인했다).
+
+**prod에서는 증상이 달랐을 것이다.** 시뮬레이터가 꺼지고 실제 빗썸 피드는 `SANDBOX_COIN_1` 심볼을
+보내지 않으므로 오체결은 나지 않는다. 다만 그것은 "실제 피드에 그 심볼이 없다"는 **우연**에 기댄 것이라
+불변식이라 부를 수 없고, 데모·로컬은 팀이 실제로 시연하는 환경이다. 그래서 프로필과 무관하게 막는다.
+
+`ExitPlanRepositoryTest`에 회귀 2건을 넣었다 — 귀속된 예약이 손절·익절 양방향 가격에서 모두 제외되는 것,
+같은 종목에 일반 예약이 섞여 있으면 **일반 예약만** 후보가 되는 것.
+
+### 함께 메운 커버리지 공백
+
+리뷰가 지적한 대로 `ExitPlanService.list()`의 튜토리얼 제외 필터와 `cancel()`의
+`EXIT_PLAN_TUTORIAL_INSTRUMENT_NOT_ALLOWED` 거부에 테스트가 없었다(동작 자체는 QA에서 정상 확인). 두
+동작 모두 042 5번이 요구하는 안전장치라 `ExitPlanServiceTest`에 단위 테스트 5건을 넣었다 — 필터 2건,
+취소 거부·미존재·정상 위임 3건.
+
+### 권장 3건
+
+1. 042 tasks 8번을 완료로 표시하고, `PracticeExitPresetOcoIntegrationTest`의 재예약 단언에 **가격**을
+   더했다. 기존에는 예약 개수(`hasSize(1)`)만 봐서 프리셋이 BALANCED로 굳어 있어도 통과했다.
+2. `docs/prd.md` EXITPRESET 행 근거에 `PR #487`을 더했다.
+3. 실재하지 않는 메서드명 `Order.createPracticeFilled` → `Order.createForPracticeAttempt`로 정정
+   (`ExitPlan.java` 주석, 042 tasks.md, 042 run-log.md 3곳).
+
+### 남긴 것 — 시뮬레이터의 샌드박스 종목 오염
+
+`BithumbFeedSimulator`가 샌드박스 종목에도 합성 틱을 넣어 `price:crypto:SANDBOX_COIN_1` 키를 계속
+갱신하는 것 자체는 그대로 뒀다. 이 PR의 차단은 소비 측에서 닫혔고, 다른 소비자는 이미 각자 막고 있다 —
+`PriceQueryService`는 샘플 종목을 `TutorialSampleInstrumentPriceService`로 우회하고(031 SANDBOX-003),
+`CryptoPriceMoveWatcher`는 `getRealInstrumentEntities`로 제외한다(이슈 #406). 생산 측을 고치는 것은 이
+PR의 범위 밖이라 별도 이슈로 남긴다.
