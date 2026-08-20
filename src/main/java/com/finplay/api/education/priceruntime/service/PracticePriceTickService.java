@@ -14,6 +14,7 @@ import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -26,7 +27,11 @@ public class PracticePriceTickService {
 
 	// tick·가격 갱신(advance) → 세션 전용 이벤트 발행(같은 트랜잭션 안에서 PracticeTickFillListener가 동기 처리,
 	// 교육 지정가 체결·마지막 tick 취소·예약 반환) → tick 99면 세션 완료(complete) 순서를 지킨다(plan.md).
-	@Transactional
+	// ADR-0028 §후속 — 이 트랜잭션 안에서 PracticeTickFillListener → PracticeOrderSettlementService.settleOnTick
+	// → LimitOrderFillService.fillIfPending이 동기 호출된다. fillIfPending 자신의 격리수준 선언은 이미 열린
+	// 이 트랜잭션에 합류(REQUIRED)할 때 Spring이 조용히 무시하므로, holdings INSERT 데드락 완화가 실제로
+	// 적용되려면 이 트랜잭션을 여는 지점에 직접 READ COMMITTED를 명시해야 한다.
+	@Transactional(isolation = Isolation.READ_COMMITTED)
 	public PracticePriceSessionResponse advanceTick(Long userId, Long sessionId, Integer expectedTick) {
 		PracticePriceSession session = practicePriceSessionRepository
 			.findByIdAndUserIdForUpdate(sessionId, userId)

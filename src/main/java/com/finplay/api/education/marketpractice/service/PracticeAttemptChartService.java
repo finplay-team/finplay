@@ -15,6 +15,7 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -37,7 +38,11 @@ public class PracticeAttemptChartService {
 		return toResponse(attempt, now);
 	}
 
-	@Transactional
+	// ADR-0028 §후속 — 컨트롤러(트랜잭션 없음)가 직접 호출하는 진짜 트랜잭션 시작점이다. 이 메서드가 부르는
+	// practiceScenarioProgressService.advance → PracticeOrderSettlementService.settleCurrentRun →
+	// LimitOrderFillService.fillIfPending은 전부 이 트랜잭션에 합류(REQUIRED)하므로, fillIfPending 자신의
+	// 격리수준 선언은 무시된다 — holdings INSERT 데드락 완화가 이 경로에도 적용되려면 여기서 명시해야 한다.
+	@Transactional(isolation = Isolation.READ_COMMITTED)
 	public PracticeTutorialChartResponse tick(Long userId, Market market) {
 		PracticeAttempt attempt = practiceAttemptRepository.findByUserIdAndMarketForUpdate(userId, market)
 			.orElseThrow(() -> new BusinessException(ErrorCode.PRACTICE_STEP_LOCKED));
