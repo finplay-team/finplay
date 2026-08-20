@@ -57,7 +57,13 @@ public class TutorialPriceGenerator {
 
 	// 과거 29개 완결 일봉은 대본 대상이 아니다 — 039의 배경 정보이고 사건과 무관하므로 버전 2도 같은 seed
 	// 생성 방식을 그대로 쓴다(041 plan §대본 설계). 버전 2는 진행 중 1봉만 대본에서 만들어 붙인다.
-	public List<TutorialPriceCandleDto> generateHistory(TutorialPriceGenerationInput input) {
+	//
+	// **package-private이다.** 이 경로는 시장별 기준가 상수를 쓰므로, 대본 실행이 실수로 이쪽을 부르면
+	// 과거봉만 1만원대에 머무른 차트가 나오면서도 기능은 정상 동작해 조용히 넘어간다. 버전 검사로 막지 않는
+	// 이유는 회귀 오라클(TutorialPriceGeneratorTest)이 버전 2 입력을 일부러 이 경로에 넣어 두 갈래가 같은
+	// 값을 내는지 대조하기 때문이다 — mixSeed가 generatorVersion을 섞어 버전 1 입력으로 대체할 수 없다.
+	// 다른 도메인은 대본을 받는 오버로드만 볼 수 있으면 된다.
+	List<TutorialPriceCandleDto> generateHistory(TutorialPriceGenerationInput input) {
 		validateInput(input);
 		return generateHistory(input, basePrice(input.market()));
 	}

@@ -1,4 +1,4 @@
-// 시장별 튜토리얼 대본 파일을 기동 시 1회 읽어 정합성을 검증하고 불변 객체로 보관하는 컴포넌트
+// 대본 식별자별 튜토리얼 대본 파일을 기동 시 1회 읽어 정합성을 검증하고 불변 객체로 보관하는 컴포넌트
 package com.finplay.api.market.service;
 
 import com.finplay.api.market.domain.Market;

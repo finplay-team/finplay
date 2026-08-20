@@ -241,6 +241,12 @@
   목적은 순서대로 갔을 때 화면과 서버가 같은 이야기를 하는 것이다. 위조·권한 상승 위협 모델을 이 spec에
   들이지 않는다.
 - **STOCK 튜토리얼 대본**(041 SCENARIO-024의 후속). 이번에도 저작하지 않는다.
+  **⚠ 그 대본을 저작하는 PR이 반드시 함께 고쳐야 하는 것이 하나 있다** — `PracticeAttempt.scenarioScriptId()`의
+  `NULL` 폴백이 시장을 보지 않아 무조건 `CRYPTO_STORY_V1`을 돌려준다. 지금은 CRYPTO만 대본이 있어
+  `usesScenarioScript()`가 STOCK에서 참이 될 수 없으므로 도달 불가지만, STOCK 대본이 들어오는 순간
+  컬럼이 `NULL`인 STOCK attempt가 CRYPTO 대본을 받아 `requireScriptMatches`에서 500이 난다. 진입
+  경로(`PracticeAttemptService.scenarioScriptIdFor`)는 시장 조건으로 막았고 폴백만 남았다.
+  엔티티 javadoc에도 같은 경고를 적어 뒀다(사전 리뷰 권장 2번의 후속으로 발견).
 - **화면 게이팅**(2단계는 시장가·지정가 버튼만, 3단계는 손절·익절만 활성) — 프론트 합의가 필요하다.
   서버는 판정(#503)과 거부(ORDERBASICS-015)까지만 제공한다.
 - **`entries[]`·`tradeResult`의 대본별 분리** — 아래 §미결 2번.

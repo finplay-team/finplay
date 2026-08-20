@@ -137,8 +137,15 @@ public class PracticeAttemptService {
 	// 클라이언트가 대본을 고르지 못하게 하는 이유는 그래야 사용자가 2단계를 건너뛸 수 없기 때문이다(plan §2·§7).
 	//
 	// 대본을 쓰지 않는 실행(생성기 버전 1)은 null이다.
+	//
+	// 고정값이라도 **시장을 반드시 함께 본다.** STOCK 대본(SCENARIO-024)이 5번 작업보다 먼저 저작되면
+	// generatorVersionFor(STOCK)이 2가 되는데, 그때 시장을 무시하면 STOCK attempt가 CRYPTO 대본 식별자를
+	// 갖게 되고 모든 가격 조회가 "attempt의 시장과 다른 대본입니다"로 500이 된다. 위 40~44행 주석이
+	// 기록한 것과 같은 형태의 사고다.
 	private TutorialScenarioScriptId scenarioScriptIdFor(Market market, short generatorVersion) {
-		return generatorVersion == SCENARIO_GENERATOR_VERSION ? TutorialScenarioScriptId.CRYPTO_STORY_V1 : null;
+		return generatorVersion == SCENARIO_GENERATOR_VERSION && market == Market.CRYPTO
+			? TutorialScenarioScriptId.CRYPTO_STORY_V1
+			: null;
 	}
 
 	private String resolveTutorialKey(Market market) {

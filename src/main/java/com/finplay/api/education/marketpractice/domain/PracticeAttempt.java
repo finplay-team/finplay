@@ -189,6 +189,14 @@ public class PracticeAttempt {
 	 * {@code CRYPTO_STORY_V1}로 읽어야 그 사용자가 "대본에 없는 구간입니다"로 500에 갇히지 않는다 —
 	 * 회복 수단이 재시작뿐이기 때문이다. 조회부가 각자 {@code null}을 처리하면 한 곳을 놓쳤을 때 그
 	 * 경로만 다른 대본을 본다.
+	 *
+	 * <p><b>⚠ 이 폴백은 시장을 보지 않는다. STOCK 대본(041 SCENARIO-024)을 저작하는 PR이 여기를 반드시
+	 * 함께 고쳐야 한다.</b> 지금은 CRYPTO만 대본이 있어 {@code usesScenarioScript()}가 STOCK에서 참이 될
+	 * 수 없으므로 도달 불가다. 그러나 STOCK 대본이 들어오는 순간 {@code generatorVersionFor(STOCK)}이 2가
+	 * 되고, 컬럼이 {@code NULL}인 STOCK attempt가 이 폴백으로 <b>CRYPTO 대본</b>을 받는다 —
+	 * {@code TutorialPriceGenerator.requireScriptMatches}가 "attempt의 시장과 다른 대본입니다"로 던져
+	 * 그 사용자의 조회·tick·주문이 전부 500이 된다. 진입 경로는
+	 * {@code PracticeAttemptService.scenarioScriptIdFor}가 시장 조건으로 이미 막았지만 <b>폴백은 안 막혔다</b>.
 	 */
 	public TutorialScenarioScriptId scenarioScriptId() {
 		if (!usesScenarioScript()) {

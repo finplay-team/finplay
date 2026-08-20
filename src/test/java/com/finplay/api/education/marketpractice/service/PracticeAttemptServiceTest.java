@@ -232,8 +232,54 @@ class PracticeAttemptServiceTest {
 		// **진입 대본은 041 고정이다**(2026-08-20 사용자 결정). 전환 엔드포인트(049 tasks 5번)가 없는 채로
 		// 진입만 2단계로 바꾸면 dev 머지가 곧 배포인 이 레포에서 041 이야기가 통째로 도달 불가가 된다.
 		// 대본을 쓰지 않는 STOCK은 식별자도 없다.
-		assertThat(attempt.scenarioScriptId()).isEqualTo(
-			market == Market.CRYPTO ? TutorialScenarioScriptId.CRYPTO_STORY_V1 : null);
+		//
+		// **원본 필드를 함께 본다.** 파생 접근자만 단언하면 NULL 폴백에 흡수되어, selectInstrument가
+		// 식별자를 아예 박지 않도록 회귀해도 버전 2 실행에서는 CRYPTO_STORY_V1이 그대로 나온다
+		// (PR 리뷰 [참고]). 같은 패키지의 PracticeAttemptTest가 쓰는 방식과 같다.
+		TutorialScenarioScriptId expectedScriptId = market == Market.CRYPTO
+			? TutorialScenarioScriptId.CRYPTO_STORY_V1
+			: null;
+		assertThat(ReflectionTestUtils.getField(attempt, "scenarioScriptId")).isEqualTo(expectedScriptId);
+		assertThat(attempt.scenarioScriptId()).isEqualTo(expectedScriptId);
+	}
+
+	/**
+	 * 리뷰 권장 2 — <b>STOCK 대본(SCENARIO-024)이 저작되는 날을 미리 막는다.</b>
+	 *
+	 * <p>지금은 {@code generatorVersionFor(STOCK)}이 1이라 이 조합이 자연 발생하지 않는다. 그래서 로더를
+	 * 스텁해 "STOCK 대본이 저작된 세계"를 인위적으로 만든다 — 그날 시장을 보지 않으면 STOCK attempt에
+	 * CRYPTO 대본 식별자가 박히고 그 사용자의 모든 가격 조회가 "attempt의 시장과 다른 대본입니다"로 500이
+	 * 된다. 그 회귀는 어떤 기존 테스트도 잡지 못한다.
+	 *
+	 * <p><b>남아 있는 구멍은 따로 있다.</b> 컬럼이 비었을 때의 폴백({@code PracticeAttempt.scenarioScriptId()})은
+	 * 시장을 보지 않고 무조건 {@code CRYPTO_STORY_V1}을 돌려준다. 그래서 이 테스트는 파생 접근자가 아니라
+	 * <b>원본 필드</b>를 단언한다 — 이번 변경이 실제로 고정한 것이 거기까지다.
+	 */
+	@Test
+	void stockAttemptGetsNoCryptoScriptIdEvenOnceItsMarketStartsGettingGeneratorVersionTwo() {
+		TutorialScenarioScriptLoader loaderWithStockScript = mock(TutorialScenarioScriptLoader.class);
+		when(loaderWithStockScript.hasScript(Market.STOCK)).thenReturn(true);
+		PracticeAttemptService serviceWithStockScript = new PracticeAttemptService(
+			practiceAttemptRepository,
+			practiceCompletionRepository,
+			practiceRiskSnapshotRepository,
+			practiceProgressRepository,
+			instrumentService,
+			tradeService,
+			loaderWithStockScript,
+			tutorialAccountService,
+			Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC));
+		PracticeAttempt attempt = selectingAttempt(Market.STOCK);
+		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.STOCK))
+			.thenReturn(Optional.of(attempt));
+		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID)).thenReturn(tutorialInstrument(Market.STOCK, true));
+		when(practiceRiskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(ATTEMPT_ID, 1L))
+			.thenReturn(Optional.empty());
+
+		serviceWithStockScript.selectInstrument(USER_ID, Market.STOCK, INSTRUMENT_ID);
+
+		assertThat(attempt.getGeneratorVersion()).isEqualTo(TutorialPriceGenerator.VERSION_2);
+		assertThat(ReflectionTestUtils.getField(attempt, "scenarioScriptId")).isNull();
 	}
 
 	@ParameterizedTest
