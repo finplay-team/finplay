@@ -2,6 +2,7 @@
 package com.finplay.api.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -28,12 +29,14 @@ import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.order.domain.Trade;
 import com.finplay.api.portfolio.domain.Holding;
+import com.finplay.api.order.service.TradeService;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -50,6 +53,7 @@ class InvestmentPracticeQueryServiceTest {
 		PracticeAttemptEvidenceService.class);
 	private final MarketPracticeChainResolutionService chainResolutionService = mock(
 		MarketPracticeChainResolutionService.class);
+	private final TradeService tradeService = mock(TradeService.class);
 	private final ReferencePriceCalculator referencePriceCalculator = mock(ReferencePriceCalculator.class);
 	private final PracticeMarketObservationRepository practiceMarketObservationRepository = mock(
 		PracticeMarketObservationRepository.class);
@@ -59,8 +63,15 @@ class InvestmentPracticeQueryServiceTest {
 
 	private final InvestmentPracticeQueryService service = new InvestmentPracticeQueryService(
 		favoriteService, practiceAttemptRepository, practiceRiskSnapshotRepository, practiceAttemptEvidenceService,
-		chainResolutionService, referencePriceCalculator, practiceMarketObservationRepository,
+		tradeService, chainResolutionService, referencePriceCalculator, practiceMarketObservationRepository,
 		practiceCompletionRepository, clock);
+
+	// 프리셋 잠금 판정이 매 응답에서 순보유수량을 읽는다(042 EXITPRESET-003). 이 테스트들의 대상은 잠금이
+	// 아니므로 기본을 "미보유"로 두고, 잠금을 보는 테스트만 따로 덮어쓴다.
+	@BeforeEach
+	void stubNoHolding() {
+		when(tradeService.netFilledQuantity(anyLong(), anyLong())).thenReturn(BigDecimal.ZERO);
+	}
 
 	@Test
 	void getProgressReturnsCompletedWithSharedEvidenceAcrossAllThreeStepsWhenCompletionExists() {
@@ -460,7 +471,7 @@ class InvestmentPracticeQueryServiceTest {
 			.thenReturn(Optional.of(latestEntry));
 		ResolvedPracticeAttemptEvidenceDto resolved = new ResolvedPracticeAttemptEvidenceDto(
 			latestEntry, firstEntry, 40L, new BigDecimal("3"), BigDecimal.ZERO, new BigDecimal("3"), null, null,
-			null, null, null);
+			null, null, null, null);
 		when(practiceAttemptEvidenceService.requireCurrentRun(attempt, USER_ID, null)).thenReturn(resolved);
 		// 첫 진입 이후·최신 진입 이전에 채운 관찰 — 기준선을 최신으로 잡으면 이 행이 사라진다.
 		PracticeMarketObservation betweenEntries = observation(
@@ -497,7 +508,7 @@ class InvestmentPracticeQueryServiceTest {
 		// 이슈 #421의 매매 결과 4값(averageBuyPrice·averageSellPrice·realizedPnl·soldBuyBasis)은 이 테스트의 단정 대상이 아니라 null로 둔다 — 매도 전 상태이고 이 테스트는 단계·evidence 판정만 본다.
 		ResolvedPracticeAttemptEvidenceDto resolved = new ResolvedPracticeAttemptEvidenceDto(
 			snapshot, snapshot, 40L, new BigDecimal("3"), BigDecimal.ZERO, new BigDecimal("3"), null, null, null, null,
-			null);
+			null, null);
 		when(practiceAttemptEvidenceService.requireCurrentRun(attempt, USER_ID, null)).thenReturn(resolved);
 		when(practiceMarketObservationRepository.findByUserIdAndHoldingIdOrderByObservedAtAscIdAsc(USER_ID, 40L))
 			.thenReturn(List.of());
@@ -552,7 +563,7 @@ class InvestmentPracticeQueryServiceTest {
 			.thenReturn(Optional.of(snapshot));
 		ResolvedPracticeAttemptEvidenceDto resolved = new ResolvedPracticeAttemptEvidenceDto(
 			snapshot, snapshot, 40L, new BigDecimal("3"), BigDecimal.ZERO, new BigDecimal("3"), null, null, null, null,
-			null);
+			null, null);
 		when(practiceAttemptEvidenceService.requireCurrentRun(attempt, USER_ID, null)).thenReturn(resolved);
 		PracticeMarketObservation observation = observation(
 			60L, PracticeEvidenceType.CLOSER_TO_BOUNDARY, NOW.minusHours(2));
@@ -639,7 +650,7 @@ class InvestmentPracticeQueryServiceTest {
 		ResolvedPracticeAttemptEvidenceDto resolved = new ResolvedPracticeAttemptEvidenceDto(
 			snapshot, snapshot, 40L, new BigDecimal("3"), new BigDecimal("3"), BigDecimal.ZERO, sellTrade, null, null,
 			null,
-			null);
+			null, null);
 		when(practiceAttemptEvidenceService.requireCurrentRun(attempt, USER_ID, 40L)).thenReturn(resolved);
 		PracticeMarketObservation qualifying = observation(60L, PracticeEvidenceType.CLOSER_TO_BOUNDARY,
 			NOW.minusMinutes(3));
@@ -693,7 +704,7 @@ class InvestmentPracticeQueryServiceTest {
 		// 이슈 #421의 매매 결과 4값은 이 테스트의 단정 대상이 아니라 null로 둔다 — 이 fixture는 snapshot에 손절·익절가를 스텁하지 않아 어떤 체결가를 넣어도 sellVerdict가 null로 나오므로, 값을 지어내면 오히려 앞뒤가 안 맞는 tradeResult가 된다.
 		ResolvedPracticeAttemptEvidenceDto resolved = new ResolvedPracticeAttemptEvidenceDto(
 			snapshot, snapshot, 40L, BigDecimal.TEN, BigDecimal.TEN, BigDecimal.ZERO, sellTrade, null, null, null,
-			null);
+			null, null);
 		when(practiceAttemptEvidenceService.requireCurrentRun(attempt, USER_ID, null)).thenReturn(resolved);
 
 		// observation(...) 헬퍼가 내부에서 mock·when을 호출하므로 바깥 when(...)이 .thenReturn()으로 닫히기 전에 실행되면 Mockito가 중첩 스터빙으로 보고 UnfinishedStubbingException을 던진다 — 이 파일의 다른 테스트들처럼 지역 변수로 먼저 뽑아 둔다.

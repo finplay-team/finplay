@@ -58,9 +58,11 @@ class PracticeRunRestartOrderServiceTest {
 	private final InstrumentService instrumentService = mock(InstrumentService.class);
 	private final PriceQueryService priceQueryService = mock(PriceQueryService.class);
 	private final PortfolioSellService portfolioSellService = mock(PortfolioSellService.class);
+	private final PracticeOrderSettlementService practiceOrderSettlementService = mock(
+		PracticeOrderSettlementService.class);
 	private final PracticeRunRestartOrderService service = new PracticeRunRestartOrderService(
 		orderRepository, tradeRepository, accountService, tutorialAccountService, instrumentService,
-		portfolioSellService);
+		portfolioSellService, practiceOrderSettlementService);
 
 	@Test
 	void cleanupCurrentRunCancelsPendingBuyAndSellAndReturnsReservationsExactlyOnce() {

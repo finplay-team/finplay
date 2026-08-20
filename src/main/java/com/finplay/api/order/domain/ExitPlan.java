@@ -207,6 +207,53 @@ public class ExitPlan {
 			reservedAt);
 	}
 
+	// 튜토리얼 자동 예약(042 EXITPRESET-005) 생성 — intentionId 없이 attempt·실행 세대로 귀속한다.
+	// 두 귀속 값을 여기서 검증하는 것은 Order.createForPracticeAttempt와 대칭을 맞추기 위해서다. 두지 않으면
+	// 이 불변식을 지키는 것이 DB CHECK 하나뿐이고, 위반이 트랜잭션 커밋 시점에야 드러난다(PR #471 리뷰).
+	public static ExitPlan createPractice(
+		User user,
+		Holding holding,
+		Instrument instrument,
+		BigDecimal quantity,
+		BigDecimal entryPrice,
+		ExitPriceType exitPriceType,
+		BigDecimal stopLossRate,
+		BigDecimal takeProfitRate,
+		BigDecimal stopLossPrice,
+		BigDecimal takeProfitPrice,
+		BigDecimal baselinePrice,
+		LocalDateTime baselineObservedAt,
+		String requestHash,
+		Long practiceAttemptId,
+		Long practiceAttemptRunNumber,
+		LocalDateTime reservedAt) {
+		if (practiceAttemptId == null || practiceAttemptRunNumber == null || practiceAttemptRunNumber <= 0) {
+			throw new IllegalArgumentException("튜토리얼 자동 예약은 attempt id와 양의 실행 세대 번호가 필요합니다.");
+		}
+		validateRateSnapshot(exitPriceType, stopLossRate, takeProfitRate);
+		ExitPlan plan = new ExitPlan(
+			user,
+			holding,
+			null,
+			null,
+			null,
+			instrument,
+			quantity,
+			entryPrice,
+			exitPriceType,
+			stopLossRate,
+			takeProfitRate,
+			stopLossPrice,
+			takeProfitPrice,
+			baselinePrice,
+			baselineObservedAt,
+			requestHash,
+			reservedAt);
+		plan.practiceAttemptId = practiceAttemptId;
+		plan.practiceAttemptRunNumber = practiceAttemptRunNumber;
+		return plan;
+	}
+
 	// 교육 경로(intentionId 지정) 생성 — 016 chain 검증이 확정한 intention·매수 체결 snapshot을 함께 저장한다.
 	public static ExitPlan createEducational(
 		User user,

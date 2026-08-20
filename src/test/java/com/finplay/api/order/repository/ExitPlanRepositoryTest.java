@@ -405,6 +405,44 @@ class ExitPlanRepositoryTest {
 		assertThat(older.getId()).isGreaterThan(sameTimeSecond.getId());
 	}
 
+	// PR #487 리뷰 QA 차단 회귀 — 이 조건이 빠지면 BithumbFeedSimulator가 SANDBOX_COIN_1에 3초마다 넣는
+	// 합성 틱이 튜토리얼 예약을 tick 없이 즉시 체결시킨다. 튜토리얼 예약은 대본 canonical 가격을 넘기는
+	// PracticeOrderSettlementService.settleCurrentRun만 체결해야 한다(042 EXITPRESET-013·014).
+	@Test
+	@DisplayName("findPendingExitPlansToFill은 튜토리얼 실행 세대에 귀속된 예약을 실시간 가격 후보에서 제외한다")
+	void findPendingExitPlansToFillExcludesPracticeAttributedPlan() {
+		PracticeAttempt attempt = practiceAttemptRepository.saveAndFlush(
+			PracticeAttempt.create(user.getId(), Market.CRYPTO, NOW));
+		ExitPlan practicePlan = generalPlan(hash("t"));
+		ReflectionTestUtils.setField(practicePlan, "practiceAttemptId", attempt.getId());
+		ReflectionTestUtils.setField(practicePlan, "practiceAttemptRunNumber", attempt.getRunNumber());
+		exitPlanRepository.saveAndFlush(practicePlan);
+
+		List<ExitPlan> atTakeProfit = exitPlanRepository
+			.findPendingExitPlansToFill(instrument.getId(), TAKE_PROFIT_PRICE);
+		List<ExitPlan> atStopLoss = exitPlanRepository
+			.findPendingExitPlansToFill(instrument.getId(), STOP_LOSS_PRICE);
+
+		assertThat(atTakeProfit).isEmpty();
+		assertThat(atStopLoss).isEmpty();
+	}
+
+	@Test
+	@DisplayName("findPendingExitPlansToFill은 같은 종목에 튜토리얼 예약이 섞여 있어도 일반 예약만 후보로 반환한다")
+	void findPendingExitPlansToFillReturnsOnlyGeneralPlanWhenPracticePlanCoexists() {
+		PracticeAttempt attempt = practiceAttemptRepository.saveAndFlush(
+			PracticeAttempt.create(user.getId(), Market.CRYPTO, NOW));
+		ExitPlan practicePlan = generalPlanAt(holding, hash("u"), NOW.minusMinutes(10));
+		ReflectionTestUtils.setField(practicePlan, "practiceAttemptId", attempt.getId());
+		ReflectionTestUtils.setField(practicePlan, "practiceAttemptRunNumber", attempt.getRunNumber());
+		exitPlanRepository.saveAndFlush(practicePlan);
+		ExitPlan generalPlan = exitPlanRepository.saveAndFlush(generalPlanAt(holding, hash("v"), NOW));
+
+		List<ExitPlan> result = exitPlanRepository.findPendingExitPlansToFill(instrument.getId(), TAKE_PROFIT_PRICE);
+
+		assertThat(result).extracting(ExitPlan::getId).containsExactly(generalPlan.getId());
+	}
+
 	// 튜토리얼 자동 예약은 실행 세대에 귀속된다(042 EXITPRESET-015) — tick 정산 대상 선별과 재시작 정리가
 	// 이 두 컬럼으로 이뤄진다. 값을 채우는 것은 042 5번이라 여기서는 스키마와 매핑만 잠근다.
 	@Test

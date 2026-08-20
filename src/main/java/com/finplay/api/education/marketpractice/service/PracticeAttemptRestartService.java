@@ -79,6 +79,9 @@ public class PracticeAttemptRestartService {
 		return PracticeAttemptResponse.from(
 			attempt,
 			snapshot,
+			// 재시작은 순체결수량을 보상 매도로 청산한 뒤에만 이 응답에 도달하므로 보유가 0이다
+			// — 조회하지 않고 false로 둔다(042 EXITPRESET-009: 프리셋도 함께 기본값으로 돌아간다).
+			false,
 			tutorialAccount.getCashBalance(),
 			tutorialAccount.getAvailableCash(),
 			tutorialAccount.getRealizedPnl());

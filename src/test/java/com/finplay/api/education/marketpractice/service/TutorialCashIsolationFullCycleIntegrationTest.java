@@ -92,6 +92,11 @@ class TutorialCashIsolationFullCycleIntegrationTest {
 			jdbcTemplate.update("DELETE FROM holding_lots WHERE holding_id IN "
 				+ "(SELECT id FROM holdings WHERE account_id IN (SELECT id FROM accounts WHERE user_id = ?))",
 				userId);
+			// 042 5번부터 튜토리얼 매수가 OCO 예약을 함께 만든다. exit_plans는 holding·order를 모두 참조하므로
+			// 둘보다 먼저 지운다(fk_exit_plans_holding).
+			jdbcTemplate.update("DELETE FROM exit_plan_conditions WHERE exit_plan_id IN "
+				+ "(SELECT id FROM exit_plans WHERE user_id = ?)", userId);
+			jdbcTemplate.update("DELETE FROM exit_plans WHERE user_id = ?", userId);
 			jdbcTemplate.update("DELETE FROM trades WHERE order_id IN "
 				+ "(SELECT id FROM orders WHERE user_id = ?)", userId);
 			jdbcTemplate.update("DELETE FROM orders WHERE user_id = ?", userId);

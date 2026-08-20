@@ -19,7 +19,6 @@ import com.finplay.api.market.service.TutorialPriceGenerator;
 import com.finplay.api.market.service.TutorialScenarioScriptLoader;
 import com.finplay.api.order.service.PracticeOrderSettlementService;
 import com.finplay.api.order.service.TradeService;
-import com.finplay.api.portfolio.service.HoldingService;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -38,14 +37,13 @@ class PracticeScenarioProgressServiceTest {
 	private static final BigDecimal CRYPTO_BASE_PRICE = new BigDecimal("10000.00000000");
 
 	private final PracticeOrderSettlementService settlementService = mock(PracticeOrderSettlementService.class);
-	private final HoldingService holdingService = mock(HoldingService.class);
 	private final TradeService tradeService = mock(TradeService.class);
 	private final PracticeAttemptCanonicalPriceService canonicalPriceService = new PracticeAttemptCanonicalPriceService(
 		mock(PracticeAttemptRepository.class),
 		new TutorialPriceGenerator(),
 		new TutorialScenarioScriptLoader(new ObjectMapper()));
 	private final PracticeScenarioProgressService service = new PracticeScenarioProgressService(
-		canonicalPriceService, settlementService, holdingService, tradeService);
+		canonicalPriceService, settlementService, tradeService);
 
 	@BeforeEach
 	void setUp() {
@@ -128,7 +126,7 @@ class PracticeScenarioProgressServiceTest {
 	void buyFilledMidTraversalLeavesTheIdleLoopWithinTheSameTick() {
 		PracticeAttempt attempt = startedAt("IDLE_ENTRY", 0L, ANCHOR);
 		// 순회 시작에 1회, 진입한 가상 분마다 1회 조회한다 — 두 번째 조회(1분 진입 직후)에서 보유가 생긴다.
-		when(holdingService.findNetQuantity(USER_ID, Market.CRYPTO, INSTRUMENT_ID))
+		when(tradeService.netFilledQuantity(ATTEMPT_ID, 1L))
 			.thenReturn(BigDecimal.ZERO, new BigDecimal("1"));
 		when(tradeService.findLatestPracticeRunBuyExecutedAt(ATTEMPT_ID, 1L))
 			.thenReturn(Optional.of(ANCHOR.plusSeconds(3)));
@@ -140,7 +138,8 @@ class PracticeScenarioProgressServiceTest {
 		assertThat(attempt.getScenarioStageElapsedSeconds()).isZero();
 		// 최종 커서만 보면 "순회 시작 시점에 이미 보유" 경로와 구별되지 않는다 — 대기 구간에서 한 번
 		// 정산한 뒤 진행 구간에서 다시 정산했다는 사실이 이 경로를 특정한다.
-		verify(settlementService, times(2)).settleCurrentRun(eq(ATTEMPT_ID), eq(1L), any(LocalDateTime.class));
+		verify(settlementService, times(2)).settleCurrentRun(eq(ATTEMPT_ID), eq(1L), any(LocalDateTime.class),
+			any(BigDecimal.class));
 	}
 
 	// 소비하지 않은 초가 차감되지 않아야 한다 — 대기 구간을 벗어나며 버린 시간은 다음 tick에 되살아나지
@@ -148,7 +147,7 @@ class PracticeScenarioProgressServiceTest {
 	@Test
 	void secondsLeftAfterTheMidTraversalFillAreSpentInTheNextProgressStage() {
 		PracticeAttempt attempt = startedAt("IDLE_ENTRY", 0L, ANCHOR);
-		when(holdingService.findNetQuantity(USER_ID, Market.CRYPTO, INSTRUMENT_ID))
+		when(tradeService.netFilledQuantity(ATTEMPT_ID, 1L))
 			.thenReturn(BigDecimal.ZERO, new BigDecimal("1"));
 		// 3초 지점에 체결되고 9초에 tick이 왔다 — 체결 이후 6초가 1막에서 쓰인다.
 		when(tradeService.findLatestPracticeRunBuyExecutedAt(ATTEMPT_ID, 1L))
@@ -159,7 +158,8 @@ class PracticeScenarioProgressServiceTest {
 		assertThat(attempt.getScenarioStageId()).isEqualTo("ACT1_RISE");
 		assertThat(attempt.getScenarioStageElapsedSeconds()).isEqualTo(6L);
 		ArgumentCaptor<LocalDateTime> pricedAt = ArgumentCaptor.forClass(LocalDateTime.class);
-		verify(settlementService, times(4)).settleCurrentRun(eq(ATTEMPT_ID), eq(1L), pricedAt.capture());
+		verify(settlementService, times(4)).settleCurrentRun(eq(ATTEMPT_ID), eq(1L), pricedAt.capture(),
+			any(BigDecimal.class));
 		// 대기 구간 1분(체결) → 진행 구간 0·1·2분. 첫 두 건이 같은 시각인 것은 이동이 시간을 소비하지
 		// 않기 때문이고, 이 시퀀스가 "순회 도중 체결"을 다른 경로와 갈라 놓는다.
 		assertThat(pricedAt.getAllValues()).containsExactly(
@@ -184,7 +184,7 @@ class PracticeScenarioProgressServiceTest {
 		PracticeAttempt attempt = startedAt("ACT2_CONFIRM", 0L, ANCHOR);
 		// 2막 확정 하락 도중 손절돼 보유가 0이 된다 — 초판에는 여기서 재진입 대기로 순간이동하는 네 번째
 		// 행이 있었고, 그것이 손절한 사용자에게서 확정 하락 관전을 빼앗았다.
-		when(holdingService.findNetQuantity(USER_ID, Market.CRYPTO, INSTRUMENT_ID))
+		when(tradeService.netFilledQuantity(ATTEMPT_ID, 1L))
 			.thenReturn(new BigDecimal("2"), new BigDecimal("2"), BigDecimal.ZERO);
 
 		service.advance(attempt, ANCHOR.plusSeconds(30));
@@ -235,7 +235,8 @@ class PracticeScenarioProgressServiceTest {
 		service.advance(attempt, ANCHOR.plusSeconds(30));
 
 		ArgumentCaptor<LocalDateTime> pricedAt = ArgumentCaptor.forClass(LocalDateTime.class);
-		verify(settlementService, times(10)).settleCurrentRun(eq(ATTEMPT_ID), eq(1L), pricedAt.capture());
+		verify(settlementService, times(10)).settleCurrentRun(eq(ATTEMPT_ID), eq(1L), pricedAt.capture(),
+			any(BigDecimal.class));
 		// 정산 시각은 순회 순서대로 엄격히 증가하고 [직전 tick, 이번 tick] 안에 든다 — 뒤섞이면 지정가가
 		// 미래 가격으로 체결된 것처럼 원장에 남는다.
 		assertThat(pricedAt.getAllValues()).isSorted().doesNotHaveDuplicates()
@@ -253,7 +254,7 @@ class PracticeScenarioProgressServiceTest {
 		service.advance(attempt, ANCHOR.plusSeconds(30));
 
 		verify(settlementService, times(1))
-			.settleCurrentRun(ATTEMPT_ID, 1L, ANCHOR.plusSeconds(30));
+			.settleCurrentRun(eq(ATTEMPT_ID), eq(1L), eq(ANCHOR.plusSeconds(30)), any(BigDecimal.class));
 		assertThat(attempt.getScenarioStageElapsedSeconds()).isEqualTo(60L);
 	}
 
@@ -264,7 +265,7 @@ class PracticeScenarioProgressServiceTest {
 
 		service.advance(attempt, ANCHOR);
 
-		verify(settlementService, times(1)).settleCurrentRun(ATTEMPT_ID, 1L, ANCHOR);
+		verify(settlementService, times(1)).settleCurrentRun(eq(ATTEMPT_ID), eq(1L), eq(ANCHOR), any(BigDecimal.class));
 	}
 
 	// 순회가 지나간 모든 가상 분의 극값이 진행 중 봉에 담긴다 — 지나온 경로를 복원할 수 없으므로 누적한다.
@@ -334,15 +335,16 @@ class PracticeScenarioProgressServiceTest {
 		service.advance(attempt, ANCHOR.plusSeconds(30));
 
 		assertThat(attempt.getScenarioStageId()).isNull();
-		verify(settlementService, never()).settleCurrentRun(anyLong(), anyLong(), any(LocalDateTime.class));
+		verify(settlementService, never()).settleCurrentRun(anyLong(), anyLong(), any(LocalDateTime.class),
+			any(BigDecimal.class));
 	}
 
 	private void holdNothing() {
-		when(holdingService.findNetQuantity(USER_ID, Market.CRYPTO, INSTRUMENT_ID)).thenReturn(BigDecimal.ZERO);
+		when(tradeService.netFilledQuantity(ATTEMPT_ID, 1L)).thenReturn(BigDecimal.ZERO);
 	}
 
 	private void holdQuantity(String quantity) {
-		when(holdingService.findNetQuantity(USER_ID, Market.CRYPTO, INSTRUMENT_ID))
+		when(tradeService.netFilledQuantity(ATTEMPT_ID, 1L))
 			.thenReturn(new BigDecimal(quantity));
 	}
 

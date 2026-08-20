@@ -32,12 +32,13 @@ import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Optional;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@RequiredArgsConstructor
 public class OrderExecutionService {
 
 	private static final String MARKET_ORDER_TYPE = "MARKET";
@@ -55,36 +56,9 @@ public class OrderExecutionService {
 	private final OrderRepository orderRepository;
 	private final TradeRepository tradeRepository;
 	private final PracticeOrderAttributionPort practiceOrderAttributionPort;
+	private final PracticeOrderSettlementService practiceOrderSettlementService;
 	private final Clock clock;
 	private final ApplicationEventPublisher eventPublisher;
-
-	@Autowired
-	public OrderExecutionService(
-		UserQueryService userQueryService,
-		AccountService accountService,
-		TutorialAccountService tutorialAccountService,
-		InstrumentService instrumentService,
-		PriceQueryService priceQueryService,
-		PortfolioBuyService portfolioBuyService,
-		PortfolioSellService portfolioSellService,
-		OrderRepository orderRepository,
-		TradeRepository tradeRepository,
-		PracticeOrderAttributionPort practiceOrderAttributionPort,
-		Clock clock,
-		ApplicationEventPublisher eventPublisher) {
-		this.userQueryService = userQueryService;
-		this.accountService = accountService;
-		this.tutorialAccountService = tutorialAccountService;
-		this.instrumentService = instrumentService;
-		this.priceQueryService = priceQueryService;
-		this.portfolioBuyService = portfolioBuyService;
-		this.portfolioSellService = portfolioSellService;
-		this.orderRepository = orderRepository;
-		this.tradeRepository = tradeRepository;
-		this.practiceOrderAttributionPort = practiceOrderAttributionPort;
-		this.clock = clock;
-		this.eventPublisher = eventPublisher;
-	}
 
 	@Transactional
 	public OrderResponse execute(
@@ -153,7 +127,7 @@ public class OrderExecutionService {
 		}
 
 		portfolioBuyService.applyBuyTrade(account, instrument, trade, quantity, pricing.price(), pricing.fee(), now);
-		practiceOrderAttributionPort.createFirstBuyRiskSnapshot(order, trade, now);
+		practiceOrderAttributionPort.createRiskSnapshotOnBuyFill(order, trade, now);
 
 		return OrderResponse.of(order, trade);
 	}
@@ -171,6 +145,15 @@ public class OrderExecutionService {
 		// 대해 항상 account를 먼저 잠그고 holding을 잠근다(spec.md 완료조건, 015-limit-order 항목5).
 		// 설계 노트 2: 가격조회 전에 계좌·보유수량부터 검증해 불필요한 시세 조회를 피한다.
 		Account account = getAccountForUpdateFor(userId, request.market());
+		// 042 EXITPRESET-016 — 튜토리얼 자동 예약이 수량을 잡고 있으면 availableQuantity가 0이라 아래 검증이
+		// 거부한다. 같은 트랜잭션에서 먼저 취소하므로 매도가 실패하면 취소도 함께 롤백된다. holding을 여기서
+		// 처음 잡는 이유이기도 하다 — 취소 서비스가 flush 후 holding을 detach한다.
+		//
+		// 포트(education)를 거치지 않고 여기서 직접 부른다. 포트 구현이 정산 서비스를 주입받으면
+		// PracticeOrderSettlementService → LimitOrderFillService → 포트 → 정산 서비스로 순환 참조가 되어
+		// 컨텍스트가 아예 뜨지 않는다(통합 테스트에서 재현). 귀속 정보는 위 lockForOrder가 이미 줬다.
+		practiceAttribution.ifPresent(attribution -> practiceOrderSettlementService.cancelCurrentRunExitPlans(
+			userId, attribution.attemptId(), attribution.runNumber()));
 		Holding holding = portfolioSellService.getHoldingForUpdateOrThrow(account, instrument, quantity);
 
 		OrderPricing pricing = priceOrder(request.market(), instrument, quantity, practiceAttribution);

@@ -7,7 +7,6 @@ import com.finplay.api.account.service.AccountService;
 import com.finplay.api.portfolio.domain.Holding;
 import com.finplay.api.portfolio.dto.response.HoldingListItemResponse;
 import com.finplay.api.portfolio.repository.HoldingRepository;
-import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.IntStream;
@@ -44,16 +43,6 @@ public class HoldingService {
 		Market accountMarket = Market.valueOf(market.name());
 		Account account = accountService.getAccountFor(userId, accountMarket);
 		return holdingRepository.findByAccountIdAndInstrumentId(account.getId(), instrumentId).map(Holding::getId);
-	}
-
-	// 041 tick 진행 계산용 — 대기 구간 탈출 판정에 쓰는 순보유수량을 가상 분마다 다시 읽는다. education이
-	// HoldingRepository를 직접 주입하지 않도록 이 서비스만 거치게 한다(ADR-0002, findHoldingId와 같은 관례).
-	@Transactional(readOnly = true)
-	public BigDecimal findNetQuantity(
-		Long userId, com.finplay.api.market.domain.Market market, Long instrumentId) {
-		return holdingRepository
-			.findQuantityByOwnerAndInstrument(userId, Market.valueOf(market.name()), instrumentId)
-			.orElse(BigDecimal.ZERO);
 	}
 
 	// 026-market-order-practice-tutorial 3단계 관찰 API용 — holdingId로 조회하되 계좌 소유자가 본인이 아니면

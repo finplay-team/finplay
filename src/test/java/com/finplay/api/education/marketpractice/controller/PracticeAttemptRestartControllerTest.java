@@ -13,6 +13,7 @@ import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.auth.token.JwtTokenProvider;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
+import com.finplay.api.education.marketpractice.dto.response.ExitPresetResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeAttemptResponse;
 import com.finplay.api.education.marketpractice.service.PracticeAttemptRestartService;
 import com.finplay.api.market.domain.Market;
@@ -52,7 +53,8 @@ class PracticeAttemptRestartControllerTest {
 		authenticate();
 		PracticeAttemptResponse response = new PracticeAttemptResponse(
 			11L, "CRYPTO", 2L, "ACTIVE", "SELECTING_INSTRUMENT", null, null, null, null, null,
-			10_000_000L, 10_000_000L, 0L);
+			10_000_000L, 10_000_000L, 0L,
+			"BALANCED", false, ExitPresetResponse.all());
 		when(restartService.restart(USER_ID, Market.CRYPTO)).thenReturn(response);
 
 		mockMvc.perform(post("/api/education/practice/attempts/CRYPTO/restart")
@@ -74,7 +76,8 @@ class PracticeAttemptRestartControllerTest {
 		authenticate();
 		PracticeAttemptResponse response = new PracticeAttemptResponse(
 			11L, "CRYPTO", 3L, "ACTIVE", "SELECTING_INSTRUMENT", null, null, null, null, null,
-			10_000_000L, 10_000_000L, 0L);
+			10_000_000L, 10_000_000L, 0L,
+			"BALANCED", false, ExitPresetResponse.all());
 		when(restartService.restart(USER_ID, Market.CRYPTO)).thenReturn(response);
 
 		mockMvc.perform(post("/api/education/practice/attempts/CRYPTO/restart")

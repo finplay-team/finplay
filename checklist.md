@@ -361,5 +361,19 @@
 - [x] 도달 부등식 판정을 042 쪽 새 테스트 한 곳으로 이동 (프리셋 리터럴 제거)
 - [x] V51 — `practice_attempts.exit_preset`, `practice_risk_snapshots.exit_preset`, `exit_plans` 귀속 컬럼 2개 + CHECK·FK·조회 인덱스
 - [x] 엔티티 필드 3곳 + `restart()`의 프리셋 초기화 + `@DataJpaTest` 왕복·CHECK 검증
-- [ ] **후속(042 3번)**: 선택 API `PUT .../exit-preset`, 잠금 조건(순보유수량 0), 응답 3개 필드, 표시 이름 형식을 프론트와 합의
-- [ ] **후속(042 4·5번)**: snapshot 생성에 프리셋·`entry_sequence` 반영, CRYPTO 자동 예약. **예약에 넘기는 체결가도 scale 8이어야 한다** — `ExitPricePolicy`는 선정규화를 하지 않는다
+- [x] **후속(042 3~7번)** — 이슈 #477에서 완료. 아래 항목 참고
+
+## 이슈 #477 — 튜토리얼 프리셋 선택 API·자동 OCO 예약·tick 정산 (042 3~7번, 2026-08-20)
+
+- [x] 선택 API `PUT .../attempts/{market}/exit-preset` — 잠금 기준은 "최초 매수 여부"가 아니라 **"지금 보유 중인가"**(손절 뒤 재진입 대기에서는 다시 허용)
+- [x] 응답 3개 필드 — `selectedExitPreset`(미선택도 `BALANCED`)·`exitPresetLocked`·`availableExitPresets`. **표시 이름은 여전히 서버가 주지 않는다**(클라이언트 소유)
+- [x] 매수 체결에 프리셋·`entry_sequence` 반영 + **진입당 1회 가드**(보유 중 추가 매수는 기준선을 안 움직인다)
+- [x] CRYPTO 자동 OCO 예약 — 공용 엔진 직접 호출, **baseline에 대본 canonical price 주입**, `ExitPlan.createPractice`가 귀속 두 값을 검증
+- [x] tick 정산에 OCO 루프(지정가 → OCO 순서 고정), 재시작이 예약을 주문보다 먼저 취소, 매도 접수 전 예약 취소
+- [x] `sellCause`(`STOP_LOSS`\|`TAKE_PROFIT`\|`MANUAL`) — `exit_plans.triggered_order_id` 역참조. **그 실행의 첫 매도 기준**이라는 한계를 계약 문서에 적었다
+- [x] 사전 리뷰 차단 2건 반영 — 자동 청산 매도의 attempt 귀속, 지정가 매도의 예약 취소
+- [x] 튜토리얼 예약을 일반 OCO 목록·취소에서 제외
+- [x] 회귀 방어 통합 테스트 — 매수 → tick 손절 체결 → 원장 확인 → 재선택 → 재매수 → 재시작
+- [x] `docs/prd.md` §3 EXITPRESET 행 신설(일부 완료로 판정), `api-routes.md`·`api-contracts.md` 갱신
+- [ ] **후속(041 6번)**: 진입별 대조 배열 — 042가 만들지 않고 넘겼다. 그때까지 **재진입한 사용자의 완료 화면은 첫 매도만 가리킨다**(금액은 맞다)
+- [ ] **후속(042 8번)**: 재진입 재예약 통합 테스트 — 손절 → 재진입 → 프리셋 변경 → 재매수에서 새 snapshot·새 예약이 바뀐 프리셋으로 생성되는지

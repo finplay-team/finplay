@@ -7,7 +7,6 @@ import com.finplay.api.market.service.TutorialScenarioStage;
 import com.finplay.api.market.service.TutorialScenarioStageKind;
 import com.finplay.api.order.service.PracticeOrderSettlementService;
 import com.finplay.api.order.service.TradeService;
-import com.finplay.api.portfolio.service.HoldingService;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -33,7 +32,6 @@ public class PracticeScenarioProgressService {
 
 	private final PracticeAttemptCanonicalPriceService canonicalPriceService;
 	private final PracticeOrderSettlementService practiceOrderSettlementService;
-	private final HoldingService holdingService;
 	private final TradeService tradeService;
 
 	/**
@@ -62,7 +60,7 @@ public class PracticeScenarioProgressService {
 			// 한 가상 분도 새로 진입하지 않은 tick(대본이 끝난 뒤, 같은 초의 재요청, 3초 미만 간격)도 정산은
 			// 한다 — 생성기 버전 1은 tick마다 무조건 settleCurrentRun을 불렀고 그 보장을 잃으면 안 된다.
 			// 이것이 없으면 대본 종료 후 접수한 지정가가 조건을 만족해도 영구히 PENDING으로 남는다.
-			settle(attempt, now);
+			settle(attempt, now, canonicalPriceService.canonicalPrice(attempt, now));
 		}
 		// clamp되지 않았으면 소비한 초만큼만 기준을 민다 — now로 밀면 1초 미만 나머지가 매 tick 버려져
 		// 3초의 배수가 아닌 간격으로 tick하는 클라이언트에서 대본이 조금씩 느려진다.
@@ -74,7 +72,7 @@ public class PracticeScenarioProgressService {
 	private void start(PracticeAttempt attempt, TutorialScenarioScript script, LocalDateTime now) {
 		BigDecimal openPrice = canonicalPriceService.canonicalPrice(attempt, now);
 		attempt.startScenarioProgress(script.firstStage().id(), openPrice, now);
-		settle(attempt, now);
+		settle(attempt, now, openPrice);
 	}
 
 	// 이번 호출에서 새 가상 분에 한 번이라도 진입했으면 true. 호출자가 진입 없는 tick의 정산을 보장한다.
@@ -199,21 +197,23 @@ public class PracticeScenarioProgressService {
 	private void enterMinute(
 		PracticeAttempt attempt, String stageId, long elapsedSeconds, LocalDateTime now, long remainingAfter) {
 		attempt.moveScenarioCursor(stageId, elapsedSeconds);
-		attempt.extendScenarioCandle(canonicalPriceService.canonicalPrice(attempt, now));
-		settle(attempt, now.minusSeconds(Math.max(0L, remainingAfter)));
+		BigDecimal price = canonicalPriceService.canonicalPrice(attempt, now);
+		attempt.extendScenarioCandle(price);
+		settle(attempt, now.minusSeconds(Math.max(0L, remainingAfter)), price);
 	}
 
-	// 042 6번이 이 자리에 OCO 예약 정산 루프를 얹는다 — settleCurrentRun 안에 넣으면 지정가와 OCO가 같은
-	// 가상 분에 같은 순서로 판정된다(041 plan §`order` 인터페이스 변경의 표 3행).
-	private void settle(PracticeAttempt attempt, LocalDateTime pricedAt) {
-		practiceOrderSettlementService.settleCurrentRun(attempt.getId(), attempt.getRunNumber(), pricedAt);
+	// 지정가와 OCO가 같은 가상 분에 같은 순서로 판정된다 — settleCurrentRun 안에서 지정가 → OCO 순이다
+	// (042 EXITPRESET-014). 가격은 이 분의 대본 canonical price이므로 차트와 체결이 같은 값을 쓴다.
+	private void settle(PracticeAttempt attempt, LocalDateTime pricedAt, BigDecimal canonicalPrice) {
+		practiceOrderSettlementService.settleCurrentRun(
+			attempt.getId(), attempt.getRunNumber(), pricedAt, canonicalPrice);
 	}
 
-	// 매 분 전체 체결을 다시 스캔하지 않고 holding 수량 스칼라만 다시 읽는다. 체결 서비스가 flush() 후
-	// holding을 detach하므로 캐시한 인스턴스를 재사용하면 낡은 수량을 읽는다(041 plan §tick 알고리즘).
+	// 매 분 스칼라 집계 한 줄만 다시 읽는다 — 체결을 엔티티로 훑지 않고, 체결 서비스가 flush() 후 holding을
+	// detach해도 영향을 받지 않는다(041 plan §tick 알고리즘). 042가 프리셋 잠금·진입 가드에 쓰는 것과 같은
+	// 산출식이며, holdings 행의 수량이 아니라 **현재 실행 세대**의 순량이다.
 	private BigDecimal netQuantity(PracticeAttempt attempt) {
-		return holdingService.findNetQuantity(
-			attempt.getUserId(), attempt.getMarket(), attempt.getInstrument().getId());
+		return tradeService.netFilledQuantity(attempt.getId(), attempt.getRunNumber());
 	}
 
 	// 체결 원장이 비어 있으면(보유는 있는데 이번 실행 체결이 없는 이례적 상태) 자르지 않는다.

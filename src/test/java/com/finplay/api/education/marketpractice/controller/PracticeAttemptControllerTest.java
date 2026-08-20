@@ -13,6 +13,8 @@ import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.auth.token.JwtTokenProvider;
 import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
+import com.finplay.api.education.marketpractice.domain.ExitPreset;
+import com.finplay.api.education.marketpractice.dto.response.ExitPresetResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeAttemptResponse;
 import com.finplay.api.education.marketpractice.service.PracticeAttemptService;
 import com.finplay.api.market.domain.Market;
@@ -58,7 +60,8 @@ class PracticeAttemptControllerTest {
 		authenticate();
 		PracticeAttemptResponse response = new PracticeAttemptResponse(
 			11L, "STOCK", 1L, "ACTIVE", "SELECTING_INSTRUMENT", null, null, null, null, null,
-			10_000_000L, 10_000_000L, 0L);
+			10_000_000L, 10_000_000L, 0L,
+			"BALANCED", false, ExitPresetResponse.all());
 		when(practiceAttemptService.ensureAttempt(USER_ID, Market.STOCK)).thenReturn(response);
 
 		mockMvc.perform(put("/api/education/practice/attempts/STOCK")
@@ -104,7 +107,8 @@ class PracticeAttemptControllerTest {
 			null,
 			0L,
 			0L,
-			0L);
+			0L,
+			"BALANCED", false, ExitPresetResponse.all());
 		when(practiceAttemptService.selectInstrument(USER_ID, Market.CRYPTO, 21L)).thenReturn(response);
 
 		mockMvc.perform(put("/api/education/practice/attempts/CRYPTO/instrument")
@@ -153,6 +157,57 @@ class PracticeAttemptControllerTest {
 			.andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
 			.andExpect(jsonPath("$.error.message").value("종목 ID는 양수여야 합니다."));
+
+		verifyNoInteractions(practiceAttemptService);
+	}
+
+	// 042 EXITPRESET-003 — 정의 밖 문자열은 Jackson이 열거형으로 못 바꿔 400 VALIDATION_ERROR가 된다.
+	@Test
+	void selectExitPresetReturnsUpdatedAttempt() throws Exception {
+		authenticate();
+		PracticeAttemptResponse response = new PracticeAttemptResponse(
+			11L, "CRYPTO", 1L, "ACTIVE", "IN_PROGRESS", 21L, null, null, null, null,
+			0L, 0L, 0L,
+			"CAUTIOUS", false, ExitPresetResponse.all());
+		when(practiceAttemptService.selectExitPreset(USER_ID, Market.CRYPTO, ExitPreset.CAUTIOUS))
+			.thenReturn(response);
+
+		mockMvc.perform(put("/api/education/practice/attempts/CRYPTO/exit-preset")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("{\"preset\":\"CAUTIOUS\"}"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.selectedExitPreset").value("CAUTIOUS"))
+			.andExpect(jsonPath("$.exitPresetLocked").value(false))
+			.andExpect(jsonPath("$.availableExitPresets.length()").value(3))
+			.andExpect(jsonPath("$.availableExitPresets[0].preset").value("CAUTIOUS"))
+			.andExpect(jsonPath("$.availableExitPresets[0].stopLossRate").value(2));
+	}
+
+	@Test
+	void selectExitPresetRejectsUnknownPresetWithoutCallingService() throws Exception {
+		authenticate();
+
+		mockMvc.perform(put("/api/education/practice/attempts/CRYPTO/exit-preset")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("{\"preset\":\"AGGRESSIVE\"}"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
+
+		verifyNoInteractions(practiceAttemptService);
+	}
+
+	@Test
+	void selectExitPresetRejectsMissingPresetWithoutCallingService() throws Exception {
+		authenticate();
+
+		mockMvc.perform(put("/api/education/practice/attempts/CRYPTO/exit-preset")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("{}"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
 
 		verifyNoInteractions(practiceAttemptService);
 	}

@@ -4,6 +4,7 @@ package com.finplay.api.order.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -15,10 +16,12 @@ import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderStatus;
+import com.finplay.api.order.repository.ExitPlanRepository;
 import com.finplay.api.order.repository.OrderRepository;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import org.mockito.InOrder;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -32,8 +35,13 @@ class PracticeOrderSettlementServiceTest {
 	private final LimitOrderFillService limitOrderFillService = mock(LimitOrderFillService.class);
 	private final LimitOrderCancelService limitOrderCancelService = mock(LimitOrderCancelService.class);
 
+	private final ExitPlanRepository exitPlanRepository = mock(ExitPlanRepository.class);
+	private final ExitPlanFillService exitPlanFillService = mock(ExitPlanFillService.class);
+	private final ExitPlanCancelService exitPlanCancelService = mock(ExitPlanCancelService.class);
+
 	private final PracticeOrderSettlementService service = new PracticeOrderSettlementService(orderRepository,
-		limitOrderFillService, limitOrderCancelService);
+		exitPlanRepository, limitOrderFillService, limitOrderCancelService, exitPlanFillService,
+		exitPlanCancelService);
 
 	@Test
 	void settleOnTickFillsOnlyOrdersWhoseLimitPriceIsAtOrAboveCurrentPrice() {
@@ -98,10 +106,35 @@ class PracticeOrderSettlementServiceTest {
 	void settleCurrentRunPassesSameCanonicalPricingTimeToEveryPendingOrder() {
 		when(orderRepository.findPendingPracticeRunOrderIds(11L, 3L)).thenReturn(List.of(1L, 2L));
 
-		service.settleCurrentRun(11L, 3L, NOW);
+		service.settleCurrentRun(11L, 3L, NOW, new BigDecimal("10000"));
 
 		verify(limitOrderFillService).fillIfPending(1L, NOW);
 		verify(limitOrderFillService).fillIfPending(2L, NOW);
+	}
+
+	// 042 EXITPRESET-014 — 지정가 → OCO 순서를 고정한다. 튜토리얼 흐름에서 둘이 동시에 걸리는 경우는
+	// 없지만, 순서가 정해져 있어야 나중에 겹칠 때 결과가 결정적이다.
+	@Test
+	void settleCurrentRunFillsLimitOrdersBeforeExitPlansWithTheSameCanonicalPrice() {
+		BigDecimal canonicalPrice = new BigDecimal("9750.00000000");
+		when(orderRepository.findPendingPracticeRunOrderIds(11L, 3L)).thenReturn(List.of(1L));
+		when(exitPlanRepository.findPendingPracticeRunExitPlanIds(11L, 3L)).thenReturn(List.of(7L));
+
+		service.settleCurrentRun(11L, 3L, NOW, canonicalPrice);
+
+		InOrder inOrder = inOrder(limitOrderFillService, exitPlanFillService);
+		inOrder.verify(limitOrderFillService).fillIfPending(1L, NOW);
+		inOrder.verify(exitPlanFillService).fillIfPending(7L, canonicalPrice);
+	}
+
+	@Test
+	void cancelCurrentRunExitPlansCancelsEveryPendingPlanOfThatRun() {
+		when(exitPlanRepository.findPendingPracticeRunExitPlanIds(11L, 3L)).thenReturn(List.of(7L, 8L));
+
+		service.cancelCurrentRunExitPlans(USER_ID, 11L, 3L);
+
+		verify(exitPlanCancelService).cancel(USER_ID, 7L);
+		verify(exitPlanCancelService).cancel(USER_ID, 8L);
 	}
 
 	private Order practiceOrder(long orderId, String limitPrice) {

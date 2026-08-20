@@ -5,8 +5,11 @@ import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
 import com.finplay.api.education.marketpractice.domain.PracticeRiskSnapshot;
+import com.finplay.api.education.marketpractice.domain.PracticeSellCause;
 import com.finplay.api.education.marketpractice.repository.PracticeRiskSnapshotRepository;
+import com.finplay.api.order.domain.ExitPlanStatus;
 import com.finplay.api.order.domain.Trade;
+import com.finplay.api.order.service.PracticeExitPlanQueryService;
 import com.finplay.api.order.service.PracticeRunTradeSummaryDto;
 import com.finplay.api.order.service.TradeService;
 import com.finplay.api.portfolio.service.HoldingService;
@@ -21,6 +24,7 @@ public class PracticeAttemptEvidenceService {
 	private final PracticeRiskSnapshotRepository practiceRiskSnapshotRepository;
 	private final TradeService tradeService;
 	private final HoldingService holdingService;
+	private final PracticeExitPlanQueryService practiceExitPlanQueryService;
 
 	@Transactional(readOnly = true)
 	public ResolvedPracticeAttemptEvidenceDto requireCurrentRun(
@@ -56,7 +60,26 @@ public class PracticeAttemptEvidenceService {
 		return new ResolvedPracticeAttemptEvidenceDto(
 			snapshot, observationBaseline, holdingId, tradeSummary.buyQuantity(), tradeSummary.sellQuantity(),
 			tradeSummary.remainingQuantity(), sellTrade, tradeSummary.averageBuyPrice(),
-			tradeSummary.averageSellPrice(), tradeSummary.realizedPnl(), tradeSummary.soldBuyBasis());
+			tradeSummary.averageSellPrice(), tradeSummary.realizedPnl(), tradeSummary.soldBuyBasis(),
+			resolveSellCause(attempt, sellTrade));
+	}
+
+	// 042 EXITPRESET-008 — 예약이 발동시킨 매도 주문인지 되짚는다. 예약이 가리키지 않는 매도는 전부 MANUAL
+	// 이며, 예약 자체가 없는 STOCK 튜토리얼과 기능 도입 전 실행도 여기 들어간다.
+	private PracticeSellCause resolveSellCause(PracticeAttempt attempt, Trade sellTrade) {
+		if (sellTrade == null) {
+			return null;
+		}
+		ExitPlanStatus status = practiceExitPlanQueryService
+			.findTriggeredSellOrderStatuses(attempt.getId(), attempt.getRunNumber())
+			.get(sellTrade.getOrder().getId());
+		if (status == ExitPlanStatus.FILLED_STOP_LOSS) {
+			return PracticeSellCause.STOP_LOSS;
+		}
+		if (status == ExitPlanStatus.FILLED_TAKE_PROFIT) {
+			return PracticeSellCause.TAKE_PROFIT;
+		}
+		return PracticeSellCause.MANUAL;
 	}
 
 	private void validateBuyEvidence(

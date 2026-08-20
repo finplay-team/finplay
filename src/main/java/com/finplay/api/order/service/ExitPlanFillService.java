@@ -138,11 +138,23 @@ public class ExitPlanFillService {
 		long fee = reservation.fee();
 
 		String idempotencyKey = triggerIdempotencyKey(plan.getId());
-		// Order.create는 MARKET 주문을 즉시 FILLED 상태로 만든다(OrderExecutionService와 동일) — 별도 markFilled
-		// 호출이 필요 없다.
-		Order order = Order.create(
-			plan.getUser(), account, instrument, OrderSide.SELL, OrderType.MARKET, quantity, idempotencyKey,
-			sha256Hex(idempotencyKey), now);
+		// Order.create·createForPracticeAttempt 둘 다 MARKET 주문을 즉시 FILLED로 만든다
+		// (OrderExecutionService와 동일) — 별도 markFilled 호출이 필요 없다.
+		//
+		// **튜토리얼 자동 예약이 발동한 매도는 반드시 attempt·실행 세대에 귀속시킨다**(042 EXITPRESET-013).
+		// 042의 판정이 전부 `orders.practice_attempt_id`로 실행 세대를 좁히기 때문이다 — 귀속 없이 만들면
+		// 이 매도가 원장에서 통째로 빠져 (1) 순보유수량이 매수분 그대로 남아 프리셋이 영구 잠기고
+		// (2) 재매수에 새 기준선·새 예약이 생기지 않고 (3) 매도 원인이 항상 null/MANUAL이 되고
+		// (4) 재시작이 순체결수량과 holding 잔량 불일치로 영구히 409가 된다. 043의 attempt 주문 목록에도
+		// 나타나지 않는다.
+		Order order = plan.getPracticeAttemptId() == null
+			? Order.create(
+				plan.getUser(), account, instrument, OrderSide.SELL, OrderType.MARKET, quantity, idempotencyKey,
+				sha256Hex(idempotencyKey), now)
+			: Order.createForPracticeAttempt(
+				plan.getUser(), account, instrument, OrderSide.SELL, OrderType.MARKET, quantity,
+				plan.getPracticeAttemptId(), plan.getPracticeAttemptRunNumber(), idempotencyKey,
+				sha256Hex(idempotencyKey), now);
 		orderRepository.save(order);
 
 		Trade trade = Trade.of(

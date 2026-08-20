@@ -128,6 +128,21 @@ public class TradeService {
 			.reduce((first, second) -> second);
 	}
 
+	/**
+	 * 현재 실행 세대의 순보유수량(FILLED BUY − FILLED SELL). <b>042 EXITPRESET-003의 프리셋 잠금,
+	 * EXITPRESET-020의 진입당 1회 가드, 041의 대기 구간 탈출 판정이 모두 이 한 메서드를 쓴다</b>
+	 * (042 plan §자동 예약 생성 "구현에서 한 메서드로 모은다").
+	 *
+	 * <p><b>holdings 행의 수량을 쓰지 않는 이유</b>는 그것이 실행 세대를 넘어 누적되기 때문이다. 재시작이
+	 * 청산하지 못한 이전 보유(attempt 도입 전에 만들어진 holding 등)가 남아 있으면, 새 실행의 첫 매수인데도
+	 * "이미 들고 있다"로 판정돼 기준선이 만들어지지 않는다.
+	 */
+	@Transactional(readOnly = true)
+	public BigDecimal netFilledQuantity(Long attemptId, long runNumber) {
+		BigDecimal net = tradeRepository.sumNetFilledPracticeRunQuantity(attemptId, runNumber);
+		return net == null ? BigDecimal.ZERO : net;
+	}
+
 	// 041 대기 구간 탈출용 — 진행 계산이 delta를 자를 기준 시각 하나만 읽는다(체결 목록 전체를 읽지 않는다).
 	@Transactional(readOnly = true)
 	public Optional<LocalDateTime> findLatestPracticeRunBuyExecutedAt(Long attemptId, long runNumber) {

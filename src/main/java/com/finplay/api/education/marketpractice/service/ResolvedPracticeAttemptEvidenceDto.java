@@ -2,6 +2,7 @@
 package com.finplay.api.education.marketpractice.service;
 
 import com.finplay.api.education.marketpractice.domain.PracticeRiskSnapshot;
+import com.finplay.api.education.marketpractice.domain.PracticeSellCause;
 import com.finplay.api.order.domain.Trade;
 import java.math.BigDecimal;
 
@@ -27,5 +28,6 @@ public record ResolvedPracticeAttemptEvidenceDto(
 	BigDecimal averageBuyPrice,
 	BigDecimal averageSellPrice,
 	Long realizedPnl,
-	Long soldBuyBasis) {
+	Long soldBuyBasis,
+	PracticeSellCause sellCause) {
 }

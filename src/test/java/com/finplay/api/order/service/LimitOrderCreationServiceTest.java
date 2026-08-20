@@ -55,11 +55,13 @@ class LimitOrderCreationServiceTest {
 	private final OrderRepository orderRepository = mock(OrderRepository.class);
 	private final PracticeOrderAttributionPort practiceOrderAttributionPort = mock(
 		PracticeOrderAttributionPort.class);
+	private final PracticeOrderSettlementService practiceOrderSettlementService = mock(
+		PracticeOrderSettlementService.class);
 	private final Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
 
 	private final LimitOrderCreationService service = new LimitOrderCreationService(
 		userQueryService, accountService, tutorialAccountService, instrumentService, portfolioSellService,
-		orderRepository, practiceOrderAttributionPort, clock);
+		orderRepository, practiceOrderAttributionPort, practiceOrderSettlementService, clock);
 
 	@Test
 	void createLimitOrderBuyReservesCashRequiredAndCreatesPendingOrder() {

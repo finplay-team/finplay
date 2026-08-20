@@ -21,11 +21,15 @@ import java.math.BigDecimal;
  *                    매도 직후 피드백(spec 012)의 {@code returnRate}와 같은 식·같은 정밀도다
  * @param sellVerdict {@code ABOVE_TAKE_PROFIT|BELOW_STOP_LOSS|BETWEEN_LINES} 또는 매도 전·기준선 부재 시
  *                    {@code null}
+ * @param sellCause   {@code STOP_LOSS|TAKE_PROFIT|MANUAL}. 매도 전이면 {@code null} (042 EXITPRESET-008).
+ *                    {@code sellVerdict}와 다르다 — 자동 예약 체결이면 verdict가 정의상 항상 경계값이라
+ *                    그것만으로는 "예약이 팔았는지 내가 팔았는지"를 알 수 없다
  */
 public record PracticeTradeResultResponse(
 	BigDecimal buyPrice,
 	BigDecimal sellPrice,
 	Long realizedPnl,
 	BigDecimal returnRate,
-	String sellVerdict) {
+	String sellVerdict,
+	String sellCause) {
 }

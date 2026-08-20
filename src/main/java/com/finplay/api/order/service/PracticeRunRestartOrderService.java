@@ -44,6 +44,7 @@ public class PracticeRunRestartOrderService {
 	private final TutorialAccountService tutorialAccountService;
 	private final InstrumentService instrumentService;
 	private final PortfolioSellService portfolioSellService;
+	private final PracticeOrderSettlementService practiceOrderSettlementService;
 
 	@Transactional
 	public void cleanupCurrentRun(PracticeRunRestartCommand command) {
@@ -65,6 +66,13 @@ public class PracticeRunRestartOrderService {
 		Account account = accountService.getAccountForUpdate(
 			command.userId(), com.finplay.api.account.domain.Market.valueOf(command.market().name()));
 		validateOrderAccounts(account, orders);
+
+		// 042 EXITPRESET-015 — **예약 취소가 주문 취소보다 먼저다.** 예약 수량이 남아 있으면 아래 보상 매도가
+		// availableQuantity 부족으로 실패한다. 취소 서비스가 flush 후 holding을 detach하므로, 이 호출 뒤에
+		// holding을 처음 잡는 아래 순서를 지켜야 낡은 인스턴스를 재사용하지 않는다.
+		practiceOrderSettlementService.cancelCurrentRunExitPlans(
+			command.userId(), command.attemptId(), command.runNumber());
+
 		BigDecimal netFilledQuantity = calculateNetFilledQuantity(command);
 		boolean pendingSellExists = orders.stream()
 			.anyMatch(order -> order.getStatus() == OrderStatus.PENDING && order.getSide() == OrderSide.SELL);

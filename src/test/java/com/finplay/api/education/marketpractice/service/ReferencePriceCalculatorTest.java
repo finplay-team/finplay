@@ -11,7 +11,6 @@ import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.springframework.test.util.ReflectionTestUtils;
 
 class ReferencePriceCalculatorTest {
 
@@ -169,11 +168,18 @@ class ReferencePriceCalculatorTest {
 				.setScale(8, RoundingMode.HALF_UP));
 	}
 
-	/** 현행 하드코딩 배율을 그 상수가 살아 있는 동안 직접 읽는다(042 tasks 4번이 이 상수를 대체한다). */
+	/**
+	 * 기능 도입 전 하드코딩 배율. 042 4번이 {@code PracticeAttemptOrderAttributionService}의 두 상수를
+	 * 프리셋으로 대체하면서 읽을 대상이 없어졌으므로 값을 여기에 적어 둔다. 이 숫자는 이제 <b>바뀔 수 있는
+	 * 설정이 아니라 고정된 과거 사실</b>이다 — EXITPRESET-002가 "아무것도 고르지 않은 사용자의 결과가 이
+	 * 기능 도입 전과 같아야 한다"를 요구하고, 그 비교 기준이 바로 이 두 값이다.
+	 */
 	private static BigDecimal currentMultiplier(String fieldName) {
-		Object value = ReflectionTestUtils.getField(PracticeAttemptOrderAttributionService.class, fieldName);
-		assertThat(value).as("%s 상수", fieldName).isInstanceOf(BigDecimal.class);
-		return (BigDecimal)value;
+		return switch (fieldName) {
+			case "STOP_LOSS_MULTIPLIER" -> new BigDecimal("0.97");
+			case "TAKE_PROFIT_MULTIPLIER" -> new BigDecimal("1.05");
+			default -> throw new IllegalArgumentException("알 수 없는 배율입니다: " + fieldName);
+		};
 	}
 
 	@Test

@@ -1,6 +1,7 @@
 // 튜토리얼 이번 실행의 수익률과 매도 위치 판정을 계산하는 순수 계산기(어떤 것도 저장하지 않는다)
 package com.finplay.api.education.marketpractice.service;
 
+import com.finplay.api.education.marketpractice.domain.PracticeSellCause;
 import com.finplay.api.education.marketpractice.domain.PracticeSellVerdict;
 import com.finplay.api.education.marketpractice.dto.response.PracticeTradeResultResponse;
 import java.math.BigDecimal;
@@ -31,14 +32,16 @@ final class PracticeTradeResultCalculator {
 		Long realizedPnl,
 		Long soldBuyBasis,
 		BigDecimal stopLossPrice,
-		BigDecimal takeProfitPrice) {
+		BigDecimal takeProfitPrice,
+		PracticeSellCause sellCause) {
 		PracticeSellVerdict verdict = judgeSellVerdict(sellPrice, stopLossPrice, takeProfitPrice);
 		return new PracticeTradeResultResponse(
 			buyPrice,
 			sellPrice,
 			realizedPnl,
 			returnRate(realizedPnl, soldBuyBasis),
-			verdict == null ? null : verdict.name());
+			verdict == null ? null : verdict.name(),
+			sellCause == null ? null : sellCause.name());
 	}
 
 	/**

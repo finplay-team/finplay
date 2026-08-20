@@ -56,9 +56,9 @@ public class ExitPlanCreationService {
 		// 6·7단계 — 확정 가격선 계산과 범위·정밀도 검증(019 정책 재사용).
 		ExitPriceLinesDto lines = exitPricePolicy.resolve(command.priceInput());
 
-		// 8단계 — 서버 유효 현재가를 baseline으로 확정한다. 시세가 없으면 여기서 409가 나고 아래 예약·저장에
-		// 도달하지 않으므로 plan·condition·예약 흔적이 남지 않는다.
-		PriceQuoteDto baseline = priceQueryService.getPrice(holding.getInstrument().getId());
+		// 8단계 — baseline 확정. 일반·교육 경로는 서버 유효 현재가를 읽고, 시세가 없으면 여기서 409가 나
+		// 아래 예약·저장에 도달하지 않으므로 plan·condition·예약 흔적이 남지 않는다.
+		ExitPlanBaselineDto baseline = resolveBaseline(command, holding);
 
 		// 9단계 — 예약과 저장을 같은 트랜잭션에서 커밋한다.
 		return reserveAndSave(command, holding, lines, baseline);
@@ -69,6 +69,16 @@ public class ExitPlanCreationService {
 	private Holding lockHolding(Holding holding) {
 		return portfolioSellService.getHoldingForUpdateForExitPlanCreation(holding.getAccount(),
 			holding.getInstrument());
+	}
+
+	// 튜토리얼 자동 예약은 호출부가 041 대본의 canonical price를 주입한다 — 이 자리의 기본 경로는 샘플
+	// 종목이면 사인파 항시 시세로 분기해 대본과 무관한 값을 baseline_price에 영속한다(042 plan §자동 예약 생성).
+	private ExitPlanBaselineDto resolveBaseline(ExitPlanCreateCommandDto command, Holding holding) {
+		if (command.isPracticePath()) {
+			return new ExitPlanBaselineDto(command.practiceOrigin().baselinePrice(), LocalDateTime.now(clock));
+		}
+		PriceQuoteDto quote = priceQueryService.getPrice(holding.getInstrument().getId());
+		return new ExitPlanBaselineDto(quote.price(), quote.sourceTime());
 	}
 
 	private void validateNoPendingPlan(Holding holding) {
@@ -84,7 +94,7 @@ public class ExitPlanCreationService {
 	}
 
 	private ExitPlan reserveAndSave(
-		ExitPlanCreateCommandDto command, Holding holding, ExitPriceLinesDto lines, PriceQuoteDto baseline) {
+		ExitPlanCreateCommandDto command, Holding holding, ExitPriceLinesDto lines, ExitPlanBaselineDto baseline) {
 		LocalDateTime now = LocalDateTime.now(clock);
 		holding.reserveQuantity(command.quantity());
 
@@ -97,12 +107,32 @@ public class ExitPlanCreationService {
 	}
 
 	private ExitPlan newExitPlan(
-		ExitPlanCreateCommandDto command, Holding holding, ExitPriceLinesDto lines, PriceQuoteDto baseline,
+		ExitPlanCreateCommandDto command, Holding holding, ExitPriceLinesDto lines, ExitPlanBaselineDto baseline,
 		LocalDateTime now) {
 		ExitPriceInputDto priceInput = command.priceInput();
 		// AVAILABLE 판정을 받은 quote는 두 공급자 모두 관측 시각을 함께 주지만, baseline_observed_at이 NOT NULL이라
 		// 방어적으로 현재 시각으로 대체한다.
-		LocalDateTime baselineObservedAt = baseline.sourceTime() != null ? baseline.sourceTime() : now;
+		LocalDateTime baselineObservedAt = baseline.observedAt() != null ? baseline.observedAt() : now;
+		if (command.isPracticePath()) {
+			ExitPlanPracticeOriginDto practiceOrigin = command.practiceOrigin();
+			return ExitPlan.createPractice(
+				command.user(),
+				holding,
+				holding.getInstrument(),
+				command.quantity(),
+				priceInput.entryPrice(),
+				priceInput.exitPriceType(),
+				priceInput.stopLossRate(),
+				priceInput.takeProfitRate(),
+				lines.stopLossPrice(),
+				lines.takeProfitPrice(),
+				baseline.price(),
+				baselineObservedAt,
+				command.requestHash(),
+				practiceOrigin.attemptId(),
+				practiceOrigin.runNumber(),
+				now);
+		}
 		if (!command.isEducationalPath()) {
 			return ExitPlan.createGeneral(
 				command.user(),

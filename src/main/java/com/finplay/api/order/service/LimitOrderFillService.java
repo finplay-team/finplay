@@ -146,7 +146,7 @@ public class LimitOrderFillService {
 		portfolioBuyService.applyBuyTrade(account, instrument, trade, quantity, executionPrice, fee, now);
 
 		order.markFilled();
-		practiceOrderAttributionPort.createFirstBuyRiskSnapshot(order, trade, now);
+		practiceOrderAttributionPort.createRiskSnapshotOnBuyFill(order, trade, now);
 	}
 
 	private void fillSell(

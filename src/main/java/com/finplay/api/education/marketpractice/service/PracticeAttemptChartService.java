@@ -52,7 +52,10 @@ public class PracticeAttemptChartService {
 			// settleCurrentRun을 한 번 더 부르면 같은 tick의 마지막 분이 두 번 판정된다.
 			practiceScenarioProgressService.advance(attempt, now);
 		} else {
-			practiceOrderSettlementService.settleCurrentRun(attempt.getId(), attempt.getRunNumber(), now);
+			// 생성기 버전 1도 같은 시점 canonical 가격으로 OCO를 함께 판정한다 — 042가 예약을 CRYPTO에서만
+			// 만들지만, 정산 진입점을 버전으로 갈라 두면 나중에 STOCK 대본이 들어올 때 한쪽만 고치게 된다.
+			practiceOrderSettlementService.settleCurrentRun(
+				attempt.getId(), attempt.getRunNumber(), now, canonicalPriceService.canonicalPrice(attempt, now));
 		}
 		return toResponse(attempt, now);
 	}
