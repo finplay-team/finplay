@@ -66,6 +66,66 @@
 
 `V53__create_stock_daily_candles.sql` — **작성 직전에 `git ls-tree origin/dev src/main/resources/db/migration/`로 번호 선점을 다시 확인한다.** 병렬 브랜치가 V53을 먼저 쓰면 번호 역전으로 배포가 막힌다(ADR-0004, 예외 처리는 ADR-0027).
 
+## Decision Gate 해소 — 실제 KIS API 호출로 확인한 사실 (2026-08-20)
+
+**이 절은 Fake·모의 검증이 아니라 실제 KIS Open API(모의투자 도메인, `https://openapivts.koreainvestment.com:29443`)를 curl로 직접 호출해 확인한 결과다 (C-005).** 대상 종목은 `instruments` 시드의 삼성전자(`005930`, `market=STOCK`, `V7__create_instruments.sql`). 인증은 `KisHistoricalCandleClientImpl`과 같은 `/oauth2/tokenP`(`client_credentials`) 흐름을 재사용했다. 원본 응답 JSON은 시크릿을 포함하지 않으므로 발췌만 남긴다.
+
+### 1. `output2` 필드명 확정
+
+`GET /uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice`(`tr_id=FHKST03010100`, `FID_PERIOD_DIV_CODE=D`, `FID_INPUT_ISCD=005930`, `FID_INPUT_DATE_1=20260801`, `FID_INPUT_DATE_2=20260820`)를 호출한 실제 응답 발췌:
+
+```json
+{
+  "stck_bsop_date": "20260820",
+  "stck_clpr": "271000",
+  "stck_oprc": "257000",
+  "stck_hgpr": "273000",
+  "stck_lwpr": "252500",
+  "acml_vol": "26095919",
+  "acml_tr_pbmn": "6961393123500",
+  "flng_cls_code": "00",
+  "prtt_rate": "0.00",
+  "mod_yn": "N",
+  "prdy_vrss_sign": "2",
+  "prdy_vrss": "23500",
+  "revl_issu_reas": ""
+}
+```
+
+확정 매핑 (`RawDailyCandleDto` → 이 필드들만 사용):
+
+| 내부 의미 | `output2` 필드 | 형식 |
+|---|---|---|
+| 거래일 | `stck_bsop_date` | `yyyyMMdd` (8자리 문자열, `DateTimeFormatter.BASIC_ISO_DATE`로 파싱) |
+| 시가 | `stck_oprc` | 문자열 정수 → `BigDecimal` |
+| 고가 | `stck_hgpr` | 〃 |
+| 저가 | `stck_lwpr` | 〃 |
+| 종가 | `stck_clpr` | 〃 |
+| 거래량 | `acml_vol` | 문자열 정수 → `long`(누적거래량, 1분봉의 `cntg_vol`과 달리 "당일 누적"이라는 이름이지만 일봉에서는 그날 하루 총 거래량과 같다) |
+
+`acml_tr_pbmn`(거래대금)·`flng_cls_code`·`prtt_rate`·`mod_yn`·`prdy_vrss*`·`revl_issu_reas`는 쓰지 않는다 — C-006(정규화된 필드만 저장)에 따라 `RawDailyCandleDto`에 매핑하지 않는다.
+
+응답은 **최신 날짜가 먼저 오는 내림차순**이다(위 예시에서 `output2[0]`이 `20260820`, 이후 과거로 감). 날짜 커서 역방향 페이징(STOCK-DAILY-002)이 이 순서와 일치한다.
+
+**1회 호출 응답 건수 상한은 100행이다** — 2023-08-20~2026-08-20(3년) 구간을 한 번에 요청했더니 `output2`가 정확히 100건만 오고 가장 오래된 행이 `20260326`이었다(3년 전체가 아니라 최근 100영업일만). 종목당 3년(약 750영업일)을 채우려면 **페이지당 100행 기준 최소 8회 호출**이 필요하다 — `MAX_PAGES_PER_SYMBOL` 산정의 근거.
+
+### 2. 수정주가 옵션(`FID_ORG_ADJ_PRC`) 의미 확정
+
+같은 종목(005930)의 2018년 50:1 액면분할(2018-05-04) 전후 구간(`FID_INPUT_DATE_1=20180420`~`FID_INPUT_DATE_2=20180515`)에 `FID_ORG_ADJ_PRC=0`과 `FID_ORG_ADJ_PRC=1`을 각각 호출해 종가(`stck_clpr`)를 대조했다:
+
+| 거래일 | `FID_ORG_ADJ_PRC=0` 종가 | `FID_ORG_ADJ_PRC=1` 종가 |
+|---|---|---|
+| 20180504 (분할 후 첫 거래일) | 51,900 | 51,900 |
+| 20180503 (분할 전 마지막 거래일) | 53,000 | **2,650,000** |
+| 20180420 | 51,620 | **2,581,000** |
+
+**결론**: `FID_ORG_ADJ_PRC=0`은 **수정주가**(액면분할 경계에서 연속적 — 51,900 ↔ 53,000처럼 자연스러운 등락) 이고, `FID_ORG_ADJ_PRC=1`은 **원주가**(액면분할 경계에서 50배 단절 — 53,000 → 2,650,000)다. spec의 우려(원주가로 저장하면 차트에 인위적 급등락 발생)가 그대로 재현됐다.
+
+**결정: 수집·저장에는 `FID_ORG_ADJ_PRC=0`(수정주가)을 쓴다.** 이유:
+- 3년 구간에 액면분할·병합이 들어와도 연속된 차트를 얻을 수 있다 — spec 우려사항 해소.
+- MKT-005가 분봉에서 정한 선례(원본 그대로, 단 이쪽은 액면분할이 문제되지 않는 짧은 재생 구간이라 원주가를 그대로 씀)와 달리, 일봉 아카이브는 3년 누적이라 성격이 다르다 — 같은 값을 그대로 따르지 않고 이 spec에 맞는 값을 새로 확정한 것이다.
+- `KisDailyCandleClientImpl` 구현 시 `FID_ORG_ADJ_PRC=0`을 상수로 고정한다(사용자 입력 없음).
+
 ## 구성요소
 
 | 클래스 | 역할 |
@@ -101,4 +161,4 @@
 - **슬라이스**: `@DataJpaTest` — `UNIQUE(instrument_id, trading_date)` 위반, 종목별 최신 거래일 조회, 기간 조회 정렬.
 - **통합(Testcontainers)**: 최초 전량 적재 → 증분 1회 → 재실행 순서로 실행해 행 수가 각각 (3년치) → (+1) → (변화 없음)이 되는지. 한 종목 실패 시 나머지 종목 저장·실패 이력 기록.
 - **회귀**: 일봉 배치 실행이 `stock_candles` 행 수를 바꾸지 않는지(STOCK-DAILY-005), 기존 캔들 조회 API 응답이 그대로인지.
-- **외부 스모크(자동 테스트와 구분 보고)**: 실제 KIS `inquire-daily-itemchartprice` 1회 호출로 **응답 필드명과 수정주가 옵션 의미 확인** — spec §Decision Gate 두 항목이 여기서 해소된다.
+- **외부 스모크(자동 테스트와 구분 보고)**: 실제 KIS `inquire-daily-itemchartprice` 1회 호출로 **응답 필드명과 수정주가 옵션 의미 확인** — spec §Decision Gate 두 항목이 여기서 해소된다. **2026-08-20 실제 호출로 해소 완료** — 결과는 위 "Decision Gate 해소" 절 참고.
