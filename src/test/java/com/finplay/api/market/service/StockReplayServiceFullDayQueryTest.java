@@ -10,6 +10,7 @@ import com.finplay.api.market.domain.StockCandle;
 import com.finplay.api.market.domain.StockReplaySession;
 import com.finplay.api.market.repository.InstrumentRepository;
 import com.finplay.api.market.repository.StockCandleRepository;
+import com.finplay.api.market.repository.StockDailyCandleRepository;
 import com.finplay.api.market.repository.StockReplaySessionRepository;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -61,6 +62,9 @@ class StockReplayServiceFullDayQueryTest {
 	@Autowired
 	private InstrumentRepository instrumentRepository;
 
+	@Autowired
+	private StockDailyCandleRepository stockDailyCandleRepository;
+
 	private Instrument instrument;
 
 	@BeforeEach
@@ -73,7 +77,8 @@ class StockReplayServiceFullDayQueryTest {
 	private StockReplayService service(LocalDate serviceDate, LocalTime time) {
 		Clock clock = Clock.fixed(LocalDateTime.of(serviceDate, time).atZone(KST).toInstant(), KST);
 		return new StockReplayService(
-			stockReplaySessionRepository, stockCandleRepository, clock, new BusinessDayCalendar());
+			stockReplaySessionRepository, stockCandleRepository, stockDailyCandleRepository, clock,
+			new BusinessDayCalendar());
 	}
 
 	private void saveCandle(LocalDate tradingDate, LocalTime candleTime, String close) {

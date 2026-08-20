@@ -17,6 +17,7 @@ import com.finplay.api.market.domain.PreparationStatus;
 import com.finplay.api.market.domain.StockCandle;
 import com.finplay.api.market.domain.StockReplaySession;
 import com.finplay.api.market.repository.StockCandleRepository;
+import com.finplay.api.market.repository.StockDailyCandleRepository;
 import com.finplay.api.market.repository.StockReplaySessionRepository;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -47,6 +48,9 @@ class StockReplayServiceTest {
 
 	private final StockReplaySessionRepository stockReplaySessionRepository = mock(StockReplaySessionRepository.class);
 	private final StockCandleRepository stockCandleRepository = mock(StockCandleRepository.class);
+	// 언스텁 상태에서 Mockito가 List 반환 메서드에 기본으로 빈 리스트를 주므로, 이 목을 쓰는 기존 테스트는 전부
+	// "아카이브에 해당 구간 데이터가 없다"로 동작해 1분봉 경로만 검증하던 기존 동작이 그대로 유지된다.
+	private final StockDailyCandleRepository stockDailyCandleRepository = mock(StockDailyCandleRepository.class);
 
 	private static Clock fixedClock(LocalDate date, LocalTime time) {
 		return Clock.fixed(LocalDateTime.of(date, time).atZone(KST).toInstant(), KST);
@@ -54,7 +58,8 @@ class StockReplayServiceTest {
 
 	private StockReplayService service(Clock clock) {
 		return new StockReplayService(
-			stockReplaySessionRepository, stockCandleRepository, clock, new BusinessDayCalendar());
+			stockReplaySessionRepository, stockCandleRepository, stockDailyCandleRepository, clock,
+			new BusinessDayCalendar());
 	}
 
 	private static StockReplaySession readySession(LocalDate serviceDate, LocalDate sourceTradingDate) {
