@@ -1,14 +1,14 @@
 # API 계약 — watchlist
 
-"023 관심목록 (watchlist)" 절의 API 계약 상세다. 전체 라우트를 한눈에 보는 지도는 `docs/api-routes.md`에 있다.
+"023 관심목록 (watchlist)" 절의 API 계약 상세다. 전체 라우트를 한눈에 보는 지도는 `ai/api-routes.md`에 있다.
 
-**controller를 추가/변경하면 `docs/api-routes.md`의 라우트 목록과 이 문서를 같은 커밋에서 함께 갱신한다** (CLAUDE.md 규칙, reviewer 리뷰 모드 점검 항목).
+**controller를 추가/변경하면 `ai/api-routes.md`의 라우트 목록과 이 문서를 같은 커밋에서 함께 갱신한다** (CLAUDE.md 규칙, reviewer 리뷰 모드 점검 항목).
 
-블랙박스 QA는 구현 코드(`src/main`)를 읽지 않고 이 문서와 spec만을 계약 근거로 사용한다 (`docs/context-router.md`).
+블랙박스 QA는 구현 코드(`src/main`)를 읽지 않고 이 문서와 spec만을 계약 근거로 사용한다 (`ai/context-router.md`).
 
 ---
 
-`docs/specs/023-watchlist`의 신규 계약 3건이다. MySQL(`watchlist_items` 테이블)에 영속화하는 실제 서비스 기능이며, `docs/specs/016-investment-education-policy`의 인메모리 튜토리얼 즐겨찾기(`/api/favorites`, ADR-0012, `docs/api/education.md`)와 완전히 별개다 — 오류 코드도 `WATCHLIST_ITEM_NOT_FOUND`로 분리해 `FAVORITE_NOT_FOUND`와 섞이지 않는다. 모든 경로는 Access Bearer 인증과 공통 오류 body를 사용하며 JSON POST는 `Content-Type: application/json`이다.
+`ai/specs/023-watchlist`의 신규 계약 3건이다. MySQL(`watchlist_items` 테이블)에 영속화하는 실제 서비스 기능이며, `ai/specs/016-investment-education-policy`의 인메모리 튜토리얼 즐겨찾기(`/api/favorites`, ADR-0012, `docs/api/education.md`)와 완전히 별개다 — 오류 코드도 `WATCHLIST_ITEM_NOT_FOUND`로 분리해 `FAVORITE_NOT_FOUND`와 섞이지 않는다. 모든 경로는 Access Bearer 인증과 공통 오류 body를 사용하며 JSON POST는 `Content-Type: application/json`이다.
 
 ### 관심목록 등록
 

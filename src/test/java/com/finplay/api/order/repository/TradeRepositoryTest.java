@@ -1,4 +1,4 @@
-// 주문별 체결 단건 조회 쿼리 메서드를 검증하는 슬라이스 테스트 (docs/specs/004-order-buy 이슈 #22)
+// 주문별 체결 단건 조회 쿼리 메서드를 검증하는 슬라이스 테스트 (ai/specs/004-order-buy 이슈 #22)
 package com.finplay.api.order.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -320,7 +320,7 @@ class TradeRepositoryTest {
 	// 아래 3개는 랭킹 재구성(이슈 #279)이 쓰는 매도 이력 조회다.
 	// 단정을 containsExactly가 아니라 포함/미포함으로 쓰는 이유: 이 저장소에는 비-@Transactional
 	// @SpringBootTest가 공유 MySQL 컨테이너에 매도 체결을 커밋한 채 남긴다. 전체 개수를 단정하면 실행 순서에
-	// 따라 깨진다 (docs/agent-mistakes.md 2026-08-04 "공유 컨테이너 커밋" 행).
+	// 따라 깨진다 (ai/agent-mistakes.md 2026-08-04 "공유 컨테이너 커밋" 행).
 	// 알려진 오염원은 LimitOrderConcurrencyIntegrationTest·OrderSellIntegrationTest다(둘 다 order 도메인의
 	// 비-@Transactional 통합 테스트). RankingIntegrationTest·RankingRebuildIntegrationTest는 tearDown에서
 	// 자기 원장을 지우게 되어(이슈 #279) 오염원에서 빠졌다. 잔재 개수는 테스트가 늘 때마다 바뀌므로 여기

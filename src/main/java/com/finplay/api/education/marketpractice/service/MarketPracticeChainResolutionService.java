@@ -23,7 +23,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * docs/specs/026-market-order-practice-tutorial plan.md "2단계 chain 해석" 절의 규칙을 구현한다. favorite·
+ * ai/specs/026-market-order-practice-tutorial plan.md "2단계 chain 해석" 절의 규칙을 구현한다. favorite·
  * intention은 ADR-0012에 따라 인메모리이므로 같은 education 도메인의 {@link PracticeIntentionRepository}를 직접
  * 쓰지만(같은 도메인 내부이므로 ADR-0002 위반 아님), buyTrade·holding 조회는 각 도메인의 조회 전용 서비스
  * 메서드만 거친다(order/portfolio repository를 이 클래스에서 직접 주입하지 않는다).

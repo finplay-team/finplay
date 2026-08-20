@@ -20,7 +20,7 @@ final class StockCandleAggregator {
 
 	private StockCandleAggregator() {}
 
-	// 1m은 이 클래스를 거치지 않는다(기존 경로 유지, docs/specs/013-candle-interval/plan.md). 1d·1w·1M만 받는다.
+	// 1m은 이 클래스를 거치지 않는다(기존 경로 유지, ai/specs/013-candle-interval/plan.md). 1d·1w·1M만 받는다.
 	static List<StockCandleDto> aggregate(List<StockCandleDto> minuteCandles, CandleInterval interval) {
 		if (!interval.isAggregated()) {
 			throw new IllegalArgumentException("StockCandleAggregator는 1m을 집계하지 않습니다: " + interval);

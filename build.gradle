@@ -44,7 +44,7 @@ dependencies {
 	implementation 'org.springframework.ai:spring-ai-starter-model-openai:2.0.0'
 	implementation 'org.flywaydb:flyway-mysql'
 	// AWS SDK v2(software.amazon.awssdk) — v1(com.amazonaws:aws-java-sdk-*)은 유지보수 모드라 신규 도입 대상이 아니다
-	// (docs/specs/022-community-enhancement/plan.md "COM-006 후속"). BOM 2.51.4는 구현 시점(2026-08-11)
+	// (ai/specs/022-community-enhancement/plan.md "COM-006 후속"). BOM 2.51.4는 구현 시점(2026-08-11)
 	// Maven Central 최신 안정판이며 Boot 4.1/Java 17과 충돌이 없다.
 	implementation platform('software.amazon.awssdk:bom:2.51.4')
 	implementation 'software.amazon.awssdk:s3'
@@ -125,7 +125,7 @@ tasks.withType(Test).configureEach {
 	//
 	// 처음에 5초로 잡았다가 PR #127 리뷰 지적으로 10초로 올렸다. agent-mistakes.md(2026-07-30)에 같은 실패
 	// 시그니처가 "호스트 리소스 경합으로 지연되다 결국 성공"한 사례로 남아 있고, 이 팀은 여러 워크트리에서
-	// 병렬로 build를 돌린다(docs/parallel-agents.md). 5초는 그런 케이스를 새 오탐 실패로 바꿀 여지가 있다.
+	// 병렬로 build를 돌린다(ai/parallel-agents.md). 5초는 그런 케이스를 새 오탐 실패로 바꿀 여지가 있다.
 	// 10초는 정상 접속(로컬 컨테이너 수십 ms) 대비 200배 이상 여유이면서 낭비 대기를 3분의 1로 줄인다.
 	//
 	// 경합이 심한 환경에서 오탐이 관찰되면 build.gradle을 고치지 말고 프로퍼티로 올린다:

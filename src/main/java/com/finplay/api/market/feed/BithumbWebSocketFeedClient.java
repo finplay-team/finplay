@@ -51,7 +51,7 @@ public class BithumbWebSocketFeedClient extends TextWebSocketHandler implements 
 	private final CryptoCandleStore candleStore;
 	private final ObjectMapper objectMapper;
 	// 필드 초기화자 대신 생성자로 주입받는다 — @RequiredArgsConstructor를 유지하며(SpotBugs EI_EXPOSE_REP2 회피 패턴,
-	// docs/agent-mistakes.md 2026-07-29) 재연결 경로(끊김→DISCONNECTED→재연결 예약, MKT-004)를 목(mock)
+	// ai/agent-mistakes.md 2026-07-29) 재연결 경로(끊김→DISCONNECTED→재연결 예약, MKT-004)를 목(mock)
 	// ScheduledExecutorService로 단위 테스트할 수 있게 한다(PR #110 리뷰 권장사항). 운영 빈 등록은 BithumbFeedConfig가 담당.
 	private final StandardWebSocketClient webSocketClient;
 	private final ScheduledExecutorService reconnectExecutor;
@@ -212,7 +212,7 @@ public class BithumbWebSocketFeedClient extends TextWebSocketHandler implements 
 
 	private record TickerSubscribeRequest(String type, List<String> symbols, List<String> tickTypes) {
 
-		// 컬렉션 필드는 방어적 복사로 불변화한다 (SpotBugs EI_EXPOSE_REP/REP2 회피, docs/agent-mistakes.md 2026-07-29).
+		// 컬렉션 필드는 방어적 복사로 불변화한다 (SpotBugs EI_EXPOSE_REP/REP2 회피, ai/agent-mistakes.md 2026-07-29).
 		private TickerSubscribeRequest {
 			symbols = List.copyOf(symbols);
 			tickTypes = List.copyOf(tickTypes);

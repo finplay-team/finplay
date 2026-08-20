@@ -27,10 +27,10 @@
 
 ## 2026-07-23 — PRD 반입과 스택 확정
 
-- **PRD 정본은 `docs/prd.md`**: Notion 원본은 사람용 미러. 에이전트(팀원 세션 포함)가 Notion에 접근 못 하므로 레포가 정본. 반입 시 확정 결정 3건은 prd.md 상단 "정본 안내" 블록에 기록.
+- **PRD 정본은 `ai/prd.md`**: Notion 원본은 사람용 미러. 에이전트(팀원 세션 포함)가 Notion에 접근 못 하므로 레포가 정본. 반입 시 확정 결정 3건은 prd.md 상단 "정본 안내" 블록에 기록.
 - **제품명 FinPlay** (구 TradeClass/Investory), **Java 17** (구 21): ADR-0006. 레포 폴더명(`Desktop\tradeclass-api`)·GitHub 레포명 변경은 클론 경로 영향 때문에 팀 합의 후 수동 진행 예정.
 - **에러 응답은 `{"error":{code,message,requestId}}`**, **URL 버저닝 미사용** (`/api/v1` 금지): conventions.md에 반영. PRD 원본의 `/api/v1` 표기보다 conventions가 우선.
-- **CI 하네스 전환은 로드맵으로만 기록** (`docs/harness-roadmap.md`): 튜터 제안(이슈 트리거 → 러너 에이전트 → PR → 사람 머지 + 정량 지표). 1차 MVP 진행 후 ADR-0007로 착수. 베이스라인 확보를 위해 지금부터 이슈→PR 흐름으로 작업.
+- **CI 하네스 전환은 로드맵으로만 기록** (`ai/harness-roadmap.md`): 튜터 제안(이슈 트리거 → 러너 에이전트 → PR → 사람 머지 + 정량 지표). 1차 MVP 진행 후 ADR-0007로 착수. 베이스라인 확보를 위해 지금부터 이슈→PR 흐름으로 작업.
 - **ADR 부분 대체 방식**: ADR-0002처럼 일부 결정만 바뀌면 원문은 안 건드리고 상태 줄에 대체 ADR 링크만 표기.
 
 ## 2026-07-23 — Codex 자동 리뷰 + 병렬 에이전트 체계
@@ -53,7 +53,7 @@
 - **작업 범위는 2개 파일뿐**: `.gradle.kts`는 이 둘이 전부였고, 소스(`src/`, Java)·래퍼(`gradlew*`)·README·CLAUDE.md(명령어만 참조)·CI(`.github/workflows` 부재)는 무관. 문법은 따옴표(`"`→`'`)·제네릭(`withType<Test>`→`withType(Test)`)·`.map`→`.collect`·`fileTree(it){exclude}`→`fileTree(dir:,exclude:)` 등 기계적 변환.
 - **올린 위치**: 사용자 결정으로 이슈 #32 PR(#36)에 함께 커밋. 오케스트레이터는 "오류 체계 PR에 무관한 빌드 변환이 섞이고 build.gradle은 원래 #31 소유 파일"이라며 별도 PR 분리를 권고했으나 사용자가 #36 유지 선택.
 - **검증**: Groovy 전환 후 `./gradlew build` BUILD SUCCESSFUL (compileJava·test·jacoco 커버리지 게이트·spotbugs·spotless 전부 정상 동작).
-- **병렬화는 spec 단위, 수단은 Agent View 우선** (`docs/parallel-agents.md`): Agent View(`claude agents`)는 내장 + 자동 worktree 격리라 "agentview 만들기" 요청은 문서화로 대체. 에이전트 팀은 실험 플래그로 활성화(팀원 간 직접 메시징)하되 파일 격리가 없어 코드 수정엔 파일 소유권 분리 필수. /feature 루프 내부는 순차 유지 (단계 의존 = 품질 게이트).
+- **병렬화는 spec 단위, 수단은 Agent View 우선** (`ai/parallel-agents.md`): Agent View(`claude agents`)는 내장 + 자동 worktree 격리라 "agentview 만들기" 요청은 문서화로 대체. 에이전트 팀은 실험 플래그로 활성화(팀원 간 직접 메시징)하되 파일 격리가 없어 코드 수정엔 파일 소유권 분리 필수. /feature 루프 내부는 순차 유지 (단계 의존 = 품질 게이트).
 
 ## 2026-07-23 — 1차 MVP spec 9개 작성
 
@@ -110,7 +110,7 @@
 - **배경**: 001-foundation 실측(25분) 직후 사용자가 "에이전트 실행 로그가 있냐"고 질문 — 사람용/AI용 분리, 어떤 명령·근거로 판단했는지. 확인해보니 없었음. context-notes에 이전에 "evidence 6종 파일 체계"를 유지비 문제로 의도적으로 뺐던 기록이 있어 먼저 그 사실을 알리고 재확인 후 진행.
 - **범위 축소로 경량 유지** (사용자 결정): 기록 주체는 **implementer·reviewer만** (tester·planner 제외). 파일은 spec당 1개 `run-log.md`, 섹션만 AI용/사람용으로 분리 (파일 2개로 안 쪼갬 — 쓰기 호출 절반으로 줄임). 각 항목 1줄 제한.
 - **속도 영향 판단**: 마크다운 append 1회(Edit 호출)라 빌드·테스트가 아니므로 항목당 5~15초 수준, 무시 가능하다고 사용자에게 답변.
-- **위치**: `docs/specs/README.md`에 형식 정의, `.claude/agents/implementer.md`·`reviewer.md`(리뷰·QA 모드 둘 다)에 기록 단계 추가. context-router.md는 건드리지 않음 (참조 문서가 아니라 필요시 훑어보는 보조 자료로 명시).
+- **위치**: `ai/specs/README.md`에 형식 정의, `.claude/agents/implementer.md`·`reviewer.md`(리뷰·QA 모드 둘 다)에 기록 단계 추가. context-router.md는 건드리지 않음 (참조 문서가 아니라 필요시 훑어보는 보조 자료로 명시).
 
 ## 2026-07-23 — dev 통합 브랜치 전환 + 레포 공개
 
@@ -181,35 +181,35 @@
 
 ## 2026-07-28 — Notion API 표 대조 후 PRD·spec 006 동기화 (이슈 #51 문서 동기화 항목 반영)
 
-- **`GET /api/accounts` 계약 목록에서 삭제**: 최신 Notion MVP API 표에는 이미 이 엔드포인트가 없다. 이슈 #11이 이 사유로 "not planned" 종료됨 — "시장별 계좌 정보는 #12(`/api/accounts/summary?market=`)로 관리하므로 중복 구현하지 않는다." `docs/prd.md` §5 계약 목록만 뒤늦게 반영이 안 돼 있었다.
-- **포트폴리오 합산 조회 경로 `/api/portfolio/summary` → `/api/portfolio`**: 이슈 #51에 팀이 이미 "최신 Notion 계약과 저장소 PRD/spec의 `/api/portfolio/summary`가 충돌하므로 구현 전에 문서를 먼저 동기화한다"고 명시해뒀고, 그 동기화 체크박스가 미완료 상태였다. `docs/prd.md` §5와 `docs/specs/006-portfolio-query/spec.md`(ACCT-003)의 경로를 Notion 확정값인 `/api/portfolio`로 맞췄다. 아직 컨트롤러가 없어 `docs/api-routes.md`는 영향 없음 — 구현 시 이 경로로 만들면 된다.
+- **`GET /api/accounts` 계약 목록에서 삭제**: 최신 Notion MVP API 표에는 이미 이 엔드포인트가 없다. 이슈 #11이 이 사유로 "not planned" 종료됨 — "시장별 계좌 정보는 #12(`/api/accounts/summary?market=`)로 관리하므로 중복 구현하지 않는다." `ai/prd.md` §5 계약 목록만 뒤늦게 반영이 안 돼 있었다.
+- **포트폴리오 합산 조회 경로 `/api/portfolio/summary` → `/api/portfolio`**: 이슈 #51에 팀이 이미 "최신 Notion 계약과 저장소 PRD/spec의 `/api/portfolio/summary`가 충돌하므로 구현 전에 문서를 먼저 동기화한다"고 명시해뒀고, 그 동기화 체크박스가 미완료 상태였다. `ai/prd.md` §5와 `ai/specs/006-portfolio-query/spec.md`(ACCT-003)의 경로를 Notion 확정값인 `/api/portfolio`로 맞췄다. 아직 컨트롤러가 없어 `ai/api-routes.md`는 영향 없음 — 구현 시 이 경로로 만들면 된다.
 - **Notion 쪽이 낡은 것은 레포에서 고치지 않음**: 매수 투자일기 API의 Notion 단계 표기("1차 고도화")는 2026-07-24/27 팀 결정(PRD·이슈 #52로 이미 "1차 MVP" 확정)보다 낡았고, 닉네임 수정 API의 Notion 상태("진행 중")도 이슈 #54 병합·종료보다 낡다. 이 둘은 Notion 편집 권한이 없어 레포에서 대신 고치지 않고 팀에 공유만 한다.
 - **미해결로 남긴 것**: 체결내역(`/api/trades`) Notion 비고의 "market 생략 시 전체 시장 통합 조회 지원 필요" 요구사항은 PRD·spec 006·이슈 #22 어디에도 없다. 새 요구사항인지 팀 확인이 필요해 임의로 spec에 추가하지 않았다.
 
 ## 2026-07-28 — 체결내역 통합 조회 제안 반려 (사용자 결정)
 
 - **주식·코인은 항상 시장별로 나눠서 조회한다**: 바로 위 미해결 항목(Notion 비고의 "market 생략 시 전체 시장 통합 조회 지원 필요")을 사용자가 즉시 반려했다. `market`은 `GET /api/trades`의 필수 파라미터로 유지하고 생략 시 통합 조회 기능은 만들지 않는다.
-- **반영 위치**: `docs/prd.md`(PORT-002, §5 계약 목록), `docs/specs/006-portfolio-query/spec.md`(PORT-002), 이슈 #22(수용 기준 추가 + 코멘트).
+- **반영 위치**: `ai/prd.md`(PORT-002, §5 계약 목록), `ai/specs/006-portfolio-query/spec.md`(PORT-002), 이슈 #22(수용 기준 추가 + 코멘트).
 
 ## 2026-07-28 — 매수 투자일기 작성 API를 1차 MVP → 2차(1차 고도화)로 하향 (사용자 결정, 바로 위 2026-07-28 노트의 판정을 뒤집음)
 
 - **"Notion이 맞다"**: 위 노트에서 "Notion 단계 표기가 낡았다"고 판단했던 것과 반대로, 사용자가 최신 Notion 표(1차 고도화)를 정본으로 확정했다. 2026-07-24/27에 이미 내렸던 "매수 체결별 투자일기 작성은 1차 MVP" 결정을 이걸로 뒤집는다 — PRD C-001 단계 잠금 판정 기준이 다시 Notion 기준으로 돌아간 사례.
-- **`docs/prd.md` 전면 반영**: §0 변경표, §3 로드맵(1차 목록에서 삭제 → 2차 목록에 추가, 1차 명시적 제외 범위에 "작성"도 추가), §4 PORT-004 요구사항 블록 삭제(요구사항 초안은 `docs/specs/007-journal/spec.md`에만 유지), §5 API 계약에서 `POST /api/trades/{buyTradeId}/journal` 제외, §6 데이터모델에서 `trade_journals` 테이블·`UNIQUE` 제약 삭제, §7 `portfolio` 패키지 설명·트랜잭션 경계 목록에서 투자일기 항목 삭제, §8 태스크 순서 7번을 취소선 처리(스펙 폴더 번호·이후 태스크 8·9·10 번호는 유지), §9 필수 자동 검증·핵심 E2E에서 투자일기 관련 문구 삭제.
-- **`docs/specs/007-journal/spec.md`**: 헤더 단계를 "2차 MVP (1차 고도화)"로 변경, 2차 착수 전까지 plan·tasks 작성과 구현 보류를 명시. 파일 자체는 삭제하지 않음 (요구사항 초안 보존용).
+- **`ai/prd.md` 전면 반영**: §0 변경표, §3 로드맵(1차 목록에서 삭제 → 2차 목록에 추가, 1차 명시적 제외 범위에 "작성"도 추가), §4 PORT-004 요구사항 블록 삭제(요구사항 초안은 `ai/specs/007-journal/spec.md`에만 유지), §5 API 계약에서 `POST /api/trades/{buyTradeId}/journal` 제외, §6 데이터모델에서 `trade_journals` 테이블·`UNIQUE` 제약 삭제, §7 `portfolio` 패키지 설명·트랜잭션 경계 목록에서 투자일기 항목 삭제, §8 태스크 순서 7번을 취소선 처리(스펙 폴더 번호·이후 태스크 8·9·10 번호는 유지), §9 필수 자동 검증·핵심 E2E에서 투자일기 관련 문구 삭제.
+- **`ai/specs/007-journal/spec.md`**: 헤더 단계를 "2차 MVP (1차 고도화)"로 변경, 2차 착수 전까지 plan·tasks 작성과 구현 보류를 명시. 파일 자체는 삭제하지 않음 (요구사항 초안 보존용).
 - **이슈 #52**: 제목 `[MVP]` → `[1차 고도화]`로 변경, 본문의 "결정 반영" 체크리스트를 취소선 처리하고 2026-07-28 정정 배경을 상단에 추가. 지금 구현 착수하지 않고 2차 시점에 재확정.
 - **닉네임 API의 Notion "진행 중" 표기는 그대로 둠** (사용자: "그냥 넘어가") — 실제로는 완료(이슈 #54 종료)이지만 레포·Notion 어느 쪽도 지금 수정하지 않는다.
 
 ## 2026-07-28 — 주식 과거 데이터 소스를 KRX → 한국투자증권(KIS) Open API로 전환 (사용자 결정, 이슈 #17)
 
 - **KRX 서면 안내 대기를 더 기다리지 않는다**: 한국투자증권 Open API 키를 발급받아 과거 1분봉도 KIS로 조회하기로 결정했다. 한국투자증권에 문의해 "과거 데이터는 공공데이터이므로 자유롭게 사용 가능"이라는 답변을 받아, PRD C-006의 KRX 서면 허가 대기(Decision Gate)가 과거 데이터 쪽에서는 해소됐다. **실시간 시세의 제3자 표출(C-007)은 별개로, 아직 확인된 바 없어 기존 제약을 그대로 유지한다** — 개발자 본인 전용 검증 환경에서만 `KIS_REALTIME`을 쓰고, 공개 배포·시연은 여전히 과거 데이터 재생(`KIS_HISTORICAL`, 구 `KRX_REPLAY`)을 쓴다.
-- **네이밍**: `STOCK_FEED_PROVIDER=KRX_REPLAY` → `KIS_HISTORICAL`, `KrxReplayPriceProvider` → `KisHistoricalReplayPriceProvider`, `KrxFileImporter` → `KisHistoricalCandleCollector`(파일 임포트가 아니라 API 호출이므로 이름도 교체). 단, 이슈 #16에서 **이미 병합된 코드**(`KrxReplayPriceProvider`, `KRX_REPLAY` enum 값)는 이번 문서 작업에서 리네이밍하지 않았다 — `docs/specs/003-market-data/tasks.md`에 별도 결정 필요로 남겨뒀다.
+- **네이밍**: `STOCK_FEED_PROVIDER=KRX_REPLAY` → `KIS_HISTORICAL`, `KrxReplayPriceProvider` → `KisHistoricalReplayPriceProvider`, `KrxFileImporter` → `KisHistoricalCandleCollector`(파일 임포트가 아니라 API 호출이므로 이름도 교체). 단, 이슈 #16에서 **이미 병합된 코드**(`KrxReplayPriceProvider`, `KRX_REPLAY` enum 값)는 이번 문서 작업에서 리네이밍하지 않았다 — `ai/specs/003-market-data/tasks.md`에 별도 결정 필요로 남겨뒀다.
 - **팀원 Claude의 이슈 #17 범위 지적을 반영해 3분할**: 이슈 #17(MVP)은 캔들 조회 API + KIS Open API 기반 과거 데이터 수집의 기본 동작(`UNIQUE` 제약 기반 멱등성, 성공/부분성공/실패 판정)까지만 남기고, ① KIS 실시간 틱 집계(`KisRealtimePriceProvider`·`KisTickAggregator`)는 이슈 [#82](https://github.com/finplay-team/finplay/issues/82), ② 수집 파이프라인 장기운영 방어 로직(동일 거래일 재수집 세부 정책·`StockCandleCleanupJob`)은 이슈 [#83](https://github.com/finplay-team/finplay/issues/83)으로 분리했다. 근거: ①은 `PUBLIC`+`KIS_HISTORICAL`이 공개 배포 기본값인 한 MVP 데모 경로에서 한 줄도 실행되지 않고, ②는 MVP 데모 기간에는 20영업일치가 쌓이지도 않고 재수집 시나리오도 반복 운영해야 의미가 생긴다.
-- **반영 위치**: `docs/prd.md`(C-006·C-007·MKT-002·005·006·007), `docs/specs/003-market-data/{spec,plan,tasks}.md`, `docs/specs/009-integration/spec.md`, `docs/specs/010-deployment/spec.md`, GitHub 이슈 #17(본문 수정) + #82·#83(신규 생성). 브랜치 `docs/017-krx-to-kis-transition`에서 작업 후 PR 예정.
+- **반영 위치**: `ai/prd.md`(C-006·C-007·MKT-002·005·006·007), `ai/specs/003-market-data/{spec,plan,tasks}.md`, `ai/specs/009-integration/spec.md`, `ai/specs/010-deployment/spec.md`, GitHub 이슈 #17(본문 수정) + #82·#83(신규 생성). 브랜치 `docs/017-krx-to-kis-transition`에서 작업 후 PR 예정.
 - **이슈 본문에는 "KRX"를 아예 언급하지 않는다** (사용자 피드백): 처음에 "KRX가 아니라 한국투자증권을 쓴다"고 대비해서 썼다가 반려당함 — 대외적으로 보이는 이슈에는 이전 방식을 언급하지 않고 현재 결정만 명시한다. 내부 계획 문서(PRD·spec·plan·context-notes)는 의사결정 맥락 보존을 위해 KRX 언급을 유지했다.
 
 ## 2026-07-30 — 코인 차트를 빗썸 실제 캔들로 연동 (사용자 결정, MKT-008 신설 · 이슈 #20 교체)
 
-- **발견**: 이슈 #20이 "빗썸에서 실제 차트를 연동해 보여주는" 것으로 이해되고 있었으나, 실제 #20의 범위는 `/api/cryptos/stream` SSE(현재가 틱)뿐이었다. `docs/specs/003-market-data/spec.md`의 범위 제외에 "코인 과거 틱·코인 캔들 영구 저장 (PRD 1차 계약의 candles는 주식 1분봉 기반 — 코인은 최신 틱만)"이 있어 **코인 차트 데이터가 1차 설계에 존재하지 않았다.** 캔들 API도 코인 `instrumentId`를 400으로 거부하고 있었다(이슈 #17 계약).
+- **발견**: 이슈 #20이 "빗썸에서 실제 차트를 연동해 보여주는" 것으로 이해되고 있었으나, 실제 #20의 범위는 `/api/cryptos/stream` SSE(현재가 틱)뿐이었다. `ai/specs/003-market-data/spec.md`의 범위 제외에 "코인 과거 틱·코인 캔들 영구 저장 (PRD 1차 계약의 candles는 주식 1분봉 기반 — 코인은 최신 틱만)"이 있어 **코인 차트 데이터가 1차 설계에 존재하지 않았다.** 캔들 API도 코인 `instrumentId`를 400으로 거부하고 있었다(이슈 #17 계약).
 - **결정**: 코인 1분봉 차트를 1차 범위에 넣고 요구사항 `MKT-008`을 신설했다. 데이터 출처는 **빗썸 공개 캔들 REST API**(`GET https://api.bithumb.com/v1/candles/minutes/1?market=KRW-BTC&to=&count=`, 인증·API Key 불필요, `count` 최대 200).
 - **왜 REST 조회·중계인가 (틱 집계를 택하지 않은 이유)**: WebSocket 체결 틱을 서버에서 1분 OHLCV로 집계하는 방식(KIS의 `KisTickAggregator`와 같은 접근)은 서버가 오래 떠 있어야 과거 봉이 쌓여, 데모 시작 직후에는 빈 차트가 된다. 빗썸 REST는 과거 200개를 즉시 주므로 기동 직후에도 차트가 그려진다. 대신 **저장하지 않는다** — 코인 캔들 테이블도, Redis 캐시 키도 만들지 않아 "Redis에는 최신 시세·수신시각·연결상태만"이라는 기존 불변식(PRD §6)을 그대로 유지한다.
 - **실제 응답을 조회해 확인한 사실** (추측 아님): 응답은 최신→과거 **내림차순**이고, 가장 최신 봉은 **아직 마감하지 않은 진행 중 분봉**이다. 필드는 `trade_price`가 종가(현재가가 아니다), `candle_acc_trade_volume`이 코인 수량, `candle_acc_trade_price`가 거래대금이다. 따라서 정렬 반전 + 진행 중 봉 제외 + 필드 혼동 방지를 계약에 명시했다.
@@ -218,7 +218,7 @@
 - **이슈 처리**: **#20 본문에 코인 차트 범위를 추가**했다. 기존 `/api/cryptos/stream` SSE 범위는 그대로 두고, 코인의 빗썸 실시간 연동 두 축(현재가 틱 + 1분봉 차트)을 한 이슈에 담았다.
   - **에이전트 실수 기록**: 이 과정에서 요청받지 않은 GitHub 이슈(#98)와 PR(#99)을 임의로 만들었고 브랜치명도 지시받은 `feat/20`이 아닌 `docs/20-...`으로 바꿨다 — 셋 다 되돌렸다(#98·#99 close, 브랜치 `feat/20-crypto-chart`로 rename). **요청받은 범위는 "문서 수정 + 이슈 #20 내용 수정 + `feat/20` 브랜치 생성"이었다.** 이슈·PR 생성은 팀에 보이는 outward-facing 작업이므로 명시적으로 요청받지 않으면 하지 않는다. 브랜치명도 사용자가 지정하면 컨벤션 해석으로 바꾸지 않는다.
 - **미확정으로 남긴 것 (Decision Gate)**: 빗썸 공개 API의 레이트리밋은 문서에 명시돼 있지 않다. 요청마다 조회하고 **캐시하지 않으며**, 실제 차단이 관측된 뒤에 짧은 TTL 캐시 도입을 판단한다 — 관측 전에 임의의 TTL 숫자를 넣지 않는다 (PRD §10).
-- **반영 위치**: `docs/prd.md`(MKT-008 신설·§5 공통 오류표에 500·502 3행 추가·§6 Redis 키 책임·§10 의존성·Decision Gate), `docs/specs/003-market-data/{spec,plan,tasks,run-log}.md`, `docs/api-routes.md`, `docs/api-contracts.md`, GitHub 이슈 #20(본문 교체) + #20(신규 생성). 브랜치 `docs/20-crypto-chart` — 문서만 변경, 구현 미착수.
+- **반영 위치**: `ai/prd.md`(MKT-008 신설·§5 공통 오류표에 500·502 3행 추가·§6 Redis 키 책임·§10 의존성·Decision Gate), `ai/specs/003-market-data/{spec,plan,tasks,run-log}.md`, `ai/api-routes.md`, `docs/api-contracts.md`, GitHub 이슈 #20(본문 교체) + #20(신규 생성). 브랜치 `docs/20-crypto-chart` — 문서만 변경, 구현 미착수.
 
 ### 같은 날 정정 — 코인은 진행 중 분봉을 **포함**한다 (사용자 지적)
 
@@ -232,7 +232,7 @@
 
 - **에이전트 실수 (2번째)**: 직전 정정에서 이슈 #20에 "1축 SSE 현재가(기존 범위 유지)"와 "2축 코인 차트(신규)"를 나란히 담았다. 이것도 틀렸다 — 사용자는 애초에 "이슈 #20 내용을 수정하라"고 했지 "SSE 축을 유지한 채 차트를 추가하라"고 한 적이 없었다. 개발 방향 자체가 바뀐 것이다: 코인의 "실시간 연동"은 이제 **차트로 보여주는 것** 하나이고, 아직 구현되지 않은 공개 SSE 방송(`/api/cryptos/stream`)은 더 이상 만들 계획이 없는 **죽은 범위**다 — "만들 필요도 문서에 둘 필요도 없다."
 - **그은 경계 (중요, 다음에 또 헷갈리지 않도록)**:
-  - **제거한 것**: 아직 미구현인 공개 SSE 방송 엔드포인트 계획(`/api/cryptos/stream`, `CryptoPriceSseController`, 그리고 그걸 만들겠다던 이슈 #20의 옛 태스크 항목). `docs/prd.md`·spec·plan·tasks에서 전부 뺐다.
+  - **제거한 것**: 아직 미구현인 공개 SSE 방송 엔드포인트 계획(`/api/cryptos/stream`, `CryptoPriceSseController`, 그리고 그걸 만들겠다던 이슈 #20의 옛 태스크 항목). `ai/prd.md`·spec·plan·tasks에서 전부 뺐다.
   - **건드리지 않은 것**: `MKT-003`·`MKT-004`(빗썸 WebSocket → Redis `PriceStore` → `PriceQueryService`)와 이미 **병합된** 코드(이슈 #16의 `BithumbFeedClient`·`FakeBithumbFeedClient`·`PriceStore`)는 그대로 둔다. 이건 화면에 실시간 값을 "방송"하는 것과는 다른 문제 — **주문 체결가와 `PRICE_UNAVAILABLE`(장애 시 주문 차단) 판정의 근거**로 계속 필요하다. 사용자의 "좀비 코드" 지적은 아직 안 만든 SSE 컨트롤러를 향한 것이지, 이미 merge돼서 주문 도메인이 의존하는 코드를 향한 게 아니라고 판단했다 — 이 판단이 틀렸으면 다시 지적받을 것이다.
   - **결과 구조**: 코인은 여전히 두 독립 경로다. ① 현재가 = 빗썸 WebSocket → Redis → 주문 체결(화면 방송 없음, 기존 `GET .../price` 폴링 API로만 노출). ② 차트 = 빗썸 REST 캔들 → 프론트가 짧은 주기로 재조회(진행 중 봉이 매번 갱신되므로 이것만으로 실시간 표출 충족, 별도 스트림 불필요).
 - **패턴 인식**: 이번 대화에서 "수정하라"는 지시를 두 번 연속 "기존 것 유지 + 새 것 추가"로 잘못 해석했다(이슈 신규 생성 건, SSE 축 유지 건). **"수정"은 교체를 뜻하고, 요청받지 않은 범위를 옆에 나란히 남겨두지 않는다** — 이 패턴은 다른 이슈·스펙 수정 요청에도 그대로 적용해야 한다.
@@ -259,8 +259,8 @@
 - **번호 대신 서술을 택했다** (사용자 결정): 새 이슈를 만들어 번호를 채우는 대신 "KIS 실시간 후속"이라는 서술로 바꿨다. 착수 시점에 이슈를 만드는 편이, 언제 할지 모르는 작업의 번호를 미리 박아 두는 것보다 낫다는 판단이다. 다시 번호를 지어내는 일이 없도록 `tasks.md` "후속 이슈" 절 머리에 "대응 GitHub 이슈 없음"을 명시했다.
 - **정정 범위를 이슈 본문(prd·tasks)보다 넓혔다** (사용자 승인): `spec.md`·`plan.md`에도 같은 오참조가 있어 함께 고쳤다. 반대로 `run-log.md`·`context-notes.md`(이 파일의 기존 서술 포함)의 #82 언급은 **그 시점의 기록**이라 손대지 않았다 — 기록을 소급 수정하면 무엇이 언제 틀렸는지 추적할 수 없게 된다.
 - **`#98`(코인 시세 SSE 스트림 API)을 `not planned`로 재분류했다**: `COMPLETED`로 닫혀 있었지만 실제로는 한 줄도 구현하지 않고 2026-07-30에 스코프 아웃한 범위다. `gh issue close --reason`은 열려 있는 이슈에만 먹으므로 reopen → close(`not planned`) 순으로 처리했다.
-- **`./gradlew build`를 돌리지 않았다**: Java 코드가 한 줄도 바뀌지 않았고, `docs/specs/010-deployment/spec.md:23`이 "문서만 바뀐 PR은 Gradle 단계를 건너뛴다"를 이미 방침으로 두고 있다. 대신 고친 문서가 참조하는 대상(plan.md 절 제목 4종, 이슈 #19·#83, 엔드포인트 경로, `/api/cryptos/stream` 잔재 여부)이 실재하는지 직접 확인했다 — 문서 정정 PR이 새 오참조를 만들면 의미가 없다.
-- **`POST /api/dev/stock-replay-seeds`는 백엔드에 없다**: 이슈 본문 마지막 항목은 프론트 레포(`FinPlay`)의 `checklist.md` 문제다. 백엔드 문서(`checklist.md`·`docs/api-routes.md`·`docs/api-contracts.md`)는 이미 실제 구현 경로인 `POST /api/dev/stock-replay-imports`로 정확하다(레포 전체 검색으로 확인).
+- **`./gradlew build`를 돌리지 않았다**: Java 코드가 한 줄도 바뀌지 않았고, `ai/specs/010-deployment/spec.md:23`이 "문서만 바뀐 PR은 Gradle 단계를 건너뛴다"를 이미 방침으로 두고 있다. 대신 고친 문서가 참조하는 대상(plan.md 절 제목 4종, 이슈 #19·#83, 엔드포인트 경로, `/api/cryptos/stream` 잔재 여부)이 실재하는지 직접 확인했다 — 문서 정정 PR이 새 오참조를 만들면 의미가 없다.
+- **`POST /api/dev/stock-replay-seeds`는 백엔드에 없다**: 이슈 본문 마지막 항목은 프론트 레포(`FinPlay`)의 `checklist.md` 문제다. 백엔드 문서(`checklist.md`·`ai/api-routes.md`·`docs/api-contracts.md`)는 이미 실제 구현 경로인 `POST /api/dev/stock-replay-imports`로 정확하다(레포 전체 검색으로 확인).
 - **PR #112 리뷰 반영 — `checklist.md`도 기록 보존 방식으로 통일했다**: 리뷰어가 "`run-log.md`·`context-notes.md`는 원문을 보존했는데 `checklist.md`만 텍스트를 치환했다"는 일관성 문제를 지적했다. 타당해서 원문(`이슈 #82(KIS 실시간 틱 집계)`)을 **취소선으로 남기고** 정정을 뒤에 덧붙이는 방식으로 바꿨다 — 이 레포가 이미 쓰던 관행(`- [x] ~~Codex PR 1차 자동 리뷰 워크플로우~~ → **당일 철회**`)과 같은 형태다. 함께 지적된 "이슈가 생기면 서술을 다시 일괄 치환해야 한다"는 부담은 `tasks.md` 후속 이슈 절에 남겼고, **개수 대신 검색 grep을 적었다** — 숫자는 문서가 바뀔 때마다 썩지만 명령은 늘 맞는다.
 
 ## 2026-08-02 — 비밀번호 3종(#114·#115·#116) 완료와 파생 이슈 5건
@@ -359,7 +359,7 @@
 
 Notion "1차 고도화"의 `ai 피드백 (뉴스를 통한 변동 원인 + 수익률 가져와서 피드백)`을 설계했다. 문서만 작성했고 코드는 한 줄도 건드리지 않았다.
 
-- **기획 문서 안에 충돌이 있었다**: Notion 1차 고도화 목록은 "뉴스를 통한 변동 원인"을 요구하는데, 같은 페이지의 운영 정책 → AI 피드백은 "외부 시장 정보(뉴스·공시) **미사용**"이라고 못박고 있었다. 레포 `docs/prd.md` C-004도 같은 취지였다. 사용자 결정으로 **조항을 개정하되 인과 단정 금지로 대체**했다 — "뉴스·공시는 시간적 동시 발생 서술에만 사용한다". C-004의 나머지("숫자·판정은 서버, AI는 서술만", "종목 추천 금지")는 그대로 살아 있고, 설계 전체가 그 제약 안에 들어간다. ~~Notion 쪽 운영 정책은 아직 안 고쳤다 — 팀 합의가 필요하다.~~ → **2026-08-03 팀 결정으로 개정 확정하고 Notion 정본(운영 정책·api 명세서 §12·§6·§3)까지 반영을 끝냈다.**
+- **기획 문서 안에 충돌이 있었다**: Notion 1차 고도화 목록은 "뉴스를 통한 변동 원인"을 요구하는데, 같은 페이지의 운영 정책 → AI 피드백은 "외부 시장 정보(뉴스·공시) **미사용**"이라고 못박고 있었다. 레포 `ai/prd.md` C-004도 같은 취지였다. 사용자 결정으로 **조항을 개정하되 인과 단정 금지로 대체**했다 — "뉴스·공시는 시간적 동시 발생 서술에만 사용한다". C-004의 나머지("숫자·판정은 서버, AI는 서술만", "종목 추천 금지")는 그대로 살아 있고, 설계 전체가 그 제약 안에 들어간다. ~~Notion 쪽 운영 정책은 아직 안 고쳤다 — 팀 합의가 필요하다.~~ → **2026-08-03 팀 결정으로 개정 확정하고 Notion 정본(운영 정책·api 명세서 §12·§6·§3)까지 반영을 끝냈다.**
 - **설계를 지배한 것은 재생 시간축이었다**: 주식은 과거 거래일 분봉을 재생하므로(MKT-002) 화면의 가격은 어제 것이다. 여기에 오늘 뉴스를 붙이면 "떨어지는 중인데 신고가 경신 기사"가 나온다. 그래서 **뉴스도 원본 거래일 것을 시각까지 맞춰** 붙인다. 파생 결론 셋 — ① 네이버 뉴스 검색 API에 **날짜 범위 지정이 없어**(최신순/정확도순, 최대 1000건) 사후 조회가 어려우므로 원본 거래일에 미리 수집해 저장해야 한다, ② 카드 노출은 재생 진행 시각을 넘으면 안 된다(스포일러), ③ 보유 구간이 여러 재생일에 걸치면 타임라인이 불연속이라 뉴스를 붙이지 않는다.
 - **OpenDART는 접수'일자'만 준다 (개발가이드 확인)**: `rcept_dt`가 `YYYYMMDD`이고 시각 필드가 없다. 그래서 **공시는 장중 변동 카드에 매칭할 수 없다** — 시가 갭 카드에만 쓴다. 마침 중요 공시는 장 마감 후에 몰려 다음날 시가에 반영되므로 용도가 맞아떨어진다. 분 단위 정밀도를 가진 소스는 네이버 뉴스뿐이다.
 - **KIS Open API에는 뉴스가 없다**: 사용자가 처음엔 "이미 쓰는 키 재사용"으로 KIS 뉴스를 골랐으나, [공식 저장소](https://github.com/koreainvestment/open-trading-api) 카테고리(인증/국내주식/국내채권/국내선물옵션/해외주식/해외선물옵션/ELW·ETF·ETN)에 뉴스가 없어 되돌렸다. 포털 직접 로그인 확인은 하지 않았으므로 100%는 아니다. 소스는 **네이버 뉴스 + OpenDART 둘로 확정**했다.
@@ -370,7 +370,7 @@ Notion "1차 고도화"의 `ai 피드백 (뉴스를 통한 변동 원인 + 수�
 - **LLM 실패가 조회를 막지 않는다**: 매도 회고는 수치가 본체이고 서술은 부가 정보다. LLM이 죽어도 200에 `narrativeStatus="UNAVAILABLE"`로 수치를 전부 반환한다. 실패 건은 저장하지 않아 다음 조회에서 재시도된다.
 - **Spring AI는 2.0.0 이상이어야 한다 (확인함)**: [Spring AI 2.0.0 GA](https://spring.io/blog/2026/06/12/spring-ai-2-0-0-GA-available-now/)(2026-06-12)가 Spring Boot 4.0/4.1 + Framework 7.0 기준으로 빌드된다. 이 프로젝트는 Boot 4.1.0이라 호환되지만, **1.x는 Boot 3.x 전용이라 컨텍스트가 아예 기동하지 않는다.** 사용자가 RestClient 직접 호출 대신 Spring AI를 선택했다(3차 RAG 챗봇까지 재사용 고려).
 - **임계 숫자는 전부 Decision Gate로 남겼다**: `k=2.5`, 5분 윈도우, 갭 1%, `[T−30분, T+5분]`, 쿨다운 30분·6건은 내가 감으로 정한 초안이다. C-005("임시 숫자를 임의로 확정하지 않는다")에 따라 spec에 초안임을 명시하고 실데이터 검증 후 확정하기로 했다. **시가 갭은 직전 거래일 종가가 `stock_candles`에 있어야 계산되는데, 현재 수집 배치가 하루치만 받아온다면 갭 카드는 데이터가 쌓인 다음 날부터 나온다** — 수집 배치 변경이 필요할 수 있어 선행 조건으로 적었다.
-- **계획 라우트를 구현된 라우트와 섞지 않았다**: `docs/api-routes.md`·`docs/api-contracts.md`에 "2차 계획 — 아직 구현하지 않음" 절을 따로 만들고 블랙박스 QA가 계약 근거로 쓰지 않도록 명시했다. 이 레포는 미구현을 구현된 것처럼 적어 두는 것에 반복적으로 데어 왔다(#98 SSE, 합성 분봉 시드). 구현 병합 커밋에서 위 표로 옮긴다.
+- **계획 라우트를 구현된 라우트와 섞지 않았다**: `ai/api-routes.md`·`docs/api-contracts.md`에 "2차 계획 — 아직 구현하지 않음" 절을 따로 만들고 블랙박스 QA가 계약 근거로 쓰지 않도록 명시했다. 이 레포는 미구현을 구현된 것처럼 적어 두는 것에 반복적으로 데어 왔다(#98 SSE, 합성 분봉 시드). 구현 병합 커밋에서 위 표로 옮긴다.
 
 ### 기존 Notion API 명세서 확인 후 설계 정렬 (2026-08-02, 같은 날 2차 수정)
 
@@ -485,7 +485,7 @@ Notion "1차 고도화"의 `ai 피드백 (뉴스를 통한 변동 원인 + 수�
 1. **저자가 리뷰어 프롬프트를 쓰면 판단은 독립적이어도 범위는 저자의 사각지대를 물려받는다.** 나는 내가 위험하다고 생각한 곳만 조준했다. 3차 리뷰어는 첫 문장이 *"두 라운드 모두를 그대로 신뢰하지 않고 원문부터 다시 검증했습니다"*였다 — 프레임을 안 받은 것이 차이였다.
 2. **리뷰 → 수정 → 푸시 사이에 검증이 없었다.** "직전 지적을 고치다 새 결함" 패턴이 **3라운드 연속** 재현됐다 (1차 권장 4 → 2차 차단 1, 2차 차단 2 → 3차 차단 1, 2차 차단 1 → 3차 차단 2). 수정 범위가 좁을수록 그 옆을 안 본다.
 
-**조치.** `docs/agent-mistakes.md`에 행을 추가하고, `.claude/agents/reviewer.md`에 절차 3개를 넣어 **에이전트 정의 수준에서 막았다** — 중점 목록에 갇히지 않기, 문서 밖 주장은 `gh api`로 대조하기, 직전 지적을 고친 PR이면 그 수정 자체를 검증 대상으로 보기. 기록만 남기면 다음에 또 프롬프트를 좁게 쓸 것이므로 에이전트 쪽에 박았다.
+**조치.** `ai/agent-mistakes.md`에 행을 추가하고, `.claude/agents/reviewer.md`에 절차 3개를 넣어 **에이전트 정의 수준에서 막았다** — 중점 목록에 갇히지 않기, 문서 밖 주장은 `gh api`로 대조하기, 직전 지적을 고친 PR이면 그 수정 자체를 검증 대상으로 보기. 기록만 남기면 다음에 또 프롬프트를 좁게 쓸 것이므로 에이전트 쪽에 박았다.
 
 ## 2026-08-04 — 개장 전 배치 소요 시간·LLM 호출량 계측 (이슈 #198)
 
@@ -552,7 +552,7 @@ PR #236 리뷰가 "코인 감시가 겹쳐 돌면 카드가 중복될 수 있다
 
 즉 **프레임워크가 이미 막고 있을 가능성이 크고, 그렇다면 필요한 것은 락이 아니라 "언제 문제가 되는지"를 문서에 남기는 일이다.** 재현되지 않는데 분산 락을 들이면 선례 없는 인프라가 근거 없이 들어온다 — 이 저장소의 동시성 제어는 전부 DB 비관적 락이다(`AccountRepository`·`OrderRepository`·`HoldingRepository`·`PracticeProgressRepository`).
 
-**결론**: 위 판정(단일 인스턴스에서는 재현되지 않는다)은 유효한 채로 남았지만, **다중 인스턴스 전환이 예정돼 있어** 그 전환 시점에 문제가 되는 것은 확정이었다. 그래서 "지금 재현되는 버그를 고친다"가 아니라 "전환 전에 방어선을 놓는다"로 이슈를 다시 잡았고, LLM 호출 비용까지 막으려면 DB 락으로는 부족하다는 점(저장 시점 이후만 막는다)이 결정적이라 ADR-0014(승인됨)로 Redis 분산 락(`CryptoWatchLock`)을 채택했다 — 이 저장소 동시성 제어의 첫 Redis 락 사례다. 구현은 PR #254에서 했다 — 리뷰 라운드별 지적과 반영 경위는 `docs/specs/012-ai-feedback/run-log.md`가 정본이다.
+**결론**: 위 판정(단일 인스턴스에서는 재현되지 않는다)은 유효한 채로 남았지만, **다중 인스턴스 전환이 예정돼 있어** 그 전환 시점에 문제가 되는 것은 확정이었다. 그래서 "지금 재현되는 버그를 고친다"가 아니라 "전환 전에 방어선을 놓는다"로 이슈를 다시 잡았고, LLM 호출 비용까지 막으려면 DB 락으로는 부족하다는 점(저장 시점 이후만 막는다)이 결정적이라 ADR-0014(승인됨)로 Redis 분산 락(`CryptoWatchLock`)을 채택했다 — 이 저장소 동시성 제어의 첫 Redis 락 사례다. 구현은 PR #254에서 했다 — 리뷰 라운드별 지적과 반영 경위는 `ai/specs/012-ai-feedback/run-log.md`가 정본이다.
 
 ### #244 → #245 순서의 이유
 
@@ -620,7 +620,7 @@ ADR-0014 §후속이 #245로 넘긴 판단이다. **그대로 못 쓴 이유**�
 
 **뮤테이션 확인이 값을 했다.** reviewer가 잡은 double-check 누락을 고친 뒤, 그 3줄을 실제로 지워 red가 나는 것(로더 호출 0 → 1)까지 확인했다. 확인이 없으면 다음 사람이 "미스를 방금 봤는데 왜 또 읽나"로 지운다.
 
-**재현·확인한 함정 2건은 `docs/agent-mistakes.md`에 넣었다** — `@Transactional` 통합 테스트에서 공유 Redis가 롤백되지 않아 메서드 간 캐시가 새는 것, 고정 `Clock`에서 `created_at`·`generated_at`이 같아져 갱신 테스트가 조용히 "건너뛰기" 테스트가 되는 것.
+**재현·확인한 함정 2건은 `ai/agent-mistakes.md`에 넣었다** — `@Transactional` 통합 테스트에서 공유 Redis가 롤백되지 않아 메서드 간 캐시가 새는 것, 고정 `Clock`에서 `created_at`·`generated_at`이 같아져 갱신 테스트가 조용히 "건너뛰기" 테스트가 되는 것.
 
 ### 캐시 대기가 커넥션을 쥐던 문제 — 후속으로 미뤘다가 같은 PR에서 처리했다
 
@@ -742,7 +742,7 @@ ADR-0014 §후속이 #245로 넘긴 판단이다. **그대로 못 쓴 이유**�
 ## 2026-08-09 — 코인 매도 회고 열기 (이슈 #275, 1단계 결정)
 
 이슈 #275의 본체는 구현이 아니라 **2차에서 미정으로 남긴 4개 항목을 결정하는 것**이었다. 결정과 근거는
-`docs/specs/012-ai-feedback/spec.md` §FEED-012에 정본으로 적었고, 여기에는 **왜 그 선택지가 남았는지**만 남긴다.
+`ai/specs/012-ai-feedback/spec.md` §FEED-012에 정본으로 적었고, 여기에는 **왜 그 선택지가 남았는지**만 남긴다.
 
 ### 결정을 좁힌 관찰 두 가지
 
@@ -831,7 +831,7 @@ SSE DTO 3개(`MarketPriceEvent`·`MarketStatusEvent`·`MarketSnapshotEvent`)에 
 초록이었다. 그 자리를 `content().string(containsString("\"originTradeDate\":null"))`로 바꿔 키가 남는다는 사실 자체를
 고정했다.
 
-### `docs/prd.md`는 건드리지 않았다
+### `ai/prd.md`는 건드리지 않았다
 
 §3 구현 현황 193·197행이 이미 **완료**이고 제공하는 기능이 그대로다 — CLAUDE.md 규칙 10의 "갱신 비대상"(제공 기능이
 같은 변경)에 해당한다. **판정이 바뀌지 않는데 근거 칸에 PR 번호만 덧붙이면 표의 근거가 무엇을 가리키는지 흐려진다.**
@@ -883,7 +883,7 @@ PR #287 답변에 "제안 문구도
 
 ### 그 과정에서 확인한 것 — ADR-0005는 자동 배포를 금지한 적이 없다
 
-`grep -n "머지\|배포" docs/adr/0005-local-agent-orchestration.md` 결과가 **0건**이다. 그런데 010 spec은
+`grep -n "머지\|배포" ai/adr/0005-local-agent-orchestration.md` 결과가 **0건**이다. 그런데 010 spec은
 "자동 배포·자동 머지는 하지 않는다 **(ADR-0005)**"로, ADR-0013은 "ADR-0005의 '자동 머지 금지' 원칙 유지"로
 그 문서에 귀속시켜 왔다. **인용이 원문보다 넓었던 자리다.**
 
@@ -922,7 +922,7 @@ GitHub IP 목록을 따라다녀야 한다. SSM은 EC2가 아웃바운드로 붙
 "앱은 돌아가지만 데이터가 깨진다"가 된다.
 
 이 제약은 **ADR-0021 안에만 적으면 지켜지지 않는다** — 마이그레이션을 쓰는 사람은 ADR-0004를 읽지
-ADR-0021을 읽지 않는다(`docs/context-router.md`의 "엔티티/스키마 변경" 행이 0004만 지목한다).
+ADR-0021을 읽지 않는다(`ai/context-router.md`의 "엔티티/스키마 변경" 행이 0004만 지목한다).
 그래서 ADR-0004 상태 줄 아래, `CLAUDE.md` 규칙 8, `AGENTS.md`에 같은 제약을 넣었다.
 **규칙은 그것을 어길 사람이 실제로 읽는 문서에 있어야 한다.**
 
@@ -974,12 +974,12 @@ ADR-0021을 읽지 않는다(`docs/context-router.md`의 "엔티티/스키마 �
 ### 이 세션이 하지 않은 것
 
 구현 전부(마이그레이션·`PostSellJournalReader`·프롬프트 조립·`journal`/`portfolio` 조회 경로), `application.yml`
-값 반영, `docs/api-contracts.md`의 재생성 소절 갱신, `docs/prd.md` §3 행 추가. 마지막 둘은 **구현 PR과 같은
+값 반영, `docs/api-contracts.md`의 재생성 소절 갱신, `ai/prd.md` §3 행 추가. 마지막 둘은 **구현 PR과 같은
 커밋에서** 해야 한다(CLAUDE.md 규칙 7·10) — 지금 미리 적으면 문서가 미구현을 구현된 것처럼 말하게 된다.
 
 ## 2026-08-16 — PR #381 dev 리베이스·리뷰 반영 및 요구사항 14개 검증, 배포 실패 발견
 
-- **PR #381(튜토리얼 흐름 재설계)을 dev 위로 리베이스해 충돌 4건 해소, 머지 완료**: dev가 80커밋 앞서 있어 `CONFLICTING` 상태였다. 충돌은 전부 의미 보존 방식으로 해결 — `LimitOrderFillService.java`는 dev의 ADR-0025 배치 실행기 구조(`fillBatch`/`fillOnePending`)와 이 PR의 attempt/run 기반 canonical 가격 체결 로직을 병합했다(단일 `fillIfPending(orderId)`는 `LocalDateTime.now(clock)`으로, `fillIfPending(orderId, pricedAt)`는 `settleCurrentRun`이 명시 시각으로 호출). `docs/api-contracts.md`·`docs/prd.md`는 두 브랜치의 신규 문장을 모두 보존.
+- **PR #381(튜토리얼 흐름 재설계)을 dev 위로 리베이스해 충돌 4건 해소, 머지 완료**: dev가 80커밋 앞서 있어 `CONFLICTING` 상태였다. 충돌은 전부 의미 보존 방식으로 해결 — `LimitOrderFillService.java`는 dev의 ADR-0025 배치 실행기 구조(`fillBatch`/`fillOnePending`)와 이 PR의 attempt/run 기반 canonical 가격 체결 로직을 병합했다(단일 `fillIfPending(orderId)`는 `LocalDateTime.now(clock)`으로, `fillIfPending(orderId, pricedAt)`는 `settleCurrentRun`이 명시 시각으로 호출). `docs/api-contracts.md`·`ai/prd.md`는 두 브랜치의 신규 문장을 모두 보존.
 - **spec 번호 충돌을 `036`→`039`로 해소**: 리뷰(namdongyeob)가 예고한 대로 PR #380이 `036-remove-crypto-stale-status`를 먼저 차지했는데, 리뷰가 예상한 이동 대상 `037`도 그 사이 다른 PR(`037-limit-order-async-fill`)이 차지해 실제 빈 번호는 `039`였다. **번호 재조정은 머지 시점의 실제 dev 상태를 다시 확인해야 한다** — 리뷰가 남긴 이동 대상 숫자를 그대로 믿으면 틀릴 수 있다.
 - **PR #381 review 권장사항 반영**: `PracticeOrderSettlementService.java` 헤더 주석에 `settleCurrentRun`(attempt/run 기반 정산) 책임 추가.
 - **프론트 companion PR #30을 리뷰 0건·CI 없음 상태로 머지**(사용자 명시 지시 "리뷰는 나중에"): `finplay-frontend`는 PR에 CI 워크플로가 붙어 있지 않다(배포용 `deploy.yml`만 존재, push 트리거).
@@ -1034,7 +1034,7 @@ ADR-0021을 읽지 않는다(`docs/context-router.md`의 "엔티티/스키마 �
   식별자·비율만 내려보내므로 서버가 쓰지 않는 문구를 열거형에 두지 않았다. **3번에서 응답 계약과 함께 정한다.**
 - ~~**`GENERATOR_VERSION`은 `1` 그대로다**(041 4·5번 소관).~~ **이슈 #472에서 전환했다** — 다만
   시장을 가리지 않고 2를 주는 것이 아니라 **대본이 저작된 시장(CRYPTO)만**이다. 아래 원문은 유지한다.
-- **`GENERATOR_VERSION`은 `1` 그대로다**(041 4·5번 소관). `docs/prd.md` §3도 갱신하지 않았다 — 제공 기능이
+- **`GENERATOR_VERSION`은 `1` 그대로다**(041 4·5번 소관). `ai/prd.md` §3도 갱신하지 않았다 — 제공 기능이
   그대로이고 EXITPRESET 행 신설은 042 7번 소관이다.
 - **`SNAP-2` 체크박스가 실제 상태와 어긋나 있어 바로잡았다** — V49로 이미 머지됐는데(PR #458) `[ ]`로 남아
   있었다.
@@ -1067,7 +1067,7 @@ ADR-0021을 읽지 않는다(`docs/context-router.md`의 "엔티티/스키마 �
   루프에서 표시 시계가 되감긴다. clamp된 만큼 표시 시계가 커서보다 앞설 수 있다는 사실을
   `docs/api-contracts.md`에 적었다. **사건의 `revealedAtVirtualMinute`을 내리는 041 6번이 이 값을 다시
   봐야 할 수 있다** — 사건 공개 시점은 커서 기준인데 화면 시계는 벽시계 기준이기 때문이다.
-- **`docs/prd.md` §3 SANDBOX 행을 갱신했다.** 처음에는 `041 tasks.md` 7번에 미뤘는데, 1차 리뷰가 "라이브
+- **`ai/prd.md` §3 SANDBOX 행을 갱신했다.** 처음에는 `041 tasks.md` 7번에 미뤘는데, 1차 리뷰가 "라이브
   엔드포인트의 제공 동작이 바뀌었으므로 규칙 10의 갱신 대상"이라고 지적해 반영했다. 행을 다시 쓰지 않고
   근거 칸 끝에 한 문장만 덧붙였다 — CRYPTO 버전 2는 마감 폐지, STOCK·legacy chain은 유지. **7번에 남은
   것은 SCENARIO 행 신설뿐이다.**

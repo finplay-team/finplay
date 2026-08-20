@@ -25,7 +25,7 @@ public class OpenAiNarrativeGenerator implements NarrativeGenerator {
 	private final boolean apiKeyConfigured;
 
 	// @Value 주입 필드가 있으므로 @RequiredArgsConstructor를 쓰지 않고 생성자를 손으로 쓴다 — Lombok은 필드의 @Value를
-	// 생성자 파라미터로 옮기지 않아 컨텍스트가 기동하지 않는다 (docs/agent-mistakes.md 2026-07-30).
+	// 생성자 파라미터로 옮기지 않아 컨텍스트가 기동하지 않는다 (ai/agent-mistakes.md 2026-07-30).
 	public OpenAiNarrativeGenerator(ChatClient narrativeChatClient, FeedbackLlmProperties properties,
 		LlmCallStats llmCallStats,
 		@Value("${spring.ai.openai.api-key:}")

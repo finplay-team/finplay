@@ -1,4 +1,4 @@
-# PR마다 전체 빌드·테스트·포맷 검사를 자동으로 실행하는 CI 게이트 (docs/specs/010-deployment)
+# PR마다 전체 빌드·테스트·포맷 검사를 자동으로 실행하는 CI 게이트 (ai/specs/010-deployment)
 name: CI
 
 on:

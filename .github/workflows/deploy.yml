@@ -110,7 +110,7 @@ jobs:
               echo ""
               echo "운영 DB는 이미 \`V$MAX_BEFORE\`까지 올라가 있으므로, 배포해도 Flyway가 \`validate\`에서 멈추고 컨테이너가 unhealthy로 죽는다(라이브 색은 그대로 유지된다)."
               echo ""
-              echo "복구 절차는 \`docs/adr/0027-unapplied-migration-rename-exception.md\` — 그 마이그레이션이 **어떤 환경에도 적용된 적 없음**을 확인한 뒤 다음 빈 번호(\`V$((MAX_BEFORE + 1))\` 이상)로 리네임한다. 재발 방지는 이슈 #449."
+              echo "복구 절차는 \`ai/adr/0027-unapplied-migration-rename-exception.md\` — 그 마이그레이션이 **어떤 환경에도 적용된 적 없음**을 확인한 뒤 다음 빈 번호(\`V$((MAX_BEFORE + 1))\` 이상)로 리네임한다. 재발 방지는 이슈 #449."
             } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
@@ -209,7 +209,7 @@ jobs:
 
       # 유휴 색을 SSM Send Command로 기동한다. SSH 인바운드를 열지 않기 위해서다 (ADR-0021 §결정 3).
       # 컨테이너 헬스체크 대기까지 같은 원격 스크립트 안에서 수행한다 — 앱 컨테이너는 호스트에 포트를
-      # 열지 않으므로(설계) 러너에서 직접 curl로 확인할 수 없다(docs/agent-mistakes.md 2026-08-11 오진 사례).
+      # 열지 않으므로(설계) 러너에서 직접 curl로 확인할 수 없다(ai/agent-mistakes.md 2026-08-11 오진 사례).
       - name: 유휴 색 기동 + 컨테이너 헬스체크 대기 (SSM)
         id: ssm-deploy
         run: |
@@ -303,7 +303,7 @@ jobs:
               echo ""
               echo "운영 DB에 적용된 이력과 저장소의 마이그레이션 파일이 어긋났다는 뜻이다. 앱 코드가 아니라 \`src/main/resources/db/migration\`부터 본다."
               echo ""
-              echo "- 번호 역전(이미 적용된 번호보다 낮은 마이그레이션이 들어온 경우)이면 복구 절차는 \`docs/adr/0027-unapplied-migration-rename-exception.md\`"
+              echo "- 번호 역전(이미 적용된 번호보다 낮은 마이그레이션이 들어온 경우)이면 복구 절차는 \`ai/adr/0027-unapplied-migration-rename-exception.md\`"
               echo "- 라이브 색은 전환하지 않았으므로 서비스는 이전 버전으로 계속 떠 있다"
             } >> "$GITHUB_STEP_SUMMARY"
           fi

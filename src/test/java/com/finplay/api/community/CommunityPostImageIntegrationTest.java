@@ -171,7 +171,7 @@ class CommunityPostImageIntegrationTest {
 
 	// 5MB 초과 업로드(MaxUploadSizeExceededException 매핑) 검증은 실제 서블릿 컨테이너의 멀티파트 크기 제한을
 	// 거쳐야 한다 — MockMvc는 파트를 메모리에서 직접 구성해 컨테이너 레벨 크기 검증을 우회하므로 이 클래스(MOCK 환경)로는
-	// 재현되지 않는다(아래 CommunityPostImageUploadSizeLimitIntegrationTest에서 실제 포트로 검증, docs/agent-mistakes.md 후보 기록 대상).
+	// 재현되지 않는다(아래 CommunityPostImageUploadSizeLimitIntegrationTest에서 실제 포트로 검증, ai/agent-mistakes.md 후보 기록 대상).
 
 	@Test
 	void deletingPostWithImageRemovesDatabaseRowAndPhysicalFile() throws Exception {

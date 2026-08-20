@@ -35,7 +35,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * docs/specs/026-market-order-practice-tutorial 이슈 #305 "GET /api/education/practice" 완료 조건의 상태
+ * ai/specs/026-market-order-practice-tutorial 이슈 #305 "GET /api/education/practice" 완료 조건의 상태
  * 계산표(1~5)를 그대로 구현한다. 어떤 것도 쓰지 않는 순수 조회이며, 완료 이후에는 {@code practice_completions}→
  * {@code practice_market_reflections}가 가리키는 holding의 chain·qualifying observation을 다시 조회할 뿐
  * favorite·intention(인메모리)이 유실돼도 completion 판정 자체는 흔들리지 않는다(spec.md "재시작 유실과 완료

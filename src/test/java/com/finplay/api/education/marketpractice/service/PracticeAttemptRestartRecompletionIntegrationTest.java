@@ -223,7 +223,7 @@ class PracticeAttemptRestartRecompletionIntegrationTest {
 		Account beforeRace = refreshedAccount(fixture.userId(), market);
 		// completionRepository.count()/reflectionRepository.count()는 공유 Testcontainers MySQL(ADR-0003)
 		// 전역 행 수다 — 다른 통합 테스트 클래스가 커밋한 행까지 포함되므로 절대값을 단정하면 전체 빌드
-		// 실행 순서에 따라 깨진다(docs/agent-mistakes.md 2026-07-30/08-04/08-10 행과 같은 부류). 경합 전후의
+		// 실행 순서에 따라 깨진다(ai/agent-mistakes.md 2026-07-30/08-04/08-10 행과 같은 부류). 경합 전후의
 		// 델타(증가량 0)만 단정한다.
 		long completionCountBeforeRace = completionRepository.count();
 		long reflectionCountBeforeRace = reflectionRepository.count();

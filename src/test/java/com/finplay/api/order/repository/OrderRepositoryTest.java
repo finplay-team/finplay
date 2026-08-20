@@ -1,4 +1,4 @@
-// 계좌 단위 커서 조회·idempotencyKey 조회 쿼리 메서드를 검증하는 슬라이스 테스트 (docs/specs/018-order-list-pagination)
+// 계좌 단위 커서 조회·idempotencyKey 조회 쿼리 메서드를 검증하는 슬라이스 테스트 (ai/specs/018-order-list-pagination)
 package com.finplay.api.order.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;

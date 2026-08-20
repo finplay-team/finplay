@@ -13,7 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * docs/specs/030-coin-practice-price-runtime plan.md "holding 관찰 연결" 절(이슈 #321 3안)을 구현한다.
+ * ai/specs/030-coin-practice-price-runtime plan.md "holding 관찰 연결" 절(이슈 #321 3안)을 구현한다.
  * {@code buyTrade → order.practicePriceSessionId} 순서로 세션 귀속을 역추적해, 세션이 있으면 owner·instrument
  * 일치를 다시 검증하고 ACTIVE/COMPLETED 세션의 {@code currentPrice}를 반환한다. sessionId가 없으면
  * {@link Optional#empty()}를 반환해 marketpractice가 기존 {@code PriceQueryService} 경로로 fallback하게 한다.

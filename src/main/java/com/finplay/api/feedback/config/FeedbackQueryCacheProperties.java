@@ -4,7 +4,7 @@ package com.finplay.api.feedback.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
-// 값의 정본은 docs/adr/0015-feedback-query-cache.md다. FeedbackCryptoProperties·FeedbackNewsProperties와 같은
+// 값의 정본은 ai/adr/0015-feedback-query-cache.md다. FeedbackCryptoProperties·FeedbackNewsProperties와 같은
 // 방침으로 yml과 @DefaultValue 양쪽에 값을 둔다 — 설정 없이도 기동하는 것을 보장하는 것은 @DefaultValue이고,
 // 운영 중 값을 바꿀 때는 항상 이기는 yml만 고친다.
 //

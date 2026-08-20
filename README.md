@@ -24,19 +24,23 @@ FinPlay 백엔드 API 서버. Spring Boot 4.1 / Java 17 / Gradle (`build.gradle`
 
 ## 문서 지도
 
+`docs/`는 사람이 보는 제품 문서, `ai/`는 AI 개발 워크플로 산출물이다.
+
 | 문서 | 내용 |
 |---|---|
 | [`AGENTS.md`](AGENTS.md) | Codex 프로젝트 규칙 |
 | [`CLAUDE.md`](CLAUDE.md) | Claude Code 프로젝트 규칙 |
-| [Notion 10 X TEN](https://app.notion.com/p/10-X-TEN-ae2b1fddfba9830abe9c813974422885) | 제품 범위·API 단계·담당자 정본 |
-| [`docs/prd.md`](docs/prd.md) | Notion 결정을 옮긴 1차 MVP 구현 스냅샷 (PRD) |
+| [Notion 10 X TEN](https://app.notion.com/p/10-X-TEN-ae2b1fddfba9830abe9c813974422885) | 최초 기획 참고용 (더 이상 정본 아님 — 정리 안 됨) |
+| [`docs/prd.md`](docs/prd.md) | 사람용 제품 요구사항 문서 |
+| [`ai/prd.md`](ai/prd.md) | AI용 요구사항 정본 — 요구사항 ID·수용 기준·구현 현황 |
 | [`docs/conventions/code.md`](docs/conventions/code.md) | 코드 컨벤션 + 리뷰 체크 질문 |
 | [`docs/conventions/git.md`](docs/conventions/git.md) | 브랜치 네이밍·커밋 메시지·PR 제목·머지 조건 |
 | [`docs/conventions/team.md`](docs/conventions/team.md) | 이슈→브랜치→PR 흐름, 이슈 분할 기준, 리뷰 지적 처리 |
-| [`docs/adr/`](docs/adr/) | 아키텍처 결정 기록 |
-| [`docs/specs/`](docs/specs/) | 기능 명세 (spec → plan → tasks) |
-| [`docs/api-routes.md`](docs/api-routes.md) | API 엔드포인트 지도 (라우트 목록·인증 규칙) |
+| [`ai/adr/`](ai/adr/) | 아키텍처 결정 기록 |
+| [`ai/specs/`](ai/specs/) | 기능 명세 (spec → plan → tasks) |
+| [`ai/api-routes.md`](ai/api-routes.md) | API 엔드포인트 지도 (라우트 목록·인증 규칙, AI 라우팅용) |
 | [`docs/api/`](docs/api/) | 도메인별 요청·응답·오류 계약 |
+| [`docs/erd.md`](docs/erd.md) | JPA 엔티티·DB 테이블 구조 지도 |
 
 ## 팀 규칙 요약
 

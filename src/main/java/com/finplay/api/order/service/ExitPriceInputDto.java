@@ -5,7 +5,7 @@ import com.finplay.api.order.domain.ExitPriceType;
 import java.math.BigDecimal;
 
 /**
- * {@code docs/specs/019-exit-price-policy} plan.md "계산 정책"이 요구한 "entity·request DTO에 의존하지 않는 내부
+ * {@code ai/specs/019-exit-price-policy} plan.md "계산 정책"이 요구한 "entity·request DTO에 의존하지 않는 내부
  * snapshot DTO"다. PRICE는 절대 가격 둘만, PERCENT는 rate 둘만 담는다는 union 불변식을 여기서 한 번 강제해
  * {@link ExitPricePolicy}와 호출부가 같은 검사를 중복하지 않게 한다.
  *

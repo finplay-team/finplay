@@ -25,10 +25,10 @@ import org.springframework.core.env.Environment;
 // 방침을 유지한다.
 class MarketStockPropertiesTest {
 
-	// docs/specs/035-stock-collector-reliability/plan.md §락 설계 세부 확정값. 기대값의 정본은 그 문서다.
+	// ai/specs/035-stock-collector-reliability/plan.md §락 설계 세부 확정값. 기대값의 정본은 그 문서다.
 	private static final String SPEC_COLLECT_LOCK_TTL_SECONDS = "600";
 
-	// docs/specs/035-stock-collector-reliability/plan.md §재시도 스케줄 근거 확정값. 기대값의 정본은 그 문서다.
+	// ai/specs/035-stock-collector-reliability/plan.md §재시도 스케줄 근거 확정값. 기대값의 정본은 그 문서다.
 	private static final String SPEC_RETRY_CRON = "0 15,30,45 8-10 * * MON-FRI";
 
 	private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()

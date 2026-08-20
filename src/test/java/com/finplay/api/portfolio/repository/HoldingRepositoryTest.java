@@ -1,4 +1,4 @@
-// 계좌별 활성 보유 조회 쿼리 메서드를 검증하는 슬라이스 테스트 (docs/specs/006-portfolio-query, 이슈 #81)
+// 계좌별 활성 보유 조회 쿼리 메서드를 검증하는 슬라이스 테스트 (ai/specs/006-portfolio-query, 이슈 #81)
 package com.finplay.api.portfolio.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;

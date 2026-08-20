@@ -148,7 +148,7 @@ class MarketNewsItemRepositoryTest {
 	}
 
 	// 수집이 중복을 거르는 유일한 경로다. 단일 필드(url)만 뽑는 조회라 파생 쿼리 이름으로 선언하면 컴파일은
-	// 통과하고 실행에서 변환 실패로 죽는다(docs/agent-mistakes.md 2026-08-03) — 실제 MySQL에서 한 번 태운다.
+	// 통과하고 실행에서 변환 실패로 죽는다(ai/agent-mistakes.md 2026-08-03) — 실제 MySQL에서 한 번 태운다.
 	@Test
 	@DisplayName("findExistingUrls는 그 종목에 이미 저장된 URL만 돌려준다")
 	void findExistingUrlsReturnsOnlyTheUrlsAlreadyStoredForThatInstrument() {

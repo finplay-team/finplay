@@ -105,7 +105,7 @@ public class HolderPopulationQueryService {
 	public record PopulationSnapshot(int holderCount, List<Integer> minutesToSell) {
 
 		// 컬렉션 필드를 가진 record는 방어적 복사가 없으면 spotbugsMain이 EI_EXPOSE_REP(2)으로 잡는다
-		// (docs/agent-mistakes.md 2026-07-29).
+		// (ai/agent-mistakes.md 2026-07-29).
 		public PopulationSnapshot {
 			minutesToSell = List.copyOf(minutesToSell);
 		}

@@ -489,7 +489,7 @@ class PracticeHoldingReflectionServiceTest {
 		verify(progress).complete(NOW);
 	}
 
-	// docs/specs/040-tutorial-restart-after-completion TUTORIAL-RESTART-004~007: attempt 기반 완료 경로의
+	// ai/specs/040-tutorial-restart-after-completion TUTORIAL-RESTART-004~007: attempt 기반 완료 경로의
 	// 최초 완료/재완료 분기. attempt.getStatus()가 COMPLETED가 아니어야(재시작 후 진행 중) 이 분기에 들어온다.
 	@Test
 	void createAttemptReflectionSavesEvidenceAndPaysRewardWhenNoPriorCompletionExists() {

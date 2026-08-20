@@ -9,7 +9,7 @@ import java.math.RoundingMode;
 import org.springframework.stereotype.Service;
 
 /**
- * {@code docs/specs/019-exit-price-policy}의 "계산과 snapshot 규칙"을 그대로 구현한다. 일반 경로(021)와 교육
+ * {@code ai/specs/019-exit-price-policy}의 "계산과 snapshot 규칙"을 그대로 구현한다. 일반 경로(021)와 교육
  * 경로(016)가 같은 인스턴스를 공유하며, 저장소·엔티티·요청 DTO에 의존하지 않아 단위 테스트만으로 전 조합을
  * 검증할 수 있다(019 plan.md "계산 정책").
  *

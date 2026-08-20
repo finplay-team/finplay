@@ -74,7 +74,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 // 빼면 여기서 LazyInitializationException으로 red가 된다(테스트 트랜잭션이 없어 붙잡아 줄 세션이 없다).
 //
 // 커밋한 행은 @AfterEach가 FK 역순으로 지운다. 날짜(2034)·심볼·이메일은 저장소에서 이 파일만 쓴다
-// (docs/agent-mistakes.md 2026-08-04 — UNIQUE 픽스처 충돌은 전체 실행에서만 터진다).
+// (ai/agent-mistakes.md 2026-08-04 — UNIQUE 픽스처 충돌은 전체 실행에서만 터진다).
 @SpringBootTest
 @Import({TestcontainersConfiguration.class,
 	CryptoPostSellFeedbackTransactionBoundaryIntegrationTest.TransactionBoundaryTestConfig.class})

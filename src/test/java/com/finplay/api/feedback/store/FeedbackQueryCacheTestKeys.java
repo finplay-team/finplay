@@ -9,7 +9,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
  * 실행 전체가 공유하는 static 싱글턴이라({@code TestcontainersConfiguration}) 한 테스트가 채운 캐시가 다음
  * 테스트에 그대로 보인다 — 롤백된 DB 상태와 살아남은 캐시가 어긋나 <b>단정이 조용히 다른 값을 본다.</b>
  * 실제로 이슈 #245에서 {@code MarketBriefingQueryGateIntegrationTest} 8건이 이 이유로 깨졌다
- * ({@code docs/agent-mistakes.md}).
+ * ({@code ai/agent-mistakes.md}).
  *
  * <p><b>{@code @BeforeEach}에서 부른다 — {@code @AfterEach}가 아니다.</b> 앞 테스트가 정리에 실패하거나
  * 예외로 중단돼도 이번 테스트는 항상 빈 캐시에서 시작한다. 정리를 뒤에 두면 그 실패가 다음 테스트의 실패로

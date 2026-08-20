@@ -106,7 +106,7 @@ class FeedbackQueryCacheConnectionHoldingIntegrationTest {
 
 	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
-	// 커밋되는 픽스처라 저장소 안에서 이 클래스만 쓰는 연도를 쓴다 (docs/agent-mistakes.md의 UNIQUE 충돌 행).
+	// 커밋되는 픽스처라 저장소 안에서 이 클래스만 쓰는 연도를 쓴다 (ai/agent-mistakes.md의 UNIQUE 충돌 행).
 	private static final LocalDateTime NOW = LocalDateTime.of(2033, 8, 6, 10, 0);
 
 	// 서비스 날짜 2033-08-06(토) 기준 원본 거래일과 그 직전 영업일. 브리핑 전장 구간이 [D-1 15:30, D 09:00]이다.

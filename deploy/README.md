@@ -1,7 +1,7 @@
 # 배포 스택 실행 방법 (수동 배포 — 파이프라인 폴백)
 
 `compose.deploy.yaml` + `Dockerfile`로 구성된 **백엔드 전용** 스택을 EC2에서 수동으로 띄우는 절차다. 프론트는 여기 포함되지 않는다 — S3에서 독립 배포된다 (ADR-0022).
-설계 배경과 완료 조건은 `docs/specs/010-deployment/spec.md`에 있다. 예전에는 nginx가 프론트와 API를 한 오리진에서 같이 서빙했지만(이슈 #108 A안), ADR-0022로 그 결정이 뒤집혀 nginx는 제거됐고 지금은 CORS로 연다.
+설계 배경과 완료 조건은 `ai/specs/010-deployment/spec.md`에 있다. 예전에는 nginx가 프론트와 API를 한 오리진에서 같이 서빙했지만(이슈 #108 A안), ADR-0022로 그 결정이 뒤집혀 nginx는 제거됐고 지금은 CORS로 연다.
 
 > **2026-08-12 — 이 문서는 더 이상 정상 배포 경로가 아니다** (ADR-0021, 이슈 #345).
 > 정상 배포는 `dev` 머지로 GitHub Actions가 수행하며, 그 구조·구축 순서·실패 대응은 [`cd-runbook.md`](cd-runbook.md)에 있다.

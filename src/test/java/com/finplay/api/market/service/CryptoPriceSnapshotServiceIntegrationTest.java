@@ -34,7 +34,7 @@ import org.springframework.transaction.annotation.Transactional;
 //
 // 이 스케줄은 Redis에만 쓴다(§코인 가격 스냅샷) — 원장(orders·trades·accounts·holdings·holding_lots·
 // trade_allocations)을 읽지도 않으므로 값이 바뀔 UPDATE 경로 자체가 없다. 행 수 비교로 충분하다
-// (docs/agent-mistakes.md 2026-08-04 "원장 불변" 행의 값 비교 요구는 UPDATE가 가능한 경로에만 해당한다).
+// (ai/agent-mistakes.md 2026-08-04 "원장 불변" 행의 값 비교 요구는 UPDATE가 가능한 경로에만 해당한다).
 @SpringBootTest
 @Transactional
 @Import({TestcontainersConfiguration.class, TestClockConfig.class})

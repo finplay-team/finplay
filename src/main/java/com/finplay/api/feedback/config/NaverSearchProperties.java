@@ -3,7 +3,7 @@ package com.finplay.api.feedback.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-// 키 경로의 정본은 docs/specs/012-ai-feedback/spec.md §C-7이다. 자격증명이라 feedback.* 안이 아니라 최상위에
+// 키 경로의 정본은 ai/specs/012-ai-feedback/spec.md §C-7이다. 자격증명이라 feedback.* 안이 아니라 최상위에
 // 두며(kis.app-key와 같은 형태), 시크릿이므로 @DefaultValue를 붙이지 않는다 — 값은 application.yml의 빈
 // 플레이스홀더를 거쳐 NAVER_SEARCH_* 환경변수에서만 온다(conventions.md 시크릿 규칙).
 //

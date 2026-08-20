@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 // 경로는 새로 만들지 않는다 — Notion api 명세서 §6의 GET /ai/post-sell/{id}에 레포 Base URL 규칙(/api)만
-// 적용했다(spec FEED-007, docs/api-routes.md).
+// 적용했다(spec FEED-007, ai/api-routes.md).
 //
 // 인증은 SecurityConfig의 anyRequest().authenticated()가 건다. 공개 GET 목록에 넣지 않으므로 토큰 없이
 // 호출하면 401 UNAUTHORIZED다 (docs/api/feedback.md).

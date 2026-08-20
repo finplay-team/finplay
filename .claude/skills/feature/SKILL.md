@@ -1,6 +1,6 @@
 ---
 name: feature
-description: spec 폴더 하나를 받아 구현→테스트 루프를 돌리고 빌드·리뷰로 마무리한다 (QA는 /review-pr에서). spec이 없으면 planner가 먼저 작성한다. 사용법: /feature docs/specs/001-foundation
+description: spec 폴더 하나를 받아 구현→테스트 루프를 돌리고 빌드·리뷰로 마무리한다 (QA는 /review-pr에서). spec이 없으면 planner가 먼저 작성한다. 사용법: /feature ai/specs/001-foundation
 ---
 
 # /feature — 기능 개발 루프
@@ -14,7 +14,7 @@ description: spec 폴더 하나를 받아 구현→테스트 루프를 돌리고
 - 직전 단계가 보고한 변경 파일 목록
 - (세션 재개 시) 마지막 실패 로그 1개 + 지난 턴 이후 메인 세션이 바꾼 파일 목록 — 이전 실패 이력 전체가 아니라 마지막 것만
 
-전달하지 않는 것: 대화 히스토리 요약, 이전 항목들의 상세, 추측성 맥락. 에이전트가 더 필요한 정보는 `docs/context-router.md`를 따라 스스로 읽는다.
+전달하지 않는 것: 대화 히스토리 요약, 이전 항목들의 상세, 추측성 맥락. 에이전트가 더 필요한 정보는 `ai/context-router.md`를 따라 스스로 읽는다.
 
 ## 세션 생명주기 (ADR-0010)
 
@@ -25,7 +25,7 @@ description: spec 폴더 하나를 받아 구현→테스트 루프를 돌리고
 
 ## 사전 확인
 
-1. 인자로 받은 spec 폴더(`docs/specs/NNN-*`)에 `spec.md`, `plan.md`, `tasks.md`가 있는지 확인. 없으면 **planner** 서브에이전트(계획 모드) 투입을 제안하고, planner가 작성한 spec을 사용자와 확인한 뒤 진행한다.
+1. 인자로 받은 spec 폴더(`ai/specs/NNN-*`)에 `spec.md`, `plan.md`, `tasks.md`가 있는지 확인. 없으면 **planner** 서브에이전트(계획 모드) 투입을 제안하고, planner가 작성한 spec을 사용자와 확인한 뒤 진행한다.
 2. `git status`로 작업 트리가 깨끗한지 확인. 브랜치가 `main` 또는 `dev`면 새 작업 브랜치를 만든다 (베이스는 `dev`).
    - 이름은 `docs/conventions/git.md`의 브랜치 네이밍을 따른다 — `<타입>/<이슈번호>-<영문-요약>`. **이슈번호는 spec 번호가 아니라 GitHub 이슈 번호이며 0으로 채우지 않는다** (`feat/16-price-query`, `feat/016-...` 아님).
    - 이슈 번호를 모르면 `gh issue list`로 이번 작업에 대응하는 이슈를 확인한다.
@@ -44,7 +44,7 @@ description: spec 폴더 하나를 받아 구현→테스트 루프를 돌리고
    - 통과하면 그 시점의 `git rev-parse HEAD`를 기록해 둔다. PR 본문의 **빌드 검증 SHA**에 적어야 `/review-pr`이 build를 재실행하지 않는다 (아래 8번 보고에 포함).
 6. **reviewer** 서브에이전트 투입 — **항상 새 세션** + **리뷰 모드** 명시 (범위: 이번 spec의 전체 diff, `git diff dev...HEAD`).
    - `RESULT: 차단 N건`에서 N > 0 → 차단 내역을 첨부해 해당 항목의 implementer 세션을 재개해 수정 후 5번부터 재실행. [권장]은 기록만 하고 진행.
-7. **planner** 서브에이전트 투입 — **동기화 모드** 명시 → `docs/api-routes.md`(라우트 목록)·`docs/api/`의 해당 도메인 파일(계약 상세) 갱신분이 있으면 `docs: ...` 커밋.
+7. **planner** 서브에이전트 투입 — **동기화 모드** 명시 → `ai/api-routes.md`(라우트 목록)·`docs/api/`의 해당 도메인 파일(계약 상세) 갱신분이 있으면 `docs: ...` 커밋.
 8. **PR 생성** — `docs/conventions/git.md`의 PR 제목·본문 규칙을 그대로 따른다. 임의 형식으로 만들지 않는다.
    - 제목: `<타입>: <한국어 요약> (#이슈번호)` — 이슈 참조는 `(#16)` 형태 하나만 쓴다. 이슈 제목(`[MVP][...]`) 복사 금지.
    - 본문: **`.github/PULL_REQUEST_TEMPLATE.md`를 읽어 그 절 구조를 그대로 채운다** (관련 이슈 / 변경 내용 / 작업 종류 / 체크리스트 / 남은 위험 / 리뷰어에게). 새 형식을 만들지 않는다. `Closes #N`과 **체크리스트의 빌드 검증 SHA(5번에서 기록한 값)** 는 필수다. 실행하지 않은 검증에 체크하지 않는다.

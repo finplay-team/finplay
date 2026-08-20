@@ -10,8 +10,8 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 // FeedbackQueryCachePropertiesTest와 같은 패턴이다 — 여기서는 record의 @DefaultValue와 검증 블록만 본다.
 // application.yml 쪽 키 경로는 LimitOrderFillExecutorPropertiesYamlTest가 맡는다.
 //
-// enabled·partitionCount·queueCapacityPerPartition의 기대값 정본은 docs/adr/0024-limit-order-fill-executor.md,
-// batchSize는 docs/adr/0025-limit-order-fill-batch-commit.md다. 구현 파일이 아니라 ADR에서 값을 가져와야
+// enabled·partitionCount·queueCapacityPerPartition의 기대값 정본은 ai/adr/0024-limit-order-fill-executor.md,
+// batchSize는 ai/adr/0025-limit-order-fill-batch-commit.md다. 구현 파일이 아니라 ADR에서 값을 가져와야
 // record와 yml이 함께 틀어지는 드리프트가 잡힌다.
 class LimitOrderFillExecutorPropertiesTest {
 

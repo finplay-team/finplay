@@ -275,7 +275,7 @@ class CryptoPostSellFeedbackE2eIntegrationTest {
 	// --- 공통 조건 — 원장 불변 ---
 
 	// 행 수만 보면 값이 바뀐 UPDATE(계좌 잔액·lot 잔여수량)를 놓치므로 값 비교를 더한다
-	// (docs/agent-mistakes.md 2026-08-04 "원장 불변 행 수 스냅샷" 행).
+	// (ai/agent-mistakes.md 2026-08-04 "원장 불변 행 수 스냅샷" 행).
 	@Test
 	@DisplayName("코인 회고 조회는 trade_feedbacks에만 1행을 쓰고 원장·읽기 전용·다른 피드백 테이블은 그대로다")
 	void neverWritesOutsideTradeFeedbacks() {

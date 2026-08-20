@@ -15,7 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 // prod는 S3FileStorageService를 쓴다 — 로컬 파일시스템은 인스턴스 간 공유되지 않는다
-// (docs/specs/022-community-enhancement/plan.md "COM-006 후속: 이미지 저장소를 S3로 전환").
+// (ai/specs/022-community-enhancement/plan.md "COM-006 후속: 이미지 저장소를 S3로 전환").
 @Profile("!prod")
 @Slf4j
 @Service
@@ -24,7 +24,7 @@ public class LocalFileStorageService implements FileStorageService {
 	private final Path baseDirectory;
 
 	// @Value 주입 필드가 있는 빈은 Lombok @RequiredArgsConstructor를 쓰지 않고 생성자를 손으로 작성한다
-	// (docs/agent-mistakes.md 2026-07-30 — Lombok은 @Value를 생성자 파라미터로 복사하지 않는다).
+	// (ai/agent-mistakes.md 2026-07-30 — Lombok은 @Value를 생성자 파라미터로 복사하지 않는다).
 	public LocalFileStorageService(
 		@Value("${finplay.community.image-storage.base-directory}")
 		String baseDirectory) {

@@ -9,10 +9,10 @@ import java.util.Optional;
 import org.springframework.stereotype.Service;
 
 /**
- * docs/specs/026-market-order-practice-tutorial plan.md "3단계 참조 가격선 계산" 절의 규칙을 구현한다. 결과를
+ * ai/specs/026-market-order-practice-tutorial plan.md "3단계 참조 가격선 계산" 절의 규칙을 구현한다. 결과를
  * 저장하지 않고 매 요청마다 다시 계산한다.
  *
- * <p><b>PERCENT 분기에 대한 설계 판단:</b> {@code docs/specs/019-exit-price-policy}는 아직 "문서 설계 확정,
+ * <p><b>PERCENT 분기에 대한 설계 판단:</b> {@code ai/specs/019-exit-price-policy}는 아직 "문서 설계 확정,
  * production 구현 미착수" 상태다(spec.md 1행) — 실제 {@link com.finplay.api.education.domain.PracticeIntention}
  * 레코드와 {@link com.finplay.api.education.dto.request.PracticeIntentionCreateRequest}는 {@code exitPriceType}·
  * {@code stopLossRate}·{@code takeProfitRate} 필드를 아직 갖지 않고 절대 가격(PRICE)만 저장한다. 따라서 이

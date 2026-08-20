@@ -20,13 +20,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * {@code docs/specs/021-general-risk-management-oco} plan.md "일반 경로 검증 순서" 3~9단계 중 <b>경로와 무관한
+ * {@code ai/specs/021-general-risk-management-oco} plan.md "일반 경로 검증 순서" 3~9단계 중 <b>경로와 무관한
  * 부분</b>만 담당한다. 잠금 순서는 두 경로·트리거·취소가 모두 공유하는 {@code holding → plan}이다.
  *
  * <p>요청 파싱, {@code intentionId} 유무 분기, 경로별 필드 조합 검증, 시장 범위(코인 전용) 검증,
  * {@code Idempotency-Key} 처리는 호출부가 수행하고 결과를 {@link ExitPlanCreateCommandDto}로 넘긴다.
  *
- * <p>예약 원장은 {@code docs/specs/015-limit-order}가 이미 구현한 {@code Holding.reservedQuantity} 원장을 그대로
+ * <p>예약 원장은 {@code ai/specs/015-limit-order}가 이미 구현한 {@code Holding.reservedQuantity} 원장을 그대로
  * 재사용한다 — 새 원장을 만들지 않는다.
  */
 @Service

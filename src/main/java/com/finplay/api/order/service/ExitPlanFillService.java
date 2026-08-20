@@ -35,7 +35,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * {@code docs/specs/021-general-risk-management-oco} plan.md "트리거·취소·잠금 순서" 표의 "가격 트리거" 행을
+ * {@code ai/specs/021-general-risk-management-oco} plan.md "트리거·취소·잠금 순서" 표의 "가격 트리거" 행을
  * 구현한다. 그 표의 {@code holding → plan}은 예약수량 원장(reservedQuantity)에 대한 잠금 순서를 규정한 것이고,
  * 현금·실현손익 갱신은 기존 시장가 매도({@code OrderExecutionService})·지정가 체결({@code LimitOrderFillService})과
  * 동일한 관례를 따라 {@code account}를 가장 먼저 잠근다 — 전체 잠금 순서는 {@code account → holding → plan}이다

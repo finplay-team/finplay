@@ -11,7 +11,7 @@
 # 해석한 뒤 이 값이면 트리거를 아예 등록하지 않는다. 값을 "먼 미래 크론"으로 두는 방법과 달리 트리거가 아예
 # 생기지 않으므로 "등록된 크론 트리거가 비어 있다"를 단정할 수 있다.
 #
-# 크론 값의 정본은 docs/specs/035-stock-collector-reliability/plan.md이며 이 파일은 그 값을 바꾸는 것이
+# 크론 값의 정본은 ai/specs/035-stock-collector-reliability/plan.md이며 이 파일은 그 값을 바꾸는 것이
 # 아니라 테스트에서만 무력화한다. 드리프트 단정은 여기 영향을 받지 않는 yml 전용 형태
 # (ConfigDataApplicationContextInitializer)로 둔다 — MarketStockPropertiesTest가 그 자리다.
 #

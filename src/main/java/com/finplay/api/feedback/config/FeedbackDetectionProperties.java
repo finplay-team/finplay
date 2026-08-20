@@ -5,7 +5,7 @@ import java.math.BigDecimal;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
-// 값의 정본은 docs/specs/012-ai-feedback/spec.md §C-7이다. 임계치를 코드 상수로 박지 않는 것은 §튜닝이
+// 값의 정본은 ai/specs/012-ai-feedback/spec.md §C-7이다. 임계치를 코드 상수로 박지 않는 것은 §튜닝이
 // "실데이터로 검증한 뒤 조정한다"로 정했기 때문이며, 조정은 application.yml만 고쳐서 끝나야 한다.
 //
 // yml과 @DefaultValue 양쪽에 값을 두는 것은 §C-7의 확정 방침이다(feedback.llm·feedback.news가 선례다) —

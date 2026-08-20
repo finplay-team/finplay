@@ -1,10 +1,10 @@
 # API 계약 — order
 
-order 도메인(및 021 일반 리스크관리 OCO 절)의 API 계약 상세다. 전체 라우트를 한눈에 보는 지도는 `docs/api-routes.md`에 있다.
+order 도메인(및 021 일반 리스크관리 OCO 절)의 API 계약 상세다. 전체 라우트를 한눈에 보는 지도는 `ai/api-routes.md`에 있다.
 
-**controller를 추가/변경하면 `docs/api-routes.md`의 라우트 목록과 이 문서를 같은 커밋에서 함께 갱신한다** (CLAUDE.md 규칙, reviewer 리뷰 모드 점검 항목).
+**controller를 추가/변경하면 `ai/api-routes.md`의 라우트 목록과 이 문서를 같은 커밋에서 함께 갱신한다** (CLAUDE.md 규칙, reviewer 리뷰 모드 점검 항목).
 
-블랙박스 QA는 구현 코드(`src/main`)를 읽지 않고 이 문서와 spec만을 계약 근거로 사용한다 (`docs/context-router.md`).
+블랙박스 QA는 구현 코드(`src/main`)를 읽지 않고 이 문서와 spec만을 계약 근거로 사용한다 (`ai/context-router.md`).
 
 ---
 
@@ -78,7 +78,7 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 ## 021 일반 리스크관리 OCO — 생성·목록·취소 (production, `intentionId` 생략 일반 경로만)
 
-`docs/specs/021-general-risk-management-oco`(plan.md "API 설계"·"일반 경로 검증 순서"·"응답 계약")가 정본이다. Issue #348로 `ExitPlanController`(`POST /api/exit-plans`, `DELETE /api/exit-plans/{exitPlanId}`)가 먼저 production에 추가됐고, 후속 "목록·응답 계약 전환" 작업으로 `GET /api/exit-plans?status=`도 production이 됐다 — **셋 다 `intentionId`를 생략하는 일반 경로만이다.** 가격 트리거·자동 청산은 이미 production(`ExitPlanTriggerListener`/`ExitPlanFillService`)이며, `intentionId`를 지정하는 교육 경로 재접합만 아직 미착수다(`docs/api/education.md`의 "016 투자 실습" 절 참고).
+`ai/specs/021-general-risk-management-oco`(plan.md "API 설계"·"일반 경로 검증 순서"·"응답 계약")가 정본이다. Issue #348로 `ExitPlanController`(`POST /api/exit-plans`, `DELETE /api/exit-plans/{exitPlanId}`)가 먼저 production에 추가됐고, 후속 "목록·응답 계약 전환" 작업으로 `GET /api/exit-plans?status=`도 production이 됐다 — **셋 다 `intentionId`를 생략하는 일반 경로만이다.** 가격 트리거·자동 청산은 이미 production(`ExitPlanTriggerListener`/`ExitPlanFillService`)이며, `intentionId`를 지정하는 교육 경로 재접합만 아직 미착수다(`docs/api/education.md`의 "016 투자 실습" 절 참고).
 
 `POST`·`DELETE`는 두 경로가 라우트를 공유한다 — `intentionId`가 non-null이면 컨트롤러가 아니라 서비스 계층(`ExitPlanService.rejectUnsupportedEducationalPath`)이 무조건 400 `VALIDATION_ERROR`("intentionId를 지정하는 교육 경로는 아직 지원하지 않습니다.")로 거부한다. `GET`은 `intentionId`를 아예 받지 않으므로(쿼리 파라미터가 아니다) 이 거부 분기와 무관하게 본인 소유 plan을 경로 구분 없이 그대로 반환한다 — 교육 경로가 재접합되면 그 plan도 같은 목록에 함께 나타난다.
 

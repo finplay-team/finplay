@@ -12,7 +12,7 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 // application.yml 쪽 키 경로는 FeedbackJournalPropertiesYamlTest가 맡는다
 // (선례: FeedbackDetectionPropertiesTest·FeedbackDetectionPropertiesYamlTest).
 //
-// 기대값의 정본은 docs/specs/012-ai-feedback/spec.md §C-7의 feedback.journal 블록이다(4차 신설, §FEED-013
+// 기대값의 정본은 ai/specs/012-ai-feedback/spec.md §C-7의 feedback.journal 블록이다(4차 신설, §FEED-013
 // 결정 4). 구현 파일이 아니라 spec에서 값을 가져와야 record와 yml이 함께 틀어지는 드리프트가 잡힌다.
 class FeedbackJournalPropertiesTest {
 
