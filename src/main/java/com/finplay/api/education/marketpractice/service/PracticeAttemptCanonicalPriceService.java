@@ -90,8 +90,10 @@ public class PracticeAttemptCanonicalPriceService {
 		return new TutorialScenarioCursor(last.id(), last.minutes() - 1);
 	}
 
+	// 가격·커서·사건 공개·복기 대조가 전부 이 메서드를 통과하므로 **대본을 고르는 자리는 여기 하나다**
+	// (049 plan §2 "읽는 자리"). NULL 해석은 attempt.scenarioScriptId()가 이미 끝냈다.
 	public TutorialScenarioScript script(PracticeAttempt attempt) {
-		return tutorialScenarioScriptLoader.script(attempt.getMarket());
+		return tutorialScenarioScriptLoader.script(attempt.scenarioScriptId());
 	}
 
 	// 대본 위치가 비어 있으면 미시작이다 — 종목 선택·재시작이 다섯 컬럼을 전부 null로 지운다(041 3번이 남긴
@@ -122,7 +124,7 @@ public class PracticeAttemptCanonicalPriceService {
 		BigDecimal open = attempt.getScenarioCandleOpen() == null ? close : attempt.getScenarioCandleOpen();
 		BigDecimal high = attempt.getScenarioCandleHigh() == null ? close : attempt.getScenarioCandleHigh();
 		BigDecimal low = attempt.getScenarioCandleLow() == null ? close : attempt.getScenarioCandleLow();
-		List<TutorialPriceCandleDto> candles = new ArrayList<>(tutorialPriceGenerator.generateHistory(input));
+		List<TutorialPriceCandleDto> candles = new ArrayList<>(tutorialPriceGenerator.generateHistory(input, script));
 		candles.add(new TutorialPriceCandleDto(
 			attempt.getTutorialDate(), open, high.max(close), low.min(close), close, true));
 		return new TutorialPriceSeriesDto(List.copyOf(candles), close);

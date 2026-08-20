@@ -144,7 +144,7 @@ class PracticeScenarioTickIntegrationTest {
 		PracticeAttempt attempt = PracticeAttempt.create(user.getId(), Market.CRYPTO, BASE_NOW.minusHours(1));
 		attempt.selectInstrument(
 			instrument, BASE_NOW.minusMinutes(10), BASE_NOW.toLocalDate(), 123L,
-			TutorialPriceGenerator.VERSION_2, BASE_NOW.minusMinutes(10));
+			TutorialPriceGenerator.VERSION_2, null, BASE_NOW.minusMinutes(10));
 		// 대기 구간을 이미 지나 2막에 들어와 있는 사용자를 재현한다 — 이 항목의 검증 대상은 대본 저작이
 		// 아니라 순회이므로 커서를 직접 세운다.
 		attempt.startScenarioProgress(stageId, new BigDecimal("10180.00000000"), BASE_NOW);

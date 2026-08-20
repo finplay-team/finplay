@@ -8,7 +8,7 @@
 
 ---
 
-## 1. 대본 기준가를 파일 필드로 옮기고 2단계 대본을 등록한다
+## 1. 대본 기준가를 파일 필드로 옮기고 2단계 대본을 등록한다 ✅ (이슈 #507)
 
 - `TutorialScenarioScript`에 `BigDecimal basePrice` 추가, 로더 검증에 `basePrice > 0` 추가.
 - `TutorialScenarioScriptId` 열거형 신설(`CRYPTO_ORDER_BASICS_V1`·`CRYPTO_STORY_V1`), 로더를
@@ -32,7 +32,7 @@
 
 ---
 
-## 2. attempt에 대본 식별자를 영속한다 (V53)
+## 2. attempt에 대본 식별자를 영속한다 (V53) ✅ (이슈 #507)
 
 - `V53__add_scenario_script_id_to_practice_attempts.sql` — `scenario_script_id VARCHAR(32) NULL`.
   추가만 하는 nullable 컬럼이라 파괴적 변경이 아니다(ADR-0021 §결정 7의 2단계 배포 대상 아님).
@@ -47,11 +47,12 @@
 - `@DataJpaTest`로 컬럼 왕복 저장·조회, `restart` 후 `NULL`이 되는지.
 - **하위 호환 단위 테스트**: 버전 2 + `scenario_script_id = NULL` + `scenario_stage_id = "ACT2_RUMOR"`인
   attempt가 500이 아니라 041 대본 가격을 받는지. (049 배포 순간 진행 중이던 사용자의 상태다.)
-- 종목 선택 직후 attempt가 `CRYPTO_ORDER_BASICS_V1`을 갖는지.
+- 종목 선택 직후 attempt가 `CRYPTO_STORY_V1`을 갖는지. **진입 대본은 전환 경로(5번)가 생길 때까지 041 고정이다**
+  — dev 머지가 곧 배포인 레포라, 전환 수단 없이 진입만 2단계로 바꾸면 041 이야기가 도달 불가가 된다(2026-08-20 사용자 결정).
 
 ---
 
-## 2-A. 2단계 대본 실행에서 자동 OCO 예약을 만들지 않는다 (ORDERBASICS-022)
+## 2-A. 2단계 대본 실행에서 자동 OCO 예약을 만들지 않는다 (ORDERBASICS-022) ✅ (이슈 #507)
 
 2번(대본 식별자 영속)이 끝나야 분기 조건이 생긴다. 그 뒤에 한다.
 
@@ -113,6 +114,11 @@
   커서 다섯 컬럼 `NULL`. **run·튜토리얼 계좌·`exitPreset`은 건드리지 않는다.**
 - 정리 로직은 `PracticeRunRestartOrderService.cleanupCurrentRun`과 같은 규칙을 쓰되 run 증가·계좌
   리셋은 하지 않는다. 재사용할지 뽑아 쓸지는 구현 세션이 판단한다.
+- ⚠️ **진입 대본을 2단계로 여는 한 줄을 이 작업이 함께 바꾼다.**
+  `PracticeAttemptService.scenarioScriptIdFor`가 2번 작업에서 `CRYPTO_STORY_V1` 고정으로 들어갔다 —
+  전환 엔드포인트가 없는 상태에서 진입을 2단계로 바꾸면 041 이야기가 도달 불가가 되기 때문이다.
+  이 작업에서 그 한 줄을 `tutorialScenarioScriptLoader.firstScriptId(market)`로 되돌려야 진입이 2단계로 열린다.
+  빠뜨리면 049가 끝나도 아무도 2단계 대본을 만나지 못한다.
 
 **검증**
 - 단위: 거부 5가지(완료 상태 / 대본 미사용 / 이미 3단계 / 단계 미완료 / 보유 중).

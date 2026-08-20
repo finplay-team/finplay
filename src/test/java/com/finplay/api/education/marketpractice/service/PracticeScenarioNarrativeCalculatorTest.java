@@ -1,6 +1,7 @@
 // 대본 커서에서 파생하는 막·진행 여부·원인 상태와 사건 공개 게이트를 실제 대본으로 검증한다.
 package com.finplay.api.education.marketpractice.service;
 
+import com.finplay.api.market.domain.TutorialScenarioScriptId;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
@@ -23,7 +24,7 @@ class PracticeScenarioNarrativeCalculatorTest {
 	private static final LocalDateTime NOW = LocalDateTime.of(2026, 8, 20, 12, 0);
 	private static final int SECONDS_PER_VIRTUAL_MINUTE = PracticeAttemptCanonicalPriceService.SECONDS_PER_VIRTUAL_MINUTE;
 	private final TutorialScenarioScript script = new TutorialScenarioScriptLoader(new ObjectMapper())
-		.script(Market.CRYPTO);
+		.script(TutorialScenarioScriptId.CRYPTO_STORY_V1);
 
 	// 커서가 비어 있으면 미시작이다 — 첫 tick 전의 조회도 첫 구간 0분으로 답해야 화면이 비지 않는다.
 	@Test
@@ -121,7 +122,7 @@ class PracticeScenarioNarrativeCalculatorTest {
 		ReflectionTestUtils.setField(instrument, "id", 21L);
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
 		attempt.selectInstrument(
-			instrument, NOW, NOW.toLocalDate(), 1L, TutorialPriceGenerator.VERSION_2, NOW);
+			instrument, NOW, NOW.toLocalDate(), 1L, TutorialPriceGenerator.VERSION_2, null, NOW);
 		return attempt;
 	}
 }

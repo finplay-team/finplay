@@ -162,7 +162,7 @@ class PracticeAttemptChartServiceTest {
 			Market.CRYPTO, "TUTORIAL-BTC", "튜토리얼 비트코인", BigDecimal.ONE, 5_000L, true, NOW);
 		ReflectionTestUtils.setField(instrument, "id", 21L);
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
-		attempt.selectInstrument(instrument, anchor, NOW.toLocalDate(), 123_456_789L, generatorVersion, anchor);
+		attempt.selectInstrument(instrument, anchor, NOW.toLocalDate(), 123_456_789L, generatorVersion, null, anchor);
 		return attempt;
 	}
 }

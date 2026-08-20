@@ -346,7 +346,7 @@ class PracticeAttemptRestartIntegrationTest {
 			if (run < 3) {
 				PracticeAttempt attempt = attemptRepository.findById(fixture.attempt().getId()).orElseThrow();
 				attempt.selectInstrument(fixture.instrument(), NOW.minusMinutes(10), NOW.toLocalDate(), 123L,
-					(short)1, NOW.minusMinutes(10));
+					(short)1, null, NOW.minusMinutes(10));
 				attemptRepository.saveAndFlush(attempt);
 			}
 		}
@@ -511,7 +511,7 @@ class PracticeAttemptRestartIntegrationTest {
 		Instrument realInstrument = realInstrument("legacy-real", Market.CRYPTO);
 		PracticeAttempt attempt = PracticeAttempt.create(user.getId(), Market.CRYPTO, NOW.minusDays(2));
 		attempt.selectInstrument(
-			realInstrument, NOW.minusDays(1), NOW.toLocalDate().minusDays(1), 456L, (short)1, NOW.minusDays(1));
+			realInstrument, NOW.minusDays(1), NOW.toLocalDate().minusDays(1), 456L, (short)1, null, NOW.minusDays(1));
 		attemptRepository.saveAndFlush(attempt);
 		jdbcTemplate.update(
 			"UPDATE practice_attempts SET status = 'COMPLETED', completed_at = ?, updated_at = ? WHERE id = ?",
@@ -569,7 +569,7 @@ class PracticeAttemptRestartIntegrationTest {
 		Account account = account(user, market);
 		Instrument instrument = instrument(scenario, market);
 		PracticeAttempt attempt = PracticeAttempt.create(user.getId(), market, NOW.minusHours(1));
-		attempt.selectInstrument(instrument, NOW.minusMinutes(10), NOW.toLocalDate(), 123L, (short)1,
+		attempt.selectInstrument(instrument, NOW.minusMinutes(10), NOW.toLocalDate(), 123L, (short)1, null,
 			NOW.minusMinutes(10));
 		attemptRepository.saveAndFlush(attempt);
 		return new Fixture(user, account, instrument, attempt);

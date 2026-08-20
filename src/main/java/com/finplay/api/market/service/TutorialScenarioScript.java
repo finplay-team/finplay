@@ -2,11 +2,18 @@
 package com.finplay.api.market.service;
 
 import com.finplay.api.market.domain.Market;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
+// basePrice는 대본마다 다르므로 생성기 상수가 아니라 파일 필드다(049 ORDERBASICS-003). 배율 1.000000이
+// 곧 이 값이며, 진행 중 봉과 과거 29봉이 **같은 기준가**를 써야 차트가 한 화면에 들어온다.
 public record TutorialScenarioScript(
-	short version, Market market, List<TutorialScenarioStage> stages, List<TutorialScenarioEvent> events) {
+	short version,
+	Market market,
+	BigDecimal basePrice,
+	List<TutorialScenarioStage> stages,
+	List<TutorialScenarioEvent> events) {
 
 	public TutorialScenarioScript {
 		stages = stages == null ? List.of() : List.copyOf(stages);
