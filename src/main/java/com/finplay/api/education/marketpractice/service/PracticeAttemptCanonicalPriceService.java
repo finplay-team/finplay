@@ -62,6 +62,34 @@ public class PracticeAttemptCanonicalPriceService {
 		return canonicalPrice(attempt, observedAt);
 	}
 
+	/**
+	 * "그때 팔지 않았다면"의 기준 가격 (041 SCENARIO-021). 대본을 쓰지 않는 실행은 {@code null}이다.
+	 *
+	 * <p><b>완료 여부로 기준이 갈린다.</b> 진행 중에는 <b>현재 커서 가격</b>이라 화면의 선이 대본과 함께
+	 * 움직이고, 완료 응답에서는 <b>대본의 마지막 진행 구간 끝 가격</b>이라 사용자가 실제로 그 지점까지
+	 * 진행했는지와 무관한 대조가 된다 — 손절 뒤 재매수하지 않고 나간 사용자도 같은 대조를 얻어야 하기
+	 * 때문이다(SCENARIO-021의 2026-08-18 정정).
+	 *
+	 * <p><b>진행 중에 종점 가격을 쓰지 않는 이유</b>는 그것이 곧 이야기의 결말을 미리 알려주기 때문이다.
+	 * 4막 폭락 가격이 2막에서 화면에 뜨면 사건 노출 게이트(SCENARIO-015)보다 더 큰 누설이 된다.
+	 */
+	public BigDecimal postSellComparisonPrice(PracticeAttempt attempt) {
+		if (!attempt.usesScenarioScript() || attempt.getInstrument() == null) {
+			return null;
+		}
+		TutorialScenarioScript script = script(attempt);
+		return tutorialPriceGenerator.canonicalPrice(toInput(attempt), script, comparisonCursor(attempt, script));
+	}
+
+	private TutorialScenarioCursor comparisonCursor(PracticeAttempt attempt, TutorialScenarioScript script) {
+		if (attempt.getStatus() != PracticeAttemptStatus.COMPLETED) {
+			return cursor(attempt, script);
+		}
+		// 로더가 "마지막 구간은 진행 구간"을 기동 시점에 강제하므로 마지막 구간의 끝이 곧 대본의 결말이다.
+		TutorialScenarioStage last = script.stages().get(script.stages().size() - 1);
+		return new TutorialScenarioCursor(last.id(), last.minutes() - 1);
+	}
+
 	public TutorialScenarioScript script(PracticeAttempt attempt) {
 		return tutorialScenarioScriptLoader.script(attempt.getMarket());
 	}

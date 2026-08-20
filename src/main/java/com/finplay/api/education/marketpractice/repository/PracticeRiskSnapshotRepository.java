@@ -2,6 +2,7 @@
 package com.finplay.api.education.marketpractice.repository;
 
 import com.finplay.api.education.marketpractice.domain.PracticeRiskSnapshot;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -15,6 +16,9 @@ public interface PracticeRiskSnapshotRepository extends JpaRepository<PracticeRi
 	// 사라져 3단계가 미완료로 되돌아간다(이슈 #420과 같은 유형).
 	Optional<PracticeRiskSnapshot> findByAttemptIdAndRunNumberAndEntrySequence(
 		Long attemptId, long runNumber, int entrySequence);
+
+	// 041 SCENARIO-019b — 완료 대조 배열은 그 실행 세대의 **모든** 진입을 진입 순서대로 본다.
+	List<PracticeRiskSnapshot> findByAttemptIdAndRunNumberOrderByEntrySequenceAsc(Long attemptId, long runNumber);
 
 	// 다음 진입의 entry_sequence 산출용 — 존재 여부가 아니라 개수가 필요하다.
 	long countByAttemptIdAndRunNumber(Long attemptId, long runNumber);

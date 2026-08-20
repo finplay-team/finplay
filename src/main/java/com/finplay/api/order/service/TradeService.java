@@ -14,6 +14,7 @@ import com.finplay.api.order.repository.TradeRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -153,6 +154,43 @@ public class TradeService {
 	// 더하지 않으므로 기존 호출부의 쿼리 수는 그대로다.
 	@Transactional(readOnly = true)
 	public PracticeRunTradeSummaryDto summarizePracticeRun(Long attemptId, long runNumber) {
+		return summarize(tradeRepository.findFilledPracticeRunTrades(attemptId, runNumber));
+	}
+
+	/**
+	 * 같은 실행 세대의 체결을 <b>진입 단위로 쪼개</b> 각각 집계한다 (041 SCENARIO-019b, 042가 넘긴 진입별
+	 * 대조 배열). 경계는 호출부가 주는 <b>진입 매수 체결 id</b>이며, 체결 하나는 자기 경계 이상이면서 다음
+	 * 경계 미만인 구간에 속한다.
+	 *
+	 * <p><b>진입의 정의를 order 도메인이 갖지 않는다.</b> "몇 번째 진입인가"는 education의
+	 * {@code practice_risk_snapshots}가 소유하는 개념이라 이 메서드는 경계 id만 받아 자기 원장을 나눈다.
+	 *
+	 * <p>집계식은 {@link #summarizePracticeRun}과 <b>같은 코드</b>다 — 두 벌로 두면 한쪽만 고쳐도 진입별
+	 * 합과 실행 전체 합이 조용히 어긋난다.
+	 *
+	 * @param entryBuyTradeIds 진입 순서(=체결 순서)로 오름차순 정렬된 매수 체결 id. 비어 있으면 빈 목록
+	 * @return 입력과 같은 순서·같은 길이의 진입별 요약
+	 */
+	@Transactional(readOnly = true)
+	public List<PracticeRunTradeSummaryDto> summarizePracticeRunEntries(
+		Long attemptId, long runNumber, List<Long> entryBuyTradeIds) {
+		if (entryBuyTradeIds.isEmpty()) {
+			return List.of();
+		}
+		List<Trade> trades = tradeRepository.findFilledPracticeRunTrades(attemptId, runNumber);
+		List<PracticeRunTradeSummaryDto> summaries = new ArrayList<>(entryBuyTradeIds.size());
+		for (int index = 0; index < entryBuyTradeIds.size(); index++) {
+			long from = entryBuyTradeIds.get(index);
+			// 마지막 진입은 상한이 없다 — 그 뒤 체결은 전부 그 진입에 속한다.
+			Long to = index + 1 < entryBuyTradeIds.size() ? entryBuyTradeIds.get(index + 1) : null;
+			summaries.add(summarize(trades.stream()
+				.filter(trade -> trade.getId() >= from && (to == null || trade.getId() < to))
+				.toList()));
+		}
+		return List.copyOf(summaries);
+	}
+
+	private PracticeRunTradeSummaryDto summarize(List<Trade> trades) {
 		BigDecimal buyQuantity = BigDecimal.ZERO;
 		BigDecimal sellQuantity = BigDecimal.ZERO;
 		BigDecimal buyNotional = BigDecimal.ZERO;
@@ -161,7 +199,7 @@ public class TradeService {
 		long soldBuyBasis = 0L;
 		boolean realizedPnlComplete = true;
 		Trade firstSell = null;
-		for (Trade trade : tradeRepository.findFilledPracticeRunTrades(attemptId, runNumber)) {
+		for (Trade trade : trades) {
 			if (trade.getSide() == OrderSide.BUY) {
 				buyQuantity = buyQuantity.add(trade.getQuantity());
 				buyNotional = buyNotional.add(trade.getPrice().multiply(trade.getQuantity()));

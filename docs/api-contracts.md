@@ -870,11 +870,18 @@ holding 관찰은 buyTrade→order에서 sessionId를 서버가 역추적한다(
 
 | Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|
-| GET | /api/education/practice?market= | Access Bearer 필수. `market`(`STOCK`\|`CRYPTO`) 필수 | 200 `InvestmentPracticeResponse` | 400 `VALIDATION_ERROR`(`market` 누락·미지원 값); Access 인증 실패는 401 `UNAUTHORIZED` | 026 MKT-PRACTICE-008, Issue #305; 031 SANDBOX-005·007, Issue #339; 039 TUTORIAL-FLOW-013, Issue #421 |
+| GET | /api/education/practice?market= | Access Bearer 필수. `market`(`STOCK`\|`CRYPTO`) 필수 | 200 `InvestmentPracticeResponse` | 400 `VALIDATION_ERROR`(`market` 누락·미지원 값); Access 인증 실패는 401 `UNAUTHORIZED` | 026 MKT-PRACTICE-008, Issue #305; 031 SANDBOX-005·007, Issue #339; 039 TUTORIAL-FLOW-013, Issue #421; 041 SCENARIO-019b·020·021·021a, Issue #488 |
 
 조회는 `market`으로 holding 기반 `tutorialKey`(`STOCK`→`INVESTMENT_PRACTICE_V1`, `CRYPTO`→`COIN_PRACTICE_V1`)를 정하고 쓰기 없이 상태를 계산한다. 영속 attempt가 있으면 현재 attempt ID/run의 risk snapshot과 귀속 주문 원장을 정본으로 쓰며 favorite·intention을 조회하지 않고 legacy completion으로 fallback하지 않는다. attempt가 없는 기존 샘플·실제 종목 사용자만 기존 026 chain으로 fallback한다. OCO 전용 key와 evidence는 조회하거나 합치지 않는다.
 
 샘플 attempt 응답은 4단계다. 1단계는 종목 선택, 2단계는 현재 run 최초 BUY/risk snapshot, 3단계는 snapshot 이후 qualifying 관찰, 4단계는 관찰 이후 같은 run의 5분 내 SELL과 reflection이다. 재시작 전 snapshot·BUY·SELL·관찰은 현재 run evidence에 포함하지 않는다. SELL 뒤 새 관찰도 그대로 저장되고 현재 run evidence로 누적된다(026 spec.md "매도 여부와 무관하게" 원칙을 031이 상속, 이슈 #420). 완료 reflection은 attempt를 먼저 잠근 뒤 completion·legacy progress 호환 행·attempt `COMPLETED`·시장별 500만원 보상을 원자 확정한다.
+
+**(041 6번, Issue #488) attempt 경로 응답에 최상위 3필드가 더해졌다.**
+
+- `entries` — **진입별 대조 배열**이며 진입 순번 오름차순이다. 각 항목은 `entrySequence`·`exitPreset`·`buyAt`·`buyPrice`·`buyQuantity`·`stopLossPrice`·`takeProfitPrice`·`sellPrice`·`sellAt`·`sellCause`·`realizedPnl`·`unrealizedPnlIfHeld`다. **왜 필요한가** — 042가 재진입을 열면서 한 실행 세대에 매도가 둘 이상 생겼는데 `tradeResult`의 매도 시각·`sellCause`는 **첫 매도** 기준이라, 2막 손절 → 3막 익절한 사용자의 완료 화면에 손절 하나만 뜬다(금액은 맞고 이야기가 틀린다). 이 배열이 그 결함을 닫는다. 진입 안에서는 실행 전체와 같은 규칙(첫 매도)을 진입 범위로 좁혀 쓰고, `sellPrice`는 수량 가중평균·`realizedPnl`은 합이라 부분 매도도 금액이 전부 반영된다. **대본 여부와 무관하게 채운다** — 재진입은 시장을 가리지 않는다. 매수 전이거나 attempt가 없는 legacy 경로는 빈 배열이다.
+- `priceAfterSell` — "그때 팔지 않았다면"의 **기준 가격**이며 `unrealizedPnlIfHeld`가 이 가격으로 계산된다. **진행 중에는 현재 대본가**, **완료 응답에서는 대본의 마지막 진행 구간 끝 가격**이다. 완료 값이 진행과 무관한 이유는 손절 뒤 재매수하지 않고 나간 사용자도 같은 대조를 얻어야 하기 때문이고(SCENARIO-021), 진행 중에 종점 가격을 쓰지 않는 이유는 그것이 이야기의 결말을 미리 알려주기 때문이다. 대본을 쓰지 않는 실행은 `null`이며 그때 `unrealizedPnlIfHeld`도 `null`이다.
+- `unrealizedPnlIfHeld` — `(priceAfterSell × 팔린 수량 − FLOOR(그 금액 × 시장 매도수수료율)) − (배분 매수원가 + 배분 매수수수료)`, 원 단위. 식·라운딩이 `OrderExecutionService.priceOrder`와 같다. **매도 수수료를 빼는 것이 핵심**이다 — 비교 대상인 `realizedPnl`이 매수·매도 수수료가 모두 반영된 원장 값이라, 빼지 않으면 가상 보유 쪽이 항상 조금 유리해 보인다(SCENARIO-021a). 서버가 계산해 내려보내며 클라이언트는 그리기만 한다.
+- `revealedEvents` — 그 실행에서 **공개된** 사건만 공개 순서로 담고 시각을 담지 않는다. 완료 시점에도 미공개 사건은 노출하지 않는다(SCENARIO-020). 형식·이유는 `GET .../chart` 소절과 같다. 대본을 쓰지 않는 실행은 빈 배열이다.
 
 1. `(userId, tutorialKey)` 완료 행이 있고 attempt가 없거나 attempt가 `COMPLETED`면 `COMPLETED`, `currentStep=null`이며 저장된 `completedAt`을 반환한다. 완료 evidence 일부가 인메모리 재시작으로 유실돼도 완료 상태는 회귀하지 않는다. 완료 행이 있어도 attempt가 040 재시작으로 다시 진행 중이면(`SELECTING_INSTRUMENT`\|`IN_PROGRESS`) 최상위 `status`·`currentStep`·`steps`·evidence는 **그 실행 기준**(`IN_PROGRESS` 또는 4단계 만료 시 `EXPIRED`)이며, `completedAt`·`rewardAmount`는 최초 완료 값을 그대로 유지한다 — `practice_completions` 행은 남아 보상 재지급을 막는다(이슈 #426, 040 비즈니스 규칙).
 2. 완료 전 유효 chain이 있으면 1·2단계는 `COMPLETED`, 3단계는 `IN_PROGRESS`다. 같은 holding의 qualifying observation이 있으면 observation evidence도 채운다.
