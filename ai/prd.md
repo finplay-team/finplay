@@ -175,7 +175,7 @@ FinPlay는 주식과 코인을 가상 자산으로 매매하고, 거래 결과�
 
 C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 
-### 구현 현황 (2026-08-16 기준)
+### 구현 현황 (2026-08-20 기준)
 
 **이 표가 "무엇이 실제로 동작하는가"의 정본이다.** 아래 요구사항 절들은 차수별 계약 정의이므로 그 절에 요구사항이 적혀 있다는 사실이 구현 완료를 뜻하지 않는다. 실제 엔드포인트 목록은 `ai/api-routes.md`, 요청·응답 계약은 `docs/api/`(도메인별 파일)가 정본이다.
 
@@ -231,6 +231,7 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 | 지정가 체결 알림 | NOTI-001~005 | **미착수** | `notification` 패키지·테이블 없음. spec 폴더 미생성. **2026-08-07: 착수 시점을 2차 MVP(1차 고도화) → 3차 MVP(2차 고도화)로 재조정(이슈 #261)** |
 | 동시성 제어·부하테스트 | — | **미착수** | Kafka·분산락 의존성 없음 |
 | 코인 틱 집계와 캐싱 | MKT-010 | **완료** | `027-crypto-tick-candle-cache`(이슈 #242), PR #255. `transaction` 채널 구독 추가, `CryptoCandleStore`(Lua 원자 갱신)·`CachedCryptoCandleProvider`(캐시·위임 병합) 신설. 동시성 테스트(Testcontainers)로 유실 0건 확인, 실측 호출 절감률 100%(캐시 구간 안) |
+| 주식 일봉 3년치 아카이브 — 수집·저장 | MKT-011 | **완료(수집·저장 범위)** | `050-stock-daily-archive`, 이슈 [#506](https://github.com/finplay-team/finplay-backend/issues/506)(참조만, 미종료 — 차트 조회 경로 결정이 남아 있음), PR [#508](https://github.com/finplay-team/finplay-backend/pull/508). `stock_daily_candles` 테이블(`V54__create_stock_daily_candles.sql`, `UNIQUE(instrument_id, trading_date)`)·`StockDailyCandle`·`StockDailyCandleRepository`·`KisDailyCandleClient`/`KisDailyCandleClientImpl`(날짜 커서 역방향 페이징, `FID_ORG_ADJ_PRC=0` 수정주가 고정, 실제 KIS 호출로 필드 매핑·수정주가 의미 확인)/`FakeKisDailyCandleClient`·`StockDailyCandleCollector`(평일 08:25 KST, 종목별 빈 구간만 채움)·`StockDailyCandleImportWriter`(`data_source=KIS_DAILY`로 1분봉과 구분)·로컬 개발 트리거 `POST /api/dev/stock-daily-imports`(local 프로필 전용) 전부 구현. Testcontainers 통합 테스트(최초 전량 적재→증분 1회→재실행 멱등, 종목 단위 실패 격리, `stock_candles` 행 수 무변경 회귀)로 검증, `./gradlew build` 통과. **차트 조회 경로는 이 요구사항의 범위가 아니다** — `1d`·`1w`·`1M`은 여전히 `stock_candles`(1분봉) 실시간 집계로 응답하며(MKT-009), 아카이브를 조회 소스로 바꾸는 결정은 재생 모델의 공개 상한과 충돌해 이슈 #506·#495로 분리돼 있다(후속 spec) |
 | 배포 아키텍처 — 관리형 서비스 전환·블루-그린 | 요구사항 ID 없음(1차 태스크 10 배포의 후속 구조 변경) | **일부 완료** | ADR-0020, 이슈 #326, PR #329. **RDS·ElastiCache 전환은 실배포 검증 완료** — `compose.deploy.yaml`에서 mysql·redis 서비스·볼륨 제거, `finplay-db`(MySQL 8.4)·`finplay-cache`(Redis OSS 7.1, 복제본 1+다중 AZ)에 접속해 기동, Flyway 30건 적용·`/actuator/health` `UP` 확인(2026-08-11). ElastiCache는 전송 중 암호화를 켰으므로 `SPRING_DATA_REDIS_SSL_ENABLED=true`가 필수다. **S3 스토리지 전환(`S3FileStorageService`)과 블루-그린 파이프라인(ALB·타깃 그룹·ACM·`compose.bluegreen.yaml`)은 문서 확정만** — 각각 별도 이슈. ADR-0014·0015·0018이 전제해 온 "다중 인스턴스 전환"의 실체를 ADR-0020이 정의한다. **프론트 정적 파일의 서빙 주체는 ADR-0022(이슈 #352, PR #353)로 nginx 동일 오리진에서 S3 독립 배포로 전환 결정됨** — ADR §결정 7의 적용 순서 중 **1번(백엔드: ADR 확정 + CORS·`forward-headers-strategy` 코드·테스트)만 완료**, 2번(프론트 베이스 URL 도입 + S3 게시 + 실측 검증)·3번(nginx 제거 + ALB 타깃 전환)은 미착수. **CD 워크플로우(`.github/workflows/deploy.yml`)는 코드로 구현됨(PR #357) — 첫 실행 미검증.** |
 | 코인 변동 카드 확정 SSE push | 요구사항 ID 없음(GitHub 이슈 #286에는 있으나 이 문서에 대응 행이 신설 전까지 없었다) | **미채택(제거됨)** | `028-crypto-card-sse-push`, 이슈 #286으로 ADR-0018에 따라 구현했다가, 이슈 #476로 ADR-0026에 따라 제거했다. 프론트가 `GET /api/cryptos/stream`을 처음부터 구독하지 않고 `useCryptoPrices.ts` 폴링(5초 간격)만 써 배포 후 사용률이 0이었다 — ADR-0018 §후속이 예고한 재검토의 결론이다. `CryptoPriceSseController`·`CryptoPriceStreamService`·`CryptoCardPushSubscriber`·`CryptoPriceMoveCardPublisher`·`RedisPubSubConfig`를 전부 삭제하고 `GET /api/cryptos/stream` 자체가 없어졌다. `CryptoPriceMoveWatcher`는 카드 저장 로직은 그대로 두고 발행 호출 한 줄만 제거했다(카드는 여전히 `GET /api/instruments/{id}/price-moves` 폴링으로 조회). `GET /api/stocks/stream`·`CryptoPriceUpdatedEvent`·`PriceStore`는 무관해 무변경 |
 | 코인 시세 표시·체결 stale 기준 분리 | PRICE-STALE-001~005 | **완료(001·002·004는 036에서 되돌려짐)** | `032-price-quote-stale-split`, 이슈 #355, PR #360. 최초 구현: `PriceStatus`에 `STALE` 추가(PRICE-STALE-002), 코인 표시·체결 판정에서 stale 완화(PRICE-STALE-001·004, 코인 SSE snapshot도 물려받음). **2026-08-14 `036-remove-crypto-stale-status`가 001·002·004를 되돌렸다** — `PriceStatus`는 다시 `AVAILABLE`·`UNAVAILABLE` 2값이고, 표시·체결 모두 경과 시간과 무관하게 항상 `AVAILABLE`이다(근거: `036-remove-crypto-stale-status`). PRICE-STALE-003(`CryptoCandleAndPriceIndependenceTest` 기존 두 테스트 회귀 없음)은 이 변경과 무관하게 계속 유효. PRICE-STALE-005(`HoldingValuationService` 등 하위 소비자의 STALE 처리)는 STALE이 더 이상 발생하지 않아 무의미해졌다(코드 변경 없음, 근거: `036-remove-crypto-stale-status`) |
@@ -255,6 +256,8 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 - 매수·매도 회고 작성·수정·상세·목록 (JOUR-001~006, 2026-07-28 Notion 확인 — 작성도 2차로 이동) — **일부 완료**: JOUR-001 매수 작성(PR #181)·JOUR-003 매도 작성(PR #189)·JOUR-004 매도 수정(PR #192)·JOUR-002 매수 수정(PR #201)·JOUR-006 목록(PR #213) 완료, JOUR-005 상세는 계약 확정(이슈 #217) 후 착수 예정
 - 캔들 조회 기간 확장 — 일봉/주봉/월봉 (MKT-009) — **완료** (`ai/specs/013-candle-interval`, PR #151)
 - 코인 틱 집계와 캐싱 (MKT-010, 2026-08-06 튜터 피드백 계기로 착수 결정, MKT-008의 "틱 미집계·Redis 미저장" 결정을 뒤집음) — **완료**(`027-crypto-tick-candle-cache`, 이슈 #242). 코인 캔들(MKT-008)의 진행 중 1분봉을 빗썸 REST 재조회 대신 서버가 `transaction` 채널 유입으로 직접 만들어 Redis에 캐싱한다. 새 MySQL 테이블은 만들지 않았다
+
+- 주식 일봉 3년치 아카이브 (MKT-011, 2차 고도화) — **완료(수집·저장 범위)**(`ai/specs/050-stock-daily-archive`, 이슈 #506). 일봉 차트 깊이가 1분봉 20영업일 보관에 묶여 최대 20봉인 문제를 별도 테이블 3년 아카이브로 푼다. 수집·저장까지이며 차트 조회 경로 연결은 후속(근거는 §3 "구현 현황" MKT-011 행)
 
 ### 3차 MVP — 2차 완료 후 별도 Spec
 
@@ -296,7 +299,7 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 > - 1차: AUTH-001~006, ACCT-001~003, MKT-001~008, ORD-001~006, PORT-001~002, COM-001~003
 > - 2차: MKT-009, **MKT-010**, PORT-003, LMT-001~005, JOUR-001~006, RANK-001~002, COM-004~006 (3단계 투자 실습 EDU-PRACTICE-*·MKT-PRACTICE-*와 코인 가상 가격 실행 환경 COIN-PRICE-RUNTIME-*, AI 피드백 FEED-*는 이 문서에 요구사항 절을 두지 않고 각각 `ai/specs/016-investment-education-policy`·`ai/specs/026-market-order-practice-tutorial`·`ai/specs/030-coin-practice-price-runtime`·`ai/specs/012-ai-feedback`이 정본이다. **커뮤니티 고도화 COM-004~006도 같은 패턴으로 `ai/specs/022-community-enhancement`가 정본이다** — 종목 기준 분류·대댓글·사진 첨부, 이슈 #246·#247·#248. **관심목록 WATCH-001~003은 `ai/specs/023-watchlist`가 정본이다** — 2차 MVP, 이슈 #252. **커뮤니티 좋아요·인기순 정렬 LIKE-001~002·SORT-001은 `ai/specs/045-community-likes-sort`가 정본이다** — 좋아요 표시·취소, 목록·단건 응답의 `likeCount`·`likedByMe` 노출, `sort=popular` 인기순 정렬, 2차 MVP(COM-001이 1차 제외로 못 박았던 좋아요를 신규 도입 — 2026-08-18 사용자 확정), 대응 이슈 없음·PR #442)
 >   - **MKT-010의 제목 표기만 "(1차 고도화)"로 다르다** — 2026-08-06 작업자가 팀 회의 용어를 그대로 쓴 것이며, §3 차수 용어 대응표대로 이 문서의 "2차 MVP"와 같은 차수다. 위 목록이 판정 기준이다.
-> - 3차: NOTI-001~005 (2026-08-07, 2차 → 3차로 재이동, 이슈 #261 — 원래 2026-08-04 이슈 #140으로 2차 확정했던 항목이며 §4의 요구사항 내용 자체는 변경 없이 유지, 착수 시점만 재조정)
+> - 3차: NOTI-001~005, **MKT-011**(주식 일봉 3년치 아카이브, 정본은 `ai/specs/050-stock-daily-archive`·이슈 #506) (2026-08-07, 2차 → 3차로 재이동, 이슈 #261 — 원래 2026-08-04 이슈 #140으로 2차 확정했던 항목이며 §4의 요구사항 내용 자체는 변경 없이 유지, 착수 시점만 재조정)
 
 ### 인증과 회원
 
@@ -498,7 +501,8 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
   - 실제 거래정지·거래 없음으로 분봉 수가 적은 정상적인 경우까지 단순 개수만으로 오류 처리하지 않는다. 종목별 정상 범위의 구체적인 기준(임계치)과 그 기준을 저장할 방식은 KIS 상품의 데이터 형식과 timestamp 의미(거래 없는 분을 생략하는지 여부)가 확인된 뒤 결정한다 — 확인 전까지는 임시 숫자를 포함해 임의로 확정하지 않는다(Decision Gate).
 - 수집 시도 자체의 이력(성공·부분성공·실패, 실패사유, 수집시각, 중복식별값)은 저장에 성공하지 못한 경우도 포함해 별도로 기록한다.
 - `UNIQUE(instrument_id, trading_date, candle_time)`으로 동일 분봉의 중복 저장을 막는다. 수집 작업을 재실행해도 중복되지 않는다(멱등).
-- 최근 20영업일의 정규화된 1분봉만 MySQL에 보관한다. 현재 재생 중인 거래일은 삭제하지 않는다. 20영업일보다 오래된 분봉은 정리 작업으로 삭제한다. **정리 작업(Cleanup Job) 구현은 MVP 데모 범위에서 제외하고 후속 이슈(장기운영 방어 로직)에서 진행한다 — 데모 기간에는 20영업일치가 쌓이지 않는다.**
+- **이 20영업일 보관 정책은 1분봉(`stock_candles`)에만 적용된다.** 최근 20영업일의 정규화된 1분봉만 MySQL에 보관한다. 현재 재생 중인 거래일은 삭제하지 않는다. 20영업일보다 오래된 분봉은 정리 작업으로 삭제한다. **정리 작업(Cleanup Job) 구현은 MVP 데모 범위에서 제외하고 후속 이슈(장기운영 방어 로직)에서 진행한다 — 데모 기간에는 20영업일치가 쌓이지 않는다.**
+  - **장기 차트용 일봉은 이 정책의 대상이 아니다** — 별도 테이블(`stock_daily_candles`)에 **최근 3년**을 누적 보관하며 근거는 **MKT-011**이다. 두 데이터는 봉 단위(1분 vs 1일)·목적(재생 원본 vs 장기 조회)·수집 엔드포인트·보관 정책이 모두 다르므로 문서·코드에서 섞어 부르지 않는다. 대조표는 `ai/specs/050-stock-daily-archive/spec.md` §"두 데이터의 구분".
 - 주문·체결·보유·손익 기록은 분봉 삭제와 무관하게 계속 보존한다.
 - 데이터 출처, 실제 거래일, 수집시각을 기록한다. 분봉 단위 검증상태는 별도로 저장하지 않는다 — 검증을 통과한 분봉만 저장되므로 수집 시도 이력(성공·부분성공·실패)만으로 충분하다.
 
@@ -560,6 +564,7 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 
 - 캔들 API(`GET /api/instruments/{instrumentId}/candles`)의 `interval` 허용값을 `1m`에서 `1m | 1d | 1w | 1M`(1분봉/일봉/주봉/월봉)로 확장한다.
 - **주식**: 정본인 1분봉(`stock_candles`, MKT-002)을 거래일·주·월 단위로 집계해 제공한다. 신규 저장 테이블을 두지 않는다.
+  - **(MKT-011로 일부 대체 — 수집 계층 한정)** "신규 저장 테이블을 두지 않는다"는 MKT-011에서 뒤집혔다. 일봉 차트의 깊이가 1분봉 보관 기간(20영업일, MKT-005)에 묶여 최대 20봉밖에 나오지 않는 문제 때문이며, 장기 일봉은 별도 테이블 `stock_daily_candles`에 3년치를 보관한다. **다만 이 문장의 "1분봉을 집계해 제공한다"는 조회 동작 자체는 아직 그대로다** — MKT-011은 수집·저장까지이고, 조회 소스를 아카이브로 바꾸는 것은 재생 모델의 공개 상한과 충돌해 별도 결정이 선행된다(이슈 #506).
 - **코인**: 빗썸 공개 캔들 REST의 일/주/월봉 엔드포인트(`/v1/candles/days`·`/weeks`·`/months`)에 위임한다 — 기존 1분봉(MKT-008)과 동일하게 저장 없이 요청 시점에 조회해 중계한다.
 - 응답은 기존 `CandleResponse`(시가·고가·저가·종가·거래량) 필드 구조를 그대로 유지한다. 집계 경계(주·월의 시작 기준), 미마감 봉 처리, 오류 코드 등 세부 계약은 착수 시 spec에서 확정한다.
 - 범위: 2차 MVP(1차 고도화). 1차 MVP API 계약(`interval=1m`)에는 포함하지 않았다.
@@ -599,6 +604,42 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 **spec에서 확정한 세부**: `ai/specs/027-crypto-tick-candle-cache/plan.md` 참조 — Redis 키 구조, Lua 원자 갱신, `since` 워터마크로 캐시·위임 구간 분할, TTL 4시간(200봉 상한에서 역산).
 
 - 범위: 1차 고도화. Decision Gate 해소 → spec → 구현 순서로 진행했다.
+
+#### MKT-011 주식 일봉 3년치 아카이브 (2차 고도화)
+
+> **정본은 `ai/specs/050-stock-daily-archive`다.** 이 절은 요구사항 ID와 범위 경계만 정의한다.
+>
+> 이 요구사항은 MKT-009 주식 항목의 "신규 저장 테이블을 두지 않는다"를 **수집 계층에 한해** 대체한다(supersede). MKT-009 해당 문장에 그 사실을 각주로 남겼다.
+
+**왜 필요한가**
+
+- 주식 일봉·주봉·월봉(MKT-009)은 `stock_candles`(1분봉)을 **조회 시점에 집계**해서 만든다. 그래서 **일봉 차트의 깊이가 1분봉 보관 기간에 종속된다.**
+- MKT-005는 1분봉을 최근 20영업일만 보관하므로(정리 작업은 이슈 #83, 미구현), 정책대로 동작하면 일봉은 최대 20개·주봉 4~5개·월봉 1~2개다. 장기 추세를 볼 수 있는 차트가 아니다.
+- 조회 계약은 이미 갖춰져 있다 — `048-candle-history-pagination`(PR #499)이 `1d`·`1w`·`1M`에 과거 방향 커서 페이지네이션을 열어 뒀다. **부족한 것은 API가 아니라 데이터 깊이다.**
+
+**무엇을 하나 (이번 범위)**
+
+- KIS **국내주식기간별시세**(`inquire-daily-itemchartprice`)로 주식 종목의 **최근 3년치 일봉**을 수집한다. 1회 호출 반환 건수 상한이 있어 날짜 커서로 역방향 분할해 연속 호출하고 이어붙인다 — MKT-005가 1분봉에서 쓰는 "상한 → 이어붙이기" 패턴과 같은 구조다.
+- **별도 테이블 `stock_daily_candles`에 저장한다.** `stock_candles`에 넣지 않는다 — 두 테이블은 보관 정책이 정반대(20영업일 삭제 vs 3년 누적)라 같은 테이블에 두면 1분봉 정리 작업(이슈 #83)이 아카이브를 지운다.
+- 최초 1회 전량 적재 + 이후 일 1회 증분(직전 영업일 1건). 과거 일봉은 확정된 기록이므로 재수집·수정하지 않는다.
+- `UNIQUE(instrument_id, trading_date)`로 재실행 멱등성을 확보한다.
+- 규모는 주식 16종 × 약 750영업일 ≈ **1.2만 행**으로, `db.t4g.micro`(ADR-0020) 기준 저장 부담이 없다. 실제 비용은 저장이 아니라 최초 적재 시 KIS 호출량이며 사용자 트래픽과 무관한 배치다.
+
+**이번 범위가 아닌 것**
+
+- **캔들 조회 API를 이 아카이브에 연결하는 일.** 주식은 과거 거래일을 재생하는 구조라 집계 캔들에 **공개 상한**이 있는데(`sourceTradingDate` 이후 거래일을 내려주지 않는다, MKT-002), 실제 달력 기준 3년치를 그대로 붙이면 재생 중인 "오늘"의 미래 봉이 노출된다. 이 시간축 결정이 선행돼야 하며 이슈 #495(주식 `1m` 시간축)와 같은 계열이다 — 결정 항목은 이슈 #506에 정리돼 있다.
+- **1분봉 보관 정책 변경.** `stock_candles`의 20영업일 롤링 윈도우는 그대로다(MKT-005). 3년치 1분봉을 보관하는 것이 아니다.
+- **코인 일봉.** 계속 빗썸 위임이다(MKT-009).
+- 실시간 시세 — C-007 Decision Gate는 실시간 한정이며 과거 데이터는 공공데이터로 확인되어 이 요구사항의 제약이 아니다(C-006).
+
+**구현 완료 — 수집·저장 범위 (2026-08-20, `050-stock-daily-archive`, PR [#508](https://github.com/finplay-team/finplay-backend/pull/508))**
+
+- 위 "무엇을 하나"에 적은 내용을 그대로 구현했다. `stock_daily_candles`(`V54__create_stock_daily_candles.sql`), `KisDailyCandleClient`/`KisDailyCandleClientImpl`(날짜 커서 역방향 페이징, 1회 100행 상한 — 실제 KIS 호출로 확인), `StockDailyCandleCollector`(평일 08:25 KST, 종목별 빈 구간만 채움, 기존 `StockCollectionLock` 재사용).
+- **수정주가 결정**: `FID_ORG_ADJ_PRC=0`(수정주가)으로 고정한다. 삼성전자 2018년 액면분할 구간을 실제 호출로 대조해 원주가(`=1`)는 분할 경계에서 50배 단절이 생기는 것을 확인하고 확정했다(`plan.md` "Decision Gate 해소" 절).
+- Testcontainers 통합 테스트로 최초 전량 적재 → 증분 → 재실행 멱등, 종목 단위 실패 격리, **`stock_candles`(1분봉) 행 수 무변경**을 검증했다.
+- **"이번 범위가 아닌 것"에 적은 항목은 여전히 미착수다** — 특히 캔들 조회 API 연결은 이 PR 이후에도 그대로 `stock_candles` 1분봉 집계로 응답하며, 이 절이 정의한 범위 경계가 그대로 유지된다.
+
+- 범위: 2차 고도화(3차 MVP). 이슈 [#506](https://github.com/finplay-team/finplay-backend/issues/506)(참조만, 미종료).
 
 ### 시장가 주문·체결
 
@@ -1012,7 +1053,8 @@ Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conven
 - `password_reset_verifications`: 이메일, 인증번호 해시, 시도횟수, 만료시각, 최근발송시각, 소비시각, 생성시각 (비로그인 단계 — `user_id` 외래키를 두지 않는다. 미가입 이메일 요청도 발송 제한 집계용 행을 남기기 때문이며, 인증번호 해시·만료시각·최근발송시각이 모두 비어 있는 행이 발송하지 않고 거부된 요청이다)
 - `accounts`: 회원·시장별 현금, 시드머니, 실현손익
 - `instruments`: 시장, 심볼, 이름, 호가단위, 최소주문금액, 거래가능
-- `stock_candles`: 종목, 거래일, 분봉시각, 시가·고가·저가·종가·거래량, 데이터출처, 수집시각 (최근 20영업일만 보관, `UNIQUE(instrument_id, trading_date, candle_time)`)
+- `stock_candles`: 종목, 거래일, **분봉시각**, 시가·고가·저가·종가·거래량, 데이터출처, 수집시각 (**1분봉 — 재생용**, 최근 20영업일만 보관, `UNIQUE(instrument_id, trading_date, candle_time)`)
+- `stock_daily_candles`: 종목, 거래일, 시가·고가·저가·종가·거래량, 데이터출처, 수집시각 (**일봉 — 장기 차트용**, 최근 3년 누적 보관, `UNIQUE(instrument_id, trading_date)`) — **MKT-011, `050-stock-daily-archive`. 아직 만들지 않았다(문서 확정·미착수).** 위 `stock_candles`와 봉 단위·목적·보관 정책이 모두 달라 별도 테이블이다 — 20영업일 보관 정책은 `stock_candles`에만 적용된다
 - `stock_replay_sessions`: 서비스 날짜, 원본 거래일, 준비상태(`preparation_status`: PREPARING·READY·FAILED — OPEN·CLOSED는 저장하지 않고 Clock으로 계산), 결과 결정시각(`resolved_at`), 실패사유 (`UNIQUE(service_date)`)
 - `market_data_imports`: 데이터출처, 원본 거래일, 수집시각, 상태(SUCCESS·PARTIAL_SUCCESS·FAILED·SKIPPED_DUPLICATE), 실패사유 (V11. **"파일 중복식별값" 컬럼은 실제로 만들지 않았다** — MKT-005의 동일 거래일 재수집 판정을 후속 이슈로 미루면서 함께 빠졌고, 기본 멱등성은 `UNIQUE(instrument_id, trading_date, candle_time)`이 담당한다, 2026-08-04 정정)
 - `orders`: 멱등키, 계좌, 종목, 구분, 유형, 수량, 체결상태

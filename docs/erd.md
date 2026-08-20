@@ -19,6 +19,7 @@ FinPlay 백엔드의 JPA 엔티티와 실제 DB 테이블 구조를 도메인별
 | auth | `PasswordResetVerification` | `password_reset_verifications` | User와 FK 없음 (이메일 문자열만) |
 | market | `Instrument` | `instruments` | 여러 도메인이 참조하는 허브 |
 | market | `StockCandle` | `stock_candles` | |
+| market | `StockDailyCandle` | `stock_daily_candles` | 일봉 3년 아카이브(MKT-011). `stock_candles`와 보관 정책이 반대(3년 누적 vs 20영업일 롤링) |
 | market | `StockReplaySession` | `stock_replay_sessions` | |
 | market | `MarketDataImport` | `market_data_imports` | 배치/수집 파이프라인 전용 |
 | order | `Order` | `orders` | |
@@ -255,6 +256,7 @@ erDiagram
 ```mermaid
 erDiagram
     instruments ||--o{ stock_candles : has
+    instruments ||--o{ stock_daily_candles : has
 
     instruments {
         bigint id PK
@@ -271,6 +273,17 @@ erDiagram
         bigint instrument_id FK "UK(instrument_id, trading_date, candle_time)"
         date trading_date "UK"
         time candle_time "UK"
+        decimal open
+        decimal high
+        decimal low
+        decimal close
+        bigint volume
+        varchar data_source
+    }
+    stock_daily_candles {
+        bigint id PK
+        bigint instrument_id FK "UK(instrument_id, trading_date)"
+        date trading_date "UK, 실제 달력 거래일"
         decimal open
         decimal high
         decimal low
@@ -296,6 +309,8 @@ erDiagram
 ```
 
 `stock_replay_sessions`, `market_data_imports`는 다른 엔티티를 FK로 참조하지 않는 독립 테이블이다(리플레이 세션·수집 배치 자체의 상태 기록용). `Trade`, `ExitPlan`이 `stock_replay_sessions`를 선택적으로 참조하는 것은 3번 다이어그램에서 다룬다.
+
+**`stock_candles`는 1분봉이며 재생(replay)용이다** — 최근 20영업일만 보관하는 롤링 윈도우다(PRD MKT-005). 장기 차트용 **일봉**은 `stock_daily_candles`에 최근 3년치를 별도 보관한다(MKT-011, `ai/specs/050-stock-daily-archive`, PR #508) — `candle_time`이 없고 `UNIQUE(instrument_id, trading_date)`만 걸려 있는 점이 `stock_candles`와의 유일한 구조 차이다. 수집·저장(`StockDailyCandleCollector`·`StockDailyCandleImportWriter`, 평일 08:25 KST 배치)은 **완료**됐다. **캔들 조회 API를 이 아카이브에 연결하는 작업만 아직 범위 밖**이다(spec 050 §범위 제외, 이슈 #506·#495) — 지금도 `1d`·`1w`·`1M` 조회는 `stock_candles`(1분봉) 집계로 응답하며 이 테이블을 읽지 않는다.
 
 ## 3. 주문 · 체결 · 포트폴리오
 

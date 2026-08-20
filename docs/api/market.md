@@ -39,6 +39,7 @@ market 도메인의 API 계약 상세다. 전체 라우트를 한눈에 보는 �
 - `volume`은 코인의 소수 수량(예: `0.26725783`)을 표현하기 위해 `BigDecimal`이다. 주식 값의 표현(`12345`, `1d`·`1w`·`1M` 집계도 정수 합계)은 바뀌지 않는다.
 - `from`·`to`를 모두 생략하면 공개 상한까지의 최신 200개를 반환한다 — 주식 `1m`은 재생 중인 거래일 전체(그 중 이미 공개된 분봉), 주식 `1d`·`1w`·`1M`은 공개 상한까지의 최신 200개 버킷, 코인은 진행 중인 분봉/봉을 포함해 최신부터 과거로 200개를 반환한다.
 - **주식 집계(`1d`·`1w`·`1M`) 규칙 요약** — 원천은 `stock_candles` 1분봉뿐이고 집계 결과는 저장하지 않는다. 버킷 경계는 `1d`=거래일(`trading_date`) 하나, `1w`=그 거래일이 속한 주(**월요일 시작**, ISO-8601·KST), `1M`=그 거래일이 속한 달력월(**1일 시작**, KST). `sourceTime`은 버킷 시작일 `T00:00:00`(월요일·1일이 실제 거래일이 아니어도 라벨로만 쓴다). OHLCV는 버킷 안 분봉 중 최초 open·최대 high·최소 low·최종 close·합계 volume이다. **공개 상한(reveal bound)**: 오늘 `READY` 재생세션이 없으면 어떤 `interval`이든 200 `[]`(1분봉과 동일 계약), 있으면 그 세션의 재생거래일보다 이전 거래일은 전량 집계, 재생거래일 당일은 1분봉과 같은 공개 컷오프(09:01 이전 0개, 09:01부터 컷오프까지)까지만 집계, 재생거래일 이후 거래일은 방어적으로 제외한다. **미완성 버킷은 응답에 포함된다**(진행 중인 거래일·주·월도 이미 공개된 분봉만으로 계산해 노출, 공개된 분봉이 0개인 버킷만 제외). **거래일이 없는 주·월은 응답에 없다**(빈 봉으로 채우지 않음, 반환된 봉 사이가 달력상 연속임을 보장하지 않음). **`from`·`to` 해석이 `1m`과 다르다** — `1d`·`1w`·`1M`은 `from`·`to`의 **날짜 성분만** 쓰고(시각 성분 무시) 버킷 시작일이 `[from의 날짜, to의 날짜]`(양끝 포함) 안에 있으면 포함한다. `1m`은 기존대로 날짜 성분을 무시하고 시각 성분만 쓴다 — 두 규칙은 의도적으로 다르다.
+- **주식 집계봉의 과거 깊이는 1분봉 보관 기간에 묶여 있다** — 원천이 `stock_candles`뿐인데 그 테이블은 최근 20영업일만 보관하므로(PRD MKT-005), 커서로 계속 과거로 넘겨도 `1d`는 약 20개·`1w`는 4~5개·`1M`은 1~2개에서 `hasNext=false`가 된다. **버그가 아니라 데이터 깊이의 한계다.** 3년치 일봉을 별도 테이블에 아카이브해 이 한계를 푸는 것이 MKT-011(`ai/specs/050-stock-daily-archive`, 이슈 #506)이며, **아직 구현 전이라 이 절의 계약은 그대로다** — 아카이브가 생겨도 조회 소스 전환은 재생 모델의 공개 상한과 충돌해 별도 결정(이슈 #506·#495)이 선행된다.
 - **코인 위임(`1d`·`1w`·`1M`) 규칙 요약** — `interval`에 따라 빗썸 엔드포인트가 `/v1/candles/days`·`/v1/candles/weeks`·`/v1/candles/months`(`1m`은 기존 `/v1/candles/minutes/1`)로 분기될 뿐, 저장·캐시(MySQL·Redis 어느 쪽에도)는 하지 않는다는 `1m` 원칙이 그대로 적용된다. 필드 매핑도 동일하다 — `trade_price`→`close`(이름과 달리 현재가가 아니다), `candle_acc_trade_volume`→`volume`(거래대금 `candle_acc_trade_price`와 다르다). **버킷 경계는 빗썸이 준 값을 그대로 쓴다** — 서버는 빗썸 봉을 다시 자르거나 묶지 않고 `candle_date_time_kst`를 `sourceTime`으로 그대로 매핑한다. 일·주·월봉 전용 필드(`prev_closing_price`·`change_price`·`change_rate`·`first_day_of_period` 등)는 무시하고 원본 응답을 그대로 내려주지 않는다.
 - **경계 일치 관측(외부 스모크, 2026-08-03 KST, `ai/specs/013-candle-interval/run-log.md` "외부 스모크" 참조)** — 빗썸 공개 캔들 REST를 직접 호출해 확인한 결과, 일봉 `candle_date_time_kst`는 KST 자정·그날 날짜, 주봉은 KST 자정·**월요일**(2026-08-03 실측 기준 검증), 월봉은 KST 자정·**매월 1일**이었다. 즉 **관측 시점 기준으로 주식(우리가 KST 거래일로 자르는 경계)과 코인(빗썸이 준 경계)의 버킷 경계가 사실상 일치**한다(KST 자정·월요일 시작·1일 시작). 이것은 빗썸 쪽 사양을 관측한 결과일 뿐이며, 서버 코드는 이 일치를 전제로 코인 경로를 보정하지 않는다 — 빗썸이 경계를 바꾸면 주식·코인 버킷 경계는 다시 벌어질 수 있다.
 
@@ -119,3 +120,19 @@ market 도메인의 API 계약 상세다. 전체 라우트를 한눈에 보는 �
 | 실전투자 | `https://openapi.koreainvestment.com:9443` |
 
 **2026-07-30 실측 결과.** 19:50 KST(장외)에 시드 → `marketStatus: OPEN`, 삼성전자 현재가 `70900.0000`(`sourceTime` `2026-07-29T15:30:00`), 캔들 391건(09:00~15:30), 16종목·6,256건 삽입. 이어서 10주 매수(`amount` 709,000 / `fee` 106) → 4주 매도(`realizedPnl` -84) → `cashBalance` 9,574,452로 정산까지 확인했다. 시드 전에는 현재가 409 `PRICE_UNAVAILABLE`·캔들 `200 []`·주문 409 `MARKET_CLOSED`였다.
+
+### 로컬 KIS 일봉 아카이브 실수집 트리거 (local 프로필 전용, 050)
+
+| Method | URL | 인증 | 요청 | 성공 응답 | 오류 응답 | Spec |
+|---|---|---|---|---|---|---|
+| POST | /api/dev/stock-daily-imports | Access Bearer 필수 | 본문 없음 | 200 `{"serviceDate":"2026-07-30","targetEndDate":"2026-07-29","newlyCollectedCount":12000,"totalArchivedCount":12000,"importStatus":"SUCCESS","failureReason":null}` (`StockDailyImportTriggerResponse`) | `local` 프로필이 아니면 404. Access 인증 실패는 401 `UNAUTHORIZED` | 050 MKT-011 (개발 도구) |
+
+**왜 있나.** 위 "로컬 KIS 실수집 트리거"와 같은 성격이지만 대상이 다르다 — 저 트리거는 1분봉(재생용, `stock_candles`)을, 이 트리거는 **일봉 아카이브**(장기 차트용, `stock_daily_candles`)를 채운다. 실제 일봉은 평일 08:25 배치(`StockDailyCandleCollector`)가 종목별 빈 구간만 채우는데, 그 시각을 기다리지 않거나 앱이 그 시각에 꺼져 있어 건너뛴 날에 즉시 채우기 위한 트리거다.
+
+**무엇을 하나.** ① `StockDailyCandleCollector.collect()`를 한 번 실행한다 — 종목마다 "있어야 할 구간(3년 전 ~ 직전 영업일) − 이미 저장된 구간"만 계산해 빈 구간이 있는 종목만 KIS를 호출한다(이미 최신까지 저장된 종목은 호출 자체가 없다 — 멱등). ② 결과(신규 저장 건수·누적 총량·이력 상태)를 돌려준다. 재생세션(`StockReplaySession`)은 건드리지 않는다 — 이 spec의 범위가 아니다(spec 050 §범위 제외, 캔들 조회 API 연결은 후속).
+
+- **`newlyCollectedCount`는 이번 호출로 새로 저장된 일봉 수다** (위 1분봉 트리거의 `collectedKisCandleCount`와 달리 "그 시점의 총량"이 아니라 "이번 실행의 증가분"이다 — 트리거 호출 전후로 `totalArchivedCount`를 비교해 계산한다). 최초 호출은 종목별 최대 3년치(약 750영업일)를 순차 조회하므로 16종목 기준 수 분 이상 걸릴 수 있다.
+- **`totalArchivedCount`는 `stock_daily_candles`에 `KIS_DAILY`로 누적 저장된 전체 일봉 수**(전 종목 합계)다. 이미 최신까지 채워진 상태에서 재호출하면 `newlyCollectedCount`는 0이고 `totalArchivedCount`는 이전과 동일하다 — **정상이다**(STOCK-DAILY-007 재실행 멱등).
+- **`importStatus`·`failureReason`은 `targetEndDate`(이번 실행의 직전 영업일) 기준 가장 최근 수집 이력**(`market_data_imports`, `source=KIS_DAILY`)이다. 이력이 아직 없으면(락을 얻지 못해 이번 실행이 조용히 스킵된 경우 등) 둘 다 `null`이다.
+- **트랜잭션을 열지 않는다** — 위 1분봉 트리거와 같은 이유(종목별 순차 HTTP 호출 동안 DB 커넥션을 점유하지 않기 위해). DB 조회는 `StockDailyImportTriggerWriter`의 별도 트랜잭션 메서드로 분리했다.
+- KIS 앱키 환경·도메인 짝(위 표), 오류 코드 판별(`EGW02004`·`EGW00133`·`EGW00201`)은 1분봉 트리거와 동일하다 — 같은 `KisProperties`·레이트리밋 재시도 패턴을 쓴다.
