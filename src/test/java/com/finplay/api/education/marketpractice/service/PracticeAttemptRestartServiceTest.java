@@ -194,7 +194,7 @@ class PracticeAttemptRestartServiceTest {
 			Market.CRYPTO, "TUTORIAL-BTC", "튜토리얼 비트코인", BigDecimal.ONE, 5_000L, true, NOW);
 		ReflectionTestUtils.setField(instrument, "id", INSTRUMENT_ID);
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
-		attempt.selectInstrument(instrument, NOW.minusMinutes(10), NOW.toLocalDate(), 123L, (short)1,
+		attempt.selectInstrument(instrument, NOW.minusMinutes(10), NOW.toLocalDate(), 123L, (short)1, null,
 			NOW.minusMinutes(10));
 		return attempt;
 	}
@@ -205,7 +205,7 @@ class PracticeAttemptRestartServiceTest {
 		Instrument realInstrument = Instrument.create(
 			Market.CRYPTO, "BTC", "비트코인", BigDecimal.ONE, 5_000L, true, NOW);
 		ReflectionTestUtils.setField(realInstrument, "id", REAL_INSTRUMENT_ID);
-		attempt.selectInstrument(realInstrument, NOW.minusDays(1), NOW.toLocalDate().minusDays(1), 456L, (short)1,
+		attempt.selectInstrument(realInstrument, NOW.minusDays(1), NOW.toLocalDate().minusDays(1), 456L, (short)1, null,
 			NOW.minusDays(1));
 		ReflectionTestUtils.setField(attempt, "status", PracticeAttemptStatus.COMPLETED);
 		ReflectionTestUtils.setField(attempt, "completedAt", NOW.minusDays(1));

@@ -413,7 +413,7 @@ class PracticeScenarioProgressServiceTest {
 		ReflectionTestUtils.setField(instrument, "id", INSTRUMENT_ID);
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
 		attempt.selectInstrument(
-			instrument, ANCHOR, ANCHOR.toLocalDate(), 123_456_789L, generatorVersion, ANCHOR);
+			instrument, ANCHOR, ANCHOR.toLocalDate(), 123_456_789L, generatorVersion, null, ANCHOR);
 		return attempt;
 	}
 }

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.domain.TutorialScenarioScriptId;
 import com.finplay.api.market.service.TutorialPriceGenerator;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -99,6 +100,62 @@ class PracticeAttemptTest {
 		assertThat(attempt.getExitPreset()).isNull();
 	}
 
+	// 049 배포 순간 진행 중이던 실행의 상태다 — 컬럼은 NULL인데 커서에는 041 구간 id가 살아 있다.
+	// 이 해석이 빠지면 그 사용자는 "대본이 저작되지 않은 식별자입니다"로 500에 갇히고 회복 수단이
+	// 재시작뿐이다.
+	@Test
+	void scenarioScriptIdFallsBackToTheStoryScriptWhenTheColumnIsNullOnAScriptRun() {
+		PracticeAttempt attempt = PracticeAttempt.create(1L, Market.CRYPTO, NOW.minusHours(1));
+		selectInstrument(attempt, TutorialPriceGenerator.VERSION_2, null);
+		ReflectionTestUtils.setField(attempt, "scenarioStageId", "ACT2_RUMOR");
+
+		assertThat(attempt.scenarioScriptId()).isEqualTo(TutorialScenarioScriptId.CRYPTO_STORY_V1);
+	}
+
+	@Test
+	void scenarioScriptIdReturnsThePersistedIdentifierWhenPresent() {
+		PracticeAttempt attempt = PracticeAttempt.create(1L, Market.CRYPTO, NOW.minusHours(1));
+		selectInstrument(attempt, TutorialPriceGenerator.VERSION_2, TutorialScenarioScriptId.CRYPTO_ORDER_BASICS_V1);
+
+		assertThat(attempt.scenarioScriptId()).isEqualTo(TutorialScenarioScriptId.CRYPTO_ORDER_BASICS_V1);
+	}
+
+	// 버전 1 실행에 식별자가 남아 있어도 대본을 쓰지 않는다. 여기서 새면 5분 마감이 걸린 실행이 대본
+	// 가격을 받게 된다.
+	@Test
+	void scenarioScriptIdIsNullForNonScriptRunEvenWhenTheColumnHoldsAValue() {
+		PracticeAttempt attempt = PracticeAttempt.create(1L, Market.CRYPTO, NOW.minusHours(1));
+		selectInstrument(attempt, TutorialPriceGenerator.VERSION_1, TutorialScenarioScriptId.CRYPTO_ORDER_BASICS_V1);
+
+		assertThat(attempt.scenarioScriptId()).isNull();
+	}
+
+	// **파생 접근자로 단언하면 이 회귀를 못 잡는다** — restart가 generatorVersion도 지우므로 컬럼이
+	// 남아 있어도 scenarioScriptId()는 null을 돌려준다. 원본 필드를 직접 읽는다.
+	@Test
+	void restartClearsThePersistedScriptIdColumnItselfNotJustTheDerivedView() {
+		PracticeAttempt attempt = PracticeAttempt.create(1L, Market.CRYPTO, NOW.minusHours(1));
+		selectInstrument(attempt, TutorialPriceGenerator.VERSION_2, TutorialScenarioScriptId.CRYPTO_ORDER_BASICS_V1);
+
+		attempt.restart(NOW);
+
+		assertThat(ReflectionTestUtils.getField(attempt, "scenarioScriptId")).isNull();
+	}
+
+	// clearScenarioProgress가 selectInstrument 안에서 먼저 돌기 때문에, 순서가 뒤집히면 새로 박은
+	// 식별자가 곧바로 지워진다. 이전 실행의 다른 식별자가 남은 상태에서 확인한다.
+	@Test
+	void selectInstrumentReplacesTheScriptIdLeftFromThePreviousRun() {
+		PracticeAttempt attempt = PracticeAttempt.create(1L, Market.CRYPTO, NOW.minusHours(1));
+		ReflectionTestUtils.setField(
+			attempt, "scenarioScriptId", TutorialScenarioScriptId.CRYPTO_ORDER_BASICS_V1);
+
+		selectInstrument(attempt, TutorialPriceGenerator.VERSION_2, TutorialScenarioScriptId.CRYPTO_STORY_V1);
+
+		assertThat(ReflectionTestUtils.getField(attempt, "scenarioScriptId"))
+			.isEqualTo(TutorialScenarioScriptId.CRYPTO_STORY_V1);
+	}
+
 	private static void putScenarioProgress(PracticeAttempt attempt) {
 		ReflectionTestUtils.setField(attempt, "scenarioStageId", "ACT4_CRASH");
 		ReflectionTestUtils.setField(attempt, "scenarioStageElapsedSeconds", 57L);
@@ -122,11 +179,16 @@ class PracticeAttemptTest {
 	}
 
 	private static void selectInstrument(PracticeAttempt attempt) {
+		selectInstrument(attempt, TutorialPriceGenerator.VERSION_1, null);
+	}
+
+	private static void selectInstrument(
+		PracticeAttempt attempt, short generatorVersion, TutorialScenarioScriptId scriptId) {
 		Instrument instrument = Instrument.create(
 			Market.CRYPTO, "TUTORIAL-BTC", "튜토리얼 비트코인", BigDecimal.ONE, 5_000L, true, NOW);
 		ReflectionTestUtils.setField(instrument, "id", 21L);
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
-		attempt.selectInstrument(instrument, NOW.minusMinutes(10), NOW.toLocalDate(), 123L, (short)1,
-			NOW.minusMinutes(10));
+		attempt.selectInstrument(instrument, NOW.minusMinutes(10), NOW.toLocalDate(), 123L, generatorVersion,
+			scriptId, NOW.minusMinutes(10));
 	}
 }

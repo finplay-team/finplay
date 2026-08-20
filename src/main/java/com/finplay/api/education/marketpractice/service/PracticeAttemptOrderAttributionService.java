@@ -11,6 +11,7 @@ import com.finplay.api.education.marketpractice.repository.PracticeAttemptReposi
 import com.finplay.api.education.marketpractice.repository.PracticeRiskSnapshotRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.domain.TutorialScenarioScriptId;
 import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.domain.Trade;
@@ -133,9 +134,30 @@ public class PracticeAttemptOrderAttributionService implements PracticeOrderAttr
 
 		// STOCK은 snapshot(참조선)까지만이다(EXITPRESET-018) — 실제 거래 화면에서도 OCO는 코인 전용이고
 		// 주식은 OCO 경로 자체가 없다.
-		if (attempt.getMarket() == Market.CRYPTO) {
+		if (attempt.getMarket() == Market.CRYPTO && automaticExitPlanAllowed(attempt)) {
 			createAutomaticExitPlan(attempt, trade, preset, entrySequence, createdAt);
 		}
+	}
+
+	/**
+	 * 2단계 대본(주문 방법 학습) 실행에서만 자동 손절·익절 예약을 건너뛴다(049 ORDERBASICS-022).
+	 *
+	 * <p><b>위험 기준선(snapshot)은 위에서 그대로 만든다.</b> 건너뛰는 것은 예약뿐이다 — 기준선까지
+	 * 빼면 {@code PracticeAttemptEvidenceService.requireCurrentRun}이 {@code PRACTICE_EVIDENCE_MISSING}으로
+	 * 던져 관찰·복기가 통째로 깨지고 진입별 대조 배열도 빈다.
+	 *
+	 * <p><b>왜 예약을 만들지 않는가.</b> 손절·익절은 3단계에서 배우는 것이라 아직 배우지 않은 기능이
+	 * 2단계에서 몰래 작동하는 것이 이상했고, ±12%를 가상 20분에 도는 이 대본에서 기본 프리셋은
+	 * <b>매수 6~9초 만에 발동한다.</b> 그러면 "매수·매도를 직접 눌러 본다"는 학습 목표가 사라지고,
+	 * 자동 청산된 매도는 왕복으로 세지 않으므로(#503) 다음 단계가 영영 열리지 않는다.
+	 *
+	 * <p><b>판정은 이 run의 대본 하나로만 한다.</b> 단계 진행 상태로 가르면 판정이 순환하고 같은 run 안에서
+	 * 예약이 생겼다 안 생겼다 한다. 대본을 쓰지 않는 실행(생성기 버전 1)은 {@code null}이라 예전대로
+	 * 예약이 생긴다. <b>2단계 대본이 늘어나면 이 판정도 함께 늘려야 한다</b> — 빠뜨리면 그 대본에서
+	 * 예약이 조용히 되살아난다.
+	 */
+	private boolean automaticExitPlanAllowed(PracticeAttempt attempt) {
+		return attempt.scenarioScriptId() != TutorialScenarioScriptId.CRYPTO_ORDER_BASICS_V1;
 	}
 
 	/**

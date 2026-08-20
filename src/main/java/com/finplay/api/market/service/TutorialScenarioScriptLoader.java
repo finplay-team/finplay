@@ -1,7 +1,8 @@
-// 시장별 튜토리얼 대본 파일을 기동 시 1회 읽어 정합성을 검증하고 불변 객체로 보관하는 컴포넌트
+// 대본 식별자별 튜토리얼 대본 파일을 기동 시 1회 읽어 정합성을 검증하고 불변 객체로 보관하는 컴포넌트
 package com.finplay.api.market.service;
 
 import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.domain.TutorialScenarioScriptId;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
@@ -22,30 +23,37 @@ public final class TutorialScenarioScriptLoader {
 	// **구간 id는 사실상 스키마다.** 진행 중인 attempt가 practice_attempts.scenario_stage_id에 이 리터럴을
 	// 들고 있으므로, 배포된 대본에서 id를 바꾸거나 지우면 그 사용자는 "대본에 없는 구간입니다"로 500에
 	// 갇힌다(재시작 외에 회복 수단이 없다). 문안·배율은 재배포로 고칠 수 있지만 id는 고치지 않는다.
-	private static final Map<Market, String> SCRIPT_RESOURCE_PATHS = Map.of(Market.CRYPTO,
-		"/tutorial/scenario-crypto-v1.json");
-
-	private final Map<Market, TutorialScenarioScript> scripts;
+	// 파일 경로는 TutorialScenarioScriptId가 들고 있다 — 시장 하나에 대본이 여럿이라 Market은 키가 되지
+	// 못한다(049 plan §1).
+	private final Map<TutorialScenarioScriptId, TutorialScenarioScript> scripts;
 
 	// 생성자는 하나만 둔다 — 둘이면 Spring이 어느 쪽으로 주입할지 정하지 못해 빈 생성 자체가 실패한다.
 	// 깨진 대본으로 기동이 실패하는지 검증하는 테스트는 아래 load를 직접 부른다.
 	public TutorialScenarioScriptLoader(ObjectMapper objectMapper) {
-		Map<Market, TutorialScenarioScript> loaded = new EnumMap<>(Market.class);
-		SCRIPT_RESOURCE_PATHS.forEach((market, path) -> loaded.put(market, load(objectMapper, market, path)));
+		Map<TutorialScenarioScriptId, TutorialScenarioScript> loaded = new EnumMap<>(TutorialScenarioScriptId.class);
+		for (TutorialScenarioScriptId scriptId : TutorialScenarioScriptId.values()) {
+			loaded.put(scriptId, load(objectMapper, scriptId.market(), scriptId.resourcePath()));
+		}
 		this.scripts = Map.copyOf(loaded);
 	}
 
 	// 대본이 저작된 시장에서만 생성기 버전 2를 쓴다 — 041은 CRYPTO 대본 하나만 저작했고 STOCK 대본은
 	// SCENARIO-024의 후속이다. 호출부가 시장 목록을 따로 들고 있으면 STOCK 대본이 추가될 때 그 목록을
-	// 함께 고치지 않아 조용히 버전 1에 머문다.
+	// 함께 고치지 않아 조용히 버전 1에 머문다. 대본이 여럿이 된 뒤에도 "이 시장에 대본이 하나라도
+	// 있는가"라는 의미는 그대로다.
 	public boolean hasScript(Market market) {
-		return scripts.containsKey(market);
+		return TutorialScenarioScriptId.hasAny(market);
 	}
 
-	public TutorialScenarioScript script(Market market) {
-		TutorialScenarioScript script = scripts.get(market);
+	// 실행이 처음 서는 대본이다. 종목 선택 시점에 attempt에 박힌다(049 plan §2).
+	public TutorialScenarioScriptId firstScriptId(Market market) {
+		return TutorialScenarioScriptId.first(market);
+	}
+
+	public TutorialScenarioScript script(TutorialScenarioScriptId scriptId) {
+		TutorialScenarioScript script = scriptId == null ? null : scripts.get(scriptId);
 		if (script == null) {
-			throw new IllegalArgumentException("대본이 저작되지 않은 시장입니다: " + market);
+			throw new IllegalArgumentException("대본이 저작되지 않은 식별자입니다: " + scriptId);
 		}
 		return script;
 	}
@@ -66,6 +74,11 @@ public final class TutorialScenarioScriptLoader {
 	private static void validate(TutorialScenarioScript script, Market market, String resourcePath) {
 		require(script.version() == TutorialPriceGenerator.VERSION_2, resourcePath, "대본 버전이 2가 아닙니다.");
 		require(script.market() == market, resourcePath, "대본의 시장이 파일 위치와 다릅니다.");
+		// 기준가가 없으면 모든 배율이 0원에 곱해져 대본 전체가 무의미해진다(049 ORDERBASICS-003).
+		require(
+			script.basePrice() != null && script.basePrice().signum() > 0,
+			resourcePath,
+			"기준가가 비어 있거나 0 이하입니다.");
 		require(!script.stages().isEmpty(), resourcePath, "구간이 하나도 없습니다.");
 
 		Set<String> stageIds = new HashSet<>();

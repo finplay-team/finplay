@@ -3,6 +3,7 @@ package com.finplay.api.education.marketpractice.domain;
 
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.domain.TutorialScenarioScriptId;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -67,6 +68,13 @@ public class PracticeAttempt {
 	@Column(name = "generator_version")
 	private Short generatorVersion;
 
+	// 이 실행이 쓰는 대본. 원본 필드에는 getter를 열지 않는다 — NULL 해석이 아래 파생 접근자 하나에만
+	// 있어야 하고, 원본을 그대로 읽는 경로가 하나라도 생기면 그 경로만 다른 대본을 보기 때문이다.
+	@Getter(AccessLevel.NONE)
+	@Enumerated(EnumType.STRING)
+	@Column(name = "scenario_script_id", length = 32)
+	private TutorialScenarioScriptId scenarioScriptId;
+
 	// 대본 위치 (구간 id, 구간 내 경과 실제 초). 생성기 버전 1 attempt에서는 계속 null이다.
 	@Column(name = "scenario_stage_id", length = 32)
 	private String scenarioStageId;
@@ -117,12 +125,15 @@ public class PracticeAttempt {
 		return new PracticeAttempt(userId, market, createdAt);
 	}
 
+	// scenarioScriptId는 대본을 쓰지 않는 실행에서 null이다. 어느 대본으로 시작하는지는 호출자가 정한다 —
+	// 엔티티는 대본 목록을 볼 수 없다(049 plan §2의 "값이 정해지는 자리").
 	public void selectInstrument(
 		Instrument instrument,
 		LocalDateTime anchorAt,
 		LocalDate tutorialDate,
 		long priceSeed,
 		short generatorVersion,
+		TutorialScenarioScriptId scenarioScriptId,
 		LocalDateTime updatedAt) {
 		if (this.status != PracticeAttemptStatus.SELECTING_INSTRUMENT) {
 			throw new IllegalStateException("종목 선택 대기 상태에서만 종목을 선택할 수 있습니다.");
@@ -135,6 +146,7 @@ public class PracticeAttempt {
 		this.status = PracticeAttemptStatus.IN_PROGRESS;
 		this.updatedAt = updatedAt;
 		clearScenarioProgress();
+		this.scenarioScriptId = scenarioScriptId;
 	}
 
 	public void restart(LocalDateTime updatedAt) {
@@ -169,9 +181,37 @@ public class PracticeAttempt {
 		return generatorVersion != null && generatorVersion == SCENARIO_GENERATOR_VERSION;
 	}
 
+	/**
+	 * 이 실행이 지금 서 있는 대본. 대본을 쓰지 않는 실행은 {@code null}이다.
+	 *
+	 * <p><b>NULL 해석은 여기 한 곳에만 둔다</b>(049 plan §NULL 해석 규칙). 049 배포 순간 진행 중이던 실행은
+	 * 이 컬럼이 {@code NULL}인데 {@code scenario_stage_id}에는 041 대본의 구간 id가 살아 있다. 그 조합을
+	 * {@code CRYPTO_STORY_V1}로 읽어야 그 사용자가 "대본에 없는 구간입니다"로 500에 갇히지 않는다 —
+	 * 회복 수단이 재시작뿐이기 때문이다. 조회부가 각자 {@code null}을 처리하면 한 곳을 놓쳤을 때 그
+	 * 경로만 다른 대본을 본다.
+	 *
+	 * <p><b>⚠ 이 폴백은 시장을 보지 않는다. STOCK 대본(041 SCENARIO-024)을 저작하는 PR이 여기를 반드시
+	 * 함께 고쳐야 한다.</b> 지금은 CRYPTO만 대본이 있어 {@code usesScenarioScript()}가 STOCK에서 참이 될
+	 * 수 없으므로 도달 불가다. 그러나 STOCK 대본이 들어오는 순간 {@code generatorVersionFor(STOCK)}이 2가
+	 * 되고, 컬럼이 {@code NULL}인 STOCK attempt가 이 폴백으로 <b>CRYPTO 대본</b>을 받는다 —
+	 * {@code TutorialPriceGenerator.requireScriptMatches}가 "attempt의 시장과 다른 대본입니다"로 던져
+	 * 그 사용자의 조회·tick·주문이 전부 500이 된다. 진입 경로는
+	 * {@code PracticeAttemptService.scenarioScriptIdFor}가 시장 조건으로 이미 막았지만 <b>폴백은 안 막혔다</b>.
+	 */
+	public TutorialScenarioScriptId scenarioScriptId() {
+		if (!usesScenarioScript()) {
+			return null;
+		}
+		return scenarioScriptId == null ? TutorialScenarioScriptId.CRYPTO_STORY_V1 : scenarioScriptId;
+	}
+
 	// 종목 선택과 재시작 양쪽에서 대본 위치를 지운다. 재시작이 빠뜨리면 재시작한 사용자가 이전 실행의 위치와
 	// 봉을 그대로 물려받아 첫 화면에 지난 실행의 4막 저점이 노출된다(041 plan §재시작 시 초기화).
+	//
+	// 대본 식별자도 함께 지운다 — 빠뜨리면 3단계에서 재시작한 사용자가 2단계를 건너뛰고 041 대본으로 다시
+	// 시작한다(049 plan §2). selectInstrument는 이 호출 뒤에 새 식별자를 박는다.
 	private void clearScenarioProgress() {
+		this.scenarioScriptId = null;
 		this.scenarioStageId = null;
 		this.scenarioStageElapsedSeconds = null;
 		this.scenarioCandleOpen = null;

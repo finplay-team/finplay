@@ -1,6 +1,7 @@
 {
   "version": 2,
   "market": "CRYPTO",
+  "basePrice": 10000.00000000,
   "stages": [
     {
       "id": "ACT1",

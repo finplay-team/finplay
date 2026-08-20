@@ -1,10 +1,10 @@
 // 대본 위치를 가격으로 바꾸는 생성기 버전 2의 고정 벡터와 경계 처리를 검증한다.
 package com.finplay.api.market.service;
 
+import com.finplay.api.market.domain.TutorialScenarioScriptId;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.finplay.api.market.domain.Market;
 import java.math.BigDecimal;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
@@ -16,7 +16,7 @@ class TutorialScenarioPriceGeneratorTest {
 	private static final BigDecimal CRYPTO_BASE_PRICE = new BigDecimal("10000.00000000");
 
 	private final TutorialScenarioScript script = new TutorialScenarioScriptLoader(new ObjectMapper())
-		.script(Market.CRYPTO);
+		.script(TutorialScenarioScriptId.CRYPTO_STORY_V1);
 
 	// 대본 배율이 바뀌면 이 벡터가 깨진다. 각 구간의 시작·극값 지점을 대표로 골랐다.
 	@ParameterizedTest

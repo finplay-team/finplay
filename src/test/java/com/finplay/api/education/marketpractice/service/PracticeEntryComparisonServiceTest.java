@@ -188,7 +188,7 @@ class PracticeEntryComparisonServiceTest {
 		ReflectionTestUtils.setField(instrument, "id", 21L);
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
 		attempt.selectInstrument(
-			instrument, NOW, NOW.toLocalDate(), 1L, TutorialPriceGenerator.VERSION_2, NOW);
+			instrument, NOW, NOW.toLocalDate(), 1L, TutorialPriceGenerator.VERSION_2, null, NOW);
 		return attempt;
 	}
 }
