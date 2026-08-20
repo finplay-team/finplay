@@ -35,6 +35,7 @@ import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -60,7 +61,10 @@ public class OrderExecutionService {
 	private final Clock clock;
 	private final ApplicationEventPublisher eventPublisher;
 
-	@Transactional
+	// ADR-0028 — holdings 신규 생성 INSERT가 REPEATABLE READ(MySQL 기본값)의 갭 락으로 서로 다른
+	// 계좌·종목 간에도 데드락을 일으킬 수 있어, 이 트랜잭션만 READ COMMITTED로 좁혀 적용한다. 계좌·보유
+	// 정합성은 이미 명시적 비관적 락(FOR UPDATE)에 의존하므로 격리수준을 낮춰도 영향이 없다.
+	@Transactional(isolation = Isolation.READ_COMMITTED)
 	public OrderResponse execute(
 		Long userId, String idempotencyKey, String requestHash, OrderCreateRequest request) {
 		validateOrderType(request.orderType());

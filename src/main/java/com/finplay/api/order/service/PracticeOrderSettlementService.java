@@ -3,6 +3,7 @@ package com.finplay.api.order.service;
 
 import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderSide;
+import com.finplay.api.order.domain.OrderStatus;
 import com.finplay.api.order.repository.ExitPlanRepository;
 import com.finplay.api.order.repository.OrderRepository;
 import java.math.BigDecimal;
@@ -43,12 +44,18 @@ public class PracticeOrderSettlementService {
 			return;
 		}
 		// fillIfPending은 같은 트랜잭션의 영속성 컨텍스트에서 동일 엔티티를 반환하므로 getStatus()가
-		// 방금 체결 여부를 그대로 반영한다 — 체결된 주문은 취소 대상에서 자연히 제외된다.
-		for (Long orderId : orderRepository.findPendingIdsBySessionId(sessionId)) {
-			Long userId = orderRepository.findById(orderId)
-				.orElseThrow(() -> new IllegalStateException("교육 지정가 주문을 찾을 수 없습니다."))
-				.getUser().getId();
-			limitOrderCancelService.cancelOrder(userId, orderId);
+		// 방금 체결 여부를 그대로 반영한다 — 체결된 주문은 취소 대상에서 자연히 제외된다. 재조회 대신 위
+		// pendingOrderIds를 그대로 재사용한다(PR #514 리뷰 권장사항, ADR-0028) — advanceTick이 READ
+		// COMMITTED가 된 뒤로 이 메서드에서 다시 findPendingIdsBySessionId를 부르면 이 틱 시작 이후 같은
+		// 세션에 새로 커밋된 지정가 주문까지 취소 대상에 끼어들 수 있다. 애초에 "이 틱 시작 시점에 있던
+		// 주문만 이 틱에서 판정한다"는 의도에도 재조회보다 이 방식이 더 맞는다.
+		for (Long orderId : pendingOrderIds) {
+			Order order = orderRepository.findById(orderId)
+				.orElseThrow(() -> new IllegalStateException("교육 지정가 주문을 찾을 수 없습니다."));
+			if (order.getStatus() != OrderStatus.PENDING) {
+				continue;
+			}
+			limitOrderCancelService.cancelOrder(order.getUser().getId(), orderId);
 		}
 	}
 

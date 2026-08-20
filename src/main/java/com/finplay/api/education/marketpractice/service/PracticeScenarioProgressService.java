@@ -37,6 +37,10 @@ public class PracticeScenarioProgressService {
 	/**
 	 * 호출자가 이미 attempt를 비관 잠금한 트랜잭션 안에서만 부른다(현재 호출부는 {@code POST .../tick}).
 	 * 생성기 버전 1 attempt는 대본을 쓰지 않으므로 아무 일도 하지 않는다.
+	 *
+	 * <p>ADR-0028 §후속 — 이 메서드의 {@code @Transactional}은 항상 호출자({@code PracticeAttemptChartService.tick})의
+	 * 트랜잭션에 합류(REQUIRED)하므로 격리수준을 여기 붙여도 적용되지 않는다. 실제 격리수준은 그 트랜잭션을
+	 * 여는 호출자 쪽에 명시돼 있다 — 이 메서드가 다른 비트랜잭션 경로에서도 호출되게 되면 그때 다시 검토한다.
 	 */
 	@Transactional
 	public void advance(PracticeAttempt attempt, LocalDateTime now) {

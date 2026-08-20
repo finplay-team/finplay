@@ -40,6 +40,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -187,6 +188,75 @@ class OrderServiceTest {
 
 		// 원인이 다른 제약이므로 재조회(멱등키 폴백)를 시도하지 않는다 — findByUserIdAndIdempotencyKey는 선제 조회 1회만 호출됨.
 		verify(orderRepository, times(1)).findByUserIdAndIdempotencyKey(USER_ID, IDEMPOTENCY_KEY);
+	}
+
+	// ADR-0028 — 데드락 1회 재시도(PR #514 리뷰 권장사항 1번).
+	@Test
+	void createOrderRetriesOnceAndReturnsResultWhenDeadlockThenSucceeds() {
+		when(orderRepository.findByUserIdAndIdempotencyKey(USER_ID, IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
+		OrderResponse executionResult = new OrderResponse(
+			200L, "STOCK", 42L, "BUY", "MARKET", "FILLED", new BigDecimal("3"), NOW, 300L, new BigDecimal("100"),
+			300L, 1L, null, NOW);
+		when(orderExecutionService.execute(any(), anyString(), anyString(), any()))
+			.thenThrow(
+				new CannotAcquireLockException("Deadlock found when trying to get lock; try restarting transaction"))
+			.thenReturn(executionResult);
+
+		OrderResponse response = orderService.createOrder(USER_ID, IDEMPOTENCY_KEY, sampleRequest());
+
+		assertThat(response).isEqualTo(executionResult);
+		verify(orderExecutionService, times(2)).execute(any(), anyString(), anyString(), any());
+	}
+
+	@Test
+	void createOrderPropagatesDeadlockWhenRetryAlsoFails() {
+		when(orderRepository.findByUserIdAndIdempotencyKey(USER_ID, IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
+		CannotAcquireLockException deadlock = new CannotAcquireLockException(
+			"Deadlock found when trying to get lock; try restarting transaction");
+		when(orderExecutionService.execute(any(), anyString(), anyString(), any())).thenThrow(deadlock);
+
+		assertThatThrownBy(() -> orderService.createOrder(USER_ID, IDEMPOTENCY_KEY, sampleRequest()))
+			.isSameAs(deadlock);
+		verify(orderExecutionService, times(2)).execute(any(), anyString(), anyString(), any());
+	}
+
+	// PR #514 리뷰 권장사항 2번 — 재시도 호출도 원래 catch(DataIntegrityViolationException)와 같은 멱등키
+	// 충돌 폴백을 타야 한다. 이 테스트는 executeWithIdempotencyFallback으로 재시도 호출을 감싸기 전에는
+	// 실패했다(재시도에서 던진 DataIntegrityViolationException이 그대로 전파돼 IDEMPOTENCY_CONFLICT
+	// 대신 원인 예외가 노출됨).
+	@Test
+	void createOrderFallsBackToReplayWhenRetryAfterDeadlockHitsIdempotencyConflict() {
+		Instrument instrument = stockInstrument();
+		ReflectionTestUtils.setField(instrument, "id", 42L);
+		Order existingOrder = Order.create(
+			testUser(),
+			account(com.finplay.api.account.domain.Market.STOCK),
+			instrument,
+			OrderSide.BUY,
+			OrderType.MARKET,
+			new BigDecimal("3"),
+			IDEMPOTENCY_KEY,
+			requestHashOf(sampleRequest()),
+			NOW);
+		ReflectionTestUtils.setField(existingOrder, "id", 100L);
+		Trade existingTrade = Trade.of(
+			existingOrder, existingOrder.getAccount(), instrument,
+			com.finplay.api.market.domain.StockReplaySession.ready(NOW.toLocalDate(), NOW.toLocalDate(), NOW, NOW),
+			OrderSide.BUY, new BigDecimal("100"),
+			new BigDecimal("3"), 300L, 1L, null, NOW, NOW);
+		when(orderRepository.findByUserIdAndIdempotencyKey(USER_ID, IDEMPOTENCY_KEY))
+			.thenReturn(Optional.empty(), Optional.of(existingOrder));
+		when(tradeRepository.findByOrderId(100L)).thenReturn(Optional.of(existingTrade));
+		when(orderExecutionService.execute(any(), anyString(), anyString(), any()))
+			.thenThrow(
+				new CannotAcquireLockException("Deadlock found when trying to get lock; try restarting transaction"))
+			.thenThrow(new DataIntegrityViolationException(
+				"Duplicate entry '1-idem-key-1' for key 'orders.uk_orders_user_idempotency'"));
+
+		OrderResponse response = orderService.createOrder(USER_ID, IDEMPOTENCY_KEY, sampleRequest());
+
+		assertThat(response).isEqualTo(OrderResponse.of(existingOrder, existingTrade));
+		verify(orderExecutionService, times(2)).execute(any(), anyString(), anyString(), any());
 	}
 
 	@Test

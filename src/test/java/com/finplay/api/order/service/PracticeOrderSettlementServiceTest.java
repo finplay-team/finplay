@@ -95,11 +95,27 @@ class PracticeOrderSettlementServiceTest {
 
 	@Test
 	void settleOnTickLoadsPendingOrdersScopedToGivenSessionOnly() {
-		when(orderRepository.findPendingIdsBySessionId(SESSION_ID)).thenReturn(List.of(), List.of());
+		when(orderRepository.findPendingIdsBySessionId(SESSION_ID)).thenReturn(List.of());
 
 		service.settleOnTick(SESSION_ID, new BigDecimal("9500"), true);
 
-		verify(orderRepository, org.mockito.Mockito.times(2)).findPendingIdsBySessionId(SESSION_ID);
+		verify(orderRepository, org.mockito.Mockito.times(1)).findPendingIdsBySessionId(SESSION_ID);
+	}
+
+	// PR #514 재리뷰 권장사항 — 취소 판정을 위해 findPendingIdsBySessionId를 다시 부르지 않고 체결 판정
+	// 단계에서 이미 읽어둔 pendingOrderIds를 재사용한다. 재조회했다면 advanceTick이 READ COMMITTED가 된
+	// 뒤로 이 틱 처리 도중 같은 세션에 새로 커밋된 지정가 주문까지 취소 대상에 끼어들 수 있었다 — 이
+	// 테스트는 그 재조회 자체가 사라졌음을(정확히 1회만 호출됨) 검증해 그 경로를 원천적으로 막는다.
+	@Test
+	void settleOnTickCancelLoopReusesInitiallyFetchedIdsInsteadOfRequeryingSoLaterCommittedOrdersAreUnaffected() {
+		Order staysPending = practiceOrder(6L, "9000");
+		when(orderRepository.findPendingIdsBySessionId(SESSION_ID)).thenReturn(List.of(staysPending.getId()));
+		when(orderRepository.findById(staysPending.getId())).thenReturn(java.util.Optional.of(staysPending));
+
+		service.settleOnTick(SESSION_ID, new BigDecimal("9500"), true);
+
+		verify(orderRepository, org.mockito.Mockito.times(1)).findPendingIdsBySessionId(SESSION_ID);
+		verify(limitOrderCancelService).cancelOrder(USER_ID, staysPending.getId());
 	}
 
 	@Test

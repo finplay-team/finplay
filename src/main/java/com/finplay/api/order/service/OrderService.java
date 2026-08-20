@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -51,6 +52,23 @@ public class OrderService {
 			return replay.get();
 		}
 
+		try {
+			return executeWithIdempotencyFallback(userId, idempotencyKey, requestHash, request);
+		} catch (CannotAcquireLockException deadlock) {
+			// ADR-0028 — holdings 신규 생성 INSERT가 서로 다른 계좌·종목 간에도 MySQL 갭 락 데드락을 일으킬
+			// 수 있다(트랜잭션 전체 롤백이라 부분 커밋 없음, 같은 인자로 재시도해도 이중 체결 위험 없음).
+			// 격리수준(READ COMMITTED) 조정으로 빈도를 낮췄지만 완전히 없애지는 못해 1회만 재시도하고,
+			// 또 실패하면 원인을 감추지 않고 그대로 전파한다. 재시도 호출도 같은 멱등키 충돌 폴백을 타야
+			// 하므로(PR #514 리뷰 권장사항) executeWithIdempotencyFallback을 그대로 재사용한다 — 재시도가
+			// 또 CannotAcquireLockException을 던지면 이 catch 밖이라 그대로 전파된다(1회 제한 유지).
+			log.warn("주문 처리 중 데드락 발생 — 1회 재시도한다. userId={}, idempotencyKey={}",
+				userId, idempotencyKey, deadlock);
+			return executeWithIdempotencyFallback(userId, idempotencyKey, requestHash, request);
+		}
+	}
+
+	private OrderResponse executeWithIdempotencyFallback(
+		Long userId, String idempotencyKey, String requestHash, OrderCreateRequest request) {
 		try {
 			return orderExecutionService.execute(userId, idempotencyKey, requestHash, request);
 		} catch (DataIntegrityViolationException concurrentDuplicate) {
