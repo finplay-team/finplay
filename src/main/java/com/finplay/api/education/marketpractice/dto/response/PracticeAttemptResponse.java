@@ -32,8 +32,10 @@ public record PracticeAttemptResponse(
 		availableExitPresets = availableExitPresets == null ? List.of() : List.copyOf(availableExitPresets);
 	}
 
-	// 진입·재시작이 아닌 호출부(종목 선택 등)는 그 시점 튜토리얼 계좌를 새로 조회하지 않으므로 0으로 채운다
-	// (TUTORIAL-CASH-ISOL-011 범위는 진입·재시작 응답 한정, plan.md "API 설계" 참고).
+	// 튜토리얼 계좌를 조회하지 않는 호출부는 세 필드를 0으로 채운다. 남은 곳은 진행 조회
+	// (GET /api/education/practice의 attempt 필드)뿐이다 — tick과 함께 폴링되는 경로라 호출마다 계좌를
+	// 한 번 더 읽지 않는다. 쓰기 경로 네 곳(진입·재시작·종목 선택·프리셋 선택)은 모두 실값을 싣는다
+	// (TUTORIAL-CASH-ISOL-011, 뒤 둘은 이슈 #502에서 더했다).
 	//
 	// exitPresetLocked만은 기본값을 두지 않고 호출부가 반드시 넘기게 한다(042 EXITPRESET-003). 잠금 여부는
 	// 현재 순보유수량을 조회해야 알 수 있고, 잘못 false로 내리면 클라이언트가 바꿀 수 없는 프리셋 선택

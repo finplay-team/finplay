@@ -80,6 +80,15 @@ class PracticeAttemptServiceTest {
 		when(tradeService.netFilledQuantity(anyLong(), anyLong())).thenReturn(BigDecimal.ZERO);
 	}
 
+	// 이슈 #502로 종목 선택·프리셋 선택 응답도 튜토리얼 계좌를 읽는다. 그 값이 대상이 아닌 테스트가
+	// NPE로 죽지 않도록 기본을 초기 계좌로 두고, 값을 보는 테스트만 따로 덮어쓴다.
+	@BeforeEach
+	void stubDefaultTutorialAccount() {
+		for (com.finplay.api.account.domain.Market accountMarket : com.finplay.api.account.domain.Market.values()) {
+			stubTutorialAccount(accountMarket, freshTutorialAccount());
+		}
+	}
+
 	@Test
 	void ensureAttemptReturnsExistingRunWithoutRestartingIt() {
 		PracticeAttempt attempt = selectingAttempt(Market.STOCK);
@@ -358,6 +367,76 @@ class PracticeAttemptServiceTest {
 
 		assertThat(attempt.getExitPreset()).isNull();
 		assertThat(response.selectedExitPreset()).isEqualTo("BALANCED");
+	}
+
+	// 이슈 #502 — 종목 선택 응답이 잔액 3필드를 0으로 내려보내 화면이 "보유 현금 0원"을 그렸다. 계좌는
+	// 진입 시점에 이미 있고 값도 멀쩡했으며, 이 호출부가 그것을 읽지 않은 것이 원인이었다.
+	@Test
+	void selectInstrumentReflectsTheCurrentTutorialAccount() {
+		PracticeAttempt attempt = selectingAttempt(Market.CRYPTO);
+		Instrument instrument = tutorialInstrument(Market.CRYPTO, true);
+		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
+			.thenReturn(Optional.of(attempt));
+		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID)).thenReturn(instrument);
+		when(practiceRiskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(ATTEMPT_ID, 1L))
+			.thenReturn(Optional.empty());
+		TutorialAccount mutated = freshTutorialAccount();
+		mutated.deductCash(2_000_000L);
+		mutated.reserveCash(500_000L);
+		mutated.addRealizedPnl(300_000L);
+		stubTutorialAccount(com.finplay.api.account.domain.Market.CRYPTO, mutated);
+
+		PracticeAttemptResponse response = service.selectInstrument(USER_ID, Market.CRYPTO, INSTRUMENT_ID);
+
+		assertThat(response.tutorialCashBalance()).isEqualTo(8_000_000L);
+		assertThat(response.tutorialAvailableCash()).isEqualTo(7_500_000L);
+		assertThat(response.tutorialRealizedPnl()).isEqualTo(300_000L);
+		verify(tutorialAccountService)
+			.getOrCreateForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO, NOW);
+	}
+
+	// 같은 종목을 다시 고르는 무변경 응답도 같은 값을 실어야 한다 — 화면이 이 경로로 들어오는 일이 흔하고
+	// (마운트 때마다 같은 종목을 재요청), 여기만 0이면 결함이 그대로 남는다.
+	@Test
+	void reselectingTheSameInstrumentAlsoReflectsTheTutorialAccount() {
+		PracticeAttempt attempt = selectingAttempt(Market.CRYPTO);
+		Instrument instrument = tutorialInstrument(Market.CRYPTO, true);
+		attempt.selectInstrument(instrument, NOW.minusMinutes(3), NOW.toLocalDate(), 1L, (short)2,
+			NOW.minusMinutes(3));
+		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
+			.thenReturn(Optional.of(attempt));
+		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID)).thenReturn(instrument);
+		when(practiceRiskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(ATTEMPT_ID, 1L))
+			.thenReturn(Optional.empty());
+		TutorialAccount mutated = freshTutorialAccount();
+		mutated.deductCash(1_000_000L);
+		stubTutorialAccount(com.finplay.api.account.domain.Market.CRYPTO, mutated);
+
+		PracticeAttemptResponse response = service.selectInstrument(USER_ID, Market.CRYPTO, INSTRUMENT_ID);
+
+		assertThat(response.status()).isEqualTo("IN_PROGRESS");
+		assertThat(response.tutorialCashBalance()).isEqualTo(9_000_000L);
+		assertThat(response.tutorialAvailableCash()).isEqualTo(9_000_000L);
+	}
+
+	// 프리셋 선택 응답도 같은 DTO를 쓰므로 같은 결함이 있었다(이슈 #502).
+	@Test
+	void selectExitPresetReflectsTheCurrentTutorialAccount() {
+		PracticeAttempt attempt = selectingAttempt(Market.CRYPTO);
+		attempt.selectInstrument(tutorialInstrument(Market.CRYPTO, true), NOW, NOW.toLocalDate(), 1L, (short)2, NOW);
+		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
+			.thenReturn(Optional.of(attempt));
+		when(practiceRiskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(ATTEMPT_ID, 1L))
+			.thenReturn(Optional.empty());
+		TutorialAccount mutated = freshTutorialAccount();
+		mutated.deductCash(4_000_000L);
+		stubTutorialAccount(com.finplay.api.account.domain.Market.CRYPTO, mutated);
+
+		PracticeAttemptResponse response = service.selectExitPreset(USER_ID, Market.CRYPTO, ExitPreset.CAUTIOUS);
+
+		assertThat(response.selectedExitPreset()).isEqualTo("CAUTIOUS");
+		assertThat(response.tutorialCashBalance()).isEqualTo(6_000_000L);
+		assertThat(response.tutorialAvailableCash()).isEqualTo(6_000_000L);
 	}
 
 	private static TutorialAccount freshTutorialAccount() {
