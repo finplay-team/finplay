@@ -33,6 +33,7 @@ import com.finplay.api.order.service.TradeService;
 import com.finplay.api.portfolio.domain.Holding;
 import com.finplay.api.portfolio.repository.HoldingRepository;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -65,6 +66,11 @@ class PracticeExitPresetOcoIntegrationTest {
 	// 처음 그 아래로 내려간다.
 	private static final BigDecimal ENTRY_PRICE = new BigDecimal("10180.00000000");
 	private static final BigDecimal BALANCED_STOP_LOSS = new BigDecimal("9874.60000000");
+	// 프리셋 퍼센트(BALANCED 3/5, RELAXED 5/8)를 배수로 옮긴 값 — ExitPreset의 수치가 바뀌면 여기도 바뀐다.
+	private static final BigDecimal BALANCED_STOP_LOSS_FACTOR = new BigDecimal("0.97");
+	private static final BigDecimal RELAXED_STOP_LOSS_FACTOR = new BigDecimal("0.95");
+	private static final BigDecimal RELAXED_TAKE_PROFIT_FACTOR = new BigDecimal("1.08");
+	private static final int PRICE_SCALE = 8;
 
 	@Autowired
 	private UserRepository userRepository;
@@ -148,7 +154,23 @@ class PracticeExitPresetOcoIntegrationTest {
 		PracticeRiskSnapshot secondEntry = latestSnapshot(fixture);
 		assertThat(secondEntry.getEntrySequence()).isEqualTo(2);
 		assertThat(secondEntry.getExitPreset()).isEqualTo(ExitPreset.RELAXED);
-		assertThat(exitPlanRepository.findPendingPracticeRunExitPlanIds(fixture.attemptId(), 1L)).hasSize(1);
+
+		// PR #487 리뷰 권장 1 — 예약이 "생겼는지"만이 아니라 그 손절·익절가가 바뀐 프리셋을 실제로 반영하는지
+		// 본다. 개수만 세면 프리셋이 BALANCED로 굳어 있어도 통과한다(042 tasks 8번의 완료 조건).
+		List<Long> reReservedIds = exitPlanRepository.findPendingPracticeRunExitPlanIds(fixture.attemptId(), 1L);
+		assertThat(reReservedIds).hasSize(1);
+		ExitPlan reReserved = exitPlanRepository.findById(reReservedIds.get(0)).orElseThrow();
+		BigDecimal reEntryPrice = secondEntry.getEntryPrice();
+		assertThat(reReserved.getStopLossPrice())
+			.isEqualByComparingTo(expectedPrice(reEntryPrice, RELAXED_STOP_LOSS_FACTOR));
+		assertThat(reReserved.getTakeProfitPrice())
+			.isEqualByComparingTo(expectedPrice(reEntryPrice, RELAXED_TAKE_PROFIT_FACTOR));
+		// 기준선 snapshot과 예약이 같은 값을 쓴다 — 화면이 보는 선과 실제 체결 조건이 갈라지지 않는다.
+		assertThat(reReserved.getStopLossPrice()).isEqualByComparingTo(secondEntry.getStopLossPrice());
+		assertThat(reReserved.getTakeProfitPrice()).isEqualByComparingTo(secondEntry.getTakeProfitPrice());
+		// BALANCED였다면 나왔을 손절가와 실제로 다르다 — 프리셋 변경이 예약까지 전달됐다는 반증 방어다.
+		assertThat(reReserved.getStopLossPrice())
+			.isNotEqualByComparingTo(expectedPrice(reEntryPrice, BALANCED_STOP_LOSS_FACTOR));
 
 		// 재시작 — 예약 취소가 주문 취소보다 먼저라 보상 매도가 성공한다(EXITPRESET-015).
 		clock.set(BASE_NOW.plusSeconds(40));
@@ -174,6 +196,10 @@ class PracticeExitPresetOcoIntegrationTest {
 		assertThat(reservedQuantity(fixture)).isEqualByComparingTo(BigDecimal.ZERO);
 		assertThat(tradeService.netFilledQuantity(fixture.attemptId(), 1L)).isEqualByComparingTo(BigDecimal.ZERO);
 		assertThat(onlyExitPlan(fixture).getStatus()).isEqualTo(ExitPlanStatus.CANCELLED);
+	}
+
+	private static BigDecimal expectedPrice(BigDecimal entryPrice, BigDecimal factor) {
+		return entryPrice.multiply(factor).setScale(PRICE_SCALE, RoundingMode.HALF_UP);
 	}
 
 	private void buy(Fixture fixture) {

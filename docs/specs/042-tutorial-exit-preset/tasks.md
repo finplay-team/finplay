@@ -87,7 +87,7 @@
   > 갈리지 않는다. 두 경로가 같은 값을 내는지 통합 테스트에서 함께 확인해라.
   >
   > **귀속 컬럼의 애플리케이션 레벨 검증을 넣을지 여기서 정한다 (PR #471 리뷰 참고).** 2번은 매핑과 DB CHECK만
-  > 만들었고, `ExitPlan`에는 `Order.createPracticeFilled`가 쓰는
+  > 만들었고, `ExitPlan`에는 `Order.createForPracticeAttempt`가 쓰는
   > `validatePracticeAttemptAttribution`(둘 다 non-null·양수) 같은 팩토리 검증이 없다. 값을 넣는 것이 이
   > 항목이므로, `ExitPlan`의 생성 팩토리를 고칠 때 `Order`와 대칭으로 검증을 둘지 함께 판단해라 —
   > 두지 않으면 이 불변식을 지키는 것은 DB CHECK 하나뿐이고, 위반이 트랜잭션 커밋 시점에야 드러난다.
@@ -132,8 +132,11 @@
 > `docs/api-routes.md`·`docs/api-contracts.md`를 그 커밋에서, 5·6·7번은 바꾼 응답 계약을 각자의 커밋에서
 > 갱신한다. 문서 갱신을 마지막 항목으로 미루면 규칙 위반을 계획에 담는 것이 된다.
 
-- [ ] **8. 재진입 재예약 통합 테스트** — 손절 체결 → 재진입 대기 → **프리셋 변경** → 재매수 → 새 snapshot
+- [x] **8. 재진입 재예약 통합 테스트** — 손절 체결 → 재진입 대기 → **프리셋 변경** → 재매수 → 새 snapshot
   (`entry_sequence = 2`)과 새 예약이 바뀐 프리셋으로 생성됨. `SNAP-2` 배포 이후에만 통과한다.
+  > `PracticeExitPresetOcoIntegrationTest.stopLossFillKeepsTheRunLedgerConsistentAndLetsTheUserReenterAndRestart`가
+  > 이 시나리오를 그대로 실행한다. PR #487 리뷰 권장 1을 반영해 **새 예약의 손절·익절가가 RELAXED(5/8)를
+  > 실제로 반영하는지**까지 단언한다 — 개수만 세면 프리셋이 BALANCED로 굳어 있어도 통과했다.
 
 ## 사람이 직접 확인할 것
 
