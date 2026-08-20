@@ -33,7 +33,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
-// 계약의 정본은 docs/api-contracts.md의 "개장 전 브리핑 조회" 행이고, 상태값은 spec 012 §C-4다.
+// 계약의 정본은 docs/api/feedback.md의 "개장 전 브리핑 조회" 행이고, 상태값은 spec 012 §C-4다.
 // 게이트·범위·상한은 MarketBriefingQueryGateIntegrationTest가, 판정 순서는 MarketBriefingServiceTest가 맡는다.
 //
 // market 400은 컨트롤러에 검증 코드가 없고 GlobalExceptionHandler에 맡겨져 있다 — 그래서 "핸들러가 실제로

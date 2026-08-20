@@ -7,7 +7,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 /**
- * 계약은 {@code docs/api-contracts.md}의 "종목 뉴스 목록·요약 조회" 행이고, 상태값과 판정 순서는 spec §C-4,
+ * 계약은 {@code docs/api/feedback.md}의 "종목 뉴스 목록·요약 조회" 행이고, 상태값과 판정 순서는 spec §C-4,
  * {@code items} 범위와 {@code summaryScope} 대응은 §C-2가 정본이다.
  *
  * <p><b>어느 상태든 200이다</b> (FEED-008). 비어 있는 것은 오류가 아니다.

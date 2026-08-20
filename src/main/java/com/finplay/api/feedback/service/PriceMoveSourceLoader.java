@@ -14,7 +14,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * {@link PriceMoveQueryService}·{@link PostSellFeedbackReader}·{@link CryptoPostSellFeedbackReader}가 같은
- * 본문을 각자 갖고 있던 것을 모았다 — {@code docs/conventions.md}의 "공통화는 <b>세 번째</b> 중복이 보이고
+ * 본문을 각자 갖고 있던 것을 모았다 — {@code docs/conventions/code.md}의 "공통화는 <b>세 번째</b> 중복이 보이고
  * 책임이 명확할 때만 검토한다"가 정확히 이 시점을 트리거로 잡는다 (PR #281 리뷰).
  *
  * <p><b>{@code @Transactional}을 붙이지 않는다.</b> 세 호출부가 전부 자기 트랜잭션 안에서 부르므로 여기에

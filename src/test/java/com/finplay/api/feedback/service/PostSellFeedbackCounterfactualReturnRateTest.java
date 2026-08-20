@@ -41,7 +41,7 @@ import org.springframework.test.util.ReflectionTestUtils;
  * tasks.md 012 이슈 #212 1번의 함정 문단 — "가격·수량이 딱 나누어지는 픽스처만 쓰면 FLOOR와 일반 반올림
  * (HALF_UP 등)이 같은 결과를 낸다."
  *
- * <p><b>docs/api-contracts.md의 예시 값(buyBasis 700,105)만으로는 이 함정을 잡지 못한다.</b> 그 픽스처에서
+ * <p><b>docs/api/feedback.md의 예시 값(buyBasis 700,105)만으로는 이 함정을 잡지 못한다.</b> 그 픽스처에서
  * 수수료 1원 차는 최종 scale-4 결과에 반영되지 않는다(1 ÷ 700,105 ≈ 0.0000014로 4번째 소수점 단위인 0.0001의
  * 1/70에도 못 미친다). 그래서 이 파일은 buyBasis를 작게(10,000) 둬서 수수료 1원 차가 반드시 4번째 소수점을 넘게
  * 만든 별도 픽스처를 쓴다 — 세 시나리오 모두 FLOOR와 HALF_UP 결과가 정확히 0.0001씩 갈린다(아래 테스트 참고).

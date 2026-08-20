@@ -157,7 +157,7 @@ public class MarketBriefingService {
 	}
 
 	/**
-	 * 시장 단위 브리핑을 조회한다. 계약은 {@code docs/api-contracts.md}의 "개장 전 브리핑 조회" 행이다.
+	 * 시장 단위 브리핑을 조회한다. 계약은 {@code docs/api/feedback.md}의 "개장 전 브리핑 조회" 행이다.
 	 *
 	 * <p><b>판정 순서는 §C-4의 표 그대로다.</b> 1번이 {@code EMPTY}이고 2번이 {@code NOT_YET}인 것이
 	 * Part C와 갈리는 자리이며 <b>의도된 차이다</b> — Part D는 "브리핑이 아예 없는 날"이 정상이고, Part C는
@@ -177,7 +177,7 @@ public class MarketBriefingService {
 	 * 두 경로 모두 {@link MarketSessionTimes}의 같은 상수를 본다.
 	 *
 	 * <p><b>이 경로는 쓰지 않는다</b> — 브리핑은 배치 산출물이고 GET은 LLM을 호출하지도 DB에 쓰지도 않는다
-	 * ({@code docs/conventions.md}, FEED-009).
+	 * ({@code docs/conventions/code.md}, FEED-009).
 	 *
 	 * <p><b>{@code @Transactional}을 걸지 않는 것이 설계다.</b> DB 읽기는 {@link MarketBriefingReader}가 각각
 	 * 자기 트랜잭션에서 끝내고, 이 메서드에는 조회 캐시의 락 대기(최대 {@code wait-millis})만 남는다 — 전체를

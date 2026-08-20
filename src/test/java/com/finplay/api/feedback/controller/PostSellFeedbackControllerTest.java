@@ -42,7 +42,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
-// 계약의 정본은 docs/api-contracts.md의 "매도 직후 피드백 조회" 소절이고, 이 파일이 보는 것은 이슈 #208
+// 계약의 정본은 docs/api/feedback.md의 "매도 직후 피드백 조회" 소절이고, 이 파일이 보는 것은 이슈 #208
 // 1번 항목의 완료 조건 중 API 계약(404·403·400)과 401이다. 판정 자체(무엇이 400인가)는
 // PostSellFeedbackServiceTest가, 실제 원장 위에서의 종단은 PostSellFeedbackIntegrationTest가 맡는다.
 //

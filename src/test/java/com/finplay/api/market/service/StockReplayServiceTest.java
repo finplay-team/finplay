@@ -1062,7 +1062,7 @@ class StockReplayServiceTest {
 	@Test
 	void getRevealedAggregatedCandlesExcludesLeadingPartialWeekBucketButIncludesNextCompleteWeekWhenFromFallsMidWeek() {
 		// 리뷰어(namdongyeob) PR #151 차단 지적 재현 — interval=1w, from이 그 주의 수요일(버킷 경계인 월요일과
-		// 불일치)이면 그 주의 나머지 분봉(수~금)만 모여 반쪽짜리 주봉이 만들어진다. docs/api-contracts.md 계약대로
+		// 불일치)이면 그 주의 나머지 분봉(수~금)만 모여 반쪽짜리 주봉이 만들어진다. docs/api/market.md 계약대로
 		// 버킷 시작일(월요일)이 rangeStart(from) 이전이면 그 버킷은 응답에서 빠져야 한다. 그 다음 주(완전한 한 주)는
 		// 정상적으로 포함되어야 한다.
 		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))

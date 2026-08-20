@@ -46,7 +46,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 // 게이트 ⑭(날짜를 하루 넘긴 조회), sameSessionCompleted=false 조건의 반사실·집단 비교. 실제 분봉·시계 위의
 // 종단은 PostSellFeedbackGateIntegrationTest가, 직렬화 필드 집합은 PostSellFeedbackControllerTest가 맡는다.
 //
-// 픽스처는 docs/api-contracts.md의 예시를 그대로 재현한다 — 매도 68,500(14:40), 극값 70,800(11:05)·68,100(14:20),
+// 픽스처는 docs/api/feedback.md의 예시를 그대로 재현한다 — 매도 68,500(14:40), 극값 70,800(11:05)·68,100(14:20),
 // closePrice 69,200, sellToCloseRate 0.0102, postSellHigh 69,500(15:05), atFirstMoveAfterBuy 69,300(11:25).
 // 그날 마지막 분봉은 15:27이다: 15:30 봉이 오는 것은 보장되지 않아(§C-2-1) 리터럴 15:30으로 찾는 구현이면
 // closePrice·atClose가 예외도 없이 빈다.
@@ -356,7 +356,7 @@ class PostSellFeedbackPostSellFlowTest {
 
 	// --- 이슈 #212 1번이 채운 반사실 returnRate — peerComparison은 여전히 4번 항목이 끼울 자리다 ---
 
-	// 이 파일의 픽스처(contractExampleCandles·card)는 docs/api-contracts.md 예시와 값이 같다 — atClose 69,200,
+	// 이 파일의 픽스처(contractExampleCandles·card)는 docs/api/feedback.md 예시와 값이 같다 — atClose 69,200,
 	// atHoldHigh 70,800, atFirstMoveAfterBuy 69,300, buyBasis 700,105(=700,000+105), quantity 10. 값이 예시와
 	// 일치하는지는 여기서 보고, FLOOR와 HALF_UP이 실제로 갈리는 함정 픽스처는
 	// PostSellFeedbackCounterfactualReturnRateTest가 따로 본다(이 픽스처의 buyBasis는 수수료 1원 차를 4번째

@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 계약은 {@code docs/api-contracts.md}의 "매도 직후 피드백 조회" 소절이 정본이고, 요구사항은 spec FEED-007·
+ * 계약은 {@code docs/api/feedback.md}의 "매도 직후 피드백 조회" 소절이 정본이고, 요구사항은 spec FEED-007·
  * 010·011·012다. <b>주식·코인이 같은 record를 쓴다</b> — 3차(이슈 #275)가 코인을 열면서도 키 집합을 가르지
  * 않았다(§FEED-012 "응답 계약이 시장별로 달라지는가"). 갈리는 것은 값뿐이고 조립 주체가
  * {@code PostSellFeedbackReader}({@code STOCK}) / {@code CryptoPostSellFeedbackReader}({@code CRYPTO})로 나뉜다.
@@ -22,7 +22,7 @@ import java.util.List;
  * 결정 0) — 재생일이 없어 시간축이 언제나 연속이다.
  *
  * <p><b>정적 팩토리를 두지 않는다.</b> 단일 엔티티 매핑이 아니라 원장 체결·FIFO 배분·분봉·카드·집계·서술
- * 여섯 곳에서 모인 값이고({@code docs/conventions.md}의 "엔티티 매핑이 없는 단순 DTO는 생략"), 항목마다
+ * 여섯 곳에서 모인 값이고({@code docs/conventions/code.md}의 "엔티티 매핑이 없는 단순 DTO는 생략"), 항목마다
  * 인자를 늘리는 팩토리를 두면 조립 지점이 둘로 갈린다. 조립은 {@code PostSellFeedbackService} 한 곳이다.
  *
  * <p><b>필드를 나중에 더하지 않는다.</b> 계약이 정한 필드 집합은 처음부터 전부 선언하고 아직 채우지 않는 값은

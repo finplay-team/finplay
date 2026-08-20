@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 // 경로를 그렇게 두었고, 클래스는 도메인 패키지에 둔다 (PriceMoveController·InstrumentNewsController와 같은 형태).
 //
 // 인증은 SecurityConfig의 anyRequest().authenticated()가 건다. 공개 GET 목록에 넣지 않으므로 토큰 없이
-// 호출하면 401 UNAUTHORIZED다 (docs/api-contracts.md).
+// 호출하면 401 UNAUTHORIZED다 (docs/api/feedback.md).
 @RestController
 @RequestMapping("/api/market")
 @RequiredArgsConstructor

@@ -11,7 +11,7 @@ import java.util.List;
 /**
  * {@code feedback}의 매도 회고(spec 012 FEED-007)가 원장 수치를 읽는 경로다. {@code trade_allocations}·
  * {@code holding_lots}는 {@code portfolio} 소유라 다른 도메인이 repository를 직접 주입하지 않고 서비스를
- * 경유한다({@code docs/conventions.md}, ADR-0002).
+ * 경유한다({@code docs/conventions/code.md}, ADR-0002).
  *
  * <p><b>판정을 여기서 하지 않는다.</b> {@code buySourceTradingDates}를 그대로 돌려주고
  * "하나라도 매도 체결과 다르면 {@code sameSessionCompleted=false}"라는 규칙은 {@code feedback}이 갖는다 —

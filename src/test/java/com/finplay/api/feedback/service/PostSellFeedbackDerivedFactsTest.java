@@ -52,7 +52,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 // 날짜 위에서만 드러나므로 PostSellFeedbackGateIntegrationTest가 맡고, 여기서는 그 게이트에 넘기는
 // 상한(revealCutoff)이 "그 체결의 서비스 날짜" 기준인지만 인자로 확인한다.
 //
-// 수치는 docs/api-contracts.md의 예시 그대로다 — 매도가 68,500, 극값 70,800(11:05)·68,100(14:20),
+// 수치는 docs/api/feedback.md의 예시 그대로다 — 매도가 68,500, 극값 70,800(11:05)·68,100(14:20),
 // sellVsHighRate −0.0325, sellVsLowRate 0.0059, 카드 11:20~11:25의 minutesAfterBuy 115·minutesBeforeSell 195,
 // buyToNewsMinutes 105.
 class PostSellFeedbackDerivedFactsTest {

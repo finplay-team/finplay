@@ -29,11 +29,11 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 /**
- * 계약은 {@code docs/api-contracts.md}의 "매도 직후 피드백 조회" 소절이고 요구사항은 spec FEED-007이다.
+ * 계약은 {@code docs/api/feedback.md}의 "매도 직후 피드백 조회" 소절이고 요구사항은 spec FEED-007이다.
  * 원장 수치·파생 사실 조립은 {@link PostSellFeedbackReader}가, 저장은 {@link TradeFeedbackWriter}가 한다.
  *
  * <p><b>이 클래스에 {@code @Transactional}이 없는 것이 설계다.</b> spec 012에서 <b>조회 경로에 LLM이 들어오는
- * 첫 자리</b>이고({@code docs/conventions.md}의 "GET은 부수효과 없음"에 대한 이 spec의 유일한 예외, 체결 1건당
+ * 첫 자리</b>이고({@code docs/conventions/code.md}의 "GET은 부수효과 없음"에 대한 이 spec의 유일한 예외, 체결 1건당
  * 1회) LLM 호출이 중앙값 2.5초·p95 3.1초다(#198 실측). 여기에 트랜잭션을 걸면 <b>사용자가 기다리는 그 3초 동안
  * DB 커넥션을 쥐고</b> 있어 커넥션 풀 크기가 곧 동시 조회 수의 상한이 된다. 트랜잭션은 메서드 단위이므로
  * 경계를 좁히는 방법은 협력자를 나누는 것뿐이다 — <b>같은 클래스의 private 메서드에 애노테이션을 붙이면

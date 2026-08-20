@@ -20,11 +20,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 /**
- * 계약은 {@code docs/api-contracts.md}의 "종목 뉴스 목록·요약 조회" 행, 상태값과 판정 순서는 spec §C-4,
+ * 계약은 {@code docs/api/feedback.md}의 "종목 뉴스 목록·요약 조회" 행, 상태값과 판정 순서는 spec §C-4,
  * 구간과 {@code summaryScope} 대응은 §C-2, 공시 날짜 판정은 §C-3, 노출 게이트는 §C-5가 정본이다.
  *
  * <p><b>쓰지 않는다.</b> 요약은 전 회원이 공유하는 배치 산출물이라 조회가 만들지 않는다 — GET이 LLM을
- * 호출하지도 DB에 쓰지도 않는다({@code docs/conventions.md}, FEED-008). 배치로 옮긴 이유는 비용이 아니라
+ * 호출하지도 DB에 쓰지도 않는다({@code docs/conventions/code.md}, FEED-008). 배치로 옮긴 이유는 비용이 아니라
  * <b>스포일러 차단과 첫 사용자의 대기</b>다.
  *
  * <p><b>어느 상태값이든 200이다</b>(FEED-008). 없는 종목만 404이며 그 판정은 {@code InstrumentService}가 한다.

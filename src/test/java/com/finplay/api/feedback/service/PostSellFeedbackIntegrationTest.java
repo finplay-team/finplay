@@ -50,7 +50,7 @@ import org.springframework.transaction.annotation.Transactional;
 // 이슈 #208 1번 항목의 완료 조건 다섯 중 "투자일기 없이 200"과 "API 계약 404·403·400"이 실제 원장 위에서만
 // 확인되는 것들이다 — 배분 요약·소유권 검증·직렬화가 한 요청에 붙는 자리라 mock으로 끝내지 않는다(ADR-0003).
 //
-// 픽스처 수치는 docs/api-contracts.md의 예시 그대로다: 매수 700,000 + 수수료 105, 매도 685,000 − 수수료 102,
+// 픽스처 수치는 docs/api/feedback.md의 예시 그대로다: 매수 700,000 + 수수료 105, 매도 685,000 − 수수료 102,
 // realizedPnl −15,207, returnRate −0.0217. 계약이 "값이 안 맞으면 예시가 아니라 구현이 틀린 것"이라 적어 뒀다.
 //
 // 공유 컨테이너를 더럽히지 않도록 클래스 트랜잭션으로 감싼다 (PriceMoveQueryGateIntegrationTest 선례).

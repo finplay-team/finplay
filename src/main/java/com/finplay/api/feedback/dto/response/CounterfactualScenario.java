@@ -5,7 +5,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
- * 계약은 {@code docs/api-contracts.md}의 "매도 직후 피드백 조회" 소절이고 가격 정의와 수익률 계산식은 spec
+ * 계약은 {@code docs/api/feedback.md}의 "매도 직후 피드백 조회" 소절이고 가격 정의와 수익률 계산식은 spec
  * §반사실·집단 비교 계산이다. 세 시나리오({@code atClose}·{@code atHoldHigh}·{@code atFirstMoveAfterBuy})가
  * 같은 형태라 {@code Counterfactuals} 안에서 이 record를 세 번 쓴다.
  *

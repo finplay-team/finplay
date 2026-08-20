@@ -7,7 +7,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 /**
- * 계약은 {@code docs/api-contracts.md}의 "개장 전 브리핑 조회" 행이고, 상태값과 판정 순서는 spec §C-4,
+ * 계약은 {@code docs/api/feedback.md}의 "개장 전 브리핑 조회" 행이고, 상태값과 판정 순서는 spec §C-4,
  * 구간은 §C-2의 {@code 전장}, 공시 날짜 판정은 §C-3이 정본이다.
  *
  * <p><b>어느 상태값이든 200이다</b>(FEED-009). 비어 있는 것은 오류가 아니다 — 특히 <b>배포 직후 이틀은

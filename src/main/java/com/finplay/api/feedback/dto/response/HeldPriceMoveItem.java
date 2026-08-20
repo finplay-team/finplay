@@ -6,7 +6,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 계약은 {@code docs/api-contracts.md}의 "매도 직후 피드백 조회" 소절이고 {@code minutesAfterBuy}·
+ * 계약은 {@code docs/api/feedback.md}의 "매도 직후 피드백 조회" 소절이고 {@code minutesAfterBuy}·
  * {@code minutesBeforeSell}의 계산식은 spec §파생 사실 계산이다.
  *
  * <p><b>{@code PriceMoveItem}을 재사용하지 않는다.</b> 그 record에는 {@code eventType}이 있고 두 간격 필드가

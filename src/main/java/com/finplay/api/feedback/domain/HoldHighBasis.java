@@ -2,7 +2,7 @@
 package com.finplay.api.feedback.domain;
 
 /**
- * 계약은 {@code docs/api-contracts.md}의 매도 직후 피드백 소절이고 근거는 spec §FEED-012 결정 4다.
+ * 계약은 {@code docs/api/feedback.md}의 매도 직후 피드백 소절이고 근거는 spec §FEED-012 결정 4다.
  *
  * <p><b>주식·코인 공용 필드다.</b> 주식은 언제나 {@link #MINUTE}이고 {@link #DAILY}는 코인에서만 나온다 —
  * 코인에만 필드를 더하면 프론트가 시장으로 분기해야 하고, <b>그 분기는 한 번 생기면 이후 모든 필드 추가가 같은
