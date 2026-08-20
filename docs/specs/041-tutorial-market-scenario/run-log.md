@@ -9,6 +9,7 @@
 | 22:34 | reviewer(리뷰, 순회 알고리즘 관점) | `git diff origin/dev...HEAD` (041 4~5번) | 041 plan §상태 전이표·§tick 알고리즘·§데이터 모델 |
 | 22:34 | reviewer(리뷰, 회귀·통합 관점) | `git diff origin/dev...HEAD` (041 4~5번) | 가격 경로 전수 grep, ADR-0004·0021 §결정 7, api-contracts 대조 |
 | 23:20 | reviewer(리뷰, 2차) | `git diff origin/dev...HEAD` + `git show d64b7ca6` | 1차 반영 재확인, 042 6번이 얹힐 자리, 테스트가 잡는 것 |
+| 2026-08-20 10:35~11:15 | 메인 세션 | `./gradlew spotlessCheck compileJava compileTestJava spotbugsMain` + `test`를 도메인별 3회 분할 실행 (041 6~7번, 브랜치 `feat/488-tutorial-event-reveal-entries`) | 전체 `build`는 이 머신에서 OOM으로 죽는다(agent-mistakes.md 2026-08-11) |
 | 10:49 | reviewer(리뷰, 계약·사건 노출 게이트 관점) | `git diff origin/dev...HEAD` (041 6~7번, 브랜치 `feat/488-tutorial-event-reveal-entries`) + `gh issue view 488`·`gh pr list` | 041 spec·plan·tasks·run-log, 042 run-log, api-contracts 튜토리얼 3절, conventions.md, ADR-0002, CLAUDE.md 7·10 |
 | 10:49 | reviewer(리뷰, 산술·체결 원장 관점) | `git diff origin/dev...HEAD` (041 6~7번, 브랜치 `feat/488-tutorial-event-reveal-entries`) + `gh issue view 488`·`gh pr view 488` | 041 plan §"안 팔았다면" 선, `PostSellArithmetic`·`OrderExecutionService.priceOrder`·`PracticeRunRestartOrderService`·`LimitOrderFeeCalculator` 요율 대조, `TradeService.summarize*`, `PracticeAttemptOrderAttributionService`(진입 경계), ADR-0002·0003 |
 | 10:49 | reviewer(리뷰, 회귀·빈 조립·컨벤션 관점) | `git diff origin/dev...HEAD` (041 6~7번, 브랜치 `feat/488-tutorial-event-reveal-entries`) + `new InvestmentPracticeResponse` 호출부 전수 grep + `gh pr list --head` | conventions.md, ADR-0002·0003, agent-mistakes.md, CLAUDE.md 6·7·10, 042 run-log §PR #487 리뷰 반영, `scenario-crypto-v1.json` 배율·사건 검산 |
@@ -156,6 +157,14 @@ plan §"안 팔았다면" 선은 "공식은 `PostSellArithmetic`을 재사용한
 - **2차 리뷰가 남긴 "대기 루프 되감기 지점의 체결이 한 tick 밀린다"**(041 4~5번 run-log). 이번에
   `scenarioProgressing`을 응답에 싣기 시작했으므로 화면에 보일 수 있는 자리가 됐다. 통합 완주에서
   재현되지 않았고 LOOP은 첫·끝 배율이 같아 가격도 튀지 않아 이번 범위에서는 손대지 않았다.
+
+## 빌드 검증 (이슈 #488, 2026-08-20)
+
+네 번으로 나눠 전부 `BUILD SUCCESSFUL`, `build/test-results/test/*.xml`의 `<failure>` 0건이다 —
+① `spotlessCheck compileJava compileTestJava spotbugsMain`, ② `education|order|portfolio|market|account`
+(1,854건), ③ `auth|badge|common|community`, ④ 나머지 도메인 + 애플리케이션 컨텍스트. 리뷰 반영 커밋
+이후 ①과 `education|order|market`(1,686건)을 재실행해 역시 0건이다. 검증 SHA `1d67fed2`, PR #494.
+**커버리지 게이트는 단일 전체 실행이 필요해 로컬에서 확인할 수 없고 CI가 판정한다.**
 
 ## 사전 리뷰 반영 (이슈 #488, 2026-08-20)
 
