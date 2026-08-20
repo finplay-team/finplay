@@ -10,6 +10,7 @@ import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.domain.PreparationStatus;
 import com.finplay.api.market.domain.StockCandle;
 import com.finplay.api.market.domain.StockReplaySession;
+import com.finplay.api.market.dto.response.CandleListResponse;
 import com.finplay.api.market.dto.response.CandleResponse;
 import com.finplay.api.market.repository.InstrumentRepository;
 import com.finplay.api.market.repository.StockCandleRepository;
@@ -462,5 +463,283 @@ class CandleQueryServiceIntegrationTest {
 		// 1d 시드만 있는 상태에서 1m을 요청하면(다른 interval 시드) 빈 배열이어야 한다 — interval별 맵이 서로 새지 않는다.
 		List<CandleResponse> minute = service.getCandles(coinInstrument.getId(), "1m", null, null, null).content();
 		assertThat(minute).isEmpty();
+	}
+
+	// 048 항목5(CANDLE-PAGE-006·007·019): 200의 배수(400개)로 거래일을 시드해, 1페이지·2페이지가 각각 정확히
+	// 200개씩 나오고 3페이지째에 빈 content+hasNext=false가 나오는 것(CANDLE-PAGE-007)을 실 MySQL로 고정한다.
+	// 두 페이지의 합집합에 중복·누락이 0건인지, 그리고 각 페이지의 실제 구간을 커서 없이 from~to로 직접 조회한
+	// 결과(상한 200 안)와 값·순서가 일치하는지도 함께 확인한다.
+	// @Transactional — saveInstrument가 새 Instrument 행을 커밋하면 InstrumentRepositoryTest의 정확한 개수 단정을
+	// 깨뜨릴 수 있어(2026-07-30 agent-mistakes.md와 동일 패턴) 테스트 종료 시 자동 롤백시켜 격리한다.
+	@Test
+	@Transactional
+	void dailyIntervalCursorPaginationCoversAllTradingDaysWithoutDuplicationAndEndsWithOneEmptyPage() {
+		Instrument instrument = saveInstrument("CDL0473A");
+		LocalDate firstTradingDate = LocalDate.of(2019, 1, 2);
+		int totalTradingDays = 400;
+		List<LocalDate> tradingDates = new ArrayList<>();
+		for (int i = 0; i < totalTradingDays; i++) {
+			LocalDate tradingDate = firstTradingDate.plusDays(i);
+			tradingDates.add(tradingDate);
+			saveAggCandle(
+				instrument, tradingDate, LocalTime.of(9, 0), "1000", "1010", "990", String.valueOf(1000 + i), 10);
+		}
+		LocalDate sourceTradingDate = tradingDates.get(totalTradingDays - 1);
+		LocalDate aggServiceDate = sourceTradingDate.plusDays(30);
+		stockReplaySessionRepository.save(
+			StockReplaySession.ready(aggServiceDate, sourceTradingDate, LocalDateTime.now(), LocalDateTime.now()));
+
+		CandleQueryService service = candleQueryServiceAt(clockAt(aggServiceDate, LocalTime.of(15, 30)));
+
+		CandleListResponse page1 = service.getCandles(instrument.getId(), "1d", null, null, null);
+		assertThat(page1.content()).hasSize(200);
+		assertThat(page1.hasNext()).isTrue();
+		assertThat(page1.nextCursor()).isNotNull();
+
+		CandleListResponse page2 = service.getCandles(instrument.getId(), "1d", null, null, page1.nextCursor());
+		assertThat(page2.content()).hasSize(200);
+		assertThat(page2.hasNext()).isTrue();
+		assertThat(page2.nextCursor()).isNotNull();
+
+		CandleListResponse page3 = service.getCandles(instrument.getId(), "1d", null, null, page2.nextCursor());
+		assertThat(page3.content()).isEmpty();
+		assertThat(page3.hasNext()).isFalse();
+		assertThat(page3.nextCursor()).isNull();
+
+		// 데이터 끝에서 같은 커서로 재요청해도 결과가 바뀌지 않는다 — 무한 루프 방지 확인.
+		CandleListResponse page3Again = service.getCandles(instrument.getId(), "1d", null, null, page2.nextCursor());
+		assertThat(page3Again.content()).isEmpty();
+		assertThat(page3Again.hasNext()).isFalse();
+
+		// 합집합 중복·누락 0건 — 두 페이지(과거→최신 순으로 이어 붙임)를 합치면 시드한 400개 거래일과 정확히 일치한다.
+		List<LocalDateTime> combinedSourceTimes = new ArrayList<>();
+		combinedSourceTimes.addAll(page2.content().stream().map(CandleResponse::sourceTime).toList());
+		combinedSourceTimes.addAll(page1.content().stream().map(CandleResponse::sourceTime).toList());
+		List<LocalDateTime> expectedSourceTimes = tradingDates.stream()
+			.map(date -> LocalDateTime.of(date, LocalTime.MIDNIGHT))
+			.toList();
+		assertThat(combinedSourceTimes).containsExactlyElementsOf(expectedSourceTimes);
+		assertThat(combinedSourceTimes).doesNotHaveDuplicates();
+
+		// 집합·순서 일치 — 각 페이지의 실제 구간을 커서 없이 from~to로 직접 조회한 결과(상한 200 안)와 값·순서가 같다.
+		LocalDateTime page1From = page1.content().get(0).sourceTime();
+		LocalDateTime page1To = page1.content().get(page1.content().size() - 1).sourceTime();
+		CandleListResponse directPage1 = service.getCandles(instrument.getId(), "1d", page1From, page1To, null);
+		assertThat(directPage1.content()).containsExactlyElementsOf(page1.content());
+
+		LocalDateTime page2From = page2.content().get(0).sourceTime();
+		LocalDateTime page2To = page2.content().get(page2.content().size() - 1).sourceTime();
+		CandleListResponse directPage2 = service.getCandles(instrument.getId(), "1d", page2From, page2To, null);
+		assertThat(directPage2.content()).containsExactlyElementsOf(page2.content());
+	}
+
+	// 048 항목5: 1w도 같은 커서 계약을 따르는지 확인한다(CANDLE-PAGE-008 균질 계약). 250주(200의 배수가 아님)를
+	// 시드해 1페이지(200개, hasNext=true) → 2페이지(50개, hasNext=false)로 자연스럽게 끝나는 경우를 검증한다.
+	@Test
+	@Transactional
+	void weeklyIntervalCursorPaginationCoversAllWeeksWithoutDuplicationOrGaps() {
+		Instrument instrument = saveInstrument("CDL0473B");
+		LocalDate firstMonday = LocalDate.of(2015, 1, 5); // 월요일
+		int totalWeeks = 250;
+		List<LocalDate> mondays = new ArrayList<>();
+		for (int i = 0; i < totalWeeks; i++) {
+			LocalDate monday = firstMonday.plusWeeks(i);
+			mondays.add(monday);
+			saveAggCandle(instrument, monday, LocalTime.of(9, 0), "1000", "1010", "990", String.valueOf(1000 + i), 10);
+		}
+		LocalDate sourceTradingDate = mondays.get(totalWeeks - 1);
+		LocalDate aggServiceDate = sourceTradingDate.plusDays(30);
+		stockReplaySessionRepository.save(
+			StockReplaySession.ready(aggServiceDate, sourceTradingDate, LocalDateTime.now(), LocalDateTime.now()));
+
+		CandleQueryService service = candleQueryServiceAt(clockAt(aggServiceDate, LocalTime.of(15, 30)));
+
+		CandleListResponse page1 = service.getCandles(instrument.getId(), "1w", null, null, null);
+		assertThat(page1.content()).hasSize(200);
+		assertThat(page1.hasNext()).isTrue();
+		assertThat(page1.nextCursor()).isNotNull();
+
+		CandleListResponse page2 = service.getCandles(instrument.getId(), "1w", null, null, page1.nextCursor());
+		assertThat(page2.content()).hasSize(50);
+		assertThat(page2.hasNext()).isFalse();
+		assertThat(page2.nextCursor()).isNull();
+
+		List<LocalDateTime> combined = new ArrayList<>();
+		combined.addAll(page2.content().stream().map(CandleResponse::sourceTime).toList());
+		combined.addAll(page1.content().stream().map(CandleResponse::sourceTime).toList());
+		List<LocalDateTime> expected = mondays.stream().map(date -> LocalDateTime.of(date, LocalTime.MIDNIGHT)).toList();
+		assertThat(combined).containsExactlyElementsOf(expected);
+		assertThat(combined).doesNotHaveDuplicates();
+	}
+
+	// 048 항목5: 1M도 같은 커서 계약을 따르는지 확인한다. 250개월을 시드해 1페이지(200개)→2페이지(50개, hasNext=false)로 끝난다.
+	@Test
+	@Transactional
+	void monthlyIntervalCursorPaginationCoversAllMonthsWithoutDuplicationOrGaps() {
+		Instrument instrument = saveInstrument("CDL0473C");
+		LocalDate firstMonth = LocalDate.of(2005, 1, 1);
+		int totalMonths = 250;
+		List<LocalDate> months = new ArrayList<>();
+		for (int i = 0; i < totalMonths; i++) {
+			LocalDate monthStart = firstMonth.plusMonths(i);
+			months.add(monthStart);
+			saveAggCandle(
+				instrument, monthStart, LocalTime.of(9, 0), "1000", "1010", "990", String.valueOf(1000 + i), 10);
+		}
+		LocalDate sourceTradingDate = months.get(totalMonths - 1);
+		LocalDate aggServiceDate = sourceTradingDate.plusDays(30);
+		stockReplaySessionRepository.save(
+			StockReplaySession.ready(aggServiceDate, sourceTradingDate, LocalDateTime.now(), LocalDateTime.now()));
+
+		CandleQueryService service = candleQueryServiceAt(clockAt(aggServiceDate, LocalTime.of(15, 30)));
+
+		CandleListResponse page1 = service.getCandles(instrument.getId(), "1M", null, null, null);
+		assertThat(page1.content()).hasSize(200);
+		assertThat(page1.hasNext()).isTrue();
+		assertThat(page1.nextCursor()).isNotNull();
+
+		CandleListResponse page2 = service.getCandles(instrument.getId(), "1M", null, null, page1.nextCursor());
+		assertThat(page2.content()).hasSize(50);
+		assertThat(page2.hasNext()).isFalse();
+		assertThat(page2.nextCursor()).isNull();
+
+		List<LocalDateTime> combined = new ArrayList<>();
+		combined.addAll(page2.content().stream().map(CandleResponse::sourceTime).toList());
+		combined.addAll(page1.content().stream().map(CandleResponse::sourceTime).toList());
+		List<LocalDateTime> expected = months.stream().map(date -> LocalDateTime.of(date, LocalTime.MIDNIGHT)).toList();
+		assertThat(combined).containsExactlyElementsOf(expected);
+		assertThat(combined).doesNotHaveDuplicates();
+	}
+
+	// CANDLE-PAGE-026: 주식 1m은 200개 봉이 모여도, 그리고 커서를 함께 줘도 hasNext는 항상 false·nextCursor는 항상
+	// null이고 content는 커서 없는 요청과 완전히 동일한 단일 재생 거래일 구간이다 — CANDLE-PAGE-007의 유일한 예외.
+	@Test
+	@Transactional
+	void stockOneMinuteCursorNeverAdvancesPastTheSingleReplayDayEvenAtTwoHundredCandles() {
+		Instrument instrument = saveInstrument("CDL0473D");
+		LocalTime candleStart = LocalTime.of(9, 0);
+		for (int i = 0; i < 200; i++) {
+			saveCandle(instrument, candleStart.plusMinutes(i), String.valueOf(71000 + i));
+		}
+		LocalDate serviceDate = LocalDate.of(2026, 8, 10);
+		saveReadySession(serviceDate);
+
+		CandleQueryService service = candleQueryServiceAt(clockAt(serviceDate, LocalTime.of(15, 30)));
+
+		CandleListResponse noCursor = service.getCandles(instrument.getId(), "1m", null, null, null);
+		assertThat(noCursor.content()).hasSize(200);
+		assertThat(noCursor.hasNext()).isFalse();
+		assertThat(noCursor.nextCursor()).isNull();
+
+		String someCursor = CandleCursor.encode(LocalDateTime.of(SOURCE_TRADING_DATE, LocalTime.of(10, 0)));
+		CandleListResponse withCursor = service.getCandles(instrument.getId(), "1m", null, null, someCursor);
+		assertThat(withCursor.content()).containsExactlyElementsOf(noCursor.content());
+		assertThat(withCursor.hasNext()).isFalse();
+		assertThat(withCursor.nextCursor()).isNull();
+	}
+
+	// 048 항목5(무커서 회귀) — 4개 interval(1m·1d·1w·1M) × 주식·코인 조합에서 커서 없는 요청의 값·개수·정렬이
+	// 페이지네이션 도입 이전과 동일하고 차이가 content 포장뿐임을 고정한다. 8개 조합 모두 데이터가 200개 미만이라
+	// hasNext=false·nextCursor=null도 함께 확인한다.
+	@Test
+	@Transactional
+	void noCursorRequestsMatchPrePaginationValuesAcrossFourIntervalsAndBothMarkets() {
+		// 주식 1m
+		Instrument stock = saveInstrument("CDL0473E");
+		saveCandle(stock, LocalTime.of(9, 0), "71100");
+		saveCandle(stock, LocalTime.of(9, 1), "71200");
+		saveCandle(stock, LocalTime.of(9, 2), "71300");
+		LocalDate serviceDate = LocalDate.of(2026, 8, 11);
+		saveReadySession(serviceDate);
+
+		// 주식 1d·1w·1M — 서로 다른 3개 거래일(월요일 3개)에 걸친 소량 데이터.
+		LocalDate td1 = LocalDate.of(2026, 6, 1);
+		LocalDate td2 = LocalDate.of(2026, 6, 8);
+		LocalDate td3 = LocalDate.of(2026, 7, 6);
+		saveAggCandle(stock, td1, LocalTime.of(9, 0), "10000", "10100", "9950", "10050", 100L);
+		saveAggCandle(stock, td2, LocalTime.of(9, 0), "20000", "20200", "19900", "20100", 200L);
+		saveAggCandle(stock, td3, LocalTime.of(9, 0), "30000", "30300", "29800", "30200", 300L);
+
+		LocalDate aggServiceDate = td3.plusDays(10);
+		stockReplaySessionRepository.save(
+			StockReplaySession.ready(aggServiceDate, td3, LocalDateTime.now(), LocalDateTime.now()));
+
+		CandleQueryService stockOneMinuteService = candleQueryServiceAt(clockAt(serviceDate, LocalTime.of(15, 30)));
+		CandleListResponse stockMinute = stockOneMinuteService.getCandles(stock.getId(), "1m", null, null, null);
+		assertThat(stockMinute.content()).extracting(CandleResponse::sourceTime)
+			.containsExactly(
+				LocalDateTime.of(SOURCE_TRADING_DATE, LocalTime.of(9, 0)),
+				LocalDateTime.of(SOURCE_TRADING_DATE, LocalTime.of(9, 1)),
+				LocalDateTime.of(SOURCE_TRADING_DATE, LocalTime.of(9, 2)));
+		assertThat(stockMinute.hasNext()).isFalse();
+		assertThat(stockMinute.nextCursor()).isNull();
+
+		CandleQueryService aggService = candleQueryServiceAt(clockAt(aggServiceDate, LocalTime.of(15, 30)));
+		CandleListResponse stockDaily = aggService.getCandles(stock.getId(), "1d", null, null, null);
+		assertThat(stockDaily.content()).extracting(CandleResponse::sourceTime)
+			.containsExactly(
+				LocalDateTime.of(td1, LocalTime.MIDNIGHT),
+				LocalDateTime.of(td2, LocalTime.MIDNIGHT),
+				LocalDateTime.of(td3, LocalTime.MIDNIGHT));
+		assertThat(stockDaily.hasNext()).isFalse();
+		assertThat(stockDaily.nextCursor()).isNull();
+
+		CandleListResponse stockWeekly = aggService.getCandles(stock.getId(), "1w", null, null, null);
+		assertThat(stockWeekly.content()).hasSize(3); // td1·td2·td3가 각각 서로 다른 주(월요일)
+		assertThat(stockWeekly.hasNext()).isFalse();
+		assertThat(stockWeekly.nextCursor()).isNull();
+
+		CandleListResponse stockMonthly = aggService.getCandles(stock.getId(), "1M", null, null, null);
+		assertThat(stockMonthly.content()).hasSize(2); // td1·td2(6월) + td3(7월)
+		assertThat(stockMonthly.hasNext()).isFalse();
+		assertThat(stockMonthly.nextCursor()).isNull();
+
+		// 코인 4개 interval — FakeCryptoCandleProvider 시드.
+		Instrument coin = instrumentRepository.save(Instrument.create(
+			Market.CRYPTO, "CDLC473", "무커서회귀코인", new BigDecimal("1"), 5000, true, LocalDateTime.now()));
+		FakeCryptoCandleProvider cryptoCandleProvider = new FakeCryptoCandleProvider();
+		LocalDateTime minuteSourceTime = LocalDateTime.of(2026, 6, 1, 9, 0);
+		LocalDateTime dailySourceTime = LocalDateTime.of(2026, 6, 1, 0, 0);
+		LocalDateTime weeklySourceTime = LocalDateTime.of(2026, 6, 8, 0, 0);
+		LocalDateTime monthlySourceTime = LocalDateTime.of(2026, 6, 1, 0, 0);
+		cryptoCandleProvider.setCandles(coin.getSymbol(), CandleInterval.ONE_MINUTE, List.of(new CryptoCandleDto(
+			minuteSourceTime, new BigDecimal("100"), new BigDecimal("101"), new BigDecimal("99"),
+			new BigDecimal("100.5"), new BigDecimal("2.0"))));
+		cryptoCandleProvider.setCandles(coin.getSymbol(), CandleInterval.ONE_DAY, List.of(new CryptoCandleDto(
+			dailySourceTime, new BigDecimal("50000"), new BigDecimal("51000"), new BigDecimal("49500"),
+			new BigDecimal("50800"), new BigDecimal("12.5"))));
+		cryptoCandleProvider.setCandles(coin.getSymbol(), CandleInterval.ONE_WEEK, List.of(new CryptoCandleDto(
+			weeklySourceTime, new BigDecimal("48000"), new BigDecimal("53000"), new BigDecimal("47500"),
+			new BigDecimal("52000"), new BigDecimal("40.25"))));
+		cryptoCandleProvider.setCandles(coin.getSymbol(), CandleInterval.ONE_MONTH, List.of(new CryptoCandleDto(
+			monthlySourceTime, new BigDecimal("45000"), new BigDecimal("55000"), new BigDecimal("44000"),
+			new BigDecimal("53500"), new BigDecimal("310.0"))));
+
+		CandleQueryService cryptoService = candleQueryServiceAt(
+			clockAt(LocalDate.of(2026, 6, 10), LocalTime.of(12, 0)), cryptoCandleProvider);
+
+		CandleListResponse cryptoMinute = cryptoService.getCandles(coin.getId(), "1m", null, null, null);
+		assertThat(cryptoMinute.content()).hasSize(1);
+		assertThat(cryptoMinute.content().get(0).sourceTime()).isEqualTo(minuteSourceTime);
+		assertThat(cryptoMinute.hasNext()).isFalse();
+		assertThat(cryptoMinute.nextCursor()).isNull();
+
+		CandleListResponse cryptoDaily = cryptoService.getCandles(coin.getId(), "1d", null, null, null);
+		assertThat(cryptoDaily.content()).hasSize(1);
+		assertThat(cryptoDaily.content().get(0).sourceTime()).isEqualTo(dailySourceTime);
+		assertThat(cryptoDaily.hasNext()).isFalse();
+		assertThat(cryptoDaily.nextCursor()).isNull();
+
+		CandleListResponse cryptoWeekly = cryptoService.getCandles(coin.getId(), "1w", null, null, null);
+		assertThat(cryptoWeekly.content()).hasSize(1);
+		assertThat(cryptoWeekly.content().get(0).sourceTime()).isEqualTo(weeklySourceTime);
+		assertThat(cryptoWeekly.hasNext()).isFalse();
+		assertThat(cryptoWeekly.nextCursor()).isNull();
+
+		CandleListResponse cryptoMonthly = cryptoService.getCandles(coin.getId(), "1M", null, null, null);
+		assertThat(cryptoMonthly.content()).hasSize(1);
+		assertThat(cryptoMonthly.content().get(0).sourceTime()).isEqualTo(monthlySourceTime);
+		assertThat(cryptoMonthly.hasNext()).isFalse();
+		assertThat(cryptoMonthly.nextCursor()).isNull();
 	}
 }
