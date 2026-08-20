@@ -107,7 +107,7 @@
 
 ---
 
-## 5. 2단계 → 3단계 전환 엔드포인트
+## 5. 2단계 → 3단계 전환 엔드포인트 ✅
 
 - `POST /api/education/practice/attempts/{market}/advance-script` + 서비스.
   attempt 잠금 → 거부 조건 5가지 → PENDING 지정가·예약 정리 → `scenario_script_id` 교체 +
