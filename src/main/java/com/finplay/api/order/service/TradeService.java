@@ -168,8 +168,14 @@ public class TradeService {
 	 * <p>집계식은 {@link #summarizePracticeRun}과 <b>같은 코드</b>다 — 두 벌로 두면 한쪽만 고쳐도 진입별
 	 * 합과 실행 전체 합이 조용히 어긋난다.
 	 *
-	 * @param entryBuyTradeIds 진입 순서(=체결 순서)로 오름차순 정렬된 매수 체결 id. 비어 있으면 빈 목록
+	 * <p><b>구간은 실행 세대의 체결을 빠짐없이 나눈다.</b> 첫 진입은 하한이, 마지막 진입은 상한이 없다 —
+	 * 그렇게 두지 않으면 첫 진입 매수보다 이른 체결(이전 실행에서 넘어온 보유를 이 실행에서 먼저 판 경우
+	 * 등)이 어느 진입에도 속하지 않고 <b>예외도 로그도 없이 사라져</b> 진입별 합과 실행 전체 합이 갈린다.
+	 *
+	 * @param entryBuyTradeIds 진입 순서(=체결 순서)로 <b>오름차순</b> 정렬된 매수 체결 id. 비어 있으면 빈 목록
 	 * @return 입력과 같은 순서·같은 길이의 진입별 요약
+	 * @throws IllegalArgumentException 경계가 오름차순이 아닐 때 — 그대로 두면 구간이 겹치거나 비어
+	 *     금액이 조용히 틀린다
 	 */
 	@Transactional(readOnly = true)
 	public List<PracticeRunTradeSummaryDto> summarizePracticeRunEntries(
@@ -177,14 +183,18 @@ public class TradeService {
 		if (entryBuyTradeIds.isEmpty()) {
 			return List.of();
 		}
+		for (int index = 1; index < entryBuyTradeIds.size(); index++) {
+			if (entryBuyTradeIds.get(index) <= entryBuyTradeIds.get(index - 1)) {
+				throw new IllegalArgumentException("진입 경계 체결 id가 오름차순이 아닙니다: " + entryBuyTradeIds);
+			}
+		}
 		List<Trade> trades = tradeRepository.findFilledPracticeRunTrades(attemptId, runNumber);
 		List<PracticeRunTradeSummaryDto> summaries = new ArrayList<>(entryBuyTradeIds.size());
 		for (int index = 0; index < entryBuyTradeIds.size(); index++) {
-			long from = entryBuyTradeIds.get(index);
-			// 마지막 진입은 상한이 없다 — 그 뒤 체결은 전부 그 진입에 속한다.
+			Long from = index == 0 ? null : entryBuyTradeIds.get(index);
 			Long to = index + 1 < entryBuyTradeIds.size() ? entryBuyTradeIds.get(index + 1) : null;
 			summaries.add(summarize(trades.stream()
-				.filter(trade -> trade.getId() >= from && (to == null || trade.getId() < to))
+				.filter(trade -> (from == null || trade.getId() >= from) && (to == null || trade.getId() < to))
 				.toList()));
 		}
 		return List.copyOf(summaries);

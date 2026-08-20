@@ -34,10 +34,8 @@ class PracticeEntryComparisonServiceTest {
 	private final PracticeRiskSnapshotRepository snapshotRepository = mock(PracticeRiskSnapshotRepository.class);
 	private final TradeService tradeService = mock(TradeService.class);
 	private final PracticeExitPlanQueryService exitPlanQueryService = mock(PracticeExitPlanQueryService.class);
-	private final PracticeAttemptCanonicalPriceService canonicalPriceService = mock(
-		PracticeAttemptCanonicalPriceService.class);
 	private final PracticeEntryComparisonService service = new PracticeEntryComparisonService(
-		snapshotRepository, tradeService, exitPlanQueryService, canonicalPriceService);
+		snapshotRepository, tradeService, exitPlanQueryService);
 
 	// **이 PR이 닫는 결함.** 2막 손절 → 3막 익절한 사용자의 완료 화면이 손절 하나만 가리키던 것을 진입 둘로
 	// 가른다. 실행 전체 합(tradeResult)은 여전히 첫 매도 기준이므로 이 배열이 유일한 창구다.
@@ -93,6 +91,8 @@ class PracticeEntryComparisonServiceTest {
 		List<PracticeEntryResponse> entries = service.findCurrentRunEntries(attempt, new BigDecimal("7900"));
 
 		assertThat(entries.get(0).unrealizedPnlIfHeld()).isEqualTo(-4_217L);
+		// 두 금액이 팔린 수량 기준임을 화면이 알 수 있어야 한다 — 부분 매도에서 buyQuantity와 갈린다.
+		assertThat(entries.get(0).sellQuantity()).isEqualByComparingTo(new BigDecimal("2"));
 		// 예약이 가리키지 않는 매도는 전부 수동이다.
 		assertThat(entries.get(0).sellCause()).isEqualTo("MANUAL");
 	}
@@ -111,6 +111,7 @@ class PracticeEntryComparisonServiceTest {
 		List<PracticeEntryResponse> entries = service.findCurrentRunEntries(attempt, new BigDecimal("7900"));
 
 		assertThat(entries.get(0).sellPrice()).isNull();
+		assertThat(entries.get(0).sellQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
 		assertThat(entries.get(0).sellAt()).isNull();
 		assertThat(entries.get(0).sellCause()).isNull();
 		assertThat(entries.get(0).unrealizedPnlIfHeld()).isNull();

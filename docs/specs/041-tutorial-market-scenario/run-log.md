@@ -9,8 +9,14 @@
 | 22:34 | reviewer(리뷰, 순회 알고리즘 관점) | `git diff origin/dev...HEAD` (041 4~5번) | 041 plan §상태 전이표·§tick 알고리즘·§데이터 모델 |
 | 22:34 | reviewer(리뷰, 회귀·통합 관점) | `git diff origin/dev...HEAD` (041 4~5번) | 가격 경로 전수 grep, ADR-0004·0021 §결정 7, api-contracts 대조 |
 | 23:20 | reviewer(리뷰, 2차) | `git diff origin/dev...HEAD` + `git show d64b7ca6` | 1차 반영 재확인, 042 6번이 얹힐 자리, 테스트가 잡는 것 |
+| 10:49 | reviewer(리뷰, 계약·사건 노출 게이트 관점) | `git diff origin/dev...HEAD` (041 6~7번, 브랜치 `feat/488-tutorial-event-reveal-entries`) + `gh issue view 488`·`gh pr list` | 041 spec·plan·tasks·run-log, 042 run-log, api-contracts 튜토리얼 3절, conventions.md, ADR-0002, CLAUDE.md 7·10 |
+| 10:49 | reviewer(리뷰, 산술·체결 원장 관점) | `git diff origin/dev...HEAD` (041 6~7번, 브랜치 `feat/488-tutorial-event-reveal-entries`) + `gh issue view 488`·`gh pr view 488` | 041 plan §"안 팔았다면" 선, `PostSellArithmetic`·`OrderExecutionService.priceOrder`·`PracticeRunRestartOrderService`·`LimitOrderFeeCalculator` 요율 대조, `TradeService.summarize*`, `PracticeAttemptOrderAttributionService`(진입 경계), ADR-0002·0003 |
+| 10:49 | reviewer(리뷰, 회귀·빈 조립·컨벤션 관점) | `git diff origin/dev...HEAD` (041 6~7번, 브랜치 `feat/488-tutorial-event-reveal-entries`) + `new InvestmentPracticeResponse` 호출부 전수 grep + `gh pr list --head` | conventions.md, ADR-0002·0003, agent-mistakes.md, CLAUDE.md 6·7·10, 042 run-log §PR #487 리뷰 반영, `scenario-crypto-v1.json` 배율·사건 검산 |
 
 ## 모니터링 (사람용 요약)
+- 10:49 — 041 6~7번 리뷰(계약·사건 노출 게이트): **차단 0건**, 권장 4건, 참고 4건. 공개 게이트가 `PracticeScenarioNarrativeCalculator` 하나뿐임을 `headline` 전수 grep으로 확인했고, ACT2_FAKEOUT(사건 없음)과 ACT2_CONFIRM 공개 전(미공개 사건 있음)이 네 필드 모두 동일함을 반례로 확인했다(SCENARIO-016). `priceAfterSell` 종점가는 `COMPLETED`에서만 나오고 그 상태에서 tick이 409로 막혀 진행 중 누설 경로가 없다. `PracticeEntryComparisonService`의 미사용 주입 필드와 PRD·tasks의 "PR #488"(실제로는 이슈 번호)이 권장이다.
+- 10:49 — 041 6~7번 리뷰(산술·체결 원장): **차단 0건**, 권장 5건, 참고 5건. 진입 경계(체결 id)가 `createRiskSnapshotOnBuyFill`의 "직전 순보유수량 0" 가드 덕에 오름차순임을 확인했고, `unrealizedPnlIfHeld`의 FLOOR 2단·팔린 수량 기준·수수료율 다섯 곳 값 일치를 `priceOrder`와 직접 대조했다. `summarizePracticeRun`은 리팩터링 후에도 쿼리 1회·결과 동일. 권장은 미사용 주입 필드, 부분 매도 시 응답에 팔린 수량이 없는 것, 경계 id 비오름차순·첫 진입 이전 체결이 조용히 사라지는 것, 새 파생 쿼리·새 응답 필드의 테스트 레벨, PRD·tasks의 "PR #488"(`gh pr view 488`로 미존재 확인 — 488은 이슈 번호)이다.
+- 10:49 — 041 6~7번 리뷰(회귀·빈 조립·컨벤션): **차단 0건**, 권장 4건, 참고 8건. 새 두 빈이 order→education 사이클에 닿지 않음(`TradeService`→AccountService·TradeRepository, `PracticeExitPlanQueryService`→ExitPlanRepository)을 확인했고 조립은 `PracticeScenarioFullJourneyIntegrationTest`(@SpringBootTest)가 실제로 검증한다. PR #487의 `practiceAttemptId is null` 불변식 2건은 그대로이며 order 도메인 변경은 `summarize(List<Trade>)` 추출뿐이라 `summarizePracticeRun` 동작이 동일하다. 7-arg 편의 생성자 호출부 8곳을 전수로 확인해 attempt 경로 3곳이 모두 `withEntryComparison`으로 감싸짐을 확인했다. 통합 테스트의 `unrealizedPnlIfHeld < realizedPnl`은 대본 배율로 검산해 항등식이 아님을 확인했다(-2108 < -260, -807 < 422). 권장은 미사용 주입 필드, 실재하지 않는 "PR #488", spec.md SCENARIO-020 미정정, `GET /api/education/practice` 새 3필드의 @WebMvcTest 부재다.
 - 23:20 — 2차 리뷰(1차 반영 재확인): **차단 0건**, 권장 2건(문서 정합성), 참고 4건. 폴백 정산이 진입 있는 tick에서 이중으로 돌지 않음, `exitIdleLoop` 두 호출점의 규칙 일치, `step` 음수 방어의 커서 정리, 버전 판정 호출부 전수, 로더 새 규칙과 현행 대본, 문서 4종의 코드 일치를 각각 반례 시도로 확인했다.
 - 22:34 — 041 4~5번 1차 리뷰 3건(관점 분리: 순회 알고리즘 / 회귀·통합 / 컨벤션·테스트). **셋이 각각 같은 차단 하나를 찾았다** — 진행 계산이 가상 분 진입 때만 정산해 대본 종료 후 PENDING 지정가가 영구 미체결. 추가 차단 1건은 문서(`api-contracts.md`가 generator version 2를 시장 구분 없이 서술). 순회 관점 리뷰어는 무한 루프·소비 초·`pricedAt` 단조성·봉 불변식을 반례 구성으로 검증해 전부 확인함으로 판정했다.
 - 22:34 — 041 4~5번 리뷰(컨벤션·테스트 관점): 차단 1건(진행 계산이 가상 분 진입 때만 정산해 FINISHED 이후 PENDING 지정가가 영구 미체결), 권장 5건, 참고 8건. 레이어·V52·문서 동기화·Jackson 3은 문제 없음. 통합 테스트의 `9941.58`은 대본 배율로 검산해 4번째 분에서만 최초 충족(종점은 9750)임을 확인했다.
@@ -150,3 +156,35 @@ plan §"안 팔았다면" 선은 "공식은 `PostSellArithmetic`을 재사용한
 - **2차 리뷰가 남긴 "대기 루프 되감기 지점의 체결이 한 tick 밀린다"**(041 4~5번 run-log). 이번에
   `scenarioProgressing`을 응답에 싣기 시작했으므로 화면에 보일 수 있는 자리가 됐다. 통합 완주에서
   재현되지 않았고 LOOP은 첫·끝 배율이 같아 가격도 튀지 않아 이번 범위에서는 손대지 않았다.
+
+## 사전 리뷰 반영 (이슈 #488, 2026-08-20)
+
+관점을 나눈 리뷰어 셋(계약·노출 게이트 / 산술·체결 원장 / 회귀·조립·컨벤션)이 **차단 0건**을 냈고, 아래
+권장을 반영했다. **셋이 독립적으로 같은 것을 하나 지적했다** — 새 서비스의 미사용 의존.
+
+- **미사용 의존 제거.** `PracticeEntryComparisonService`가 `PracticeAttemptCanonicalPriceService`를
+  주입만 하고 한 번도 읽지 않았다(기준가는 호출부가 인자로 넘긴다). 내 변경이 만든 고아라 필드·생성자
+  인자·테스트 mock을 함께 지웠다. 사이클이 나기 쉬운 자리에 불필요한 빈 간선을 하나 덜었다.
+- **`entries[]`에 `sellQuantity`를 더했다.** `realizedPnl`·`unrealizedPnlIfHeld`가 **팔린 수량** 기준인데
+  응답에는 `buyQuantity`만 있어, 부분 매도한 진입에서 화면이 두 금액을 전체 수량의 것으로 읽게 된다.
+  산술 자체는 맞았다(`soldBuyBasis`와 곱하는 수량이 둘 다 팔린 수량이라 축이 일치한다).
+- **진입 구간이 원장을 빠짐없이 나누게 했다.** 첫 진입에 하한을 두지 않아, 첫 진입 매수보다 이른 체결
+  (이전 실행에서 넘어온 보유를 이 실행에서 먼저 판 경우)이 어디에도 속하지 않고 **예외도 로그도 없이
+  사라지던** 것을 막았다. 경계가 오름차순이 아니면 `IllegalArgumentException`을 던진다 — 그대로 두면
+  구간이 겹치거나 비어 금액이 조용히 틀린다.
+- **로더에 공개 분 범위 검증을 더했다.** `revealMinute()`이 구간 길이를 넘으면 그 사건은 **영영 열리지
+  않는다**(커서가 구간 끝에 닿으면 다음 구간으로 넘어가므로 공개 조건을 만족하는 순간이 없다). 041 6번이
+  이 값의 첫 소비자라 여기서 처음 검증한다. 현행 대본 5건은 전부 안전하다.
+- **커서 null 판정을 `PracticeAttemptCanonicalPriceService.cursor`와 맞췄다.** 두 컬럼 중 하나만 null인
+  상태에서 계산기는 "그 구간 0분", 가격 서비스는 "첫 구간 0분"으로 갈렸다. 둘을 짝으로 묶는 DB CHECK가
+  없어 조합이 가능하고, 어긋나면 "막은 3막인데 가격은 0막"이 된다.
+- **`GET /api/education/practice`의 새 3필드에 `@WebMvcTest`를 더했다.** chart 쪽만 채워져 있었는데,
+  이쪽은 `withEntryComparison`이 응답을 통째로 재조립하는 **다른 경로**라 회귀해도 잡히지 않았다.
+- **spec SCENARIO-020 본문에 완화 근거를 적었다.** 결정이 run-log에만 있으면 블랙박스 QA가 spec을 근거로
+  FAIL을 낸다. SCENARIO-021을 본문에서 정정한 선례를 따랐다.
+- `docs/api-contracts.md`의 공식 표기에서 바깥 `FLOOR`가 빠져 있던 것과 "최상위 3필드"라 쓰고 불릿이
+  넷이던 것을 정정했다.
+
+**반영하지 않은 것** — 진입별 배열과 실행 전체 요약이 같은 쿼리를 각각 한 번씩 더 부르는 중복(진입 2~3개
+규모라 실害가 없고, 두 요약을 합치는 것은 이 PR의 범위를 넘는다), 수수료율 상수 통합(다섯 곳이며 별도
+이슈가 맞다), `PracticeEntryResponse`의 정적 팩토리화(같은 패키지에 생성자 직접 호출 선례가 있다).

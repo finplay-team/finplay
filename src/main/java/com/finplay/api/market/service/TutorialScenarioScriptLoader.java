@@ -130,6 +130,13 @@ public final class TutorialScenarioScriptLoader {
 				event.impactStartMinute() + event.impactMinutes() <= script.stage(event.stageId()).minutes(),
 				resourcePath,
 				"사건의 영향 구간이 구간 길이를 넘습니다: " + event.stageId());
+			// 공개 분이 구간을 벗어나면 그 사건은 **영영 열리지 않는다** — 커서가 구간 끝에 닿으면 다음
+			// 구간으로 넘어가므로 공개 조건을 만족하는 순간이 없다. 041 6번이 revealMinute의 첫 소비자라
+			// 여기서 처음 검증한다(어떤 테스트도 조용히 닫힌 사건을 잡지 못한다).
+			require(
+				event.revealMinute() < script.stage(event.stageId()).minutes(),
+				resourcePath,
+				"사건의 공개 분이 구간 길이를 넘습니다: " + event.stageId());
 		}
 	}
 

@@ -32,13 +32,14 @@ final class PracticeScenarioNarrativeCalculator {
 	 */
 	static PracticeScenarioNarrativeDto calculate(PracticeAttempt attempt, TutorialScenarioScript script) {
 		// 커서가 비어 있으면 미시작이다 — 종목 선택·재시작이 다섯 컬럼을 전부 null로 지우고 첫 tick이
-		// 대본의 첫 구간 0분으로 세운다(041 3·4번이 정한 계약).
-		TutorialScenarioStage stage = attempt.getScenarioStageId() == null
+		// 대본의 첫 구간 0분으로 세운다(041 3·4번이 정한 계약). **두 컬럼 중 하나만 null이어도 미시작으로
+		// 읽는다** — 가격을 정하는 PracticeAttemptCanonicalPriceService.cursor와 같은 판정이라야
+		// "막은 3막인데 가격은 0막"처럼 두 값이 갈라지지 않는다(둘을 짝으로 묶는 DB CHECK는 없다).
+		boolean unstarted = attempt.getScenarioStageId() == null || attempt.getScenarioStageElapsedSeconds() == null;
+		TutorialScenarioStage stage = unstarted
 			? script.firstStage()
 			: script.stage(attempt.getScenarioStageId());
-		long elapsedSeconds = attempt.getScenarioStageElapsedSeconds() == null
-			? 0L
-			: Math.max(0L, attempt.getScenarioStageElapsedSeconds());
+		long elapsedSeconds = unstarted ? 0L : Math.max(0L, attempt.getScenarioStageElapsedSeconds());
 		// clamp하지 않은 분을 공개 판정에 쓴다. 마지막 구간을 다 쓰면 커서가 구간 길이에 닿은 채 멈추는데
 		// (FINISHED), 가격용으로 마지막 분에 clamp한 값을 여기 쓰면 그 구간의 사건 하나가 영영 열리지 않는다.
 		long minute = elapsedSeconds / SECONDS_PER_VIRTUAL_MINUTE;

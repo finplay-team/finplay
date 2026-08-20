@@ -25,6 +25,10 @@ import java.time.LocalDateTime;
  * @param stopLossPrice       그 진입의 손절 기준선
  * @param takeProfitPrice     그 진입의 익절 기준선
  * @param sellPrice           그 진입 매도 체결의 수량 가중평균 단가. 매도 전이면 {@code null}
+ * @param sellQuantity        그 진입에서 <b>팔린</b> 수량 합. {@code realizedPnl}과
+ *                            {@code unrealizedPnlIfHeld}가 <b>이 수량 기준</b>이라, 부분 매도한 진입에서
+ *                            {@code buyQuantity}와 다르다 — 이 필드가 없으면 화면이 두 금액을 전체 수량의
+ *                            것으로 오해한다
  * @param sellAt              그 진입의 최초 매도 체결 시각. 매도 전이면 {@code null}
  * @param sellCause           {@code STOP_LOSS|TAKE_PROFIT|MANUAL}. 매도 전이면 {@code null}
  * @param realizedPnl         그 진입 매도의 실현손익 합(원, 매수·매도 수수료가 모두 반영된 원장 값).
@@ -43,6 +47,7 @@ public record PracticeEntryResponse(
 	BigDecimal stopLossPrice,
 	BigDecimal takeProfitPrice,
 	BigDecimal sellPrice,
+	BigDecimal sellQuantity,
 	LocalDateTime sellAt,
 	String sellCause,
 	Long realizedPnl,

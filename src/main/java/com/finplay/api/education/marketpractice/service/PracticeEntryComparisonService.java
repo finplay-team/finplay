@@ -42,7 +42,6 @@ public class PracticeEntryComparisonService {
 	private final PracticeRiskSnapshotRepository practiceRiskSnapshotRepository;
 	private final TradeService tradeService;
 	private final PracticeExitPlanQueryService practiceExitPlanQueryService;
-	private final PracticeAttemptCanonicalPriceService canonicalPriceService;
 
 	/**
 	 * 현재 실행 세대의 진입별 대조 배열. 진입 순번 오름차순이며 진입이 없으면(매수 전) 빈 목록이다.
@@ -90,6 +89,7 @@ public class PracticeEntryComparisonService {
 			snapshot.getStopLossPrice(),
 			snapshot.getTakeProfitPrice(),
 			summary.averageSellPrice(),
+			summary.sellQuantity(),
 			sellTrade == null ? null : sellTrade.getExecutedAt(),
 			sellTrade == null
 				? null

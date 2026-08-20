@@ -602,6 +602,30 @@ class TradeServiceTest {
 		assertThat(entries.get(0).firstSellTrade().getId()).isEqualTo(2L);
 	}
 
+	// 첫 진입 매수보다 이른 체결이 어디에도 속하지 않고 사라지면 진입별 합과 실행 전체 합이 예외도 로그도
+	// 없이 갈린다 — 첫 진입에 하한을 두지 않아 구간이 원장을 빠짐없이 나눈다.
+	@Test
+	void summarizePracticeRunEntriesGivesEveryEarlierTradeToTheFirstEntry() {
+		when(tradeRepository.findFilledPracticeRunTrades(77L, 1L)).thenReturn(List.of(
+			practiceTrade(1L, OrderSide.SELL, new BigDecimal("100"), new BigDecimal("2"), 200L, 0L, 20L),
+			practiceTrade(2L, OrderSide.BUY, new BigDecimal("100"), new BigDecimal("10"), 1_000L, 0L, null),
+			practiceTrade(3L, OrderSide.SELL, new BigDecimal("97"), new BigDecimal("10"), 970L, 0L, -30L)));
+
+		List<PracticeRunTradeSummaryDto> entries = tradeService.summarizePracticeRunEntries(77L, 1L, List.of(2L));
+
+		assertThat(entries).hasSize(1);
+		assertThat(entries.get(0).sellQuantity()).isEqualByComparingTo(new BigDecimal("12"));
+		assertThat(entries.get(0).realizedPnl()).isEqualTo(-10L);
+	}
+
+	// 경계가 오름차순이 아니면 구간이 겹치거나 비어 금액이 조용히 틀린다 — 계약으로만 두지 않고 막는다.
+	@Test
+	void summarizePracticeRunEntriesRejectsBoundariesThatAreNotAscending() {
+		assertThatThrownBy(() -> tradeService.summarizePracticeRunEntries(77L, 1L, List.of(3L, 1L)))
+			.isInstanceOf(IllegalArgumentException.class);
+		verify(tradeRepository, never()).findFilledPracticeRunTrades(77L, 1L);
+	}
+
 	// 매수 전에는 진입 자체가 없다 — 원장을 읽지 않고 빈 목록을 돌려준다.
 	@Test
 	void summarizePracticeRunEntriesReadsNothingWhenThereIsNoEntry() {
