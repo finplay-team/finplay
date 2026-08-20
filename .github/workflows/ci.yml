@@ -40,8 +40,10 @@ jobs:
           BASE="origin/${{ github.base_ref }}"
           MIGRATION_DIR="src/main/resources/db/migration"
 
+          # || true — 이 스텝의 셸은 bash -eo pipefail입니다(Actions 기본). grep이 무매치로 exit 1을
+          # 내면 대입문 자체가 실패해, 아래 폴백 줄에 닿기 전에 스텝이 죽습니다 (PR #493 리뷰).
           MAX_BASE=$(git ls-tree -r --name-only "$BASE" -- "$MIGRATION_DIR" \
-            | grep -oE '/V[0-9]+__' | grep -oE '[0-9]+' | sort -n | tail -1)
+            | grep -oE '/V[0-9]+__' | grep -oE '[0-9]+' | sort -n | tail -1 || true)
           MAX_BASE=${MAX_BASE:-0}
           echo "$BASE 최고 마이그레이션 번호: V$MAX_BASE"
 
@@ -52,15 +54,23 @@ jobs:
           fi
 
           FAILED=0
-          for f in $NEW_FILES; do
-            NUM=$(basename "$f" | grep -oE '^V[0-9]+' | grep -oE '[0-9]+')
-            [ -z "$NUM" ] && continue
+          # 한 줄씩 읽습니다 — 공백이 든 파일명이 워드 스플리팅으로 쪼개지지 않게 합니다.
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            # NUM의 || true도 같은 이유입니다. 마이그레이션 디렉터리에는 V{N}__ 규칙과 무관한
+            # 파일(Flyway 콜백 afterMigrate.sql 등)이 들어올 수 있고, 그때 조용히 죽는 대신
+            # 그 파일만 건너뛰어야 합니다.
+            NUM=$(basename "$f" | grep -oE '^V[0-9]+' | grep -oE '[0-9]+' || true)
+            if [ -z "$NUM" ]; then
+              echo "번호 없는 파일 — 검사 대상 아님: $f"
+              continue
+            fi
             echo "신규 마이그레이션: $f (V$NUM)"
             if [ "$NUM" -le "$MAX_BASE" ]; then
               echo "::error file=$f::V$NUM이 ${{ github.base_ref }}에 이미 있는 최고 번호(V$MAX_BASE) 이하입니다. 다른 PR이 먼저 그 번호대를 차지했을 가능성이 높습니다 — 다음 빈 번호(V$((MAX_BASE + 1)))로 리네임하세요."
               FAILED=1
             fi
-          done
+          done <<< "$NEW_FILES"
 
           if [ "$FAILED" -eq 1 ]; then
             exit 1
