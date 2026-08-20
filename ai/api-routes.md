@@ -112,9 +112,9 @@
 
 네 경로 모두 `SecurityConfig` 공개 목록에 추가하지 않는다 — `anyRequest().authenticated()`로 떨어져 Access Bearer 토큰을 요구한다.
 
-**Notion 명세와의 차이 (팀 동기화 필요)**
+**Notion 초기 명세와의 차이 (참고용 — 이 레포가 정본, Notion 동기화 불필요)**
 
-| 항목 | Notion api 명세서 | 이 레포 | 사유 |
+| 항목 | Notion api 명세서(최초 기획, 미정리) | 이 레포 | 사유 |
 |---|---|---|---|
 | Base URL | `/api/v1` | `/api` | 버저닝 미사용 (2026-07-23 확정, `docs/conventions/code.md`) |
 | 매도 직후 피드백 | `GET /ai/post-sell/{id}` | `GET /api/ai/post-sell/{tradeId}` | Base URL 규칙만 적용, 경로는 동일 |

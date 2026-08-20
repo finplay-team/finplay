@@ -30,7 +30,7 @@ FinPlay 백엔드 API 서버. Spring Boot 4.1 / Java 17 / Gradle (`build.gradle`
 |---|---|
 | [`AGENTS.md`](AGENTS.md) | Codex 프로젝트 규칙 |
 | [`CLAUDE.md`](CLAUDE.md) | Claude Code 프로젝트 규칙 |
-| [Notion 10 X TEN](https://app.notion.com/p/10-X-TEN-ae2b1fddfba9830abe9c813974422885) | 제품 범위·API 단계·담당자 참고 (저장소가 정본, 아래 참고) |
+| [Notion 10 X TEN](https://app.notion.com/p/10-X-TEN-ae2b1fddfba9830abe9c813974422885) | 최초 기획 참고용 (더 이상 정본 아님 — 정리 안 됨) |
 | [`docs/prd.md`](docs/prd.md) | 사람용 제품 요구사항 문서 |
 | [`ai/prd.md`](ai/prd.md) | AI용 요구사항 정본 — 요구사항 ID·수용 기준·구현 현황 |
 | [`docs/conventions/code.md`](docs/conventions/code.md) | 코드 컨벤션 + 리뷰 체크 질문 |
