@@ -3,7 +3,6 @@ package com.finplay.api.market.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.finplay.api.market.domain.Market;
 import java.math.BigDecimal;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -16,7 +15,7 @@ import tools.jackson.databind.ObjectMapper;
 class TutorialScenarioScriptIntegrityTest {
 
 	private final TutorialScenarioScript script = new TutorialScenarioScriptLoader(new ObjectMapper())
-		.script(Market.CRYPTO);
+		.script(TutorialScenarioScriptId.CRYPTO_STORY_V1);
 
 	@Test
 	void stagesFollowPlannedOrderAndLengths() {

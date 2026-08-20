@@ -28,6 +28,7 @@ import com.finplay.api.favorite.dto.response.FavoriteResponse;
 import com.finplay.api.favorite.service.FavoriteService;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.service.TutorialScenarioScriptId;
 import com.finplay.api.market.service.TutorialScenarioScriptLoader;
 import com.finplay.api.order.domain.Trade;
 import com.finplay.api.portfolio.domain.Holding;
@@ -573,7 +574,8 @@ class InvestmentPracticeQueryServiceTest {
 		// 041 6번 — 대본 실행이면 응답에 공개된 사건이 함께 실린다. 이 테스트의 대상은 마감 폐지이므로
 		// 배포되는 대본을 그대로 물려 실제 게이트가 돌게 두고, 사건 목록 자체는 전용 테스트가 본다.
 		when(canonicalPriceService.script(attempt))
-			.thenReturn(new TutorialScenarioScriptLoader(new ObjectMapper()).script(Market.CRYPTO));
+			.thenReturn(
+				new TutorialScenarioScriptLoader(new ObjectMapper()).script(TutorialScenarioScriptId.CRYPTO_STORY_V1));
 
 		PracticeRiskSnapshot snapshot = riskSnapshot(30L, NOW.minusHours(3));
 		when(practiceRiskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(70L, 1L))

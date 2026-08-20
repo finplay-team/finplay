@@ -8,7 +8,7 @@
 
 ---
 
-## 1. 대본 기준가를 파일 필드로 옮기고 2단계 대본을 등록한다
+## 1. 대본 기준가를 파일 필드로 옮기고 2단계 대본을 등록한다 ✅ (이슈 #507)
 
 - `TutorialScenarioScript`에 `BigDecimal basePrice` 추가, 로더 검증에 `basePrice > 0` 추가.
 - `TutorialScenarioScriptId` 열거형 신설(`CRYPTO_ORDER_BASICS_V1`·`CRYPTO_STORY_V1`), 로더를

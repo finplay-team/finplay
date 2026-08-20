@@ -8,6 +8,7 @@ import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.TutorialPriceGenerator;
 import com.finplay.api.market.service.TutorialScenarioScript;
+import com.finplay.api.market.service.TutorialScenarioScriptId;
 import com.finplay.api.market.service.TutorialScenarioScriptLoader;
 import com.finplay.api.market.service.TutorialScenarioStage;
 import java.math.BigDecimal;
@@ -23,7 +24,7 @@ class PracticeScenarioNarrativeCalculatorTest {
 	private static final LocalDateTime NOW = LocalDateTime.of(2026, 8, 20, 12, 0);
 	private static final int SECONDS_PER_VIRTUAL_MINUTE = PracticeAttemptCanonicalPriceService.SECONDS_PER_VIRTUAL_MINUTE;
 	private final TutorialScenarioScript script = new TutorialScenarioScriptLoader(new ObjectMapper())
-		.script(Market.CRYPTO);
+		.script(TutorialScenarioScriptId.CRYPTO_STORY_V1);
 
 	// 커서가 비어 있으면 미시작이다 — 첫 tick 전의 조회도 첫 구간 0분으로 답해야 화면이 비지 않는다.
 	@Test

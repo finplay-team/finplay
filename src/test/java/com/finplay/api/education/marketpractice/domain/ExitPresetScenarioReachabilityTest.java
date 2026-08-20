@@ -4,9 +4,9 @@ package com.finplay.api.education.marketpractice.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finplay.api.education.marketpractice.service.ReferencePriceCalculator;
-import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.TutorialScenarioEvent;
 import com.finplay.api.market.service.TutorialScenarioScript;
+import com.finplay.api.market.service.TutorialScenarioScriptId;
 import com.finplay.api.market.service.TutorialScenarioScriptLoader;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -30,7 +30,7 @@ import tools.jackson.databind.ObjectMapper;
 class ExitPresetScenarioReachabilityTest {
 
 	private final TutorialScenarioScript script = new TutorialScenarioScriptLoader(new ObjectMapper())
-		.script(Market.CRYPTO);
+		.script(TutorialScenarioScriptId.CRYPTO_STORY_V1);
 	private final ReferencePriceCalculator calculator = new ReferencePriceCalculator();
 
 	@Test

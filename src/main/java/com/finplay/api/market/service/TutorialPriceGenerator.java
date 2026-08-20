@@ -30,19 +30,20 @@ public class TutorialPriceGenerator {
 		validate(input, publishedMinute);
 		requireVersion(input, VERSION_1);
 		long mixedSeed = mixSeed(input);
+		BigDecimal basePrice = basePrice(input.market());
 		List<TutorialPriceCandleDto> candles = new ArrayList<>(HISTORY_CANDLE_COUNT + 1);
 		candles.addAll(generateHistory(input));
 
-		BigDecimal open = currentMinutePrice(input.market(), mixedSeed, 0L);
+		BigDecimal open = currentMinutePrice(basePrice, mixedSeed, 0L);
 		BigDecimal high = open;
 		BigDecimal low = open;
 		long foldEnd = Math.min(publishedMinute, CURRENT_PRICE_PERIOD_MINUTES - 1L);
 		for (long minute = 1L; minute <= foldEnd; minute++) {
-			BigDecimal price = currentMinutePrice(input.market(), mixedSeed, minute);
+			BigDecimal price = currentMinutePrice(basePrice, mixedSeed, minute);
 			high = high.max(price);
 			low = low.min(price);
 		}
-		BigDecimal close = currentMinutePrice(input.market(), mixedSeed, publishedMinute);
+		BigDecimal close = currentMinutePrice(basePrice, mixedSeed, publishedMinute);
 		candles.add(new TutorialPriceCandleDto(
 			input.tutorialDate(), open, high.max(close), low.min(close), close, true));
 		return new TutorialPriceSeriesDto(candles, close);
@@ -51,17 +52,32 @@ public class TutorialPriceGenerator {
 	public BigDecimal canonicalPrice(TutorialPriceGenerationInput input, long publishedMinute) {
 		validate(input, publishedMinute);
 		requireVersion(input, VERSION_1);
-		return currentMinutePrice(input.market(), mixSeed(input), publishedMinute);
+		return currentMinutePrice(basePrice(input.market()), mixSeed(input), publishedMinute);
 	}
 
 	// 과거 29개 완결 일봉은 대본 대상이 아니다 — 039의 배경 정보이고 사건과 무관하므로 버전 2도 같은 seed
 	// 생성 방식을 그대로 쓴다(041 plan §대본 설계). 버전 2는 진행 중 1봉만 대본에서 만들어 붙인다.
 	public List<TutorialPriceCandleDto> generateHistory(TutorialPriceGenerationInput input) {
 		validateInput(input);
+		return generateHistory(input, basePrice(input.market()));
+	}
+
+	// 버전 2의 과거 봉은 **대본의 기준가**로 만든다. 진행 중 봉만 대본 기준가를 쓰면 기준가 10만원짜리
+	// 대본에서 과거 봉만 1만원대에 머물러 차트가 두 동강 난다(049 plan §1의 경고).
+	public List<TutorialPriceCandleDto> generateHistory(
+		TutorialPriceGenerationInput input, TutorialScenarioScript script) {
+		validateInput(input);
+		requireVersion(input, VERSION_2);
+		requireScriptMatches(script, input);
+		return generateHistory(input, script.basePrice());
+	}
+
+	private List<TutorialPriceCandleDto> generateHistory(
+		TutorialPriceGenerationInput input, BigDecimal basePrice) {
 		long mixedSeed = mixSeed(input);
 		List<TutorialPriceCandleDto> candles = new ArrayList<>(HISTORY_CANDLE_COUNT);
 		for (int index = 0; index < HISTORY_CANDLE_COUNT; index++) {
-			candles.add(generateHistoryCandle(input, mixedSeed, index));
+			candles.add(generateHistoryCandle(input, mixedSeed, index, basePrice));
 		}
 		return candles;
 	}
@@ -72,20 +88,27 @@ public class TutorialPriceGenerator {
 		TutorialPriceGenerationInput input, TutorialScenarioScript script, TutorialScenarioCursor cursor) {
 		validateInput(input);
 		requireVersion(input, VERSION_2);
-		if (script == null || cursor == null) {
+		if (cursor == null) {
+			throw new IllegalArgumentException("튜토리얼 대본 또는 대본 위치가 비어 있습니다.");
+		}
+		requireScriptMatches(script, input);
+		return TutorialScenarioPriceGenerator.canonicalPrice(script, cursor, script.basePrice());
+	}
+
+	private void requireScriptMatches(TutorialScenarioScript script, TutorialPriceGenerationInput input) {
+		if (script == null) {
 			throw new IllegalArgumentException("튜토리얼 대본 또는 대본 위치가 비어 있습니다.");
 		}
 		if (script.market() != input.market()) {
 			throw new IllegalArgumentException("attempt의 시장과 다른 대본입니다.");
 		}
-		return TutorialScenarioPriceGenerator.canonicalPrice(script, cursor, basePrice(input.market()));
 	}
 
 	private TutorialPriceCandleDto generateHistoryCandle(
-		TutorialPriceGenerationInput input, long mixedSeed, int index) {
+		TutorialPriceGenerationInput input, long mixedSeed, int index, BigDecimal basePrice) {
 		long coordinate = index * 4L;
-		BigDecimal open = price(input.market(), mixedSeed, coordinate);
-		BigDecimal close = price(input.market(), mixedSeed, coordinate + 1L);
+		BigDecimal open = price(basePrice, mixedSeed, coordinate);
+		BigDecimal close = price(basePrice, mixedSeed, coordinate + 1L);
 		BigDecimal highRate = unit(mixedSeed, coordinate + 2L).multiply(MAX_WICK_RATE);
 		BigDecimal lowRate = unit(mixedSeed, coordinate + 3L).multiply(MAX_WICK_RATE);
 		BigDecimal high = open.max(close).multiply(BigDecimal.ONE.add(highRate))
@@ -96,17 +119,17 @@ public class TutorialPriceGenerator {
 			input.tutorialDate().minusDays(HISTORY_CANDLE_COUNT - index), open, high, low, close, false);
 	}
 
-	private BigDecimal currentMinutePrice(Market market, long mixedSeed, long minute) {
+	private BigDecimal currentMinutePrice(BigDecimal basePrice, long mixedSeed, long minute) {
 		long periodicMinute = Math.floorMod(minute, CURRENT_PRICE_PERIOD_MINUTES);
-		return price(market, mixedSeed, CURRENT_COORDINATE_OFFSET + periodicMinute);
+		return price(basePrice, mixedSeed, CURRENT_COORDINATE_OFFSET + periodicMinute);
 	}
 
-	private BigDecimal price(Market market, long mixedSeed, long coordinate) {
-		BigDecimal base = basePrice(market);
+	private BigDecimal price(BigDecimal basePrice, long mixedSeed, long coordinate) {
 		BigDecimal factor = MIN_FACTOR.add(unit(mixedSeed, coordinate).multiply(FACTOR_RANGE));
-		return base.multiply(factor).setScale(PRICE_SCALE, RoundingMode.HALF_UP);
+		return basePrice.multiply(factor).setScale(PRICE_SCALE, RoundingMode.HALF_UP);
 	}
 
+	// 생성기 버전 1 전용 기준가다. 버전 2는 대본 파일의 basePrice를 쓴다(049 ORDERBASICS-003).
 	private BigDecimal basePrice(Market market) {
 		return market == Market.STOCK ? STOCK_BASE_PRICE : CRYPTO_BASE_PRICE;
 	}

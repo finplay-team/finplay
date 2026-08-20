@@ -1,7 +1,6 @@
 {
   "version": 2,
   "market": "CRYPTO",
-  "basePrice": 10000.00000000,
   "stages": [
     {
       "id": "IDLE",
@@ -20,7 +19,7 @@
       "kind": "PROGRESS",
       "minutes": 3,
       "ratios": [
-        1.05,
+        1.0,
         1.02,
         1.03
       ]

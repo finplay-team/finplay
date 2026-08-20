@@ -13,6 +13,7 @@ import com.finplay.api.market.service.TutorialPriceGenerator;
 import com.finplay.api.market.service.TutorialPriceSeriesDto;
 import com.finplay.api.market.service.TutorialScenarioCursor;
 import com.finplay.api.market.service.TutorialScenarioScript;
+import com.finplay.api.market.service.TutorialScenarioScriptId;
 import com.finplay.api.market.service.TutorialScenarioScriptLoader;
 import com.finplay.api.market.service.TutorialScenarioStage;
 import java.math.BigDecimal;
@@ -90,8 +91,11 @@ public class PracticeAttemptCanonicalPriceService {
 		return new TutorialScenarioCursor(last.id(), last.minutes() - 1);
 	}
 
+	// 049 2번이 attempt에 영속된 대본 식별자로 이 한 줄을 바꾼다. 그전까지는 진행 중인 모든 버전 2 실행이
+	// 041 대본 위에 서 있으므로(커서가 그 구간 id를 들고 있다) 여기서 041 대본을 고정으로 읽어야 가격이
+	// 한 자리도 달라지지 않는다.
 	public TutorialScenarioScript script(PracticeAttempt attempt) {
-		return tutorialScenarioScriptLoader.script(attempt.getMarket());
+		return tutorialScenarioScriptLoader.script(TutorialScenarioScriptId.CRYPTO_STORY_V1);
 	}
 
 	// 대본 위치가 비어 있으면 미시작이다 — 종목 선택·재시작이 다섯 컬럼을 전부 null로 지운다(041 3번이 남긴
@@ -122,7 +126,7 @@ public class PracticeAttemptCanonicalPriceService {
 		BigDecimal open = attempt.getScenarioCandleOpen() == null ? close : attempt.getScenarioCandleOpen();
 		BigDecimal high = attempt.getScenarioCandleHigh() == null ? close : attempt.getScenarioCandleHigh();
 		BigDecimal low = attempt.getScenarioCandleLow() == null ? close : attempt.getScenarioCandleLow();
-		List<TutorialPriceCandleDto> candles = new ArrayList<>(tutorialPriceGenerator.generateHistory(input));
+		List<TutorialPriceCandleDto> candles = new ArrayList<>(tutorialPriceGenerator.generateHistory(input, script));
 		candles.add(new TutorialPriceCandleDto(
 			attempt.getTutorialDate(), open, high.max(close), low.min(close), close, true));
 		return new TutorialPriceSeriesDto(List.copyOf(candles), close);
