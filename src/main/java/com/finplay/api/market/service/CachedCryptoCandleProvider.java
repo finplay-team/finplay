@@ -86,7 +86,23 @@ public class CachedCryptoCandleProvider implements CryptoCandleProvider {
 			}
 		}
 
-		return merge(delegated, cached);
+		List<CryptoCandleDto> merged = merge(delegated, cached);
+		// D-2(048): 캐시가 담당한 구간은 체결 없는 분의 키가 없어(027) 200분 창이어도 200개에 못 미칠 수
+		// 있다. hasNext는 개수(size==200)로만 판정하므로(CandleQueryService), 여기서 못 채우면 과거가
+		// 남았는데도 페이징이 조기 종료된다. 요청 창이 정확히 200분 폭일 때만 같은 구간을 빗썸에 한 번 더
+		// 위임해 채운다 — 위임은 존재하는 봉만 count개까지 채워 오므로(9-1) 이 보충이 200개를 채운다.
+		boolean fullWidthWindow = ChronoUnit.MINUTES.between(effectiveFrom, effectiveTo) == MAX_COUNT - 1;
+		if (merged.size() < MAX_COUNT && fullWidthWindow) {
+			List<CryptoCandleDto> supplement = delegate.getCandles(symbol, interval, effectiveFrom, effectiveTo);
+			// merge(a, b)는 겹치면 b를 채택한다 — merged(캐시 우선순위가 이미 반영된 값)를 뒤에 둬 027의
+			// "겹치면 캐시 봉이 이긴다" 우선순위를 보충 이후에도 그대로 유지한다.
+			merged = merge(supplement, merged);
+		}
+		if (merged.size() > MAX_COUNT) {
+			// 캐시 전용 진행 중 봉이 보충 200개에 더해져 넘칠 수 있어 최신 200개만 남긴다.
+			merged = merged.subList(merged.size() - MAX_COUNT, merged.size());
+		}
+		return merged;
 	}
 
 	private static LocalDateTime min(LocalDateTime left, LocalDateTime right) {
