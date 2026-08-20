@@ -1182,10 +1182,16 @@ ADR-0021을 읽지 않는다(`ai/context-router.md`의 "엔티티/스키마 변�
 - **재시작 보상매도는 판정에 들어오지 않는다.** `PracticeAttemptRestartService`가 `attempt.restart()`
   **이전의** run 번호로 `cleanupCurrentRun`을 부르므로 그 `MARKET SELL`은 직전 세대에 귀속되고, 새 run의
   판정 범위 밖이다. 확인하고 넘어간 것이지 방어 코드를 넣은 것이 아니다.
-- **E-1의 잔액은 `TutorialAccountService.getOrCreateForUpdate` 재사용으로 채운다.** 새 조회 메서드를
-  만들지 않은 이유는 `PracticeAttemptRestartService`가 이미 같은 방식(리셋 후 같은 메서드로 다시 조회해
-  응답에 싣기)을 쓰고 있어서다. 두 호출부 모두 attempt를 먼저 잠근 트랜잭션 안이라 진입 경로와 잠금
-  순서(attempt → tutorial account)가 같다 — 순서가 같아야 #491류 교착을 새로 만들지 않는다.
+- **E-1의 잔액은 비잠금 조회로 읽고 없을 때만 get-or-create로 떨어진다.** 처음에는 기존
+  `getOrCreateForUpdate`를 재사용했으나(재시작 경로의 선례가 있었다) 사전 리뷰가 **계좌를 한 글자도
+  바꾸지 않는 응답이 X 잠금을 건다**고 지적했다. 교착이 되지는 않지만(모든 경로가 attempt를 먼저
+  잠근다) 지정가 취소·정정이나 예약 청산 정산과 경합해 대기한다 — attempt 잠금이 그 트랜잭션들을
+  직렬화하지 못하기 때문이다. `TutorialAccountService.find`를 새로 두고 폴백만 남겼다.
+- **프리셋 단계 판정은 "적용한 진입이 있는가"가 아니라 "골랐는가"다.** 전자는 두 방향으로 틀렸다.
+  고르지 않은 사용자의 진입에도 snapshot에 기본값 `BALANCED`가 박히므로 앞 단계를 기본값으로 마친
+  사용자가 **세 보기 중 "보통"을 고르는 순간** 재진입 없이 통과했고, 반대로 이미 통과한 사용자가
+  다음 진입을 준비하며 프리셋을 바꾸면 통과가 취소돼 화면이 이미 연 단계를 되잠갔다. 필드 이름도
+  `exitPresetSelected`로 바로잡았다 — "applied"는 진입까지 했다는 뜻으로 읽힌다.
 - **`GET /api/education/practice`의 `attempt` 필드는 계속 0이다.** tick과 함께 폴링되는 경로라 호출마다
   계좌를 한 번 더 읽는 대가가 종목 선택(사용자가 한 번 부르는 호출)과 다르다.
 
