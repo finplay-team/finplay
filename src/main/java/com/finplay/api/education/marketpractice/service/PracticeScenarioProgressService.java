@@ -56,7 +56,11 @@ public class PracticeScenarioProgressService {
 		long gapSeconds = Math.max(0L, Duration.between(base, now).getSeconds());
 		boolean clamped = gapSeconds > MAX_TICK_GAP_SECONDS;
 		boolean enteredAnyMinute = traverse(attempt, script, now, clamped ? MAX_TICK_GAP_SECONDS : gapSeconds);
-		if (!enteredAnyMinute) {
+		// 순회가 끝난 자리가 대기 구간인데 보유가 있으면 이번 tick 안에서 나간다. 대기 구간 끝에 닿아 0으로
+		// 되감는 지점에서 체결되면 그때 남은 delta가 0이라 순회의 while 조건이 먼저 끝나기 때문이다
+		// (041 4~5번 2차 리뷰가 "6번이 scenarioProgressing을 싣기 시작하면 화면에 보인다"고 넘긴 항목).
+		boolean leftIdleLoop = leaveIdleLoopIfHolding(attempt, script, now);
+		if (!enteredAnyMinute && !leftIdleLoop) {
 			// 한 가상 분도 새로 진입하지 않은 tick(대본이 끝난 뒤, 같은 초의 재요청, 3초 미만 간격)도 정산은
 			// 한다 — 생성기 버전 1은 tick마다 무조건 settleCurrentRun을 불렀고 그 보장을 잃으면 안 된다.
 			// 이것이 없으면 대본 종료 후 접수한 지정가가 조건을 만족해도 영구히 PENDING으로 남는다.
@@ -72,7 +76,29 @@ public class PracticeScenarioProgressService {
 	private void start(PracticeAttempt attempt, TutorialScenarioScript script, LocalDateTime now) {
 		BigDecimal openPrice = canonicalPriceService.canonicalPrice(attempt, now);
 		attempt.startScenarioProgress(script.firstStage().id(), openPrice, now);
-		settle(attempt, now, openPrice);
+		// 초기화 tick에도 이미 보유가 있으면 대기 구간에 세워 두지 않는다 — 종목 선택 직후 매수하고 첫
+		// tick을 부른 사용자가 여기 해당하며, 미루면 화면이 한 사이클 동안 "대기 중"으로 보인다
+		// (PR #494 QA 참고 3). 이동은 시간을 소비하지 않으므로 delta가 없는 이 tick에서 해도 대본이 앞서지 않는다.
+		if (!leaveIdleLoopIfHolding(attempt, script, now)) {
+			settle(attempt, now, openPrice);
+		}
+	}
+
+	/**
+	 * <b>한 tick이 끝났을 때 보유 중이면 커서는 대기 구간에 있지 않다</b> — 표 2행을 tick 경계에서도 지키는
+	 * 마지막 방어다. 이동한 경우 {@link #exitIdleLoop}가 새 커서 가격으로 정산까지 마치므로 호출부는
+	 * 폴백 정산을 생략한다.
+	 *
+	 * @return 실제로 대기 구간을 벗어났으면 {@code true}. 대기 구간이 아니거나 미보유거나 나갈 진행 구간이
+	 *     없으면 {@code false}
+	 */
+	private boolean leaveIdleLoopIfHolding(
+		PracticeAttempt attempt, TutorialScenarioScript script, LocalDateTime now) {
+		TutorialScenarioStage stage = script.stage(attempt.getScenarioStageId());
+		if (stage.kind() != TutorialScenarioStageKind.LOOP || netQuantity(attempt).signum() <= 0) {
+			return false;
+		}
+		return exitIdleLoop(attempt, script, stage, now, 0L) >= 0L;
 	}
 
 	// 이번 호출에서 새 가상 분에 한 번이라도 진입했으면 true. 호출자가 진입 없는 tick의 정산을 보장한다.

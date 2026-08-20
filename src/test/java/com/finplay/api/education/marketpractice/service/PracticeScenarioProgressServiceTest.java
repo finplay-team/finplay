@@ -65,6 +65,48 @@ class PracticeScenarioProgressServiceTest {
 		assertThat(attempt.getScenarioProgressUpdatedAt()).isEqualTo(ANCHOR);
 	}
 
+	// PR #494 QA 참고 3 — 종목 선택 직후 매수하고 첫 tick을 부르면, 초기화 tick이 커서만 세우고 끝나 화면이
+	// 한 사이클 동안 "대기 중"으로 보였다. 이동은 시간을 소비하지 않으므로 같은 tick에서 나가야 한다.
+	@Test
+	void firstTickLeavesTheIdleLoopImmediatelyWhenTheUserAlreadyBought() {
+		PracticeAttempt attempt = scenarioAttempt();
+		holdQuantity("0.5");
+
+		service.advance(attempt, ANCHOR);
+
+		assertThat(attempt.getScenarioStageId()).isEqualTo("ACT1_RISE");
+		assertThat(attempt.getScenarioStageElapsedSeconds()).isZero();
+		// 시간은 소비하지 않았다 — 진행 기준 시각이 그대로여야 다음 tick의 delta가 줄지 않는다.
+		assertThat(attempt.getScenarioProgressUpdatedAt()).isEqualTo(ANCHOR);
+	}
+
+	// 미보유면 초기화 tick은 지금까지처럼 첫 구간에 머문다(위 테스트의 반증 방어).
+	@Test
+	void firstTickStaysInTheIdleLoopWhenNothingIsHeld() {
+		PracticeAttempt attempt = scenarioAttempt();
+
+		service.advance(attempt, ANCHOR);
+
+		assertThat(attempt.getScenarioStageId()).isEqualTo("IDLE_ENTRY");
+	}
+
+	// 대기 구간 끝에 닿아 0으로 되감는 지점에서 체결되면 남은 delta가 0이라 순회가 먼저 끝난다 — 그때도 이
+	// tick 안에서 진행 구간으로 나간다(041 4~5번 2차 리뷰가 6번으로 넘긴 항목).
+	@Test
+	void tickThatFillsAtTheLoopRewindPointStillLeavesTheIdleLoopInTheSameTick() {
+		// IDLE_ENTRY는 20분(60초)이다. 57초에서 3초를 밀면 되감기 지점에 정확히 닿고 남은 delta가 0이 된다.
+		PracticeAttempt attempt = startedAt("IDLE_ENTRY", 57L, ANCHOR);
+		// **체결이 순회 도중에 생기는 상황을 재현한다.** 처음부터 보유를 두면 순회 첫 판정에서 곧바로
+		// 탈출해 이 결함이 있던 경로를 지나지 않는다 — 되감기 지점의 정산이 체결을 만들어야 재현된다.
+		when(tradeService.netFilledQuantity(ATTEMPT_ID, 1L))
+			.thenReturn(BigDecimal.ZERO, new BigDecimal("0.5"));
+
+		service.advance(attempt, ANCHOR.plusSeconds(3));
+
+		assertThat(attempt.getScenarioStageId()).isEqualTo("ACT1_RISE");
+		assertThat(attempt.getScenarioStageElapsedSeconds()).isZero();
+	}
+
 	// 표 1행 — 미보유 대기 구간은 벽시계로 진행하고 구간 끝에 닿으면 0으로 되감는다. 가격은 계속 움직인다.
 	@Test
 	void idleLoopAdvancesWithoutHoldingAndRewindsAtTheEnd() {
