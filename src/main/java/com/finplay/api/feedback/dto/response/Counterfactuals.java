@@ -4,7 +4,7 @@ package com.finplay.api.feedback.dto.response;
 import com.finplay.api.feedback.domain.PostSellFeedbackStatus;
 
 /**
- * 계약은 {@code docs/api-contracts.md}의 "매도 직후 피드백 조회" 소절, 게이트는 spec §C-5({@code postSellFlow}와
+ * 계약은 {@code docs/api/feedback.md}의 "매도 직후 피드백 조회" 소절, 게이트는 spec §C-5({@code postSellFlow}와
  * 같다), 가격 정의는 §반사실·집단 비교 계산이다.
  *
  * <p>세 시나리오의 가격은 각각 그 거래일 <b>마지막 분봉</b>의 close, 보유 구간 최고가, <b>보유 구간(매수~매도)</b>

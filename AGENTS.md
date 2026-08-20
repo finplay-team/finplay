@@ -15,11 +15,11 @@ FinPlay 백엔드 API 서버. Spring Boot 4.1 / Java 17 / Gradle(`build.gradle`,
 
 - 한 번에 하나의 Issue 또는 명시된 작업 범위만 처리한다.
 - 기존 사용자 변경과 범위 밖 파일을 수정·삭제·되돌리지 않는다.
-- 아키텍처와 코드 컨벤션은 `docs/adr/0002-architecture.md`, `docs/conventions.md`를 따른다. 브랜치·커밋·PR 형식은 `docs/git-conventions.md`, 이슈·리뷰 운영은 `docs/team-conventions.md`를 따른다.
+- 아키텍처와 코드 컨벤션은 `docs/adr/0002-architecture.md`, `docs/conventions/code.md`를 따른다. 브랜치·커밋·PR 형식은 `docs/conventions/git.md`, 이슈·리뷰 운영은 `docs/conventions/team.md`를 따른다.
 - 테스트 수준은 `docs/adr/0003-testing-strategy.md`를 따른다. Mock 성공을 실제 DB·외부 API 검증으로 표현하지 않는다.
 - 엔티티/스키마 변경은 `docs/adr/0004-flyway-migrations.md`에 따라 새 Flyway 마이그레이션을 추가한다. 머지된 마이그레이션은 수정하지 않는다. **파괴적 변경(컬럼·테이블 삭제, 이름 변경, 타입 축소, NOT NULL 승격)은 한 배포에 담지 않고 두 배포로 나눈다** — 자동 배포의 롤백은 앱만 되돌리고 스키마는 되돌리지 않는다 (ADR-0021 §결정 7).
 - 새 Java 소스 파일 첫 줄에는 파일 역할을 설명하는 한 줄 한국어 주석을 둔다.
-- controller를 추가·변경하면 `docs/api-routes.md`(라우트 목록)와 `docs/api-contracts.md`(계약 상세)를 같은 작업에서 함께 동기화한다.
+- controller를 추가·변경하면 `docs/api-routes.md`(라우트 목록)와 `docs/api/`의 해당 도메인 파일(계약 상세)을 같은 작업에서 함께 동기화한다.
 - 요구사항 ID의 구현 상태를 바꾸면(미착수 → 완료, 새 엔드포인트 제공 등) `docs/prd.md` §3 "구현 현황" 행도 같은 작업에서 갱신하고 근거 칸에 PR 번호를 적는다. 기능 제공 범위가 그대로인 리팩터링·테스트·문서 변경은 대상이 아니다.
 
 ## 명령과 완료 기준
@@ -58,7 +58,7 @@ FinPlay 백엔드 API 서버. Spring Boot 4.1 / Java 17 / Gradle(`build.gradle`,
 
 ## 브랜치와 리뷰
 
-상세 규칙은 `docs/git-conventions.md`에 있다. 요약은 다음과 같다.
+상세 규칙은 `docs/conventions/git.md`에 있다. 요약은 다음과 같다.
 
 - 기능 브랜치는 `dev`에서 만들고 PR 대상도 `dev`로 한다.
 - 브랜치명은 `<타입>/<이슈번호>-<영문-요약>`이며 **이슈번호는 0으로 채우지 않는다** (`feat/16-price-query`). 한국어·개인 이름·날짜를 쓰지 않는다.

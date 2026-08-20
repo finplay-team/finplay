@@ -25,7 +25,7 @@ import org.springframework.stereotype.Component;
  * 규칙의 정본은 spec §FEED-013 결정 3·4이고 신설 근거는 §C-6이다(4차). {@code PostSellFeedbackService}가 조회마다
  * 한 번 불러 프롬프트 재료와 재생성 판정용 지문을 함께 얻는다.
  *
- * <p><b>{@code journal}·{@code portfolio} 서비스만 주입한다</b>(ADR-0002·{@code docs/conventions.md}).
+ * <p><b>{@code journal}·{@code portfolio} 서비스만 주입한다</b>(ADR-0002·{@code docs/conventions/code.md}).
  * {@code BuyTradeJournalRepository}·{@code TradeAllocationRepository}가 여기 들어오면 이 클래스를 둔 이유가
  * 사라진다 — 다른 도메인의 테이블을 {@code feedback}이 직접 보게 된다.
  *

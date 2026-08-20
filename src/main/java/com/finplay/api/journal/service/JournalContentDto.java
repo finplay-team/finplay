@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
  *
  * <p><b>엔티티를 도메인 밖으로 내보내지 않기 위한 자리다.</b> {@code buy_trade_journals}·
  * {@code sell_trade_journals}는 {@code journal} 소유라 다른 도메인이 repository를 직접 주입하지 않고 서비스를
- * 경유한다({@code docs/conventions.md}, ADR-0002).
+ * 경유한다({@code docs/conventions/code.md}, ADR-0002).
  *
  * <p><b>본문을 절단하지 않는다.</b> 절단 상한이 {@code feedback.journal.*} 설정이라 절단은 {@code feedback}의
  * 책임이다({@code PostSellJournalReader}). 여기서는 저장된 본문을 그대로 준다.

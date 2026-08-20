@@ -26,7 +26,7 @@
 
 - **Redis는 이미 있다** — `PriceStore`(코인 시세·스냅샷), `RankingStore`(랭킹), `CryptoWatchLock`(ADR-0014). 배포 구성에도 들어 있다.
 - **Spring 캐시 추상화는 안 쓰고 있다** — `@EnableCaching`·`@Cacheable`이 한 곳도 없고 `spring-boot-starter-cache`도 의존성에 없다.
-- 이 저장소의 Redis 사용은 전부 **`StringRedisTemplate`을 직접 쓰고 키 조립을 한 클래스에 가두는** 형태다(`docs/conventions.md`).
+- 이 저장소의 Redis 사용은 전부 **`StringRedisTemplate`을 직접 쓰고 키 조립을 한 클래스에 가두는** 형태다(`docs/conventions/code.md`).
 - 이슈 #242(코인 1분봉 Redis 캐싱, PR #255)가 진행 중이고 `candle:crypto:<symbol>:1m:<epochMinute>`를 쓴다. 기존 키는 `price:crypto:`·`feed:crypto:status`·`ranking:`·`feedback:crypto-watch:lock:`이다.
 
 ## 결정
@@ -75,7 +75,7 @@ ADR-0014 §후속이 넘긴 판단에 대한 답이다. **`CryptoWatchLock`을 �
 
 - **동적 TTL을 표현하기 나쁘다.** `RedisCacheConfiguration.entryTtl`은 캐시 이름 단위 고정값이라 위 2번의 "다음 경계까지"를 담을 자리가 없다. `entryTtlFunction`으로 우회할 수는 있으나 그 시점엔 어노테이션이 주는 단순함이 사라진다.
 - **락과 결합할 자리가 없다.** `@Cacheable(sync = true)`는 인스턴스 내 락이라 4번의 요구를 만족하지 못하고, 분산 락을 끼우려면 커스텀 `Cache` 데코레이터를 써야 한다 — 어노테이션 뒤에 숨은 락은 다음 사람이 읽기 어렵다.
-- **이 저장소의 기존 Redis 패턴과 어긋난다.** `PriceStore`·`RankingStore`·`CryptoWatchLock`이 전부 `StringRedisTemplate`을 직접 쓰고 **키 조립을 한 클래스에 가둔다**(`docs/conventions.md`). 새 스타터 의존성 없이 같은 패턴을 하나 더 따르는 편이 일관적이다.
+- **이 저장소의 기존 Redis 패턴과 어긋난다.** `PriceStore`·`RankingStore`·`CryptoWatchLock`이 전부 `StringRedisTemplate`을 직접 쓰고 **키 조립을 한 클래스에 가둔다**(`docs/conventions/code.md`). 새 스타터 의존성 없이 같은 패턴을 하나 더 따르는 편이 일관적이다.
 
 대신 **`FeedbackQueryCache`(신설, `com.finplay.api.feedback.store`)** 하나가 캐시 키 조립·TTL 계산·직렬화·락 게이트를 전부 갖고, 조회 서비스 두 곳은 `getOrLoad(키, 로더)` 형태로만 쓴다.
 

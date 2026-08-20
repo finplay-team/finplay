@@ -815,7 +815,7 @@ class PostSellFeedbackServiceTest {
 	@DisplayName("커뮤니티 매매 카드 요약은 loadContext의 원장 값만 조립하고 reader.read()를 부르지 않는다")
 	void getTradeShareSummaryMapsFactsFromLoadContextWithoutCallingReader() {
 		// Trade는 Order·Account까지 갖춰야 하는 무거운 엔티티라, 이 테스트가 실제로 읽는 필드만 스텁한다 —
-		// Instrument는 실제 팩토리로 만든다(docs/conventions.md).
+		// Instrument는 실제 팩토리로 만든다(docs/conventions/code.md).
 		Trade trade = mock(Trade.class);
 		Instrument instrument = Instrument.create(
 			Market.STOCK, "005930", "삼성전자", BigDecimal.ONE, 1_000L, true, NOW);
@@ -916,7 +916,7 @@ class PostSellFeedbackServiceTest {
 		return feedback;
 	}
 
-	// 엔티티를 mock으로 만들지 않는다 — 실제 팩토리로 만들어 값이 담긴 객체를 쓴다(docs/conventions.md).
+	// 엔티티를 mock으로 만들지 않는다 — 실제 팩토리로 만들어 값이 담긴 객체를 쓴다(docs/conventions/code.md).
 	// 이 경로는 서술 두 값만 읽으므로 연관 체결은 필요하지 않다. 지문은 null이다 — 저장 당시 프롬프트에 실린
 	// 일기가 없었다는 뜻이고, PostSellJournalReader 대역이 돌려주는 현재 지문(null)과 같아 일기 사유가 닫힌다.
 	private static TradeFeedback storedFeedback(String narrative, NarrativeSource source) {

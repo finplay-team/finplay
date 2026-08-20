@@ -268,7 +268,7 @@ class TradeFeedbackWriterTest {
 			.containsExactly("TradeFeedbackRepository");
 	}
 
-	// 전이는 엔티티가 소유하므로 mock이 아니라 실제 팩토리로 만든 행을 쓴다(docs/conventions.md). 이 경로는
+	// 전이는 엔티티가 소유하므로 mock이 아니라 실제 팩토리로 만든 행을 쓴다(docs/conventions/code.md). 이 경로는
 	// 연관 체결을 읽지 않아 trade가 필요하지 않다.
 	private static TradeFeedback storedFeedback(String journalFingerprint) {
 		return TradeFeedback.create(

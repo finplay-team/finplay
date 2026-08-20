@@ -78,7 +78,7 @@
 - [x] ~~CI paths-filter 실동작 검증~~ → **CI 워크플로우 제거** (2026-07-24 튜터 피드백 "CI는 배포 단계에" — 재도입 시점은 harness-roadmap)
 - [x] `/feature docs/specs/001-foundation` 루프 실측 (PR 전까지, 약 25분 — context-notes 참조. 측정 후 코드 폐기, 실제 구현은 재작업 필요)
 - [ ] 전역 예외 핸들러 + 에러 응답 포맷 구현 (`001-foundation` spec 범위. PRD §5 오류표 코드 전부를 ErrorCode enum으로 — 이메일 인증·OAuth 코드 5종 추가됨)
-- [x] JaCoCo 커버리지 최소선 추가 (현재 기준 **라인 40%** — 정본은 `docs/conventions.md`. 지표 보고 후 상향)
+- [x] JaCoCo 커버리지 최소선 추가 (현재 기준 **라인 40%** — 정본은 `docs/conventions/code.md`. 지표 보고 후 상향)
 - [ ] 최소 CI 재도입 + 배포 후 스모크 (`scripts/smoke.ps1`) — **`010-deployment`로 이관** (2026-07-24. 첫 배포가 통합 검증보다 앞서므로 PRD 9가 아니다)
 - [ ] Coordinator(사람)·Orchestrator(AI) 역할 구분 문구 — `docs/parallel-agents.md` + `CLAUDE.md`
 - [ ] 지표 체계 문서화 (지표 7종 + `mode:solo`/`mode:parallel` 라벨) — `harness-roadmap.md`는 아직 측정 항목 3개
@@ -313,7 +313,7 @@
 - [x] ADR-0004 — 파괴적 마이그레이션 금지 제약 추가 (롤백이 앱만 되돌리므로). `CLAUDE.md` 규칙 8·`AGENTS.md`에도 반영
 - [x] `docs/specs/010-deployment/spec.md` — §자동 배포(CD) 신설, §개요·시나리오·배포 요구사항·범위 제외·완료 조건 개정
 - [x] `deploy/README.md` — 수동 절차를 **폴백**으로 재배치, "프론트만 교체" 절에 자동 경로 비적용 사유 추가
-- [x] `docs/context-router.md`·`docs/git-conventions.md`·`docs/harness-roadmap.md`·`README.md`·`AGENTS.md` 동기화
+- [x] `docs/context-router.md`·`docs/conventions/git.md`·`docs/harness-roadmap.md`·`README.md`·`AGENTS.md` 동기화
 
 ### 하지 않은 것 (의도)
 - **`.github/workflows/deploy.yml` 작성** — 이 이슈는 결정·문서까지다. 후속 이슈

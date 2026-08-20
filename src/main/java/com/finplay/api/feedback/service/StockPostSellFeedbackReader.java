@@ -32,7 +32,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 계약은 {@code docs/api-contracts.md}의 "매도 직후 피드백 조회" 소절이고 요구사항은 spec FEED-007이다. 주식 체결
+ * 계약은 {@code docs/api/feedback.md}의 "매도 직후 피드백 조회" 소절이고 요구사항은 spec FEED-007이다. 주식 체결
  * 1건의 <b>서술을 뺀 응답 전체</b>를 조립한다 — {@code PostSellFeedbackService}가 여기서 받은 값에 서술만 얹는다.
  *
  * <p><b>진입점이 아니다.</b> 존재(404)·소유(403)·매수 체결(400) 검증과 배분 조회는

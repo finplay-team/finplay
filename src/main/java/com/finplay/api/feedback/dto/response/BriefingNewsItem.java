@@ -13,9 +13,9 @@ import java.time.LocalDateTime;
  * 두 항목 record의 공존이 의도이며 한쪽으로 합치지 않는다.
  *
  * <p>종목 정보를 함께 싣는 이유는 화면이 추가 조회를 하지 않아도 되게 하기 위해서다
- * ({@code docs/api-contracts.md}).
+ * ({@code docs/api/feedback.md}).
  *
- * <p><b>이름에 {@code ~ListItemResponse}를 붙이지 않는다</b> — {@code docs/conventions.md} DTO 표 각주가
+ * <p><b>이름에 {@code ~ListItemResponse}를 붙이지 않는다</b> — {@code docs/conventions/code.md} DTO 표 각주가
  * spec 012 항목 record의 이름을 §C-6에 위임했고, 같은 응답군에서 접미사가 섞이면 그 위임이 무의미해진다.
  *
  * <p>본문과 요약 스니펫을 담지 않는 이유, {@code publisher}가 뉴스에서 도메인인 이유는 {@code NewsItem}과 같다.

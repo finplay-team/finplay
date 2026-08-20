@@ -6,7 +6,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
- * 계약은 {@code docs/api-contracts.md}의 "매도 직후 피드백 조회" 소절, 게이트는 spec §C-5, 계산식은
+ * 계약은 {@code docs/api/feedback.md}의 "매도 직후 피드백 조회" 소절, 게이트는 spec §C-5, 계산식은
  * §파생 사실 계산이다.
  *
  * <p><b>게이트 전에는 {@code status = NOT_YET}이고 가격 필드가 전부 {@code null}이다.</b> 14:40에 매도하고

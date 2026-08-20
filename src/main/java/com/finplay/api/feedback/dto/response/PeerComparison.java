@@ -5,7 +5,7 @@ import com.finplay.api.feedback.domain.PostSellFeedbackStatus;
 import java.math.BigDecimal;
 
 /**
- * 계약은 {@code docs/api-contracts.md}의 "매도 직후 피드백 조회" 소절, 상태값은 spec §C-4, 게이트는 §C-5,
+ * 계약은 {@code docs/api/feedback.md}의 "매도 직후 피드백 조회" 소절, 상태값은 spec §C-4, 게이트는 §C-5,
  * 지표 계산은 §반사실·집단 비교 계산이다.
  *
  * <p><b>게이트가 시각이 아니라 확정 집계 행의 존재다</b>(§C-5). 장 마감 집계 배치가 게이트 시각보다 늦게 돌기

@@ -224,7 +224,7 @@ class FakeOAuthFlowIntegrationTest {
 	}
 
 	// LOGIN 성공은 이제 토큰을 바로 주지 않고 프론트 콜백 주소로 302 리다이렉트하며 1회용 교환 코드만 싣는다
-	// (docs/api-contracts.md OAuth callback). 그 코드로 login-exchange를 호출해야 실제 토큰을 받는다.
+	// (docs/api/auth.md OAuth callback). 그 코드로 login-exchange를 호출해야 실제 토큰을 받는다.
 	private MvcResult callback(
 		String provider, String code, String state, Cookie cookie) throws Exception {
 		MvcResult redirected = mockMvc.perform(get("/api/auth/oauth/{provider}/callback", provider)

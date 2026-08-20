@@ -34,7 +34,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
-// 계약의 정본은 docs/api-contracts.md의 "종목 뉴스 목록·요약 조회" 행이고, 상태값은 spec 012 §C-4다.
+// 계약의 정본은 docs/api/feedback.md의 "종목 뉴스 목록·요약 조회" 행이고, 상태값은 spec 012 §C-4다.
 // 게이트·범위·상태값 판정이 실제 데이터 위에서 성립하는지는 InstrumentNewsQueryGateIntegrationTest가,
 // 판정 순서 자체는 InstrumentNewsQueryServiceTest가 맡는다 — 여기서는 직렬화 형태와 인증·오류 매핑만 본다.
 @WebMvcTest(InstrumentNewsController.class)

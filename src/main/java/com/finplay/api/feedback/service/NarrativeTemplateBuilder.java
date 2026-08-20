@@ -76,7 +76,7 @@ public class NarrativeTemplateBuilder {
 	}
 
 	// 아래 세 포맷 도우미는 NarrativePromptBuilder에도 같은 형태로 있다. 지금은 중복을 그대로 둔다 —
-	// 공통화는 세 번째 중복이 보일 때 검토한다(docs/conventions.md)는 기준이 하나이고, 이미 골든 마스터
+	// 공통화는 세 번째 중복이 보일 때 검토한다(docs/conventions/code.md)는 기준이 하나이고, 이미 골든 마스터
 	// 테스트가 붙은 클래스를 이 항목의 범위 밖에서 건드리지 않으려는 것이 다른 하나다. 셋째 사용처가
 	// 생기면 그때 한 클래스로 뽑는다.
 

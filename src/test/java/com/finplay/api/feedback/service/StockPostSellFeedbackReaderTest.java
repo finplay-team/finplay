@@ -34,7 +34,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
 // tasks-282.md 1번 항목이 PostSellFeedbackReaderTest에서 이리로 옮긴 단정들이다 — 정본은
-// docs/api-contracts.md의 "매도 직후 피드백 조회" 소절과 spec 012 FEED-007이고, 이슈 #208 1번 항목이 소유한
+// docs/api/feedback.md의 "매도 직후 피드백 조회" 소절과 spec 012 FEED-007이고, 이슈 #208 1번 항목이 소유한
 // 완료 조건 중 여러 lot의 buyAt과 서로 다른 원본 거래일이면 sameSessionCompleted=false를 본다.
 //
 // **검증(404·403·400)과 배분 조회는 이 클래스의 책임이 아니다** — PostSellFeedbackContextReaderTest가 보고,

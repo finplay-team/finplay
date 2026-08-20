@@ -12,7 +12,7 @@ import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 
 /**
- * 계약은 {@code docs/api-contracts.md}의 "매도 직후 피드백 조회" 소절이고 식은 spec §파생 사실 계산·
+ * 계약은 {@code docs/api/feedback.md}의 "매도 직후 피드백 조회" 소절이고 식은 spec §파생 사실 계산·
  * §반사실·집단 비교 계산이다.
  *
  * <p><b>왜 따로 있는가.</b> 3차(이슈 #275)가 코인 경로를 열면서 조립 주체가
@@ -120,7 +120,7 @@ final class PostSellArithmetic {
 	 *
 	 * <p><b>{@code Duration.between(...).toMinutes()}를 그대로 쓰면 안 된다.</b> 체결 시각에는 소수 초가 붙어
 	 * 있고({@code executed_at}이 {@code DATETIME(6)}이다) {@code toMinutes()}는 <b>0 방향으로 절삭</b>한다.
-	 * 그래서 {@code 09:30:17.4 → 11:25:00}이 {@code 114}가 되는데 {@code docs/api-contracts.md}의 예시는
+	 * 그래서 {@code 09:30:17.4 → 11:25:00}이 {@code 114}가 되는데 {@code docs/api/feedback.md}의 예시는
 	 * {@code minutesAfterBuy: 115}다. <b>계약 예시가 재현되지 않으면 예시가 아니라 구현이 틀린 것이다.</b>
 	 *
 	 * <p><b>0 방향 절삭은 부호에 따라 방향이 뒤집힌다.</b> {@code buyToNewsMinutes}는 기사가 매수보다 이르면

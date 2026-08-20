@@ -5,18 +5,18 @@ AI 에이전트는 **docs/ 전체를 순회하지 않는다.** 작업 유형에 
 | 작업 유형 | 반드시 읽을 문서 |
 |---|---|
 | spec 작성 / 차수 범위 판단 | `docs/prd.md` (요구사항 ID·수용 기준·제외 범위 + §3 구현 현황) + `docs/specs/README.md` |
-| 기능 구현 | 해당 `docs/specs/NNN-*/` (spec, plan, tasks) + `docs/conventions.md` + `docs/adr/0002-architecture.md`. **요구사항 ID의 구현 상태가 바뀌면 `docs/prd.md` §3 "구현 현황" 행도 같은 커밋에서 갱신한다** (CLAUDE.md 규칙 10) — PRD 전체가 아니라 그 절만 읽으면 된다 |
+| 기능 구현 | 해당 `docs/specs/NNN-*/` (spec, plan, tasks) + `docs/conventions/code.md` + `docs/adr/0002-architecture.md`. **요구사항 ID의 구현 상태가 바뀌면 `docs/prd.md` §3 "구현 현황" 행도 같은 커밋에서 갱신한다** (CLAUDE.md 규칙 10) — PRD 전체가 아니라 그 절만 읽으면 된다 |
 | LLM·AI 기능 구현 | 위 목록 + `docs/adr/0011-llm-provider-integration.md` (프로바이더 추상화, 실패 시 템플릿 폴백, Fake 테스트 방침) |
 | 투자 실습 튜토리얼 (education·practice·즐겨찾기·OCO) | **`docs/specs/026-market-order-practice-tutorial`을 먼저 읽는다** — holding 기반 완료 경로·진행 조회 정본. 코인 가상 가격 세션·교육 지정가·관찰 가격원은 **`030-coin-practice-price-runtime`**이 부분 대체 정본이다. 그다음 필요에 따라: `016-investment-education-policy`(3단계 모델·1단계·사전 의도, OCO는 3차), `020-coin-practice-tutorial`(코인 OCO delta·key), `019-exit-price-policy`, `021-general-risk-management-oco`(OCO 생성·트리거·취소 엔진 구조), `040-tutorial-restart-after-completion`(재시작 절차·완료 보상 1회 캡), `047-tutorial-sandbox-cash-isolation`(샌드박스 매매·완료 보상의 현금 처리 대상 — 튜토리얼 전용 계좌 분리). **021·040·047은 서로 다른 겹을 소유한다** — 021은 OCO 엔진 구조, 040은 재시작 절차, 047은 그 위에서 현금이 실제 계좌·튜토리얼 계좌 중 어디로 가는지. 셋 다 상대방을 대체하지 않고 서로 참조한다. **+ ADR-0012 필수** — 즐겨찾기·사전 의도만 인메모리이며 030 가격 세션·047 튜토리얼 계좌는 DB 영속이다 |
 | 엔티티/스키마 변경 | 위 + `docs/adr/0004-flyway-migrations.md`(번호 역전으로 배포가 막힌 뒤의 처리는 `docs/adr/0027-unapplied-migration-rename-exception.md`) + `docs/erd.md`(전체 테이블·컬럼·연관관계 지도, 엔티티를 추가·삭제하면 같은 커밋에서 갱신) |
 | 테스트 작성 | `docs/adr/0003-testing-strategy.md` |
-| 코드 리뷰 | `docs/conventions.md`(리뷰 체크 질문 포함) + `docs/adr/0002-architecture.md` + `docs/adr/0003-testing-strategy.md` + `docs/adr/0004-flyway-migrations.md` + `docs/api-routes.md` + `docs/api-contracts.md`. 새 엔드포인트·요구사항 완료가 있으면 `docs/prd.md` §3 갱신 여부도 본다 (CLAUDE.md 규칙 10) |
-| 블랙박스 QA | 해당 spec의 `spec.md` + `docs/api-contracts.md` — **구현 코드(src/main) 금지**. 계약 절 제목의 "(계획)" 표시는 controller가 없다는 뜻이니 실행 근거로 쓰지 않는다 |
-| API 문서 갱신 | `docs/api-routes.md`(라우트 목록) + `docs/api-contracts.md`(계약 상세) — 둘을 같은 커밋에서 갱신 |
-| 브랜치 생성 / 커밋 / PR 작성 | `docs/git-conventions.md` |
-| 이슈 분할 / 리뷰 지적 처리 | `docs/team-conventions.md` |
+| 코드 리뷰 | `docs/conventions/code.md`(리뷰 체크 질문 포함) + `docs/adr/0002-architecture.md` + `docs/adr/0003-testing-strategy.md` + `docs/adr/0004-flyway-migrations.md` + `docs/api-routes.md` + `docs/api/`. 새 엔드포인트·요구사항 완료가 있으면 `docs/prd.md` §3 갱신 여부도 본다 (CLAUDE.md 규칙 10) |
+| 블랙박스 QA | 해당 spec의 `spec.md` + `docs/api/`의 해당 도메인 파일 — **구현 코드(src/main) 금지**. 계약 절 제목의 "(계획)" 표시는 controller가 없다는 뜻이니 실행 근거로 쓰지 않는다 |
+| API 문서 갱신 | `docs/api-routes.md`(라우트 목록) + `docs/api/`(도메인별 계약 상세) — 둘을 같은 커밋에서 갱신 |
+| 브랜치 생성 / 커밋 / PR 작성 | `docs/conventions/git.md` |
+| 이슈 분할 / 리뷰 지적 처리 | `docs/conventions/team.md` |
 | 하네스/문서 수정 | `AGENTS.md` + `CLAUDE.md` + 이 파일 + `docs/adr/0005-local-agent-orchestration.md` + `docs/adr/0008-four-agent-roster.md` + `docs/adr/0009-codex-local-orchestration.md` + `docs/adr/0010-agent-session-lifecycle.md` |
-| 배포 / CI·CD 구성 / 스모크 | `docs/specs/010-deployment/spec.md` + **`docs/adr/0020-managed-service-deployment.md`**(배포 **아키텍처** 정본 — EC2 + RDS·ElastiCache·S3 + 블루-그린) + **`docs/adr/0021-continuous-deployment.md`**(배포 **실행 방식** 정본 — `dev` 머지 트리거·OIDC·SSM·ECR·자동 롤백) + **`docs/adr/0022-frontend-static-hosting-cors.md`**(프론트 정적 파일의 **서빙 주체** 정본 — S3 독립 배포 + 백엔드 CORS) + `docs/conventions.md`(시크릿 절). **셋은 층이 다르다** — 무엇 위에 배포하는가는 0020, 어떻게 배포되는가는 0021, 프론트를 누가 서빙하는가는 0022이며, spec과 판단이 갈리면 ADR이 정본이다. **0022는 0020 §결정 4의 nginx 부분과 0021 §결정 8을 대체한다** — 두 ADR의 나머지는 그대로 유효하다 |
+| 배포 / CI·CD 구성 / 스모크 | `docs/specs/010-deployment/spec.md` + **`docs/adr/0020-managed-service-deployment.md`**(배포 **아키텍처** 정본 — EC2 + RDS·ElastiCache·S3 + 블루-그린) + **`docs/adr/0021-continuous-deployment.md`**(배포 **실행 방식** 정본 — `dev` 머지 트리거·OIDC·SSM·ECR·자동 롤백) + **`docs/adr/0022-frontend-static-hosting-cors.md`**(프론트 정적 파일의 **서빙 주체** 정본 — S3 독립 배포 + 백엔드 CORS) + `docs/conventions/code.md`(시크릿 절). **셋은 층이 다르다** — 무엇 위에 배포하는가는 0020, 어떻게 배포되는가는 0021, 프론트를 누가 서빙하는가는 0022이며, spec과 판단이 갈리면 ADR이 정본이다. **0022는 0020 §결정 4의 nginx 부분과 0021 §결정 8을 대체한다** — 두 ADR의 나머지는 그대로 유효하다 |
 | 자동 배포 파이프라인 구축·장애 대응 | `deploy/cd-runbook.md` (AWS 콘솔 선행 설정·파이프라인 단계·실패 경로·오진표) + ADR-0021. **아직 구축 전이므로 이 문서는 "돌고 있는 것"의 기록이 아니라 목표 구조다** |
 | 배포 스택 실행 (수동 배포 절차 — 파이프라인 폴백) | `deploy/README.md` (+ `compose.deploy.yaml`·`Dockerfile`). **DB·캐시는 이 스택 안에 없다** — RDS·ElastiCache이며 근거는 ADR-0020. **정상 배포 경로는 더 이상 이 문서가 아니다** — ADR-0021 이후 이 절차는 파이프라인이 막혔을 때만 쓴다. **nginx는 제거됐다** (ADR-0022, 이슈 #352) — 앱 컨테이너가 호스트 포트를 직접 열고, 프론트는 S3에서 독립 배포된다. `deploy/nginx*.conf`는 더 이상 저장소에 없다 |
 | 하네스 CI 전환 (미착수) | `docs/harness-roadmap.md` + `docs/adr/0005-local-agent-orchestration.md` |

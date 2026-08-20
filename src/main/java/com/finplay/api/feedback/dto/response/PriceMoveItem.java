@@ -11,7 +11,7 @@ import java.util.List;
 
 /**
  * <b>{@code revealTime}을 담지 않는다</b> — 노출 여부를 서버가 판정한 뒤 통과한 카드만 응답에 넣으므로,
- * 그 값은 클라이언트가 알 필요가 없는 내부 판정값이다 ({@code docs/api-contracts.md}).
+ * 그 값은 클라이언트가 알 필요가 없는 내부 판정값이다 ({@code docs/api/feedback.md}).
  *
  * <p><b>구간은 {@code LocalDateTime}으로 내린다.</b> 저장은 원본 거래일 시간축의 {@code TIME}이지만(§C-8),
  * 화면이 그리는 축은 날짜가 붙은 시각이라 계약이 {@code "2026-07-29T11:20:00"} 형태다. 날짜는 카드의

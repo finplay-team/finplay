@@ -48,7 +48,7 @@ import org.mockito.InOrder;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.annotation.Transactional;
 
-// tasks-275.md 4번 항목이다. 정본은 spec §FEED-012 결정 0~4·§C-5이고 계약은 docs/api-contracts.md의
+// tasks-275.md 4번 항목이다. 정본은 spec §FEED-012 결정 0~4·§C-5이고 계약은 docs/api/feedback.md의
 // "코인 체결의 차이" 소절이다. 3adb8192가 구현한 CryptoPostSellFeedbackReader의 분기를 고정한다.
 //
 // CandleQueryService를 mock한다 — 200봉 상한은 공급자 계약이라 실제 호출로는 경계를 재현할 수 없고, 봉 유무를

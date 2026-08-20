@@ -1,8 +1,8 @@
 # API 라우트 지도
 
-전체 엔드포인트를 한눈에 보는 레지스트리다. **controller를 추가/변경하면 이 문서의 라우트 목록과 `docs/api-contracts.md`의 해당 절을 같은 커밋에서 함께 갱신한다** (CLAUDE.md 규칙, reviewer 리뷰 모드 점검 항목).
+전체 엔드포인트를 한눈에 보는 레지스트리다. **controller를 추가/변경하면 이 문서의 라우트 목록과 `docs/api/`의 해당 도메인 파일을 같은 커밋에서 함께 갱신한다** (CLAUDE.md 규칙, reviewer 리뷰 모드 점검 항목).
 
-- 엔드포인트별 요청·응답·오류 계약은 `docs/api-contracts.md`에 있다.
+- 엔드포인트별 요청·응답·오류 계약은 `docs/api/`에 도메인별로 있다.
 - 실행 중인 앱의 자동 생성 문서는 Swagger UI에서 확인한다 — `http://localhost:8080/swagger-ui.html`
 
 ## 라우트 목록
@@ -82,7 +82,7 @@
 | GET | /api/instruments/{instrumentId}/price-moves | feedback | 종목의 변동 원인 카드 목록 조회. 주식은 현재 재생세션 원본 거래일 중 `revealTime`이 지난 카드만(스포일러 차단) `windowStart` 오름차순, 각 카드의 근거는 발행시각 내림차순. 카드 0건·재생세션 미준비 모두 200(후자는 `originTradeDate=null`). `status`(`READY`·`EMPTY`·`NOT_YET`)로 둘을 구별한다 | 012 FEED-006, Issue #180, Issue #280 |
 | GET | /api/instruments/{instrumentId}/news | feedback | 종목의 뉴스·공시 목록과 AI 요약 순수 조회. 주식은 09:00 이후에만 열리고 발행시각이 재생 시각을 지난 것만 노출하며, `summaryScope`가 15:30 전후로 `PRE_MARKET`→`FULL`로 바뀐다. 목록은 발행시각 내림차순 + `id` 내림차순이고 상한 초과 시 공시를 먼저 채운다. 코인은 재생세션·개장 게이트와 무관하게 조회 시각 기준 최근 24시간 뉴스와 `ROLLING_24H` 요약 `generated_at` 최신 1행을 돌려주고 `originTradeDate`는 `null`이다. 개장 전·재생세션 미준비·기사 0건·요약 행 없음·서술 실패가 전부 200(상태값은 spec §C-4) | 012 FEED-008, Issue #188 |
 | GET | /api/market/briefing?market= | feedback | 시장 단위 개장 전 브리핑 순수 조회. 주식은 **spec §C-2의 `전장` 구간 기사·공시만**(장중 기사 절대 미포함)이고 Part C와 09:00 하한이 같다. `items`는 저장하지 않고 조회 시 같은 구간 질의로 다시 만들며 상한은 `max-items-per-briefing`. 재생세션 미준비는 `EMPTY`·`originTradeDate=null`, 개장 전은 `NOT_YET`(Part C와 의도된 차이, spec §C-4). 코인은 재생세션과 무관하게 최근 24시간 코인 뉴스와 `generated_at` 최신 1행을 돌려주며 `originTradeDate=null`이고 `NOT_YET`이 되지 않는다. `market` 누락·허용 값 밖은 400 | 012 FEED-009, Issue #188 |
-| GET | /api/ai/post-sell/{tradeId} | feedback | 본인 매도 체결 1건의 매도 직후 피드백. 원장의 FIFO 수치(배분 가중평균 매수단가·매도가·수량·수수료·실현손익·수익률·보유기간) + 보유 구간 변동 원인 카드 + 관찰형 서술. `buyAt`은 배분된 lot 중 가장 이른 체결 시각이다. **주식**은 `buyAt`·`sellAt`이 원본 거래일 축이고, 같은 원본 거래일 안에서 완결된 매매만(`sameSessionCompleted=true`) 카드·극값·반사실·집단 비교를 포함하며, 매도 후 흐름·반사실이 **그 체결의 서비스 날짜 15:30** 이후에만 열린다(spec §C-5). **코인 체결도 200이다**(이슈 #275) — 시각이 전부 실제 절대 시각이라 `sameSessionCompleted`가 항상 `true`이고, 게이트가 15:30이 아니라 **그 체결 날짜의 다음 KST 자정**이며, 집단 비교는 매일 00:05 배치가 확정한다. 응답 필드는 시장에 따라 달라지지 않고 `holdHighBasis`(`MINUTE`\|`DAILY`)가 보유 구간 극값의 정밀도를 알린다 — 계약 상세는 `docs/api-contracts.md`의 "코인 체결의 차이" 소절(spec §FEED-012). **투자일기에 의존하지 않는다** | 012 FEED-007, Issue #208 |
+| GET | /api/ai/post-sell/{tradeId} | feedback | 본인 매도 체결 1건의 매도 직후 피드백. 원장의 FIFO 수치(배분 가중평균 매수단가·매도가·수량·수수료·실현손익·수익률·보유기간) + 보유 구간 변동 원인 카드 + 관찰형 서술. `buyAt`은 배분된 lot 중 가장 이른 체결 시각이다. **주식**은 `buyAt`·`sellAt`이 원본 거래일 축이고, 같은 원본 거래일 안에서 완결된 매매만(`sameSessionCompleted=true`) 카드·극값·반사실·집단 비교를 포함하며, 매도 후 흐름·반사실이 **그 체결의 서비스 날짜 15:30** 이후에만 열린다(spec §C-5). **코인 체결도 200이다**(이슈 #275) — 시각이 전부 실제 절대 시각이라 `sameSessionCompleted`가 항상 `true`이고, 게이트가 15:30이 아니라 **그 체결 날짜의 다음 KST 자정**이며, 집단 비교는 매일 00:05 배치가 확정한다. 응답 필드는 시장에 따라 달라지지 않고 `holdHighBasis`(`MINUTE`\|`DAILY`)가 보유 구간 극값의 정밀도를 알린다 — 계약 상세는 `docs/api/feedback.md`의 "코인 체결의 차이" 소절(spec §FEED-012). **투자일기에 의존하지 않는다** | 012 FEED-007, Issue #208 |
 | GET | /api/rankings?market=&limit= | ranking | 시장별(`STOCK`\|`CRYPTO`) 실현손익 상위 랭킹 조회. `market` 쿼리 파라미터 필수(누락·미지원 리터럴은 400 `VALIDATION_ERROR`). `limit`은 선택이며 **컨트롤러가 거부하지 않고** 서비스가 클램핑(생략·0 이하→10, 51 이상→50) — `GET /api/trades`·`GET /api/orders`의 범위 밖 400과 의도적으로 다름. 매도 체결 이력이 없는 회원은 제외, 동점자는 공동 순위. 응답에 `status`(`READY`/`REBUILDING`/`UNAVAILABLE`)를 함께 실어 빈 `content`가 "랭킹 대상자 없음"·"ZSET 유실로 집계 준비 중"·"Redis 연결 장애"를 구별하게 한다 — Redis 장애 시에도 500이 아니라 200이다 | 014 RANK-001, Issue #187·#279·#288 |
 | GET | /api/rankings/me?market= | ranking | 인증 사용자 본인의 시장별 실현손익 순위 단건 조회. 대상은 인증 토큰의 본인으로 고정(다른 사용자 지정 불가). `market` 필수(누락·미지원 리터럴은 400 `VALIDATION_ERROR`). 상위 노출 구간(`GET /api/rankings`의 limit)과 무관하게 항상 정확한 보정 순위를 반환하고, 매도 체결 이력이 없으면 `rank`만 `null`(오류 아님). `rank: null`은 `status`(`READY`=매도 이력 없음 / `REBUILDING`=ZSET 유실로 집계 준비 중 / `UNAVAILABLE`=Redis 연결 장애)와 함께 읽는다 | 014 RANK-002, Issue #233·#279·#288 |
 | POST | /api/watchlist-items | watchlist | 인증 사용자가 존재하는 종목을 본인 관심목록에 등록 (201). 거래 가능 여부(`tradable`)는 검사하지 않는다 — `education`/`favorite`(튜토리얼 전용, 인메모리)와 별개의 실제 서비스 기능. 이미 등록된 종목은 409 `DUPLICATE_RESOURCE`, 존재하지 않는 종목 ID는 404 `NOT_FOUND` | 023 WATCH-001 |
@@ -116,7 +116,7 @@
 
 | 항목 | Notion api 명세서 | 이 레포 | 사유 |
 |---|---|---|---|
-| Base URL | `/api/v1` | `/api` | 버저닝 미사용 (2026-07-23 확정, `docs/conventions.md`) |
+| Base URL | `/api/v1` | `/api` | 버저닝 미사용 (2026-07-23 확정, `docs/conventions/code.md`) |
 | 매도 직후 피드백 | `GET /ai/post-sell/{id}` | `GET /api/ai/post-sell/{tradeId}` | Base URL 규칙만 적용, 경로는 동일 |
 | `post-sell` 내용 | 계획 대비 실제 대조 (2단계) | 원장 수치 + 뉴스 변동 원인 | 계획 대조에는 목표가·손절가 등 구조화 필드가 필요하다. `007-journal`(다른 팀원 범위)은 JOUR-001(자유 텍스트 `content` 작성 API)만 구현됐고, 그 구조화 필드(`plan`·`planOutcome`)는 아직 없다. 생기면 같은 응답에 **추가**하면 되므로 계약이 깨지지 않는다 |
 | AI 엔드포인트 수 | 6개 (`pre-order`·`post-sell`·`d7`·`weekly-report`·`basis-stats`·`similar`) | `post-sell` 1개만 | 나머지 5개는 2차 범위 밖 (`docs/specs/012-ai-feedback` 범위 제외) |

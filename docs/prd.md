@@ -9,7 +9,7 @@
 > **정본 안내 (2026-07-24 개정)**
 > - 팀이 확정하는 **제품 범위·API 단계·담당자는 [Notion 10 X TEN](https://www.notion.so/10-X-TEN-d3ab1fddfba9833d99f38105b2295b08)이 정본**이다.
 > - 이 파일은 Notion 결정을 구현 가능한 요구사항으로 옮긴 **저장소 구현 스냅샷**이다. 구현 에이전트는 저장소 안에서 이 파일과 `docs/specs/`를 읽되, Notion과 충돌을 발견하면 임의로 한쪽을 선택하지 않고 구현을 멈춘 뒤 문서를 먼저 동기화한다.
-> - Notion 원본 대비 반입 시 확정된 변경: ① 제품명 Investory → **FinPlay** (ADR-0006) ② Base URL `/api/v1` → **`/api`** (버저닝 미사용, `docs/conventions.md`) ③ Java 17 확정 (레포 초기값 21에서 변경, ADR-0006).
+> - Notion 원본 대비 반입 시 확정된 변경: ① 제품명 Investory → **FinPlay** (ADR-0006) ② Base URL `/api/v1` → **`/api`** (버저닝 미사용, `docs/conventions/code.md`) ③ Java 17 확정 (레포 초기값 21에서 변경, ADR-0006).
 > - 기능 구현 시 이 문서를 직접 구현 근거로 쓰지 않는다 — 요구사항 ID 단위로 `docs/specs/NNN-*/` spec을 만들어 진행한다 (`docs/specs/README.md`).
 
 ## 0. 문서 규칙과 출처
@@ -178,7 +178,7 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 
 ### 구현 현황 (2026-08-16 기준)
 
-**이 표가 "무엇이 실제로 동작하는가"의 정본이다.** 아래 요구사항 절들은 차수별 계약 정의이므로 그 절에 요구사항이 적혀 있다는 사실이 구현 완료를 뜻하지 않는다. 실제 엔드포인트 목록은 `docs/api-routes.md`, 요청·응답 계약은 `docs/api-contracts.md`가 정본이다.
+**이 표가 "무엇이 실제로 동작하는가"의 정본이다.** 아래 요구사항 절들은 차수별 계약 정의이므로 그 절에 요구사항이 적혀 있다는 사실이 구현 완료를 뜻하지 않는다. 실제 엔드포인트 목록은 `docs/api-routes.md`, 요청·응답 계약은 `docs/api/`(도메인별 파일)가 정본이다.
 
 > **갱신 규약 (CLAUDE.md 규칙 10).** 요구사항 ID의 구현 상태를 바꾸는 PR은 이 표의 해당 행을 **같은 커밋에서** 갱신하고 근거 칸에 그 PR 번호를 적는다. 기능 제공 범위가 그대로인 리팩터링·테스트·버그 수정·문서 변경은 갱신 대상이 아니다. 표에 없는 새 기능은 행을 추가하며, 판정(완료·일부 완료·문서 확정·미착수)과 근거를 함께 적는다 — **근거 없는 판정은 다음 사람이 검증할 수 없다.** 근거는 코드에서 확인 가능한 형태로 적는다(PR 번호, 없으면 부재하는 컨트롤러·enum 값 등).
 
@@ -193,7 +193,7 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 | AI 피드백 — LLM 서술 생성·후검증·템플릿 폴백 | ADR-0011 | **완료** | PR #154 (`NarrativeGenerator`, Spring AI) |
 | AI 피드백 — 뉴스·공시 수집 | FEED-001 | **완료** | PR #174 |
 | AI 피드백 — 변동 원인 카드 | FEED-002~007 계열 | **완료** | PR #185 (`GET /api/instruments/{id}/price-moves`) |
-| AI 피드백 — 종목 뉴스 요약·개장 전 브리핑 | FEED-008·FEED-009 | **완료** | PR #194 (`GET .../news`는 FEED-008, `GET /api/market/briefing`은 FEED-009). 두 기능을 한 행에 묶되 **ID를 둘 다 적는다** — `012` spec §Part D와 `api-routes.md`·`api-contracts.md`의 근거 칸이 브리핑을 `FEED-009`로 부르는데, 이 표에 그 ID가 없으면 정본에서 ID로 검색해도 행이 나오지 않는다(이슈 #410) |
+| AI 피드백 — 종목 뉴스 요약·개장 전 브리핑 | FEED-008·FEED-009 | **완료** | PR #194 (`GET .../news`는 FEED-008, `GET /api/market/briefing`은 FEED-009). 두 기능을 한 행에 묶되 **ID를 둘 다 적는다** — `012` spec §Part D와 `api-routes.md`·`docs/api/`의 근거 칸이 브리핑을 `FEED-009`로 부르는데, 이 표에 그 ID가 없으면 정본에서 ID로 검색해도 행이 나오지 않는다(이슈 #410) |
 | AI 피드백 — 매도 직후 피드백 | FEED-007 | **완료** | `012` plan의 이슈 6 (Issue #208, `GET /api/ai/post-sell/{tradeId}`). 원장 수치·파생 사실·보유 구간 카드·매도 후 흐름·반사실 가격·AI 서술까지. **반사실 `returnRate`와 집단 비교 지표는 아래 FEED-010·011 행이다.** 이슈 #275로 **코인 체결도 400이 아니라 200이 된다** — spec `§FEED-012` 결정 0~4(장 마감 대신 **KST 자정 게이트**, `sameSessionCompleted` 항상 `true`, 199분 초과 보유는 보유 구간 극값을 **일봉 종가**로 내리고 `holdHighBasis`로 정밀도를 알림, `atClose`는 매도일 일봉 종가). 원장 수치·보유 구간 카드는 주식과 같은 계산을 그대로 쓴다 |
 | AI 피드백 — 반사실 시뮬레이션·집단 비교 | FEED-010·011 | **완료** | `012` plan의 이슈 7 (PR #216, Closes #212). 반사실 3종 `returnRate` 수수료 재계산, `peerComparison`의 `NO_EVENT`·`INSUFFICIENT_SAMPLE`·`READY` 판정, 장 마감 배치(`PeerStatsBatchService`)의 `price_move_peer_stats` 확정 집계. 이슈 #275로 **코인 체결에도 같은 두 지표가 열린다** — spec `§FEED-012` 결정 3의 코인 확정 배치(`runCryptoPeerStatsBatch`, 매일 **00:05**에 전날 KST 하루치 카드를 집계하고 `service_date`는 카드 `occurred_at`의 날짜), 반사실 `returnRate`는 코인 수수료율 `0.0005`로 재계산 |
 | AI 피드백 — 코인 변동 감시 | FEED-005·006 코인 분기 | **완료** | `012` plan의 이슈 8 (PR #236, Closes #225). `CryptoPriceSnapshotService` 스냅샷 기록·`CryptoPriceMoveWatcher` 탐지·카드 확정, `GET /api/instruments/{id}/price-moves` 코인 분기(게이트 없음, 최근 24시간, `originTradeDate=null`). PR #290(Closes #285) — 근거 0건일 때 온디맨드 수집 후 재매칭(ADR-0017)으로 카드 생성 성공률이 오른다 |
@@ -563,7 +563,7 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 - **코인**: 빗썸 공개 캔들 REST의 일/주/월봉 엔드포인트(`/v1/candles/days`·`/weeks`·`/months`)에 위임한다 — 기존 1분봉(MKT-008)과 동일하게 저장 없이 요청 시점에 조회해 중계한다.
 - 응답은 기존 `CandleResponse`(시가·고가·저가·종가·거래량) 필드 구조를 그대로 유지한다. 집계 경계(주·월의 시작 기준), 미마감 봉 처리, 오류 코드 등 세부 계약은 착수 시 spec에서 확정한다.
 - 범위: 2차 MVP(1차 고도화). 1차 MVP API 계약(`interval=1m`)에는 포함하지 않았다.
-- **구현 완료 (2026-08-04, `docs/specs/013-candle-interval`, PR #151)** — `interval`은 현재 `1m·1d·1w·1M` 4종을 받는다. 미지원 값은 400 `VALIDATION_ERROR`다. 주식은 `stock_candles` 1분봉을 일·주(월요일 시작)·월(1일 시작) 버킷으로 집계하고, 코인은 빗썸 `days`·`weeks`·`months` 엔드포인트에 위임한다. 아래 §5의 "1차 API 계약은 `interval=1m`만 포함한다"는 서술은 1차 시점 기준이며 현재 계약이 아니다 — 실제 계약은 `docs/api-contracts.md`가 정본이다.
+- **구현 완료 (2026-08-04, `docs/specs/013-candle-interval`, PR #151)** — `interval`은 현재 `1m·1d·1w·1M` 4종을 받는다. 미지원 값은 400 `VALIDATION_ERROR`다. 주식은 `stock_candles` 1분봉을 일·주(월요일 시작)·월(1일 시작) 버킷으로 집계하고, 코인은 빗썸 `days`·`weeks`·`months` 엔드포인트에 위임한다. 아래 §5의 "1차 API 계약은 `interval=1m`만 포함한다"는 서술은 1차 시점 기준이며 현재 계약이 아니다 — 실제 계약은 `docs/api/market.md`가 정본이다.
 
 #### MKT-010 코인 틱 집계와 캐싱 (1차 고도화)
 
@@ -703,7 +703,7 @@ C-001 단계 잠금은 이 문서의 차수 이름을 기준으로 판정한다.
 
 **계좌·보유 조회 계약 영향 — 해소됨(2026-08-06, 이슈 #235)**: 예약(에스크로)이 도입되면 `cashBalance`(ACCT-002, 계좌 원장 값 그대로)와 실제 "주문 가능 금액"이 갈라지고, 보유수량(PORT-001)도 "총 보유"와 "주문 가능 수량"이 갈라진다. `AccountSummaryResponse`에 `reservedCash`(long, `cashBalance` 다음 위치)를, `HoldingListItemResponse`에 `reservedQuantity`(BigDecimal, `quantity` 다음 위치)를 추가해 원장 값을 그대로 노출하는 것으로 확정했다 — 둘 다 이미 존재하는 원장 값(`accounts.reserved_cash`·`holdings.reserved_quantity`, V22)을 노출할 뿐 새로운 계산·집계는 도입하지 않는다. "주문 가능 금액"·"주문 가능 수량" 같은 파생값 필드(`availableCash`/`availableQuantity`)는 추가하지 않는다 — 클라이언트가 `cashBalance - reservedCash`·`quantity - reservedQuantity`로 직접 계산할 수 있다.
 
-LMT-001~005의 상세 계약(요청·응답 필드, 전체 오류 코드)은 `docs/specs/015-limit-order/spec.md`에서 확정했다. LMT-001~005 전부 완료돼 `OrderType.LIMIT`·`OrderStatus.PENDING`을 포함한 지정가 경로가 코드에 존재한다(LMT-005는 PR #240, 이슈 #239). `PATCH /api/orders/{orderId}` 요청 필드·부분 갱신 허용 형태·오류 코드는 `docs/api-routes.md`·`docs/api-contracts.md`에 함께 반영됐다.
+LMT-001~005의 상세 계약(요청·응답 필드, 전체 오류 코드)은 `docs/specs/015-limit-order/spec.md`에서 확정했다. LMT-001~005 전부 완료돼 `OrderType.LIMIT`·`OrderStatus.PENDING`을 포함한 지정가 경로가 코드에 존재한다(LMT-005는 PR #240, 이슈 #239). `PATCH /api/orders/{orderId}` 요청 필드·부분 갱신 허용 형태·오류 코드는 `docs/api-routes.md`·`docs/api/order.md`에 함께 반영됐다.
 
 ### 알림
 
@@ -742,7 +742,7 @@ LMT-001~005의 상세 계약(요청·응답 필드, 전체 오류 코드)은 `do
 - `DELETE /api/notifications/{id}`로 알림 하나를 삭제한다.
 - 다른 회원의 알림은 삭제할 수 없다.
 
-**Decision Gate**: SSE 연결·인증 스코프·재연결 처리, 알림 페이로드·응답 필드, 알림 저장 스키마, 전체 오류 코드, `docs/api-routes.md`·`docs/api-contracts.md` 갱신은 착수 시 알림 spec에서 확정한다.
+**Decision Gate**: SSE 연결·인증 스코프·재연결 처리, 알림 페이로드·응답 필드, 알림 저장 스키마, 전체 오류 코드, `docs/api-routes.md`·`docs/api/` 갱신은 착수 시 알림 spec에서 확정한다.
 
 상세 계약은 3차 착수 시 알림 spec에서 확정한다. **알림 spec 폴더는 아직 만들지 않았고 번호도 배정되지 않았다** — 이전 서술이 가리킨 `docs/specs/013-notification`은 존재하지 않으며 `013`은 캔들 기간 확장(`013-candle-interval`)이 이미 점유하고 있다(2026-08-04 정정). 착수 시점에 비어 있는 번호를 실제 폴더 목록으로 재확인해 배정한다 — 번호를 미리 지어내지 않는다.
 
@@ -770,7 +770,7 @@ LMT-001~005의 상세 계약(요청·응답 필드, 전체 오류 코드)은 `do
 - 다른 사용자의 주문은 조회할 수 없다.
 - `market`은 필수 파라미터다. `PORT-002 거래내역`과 동일하게 시장별로 나눠 조회하며, 통합 조회는 지원하지 않는다 — 2차 지정가 도입(`GET /api/orders/pending`, LMT 요구사항)으로 미체결 주문이 계속 쌓이는 상황에 대비해 형제 API(PORT-002·RANK-001·JOUR-006·`GET /api/orders/pending`)와 조회 패턴을 통일한다.
 - 커서 기반 페이지네이션(`cursor`·`limit`)을 도입한다. `limit`은 선택이며 기본 20, 1~100 범위를 벗어나면 400 `VALIDATION_ERROR`로 거부한다(클램핑 없음) — `GET /api/trades`(PORT-002)와 동일한 검증 방식이다.
-- 이 정책은 1차 MVP 당시의 "별도 페이지네이션을 두지 않는다"는 가정을 대체한다. 실제 코드(`OrderController`·`OrderService`·`OrderRepository`) 변경과 `docs/api-routes.md`·`docs/api-contracts.md` 갱신은 이 결정과 별개의 구현 이슈에서 진행한다.
+- 이 정책은 1차 MVP 당시의 "별도 페이지네이션을 두지 않는다"는 가정을 대체한다. 실제 코드(`OrderController`·`OrderService`·`OrderRepository`) 변경과 `docs/api-routes.md`·`docs/api/order.md` 갱신은 이 결정과 별개의 구현 이슈에서 진행한다.
 - 이미 배포된 `GET /api/orders` 응답 계약을 바꾸는 breaking change다 — 실제 구현 시 프론트엔드(FinPlay 레포)와 사전 조율이 필요하다.
 
 > 투자일기(매수·매도 회고) 기능은 2026-07-28 Notion 확인 결과 1차 MVP가 아니라 2차(1차 고도화) 범위다. 1차 요구사항에서는 제외하며, 아래 JOUR 요구사항은 2차 착수 전 확정한 내용이다.
@@ -843,7 +843,7 @@ LMT-001~005의 상세 계약(요청·응답 필드, 전체 오류 코드)은 `do
 
 - `GET /api/rankings?market=&limit=`로 실현손익 기준 전체 랭킹을 시장별로 조회한다.
 - `market`은 필수 파라미터다 — 계좌·거래내역 조회 규칙(PORT-002)과 동일하게 시장별로 나눠 조회하며, 두 시장을 합산한 통합 랭킹은 제공하지 않는다.
-- `limit`은 생략 시 기본 10건을 반환한다. 요청값이 50을 초과해도 서버는 최대 50건까지만 반환한다(클램핑) — 남용 방지를 위한 상한이다. 1 미만(0 이하)이어도 오류로 거부하지 않고 기본값 10으로 클램핑한다 — 상한과 동일한 근거(사용성 우선)를 하한에도 일관되게 적용한 것이다. 이는 범위 밖 값을 400 `VALIDATION_ERROR`로 거부하는 거래내역 조회(`GET /api/trades`, `docs/api-contracts.md`)와 의도적으로 다른 처리다 — 거래내역은 완전성이 중요한 감사성 조회라 누락 없이 정확한 건수를 보장해야 하지만, 랭킹은 "상위 N명 탐색" 용도라 과도한 요청값을 오류로 막을 필요 없이 상한까지만 보여줘도 사용성에 문제가 없다.
+- `limit`은 생략 시 기본 10건을 반환한다. 요청값이 50을 초과해도 서버는 최대 50건까지만 반환한다(클램핑) — 남용 방지를 위한 상한이다. 1 미만(0 이하)이어도 오류로 거부하지 않고 기본값 10으로 클램핑한다 — 상한과 동일한 근거(사용성 우선)를 하한에도 일관되게 적용한 것이다. 이는 범위 밖 값을 400 `VALIDATION_ERROR`로 거부하는 거래내역 조회(`GET /api/trades`, `docs/api/order.md`)와 의도적으로 다른 처리다 — 거래내역은 완전성이 중요한 감사성 조회라 누락 없이 정확한 건수를 보장해야 하지만, 랭킹은 "상위 N명 탐색" 용도라 과도한 요청값을 오류로 막을 필요 없이 상한까지만 보여줘도 사용성에 문제가 없다.
 - 매도 체결 이력이 한 번도 없는 회원은 랭킹 대상에서 제외한다 — 매도 이력이 있고 그 결과 실현손익이 정확히 0인 회원은 제외 대상이 아니며 다른 회원과 동일하게 동점 규칙을 적용한다. 이력 없는 회원까지 포함하면 대다수가 0으로 동점 처리되어 랭킹의 의미가 없어지므로, 제외 기준은 손익 값이 아니라 매도 이력 유무다.
 - 정렬 기준은 시장별 실현손익 내림차순이다.
 - 동점자(실현손익이 완전히 같은 회원)는 공동 순위를 부여한다 — 다음 순위는 동점자 수만큼 건너뛴다(예: 공동 1위 2명 다음 순위는 3위). **Redis ZSET의 기본 순위 커맨드는 동점이어도 멤버를 사전순으로 순차 배정해 이 규칙과 다르게 동작하므로, 공동 순위 계산은 애플리케이션 계층에서 별도로 처리한다** — score desc·동점자는 userId asc로 재정렬한 뒤 고유 score마다 `countStrictlyGreater(score) + 1`로 순위를 계산한다(RANK-001 구현 완료, PR #196).
@@ -891,9 +891,9 @@ LMT-001~005의 상세 계약(요청·응답 필드, 전체 오류 코드)은 `do
 
 ## 5. API 계약 (1차 MVP 기준 목록)
 
-Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conventions.md`). 아래 목록은 클라이언트가 호출하는 **실제 외부 경로를 그대로** 적는다 — 문서마다 `/auth/...`와 `/api/auth/...`가 섞이지 않게 한다.
+Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conventions/code.md`). 아래 목록은 클라이언트가 호출하는 **실제 외부 경로를 그대로** 적는다 — 문서마다 `/auth/...`와 `/api/auth/...`가 섞이지 않게 한다.
 
-> **이 목록은 1차 MVP 시점의 경로 집합이며 현재 제공 중인 전체 경로가 아니다.** 2차에서 추가·구현된 경로(`GET /api/rankings`, `GET /api/instruments/{id}/price-moves`, `GET /api/instruments/{id}/news`, `GET /api/market/briefing`, `POST·PATCH /api/trades/{id}/journal`, `POST·PATCH /api/trades/{id}/sell-journal`, `GET·POST·DELETE /api/favorites`, `POST /api/education/practice/intentions`, `GET /api/education/practice/synthetic-prices/{id}`)는 여기 반영하지 않는다. **실제 라우트 전수는 `docs/api-routes.md`, 요청·응답·오류 계약은 `docs/api-contracts.md`가 정본이다** — 이 두 문서는 controller 변경과 같은 커밋에서 갱신된다(CLAUDE.md 규칙 7). 아래 목록은 1차 완료 범위를 확인하는 용도로만 유지한다.
+> **이 목록은 1차 MVP 시점의 경로 집합이며 현재 제공 중인 전체 경로가 아니다.** 2차에서 추가·구현된 경로(`GET /api/rankings`, `GET /api/instruments/{id}/price-moves`, `GET /api/instruments/{id}/news`, `GET /api/market/briefing`, `POST·PATCH /api/trades/{id}/journal`, `POST·PATCH /api/trades/{id}/sell-journal`, `GET·POST·DELETE /api/favorites`, `POST /api/education/practice/intentions`, `GET /api/education/practice/synthetic-prices/{id}`)는 여기 반영하지 않는다. **실제 라우트 전수는 `docs/api-routes.md`, 요청·응답·오류 계약은 `docs/api/`(도메인별 파일)가 정본이다** — 이 문서들은 controller 변경과 같은 커밋에서 갱신된다(CLAUDE.md 규칙 7). 아래 목록은 1차 완료 범위를 확인하는 용도로만 유지한다.
 
 ### 인증
 
@@ -938,7 +938,7 @@ Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conven
 
 - `GET /api/orders?market=&cursor=&limit=` (`market` 필수 — 생략 시 통합 조회는 지원하지 않는다. `cursor`·`limit`은 `GET /api/trades`와 동일한 페이지네이션 방식 — 2026-08-04 확정, 이슈 #177. 실제 구현은 이슈 #182(`docs/specs/018-order-list-pagination`)에서 완료했다)
   - 인증 사용자의 주문을 최신 요청순으로 시장별로 반환한다.
-  - 응답 항목: `orderId`, `market`, `instrumentId`, `side`, `orderType`, `status`, `quantity`, `requestedAt` (`docs/api-contracts.md` 정본 기준 — `symbol` 없음, `quantity`)
+  - 응답 항목: `orderId`, `market`, `instrumentId`, `side`, `orderType`, `status`, `quantity`, `requestedAt` (`docs/api/order.md` 정본 기준 — `symbol` 없음, `quantity`)
   - 체결가격·체결금액·수수료·실현손익·체결시각은 포함하지 않고 `GET /api/trades`에서 조회한다.
 - `POST /api/orders`
 - 요청 예시: `{"market":"STOCK","instrumentId":1,"side":"BUY","orderType":"MARKET","quantity":"10"}`
@@ -989,7 +989,7 @@ Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conven
 | 502 | OAUTH_PROVIDER_ERROR | OAuth 공급자 장애·타임아웃·비정상 응답 |
 | 502 | MARKET_DATA_PROVIDER_ERROR | 외부 시세 공급자 조회 실패 (빗썸 캔들 REST 장애·타임아웃·파싱 불가 — MKT-008) |
 
-위 표는 **2026-08-04 기준 `com.finplay.api.common.ErrorCode` enum 전체(26개)와 1:1로 일치한다.** 코드가 정본이며, 새 오류 코드를 추가하면 이 표도 같은 커밋에서 갱신한다. 엔드포인트별로 어떤 코드가 나오는지는 `docs/api-contracts.md`가 정본이다.
+위 표는 **2026-08-04 기준 `com.finplay.api.common.ErrorCode` enum 전체(26개)와 1:1로 일치한다.** 코드가 정본이며, 새 오류 코드를 추가하면 이 표도 같은 커밋에서 갱신한다. 엔드포인트별로 어떤 코드가 나오는지는 `docs/api/`(도메인별 파일)가 정본이다.
 
 오류 형식:
 
@@ -1132,7 +1132,7 @@ Flyway 마이그레이션은 V1~V28까지 적용돼 있다. 아래는 2차에서
 - `favorite`: 즐겨찾기 (ADR-0012에 따라 DB가 아닌 인메모리 저장)
 - `education`: 투자 실습 — legacy 사전 의도(인메모리)·영속 attempt/run과 자동 위험 snapshot(DB)·진행/불변 완료(DB)·canonical 29+1 차트·legacy 합성 시세(`education.synthetic`)
 
-**도메인 간 호출은 service를 경유하고 다른 도메인의 repository를 직접 주입하지 않는다** (`docs/conventions.md`). 투자 실습 OCO는 `education application → order application port` 한 방향만 허용한다.
+**도메인 간 호출은 service를 경유하고 다른 도메인의 repository를 직접 주입하지 않는다** (`docs/conventions/code.md`). 투자 실습 OCO는 `education application → order application port` 한 방향만 허용한다.
 
 ### 트랜잭션 경계
 

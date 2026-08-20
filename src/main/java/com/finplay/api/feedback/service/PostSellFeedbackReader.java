@@ -9,7 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 /**
- * 계약은 {@code docs/api-contracts.md}의 "매도 직후 피드백 조회" 소절이고 요구사항은 spec FEED-007이다.
+ * 계약은 {@code docs/api/feedback.md}의 "매도 직후 피드백 조회" 소절이고 요구사항은 spec FEED-007이다.
  * 서술을 뺀 응답 전체를 돌려준다 — 조립 자체는 시장별 리더가 하고 이 클래스는 컨텍스트 로드 → 시장 분기 →
  * 위임만 한다. {@code PostSellFeedbackService}가 여기서 받은 값에 서술만 얹는다.
  *
@@ -20,7 +20,7 @@ import org.springframework.stereotype.Component;
  * 안쪽은 이 클래스가 코인 경로의 빗썸 REST 호출(타임아웃 예산 connect 2초·read 3초)을 트랜잭션 밖에 두려고
  * 아래 협력자들을 따로 두는 것이다. 두 겹 모두 <b>느린 외부 호출이 도는 동안 DB 커넥션(풀 20)을 쥐지 않기
  * 위해서다.</b> 이 엔드포인트는 spec 012에서 <b>조회 경로에 LLM이 들어오는 첫 자리</b>이기도 하다
- * (FEED-007 — {@code docs/conventions.md}의 "GET은 부수효과 없음"에 대한 유일한 예외).
+ * (FEED-007 — {@code docs/conventions/code.md}의 "GET은 부수효과 없음"에 대한 유일한 예외).
  *
  * <p><b>빈을 나누는 것 말고 경계를 좁힐 방법이 없다.</b> 트랜잭션은 메서드 단위라 읽기와 외부 호출이 한
  * 메서드에 있으면 나눌 수 없고, <b>같은 클래스의 private 메서드에 애노테이션을 붙이는 것은 자기호출이라
@@ -39,7 +39,7 @@ import org.springframework.stereotype.Component;
  * LLM에게 계산시키지 않는다(PRD C-004). 배분·lot은 {@code portfolio} 소유라 서비스를 경유한다(§C-6).
  *
  * <p><b>엔티티가 밖으로 나가지 않고 원장에 쓰지도 않는다.</b> 응답 record에 담기는 것은 전부 스칼라·record이고
- * ({@code docs/conventions.md}), 이 spec이 회원별로 쓰는 유일한 테이블({@code trade_feedbacks})은
+ * ({@code docs/conventions/code.md}), 이 spec이 회원별로 쓰는 유일한 테이블({@code trade_feedbacks})은
  * {@code TradeFeedbackWriter}만 건드린다.
  */
 @Component

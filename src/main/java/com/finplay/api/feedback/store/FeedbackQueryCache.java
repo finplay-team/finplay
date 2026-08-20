@@ -34,7 +34,7 @@ import tools.jackson.databind.ObjectMapper;
  * <p><b>{@code @EnableCaching}·{@code @Cacheable}을 쓰지 않는다</b>(ADR-0015 §5). 만료가 고정 초가 아니라
  * "다음 갱신 시점까지"라 캐시 이름 단위 TTL로 표현할 자리가 없고, 아래 분산 락을 끼울 자리도 없다. 대신
  * {@code PriceStore}·{@code RankingStore}·{@code CryptoWatchLock}과 같은 형태로 {@code StringRedisTemplate}을
- * 직접 쓰고 <b>키 조립을 이 클래스 하나에 가둔다</b>({@code docs/conventions.md}).
+ * 직접 쓰고 <b>키 조립을 이 클래스 하나에 가둔다</b>({@code docs/conventions/code.md}).
  *
  * <p><b>fail-open이다</b>(ADR-0015 §6). Redis 접촉(조회·저장·락·무효화)에서 나는 {@code RuntimeException}은 전부
  * 삼켜 캐시 미스와 같게 취급하고 원본으로 내려간다. 캐시는 있으면 빠르고 없으면 DB로 가는 것이지, 없으면 장애가

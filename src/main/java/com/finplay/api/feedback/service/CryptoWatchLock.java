@@ -17,7 +17,7 @@ import org.springframework.stereotype.Component;
  * {@code feedback.crypto.watch-lock-ttl-seconds}(LLM 타임아웃 기준 45초). 그 둘이 박혀 있어 조회 경로(#245)가
  * 이 클래스를 그대로 재사용할 수 없었고, 그래서 메커니즘만 추출했다.
  *
- * <p>{@code RedisLock}은 <b>빈으로 주입받는다</b>({@code docs/conventions.md}의 생성자 주입 관례). 한때
+ * <p>{@code RedisLock}은 <b>빈으로 주입받는다</b>({@code docs/conventions/code.md}의 생성자 주입 관례). 한때
  * 생성자 안에서 {@code new}로 하나 더 만들었는데 — 추출 당시 테스트의 생성자 호출을 건드리지 않으려던
  * 결과였다 — 그러면 <b>테스트 편의가 운영 배선을 결정</b>하고, 지금은 무상태라 무해해도 메트릭·설정이 붙는
  * 순간 두 인스턴스가 갈린다(PR 리뷰 [권장 4]).

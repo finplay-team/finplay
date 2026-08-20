@@ -1,6 +1,6 @@
 # 코드 컨벤션
 
-코드를 작성·리뷰할 때 따르는 규칙이다. 브랜치·커밋·PR 형식은 `docs/git-conventions.md`, 이슈·리뷰 운영 규칙은 `docs/team-conventions.md`에 있다.
+코드를 작성·리뷰할 때 따르는 규칙이다. 브랜치·커밋·PR 형식은 `docs/conventions/git.md`, 이슈·리뷰 운영 규칙은 `docs/conventions/team.md`에 있다.
 
 ## 패키지 구조
 

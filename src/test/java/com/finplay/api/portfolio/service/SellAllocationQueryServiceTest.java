@@ -175,7 +175,7 @@ class SellAllocationQueryServiceTest {
 
 	// --- 배분 요약 ---
 
-	// 계약 예시(docs/api-contracts.md)를 두 lot으로 재현한다 — 완료 조건 2번이 2개 lot 픽스처를 요구한다.
+	// 계약 예시(docs/api/portfolio.md)를 두 lot으로 재현한다 — 완료 조건 2번이 2개 lot 픽스처를 요구한다.
 	// 매수원가 합 700,000 / 수량 10 = 70,000이고 매수수수료 합은 105다.
 	@Test
 	@DisplayName("두 lot에 배분된 매도의 요약 — 가중평균 매수단가·가장 이른 매수 시각·lot별 원본 거래일")

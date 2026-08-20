@@ -161,7 +161,7 @@ public class PriceStore {
 
 	// 코인 가격 스냅샷 1건을 Sorted Set에 적재하고, retention을 넘은 과거 원소를 함께 제거한다
 	// (spec 012 §코인 가격 스냅샷 — CryptoPriceSnapshotService가 매 분 호출한다). 키 조립은 이 클래스 안에서만
-	// 한다(docs/conventions.md). score는 recordedAt의 epoch millis, member는 "{epochMillis}:{price}"다 —
+	// 한다(docs/conventions/code.md). score는 recordedAt의 epoch millis, member는 "{epochMillis}:{price}"다 —
 	// 수익률이 아니라 가격+시각을 저장해야 나중에 임의 구간의 "N분 전 가격"을 꺼낼 수 있다.
 	public void recordSnapshot(String symbol, LocalDateTime recordedAt, BigDecimal price, Duration retention) {
 		String key = snapshotKey(symbol);

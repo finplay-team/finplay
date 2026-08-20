@@ -31,7 +31,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
- * 계약은 {@code docs/api-contracts.md}의 "매도 직후 피드백 조회 — 코인 체결의 차이" 소절이고 결정과 근거는
+ * 계약은 {@code docs/api/feedback.md}의 "매도 직후 피드백 조회 — 코인 체결의 차이" 소절이고 결정과 근거는
  * spec §FEED-012다. 산술은 {@link PostSellArithmetic}이 주식과 공유한다.
  *
  * <p><b>진입점이 아니다.</b> 존재(404)·소유(403)·매수 체결(400) 검증과 배분 조회는

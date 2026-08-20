@@ -22,14 +22,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 계약은 {@code docs/api-contracts.md}의 "종목 변동 원인 카드 조회" 행이고 노출 게이트는 spec §C-5다.
+ * 계약은 {@code docs/api/feedback.md}의 "종목 변동 원인 카드 조회" 행이고 노출 게이트는 spec §C-5다.
  *
  * <p><b>빈 응답이 오류가 아니다</b>(FEED-006·§실패 처리). 카드 0건도, 재생세션 미준비도 200이다 — 후자는
  * {@code originTradeDate}까지 {@code null}이다. 둘은 {@code status}로 갈린다({@code EMPTY} vs
  * {@code NOT_YET}, Issue #280) — 코인은 재생세션 개념이 없어 {@code NOT_YET}이 나오지 않는다.
  *
  * <p><b>쓰지 않는다.</b> 카드·요약은 전 회원이 공유하는 배치 산출물이라 조회가 만들지 않는다
- * ({@code docs/conventions.md} — GET은 부수효과 없음). 원장 불변이 조회 경로에서 취하는 형태다.
+ * ({@code docs/conventions/code.md} — GET은 부수효과 없음). 원장 불변이 조회 경로에서 취하는 형태다.
  */
 @Service
 @RequiredArgsConstructor

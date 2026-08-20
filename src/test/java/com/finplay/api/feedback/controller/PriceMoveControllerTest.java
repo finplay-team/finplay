@@ -37,7 +37,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
-// 계약의 정본은 docs/api-contracts.md의 "종목 변동 원인 카드 조회" 행이고, 빈 응답이 오류가 아니라는 규칙은
+// 계약의 정본은 docs/api/feedback.md의 "종목 변동 원인 카드 조회" 행이고, 빈 응답이 오류가 아니라는 규칙은
 // spec 012 FEED-006·§실패 처리다. 노출 게이트가 실제로 걸러지는지는 저장된 TIME 값 위에서 봐야 하므로
 // PriceMoveQueryGateIntegrationTest가 맡는다 — 여기서는 직렬화 형태와 인증·오류 매핑만 본다.
 @WebMvcTest(PriceMoveController.class)
