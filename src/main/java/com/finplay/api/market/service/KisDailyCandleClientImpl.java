@@ -83,6 +83,7 @@ public class KisDailyCandleClientImpl implements KisDailyCandleClient {
 		requireCredentials();
 		Map<LocalDate, RawDailyCandleDto> collected = new LinkedHashMap<>();
 		LocalDate cursorEnd = to;
+		boolean reachedFrom = false;
 		for (int page = 0; page < MAX_PAGES_PER_SYMBOL; page++) {
 			List<RawDailyCandleDto> rows = requestPage(symbol, from, cursorEnd);
 			if (rows.isEmpty()) {
@@ -96,6 +97,7 @@ public class KisDailyCandleClientImpl implements KisDailyCandleClient {
 				}
 			}
 			if (!earliestInPage.isAfter(from)) {
+				reachedFrom = true;
 				break;
 			}
 			LocalDate nextCursorEnd = earliestInPage.minusDays(1);
@@ -104,6 +106,17 @@ public class KisDailyCandleClientImpl implements KisDailyCandleClient {
 				break;
 			}
 			cursorEnd = nextCursorEnd;
+		}
+		// 요청 구간의 시작(from)에 닿지 못하고 페이지 상한에 걸려 끝나면, 그보다 더 과거 구간은 이번 호출로 채워지지
+		// 않는다. StockDailyCandleCollector의 다음 실행은 "가장 최근 저장 거래일 다음날"부터만 다시 조회하므로
+		// (plan.md "결정 1"), 이 미달 구간은 자동으로 다시 채워지지 않는다 — 운영자가 알아챌 수 있도록 경고만 남긴다
+		// (STOCK-DAILY-002 리뷰 지적, 재현 조건: 3년 750영업일이 100건/페이지·12페이지 상한을 초과하는 경우).
+		if (!reachedFrom && !collected.isEmpty()) {
+			LocalDate earliestCollected = collected.keySet().stream().min(Comparator.naturalOrder()).orElseThrow();
+			log.warn(
+				"KIS 일봉 페이지 상한({})에 도달해 요청 구간을 다 채우지 못했습니다 — 채워지지 않은 구간은 자동으로"
+					+ " 재시도되지 않습니다 (symbol={}, requestedFrom={}, actualEarliest={}, to={})",
+				MAX_PAGES_PER_SYMBOL, symbol, from, earliestCollected, to);
 		}
 		return collected.values().stream()
 			.filter(candle -> !candle.tradingDate().isBefore(from) && !candle.tradingDate().isAfter(to))

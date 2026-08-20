@@ -3,8 +3,10 @@
 package com.finplay.api.market.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.finplay.api.market.config.KisProperties;
@@ -17,9 +19,11 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 
 class KisDailyCandleClientImplTest {
 
@@ -30,6 +34,9 @@ class KisDailyCandleClientImplTest {
 	private static final String APP_KEY = "test-app-key";
 	private static final String APP_SECRET = "test-app-secret";
 	private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.BASIC_ISO_DATE;
+	// KIS가 실제로 내려주는 오류 본문 그대로 (2026-07-30 실측, KisHistoricalCandleClientImplTest와 동일 근거).
+	private static final String RATE_LIMIT_BODY = "{\"rt_cd\":\"1\",\"msg1\":\"초당 거래건수를 초과하였습니다.\",\"msg_cd\":\"EGW00201\"}";
+	private static final String DOMAIN_MISMATCH_BODY = "{\"rt_cd\":\"1\",\"msg1\":\"실전투자 도메인은 모의투자 앱키로 호출하실 수 없습니다.\",\"msg_cd\":\"EGW02004\"}";
 
 	// 실제 KIS 토큰 유효기간(약 24시간)과 무관하게, 테스트에서는 만료시각을 충분히 먼 미래로 고정해 재발급 분기를 타지 않게 한다.
 	private static final String FAR_FUTURE_EXPIRY = "2099-01-01 00:00:00";
@@ -355,6 +362,58 @@ class KisDailyCandleClientImplTest {
 
 		assertThat(candles).hasSize(1);
 		assertThat(candles.get(0).tradingDate()).isEqualTo(from);
+		server.verify();
+	}
+
+	// --- 레이트리밋 재시도 (KisHistoricalCandleClientImplTest의 동일 이름 테스트와 같은 근거·구조) ---
+
+	@Test
+	void fetchDailyCandlesRetriesWhenKisRejectsWithPerSecondRateLimit() {
+		RestClient.Builder builder = newBuilder();
+		MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+		KisDailyCandleClientImpl client = newClient(builder);
+		LocalDate from = LocalDate.of(2026, 7, 20);
+		LocalDate to = LocalDate.of(2026, 7, 20);
+
+		expectTokenExchange(server);
+		// 첫 시도는 초당 제한으로 거부되고, 같은 페이지(from~to)로 재시도해 성공한다.
+		server.expect(requestTo(dailyCandleUri(from, to)))
+			.andExpect(method(HttpMethod.GET))
+			.andRespond(withStatus(HttpStatus.INTERNAL_SERVER_ERROR)
+				.body(RATE_LIMIT_BODY)
+				.contentType(MediaType.APPLICATION_JSON));
+		server.expect(requestTo(dailyCandleUri(from, to)))
+			.andExpect(method(HttpMethod.GET))
+			.andRespond(withSuccess(
+				dailyPageJson(dailyRow(from, "71000", "71500", "70900", "71200", "123456")),
+				MediaType.APPLICATION_JSON));
+
+		List<RawDailyCandleDto> candles = client.fetchDailyCandles(SYMBOL, from, to);
+
+		assertThat(candles).hasSize(1);
+		server.verify();
+	}
+
+	// 인증 실패·도메인 불일치(EGW02004) 등은 재시도해도 결과가 같으므로 즉시 던져야 한다(1분봉 클라이언트와 동일 근거 —
+	// 무의미한 대기로 08:25 배치가 불필요하게 길어지지 않게 한다).
+	@Test
+	void fetchDailyCandlesDoesNotRetryNonRateLimitErrors() {
+		RestClient.Builder builder = newBuilder();
+		MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+		KisDailyCandleClientImpl client = newClient(builder);
+		LocalDate from = LocalDate.of(2026, 7, 20);
+		LocalDate to = LocalDate.of(2026, 7, 20);
+
+		expectTokenExchange(server);
+		server.expect(requestTo(dailyCandleUri(from, to)))
+			.andExpect(method(HttpMethod.GET))
+			.andRespond(withStatus(HttpStatus.INTERNAL_SERVER_ERROR)
+				.body(DOMAIN_MISMATCH_BODY)
+				.contentType(MediaType.APPLICATION_JSON));
+
+		assertThatThrownBy(() -> client.fetchDailyCandles(SYMBOL, from, to))
+			.isInstanceOf(RestClientResponseException.class);
+		// expect를 1건만 등록했으므로 재시도가 있었다면 verify가 실패한다.
 		server.verify();
 	}
 }
