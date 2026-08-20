@@ -394,8 +394,7 @@ class PracticeAttemptServiceTest {
 		assertThat(response.tutorialCashBalance()).isEqualTo(8_000_000L);
 		assertThat(response.tutorialAvailableCash()).isEqualTo(7_500_000L);
 		assertThat(response.tutorialRealizedPnl()).isEqualTo(300_000L);
-		verify(tutorialAccountService)
-			.getOrCreateForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO, NOW);
+		verify(tutorialAccountService).find(USER_ID, com.finplay.api.account.domain.Market.CRYPTO);
 	}
 
 	// 같은 종목을 다시 고르는 무변경 응답도 같은 값을 실어야 한다 — 화면이 이 경로로 들어오는 일이 흔하고
