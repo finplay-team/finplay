@@ -1297,6 +1297,143 @@ class StockReplayServiceTest {
 		assertThat(result.get(0).tradingDate()).isEqualTo(firstOfMonthFrom);
 	}
 
+	// --- 048: 집계봉 커서 기준점 이동 (CANDLE-PAGE-018~024) ---
+	// StockReplayService 본문은 손대지 않았다(plan 8-1, 8-2) - CandleQueryService(항목 2, 완료)가 커서를
+	// to = cursor.minusMinutes(1)로 정규화해 KisHistoricalReplayPriceProvider를 거쳐 toDate(=to.toLocalDate())로
+	// 넘기므로, 여기서는 그 정규화 결과값을 직접 toDate 인자로 넣어 rangeEnd, narrowRangeStart, subList 캡이
+	// 실제로 "커서보다 과거 방향 최신 200버킷"을 만드는지 검증한다.
+
+	@Test
+	void getRevealedAggregatedCandlesNarrowRangeStartQueryEndMovesToTheDayBeforeTheCursorDate() {
+		// CANDLE-PAGE-018 - narrowRangeStart의 역산 앵커(queryEnd)가 커서 직전 날짜로 옮겨가는지 인자 캡처로 단언한다.
+		// cursor는 항상 버킷 경계(T00:00)이므로 to = cursor.minusMinutes(1)의 날짜는 정확히 "커서 날짜 - 1일"이다.
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		LocalDateTime cursor = LocalDateTime.of(LocalDate.of(2026, 7, 20), LocalTime.MIDNIGHT);
+		LocalDate cursorDerivedToDate = cursor.minusMinutes(1).toLocalDate();
+		assertThat(cursorDerivedToDate).isEqualTo(cursor.toLocalDate().minusDays(1));
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+			any(), any(), eq(cursorDerivedToDate)))
+			.thenReturn(List.of());
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(10, 0)));
+
+		service.getRevealedAggregatedCandles(INSTRUMENT_ID, CandleInterval.ONE_DAY, null, cursorDerivedToDate);
+
+		ArgumentCaptor<LocalDate> queryEndCaptor = ArgumentCaptor.forClass(LocalDate.class);
+		verify(stockCandleRepository).findDistinctTradingDateByInstrumentIdAndTradingDateBetweenOrderByTradingDateDesc(
+			eq(INSTRUMENT_ID), any(), queryEndCaptor.capture(), eq(PageRequest.of(0, 200)));
+		assertThat(queryEndCaptor.getValue()).isEqualTo(cursorDerivedToDate);
+	}
+
+	@Test
+	void getRevealedAggregatedCandlesKeepsExactlyTwoHundredBucketsWhenLeadingPartialBucketWouldOtherwiseLeakThePage() {
+		// CANDLE-PAGE-019 - 선두 partial 버킷 필터 -> 200개 캡 순서가 유지돼야 페이지가 199개로 새지 않는다(plan 8-3).
+		// week0는 rangeStart(수요일)보다 이른 월요일에서 시작하는 반쪽 버킷이라 필터에서 제외되고, week1~week200
+		// (200개)이 완전한 버킷으로 남는다. 순서가 뒤집혀 캡을 먼저 걸면 필터가 그 뒤에 또 하나를 떨어뜨려
+		// 199개가 된다 - 이 테스트는 실제 구현이 정확히 200개를 반환하는지로 그 회귀를 고정한다.
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		LocalDate week0Monday = LocalDate.of(2020, 1, 6);
+		LocalDate rangeStart = week0Monday.plusDays(2); // 2020-01-08(수) - week0 버킷을 반쪽으로 만드는 시작점
+		LocalDate lastWeekMonday = week0Monday.plusWeeks(200);
+		LocalDate rangeEnd = lastWeekMonday.plusDays(4); // week200 금요일까지 - sourceTradingDate(WEEKDAY)와 무관한 과거 구간
+
+		List<StockCandle> minuteCandles = new ArrayList<>();
+		minuteCandles.add(candle(rangeStart, LocalTime.of(9, 0), bd(1), bd(1), bd(1), bd(1), 1)); // week0(반쪽)
+		for (int week = 1; week <= 200; week++) {
+			LocalDate monday = week0Monday.plusWeeks(week);
+			minuteCandles.add(candle(monday, LocalTime.of(9, 0), bd(1000 + week), bd(1000 + week), bd(1000 + week),
+				bd(1000 + week), 1));
+		}
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+			INSTRUMENT_ID, rangeStart, rangeEnd))
+			.thenReturn(minuteCandles);
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(10, 0)));
+
+		List<StockCandleDto> result = service.getRevealedAggregatedCandles(
+			INSTRUMENT_ID, CandleInterval.ONE_WEEK, rangeStart, rangeEnd);
+
+		assertThat(result).hasSize(200);
+		assertThat(result.get(0).tradingDate()).isEqualTo(week0Monday.plusWeeks(1));
+		assertThat(result.get(199).tradingDate()).isEqualTo(lastWeekMonday);
+	}
+
+	@Test
+	void getRevealedAggregatedCandlesClampsRangeEndToSourceTradingDateWhenCursorDerivedToDateIsAfterIt() {
+		// CANDLE-PAGE-021 - 공개 상한(reveal bound)은 커서로 우회되지 않는다. 클라이언트가 재생거래일보다 미래인
+		// 커서를 보내도(즉 정규화된 toDate가 sourceTradingDate 이후여도) 실제 쿼리 상한은 재생거래일을 넘지 않는다.
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		LocalDateTime futureCursor = LocalDateTime.of(WEEKDAY.plusDays(30), LocalTime.MIDNIGHT);
+		LocalDate cursorDerivedToDate = futureCursor.minusMinutes(1).toLocalDate();
+		LocalDate requestedFrom = WEEKDAY.minusDays(10);
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+			eq(INSTRUMENT_ID), eq(requestedFrom), eq(WEEKDAY.minusDays(1))))
+			.thenReturn(List.of());
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+			eq(INSTRUMENT_ID), eq(WEEKDAY), eq(LocalTime.MIN), any()))
+			.thenReturn(List.of());
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(10, 0)));
+
+		service.getRevealedAggregatedCandles(
+			INSTRUMENT_ID, CandleInterval.ONE_DAY, requestedFrom, cursorDerivedToDate);
+
+		verify(stockCandleRepository, never())
+			.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+				eq(INSTRUMENT_ID), eq(cursorDerivedToDate), any(), any());
+		verify(stockCandleRepository, never())
+			.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+				eq(INSTRUMENT_ID), eq(requestedFrom), eq(cursorDerivedToDate));
+		verify(stockCandleRepository).findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+			eq(INSTRUMENT_ID), eq(WEEKDAY), eq(LocalTime.MIN), any());
+	}
+
+	@Test
+	void getRevealedAggregatedCandlesReturnsEmptyListWhenNoReadySessionRegardlessOfCursorDerivedToDate() {
+		// CANDLE-PAGE-022 - READY 세션이 없으면 커서 유무와 무관하게 013 계약(빈 목록, 필요하면 038 폴백)이 유지된다.
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY)).thenReturn(Optional.empty());
+		when(stockReplaySessionRepository
+			.findFirstByServiceDateBeforeAndPreparationStatusOrderByServiceDateDesc(WEEKDAY, PreparationStatus.READY))
+			.thenReturn(Optional.empty());
+		LocalDateTime cursor = LocalDateTime.of(WEEKDAY.minusDays(5), LocalTime.MIDNIGHT);
+		LocalDate cursorDerivedToDate = cursor.minusMinutes(1).toLocalDate();
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(10, 0)));
+
+		List<StockCandleDto> result = service.getRevealedAggregatedCandles(
+			INSTRUMENT_ID, CandleInterval.ONE_DAY, null, cursorDerivedToDate);
+
+		assertThat(result).isEmpty();
+		verifyNoInteractions(stockCandleRepository);
+	}
+
+	@Test
+	void getRevealedAggregatedCandlesOmitsReplayDayBucketBeforeOneMinuteCutoffRegardlessOfCursorDerivedToDate() {
+		// CANDLE-PAGE-022 - 09:01 이전(재생거래일 당일 미마감)에는 커서 유무와 무관하게 그 거래일 버킷을 만들지
+		// 않는다. cursorDerivedToDate가 WEEKDAY로 정규화돼 들어와도(즉 커서가 존재해도) 결과는 커서 없는 기존
+		// 테스트(getRevealedAggregatedCandlesOmitsReplayDayBucketBeforeOneMinuteCutoff)와 동일해야 한다.
+		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
+			.thenReturn(Optional.of(readySession(WEEKDAY, WEEKDAY)));
+		LocalDate priorTradingDate = WEEKDAY.minusDays(3);
+		when(stockCandleRepository.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
+			INSTRUMENT_ID, priorTradingDate, WEEKDAY.minusDays(1)))
+			.thenReturn(List.of(
+				candle(priorTradingDate, LocalTime.of(9, 0), bd(1000), bd(1005), bd(995), bd(1002), 10)));
+		LocalDateTime cursor = LocalDateTime.of(WEEKDAY.plusDays(1), LocalTime.MIDNIGHT);
+		LocalDate cursorDerivedToDate = cursor.minusMinutes(1).toLocalDate();
+		assertThat(cursorDerivedToDate).isEqualTo(WEEKDAY);
+		// 09:00:30 - 첫 분봉 구간, resolveRevealCutoff는 empty를 반환한다.
+		StockReplayService service = service(fixedClock(WEEKDAY, LocalTime.of(9, 0, 30)));
+
+		List<StockCandleDto> result = service.getRevealedAggregatedCandles(
+			INSTRUMENT_ID, CandleInterval.ONE_DAY, priorTradingDate, cursorDerivedToDate);
+
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).tradingDate()).isEqualTo(priorTradingDate);
+		verify(stockCandleRepository, never())
+			.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
+				any(), eq(WEEKDAY), any(), any());
+	}
+
 	// --- 장 마감 후 마지막 재생 상태 유지(getRevealedCandles·getRevealedAggregatedCandles 폴백, spec 038 QUOTE-HOLD-002) ---
 
 	@Test

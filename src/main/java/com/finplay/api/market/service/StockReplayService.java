@@ -296,6 +296,7 @@ public class StockReplayService {
 		// docs/api-contracts.md 계약은 "버킷 시작일이 [from의 날짜, to의 날짜] 안에 있으면 포함"이므로, 시작일이
 		// rangeStart보다 이른 버킷은 반쪽짜리인 채로 완전한 캔들처럼 보이게 되어 제외해야 한다(PR #151 리뷰 차단 반영).
 		// 200개 캡보다 먼저 걸러야 캡이 실제로 응답에 남을 버킷 수를 기준으로 동작한다.
+		// 페이징 도입 후에는 hasNext 판정까지 이 순서에 의존한다 — 048.
 		List<StockCandleDto> aggregated = StockCandleAggregator.aggregate(minuteCandles, interval).stream()
 			.filter(candle -> !candle.tradingDate().isBefore(rangeStart))
 			.toList();
