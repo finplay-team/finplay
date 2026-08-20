@@ -17,6 +17,7 @@ import com.finplay.api.education.marketpractice.domain.ExitPreset;
 import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
 import com.finplay.api.education.marketpractice.domain.PracticeRiskSnapshot;
 import com.finplay.api.education.marketpractice.dto.response.PracticeAttemptResponse;
+import com.finplay.api.education.marketpractice.dto.response.PracticeStageProgressResponse;
 import com.finplay.api.education.marketpractice.repository.PracticeAttemptRepository;
 import com.finplay.api.education.marketpractice.repository.PracticeRiskSnapshotRepository;
 import com.finplay.api.market.domain.Instrument;
@@ -26,6 +27,7 @@ import com.finplay.api.order.domain.ExitPlan;
 import com.finplay.api.order.domain.ExitPlanStatus;
 import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.domain.OrderStatus;
+import com.finplay.api.order.domain.OrderType;
 import com.finplay.api.order.dto.request.OrderCreateRequest;
 import com.finplay.api.order.repository.ExitPlanRepository;
 import com.finplay.api.order.service.OrderService;
@@ -96,6 +98,10 @@ class PracticeExitPresetOcoIntegrationTest {
 	private PracticeAttemptRestartService restartService;
 	@Autowired
 	private TradeService tradeService;
+	@Autowired
+	private PracticeStageProgressCalculationService stageProgressCalculationService;
+	@Autowired
+	private PracticeEntryComparisonService practiceEntryComparisonService;
 	@Autowired
 	private TestClock clock;
 
@@ -178,6 +184,68 @@ class PracticeExitPresetOcoIntegrationTest {
 		assertThat(restarted.runNumber()).isEqualTo(2L);
 		assertThat(exitPlanRepository.findPendingPracticeRunExitPlanIds(fixture.attemptId(), 1L)).isEmpty();
 		assertThat(reservedQuantity(fixture)).isEqualByComparingTo(BigDecimal.ZERO);
+	}
+
+	/**
+	 * 이슈 #503 — 단계 진행 판정이 <b>예약이 발동시킨 매도를 시장가 매도로 세지 않는지</b>를 실제 원장으로
+	 * 확인한다. 그 매도는 {@code ExitPlanFillService}가 {@code OrderType.MARKET}으로 만들기 때문에,
+	 * 원장의 주문 유형만 보는 구현은 여기서만 틀린다 — 단위 테스트는 mock이라 전부 초록인 채로 통과한다.
+	 */
+	@Test
+	void stopLossDoesNotCompleteTheMarketStageButAManualSellDoes() {
+		Fixture fixture = tutorialRunAtRumorStage("oco-stage");
+
+		clock.set(BASE_NOW.plusSeconds(1));
+		buy(fixture);
+		assertThat(stageProgress(fixture).marketBuySellCompleted()).isFalse();
+		// 기본 프리셋으로 들어온 진입은 "프리셋을 배웠다"가 아니다 — 고른 적이 없다.
+		assertThat(stageProgress(fixture).exitPresetApplied()).isFalse();
+
+		// tick — 손절이 발동해 포지션이 청산된다. 원장에는 MARKET 매도가 남는다.
+		clock.set(BASE_NOW.plusSeconds(23));
+		chartService.tick(fixture.userId(), Market.CRYPTO);
+		assertThat(onlyExitPlan(fixture).getStatus()).isEqualTo(ExitPlanStatus.FILLED_STOP_LOSS);
+		assertThat(onlyExitPlan(fixture).getTriggeredOrder().getOrderType()).isEqualTo(OrderType.MARKET);
+		assertThat(stageProgress(fixture).marketBuySellCompleted()).isFalse();
+
+		// 프리셋을 직접 고르고 그 프리셋으로 재진입하면 프리셋 단계가 열린다.
+		attemptService.selectExitPreset(fixture.userId(), Market.CRYPTO, ExitPreset.RELAXED);
+		assertThat(stageProgress(fixture).exitPresetApplied()).isFalse();
+		clock.set(BASE_NOW.plusSeconds(30));
+		buy(fixture);
+		assertThat(stageProgress(fixture).exitPresetApplied()).isTrue();
+
+		// 직접 시장가로 팔아야 그제야 시장가 단계가 통과된다.
+		clock.set(BASE_NOW.plusSeconds(31));
+		orderService.createOrder(fixture.userId(), "stage-sell-" + UUID.randomUUID(),
+			new OrderCreateRequest(Market.CRYPTO, fixture.instrumentId(), OrderSide.SELL, "MARKET", QUANTITY));
+
+		PracticeStageProgressResponse progress = stageProgress(fixture);
+		assertThat(progress.marketBuySellCompleted()).isTrue();
+		// 지정가는 한 번도 쓰지 않았다 — 시장가 왕복이 지정가 단계까지 열어 주지 않는다.
+		assertThat(progress.limitBuySellCompleted()).isFalse();
+	}
+
+	// 진입별 대조 배열이 그 진입을 연 매수의 주문 유형을 담는다(이슈 #503).
+	@Test
+	void eachEntryCarriesTheOrderTypeOfItsOpeningBuy() {
+		Fixture fixture = tutorialRunAtRumorStage("oco-entrytype");
+
+		clock.set(BASE_NOW.plusSeconds(1));
+		buy(fixture);
+		PracticeAttempt attempt = attemptRepository.findById(fixture.attemptId()).orElseThrow();
+
+		assertThat(practiceEntryComparisonService.findCurrentRunEntries(attempt, null))
+			.singleElement()
+			.satisfies(entry -> {
+				assertThat(entry.entrySequence()).isEqualTo(1);
+				assertThat(entry.buyOrderType()).isEqualTo("MARKET");
+			});
+	}
+
+	private PracticeStageProgressResponse stageProgress(Fixture fixture) {
+		return stageProgressCalculationService.calculate(
+			attemptRepository.findById(fixture.attemptId()).orElseThrow());
 	}
 
 	// EXITPRESET-016 — 전량 예약 상태에서도 사용자가 직접 팔 수 있어야 한다.

@@ -8,6 +8,8 @@ import com.finplay.api.account.domain.Account;
 import com.finplay.api.account.repository.AccountRepository;
 import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
+import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
+import com.finplay.api.education.marketpractice.repository.PracticeAttemptRepository;
 import com.finplay.api.education.priceruntime.domain.PracticePriceSession;
 import com.finplay.api.education.priceruntime.repository.PracticePriceSessionRepository;
 import com.finplay.api.market.domain.Instrument;
@@ -19,6 +21,7 @@ import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.domain.OrderType;
 import com.finplay.api.order.domain.Trade;
+import com.finplay.api.order.service.PracticeRunFillKindDto;
 import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -33,6 +36,7 @@ import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -68,10 +72,15 @@ class TradeRepositoryTest {
 	@Autowired
 	private PracticePriceSessionRepository practicePriceSessionRepository;
 
+	@Autowired
+	private PracticeAttemptRepository practiceAttemptRepository;
+
 	private User owner;
 	private Account ownerAccount;
 	private Instrument instrument;
 	private StockReplaySession session;
+	// orders.practice_attempt_id는 practice_attempts를 가리키는 FK다 — 임의의 숫자를 쓰면 insert가 막힌다.
+	private Long practiceAttemptId;
 	private int idempotencySequence = 0;
 
 	private Order createOrder(User user, Account account, LocalDateTime requestedAt) {
@@ -114,6 +123,8 @@ class TradeRepositoryTest {
 			Instrument.create(Market.STOCK, "TRD01", "테스트종목", BigDecimal.valueOf(100), 10_000L, true, NOW));
 		session = stockReplaySessionRepository.saveAndFlush(
 			StockReplaySession.ready(NOW.toLocalDate().plusYears(20), NOW.toLocalDate(), NOW, NOW));
+		practiceAttemptId = practiceAttemptRepository.saveAndFlush(
+			PracticeAttempt.create(owner.getId(), Market.STOCK, NOW)).getId();
 	}
 
 	@Test
@@ -523,5 +534,76 @@ class TradeRepositoryTest {
 			OrderSide.SELL, com.finplay.api.account.domain.Market.STOCK)).isTrue();
 		assertThat(tradeRepository.existsBySideAndAccountMarketAndInstrument_TutorialSampleFalse(
 			OrderSide.SELL, com.finplay.api.account.domain.Market.CRYPTO)).isTrue();
+	}
+
+	// 이슈 #503 — 튜토리얼 5단계 진행 판정이 읽는 생성자 표현식 쿼리. 생성자 표현식은 컴파일이 아니라
+	// 실행 시점에 깨지므로 실제 DB로 한 번 돌려 둔다.
+	@Test
+	@DisplayName("현재 실행 세대의 체결을 주문 id·방향·유형으로 프로젝션한다")
+	void findPracticeRunFillKindsProjectsSideAndOrderTypePerOrder() {
+		Instrument sample = tutorialSampleInstrument("FKD01");
+		Order marketBuy = practiceOrder(sample, OrderSide.BUY, OrderType.MARKET, 1L);
+		practiceFill(marketBuy, sample, OrderSide.BUY);
+		Order limitSell = practiceOrder(sample, OrderSide.SELL, OrderType.LIMIT, 1L);
+		limitSell.markFilled();
+		orderRepository.saveAndFlush(limitSell);
+		practiceFill(limitSell, sample, OrderSide.SELL);
+
+		List<PracticeRunFillKindDto> kinds = tradeRepository.findPracticeRunFillKinds(practiceAttemptId, 1L);
+
+		assertThat(kinds).containsExactlyInAnyOrder(
+			new PracticeRunFillKindDto(marketBuy.getId(), OrderSide.BUY, OrderType.MARKET),
+			new PracticeRunFillKindDto(limitSell.getId(), OrderSide.SELL, OrderType.LIMIT));
+	}
+
+	// 재시작하면 run 번호가 올라간다. 이전 세대의 체결이 새 세대 판정에 섞이면 재시작해도 단계가
+	// 완료로 남는다.
+	@Test
+	@DisplayName("다른 실행 세대와 PENDING 주문은 프로젝션에서 빠진다")
+	void findPracticeRunFillKindsExcludesOtherRunsAndPendingOrders() {
+		Instrument sample = tutorialSampleInstrument("FKD02");
+		Order previousRun = practiceOrder(sample, OrderSide.SELL, OrderType.MARKET, 1L);
+		practiceFill(previousRun, sample, OrderSide.SELL);
+		Order pendingThisRun = orderRepository.saveAndFlush(Order.createLimitPendingForPracticeAttempt(
+			owner, ownerAccount, sample, OrderSide.BUY, BigDecimal.ONE, new BigDecimal("100"),
+			practiceAttemptId, 2L, nextIdempotencyKey(), nextRequestHash(), NOW));
+		practiceFill(pendingThisRun, sample, OrderSide.BUY);
+
+		List<PracticeRunFillKindDto> kinds = tradeRepository.findPracticeRunFillKinds(practiceAttemptId, 2L);
+
+		assertThat(kinds).isEmpty();
+	}
+
+	private Instrument tutorialSampleInstrument(String code) {
+		Instrument sample = Instrument.create(
+			Market.STOCK, code, "튜토리얼 샘플", new BigDecimal("0.00000001"), 0L, true, NOW);
+		ReflectionTestUtils.setField(sample, "tutorialSample", true);
+		return instrumentRepository.saveAndFlush(sample);
+	}
+
+	private Order practiceOrder(Instrument tradedInstrument, OrderSide side, OrderType orderType, long runNumber) {
+		if (orderType == OrderType.MARKET) {
+			return orderRepository.saveAndFlush(Order.createForPracticeAttempt(
+				owner, ownerAccount, tradedInstrument, side, OrderType.MARKET, BigDecimal.ONE,
+				practiceAttemptId, runNumber, nextIdempotencyKey(), nextRequestHash(), NOW));
+		}
+		return orderRepository.saveAndFlush(Order.createLimitPendingForPracticeAttempt(
+			owner, ownerAccount, tradedInstrument, side, BigDecimal.ONE, new BigDecimal("100"),
+			practiceAttemptId, runNumber, nextIdempotencyKey(), nextRequestHash(), NOW));
+	}
+
+	private Trade practiceFill(Order order, Instrument tradedInstrument, OrderSide side) {
+		return tradeRepository.saveAndFlush(Trade.of(
+			order, ownerAccount, tradedInstrument, null, side,
+			BigDecimal.valueOf(100), BigDecimal.ONE, 100L, 0L, side == OrderSide.SELL ? 0L : null, NOW, NOW));
+	}
+
+	private String nextIdempotencyKey() {
+		idempotencySequence++;
+		return "practice-kind-" + idempotencySequence;
+	}
+
+	private String nextRequestHash() {
+		return String.format("%064d", idempotencySequence);
 	}
 }

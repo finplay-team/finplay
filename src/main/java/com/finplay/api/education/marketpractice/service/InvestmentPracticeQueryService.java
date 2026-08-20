@@ -70,6 +70,7 @@ public class InvestmentPracticeQueryService {
 	private final PracticeMarketObservationRepository practiceMarketObservationRepository;
 	private final PracticeAttemptCanonicalPriceService canonicalPriceService;
 	private final PracticeEntryComparisonService practiceEntryComparisonService;
+	private final PracticeStageProgressCalculationService practiceStageProgressCalculationService;
 	private final PracticeCompletionRepository practiceCompletionRepository;
 	private final Clock clock;
 
@@ -129,6 +130,8 @@ public class InvestmentPracticeQueryService {
 
 	/**
 	 * 041 SCENARIO-019b·020·021 — 진입별 대조 배열과 공개된 사건, "안 팔았다면"의 기준 가격을 얹는다.
+	 * 이슈 #503에서 튜토리얼 단계 진행 판정({@code tutorialStageProgress})도 같은 자리에서 얹는다 — attempt
+	 * 경로의 세 응답(진행 중·완료·완료 replay)이 모두 여기를 지나므로 한 곳만 고치면 세 화면이 갈리지 않는다.
 	 *
 	 * <p><b>진입 배열은 대본 여부와 무관하게 채운다.</b> 재진입은 042가 시장을 가리지 않고 열었으므로
 	 * 버전 1 실행에도 진입이 둘 생길 수 있고, "첫 매도만 보인다"는 결함도 그쪽에 똑같이 있다. 대본이 없으면
@@ -137,6 +140,7 @@ public class InvestmentPracticeQueryService {
 	private InvestmentPracticeResponse withEntryComparison(
 		InvestmentPracticeResponse response, PracticeAttempt attempt) {
 		if (attempt.getInstrument() == null) {
+			// 종목 미선택은 진입도 단계 진행도 있을 수 없다 — 짧은 생성자가 둘 다 빈 값으로 채운다.
 			return response;
 		}
 		BigDecimal priceAfterSell = canonicalPriceService.postSellComparisonPrice(attempt);
@@ -155,7 +159,8 @@ public class InvestmentPracticeQueryService {
 			response.attempt(),
 			revealedEvents,
 			priceAfterSell,
-			practiceEntryComparisonService.findCurrentRunEntries(attempt, priceAfterSell));
+			practiceEntryComparisonService.findCurrentRunEntries(attempt, priceAfterSell),
+			practiceStageProgressCalculationService.calculate(attempt));
 	}
 
 	private InvestmentPracticeResponse attachReplayAttempt(

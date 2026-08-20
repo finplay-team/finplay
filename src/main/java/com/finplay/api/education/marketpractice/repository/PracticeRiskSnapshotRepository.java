@@ -1,6 +1,7 @@
 // 튜토리얼 attempt의 실행 세대별 불변 위험 스냅샷 영속을 담당하는 JPA 리포지터리
 package com.finplay.api.education.marketpractice.repository;
 
+import com.finplay.api.education.marketpractice.domain.ExitPreset;
 import com.finplay.api.education.marketpractice.domain.PracticeRiskSnapshot;
 import java.util.List;
 import java.util.Optional;
@@ -22,4 +23,7 @@ public interface PracticeRiskSnapshotRepository extends JpaRepository<PracticeRi
 
 	// 다음 진입의 entry_sequence 산출용 — 존재 여부가 아니라 개수가 필요하다.
 	long countByAttemptIdAndRunNumber(Long attemptId, long runNumber);
+
+	// 이슈 #503 — 사용자가 고른 프리셋으로 실제 진입까지 했는가. 개수도 목록도 필요 없어 존재 여부만 읽는다.
+	boolean existsByAttemptIdAndRunNumberAndExitPreset(Long attemptId, long runNumber, ExitPreset exitPreset);
 }

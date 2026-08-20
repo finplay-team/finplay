@@ -263,10 +263,24 @@ holding 관찰은 buyTrade→order에서 sessionId를 서버가 역추적한다(
 
 **(041 6번, Issue #488) attempt 경로 응답에 최상위 3필드(`entries`·`priceAfterSell`·`revealedEvents`)가 더해졌다.** 아래 셋째 항목은 그 중 `entries[]`의 필드 하나를 따로 설명한 것이다.
 
-- `entries` — **진입별 대조 배열**이며 진입 순번 오름차순이다. 각 항목은 `entrySequence`·`exitPreset`·`buyAt`·`buyPrice`·`buyQuantity`·`stopLossPrice`·`takeProfitPrice`·`sellPrice`·`sellQuantity`·`sellAt`·`sellCause`·`realizedPnl`·`unrealizedPnlIfHeld`다. **`realizedPnl`과 `unrealizedPnlIfHeld`는 `sellQuantity` 기준**이라 부분 매도한 진입에서는 `buyQuantity`와 다르다 — 두 금액을 전체 수량의 것으로 읽으면 안 된다. **왜 필요한가** — 042가 재진입을 열면서 한 실행 세대에 매도가 둘 이상 생겼는데 `tradeResult`의 매도 시각·`sellCause`는 **첫 매도** 기준이라, 2막 손절 → 3막 익절한 사용자의 완료 화면에 손절 하나만 뜬다(금액은 맞고 이야기가 틀린다). 이 배열이 그 결함을 닫는다. 진입 안에서는 실행 전체와 같은 규칙(첫 매도)을 진입 범위로 좁혀 쓰고, `sellPrice`는 수량 가중평균·`realizedPnl`은 합이라 부분 매도도 금액이 전부 반영된다. **대본 여부와 무관하게 채운다** — 재진입은 시장을 가리지 않는다. 매수 전이거나 attempt가 없는 legacy 경로는 빈 배열이다.
+- `entries` — **진입별 대조 배열**이며 진입 순번 오름차순이다. 각 항목은 `entrySequence`·`exitPreset`·`buyOrderType`·`buyAt`·`buyPrice`·`buyQuantity`·`stopLossPrice`·`takeProfitPrice`·`sellPrice`·`sellQuantity`·`sellAt`·`sellCause`·`realizedPnl`·`unrealizedPnlIfHeld`다. **`realizedPnl`과 `unrealizedPnlIfHeld`는 `sellQuantity` 기준**이라 부분 매도한 진입에서는 `buyQuantity`와 다르다 — 두 금액을 전체 수량의 것으로 읽으면 안 된다. **왜 필요한가** — 042가 재진입을 열면서 한 실행 세대에 매도가 둘 이상 생겼는데 `tradeResult`의 매도 시각·`sellCause`는 **첫 매도** 기준이라, 2막 손절 → 3막 익절한 사용자의 완료 화면에 손절 하나만 뜬다(금액은 맞고 이야기가 틀린다). 이 배열이 그 결함을 닫는다. 진입 안에서는 실행 전체와 같은 규칙(첫 매도)을 진입 범위로 좁혀 쓰고, `sellPrice`는 수량 가중평균·`realizedPnl`은 합이라 부분 매도도 금액이 전부 반영된다. **대본 여부와 무관하게 채운다** — 재진입은 시장을 가리지 않는다. 매수 전이거나 attempt가 없는 legacy 경로는 빈 배열이다. **(이슈 #503)** `buyOrderType`은 그 진입을 연 매수의 주문 유형(`MARKET`\|`LIMIT`)이며 진입 경계인 위험 snapshot의 매수 체결이 가리키는 주문에서 읽는다 — **매도의 유형이 아니다**(시장가로 산 포지션을 지정가로 팔거나 예약이 청산할 수 있다).
 - `priceAfterSell` — "그때 팔지 않았다면"의 **기준 가격**이며 `unrealizedPnlIfHeld`가 이 가격으로 계산된다. **진행 중에는 현재 대본가**, **완료 응답에서는 대본의 마지막 진행 구간 끝 가격**이다. 완료 값이 진행과 무관한 이유는 손절 뒤 재매수하지 않고 나간 사용자도 같은 대조를 얻어야 하기 때문이고(SCENARIO-021), 진행 중에 종점 가격을 쓰지 않는 이유는 그것이 이야기의 결말을 미리 알려주기 때문이다. 대본을 쓰지 않는 실행은 `null`이며 그때 `unrealizedPnlIfHeld`도 `null`이다.
 - `unrealizedPnlIfHeld` — `(FLOOR(priceAfterSell × 팔린 수량) − FLOOR(그 금액 × 시장 매도수수료율)) − (배분 매수원가 + 배분 매수수수료)`, 원 단위(2단 `FLOOR`). 식·라운딩이 `OrderExecutionService.priceOrder`와 같다. **매도 수수료를 빼는 것이 핵심**이다 — 비교 대상인 `realizedPnl`이 매수·매도 수수료가 모두 반영된 원장 값이라, 빼지 않으면 가상 보유 쪽이 항상 조금 유리해 보인다(SCENARIO-021a). 서버가 계산해 내려보내며 클라이언트는 그리기만 한다.
 - `revealedEvents` — 그 실행에서 **공개된** 사건만 공개 순서로 담고 시각을 담지 않는다. 완료 시점에도 미공개 사건은 노출하지 않는다(SCENARIO-020). 형식·이유는 `GET .../chart` 소절과 같다. 대본을 쓰지 않는 실행은 빈 배열이다.
+
+**(이슈 #503) 최상위 `tutorialStageProgress`가 더해졌다.** 튜토리얼 5단계(종목 고르기 → 시장가 매수·매도 → 지정가 매수·매도 → 손절·익절 프리셋 → 되돌아보기) 중 **주문 방법·프리셋 단계를 그 실행에서 실제로 마쳤는지**를 서버가 체결 원장으로 판정한다. 화면이 스스로 세면 새로고침에 날아가지만 원장은 남는다. **판정 범위는 현재 attempt의 현재 실행 세대**이며 재시작하면 셋 다 `false`로 돌아간다. **`null`이 되지 않는다** — attempt가 없는 경로(legacy chain, 즐겨찾기만, 미착수)와 종목 미선택도 세 값 모두 `false`인 객체로 나간다.
+
+| 필드 | 판정 |
+|---|---|
+| `marketBuySellCompleted` | 이 실행에 `MARKET` 매수 체결이 있고, **사용자가 낸** `MARKET` 매도 체결도 있다 |
+| `limitBuySellCompleted` | 이 실행에 `LIMIT` 매수 체결과 `LIMIT` 매도 체결이 둘 다 있다 |
+| `exitPresetApplied` | 이 실행에서 프리셋을 **직접 골랐고**(`PUT .../exit-preset`), 그 프리셋으로 만들어진 진입 snapshot이 있다 |
+
+**손절·익절 예약이 발동시킨 매도는 `marketBuySellCompleted`에서 뺀다.** 그 매도도 원장에는 `MARKET` 주문으로 남지만(`ExitPlanFillService`) 사용자가 낸 주문이 아니라, 세면 프리셋에 청산당하기만 한 사용자가 이 단계를 통과한 것으로 표시된다. 제외 근거는 `exit_plans.triggered_order_id`다. 재시작 보상 매도도 `MARKET`이지만 **직전 실행 세대에 귀속**되므로 애초에 판정 범위 밖이다.
+
+`exitPresetApplied`가 "고르기"와 "적용된 진입"을 함께 보는 이유는 두 가지다. 고르지 않은 사용자의 진입에도 snapshot에는 기본 프리셋(`BALANCED`)이 박히므로(042 EXITPRESET-002) snapshot만 보면 아무나 통과하고, 프리셋은 보유 중에 바꿀 수 없어 **다음 진입에만** 적용되므로(EXITPRESET-003) 고르기만 한 시점은 아직 배운 것이 아니다.
+
+**판정만 하고 강제하지 않는다.** 잘못된 순서의 주문을 409로 거부하는 게이트는 이 계약에 없다 — 사용자가 API를 직접 불러 순서를 건너뛸 수 있으며, 이는 보안이 아니라 학습 순서다.
 
 1. `(userId, tutorialKey)` 완료 행이 있고 attempt가 없거나 attempt가 `COMPLETED`면 `COMPLETED`, `currentStep=null`이며 저장된 `completedAt`을 반환한다. 완료 evidence 일부가 인메모리 재시작으로 유실돼도 완료 상태는 회귀하지 않는다. 완료 행이 있어도 attempt가 040 재시작으로 다시 진행 중이면(`SELECTING_INSTRUMENT`\|`IN_PROGRESS`) 최상위 `status`·`currentStep`·`steps`·evidence는 **그 실행 기준**(`IN_PROGRESS` 또는 4단계 만료 시 `EXPIRED`)이며, `completedAt`·`rewardAmount`는 최초 완료 값을 그대로 유지한다 — `practice_completions` 행은 남아 보상 재지급을 막는다(이슈 #426, 040 비즈니스 규칙).
 2. 완료 전 유효 chain이 있으면 1·2단계는 `COMPLETED`, 3단계는 `IN_PROGRESS`다. 같은 holding의 qualifying observation이 있으면 observation evidence도 채운다.

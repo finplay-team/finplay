@@ -83,6 +83,9 @@ public class PracticeEntryComparisonService {
 			// 기능 도입 전에 만들어진 행은 exit_preset이 null이며 기본 프리셋으로 해석한다(042 EXITPRESET-002).
 			// PracticeAttemptResponse.selectedExitPreset과 같은 규칙이라 화면 두 곳이 다른 값을 보이지 않는다.
 			(snapshot.getExitPreset() == null ? ExitPreset.DEFAULT : snapshot.getExitPreset()).name(),
+			// 이슈 #503 — 진입을 연 매수의 주문 유형. 진입 경계가 곧 그 매수 체결이라 별도 조회 없이
+			// 원장에서 그대로 읽는다.
+			snapshot.getBuyTrade().getOrder().getOrderType().name(),
 			snapshot.getBuyTrade().getExecutedAt(),
 			summary.averageBuyPrice(),
 			summary.buyQuantity(),

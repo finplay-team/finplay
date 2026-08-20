@@ -4,6 +4,7 @@ package com.finplay.api.order.repository;
 import com.finplay.api.account.domain.Market;
 import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.domain.Trade;
+import com.finplay.api.order.service.PracticeRunFillKindDto;
 import java.time.LocalDateTime;
 import java.math.BigDecimal;
 import java.util.List;
@@ -82,6 +83,22 @@ public interface TradeRepository extends JpaRepository<Trade, Long>, TradeReposi
 	BigDecimal sumNetFilledPracticeRunQuantity(@Param("attemptId")
 	Long attemptId, @Param("runNumber")
 	long runNumber);
+
+	// 이슈 #503 — 튜토리얼 5단계 진행 판정용. 체결을 엔티티로 훑지 않고 주문 id·방향·유형 세 값만
+	// 뽑는다. 주문 하나에 체결은 최대 하나다(`trades.uk_trades_order`)라서 중복 제거가 필요 없다.
+	@Query("""
+		select new com.finplay.api.order.service.PracticeRunFillKindDto(
+			t.order.id, t.side, t.order.orderType)
+		from Trade t
+		where t.order.practiceAttemptId = :attemptId
+		  and t.order.practiceAttemptRunNumber = :runNumber
+		  and t.order.status = com.finplay.api.order.domain.OrderStatus.FILLED
+		""")
+	List<PracticeRunFillKindDto> findPracticeRunFillKinds(
+		@Param("attemptId")
+		Long attemptId,
+		@Param("runNumber")
+		long runNumber);
 
 	// 041 대기 구간 탈출 시 delta를 자를 기준 시각 — 남은 delta를 전부 이월하면 사용자가 매수 직후 처음 보는
 	// 화면이 진행 구간 한참 뒤가 되어 가격이 튄다(041 plan §상태 전이표). 순회 중 체결도 그 시점 시각으로
