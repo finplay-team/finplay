@@ -56,10 +56,113 @@ FinPlay 백엔드의 JPA 엔티티와 실제 DB 테이블 구조를 도메인별
 
 - `A ||--o{ B` : 1:N, `B`가 FK로 `A`를 참조 (일반적인 `@ManyToOne`)
 - `A ||--o| B` : 1:0..1, FK 컬럼에 `UNIQUE` 제약이 걸려 있어 사실상 1:1에 가까움
-- `A ||..o{ B` (점선) : `B`가 `A`의 PK 값을 컬럼에 저장하지만 `@ManyToOne` 같은 **JPA 연관관계 매핑은 없는** 참조. **DB에는 실제 `FOREIGN KEY` 제약이 걸려 있다** — 없는 것은 JPA 매핑뿐이지 참조 무결성이 아니다(유일한 예외는 `practice_market_observations.instrument_id`로, 이 컬럼만 FK 제약 자체가 없다). `education` 도메인 다수 엔티티의 `user_id`, `CommunityPost.sharedTradeId`, `WatchlistItem.userId`가 이 패턴이다.
+- `A ||..o{ B` (점선) : `B`가 `A`의 PK 값을 컬럼에 저장하지만 `@ManyToOne` 같은 **JPA 연관관계 매핑은 없는** 참조. **DB에는 실제 `FOREIGN KEY` 제약이 걸려 있다** — 없는 것은 JPA 매핑뿐이지 참조 무결성이 아니다(유일한 예외는 `practice_market_observations.instrument_id`로, 이 컬럼만 FK 제약 자체가 없다). `education` 도메인 다수 엔티티의 `user_id`, `CommunityPost.sharedTradeId`, `WatchlistItem.userId`, `Order`/`ExitPlan`의 `practice_attempt_id`(및 `Order.practicePriceSessionId`)가 이 패턴이다.
 - 조인 엔티티(`price_move_event_sources`)로 구현된 M:N은 두 개의 `||--o{` 관계로 풀어서 표시한다.
 
-각 다이어그램의 속성 목록은 실제 컬럼 전체가 아니라 ERD 이해에 필요한 주요 컬럼 위주로 추렸다. `PK`/`FK`/`UK` 표시는 각각 기본키, 외래키, (단일 또는 복합)유니크 제약을 뜻하며, 복합 유니크는 컬럼 옆 주석으로 함께 적었다. `users`, `instruments`, `trades`, `accounts`, `holdings`, `orders`는 여러 다이어그램에 허브로 반복 등장하는 동일 엔티티다.
+각 다이어그램의 속성 목록은 실제 컬럼 전체가 아니라 ERD 이해에 필요한 주요 컬럼 위주로 추렸다. `PK`/`FK`/`UK` 표시는 각각 기본키, 외래키, (단일 또는 복합)유니크 제약을 뜻하며, 복합 유니크는 컬럼 옆 주석으로 함께 적었다. `users`, `instruments`, `trades`, `accounts`, `holdings`, `orders`는 여러 다이어그램에 허브로 반복 등장하는 동일 엔티티다. `practice_attempts`, `practice_price_sessions`도 5번(교육) 다이어그램에서 상세히 다루는 동일 엔티티가 3·4번 다이어그램에 참조 대상으로 등장한다.
+
+---
+
+## 0. 전체 통합 개요
+
+42개 테이블 전체 관계를 하나의 다이어그램에 담은 개요다. 컬럼은 생략했고 관계선 표기(실선/점선, `|o` optional)는 위 범례를 그대로 따른다. 컬럼·제약 상세는 아래 도메인별 1~7번 다이어그램을 참고한다. 다른 엔티티를 참조하지 않는 독립 테이블(`email_verifications`, `password_reset_verifications`, `market_data_imports`, `market_briefings`)은 관계선 없이 박스만 표시했다.
+
+```mermaid
+erDiagram
+    %% 1. 인증 · 계정
+    users ||--o{ accounts : has
+    users ||--o{ tutorial_accounts : has
+    users ||--o{ social_accounts : links
+    users ||--o{ refresh_tokens : issues
+    users ||--o{ reauth_tokens : issues
+    users ||--o{ email_change_verifications : requests
+
+    %% 2. 시세 · 상품
+    instruments ||--o{ stock_candles : has
+
+    %% 3. 주문 · 체결 · 포트폴리오
+    users ||--o{ orders : places
+    accounts ||--o{ orders : has
+    instruments ||--o{ orders : has
+    practice_attempts |o..o{ orders : "optional, JPA 매핑 없음"
+    practice_price_sessions |o..o{ orders : "optional, JPA 매핑 없음"
+    orders ||--o| trades : fills
+    accounts ||--o{ trades : has
+    instruments ||--o{ trades : has
+    stock_replay_sessions |o--o{ trades : "optional, 주식만"
+    accounts ||--o{ holdings : holds
+    instruments ||--o{ holdings : has
+    holdings ||--o{ holding_lots : "FIFO 매입 lot"
+    trades ||--o| holding_lots : "매수 체결 1건 = lot 1건"
+    trades ||--o{ trade_allocations : "매도 체결이 소비"
+    holding_lots ||--o{ trade_allocations : consumed_by
+
+    %% 4. 손절/익절 예약 (Exit Plan)
+    users ||--o{ exit_plans : has
+    holdings ||--o{ exit_plans : has
+    instruments ||--o{ exit_plans : has
+    trades |o--o{ exit_plans : "매수 체결(선택)"
+    orders |o--o{ exit_plans : "트리거된 주문(선택)"
+    stock_replay_sessions |o--o{ exit_plans : "optional"
+    practice_attempts |o..o{ exit_plans : "optional, JPA 매핑 없음"
+    exit_plans ||--o{ exit_plan_conditions : has
+    users ||--o{ exit_plan_idempotency_keys : has
+    exit_plans ||--o{ exit_plan_idempotency_keys : has
+
+    %% 5. 투자 교육 · 튜토리얼
+    users ||--o{ practice_progresses : has
+    users ||..o{ practice_attempts : "user_id (JPA 매핑 없음)"
+    instruments |o--o{ practice_attempts : optional
+    users ||..o{ practice_completions : "user_id (JPA 매핑 없음)"
+    practice_market_reflections ||--o{ practice_completions : finalizes
+    users ||..o{ practice_market_observations : "user_id (JPA 매핑 없음)"
+    holdings ||--o{ practice_market_observations : observed_via
+    users ||..o{ practice_market_reflections : "user_id (JPA 매핑 없음)"
+    holdings ||--o{ practice_market_reflections : reflected_via
+    practice_attempts ||--o{ practice_risk_snapshots : has
+    trades ||--o{ practice_risk_snapshots : "매수 체결로 진입"
+    users ||..o{ practice_price_sessions : "user_id (JPA 매핑 없음)"
+    instruments ||..o{ practice_price_sessions : "instrument_id (JPA 매핑 없음)"
+
+    %% 6. 피드백 · AI 내러티브
+    instruments ||--o{ instrument_news_summaries : has
+    instruments ||--o{ market_news_items : has
+    instruments ||--o{ price_move_events : has
+    price_move_events ||--o{ price_move_event_sources : has
+    market_news_items ||--o{ price_move_event_sources : has
+    price_move_events ||--o{ price_move_peer_stats : has
+    trades ||--o| trade_feedbacks : has
+
+    %% 7. 매매일지 · 커뮤니티 · 관심종목
+    trades ||--o| buy_trade_journals : has
+    trades ||--o| sell_trade_journals : has
+    users ||--o{ community_posts : authors
+    instruments |o--o{ community_posts : optional
+    trades ||..o{ community_posts : "shared_trade_id (JPA 매핑 없음)"
+    community_posts |o--o| community_post_images : has
+    users ||--o{ community_post_images : uploads
+    community_posts ||--o{ community_post_likes : liked_by
+    users ||--o{ community_post_likes : likes
+    community_posts ||--o{ post_comments : has
+    users ||--o{ post_comments : writes
+    post_comments ||--o{ post_comments : replies_to
+    instruments ||--o{ watchlist_items : watched_as
+    users ||..o{ watchlist_items : "user_id (JPA 매핑 없음), UK(user_id, instrument_id)"
+
+    %% 관계 없는 독립 테이블
+    email_verifications {
+        bigint id PK
+    }
+    password_reset_verifications {
+        bigint id PK
+    }
+    market_data_imports {
+        bigint id PK
+    }
+    market_briefings {
+        bigint id PK
+    }
+```
 
 ---
 
@@ -202,6 +305,8 @@ erDiagram
     users ||--o{ orders : places
     accounts ||--o{ orders : has
     instruments ||--o{ orders : has
+    practice_attempts |o..o{ orders : "optional, JPA 매핑 없음"
+    practice_price_sessions |o..o{ orders : "optional, JPA 매핑 없음"
     orders ||--o| trades : fills
     accounts ||--o{ trades : has
     instruments ||--o{ trades : has
@@ -223,6 +328,9 @@ erDiagram
         enum status
         decimal quantity
         decimal limit_price
+        bigint practice_price_session_id "nullable, JPA 매핑 없음"
+        bigint practice_attempt_id "nullable, JPA 매핑 없음"
+        bigint practice_attempt_run_number "nullable, practice_attempt_id와 짝"
         varchar idempotency_key "UK(user_id, idempotency_key)"
         varchar request_hash
     }
@@ -271,6 +379,8 @@ erDiagram
 
 `orders`→`trades`, `trades`→`holding_lots`는 각각 `uk_trades_order UNIQUE(order_id)`, `uk_holding_lots_buy_trade UNIQUE(buy_trade_id)` 제약으로 실제 DB에서 1:0..1임이 보장된다(주문 1건은 체결 1건까지만, 매수 체결 1건은 lot 1건까지만).
 
+`orders.practice_price_session_id`·`practice_attempt_id`·`practice_attempt_run_number`는 튜토리얼 주문에만 채워지는 nullable 컬럼이다. `Order` 엔티티가 `PracticeAttempt`·`PracticePriceSession`을 `@ManyToOne`으로 참조하지 않아 점선이지만, `fk_orders_practice_attempt`·`fk_orders_practice_price_session` FK는 DB에 실제로 걸려 있다(5번 다이어그램의 점선 관계와 같은 패턴). `practice_attempt_id`와 `practice_attempt_run_number`는 `chk_orders_practice_attempt_attribution` CHECK로 항상 함께 NULL이거나 함께 채워짐이 보장된다.
+
 ## 4. 손절/익절 예약 (Exit Plan)
 
 ```mermaid
@@ -281,6 +391,7 @@ erDiagram
     trades |o--o{ exit_plans : "매수 체결(선택)"
     orders |o--o{ exit_plans : "트리거된 주문(선택)"
     stock_replay_sessions |o--o{ exit_plans : "optional"
+    practice_attempts |o..o{ exit_plans : "optional, JPA 매핑 없음"
     exit_plans ||--o{ exit_plan_conditions : has
     users ||--o{ exit_plan_idempotency_keys : has
     exit_plans ||--o{ exit_plan_idempotency_keys : has
@@ -294,6 +405,8 @@ erDiagram
         bigint triggered_order_id FK "nullable"
         bigint stock_replay_session_id FK "nullable"
         varchar intention_instance_key "UK(user_id, intention_instance_key), 교육 경로 전용"
+        bigint practice_attempt_id "nullable, JPA 매핑 없음, 튜토리얼 자동 예약 전용"
+        bigint practice_attempt_run_number "nullable, practice_attempt_id와 짝"
         decimal quantity
         decimal entry_price
         enum exit_price_type
@@ -317,6 +430,8 @@ erDiagram
         varchar request_hash
     }
 ```
+
+`exit_plans.practice_attempt_id`·`practice_attempt_run_number`는 튜토리얼 손절·익절 자동 예약(`ExitPlan.createPractice`)에만 채워지는 nullable 컬럼 쌍이다. `intention_instance_key`(교육 경로의 수동 예약)와는 별개 트랙이며, `chk_exit_plans_practice_attempt_attribution` CHECK로 둘이 항상 함께 NULL이거나 함께 채워짐이 보장된다. `orders`와 마찬가지로 JPA 매핑은 없지만 `fk_exit_plans_practice_attempt` FK는 DB에 걸려 있다.
 
 ## 5. 투자 교육 · 튜토리얼
 
