@@ -27,6 +27,7 @@ import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -47,14 +48,16 @@ public class LimitOrderFillService {
 	// 이미 order를 락으로 잡은 뒤 PENDING 여부를 재확인하므로 같은 주문에 이벤트가 중복 도착해도 두 번째 호출은 no-op.
 	// order.limit-fill-executor.enabled=false(폴백 경로)와, 실행기 큐 청크(fillBatch) 없이 주문 1건만
 	// 단독으로 체결해야 하는 호출부가 쓴다.
-	@Transactional
+	// ADR-0028 — holdings 신규 생성 INSERT 데드락 완화를 위해 READ COMMITTED로 좁혀 적용한다(계좌·보유
+	// 정합성은 명시적 FOR UPDATE 락에 의존하므로 영향 없음).
+	@Transactional(isolation = Isolation.READ_COMMITTED)
 	public void fillIfPending(Long orderId) {
 		fillOnePending(orderId, LocalDateTime.now(clock));
 	}
 
 	// attempt/run 정산(PracticeOrderSettlementService.settleCurrentRun)이 재시작·복기 등 과거 시각으로 재현할
 	// 체결가·시각을 명시해야 할 때 쓴다 — canonical 가격은 이 pricedAt 기준으로 계산된다.
-	@Transactional
+	@Transactional(isolation = Isolation.READ_COMMITTED)
 	public void fillIfPending(Long orderId, LocalDateTime pricedAt) {
 		fillOnePending(orderId, pricedAt);
 	}
@@ -66,7 +69,8 @@ public class LimitOrderFillService {
 	// 그대로 커밋하는 방식은 택하지 않았다 — Hibernate는 flush 중 예외가 나면 그 세션을 더 이상 신뢰할 수
 	// 없다고 보므로, 예외 이후에도 같은 영속성 컨텍스트로 나머지 건을 계속 처리하는 건 검증되지 않은 위험을
 	// 감수하는 것이다(ADR-0025 §결정 3의 선택 이유).
-	@Transactional
+	// ADR-0028 — holdings 신규 생성 INSERT 데드락 완화를 위해 READ COMMITTED로 좁혀 적용한다.
+	@Transactional(isolation = Isolation.READ_COMMITTED)
 	public void fillBatch(List<Long> orderIds) {
 		LocalDateTime pricedAt = LocalDateTime.now(clock);
 		for (Long orderId : orderIds) {
