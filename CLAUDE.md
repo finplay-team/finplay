@@ -65,5 +65,4 @@ FinPlay 백엔드 API 서버. Spring Boot 4.1 / Java 17 / Gradle (`build.gradle`
 | `docs/conventions/team.md` | 이슈→브랜치→PR 흐름, 이슈 분할 기준, 리뷰 지적 처리 |
 | `docs/api-routes.md` | API 엔드포인트 지도 (controller와 항상 동기화) |
 | `docs/api/` | 도메인별 요청·응답·오류 계약 (블랙박스 QA 근거) |
-| `checklist.md` | 현재 진행 중인 작업 체크리스트 |
 | `context-notes.md` | 세션 간 인수인계용 결정 기록 |
