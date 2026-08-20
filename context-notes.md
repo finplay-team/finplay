@@ -1169,3 +1169,22 @@ ADR-0021을 읽지 않는다(`ai/context-router.md`의 "엔티티/스키마 변�
   tick을 9초로 잘게 썼다 — 30초(가상 10분)씩 밀면 공개 분을 지나쳐 "열리기 전"을 관찰할 수 없다.
   시간 분산 관찰(2분 이상 3회)은 벽시계를 대본보다 크게 밀어(70초) 만들었다. 초과분은 clamp돼 대본이
   건너뛰지 않는다.
+
+## 이슈 #502·#503 — 튜토리얼 5단계 진행 판정 (2026-08-20)
+
+- **`steps[]`를 확장하지 않고 `tutorialStageProgress`를 새로 뒀다.** 기존 `steps[]`는 026의 1~4단계
+  (즐겨찾기→매수→관찰→매도/복기) 의미가 이미 박혀 있어, 같은 배열에 "주문 유형을 배웠는가"를 섞으면
+  한 배열이 두 의미를 갖는다. 프론트가 새 필드 하나를 읽는 비용이 그보다 싸다.
+- **자동 예약이 발동시킨 매도는 시장가 매도로 세지 않는다.** `ExitPlanFillService.executeMarketSell`이
+  손절·익절 청산을 `OrderType.MARKET`으로 만들기 때문에, 원장의 주문 유형만 보면 **프리셋 손절만 당한
+  사용자가 "시장가로 팔아봤다"로 판정된다.** `exit_plans.triggered_order_id`가 가리키는 주문을 제외한다
+  — `PracticeExitPlanQueryService.findTriggeredSellOrderStatuses`가 그 집합을 이미 주므로 새 쿼리가 없다.
+- **재시작 보상매도는 판정에 들어오지 않는다.** `PracticeAttemptRestartService`가 `attempt.restart()`
+  **이전의** run 번호로 `cleanupCurrentRun`을 부르므로 그 `MARKET SELL`은 직전 세대에 귀속되고, 새 run의
+  판정 범위 밖이다. 확인하고 넘어간 것이지 방어 코드를 넣은 것이 아니다.
+- **E-1의 잔액은 `TutorialAccountService.getOrCreateForUpdate` 재사용으로 채운다.** 새 조회 메서드를
+  만들지 않은 이유는 `PracticeAttemptRestartService`가 이미 같은 방식(리셋 후 같은 메서드로 다시 조회해
+  응답에 싣기)을 쓰고 있어서다. 두 호출부 모두 attempt를 먼저 잠근 트랜잭션 안이라 진입 경로와 잠금
+  순서(attempt → tutorial account)가 같다 — 순서가 같아야 #491류 교착을 새로 만들지 않는다.
+- **`GET /api/education/practice`의 `attempt` 필드는 계속 0이다.** tick과 함께 폴링되는 경로라 호출마다
+  계좌를 한 번 더 읽는 대가가 종목 선택(사용자가 한 번 부르는 호출)과 다르다.
