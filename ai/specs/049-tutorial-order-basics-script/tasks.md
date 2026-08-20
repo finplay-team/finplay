@@ -108,6 +108,11 @@
   시장가 왕복 → 범위 밖(130,000원) 지정가 매도 접수 성공 → 여러 tick 미체결 유지 → 취소 성공 →
   범위 안(108,000원) 재접수 → 다음 바퀴 안에 체결.
 - `ai/api-routes.md` — `advance-script` 행 추가, chart·tick 행에 `priceGuideRange` 명시.
+- `docs/api/education.md` — **`scenarioStage` 허용값에 `ORDER_BASICS`를 더한다.** 2단계 대본의 유일한
+  구간이 `id: ORDER_BASICS`·`act: null`이고 `PracticeScenarioNarrativeCalculator`가 `act`가 null이면
+  구간 id를 그대로 라벨로 내보내므로, 지금 계약이 못박은 7개(`IDLE_ENTRY`\|`ACT1`\|`ACT2`\|
+  `IDLE_REENTRY`\|`ACT3`\|`ACT4`\|`FINISHED`) 밖의 값이 나간다. `PracticeTutorialChartResponse`의
+  javadoc도 같은 목록을 들고 있어 함께 고친다 — 빠뜨리면 프론트가 모르는 값을 받는다.
 - `docs/api/education.md` — 안내 범위·409 게이트 반영. ⚠️ **지금 그 문서에 "판정만 하고 강제하지
   않는다"가 적혀 있다(#503). 이번 변경이 그 문장을 뒤집으므로 반드시 같은 커밋에서 고친다.**
 - `ai/prd.md` §3 — `TUTORIAL-STAGE-001`의 "미착수: 게이트 강제"를 갱신하고, 2단계 대본 분리 행을
