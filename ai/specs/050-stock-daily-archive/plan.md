@@ -139,7 +139,9 @@
 | `StockDailyCandleImportWriter` | 저장 트랜잭션 경계. 종목 하나의 실패가 다른 종목 트랜잭션을 말아 올리지 않게 분리 |
 | `RawDailyCandleDto` | KIS 응답 → 내부 모델 사이의 원시 표현 |
 
-배치 스케줄은 1분봉 수집(08:10)과 겹치지 않는 시각에 둔다 — 두 배치가 같은 KIS 레이트리밋을 나눠 쓰기 때문이다. 정확한 시각은 구현 시 확정한다.
+**배치 스케줄: 평일 08:25 KST로 확정** (2026-08-20, task 4 구현 시). 기존 시각과 겹치지 않는지 전수 확인했다 — 1분봉 정규 배치 08:10(`KisHistoricalCandleCollector.collect`), 1분봉 재시도 08:15/08:30/08:45(`market.stock.retry-cron`="0 15,30,45 8-10 * * MON-FRI"), 재생세션 확정 배치 08:40(`StockReplaySessionScheduler`). 08:25는 이 중 어디와도 겹치지 않으면서 1분봉 정규 배치가 끝날 여유(통상 수 분 이내 종료)를 둔다.
+
+**다중 인스턴스 락(STOCK-DAILY-011)에 대한 설계 메모**: `StockDailyCandleCollector`는 `StockCollectionLock`을 그대로 재사용하며, 락 키의 유일한 변수인 날짜값으로 1분봉 배치와 동일한 `targetEndDate`(직전 영업일)를 넘긴다. `StockCollectionLock`의 키는 `market:stock-collect:lock:{date}`로 날짜만으로 결정되므로, 이 값이 1분봉 배치와 같으면 **Redis 락 키도 같다** — 클래스를 수정하지 않고 그대로 재사용하는 이상 배치 종류를 구분하는 별도 네임스페이스가 없다. 실제로는 문제가 되지 않는다: 스케줄이 15분 이상 떨어져 있고 락 TTL이 600초(10분)이므로 1분봉 배치가 정상 종료됐다면 08:25에는 이미 풀려 있다. 드물게 못 얻더라도 COLLECT-STAB-001과 같은 방식으로 조용히 스킵하고, 다음 실행이 빈 구간을 그대로 이어서 채우므로(결정 1) 데이터 유실은 없다 — 재검토가 필요하면 `StockCollectionLock`에 배치 식별자를 추가하는 리팩터링을 후속 이슈로 고려한다.
 
 ## 입력 명세
 

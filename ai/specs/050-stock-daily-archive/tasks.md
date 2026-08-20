@@ -8,7 +8,7 @@ spec 하나당 3~7개 권장(`ai/specs/README.md`) 기준으로 5개로 나눈�
 
 - [x] **3. KIS 일봉 클라이언트** — `KisDailyCandleClient` / `KisDailyCandleClientImpl`(날짜 커서 역방향 페이징, 레이트리밋 재시도, 페이지 상한) / `FakeKisDailyCandleClient`. 단위 테스트로 페이징 종료 조건·응답 검증 규칙·상한 도달 시 중단 검증.
 
-- [ ] **4. 수집기 + Writer** — `StockDailyCandleCollector`(빈 구간 계산, 락, 종목 단위 실패 격리, 이력 기록), `StockDailyCandleImportWriter`(저장 트랜잭션 경계), 배치 스케줄 등록. 단위 테스트로 빈 구간 계산 4케이스(최초·정상·재실행·부분 보유).
+- [x] **4. 수집기 + Writer** — `StockDailyCandleCollector`(빈 구간 계산, 락, 종목 단위 실패 격리, 이력 기록), `StockDailyCandleImportWriter`(저장 트랜잭션 경계), 배치 스케줄 등록. 단위 테스트로 빈 구간 계산 4케이스(최초·정상·재실행·부분 보유).
 
 - [ ] **5. 통합 테스트 + 개발용 트리거 + 문서 갱신** — Testcontainers로 최초 전량 → 증분 → 재실행 행 수 검증, 종목 1개 실패 시 나머지 저장 검증, `stock_candles` 무변경 회귀. `POST /api/dev/stock-daily-imports`(local 프로필 전용) 추가. `ai/api-routes.md`에 그 라우트 행 추가(CLAUDE.md 규칙 7), `ai/prd.md` §3 구현 현황의 MKT-011 행을 완료로 갱신(규칙 10).
 
