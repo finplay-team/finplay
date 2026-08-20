@@ -1,9 +1,0 @@
-{
-  "version": "0.0.1",
-  "configurations": [
-    {
-      "name": "finplay-frontend-preview",
-      "url": "http://localhost:5173"
-    }
-  ]
-}
