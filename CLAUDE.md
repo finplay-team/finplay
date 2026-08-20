@@ -21,7 +21,7 @@ FinPlay 백엔드 API 서버. Spring Boot 4.1 / Java 17 / Gradle (`build.gradle`
 4. **완료 선언 전 `./gradlew build` 실행.** 실패하면 고치고 재실행한다.
 5. **컨벤션은 3개 문서로 나뉘어 있다.** 코드는 `docs/conventions/code.md`(레이어 구조, 네이밍, API 응답 포맷, 예외 처리, 리뷰 체크 질문), 브랜치·커밋·PR은 `docs/conventions/git.md`, 이슈·리뷰 운영은 `docs/conventions/team.md`를 따른다.
 6. **새 소스 파일 첫 줄에 한 줄 한국어 주석**으로 파일 역할을 적는다 (`// 주문 생성/조회를 담당하는 서비스`).
-7. **controller를 추가/변경하면 `docs/api-routes.md`(라우트 목록)와 `docs/api-contracts.md`(계약 상세)를 같은 커밋에서 함께 갱신한다.**
+7. **controller를 추가/변경하면 `docs/api-routes.md`(라우트 목록)와 `docs/api/`의 해당 도메인 파일(계약 상세)을 같은 커밋에서 함께 갱신한다.**
 8. **스키마 변경은 Flyway 마이그레이션으로만.** 엔티티 변경 시 `db/migration/V{N}__*.sql` 동반 필수, 머지된 마이그레이션 수정 금지 (ADR-0004). **파괴적 변경(컬럼·테이블 삭제, 이름 변경, 타입 축소, NOT NULL 승격)은 한 배포에 담지 않고 두 배포로 나눈다** — 자동 배포의 롤백은 앱만 되돌리고 스키마는 되돌리지 않기 때문이다 (ADR-0021 §결정 7).
 9. **구현 시작 전 `docs/agent-mistakes.md`를 읽는다.** 하네스/빌드 관련 실수를 재현·확인하면 같은 파일에 기록한다 (재현된 실수만, 추측 금지).
 10. **요구사항 ID의 구현 상태를 바꾸면 `docs/prd.md` §3 "구현 현황" 행을 같은 커밋에서 갱신한다.** 규칙 7이 controller ↔ API 문서를 묶는 것과 같은 취지로, 이 표가 "무엇이 실제로 동작하는가"의 정본이기 때문이다 (PR #204에서 신설).
@@ -64,6 +64,6 @@ FinPlay 백엔드 API 서버. Spring Boot 4.1 / Java 17 / Gradle (`build.gradle`
 | `docs/conventions/git.md` | 브랜치 네이밍·커밋 메시지·PR 제목·PR 본문 템플릿·머지 조건 |
 | `docs/conventions/team.md` | 이슈→브랜치→PR 흐름, 이슈 분할 기준, 리뷰 지적 처리 |
 | `docs/api-routes.md` | API 엔드포인트 지도 (controller와 항상 동기화) |
-| `docs/api-contracts.md` | 엔드포인트별 요청·응답·오류 계약 (블랙박스 QA 근거) |
+| `docs/api/` | 도메인별 요청·응답·오류 계약 (블랙박스 QA 근거) |
 | `checklist.md` | 현재 진행 중인 작업 체크리스트 |
 | `context-notes.md` | 세션 간 인수인계용 결정 기록 |

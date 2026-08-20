@@ -19,7 +19,7 @@ FinPlay 백엔드 API 서버. Spring Boot 4.1 / Java 17 / Gradle(`build.gradle`,
 - 테스트 수준은 `docs/adr/0003-testing-strategy.md`를 따른다. Mock 성공을 실제 DB·외부 API 검증으로 표현하지 않는다.
 - 엔티티/스키마 변경은 `docs/adr/0004-flyway-migrations.md`에 따라 새 Flyway 마이그레이션을 추가한다. 머지된 마이그레이션은 수정하지 않는다. **파괴적 변경(컬럼·테이블 삭제, 이름 변경, 타입 축소, NOT NULL 승격)은 한 배포에 담지 않고 두 배포로 나눈다** — 자동 배포의 롤백은 앱만 되돌리고 스키마는 되돌리지 않는다 (ADR-0021 §결정 7).
 - 새 Java 소스 파일 첫 줄에는 파일 역할을 설명하는 한 줄 한국어 주석을 둔다.
-- controller를 추가·변경하면 `docs/api-routes.md`(라우트 목록)와 `docs/api-contracts.md`(계약 상세)를 같은 작업에서 함께 동기화한다.
+- controller를 추가·변경하면 `docs/api-routes.md`(라우트 목록)와 `docs/api/`의 해당 도메인 파일(계약 상세)을 같은 작업에서 함께 동기화한다.
 - 요구사항 ID의 구현 상태를 바꾸면(미착수 → 완료, 새 엔드포인트 제공 등) `docs/prd.md` §3 "구현 현황" 행도 같은 작업에서 갱신하고 근거 칸에 PR 번호를 적는다. 기능 제공 범위가 그대로인 리팩터링·테스트·문서 변경은 대상이 아니다.
 
 ## 명령과 완료 기준

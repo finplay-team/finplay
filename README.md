@@ -36,7 +36,7 @@ FinPlay 백엔드 API 서버. Spring Boot 4.1 / Java 17 / Gradle (`build.gradle`
 | [`docs/adr/`](docs/adr/) | 아키텍처 결정 기록 |
 | [`docs/specs/`](docs/specs/) | 기능 명세 (spec → plan → tasks) |
 | [`docs/api-routes.md`](docs/api-routes.md) | API 엔드포인트 지도 (라우트 목록·인증 규칙) |
-| [`docs/api-contracts.md`](docs/api-contracts.md) | 엔드포인트별 요청·응답·오류 계약 |
+| [`docs/api/`](docs/api/) | 도메인별 요청·응답·오류 계약 |
 
 ## 팀 규칙 요약
 

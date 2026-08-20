@@ -1,6 +1,6 @@
 # API 계약 — feedback
 
-`docs/api-contracts.md`의 "012 AI 피드백" 절을 옮겨 정리한 문서다. 전체 라우트를 한눈에 보는 지도는 `docs/api-routes.md`에 있다.
+"012 AI 피드백" 절의 API 계약 상세다. 전체 라우트를 한눈에 보는 지도는 `docs/api-routes.md`에 있다.
 
 **controller를 추가/변경하면 `docs/api-routes.md`의 라우트 목록과 이 문서를 같은 커밋에서 함께 갱신한다** (CLAUDE.md 규칙, reviewer 리뷰 모드 점검 항목).
 
