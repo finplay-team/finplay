@@ -28,8 +28,10 @@ import com.finplay.api.order.domain.ExitPlanStatus;
 import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.domain.OrderStatus;
 import com.finplay.api.order.domain.OrderType;
+import com.finplay.api.order.dto.request.LimitOrderCreateRequest;
 import com.finplay.api.order.dto.request.OrderCreateRequest;
 import com.finplay.api.order.repository.ExitPlanRepository;
+import com.finplay.api.order.service.LimitOrderService;
 import com.finplay.api.order.service.OrderService;
 import com.finplay.api.order.service.TradeService;
 import com.finplay.api.portfolio.domain.Holding;
@@ -98,6 +100,8 @@ class PracticeExitPresetOcoIntegrationTest {
 	private PracticeAttemptRestartService restartService;
 	@Autowired
 	private TradeService tradeService;
+	@Autowired
+	private LimitOrderService limitOrderService;
 	@Autowired
 	private PracticeStageProgressCalculationService stageProgressCalculationService;
 	@Autowired
@@ -199,7 +203,7 @@ class PracticeExitPresetOcoIntegrationTest {
 		buy(fixture);
 		assertThat(stageProgress(fixture).marketBuySellCompleted()).isFalse();
 		// 기본 프리셋으로 들어온 진입은 "프리셋을 배웠다"가 아니다 — 고른 적이 없다.
-		assertThat(stageProgress(fixture).exitPresetApplied()).isFalse();
+		assertThat(stageProgress(fixture).exitPresetSelected()).isFalse();
 
 		// tick — 손절이 발동해 포지션이 청산된다. 원장에는 MARKET 매도가 남는다.
 		clock.set(BASE_NOW.plusSeconds(23));
@@ -208,12 +212,15 @@ class PracticeExitPresetOcoIntegrationTest {
 		assertThat(onlyExitPlan(fixture).getTriggeredOrder().getOrderType()).isEqualTo(OrderType.MARKET);
 		assertThat(stageProgress(fixture).marketBuySellCompleted()).isFalse();
 
-		// 프리셋을 직접 고르고 그 프리셋으로 재진입하면 프리셋 단계가 열린다.
+		// 프리셋을 직접 고르면 그 순간 프리셋 단계가 열린다. **여기서 RELAXED 대신 BALANCED를 골라도
+		// 결과가 같아야 한다** — 기본값과 명시 선택을 snapshot으로 구분하려던 판정은 세 보기 중
+		// "보통"에서만 재진입 없이 통과시키는 구멍이 있었다(리뷰 지적).
 		attemptService.selectExitPreset(fixture.userId(), Market.CRYPTO, ExitPreset.RELAXED);
-		assertThat(stageProgress(fixture).exitPresetApplied()).isFalse();
+		assertThat(stageProgress(fixture).exitPresetSelected()).isTrue();
 		clock.set(BASE_NOW.plusSeconds(30));
 		buy(fixture);
-		assertThat(stageProgress(fixture).exitPresetApplied()).isTrue();
+		// 진입 뒤에도 유지되고, 다음 진입을 준비하며 프리셋을 또 바꿔도 되잠기지 않는다.
+		assertThat(stageProgress(fixture).exitPresetSelected()).isTrue();
 
 		// 직접 시장가로 팔아야 그제야 시장가 단계가 통과된다.
 		clock.set(BASE_NOW.plusSeconds(31));
@@ -241,6 +248,56 @@ class PracticeExitPresetOcoIntegrationTest {
 				assertThat(entry.entrySequence()).isEqualTo(1);
 				assertThat(entry.buyOrderType()).isEqualTo("MARKET");
 			});
+	}
+
+	/**
+	 * 사전 리뷰 권장 — <b>지정가 왕복이 실제 원장에서 판정되는 것을 통합으로 고정한다.</b>
+	 *
+	 * <p>이 판정은 전적으로 {@code orders.practice_attempt_id} 귀속에 기댄다. 지정가 매수·매도 어느
+	 * 한쪽에서 귀속이 빠지면 {@code limitBuySellCompleted}는 <b>영원히 false</b>가 되는데, 단위 테스트와
+	 * 리포지터리 슬라이스는 주문 행을 직접 만들어 넣으므로 전부 초록으로 남는다.
+	 *
+	 * <p>2막-a 루머 구간은 10180에서 9750까지 내려간다. 매수는 10,000에 걸면 가격이 그 아래로 내려올 때
+	 * 체결되고, 매도는 9,800에 걸면 아직 그 위인 분에서 체결된다.
+	 */
+	@Test
+	void aLimitRoundTripCompletesTheLimitStageAndTagsTheEntry() {
+		Fixture fixture = tutorialRunAtRumorStage("limit-stage");
+
+		clock.set(BASE_NOW.plusSeconds(1));
+		limitOrder(fixture, OrderSide.BUY, new BigDecimal("10000"));
+		assertThat(stageProgress(fixture).limitBuySellCompleted()).isFalse();
+
+		// 루머 구간을 흘려 매수 지정가를 체결시킨다.
+		clock.set(BASE_NOW.plusSeconds(15));
+		chartService.tick(fixture.userId(), Market.CRYPTO);
+		assertThat(tradeService.netFilledQuantity(fixture.attemptId(), 1L)).isEqualByComparingTo(QUANTITY);
+		// 매수만으로는 왕복이 아니다.
+		assertThat(stageProgress(fixture).limitBuySellCompleted()).isFalse();
+
+		// 진입이 지정가로 열렸다는 것이 완료 대조 배열에 남는다.
+		PracticeAttempt attempt = attemptRepository.findById(fixture.attemptId()).orElseThrow();
+		assertThat(practiceEntryComparisonService.findCurrentRunEntries(attempt, null))
+			.singleElement()
+			.satisfies(entry -> assertThat(entry.buyOrderType()).isEqualTo("LIMIT"));
+
+		// 지정가 매도 접수 — 전량이 자동 예약에 잡혀 있어도 접수된다(042 EXITPRESET-016).
+		limitOrder(fixture, OrderSide.SELL, new BigDecimal("9800"));
+		clock.set(BASE_NOW.plusSeconds(18));
+		chartService.tick(fixture.userId(), Market.CRYPTO);
+
+		assertThat(tradeService.netFilledQuantity(fixture.attemptId(), 1L)).isEqualByComparingTo(BigDecimal.ZERO);
+		PracticeStageProgressResponse progress = stageProgress(fixture);
+		assertThat(progress.limitBuySellCompleted()).isTrue();
+		// 시장가는 한 번도 쓰지 않았다 — 지정가 왕복이 시장가 단계까지 열어 주지 않는다.
+		assertThat(progress.marketBuySellCompleted()).isFalse();
+	}
+
+	private void limitOrder(Fixture fixture, OrderSide side, BigDecimal limitPrice) {
+		limitOrderService.createLimitOrder(
+			fixture.userId(),
+			"limit-stage-" + UUID.randomUUID(),
+			new LimitOrderCreateRequest(Market.CRYPTO, fixture.instrumentId(), side, QUANTITY, limitPrice));
 	}
 
 	private PracticeStageProgressResponse stageProgress(Fixture fixture) {

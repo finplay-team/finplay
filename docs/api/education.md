@@ -273,12 +273,12 @@ holding 관찰은 buyTrade→order에서 sessionId를 서버가 역추적한다(
 | 필드 | 판정 |
 |---|---|
 | `marketBuySellCompleted` | 이 실행에 `MARKET` 매수 체결이 있고, **사용자가 낸** `MARKET` 매도 체결도 있다 |
-| `limitBuySellCompleted` | 이 실행에 `LIMIT` 매수 체결과 `LIMIT` 매도 체결이 둘 다 있다 |
-| `exitPresetApplied` | 이 실행에서 프리셋을 **직접 골랐고**(`PUT .../exit-preset`), 그 프리셋으로 만들어진 진입 snapshot이 있다 |
+| `limitBuySellCompleted` | 이 실행에 `LIMIT` 매수 체결과 `LIMIT` 매도 체결이 둘 다 있다. **STOCK 실행에서는 영원히 `false`다** — 지정가 주문 경로가 코인 전용이라(`LimitOrderCreationService`가 `market != CRYPTO`를 400으로 거부, `POST .../limit-orders`도 코인만) 주식 튜토리얼에는 이 단계를 통과할 수단이 없다. 프론트가 5단계 진행바를 시장 구분 없이 쓰면 주식에서 막힌다 |
+| `exitPresetSelected` | 이 실행에서 프리셋을 **직접 골랐는가**(`PUT .../exit-preset`) |
 
-**손절·익절 예약이 발동시킨 매도는 `marketBuySellCompleted`에서 뺀다.** 그 매도도 원장에는 `MARKET` 주문으로 남지만(`ExitPlanFillService`) 사용자가 낸 주문이 아니라, 세면 프리셋에 청산당하기만 한 사용자가 이 단계를 통과한 것으로 표시된다. 제외 근거는 `exit_plans.triggered_order_id`다. 재시작 보상 매도도 `MARKET`이지만 **직전 실행 세대에 귀속**되므로 애초에 판정 범위 밖이다.
+**손절·익절 예약이 발동시킨 매도는 왕복 판정에서 뺀다.** 그 매도도 원장에는 `MARKET` 주문으로 남지만(`ExitPlanFillService`) 사용자가 낸 주문이 아니라, 세면 프리셋에 청산당하기만 한 사용자가 이 단계를 통과한 것으로 표시된다. 제외 근거는 `exit_plans.triggered_order_id`다. 제외는 **두 주문 유형 모두에 적용된다** — 현재 예약 청산은 `MARKET`으로만 만들어지지만, 나중에 지정가 청산이 생겨도 계약이 그대로 성립하도록 유형을 가리지 않는다. 재시작 보상 매도도 `MARKET`이지만 **직전 실행 세대에 귀속**되므로 애초에 판정 범위 밖이다. **부분 매도도 왕복으로 센다** — 산 수량을 다 팔지 않아도 "사고팔아 봤다"는 성립한다.
 
-`exitPresetApplied`가 "고르기"와 "적용된 진입"을 함께 보는 이유는 두 가지다. 고르지 않은 사용자의 진입에도 snapshot에는 기본 프리셋(`BALANCED`)이 박히므로(042 EXITPRESET-002) snapshot만 보면 아무나 통과하고, 프리셋은 보유 중에 바꿀 수 없어 **다음 진입에만** 적용되므로(EXITPRESET-003) 고르기만 한 시점은 아직 배운 것이 아니다.
+**`exitPresetSelected`는 "고른 프리셋으로 진입까지 했는가"가 아니다.** 그렇게 판정하면 두 방향으로 틀리기 때문이다. (1) 고르지 않은 사용자의 진입에도 snapshot에는 기본 프리셋 `BALANCED`가 박히므로(042 EXITPRESET-002), 앞 단계를 기본값으로 마친 사용자가 4단계에서 **세 보기 중 "보통"을 고르는 순간** 재진입 없이 통과한다. (2) 이미 통과한 사용자가 다음 진입을 준비하며 프리셋을 바꾸면(042 EXITPRESET-003이 허용하는 정상 조작) 그 프리셋의 진입이 아직 없어 **통과가 취소되고 화면이 이미 연 단계를 되잠근다.** "골랐는가"만 보면 둘 다 사라지고, 재시작이 `attempt.exit_preset`을 지우므로 실행 안에서 단조롭게 증가한다.
 
 **판정만 하고 강제하지 않는다.** 잘못된 순서의 주문을 409로 거부하는 게이트는 이 계약에 없다 — 사용자가 API를 직접 불러 순서를 건너뛸 수 있으며, 이는 보안이 아니라 학습 순서다.
 

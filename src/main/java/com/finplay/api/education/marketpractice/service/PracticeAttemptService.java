@@ -222,16 +222,19 @@ public class PracticeAttemptService {
 	/**
 	 * 종목 선택·프리셋 선택 응답이 실을 튜토리얼 계좌를 읽는다(이슈 #502).
 	 *
-	 * <p><b>새 조회 메서드를 만들지 않고 {@code getOrCreateForUpdate}를 그대로 쓴다</b> —
-	 * {@code PracticeAttemptRestartService}가 이미 같은 방식(같은 트랜잭션에서 리셋한 계좌를 이 메서드로
-	 * 다시 읽어 응답에 싣기)을 쓰고 있고, 두 호출부 모두 attempt를 먼저 잠근 트랜잭션 안이라 진입 경로와
-	 * 잠금 순서(attempt → tutorial account)가 같다. 순서가 같아야 이슈 #491류 교착을 새로 만들지 않는다.
+	 * <p><b>잠금 없이 먼저 읽고, 없을 때만 get-or-create로 떨어진다.</b> 이 두 호출부는 계좌를 한 글자도
+	 * 바꾸지 않으므로 X 잠금을 걸 이유가 없다 — 걸면 무변경 응답이 지정가 취소·정정이나 예약 청산 정산과
+	 * 경합해 대기한다(attempt 잠금은 그 트랜잭션들을 직렬화하지 못한다). 폴백을 남겨 두는 것은 계좌가
+	 * 아직 없는 예외 경우(계좌 도입 이전 attempt)에도 0원을 내려보내지 않기 위해서이고, 그 경로는 진입이
+	 * 이미 계좌를 만들어 두므로 사실상 도달하지 않는다.
 	 *
-	 * <p>계좌는 진입 시점에 이미 만들어져 있으므로 여기서 생성이 일어나는 일은 사실상 없다. get-or-create를
-	 * 쓰는 것은 그 예외 경우(계좌 도입 이전 attempt 등)에도 0원을 내려보내지 않기 위해서다.
+	 * <p>진입 경로와 잠금 순서(attempt → tutorial account)는 폴백에서도 같다 — 순서가 같아야 이슈 #491류
+	 * 교착을 새로 만들지 않는다.
 	 */
 	private TutorialAccount tutorialAccountFor(Long userId, Market market) {
-		return tutorialAccountService.getOrCreateForUpdate(
-			userId, toAccountMarket(market), LocalDateTime.now(clock));
+		com.finplay.api.account.domain.Market accountMarket = toAccountMarket(market);
+		return tutorialAccountService.find(userId, accountMarket)
+			.orElseGet(() -> tutorialAccountService.getOrCreateForUpdate(
+				userId, accountMarket, LocalDateTime.now(clock)));
 	}
 }

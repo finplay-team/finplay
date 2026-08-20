@@ -2,7 +2,6 @@
 package com.finplay.api.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -10,7 +9,6 @@ import static org.mockito.Mockito.when;
 import com.finplay.api.education.marketpractice.domain.ExitPreset;
 import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
 import com.finplay.api.education.marketpractice.dto.response.PracticeStageProgressResponse;
-import com.finplay.api.education.marketpractice.repository.PracticeRiskSnapshotRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.order.domain.ExitPlanStatus;
@@ -38,17 +36,13 @@ class PracticeStageProgressCalculationServiceTest {
 	private final TradeService tradeService = mock(TradeService.class);
 	private final PracticeExitPlanQueryService practiceExitPlanQueryService = mock(
 		PracticeExitPlanQueryService.class);
-	private final PracticeRiskSnapshotRepository practiceRiskSnapshotRepository = mock(
-		PracticeRiskSnapshotRepository.class);
 	private final PracticeStageProgressCalculationService service = new PracticeStageProgressCalculationService(
-		tradeService, practiceExitPlanQueryService, practiceRiskSnapshotRepository);
+		tradeService, practiceExitPlanQueryService);
 
 	@BeforeEach
-	void stubNoExitPlansAndNoSnapshots() {
+	void stubNoExitPlans() {
 		when(practiceExitPlanQueryService.findTriggeredSellOrderStatuses(anyLong(), anyLong()))
 			.thenReturn(Map.of());
-		when(practiceRiskSnapshotRepository.existsByAttemptIdAndRunNumberAndExitPreset(anyLong(), anyLong(), any()))
-			.thenReturn(false);
 	}
 
 	// 종목을 고르기 전에는 실행 자체가 없다 — 원장을 읽지 않고 전부 false다.
@@ -140,40 +134,42 @@ class PracticeStageProgressCalculationServiceTest {
 		assertThat(progress.marketBuySellCompleted()).isTrue();
 	}
 
-	// 프리셋을 고르지 않은 사용자의 진입에도 snapshot에는 기본 프리셋이 박힌다(042 EXITPRESET-002).
-	// snapshot만 보고 판정하면 아무나 통과하므로 "직접 골랐는가"를 함께 본다.
+	// 아직 고르지 않았으면 미통과다. 이 사용자의 진입 snapshot에도 기본 프리셋 BALANCED가 박히지만
+	// (042 EXITPRESET-002) 그것으로 통과시키지 않는다 — 고른 적이 없기 때문이다.
 	@Test
-	void anEntryUnderTheDefaultPresetDoesNotCountAsLearningThePreset() {
+	void notChoosingAPresetLeavesTheStageIncomplete() {
 		stubFills(fill(101L, OrderSide.BUY, OrderType.MARKET));
-		when(practiceRiskSnapshotRepository
-			.existsByAttemptIdAndRunNumberAndExitPreset(ATTEMPT_ID, RUN, ExitPreset.BALANCED))
-			.thenReturn(true);
 
 		PracticeStageProgressResponse progress = service.calculate(startedAttempt(null));
 
-		assertThat(progress.exitPresetApplied()).isFalse();
+		assertThat(progress.exitPresetSelected()).isFalse();
 	}
 
-	// 고르기만 하고 아직 사지 않았으면 적용된 진입이 없다 — 프리셋은 다음 진입에만 적용된다.
 	@Test
-	void choosingAPresetWithoutEnteringDoesNotCompleteTheStage() {
+	void choosingAPresetCompletesTheStage() {
 		stubFills();
 
 		PracticeStageProgressResponse progress = service.calculate(startedAttempt(ExitPreset.CAUTIOUS));
 
-		assertThat(progress.exitPresetApplied()).isFalse();
+		assertThat(progress.exitPresetSelected()).isTrue();
 	}
 
+	/**
+	 * <b>단조성.</b> 이미 통과한 사용자가 다음 진입을 준비하며 프리셋을 바꾸는 것은 042 EXITPRESET-003이
+	 * 허용하는 정상 조작이다. "고른 프리셋으로 진입까지 했는가"로 판정하면 바꾼 프리셋의 진입이 아직
+	 * 없어 <b>통과가 취소되고 화면이 이미 연 단계를 되잠근다.</b>
+	 */
 	@Test
-	void choosingAPresetAndEnteringUnderItCompletesTheStage() {
-		stubFills(fill(101L, OrderSide.BUY, OrderType.MARKET));
-		when(practiceRiskSnapshotRepository
-			.existsByAttemptIdAndRunNumberAndExitPreset(ATTEMPT_ID, RUN, ExitPreset.CAUTIOUS))
-			.thenReturn(true);
+	void changingThePresetAfterPassingKeepsTheStageComplete() {
+		stubFills(
+			fill(101L, OrderSide.BUY, OrderType.MARKET),
+			fill(102L, OrderSide.SELL, OrderType.MARKET));
+		PracticeAttempt attempt = startedAttempt(ExitPreset.CAUTIOUS);
+		attempt.selectExitPreset(ExitPreset.RELAXED, NOW);
 
-		PracticeStageProgressResponse progress = service.calculate(startedAttempt(ExitPreset.CAUTIOUS));
+		PracticeStageProgressResponse progress = service.calculate(attempt);
 
-		assertThat(progress.exitPresetApplied()).isTrue();
+		assertThat(progress.exitPresetSelected()).isTrue();
 	}
 
 	private void stubFills(PracticeRunFillKindDto... fills) {

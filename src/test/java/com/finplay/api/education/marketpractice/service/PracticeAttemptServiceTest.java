@@ -272,8 +272,11 @@ class PracticeAttemptServiceTest {
 				exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.INSTRUMENT_NOT_TRADABLE));
 	}
 
+	// 진입·재시작은 get-or-create를, 종목·프리셋 선택은 비잠금 find를 쓴다(이슈 #502). 대상이 잠금이 아닌
+	// 테스트들이 양쪽 어느 경로로 들어와도 같은 계좌를 보도록 둘 다 스텁한다.
 	private void stubTutorialAccount(com.finplay.api.account.domain.Market market, TutorialAccount account) {
 		when(tutorialAccountService.getOrCreateForUpdate(USER_ID, market, NOW)).thenReturn(account);
+		when(tutorialAccountService.find(USER_ID, market)).thenReturn(Optional.of(account));
 	}
 
 	// legacy completion만 있는 사용자에게 만들어 주는 읽기 전용 replay는 대본 커서가 없고 tick도 돌지 않는다.
@@ -417,6 +420,49 @@ class PracticeAttemptServiceTest {
 		assertThat(response.status()).isEqualTo("IN_PROGRESS");
 		assertThat(response.tutorialCashBalance()).isEqualTo(9_000_000L);
 		assertThat(response.tutorialAvailableCash()).isEqualTo(9_000_000L);
+	}
+
+	/**
+	 * 계좌를 한 글자도 바꾸지 않는 응답이 계좌 행에 X 잠금을 걸지 않는지 고정한다(이슈 #502 리뷰 지적).
+	 *
+	 * <p>{@code getOrCreateForUpdate}는 {@code SELECT ... FOR UPDATE}라, 무변경 응답이 이것을 쓰면
+	 * attempt 잠금이 직렬화하지 못하는 트랜잭션(지정가 취소·정정, 예약 청산 정산)과 경합해 대기한다.
+	 */
+	@Test
+	void selectInstrumentReadsTheTutorialAccountWithoutLockingIt() {
+		PracticeAttempt attempt = selectingAttempt(Market.CRYPTO);
+		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
+			.thenReturn(Optional.of(attempt));
+		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID))
+			.thenReturn(tutorialInstrument(Market.CRYPTO, true));
+		when(practiceRiskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(ATTEMPT_ID, 1L))
+			.thenReturn(Optional.empty());
+
+		service.selectInstrument(USER_ID, Market.CRYPTO, INSTRUMENT_ID);
+
+		verify(tutorialAccountService).find(USER_ID, com.finplay.api.account.domain.Market.CRYPTO);
+		verify(tutorialAccountService, never())
+			.getOrCreateForUpdate(anyLong(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+	}
+
+	// 계좌가 아직 없는 예외 경우(계좌 도입 이전 attempt)에는 0원을 내려보내지 않고 get-or-create로 떨어진다.
+	@Test
+	void selectInstrumentFallsBackToGetOrCreateWhenTheAccountIsMissing() {
+		PracticeAttempt attempt = selectingAttempt(Market.CRYPTO);
+		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
+			.thenReturn(Optional.of(attempt));
+		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID))
+			.thenReturn(tutorialInstrument(Market.CRYPTO, true));
+		when(practiceRiskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(ATTEMPT_ID, 1L))
+			.thenReturn(Optional.empty());
+		when(tutorialAccountService.find(USER_ID, com.finplay.api.account.domain.Market.CRYPTO))
+			.thenReturn(Optional.empty());
+
+		PracticeAttemptResponse response = service.selectInstrument(USER_ID, Market.CRYPTO, INSTRUMENT_ID);
+
+		assertThat(response.tutorialCashBalance()).isEqualTo(10_000_000L);
+		verify(tutorialAccountService)
+			.getOrCreateForUpdate(USER_ID, com.finplay.api.account.domain.Market.CRYPTO, NOW);
 	}
 
 	// 프리셋 선택 응답도 같은 DTO를 쓰므로 같은 결함이 있었다(이슈 #502).

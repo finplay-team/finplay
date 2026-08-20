@@ -219,7 +219,7 @@ class PracticeScenarioFullJourneyIntegrationTest {
 		assertThat(completed.tutorialStageProgress().marketBuySellCompleted()).isFalse();
 		assertThat(completed.tutorialStageProgress().limitBuySellCompleted()).isFalse();
 		// 프리셋은 직접 골랐고 그 프리셋으로 진입까지 했다.
-		assertThat(completed.tutorialStageProgress().exitPresetApplied()).isTrue();
+		assertThat(completed.tutorialStageProgress().exitPresetSelected()).isTrue();
 
 		// 완료 대조의 기준가는 대본 종점이다 — 사용자가 실제로 어디까지 갔는지와 무관하다(SCENARIO-021).
 		assertThat(completed.priceAfterSell()).isEqualByComparingTo(SCRIPT_FINAL_PRICE);

@@ -1,10 +1,8 @@
 // 현재 실행 세대의 체결 원장을 읽어 튜토리얼 5단계 중 주문 방법·프리셋 단계의 완료 여부를 판정하는 조회 서비스
 package com.finplay.api.education.marketpractice.service;
 
-import com.finplay.api.education.marketpractice.domain.ExitPreset;
 import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
 import com.finplay.api.education.marketpractice.dto.response.PracticeStageProgressResponse;
-import com.finplay.api.education.marketpractice.repository.PracticeRiskSnapshotRepository;
 import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.domain.OrderType;
 import com.finplay.api.order.service.PracticeExitPlanQueryService;
@@ -29,7 +27,6 @@ public class PracticeStageProgressCalculationService {
 
 	private final TradeService tradeService;
 	private final PracticeExitPlanQueryService practiceExitPlanQueryService;
-	private final PracticeRiskSnapshotRepository practiceRiskSnapshotRepository;
 
 	@Transactional(readOnly = true)
 	public PracticeStageProgressResponse calculate(PracticeAttempt attempt) {
@@ -48,7 +45,9 @@ public class PracticeStageProgressCalculationService {
 		return new PracticeStageProgressResponse(
 			roundTripCompleted(fills, triggeredSellOrderIds, OrderType.MARKET),
 			roundTripCompleted(fills, triggeredSellOrderIds, OrderType.LIMIT),
-			exitPresetApplied(attempt, attemptId, runNumber));
+			// 이 실행에서 프리셋을 직접 골랐는가. 재시작이 attempt.exitPreset을 지우므로 실행 안에서
+			// 단조롭게 증가한다 — 한 번 통과한 단계가 드롭다운 조작만으로 되잠기지 않는다.
+			attempt.getExitPreset() != null);
 	}
 
 	/**
@@ -78,23 +77,4 @@ public class PracticeStageProgressCalculationService {
 		return bought && sold;
 	}
 
-	/**
-	 * 프리셋을 <b>고르고 그 프리셋으로 진입까지</b> 했는가.
-	 *
-	 * <p>{@code attempt.exitPreset}이 {@code null}이 아니라는 것은 이 실행에서 사용자가 직접 골랐다는
-	 * 뜻이다(재시작이 이 값을 지운다). 고르지 않은 사용자의 진입도 snapshot에는 기본 프리셋이 박히므로
-	 * (042 EXITPRESET-002) snapshot만 보면 아무나 통과한다 — 그래서 두 조건을 함께 본다.
-	 *
-	 * <p>고른 값과 <b>같은</b> 프리셋의 snapshot을 찾는 이유는 프리셋 선택이 보유 중에는 막히고 다음
-	 * 진입에만 적용되기 때문이다(042 EXITPRESET-003). 기본값으로 진입한 뒤 프리셋을 바꾸기만 하고 아직
-	 * 사지 않은 사용자는 여기서 정확히 {@code false}가 된다.
-	 */
-	private boolean exitPresetApplied(PracticeAttempt attempt, Long attemptId, long runNumber) {
-		ExitPreset selected = attempt.getExitPreset();
-		if (selected == null) {
-			return false;
-		}
-		return practiceRiskSnapshotRepository
-			.existsByAttemptIdAndRunNumberAndExitPreset(attemptId, runNumber, selected);
-	}
 }
