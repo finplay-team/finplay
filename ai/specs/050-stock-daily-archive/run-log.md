@@ -15,3 +15,7 @@
 - 2026-08-20 — `KisDailyCandleClient`/`KisDailyCandleClientImpl`/`FakeKisDailyCandleClient`/`RawDailyCandleDto` 추가. 날짜 커서 역방향 페이징·레이트리밋 재시도는 1분봉 클라이언트와 같은 패턴(별도 토큰 캐시), 응답 행 검증은 위반 행만 폐기(부분성공 근거). compileJava 통과, 단위 테스트는 tester 담당이라 작성하지 않음.
 - 2026-08-20 — `StockDailyCandleCollector`/`StockDailyCandleImportWriter`/`DailyInstrumentOutcome` 추가. 배치 스케줄 08:25 KST로 확정(기존 스케줄 전수 확인, plan.md 반영). `StockCollectionLock` 재사용 시 1분봉 배치와 락 키가 겹칠 수 있다는 트레이드오프를 plan.md에 명시. compileJava 통과, 단위 테스트는 tester 담당이라 작성하지 않음. tester가 남긴 관찰(KisDailyCandleClientImpl의 커서 진행 검증 도달 불가 방어 코드)은 이번 항목 범위 밖이라 손대지 않음.
 - 2026-08-20 — `POST /api/dev/stock-daily-imports`(local 전용, `StockDailyImportTriggerController/Service/Writer` + `StockDailyImportTriggerResponse`) 추가, `StockDailyCandleRepository.countByDataSource`·`MarketDataImportRepository.findFirstBySourceAndSourceTradingDateOrderByCollectedAtDesc` 신설. Testcontainers 통합 테스트(`StockDailyCandleCollectorIntegrationTest`, 최초 전량→증분→재실행, 종목 단위 실패 격리, `stock_candles` 무변경 회귀)를 직접 작성해 통과 확인. `ai/api-routes.md`·`docs/api/market.md`·`ai/prd.md` §3(MKT-011 완료) 갱신. 전체 `./gradlew build` 통과(spotless·spotbugs·jacoco 포함).
+| 2026-08-20 | reviewer(리뷰) | `git diff dev...HEAD`(10개 커밋 전체) — docs/conventions/code.md, ai/adr/0002·0003·0004, spec.md, plan.md, docs/api/market.md, ai/prd.md 대조 | 지정 범위 `feat/506-stock-daily-archive` HEAD eb70bddb |
+
+## 모니터링 (사람용 요약)
+- 2026-08-20 — 리뷰 완료, 차단 0건 / 권장 2건(일봉 클라이언트 페이지 상한 도달 시 재실행 갭 이론상 가능, KisDailyCandleClientImpl 커서 진행 가드 도달 불가 확인) / 참고 2건. 머지 가능.
