@@ -24,7 +24,7 @@
 
 - [x] **5. 생성 통합 시나리오·문서 동기화·전체 게이트**
   - `@SpringBootTest` + MySQL Testcontainers에서 게시물·인증 작성자 연결, 평면 구조, 400·404·401 시 DB 비변경을 검증한다.
-  - 실제 Controller 매핑과 본문 최대 1,000자·201 응답 네 필드·400·401·404 계약을 `docs/api-routes.md`에 동기화한다.
+  - 실제 Controller 매핑과 본문 최대 1,000자·201 응답 네 필드·400·401·404 계약을 `ai/api-routes.md`에 동기화한다.
   - 댓글 조회·삭제·수정·대댓글과 다른 커뮤니티 API를 구현하지 않았는지 확인한다.
   - `spotlessApply`, 대상 테스트, `.\gradlew.bat build --no-daemon --max-workers=1`, `git diff --check`를 순차 실행한다.
   - 문서 반영 전 HEAD `dde3e3e`의 전체 build는 407개 테스트·JaCoCo·SpotBugs·Spotless를 포함해 4분 29초에 통과했다. 문서 커밋 후 최종 전체 build는 별도로 재실행한다.

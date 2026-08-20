@@ -14,8 +14,8 @@
 | 03:55 | implementer | 조회 트랜잭션 경계 분리 후 `.\gradlew.bat build` 통과 | PR #257 남은 위험 1, `PostSellFeedbackService`/`PostSellFeedbackReader` 선례, ADR-0002 |
 | 04:40 | reviewer(리뷰) | `git diff dev...HEAD` (42파일, 마지막 커밋 `8fbd3b7` 중점) | ADR-0015, spec.md(024), spec 012 §C-4·§C-6, docs/conventions.md, ADR-0002·0003·0004, CLAUDE.md 규칙 7·10 |
 | 05:05 | implementer | 2회차 리뷰 중 2건 반영 후 `.\gradlew.bat compileJava` | PR 리뷰 2회차 [참고 — TTL≤0 WARN]·[권장 — spec 012 §C-6], ADR-0015 §2 |
-| 05:40 | reviewer(리뷰) | `git diff dev...HEAD` (43파일, 테스트 방어력·단순성 2관점 한정) | spec.md(024), ADR-0015, docs/conventions.md, CLAUDE.md 전역규칙 2·3, ADR-0014, docs/agent-mistakes.md |
-| 05:50 | implementer | 3회차 리뷰 코드 7건 반영 후 `.\gradlew.bat compileJava` | PR 리뷰 3회차, ADR-0015 §1·§2·§6, docs/agent-mistakes.md 2026-08-04 |
+| 05:40 | reviewer(리뷰) | `git diff dev...HEAD` (43파일, 테스트 방어력·단순성 2관점 한정) | spec.md(024), ADR-0015, docs/conventions.md, CLAUDE.md 전역규칙 2·3, ADR-0014, ai/agent-mistakes.md |
+| 05:50 | implementer | 3회차 리뷰 코드 7건 반영 후 `.\gradlew.bat compileJava` | PR 리뷰 3회차, ADR-0015 §1·§2·§6, ai/agent-mistakes.md 2026-08-04 |
 
 ## 모니터링 (사람용 요약)
 - 01:05 — 항목 1: `RedisLock` 추출, `CryptoWatchLock`이 위임하도록 전환. 컴파일·기존 단위 테스트 통과(#244 테스트 무수정).

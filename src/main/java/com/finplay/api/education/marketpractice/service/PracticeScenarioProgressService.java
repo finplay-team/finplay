@@ -16,7 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * {@code docs/specs/041-tutorial-market-scenario/plan.md} §상태 전이표와 §tick 알고리즘을 구현한다.
+ * {@code ai/specs/041-tutorial-market-scenario/plan.md} §상태 전이표와 §tick 알고리즘을 구현한다.
  *
  * <p>표는 세 행뿐이고 <b>매도는 어느 행에도 없다</b>(SCENARIO-010) — 매도해도 커서를 옮기지 않는다. 가격을
  * 직접 계산하지 않고 {@code market}의 변환({@link PracticeAttemptCanonicalPriceService})만 호출한다(ADR-0002).

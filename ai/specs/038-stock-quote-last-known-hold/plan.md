@@ -4,7 +4,7 @@
 
 - Spec: `./spec.md`
 - 이슈: [#384](https://github.com/finplay-team/finplay-backend/issues/384) (결정 사항 4건의 정본)
-- 상위 요구사항: `docs/prd.md` MKT-002(재생 규칙)·MKT-004(시세 장애)·MKT-009(집계 캔들), `docs/specs/003-market-data`
+- 상위 요구사항: `ai/prd.md` MKT-002(재생 규칙)·MKT-004(시세 장애)·MKT-009(집계 캔들), `ai/specs/003-market-data`
 - 관련 ADR: ADR-0002(레이어 구조), ADR-0003(테스트 전략)
 - 인접 spec: `035-stock-collector-reliability`(장중 수집 결손은 그쪽 영역), `036-remove-crypto-stale-status`(코인의
   같은 성격 문제를 먼저 해결한 선례 — 판정을 없애 마지막 값을 유지)
@@ -126,7 +126,7 @@ new StockReplayPriceDto(
 
 ## API 설계
 
-**신규·변경 엔드포인트 없음.** 기존 응답의 값만 달라진다(`docs/api-routes.md` 갱신 대상 아님).
+**신규·변경 엔드포인트 없음.** 기존 응답의 값만 달라진다(`ai/api-routes.md` 갱신 대상 아님).
 
 | Method | URL | 지금(주말) | 이 spec 적용 후(주말) |
 |---|---|---|---|
@@ -189,5 +189,5 @@ new StockReplayPriceDto(
 - `docs/api-contracts.md` — ① 주식 가격·캔들 절의 장외 동작 서술, ② SSE 절의 "장 마감 후에도 마지막 값을 유지한다"
   문단(자정을 넘겨도 유지된다는 사실을 추가), ③ `costBasis` 대체 문단(주말에는 더 이상 이 경로로 빠지지 않으며,
   이 처리는 폴백 후보가 없을 때를 위해 남는다는 단서).
-- `docs/prd.md` §3 "구현 현황" — `QUOTE-HOLD-001~007` 행 추가(근거 칸에 이 spec과 PR 번호).
-- `docs/api-routes.md` — 갱신 대상 아님(라우트 무변경).
+- `ai/prd.md` §3 "구현 현황" — `QUOTE-HOLD-001~007` 행 추가(근거 칸에 이 spec과 PR 번호).
+- `ai/api-routes.md` — 갱신 대상 아님(라우트 무변경).

@@ -4,7 +4,7 @@ package com.finplay.api.feedback.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
-// 값의 정본은 docs/specs/012-ai-feedback/spec.md §C-1이다. FeedbackNewsProperties와 같은 방침이며
+// 값의 정본은 ai/specs/012-ai-feedback/spec.md §C-1이다. FeedbackNewsProperties와 같은 방침이며
 // (§C-7 — yml과 @DefaultValue 양쪽에 값을 두고 드리프트 테스트로 대조), 실제로 스케줄을 결정하는 것은
 // @Scheduled가 읽는 application.yml 쪽이고 여기 @DefaultValue는 바닥값이다.
 //

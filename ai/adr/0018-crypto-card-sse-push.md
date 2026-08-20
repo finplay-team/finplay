@@ -2,7 +2,7 @@
 
 - 상태: 승인됨
 - 날짜: 2026-08-10
-- 관계: 이슈 #286. `docs/specs/028-crypto-card-sse-push`의 정본. ADR-0002(레이어 구조), ADR-0014(코인 감시 Redis 락 — 같은 다중 인스턴스 전제를 공유), ADR-0015(조회 캐시 Redis 락 — `RedisLock` 추출 선례)를 따른다. `docs/specs/003-market-data/plan.md`의 "코인은 전용 SSE 스트림을 두지 않는다"(2026-07-30) 결정을 이 ADR이 뒤집는다 — 상세는 §맥락.
+- 관계: 이슈 #286. `ai/specs/028-crypto-card-sse-push`의 정본. ADR-0002(레이어 구조), ADR-0014(코인 감시 Redis 락 — 같은 다중 인스턴스 전제를 공유), ADR-0015(조회 캐시 Redis 락 — `RedisLock` 추출 선례)를 따른다. `ai/specs/003-market-data/plan.md`의 "코인은 전용 SSE 스트림을 두지 않는다"(2026-07-30) 결정을 이 ADR이 뒤집는다 — 상세는 §맥락.
 
 ## 맥락
 
@@ -10,7 +10,7 @@
 
 ### 이 결정은 기존 문서 결정을 뒤집는다
 
-`docs/prd.md` MKT-008과 `docs/specs/003-market-data/plan.md`(2026-07-30)는 "코인 전용 SSE 스트림은 두지 않는다 — `/api/cryptos/stream` 엔드포인트는 만들지 않는다"를 명시적으로 확정했었다. 근거는 "코인 캔들 API가 진행 중 분봉을 포함해 반환하므로 프론트가 짧은 주기로 재조회하는 것만으로 충분하다"였다. 이 ADR은 그 결정을 코인 변동 카드 확정 이벤트에 한해 뒤집는다 — **가격 재조회로는 대체할 수 없는 이벤트**(카드가 생겼다는 사실 자체)가 생겼기 때문이다. 코인 캔들 재조회로 가격은 알 수 있어도 "지금 막 카드가 확정됐다"는 사실은 알 수 없다. `docs/prd.md`·`docs/specs/003-market-data/plan.md`의 해당 문구 갱신은 이 spec의 tasks.md 항목으로 별도 처리한다 — 이 ADR 자체는 갱신 대상이 아니다(CLAUDE.md 규칙 2 — ADR은 새 번호로만 대체한다).
+`ai/prd.md` MKT-008과 `ai/specs/003-market-data/plan.md`(2026-07-30)는 "코인 전용 SSE 스트림은 두지 않는다 — `/api/cryptos/stream` 엔드포인트는 만들지 않는다"를 명시적으로 확정했었다. 근거는 "코인 캔들 API가 진행 중 분봉을 포함해 반환하므로 프론트가 짧은 주기로 재조회하는 것만으로 충분하다"였다. 이 ADR은 그 결정을 코인 변동 카드 확정 이벤트에 한해 뒤집는다 — **가격 재조회로는 대체할 수 없는 이벤트**(카드가 생겼다는 사실 자체)가 생겼기 때문이다. 코인 캔들 재조회로 가격은 알 수 있어도 "지금 막 카드가 확정됐다"는 사실은 알 수 없다. `ai/prd.md`·`ai/specs/003-market-data/plan.md`의 해당 문구 갱신은 이 spec의 tasks.md 항목으로 별도 처리한다 — 이 ADR 자체는 갱신 대상이 아니다(CLAUDE.md 규칙 2 — ADR은 새 번호로만 대체한다).
 
 ### 왜 코인 시세 스트림을 통째로 신설하는가 — 카드 이벤트만 얹을 수는 없는가
 
@@ -56,7 +56,7 @@ Redis 메시지·SSE 이벤트 payload에는 카드의 `instrumentId`·`priceMov
 
 **받아들이는 대가**
 
-- `docs/prd.md` MKT-008·`docs/specs/003-market-data/plan.md`의 "코인 SSE 스트림을 두지 않는다" 결정을 뒤집는다 — 두 문서 모두 이 spec의 tasks.md에서 갱신해야 실제 정합이 맞는다(이 ADR만으로는 문서 정합이 끝나지 않는다).
+- `ai/prd.md` MKT-008·`ai/specs/003-market-data/plan.md`의 "코인 SSE 스트림을 두지 않는다" 결정을 뒤집는다 — 두 문서 모두 이 spec의 tasks.md에서 갱신해야 실제 정합이 맞는다(이 ADR만으로는 문서 정합이 끝나지 않는다).
 - 이 저장소의 첫 Redis **pub/sub** 사례가 된다(기존 Redis 사용은 전부 key-value: `PriceStore`·`RankingStore`·락 2종·`FeedbackQueryCache`) — `RedisMessageListenerContainer`라는 새 인프라 개념이 하나 늘어난다.
 - 코인 시세 실시간 스트림(snapshot·price·status)까지 함께 신설하는 것은 이슈 #286의 완료 조건(카드 push)보다 넓은 범위다 — `SseEmitterRegistry(Market.CRYPTO)`가 이미 있고 카드 이벤트만 얹기보다 대칭 구조로 완성하는 편이 인프라 중복을 피한다고 판단했지만, 이 확장 자체가 별도 검증(다중 인스턴스 fan-out을 단일 JVM 테스트로 흉내내는 방식의 한계 등)을 요구한다.
 - Redis가 죽어 있으면 그 순간의 카드 확정은 아무 인스턴스에도 push되지 않는다(원장에는 영향 없음 — 부가 기능이므로 허용 범위). 클라이언트는 다음 폴링이나 재연결 시 `snapshot`이 아니라 REST 재조회로만 그 카드를 알게 된다(놓친 이벤트 재전송은 기존 SSE 계약대로 미지원).
@@ -85,6 +85,6 @@ Redis 메시지·SSE 이벤트 payload에는 카드의 `instrumentId`·`priceMov
 
 ## 후속
 
-- `docs/prd.md` MKT-008·`docs/specs/003-market-data/plan.md`의 "코인 SSE 스트림 없음" 문구는 이 spec(`028-crypto-card-sse-push`)의 tasks.md에서 갱신한다 — 이 ADR 자체는 갱신 대상이 아니다.
+- `ai/prd.md` MKT-008·`ai/specs/003-market-data/plan.md`의 "코인 SSE 스트림 없음" 문구는 이 spec(`028-crypto-card-sse-push`)의 tasks.md에서 갱신한다 — 이 ADR 자체는 갱신 대상이 아니다.
 - 코인 시세 실시간 스트림(snapshot·price·status)이 카드 push와 별개로 실제 트래픽에서 유용한지는 배포 후 사용률로 재검토한다 — 지금은 카드 push 인프라의 대칭 부산물로 함께 만든다.
 - 다중 인스턴스 배포 후 실제 Redis pub/sub 팬아웃 지연·유실률을 관측한 적이 없다 — 단일 Redis 인스턴스 기준이며, Redis 자체를 다중화(센티널/클러스터)하는 시점에 ADR-0014·0015와 같은 조건(페일오버 순간 유실 가능성)을 재검토한다.

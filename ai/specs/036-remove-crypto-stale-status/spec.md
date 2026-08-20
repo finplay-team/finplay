@@ -1,12 +1,12 @@
 # Spec: 코인 시세 STALE 판정 완전 제거
 
 > GitHub 이슈 #379. 팀 확정 방향: 마지막으로 기록된 가격은 경과 시간과 무관하게 항상 `AVAILABLE`로 취급한다 — 재논의하지 않는다.
-> 선행 근거: `docs/specs/003-market-data/spec.md` MKT-003·MKT-004, `docs/specs/032-price-quote-stale-split/spec.md`, `docs/specs/034-crypto-price-rest-backup/spec.md`.
+> 선행 근거: `ai/specs/003-market-data/spec.md` MKT-003·MKT-004, `ai/specs/032-price-quote-stale-split/spec.md`, `ai/specs/034-crypto-price-rest-backup/spec.md`.
 > 요구사항 ID는 이 spec 전용 네임스페이스 `PRICE-NOSTALE-*`를 쓴다 — `PRICE-STALE-*`(032)·`PRICE-REST-*`(034)와 같은 패턴으로, PRD 본문에 요구사항 절을 새로 추가하지 않고 이 spec이 정본이다. PRD §3 "구현 현황"에는 완료 시 행을 추가·갱신한다(CLAUDE.md 규칙 10).
 
 ## 이 spec이 되돌리는 것 — 032·034 결정과의 관계 (필수 선행 확인)
 
-이 변경은 `docs/prd.md` §3에 "완료"로 기록된 두 spec의 결정을 뒤집는다. 각 요구사항별로 무엇이 되돌려지고 무엇이 그대로인지 명시한다.
+이 변경은 `ai/prd.md` §3에 "완료"로 기록된 두 spec의 결정을 뒤집는다. 각 요구사항별로 무엇이 되돌려지고 무엇이 그대로인지 명시한다.
 
 | 원본 요구사항 | 내용 | 이 spec의 처리 |
 |---|---|---|
@@ -90,12 +90,12 @@
 - [ ] 코인 종목이 연결 끊김이거나 시세를 한 번도 받은 적이 없을 때는 여전히 409 `PRICE_UNAVAILABLE`을 반환하는 테스트 통과(회귀 확인).
 - [ ] `PriceStatus`가 `AVAILABLE`·`UNAVAILABLE` 2값만 갖는다 — `STALE` 참조가 프로덕션·테스트 코드에 남아있지 않다.
 - [ ] `getOrderExecutionPrice`의 코인 분기가 경과 시간과 무관하게 항상 마지막 가격으로 체결에 성공하는 테스트 통과.
-- [ ] `HoldingValuationService`가 연결 유지 중인 코인 보유분의 평가금액·수익률을 경과 시간과 무관하게 계속 채우는 회귀 테스트 통과("-" 깜빡임 해소 확인) — `docs/specs/036-remove-crypto-stale-status/tasks.md`의 관련 항목에서 명시적으로 다룬다.
+- [ ] `HoldingValuationService`가 연결 유지 중인 코인 보유분의 평가금액·수익률을 경과 시간과 무관하게 계속 채우는 회귀 테스트 통과("-" 깜빡임 해소 확인) — `ai/specs/036-remove-crypto-stale-status/tasks.md`의 관련 항목에서 명시적으로 다룬다.
 - [ ] 코인 SSE snapshot이 연결 유지 중인 종목에서 더 이상 `"STALE"`을 노출하지 않는 회귀 테스트 통과.
 - [ ] `CryptoCandleAndPriceIndependenceTest`의 기존 두 테스트가 회귀 없이 통과.
 - [ ] `docs/api-contracts.md`의 `/price` 절·코인 SSE snapshot 절·주문 절에서 `STALE` 관련 서술이 제거되고 이 spec을 반영해 갱신됨(같은 커밋).
-- [ ] `docs/api-routes.md`의 `/price` 라우트 설명에서 `STALE` 언급이 제거됨.
-- [ ] `docs/specs/003-market-data/spec.md` MKT-004가 "연결 유지+가격 있음이면 경과 시간과 무관하게 항상 정상"으로 재작성됨.
-- [ ] `docs/specs/032-price-quote-stale-split/spec.md`·`docs/specs/034-crypto-price-rest-backup/spec.md` 상단에 이 spec으로 대체된 요구사항(위 표 참고)을 명시하는 각주가 추가됨(체크박스 원문은 유지, 027이 003을 대체할 때 쓴 각주 패턴).
-- [ ] `docs/prd.md` §3 "구현 현황"의 PRICE-STALE-001~005·PRICE-REST-001~006 관련 행이 이 변경을 반영해 갱신됨(근거: 이 spec/PR).
+- [ ] `ai/api-routes.md`의 `/price` 라우트 설명에서 `STALE` 언급이 제거됨.
+- [ ] `ai/specs/003-market-data/spec.md` MKT-004가 "연결 유지+가격 있음이면 경과 시간과 무관하게 항상 정상"으로 재작성됨.
+- [ ] `ai/specs/032-price-quote-stale-split/spec.md`·`ai/specs/034-crypto-price-rest-backup/spec.md` 상단에 이 spec으로 대체된 요구사항(위 표 참고)을 명시하는 각주가 추가됨(체크박스 원문은 유지, 027이 003을 대체할 때 쓴 각주 패턴).
+- [ ] `ai/prd.md` §3 "구현 현황"의 PRICE-STALE-001~005·PRICE-REST-001~006 관련 행이 이 변경을 반영해 갱신됨(근거: 이 spec/PR).
 - [ ] `./gradlew build` 통과.

@@ -3,9 +3,9 @@
 ## 관련 문서
 
 - Spec: `./spec.md`
-- 참고 spec: `docs/specs/011-order-ledger-schema/plan.md`(기존 `orders`/`trades`/`holdings` 스키마 설계 근거), `docs/specs/004-order-buy`·`005-order-sell`(시장가 검증·체결 로직 원본), `docs/specs/016-investment-education-policy/plan.md`(비관적 락 다단계 순서 선례 — `progress → favorite → intention → plan`)
+- 참고 spec: `ai/specs/011-order-ledger-schema/plan.md`(기존 `orders`/`trades`/`holdings` 스키마 설계 근거), `ai/specs/004-order-buy`·`005-order-sell`(시장가 검증·체결 로직 원본), `ai/specs/016-investment-education-policy/plan.md`(비관적 락 다단계 순서 선례 — `progress → favorite → intention → plan`)
 - 관련 ADR: [ADR-0002](../../adr/0002-architecture.md)(도메인 패키지 구조, cross-domain repository 직접 주입 금지), [ADR-0003](../../adr/0003-testing-strategy.md)(테스트 피라미드, Testcontainers 통합 테스트), [ADR-0004](../../adr/0004-flyway-migrations.md)(Flyway로만 스키마 변경)
-- PRD 근거: `docs/prd.md` 591~615행(LMT-001·LMT-002), §3 구현 현황 211행
+- PRD 근거: `ai/prd.md` 591~615행(LMT-001·LMT-002), §3 구현 현황 211행
 
 ## 기존 코드 현황 (구현 전 확인한 사실)
 
@@ -83,7 +83,7 @@ ALTER TABLE orders
 - `reserved_cash`·`reserved_quantity`는 기존 `cash_balance`·`quantity`와 정밀도를 맞춘다(각각 `BIGINT`, `DECIMAL(30,8)`).
 - `limit_price`는 기존 가격류 컬럼과 동일하게 `DECIMAL(18,8)`(코인 tick 0.1 표현 가능).
 - `orders.order_type`·`orders.status`는 이미 `VARCHAR(10)`이라 `"LIMIT"`(5자)·`"PENDING"`(7자) 모두 컬럼 변경 없이 저장 가능하다.
-- `idx_orders_limit_fill`은 LMT-002 체결 후보 조회(`instrument_id`+`status`+`side`+`limit_price` 조건)의 풀스캔을 막는다. 기존 `docs/specs/011-order-ledger-schema/plan.md`와 마�찬가지로 CHECK 제약은 쓰지 않는다(코드베이스 전례 없음 — 앱 계층에서 불변식 검증).
+- `idx_orders_limit_fill`은 LMT-002 체결 후보 조회(`instrument_id`+`status`+`side`+`limit_price` 조건)의 풀스캔을 막는다. 기존 `ai/specs/011-order-ledger-schema/plan.md`와 마�찬가지로 CHECK 제약은 쓰지 않는다(코드베이스 전례 없음 — 앱 계층에서 불변식 검증).
 - 기존 `uk_trades_order UNIQUE(order_id)` 제약은 그대로 유지한다 — 지정가도 전량 목표가 체결만 지원해(부분체결 제외 범위) 주문 1건당 체결 1건 불변식이 여전히 성립한다.
 
 ### 엔티티 변경
@@ -498,7 +498,7 @@ spec.md 시나리오 13·14·15에 대응한다.
 ## Decision Gate (spec.md 확정된 설계 결정 10번 재확인, 변경 없음)
 
 - 신규 종목 첫 매수 동시 생성 경합은 account 락만으로 방지한다 — `holdings.uk_holdings_account_instrument` 유니크 제약 위반에 대한 방어적 catch·재조회 로직은 추가하지 않는다(일어날 수 없는 시나리오에 방어 코드를 넣지 않는다는 컨벤션과 일치).
-- 마이그레이션·API 계약 변경 없음 — 락 순서 조정은 서비스 레이어 내부 구현이라 `docs/api-routes.md`·`docs/api-contracts.md`·`docs/prd.md` §3 갱신 대상이 아니다(CLAUDE.md 규칙7은 controller 변경 시에만 적용, 규칙10은 기능 제공 범위가 그대로인 변경이라 갱신 비대상).
+- 마이그레이션·API 계약 변경 없음 — 락 순서 조정은 서비스 레이어 내부 구현이라 `ai/api-routes.md`·`docs/api-contracts.md`·`ai/prd.md` §3 갱신 대상이 아니다(CLAUDE.md 규칙7은 controller 변경 시에만 적용, 규칙10은 기능 제공 범위가 그대로인 변경이라 갱신 비대상).
 
 ---
 
@@ -507,8 +507,8 @@ spec.md 시나리오 13·14·15에 대응한다.
 ## 관련 문서
 
 - Spec: `./spec.md` "LMT-004 미체결 주문 목록 조회" 절, "계좌·보유 조회 계약 영향 해소 (Decision Gate)" 절, "확정된 설계 결정" 11번.
-- 형제 API(패턴 원본): `GET /api/orders?market=&cursor=&limit=`(PORT-003, `docs/specs/018-order-list-pagination/plan.md`) — `OrderCursor`·`OrderListItemResponse`·`OrderListResponse`·`OrderRepositoryCustom`/`OrderRepositoryImpl`(QueryDSL) 커서 페이지네이션 인프라를 그대로 재사용한다. 상태 필터만 추가되는 변형이라 새 클래스를 최소화한다.
-- PRD 근거: `docs/prd.md` 626~634행(LMT-004 + "계좌·보유 조회 계약 영향(Decision Gate)"), §3 구현 현황 213행.
+- 형제 API(패턴 원본): `GET /api/orders?market=&cursor=&limit=`(PORT-003, `ai/specs/018-order-list-pagination/plan.md`) — `OrderCursor`·`OrderListItemResponse`·`OrderListResponse`·`OrderRepositoryCustom`/`OrderRepositoryImpl`(QueryDSL) 커서 페이지네이션 인프라를 그대로 재사용한다. 상태 필터만 추가되는 변형이라 새 클래스를 최소화한다.
+- PRD 근거: `ai/prd.md` 626~634행(LMT-004 + "계좌·보유 조회 계약 영향(Decision Gate)"), §3 구현 현황 213행.
 - 관련 ADR: [ADR-0002](../../adr/0002-architecture.md)(레이어드, 도메인 간 참조는 service만 — `HoldingListItemResponse`가 `Holding` 엔티티를 그대로 받는 기존 패턴을 유지), [ADR-0003](../../adr/0003-testing-strategy.md)(테스트 전략), [ADR-0004](../../adr/0004-flyway-migrations.md)(이번 작업은 스키마 변경 없음 — `accounts.reserved_cash`·`holdings.reserved_quantity`는 V22로 이미 존재).
 
 ## 기존 코드 현황 (구현 전 확인한 사실)
@@ -715,9 +715,9 @@ public record HoldingListItemResponse(
 
 같은 커밋에서 갱신(CLAUDE.md 규칙 7 + 규칙 10):
 
-- `docs/api-routes.md`: 라우트 표에 `GET | /api/orders/pending?market=&cursor=&limit= | order | ... | 015 LMT-004, Issue #235` 행 추가(기존 `GET /api/orders`·`POST /api/orders/limit`·`DELETE /api/orders/{orderId}` 행 근처).
+- `ai/api-routes.md`: 라우트 표에 `GET | /api/orders/pending?market=&cursor=&limit= | order | ... | 015 LMT-004, Issue #235` 행 추가(기존 `GET /api/orders`·`POST /api/orders/limit`·`DELETE /api/orders/{orderId}` 행 근처).
 - `docs/api-contracts.md`: `## order` 절에 "미체결 주문 목록 조회" 표 추가(요청 `market`/`cursor`/`limit`, 응답 `OrderListResponse` 예시, 오류 400/401/404). `## account` 절의 `AccountSummaryResponse` 예시에 `reservedCash` 필드를 반영. `## portfolio` 절의 `HoldingListItemResponse` 예시에 `reservedQuantity` 필드를 반영.
-- `docs/prd.md` §3 구현 현황 "지정가 주문·상시 체결(LMT-001~004)" 행을 이 PR 번호를 근거로 "완료"로 갱신한다 — LMT-001~004 전부 완료됨을 명시. "계좌·보유 조회 계약 영향(Decision Gate)" 절 본문도 "착수 시 확정한다"는 미정 문구를 실제 필드명(`reservedCash`/`reservedQuantity`)이 확정됐다는 문구로 교체한다.
+- `ai/prd.md` §3 구현 현황 "지정가 주문·상시 체결(LMT-001~004)" 행을 이 PR 번호를 근거로 "완료"로 갱신한다 — LMT-001~004 전부 완료됨을 명시. "계좌·보유 조회 계약 영향(Decision Gate)" 절 본문도 "착수 시 확정한다"는 미정 문구를 실제 필드명(`reservedCash`/`reservedQuantity`)이 확정됐다는 문구로 교체한다.
 
 ## 테스트 계획 (ADR-0003 기준)
 
@@ -742,7 +742,7 @@ public record HoldingListItemResponse(
 ## 관련 문서
 
 - Spec: `./spec.md` "LMT-005 지정가 주문 수정 (코인 전용, 이슈 #239)" 절, "LMT-005 완료 조건", "확정된 설계 결정" 12번(수정 이력 미보관 재확정).
-- PRD 근거: `docs/prd.md` 632~649행(LMT-005 정책, PR #238로 확정).
+- PRD 근거: `ai/prd.md` 632~649행(LMT-005 정책, PR #238로 확정).
 - 이 절이 재사용하는 잠금·예약 인프라는 위 LMT-002·LMT-003 계획이 이미 도입했다 — 신규 repository 메서드는 필요 없다.
 
 ## 기존 코드 현황 (구현 전 확인한 사실)
@@ -930,9 +930,9 @@ spec.md 시나리오 21~25에 대응한다.
 
 같은 커밋에서 갱신(CLAUDE.md 규칙 7 + 규칙 10):
 
-- `docs/api-routes.md`: 라우트 표에 `PATCH | /api/orders/{orderId} | order | ... | 015 LMT-005, Issue #239` 행 추가(기존 `DELETE /api/orders/{orderId}` 행 근처).
+- `ai/api-routes.md`: 라우트 표에 `PATCH | /api/orders/{orderId} | order | ... | 015 LMT-005, Issue #239` 행 추가(기존 `DELETE /api/orders/{orderId}` 행 근처).
 - `docs/api-contracts.md`: `## order` 절에 "지정가 주문 수정" 표 추가(요청 `LimitOrderUpdateRequest`, 응답 `LimitOrderResponse` 재사용 명시, 오류 400/401/403/404/409 계약 — `INSUFFICIENT_CASH`/`INSUFFICIENT_QTY`/`ORDER_ALREADY_FILLED`/`ORDER_ALREADY_CANCELLED` 전부 기존 코드 재사용임을 명시).
-- `docs/prd.md` §3 구현 현황 "지정가 주문·상시 체결(LMT-001~005)" 행을 이 PR 번호를 근거로 "완료"로 갱신한다 — LMT-001~005 전부 완료됨을 명시.
+- `ai/prd.md` §3 구현 현황 "지정가 주문·상시 체결(LMT-001~005)" 행을 이 PR 번호를 근거로 "완료"로 갱신한다 — LMT-001~005 전부 완료됨을 명시.
 
 ## 테스트 계획 (ADR-0003 기준)
 

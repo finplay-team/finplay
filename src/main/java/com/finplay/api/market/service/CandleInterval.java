@@ -19,7 +19,7 @@ public enum CandleInterval {
 	}
 
 	// 대소문자를 구분해 정확히 일치할 때만 매칭한다 — equalsIgnoreCase로 바꾸면 월봉(1M)과 분봉(1m)이 같은 값으로
-	// 충돌한다. spec 확정 계약(docs/specs/013-candle-interval/spec.md "공통 계약"): 서버는 대소문자를 정규화하지 않는다.
+	// 충돌한다. spec 확정 계약(ai/specs/013-candle-interval/spec.md "공통 계약"): 서버는 대소문자를 정규화하지 않는다.
 	public static CandleInterval from(String value) {
 		return Arrays.stream(values())
 			.filter(candleInterval -> candleInterval.value.equals(value))

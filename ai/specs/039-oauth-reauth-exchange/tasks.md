@@ -40,12 +40,12 @@
   테스트 클래스 — 구현 시점에 기존 클래스 구조를 보고 판단).
 
 - [x] **5. 문서 동기화**
-  `docs/api-routes.md`·`docs/api-contracts.md`의 OAuth 재인증 콜백 행(신규 `reauth-exchange` 엔드포인트, REAUTH
+  `ai/api-routes.md`·`docs/api-contracts.md`의 OAuth 재인증 콜백 행(신규 `reauth-exchange` 엔드포인트, REAUTH
   콜백 응답이 200 JSON에서 302 리다이렉트로 바뀌는 것, "REAUTH는... 기존 200 JSON 계약을 그대로 둔다"는 이제
-  틀린 서술 정정)을 갱신한다(CLAUDE.md 규칙 7). `docs/prd.md` §3 "구현 현황"은 AUTH-003·AUTH-005가 이미 "완료"로
+  틀린 서술 정정)을 갱신한다(CLAUDE.md 규칙 7). `ai/prd.md` §3 "구현 현황"은 AUTH-003·AUTH-005가 이미 "완료"로
   묶인 1차 태스크 행(`AUTH-001~006`)의 판정을 바꾸지 않는다 — 이 spec은 기존에 "된다"고 전제된 재인증 왕복을
   실제로 되게 만드는 결함 수정이라 CLAUDE.md 규칙 10의 "기능 제공 범위가 그대로인" 갱신 비대상에 해당한다(계약
-  세부는 `docs/api-contracts.md`가, 이 spec 자체의 존재는 `docs/specs/039-oauth-reauth-exchange`가 근거로
+  세부는 `docs/api-contracts.md`가, 이 spec 자체의 존재는 `ai/specs/039-oauth-reauth-exchange`가 근거로
   남는다).
 
 - [x] **6. `./gradlew build` 통과 확인** — SHA `b9fe2211d119a2ff38561830fd617aed7e7feff0`

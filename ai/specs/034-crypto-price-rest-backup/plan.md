@@ -3,9 +3,9 @@
 ## 관련 문서
 
 - Spec: `./spec.md`
-- 대체 대상: `docs/specs/032-price-quote-stale-split/spec.md` PRICE-STALE-003(체결 경로 불변)
-- 선행 spec: `docs/specs/003-market-data/spec.md`(MKT-003·MKT-004)
-- 관련 ADR: `docs/adr/0002-architecture.md`(레이어), `docs/adr/0003-testing-strategy.md`(테스트), `docs/adr/0021-continuous-deployment.md`(dev 머지 = 즉시 배포)
+- 대체 대상: `ai/specs/032-price-quote-stale-split/spec.md` PRICE-STALE-003(체결 경로 불변)
+- 선행 spec: `ai/specs/003-market-data/spec.md`(MKT-003·MKT-004)
+- 관련 ADR: `ai/adr/0002-architecture.md`(레이어), `ai/adr/0003-testing-strategy.md`(테스트), `ai/adr/0021-continuous-deployment.md`(dev 머지 = 즉시 배포)
 - 이슈: #369(본건), #107(폴러 최초 도입), #355(저유동성 조회 차단), #242(웹소켓 채널 실측)
 
 ## 두 변경의 관계

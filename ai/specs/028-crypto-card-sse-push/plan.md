@@ -4,7 +4,7 @@
 
 - Spec: `./spec.md`
 - 관련 ADR: **ADR-0018**(이 spec의 정본 — 결정 근거 전체), ADR-0002(레이어 구조 — feedback→market은 service만 의존), ADR-0014(코인 감시 Redis 락 — 같은 다중 인스턴스 전제), ADR-0015(조회 캐시 Redis 락 — `RedisLock` 추출·`ObjectMapper` 직렬화 선례)
-- PRD: 대응 요구사항 ID 없음(`spec.md` "PRD 정합성" 참고). `docs/prd.md` MKT-008·`docs/specs/003-market-data/plan.md`의 "코인 SSE 없음" 결정을 이 spec이 뒤집는다.
+- PRD: 대응 요구사항 ID 없음(`spec.md` "PRD 정합성" 참고). `ai/prd.md` MKT-008·`ai/specs/003-market-data/plan.md`의 "코인 SSE 없음" 결정을 이 spec이 뒤집는다.
 - 선행: `003-market-data`(이슈 #18 `SseEmitterRegistry`, 이슈 #19 `StockPriceStreamService`/`StockPriceSseController`), `012-ai-feedback` 이슈 8(PR #236, `CryptoPriceMoveWatcher`·`PriceMoveCardWriter`), `024-feedback-query-cache`(`RedisLock` 추출·`ObjectMapper` 직렬화 패턴)
 
 ## API 설계
@@ -86,7 +86,7 @@
 
 ## 문서 동기화 계획 (실제 갱신은 tasks.md에서 구현 단계에 수행)
 
-- `docs/api-routes.md` — `GET /api/cryptos/stream` 행 추가(도메인 `market`, Spec `028`).
+- `ai/api-routes.md` — `GET /api/cryptos/stream` 행 추가(도메인 `market`, Spec `028`).
 - `docs/api-contracts.md` — market 섹션에 `/api/cryptos/stream` 계약(이벤트 4종·payload 예시) 추가. `/api/stocks/stream` 계약 절은 수정하지 않는다.
-- `docs/prd.md` §3 "구현 현황" — 새 행 추가(요구사항 ID 없음 명시, 근거는 이슈 #286·spec `028`). §4 MKT-008 본문에 "코인 SSE 스트림은 두지 않는다" 서술이 카드 알림 한정으로 뒤집혔음을 각주로 추가(원문은 보존하고 갱신 이력만 남긴다 — PRD는 ADR과 달리 직접 수정하는 문서이므로 새 번호 체계는 없지만, 기존 문구를 지우지 않고 갱신 시점·사유를 남기는 이 저장소의 관례를 따른다).
-- `docs/specs/003-market-data/plan.md` — 61행 "코인은 전용 스트림을 두지 않는다"·442행 "코인 SSE" 제외 문구에 "028에서 카드 알림 한정으로 뒤집힘" 각주 추가. 원문 문장 자체는 지우지 않는다(이 문서가 "이 시점의 결정"을 기록하는 관례를 따른다 — MKT-008 절의 "(2026-08-06 MKT-010으로 대체)" 각주 패턴과 동일).
+- `ai/prd.md` §3 "구현 현황" — 새 행 추가(요구사항 ID 없음 명시, 근거는 이슈 #286·spec `028`). §4 MKT-008 본문에 "코인 SSE 스트림은 두지 않는다" 서술이 카드 알림 한정으로 뒤집혔음을 각주로 추가(원문은 보존하고 갱신 이력만 남긴다 — PRD는 ADR과 달리 직접 수정하는 문서이므로 새 번호 체계는 없지만, 기존 문구를 지우지 않고 갱신 시점·사유를 남기는 이 저장소의 관례를 따른다).
+- `ai/specs/003-market-data/plan.md` — 61행 "코인은 전용 스트림을 두지 않는다"·442행 "코인 SSE" 제외 문구에 "028에서 카드 알림 한정으로 뒤집힘" 각주 추가. 원문 문장 자체는 지우지 않는다(이 문서가 "이 시점의 결정"을 기록하는 관례를 따른다 — MKT-008 절의 "(2026-08-06 MKT-010으로 대체)" 각주 패턴과 동일).

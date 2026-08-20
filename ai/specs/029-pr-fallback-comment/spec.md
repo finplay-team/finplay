@@ -1,7 +1,7 @@
 # Spec: PR 생성 전 정지 지점 이슈 알림
 
 ## 개요
-이슈 트리거 하네스(ADR-0013)의 `implement-and-open-pr` job은 PR을 연 뒤의 모든 정지 지점에 이력 코멘트를 남기도록 정비돼 있다(ADR-0016, PR #293). 그런데 이력 코멘트 스텝은 전부 `steps.pr.outputs.number != ''`를 요구하므로, **PR이 만들어지기 전에 흐름이 죽으면 아무 데도 알림이 가지 않는다.** 2026-08-10 실행(이슈 #276 처리)에서 실제로 발생했다 — 구현 에이전트가 100턴·$7.25를 쓰고도 브랜치·PR을 만들지 못했고, 이슈에는 지금도 아무 응답이 없다(GitHub 이슈 #311, `docs/agent-mistakes.md` 2026-08-10 행).
+이슈 트리거 하네스(ADR-0013)의 `implement-and-open-pr` job은 PR을 연 뒤의 모든 정지 지점에 이력 코멘트를 남기도록 정비돼 있다(ADR-0016, PR #293). 그런데 이력 코멘트 스텝은 전부 `steps.pr.outputs.number != ''`를 요구하므로, **PR이 만들어지기 전에 흐름이 죽으면 아무 데도 알림이 가지 않는다.** 2026-08-10 실행(이슈 #276 처리)에서 실제로 발생했다 — 구현 에이전트가 100턴·$7.25를 쓰고도 브랜치·PR을 만들지 못했고, 이슈에는 지금도 아무 응답이 없다(GitHub 이슈 #311, `ai/agent-mistakes.md` 2026-08-10 행).
 
 `github.event.issue.number`는 이 job의 트리거 시점(`issue_comment`)부터 항상 존재하므로, PR이 없어도 게시 대상은 확보돼 있다. 이 spec은 PR 생성 전 구간에 이력 코멘트를 추가해 이 사각지대를 없앤다.
 
@@ -38,6 +38,6 @@
 ## 완료 조건
 - [ ] 세 정지 지점(구현 호출 실패·빌드 실패·PR 조회 실패) 각각에서 이슈에 사유(실제 `outcome` 값)와 Actions 실행 링크가 담긴 코멘트가 정확히 1개 남는 것을, 도달 가능한 outcome 조합을 전수 검토해(표 또는 스크립트) 확인한다.
 - [ ] 정상 흐름(구현 → 빌드 → PR 오픈)에서 이 변경으로 인한 추가 코멘트가 없는 것을 같은 전수 검토로 확인한다.
-- [x] PR 생성 전 구간의 이력 코멘트 3개 스텝의 결정이 ADR로 정본화된다. **2026-08-10 PR #312 리뷰(차단 1건) 이후 정정**: 최초 계획은 `docs/adr/0016-review-gate-auto-fix-round.md` 본문을 직접 갱신하는 것이었으나, `docs/adr/0001-record-architecture-decisions.md`("ADR은 한번 승인되면 수정하지 않는다")와 CLAUDE.md 규칙 2 위반이라는 지적을 받아 새 `docs/adr/0019-pre-pr-failure-issue-comment.md`를 신설하고 ADR-0016은 상태 줄에 포인터만 추가하는 방식(ADR-0014·PR #285 선례)으로 바꿨다.
+- [x] PR 생성 전 구간의 이력 코멘트 3개 스텝의 결정이 ADR로 정본화된다. **2026-08-10 PR #312 리뷰(차단 1건) 이후 정정**: 최초 계획은 `ai/adr/0016-review-gate-auto-fix-round.md` 본문을 직접 갱신하는 것이었으나, `ai/adr/0001-record-architecture-decisions.md`("ADR은 한번 승인되면 수정하지 않는다")와 CLAUDE.md 규칙 2 위반이라는 지적을 받아 새 `ai/adr/0019-pre-pr-failure-issue-comment.md`를 신설하고 ADR-0016은 상태 줄에 포인터만 추가하는 방식(ADR-0014·PR #285 선례)으로 바꿨다.
 - [ ] `.github/workflows/agent.yml`이 `python -c "import yaml; yaml.safe_load(...)"`로 문법 검증을 통과하고, 새로 추가한 각 `run:` 블록이 `bash -n`으로 문법 검증을 통과한다.
 - [ ] 테스트 이슈 1건으로 실제 검증한다(머지 후 가능 — `issue_comment` 트리거는 항상 `dev` 기준 워크플로우 버전으로 실행되므로 PR 머지 전에는 실제 하네스 실행으로 검증할 수 없다).

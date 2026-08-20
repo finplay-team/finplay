@@ -1,10 +1,10 @@
 # API 계약 — education
 
-"016 투자 실습"·"026 시장가/지정가 매매 기반 투자 실습" 절의 API 계약 상세다. 전체 라우트를 한눈에 보는 지도는 `docs/api-routes.md`에 있다.
+"016 투자 실습"·"026 시장가/지정가 매매 기반 투자 실습" 절의 API 계약 상세다. 전체 라우트를 한눈에 보는 지도는 `ai/api-routes.md`에 있다.
 
-**controller를 추가/변경하면 `docs/api-routes.md`의 라우트 목록과 이 문서를 같은 커밋에서 함께 갱신한다** (CLAUDE.md 규칙, reviewer 리뷰 모드 점검 항목).
+**controller를 추가/변경하면 `ai/api-routes.md`의 라우트 목록과 이 문서를 같은 커밋에서 함께 갱신한다** (CLAUDE.md 규칙, reviewer 리뷰 모드 점검 항목).
 
-블랙박스 QA는 구현 코드(`src/main`)를 읽지 않고 이 문서와 spec만을 계약 근거로 사용한다 (`docs/context-router.md`).
+블랙박스 QA는 구현 코드(`src/main`)를 읽지 않고 이 문서와 spec만을 계약 근거로 사용한다 (`ai/context-router.md`).
 
 일반 리스크관리 OCO(`intentionId` 생략, production)의 생성·취소·목록 조회는 이 문서가 아니라 `docs/api/order.md`의 "021 일반 리스크관리 OCO" 절이 정본이다 — 아래 016 절은 `intentionId`를 지정하는 **교육 경로**(아직 미구현) 계약이다.
 
@@ -12,7 +12,7 @@
 
 ## 016 투자 실습 (candidate 1~4·합성 시세 제공, OCO 계열 계획)
 
-`docs/specs/016-investment-education-policy`의 계약은 제공 5건과 계획 6건, 총 11건이다. **`POST`·`DELETE /api/exit-plans`는 Issue #348로 production에 추가됐지만 이 절이 아니라 `docs/api/order.md`의 "021 일반 리스크관리 OCO" 절이 정본이다** — 이번에 구현된 것은 `intentionId`를 생략하는 **일반 경로**뿐이고, 이 절이 다루는 `intentionId` 지정 **교육 경로**는 여전히 컨트롤러가 이를 거부한다(400 `VALIDATION_ERROR`). 아래 "OCO exit plan 생성 (계획)"·"OCO 예약 취소" 두 절의 본문은 교육 경로 계약이므로 QA 실행 근거로 쓰지 않는다.
+`ai/specs/016-investment-education-policy`의 계약은 제공 5건과 계획 6건, 총 11건이다. **`POST`·`DELETE /api/exit-plans`는 Issue #348로 production에 추가됐지만 이 절이 아니라 `docs/api/order.md`의 "021 일반 리스크관리 OCO" 절이 정본이다** — 이번에 구현된 것은 `intentionId`를 생략하는 **일반 경로**뿐이고, 이 절이 다루는 `intentionId` 지정 **교육 경로**는 여전히 컨트롤러가 이를 거부한다(400 `VALIDATION_ERROR`). 아래 "OCO exit plan 생성 (계획)"·"OCO 예약 취소" 두 절의 본문은 교육 경로 계약이므로 QA 실행 근거로 쓰지 않는다.
 
 **제공 중(블랙박스 QA 실행 가능)** — 5건: candidate 1 `POST /api/favorites`, candidate 2 `GET /api/favorites`, candidate 3 `DELETE /api/favorites/{instrumentId}`, candidate 4 `POST /api/education/practice/intentions`, 튜토리얼 합성 시세 `GET /api/education/practice/synthetic-prices/{instrumentId}`. 아래 각 절에 "(계획)" 표시가 없는 것이 이에 해당한다.
 
@@ -22,11 +22,11 @@
 >
 > 3단계 실습을 **지금 QA한다면 이 절이 아니라 아래 `026` 절**을 근거로 삼는다 — 2차 MVP에서 실제로 완료 가능한 경로는 그쪽이다. 일반 리스크관리 OCO 생성·취소(`intentionId` 생략)를 QA한다면 `docs/api/order.md`의 "021 일반 리스크관리 OCO" 절을 근거로 삼는다.
 
-각 후속 구현이 병합될 때 해당 계약을 실제 상태로 전환하고 `docs/api-routes.md`의 계획 행도 실제 라우트 목록으로 옮긴다. 모든 경로는 Access Bearer 인증과 공통 오류 body를 사용하며 JSON POST는 `Content-Type: application/json`이다.
+각 후속 구현이 병합될 때 해당 계약을 실제 상태로 전환하고 `ai/api-routes.md`의 계획 행도 실제 라우트 목록으로 옮긴다. 모든 경로는 Access Bearer 인증과 공통 오류 body를 사용하며 JSON POST는 `Content-Type: application/json`이다.
 
 수량은 양수 `DECIMAL(30,8)` 범위(정수부 최대 22자리·소수부 최대 8자리), 가격은 양수 `DECIMAL(18,8)` 범위(정수부 최대 10자리·소수부 최대 8자리)다. 초과 precision/scale은 반올림하지 않고 400 `VALIDATION_ERROR`로 거부한다. 모든 id는 양의 `Long`이다.
 
-**즐겨찾기·사전 의도의 저장 방식 (정본: `docs/adr/0012-tutorial-state-in-memory.md`)** — 이 절 전체에 적용되므로 각 엔드포인트에서 반복하지 않는다. `#193`부터 `favorites`(V14)·`practice_intentions`(V16) 테이블은 DROP됐고 서버 힙 메모리(인스턴스 단위 `ConcurrentHashMap`)에 저장한다. 클라이언트가 관측하는 결과는 셋이다 — ① **서버 재시작·재배포 시 등록된 즐겨찾기와 사전 의도가 모두 사라진다**(재등록 필요, 삭제 요청은 404가 된다), ② `favoriteId`·`intentionId`는 프로세스 기동마다 1부터 재채번되므로 서로 다른 시점의 같은 id가 다른 리소스일 수 있다, ③ 다중 인스턴스에서 sticky session이 없으면 인스턴스마다 다른 상태가 보인다. `practice_progresses`·`practice_completions`(완료 판정)는 DB에 남아 이 유실의 영향을 받지 않는다.
+**즐겨찾기·사전 의도의 저장 방식 (정본: `ai/adr/0012-tutorial-state-in-memory.md`)** — 이 절 전체에 적용되므로 각 엔드포인트에서 반복하지 않는다. `#193`부터 `favorites`(V14)·`practice_intentions`(V16) 테이블은 DROP됐고 서버 힙 메모리(인스턴스 단위 `ConcurrentHashMap`)에 저장한다. 클라이언트가 관측하는 결과는 셋이다 — ① **서버 재시작·재배포 시 등록된 즐겨찾기와 사전 의도가 모두 사라진다**(재등록 필요, 삭제 요청은 404가 된다), ② `favoriteId`·`intentionId`는 프로세스 기동마다 1부터 재채번되므로 서로 다른 시점의 같은 id가 다른 리소스일 수 있다, ③ 다중 인스턴스에서 sticky session이 없으면 인스턴스마다 다른 상태가 보인다. `practice_progresses`·`practice_completions`(완료 판정)는 DB에 남아 이 유실의 영향을 받지 않는다.
 
 ### 즐겨찾기 등록
 
@@ -71,11 +71,11 @@
 
 현재 존재하는 본인 favorite와 같은 종목만 허용한다. 서비스는 `(user_id, tutorial_key)` 유일 제약의 `practice_progresses`를 atomic insert-if-absent 한 뒤 진행 행과 favorite를 잠가 검증한다.
 
-**`tutorial_key`는 대상 종목의 `market`으로 서버가 결정한다** — `STOCK`이면 `INVESTMENT_PRACTICE_V1`, `CRYPTO`이면 `COIN_PRACTICE_V1`(이슈 #226 구현 완료, 규칙 정본은 `docs/specs/020-coin-practice-tutorial`). **클라이언트는 key를 입력하지 않는다.** 주식과 코인은 완전히 독립된 튜토리얼이라 한쪽 완료가 다른 쪽에 영향을 주지 않으며, 코인 종목으로 의도를 기록하려면 1단계 favorite도 같은 코인 종목이어야 한다(아니면 409 `PRACTICE_STEP_LOCKED`). 완료 상태면 저장 없이 409 `PRACTICE_ALREADY_COMPLETED`, favorite가 없으면 저장 없이 409 `PRACTICE_STEP_LOCKED`다. 유효 요청마다 사용자별 리스트에 새 레코드를 추가하며 **중복 intention을 금지하는 유일 제약은 없다**(저장 방식·유실은 도입부 참고). 이 API는 의도만 기록하며 실제 매수 체결은 `POST /api/orders`(시장가) 또는 `POST /api/orders/limit`(코인 지정가)의 별도 요청이다.
+**`tutorial_key`는 대상 종목의 `market`으로 서버가 결정한다** — `STOCK`이면 `INVESTMENT_PRACTICE_V1`, `CRYPTO`이면 `COIN_PRACTICE_V1`(이슈 #226 구현 완료, 규칙 정본은 `ai/specs/020-coin-practice-tutorial`). **클라이언트는 key를 입력하지 않는다.** 주식과 코인은 완전히 독립된 튜토리얼이라 한쪽 완료가 다른 쪽에 영향을 주지 않으며, 코인 종목으로 의도를 기록하려면 1단계 favorite도 같은 코인 종목이어야 한다(아니면 409 `PRACTICE_STEP_LOCKED`). 완료 상태면 저장 없이 409 `PRACTICE_ALREADY_COMPLETED`, favorite가 없으면 저장 없이 409 `PRACTICE_STEP_LOCKED`다. 유효 요청마다 사용자별 리스트에 새 레코드를 추가하며 **중복 intention을 금지하는 유일 제약은 없다**(저장 방식·유실은 도입부 참고). 이 API는 의도만 기록하며 실제 매수 체결은 `POST /api/orders`(시장가) 또는 `POST /api/orders/limit`(코인 지정가)의 별도 요청이다.
 
 OCO 전용 경로는 `STOCK`이면 `INVESTMENT_OCO_PRACTICE_V1`, `CRYPTO`이면 `COIN_OCO_PRACTICE_V1`을 사용한다. 두 경로의 intention은 같은 인메모리 ID 공간에 저장하되 내부 tutorial key로 구분하며 상호 대체할 수 없다. OCO 생성은 OCO 전용 intention만 인정하고, OCO 복기는 exit plan 시장의 OCO progress를 잠가 같은 key의 completion을 생성한다. 따라서 holding 기반 실습을 이미 완료한 사용자도 OCO 전용 의도를 새로 기록해 독립적으로 시작할 수 있다.
 
-**후속 확장 계획(#199, 아직 미구현):** 기존 타입 생략+`stopLoss`·`takeProfit` 요청은 PRICE로 호환하면서 `exitPriceType=PRICE|PERCENT`를 추가한다. PERCENT는 퍼센트 단위(백분율 값, `5`=5%)의 `stopLossRate`·`takeProfitRate`만 받고 실제 시장가 BUY `entryPrice`를 기준으로 OCO 생성 시 scale 8 절대 가격선을 계산한다. intention은 ADR-0012대로 인메모리를 유지하고 내부 UUID instance key로 영속 exit plan과 숫자 ID 재사용을 구분한다. tagged union, rate 범위·반올림·저장 정책은 `docs/specs/019-exit-price-policy`가 정본이며, 구현 전까지 위 현재 요청·응답만 실제 호출 가능하다.
+**후속 확장 계획(#199, 아직 미구현):** 기존 타입 생략+`stopLoss`·`takeProfit` 요청은 PRICE로 호환하면서 `exitPriceType=PRICE|PERCENT`를 추가한다. PERCENT는 퍼센트 단위(백분율 값, `5`=5%)의 `stopLossRate`·`takeProfitRate`만 받고 실제 시장가 BUY `entryPrice`를 기준으로 OCO 생성 시 scale 8 절대 가격선을 계산한다. intention은 ADR-0012대로 인메모리를 유지하고 내부 UUID instance key로 영속 exit plan과 숫자 ID 재사용을 구분한다. tagged union, rate 범위·반올림·저장 정책은 `ai/specs/019-exit-price-policy`가 정본이며, 구현 전까지 위 현재 요청·응답만 실제 호출 가능하다.
 
 ### 튜토리얼 합성 시세 조회
 
@@ -98,13 +98,13 @@ OCO 전용 경로는 `STOCK`이면 `INVESTMENT_OCO_PRACTICE_V1`, `CRYPTO`이면 
 
 `PracticePriceSessionResponse`는 `sessionId`, `instrumentId`, `status`(`ACTIVE`\|`COMPLETED`), `generatorVersion`, `startPrice`, `currentTick`, `currentPrice`, `tickSeconds=3`, `totalTicks=100`, `createdAt`, nullable `completedAt`을 반환한다. `seed`는 서버 내부 재현 정보이며 응답에 노출하지 않는다. 생성은 `InstrumentService.getInstrumentEntity`로 종목 존재를 확인한 뒤 `market=CRYPTO`·`tradable=true`를 서비스가 검증하고, `PriceQueryService.getPriceQuote`로 조회한 실제 유효 현재가를 anchor로 쓰며 미가용 시 정확히 `10000.00000000`을 쓴다. seed는 서버 CSPRNG(`SecureRandom`)로 생성하고 생성 직후 `currentTick=0`, `currentPrice=startPrice`, `status=ACTIVE`다. 조회 시 seed·startPrice로 저장된 tick까지 v1 생성기를 재실행해 저장된 `currentPrice`와 일치하는지 검증하고, 불일치하면 클라이언트 오류가 아니라 500 `INTERNAL_ERROR`로 중단한다(재기동 재현성 방어).
 
-가격 세션은 DB 영속이며 `(user_id, instrument_id)`별 ACTIVE 세션은 MySQL generated column(`active_slot`)과 unique 제약으로 최대 1개만 허용한다(완료 세션은 이 상한에 포함하지 않는다). 상세 스키마·생성기 byte encoding·잠금·재기동 계약은 `docs/specs/030-coin-practice-price-runtime/plan.md`가 정본이다.
+가격 세션은 DB 영속이며 `(user_id, instrument_id)`별 ACTIVE 세션은 MySQL generated column(`active_slot`)과 unique 제약으로 최대 1개만 허용한다(완료 세션은 이 상한에 포함하지 않는다). 상세 스키마·생성기 byte encoding·잠금·재기동 계약은 `ai/specs/030-coin-practice-price-runtime/plan.md`가 정본이다.
 
 next-tick은 세션을 owner 스코프로 `SELECT ... FOR UPDATE`(`findByIdAndUserIdForUpdate`) 잠근 뒤 상태·`expectedTick`을 검증하고, v1 생성기로 다음 가격을 계산해 `PracticePriceSession.advance()`로 `currentTick`·`currentPrice`를 갱신한다. `expectedTick`은 정확히 `currentTick+1`만 받으며(1..99 범위를 벗어나는 요청은 항상 이 비교에서 걸린다), 같은 트랜잭션 안에서 세션 전용 `PracticePriceTickAdvancedEvent`를 발행해 `PracticeTickFillListener`(일반 동기 `@EventListener`, 예외를 삼키지 않는다)가 같은 세션의 PENDING 교육 지정가 주문만 체결 판정한다. tick 99 도달 시에는 체결 판정을 먼저 마친 뒤 남은 PENDING 주문을 취소·예약 현금 반환하고, 그다음 세션을 `COMPLETED`로 전이해 `completedAt`을 채운다(`PracticePriceSession.complete()`). 튜토리얼 이벤트는 `PriceStore`·`CryptoPriceUpdatedEvent`를 사용하지 않고 같은 sessionId의 주문만 처리하며, 일반 지정가 체결 경로(`findPendingLimitOrdersToFill`)는 `practicePriceSessionId is null` 조건으로 교육 주문을 제외한다.
 
 교육 지정가 생성(`POST /api/education/practice/limit-orders`)은 세션을 owner 스코프로 먼저 잠근 뒤(존재하지 않거나 타인 소유는 404 `NOT_FOUND`) `status=ACTIVE`(아니면 409 `PRACTICE_PRICE_SESSION_CLOSED`)·요청 `instrumentId`가 세션의 종목과 일치(아니면 409 `PRACTICE_PRICE_SESSION_MISMATCH`)를 검증하고, order 도메인의 `PracticeLimitOrderCreationService`에 위임한다. 이 서비스가 종목 `market=CRYPTO`·`tradable=true`(아니면 409 `INSTRUMENT_NOT_TRADABLE`), 수량·지정가 형식과 최소주문금액(기존 015 지정가 규칙 재사용), 세션당 PENDING 교육 주문 1건 상한(초과 시 409 `PRACTICE_LIMIT_ORDER_ALREADY_PENDING`)을 검증한 뒤 계좌 현금을 예약하고(부족 시 기존 409 `INSUFFICIENT_CASH`) `Order`를 `practicePriceSessionId`와 함께 PENDING으로 저장한다. side는 요청에서 받지 않고 서버가 항상 `BUY`로 고정한다. `Idempotency-Key` 헤더는 요구하지 않으며 서버가 `practice:{sessionId}:{UUID}` 형태로 멱등키를 합성한다(재요청 재현이 아니라 세션 비관 잠금 + PENDING 1건 상한이 중복 생성을 막는다). 응답은 기존 지정가 생성과 동일한 `LimitOrderResponse`다(생성 시점은 항상 PENDING이라 체결 정보를 포함하는 `OrderResponse`를 쓰지 않는다).
 
-holding 관찰은 buyTrade→order에서 sessionId를 서버가 역추적한다(이슈 #321, 3안 — priceruntime의 `PracticePriceObservationService` 파사드가 세션 가격원을 소유). sessionId가 있으면 ACTIVE/COMPLETED 세션의 마지막 현재가, null이면 기존 실제 가격원(`PriceQueryService`)을 사용한다. sessionId가 있는데 세션 owner·instrument가 chain과 불일치하면(데이터 이상 상태) 실제 가격으로 조용히 fallback하지 않고 409 `PRACTICE_EVIDENCE_MISSING`으로 거부한다 — `holding-observations` API의 기존 오류 집합을 늘리지 않는다. 세션 가격 경로에서는 `PRICE_UNAVAILABLE`이 발생하지 않는다(세션 `currentPrice`는 항상 non-null). 상세 잠금 순서·트랜잭션 계약은 `docs/specs/030-coin-practice-price-runtime/plan.md`가 정본이다.
+holding 관찰은 buyTrade→order에서 sessionId를 서버가 역추적한다(이슈 #321, 3안 — priceruntime의 `PracticePriceObservationService` 파사드가 세션 가격원을 소유). sessionId가 있으면 ACTIVE/COMPLETED 세션의 마지막 현재가, null이면 기존 실제 가격원(`PriceQueryService`)을 사용한다. sessionId가 있는데 세션 owner·instrument가 chain과 불일치하면(데이터 이상 상태) 실제 가격으로 조용히 fallback하지 않고 409 `PRACTICE_EVIDENCE_MISSING`으로 거부한다 — `holding-observations` API의 기존 오류 집합을 늘리지 않는다. 세션 가격 경로에서는 `PRICE_UNAVAILABLE`이 발생하지 않는다(세션 `currentPrice`는 항상 non-null). 상세 잠금 순서·트랜잭션 계약은 `ai/specs/030-coin-practice-price-runtime/plan.md`가 정본이다.
 
 ### OCO exit plan 생성 — 교육 경로, `intentionId` 지정 (계획)
 
@@ -181,11 +181,11 @@ holding 관찰은 buyTrade→order에서 sessionId를 서버가 역추적한다(
 | `PracticeStepResponse` | `Integer step`, `String status`, `Boolean locked`, `PracticeEvidenceResponse evidence` | 모두 non-null; locked 단계도 빈 evidence 객체 반환 |
 | `PracticeEvidenceResponse` | `Long favoriteId`, `LocalDateTime favoriteCreatedAt`, `Long intentionId`, `LocalDateTime intentionCreatedAt`, `Long buyTradeId`, `LocalDateTime buyTradeExecutedAt`, `Long exitPlanId`, `LocalDateTime exitPlanReservedAt`, `Long observationId`, `LocalDateTime observationObservedAt`, `String evidenceType`, `Long reflectionId`, `LocalDateTime reflectionCreatedAt` | 리소스 id·시각은 쌍으로 null/non-null; observation은 id·시각·type이 함께 null/non-null |
 
-진행 상태의 모든 조합, OCO fingerprint canonical JSON과 동시성·잠금 정본은 `docs/specs/016-investment-education-policy/plan.md`를 따른다.
+진행 상태의 모든 조합, OCO fingerprint canonical JSON과 동시성·잠금 정본은 `ai/specs/016-investment-education-policy/plan.md`를 따른다.
 
 ## 026 시장가/지정가 매매 기반 투자 실습 (OCO 없이, holding-observations)
 
-`016`의 OCO exit plan 없이 지금 production에 있는 시장가·코인 지정가 매수만으로 2·3단계를 완결하는 경로다(`docs/specs/026-market-order-practice-tutorial`). `holdingId`를 요청 식별자로 받으며 `016`의 `/observations`·`exitPlanId` 계약과 URL·필드가 다르고 서로 공존한다(spec.md "관찰·복기 API 대상 식별자" 절).
+`016`의 OCO exit plan 없이 지금 production에 있는 시장가·코인 지정가 매수만으로 2·3단계를 완결하는 경로다(`ai/specs/026-market-order-practice-tutorial`). `holdingId`를 요청 식별자로 받으며 `016`의 `/observations`·`exitPlanId` 계약과 URL·필드가 다르고 서로 공존한다(spec.md "관찰·복기 API 대상 식별자" 절).
 
 > **2차 MVP에서 3단계 실습을 실제로 완료할 수 있는 유일한 경로이며, 블랙박스 QA는 이 절을 근거로 삼는다.** `016` 절의 OCO 계약(`/exit-plans`, `/observations`, `/reflections`)은 3차 MVP 설계이고 controller가 없다.
 >
@@ -275,7 +275,7 @@ holding 관찰은 buyTrade→order에서 sessionId를 서버가 역추적한다(
 
 `locked`는 직전 단계가 완료되지 않았으면 `true`다. favorite·intention·buyTrade와 observation의 식별자·시각은 각각 한 쌍으로 null/non-null이며 observation은 `evidenceType`까지 함께 null/non-null이다. `holdingId`는 chain이 있을 때 채우고 참조 손절·익절가는 완료 전 계산 가능한 경우에만 채운다.
 
-**`steps` 배열 길이(031, Issue #339, `docs/specs/031-tutorial-sandbox-instruments`)**: 위 1~4번에서 해석·완료된 chain의 종목이 샘플 종목(`is_tutorial_sample=true`)이면 `steps`가 3개가 아니라 **4개**다(실제 종목 chain은 위 계약을 그대로 유지, 항상 3개). 4번째 "매도·복기" 단계는 샘플 종목 chain에만 존재한다.
+**`steps` 배열 길이(031, Issue #339, `ai/specs/031-tutorial-sandbox-instruments`)**: 위 1~4번에서 해석·완료된 chain의 종목이 샘플 종목(`is_tutorial_sample=true`)이면 `steps`가 3개가 아니라 **4개**다(실제 종목 chain은 위 계약을 그대로 유지, 항상 3개). 4번째 "매도·복기" 단계는 샘플 종목 chain에만 존재한다.
 
 - 4단계 evidence는 (a) `buyTrade.executedAt` 기준 5분 이내 `FILLED` `SELL` 체결(`POST /api/orders` 재사용, 신규 매도 엔드포인트 없음), (b) 자유 복기 저장(`holding-reflections`, 031에서 샘플 종목 chain에 전제조건 추가) 둘 다 필요하다.
 - 4단계 `status`는 (a)·(b) 모두 있으면 `COMPLETED`, (a)만 있으면 `IN_PROGRESS`(복기 대기), 매도가 아직 없고 5분 이내면 신규 상태값 **`AWAITING_SALE`**(`locked=false` — 이 API의 다른 `NOT_STARTED`는 전부 `locked=true`와 짝을 이루므로, 지금 매도해야 하는 이 단계에 `NOT_STARTED`를 재사용하면 프론트엔드가 기존 관례대로 CTA를 숨길 위험이 있어 별도 값을 쓴다), 매도 없이 5분 초과 또는 매도 체결 자체가 `buyTrade.executedAt+5분`을 초과했으면(늦은 매도) 신규 상태값 **`EXPIRED`**다(`status` 필드는 여전히 `String`이라 스키마 변경 없음).

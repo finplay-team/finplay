@@ -5,9 +5,9 @@
 |---|---|---|---|
 | 14:11 | implementer | `./gradlew compileJava compileTestJava test --tests "*KisHistoricalCandleCollectorTest" --tests "*InstrumentRepositoryTest"` | tasks.md 항목 1, spec.md COLLECT-STAB-002·004 |
 | 15:20 | implementer | `./gradlew compileJava` | tasks.md 항목 2, plan.md §락 설계 세부, ADR-0014, feedback.service.RedisLock/CryptoWatchLock 선례 |
-| 16:05 | implementer | `./gradlew compileJava` | tasks.md 항목 3, spec.md COLLECT-STAB-003, plan.md §재시도 스케줄 근거·§파일별 변경 지점, docs/agent-mistakes.md(zone 명시 함정) |
+| 16:05 | implementer | `./gradlew compileJava` | tasks.md 항목 3, spec.md COLLECT-STAB-003, plan.md §재시도 스케줄 근거·§파일별 변경 지점, ai/agent-mistakes.md(zone 명시 함정) |
 | 16:30 | implementer | `./gradlew compileJava` | tasks.md 항목 4, spec.md COLLECT-STAB-005, plan.md §`KisProperties.java` + `application-prod.yml`, application-local.yml 기존 600ms 근거 주석 |
-| 17:40 | reviewer | `git diff dev...HEAD` 전체 정독(코드·테스트·yml) + `gh issue view 370/373` 대조 | docs/conventions.md, docs/adr/0002-architecture.md, docs/adr/0003-testing-strategy.md, docs/adr/0004-flyway-migrations.md, spec.md, plan.md, RedisLock/CryptoWatchLock 선례 |
+| 17:40 | reviewer | `git diff dev...HEAD` 전체 정독(코드·테스트·yml) + `gh issue view 370/373` 대조 | docs/conventions.md, ai/adr/0002-architecture.md, ai/adr/0003-testing-strategy.md, ai/adr/0004-flyway-migrations.md, spec.md, plan.md, RedisLock/CryptoWatchLock 선례 |
 
 ## 모니터링 (사람용 요약)
 - 14:11 — 샌드박스 종목 제외 조회 메서드 추가, 수집 결과 로그 남김, 관련 테스트 24건 통과.

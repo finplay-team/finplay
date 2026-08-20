@@ -24,7 +24,7 @@ ADR-0005는 Claude API 키 비용 때문에 "PR 생성 즉시 무인 자동 리�
 
 - 실행마다 OpenAI API 비용이 발생한다 (docs-only PR은 paths-filter로 스킵해 절감).
 - Codex는 빌드/테스트를 실행하지 않는다 — 그건 CI(ci.yml)와 로컬 test-runner의 몫이다.
-- 튜터 제안의 "이슈 → 방향 제시 → 구현 → PR" 자동화는 여전히 미착수다 (`docs/harness-roadmap.md`). Codex 키로는 Claude 하네스를 러너에서 돌릴 수 없으므로, 그 단계는 Claude 구독 OAuth 토큰 또는 Anthropic API 키 확보 시 별도 ADR로 결정한다.
+- 튜터 제안의 "이슈 → 방향 제시 → 구현 → PR" 자동화는 여전히 미착수다 (`ai/harness-roadmap.md`). Codex 키로는 Claude 하네스를 러너에서 돌릴 수 없으므로, 그 단계는 Claude 구독 OAuth 토큰 또는 Anthropic API 키 확보 시 별도 ADR로 결정한다.
 
 ## 결과
 

@@ -4,7 +4,7 @@
 
 **Goal:** `EmailVerificationService.confirmVerificationCode`와 `EmailChangeService.validateAndConsumeCode`의 "잠금 없이 읽고 → 읽은 값으로 한도 판정 → 증가" 경로에 PR #120과 **같은 방식**(`@Lock(LockModeType.PESSIMISTIC_WRITE)`)을 적용해 읽기-판정-증가를 직렬화한다. 그 뒤 세 서비스에 복제된 인증번호 정책 상수와 `generateCode`·`hmac`·`checkSendRateLimit`·`expirePreviousCodes`를 공통 컴포넌트로 추출하되, **용도별 HMAC 시크릿 분리는 그대로 보존한다.**
 
-**관련 정본:** GitHub Issue #121(본문 + 범위 축소 코멘트), PRD `AUTH-004`(`docs/prd.md` 246-259행), `AUTH-005`(272-278행), `AUTH-006`(294-318행), `docs/specs/002-auth-account/spec.md`, `docs/specs/002-auth-account/plan.md`, `issue-116-plan.md`(D1 판정 순서·D3 `noRollbackFor`), `issue-115-plan.md`(U5 공통화 미룸), `issue-56-plan.md`(이메일 변경 확인 구조), `docs/specs/002-auth-account/run-log.md`("QA 경쟁 조건 수정" 절), PR #120 커밋 `385144c`, ADR-0002, ADR-0003, ADR-0004, `docs/conventions.md`
+**관련 정본:** GitHub Issue #121(본문 + 범위 축소 코멘트), PRD `AUTH-004`(`ai/prd.md` 246-259행), `AUTH-005`(272-278행), `AUTH-006`(294-318행), `ai/specs/002-auth-account/spec.md`, `ai/specs/002-auth-account/plan.md`, `issue-116-plan.md`(D1 판정 순서·D3 `noRollbackFor`), `issue-115-plan.md`(U5 공통화 미룸), `issue-56-plan.md`(이메일 변경 확인 구조), `ai/specs/002-auth-account/run-log.md`("QA 경쟁 조건 수정" 절), PR #120 커밋 `385144c`, ADR-0002, ADR-0003, ADR-0004, `docs/conventions.md`
 
 **착수 전 확정된 결정 (다시 논의하지 않는다):**
 
@@ -26,7 +26,7 @@
 | 세 서비스의 정책 상수·`generateCode`·`hmac`·`checkSendRateLimit`·`expirePreviousCodes` | 3중 복제 | 공통 컴포넌트로 추출 (D5·D6) |
 | `build.gradle` 테스트 환경 | `EMAIL_VERIFICATION_SECRET`·`PASSWORD_RESET_SECRET`이 **서로 다른 값** | 시크릿 뒤바뀜이 기존 테스트로 잡히는 근거 (D5) |
 
-**신규 Flyway 마이그레이션·신규 `ErrorCode`·신규 엔드포인트는 없다.** 컨트롤러를 건드리지 않으므로 `docs/api-routes.md`·`docs/api-contracts.md`도 **수정하지 않는다.**
+**신규 Flyway 마이그레이션·신규 `ErrorCode`·신규 엔드포인트는 없다.** 컨트롤러를 건드리지 않으므로 `ai/api-routes.md`·`docs/api-contracts.md`도 **수정하지 않는다.**
 
 ---
 
@@ -83,7 +83,7 @@ Java 17, Spring Boot 4.1, Spring Data JPA(`@Lock`), MySQL 8.4(Testcontainers, In
 - 인증번호 자릿수·만료 시간 등 **정책값 변경** — 상수의 위치만 옮기고 값은 그대로다.
 - 세 번째 HMAC 시크릿(`EMAIL_CHANGE_SECRET`) 신설 (U2).
 - 계정 잠금·의심 로그인 알림, 재설정 완료 알림 메일.
-- `docs/api-routes.md`·`docs/api-contracts.md` — 컨트롤러·응답 계약이 바뀌지 않는다.
+- `ai/api-routes.md`·`docs/api-contracts.md` — 컨트롤러·응답 계약이 바뀌지 않는다.
 - 신규 Flyway 마이그레이션·신규 `ErrorCode`.
 
 ---
@@ -256,7 +256,7 @@ public void expireAll(List<? extends ExpirableVerification> rows, LocalDateTime 
 3. repository에 `@Lock` 한 줄을 넣는다(+ D4의 호출부 교정).
 4. 같은 테스트를 다시 실행한다 → 통과해야 한다.
 5. 생성 SQL에 `... for update`가 붙는지 로그로 확인한다(D3의 조인 여부 포함).
-6. **2번과 4번 두 실행의 명령과 실측값을 `docs/specs/002-auth-account/run-log.md`에 남긴다.** PR #120이 "QA 실측(동시 5건 → `attempt_count` 1)"을 남긴 것과 같은 형식이다. 통과 사실만 적는 것은 근거가 아니다.
+6. **2번과 4번 두 실행의 명령과 실측값을 `ai/specs/002-auth-account/run-log.md`에 남긴다.** PR #120이 "QA 실측(동시 5건 → `attempt_count` 1)"을 남긴 것과 같은 형식이다. 통과 사실만 적는 것은 근거가 아니다.
 7. (권장) 커밋 직전에 프로덕션 변경만 임시로 되돌려 다시 실패하는지 한 번 더 확인한다 — 테스트가 잠금이 아닌 다른 이유로 통과하고 있지 않다는 최종 확인이다.
 
 Task 3·4(공통화) 이후에도 이 동시성 테스트가 통과하는지 다시 돌린다. 공통화가 한도 판정 경계를 건드렸다면 여기서 잡힌다.
@@ -306,7 +306,7 @@ Task 3·4(공통화) 이후에도 이 동시성 테스트가 통과하는지 다
 - `controller/`·`dto/`·`config/SecurityConfig.java`·`common/ErrorCode.java` — 엔드포인트·요청·응답·오류 코드가 전혀 바뀌지 않는다.
 - `src/main/resources/db/migration/*` — 신규 마이그레이션 없음 (ADR-0004).
 - `build.gradle`·`.env.example`·`deploy/README.md` — 두 시크릿 환경변수는 이미 배선돼 있고 이름도 바뀌지 않는다.
-- `docs/api-routes.md`·`docs/api-contracts.md` — **컨트롤러 변경이 없으므로 건드리지 않는다.**
+- `ai/api-routes.md`·`docs/api-contracts.md` — **컨트롤러 변경이 없으므로 건드리지 않는다.**
 
 ### Test files
 
@@ -320,9 +320,9 @@ Task 3·4(공통화) 이후에도 이 동시성 테스트가 통과하는지 다
 
 ### Documentation files to modify after implementation
 
-- `docs/specs/002-auth-account/run-log.md` — D7 절차 2번·4번 실행의 명령과 **실측값** 기록, D3의 생성 SQL 확인 결과, 공통화 이후 재실행 결과.
-- `docs/specs/002-auth-account/tasks.md` — Issue #121 절 체크.
-- `docs/prd.md` — **문구 변경은 원칙적으로 없다.** 상수의 코드상 위치만 바뀌고 값·정책은 그대로다. 다만 Task 5에서 `AUTH-004`(249·251)·`AUTH-005`(278)·`AUTH-006`(297-298)의 정책 서술과 `VerificationCodePolicy`의 상수값이 하나씩 일치하는지 대조하고, 어긋나는 것이 나오면 **고치지 말고 보고한다.**
+- `ai/specs/002-auth-account/run-log.md` — D7 절차 2번·4번 실행의 명령과 **실측값** 기록, D3의 생성 SQL 확인 결과, 공통화 이후 재실행 결과.
+- `ai/specs/002-auth-account/tasks.md` — Issue #121 절 체크.
+- `ai/prd.md` — **문구 변경은 원칙적으로 없다.** 상수의 코드상 위치만 바뀌고 값·정책은 그대로다. 다만 Task 5에서 `AUTH-004`(249·251)·`AUTH-005`(278)·`AUTH-006`(297-298)의 정책 서술과 `VerificationCodePolicy`의 상수값이 하나씩 일치하는지 대조하고, 어긋나는 것이 나오면 **고치지 말고 보고한다.**
 
 ---
 
@@ -364,10 +364,10 @@ Task 3·4(공통화) 이후에도 이 동시성 테스트가 통과하는지 다
 
 - [ ] `./gradlew build`(Spotless·SpotBugs·JaCoCo 포함)를 실제로 실행해 통과시킨다.
 - [ ] Task 1·2의 동시성 테스트를 공통화 이후 상태에서 다시 돌려 통과를 확인한다.
-- [ ] `docs/specs/002-auth-account/run-log.md`에 이번 이슈 절을 추가한다 — **수정 전 실패 실측값과 수정 후 통과 결과를 두 경로 각각에 대해**, 생성 SQL 확인 결과, 공통화 전후 회귀 결과.
-- [ ] `docs/prd.md` `AUTH-004`(249·251·255행)·`AUTH-005`(278행)·`AUTH-006`(297-298행)의 정책 서술과 `VerificationCodePolicy` 상수값을 하나씩 대조한다. **어긋나는 것이 있으면 고치지 말고 보고한다.**
-- [ ] `docs/specs/002-auth-account/tasks.md`의 Issue #121 절을 체크한다.
-- [ ] `docs/api-routes.md`·`docs/api-contracts.md`를 **건드리지 않았음**을 확인한다 (컨트롤러 변경 없음).
+- [ ] `ai/specs/002-auth-account/run-log.md`에 이번 이슈 절을 추가한다 — **수정 전 실패 실측값과 수정 후 통과 결과를 두 경로 각각에 대해**, 생성 SQL 확인 결과, 공통화 전후 회귀 결과.
+- [ ] `ai/prd.md` `AUTH-004`(249·251·255행)·`AUTH-005`(278행)·`AUTH-006`(297-298행)의 정책 서술과 `VerificationCodePolicy` 상수값을 하나씩 대조한다. **어긋나는 것이 있으면 고치지 말고 보고한다.**
+- [ ] `ai/specs/002-auth-account/tasks.md`의 Issue #121 절을 체크한다.
+- [ ] `ai/api-routes.md`·`docs/api-contracts.md`를 **건드리지 않았음**을 확인한다 (컨트롤러 변경 없음).
 
 ---
 
@@ -383,7 +383,7 @@ Task 3·4(공통화) 이후에도 이 동시성 테스트가 통과하는지 다
 - [ ] `EMAIL_VERIFICATION_SECRET`과 `PASSWORD_RESET_SECRET`이 여전히 분리돼 있고, 한쪽 코드가 다른 쪽 경로에서 통하지 않음이 테스트로 고정됐다.
 - [ ] 정책 상수·`generateCode`·`hmac`·`checkSendRateLimit`(+ 선택적으로 `expirePreviousCodes`)의 3중 복제가 사라졌다.
 - [ ] 신규 Flyway 마이그레이션·신규 `ErrorCode`·컨트롤러 변경이 없다.
-- [ ] `docs/api-routes.md`·`docs/api-contracts.md`가 수정되지 않았다.
+- [ ] `ai/api-routes.md`·`docs/api-contracts.md`가 수정되지 않았다.
 - [ ] `./gradlew build`가 통과한다.
 
 ---

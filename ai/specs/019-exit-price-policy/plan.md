@@ -100,7 +100,7 @@ takeProfitPrice = entryPrice.multiply(ONE.add(normalizedTakeRate))
 ## 문서 전환 규칙
 
 - 이 문서 PR은 production과 실제 intention API 계약을 바꾸지 않는다. 전역 API 문서에는 “후속 변경 계획”으로만 기록한다.
-- intention 확장 Controller 이슈에서 `docs/api-routes.md`와 `docs/api-contracts.md`를 실제 계약으로 전환한다.
+- intention 확장 Controller 이슈에서 `ai/api-routes.md`와 `docs/api-contracts.md`를 실제 계약으로 전환한다.
 - candidate 7 OCO Controller 이슈는 변경된 4필드 요청과 확정 가격선 응답을 actual로 전환한다.
 
 ## 테스트 계획

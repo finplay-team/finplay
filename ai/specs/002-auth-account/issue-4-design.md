@@ -132,6 +132,6 @@ Testcontainers MySQL로 다음 핵심 시나리오를 검증한다.
 
 ## 문서 동기화
 
-- controller 추가와 함께 `docs/api-routes.md`에 회원가입 라우트와 요청·응답·오류 계약을 추가한다.
-- `docs/specs/002-auth-account/tasks.md`의 회원가입 작업은 구현·검증 완료 후에만 체크한다.
+- controller 추가와 함께 `ai/api-routes.md`에 회원가입 라우트와 요청·응답·오류 계약을 추가한다.
+- `ai/specs/002-auth-account/tasks.md`의 회원가입 작업은 구현·검증 완료 후에만 체크한다.
 - 구현 결과와 실제 검증 명령은 기존 `run-log.md`에 Issue #4 구역으로 기록한다.

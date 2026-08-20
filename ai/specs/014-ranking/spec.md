@@ -2,11 +2,11 @@
 
 > 단계: **2차 MVP (팀 회의 표현: 1차 고도화)**. 이슈 [#187](https://github.com/finplay-team/finplay/issues/187).
 >
-> PRD 근거: **RANK-001**(`docs/prd.md` "랭킹" 절, 2026-08-03 정책 확정 이슈 [#139](https://github.com/finplay-team/finplay/issues/139) — 완료). RANK-002(`GET /api/rankings/me`, 내 랭킹 조회)는 이 spec이 만드는 인프라·보정 로직을 재사용하는 후속 이슈에서 같은 spec 파일에 이어서 기록한다(이번 착수 범위 아님).
+> PRD 근거: **RANK-001**(`ai/prd.md` "랭킹" 절, 2026-08-03 정책 확정 이슈 [#139](https://github.com/finplay-team/finplay/issues/139) — 완료). RANK-002(`GET /api/rankings/me`, 내 랭킹 조회)는 이 spec이 만드는 인프라·보정 로직을 재사용하는 후속 이슈에서 같은 spec 파일에 이어서 기록한다(이번 착수 범위 아님).
 >
-> **문서 동기화 상태**: 이 spec 확정 시점에 아직 컨트롤러가 없다. 구현 착수 시 `docs/api-routes.md`·`docs/api-contracts.md`에 `GET /api/rankings` 계약을 같은 커밋에서 추가한다(CLAUDE.md 규칙 7).
+> **문서 동기화 상태**: 이 spec 확정 시점에 아직 컨트롤러가 없다. 구현 착수 시 `ai/api-routes.md`·`docs/api-contracts.md`에 `GET /api/rankings` 계약을 같은 커밋에서 추가한다(CLAUDE.md 규칙 7).
 >
-> **RANK-002 착수 (2026-08-05, 이슈 [#233](https://github.com/finplay-team/finplay/issues/233))**: 아래 "RANK-002 내 랭킹 조회" 절에 요구사항·완료 조건을 이어서 기록한다. RANK-002도 착수 시점에 아직 컨트롤러가 없다 — 구현 착수 시 `docs/api-routes.md`·`docs/api-contracts.md`에 `GET /api/rankings/me` 계약을 같은 커밋에서 추가한다.
+> **RANK-002 착수 (2026-08-05, 이슈 [#233](https://github.com/finplay-team/finplay/issues/233))**: 아래 "RANK-002 내 랭킹 조회" 절에 요구사항·완료 조건을 이어서 기록한다. RANK-002도 착수 시점에 아직 컨트롤러가 없다 — 구현 착수 시 `ai/api-routes.md`·`docs/api-contracts.md`에 `GET /api/rankings/me` 계약을 같은 커밋에서 추가한다.
 >
 > **재구성 절차 착수 (2026-08-09, 이슈 [#279](https://github.com/finplay-team/finplay/issues/279))**: RANK-001·RANK-002 두 착수분이 모두 "별도 이슈"로 미뤘던 **Redis 유실 시 MySQL 원장 기반 재구성 절차**를 확정·구현한다. 아래 "랭킹 재구성 절차 (이슈 #279)" 절이 정본이며, 위 세 곳의 미결 표기(RANK-001 Decision Gate·RANK-001 범위 제외·RANK-002 범위 제외)는 이 절을 가리키도록 갱신했다(삭제하지 않고 이력을 남긴다).
 
@@ -75,15 +75,15 @@
 - [ ] 매도 체결(`OrderExecutionService`의 FIFO 배분 확정, `accounts.realized_pnl` 갱신)이 커밋된 이후에만 랭킹에 반영된다(커밋 전 갱신·롤백 시 Redis 오염이 없다)
 - [ ] 같은 사용자의 매도 체결 두 건이 커밋 순서와 다르게 랭킹 갱신 이벤트로 처리되어도(순서 역전 시뮬레이션), 최종 ZSET score가 DB의 최신 `realized_pnl`과 일치한다
 - [ ] after-commit 랭킹 갱신이 Redis 장애로 재시도 후에도 실패하면 로그만 남기고, 매도 체결 자체(주문·체결·계좌 갱신)는 영향받지 않고 정상 성공한다(랭킹 갱신 실패가 체결을 롤백시키지 않는다)
-- [ ] 위 Decision Gate 항목(응답 필드·오류코드·Redis 키 설계·동시성 경합·보정 로직·Redis 갱신 실패 시 보상 경로)이 확정되어 `docs/specs/014-ranking/spec.md`·`plan.md`에 기록된다
-- [ ] `docs/api-routes.md`·`docs/api-contracts.md`에 `GET /api/rankings` 계약이 추가된다(컨트롤러 변경과 같은 커밋, CLAUDE.md 규칙 7)
-- [ ] 신규 `docs/specs/014-ranking/spec.md`를 작성해 RANK-001 요구사항 및 Decision Gate 확정 결과를 정식 spec으로 기록한다(RANK-002는 후속 이슈에서 같은 spec에 이어서 기록)
-- [ ] 단위(서비스 로직, Redis mock)·슬라이스(`@DataJpaTest`/`@WebMvcTest`)·통합(Testcontainers MySQL + Redis, 매도 체결→커밋→ZSET 반영 전체 흐름) 테스트를 작성한다(`docs/adr/0003-testing-strategy.md` 기준)
+- [ ] 위 Decision Gate 항목(응답 필드·오류코드·Redis 키 설계·동시성 경합·보정 로직·Redis 갱신 실패 시 보상 경로)이 확정되어 `ai/specs/014-ranking/spec.md`·`plan.md`에 기록된다
+- [ ] `ai/api-routes.md`·`docs/api-contracts.md`에 `GET /api/rankings` 계약이 추가된다(컨트롤러 변경과 같은 커밋, CLAUDE.md 규칙 7)
+- [ ] 신규 `ai/specs/014-ranking/spec.md`를 작성해 RANK-001 요구사항 및 Decision Gate 확정 결과를 정식 spec으로 기록한다(RANK-002는 후속 이슈에서 같은 spec에 이어서 기록)
+- [ ] 단위(서비스 로직, Redis mock)·슬라이스(`@DataJpaTest`/`@WebMvcTest`)·통합(Testcontainers MySQL + Redis, 매도 체결→커밋→ZSET 반영 전체 흐름) 테스트를 작성한다(`ai/adr/0003-testing-strategy.md` 기준)
 - [ ] `./gradlew build` 통과
 
 ## RANK-002 내 랭킹 조회 (2차 MVP)
 
-> 이슈 [#233](https://github.com/finplay-team/finplay/issues/233). PRD 근거: `docs/prd.md` "RANK-002 내 랭킹 조회" 절(2026-08-05 정책 확정). 아래 요구사항·완료 조건은 위 RANK-001이 만든 Redis ZSET(`ranking:{market}`)·공동 순위 보정 로직(`countStrictlyGreater`)을 재사용한다 — 새 Redis 키·자료구조를 만들지 않는다(근거는 `plan.md` "RANK-002 설계").
+> 이슈 [#233](https://github.com/finplay-team/finplay/issues/233). PRD 근거: `ai/prd.md` "RANK-002 내 랭킹 조회" 절(2026-08-05 정책 확정). 아래 요구사항·완료 조건은 위 RANK-001이 만든 Redis ZSET(`ranking:{market}`)·공동 순위 보정 로직(`countStrictlyGreater`)을 재사용한다 — 새 Redis 키·자료구조를 만들지 않는다(근거는 `plan.md` "RANK-002 설계").
 
 ### 개요
 
@@ -126,22 +126,22 @@
 - [ ] 상위 limit건에 들지 않아도 정확한 보정 순위를 반환한다(RANK-001의 `countStrictlyGreater` 로직 재사용, 세부는 `plan.md`)
 - [ ] 매도 체결 이력이 없는 사용자는 순위 필드만 null이고, 닉네임·실현손익(0)은 정상 값을 반환한다(오류가 아님)
 - [ ] 닉네임은 마스킹 없이 노출한다
-- [ ] `docs/api-routes.md`·`docs/api-contracts.md`에 `GET /api/rankings/me` 계약이 추가된다(컨트롤러 변경과 같은 커밋, CLAUDE.md 규칙 7)
-- [ ] `docs/prd.md` §3 구현 현황의 "랭킹 — 내 랭킹 조회(RANK-002)" 행이 완료로 갱신된다(근거는 이 PR 번호, CLAUDE.md 규칙 10)
+- [ ] `ai/api-routes.md`·`docs/api-contracts.md`에 `GET /api/rankings/me` 계약이 추가된다(컨트롤러 변경과 같은 커밋, CLAUDE.md 규칙 7)
+- [ ] `ai/prd.md` §3 구현 현황의 "랭킹 — 내 랭킹 조회(RANK-002)" 행이 완료로 갱신된다(근거는 이 PR 번호, CLAUDE.md 규칙 10)
 - [x] 단위(`RankingStoreTest`/`RankingServiceTest`, Redis·AccountService mock)·슬라이스(`@WebMvcTest RankingControllerTest`) 테스트를 작성한다. 이 기능이 재사용하는 ZSET 쓰기·이벤트 흐름 자체는 RANK-001 통합 테스트가 이미 검증했지만, "상위 `limit` 밖에서도 정확한 순위를 반환한다"는 RANK-002 고유의 읽기 경로는 그 재사용 범위 밖이라 `RankingIntegrationTest`에 시나리오를 하나 추가했다(PR #234 리뷰 권장 반영, 근거는 `plan.md` "테스트 계획")
 - [ ] `./gradlew build` 통과
 
 ## 랭킹 재구성 절차 (이슈 #279)
 
-> 이슈 [#279](https://github.com/finplay-team/finplay/issues/279). 선행 이슈 #187(RANK-001)·#233(RANK-002)가 각각 "별도 이슈"로 미뤄둔 **Redis 유실 시 MySQL 원장 기반 재구성 절차**를 확정·구현한다. PRD 근거: `docs/prd.md` RANK-001 절의 "Redis 유실 시 MySQL 원장으로 재구성한다 — 재구성 트리거·절차의 세부 구현은 착수 시 확정한다"(2026-08-03 확정, 이슈 #139)와 §6 "Redis 키 책임"의 랭킹 항목.
+> 이슈 [#279](https://github.com/finplay-team/finplay/issues/279). 선행 이슈 #187(RANK-001)·#233(RANK-002)가 각각 "별도 이슈"로 미뤄둔 **Redis 유실 시 MySQL 원장 기반 재구성 절차**를 확정·구현한다. PRD 근거: `ai/prd.md` RANK-001 절의 "Redis 유실 시 MySQL 원장으로 재구성한다 — 재구성 트리거·절차의 세부 구현은 착수 시 확정한다"(2026-08-03 확정, 이슈 #139)와 §6 "Redis 키 책임"의 랭킹 항목.
 
 ### 요구사항 ID를 새로 부여하지 않는 이유 (판단 근거)
 
 **새 ID(RANK-003)를 만들지 않고 RANK-001·RANK-002의 견고성 보강으로 기록한다.** 근거는 셋이다.
 
-1. **PRD에 이미 RANK-001의 일부로 적혀 있다.** `docs/prd.md` RANK-001 절이 "유실 시 MySQL 원장으로 재구성한다"를 **정책으로 이미 확정**해두고 "세부 구현은 착수 시 확정한다"로 미뤄둔 상태다. 즉 이 작업은 없던 요구사항을 새로 만드는 것이 아니라 **기존 요구사항의 미확정 세부를 채우는 것**이다. PRD에 없는 ID를 spec이 임의로 발명하면 PRD가 요구사항 ID의 정본이라는 전제가 깨진다.
+1. **PRD에 이미 RANK-001의 일부로 적혀 있다.** `ai/prd.md` RANK-001 절이 "유실 시 MySQL 원장으로 재구성한다"를 **정책으로 이미 확정**해두고 "세부 구현은 착수 시 확정한다"로 미뤄둔 상태다. 즉 이 작업은 없던 요구사항을 새로 만드는 것이 아니라 **기존 요구사항의 미확정 세부를 채우는 것**이다. PRD에 없는 ID를 spec이 임의로 발명하면 PRD가 요구사항 ID의 정본이라는 전제가 깨진다.
 2. **사용자에게 새 기능을 제공하지 않는다.** 새 엔드포인트가 없고(수동 재구성 엔드포인트는 만들지 않기로 확정), 사용자가 "할 수 있는 일"이 늘지 않는다. 늘어나는 것은 기존 두 엔드포인트가 **잘못된 값을 조용히 반환하지 않게 되는 정확성**뿐이다.
-3. **`docs/prd.md` §3 구현 현황 표의 RANK-001·RANK-002 행 판정이 바뀌지 않는다.** 두 행 모두 이미 "완료"이며 이 작업으로도 "완료"다. CLAUDE.md 규칙 10의 "미착수 → 완료로 바꾸는 PR / 새 엔드포인트를 제공하는 PR / 일부 완료의 내용이 달라지는 PR" 중 어디에도 해당하지 않는다.
+3. **`ai/prd.md` §3 구현 현황 표의 RANK-001·RANK-002 행 판정이 바뀌지 않는다.** 두 행 모두 이미 "완료"이며 이 작업으로도 "완료"다. CLAUDE.md 규칙 10의 "미착수 → 완료로 바꾸는 PR / 새 엔드포인트를 제공하는 PR / 일부 완료의 내용이 달라지는 PR" 중 어디에도 해당하지 않는다.
 
 다만 두 엔드포인트의 **응답 계약은 실제로 바뀐다**(`status` 필드 추가). 따라서 `docs/api-contracts.md` 갱신은 필수이며(CLAUDE.md 규칙 7), PRD도 §3 표가 아니라 **본문**(RANK-001 절의 미확정 문구, §6 Redis 키 책임의 랭킹 항목)을 갱신 대상으로 삼는다.
 
@@ -205,7 +205,7 @@ Redis ZSET `ranking:{market}`은 MySQL 원장(`accounts.realized_pnl`)의 파생
 
 ### 범위 제외
 
-- **ZSET의 정본 승격** — 정본은 계속 MySQL `accounts.realized_pnl`이다(위 "비즈니스 규칙", `docs/prd.md` §6). 이 작업은 그 결정을 바꾸지 않는다.
+- **ZSET의 정본 승격** — 정본은 계속 MySQL `accounts.realized_pnl`이다(위 "비즈니스 규칙", `ai/prd.md` §6). 이 작업은 그 결정을 바꾸지 않는다.
 - **`realizedPnl`을 DB에서 조회하도록 변경** — RANK-002가 응답 내부 정합성(rank와 realizedPnl이 동일 스냅샷 기준)을 위해 의도적으로 ZSET을 선택한 결정을 유지한다.
 - ~~**Redis 장애(연결 불가) 시 폴백** — 유실과 장애는 다르다. 현재 읽기 경로(`RankingStore.topN` 등)에 try/catch가 없어 Redis 장애 시 500이 나가는데, **이번 범위에서 바꾸지 않는다.** 이슈 #279가 명시적으로 제외했다.~~ → **해소됨. 이슈 [#288](https://github.com/finplay-team/finplay/issues/288)에서 읽기 경로에 `RankingStoreUnavailableException`을 도입해 Redis 장애 시에도 200 + `status: UNAVAILABLE`을 반환하도록 구현했다** — 아래 "Redis 장애 시 읽기 경로 폴백과 기동 내성 (이슈 #288)" 절이 정본이다.
 - **수동 재구성 엔드포인트** — 관리자 롤 개념이 없어 권한 설계까지 범위가 커진다(위 Decision Gate 참고).
@@ -238,10 +238,10 @@ Redis ZSET `ranking:{market}`은 MySQL 원장(`accounts.realized_pnl`)의 파생
 - [ ] `GET /api/rankings` 응답에 `status`가 추가되고, ZSET이 비었으면서 매도 이력 계좌가 존재하면 `REBUILDING`, 그 외에는 `READY`를 반환한다
 - [ ] `GET /api/rankings/me` 응답에 `status`가 추가되고, 내 score가 없으면서 내 매도 이력이 있으면 `REBUILDING`, 매도 이력도 없으면 `READY` + `rank: null`을 반환한다
 - [ ] 두 엔드포인트 모두 유실 상태에서도 HTTP 200을 유지한다
-- [ ] `docs/api-contracts.md`의 랭킹 절에 `status` 필드가 반영된다(응답 DTO가 실제로 바뀌는 커밋과 같은 커밋, CLAUDE.md 규칙 7). `docs/api-routes.md`는 Method·URL·요약이 그대로면 변경 없음을 확인만 한다
-- [ ] `docs/prd.md` 본문 2곳(RANK-001 절의 "재구성 트리거·절차의 세부 구현은 착수 시 확정한다"·"여전히 Decision Gate다", §6 Redis 키 책임의 랭킹 항목)에 확정된 재구성 절차가 반영된다. **§3 구현 현황 표는 갱신 대상이 아니다** — RANK-001·RANK-002 행의 판정이 "완료"에서 바뀌지 않는다(위 "요구사항 ID를 새로 부여하지 않는 이유" 참고)
+- [ ] `docs/api-contracts.md`의 랭킹 절에 `status` 필드가 반영된다(응답 DTO가 실제로 바뀌는 커밋과 같은 커밋, CLAUDE.md 규칙 7). `ai/api-routes.md`는 Method·URL·요약이 그대로면 변경 없음을 확인만 한다
+- [ ] `ai/prd.md` 본문 2곳(RANK-001 절의 "재구성 트리거·절차의 세부 구현은 착수 시 확정한다"·"여전히 Decision Gate다", §6 Redis 키 책임의 랭킹 항목)에 확정된 재구성 절차가 반영된다. **§3 구현 현황 표는 갱신 대상이 아니다** — RANK-001·RANK-002 행의 판정이 "완료"에서 바뀌지 않는다(위 "요구사항 ID를 새로 부여하지 않는 이유" 참고)
 - [ ] 이 spec의 미결 표기 3곳(RANK-001 Decision Gate·RANK-001 범위 제외·RANK-002 범위 제외)이 삭제가 아니라 "#279에서 확정·구현됨"으로 갱신되어 이력이 남는다
-- [ ] 단위·슬라이스(`@WebMvcTest`)·통합(Testcontainers MySQL+Redis) 테스트를 작성한다(`docs/adr/0003-testing-strategy.md` 기준, 세부는 `plan.md` 테스트 계획)
+- [ ] 단위·슬라이스(`@WebMvcTest`)·통합(Testcontainers MySQL+Redis) 테스트를 작성한다(`ai/adr/0003-testing-strategy.md` 기준, 세부는 `plan.md` 테스트 계획)
 - [ ] 기존 테스트가 모두 통과하고 `./gradlew build`가 통과한다
 
 ## Redis 장애 시 읽기 경로 폴백과 기동 내성 (이슈 #288)
@@ -272,7 +272,7 @@ Redis ZSET `ranking:{market}`은 MySQL 원장(`accounts.realized_pnl`)의 파생
 
 - [ ] `RankingStore`를 스텁해 `RankingStoreUnavailableException`을 던지게 구성한 통합 테스트로 `GET /api/rankings`·`GET /api/rankings/me` 모두 200 + `UNAVAILABLE`을 확인한다(Testcontainers, 컨트롤러→서비스→스토어 실배선)
 - [ ] `BithumbFeedClient.start()`가 예외를 던져도 `BithumbFeedLifecycle.startFeed`가 전파하지 않는 것을 단위 테스트로 확인한다
-- [ ] `docs/api-routes.md`·`docs/api-contracts.md`에 `UNAVAILABLE`이 반영된다(응답 계약이 바뀌는 커밋과 같은 커밋, CLAUDE.md 규칙 7)
-- [ ] `docs/prd.md` 본문(RANK-001 절)에 이 결정이 반영된다. **§3 구현 현황 표는 갱신 대상이 아니다** — 기존 기능의 견고성 보강이라 RANK-001·RANK-002 행의 판정("완료")이 바뀌지 않는다(이슈 #279와 동일한 판단 근거, 위 "요구사항 ID를 새로 부여하지 않는 이유" 참고)
+- [ ] `ai/api-routes.md`·`docs/api-contracts.md`에 `UNAVAILABLE`이 반영된다(응답 계약이 바뀌는 커밋과 같은 커밋, CLAUDE.md 규칙 7)
+- [ ] `ai/prd.md` 본문(RANK-001 절)에 이 결정이 반영된다. **§3 구현 현황 표는 갱신 대상이 아니다** — 기존 기능의 견고성 보강이라 RANK-001·RANK-002 행의 판정("완료")이 바뀌지 않는다(이슈 #279와 동일한 판단 근거, 위 "요구사항 ID를 새로 부여하지 않는 이유" 참고)
 - [ ] 이 spec의 미결 표기 2곳(RANK-001 범위 제외·RANK-002 알려진 한계)이 삭제가 아니라 "#288에서 해소됨"으로 갱신되어 이력이 남는다
 - [ ] 기존 테스트가 모두 통과하고 `./gradlew build`가 통과한다

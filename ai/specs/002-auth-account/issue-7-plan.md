@@ -62,7 +62,7 @@
 - 폐기 후 `/api/auth/refresh` 401과 타인 토큰 비폐기 검증
 - 공통 400·401·403 오류 형식
 - Controller·Service 단위/슬라이스 테스트와 실제 MySQL 통합 테스트
-- 구현 뒤 `docs/api-routes.md` 동기화
+- 구현 뒤 `ai/api-routes.md` 동기화
 
 ### 제외
 
@@ -161,11 +161,11 @@ Refresh JWT 파싱 실패, 해시 조회 결과 0건·2건 이상, JWT subject�
 
 ### Documentation files to modify after implementation
 
-- `docs/api-routes.md`
+- `ai/api-routes.md`
   - 실제 Controller 매핑 기준 logout 상세 계약과 보호 경로 표 추가.
-- `docs/specs/002-auth-account/tasks.md`
+- `ai/specs/002-auth-account/tasks.md`
   - Issue #7 logout 항목을 완료 처리하되 Issue #8과 다른 잔여 작업은 그대로 둔다.
-- `docs/specs/002-auth-account/run-log.md`
+- `ai/specs/002-auth-account/run-log.md`
   - implementer·reviewer가 실제 실행한 명령과 검증 수준만 기록한다.
 
 ### 만들거나 수정하지 않을 파일
@@ -294,9 +294,9 @@ Refresh JWT 파싱 실패, 해시 조회 결과 0건·2건 이상, JWT subject�
 
 **Files**
 
-- Modify: `docs/api-routes.md`
-- Modify: `docs/specs/002-auth-account/tasks.md`
-- Modify during feature workflow: `docs/specs/002-auth-account/run-log.md`
+- Modify: `ai/api-routes.md`
+- Modify: `ai/specs/002-auth-account/tasks.md`
+- Modify during feature workflow: `ai/specs/002-auth-account/run-log.md`
 
 - [x] **Step 1: 실제 Controller 매핑으로 API 문서를 동기화한다**
   - 엔드포인트 목록에 `POST /api/auth/logout`을 추가한다.
@@ -322,14 +322,14 @@ Refresh JWT 파싱 실패, 해시 조회 결과 0건·2건 이상, JWT subject�
 
   ```powershell
   git diff --check
-  git diff -- src/main/java/com/finplay/api/auth/controller/AuthController.java docs/api-routes.md
+  git diff -- src/main/java/com/finplay/api/auth/controller/AuthController.java ai/api-routes.md
   git status --short
   ```
 
 - [x] **Step 6: 문서 변경을 논리 커밋한다**
 
   ```powershell
-  git add docs/api-routes.md docs/specs/002-auth-account/tasks.md docs/specs/002-auth-account/run-log.md
+  git add ai/api-routes.md ai/specs/002-auth-account/tasks.md ai/specs/002-auth-account/run-log.md
   git commit -m "docs: 로그아웃 API 계약 동기화"
   ```
 
@@ -351,5 +351,5 @@ Refresh JWT 파싱 실패, 해시 조회 결과 0건·2건 이상, JWT subject�
 - [x] Access 사용자, Refresh JWT subject, DB 토큰 소유자를 대조한다.
 - [x] Refresh Token 원문은 DB나 로그에 남지 않는다.
 - [x] Access Token 블랙리스트, 전체 세션 로그아웃, 스키마 변경을 포함하지 않는다.
-- [x] 실제 Controller 매핑과 `docs/api-routes.md`가 일치한다.
+- [x] 실제 Controller 매핑과 `ai/api-routes.md`가 일치한다.
 - [x] 대상 테스트와 `.\gradlew.bat build --no-daemon --max-workers=1` 결과를 새로 확인한다.

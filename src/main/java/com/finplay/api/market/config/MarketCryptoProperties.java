@@ -4,7 +4,7 @@ package com.finplay.api.market.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
-// 값의 정본은 docs/specs/012-ai-feedback/spec.md §C-1(크론)·§코인 가격 스냅샷(보관 기간)이다. feedback.batch.*와 같은
+// 값의 정본은 ai/specs/012-ai-feedback/spec.md §C-1(크론)·§코인 가격 스냅샷(보관 기간)이다. feedback.batch.*와 같은
 // 방침 — yml과 @DefaultValue 양쪽에 값을 두고 드리프트 테스트로 대조한다(§C-7).
 //
 // zone은 여기 없다. @Scheduled 선언부가 zone = "Asia/Seoul"을 직접 붙인다(§C-1).

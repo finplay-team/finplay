@@ -7,15 +7,15 @@
 | - | implementer | `./gradlew compileJava` | plan.md 설계 노트 6·7·패키지 구성, tasks.md 항목 2 |
 | - | implementer | `./gradlew compileJava`, `./gradlew spotlessApply` | plan.md 설계 노트 1·2·3·5·8·입력 명세·패키지 구성, tasks.md 항목 3 |
 | - | implementer | `./gradlew compileJava`, `./gradlew compileTestJava`, `./gradlew test --tests OrderControllerTest` | plan.md API 설계·패키지 구성, tasks.md 항목 4, docs/conventions.md API 응답 포맷 |
-| - | implementer | `./gradlew clean build --no-daemon --max-workers=1` (JAVA_HOME=corretto-17) | plan.md 테스트 계획(통합 시나리오), tasks.md 항목 5, docs/agent-mistakes.md(JAVA_HOME·Docker) |
+| - | implementer | `./gradlew clean build --no-daemon --max-workers=1` (JAVA_HOME=corretto-17) | plan.md 테스트 계획(통합 시나리오), tasks.md 항목 5, ai/agent-mistakes.md(JAVA_HOME·Docker) |
 
-| - | reviewer(리뷰) | `git diff dev...HEAD --stat` 후 전체 diff 검토 | docs/conventions.md, ADR-0002/0003/0004, docs/agent-mistakes.md |
+| - | reviewer(리뷰) | `git diff dev...HEAD --stat` 후 전체 diff 검토 | docs/conventions.md, ADR-0002/0003/0004, ai/agent-mistakes.md |
 | - | implementer | `./gradlew compileJava compileTestJava test --tests "*OrderServiceTest"` | 리뷰 차단 1건 수정 — ADR-0002(도메인 간 참조는 service 레이어만) |
 | - | implementer | `./gradlew compileJava compileTestJava`, `./gradlew test --tests OrderRepositoryTest --tests TradeRepositoryTest` | plan.md "이슈 #22" 신규 리포지토리 메서드 절, tasks.md 이슈 #22 항목 1 |
 | - | implementer | `JAVA_HOME=corretto-17 ./gradlew compileJava compileTestJava`, `./gradlew test --tests "com.finplay.api.order.*"` | plan.md "이슈 #22 — 클래스 분리"·"OrderService.createOrder 확정 로직" 절, tasks.md 이슈 #22 항목 2 |
 | - | implementer | `./gradlew compileJava compileTestJava`, `./gradlew test --tests OrderServiceTest --tests "com.finplay.api.order.*"` | plan.md "이슈 #22 — OrderService.createOrder 확정 로직" 절(코드 그대로 적용), tasks.md 이슈 #22 항목 3 |
 | - | implementer | `JAVA_HOME=corretto-17 ./gradlew compileJava compileTestJava`, `./gradlew build`(2회) | plan.md "이슈 #22 — 테스트 계획"의 통합 시나리오, tasks.md 이슈 #22 항목 4 |
-| - | reviewer(리뷰) | `git diff origin/dev...HEAD --stat` 후 전체 diff·plan.md "이슈 #22" 절 대조 검토 | docs/conventions.md, ADR-0002/0003/0004, docs/agent-mistakes.md, plan.md 이슈 #22 절 |
+| - | reviewer(리뷰) | `git diff origin/dev...HEAD --stat` 후 전체 diff·plan.md "이슈 #22" 절 대조 검토 | docs/conventions.md, ADR-0002/0003/0004, ai/agent-mistakes.md, plan.md 이슈 #22 절 |
 
 ## 모니터링 (사람용 요약)
 - 항목 1(account·market·common 확장 지점) 구현 완료, 컴파일 통과. 테스트는 tester 담당.

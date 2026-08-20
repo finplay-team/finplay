@@ -76,7 +76,7 @@ public class TutorialAccount {
 ### 마이그레이션
 
 `src/main/resources/db/migration/V46__create_tutorial_accounts_and_backfill_cash.sql`(다음 빈 버전 —
-착수 시점에 `origin/dev`·열려 있는 PR을 다시 확인해 충돌 여부를 재검증한다, `docs/specs/README.md` 번호
+착수 시점에 `origin/dev`·열려 있는 PR을 다시 확인해 충돌 여부를 재검증한다, `ai/specs/README.md` 번호
 규칙과 동일한 원칙을 마이그레이션 버전에도 적용). 두 부분으로 구성한다.
 
 1. `CREATE TABLE tutorial_accounts` — 위 엔티티 컬럼(`realizedPnl` 포함) 그대로, `UNIQUE KEY (user_id, market)`,
@@ -145,7 +145,7 @@ account.addSandboxCashAdjustment(...)` 형태였던 곳들), 엔티티 필드·�
 `PracticeAttemptService.ensureAttempt`·`PracticeAttemptRestartService.restart`가 이미 같은 트랜잭션에서
 `TutorialAccount`를 get-or-create/reset하므로(위 "TutorialAccountService — API"), 추가 조회 없이 그 결과를
 `PracticeAttemptResponse.from(...)`에 그대로 실어 보낼 수 있어 변경 표면이 가장 작다 — 새 엔드포인트를 만들
-필요가 없다. **다만 실제 컨트롤러·DTO 코드 작성과 `docs/api-routes.md`·`docs/api-contracts.md` 갱신은 이
+필요가 없다. **다만 실제 컨트롤러·DTO 코드 작성과 `ai/api-routes.md`·`docs/api-contracts.md` 갱신은 이
 spec 문서 작업의 범위가 아니다** — CLAUDE.md 규칙 7에 따라 구현 PR이 커밋 하나로 코드·두 문서를 함께
 갱신한다. 이 plan은 "어떤 필드가, 어느 값으로 채워져야 하는가"라는 계약만 확정해 둔다.
 

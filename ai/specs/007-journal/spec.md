@@ -15,9 +15,9 @@
 >
 > 6차 착수 범위는 **JOUR-005(투자일기 상세 조회) 1건뿐**이었고, 이로써 이 spec의 여섯 요구사항이 모두 닫혔다. **JOUR-005의 식별자 체계 Decision Gate는 2026-08-05 이슈 #217에서 "타입별 경로 분리"로 해제됐다** — 매수 회고와 매도 회고를 각각 `GET /api/journal/buy/{buyTradeId}`·`GET /api/journal/sell/{sellTradeId}`로 조회한다. 근거는 아래 §비즈니스 규칙 "상세 조회는 타입별 경로로 분리한다"에 있다.
 >
-> **JOUR-002의 Decision Gate는 2026-08-04 이슈 #197에서 해제됐다** — "첫 매도 배분이 발생한 매수 lot은 수정 잠금"(`005-order-sell/spec.md`) 규칙을 적용하지 않고 잠금 없이 구현했다. 근거는 아래 §비즈니스 규칙 "매수 회고 수정 잠금 없음"과 `docs/prd.md` JOUR-002에 있다.
+> **JOUR-002의 Decision Gate는 2026-08-04 이슈 #197에서 해제됐다** — "첫 매도 배분이 발생한 매수 lot은 수정 잠금"(`005-order-sell/spec.md`) 규칙을 적용하지 않고 잠금 없이 구현했다. 근거는 아래 §비즈니스 규칙 "매수 회고 수정 잠금 없음"과 `ai/prd.md` JOUR-002에 있다.
 >
-> PRD 근거: `docs/prd.md` **JOUR-001**·**JOUR-002**·**JOUR-003**·**JOUR-004**·**JOUR-006**. 선행: `004-order-buy`(매수 체결), `005-order-sell`(매도 체결·FIFO 배분), JOUR-001·003(매수·매도 회고 테이블·엔티티) — 모두 완료됨. 목록 조회의 커서·`market`·`limit` 규칙은 `006-portfolio-query`(PORT-002 `GET /api/trades`)·`018-order-list-pagination`(PORT-003 `GET /api/orders`)의 확정 정책을 그대로 따른다.
+> PRD 근거: `ai/prd.md` **JOUR-001**·**JOUR-002**·**JOUR-003**·**JOUR-004**·**JOUR-006**. 선행: `004-order-buy`(매수 체결), `005-order-sell`(매도 체결·FIFO 배분), JOUR-001·003(매수·매도 회고 테이블·엔티티) — 모두 완료됨. 목록 조회의 커서·`market`·`limit` 규칙은 `006-portfolio-query`(PORT-002 `GET /api/trades`)·`018-order-list-pagination`(PORT-003 `GET /api/orders`)의 확정 정책을 그대로 따른다.
 >
 > **요구사항 ID 표기 정리(2026-08-04)** — 이 문서의 초안은 같은 요구사항을 `PORT-004`로 적고 있었으나, PRD와 이슈 #159는 `JOUR-001`로 부른다. **PRD가 정본이므로 `JOUR-001`로 통일한다.** `PORT-004`는 더 이상 쓰지 않는다.
 
@@ -137,7 +137,7 @@
   1. **잠금의 목적이 없다.** 매수 회고 잠금(JOUR-002)의 취지는 "매도 배분이 일어난 뒤 매수 시점의 판단을 사후 수정하지 못하게" 하는 것이었다(`005-order-sell/spec.md`. **그 매수 회고 잠금 자체도 2026-08-04 이슈 #197에서 철회됐다** — 아래 §매수 회고 수정 절 참고. 이 문단은 JOUR-004 착수 시점의 기록이다). 매도 회고는 매도 체결이 확정된 **뒤**의 기록이고, 그 매도 체결의 FIFO 배분·실현손익은 체결 시점에 이미 확정돼 이후 원장 이벤트로 바뀌지 않는다. 회고의 전제를 뒤집을 후속 사건 자체가 없다.
   2. **잠금 후보가 모두 아직 없는 기능에 걸려 있다.** 생각할 수 있는 조건(작성 후 N일 경과, AI 피드백 생성 후 잠금, 커뮤니티·랭킹 공개 후 잠금)은 각각 spec 012(AI 피드백)·JOUR-005·006(조회)·커뮤니티 공개 범위가 정해져야 판단할 수 있다. 지금 근거 없이 조건을 넣으면 실제 요구가 생기기 전에 계약이 굳는다.
   3. **되돌리기 비용이 비대칭이다.** "잠금 없음 → 잠금 추가"는 새 오류 코드·조건을 더하는 확장이지만, "잠금 있음 → 잠금 해제"는 이미 거부됐던 요청이 성공하게 되는 완화라 프론트엔드가 이미 대응한 오류 경로를 다시 걷어내야 한다.
-  - **후속 조건 — 2026-08-15에 해제됐고 결론은 "잠금 없음 유지"다.** AI 피드백이 매도·매수 회고를 입력으로 쓰게 됐고(`docs/specs/012-ai-feedback/spec.md` §FEED-013), 그 spec이 예고대로 **잠금이 아니라 피드백 재생성**을 택했다. 근거는 사용자 동선이 잠금과 반대라는 것이다 — 매도 → 피드백 조회 → 회고 작성 순서라 "피드백 생성 후 잠금"은 **회고를 쓰기도 전에 잠기는** 규칙이 된다. **이 문서의 수정 계약 네 개(JOUR-001~004)는 한 글자도 바뀌지 않으며 `JOURNAL_LOCKED`는 만들지 않는다.**
+  - **후속 조건 — 2026-08-15에 해제됐고 결론은 "잠금 없음 유지"다.** AI 피드백이 매도·매수 회고를 입력으로 쓰게 됐고(`ai/specs/012-ai-feedback/spec.md` §FEED-013), 그 spec이 예고대로 **잠금이 아니라 피드백 재생성**을 택했다. 근거는 사용자 동선이 잠금과 반대라는 것이다 — 매도 → 피드백 조회 → 회고 작성 순서라 "피드백 생성 후 잠금"은 **회고를 쓰기도 전에 잠기는** 규칙이 된다. **이 문서의 수정 계약 네 개(JOUR-001~004)는 한 글자도 바뀌지 않으며 `JOURNAL_LOCKED`는 만들지 않는다.**
 - 수정 성공·실패도 작성과 동일하게 주문·체결·계좌·잔액·보유·FIFO lot·실현손익 원장을 변경하지 않는다. 투자일기는 원장을 **읽기만** 한다.
 - 수정 조회·검증·저장은 한 트랜잭션에서 처리한다. 같은 회고에 동시 수정이 들어오면 마지막 커밋이 남으며(last-write-wins), 별도 낙관적 락을 도입하지 않는다 — 본인만 수정할 수 있어 동시 편집자가 한 사람이다.
 
@@ -213,7 +213,7 @@
 - [x] 없는 체결·매도가 아닌 체결·타인 체결·공백 본문 거부 테스트 통과.
 - [x] 성공·실패 전후 주문·체결·계좌·잔액·보유·손익 원장이 변하지 않는 통합 테스트 통과.
 - [x] **신규 Flyway 마이그레이션으로 투자일기 테이블을 생성한다** (`V15__create_buy_trade_journals.sql`).
-- [x] **`docs/api-routes.md`·`docs/api-contracts.md`에 신규 엔드포인트를 같은 커밋에서 반영한다** (CLAUDE.md 규칙 7).
+- [x] **`ai/api-routes.md`·`docs/api-contracts.md`에 신규 엔드포인트를 같은 커밋에서 반영한다** (CLAUDE.md 규칙 7).
 - [x] **이 문서의 "2차 착수 전 초안·지금은 착수하지 않는다" 상태 서술을 실제 착수 상태로 갱신한다** (2026-08-04 반영 완료 — 위 머리말).
 - [x] `./gradlew build` 통과.
 
@@ -226,7 +226,7 @@
 - [x] **신규 Flyway 마이그레이션으로 매도 투자일기 테이블을 생성한다** (`V17__create_sell_trade_journals.sql`, ADR-0004).
 - [x] 같은 매도 체결에 매수 회고를, 같은 매수 체결에 매도 회고를 쓸 수 없음(각각 400)을 확인한다.
 - [x] 매수 회고 기존 계약(`POST /api/trades/{buyTradeId}/journal`)과 기존 테스트가 그대로 통과한다.
-- [x] **`docs/api-routes.md`·`docs/api-contracts.md`에 신규 엔드포인트를 같은 커밋에서 반영한다** (CLAUDE.md 규칙 7).
+- [x] **`ai/api-routes.md`·`docs/api-contracts.md`에 신규 엔드포인트를 같은 커밋에서 반영한다** (CLAUDE.md 규칙 7).
 - [x] `./gradlew build` 통과 (검증 SHA `2e72edffd9e8d8c1c0301eb0dfff8dded4b2aca1`).
 
 ### 3차 착수 (JOUR-004, 이슈 #190) — 완료
@@ -239,7 +239,7 @@
 - [x] 매수 회고 기존 계약(`POST /api/trades/{buyTradeId}/journal`)과 매도 회고 작성 계약(`POST .../sell-journal`), 그 기존 테스트가 그대로 통과한다.
 - [x] **신규 Flyway 마이그레이션으로 `sell_trade_journals`에 수정시각 컬럼을 추가한다** (ADR-0004 — 머지된 `V17`은 수정하지 않고 새 번호 파일로. 착수 시점 `dev`의 최신 번호를 다시 확인한다. 조사 시점 최신은 `V17`).
 - [x] 성공·실패 전후 주문·체결·계좌·잔액·보유·손익 원장이 변하지 않는 통합 테스트 통과.
-- [x] **`docs/api-routes.md`·`docs/api-contracts.md`에 신규 엔드포인트를 같은 커밋에서 반영한다** (CLAUDE.md 규칙 7).
+- [x] **`ai/api-routes.md`·`docs/api-contracts.md`에 신규 엔드포인트를 같은 커밋에서 반영한다** (CLAUDE.md 규칙 7).
 - [x] `./gradlew build` 통과.
 
 ### 4차 착수 (JOUR-002, 이슈 #197) — 완료
@@ -252,8 +252,8 @@
 - [x] **신규 Flyway 마이그레이션으로 `buy_trade_journals`에 수정시각 컬럼을 추가한다** (ADR-0004 — 머지된 `V15`는 수정하지 않고 새 번호 파일로). 최종 번호는 `V21__add_updated_at_to_buy_trade_journals.sql` — `dev` 선병합으로 두 번 재번호화했다(`run-log.md` 참고).
 - [x] 성공·실패 전후 주문·체결·계좌·잔액·보유·손익 원장이 변하지 않는 통합 테스트 통과.
 - [x] 매수 회고 작성 계약(`POST .../journal`)과 매도 회고 작성·수정 계약(`POST`·`PATCH .../sell-journal`), 그 기존 테스트가 그대로 통과한다.
-- [x] **`docs/api-routes.md`·`docs/api-contracts.md`에 신규 엔드포인트를 같은 커밋에서 반영한다** (CLAUDE.md 규칙 7).
-- [x] **`docs/prd.md` JOUR-002의 Decision Gate 문구와 `docs/specs/005-order-sell/spec.md`의 잠금 규정을 이번 결정으로 갱신한다** (2026-08-04 반영 완료 — 문서 커밋).
+- [x] **`ai/api-routes.md`·`docs/api-contracts.md`에 신규 엔드포인트를 같은 커밋에서 반영한다** (CLAUDE.md 규칙 7).
+- [x] **`ai/prd.md` JOUR-002의 Decision Gate 문구와 `ai/specs/005-order-sell/spec.md`의 잠금 규정을 이번 결정으로 갱신한다** (2026-08-04 반영 완료 — 문서 커밋).
 - [x] `./gradlew build` 통과 (PR [#201](https://github.com/finplay-team/finplay/pull/201) 머지).
 
 ### 5차 착수 (JOUR-006, 이슈 #203) — 완료
@@ -267,7 +267,7 @@
 - [x] **응답에 통합 `journalId`가 없음을 고정하는 계약 테스트 통과** — JOUR-005 식별자 체계를 선점하지 않았다는 근거다 (§비즈니스 규칙 "JOUR-005 식별자 게이트를 선점하지 않는다").
 - [x] 조회 전후 투자일기·주문·체결·계좌·잔액·보유·손익 데이터가 전혀 변하지 않음을 확인한다(읽기 전용).
 - [x] 기존 4개 계약(`POST`·`PATCH .../journal`, `POST`·`PATCH .../sell-journal`)과 그 테스트가 그대로 통과한다. **신규 Flyway 마이그레이션이 없다** — 이번 착수는 스키마를 바꾸지 않는다.
-- [x] **`docs/api-routes.md`·`docs/api-contracts.md`에 신규 엔드포인트를 같은 커밋에서 반영한다** (CLAUDE.md 규칙 7).
+- [x] **`ai/api-routes.md`·`docs/api-contracts.md`에 신규 엔드포인트를 같은 커밋에서 반영한다** (CLAUDE.md 규칙 7).
 - [x] `./gradlew build` 통과.
 
 ### 6차 착수 (JOUR-005, 이슈 #217) — 이번 착수
@@ -280,6 +280,6 @@
 - [x] 수정(JOUR-002·004) 후 상세를 조회하면 **갱신된 본문과 `updatedAt`**이 그대로 보이는 테스트 통과 (조회가 수정 결과를 반영한다).
 - [x] 조회 전후 투자일기·주문·체결·계좌·잔액·보유·손익 데이터가 전혀 변하지 않음을 확인한다(읽기 전용). **신규 Flyway 마이그레이션이 없다.**
 - [x] 기존 5개 계약(`POST`·`PATCH .../journal`, `POST`·`PATCH .../sell-journal`, `GET /api/journal`)과 그 테스트가 그대로 통과한다. **목록 응답 계약은 바뀌지 않는다**(통합 `journalId` 미노출 유지).
-- [x] **`docs/api-routes.md`·`docs/api-contracts.md`에 신규 엔드포인트 2개를 같은 커밋에서 반영한다** (CLAUDE.md 규칙 7).
-- [x] **`docs/prd.md` JOUR-005의 Decision Gate 문구를 경로 분리 결정으로 갱신하고, §3 "구현 현황"의 투자일기 조회 행을 갱신한다** (CLAUDE.md 규칙 10).
+- [x] **`ai/api-routes.md`·`docs/api-contracts.md`에 신규 엔드포인트 2개를 같은 커밋에서 반영한다** (CLAUDE.md 규칙 7).
+- [x] **`ai/prd.md` JOUR-005의 Decision Gate 문구를 경로 분리 결정으로 갱신하고, §3 "구현 현황"의 투자일기 조회 행을 갱신한다** (CLAUDE.md 규칙 10).
 - [x] `./gradlew build` 통과.

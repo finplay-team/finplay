@@ -9,7 +9,7 @@
 
 ## API 설계
 
-**신규·변경 엔드포인트가 없다.** 기존 `GET /api/instruments/{instrumentId}/candles`의 응답 계약이 그대로 유지되고 데이터 출처만 바뀐다. 그래서 `docs/api-routes.md`는 갱신 대상이 아니고, `docs/api-contracts.md`는 "저장·캐시하지 않는다"는 서술 정정만 필요하다.
+**신규·변경 엔드포인트가 없다.** 기존 `GET /api/instruments/{instrumentId}/candles`의 응답 계약이 그대로 유지되고 데이터 출처만 바뀐다. 그래서 `ai/api-routes.md`는 갱신 대상이 아니고, `docs/api-contracts.md`는 "저장·캐시하지 않는다"는 서술 정정만 필요하다.
 
 | Method | URL | 변경 |
 |---|---|---|

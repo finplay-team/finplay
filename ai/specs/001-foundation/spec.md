@@ -1,6 +1,6 @@
 # Spec: 프로젝트 기반 잔여 작업 (Redis · QueryDSL · 공통 오류 · Clock)
 
-> PRD 근거: `docs/prd.md` §7 기술 계획, §8 태스크 1. 요구사항 ID 없음 (기술 기반 작업).
+> PRD 근거: `ai/prd.md` §7 기술 계획, §8 태스크 1. 요구사항 ID 없음 (기술 기반 작업).
 > 하네스 셋팅에서 이미 완료된 항목(MySQL·Testcontainers·Flyway·compose·프로필·Spotless·JaCoCo)은 제외한 **잔여분만** 다룬다 (`checklist.md` 참조).
 
 ## 개요

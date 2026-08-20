@@ -21,7 +21,7 @@
   Testcontainers 기반 `@SpringBootTest`: (a) 동일 주문에 체결 이벤트 2회 동시 도착 시 1회만 체결, (b) 지정가 SELL 체결과 시장가 SELL 체결이 동시에 실행돼도 데드락 없음(ABBA 회귀), (c) 매수 지정가 생성 시 현금 부족 거부와 무예약 확인, (d) 매도 지정가로 예약된 수량을 시장가/다른 지정가로 초과 매도 시 거부. plan.md "동시성 테스트 시나리오" 4개 그대로 구현.
 
 - [x] 7. **문서 동기화**
-  `docs/api-routes.md`·`docs/api-contracts.md`에 `POST /api/orders/limit` 추가(요청·응답·오류 계약, `market/api-routes.md` 41행 근처 order 도메인 절). `docs/prd.md` §3 구현 현황 "지정가 주문·상시 체결" 행을 "일부 완료(LMT-001~002)"로 갱신, 근거에 이 PR 번호 기입, LMT-003·004는 범위 밖임을 명시. `./gradlew build` 통과 확인.
+  `ai/api-routes.md`·`docs/api-contracts.md`에 `POST /api/orders/limit` 추가(요청·응답·오류 계약, `market/api-routes.md` 41행 근처 order 도메인 절). `ai/prd.md` §3 구현 현황 "지정가 주문·상시 체결" 행을 "일부 완료(LMT-001~002)"로 갱신, 근거에 이 PR 번호 기입, LMT-003·004는 범위 밖임을 명시. `./gradlew build` 통과 확인.
 
 ## LMT-003 지정가 주문 취소 (이슈 #218)
 
@@ -35,14 +35,14 @@
   `LimitOrderConcurrencyIntegrationTest`에 plan.md "동시성 테스트 시나리오 추가" 그대로 2개 메서드 추가 — 기존 `runConcurrently`(ready/start `CountDownLatch`) 헬퍼를 그대로 재사용한다: (a) BUY `PENDING` 주문에 `cancelOrder`와 `fillIfPending`을 동시 호출해 정확히 한쪽만 성공(체결 승리 시 취소는 `ORDER_ALREADY_FILLED` 예외, 취소 승리 시 체결은 no-op)하고 `reservedCash`·`cashBalance`가 이중 반환·이중 소비 없이 일관됨을 검증, (b) 같은 패턴을 SELL(`reservedQuantity`·`quantity` 버전)로 1개 더 추가.
 
 - [x] 11. **문서 동기화**
-  `docs/api-routes.md`·`docs/api-contracts.md`에 `DELETE /api/orders/{orderId}` 추가(요청 없음·204 본문 없음 응답·404/403/409 오류 계약, 신규 코드 `ORDER_ALREADY_FILLED`·`ORDER_ALREADY_CANCELLED` 설명 포함) — 항목9 컨트롤러 커밋에서 이미 반영되어 있었고 실제 구현과 재대조해 일치 확인함. `docs/prd.md` §3 구현 현황 "지정가 주문·상시 체결(LMT-001~004)" 행을 "일부 완료(LMT-001~003)"로 갱신, LMT-004는 범위 밖임을 명시 — **근거는 PR 미생성으로 "이슈 #218(PR 생성 후 번호 갱신 필요)" 임시 기입, PR 생성 후 실제 번호로 교체 필요**. `./gradlew build`는 오케스트레이터가 `ErrorCodeTest`의 stale 카운트(26→27)·매핑 누락(`ORDER_NOT_PENDING`)을 직접 수정한 뒤 재실행해 통과 확인.
+  `ai/api-routes.md`·`docs/api-contracts.md`에 `DELETE /api/orders/{orderId}` 추가(요청 없음·204 본문 없음 응답·404/403/409 오류 계약, 신규 코드 `ORDER_ALREADY_FILLED`·`ORDER_ALREADY_CANCELLED` 설명 포함) — 항목9 컨트롤러 커밋에서 이미 반영되어 있었고 실제 구현과 재대조해 일치 확인함. `ai/prd.md` §3 구현 현황 "지정가 주문·상시 체결(LMT-001~004)" 행을 "일부 완료(LMT-001~003)"로 갱신, LMT-004는 범위 밖임을 명시 — **근거는 PR 미생성으로 "이슈 #218(PR 생성 후 번호 갱신 필요)" 임시 기입, PR 생성 후 실제 번호로 교체 필요**. `./gradlew build`는 오케스트레이터가 `ErrorCodeTest`의 stale 카운트(26→27)·매핑 누락(`ORDER_NOT_PENDING`)을 직접 수정한 뒤 재실행해 통과 확인.
 
 - [x] 12. **취소 상태(409) 오류 코드 분리(이슈 #218 후속, 2026-08-05 사용자 확인)**
   단일 `ErrorCode.ORDER_NOT_PENDING`을 `ORDER_ALREADY_FILLED`·`ORDER_ALREADY_CANCELLED`로 분리(spec.md "확정된 설계 결정" 9번). `LimitOrderCancelService.cancelOrder`의 상태 검증 분기를 `FILLED`/`CANCELLED`로 나눠 각각 다른 코드를 던지도록 수정. `ErrorCodeTest`(카운트 27→28, 매핑 엔트리 교체), `LimitOrderCancelServiceTest`·`OrderControllerTest`·`LimitOrderConcurrencyIntegrationTest`의 관련 케이스를 두 코드로 분리. `docs/api-contracts.md`·spec.md·plan.md의 `ORDER_NOT_PENDING` 서술을 모두 갱신.
 
 ## 시장가 매수 경로 락 보강 (이슈 #224)
 
-이 절은 controller 변경이 없다 — `docs/api-routes.md`·`docs/api-contracts.md` 갱신 대상 아님(CLAUDE.md 규칙7은 controller 변경 시에만 적용). `docs/prd.md` §3 구현 현황도 갱신 대상 아님(CLAUDE.md 규칙10 "갱신 비대상" — 서비스 레이어 내부 락 순서 조정이라 기능 제공 범위가 그대로다). 신규 마이그레이션·신규 repository 메서드·신규 서비스 메서드가 전혀 없다(plan.md "기존 코드 확인 결과" — 기존 LMT-001/002 잠금 인프라를 호출부 교체만으로 재사용).
+이 절은 controller 변경이 없다 — `ai/api-routes.md`·`docs/api-contracts.md` 갱신 대상 아님(CLAUDE.md 규칙7은 controller 변경 시에만 적용). `ai/prd.md` §3 구현 현황도 갱신 대상 아님(CLAUDE.md 규칙10 "갱신 비대상" — 서비스 레이어 내부 락 순서 조정이라 기능 제공 범위가 그대로다). 신규 마이그레이션·신규 repository 메서드·신규 서비스 메서드가 전혀 없다(plan.md "기존 코드 확인 결과" — 기존 LMT-001/002 잠금 인프라를 호출부 교체만으로 재사용).
 
 - [x] 13. **시장가 매수 계좌 락 조정**
   `OrderExecutionService.createBuyOrder`의 `Account account = getAccountFor(userId, request.market());`를 `getAccountForUpdateFor(userId, request.market())`로 교체(plan.md "변경 지점 1", 신규 메서드 없음 — SELL이 이미 쓰는 private 메서드 재사용). `getAccountForUpdateFor` 위 주석·`execute()`의 계좌 선조회 제거 주석을 "매수·매도 모두 계좌를 잠근다"로 갱신. `getAccountFor(Long, Market)`의 다른 호출부가 남아있는지 grep으로 확인 후 죽은 코드면 제거. 기존 `OrderExecutionService` 단위·슬라이스 테스트 회귀 확인(현금 부족 409 등 기존 케이스가 락 도입 후에도 그대로 통과하는지).
@@ -54,7 +54,7 @@
   `LimitOrderConcurrencyIntegrationTest`에 plan.md "동시성 테스트 시나리오" 3개(spec.md 시나리오 13·14·15)를 기존 `runConcurrently`(ready/start `CountDownLatch`, `ExecutorService` 2스레드) 헬퍼로 추가: (a) 시장가 매수 vs 지정가 매수 생성 계좌 경합(합산 소비액이 잔액을 초과하도록 설계, 한쪽만 성공하거나 직렬화되어 `availableCash` 불변식 유지), (b) 시장가 매수 vs 지정가 매수 체결 holdings lost-update 방지(최종 수량이 두 매수 합과 정확히 일치, `HoldingLot` 2건), (c) 조정된 시장가 매수와 기존 시장가 매도·지정가 체결 간 ABBA 데드락 회귀(타임아웃·데드락 예외 없이 완료).
 
 - [x] 16. **spec 완료조건 확정 및 최종 빌드**
-  `docs/specs/015-limit-order/spec.md` "시장가 매수 경로 락 보강 완료 조건 (이슈 #224)" 체크박스를 구현·테스트 통과 확인 후 `[x]`로 갱신. `./gradlew build` 전체 통과 확인(실패 시 수정 후 재실행). 이 커밋에는 `docs/api-routes.md`·`docs/api-contracts.md`·`docs/prd.md` §3 변경이 없어야 정상이다(controller·기능 제공 범위 변경 없음).
+  `ai/specs/015-limit-order/spec.md` "시장가 매수 경로 락 보강 완료 조건 (이슈 #224)" 체크박스를 구현·테스트 통과 확인 후 `[x]`로 갱신. `./gradlew build` 전체 통과 확인(실패 시 수정 후 재실행). 이 커밋에는 `ai/api-routes.md`·`docs/api-contracts.md`·`ai/prd.md` §3 변경이 없어야 정상이다(controller·기능 제공 범위 변경 없음).
 
 ## LMT-004 미체결 주문 목록 조회 · 계좌·보유 조회 계약 영향 해소 (이슈 #235)
 
@@ -68,7 +68,7 @@
   지정가 매수·매도 주문을 여러 건(`PENDING`·`FILLED`·`CANCELLED` 혼합) 생성한 뒤 `GET /api/orders/pending?market=CRYPTO`가 `PENDING`만 최신순 커서 페이지네이션으로 반환하고(첫 페이지→`nextCursor`로 다음 페이지, 중복·누락 없음) 타 사용자 주문이 섞이지 않는지 검증. 같은 시나리오에서 `GET /api/accounts/summary?market=CRYPTO`·`GET /api/holdings?market=CRYPTO`를 호출해 `reservedCash`·`reservedQuantity`가 실제 예약값과 정확히 일치하고, 체결·취소 후에는 각각 0(또는 감소한 값)으로 돌아오는지 확인(plan.md "테스트 계획" 통합 시나리오 그대로, Testcontainers 기반 — ADR-0003).
 
 - [x] 20. **문서 동기화 및 최종 빌드**
-  `docs/api-routes.md`에 `GET /api/orders/pending?market=&cursor=&limit=` 행 추가. `docs/api-contracts.md`의 `## order` 절에 "미체결 주문 목록 조회" 표 추가, `## account` 절 `AccountSummaryResponse` 예시에 `reservedCash` 반영, `## portfolio` 절 `HoldingListItemResponse` 예시에 `reservedQuantity` 반영(위 세 곳 모두 같은 커밋). `docs/prd.md` §3 구현 현황 "지정가 주문·상시 체결(LMT-001~004)" 행을 이 PR 번호를 근거로 "완료"로 갱신하고, "계좌·보유 조회 계약 영향(Decision Gate)" 절 본문의 미정 문구를 확정된 필드명(`reservedCash`/`reservedQuantity`)으로 교체. `docs/specs/015-limit-order/spec.md` "LMT-004 완료 조건 (이슈 #235)" 체크박스를 구현·테스트 통과 확인 후 `[x]`로 갱신. `./gradlew build` 전체 통과 확인(실패 시 수정 후 재실행).
+  `ai/api-routes.md`에 `GET /api/orders/pending?market=&cursor=&limit=` 행 추가. `docs/api-contracts.md`의 `## order` 절에 "미체결 주문 목록 조회" 표 추가, `## account` 절 `AccountSummaryResponse` 예시에 `reservedCash` 반영, `## portfolio` 절 `HoldingListItemResponse` 예시에 `reservedQuantity` 반영(위 세 곳 모두 같은 커밋). `ai/prd.md` §3 구현 현황 "지정가 주문·상시 체결(LMT-001~004)" 행을 이 PR 번호를 근거로 "완료"로 갱신하고, "계좌·보유 조회 계약 영향(Decision Gate)" 절 본문의 미정 문구를 확정된 필드명(`reservedCash`/`reservedQuantity`)으로 교체. `ai/specs/015-limit-order/spec.md` "LMT-004 완료 조건 (이슈 #235)" 체크박스를 구현·테스트 통과 확인 후 `[x]`로 갱신. `./gradlew build` 전체 통과 확인(실패 시 수정 후 재실행).
 
 ## LMT-005 지정가 주문 수정 (이슈 #239)
 
@@ -82,4 +82,4 @@
   `LimitOrderConcurrencyIntegrationTest`에 plan.md "동시성 테스트 시나리오" 2~4번(spec.md 시나리오 23·24) 추가 — 기존 `runConcurrently`(ready/start `CountDownLatch`) 헬퍼 재사용. (a, 이 기능의 핵심 증명) 예약 가능 현금·수량을 초과하는 `PATCH` 요청이 409로 거부된 **후** 주문·계좌·보유를 DB에서 재조회해 요청 전 값과 완전히 동일함을 확인(서비스 예외 타입만 보는 얕은 검증 금지, 매수·매도 각 1개). (b) 수정-대-체결 동시 경합(체결 승리·수정 승리 두 경로 모두 예약 일관성 확인). (c) 수정-대-취소 동시 경합(취소 승리·수정 승리 두 경로 모두 확인).
 
 - [x] 24. **문서 동기화 및 최종 빌드**
-  `docs/api-routes.md`에 `PATCH /api/orders/{orderId}` 행 추가(`DELETE /api/orders/{orderId}` 행 근처). `docs/api-contracts.md`의 `## order` 절에 "지정가 주문 수정" 표 추가(요청·응답·오류 계약, 전부 기존 코드 재사용임을 명시). `docs/prd.md` §3 구현 현황 "지정가 주문·상시 체결(LMT-001~005)" 행을 이 PR 번호를 근거로 "완료"로 갱신(LMT-001~005 전부 완료). `docs/specs/015-limit-order/spec.md` "LMT-005 완료 조건 (이슈 #239)" 체크박스를 구현·테스트 통과 확인 후 `[x]`로 갱신. `./gradlew build` 전체 통과 확인(실패 시 수정 후 재실행).
+  `ai/api-routes.md`에 `PATCH /api/orders/{orderId}` 행 추가(`DELETE /api/orders/{orderId}` 행 근처). `docs/api-contracts.md`의 `## order` 절에 "지정가 주문 수정" 표 추가(요청·응답·오류 계약, 전부 기존 코드 재사용임을 명시). `ai/prd.md` §3 구현 현황 "지정가 주문·상시 체결(LMT-001~005)" 행을 이 PR 번호를 근거로 "완료"로 갱신(LMT-001~005 전부 완료). `ai/specs/015-limit-order/spec.md` "LMT-005 완료 조건 (이슈 #239)" 체크박스를 구현·테스트 통과 확인 후 `[x]`로 갱신. `./gradlew build` 전체 통과 확인(실패 시 수정 후 재실행).

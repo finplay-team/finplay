@@ -21,8 +21,8 @@
 |---|---|
 | `./spec.md` | 요구사항·비즈니스 규칙·완료 조건 (정본) |
 | `./tasks.md` | 커밋 단위 작업 분해 |
-| `docs/prd.md` JOUR-001 | 상위 요구사항. JOUR-005의 Decision Gate 서술도 여기 (JOUR-002의 게이트는 2026-08-04 이슈 #197에서 해제) |
-| `docs/api-routes.md` · `docs/api-contracts.md` | JOUR-001 반영 완료 (2026-08-04). **JOUR-003는 미반영** — 컨트롤러 커밋과 같은 커밋에서 반영한다 |
+| `ai/prd.md` JOUR-001 | 상위 요구사항. JOUR-005의 Decision Gate 서술도 여기 (JOUR-002의 게이트는 2026-08-04 이슈 #197에서 해제) |
+| `ai/api-routes.md` · `docs/api-contracts.md` | JOUR-001 반영 완료 (2026-08-04). **JOUR-003는 미반영** — 컨트롤러 커밋과 같은 커밋에서 반영한다 |
 | [ADR-0002](../../adr/0002-architecture.md) | `controller → service → repository`, 도메인 패키지. **도메인 간 참조는 service 경유** — journal이 `TradeRepository`를 직접 주입하지 않는 근거 |
 | [ADR-0003](../../adr/0003-testing-strategy.md) | 서비스 로직=단위, 쿼리·제약=`@DataJpaTest`, API 계약=`@WebMvcTest`, 핵심 시나리오=Testcontainers 통합 |
 | [ADR-0004](../../adr/0004-flyway-migrations.md) | 스키마는 마이그레이션으로만. `ddl-auto=validate`, 머지된 파일 수정 금지 |
@@ -94,7 +94,7 @@ CREATE TABLE buy_trade_journals (
 );
 ```
 
-**마이그레이션 파일: `V15__create_buy_trade_journals.sql`.** 조사 시점(2026-08-04) 착수 당시 `dev`의 최신 버전은 `V13__create_ai_feedback_tables.sql`이라 처음엔 V14로 만들었으나, PR #181 병합 전 `dev`에 `V14__create_favorites.sql`(#163·#168)이 먼저 병합돼 번호가 충돌해 V15로 재번호화했다(ADR-0004 — 이미 만든 V14 파일은 수정하지 않고 새 번호로 대체, `docs/agent-mistakes.md` 2026-08-03 행과 같은 패턴).
+**마이그레이션 파일: `V15__create_buy_trade_journals.sql`.** 조사 시점(2026-08-04) 착수 당시 `dev`의 최신 버전은 `V13__create_ai_feedback_tables.sql`이라 처음엔 V14로 만들었으나, PR #181 병합 전 `dev`에 `V14__create_favorites.sql`(#163·#168)이 먼저 병합돼 번호가 충돌해 V15로 재번호화했다(ADR-0004 — 이미 만든 V14 파일은 수정하지 않고 새 번호로 대체, `ai/agent-mistakes.md` 2026-08-03 행과 같은 패턴).
 
 FK 대상은 **실측**한 값이다.
 
@@ -266,7 +266,7 @@ CREATE TABLE sell_trade_journals (
 );
 ```
 
-**마이그레이션 파일: `V17__create_sell_trade_journals.sql`.** 조사 시점(2026-08-04) `dev`의 최신 버전은 `V16__create_practice_progresses_and_intentions.sql`이다. **구현 착수 시 `dev`를 다시 확인해** 그때의 최신 다음 번호를 쓴다 — `buy_trade_journals`가 V14→V15로 재번호화된 전례(ADR-0004, `docs/agent-mistakes.md` 2026-08-03)가 있으므로 병합 직전에 한 번 더 대조한다.
+**마이그레이션 파일: `V17__create_sell_trade_journals.sql`.** 조사 시점(2026-08-04) `dev`의 최신 버전은 `V16__create_practice_progresses_and_intentions.sql`이다. **구현 착수 시 `dev`를 다시 확인해** 그때의 최신 다음 번호를 쓴다 — `buy_trade_journals`가 V14→V15로 재번호화된 전례(ADR-0004, `ai/agent-mistakes.md` 2026-08-03)가 있으므로 병합 직전에 한 번 더 대조한다.
 
 - FK 대상 `trades(id)`와 컬럼 타입은 JOUR-001 §데이터 모델의 실측 표를 그대로 따른다. 체결 테이블·PK·`side` enum·소유 경로(`Trade → Account → User`)는 변하지 않았다.
 - 제약·인덱스 방침도 동일하다 — `UNIQUE(sell_trade_id)`가 동시 중복의 최종 방어선이고, `user_id` 비정규화·`updated_at`·추가 인덱스는 만들지 않는다.
@@ -323,7 +323,7 @@ com.finplay.api.journal
 
 ### 문서 갱신 (CLAUDE.md 규칙 7)
 
-- `docs/api-routes.md` — `journal` 도메인에 `POST /api/trades/{sellTradeId}/sell-journal` 행 추가 (근거 열: `007 JOUR-003, Issue #183`).
+- `ai/api-routes.md` — `journal` 도메인에 `POST /api/trades/{sellTradeId}/sell-journal` 행 추가 (근거 열: `007 JOUR-003, Issue #183`).
 - `docs/api-contracts.md` `## journal` 절 — 요청·응답·오류 계약 행 추가. 매수 회고 행 아래에 두고, 두 회고의 차이(경로, 체결 구분 검증 대상, 응답 체결 ID 필드명)를 본문에 한 줄로 적는다.
 - 컨트롤러 변경과 **같은 커밋**에서 갱신한다.
 
@@ -391,7 +391,7 @@ spec.md §비즈니스 규칙(JOUR-004)이 "이미 배포된 작성 계약(`POST
 
 #### 마이그레이션 — `sell_trade_journals`에 `updated_at` 추가
 
-**착수 시점 `dev`의 최신 마이그레이션 번호를 실제로 확인한 결과(2026-08-04) `V17__create_sell_trade_journals.sql`이 마지막이다.** 다음 번호는 `V18`이다. **구현 착수 직전에 `ls src/main/resources/db/migration`으로 한 번 더 대조한다** — `buy_trade_journals`가 V14→V15로 재번호화된 전례(ADR-0004, `docs/agent-mistakes.md` 2026-08-03)와 같은 패턴으로, 이 spec 자체가 이미 두 번(V15, V17) 재확인을 거쳤다.
+**착수 시점 `dev`의 최신 마이그레이션 번호를 실제로 확인한 결과(2026-08-04) `V17__create_sell_trade_journals.sql`이 마지막이다.** 다음 번호는 `V18`이다. **구현 착수 직전에 `ls src/main/resources/db/migration`으로 한 번 더 대조한다** — `buy_trade_journals`가 V14→V15로 재번호화된 전례(ADR-0004, `ai/agent-mistakes.md` 2026-08-03)와 같은 패턴으로, 이 spec 자체가 이미 두 번(V15, V17) 재확인을 거쳤다.
 
 기존 행에 `NOT NULL` 컬럼을 추가하려면 상수 `DEFAULT`로는 "행마다 다른 값"(그 행의 `created_at`)을 채울 수 없으므로, 컬럼을 잠깐 nullable로 추가 → 기존 값을 `created_at`으로 백필 → `NOT NULL`로 좁히는 3단계를 한 마이그레이션 파일 안에서 순서대로 실행한다.
 
@@ -520,7 +520,7 @@ public SellJournalUpdateResponse updateSellJournal(Long userId, Long sellTradeId
 
 ### 문서 갱신 (CLAUDE.md 규칙 7)
 
-- `docs/api-routes.md` — `journal` 도메인에 `PATCH /api/trades/{sellTradeId}/sell-journal` 행 추가 (근거 열: `007 JOUR-004, Issue #190`).
+- `ai/api-routes.md` — `journal` 도메인에 `PATCH /api/trades/{sellTradeId}/sell-journal` 행 추가 (근거 열: `007 JOUR-004, Issue #190`).
 - `docs/api-contracts.md` `## journal` 절 — 매도 회고 작성 절 아래에 "매도 회고 수정" 소절을 추가해 요청·응답·오류 계약을 적는다. 작성 절과의 차이(메서드 PATCH, 상태 200, 응답 5필드, 회고 없으면 404, 409 없음)를 본문에 한 줄로 요약한다.
 - 컨트롤러 변경과 **같은 커밋**에서 갱신한다(이 항목은 tasks.md에서 컨트롤러 커밋에 포함한다).
 - 이 갱신은 planner의 동기화 모드가 실제 controller 코드를 보고 확정하며, 여기 적은 문구는 설계 의도이지 최종 표현이 아니다.
@@ -585,7 +585,7 @@ JOUR-004 §"응답 DTO를 분리하는 이유"와 **같은 판단을 그대로 �
 
 #### 마이그레이션 — `buy_trade_journals`에 `updated_at` 추가
 
-**조사 시점(2026-08-04) `dev`의 최신 마이그레이션은 `V18__add_updated_at_to_sell_trade_journals.sql`이므로 다음 번호는 `V19`로 예상했으나, PR 리뷰 중 `dev`에 `V19__drop_favorites_and_practice_intentions.sql`(#193)이 먼저 병합돼 `V20`으로 재번호화했고, 그 뒤 `dev`에 `V20__add_stock_replay_session_to_trades.sql`(#191)까지 먼저 병합되면서 다시 충돌해 최종적으로 `V21`로 재번호화했다.** 파일명은 `V21__add_updated_at_to_buy_trade_journals.sql`. 이 spec은 이미 V14→V15, V16→V17 재확인에 이어 이번 이슈에서만 두 번(V19→V20→V21) 재번호화했다(ADR-0004, `docs/agent-mistakes.md` 2026-08-03 패턴과 동일 — 착수 시점에 확인한 번호도 PR 머지 전에 다시 한번, 그리고 병합 대기 중 다시 대조해야 한다).
+**조사 시점(2026-08-04) `dev`의 최신 마이그레이션은 `V18__add_updated_at_to_sell_trade_journals.sql`이므로 다음 번호는 `V19`로 예상했으나, PR 리뷰 중 `dev`에 `V19__drop_favorites_and_practice_intentions.sql`(#193)이 먼저 병합돼 `V20`으로 재번호화했고, 그 뒤 `dev`에 `V20__add_stock_replay_session_to_trades.sql`(#191)까지 먼저 병합되면서 다시 충돌해 최종적으로 `V21`로 재번호화했다.** 파일명은 `V21__add_updated_at_to_buy_trade_journals.sql`. 이 spec은 이미 V14→V15, V16→V17 재확인에 이어 이번 이슈에서만 두 번(V19→V20→V21) 재번호화했다(ADR-0004, `ai/agent-mistakes.md` 2026-08-03 패턴과 동일 — 착수 시점에 확인한 번호도 PR 머지 전에 다시 한번, 그리고 병합 대기 중 다시 대조해야 한다).
 
 DDL은 **JOUR-004의 `V18`과 같은 3단계**다(테이블명만 다르다). 기존 행에 `NOT NULL` 컬럼을 추가할 때 상수 `DEFAULT`로는 "행마다 다른 값"(그 행의 `created_at`)을 채울 수 없으므로 한 파일 안에서 순서대로 실행한다.
 
@@ -705,9 +705,9 @@ JOUR-004 테스트와 **대칭**으로 만들되, 잠금 없음을 고정하는 
 
 ### 문서 갱신 (CLAUDE.md 규칙 7)
 
-- `docs/api-routes.md` — `journal` 도메인에 `PATCH /api/trades/{buyTradeId}/journal` 행 추가 (근거 열: `007 JOUR-002, Issue #197`).
+- `ai/api-routes.md` — `journal` 도메인에 `PATCH /api/trades/{buyTradeId}/journal` 행 추가 (근거 열: `007 JOUR-002, Issue #197`).
 - `docs/api-contracts.md` `## journal` 절 — 매수 회고 작성 절 아래에 "매수 체결 투자일기 수정" 소절을 추가한다. 매도 회고 수정 절과의 대칭(메서드 PATCH, 상태 200, 응답 5필드, 회고 없으면 404, 409 없음)과 **잠금 없음(매도 배분 여부와 무관하게 항상 수정 가능)**을 본문에 적는다.
-- **`docs/prd.md` JOUR-002·`docs/specs/005-order-sell/spec.md`의 잠금 규정 갱신은 이번 착수의 문서 커밋에서 이미 완료했다** (2026-08-04) — 구현 커밋에서 다시 손대지 않는다.
+- **`ai/prd.md` JOUR-002·`ai/specs/005-order-sell/spec.md`의 잠금 규정 갱신은 이번 착수의 문서 커밋에서 이미 완료했다** (2026-08-04) — 구현 커밋에서 다시 손대지 않는다.
 - 컨트롤러 변경과 **같은 커밋**에서 API 문서 2개를 갱신한다.
 
 ## JOUR-006 투자일기 목록 조회 설계 (이슈 #203, 이번 착수)
@@ -956,7 +956,7 @@ public class JournalListController {
 
 ### 문서 갱신 (CLAUDE.md 규칙 7)
 
-- `docs/api-routes.md` — `journal` 도메인에 `GET /api/journal` 행 추가 (근거 열: `007 JOUR-006, Issue #203`).
+- `ai/api-routes.md` — `journal` 도메인에 `GET /api/journal` 행 추가 (근거 열: `007 JOUR-006, Issue #203`).
 - `docs/api-contracts.md` `## journal` 절 — 기존 4개 계약 아래에 "투자일기 목록 조회" 소절을 추가해 요청(쿼리 파라미터 3개)·응답(wrapper 3필드 + 항목 6필드)·오류(400×3·401·404·200 빈 목록) 계약을 적는다. `journalId` 미노출과 `market`+소유권 결합 조건을 본문에 한 줄로 요약한다.
 - 컨트롤러 변경과 **같은 커밋**에서 갱신한다. 이 갱신은 planner의 동기화 모드가 실제 controller 코드를 보고 확정하며, 여기 적은 문구는 설계 의도이지 최종 표현이 아니다.
 
@@ -1141,9 +1141,9 @@ public SellJournalDetailResponse getSellJournal(Long userId, Long sellTradeId)
 
 ### 문서 갱신 (CLAUDE.md 규칙 7·10)
 
-- `docs/api-routes.md` — `journal` 도메인에 `GET /api/journal/buy/{buyTradeId}`·`GET /api/journal/sell/{sellTradeId}` 2행 추가 (근거 열: `007 JOUR-005, Issue #217`).
+- `ai/api-routes.md` — `journal` 도메인에 `GET /api/journal/buy/{buyTradeId}`·`GET /api/journal/sell/{sellTradeId}` 2행 추가 (근거 열: `007 JOUR-005, Issue #217`).
 - `docs/api-contracts.md` `## journal` 절 — 목록 조회 소절 아래에 "투자일기 상세 조회(매수·매도)" 소절을 추가한다. 경로 분리 이유 한 줄, 검증 순서, 응답 5필드가 수정 응답과 동일하다는 점, 409·본문 없음을 적는다.
-- `docs/prd.md` — JOUR-005 절의 Decision Gate 문구를 경로 분리 결정으로 교체하고(문서 커밋에서 선행), §3 "구현 현황"의 투자일기 조회 행을 **구현 커밋에서** 완료로 갱신한다(규칙 10).
+- `ai/prd.md` — JOUR-005 절의 Decision Gate 문구를 경로 분리 결정으로 교체하고(문서 커밋에서 선행), §3 "구현 현황"의 투자일기 조회 행을 **구현 커밋에서** 완료로 갱신한다(규칙 10).
 - API 문서 2개는 컨트롤러 변경과 **같은 커밋**에서 갱신한다. 이 갱신은 planner의 동기화 모드가 실제 controller 코드를 보고 확정하며, 여기 적은 문구는 설계 의도이지 최종 표현이 아니다.
 
 ## 이 spec에서 하지 않는 것
@@ -1152,8 +1152,8 @@ public SellJournalDetailResponse getSellJournal(Long userId, Long sellTradeId)
 
 > **2026-08-04 갱신**: 위 문단은 JOUR-003 착수 시점(이슈 #183)의 기록이며 그 시점 기준으로는 여전히 맞다("다음 별도 이슈" = 지금 이 JOUR-004). JOUR-004는 이제 이번 spec의 착수 범위이고, 실제 설계는 위 §JOUR-004 매도 회고 수정 설계를 따른다. 매수 회고 수정(JOUR-002)·투자일기 상세(JOUR-005)는 여전히 Decision Gate 미해결로 범위 밖이다.
 >
-> **2026-08-04 재갱신 (이슈 #197)**: **JOUR-002의 Decision Gate는 해제됐다** — 잠금을 두지 않기로 확정했고(`./spec.md` §비즈니스 규칙 "매수 회고 수정 잠금 없음", `docs/prd.md` JOUR-002), 설계는 위 §JOUR-002 매수 회고 수정 설계를 따른다. 따라서 `buy_trade_journals`의 `updated_at`을 이번 착수에서 추가한다. **투자일기 상세(JOUR-005)의 식별자 체계 게이트만 남았고**, 목록(JOUR-006)과 함께 여전히 범위 밖이다.
+> **2026-08-04 재갱신 (이슈 #197)**: **JOUR-002의 Decision Gate는 해제됐다** — 잠금을 두지 않기로 확정했고(`./spec.md` §비즈니스 규칙 "매수 회고 수정 잠금 없음", `ai/prd.md` JOUR-002), 설계는 위 §JOUR-002 매수 회고 수정 설계를 따른다. 따라서 `buy_trade_journals`의 `updated_at`을 이번 착수에서 추가한다. **투자일기 상세(JOUR-005)의 식별자 체계 게이트만 남았고**, 목록(JOUR-006)과 함께 여전히 범위 밖이다.
 >
 > **2026-08-04 재갱신 (이슈 #203)**: **목록 조회(JOUR-006)는 이제 이번 spec의 착수 범위**이고, 실제 설계는 위 §JOUR-006 투자일기 목록 조회 설계를 따른다. JOUR-006은 식별자 게이트와 무관하게 착수했다(spec.md §비즈니스 규칙 "JOUR-005 식별자 게이트를 선점하지 않는다"). **투자일기 상세(JOUR-005)의 식별자 체계 게이트만 여전히 미해결이며 범위 밖이다.**
 >
-> **2026-08-05 재갱신 (이슈 #217)**: **JOUR-005의 식별자 체계 게이트가 해제됐다** — 타입별 경로 분리(`GET /api/journal/buy|sell/{tradeId}`)로 확정했고(spec.md §비즈니스 규칙 "상세 조회는 타입별 경로로 분리한다", `docs/prd.md` JOUR-005), 설계는 위 §JOUR-005 투자일기 상세 조회 설계를 따른다. **이로써 이 spec의 여섯 요구사항(JOUR-001~006)에 남은 Decision Gate가 없다.** 두 회고 테이블 통합·통합 `journalId`는 이 결정으로 영구히 배제됐다.
+> **2026-08-05 재갱신 (이슈 #217)**: **JOUR-005의 식별자 체계 게이트가 해제됐다** — 타입별 경로 분리(`GET /api/journal/buy|sell/{tradeId}`)로 확정했고(spec.md §비즈니스 규칙 "상세 조회는 타입별 경로로 분리한다", `ai/prd.md` JOUR-005), 설계는 위 §JOUR-005 투자일기 상세 조회 설계를 따른다. **이로써 이 spec의 여섯 요구사항(JOUR-001~006)에 남은 Decision Gate가 없다.** 두 회고 테이블 통합·통합 `journalId`는 이 결정으로 영구히 배제됐다.

@@ -4,7 +4,7 @@
 
 **Goal:** `GET /api/auth/oauth/{provider}/authorize`에 `purpose=login|reauth`를 추가해 목적을 state에 위·변조 불가능하게 묶고, `GET /api/auth/oauth/{provider}/callback`이 state에서 purpose를 복원해 기존 로그인(#10)과 신규 OAuth 재인증을 분기하도록 만든다. 재인증 성공 시 5분 유효·일회용 `reauthToken`을 발급하되 회원·소셜계정·계좌·시드머니는 절대 생성·변경하지 않는다.
 
-**관련 정본:** GitHub Issue #53, PRD `AUTH-003`·`AUTH-005` (`docs/prd.md` 231-244행, 268-281행, 511-512행), `spec.md`, `plan.md`, Issue #9/#10 계획, ADR-0002, ADR-0004, `docs/conventions.md`
+**관련 정본:** GitHub Issue #53, PRD `AUTH-003`·`AUTH-005` (`ai/prd.md` 231-244행, 268-281행, 511-512행), `spec.md`, `plan.md`, Issue #9/#10 계획, ADR-0002, ADR-0004, `docs/conventions.md`
 
 **선행:** Issue #8·#9·#10이 `origin/dev`에 있다 — `GET /api/auth/oauth/{provider}/authorize`(302), `GET /api/auth/oauth/{provider}/callback`(로그인), `OAuthStateGenerator`(순수 랜덤 state), `OAuthStateCookieFactory`(10분 보안 쿠키), `AuthService.oauthLogin`, `GET /api/auth/me`.
 
@@ -51,7 +51,7 @@
 - `reauth_tokens` Flyway 마이그레이션, `ReauthToken` 엔티티, `ReauthTokenRepository`, 원문 미저장(SHA-256 해시만) 발급 트랜잭션.
 - `REAUTHENTICATION_FAILED`(403) `ErrorCode` 추가.
 - `OAUTH_STATE_SECRET` 신규 환경변수와 `.env.example`·`application.yml`·`build.gradle` test 환경 반영.
-- `docs/api-routes.md` 동기화.
+- `ai/api-routes.md` 동기화.
 
 ### 제외
 
@@ -249,9 +249,9 @@ public record ReauthTokenResponse(String reauthToken, long expiresInSeconds) {}
 
 ### Documentation files to modify after implementation
 
-- `docs/api-routes.md`
-- `docs/specs/002-auth-account/tasks.md`
-- `docs/specs/002-auth-account/run-log.md`
+- `ai/api-routes.md`
+- `ai/specs/002-auth-account/tasks.md`
+- `ai/specs/002-auth-account/run-log.md`
 - PR 본문의 검증 표
 
 ### 수정하지 않을 파일
@@ -299,8 +299,8 @@ public record ReauthTokenResponse(String reauthToken, long expiresInSeconds) {}
 
 - [ ] 대상 단위·슬라이스·통합 테스트 전체와 기존 Issue #9/#10 회귀 스위트, Spotless, `.\gradlew.bat build --no-daemon --max-workers=1`을 실행한다.
 - [ ] Fake OAuth로 authorize(reauth)→callback(reauth) 전체 흐름과 authorize(login)→callback(login) 전체 흐름을 자동 통합 테스트로 함께 유지한다.
-- [ ] `docs/api-routes.md`의 authorize/callback 표를 purpose 분기·`REAUTHENTICATION_FAILED`·인증 규칙 표(조건부 공개 경로) 기준으로 갱신한다.
-- [ ] `docs/specs/002-auth-account/tasks.md`에 Issue #53 작업 항목 절을 추가하고 진행 상태를 반영한다.
+- [ ] `ai/api-routes.md`의 authorize/callback 표를 purpose 분기·`REAUTHENTICATION_FAILED`·인증 규칙 표(조건부 공개 경로) 기준으로 갱신한다.
+- [ ] `ai/specs/002-auth-account/tasks.md`에 Issue #53 작업 항목 절을 추가하고 진행 상태를 반영한다.
 
 ---
 
@@ -311,7 +311,7 @@ public record ReauthTokenResponse(String reauthToken, long expiresInSeconds) {}
 - [ ] reauth callback이 동일 계정 성공(5분 유효·일회용 `reauthToken`), 다른 계정/미연결 provider/state 위·변조 거부(모두 403 `REAUTHENTICATION_FAILED`)를 자동 테스트로 통과한다.
 - [ ] reauth 성공·실패 전후 User·SocialAccount·Account·시드머니가 MySQL 통합 테스트로 불변임이 확인된다.
 - [ ] `reauth_tokens`가 원문을 저장하지 않고 해시·만료시각·소비 여부만 저장한다(소비 로직 자체는 범위 밖).
-- [ ] `docs/api-routes.md`가 실제 Controller 매핑과 일치한다.
+- [ ] `ai/api-routes.md`가 실제 Controller 매핑과 일치한다.
 - [ ] `./gradlew build`(Spotless·SpotBugs·JaCoCo 포함)가 통과한다.
 
 ---

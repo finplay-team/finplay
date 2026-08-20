@@ -3,9 +3,9 @@
 ## 관련 문서
 
 - Spec: `./spec.md`
-- 대체 대상: `docs/specs/032-price-quote-stale-split/spec.md` PRICE-STALE-001·002·004(되돌림), PRICE-STALE-005(무의미화), `docs/specs/034-crypto-price-rest-backup/spec.md` PRICE-REST-004(무의미화) — 상세 대응표는 spec.md 상단 참조.
-- 관련 ADR: `docs/adr/0002-architecture.md`(레이어 규칙 — 판정 로직은 service, `PriceStore`는 key 조립·원자적 조회 전용 컴포넌트), `docs/adr/0003-testing-strategy.md`(테스트 레벨), `docs/adr/0021-continuous-deployment.md`(dev 머지 = 즉시 배포 — 아래 "배포 시 확인 사항" 참조).
-- 선행 spec: `docs/specs/003-market-data`(MKT-003·MKT-004 원문), `docs/specs/027-crypto-tick-candle-cache`(각주로 원문 대체 사실만 남기는 선례).
+- 대체 대상: `ai/specs/032-price-quote-stale-split/spec.md` PRICE-STALE-001·002·004(되돌림), PRICE-STALE-005(무의미화), `ai/specs/034-crypto-price-rest-backup/spec.md` PRICE-REST-004(무의미화) — 상세 대응표는 spec.md 상단 참조.
+- 관련 ADR: `ai/adr/0002-architecture.md`(레이어 규칙 — 판정 로직은 service, `PriceStore`는 key 조립·원자적 조회 전용 컴포넌트), `ai/adr/0003-testing-strategy.md`(테스트 레벨), `ai/adr/0021-continuous-deployment.md`(dev 머지 = 즉시 배포 — 아래 "배포 시 확인 사항" 참조).
+- 선행 spec: `ai/specs/003-market-data`(MKT-003·MKT-004 원문), `ai/specs/027-crypto-tick-candle-cache`(각주로 원문 대체 사실만 남기는 선례).
 
 ## 설계 결정 — `PriceStatus`를 3값에서 2값으로 되돌린다
 
@@ -103,10 +103,10 @@ REST 폴링 백업(034 PRICE-REST-002)은 그대로 3초 주기로 관측 시각
 - `docs/api-contracts.md` `### 종목 현재가 조회`: `STALE` 관련 서술("코인은 `status`가 `"STALE"`일 수도 있다"·"코인이 stale인 것만으로는 더 이상 409가 아니다")을 제거하고, "연결 유지+수신 이력 있음이면 경과 시간과 무관하게 항상 `AVAILABLE`"로 갱신한다. 오류 응답 칸의 409 조건을 "연결 끊김·수신 이력 없음"으로 단순화한다.
 - `docs/api-contracts.md` 주문 절: "이 `STALE` 완화는 034부터 주문 체결 가격 판정에도 그대로 적용된다"는 서술을 "코인 체결 거부(409)는 연결 끊김·수신 이력 없음 두 경우뿐이며, 그 외에는 경과 시간과 무관하게 항상 마지막 가격으로 체결된다"로 갱신한다.
 - `docs/api-contracts.md` `### 코인 SSE 스트림` `snapshot` 절: `STALE` 예시·서술 제거.
-- `docs/api-routes.md`: `/api/instruments/{instrumentId}/price` 라우트 설명에서 `STALE` 언급 제거, "근거" 칸에 `036` 추가.
-- `docs/specs/003-market-data/spec.md` MKT-004: 034가 재작성해 놓은 현재 5개 체크박스(연결 끊김·재연결 복귀·10초 초과해도 표시·체결 모두 사용·관측 시각은 나중 것을 씀·임의값 금지) 중 "관측 시각이 10초를 넘겼더라도(stale)" 관련 항목을 "관측 시각이 얼마나 오래됐든(경과 시간 무관)"으로 다시 고쳐, `STALE` 상태 표시 자체가 없어졌다는 사실을 반영한다. 003이 정본 계약 문서로서 계속 최신 상태를 유지해온 관례(032·034가 그렇게 해왔다)를 따른다 — 각주가 아니라 본문을 다시 쓴다.
-- `docs/specs/032-price-quote-stale-split/spec.md`·`docs/specs/034-crypto-price-rest-backup/spec.md`: 각 파일 최상단(제목 바로 아래)에 한 줄 각주를 추가한다 — "이 spec의 [PRICE-STALE-001·002·004 / PRICE-REST-004]는 `036-remove-crypto-stale-status`로 [되돌려졌다/무의미해졌다] — 원문 체크박스는 이력으로 유지한다." 027이 003을 대체할 때 쓴 것과 같은 패턴. 체크박스 본문은 건드리지 않는다.
-- `docs/prd.md` §3 "구현 현황": PRICE-STALE-001~005 행과 PRICE-REST-001~006 행을 갱신한다(근거: 이 spec/PR 번호) — 두 행 모두 "완료(원복됨)" 또는 유사한 표현으로 이 spec이 되돌린 부분을 명시하고, 그대로인 부분(PRICE-STALE-003·005 일부, PRICE-REST-001~003·005·006)은 유지된다고 적는다. 표 형식·근거 표기는 기존 다른 행들의 관례(PR 번호 또는 spec 폴더명)를 따른다.
+- `ai/api-routes.md`: `/api/instruments/{instrumentId}/price` 라우트 설명에서 `STALE` 언급 제거, "근거" 칸에 `036` 추가.
+- `ai/specs/003-market-data/spec.md` MKT-004: 034가 재작성해 놓은 현재 5개 체크박스(연결 끊김·재연결 복귀·10초 초과해도 표시·체결 모두 사용·관측 시각은 나중 것을 씀·임의값 금지) 중 "관측 시각이 10초를 넘겼더라도(stale)" 관련 항목을 "관측 시각이 얼마나 오래됐든(경과 시간 무관)"으로 다시 고쳐, `STALE` 상태 표시 자체가 없어졌다는 사실을 반영한다. 003이 정본 계약 문서로서 계속 최신 상태를 유지해온 관례(032·034가 그렇게 해왔다)를 따른다 — 각주가 아니라 본문을 다시 쓴다.
+- `ai/specs/032-price-quote-stale-split/spec.md`·`ai/specs/034-crypto-price-rest-backup/spec.md`: 각 파일 최상단(제목 바로 아래)에 한 줄 각주를 추가한다 — "이 spec의 [PRICE-STALE-001·002·004 / PRICE-REST-004]는 `036-remove-crypto-stale-status`로 [되돌려졌다/무의미해졌다] — 원문 체크박스는 이력으로 유지한다." 027이 003을 대체할 때 쓴 것과 같은 패턴. 체크박스 본문은 건드리지 않는다.
+- `ai/prd.md` §3 "구현 현황": PRICE-STALE-001~005 행과 PRICE-REST-001~006 행을 갱신한다(근거: 이 spec/PR 번호) — 두 행 모두 "완료(원복됨)" 또는 유사한 표현으로 이 spec이 되돌린 부분을 명시하고, 그대로인 부분(PRICE-STALE-003·005 일부, PRICE-REST-001~003·005·006)은 유지된다고 적는다. 표 형식·근거 표기는 기존 다른 행들의 관례(PR 번호 또는 spec 폴더명)를 따른다.
 
 ## 테스트 계획
 

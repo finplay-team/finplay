@@ -43,7 +43,7 @@
 - [ ] TUTORIAL-FLOW-004: 재시작은 현재 실행 세대의 샘플 종목 FILLED BUY 합계에서 FILLED SELL 합계를 뺀
   양수 순체결수량만 서버 보상 매도한다. 가격은 그 attempt의 재시작 시점 canonical tutorial price이며,
   기존 불변 주문·체결 원장을 삭제·수정하지 않고 새 FILLED SELL 원장을 남긴다. 순수량이 0이면 매도하지 않는다.
-- [ ] TUTORIAL-FLOW-005 (`docs/specs/040-tutorial-restart-after-completion`으로 부분 대체됨, Issue #402 —
+- [ ] TUTORIAL-FLOW-005 (`ai/specs/040-tutorial-restart-after-completion`으로 부분 대체됨, Issue #402 —
   "재시작 요청" 부분만 뒤집혔다: 완료 attempt도 `POST .../restart`로 실제 재시작한다. "진입 요청"에 대한
   아래 문장은 그대로 유효하다): 완료 attempt는 진입 또는 재시작 요청으로 초기화하거나 새 실행 세대를 만들지
   않는다. 두 요청 모두 기존 완료 evidence를 사용하는 `REPLAY` 모드를 반환하고 completion·reward·ledger를

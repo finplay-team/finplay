@@ -4,13 +4,13 @@
 
 - Spec: `./spec.md`
 - 선행 spec: `../003-market-data/spec.md`, `../003-market-data/plan.md`
-- PRD: `docs/prd.md` MKT-009 (선행 MKT-002·MKT-008, 정책 C-005·C-006)
+- PRD: `ai/prd.md` MKT-009 (선행 MKT-002·MKT-008, 정책 C-005·C-006)
 - 관련 ADR
   - **ADR-0002 (레이어드 아키텍처)** — `controller → service → repository`. 집계 로직은 service 계층에 두고 controller·repository에 넣지 않는다.
   - **ADR-0003 (테스트 전략)** — 집계 로직은 단위, 신규 쿼리는 `@DataJpaTest`, API 계약은 `@WebMvcTest`, 핵심 시나리오는 Testcontainers 통합.
   - **ADR-0004 (Flyway)** — **이번 작업은 스키마 변경이 없다.** 신규 마이그레이션을 만들지 않고 기존 `V8__create_stock_candles.sql`도 수정하지 않는다.
 - 코드 컨벤션: `docs/conventions.md`(DTO 규칙, 레이어 규칙, API 규칙, 예외 처리)
-- **문서 동기화 상태**: 아래 API 설계·입력 명세는 `docs/api-contracts.md`·`docs/api-routes.md`에 반영됐다(2026-08-03, 이슈 #143 동기화).
+- **문서 동기화 상태**: 아래 API 설계·입력 명세는 `docs/api-contracts.md`·`ai/api-routes.md`에 반영됐다(2026-08-03, 이슈 #143 동기화).
 
 ## API 설계
 

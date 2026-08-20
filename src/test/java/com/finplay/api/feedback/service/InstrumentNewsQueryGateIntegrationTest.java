@@ -98,7 +98,7 @@ class InstrumentNewsQueryGateIntegrationTest {
 	// 키를 쓰므로, saveSummary로 채운 메서드가 먼저 돌면 EMPTY·UNAVAILABLE 단정이 READY를 보게 된다.
 	// 지금까지 통과한 것은 JUnit5 기본 메서드 순서가 우연히 유리했기 때문이고, 메서드 이름 하나만 바뀌어도
 	// 뒤집힌다(같은 원인으로 MarketBriefingQueryGateIntegrationTest는 실제로 8건이 깨졌다 —
-	// docs/agent-mistakes.md). @AfterEach가 아니라 @BeforeEach인 이유는 앞 테스트가 정리에 실패해도 이번
+	// ai/agent-mistakes.md). @AfterEach가 아니라 @BeforeEach인 이유는 앞 테스트가 정리에 실패해도 이번
 	// 테스트가 항상 빈 캐시에서 시작하게 하기 위해서다.
 	@BeforeEach
 	void clearQueryCache() {

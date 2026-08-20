@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- 작업 범위는 GitHub Issue #4와 `docs/specs/002-auth-account/issue-4-design.md`로 제한한다.
+- 작업 범위는 GitHub Issue #4와 `ai/specs/002-auth-account/issue-4-design.md`로 제한한다.
 - 새 Java 소스 첫 줄에는 파일 역할을 설명하는 한국어 한 줄 주석을 둔다.
 - DTO는 record로 작성하고 요청 문자열에는 최대 길이를 명시한다.
 - 8~100자 원문 비밀번호는 SHA-256 사전 해시 후 `{sha256-bcrypt}<BCrypt 해시>` 형식으로, 가입 토큰과 Refresh Token은 SHA-256 해시만 저장한다.
@@ -19,7 +19,7 @@
 - 회원, 계좌 2개, 가입 토큰 소비, Refresh Token 해시 저장은 하나의 트랜잭션이다.
 - 로그인, Bearer 필터, 보호 경로, Refresh 회전, 로그아웃, 내 정보 조회는 구현하지 않는다.
 - 병합된 `V2__create_auth_account_tables.sql`은 수정하지 않는다.
-- controller를 추가하면 `docs/api-routes.md`를 같은 작업에서 동기화한다.
+- controller를 추가하면 `ai/api-routes.md`를 같은 작업에서 동기화한다.
 - 검증은 Windows wrapper `.\gradlew.bat`로 실행한다.
 
 ---
@@ -59,9 +59,9 @@
 
 ### Documentation files to modify
 
-- `docs/api-routes.md`
-- `docs/specs/002-auth-account/tasks.md`
-- `docs/specs/002-auth-account/run-log.md`
+- `ai/api-routes.md`
+- `ai/specs/002-auth-account/tasks.md`
+- `ai/specs/002-auth-account/run-log.md`
 
 ---
 
@@ -582,9 +582,9 @@ git commit -m "test: 회원가입 원자성 통합 검증 추가"
 ### Task 6: 문서 동기화와 전체 게이트
 
 **Files:**
-- Modify: `docs/api-routes.md`
-- Modify: `docs/specs/002-auth-account/tasks.md`
-- Modify: `docs/specs/002-auth-account/run-log.md`
+- Modify: `ai/api-routes.md`
+- Modify: `ai/specs/002-auth-account/tasks.md`
+- Modify: `ai/specs/002-auth-account/run-log.md`
 
 **Interfaces:**
 - Consumes: 최종 API 계약과 실제 검증 결과.
@@ -592,7 +592,7 @@ git commit -m "test: 회원가입 원자성 통합 검증 추가"
 
 - [ ] **Step 1: API route 문서를 갱신한다**
 
-`docs/api-routes.md`에 다음 계약을 추가한다.
+`ai/api-routes.md`에 다음 계약을 추가한다.
 
 ```markdown
 | POST | /api/auth/signup | auth | 가입 토큰 소비·회원과 시장별 계좌 생성·JWT 발급 | 002 AUTH-001·ACCT-001 |
@@ -647,7 +647,7 @@ Expected: 범위 밖 파일 변경이 없고 diff check가 PASS.
 - [ ] **Step 6: 문서 커밋을 만든다**
 
 ```powershell
-git add docs/api-routes.md docs/specs/002-auth-account/tasks.md docs/specs/002-auth-account/run-log.md
+git add ai/api-routes.md ai/specs/002-auth-account/tasks.md ai/specs/002-auth-account/run-log.md
 git commit -m "docs: 이슈 4 구현 결과 동기화"
 ```
 

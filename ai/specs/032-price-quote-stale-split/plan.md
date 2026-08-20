@@ -3,8 +3,8 @@
 ## 관련 문서
 
 - Spec: `./spec.md`
-- 관련 ADR: `docs/adr/0002-architecture.md`(레이어 규칙 — 판정 로직은 service, key 조립·원자적 조회는 PriceStore 컴포넌트)
-- 선행 spec: `docs/specs/003-market-data`(MKT-003·MKT-004 원문), `docs/specs/027-crypto-tick-candle-cache`(같은 패턴으로 "원문은 유지, 각주로 대체 사실만 남긴다"는 선례), `docs/specs/028-crypto-card-sse-push`(코인 SSE snapshot 계약)
+- 관련 ADR: `ai/adr/0002-architecture.md`(레이어 규칙 — 판정 로직은 service, key 조립·원자적 조회는 PriceStore 컴포넌트)
+- 선행 spec: `ai/specs/003-market-data`(MKT-003·MKT-004 원문), `ai/specs/027-crypto-tick-candle-cache`(같은 패턴으로 "원문은 유지, 각주로 대체 사실만 남긴다"는 선례), `ai/specs/028-crypto-card-sse-push`(코인 SSE snapshot 계약)
 
 ## 표현 방식 결정 — `PriceStatus`에 `STALE` 추가 (boolean 플래그 방식 기각)
 
@@ -116,8 +116,8 @@ spec.md PRICE-STALE-004·005의 근거대로, 이 네 서비스는 기존 조건
 
 - `docs/api-contracts.md` `### 종목 현재가 조회`: 오류 응답 칸의 "코인: stale·연결 끊김) 409"를 "코인: 연결 끊김·수신 이력 없음만 409, stale은 200 status=STALE"로 정정하고, 성공 응답 예시 옆에 `STALE` 값과 예시를 추가한다.
 - `docs/api-contracts.md` `### 코인 SSE 스트림`의 `snapshot` 절에 `STALE` 상태 설명을 추가한다.
-- `docs/specs/003-market-data/spec.md` MKT-004 절 하단에 각주 추가 — 원문("주문 가능 상태가 거부로 바뀐다")은 유지하되, 과거 구현이 이 판정을 화면 조회에도 잘못 적용했었고 `032-price-quote-stale-split`이 이를 분리했다는 사실만 남긴다(027이 003을 대체할 때 쓴 것과 같은 각주 패턴).
-- `docs/prd.md` §3 "구현 현황"에 새 행 추가(근거: 이 PR 번호). §4 MKT-004 절 본문은 고치지 않는다(spec.md "비즈니스 규칙" 참조 — 문구 자체는 이미 체결 관점으로 좁게 쓰여 있었다).
+- `ai/specs/003-market-data/spec.md` MKT-004 절 하단에 각주 추가 — 원문("주문 가능 상태가 거부로 바뀐다")은 유지하되, 과거 구현이 이 판정을 화면 조회에도 잘못 적용했었고 `032-price-quote-stale-split`이 이를 분리했다는 사실만 남긴다(027이 003을 대체할 때 쓴 것과 같은 각주 패턴).
+- `ai/prd.md` §3 "구현 현황"에 새 행 추가(근거: 이 PR 번호). §4 MKT-004 절 본문은 고치지 않는다(spec.md "비즈니스 규칙" 참조 — 문구 자체는 이미 체결 관점으로 좁게 쓰여 있었다).
 
 ## 테스트 계획
 

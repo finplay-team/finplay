@@ -21,7 +21,7 @@
   - 단건 조회·수정·삭제, 댓글, 검색·정렬 옵션, 새 Flyway 마이그레이션은 이 이슈에 포함하지 않는다.
 
 - [x] **5. API 문서 동기화와 완료 게이트**
-  - [x] 실제 Controller 매핑, 인증, 페이지 기본값·상한, 성공 응답 메타데이터와 400·401 계약을 `docs/api-routes.md`에 동기화한다.
+  - [x] 실제 Controller 매핑, 인증, 페이지 기본값·상한, 성공 응답 메타데이터와 400·401 계약을 `ai/api-routes.md`에 동기화한다.
   - [x] `spotlessApply`와 Repository·Service·Controller·통합 대상 테스트를 현재 HEAD에서 실행해 통과한다.
   - [x] 테스트 격리 수정 뒤 결합 실행으로 오염 재현 시나리오가 통과함을 확인한다.
   - [x] `build --no-daemon --max-workers=1`과 `git diff --check`를 실행해 통과한다.

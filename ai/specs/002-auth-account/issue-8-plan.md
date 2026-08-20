@@ -57,7 +57,7 @@
 - `AuthService`에 읽기 전용 조회 메서드 1개 추가 — 회원 조회 + 가입 방식 판별
 - 정상 200, 공통 401 오류 형식
 - Controller·Service 단위/슬라이스 테스트와 실제 MySQL 통합 테스트(타인 격리·가입 방식별 값 포함)
-- 구현 뒤 `docs/api-routes.md`·`tasks.md` 동기화, `plan.md` API 설계 표의 `GET /api/auth/me` 응답 칸 최소 갱신
+- 구현 뒤 `ai/api-routes.md`·`tasks.md` 동기화, `plan.md` API 설계 표의 `GET /api/auth/me` 응답 칸 최소 갱신
 
 ### 제외
 
@@ -198,10 +198,10 @@ public enum SignupMethod {
 
 ### Documentation files to modify after implementation
 
-- `docs/api-routes.md` — 실제 Controller 매핑 기준 `GET /api/auth/me` 상세 계약(응답에 `signupMethod` 포함) 추가.
-- `docs/specs/002-auth-account/plan.md` — API 설계 표의 `GET /api/auth/me` 응답 칸을 `MemberResponse (id, email, nickname, signupMethod)`로 최소 갱신한다(그 외 내용은 건드리지 않는다).
-- `docs/specs/002-auth-account/tasks.md` — "JWT·Security" 항목의 "`GET /api/auth/me` 잔여(Issue #8)" 메모를 완료로 갱신한다. 다른 잔여 작업(OAuth 어댑터, 통합 테스트 나머지 시나리오)은 그대로 둔다.
-- `docs/specs/002-auth-account/run-log.md` — implementer·reviewer가 실제 실행한 명령과 검증 수준만 기록한다.
+- `ai/api-routes.md` — 실제 Controller 매핑 기준 `GET /api/auth/me` 상세 계약(응답에 `signupMethod` 포함) 추가.
+- `ai/specs/002-auth-account/plan.md` — API 설계 표의 `GET /api/auth/me` 응답 칸을 `MemberResponse (id, email, nickname, signupMethod)`로 최소 갱신한다(그 외 내용은 건드리지 않는다).
+- `ai/specs/002-auth-account/tasks.md` — "JWT·Security" 항목의 "`GET /api/auth/me` 잔여(Issue #8)" 메모를 완료로 갱신한다. 다른 잔여 작업(OAuth 어댑터, 통합 테스트 나머지 시나리오)은 그대로 둔다.
+- `ai/specs/002-auth-account/run-log.md` — implementer·reviewer가 실제 실행한 명령과 검증 수준만 기록한다.
 
 ### 만들거나 수정하지 않을 파일
 
@@ -337,10 +337,10 @@ public enum SignupMethod {
 
 **Files**
 
-- Modify: `docs/api-routes.md`
-- Modify: `docs/specs/002-auth-account/plan.md`
-- Modify: `docs/specs/002-auth-account/tasks.md`
-- Modify during feature workflow: `docs/specs/002-auth-account/run-log.md`
+- Modify: `ai/api-routes.md`
+- Modify: `ai/specs/002-auth-account/plan.md`
+- Modify: `ai/specs/002-auth-account/tasks.md`
+- Modify during feature workflow: `ai/specs/002-auth-account/run-log.md`
 
 - [ ] **Step 1: 실제 Controller 매핑으로 API 문서를 동기화한다**
   - 라우트 목록에 `GET /api/auth/me`를 추가한다.
@@ -368,14 +368,14 @@ public enum SignupMethod {
 
   ```powershell
   git diff --check
-  git diff -- src/main/java/com/finplay/api/auth/controller/AuthController.java docs/api-routes.md docs/specs/002-auth-account/plan.md
+  git diff -- src/main/java/com/finplay/api/auth/controller/AuthController.java ai/api-routes.md ai/specs/002-auth-account/plan.md
   git status --short
   ```
 
 - [ ] **Step 7: 문서 변경을 논리 커밋한다**
 
   ```powershell
-  git add docs/api-routes.md docs/specs/002-auth-account/plan.md docs/specs/002-auth-account/tasks.md docs/specs/002-auth-account/run-log.md
+  git add ai/api-routes.md ai/specs/002-auth-account/plan.md ai/specs/002-auth-account/tasks.md ai/specs/002-auth-account/run-log.md
   git commit -m "docs: 내 정보 조회 API 계약과 가입 방식 응답 동기화"
   ```
 
@@ -397,5 +397,5 @@ public enum SignupMethod {
 - [ ] Access Token 없음·만료·변조·`REFRESH` 타입은 401 `UNAUTHORIZED` 공통 포맷이다.
 - [ ] 서로 다른 두 회원(이메일·소셜 포함)이 각자의 Bearer로 조회하면 결과가 격리된다(실제 MySQL 통합 테스트로 확인).
 - [ ] `SecurityConfig`·`UserQueryService`·`OAuthProviderName`·스키마를 변경하지 않았다.
-- [ ] 실제 Controller 매핑과 `docs/api-routes.md`가 일치하고, `plan.md` API 설계 표의 응답 칸이 갱신됐다.
+- [ ] 실제 Controller 매핑과 `ai/api-routes.md`가 일치하고, `plan.md` API 설계 표의 응답 칸이 갱신됐다.
 - [ ] 대상 테스트와 `.\gradlew.bat build --no-daemon --max-workers=1` 결과를 새로 확인한다.

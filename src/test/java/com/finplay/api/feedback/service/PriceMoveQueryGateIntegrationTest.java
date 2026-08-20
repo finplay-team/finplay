@@ -372,7 +372,7 @@ class PriceMoveQueryGateIntegrationTest {
 	// 다른 원장 불변 테스트(CryptoPriceMoveWatcherIntegrationTest·PostSellFeedbackNarrativeIntegrationTest)와
 	// 같은 테이블 목록이다. 이 조회는 애초에 원장 테이블을 읽지도 않으므로(PriceMoveQueryService는 instrument·
 	// price_move_events·price_move_event_sources만 본다) UPDATE로 값만 바뀌는 경로 자체가 없다 — 행 수 비교로
-	// 충분하다(docs/agent-mistakes.md 2026-08-04 "원장 불변" 행의 값 비교 요구는 UPDATE가 가능한 경로에 해당한다).
+	// 충분하다(ai/agent-mistakes.md 2026-08-04 "원장 불변" 행의 값 비교 요구는 UPDATE가 가능한 경로에 해당한다).
 	private static final List<String> LEDGER_TABLES = List.of("orders", "trades", "accounts", "holdings",
 		"holding_lots", "trade_allocations");
 

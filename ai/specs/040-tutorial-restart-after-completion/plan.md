@@ -37,7 +37,7 @@
 | PUT | `/api/education/practice/attempts/{market}` | 매핑·요청·응답 스키마는 무변경. 다만 completion evidence가 있고 attempt가 현재 `COMPLETED`가 아닌 조합(재시작 후 진행 중)을 오류로 오판하던 내부 분기를 제거 |
 | POST | `/api/education/practice/holding-reflections` | 응답에 `rewardGranted: boolean` 필드 추가(아래 "미확정" 참고). attempt 기반 완료 시 재완료를 더 이상 `PRACTICE_ALREADY_COMPLETED`로 막지 않음(단, attempt가 현재 `COMPLETED` 상태에서 재시작 없이 재호출하는 경우는 계속 막는다 — 그 경우는 "재완료"가 아니라 "같은 완료를 중복 제출") |
 
-URL·HTTP 메서드·요청 바디는 변경하지 않는다. `docs/api-routes.md`의 매핑 표 자체는 바뀌지 않지만,
+URL·HTTP 메서드·요청 바디는 변경하지 않는다. `ai/api-routes.md`의 매핑 표 자체는 바뀌지 않지만,
 `docs/api-contracts.md`의 이 3개 계약(요청 검증표는 무변경, 응답·오류 의미는 변경)은 구현 커밋에서
 갱신이 필요하다 — 아래 "controller 영향" 참고.
 
@@ -116,7 +116,7 @@ URL·HTTP 메서드·요청 바디는 변경하지 않는다. `docs/api-routes.m
 
 ## 컨트롤러 영향 (동기화 대상 여부)
 
-- URL·HTTP 메서드 추가/삭제 없음 → `docs/api-routes.md`의 매핑 표는 변경 불필요.
+- URL·HTTP 메서드 추가/삭제 없음 → `ai/api-routes.md`의 매핑 표는 변경 불필요.
 - 세 엔드포인트의 **응답 의미**가 바뀐다(`restart`가 실제로 재시작함, `holding-reflections` 응답에 새 필드
   가능성, `PUT ensure`의 오류 조건 축소) → **`docs/api-contracts.md`는 구현 커밋에서 갱신이 필요하다.**
   이 계획 단계에서는 "controller가 추가/변경되면 함께 갱신"이라는 CLAUDE.md 규칙 7 대상임을 표시만 한다.

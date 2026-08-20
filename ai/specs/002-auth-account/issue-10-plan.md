@@ -67,7 +67,7 @@
 - 기존 소셜 회원 로그인
 - 신규 회원·`social_accounts`·계좌 2개·Refresh Token 해시의 원자 저장
 - `OAUTH_EMAIL_REQUIRED`·`ACCOUNT_LINK_REQUIRED`·`VALIDATION_ERROR`·`OAUTH_AUTHORIZATION_FAILED`·`OAUTH_PROVIDER_ERROR` 공통 오류
-- callback 공개 경로 Security 설정과 `docs/api-routes.md` 동기화
+- callback 공개 경로 Security 설정과 `ai/api-routes.md` 동기화
 - 카카오·네이버 각각의 실제 브라우저 스모크와 DB 검증
 
 ### 제외
@@ -223,9 +223,9 @@ OAuthUserDto fetchUser(String authorizationCode, String state);
 
 ### Documentation files to modify after implementation
 
-- `docs/api-routes.md`
-- `docs/specs/002-auth-account/tasks.md`
-- `docs/specs/002-auth-account/run-log.md`
+- `ai/api-routes.md`
+- `ai/specs/002-auth-account/tasks.md`
+- `ai/specs/002-auth-account/run-log.md`
 - PR 본문의 Issue #10 검증 표
 
 ### 수정하지 않을 파일
@@ -270,7 +270,7 @@ OAuthUserDto fetchUser(String authorizationCode, String state);
 - [x] 같은 Fake `provider + providerUserId` 재호출은 기존 회원 로그인이고 중복 행이 없음을 검증한다.
 - [x] 이메일 미제공, 일반 회원 충돌, state 오류, 사용자 취소·만료/재사용 code, 공급자 장애·timeout·malformed response, 신규 가입 롤백을 자동 회귀 테스트로 유지한다.
 - [x] Issue #9 authorize/state 테스트와 기존 auth-account 회귀를 포함한 대상 테스트, Spotless, `.\gradlew.bat build --no-daemon --max-workers=1`을 실행한다.
-- [x] 실제 Controller 매핑 기준으로 `docs/api-routes.md`를 동기화하고 자동 검증 결과만 run-log·PR의 “자동 테스트” 영역에 기록한다.
+- [x] 실제 Controller 매핑 기준으로 `ai/api-routes.md`를 동기화하고 자동 검증 결과만 run-log·PR의 “자동 테스트” 영역에 기록한다.
 - [x] 실제 `oauth-real` 컨텍스트에서 `RestClient.Builder` 자동설정 누락을 재현하고 `spring-boot-restclient`, `OAuthRealContextIntegrationTest`, timeout counterfactual 테스트로 보완한 뒤 실제 jar 기동과 authorize 302를 확인한다.
 - [x] Fake Provider의 generated code 1회 성공·순차 재사용 거부·동시성 단일 성공, authorize URI별 고유 code, 잘못된 provider 거부·grant 비소비 후 원 provider 1회 성공을 자동 테스트로 검증한다.
 - [x] Fake 전체 flow에서 첫 callback 200 후 같은 `(provider, code, state)`와 raw cookie 재전송이 400 `OAUTH_AUTHORIZATION_FAILED`이고 RefreshToken·User·SocialAccount·Account가 불변인지 MySQL 통합 테스트로 검증한다.
@@ -335,5 +335,5 @@ OAuthUserDto fetchUser(String authorizationCode, String state);
 - [x] 실제 네이버 OAuth 전체 흐름과 신규/기존/DB 검증이 `PASS`다. 단, 기존 회원 두 번째 HTTP 응답의 브라우저 렌더링 제한은 run-log에 별도 기록한다.
 - [x] 자동 테스트와 실제 카카오·네이버 결과가 run-log와 PR에 별도 기록된다.
 - [x] 시크릿·Provider Access Token·authorization code가 저장소·로그·검증 기록에 없다.
-- [x] `docs/api-routes.md`가 실제 callback Controller와 일치한다.
+- [x] `ai/api-routes.md`가 실제 callback Controller와 일치한다.
 - [x] PR #49 차단 리뷰 후속 production/test 상태에서 Spotless·대상 테스트·전체 build를 새로 실행해 결과를 기록한다.

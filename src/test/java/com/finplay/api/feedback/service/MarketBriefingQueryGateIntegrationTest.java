@@ -111,7 +111,7 @@ class MarketBriefingQueryGateIntegrationTest {
 
 	// 조회 캐시(#245)가 켜진 뒤 필요해진 격리 훅이다. 이 클래스는 @Transactional이라 DB는 롤백되지만 공유
 	// Testcontainers Redis는 롤백되지 않아, 앞 메서드가 캐시한 브리핑 텍스트·items가 뒤 메서드에 그대로 보인다
-	// (실제로 8건이 그렇게 깨졌다 — docs/agent-mistakes.md). @AfterEach가 아니라 @BeforeEach인 것은 앞
+	// (실제로 8건이 그렇게 깨졌다 — ai/agent-mistakes.md). @AfterEach가 아니라 @BeforeEach인 것은 앞
 	// 테스트가 정리에 실패해도 이번 테스트가 항상 빈 캐시에서 시작하게 하기 위해서다.
 	//
 	// 캐시를 끄지 않는다 — 게이트 단정들이 운영과 같은 배선(캐시 켜짐)을 그대로 지나가야 계약 불변의 증거가 된다.

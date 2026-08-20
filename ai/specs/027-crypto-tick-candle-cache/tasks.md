@@ -2,11 +2,11 @@
 
 > 이슈 #242. spec `./spec.md`, plan `./plan.md`.
 >
-> 항목 굵기는 **커밋 1개 = 응집된 기능 조각** 기준이다(`docs/specs/README.md`). 순서대로 진행한다 — ①이 없으면 ②를 검증할 수 없고, ②가 없으면 ④가 붙을 데가 없다.
+> 항목 굵기는 **커밋 1개 = 응집된 기능 조각** 기준이다(`ai/specs/README.md`). 순서대로 진행한다 — ①이 없으면 ②를 검증할 수 없고, ②가 없으면 ④가 붙을 데가 없다.
 
 - [ ] **① 착수 전 실측 (코드 없음)** — PRD §10 Decision Gate 충족. ⓐ 현재 빗썸 REST 캔들 호출량(측정 조건: 동시 사용자 수·차트 재조회 주기·측정 시간을 기록하고 after에서 동일하게 재현), ⓑ 캔들 응답 시간, ⓒ **종목별 "1분 안에 체결이 있는 비율"**(plan "남은 위험" 첫 항목 — 이 값이 낮으면 캐시 효과 자체가 줄어 설계 전제가 흔들린다). 결과를 `run-log.md`에 기록한다. **실측 없이 다음 항목으로 넘어가지 않는다.**
 
-- [ ] **② `BithumbTransactionMessageParser` + `CryptoTrade`** (`market/feed`) — `transaction` 메시지를 체결 목록으로 파싱하는 순수 함수. `content.list`의 **모든 원소** 반환, `type`이 transaction이 아니면 빈 목록, 어떤 파싱 예외도 밖으로 던지지 않고 로그만 남기고 건너뜀(연결 유지 — `BithumbTickerMessageParser`와 동일 정책), `contDtm`(밀리초) 파싱, 심볼 `_KRW` 제거. record 컬렉션은 `List.copyOf` 방어적 복사(`docs/agent-mistakes.md` 2026-07-29 패턴). Jackson3(`tools.jackson`) import 규칙 준수.
+- [ ] **② `BithumbTransactionMessageParser` + `CryptoTrade`** (`market/feed`) — `transaction` 메시지를 체결 목록으로 파싱하는 순수 함수. `content.list`의 **모든 원소** 반환, `type`이 transaction이 아니면 빈 목록, 어떤 파싱 예외도 밖으로 던지지 않고 로그만 남기고 건너뜀(연결 유지 — `BithumbTickerMessageParser`와 동일 정책), `contDtm`(밀리초) 파싱, 심볼 `_KRW` 제거. record 컬렉션은 `List.copyOf` 방어적 복사(`ai/agent-mistakes.md` 2026-07-29 패턴). Jackson3(`tools.jackson`) import 규칙 준수.
   - (+ 단위 테스트: 단건 정상 파싱, **다건 `list` 전부 반환**, 비-transaction 메시지 무시, 필드 누락·잘못된 JSON에서 예외 미전파, 밀리초 파싱, 심볼 변환)
 
 - [ ] **③ `CryptoCandleStore` — Redis 저장소 + Lua 원자 갱신** (`market/store`) — 키 조립을 이 클래스에서만 한다(`PriceStore` 원칙). `recordTrade`(Lua로 open/high/low/close/volumeScaled 원자 갱신 + EXPIRE), `getCandles(symbol, fromMinute, toMinute)`(파이프라인 1회 일괄 `HGETALL`), `getSince`/`touchSince`. **거래량은 `×10^8` `long`으로 `HINCRBY` 누적**(소수 9자리 이상은 집계 제외 + 로그), 가격은 원본 문자열 저장·`tonumber` 비교. TTL 4시간(200봉 상한에서 역산 — 임의 숫자 아님). 시각 변환은 `clock.getZone()` 기준(`PriceStore`와 동일).
@@ -21,8 +21,8 @@
   - (+ Testcontainers 통합: 캐시+위임 이어붙이기 `sourceTime` 중복·누락 없음, 빗썸 실패 시 502/200 분기)
   - (+ `@WebMvcTest` 회귀: `interval` 4종 계약(200/400/404/401/502)이 기존과 동일 — 경로가 바뀌어도 계약은 그대로)
 
-- [ ] **⑥ 문서 동기화 + after 실측** — `docs/api-contracts.md` 코인 캔들 절의 "저장·캐시하지 않는다" 서술 정정(같은 커밋), `docs/prd.md` §3 구현 현황 MKT-010 행 갱신(근거 칸에 이 PR 번호), `docs/specs/003-market-data`·`013-candle-interval`의 "코인은 저장·캐시 없음" 서술에 이력 표시. **①과 동일 조건으로 after 실측**(호출량·응답시간·캐시 적중률)해 `run-log.md`에 before/after 대조 기록. 외부 스모크(실제 빗썸 transaction 수신·동시 구독 유지·`contQty` 실제 자릿수)는 자동 테스트와 **구분해** 보고(C-005). `./gradlew build` 통과.
+- [ ] **⑥ 문서 동기화 + after 실측** — `docs/api-contracts.md` 코인 캔들 절의 "저장·캐시하지 않는다" 서술 정정(같은 커밋), `ai/prd.md` §3 구현 현황 MKT-010 행 갱신(근거 칸에 이 PR 번호), `ai/specs/003-market-data`·`013-candle-interval`의 "코인은 저장·캐시 없음" 서술에 이력 표시. **①과 동일 조건으로 after 실측**(호출량·응답시간·캐시 적중률)해 `run-log.md`에 before/after 대조 기록. 외부 스모크(실제 빗썸 transaction 수신·동시 구독 유지·`contQty` 실제 자릿수)는 자동 테스트와 **구분해** 보고(C-005). `./gradlew build` 통과.
 
 ## 하지 않는 것
 
-`docs/api-routes.md` 갱신 — **신규·변경 엔드포인트가 없다**(계약 무변경, 내부 경로만 변경). Flyway 마이그레이션 — **신규 테이블 없음**(ADR-0004 대상 아님).
+`ai/api-routes.md` 갱신 — **신규·변경 엔드포인트가 없다**(계약 무변경, 내부 경로만 변경). Flyway 마이그레이션 — **신규 테이블 없음**(ADR-0004 대상 아님).

@@ -23,6 +23,6 @@
   - 게시물 미존재 404와 비로그인 401을 검증하고 조회 전후 댓글 DB 상태가 불변인지 확인한다.
 
 - [x] **5. API 문서 동기화와 전체 게이트**
-  - 실제 Controller 매핑을 기준으로 `docs/api-routes.md`에 GET 라우트, 인증, 배열 응답, 안정 정렬, 빈 목록 200, 404·401 계약을 반영한다.
+  - 실제 Controller 매핑을 기준으로 `ai/api-routes.md`에 GET 라우트, 인증, 배열 응답, 안정 정렬, 빈 목록 200, 404·401 계약을 반영한다.
   - 댓글 페이지네이션·작성·삭제·수정·대댓글 및 다른 API를 변경하지 않았는지 확인한다.
   - `.\gradlew.bat spotlessApply --no-daemon --max-workers=1`, 대상 테스트, `.\gradlew.bat build --no-daemon --max-workers=1`, `git diff --check`를 같은 worktree에서 겹치지 않게 순차 실행한다.

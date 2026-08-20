@@ -198,9 +198,9 @@ exceptionHandling(authenticationEntryPoint, accessDeniedHandler)
 
 ### Documentation files to modify
 
-- `docs/api-routes.md`
-- `docs/specs/002-auth-account/tasks.md`
-- `docs/specs/002-auth-account/run-log.md`
+- `ai/api-routes.md`
+- `ai/specs/002-auth-account/tasks.md`
+- `ai/specs/002-auth-account/run-log.md`
 
 ---
 
@@ -540,7 +540,7 @@ git commit -m "test: 로그인 통합 검증 추가"
 ## Task 7: 문서 동기화와 전체 게이트
 
 **Files**
-- Modify: `docs/api-routes.md`, `docs/specs/002-auth-account/tasks.md`, `docs/specs/002-auth-account/run-log.md`
+- Modify: `ai/api-routes.md`, `ai/specs/002-auth-account/tasks.md`, `ai/specs/002-auth-account/run-log.md`
 
 - [x] **Step 1: 라우트 문서를 갱신한다**
 
@@ -580,7 +580,7 @@ Expected: 범위 밖 파일 변경이 없다. `V3__*.sql`이 생성되지 않았
 - [x] **Step 5: 문서 커밋을 만든다**
 
 ```powershell
-git add docs/agent-mistakes.md docs/api-routes.md docs/specs/002-auth-account/issue-5-plan.md docs/specs/002-auth-account/tasks.md docs/specs/002-auth-account/run-log.md
+git add ai/agent-mistakes.md ai/api-routes.md ai/specs/002-auth-account/issue-5-plan.md ai/specs/002-auth-account/tasks.md ai/specs/002-auth-account/run-log.md
 git commit -m "docs: 이슈 5 구현 결과 동기화"
 ```
 

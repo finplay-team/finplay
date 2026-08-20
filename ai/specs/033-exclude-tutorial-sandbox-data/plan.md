@@ -3,8 +3,8 @@
 ## 관련 문서
 
 - Spec: `./spec.md`
-- 배경(변경하지 않음): `docs/specs/031-tutorial-sandbox-instruments`(샌드박스 종목·항시 시세·매도 단계·
-  5분 제한의 정본, `instruments.is_tutorial_sample` 컬럼 출처), `docs/specs/026-market-order-practice-tutorial`
+- 배경(변경하지 않음): `ai/specs/031-tutorial-sandbox-instruments`(샌드박스 종목·항시 시세·매도 단계·
+  5분 제한의 정본, `instruments.is_tutorial_sample` 컬럼 출처), `ai/specs/026-market-order-practice-tutorial`
   (2·3단계 chain 해석, 이슈 #343 튜토리얼 완료 보상 500만원)
 - 관련 ADR: ADR-0002(레이어드 경계), ADR-0003(테스트 전략), ADR-0004(Flyway migration 전용, 머지된
   파일 수정 금지 + ADR-0021 §결정7의 무중단 배포 제약)
@@ -15,7 +15,7 @@
 (2) 기존 서비스 메서드 내부에 조건 분기를 추가하는 것, (3) 값을 바로잡는 1회성 데이터 마이그레이션이다.
 셋 다 ADR-0002가 이미 규정한 레이어드 경계 안에서 끝나고, API 계약(요청·응답 필드)도 바꾸지 않는다.
 `031`의 plan.md가 같은 논리로 "새 ADR 불필요"를 판단한 선례와 같은 근거다. 이슈 #343(보상)을 다루는
-ADR도 존재하지 않는다(`docs/adr/` 확인, 026/031 plan.md에만 설계가 남아 있다) — 이 spec이 그와 충돌할
+ADR도 존재하지 않는다(`ai/adr/` 확인, 026/031 plan.md에만 설계가 남아 있다) — 이 spec이 그와 충돌할
 결정을 내리지 않으므로 새로 만들 필요도 없다.
 
 ## 도메인 경계
@@ -356,7 +356,7 @@ SET a.realized_pnl = COALESCE((
   컬럼의 초기값은 어차피 0이라 이번 마이그레이션 한정으로는 결과가 같지만, `realized_pnl` 재계산과
   같은 패턴(전체 덮어쓰기)으로 통일해 멱등성을 코드 형태로도 명확히 한다 — 나중에 이 마이그레이션을
   참고해 비슷한 재계산을 또 만들 사람이 `+=`를 따라 쓰다가 재실행 시 값이 두 배가 되는 실수를
-  막는다(`docs/agent-mistakes.md`에 기록할 만한 유형의 실수를 사전에 차단).
+  막는다(`ai/agent-mistakes.md`에 기록할 만한 유형의 실수를 사전에 차단).
 - **`practice_completions` COUNT 방식의 정확성 전제**: 보상 지급 로직(`PracticeHoldingReflectionService.
   createReflection`)은 `practiceCompletionRepository.save(...)` 직후 정확히 한 번
   `payTutorialCompletionReward(...)`를 호출하고, `practice_completions`에는
@@ -374,7 +374,7 @@ SET a.realized_pnl = COALESCE((
   매도·보상이 다시 옛 방식으로 반영됨)은 이 spec 배포 전과 같은 상태로 돌아가는 것뿐이라 새로운
   위험이 아니다.
 - **마이그레이션 번호**: 착수 시 `origin/dev` 최신 `V{N}`을 재확인한다 — 이 문서 작성 시점 최신은
-  `V33__rename_tutorial_sample_instruments.sql`이므로 잠정 번호는 `V34`(`docs/specs/README.md` 번호
+  `V33__rename_tutorial_sample_instruments.sql`이므로 잠정 번호는 `V34`(`ai/specs/README.md` 번호
   규칙과 같은 종류의 선점 위험, 병렬 브랜치 확인 필요).
 
 ## 6. 알려진 한계

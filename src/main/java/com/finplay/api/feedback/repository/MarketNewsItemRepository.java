@@ -32,7 +32,7 @@ public interface MarketNewsItemRepository extends JpaRepository<MarketNewsItem, 
 	 *
 	 * <p><b>파생 쿼리 이름 대신 {@code @Query}를 쓴다.</b> Spring Data JPA는 메서드 이름만으로 단일 필드를
 	 * 프로젝션하지 않고 엔티티 전체를 반환하려다 변환에서 실패하는데, <b>컴파일은 통과하므로</b> 슬라이스 테스트를
-	 * 돌리기 전까지 드러나지 않는다 ({@code docs/agent-mistakes.md} 2026-08-03).
+	 * 돌리기 전까지 드러나지 않는다 ({@code ai/agent-mistakes.md} 2026-08-03).
 	 */
 	@Query("SELECT n.url FROM MarketNewsItem n WHERE n.instrument.id = :instrumentId AND n.url IN :urls")
 	List<String> findExistingUrls(@Param("instrumentId")

@@ -6,21 +6,21 @@ FinPlay 백엔드 API 서버. Spring Boot 4.1 / Java 17 / Gradle(`build.gradle`,
 ## 시작과 문서 라우팅
 
 - 작업 전 `git status --short --branch`로 브랜치와 기존 변경을 확인한다.
-- `docs/context-router.md`에서 작업 유형에 해당하는 문서만 읽는다. `docs/` 전체 순회는 금지한다.
+- `ai/context-router.md`에서 작업 유형에 해당하는 문서만 읽는다. `docs/` 전체 순회는 금지한다.
 - 기능 요청에 spec이 없으면 구현하지 말고 spec 작성부터 제안한다.
-- 구현 시작 전 `docs/agent-mistakes.md`를 읽고, 재현·확인된 하네스/빌드 실수는 같은 파일에 기록한다.
+- 구현 시작 전 `ai/agent-mistakes.md`를 읽고, 재현·확인된 하네스/빌드 실수는 같은 파일에 기록한다.
 - 기존 ADR과 충돌하는 구현은 중단하고 새 ADR 초안을 제안한다. 기존 ADR은 수정하지 않는다.
 
 ## 구현 규칙
 
 - 한 번에 하나의 Issue 또는 명시된 작업 범위만 처리한다.
 - 기존 사용자 변경과 범위 밖 파일을 수정·삭제·되돌리지 않는다.
-- 아키텍처와 코드 컨벤션은 `docs/adr/0002-architecture.md`, `docs/conventions/code.md`를 따른다. 브랜치·커밋·PR 형식은 `docs/conventions/git.md`, 이슈·리뷰 운영은 `docs/conventions/team.md`를 따른다.
-- 테스트 수준은 `docs/adr/0003-testing-strategy.md`를 따른다. Mock 성공을 실제 DB·외부 API 검증으로 표현하지 않는다.
-- 엔티티/스키마 변경은 `docs/adr/0004-flyway-migrations.md`에 따라 새 Flyway 마이그레이션을 추가한다. 머지된 마이그레이션은 수정하지 않는다. **파괴적 변경(컬럼·테이블 삭제, 이름 변경, 타입 축소, NOT NULL 승격)은 한 배포에 담지 않고 두 배포로 나눈다** — 자동 배포의 롤백은 앱만 되돌리고 스키마는 되돌리지 않는다 (ADR-0021 §결정 7).
+- 아키텍처와 코드 컨벤션은 `ai/adr/0002-architecture.md`, `docs/conventions/code.md`를 따른다. 브랜치·커밋·PR 형식은 `docs/conventions/git.md`, 이슈·리뷰 운영은 `docs/conventions/team.md`를 따른다.
+- 테스트 수준은 `ai/adr/0003-testing-strategy.md`를 따른다. Mock 성공을 실제 DB·외부 API 검증으로 표현하지 않는다.
+- 엔티티/스키마 변경은 `ai/adr/0004-flyway-migrations.md`에 따라 새 Flyway 마이그레이션을 추가한다. 머지된 마이그레이션은 수정하지 않는다. **파괴적 변경(컬럼·테이블 삭제, 이름 변경, 타입 축소, NOT NULL 승격)은 한 배포에 담지 않고 두 배포로 나눈다** — 자동 배포의 롤백은 앱만 되돌리고 스키마는 되돌리지 않는다 (ADR-0021 §결정 7).
 - 새 Java 소스 파일 첫 줄에는 파일 역할을 설명하는 한 줄 한국어 주석을 둔다.
-- controller를 추가·변경하면 `docs/api-routes.md`(라우트 목록)와 `docs/api/`의 해당 도메인 파일(계약 상세)을 같은 작업에서 함께 동기화한다.
-- 요구사항 ID의 구현 상태를 바꾸면(미착수 → 완료, 새 엔드포인트 제공 등) `docs/prd.md` §3 "구현 현황" 행도 같은 작업에서 갱신하고 근거 칸에 PR 번호를 적는다. 기능 제공 범위가 그대로인 리팩터링·테스트·문서 변경은 대상이 아니다.
+- controller를 추가·변경하면 `ai/api-routes.md`(라우트 목록)와 `docs/api/`의 해당 도메인 파일(계약 상세)을 같은 작업에서 함께 동기화한다.
+- 요구사항 ID의 구현 상태를 바꾸면(미착수 → 완료, 새 엔드포인트 제공 등) `ai/prd.md` §3 "구현 현황" 행도 같은 작업에서 갱신하고 근거 칸에 PR 번호를 적는다. 기능 제공 범위가 그대로인 리팩터링·테스트·문서 변경은 대상이 아니다.
 
 ## 명령과 완료 기준
 
@@ -41,7 +41,7 @@ FinPlay 백엔드 API 서버. Spring Boot 4.1 / Java 17 / Gradle(`build.gradle`,
 - production 코드 작성자는 작업 항목마다 implementer 한 명으로 제한한다.
 - planner·tester·reviewer는 역할 파일에 허용된 범위만 수정한다.
 - 서브에이전트 완료 보고만 신뢰하지 않는다. 메인 에이전트가 diff와 검증 결과를 다시 확인한다.
-- 독립 spec 병렬 처리와 파일 소유권은 `docs/parallel-agents.md`를 따른다.
+- 독립 spec 병렬 처리와 파일 소유권은 `ai/parallel-agents.md`를 따른다.
 - 모델·승인 정책·인증은 저장소에 고정하지 않는다. 각자 `~/.codex/config.toml`에서 모델과 승인 모드를 설정한 뒤 실행한다 (ADR-0009).
 - 서브에이전트 세션 생명주기(implementer/tester 재사용·재개, reviewer 신규, 전환 조건)는 ADR-0010을 따른다. 실행 방법은 `feature` 스킬에 있다.
 

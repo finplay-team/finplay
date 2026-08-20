@@ -1,8 +1,8 @@
 # Spec: 코인 시세 표시와 체결 판정의 stale 기준 분리
 
 > GitHub 이슈 #355. 팀 확정 방향: 이슈 코멘트에서 제시된 1/2/3안 중 **1안**(표시용 판정과 체결용 판정 분리, yxejxnn 확정) — 재논의하지 않는다.
-> 선행 근거: `docs/specs/003-market-data/spec.md` MKT-003·MKT-004, `docs/adr/0002-architecture.md`.
-> 요구사항 ID는 이 spec 전용 네임스페이스 `PRICE-STALE-*`를 쓴다 — `docs/prd.md`의 EDU-PRACTICE-*·COIN-PRICE-RUNTIME-*·FEED-*와 같은 패턴으로, PRD 본문에 요구사항 절을 새로 추가하지 않고 이 spec이 정본이다. PRD §3 "구현 현황"에는 완료 시 행을 추가한다(CLAUDE.md 규칙 10).
+> 선행 근거: `ai/specs/003-market-data/spec.md` MKT-003·MKT-004, `ai/adr/0002-architecture.md`.
+> 요구사항 ID는 이 spec 전용 네임스페이스 `PRICE-STALE-*`를 쓴다 — `ai/prd.md`의 EDU-PRACTICE-*·COIN-PRICE-RUNTIME-*·FEED-*와 같은 패턴으로, PRD 본문에 요구사항 절을 새로 추가하지 않고 이 spec이 정본이다. PRD §3 "구현 현황"에는 완료 시 행을 추가한다(CLAUDE.md 규칙 10).
 > **(2026-08-14 `036-remove-crypto-stale-status`로 대체됨)** PRICE-STALE-001·002·004는 036에서 되돌려졌다 — 연결 유지+수신 이력 있음이면 경과 시간과 무관하게 항상 `AVAILABLE`이며 `STALE` 상태 자체가 사라졌다. PRICE-STALE-005는 STALE이 더 이상 발생하지 않아 무의미해졌다(코드 변경 없음). PRICE-STALE-003(`CryptoCandleAndPriceIndependenceTest` 회귀 없음)은 이 변경과 무관하게 그대로 유효하다. 아래 체크박스 원문은 이력으로 유지한다.
 
 ## 개요
@@ -40,7 +40,7 @@
 
 ### PRICE-STALE-004 표시 소비자 확장 — 코인 SSE snapshot
 
-- [ ] 코인 SSE 스트림(`GET /api/cryptos/stream`, `docs/specs/028-crypto-card-sse-push`)의 `snapshot` 이벤트도 같은 완화를 적용받는다 — 연결이 살아있고 최신 틱을 받은 적이 있는 종목은 stale이어도 `price`·`sourceTime`이 채워지고 `status: "STALE"`로 노출된다(빈 값 `UNAVAILABLE`로 떨어뜨리지 않는다). `price` 이벤트(빗썸 틱 push 그 자체)는 원래 항상 신선한 값만 발생하므로 영향이 없다.
+- [ ] 코인 SSE 스트림(`GET /api/cryptos/stream`, `ai/specs/028-crypto-card-sse-push`)의 `snapshot` 이벤트도 같은 완화를 적용받는다 — 연결이 살아있고 최신 틱을 받은 적이 있는 종목은 stale이어도 `price`·`sourceTime`이 채워지고 `status: "STALE"`로 노출된다(빈 값 `UNAVAILABLE`로 떨어뜨리지 않는다). `price` 이벤트(빗썸 틱 push 그 자체)는 원래 항상 신선한 값만 발생하므로 영향이 없다.
 
 ### PRICE-STALE-005 엄격 유지 소비자 고정
 
@@ -75,6 +75,6 @@
 - [ ] `SyntheticPriceService`·`PracticePriceSessionService`가 stale 입력에서 여전히 고정 fallback 시작가를 쓰는 테스트 통과.
 - [ ] 코인 SSE snapshot이 stale 종목을 `status: "STALE"` + 실제 마지막 가격으로 노출하는 테스트 통과.
 - [ ] `docs/api-contracts.md`의 `/price` 절과 코인 SSE snapshot 절이 `STALE` 상태를 반영해 갱신됨(같은 커밋).
-- [ ] `docs/specs/003-market-data/spec.md` MKT-004에 이 spec의 반영이 남음(이후 `034-crypto-price-rest-backup`에서 체결까지 완화되면서 MKT-004 원문 자체가 다시 교체됐다 — 현재 원문이 정본이다).
-- [ ] `docs/prd.md` §3 "구현 현황"에 이 기능의 행이 추가됨(근거: PR 번호).
+- [ ] `ai/specs/003-market-data/spec.md` MKT-004에 이 spec의 반영이 남음(이후 `034-crypto-price-rest-backup`에서 체결까지 완화되면서 MKT-004 원문 자체가 다시 교체됐다 — 현재 원문이 정본이다).
+- [ ] `ai/prd.md` §3 "구현 현황"에 이 기능의 행이 추가됨(근거: PR 번호).
 - [ ] `./gradlew build` 통과.

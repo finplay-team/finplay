@@ -1,18 +1,18 @@
 # API 계약 — feedback
 
-"012 AI 피드백" 절의 API 계약 상세다. 전체 라우트를 한눈에 보는 지도는 `docs/api-routes.md`에 있다.
+"012 AI 피드백" 절의 API 계약 상세다. 전체 라우트를 한눈에 보는 지도는 `ai/api-routes.md`에 있다.
 
-**controller를 추가/변경하면 `docs/api-routes.md`의 라우트 목록과 이 문서를 같은 커밋에서 함께 갱신한다** (CLAUDE.md 규칙, reviewer 리뷰 모드 점검 항목).
+**controller를 추가/변경하면 `ai/api-routes.md`의 라우트 목록과 이 문서를 같은 커밋에서 함께 갱신한다** (CLAUDE.md 규칙, reviewer 리뷰 모드 점검 항목).
 
-블랙박스 QA는 구현 코드(`src/main`)를 읽지 않고 이 문서와 spec만을 계약 근거로 사용한다 (`docs/context-router.md`).
+블랙박스 QA는 구현 코드(`src/main`)를 읽지 않고 이 문서와 spec만을 계약 근거로 사용한다 (`ai/context-router.md`).
 
 ---
 
 ## 012 AI 피드백
 
-`docs/specs/012-ai-feedback`의 계약 4건이다(변동 원인 카드·매도 직후 피드백·종목 뉴스 요약·개장 전 브리핑). 네 경로는 URL 접두사(`instruments`·`ai`·`market`)가 다르지만 소유 도메인은 `feedback` 하나다. spec 단위로 묶어 둔다. **네 절 모두 제목에 "(계획)" 표시가 없다 — controller가 전부 있으므로 네 절이 전부 블랙박스 QA 근거다** (매도 직후 피드백이 마지막이며 이슈 #208에서 걷었다). `docs/api-routes.md`도 같은 상태이며 계획 라우트로 남은 2차 경로는 없다. **`plan.md`의 남은 이슈 7·8번은 이 네 절에 필드·분기를 더하고 새 엔드포인트를 만들지 않는다** — 계획 절을 다시 세우지 않는다.
+`ai/specs/012-ai-feedback`의 계약 4건이다(변동 원인 카드·매도 직후 피드백·종목 뉴스 요약·개장 전 브리핑). 네 경로는 URL 접두사(`instruments`·`ai`·`market`)가 다르지만 소유 도메인은 `feedback` 하나다. spec 단위로 묶어 둔다. **네 절 모두 제목에 "(계획)" 표시가 없다 — controller가 전부 있으므로 네 절이 전부 블랙박스 QA 근거다** (매도 직후 피드백이 마지막이며 이슈 #208에서 걷었다). `ai/api-routes.md`도 같은 상태이며 계획 라우트로 남은 2차 경로는 없다. **`plan.md`의 남은 이슈 7·8번은 이 네 절에 필드·분기를 더하고 새 엔드포인트를 만들지 않는다** — 계획 절을 다시 세우지 않는다.
 
-**아래 예시의 `publisher`가 뉴스에서 `hankyung.com`처럼 도메인인 것은 오타가 아니다.** 네이버 뉴스 검색 응답에 언론사 이름 필드가 없어(`title`·`originallink`·`link`·`description`·`pubDate`가 전부) `originallink` 호스트에서 `www.`만 뗀 값을 저장하며, 정본은 spec §C-8이다. 한글 언론사명 매핑은 후속 이슈로 분리했다(`docs/specs/012-ai-feedback/plan.md` §후속으로 낼 이슈). 공시(`type=DISCLOSURE`)의 `publisher`는 `DART` 고정이다.
+**아래 예시의 `publisher`가 뉴스에서 `hankyung.com`처럼 도메인인 것은 오타가 아니다.** 네이버 뉴스 검색 응답에 언론사 이름 필드가 없어(`title`·`originallink`·`link`·`description`·`pubDate`가 전부) `originallink` 호스트에서 `www.`만 뗀 값을 저장하며, 정본은 spec §C-8이다. 한글 언론사명 매핑은 후속 이슈로 분리했다(`ai/specs/012-ai-feedback/plan.md` §후속으로 낼 이슈). 공시(`type=DISCLOSURE`)의 `publisher`는 `DART` 고정이다.
 
 ### 종목 변동 원인 카드 조회
 
@@ -138,7 +138,7 @@
 
 **재생성이 성공하면 1회로 끝나지만, 실패하면 다음 조회에서 다시 시도한다** (2026-08-05 정정 — 그전까지 이 소절이 "1회 재생성"으로만 적혀 실제 동작보다 좁았다. 코드는 처음부터 `spec.md` §C-7·FEED-007대로였다). 성공 시 `narrative_finalized`가 `TRUE`가 되어 게이트가 닫힌다. LLM 실패·후검증 위반으로 **템플릿으로 대체되면 실패로 치고 기존 서술을 유지한 채 `narrative_finalized`를 `FALSE`로 남기므로**, 게이트가 열려 있는 다음 조회에서 상한 이내면 또 시도한다 — 템플릿 문장에는 매도 후 흐름·집단 비교가 없어서 그것으로 덮으면 재생성할수록 서술이 빈약해지기 때문이다.
 
-**재시도는 체결 1건당 누적 `max-narrative-retry`회까지이며**(`regeneration_attempts`, 값은 `spec.md` §C-7) **날짜 단위로 리셋하지 않는다** — 실패 시 `generated_at`을 갱신하지 않으므로 날짜 기준이 애초에 성립하지 않는다. 따라서 **LLM 장애가 길어져도 한 체결의 평생 LLM 호출은 최초 생성 1회 + 두 재생성 상한의 합으로 묶여 있고 조회 수에 비례하지 않는다** (4차에 두 번째 사유가 생겨 "재생성 상한"에서 "두 상한의 합"으로 정정했다 — 아래 문단). 상한에 닿으면 `narrative_finalized`가 `FALSE`로 남은 채 더 이상 호출하지 않으며, 응답은 그대로 200이고 `narrativeStatus`는 항상 `READY`다(템플릿이 있어 서술이 비지 않는다). 다만 **조회 경로의 LLM 호출량에는 현재 계측이 없다** — `LlmCallStats`는 배치 스코프 전용이며(#198, 의도된 동작) 후속 이슈로 `docs/specs/012-ai-feedback/plan.md` §후속으로 낼 이슈에 적혀 있다.
+**재시도는 체결 1건당 누적 `max-narrative-retry`회까지이며**(`regeneration_attempts`, 값은 `spec.md` §C-7) **날짜 단위로 리셋하지 않는다** — 실패 시 `generated_at`을 갱신하지 않으므로 날짜 기준이 애초에 성립하지 않는다. 따라서 **LLM 장애가 길어져도 한 체결의 평생 LLM 호출은 최초 생성 1회 + 두 재생성 상한의 합으로 묶여 있고 조회 수에 비례하지 않는다** (4차에 두 번째 사유가 생겨 "재생성 상한"에서 "두 상한의 합"으로 정정했다 — 아래 문단). 상한에 닿으면 `narrative_finalized`가 `FALSE`로 남은 채 더 이상 호출하지 않으며, 응답은 그대로 200이고 `narrativeStatus`는 항상 `READY`다(템플릿이 있어 서술이 비지 않는다). 다만 **조회 경로의 LLM 호출량에는 현재 계측이 없다** — `LlmCallStats`는 배치 스코프 전용이며(#198, 의도된 동작) 후속 이슈로 `ai/specs/012-ai-feedback/plan.md` §후속으로 낼 이슈에 적혀 있다.
 
 **두 번째 재생성 사유는 투자일기다** (4차, 이슈 #386 · `spec.md` §FEED-013 결정 3). 4차부터 이 서술은 그 매도 체결의 **매도 회고 일기**와 배분된 매수 체결들의 **매수 회고 일기**를 함께 재료로 쓴다. 그래서 일기가 나중에 작성되거나 수정되면 **다음 조회에서 서술을 다시 만든다.** 일기 수정을 잠그지 않는다 — `docs/api/journal.md`의 작성·수정 계약 네 개는 한 글자도 바뀌지 않았고 `JOURNAL_LOCKED` 같은 오류 코드도 없다. **일기가 하나도 없으면 3차와 동일하게 동작한다** — 프롬프트에서 해당 줄만 빠질 뿐 계약·게이트가 그대로다.
 

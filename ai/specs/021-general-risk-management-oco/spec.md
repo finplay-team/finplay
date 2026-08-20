@@ -2,9 +2,9 @@
 
 > 상태: 문서 설계 확정, production 구현은 3차 MVP 착수분(2026-08-06 재확정)
 >
-> **2차 MVP는 이 OCO 없이 `docs/specs/026-market-order-practice-tutorial`(2026-08-10 신설)로 튜토리얼을 완결한다.** 이 spec은 3차 MVP 착수 전까지 설계 문서로만 남아 있으며, `026`은 이 엔진을 기다리지 않고 시장가/지정가 매매 결과만으로 완결하도록 별도 설계됐다 — 서로 대체 관계가 아니라 같은 문제(3단계 실습 완결)의 서로 다른 시점 해법이다.
+> **2차 MVP는 이 OCO 없이 `ai/specs/026-market-order-practice-tutorial`(2026-08-10 신설)로 튜토리얼을 완결한다.** 이 spec은 3차 MVP 착수 전까지 설계 문서로만 남아 있으며, `026`은 이 엔진을 기다리지 않고 시장가/지정가 매매 결과만으로 완결하도록 별도 설계됐다 — 서로 대체 관계가 아니라 같은 문제(3단계 실습 완결)의 서로 다른 시점 해법이다.
 >
-> `docs/prd.md`는 손절·익절 OCO를 "튜토리얼 전용"과 "일반 리스크관리 OCO"(3차 MVP 후보)로 나눠 두었다(§2). 2026-08-05에는 코인(GTC) 튜토리얼 경로를 2차 MVP 활성 트랙으로 우선 구현하기로 했었으나, 2026-08-06 결정으로 그 우선 구현을 철회하고 튜토리얼 OCO·일반 리스크관리 OCO를 함께 3차 MVP에서 착수하기로 확정했다. 이 spec은 그 3차 착수 시점에 두 트랙을 처음부터 하나의 엔진으로 설계해 두는 문서다 — 교육 튜토리얼에 종속되지 않는 일반 기능으로 처음 설계한다. `POST /api/exit-plans` 등 관련 production 코드는 아직 전혀 없다 — 이 문서는 리팩터링이 아니라 최초 설계다.
+> `ai/prd.md`는 손절·익절 OCO를 "튜토리얼 전용"과 "일반 리스크관리 OCO"(3차 MVP 후보)로 나눠 두었다(§2). 2026-08-05에는 코인(GTC) 튜토리얼 경로를 2차 MVP 활성 트랙으로 우선 구현하기로 했었으나, 2026-08-06 결정으로 그 우선 구현을 철회하고 튜토리얼 OCO·일반 리스크관리 OCO를 함께 3차 MVP에서 착수하기로 확정했다. 이 spec은 그 3차 착수 시점에 두 트랙을 처음부터 하나의 엔진으로 설계해 두는 문서다 — 교육 튜토리얼에 종속되지 않는 일반 기능으로 처음 설계한다. `POST /api/exit-plans` 등 관련 production 코드는 아직 전혀 없다 — 이 문서는 리팩터링이 아니라 최초 설계다.
 >
 > **OCO 체결의 현금 처리(샌드박스 격리)는 `047-tutorial-sandbox-cash-isolation`이 정본이다.** 이 spec은
 > 애초에 튜토리얼 현금 격리를 고려한 적이 없었다 — `047`은 이 spec을 대체하는 것이 아니라, 이 spec이
@@ -14,7 +14,7 @@
 
 ## 개요
 
-`docs/specs/016-investment-education-policy`는 OCO exit plan(손절·익절을 한 쌍으로 묶어 한쪽 도달 시 반대쪽을 자동 취소하는 예약)을 3단계 투자 실습 튜토리얼에만 쓰도록 설계했다 — 생성에 `intentionId`가 필수이고 favorite→intention→buyTrade→holding→exitPlan chain 검증이 붙는다. 이 spec은 같은 OCO 생성·트리거·취소 엔진을 튜토리얼에 종속되지 않는 **일반 기능**으로 확장한다.
+`ai/specs/016-investment-education-policy`는 OCO exit plan(손절·익절을 한 쌍으로 묶어 한쪽 도달 시 반대쪽을 자동 취소하는 예약)을 3단계 투자 실습 튜토리얼에만 쓰도록 설계했다 — 생성에 `intentionId`가 필수이고 favorite→intention→buyTrade→holding→exitPlan chain 검증이 붙는다. 이 spec은 같은 OCO 생성·트리거·취소 엔진을 튜토리얼에 종속되지 않는 **일반 기능**으로 확장한다.
 
 일반 사용자는 지금 보유 중인 holding에 사전 의도 기록 없이 바로 OCO를 걸 수 있다. `intentionId`는 이 API의 **선택 파라미터**가 된다.
 
@@ -73,7 +73,7 @@
 - 계산된 `stopLossPrice`·`takeProfitPrice`는 `0 < stopLossPrice < entryPrice < takeProfitPrice`를 만족해야 하며, `entryPrice`는 교육 경로는 `buyTrade.entryPrice`(변경 없음), 일반 경로는 holding의 생성 시점 `averagePrice` snapshot이다.
 - 생성 트랜잭션은 서버 유효 현재가를 baseline으로 저장한다. 유효 시세가 없으면 두 경로 모두 409 `PRICE_UNAVAILABLE`로 plan·condition·예약 흔적 없이 거부한다.
 - 가격 트리거는 익절 `currentPrice >= takeProfitPrice`, 손절 `currentPrice <= stopLossPrice`이며 트리거 시점 현재가로 시장가 청산한다. 두 경로가 완전히 같은 트리거·체결·반대 조건 취소 로직을 공유한다.
-- 취소·체결·만료 경합에서 예약 수량은 항상 정확히 한 번 소비되거나 반환된다. 기존 시장가·지정가 SELL은 공통 예약 원장(`Holding.getAvailableQuantity()`, `reserveQuantity()`, `releaseReservedQuantity()` — `docs/specs/015-limit-order`가 이미 구현)에서 `availableQuantity`만 검증한다. 이 원장은 새로 만들지 않고 그대로 재사용한다.
+- 취소·체결·만료 경합에서 예약 수량은 항상 정확히 한 번 소비되거나 반환된다. 기존 시장가·지정가 SELL은 공통 예약 원장(`Holding.getAvailableQuantity()`, `reserveQuantity()`, `releaseReservedQuantity()` — `ai/specs/015-limit-order`가 이미 구현)에서 `availableQuantity`만 검증한다. 이 원장은 새로 만들지 않고 그대로 재사용한다.
 - 일반 경로 생성·취소는 `Idempotency-Key` 재시도에서 최초 결과를 그대로 재현한다. 일반 경로는 holding이 영속 DB 행이라 ADR-0012의 재시작 인스턴스 재사용 문제가 없으므로, 교육 경로처럼 복잡한 key-first 재해석 coordinator가 필요하지 않다(`plan.md` 참고).
 - **샌드박스 종목 holding은 일반 경로 대상이 아니다.** `047` spec이 다루는 튜토리얼 현금 격리와 별개로, `intentionId` 없는 일반 OCO가 샌드박스 holding(투자 실습 튜토리얼 전용 종목)에 걸리면 그 OCO 체결이 `Order.create(...)`(교육 attempt 귀속 없음)로 진행돼 실습 재시작·진행 판정(`practiceAttemptId` 기반 순체결수량 계산)이 깨진다(이슈 #461 코드 확인 결과). `ExitPlanService`가 `validateMarketIsCrypto` 옆에서 이 판정을 맡는다 — 경로 공용 엔진(`ExitPlanCreationService`)에 두지 않는 이유는 향후 교육 경로(`intentionId` 지정, `016` EDU-PRACTICE-005·006)가 재접합될 때 그 경로 자신이 이 차단에 막히지 않아야 하기 때문이다.
 
@@ -95,4 +95,4 @@
 - [ ] 두 경로가 완전히 같은 생성·트리거·취소 엔진(잠금 순서, 예약 원장, 정확히 한 번 규칙, GTC)을 공유함이 명시된다.
 - [ ] `016`·`019`·`020`과의 문서 소유권 경계가 항목별로 명확히 나뉜다.
 - [ ] 주식 범위 제외가 거부 방식(400)과 함께 명시된다.
-- [x] `docs/prd.md`와의 차수 불일치(§2·§4의 "3차 MVP 후보" 문구, §3 구현 현황)가 해소된다 — 이 PR(#249)이 §2·§3·§4를 직접 동기화했다(tasks.md "후속 확인 필요" 절 참고). 남은 것은 §4 요구사항 ID 부여 방식뿐이며 3차 착수 이슈로 넘긴다.
+- [x] `ai/prd.md`와의 차수 불일치(§2·§4의 "3차 MVP 후보" 문구, §3 구현 현황)가 해소된다 — 이 PR(#249)이 §2·§3·§4를 직접 동기화했다(tasks.md "후속 확인 필요" 절 참고). 남은 것은 §4 요구사항 ID 부여 방식뿐이며 3차 착수 이슈로 넘긴다.

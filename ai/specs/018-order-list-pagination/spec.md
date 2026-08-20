@@ -2,11 +2,11 @@
 
 > 단계: **2차 MVP (팀 회의 표현: 1차 고도화)**. 이슈 #182.
 >
-> PRD 근거: **PORT-003**(`docs/prd.md`, 2026-08-04 확정, 이슈 #177 — [PR #178](https://github.com/finplay-team/finplay/pull/178)). 선행 근거: PORT-002(`GET /api/trades` — 동일 검증 방식·조회 패턴의 형제 API), ACCT-002(계좌 소유권 검증 `AccountService.getAccountFor`).
+> PRD 근거: **PORT-003**(`ai/prd.md`, 2026-08-04 확정, 이슈 #177 — [PR #178](https://github.com/finplay-team/finplay/pull/178)). 선행 근거: PORT-002(`GET /api/trades` — 동일 검증 방식·조회 패턴의 형제 API), ACCT-002(계좌 소유권 검증 `AccountService.getAccountFor`).
 >
 > 선행 spec: `006-portfolio-query`. **이 spec은 006의 PORT-003 1차 계약("페이지네이션 없이 전체 주문 반환")을 대체한다** — 006 spec.md의 해당 문장은 지우지 않고 "1차 고도화(이슈 #182, 018)에서 확장됨" 이력 표시만 남긴다. 006은 1차 MVP 범위로 이미 완료된 spec이고, 그 문장은 **당시 계약을 기록한 이력**이다. 완료된 1차 spec을 사후 편집해 2차 요구사항을 섞으면 무엇이 1차 계약이었는지 추적할 수 없어진다. 003→013, 011, 012도 같은 이유로 후속 폴더를 썼다.
 >
-> **문서 동기화 상태**: 이 spec의 확정 계약은 구현 착수 시 `docs/api-routes.md`·`docs/api-contracts.md`의 `GET /api/orders` 행을 같은 커밋에서 갱신한다(CLAUDE.md 규칙 7). 현재 두 문서에는 아직 1차 계약(페이지네이션 없음)이 남아 있다.
+> **문서 동기화 상태**: 이 spec의 확정 계약은 구현 착수 시 `ai/api-routes.md`·`docs/api-contracts.md`의 `GET /api/orders` 행을 같은 커밋에서 갱신한다(CLAUDE.md 규칙 7). 현재 두 문서에는 아직 1차 계약(페이지네이션 없음)이 남아 있다.
 
 ## 개요
 
@@ -50,7 +50,7 @@
 - `GET /api/orders/pending`(LMT-004, 미체결 지정가 목록) 구현 — 별도 스펙·이슈.
 - 프론트엔드(FinPlay 레포) 쪽 대응 변경 — 별도 조율·별도 작업.
 - 스키마 변경·신규 Flyway 마이그레이션 — `Order` 엔티티에 이미 `account` 연관관계가 있어 필요 없다.
-- `docs/prd.md` "API 계약" 섹션(790행 근처)의 `symbol`·`requestedQuantity` 필드 서술과 실제 코드(`quantity`, `symbol` 없음)의 드리프트 — 이번 이슈 이전부터 있던 것이며, 이 spec은 실제 코드·`docs/api-contracts.md` 정본 기준(`quantity`, `symbol` 없음)을 그대로 따른다. (당초 별도 이슈로 미룰 계획이었으나, 단순 문구 정정이라 이 PR에서 `docs/prd.md`도 함께 고쳤다.)
+- `ai/prd.md` "API 계약" 섹션(790행 근처)의 `symbol`·`requestedQuantity` 필드 서술과 실제 코드(`quantity`, `symbol` 없음)의 드리프트 — 이번 이슈 이전부터 있던 것이며, 이 spec은 실제 코드·`docs/api-contracts.md` 정본 기준(`quantity`, `symbol` 없음)을 그대로 따른다. (당초 별도 이슈로 미룰 계획이었으나, 단순 문구 정정이라 이 PR에서 `ai/prd.md`도 함께 고쳤다.)
 
 ## 완료 조건
 
@@ -60,7 +60,7 @@
 - [x] 다른 사용자 소유이거나 존재하지 않는 계좌의 `market`으로 조회하면 거부되는 테스트 통과(계좌 소유권 검증). (`OrderListIntegrationTest#getMyOrdersRejectsWhenAccountForRequestedMarketDoesNotExist`)
 - [x] 커서 없이 요청하면 최신순 첫 페이지를 반환하고, 응답의 `nextCursor`로 이어 조회하면 중복·누락 없이 이전 페이지 끝에서 이어지는 테스트 통과. 마지막 페이지는 `hasNext=false`·`nextCursor=null`인 테스트 통과. (`OrderRepositoryTest`의 커서 경계 테스트 3건 + `OrderListIntegrationTest#cursorPaginationAcrossPagesMatchesSinglePageFetchInSetAndOrderAndLastPageHasNoNext`)
 - [x] 기존 8개 응답 필드(`orderId`·`market`·`instrumentId`·`side`·`orderType`·`status`·`quantity`·`requestedAt`)에 회귀가 없는 테스트 통과. (`OrderControllerTest#getMyOrdersReturnsOkWithEveryFieldWhenMarketIsStock`, `OrderListIntegrationTest#getMyOrdersReturnsOwnOrdersNewestFirstWithFieldContractAndExcludesOtherUsers`)
-- [x] `docs/api-routes.md`·`docs/api-contracts.md`의 `GET /api/orders` 계약이 새 시그니처·응답 형태로 갱신됨(컨트롤러 변경과 같은 커밋, 커밋 `3bd1cb8`).
-- [x] `docs/specs/006-portfolio-query/spec.md`에 이력 각주가 추가되고 본문은 보존됨(003→013 선례와 동일한 패턴, 커밋 `411877f`).
-- [x] `OrderControllerTest`·`OrderServiceTest`·`OrderRepositoryTest`·`OrderListIntegrationTest` 4종이 갱신·추가됨(`docs/adr/0003-testing-strategy.md` 기준. `OrderCursorTest`도 신규 추가).
+- [x] `ai/api-routes.md`·`docs/api-contracts.md`의 `GET /api/orders` 계약이 새 시그니처·응답 형태로 갱신됨(컨트롤러 변경과 같은 커밋, 커밋 `3bd1cb8`).
+- [x] `ai/specs/006-portfolio-query/spec.md`에 이력 각주가 추가되고 본문은 보존됨(003→013 선례와 동일한 패턴, 커밋 `411877f`).
+- [x] `OrderControllerTest`·`OrderServiceTest`·`OrderRepositoryTest`·`OrderListIntegrationTest` 4종이 갱신·추가됨(`ai/adr/0003-testing-strategy.md` 기준. `OrderCursorTest`도 신규 추가).
 - [x] `./gradlew build` 통과. (죽은 코드 정리 후 최종 확인 완료)

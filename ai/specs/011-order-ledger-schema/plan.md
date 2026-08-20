@@ -3,7 +3,7 @@
 ## 관련 문서
 
 - Spec: `./spec.md`
-- 참고 spec (컬럼 요구 근거): `docs/specs/004-order-buy/spec.md`, `docs/specs/005-order-sell/spec.md`
+- 참고 spec (컬럼 요구 근거): `ai/specs/004-order-buy/spec.md`, `ai/specs/005-order-sell/spec.md`
 - 관련 ADR: [ADR-0002](../../adr/0002-architecture.md) (도메인 패키지 구조, 도메인 간 참조는 service 레이어만), [ADR-0004](../../adr/0004-flyway-migrations.md) (Flyway로만 스키마 변경, 머지된 마이그레이션 수정 금지)
 - PRD 근거: §6 1차 데이터 모델(`orders`·`trades`·`holdings`·`holding_lots`·`trade_allocations` 행과 핵심 제약), §7 구조(`order`/`portfolio` 도메인 책임 분리), C-003(금액과 원장)
 

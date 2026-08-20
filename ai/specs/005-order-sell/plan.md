@@ -4,7 +4,7 @@
 
 - Spec: `./spec.md`
 - 근거: GitHub 이슈 #41
-- 선행 spec: `docs/specs/011-order-ledger-schema/`(엔티티 5종·마이그레이션 V10, dev에 merge됨), `docs/specs/004-order-buy/`(`OrderService`·`OrderController`·`PortfolioBuyService`·`Holding`·`HoldingLot` 구현 완료, PR #88)
+- 선행 spec: `ai/specs/011-order-ledger-schema/`(엔티티 5종·마이그레이션 V10, dev에 merge됨), `ai/specs/004-order-buy/`(`OrderService`·`OrderController`·`PortfolioBuyService`·`Holding`·`HoldingLot` 구현 완료, PR #88)
 - 관련 ADR: [ADR-0002](../../adr/0002-architecture.md)(도메인 간 참조는 service 레이어만 — `OrderService`는 portfolio 도메인 repository를 직접 주입하지 않는다), [ADR-0004](../../adr/0004-flyway-migrations.md)(이번 spec은 스키마 변경 없음 — `trade_allocations`는 V10에서 이미 생성됨, 새 마이그레이션 금지)
 - PRD 근거: §4 ORD-001~006(매도 관점), §5 API 계약·공통 오류표, §6 데이터 모델(011에서 이미 반영), §7 트랜잭션 경계("시장가 매도: 주문+체결+FIFO 배분+holding+현금증가+실현손익 원자 처리")
 
@@ -202,7 +202,7 @@ realizedPnl = (매도금액 - 매도수수료) - (배분된 매수원가 합 + �
 
 ## 데이터 모델
 
-스키마 변경 없음 — `docs/specs/011-order-ledger-schema/`의 V10 마이그레이션·엔티티 5종(`Order`·`Trade`·`Holding`·`HoldingLot`·`TradeAllocation`)을 그대로 사용한다. 이번 spec은 엔티티에 상태 변경 메서드만 추가하고, Repository에 조회 메서드만 추가한다(위 설계 노트 5·6). 새 컬럼·새 테이블 없음(ADR-0004).
+스키마 변경 없음 — `ai/specs/011-order-ledger-schema/`의 V10 마이그레이션·엔티티 5종(`Order`·`Trade`·`Holding`·`HoldingLot`·`TradeAllocation`)을 그대로 사용한다. 이번 spec은 엔티티에 상태 변경 메서드만 추가하고, Repository에 조회 메서드만 추가한다(위 설계 노트 5·6). 새 컬럼·새 테이블 없음(ADR-0004).
 
 ## 테스트 계획
 
@@ -226,4 +226,4 @@ realizedPnl = (매도금액 - 매도수수료) - (배분된 매수원가 합 + �
 
 ## 문서 갱신
 
-`OrderController`의 `POST /api/orders` 계약이 SELL을 포함하도록 바뀌므로(응답에 `realizedPnl` 추가, `side=SELL`이 더 이상 400 오류 케이스가 아니라 정상 처리 + 새 오류 케이스 409 `INSUFFICIENT_QTY` 추가) `docs/api-routes.md`·`docs/api-contracts.md`를 이번 tasks 마지막 항목에서 같은 커밋으로 갱신한다(동기화 모드, planner 재투입 또는 `/feature` 마무리 단계). 특히 `api-contracts.md` 222행의 오류 목록에서 "`side=SELL`은 400 `VALIDATION_ERROR`" 문구를 제거하고 409 `INSUFFICIENT_QTY`를 추가해야 한다.
+`OrderController`의 `POST /api/orders` 계약이 SELL을 포함하도록 바뀌므로(응답에 `realizedPnl` 추가, `side=SELL`이 더 이상 400 오류 케이스가 아니라 정상 처리 + 새 오류 케이스 409 `INSUFFICIENT_QTY` 추가) `ai/api-routes.md`·`docs/api-contracts.md`를 이번 tasks 마지막 항목에서 같은 커밋으로 갱신한다(동기화 모드, planner 재투입 또는 `/feature` 마무리 단계). 특히 `api-contracts.md` 222행의 오류 목록에서 "`side=SELL`은 400 `VALIDATION_ERROR`" 문구를 제거하고 409 `INSUFFICIENT_QTY`를 추가해야 한다.

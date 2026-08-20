@@ -55,7 +55,7 @@
 - 작성자 닉네임을 포함한 댓글 응답 목록
 - 빈 목록 200, 게시물 미존재 404, 인증 실패 401
 - Service 단위, Repository/MySQL 슬라이스, Controller 슬라이스, 통합 테스트
-- 구현 뒤 실제 Controller 매핑 기준 `docs/api-routes.md` 동기화
+- 구현 뒤 실제 Controller 매핑 기준 `ai/api-routes.md` 동기화
 
 ### 제외
 
@@ -186,9 +186,9 @@ Repository 쿼리는 `post.id = :postId`로 격리하고 `createdAt ASC, id ASC`
 
 ### Documentation
 
-- `docs/api-routes.md`
+- `ai/api-routes.md`
   - 구현된 GET 매핑과 응답·오류 계약 동기화.
-- `docs/specs/008-community/issue-29-tasks.md`
+- `ai/specs/008-community/issue-29-tasks.md`
   - 구현 루프 완료 상태 기록.
 
 ### 수정하지 않을 파일
@@ -196,7 +196,7 @@ Repository 쿼리는 `post.id = :postId`로 격리하고 `createdAt ASC, id ASC`
 - `src/main/resources/db/migration/V4__create_post_comments_table.sql` 및 다른 머지된 마이그레이션
 - `src/main/java/com/finplay/api/community/domain/PostComment.java`
 - `src/main/java/com/finplay/api/community/dto/response/PostCommentResponse.java`
-- `docs/specs/008-community/spec.md`
+- `ai/specs/008-community/spec.md`
 - 다른 커뮤니티 API용 production/test 파일
 
 ---
@@ -248,5 +248,5 @@ Repository 쿼리는 `post.id = :postId`로 격리하고 `createdAt ASC, id ASC`
 - [ ] 존재하는 무댓글 게시물은 200 `[]`, 게시물 미존재는 404 `NOT_FOUND`다.
 - [ ] 비로그인·유효하지 않은 Access Token은 401 `UNAUTHORIZED`다.
 - [ ] 댓글 페이지네이션·수정·대댓글과 다른 API를 구현하지 않는다.
-- [ ] 실제 Controller 매핑을 `docs/api-routes.md`에 동기화한다.
+- [ ] 실제 Controller 매핑을 `ai/api-routes.md`에 동기화한다.
 - [ ] `spotlessApply`, 대상 테스트, `.\gradlew.bat build --no-daemon --max-workers=1`, `git diff --check`를 순차 실행해 통과한다.

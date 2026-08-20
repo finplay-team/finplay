@@ -18,7 +18,7 @@
   - 게시물 조회는 인증 사용자에게만 허용한다(비로그인 401, 공개 조회 없음).
 - PRD §5 1차 API 계약
   - `GET /api/community/posts?page=&size=`
-- `docs/specs/008-community/spec.md`
+- `ai/specs/008-community/spec.md`
   - 비로그인 접근은 401이다.
 - GitHub Issue #24 계약
   - 페이지 경계에 중복·누락이 없고 빈 목록은 빈 `content`다.
@@ -51,7 +51,7 @@
 - `page`·`size` 쿼리 파라미터 검증과 기본값
 - 작성자를 포함한 최신순(동시각 `id` 보조 정렬) 페이지 조회 — 다중 조인이므로 QueryDSL 사용(컨벤션 기준)
 - Repository 슬라이스, Service 단위, Controller 슬라이스, 핵심 통합 테스트
-- 구현 뒤 `docs/api-routes.md` 동기화
+- 구현 뒤 `ai/api-routes.md` 동기화
 
 ### 제외
 
@@ -147,12 +147,12 @@ Repository가 정렬·조인 세부사항을 갖고, Service는 `Pageable`만 �
 
 ### Documentation files to modify after implementation
 
-- `docs/api-routes.md`
+- `ai/api-routes.md`
 
 ### 만들거나 수정하지 않을 파일
 
 - `src/main/resources/db/migration/*` (신규 마이그레이션 불필요 — V3 인덱스로 충분)
-- `docs/specs/008-community/spec.md`
+- `ai/specs/008-community/spec.md`
 - 다른 커뮤니티 API(단건조회·수정·삭제·댓글)용 production/test 파일
 
 ---
@@ -201,5 +201,5 @@ Repository가 정렬·조인 세부사항을 갖고, Service는 `Pageable`만 �
 - [ ] `page`/`size` 검증 실패는 400 `VALIDATION_ERROR`다.
 - [ ] 비로그인 요청은 401 `UNAUTHORIZED`다.
 - [ ] 작성자 조회가 fetch join으로 N+1 없이 처리된다.
-- [ ] 실제 Controller 매핑을 `docs/api-routes.md`에 동기화한다.
+- [ ] 실제 Controller 매핑을 `ai/api-routes.md`에 동기화한다.
 - [ ] `./gradlew build`를 새로 실행해 통과한다.

@@ -10,7 +10,7 @@
 - `CommunityPostService.updatePost(authenticatedUserId, postId, title, content)` — 게시물 미존재 404, 소유자 불일치 403 처리 포함
 - `CommunityPostRepository.findById` 재사용 (신규 조회 메서드 불필요)
 
-아직 없는 것: Controller의 PATCH 엔드포인트, 요청 DTO(및 title·content 자체 검증), `docs/api-routes.md` 반영, 관련 테스트.
+아직 없는 것: Controller의 PATCH 엔드포인트, 요청 DTO(및 title·content 자체 검증), `ai/api-routes.md` 반영, 관련 테스트.
 
 ## 요구사항 ID와 수용 기준
 
@@ -36,7 +36,7 @@
 - 기존 `CommunityPostService.updatePost`, `CommunityPost.update` 재사용 — 이미 구현된 404/403 로직 변경 없음
 - 기존 `CommunityPostResponse` 재사용
 - Service 단위, Controller MVC 슬라이스, 실제 DB 통합 테스트
-- 구현 후 실제 Controller 매핑 기준 `docs/api-routes.md` 동기화
+- 구현 후 실제 Controller 매핑 기준 `ai/api-routes.md` 동기화
 
 ### 제외
 
@@ -96,8 +96,8 @@
 
 ### Documentation
 
-- `docs/api-routes.md` (동기화 모드에서 처리)
-- `docs/specs/008-community/issue-26-tasks.md`
+- `ai/api-routes.md` (동기화 모드에서 처리)
+- `ai/specs/008-community/issue-26-tasks.md`
 
 ## 테스트 계획
 
@@ -134,5 +134,5 @@
 - [ ] 제목·본문 누락·공백·길이 초과는 400 `VALIDATION_ERROR`이며 게시물이 변경되지 않는다.
 - [ ] 비로그인 요청은 401 `UNAUTHORIZED`를 반환한다.
 - [ ] 목록·삭제·댓글 등 다른 API와 엔티티·스키마를 변경하지 않는다.
-- [ ] 실제 Controller 매핑을 `docs/api-routes.md`에 동기화한다 (동기화 모드에서 처리).
+- [ ] 실제 Controller 매핑을 `ai/api-routes.md`에 동기화한다 (동기화 모드에서 처리).
 - [ ] 대상 테스트와 `.\gradlew.bat build --no-daemon --max-workers=1`을 새로 실행해 통과한다.

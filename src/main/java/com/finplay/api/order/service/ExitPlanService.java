@@ -29,7 +29,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * {@code docs/specs/021-general-risk-management-oco} plan.md "일반 경로 검증 순서" 1~2단계(holding 소유권·시장
+ * {@code ai/specs/021-general-risk-management-oco} plan.md "일반 경로 검증 순서" 1~2단계(holding 소유권·시장
  * 제한·샌드박스 종목 제외)와 "멱등성" 일반 경로 알고리즘을 담당한다. 3~9단계(잠금·예약·저장)는
  * {@link ExitPlanCreationService}에 위임한다.
  *

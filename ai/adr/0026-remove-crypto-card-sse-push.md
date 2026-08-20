@@ -2,7 +2,7 @@
 
 - 상태: 승인됨
 - 날짜: 2026-08-20
-- 관계: 이슈 #476. ADR-0018(`docs/adr/0018-crypto-card-sse-push.md`)을 대체(supersede)한다 — CLAUDE.md 규칙 2에 따라 ADR-0018 자체는 수정하지 않고 새 번호로만 대체한다. `docs/specs/028-crypto-card-sse-push`가 신설했던 인프라를 이번 결정으로 제거한다.
+- 관계: 이슈 #476. ADR-0018(`ai/adr/0018-crypto-card-sse-push.md`)을 대체(supersede)한다 — CLAUDE.md 규칙 2에 따라 ADR-0018 자체는 수정하지 않고 새 번호로만 대체한다. `ai/specs/028-crypto-card-sse-push`가 신설했던 인프라를 이번 결정으로 제거한다.
 
 ## 맥락
 
@@ -12,13 +12,13 @@ ADR-0018은 코인 변동 카드 확정 알림(`priceMoveCardConfirmed`)을 실�
 
 ## 결정
 
-**`GET /api/cryptos/stream`과 그 전용 인프라를 전부 제거한다.** 코인 변동 카드는 여전히 `CryptoPriceMoveWatcher`가 매 분 감시해 확정·저장하지만(변경 없음), 그 확정을 실시간으로 알리는 별도 경로는 더 이상 없다 — 클라이언트는 `GET /api/instruments/{instrumentId}/price-moves` 재조회(폴링)로만 새 카드를 안다. ADR-0018 §맥락이 뒤집었던 "코인은 전용 SSE 스트림을 두지 않는다"(`docs/prd.md` MKT-008, `docs/specs/003-market-data/plan.md` 2026-07-30 결정)가 예외 없이 다시 적용된다.
+**`GET /api/cryptos/stream`과 그 전용 인프라를 전부 제거한다.** 코인 변동 카드는 여전히 `CryptoPriceMoveWatcher`가 매 분 감시해 확정·저장하지만(변경 없음), 그 확정을 실시간으로 알리는 별도 경로는 더 이상 없다 — 클라이언트는 `GET /api/instruments/{instrumentId}/price-moves` 재조회(폴링)로만 새 카드를 안다. ADR-0018 §맥락이 뒤집었던 "코인은 전용 SSE 스트림을 두지 않는다"(`ai/prd.md` MKT-008, `ai/specs/003-market-data/plan.md` 2026-07-30 결정)가 예외 없이 다시 적용된다.
 
 1. **삭제 대상**: `CryptoPriceSseController`(`GET /api/cryptos/stream` 컨트롤러), `CryptoPriceStreamService`(snapshot 구성·price/status push), `CryptoCardPushSubscriber`(Redis 구독→SSE 팬아웃 리스너), `CryptoPriceMoveCardPublisher`(Redis 발행), `RedisPubSubConfig`(`RedisMessageListenerContainer` 빈 등록). 이 다섯은 이 기능 전용이라 다른 곳에 영향이 없다. 이들만 참조하던 `PriceMoveCardConfirmedEvent` DTO(Redis 메시지·SSE payload 겸용)도 함께 제거한다 — 남겨두면 아무도 참조하지 않는 죽은 코드가 된다.
 2. **`CryptoPriceMoveWatcher`는 발행 호출 한 줄만 제거한다**: `watchOne()`이 `PriceMoveCardWriter.persist(card, sources)` 직후 호출하던 `cryptoPriceMoveCardPublisher.publish(...)`(및 그 try-catch 방어)만 삭제한다. 카드 확정 탐지·쿨다운·근거 매칭·서술·저장 로직 자체는 이 결정과 무관해 전혀 바뀌지 않는다 — ADR-0018 §결정 3이 "발행은 부가 기능이며 발행 실패가 카드 생성을 막지 않는다"고 이미 선언했던 그대로, 이번에는 그 부가 기능을 통째로 걷어낸다.
 3. **`CryptoPriceUpdatedEvent`·`PriceStore`는 건드리지 않는다**: 이 이벤트는 지정가 체결·손절익절 트리거(`LimitOrderTriggerListener`)가 발행·구독하는 별개 인프라다. `CryptoPriceStreamService.onPriceUpdated`가 같은 이벤트를 구독해 SSE로 재전송했을 뿐 발행 측이 아니었으므로, 그 구독자(`CryptoPriceStreamService`)를 지워도 발행자와 다른 구독자(`LimitOrderTriggerListener`)는 영향받지 않는다.
 4. **`GET /api/stocks/stream`(`StockPriceSseController`/`StockPriceStreamService`)은 무관하다**: `SseEmitterRegistry`·`MarketSnapshotEvent`/`MarketPriceEvent`/`MarketStatusEvent` DTO는 주식 스트림과 공유하는 인프라라 그대로 유지한다 — 이번 삭제 대상은 `Market.CRYPTO` 전용 컨트롤러·서비스·구독자·발행자뿐이다.
-5. **문서 동기화**: `docs/api-routes.md`·`docs/api-contracts.md`에서 `GET /api/cryptos/stream` 관련 행·절을 제거하고, `docs/prd.md` §3 "코인 변동 카드 확정 SSE push" 행 상태를 완료에서 미채택(제거됨)으로 바꾼다(CLAUDE.md 규칙 7·10).
+5. **문서 동기화**: `ai/api-routes.md`·`docs/api-contracts.md`에서 `GET /api/cryptos/stream` 관련 행·절을 제거하고, `ai/prd.md` §3 "코인 변동 카드 확정 SSE push" 행 상태를 완료에서 미채택(제거됨)으로 바꾼다(CLAUDE.md 규칙 7·10).
 
 ## 결과
 

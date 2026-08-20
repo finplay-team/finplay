@@ -144,7 +144,7 @@ production 호출부는 `ExitPlanTriggerListener` 하나뿐임을 확인했다).
 
 1. 042 tasks 8번을 완료로 표시하고, `PracticeExitPresetOcoIntegrationTest`의 재예약 단언에 **가격**을
    더했다. 기존에는 예약 개수(`hasSize(1)`)만 봐서 프리셋이 BALANCED로 굳어 있어도 통과했다.
-2. `docs/prd.md` EXITPRESET 행 근거에 `PR #487`을 더했다.
+2. `ai/prd.md` EXITPRESET 행 근거에 `PR #487`을 더했다.
 3. 실재하지 않는 메서드명 `Order.createPracticeFilled` → `Order.createForPracticeAttempt`로 정정
    (`ExitPlan.java` 주석, 042 tasks.md, 042 run-log.md 3곳).
 

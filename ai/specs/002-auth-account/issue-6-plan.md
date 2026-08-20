@@ -50,7 +50,7 @@
 - 동일 토큰 동시 요청에서 단일 성공 보장
 - 만료·폐기·미존재·재사용·JWT와 DB 사용자 불일치의 동일 401 처리
 - Controller, 서비스, JWT 파서, 실제 MySQL 조건부 갱신, 핵심 통합·롤백 테스트
-- `SecurityConfig` 공개 POST 경로 및 `docs/api-routes.md` 동기화
+- `SecurityConfig` 공개 POST 경로 및 `ai/api-routes.md` 동기화
 
 ### 제외
 
@@ -190,9 +190,9 @@ ADR-0004에 따라 병합된 `V2__create_auth_account_tables.sql`은 수정하�
 
 ### Documentation files to modify
 
-- `docs/api-routes.md` — 실제 Controller 매핑과 공개 경로를 추가.
-- `docs/specs/002-auth-account/tasks.md` — Refresh 회전 작업을 Issue #6 완료로 표시하고 logout 잔여 범위를 분리.
-- `docs/specs/002-auth-account/run-log.md` — 실행 명령과 통과 수준, 미실행 검증을 기록.
+- `ai/api-routes.md` — 실제 Controller 매핑과 공개 경로를 추가.
+- `ai/specs/002-auth-account/tasks.md` — Refresh 회전 작업을 Issue #6 완료로 표시하고 logout 잔여 범위를 분리.
+- `ai/specs/002-auth-account/run-log.md` — 실행 명령과 통과 수준, 미실행 검증을 기록.
 
 ### 만들거나 수정하지 않을 파일
 
@@ -385,9 +385,9 @@ ADR-0004에 따라 병합된 `V2__create_auth_account_tables.sql`은 수정하�
 
 **Files**
 
-- Modify: `docs/api-routes.md`
-- Modify: `docs/specs/002-auth-account/tasks.md`
-- Modify: `docs/specs/002-auth-account/run-log.md`
+- Modify: `ai/api-routes.md`
+- Modify: `ai/specs/002-auth-account/tasks.md`
+- Modify: `ai/specs/002-auth-account/run-log.md`
 
 - [x] **Step 1: 실제 Controller 기준으로 API 문서를 갱신한다**
   - `POST /api/auth/refresh` 요청·200 응답·400·401 계약을 추가한다.
@@ -407,7 +407,7 @@ ADR-0004에 따라 병합된 `V2__create_auth_account_tables.sql`은 수정하�
   ```powershell
   git status --short
   git diff --check
-  git diff -- src/main src/test docs/api-routes.md docs/specs/002-auth-account
+  git diff -- src/main src/test ai/api-routes.md ai/specs/002-auth-account
   ```
 
   범위 밖 파일, V2 수정, 새 마이그레이션, logout·`/me`·OAuth callback 구현이 없어야 한다.
@@ -423,7 +423,7 @@ ADR-0004에 따라 병합된 `V2__create_auth_account_tables.sql`은 수정하�
 - [x] **Step 6: 문서와 최종 정리만 논리 커밋한다**
 
   ```powershell
-  git add docs/api-routes.md docs/specs/002-auth-account/tasks.md docs/specs/002-auth-account/run-log.md
+  git add ai/api-routes.md ai/specs/002-auth-account/tasks.md ai/specs/002-auth-account/run-log.md
   git commit -m "docs: Refresh Token 재발급 계약 동기화"
   ```
 
@@ -440,5 +440,5 @@ ADR-0004에 따라 병합된 `V2__create_auth_account_tables.sql`은 수정하�
 - [x] 같은 토큰의 동시 회전은 정확히 하나만 성공한다.
 - [x] 새 토큰 발급·저장 실패 시 기존 폐기가 실제 MySQL에서 롤백된다.
 - [x] logout, `/me`, OAuth callback, 스키마 변경을 포함하지 않는다.
-- [x] 실제 Controller 매핑과 `docs/api-routes.md`가 일치한다.
+- [x] 실제 Controller 매핑과 `ai/api-routes.md`가 일치한다.
 - [x] 대상 테스트와 `.\gradlew.bat build --no-daemon --max-workers=1` 결과를 새로 확인한다.

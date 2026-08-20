@@ -44,9 +44,9 @@
 
 ## PRD 정합성 — 확인 필요
 
-- **`docs/prd.md` MKT-008과 `docs/specs/003-market-data/plan.md`(2026-07-30)는 "코인 전용 SSE 스트림은 두지 않는다 — `/api/cryptos/stream` 엔드포인트는 만들지 않는다"를 명시적으로 확정한 상태다.** 이 spec은 카드 확정 알림을 위해 그 결정을 뒤집고 코인 SSE 스트림을 신설한다. 근거는 `docs/adr/0018-crypto-card-sse-push.md` §맥락에 있다 — 요약하면, 캔들 재조회로는 "가격"은 알 수 있어도 "카드가 방금 확정됐다"는 사건 자체는 알 수 없기 때문이다.
-- 이 반전은 PRD에 요구사항 ID가 없는 상태에서 만드는 것이다(GitHub 이슈 #286에는 있지만 `docs/prd.md`에 대응 행이 없다). `docs/prd.md` §3 "구현 현황"에 새 행을 추가하고, MKT-008·`003-market-data/plan.md`의 "SSE 없음" 문구를 갱신하는 것을 이 spec의 tasks.md에 포함한다.
-- **코인 시세 실시간 스트림(snapshot·price·status 3종)까지 함께 만드는 것은 이슈 #286의 완료 조건(카드 push)보다 넓은 범위다.** `SseEmitterRegistry(Market.CRYPTO)`가 이미 설계돼 있고 카드 알림만 얹기보다 `StockPriceStreamService`/`StockPriceSseController`와 대칭 구조로 완성하는 편이 인프라 중복(새 레지스트리·새 heartbeat 로직 등)을 피한다고 판단해 함께 포함했다 — 이 확장 판단은 오케스트레이터가 사용자와 논의해 확정한 결정이며, 이 spec 작성자(planner)가 임의로 넓힌 것이 아니다. `docs/prd.md`에는 이 실시간 스트림 자체의 요구사항 ID도 없다.
+- **`ai/prd.md` MKT-008과 `ai/specs/003-market-data/plan.md`(2026-07-30)는 "코인 전용 SSE 스트림은 두지 않는다 — `/api/cryptos/stream` 엔드포인트는 만들지 않는다"를 명시적으로 확정한 상태다.** 이 spec은 카드 확정 알림을 위해 그 결정을 뒤집고 코인 SSE 스트림을 신설한다. 근거는 `ai/adr/0018-crypto-card-sse-push.md` §맥락에 있다 — 요약하면, 캔들 재조회로는 "가격"은 알 수 있어도 "카드가 방금 확정됐다"는 사건 자체는 알 수 없기 때문이다.
+- 이 반전은 PRD에 요구사항 ID가 없는 상태에서 만드는 것이다(GitHub 이슈 #286에는 있지만 `ai/prd.md`에 대응 행이 없다). `ai/prd.md` §3 "구현 현황"에 새 행을 추가하고, MKT-008·`003-market-data/plan.md`의 "SSE 없음" 문구를 갱신하는 것을 이 spec의 tasks.md에 포함한다.
+- **코인 시세 실시간 스트림(snapshot·price·status 3종)까지 함께 만드는 것은 이슈 #286의 완료 조건(카드 push)보다 넓은 범위다.** `SseEmitterRegistry(Market.CRYPTO)`가 이미 설계돼 있고 카드 알림만 얹기보다 `StockPriceStreamService`/`StockPriceSseController`와 대칭 구조로 완성하는 편이 인프라 중복(새 레지스트리·새 heartbeat 로직 등)을 피한다고 판단해 함께 포함했다 — 이 확장 판단은 오케스트레이터가 사용자와 논의해 확정한 결정이며, 이 spec 작성자(planner)가 임의로 넓힌 것이 아니다. `ai/prd.md`에는 이 실시간 스트림 자체의 요구사항 ID도 없다.
 
 ## 완료 조건
 
@@ -59,7 +59,7 @@
 - [ ] `GET /api/stocks/stream`의 기존 통합·슬라이스 테스트가 수정 없이 그대로 통과한다.
 - [ ] 주식 카드 확정 경로(`PriceMoveCardService`)를 호출해도 새 Redis 채널에 아무 메시지도 발행되지 않는다 — 테스트로 확인.
 - [ ] `deploy/nginx.conf`의 `location /api` 블록(`proxy_buffering off`·`proxy_read_timeout 3600s`)이 이미 `/api` 하위 전체에 적용되고 있어 새 엔드포인트가 `/api` 하위인 한 별도 nginx 수정이 필요 없음을 확인한다(경로가 `/api` 밖이면 새 `location`이 필요하다).
-- [ ] `docs/api-routes.md`·`docs/api-contracts.md`에 신설 엔드포인트가 반영된다.
-- [ ] `docs/prd.md` §3 "구현 현황"에 이 기능의 행이 추가되고, MKT-008·`docs/specs/003-market-data/plan.md`의 "코인 SSE 없음" 문구가 갱신된다.
+- [ ] `ai/api-routes.md`·`docs/api-contracts.md`에 신설 엔드포인트가 반영된다.
+- [ ] `ai/prd.md` §3 "구현 현황"에 이 기능의 행이 추가되고, MKT-008·`ai/specs/003-market-data/plan.md`의 "코인 SSE 없음" 문구가 갱신된다.
 - [ ] 기존 전체 테스트가 통과한다(`./gradlew build`).
 - [ ] 주문·체결·계좌·잔액·보유·손익 원장이 이 spec으로 인해 전혀 바뀌지 않는다 — 이 spec에는 원장 쓰기가 없다.

@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.scheduling.support.CronExpression;
 
-// 기대값의 정본은 docs/specs/012-ai-feedback/spec.md다 — 크론 2종은 §C-1 표, 자격증명 3종의 키 경로와
+// 기대값의 정본은 ai/specs/012-ai-feedback/spec.md다 — 크론 2종은 §C-1 표, 자격증명 3종의 키 경로와
 // "시크릿에는 @DefaultValue를 두지 않는다"는 §C-7이다. 구현 파일이 아니라 spec에서 값을 가져와야
 // record와 yml이 함께 틀어지는 드리프트가 잡힌다.
 class NewsCollectionPropertiesTest {

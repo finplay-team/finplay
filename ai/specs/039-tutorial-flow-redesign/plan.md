@@ -140,7 +140,7 @@ nullable `tutorialDate`, nullable `riskSnapshot`, nullable `completedAt`을 반�
 
 ## 문서 동기화
 
-controller 구현과 같은 커밋에서 실제 mapping만 `docs/api-routes.md`에 반영하고 이 절의 요청·응답·오류를
+controller 구현과 같은 커밋에서 실제 mapping만 `ai/api-routes.md`에 반영하고 이 절의 요청·응답·오류를
 `docs/api-contracts.md`의 036 절에 동기화한다. 새 기능 제공으로 요구사항 상태가 바뀌므로 구현 완료 커밋은
-`docs/prd.md` §3에 TUTORIAL-FLOW-001~012 행과 PR 번호를 추가한다. 현재 PRD에는 이 신규 ID 행이 없으므로
+`ai/prd.md` §3에 TUTORIAL-FLOW-001~012 행과 PR 번호를 추가한다. 현재 PRD에는 이 신규 ID 행이 없으므로
 계획 단계에서는 완료 상태를 선반영하지 않는다.

@@ -24,7 +24,7 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
 
 // 버킷명은 CommunityS3StorageProperties(@ConfigurationProperties)로 받는다 — @Value 필드 대신 프로퍼티
 // record를 주입받으면 파생 로직 없는 파라미터 직접 대입만으로 Lombok @RequiredArgsConstructor를 쓸 수
-// 있다(SpotBugs EI_EXPOSE_REP2 회피, docs/agent-mistakes.md 2026-07-29 항목 — 손으로 쓴 생성자의 가변
+// 있다(SpotBugs EI_EXPOSE_REP2 회피, ai/agent-mistakes.md 2026-07-29 항목 — 손으로 쓴 생성자의 가변
 // 필드(S3Client) 저장만 EI_EXPOSE_REP2로 잡히고 Lombok이 생성한 생성자는 잡히지 않는다).
 @Profile("prod")
 @Slf4j

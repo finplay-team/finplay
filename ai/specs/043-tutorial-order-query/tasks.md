@@ -9,5 +9,5 @@
 - [x] 통합 테스트(Testcontainers) — 지정가 매수 생성→`PENDING` 조회 확인→tick 체결→`FILLED` 재조회
   확인→재시작→이전 run 주문 제외 확인, 기존 `GET /api/orders`·`GET /api/orders/pending` 샌드박스 제외
   회귀 재확인
-- [x] 문서 갱신 — `docs/api-routes.md`·`docs/api-contracts.md`에 새 엔드포인트 반영(CLAUDE.md 규칙 7),
-  `docs/prd.md` §3 신규 행 여부 판단
+- [x] 문서 갱신 — `ai/api-routes.md`·`docs/api-contracts.md`에 새 엔드포인트 반영(CLAUDE.md 규칙 7),
+  `ai/prd.md` §3 신규 행 여부 판단

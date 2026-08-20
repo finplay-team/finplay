@@ -67,8 +67,8 @@
   상단에 "이 spec의 4단계 확장은 `031`이 정본" 1줄 상태 참조를 추가한다(내용 수정 아님). (spec
   SANDBOX-009, plan 5번, 완료 조건)
 
-- [x] **문서 동기화 + `./gradlew build`** — `docs/api-routes.md`(`GET /api/instruments` 응답 필드 변경,
+- [x] **문서 동기화 + `./gradlew build`** — `ai/api-routes.md`(`GET /api/instruments` 응답 필드 변경,
   `GET /api/education/practice` 4단계 응답 변경 각주), `docs/api-contracts.md`(`isTutorialSample` 필드,
   4단계 `steps` 배열, `PracticeEvidenceResponse` 3신규 필드, `holding-reflections`의 신규 409
-  `PRACTICE_SANDBOX_TIME_EXPIRED` 계약) 갱신. `docs/prd.md` §3 구현 현황에 해당 요구사항 ID 행 갱신(근거:
+  `PRACTICE_SANDBOX_TIME_EXPIRED` 계약) 갱신. `ai/prd.md` §3 구현 현황에 해당 요구사항 ID 행 갱신(근거:
   이 PR). 전체 재실행 `./gradlew build` `BUILD SUCCESSFUL` 확인, 실패 시 수정 후 재실행.

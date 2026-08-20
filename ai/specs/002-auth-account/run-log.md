@@ -8,7 +8,7 @@
 |---|---|---|---|
 | implementer | implementer | `gradlew.bat -p <root> compileJava --console=plain` — `BUILD SUCCESSFUL` | issue-116-plan.md Task 1·D2(`AndCodeHashIsNotNull` 필수, 거부 행 NPE 방지), `EmailChangeVerification.incrementAttemptCount`·`consume` 선례, ADR-0002·ADR-0004(신규 마이그레이션 없음) |
 
-- `PasswordResetVerification.incrementAttemptCount()`·`consume(now)`를 `EmailChangeVerification`의 동명 메서드와 동일 시그니처로 추가하고, `PasswordResetVerificationRepository.findFirstByEmailAndCodeHashIsNotNullOrderByCreatedAtDesc`를 추가했다. `attempt_count`·`consumed_at`은 V12에 이미 있어 신규 Flyway 마이그레이션은 없다. controller 변경이 없어 `docs/api-routes.md`·`docs/api-contracts.md`는 갱신하지 않았다.
+- `PasswordResetVerification.incrementAttemptCount()`·`consume(now)`를 `EmailChangeVerification`의 동명 메서드와 동일 시그니처로 추가하고, `PasswordResetVerificationRepository.findFirstByEmailAndCodeHashIsNotNullOrderByCreatedAtDesc`를 추가했다. `attempt_count`·`consumed_at`은 V12에 이미 있어 신규 Flyway 마이그레이션은 없다. controller 변경이 없어 `ai/api-routes.md`·`docs/api-contracts.md`는 갱신하지 않았다.
 
 ### Task 2: `PasswordResetService.validateAndConsumeCode` 검증·소비
 
@@ -18,7 +18,7 @@
 
 - `EmailChangeService.validateAndConsumeCode`와 같은 구조로 트랜잭션 경계 없이 구현하되, 이 이슈 고유의 (5)(6)단계(회원 존재 400 · `hasPassword()` 409 · 최종 `consume`)를 뒤에 붙이고 재설정 대상 `User`를 반환한다 — 미가입은 발송 엔드포인트의 404와 달리 400이고, 5회 초과는 증가+즉시 만료 후 429다.
 - `MAX_VERIFICATION_ATTEMPTS = 5`만 상수로 추가했고 `hmac`·`generateCode`·`checkSendRateLimit` 등 기존 private 메서드와 `sendResetCode`는 수정하지 않았다(U6대로 4중 중복 공통화는 하지 않음). 클래스 파일 헤더 주석에 "확인 시 검증·소비"를 덧붙인 것이 유일한 부수 변경이다.
-- `AuthService`·컨트롤러·DTO·`SecurityConfig`(Task 3), 통합 테스트(Task 4), 문서 동기화(Task 5)는 범위 밖이라 손대지 않았다. controller 변경이 없어 `docs/api-routes.md`·`docs/api-contracts.md`도 갱신하지 않았다.
+- `AuthService`·컨트롤러·DTO·`SecurityConfig`(Task 3), 통합 테스트(Task 4), 문서 동기화(Task 5)는 범위 밖이라 손대지 않았다. controller 변경이 없어 `ai/api-routes.md`·`docs/api-contracts.md`도 갱신하지 않았다.
 
 ### Task 3: `AuthService.confirmPasswordReset`·컨트롤러·공개 경로
 
@@ -28,7 +28,7 @@
 
 - `AuthService.confirmPasswordReset`은 `changePassword`(#114)를 베끼지 않고 새로 썼다 — 폐기 후 `issueTokenPair`를 호출하지 않아 항상 전 기기 로그아웃이고, `void` 반환이라 `jwtTokenProvider`를 건드리지 않는다. `rollbackFor` 서브타입(#56의 `EmailChangeConflictException`)은 `password_hash`에 유니크 제약이 없어 만들지 않았다.
 - `PasswordResetConfirmRequest`(email·`\d{6}` code·newPassword 8~100자)와 `PasswordResetController.confirmReset`(`POST /confirm`, 204 본문 없음, `AuthService` 신규 주입)을 추가하고 `PUBLIC_POST_PATHS`에 `/api/auth/password-resets/confirm`을 별도 항목으로 넣었다(접두 매칭이 아니라 정확 일치라 필요).
-- `docs/api-routes.md`(라우트 행 + 공개 경로 행)와 `docs/api-contracts.md`("비밀번호 재설정 확인 및 적용" 절 신설, Access Token 잔존 한계 명시)를 함께 갱신했다. PRD 갱신은 Task 5 범위라 손대지 않았다.
+- `ai/api-routes.md`(라우트 행 + 공개 경로 행)와 `docs/api-contracts.md`("비밀번호 재설정 확인 및 적용" 절 신설, Access Token 잔존 한계 명시)를 함께 갱신했다. PRD 갱신은 Task 5 범위라 손대지 않았다.
 - **기존 테스트 2개가 컴파일 실패한다** — `AuthService` 생성자에 `PasswordResetService`가 추가되어 `AuthServiceTest:108`·`OAuthAuthServiceTest:71`의 `new AuthService(...)` 인자 목록을 고쳐야 한다. `PasswordResetControllerTest`도 `AuthService` `@MockitoBean` 추가가 필요하다(컴파일은 통과하나 컨텍스트 기동 실패).
 
 ### 리뷰 권장 반영: 재설정 메일 문구를 가입 인증·이메일 변경과 분리
@@ -56,7 +56,7 @@
 
 | 시각 | 에이전트 | 실행 명령 | 근거 |
 |---|---|---|---|
-| reviewer(리뷰) | reviewer | `git diff dev...HEAD`(#114·#115·#116 38파일) + `git log --oneline dev..HEAD -- db/migration/V12*`(머지 후 수정 없음 확인) | conventions.md(레이어·DTO·Lombok·엔티티·API·테스트 규칙, 리뷰 체크 질문), ADR-0002·0003·0004, issue-116-plan.md D1~D5·U1~U7, docs/prd.md AUTH-006, docs/api-routes.md, docs/api-contracts.md |
+| reviewer(리뷰) | reviewer | `git diff dev...HEAD`(#114·#115·#116 38파일) + `git log --oneline dev..HEAD -- db/migration/V12*`(머지 후 수정 없음 확인) | conventions.md(레이어·DTO·Lombok·엔티티·API·테스트 규칙, 리뷰 체크 질문), ADR-0002·0003·0004, issue-116-plan.md D1~D5·U1~U7, ai/prd.md AUTH-006, ai/api-routes.md, docs/api-contracts.md |
 
 - 차단 0건 / 권장 3건 / 참고 4건 — 머지 가능. 착수 전 확정 결정 3건(단일 요청 즉시 적용·미가입 400·5회 초과 429)과 중점 점검 7항목(새 토큰 미발급, `noRollbackFor`와 원자성 양립, `AndCodeHashIsNotNull` NPE 방지, 원문 미노출, `SecurityConfig` 정확 일치 경로, `AuthService` 순환 참조 없음, PRD·API 문서 일치)이 모두 코드와 일치했다. 권장은 (1) `attempt_count` 증가의 동시성 갱신 손실로 5회 제한이 병렬 요청에 우회 가능(#3·#56과 공유하는 선례라 후속 이슈 권장), (2) 재설정 메일 제목·본문이 가입 인증 메일과 동일해 용도 구분 불가, (3) `changePassword`의 OAuth 전용 판별이 `hasPassword()`와 어긋남(계정 연결 기능 도입 시 버그)이다.
 
@@ -69,7 +69,7 @@
 | implementer | implementer | `git ls-tree -r origin/dev --name-only -- src/main/resources/db/migration`(V12 미선점 확인) → `JAVA_HOME="C:\Program Files\Java\jdk-17" gradlew.bat -p <root> compileJava --no-daemon --max-workers=1` — `BUILD SUCCESSFUL`, 이어서 `spotlessApply`(신규 Java 파일 줄바꿈 정규화) | issue-115-plan.md D3(`SOCIAL_ACCOUNT_ONLY` 위치·문구)·D6(테이블·NULL 규약·쿼리 2개)·D7(시크릿 배선 3곳), ADR-0004(V12 신규), conventions.md 엔티티·Repository 규칙, agent-mistakes 2026-08-01(Write 도구 LF → `spotlessApply`) |
 
 - 거부 행(`code_hash`·`expires_at`·`last_sent_at` NULL)과 발송 행을 같은 테이블에서 구분하는 D6 규약대로 세 컬럼을 NULL 허용으로 두고, `create`/`createRejected`를 공통 private 생성자 하나로 모았다. `attempt_count` 증가·`consume`은 #116 범위라 추가하지 않았다.
-- 서비스·컨트롤러·DTO(Task 2~3), `SecurityConfig` 공개 경로, PRD·API 문서 동기화(Task 5)는 이번 항목 범위 밖이라 손대지 않았다. controller 변경이 없어 `docs/api-routes.md`·`docs/api-contracts.md`는 갱신하지 않았다.
+- 서비스·컨트롤러·DTO(Task 2~3), `SecurityConfig` 공개 경로, PRD·API 문서 동기화(Task 5)는 이번 항목 범위 밖이라 손대지 않았다. controller 변경이 없어 `ai/api-routes.md`·`docs/api-contracts.md`는 갱신하지 않았다.
 
 ### Task 2: `PasswordResetService.sendResetCode` 판정 순서와 트랜잭션 정책
 
@@ -79,7 +79,7 @@
 
 - `EmailVerificationService`와 같은 형태로 생성자를 손으로 쓰고 `@Value`를 파라미터에 붙였다(Lombok `@RequiredArgsConstructor`는 `@Value`를 생성자 파라미터로 옮기지 않는다). 수기 생성자라 `spotbugsMain`을 단독 실행해 `EI_EXPOSE_REP2`가 없음을 확인했다.
 - `checkSendRateLimit`·`expirePreviousCodes`·`generateCode`·`hmac`는 계획 D5·U5대로 공통 유틸로 추출하지 않고 새 리포지터리·엔티티에 맞춰 옮겼다(세 번째 중복이지만 이번 이슈에서 3-서비스 리팩터링을 함께 하지 않는다).
-- 컨트롤러·DTO·`SecurityConfig` 공개 경로(Task 3), 통합 테스트(Task 4), 문서 동기화(Task 5)는 범위 밖이라 손대지 않았다. controller 변경이 없어 `docs/api-routes.md`·`docs/api-contracts.md`도 갱신하지 않았다.
+- 컨트롤러·DTO·`SecurityConfig` 공개 경로(Task 3), 통합 테스트(Task 4), 문서 동기화(Task 5)는 범위 밖이라 손대지 않았다. controller 변경이 없어 `ai/api-routes.md`·`docs/api-contracts.md`도 갱신하지 않았다.
 
 ### Task 3: `PasswordResetController`·요청 DTO와 공개 경로
 
@@ -89,7 +89,7 @@
 
 - `PasswordResetController`는 `EmailVerificationController.sendVerificationCode`와 같은 모양으로 서비스 호출 후 202만 반환한다. `PasswordResetRequest`는 `EmailVerificationRequest`와 동일한 `@NotBlank`·`@Size(max = 255)`·`@Email` 조합이다.
 - `SecurityConfig`는 `PUBLIC_POST_PATHS`에 `/api/auth/password-resets` 한 줄만 추가했다 — 다른 경로의 인증 규칙과 조건부 공개 매처는 건드리지 않았다.
-- `docs/api-routes.md`(라우트 목록 + 인증 규칙 표 공개 경로 행)와 `docs/api-contracts.md`(auth 절에 "비밀번호 재설정 인증번호 발송" 계약 신설)를 함께 갱신했다. PRD `AUTH-006` 신설은 Task 5 범위라 손대지 않았다.
+- `ai/api-routes.md`(라우트 목록 + 인증 규칙 표 공개 경로 행)와 `docs/api-contracts.md`(auth 절에 "비밀번호 재설정 인증번호 발송" 계약 신설)를 함께 갱신했다. PRD `AUTH-006` 신설은 Task 5 범위라 손대지 않았다.
 - `SecurityConfigTest`의 공개 경로 `@ValueSource` 목록에 새 경로가 아직 없다(개수 단정은 없어 기존 테스트는 깨지지 않는다) — 추가는 tester 몫이다.
 
 ### 리뷰 차단 반영: OAuth 전용 회원 판별을 `hasPassword()`로 교체
@@ -132,7 +132,7 @@
 
 - `EmailChangeConflictException`(`com.finplay.api.auth.exception`, `BusinessException` 상속, `ErrorCode.DUPLICATE_RESOURCE`)을 코드베이스 최초의 `BusinessException` 서브타입으로 추가했다.
 - `AuthService`에 `EmailChangeService` 의존성을 추가하고 `confirmEmailChange`를 D2 그대로 `@Transactional(noRollbackFor = BusinessException.class, rollbackFor = EmailChangeConflictException.class)`로 구현했다 — `validateAndConsumeCode` → `user.changeEmail` → `saveAndFlush`(`DataIntegrityViolationException` → `EmailChangeConflictException`) → `revokeAllActiveByUserId` 순서, `signupMethod`는 `getMe`/`changeNickname`과 동일하게 계산.
-- `EmailChangeConfirmRequest`(`EmailVerificationConfirmRequest`와 동일한 검증 애노테이션)와 `EmailChangeController.confirmEmailChange`(`POST /api/auth/email-changes/confirm`, `AuthService` 신규 주입, 200 `MemberResponse`)를 추가하고 `docs/api-routes.md`를 갱신했다.
+- `EmailChangeConfirmRequest`(`EmailVerificationConfirmRequest`와 동일한 검증 애노테이션)와 `EmailChangeController.confirmEmailChange`(`POST /api/auth/email-changes/confirm`, `AuthService` 신규 주입, 200 `MemberResponse`)를 추가하고 `ai/api-routes.md`를 갱신했다.
 - 테스트 작성은 이번 항목 범위 밖(tester 담당)이라 수행하지 않았고, `compileJava`로만 컴파일을 확인했다.
 
 ## Issue #55
@@ -144,7 +144,7 @@
 | 02:15 | implementer | `JAVA_HOME="C:\Program Files\Java\jdk-17"` 지정 후 `.\gradlew.bat compileJava spotlessCheck --no-daemon --max-workers=1` — `BUILD SUCCESSFUL`(`spotlessApply` 선행) | issue-55-plan.md D1·D2(신규 테이블·컬럼 구성)·D3(`consumeIfValidForUser` 원자적 소비)·D5(제한은 `userId`, 무효화는 `(userId, newEmail)`), ADR-0004(신규 V6 마이그레이션), conventions.md 엔티티·리포지터리 규칙 |
 | 재검증 | implementer(중복 투입) | 병렬로 재투입된 세션이 기존 산출물(V6·엔티티·리포지터리·`consumeIfValidForUser`)이 계획과 일치함을 확인하고 `.\gradlew.bat compileJava --no-daemon --max-workers=1 --rerun-tasks` 재실행 — `BUILD SUCCESSFUL`, 추가 변경 없음 | issue-55-plan.md Task 1 체크박스 3개 |
 
-- 02:15 — V6 마이그레이션·`EmailChangeVerification`·`EmailChangeVerificationRepository`를 신설하고 `ReauthTokenRepository.consumeIfValidForUser`(`@Param` 필수 — `-parameters` 옵션 없음)를 추가해 컴파일을 통과했다. `docs/agent-mistakes.md`의 `JAVA_HOME` 경로는 이 장비에 없어 실제 설치 경로(`C:\Program Files\Java\jdk-17`)를 확인해 사용했고, 새 파일이 LF로 저장돼 `spotlessJavaCheck`가 차단해 `spotlessApply`로 해소했다.
+- 02:15 — V6 마이그레이션·`EmailChangeVerification`·`EmailChangeVerificationRepository`를 신설하고 `ReauthTokenRepository.consumeIfValidForUser`(`@Param` 필수 — `-parameters` 옵션 없음)를 추가해 컴파일을 통과했다. `ai/agent-mistakes.md`의 `JAVA_HOME` 경로는 이 장비에 없어 실제 설치 경로(`C:\Program Files\Java\jdk-17`)를 확인해 사용했고, 새 파일이 LF로 저장돼 `spotlessJavaCheck`가 차단해 `spotlessApply`로 해소했다.
 - 재검증 — Task 1이 같은 worktree에 이미 완료돼 있어(중복 투입) 파일을 계획서와 대조만 하고 추가 구현 없이 컴파일 재확인만 했다.
 
 ### Task 2: `EmailChangeService.requestEmailChange` 재인증·중복·발송 제한 판정
@@ -161,7 +161,7 @@
 |---|---|---|---|
 | implementer | implementer | `JAVA_HOME="C:/Program Files/Java/jdk-17" ./gradlew.bat compileJava --no-daemon --max-workers=1` — `BUILD SUCCESSFUL` | issue-55-plan.md Task 3·HTTP 계약 표(202 본문 없음, `newEmail` 필수·`currentPassword`/`reauthToken` 선택), conventions.md DTO 검증·API 규칙 |
 
-- `EmailChangeRequest`(`newEmail`만 `@NotBlank`+`@Email`+`@Size(max=255)`, `currentPassword`/`reauthToken`은 `@Size`만 적용해 서비스 계층 403 판단에 위임)와 `EmailChangeController`(`POST /api/auth/email-changes`, Bearer 인증, 202 본문 없음)를 추가했다. `SecurityConfig`는 수정하지 않았고, `docs/api-routes.md`에 라우트·전용 절·보호 경로 표를 갱신했다.
+- `EmailChangeRequest`(`newEmail`만 `@NotBlank`+`@Email`+`@Size(max=255)`, `currentPassword`/`reauthToken`은 `@Size`만 적용해 서비스 계층 403 판단에 위임)와 `EmailChangeController`(`POST /api/auth/email-changes`, Bearer 인증, 202 본문 없음)를 추가했다. `SecurityConfig`는 수정하지 않았고, `ai/api-routes.md`에 라우트·전용 절·보호 경로 표를 갱신했다.
 
 ### Task 4: 통합 테스트(Fake EmailSender + Testcontainers MySQL)
 
@@ -202,7 +202,7 @@
 | 시각 | 에이전트 | 실행 명령 | 근거 |
 |---|---|---|---|
 | 01:10 | implementer | `.\gradlew.bat build --no-daemon --max-workers=1` — `BUILD SUCCESSFUL`, 519 tests / 실패 0 / 스킵 0 (HEAD `c7543d6`, 워킹트리 clean) | issue-53-plan.md 완료 체크리스트, CLAUDE.md 규칙 4·7, ADR-0003 |
-| 09:40 | reviewer(리뷰) | `git diff origin/dev...HEAD`(커밋 81b7cd6·17e294c·c08fcd1·c7543d6·ffaaba3 전체) | issue-53-plan.md D1~D8, conventions.md, ADR-0002·0003·0004, docs/api-routes.md, docs/agent-mistakes.md |
+| 09:40 | reviewer(리뷰) | `git diff origin/dev...HEAD`(커밋 81b7cd6·17e294c·c08fcd1·c7543d6·ffaaba3 전체) | issue-53-plan.md D1~D8, conventions.md, ADR-0002·0003·0004, ai/api-routes.md, ai/agent-mistakes.md |
 
 ### 실제 네이버 OAuth 재인증 스모크
 
@@ -220,7 +220,7 @@
 - 보장 범위를 “정상 브라우저 callback 응답에서 state 쿠키 만료”로 좁힌다. 서버는 state를 저장하지 않으므로 raw cookie 재전송 자체를 차단한다고 주장하지 않으며, 실제 공급자의 authorization code 단일 사용이 재전송을 거부한다.
 - Fake는 authorize마다 state에 결합된 고유 code를 발급하고 KAKAO/NAVER 전용 callback bean이 Fake 전용 thread-safe store에서 `(provider, code, state)`를 원자적으로 한 번만 소비한다. 특수 fixture code는 기존 오류 테스트용으로 유지한다.
 - 검증 완료: 잘못된 provider는 grant 소비 없이 400으로 거부되고, 원 provider는 이후 한 번 성공하며 재사용은 400이다. generated code 순차 재사용·동시성 단일 성공, authorize URI별 고유 code, 첫 전체 callback 200 후 동일 `(provider, code, state)`와 raw cookie 재전송 400, RefreshToken·User·SocialAccount·Account 불변, 기존 state 누락·불일치 400 회귀가 대상 테스트 묶음에서 `PASS`했다.
-- Issue #9 plan과 ADR은 수정하지 않는다. Issue #10의 Fake Provider·자동 회귀 후속 변경과 `docs/api-routes.md` 계약 정정으로 한정한다.
+- Issue #9 plan과 ADR은 수정하지 않는다. Issue #10의 Fake Provider·자동 회귀 후속 변경과 `ai/api-routes.md` 계약 정정으로 한정한다.
 - `.\gradlew.bat spotlessApply`와 관련 대상 테스트 묶음이 `PASS`했고, provider 결합 후 메인 최종 `.\gradlew.bat build --no-daemon --max-workers=1`은 3분 23초에 `BUILD SUCCESSFUL`이었다.
 
 ### Task 4 production 점검 기록
@@ -231,7 +231,7 @@
 | 23:05 | implementer | `.\gradlew.bat compileJava --no-daemon --max-workers=1`; `.\gradlew.bat spotbugsMain --no-daemon --max-workers=1` — 모두 `BUILD SUCCESSFUL` | 전체 build 차단 `NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE` 수정 재검증 |
 | 23:18 | implementer | `.\gradlew.bat compileJava --no-daemon --max-workers=1`; `.\gradlew.bat spotbugsMain --no-daemon --max-workers=1` — 모두 `BUILD SUCCESSFUL` | 리뷰 차단: 실제 OAuth connect 5초/read 10초 timeout과 트랜잭션 전 DTO 검증 |
 
-- 22:49 — default profile Fake 전체 흐름의 production 누락이 없음을 확인해 src는 변경하지 않고, 실제 오류 계약을 `docs/api-routes.md`에 보완했다.
+- 22:49 — default profile Fake 전체 흐름의 production 누락이 없음을 확인해 src는 변경하지 않고, 실제 오류 계약을 `ai/api-routes.md`에 보완했다.
 - 최초 전체 build는 테스트·JaCoCo 통과 후 Naver token nullable 응답의 분리 검증을 SpotBugs가 추적하지 못해 실패했다.
 - nullable 검증과 access token 반환을 같은 흐름으로 합쳐 경고를 해소했다. `org.jetbrains.annotations.Nullable` 보조 누락 메시지는 남지만 SpotBugs 경고·게이트는 통과했다.
 - 두 번째 전체 build는 테스트·JaCoCo·SpotBugs 통과 후 수정 파일의 줄바꿈 포맷을 `spotlessJavaCheck`가 차단했다. `spotlessApply` 후 재실행해 전체 `BUILD SUCCESSFUL`을 확인했다.
@@ -454,28 +454,28 @@
 | 03:25 | implementer | `.\gradlew.bat spotlessApply`(UP-TO-DATE); 대상 테스트 5종 `BUILD SUCCESSFUL`; `.\gradlew.bat build --no-daemon --max-workers=1` — `BUILD SUCCESSFUL`(2분 20초), 65 suites / 564 tests / 실패·오류·스킵 0 (HEAD `fca5233`) | issue-54-plan.md Task 5·완료 체크리스트, CLAUDE.md 규칙 4·7, ADR-0003 |
 | 04:20 | implementer | `.\gradlew.bat test --tests "*NicknameChangeIntegrationTest" --no-daemon --max-workers=1` — 4/4 통과, `.\gradlew.bat spotlessApply` | issue-54-plan.md Task 4·미확정 6번(Order/Execution 미존재로 계좌까지만 검증), ADR-0003 Testcontainers 통합 테스트 |
 
-| 05:10 | reviewer(리뷰) | `git diff origin/dev...HEAD` (Issue #54 프로덕션 5·테스트 5·문서 4 파일), `SecurityConfig`·`ErrorCode`·`db/migration`·`Sha256BcryptPasswordEncoder`·`User`·`AuthController` 원본 확인 | issue-54-plan.md D1~D7·완료 체크리스트, conventions.md 레이어·엔티티·DTO·테스트 규칙, ADR-0002, ADR-0003, ADR-0004(마이그레이션 미추가 확인), docs/api-routes.md |
-| 재검토 | reviewer(리뷰) | issue-54-plan.md "미확정·PRD 불일치" 1~5번 재검토 — `AuthService.changeNickname`·`consumeReauthToken`·`ReauthTokenRepository.consumeIfValidForUser`·`OAuthAuthorizationService.authorizeForReauth`·`OAuthCallbackService`·Issue #53 `reauthenticate` 원본 재확인 | docs/prd.md AUTH-005, GitHub Issue #54 본문, issue-54-plan.md D1·D2·D4·D7, Issue #53 issue-53-plan.md(발급 시 SocialAccount 검증 후 state에 바인딩) |
-| 10:20 | reviewer(리뷰) | `git diff origin/dev...HEAD`(커밋 4b7de6a·58ddc1f·f2d5521·58eb78d·62d858c) | issue-55-plan.md D1~D5, conventions.md, ADR-0002·0003·0004, docs/api-routes.md
-| reviewer | reviewer(리뷰) | `git diff dev...HEAD`(커밋 7380c16·18275c4·dad6eeb·ecdf3aa·7f58cb1) | issue-56-plan.md D1~D5, conventions.md, ADR-0002·0003·0004, docs/api-routes.md
+| 05:10 | reviewer(리뷰) | `git diff origin/dev...HEAD` (Issue #54 프로덕션 5·테스트 5·문서 4 파일), `SecurityConfig`·`ErrorCode`·`db/migration`·`Sha256BcryptPasswordEncoder`·`User`·`AuthController` 원본 확인 | issue-54-plan.md D1~D7·완료 체크리스트, conventions.md 레이어·엔티티·DTO·테스트 규칙, ADR-0002, ADR-0003, ADR-0004(마이그레이션 미추가 확인), ai/api-routes.md |
+| 재검토 | reviewer(리뷰) | issue-54-plan.md "미확정·PRD 불일치" 1~5번 재검토 — `AuthService.changeNickname`·`consumeReauthToken`·`ReauthTokenRepository.consumeIfValidForUser`·`OAuthAuthorizationService.authorizeForReauth`·`OAuthCallbackService`·Issue #53 `reauthenticate` 원본 재확인 | ai/prd.md AUTH-005, GitHub Issue #54 본문, issue-54-plan.md D1·D2·D4·D7, Issue #53 issue-53-plan.md(발급 시 SocialAccount 검증 후 state에 바인딩) |
+| 10:20 | reviewer(리뷰) | `git diff origin/dev...HEAD`(커밋 4b7de6a·58ddc1f·f2d5521·58eb78d·62d858c) | issue-55-plan.md D1~D5, conventions.md, ADR-0002·0003·0004, ai/api-routes.md
+| reviewer | reviewer(리뷰) | `git diff dev...HEAD`(커밋 7380c16·18275c4·dad6eeb·ecdf3aa·7f58cb1) | issue-56-plan.md D1~D5, conventions.md, ADR-0002·0003·0004, ai/api-routes.md
 | 19:47 | implementer | `.\gradlew.bat -p <루트> compileJava --no-daemon --max-workers=1` — BUILD SUCCESSFUL | issue-114-plan.md Task 1(D2 OAuth 전용 400·D3 검증 순서·D4 `changePassword`·D5 폐기→발급 순서·D6 단일 트랜잭션·D7 기존 ErrorCode만), conventions.md 엔티티·레이어 규칙, ADR-0002, ADR-0004(마이그레이션 미추가) |
 | 20:05 | implementer | `.\gradlew.bat -p <루트> spotlessApply compileJava --no-daemon --max-workers=1` — BUILD SUCCESSFUL | issue-114-plan.md Task 2(D1 요청 DTO 검증 정책·D8 200 `TokenResponse`·`SecurityConfig` 미변경 확인), conventions.md DTO·API 규칙, CLAUDE.md 규칙 7(api-routes.md·api-contracts.md 동기화) |
-| reviewer | reviewer(리뷰) | `git diff dev...HEAD`(커밋 1613a86·cdaaec2·f612652·ead50f9·c8577a0) | issue-114-plan.md D1~D8·팀 확정 2건(폐기→발급 순서, OAuth 전용 400), conventions.md 리뷰 체크 질문·DTO·엔티티 규칙, ADR-0002·0003·0004(마이그레이션 미추가 확인), docs/api-routes.md·api-contracts.md·prd.md |
-| reviewer | reviewer(리뷰) | `git diff dev...HEAD --stat` + Issue #115 프로덕션 6·수정 4·테스트 5·문서 6 파일 원본 확인(`PasswordResetService`·`PasswordResetVerification`·V12·`SecurityConfig`·`ErrorCode`·`AuthService.createOAuthUser`) | issue-115-plan.md D1~D7·팀 확정 3건(404/409 응답 구분, 이메일 단위 집계·제한 우선 판정, 전용 `PASSWORD_RESET_SECRET`), conventions.md 리뷰 체크 질문·엔티티·DTO·테스트 규칙, ADR-0002·0003·0004, docs/prd.md AUTH-006·api-routes.md·api-contracts.md |
-| reviewer | reviewer(재리뷰) | `git diff dev...HEAD`(차단 수정 `1c534a8` 포함 전체) + `User`·`AuthService`·`PasswordResetService`·`Sha256BcryptPasswordEncoder`·`compose.deploy.yaml` 원본과 `grep '{oauth-only}'`·`grep 'User.create('` 전수 확인 | issue-115-plan.md D1~D7·팀 확정 3건, conventions.md 상수·엔티티·레이어·테스트 규칙, ADR-0002·0003·0004, docs/prd.md AUTH-006·api-routes.md·api-contracts.md |
+| reviewer | reviewer(리뷰) | `git diff dev...HEAD`(커밋 1613a86·cdaaec2·f612652·ead50f9·c8577a0) | issue-114-plan.md D1~D8·팀 확정 2건(폐기→발급 순서, OAuth 전용 400), conventions.md 리뷰 체크 질문·DTO·엔티티 규칙, ADR-0002·0003·0004(마이그레이션 미추가 확인), ai/api-routes.md·api-contracts.md·prd.md |
+| reviewer | reviewer(리뷰) | `git diff dev...HEAD --stat` + Issue #115 프로덕션 6·수정 4·테스트 5·문서 6 파일 원본 확인(`PasswordResetService`·`PasswordResetVerification`·V12·`SecurityConfig`·`ErrorCode`·`AuthService.createOAuthUser`) | issue-115-plan.md D1~D7·팀 확정 3건(404/409 응답 구분, 이메일 단위 집계·제한 우선 판정, 전용 `PASSWORD_RESET_SECRET`), conventions.md 리뷰 체크 질문·엔티티·DTO·테스트 규칙, ADR-0002·0003·0004, ai/prd.md AUTH-006·api-routes.md·api-contracts.md |
+| reviewer | reviewer(재리뷰) | `git diff dev...HEAD`(차단 수정 `1c534a8` 포함 전체) + `User`·`AuthService`·`PasswordResetService`·`Sha256BcryptPasswordEncoder`·`compose.deploy.yaml` 원본과 `grep '{oauth-only}'`·`grep 'User.create('` 전수 확인 | issue-115-plan.md D1~D7·팀 확정 3건, conventions.md 상수·엔티티·레이어·테스트 규칙, ADR-0002·0003·0004, ai/prd.md AUTH-006·api-routes.md·api-contracts.md |
 | 11:30 | implementer | `gradlew.bat -p <root> compileJava` — `BUILD SUCCESSFUL`; `test --tests "*EmailVerificationConcurrencyIntegrationTest"` — 3/3 통과(직전 red 3건 해소), 생성 SQL `... order by ev1_0.created_at desc limit ? for update of ev1_0` 실측(hibernate.SQL DEBUG 일시 활성 후 원복) | issue-121-plan.md D2·D7(서비스 본문 미수정·`for update` 로그 확인), `PasswordResetVerificationRepository`(PR #120) 주석 형식, ADR-0002, ADR-0004(신규 마이그레이션 없음) |
 | 11:52 | implementer | `gradlew.bat -p <root> compileJava compileTestJava` — `BUILD SUCCESSFUL`; `test --tests "*EmailChangeConcurrencyIntegrationTest" --tests "*EmailChangeConfirmIntegrationTest"` — 3/3 + 11/11 통과(직전 red 3건 해소, 호출부 교정 회귀 없음), 생성 SQL `... where ecv1_0.user_id=? and ecv1_0.new_email=? order by ecv1_0.created_at desc limit ? for update of ecv1_0`로 `users` 조인 없음까지 실측(hibernate.SQL DEBUG는 임시 init script로만 활성, build.gradle 무수정) | issue-121-plan.md D2·D3·D4·D7(서비스 본문 미수정·`for update`와 조인 여부 로그 확인·잠금 쿼리 테스트 호출부 교정), `PasswordResetConfirmIntegrationTest`(PR #120) 헬퍼 형식, ADR-0002, ADR-0004(신규 마이그레이션 없음) |
-| 12:05 | implementer | `gradlew.bat -p <root> compileJava` — `BUILD SUCCESSFUL`; `test --tests "*EmailVerification*" --tests "*EmailChange*" --tests "*PasswordReset*" --tests "*VerificationSecretIsolation*"` — 24 suites / 229 tests / 실패·오류 0(동시성 2종 3+3건 포함); `spotlessApply`·`spotbugsMain spotlessCheck` — `BUILD SUCCESSFUL` | issue-121-plan.md Task 3·D5·D8·U2(시크릿 2분할 현상 유지, `EMAIL_CHANGE_SECRET` 미신설), docs/agent-mistakes.md 2026-07-30(`@Value` 빈에 `@RequiredArgsConstructor` 금지), conventions.md, ADR-0002, ADR-0004(신규 마이그레이션 없음) |
+| 12:05 | implementer | `gradlew.bat -p <root> compileJava` — `BUILD SUCCESSFUL`; `test --tests "*EmailVerification*" --tests "*EmailChange*" --tests "*PasswordReset*" --tests "*VerificationSecretIsolation*"` — 24 suites / 229 tests / 실패·오류 0(동시성 2종 3+3건 포함); `spotlessApply`·`spotbugsMain spotlessCheck` — `BUILD SUCCESSFUL` | issue-121-plan.md Task 3·D5·D8·U2(시크릿 2분할 현상 유지, `EMAIL_CHANGE_SECRET` 미신설), ai/agent-mistakes.md 2026-07-30(`@Value` 빈에 `@RequiredArgsConstructor` 금지), conventions.md, ADR-0002, ADR-0004(신규 마이그레이션 없음) |
 | 12:28 | implementer | `gradlew.bat -p <root> compileJava` — `BUILD SUCCESSFUL`; `test --tests "*EmailVerification*" --tests "*EmailChange*" --tests "*PasswordReset*" --tests "*Verification*"` — 26 suites / 247 tests / 실패·오류 0(동시성 2종 3+3건 포함, 세 도메인의 발송 제한 429 경계 케이스 기대값 무수정 통과) | issue-121-plan.md Task 4·D5·D6·U3·U4(`checkSendRateLimit`만 공통화, `expirePreviousCodes`는 제외), conventions.md 리뷰 체크 질문("공통화가 책임을 명확하게 만들었는가, 아니면 숨겼는가?"), ADR-0002, ADR-0004(신규 마이그레이션 없음) |
 | 11:22 | tester | `test --tests "*EmailVerificationConcurrencyIntegrationTest"` — **수정 전 실측 3/3 실패**. 동시 5건 → `attempt_count` 기대 5 / **실측 1**, 동시 6건 → 400 기대 5건 / **실측 6건**·429 기대 1건 / **실측 0건**·`attempt_count` **1**, 동시 8건 → 429 **0건**이고 `expires_at`이 5분 뒤 그대로여서 **인증번호가 무효화조차 되지 않음** | issue-121-plan.md D7 1~2번(수정 전 실패 실측), 수용 기준 5, PR #120의 "동시 5건 → attempt_count 1" 형식 |
 | 11:44 | tester | `test --tests "*EmailChangeConcurrencyIntegrationTest"` — **수정 전 실측 3/3 실패**. 동시 5건 → `attempt_count` 기대 5 / **실측 1**, 동시 6건 → 400 기대 5건+429 1건 / **실측 400 6건·429 0건**, 동시 8건 → **429 0건**(전부 400) | issue-121-plan.md D7 1~2번, 수용 기준 5, 픽스처는 실제 가입·로그인·Bearer 경로로 생성(프로덕션에 존재하는 형태) |
 | 13:41 | 메인 세션 | `gradlew.bat -p <root> cleanTest build` — **BUILD SUCCESSFUL in 5m 3s (1회차)**. 160개 클래스 **1362건**(기존 1329 + 신규 33) 실패·에러·스킵 0. 빌드 검증 SHA `a63fc62` | issue-121-plan.md Task 5, CLAUDE.md 규칙 4(완료 선언 전 build), 이슈 #119 수정 후 1회차 통과 |
-| reviewer | reviewer(리뷰) | `git diff dev...HEAD`(커밋 5f8bfd0·a4693b7·738d0ad·d6fb0d6·a63fc62) + `@Lock` 3곳 원본 대조, V2/V6 인덱스 정의 확인, `openssl dgst -sha256 -hmac`로 고정 해시 2건 독립 재계산, 잠금 쿼리 호출부 전수 grep | issue-121-plan.md D1~D8·U1~U7, conventions.md 리뷰 체크 질문("공통화가 책임을 명확하게 만들었는가")·Lombok·테스트 규칙, ADR-0002·0003·0004, docs/prd.md AUTH-004·005·006 정책값 대조, Issue #121 본문+범위 축소 코멘트 |
-| reviewer | reviewer(리뷰, PR #145) | `git diff dev...HEAD`(HEAD `33f503c`, PR #145) — 세 서비스 diff 전체 대조, `VerificationCodePolicy`/`VerificationCodeHasher`/두 리포지터리 원본 확인, `gh issue view 121`·`gh issue view 121 --json comments`로 이슈 원문·범위 축소 코멘트 실제 대조, `gh pr view 145`로 PR 본문·빌드 검증 SHA 대조, `compileJava compileTestJava spotlessCheck` 재실행 | issue-121-plan.md D1~D8·U1~U7, tasks.md Issue #121 절, conventions.md 리뷰 체크 질문·Lombok·테스트 규칙, ADR-0002·0003·0004, docs/prd.md AUTH-004·005·006 |
+| reviewer | reviewer(리뷰) | `git diff dev...HEAD`(커밋 5f8bfd0·a4693b7·738d0ad·d6fb0d6·a63fc62) + `@Lock` 3곳 원본 대조, V2/V6 인덱스 정의 확인, `openssl dgst -sha256 -hmac`로 고정 해시 2건 독립 재계산, 잠금 쿼리 호출부 전수 grep | issue-121-plan.md D1~D8·U1~U7, conventions.md 리뷰 체크 질문("공통화가 책임을 명확하게 만들었는가")·Lombok·테스트 규칙, ADR-0002·0003·0004, ai/prd.md AUTH-004·005·006 정책값 대조, Issue #121 본문+범위 축소 코멘트 |
+| reviewer | reviewer(리뷰, PR #145) | `git diff dev...HEAD`(HEAD `33f503c`, PR #145) — 세 서비스 diff 전체 대조, `VerificationCodePolicy`/`VerificationCodeHasher`/두 리포지터리 원본 확인, `gh issue view 121`·`gh issue view 121 --json comments`로 이슈 원문·범위 축소 코멘트 실제 대조, `gh pr view 145`로 PR 본문·빌드 검증 SHA 대조, `compileJava compileTestJava spotlessCheck` 재실행 | issue-121-plan.md D1~D8·U1~U7, tasks.md Issue #121 절, conventions.md 리뷰 체크 질문·Lombok·테스트 규칙, ADR-0002·0003·0004, ai/prd.md AUTH-004·005·006 |
 
 ## 모니터링 (사람용 요약)
 - PR #145(Issue #121) 재리뷰 판정: 차단 0건, 권장 0건, 참고 2건. 세 서비스 공통화(`VerificationCodePolicy`·`VerificationCodeHasher`)가 정책 상수·판정 순서·발송 제한 비대칭(60초 `> 0` vs 1시간·하루 `>= LIMIT`)·시크릿 2분배를 그대로 재현함을 코드로 대조했고, `@Lock(PESSIMISTIC_WRITE)` 2곳은 트랜잭션 경계(AuthService/EmailVerificationService 자체)와 LAZY 연관관계로 인한 잠금 범위(V6 인덱스 `(user_id, created_at)`라 `new_email` 갭까지 잠길 수 있음, `users` 조인 없음)를 정확히 반영한다. `expirePreviousCodes` 공통화 제외는 이슈 원문 대조 결과 이슈가 명시적으로 나열한 항목이지만 PR이 사유(정책 판정이 없어 책임이 흐려짐)를 공개적으로 밝히고 리뷰어에게 판단을 요청한 형태라 타당함. 컨트롤러·라우트·계약·마이그레이션 변경 없음을 diff로 재확인, 머지 가능.
-  - [참고] `docs/specs/002-auth-account/issue-121-plan.md` D7은 `EmailChangeConcurrencyIntegrationTest`를 `authService.confirmEmailChange` 직접 호출로 설계했으나 실제 구현은 MockMvc + 실제 가입/로그인/Bearer 플로우로 대체됐다(#115 픽스처 사고 재발 방지 목적, 더 강한 엔드투엔드 검증). 계획 문서에 이 변경 사유가 기록돼 있지 않아 다음에 D7을 참고하는 사람이 혼동할 수 있다 — 사소하나 plan.md에 실제 구현과의 차이를 한 줄 남기는 것을 권한다.
+  - [참고] `ai/specs/002-auth-account/issue-121-plan.md` D7은 `EmailChangeConcurrencyIntegrationTest`를 `authService.confirmEmailChange` 직접 호출로 설계했으나 실제 구현은 MockMvc + 실제 가입/로그인/Bearer 플로우로 대체됐다(#115 픽스처 사고 재발 방지 목적, 더 강한 엔드투엔드 검증). 계획 문서에 이 변경 사유가 기록돼 있지 않아 다음에 D7을 참고하는 사람이 혼동할 수 있다 — 사소하나 plan.md에 실제 구현과의 차이를 한 줄 남기는 것을 권한다.
   - [참고] PR 본문이 밝힌 `VerificationCodePolicy`의 스타일 혼재(`isAttemptLimitReached`는 boolean 반환, `checkSendRateLimit`은 즉시 throw)는 동작 불변을 지키기 위한 의도적 보류로 타당하다 — 후속 이슈에서 통일 여부만 판단하면 된다.
 - Issue #121 리뷰 판정: 차단 0건, 권장 2건, 참고 4건. `@Lock` 2줄은 PR #120 선례와 형태·주석까지 동일하고 세 서비스 본문의 판정 순서·비교 연산자·오류 코드가 그대로이며 시크릿 2분배와 HMAC 바이트 동일성이 독립 재계산으로 확인됐다(`expirePreviousCodes` 제외와 원자성 선행 순서 모두 타당), 머지 가능.
 - Issue #121 Task 4: `checkSendRateLimit` 3벌을 `VerificationCodePolicy.checkSendRateLimit(now, ToLongFunction<LocalDateTime>)`으로 합치면서 판정 순서(60초 → 1시간 → 하루)와 비교 연산자 비대칭(첫 창만 `> 0`, 나머지 `>= LIMIT`)을 그대로 옮겼고, 세 도메인의 집계 키 차이(이메일 단위 vs 회원 단위)만 람다로 남겼다. `expirePreviousCodes` 공통화(D6)는 실제 공유분이 `for` 루프 3줄뿐이고 정책 판정이 한 톨도 없어 정책 컴포넌트의 책임을 흐린다고 판단해 **제외**했다(U3이 예고한 경우).
@@ -518,13 +518,13 @@
 - 23:30 — Issue #53 Task 1: `OAuthPurpose`·`OAuthStateClaims`와 HMAC-SHA-256 서명/검증(`generate(purpose, userId)`·`verify`, 실패는 전부 403 `REAUTHENTICATION_FAILED`)을 `OAuthStateGenerator`에 추가하고 `OAUTH_STATE_SECRET`을 yml·.env.example·build.gradle test 환경에 배선했다. `OAuthAuthorizationService.authorize`는 `generate(LOGIN, null)` 호출로만 바꿔 302 계약은 그대로 회귀 통과했다.
 - 01:10 — Issue #53 Task 5: HEAD `c7543d6`·워킹트리 clean 상태에서 전체 `build`(Spotless·SpotBugs·JaCoCo 40% 포함)를 돌려 519 tests 전부 통과했다. authorize(reauth)→callback(reauth)는 `OAuthReauthCallbackIntegrationTest` 4건, authorize(login)→callback(login)은 `FakeOAuthFlowIntegrationTest` 5건·`OAuthLoginIntegrationTest` 6건으로 같은 빌드 안에서 함께 실행됨을 테스트 결과 XML로 확인했다. api-routes.md는 Task 3·4에서 이미 authorize·callback 양쪽을 갱신해 추가 변경이 필요 없었고, tasks.md의 Issue #53 5번째 항목만 체크했다.
 - 00:45 — Issue #53 Task 4: `authorizeForReauth`(provider 해석은 private `createAuthorization`으로 공유), `authorizeReauth` 컨트롤러 메서드(`params="purpose=reauth"`, 200 `OAuthReauthorizeResponse`), 기존 `authorize`의 purpose 방어 검증, `SecurityConfig`의 조건부 공개 매처를 추가했다. **계획서 D6의 `AntPathRequestMatcher`는 Spring Security 7.1에서 제거돼 존재하지 않아** jar 내용을 직접 확인하고 `PathPatternRequestMatcher`로 대체했다(`AndRequestMatcher`는 그대로 사용). 기존 302 계약은 `FakeOAuthFlowIntegrationTest`로 회귀 확인했다.
-- 00:20 — Issue #53 Task 3: `OAuthCallbackService`에 `stateGenerator.verify` 호출과 purpose 분기를 넣고 서비스·컨트롤러 반환 타입을 `Object`로 바꿨다. 실제 MySQL 통합 테스트를 처음 돌려서야 Task 1이 심어둔 결함(생성자 2개 `@Component`에 `@Autowired` 누락 → `@SpringBootTest` 전체가 `No default constructor found`)이 드러났고, 이는 컴파일·단위 테스트만으로는 잡히지 않아 `docs/agent-mistakes.md`에 기록했다. `ErrorCodeTest`의 코드 개수 고정(19→20)도 Task 1 여파로 함께 갱신했다.
+- 00:20 — Issue #53 Task 3: `OAuthCallbackService`에 `stateGenerator.verify` 호출과 purpose 분기를 넣고 서비스·컨트롤러 반환 타입을 `Object`로 바꿨다. 실제 MySQL 통합 테스트를 처음 돌려서야 Task 1이 심어둔 결함(생성자 2개 `@Component`에 `@Autowired` 누락 → `@SpringBootTest` 전체가 `No default constructor found`)이 드러났고, 이는 컴파일·단위 테스트만으로는 잡히지 않아 `ai/agent-mistakes.md`에 기록했다. `ErrorCodeTest`의 코드 개수 고정(19→20)도 Task 1 여파로 함께 갱신했다.
 - 00:05 — Issue #53 Task 2: `V5__create_reauth_tokens_table.sql`·`ReauthToken`·`ReauthTokenRepository`·`ReauthTokenGenerator`·`ReauthTokenResponse`를 추가하고 `AuthService.reauthenticate`(회원·소셜계정 조회 후 해시만 저장, 실패는 전부 403)를 구현했다. `AuthService` 생성자가 2개 늘어 `AuthServiceTest`·`OAuthAuthServiceTest`의 생성 호출부를 갱신했고 기존 케이스는 그대로 통과했다. Docker가 없어 `@DataJpaTest`·Testcontainers 검증은 tester에게 위임한다.
 - 09:40 — Issue #53 리뷰 판정: 차단 0건. HMAC 상수 시간 검증, reauthenticate 회원/계좌 불변, purpose 분기 순서, SecurityConfig 안전 기본값, 이전 로그인 계약 무회귀를 D1~D8과 대조해 확인, 머지 가능.
 - 02:14 — Issue #54 Task 1: `ReauthTokenRepository.consumeIfValidForUser`(해시·소유자·미소비·미만료를 한 번의 조건부 UPDATE로 확인, `RefreshTokenRepository.revokeIfActiveAndNotExpired` 선례 재사용)와 `UserRepository.existsByNicknameAndIdNot`을 TDD로 추가했다. 벌크 UPDATE는 영속성 컨텍스트를 우회하므로 테스트에서 `EntityManager.clear()` 후 재조회로 `consumedAt` 값을 검증했고, 재사용·만료·타인 소유 케이스가 모두 0을 반환함을 실제 MySQL로 확인했다.
 - 02:59 — Issue #54 Task 2: `User.changeNickname`(닉네임+`updatedAt`만 갱신)과 `AuthService.changeNickname`(가입 방식은 DB의 `SocialAccount`로 판별, 이메일은 비밀번호 대조·OAuth는 sha256 해시로 `consumeIfValidForUser` 소비, 사전 중복 확인 + `saveAndFlush`의 `DataIntegrityViolationException` 둘 다로 409 방어)을 TDD로 추가해 `AuthServiceTest` 47/47이 통과했다. 새 의존성·ErrorCode·마이그레이션은 추가하지 않았고, 계획 D5의 비밀번호 대조는 `passwordHash` null 방어 없이 그대로 구현했다(EMAIL 분기는 `SocialAccount`가 없는 회원만 도달하므로 null이 나올 수 없다).
 - 04:20 — Issue #54 Task 4: `NicknameChangeIntegrationTest` 4건을 실제 MySQL(Docker 가용)에서 통과시켰다. OAuth 준비는 커밋된 상태를 실제로 재조회해야 해서 `@Transactional` 롤백형 MockMvc 콜백 대신 `authService.oauthLogin` + Issue #53 `reauthenticate` 서비스 경로로 유니크 데이터를 만들었고(고정 `fake-oauth-user`·고정 이메일 충돌 회피), 계좌 불변은 `id·market·cashBalance·seedMoney·realizedPnl·createdAt·updatedAt` 스냅샷 비교로 검증했다. 주문·체결 도메인은 부재해 계획 미확정 6번대로 제외했다.
-- 03:25 — Issue #54 Task 5: HEAD `fca5233`(코드 워킹트리 clean) 상태에서 전체 `build`(Spotless·SpotBugs·JaCoCo 40% 포함)를 돌려 564 tests 전부 통과했다. `docs/api-routes.md`는 Task 3에서 이미 라우트·상세 계약·보호 경로를 갱신해 두었고 실제 `AuthController`의 `@PatchMapping("/me/nickname")`과 일치함을 확인해 추가 변경이 없었으며, `tasks.md`의 JWT·Security 항목에 Issue #54 완료를 명시하고 작업 항목 5개 절을 추가했다. 코드 수정은 필요 없었다.
+- 03:25 — Issue #54 Task 5: HEAD `fca5233`(코드 워킹트리 clean) 상태에서 전체 `build`(Spotless·SpotBugs·JaCoCo 40% 포함)를 돌려 564 tests 전부 통과했다. `ai/api-routes.md`는 Task 3에서 이미 라우트·상세 계약·보호 경로를 갱신해 두었고 실제 `AuthController`의 `@PatchMapping("/me/nickname")`과 일치함을 확인해 추가 변경이 없었으며, `tasks.md`의 JWT·Security 항목에 Issue #54 완료를 명시하고 작업 항목 5개 절을 추가했다. 코드 수정은 필요 없었다.
 - 03:35 — Issue #54 Task 3: `NicknameUpdateRequest`(nickname만 `@NotBlank`, 재인증 필드 2개는 선택)와 보호된 `PATCH /api/auth/me/nickname`을 TDD로 추가해 `AuthControllerTest` 59/59가 통과했다. 응답 키 집합을 `hasSize(4)`로 고정하고 `currentPassword`·`reauthToken`·`passwordHash` 부재를 명시 검증했다. 인증 없음·Refresh Bearer 케이스는 매핑 추가 전부터 Security 체인이 401로 막아 `SecurityConfig`는 수정하지 않았고, api-routes.md에 라우트·상세 계약·보호 경로를 같은 커밋에서 동기화했다.
 - 05:10 — Issue #54 리뷰 판정: 차단 0건, 권장 2·참고 4. 원자적 소비 쿼리의 소유자 조건, 단일 트랜잭션 롤백, 본인 제외 중복 확인 이중 방어, `MemberResponse` 민감 필드 미노출, `SecurityConfig`·`ErrorCode`·마이그레이션 미변경, api-routes 일치를 확인, 머지 가능.
 - 재검토 — issue-54-plan.md 미확정 1~5번 전부 "유지" 판정. 5번(소비 시 SocialAccount 재조회 없음)은 Issue #53 authorize→callback 경로가 Access JWT 인증된 principal.userId()를 서명된 state에 실어 SocialAccount 소유자 검증까지 마친 뒤에만 reauth_tokens.user_id에 바인딩함을 재확인해, 소비 시점 재조회가 보안상 불필요함을 확인. 코드 변경 없음.

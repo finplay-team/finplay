@@ -83,7 +83,7 @@
 3. **끝 판정은 오직 `hasNext`다** — 거래일이 없는 주·월, 체결이 없는 분 때문에 `content` 안의 봉 사이가 달력상 비는 것은 데이터 끝의 신호가 아니다(CANDLE-PAGE-023).
 4. **코인은 `content`의 가장 오래된 봉이 요청한 `from`보다 과거일 수 있다** — 빗썸이 "구간"이 아니라 "`to` 기준 최신 N개"를 주기 때문이며(§9-1) 페이징 이전부터의 기존 동작이다. `from`은 코인에서 하한 보장이 아니라 **조회 폭의 힌트**다. `nextCursor`는 요청 창이 아니라 실제로 돌려준 가장 오래된 봉에서 나오므로 이어받기에는 영향이 없다.
 
-`docs/api-routes.md`·`docs/api-contracts.md`에 남아 있는 **"200개를 넘는 구간을 이어붙이는 페이징은 1차 범위가 아니다"** 서술은 이 계약으로 교체한다(컨트롤러 변경과 같은 커밋, CLAUDE.md 규칙 7).
+`ai/api-routes.md`·`docs/api-contracts.md`에 남아 있는 **"200개를 넘는 구간을 이어붙이는 페이징은 1차 범위가 아니다"** 서술은 이 계약으로 교체한다(컨트롤러 변경과 같은 커밋, CLAUDE.md 규칙 7).
 
 ### 4-2. 오류
 
@@ -444,7 +444,7 @@ narrowRangeStart(instrumentId, interval, rangeStart, pastEnd) ← 역산 앵커�
 
 | 문서 | 갱신 내용 |
 |---|---|
-| `docs/api-routes.md` | 라우트 표에 `&cursor=` 추가, 응답을 `CandleListResponse`로, "페이징은 1차 범위가 아니다" 서술 교체, 근거에 048·이슈 #473 추가 |
+| `ai/api-routes.md` | 라우트 표에 `&cursor=` 추가, 응답을 `CandleListResponse`로, "페이징은 1차 범위가 아니다" 서술 교체, 근거에 048·이슈 #473 추가 |
 | `docs/api-contracts.md` | §4 전체(봉투 3필드·`cursor` 입력 명세·`to` 무시 규칙·빈 마지막 페이지·데이터 끝 판정·분 단위 내림 해석·**코인에서 `content[0]`이 `from`보다 과거일 수 있음**·오류 표) |
-| `docs/prd.md` §3 | `CANDLE-PAGE-*` 행을 **"완료"**로 추가. 근거 칸에 **PR 번호 + "주식 `1m` 과거 거래일 조회는 별도 ADR·이슈"** |
-| `docs/specs/013-candle-interval/`·`027-crypto-tick-candle-cache/` | "페이지네이션·커서 도입은 범위 제외" 문장에 **"2차 고도화(이슈 #473, 048)에서 도입됨"** 이력 표시만 추가(문장 삭제 금지) |
+| `ai/prd.md` §3 | `CANDLE-PAGE-*` 행을 **"완료"**로 추가. 근거 칸에 **PR 번호 + "주식 `1m` 과거 거래일 조회는 별도 ADR·이슈"** |
+| `ai/specs/013-candle-interval/`·`027-crypto-tick-candle-cache/` | "페이지네이션·커서 도입은 범위 제외" 문장에 **"2차 고도화(이슈 #473, 048)에서 도입됨"** 이력 표시만 추가(문장 삭제 금지) |

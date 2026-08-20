@@ -36,7 +36,7 @@ public record PriceMovePromptDto(
 	List<NewsSourceDto> sources) {
 
 	// 컬렉션 필드를 가진 record는 방어적 복사를 넣지 않으면 spotbugsMain이 EI_EXPOSE_REP으로 잡는다
-	// (docs/agent-mistakes.md 2026-07-29). 이하 record 전부 같은 이유로 compact 생성자를 둔다.
+	// (ai/agent-mistakes.md 2026-07-29). 이하 record 전부 같은 이유로 compact 생성자를 둔다.
 	public PriceMovePromptDto {
 		sources = List.copyOf(sources);
 	}

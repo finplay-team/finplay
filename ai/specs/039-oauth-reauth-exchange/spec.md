@@ -2,7 +2,7 @@
 
 > PRD 근거: AUTH-003("내 정보 수정용 OAuth 재인증은... 5분 유효·일회용 `reauthToken`을 발급한다"), AUTH-005("OAuth
 > 전용 회원의 닉네임·이메일 변경은... 유효한 일회용 `reauthToken`을 확인한다"). 이 두 요구사항이 전제하는 "재인증
-> 팝업 왕복"은 이미 코드가 있지만(`docs/specs/002-auth-account`), 프론트(`finplay-frontend`, 별도 저장소)가 그
+> 팝업 왕복"은 이미 코드가 있지만(`ai/specs/002-auth-account`), 프론트(`finplay-frontend`, 별도 저장소)가 그
 > 왕복을 실제로 구현하는 과정에서 지금 백엔드 설계로는 왕복 자체가 성립할 수 없는 결함 2건이 드러났다. 이 spec은 새
 > 기능이 아니라 **AUTH-003·AUTH-005가 이미 "된다"고 전제한 것을 실제로 되게 만드는 결함 수정**이며, 세부 계약은
 > 032·034·035·038 선례와 같은 패턴으로 이 spec 전용 네임스페이스 **`OAUTH-REAUTH-*`** 를 쓴다(PRD 본문에 새 절을
@@ -116,5 +116,5 @@ provider 계정으로 다시 로그인해 `reauthToken`을 받아 오는" 별도
 - [x] Fake OAuth로 인가 시작 → 콜백 → 302 리다이렉트 → 교환 코드로 `reauthToken` 획득 → 그 토큰으로
   `PATCH /api/auth/me/nickname` 성공까지 이어지는 통합 테스트가 통과한다.
 - [x] `./gradlew build` 통과.
-- [x] `docs/api-routes.md`·`docs/api-contracts.md`의 OAuth 재인증 관련 절이 이번 변경(새 교환 엔드포인트,
+- [x] `ai/api-routes.md`·`docs/api-contracts.md`의 OAuth 재인증 관련 절이 이번 변경(새 교환 엔드포인트,
   REAUTH 콜백 응답이 200 JSON에서 302 리다이렉트로 바뀌는 것)에 맞게 갱신된다.

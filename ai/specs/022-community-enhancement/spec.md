@@ -1,6 +1,6 @@
 # Spec: 커뮤니티 고도화 (종목 기준 분류 · 대댓글 · 사진 첨부)
 
-> PRD 근거: COM-004, COM-005, COM-006 (신설, 2차 MVP). 이 ID들의 상세는 PRD 본문에 별도 절을 두지 않고 이 spec이 정본이다 (`docs/prd.md` 4절 머리말의 EDU-PRACTICE-*·FEED-* 패턴을 따름).
+> PRD 근거: COM-004, COM-005, COM-006 (신설, 2차 MVP). 이 ID들의 상세는 PRD 본문에 별도 절을 두지 않고 이 spec이 정본이다 (`ai/prd.md` 4절 머리말의 EDU-PRACTICE-*·FEED-* 패턴을 따름).
 > 선행: `008-community` (게시물 CRUD·평면 댓글·소유권, COM-001~003). `002-auth-account`.
 > plan.md·tasks.md는 이슈별로 착수 직전 작성한다. 이슈 3개로 분리 진행 — 이슈 1개 = 그룹 1개(COM-004/005/006), spec은 공유한다 (2026-08-06 확정, `docs/team-conventions.md`의 "이슈 하나 = spec 하나" 원칙에 대한 예외).
 > 관련 이슈: #246 (COM-004 종목 기준 분류), #247 (COM-005 대댓글), #248 (COM-006 사진 첨부).
@@ -99,5 +99,5 @@
 - [x] 미첨부 게시물 하위 호환(기존 COM-001 시나리오) 회귀 테스트 통과.
 
 ### 공통
-- [x] `docs/api-routes.md`·`docs/api-contracts.md`를 각 이슈 구현 커밋에서 갱신.
+- [x] `ai/api-routes.md`·`docs/api-contracts.md`를 각 이슈 구현 커밋에서 갱신.
 - [x] `./gradlew build` 통과.

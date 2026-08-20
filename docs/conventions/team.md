@@ -17,4 +17,4 @@
   - **큰 루프** — 범위 밖 문제·새 기능은 새 이슈로 분리한다.
   - 리뷰 코멘트를 새 이슈로 흩뿌리지 않는다.
 - 코드 리뷰에서 확인할 구조 점검 항목은 `docs/conventions/code.md`의 "리뷰 체크 질문"에 있다.
-- 에이전트 기반 리뷰 절차는 `/review-pr` 스킬과 `docs/adr/0008-four-agent-roster.md`를 따른다.
+- 에이전트 기반 리뷰 절차는 `/review-pr` 스킬과 `ai/adr/0008-four-agent-roster.md`를 따른다.

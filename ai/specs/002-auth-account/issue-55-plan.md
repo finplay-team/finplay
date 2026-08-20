@@ -4,7 +4,7 @@
 
 **Goal:** `POST /api/auth/email-changes`를 신설해 인증 사용자의 새 이메일 소유권 확인을 위한 6자리 인증번호를 발송한다. 이메일 회원은 현재 비밀번호로, OAuth 전용 회원은 Issue #53의 5분 유효·일회용 `reauthToken`으로 재인증하며, 검증에 성공해야만 발송한다. 확인·실제 `users.email` 변경·Refresh Token 폐기는 후속 이슈로 미룬다.
 
-**관련 정본:** GitHub Issue #55, PRD `AUTH-005` (`docs/prd.md` 268-289행), `docs/specs/002-auth-account/spec.md`, `docs/specs/002-auth-account/plan.md`, Issue #53 계획(`issue-53-plan.md`, 재인증 토큰 발급), ADR-0002, ADR-0003, ADR-0004, `docs/conventions.md`
+**관련 정본:** GitHub Issue #55, PRD `AUTH-005` (`ai/prd.md` 268-289행), `ai/specs/002-auth-account/spec.md`, `ai/specs/002-auth-account/plan.md`, Issue #53 계획(`issue-53-plan.md`, 재인증 토큰 발급), ADR-0002, ADR-0003, ADR-0004, `docs/conventions.md`
 
 **선행:** Issue #2·#3·#8·#53이 `dev`에 있다 — `User`·`SocialAccount`·`Account` 엔티티/마이그레이션(V1·V2), `GET /api/auth/me`(EMAIL/OAuth 판별 패턴), `AuthService.reauthenticate`로 발급되는 5분 유효·일회용 `reauthToken`과 `reauth_tokens` 테이블(V5, `token_hash`·`expires_at`·`consumed_at`).
 
@@ -56,7 +56,7 @@ Java 17, Spring Boot 4.1, Spring Data JPA, MySQL 8.4(Testcontainers), Spring Sec
 - `POST /api/auth/email-changes` — Bearer 인증 필수, 재인증 증명 검증, 새 이메일 중복 검사, 발송 제한 판정, 인증번호 생성·HMAC 저장·발송.
 - `email_change_verifications` Flyway 마이그레이션, `EmailChangeVerification` 엔티티, `EmailChangeVerificationRepository`.
 - `ReauthTokenRepository.consumeIfValidForUser(tokenHash, userId, now)` 추가(Issue #54와 조율 완료된 공유 설계).
-- `docs/api-routes.md` 동기화.
+- `ai/api-routes.md` 동기화.
 
 ### 제외
 
@@ -200,8 +200,8 @@ public void requestEmailChange(Long userId, String newEmail, String currentPassw
 
 ### Documentation files to modify after implementation
 
-- `docs/api-routes.md`
-- `docs/specs/002-auth-account/tasks.md`
+- `ai/api-routes.md`
+- `ai/specs/002-auth-account/tasks.md`
 
 ---
 
@@ -226,7 +226,7 @@ public void requestEmailChange(Long userId, String newEmail, String currentPassw
 
 - [ ] Fake `EmailSender` + Testcontainers MySQL로 EMAIL/OAuth 각 성공 흐름과 실패 시나리오 전후 `users`·`accounts`·`orders`·`executions` 등 기존 데이터 불변, `email_change_verifications`에 해시만 저장됨을 검증한다.
 - [ ] 대상 단위·슬라이스·통합 테스트 전체와 기존 회귀 스위트, Spotless, `./gradlew build`를 실행한다.
-- [ ] `docs/api-routes.md`에 `POST /api/auth/email-changes` 라우트를 추가하고 `docs/specs/002-auth-account/tasks.md`에 Issue #55 작업 항목 절을 추가한다.
+- [ ] `ai/api-routes.md`에 `POST /api/auth/email-changes` 라우트를 추가하고 `ai/specs/002-auth-account/tasks.md`에 Issue #55 작업 항목 절을 추가한다.
 
 ---
 
@@ -238,7 +238,7 @@ public void requestEmailChange(Long userId, String newEmail, String currentPassw
 - [ ] 재발송 시 같은 회원·같은 새 이메일의 이전 인증번호가 즉시 무효화되어 유효한 코드가 최대 1개임이 검증된다.
 - [ ] 발송 성공·실패와 무관하게 기존 `users.email`·계좌·잔액·주문·체결·투자일기가 불변임이 MySQL 통합 테스트로 확인된다.
 - [ ] `email_change_verifications`가 인증번호 원문을 저장하지 않고 HMAC 해시만 저장한다.
-- [ ] `docs/api-routes.md`가 실제 Controller 매핑과 일치한다.
+- [ ] `ai/api-routes.md`가 실제 Controller 매핑과 일치한다.
 - [ ] `./gradlew build`(Spotless·SpotBugs·JaCoCo 포함)가 통과한다.
 
 ---

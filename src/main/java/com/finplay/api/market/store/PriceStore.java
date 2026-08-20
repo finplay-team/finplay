@@ -39,7 +39,7 @@ public class PriceStore {
 
 	// 동일 심볼의 과거 틱(수신시각이 현재 저장된 값보다 이전 또는 같음)은 최신 틱을 덮어쓰지 못한다 (spec.md MKT-003).
 	// 이 가드는 receivedAt(체결 시각)끼리만 비교한다 — REST 폴러(recordObservation)가 항상 "지금" 시각을 관측 시각으로
-	// 남기더라도 이 가드에는 영향을 주지 않는다(PRICE-REST-003, docs/specs/034-crypto-price-rest-backup/plan.md).
+	// 남기더라도 이 가드에는 영향을 주지 않는다(PRICE-REST-003, ai/specs/034-crypto-price-rest-backup/plan.md).
 	// 이 분기를 통과해 실제로 최신값을 갱신했을 때만 CryptoPriceUpdatedEvent를 publish한다 (015-limit-order LMT-002 트리거,
 	// spec.md 확정된 설계 결정 3번). 일반 ApplicationEvent다 — 가격 수신이 DB 트랜잭션이 아니므로 AFTER_COMMIT 대상이 없다.
 	// 가드를 통과하면 observedAt(관측 시각)도 "지금"으로 함께 갱신한다 — 체결이 신선함을 웹소켓 수신 자체로도
@@ -63,7 +63,7 @@ public class PriceStore {
 	// REST 폴러(BithumbRestTickerPoller) 전용 — "이 가격이 지금도 최신"임을 재확인했다는 뜻으로 observedAt은
 	// 항상 갱신한다. price는 저장된 값과 실제로 다를 때만 갱신하고, receivedAt(체결 시각)은 원칙적으로 절대
 	// 건드리지 않는다 — REST는 체결 시각을 모르고 "폴링한 시각"만 알기 때문에 여기 채워 넣으면 MKT-003 가드가
-	// 오염된다(PRICE-REST-001·002, docs/specs/034-crypto-price-rest-backup/plan.md).
+	// 오염된다(PRICE-REST-001·002, ai/specs/034-crypto-price-rest-backup/plan.md).
 	// 예외 — 이 심볼의 웹소켓 체결을 한 번도 받은 적 없을 때(서버 재시작 직후 REST가 그 심볼의 첫 웹소켓
 	// 체결보다 먼저 도착하는 경우 등)만 receivedAt도 observedAt과 같은 값으로 부트스트랩한다. 그러지 않으면
 	// getLatestPrice가 receivedAt 없음을 이유로 계속 Optional.empty()를 돌려줘, REST가 신선한 가격을 확보했는데도
@@ -121,7 +121,7 @@ public class PriceStore {
 	}
 
 	// 주어진 시각이 10초를 초과하면 stale(유효하지 않음)로 판정한다. 판정 기준 시각은 관측 시각(observedAt)이다
-	// (PRICE-REST-001, docs/specs/034-crypto-price-rest-backup) — 호출자가 CryptoPriceDto.observedAt()을 넘겨야
+	// (PRICE-REST-001, ai/specs/034-crypto-price-rest-backup) — 호출자가 CryptoPriceDto.observedAt()을 넘겨야
 	// REST 폴링이 신선도를 유지하는 효과가 실제로 반영된다. 표시·체결 판정(PriceQueryService)은 036 이후 이
 	// 메서드를 더 이상 호출하지 않는다 — 지금은 isPriceAvailable() 경유로 CryptoPriceSnapshotService(변동 카드
 	// 재료 신뢰도 게이트, PRICE-NOSTALE-004)만 이 stale 개념을 쓴다.
@@ -132,7 +132,7 @@ public class PriceStore {
 
 	// 연결이 끊겼거나 최신 틱이 stale이면 유효하지 않은 가격으로 판정한다. PriceQueryService의 코인 표시·체결
 	// 경로는 이 메서드를 호출하지 않는다 — 036 이후 관측 시각과 무관하게 항상 AVAILABLE로 취급한다(PRICE-NOSTALE-001,
-	// docs/specs/036-remove-crypto-stale-status). CryptoPriceSnapshotService(변동 카드 재료 신뢰도 게이트,
+	// ai/specs/036-remove-crypto-stale-status). CryptoPriceSnapshotService(변동 카드 재료 신뢰도 게이트,
 	// PRICE-NOSTALE-004)는 여전히 이 메서드로 stale 심볼을 건너뛴다.
 	public boolean isPriceAvailable(String symbol) {
 		if (getConnectionStatus() != FeedConnectionStatus.CONNECTED) {

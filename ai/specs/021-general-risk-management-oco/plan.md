@@ -12,7 +12,7 @@
 
 ## 착수 제한
 
-이 문서는 계약·스키마·잠금 설계만 확정한다. production, Controller, migration, `docs/api-routes.md`, `docs/api-contracts.md`를 변경하지 않는다. 아래 계약은 후속 구현 이슈의 계약이며 구현 전에는 실제 사용 가능하다고 문서화하지 않는다.
+이 문서는 계약·스키마·잠금 설계만 확정한다. production, Controller, migration, `ai/api-routes.md`, `docs/api-contracts.md`를 변경하지 않는다. 아래 계약은 후속 구현 이슈의 계약이며 구현 전에는 실제 사용 가능하다고 문서화하지 않는다.
 
 ## 라우트 재사용 결정
 

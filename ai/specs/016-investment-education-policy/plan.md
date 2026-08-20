@@ -8,7 +8,7 @@
 - Spec 번호: 011은 order-ledger가 점유하고 013은 원격 `feat/143-candle-interval`에서 사용하며 014 ranking·015 limit가 예약되어 있어 016을 사용한다.
 
 ## 착수 제한
-- 현재 #158 범위는 상세 API 계약·구현 순서 확정뿐이다. production, Controller, migration, `docs/api-routes.md`, `docs/api-contracts.md`를 변경하지 않는다.
+- 현재 #158 범위는 상세 API 계약·구현 순서 확정뿐이다. production, Controller, migration, `ai/api-routes.md`, `docs/api-contracts.md`를 변경하지 않는다.
 - 아래 API는 후속 구현 이슈의 계약이며 구현 전에는 실제 사용 가능하다고 문서화하지 않는다.
 
 ## 도메인 경계
@@ -81,7 +81,7 @@ OCO 요청 fingerprint는 UTF-8 canonical JSON의 SHA-256이다. key 순서는 `
 - `FavoriteCreateRequest(Long instrumentId)`: non-null·양수.
 - `FavoriteResponse(Long favoriteId, Long instrumentId, String market, String symbol, String name, LocalDateTime createdAt)`: 모두 non-null, `market` 허용값은 `STOCK|CRYPTO`.
 - `FavoriteListResponse(List<FavoriteResponse> content)`: non-null, 없으면 빈 배열.
-- `PracticeIntentionCreateRequest`: 공통 `instrumentId`, `quantity`, 선택 `exitPriceType`; PRICE는 `stopLoss`, `takeProfit`, PERCENT는 `stopLossRate`, `takeProfitRate`만 허용한다. 기존 타입 생략+가격 둘은 PRICE다. 정밀도·nullable 조합은 `docs/specs/019-exit-price-policy`를 따른다. **PERCENT는 019 구현 전까지 production에 없다 — 그 전까지는 PRICE(또는 타입 생략)만 실제로 제공한다.**
+- `PracticeIntentionCreateRequest`: 공통 `instrumentId`, `quantity`, 선택 `exitPriceType`; PRICE는 `stopLoss`, `takeProfit`, PERCENT는 `stopLossRate`, `takeProfitRate`만 허용한다. 기존 타입 생략+가격 둘은 PRICE다. 정밀도·nullable 조합은 `ai/specs/019-exit-price-policy`를 따른다. **PERCENT는 019 구현 전까지 production에 없다 — 그 전까지는 PRICE(또는 타입 생략)만 실제로 제공한다.**
 - `PracticeIntentionResponse`: 공통 식별자·수량·`exitPriceType`·생성시각, PRICE에서만 non-null인 가격 둘과 PERCENT에서만 non-null인 rate 둘을 반환한다. (PERCENT 필드는 019 구현 전까지 항상 null이다.)
 - `ExitPlanCreateRequest(Long intentionId, Long buyTradeId, Long instrumentId, BigDecimal quantity)`: 모두 non-null·양수; ids는 positive `Long`, quantity는 `@Digits(integer=22, fraction=8)`.
 - `ExitPlanResponse`: 기존 식별자·수량·entry/baseline/status/시각에 `exitPriceType`, PERCENT에서만 non-null인 원본 rate 둘, 항상 non-null인 `stopLossPrice`, `takeProfitPrice`를 반환한다. `replaySessionId`는 코인만 null이고 terminal nullable 규칙은 유지한다.
@@ -184,7 +184,7 @@ OCO 복기는 요청 exit plan의 market으로 OCO tutorial key를 결정해 그
 - 합성 시세(#193): 응답이 `tickSeconds=3`, `prices` 크기 약 100, 모든 가격이 양수인지, 존재하지 않는 종목은 404인지, 같은 종목을 연속 호출해도 매번 새 시계열인지(값이 항상 동일하지 않음을 확률적으로 확인) `@WebMvcTest`/단위 테스트로 검증한다.
 
 ## 후속 구현 이슈 후보
-각 후보는 API 하나 또는 원자적 트랜잭션 경계 하나만 소유한다. 번호는 권장 착수 순서일 뿐이며 실제 착수 가능 여부는 각 항목에 적은 선행 후보 DAG로 판단한다. 이슈는 미리 일괄 생성하지 않고 선행 gate를 만족해 실제 착수할 후보 하나만 생성한다. Controller를 실제 변경한 후보만 같은 커밋에서 `docs/api-routes.md`와 `docs/api-contracts.md`를 동기화한다.
+각 후보는 API 하나 또는 원자적 트랜잭션 경계 하나만 소유한다. 번호는 권장 착수 순서일 뿐이며 실제 착수 가능 여부는 각 항목에 적은 선행 후보 DAG로 판단한다. 이슈는 미리 일괄 생성하지 않고 선행 gate를 만족해 실제 착수할 후보 하나만 생성한다. Controller를 실제 변경한 후보만 같은 커밋에서 `ai/api-routes.md`와 `docs/api-contracts.md`를 동기화한다.
 
 실제 topological 착수 순서는 `1 → (2·3·4 병렬 가능)`, `5·6 독립`, `4+5+6 → 7`, `7 → (8·9·13 병렬 가능)`, `2+4+7+8 → 12`, `7+13 → 10`, `7+10 → 11`, `3+10+11+12+13 → 14`, `6 → 15`다. 한 건씩 이슈를 생성할 때도 이 topo와 gate를 사용한다.
 

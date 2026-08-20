@@ -2,7 +2,7 @@
 
 - 상태: 승인됨
 - 날짜: 2026-08-10
-- 관계: [ADR-0016](0016-review-gate-auto-fix-round.md)(PR 오픈 이후 구간의 "이력 코멘트는 always(), 판정·승인은 !cancelled()" 원칙을 그대로 물려받아 적용 범위만 PR 생성 전 구간으로 넓힌다 — ADR-0016 본문은 수정하지 않는다). GitHub 이슈 #311, `docs/specs/029-pr-fallback-comment/spec.md`·`plan.md`를 구체화한다.
+- 관계: [ADR-0016](0016-review-gate-auto-fix-round.md)(PR 오픈 이후 구간의 "이력 코멘트는 always(), 판정·승인은 !cancelled()" 원칙을 그대로 물려받아 적용 범위만 PR 생성 전 구간으로 넓힌다 — ADR-0016 본문은 수정하지 않는다). GitHub 이슈 #311, `ai/specs/029-pr-fallback-comment/spec.md`·`plan.md`를 구체화한다.
 
 ## 맥락
 
@@ -16,7 +16,7 @@ ADR-0016은 `implement-and-open-pr` job이 PR을 연 뒤의 모든 정지 지점
   - `implement_failure_comment` — 구현 에이전트 호출(`id: implement`)이 `outcome != 'success'`.
   - `build_failure_issue_comment` — 구현은 성공했지만 러너의 빌드 검증(`id: build`)이 `outcome != 'success'`.
   - `pr_lookup_failure_comment` — 빌드는 성공했지만 PR 번호 조회(`id: pr`)가 `outcome != 'success'`(빈 `NUMBER`로 인한 기존 `exit 1` 포함).
-- 세 조건은 각각 바로 앞 스텝의 `outcome == 'success'`를 전제로 걸어 상호 배타를 구조적으로 보장한다 — 정상 흐름(구현 → 빌드 → PR 오픈 모두 성공)에서는 셋 다 스킵되고, 실패 흐름에서는 정확히 하나만 발화한다. 도달 가능한 outcome 조합을 전수 검토해 확인했다(`docs/specs/029-pr-fallback-comment/plan.md`).
+- 세 조건은 각각 바로 앞 스텝의 `outcome == 'success'`를 전제로 걸어 상호 배타를 구조적으로 보장한다 — 정상 흐름(구현 → 빌드 → PR 오픈 모두 성공)에서는 셋 다 스킵되고, 실패 흐름에서는 정확히 하나만 발화한다. 도달 가능한 outcome 조합을 전수 검토해 확인했다(`ai/specs/029-pr-fallback-comment/plan.md`).
 - ADR-0016이 이미 세운 원칙을 그대로 따른다 — 이력 코멘트라 `always()`를 쓰고, 대상 판정은 `outcome == 'failure'`가 아니라 `outcome != 'success'`로 통일한다(취소된 스텝의 `outcome`은 `cancelled`이지 `failure`가 아니므로). 코멘트 본문은 "실패했습니다"로 단정하지 않고 실제 `outcome` 값을 함께 찍는다.
   - `implement_failure_comment`만 예외로 앞 스텝(`implement`)이 `skipped`인 경우(예: `checkout` 실패로 인한 연쇄 스킵)까지 잡는다 — `implement` 앞에는 조건부 스텝이 없어 이 스텝이 유일하게 항상 `always()`로 도는 앞단 게이트이기 때문이다.
 - 코멘트 본문에 Actions 실행 링크(`${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`)를 포함한다 — 이슈 #311이 지목한 실제 장애(이슈 #276)가 "Actions 탭을 직접 확인하지 않으면 알 방법이 없었다"는 것이었다.

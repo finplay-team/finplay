@@ -3,18 +3,18 @@
 ## 관련 문서
 
 - Spec: `./spec.md`
-- 원 계약: `docs/specs/003-market-data/spec.md` §MKT-005 데이터 수집과 보관
-- ADR-0014 (`docs/adr/0014-crypto-watch-lock.md`) — 다중 인스턴스 중복 방지에 Redis 분산 락을 쓴 선례. `RedisLock`
+- 원 계약: `ai/specs/003-market-data/spec.md` §MKT-005 데이터 수집과 보관
+- ADR-0014 (`ai/adr/0014-crypto-watch-lock.md`) — 다중 인스턴스 중복 방지에 Redis 분산 락을 쓴 선례. `RedisLock`
   (획득·해제 메커니즘)이 ADR-0015 §4에서 `com.finplay.api.feedback.service`로 이미 추출·재사용 가능한 상태다.
-- ADR-0015 (`docs/adr/0015-feedback-query-cache.md` §4) — `RedisLock` 추출 근거. "재사용이 실제로 필요해지면 그때
+- ADR-0015 (`ai/adr/0015-feedback-query-cache.md` §4) — `RedisLock` 추출 근거. "재사용이 실제로 필요해지면 그때
   추출한다"(ADR-0014 §후속)의 두 번째 소비자가 §245(조회 캐시)였고, 이 spec이 **세 번째이자 첫 도메인 간
   (market → feedback) 소비자**다.
-- ADR-0020 (`docs/adr/0020-managed-service-deployment.md`) — 배포 아키텍처(EC2 + RDS·ElastiCache + 블루-그린).
-- ADR-0021 (`docs/adr/0021-continuous-deployment.md`) — 배포 실행 방식(GitHub Actions, SSM, 블루-그린 전환).
-- `docs/specs/033-exclude-tutorial-sandbox-data/spec.md` — 같은 성격(샌드박스 데이터의 실거래 인프라 누출)의 선례.
+- ADR-0020 (`ai/adr/0020-managed-service-deployment.md`) — 배포 아키텍처(EC2 + RDS·ElastiCache + 블루-그린).
+- ADR-0021 (`ai/adr/0021-continuous-deployment.md`) — 배포 실행 방식(GitHub Actions, SSM, 블루-그린 전환).
+- `ai/specs/033-exclude-tutorial-sandbox-data/spec.md` — 같은 성격(샌드박스 데이터의 실거래 인프라 누출)의 선례.
   033은 조회 경로(포트폴리오·투자일기·랭킹)에서 걸러냈고, 이 spec은 **수집 배치의 조회 대상**에서 걸러낸다는
   점이 다르다.
-- ADR-0004 (`docs/adr/0004-flyway-migrations.md`) — 이 spec은 스키마 변경이 없어 §결정 7(파괴적 변경 2배포 분리)
+- ADR-0004 (`ai/adr/0004-flyway-migrations.md`) — 이 spec은 스키마 변경이 없어 §결정 7(파괴적 변경 2배포 분리)
   적용 대상이 아니다.
 
 ## 배경 조사
@@ -49,7 +49,7 @@ ADR-0020·ADR-0021 본문에서 **설계 자체가 이미 다중 컨테이너 �
 - `ClockConfig`가 `Clock.system(ZoneId.of("Asia/Seoul"))`을 반환하고, `KisHistoricalCandleCollector.collect()`·
   `StockReplaySessionScheduler.resolveTodaySession()` 둘 다 `@Scheduled(cron = "...", zone = "Asia/Seoul")`로
   `zone`을 명시한다. 둘 다 최초 구현 커밋(`43eac525`, 이슈 자체가 확인)부터 있었다.
-- 이 저장소의 알려진 함정(`CryptoFeedbackBatchService`의 주석, `docs/agent-mistakes.md` 계열) — "`zone`을
+- 이 저장소의 알려진 함정(`CryptoFeedbackBatchService`의 주석, `ai/agent-mistakes.md` 계열) — "`zone`을
   빠뜨리면 배포 JVM 기본(UTC)으로 9시간 밀린다" — 은 **여기 해당하지 않는다**. Spring의 `@Scheduled` cron
   트리거는 `zone` 속성이 있으면 JVM 기본 타임존과 무관하게 그 zone으로 다음 실행 시각을 계산한다. `zone`이
   이미 명시돼 있으므로 이 알려진 함정과 같은 메커니즘으로는 설명되지 않는다(이슈 본문도 같은 결론).

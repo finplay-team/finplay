@@ -3,7 +3,7 @@
 ## 관련 문서
 - Spec: `./spec.md`
 - 관련 ADR: ADR-0002(레이어드 아키텍처, 도메인 패키지), ADR-0004(Flyway 마이그레이션), ADR-0003(테스트 전략)
-- **명시적으로 대체하지 않는 문서**: `docs/adr/0012-tutorial-state-in-memory.md` — 이 ADR은 `com.finplay.api.favorite`(튜토리얼 전용) 범위만 다루며 이 spec은 그 범위 밖의 새 도메인이다.
+- **명시적으로 대체하지 않는 문서**: `ai/adr/0012-tutorial-state-in-memory.md` — 이 ADR은 `com.finplay.api.favorite`(튜토리얼 전용) 범위만 다루며 이 spec은 그 범위 밖의 새 도메인이다.
 
 ## 도메인·라우트 명명 결정
 

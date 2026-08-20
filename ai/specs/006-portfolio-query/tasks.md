@@ -23,7 +23,7 @@
   - Testcontainers 기반 기존 통합 테스트 파일(또는 인접 파일)에 시나리오 추가: 이슈 #13 매수 API로 실제 주문 데이터 생성(여러 건, 가능하면 타인 주문 포함) → `GET /api/orders` 호출 → 본인 범위·최신순·필드 계약·타인 주문 제외·체결 필드 미노출을 한 시나리오에서 검증.
   - 주문이 없는 신규 사용자에 대한 200 빈 배열 케이스 포함.
 
-- [x] **문서 동기화: `docs/api-routes.md` · `docs/api-contracts.md`**
+- [x] **문서 동기화: `ai/api-routes.md` · `docs/api-contracts.md`**
   - `api-routes.md` 라우트 표에 `GET /api/orders` 행 추가(Spec 컬럼에 `006 PORT-003, Issue #21` 표기).
   - `api-contracts.md`의 `## order` 절에 "내 주문 목록 조회" 표 추가 — 요청 없음, 성공 200 예시(`OrderListItemResponse[]`), 오류 401만.
   - 같은 커밋에서 두 문서를 함께 갱신(CLAUDE.md 규칙 7).
@@ -77,9 +77,9 @@
 - [x] **통합 테스트: 매수 파이프라인 기반 계좌 요약 시나리오**
   - Testcontainers 기반 통합 테스트(기존 매수 통합 테스트 파일 인접 또는 신규 `AccountSummaryIntegrationTest`)에 시나리오 추가: 회원가입 직후 빈 계좌 200(모두 0, `cashBalance`는 초기 시드머니) → 매수 API로 실제 매수 실행 후 재조회해 6개 값이 원장·시세 기준으로 정확히 일치 → 시세 무효 종목 보유 상황에서도 예외 없이 200(해당 종목 합산 제외 확인) → 타인 계좌 매수가 본인 조회에 섞이지 않음.
 
-- [x] **문서 동기화: `docs/prd.md` · `docs/api-routes.md` · `docs/api-contracts.md`**
-  - `docs/prd.md` ACCT-002 절에 수익률 필드를 추가(계산식 근거 명시, #51이 동일 계산식을 재사용함을 명시).
-  - `docs/api-routes.md` 라우트 표에 `GET /api/accounts/summary?market=` 행 추가(Spec 컬럼에 `006 ACCT-002, Issue #81` 표기).
+- [x] **문서 동기화: `ai/prd.md` · `ai/api-routes.md` · `docs/api-contracts.md`**
+  - `ai/prd.md` ACCT-002 절에 수익률 필드를 추가(계산식 근거 명시, #51이 동일 계산식을 재사용함을 명시).
+  - `ai/api-routes.md` 라우트 표에 `GET /api/accounts/summary?market=` 행 추가(Spec 컬럼에 `006 ACCT-002, Issue #81` 표기).
   - `docs/api-contracts.md`에 신규 `## account` 절 추가 — 요청(쿼리 `market` 필수), 성공 200 예시(`AccountSummaryResponse` 6개 필드), 오류(400 `VALIDATION_ERROR`, 401 `UNAUTHORIZED`) 표.
   - 같은 커밋에서 세 문서를 함께 갱신(CLAUDE.md 규칙 7).
 
@@ -115,9 +115,9 @@
   - Testcontainers 기반 통합 테스트(신규 `HoldingIntegrationTest` 또는 기존 매수 통합 테스트 파일 인접)에 시나리오 추가: 2종목 매수 후 1종목 전량 매도 → `GET /api/holdings?market=` 호출 → 매도한 종목이 목록에서 제외되고 남은 종목의 6개 값(수량·평균단가·현재가·평가금액·미실현손익·수익률)이 원장·시세 기준으로 정확한지 검증(spec 완료 조건 직접 구현).
   - 보유 종목 없는 신규 계좌 → 200 빈 배열, 타인 계좌 보유가 섞이지 않음, `market` 누락/잘못된 값 400·비로그인 401 최소 1건 확인.
 
-- [x] **문서 동기화: `docs/prd.md` · `docs/api-routes.md` · `docs/api-contracts.md`**
-  - `docs/prd.md` PORT-001 절에 현재가·수익률 필드를 추가(plan.md 문서 동기화 절 참고).
-  - `docs/api-routes.md` 라우트 표에 `GET /api/holdings?market=` 행 추가(Spec 컬럼에 `006 PORT-001, Issue #52` 표기).
+- [x] **문서 동기화: `ai/prd.md` · `ai/api-routes.md` · `docs/api-contracts.md`**
+  - `ai/prd.md` PORT-001 절에 현재가·수익률 필드를 추가(plan.md 문서 동기화 절 참고).
+  - `ai/api-routes.md` 라우트 표에 `GET /api/holdings?market=` 행 추가(Spec 컬럼에 `006 PORT-001, Issue #52` 표기).
   - `docs/api-contracts.md`에 신규 `## portfolio` 절 추가 — 요청(쿼리 `market` 필수), 성공 200 예시(`HoldingListItemResponse[]`, 시세 유효/무효 각 1건 포함), 오류(400 `VALIDATION_ERROR`, 401 `UNAUTHORIZED`) 표. 시세 무효 항목의 표현 정책(4개 필드 `null` + `priceStatus`)을 본문에 명시.
   - 같은 커밋에서 세 문서를 함께 갱신(CLAUDE.md 규칙 7).
 
@@ -156,8 +156,8 @@
   - `limit`을 데이터 건수보다 작게 설정해 `nextCursor`를 따라가며 전체를 여러 페이지로 수집한 결과가, 커서 없이 큰 `limit`으로 한 번에 조회한 결과와 항목 집합·순서가 정확히 일치하는지 검증(중복·누락 없음의 최종 근거, spec 완료 조건).
   - 타인 계좌 체결이 섞이지 않는지, 손상된 `cursor`·`market` 누락 400과 비로그인 401 최소 1건씩, 체결내역 없는 신규 계좌 200 빈 배열 확인.
 
-- [x] **문서 동기화: `docs/api-routes.md` · `docs/api-contracts.md`**
-  - `docs/api-routes.md` 라우트 표에 `GET /api/trades?market=&cursor=&limit=` 행 추가(Spec 컬럼에 `006 PORT-002, Issue #82` 표기).
+- [x] **문서 동기화: `ai/api-routes.md` · `docs/api-contracts.md`**
+  - `ai/api-routes.md` 라우트 표에 `GET /api/trades?market=&cursor=&limit=` 행 추가(Spec 컬럼에 `006 PORT-002, Issue #82` 표기).
   - `docs/api-contracts.md`의 `## order` 절에 "내 체결 내역 조회" 표 추가 — 요청(쿼리 `market` 필수, `cursor`·`limit` 선택), 성공 200 예시(매수·매도 각 1건, `nextCursor`·`hasNext` 포함), 오류(400 `VALIDATION_ERROR` — `market`·손상된 `cursor`·`limit` 범위 세 경우 모두, 401 `UNAUTHORIZED`).
   - 같은 커밋에서 두 문서를 함께 갱신(CLAUDE.md 규칙 7).
 
@@ -186,7 +186,7 @@
   - Testcontainers 기반 통합 테스트(신규 `PortfolioSummaryIntegrationTest` 또는 기존 `AccountSummaryIntegrationTest` 인접)에 시나리오 추가: 회원가입 직후 빈 계좌 상태에서 `GET /api/portfolio` → 200, `totalValue = 2 × 초기 시드머니`·`unrealizedPnl=0`·`realizedPnl=0`·`returnRate=0`(spec 완료 조건 "빈 계좌"). `STOCK`만 매수 실행 후 `GET /api/accounts/summary?market=STOCK`·`market=CRYPTO` 각각과 `GET /api/portfolio`를 비교해 4개 필드가 두 시장 요약의 정확한 합인지 검증(spec 완료 조건 "단일 시장 보유"). 양 시장 모두 매수 실행 후 동일하게 비교 검증(spec 완료 조건 "양 시장 보유").
   - 타인 계좌의 매수·보유가 본인 포트폴리오 합산에 섞이지 않는지, 비로그인 401 최소 1건 확인.
 
-- [x] **문서 동기화: `docs/api-routes.md` · `docs/api-contracts.md`**
-  - `docs/api-routes.md` 라우트 표에 `GET /api/portfolio` 행 추가(도메인 컬럼 `portfolio`, Spec 컬럼에 `006 ACCT-003, Issue #51` 표기).
+- [x] **문서 동기화: `ai/api-routes.md` · `docs/api-contracts.md`**
+  - `ai/api-routes.md` 라우트 표에 `GET /api/portfolio` 행 추가(도메인 컬럼 `portfolio`, Spec 컬럼에 `006 ACCT-003, Issue #51` 표기).
   - `docs/api-contracts.md`의 기존 `## portfolio` 절(이슈 #52가 신설)에 "전체 포트폴리오 합산 요약 조회" 표 추가 — 요청 없음(쿼리·본문 모두 없음, 인증만), 성공 200 예시(`PortfolioSummaryResponse` 4개 필드), 오류 401 `UNAUTHORIZED`만(400 `market` 케이스가 없음을 명시).
   - 같은 커밋에서 두 문서를 함께 갱신(CLAUDE.md 규칙 7).

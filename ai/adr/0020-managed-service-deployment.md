@@ -2,11 +2,11 @@
 
 - 상태: 승인됨
 - 날짜: 2026-08-11
-- 관계: 이슈 #326. `docs/specs/010-deployment`의 배포 아키텍처 정본. ADR-0014(코인 감시 Redis 락)·ADR-0015(조회 캐시 Redis 락)·ADR-0018(코인 카드 SSE push)이 공통 전제로 인용해 온 **"다중 인스턴스 전환이 예정돼 있다"의 실체를 이 ADR이 정의한다** — 세 ADR은 그대로 유효하며 이 ADR이 그 전제를 사후 승인한다. `docs/specs/022-community-enhancement/plan.md`의 "이미지를 로컬 파일시스템에 저장한다"는 단일 인스턴스 전제 위에 있었고, 이 ADR이 그 전제를 없앤다 — 상세는 §맥락.
+- 관계: 이슈 #326. `ai/specs/010-deployment`의 배포 아키텍처 정본. ADR-0014(코인 감시 Redis 락)·ADR-0015(조회 캐시 Redis 락)·ADR-0018(코인 카드 SSE push)이 공통 전제로 인용해 온 **"다중 인스턴스 전환이 예정돼 있다"의 실체를 이 ADR이 정의한다** — 세 ADR은 그대로 유효하며 이 ADR이 그 전제를 사후 승인한다. `ai/specs/022-community-enhancement/plan.md`의 "이미지를 로컬 파일시스템에 저장한다"는 단일 인스턴스 전제 위에 있었고, 이 ADR이 그 전제를 없앤다 — 상세는 §맥락.
 
 ## 맥락
 
-`docs/specs/010-deployment/spec.md`가 정의한 현재 배포 구조는 **EC2 한 대에 `compose.deploy.yaml`로 nginx·app·mysql·redis 네 컨테이너를 함께 올리는 것**이다. 같은 spec의 범위 제외 절이 "무중단 배포·롤백 자동화·오토스케일링"을 명시적으로 뺐다. 1차 MVP를 띄우기 위한 최소 구성으로는 타당했지만, 지금 세 방향에서 한계가 동시에 드러났다.
+`ai/specs/010-deployment/spec.md`가 정의한 현재 배포 구조는 **EC2 한 대에 `compose.deploy.yaml`로 nginx·app·mysql·redis 네 컨테이너를 함께 올리는 것**이다. 같은 spec의 범위 제외 절이 "무중단 배포·롤백 자동화·오토스케일링"을 명시적으로 뺐다. 1차 MVP를 띄우기 위한 최소 구성으로는 타당했지만, 지금 세 방향에서 한계가 동시에 드러났다.
 
 ### 상태 저장소가 EC2 인스턴스와 생명주기를 공유한다
 
@@ -24,7 +24,7 @@ ADR-0014는 `@Scheduled` 겹침 방지가 다중 인스턴스에서 사라진다
 
 ### 로컬 파일시스템 저장이 다중 인스턴스에서 깨진다
 
-`docs/specs/022-community-enhancement/plan.md`의 `LocalFileStorageService` 항목은 이 문제를 미리 적어 뒀다 — "로컬 파일시스템은 인스턴스 간에 공유되지 않는다. 이 구현은 단일 인스턴스 배포를 전제하며, 다중 인스턴스 배포로 전환하려면 `FileStorageService` 구현체를 오브젝트 스토리지로 먼저 교체해야 한다"(PR #269 리뷰). `S3FileStorageService`는 "실제로 필요해지는 시점(운영 배포 논의)에 추가한다"로 미뤄져 있었다. **지금이 그 시점이다.**
+`ai/specs/022-community-enhancement/plan.md`의 `LocalFileStorageService` 항목은 이 문제를 미리 적어 뒀다 — "로컬 파일시스템은 인스턴스 간에 공유되지 않는다. 이 구현은 단일 인스턴스 배포를 전제하며, 다중 인스턴스 배포로 전환하려면 `FileStorageService` 구현체를 오브젝트 스토리지로 먼저 교체해야 한다"(PR #269 리뷰). `S3FileStorageService`는 "실제로 필요해지는 시점(운영 배포 논의)에 추가한다"로 미뤄져 있었다. **지금이 그 시점이다.**
 
 `FileStorageService` 인터페이스가 이미 있으므로 이 교체는 구현체 하나를 추가하는 일이다 — 설계를 다시 하는 일이 아니다.
 
@@ -69,7 +69,7 @@ Single-AZ를 고른 것은 이 결정의 목적이 **고가용성이 아니라 �
 
 같은 EC2에서 blue(8081)·green(8082) 두 스택을 번갈아 띄우고 ALB의 두 타깃 그룹으로 전환한다. 새 스택이 헬스체크를 통과한 뒤에만 트래픽을 옮기고, 이전 스택은 롤백 경로로 잠시 남긴다.
 
-**ALB는 무중단만을 위한 것이 아니다.** ACM 인증서를 ALB에 붙이면 HTTPS가 해결되고, 그것이 지금 막혀 있는 **카카오·네이버 OAuth 로그인을 여는 유일한 경로**다 — `OAuthStateCookieFactory`가 `prod`에서 `OAUTH_STATE_COOKIE_SECURE=false`를 fail-fast로 거부하고(2026-07-31 실측, `docs/agent-mistakes.md`), 브라우저는 `http://`에서 `Secure` 쿠키를 저장하지 않는다. 즉 HTTPS 없이는 OAuth가 원리적으로 불가능하다. 무중단 배포와 OAuth 활성화가 같은 하나의 인프라(ALB + ACM)로 동시에 풀린다.
+**ALB는 무중단만을 위한 것이 아니다.** ACM 인증서를 ALB에 붙이면 HTTPS가 해결되고, 그것이 지금 막혀 있는 **카카오·네이버 OAuth 로그인을 여는 유일한 경로**다 — `OAuthStateCookieFactory`가 `prod`에서 `OAUTH_STATE_COOKIE_SECURE=false`를 fail-fast로 거부하고(2026-07-31 실측, `ai/agent-mistakes.md`), 브라우저는 `http://`에서 `Secure` 쿠키를 저장하지 않는다. 즉 HTTPS 없이는 OAuth가 원리적으로 불가능하다. 무중단 배포와 OAuth 활성화가 같은 하나의 인프라(ALB + ACM)로 동시에 풀린다.
 
 ### 5. 네트워크 경계는 보안 그룹 참조로 정의한다
 
@@ -99,7 +99,7 @@ RDS·ElastiCache는 **public 서브넷에 두지 않는다.** 각 전용 보안 
 - **로컬 개발과 배포의 구성이 갈라진다.** 로컬은 여전히 `compose.yaml`의 컨테이너 mysql·redis를 쓰고(`spring-boot-docker-compose`), 배포만 관리형 서비스다. TLS 설정처럼 **배포에서만 필요한 값**이 생기며, 이 차이는 로컬에서 재현되지 않는다.
 - **AWS 콘솔 설정이 문서에 없으면 복원할 수 없는 상태가 된다.** 서브넷 그룹·보안 그룹·암호화 옵션은 코드가 아니라 콘솔에 있다(IaC를 도입하지 않았다). 이 ADR과 010 spec의 기술이 사실상 유일한 정본이다.
 - **ElastiCache의 전송 중 암호화 여부는 생성 후 변경할 수 없다.** 클러스터를 다시 만들지 않는 한 클라이언트가 TLS로 맞추는 것 외의 선택지가 없다.
-- `docs/specs/022-community-enhancement/plan.md`의 로컬 저장 결정을 뒤집으므로, `S3FileStorageService` 구현과 기존 업로드 파일 이관이 **별도 작업으로 반드시 뒤따라야 한다.** 그 전까지 재배포 시 업로드 이미지 유실은 남아 있다.
+- `ai/specs/022-community-enhancement/plan.md`의 로컬 저장 결정을 뒤집으므로, `S3FileStorageService` 구현과 기존 업로드 파일 이관이 **별도 작업으로 반드시 뒤따라야 한다.** 그 전까지 재배포 시 업로드 이미지 유실은 남아 있다.
 
 ## 대안과 기각 사유
 
@@ -125,7 +125,7 @@ RDS·ElastiCache는 **public 서브넷에 두지 않는다.** 각 전용 보안 
 
 ## 후속
 
-- `S3FileStorageService` 구현과 기존 로컬 업로드 파일의 S3 이관은 **별도 이슈**로 분리한다. 이 ADR은 방향만 결정하며, 그 작업 전까지 `docs/specs/022-community-enhancement/plan.md`의 로컬 저장 전제가 코드에 남아 있다.
+- `S3FileStorageService` 구현과 기존 로컬 업로드 파일의 S3 이관은 **별도 이슈**로 분리한다. 이 ADR은 방향만 결정하며, 그 작업 전까지 `ai/specs/022-community-enhancement/plan.md`의 로컬 저장 전제가 코드에 남아 있다.
 - ALB·타깃 그룹·ACM 인증서 발급과 `compose.bluegreen.yaml` 작성은 **별도 이슈**다. 이 ADR은 그 구성을 요구할 뿐 절차를 정의하지 않는다.
 - RDS Single-AZ는 실사용자 트래픽이 붙는 시점에 Multi-AZ 전환을 재검토한다 — 무중단으로 켤 수 있으므로 지금 결정하지 않는다.
 - 다중 인스턴스를 실제로 상시 운영하게 되면 ADR-0014의 `watch-lock-ttl-seconds`, ADR-0015의 `lock-ttl-millis`·`wait-millis` 기본값을 실측으로 조정한다 — 세 ADR 모두 "다중 인스턴스 배포 후 실측해 조정한다"를 미해결로 남겨 뒀다.

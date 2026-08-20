@@ -4,7 +4,7 @@ package com.finplay.api.feedback.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
-// 값의 정본은 docs/specs/012-ai-feedback/spec.md §C-7이다. FeedbackDetectionProperties·FeedbackNewsProperties와
+// 값의 정본은 ai/specs/012-ai-feedback/spec.md §C-7이다. FeedbackDetectionProperties·FeedbackNewsProperties와
 // 같은 방침으로 yml과 @DefaultValue 양쪽에 값을 둔다 — 설정 없이도 기동하는 것을 보장하는 것은 @DefaultValue이고,
 // 운영 중 값을 바꿀 때는 항상 이기는 yml만 고친다. 두 곳이 갈리면 드리프트 테스트가 잡는다.
 //

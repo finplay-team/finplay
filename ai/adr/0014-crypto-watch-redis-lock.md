@@ -2,7 +2,7 @@
 
 - 상태: 승인됨 — 락 범위는 [ADR-0017](0017-crypto-news-ondemand-collection.md)(§결정4)이 "근거 매칭 → 필요 시 온디맨드 수집 → 재매칭" 구간을 추가해 확장한다. 그 외 결정은 유효.
 - 날짜: 2026-08-06
-- 관계: `docs/specs/012-ai-feedback` §탐지 알고리즘(코인)·§C-9의 구현을 구체화한다. 이슈 #244. ADR-0002(레이어 구조)를 따르며 기존 `com.finplay.api.feedback` 패키지 안에서 해결한다.
+- 관계: `ai/specs/012-ai-feedback` §탐지 알고리즘(코인)·§C-9의 구현을 구체화한다. 이슈 #244. ADR-0002(레이어 구조)를 따르며 기존 `com.finplay.api.feedback` 패키지 안에서 해결한다.
 
 ## 맥락
 
@@ -29,7 +29,7 @@
   - 해제: 저장한 `token`이 지금도 이 키의 값과 같을 때만 지운다(Lua 스크립트로 GET-비교-DEL을 원자적으로 묶는다 — "check-then-delete"가 두 명령이면 그 사이에 TTL 만료 후 다른 인스턴스가 잡은 락을 지울 수 있다).
   - TTL은 `feedback.crypto.watch-lock-ttl-seconds`(신설, 기본값 45) — LLM 호출 p95 3.12초·최대 4.06초(#198 실측)는 평상시 기준이고, `feedback.llm.timeout-seconds`(20)가 락 안에서 걸릴 수 있는 실제 최악 시간이다. TTL을 그 최악값의 약 2배(여유 25초)로 잡아 뉴스 매칭·DB 쓰기까지 더해도 충분한 여유를 두면서, 인스턴스가 락을 쥔 채 죽어도 45초 뒤엔 스스로 풀려 특정 코인이 영구히 막히지 않는다.
 - **위치**: `com.finplay.api.feedback.service.CryptoWatchLock` 하나만 새로 만든다. 이 이슈의 유일한 소비자이므로 범용 `DistributedLockService`로 미리 일반화하지 않는다(YAGNI) — 재사용이 실제로 필요해지면(예: #245) 그때 추출한다.
-- **spec 갱신**: `docs/specs/012-ai-feedback/spec.md`의 "코인 카드의 중복을 실제로 막는 것은 유니크가 아니라 쿨다운·일일 상한이다" 문장을 "다중 인스턴스에서는 Redis 락(§ADR-0014)이 우선 방어선이고, 쿨다운·일일 상한은 그 다음 방어선이다"로 갱신한다.
+- **spec 갱신**: `ai/specs/012-ai-feedback/spec.md`의 "코인 카드의 중복을 실제로 막는 것은 유니크가 아니라 쿨다운·일일 상한이다" 문장을 "다중 인스턴스에서는 Redis 락(§ADR-0014)이 우선 방어선이고, 쿨다운·일일 상한은 그 다음 방어선이다"로 갱신한다.
 
 ## 결과
 

@@ -13,7 +13,7 @@ import java.util.Optional;
 import org.springframework.stereotype.Service;
 
 /**
- * docs/specs/026-market-order-practice-tutorial plan.md "Evidence 계산 규칙" 절의 A·B 판정을 구현한다. 이
+ * ai/specs/026-market-order-practice-tutorial plan.md "Evidence 계산 규칙" 절의 A·B 판정을 구현한다. 이
  * 서비스는 어떤 저장도 하지 않는다 — 관찰 1건을 실제로 insert하는 트랜잭션은 이 spec의 다음 작업 항목
  * (tasks.md 3번, Controller)이 만든다. 여기서는 "주어진 참조 가격선·현재가·기존 관찰 목록 + 이번 관찰
  * 시도"만 받아 그 관찰이 A 또는 B를 충족하는지만 계산해 반환한다.
@@ -58,7 +58,7 @@ public class EvidenceJudgmentService {
 	 * 경계를 {@code closerBoundary}로 그대로 노출한다.
 	 *
 	 * <p><b>동률 tie-break</b>: 두 거리가 정확히 같으면 {@link PracticeBoundary#STOP_LOSS}를 우선한다
-	 * (`docs/specs/026-market-order-practice-tutorial/plan.md` "Evidence A" 절, PR #298 리뷰에서 명시
+	 * (`ai/specs/026-market-order-practice-tutorial/plan.md` "Evidence A" 절, PR #298 리뷰에서 명시
 	 * 확정). {@code 019}의 {@code stopLossPrice < entryPrice < takeProfitPrice} 불변조건이 유지되는 한
 	 * 동률 지점의 거리는 항상 {@code baselineDistance} 이상이라 이 분기는 {@code closerToBoundary=true}로
 	 * 이어지지 못한다(현재 도달 불가능) — 그래도 그 불변조건이 깨지는 입력이 들어올 경우를 위해 임의 방치

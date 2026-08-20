@@ -2,15 +2,15 @@
 
 > ## ⚠️ 먼저 읽을 것 — 이 문서는 3차 MVP OCO 경로의 설계 정본이다
 >
-> **2·3단계를 지금 구현하러 왔다면 이 문서가 아니라 `docs/specs/026-market-order-practice-tutorial`을 봐야 한다.** 이 문서가 정의한 OCO 기반 2·3단계는 2026-08-06 결정으로 3차 MVP(2차 고도화)로 이연됐고, 2차 MVP에서 실제로 동작하는 완료 경로는 `026`(2026-08-10 신설, OCO 없이 시장가/지정가 매매로 완결)이다. `026`은 이 문서의 1단계(즐겨찾기)와 사전 의도 기록 API(`POST /api/education/practice/intentions`), 공통 판정 원칙(클라이언트 완료 주장 불허 등)을 **변경 없이 그대로 재사용**한다.
+> **2·3단계를 지금 구현하러 왔다면 이 문서가 아니라 `ai/specs/026-market-order-practice-tutorial`을 봐야 한다.** 이 문서가 정의한 OCO 기반 2·3단계는 2026-08-06 결정으로 3차 MVP(2차 고도화)로 이연됐고, 2차 MVP에서 실제로 동작하는 완료 경로는 `026`(2026-08-10 신설, OCO 없이 시장가/지정가 매매로 완결)이다. `026`은 이 문서의 1단계(즐겨찾기)와 사전 의도 기록 API(`POST /api/education/practice/intentions`), 공통 판정 원칙(클라이언트 완료 주장 불허 등)을 **변경 없이 그대로 재사용**한다.
 >
 > `GET /api/education/practice?market=`의 계약 정본은 `026`이다. 이 문서의 candidate 12는 별도 `GET /api/education/practice/oco?market=`에서 `exitPlanId` 기반 evidence를 조회하며, holding 기반 경로와 완료 key를 공유하지 않는다(2026-08-10 확정, 이슈 #308).
 >
 > 상태: spec·계획 API 계약 확정, candidate 1~6 구현 완료(즐겨찾기·사전 의도·합성 시세·주식 체결 세션 FK·공통 예약 원장). **나머지 OCO 계열 production은 3차 MVP로 이연.**
 >
-> 이 문서의 OCO·관찰 규칙은 주식 체결 재생 세션 기준으로 확정돼 있다. **코인 시장 실습의 설계 정본은 `docs/specs/020-coin-practice-tutorial`이다** — 튜토리얼 key 분리, GTC 수명, 세션 없는 잠금 순서, 소수 수량 비교는 그 문서가 소유한다. 단 **OCO 엔진 공통부(스키마·잠금·트리거)의 정본은 `021-general-risk-management-oco`로 이관됐다**(`021/spec.md`의 "문서 소유권 재배치" 표) — 이 문서의 "OCO exit plan 비즈니스 규칙" 절 중 엔진 공통 부분은 그 표에 따라 대체된 것으로 읽는다.
+> 이 문서의 OCO·관찰 규칙은 주식 체결 재생 세션 기준으로 확정돼 있다. **코인 시장 실습의 설계 정본은 `ai/specs/020-coin-practice-tutorial`이다** — 튜토리얼 key 분리, GTC 수명, 세션 없는 잠금 순서, 소수 수량 비교는 그 문서가 소유한다. 단 **OCO 엔진 공통부(스키마·잠금·트리거)의 정본은 `021-general-risk-management-oco`로 이관됐다**(`021/spec.md`의 "문서 소유권 재배치" 표) — 이 문서의 "OCO exit plan 비즈니스 규칙" 절 중 엔진 공통 부분은 그 표에 따라 대체된 것으로 읽는다.
 >
-> **차수 재분류 (2026-08-06 재확정)**: 이미 구현된 candidate 1~6은 2차 MVP 완료로 유지되고, **이 문서가 정의한 OCO 기반 2·3단계(진행조회·관찰·복기 포함)는 코인·주식 구분 없이 3차 MVP(2차 고도화)로 이동했다.** 결정 경위 전문은 `docs/prd.md` §3의 해당 행이 정본이며 여기서 반복하지 않는다.
+> **차수 재분류 (2026-08-06 재확정)**: 이미 구현된 candidate 1~6은 2차 MVP 완료로 유지되고, **이 문서가 정의한 OCO 기반 2·3단계(진행조회·관찰·복기 포함)는 코인·주식 구분 없이 3차 MVP(2차 고도화)로 이동했다.** 결정 경위 전문은 `ai/prd.md` §3의 해당 행이 정본이며 여기서 반복하지 않는다.
 
 ## 개요
 1차 고도화(PRD 2차 MVP)의 교육 범위는 사용자가 실제 FinPlay 도메인 API를 사용해 계획·매수·예약·관찰·복기를 경험하는 3단계 실습이다. 서버는 실제 즐겨찾기, 체결, OCO exit plan과 관찰·복기 기록을 연결해 진행 상태를 판정하며 클라이언트의 완료 주장만으로 단계를 완료하지 않는다.
@@ -46,7 +46,7 @@
 
 ### 2단계 — 먼저 계획하고 시장가 진입과 OCO 청산을 예약하기
 - OCO 실습은 `POST /api/education/practice/oco/intentions`로 시작한다. 요청·응답 필드는 기존 holding 기반 의도 API와 같지만, 서버는 종목 market에 따라 `INVESTMENT_OCO_PRACTICE_V1|COIN_OCO_PRACTICE_V1` progress를 생성·잠그고 intention에 해당 key를 내부 귀속한다. 기존 `POST /api/education/practice/intentions`로 만든 holding 기반 intention은 OCO plan 생성에 사용할 수 없다.
-- 사용자는 매수 전에 `instrumentId`, `quantity`와 PRICE 방식의 `stopLoss`·`takeProfit` 또는 PERCENT 방식의 `stopLossRate`·`takeProfitRate`를 실습 의도로 기록한다. 기존 타입 생략+가격 요청은 PRICE로 호환하며 상세 tagged union은 `docs/specs/019-exit-price-policy`를 따른다. **PERCENT는 019 구현 전까지 production에 없으며 현재는 PRICE(또는 타입 생략) 요청만 실제로 받을 수 있다.**
+- 사용자는 매수 전에 `instrumentId`, `quantity`와 PRICE 방식의 `stopLoss`·`takeProfit` 또는 PERCENT 방식의 `stopLossRate`·`takeProfitRate`를 실습 의도로 기록한다. 기존 타입 생략+가격 요청은 PRICE로 호환하며 상세 tagged union은 `ai/specs/019-exit-price-policy`를 따른다. **PERCENT는 019 구현 전까지 production에 없으며 현재는 PRICE(또는 타입 생략) 요청만 실제로 받을 수 있다.**
 - intention의 `instrumentId`는 현재 존재하는 step 1 본인 favorite의 `instrumentId`와 같아야 한다. favorite가 없거나 다른 종목이면 409 `PRACTICE_STEP_LOCKED`로 intention 생성을 거부한다.
 - 최초 intention 생성 트랜잭션은 호출 경로와 종목 market으로 결정한 `(user_id, tutorial_key)`별 `practice_progresses` 행을 상태를 덮어쓰지 않는 MySQL 원자 upsert로 확보한 뒤 재조회·잠그고, 대상 favorite의 사용자 단위 in-memory 락을 이어서 획득해 intention 저장까지 유지한다. upsert는 unique 예외를 발생시키지 않고 이미 완료된 progress도 변경하지 않는다. favorite DELETE도 같은 in-memory 락을 사용해 직렬화하며, 삭제 선행은 409 `PRACTICE_STEP_LOCKED`·intention 무저장, intention 선행은 201 뒤 DELETE 204다. 동시 intention 요청도 각 tutorial key의 progress 한 행으로 수렴한다.
 - 이후 기존 `POST /api/orders`에 `orderType="MARKET"`, `side="BUY"`로 같은 종목·수량을 주문한다. 이 시장가 주문은 기존 계약대로 즉시 `FILLED` 체결되며 예약 상태가 아니다.
@@ -91,7 +91,7 @@
 - 생성 입력은 positive `Long`의 `intentionId`, `buyTradeId`, `instrumentId`, `DECIMAL(30,8)` 범위의 양수 `quantity`이며 `Idempotency-Key` header가 필수다. 가격·rate는 다시 받지 않고 사용자 단위 in-process 락 안에서 조회한 intention에서 읽는다.
 - `buyTradeId`는 인증 사용자 본인의 `FILLED` 시장가 매수 체결이어야 하며 `instrumentId`와 실제 holding이 일치해야 한다.
 - `exitPlan.quantity`는 intention·buyTrade quantity와 정확히 같고, 생성 시 holding의 `availableQuantity` 이하여야 한다. plan 하나가 그 수량을 한 번만 예약한다.
-- PRICE는 intention의 가격에 대해, PERCENT는 실제 진입 체결가로 계산한 scale 8 가격에 대해 `0 < stopLossPrice < entryPrice < takeProfitPrice`여야 한다. 계산·반올림과 입력 조합은 `docs/specs/019-exit-price-policy`를 따르며 범위가 깨지면 거부한다.
+- PRICE는 intention의 가격에 대해, PERCENT는 실제 진입 체결가로 계산한 scale 8 가격에 대해 `0 < stopLossPrice < entryPrice < takeProfitPrice`여야 한다. 계산·반올림과 입력 조합은 `ai/specs/019-exit-price-policy`를 따르며 범위가 깨지면 거부한다.
 - 생성 트랜잭션은 서버의 거래 가능한 유효 현재가를 조회해 `baselinePrice`, `baselineObservedAt`으로 plan에 저장한다. 유효 시세가 없으면 409 `PRICE_UNAVAILABLE`로 거부하고 plan·condition·수량 예약을 하나도 남기지 않는다.
 - `trades.stock_replay_session_id`를 nullable FK로 추가한다. 주식 체결은 체결 당시 현재 replay session id를 반드시 저장하고 코인 체결은 null이다.
 - 주식은 `buyTradeId.stockReplaySessionId`와 현재 `OPEN` replay session이 같고 15:30 전일 때만 plan을 생성한다. plan에 같은 `replaySessionId`를 저장한다. 이 FK migration과 주식 fill 기록 변경은 OCO보다 먼저 배포한다. 코인은 session 연결 없이 GTC다.

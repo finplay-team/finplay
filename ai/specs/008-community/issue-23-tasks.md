@@ -24,6 +24,6 @@
 
 - [x] **5. 생성 통합 시나리오·문서 동기화·전체 게이트**
   - [x] `@SpringBootTest` + MySQL Testcontainers에서 인증 사용자 저장, 위조 방지, 400/401 시 DB 비변경을 검증한다.
-  - [x] 실제 Controller 매핑과 요청 길이, 201 응답 6개 필드, 400·401 계약을 `docs/api-routes.md`에 동기화한다.
+  - [x] 실제 Controller 매핑과 요청 길이, 201 응답 6개 필드, 400·401 계약을 `ai/api-routes.md`에 동기화한다.
   - [x] `spotlessApply`, 대상 테스트, `build --no-daemon --max-workers=1`을 실행한다.
   - [x] `git diff --check`를 실행한다.

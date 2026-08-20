@@ -30,6 +30,6 @@
   - `./gradlew build` 전체 통과 확인(스팟버그스·JaCoCo 포함).
 
 - [x] **6. 문서 갱신**
-  - `docs/api-routes.md`의 `POST /api/orders` 요약을 SELL 포함으로 갱신(현재 "인증 사용자의 시장가 매수 주문을..." 문구 → 매수·매도 공통 문구, 근거에 이슈 #41 추가).
+  - `ai/api-routes.md`의 `POST /api/orders` 요약을 SELL 포함으로 갱신(현재 "인증 사용자의 시장가 매수 주문을..." 문구 → 매수·매도 공통 문구, 근거에 이슈 #41 추가).
   - `docs/api-contracts.md` 222행 계약을 갱신 — 응답 예시에 `realizedPnl` 필드 추가(BUY는 `null`, SELL 예시 응답 별도 제시), 오류 목록에서 "`side=SELL`은 400 `VALIDATION_ERROR`" 문구 제거 후 409 `INSUFFICIENT_QTY`(보유수량 초과) 추가.
   - 같은 커밋에서 두 문서를 함께 갱신(동기화 모드, planner 재투입).

@@ -1,7 +1,7 @@
 # Spec: 코인 시세 신선도 보강과 체결 가용성 확대
 
 > GitHub 이슈 #369. 팀 확정 방향: **A(REST 폴링 백업)와 B(체결 경로의 STALE 허용)를 함께 적용한다**(yxejxnn 확정, 2026-08-13) — 재논의하지 않는다.
-> 선행 근거: `docs/specs/032-price-quote-stale-split/spec.md`(표시/체결 stale 판정 분리), `docs/specs/003-market-data/spec.md` MKT-003·MKT-004, 이슈 #107(폴러 최초 도입), 이슈 #355.
+> 선행 근거: `ai/specs/032-price-quote-stale-split/spec.md`(표시/체결 stale 판정 분리), `ai/specs/003-market-data/spec.md` MKT-003·MKT-004, 이슈 #107(폴러 최초 도입), 이슈 #355.
 > 요구사항 ID는 이 spec 전용 네임스페이스 `PRICE-REST-*`를 쓴다 — `PRICE-STALE-*`(032)와 같은 패턴으로, PRD 본문에 요구사항 절을 새로 추가하지 않고 이 spec이 정본이다. PRD §3 "구현 현황"에는 완료 시 행을 추가한다(CLAUDE.md 규칙 10).
 > **(2026-08-14 `036-remove-crypto-stale-status`로 대체됨)** PRICE-REST-004(체결 경로 STALE 허용)는 표시 판정 자체가 다시는 STALE을 만들지 않게 되어 도달 불가능해져 무의미해졌다(코드 변경 없음) — `getOrderExecutionPrice`는 이미 표시 판정에 위임하는 구조라 자동으로 항상 `AVAILABLE`만 받는다. PRICE-REST-001~003(관측시각 분리·REST 폴링 백업·웹소켓 실시간성 보존)과 PRICE-REST-005·006(fail-closed 잔여선·스케줄러 풀 크기)은 코드 변경 없이 그대로 유효하다. 아래 체크박스 원문은 이력으로 유지한다.
 
@@ -83,7 +83,7 @@ MKT-004의 "10초 초과 시 주문 거부" 규칙은 이 spec으로 **실질적
 - **"가격이 오래된 것"과 "가격이 아예 없는 것"은 서로 다른 상태다.** 전자는 이번 spec에서 매매를 허용하고, 후자는 계속 거부한다. 이 둘을 하나의 `boolean`으로 뭉뚱그리지 않는다(032가 세운 구분을 승계).
 - 표시·체결에 쓰는 가격은 여전히 **실제로 수신된 마지막 체결가**다 — 임의값·보간값·호가 기준가로 대체하지 않는다.
 - REST 폴링 주기는 stale 임계값보다 **반드시 짧아야 한다.** 길면 폴링이 정상 동작해도 그 사이에 stale이 발생한다.
-- **주문 거부 조건은 "연결이 끊겼거나 시세를 한 번도 받은 적이 없을 때"뿐이다** — 10초 초과 자체는 주문 거부 사유가 아니다(MKT-004, `docs/specs/003-market-data/spec.md`·`docs/prd.md`에서 이 내용으로 갱신 완료).
+- **주문 거부 조건은 "연결이 끊겼거나 시세를 한 번도 받은 적이 없을 때"뿐이다** — 10초 초과 자체는 주문 거부 사유가 아니다(MKT-004, `ai/specs/003-market-data/spec.md`·`ai/prd.md`에서 이 내용으로 갱신 완료).
 - 코인 시세 정본은 여전히 Redis 최신 틱이다 — 새 MySQL 테이블을 만들지 않는다.
 
 ## 남은 알려진 공백
@@ -117,6 +117,6 @@ A+B를 모두 적용해도 **웹소켓이 완전히 끊긴 구간에서는 매�
 - [x] 자동 테스트가 외부 네트워크에 의존하지 않는다(PRD C-005) — `BithumbRestTickerPollerConditionalTest`로 확인.
 - [x] 기존 회귀 테스트 통과: `CryptoCandleAndPriceIndependenceTest`, `PriceQueryServiceTest`, `HoldingValuationServiceTest`, `OrderExecutionServiceTest`, `NewsCollectionIntegrationTest.schedulingPoolIsLargeEnoughForEveryScheduledTask`.
 - [x] `docs/api-contracts.md`의 `/price` 절과 주문 절에서 `PRICE_UNAVAILABLE` 발생 조건 설명이 갱신됨(같은 커밋).
-- [x] `docs/specs/003-market-data/spec.md`·`docs/prd.md`의 MKT-004, `docs/specs/032-price-quote-stale-split/spec.md`의 체결 차단 요구사항을 새 동작에 맞게 갱신 완료.
-- [x] `docs/prd.md` §3 "구현 현황"에 이 기능의 행이 추가됨(근거: 이슈 #369, PR 생성 후 번호 갱신 필요).
+- [x] `ai/specs/003-market-data/spec.md`·`ai/prd.md`의 MKT-004, `ai/specs/032-price-quote-stale-split/spec.md`의 체결 차단 요구사항을 새 동작에 맞게 갱신 완료.
+- [x] `ai/prd.md` §3 "구현 현황"에 이 기능의 행이 추가됨(근거: 이슈 #369, PR 생성 후 번호 갱신 필요).
 - [x] `./gradlew build` 통과.

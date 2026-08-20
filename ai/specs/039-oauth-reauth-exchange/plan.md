@@ -11,7 +11,7 @@
   `POST /api/auth/oauth/login-exchange`, PR #385 — 이번 spec은 REAUTH purpose에 같은 패턴을 적용한다)
 - 건드리는 기존 파일: `OAuthStateGenerator`, `OAuthStateCookieFactory`(변경 없음, 참고용), `OAuthCallbackController`,
   `OAuthCallbackService`, `OAuthAuthorizationController`(변경 여부는 §설계 판단 3 참고), `application.yml`,
-  `.env.example`, `docs/api-routes.md`, `docs/api-contracts.md`
+  `.env.example`, `ai/api-routes.md`, `docs/api-contracts.md`
 
 ## 설계 판단 (요청받은 트레이드오프 3건)
 

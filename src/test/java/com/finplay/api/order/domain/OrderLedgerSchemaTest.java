@@ -1,5 +1,5 @@
 // 주문·체결 원장 5개 엔티티(Order·Trade·Holding·HoldingLot·TradeAllocation)의 스키마 매핑과
-// 유니크 제약 2종을 검증하는 슬라이스 테스트 (ADR-0003, docs/specs/011-order-ledger-schema)
+// 유니크 제약 2종을 검증하는 슬라이스 테스트 (ADR-0003, ai/specs/011-order-ledger-schema)
 package com.finplay.api.order.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;

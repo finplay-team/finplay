@@ -5,7 +5,7 @@
 - Spec: `./spec.md` "COM-004 종목 기준 분류" 절, "Decision Gate"(이 그룹 해당 없음), "완료 조건 COM-004"
 - 선행 구현: `008-community`(`CommunityPost`·`CommunityPostService`·`CommunityPostController`·`CommunityPostRepository`, COM-001~003), `013-instrument-master`류(`Instrument`·`InstrumentService`·`InstrumentRepository`, MKT-001), `021-watchlist`(`WatchlistService`가 `InstrumentService.getInstrumentEntity`를 거쳐 cross-domain 참조하는 선례)
 - 관련 ADR: [ADR-0002](../../adr/0002-architecture.md)(레이어드, 도메인 간 참조는 service 레이어만 — `community`가 `market`의 `InstrumentRepository`를 직접 주입하지 않는다), [ADR-0004](../../adr/0004-flyway-migrations.md)(신규 컬럼은 Flyway로만)
-- PRD 근거: `docs/prd.md` COM-004(신설 2차 MVP, 상세는 이 spec이 정본 — spec.md 머리말 참고)
+- PRD 근거: `ai/prd.md` COM-004(신설 2차 MVP, 상세는 이 spec이 정본 — spec.md 머리말 참고)
 
 ## 기존 코드 현황 (구현 전 확인한 사실)
 
@@ -140,7 +140,7 @@ public Instrument getTradableInstrumentEntity(Long instrumentId) {
 - Spec: `./spec.md` "COM-005 대댓글" 절, "Decision Gate"(부모 댓글 삭제 시 자식 처리 — 이 plan에서 확정), "완료 조건 COM-005"
 - 선행 구현: `008-community`(`PostComment`·`PostCommentService`·`PostCommentController`·`CommentController`·`PostCommentRepository`, COM-002/003 평면 댓글), COM-004(같은 spec 그룹, `V24` 마이그레이션까지 진행됨 — 다음 버전은 `V25`)
 - 관련 ADR: [ADR-0002](../../adr/0002-architecture.md)(레이어드, controller가 비즈니스 판단을 하지 않는다), [ADR-0004](../../adr/0004-flyway-migrations.md)(신규 컬럼·FK는 Flyway로만)
-- PRD 근거: `docs/prd.md` COM-005(신설 2차 MVP, 상세는 이 spec이 정본)
+- PRD 근거: `ai/prd.md` COM-005(신설 2차 MVP, 상세는 이 spec이 정본)
 
 ## 기존 코드 현황 (구현 전 확인한 사실)
 
@@ -415,7 +415,7 @@ public static PostCommentResponse from(PostComment comment, List<PostCommentResp
 - Spec: `./spec.md` "COM-006 사진 첨부" 절, "Decision Gate"(이미지 저장 방식·허용 형식/크기 — 이 plan에서 확정), "완료 조건 COM-006"
 - 선행 구현: `008-community`(`CommunityPost`·`CommunityPostService`·`CommunityPostController`), COM-004(`V24`, `Instrument` cross-domain 참조 패턴), COM-005(`V25`, self-referencing FK + `ON DELETE CASCADE` 패턴) — 다음 마이그레이션 버전은 `V26`
 - 관련 ADR: [ADR-0002](../../adr/0002-architecture.md)(레이어드, 도메인 간 참조는 service 레이어만, `common`은 전역 예외·오류 응답·공통 설정만 — 신규 인프라를 성급하게 `common`에 두지 않는다), [ADR-0004](../../adr/0004-flyway-migrations.md)(신규 테이블·컬럼은 Flyway로만)
-- PRD 근거: `docs/prd.md` COM-006(신설 2차 MVP, 상세는 이 spec이 정본)
+- PRD 근거: `ai/prd.md` COM-006(신설 2차 MVP, 상세는 이 spec이 정본)
 
 ## Decision Gate 확정
 
@@ -638,7 +638,7 @@ private CommunityPostImage image;
 ### 관련 문서
 
 - 위 "Decision Gate 확정" 절 — "**과설계 금지 — 인터페이스로만 추상화, 클라우드 구현체는 지금 만들지 않는다.** ... `S3FileStorageService` 등은 실제로 필요해지는 시점(운영 배포 논의)에 새로 추가한다"고 명시적으로 미뤄 둔 결정을 실행한다.
-- ADR-0020(`docs/adr/0020-managed-service-deployment.md` §결정 3 "업로드 파일은 S3로 옮긴다")이 이 전환의 아키텍처 근거다. PR #329(이슈 #326)가 `dev`에 머지됐고 이 작업 브랜치는 그 위로 리베이스된 상태다.
+- ADR-0020(`ai/adr/0020-managed-service-deployment.md` §결정 3 "업로드 파일은 S3로 옮긴다")이 이 전환의 아키텍처 근거다. PR #329(이슈 #326)가 `dev`에 머지됐고 이 작업 브랜치는 그 위로 리베이스된 상태다.
 - ADR-0002(레이어드, 도메인 간 참조는 service 레이어만) — 이번 변경은 `community.storage` 패키지 내부 구현체 교체이므로 해당 없음(위반 없음).
 - ADR-0004(Flyway 마이그레이션) — **이번 작업은 스키마 변경이 없다.** `community_post_images` 테이블·`stored_filename` 컬럼 의미는 그대로다(저장 위치만 바뀐다). 신규 `V*` 마이그레이션 파일을 만들지 않는다.
 - PR #329 "남은 위험/후속" 절, 이슈 #330 본문.
@@ -719,7 +719,7 @@ public class S3FileStorageService implements FileStorageService {
 }
 ```
 
-- `S3Client`는 `S3FileStorageService`가 직접 `S3Client.create()`로 만들지, `@Configuration` 클래스가 `@Bean`으로 노출할지는 implementer 재량이다 — 다만 `LocalFileStorageService`가 `@Value` 필드를 생성자로 손으로 받는 이유(Lombok이 `@Value`를 생성자 파라미터로 복사하지 않음, `docs/agent-mistakes.md` 2026-07-30)와 같은 함정이 여기도 적용되므로 `@RequiredArgsConstructor`를 쓰지 않는다.
+- `S3Client`는 `S3FileStorageService`가 직접 `S3Client.create()`로 만들지, `@Configuration` 클래스가 `@Bean`으로 노출할지는 implementer 재량이다 — 다만 `LocalFileStorageService`가 `@Value` 필드를 생성자로 손으로 받는 이유(Lombok이 `@Value`를 생성자 파라미터로 복사하지 않음, `ai/agent-mistakes.md` 2026-07-30)와 같은 함정이 여기도 적용되므로 `@RequiredArgsConstructor`를 쓰지 않는다.
 - `store(MultipartFile file, String storedFilename)`: `PutObjectRequest.builder().bucket(bucket).key(storedFilename).contentType(file.getContentType()).build()`와 `RequestBody.fromInputStream(file.getInputStream(), file.getSize())`로 업로드. 업로드 실패(`S3Exception`, `IOException`)는 `LocalFileStorageService.store`와 동일하게 `BusinessException(ErrorCode.INTERNAL_ERROR, "이미지 저장에 실패했습니다.")`로 감싼다(호출부 `CommunityPostImageService`가 저장소 구현 세부사항을 모르게 하는 기존 계약 유지).
 - `load(String storedFilename)`: `GetObjectRequest`로 `ResponseInputStream<GetObjectResponse>`를 받아 `Resource`로 감싼다. 존재하지 않으면 SDK가 `NoSuchKeyException`을 던지는데, 이를 잡아 `LocalFileStorageService.load`와 동일하게 `BusinessException(ErrorCode.NOT_FOUND)`로 변환한다(호출부 `CommunityPostImageService.loadImageFile`이 저장소 종류와 무관하게 같은 예외 계약을 받는다). `InputStreamResource`를 그대로 쓰면 `contentLength()`가 정의되지 않아 `CommunityPostImageController`의 `ResponseEntity<Resource>` 직렬화 시 `Content-Length` 헤더가 빠질 수 있으므로, `GetObjectResponse.contentLength()`를 오버라이드한 얇은 `InputStreamResource` 서브클래스를 두거나 동급 처리를 한다.
 - `delete(String storedFilename)`: `DeleteObjectRequest`로 삭제. `LocalFileStorageService.delete`와 같은 계약(best-effort, 실패해도 예외를 던지지 않고 `log.warn`만 남긴다) — 존재하지 않는 키를 지워도 S3는 오류를 던지지 않으므로 별도 존재 확인이 필요 없다(로컬 구현의 `deleteIfExists`와 동등한 동작이 기본으로 보장된다).
@@ -748,9 +748,9 @@ public class S3FileStorageService implements FileStorageService {
 | `application-prod.yml` | `finplay.community.image-storage.s3.bucket: ${COMMUNITY_S3_BUCKET}` 추가(기본값 없음, fail-fast) |
 | `.env.example` | "배포(prod 프로필)에서만 필요" 절에 `COMMUNITY_S3_BUCKET=` 추가, 버킷 사전 생성 안내 주석 |
 | `deploy/README.md` | S3 버킷 생성(퍼블릭 액세스 차단 유지 — 이미지는 앱의 다운로드 엔드포인트로만 노출되고 버킷을 직접 공개하지 않는다), IAM 역할·최소 권한 정책, EC2 인스턴스 프로파일 연결 체크리스트 추가(ADR-0020이 RDS·ElastiCache 콘솔 설정을 남긴 것과 같은 형식). 이관 스크립트(`aws s3 sync`) 절차 포함 |
-| `docs/adr/0020-managed-service-deployment.md` | 이미 "S3FileStorageService 구현·이관은 별도 이슈"라고 후속을 명시해 뒀으므로 **내용 수정은 필요 없다.** ADR은 새 번호로 대체(superseded)하는 것 외에 고치지 않는다(CLAUDE.md 규칙2) — 이번 구현 완료는 이 spec의 plan.md와 `docs/prd.md` §3에 기록한다. |
-| `docs/specs/022-community-enhancement/plan.md` (이 문서) | 위 "Decision Gate 확정" 절의 "지금은 만들지 않는다" 문장이 실행 완료됐음을 별도 각주로 표기(구현 완료 커밋에서, PR #329가 남긴 화살표 각주 바로 아래에 이어 적는다) |
-| `docs/prd.md` §3 | "커뮤니티 고도화" 행 근거에 이슈 #330/이 PR 번호 추가(기능 제공 범위 자체는 바뀌지 않음 — 저장 위치만 바뀌므로 CLAUDE.md 규칙10 "갱신 비대상"에 해당할 수 있다. 다만 §3가 이미 "완료(COM-004~006)"로 적혀 있고 그 각주가 "로컬 파일시스템"을 함의하지 않으므로, 근거 칸에 이슈 번호만 추가하고 판정 문구는 바꾸지 않는 것으로 충분하다 — 최종 판단은 implementer가 실제 diff를 보고 내린다) |
+| `ai/adr/0020-managed-service-deployment.md` | 이미 "S3FileStorageService 구현·이관은 별도 이슈"라고 후속을 명시해 뒀으므로 **내용 수정은 필요 없다.** ADR은 새 번호로 대체(superseded)하는 것 외에 고치지 않는다(CLAUDE.md 규칙2) — 이번 구현 완료는 이 spec의 plan.md와 `ai/prd.md` §3에 기록한다. |
+| `ai/specs/022-community-enhancement/plan.md` (이 문서) | 위 "Decision Gate 확정" 절의 "지금은 만들지 않는다" 문장이 실행 완료됐음을 별도 각주로 표기(구현 완료 커밋에서, PR #329가 남긴 화살표 각주 바로 아래에 이어 적는다) |
+| `ai/prd.md` §3 | "커뮤니티 고도화" 행 근거에 이슈 #330/이 PR 번호 추가(기능 제공 범위 자체는 바뀌지 않음 — 저장 위치만 바뀌므로 CLAUDE.md 규칙10 "갱신 비대상"에 해당할 수 있다. 다만 §3가 이미 "완료(COM-004~006)"로 적혀 있고 그 각주가 "로컬 파일시스템"을 함의하지 않으므로, 근거 칸에 이슈 번호만 추가하고 판정 문구는 바꾸지 않는 것으로 충분하다 — 최종 판단은 implementer가 실제 diff를 보고 내린다) |
 
 ### 테스트 계획
 

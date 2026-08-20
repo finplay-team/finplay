@@ -3,12 +3,12 @@
 ## 관련 문서
 
 - Spec: `./spec.md`
-- **설계 정본: `docs/adr/0015-feedback-query-cache.md`** (상태: 승인됨) — 이 plan은 그 8개 결정의 구현 배치도이며, 여기서 설계를 다시 정하지 않는다.
+- **설계 정본: `ai/adr/0015-feedback-query-cache.md`** (상태: 승인됨) — 이 plan은 그 8개 결정의 구현 배치도이며, 여기서 설계를 다시 정하지 않는다.
 - ADR-0014(코인 감시 Redis 락) — `RedisLock` 추출의 출처. §후속이 "재사용이 실제로 필요해지면(예: #245) 그때 추출한다"고 예고한 그 시점이다.
 - ADR-0002(레이어드 아키텍처) — `com.finplay.api.feedback` 안에서 해결한다.
 - ADR-0003(테스트 전략) — 서비스 로직 단위, Redis 관련은 Testcontainers 통합.
 - ADR-0011 / PRD C-005 — 자동 테스트로 실제 외부 API를 호출하지 않는다.
-- 상위 spec: `docs/specs/012-ai-feedback` §C-2·§C-4·§C-5·§C-9(조회 계약), FEED-008·FEED-009.
+- 상위 spec: `ai/specs/012-ai-feedback` §C-2·§C-4·§C-5·§C-9(조회 계약), FEED-008·FEED-009.
 
 ## API 설계
 
@@ -16,7 +16,7 @@
 |---|---|---|---|---|
 | — | — | — | — | **엔드포인트 추가·변경·삭제가 없다** |
 
-**controller를 건드리지 않는다.** 캐시는 `InstrumentNewsQueryService`·`MarketBriefingService`의 내부에 들어가고, 두 조회 API(`GET /api/instruments/{id}/news`, `GET /api/market/briefing`)의 요청·응답·오류 계약은 한 글자도 바뀌지 않는다(ADR-0015 §결과). 따라서 **`docs/api-routes.md`·`docs/api-contracts.md` 수정이 이 spec 범위에 없다**(CLAUDE.md 규칙 7의 대상은 controller 변경이며 여기 해당 없음). 마무리 동기화 모드에서 재확인한다.
+**controller를 건드리지 않는다.** 캐시는 `InstrumentNewsQueryService`·`MarketBriefingService`의 내부에 들어가고, 두 조회 API(`GET /api/instruments/{id}/news`, `GET /api/market/briefing`)의 요청·응답·오류 계약은 한 글자도 바뀌지 않는다(ADR-0015 §결과). 따라서 **`ai/api-routes.md`·`docs/api-contracts.md` 수정이 이 spec 범위에 없다**(CLAUDE.md 규칙 7의 대상은 controller 변경이며 여기 해당 없음). 마무리 동기화 모드에서 재확인한다.
 
 ## 입력 명세
 

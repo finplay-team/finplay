@@ -2,7 +2,7 @@
 
 - 상태: 승인됨
 - 날짜: 2026-08-03
-- 관계: C-004(AI 정책)를 구현 수준으로 구체화한다. ADR-0002의 레이어 구조를 따르며 새 도메인 패키지 `com.finplay.api.feedback`만 추가한다. `docs/specs/012-ai-feedback`의 선행 결정이다.
+- 관계: C-004(AI 정책)를 구현 수준으로 구체화한다. ADR-0002의 레이어 구조를 따르며 새 도메인 패키지 `com.finplay.api.feedback`만 추가한다. `ai/specs/012-ai-feedback`의 선행 결정이다.
 
 ## 맥락
 
@@ -101,6 +101,6 @@
 
 ## 후속
 
-- ~~프로바이더 기본값 확정~~ — **해소됨(2026-08-03).** 팀 보유 크레딧이 OpenAI라 기본값을 OpenAI로 확정했다. 이 ADR의 결정 자체는 프로바이더 중립이라 본문은 바뀌지 않았고, starter 좌표와 모델명은 `docs/specs/012-ai-feedback` §외부 API 호출 상세·§C-7이 정본이다.
-- `TEMPLATE` 비율 관측 후 모델 등급 조정 (`docs/specs/012-ai-feedback` §튜닝).
+- ~~프로바이더 기본값 확정~~ — **해소됨(2026-08-03).** 팀 보유 크레딧이 OpenAI라 기본값을 OpenAI로 확정했다. 이 ADR의 결정 자체는 프로바이더 중립이라 본문은 바뀌지 않았고, starter 좌표와 모델명은 `ai/specs/012-ai-feedback` §외부 API 호출 상세·§C-7이 정본이다.
+- `TEMPLATE` 비율 관측 후 모델 등급 조정 (`ai/specs/012-ai-feedback` §튜닝).
 - 3차 RAG 챗봇 착수 시 이 추상화의 재사용 범위를 재검토한다.

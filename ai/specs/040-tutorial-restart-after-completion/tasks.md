@@ -12,5 +12,5 @@
 - [x] Testcontainers 통합 테스트: 최초 완료→보상 지급→재시작→재완료→보상 미지급·evidence 행 수 불변,
   배포 전 완료 데이터 seed 기반 소급 판정, 동시 재완료 요청 경합
 - [x] 문서 동기화: `docs/api-contracts.md`의 restart/ensure/holding-reflections 3개 계약 갱신,
-  `docs/specs/039-tutorial-flow-redesign/spec.md`에 TUTORIAL-FLOW-005 대체 표기 추가, `docs/prd.md` §3
+  `ai/specs/039-tutorial-flow-redesign/spec.md`에 TUTORIAL-FLOW-005 대체 표기 추가, `ai/prd.md` §3
   구현 현황 갱신

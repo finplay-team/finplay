@@ -18,5 +18,5 @@
   - 존재하지 않는 `postId`의 404, 비로그인 요청의 401을 각각 검증한다.
 
 - [x] **5. 문서 동기화와 완료 게이트**
-  - `docs/api-routes.md`의 커뮤니티 게시물 DELETE 엔드포인트 반영은 이 항목에서 직접 하지 않는다 — **동기화 모드에서 처리**(planner의 별도 실행 단계, `/feature` 마무리 단계).
+  - `ai/api-routes.md`의 커뮤니티 게시물 DELETE 엔드포인트 반영은 이 항목에서 직접 하지 않는다 — **동기화 모드에서 처리**(planner의 별도 실행 단계, `/feature` 마무리 단계).
   - `spotlessApply`, 대상 테스트, `.\gradlew.bat build --no-daemon --max-workers=1`, `git diff --check`를 실행하고 결과를 기록한다.

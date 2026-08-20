@@ -4,7 +4,7 @@ package com.finplay.api.market.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
-// 값의 정본은 docs/specs/035-stock-collector-reliability/plan.md §락 설계 세부(TTL 근거)다. market.crypto와 같은
+// 값의 정본은 ai/specs/035-stock-collector-reliability/plan.md §락 설계 세부(TTL 근거)다. market.crypto와 같은
 // 방침 — yml과 @DefaultValue 양쪽에 값을 두고 드리프트 테스트로 대조한다.
 @ConfigurationProperties(prefix = "market.stock")
 public record MarketStockProperties(

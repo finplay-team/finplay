@@ -40,7 +40,7 @@ import org.springframework.web.client.RestClientException;
  * <p>{@code RestClient}를 빈으로 등록하지 않고 {@code RestClient.Builder}로 여기서 완성하는 이유는
  * {@code NaverNewsCollector}와 같다 — 같은 타입 빈이 늘면 {@code KisHistoricalCandleClientImpl}의 주입이
  * {@code NoUniqueBeanDefinitionException}으로 깨져 컨텍스트 전체가 기동하지 않는다
- * ({@code docs/agent-mistakes.md} 2026-08-04 항목).
+ * ({@code ai/agent-mistakes.md} 2026-08-04 항목).
  */
 @Slf4j
 @Component

@@ -5,10 +5,10 @@
 
 ## 기존 `education`/`favorite` 튜토리얼 기능과의 관계 (중요 — 혼동 주의)
 
-`docs/api-routes.md`에는 이미 `POST/GET/DELETE /api/favorites`가 있고 `com.finplay.api.favorite` 패키지로 구현되어 있다. 그러나 이 기능은:
+`ai/api-routes.md`에는 이미 `POST/GET/DELETE /api/favorites`가 있고 `com.finplay.api.favorite` 패키지로 구현되어 있다. 그러나 이 기능은:
 
-- `docs/specs/016-investment-education-policy`의 3단계 투자 실습 튜토리얼 전용이다(요구사항 EDU-PRACTICE-002).
-- `docs/adr/0012-tutorial-state-in-memory.md`에 따라 **의도적으로 서버 힙 메모리(`ConcurrentHashMap`)**에 저장하며, 재시작·다중 인스턴스 시 유실을 사용자가 감수한 결정이다.
+- `ai/specs/016-investment-education-policy`의 3단계 투자 실습 튜토리얼 전용이다(요구사항 EDU-PRACTICE-002).
+- `ai/adr/0012-tutorial-state-in-memory.md`에 따라 **의도적으로 서버 힙 메모리(`ConcurrentHashMap`)**에 저장하며, 재시작·다중 인스턴스 시 유실을 사용자가 감수한 결정이다.
 - DB 테이블 `favorites`는 V19 마이그레이션으로 이미 DROP되어 더 이상 존재하지 않는다.
 - 거래 불가 종목(`instrument.tradable == false`) 등록을 `INSTRUMENT_NOT_TRADABLE`(409)로 막는다 — 실습에서 다음 단계(매수)로 이어지는 선행 조건이기 때문이다.
 
@@ -26,7 +26,7 @@
 
 ## PRD 대조 (미확정 사항 — 반드시 확인 필요)
 
-`docs/prd.md`에는 이 기능(실사용 관심목록)에 대응하는 요구사항 ID가 없다. PRD 본문이 다루는 "즐겨찾기"는 전부 EDU-PRACTICE-002(튜토리얼)뿐이다. 이 spec은 오케스트레이터 요청에 따라 신규 기능으로 진행하되, 임의로 PRD ID를 만들어 붙이지 않고 **WATCH-001~003(이 spec 로컬 식별자, PRD 미등재)**로 부른다. PRD에 반영할지, 반영한다면 어느 절(1차 MVP/2차 MVP)에 넣을지는 사람 판단이 필요하다.
+`ai/prd.md`에는 이 기능(실사용 관심목록)에 대응하는 요구사항 ID가 없다. PRD 본문이 다루는 "즐겨찾기"는 전부 EDU-PRACTICE-002(튜토리얼)뿐이다. 이 spec은 오케스트레이터 요청에 따라 신규 기능으로 진행하되, 임의로 PRD ID를 만들어 붙이지 않고 **WATCH-001~003(이 spec 로컬 식별자, PRD 미등재)**로 부른다. PRD에 반영할지, 반영한다면 어느 절(1차 MVP/2차 MVP)에 넣을지는 사람 판단이 필요하다.
 
 ## 사용자 시나리오
 - 인증 사용자는 거래 가능 여부와 무관하게 주식·코인 종목을 본인 관심목록에 등록할 수 있다. (WATCH-001)
@@ -59,4 +59,4 @@
 - [ ] 등록·목록(필터 포함)·해제 API가 위 요구사항대로 동작하는지 슬라이스 테스트로 확인한다.
 - [ ] 중복 등록 방지가 DB 제약 + 서비스 예외 변환으로 동작하는지 단위/통합 테스트로 확인한다.
 - [ ] 서버 재시작(테스트 컨텍스트 재기동 시나리오)에도 데이터가 유지되는지 Testcontainers 통합 테스트로 확인한다.
-- [ ] `docs/api-routes.md`·`docs/api-contracts.md`에 새 라우트가 반영된다(별도 커밋에서 controller 구현 시).
+- [ ] `ai/api-routes.md`·`docs/api-contracts.md`에 새 라우트가 반영된다(별도 커밋에서 controller 구현 시).

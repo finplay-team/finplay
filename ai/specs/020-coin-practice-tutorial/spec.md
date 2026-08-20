@@ -2,15 +2,15 @@
 
 > 상태: 문서 설계 확정. OCO 계열 production은 미착수이나, **튜토리얼 key market 분기(`COIN_PRACTICE_V1`)는 이미 구현됨**(이슈 #226) — `tasks.md` 참고.
 >
-> **이 spec은 OCO(예약형 손절·익절) 기반 코인 실습만 다룬다.** 차수는 **3차 MVP(2차 고도화)**다(2026-08-06 재확정 — 결정 경위 전문은 `docs/prd.md` §3이 정본). 설계(튜토리얼 key 분리, GTC 수명, 세션 없는 잠금 순서, 소수 수량 비교)는 그대로 유효하며 3차 착수 시점에 그 설계를 따른다.
+> **이 spec은 OCO(예약형 손절·익절) 기반 코인 실습만 다룬다.** 차수는 **3차 MVP(2차 고도화)**다(2026-08-06 재확정 — 결정 경위 전문은 `ai/prd.md` §3이 정본). 설계(튜토리얼 key 분리, GTC 수명, 세션 없는 잠금 순서, 소수 수량 비교)는 그대로 유효하며 3차 착수 시점에 그 설계를 따른다.
 >
-> **2차 MVP에서 코인 실습을 실제로 완결할 수 있는 경로는 `docs/specs/026-market-order-practice-tutorial`이다** (2026-08-10 신설, OCO 없이 시장가·코인 지정가 매수로 완결). `026`은 이 문서의 튜토리얼 key 분리(`COIN_PRACTICE_V1`)와 scale 무관 수량 비교 규칙을 그대로 재사용한다 — 그 key 분기는 이미 production에 있다(이슈 #226, `PracticeIntentionService`). 진행조회는 필수 `market=STOCK|CRYPTO`로 한 시장만 선택하고, 3차 OCO는 별도 URL·완료 key를 사용한다(2026-08-10, 이슈 #308).
+> **2차 MVP에서 코인 실습을 실제로 완결할 수 있는 경로는 `ai/specs/026-market-order-practice-tutorial`이다** (2026-08-10 신설, OCO 없이 시장가·코인 지정가 매수로 완결). `026`은 이 문서의 튜토리얼 key 분리(`COIN_PRACTICE_V1`)와 scale 무관 수량 비교 규칙을 그대로 재사용한다 — 그 key 분기는 이미 production에 있다(이슈 #226, `PracticeIntentionService`). 진행조회는 필수 `market=STOCK|CRYPTO`로 한 시장만 선택하고, 3차 OCO는 별도 URL·완료 key를 사용한다(2026-08-10, 이슈 #308).
 >
-> **2차 코인 holding 경로의 가격원은 `docs/specs/030-coin-practice-price-runtime`이 부분 대체한다.** 아래 COIN-PRACTICE-008·009의 빗썸 가격/합성 시세 evidence 비사용은 3차 OCO와 세션 없는 기존 주문에 계속 유효하다. 교육 가격 세션으로 만든 지정가 trade·holding만 030의 영속 세션 가격으로 체결·관찰한다. 기존 표시 전용 `/synthetic-prices`는 여전히 evidence가 아니다.
+> **2차 코인 holding 경로의 가격원은 `ai/specs/030-coin-practice-price-runtime`이 부분 대체한다.** 아래 COIN-PRACTICE-008·009의 빗썸 가격/합성 시세 evidence 비사용은 3차 OCO와 세션 없는 기존 주문에 계속 유효하다. 교육 가격 세션으로 만든 지정가 trade·holding만 030의 영속 세션 가격으로 체결·관찰한다. 기존 표시 전용 `/synthetic-prices`는 여전히 evidence가 아니다.
 
 ## 개요
 
-3단계 투자 실습 튜토리얼(`docs/specs/016-investment-education-policy`)은 계약이 주식 기준으로 확정돼 있다. OCO exit plan의 생성·트리거·만료가 주식 체결 재생 세션(`trades.stock_replay_session_id`, 15:30 종료)에 묶여 있고, 3단계 관찰 증거 C도 "익절·손절 체결 또는 **주식 세션 만료**"로 정의된다. 코인은 그 규칙 안에서 "session 연결 없이 GTC", "자동 만료 없음", "holding → plan 잠금"이라는 예외 문구로만 등장한다.
+3단계 투자 실습 튜토리얼(`ai/specs/016-investment-education-policy`)은 계약이 주식 기준으로 확정돼 있다. OCO exit plan의 생성·트리거·만료가 주식 체결 재생 세션(`trades.stock_replay_session_id`, 15:30 종료)에 묶여 있고, 3단계 관찰 증거 C도 "익절·손절 체결 또는 **주식 세션 만료**"로 정의된다. 코인은 그 규칙 안에서 "session 연결 없이 GTC", "자동 만료 없음", "holding → plan 잠금"이라는 예외 문구로만 등장한다.
 
 이 spec은 코인 시장 실습을 독립적으로 완결되는 튜토리얼로 확정한다. 주식 규칙을 수정하지 않고 코인 경로만 정의하며, 세션 경계가 없는 24시간 시장에서 튜토리얼 identity·GTC plan 수명·관찰 증거·소수 수량 비교를 확정한다. 016의 공통 규칙(클라이언트 완료 주장 불허, 서버 evidence 연결, 보상·LLM 미사용)은 그대로 상속한다.
 

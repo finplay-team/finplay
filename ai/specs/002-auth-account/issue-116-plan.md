@@ -4,7 +4,7 @@
 
 **Goal:** `POST /api/auth/password-resets/confirm`을 비인증 공개 경로로 신설해, #115에서 발송한 인증번호와 새 비밀번호를 **한 요청으로 함께 받아** 즉시 적용한다. 인증번호 1회 소비 · `users.password_hash` 교체 · 해당 회원의 기존 Refresh Token 전체 폐기가 부분 성공 없이 한 트랜잭션으로 처리되어야 한다. 재설정은 비로그인 흐름이므로 **새 토큰 쌍을 발급하지 않으며 항상 전 기기 로그아웃**이다.
 
-**관련 정본:** GitHub Issue #116, PRD `AUTH-006`(`docs/prd.md` 294-318행), `docs/specs/002-auth-account/spec.md`, `docs/specs/002-auth-account/plan.md`, Issue #115 계획(`issue-115-plan.md`, 테이블·발송 규칙), Issue #56 계획(`issue-56-plan.md`, "확인 및 적용" 계열 직전 선례 — 검증 순서·소비·세션 폐기 원자성), Issue #114 계획(`issue-114-plan.md`, `User.changePassword`·세션 폐기 순서), ADR-0002, ADR-0003, ADR-0004, `docs/conventions.md`
+**관련 정본:** GitHub Issue #116, PRD `AUTH-006`(`ai/prd.md` 294-318행), `ai/specs/002-auth-account/spec.md`, `ai/specs/002-auth-account/plan.md`, Issue #115 계획(`issue-115-plan.md`, 테이블·발송 규칙), Issue #56 계획(`issue-56-plan.md`, "확인 및 적용" 계열 직전 선례 — 검증 순서·소비·세션 폐기 원자성), Issue #114 계획(`issue-114-plan.md`, `User.changePassword`·세션 폐기 순서), ADR-0002, ADR-0003, ADR-0004, `docs/conventions.md`
 
 **착수 전 확정된 결정:** **단계 구성은 (a)안 — 인증번호와 새 비밀번호를 한 요청으로 받아 즉시 적용한다.** 이슈 본문 "착수 전 결정 필요"는 이것으로 해소됐다. `POST /api/auth/email-changes/confirm`(#56)과 같은 패턴이며, 별도 `passwordResetToken`을 발급하는 2단계 (b)안은 채택하지 않았다 — 엔드포인트가 하나로 끝나고 새 토큰의 저장·소비 구현이 필요 없다는 것이 근거다. 프런트는 인증번호 입력칸과 새 비밀번호 입력칸을 한 화면에 둔다.
 
@@ -41,7 +41,7 @@ Java 17, Spring Boot 4.1, Spring Data JPA, MySQL 8.4(Testcontainers), Spring Sec
 
 ## 요구사항 ID와 수용 기준
 
-### PRD `AUTH-006` (확인·교체·폐기 부분, `docs/prd.md` 294-318행)
+### PRD `AUTH-006` (확인·교체·폐기 부분, `ai/prd.md` 294-318행)
 
 - 인증번호는 6자리 숫자이며 유효시간 5분, 입력 시도는 최대 5회다. 5회를 초과하면 해당 인증번호를 즉시 무효화하고 429 `TOO_MANY_REQUESTS`로 응답한다. (→ U1 참고: 이슈 본문의 "실패 사유 미구분"과 부분 충돌)
 - 재발송하면 이전 인증번호는 즉시 무효화된다 — 유효한 인증번호는 항상 최대 1개다.
@@ -73,7 +73,7 @@ Java 17, Spring Boot 4.1, Spring Data JPA, MySQL 8.4(Testcontainers), Spring Sec
 - `PasswordResetService.validateAndConsumeCode(email, code)` 추가(검증·소비·대상 회원 판별).
 - `AuthService.confirmPasswordReset(email, code, newPassword)` 추가(해시 교체 + Refresh Token 전체 폐기, 트랜잭션 경계).
 - `PasswordResetConfirmRequest` DTO, `SecurityConfig.PUBLIC_POST_PATHS` 경로 추가.
-- PRD `AUTH-006` 구현 단계 문구·엔드포인트 목록 갱신, `docs/api-routes.md`·`docs/api-contracts.md` 동기화.
+- PRD `AUTH-006` 구현 단계 문구·엔드포인트 목록 갱신, `ai/api-routes.md`·`docs/api-contracts.md` 동기화.
 
 ### 제외
 
@@ -257,9 +257,9 @@ public record PasswordResetConfirmRequest(
 
 ### Documentation files to modify after implementation
 
-- `docs/prd.md` — `AUTH-006` 309행의 구현 단계 문구 갱신, 확인 단계 계약(한 요청으로 인증번호+새 비밀번호, 8~100자, 새 토큰 미발급) 반영, 엔드포인트 목록(550행)에 `/confirm` 추가
-- `docs/api-routes.md`·`docs/api-contracts.md` — planner 동기화 모드에서 함께 갱신
-- `docs/specs/002-auth-account/tasks.md` — Issue #116 절 체크
+- `ai/prd.md` — `AUTH-006` 309행의 구현 단계 문구 갱신, 확인 단계 계약(한 요청으로 인증번호+새 비밀번호, 8~100자, 새 토큰 미발급) 반영, 엔드포인트 목록(550행)에 `/confirm` 추가
+- `ai/api-routes.md`·`docs/api-contracts.md` — planner 동기화 모드에서 함께 갱신
+- `ai/specs/002-auth-account/tasks.md` — Issue #116 절 체크
 
 ---
 
@@ -293,10 +293,10 @@ public record PasswordResetConfirmRequest(
 
 ## Task 5: PRD·API 문서 동기화
 
-- [ ] `docs/prd.md` `AUTH-006`의 구현 단계 문구(309행)를 갱신하고, 확인 단계 계약(인증번호+새 비밀번호 동시 수신, 새 비밀번호 8~100자, 새 토큰 미발급·전 기기 로그아웃)을 반영한다. 엔드포인트 목록(550행 부근)에 `POST /api/auth/password-resets/confirm`을 추가한다.
+- [ ] `ai/prd.md` `AUTH-006`의 구현 단계 문구(309행)를 갱신하고, 확인 단계 계약(인증번호+새 비밀번호 동시 수신, 새 비밀번호 8~100자, 새 토큰 미발급·전 기기 로그아웃)을 반영한다. 엔드포인트 목록(550행 부근)에 `POST /api/auth/password-resets/confirm`을 추가한다.
 - [ ] U1(5회 초과 응답 코드)의 최종 결론을 PRD 문구와 일치시킨다.
-- [ ] `docs/api-routes.md`·`docs/api-contracts.md`를 실제 매핑과 일치하게 갱신한다(Access Token 잔존 한계 명시 포함, planner 동기화 모드).
-- [ ] `docs/specs/002-auth-account/tasks.md`의 Issue #116 절을 체크한다.
+- [ ] `ai/api-routes.md`·`docs/api-contracts.md`를 실제 매핑과 일치하게 갱신한다(Access Token 잔존 한계 명시 포함, planner 동기화 모드).
+- [ ] `ai/specs/002-auth-account/tasks.md`의 Issue #116 절을 체크한다.
 
 ---
 
@@ -311,7 +311,7 @@ public record PasswordResetConfirmRequest(
 - [ ] OAuth 연결·계좌·시드머니·잔액·주문·체결이 전 시나리오에서 불변임이 확인된다.
 - [ ] 인증 헤더 없이 호출해도 401이 아님이 검증된다.
 - [ ] 신규 Flyway 마이그레이션·신규 `ErrorCode`가 추가되지 않았다.
-- [ ] `docs/prd.md`·`docs/api-routes.md`·`docs/api-contracts.md`가 실제 구현과 일치한다.
+- [ ] `ai/prd.md`·`ai/api-routes.md`·`docs/api-contracts.md`가 실제 구현과 일치한다.
 - [ ] `./gradlew build`(Spotless·SpotBugs·JaCoCo 포함)가 통과한다.
 
 ---

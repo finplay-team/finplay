@@ -22,7 +22,7 @@
   - 대상 게시물 없음은 404 `NOT_FOUND`.
 - PRD §6 데이터 모델
   - `post_comments`는 게시물, 작성자, 본문, 생성시각을 저장한다.
-- `docs/specs/008-community/spec.md`
+- `ai/specs/008-community/spec.md`
   - 댓글 본문은 공백만으로 이뤄질 수 없다.
   - 댓글은 평면형이며 수정·대댓글은 범위에서 제외한다.
 - GitHub Issue #28 계약
@@ -63,7 +63,7 @@
 - 댓글 생성과 저장의 단일 트랜잭션
 - 정상 201 응답
 - Service 단위, Repository/MySQL 슬라이스, Controller 슬라이스, 핵심 통합 테스트
-- 구현 뒤 실제 Controller 매핑 기준 `docs/api-routes.md` 동기화
+- 구현 뒤 실제 Controller 매핑 기준 `ai/api-routes.md` 동기화
 
 ### 제외
 
@@ -197,13 +197,13 @@ CREATE TABLE post_comments (
 
 ### Documentation
 
-- `docs/api-routes.md`
-- `docs/specs/008-community/issue-28-tasks.md`
+- `ai/api-routes.md`
+- `ai/specs/008-community/issue-28-tasks.md`
 
 ### 만들거나 수정하지 않을 파일
 
 - 머지된 Flyway 마이그레이션 V1~V3
-- `docs/specs/008-community/spec.md`
+- `ai/specs/008-community/spec.md`
 - 다른 커뮤니티 API용 production/test 파일
 
 ---
@@ -253,5 +253,5 @@ CREATE TABLE post_comments (
 - [ ] 비로그인 요청은 401 `UNAUTHORIZED`이며 DB 변경이 없다.
 - [ ] 실제 MySQL에서 마이그레이션·두 FK·저장 흐름을 검증한다.
 - [ ] 댓글 조회·삭제·수정·대댓글 등 다른 API를 구현하지 않는다.
-- [ ] 실제 Controller 매핑을 `docs/api-routes.md`에 동기화한다.
+- [ ] 실제 Controller 매핑을 `ai/api-routes.md`에 동기화한다.
 - [ ] `.\gradlew.bat build --no-daemon --max-workers=1`을 새로 실행해 통과한다.

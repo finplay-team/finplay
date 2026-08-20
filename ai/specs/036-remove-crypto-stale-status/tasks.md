@@ -19,10 +19,10 @@
 
 - [x] **3. API 계약 문서 동기화**
   - `docs/api-contracts.md`: `/price` 절, 주문 절, 코인 SSE `snapshot` 절에서 `STALE` 관련 서술 제거·갱신(plan.md "문서 동기화" 참조).
-  - `docs/api-routes.md`: `/api/instruments/{instrumentId}/price` 라우트 설명에서 `STALE` 언급 제거, 근거 칸에 `036` 추가.
+  - `ai/api-routes.md`: `/api/instruments/{instrumentId}/price` 라우트 설명에서 `STALE` 언급 제거, 근거 칸에 `036` 추가.
 
 - [x] **4. spec 대체 각주 + PRD §3 구현 현황 갱신**
-  - `docs/specs/003-market-data/spec.md` MKT-004를 "경과 시간과 무관하게 항상 AVAILABLE"로 본문 재작성(각주가 아니라 034가 해온 대로 본문을 직접 갱신).
-  - `docs/specs/032-price-quote-stale-split/spec.md`·`docs/specs/034-crypto-price-rest-backup/spec.md` 최상단에 이 spec으로 대체된 요구사항을 명시하는 한 줄 각주 추가(체크박스 원문 유지).
-  - `docs/prd.md` §3 "구현 현황"의 PRICE-STALE-001~005·PRICE-REST-001~006 관련 행을 이 spec 반영해 갱신(근거: 이 spec/PR 번호, CLAUDE.md 규칙 10).
+  - `ai/specs/003-market-data/spec.md` MKT-004를 "경과 시간과 무관하게 항상 AVAILABLE"로 본문 재작성(각주가 아니라 034가 해온 대로 본문을 직접 갱신).
+  - `ai/specs/032-price-quote-stale-split/spec.md`·`ai/specs/034-crypto-price-rest-backup/spec.md` 최상단에 이 spec으로 대체된 요구사항을 명시하는 한 줄 각주 추가(체크박스 원문 유지).
+  - `ai/prd.md` §3 "구현 현황"의 PRICE-STALE-001~005·PRICE-REST-001~006 관련 행을 이 spec 반영해 갱신(근거: 이 spec/PR 번호, CLAUDE.md 규칙 10).
   - 이 작업 항목까지 완료된 뒤 `./gradlew build` 통과 확인.

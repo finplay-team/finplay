@@ -104,11 +104,11 @@
 - [x] **7. 통합 시나리오와 문서** — Testcontainers 통합 테스트로 **0막 대기 → 매수 → 1막 →
   2막 손절 → 확정 하락 관전 → 재진입 대기 → 재매수 → 3막 익절 → 4막 관전 → 복기 → 완료** 완주.
   `CAUTIOUS`가 루머에서, `BALANCED`가 확정에서 손절되는 분기와 **재매수 후에도 관찰 evidence가 유지되는
-  것**을 함께 확인. `docs/api-routes.md` 최종 확인, `docs/prd.md` §3에 `SCENARIO-001~024` 행 추가.
+  것**을 함께 확인. `ai/api-routes.md` 최종 확인, `ai/prd.md` §3에 `SCENARIO-001~024` 행 추가.
   > **SANDBOX 행의 5분 만료 서술은 이슈 #472(4·5번)에서 이미 갱신했다** — 그 PR이 CRYPTO 버전 2에서
   > 마감을 실제로 폐지했으므로 규칙 10의 갱신 대상이었다. 여기 남은 것은 SCENARIO 행 신설뿐이다.
   > **완료 (이슈 #488).** `PracticeScenarioFullJourneyIntegrationTest`가 완주와 프리셋 분기를 함께 본다.
-  > `docs/prd.md` §3에 SCENARIO 행을 신설하고 042의 EXITPRESET 행을 "일부 완료 → 완료"로 바꿨다 —
+  > `ai/prd.md` §3에 SCENARIO 행을 신설하고 042의 EXITPRESET 행을 "일부 완료 → 완료"로 바꿨다 —
   > 남아 있던 미완료가 이 작업의 진입별 배열이었다.
 
 > **API 문서는 각 항목이 자기 커밋에서 갱신한다**(CLAUDE.md 규칙 7). 5·6번이 응답 계약을 바꾸므로 각자

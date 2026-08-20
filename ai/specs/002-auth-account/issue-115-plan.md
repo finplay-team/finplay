@@ -4,7 +4,7 @@
 
 **Goal:** `POST /api/auth/password-resets`를 비인증 공개 경로로 신설해, 비밀번호를 잊은 이메일 회원의 가입 이메일로 6자리 인증번호를 발송한다. 인증번호는 원문을 저장하지 않고 전용 시크릿 기반 HMAC-SHA-256 해시만 저장하며, 5분 만료·60초 재발송 간격·1시간 5회·하루 10회 제한과 재발송 시 이전 코드 즉시 무효화를 적용한다. 확인·실제 비밀번호 교체·Refresh Token 폐기는 후속 이슈로 미룬다.
 
-**관련 정본:** GitHub Issue #115, PRD `AUTH-004`(가입 인증번호 흐름 원형, `docs/prd.md` 246-259행), PRD `AUTH-002`(소셜 전용 회원의 비밀번호 부재 판별, 224행), PRD §5 공통 오류표(570-593행), `docs/specs/002-auth-account/spec.md`, `docs/specs/002-auth-account/plan.md`, Issue #55 계획(`issue-55-plan.md`, 발송 제한·이전 코드 무효화 구조의 직전 선례), Issue #56 계획(`issue-56-plan.md`, 확인 단계 구조 — 후속 #116이 참고), ADR-0002, ADR-0003, ADR-0004, `docs/conventions.md`
+**관련 정본:** GitHub Issue #115, PRD `AUTH-004`(가입 인증번호 흐름 원형, `ai/prd.md` 246-259행), PRD `AUTH-002`(소셜 전용 회원의 비밀번호 부재 판별, 224행), PRD §5 공통 오류표(570-593행), `ai/specs/002-auth-account/spec.md`, `ai/specs/002-auth-account/plan.md`, Issue #55 계획(`issue-55-plan.md`, 발송 제한·이전 코드 무효화 구조의 직전 선례), Issue #56 계획(`issue-56-plan.md`, 확인 단계 구조 — 후속 #116이 참고), ADR-0002, ADR-0003, ADR-0004, `docs/conventions.md`
 
 **PRD 상태:** PRD에는 비밀번호 재설정 요구사항이 **아직 없다.** 이 이슈에서 `AUTH-006`을 신설한다 (문구 초안은 "미확정·PRD 불일치" 절 U1).
 
@@ -256,9 +256,9 @@ List<PasswordResetVerification> findByEmailAndCodeHashIsNotNullAndConsumedAtIsNu
 
 ### Documentation files to modify after implementation
 
-- `docs/prd.md` — `AUTH-006` 신설(U1), §5 공통 오류표에 신규 409 코드 행, 엔드포인트 목록에 `POST /api/auth/password-resets`
-- `docs/api-routes.md`, `docs/api-contracts.md` — planner 동기화 모드에서 함께 갱신
-- `docs/specs/002-auth-account/tasks.md` — Issue #115 절 체크
+- `ai/prd.md` — `AUTH-006` 신설(U1), §5 공통 오류표에 신규 409 코드 행, 엔드포인트 목록에 `POST /api/auth/password-resets`
+- `ai/api-routes.md`, `docs/api-contracts.md` — planner 동기화 모드에서 함께 갱신
+- `ai/specs/002-auth-account/tasks.md` — Issue #115 절 체크
 
 ---
 
@@ -293,9 +293,9 @@ List<PasswordResetVerification> findByEmailAndCodeHashIsNotNullAndConsumedAtIsNu
 
 ## Task 5: PRD 신설과 API 문서 동기화
 
-- [ ] `docs/prd.md`에 `AUTH-006`(U1 초안 기준)을 신설하고, §5 공통 오류표에 신규 409 코드 행을, 엔드포인트 목록에 `POST /api/auth/password-resets`를 추가한다.
-- [ ] `docs/api-routes.md`·`docs/api-contracts.md`를 실제 매핑과 일치하게 갱신한다 (planner 동기화 모드).
-- [ ] `docs/specs/002-auth-account/tasks.md`의 Issue #115 절을 체크한다.
+- [ ] `ai/prd.md`에 `AUTH-006`(U1 초안 기준)을 신설하고, §5 공통 오류표에 신규 409 코드 행을, 엔드포인트 목록에 `POST /api/auth/password-resets`를 추가한다.
+- [ ] `ai/api-routes.md`·`docs/api-contracts.md`를 실제 매핑과 일치하게 갱신한다 (planner 동기화 모드).
+- [ ] `ai/specs/002-auth-account/tasks.md`의 Issue #115 절을 체크한다.
 
 ---
 
@@ -311,7 +311,7 @@ List<PasswordResetVerification> findByEmailAndCodeHashIsNotNullAndConsumedAtIsNu
 - [ ] 인증 헤더 없이 호출해도 401이 아님이 검증된다.
 - [ ] `users`·`accounts`·`refresh_tokens`가 전 시나리오에서 불변임이 MySQL 통합 테스트로 확인된다.
 - [ ] `PASSWORD_RESET_SECRET`이 없으면 기동이 실패한다(yml 기본값 없음)는 것이 확인된다.
-- [ ] `docs/prd.md`·`docs/api-routes.md`·`docs/api-contracts.md`가 실제 구현과 일치한다.
+- [ ] `ai/prd.md`·`ai/api-routes.md`·`docs/api-contracts.md`가 실제 구현과 일치한다.
 - [ ] `./gradlew build`(Spotless·SpotBugs·JaCoCo 포함)가 통과한다.
 
 ---

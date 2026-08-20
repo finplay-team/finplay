@@ -6,7 +6,7 @@
 
 **선행:** Issue #23(작성)·#25(단건 조회)·#26(수정, PR #61로 dev 머지 완료)이 존재해 `CommunityPost`·`CommunityPostRepository`·`CommunityPostService`·`CommunityPostController`가 있다. Issue #28(댓글 작성, dev 머지 완료)로 `PostComment`·`PostCommentRepository`(현재 빈 `JpaRepository` 인터페이스)·`post_comments` 테이블(`V4__create_post_comments_table.sql`)이 존재한다.
 
-아직 없는 것: Controller의 DELETE 엔드포인트, Service의 삭제 로직, 댓글 처리(설계 결정 D1 참고), `docs/api-routes.md` 반영, 관련 테스트.
+아직 없는 것: Controller의 DELETE 엔드포인트, Service의 삭제 로직, 댓글 처리(설계 결정 D1 참고), `ai/api-routes.md` 반영, 관련 테스트.
 
 ## 요구사항 ID와 수용 기준
 
@@ -33,7 +33,7 @@
 - `PostCommentRepository`에 게시물 기준 일괄 삭제 메서드 추가 (D1이 (b)로 결정될 경우)
 - Controller/Service/Repository 계층 분리 유지 (ADR-0002)
 - Service 단위, Controller MVC 슬라이스, 실제 DB 통합 테스트 (댓글 없음/있음·타인 삭제·없는 ID·204 케이스)
-- 구현 후 실제 Controller 매핑 기준 `docs/api-routes.md` 동기화
+- 구현 후 실제 Controller 매핑 기준 `ai/api-routes.md` 동기화
 
 ### 제외
 
@@ -107,8 +107,8 @@
 
 ### Documentation
 
-- `docs/api-routes.md` (동기화 모드에서 처리)
-- `docs/specs/008-community/issue-27-tasks.md`
+- `ai/api-routes.md` (동기화 모드에서 처리)
+- `ai/specs/008-community/issue-27-tasks.md`
 
 ## 테스트 계획
 
@@ -146,5 +146,5 @@
 - [ ] 존재하지 않는 게시물 삭제는 404 `NOT_FOUND`를 반환한다.
 - [ ] 비로그인 요청은 401 `UNAUTHORIZED`를 반환한다.
 - [ ] `V4` 마이그레이션과 `post_comments` FK 제약을 변경하지 않는다.
-- [ ] 실제 Controller 매핑을 `docs/api-routes.md`에 동기화한다 (동기화 모드에서 처리).
+- [ ] 실제 Controller 매핑을 `ai/api-routes.md`에 동기화한다 (동기화 모드에서 처리).
 - [ ] 대상 테스트와 `.\gradlew.bat build --no-daemon --max-workers=1`을 새로 실행해 통과한다.

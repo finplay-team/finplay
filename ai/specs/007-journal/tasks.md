@@ -60,7 +60,7 @@
 
 - [x] **6. 문서 갱신 + 빌드**
 
-  `docs/api-routes.md` 라우트 목록에 신규 행을, `docs/api-contracts.md` `## order` 절(또는 신설 `## journal` 절)에 요청·응답·오류 계약을 추가한다 (CLAUDE.md 규칙 7 — 원래는 컨트롤러 커밋과 같은 커밋이 원칙이므로, 4번에서 함께 넣었다면 이 항목은 누락분 확인으로 끝낸다).
+  `ai/api-routes.md` 라우트 목록에 신규 행을, `docs/api-contracts.md` `## order` 절(또는 신설 `## journal` 절)에 요청·응답·오류 계약을 추가한다 (CLAUDE.md 규칙 7 — 원래는 컨트롤러 커밋과 같은 커밋이 원칙이므로, 4번에서 함께 넣었다면 이 항목은 누락분 확인으로 끝낸다).
   - `plan.md` §관련 문서의 "아직 미반영" 표기를 반영 완료로 바꾼다.
   - `./gradlew spotlessApply` 후 **`./gradlew build` 통과**를 확인한다.
 
@@ -73,7 +73,7 @@
 | 없는 체결·매도가 아닌 체결·타인 체결·공백 본문 거부 | **5** (단위 **3**, 계약 **4**) |
 | 성공·실패 전후 원장 불변 | **5** (마이그레이션에 원장 `ALTER` 없음은 **1**) |
 | 신규 Flyway 마이그레이션으로 투자일기 테이블 생성 (ADR-0004) | **1** |
-| `docs/api-routes.md`·`docs/api-contracts.md` 반영 | **6** (컨트롤러 커밋 **4**와 같은 커밋이면 거기서) |
+| `ai/api-routes.md`·`docs/api-contracts.md` 반영 | **6** (컨트롤러 커밋 **4**와 같은 커밋이면 거기서) |
 | `spec.md` 상태 서술 갱신 | **완료** — 2026-08-04 planner가 `spec.md` 머리말에서 반영 |
 | `./gradlew build` 통과 | **6** |
 
@@ -122,7 +122,7 @@
 
   `POST /api/trades/{sellTradeId}/sell-journal`을 기존 컨트롤러에 추가하고 record DTO 2개를 만든다. 응답 필드는 `journalId`·`sellTradeId`·`content`·`createdAt` 4개 고정이다.
   - 컨트롤러에 비즈니스 판단·repository 호출·try-catch를 두지 않는다.
-  - **같은 커밋에서** `docs/api-routes.md`·`docs/api-contracts.md`를 갱신한다 (CLAUDE.md 규칙 7).
+  - **같은 커밋에서** `ai/api-routes.md`·`docs/api-contracts.md`를 갱신한다 (CLAUDE.md 규칙 7).
   - 검증 — `@WebMvcTest`: 201 본문 `jsonPath` 4필드, 공백·누락·상한 초과 400, 숫자 아닌 `sellTradeId` 400, 미인증 401, 서비스 예외의 403·404·409 매핑.
 
 - [x] **S4. 통합 테스트 + 빌드**
@@ -144,8 +144,8 @@
 | 없는 체결·매수인 체결·타인 체결·공백 본문 거부 | **S4** (단위 **S2**, 계약 **S3**) |
 | 성공·실패 전후 원장 불변 | **S4** (마이그레이션에 원장 `ALTER` 없음은 **S1**) |
 | 신규 Flyway 마이그레이션으로 매도 투자일기 테이블 생성 (ADR-0004) | **S1** |
-| `docs/api-routes.md`·`docs/api-contracts.md` 반영 | **S3** |
-| `docs/specs/007-journal/spec.md` 범위 제외 갱신 | **완료** — 2026-08-04 `spec.md`·`plan.md`·이 문서에 2차 착수 범위 반영 |
+| `ai/api-routes.md`·`docs/api-contracts.md` 반영 | **S3** |
+| `ai/specs/007-journal/spec.md` 범위 제외 갱신 | **완료** — 2026-08-04 `spec.md`·`plan.md`·이 문서에 2차 착수 범위 반영 |
 | `./gradlew build` 통과 | **S4** |
 
 ## 이 이슈에서 하지 않는 것
@@ -195,7 +195,7 @@
 
   `PATCH /api/trades/{sellTradeId}/sell-journal`을 기존 컨트롤러에 추가하고 record DTO 2개(`SellJournalUpdateRequest`, `SellJournalUpdateResponse`)를 만든다. 응답 필드는 `journalId`·`sellTradeId`·`content`·`createdAt`·`updatedAt` 5개 고정이다. 성공 상태는 200이다(생성이 아니므로 201 아님).
   - 컨트롤러에 비즈니스 판단·repository 호출·try-catch를 두지 않는다.
-  - **같은 커밋에서** `docs/api-routes.md`·`docs/api-contracts.md`를 갱신한다 (CLAUDE.md 규칙 7, plan.md §문서 갱신).
+  - **같은 커밋에서** `ai/api-routes.md`·`docs/api-contracts.md`를 갱신한다 (CLAUDE.md 규칙 7, plan.md §문서 갱신).
   - 검증 — `@WebMvcTest`: 200 본문 `jsonPath` 5필드, 공백·누락·상한 초과 400, 숫자 아닌 `sellTradeId` 400, 미인증 401, 서비스 예외의 400·403·404 매핑(409 케이스 없음).
 
 - [x] **U4. 통합 테스트 + 빌드**
@@ -221,7 +221,7 @@
 | 매수 회고 작성·매도 회고 작성 기존 계약과 테스트가 그대로 통과 | **U4** (경로 무변경은 **U1**·**U2**) |
 | 신규 Flyway 마이그레이션으로 `sell_trade_journals`에 수정시각 컬럼 추가 (ADR-0004) | **U1** |
 | 성공·실패 전후 원장 불변 | **U4** (마이그레이션에 원장 `ALTER` 없음은 **U1**) |
-| `docs/api-routes.md`·`docs/api-contracts.md` 반영 | **U3** |
+| `ai/api-routes.md`·`docs/api-contracts.md` 반영 | **U3** |
 | `./gradlew build` 통과 | **U4** |
 
 ## 이 이슈에서 하지 않는 것
@@ -256,9 +256,9 @@
 - [x] **B0. PRD·spec·plan·tasks 문서 갱신 (문서 커밋, 구현 전 선행)**
 
   Decision Gate 해제 결정을 정본 문서에 반영한다. 코드 변경 없음.
-  - `docs/prd.md` JOUR-002 — Decision Gate 문구를 "잠금 없음 확정 + 근거 3가지 + 향후 피드백·리포트 스펙에서 재검토"로 교체. JOUR-004 항목의 JOUR-002 참조도 함께 정정.
-  - `docs/specs/005-order-sell/spec.md` — "첫 매도 배분이 발생한 매수 lot은 투자일기 수정이 잠긴다" 규칙에 철회 표시와 근거 링크를 단다(그 spec의 구현에는 영향 없음).
-  - `docs/specs/007-journal/` `spec.md`·`plan.md`·`tasks.md` — 4차 착수(JOUR-002) 범위·요구사항·비즈니스 규칙·완료 조건·설계·작업 항목 추가, 범위 제외에서 JOUR-002 제거.
+  - `ai/prd.md` JOUR-002 — Decision Gate 문구를 "잠금 없음 확정 + 근거 3가지 + 향후 피드백·리포트 스펙에서 재검토"로 교체. JOUR-004 항목의 JOUR-002 참조도 함께 정정.
+  - `ai/specs/005-order-sell/spec.md` — "첫 매도 배분이 발생한 매수 lot은 투자일기 수정이 잠긴다" 규칙에 철회 표시와 근거 링크를 단다(그 spec의 구현에는 영향 없음).
+  - `ai/specs/007-journal/` `spec.md`·`plan.md`·`tasks.md` — 4차 착수(JOUR-002) 범위·요구사항·비즈니스 규칙·완료 조건·설계·작업 항목 추가, 범위 제외에서 JOUR-002 제거.
   - 검증 — 문서만 바뀌므로 빌드 불필요. `JOURNAL_LOCKED`·"잠금" 언급이 남은 위치를 grep으로 확인해 모순이 없는지 본다.
 
 - [x] **B1. 마이그레이션 + 엔티티 `updatedAt` 필드·수정 메서드 + 리포지토리 조회 메서드**
@@ -284,7 +284,7 @@
 
   `PATCH /api/trades/{buyTradeId}/journal`을 기존 컨트롤러에 추가하고 record DTO 2개(`BuyJournalUpdateRequest`, `BuyJournalUpdateResponse`)를 만든다. 응답 필드는 `journalId`·`buyTradeId`·`content`·`createdAt`·`updatedAt` 5개 고정이고 성공 상태는 200이다.
   - 컨트롤러에 비즈니스 판단·repository 호출·try-catch를 두지 않는다.
-  - **같은 커밋에서** `docs/api-routes.md`·`docs/api-contracts.md`를 갱신한다 (CLAUDE.md 규칙 7, plan.md §문서 갱신). 계약 본문에 **잠금 없음(매도 배분 여부와 무관하게 항상 수정 가능)**을 명시한다.
+  - **같은 커밋에서** `ai/api-routes.md`·`docs/api-contracts.md`를 갱신한다 (CLAUDE.md 규칙 7, plan.md §문서 갱신). 계약 본문에 **잠금 없음(매도 배분 여부와 무관하게 항상 수정 가능)**을 명시한다.
   - 검증 — `@WebMvcTest`: 200 본문 `jsonPath` 5필드, 공백·누락·상한 초과 400, 숫자 아닌 `buyTradeId` 400, 미인증 401, 서비스 예외의 400·403·404 매핑(409 케이스 없음).
 
 - [x] **B4. 통합 테스트 (잠금 없음 회귀 포함) + 빌드**
@@ -309,9 +309,9 @@
 | upsert 아님(수정 요청이 새 회고를 만들지 않음)을 행 수로 확인 | **B4** |
 | 신규 Flyway 마이그레이션으로 `buy_trade_journals`에 수정시각 컬럼 추가 (ADR-0004) | **B1** |
 | 성공·실패 전후 원장 불변 | **B4** (마이그레이션에 원장 `ALTER` 없음은 **B1**) |
-| `docs/api-routes.md`·`docs/api-contracts.md` 반영 | **B3** |
-| `docs/prd.md` JOUR-002 Decision Gate 문구 갱신 | **B0** |
-| `docs/specs/007-journal/spec.md` 범위 제외에서 JOUR-002 제거 + 요구사항·완료 조건 절 추가 | **B0** |
+| `ai/api-routes.md`·`docs/api-contracts.md` 반영 | **B3** |
+| `ai/prd.md` JOUR-002 Decision Gate 문구 갱신 | **B0** |
+| `ai/specs/007-journal/spec.md` 범위 제외에서 JOUR-002 제거 + 요구사항·완료 조건 절 추가 | **B0** |
 | `./gradlew build` 통과 | **B4** |
 
 ## 이 이슈에서 하지 않는 것
@@ -362,7 +362,7 @@
   `GET /api/journal`을 새 컨트롤러 `JournalListController`(`@RequestMapping("/api/journal")`)에 연다. `JournalListResponse`(`content`·`nextCursor`·`hasNext`)와 `JournalListItemResponse`(`journalType`·`buyTradeId`·`sellTradeId`·`content`·`createdAt`·`updatedAt`, `from(BuyTradeJournal)`/`from(SellTradeJournal)` 오버로드) record 2개를 만든다. `limit` 검증은 `TradeController.validateLimit`을 그대로 복제한다.
   - `journalType`은 `order.domain.OrderSide`를 재사용하지 않고 리터럴 `"BUY"`/`"SELL"` 문자열을 직접 쓴다.
   - 컨트롤러에 비즈니스 판단·repository 호출·try-catch를 두지 않는다.
-  - **같은 커밋에서** `docs/api-routes.md`·`docs/api-contracts.md`를 갱신한다 (CLAUDE.md 규칙 7, plan.md §문서 갱신).
+  - **같은 커밋에서** `ai/api-routes.md`·`docs/api-contracts.md`를 갱신한다 (CLAUDE.md 규칙 7, plan.md §문서 갱신).
   - 검증 — `@WebMvcTest`(`JournalListControllerTest`, 신규): 200 본문 `jsonPath` 6필드 + `journalId` 필드 **부재** 확인, `market` 누락·미지원 리터럴 400, `limit` 0·101 400, `cursor` 파싱 실패 400, 미인증 401, 서비스 404(계좌 없음) 매핑.
 
 - [x] **L4. 통합 테스트 — 혼합 목록·market 필터·커서 경계·격리 + 빌드**
@@ -381,7 +381,7 @@
 
 - [x] **L5. 문서 최종 확인 + 빌드**
 
-  `docs/api-routes.md`·`docs/api-contracts.md`가 실제 컨트롤러(`JournalListController`)와 일치하는지 최종 대조한다(원래는 L3에서 컨트롤러 커밋과 같은 커밋이 원칙이므로, L3에서 함께 반영했다면 이 항목은 누락분 확인으로 끝낸다).
+  `ai/api-routes.md`·`docs/api-contracts.md`가 실제 컨트롤러(`JournalListController`)와 일치하는지 최종 대조한다(원래는 L3에서 컨트롤러 커밋과 같은 커밋이 원칙이므로, L3에서 함께 반영했다면 이 항목은 누락분 확인으로 끝낸다).
   - `plan.md` §관련 문서·§JOUR-006 절의 "미반영" 표기가 있다면 반영 완료로 바꾼다.
   - `./gradlew spotlessApply` 후 **`./gradlew build` 통과**를 다시 확인한다.
 
@@ -398,7 +398,7 @@
 | 통합 `journalId` 미노출 계약 테스트 | **L4** (계약은 **L3**) |
 | 조회 전후 투자일기·원장 데이터 불변 | **L4** |
 | 기존 4개 계약과 그 테스트가 그대로 통과, 신규 마이그레이션 없음 | **L4** (경로 무변경은 **L1**·**L2**·**L3**) |
-| `docs/api-routes.md`·`docs/api-contracts.md` 반영 | **L3** (최종 확인 **L5**) |
+| `ai/api-routes.md`·`docs/api-contracts.md` 반영 | **L3** (최종 확인 **L5**) |
 | `./gradlew build` 통과 | **L4**·**L5** |
 
 ## 이 이슈에서 하지 않는 것
@@ -432,9 +432,9 @@
 - [x] **D0. PRD·spec·plan·tasks 문서 갱신 (문서 커밋, 구현 전 선행)**
 
   Decision Gate 해제 결정을 정본 문서에 반영한다. 코드 변경 없음.
-  - `docs/prd.md` JOUR-005 — URL·Decision Gate 문구를 "타입별 경로 분리 확정 + 두 엔드포인트 + 근거 3가지"로 교체. §3 "구현 현황"의 투자일기 조회 행도 실제 상태에 맞게 정리한다(JOUR-006은 PR #213으로 이미 완료인데 행이 `JOUR-005·006 미착수`로 묶여 있어 사실과 어긋난다 — 행을 분리한다).
-  - `docs/specs/007-journal/` `spec.md`·`plan.md`·`tasks.md` — 6차 착수(JOUR-005) 범위·요구사항·비즈니스 규칙·완료 조건·설계·작업 항목 추가, 범위 제외에서 JOUR-005 제거.
-  - **`docs/api-routes.md`·`docs/api-contracts.md`는 이 커밋에서 건드리지 않는다** — 아직 없는 엔드포인트를 라우트 지도에 먼저 올리면 그 문서가 "실제 컨트롤러와 동기화된 지도"라는 성질을 잃는다. D3(컨트롤러 커밋)에서 함께 반영한다(CLAUDE.md 규칙 7).
+  - `ai/prd.md` JOUR-005 — URL·Decision Gate 문구를 "타입별 경로 분리 확정 + 두 엔드포인트 + 근거 3가지"로 교체. §3 "구현 현황"의 투자일기 조회 행도 실제 상태에 맞게 정리한다(JOUR-006은 PR #213으로 이미 완료인데 행이 `JOUR-005·006 미착수`로 묶여 있어 사실과 어긋난다 — 행을 분리한다).
+  - `ai/specs/007-journal/` `spec.md`·`plan.md`·`tasks.md` — 6차 착수(JOUR-005) 범위·요구사항·비즈니스 규칙·완료 조건·설계·작업 항목 추가, 범위 제외에서 JOUR-005 제거.
+  - **`ai/api-routes.md`·`docs/api-contracts.md`는 이 커밋에서 건드리지 않는다** — 아직 없는 엔드포인트를 라우트 지도에 먼저 올리면 그 문서가 "실제 컨트롤러와 동기화된 지도"라는 성질을 잃는다. D3(컨트롤러 커밋)에서 함께 반영한다(CLAUDE.md 규칙 7).
   - 검증 — 문서만 바뀌므로 빌드 불필요. "Decision Gate"·"미해결"·"식별자 체계" 언급이 남은 위치를 grep으로 확인해 모순이 없는지 본다.
 
 - [x] **D1. `JournalService.getBuyJournal`·`getSellJournal` — 조회 유스케이스 2개 (단위 테스트 포함)**
@@ -450,7 +450,7 @@
 
   `GET /api/journal/buy/{buyTradeId}`·`GET /api/journal/sell/{sellTradeId}`를 신규 컨트롤러 `JournalDetailController`(`@RequestMapping("/api/journal")`)에 연다. 기존 두 컨트롤러는 건드리지 않는다.
   - 컨트롤러에 비즈니스 판단·repository 호출·try-catch를 두지 않는다. 요청 본문·쿼리 파라미터가 없다.
-  - **같은 커밋에서** `docs/api-routes.md`(2행)·`docs/api-contracts.md`(`## journal` 절에 상세 조회 소절)를 갱신한다 (CLAUDE.md 규칙 7, plan.md §문서 갱신).
+  - **같은 커밋에서** `ai/api-routes.md`(2행)·`docs/api-contracts.md`(`## journal` 절에 상세 조회 소절)를 갱신한다 (CLAUDE.md 규칙 7, plan.md §문서 갱신).
   - 검증 — `@WebMvcTest`(`JournalDetailControllerTest`, 신규): 두 경로 각각 200 본문 `jsonPath` 5필드, 숫자 아닌 경로 변수 400, 미인증 401, 서비스 예외의 400·403·404 매핑(409 없음), 매수 응답에 `sellTradeId` 키 부재·매도 응답에 `buyTradeId` 키 부재.
 
 - [x] **D3. 통합 테스트 — PK 충돌 픽스처·교차 경로·읽기 전용 + 빌드**
@@ -466,8 +466,8 @@
 
 - [x] **D4. PRD 구현 현황 갱신 + 문서 최종 확인 + 빌드**
 
-  `docs/prd.md` §3 "구현 현황"의 투자일기 상세 조회 행을 **완료**로 바꾸고 근거에 이번 PR 번호를 적는다 (CLAUDE.md 규칙 10).
-  - `docs/api-routes.md`·`docs/api-contracts.md`가 실제 컨트롤러(`JournalDetailController`)와 일치하는지 최종 대조한다(D2에서 함께 반영했다면 누락분 확인으로 끝낸다).
+  `ai/prd.md` §3 "구현 현황"의 투자일기 상세 조회 행을 **완료**로 바꾸고 근거에 이번 PR 번호를 적는다 (CLAUDE.md 규칙 10).
+  - `ai/api-routes.md`·`docs/api-contracts.md`가 실제 컨트롤러(`JournalDetailController`)와 일치하는지 최종 대조한다(D2에서 함께 반영했다면 누락분 확인으로 끝낸다).
   - `spec.md` §완료 조건 6차 착수의 체크박스를 실제 상태로 갱신한다.
   - `./gradlew spotlessApply` 후 **`./gradlew build` 통과**를 다시 확인한다.
 
@@ -483,10 +483,10 @@
 | 수정 후 상세 조회에 갱신 본문·`updatedAt` 반영 | **D3** |
 | 조회 전후 데이터 불변(읽기 전용), 신규 마이그레이션 없음 | **D3** (`readOnly` 설계는 **D1**) |
 | 기존 5개 계약과 그 테스트가 그대로 통과, 목록 계약 무변경 | **D3** (경로 무변경은 **D1**·**D2**) |
-| `docs/api-routes.md`·`docs/api-contracts.md` 반영 | **D2** (최종 확인 **D4**) |
-| `docs/prd.md` JOUR-005 Decision Gate 문구 갱신 | **D0** |
-| `docs/prd.md` §3 구현 현황 행 갱신 | **D0**(행 분리·사실 정정) → **D4**(완료 판정·PR 번호) |
-| `docs/specs/007-journal/spec.md`에 JOUR-005 착수 반영 | **D0** (완료 체크는 **D4**) |
+| `ai/api-routes.md`·`docs/api-contracts.md` 반영 | **D2** (최종 확인 **D4**) |
+| `ai/prd.md` JOUR-005 Decision Gate 문구 갱신 | **D0** |
+| `ai/prd.md` §3 구현 현황 행 갱신 | **D0**(행 분리·사실 정정) → **D4**(완료 판정·PR 번호) |
+| `ai/specs/007-journal/spec.md`에 JOUR-005 착수 반영 | **D0** (완료 체크는 **D4**) |
 | `./gradlew build` 통과 | **D3**·**D4** |
 
 ## 이 이슈에서 하지 않는 것

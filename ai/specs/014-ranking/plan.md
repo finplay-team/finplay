@@ -3,7 +3,7 @@
 ## 관련 문서
 
 - Spec: `./spec.md`
-- PRD: `docs/prd.md` RANK-001(2026-08-03 확정, 이슈 #139)
+- PRD: `ai/prd.md` RANK-001(2026-08-03 확정, 이슈 #139)
 - 이슈: #187(`gh issue view 187`), 선행 이슈 #139(완료, 정책 확정)
 - 관련 ADR
   - **ADR-0002 (레이어드 아키텍처)** — `controller → service → repository/store`. 도메인 간 참조는 service를 통해서만 한다. 다른 도메인의 repository를 직접 주입하지 않는다. 이 기능은 `ranking` 도메인이 `account` 도메인의 이벤트 타입 하나를 참조하는 것과 별개로, `RankingService`가 `account` 데이터를 조회할 때는 `AccountRepository`가 아니라 `AccountService`(신규 조회 메서드 `findByIdOrEmpty`/`findAllByIdInFetchUser`)를 주입해 사용한다(리뷰 반영, PR #187).
@@ -84,7 +84,7 @@ public class RankingEventListener {
 
 - `phase = AFTER_COMMIT`을 명시한다(기본값이 `AFTER_COMMIT`이지만 의도를 코드로 드러내기 위해 명시 — 리뷰 시 "왜 이 phase인지" 질문이 나오지 않게 한다).
 - 이 리스너는 **기본적으로 이벤트를 발행한 스레드에서 동기 실행**된다(`@Async` 미적용) — 별도 스레드풀·`@EnableAsync` 설정을 추가하지 않는다. 재시도 backoff를 포함해도 매도 응답 지연이 수백 ms 이내로 bounded되도록 아래 4)의 백오프 값을 짧게 잡는다. 지연이 실제로 문제가 되면 `@Async` 도입은 후속 고도화(과설계 금지 원칙).
-- **리스너 메서드 본문 전체를 try/catch로 감싼다 — `RankingStore.addScoreWithRetry` 내부의 try/catch만으로는 부족하다.** Spring 트랜잭션 매니저는 `AFTER_COMMIT` 동기화 콜백에서 던진 예외를 삼키지 않고 `commit()` 호출부까지, 결국 `@Transactional` 프록시를 거쳐 원래 호출 스레드(매도 요청을 처리 중인 HTTP 스레드)까지 전파시킨다(DB 롤백은 안 되지만 응답은 500이 나갈 수 있음). `RankingStore.addScoreWithRetry`는 Redis 호출만 감싸므로, 그 앞단인 `RankingService.refreshScore`의 `accountService.findByIdOrEmpty(accountId)`가 던지는 예외(예: DB 커넥션 풀 고갈로 인한 `SQLTransientConnectionException`, 순간적 DB 장애로 인한 `DataAccessResourceFailureException` — 둘 다 재현 전례 있음, `docs/agent-mistakes.md` 2026-07-30)는 그 try/catch로 못 막는다. 그래서 리스너 메서드 최상위에서 한 번 더 감싸 **어떤 예외가 나든** 로그만 남기고 절대 밖으로 전파하지 않게 한다(완료 조건 "매도 체결 자체는 정상 성공" 보장의 실질적 구현 지점 — `RankingStore`의 내부 try/catch가 아니라 이 리스너 레벨의 try/catch다).
+- **리스너 메서드 본문 전체를 try/catch로 감싼다 — `RankingStore.addScoreWithRetry` 내부의 try/catch만으로는 부족하다.** Spring 트랜잭션 매니저는 `AFTER_COMMIT` 동기화 콜백에서 던진 예외를 삼키지 않고 `commit()` 호출부까지, 결국 `@Transactional` 프록시를 거쳐 원래 호출 스레드(매도 요청을 처리 중인 HTTP 스레드)까지 전파시킨다(DB 롤백은 안 되지만 응답은 500이 나갈 수 있음). `RankingStore.addScoreWithRetry`는 Redis 호출만 감싸므로, 그 앞단인 `RankingService.refreshScore`의 `accountService.findByIdOrEmpty(accountId)`가 던지는 예외(예: DB 커넥션 풀 고갈로 인한 `SQLTransientConnectionException`, 순간적 DB 장애로 인한 `DataAccessResourceFailureException` — 둘 다 재현 전례 있음, `ai/agent-mistakes.md` 2026-07-30)는 그 try/catch로 못 막는다. 그래서 리스너 메서드 최상위에서 한 번 더 감싸 **어떤 예외가 나든** 로그만 남기고 절대 밖으로 전파하지 않게 한다(완료 조건 "매도 체결 자체는 정상 성공" 보장의 실질적 구현 지점 — `RankingStore`의 내부 try/catch가 아니라 이 리스너 레벨의 try/catch다).
 
 ### 4) `RankingStore` (신규, `com.finplay.api.ranking.store`) — Redis 전용 창구
 
@@ -313,7 +313,7 @@ com.finplay.api.order.service.OrderExecutionService (기존 파일 — 수정)
 ### 관련 문서
 
 - Spec: `./spec.md` "RANK-002 내 랭킹 조회"
-- PRD: `docs/prd.md` "RANK-002 내 랭킹 조회"(2026-08-05 확정)
+- PRD: `ai/prd.md` "RANK-002 내 랭킹 조회"(2026-08-05 확정)
 - ADR-0002(레이어드 아키텍처) — 이번에도 `RankingService`가 `AccountRepository`를 직접 주입하지 않고 `AccountService`를 통해 계좌를 조회한다. 최초 설계는 기존 `getAccountFor(userId, market)`를 재사용했으나(신규 repository 메서드 불필요), PR #234 리뷰 권장 반영으로 fetch join 전용 신규 메서드 `getAccountForWithUser(userId, market)`(내부적으로 `AccountRepository.findByUserIdAndMarketFetchUser` 신규 쿼리 사용)로 바꿨다 — 아래 "계좌 하나의 score를 얻는 방법" 다음 절 참고.
 - **코드 확인 결과 (구현 착수 전 필수 확인)**: 실제 `RankingStore`/`RankingService`(`src/main/java/com/finplay/api/ranking/`)를 읽어 아래를 확인했다 — plan.md 위쪽 6절의 최초 스케치(`Range.rightUnbounded(...)`)는 실제로는 쓰이지 않았고, `countStrictlyGreater(Market, long score)`(score는 `long`, `count(key, lowerBound, +INF)` 오버로드 사용)로 구현돼 있다(PR #196 리뷰 반영, 위 8절 참고). RANK-002는 이 **실제 시그니처**(`long` 파라미터)를 그대로 재사용한다. 6절이 예고한 "`calculateRanks`를 private으로 분리해 재사용" 방식은 그대로는 재사용하지 않는다 — `calculateRanks`는 "여러 accountId의 window를 한 번에 정렬·매핑"하는 목록 전용 로직이라 단건 조회에 맞지 않는다. 대신 `calculateRanks`가 이미 쓰고 있는 원자 연산 `RankingStore.countStrictlyGreater(market, score)`를 그대로 재사용하고, "이 계좌의 score를 어떻게 얻는가"만 새로 설계한다(아래).
 
@@ -428,7 +428,7 @@ com.finplay.api.account                    # PR #234 리뷰 권장 반영 — �
 
 - Spec: `./spec.md` "랭킹 재구성 절차 (이슈 #279)"
 - 이슈: #279(`gh issue view 279`), 선행 이슈 #187(RANK-001)·#233(RANK-002)
-- PRD: `docs/prd.md` RANK-001 절("유실 시 MySQL 원장으로 재구성한다 — 세부 구현은 착수 시 확정")·§6 "Redis 키 책임"의 랭킹 항목
+- PRD: `ai/prd.md` RANK-001 절("유실 시 MySQL 원장으로 재구성한다 — 세부 구현은 착수 시 확정")·§6 "Redis 키 책임"의 랭킹 항목
 - 관련 ADR
   - **ADR-0002 (레이어드 아키텍처)** — `ranking` 도메인은 다른 도메인의 repository를 직접 주입하지 않는다. 매도 이력 조회는 `order` 도메인의 `TradeService`를 경유하고, 계좌 조회는 `account` 도메인의 `AccountService`를 경유한다. RANK-001이 `AccountRepository` 직접 주입을 리뷰에서 지적받아 `AccountService` 경유로 바꾼 것(위 9행)과 같은 기준이다.
   - **ADR-0003 (테스트 전략)** — 단위 / `@DataJpaTest`·`@WebMvcTest` 슬라이스 / Testcontainers 통합. 세부는 아래 "테스트 계획".
@@ -486,7 +486,7 @@ com.finplay.api.account
 src/main/resources/application.yml             # (변경) ranking.rebuild.cron 프로퍼티 추가
 ```
 
-`RankingController`는 **변경하지 않는다** — 응답 DTO만 바뀌고 매핑·파라미터는 그대로다. 그래서 `docs/api-routes.md`의 Method·URL·요약 행도 그대로이고, 갱신 대상은 `docs/api-contracts.md`뿐이다(CLAUDE.md 규칙 7의 취지는 "controller와 문서를 같은 커밋에서 맞춘다"이므로, 계약이 바뀌는 이번에는 contracts가 그 대상이다).
+`RankingController`는 **변경하지 않는다** — 응답 DTO만 바뀌고 매핑·파라미터는 그대로다. 그래서 `ai/api-routes.md`의 Method·URL·요약 행도 그대로이고, 갱신 대상은 `docs/api-contracts.md`뿐이다(CLAUDE.md 규칙 7의 취지는 "controller와 문서를 같은 커밋에서 맞춘다"이므로, 계약이 바뀌는 이번에는 contracts가 그 대상이다).
 
 ### 레이어 배치 (ADR-0002)
 
@@ -700,8 +700,8 @@ public record MyRankingResponse(String market, RankingStatus status, Integer ran
 ### 문서 동기화 (CLAUDE.md 규칙 7·10)
 
 - **`docs/api-contracts.md`** — 랭킹 절의 `GET /api/rankings`·`GET /api/rankings/me` 응답 예시와 필드 표에 `status`를 추가한다. `rank: null` + `status: READY`(매도 이력 없음)와 `rank: null` + `status: REBUILDING`(집계 준비 중)이 서로 다른 의미라는 점을 명시한다. **응답 DTO가 실제로 바뀌는 커밋과 같은 커밋에서 갱신한다.**
-- **`docs/api-routes.md`** — Method·URL·요약이 바뀌지 않으므로 변경 없음이 정상이다. 확인만 하고 불필요하게 손대지 않는다.
-- **`docs/prd.md`** — §3 구현 현황 표는 **갱신 대상이 아니다**(RANK-001·RANK-002 행 판정이 "완료"에서 바뀌지 않는다, 근거는 spec.md "요구사항 ID를 새로 부여하지 않는 이유"). 대신 본문 2곳을 갱신한다.
+- **`ai/api-routes.md`** — Method·URL·요약이 바뀌지 않으므로 변경 없음이 정상이다. 확인만 하고 불필요하게 손대지 않는다.
+- **`ai/prd.md`** — §3 구현 현황 표는 **갱신 대상이 아니다**(RANK-001·RANK-002 행 판정이 "완료"에서 바뀌지 않는다, 근거는 spec.md "요구사항 ID를 새로 부여하지 않는 이유"). 대신 본문 2곳을 갱신한다.
   - RANK-001 절(현재 827행 부근): "재구성 트리거·절차의 세부 구현은 착수 시 확정한다"·"이 경우의 보상·정합성 재확인(재구성 배치 등)은 여전히 Decision Gate다" → 확정 내용(기동 훅 + 매일 04:20 배치, 전체 재구성, 임시 키 RENAME 교체)으로 갱신.
   - §6 "Redis 키 책임"(현재 1048행 부근): "유실 시 MySQL 원장으로 재구성한다" → 재구성 트리거·대상 판정 기준(매도 이력)·교체 방식과 `status` 노출을 덧붙인다.
 

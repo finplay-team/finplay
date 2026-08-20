@@ -11,7 +11,7 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 // FeedbackLlmPropertiesTest와 같은 짝의 앞쪽이다 — 여기서는 record의 @DefaultValue만 본다.
 // application.yml 쪽 키 경로는 FeedbackDetectionPropertiesYamlTest가 맡는다.
 //
-// 기대값의 정본은 docs/specs/012-ai-feedback/spec.md §C-7이다. 구현 파일이 아니라 spec에서 값을
+// 기대값의 정본은 ai/specs/012-ai-feedback/spec.md §C-7이다. 구현 파일이 아니라 spec에서 값을
 // 가져와야 record와 yml이 함께 틀어지는 드리프트가 잡힌다.
 class FeedbackDetectionPropertiesTest {
 

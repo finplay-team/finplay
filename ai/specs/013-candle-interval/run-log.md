@@ -8,7 +8,7 @@
 | - | implementer(③) | `./gradlew compileJava compileTestJava` | plan.md 구성요소 5·6, spec.md "공개 상한(reveal bound)" |
 | - | implementer(④) | `./gradlew compileJava compileTestJava` | plan.md 구성요소 8·9, spec.md "코인 — 빗썸 위임" |
 | - | implementer(⑤ 통합 테스트만) | `./gradlew test --tests "com.finplay.api.market.*"` | plan.md "테스트 계획 — 통합", tasks.md ⑤, 기존 `CandleQueryServiceIntegrationTest` 패턴 재사용 |
-| - | reviewer(리뷰) | `git diff origin/dev...HEAD` (013 관련 커밋만, 인증 리팩터링 머지분 제외) | docs/conventions.md, docs/adr/0002·0003·0004, docs/api-routes.md·api-contracts.md, docs/specs/013-candle-interval/{spec,plan,tasks}.md |
+| - | reviewer(리뷰) | `git diff origin/dev...HEAD` (013 관련 커밋만, 인증 리팩터링 머지분 제외) | docs/conventions.md, ai/adr/0002·0003·0004, ai/api-routes.md·api-contracts.md, ai/specs/013-candle-interval/{spec,plan,tasks}.md |
 | - | implementer(PR #151 외부 리뷰 차단 대응) | `./gradlew compileJava compileTestJava` + `./gradlew test --tests StockReplayServiceTest --tests StockCandleAggregatorTest` | docs/api-contracts.md의 "버킷 시작일이 [from,to] 안에 있으면 포함" 계약, PR #151 리뷰(namdongyeob) |
 
 ## 모니터링 (사람용 요약)

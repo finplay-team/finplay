@@ -28,7 +28,7 @@
 - 게시물과 LAZY 작성자를 한 조회 흐름에서 안전하게 로드
 - 조회 전용 `@Transactional(readOnly = true)` 서비스 경계
 - Service 단위, Controller MVC 슬라이스, 실제 DB 통합 테스트
-- 구현 후 실제 Controller 매핑 기준 `docs/api-routes.md` 동기화
+- 구현 후 실제 Controller 매핑 기준 `ai/api-routes.md` 동기화
 
 ### 제외
 
@@ -94,8 +94,8 @@ PRD §5와 현재 `ErrorCode`에 404 `NOT_FOUND`가 이미 존재하므로 게�
 
 ### Documentation
 
-- `docs/api-routes.md`
-- `docs/specs/008-community/issue-25-tasks.md`
+- `ai/api-routes.md`
+- `ai/specs/008-community/issue-25-tasks.md`
 
 ## 테스트 계획
 
@@ -129,5 +129,5 @@ PRD §5와 현재 `ErrorCode`에 404 `NOT_FOUND`가 이미 존재하므로 게�
 - [ ] 조회 서비스가 `readOnly = true` 트랜잭션을 사용한다.
 - [ ] LAZY 작성자가 OSIV나 우연한 영속성 컨텍스트에 의존하지 않고 안전하게 응답으로 변환된다.
 - [ ] 목록·수정·삭제·댓글 등 다른 API를 구현하지 않는다.
-- [ ] 실제 Controller 매핑을 `docs/api-routes.md`에 동기화한다.
+- [ ] 실제 Controller 매핑을 `ai/api-routes.md`에 동기화한다.
 - [ ] 대상 테스트와 `.\gradlew.bat build --no-daemon --max-workers=1`을 새로 실행해 통과한다.

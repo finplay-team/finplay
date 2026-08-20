@@ -28,7 +28,7 @@
   - `./gradlew build` 전체 통과 확인(스팟버그스·JaCoCo 포함).
 
 - [x] **6. 문서 갱신**
-  - `docs/api-routes.md`에 `POST /api/orders` 라우트 추가.
+  - `ai/api-routes.md`에 `POST /api/orders` 라우트 추가.
   - `docs/api-contracts.md`에 요청·응답·오류 코드(400/404/409/422 각 사유) 계약 추가.
   - 같은 커밋에서 두 문서를 함께 갱신(동기화 모드).
 
@@ -56,5 +56,5 @@
 
 - [x] **5. 문서 갱신**
   - `docs/api-contracts.md`의 `POST /api/orders` 계약에서 "헤더 존재 검증까지만·#22에서 구현 예정" 문구를 제거하고 재요청 재현·409 `IDEMPOTENCY_CONFLICT` 규칙을 명시, 근거에 Issue #22 추가.
-  - `docs/api-routes.md`의 같은 라우트 설명에서 "재현 방지는 #22" 문구를 갱신.
+  - `ai/api-routes.md`의 같은 라우트 설명에서 "재현 방지는 #22" 문구를 갱신.
   - 같은 커밋에서 두 문서를 함께 갱신(동기화 모드).

@@ -4,7 +4,7 @@
 
 - Spec: `./spec.md`
 - 근거: GitHub 이슈 #13
-- 선행 spec: `docs/specs/011-order-ledger-schema/`(엔티티 5종·마이그레이션 V10 완료, dev에 merge됨), `docs/specs/003-market-data/`(`PriceQueryService`·`StockPriceProvider` 완료)
+- 선행 spec: `ai/specs/011-order-ledger-schema/`(엔티티 5종·마이그레이션 V10 완료, dev에 merge됨), `ai/specs/003-market-data/`(`PriceQueryService`·`StockPriceProvider` 완료)
 - 관련 ADR: [ADR-0002](../../adr/0002-architecture.md)(도메인 간 참조는 service 레이어만), [ADR-0004](../../adr/0004-flyway-migrations.md)(이번 spec은 스키마 변경 없음 — V10 재사용)
 - PRD 근거: §4 ORD-001~004·006, §5 API 계약·공통 오류표, §6 데이터 모델(011에서 이미 반영), §7 트랜잭션 경계("시장가 매수: 주문+체결+현금차감+holding+lot 생성 원자 처리")
 
@@ -128,7 +128,7 @@ public Account getAccountFor(Long userId, Market market) {
 
 ## 데이터 모델
 
-스키마 변경 없음 — `docs/specs/011-order-ledger-schema/`의 V10 마이그레이션·엔티티 5종을 그대로 사용한다. 이번 spec에서 신규 Repository 메서드만 추가한다(위 설계 노트 4·7).
+스키마 변경 없음 — `ai/specs/011-order-ledger-schema/`의 V10 마이그레이션·엔티티 5종을 그대로 사용한다. 이번 spec에서 신규 Repository 메서드만 추가한다(위 설계 노트 4·7).
 
 ## 테스트 계획
 
@@ -148,7 +148,7 @@ public Account getAccountFor(Long userId, Market market) {
 
 ## 문서 갱신
 
-`OrderController` 추가로 `docs/api-routes.md`·`docs/api-contracts.md`를 이번 tasks 마지막 항목에서 같은 커밋으로 갱신한다(동기화 모드, planner 재투입 또는 /feature 마무리 단계).
+`OrderController` 추가로 `ai/api-routes.md`·`docs/api-contracts.md`를 이번 tasks 마지막 항목에서 같은 커밋으로 갱신한다(동기화 모드, planner 재투입 또는 /feature 마무리 단계).
 
 ---
 
@@ -275,5 +275,5 @@ Optional<Trade> findByOrderId(Long orderId);
 ### 문서 갱신
 
 - `docs/api-contracts.md`의 `POST /api/orders` 행(현재 222·224행) — "이번 구현은 `Idempotency-Key` 헤더 존재 검증까지만 하며 ... #22에서 구현 예정" 문구를 제거하고, 재요청 재현(동일 응답 반환)과 다른 본문 409 `IDEMPOTENCY_CONFLICT` 계약을 명시한다. 근거 열에 Issue #22 추가.
-- `docs/api-routes.md`의 `POST /api/orders` 행(현재 36행) — "존재 검증만, 재현 방지는 #22" 문구를 재현·충돌 판정 포함으로 갱신.
+- `ai/api-routes.md`의 `POST /api/orders` 행(현재 36행) — "존재 검증만, 재현 방지는 #22" 문구를 재현·충돌 판정 포함으로 갱신.
 - 두 문서는 같은 커밋에서 함께 갱신한다(동기화 모드, planner 재투입).

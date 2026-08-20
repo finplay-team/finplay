@@ -4,7 +4,7 @@
 
 **Goal:** 인증 사용자가 `PATCH /api/auth/me/password`로 현재 비밀번호를 재인증한 뒤 자신의 비밀번호를 바꾼다. 재인증 검증 → `passwordHash` 교체 → 회원의 기존 Refresh Token 전체 폐기 → 요청한 기기용 새 토큰 쌍 발급이 하나의 트랜잭션으로 처리되고, 실패하면 아무 것도 바뀌지 않는다. 성공 응답은 200 `TokenResponse`이며 **다른 기기만 로그아웃**된다.
 
-**관련 정본:** GitHub Issue #114, PRD `AUTH-005`(`docs/prd.md` 267-288행 — 비밀번호 변경 항목은 아직 없으며 이번 이슈에서 추가한다, "미확정" 1번), `docs/specs/002-auth-account/spec.md`, `docs/specs/002-auth-account/plan.md`, Issue #54 계획(`issue-54-plan.md`, 재인증 판별·`/api/auth/me/*` 구조), Issue #56 계획(`issue-56-plan.md`, Refresh Token 전체 폐기), ADR-0002, ADR-0003, ADR-0004, `docs/conventions.md`
+**관련 정본:** GitHub Issue #114, PRD `AUTH-005`(`ai/prd.md` 267-288행 — 비밀번호 변경 항목은 아직 없으며 이번 이슈에서 추가한다, "미확정" 1번), `ai/specs/002-auth-account/spec.md`, `ai/specs/002-auth-account/plan.md`, Issue #54 계획(`issue-54-plan.md`, 재인증 판별·`/api/auth/me/*` 구조), Issue #56 계획(`issue-56-plan.md`, Refresh Token 전체 폐기), ADR-0002, ADR-0003, ADR-0004, `docs/conventions.md`
 
 **선행:** Issue #4·#5·#54·#56이 `dev`에 있다. 실제 코드베이스 확인 결과 이번 이슈가 필요로 하는 부품이 모두 존재한다.
 
@@ -70,7 +70,7 @@ PRD `AUTH-005`는 현재 닉네임·이메일 변경만 규정하고 비밀번�
 - `User.changePassword(newPasswordHash, now)` 추가.
 - `AuthService.changePassword(userId, currentPassword, newPassword)` — 재인증·정책 검사·해시 교체·Refresh Token 전체 폐기·새 토큰 쌍 발급을 한 트랜잭션으로 처리.
 - 서비스 단위 테스트, Controller `@WebMvcTest`, 실제 MySQL 통합 테스트.
-- `docs/prd.md` AUTH-005 비밀번호 변경 항목 추가, `docs/api-routes.md`·`docs/api-contracts.md`·`tasks.md` 동기화.
+- `ai/prd.md` AUTH-005 비밀번호 변경 항목 추가, `ai/api-routes.md`·`docs/api-contracts.md`·`tasks.md` 동기화.
 
 ### 제외
 
@@ -256,11 +256,11 @@ public void changePassword(String newPasswordHash, LocalDateTime now) {
 
 ### Documentation files to modify after implementation
 
-- `docs/prd.md` — AUTH-005에 비밀번호 변경 항목 추가 ("요구사항 ID와 수용 기준" 절의 6개 문장).
-- `docs/api-routes.md` — 라우트 목록과 Security 보호 목록에 `PATCH /api/auth/me/password` 추가.
+- `ai/prd.md` — AUTH-005에 비밀번호 변경 항목 추가 ("요구사항 ID와 수용 기준" 절의 6개 문장).
+- `ai/api-routes.md` — 라우트 목록과 Security 보호 목록에 `PATCH /api/auth/me/password` 추가.
 - `docs/api-contracts.md` — 인증 도메인 절에 요청·응답·오류 계약 추가.
-- `docs/specs/002-auth-account/tasks.md` — Issue #114 작업 항목 절(이 계획과 함께 이미 추가됨) 체크 갱신.
-- `docs/specs/002-auth-account/run-log.md` — implementer·reviewer가 자동 기록.
+- `ai/specs/002-auth-account/tasks.md` — Issue #114 작업 항목 절(이 계획과 함께 이미 추가됨) 체크 갱신.
+- `ai/specs/002-auth-account/run-log.md` — implementer·reviewer가 자동 기록.
 
 ### 수정하지 않을 파일
 
@@ -388,19 +388,19 @@ public void changePassword(String newPasswordHash, LocalDateTime now) {
 
 **Files**
 
-- Modify: `docs/prd.md`
-- Modify: `docs/api-routes.md`
+- Modify: `ai/prd.md`
+- Modify: `ai/api-routes.md`
 - Modify: `docs/api-contracts.md`
-- Modify: `docs/specs/002-auth-account/tasks.md`
-- Modify during feature workflow: `docs/specs/002-auth-account/run-log.md`
+- Modify: `ai/specs/002-auth-account/tasks.md`
+- Modify during feature workflow: `ai/specs/002-auth-account/run-log.md`
 
 - [ ] **Step 1: PRD AUTH-005에 비밀번호 변경 항목을 추가한다**
   - 이 계획의 "PRD `AUTH-005` (비밀번호 변경 부분 — 이번 이슈에서 신설)" 6개 문장을 AUTH-005 요구사항 목록에 넣는다.
   - 특히 "기존 Refresh Token을 모두 폐기하고 요청한 기기에만 새 토큰 쌍을 발급한다"가 바로 위 이메일 변경 항목의 "재로그인을 요구한다"와 다르다는 점이 문서상 분명히 드러나게 쓴다(D5).
 - [ ] **Step 2: 실제 Controller 매핑으로 API 문서를 동기화한다**
-  - `docs/api-routes.md` 라우트 표에 `PATCH /api/auth/me/password` 행과 Security 보호 목록 행을 추가한다.
+  - `ai/api-routes.md` 라우트 표에 `PATCH /api/auth/me/password` 행과 Security 보호 목록 행을 추가한다.
   - `docs/api-contracts.md` 인증 도메인 절에 요청 본문, 200 `TokenResponse`, 400/401/403 오류 계약과 "다른 기기만 로그아웃" 부수 효과를 기록한다.
-- [ ] **Step 3: tasks 상태를 갱신한다** — `docs/specs/002-auth-account/tasks.md`의 Issue #114 절을 완료 표시한다.
+- [ ] **Step 3: tasks 상태를 갱신한다** — `ai/specs/002-auth-account/tasks.md`의 Issue #114 절을 완료 표시한다.
 - [ ] **Step 4: Spotless와 대상 테스트를 실행한다**
 
   ```powershell
@@ -418,14 +418,14 @@ public void changePassword(String newPasswordHash, LocalDateTime now) {
 
   ```powershell
   git diff --check
-  git diff -- src/main/java/com/finplay/api/auth/controller/AuthController.java docs/api-routes.md docs/api-contracts.md
+  git diff -- src/main/java/com/finplay/api/auth/controller/AuthController.java ai/api-routes.md docs/api-contracts.md
   git status --short
   ```
 
 - [ ] **Step 7: 문서 변경을 논리 커밋한다**
 
   ```powershell
-  git add docs/prd.md docs/api-routes.md docs/api-contracts.md docs/specs/002-auth-account/tasks.md docs/specs/002-auth-account/run-log.md
+  git add ai/prd.md ai/api-routes.md docs/api-contracts.md ai/specs/002-auth-account/tasks.md ai/specs/002-auth-account/run-log.md
   git commit -m "docs: 비밀번호 변경 API 요구사항과 계약 동기화"
   ```
 
@@ -443,14 +443,14 @@ public void changePassword(String newPasswordHash, LocalDateTime now) {
 - [ ] 어떤 응답에도 `passwordHash`·`currentPassword`·`newPassword`가 어떤 이름으로도 없다.
 - [ ] 변경 전후로 이메일·닉네임·계좌 2개(STOCK·CRYPTO)·시드머니·잔액이 실제 MySQL 통합 테스트로 불변임이 확인된다.
 - [ ] 새 Flyway 마이그레이션·새 `ErrorCode`를 추가하지 않았다(D7).
-- [ ] `docs/prd.md` AUTH-005에 비밀번호 변경 항목이 추가됐고, `docs/api-routes.md`·`docs/api-contracts.md`가 실제 Controller 매핑과 일치한다.
+- [ ] `ai/prd.md` AUTH-005에 비밀번호 변경 항목이 추가됐고, `ai/api-routes.md`·`docs/api-contracts.md`가 실제 Controller 매핑과 일치한다.
 - [ ] `.\gradlew.bat build --no-daemon --max-workers=1`(Spotless·SpotBugs·JaCoCo 포함)이 통과한다.
 
 ---
 
 ## 미확정·PRD 불일치 (임의로 정하지 않고 보고하는 항목)
 
-1. **PRD `AUTH-005`에 비밀번호 변경 항목이 아예 없다 (PRD 공백, 가장 중요).** `docs/prd.md` 267-288행의 AUTH-005는 닉네임·이메일 변경만 규정하고 비밀번호 변경을 한 줄도 언급하지 않는다. 이슈 #114가 "이 이슈에서 PRD 항목을 추가하고 함께 구현한다"고 명시해 이번 계획은 위 "요구사항 ID와 수용 기준" 절의 6개 문장을 PRD에 추가하는 것으로 잡았다(Task 4 Step 1). 다만 `docs/prd.md` 머리말은 **제품 범위의 정본이 Notion "10 X TEN"이며 저장소 PRD는 그 스냅샷**이라고 못박고 있다 — 따라서 이 항목 추가는 Notion에도 반영되어야 하며, Notion에 비밀번호 변경이 1차 MVP로 확정돼 있는지 팀 확인이 필요하다. 저장소 문서만 먼저 고치면 두 정본이 갈라진다.
+1. **PRD `AUTH-005`에 비밀번호 변경 항목이 아예 없다 (PRD 공백, 가장 중요).** `ai/prd.md` 267-288행의 AUTH-005는 닉네임·이메일 변경만 규정하고 비밀번호 변경을 한 줄도 언급하지 않는다. 이슈 #114가 "이 이슈에서 PRD 항목을 추가하고 함께 구현한다"고 명시해 이번 계획은 위 "요구사항 ID와 수용 기준" 절의 6개 문장을 PRD에 추가하는 것으로 잡았다(Task 4 Step 1). 다만 `ai/prd.md` 머리말은 **제품 범위의 정본이 Notion "10 X TEN"이며 저장소 PRD는 그 스냅샷**이라고 못박고 있다 — 따라서 이 항목 추가는 Notion에도 반영되어야 하며, Notion에 비밀번호 변경이 1차 MVP로 확정돼 있는지 팀 확인이 필요하다. 저장소 문서만 먼저 고치면 두 정본이 갈라진다.
 2. **팀 확정 1 — 성공 시 세션 처리가 PRD의 이메일 변경 문장과 다르다.** PRD AUTH-005는 이메일 변경에 대해 "기존 Refresh Token을 모두 폐기하고 **재로그인을 요구한다**"고 적었고 Issue #56이 그대로 구현했다. 비밀번호 변경은 팀 결정에 따라 전부 폐기 후 요청 기기용 새 토큰 쌍을 즉시 발급해 **다른 기기만 로그아웃**시킨다(D5). 두 기능의 동작이 의도적으로 다르다는 점을 PRD 문장에도 명시해야 하며(Task 4 Step 1), 그렇지 않으면 이후 읽는 사람이 #56 문장을 비밀번호 변경에도 적용된다고 오해한다. 근거는 D5에 기록했다.
 3. **팀 확정 2 — OAuth 전용 회원 거부 코드.** 400 `VALIDATION_ERROR` + "OAuth 전용 회원은 비밀번호를 변경할 수 없습니다."로 확정했다(D2). 재인증 실패(403)가 아니라 계정 유형 불일치라는 근거를 D2에 기록했다. 이슈 본문은 "명시적으로 거부할지, 비밀번호 최초 설정을 별도 이슈로 뺄지 정한다"고만 적었고 PRD에는 관련 문장이 없다. OAuth 전용 회원의 비밀번호 최초 설정은 이번 범위에서 제외했으며, 필요해지면 별도 이슈로 만든다.
 4. **비밀번호 변경 시도 횟수 제한·계정 잠금·감사 로그를 두지 않는다.** 이슈·PRD 모두 요구하지 않아 이번 범위에서 제외했다(그래서 D6이 단순 `@Transactional`로 충분하다). 현재 비밀번호를 모르는 상태에서 403을 반복해서 받아 볼 수 있으므로, 무차별 대입 방어가 필요하다고 판단되면 별도 이슈로 다뤄야 한다 — 다만 이 엔드포인트는 이미 유효한 Access Bearer를 요구하므로 로그인 엔드포인트보다 노출 면적이 작다.

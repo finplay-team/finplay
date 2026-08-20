@@ -24,7 +24,7 @@
   `nextCursor = hasNext ? encode(content.get(0).sourceTime()) : null`.
   `InstrumentController.getCandles`는 반환 타입과 `@RequestParam(required=false) String cursor` **두 가지만** 바뀐다
   (`@DateTimeFormat` 금지 — 바인더 단계 파싱 실패가 검증 순서를 깬다, plan §3). `getCryptoCandles`는 손대지 않는다(plan §6-5).
-  같은 커밋에서 `docs/api-routes.md`·`docs/api-contracts.md`를 갱신한다(CLAUDE.md 규칙 7, plan §15) —
+  같은 커밋에서 `ai/api-routes.md`·`docs/api-contracts.md`를 갱신한다(CLAUDE.md 규칙 7, plan §15) —
   `&cursor=` 추가, 응답을 `CandleListResponse`로, **"200개를 넘는 구간을 이어붙이는 페이징은 1차 범위가 아니다" 서술 교체**,
   그리고 plan §4가 지정한 5가지(`to` 무시·빈 마지막 페이지 1회·끝 판정은 `hasNext`뿐·코인에서 `content[0]`이 `from`보다
   과거일 수 있음·커서의 분 단위 내림 해석)를 함께 적는다.
@@ -79,9 +79,9 @@
   **완료 판정**: 두 페이지 이상을 실제 MySQL 데이터로 이어받아 중복·누락 0건이 고정되고, 빈 마지막 페이지 1회가 계약대로 재현된다.
 
 - [x] **6. 문서 마무리 · 후속 작업 등록 · 빌드**
-  `docs/prd.md` §3 "구현 현황"에 `CANDLE-PAGE-*` 행을 **"완료"**로 추가하고 근거 칸에 **PR 번호 + "주식 `1m` 과거
+  `ai/prd.md` §3 "구현 현황"에 `CANDLE-PAGE-*` 행을 **"완료"**로 추가하고 근거 칸에 **PR 번호 + "주식 `1m` 과거
   거래일 조회는 별도 ADR·이슈"**를 적는다(CLAUDE.md 규칙 10, plan §15).
-  `docs/specs/013-candle-interval/`·`027-crypto-tick-candle-cache/`의 "페이지네이션·커서 도입은 범위 제외" 문장에
+  `ai/specs/013-candle-interval/`·`027-crypto-tick-candle-cache/`의 "페이지네이션·커서 도입은 범위 제외" 문장에
   **문장을 지우지 않고** "2차 고도화(이슈 #473, 048)에서 도입됨" 이력 표시만 덧붙인다.
   후속 이슈 2건을 등록하고 번호를 PR 본문에 남긴다 — ① **주식 `1m` 과거 거래일 조회의 시간축 ADR 초안**(이 spec은
   선점하지 않는다), ② **프론트 `?? data` 폴백 제거**(CANDLE-PAGE-029, 별도 레포).

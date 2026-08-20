@@ -17,7 +17,7 @@
 - 가입 토큰 만료는 발급 시각부터 30분이며 응답의 `expiresInSeconds`는 `1800`이다.
 - 기존 `V2__create_auth_account_tables.sql`은 수정하지 않는다.
 - 새 Java 파일 첫 줄에는 파일 역할을 설명하는 한 줄 한국어 주석을 둔다.
-- controller 변경과 함께 `docs/api-routes.md`를 동기화한다.
+- controller 변경과 함께 `ai/api-routes.md`를 동기화한다.
 - production 코드는 implementer 한 명만 수정하고, tester·reviewer는 `src/main`을 수정하지 않는다.
 
 ---
@@ -84,7 +84,7 @@
 - 수정: `src/test/java/com/finplay/api/auth/controller/EmailVerificationControllerTest.java`
 - 생성: `src/main/java/com/finplay/api/auth/dto/request/EmailVerificationConfirmRequest.java`
 - 수정: `src/main/java/com/finplay/api/auth/controller/EmailVerificationController.java`
-- 수정: `docs/api-routes.md`
+- 수정: `ai/api-routes.md`
 
 **인터페이스**
 
@@ -112,7 +112,7 @@
 
 - [x] **3단계: 최소 production 및 문서 구현**
 
-  implementer는 `@PostMapping("/confirm")`을 추가한다. 요청 record에는 이메일 검증과 숫자 6자리 코드 검증을 선언하고, 서비스 결과를 HTTP 200으로 반환한다. `docs/api-routes.md`에는 공개 인증번호 확인 경로, 요청·성공 응답·400/429 오류 계약을 기록한다.
+  implementer는 `@PostMapping("/confirm")`을 추가한다. 요청 record에는 이메일 검증과 숫자 6자리 코드 검증을 선언하고, 서비스 결과를 HTTP 200으로 반환한다. `ai/api-routes.md`에는 공개 인증번호 확인 경로, 요청·성공 응답·400/429 오류 계약을 기록한다.
 
 - [x] **4단계: GREEN 및 항목 검증**
 
@@ -132,8 +132,8 @@
 
 **파일**
 
-- 수정: `docs/specs/002-auth-account/tasks.md`
-- 수정: `docs/specs/002-auth-account/run-log.md`
+- 수정: `ai/specs/002-auth-account/tasks.md`
+- 수정: `ai/specs/002-auth-account/run-log.md`
 
 - [x] **1단계: 작업 체크와 실행 로그 동기화**
 

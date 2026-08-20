@@ -10,7 +10,7 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 // FeedbackCryptoPropertiesTest와 같은 짝의 앞쪽이다 — 여기서는 record의 @DefaultValue와 검증 블록만 본다.
 // application.yml 쪽 키 경로는 FeedbackQueryCachePropertiesYamlTest가 맡는다.
 //
-// 기대값의 정본은 docs/adr/0015-feedback-query-cache.md다. 구현 파일이 아니라 ADR에서 값을 가져와야 record와
+// 기대값의 정본은 ai/adr/0015-feedback-query-cache.md다. 구현 파일이 아니라 ADR에서 값을 가져와야 record와
 // yml이 함께 틀어지는 드리프트가 잡힌다.
 //
 // FeedbackCryptoPropertiesTest와 달리 로컬 테스트 전용 설정을 만들지 않는다 — production 등록 설정

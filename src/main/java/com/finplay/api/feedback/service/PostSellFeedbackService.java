@@ -200,7 +200,7 @@ public class PostSellFeedbackService {
 	 * {@code HibernateJpaDialect}가 <b>기반 타입인 {@code DataIntegrityViolationException}으로</b> 번역하고,
 	 * {@code DuplicateKeyException}은 JDBC 에러코드 번역 경로에서 붙는 하위 타입이다. 좁혔다가 매핑이 예상과
 	 * 다르면 <b>정상 경합이 500이 된다</b>. 이 환경에서는 MySQL 없이 실제 번역 타입을 확인할 수 없으므로
-	 * 기억으로 타입을 고르지 않는다({@code docs/agent-mistakes.md}의 반복 패턴이다).
+	 * 기억으로 타입을 고르지 않는다({@code ai/agent-mistakes.md}의 반복 패턴이다).
 	 *
 	 * <p>행 재조회는 <b>번역 타입과 무관하게 성립하고</b> 원래 막으려던 상태를 정확히 가른다. FK·NOT NULL 위반은
 	 * 행이 안 생기므로 {@code WARN}으로 드러난다 — 조용히 넘기면 그 체결은 <b>조회마다 LLM을 다시 부르는데</b>

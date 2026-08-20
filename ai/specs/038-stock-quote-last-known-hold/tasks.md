@@ -31,7 +31,7 @@
 
 - [x] **6. 문서 동기화**
   `docs/api-contracts.md`(가격·캔들 장외 동작, SSE "마지막 값 유지" 문단, `costBasis` 대체 문단)와
-  `docs/prd.md` §3 "구현 현황"의 `QUOTE-HOLD-001~007` 행을 갱신한다(CLAUDE.md 규칙 10).
-  `docs/api-routes.md`는 라우트 변경이 없어 대상이 아니다.
+  `ai/prd.md` §3 "구현 현황"의 `QUOTE-HOLD-001~007` 행을 갱신한다(CLAUDE.md 규칙 10).
+  `ai/api-routes.md`는 라우트 변경이 없어 대상이 아니다.
 
 - [x] **7. `./gradlew build` 통과 확인**

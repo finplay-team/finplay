@@ -5,7 +5,7 @@
 ## 관련 문서
 
 - Spec: `./spec.md` (PORT-003 절)
-- 선행 spec: `docs/specs/011-order-ledger-schema/plan.md` (`orders` 테이블 컬럼·엔티티 정의), `docs/specs/004-order-buy/`(#13, 이미 구현된 매수 파이프라인 — 통합 테스트가 실제 주문 데이터를 만드는 데 사용)
+- 선행 spec: `ai/specs/011-order-ledger-schema/plan.md` (`orders` 테이블 컬럼·엔티티 정의), `ai/specs/004-order-buy/`(#13, 이미 구현된 매수 파이프라인 — 통합 테스트가 실제 주문 데이터를 만드는 데 사용)
 - 관련 ADR: [ADR-0002](../../adr/0002-architecture.md) (controller → service → repository, 도메인 간 참조는 service만), [ADR-0003](../../adr/0003-testing-strategy.md) (테스트 레벨별 전략)
 - PRD 근거: PORT-003, C-002(추측 구현 금지), §5 공통 오류표
 
@@ -98,7 +98,7 @@ public ResponseEntity<List<OrderListItemResponse>> getMyOrders(
 ## 문서 동기화
 
 같은 커밋에서 갱신(CLAUDE.md 규칙 7):
-- `docs/api-routes.md`: 라우트 표에 `GET | /api/orders | order | ...` 행 추가.
+- `ai/api-routes.md`: 라우트 표에 `GET | /api/orders | order | ...` 행 추가.
 - `docs/api-contracts.md`: `## order` 절에 "내 주문 목록 조회" 표 추가 — 요청 없음, 성공 200 배열 예시(`OrderListItemResponse` 필드), 오류는 401만.
 
 ## 테스트 계획 (ADR-0003 기준)
@@ -118,7 +118,7 @@ public ResponseEntity<List<OrderListItemResponse>> getMyOrders(
 
 - Spec: `./spec.md` ACCT-002·PORT-001 절, 비즈니스 규칙 5번째 항목("시세가 유효하지 않은 종목의 평가값 처리 방식은 plan에서 확정한다")
 - PRD 근거: ACCT-002, PORT-001, [C-003](../../prd.md)(금액 double/float 금지, BigDecimal/원단위 BIGINT만 사용)
-- 반올림 전례: `docs/specs/004-order-buy/plan.md` 섹션 5 "금액 계산 — 반올림 규칙 확정"(`amount = price.multiply(quantity).setScale(0, RoundingMode.FLOOR)` 확정 — 이 계산도 동일 방향으로 통일한다)
+- 반올림 전례: `ai/specs/004-order-buy/plan.md` 섹션 5 "금액 계산 — 반올림 규칙 확정"(`amount = price.multiply(quantity).setScale(0, RoundingMode.FLOOR)` 확정 — 이 계산도 동일 방향으로 통일한다)
 - 관련 ADR: [ADR-0002](../../adr/0002-architecture.md)(도메인 간 참조는 service 레이어를 통해서만 — 이번 서비스는 `portfolio` 도메인에 두고 이후 `account` 도메인 서비스가 이를 호출하는 방식으로 재사용한다)
 - 선행 이슈: #12(원장 스키마, 병합됨), #16(현재가 조회 및 공통 가격 계약, 병합됨)
 
@@ -193,7 +193,7 @@ PRD C-003에 따라 전 구간 `BigDecimal`/`long`만 사용한다(`double`/`flo
 
 ### 문서 동기화
 
-해당 없음 — controller 변경이 없어 `docs/api-routes.md`·`docs/api-contracts.md` 갱신 대상이 아니다(CLAUDE.md 규칙 7은 controller 변경 시에만 적용). 세 소비 API(#81/#52/#51)가 각자 구현될 때 그 API의 계약 문서에서 이 계산 결과 필드를 노출한다.
+해당 없음 — controller 변경이 없어 `ai/api-routes.md`·`docs/api-contracts.md` 갱신 대상이 아니다(CLAUDE.md 규칙 7은 controller 변경 시에만 적용). 세 소비 API(#81/#52/#51)가 각자 구현될 때 그 API의 계약 문서에서 이 계산 결과 필드를 노출한다.
 
 ### 테스트 계획 (ADR-0003 기준)
 
@@ -211,7 +211,7 @@ PRD C-003에 따라 전 구간 `BigDecimal`/`long`만 사용한다(`double`/`flo
 ### 관련 문서
 
 - Spec: `./spec.md` ACCT-002 절
-- PRD 근거: `docs/prd.md` ACCT-002 (이번 이슈에서 수익률 필드를 추가해 갱신 — 문서 동기화 절 참고)
+- PRD 근거: `ai/prd.md` ACCT-002 (이번 이슈에서 수익률 필드를 추가해 갱신 — 문서 동기화 절 참고)
 - 선행 절: 이 문서의 "이슈 #47" 절(`HoldingValuationService`/`HoldingValuationDto` 시그니처·반올림 규칙·시세 무효 처리 규칙 — 이번 이슈가 그대로 재사용)
 - 관련 ADR: [ADR-0002](../../adr/0002-architecture.md) — **도메인 간 참조는 service 레이어를 통해서만, 다른 도메인의 repository를 직접 주입하지 않는다.** `Holding`은 `portfolio` 도메인 엔티티이므로 `account` 도메인의 `AccountService`가 `HoldingRepository`(portfolio)를 직접 주입하면 ADR 위반이다 — 아래 "Service 설계"에서 이를 피하는 구조를 명시한다.
 - 선행 이슈: #12(원장 스키마, 병합됨), #47(평가 계산, 병합됨), #13·#41(매수·매도, 병합됨)
@@ -375,8 +375,8 @@ public class AccountController {
 
 같은 커밋에서 갱신(CLAUDE.md 규칙 7 + 이슈 #81 본문 요구):
 
-- `docs/prd.md` ACCT-002 절에 수익률 필드를 추가한다 — 현재 "현금잔고, 보유평가액, 총평가액, 실현손익, 미실현손익을 시장별로 반환한다." 문장에 수익률을 포함하도록 갱신(`(총평가액 − 시드머니) ÷ 시드머니` 계산식 근거 명시, #51이 동일 계산식을 재사용함을 각주로 남긴다).
-- `docs/api-routes.md`: 라우트 표에 `GET | /api/accounts/summary?market= | account | ... | 006 ACCT-002, Issue #81` 행 추가.
+- `ai/prd.md` ACCT-002 절에 수익률 필드를 추가한다 — 현재 "현금잔고, 보유평가액, 총평가액, 실현손익, 미실현손익을 시장별로 반환한다." 문장에 수익률을 포함하도록 갱신(`(총평가액 − 시드머니) ÷ 시드머니` 계산식 근거 명시, #51이 동일 계산식을 재사용함을 각주로 남긴다).
+- `ai/api-routes.md`: 라우트 표에 `GET | /api/accounts/summary?market= | account | ... | 006 ACCT-002, Issue #81` 행 추가.
 - `docs/api-contracts.md`: 새 `## account` 절 신설(이 API가 계좌 도메인 최초 컨트롤러이므로 절 자체가 없음) — 요청(쿼리 `market` 필수), 성공 200 예시(`AccountSummaryResponse` 6개 필드 값 포함), 오류(market 누락/잘못된 값 400 `VALIDATION_ERROR`, 인증 실패 401 `UNAUTHORIZED`) 표 추가.
 
 ### 테스트 계획 (ADR-0003 기준)
@@ -413,7 +413,7 @@ public class AccountController {
 ### 관련 문서
 
 - Spec: `./spec.md` PORT-001 절
-- PRD 근거: `docs/prd.md` PORT-001 (이번 이슈에서 현재가·수익률 필드를 추가해 갱신 — 문서 동기화 절 참고)
+- PRD 근거: `ai/prd.md` PORT-001 (이번 이슈에서 현재가·수익률 필드를 추가해 갱신 — 문서 동기화 절 참고)
 - 선행 절: 이 문서의 "이슈 #47" 절(`HoldingValuationService`/`HoldingValuationDto` 시그니처·반올림 규칙), "이슈 #81" 절 특히 "정책 수정 (PR #96 리뷰 차단 반영, 2026-07-30)" — 시세 무효 보유를 `costBasis`로 폴백하는 정책의 실제 판단 근거와 `AccountService.getAccountSummary` 구현 전례
 - 관련 ADR: [ADR-0002](../../adr/0002-architecture.md) — 도메인 간 참조는 service 레이어를 통해서만. `order` 도메인이 이미 `account.service.AccountService`를 주입하는 전례(`OrderExecutionService`)가 있어, `portfolio` 도메인 서비스가 `AccountService`를 주입하는 것도 동일 패턴이다(양방향이지만 순환 아님 — 근거는 아래 "Service 설계" 참고).
 - 선행 이슈: #12(원장 스키마, 병합됨), #47(평가 계산, 병합됨), #13·#41(매수·매도, 병합됨), #81(계좌 요약, 병합됨 — 시세 무효 정책 전례)
@@ -579,8 +579,8 @@ public class HoldingController {
 
 같은 커밋에서 갱신(CLAUDE.md 규칙 7 + 이슈 #52 본문 요구):
 
-- `docs/prd.md` PORT-001 절에 현재가·수익률 필드를 추가한다 — 현재 "평가금액과 미실현손익은 최신 시세로 계산한다." 문장에 현재가·수익률도 반환 대상임을 포함하도록 갱신.
-- `docs/api-routes.md`: 라우트 표에 `GET | /api/holdings?market= | portfolio | ... | 006 PORT-001, Issue #52` 행 추가.
+- `ai/prd.md` PORT-001 절에 현재가·수익률 필드를 추가한다 — 현재 "평가금액과 미실현손익은 최신 시세로 계산한다." 문장에 현재가·수익률도 반환 대상임을 포함하도록 갱신.
+- `ai/api-routes.md`: 라우트 표에 `GET | /api/holdings?market= | portfolio | ... | 006 PORT-001, Issue #52` 행 추가.
 - `docs/api-contracts.md`: 새 `## portfolio` 절 신설(이 API가 portfolio 도메인 최초 컨트롤러) — 요청(쿼리 `market` 필수), 성공 200 예시(`HoldingListItemResponse[]`, 시세 유효/무효 각 1건 포함), 오류(400 `VALIDATION_ERROR`, 401 `UNAUTHORIZED`) 표. 시세 무효 항목의 4개 필드가 `null`이고 `priceStatus`로 구분됨을 본문에 명시(위 "표현 정책" 근거를 요약 인용).
 
 ### 테스트 계획 (ADR-0003 기준)
@@ -613,7 +613,7 @@ public class HoldingController {
 ### 관련 문서
 
 - Spec: `./spec.md` PORT-002 절
-- PRD 근거: `docs/prd.md` PORT-002 (커서 포맷·정렬 기준은 이미 "2026-07-28 팀 결정"으로 고정, 이번 이슈는 실제 구현만 확정)
+- PRD 근거: `ai/prd.md` PORT-002 (커서 포맷·정렬 기준은 이미 "2026-07-28 팀 결정"으로 고정, 이번 이슈는 실제 구현만 확정)
 - 선행 절: 이 문서의 "이슈 #21(PORT-003 주문 목록)" 절 — `OrderListItemResponse` 필드 계약과 "체결 전용 필드는 거래내역이 소유한다"는 분리 원칙의 상대편 문서, "이슈 #81"·"이슈 #52" 절 — `account` 도메인 `AccountService.getAccountFor(userId, market)`를 재사용해 계좌 소유권+시장 스코프를 해결하는 전례
 - 관련 ADR: [ADR-0002](../../adr/0002-architecture.md)(도메인 간 참조는 service 레이어만 — `order` 도메인의 신규 `TradeService`가 `account` 도메인의 `AccountService`를 주입하는 것은 `OrderExecutionService`가 이미 쓰는 전례와 동일한 패턴), [ADR-0003](../../adr/0003-testing-strategy.md)
 - 선행 이슈: #12(원장 스키마, 병합됨), #13·#41(매수·매도로 `trades` 실데이터 생성, 병합됨), #21(주문 목록, 병합됨 — 필드 분리 기준), #81·#52(계좌 요약·보유 종목, 병합됨 — `AccountService.getAccountFor` 재사용 전례)
@@ -892,7 +892,7 @@ public class TradeController {
 
 같은 커밋에서 갱신(CLAUDE.md 규칙 7):
 
-- `docs/api-routes.md`: 라우트 표에 `GET | /api/trades?market=&cursor=&limit= | order | ... | 006 PORT-002, Issue #82` 행 추가.
+- `ai/api-routes.md`: 라우트 표에 `GET | /api/trades?market=&cursor=&limit= | order | ... | 006 PORT-002, Issue #82` 행 추가.
 - `docs/api-contracts.md`: `## order` 절에 "내 체결 내역 조회" 표 추가(기존 "내 주문 목록 조회" 다음) — 요청(쿼리 `market` 필수, `cursor`·`limit` 선택), 성공 200 예시(매수 1건 `realizedPnl:null` + 매도 1건 `realizedPnl` 값 있음, `nextCursor`·`hasNext` 포함), 오류(400 `VALIDATION_ERROR` — `market` 누락/오류, 손상된 `cursor`, `limit` 범위 초과 세 경우 모두 포함, 401 `UNAUTHORIZED`).
 
 ### 테스트 계획 (ADR-0003 기준)
@@ -931,7 +931,7 @@ public class TradeController {
 ### 관련 문서
 
 - Spec: `./spec.md` ACCT-003 절
-- PRD 근거: `docs/prd.md` ACCT-003
+- PRD 근거: `ai/prd.md` ACCT-003
 - 선행 절: 이 문서의 "이슈 #81" 절 — 특히 "후속: #51(합산 포트폴리오)이 이 이슈의 수익률 계산식(`(총평가액 − 시드머니) ÷ 시드머니`)을 그대로 재사용한다"(관련 문서 항목의 각주)와 "응답 DTO 설계" 표(6개 필드 계약, `AccountSummaryResponse`는 `seedMoney`를 포함하지 않음을 이번 이슈에서 재확인)
 - 관련 ADR: [ADR-0002](../../adr/0002-architecture.md) — 도메인 간 참조는 service 레이어를 통해서만, 다른 도메인의 repository를 직접 주입하지 않는다. 이번 이슈는 `portfolio` 도메인에 신규 서비스를 두고 `account.service.AccountService`의 **공개 메서드만** 호출한다 — `AccountRepository`(account 도메인)를 직접 주입하지 않는다(아래 "설계 결정 1" 근거).
 - 선행 이슈: #12(원장 스키마, 병합됨), #47(평가 계산, 병합됨), #13·#41(매수·매도, 병합됨), #81(계좌 요약, 병합됨 — 계산식·수익률 공식의 원 출처), #52(보유 종목 목록, 병합됨 — `portfolio` 도메인이 `AccountService`를 주입하는 기존 전례)
@@ -980,7 +980,7 @@ public class TradeController {
 
 ### 입력 명세
 
-없음. 쿼리 파라미터·경로 변수·요청 본문이 전혀 없다 — 인증된 사용자 본인의 두 시장 계좌를 고정적으로 합산하는 API라 `@RequestParam` 자체를 선언하지 않는다(위 "API 설계" 근거). 유일한 검증은 Spring Security의 인증 여부(미인증 401)뿐이며, 이는 컨트롤러 코드가 아니라 `SecurityConfig`의 기본 보호 경로(`anyRequest().authenticated()`)가 처리한다(`docs/api-routes.md` "인증 규칙" 절 기존 계약, 이 이슈에서 새로 추가하지 않는다).
+없음. 쿼리 파라미터·경로 변수·요청 본문이 전혀 없다 — 인증된 사용자 본인의 두 시장 계좌를 고정적으로 합산하는 API라 `@RequestParam` 자체를 선언하지 않는다(위 "API 설계" 근거). 유일한 검증은 Spring Security의 인증 여부(미인증 401)뿐이며, 이는 컨트롤러 코드가 아니라 `SecurityConfig`의 기본 보호 경로(`anyRequest().authenticated()`)가 처리한다(`ai/api-routes.md` "인증 규칙" 절 기존 계약, 이 이슈에서 새로 추가하지 않는다).
 
 ### 응답 DTO 설계
 
@@ -1071,9 +1071,9 @@ public class PortfolioController {
 
 같은 커밋에서 갱신(CLAUDE.md 규칙 7 + 이슈 #51 본문 요구):
 
-- `docs/api-routes.md`: 라우트 표에 `GET | /api/portfolio | portfolio | ... | 006 ACCT-003, Issue #51` 행 추가(도메인 컬럼은 `portfolio` — 위 "설계 결정 1" 근거).
+- `ai/api-routes.md`: 라우트 표에 `GET | /api/portfolio | portfolio | ... | 006 ACCT-003, Issue #51` 행 추가(도메인 컬럼은 `portfolio` — 위 "설계 결정 1" 근거).
 - `docs/api-contracts.md`: 기존 `## portfolio` 절(이슈 #52가 이미 신설)에 "전체 포트폴리오 합산 요약 조회" 표를 추가 — 요청(쿼리 없음, 인증만), 성공 200 예시(`PortfolioSummaryResponse` 4개 필드 값 포함, 한 시장만 보유·양 시장 모두 보유 없음 케이스 문구 포함), 오류(401 `UNAUTHORIZED`만 — `market` 관련 400 없음을 명시).
-- `docs/prd.md`는 이번 이슈에서 갱신하지 않는다 — ACCT-003 요구사항 문구(총평가자산·총수익률·평가손익·실현손익)가 이미 정확하고 `#81`처럼 필드를 새로 추가하는 변경이 아니다(PRD 갱신 불필요, 임의 확장 금지 원칙).
+- `ai/prd.md`는 이번 이슈에서 갱신하지 않는다 — ACCT-003 요구사항 문구(총평가자산·총수익률·평가손익·실현손익)가 이미 정확하고 `#81`처럼 필드를 새로 추가하는 변경이 아니다(PRD 갱신 불필요, 임의 확장 금지 원칙).
 
 ### 테스트 계획 (ADR-0003 기준)
 

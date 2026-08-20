@@ -21,7 +21,7 @@
   - 인증 없음·만료는 401 `UNAUTHORIZED`.
 - PRD §6 데이터 모델
   - `community_posts`는 작성자, 제목, 본문, 생성·수정시각을 저장한다.
-- `docs/specs/008-community/spec.md`
+- `ai/specs/008-community/spec.md`
   - 제목과 본문은 공백만으로 이뤄질 수 없다.
   - 비로그인 접근은 401이다.
 - GitHub Issue #23 계약
@@ -56,7 +56,7 @@
 - 생성된 게시물의 201 응답
 - `community_posts` 신규 Flyway 마이그레이션
 - Service 단위, Repository/MySQL 슬라이스, Controller 슬라이스, 핵심 통합 테스트
-- 구현 뒤 실제 Controller 매핑 기준 `docs/api-routes.md` 동기화
+- 구현 뒤 실제 Controller 매핑 기준 `ai/api-routes.md` 동기화
 
 ### 제외
 
@@ -199,15 +199,15 @@ CREATE TABLE community_posts (
 
 ### Documentation files to modify after implementation
 
-- `docs/api-routes.md`
-- `docs/specs/008-community/issue-23-tasks.md`
+- `ai/api-routes.md`
+- `ai/specs/008-community/issue-23-tasks.md`
 
 ### 만들거나 수정하지 않을 파일
 
 - `src/main/resources/db/migration/V1__init.sql`
 - `src/main/resources/db/migration/V2__create_auth_account_tables.sql`
 - 다른 커뮤니티 API용 production/test 파일
-- `docs/specs/008-community/spec.md`
+- `ai/specs/008-community/spec.md`
 
 ---
 
@@ -255,5 +255,5 @@ CREATE TABLE community_posts (
 - [ ] 비로그인 요청은 401 `UNAUTHORIZED`이며 DB 변경이 없다.
 - [ ] 실제 MySQL에서 마이그레이션·FK·저장 흐름을 검증한다.
 - [ ] 다른 커뮤니티 API를 구현하지 않는다.
-- [ ] 실제 Controller 매핑을 `docs/api-routes.md`에 동기화한다.
+- [ ] 실제 Controller 매핑을 `ai/api-routes.md`에 동기화한다.
 - [ ] `.\gradlew.bat build --no-daemon --max-workers=1`을 새로 실행해 통과한다.

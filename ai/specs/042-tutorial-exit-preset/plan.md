@@ -429,7 +429,7 @@ snapshot으로 만들어진 예약(이미 체결·취소됨)은 그대로 남는
 4. 매수 체결 시 snapshot에 프리셋 반영 (예약 생성 없이 여기까지) → 회귀 확인
 5. CRYPTO 자동 예약 생성 (`ExitPlanCreateCommandDto.practice`, 귀속 컬럼)
 6. tick의 OCO 정산 + 재시작 예약 정리 + 수동 매도 공존
-7. `sellCause` + 완료 응답 대조 + `docs/api-routes.md`·`api-contracts.md` 갱신
+7. `sellCause` + 완료 응답 대조 + `ai/api-routes.md`·`api-contracts.md` 갱신
 8. 재진입 재예약 통합 테스트 (`SNAP-2` 배포 이후에만 통과)
 
 **4번과 5번을 나눈 이유**는 프리셋 반영과 자동 예약이 서로 다른 위험을 갖기 때문이다. 4번까지는

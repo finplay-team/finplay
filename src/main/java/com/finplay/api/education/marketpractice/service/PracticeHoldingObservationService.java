@@ -26,7 +26,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * docs/specs/026-market-order-practice-tutorial plan.md "확정 HTTP·JSON 계약" 절의
+ * ai/specs/026-market-order-practice-tutorial plan.md "확정 HTTP·JSON 계약" 절의
  * {@code POST /api/education/practice/holding-observations} 처리 순서를 구현한다. 관찰 저장은 append-only
  * insert라 비관적 락이 필요 없다(plan.md "트랜잭션과 경합" 절).
  */

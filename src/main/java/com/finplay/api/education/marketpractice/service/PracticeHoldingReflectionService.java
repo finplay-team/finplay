@@ -31,7 +31,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * docs/specs/026-market-order-practice-tutorial plan.md "확정 HTTP·JSON 계약" 절의 {@code POST
+ * ai/specs/026-market-order-practice-tutorial plan.md "확정 HTTP·JSON 계약" 절의 {@code POST
  * /api/education/practice/holding-reflections} 처리 순서를 구현한다. {@code practice_progresses}를 잠근 뒤
  * evidence를 재검증하고, 복기·완료 저장과 progress 전이를 같은 트랜잭션에서 처리한다(plan.md "트랜잭션과 경합").
  */

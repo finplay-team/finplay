@@ -4,14 +4,14 @@
 >
 > **이 이슈가 spec 012의 마지막 이슈다.** 1~7번(#147·#160·#167·#180·#188·#208·#212)이 전부 머지돼 주식 쪽이 완성됐고, 이 이슈가 코인 쪽(FEED-005)과 FEED-006의 코인 분기를 닫는다. `plan.md` §"8번이 마지막인 이유" — 코인 감시는 `market`의 가격 스냅샷 보관 신설이 선행돼야 성립한다.
 >
-> 항목 하나 = implementer 1회 투입 = 커밋 1개 (`docs/specs/README.md`의 굵기 가이드). 테스트 레벨은 ADR-0003을 따른다 — 순수 계산·서비스 로직은 단위, 리포지토리 파인더는 `@DataJpaTest`, 원장 불변은 고정 `Clock` + Testcontainers 통합이다.
+> 항목 하나 = implementer 1회 투입 = 커밋 1개 (`ai/specs/README.md`의 굵기 가이드). 테스트 레벨은 ADR-0003을 따른다 — 순수 계산·서비스 로직은 단위, 리포지토리 파인더는 `@DataJpaTest`, 원장 불변은 고정 `Clock` + Testcontainers 통합이다.
 
 ## 이 이슈 전체에 걸리는 제약
 
 - **여기서 값을 새로 정하지 않는다.** `feedback.crypto.*` 6개 키(`cooldown-minutes`·`daily-limit`·`rolling-window-minutes`·`sigma-lookback-hours`·`min-sample-count`·`match-before-minutes`)와 `market.crypto.price-snapshot-cron`의 값은 §C-7·§C-1을 그대로 옮긴다.
 - **`k`(z-score 계수)는 새로 만들지 않는다.** §탐지 알고리즘(코인)의 `|r5| / σ24 < k`는 **`feedback.detection.z-score-k`를 그대로 쓴다** — §C-7의 `feedback.crypto` 블록에 별도 `z-score-k`가 없다. 주식과 코인이 같은 계수를 공유하는 것이 의도다.
 - **새 마이그레이션이 필요 없음을 확인했다** (2026-08-05, planner). `V13__create_ai_feedback_tables.sql`의 `price_move_events`에 `occurred_at DATETIME(6) NULL`·`window_start`/`window_end` `TIME NULL`이 이미 있고, `idx_price_move_events_instrument_occurred_at (instrument_id, occurred_at)` 인덱스가 코인 24시간 조회와 쿨다운·일일 상한 조회 양쪽에 그대로 쓰인다. **머지된 마이그레이션은 수정 금지**(ADR-0004) — 착수 중 정말 컬럼이 부족하면 코드를 먼저 만들지 말고 오케스트레이터에게 보고한다.
-- **새 외부 HTTP 호출을 추가하지 않는다.** 코인 가격 스냅샷은 이미 연결된 빗썸 피드(`PriceStore`)를 읽어 Redis에 적재할 뿐이고, 코인 감시도 이미 저장된 뉴스(`MarketNewsItemRepository`)를 읽을 뿐이다. **새 `RestClient` 빈을 만들지 않는다** — `docs/agent-mistakes.md` 2026-08-04 행(같은 타입 `RestClient` 빈을 늘려 `NoUniqueBeanDefinitionException`으로 기존 `KisHistoricalCandleClientImpl`까지 깨진 사고)이 정확히 이 실수다.
+- **새 외부 HTTP 호출을 추가하지 않는다.** 코인 가격 스냅샷은 이미 연결된 빗썸 피드(`PriceStore`)를 읽어 Redis에 적재할 뿐이고, 코인 감시도 이미 저장된 뉴스(`MarketNewsItemRepository`)를 읽을 뿐이다. **새 `RestClient` 빈을 만들지 않는다** — `ai/agent-mistakes.md` 2026-08-04 행(같은 타입 `RestClient` 빈을 늘려 `NoUniqueBeanDefinitionException`으로 기존 `KisHistoricalCandleClientImpl`까지 깨진 사고)이 정확히 이 실수다.
 - **이미 있는 것을 다시 만들지 않는다.**
 
   | 이미 있는 것 | 이 이슈가 할 일 |
@@ -78,7 +78,7 @@
 
 - [x] **5. 원장 불변 — 8개 이슈 공통 조건의 확장**
 
-  완료 조건(공통) — "카드 생성·조회 전후로 주문·체결·계좌·잔액·보유·손익 원장이 변하지 않는다." 기존 원장 불변 테스트 패턴(`docs/agent-mistakes.md` 2026-08-04 행 — 값까지 비교, raw JDBC 스냅샷 전 `flush()`)을 그대로 확장해 이 이슈가 새로 만드는 쓰기 경로를 덮는다.
+  완료 조건(공통) — "카드 생성·조회 전후로 주문·체결·계좌·잔액·보유·손익 원장이 변하지 않는다." 기존 원장 불변 테스트 패턴(`ai/agent-mistakes.md` 2026-08-04 행 — 값까지 비교, raw JDBC 스냅샷 전 `flush()`)을 그대로 확장해 이 이슈가 새로 만드는 쓰기 경로를 덮는다.
   - `CryptoPriceSnapshotService`의 매분 기록 전후로 원장 테이블이 변하지 않는다 — 이 스케줄은 Redis에만 쓴다.
   - `CryptoPriceMoveWatcher` 실행 전후로 원장 테이블이 변하지 않는다 — 유일한 쓰기 대상은 `price_move_events`·`price_move_event_sources`다.
   - `PriceMoveQueryService.getPriceMoves`의 코인 분기 조회 전후로도 원장 테이블이 변하지 않는다.
@@ -86,9 +86,9 @@
 
 - [x] **6. 문서 동기화 — `api-contracts.md`의 코인 미구현 안내 제거, `prd.md` §3 갱신**
 
-  `docs/api-routes.md`는 **대상이 아니다** — 이 이슈는 새 컨트롤러·새 라우트를 만들지 않는다.
+  `ai/api-routes.md`는 **대상이 아니다** — 이 이슈는 새 컨트롤러·새 라우트를 만들지 않는다.
   - `docs/api-contracts.md`의 "종목 변동 원인 카드 조회" 절에서 "**코인 분기는 아직 구현되지 않았다 (2026-08-04, 이슈 #180)**" 인용 블록을 통째로 걷어낸다(그 문단 자체가 "이 단서는 8번이 들어오면 지운다"고 적어 뒀다). 걷어낸 뒤 "노출 필터"·"카드 개수" 문단이 실제 코인 동작(게이트 없음, `daily-limit`건 상한)과 여전히 맞는지 확인한다.
-  - `docs/prd.md` §3 "구현 현황"의 **"AI 피드백 — 코인 변동 감시"** 행(현재 `—` / **미착수** / "`012` plan의 이슈 8 미생성")을 완료로 갱신하고 근거 칸에 이 PR 번호를 적는다(CLAUDE.md 규칙 10).
+  - `ai/prd.md` §3 "구현 현황"의 **"AI 피드백 — 코인 변동 감시"** 행(현재 `—` / **미착수** / "`012` plan의 이슈 8 미생성")을 완료로 갱신하고 근거 칸에 이 PR 번호를 적는다(CLAUDE.md 규칙 10).
   - 두 문서는 **항상 같은 커밋에서 함께 맞춘다.**
 
 ## 완료 조건 소유

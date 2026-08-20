@@ -4,7 +4,7 @@
 - Spec: `./spec.md`
 - GitHub 이슈: #311 (finplay-team/finplay)
 - 관련 ADR: [ADR-0019](../../adr/0019-pre-pr-failure-issue-comment.md)(이번 결정의 정본 — PR #312 리뷰 후 신설), [ADR-0016](../../adr/0016-review-gate-auto-fix-round.md)(이력 코멘트 always()/outcome != success 원칙의 출처, 본문은 수정하지 않고 상태 줄에 ADR-0019 포인터만 추가), [ADR-0001](../../adr/0001-record-architecture-decisions.md)(승인된 ADR 본문 불변 원칙 — PR #312 리뷰가 근거로 든 문서), [ADR-0013](../../adr/0013-issue-triggered-agent-harness.md)(job 구조 원본)
-- 선례: `docs/specs/025-review-gate-auto-fix/`(같은 파일을 다룬 직전 spec — plan.md의 "always()와 !cancelled()를 나누는 기준" 절이 이번 작업의 조건식 원칙 그대로다)
+- 선례: `ai/specs/025-review-gate-auto-fix/`(같은 파일을 다룬 직전 spec — plan.md의 "always()와 !cancelled()를 나누는 기준" 절이 이번 작업의 조건식 원칙 그대로다)
 
 이 spec도 025와 같은 이유로 API 엔드포인트·엔티티가 아니라 `.github/workflows/agent.yml`의 `implement-and-open-pr` job을 바꾸는 CI 워크플로우 변경이다. "API 설계·입력 명세·데이터 모델" 대신 스텝 시퀀스로 설계를 기술한다.
 
@@ -128,9 +128,9 @@
 
 ## ADR — 종료 사유 열거 확장 (2026-08-10 PR #312 리뷰 후 정정)
 
-**최초 계획(아래 취소선 절)은 PR #312 리뷰(WookJaes, 차단 1건)에서 기각됐다** — "적용 범위 확장이면 인플레이스 수정 허용"이라는 예외는 `docs/adr/0001-record-architecture-decisions.md:15`("ADR은 한번 승인되면 수정하지 않는다")와 CLAUDE.md 규칙 2 어디에도 없다는 지적이다. 이 저장소에는 정확히 반대 방향의 선례가 이미 있다 — ADR-0014가 PR #290에서 락 범위가 확장됐을 때, 본문은 고치지 않고 **상태 줄에 포인터 한 줄만** 추가했다(PR #285 커밋 `7ab60341`).
+**최초 계획(아래 취소선 절)은 PR #312 리뷰(WookJaes, 차단 1건)에서 기각됐다** — "적용 범위 확장이면 인플레이스 수정 허용"이라는 예외는 `ai/adr/0001-record-architecture-decisions.md:15`("ADR은 한번 승인되면 수정하지 않는다")와 CLAUDE.md 규칙 2 어디에도 없다는 지적이다. 이 저장소에는 정확히 반대 방향의 선례가 이미 있다 — ADR-0014가 PR #290에서 락 범위가 확장됐을 때, 본문은 고치지 않고 **상태 줄에 포인터 한 줄만** 추가했다(PR #285 커밋 `7ab60341`).
 
-**정정된 결정**: 새 ADR `docs/adr/0019-pre-pr-failure-issue-comment.md`를 만들어 이번 결정(PR 생성 전 구간도 이력 코멘트 always() 원칙을 따른다)을 그 안에 전부 담는다. `docs/adr/0016-review-gate-auto-fix-round.md` 본문은 한 글자도 고치지 않고, ADR-0014 선례와 같은 형태로 상태 줄에 포인터만 추가한다.
+**정정된 결정**: 새 ADR `ai/adr/0019-pre-pr-failure-issue-comment.md`를 만들어 이번 결정(PR 생성 전 구간도 이력 코멘트 always() 원칙을 따른다)을 그 안에 전부 담는다. `ai/adr/0016-review-gate-auto-fix-round.md` 본문은 한 글자도 고치지 않고, ADR-0014 선례와 같은 형태로 상태 줄에 포인터만 추가한다.
 
 ```markdown
 - 상태: 승인됨 — PR 생성 전 구간(구현 호출·빌드 검증·PR 조회 실패)의 이력 코멘트는 [ADR-0019](0019-pre-pr-failure-issue-comment.md)가 이 ADR의 "이력 코멘트는 always()" 원칙을 이슈 코멘트로 확장한다. 그 외 결정은 유효.
@@ -139,14 +139,14 @@
 이슈 #311 완료 조건의 "ADR-0016의 종료 사유 열거를 갱신한다"는 이제 "ADR-0016 상태 줄에 포인터를 추가하고, 실제 열거는 ADR-0019에 담는다"로 해석한다 — 완료 조건의 의도(PR 생성 전 구간의 종료 사유가 어딘가에 정본으로 남는 것)는 그대로 충족하되, ADR-0001의 불변성 원칙을 지키는 방식으로 이행한다.
 
 ~~### (기각됨) 1) 메타데이터 절에 갱신 이력 한 줄 추가~~
-~~`docs/adr/0016-review-gate-auto-fix-round.md`의 "관계" 줄(L5) 바로 아래에 추가~~ — 본문 수정이라 기각.
+~~`ai/adr/0016-review-gate-auto-fix-round.md`의 "관계" 줄(L5) 바로 아래에 추가~~ — 본문 수정이라 기각.
 
 ~~### (기각됨) 2) "이력 코멘트 스텝은 always()" 목록 확장 (L32)~~ — 본문 수정이라 기각. 대신 이 목록에 있던 신규 스텝 열거는 ADR-0019 "결정" 절로 그대로 옮겼다.
 
 ## 로컬 검증 절차 (CI 없음 — `./gradlew build`는 이 변경의 검증 대상 아님, `src/` 무변경)
 
 1. **YAML 문법**: `python -c "import yaml; yaml.safe_load(open('.github/workflows/agent.yml', encoding='utf-8'))"` — 예외 없이 종료해야 한다.
-2. **셸 문법**: 새로 추가한 `run:` 블록 3개 각각을 `.sh` 파일로 뽑아 `bash -n`으로 검증한다. **LF(`\n`)로 저장** — Windows 환경에서 CRLF로 저장하면 `bash -n`이 거짓 실패를 낸다(작업 지시 원문 경고, `docs/agent-mistakes.md`의 개행 관련 유사 사례와 같은 종류의 함정).
+2. **셸 문법**: 새로 추가한 `run:` 블록 3개 각각을 `.sh` 파일로 뽑아 `bash -n`으로 검증한다. **LF(`\n`)로 저장** — Windows 환경에서 CRLF로 저장하면 `bash -n`이 거짓 실패를 낸다(작업 지시 원문 경고, `ai/agent-mistakes.md`의 개행 관련 유사 사례와 같은 종류의 함정).
 3. **조건식 대조**: 위 "도달 가능한 outcome 조합 전수 검토" 표의 `if:` 문자열을, 실제로 커밋된 `agent.yml`의 세 스텝 `if:` 줄과 한 글자씩 대조한다(복붙 오타로 상호 배타가 깨지는 것을 막기 위함 — 025의 5차 리뷰에서 실제로 조건식 오타가 지적된 선례가 있다).
 4. **실제 이슈 검증**: 머지 후 테스트 이슈로 세 정지 지점 중 최소 1곳(가장 재현하기 쉬운 것은 빈 `PR_NUMBER`를 유발하는 시나리오)을 실제로 발생시켜 이슈 코멘트가 남는지 확인한다 — `issue_comment` 트리거는 항상 `dev` 기준 워크플로우 버전으로 실행되므로 PR 머지 전에는 불가능하다(025의 tasks.md와 동일한 제약).
 

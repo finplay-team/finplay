@@ -11,8 +11,8 @@
 > 이 spec은 그 결정을 전제로 쓴다.
 >
 > **spec 번호 038을 쓰는 이유**: `037`은 비워 둔다. 열린 PR [#381](https://github.com/finplay-team/finplay-backend/pull/381)이
-> `docs/specs/036-tutorial-flow-redesign`을 갖고 있는데 `036`은 이미 머지된 `036-remove-crypto-stale-status`가
-> 차지했다(둘 다 2026-08-14 생성). `docs/specs/README.md`의 "나중에 생성된 폴더를 다음 빈 번호로 옮긴다" 규칙대로면
+> `ai/specs/036-tutorial-flow-redesign`을 갖고 있는데 `036`은 이미 머지된 `036-remove-crypto-stale-status`가
+> 차지했다(둘 다 2026-08-14 생성). `ai/specs/README.md`의 "나중에 생성된 폴더를 다음 빈 번호로 옮긴다" 규칙대로면
 > #381이 `037`로 옮겨 오게 되므로, 그 자리를 뺏지 않기 위해 이 spec이 `038`을 쓴다(README "결번은 메우지 않는다").
 
 ## 개요
@@ -113,5 +113,5 @@
 - [ ] 보유 종목이 있는 계좌의 주말 요약이 `costBasis` 대체 경로(`docs/api-contracts.md`)로 빠지지 않고 실제
   평가금액·수익률을 반환함이 확인된다.
 - [ ] `./gradlew build` 통과.
-- [ ] `docs/api-contracts.md`(시세·캔들·SSE 절과 `costBasis` 대체 문단)와 `docs/prd.md` §3 "구현 현황"에
-  `QUOTE-HOLD-001~007` 행이 갱신·추가된다. `docs/api-routes.md`는 라우트 변경이 없어 갱신 대상이 아니다.
+- [ ] `docs/api-contracts.md`(시세·캔들·SSE 절과 `costBasis` 대체 문단)와 `ai/prd.md` §3 "구현 현황"에
+  `QUOTE-HOLD-001~007` 행이 갱신·추가된다. `ai/api-routes.md`는 라우트 변경이 없어 갱신 대상이 아니다.

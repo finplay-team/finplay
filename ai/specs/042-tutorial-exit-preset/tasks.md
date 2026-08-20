@@ -114,7 +114,7 @@
   현재 `PracticeAttemptEvidenceService`가 `tradeSummary.firstSellTrade()` 하나만 쓰므로, 재진입하면 완료
   화면에 2막 손절만 뜨고 3막 익절이 사라진다. `exit_plans.triggered_order_id` 역참조로 판정한다.
   나머지 대조 값(`sellPrice`·`realizedPnl`·`returnRate`·`sellVerdict`)은 이슈 #421로 이미 있다. 이 배열이 041의 "안 팔았다면" 선 재료도 겸한다.
-  `docs/prd.md` §3에 `EXITPRESET-001~020` 행 추가.
+  `ai/prd.md` §3에 `EXITPRESET-001~020` 행 추가.
   > **구현에서 정한 것 (이슈 #477).**
   > - **`sellCause`는 넣었다.** `exit_plans.triggered_order_id` 역참조로 판정하며, 예약이 가리키지 않는
   >   매도는 전부 `MANUAL`이다(예약이 없는 STOCK과 기능 도입 전 실행 포함). education이 `ExitPlanRepository`를
@@ -129,7 +129,7 @@
   >   있었는가"이며, 2막 손절 → 3막 익절이 화면에서 손절 하나로 보인다.
 
 > **API 문서는 각 항목이 자기 커밋에서 갱신한다**(CLAUDE.md 규칙 7). 3번은 새 엔드포인트를 만들므로
-> `docs/api-routes.md`·`docs/api-contracts.md`를 그 커밋에서, 5·6·7번은 바꾼 응답 계약을 각자의 커밋에서
+> `ai/api-routes.md`·`docs/api-contracts.md`를 그 커밋에서, 5·6·7번은 바꾼 응답 계약을 각자의 커밋에서
 > 갱신한다. 문서 갱신을 마지막 항목으로 미루면 규칙 위반을 계획에 담는 것이 된다.
 
 - [x] **8. 재진입 재예약 통합 테스트** — 손절 체결 → 재진입 대기 → **프리셋 변경** → 재매수 → 새 snapshot

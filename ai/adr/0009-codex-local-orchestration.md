@@ -32,4 +32,4 @@
 
 - Claude Code와 Codex 팀원이 같은 로컬 개발·리뷰 절차를 재현할 수 있다.
 - Codex 스킬이나 적용 가능한 `AGENTS.md` 지시가 역할 위임을 요구할 때만 서브에이전트를 사용한다.
-- CI 하네스 전환은 계속 `docs/harness-roadmap.md`의 후속 ADR 범위로 남는다.
+- CI 하네스 전환은 계속 `ai/harness-roadmap.md`의 후속 ADR 범위로 남는다.

@@ -3,10 +3,10 @@
 ## 관련 문서
 
 - Spec: `./spec.md`
-- 상속 정본(변경하지 않음): `docs/specs/026-market-order-practice-tutorial`(2단계 chain 해석, 참조 가격선,
+- 상속 정본(변경하지 않음): `ai/specs/026-market-order-practice-tutorial`(2단계 chain 해석, 참조 가격선,
   evidence A/B 판정, 불변 완료 원칙 — 이 spec은 이 문서의 계약을 상속하고 4단계로만 확장한다),
-  `docs/specs/030-coin-practice-price-runtime`(코인 가상 가격 세션, 병행 — 건드리지 않음)
-- 참고: `docs/specs/019-exit-price-policy`(PRICE/PERCENT 계산, 변경 없음), `docs/adr/0012-tutorial-state-in-memory.md`
+  `ai/specs/030-coin-practice-price-runtime`(코인 가상 가격 세션, 병행 — 건드리지 않음)
+- 참고: `ai/specs/019-exit-price-policy`(PRICE/PERCENT 계산, 변경 없음), `ai/adr/0012-tutorial-state-in-memory.md`
 - 관련 ADR: ADR-0002(레이어드), ADR-0003(테스트 전략), ADR-0004(migration 정책), ADR-0012(즐겨찾기·의도 인메모리)
 - 기존 API(변경 없이 재사용): `GET /api/instruments`, `POST /api/orders`(BUY·SELL 시장가), `POST /api/education/practice/intentions`
 
@@ -329,7 +329,7 @@ findEarliestFilledBuyTradeMatchingPicksFirstQuantityMatchInRepositoryOrder`가 �
 - `ResolvedPracticeChainDto`(Java record, DB 테이블 아님)에 `sellTradeId`·`sellTradeExecutedAt` 2필드
   추가.
 - 신규 migration 번호는 착수 시점에 `origin/dev` 최신 `V{N}`을 재확인해 정한다(ADR-0004,
-  `docs/specs/README.md` 번호 규칙과 같은 종류의 선점 위험).
+  `ai/specs/README.md` 번호 규칙과 같은 종류의 선점 위험).
 
 ## 입력 명세
 

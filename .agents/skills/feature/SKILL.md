@@ -9,8 +9,8 @@ spec 폴더 하나를 품질 게이트 순서대로 구현한다. 메인 에이�
 
 ## 사전 확인
 
-1. `AGENTS.md`와 `docs/context-router.md`를 읽는다.
-2. 인자로 받은 `docs/specs/NNN-*`에 `spec.md`, `plan.md`, `tasks.md`가 있는지 확인한다.
+1. `AGENTS.md`와 `ai/context-router.md`를 읽는다.
+2. 인자로 받은 `ai/specs/NNN-*`에 `spec.md`, `plan.md`, `tasks.md`가 있는지 확인한다.
 3. 문서가 없으면 planner를 계획 모드로 투입하고 사용자의 spec 확인을 받은 뒤 구현한다.
 4. `git status --short --branch`로 기존 변경과 브랜치를 확인한다. 사용자 변경을 커밋에 섞거나 되돌리지 않는다.
 5. 현재 브랜치가 `main` 또는 `dev`면 사용자 작업과 충돌하지 않는지 확인한 뒤 `dev` 기반 `feat/NNN-요약` 브랜치를 만든다.

@@ -28,7 +28,7 @@
 ## 리뷰 로그
 | 시각 | 에이전트 | 점검 범위 | 근거 문서 |
 |---|---|---|---|
-| - | reviewer | `git diff dev...HEAD` (전체 21개 파일), 커밋별 diff(9d276c1b·aef0299d·b9fe2211) 개별 확인 | docs/conventions.md, docs/adr/0002·0003·0004, spec.md, plan.md |
+| - | reviewer | `git diff dev...HEAD` (전체 21개 파일), 커밋별 diff(9d276c1b·aef0299d·b9fe2211) 개별 확인 | docs/conventions.md, ai/adr/0002·0003·0004, spec.md, plan.md |
 
 ## 모니터링 (리뷰)
 - 코드 리뷰 결과: 차단 0건 / 권장 0건 / 참고 2건 — 머지 가능. state exp 검증(off-by-one·타임존 없음), REAUTH 쿠키 생략이 LOGIN 위장·재사용을 열지 않음(purpose는 서명 payload에서만 옴), reauth-exchange 공개 엔드포인트 코드 추측 불가(256비트)·1회성(getAndDelete)·TTL 60초, Location에 reauthToken 원문 없음(테스트로 확인), verify() 실패 시 400/403 분기 수정에 새 우회 없음, Store 중복은 conventions.md "세 번째 중복" 기준상 허용 범위.

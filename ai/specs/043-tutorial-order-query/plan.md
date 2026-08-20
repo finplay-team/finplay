@@ -131,9 +131,9 @@ public List<OrderListItemResponse> getCurrentRunOrders(Long userId, Market marke
 
 ## 문서 동기화
 
-controller 구현과 같은 커밋에서 실제 mapping을 `docs/api-routes.md`에 추가하고, 이 절의 요청·응답·오류를
+controller 구현과 같은 커밋에서 실제 mapping을 `ai/api-routes.md`에 추가하고, 이 절의 요청·응답·오류를
 `docs/api-contracts.md`의 `education`(또는 튜토리얼 attempt) 절에 동기화한다(CLAUDE.md 규칙 7). 이
 엔드포인트는 PRD에 등재된 공식 요구사항 ID가 아니므로(기존 TUTORIAL-FLOW-003·007 order 귀속 계약의
-읽기 gap을 메우는 버그성 보강) `docs/prd.md` §3에 새 행을 추가할지는 구현 완료 시점에 오케스트레이터가
+읽기 gap을 메우는 버그성 보강) `ai/prd.md` §3에 새 행을 추가할지는 구현 완료 시점에 오케스트레이터가
 판단한다 — WATCHLIST(023) 선례처럼 PRD 미등재 신규 조회 기능으로 행을 추가하는 것이 합리적이나, 최종
 판단은 계획 문서가 아니라 구현 완료 커밋에서 내린다.

@@ -83,7 +83,7 @@ public class PracticeIntentionService {
 		});
 	}
 
-	// docs/specs/020 "tutorial key 해석": market이 STOCK이면 기존 주식 실습 key, CRYPTO면 코인 실습 key로
+	// ai/specs/020 "tutorial key 해석": market이 STOCK이면 기존 주식 실습 key, CRYPTO면 코인 실습 key로
 	// 분기한다. 기존 INVESTMENT_PRACTICE_V1 행은 재분류하지 않고 신규 생성 경로만 이 규칙을 따른다.
 	private String resolveTutorialKey(Market market) {
 		return switch (market) {

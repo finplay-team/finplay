@@ -182,7 +182,7 @@ FinPlay는 코인과 주식을 가상 자산으로 매매해보는 교육형 모
 
 ## 부록 B. API 요약
 
-전체 엔드포인트 목록과 요청·응답·오류 계약은 [`docs/api-routes.md`](./api-routes.md)와 [`docs/api/`](./api) 아래 도메인별 문서(`auth`·`account`·`market`·`order`·`portfolio`·`journal`·`education`·`feedback`·`ranking`·`community`·`watchlist`)가 정본이다. 도메인별로 대략 다음과 같은 기능을 제공한다.
+전체 엔드포인트 목록과 요청·응답·오류 계약은 [`ai/api-routes.md`](./api-routes.md)와 [`docs/api/`](./api) 아래 도메인별 문서(`auth`·`account`·`market`·`order`·`portfolio`·`journal`·`education`·`feedback`·`ranking`·`community`·`watchlist`)가 정본이다. 도메인별로 대략 다음과 같은 기능을 제공한다.
 
 | 도메인 | 제공 기능 |
 |---|---|

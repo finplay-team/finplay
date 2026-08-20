@@ -22,7 +22,7 @@ spring:
     # 더 짧게 잡으면 PriceStore 쪽 오탐이 사용자에게 보이고, 더 길게 잡으면 위 블랙홀 시나리오의 스레드 점유가
     # 그만큼 길어진다. 캐시 전용 LettuceClientConfiguration으로 이 캐시에만 짧은 값을 주는 선택지도 있었으나,
     # 같은 타입 빈을 하나 더 만드는 방식이라 이 저장소가 실제로 겪은 NoUniqueBeanDefinitionException 함정을
-    # 다시 부른다(docs/agent-mistakes.md 2026-08-04). 전역 한 값으로 두고 근거를 여기 남긴다.
+    # 다시 부른다(ai/agent-mistakes.md 2026-08-04). 전역 한 값으로 두고 근거를 여기 남긴다.
     redis:
       timeout: 2s
       connect-timeout: 2s
@@ -39,7 +39,7 @@ spring:
       # (기본 30초)만큼 대기할 수 있다. "요청당 최대 2커넥션" 전제로 기존 동시성 여유(10)를 유지하려면 풀을
       # 20으로 둔다. MySQL 컨테이너(compose.yaml)는 max_connections 기본값(151)을 그대로 쓰므로 여유가 있다.
       #
-      # 이 계산은 1차 범위의 단일 인스턴스 전제(docs/prd.md)에서만 유효하다. ADR-0014가 예고한 다중 인스턴스
+      # 이 계산은 1차 범위의 단일 인스턴스 전제(ai/prd.md)에서만 유효하다. ADR-0014가 예고한 다중 인스턴스
       # 전환이 실제로 이뤄지면 "인스턴스 수 × 20"이 운영 DB의 max_connections를 넘지 않는지 그때 다시
       # 검토해야 한다(PR #272 리뷰 권장 사항).
       maximum-pool-size: 20
@@ -171,8 +171,8 @@ bithumb:
       read-timeout-ms: ${BITHUMB_TICKER_READ_TIMEOUT_MS:3000}
 
 # 지정가 체결 비동기 실행기(LimitOrderFillExecutorRouter, ADR-0024). enabled·partition-count·
-# queue-capacity-per-partition의 정본은 docs/adr/0024-limit-order-fill-executor.md이고, batch-size의
-# 정본은 docs/adr/0025-limit-order-fill-batch-commit.md다. LimitOrderFillExecutorProperties가 같은
+# queue-capacity-per-partition의 정본은 ai/adr/0024-limit-order-fill-executor.md이고, batch-size의
+# 정본은 ai/adr/0025-limit-order-fill-batch-commit.md다. LimitOrderFillExecutorProperties가 같은
 # 값을 @DefaultValue로 갖는다.
 order:
   limit-fill-executor:
@@ -191,7 +191,7 @@ order:
     batch-size: 50
 
 # 코인 가격 스냅샷(CryptoPriceSnapshotService, spec 012 §코인 가격 스냅샷, 이슈 #225). 값의 정본은
-# docs/specs/012-ai-feedback/spec.md §C-1(크론)·§코인 가격 스냅샷(보관 기간)이고 MarketCryptoProperties가
+# ai/specs/012-ai-feedback/spec.md §C-1(크론)·§코인 가격 스냅샷(보관 기간)이고 MarketCryptoProperties가
 # 같은 값을 @DefaultValue로 갖는다. 선언부에 zone = "Asia/Seoul"을 반드시 함께 붙인다.
 market:
   crypto:
@@ -201,11 +201,11 @@ market:
     sigma-lookback-hours: 24
   stock:
     # 주식 분봉 수집 배치(KisHistoricalCandleCollector)의 거래일 단위 Redis 락 TTL(초). 정본은
-    # docs/specs/035-stock-collector-reliability/plan.md §락 설계 세부 — 정상 실행 소요시간의 수 배 여유를
+    # ai/specs/035-stock-collector-reliability/plan.md §락 설계 세부 — 정상 실행 소요시간의 수 배 여유를
     # 두면서도 프로세스가 죽어 finally를 못 도는 최후의 경우 하루 종일 잠기지 않게 하는 값이다(COLLECT-STAB-001).
     collect-lock-ttl-seconds: 600
     # 정규 08:10 배치 이후 당일 재시도 크론(COLLECT-STAB-003). 08:15부터 10:45까지 15분 간격 9회 — 근거는
-    # docs/specs/035-stock-collector-reliability/plan.md §재시도 스케줄 근거.
+    # ai/specs/035-stock-collector-reliability/plan.md §재시도 스케줄 근거.
     retry-cron: "0 15,30,45 8-10 * * MON-FRI"
 
 # 네이버 뉴스 검색 API 키 — 뉴스 수집기(spec 012 FEED-001)가 사용한다. 키 경로의 정본은 spec §C-7이다.
@@ -223,7 +223,7 @@ naver-search:
 dart:
   api-key: ${DART_API_KEY:}
 
-# AI 서술 생성(spec 012)의 LLM 호출 설정. 값의 정본은 docs/specs/012-ai-feedback/spec.md §C-7이며 코드에 상수로
+# AI 서술 생성(spec 012)의 LLM 호출 설정. 값의 정본은 ai/specs/012-ai-feedback/spec.md §C-7이며 코드에 상수로
 # 박지 않는다 (ADR-0011). 프로바이더 교체는 build.gradle의 starter 의존성과 이 블록 변경으로 끝난다.
 # API 키는 이 블록이 아니라 위 spring.ai.openai.api-key로 주입한다 (시크릿은 yml에 적지 않는다, conventions.md).
 #
@@ -321,7 +321,7 @@ feedback:
     poll-millis: 20 # 대기 중 캐시 재확인 간격. 1 미만이면 기동 실패 — 0이면 바쁜 대기가 된다
 
 # 랭킹 ZSET 재구성 배치(RankingRebuildService, spec 014 이슈 #279). Redis 유실 복구와 정기 교정을 겸한다.
-# 값의 정본은 docs/specs/014-ranking/plan.md "Decision Gate 확정"이며 @Scheduled는 record가 아니라
+# 값의 정본은 ai/specs/014-ranking/plan.md "Decision Gate 확정"이며 @Scheduled는 record가 아니라
 # Environment에서 읽으므로 실제 스케줄을 결정하는 것은 이 블록이다(@ConfigurationProperties record를 따로
 # 두지 않는 이유 — 값이 크론 하나뿐이라 record를 만들면 같은 값이 두 곳에 생기는 관리 부담만 는다).
 #
@@ -344,7 +344,7 @@ ranking:
 # 커뮤니티 게시물 첨부 이미지(COM-006, 이슈 #248) 저장 위치. 시크릿이 아니므로 yml에 기본값을 둔다
 # (conventions.md "시크릿" 절 대상 아님). 로컬 실행 디렉터리 기준 상대 경로가 기본값이며, 운영 배포 시
 # COMMUNITY_IMAGE_STORAGE_DIR 환경변수로 절대 경로를 덮어쓴다. 이 프로젝트는 객체 스토리지 인프라가 없어
-# 로컬 파일시스템 저장을 채택했다(docs/specs/022-community-enhancement/plan.md "Decision Gate 확정").
+# 로컬 파일시스템 저장을 채택했다(ai/specs/022-community-enhancement/plan.md "Decision Gate 확정").
 finplay:
   community:
     image-storage:

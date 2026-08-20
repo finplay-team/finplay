@@ -4,7 +4,7 @@ package com.finplay.api.feedback.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
-// 값의 정본은 docs/specs/012-ai-feedback/spec.md §C-7이다. 모델·타임아웃·최대 토큰을 코드 상수로 박지 않는 것이
+// 값의 정본은 ai/specs/012-ai-feedback/spec.md §C-7이다. 모델·타임아웃·최대 토큰을 코드 상수로 박지 않는 것이
 // ADR-0011의 "프로바이더 교체는 starter 의존성과 feedback.llm.* 설정 변경으로 끝난다"는 결정이다.
 // 설정을 하나도 주지 않아도 기동해야 하므로 전 항목에 @DefaultValue를 둔다.
 @ConfigurationProperties(prefix = "feedback.llm")

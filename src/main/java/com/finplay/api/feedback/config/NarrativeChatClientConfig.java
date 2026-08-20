@@ -12,7 +12,7 @@ import org.springframework.context.annotation.Configuration;
 public class NarrativeChatClientConfig {
 
 	// 완성된 ChatClient를 그대로 주입받게 한다 — 생성자에서 빌더를 조립하면 SpotBugs EI_EXPOSE_REP2에 걸리기 쉽다
-	// (KisRestClientConfig가 RestClient에 같은 이유로 쓰는 방식, docs/agent-mistakes.md 2026-07-29).
+	// (KisRestClientConfig가 RestClient에 같은 이유로 쓰는 방식, ai/agent-mistakes.md 2026-07-29).
 	//
 	// Spring AI 2.0은 ChatModel 빈이 하나일 때 ChatClient.Builder만 자동 등록하고 ChatClient 자체는 만들지 않는다.
 	// 호출 타임아웃을 여기서 주지 않는 이유는 그것이 요청 단위가 아니라 클라이언트 단위 값이기 때문이다 —

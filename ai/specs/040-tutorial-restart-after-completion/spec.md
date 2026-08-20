@@ -115,7 +115,7 @@
 - 프론트엔드 구현 — `finplay-frontend`의 `AttemptTutorialFlow.tsx` replay 게이팅 변경은 별도 레포의 별도
   작업이며 이 spec은 백엔드 계약만 정의한다. (영향 참고: 완료 상태에서도 재시작 버튼이 보이도록 게이팅
   조건이 바뀌어야 한다.)
-- `docs/specs/016-investment-education-policy`가 정의한 즐겨찾기·의도 재시작 시 완료 전 evidence 소실
+- `ai/specs/016-investment-education-policy`가 정의한 즐겨찾기·의도 재시작 시 완료 전 evidence 소실
   규칙 변경
 
 ## 완료 조건
@@ -131,5 +131,5 @@
   넘지 않는 것이 동시성 테스트로 확인된다.
 - [ ] 완료 후 재시작해 진행 중인 attempt에 대해 `PUT .../attempts/{market}`(진입 재조회)가 오류 없이
   현재 실행 상태를 반환하는 것이 확인된다.
-- [ ] `docs/specs/039-tutorial-flow-redesign/spec.md`의 TUTORIAL-FLOW-005 항목에 이 spec으로 대체됐다는
+- [ ] `ai/specs/039-tutorial-flow-redesign/spec.md`의 TUTORIAL-FLOW-005 항목에 이 spec으로 대체됐다는
   표기가 추가된다.

@@ -104,11 +104,11 @@
 
 **투자 실습 관련 경로는 구현·계획을 막론하고 전부** 공개 경로에 추가하지 않으며 Access Bearer 인증을 요구한다 — 즐겨찾기 3개, 기존 사전 의도, 합성 시세, `026`의 관찰·복기 2개, 위 실제 라우트로 옮긴 일반 경로 OCO 생성·취소·목록 3개, 그리고 위 계획 4개 모두 해당한다. `POST /api/orders` 시장가 매수는 이미 제공 중인 기존 API를 그대로 사용하므로 계획 라우트에 중복 기재하지 않는다.
 
-#199의 PRICE/PERCENT intention 확장은 아직 실제 라우트 계약이 아니다. 구현 시 기존 타입 생략+가격 요청을 PRICE로 호환하고, OCO 계획 라우트는 가격·rate를 다시 받지 않고 intention 정본에서 확정한다. 상세 계약은 `docs/specs/019-exit-price-policy`를 따른다.
+#199의 PRICE/PERCENT intention 확장은 아직 실제 라우트 계약이 아니다. 구현 시 기존 타입 생략+가격 요청을 PRICE로 호환하고, OCO 계획 라우트는 가격·rate를 다시 받지 않고 intention 정본에서 확정한다. 상세 계약은 `ai/specs/019-exit-price-policy`를 따른다.
 
 ## 2차 라우트 (구현 완료)
 
-`docs/specs/012-ai-feedback`의 네 경로 — `GET /api/instruments/{instrumentId}/price-moves`(FEED-006)·`GET /api/instruments/{instrumentId}/news`(FEED-008)·`GET /api/market/briefing`(FEED-009)·`GET /api/ai/post-sell/{tradeId}`(FEED-007) — 는 **전부 구현되어 위 실제 라우트 목록에 반영했다. 계획 라우트로 남은 2차 경로는 없고 네 경로 모두 블랙박스 QA 근거다.** spec 012의 남은 이슈(`docs/specs/012-ai-feedback/plan.md` 7·8번 — 반사실 수익률·집단 비교, 코인 변동 감시)는 **이 네 경로의 응답 필드와 분기를 채우며 새 엔드포인트를 만들지 않는다** — 이 절을 계획 라우트 표로 되돌리지 않는다.
+`ai/specs/012-ai-feedback`의 네 경로 — `GET /api/instruments/{instrumentId}/price-moves`(FEED-006)·`GET /api/instruments/{instrumentId}/news`(FEED-008)·`GET /api/market/briefing`(FEED-009)·`GET /api/ai/post-sell/{tradeId}`(FEED-007) — 는 **전부 구현되어 위 실제 라우트 목록에 반영했다. 계획 라우트로 남은 2차 경로는 없고 네 경로 모두 블랙박스 QA 근거다.** spec 012의 남은 이슈(`ai/specs/012-ai-feedback/plan.md` 7·8번 — 반사실 수익률·집단 비교, 코인 변동 감시)는 **이 네 경로의 응답 필드와 분기를 채우며 새 엔드포인트를 만들지 않는다** — 이 절을 계획 라우트 표로 되돌리지 않는다.
 
 네 경로 모두 `SecurityConfig` 공개 목록에 추가하지 않는다 — `anyRequest().authenticated()`로 떨어져 Access Bearer 토큰을 요구한다.
 
@@ -119,7 +119,7 @@
 | Base URL | `/api/v1` | `/api` | 버저닝 미사용 (2026-07-23 확정, `docs/conventions/code.md`) |
 | 매도 직후 피드백 | `GET /ai/post-sell/{id}` | `GET /api/ai/post-sell/{tradeId}` | Base URL 규칙만 적용, 경로는 동일 |
 | `post-sell` 내용 | 계획 대비 실제 대조 (2단계) | 원장 수치 + 뉴스 변동 원인 | 계획 대조에는 목표가·손절가 등 구조화 필드가 필요하다. `007-journal`(다른 팀원 범위)은 JOUR-001(자유 텍스트 `content` 작성 API)만 구현됐고, 그 구조화 필드(`plan`·`planOutcome`)는 아직 없다. 생기면 같은 응답에 **추가**하면 되므로 계약이 깨지지 않는다 |
-| AI 엔드포인트 수 | 6개 (`pre-order`·`post-sell`·`d7`·`weekly-report`·`basis-stats`·`similar`) | `post-sell` 1개만 | 나머지 5개는 2차 범위 밖 (`docs/specs/012-ai-feedback` 범위 제외) |
+| AI 엔드포인트 수 | 6개 (`pre-order`·`post-sell`·`d7`·`weekly-report`·`basis-stats`·`similar`) | `post-sell` 1개만 | 나머지 5개는 2차 범위 밖 (`ai/specs/012-ai-feedback` 범위 제외) |
 | 변동 원인 카드 | 없음 | `GET /api/instruments/{id}/price-moves` | 신규 — Notion 명세 DB에 행 추가 필요 |
 | 종목 뉴스 목록·요약 | 없음 | `GET /api/instruments/{id}/news` | 신규 — Notion 1차 고도화 "뉴스 요약" 항목에 대응 |
 | 개장 전 브리핑 | 없음 | `GET /api/market/briefing?market=` | 신규 — 변동 원인 카드는 가격이 움직인 **뒤**를 설명하므로 매매 판단에 쓸 수 없다. 브리핑이 그 공백을 채운다 |

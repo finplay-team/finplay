@@ -2,7 +2,7 @@
 
 - 상태: 승인됨 — PR 생성 전 구간(구현 호출·빌드 검증·PR 조회 실패)의 이력 코멘트는 [ADR-0019](0019-pre-pr-failure-issue-comment.md)가 이 ADR의 "이력 코멘트는 always()" 원칙을 이슈 코멘트로 확장한다. 그 외 결정은 유효.
 - 날짜: 2026-08-10
-- 관계: [ADR-0013](0013-issue-triggered-agent-harness.md)의 "조건부 승인" 결정을 대체(superseded)한다. ADR-0013의 다른 결정(러너 환경, 인증 방식, 이슈 트리거 흐름)은 유효하다. [ADR-0005](0005-local-agent-orchestration.md)의 "자동 머지 금지" 원칙은 유지한다. GitHub 이슈 #292, `docs/specs/025-review-gate-auto-fix/spec.md`·`plan.md`를 구체화한다.
+- 관계: [ADR-0013](0013-issue-triggered-agent-harness.md)의 "조건부 승인" 결정을 대체(superseded)한다. ADR-0013의 다른 결정(러너 환경, 인증 방식, 이슈 트리거 흐름)은 유효하다. [ADR-0005](0005-local-agent-orchestration.md)의 "자동 머지 금지" 원칙은 유지한다. GitHub 이슈 #292, `ai/specs/025-review-gate-auto-fix/spec.md`·`plan.md`를 구체화한다.
 
 ## 맥락
 
@@ -26,7 +26,7 @@ ADR-0013은 `implement-and-open-pr` job이 PR을 연 뒤 자체 리뷰를 한 �
   - 재리뷰를 수행하는 호출은 자동 수정을 수행한 호출과 별도의 claude-code-action 호출이다 — 자기가 고친 것을 자기가 통과시키지 않는다.
 - **승인 판정 대상이 바뀐다.** ADR-0013은 라운드 1 리뷰 결과만으로 승인 여부를 판정했다. 이 ADR은 최종 판정 병합 스텝을 두어, 자동 수정 라운드가 실행됐으면 그 재리뷰 결과를, 실행되지 않았으면(라운드 1이 이미 차단 0건이었거나 자동 수정 전제 조건 미충족) 라운드 1 결과를 최종값으로 쓴다. **승인 기준 자체(차단 0건·권장 0건)는 ADR-0013 그대로 유지한다** — 바뀌는 것은 그 기준을 어느 라운드의 결과에 적용하느냐뿐이다.
 - 재시도는 최대 1회로 고정한다. GitHub Actions의 step은 반복문을 지원하지 않으므로, 라운드 수는 YAML에 고정 스텝으로 언롤해 구조적으로 상한을 건다(런타임 카운터에 의존하지 않는다). 자동 수정 라운드가 끝난 뒤에도 차단이 남아 있으면 더 이상 자동 재시도하지 않고 사람에게 넘긴다.
-- `implement-and-open-pr` job에 `timeout-minutes: 90`을 명시한다(산정 근거의 정본은 이 절 — `agent.yml`에는 참조만 남긴다, PR #293 3차 리뷰 권장 4). 기존 흐름(구현 + 빌드 ~7분 + 리뷰)에 자동 수정 라운드(수정 + 빌드 ~7분 + 재리뷰)가 그대로 다시 붙어 claude-code-action 호출이 최대 4건(구현·리뷰·자동 수정·재리뷰)까지 늘 수 있다. 최초 추정(60분, 이슈 #292 propose-directions의 비용 추정과 `docs/agent-mistakes.md`의 실측 빌드 시간 7분 내외를 근거로 삼음)은 여유가 빠듯하다고 보고 90분으로 상향했다. GitHub 기본값(360분)에 암묵적으로 의존하던 상태를 없앴다는 목적은 그대로다. 정확한 값 자체가 이 ADR의 핵심 결정은 아니며, 실제 실행 시간을 관찰한 뒤 조정 가능하다.
+- `implement-and-open-pr` job에 `timeout-minutes: 90`을 명시한다(산정 근거의 정본은 이 절 — `agent.yml`에는 참조만 남긴다, PR #293 3차 리뷰 권장 4). 기존 흐름(구현 + 빌드 ~7분 + 리뷰)에 자동 수정 라운드(수정 + 빌드 ~7분 + 재리뷰)가 그대로 다시 붙어 claude-code-action 호출이 최대 4건(구현·리뷰·자동 수정·재리뷰)까지 늘 수 있다. 최초 추정(60분, 이슈 #292 propose-directions의 비용 추정과 `ai/agent-mistakes.md`의 실측 빌드 시간 7분 내외를 근거로 삼음)은 여유가 빠듯하다고 보고 90분으로 상향했다. GitHub 기본값(360분)에 암묵적으로 의존하던 상태를 없앴다는 목적은 그대로다. 정확한 값 자체가 이 ADR의 핵심 결정은 아니며, 실제 실행 시간을 관찰한 뒤 조정 가능하다.
 - "리뷰 결과를 PR에 게시" 계열 스텝(라운드 1·자동 수정 라운드 공통)은 `env`에 `fromJSON(...)` 평가 결과가 아니라 raw `structured_output` 문자열만 넘기고, `run:` 스크립트 안에서 빈 값을 먼저 체크한 뒤 `jq -r`로 파싱한다. `structured_output`이 빈 문자열이어도 스텝 자체는 실패하지 않는다 — 빈 값일 때도 조용히 건너뛰지 않고 "구조화된 결과를 반환하지 않았습니다" 계열 코멘트로 흔적을 남긴다(PR #293 2·3차 리뷰 권장).
 - 앞선 스텝 실패로 `success()` 체인이 깨진 뒤에도 돌아야 하는 스텝들은 명시적 status 함수를 쓰되, **이력 코멘트와 판정·승인을 구분한다**(PR #293 3차 리뷰 참고 1 → 4차 리뷰 권장 1로 정정).
   - **이력 코멘트 스텝은 `always()`** — `review_failure_comment`·`autofix_call_failure_comment`·`autofix_build_failure_comment`·`autofix_review_failure_comment`.
@@ -44,7 +44,7 @@ ADR-0013은 `implement-and-open-pr` job이 PR을 연 뒤 자체 리뷰를 한 �
 - 워크플로우 재귀 호출 또는 에이전트 내부 자율 반복(이슈 #292 propose-directions의 2·3안) — 채택안은 같은 job 안에서 step을 언롤하는 1안이다.
 - PR 댓글로 재수정을 트리거하는 것(verify-actor의 PR 댓글 제외 조건 변경).
 - 사람의 최종 승인·머지 자동화 — ADR-0005·ADR-0013의 "자동 머지 금지" 원칙을 그대로 따른다.
-- 하네스 도입 전/후 비교를 위한 지표 수집 스크립트 — `docs/harness-roadmap.md`의 별도 미착수 항목이며 이 ADR의 범위가 아니다.
+- 하네스 도입 전/후 비교를 위한 지표 수집 스크립트 — `ai/harness-roadmap.md`의 별도 미착수 항목이며 이 ADR의 범위가 아니다.
 
 ## 결과
 

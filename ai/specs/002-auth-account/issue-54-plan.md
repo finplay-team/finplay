@@ -4,7 +4,7 @@
 
 **Goal:** 인증 사용자가 `PATCH /api/auth/me/nickname`으로 본인 닉네임을 변경한다. 이메일 회원은 현재 비밀번호로, OAuth 전용 회원은 Issue #53이 발급한 5분 유효·일회용 `reauthToken`으로 재인증을 증명해야 하며, 검증과 닉네임 변경을 하나의 트랜잭션으로 처리한다. 실패 시 아무 것도 바뀌지 않고, 성공해도 이메일·계좌·시드머니·잔액·주문·체결·투자일기는 그대로 유지된다.
 
-**관련 정본:** GitHub Issue #54, PRD `AUTH-005`(`docs/prd.md` 268-281행), `spec.md`, `plan.md`, Issue #8·#53 계획, ADR-0002, ADR-0003, ADR-0004, `docs/conventions.md`
+**관련 정본:** GitHub Issue #54, PRD `AUTH-005`(`ai/prd.md` 268-281행), `spec.md`, `plan.md`, Issue #8·#53 계획, ADR-0002, ADR-0003, ADR-0004, `docs/conventions.md`
 
 **선행:** Issue #8(`GET /api/auth/me`, `MemberResponse`, `SignupMethod`, `SocialAccountRepository.findByUserId`)과 Issue #53(`reauth_tokens` 스키마, `ReauthToken` 엔티티, `ReauthTokenRepository`, `AuthService.reauthenticate`로 5분 유효·일회용 `reauthToken` 발급)이 `origin/dev`에 병합돼 있다. 이번 이슈는 그 토큰을 처음으로 **소비**하는 사례다.
 
@@ -52,7 +52,7 @@
 - `UserRepository`에 본인 제외 중복 확인 쿼리 메서드 추가.
 - 성공 응답은 `MemberResponse`(Issue #8과 동일 DTO) 재사용.
 - 서비스 단위 테스트, Repository `@DataJpaTest`, Controller `@WebMvcTest`/Security 슬라이스, 실제 MySQL 통합 테스트(이메일/OAuth 각각 성공·실패, 계좌 2개·잔액 불변).
-- 구현 뒤 `docs/api-routes.md`·`tasks.md` 동기화.
+- 구현 뒤 `ai/api-routes.md`·`tasks.md` 동기화.
 
 ### 제외
 
@@ -267,9 +267,9 @@ public MemberResponse changeNickname(
 
 ### Documentation files to modify after implementation
 
-- `docs/api-routes.md` — `PATCH /api/auth/me/nickname` 라우트·상세 계약 추가.
-- `docs/specs/002-auth-account/tasks.md` — "JWT·Security" 항목 아래 Issue #54 작업 항목 절 추가.
-- `docs/specs/002-auth-account/run-log.md` — implementer·reviewer가 실행한 명령과 근거만 기록(사람이 직접 쓰지 않음).
+- `ai/api-routes.md` — `PATCH /api/auth/me/nickname` 라우트·상세 계약 추가.
+- `ai/specs/002-auth-account/tasks.md` — "JWT·Security" 항목 아래 Issue #54 작업 항목 절 추가.
+- `ai/specs/002-auth-account/run-log.md` — implementer·reviewer가 실행한 명령과 근거만 기록(사람이 직접 쓰지 않음).
 
 ### 수정하지 않을 파일
 
@@ -438,9 +438,9 @@ public MemberResponse changeNickname(
 
 **Files**
 
-- Modify: `docs/api-routes.md`
-- Modify: `docs/specs/002-auth-account/tasks.md`
-- Modify during feature workflow: `docs/specs/002-auth-account/run-log.md`
+- Modify: `ai/api-routes.md`
+- Modify: `ai/specs/002-auth-account/tasks.md`
+- Modify during feature workflow: `ai/specs/002-auth-account/run-log.md`
 
 - [ ] **Step 1: 실제 Controller 매핑으로 API 문서를 동기화한다**
   - 라우트 목록에 `PATCH /api/auth/me/nickname` 행 추가.
@@ -464,14 +464,14 @@ public MemberResponse changeNickname(
 
   ```powershell
   git diff --check
-  git diff -- src/main/java/com/finplay/api/auth/controller/AuthController.java docs/api-routes.md
+  git diff -- src/main/java/com/finplay/api/auth/controller/AuthController.java ai/api-routes.md
   git status --short
   ```
 
 - [ ] **Step 6: 문서 변경을 논리 커밋한다**
 
   ```powershell
-  git add docs/api-routes.md docs/specs/002-auth-account/tasks.md docs/specs/002-auth-account/run-log.md
+  git add ai/api-routes.md ai/specs/002-auth-account/tasks.md ai/specs/002-auth-account/run-log.md
   git commit -m "docs: 재인증 기반 닉네임 변경 API 계약 동기화"
   ```
 
@@ -489,7 +489,7 @@ public MemberResponse changeNickname(
 - [ ] 성공 응답(`MemberResponse`)에 `passwordHash`·재인증 토큰·OAuth 제공자 식별자가 어떤 이름으로도 없다.
 - [ ] 변경 전후로 이메일·계좌 2개(STOCK·CRYPTO)·시드머니·잔액이 실제 MySQL 통합 테스트로 불변임이 확인된다.
 - [ ] 새 Flyway 마이그레이션·새 `ErrorCode`를 추가하지 않았다(D6·D7).
-- [ ] `docs/api-routes.md`가 실제 Controller 매핑과 일치한다.
+- [ ] `ai/api-routes.md`가 실제 Controller 매핑과 일치한다.
 - [ ] `.\gradlew.bat build --no-daemon --max-workers=1`(Spotless·SpotBugs·JaCoCo 포함)이 통과한다.
 
 ---

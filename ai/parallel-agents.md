@@ -20,7 +20,7 @@ claude agents        # Agent View 실행
 
 - 입력창에서 작업을 디스패치하면 백그라운드 세션이 생긴다. 각 세션은 `.claude/worktrees/`의 **격리된 worktree**에서 돌아 서로 파일을 건드리지 않는다.
 - 세션 목록이 상태별(Needs input / Working / Completed / Failed)로 표시된다. `Space` 미리보기, `Enter` 전체 트랜스크립트 접속.
-- 사용 예: `/feature docs/specs/003-market` 세션과 `/feature docs/specs/008-community` 세션을 동시에 디스패치.
+- 사용 예: `/feature ai/specs/003-market` 세션과 `/feature ai/specs/008-community` 세션을 동시에 디스패치.
 
 ### 1차 MVP 태스크 의존성 (PRD 8장 기준 — 병렬 가능 지점)
 

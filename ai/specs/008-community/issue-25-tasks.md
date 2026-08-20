@@ -16,6 +16,6 @@
   - [x] 존재하지 않는 ID의 404 `NOT_FOUND`와 비로그인 401 `UNAUTHORIZED`를 검증한다.
 
 - [x] **4. API 문서 동기화와 완료 게이트**
-  - [x] 실제 Controller 매핑을 기준으로 `docs/api-routes.md`에 GET 경로, 인증, 200 응답 6필드, 401·404 계약을 추가한다.
+  - [x] 실제 Controller 매핑을 기준으로 `ai/api-routes.md`에 GET 경로, 인증, 200 응답 6필드, 401·404 계약을 추가한다.
   - [x] 목록·수정·삭제·댓글 등 다른 API와 엔티티·스키마를 변경하지 않았는지 확인한다.
   - [x] `spotlessApply`, 대상 테스트, `.\gradlew.bat build --no-daemon --max-workers=1`, `git diff --check`를 실행하고 결과를 기록한다.

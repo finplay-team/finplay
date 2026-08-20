@@ -4,7 +4,7 @@
 >
 > **번호 경위**: 이 spec은 애초에 `045-tutorial-sandbox-cash-isolation`으로 작성 중이었으나, 착수 시점
 > `045`가 이미 `045-community-likes-sort`(PR #442, `dev` 머지 완료)로 선점되어 있음을 발견해
-> `docs/specs/README.md`의 번호 규칙에 따라 `047`로 옮겼다(`046`도 `046-community-trade-share`로 이미
+> `ai/specs/README.md`의 번호 규칙에 따라 `047`로 옮겼다(`046`도 `046-community-trade-share`로 이미
 > 선점됨).
 >
 > 이 문서는 `033-exclude-tutorial-sandbox-data`의 **SANDBOX-EXCL-006·SANDBOX-EXCL-007을 대체(supersede)한다.**
@@ -189,7 +189,7 @@
 후보는 튜토리얼 진입·재시작 응답(`PracticeAttemptResponse`)에 `tutorialCashBalance`·`tutorialAvailableCash`·
 `tutorialRealizedPnl` 세 필드를 추가하는 것이다. 이 응답은 이미 그 시장의 튜토리얼 계좌를 get-or-create하는
 지점이므로(위 "계좌 생성 시점"), 추가 조회 없이 같은 트랜잭션에서 얻은 값을 그대로 실어 보낼 수 있어
-변경 표면이 가장 작다. `docs/api-routes.md`·`docs/api-contracts.md` 파일 자체의 갱신은 CLAUDE.md 규칙 7에
+변경 표면이 가장 작다. `ai/api-routes.md`·`docs/api-contracts.md` 파일 자체의 갱신은 CLAUDE.md 규칙 7에
 따라 실제 컨트롤러 변경이 커밋되는 시점(구현 PR)에 한다(아래 "범위 제외").
 
 ## 비즈니스 규칙
@@ -243,7 +243,7 @@
   현금 부족 개념을 아예 없애는 대안과는 방향이 다르다(TUTORIAL-CASH-ISOL-005).
 - **프론트엔드(finplay-frontend) 구현** — 이 spec은 백엔드 계약(현금·요약 응답 계산, 튜토리얼 계좌 존재
   여부)만 정의한다. 화면 문구·설명 변경은 별도 저장소 작업이다.
-- **`docs/api-routes.md`·`docs/api-contracts.md`·`docs/prd.md` §3 갱신** — 이 spec 작성 단계에서는 하지
+- **`ai/api-routes.md`·`docs/api-contracts.md`·`ai/prd.md` §3 갱신** — 이 spec 작성 단계에서는 하지
   않는다. TUTORIAL-CASH-ISOL-011이 "어떤 필드가 응답에 있어야 하는가"라는 계약은 정의하지만, 실제
   컨트롤러·DTO 코드 변경과 그 두 문서의 갱신은 CLAUDE.md 규칙 7·10에 따라 실제 구현 PR이 머지되는
   시점에 그 PR이 함께 한다(`tasks.md`에 체크리스트 항목으로 남긴다).

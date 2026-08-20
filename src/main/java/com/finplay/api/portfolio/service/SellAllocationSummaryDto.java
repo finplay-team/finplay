@@ -41,7 +41,7 @@ public record SellAllocationSummaryDto(
 	List<LocalDate> buySourceTradingDates) {
 
 	// 컬렉션 필드를 가진 record는 방어적 복사가 없으면 spotbugsMain이 EI_EXPOSE_REP으로 잡는다
-	// (docs/agent-mistakes.md 2026-07-29). 원본 거래일이 null인 lot(코인)도 담기므로 List.copyOf를 쓸 수 없다.
+	// (ai/agent-mistakes.md 2026-07-29). 원본 거래일이 null인 lot(코인)도 담기므로 List.copyOf를 쓸 수 없다.
 	public SellAllocationSummaryDto {
 		buySourceTradingDates = Collections.unmodifiableList(new ArrayList<>(buySourceTradingDates));
 	}

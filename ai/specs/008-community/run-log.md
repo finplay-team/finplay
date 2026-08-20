@@ -6,15 +6,15 @@
 | 시각 | 에이전트 | 실행 명령 | 근거 |
 |---|---|---|---|
 | Task 1 | implementer | `.\gradlew.bat compileJava --no-daemon --max-workers=1` — `BUILD SUCCESSFUL` | issue-26-tasks.md Task 1, issue-26-plan.md D1(생성 DTO 동일 제약)·D3(트랜잭션 경계), conventions.md DTO record 규칙 |
-| Task 2 | implementer | `.\gradlew.bat compileJava --no-daemon --max-workers=1` — `BUILD SUCCESSFUL` | issue-26-tasks.md Task 2, docs/adr/0002-architecture.md (controller→service 흐름) |
+| Task 2 | implementer | `.\gradlew.bat compileJava --no-daemon --max-workers=1` — `BUILD SUCCESSFUL` | issue-26-tasks.md Task 2, ai/adr/0002-architecture.md (controller→service 흐름) |
 
 ### 모니터링 (사람용 요약)
 - Task 1 — `CommunityPostUpdateRequest`(title `@NotBlank`+`@Size(max=100)`, content `@NotBlank`+`@Size(max=5000)`) 신규 추가. `CommunityPostService.updatePost`는 이미 `@Transactional`이 있어 변경 없음. 컴파일 통과.
-- Task 2 — `CommunityPostController`에 `@PatchMapping("/{postId}")` 추가, `updatePost` 호출 후 200 OK 응답. 컴파일 통과. `docs/api-routes.md` 동기화는 이 작업 범위 밖(계획서 명시)이라 미반영.
-| 리뷰 | reviewer(리뷰) | `git diff dev...HEAD` (6639094) | conventions.md 레이어·DTO·에러 규칙, ADR-0002/0003/0004, issue-26-plan.md/tasks.md, docs/api-routes.md |
+- Task 2 — `CommunityPostController`에 `@PatchMapping("/{postId}")` 추가, `updatePost` 호출 후 200 OK 응답. 컴파일 통과. `ai/api-routes.md` 동기화는 이 작업 범위 밖(계획서 명시)이라 미반영.
+| 리뷰 | reviewer(리뷰) | `git diff dev...HEAD` (6639094) | conventions.md 레이어·DTO·에러 규칙, ADR-0002/0003/0004, issue-26-plan.md/tasks.md, ai/api-routes.md |
 
 ### 모니터링 (사람용 요약, 추가)
-- 리뷰 — 레이어링·소유권 검증(403)·미존재(404)·트랜잭션 경계·테스트 3계층 모두 양호. `docs/api-routes.md` PATCH 엔드포인트 미반영(Task 5 미완료)만 차단.
+- 리뷰 — 레이어링·소유권 검증(403)·미존재(404)·트랜잭션 경계·테스트 3계층 모두 양호. `ai/api-routes.md` PATCH 엔드포인트 미반영(Task 5 미완료)만 차단.
 
 ## Issue #28
 
@@ -45,9 +45,9 @@
 
 ### 모니터링 (사람용 요약)
 - Task 1 — `PostCommentRepository.deleteByPost_Id(Long)` 파생 삭제 쿼리, `CommunityPostService.deletePost(authenticatedUserId, postId)`(NOT_FOUND→FORBIDDEN→댓글 삭제→게시물 삭제 순) 추가. 컴파일 통과. 컨트롤러·테스트·문서는 범위 밖.
-- Task 2 — `CommunityPostController`에 `@DeleteMapping("/{postId}")` 추가, `deletePost` 호출 후 204 No Content 응답. 컴파일 통과. 테스트·`docs/api-routes.md` 동기화는 범위 밖.
-- 리뷰 — 레이어링·소유권 검증(403)·미존재(404)·트랜잭션 경계(댓글 선삭제 후 게시물 삭제)·테스트 3계층 모두 적합. `docs/api-routes.md` DELETE 엔드포인트 미반영(Task 5 미완료)으로 차단 1건.
-- 문서 동기화 — planner(동기화 모드)가 `docs/api-routes.md`에 `DELETE /api/community/posts/{postId}` 요약 행과 상세 절(인증·요청·204 응답·401/403/404 오류·Spec 008 COM-001, Issue #27)을 추가하고 issue-27-tasks.md Task 5를 완료 처리했다.
+- Task 2 — `CommunityPostController`에 `@DeleteMapping("/{postId}")` 추가, `deletePost` 호출 후 204 No Content 응답. 컴파일 통과. 테스트·`ai/api-routes.md` 동기화는 범위 밖.
+- 리뷰 — 레이어링·소유권 검증(403)·미존재(404)·트랜잭션 경계(댓글 선삭제 후 게시물 삭제)·테스트 3계층 모두 적합. `ai/api-routes.md` DELETE 엔드포인트 미반영(Task 5 미완료)으로 차단 1건.
+- 문서 동기화 — planner(동기화 모드)가 `ai/api-routes.md`에 `DELETE /api/community/posts/{postId}` 요약 행과 상세 절(인증·요청·204 응답·401/403/404 오류·Spec 008 COM-001, Issue #27)을 추가하고 issue-27-tasks.md Task 5를 완료 처리했다.
 
 ## Issue #29
 
@@ -76,12 +76,12 @@
 | 시각 | 에이전트 | 실행 명령 | 근거 |
 |---|---|---|---|
 | Task 1 | implementer | `.\gradlew.bat compileJava --no-daemon --max-workers=1` — `BUILD SUCCESSFUL` | issue-30-tasks.md Task 1, issue-30-plan.md D2(findById→소유자 비교→예외/삭제 패턴), CommunityPostService.updatePost 선례 |
-| Task 2 | implementer | `JAVA_HOME=/c/Users/pmsal/.jdks/ms-17.0.20 ./gradlew.bat compileJava --no-daemon -q` — 통과 | issue-30-tasks.md Task 2, docs/adr/0002-architecture.md(controller→service 흐름), docs/api-routes.md 동기화 규칙 |
+| Task 2 | implementer | `JAVA_HOME=/c/Users/pmsal/.jdks/ms-17.0.20 ./gradlew.bat compileJava --no-daemon -q` — 통과 | issue-30-tasks.md Task 2, ai/adr/0002-architecture.md(controller→service 흐름), ai/api-routes.md 동기화 규칙 |
 
 ### 모니터링 (사람용 요약)
 - Task 1 — `PostCommentService.deleteComment(authenticatedUserId, commentId)` 추가(`@Transactional`, NOT_FOUND/FORBIDDEN 후 delete). Repository 변경 없음. 컴파일 통과. 단위 테스트는 다음 단계(tester) 담당.
-- Task 2 — 신규 `CommentController`(`/api/community/comments`, DELETE `/{commentId}`) 추가, `PostCommentController`는 변경 없음, Security 화이트리스트 미추가(인증 필요 유지). `docs/api-routes.md`에 라우트·오류 표 반영. 컴파일 통과, 슬라이스 테스트는 다음 단계(tester) 담당.
-| 리뷰 | reviewer(리뷰) | `git diff dev...HEAD` (5193dfe) | conventions.md 레이어·API·Lombok·테스트 규칙, ADR-0002/0003/0004, issue-30-plan.md/tasks.md, docs/api-routes.md, SecurityConfig 화이트리스트 |
+- Task 2 — 신규 `CommentController`(`/api/community/comments`, DELETE `/{commentId}`) 추가, `PostCommentController`는 변경 없음, Security 화이트리스트 미추가(인증 필요 유지). `ai/api-routes.md`에 라우트·오류 표 반영. 컴파일 통과, 슬라이스 테스트는 다음 단계(tester) 담당.
+| 리뷰 | reviewer(리뷰) | `git diff dev...HEAD` (5193dfe) | conventions.md 레이어·API·Lombok·테스트 규칙, ADR-0002/0003/0004, issue-30-plan.md/tasks.md, ai/api-routes.md, SecurityConfig 화이트리스트 |
 
 ### 모니터링 (사람용 요약, 추가)
 - 리뷰 — 컨트롤러 분리(D1)·서비스 재사용(D2) 설계 결정이 컨벤션과 일관됨. 레이어링·403/404·204·에러 포맷·Security 화이트리스트 미노출·3단계 테스트(단위/WebMvc/Testcontainers) 모두 양호. 차단 사항 없음.

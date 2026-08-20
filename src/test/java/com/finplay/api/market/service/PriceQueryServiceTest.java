@@ -292,7 +292,7 @@ class PriceQueryServiceTest {
 	}
 
 	// 이하 PRICE-NOSTALE-001 — 연결 유지 + 수신 이력 있음이면 관측 시각이 얼마나 오래됐든 항상 AVAILABLE이다
-	// (docs/specs/036-remove-crypto-stale-status, 032 PRICE-STALE-001의 stale 완화 자체를 되돌림 — STALE은
+	// (ai/specs/036-remove-crypto-stale-status, 032 PRICE-STALE-001의 stale 완화 자체를 되돌림 — STALE은
 	// 더 이상 발생하지 않는다).
 
 	@Test
@@ -362,7 +362,7 @@ class PriceQueryServiceTest {
 	}
 
 	// 체결 경로(getOrderExecutionPrice)는 표시 경로와 같은 규칙을 쓴다 — 연결 유지 + 수신 이력 있음이면 관측 시각이
-	// 얼마나 오래됐든 예외 없이 마지막 가격으로 체결된다(PRICE-NOSTALE-001, docs/specs/036-remove-crypto-stale-status).
+	// 얼마나 오래됐든 예외 없이 마지막 가격으로 체결된다(PRICE-NOSTALE-001, ai/specs/036-remove-crypto-stale-status).
 	@Test
 	void getOrderExecutionPriceReturnsLastKnownPriceEvenThoughObservedLongAgo() {
 		Instrument instrument = Instrument.create(
@@ -591,7 +591,7 @@ class PriceQueryServiceTest {
 
 	// 이하 PRICE-NOSTALE-001 배치판 — 단건 getCryptoDisplayPriceQuote와 동일한 규칙(연결 유지+수신 이력 있음이면
 	// 경과 시간과 무관하게 항상 AVAILABLE, 연결 끊김·수신 이력 없음→UNAVAILABLE)을 배치에서도 확인한다
-	// (docs/specs/036-remove-crypto-stale-status).
+	// (ai/specs/036-remove-crypto-stale-status).
 
 	@Test
 	void getPriceQuotesReturnsAvailableQuoteWithLastKnownPriceEvenThoughObservedLongAgo() {

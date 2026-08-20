@@ -105,7 +105,7 @@ takeProfitPrice = entryPrice × (1 + takeProfitRate / 100)
 
 ## 일반 지정가와의 구분
 
-- PRICE 입력의 `stopLoss`·`takeProfit`은 일반 지정가(목표가) 주문의 필드가 아니다. `docs/specs/015-limit-order`가 아직 없어 그 필드명이 확정되지 않았으므로 여기서 `limitPrice`라는 이름을 선점하지 않는다.
+- PRICE 입력의 `stopLoss`·`takeProfit`은 일반 지정가(목표가) 주문의 필드가 아니다. `ai/specs/015-limit-order`가 아직 없어 그 필드명이 확정되지 않았으므로 여기서 `limitPrice`라는 이름을 선점하지 않는다.
 - 일반 LIMIT는 단일 BUY/SELL 주문 자체가 지정가(목표가)에 전량 체결된다.
 - OCO는 기존 보유분에 두 임계값을 묶고, 한쪽 도달 시 트리거 현재가로 시장가 SELL을 만들며 반대 조건을 취소한다.
 - 두 기능은 공통 가격 이벤트와 holding 예약 원장을 사용할 수 있지만 API, 상태, 체결가 정책과 트랜잭션은 분리한다.

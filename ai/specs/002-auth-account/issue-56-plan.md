@@ -4,7 +4,7 @@
 
 **Goal:** `POST /api/auth/email-changes/confirm`을 신설해, Issue #55에서 발송한 새 이메일 인증번호를 확인하고 성공 시에만 `users.email`을 원자적으로 변경한다. 인증번호 소비·이메일 변경·기존 Refresh Token 전체 폐기가 부분 성공 없이 한 트랜잭션 단위로 처리되어야 하며, 변경 완료 후에는 재로그인이 필요하다.
 
-**관련 정본:** GitHub Issue #56, PRD `AUTH-005`(`docs/prd.md` 57-65행), `docs/specs/002-auth-account/spec.md`, `docs/specs/002-auth-account/plan.md`, Issue #55 계획(`issue-55-plan.md`, 인증번호 발송·스키마), Issue #54 계획(`issue-54-plan.md`, 재인증 판별·닉네임 변경 트랜잭션 선례), ADR-0002, ADR-0003, ADR-0004, `docs/conventions.md`
+**관련 정본:** GitHub Issue #56, PRD `AUTH-005`(`ai/prd.md` 57-65행), `ai/specs/002-auth-account/spec.md`, `ai/specs/002-auth-account/plan.md`, Issue #55 계획(`issue-55-plan.md`, 인증번호 발송·스키마), Issue #54 계획(`issue-54-plan.md`, 재인증 판별·닉네임 변경 트랜잭션 선례), ADR-0002, ADR-0003, ADR-0004, `docs/conventions.md`
 
 **선행:** Issue #8·#53·#54·#55가 `dev`에 있다. 실제 코드베이스 확인 결과 #55는 계획대로 구현되어 있다 — `EmailChangeVerification`(`user_id`·`new_email`·`code_hash`·`attempt_count`·`expires_at`·`last_sent_at`·`consumed_at`), `EmailChangeVerificationRepository`(`countByUserIdAndCreatedAtAfter`, `findByUserIdAndNewEmailAndConsumedAtIsNullAndExpiresAtAfter`), `EmailChangeService.requestEmailChange`(재인증 판별·중복 409·발송 제한 429·재발송 무효화), `EmailChangeController`(`POST /api/auth/email-changes`, 202), `ReauthTokenRepository.consumeIfValidForUser(tokenHash, userId, now)`(원자적 1회 소비, `@Param` 부착 확인됨)가 모두 존재한다. 다만 `EmailChangeVerification`에는 `attempt_count`를 증가시키는 메서드와 소비(`consumedAt` 설정) 메서드가 아직 없다(#55 D2에서 "사용처 없음"으로 의도적으로 생략) — 이번 이슈에서 추가해야 한다.
 
@@ -58,7 +58,7 @@ Java 17, Spring Boot 4.1, Spring Data JPA, MySQL 8.4(Testcontainers), Spring Sec
 
 - `POST /api/auth/email-changes/confirm` — Bearer 인증 필수, 새 이메일+인증번호 검증, 성공 시 `users.email` 원자적 변경과 회원의 기존 Refresh Token 전체 폐기.
 - `EmailChangeVerification.incrementAttemptCount()`/`consume(now)`, `EmailChangeVerificationRepository.findFirstByUserIdAndNewEmailOrderByCreatedAtDesc`, `RefreshTokenRepository.revokeAllActiveByUserId(userId, now)`, `User.changeEmail(newEmail, now)` 추가.
-- `docs/api-routes.md` 동기화.
+- `ai/api-routes.md` 동기화.
 
 ### 제외
 
@@ -227,8 +227,8 @@ public record EmailChangeConfirmRequest(
 
 ### Documentation files to modify after implementation
 
-- `docs/api-routes.md`
-- `docs/specs/002-auth-account/tasks.md`
+- `ai/api-routes.md`
+- `ai/specs/002-auth-account/tasks.md`
 
 ---
 
@@ -256,7 +256,7 @@ public record EmailChangeConfirmRequest(
 - [x] Testcontainers MySQL로 발송→확인 성공 전체 흐름, 재사용·5회 초과·만료·재발송 무효화·타인 요청 격리, 확인 성공 후 기존 Refresh Token 401 검증, 확인 전후 계좌·잔액·주문·체결 불변을 검증한다.
 - [x] 동시에 같은 새 이메일을 다른 경로로 먼저 선점하는 경합 시나리오를 실제 MySQL로 재현해 409와 인증번호 미소비·Refresh Token 미폐기 롤백을 검증한다.
 - [x] 대상 단위·슬라이스·통합 테스트 전체와 기존 회귀 스위트, Spotless, `./gradlew build`를 실행한다. (`BUILD SUCCESSFUL in 3m 10s`, 커밋 `ecdf3aa`)
-- [x] `docs/api-routes.md`에 `POST /api/auth/email-changes/confirm` 라우트를 추가하고 `docs/specs/002-auth-account/tasks.md`에 Issue #56 작업 항목 절을 추가한다.
+- [x] `ai/api-routes.md`에 `POST /api/auth/email-changes/confirm` 라우트를 추가하고 `ai/specs/002-auth-account/tasks.md`에 Issue #56 작업 항목 절을 추가한다.
 
 ---
 
@@ -268,7 +268,7 @@ public record EmailChangeConfirmRequest(
 - [x] 동시 중복 이메일 경합이 409 `DUPLICATE_RESOURCE`로 처리되고, 이 경우 인증번호 소비·Refresh Token 폐기가 함께 롤백됨이 실제 MySQL 통합 테스트로 확인된다.
 - [x] 확인 성공 후 기존 Refresh Token으로 `/api/auth/refresh`가 401이 되는 테스트가 통과한다.
 - [x] 확인 성공·실패와 무관하게 계좌·잔액·주문·체결·투자일기, `social_accounts`의 `provider`+`providerUserId` 연결이 불변임이 검증된다.
-- [x] `docs/api-routes.md`가 실제 Controller 매핑과 일치한다.
+- [x] `ai/api-routes.md`가 실제 Controller 매핑과 일치한다.
 - [x] `./gradlew build`(Spotless·SpotBugs·JaCoCo 포함)가 통과한다.
 
 ---

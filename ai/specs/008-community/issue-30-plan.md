@@ -20,7 +20,7 @@
   - 인증 없음·만료는 401 `UNAUTHORIZED`.
   - 대상 없음은 404 `NOT_FOUND`.
   - 소유자 아님은 403 `FORBIDDEN`.
-- `docs/specs/008-community/spec.md`
+- `ai/specs/008-community/spec.md`
   - 사용자는 본인 댓글을 삭제한다.
   - 사용자가 남의 댓글을 고치려 하면 거부당한다.
 - GitHub Issue #30 계약
@@ -56,7 +56,7 @@
 - `PostCommentService`에 `deleteComment(authenticatedUserId, commentId)` 추가 (도메인당 서비스 1개 유지)
 - 성공 204(본문 없음) 응답
 - Service 단위, Controller 슬라이스, 핵심 통합 테스트
-- 구현 뒤 실제 Controller 매핑 기준 `docs/api-routes.md` 동기화(동기화 모드에서 처리)
+- 구현 뒤 실제 Controller 매핑 기준 `ai/api-routes.md` 동기화(동기화 모드에서 처리)
 
 ### 제외
 
@@ -140,14 +140,14 @@ public ResponseEntity<Void> deleteComment(
 
 ### Documentation
 
-- `docs/api-routes.md` (동기화 모드에서 처리 — 이번 계획 모드 범위 아님)
-- `docs/specs/008-community/issue-30-tasks.md`
+- `ai/api-routes.md` (동기화 모드에서 처리 — 이번 계획 모드 범위 아님)
+- `ai/specs/008-community/issue-30-tasks.md`
 
 ### 만들거나 수정하지 않을 파일
 
 - `PostCommentRepository` — 커스텀 소유자 검증 삭제 메서드를 추가하지 않는다(D2 근거).
 - `PostComment` 엔티티 — soft delete 필드·상태 변경 메서드를 추가하지 않는다.
-- `docs/specs/008-community/spec.md`
+- `ai/specs/008-community/spec.md`
 - Flyway 마이그레이션 — 스키마 변경 없음.
 - 다른 커뮤니티 API용 production/test 파일.
 
@@ -192,5 +192,5 @@ public ResponseEntity<Void> deleteComment(
 - [ ] 비로그인 요청은 401 `UNAUTHORIZED`이며 댓글은 삭제되지 않는다.
 - [ ] Controller/Service/Repository 계층 분리를 지키고, 소유권 판단은 Service에 있다.
 - [ ] 오류 응답은 공통 형식(`{"error":{"code":...,"message":...,"requestId":...}}`)을 따른다.
-- [ ] 실제 Controller 매핑을 `docs/api-routes.md`에 동기화한다(동기화 모드).
+- [ ] 실제 Controller 매핑을 `ai/api-routes.md`에 동기화한다(동기화 모드).
 - [ ] `.\gradlew.bat build --no-daemon --max-workers=1`을 새로 실행해 통과한다.

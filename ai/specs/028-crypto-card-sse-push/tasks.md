@@ -1,6 +1,6 @@
 # Tasks: 코인 변동 카드 확정 SSE push 배선 (이슈 #286)
 
-항목 1개 = 커밋 1개. 설계 근거는 `docs/adr/0018-crypto-card-sse-push.md`이며 구현 중 그와 어긋나는 필요가 생기면 구현하지 말고 새 ADR을 제안한다(CLAUDE.md 규칙 2).
+항목 1개 = 커밋 1개. 설계 근거는 `ai/adr/0018-crypto-card-sse-push.md`이며 구현 중 그와 어긋나는 필요가 생기면 구현하지 말고 새 ADR을 제안한다(CLAUDE.md 규칙 2).
 
 - [x] **1. 코인 SSE 스트림 인프라 신설** (ADR-0018 §결정 — "왜 코인 시세 스트림을 통째로 신설하는가")
   - `CryptoPriceStreamService`(`com.finplay.api.market.service`) — `buildSnapshot()`/`sendSnapshot()`(코인 12종, `PriceQueryService.getPriceQuote` 재사용), `createEmitter()`/`activate()`(`SseEmitterRegistry(Market.CRYPTO)` 위임), `@EventListener(CryptoPriceUpdatedEvent)`로 `price` push(새 이벤트 타입 아님 — `PriceStore.saveTick`이 이미 발행), `@Scheduled(fixedRate=5000)`로 `FeedConnectionStatus` 변경 감지 후 `status` push.
@@ -25,10 +25,10 @@
   - **다중 인스턴스 팬아웃**: 같은 Testcontainers Redis에 대해 `SseEmitterRegistry`+`CryptoCardPushSubscriber`+`RedisMessageListenerContainer` 조합을 테스트 코드에서 두 벌 직접 조립(전체 Spring Context 2개를 띄우지 않음) → 한쪽 `CryptoPriceMoveCardPublisher`가 발행한 메시지를 **양쪽** 조합의 emitter가 모두 수신함을 확인.
   - 저장 실패 시 push 없음, Redis 장애에도 카드 생성 성공, 구독자 0명이어도 카드 생성 성공 — 3가지도 이 항목에서 함께 통합 테스트로 확인.
 
-- [x] **5. 문서 갱신** (`docs/specs/028-crypto-card-sse-push/plan.md` §문서 동기화 계획)
-  - `docs/api-routes.md` — `GET /api/cryptos/stream` 행 추가(도메인 `market`, Spec `028`).
+- [x] **5. 문서 갱신** (`ai/specs/028-crypto-card-sse-push/plan.md` §문서 동기화 계획)
+  - `ai/api-routes.md` — `GET /api/cryptos/stream` 행 추가(도메인 `market`, Spec `028`).
   - `docs/api-contracts.md` — market 섹션에 `/api/cryptos/stream` 계약(이벤트 4종·payload 예시) 추가. `/api/stocks/stream` 계약 절은 무수정.
-  - `docs/prd.md` §3 "구현 현황" — 새 행 추가(요구사항 ID 없음을 명시, 근거는 이슈 #286·spec `028`). MKT-008 본문에 카드 알림 한정 반전 각주 추가(원문 보존).
-  - `docs/specs/003-market-data/plan.md` — 61행·442행의 "코인 SSE 없음" 문구에 "028에서 카드 알림 한정으로 뒤집힘" 각주 추가(원문 보존).
+  - `ai/prd.md` §3 "구현 현황" — 새 행 추가(요구사항 ID 없음을 명시, 근거는 이슈 #286·spec `028`). MKT-008 본문에 카드 알림 한정 반전 각주 추가(원문 보존).
+  - `ai/specs/003-market-data/plan.md` — 61행·442행의 "코인 SSE 없음" 문구에 "028에서 카드 알림 한정으로 뒤집힘" 각주 추가(원문 보존).
   - `deploy/nginx.conf` 확인 — `location /api` 블록이 새 경로(`/api/cryptos/stream`)에 이미 적용됨을 재확인만 하고 수정하지 않는다(경로가 `/api` 밖으로 바뀌면 그때 `location` 추가가 필요하다).
   - 마무리로 `./gradlew build` 전체 통과 확인.

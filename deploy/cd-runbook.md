@@ -1,8 +1,8 @@
 # CD 런북 — `dev` 머지 자동 배포
 
-> **이 문서는 아직 "돌고 있는 파이프라인"의 기록이 아니다.** 2026-08-13 기준 `.github/workflows/deploy.yml`은 PR #357로 작성됐고 AWS 콘솔 설정(OIDC·IAM 역할·ECR·EC2 권한·GitHub Variables)도 완료됐지만, **파이프라인이 실제로 한 번도 실행된 적은 없다.** 이 문서는 [ADR-0021](../docs/adr/0021-continuous-deployment.md)이 결정한 목표 구조를 **구축 순서와 실패 대응까지 포함해 옮긴 것**이며, 각 항목은 실제로 수행한 시점에 체크한다.
+> **이 문서는 아직 "돌고 있는 파이프라인"의 기록이 아니다.** 2026-08-13 기준 `.github/workflows/deploy.yml`은 PR #357로 작성됐고 AWS 콘솔 설정(OIDC·IAM 역할·ECR·EC2 권한·GitHub Variables)도 완료됐지만, **파이프라인이 실제로 한 번도 실행된 적은 없다.** 이 문서는 [ADR-0021](../ai/adr/0021-continuous-deployment.md)이 결정한 목표 구조를 **구축 순서와 실패 대응까지 포함해 옮긴 것**이며, 각 항목은 실제로 수행한 시점에 체크한다.
 >
-> 결정의 근거·대안은 ADR-0021이 정본이다. 배포 아키텍처(EC2 + RDS·ElastiCache·S3 + 블루-그린) 자체는 [ADR-0020](../docs/adr/0020-managed-service-deployment.md)이 정본이다. **수동 배포 절차는 폐기하지 않는다** — 파이프라인이 막혔을 때의 폴백으로 [`README.md`](README.md)에 남아 있다.
+> 결정의 근거·대안은 ADR-0021이 정본이다. 배포 아키텍처(EC2 + RDS·ElastiCache·S3 + 블루-그린) 자체는 [ADR-0020](../ai/adr/0020-managed-service-deployment.md)이 정본이다. **수동 배포 절차는 폐기하지 않는다** — 파이프라인이 막혔을 때의 폴백으로 [`README.md`](README.md)에 남아 있다.
 
 ## 이 파이프라인이 하는 일
 
@@ -121,7 +121,7 @@ IaC를 쓰지 않으므로 **이 절이 사실상 유일한 정본이다** (ADR-
 |---|---|---|
 | 컨테이너가 즉시 죽고 `exec format error` | **이미지 아키텍처 불일치.** EC2가 `t4g`(arm64)인데 x86 러너에서 만든 이미지를 올렸다 | `docker image inspect <이미지> --format '{{.Architecture}}'` → `arm64`여야 한다 |
 | 앱만 기동 실패, DNS·보안그룹·TCP는 정상 | `.env`의 `SPRING_DATA_REDIS_SSL_ENABLED=true` 누락 (2026-08-11 실측, ADR-0020 §결정 2) | `README.md` "알려진 함정" 절 |
-| `docker ps`는 `(healthy)`인데 호스트 `curl :8080`이 실패 | **앱 컨테이너는 호스트에 포트를 열지 않는다**(설계). 호스트에서 부르면 앱 상태와 무관하게 실패한다 (2026-08-11 실측, `docs/agent-mistakes.md`) | `docker exec <앱컨테이너> curl -fsS http://localhost:8080/actuator/health` |
+| `docker ps`는 `(healthy)`인데 호스트 `curl :8080`이 실패 | **앱 컨테이너는 호스트에 포트를 열지 않는다**(설계). 호스트에서 부르면 앱 상태와 무관하게 실패한다 (2026-08-11 실측, `ai/agent-mistakes.md`) | `docker exec <앱컨테이너> curl -fsS http://localhost:8080/actuator/health` |
 | SSM 명령이 `DeliveryTimedOut`으로 끝난다 | SSM Agent가 죽었거나 인스턴스 프로파일에 `AmazonSSMManagedInstanceCore`가 없다. 네트워크가 아니다 | Fleet Manager 목록에 인스턴스가 보이는지 |
 | OIDC 단계에서 `Not authorized to perform sts:AssumeRoleWithWebIdentity` | 신뢰 정책의 `sub`가 실제 브랜치와 다르다. `refs/heads/dev`로 못박았으므로 **다른 브랜치에서 돌린 워크플로우는 반드시 여기서 막힌다**(의도된 동작) | 역할 신뢰 정책의 `sub` 값 |
 

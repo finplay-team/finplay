@@ -36,7 +36,7 @@ import org.springframework.transaction.annotation.Transactional;
 // 값이 실제로 들어와 단정이 흔들린다. 여기서 주는 값은 환경변수가 없을 때 application.yml이 만들어 내는 값과 같다.
 //
 // OpenAI만 빈 문자열이 아니라 자리표시자인 것은 의도된 차이다. openai-java-core SDK가 빈 문자열을 거부해
-// 컨텍스트가 아예 기동하지 않기 때문이며(docs/agent-mistakes.md 2026-08-03), application.yml이 같은 이유로
+// 컨텍스트가 아예 기동하지 않기 때문이며(ai/agent-mistakes.md 2026-08-03), application.yml이 같은 이유로
 // ${OPENAI_API_KEY:not-configured}를 쓴다.
 //
 // 공유 컨테이너를 더럽히지 않도록 클래스 트랜잭션으로 감싼다 (NewsCollectionIntegrationTest 선례).

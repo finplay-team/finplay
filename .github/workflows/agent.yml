@@ -41,7 +41,7 @@ jobs:
               ${{ github.event.issue.body }}
 
             반드시 지켜라:
-            - CLAUDE.md, docs/context-router.md로 관련 문서(관련 spec·ADR·conventions)를 먼저 확인하고 방향을 잡아라.
+            - CLAUDE.md, ai/context-router.md로 관련 문서(관련 spec·ADR·conventions)를 먼저 확인하고 방향을 잡아라.
             - 코드를 수정하지 마라. 브랜치 생성·커밋·PR 오픈을 하지 마라 — 이 단계는 제안뿐이다.
             - 각 방안에 개요, 영향 범위(건드릴 파일/도메인), 장단점을 짧게 적어라.
             - 기존 ADR과 충돌하는 방향이면 새 ADR이 필요하다고 명시해라 (CLAUDE.md 규칙 2).
@@ -134,7 +134,7 @@ jobs:
             코멘트: ${{ github.event.comment.body }}
 
             순서대로 진행해라 (ADR-0013 결정 순서):
-            1. `docs/agent-mistakes.md`를 읽고, `docs/context-router.md`로 이 작업에 맞는 문서만 골라 읽어라.
+            1. `ai/agent-mistakes.md`를 읽고, `ai/context-router.md`로 이 작업에 맞는 문서만 골라 읽어라.
             2. 최신 dev 기준으로 새 브랜치를 만들어라. 브랜치명은 docs/conventions/git.md 규칙을 따른다 — `<타입>/${{ github.event.issue.number }}-<영문-kebab-case-요약>` (이슈번호는 0으로 채우지 않는다).
             3. CLAUDE.md·docs/conventions/code.md·관련 ADR·spec을 따라 선택된 방향대로 구현해라. spec 단위 기능이면 CLAUDE.md의 /feature 절차(구현→테스트→빌드→리뷰)를 참고해 구현과 테스트를 함께 작성해라.
             4. `./gradlew build`를 실행해 통과를 확인해라. 실패하면 원인을 고쳐서 재시도해라 — 통과 못 하면 PR을 열지 마라.
@@ -179,7 +179,7 @@ jobs:
           # 컴파일 태스크는 전부 UP-TO-DATE(같은 워크스페이스에서 앞선 빌드가 돌았다는 뜻)인데
           # 테스트 단언 실패는 한 건도 없이 Gradle 내부 오류만 났다:
           # https://github.com/finplay-team/finplay/actions/runs/31353092525/job/93347455971
-          # 같은 실패 모드가 로컬에서도 이미 재현·기록돼 있다 — docs/agent-mistakes.md의 2026-07-25 행
+          # 같은 실패 모드가 로컬에서도 이미 재현·기록돼 있다 — ai/agent-mistakes.md의 2026-07-25 행
           # ("같은 worktree에서 Gradle 검증을 겹쳐 실행 → 테스트 결과 NoSuchFileException").
           # 그때의 해법이 "모든 에이전트 Gradle 프로세스 **종료 후** 단독 재실행"이었으므로 여기서도 같게 간다.
           # --stop만으로는 부족하다: 바쁜 데몬에는 "현재 빌드를 끝내고 종료하라"는 요청만 보내고 즉시 반환해서,
@@ -269,15 +269,15 @@ jobs:
 
             리뷰 전 반드시 읽어라:
             - docs/conventions/code.md
-            - docs/adr/0002-architecture.md
-            - docs/adr/0003-testing-strategy.md
-            - docs/adr/0004-flyway-migrations.md
+            - ai/adr/0002-architecture.md
+            - ai/adr/0003-testing-strategy.md
+            - ai/adr/0004-flyway-migrations.md
 
             절차:
             1. `git diff origin/dev...HEAD`로 변경 파일을 확인해라.
             2. 컨벤션 위반(엔티티 노출, controller 내 비즈니스 로직, `@Setter`/`@Data`, 다른 도메인 repository 직접 주입),
                ADR 위반(패키지 구조, Flyway 마이그레이션 누락, 기존 마이그레이션 수정),
-               문서 동기화 누락(docs/api-routes.md·docs/api/(해당 도메인 파일)·docs/prd.md §3),
+               문서 동기화 누락(ai/api-routes.md·docs/api/(해당 도메인 파일)·ai/prd.md §3),
                테스트 누락(mock 단위 테스트만으로 끝났는지), 버그(트랜잭션 경계·N+1·null 처리)를 점검해라.
             3. 지적마다 파일:줄번호, 문제, 수정 방향을 적어라. 컨벤션에 없는 개인 취향은 지적하지 마라.
             4. 각 지적을 아래 기준으로 차단/권장/참고 중 하나로 분류해라.
@@ -433,15 +433,15 @@ jobs:
 
             리뷰 전 반드시 읽어라:
             - docs/conventions/code.md
-            - docs/adr/0002-architecture.md
-            - docs/adr/0003-testing-strategy.md
-            - docs/adr/0004-flyway-migrations.md
+            - ai/adr/0002-architecture.md
+            - ai/adr/0003-testing-strategy.md
+            - ai/adr/0004-flyway-migrations.md
 
             절차:
             1. `git diff origin/dev...HEAD`로 변경 파일을 확인해라.
             2. 컨벤션 위반(엔티티 노출, controller 내 비즈니스 로직, `@Setter`/`@Data`, 다른 도메인 repository 직접 주입),
                ADR 위반(패키지 구조, Flyway 마이그레이션 누락, 기존 마이그레이션 수정),
-               문서 동기화 누락(docs/api-routes.md·docs/api/(해당 도메인 파일)·docs/prd.md §3),
+               문서 동기화 누락(ai/api-routes.md·docs/api/(해당 도메인 파일)·ai/prd.md §3),
                테스트 누락(mock 단위 테스트만으로 끝났는지), 버그(트랜잭션 경계·N+1·null 처리)를 점검해라.
             3. 지적마다 파일:줄번호, 문제, 수정 방향을 적어라. 컨벤션에 없는 개인 취향은 지적하지 마라.
             4. 각 지적을 아래 기준으로 차단/권장/참고 중 하나로 분류해라.
