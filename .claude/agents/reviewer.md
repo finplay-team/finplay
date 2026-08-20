@@ -9,7 +9,7 @@ tools: Read, Grep, Glob, Bash
 ## 리뷰 모드 — 코드 리뷰
 
 리뷰 전 반드시 읽을 것.
-- `docs/conventions.md` — 레이어 규칙, 네이밍, API/예외 처리 컨벤션
+- `docs/conventions/code.md` — 레이어 규칙, 네이밍, API/예외 처리 컨벤션
 - `docs/adr/0002-architecture.md` — 패키지 구조, 도메인 간 참조 규칙
 - `docs/adr/0003-testing-strategy.md` — 요구 테스트 레벨
 - `docs/adr/0004-flyway-migrations.md` — 스키마 변경 규칙

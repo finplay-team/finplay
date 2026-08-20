@@ -15,7 +15,7 @@ ADR-0005는 Claude API 키 비용 때문에 "PR 생성 즉시 무인 자동 리�
 ## 결정
 
 - **모든 PR에 Codex 1차 자동 리뷰**를 붙인다 (`.github/workflows/ai-review.yml`).
-- 리뷰 기준은 로컬 code-reviewer와 **같은 정본 문서**를 쓴다 — 프롬프트(`.github/codex/prompts/review.md`)가 `docs/conventions.md`와 ADR들을 읽도록 지시하고, 출력 형식도 동일한 `[차단]/[권장]/[참고]`를 쓴다. 기준이 바뀌면 정본 문서만 고치면 양쪽에 반영된다.
+- 리뷰 기준은 로컬 code-reviewer와 **같은 정본 문서**를 쓴다 — 프롬프트(`.github/codex/prompts/review.md`)가 `docs/conventions/code.md`와 ADR들을 읽도록 지시하고, 출력 형식도 동일한 `[차단]/[권장]/[참고]`를 쓴다. 기준이 바뀌면 정본 문서만 고치면 양쪽에 반영된다.
 - **역할 분담**: Codex CI = 모든 PR의 즉시 1차 게이트 (컨벤션·ADR·문서 동기화·명백한 버그). 로컬 `/review-pr` = 깊은 리뷰 + 빌드 실행 + 블랙박스 QA (Claude 구독, 사람이 트리거).
 - **자동 승인 금지 유지** — Codex는 코멘트만 달고, 최종 승인 클릭은 사람이 한다 (ADR-0005 원칙).
 - 인증: 레포 시크릿 `OPENAI_API_KEY`. 실행 샌드박스는 `read-only` (리뷰어는 파일을 수정하지 않는다).

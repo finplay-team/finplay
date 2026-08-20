@@ -7,7 +7,7 @@ description: 방금 구현된 코드의 테스트를 작성·실행하고 실패
 
 ## 테스트 작성 — 변경 파일 목록을 받았을 때
 
-1. `docs/adr/0003-testing-strategy.md`와 `docs/conventions.md`의 테스트 작성 규칙 절을 읽고, 지시받은 변경 파일 목록과 해당 spec의 완료 조건을 읽는다.
+1. `docs/adr/0003-testing-strategy.md`와 `docs/conventions/code.md`의 테스트 작성 규칙 절을 읽고, 지시받은 변경 파일 목록과 해당 spec의 완료 조건을 읽는다.
 2. 레벨을 판단해 작성한다.
    - 서비스 비즈니스 로직 → JUnit5 + Mockito 단위 테스트 (성공 + 실패/예외 경로 포함)
    - 커스텀 쿼리가 있는 repository → `@DataJpaTest` + `@Import(TestcontainersConfiguration.class)`

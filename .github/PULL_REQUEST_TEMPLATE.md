@@ -17,7 +17,7 @@ Closes #
 - [ ] `./gradlew build` 로컬 통과 (실행하지 않은 테스트를 했다고 적지 않는다 — 실측 결과만)
   - 빌드 검증 SHA: <!-- build가 통과한 시점의 커밋. `git rev-parse HEAD`. 이후 커밋을 푸시하면 갱신한다 -->
 - [ ] 변경 로직에 대응하는 테스트 추가 (단위 + 필요 시 슬라이스/통합)
-- [ ] `docs/conventions.md` 준수 (엔티티 미노출, 레이어 규칙 등)
+- [ ] `docs/conventions/code.md` 준수 (엔티티 미노출, 레이어 규칙 등)
 - [ ] controller 추가/변경 시 `docs/api-routes.md`(라우트 목록) + `docs/api-contracts.md`(계약 상세) 함께 갱신
 - [ ] 요구사항 ID의 구현 상태가 바뀌면 `docs/prd.md` §3 "구현 현황" 행 갱신 (근거 칸에 이 PR 번호) — 기능 제공 범위가 그대로인 리팩터링·테스트·문서 PR은 해당 없음
 - [ ] API 변경 시 관련 spec(`docs/specs/`) 갱신

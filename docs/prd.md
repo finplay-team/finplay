@@ -9,7 +9,7 @@
 > **정본 안내 (2026-07-24 개정)**
 > - 팀이 확정하는 **제품 범위·API 단계·담당자는 [Notion 10 X TEN](https://www.notion.so/10-X-TEN-d3ab1fddfba9833d99f38105b2295b08)이 정본**이다.
 > - 이 파일은 Notion 결정을 구현 가능한 요구사항으로 옮긴 **저장소 구현 스냅샷**이다. 구현 에이전트는 저장소 안에서 이 파일과 `docs/specs/`를 읽되, Notion과 충돌을 발견하면 임의로 한쪽을 선택하지 않고 구현을 멈춘 뒤 문서를 먼저 동기화한다.
-> - Notion 원본 대비 반입 시 확정된 변경: ① 제품명 Investory → **FinPlay** (ADR-0006) ② Base URL `/api/v1` → **`/api`** (버저닝 미사용, `docs/conventions.md`) ③ Java 17 확정 (레포 초기값 21에서 변경, ADR-0006).
+> - Notion 원본 대비 반입 시 확정된 변경: ① 제품명 Investory → **FinPlay** (ADR-0006) ② Base URL `/api/v1` → **`/api`** (버저닝 미사용, `docs/conventions/code.md`) ③ Java 17 확정 (레포 초기값 21에서 변경, ADR-0006).
 > - 기능 구현 시 이 문서를 직접 구현 근거로 쓰지 않는다 — 요구사항 ID 단위로 `docs/specs/NNN-*/` spec을 만들어 진행한다 (`docs/specs/README.md`).
 
 ## 0. 문서 규칙과 출처
@@ -891,7 +891,7 @@ LMT-001~005의 상세 계약(요청·응답 필드, 전체 오류 코드)은 `do
 
 ## 5. API 계약 (1차 MVP 기준 목록)
 
-Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conventions.md`). 아래 목록은 클라이언트가 호출하는 **실제 외부 경로를 그대로** 적는다 — 문서마다 `/auth/...`와 `/api/auth/...`가 섞이지 않게 한다.
+Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conventions/code.md`). 아래 목록은 클라이언트가 호출하는 **실제 외부 경로를 그대로** 적는다 — 문서마다 `/auth/...`와 `/api/auth/...`가 섞이지 않게 한다.
 
 > **이 목록은 1차 MVP 시점의 경로 집합이며 현재 제공 중인 전체 경로가 아니다.** 2차에서 추가·구현된 경로(`GET /api/rankings`, `GET /api/instruments/{id}/price-moves`, `GET /api/instruments/{id}/news`, `GET /api/market/briefing`, `POST·PATCH /api/trades/{id}/journal`, `POST·PATCH /api/trades/{id}/sell-journal`, `GET·POST·DELETE /api/favorites`, `POST /api/education/practice/intentions`, `GET /api/education/practice/synthetic-prices/{id}`)는 여기 반영하지 않는다. **실제 라우트 전수는 `docs/api-routes.md`, 요청·응답·오류 계약은 `docs/api-contracts.md`가 정본이다** — 이 두 문서는 controller 변경과 같은 커밋에서 갱신된다(CLAUDE.md 규칙 7). 아래 목록은 1차 완료 범위를 확인하는 용도로만 유지한다.
 
@@ -1132,7 +1132,7 @@ Flyway 마이그레이션은 V1~V28까지 적용돼 있다. 아래는 2차에서
 - `favorite`: 즐겨찾기 (ADR-0012에 따라 DB가 아닌 인메모리 저장)
 - `education`: 투자 실습 — legacy 사전 의도(인메모리)·영속 attempt/run과 자동 위험 snapshot(DB)·진행/불변 완료(DB)·canonical 29+1 차트·legacy 합성 시세(`education.synthetic`)
 
-**도메인 간 호출은 service를 경유하고 다른 도메인의 repository를 직접 주입하지 않는다** (`docs/conventions.md`). 투자 실습 OCO는 `education application → order application port` 한 방향만 허용한다.
+**도메인 간 호출은 service를 경유하고 다른 도메인의 repository를 직접 주입하지 않는다** (`docs/conventions/code.md`). 투자 실습 OCO는 `education application → order application port` 한 방향만 허용한다.
 
 ### 트랜잭션 경계
 

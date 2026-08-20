@@ -1,6 +1,6 @@
 # Git 컨벤션 — 브랜치 · 커밋 · PR
 
-브랜치를 만들거나 커밋·PR을 작성할 때 이 문서를 따른다. 코드 작성 규칙은 `docs/conventions.md`, 이슈·리뷰 운영 규칙은 `docs/team-conventions.md`에 있다.
+브랜치를 만들거나 커밋·PR을 작성할 때 이 문서를 따른다. 코드 작성 규칙은 `docs/conventions/code.md`, 이슈·리뷰 운영 규칙은 `docs/conventions/team.md`에 있다.
 
 ## 브랜치 전략 (dev 통합 브랜치 — 2026-07-23 팀 결정, GitHub Flow에서 변경)
 

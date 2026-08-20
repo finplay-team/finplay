@@ -1,6 +1,6 @@
 # 팀 컨벤션 — 이슈 · PR 운영
 
-작업을 어떤 순서로 흘리고 리뷰를 어떻게 처리하는지 정한다. 브랜치·커밋·PR의 작성 형식은 `docs/git-conventions.md`, 코드 작성 규칙은 `docs/conventions.md`에 있다.
+작업을 어떤 순서로 흘리고 리뷰를 어떻게 처리하는지 정한다. 브랜치·커밋·PR의 작성 형식은 `docs/conventions/git.md`, 코드 작성 규칙은 `docs/conventions/code.md`에 있다.
 
 ## 작업 흐름
 
@@ -16,5 +16,5 @@
   - **작은 루프** — PR 범위 안의 지적은 같은 PR에서 수정해 재푸시한다.
   - **큰 루프** — 범위 밖 문제·새 기능은 새 이슈로 분리한다.
   - 리뷰 코멘트를 새 이슈로 흩뿌리지 않는다.
-- 코드 리뷰에서 확인할 구조 점검 항목은 `docs/conventions.md`의 "리뷰 체크 질문"에 있다.
+- 코드 리뷰에서 확인할 구조 점검 항목은 `docs/conventions/code.md`의 "리뷰 체크 질문"에 있다.
 - 에이전트 기반 리뷰 절차는 `/review-pr` 스킬과 `docs/adr/0008-four-agent-roster.md`를 따른다.

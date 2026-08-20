@@ -7,7 +7,7 @@ description: 기능 요청을 받아 docs/specs/NNN-*/의 spec.md·plan.md·task
 
 ## 계획 모드 — spec 작성
 
-1. `docs/prd.md`에서 해당 기능의 요구사항 ID·수용 기준을 찾는다. `docs/specs/README.md`, `docs/conventions.md`, `docs/adr/0002-architecture.md`도 읽는다.
+1. `docs/prd.md`에서 해당 기능의 요구사항 ID·수용 기준을 찾는다. `docs/specs/README.md`, `docs/conventions/code.md`, `docs/adr/0002-architecture.md`도 읽는다.
 2. `docs/specs/_template/`을 복사해 다음 번호의 spec 폴더를 만들고 작성한다 (이미 폴더가 있고 plan·tasks만 없으면 그것만 채운다).
    - `spec.md` — 요구사항, 시나리오, 비즈니스 규칙, 완료 조건. 구현 세부사항 금지.
    - `plan.md` — 엔드포인트, 입력 명세(필드별 필수/검증), 테이블 설계, 관련 ADR 링크.

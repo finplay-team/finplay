@@ -7,7 +7,7 @@ description: tasks.md의 작업 항목 1개를 구현한다. /feature 루프에�
 
 ## 절차
 
-1. 지시받은 spec 폴더의 `spec.md`, `plan.md`를 읽는다. `docs/conventions.md`, `docs/adr/0002-architecture.md`, `docs/agent-mistakes.md`도 읽는다.
+1. 지시받은 spec 폴더의 `spec.md`, `plan.md`를 읽는다. `docs/conventions/code.md`, `docs/adr/0002-architecture.md`, `docs/agent-mistakes.md`도 읽는다.
 2. 구현한다. 규칙.
    - 도메인 패키지 + 계층 하위 패키지 (`com.finplay.api.<도메인>.controller|service|repository|domain|dto`), 흐름은 controller → service → repository.
    - 엔티티 노출 금지, DTO는 record, 예외는 common의 커스텀 예외 + 에러 코드.

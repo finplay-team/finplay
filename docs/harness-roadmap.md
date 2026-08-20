@@ -22,7 +22,7 @@
 ③ 사람이 PR 검토 → 머지 결정 (자동 머지 금지 — ADR-0005의 원칙 유지)
 ```
 
-**③단계는 의도적으로 완전 수동이다(2026-08-10 확정, 이슈 #317).** PR이 열린 뒤 사람이 남기는 리뷰(코멘트·`CHANGES_REQUESTED` 등)를 감지해 자동으로 재수정하는 경로는 만들지 않는다 — ADR-0016도 "PR 댓글로 재수정을 트리거하는 것"을 이미 한 번 범위 밖으로 뺐고(§범위 밖), 이슈 #317에서 다시 검토한 결과도 같은 결론이었다. `@claude`를 PR 리뷰·PR 댓글에 남겨도 하네스는 반응하지 않는다(`agent.yml`의 `on:`이 `issues`·`issue_comment`만 구독하고, `verify-actor`가 PR에 달린 `issue_comment`를 의도적으로 걸러낸다 — ADR-0013). 리뷰 지적은 팀원이나 로컬 Claude Code/Codex 세션이 직접 반영해 같은 PR에 재푸시한다(`docs/team-conventions.md` "작은 루프").
+**③단계는 의도적으로 완전 수동이다(2026-08-10 확정, 이슈 #317).** PR이 열린 뒤 사람이 남기는 리뷰(코멘트·`CHANGES_REQUESTED` 등)를 감지해 자동으로 재수정하는 경로는 만들지 않는다 — ADR-0016도 "PR 댓글로 재수정을 트리거하는 것"을 이미 한 번 범위 밖으로 뺐고(§범위 밖), 이슈 #317에서 다시 검토한 결과도 같은 결론이었다. `@claude`를 PR 리뷰·PR 댓글에 남겨도 하네스는 반응하지 않는다(`agent.yml`의 `on:`이 `issues`·`issue_comment`만 구독하고, `verify-actor`가 PR에 달린 `issue_comment`를 의도적으로 걸러낸다 — ADR-0013). 리뷰 지적은 팀원이나 로컬 Claude Code/Codex 세션이 직접 반영해 같은 PR에 재푸시한다(`docs/conventions/team.md` "작은 루프").
 
 기존 하네스가 그대로 얹혀지는 구조다 — Claude용 `CLAUDE.md`·`.claude/`, Codex용 `AGENTS.md`·`.agents/`·`.codex/`, 공통 `docs/`가 커밋돼 있어 선택한 러너도 로컬과 동일한 규칙·라우터·리뷰 기준을 쓴다.
 

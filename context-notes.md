@@ -928,7 +928,7 @@ ADR-0021을 읽지 않는다(`docs/context-router.md`의 "엔티티/스키마 �
 
 ### `main`의 역할이 바뀐 것을 문서에 남겼다
 
-`dev` 머지를 트리거로 고른 순간 `main`은 배포 소스가 아니게 된다. `docs/git-conventions.md`·`README.md`·
+`dev` 머지를 트리거로 고른 순간 `main`은 배포 소스가 아니게 된다. `docs/conventions/git.md`·`README.md`·
 `AGENTS.md`가 전부 "`main`은 배포·시연용"이라고 적고 있었으므로 셋 다 "시연·심사 스냅샷"으로 고쳤다.
 **트리거 선택의 부수 효과라 놓치기 쉬운 자리다** — 안 고쳤으면 문서가 배포 브랜치를 두 개로 말하게 된다.
 
