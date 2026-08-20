@@ -17,6 +17,7 @@ import com.finplay.api.education.marketpractice.dto.response.PracticeTutorialCha
 import com.finplay.api.education.marketpractice.repository.PracticeAttemptRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.domain.TutorialScenarioScriptId;
 import com.finplay.api.market.service.TutorialPriceGenerator;
 import com.finplay.api.order.service.PracticeOrderSettlementService;
 import java.math.BigDecimal;
@@ -143,18 +144,54 @@ class PracticeAttemptChartServiceTest {
 		assertThat(response.candles().get(29).low()).isEqualByComparingTo(new BigDecimal("8000.00000000"));
 	}
 
+	// 049 tasks 3번 검증 — 2단계 대본(사건 없음)은 안내 범위가 나가야 한다.
+	@Test
+	void getChartExposesPriceGuideRangeForOrderBasicsScenarioScript() {
+		PracticeAttempt attempt = orderBasicsAttempt();
+		when(attemptRepository.findByUserIdAndMarket(USER_ID, Market.CRYPTO)).thenReturn(Optional.of(attempt));
+
+		PracticeTutorialChartResponse response = service.getChart(USER_ID, Market.CRYPTO);
+
+		assertThat(response.priceGuideRange()).isNotNull();
+		assertThat(response.priceGuideRange().low()).isEqualByComparingTo(new BigDecimal("90000.00000000"));
+		assertThat(response.priceGuideRange().high()).isEqualByComparingTo(new BigDecimal("110000.00000000"));
+	}
+
+	// 049 tasks 3번 검증 — 041 대본(사건 있음)은 안내 범위가 null이어야 한다. 이 단정이 SCENARIO-015·020을
+	// 지킨다 — 안내 범위가 나가면 4막 폭락의 저점(7900대)이 사건 공개 전에 노출된다.
+	@Test
+	void getChartLeavesPriceGuideRangeNullForStoryScenarioScriptWithEvents() {
+		PracticeAttempt attempt = scenarioAttempt();
+		when(attemptRepository.findByUserIdAndMarket(USER_ID, Market.CRYPTO)).thenReturn(Optional.of(attempt));
+
+		PracticeTutorialChartResponse response = service.getChart(USER_ID, Market.CRYPTO);
+
+		assertThat(response.priceGuideRange()).isNull();
+	}
+
+	// scenarioScriptId를 null로 두면 파생 접근자가 CRYPTO_STORY_V1(041 대본, events 있음)로 해석한다
+	// (PracticeAttempt.scenarioScriptId() 하위 호환 규칙, 049 tasks 2번).
 	private static PracticeAttempt scenarioAttempt() {
-		PracticeAttempt attempt = attempt(TutorialPriceGenerator.VERSION_2);
+		PracticeAttempt attempt = attempt(TutorialPriceGenerator.VERSION_2, null);
 		attempt.startScenarioProgress("ACT1_RISE", new BigDecimal("10000.00000000"), NOW.minusSeconds(3));
 		attempt.moveScenarioCursor("ACT1_RISE", 12L);
 		return attempt;
 	}
 
-	private static PracticeAttempt selectedAttempt() {
-		return attempt(TutorialPriceGenerator.VERSION_1);
+	// 049 tasks 3번 — 2단계 대본(CRYPTO_ORDER_BASICS_V1)은 events가 비어 있어 안내 범위가 나가야 한다.
+	private static PracticeAttempt orderBasicsAttempt() {
+		PracticeAttempt attempt = attempt(TutorialPriceGenerator.VERSION_2,
+			TutorialScenarioScriptId.CRYPTO_ORDER_BASICS_V1);
+		attempt.startScenarioProgress("ORDER_BASICS", new BigDecimal("100000.00000000"), NOW.minusSeconds(3));
+		attempt.moveScenarioCursor("ORDER_BASICS", 12L);
+		return attempt;
 	}
 
-	private static PracticeAttempt attempt(short generatorVersion) {
+	private static PracticeAttempt selectedAttempt() {
+		return attempt(TutorialPriceGenerator.VERSION_1, null);
+	}
+
+	private static PracticeAttempt attempt(short generatorVersion, TutorialScenarioScriptId scenarioScriptId) {
 		LocalDateTime anchor = NOW.minusSeconds(5);
 		PracticeAttempt attempt = PracticeAttempt.create(USER_ID, Market.CRYPTO, NOW.minusHours(1));
 		ReflectionTestUtils.setField(attempt, "id", 11L);
@@ -162,7 +199,8 @@ class PracticeAttemptChartServiceTest {
 			Market.CRYPTO, "TUTORIAL-BTC", "튜토리얼 비트코인", BigDecimal.ONE, 5_000L, true, NOW);
 		ReflectionTestUtils.setField(instrument, "id", 21L);
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
-		attempt.selectInstrument(instrument, anchor, NOW.toLocalDate(), 123_456_789L, generatorVersion, null, anchor);
+		attempt.selectInstrument(
+			instrument, anchor, NOW.toLocalDate(), 123_456_789L, generatorVersion, scenarioScriptId, anchor);
 		return attempt;
 	}
 }

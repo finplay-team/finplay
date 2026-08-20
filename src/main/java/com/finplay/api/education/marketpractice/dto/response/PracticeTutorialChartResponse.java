@@ -17,6 +17,8 @@ import java.util.List;
  * @param causeStatus         {@code REVEALED|NONE_KNOWN} 둘뿐이다. 미공개 사건이 있는 구간도
  *                            {@code NONE_KNOWN}이라 두 경우를 구분할 수 없다(SCENARIO-015·016)
  * @param revealedEvents      공개 시점이 지난 사건만, 공개 순서다. 시각을 담지 않는다
+ * @param priceGuideRange     대본이 안내하는 가격 변동 범위. 사건이 있는 대본이거나 대본을 쓰지 않는
+ *                            attempt에서는 {@code null}이다(049 ORDERBASICS-009~011)
  */
 public record PracticeTutorialChartResponse(
 	Long attemptId,
@@ -28,7 +30,8 @@ public record PracticeTutorialChartResponse(
 	String scenarioStage,
 	Boolean scenarioProgressing,
 	String causeStatus,
-	List<PracticeScenarioEventResponse> revealedEvents) {
+	List<PracticeScenarioEventResponse> revealedEvents,
+	PriceGuideRangeResponse priceGuideRange) {
 	public PracticeTutorialChartResponse {
 		candles = List.copyOf(candles);
 		revealedEvents = revealedEvents == null ? List.of() : List.copyOf(revealedEvents);

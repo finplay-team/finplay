@@ -7,9 +7,12 @@ import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
 import com.finplay.api.education.marketpractice.domain.PracticeAttemptStatus;
 import com.finplay.api.education.marketpractice.dto.response.PracticeTutorialCandleResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeTutorialChartResponse;
+import com.finplay.api.education.marketpractice.dto.response.PriceGuideRangeResponse;
 import com.finplay.api.education.marketpractice.repository.PracticeAttemptRepository;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.TutorialPriceSeriesDto;
+import com.finplay.api.market.service.TutorialScenarioPriceGuideRangeCalculator;
+import com.finplay.api.market.service.TutorialScenarioScript;
 import com.finplay.api.order.service.PracticeOrderSettlementService;
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -65,8 +68,9 @@ public class PracticeAttemptChartService {
 		TutorialPriceSeriesDto series = canonicalPriceService.priceSeries(attempt, now);
 		// 041 6번 — 대본을 쓰지 않는 attempt는 네 필드가 비어 나간다. 조회 시점에 커서를 읽기만 하므로
 		// GET chart의 "부수효과 없음" 계약(SCENARIO-022)은 그대로다.
-		PracticeScenarioNarrativeDto narrative = attempt.usesScenarioScript()
-			? PracticeScenarioNarrativeCalculator.calculate(attempt, canonicalPriceService.script(attempt))
+		TutorialScenarioScript script = attempt.usesScenarioScript() ? canonicalPriceService.script(attempt) : null;
+		PracticeScenarioNarrativeDto narrative = script != null
+			? PracticeScenarioNarrativeCalculator.calculate(attempt, script)
 			: PracticeScenarioNarrativeDto.EMPTY;
 		return new PracticeTutorialChartResponse(
 			attempt.getId(),
@@ -78,6 +82,18 @@ public class PracticeAttemptChartService {
 			narrative.scenarioStage(),
 			narrative.scenarioProgressing(),
 			narrative.causeStatus(),
-			narrative.revealedEvents());
+			narrative.revealedEvents(),
+			toPriceGuideRange(script));
+	}
+
+	// 049 ORDERBASICS-011 — 판정식은 script.events().isEmpty() 하나다. 사건이 있는 대본(041)이거나
+	// 대본을 쓰지 않는 attempt(script == null)면 null이다.
+	private PriceGuideRangeResponse toPriceGuideRange(TutorialScenarioScript script) {
+		if (script == null || !script.events().isEmpty()) {
+			return null;
+		}
+		return TutorialScenarioPriceGuideRangeCalculator.calculate(script)
+			.map(range -> new PriceGuideRangeResponse(range.low(), range.high()))
+			.orElse(null);
 	}
 }

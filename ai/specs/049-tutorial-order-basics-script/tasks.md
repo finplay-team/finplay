@@ -73,7 +73,7 @@
 - 예약 부재가 기존 경로에 무해하다는 것은 spec §비즈니스 규칙에 전수 확인 결과가 있다. **그 조사를
   반복하지 말고** 위 두 통합 테스트로 실제 동작만 고정해라.
 
-## 3. 대본 가격 안내 범위를 차트 응답에 싣는다
+## 3. 대본 가격 안내 범위를 차트 응답에 싣는다 ✅
 
 - `market.service`에 순수 계산 함수 추가(plan §5의 일반식). 상수 1,000을 박지 않는다.
 - `PracticeTutorialChartResponse`에 `priceGuideRange` 추가. 판정식은 `script.events().isEmpty()` 하나.
