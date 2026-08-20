@@ -4,7 +4,7 @@ spec 하나당 3~7개 권장(`ai/specs/README.md`) 기준으로 5개로 나눈�
 
 - [x] **1. 외부 스모크로 Decision Gate 해소** — 실제 KIS `inquire-daily-itemchartprice` 1회 호출로 `output2` 일봉 필드명과 수정주가 옵션(`FID_ORG_ADJ_PRC`) 의미를 확인하고, 확정 내용을 `plan.md`에 반영한다. **이 항목이 끝나기 전에는 2번의 응답 매핑을 확정하지 않는다** (spec §Decision Gate).
 
-- [ ] **2. 엔티티 + Repository + 마이그레이션** — `StockDailyCandle`, `StockDailyCandleRepository`, `V53__create_stock_daily_candles.sql`(작성 직전 `git ls-tree origin/dev`로 번호 재확인, ADR-0004). `@DataJpaTest`로 `UNIQUE(instrument_id, trading_date)` 위반·최신 거래일 조회·기간 조회 정렬 검증.
+- [x] **2. 엔티티 + Repository + 마이그레이션** — `StockDailyCandle`, `StockDailyCandleRepository`, `V53__create_stock_daily_candles.sql`(작성 직전 `git ls-tree origin/dev`로 번호 재확인, ADR-0004). `@DataJpaTest`로 `UNIQUE(instrument_id, trading_date)` 위반·최신 거래일 조회·기간 조회 정렬 검증.
 
 - [ ] **3. KIS 일봉 클라이언트** — `KisDailyCandleClient` / `KisDailyCandleClientImpl`(날짜 커서 역방향 페이징, 레이트리밋 재시도, 페이지 상한) / `FakeKisDailyCandleClient`. 단위 테스트로 페이징 종료 조건·응답 검증 규칙·상한 도달 시 중단 검증.
 
