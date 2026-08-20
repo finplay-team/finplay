@@ -243,15 +243,16 @@ class PracticeAttemptServiceTest {
 			market == Market.CRYPTO ? TutorialPriceGenerator.VERSION_2 : TutorialPriceGenerator.VERSION_1);
 		// 대본 위치는 여전히 비어 있다 — 첫 tick이 대본의 첫 구간으로 초기화한다(041 3번이 남긴 계약).
 		assertThat(attempt.getScenarioStageId()).isNull();
-		// **진입 대본은 041 고정이다**(2026-08-20 사용자 결정). 전환 엔드포인트(049 tasks 5번)가 없는 채로
-		// 진입만 2단계로 바꾸면 dev 머지가 곧 배포인 이 레포에서 041 이야기가 통째로 도달 불가가 된다.
-		// 대본을 쓰지 않는 STOCK은 식별자도 없다.
+		// **진입 대본은 이제 2단계(`CRYPTO_ORDER_BASICS_V1`)다**(049 tasks 5번, 전환 엔드포인트
+		// `advance-script`가 생기면서 `scenarioScriptIdFor`가 `firstScriptId(market)`로 되돌아갔다).
+		// 041 고정은 전환 엔드포인트가 없던 049 tasks 2번 시점의 임시 결정이었다. 대본을 쓰지 않는
+		// STOCK은 식별자도 없다.
 		//
 		// **원본 필드를 함께 본다.** 파생 접근자만 단언하면 NULL 폴백에 흡수되어, selectInstrument가
 		// 식별자를 아예 박지 않도록 회귀해도 버전 2 실행에서는 CRYPTO_STORY_V1이 그대로 나온다
 		// (PR 리뷰 [참고]). 같은 패키지의 PracticeAttemptTest가 쓰는 방식과 같다.
 		TutorialScenarioScriptId expectedScriptId = market == Market.CRYPTO
-			? TutorialScenarioScriptId.CRYPTO_STORY_V1
+			? TutorialScenarioScriptId.CRYPTO_ORDER_BASICS_V1
 			: null;
 		assertThat(ReflectionTestUtils.getField(attempt, "scenarioScriptId")).isEqualTo(expectedScriptId);
 		assertThat(attempt.scenarioScriptId()).isEqualTo(expectedScriptId);

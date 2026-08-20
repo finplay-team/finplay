@@ -18,9 +18,11 @@ import com.finplay.api.market.repository.InstrumentRepository;
 import com.finplay.api.market.service.TutorialPriceGenerator;
 import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.dto.request.LimitOrderCreateRequest;
+import com.finplay.api.order.dto.request.OrderCreateRequest;
 import com.finplay.api.order.dto.response.LimitOrderResponse;
 import com.finplay.api.order.repository.TradeRepository;
 import com.finplay.api.order.service.LimitOrderService;
+import com.finplay.api.order.service.OrderService;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -55,6 +57,8 @@ class PracticeScenarioTickIntegrationTest {
 	private PracticeAttemptRepository attemptRepository;
 	@Autowired
 	private LimitOrderService limitOrderService;
+	@Autowired
+	private OrderService orderService;
 	@Autowired
 	private PracticeAttemptChartService chartService;
 	@Autowired
@@ -149,6 +153,14 @@ class PracticeScenarioTickIntegrationTest {
 		// 아니라 순회이므로 커서를 직접 세운다.
 		attempt.startScenarioProgress(stageId, new BigDecimal("10180.00000000"), BASE_NOW);
 		attemptRepository.saveAndFlush(attempt);
+		// 049 ORDERBASICS-015 — 이 실행은 대본을 쓰므로(생성기 버전 2) 지정가 주문은 시장가 왕복을 마쳐야
+		// 열린다. 이 항목의 검증 대상은 대본 저작·순회이지 게이트가 아니므로, 지정가를 거는 테스트들이
+		// 막히지 않도록 시장가 왕복을 미리 마친다. 시장가 주문은 커서를 움직이지 않으므로(오직 tick만
+		// 커서를 민다) 순회를 대상으로 하는 단언(진행 초·진행 갱신 시각)에 영향이 없다.
+		orderService.createOrder(user.getId(), "scenario-tick-warmup-buy-" + UUID.randomUUID(),
+			new OrderCreateRequest(Market.CRYPTO, instrument.getId(), OrderSide.BUY, "MARKET", QUANTITY));
+		orderService.createOrder(user.getId(), "scenario-tick-warmup-sell-" + UUID.randomUUID(),
+			new OrderCreateRequest(Market.CRYPTO, instrument.getId(), OrderSide.SELL, "MARKET", QUANTITY));
 		return new Fixture(user, account, instrument, attempt);
 	}
 
