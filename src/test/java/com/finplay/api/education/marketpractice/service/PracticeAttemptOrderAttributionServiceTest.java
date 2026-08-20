@@ -17,6 +17,7 @@ import com.finplay.api.education.marketpractice.repository.PracticeAttemptReposi
 import com.finplay.api.education.marketpractice.repository.PracticeRiskSnapshotRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.domain.TutorialScenarioScriptId;
 import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderSide;
 import com.finplay.api.order.domain.OrderType;
@@ -162,6 +163,65 @@ class PracticeAttemptOrderAttributionServiceTest {
 
 		verify(practiceAttemptRepository, never()).findByIdForUpdate(org.mockito.ArgumentMatchers.any());
 		verifyNoInteractions(practiceRiskSnapshotRepository);
+	}
+
+	/**
+	 * 049 ORDERBASICS-022 — 2단계 대본 실행은 <b>기준선은 만들고 예약만 건너뛴다.</b>
+	 *
+	 * <p>기준선까지 빠지면 {@code PracticeAttemptEvidenceService.requireCurrentRun}이
+	 * {@code PRACTICE_EVIDENCE_MISSING}으로 던져 그 실행의 관찰·복기가 통째로 깨진다. 그래서 "예약이 없다"와
+	 * "기준선이 있다"를 한 테스트에서 함께 단언한다.
+	 */
+	@Test
+	void createRiskSnapshotOnBuyFillSkipsOnlyTheExitPlanForTheOrderBasicsScript() {
+		Instrument instrument = tutorialInstrument();
+		PracticeAttempt attempt = scriptAttempt(instrument, TutorialScenarioScriptId.CRYPTO_ORDER_BASICS_V1);
+		Order order = attributedBuyOrder(instrument);
+		Trade trade = buyTrade(order, instrument, new BigDecimal("100000.00000000"));
+		when(practiceAttemptRepository.findByIdForUpdate(ATTEMPT_ID)).thenReturn(Optional.of(attempt));
+		when(practiceRiskSnapshotRepository.countByAttemptIdAndRunNumber(ATTEMPT_ID, 1L)).thenReturn(0L);
+		when(tradeService.netFilledQuantity(ATTEMPT_ID, 1L)).thenReturn(trade.getQuantity());
+
+		service.createRiskSnapshotOnBuyFill(order, trade, NOW);
+
+		ArgumentCaptor<PracticeRiskSnapshot> snapshotCaptor = ArgumentCaptor.forClass(PracticeRiskSnapshot.class);
+		verify(practiceRiskSnapshotRepository).save(snapshotCaptor.capture());
+		PracticeRiskSnapshot snapshot = snapshotCaptor.getValue();
+		assertThat(snapshot.getEntrySequence()).isEqualTo(1);
+		assertThat(snapshot.getExitPreset()).isEqualTo(ExitPreset.DEFAULT);
+		assertThat(snapshot.getEntryPrice()).isEqualByComparingTo("100000.00000000");
+		assertThat(snapshot.getStopLossPrice()).isEqualByComparingTo("97000.00000000");
+		assertThat(snapshot.getTakeProfitPrice()).isEqualByComparingTo("105000.00000000");
+		verifyNoInteractions(exitPlanCreationService);
+	}
+
+	// 대조군 — 3단계 대본 실행에서는 예약이 그대로 생긴다. 이게 없으면 예약을 통째로 없앤 구현도 초록이다.
+	@Test
+	void createRiskSnapshotOnBuyFillStillCreatesTheExitPlanForTheStoryScript() {
+		Instrument instrument = tutorialInstrument();
+		PracticeAttempt attempt = scriptAttempt(instrument, TutorialScenarioScriptId.CRYPTO_STORY_V1);
+		Order order = attributedBuyOrder(instrument);
+		Trade trade = buyTrade(order, instrument, new BigDecimal("10180.00000000"));
+		when(practiceAttemptRepository.findByIdForUpdate(ATTEMPT_ID)).thenReturn(Optional.of(attempt));
+		when(practiceRiskSnapshotRepository.countByAttemptIdAndRunNumber(ATTEMPT_ID, 1L)).thenReturn(0L);
+		when(tradeService.netFilledQuantity(ATTEMPT_ID, 1L)).thenReturn(trade.getQuantity());
+		when(holdingService.findHoldingId(USER_ID, Market.CRYPTO, INSTRUMENT_ID)).thenReturn(Optional.of(77L));
+		when(holdingService.findHoldingForOwner(USER_ID, 77L)).thenReturn(Optional.of(mock(Holding.class)));
+		when(canonicalPriceService.canonicalPrice(attempt, NOW)).thenReturn(new BigDecimal("10180.00000000"));
+
+		service.createRiskSnapshotOnBuyFill(order, trade, NOW);
+
+		verify(practiceRiskSnapshotRepository).save(org.mockito.ArgumentMatchers.any());
+		verify(exitPlanCreationService).create(org.mockito.ArgumentMatchers.any());
+	}
+
+	// 대본 식별자가 null인 실행(생성기 버전 1)도 예전대로 예약이 생긴다 — 위 두 테스트가 각각 고정한다.
+	private static PracticeAttempt scriptAttempt(Instrument instrument, TutorialScenarioScriptId scriptId) {
+		PracticeAttempt attempt = PracticeAttempt.create(USER_ID, Market.CRYPTO, NOW.minusHours(1));
+		ReflectionTestUtils.setField(attempt, "id", ATTEMPT_ID);
+		attempt.selectInstrument(instrument, NOW.minusMinutes(10), NOW.toLocalDate(), 123L, (short)2, scriptId,
+			NOW.minusMinutes(10));
+		return attempt;
 	}
 
 	private static PracticeAttempt inProgressAttempt(Instrument instrument) {
