@@ -66,7 +66,9 @@
 
 ### 마이그레이션
 
-`V53__create_stock_daily_candles.sql` — **작성 직전에 `git ls-tree origin/dev src/main/resources/db/migration/`로 번호 선점을 다시 확인한다.** 병렬 브랜치가 V53을 먼저 쓰면 번호 역전으로 배포가 막힌다(ADR-0004, 예외 처리는 ADR-0027).
+`V54__create_stock_daily_candles.sql` — **작성 직전에 `git ls-tree origin/dev src/main/resources/db/migration/`로 번호 선점을 다시 확인한다.** 병렬 브랜치가 V53을 먼저 쓰면 번호 역전으로 배포가 막힌다(ADR-0004, 예외 처리는 ADR-0027).
+
+**실제로 발생함(2026-08-21)**: PR #509(`049-tutorial-order-basics-script`)가 이 PR의 리뷰가 끝난 뒤 `dev`에 먼저 머지되면서 같은 V53을 `V53__add_scenario_script_id_to_practice_attempts.sql`로 선점했다. 파일명이 달라 git 병합 충돌은 나지 않았지만 Flyway는 버전 번호로 마이그레이션을 식별하므로 그대로 두면 기동 시 "V53 중복" 오류가 난다. 이 PR(나중에 생성된 쪽)을 `origin/dev` 머지 후 V54로 옮기고 아래 참조를 전부 갱신했다(ADR-0004 "충돌을 발견하면 나중에 생성된 폴더를 다음 빈 번호로 옮긴다" 규칙 그대로).
 
 ## Decision Gate 해소 — 실제 KIS API 호출로 확인한 사실 (2026-08-20)
 
