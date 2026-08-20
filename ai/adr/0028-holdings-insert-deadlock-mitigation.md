@@ -48,6 +48,26 @@ REPEATABLE READ의 스냅숏 격리가 아니라 명시적 비관적 락(`SELECT
 적용해도 위험이 없고, 매수·매도로 트랜잭션 경계를 분리하는 편이 오히려 더 큰 변경이라 그렇게 하지
 않는다.
 
+**정정(PR #514 리뷰 차단사항, 이 ADR의 최초 구현이 놓쳤던 경로).** `LimitOrderFillService`의 세 메서드에
+`isolation = READ_COMMITTED`를 선언해도, 이미 열려 있는 트랜잭션에 합류(`Propagation.REQUIRED`)할 때는
+Spring이 그 선언을 조용히 무시한다(`AbstractPlatformTransactionManager.validateExistingTransaction`
+기본값이 `false`라 트랜잭션 속성 충돌을 검증하지 않는다). 튜토리얼(코인 모의투자) 지정가 체결이
+정확히 이 경로다 — `PracticeOrderSettlementService.settleOnTick`/`settleCurrentRun`이 이미 열린
+트랜잭션 안에서 `fillIfPending`을 호출하므로, 격리수준은 실제로 그 트랜잭션을 여는 지점에 명시해야
+적용된다. 추적한 결과 진짜 트랜잭션 시작점은 둘이다.
+
+- `PracticePriceTickService.advanceTick` — `PracticeTickFillListener.onTickAdvanced`(트랜잭션 없는
+  일반 `@EventListener`)가 이 트랜잭션 안에서 동기 호출되므로, `advanceTick` 자신이 진짜 시작점이다.
+- `PracticeAttemptChartService.tick` — 컨트롤러(`PracticeAttemptChartController`, 트랜잭션 없음)가
+  직접 호출한다. `PracticeScenarioProgressService.advance`는 이 트랜잭션에 합류할 뿐이라(자신의
+  `@Transactional`은 항상 no-op) 별도로 손대지 않았다.
+
+두 메서드에 `isolation = READ_COMMITTED`를 추가해 닫았다. 다만 이 방식의 구조적 한계는 남는다 — **앞으로
+`fillIfPending`을 또 다른(격리수준 미지정) 트랜잭션 안에서 호출하는 코드가 추가되면 컴파일러·테스트
+없이 조용히 같은 구멍이 다시 생긴다.** 이걸 근본적으로 막으려면 대안 (a)(holdings INSERT를 원자적 upsert
+SQL로 바꿔 어느 트랜잭션에서 호출돼도 안전하게 만드는 것)가 필요하지만, 지금은 발견된 구멍을 닫는 데
+집중하고 이 한계를 알려진 채무로 남긴다(§후속).
+
 ### 2. 재시도 — 시장가 매수 경로에만 1회 추가
 
 **후보**: (a) 재시도를 추가하지 않고 격리수준 조정만으로 끝낸다, (b) 데드락이 발생하는 모든 경로(시장가·
@@ -116,3 +136,10 @@ REPEATABLE READ의 스냅숏 격리가 아니라 명시적 비관적 락(`SELECT
 - 이슈 #501(지정가 체결 청크 내 벌크 락 최적화)처럼 이 경로의 락 자체를 줄이거나 없애는 변경을 검토할
   때는, 지금 계좌 락이 이 데드락을 부수적으로 막아주는 효과가 있었다는 점(`docs/loadtest/holdings-
   insert-deadlock-result.md` "해석" 참고)을 함께 고려해야 한다.
+- **(PR #514 리뷰로 발견) `fillIfPending`을 이미 열린 트랜잭션 안에서 호출하는 새 호출부가 추가될 때마다
+  같은 방식으로 재검토가 필요하다.** `LimitOrderFillAccountLockContentionIntegrationTest.
+  innerReadCommittedDeclarationIsIgnoredWhenJoiningAnAlreadyOpenDefaultIsolationTransaction`이 이
+  Spring 전파 규칙 자체(외부 트랜잭션이 격리수준을 결정하고, 안쪽 선언은 무시된다)를 결정론적으로
+  고정해뒀지만, 이건 "이 규칙이 여전히 유효하다"만 검증할 뿐 "새 호출부가 이 규칙을 어겼는지"는 잡아주지
+  않는다 — 이 한계가 실제로 반복되면(호출부가 새로 생길 때마다 놓치는 사고가 재발하면) 대안 (a) upsert
+  전환으로 근본적으로 없애는 것을 재검토한다.
