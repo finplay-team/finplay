@@ -6,7 +6,7 @@ FinPlay 백엔드 API 서버. Spring Boot 4.1 / Java 17 / Gradle(`build.gradle`,
 ## 시작과 문서 라우팅
 
 - 작업 전 `git status --short --branch`로 브랜치와 기존 변경을 확인한다.
-- `ai/context-router.md`에서 작업 유형에 해당하는 문서만 읽는다. `docs/` 전체 순회는 금지한다.
+- `ai/context-router.md`에서 작업 유형에 해당하는 문서만 읽는다. `docs/`·`ai/` 전체 순회는 금지한다.
 - 기능 요청에 spec이 없으면 구현하지 말고 spec 작성부터 제안한다.
 - 구현 시작 전 `ai/agent-mistakes.md`를 읽고, 재현·확인된 하네스/빌드 실수는 같은 파일에 기록한다.
 - 기존 ADR과 충돌하는 구현은 중단하고 새 ADR 초안을 제안한다. 기존 ADR은 수정하지 않는다.

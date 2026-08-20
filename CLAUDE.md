@@ -15,7 +15,7 @@ FinPlay 백엔드 API 서버. Spring Boot 4.1 / Java 17 / Gradle (`build.gradle`
 
 ## AI가 반드시 지켜야 하는 규칙
 
-1. **코드 작성 전 `ai/context-router.md`에서 해당 작업 유형의 문서만 읽는다.** docs/ 전체 순회 금지. spec이 없는 기능 요청을 받으면 spec부터 작성 제안한다.
+1. **코드 작성 전 `ai/context-router.md`에서 해당 작업 유형의 문서만 읽는다.** docs/·ai/ 전체 순회 금지. spec이 없는 기능 요청을 받으면 spec부터 작성 제안한다.
 2. **ADR 위반 금지.** 기존 ADR과 어긋나는 구현이 필요하면 구현하지 말고 새 ADR 초안을 제안한다. ADR은 수정하지 않고 새 번호로 대체(superseded)한다.
 3. **테스트 전략 준수.** `ai/adr/0003-testing-strategy.md` 기준. 서비스 로직은 단위 테스트, Repository 쿼리는 `@DataJpaTest`, API 계약은 `@WebMvcTest`, 핵심 시나리오는 Testcontainers 통합 테스트. mock만으로 검증을 끝내지 않는다.
 4. **완료 선언 전 `./gradlew build` 실행.** 실패하면 고치고 재실행한다.
@@ -53,16 +53,20 @@ FinPlay 백엔드 API 서버. Spring Boot 4.1 / Java 17 / Gradle (`build.gradle`
 
 ## 문서 지도
 
+`docs/`는 사람이 열어볼 제품 문서, `ai/`는 AI 개발 워크플로 산출물이다. `docs/prd.md`(사람용)와 `ai/prd.md`(AI용)는 이름은 같지만 다른 문서다 — spec 근거·구현 현황 갱신(규칙 10)은 항상 `ai/prd.md`를 본다.
+
 | 문서 | 용도 |
 |---|---|
 | `ai/context-router.md` | 작업 유형별 읽을 문서 지정 (여기부터 시작) |
-| `ai/prd.md` | 제품 요구사항 정본 — 1차 MVP + 2차 MVP(1차 고도화) (모든 spec의 상위 문서). §3 "구현 현황"이 무엇이 실제로 동작하는지의 정본 |
+| `docs/prd.md` | 사람용 제품 요구사항 문서 |
+| `ai/prd.md` | AI용 요구사항 정본 — 요구사항 ID·수용 기준·차수·§3 "구현 현황" (모든 spec의 상위 문서, 규칙 10 갱신 대상) |
 | `ai/agent-mistakes.md` | 재현·확인된 AI 실수 로그 |
 | `ai/adr/` | 아키텍처 결정 기록 (왜) |
 | `ai/specs/` | 기능 명세 spec → plan → tasks (무엇을) |
 | `docs/conventions/code.md` | 코드 컨벤션 + 리뷰 체크 질문 |
 | `docs/conventions/git.md` | 브랜치 네이밍·커밋 메시지·PR 제목·PR 본문 템플릿·머지 조건 |
 | `docs/conventions/team.md` | 이슈→브랜치→PR 흐름, 이슈 분할 기준, 리뷰 지적 처리 |
-| `ai/api-routes.md` | API 엔드포인트 지도 (controller와 항상 동기화) |
+| `ai/api-routes.md` | API 엔드포인트 지도 (controller와 항상 동기화, AI 라우팅용) |
 | `docs/api/` | 도메인별 요청·응답·오류 계약 (블랙박스 QA 근거) |
+| `docs/erd.md` | JPA 엔티티·DB 테이블 구조 지도 |
 | `context-notes.md` | 세션 간 인수인계용 결정 기록 |
