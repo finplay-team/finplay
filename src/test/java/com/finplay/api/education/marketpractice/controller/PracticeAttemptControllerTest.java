@@ -16,6 +16,7 @@ import com.finplay.api.common.ErrorCode;
 import com.finplay.api.education.marketpractice.domain.ExitPreset;
 import com.finplay.api.education.marketpractice.dto.response.ExitPresetResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeAttemptResponse;
+import com.finplay.api.education.marketpractice.service.PracticeAttemptEntryService;
 import com.finplay.api.education.marketpractice.service.PracticeAttemptService;
 import com.finplay.api.market.domain.Market;
 import java.time.LocalDate;
@@ -43,6 +44,10 @@ class PracticeAttemptControllerTest {
 	@MockitoBean
 	private PracticeAttemptService practiceAttemptService;
 
+	// 진입만 재시도 경계(PracticeAttemptEntryService)를 거친다 (이슈 #491).
+	@MockitoBean
+	private PracticeAttemptEntryService practiceAttemptEntryService;
+
 	@MockitoBean
 	private JwtTokenProvider jwtTokenProvider;
 
@@ -52,7 +57,7 @@ class PracticeAttemptControllerTest {
 			.andExpect(status().isUnauthorized())
 			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"));
 
-		verifyNoInteractions(practiceAttemptService);
+		verifyNoInteractions(practiceAttemptEntryService);
 	}
 
 	@Test
@@ -62,7 +67,7 @@ class PracticeAttemptControllerTest {
 			11L, "STOCK", 1L, "ACTIVE", "SELECTING_INSTRUMENT", null, null, null, null, null,
 			10_000_000L, 10_000_000L, 0L,
 			"BALANCED", false, ExitPresetResponse.all());
-		when(practiceAttemptService.ensureAttempt(USER_ID, Market.STOCK)).thenReturn(response);
+		when(practiceAttemptEntryService.ensureAttempt(USER_ID, Market.STOCK)).thenReturn(response);
 
 		mockMvc.perform(put("/api/education/practice/attempts/STOCK")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN))
@@ -76,7 +81,7 @@ class PracticeAttemptControllerTest {
 			.andExpect(jsonPath("$.tutorialAvailableCash").value(10_000_000))
 			.andExpect(jsonPath("$.tutorialRealizedPnl").value(0));
 
-		verify(practiceAttemptService).ensureAttempt(USER_ID, Market.STOCK);
+		verify(practiceAttemptEntryService).ensureAttempt(USER_ID, Market.STOCK);
 	}
 
 	@Test
@@ -88,7 +93,7 @@ class PracticeAttemptControllerTest {
 			.andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
 
-		verifyNoInteractions(practiceAttemptService);
+		verifyNoInteractions(practiceAttemptEntryService);
 	}
 
 	@Test

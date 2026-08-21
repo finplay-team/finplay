@@ -5,6 +5,7 @@ import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.education.marketpractice.dto.request.PracticeAttemptExitPresetUpdateRequest;
 import com.finplay.api.education.marketpractice.dto.request.PracticeAttemptInstrumentUpdateRequest;
 import com.finplay.api.education.marketpractice.dto.response.PracticeAttemptResponse;
+import com.finplay.api.education.marketpractice.service.PracticeAttemptEntryService;
 import com.finplay.api.education.marketpractice.service.PracticeAttemptService;
 import com.finplay.api.market.domain.Market;
 import jakarta.validation.Valid;
@@ -23,6 +24,8 @@ import org.springframework.web.bind.annotation.RestController;
 public class PracticeAttemptController {
 
 	private final PracticeAttemptService practiceAttemptService;
+	// 진입만 재시도 경계를 한 겹 거친다 (이슈 #491) — 나머지 두 경로는 사용자가 다시 누를 수 있다.
+	private final PracticeAttemptEntryService practiceAttemptEntryService;
 
 	@PutMapping("/{market}")
 	public ResponseEntity<PracticeAttemptResponse> ensureAttempt(
@@ -30,7 +33,7 @@ public class PracticeAttemptController {
 		AuthenticatedUser principal,
 		@PathVariable
 		Market market) {
-		return ResponseEntity.ok(practiceAttemptService.ensureAttempt(principal.userId(), market));
+		return ResponseEntity.ok(practiceAttemptEntryService.ensureAttempt(principal.userId(), market));
 	}
 
 	// PUT인 이유는 자연 멱등이기 때문이다 — 같은 값을 몇 번 보내도 결과가 같고 체결 전이면 몇 번이든 바꿀
