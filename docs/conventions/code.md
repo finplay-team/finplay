@@ -34,6 +34,7 @@ com.finplay.api
 - 상수: 매직 넘버·문자열·기간은 `private static final` 필드로 빼고 UPPER_SNAKE_CASE로 짓는다.
 - boolean 변수·필드는 `is~`/`has~` (`isDeleted`, `hasStock`), 시간 필드는 `LocalDateTime` + `xxxAt` (`createdAt`, `filledAt`).
 - wildcard import(`import foo.*`)를 쓰지 않는다.
+- import 순서는 static import 블록(최상단, 별도 그룹) → 나머지는 출처 구분 없는 단일 알파벳 그룹이다. `spotlessApply`(`build.gradle`의 `importOrder()`)가 강제하며 어기면 `spotlessCheck`가 빌드를 막는다 (이슈 #525).
 
 ## DTO 규칙
 
@@ -146,7 +147,7 @@ com.finplay.api
 ## 기타
 
 - 새 소스 파일 첫 줄에 한국어 한 줄 주석으로 역할 명시.
-- 포맷은 Spotless가 **NAVER 자바 스타일**(`config/naver-eclipse-formatter.xml`)로 강제한다 (2026-07-23 팀 노션 확정, palantir에서 교체). 커밋 전 `./gradlew spotlessApply`. IDE에 [NAVER IntelliJ formatter](https://naver.github.io/hackday-conventions-java/)를 설정하면 저장 시점부터 일치한다.
+- 포맷은 Spotless가 **NAVER 자바 스타일**(`config/naver-eclipse-formatter.xml`)로 강제한다 (2026-07-23 팀 노션 확정, palantir에서 교체). 커밋 전 `./gradlew spotlessApply`. IDE에 [NAVER IntelliJ formatter](https://naver.github.io/hackday-conventions-java/)를 설정하면 저장 시점부터 일치한다. **IntelliJ의 `Editor > Code Style > Java > Imports` 레이아웃도 그룹 사이 빈 줄 없는 단일 그룹으로 맞춘다** — 기본 레이아웃(그룹 사이 빈 줄)로 저장·Optimize Imports를 쓰면 매번 `spotlessApply`와 어긋난다 (이슈 #525).
 - 정적 분석은 `./gradlew build`가 강제한다 — SpotBugs(버그 패턴) + JaCoCo 라인 커버리지 40% 게이트(경량 시작값, 지표 보고 상향). 오탐 제외는 `config/spotbugs/exclude.xml`에 재현 확인된 것만 추가.
 
 ## 시크릿
