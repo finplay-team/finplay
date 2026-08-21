@@ -273,8 +273,14 @@ public class StockReplayService {
 		LocalDate sourceTradingDateMinusOne = sourceTradingDate.minusDays(1);
 		LocalDate pastEnd = rangeEnd.isBefore(sourceTradingDateMinusOne) ? rangeEnd : sourceTradingDateMinusOne;
 		if (!rangeStart.isAfter(pastEnd)) {
-			LocalDate narrowedRangeStart = narrowRangeStart(instrumentId, interval, rangeStart, pastEnd);
-			minuteCandles.addAll(pastCandlesPreferringArchive(instrumentId, narrowedRangeStart, pastEnd));
+			// 아카이브는 narrowRangeStart의 narrowing 계산과 pastCandlesPreferringArchive의 병합 둘 다에 필요하지만,
+			// 왕복을 줄이려고 원본 rangeStart~pastEnd 구간을 한 번만 조회해 재사용한다(PR #515 리뷰 권장 — narrowing이
+			// rangeStart를 좁히기만 하므로 이미 가져온 이 결과가 narrowedRangeStart 이후 구간을 항상 포함한다).
+			List<StockDailyCandle> archiveRows = stockDailyCandleRepository
+				.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAsc(instrumentId, rangeStart, pastEnd);
+			LocalDate narrowedRangeStart = narrowRangeStart(instrumentId, interval, rangeStart, pastEnd, archiveRows);
+			minuteCandles.addAll(
+				pastCandlesPreferringArchive(instrumentId, narrowedRangeStart, pastEnd, archiveRows));
 		}
 
 		boolean sourceTradingDateInRange = !rangeStart.isAfter(sourceTradingDate)
@@ -313,13 +319,17 @@ public class StockReplayService {
 	// 같은 거래일을 두 소스가 동시에 채우지 않는다 — 한 거래일은 항상 하나의 소스에서만 나온다(이슈 #506 결정 2,
 	// "경계에서 봉 하나가 두 번 나오거나 값이 튀지 않아야 한다"). 아카이브가 있으면 아카이브가 이긴다 — 정규장
 	// 분봉만 합산하는 1분봉 집계와 달리 실제 KIS 확정 종가(수정주가)라 장기적으로 이쪽을 정본으로 삼는다.
-	private List<StockCandleDto> pastCandlesPreferringArchive(Long instrumentId, LocalDate rangeStart,
-		LocalDate rangeEnd) {
-		List<StockDailyCandle> archiveRows = stockDailyCandleRepository
-			.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAsc(instrumentId, rangeStart, rangeEnd);
+	// archiveRowsInWiderRange는 호출부가 이미 조회해 둔 [원본 rangeStart, rangeEnd] 결과다 — narrowedRangeStart는
+	// 원본 rangeStart보다 같거나 늦으므로(narrowRangeStart는 좁히기만 한다) 이 목록이 [narrowedRangeStart, rangeEnd]도
+	// 항상 포함한다. 그래서 여기서 다시 쿼리하지 않고 날짜만 걸러 쓴다(PR #515 리뷰 권장 — 아카이브 이중 조회 제거).
+	private List<StockCandleDto> pastCandlesPreferringArchive(
+		Long instrumentId, LocalDate rangeStart, LocalDate rangeEnd, List<StockDailyCandle> archiveRowsInWiderRange) {
 		Set<LocalDate> archiveDates = new HashSet<>();
 		List<StockCandleDto> merged = new ArrayList<>();
-		for (StockDailyCandle archiveCandle : archiveRows) {
+		for (StockDailyCandle archiveCandle : archiveRowsInWiderRange) {
+			if (archiveCandle.getTradingDate().isBefore(rangeStart)) {
+				continue;
+			}
 			archiveDates.add(archiveCandle.getTradingDate());
 			merged.add(toArchiveDto(archiveCandle));
 		}
@@ -435,21 +445,17 @@ public class StockReplayService {
 	//
 	// 이슈 #506·MKT-011 반영: 1분봉만 보고 좁히면 아카이브에만 있는(1분봉 보관 기간 밖의) 과거 거래일이 narrowedFloor
 	// 밑으로 잘려 나가 조회 자체에서 빠진다 — pastCandlesPreferringArchive가 그 구간을 채울 기회조차 갖지 못한다.
-	// 그래서 narrowedFloor 계산에 두 소스의 거래일을 합쳐서 쓴다(아카이브는 거래일당 1행이라 391행짜리 1분봉과
-	// 달리 이 조회 자체가 이미 가볍다 — 최근 3년 전량을 가져와도 최대 수백 행).
+	// 그래서 narrowedFloor 계산에 두 소스의 거래일을 합쳐서 쓴다. 아카이브는 호출부가 이미 조회해 둔 결과를 그대로
+	// 받는다(PR #515 리뷰 권장 — 이중 조회 제거, archiveRows는 [rangeStart, queryEnd] 전체를 커버한다).
 	private LocalDate narrowRangeStart(
-		Long instrumentId, CandleInterval interval, LocalDate rangeStart, LocalDate queryEnd) {
+		Long instrumentId, CandleInterval interval, LocalDate rangeStart, LocalDate queryEnd,
+		List<StockDailyCandle> archiveRows) {
 		int fetchLimit = MAX_AGGREGATED_CANDLES * maxTradingDaysPerBucket(interval);
 		List<LocalDate> minuteTradingDates = stockCandleRepository
 			.findDistinctTradingDateByInstrumentIdAndTradingDateBetweenOrderByTradingDateDesc(
 				instrumentId, rangeStart, queryEnd, PageRequest.of(0, fetchLimit));
-		List<LocalDate> archiveTradingDates = stockDailyCandleRepository
-			.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAsc(instrumentId, rangeStart, queryEnd)
-			.stream()
-			.map(StockDailyCandle::getTradingDate)
-			.toList();
 		Set<LocalDate> combinedDates = new HashSet<>(minuteTradingDates);
-		combinedDates.addAll(archiveTradingDates);
+		archiveRows.forEach(candle -> combinedDates.add(candle.getTradingDate()));
 		List<LocalDate> recentTradingDates = combinedDates.stream()
 			.sorted(Comparator.reverseOrder())
 			.limit(fetchLimit)

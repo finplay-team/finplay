@@ -439,6 +439,58 @@ class CandleQueryServiceIntegrationTest {
 		assertThat(daily.get(199).close()).isEqualByComparingTo(String.valueOf(1000 + totalTradingDays - 1));
 	}
 
+	// PR #515 리뷰 권장 — 위 테스트는 210일 전부 1분봉이라 narrowRangeStart의 "두 소스 합산" 경로 자체가 검증되지
+	// 않는다(아카이브가 비어 있으면 합집합이 그냥 1분봉 목록과 같다). 여기서는 오래된 110일을 아카이브 전용,
+	// 최근 100일을 1분봉 전용으로 나눠 실제로 두 소스를 합쳐야만 210일(>200) 스캔이 성립하는 상황을 만든다.
+	// 200개 캡에 걸려 살아남는 경계(아카이브 인덱스 10~109, 1분봉 인덱스 110~209)가 소스 전환 지점에서도 끊기거나
+	// 겹치지 않는지가 이 테스트의 핵심이다.
+	@Test
+	@Transactional
+	void aggregatedDailyIntervalNarrowingCombinesArchiveAndOneMinuteWhenCombinedTotalExceedsTwoHundred() {
+		Instrument instrument = saveInstrument("CDL0515N");
+		LocalDate firstTradingDate = LocalDate.of(2018, 1, 2);
+		int archiveDays = 110;
+		int oneMinuteDays = 100;
+		int totalTradingDays = archiveDays + oneMinuteDays;
+		List<LocalDate> tradingDates = new ArrayList<>();
+		for (int i = 0; i < totalTradingDays; i++) {
+			LocalDate tradingDate = firstTradingDate.plusDays(i);
+			tradingDates.add(tradingDate);
+			if (i < archiveDays) {
+				saveDailyArchiveCandle(
+					instrument, tradingDate, "1000", "1010", "990", String.valueOf(1000 + i), 10L);
+			} else {
+				saveAggCandle(
+					instrument, tradingDate, LocalTime.of(9, 0), "1000", "1010", "990", String.valueOf(1000 + i), 10);
+			}
+		}
+		LocalDate sourceTradingDate = tradingDates.get(totalTradingDays - 1);
+		LocalDate aggServiceDate = sourceTradingDate.plusDays(30);
+		stockReplaySessionRepository.save(
+			StockReplaySession.ready(aggServiceDate, sourceTradingDate, LocalDateTime.now(), LocalDateTime.now()));
+
+		CandleQueryService service = candleQueryServiceAt(clockAt(aggServiceDate, LocalTime.of(15, 30)));
+		List<CandleResponse> daily = service.getCandles(instrument.getId(), "1d", null, null, null).content();
+
+		assertThat(daily).hasSize(200);
+		// 가장 오래된 10일(인덱스 0~9, 전부 아카이브)이 캡에 밀려 빠진다.
+		assertThat(daily).extracting(CandleResponse::sourceTime)
+			.doesNotContain(LocalDateTime.of(tradingDates.get(9), LocalTime.MIDNIGHT));
+		// 살아남은 첫 봉(인덱스 10)은 아카이브 소스 값이다.
+		assertThat(daily.get(0).sourceTime()).isEqualTo(LocalDateTime.of(tradingDates.get(10), LocalTime.MIDNIGHT));
+		assertThat(daily.get(0).close()).isEqualByComparingTo(String.valueOf(1000 + 10));
+		// 소스 전환 경계 — 인덱스 109(아카이브 마지막)와 110(1분봉 첫날)이 응답에서 나란히 이어지고 값도 정확해야
+		// 한다. 아카이브는 인덱스 10부터 살아남으므로 응답에서의 위치는 (109-10)=99, (110-10)=100.
+		assertThat(daily.get(99).sourceTime()).isEqualTo(LocalDateTime.of(tradingDates.get(109), LocalTime.MIDNIGHT));
+		assertThat(daily.get(99).close()).isEqualByComparingTo(String.valueOf(1000 + 109));
+		assertThat(daily.get(100).sourceTime())
+			.isEqualTo(LocalDateTime.of(tradingDates.get(110), LocalTime.MIDNIGHT));
+		assertThat(daily.get(100).close()).isEqualByComparingTo(String.valueOf(1000 + 110));
+		// 마지막 봉(재생거래일, 1분봉 소스)까지 끊김 없이 이어진다.
+		assertThat(daily.get(199).sourceTime()).isEqualTo(LocalDateTime.of(sourceTradingDate, LocalTime.MIDNIGHT));
+		assertThat(daily.get(199).close()).isEqualByComparingTo(String.valueOf(1000 + totalTradingDays - 1));
+	}
+
 	// PR #162 리뷰 차단 1(실제 재현·확정) 회귀 — narrowRangeStart가 200번째(가장 오래 살아남는) 버킷의 시작일이
 	// 아니라 그 버킷을 최신순 순회 중 "처음 마주친" 거래일(주봉이면 그 주 금요일)을 조회 하한으로 쓰면, 그 버킷의
 	// 앞쪽 거래일(월요일)이 뒤이은 1분봉 쿼리에서 빠져 open이 조용히 틀린다. 실제로 좁히기가 트리거되도록(200개
