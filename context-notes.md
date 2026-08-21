@@ -1228,3 +1228,30 @@ ADR-0021을 읽지 않는다(`ai/context-router.md`의 "엔티티/스키마 변�
   순보유수량만 보고, 재시작·매도 접수의 예약 취소는 빈 목록 순회라 no-op이며, `PracticeSellCause.from`
   은 예약 없는 매도를 이미 `MANUAL`로 다룬다(STOCK 튜토리얼이 그 선례다). 전수 확인 표는 spec 049
   §비즈니스 규칙에 남겼다 — 다음 사람이 같은 조사를 반복하지 않도록.
+
+## 2026-08-21 — 튜토리얼 진입 교착의 원인을 확정하고 INSERT 구문으로 고쳤다 (이슈 #491)
+
+- **원인은 추정이 아니라 확인됐다.** 이슈는 "INSERT IGNORE 뒤 같은 키를 FOR UPDATE로 재잠그는 패턴"을
+  추정으로 적어 두었고 `SHOW ENGINE INNODB STATUS`를 못 봤다고 남겼다. `PracticeAttemptEntryConcurrency
+  IntegrationTest`(기존 행 + 동시 2건, 10라운드)로 결정적으로 재현한 뒤 root 커넥션으로 교착 리포트를
+  떴다 — **두 트랜잭션이 `uk_practice_attempts_user_market`의 같은 레코드에 `lock mode S`를 HOLD한 채
+  서로 `lock_mode X locks rec but not gap`을 WAIT**했다. 추정이 정확히 맞았다.
+- **격리수준을 낮추는 방식(ADR-0028)으로는 안 고쳐진다.** 리포트의 `locks rec but not gap`이 근거다 —
+  갭 락이 아니라 레코드 락이라 READ COMMITTED로 내려도 그대로 남는다. ADR-0028을 이 이슈에 그대로
+  복사하지 않은 이유가 이것이다.
+- **핵심은 "S는 공유라 둘이 동시에 쥘 수 있다"는 것이다.** `ON DUPLICATE KEY UPDATE`는 같은 자리에서
+  배타 잠금(X)을 잡아 두 트랜잭션이 그 구문에서 직렬화되므로 승격할 S가 애초에 없다. 어느 인덱스
+  레코드에 잠금이 놓이는지와 무관하게 성립한다.
+- **새 패턴이 아니다.** `PracticeProgressRepository.insertIfAbsent`가 같은 insert→FOR UPDATE 패턴에
+  이미 `ON DUPLICATE KEY UPDATE id = id`를 쓰고 있었다. `practice_attempts`만 `INSERT IGNORE`로 남아
+  있던 예외였고, 이 커밋으로 저장소에서 `INSERT IGNORE`는 사라졌다.
+- **tick ↔ 체결 정산 잠금 순서는 뒤집히지 않는다(확인함).** 이슈가 함께 지목한 우려인데, `practice_
+  attempts`를 잠그는 트랜잭션을 전수로 보면 **전부 attempt를 order·account·tutorial account보다 먼저
+  잠근다.** 보조 인덱스로 잠그는 경로(tick·진입·종목선택·재시작·대본전환·복기·`lockForOrder`)는 모두
+  그것이 그 트랜잭션의 **첫** attempt 잠금이고, PK로 잠그는 경로(`lockForFill`·`createRiskSnapshotOn
+  BuyFill`)는 체결 트랜잭션의 첫 잠금이거나 이미 보조 인덱스로 같은 행을 잠근 뒤다. 즉 "clustered를
+  쥔 채 secondary를 기다리는" 트랜잭션이 없어 순환이 만들어지지 않는다. 보조 인덱스 레코드를 쥔 채
+  같은 레코드를 기다리던 유일한 코드가 바로 이 이슈의 `ensureAttempt`였다.
+- **재시도는 원인 수정이 아니라 그물이다.** 이슈 완료조건 2를 위해 `PracticeAttemptEntryService`에
+  1회 재시도를 뒀다. 트랜잭션 밖이어야 해서(롤백된 트랜잭션 안에서 다시 부르면 rollback-only)
+  별도 빈으로 나눴고, 이는 ADR-0028이 `OrderService` → `OrderExecutionService`로 나눈 구조와 같다.
