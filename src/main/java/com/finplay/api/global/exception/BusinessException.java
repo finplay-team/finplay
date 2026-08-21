@@ -15,11 +15,6 @@ public class BusinessException extends RuntimeException {
 		this.errorCode = errorCode;
 	}
 
-	public BusinessException(ErrorCode errorCode, String message, Throwable cause) {
-		super(message, cause);
-		this.errorCode = errorCode;
-	}
-
 	// 클라이언트 응답 메시지는 ErrorCode 기본 메시지로 고정하고, 상세 원인은 cause로만 남긴다 — 캐치를 빠뜨린
 	// 호출자가 생겨도 GlobalExceptionHandler가 내부 진단 문자열을 그대로 응답에 실어 보내지 않게 하기 위해서다
 	// (PR #523 리뷰 [권장 5]).
