@@ -9,11 +9,13 @@ import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.domain.PreparationStatus;
 import com.finplay.api.market.domain.StockCandle;
+import com.finplay.api.market.domain.StockDailyCandle;
 import com.finplay.api.market.domain.StockReplaySession;
 import com.finplay.api.market.dto.response.CandleListResponse;
 import com.finplay.api.market.dto.response.CandleResponse;
 import com.finplay.api.market.repository.InstrumentRepository;
 import com.finplay.api.market.repository.StockCandleRepository;
+import com.finplay.api.market.repository.StockDailyCandleRepository;
 import com.finplay.api.market.repository.StockReplaySessionRepository;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -53,6 +55,9 @@ class CandleQueryServiceIntegrationTest {
 	private StockReplaySessionRepository stockReplaySessionRepository;
 
 	@Autowired
+	private StockDailyCandleRepository stockDailyCandleRepository;
+
+	@Autowired
 	private BusinessDayCalendar businessDayCalendar;
 
 	private Clock clockAt(LocalDate date, LocalTime time) {
@@ -68,7 +73,8 @@ class CandleQueryServiceIntegrationTest {
 	// 별도 오버로드를 둔다.
 	private CandleQueryService candleQueryServiceAt(Clock clock, FakeCryptoCandleProvider cryptoCandleProvider) {
 		StockReplayService stockReplayService = new StockReplayService(
-			stockReplaySessionRepository, stockCandleRepository, clock, businessDayCalendar);
+			stockReplaySessionRepository, stockCandleRepository, stockDailyCandleRepository, clock,
+			businessDayCalendar);
 		KisHistoricalReplayPriceProvider provider = new KisHistoricalReplayPriceProvider(stockReplayService);
 		return new CandleQueryService(instrumentRepository, provider, cryptoCandleProvider);
 	}
@@ -329,6 +335,72 @@ class CandleQueryServiceIntegrationTest {
 		assertThat(minute.get(1).close()).isEqualByComparingTo("40300");
 	}
 
+	private void saveDailyArchiveCandle(
+		Instrument instrument, LocalDate tradingDate, String open, String high, String low, String close, long volume) {
+		stockDailyCandleRepository.save(StockDailyCandle.create(
+			instrument, tradingDate,
+			new BigDecimal(open), new BigDecimal(high), new BigDecimal(low), new BigDecimal(close), volume,
+			"KIS_DAILY", LocalDateTime.now()));
+	}
+
+	// 이슈 #506·spec 050(MKT-011) — 일봉 아카이브 연결. 세 거래일 중 하나만 아카이브에 있을 때 그 거래일만
+	// 아카이브 값을 쓰고(결정 2: 날짜당 소스 하나), 나머지는 1분봉 집계로 채워져 봉이 하나도 빠지지 않는지 검증한다.
+	// 배포 직후처럼 아카이브가 최초 적재 전인 상황(1분봉만 있음)과 아카이브가 그 날짜를 이미 채운 상황이 섞여도
+	// 같은 daily 응답 하나에서 자연스럽게 이어진다는 것이 이 테스트의 핵심이다.
+	@Test
+	void aggregatedDailyIntervalPrefersArchiveOverOneMinuteAggregationPerTradingDate() {
+		Instrument instrument = saveInstrument("CDL0506A");
+
+		LocalDate td1 = LocalDate.of(2023, 8, 21); // 아카이브에만 있음(1분봉 보관 기간 밖의 옛 거래일이라고 가정)
+		LocalDate td2 = LocalDate.of(2026, 6, 3); // 1분봉에만 있음(아카이브 배치가 아직 못 채운 최근 거래일)
+		LocalDate td3 = LocalDate.of(2026, 7, 1); // 재생거래일(오늘) — 아카이브를 절대 쓰면 안 되는 날
+
+		// td1: 아카이브 전용. 1분봉 테이블에는 이 날짜의 행이 아예 없다 — 아카이브가 없으면 이 날짜는 통째로 빠진다.
+		saveDailyArchiveCandle(instrument, td1, "10000", "10500", "9900", "10300", 999L);
+
+		// td2: 1분봉 전용(아카이브 미도달 구간). 기존 집계 경로 그대로 검증.
+		saveAggCandle(instrument, td2, LocalTime.of(9, 0), "20000", "20200", "19900", "20100", 200L);
+
+		// td3: 재생거래일. 1분봉으로만 채워져 있고, 아카이브에도 "혹시 같은 날짜 값이 있어도" 이 날은 절대 아카이브를
+		// 쓰면 안 된다는 것까지 함께 검증하기 위해 아카이브에도 같은 날짜의(값이 다른) 행을 심어 둔다 — 만약 코드가
+		// 실수로 재생거래일까지 아카이브를 참조하면 이 값(99999)이 응답에 새어나와 테스트가 잡아낸다.
+		saveAggCandle(instrument, td3, LocalTime.of(9, 0), "40000", "40200", "39900", "40100", 400L);
+		saveDailyArchiveCandle(instrument, td3, "1", "99999", "1", "99999", 1L);
+
+		LocalDate aggServiceDate = LocalDate.of(2026, 8, 12);
+		stockReplaySessionRepository.save(
+			StockReplaySession.ready(aggServiceDate, td3, LocalDateTime.now(), LocalDateTime.now()));
+
+		CandleQueryService service = candleQueryServiceAt(clockAt(aggServiceDate, LocalTime.of(15, 30)));
+		// td1(2023-08-21)이 기본 lookbackFloor(rangeEnd-400일)보다 더 과거라 from을 명시해야 조회 범위에 들어온다 —
+		// 이 spec의 핵심은 "얼마나 과거까지 보여줄지"가 아니라 "그 구간에 아카이브·1분봉이 섞여도 날짜당 소스가
+		// 하나로 정확히 선택되는지"이므로 lookbackFloor 자체는 이 테스트의 관심사가 아니다.
+		LocalDateTime from = LocalDateTime.of(td1, LocalTime.MIDNIGHT);
+		List<CandleResponse> daily = service.getCandles(instrument.getId(), "1d", from, null, null).content();
+
+		assertThat(daily).extracting(CandleResponse::sourceTime)
+			.containsExactly(
+				LocalDateTime.of(td1, LocalTime.MIDNIGHT),
+				LocalDateTime.of(td2, LocalTime.MIDNIGHT),
+				LocalDateTime.of(td3, LocalTime.MIDNIGHT));
+
+		// td1 — 아카이브 값 그대로.
+		assertThat(daily.get(0).open()).isEqualByComparingTo("10000");
+		assertThat(daily.get(0).high()).isEqualByComparingTo("10500");
+		assertThat(daily.get(0).low()).isEqualByComparingTo("9900");
+		assertThat(daily.get(0).close()).isEqualByComparingTo("10300");
+		assertThat(daily.get(0).volume()).isEqualByComparingTo("999");
+
+		// td2 — 1분봉 집계 값 그대로(기존 회귀).
+		assertThat(daily.get(1).close()).isEqualByComparingTo("20100");
+		assertThat(daily.get(1).volume()).isEqualByComparingTo("200");
+
+		// td3 — 재생거래일은 1분봉 값이어야 한다. 아카이브의 99999가 나오면 공개 상한이 깨진 것이다.
+		assertThat(daily.get(2).high()).isEqualByComparingTo("40200");
+		assertThat(daily.get(2).close()).isEqualByComparingTo("40100");
+		assertThat(daily.get(2).volume()).isEqualByComparingTo("400");
+	}
+
 	// 이슈 #155: 응답은 200개 버킷으로 캡되지만 그걸 만들기 위해 읽는 분봉 수 자체에는 상한이 없던 버그(PR #151
 	// 리뷰에서 분리) — 실제 MySQL에 200개 버킷보다 많은 거래일(210일)을 시드해, 조회 하한을 좁히는 최적화
 	// (StockReplayService.narrowRangeStart)가 실 DB 경로에서도 여전히 정확한 "최신 200개"를 반환하는지 검증한다.
@@ -364,6 +436,58 @@ class CandleQueryServiceIntegrationTest {
 		assertThat(daily.get(0).sourceTime()).isEqualTo(LocalDateTime.of(tradingDates.get(10), LocalTime.MIDNIGHT));
 		assertThat(daily.get(199).sourceTime())
 			.isEqualTo(LocalDateTime.of(sourceTradingDate, LocalTime.MIDNIGHT));
+		assertThat(daily.get(199).close()).isEqualByComparingTo(String.valueOf(1000 + totalTradingDays - 1));
+	}
+
+	// PR #515 리뷰 권장 — 위 테스트는 210일 전부 1분봉이라 narrowRangeStart의 "두 소스 합산" 경로 자체가 검증되지
+	// 않는다(아카이브가 비어 있으면 합집합이 그냥 1분봉 목록과 같다). 여기서는 오래된 110일을 아카이브 전용,
+	// 최근 100일을 1분봉 전용으로 나눠 실제로 두 소스를 합쳐야만 210일(>200) 스캔이 성립하는 상황을 만든다.
+	// 200개 캡에 걸려 살아남는 경계(아카이브 인덱스 10~109, 1분봉 인덱스 110~209)가 소스 전환 지점에서도 끊기거나
+	// 겹치지 않는지가 이 테스트의 핵심이다.
+	@Test
+	@Transactional
+	void aggregatedDailyIntervalNarrowingCombinesArchiveAndOneMinuteWhenCombinedTotalExceedsTwoHundred() {
+		Instrument instrument = saveInstrument("CDL0515N");
+		LocalDate firstTradingDate = LocalDate.of(2018, 1, 2);
+		int archiveDays = 110;
+		int oneMinuteDays = 100;
+		int totalTradingDays = archiveDays + oneMinuteDays;
+		List<LocalDate> tradingDates = new ArrayList<>();
+		for (int i = 0; i < totalTradingDays; i++) {
+			LocalDate tradingDate = firstTradingDate.plusDays(i);
+			tradingDates.add(tradingDate);
+			if (i < archiveDays) {
+				saveDailyArchiveCandle(
+					instrument, tradingDate, "1000", "1010", "990", String.valueOf(1000 + i), 10L);
+			} else {
+				saveAggCandle(
+					instrument, tradingDate, LocalTime.of(9, 0), "1000", "1010", "990", String.valueOf(1000 + i), 10);
+			}
+		}
+		LocalDate sourceTradingDate = tradingDates.get(totalTradingDays - 1);
+		LocalDate aggServiceDate = sourceTradingDate.plusDays(30);
+		stockReplaySessionRepository.save(
+			StockReplaySession.ready(aggServiceDate, sourceTradingDate, LocalDateTime.now(), LocalDateTime.now()));
+
+		CandleQueryService service = candleQueryServiceAt(clockAt(aggServiceDate, LocalTime.of(15, 30)));
+		List<CandleResponse> daily = service.getCandles(instrument.getId(), "1d", null, null, null).content();
+
+		assertThat(daily).hasSize(200);
+		// 가장 오래된 10일(인덱스 0~9, 전부 아카이브)이 캡에 밀려 빠진다.
+		assertThat(daily).extracting(CandleResponse::sourceTime)
+			.doesNotContain(LocalDateTime.of(tradingDates.get(9), LocalTime.MIDNIGHT));
+		// 살아남은 첫 봉(인덱스 10)은 아카이브 소스 값이다.
+		assertThat(daily.get(0).sourceTime()).isEqualTo(LocalDateTime.of(tradingDates.get(10), LocalTime.MIDNIGHT));
+		assertThat(daily.get(0).close()).isEqualByComparingTo(String.valueOf(1000 + 10));
+		// 소스 전환 경계 — 인덱스 109(아카이브 마지막)와 110(1분봉 첫날)이 응답에서 나란히 이어지고 값도 정확해야
+		// 한다. 아카이브는 인덱스 10부터 살아남으므로 응답에서의 위치는 (109-10)=99, (110-10)=100.
+		assertThat(daily.get(99).sourceTime()).isEqualTo(LocalDateTime.of(tradingDates.get(109), LocalTime.MIDNIGHT));
+		assertThat(daily.get(99).close()).isEqualByComparingTo(String.valueOf(1000 + 109));
+		assertThat(daily.get(100).sourceTime())
+			.isEqualTo(LocalDateTime.of(tradingDates.get(110), LocalTime.MIDNIGHT));
+		assertThat(daily.get(100).close()).isEqualByComparingTo(String.valueOf(1000 + 110));
+		// 마지막 봉(재생거래일, 1분봉 소스)까지 끊김 없이 이어진다.
+		assertThat(daily.get(199).sourceTime()).isEqualTo(LocalDateTime.of(sourceTradingDate, LocalTime.MIDNIGHT));
 		assertThat(daily.get(199).close()).isEqualByComparingTo(String.valueOf(1000 + totalTradingDays - 1));
 	}
 

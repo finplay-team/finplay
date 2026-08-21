@@ -21,6 +21,7 @@ import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.domain.StockReplaySession;
 import com.finplay.api.market.repository.InstrumentRepository;
 import com.finplay.api.market.repository.StockCandleRepository;
+import com.finplay.api.market.repository.StockDailyCandleRepository;
 import com.finplay.api.market.repository.StockReplaySessionRepository;
 import com.finplay.api.market.service.BusinessDayCalendar;
 import com.finplay.api.market.service.StockReplayService;
@@ -99,6 +100,9 @@ class PeerStatsBatchServiceIntegrationTest {
 
 	@Autowired
 	private StockCandleRepository stockCandleRepository;
+
+	@Autowired
+	private StockDailyCandleRepository stockDailyCandleRepository;
 
 	@Autowired
 	private InstrumentRepository instrumentRepository;
@@ -320,7 +324,8 @@ class PeerStatsBatchServiceIntegrationTest {
 		Clock clockForDate = Clock.fixed(
 			LocalDateTime.of(serviceDate, LocalTime.of(15, 32)).atZone(KST).toInstant(), KST);
 		StockReplayService replayServiceForDate = new StockReplayService(
-			stockReplaySessionRepository, stockCandleRepository, clockForDate, businessDayCalendar);
+			stockReplaySessionRepository, stockCandleRepository, stockDailyCandleRepository, clockForDate,
+			businessDayCalendar);
 		PeerStatsBatchService batchForDate = new PeerStatsBatchService(
 			replayServiceForDate, priceMoveEventRepository, priceMovePeerStatRepository,
 			holderPopulationQueryService, clockForDate);

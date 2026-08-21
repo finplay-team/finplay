@@ -3,8 +3,10 @@ package com.finplay.api.market.service;
 
 import com.finplay.api.market.domain.PreparationStatus;
 import com.finplay.api.market.domain.StockCandle;
+import com.finplay.api.market.domain.StockDailyCandle;
 import com.finplay.api.market.domain.StockReplaySession;
 import com.finplay.api.market.repository.StockCandleRepository;
+import com.finplay.api.market.repository.StockDailyCandleRepository;
 import com.finplay.api.market.repository.StockReplaySessionRepository;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -13,6 +15,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
@@ -43,6 +46,7 @@ public class StockReplayService {
 
 	private final StockReplaySessionRepository stockReplaySessionRepository;
 	private final StockCandleRepository stockCandleRepository;
+	private final StockDailyCandleRepository stockDailyCandleRepository;
 	private final Clock clock;
 	private final BusinessDayCalendar businessDayCalendar;
 
@@ -269,14 +273,14 @@ public class StockReplayService {
 		LocalDate sourceTradingDateMinusOne = sourceTradingDate.minusDays(1);
 		LocalDate pastEnd = rangeEnd.isBefore(sourceTradingDateMinusOne) ? rangeEnd : sourceTradingDateMinusOne;
 		if (!rangeStart.isAfter(pastEnd)) {
-			LocalDate narrowedRangeStart = narrowRangeStart(instrumentId, interval, rangeStart, pastEnd);
+			// 아카이브는 narrowRangeStart의 narrowing 계산과 pastCandlesPreferringArchive의 병합 둘 다에 필요하지만,
+			// 왕복을 줄이려고 원본 rangeStart~pastEnd 구간을 한 번만 조회해 재사용한다(PR #515 리뷰 권장 — narrowing이
+			// rangeStart를 좁히기만 하므로 이미 가져온 이 결과가 narrowedRangeStart 이후 구간을 항상 포함한다).
+			List<StockDailyCandle> archiveRows = stockDailyCandleRepository
+				.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAsc(instrumentId, rangeStart, pastEnd);
+			LocalDate narrowedRangeStart = narrowRangeStart(instrumentId, interval, rangeStart, pastEnd, archiveRows);
 			minuteCandles.addAll(
-				stockCandleRepository
-					.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(
-						instrumentId, narrowedRangeStart, pastEnd)
-					.stream()
-					.map(StockCandleDto::from)
-					.toList());
+				pastCandlesPreferringArchive(instrumentId, narrowedRangeStart, pastEnd, archiveRows));
 		}
 
 		boolean sourceTradingDateInRange = !rangeStart.isAfter(sourceTradingDate)
@@ -304,6 +308,49 @@ public class StockReplayService {
 			return aggregated;
 		}
 		return aggregated.subList(aggregated.size() - MAX_AGGREGATED_CANDLES, aggregated.size());
+	}
+
+	// 집계 캔들(1d·1w·1M)의 "과거(이미 지난 거래일)" 구간을 두 데이터 소스에서 합쳐 만든다(이슈 #506, MKT-011).
+	// - stock_daily_candles(장기 아카이브, 최근 3년): 이 구간(호출부가 pastEnd로 sourceTradingDate 이전만 넘긴다)에서는
+	//   재생 중인 "오늘"의 미래가 나올 수 없으므로 공개 상한(reveal bound)과 무관하게 그대로 쓴다 — 별도 컷오프가
+	//   필요 없다(spec 050 결정 1, 이미 완료된 과거 거래일의 확정 기록이기 때문).
+	// - stock_candles(1분봉 집계): 아카이브가 아직 그 날짜를 못 채운 경우에만 보충한다(배포 직후·최초 적재 이전
+	//   구간, 또는 아카이브 배치가 하루 지연되는 경우).
+	// 같은 거래일을 두 소스가 동시에 채우지 않는다 — 한 거래일은 항상 하나의 소스에서만 나온다(이슈 #506 결정 2,
+	// "경계에서 봉 하나가 두 번 나오거나 값이 튀지 않아야 한다"). 아카이브가 있으면 아카이브가 이긴다 — 정규장
+	// 분봉만 합산하는 1분봉 집계와 달리 실제 KIS 확정 종가(수정주가)라 장기적으로 이쪽을 정본으로 삼는다.
+	// archiveRowsInWiderRange는 호출부가 이미 조회해 둔 [원본 rangeStart, rangeEnd] 결과다 — narrowedRangeStart는
+	// 원본 rangeStart보다 같거나 늦으므로(narrowRangeStart는 좁히기만 한다) 이 목록이 [narrowedRangeStart, rangeEnd]도
+	// 항상 포함한다. 그래서 여기서 다시 쿼리하지 않고 날짜만 걸러 쓴다(PR #515 리뷰 권장 — 아카이브 이중 조회 제거).
+	private List<StockCandleDto> pastCandlesPreferringArchive(
+		Long instrumentId, LocalDate rangeStart, LocalDate rangeEnd, List<StockDailyCandle> archiveRowsInWiderRange) {
+		Set<LocalDate> archiveDates = new HashSet<>();
+		List<StockCandleDto> merged = new ArrayList<>();
+		for (StockDailyCandle archiveCandle : archiveRowsInWiderRange) {
+			if (archiveCandle.getTradingDate().isBefore(rangeStart)) {
+				continue;
+			}
+			archiveDates.add(archiveCandle.getTradingDate());
+			merged.add(toArchiveDto(archiveCandle));
+		}
+		stockCandleRepository
+			.findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc(instrumentId, rangeStart,
+				rangeEnd)
+			.stream()
+			.filter(candle -> !archiveDates.contains(candle.getTradingDate()))
+			.map(StockCandleDto::from)
+			.forEach(merged::add);
+		merged.sort(Comparator.comparing(StockCandleDto::tradingDate).thenComparing(StockCandleDto::candleTime));
+		return merged;
+	}
+
+	// 아카이브는 거래일당 한 행이라 candleTime 개념이 없다 — 그날 하루를 대표하는 단일 "봉"으로 취급해 자정을 쓴다.
+	// StockCandleAggregator.toDto가 확정 버킷에 쓰는 값과 동일해(그 클래스 마지막 메서드 참고) 조회 결과 형태가
+	// 소스에 따라 달라지지 않는다.
+	private static StockCandleDto toArchiveDto(StockDailyCandle candle) {
+		return new StockCandleDto(
+			candle.getTradingDate(), LocalTime.MIDNIGHT,
+			candle.getOpen(), candle.getHigh(), candle.getLow(), candle.getClose(), candle.getVolume());
 	}
 
 	/**
@@ -395,12 +442,24 @@ public class StockReplayService {
 	// 시작 거래일을 역산해 rangeStart를 그 시점까지만 좁힌다. 조회된 거래일이 200버킷을 채우기에 부족하면(데이터가
 	// 아직 얕거나 fetchLimit 안에서 못 채우면) 원래 rangeStart를 그대로 쓴다 — 이 메서드는 범위를 넓히지 않고 좁히기만
 	// 한다. 유일한 호출부(150행)가 이미 rangeStart<=queryEnd를 보장하므로 그 전제를 여기서 다시 검사하지 않는다.
+	//
+	// 이슈 #506·MKT-011 반영: 1분봉만 보고 좁히면 아카이브에만 있는(1분봉 보관 기간 밖의) 과거 거래일이 narrowedFloor
+	// 밑으로 잘려 나가 조회 자체에서 빠진다 — pastCandlesPreferringArchive가 그 구간을 채울 기회조차 갖지 못한다.
+	// 그래서 narrowedFloor 계산에 두 소스의 거래일을 합쳐서 쓴다. 아카이브는 호출부가 이미 조회해 둔 결과를 그대로
+	// 받는다(PR #515 리뷰 권장 — 이중 조회 제거, archiveRows는 [rangeStart, queryEnd] 전체를 커버한다).
 	private LocalDate narrowRangeStart(
-		Long instrumentId, CandleInterval interval, LocalDate rangeStart, LocalDate queryEnd) {
+		Long instrumentId, CandleInterval interval, LocalDate rangeStart, LocalDate queryEnd,
+		List<StockDailyCandle> archiveRows) {
 		int fetchLimit = MAX_AGGREGATED_CANDLES * maxTradingDaysPerBucket(interval);
-		List<LocalDate> recentTradingDates = stockCandleRepository
+		List<LocalDate> minuteTradingDates = stockCandleRepository
 			.findDistinctTradingDateByInstrumentIdAndTradingDateBetweenOrderByTradingDateDesc(
 				instrumentId, rangeStart, queryEnd, PageRequest.of(0, fetchLimit));
+		Set<LocalDate> combinedDates = new HashSet<>(minuteTradingDates);
+		archiveRows.forEach(candle -> combinedDates.add(candle.getTradingDate()));
+		List<LocalDate> recentTradingDates = combinedDates.stream()
+			.sorted(Comparator.reverseOrder())
+			.limit(fetchLimit)
+			.toList();
 		if (recentTradingDates.isEmpty()) {
 			return rangeStart;
 		}
