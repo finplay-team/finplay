@@ -30,6 +30,7 @@ import com.finplay.api.domain.order.entity.OrderSide;
 import com.finplay.api.domain.order.entity.OrderStatus;
 import com.finplay.api.domain.order.entity.OrderType;
 import com.finplay.api.domain.order.repository.ExitPlanRepository;
+import com.finplay.api.domain.order.service.ExitPlanService;
 import com.finplay.api.domain.order.service.LimitOrderService;
 import com.finplay.api.domain.order.service.OrderService;
 import com.finplay.api.domain.order.service.TradeService;
@@ -116,6 +117,8 @@ class PracticeExitPresetOcoIntegrationTest {
 	private PracticeEntryComparisonService practiceEntryComparisonService;
 	@Autowired
 	private PracticeExitPlanReservationService exitPlanReservationService;
+	@Autowired
+	private ExitPlanService exitPlanService;
 	@Autowired
 	private TestClock clock;
 
@@ -357,6 +360,45 @@ class PracticeExitPresetOcoIntegrationTest {
 		assertThat(reservedQuantity(fixture)).isEqualByComparingTo(BigDecimal.ZERO);
 		assertThat(tradeService.netFilledQuantity(fixture.attemptId(), 1L)).isEqualByComparingTo(BigDecimal.ZERO);
 		assertThat(onlyExitPlan(fixture).getStatus()).isEqualTo(ExitPlanStatus.CANCELLED);
+	}
+
+	/**
+	 * 이슈 #527 리뷰 1·3번. 두 가지를 <b>실제 MySQL로</b> 고정한다.
+	 *
+	 * <ul>
+	 *   <li>사용자가 직접 건 예약은 {@code DELETE /api/exit-plans/{id}}의 호출부로 취소된다 — 042 자동 예약만
+	 *       막던 차단이 052의 사용자 주도 예약까지 막으면, write-once와 겹쳐 한 번 걸면 체결될 때까지 풀 수
+	 *       없는 상태가 된다.</li>
+	 *   <li>취소된 행도 write-once를 그대로 막는다 — mock 단위 테스트는 이 판정을 스텁으로 대신해서
+	 *       {@code existsByPracticeAttemptIdAndPracticeAttemptRunNumberAndRequestHash}에 status 조건이 없다는
+	 *       것을 <b>실제 쿼리로</b> 확인하지 못한다.</li>
+	 * </ul>
+	 */
+	@Test
+	void aUserReservationIsCancellableAndTheCancelledRowStillBlocksTheSameEntry() {
+		Fixture fixture = tutorialRunAtRumorStage("oco-cancel");
+
+		clock.set(BASE_NOW.plusSeconds(1));
+		buy(fixture);
+		reserve(fixture, "3", "5");
+		Long planId = onlyExitPlan(fixture).getId();
+		assertThat(reservedQuantity(fixture)).isEqualByComparingTo(QUANTITY);
+
+		clock.set(BASE_NOW.plusSeconds(2));
+		exitPlanService.cancel(fixture.userId(), planId);
+
+		assertThat(onlyExitPlan(fixture).getStatus()).isEqualTo(ExitPlanStatus.CANCELLED);
+		assertThat(reservedQuantity(fixture)).isEqualByComparingTo(BigDecimal.ZERO);
+
+		// write-once — 취소한 뒤 같은 진입에서 더 넓은 선으로 다시 거는 것은 거부한다(052 EXITFREE-020).
+		assertThatThrownBy(() -> reserve(fixture, "5", "8"))
+			.isInstanceOfSatisfying(BusinessException.class, exception -> assertThat(exception.getErrorCode())
+				.isEqualTo(ErrorCode.EXIT_PLAN_ALREADY_EXISTS));
+
+		// EXITFREE-025 — 취소해도 예약 이력이 남아 대기 구간을 통과시킨다. 여기서 거짓이 되면 재생성도
+		// 막힌 사용자가 대본 앞에 갇힌다(막다른 길).
+		assertThat(exitPlanReservationService.entryReservationSatisfied(
+			attemptRepository.findById(fixture.attemptId()).orElseThrow())).isTrue();
 	}
 
 	private static BigDecimal expectedPrice(BigDecimal entryPrice, BigDecimal factor) {

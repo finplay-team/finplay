@@ -46,7 +46,7 @@ import org.springframework.transaction.annotation.Transactional;
  * <p><b>기존 경로를 새로 만들지 않는다.</b> 가격선 계산·범위 검증·수량 예약·저장은 042 자동 예약이 쓰던
  * {@link ExitPlanCreationService}를 그대로 부르고(019 공식·엔진 4~9단계), 취소는 경로 공통인
  * {@code DELETE /api/exit-plans/{id}}가 이미 받는다. 비율 검증도
- * {@link com.finplay.api.education.marketpractice.dto.request.PracticeAttemptExitRatesUpdateRequest}와 같은
+ * {@link com.finplay.api.domain.education.marketpractice.dto.request.PracticeAttemptExitRatesUpdateRequest}와 같은
  * {@link ExitRates}가 한다.
  */
 @Service

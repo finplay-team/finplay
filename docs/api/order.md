@@ -96,6 +96,7 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 - `holding`이 존재하지 않거나 본인 소유가 아니면 404 `NOT_FOUND`(소유 여부 비노출).
 - `holding.instrument.market != CRYPTO`(주식 holding)면 400 `VALIDATION_ERROR`("코인 종목만 일반 리스크관리 OCO를 지원합니다.") — 이 spec 범위는 코인 전용이다.
 - `holding.instrument.isTutorialSample()`(투자 실습 튜토리얼 전용 샌드박스 종목)이면 409 `EXIT_PLAN_TUTORIAL_INSTRUMENT_NOT_ALLOWED`("샌드박스 종목은 일반 리스크관리 OCO를 지원하지 않습니다.") — `intentionId` 재접합 전까지 샌드박스 holding은 일반 경로 대상이 아니다(Issue #461, RISK-OCO-014).
+- **(052 EXITFREE-020) `DELETE`의 같은 오류 코드는 종목만으로 판정하지 않는다.** 샌드박스 종목이면서 **042 자동 예약 경로가 관리하는 실행 세대**의 예약일 때만 409로 거부한다. 자동 생성은 "대본을 쓰지 않는 실행"(`scenario_script_id`가 없는 attempt)에서만 일어나므로, 대본을 쓰는 실행의 attempt 귀속 예약은 전부 사용자가 직접 건 것이며 취소할 수 있다. attempt 귀속이 없거나 지난 실행 세대의 예약은 거부한다(재시작 경로가 관리할 몫이다). 종목 하나로 판정하면 사용자 주도 예약까지 막혀, 진입당 1회 write-once와 겹쳐 **한 번 걸면 체결될 때까지 풀 수 없는** 상태가 된다.
 - 같은 holding에 이미 `PENDING` exit plan이 있으면(멱등 재현이 아닌 한) 409 `EXIT_PLAN_ALREADY_EXISTS`(이 판정이 아래 수량 판정보다 먼저다 — 기존 예약이 원인인데 `INSUFFICIENT_QTY`로 가려지지 않게).
 - `holding.getAvailableQuantity() < quantity`면 409 `INSUFFICIENT_QTY`.
 - 계산된 `stopLossPrice`·`takeProfitPrice`가 `0 < stopLossPrice < entryPrice < takeProfitPrice` 또는 `DECIMAL(18,8)` 상한을 벗어나면 409 `EXIT_PLAN_INVALID_PRICE_RANGE`.
@@ -107,7 +108,7 @@ SELL은 가격을 조회하기 전에 보유수량부터 검증한다(불필요�
 
 | Method | URL | 요청 | 성공 응답 | 오류 응답 | Spec |
 |---|---|---|---|---|---|
-| DELETE | /api/exit-plans/{exitPlanId} | 양의 `exitPlanId` path | 204, 본문 없음 | 404 `EXIT_PLAN_NOT_FOUND`; 409 `EXIT_PLAN_NOT_PENDING`, **(042, Issue #477)** `EXIT_PLAN_TUTORIAL_INSTRUMENT_NOT_ALLOWED`(튜토리얼 자동 예약은 이 경로로 취소할 수 없다 — 042가 tick 정산·재시작·매도 접수에서 관리하는 생명주기를 밖에서 깨뜨리기 때문이다. 튜토리얼 내부 취소는 이 호출부를 거치지 않는다) | 021, Issue #348; 042 EXITPRESET-016, Issue #477 |
+| DELETE | /api/exit-plans/{exitPlanId} | 양의 `exitPlanId` path | 204, 본문 없음 | 404 `EXIT_PLAN_NOT_FOUND`; 409 `EXIT_PLAN_NOT_PENDING`, **(042, Issue #477)** `EXIT_PLAN_TUTORIAL_INSTRUMENT_NOT_ALLOWED`(튜토리얼 **자동** 예약은 이 경로로 취소할 수 없다 — 042가 tick 정산·재시작·매도 접수에서 관리하는 생명주기를 밖에서 깨뜨리기 때문이다. 튜토리얼 내부 취소는 이 호출부를 거치지 않는다. **(052 EXITFREE-020) 사용자가 직접 건 튜토리얼 예약은 이 경로로 취소된다** — 아래 판정 참조) | 021, Issue #348; 042 EXITPRESET-016, Issue #477; 052 EXITFREE-020 |
 
 본인 소유의 `PENDING` exit plan만 취소한다. 존재하지 않거나 타인 소유는 존재를 숨겨 404 `EXIT_PLAN_NOT_FOUND`다(소유 여부 비노출). `PENDING`이 아닌(이미 체결·취소된 terminal) plan을 취소하려 하면 409 `EXIT_PLAN_NOT_PENDING`이다. 검증 순서는 항상 존재 → 상태다. 성공 시 `holding.releaseReservedQuantity(plan.getQuantity())`로 예약 수량을 정확히 한 번 반환하고 대기 중인 `exit_plan_conditions`도 함께 취소한다. 잠금 순서는 `holding → plan`(트리거와 동일해 데드락이 없다).
 

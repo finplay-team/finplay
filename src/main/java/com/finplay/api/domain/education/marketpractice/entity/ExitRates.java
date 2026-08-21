@@ -9,7 +9,7 @@ import java.util.Arrays;
  * <b>자유 입력</b>으로 바꾸면서, "적용될 비율"의 단일 표현이 열거형이 아니라 이 값 객체가 됐다.
  *
  * <p><b>단위는 042 그대로다 — 퍼센트 수</b>(3%는 {@code 0.03}이 아니라 {@code 3})이고 <b>손절률도 양수</b>이며
- * 부호는 {@link com.finplay.api.education.marketpractice.service.ReferencePriceCalculator}가 붙인다. 분수로
+ * 부호는 {@link com.finplay.api.domain.education.marketpractice.service.ReferencePriceCalculator}가 붙인다. 분수로
  * 적으면 계산기가 다시 100으로 나눠 100배 틀린 값이 조용히 나온다.
  *
  * <p><b>두 값은 서로 독립이다.</b> 손절 5 + 익절 3처럼 프리셋 3개 어디에도 없는 조합이 유효하며, 프리셋

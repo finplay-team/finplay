@@ -46,6 +46,8 @@ class ExitPlanServiceTest {
 	private static final Long USER_ID = 1L;
 	private static final Long HOLDING_ID = 100L;
 	private static final String IDEMPOTENCY_KEY = "11111111-1111-1111-1111-111111111111";
+	private static final Long PRACTICE_ATTEMPT_ID = 77L;
+	private static final Long PRACTICE_RUN_NUMBER = 1L;
 
 	private final HoldingService holdingService = mock(HoldingService.class);
 	private final UserQueryService userQueryService = mock(UserQueryService.class);
@@ -55,10 +57,12 @@ class ExitPlanServiceTest {
 		ExitPlanIdempotentCreationService.class);
 	private final ExitPlanRepository exitPlanRepository = mock(ExitPlanRepository.class);
 	private final ExitPlanCancelService exitPlanCancelService = mock(ExitPlanCancelService.class);
+	private final PracticeOrderAttributionPort practiceOrderAttributionPort = mock(
+		PracticeOrderAttributionPort.class);
 
 	private final ExitPlanService service = new ExitPlanService(
 		holdingService, userQueryService, exitPlanIdempotencyKeyRepository, exitPlanIdempotentCreationService,
-		exitPlanRepository, exitPlanCancelService);
+		exitPlanRepository, exitPlanCancelService, practiceOrderAttributionPort);
 
 	@Test
 	void createThrowsValidationErrorWhenIntentionIdProvided() {
@@ -442,18 +446,47 @@ class ExitPlanServiceTest {
 	}
 
 	@Test
-	void cancelThrowsTutorialInstrumentNotAllowedAndDoesNotReachEngineWhenPlanIsTutorialReservation() {
-		Holding tutorialHolding = holdingWithMarket(Market.CRYPTO);
-		ReflectionTestUtils.setField(tutorialHolding.getInstrument(), "tutorialSample", true);
-		ExitPlan tutorialPlan = generalPlan(tutorialHolding);
+	void cancelThrowsTutorialInstrumentNotAllowedAndDoesNotReachEngineWhenTutorialPlanIsUnattributed() {
+		ExitPlan tutorialPlan = tutorialPlan();
 		when(exitPlanRepository.findByIdAndUserId(tutorialPlan.getId(), USER_ID))
 			.thenReturn(Optional.of(tutorialPlan));
+		when(practiceOrderAttributionPort.managesAutomaticExitPlans(null, null)).thenReturn(true);
 
 		assertThatThrownBy(() -> service.cancel(USER_ID, tutorialPlan.getId()))
 			.isInstanceOf(BusinessException.class)
 			.extracting(ex -> ((BusinessException)ex).getErrorCode())
 			.isEqualTo(ErrorCode.EXIT_PLAN_TUTORIAL_INSTRUMENT_NOT_ALLOWED);
 		verifyNoInteractions(exitPlanCancelService);
+	}
+
+	// 042 자동 예약은 지금도 막힌다 — 재시작 경로가 관리하는 예약이라 밖에서 풀면 기준선 없는 보유가 남는다.
+	@Test
+	void cancelThrowsTutorialInstrumentNotAllowedWhenTheAutomaticPathManagesThatRun() {
+		ExitPlan automaticPlan = practiceAttributedTutorialPlan();
+		when(exitPlanRepository.findByIdAndUserId(automaticPlan.getId(), USER_ID))
+			.thenReturn(Optional.of(automaticPlan));
+		when(practiceOrderAttributionPort.managesAutomaticExitPlans(PRACTICE_ATTEMPT_ID, PRACTICE_RUN_NUMBER))
+			.thenReturn(true);
+
+		assertThatThrownBy(() -> service.cancel(USER_ID, automaticPlan.getId()))
+			.isInstanceOf(BusinessException.class)
+			.extracting(ex -> ((BusinessException)ex).getErrorCode())
+			.isEqualTo(ErrorCode.EXIT_PLAN_TUTORIAL_INSTRUMENT_NOT_ALLOWED);
+		verifyNoInteractions(exitPlanCancelService);
+	}
+
+	// 052 EXITFREE-020 — 사용자가 직접 건 예약은 취소된다. 막으면 write-once와 겹쳐 풀 방법이 사라진다.
+	@Test
+	void cancelDelegatesToEngineWhenTheUserCreatedTheTutorialReservation() {
+		ExitPlan userDrivenPlan = practiceAttributedTutorialPlan();
+		when(exitPlanRepository.findByIdAndUserId(userDrivenPlan.getId(), USER_ID))
+			.thenReturn(Optional.of(userDrivenPlan));
+		when(practiceOrderAttributionPort.managesAutomaticExitPlans(PRACTICE_ATTEMPT_ID, PRACTICE_RUN_NUMBER))
+			.thenReturn(false);
+
+		service.cancel(USER_ID, userDrivenPlan.getId());
+
+		verify(exitPlanCancelService).cancel(USER_ID, userDrivenPlan.getId());
 	}
 
 	@Test
@@ -494,6 +527,20 @@ class ExitPlanServiceTest {
 		ReflectionTestUtils.setField(holding, "id", HOLDING_ID);
 		holding.applyBuy(new BigDecimal("10"), new BigDecimal("100000"), NOW);
 		return holding;
+	}
+
+	private static ExitPlan tutorialPlan() {
+		Holding tutorialHolding = holdingWithMarket(Market.CRYPTO);
+		ReflectionTestUtils.setField(tutorialHolding.getInstrument(), "tutorialSample", true);
+		return generalPlan(tutorialHolding);
+	}
+
+	// 튜토리얼 예약은 attempt·실행 세대에 귀속된다 — 그 귀속이 자동/사용자 주도를 가르는 유일한 단서다.
+	private static ExitPlan practiceAttributedTutorialPlan() {
+		ExitPlan plan = tutorialPlan();
+		ReflectionTestUtils.setField(plan, "practiceAttemptId", PRACTICE_ATTEMPT_ID);
+		ReflectionTestUtils.setField(plan, "practiceAttemptRunNumber", PRACTICE_RUN_NUMBER);
+		return plan;
 	}
 
 	private static ExitPlan generalPlan(Holding holding) {

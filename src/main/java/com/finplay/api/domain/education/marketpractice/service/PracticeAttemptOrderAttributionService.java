@@ -188,6 +188,27 @@ public class PracticeAttemptOrderAttributionService implements PracticeOrderAttr
 	}
 
 	/**
+	 * 취소 차단 판정을 <b>생성 판정과 같은 파일·같은 술어로 답한다</b>(이슈 #527 리뷰 1번). 자동으로
+	 * 만들었는가와 사용자가 취소할 수 있는가는 같은 질문의 앞뒤이며, 두 곳에 두면 대본이 늘어날 때 한쪽만
+	 * 고쳐져 "만들어지지도 않은 예약을 자동 예약이라며 못 지우는" 상태가 된다.
+	 *
+	 * <p><b>모르면 막는다.</b> attempt가 없거나 예약이 지난 실행 세대의 것이면 참을 준다 — 042가 세운
+	 * 생명주기를 밖에서 깨뜨리지 않는 쪽이 안전하고, 지난 세대의 PENDING 예약은 재시작이 이미 정리한다
+	 * (EXITPRESET-015)이라 사용자가 마주칠 자리가 아니다.
+	 */
+	@Transactional(readOnly = true)
+	@Override
+	public boolean managesAutomaticExitPlans(Long practiceAttemptId, Long practiceAttemptRunNumber) {
+		if (practiceAttemptId == null || practiceAttemptRunNumber == null) {
+			return true;
+		}
+		return practiceAttemptRepository.findById(practiceAttemptId)
+			.map(attempt -> attempt.getRunNumber() != practiceAttemptRunNumber
+				|| automaticExitPlanAllowed(attempt))
+			.orElse(true);
+	}
+
+	/**
 	 * 매수 체결과 <b>같은 트랜잭션</b>에서 OCO 예약을 만든다(042 EXITPRESET-012) — 예약 생성이 실패하면
 	 * 매수도 함께 롤백돼 "기준선은 있는데 예약이 없는" 상태가 남지 않는다.
 	 *

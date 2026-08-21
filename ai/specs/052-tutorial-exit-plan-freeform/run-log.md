@@ -11,8 +11,16 @@
 | — | implementer | `.\gradlew.bat test --tests PracticeStageProgressCalculationServiceTest`(통과) — `exitPresetSelected` 판정을 예약 존재까지 확장 | 프론트 세션이 드러낸 결함(화면이 `exit-rates`를 부르지 않는다), TUTORIAL-STAGE-001, EXITFREE-011 |
 | — | implementer | `.\gradlew.bat compileJava compileTestJava` + `test --tests`(진행 계산·예약 서비스·차트 서비스 49건 전부 통과) 후 `spotlessApply` — 대기 구간 탈출 조건에 "그 진입의 예약" 추가 | 제품 오너 실사용 피드백(예약 폼을 채우는 동안 이야기가 흘러간다), 신설 EXITFREE-025, 041 상태 전이표 2행, 042 EXITPRESET-020, ADR-0002 |
 | — | implementer | `gradlew.bat test --tests com.finplay.api.domain.market.service.TutorialScenarioScriptIntegrityTest`(5건 통과, 로더 기동 검증 포함) — 3단계 대본 사건 문안 5개를 사실 보도체로 교체(가격 배열·타이밍 필드 무변경) | 튜터 지적("뉴스가 아니라 찌라시") → 제품 오너 확정("루머는 빼자"), 041 plan §문안 작성 규칙, SCENARIO-017·018 |
+| — | implementer | `gradlew.bat spotlessApply compileJava compileTestJava` + `test --tests`(ExitPlanServiceTest 31·ErrorCodeTest 8·PracticeExitPlanReservationServiceTest 12·PracticeExitPresetOcoIntegrationTest 6·ExitPlanGeneralPathIntegrationTest 7·PracticeOrderBasicsNoAutoExitIntegrationTest 7 전부 통과) — PR #527 리뷰 지적 4건 반영 | PR #527 리뷰(차단 1·권장 2·참고 1), 042 EXITPRESET-016 / 이슈 #477, 052 EXITFREE-020·025, 021 RISK-OCO-014, ADR-0002(도메인 간 참조는 service 레이어로) |
 
 ## 모니터링 (사람용 요약)
+
+- **PR #527 리뷰 4건 반영.** ① [차단] 사용자 주도 예약이 취소되지 않던 것을 고쳤다 — `ExitPlanService.cancel`의
+  차단이 "샌드박스 종목인가" 하나로 판정해 052가 새로 만든 사용자 주도 예약까지 막았고, write-once와 겹쳐
+  한 번 걸면 체결될 때까지 풀 수 없었다. 이제 **042 자동 예약 경로가 관리하는 실행 세대**일 때만 막는다
+  (판정 근거는 자동 생성을 결정하는 술어 그대로 — 대본을 쓰지 않는 실행인가). ② `EXIT_PLAN_ALREADY_EXISTS`
+  메시지를 상태 중립 문구로 바꿨다. ③ 취소된 행이 write-once를 막는 것을 실제 MySQL로 고정하는 통합
+  테스트를 추가했다. ④ 패키지 재편 때 문자열 안이라 안 잡힌 Javadoc FQCN 2곳을 고쳤다.
 
 - **범위.** 제품 오너가 시간 압박으로 1차 범위를 제안 A(프리셋 → 자유 입력)로 좁혔다. 제안 B(손절·익절
   각 1회 겪기 보장)와 C(체험 직후 반사실 모달)는 spec에 2차로 적어 두고 착수하지 않았다.
@@ -142,9 +150,11 @@
   정리한다.
 - **제안 C(EXITFREE-030·031) 미착수.** tick 응답이 이번 tick에 무엇을 체결했는지 돌려주는 부분은 이번
   범위가 아니다. 지금은 화면이 진행 조회의 `exitExperience`·`entries[]`로 사후에만 알 수 있다.
-- **EXITFREE-025의 통합 검증이 남았다.** 예약을 **취소한** 사용자가 대기 구간을 계속 나갈 수 있다는 것과
-  재시작 직후 새 실행에서 다시 예약을 걸어야 나간다는 것은 지금 단위 테스트(모킹된 조회)와 조회 조건
-  (상태 무관·run 범위)의 정적 확인까지만 고정돼 있다. 실제 원장으로 도는 통합 회귀는 tester 몫이다.
+- **EXITFREE-025의 통합 검증이 절반 남았다.** 예약을 **취소한** 사용자가 대기 구간을 계속 나갈 수 있다는
+  것은 PR #527 리뷰 3번 대응으로 실제 MySQL 통합 테스트에 고정했다
+  (`PracticeExitPresetOcoIntegrationTest.aUserReservationIsCancellableAndTheCancelledRowStillBlocksTheSameEntry`).
+  **재시작 직후 새 실행에서 다시 예약을 걸어야 나간다**는 쪽은 여전히 단위 테스트와 조회 조건(run 범위)의
+  정적 확인까지만이다 — 실제 원장으로 도는 통합 회귀는 tester 몫이다.
 
 - **통합 테스트를 이 세션에서 돌리지 못했다.** Testcontainers는 이 하네스에 Docker가 없고(agent-mistakes
   2026-07-27), `bootRun`이 떠 있어 전체 `build`도 금지였다. unit·slice만 실행했다.
