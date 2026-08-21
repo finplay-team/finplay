@@ -152,7 +152,7 @@ holding 관찰은 buyTrade→order에서 sessionId를 서버가 역추적한다(
 |---|---|---|---|---|---|
 | POST | /api/education/practice/reflections | `{"exitPlanId":1,"answer":"계획한 손절선에 가까워져 팔고 싶었지만 미리 정한 기준을 확인했다."}` (`PracticeReflectionCreateRequest`) | 최초 201 `{"reflectionId":1,"exitPlanId":1,"prompt":"지금 팔고 싶나요? 그렇다면 왜 그런가요? 계획한 손절·익절 라인과 비교해 적어보세요.","answer":"...","createdAt":"2026-08-03T10:10:00"}` (`PracticeReflectionResponse`) | 400 `VALIDATION_ERROR`; 404 `EXIT_PLAN_NOT_FOUND`; 409 `PRACTICE_EVIDENCE_MISSING`, `PRACTICE_ALREADY_COMPLETED` | 016 candidate 14 |
 
-> **이 절의 프롬프트 문구를 holding 기준 경로에 그대로 쓰지 않는다.** 위 문구는 사용자가 exit plan으로 손절·익절을 **직접 계획하는** 016 OCO 경로(미구현)의 것이다. `POST /api/education/practice/holding-reflections`는 039가 사전 의도 입력을 없애고 서버가 체결가 기준 -3%/+5%를 자동 고정하는 흐름이라 문구가 갈라졌다(이슈 #422). 각 경로의 문구는 해당 절이 정본이다.
+> **이 절의 프롬프트 문구를 holding 기준 경로에 그대로 쓰지 않는다.** 위 문구는 사용자가 exit plan으로 손절·익절을 **직접 계획하는** 016 OCO 경로(미구현)의 것이다. `POST /api/education/practice/holding-reflections`는 039가 사전 의도 입력을 없애고 서버가 체결가 기준 -3%/+5%를 자동 고정하는 흐름이라 문구가 갈라졌다(이슈 #422). **(이슈 #432) 그 뒤 holding 기준 경로는 `prompt` 필드 자체를 폐기해 문구를 클라이언트가 소유한다** — 이 절의 OCO 경로만 응답에 `prompt`를 싣는다.
 
 `answer`는 whitespace-only가 아닌 raw Java 문자열 길이 1~2000이며 trim 없이 `VARCHAR(2000) NOT NULL`에 원문을 저장한다. A(경계에 가까워짐), B(2분 이상 범위의 서버 관찰 3회), C(체결·주식 만료 final event) 중 하나와 전체 owner·instrument·수량 evidence를 재검증한다. 정답·점수·보상은 없다. 사용자·튜토리얼 최초 요청만 reflection·completion을 원자 저장하고 이후 요청은 답변을 추가 저장하지 않은 채 409다.
 
@@ -220,12 +220,12 @@ holding 관찰은 buyTrade→order에서 sessionId를 서버가 역추적한다(
 
 `(user_id, tutorial_key)` unique(`practice_market_reflections`, `practice_completions` 모두)가 최종 경합 방어선이며, `practice_progresses` 비관적 락으로 동시 복기 요청을 직렬화한다.
 
-응답 `prompt`는 요청과 무관하게 항상 같은 고정 문구다(`PracticeHoldingReflectionResponse.PROMPT`). 현재 문구는 `방금 판 이유가 무엇인가요? 화면에 표시된 손절선·익절선과 비교해서, 지금 돌아보면 그 판단이 어땠는지 한 줄로 적어 보세요.`이며, 이 단계가 전량 매도 이후에 열리고(031 SANDBOX-006) 손절·익절선을 사용자가 아니라 서버가 자동 고정한다는(039 TUTORIAL-FLOW-008) 전제를 반영한다(Issue #422). 앞의 `016` 계획 절(`POST /api/education/practice/reflections`)의 OCO 복기 문구는 사용자가 exit plan을 직접 계획하는 별도 경로이므로 이 문구와 다르다.
+**(이슈 #432) 이 응답에는 `prompt` 필드가 없다.** 예전에는 요청과 무관한 고정 문구를 항상 같은 값으로 실어 보냈는데, 프론트가 그 값을 렌더링하지 않고 자체 문구를 쓰고 있어 사용자에게 닿는 경로가 없었다 — 문구 하나 고치자고 백엔드를 배포해야 하는 비용만 남아 폐기했다. 질문 문구는 이제 클라이언트가 소유한다. 저장된 복기가 어느 세대 질문에 답한 것인지는 `practice_market_reflections.prompt_version`에 그대로 영속되며, 버전 1이 가리키는 **원문은 `PracticeHoldingReflectionService.PROMPT_VERSION` 주석에 남겨 두었다** — 서버가 원본을 잃지 않으면서 API 표면에서만 뺀 것이다. 앞의 `016` 계획 절(`POST /api/education/practice/reflections`)의 OCO 복기는 사용자가 exit plan을 직접 계획하는 별도 경로라 `prompt` 필드를 그대로 유지한다 — 두 경로를 한꺼번에 정리하지 않는다.
 
 | DTO | 필드 순서와 타입 | nullable 규칙 |
 |---|---|---|
 | `PracticeHoldingReflectionCreateRequest` | `Long holdingId`, `String answer` | `holdingId` non-null·양수; `answer`는 non-blank·2000자 이하 |
-| `PracticeHoldingReflectionResponse` | `Long reflectionId`, `Long holdingId`, `String prompt`, `String answer`, `LocalDateTime createdAt`, `boolean rewardGranted` | `holdingId`·`prompt`·`answer`·`createdAt`·`rewardGranted`는 non-null; `reflectionId`는 최초 완료만 non-null이고 재완료(040)는 `null`(새 reflection 행을 만들지 않으므로) |
+| `PracticeHoldingReflectionResponse` | `Long reflectionId`, `Long holdingId`, `String answer`, `LocalDateTime createdAt`, `boolean rewardGranted` | `holdingId`·`answer`·`createdAt`·`rewardGranted`는 non-null; `reflectionId`는 최초 완료만 non-null이고 재완료(040)는 `null`(새 reflection 행을 만들지 않으므로). **(이슈 #432) `String prompt`가 있었으나 폐기했다** |
 
 ### 036 튜토리얼 attempt 진입·종목 선택·자동 위험 스냅샷
 
