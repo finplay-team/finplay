@@ -9,7 +9,7 @@ import java.util.List;
  * 계약은 {@code docs/api/feedback.md}의 "매도 직후 피드백 조회" 소절이고 {@code minutesAfterBuy}·
  * {@code minutesBeforeSell}의 계산식은 spec §파생 사실 계산이다.
  *
- * <p><b>{@code PriceMoveListItemResponse}을 재사용하지 않는다.</b> 그 record에는 {@code eventType}이 있고 두 간격 필드가
+ * <p><b>{@code PriceMoveItem}을 재사용하지 않는다.</b> 그 record에는 {@code eventType}이 있고 두 간격 필드가
  * 없다 — 계약이 정한 JSON 필드 집합이 서로 다르므로 한쪽을 다른 쪽으로 대체하면 계약이 깨진다. 근거 목록은
  * 반대로 {@code NewsItem}을 그대로 쓴다(§C-6 — 중첩으로 복제하지 않는다).
  *
@@ -23,7 +23,7 @@ import java.util.List;
  * @param minutesAfterBuy   카드 {@code windowEnd} − 매수시각 (분)
  * @param minutesBeforeSell 매도시각 − 카드 {@code windowEnd} (분)
  */
-public record HeldPriceMoveItemResponse(
+public record HeldPriceMoveItem(
 	Long id,
 	LocalDateTime windowStart,
 	LocalDateTime windowEnd,
@@ -35,7 +35,7 @@ public record HeldPriceMoveItemResponse(
 
 	// 컬렉션 필드를 가진 record는 방어적 복사가 없으면 spotbugsMain이 EI_EXPOSE_REP으로 잡는다
 	// (ai/agent-mistakes.md 2026-07-29).
-	public HeldPriceMoveItemResponse {
+	public HeldPriceMoveItem {
 		sources = List.copyOf(sources);
 	}
 }

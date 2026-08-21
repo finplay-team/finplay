@@ -25,7 +25,7 @@ import java.time.temporal.ChronoUnit;
  * 맞춘 값이다 — 주식은 원본 거래일 축, 코인은 실제 시각이다. 이 클래스가 날짜를 만들거나 옮기면 그 구분이
  * 여기로 새어 들어와 두 경로가 다시 얽힌다.
  */
-public final class PostSellArithmetic {
+final class PostSellArithmetic {
 
 	// 계약이 정한 수익률 scale·라운딩. HoldingValuationService와 같은 값이다.
 	static final int RETURN_RATE_SCALE = 4;

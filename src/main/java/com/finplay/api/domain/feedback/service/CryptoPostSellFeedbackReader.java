@@ -7,7 +7,7 @@ import com.finplay.api.domain.feedback.entity.HoldHighBasis;
 import com.finplay.api.domain.feedback.entity.PostSellFeedbackStatus;
 import com.finplay.api.domain.feedback.dto.response.CounterfactualScenario;
 import com.finplay.api.domain.feedback.dto.response.Counterfactuals;
-import com.finplay.api.domain.feedback.dto.response.HeldPriceMoveItemResponse;
+import com.finplay.api.domain.feedback.dto.response.HeldPriceMoveItem;
 import com.finplay.api.domain.feedback.dto.response.NewsItem;
 import com.finplay.api.domain.feedback.dto.response.PeerComparison;
 import com.finplay.api.domain.feedback.dto.response.PostSellFeedbackResponse;
@@ -56,7 +56,7 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class CryptoPostSellFeedbackReader {
+class CryptoPostSellFeedbackReader {
 
 	/**
 	 * 1분봉으로 덮을 수 있는 최대 구간(분) — 공급자 상한이 <b>200봉</b>이라 양 끝을 포함하면 {@code 199분}이다
@@ -103,7 +103,7 @@ public class CryptoPostSellFeedbackReader {
 		long buyBasis = allocation.allocatedCost() + allocation.allocatedBuyFee();
 
 		// (트랜잭션 B) 카드 조회 — 아래 REST 조회가 이 결과를 인자로 쓴다.
-		List<HeldPriceMoveItemResponse> priceMoves = cryptoPostSellFeedbackDbReader.findHeldPriceMoves(trade, buyAt,
+		List<HeldPriceMoveItem> priceMoves = cryptoPostSellFeedbackDbReader.findHeldPriceMoves(trade, buyAt,
 			sellAt);
 
 		// (트랜잭션 없음) 캔들 REST 4종.
@@ -390,7 +390,7 @@ public class CryptoPostSellFeedbackReader {
 		boolean dayClosed,
 		BigDecimal closePrice,
 		HoldExtremes extremes,
-		List<HeldPriceMoveItemResponse> priceMoves,
+		List<HeldPriceMoveItem> priceMoves,
 		BigDecimal quantity,
 		long buyBasis,
 		LocalDateTime sellAt) {
@@ -429,7 +429,7 @@ public class CryptoPostSellFeedbackReader {
 	 */
 	private CounterfactualScenario scenarioAtFirstMoveAfterBuy(
 		String symbol,
-		List<HeldPriceMoveItemResponse> priceMoves,
+		List<HeldPriceMoveItem> priceMoves,
 		BigDecimal quantity,
 		long buyBasis,
 		BigDecimal feeRate) {
@@ -454,7 +454,7 @@ public class CryptoPostSellFeedbackReader {
 	 * <p><b>부호를 뒤집지 않는다</b> — 매수가 기사보다 앞이면 <b>양수</b>다. 부호가 반대면 화면이 "기사를 보고
 	 * 매수했다"와 "기사 전에 매수했다"를 정확히 거꾸로 말한다.
 	 */
-	private static Integer buyToNewsMinutes(LocalDateTime buyAt, List<HeldPriceMoveItemResponse> priceMoves) {
+	private static Integer buyToNewsMinutes(LocalDateTime buyAt, List<HeldPriceMoveItem> priceMoves) {
 		return priceMoves.stream()
 			.flatMap(move -> move.sources().stream())
 			.map(NewsItem::publishedAt)

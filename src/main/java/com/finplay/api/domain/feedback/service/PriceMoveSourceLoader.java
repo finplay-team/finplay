@@ -23,7 +23,7 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @RequiredArgsConstructor
-public class PriceMoveSourceLoader {
+class PriceMoveSourceLoader {
 
 	private final PriceMoveEventSourceRepository priceMoveEventSourceRepository;
 

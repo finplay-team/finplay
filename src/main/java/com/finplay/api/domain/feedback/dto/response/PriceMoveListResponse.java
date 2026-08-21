@@ -22,7 +22,7 @@ import java.util.List;
  *     ({@code narrative_source}가 {@code LLM} 또는 {@code TEMPLATE}, §C-4) 서술 없는 카드가 존재하지 않는다
  */
 public record PriceMoveListResponse(LocalDate originTradeDate, FeedbackContentStatus status,
-	List<PriceMoveListItemResponse> moves) {
+	List<PriceMoveItem> moves) {
 
 	// 컬렉션 필드를 가진 record는 방어적 복사가 없으면 spotbugsMain이 EI_EXPOSE_REP으로 잡는다
 	// (ai/agent-mistakes.md 2026-07-29).
@@ -42,7 +42,7 @@ public record PriceMoveListResponse(LocalDate originTradeDate, FeedbackContentSt
 	}
 
 	/** {@code status}는 카드 유무로 정한다 — 호출부가 따로 넘기지 않아야 목록과 상태가 어긋날 수 없다. */
-	public static PriceMoveListResponse of(LocalDate originTradeDate, List<PriceMoveListItemResponse> moves) {
+	public static PriceMoveListResponse of(LocalDate originTradeDate, List<PriceMoveItem> moves) {
 		FeedbackContentStatus status = moves.isEmpty() ? FeedbackContentStatus.EMPTY : FeedbackContentStatus.READY;
 		return new PriceMoveListResponse(originTradeDate, status, moves);
 	}

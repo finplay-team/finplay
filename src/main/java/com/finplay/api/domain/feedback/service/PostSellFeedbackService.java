@@ -6,7 +6,7 @@ import com.finplay.api.domain.feedback.entity.MarketNewsItemType;
 import com.finplay.api.domain.feedback.entity.NarrativeSource;
 import com.finplay.api.domain.feedback.entity.PostSellFeedbackStatus;
 import com.finplay.api.domain.feedback.entity.TradeFeedback;
-import com.finplay.api.domain.feedback.dto.response.HeldPriceMoveItemResponse;
+import com.finplay.api.domain.feedback.dto.response.HeldPriceMoveItem;
 import com.finplay.api.domain.feedback.dto.response.NewsItem;
 import com.finplay.api.domain.feedback.dto.response.PeerComparison;
 import com.finplay.api.domain.feedback.dto.response.PostSellFeedbackResponse;
@@ -418,7 +418,7 @@ public class PostSellFeedbackService {
 	}
 
 	/** 보유 구간 카드의 근거 기사 중 가장 이른 발행시각 — {@code buyToNewsMinutes}의 기준값 {@code T0}다. */
-	private static LocalDateTime firstNewsAt(List<HeldPriceMoveItemResponse> priceMoves) {
+	private static LocalDateTime firstNewsAt(List<HeldPriceMoveItem> priceMoves) {
 		return priceMoves.stream()
 			.flatMap(move -> move.sources().stream())
 			.map(NewsItem::publishedAt)
@@ -428,7 +428,7 @@ public class PostSellFeedbackService {
 
 	// 응답 항목과 프롬프트 항목을 따로 두는 것은 #147의 결정이다 — 프롬프트에는 원문 URL을 주지 않고(모델이
 	// 인용하려 들 뿐 서술에 쓸모가 없다) 공시 여부는 열거형 대신 boolean으로 받는다.
-	private static List<HeldPriceMoveDto> toPromptPriceMoves(List<HeldPriceMoveItemResponse> priceMoves) {
+	private static List<HeldPriceMoveDto> toPromptPriceMoves(List<HeldPriceMoveItem> priceMoves) {
 		return priceMoves.stream()
 			.map(move -> new HeldPriceMoveDto(
 				move.windowStart(),

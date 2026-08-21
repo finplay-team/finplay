@@ -23,7 +23,7 @@ import com.finplay.api.domain.feedback.entity.PostSellFeedbackStatus;
 import com.finplay.api.domain.feedback.entity.TradeFeedback;
 import com.finplay.api.domain.feedback.dto.response.Counterfactuals;
 import com.finplay.api.domain.feedback.dto.response.CounterfactualScenario;
-import com.finplay.api.domain.feedback.dto.response.HeldPriceMoveItemResponse;
+import com.finplay.api.domain.feedback.dto.response.HeldPriceMoveItem;
 import com.finplay.api.domain.feedback.dto.response.NewsItem;
 import com.finplay.api.domain.feedback.dto.response.PeerComparison;
 import com.finplay.api.domain.feedback.dto.response.PostSellFeedbackResponse;
@@ -1016,8 +1016,8 @@ class PostSellFeedbackServiceTest {
 			null);
 	}
 
-	private static HeldPriceMoveItemResponse sampleCard() {
-		return new HeldPriceMoveItemResponse(
+	private static HeldPriceMoveItem sampleCard() {
+		return new HeldPriceMoveItem(
 			12L,
 			LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(11, 20)),
 			LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(11, 25)),

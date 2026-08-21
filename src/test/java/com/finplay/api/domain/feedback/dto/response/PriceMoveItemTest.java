@@ -1,4 +1,4 @@
-// PriceMoveListItemResponse의 ofCrypto 팩토리가 §C-9대로 구간을 계산하는지 검증하는 순수 단위 테스트다.
+// PriceMoveItem의 ofCrypto 팩토리가 §C-9대로 구간을 계산하는지 검증하는 순수 단위 테스트다.
 package com.finplay.api.domain.feedback.dto.response;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -39,7 +39,7 @@ class PriceMoveItemTest {
 		LocalDateTime occurredAt = LocalDateTime.of(2026, 8, 5, 14, 30, 0);
 		PriceMoveEvent event = cryptoEvent(1L, occurredAt, "5분간 3.1% 상승했습니다.");
 
-		PriceMoveListItemResponse item = PriceMoveListItemResponse.ofCrypto(event, List.of(), 5);
+		PriceMoveItem item = PriceMoveItem.ofCrypto(event, List.of(), 5);
 
 		assertThat(item.windowEnd()).isEqualTo(occurredAt);
 		assertThat(item.windowStart()).isEqualTo(LocalDateTime.of(2026, 8, 5, 14, 25, 0));
@@ -53,7 +53,7 @@ class PriceMoveItemTest {
 		LocalDateTime occurredAt = LocalDateTime.of(2026, 8, 5, 14, 30, 0);
 		PriceMoveEvent event = cryptoEvent(2L, occurredAt, "10분간 급등했습니다.");
 
-		PriceMoveListItemResponse item = PriceMoveListItemResponse.ofCrypto(event, List.of(), 10);
+		PriceMoveItem item = PriceMoveItem.ofCrypto(event, List.of(), 10);
 
 		assertThat(item.windowStart()).isEqualTo(LocalDateTime.of(2026, 8, 5, 14, 20, 0));
 	}
@@ -66,7 +66,7 @@ class PriceMoveItemTest {
 		LocalDateTime occurredAt = LocalDateTime.of(2026, 8, 5, 0, 3, 0);
 		PriceMoveEvent event = cryptoEvent(3L, occurredAt, "자정 직후 급락했습니다.");
 
-		PriceMoveListItemResponse item = PriceMoveListItemResponse.ofCrypto(event, List.of(), 5);
+		PriceMoveItem item = PriceMoveItem.ofCrypto(event, List.of(), 5);
 
 		assertThat(item.windowStart()).isEqualTo(LocalDateTime.of(2026, 8, 4, 23, 58, 0));
 		assertThat(item.windowStart()).isBefore(item.windowEnd());
@@ -78,7 +78,7 @@ class PriceMoveItemTest {
 		LocalDateTime occurredAt = LocalDateTime.of(2026, 8, 5, 14, 30, 0);
 		PriceMoveEvent event = cryptoEvent(9L, occurredAt, "5분간 3.1% 상승했습니다.");
 
-		PriceMoveListItemResponse item = PriceMoveListItemResponse.ofCrypto(event, List.of(), 5);
+		PriceMoveItem item = PriceMoveItem.ofCrypto(event, List.of(), 5);
 
 		assertThat(item.id()).isEqualTo(9L);
 		assertThat(item.eventType()).isEqualTo(PriceMoveEventType.INTRADAY);

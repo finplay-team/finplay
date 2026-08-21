@@ -21,7 +21,7 @@ import com.finplay.api.global.exception.ErrorCode;
 import com.finplay.api.domain.feedback.entity.MarketNewsItemType;
 import com.finplay.api.domain.feedback.entity.PriceMoveEventType;
 import com.finplay.api.domain.feedback.dto.response.NewsItem;
-import com.finplay.api.domain.feedback.dto.response.PriceMoveListItemResponse;
+import com.finplay.api.domain.feedback.dto.response.PriceMoveItem;
 import com.finplay.api.domain.feedback.dto.response.PriceMoveListResponse;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -181,7 +181,7 @@ class PriceMoveControllerTest {
 	void returnsNullOriginTradeDateWithSerializedCardsForCryptoInstrument() throws Exception {
 		authenticate();
 		LocalDateTime occurredAt = LocalDateTime.of(2026, 8, 5, 14, 30, 0);
-		PriceMoveListItemResponse cryptoCard = new PriceMoveListItemResponse(
+		PriceMoveItem cryptoCard = new PriceMoveItem(
 			99L,
 			PriceMoveEventType.INTRADAY,
 			occurredAt.minusMinutes(5),
@@ -295,8 +295,8 @@ class PriceMoveControllerTest {
 		verifyNoInteractions(priceMoveQueryService);
 	}
 
-	private static PriceMoveListItemResponse sampleCard() {
-		return new PriceMoveListItemResponse(
+	private static PriceMoveItem sampleCard() {
+		return new PriceMoveItem(
 			12L,
 			PriceMoveEventType.INTRADAY,
 			LocalDateTime.of(ORIGIN_TRADE_DATE, java.time.LocalTime.of(11, 20)),

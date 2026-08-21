@@ -19,7 +19,7 @@ import java.util.List;
  *
  * <p>{@code sources}가 빈 배열인 카드는 존재하지 않는다 — 근거가 없으면 카드 자체를 만들지 않는다(FEED-003).
  */
-public record PriceMoveListItemResponse(
+public record PriceMoveItem(
 	Long id,
 	PriceMoveEventType eventType,
 	LocalDateTime windowStart,
@@ -30,7 +30,7 @@ public record PriceMoveListItemResponse(
 
 	// 컬렉션 필드를 가진 record는 방어적 복사가 없으면 spotbugsMain이 EI_EXPOSE_REP으로 잡는다
 	// (ai/agent-mistakes.md 2026-07-29).
-	public PriceMoveListItemResponse {
+	public PriceMoveItem {
 		sources = List.copyOf(sources);
 	}
 
@@ -38,9 +38,9 @@ public record PriceMoveListItemResponse(
 	 * 주식 카드를 만든다. 코인 카드는 시각 컬럼이 달라({@code occurredAt} 하나, §C-9) 이 팩토리를 쓰지 않고
 	 * {@link #ofCrypto}를 쓴다.
 	 */
-	public static PriceMoveListItemResponse ofStock(PriceMoveEvent event, List<NewsItem> sources) {
+	public static PriceMoveItem ofStock(PriceMoveEvent event, List<NewsItem> sources) {
 		LocalDate originTradeDate = event.getOriginTradeDate();
-		return new PriceMoveListItemResponse(
+		return new PriceMoveItem(
 			event.getId(),
 			event.getEventType(),
 			atOriginTradeDate(originTradeDate, event.getWindowStart()),
@@ -59,10 +59,10 @@ public record PriceMoveListItemResponse(
 	 *     설정값이 아니라 <b>조회 시점</b>의 현재 설정값을 쓴다({@code CryptoPriceMoveWatcher}와 같은 값을
 	 *     참조하는 소스가 하나뿐이라 어긋나지 않는다)
 	 */
-	public static PriceMoveListItemResponse ofCrypto(
+	public static PriceMoveItem ofCrypto(
 		PriceMoveEvent event, List<NewsItem> sources, int rollingWindowMinutes) {
 		LocalDateTime windowEnd = event.getOccurredAt();
-		return new PriceMoveListItemResponse(
+		return new PriceMoveItem(
 			event.getId(),
 			event.getEventType(),
 			windowEnd.minusMinutes(rollingWindowMinutes),

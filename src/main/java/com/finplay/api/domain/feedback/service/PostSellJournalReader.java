@@ -42,7 +42,7 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @RequiredArgsConstructor
-public class PostSellJournalReader {
+class PostSellJournalReader {
 
 	private static final String DIGEST_ALGORITHM = "SHA-256";
 

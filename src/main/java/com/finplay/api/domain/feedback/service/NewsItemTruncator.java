@@ -28,7 +28,7 @@ import java.util.List;
  * 픽스처의 기사 수가 상한 아래이면 절단 자체가 일어나지 않아 규칙의 유무를 구분하지 못한다. 검증하려면
  * <b>픽스처를 상한 위로</b> 잡아야 한다.
  */
-public final class NewsItemTruncator {
+final class NewsItemTruncator {
 
 	// id가 null인 것은 아직 저장되지 않은 엔티티뿐이다. 실제 경로에서는 전부 조회 결과라 값이 있지만,
 	// 여기서 NPE로 배치를 죽이는 것보다 순서만 뒤로 미는 편이 안전하다(reversed() 뒤에는 마지막으로 간다).

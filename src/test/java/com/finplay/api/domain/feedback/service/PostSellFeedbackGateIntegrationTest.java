@@ -18,7 +18,7 @@ import com.finplay.api.domain.feedback.entity.PostSellFeedbackStatus;
 import com.finplay.api.domain.feedback.entity.PriceMoveEvent;
 import com.finplay.api.domain.feedback.entity.PriceMoveEventSource;
 import com.finplay.api.domain.feedback.entity.PriceMoveEventType;
-import com.finplay.api.domain.feedback.dto.response.HeldPriceMoveItemResponse;
+import com.finplay.api.domain.feedback.dto.response.HeldPriceMoveItem;
 import com.finplay.api.domain.feedback.dto.response.NewsItem;
 import com.finplay.api.domain.feedback.dto.response.PostSellFeedbackResponse;
 import com.finplay.api.domain.feedback.repository.MarketNewsItemRepository;
@@ -225,7 +225,7 @@ class PostSellFeedbackGateIntegrationTest {
 		assertThat(beforeReveal.buyToNewsMinutes()).isEqualTo(45);
 		// 감춰진 카드의 09:00 기사가 섞인 구현이 내는 값.
 		assertThat(beforeReveal.buyToNewsMinutes()).isNotEqualTo(-30);
-		assertThat(beforeReveal.priceMoves()).flatExtracting(HeldPriceMoveItemResponse::sources)
+		assertThat(beforeReveal.priceMoves()).flatExtracting(HeldPriceMoveItem::sources)
 			.extracting(NewsItem::title)
 			.doesNotContain("장 초반 기사");
 
@@ -235,7 +235,7 @@ class PostSellFeedbackGateIntegrationTest {
 
 		// 09:00 기사가 모수에 들어오면 09:00 − 09:30 = −30분이다 — 부호도 함께 확인된다.
 		assertThat(afterReveal.buyToNewsMinutes()).isEqualTo(-30);
-		assertThat(afterReveal.priceMoves()).flatExtracting(HeldPriceMoveItemResponse::sources)
+		assertThat(afterReveal.priceMoves()).flatExtracting(HeldPriceMoveItem::sources)
 			.extracting(NewsItem::title)
 			.contains("장 초반 기사");
 	}
@@ -260,8 +260,8 @@ class PostSellFeedbackGateIntegrationTest {
 		assertThat(intraday.getId()).isLessThan(gap.getId());
 
 		assertThat(response.priceMoves())
-			.extracting(HeldPriceMoveItemResponse::id, HeldPriceMoveItemResponse::minutesAfterBuy,
-				HeldPriceMoveItemResponse::minutesBeforeSell)
+			.extracting(HeldPriceMoveItem::id, HeldPriceMoveItem::minutesAfterBuy,
+				HeldPriceMoveItem::minutesBeforeSell)
 			.containsExactly(
 				// 장중 카드 windowEnd 10:25 — 매수 55분 뒤, 매도 65분 전.
 				tuple(intraday.getId(), 55, 65),

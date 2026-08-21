@@ -13,7 +13,7 @@ import com.finplay.api.domain.feedback.entity.HoldHighBasis;
 import com.finplay.api.domain.feedback.entity.NarrativeSource;
 import com.finplay.api.domain.feedback.entity.PostSellFeedbackStatus;
 import com.finplay.api.domain.feedback.entity.PriceMoveEvent;
-import com.finplay.api.domain.feedback.dto.response.HeldPriceMoveItemResponse;
+import com.finplay.api.domain.feedback.dto.response.HeldPriceMoveItem;
 import com.finplay.api.domain.feedback.dto.response.PeerComparison;
 import com.finplay.api.domain.feedback.dto.response.PostSellFeedbackResponse;
 import com.finplay.api.domain.feedback.repository.PriceMoveEventRepository;
@@ -379,13 +379,13 @@ class CryptoPostSellFeedbackTransactionBoundaryIntegrationTest {
 		}
 
 		@Override
-		List<HeldPriceMoveItemResponse> findHeldPriceMoves(Trade trade, LocalDateTime buyAt, LocalDateTime sellAt) {
+		List<HeldPriceMoveItem> findHeldPriceMoves(Trade trade, LocalDateTime buyAt, LocalDateTime sellAt) {
 			probe.record(TransactionProbe.PRICE_MOVES);
 			return super.findHeldPriceMoves(trade, buyAt, sellAt);
 		}
 
 		@Override
-		PeerComparison buildPeerComparison(List<HeldPriceMoveItemResponse> priceMoves) {
+		PeerComparison buildPeerComparison(List<HeldPriceMoveItem> priceMoves) {
 			probe.record(TransactionProbe.PEER_COMPARISON);
 			return super.buildPeerComparison(priceMoves);
 		}

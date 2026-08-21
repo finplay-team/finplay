@@ -70,7 +70,7 @@ public record PostSellFeedbackResponse(
 	BigDecimal sellVsLowRate,
 	HoldHighBasis holdHighBasis,
 	Integer buyToNewsMinutes,
-	List<HeldPriceMoveItemResponse> priceMoves,
+	List<HeldPriceMoveItem> priceMoves,
 	PostSellFlow postSellFlow,
 	Counterfactuals counterfactuals,
 	PeerComparison peerComparison,

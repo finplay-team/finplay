@@ -3,7 +3,7 @@ package com.finplay.api.domain.feedback.service;
 
 import com.finplay.api.domain.feedback.config.FeedbackCryptoProperties;
 import com.finplay.api.domain.feedback.entity.PriceMoveEvent;
-import com.finplay.api.domain.feedback.dto.response.HeldPriceMoveItemResponse;
+import com.finplay.api.domain.feedback.dto.response.HeldPriceMoveItem;
 import com.finplay.api.domain.feedback.dto.response.NewsItem;
 import com.finplay.api.domain.feedback.dto.response.PeerComparison;
 import com.finplay.api.domain.feedback.repository.PriceMoveEventRepository;
@@ -64,7 +64,7 @@ class CryptoPostSellFeedbackDbReader {
 	 * 분에 탐지된 카드가 오히려 빠지고 있었다.</b> 저장 쪽을 분 경계로 맞추면서 이 전제가 비로소 참이 됐다.
 	 */
 	@Transactional(readOnly = true)
-	List<HeldPriceMoveItemResponse> findHeldPriceMoves(Trade trade, LocalDateTime buyAt, LocalDateTime sellAt) {
+	List<HeldPriceMoveItem> findHeldPriceMoves(Trade trade, LocalDateTime buyAt, LocalDateTime sellAt) {
 		List<PriceMoveEvent> events = priceMoveEventRepository
 			.findByInstrumentIdAndMarketAndOccurredAtBetweenOrderByOccurredAtAscIdAsc(
 				trade.getInstrument().getId(),
@@ -87,13 +87,13 @@ class CryptoPostSellFeedbackDbReader {
 	 *
 	 * <p><b>{@code windowStart}는 저장 컬럼이 아니라 파생값이다</b>(§C-9) — 코인 카드는 {@code occurred_at}
 	 * 하나만 저장하고 {@code window_start}/{@code window_end}가 {@code NULL}이므로, 목록 조회
-	 * ({@code PriceMoveListItemResponse.ofCrypto})와 <b>같은 규칙</b>으로 {@code occurredAt − rolling-window-minutes}를 쓴다.
+	 * ({@code PriceMoveItem.ofCrypto})와 <b>같은 규칙</b>으로 {@code occurredAt − rolling-window-minutes}를 쓴다.
 	 * 두 곳이 다른 규칙을 쓰면 같은 카드가 화면마다 다른 구간으로 보인다.
 	 */
-	private HeldPriceMoveItemResponse toHeldPriceMoveItem(
+	private HeldPriceMoveItem toHeldPriceMoveItem(
 		PriceMoveEvent event, LocalDateTime buyAt, LocalDateTime sellAt, List<NewsItem> sources) {
 		LocalDateTime windowEnd = event.getOccurredAt();
-		return new HeldPriceMoveItemResponse(
+		return new HeldPriceMoveItem(
 			event.getId(),
 			windowEnd.minusMinutes(cryptoProperties.rollingWindowMinutes()),
 			windowEnd,
@@ -115,12 +115,12 @@ class CryptoPostSellFeedbackDbReader {
 	 * KST 날짜</b>를 쓴다. 배치가 저장하는 값과 같은 규칙이어야 한다.
 	 */
 	@Transactional(readOnly = true)
-	PeerComparison buildPeerComparison(List<HeldPriceMoveItemResponse> priceMoves) {
+	PeerComparison buildPeerComparison(List<HeldPriceMoveItem> priceMoves) {
 		if (priceMoves.isEmpty()) {
 			return PostSellArithmetic.peerComparisonNoEvent();
 		}
 
-		HeldPriceMoveItemResponse card = priceMoves.get(0);
+		HeldPriceMoveItem card = priceMoves.get(0);
 		// yourMinutesToSell = 매도시각 − 카드 시각. card.minutesBeforeSell()이 이미 같은 계산이라 다시 재지 않는다.
 		Integer yourMinutesToSell = card.minutesBeforeSell();
 		return priceMovePeerStatRepository

@@ -6,7 +6,7 @@ import com.finplay.api.domain.feedback.entity.PostSellFeedbackStatus;
 import com.finplay.api.domain.feedback.entity.PriceMoveEvent;
 import com.finplay.api.domain.feedback.dto.response.CounterfactualScenario;
 import com.finplay.api.domain.feedback.dto.response.Counterfactuals;
-import com.finplay.api.domain.feedback.dto.response.HeldPriceMoveItemResponse;
+import com.finplay.api.domain.feedback.dto.response.HeldPriceMoveItem;
 import com.finplay.api.domain.feedback.dto.response.NewsItem;
 import com.finplay.api.domain.feedback.dto.response.PeerComparison;
 import com.finplay.api.domain.feedback.dto.response.PostSellFeedbackResponse;
@@ -102,7 +102,7 @@ class StockPostSellFeedbackReader {
 		// 파생 사실은 sameSessionCompleted가 참일 때만 성립한다 — 여러 재생일에 걸친 매매는 분봉이 불연속이라
 		// 극값·간격 계산의 정의 자체가 없다(§파생 사실 계산). 계약이 정한 형태는 전부 null, priceMoves는 []다.
 		boolean sameSessionCompleted = isSameSessionCompleted(sellSourceTradingDate, allocation, buyAt, sellAt);
-		List<HeldPriceMoveItemResponse> priceMoves = sameSessionCompleted
+		List<HeldPriceMoveItem> priceMoves = sameSessionCompleted
 			? findHeldPriceMoves(trade, sellSourceTradingDate, buyAt, sellAt)
 			: List.of();
 
@@ -335,7 +335,7 @@ class StockPostSellFeedbackReader {
 		List<StockCandleDto> fullDayCandles,
 		LocalDate sourceTradingDate,
 		HoldExtremes extremes,
-		List<HeldPriceMoveItemResponse> priceMoves,
+		List<HeldPriceMoveItem> priceMoves,
 		BigDecimal quantity,
 		long buyBasis) {
 		if (!marketClosed) {
@@ -382,7 +382,7 @@ class StockPostSellFeedbackReader {
 	 *     없어도 {@code null}이다 — 가격을 지어내지 않는다
 	 */
 	private static CounterfactualScenario scenarioAtFirstMoveAfterBuy(
-		List<StockCandleDto> fullDayCandles, List<HeldPriceMoveItemResponse> priceMoves, BigDecimal quantity,
+		List<StockCandleDto> fullDayCandles, List<HeldPriceMoveItem> priceMoves, BigDecimal quantity,
 		long buyBasis) {
 		if (priceMoves.isEmpty()) {
 			return null;
@@ -447,12 +447,12 @@ class StockPostSellFeedbackReader {
 	 *
 	 * @param sellServiceDate 조회 중인 매도 체결의 서비스 날짜 ({@link #serviceDateOf})
 	 */
-	private PeerComparison buildPeerComparison(List<HeldPriceMoveItemResponse> priceMoves, LocalDate sellServiceDate) {
+	private PeerComparison buildPeerComparison(List<HeldPriceMoveItem> priceMoves, LocalDate sellServiceDate) {
 		if (priceMoves.isEmpty()) {
 			return PostSellArithmetic.peerComparisonNoEvent();
 		}
 
-		HeldPriceMoveItemResponse card = priceMoves.get(0);
+		HeldPriceMoveItem card = priceMoves.get(0);
 		// yourMinutesToSell = 매도시각 − 카드 windowEnd (분). card.minutesBeforeSell()이 이미 같은 계산
 		// (toHeldPriceMoveItem의 minutesBetween(windowEnd, sellAt))이라 다시 계산하지 않고 그대로 쓴다.
 		Integer yourMinutesToSell = card.minutesBeforeSell();
@@ -472,7 +472,7 @@ class StockPostSellFeedbackReader {
 	 * {@code TIME}인데 체결 시각에는 소수 초가 붙어, 그대로 넘기면 <b>매수 분과 같은 분에 끝난 카드가 하한 밖으로
 	 * 밀린다.</b> 이유는 그 메서드에 있다.
 	 */
-	private List<HeldPriceMoveItemResponse> findHeldPriceMoves(
+	private List<HeldPriceMoveItem> findHeldPriceMoves(
 		Trade trade, LocalDate sourceTradingDate, LocalDateTime buyAt, LocalDateTime sellAt) {
 		LocalTime revealCutoff = revealCutoff(serviceDateOf(trade));
 		if (revealCutoff == null) {
@@ -535,11 +535,11 @@ class StockPostSellFeedbackReader {
 	 * @param sellAt {@code minutesBeforeSell = 매도시각 − 카드 windowEnd}. 파인더가 {@code windowEnd}를 보유
 	 *     구간으로 좁히므로 두 값은 음수가 되지 않는다
 	 */
-	private static HeldPriceMoveItemResponse toHeldPriceMoveItem(
+	private static HeldPriceMoveItem toHeldPriceMoveItem(
 		PriceMoveEvent event, LocalDateTime buyAt, LocalDateTime sellAt, List<NewsItem> sources) {
 		LocalDateTime windowStart = LocalDateTime.of(event.getOriginTradeDate(), event.getWindowStart());
 		LocalDateTime windowEnd = LocalDateTime.of(event.getOriginTradeDate(), event.getWindowEnd());
-		return new HeldPriceMoveItemResponse(
+		return new HeldPriceMoveItem(
 			event.getId(),
 			windowStart,
 			windowEnd,
@@ -563,7 +563,7 @@ class StockPostSellFeedbackReader {
 	 *
 	 * @return 근거 기사가 없으면 {@code null}. 4번 항목이 프롬프트의 {@code firstNewsAt}도 함께 {@code null}로 둔다
 	 */
-	private static Integer buyToNewsMinutes(LocalDateTime buyAt, List<HeldPriceMoveItemResponse> priceMoves) {
+	private static Integer buyToNewsMinutes(LocalDateTime buyAt, List<HeldPriceMoveItem> priceMoves) {
 		return priceMoves.stream()
 			.flatMap(move -> move.sources().stream())
 			.map(NewsItem::publishedAt)

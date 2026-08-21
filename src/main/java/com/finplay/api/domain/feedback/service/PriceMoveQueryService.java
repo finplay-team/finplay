@@ -4,7 +4,7 @@ package com.finplay.api.domain.feedback.service;
 import com.finplay.api.domain.feedback.config.FeedbackCryptoProperties;
 import com.finplay.api.domain.feedback.entity.PriceMoveEvent;
 import com.finplay.api.domain.feedback.dto.response.NewsItem;
-import com.finplay.api.domain.feedback.dto.response.PriceMoveListItemResponse;
+import com.finplay.api.domain.feedback.dto.response.PriceMoveItem;
 import com.finplay.api.domain.feedback.dto.response.PriceMoveListResponse;
 import com.finplay.api.domain.feedback.repository.PriceMoveEventRepository;
 import com.finplay.api.domain.market.entity.Instrument;
@@ -77,8 +77,8 @@ public class PriceMoveQueryService {
 		}
 
 		Map<Long, List<NewsItem>> sourcesByEventId = priceMoveSourceLoader.findSources(events);
-		List<PriceMoveListItemResponse> moves = events.stream()
-			.map(event -> PriceMoveListItemResponse.ofStock(
+		List<PriceMoveItem> moves = events.stream()
+			.map(event -> PriceMoveItem.ofStock(
 				event, sourcesByEventId.getOrDefault(event.getId(), List.of())))
 			.toList();
 		return PriceMoveListResponse.of(session.sourceTradingDate(), moves);
@@ -101,8 +101,8 @@ public class PriceMoveQueryService {
 		}
 
 		Map<Long, List<NewsItem>> sourcesByEventId = priceMoveSourceLoader.findSources(events);
-		List<PriceMoveListItemResponse> moves = events.stream()
-			.map(event -> PriceMoveListItemResponse.ofCrypto(
+		List<PriceMoveItem> moves = events.stream()
+			.map(event -> PriceMoveItem.ofCrypto(
 				event,
 				sourcesByEventId.getOrDefault(event.getId(), List.of()),
 				cryptoProperties.rollingWindowMinutes()))

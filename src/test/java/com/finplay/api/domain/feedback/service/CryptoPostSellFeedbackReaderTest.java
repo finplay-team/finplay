@@ -17,7 +17,7 @@ import com.finplay.api.global.exception.BusinessException;
 import com.finplay.api.global.exception.ErrorCode;
 import com.finplay.api.domain.feedback.entity.HoldHighBasis;
 import com.finplay.api.domain.feedback.entity.PostSellFeedbackStatus;
-import com.finplay.api.domain.feedback.dto.response.HeldPriceMoveItemResponse;
+import com.finplay.api.domain.feedback.dto.response.HeldPriceMoveItem;
 import com.finplay.api.domain.feedback.dto.response.PeerComparison;
 import com.finplay.api.domain.feedback.dto.response.PostSellFeedbackResponse;
 import com.finplay.api.domain.market.entity.Instrument;
@@ -478,7 +478,7 @@ class CryptoPostSellFeedbackReaderTest {
 	void readsCardsBeforeTheRestCallsAndPeerComparisonAfterThem() {
 		givenMinuteCandles(minuteCandles());
 		givenDailyCandles(dailyCandles());
-		List<HeldPriceMoveItemResponse> priceMoves = givenHeldCard(LocalDateTime.of(SELL_DATE, LocalTime.of(0, 30)));
+		List<HeldPriceMoveItem> priceMoves = givenHeldCard(LocalDateTime.of(SELL_DATE, LocalTime.of(0, 30)));
 
 		PostSellFeedbackResponse response = read(GATE_OPENS_AT, BUY_AT_199);
 
@@ -623,8 +623,8 @@ class CryptoPostSellFeedbackReaderTest {
 
 	// 트랜잭션 B가 돌려주는 카드 — 조립 리더가 이 값에서 실제로 쓰는 것은 windowEnd(첫 카드 반사실의 캔들 조회
 	// 인자)와 sources(buyToNewsMinutes)뿐이다. occurredAt → windowStart 파생은 DbReader의 몫이라 여기서는 지어낸다.
-	private List<HeldPriceMoveItemResponse> givenHeldCard(LocalDateTime windowEnd) {
-		List<HeldPriceMoveItemResponse> priceMoves = List.of(new HeldPriceMoveItemResponse(
+	private List<HeldPriceMoveItem> givenHeldCard(LocalDateTime windowEnd) {
+		List<HeldPriceMoveItem> priceMoves = List.of(new HeldPriceMoveItem(
 			11L, windowEnd.minusMinutes(5), windowEnd, new BigDecimal("0.021"), 0, 0, "코인 카드", List.of()));
 		when(cryptoPostSellFeedbackDbReader.findHeldPriceMoves(any(), any(), any())).thenReturn(priceMoves);
 		return priceMoves;

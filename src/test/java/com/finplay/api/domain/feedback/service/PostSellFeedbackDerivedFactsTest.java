@@ -18,7 +18,7 @@ import com.finplay.api.domain.feedback.entity.NarrativeSource;
 import com.finplay.api.domain.feedback.entity.PriceMoveEvent;
 import com.finplay.api.domain.feedback.entity.PriceMoveEventSource;
 import com.finplay.api.domain.feedback.entity.PriceMoveEventType;
-import com.finplay.api.domain.feedback.dto.response.HeldPriceMoveItemResponse;
+import com.finplay.api.domain.feedback.dto.response.HeldPriceMoveItem;
 import com.finplay.api.domain.feedback.dto.response.NewsItem;
 import com.finplay.api.domain.feedback.dto.response.PostSellFeedbackResponse;
 import com.finplay.api.domain.feedback.repository.PriceMoveEventRepository;
@@ -278,7 +278,7 @@ class PostSellFeedbackDerivedFactsTest {
 		PostSellFeedbackResponse response = getPostSellFeedback();
 
 		assertThat(response.priceMoves())
-			.extracting(HeldPriceMoveItemResponse::id, move -> move.windowStart().toLocalTime())
+			.extracting(HeldPriceMoveItem::id, move -> move.windowStart().toLocalTime())
 			.containsExactly(tuple(12L, LocalTime.of(11, 20)), tuple(13L, LocalTime.of(13, 20)));
 		assertThat(response.priceMoves().get(0).sources())
 			.extracting(NewsItem::title)

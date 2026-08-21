@@ -21,7 +21,7 @@ import com.finplay.api.domain.feedback.entity.MarketNewsItemType;
 import com.finplay.api.domain.feedback.entity.PostSellFeedbackStatus;
 import com.finplay.api.domain.feedback.dto.response.CounterfactualScenario;
 import com.finplay.api.domain.feedback.dto.response.Counterfactuals;
-import com.finplay.api.domain.feedback.dto.response.HeldPriceMoveItemResponse;
+import com.finplay.api.domain.feedback.dto.response.HeldPriceMoveItem;
 import com.finplay.api.domain.feedback.dto.response.NewsItem;
 import com.finplay.api.domain.feedback.dto.response.PeerComparison;
 import com.finplay.api.domain.feedback.dto.response.PostSellFeedbackResponse;
@@ -342,7 +342,7 @@ class PostSellFeedbackControllerTest {
 			// 주식은 언제나 1분봉 정밀도다(§FEED-012 결정 4 — DAILY는 코인 전용).
 			HoldHighBasis.MINUTE,
 			105,
-			List.of(new HeldPriceMoveItemResponse(
+			List.of(new HeldPriceMoveItem(
 				12L,
 				LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(11, 20)),
 				LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(11, 25)),

@@ -20,7 +20,7 @@ import com.finplay.api.domain.feedback.entity.PostSellFeedbackStatus;
 import com.finplay.api.domain.feedback.entity.PriceMoveEvent;
 import com.finplay.api.domain.feedback.entity.PriceMoveEventSource;
 import com.finplay.api.domain.feedback.entity.PriceMovePeerStat;
-import com.finplay.api.domain.feedback.dto.response.HeldPriceMoveItemResponse;
+import com.finplay.api.domain.feedback.dto.response.HeldPriceMoveItem;
 import com.finplay.api.domain.feedback.dto.response.NewsItem;
 import com.finplay.api.domain.feedback.dto.response.PeerComparison;
 import com.finplay.api.domain.feedback.repository.PriceMoveEventRepository;
@@ -71,7 +71,7 @@ class CryptoPostSellFeedbackDbReaderTest {
 	private static final LocalDateTime FIRST_CARD_AT = LocalDateTime.of(SELL_DATE, LocalTime.of(0, 30));
 	private static final LocalDateTime SECOND_CARD_AT = LocalDateTime.of(SELL_DATE, LocalTime.of(1, 40));
 
-	// rolling-window-minutes = 5. windowStart가 이 값만큼 앞이어야 목록 조회(PriceMoveListItemResponse.ofCrypto)와 같은
+	// rolling-window-minutes = 5. windowStart가 이 값만큼 앞이어야 목록 조회(PriceMoveItem.ofCrypto)와 같은
 	// 구간으로 보인다.
 	private final FeedbackCryptoProperties cryptoProperties = new FeedbackCryptoProperties(30, 6, 5, 24, 100, 35, 45);
 
@@ -116,7 +116,7 @@ class CryptoPostSellFeedbackDbReaderTest {
 	void returnsAnEmptyListWithoutLoadingSourcesWhenNoCardIsInTheHold() {
 		givenCards();
 
-		List<HeldPriceMoveItemResponse> priceMoves = dbReader.findHeldPriceMoves(cryptoSellTrade(), BUY_AT, SELL_AT);
+		List<HeldPriceMoveItem> priceMoves = dbReader.findHeldPriceMoves(cryptoSellTrade(), BUY_AT, SELL_AT);
 
 		assertThat(priceMoves).isEmpty();
 		// 코인 카드는 근거 기사가 없으면 생성되지 않고 수집이 30분 주기라 0건이 오히려 흔한 경우다 — 그때마다
@@ -132,10 +132,10 @@ class CryptoPostSellFeedbackDbReaderTest {
 		givenCards(card(FIRST_CARD_ID, FIRST_CARD_AT));
 		givenNoSources();
 
-		List<HeldPriceMoveItemResponse> priceMoves = dbReader.findHeldPriceMoves(cryptoSellTrade(), BUY_AT, SELL_AT);
+		List<HeldPriceMoveItem> priceMoves = dbReader.findHeldPriceMoves(cryptoSellTrade(), BUY_AT, SELL_AT);
 
 		assertThat(priceMoves).hasSize(1);
-		HeldPriceMoveItemResponse item = priceMoves.get(0);
+		HeldPriceMoveItem item = priceMoves.get(0);
 		assertThat(item.id()).isEqualTo(FIRST_CARD_ID);
 		assertThat(item.windowEnd()).isEqualTo(FIRST_CARD_AT);
 		assertThat(item.windowStart()).isEqualTo(FIRST_CARD_AT.minusMinutes(5));
@@ -155,9 +155,9 @@ class CryptoPostSellFeedbackDbReaderTest {
 		when(priceMoveEventSourceRepository.findAllByPriceMoveEventIdIn(anyList()))
 			.thenReturn(List.of(sourceOf(first, "첫 카드 근거 기사")));
 
-		List<HeldPriceMoveItemResponse> priceMoves = dbReader.findHeldPriceMoves(cryptoSellTrade(), BUY_AT, SELL_AT);
+		List<HeldPriceMoveItem> priceMoves = dbReader.findHeldPriceMoves(cryptoSellTrade(), BUY_AT, SELL_AT);
 
-		assertThat(priceMoves).extracting(HeldPriceMoveItemResponse::id)
+		assertThat(priceMoves).extracting(HeldPriceMoveItem::id)
 			.as("카드 순서는 리포지터리 정렬(occurredAt · id 오름차순)을 그대로 보존한다")
 			.containsExactly(FIRST_CARD_ID, SECOND_CARD_ID);
 		assertThat(priceMoves.get(0).sources()).extracting(NewsItem::title).containsExactly("첫 카드 근거 기사");
@@ -282,8 +282,8 @@ class CryptoPostSellFeedbackDbReaderTest {
 	}
 
 	// buildPeerComparison은 카드 record만 보므로 findHeldPriceMoves를 거치지 않고 직접 만든다.
-	private static HeldPriceMoveItemResponse heldCard(Long id, LocalDateTime windowEnd) {
-		return new HeldPriceMoveItemResponse(
+	private static HeldPriceMoveItem heldCard(Long id, LocalDateTime windowEnd) {
+		return new HeldPriceMoveItem(
 			id,
 			windowEnd.minusMinutes(5),
 			windowEnd,

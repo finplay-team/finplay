@@ -14,7 +14,7 @@ import com.finplay.api.domain.feedback.entity.PriceMoveEvent;
 import com.finplay.api.domain.feedback.entity.PriceMoveEventSource;
 import com.finplay.api.domain.feedback.entity.PriceMoveEventType;
 import com.finplay.api.domain.feedback.dto.response.NewsItem;
-import com.finplay.api.domain.feedback.dto.response.PriceMoveListItemResponse;
+import com.finplay.api.domain.feedback.dto.response.PriceMoveItem;
 import com.finplay.api.domain.feedback.dto.response.PriceMoveListResponse;
 import com.finplay.api.domain.feedback.repository.MarketNewsItemRepository;
 import com.finplay.api.domain.feedback.repository.PriceMoveEventRepository;
@@ -154,7 +154,7 @@ class PriceMoveQueryGateIntegrationTest {
 			publishedAt.plusMinutes(30)));
 	}
 
-	private List<PriceMoveListItemResponse> queryMoves() {
+	private List<PriceMoveItem> queryMoves() {
 		return priceMoveQueryService.getPriceMoves(instrument.getId()).moves();
 	}
 
@@ -169,7 +169,7 @@ class PriceMoveQueryGateIntegrationTest {
 		mutableClock.set(LocalDateTime.of(SECOND_REPLAY_DATE, LocalTime.of(11, 30)));
 
 		assertThat(queryMoves())
-			.extracting(PriceMoveListItemResponse::windowEnd)
+			.extracting(PriceMoveItem::windowEnd)
 			.containsExactly(LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(11, 25)));
 	}
 
@@ -432,7 +432,7 @@ class PriceMoveQueryGateIntegrationTest {
 		mutableClock.set(LocalDateTime.of(SECOND_REPLAY_DATE, LocalTime.of(15, 0)));
 
 		assertThat(queryMoves())
-			.extracting(PriceMoveListItemResponse::eventType)
+			.extracting(PriceMoveItem::eventType)
 			.containsExactly(PriceMoveEventType.OPENING_GAP, PriceMoveEventType.INTRADAY);
 	}
 
@@ -451,7 +451,7 @@ class PriceMoveQueryGateIntegrationTest {
 		mutableClock.set(LocalDateTime.of(SECOND_REPLAY_DATE, LocalTime.of(15, 0)));
 
 		assertThat(queryMoves())
-			.extracting(PriceMoveListItemResponse::eventType)
+			.extracting(PriceMoveItem::eventType)
 			.containsExactly(PriceMoveEventType.INTRADAY, PriceMoveEventType.OPENING_GAP);
 	}
 
@@ -467,7 +467,7 @@ class PriceMoveQueryGateIntegrationTest {
 		saveCard(LocalTime.of(9, 0), LocalTime.of(9, 5), LocalTime.of(9, 6));
 		mutableClock.set(LocalDateTime.of(SECOND_REPLAY_DATE, LocalTime.of(15, 0)));
 
-		List<PriceMoveListItemResponse> moves = queryMoves();
+		List<PriceMoveItem> moves = queryMoves();
 
 		assertThat(moves).extracting(move -> move.windowStart().toLocalTime())
 			.containsExactly(LocalTime.of(9, 0), LocalTime.of(11, 20));

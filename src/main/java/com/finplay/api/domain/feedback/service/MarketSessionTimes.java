@@ -27,11 +27,11 @@ import java.time.LocalTime;
  * §튜닝으로 조정하는 수치를 담지만 이 셋은 조정 대상이 아니라 시장 규칙이다.
  *
  * <p>가시성을 좁혔던 것은 사용처가 전부 이 패키지의 서비스였기 때문이고, 원래 주석이 "밖에서 필요해지면 그때
- * 넓힌다"고 예고한 그 시점이 왔다 — {@code feedback.store.FeedbackQueryCache}가 조회 캐시의 TTL 경계로 아래 두
- * 시각을 쓴다(ADR-0015 §2). <b>캐시가 시각 상수를 따로 선언하지 않는 것이 요점이다</b> — 두 곳에 리터럴을 두면
- * 한쪽만 바뀌었을 때 캐시 만료와 조회 범위가 예외도 로그도 없이 갈린다. {@code ROLLING_WINDOW}도 이후
- * {@code feedback.service}가 briefing·instrumentnews·pricemove 하위 패키지로 나뉘면서 이 클래스 밖(다른
- * 하위 패키지)의 소비자가 생겨 함께 넓혔다.
+ * 넓힌다"고 예고한 그 시점이 {@code MARKET_OPEN_TIME}·{@code MARKET_CLOSE_TIME} 두 값에 왔다 —
+ * {@code feedback.store.FeedbackQueryCache}가 조회 캐시의 TTL 경계로 이 둘을 쓴다(ADR-0015 §2).
+ * <b>캐시가 시각 상수를 따로 선언하지 않는 것이 요점이다</b> — 두 곳에 리터럴을 두면 한쪽만 바뀌었을 때 캐시
+ * 만료와 조회 범위가 예외도 로그도 없이 갈린다. {@code ROLLING_WINDOW}는 소비자 셋이 여전히 전부 이 패키지
+ * 안이라(아래 참고) package-private을 유지한다.
  */
 public final class MarketSessionTimes {
 
@@ -55,7 +55,7 @@ public final class MarketSessionTimes {
 	 * <p><b>설정값이 아니다.</b> §튜닝으로 조정하는 수치가 아니라 §C-2가 정의한 범위 자체이며, 위 두 시각과
 	 * 같은 성격이라 {@code feedback.*} 블록에 두지 않는다.
 	 */
-	public static final Duration ROLLING_WINDOW = Duration.ofHours(24);
+	static final Duration ROLLING_WINDOW = Duration.ofHours(24);
 
 	private MarketSessionTimes() {}
 }
