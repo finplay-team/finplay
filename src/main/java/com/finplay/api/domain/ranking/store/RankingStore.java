@@ -139,10 +139,12 @@ public class RankingStore {
 	// WARN + 스택트레이스 생략(PR #296 리뷰 권장사항) — 이제 이 경로는 500이 아니라 정상 폴백이라, 장애가
 	// 몇 분만 이어져도 요청 수만큼 동일 스택트레이스가 쌓여 정작 봐야 할 다른 ERROR를 덮는다. 예외 타입·메시지는
 	// 원인 파악에 충분하고, 반복 여부·지속 시간은 이 로그 라인 자체의 빈도로 알 수 있다.
+	// 상세 원인(시장·예외)은 여기서 로그로만 남기고, 예외 메시지는 ErrorCode 기본 메시지로 고정한다 — 이 메시지가
+	// GlobalExceptionHandler를 거쳐 그대로 응답 본문에 실리므로, RankingService의 catch를 빠뜨린 새 호출자가
+	// 생겨도 내부 진단 문자열이 클라이언트로 새지 않게 하기 위해서다(PR #523 리뷰 [권장 5]).
 	private BusinessException unavailable(Market market, Exception cause) {
 		log.warn("랭킹 조회 실패(Redis 연결 장애). market={}, cause={}", market, cause.toString());
-		return new BusinessException(ErrorCode.RANKING_STORE_UNAVAILABLE, "랭킹 조회 중 Redis 연결 장애. market=" + market,
-			cause);
+		return new BusinessException(ErrorCode.RANKING_STORE_UNAVAILABLE, cause);
 	}
 
 	private void sleepBackoff(long millis) {

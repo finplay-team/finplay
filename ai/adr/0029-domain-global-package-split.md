@@ -42,9 +42,12 @@ feedback, journal, market, order, portfolio, ranking, watchlist)와 전역 예�
 
 - 패키지 목록 자체가 "이건 도메인 로직, 이건 전역 공통"을 구분해주면 새로 합류하는 사람이나 에이전트가
   구조만 보고 어디에 코드를 둘지 판단할 수 있다.
-- 기계적 이동이라 레이어 구조·클래스 내용은 전혀 바뀌지 않는다 — 패키지 선언과 import, 그리고 JPQL
+- 대부분 기계적 이동이라 레이어 구조·클래스 내용은 바뀌지 않는다 — 패키지 선언과 import, 그리고 JPQL
   `@Query` 문자열 안의 완전정규화 클래스명(예: `new com.finplay.api.order.service.PracticeOrderFillAttributionDto(...)`)만
-  갱신됐다.
+  갱신됐다. 예외 하나는 의도적으로 같은 커밋에 포함했다 — `account.domain.Market`과 `market.domain.Market`이
+  값 집합이 같은 중복 enum이었던 것을 이 재편 김에 `market.entity.Market` 하나로 합쳤다(`@Enumerated(STRING)`이라
+  DB·동작 영향 없음, PR #523 리뷰 [권장 3]). 도메인 간 타입 의존이 하나 새로 생기는 결정이라 "완전히
+  기계적"이라는 서술과는 별개로 남겨 둔다.
 
 ## 결과
 
