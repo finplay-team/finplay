@@ -1,4 +1,4 @@
-// 자동 OCO 예약이 tick에서 체결된 뒤 실행 세대 원장·재진입·재시작이 이어지는지 실제 MySQL로 검증한다.
+// 사용자가 건 OCO 예약이 tick에서 체결된 뒤 실행 세대 원장·재진입·재시작이 이어지는지 실제 MySQL로 검증한다.
 package com.finplay.api.domain.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -13,6 +13,7 @@ import com.finplay.api.domain.education.marketpractice.dto.response.PracticeAtte
 import com.finplay.api.domain.education.marketpractice.dto.response.PracticeEntryResponse;
 import com.finplay.api.domain.education.marketpractice.dto.response.PracticeStageProgressResponse;
 import com.finplay.api.domain.education.marketpractice.entity.ExitPreset;
+import com.finplay.api.domain.education.marketpractice.entity.ExitRates;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeAttempt;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeRiskSnapshot;
 import com.finplay.api.domain.education.marketpractice.repository.PracticeAttemptRepository;
@@ -114,6 +115,8 @@ class PracticeExitPresetOcoIntegrationTest {
 	@Autowired
 	private PracticeEntryComparisonService practiceEntryComparisonService;
 	@Autowired
+	private PracticeExitPlanReservationService exitPlanReservationService;
+	@Autowired
 	private TestClock clock;
 
 	@BeforeEach
@@ -128,9 +131,13 @@ class PracticeExitPresetOcoIntegrationTest {
 		// 마친다 — 그래서 이 실행의 "진짜" 첫 진입은 entrySequence 3이다(워밍업 시장가 1·지정가 1).
 		Fixture fixture = tutorialRunAtRumorStageAfterBothRoundTrips("oco-stop");
 
-		// 매수 — 같은 트랜잭션에서 기준선과 예약이 함께 생긴다(EXITPRESET-012).
+		// 매수 — 기준선만 생긴다. **052 EXITFREE-020으로 자동 예약이 사라졌다**(042 EXITPRESET-012를
+		// 뒤집었다) — 예약은 아래에서 사용자가 직접 건다.
 		clock.set(NARRATIVE_START.plusSeconds(1));
 		buy(fixture);
+		assertThat(exitPlanRepository
+			.findByPracticeAttemptIdAndPracticeAttemptRunNumber(fixture.attemptId(), 1L)).isEmpty();
+		reserve(fixture, "3", "5");
 
 		PracticeRiskSnapshot firstEntry = latestSnapshot(fixture);
 		assertThat(firstEntry.getEntrySequence()).isEqualTo(3);
@@ -168,16 +175,18 @@ class PracticeExitPresetOcoIntegrationTest {
 		assertThat(afterStop.exitPresetLocked()).isFalse();
 		assertThat(afterStop.selectedExitPreset()).isEqualTo("RELAXED");
 
-		// 재매수 — 새 진입이라 새 기준선과 새 예약이 바뀐 프리셋으로 생긴다(EXITPRESET-017).
+		// 재매수 — 새 진입이라 새 기준선이 바뀐 프리셋으로 생기고(EXITPRESET-017), 그 진입 몫으로 예약을
+		// 다시 한 번 걸 수 있다(052 write-once는 진입 단위다).
 		clock.set(NARRATIVE_START.plusSeconds(30));
 		buy(fixture);
+		reserve(fixture, "5", "8");
 
 		PracticeRiskSnapshot secondEntry = latestSnapshot(fixture);
 		assertThat(secondEntry.getEntrySequence()).isEqualTo(4);
 		assertThat(secondEntry.getExitPreset()).isEqualTo(ExitPreset.RELAXED);
 
-		// PR #487 리뷰 권장 1 — 예약이 "생겼는지"만이 아니라 그 손절·익절가가 바뀐 프리셋을 실제로 반영하는지
-		// 본다. 개수만 세면 프리셋이 BALANCED로 굳어 있어도 통과한다(042 tasks 8번의 완료 조건).
+		// PR #487 리뷰 권장 1 — 예약이 "생겼는지"만이 아니라 그 손절·익절가가 사용자가 정한 비율을 실제로
+		// 반영하는지 본다. 개수만 세면 비율이 3/5로 굳어 있어도 통과한다.
 		List<Long> reReservedIds = exitPlanRepository.findPendingPracticeRunExitPlanIds(fixture.attemptId(), 1L);
 		assertThat(reReservedIds).hasSize(1);
 		ExitPlan reReserved = exitPlanRepository.findById(reReservedIds.get(0)).orElseThrow();
@@ -217,6 +226,7 @@ class PracticeExitPresetOcoIntegrationTest {
 
 		clock.set(BASE_NOW.plusSeconds(1));
 		buy(fixture);
+		reserve(fixture, "3", "5");
 		assertThat(stageProgress(fixture).marketBuySellCompleted()).isFalse();
 
 		// tick — 손절이 발동해 포지션이 청산된다. 원장에는 MARKET 매도가 남는다.
@@ -303,7 +313,10 @@ class PracticeExitPresetOcoIntegrationTest {
 		assertThat(entries).hasSize(2);
 		assertThat(entries.get(1).buyOrderType()).isEqualTo("LIMIT");
 
-		// 지정가 매도 접수 — 전량이 자동 예약에 잡혀 있어도 접수된다(042 EXITPRESET-016).
+		// 지정가 매도 접수 — 전량이 예약에 잡혀 있어도 접수된다(042 EXITPRESET-016). 052로 예약을 거는
+		// 주체가 사용자로 바뀌었을 뿐, 접수가 막히지 않아야 한다는 성질은 그대로다.
+		reserve(fixture, "3", "5");
+		assertThat(reservedQuantity(fixture)).isEqualByComparingTo(QUANTITY);
 		limitOrder(fixture, OrderSide.SELL, new BigDecimal("9700"));
 		clock.set(BASE_NOW.plusSeconds(18));
 		chartService.tick(fixture.userId(), Market.CRYPTO);
@@ -334,6 +347,7 @@ class PracticeExitPresetOcoIntegrationTest {
 
 		clock.set(BASE_NOW.plusSeconds(1));
 		buy(fixture);
+		reserve(fixture, "3", "5");
 		assertThat(reservedQuantity(fixture)).isEqualByComparingTo(QUANTITY);
 
 		clock.set(BASE_NOW.plusSeconds(2));
@@ -347,6 +361,13 @@ class PracticeExitPresetOcoIntegrationTest {
 
 	private static BigDecimal expectedPrice(BigDecimal entryPrice, BigDecimal factor) {
 		return entryPrice.multiply(factor).setScale(PRICE_SCALE, RoundingMode.HALF_UP);
+	}
+
+	// 052 EXITFREE-020 — 사용자가 직접 거는 예약. 042에서는 이 자리를 매수 체결이 대신했다.
+	private void reserve(Fixture fixture, String stopLossRate, String takeProfitRate) {
+		exitPlanReservationService.create(
+			fixture.userId(), Market.CRYPTO,
+			ExitRates.of(new BigDecimal(stopLossRate), new BigDecimal(takeProfitRate)));
 	}
 
 	private void buy(Fixture fixture) {

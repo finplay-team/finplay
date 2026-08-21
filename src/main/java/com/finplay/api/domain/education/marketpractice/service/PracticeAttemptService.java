@@ -6,6 +6,7 @@ import com.finplay.api.domain.account.service.TutorialAccountService;
 import com.finplay.api.domain.education.marketpractice.dto.response.PracticeAttemptResponse;
 import com.finplay.api.domain.education.marketpractice.dto.response.PracticeStageProgressResponse;
 import com.finplay.api.domain.education.marketpractice.entity.ExitPreset;
+import com.finplay.api.domain.education.marketpractice.entity.ExitRates;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeAttempt;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeAttemptStatus;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeCompletion;
@@ -221,6 +222,25 @@ public class PracticeAttemptService {
 	 */
 	@Transactional
 	public PracticeAttemptResponse selectExitPreset(Long userId, Market market, ExitPreset preset) {
+		return selectExitRates(userId, market, ExitRates.of(preset));
+	}
+
+	/**
+	 * 052 — 현재 실행 세대의 손절·익절 비율을 자유 입력으로 고친다. 프리셋 3개(택1)를 없애고 실전 화면처럼
+	 * 두 값을 서로 <b>독립적으로</b> 정하게 하는 것이 이 엔드포인트의 목적이며, 손절 5 + 익절 3 같은 조합도
+	 * 유효하다.
+	 *
+	 * <p><b>거부 판정은 프리셋 경로와 한 글자도 다르지 않다</b> — 위 {@link #selectExitPreset}이 이 메서드에
+	 * 위임하므로 두 엔드포인트가 같은 코드로 판정한다. 특히 <b>보유 중 거부</b>는 042 EXITPRESET-003의
+	 * 취지를 그대로 승계한다: 손실 중에 손절선을 슬금슬금 내리는 사후 합리화를 막는 것이고, 자유 입력은
+	 * 그 유혹을 <b>키우지</b> 오히려 줄이지 않는다. 손절을 겪은 뒤 다음 진입의 기준을 다시 정하는 것은
+	 * 이 기능이 훈련시키려는 판단 그 자체이므로 재진입 대기 중에는 몇 번이든 바꿀 수 있다.
+	 *
+	 * <p>이미 확정된 snapshot과 그 snapshot으로 만들어진 예약은 어떤 경우에도 바뀌지 않으며 다음 진입에만
+	 * 적용된다 — 자동 예약 구조는 052가 건드리지 않는다(042 EXITPRESET-004·012).
+	 */
+	@Transactional
+	public PracticeAttemptResponse selectExitRates(Long userId, Market market, ExitRates exitRates) {
 		PracticeAttempt attempt = practiceAttemptRepository.findByUserIdAndMarketForUpdate(userId, market)
 			.orElseThrow(() -> new BusinessException(ErrorCode.PRACTICE_STEP_LOCKED));
 		if (attempt.getStatus() == PracticeAttemptStatus.COMPLETED) {
@@ -230,7 +250,7 @@ public class PracticeAttemptService {
 		if (exitPresetLocked(attempt)) {
 			throw new BusinessException(ErrorCode.PRACTICE_STEP_LOCKED);
 		}
-		attempt.selectExitPreset(preset, LocalDateTime.now(clock));
+		attempt.selectExitRates(exitRates, LocalDateTime.now(clock));
 		// 방금 잠금이 아님을 확인했으므로 다시 조회하지 않는다 — attempt를 잠근 트랜잭션 안이라 그 사이
 		// 매수 체결이 끼어들 수 없다.
 		return toResponse(attempt, tutorialAccountFor(userId, market), false);

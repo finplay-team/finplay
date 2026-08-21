@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 
 import com.finplay.api.domain.education.marketpractice.dto.response.PracticeEntryResponse;
 import com.finplay.api.domain.education.marketpractice.entity.ExitPreset;
+import com.finplay.api.domain.education.marketpractice.entity.ExitRates;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeAttempt;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeRiskSnapshot;
 import com.finplay.api.domain.education.marketpractice.repository.PracticeRiskSnapshotRepository;
@@ -107,7 +108,10 @@ class PracticeEntryComparisonServiceTest {
 	@Test
 	void heldEntryLeavesSellAndComparisonFieldsEmpty() {
 		PracticeAttempt attempt = attempt();
-		PracticeRiskSnapshot entry = snapshot(attempt, 1, null, buyTrade(101L), "9700", "10500");
+		// 052 이전에 만들어진 행(세 컬럼이 모두 null)을 만든다 — 팩토리는 이제 비율을 항상 채우므로
+		// 그 상태는 필드를 직접 비워야만 재현된다.
+		PracticeRiskSnapshot entry = legacySnapshot(
+			snapshot(attempt, 1, ExitPreset.BALANCED, buyTrade(101L), "9700", "10500"));
 		when(snapshotRepository.findByAttemptIdAndRunNumberOrderByEntrySequenceAsc(ATTEMPT_ID, 1L))
 			.thenReturn(List.of(entry));
 		when(tradeService.summarizePracticeRunEntries(ATTEMPT_ID, 1L, List.of(101L))).thenReturn(List.of(
@@ -154,11 +158,19 @@ class PracticeEntryComparisonServiceTest {
 		return snapshot(attempt, entrySequence, preset, buyTrade, stopLoss, takeProfit, null);
 	}
 
+	/** 042·052 이전에 만들어진 행 — exit_preset과 비율 두 컬럼이 모두 비어 있다. */
+	private static PracticeRiskSnapshot legacySnapshot(PracticeRiskSnapshot snapshot) {
+		ReflectionTestUtils.setField(snapshot, "exitPreset", null);
+		ReflectionTestUtils.setField(snapshot, "exitStopLossRate", null);
+		ReflectionTestUtils.setField(snapshot, "exitTakeProfitRate", null);
+		return snapshot;
+	}
+
 	private static PracticeRiskSnapshot snapshot(
 		PracticeAttempt attempt, int entrySequence, ExitPreset preset, Trade buyTrade, String stopLoss,
 		String takeProfit, TutorialScenarioScriptId scenarioScriptId) {
 		return PracticeRiskSnapshot.create(
-			attempt, 1L, entrySequence, preset, buyTrade, new BigDecimal("10000"),
+			attempt, 1L, entrySequence, ExitRates.of(preset), buyTrade, new BigDecimal("10000"),
 			new BigDecimal(stopLoss), new BigDecimal(takeProfit), scenarioScriptId, NOW);
 	}
 

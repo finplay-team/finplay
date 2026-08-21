@@ -12,11 +12,13 @@ import com.finplay.api.domain.auth.config.SecurityConfig;
 import com.finplay.api.domain.auth.token.AuthenticatedUser;
 import com.finplay.api.domain.auth.token.JwtTokenProvider;
 import com.finplay.api.domain.education.marketpractice.dto.response.ExitPresetResponse;
+import com.finplay.api.domain.education.marketpractice.dto.response.ExitRateBoundsResponse;
 import com.finplay.api.domain.education.marketpractice.dto.response.PracticeAttemptResponse;
 import com.finplay.api.domain.education.marketpractice.service.PracticeAttemptScriptAdvanceService;
 import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.global.exception.BusinessException;
 import com.finplay.api.global.exception.ErrorCode;
+import java.math.BigDecimal;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -54,7 +56,8 @@ class PracticeAttemptScriptAdvanceControllerTest {
 		PracticeAttemptResponse response = new PracticeAttemptResponse(
 			11L, "CRYPTO", 2L, "ACTIVE", "ACTIVE", 3L, null, null, null, null,
 			10_000_000L, 10_000_000L, 0L,
-			"BALANCED", false, ExitPresetResponse.all());
+			"BALANCED", false, ExitPresetResponse.all(),
+			new BigDecimal("3"), new BigDecimal("5"), ExitRateBoundsResponse.current());
 		when(scriptAdvanceService.advanceScript(USER_ID, Market.CRYPTO)).thenReturn(response);
 
 		mockMvc.perform(post("/api/education/practice/attempts/CRYPTO/advance-script")

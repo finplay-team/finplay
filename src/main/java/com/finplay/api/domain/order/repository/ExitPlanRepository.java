@@ -34,6 +34,22 @@ public interface ExitPlanRepository extends JpaRepository<ExitPlan, Long> {
 	List<ExitPlan> findByPracticeAttemptIdAndPracticeAttemptRunNumber(Long practiceAttemptId,
 		Long practiceAttemptRunNumber);
 
+	// 052 EXITFREE-020 write-once — **그 진입에** 예약을 이미 한 번 만들었는가. request_hash가
+	// attemptId:runNumber:entrySequence의 SHA-256이라(ExitPlanPracticeOriginDto.auditRequestHash) 진입을
+	// 정확히 가리킨다. **개수를 세는 판정으로 대신할 수 없다** — 예약 없이 지나간 진입이 하나라도 있으면
+	// "예약 수 < 진입 순번"이 남아 이미 예약한 진입에서 재생성이 다시 열린다.
+	//
+	// 상태를 조건에 넣지 않는 것이 이 판정의 핵심이다 — 취소된 예약도 세야 "취소하고 더 낮은 선으로 다시
+	// 걸기"가 막힌다(042 EXITPRESET-003이 막은 손절선 슬금슬금 내리기의 다른 문).
+	boolean existsByPracticeAttemptIdAndPracticeAttemptRunNumberAndRequestHash(
+		Long practiceAttemptId, Long practiceAttemptRunNumber, String requestHash);
+
+	// 052 EXITFREE-011 — 이 실행 세대에 예약이 하나라도 있는가(상태 무관). 5단계 진행 판정의
+	// exitPresetSelected가 "예약을 걸어 기준을 정했다"를 인정하는 근거이며, **취소된 예약도 세야**
+	// 그 판정이 실행 안에서 단조 증가한다(예약을 걸었다 취소했다고 이미 연 단계가 되잠기면 안 된다).
+	boolean existsByPracticeAttemptIdAndPracticeAttemptRunNumber(
+		Long practiceAttemptId, Long practiceAttemptRunNumber);
+
 	// 042 EXITPRESET-014·015·016 — 현재 튜토리얼 실행 세대에 귀속된 PENDING 예약의 id만 읽는다.
 	// 종목 단위인 findPendingExitPlansToFill을 쓰지 않는 이유는 그것이 다른 실행 세대·다른 사용자의 예약까지
 	// 함께 잡기 때문이다. id만 프로젝션하는 것은 체결·취소 서비스가 각자 잠금 순서대로 다시 조회하기 때문이다.

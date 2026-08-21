@@ -10,6 +10,7 @@ import com.finplay.api.domain.account.repository.AccountRepository;
 import com.finplay.api.domain.auth.entity.User;
 import com.finplay.api.domain.auth.repository.UserRepository;
 import com.finplay.api.domain.education.marketpractice.entity.ExitPreset;
+import com.finplay.api.domain.education.marketpractice.entity.ExitRates;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeAttempt;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeAttemptStatus;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeRiskSnapshot;
@@ -474,7 +475,7 @@ class PracticeAttemptRepositoryTest {
 	void findByAttemptIdAndRunNumberOrderByEntrySequenceAscFetchesBuyTradeAndItsOrderInOneQuery() {
 		for (int sequence = 1; sequence <= 3; sequence++) {
 			practiceRiskSnapshotRepository.saveAndFlush(PracticeRiskSnapshot.create(
-				attempt, attempt.getRunNumber(), sequence, ExitPreset.BALANCED,
+				attempt, attempt.getRunNumber(), sequence, ExitRates.of(ExitPreset.BALANCED),
 				createBuyTrade("graph-idem-" + sequence), BigDecimal.valueOf(100),
 				BigDecimal.valueOf(97), BigDecimal.valueOf(105), null, NOW));
 		}
@@ -550,15 +551,24 @@ class PracticeAttemptRepositoryTest {
 	@DisplayName("프리셋을 고르지 않은 attempt와 기능 도입 전 스냅샷은 프리셋이 NULL인 채로 저장된다")
 	void unselectedExitPresetStaysNull() {
 		Trade buyTrade = createBuyTrade("exit-preset-null-order");
-		// 042 4번부터 새로 만드는 스냅샷은 미선택 사용자도 기본 프리셋으로 채워진다. NULL이 남는 것은
-		// 기능 도입 전에 만들어진 행뿐이며, 그 행이 계속 읽히는지 확인하려고 여기서만 null로 만든다.
+		// 042 4번부터 새로 만드는 스냅샷은 미선택 사용자도 기본 프리셋으로 채워지고, 052부터는 비율 두
+		// 컬럼까지 팩토리가 항상 채운다. NULL이 남는 것은 기능 도입 전에 만들어진 행뿐이라 **팩토리로는
+		// 그 상태를 만들 수 없다** — 그 행이 계속 읽히는지 확인하려고 여기서만 네이티브 UPDATE로 비운다.
+		// V56의 CHECK는 "둘 다 NULL이거나 둘 다 양수"라 세 컬럼을 함께 비우는 것이 제약을 통과한다.
 		PracticeRiskSnapshot savedSnapshot = practiceRiskSnapshotRepository.saveAndFlush(
-			createRiskSnapshot(buyTrade, NOW.plusSeconds(1), null));
+			createRiskSnapshot(buyTrade, NOW.plusSeconds(1)));
+		entityManager.createNativeQuery(
+			"UPDATE practice_risk_snapshots SET exit_preset = NULL, exit_stop_loss_rate = NULL,"
+				+ " exit_take_profit_rate = NULL WHERE id = :snapshotId")
+			.setParameter("snapshotId", savedSnapshot.getId())
+			.executeUpdate();
 		entityManager.clear();
 
 		assertThat(practiceAttemptRepository.findById(attempt.getId()).orElseThrow().getExitPreset()).isNull();
-		assertThat(practiceRiskSnapshotRepository.findById(savedSnapshot.getId()).orElseThrow().getExitPreset())
-			.isNull();
+		PracticeRiskSnapshot reloaded = practiceRiskSnapshotRepository.findById(savedSnapshot.getId()).orElseThrow();
+		assertThat(reloaded.getExitPreset()).isNull();
+		// 052 — 세 컬럼이 모두 빈 도입 전 행도 읽히며, 기본값(−3%·+5%)으로 해석된다(EXITPRESET-002 승계).
+		assertThat(reloaded.appliedExitRates()).isEqualTo(ExitRates.DEFAULT);
 	}
 
 	// 열거형 밖의 값은 엔티티로는 만들 수 없으므로 네이티브 UPDATE로 스키마를 직접 찌른다. V51이 CHECK를
@@ -595,7 +605,7 @@ class PracticeAttemptRepositoryTest {
 			attempt,
 			attempt.getRunNumber(),
 			PracticeRiskSnapshot.FIRST_ENTRY_SEQUENCE,
-			exitPreset,
+			ExitRates.of(exitPreset),
 			buyTrade,
 			new BigDecimal("100.00000000"),
 			new BigDecimal("97.00000000"),
@@ -614,7 +624,7 @@ class PracticeAttemptRepositoryTest {
 			attempt,
 			attempt.getRunNumber(),
 			PracticeRiskSnapshot.FIRST_ENTRY_SEQUENCE,
-			ExitPreset.BALANCED,
+			ExitRates.of(ExitPreset.BALANCED),
 			buyTrade,
 			new BigDecimal("100.00000000"),
 			new BigDecimal("97.00000000"),

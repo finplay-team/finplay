@@ -9,11 +9,13 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.finplay.api.domain.education.marketpractice.dto.response.ExitPresetResponse;
+import com.finplay.api.domain.education.marketpractice.dto.response.ExitRateBoundsResponse;
 import com.finplay.api.domain.education.marketpractice.dto.response.PracticeAttemptResponse;
 import com.finplay.api.domain.education.marketpractice.dto.response.PracticeTutorialChartResponse;
 import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.global.exception.BusinessException;
 import com.finplay.api.global.exception.ErrorCode;
+import java.math.BigDecimal;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.CannotAcquireLockException;
@@ -127,6 +129,7 @@ class PracticeAttemptDeadlockRetryServiceTest {
 	private PracticeAttemptResponse attemptResponse() {
 		return new PracticeAttemptResponse(
 			11L, "CRYPTO", 1L, "ACTIVE", "SELECTING_INSTRUMENT", null, null, null, null, null,
-			10_000_000L, 10_000_000L, 0L, "BALANCED", false, ExitPresetResponse.all());
+			10_000_000L, 10_000_000L, 0L, "BALANCED", false, ExitPresetResponse.all(),
+			new BigDecimal("3"), new BigDecimal("5"), ExitRateBoundsResponse.current());
 	}
 }

@@ -3,6 +3,7 @@ package com.finplay.api.domain.education.marketpractice.service;
 
 import com.finplay.api.domain.education.marketpractice.dto.response.PracticeEntryResponse;
 import com.finplay.api.domain.education.marketpractice.entity.ExitPreset;
+import com.finplay.api.domain.education.marketpractice.entity.ExitRates;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeAttempt;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeRiskSnapshot;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeSellCause;
@@ -79,11 +80,16 @@ public class PracticeEntryComparisonService {
 		BigDecimal comparisonPrice) {
 		Trade sellTrade = summary.firstSellTrade();
 		Market market = attempt.getMarket();
+		// 052 — 그 진입에 실제로 적용된 비율이 정본이고 프리셋 이름은 파생값이다. 042 이전 행의 NULL 해석은
+		// appliedExitRates가 갖는다. PracticeAttemptResponse.selectedExitPreset과 같은 규칙이라 화면 두 곳이
+		// 다른 값을 보이지 않는다.
+		ExitRates rates = snapshot.appliedExitRates();
+		ExitPreset matchingPreset = rates.matchingPreset();
 		return new PracticeEntryResponse(
 			snapshot.getEntrySequence(),
-			// 기능 도입 전에 만들어진 행은 exit_preset이 null이며 기본 프리셋으로 해석한다(042 EXITPRESET-002).
-			// PracticeAttemptResponse.selectedExitPreset과 같은 규칙이라 화면 두 곳이 다른 값을 보이지 않는다.
-			(snapshot.getExitPreset() == null ? ExitPreset.DEFAULT : snapshot.getExitPreset()).name(),
+			matchingPreset == null ? null : matchingPreset.name(),
+			rates.stopLossRate(),
+			rates.takeProfitRate(),
 			// 이슈 #503 — 진입을 연 매수의 주문 유형. 진입 경계가 곧 그 매수 체결이다. buyTrade와 그
 			// order는 지연 로딩이지만 snapshot 조회가 @EntityGraph로 함께 가져오므로 여기서 추가 조회가
 			// 나지 않는다 — 그 fetch가 빠지면 진입 하나마다 조회 두 번이 조용히 붙는다.

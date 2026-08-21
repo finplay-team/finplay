@@ -18,7 +18,12 @@ import java.time.LocalDateTime;
  * {@code realizedPnl}은 합이라 금액은 전부 반영된다.
  *
  * @param entrySequence       실행 세대 안의 몇 번째 진입인가(1부터). 손절 후 재매수하면 2다
- * @param exitPreset          그 진입에 적용된 프리셋. 기능 도입 전 행은 기본 프리셋으로 해석해 내려보낸다
+ * @param exitPreset          그 진입에 적용된 비율이 042 프리셋 3개 중 하나와 <b>정확히 같을 때</b> 그
+ *                            식별자, 자유 조합이면 {@code null}(052). 042 이전 행은 기본 프리셋으로 해석해
+ *                            내려보낸다
+ * @param stopLossRate        그 진입에 적용된 손절률(퍼센트 수, 양수). {@code exitPreset}이 {@code null}일
+ *                            수 있으므로 화면은 이 두 값으로 기준을 그린다 — 항상 채워진다
+ * @param takeProfitRate      그 진입에 적용된 익절률(퍼센트 수, 양수)
  * @param buyOrderType        그 진입을 연 매수의 주문 유형({@code MARKET|LIMIT}, 이슈 #503). 진입 경계인
  *                            위험 snapshot의 매수 체결이 가리키는 주문에서 읽는다. <b>매도의 유형이
  *                            아니다</b> — 시장가로 산 포지션을 지정가로 팔거나 예약이 청산할 수 있어 둘이
@@ -52,6 +57,8 @@ import java.time.LocalDateTime;
 public record PracticeEntryResponse(
 	int entrySequence,
 	String exitPreset,
+	BigDecimal stopLossRate,
+	BigDecimal takeProfitRate,
 	String buyOrderType,
 	LocalDateTime buyAt,
 	BigDecimal buyPrice,

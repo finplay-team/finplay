@@ -1,15 +1,19 @@
-// 프리셋 세 개의 손절·익절선이 041 대본에서 실제로 닿는지를 대본 파일과 상수로 판정한다 (EXITPRESET-010).
+// 프리셋 세 개와 052 자유 입력 구간 전체의 손절·익절선이 041 대본에서 실제로 닿는지 판정한다 (EXITPRESET-010).
 package com.finplay.api.domain.education.marketpractice.entity;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finplay.api.domain.education.marketpractice.service.ReferencePriceCalculator;
+import com.finplay.api.domain.education.marketpractice.service.ReferencePriceLines;
 import com.finplay.api.domain.market.entity.TutorialScenarioScriptId;
 import com.finplay.api.domain.market.service.TutorialScenarioEvent;
 import com.finplay.api.domain.market.service.TutorialScenarioScript;
 import com.finplay.api.domain.market.service.TutorialScenarioScriptLoader;
+import com.finplay.api.domain.market.service.TutorialScenarioStage;
+import com.finplay.api.domain.market.service.TutorialScenarioStageKind;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
@@ -120,6 +124,110 @@ class ExitPresetScenarioReachabilityTest {
 
 			assertThat(missedUpside).as("%s 익절 후 놓친 상승분", preset).isLessThan(crashDrop);
 		});
+	}
+
+	// ---------------------------------------------------------------------------------------------
+	// 052 — 자유 입력 구간 전수 도달성
+	//
+	// **여기부터가 이 클래스에서 가장 중요한 검증이다.** 위 단언들은 프리셋 셋(2·3·5 / 3·5·8)이라는 점
+	// 세 개에 대해서만 도달성을 고정한다. 052가 그 자리를 자유 입력으로 바꾸면서 검증해야 할 것이 점
+	// 세 개가 아니라 **구간 [2,5]·[3,8] 전체**가 됐다 — 사용자가 고를 수 있는데 대본이 영영 닿지 않는
+	// 값이 하나라도 있으면 그 사용자는 이 튜토리얼이 가르치려는 것("손절과 익절을 실제로 겪어 본다")을
+	// 못 배우고 끝난다.
+	//
+	// 0.1%p 간격 전수(손절 31개 × 익절 51개 = 1581조합)를 **가능한 모든 진입 분**에 대해 훑는다. 진입가는
+	// 대기 구간의 어느 분에서나 잡힐 수 있으므로 진입 배율을 하나로 고정하면 안 된다 — 이 대본의 대기
+	// 구간은 ±0.2% 범위로 흔들린다.
+	//
+	// 가격 경로는 041의 전이 규칙을 그대로 쓴다: **대기 구간에서 매수하면 시간을 소비하지 않고 다음 진행
+	// 구간의 0분으로 점프한다.** 그래서 진입 이후 경로는 그 대기 구간의 남은 분이 아니라 다음 PROGRESS
+	// 구간부터다.
+	// ---------------------------------------------------------------------------------------------
+
+	private static final BigDecimal RATE_STEP = new BigDecimal("0.1");
+
+	@Test
+	void everyAllowedRatePairStopsOutOnTheFirstEntryBeforeReachingTakeProfit() {
+		List<BigDecimal> path = pathAfterEntryIn("IDLE_ENTRY");
+		forEachRatePair((stopLossRate, takeProfitRate) -> {
+			for (BigDecimal entryRatio : script.stage("IDLE_ENTRY").ratios()) {
+				assertThat(firstLineReached(entryRatio, stopLossRate, takeProfitRate, path))
+					.as("1막 진입 배율 %s · 손절 %s%% · 익절 %s%%", entryRatio, stopLossRate, takeProfitRate)
+					.isEqualTo(Reached.STOP_LOSS);
+			}
+		});
+	}
+
+	@Test
+	void everyAllowedRatePairTakesProfitOnTheReentryBeforeReachingStopLoss() {
+		List<BigDecimal> path = pathAfterEntryIn("IDLE_REENTRY");
+		forEachRatePair((stopLossRate, takeProfitRate) -> {
+			for (BigDecimal entryRatio : script.stage("IDLE_REENTRY").ratios()) {
+				assertThat(firstLineReached(entryRatio, stopLossRate, takeProfitRate, path))
+					.as("재진입 배율 %s · 손절 %s%% · 익절 %s%%", entryRatio, stopLossRate, takeProfitRate)
+					.isEqualTo(Reached.TAKE_PROFIT);
+			}
+		});
+	}
+
+	/** 손절이 먼저 닿았는가, 익절이 먼저 닿았는가, 둘 다 못 닿고 대본이 끝났는가. */
+	private enum Reached {
+		STOP_LOSS, TAKE_PROFIT, NEITHER
+	}
+
+	/**
+	 * 진입 이후 경로를 분 단위로 걸으며 <b>먼저</b> 닿는 선을 판정한다. 두 선이 같은 분에 함께 걸리는 일은
+	 * 이 대본에 없지만, 있다면 손절을 먼저 본다 — 실제 tick 정산도 하락을 먼저 판정한다.
+	 */
+	private Reached firstLineReached(
+		BigDecimal entryRatio, BigDecimal stopLossRate, BigDecimal takeProfitRate, List<BigDecimal> path) {
+		ReferencePriceLines lines = calculator.calculateFromRates(
+			entryRatio, ExitRates.of(stopLossRate, takeProfitRate));
+		for (BigDecimal ratio : path) {
+			if (ratio.compareTo(lines.referenceStopLossPrice()) <= 0) {
+				return Reached.STOP_LOSS;
+			}
+			if (ratio.compareTo(lines.referenceTakeProfitPrice()) >= 0) {
+				return Reached.TAKE_PROFIT;
+			}
+		}
+		return Reached.NEITHER;
+	}
+
+	/**
+	 * 대기 구간 {@code waitStageId}에서 매수한 뒤 실제로 겪는 배율 경로. 041의 "대기 구간 매수는 다음 진행
+	 * 구간 0분으로 점프한다"를 그대로 따라 그 구간의 남은 분은 넣지 않고, 그 뒤 구간은 대기·진행 구분 없이
+	 * 대본 순서대로 이어 붙인다.
+	 */
+	private List<BigDecimal> pathAfterEntryIn(String waitStageId) {
+		List<TutorialScenarioStage> stages = script.stages();
+		int start = 0;
+		while (!stages.get(start).id().equals(waitStageId)) {
+			start++;
+		}
+		while (stages.get(start).kind() != TutorialScenarioStageKind.PROGRESS) {
+			start++;
+		}
+		List<BigDecimal> path = new ArrayList<>();
+		for (int index = start; index < stages.size(); index++) {
+			path.addAll(stages.get(index).ratios());
+		}
+		return List.copyOf(path);
+	}
+
+	private void forEachRatePair(RatePairAssertion assertion) {
+		for (BigDecimal stopLossRate = ExitRates.STOP_LOSS_MIN; stopLossRate
+			.compareTo(ExitRates.STOP_LOSS_MAX) <= 0; stopLossRate = stopLossRate.add(RATE_STEP)) {
+			for (BigDecimal takeProfitRate = ExitRates.TAKE_PROFIT_MIN; takeProfitRate
+				.compareTo(ExitRates.TAKE_PROFIT_MAX) <= 0; takeProfitRate = takeProfitRate.add(RATE_STEP)) {
+				assertion.accept(stopLossRate, takeProfitRate);
+			}
+		}
+	}
+
+	@FunctionalInterface
+	private interface RatePairAssertion {
+		void accept(BigDecimal stopLossRate, BigDecimal takeProfitRate);
 	}
 
 	private void forEachPreset(Consumer<ExitPreset> assertion) {

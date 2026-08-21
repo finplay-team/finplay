@@ -99,9 +99,22 @@ public class PracticeAttempt {
 
 	// 현재 실행 세대의 손절·익절 프리셋 선택값. null이면 미선택이며 기본 프리셋으로 해석한다
 	// (042 EXITPRESET-002). 값을 채우는 것은 선택 API(042 tasks 3번)이고 여기서는 매핑만 더한다.
+	//
+	// **052 이후 이 컬럼은 더 이상 정본이 아니다.** 적용될 비율의 정본은 아래 두 컬럼이고, 여기에는 그 비율이
+	// 프리셋 3개 중 하나와 정확히 같을 때만 그 식별자가 들어간다(자유 조합이면 null). 지우지 않는 이유는
+	// 프론트가 별도 배포라 프리셋 전환이 끝나기 전에 컬럼을 없애면 깨지기 때문이다(CLAUDE.md 규칙 8).
 	@Enumerated(EnumType.STRING)
 	@Column(name = "exit_preset", length = 20)
 	private ExitPreset exitPreset;
+
+	// 052 — 현재 실행 세대의 손절·익절 비율 자유 입력값(퍼센트 수, 손절도 양수). 둘 다 null이면 미선택이며
+	// exit_preset → 기본값 순으로 해석한다(effectiveExitRates). **둘 중 하나만 null인 상태는 없다** —
+	// 스키마의 CHECK와 아래 selectExitRates가 함께 막는다.
+	@Column(name = "exit_stop_loss_rate", precision = 7, scale = 4)
+	private BigDecimal exitStopLossRate;
+
+	@Column(name = "exit_take_profit_rate", precision = 7, scale = 4)
+	private BigDecimal exitTakeProfitRate;
 
 	@Column(name = "created_at", nullable = false)
 	private LocalDateTime createdAt;
@@ -161,18 +174,64 @@ public class PracticeAttempt {
 		this.updatedAt = updatedAt;
 		// 프리셋 선택은 실행 세대에 귀속된다 — 재시작하면 기본값으로 되돌아간다(042 EXITPRESET-009).
 		this.exitPreset = null;
+		this.exitStopLossRate = null;
+		this.exitTakeProfitRate = null;
 		clearScenarioProgress();
 	}
 
 	// 현재 실행 세대의 손절·익절 기준을 고른다. 잠금 판정(순보유수량 0)은 호출자가 한다 — 엔티티가
 	// holding 원장을 볼 수 없기 때문이다(042 EXITPRESET-003).
+	//
+	// 052 — 프리셋을 고른 경우에도 비율 두 컬럼을 함께 채운다. 적용될 비율의 정본이 비율 컬럼 하나로
+	// 모여야 체결 경로가 "프리셋이면 이쪽, 자유 입력이면 저쪽" 두 갈래를 갖지 않는다.
 	public void selectExitPreset(ExitPreset exitPreset, LocalDateTime updatedAt) {
+		selectExitRates(ExitRates.of(exitPreset), updatedAt);
+	}
+
+	/**
+	 * 052 — 현재 실행 세대의 손절·익절 비율을 자유 입력으로 고친다. 구간·소수 자릿수 검증은 요청 DTO가,
+	 * 보유 중 잠금은 서비스가 한다(042 EXITPRESET-003의 판정을 그대로 승계) — 엔티티는 holding 원장을
+	 * 볼 수 없다.
+	 *
+	 * <p>{@code exit_preset}에는 이 조합과 정확히 같은 프리셋이 있을 때만 그 식별자가 들어간다. 자유
+	 * 조합이면 {@code null}이며, 그 자리에 "CUSTOM" 같은 값을 새로 만들지 않는다 — 그러면 V51이 스키마에
+	 * 박아 둔 CHECK를 고쳐야 하고, 구버전 앱이 읽을 수 없는 값이 그 컬럼에 들어가 롤백 경로가 깨진다.
+	 */
+	public void selectExitRates(ExitRates exitRates, LocalDateTime updatedAt) {
 		if (this.status != PracticeAttemptStatus.IN_PROGRESS
 			&& this.status != PracticeAttemptStatus.SELECTING_INSTRUMENT) {
 			throw new IllegalStateException("진행 중인 튜토리얼 attempt만 손절·익절 기준을 고칠 수 있습니다.");
 		}
-		this.exitPreset = exitPreset;
+		this.exitStopLossRate = exitRates.stopLossRate();
+		this.exitTakeProfitRate = exitRates.takeProfitRate();
+		this.exitPreset = exitRates.matchingPreset();
 		this.updatedAt = updatedAt;
+	}
+
+	/**
+	 * 지금 이 실행 세대에 <b>실제로 적용될</b> 손절·익절 비율. 미선택이면 기본값(손절 3·익절 5)이라
+	 * {@code null}이 되지 않는다(042 EXITPRESET-002 승계).
+	 *
+	 * <p><b>{@code exit_preset} 폴백을 남겨 두는 것은 형식이 아니라 필수다.</b> 자동 배포의 롤백은 앱만
+	 * 되돌리고 스키마는 되돌리지 않으므로(ADR-0021 §결정 7), 052 배포 전후로 구버전 앱이 비율 컬럼 없이
+	 * {@code exit_preset}만 쓴 행이 남을 수 있다. 그 행을 기본값으로 읽으면 사용자가 고른 기준이 조용히
+	 * 바뀐다.
+	 */
+	public ExitRates effectiveExitRates() {
+		if (exitStopLossRate != null && exitTakeProfitRate != null) {
+			return ExitRates.of(exitStopLossRate, exitTakeProfitRate);
+		}
+		return exitPreset == null ? ExitRates.DEFAULT : ExitRates.of(exitPreset);
+	}
+
+	/**
+	 * 이 실행에서 손절·익절 기준을 <b>직접 정했는가</b>(프리셋이든 자유 비율이든).
+	 *
+	 * <p>052가 프리셋 픽커를 화면에서 없애므로 판정을 프리셋 선택 여부로 두면 그 단계가 영영 미완으로
+	 * 남는다({@code tutorialStageProgress.exitPresetSelected}, 이슈 #503).
+	 */
+	public boolean exitRatesSelected() {
+		return exitStopLossRate != null || exitPreset != null;
 	}
 
 	// 이 실행이 저작 대본으로 가격을 만드는가. 대본은 커서가 시계를 정하므로 벽시계 마감(031 SANDBOX-008의

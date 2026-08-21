@@ -2,10 +2,12 @@
 package com.finplay.api.domain.education.marketpractice.dto.response;
 
 import com.finplay.api.domain.education.marketpractice.entity.ExitPreset;
+import com.finplay.api.domain.education.marketpractice.entity.ExitRates;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeAttempt;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeAttemptMode;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeAttemptStatus;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeRiskSnapshot;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -26,7 +28,10 @@ public record PracticeAttemptResponse(
 	long tutorialRealizedPnl,
 	String selectedExitPreset,
 	boolean exitPresetLocked,
-	List<ExitPresetResponse> availableExitPresets) {
+	List<ExitPresetResponse> availableExitPresets,
+	BigDecimal exitStopLossRate,
+	BigDecimal exitTakeProfitRate,
+	ExitRateBoundsResponse exitRateBounds) {
 
 	public PracticeAttemptResponse {
 		availableExitPresets = availableExitPresets == null ? List.of() : List.copyOf(availableExitPresets);
@@ -55,6 +60,7 @@ public record PracticeAttemptResponse(
 		PracticeAttemptMode mode = attempt.getStatus() == PracticeAttemptStatus.COMPLETED
 			? PracticeAttemptMode.REPLAY
 			: PracticeAttemptMode.ACTIVE;
+		ExitRates rates = attempt.effectiveExitRates();
 		return new PracticeAttemptResponse(
 			attempt.getId(),
 			attempt.getMarket().name(),
@@ -69,10 +75,21 @@ public record PracticeAttemptResponse(
 			tutorialCashBalance,
 			tutorialAvailableCash,
 			tutorialRealizedPnl,
-			// 미선택은 기본 프리셋으로 해석해 내려보낸다(EXITPRESET-002) — 클라이언트가 null 분기를 갖지
-			// 않도록, 그리고 실제로 적용될 값과 화면에 보이는 값이 같도록.
-			(attempt.getExitPreset() == null ? ExitPreset.DEFAULT : attempt.getExitPreset()).name(),
+			// 052 — 프리셋 이름은 이제 파생값이다. 적용될 비율이 프리셋 3개 중 하나와 정확히 같으면 그
+			// 식별자를, 자유 조합이면 null을 담는다. **미선택 사용자는 기본값(3·5)이 BALANCED와 같아
+			// 지금까지와 똑같이 "BALANCED"를 받는다** — 042 EXITPRESET-002가 약속한 것이 그대로 유지된다.
+			// 프론트가 프리셋 픽커를 떼면 이 필드와 availableExitPresets를 함께 없앤다.
+			presetNameOf(rates),
 			exitPresetLocked,
-			ExitPresetResponse.all());
+			ExitPresetResponse.all(),
+			// 항상 non-null이다 — 미선택도 기본값이 실린다(클라이언트에 null 분기를 만들지 않는다).
+			rates.stopLossRate(),
+			rates.takeProfitRate(),
+			ExitRateBoundsResponse.current());
+	}
+
+	private static String presetNameOf(ExitRates rates) {
+		ExitPreset matching = rates.matchingPreset();
+		return matching == null ? null : matching.name();
 	}
 }

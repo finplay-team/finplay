@@ -57,10 +57,19 @@ public class PracticeRiskSnapshot {
 	private BigDecimal takeProfitPrice;
 
 	// 이 진입에 적용된 프리셋. null은 기능 도입 전에 만들어진 행이며 기본 프리셋으로 해석한다
-	// (042 EXITPRESET-002). 새로 만드는 행은 항상 채워진다 — 미선택 사용자도 기본 프리셋이 확정된다.
+	// (042 EXITPRESET-002). 052 이후로는 "적용된 비율이 프리셋 3개 중 하나와 정확히 같았는가"의 표시일
+	// 뿐이라 자유 조합 진입에서도 null이다 — 정본은 아래 두 컬럼이다.
 	@Enumerated(EnumType.STRING)
 	@Column(name = "exit_preset", length = 20)
 	private ExitPreset exitPreset;
+
+	// 052 — 이 진입에 실제로 적용된 손절·익절 비율(퍼센트 수, 손절도 양수). 둘 다 null인 행은 052 이전에
+	// 만들어졌으며 exit_preset -> 기본값 순으로 해석한다(appliedExitRates).
+	@Column(name = "exit_stop_loss_rate", precision = 7, scale = 4)
+	private BigDecimal exitStopLossRate;
+
+	@Column(name = "exit_take_profit_rate", precision = 7, scale = 4)
+	private BigDecimal exitTakeProfitRate;
 
 	// 이 진입이 열릴 때 attempt가 쓰던 대본 식별자(049 ORDERBASICS-023). NULL 해석은 여기 두지 않는다 —
 	// attempt가 지연 로딩이라 필요한 attempt.usesScenarioScript()는 호출자가 이미 인자로 갖고 있어
@@ -76,7 +85,7 @@ public class PracticeRiskSnapshot {
 		PracticeAttempt attempt,
 		long runNumber,
 		int entrySequence,
-		ExitPreset exitPreset,
+		ExitRates exitRates,
 		Trade buyTrade,
 		BigDecimal entryPrice,
 		BigDecimal stopLossPrice,
@@ -86,7 +95,9 @@ public class PracticeRiskSnapshot {
 		this.attempt = attempt;
 		this.runNumber = runNumber;
 		this.entrySequence = entrySequence;
-		this.exitPreset = exitPreset;
+		this.exitStopLossRate = exitRates.stopLossRate();
+		this.exitTakeProfitRate = exitRates.takeProfitRate();
+		this.exitPreset = exitRates.matchingPreset();
 		this.buyTrade = buyTrade;
 		this.entryPrice = entryPrice;
 		this.stopLossPrice = stopLossPrice;
@@ -99,7 +110,7 @@ public class PracticeRiskSnapshot {
 		PracticeAttempt attempt,
 		long runNumber,
 		int entrySequence,
-		ExitPreset exitPreset,
+		ExitRates exitRates,
 		Trade buyTrade,
 		BigDecimal entryPrice,
 		BigDecimal stopLossPrice,
@@ -110,7 +121,20 @@ public class PracticeRiskSnapshot {
 			throw new IllegalArgumentException("진입 순번은 1 이상이어야 합니다.");
 		}
 		return new PracticeRiskSnapshot(
-			attempt, runNumber, entrySequence, exitPreset, buyTrade, entryPrice, stopLossPrice, takeProfitPrice,
+			attempt, runNumber, entrySequence, exitRates, buyTrade, entryPrice, stopLossPrice, takeProfitPrice,
 			scenarioScriptId, createdAt);
+	}
+
+	/**
+	 * 이 진입에 적용된 손절·익절 비율. 052 이전에 만들어진 행은 두 컬럼이 비어 있으므로 {@code exit_preset}
+	 * -> 기본값 순으로 해석한다(042 EXITPRESET-002). NULL 해석을 여기 두는 이유는
+	 * {@code PracticeAttempt.effectiveExitRates}와 <b>같은 규칙</b>이어야 화면 두 곳이 다른 값을 보이지 않기
+	 * 때문이다.
+	 */
+	public ExitRates appliedExitRates() {
+		if (exitStopLossRate != null && exitTakeProfitRate != null) {
+			return ExitRates.of(exitStopLossRate, exitTakeProfitRate);
+		}
+		return exitPreset == null ? ExitRates.DEFAULT : ExitRates.of(exitPreset);
 	}
 }

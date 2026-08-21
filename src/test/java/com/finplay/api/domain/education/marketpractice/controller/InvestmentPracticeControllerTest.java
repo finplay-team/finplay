@@ -15,6 +15,7 @@ import com.finplay.api.domain.auth.config.SecurityConfig;
 import com.finplay.api.domain.auth.token.AuthenticatedUser;
 import com.finplay.api.domain.auth.token.JwtTokenProvider;
 import com.finplay.api.domain.education.marketpractice.dto.response.ExitPresetResponse;
+import com.finplay.api.domain.education.marketpractice.dto.response.ExitRateBoundsResponse;
 import com.finplay.api.domain.education.marketpractice.dto.response.InvestmentPracticeResponse;
 import com.finplay.api.domain.education.marketpractice.dto.response.PracticeAttemptResponse;
 import com.finplay.api.domain.education.marketpractice.dto.response.PracticeEntryResponse;
@@ -106,7 +107,8 @@ class InvestmentPracticeControllerTest {
 				new BigDecimal("105.00000000"), 30L, LocalDateTime.of(2026, 8, 3, 9, 0),
 				"BALANCED", new BigDecimal("3"), new BigDecimal("5"), 1),
 			LocalDateTime.of(2026, 8, 10, 9, 0), 0L, 0L, 0L,
-			"BALANCED", false, ExitPresetResponse.all());
+			"BALANCED", false, ExitPresetResponse.all(),
+			new BigDecimal("3"), new BigDecimal("5"), ExitRateBoundsResponse.current());
 		InvestmentPracticeResponse response = new InvestmentPracticeResponse(
 			"INVESTMENT_PRACTICE_V1", "COMPLETED", null, steps, LocalDateTime.of(2026, 8, 10, 9, 0), 5_000_000L,
 			attempt);
@@ -245,12 +247,14 @@ class InvestmentPracticeControllerTest {
 			List.of(new PracticeScenarioEventResponse("ACT1", "[연습] 첫 소식")),
 			new BigDecimal("7900.00000000"),
 			List.of(
-				new PracticeEntryResponse(1, "CAUTIOUS", "MARKET", LocalDateTime.of(2026, 8, 20, 11, 0),
+				new PracticeEntryResponse(1, "CAUTIOUS", new BigDecimal("2"), new BigDecimal("3"), "MARKET",
+					LocalDateTime.of(2026, 8, 20, 11, 0),
 					new BigDecimal("10000.00000000"), new BigDecimal("1"), new BigDecimal("9800.00000000"),
 					new BigDecimal("10300.00000000"), new BigDecimal("9750.00000000"), new BigDecimal("1"),
 					LocalDateTime.of(2026, 8, 20, 11, 10), "STOP_LOSS", -260L, -2108L,
 					"CRYPTO_ORDER_BASICS_V1"),
-				new PracticeEntryResponse(2, "BALANCED", "LIMIT", LocalDateTime.of(2026, 8, 20, 11, 20),
+				new PracticeEntryResponse(2, "BALANCED", new BigDecimal("3"), new BigDecimal("5"), "LIMIT",
+					LocalDateTime.of(2026, 8, 20, 11, 20),
 					new BigDecimal("8700.00000000"), new BigDecimal("1"), new BigDecimal("8439.00000000"),
 					new BigDecimal("9135.00000000"), new BigDecimal("9135.00000000"), new BigDecimal("1"),
 					LocalDateTime.of(2026, 8, 20, 11, 40), "TAKE_PROFIT", 422L, -807L,

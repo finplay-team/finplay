@@ -480,7 +480,9 @@ erDiagram
         bigint instrument_id FK "nullable"
         bigint run_number
         enum status
-        enum exit_preset
+        enum exit_preset "052 이후 파생값 — 비율이 프리셋과 정확히 같을 때만 채워진다"
+        decimal exit_stop_loss_rate "nullable, 퍼센트 수(3%는 3)"
+        decimal exit_take_profit_rate "nullable, 퍼센트 수"
         varchar scenario_stage_id
         datetime completed_at
     }
@@ -516,6 +518,9 @@ erDiagram
         decimal entry_price
         decimal stop_loss_price
         decimal take_profit_price
+        enum exit_preset "052 이후 파생값"
+        decimal exit_stop_loss_rate "nullable, 그 진입에 적용된 손절률"
+        decimal exit_take_profit_rate "nullable, 그 진입에 적용된 익절률"
     }
     practice_price_sessions {
         bigint id PK
