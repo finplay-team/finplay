@@ -1,12 +1,12 @@
 // 매도 이력 원장(trades)과 계좌 실현손익(accounts)에서 랭킹 ZSET을 통째로 재구성하는 서비스 (이슈 #279)
-package com.finplay.api.ranking.service;
+package com.finplay.api.domain.ranking.service;
 
-import com.finplay.api.account.domain.Account;
-import com.finplay.api.account.domain.Market;
-import com.finplay.api.account.service.AccountService;
-import com.finplay.api.order.service.TradeService;
-import com.finplay.api.ranking.dto.RankingEntryDto;
-import com.finplay.api.ranking.store.RankingStore;
+import com.finplay.api.domain.account.entity.Account;
+import com.finplay.api.domain.market.entity.Market;
+import com.finplay.api.domain.account.service.AccountService;
+import com.finplay.api.domain.order.service.TradeService;
+import com.finplay.api.domain.ranking.store.RankingEntryDto;
+import com.finplay.api.domain.ranking.store.RankingStore;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;

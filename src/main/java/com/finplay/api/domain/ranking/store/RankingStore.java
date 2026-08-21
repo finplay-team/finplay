@@ -1,8 +1,9 @@
 // 시장별 실현손익 랭킹 ZSET을 Redis에 저장·조회하는 전용 창구 (key 문자열은 이 클래스에서만 조립)
-package com.finplay.api.ranking.store;
+package com.finplay.api.domain.ranking.store;
 
-import com.finplay.api.account.domain.Market;
-import com.finplay.api.ranking.dto.RankingEntryDto;
+import com.finplay.api.domain.market.entity.Market;
+import com.finplay.api.global.exception.BusinessException;
+import com.finplay.api.global.exception.ErrorCode;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -138,9 +139,10 @@ public class RankingStore {
 	// WARN + 스택트레이스 생략(PR #296 리뷰 권장사항) — 이제 이 경로는 500이 아니라 정상 폴백이라, 장애가
 	// 몇 분만 이어져도 요청 수만큼 동일 스택트레이스가 쌓여 정작 봐야 할 다른 ERROR를 덮는다. 예외 타입·메시지는
 	// 원인 파악에 충분하고, 반복 여부·지속 시간은 이 로그 라인 자체의 빈도로 알 수 있다.
-	private RankingStoreUnavailableException unavailable(Market market, Exception cause) {
+	private BusinessException unavailable(Market market, Exception cause) {
 		log.warn("랭킹 조회 실패(Redis 연결 장애). market={}, cause={}", market, cause.toString());
-		return new RankingStoreUnavailableException("랭킹 조회 중 Redis 연결 장애. market=" + market, cause);
+		return new BusinessException(ErrorCode.RANKING_STORE_UNAVAILABLE, "랭킹 조회 중 Redis 연결 장애. market=" + market,
+			cause);
 	}
 
 	private void sleepBackoff(long millis) {

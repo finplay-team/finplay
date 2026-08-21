@@ -1,5 +1,5 @@
 // mock RankingStore/AccountService로 RankingService의 limit 클램핑·공동 순위 보정을 검증하는 단위 테스트다.
-package com.finplay.api.ranking.service;
+package com.finplay.api.domain.ranking.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -12,18 +12,19 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.finplay.api.account.domain.Account;
-import com.finplay.api.account.domain.Market;
-import com.finplay.api.account.service.AccountService;
-import com.finplay.api.auth.domain.User;
-import com.finplay.api.order.service.TradeService;
-import com.finplay.api.ranking.domain.RankingStatus;
-import com.finplay.api.ranking.dto.RankingEntryDto;
-import com.finplay.api.ranking.dto.response.MyRankingResponse;
-import com.finplay.api.ranking.dto.response.RankingListItemResponse;
-import com.finplay.api.ranking.dto.response.RankingListResponse;
-import com.finplay.api.ranking.store.RankingStore;
-import com.finplay.api.ranking.store.RankingStoreUnavailableException;
+import com.finplay.api.domain.account.entity.Account;
+import com.finplay.api.domain.market.entity.Market;
+import com.finplay.api.domain.account.service.AccountService;
+import com.finplay.api.domain.auth.entity.User;
+import com.finplay.api.domain.order.service.TradeService;
+import com.finplay.api.domain.ranking.entity.RankingStatus;
+import com.finplay.api.domain.ranking.store.RankingEntryDto;
+import com.finplay.api.domain.ranking.dto.response.MyRankingResponse;
+import com.finplay.api.domain.ranking.dto.response.RankingListItemResponse;
+import com.finplay.api.domain.ranking.dto.response.RankingListResponse;
+import com.finplay.api.domain.ranking.store.RankingStore;
+import com.finplay.api.global.exception.BusinessException;
+import com.finplay.api.global.exception.ErrorCode;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -436,13 +437,13 @@ class RankingServiceTest {
 	}
 
 	// --- Redis 연결 장애 시 UNAVAILABLE (이슈 #288) ---
-	// 유실(REBUILDING)과 달리 ZSET 자체를 읽지 못한 상태다. RankingStoreUnavailableException이 어느 단계에서
+	// 유실(REBUILDING)과 달리 ZSET 자체를 읽지 못한 상태다. RANKING_STORE_UNAVAILABLE이 어느 단계에서
 	// 나든(첫 topN·경계 병합의 findAllAtScore·순위 계산의 countStrictlyGreater) 같은 응답으로 수렴해야 한다.
 
 	@Test
 	void getRankingsReturnsUnavailableWhenTopNThrowsUnavailableException() {
 		when(rankingStore.topN(Market.STOCK, 11))
-			.thenThrow(new RankingStoreUnavailableException("redis down", new RuntimeException()));
+			.thenThrow(new BusinessException(ErrorCode.RANKING_STORE_UNAVAILABLE, "redis down"));
 
 		RankingListResponse response = rankingService.getRankings(Market.STOCK, null);
 
@@ -458,7 +459,7 @@ class RankingServiceTest {
 			new RankingEntryDto(1L, 100L),
 			new RankingEntryDto(2L, 100L)));
 		when(rankingStore.findAllAtScore(Market.STOCK, 100L))
-			.thenThrow(new RankingStoreUnavailableException("redis down", new RuntimeException()));
+			.thenThrow(new BusinessException(ErrorCode.RANKING_STORE_UNAVAILABLE, "redis down"));
 
 		RankingListResponse response = rankingService.getRankings(Market.STOCK, 1);
 
@@ -474,7 +475,7 @@ class RankingServiceTest {
 		when(rankingStore.topN(Market.STOCK, 11)).thenReturn(List.of(new RankingEntryDto(1L, 100L)));
 		when(accountService.getAccountsWithUser(List.of(1L))).thenReturn(List.of(alice));
 		when(rankingStore.countStrictlyGreater(Market.STOCK, 100L))
-			.thenThrow(new RankingStoreUnavailableException("redis down", new RuntimeException()));
+			.thenThrow(new BusinessException(ErrorCode.RANKING_STORE_UNAVAILABLE, "redis down"));
 
 		RankingListResponse response = rankingService.getRankings(Market.STOCK, null);
 
@@ -488,7 +489,7 @@ class RankingServiceTest {
 		Account account = account(1L, Market.STOCK, 500_000L, 10L, "alice");
 		when(accountService.getAccountForWithUser(10L, Market.STOCK)).thenReturn(account);
 		when(rankingStore.score(Market.STOCK, 1L))
-			.thenThrow(new RankingStoreUnavailableException("redis down", new RuntimeException()));
+			.thenThrow(new BusinessException(ErrorCode.RANKING_STORE_UNAVAILABLE, "redis down"));
 
 		MyRankingResponse response = rankingService.getMyRanking(10L, Market.STOCK);
 
@@ -504,7 +505,7 @@ class RankingServiceTest {
 		when(accountService.getAccountForWithUser(10L, Market.STOCK)).thenReturn(account);
 		when(rankingStore.score(Market.STOCK, 1L)).thenReturn(5_000L);
 		when(rankingStore.countStrictlyGreater(Market.STOCK, 5_000L))
-			.thenThrow(new RankingStoreUnavailableException("redis down", new RuntimeException()));
+			.thenThrow(new BusinessException(ErrorCode.RANKING_STORE_UNAVAILABLE, "redis down"));
 
 		MyRankingResponse response = rankingService.getMyRanking(10L, Market.STOCK);
 

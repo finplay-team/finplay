@@ -1,5 +1,5 @@
 // 매도 체결→커밋→랭킹 반영 전체 흐름을 Testcontainers MySQL+Redis로 검증하는 통합 테스트다.
-package com.finplay.api.ranking;
+package com.finplay.api.domain.ranking;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -13,27 +13,28 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.finplay.api.TestcontainersConfiguration;
-import com.finplay.api.account.domain.Account;
-import com.finplay.api.account.event.RealizedPnlUpdatedEvent;
-import com.finplay.api.account.repository.AccountRepository;
-import com.finplay.api.auth.domain.User;
-import com.finplay.api.auth.repository.UserRepository;
-import com.finplay.api.auth.token.JwtTokenProvider;
-import com.finplay.api.market.domain.Instrument;
-import com.finplay.api.market.domain.Market;
-import com.finplay.api.market.repository.InstrumentRepository;
-import com.finplay.api.market.store.FeedConnectionStatus;
-import com.finplay.api.market.store.PriceStore;
-import com.finplay.api.order.domain.OrderSide;
-import com.finplay.api.order.dto.request.OrderCreateRequest;
-import com.finplay.api.order.dto.response.OrderResponse;
-import com.finplay.api.ranking.dto.response.MyRankingResponse;
-import com.finplay.api.ranking.dto.response.RankingListItemResponse;
-import com.finplay.api.ranking.dto.response.RankingListResponse;
-import com.finplay.api.ranking.listener.RankingEventListener;
-import com.finplay.api.ranking.service.RankingService;
-import com.finplay.api.ranking.store.RankingStore;
-import com.finplay.api.ranking.store.RankingStoreUnavailableException;
+import com.finplay.api.domain.account.entity.Account;
+import com.finplay.api.domain.account.event.RealizedPnlUpdatedEvent;
+import com.finplay.api.domain.account.repository.AccountRepository;
+import com.finplay.api.domain.auth.entity.User;
+import com.finplay.api.domain.auth.repository.UserRepository;
+import com.finplay.api.domain.auth.token.JwtTokenProvider;
+import com.finplay.api.domain.market.entity.Instrument;
+import com.finplay.api.domain.market.entity.Market;
+import com.finplay.api.domain.market.repository.InstrumentRepository;
+import com.finplay.api.domain.market.store.FeedConnectionStatus;
+import com.finplay.api.domain.market.store.PriceStore;
+import com.finplay.api.domain.order.entity.OrderSide;
+import com.finplay.api.domain.order.dto.request.OrderCreateRequest;
+import com.finplay.api.domain.order.dto.response.OrderResponse;
+import com.finplay.api.domain.ranking.dto.response.MyRankingResponse;
+import com.finplay.api.domain.ranking.dto.response.RankingListItemResponse;
+import com.finplay.api.domain.ranking.dto.response.RankingListResponse;
+import com.finplay.api.domain.ranking.listener.RankingEventListener;
+import com.finplay.api.domain.ranking.service.RankingService;
+import com.finplay.api.domain.ranking.store.RankingStore;
+import com.finplay.api.global.exception.BusinessException;
+import com.finplay.api.global.exception.ErrorCode;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -420,7 +421,7 @@ class RankingIntegrationTest {
 		User user = createUser("rank-redis-outage");
 		createAccount(user);
 		String accessToken = issueAccessToken(user);
-		doThrow(new RankingStoreUnavailableException("redis down", new RuntimeException()))
+		doThrow(new BusinessException(ErrorCode.RANKING_STORE_UNAVAILABLE, "redis down"))
 			.when(rankingStore)
 			.topN(any(), anyInt());
 
@@ -440,7 +441,7 @@ class RankingIntegrationTest {
 		User user = createUser("rank-me-redis-outage");
 		createAccount(user);
 		String accessToken = issueAccessToken(user);
-		doThrow(new RankingStoreUnavailableException("redis down", new RuntimeException()))
+		doThrow(new BusinessException(ErrorCode.RANKING_STORE_UNAVAILABLE, "redis down"))
 			.when(rankingStore)
 			.score(any(), any());
 
@@ -547,7 +548,7 @@ class RankingIntegrationTest {
 
 	private Account createAccount(User user) {
 		Account account = accountRepository.saveAndFlush(
-			Account.create(user, com.finplay.api.account.domain.Market.CRYPTO, LocalDateTime.now(clock)));
+			Account.create(user, Market.CRYPTO, LocalDateTime.now(clock)));
 		createdAccountIds.add(account.getId());
 		return account;
 	}

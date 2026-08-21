@@ -1,17 +1,18 @@
 // 랭킹 점수 갱신과 시장별 랭킹 목록 조회(공동 순위 보정 포함)를 담당하는 서비스
-package com.finplay.api.ranking.service;
+package com.finplay.api.domain.ranking.service;
 
-import com.finplay.api.account.domain.Account;
-import com.finplay.api.account.domain.Market;
-import com.finplay.api.account.service.AccountService;
-import com.finplay.api.order.service.TradeService;
-import com.finplay.api.ranking.domain.RankingStatus;
-import com.finplay.api.ranking.dto.RankingEntryDto;
-import com.finplay.api.ranking.dto.response.MyRankingResponse;
-import com.finplay.api.ranking.dto.response.RankingListItemResponse;
-import com.finplay.api.ranking.dto.response.RankingListResponse;
-import com.finplay.api.ranking.store.RankingStore;
-import com.finplay.api.ranking.store.RankingStoreUnavailableException;
+import com.finplay.api.domain.account.entity.Account;
+import com.finplay.api.domain.market.entity.Market;
+import com.finplay.api.domain.account.service.AccountService;
+import com.finplay.api.domain.order.service.TradeService;
+import com.finplay.api.domain.ranking.entity.RankingStatus;
+import com.finplay.api.domain.ranking.dto.response.MyRankingResponse;
+import com.finplay.api.domain.ranking.dto.response.RankingListItemResponse;
+import com.finplay.api.domain.ranking.dto.response.RankingListResponse;
+import com.finplay.api.domain.ranking.store.RankingEntryDto;
+import com.finplay.api.domain.ranking.store.RankingStore;
+import com.finplay.api.global.exception.BusinessException;
+import com.finplay.api.global.exception.ErrorCode;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -61,7 +62,10 @@ public class RankingService {
 		int limit = clampLimit(limitParam);
 		try {
 			return getRankingsOrThrow(market, limit);
-		} catch (RankingStoreUnavailableException e) {
+		} catch (BusinessException e) {
+			if (e.getErrorCode() != ErrorCode.RANKING_STORE_UNAVAILABLE) {
+				throw e;
+			}
 			// Redis 연결 장애 — 유실(REBUILDING)과 달리 재구성으로 해결되지 않는다. 500 대신 200 +
 			// UNAVAILABLE로 응답한다(이슈 #288). 로그는 RankingStore.unavailable에서 이미 남겼다.
 			return new RankingListResponse(market.name(), RankingStatus.UNAVAILABLE, List.of());
@@ -116,7 +120,10 @@ public class RankingService {
 		Account account = accountService.getAccountForWithUser(userId, market);
 		try {
 			return getMyRankingOrThrow(market, account);
-		} catch (RankingStoreUnavailableException e) {
+		} catch (BusinessException e) {
+			if (e.getErrorCode() != ErrorCode.RANKING_STORE_UNAVAILABLE) {
+				throw e;
+			}
 			// Redis 연결 장애(이슈 #288). rank는 REBUILDING과 같은 모양(null)으로 두고, realizedPnl도 같은
 			// 원칙(score가 없을 때의 0)을 그대로 따른다 — 신뢰할 수 없는 값을 채우지 않는다.
 			return new MyRankingResponse(market.name(), RankingStatus.UNAVAILABLE, null,

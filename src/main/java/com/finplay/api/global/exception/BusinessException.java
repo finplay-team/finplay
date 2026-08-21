@@ -1,5 +1,5 @@
 // ErrorCode를 담아 도메인 서비스가 던지는 비즈니스 런타임 예외
-package com.finplay.api.common;
+package com.finplay.api.global.exception;
 
 public class BusinessException extends RuntimeException {
 
@@ -12,6 +12,11 @@ public class BusinessException extends RuntimeException {
 
 	public BusinessException(ErrorCode errorCode, String message) {
 		super(message);
+		this.errorCode = errorCode;
+	}
+
+	public BusinessException(ErrorCode errorCode, String message, Throwable cause) {
+		super(message, cause);
 		this.errorCode = errorCode;
 	}
 

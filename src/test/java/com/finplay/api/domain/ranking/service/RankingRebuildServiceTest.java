@@ -1,5 +1,5 @@
 // mock 협력 객체로 RankingRebuildService의 위임 순서·score 출처·시장별 예외 격리·두 트리거 동일 경로를 검증한다.
-package com.finplay.api.ranking.service;
+package com.finplay.api.domain.ranking.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -17,13 +17,13 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
-import com.finplay.api.account.domain.Account;
-import com.finplay.api.account.domain.Market;
-import com.finplay.api.account.service.AccountService;
-import com.finplay.api.auth.domain.User;
-import com.finplay.api.order.service.TradeService;
-import com.finplay.api.ranking.dto.RankingEntryDto;
-import com.finplay.api.ranking.store.RankingStore;
+import com.finplay.api.domain.account.entity.Account;
+import com.finplay.api.domain.market.entity.Market;
+import com.finplay.api.domain.account.service.AccountService;
+import com.finplay.api.domain.auth.entity.User;
+import com.finplay.api.domain.order.service.TradeService;
+import com.finplay.api.domain.ranking.store.RankingEntryDto;
+import com.finplay.api.domain.ranking.store.RankingStore;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;

@@ -1,5 +1,5 @@
 // PRD §5 공통 오류표의 코드·HTTP 상태·기본 메시지를 정의하는 열거형
-package com.finplay.api.common;
+package com.finplay.api.global.exception;
 
 import org.springframework.http.HttpStatus;
 
@@ -48,7 +48,8 @@ public enum ErrorCode {
 	TOO_MANY_REQUESTS(HttpStatus.TOO_MANY_REQUESTS, "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요."),
 	INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 내부 오류가 발생했습니다."),
 	OAUTH_PROVIDER_ERROR(HttpStatus.BAD_GATEWAY, "OAuth 공급자 요청을 처리할 수 없습니다."),
-	MARKET_DATA_PROVIDER_ERROR(HttpStatus.BAD_GATEWAY, "시세 데이터 공급자 요청을 처리할 수 없습니다.");
+	MARKET_DATA_PROVIDER_ERROR(HttpStatus.BAD_GATEWAY, "시세 데이터 공급자 요청을 처리할 수 없습니다."),
+	RANKING_STORE_UNAVAILABLE(HttpStatus.BAD_GATEWAY, "랭킹 데이터를 조회할 수 없습니다.");
 
 	private final HttpStatus httpStatus;
 	private final String defaultMessage;

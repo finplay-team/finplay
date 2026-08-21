@@ -1,5 +1,5 @@
 // mock Redis(StringRedisTemplate)로 RankingStore.addScoreWithRetry의 재시도·예외 억제를 검증하는 단위 테스트다.
-package com.finplay.api.ranking.store;
+package com.finplay.api.domain.ranking.store;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -17,8 +17,9 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.finplay.api.account.domain.Market;
-import com.finplay.api.ranking.dto.RankingEntryDto;
+import com.finplay.api.domain.market.entity.Market;
+import com.finplay.api.global.exception.BusinessException;
+import com.finplay.api.global.exception.ErrorCode;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -144,66 +145,71 @@ class RankingStoreTest {
 	}
 
 	// --- Redis 연결 장애 시 읽기 경로 (이슈 #288, catch 범위는 PR #296 리뷰 권장사항으로 좁힘) ---
-	// 쓰기 경로(addScoreWithRetry·replaceAll)는 실패를 삼키지만, 읽기 경로 4곳은 RankingStoreUnavailableException을
+	// 쓰기 경로(addScoreWithRetry·replaceAll)는 실패를 삼키지만, 읽기 경로 4곳은 BusinessException(RANKING_STORE_UNAVAILABLE)을
 	// 던져 RankingService가 UNAVAILABLE 응답으로 바꿀 수 있게 한다. RedisConnectionFailureException은 실제
 	// Lettuce 연결 실패 시 쓰이는 타입이고, QueryTimeoutException도 같은 이유로 잡는다. 반면 그 밖의
 	// DataAccessException(예: RedisSystemException — WRONGTYPE 등 데이터 오염이 번역되는 타입)은 잡지 않고
 	// 그대로 전파해 500으로 드러나야 한다 — 재시도로 저절로 낫지 않는 버그를 UNAVAILABLE로 위장하지 않기 위해서다.
 
 	@Test
-	void topNThrowsRankingStoreUnavailableExceptionWhenRedisConnectionFails() {
+	void topNThrowsRankingStoreUnavailableWhenRedisConnectionFails() {
 		RankingStore rankingStore = rankingStore();
 		when(zSetOperations.reverseRangeWithScores("ranking:STOCK", 0, 10))
 			.thenThrow(new RedisConnectionFailureException("Unable to connect to Redis"));
 
 		assertThatThrownBy(() -> rankingStore.topN(Market.STOCK, 11))
-			.isInstanceOf(RankingStoreUnavailableException.class)
+			.isInstanceOf(BusinessException.class)
+			.hasFieldOrPropertyWithValue("errorCode", ErrorCode.RANKING_STORE_UNAVAILABLE)
 			.hasCauseInstanceOf(RedisConnectionFailureException.class);
 	}
 
 	@Test
-	void findAllAtScoreThrowsRankingStoreUnavailableExceptionWhenRedisConnectionFails() {
+	void findAllAtScoreThrowsRankingStoreUnavailableWhenRedisConnectionFails() {
 		RankingStore rankingStore = rankingStore();
 		when(zSetOperations.rangeByScore("ranking:STOCK", 100.0, 100.0, 0, 500))
 			.thenThrow(new RedisConnectionFailureException("Unable to connect to Redis"));
 
 		assertThatThrownBy(() -> rankingStore.findAllAtScore(Market.STOCK, 100L))
-			.isInstanceOf(RankingStoreUnavailableException.class)
+			.isInstanceOf(BusinessException.class)
+			.hasFieldOrPropertyWithValue("errorCode", ErrorCode.RANKING_STORE_UNAVAILABLE)
 			.hasCauseInstanceOf(RedisConnectionFailureException.class);
 	}
 
 	@Test
-	void countStrictlyGreaterThrowsRankingStoreUnavailableExceptionWhenRedisConnectionFails() {
+	void countStrictlyGreaterThrowsRankingStoreUnavailableWhenRedisConnectionFails() {
 		RankingStore rankingStore = rankingStore();
 		when(zSetOperations.count("ranking:STOCK", 101.0, Double.POSITIVE_INFINITY))
 			.thenThrow(new RedisConnectionFailureException("Unable to connect to Redis"));
 
 		assertThatThrownBy(() -> rankingStore.countStrictlyGreater(Market.STOCK, 100L))
-			.isInstanceOf(RankingStoreUnavailableException.class)
+			.isInstanceOf(BusinessException.class)
+			.hasFieldOrPropertyWithValue("errorCode", ErrorCode.RANKING_STORE_UNAVAILABLE)
 			.hasCauseInstanceOf(RedisConnectionFailureException.class);
 	}
 
 	@Test
-	void scoreThrowsRankingStoreUnavailableExceptionWhenRedisConnectionFails() {
+	void scoreThrowsRankingStoreUnavailableWhenRedisConnectionFails() {
 		RankingStore rankingStore = rankingStore();
 		when(zSetOperations.score("ranking:STOCK", "1"))
 			.thenThrow(new RedisConnectionFailureException("Unable to connect to Redis"));
 
 		assertThatThrownBy(() -> rankingStore.score(Market.STOCK, 1L))
-			.isInstanceOf(RankingStoreUnavailableException.class)
+			.isInstanceOf(BusinessException.class)
+			.hasFieldOrPropertyWithValue("errorCode", ErrorCode.RANKING_STORE_UNAVAILABLE)
 			.hasCauseInstanceOf(RedisConnectionFailureException.class);
 	}
 
 	// QueryTimeoutException도 RedisConnectionFailureException과 동일하게 UNAVAILABLE로 변환돼야 한다 — 응답
 	// 지연도 "지금 이 값을 믿지 마라"는 점에서 연결 자체가 안 되는 경우와 같은 취급을 받는다.
 	@Test
-	void topNThrowsRankingStoreUnavailableExceptionWhenRedisTimesOut() {
+	void topNThrowsRankingStoreUnavailableWhenRedisTimesOut() {
 		RankingStore rankingStore = rankingStore();
 		when(zSetOperations.reverseRangeWithScores("ranking:STOCK", 0, 10))
 			.thenThrow(new QueryTimeoutException("Redis command timed out"));
 
 		assertThatThrownBy(() -> rankingStore.topN(Market.STOCK, 11))
-			.isInstanceOf(RankingStoreUnavailableException.class)
+			.isInstanceOf(BusinessException.class)
+			.hasFieldOrPropertyWithValue("errorCode", ErrorCode.RANKING_STORE_UNAVAILABLE)
 			.hasCauseInstanceOf(QueryTimeoutException.class);
 	}
 
@@ -218,7 +224,7 @@ class RankingStoreTest {
 
 		assertThatThrownBy(() -> rankingStore.topN(Market.STOCK, 11))
 			.isSameAs(wrongType)
-			.isNotInstanceOf(RankingStoreUnavailableException.class);
+			.isNotInstanceOf(BusinessException.class);
 	}
 
 	// 한 클래스 안에서 읽기·쓰기 태도가 갈리는 것은 의도한 비대칭이다(이슈 #288 본문) — 이 테스트가 그 비대칭이
