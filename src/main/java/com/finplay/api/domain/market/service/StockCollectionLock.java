@@ -1,8 +1,8 @@
 // 주식 분봉 수집 배치의 거래일 단위 Redis 락 — 키 접두사와 TTL만 정하고 획득·해제 메커니즘은 RedisLock에 맡긴다 (ADR-0014 선례, COLLECT-STAB-001)
 package com.finplay.api.domain.market.service;
 
-import com.finplay.api.global.lock.RedisLock;
 import com.finplay.api.domain.market.config.MarketStockProperties;
+import com.finplay.api.global.lock.RedisLock;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.util.Optional;

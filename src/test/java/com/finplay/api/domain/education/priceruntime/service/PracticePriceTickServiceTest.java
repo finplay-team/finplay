@@ -6,13 +6,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.finplay.api.global.exception.BusinessException;
-import com.finplay.api.global.exception.ErrorCode;
+import com.finplay.api.domain.education.priceruntime.dto.response.PracticePriceSessionResponse;
 import com.finplay.api.domain.education.priceruntime.entity.PracticePriceSession;
 import com.finplay.api.domain.education.priceruntime.entity.PracticePriceSessionStatus;
-import com.finplay.api.domain.education.priceruntime.dto.response.PracticePriceSessionResponse;
 import com.finplay.api.domain.education.priceruntime.event.PracticePriceTickAdvancedEvent;
 import com.finplay.api.domain.education.priceruntime.repository.PracticePriceSessionRepository;
+import com.finplay.api.global.exception.BusinessException;
+import com.finplay.api.global.exception.ErrorCode;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;

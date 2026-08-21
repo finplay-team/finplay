@@ -1,10 +1,10 @@
 // 종목의 뉴스·공시 목록과 그 시점의 요약을 노출 게이트에 맞춰 조립하는 조회 서비스 — DB는 Reader가, 캐시는 FeedbackQueryCache가 맡고 여기는 순서만 잡는다.
 package com.finplay.api.domain.feedback.service;
 
-import com.finplay.api.domain.feedback.entity.FeedbackContentStatus;
-import com.finplay.api.domain.feedback.entity.NewsSummaryScope;
 import com.finplay.api.domain.feedback.dto.response.InstrumentNewsResponse;
 import com.finplay.api.domain.feedback.dto.response.NewsItem;
+import com.finplay.api.domain.feedback.entity.FeedbackContentStatus;
+import com.finplay.api.domain.feedback.entity.NewsSummaryScope;
 import com.finplay.api.domain.feedback.store.FeedbackQueryCache;
 import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.market.service.StockReplayService;

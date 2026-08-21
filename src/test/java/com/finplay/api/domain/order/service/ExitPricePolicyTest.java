@@ -4,9 +4,9 @@ package com.finplay.api.domain.order.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.finplay.api.domain.education.marketpractice.service.ReferencePriceCalculator;
 import com.finplay.api.global.exception.BusinessException;
 import com.finplay.api.global.exception.ErrorCode;
-import com.finplay.api.domain.education.marketpractice.service.ReferencePriceCalculator;
 import java.math.BigDecimal;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

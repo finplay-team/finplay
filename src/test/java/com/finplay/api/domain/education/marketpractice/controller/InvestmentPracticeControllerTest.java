@@ -14,13 +14,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.finplay.api.domain.auth.config.SecurityConfig;
 import com.finplay.api.domain.auth.token.AuthenticatedUser;
 import com.finplay.api.domain.auth.token.JwtTokenProvider;
-import com.finplay.api.domain.education.marketpractice.dto.response.InvestmentPracticeResponse;
 import com.finplay.api.domain.education.marketpractice.dto.response.ExitPresetResponse;
+import com.finplay.api.domain.education.marketpractice.dto.response.InvestmentPracticeResponse;
 import com.finplay.api.domain.education.marketpractice.dto.response.PracticeAttemptResponse;
 import com.finplay.api.domain.education.marketpractice.dto.response.PracticeEntryResponse;
 import com.finplay.api.domain.education.marketpractice.dto.response.PracticeEvidenceResponse;
-import com.finplay.api.domain.education.marketpractice.dto.response.PracticeScenarioEventResponse;
 import com.finplay.api.domain.education.marketpractice.dto.response.PracticeRiskSnapshotResponse;
+import com.finplay.api.domain.education.marketpractice.dto.response.PracticeScenarioEventResponse;
 import com.finplay.api.domain.education.marketpractice.dto.response.PracticeStageProgressResponse;
 import com.finplay.api.domain.education.marketpractice.dto.response.PracticeStepResponse;
 import com.finplay.api.domain.education.marketpractice.dto.response.PracticeTradeResultResponse;

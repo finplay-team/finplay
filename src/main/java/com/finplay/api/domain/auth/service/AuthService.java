@@ -2,15 +2,15 @@
 package com.finplay.api.domain.auth.service;
 
 import com.finplay.api.domain.account.service.AccountService;
+import com.finplay.api.domain.auth.dto.response.MemberResponse;
+import com.finplay.api.domain.auth.dto.response.ReauthTokenResponse;
+import com.finplay.api.domain.auth.dto.response.TokenResponse;
 import com.finplay.api.domain.auth.entity.EmailVerification;
 import com.finplay.api.domain.auth.entity.ReauthToken;
 import com.finplay.api.domain.auth.entity.RefreshToken;
 import com.finplay.api.domain.auth.entity.SignupMethod;
 import com.finplay.api.domain.auth.entity.SocialAccount;
 import com.finplay.api.domain.auth.entity.User;
-import com.finplay.api.domain.auth.dto.response.MemberResponse;
-import com.finplay.api.domain.auth.dto.response.ReauthTokenResponse;
-import com.finplay.api.domain.auth.dto.response.TokenResponse;
 import com.finplay.api.domain.auth.exception.EmailChangeConflictException;
 import com.finplay.api.domain.auth.oauth.OAuthNicknameGenerator;
 import com.finplay.api.domain.auth.oauth.OAuthProviderName;

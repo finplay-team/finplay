@@ -8,6 +8,20 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.reset;
 
+import com.finplay.api.TestcontainersConfiguration;
+import com.finplay.api.domain.account.repository.AccountRepository;
+import com.finplay.api.domain.account.service.AccountService;
+import com.finplay.api.domain.auth.dto.response.SignupTokenResponse;
+import com.finplay.api.domain.auth.dto.response.TokenResponse;
+import com.finplay.api.domain.auth.email.FakeEmailSender;
+import com.finplay.api.domain.auth.entity.RefreshToken;
+import com.finplay.api.domain.auth.entity.User;
+import com.finplay.api.domain.auth.repository.EmailVerificationRepository;
+import com.finplay.api.domain.auth.repository.RefreshTokenRepository;
+import com.finplay.api.domain.auth.repository.UserRepository;
+import com.finplay.api.domain.market.entity.Market;
+import com.finplay.api.global.exception.BusinessException;
+import com.finplay.api.global.exception.ErrorCode;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -20,28 +34,12 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
-
-import com.finplay.api.TestcontainersConfiguration;
-import com.finplay.api.domain.market.entity.Market;
-import com.finplay.api.domain.account.repository.AccountRepository;
-import com.finplay.api.domain.account.service.AccountService;
-import com.finplay.api.domain.auth.entity.RefreshToken;
-import com.finplay.api.domain.auth.entity.User;
-import com.finplay.api.domain.auth.dto.response.SignupTokenResponse;
-import com.finplay.api.domain.auth.dto.response.TokenResponse;
-import com.finplay.api.domain.auth.email.FakeEmailSender;
-import com.finplay.api.domain.auth.repository.EmailVerificationRepository;
-import com.finplay.api.domain.auth.repository.RefreshTokenRepository;
-import com.finplay.api.domain.auth.repository.UserRepository;
-import com.finplay.api.global.exception.BusinessException;
-import com.finplay.api.global.exception.ErrorCode;
 
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)

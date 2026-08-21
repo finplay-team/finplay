@@ -5,10 +5,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finplay.api.TestcontainersConfiguration;
-import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.account.entity.TutorialAccount;
 import com.finplay.api.domain.auth.entity.User;
 import com.finplay.api.domain.auth.repository.UserRepository;
+import com.finplay.api.domain.market.entity.Market;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;

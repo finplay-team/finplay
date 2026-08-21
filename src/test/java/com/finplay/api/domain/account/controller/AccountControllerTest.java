@@ -8,12 +8,12 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.account.dto.response.AccountSummaryResponse;
 import com.finplay.api.domain.account.service.AccountService;
 import com.finplay.api.domain.auth.config.SecurityConfig;
 import com.finplay.api.domain.auth.token.AuthenticatedUser;
 import com.finplay.api.domain.auth.token.JwtTokenProvider;
+import com.finplay.api.domain.market.entity.Market;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

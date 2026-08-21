@@ -1,7 +1,6 @@
 // InvestmentPracticeQueryService의 GET /api/education/practice 5가지 상태 판정을 검증하는 단위 테스트다.
 package com.finplay.api.domain.education.marketpractice.service;
 
-import com.finplay.api.domain.market.entity.TutorialScenarioScriptId;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -10,6 +9,8 @@ import static org.mockito.Mockito.when;
 
 import com.finplay.api.domain.account.entity.Account;
 import com.finplay.api.domain.auth.entity.User;
+import com.finplay.api.domain.education.marketpractice.dto.response.InvestmentPracticeResponse;
+import com.finplay.api.domain.education.marketpractice.dto.response.PracticeStepResponse;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeAttempt;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeAttemptStatus;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeCompletion;
@@ -17,10 +18,8 @@ import com.finplay.api.domain.education.marketpractice.entity.PracticeEvidenceTy
 import com.finplay.api.domain.education.marketpractice.entity.PracticeMarketObservation;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeMarketReflection;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeRiskSnapshot;
-import com.finplay.api.domain.education.marketpractice.dto.response.InvestmentPracticeResponse;
-import com.finplay.api.domain.education.marketpractice.dto.response.PracticeStepResponse;
-import com.finplay.api.domain.education.marketpractice.repository.PracticeCompletionRepository;
 import com.finplay.api.domain.education.marketpractice.repository.PracticeAttemptRepository;
+import com.finplay.api.domain.education.marketpractice.repository.PracticeCompletionRepository;
 import com.finplay.api.domain.education.marketpractice.repository.PracticeMarketObservationRepository;
 import com.finplay.api.domain.education.marketpractice.repository.PracticeRiskSnapshotRepository;
 import com.finplay.api.domain.education.service.PracticeIntentionService;
@@ -29,10 +28,11 @@ import com.finplay.api.domain.favorite.dto.response.FavoriteResponse;
 import com.finplay.api.domain.favorite.service.FavoriteService;
 import com.finplay.api.domain.market.entity.Instrument;
 import com.finplay.api.domain.market.entity.Market;
+import com.finplay.api.domain.market.entity.TutorialScenarioScriptId;
 import com.finplay.api.domain.market.service.TutorialScenarioScriptLoader;
 import com.finplay.api.domain.order.entity.Trade;
-import com.finplay.api.domain.portfolio.entity.Holding;
 import com.finplay.api.domain.order.service.TradeService;
+import com.finplay.api.domain.portfolio.entity.Holding;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;

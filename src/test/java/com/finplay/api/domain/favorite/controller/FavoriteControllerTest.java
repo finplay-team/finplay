@@ -15,11 +15,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.finplay.api.domain.auth.config.SecurityConfig;
 import com.finplay.api.domain.auth.token.AuthenticatedUser;
 import com.finplay.api.domain.auth.token.JwtTokenProvider;
-import com.finplay.api.global.exception.BusinessException;
-import com.finplay.api.global.exception.ErrorCode;
 import com.finplay.api.domain.favorite.dto.response.FavoriteListResponse;
 import com.finplay.api.domain.favorite.dto.response.FavoriteResponse;
 import com.finplay.api.domain.favorite.service.FavoriteService;
+import com.finplay.api.global.exception.BusinessException;
+import com.finplay.api.global.exception.ErrorCode;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;

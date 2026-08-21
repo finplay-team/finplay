@@ -1,12 +1,12 @@
 // 본인의 시장별 체결 내역을 커서 페이지네이션으로 조회하는 컨트롤러
 package com.finplay.api.domain.order.controller;
 
-import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.auth.token.AuthenticatedUser;
-import com.finplay.api.global.exception.BusinessException;
-import com.finplay.api.global.exception.ErrorCode;
+import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.order.dto.response.TradeListResponse;
 import com.finplay.api.domain.order.service.TradeService;
+import com.finplay.api.global.exception.BusinessException;
+import com.finplay.api.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;

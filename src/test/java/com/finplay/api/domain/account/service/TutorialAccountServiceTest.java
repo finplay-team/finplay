@@ -8,11 +8,11 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.account.entity.TutorialAccount;
 import com.finplay.api.domain.account.repository.TutorialAccountRepository;
 import com.finplay.api.domain.auth.entity.User;
 import com.finplay.api.domain.auth.service.UserQueryService;
+import com.finplay.api.domain.market.entity.Market;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;

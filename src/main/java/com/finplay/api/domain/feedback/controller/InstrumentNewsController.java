@@ -1,9 +1,8 @@
 // 종목별 뉴스·공시 목록과 AI 요약 조회 요청을 처리하는 컨트롤러
 package com.finplay.api.domain.feedback.controller;
 
-import com.finplay.api.domain.feedback.service.InstrumentNewsQueryService;
-
 import com.finplay.api.domain.feedback.dto.response.InstrumentNewsResponse;
+import com.finplay.api.domain.feedback.service.InstrumentNewsQueryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;

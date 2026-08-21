@@ -2,13 +2,13 @@
 package com.finplay.api.domain.community.controller;
 
 import com.finplay.api.domain.auth.token.AuthenticatedUser;
-import com.finplay.api.global.exception.BusinessException;
-import com.finplay.api.global.exception.ErrorCode;
 import com.finplay.api.domain.community.dto.request.CommunityPostCreateRequest;
 import com.finplay.api.domain.community.dto.request.CommunityPostUpdateRequest;
 import com.finplay.api.domain.community.dto.response.CommunityPostListResponse;
 import com.finplay.api.domain.community.dto.response.CommunityPostResponse;
 import com.finplay.api.domain.community.service.CommunityPostService;
+import com.finplay.api.global.exception.BusinessException;
+import com.finplay.api.global.exception.ErrorCode;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;

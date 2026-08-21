@@ -1,9 +1,9 @@
 // 대본 커서를 읽어 노출 가능한 진행 상태와 공개된 사건만 골라내는 순수 계산기(어떤 것도 저장하지 않는다)
 package com.finplay.api.domain.education.marketpractice.service;
 
+import com.finplay.api.domain.education.marketpractice.dto.response.PracticeScenarioEventResponse;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeAttempt;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeCauseStatus;
-import com.finplay.api.domain.education.marketpractice.dto.response.PracticeScenarioEventResponse;
 import com.finplay.api.domain.market.service.TutorialScenarioEvent;
 import com.finplay.api.domain.market.service.TutorialScenarioScript;
 import com.finplay.api.domain.market.service.TutorialScenarioStage;

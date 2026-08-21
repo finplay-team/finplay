@@ -1,13 +1,13 @@
 // 네이버 뉴스 검색 API로 종목별 기사를 가져오는 운영 프로필 전용 NewsCollector 구현.
 package com.finplay.api.domain.feedback.collector;
 
-import com.finplay.api.domain.feedback.service.NewsSearchQueryBuilder;
-import com.finplay.api.domain.feedback.service.NewsTitleFilter;
-
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.finplay.api.domain.feedback.config.NaverSearchProperties;
+import com.finplay.api.domain.feedback.service.NewsSearchQueryBuilder;
+import com.finplay.api.domain.feedback.service.NewsTitleFilter;
 import com.finplay.api.domain.market.entity.Instrument;
 import java.net.URI;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -15,7 +15,6 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
-import java.time.Duration;
 import java.util.Optional;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;

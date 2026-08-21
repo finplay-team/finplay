@@ -10,10 +10,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.finplay.api.domain.auth.email.EmailSender;
 import com.finplay.api.domain.auth.entity.EmailChangeVerification;
 import com.finplay.api.domain.auth.entity.SocialAccount;
 import com.finplay.api.domain.auth.entity.User;
-import com.finplay.api.domain.auth.email.EmailSender;
 import com.finplay.api.domain.auth.oauth.OAuthProviderName;
 import com.finplay.api.domain.auth.repository.EmailChangeVerificationRepository;
 import com.finplay.api.domain.auth.repository.ReauthTokenRepository;

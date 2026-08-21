@@ -1,11 +1,11 @@
 // 실행 세대의 진입마다 기준선·매수·매도와 "안 팔았다면" 평가손익을 묶어 완료 대조 배열을 만드는 조회 서비스
 package com.finplay.api.domain.education.marketpractice.service;
 
+import com.finplay.api.domain.education.marketpractice.dto.response.PracticeEntryResponse;
 import com.finplay.api.domain.education.marketpractice.entity.ExitPreset;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeAttempt;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeRiskSnapshot;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeSellCause;
-import com.finplay.api.domain.education.marketpractice.dto.response.PracticeEntryResponse;
 import com.finplay.api.domain.education.marketpractice.repository.PracticeRiskSnapshotRepository;
 import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.market.entity.TutorialScenarioScriptId;

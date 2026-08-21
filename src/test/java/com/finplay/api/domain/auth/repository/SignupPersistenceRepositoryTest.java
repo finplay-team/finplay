@@ -4,9 +4,16 @@ package com.finplay.api.domain.auth.repository;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.finplay.api.TestcontainersConfiguration;
+import com.finplay.api.domain.account.entity.Account;
+import com.finplay.api.domain.account.repository.AccountRepository;
+import com.finplay.api.domain.auth.entity.EmailVerification;
+import com.finplay.api.domain.auth.entity.RefreshToken;
+import com.finplay.api.domain.auth.entity.User;
+import com.finplay.api.domain.market.entity.Market;
+import jakarta.persistence.EntityManager;
 import java.time.LocalDateTime;
 import java.util.List;
-
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -14,16 +21,6 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
-
-import com.finplay.api.TestcontainersConfiguration;
-import com.finplay.api.domain.account.entity.Account;
-import com.finplay.api.domain.market.entity.Market;
-import com.finplay.api.domain.account.repository.AccountRepository;
-import com.finplay.api.domain.auth.entity.EmailVerification;
-import com.finplay.api.domain.auth.entity.RefreshToken;
-import com.finplay.api.domain.auth.entity.User;
-
-import jakarta.persistence.EntityManager;
 
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)

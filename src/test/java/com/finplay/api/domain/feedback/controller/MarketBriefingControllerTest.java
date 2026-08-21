@@ -1,8 +1,6 @@
 // 개장 전 브리핑 조회 API의 인증·market 파라미터 검증·직렬화·오류 매핑 계약을 검증하는 WebMvc 슬라이스 테스트다.
 package com.finplay.api.domain.feedback.controller;
 
-import com.finplay.api.domain.feedback.service.MarketBriefingService;
-
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -14,10 +12,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.finplay.api.domain.auth.config.SecurityConfig;
 import com.finplay.api.domain.auth.token.AuthenticatedUser;
 import com.finplay.api.domain.auth.token.JwtTokenProvider;
-import com.finplay.api.domain.feedback.entity.FeedbackContentStatus;
-import com.finplay.api.domain.feedback.entity.MarketNewsItemType;
 import com.finplay.api.domain.feedback.dto.response.BriefingNewsItem;
 import com.finplay.api.domain.feedback.dto.response.MarketBriefingResponse;
+import com.finplay.api.domain.feedback.entity.FeedbackContentStatus;
+import com.finplay.api.domain.feedback.entity.MarketNewsItemType;
+import com.finplay.api.domain.feedback.service.MarketBriefingService;
 import com.finplay.api.domain.market.entity.Market;
 import java.time.LocalDate;
 import java.time.LocalDateTime;

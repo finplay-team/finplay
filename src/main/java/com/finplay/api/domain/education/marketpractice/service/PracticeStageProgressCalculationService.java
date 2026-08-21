@@ -1,8 +1,8 @@
 // 현재 실행 세대의 체결 원장을 읽어 튜토리얼 5단계 중 주문 방법·프리셋 단계의 완료 여부를 판정하는 조회 서비스
 package com.finplay.api.domain.education.marketpractice.service;
 
-import com.finplay.api.domain.education.marketpractice.entity.PracticeAttempt;
 import com.finplay.api.domain.education.marketpractice.dto.response.PracticeStageProgressResponse;
+import com.finplay.api.domain.education.marketpractice.entity.PracticeAttempt;
 import com.finplay.api.domain.order.entity.OrderSide;
 import com.finplay.api.domain.order.entity.OrderType;
 import com.finplay.api.domain.order.service.PracticeExitPlanQueryService;

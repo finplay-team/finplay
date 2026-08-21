@@ -4,9 +4,9 @@ package com.finplay.api.domain.feedback.store;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finplay.api.domain.feedback.config.FeedbackNewsProperties;
-import com.finplay.api.domain.feedback.entity.MarketNewsItemType;
 import com.finplay.api.domain.feedback.dto.response.BriefingNewsItem;
 import com.finplay.api.domain.feedback.dto.response.MarketBriefingResponse;
+import com.finplay.api.domain.feedback.entity.MarketNewsItemType;
 import com.finplay.api.domain.market.entity.Market;
 import java.time.Duration;
 import java.time.LocalDateTime;

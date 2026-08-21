@@ -8,10 +8,10 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.finplay.api.domain.market.entity.Instrument;
-import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.market.dto.sse.MarketSnapshotEvent;
 import com.finplay.api.domain.market.dto.sse.MarketSnapshotEvent.InstrumentPriceSnapshot;
+import com.finplay.api.domain.market.entity.Instrument;
+import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.market.repository.InstrumentRepository;
 import com.finplay.api.domain.market.sse.SseEmitterRegistry;
 import java.math.BigDecimal;

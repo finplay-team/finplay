@@ -9,8 +9,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.finplay.api.domain.auth.entity.EmailVerification;
 import com.finplay.api.domain.auth.email.EmailSender;
+import com.finplay.api.domain.auth.entity.EmailVerification;
 import com.finplay.api.domain.auth.repository.EmailVerificationRepository;
 import com.finplay.api.domain.auth.repository.UserRepository;
 import com.finplay.api.domain.auth.verification.VerificationCodePolicy;
@@ -30,10 +30,10 @@ import javax.crypto.spec.SecretKeySpec;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.junit.jupiter.api.extension.ExtendWith;
 
 @ExtendWith(MockitoExtension.class)
 class EmailVerificationServiceTest {

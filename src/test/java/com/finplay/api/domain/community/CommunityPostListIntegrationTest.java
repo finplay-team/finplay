@@ -6,14 +6,14 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.finplay.api.TestcontainersConfiguration;
 import com.finplay.api.domain.auth.entity.User;
 import com.finplay.api.domain.auth.repository.UserRepository;
 import com.finplay.api.domain.auth.token.JwtTokenProvider;
 import com.finplay.api.domain.community.entity.CommunityPost;
 import com.finplay.api.domain.community.repository.CommunityPostRepository;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;

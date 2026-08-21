@@ -1,8 +1,6 @@
 // 종목 뉴스 목록·요약 조회 API의 인증·직렬화·오류 매핑 계약을 검증하는 WebMvc 슬라이스 테스트다.
 package com.finplay.api.domain.feedback.controller;
 
-import com.finplay.api.domain.feedback.service.InstrumentNewsQueryService;
-
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -13,13 +11,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.finplay.api.domain.auth.config.SecurityConfig;
 import com.finplay.api.domain.auth.token.AuthenticatedUser;
 import com.finplay.api.domain.auth.token.JwtTokenProvider;
-import com.finplay.api.global.exception.BusinessException;
-import com.finplay.api.global.exception.ErrorCode;
+import com.finplay.api.domain.feedback.dto.response.InstrumentNewsResponse;
+import com.finplay.api.domain.feedback.dto.response.NewsItem;
 import com.finplay.api.domain.feedback.entity.FeedbackContentStatus;
 import com.finplay.api.domain.feedback.entity.MarketNewsItemType;
 import com.finplay.api.domain.feedback.entity.NewsSummaryScope;
-import com.finplay.api.domain.feedback.dto.response.InstrumentNewsResponse;
-import com.finplay.api.domain.feedback.dto.response.NewsItem;
+import com.finplay.api.domain.feedback.service.InstrumentNewsQueryService;
+import com.finplay.api.global.exception.BusinessException;
+import com.finplay.api.global.exception.ErrorCode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;

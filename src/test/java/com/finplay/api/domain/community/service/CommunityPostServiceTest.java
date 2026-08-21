@@ -1,8 +1,6 @@
 // 인증 사용자 기반 게시글 생성 규칙과 저장 실패 경계를 검증하는 단위 테스트다.
 package com.finplay.api.domain.community.service;
 
-import com.finplay.api.domain.feedback.service.PostSellFeedbackService;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -13,20 +11,21 @@ import static org.mockito.Mockito.when;
 
 import com.finplay.api.domain.auth.entity.User;
 import com.finplay.api.domain.auth.service.UserQueryService;
-import com.finplay.api.global.exception.BusinessException;
-import com.finplay.api.global.exception.ErrorCode;
-import com.finplay.api.domain.community.entity.CommunityPost;
-import com.finplay.api.domain.community.entity.CommunityPostImage;
 import com.finplay.api.domain.community.dto.response.CommunityPostImageResponse;
 import com.finplay.api.domain.community.dto.response.CommunityPostListResponse;
 import com.finplay.api.domain.community.dto.response.CommunityPostResponse;
+import com.finplay.api.domain.community.entity.CommunityPost;
+import com.finplay.api.domain.community.entity.CommunityPostImage;
 import com.finplay.api.domain.community.repository.CommunityPostLikeRepository;
 import com.finplay.api.domain.community.repository.CommunityPostRepository;
 import com.finplay.api.domain.community.repository.PostCommentRepository;
 import com.finplay.api.domain.feedback.dto.response.TradeShareSummaryResponse;
+import com.finplay.api.domain.feedback.service.PostSellFeedbackService;
 import com.finplay.api.domain.market.entity.Instrument;
 import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.market.service.InstrumentService;
+import com.finplay.api.global.exception.BusinessException;
+import com.finplay.api.global.exception.ErrorCode;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;

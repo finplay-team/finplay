@@ -1,9 +1,9 @@
 // OCO 손절·익절 실행 가격선을 019 공식대로 확정하고 범위·정밀도를 검증하는 순수 계산기
 package com.finplay.api.domain.order.service;
 
+import com.finplay.api.domain.order.entity.ExitPriceType;
 import com.finplay.api.global.exception.BusinessException;
 import com.finplay.api.global.exception.ErrorCode;
-import com.finplay.api.domain.order.entity.ExitPriceType;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import org.springframework.stereotype.Service;

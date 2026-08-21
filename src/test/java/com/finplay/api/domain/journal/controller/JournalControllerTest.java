@@ -14,13 +14,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.finplay.api.domain.auth.config.SecurityConfig;
 import com.finplay.api.domain.auth.token.AuthenticatedUser;
 import com.finplay.api.domain.auth.token.JwtTokenProvider;
-import com.finplay.api.global.exception.BusinessException;
-import com.finplay.api.global.exception.ErrorCode;
 import com.finplay.api.domain.journal.dto.response.BuyJournalResponse;
 import com.finplay.api.domain.journal.dto.response.BuyJournalUpdateResponse;
 import com.finplay.api.domain.journal.dto.response.SellJournalResponse;
 import com.finplay.api.domain.journal.dto.response.SellJournalUpdateResponse;
 import com.finplay.api.domain.journal.service.JournalService;
+import com.finplay.api.global.exception.BusinessException;
+import com.finplay.api.global.exception.ErrorCode;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;

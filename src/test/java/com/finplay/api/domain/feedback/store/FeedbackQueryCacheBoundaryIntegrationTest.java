@@ -1,20 +1,14 @@
 // 조회 캐시의 경계 조건 — 주식 범위 전환·코인 매시 주기 TTL·Redis 장애·원장 불변을 실 MySQL/Redis로 검증한다 (tasks.md 항목 7).
 package com.finplay.api.domain.feedback.store;
 
-import com.finplay.api.domain.feedback.service.InstrumentNewsQueryReader;
-import com.finplay.api.domain.feedback.service.InstrumentNewsQueryService;
-import com.finplay.api.domain.feedback.service.MarketBriefingReader;
-import com.finplay.api.domain.feedback.service.MarketBriefingService;
-import com.finplay.api.domain.feedback.service.NarrativeService;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
 import com.finplay.api.TestcontainersConfiguration;
-import com.finplay.api.global.config.TestClock;
-import com.finplay.api.global.config.TestClockConfig;
 import com.finplay.api.domain.feedback.config.FeedbackNewsProperties;
 import com.finplay.api.domain.feedback.config.FeedbackQueryCacheProperties;
+import com.finplay.api.domain.feedback.dto.response.InstrumentNewsResponse;
+import com.finplay.api.domain.feedback.dto.response.MarketBriefingResponse;
 import com.finplay.api.domain.feedback.entity.FeedbackContentStatus;
 import com.finplay.api.domain.feedback.entity.InstrumentNewsSummary;
 import com.finplay.api.domain.feedback.entity.MarketBriefing;
@@ -22,12 +16,14 @@ import com.finplay.api.domain.feedback.entity.MarketNewsItem;
 import com.finplay.api.domain.feedback.entity.MarketNewsItemType;
 import com.finplay.api.domain.feedback.entity.NarrativeSource;
 import com.finplay.api.domain.feedback.entity.NewsSummaryScope;
-import com.finplay.api.domain.feedback.dto.response.InstrumentNewsResponse;
-import com.finplay.api.domain.feedback.dto.response.MarketBriefingResponse;
 import com.finplay.api.domain.feedback.repository.InstrumentNewsSummaryRepository;
 import com.finplay.api.domain.feedback.repository.MarketBriefingRepository;
 import com.finplay.api.domain.feedback.repository.MarketNewsItemRepository;
-import com.finplay.api.global.lock.RedisLock;
+import com.finplay.api.domain.feedback.service.InstrumentNewsQueryReader;
+import com.finplay.api.domain.feedback.service.InstrumentNewsQueryService;
+import com.finplay.api.domain.feedback.service.MarketBriefingReader;
+import com.finplay.api.domain.feedback.service.MarketBriefingService;
+import com.finplay.api.domain.feedback.service.NarrativeService;
 import com.finplay.api.domain.market.entity.Instrument;
 import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.market.entity.StockReplaySession;
@@ -36,6 +32,9 @@ import com.finplay.api.domain.market.repository.StockReplaySessionRepository;
 import com.finplay.api.domain.market.service.BusinessDayCalendar;
 import com.finplay.api.domain.market.service.InstrumentService;
 import com.finplay.api.domain.market.service.StockReplayService;
+import com.finplay.api.global.config.TestClock;
+import com.finplay.api.global.config.TestClockConfig;
+import com.finplay.api.global.lock.RedisLock;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.net.ServerSocket;

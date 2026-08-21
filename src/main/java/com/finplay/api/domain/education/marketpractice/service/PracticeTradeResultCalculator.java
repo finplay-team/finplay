@@ -1,9 +1,9 @@
 // 튜토리얼 이번 실행의 수익률과 매도 위치 판정을 계산하는 순수 계산기(어떤 것도 저장하지 않는다)
 package com.finplay.api.domain.education.marketpractice.service;
 
+import com.finplay.api.domain.education.marketpractice.dto.response.PracticeTradeResultResponse;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeSellCause;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeSellVerdict;
-import com.finplay.api.domain.education.marketpractice.dto.response.PracticeTradeResultResponse;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 

@@ -9,7 +9,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.finplay.api.TestcontainersConfiguration;
-import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.account.repository.AccountRepository;
 import com.finplay.api.domain.auth.entity.User;
 import com.finplay.api.domain.auth.oauth.OAuthProviderName;
@@ -18,6 +17,7 @@ import com.finplay.api.domain.auth.repository.SocialAccountRepository;
 import com.finplay.api.domain.auth.repository.UserRepository;
 import com.finplay.api.domain.auth.token.AuthenticatedUser;
 import com.finplay.api.domain.auth.token.JwtTokenProvider;
+import com.finplay.api.domain.market.entity.Market;
 import com.jayway.jsonpath.JsonPath;
 import jakarta.servlet.http.Cookie;
 import java.net.URI;

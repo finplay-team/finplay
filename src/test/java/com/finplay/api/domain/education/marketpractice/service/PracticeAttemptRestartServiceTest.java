@@ -9,9 +9,9 @@ import static org.mockito.Mockito.when;
 
 import com.finplay.api.domain.account.entity.TutorialAccount;
 import com.finplay.api.domain.account.service.TutorialAccountService;
+import com.finplay.api.domain.education.marketpractice.dto.response.PracticeAttemptResponse;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeAttempt;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeAttemptStatus;
-import com.finplay.api.domain.education.marketpractice.dto.response.PracticeAttemptResponse;
 import com.finplay.api.domain.education.marketpractice.repository.PracticeAttemptRepository;
 import com.finplay.api.domain.education.marketpractice.repository.PracticeRiskSnapshotRepository;
 import com.finplay.api.domain.market.entity.Instrument;

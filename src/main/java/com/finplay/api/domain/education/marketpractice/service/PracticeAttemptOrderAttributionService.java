@@ -1,13 +1,11 @@
 // 샘플 주문을 현재 attempt 실행 세대에 귀속하고 최초 BUY 위험 스냅샷을 원자 생성하는 서비스
 package com.finplay.api.domain.education.marketpractice.service;
 
-import com.finplay.api.global.exception.BusinessException;
-import com.finplay.api.global.exception.ErrorCode;
+import com.finplay.api.domain.education.marketpractice.dto.response.PracticeStageProgressResponse;
 import com.finplay.api.domain.education.marketpractice.entity.ExitPreset;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeAttempt;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeAttemptStatus;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeRiskSnapshot;
-import com.finplay.api.domain.education.marketpractice.dto.response.PracticeStageProgressResponse;
 import com.finplay.api.domain.education.marketpractice.repository.PracticeAttemptRepository;
 import com.finplay.api.domain.education.marketpractice.repository.PracticeRiskSnapshotRepository;
 import com.finplay.api.domain.market.entity.Instrument;
@@ -22,12 +20,14 @@ import com.finplay.api.domain.order.service.ExitPlanCreationService;
 import com.finplay.api.domain.order.service.ExitPlanPracticeOriginDto;
 import com.finplay.api.domain.order.service.ExitPriceInputDto;
 import com.finplay.api.domain.order.service.PracticeOrderAttributionDto;
-import com.finplay.api.domain.order.service.TradeService;
 import com.finplay.api.domain.order.service.PracticeOrderAttributionPort;
 import com.finplay.api.domain.order.service.PracticeOrderFillAttributionDto;
 import com.finplay.api.domain.order.service.PracticeOrderFillContextDto;
+import com.finplay.api.domain.order.service.TradeService;
 import com.finplay.api.domain.portfolio.entity.Holding;
 import com.finplay.api.domain.portfolio.service.HoldingService;
+import com.finplay.api.global.exception.BusinessException;
+import com.finplay.api.global.exception.ErrorCode;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;

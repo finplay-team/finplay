@@ -9,10 +9,10 @@ import static org.mockito.Mockito.doThrow;
 
 import com.finplay.api.TestcontainersConfiguration;
 import com.finplay.api.domain.account.service.AccountService;
+import com.finplay.api.domain.auth.email.FakeEmailSender;
 import com.finplay.api.domain.auth.entity.PasswordResetVerification;
 import com.finplay.api.domain.auth.entity.RefreshToken;
 import com.finplay.api.domain.auth.entity.User;
-import com.finplay.api.domain.auth.email.FakeEmailSender;
 import com.finplay.api.domain.auth.oauth.OAuthProviderName;
 import com.finplay.api.domain.auth.oauth.OAuthUserDto;
 import com.finplay.api.domain.auth.repository.PasswordResetVerificationRepository;

@@ -14,9 +14,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.finplay.api.domain.auth.config.SecurityConfig;
 import com.finplay.api.domain.auth.token.AuthenticatedUser;
 import com.finplay.api.domain.auth.token.JwtTokenProvider;
+import com.finplay.api.domain.community.service.PostCommentService;
 import com.finplay.api.global.exception.BusinessException;
 import com.finplay.api.global.exception.ErrorCode;
-import com.finplay.api.domain.community.service.PostCommentService;
 import java.util.Optional;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;

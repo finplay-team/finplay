@@ -12,13 +12,13 @@ import static org.mockito.Mockito.when;
 
 import com.finplay.api.domain.auth.entity.User;
 import com.finplay.api.domain.auth.service.UserQueryService;
-import com.finplay.api.global.exception.BusinessException;
-import com.finplay.api.global.exception.ErrorCode;
+import com.finplay.api.domain.community.dto.response.CommunityPostLikeResponse;
 import com.finplay.api.domain.community.entity.CommunityPost;
 import com.finplay.api.domain.community.entity.CommunityPostLike;
-import com.finplay.api.domain.community.dto.response.CommunityPostLikeResponse;
 import com.finplay.api.domain.community.repository.CommunityPostLikeRepository;
 import com.finplay.api.domain.community.repository.CommunityPostRepository;
+import com.finplay.api.global.exception.BusinessException;
+import com.finplay.api.global.exception.ErrorCode;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;

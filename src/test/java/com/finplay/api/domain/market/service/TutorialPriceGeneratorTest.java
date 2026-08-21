@@ -1,11 +1,11 @@
 // attempt seed·run 기반 튜토리얼 가격 생성기의 고정 벡터와 OHLC 불변성을 검증한다.
 package com.finplay.api.domain.market.service;
 
-import com.finplay.api.domain.market.entity.TutorialScenarioScriptId;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finplay.api.domain.market.entity.Market;
+import com.finplay.api.domain.market.entity.TutorialScenarioScriptId;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;

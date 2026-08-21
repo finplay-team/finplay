@@ -4,11 +4,11 @@ package com.finplay.api.domain.auth.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finplay.api.TestcontainersConfiguration;
-import com.finplay.api.domain.auth.entity.SignupMethod;
-import com.finplay.api.domain.auth.entity.User;
 import com.finplay.api.domain.auth.dto.response.MemberResponse;
 import com.finplay.api.domain.auth.dto.response.SignupTokenResponse;
 import com.finplay.api.domain.auth.email.FakeEmailSender;
+import com.finplay.api.domain.auth.entity.SignupMethod;
+import com.finplay.api.domain.auth.entity.User;
 import com.finplay.api.domain.auth.oauth.OAuthProviderName;
 import com.finplay.api.domain.auth.oauth.OAuthUserDto;
 import com.finplay.api.domain.auth.repository.UserRepository;

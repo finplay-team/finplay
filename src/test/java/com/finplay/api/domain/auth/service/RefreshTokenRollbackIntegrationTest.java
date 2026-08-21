@@ -5,6 +5,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
+import com.finplay.api.TestcontainersConfiguration;
+import com.finplay.api.domain.auth.dto.response.TokenResponse;
+import com.finplay.api.domain.auth.entity.RefreshToken;
+import com.finplay.api.domain.auth.entity.User;
+import com.finplay.api.domain.auth.repository.RefreshTokenRepository;
+import com.finplay.api.domain.auth.repository.UserRepository;
+import com.finplay.api.domain.auth.token.AuthenticatedUser;
+import com.finplay.api.domain.auth.token.IssuedTokenPair;
+import com.finplay.api.domain.auth.token.JwtTokenProvider;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -13,7 +22,6 @@ import java.time.LocalDateTime;
 import java.util.HexFormat;
 import java.util.Optional;
 import java.util.UUID;
-
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -22,16 +30,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
-
-import com.finplay.api.TestcontainersConfiguration;
-import com.finplay.api.domain.auth.entity.RefreshToken;
-import com.finplay.api.domain.auth.entity.User;
-import com.finplay.api.domain.auth.dto.response.TokenResponse;
-import com.finplay.api.domain.auth.repository.RefreshTokenRepository;
-import com.finplay.api.domain.auth.repository.UserRepository;
-import com.finplay.api.domain.auth.token.AuthenticatedUser;
-import com.finplay.api.domain.auth.token.IssuedTokenPair;
-import com.finplay.api.domain.auth.token.JwtTokenProvider;
 
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)

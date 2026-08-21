@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.finplay.api.TestcontainersConfiguration;
 import com.finplay.api.domain.auth.entity.User;
 import com.finplay.api.domain.auth.repository.UserRepository;
@@ -17,7 +18,6 @@ import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.market.repository.InstrumentRepository;
 import com.finplay.api.domain.watchlist.entity.WatchlistItem;
 import com.finplay.api.domain.watchlist.repository.WatchlistItemRepository;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.EntityManager;
 import java.time.LocalDateTime;
 import java.util.List;

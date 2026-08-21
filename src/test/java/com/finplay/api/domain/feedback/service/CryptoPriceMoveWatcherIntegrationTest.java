@@ -10,8 +10,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.finplay.api.TestcontainersConfiguration;
-import com.finplay.api.global.config.TestClock;
-import com.finplay.api.global.config.TestClockConfig;
 import com.finplay.api.domain.feedback.collector.CollectedNewsDto;
 import com.finplay.api.domain.feedback.collector.NewsCollector;
 import com.finplay.api.domain.feedback.entity.MarketNewsItem;
@@ -25,6 +23,8 @@ import com.finplay.api.domain.market.entity.Instrument;
 import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.market.repository.InstrumentRepository;
 import com.finplay.api.domain.market.store.PriceStore;
+import com.finplay.api.global.config.TestClock;
+import com.finplay.api.global.config.TestClockConfig;
 import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
 import java.time.Duration;

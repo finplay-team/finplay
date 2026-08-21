@@ -1,12 +1,12 @@
 // 주식 SSE 스트림(/api/stocks/stream)의 snapshot 구성과 매분 price·status 이벤트 push를 담당하는 서비스 (이슈 #19)
 package com.finplay.api.domain.market.service;
 
-import com.finplay.api.domain.market.entity.Instrument;
-import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.market.dto.sse.MarketPriceEvent;
 import com.finplay.api.domain.market.dto.sse.MarketSnapshotEvent;
 import com.finplay.api.domain.market.dto.sse.MarketSnapshotEvent.InstrumentPriceSnapshot;
 import com.finplay.api.domain.market.dto.sse.MarketStatusEvent;
+import com.finplay.api.domain.market.entity.Instrument;
+import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.market.repository.InstrumentRepository;
 import com.finplay.api.domain.market.sse.SseEmitterRegistry;
 import jakarta.annotation.PostConstruct;

@@ -11,8 +11,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.finplay.api.TestcontainersConfiguration;
-import com.finplay.api.global.config.TestClock;
-import com.finplay.api.global.config.TestClockConfig;
 import com.finplay.api.domain.feedback.config.FeedbackCryptoProperties;
 import com.finplay.api.domain.feedback.config.FeedbackDetectionProperties;
 import com.finplay.api.domain.feedback.entity.MarketNewsItem;
@@ -25,6 +23,8 @@ import com.finplay.api.domain.market.repository.InstrumentRepository;
 import com.finplay.api.domain.market.service.CryptoPriceSnapshotService;
 import com.finplay.api.domain.market.service.InstrumentService;
 import com.finplay.api.domain.market.store.PriceStore;
+import com.finplay.api.global.config.TestClock;
+import com.finplay.api.global.config.TestClockConfig;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;

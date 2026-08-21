@@ -4,30 +4,28 @@ package com.finplay.api.domain.auth.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.HexFormat;
-import java.util.UUID;
-
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.annotation.Import;
-
 import com.finplay.api.TestcontainersConfiguration;
-import com.finplay.api.domain.auth.entity.RefreshToken;
-import com.finplay.api.domain.auth.entity.User;
 import com.finplay.api.domain.auth.dto.response.SignupTokenResponse;
 import com.finplay.api.domain.auth.dto.response.TokenResponse;
 import com.finplay.api.domain.auth.email.FakeEmailSender;
+import com.finplay.api.domain.auth.entity.RefreshToken;
+import com.finplay.api.domain.auth.entity.User;
 import com.finplay.api.domain.auth.repository.RefreshTokenRepository;
 import com.finplay.api.domain.auth.repository.UserRepository;
 import com.finplay.api.domain.auth.token.AuthenticatedUser;
 import com.finplay.api.domain.auth.token.JwtTokenProvider;
 import com.finplay.api.global.exception.BusinessException;
 import com.finplay.api.global.exception.ErrorCode;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
+import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)

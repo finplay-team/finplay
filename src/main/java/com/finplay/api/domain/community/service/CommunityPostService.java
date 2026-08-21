@@ -1,22 +1,21 @@
 // 인증 사용자를 작성자로 연결해 커뮤니티 게시글 생성을 처리하는 서비스
 package com.finplay.api.domain.community.service;
 
-import com.finplay.api.domain.feedback.service.PostSellFeedbackService;
-
 import com.finplay.api.domain.auth.entity.User;
 import com.finplay.api.domain.auth.service.UserQueryService;
-import com.finplay.api.global.exception.BusinessException;
-import com.finplay.api.global.exception.ErrorCode;
-import com.finplay.api.domain.community.entity.CommunityPost;
-import com.finplay.api.domain.community.entity.CommunityPostImage;
 import com.finplay.api.domain.community.dto.response.CommunityPostListResponse;
 import com.finplay.api.domain.community.dto.response.CommunityPostResponse;
+import com.finplay.api.domain.community.entity.CommunityPost;
+import com.finplay.api.domain.community.entity.CommunityPostImage;
 import com.finplay.api.domain.community.repository.CommunityPostLikeRepository;
 import com.finplay.api.domain.community.repository.CommunityPostRepository;
 import com.finplay.api.domain.community.repository.PostCommentRepository;
 import com.finplay.api.domain.feedback.dto.response.TradeShareSummaryResponse;
+import com.finplay.api.domain.feedback.service.PostSellFeedbackService;
 import com.finplay.api.domain.market.entity.Instrument;
 import com.finplay.api.domain.market.service.InstrumentService;
+import com.finplay.api.global.exception.BusinessException;
+import com.finplay.api.global.exception.ErrorCode;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;

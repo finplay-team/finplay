@@ -1,8 +1,6 @@
 // attempt의 영속 seed·anchor·run 또는 대본 커서를 market 순수 생성기 입력과 현재 canonical 가격으로 해석하는 서비스
 package com.finplay.api.domain.education.marketpractice.service;
 
-import com.finplay.api.global.exception.BusinessException;
-import com.finplay.api.global.exception.ErrorCode;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeAttempt;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeAttemptStatus;
 import com.finplay.api.domain.education.marketpractice.repository.PracticeAttemptRepository;
@@ -15,6 +13,8 @@ import com.finplay.api.domain.market.service.TutorialScenarioCursor;
 import com.finplay.api.domain.market.service.TutorialScenarioScript;
 import com.finplay.api.domain.market.service.TutorialScenarioScriptLoader;
 import com.finplay.api.domain.market.service.TutorialScenarioStage;
+import com.finplay.api.global.exception.BusinessException;
+import com.finplay.api.global.exception.ErrorCode;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;

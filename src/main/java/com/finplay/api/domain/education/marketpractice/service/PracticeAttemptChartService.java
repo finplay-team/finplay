@@ -1,19 +1,19 @@
 // 현재 attempt의 읽기 전용 29+1 차트와 명시적 canonical 지정가 tick을 처리하는 서비스
 package com.finplay.api.domain.education.marketpractice.service;
 
-import com.finplay.api.global.exception.BusinessException;
-import com.finplay.api.global.exception.ErrorCode;
-import com.finplay.api.domain.education.marketpractice.entity.PracticeAttempt;
-import com.finplay.api.domain.education.marketpractice.entity.PracticeAttemptStatus;
 import com.finplay.api.domain.education.marketpractice.dto.response.PracticeTutorialCandleResponse;
 import com.finplay.api.domain.education.marketpractice.dto.response.PracticeTutorialChartResponse;
 import com.finplay.api.domain.education.marketpractice.dto.response.PriceGuideRangeResponse;
+import com.finplay.api.domain.education.marketpractice.entity.PracticeAttempt;
+import com.finplay.api.domain.education.marketpractice.entity.PracticeAttemptStatus;
 import com.finplay.api.domain.education.marketpractice.repository.PracticeAttemptRepository;
 import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.market.service.TutorialPriceSeriesDto;
 import com.finplay.api.domain.market.service.TutorialScenarioPriceGuideRangeCalculator;
 import com.finplay.api.domain.market.service.TutorialScenarioScript;
 import com.finplay.api.domain.order.service.PracticeOrderSettlementService;
+import com.finplay.api.global.exception.BusinessException;
+import com.finplay.api.global.exception.ErrorCode;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;

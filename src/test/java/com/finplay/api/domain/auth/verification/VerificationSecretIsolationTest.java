@@ -5,10 +5,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
+import com.finplay.api.domain.auth.email.EmailSender;
 import com.finplay.api.domain.auth.entity.EmailVerification;
 import com.finplay.api.domain.auth.entity.PasswordResetVerification;
 import com.finplay.api.domain.auth.entity.User;
-import com.finplay.api.domain.auth.email.EmailSender;
 import com.finplay.api.domain.auth.repository.EmailVerificationRepository;
 import com.finplay.api.domain.auth.repository.PasswordResetVerificationRepository;
 import com.finplay.api.domain.auth.repository.UserRepository;

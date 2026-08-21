@@ -1,9 +1,9 @@
 // 비밀번호 재설정 인증번호의 발송 제한 판정·대상 회원 판별·생성·HMAC 저장·이전 코드 무효화·발송과 확인 시 검증·소비를 담당하는 서비스
 package com.finplay.api.domain.auth.service;
 
+import com.finplay.api.domain.auth.email.EmailSender;
 import com.finplay.api.domain.auth.entity.PasswordResetVerification;
 import com.finplay.api.domain.auth.entity.User;
-import com.finplay.api.domain.auth.email.EmailSender;
 import com.finplay.api.domain.auth.repository.PasswordResetVerificationRepository;
 import com.finplay.api.domain.auth.repository.UserRepository;
 import com.finplay.api.domain.auth.verification.VerificationCodeHasher;
