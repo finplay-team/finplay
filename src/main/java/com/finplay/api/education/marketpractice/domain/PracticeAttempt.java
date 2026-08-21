@@ -205,6 +205,18 @@ public class PracticeAttempt {
 		return scenarioScriptId == null ? TutorialScenarioScriptId.CRYPTO_STORY_V1 : scenarioScriptId;
 	}
 
+	// 049 ORDERBASICS-018 — 같은 run 안에서 2단계 대본을 3단계 대본으로 교체한다(전환은 재시작이 아니다).
+	// run·exitPreset·계좌는 건드리지 않고 커서만 지운다 — 새 대본의 첫 tick이 그 대본의 첫 구간 0분으로
+	// 커서를 다시 세운다(041 3번이 남긴 계약과 동일).
+	public void advanceScenarioScript(TutorialScenarioScriptId scenarioScriptId, LocalDateTime updatedAt) {
+		if (this.status != PracticeAttemptStatus.IN_PROGRESS) {
+			throw new IllegalStateException("진행 중인 튜토리얼 attempt만 대본을 전환할 수 있습니다.");
+		}
+		clearScenarioProgress();
+		this.scenarioScriptId = scenarioScriptId;
+		this.updatedAt = updatedAt;
+	}
+
 	// 종목 선택과 재시작 양쪽에서 대본 위치를 지운다. 재시작이 빠뜨리면 재시작한 사용자가 이전 실행의 위치와
 	// 봉을 그대로 물려받아 첫 화면에 지난 실행의 4막 저점이 노출된다(041 plan §재시작 시 초기화).
 	//

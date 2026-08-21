@@ -21,6 +21,7 @@ import com.finplay.api.common.ErrorCode;
 import com.finplay.api.education.marketpractice.dto.response.PracticeScenarioEventResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeTutorialCandleResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeTutorialChartResponse;
+import com.finplay.api.education.marketpractice.dto.response.PriceGuideRangeResponse;
 import com.finplay.api.education.marketpractice.service.PracticeAttemptChartService;
 import com.finplay.api.market.domain.Market;
 import java.math.BigDecimal;
@@ -168,6 +169,35 @@ class PracticeAttemptChartControllerTest {
 			.andExpect(jsonPath("$.revealedEvents.length()").value(0));
 	}
 
+	// 049 tasks 3번 검증 — priceGuideRange가 있을 때 low·high가 그대로 직렬화된다.
+	@Test
+	void chartJsonExposesPriceGuideRangeWhenScriptHasNoEvents() throws Exception {
+		authenticate();
+		PriceGuideRangeResponse range = new PriceGuideRangeResponse(
+			new BigDecimal("90000.00000000"), new BigDecimal("110000.00000000"));
+		when(chartService.getChart(USER_ID, Market.CRYPTO)).thenReturn(chartResponse(range));
+
+		mockMvc.perform(get("/api/education/practice/attempts/CRYPTO/chart")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.priceGuideRange.low").value(90000.00000000))
+			.andExpect(jsonPath("$.priceGuideRange.high").value(110000.00000000));
+	}
+
+	// 049 tasks 3번 검증 — priceGuideRange가 null일 때 필드가 null로 나가고(SCENARIO-015·020), 041 실행의
+	// 차트 응답 어디에도 4막 폭락 저점(7900대)이 사전 노출되지 않는다(블랙박스 관점).
+	@Test
+	void chartJsonLeavesPriceGuideRangeNullAndNeverLeaksActFourCrashPrice() throws Exception {
+		authenticate();
+		when(chartService.getChart(USER_ID, Market.CRYPTO)).thenReturn(chartResponse((PriceGuideRangeResponse)null));
+
+		mockMvc.perform(get("/api/education/practice/attempts/CRYPTO/chart")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.priceGuideRange").value(nullValue()))
+			.andExpect(content().string(not(containsString("7900"))));
+	}
+
 	private void authenticate() {
 		when(jwtTokenProvider.parseAccessToken(TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
@@ -177,8 +207,18 @@ class PracticeAttemptChartControllerTest {
 		return chartResponse("ACT2", false, "NONE_KNOWN", List.of());
 	}
 
+	private static PracticeTutorialChartResponse chartResponse(PriceGuideRangeResponse priceGuideRange) {
+		return chartResponse("ACT2", false, "NONE_KNOWN", List.of(), priceGuideRange);
+	}
+
 	private static PracticeTutorialChartResponse chartResponse(
 		String scenarioStage, Boolean progressing, String causeStatus, List<PracticeScenarioEventResponse> events) {
+		return chartResponse(scenarioStage, progressing, causeStatus, events, null);
+	}
+
+	private static PracticeTutorialChartResponse chartResponse(
+		String scenarioStage, Boolean progressing, String causeStatus, List<PracticeScenarioEventResponse> events,
+		PriceGuideRangeResponse priceGuideRange) {
 		List<PracticeTutorialCandleResponse> candles = IntStream.range(0, 30)
 			.mapToObj(index -> new PracticeTutorialCandleResponse(
 				LocalDate.of(2026, 7, 16).plusDays(index),
@@ -190,6 +230,6 @@ class PracticeAttemptChartControllerTest {
 			.toList();
 		return new PracticeTutorialChartResponse(
 			11L, 3L, 21L, LocalDateTime.of(2026, 8, 14, 12, 7), 3, candles,
-			scenarioStage, progressing, causeStatus, events);
+			scenarioStage, progressing, causeStatus, events, priceGuideRange);
 	}
 }

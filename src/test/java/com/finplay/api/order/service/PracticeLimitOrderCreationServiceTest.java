@@ -22,6 +22,7 @@ import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.InstrumentService;
 import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderStatus;
+import com.finplay.api.order.domain.OrderType;
 import com.finplay.api.order.dto.response.LimitOrderResponse;
 import com.finplay.api.order.repository.OrderRepository;
 import java.math.BigDecimal;
@@ -97,7 +98,7 @@ class PracticeLimitOrderCreationServiceTest {
 		Account account = account();
 		TutorialAccount tutorialAccount = tutorialAccount();
 		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID)).thenReturn(instrument);
-		when(practiceOrderAttributionPort.lockForOrder(USER_ID, instrument))
+		when(practiceOrderAttributionPort.lockForOrder(USER_ID, instrument, OrderType.LIMIT))
 			.thenReturn(Optional.of(new PracticeOrderAttributionDto(50L, 3L, new BigDecimal("1000000"))));
 		when(orderRepository.existsByPracticePriceSessionIdAndStatus(SESSION_ID, OrderStatus.PENDING))
 			.thenReturn(false);

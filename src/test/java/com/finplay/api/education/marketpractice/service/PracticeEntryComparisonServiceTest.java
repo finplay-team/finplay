@@ -12,6 +12,7 @@ import com.finplay.api.education.marketpractice.dto.response.PracticeEntryRespon
 import com.finplay.api.education.marketpractice.repository.PracticeRiskSnapshotRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.domain.TutorialScenarioScriptId;
 import com.finplay.api.market.service.TutorialPriceGenerator;
 import com.finplay.api.order.domain.ExitPlanStatus;
 import com.finplay.api.order.domain.Order;
@@ -150,9 +151,15 @@ class PracticeEntryComparisonServiceTest {
 	private static PracticeRiskSnapshot snapshot(
 		PracticeAttempt attempt, int entrySequence, ExitPreset preset, Trade buyTrade, String stopLoss,
 		String takeProfit) {
+		return snapshot(attempt, entrySequence, preset, buyTrade, stopLoss, takeProfit, null);
+	}
+
+	private static PracticeRiskSnapshot snapshot(
+		PracticeAttempt attempt, int entrySequence, ExitPreset preset, Trade buyTrade, String stopLoss,
+		String takeProfit, TutorialScenarioScriptId scenarioScriptId) {
 		return PracticeRiskSnapshot.create(
 			attempt, 1L, entrySequence, preset, buyTrade, new BigDecimal("10000"),
-			new BigDecimal(stopLoss), new BigDecimal(takeProfit), NOW);
+			new BigDecimal(stopLoss), new BigDecimal(takeProfit), scenarioScriptId, NOW);
 	}
 
 	private static Trade buyTrade(long id) {
@@ -181,6 +188,10 @@ class PracticeEntryComparisonServiceTest {
 	}
 
 	private static PracticeAttempt attempt() {
+		return attempt(TutorialPriceGenerator.VERSION_2, null);
+	}
+
+	private static PracticeAttempt attempt(short generatorVersion, TutorialScenarioScriptId scenarioScriptId) {
 		PracticeAttempt attempt = PracticeAttempt.create(7L, Market.CRYPTO, NOW.minusHours(1));
 		ReflectionTestUtils.setField(attempt, "id", ATTEMPT_ID);
 		Instrument instrument = Instrument.create(
@@ -188,7 +199,76 @@ class PracticeEntryComparisonServiceTest {
 		ReflectionTestUtils.setField(instrument, "id", 21L);
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
 		attempt.selectInstrument(
-			instrument, NOW, NOW.toLocalDate(), 1L, TutorialPriceGenerator.VERSION_2, null, NOW);
+			instrument, NOW, NOW.toLocalDate(), 1L, generatorVersion, scenarioScriptId, NOW);
 		return attempt;
+	}
+
+	// 049 ORDERBASICS-023 — 완료 대조 배열의 진입마다 대본 식별자가 어떻게 해석되는지(plan.md §3-A 표).
+	@Test
+	void entryOpenedUnderOrderBasicsScriptCarriesThatScriptId() {
+		PracticeAttempt attempt = attempt(TutorialPriceGenerator.VERSION_2, TutorialScenarioScriptId.CRYPTO_STORY_V1);
+		PracticeRiskSnapshot entry = snapshot(
+			attempt, 1, ExitPreset.BALANCED, buyTrade(101L), "9700", "10500",
+			TutorialScenarioScriptId.CRYPTO_ORDER_BASICS_V1);
+		when(snapshotRepository.findByAttemptIdAndRunNumberOrderByEntrySequenceAsc(ATTEMPT_ID, 1L))
+			.thenReturn(List.of(entry));
+		when(tradeService.summarizePracticeRunEntries(ATTEMPT_ID, 1L, List.of(101L))).thenReturn(List.of(
+			summary("10000", "1", null, "0", null, null, null)));
+		when(exitPlanQueryService.findTriggeredSellOrderStatuses(ATTEMPT_ID, 1L)).thenReturn(Map.of());
+
+		List<PracticeEntryResponse> entries = service.findCurrentRunEntries(attempt, null);
+
+		assertThat(entries.get(0).scenarioScriptId()).isEqualTo("CRYPTO_ORDER_BASICS_V1");
+	}
+
+	@Test
+	void entryOpenedUnderStoryScriptCarriesThatScriptId() {
+		PracticeAttempt attempt = attempt(TutorialPriceGenerator.VERSION_2, TutorialScenarioScriptId.CRYPTO_STORY_V1);
+		PracticeRiskSnapshot entry = snapshot(
+			attempt, 1, ExitPreset.BALANCED, buyTrade(101L), "9700", "10500",
+			TutorialScenarioScriptId.CRYPTO_STORY_V1);
+		when(snapshotRepository.findByAttemptIdAndRunNumberOrderByEntrySequenceAsc(ATTEMPT_ID, 1L))
+			.thenReturn(List.of(entry));
+		when(tradeService.summarizePracticeRunEntries(ATTEMPT_ID, 1L, List.of(101L))).thenReturn(List.of(
+			summary("10000", "1", null, "0", null, null, null)));
+		when(exitPlanQueryService.findTriggeredSellOrderStatuses(ATTEMPT_ID, 1L)).thenReturn(Map.of());
+
+		List<PracticeEntryResponse> entries = service.findCurrentRunEntries(attempt, null);
+
+		assertThat(entries.get(0).scenarioScriptId()).isEqualTo("CRYPTO_STORY_V1");
+	}
+
+	// 049 이전에 만들어진 스냅샷(컬럼 도입 전)은 값이 NULL이지만, attempt가 대본을 쓰는 실행이면
+	// CRYPTO_STORY_V1(041 대본)로 해석한다 — PracticeAttempt.scenarioScriptId()의 NULL 해석과 대칭이다.
+	@Test
+	void preExistingSnapshotWithNullScriptIdColumnResolvesToStoryScript() {
+		PracticeAttempt attempt = attempt(TutorialPriceGenerator.VERSION_2, TutorialScenarioScriptId.CRYPTO_STORY_V1);
+		PracticeRiskSnapshot entry = snapshot(attempt, 1, ExitPreset.BALANCED, buyTrade(101L), "9700", "10500", null);
+		when(snapshotRepository.findByAttemptIdAndRunNumberOrderByEntrySequenceAsc(ATTEMPT_ID, 1L))
+			.thenReturn(List.of(entry));
+		when(tradeService.summarizePracticeRunEntries(ATTEMPT_ID, 1L, List.of(101L))).thenReturn(List.of(
+			summary("10000", "1", null, "0", null, null, null)));
+		when(exitPlanQueryService.findTriggeredSellOrderStatuses(ATTEMPT_ID, 1L)).thenReturn(Map.of());
+
+		List<PracticeEntryResponse> entries = service.findCurrentRunEntries(attempt, null);
+
+		assertThat(entries.get(0).scenarioScriptId()).isEqualTo("CRYPTO_STORY_V1");
+	}
+
+	// 대본을 쓰지 않는 실행(생성기 버전 1)은 attempt.usesScenarioScript()가 false라 스냅샷 컬럼값과
+	// 무관하게 항상 null이다.
+	@Test
+	void entryFromNonScriptedRunResolvesToNull() {
+		PracticeAttempt attempt = attempt(TutorialPriceGenerator.VERSION_1, null);
+		PracticeRiskSnapshot entry = snapshot(attempt, 1, ExitPreset.BALANCED, buyTrade(101L), "9700", "10500", null);
+		when(snapshotRepository.findByAttemptIdAndRunNumberOrderByEntrySequenceAsc(ATTEMPT_ID, 1L))
+			.thenReturn(List.of(entry));
+		when(tradeService.summarizePracticeRunEntries(ATTEMPT_ID, 1L, List.of(101L))).thenReturn(List.of(
+			summary("10000", "1", null, "0", null, null, null)));
+		when(exitPlanQueryService.findTriggeredSellOrderStatuses(ATTEMPT_ID, 1L)).thenReturn(Map.of());
+
+		List<PracticeEntryResponse> entries = service.findCurrentRunEntries(attempt, null);
+
+		assertThat(entries.get(0).scenarioScriptId()).isNull();
 	}
 }

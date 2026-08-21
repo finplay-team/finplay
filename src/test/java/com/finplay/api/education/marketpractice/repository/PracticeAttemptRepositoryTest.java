@@ -430,7 +430,7 @@ class PracticeAttemptRepositoryTest {
 			practiceRiskSnapshotRepository.saveAndFlush(PracticeRiskSnapshot.create(
 				attempt, attempt.getRunNumber(), sequence, ExitPreset.BALANCED,
 				createBuyTrade("graph-idem-" + sequence), BigDecimal.valueOf(100),
-				BigDecimal.valueOf(97), BigDecimal.valueOf(105), NOW));
+				BigDecimal.valueOf(97), BigDecimal.valueOf(105), null, NOW));
 		}
 		entityManager.clear();
 		Statistics statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
@@ -554,6 +554,32 @@ class PracticeAttemptRepositoryTest {
 			new BigDecimal("100.00000000"),
 			new BigDecimal("97.00000000"),
 			new BigDecimal("105.00000000"),
+			null,
 			createdAt);
+	}
+
+	// 049 ORDERBASICS-023 — 진입이 열릴 때 대본 식별자를 스냅샷에 고정한다. 컬럼이 실제로 왕복하는지는
+	// 서비스 단위 테스트가 아니라 여기서만 잡힌다(mock 리포지터리는 컬럼 매핑을 검증하지 않는다).
+	@Test
+	@DisplayName("위험 스냅샷의 대본 식별자 컬럼이 영속되고 재조회된다")
+	void scenarioScriptIdColumnRoundTripsOnRiskSnapshot() {
+		Trade buyTrade = createBuyTrade("risk-snapshot-script-id");
+		PracticeRiskSnapshot snapshot = PracticeRiskSnapshot.create(
+			attempt,
+			attempt.getRunNumber(),
+			PracticeRiskSnapshot.FIRST_ENTRY_SEQUENCE,
+			ExitPreset.BALANCED,
+			buyTrade,
+			new BigDecimal("100.00000000"),
+			new BigDecimal("97.00000000"),
+			new BigDecimal("105.00000000"),
+			TutorialScenarioScriptId.CRYPTO_ORDER_BASICS_V1,
+			NOW);
+		Long snapshotId = practiceRiskSnapshotRepository.saveAndFlush(snapshot).getId();
+		entityManager.clear();
+
+		PracticeRiskSnapshot reloaded = practiceRiskSnapshotRepository.findById(snapshotId).orElseThrow();
+
+		assertThat(reloaded.getScenarioScriptId()).isEqualTo(TutorialScenarioScriptId.CRYPTO_ORDER_BASICS_V1);
 	}
 }

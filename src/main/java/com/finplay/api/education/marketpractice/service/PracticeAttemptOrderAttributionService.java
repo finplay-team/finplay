@@ -7,6 +7,7 @@ import com.finplay.api.education.marketpractice.domain.ExitPreset;
 import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
 import com.finplay.api.education.marketpractice.domain.PracticeAttemptStatus;
 import com.finplay.api.education.marketpractice.domain.PracticeRiskSnapshot;
+import com.finplay.api.education.marketpractice.dto.response.PracticeStageProgressResponse;
 import com.finplay.api.education.marketpractice.repository.PracticeAttemptRepository;
 import com.finplay.api.education.marketpractice.repository.PracticeRiskSnapshotRepository;
 import com.finplay.api.market.domain.Instrument;
@@ -14,6 +15,7 @@ import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.domain.TutorialScenarioScriptId;
 import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderSide;
+import com.finplay.api.order.domain.OrderType;
 import com.finplay.api.order.domain.Trade;
 import com.finplay.api.order.service.ExitPlanCreateCommandDto;
 import com.finplay.api.order.service.ExitPlanCreationService;
@@ -50,11 +52,15 @@ public class PracticeAttemptOrderAttributionService implements PracticeOrderAttr
 	// 예약 생성에 넘길 holding 엔티티를 얻는 용도다 — 순보유수량 판정에는 쓰지 않는다(실행 세대 범위가 아니다).
 	private final HoldingService holdingService;
 	private final ExitPlanCreationService exitPlanCreationService;
+	// 049 ORDERBASICS-015 단계 순서 게이트 판정에 쓴다(#503 산출식 재사용). 아무것도 저장하지 않는 조회
+	// 서비스이고 이 서비스를 참조하지 않으므로 education 내부에 새 순환이 생기지 않는다(plan §4).
+	private final PracticeStageProgressCalculationService practiceStageProgressCalculationService;
 	private final Clock clock;
 
 	@Transactional
 	@Override
-	public Optional<PracticeOrderAttributionDto> lockForOrder(Long userId, Instrument instrument) {
+	public Optional<PracticeOrderAttributionDto> lockForOrder(
+		Long userId, Instrument instrument, OrderType orderType) {
 		if (!instrument.isTutorialSample()) {
 			return Optional.empty();
 		}
@@ -65,9 +71,29 @@ public class PracticeAttemptOrderAttributionService implements PracticeOrderAttr
 		}
 		PracticeAttempt attempt = foundAttempt.get();
 		validateCurrentRun(attempt, instrument, attempt.getRunNumber());
+		requireStageUnlocked(attempt, orderType);
 		return Optional.of(new PracticeOrderAttributionDto(
 			attempt.getId(), attempt.getRunNumber(),
 			canonicalPriceService.canonicalPrice(attempt, LocalDateTime.now(clock))));
+	}
+
+	/**
+	 * 049 ORDERBASICS-015 — 앞 단계를 마치지 않은 주문을 409로 거부한다. 판정은 #503의
+	 * {@code PracticeStageProgressCalculationService}와 같은 산출식을 쓴다(화면의 잠금과 서버의 거부가
+	 * 어긋나지 않게 하려는 목적, spec §비즈니스 규칙).
+	 *
+	 * <p>대본을 쓰지 않는 실행(생성기 버전 1·legacy)과 시장가 주문은 항상 통과한다 — 시장가는 2단계의 첫
+	 * 자리이고, 지정가는 시장가 왕복을 마쳐야 열린다. 어느 단계가 막혔는지는 오류 본문에 싣지 않는다
+	 * (ORDERBASICS-017) — 그 정보는 이미 {@code tutorialStageProgress}에 있다.
+	 */
+	private void requireStageUnlocked(PracticeAttempt attempt, OrderType orderType) {
+		if (!attempt.usesScenarioScript() || orderType == OrderType.MARKET) {
+			return;
+		}
+		PracticeStageProgressResponse progress = practiceStageProgressCalculationService.calculate(attempt);
+		if (!progress.marketBuySellCompleted()) {
+			throw new BusinessException(ErrorCode.PRACTICE_STAGE_LOCKED);
+		}
 	}
 
 	@Transactional
@@ -130,6 +156,9 @@ public class PracticeAttemptOrderAttributionService implements PracticeOrderAttr
 			referencePriceCalculator.normalizeEntryPrice(trade.getPrice()),
 			lines.referenceStopLossPrice(),
 			lines.referenceTakeProfitPrice(),
+			// 049 ORDERBASICS-023 — 진입이 열릴 때 attempt가 쓰던 대본을 진입에 고정한다. attempt는 위에서
+			// findByIdForUpdate로 이미 완전히 로드돼 있어 추가 조회가 없다(plan.md §3-A).
+			attempt.scenarioScriptId(),
 			createdAt));
 
 		// STOCK은 snapshot(참조선)까지만이다(EXITPRESET-018) — 실제 거래 화면에서도 OCO는 코인 전용이고

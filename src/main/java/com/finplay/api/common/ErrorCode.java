@@ -18,6 +18,7 @@ public enum ErrorCode {
 	METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "지원하지 않는 요청 방식입니다."),
 	DUPLICATE_RESOURCE(HttpStatus.CONFLICT, "이미 존재하는 리소스입니다."),
 	PRACTICE_STEP_LOCKED(HttpStatus.CONFLICT, "선행 실습 단계를 완료해야 합니다."),
+	PRACTICE_STAGE_LOCKED(HttpStatus.CONFLICT, "앞 단계를 먼저 마쳐야 합니다."),
 	PRACTICE_ALREADY_COMPLETED(HttpStatus.CONFLICT, "이미 완료한 실습입니다."),
 	PRACTICE_EVIDENCE_MISSING(HttpStatus.CONFLICT, "실습 진행에 필요한 증거를 확인할 수 없습니다."),
 	PRACTICE_SANDBOX_TIME_EXPIRED(HttpStatus.CONFLICT, "실습 매수 후 5분이 지나 이 시도는 만료됐습니다. 다시 매수해 주세요."),

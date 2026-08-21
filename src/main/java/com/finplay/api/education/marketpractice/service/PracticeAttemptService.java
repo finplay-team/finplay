@@ -11,6 +11,7 @@ import com.finplay.api.education.marketpractice.domain.PracticeCompletion;
 import com.finplay.api.education.marketpractice.domain.PracticeAttemptStatus;
 import com.finplay.api.education.marketpractice.domain.PracticeRiskSnapshot;
 import com.finplay.api.education.marketpractice.dto.response.PracticeAttemptResponse;
+import com.finplay.api.education.marketpractice.dto.response.PracticeStageProgressResponse;
 import com.finplay.api.education.marketpractice.repository.PracticeAttemptRepository;
 import com.finplay.api.education.marketpractice.repository.PracticeCompletionRepository;
 import com.finplay.api.education.marketpractice.repository.PracticeRiskSnapshotRepository;
@@ -56,6 +57,8 @@ public class PracticeAttemptService {
 	private final TradeService tradeService;
 	private final TutorialScenarioScriptLoader tutorialScenarioScriptLoader;
 	private final TutorialAccountService tutorialAccountService;
+	// 049 ORDERBASICS-015 — 프리셋 선택도 lockForOrder와 같은 판정식을 쓴다(#503 재사용).
+	private final PracticeStageProgressCalculationService practiceStageProgressCalculationService;
 	private final Clock clock;
 	private final SecureRandom secureRandom = new SecureRandom();
 
@@ -128,23 +131,16 @@ public class PracticeAttemptService {
 		return tutorialScenarioScriptLoader.hasScript(market) ? SCENARIO_GENERATOR_VERSION : LEGACY_GENERATOR_VERSION;
 	}
 
-	// 진입 대본을 041(CRYPTO_STORY_V1)에 **일부러 고정**한다. 이 레포는 dev 머지 즉시 배포되므로,
-	// 2단계→3단계 전환 엔드포인트(049 tasks 5번)가 없는 상태에서 진입을 2단계로 바꾸면 041 이야기가
-	// 통째로 도달 불가가 된다 — 사용자가 새 대본을 끝내도 빠져나올 길이 없기 때문이다.
+	// 진입 대본은 그 시장의 첫 대본이다(049 tasks 5번 — 전환 엔드포인트가 생겨 2단계에서 3단계로 빠져나갈
+	// 길이 있으므로 041 고정을 풀었다). 클라이언트가 대본을 고르지 못하게 하는 이유는 그래야 사용자가
+	// 2단계를 건너뛸 수 없기 때문이다(plan §2·§7). 대본을 쓰지 않는 실행(생성기 버전 1)은 null이다.
 	//
-	// **여는 방법은 이 한 줄을 `tutorialScenarioScriptLoader.firstScriptId(market)`로 바꾸는 것이다.**
-	// tasks 5번(전환 엔드포인트)이 그 변경을 함께 들고 들어온다. 그때 진입은 그 시장의 첫 대본이 되고,
-	// 클라이언트가 대본을 고르지 못하게 하는 이유는 그래야 사용자가 2단계를 건너뛸 수 없기 때문이다(plan §2·§7).
-	//
-	// 대본을 쓰지 않는 실행(생성기 버전 1)은 null이다.
-	//
-	// 고정값이라도 **시장을 반드시 함께 본다.** STOCK 대본(SCENARIO-024)이 5번 작업보다 먼저 저작되면
-	// generatorVersionFor(STOCK)이 2가 되는데, 그때 시장을 무시하면 STOCK attempt가 CRYPTO 대본 식별자를
-	// 갖게 되고 모든 가격 조회가 "attempt의 시장과 다른 대본입니다"로 500이 된다. 위 40~44행 주석이
-	// 기록한 것과 같은 형태의 사고다.
+	// **시장을 반드시 함께 본다.** STOCK 대본(SCENARIO-024)이 저작되기 전까지는 STOCK에서
+	// generatorVersionFor가 항상 1을 주므로 이 분기에 도달하지 않는다. 위 40~44행 주석이 기록한 것과 같은
+	// 형태의 사고를 피하기 위해 market == CRYPTO 조건을 그대로 남긴다.
 	private TutorialScenarioScriptId scenarioScriptIdFor(Market market, short generatorVersion) {
 		return generatorVersion == SCENARIO_GENERATOR_VERSION && market == Market.CRYPTO
-			? TutorialScenarioScriptId.CRYPTO_STORY_V1
+			? tutorialScenarioScriptLoader.firstScriptId(market)
 			: null;
 	}
 
@@ -203,6 +199,7 @@ public class PracticeAttemptService {
 		if (attempt.getStatus() == PracticeAttemptStatus.COMPLETED) {
 			throw new BusinessException(ErrorCode.PRACTICE_ALREADY_COMPLETED);
 		}
+		requireStageUnlockedForPresetSelection(attempt);
 		if (exitPresetLocked(attempt)) {
 			throw new BusinessException(ErrorCode.PRACTICE_STEP_LOCKED);
 		}
@@ -210,6 +207,21 @@ public class PracticeAttemptService {
 		// 방금 잠금이 아님을 확인했으므로 다시 조회하지 않는다 — attempt를 잠근 트랜잭션 안이라 그 사이
 		// 매수 체결이 끼어들 수 없다.
 		return toResponse(attempt, tutorialAccountFor(userId, market), false);
+	}
+
+	/**
+	 * 049 ORDERBASICS-015 — 지정가 왕복을 마치기 전 프리셋 선택을 409로 거부한다. 대본을 쓰지 않는 실행은
+	 * 항상 통과한다. 보유 중 잠금(exitPresetLocked)보다 <b>앞에</b> 검사한다 — 두 조건이 동시에 걸릴 때
+	 * "앞 단계를 먼저 마쳐야 합니다"가 사용자에게 더 정확한 안내다(plan §4).
+	 */
+	private void requireStageUnlockedForPresetSelection(PracticeAttempt attempt) {
+		if (!attempt.usesScenarioScript()) {
+			return;
+		}
+		PracticeStageProgressResponse progress = practiceStageProgressCalculationService.calculate(attempt);
+		if (!progress.marketBuySellCompleted() || !progress.limitBuySellCompleted()) {
+			throw new BusinessException(ErrorCode.PRACTICE_STAGE_LOCKED);
+		}
 	}
 
 	// 042 EXITPRESET-003의 잠금 판정, EXITPRESET-020의 진입 가드, 041의 대기 구간 탈출 판정이 같은 산출식을

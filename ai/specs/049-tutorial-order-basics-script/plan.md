@@ -201,6 +201,99 @@ ALTER TABLE practice_attempts
 
 ---
 
+## 3-A. 완료 대조 배열의 대본 식별자 (tasks 5-A, ORDERBASICS-023, 2026-08-21 사용자 결정)
+
+이슈 #512가 "완료 대조 배열이 진입마다 어느 대본인지 알려준다"를 결정 (가)로 확정했다. spec.md
+§비즈니스 규칙 "완료 대조 배열의 대본 식별자"가 결정 근거이고, 이 절은 그 구현 형태다.
+
+### `entries[]`가 실제로 어디서 파생되는지 (코드로 확인)
+
+`PracticeEntryComparisonService.findCurrentRunEntries(attempt, comparisonPrice)`가
+
+```
+PracticeRiskSnapshotRepository.findByAttemptIdAndRunNumberOrderByEntrySequenceAsc(attemptId, runNumber)
+```
+
+로 `practice_risk_snapshots`를 진입 순서대로 순회해 `PracticeEntryResponse` 목록을 만든다. `@EntityGraph`는
+`buyTrade`·`buyTrade.order`만 즉시 로딩하고 **`attempt`는 대상이 아니다** — 호출자가 이미 `attempt`를 갖고
+있어 서비스가 스냅샷마다 `attempt`를 따로 로딩하지 않기 때문이다. `PracticeRiskSnapshot`의 컬럼은
+`id`·`attempt`·`runNumber`·`entrySequence`·`buyTrade`·`entryPrice`·`stopLossPrice`·`takeProfitPrice`·
+`exitPreset`·`createdAt`이 전부다 — **대본 식별자가 없다.** 이슈의 "컬럼 추가가 필요할 가능성이 높다"는
+추측이 코드로 확인됐고, 대안(§아래)이 없으므로 컬럼 추가안을 그대로 채택한다.
+
+### 왜 다른 설계가 없는가
+
+전환(§3)은 `scenario_script_id` 값만 교체할 뿐 "언제 전환했는가"를 attempt 어디에도 남기지 않는다.
+그래서 매수 체결 시각과 전환 시각을 비교해 사후에 진입의 대본을 판정하는 방법은 애초에 불가능하다 —
+비교할 전환 시각이 저장되지 않는다. 진입이 열리는 순간(스냅샷 생성) 그 값을 스냅샷에 복사해 두는 것이
+유일한 방법이다.
+
+### 마이그레이션 (잠정 — 구현 시점에 재확인)
+
+**V55(잠정)** — `V55__add_scenario_script_id_to_practice_risk_snapshots.sql`.
+
+```sql
+ALTER TABLE practice_risk_snapshots
+  ADD COLUMN scenario_script_id VARCHAR(32) NULL COMMENT '이 진입이 열릴 때 attempt가 쓰던 대본 식별자. NULL은 대본을 쓰지 않는 실행이거나 049 이전 진입(스냅샷 컬럼 도입 전)';
+```
+
+- 추가만 하는 nullable 컬럼이라 파괴적 변경이 아니다(ADR-0021 §결정 7 대상 아님). 백필하지 않는다.
+- **번호가 확정이 아닌 이유.** 이 spec의 나머지 작업(3·4·6번, tasks.md 기준)에는 마이그레이션이 없다 —
+  3번(가격 안내 범위)·4번(순서 강제 409)은 컬럼을 추가하지 않고, 6번은 통합 테스트와 문서 갱신뿐이다.
+  그래서 지금 시점엔 §2의 V53(완료) 다음으로 5-A가 유일한 마이그레이션 후보이고, `origin/dev`의 현재
+  최고가 V54이므로 산술적으로 V55가 된다. 그러나 **이 spec 밖의 병렬 브랜치가 먼저 병합되면 번호가
+  밀린다**(`ai/agent-mistakes.md`의 동형 사례, tasks.md 2번이 이미 같은 경고를 달았다) — 구현 세션이
+  머지 직전 `origin/dev`를 다시 확인해 최종 번호를 정한다.
+
+### `NULL` 해석 — 엔티티가 아니라 서비스 계층에서 (attempt와 다른 이유)
+
+`PracticeAttempt.scenarioScriptId()`는 자기 자신의 `usesScenarioScript()`를 바로 참조할 수 있어 파생
+접근자 하나로 NULL을 해석한다(§2). `PracticeRiskSnapshot`은 사정이 다르다 — `attempt`가
+`@EntityGraph`에 없어 지연 로딩이고, 판정에 필요한 `usesScenarioScript()`는 **호출자가 이미 들고 있는
+`attempt` 인자**로 공짜로 얻을 수 있다. 엔티티 안에서 `snapshot.getAttempt().usesScenarioScript()`를
+부르면 스냅샷마다 지연 로딩이 하나씩 붙어 이 조회를 쓰는 tick 폴링 경로에 비용이 생긴다.
+
+그래서 해석은 `PracticeEntryComparisonService.toEntry`에 둔다 — **`exitPreset`이 이미 같은 자리에서
+같은 패턴으로 NULL을 해석하고 있다**(83~85행, "기능 도입 전 행은 기본 프리셋으로 해석").
+
+```java
+String scenarioScriptId = !attempt.usesScenarioScript()
+    ? null
+    : (snapshot.getScenarioScriptId() == null
+        ? TutorialScenarioScriptId.CRYPTO_STORY_V1
+        : snapshot.getScenarioScriptId()).name();
+```
+
+| attempt.usesScenarioScript() | 스냅샷 컬럼 | 해석 |
+|---|---|---|
+| `false`(생성기 버전 1) | — | `null` — 대본을 쓰지 않는 실행. 기존 `unrealizedPnlIfHeld` 등과 같은 규칙 |
+| `true` | 값 있음(049 이후 진입) | 그 값 그대로 |
+| `true` | `NULL`(049 이전 진입 — 컬럼 도입 전에 만들어진 스냅샷) | `CRYPTO_STORY_V1` — `PracticeAttempt.scenarioScriptId()`의 NULL 해석과 대칭이다 |
+
+`PracticeRiskSnapshot`에는 원본 컬럼과 평범한 getter만 두고, `PracticeAttempt`처럼 파생 접근자로
+NULL을 해석하는 구조는 **쓰지 않는다** — 필요한 문맥(`attempt.usesScenarioScript()`)이 엔티티 밖에
+이미 있기 때문이다.
+
+### 값이 채워지는 자리
+
+`PracticeAttemptOrderAttributionService.createRiskSnapshotOnBuyFill`(105~131행)이 이미
+`attempt`를 `findByIdForUpdate`로 완전히 로드해 갖고 있다(109행). `PracticeRiskSnapshot.create(...)`
+호출(122행)에 `attempt.scenarioScriptId()`를 인자로 더한다 — 추가 조회가 필요 없다. 이 접근자는
+대본을 쓰지 않는 실행에서 이미 `null`을 반환하므로(§2), 새로 만드는 스냅샷은 "대본 없음"과 "대본 있음"을
+채우는 순간부터 정확하게 구분된다. 049 이전 진입만 `NULL`(컬럼 도입 전)로 남는다.
+
+### 응답 DTO
+
+`PracticeEntryResponse`에 `String scenarioScriptId` 필드를 더한다(record 마지막 필드로 추가 —
+javadoc에 위 표의 세 갈래를 그대로 적는다).
+
+### 이 작업이 §8 데이터 모델에 미치는 영향
+
+§8은 "다른 테이블은 바뀌지 않는다"고 적었으나 이 절로 그 문장이 더 이상 맞지 않는다 — 아래 §8 표에
+`practice_risk_snapshots.scenario_script_id` 행을 추가한다.
+
+---
+
 ## 4. 순서 강제 (ORDERBASICS-015)
 
 ### 판정 시점 — `lockForOrder` 하나
@@ -370,15 +463,20 @@ if low >= high -> 범위 없음(null)                       # 폭이 너무 좁�
 
 ## 8. 데이터 모델
 
-`practice_attempts`에 컬럼 하나(§2). **다른 테이블은 바뀌지 않는다.**
+`practice_attempts`에 컬럼 하나(§2), `practice_risk_snapshots`에 컬럼 하나(§3-A, 5-A).
 
-| 컬럼 | 타입 | NULL | 뜻 |
-|---|---|---|---|
-| `scenario_script_id` | `VARCHAR(32)` | 허용 | 이 실행이 쓰는 대본 식별자. `NULL`은 "대본 미사용" 또는 "049 이전 실행(= 041 대본)" |
+| 테이블 | 컬럼 | 타입 | NULL | 뜻 |
+|---|---|---|---|---|
+| `practice_attempts` | `scenario_script_id` | `VARCHAR(32)` | 허용 | 이 실행이 **지금** 쓰는 대본 식별자. `NULL`은 "대본 미사용" 또는 "049 이전 실행(= 041 대본)" |
+| `practice_risk_snapshots` | `scenario_script_id` | `VARCHAR(32)` | 허용 | 그 **진입이 열릴 때** attempt가 쓰던 대본 식별자(진입별로 고정, §3-A). `NULL`은 "대본을 쓰지 않는 실행" 또는 "049 이전 진입(컬럼 도입 전)" — 어느 쪽인지는 그 진입이 속한 attempt의 `usesScenarioScript()`로 가른다 |
 
-- 인덱스를 더하지 않는다 — 이 컬럼으로 조회하지 않는다(attempt는 항상 `(user_id, market)` 또는 `id`로 찾는다).
+- 인덱스를 더하지 않는다 — 두 컬럼 다 이걸로 조회하지 않는다(attempt는 `(user_id, market)`·`id`로,
+  snapshot은 `(attempt_id, run_number)`로 찾는다).
 - CHECK 제약을 걸지 않는다 — 값 집합이 열거형이고 대본이 늘어날 때마다 마이그레이션을 또 쓰게 된다
   (머지된 마이그레이션은 수정 금지, ADR-0004).
+- **두 컬럼의 `NULL`은 같은 문자열이지만 뜻이 다르다.** `practice_attempts` 쪽은 "지금 이 attempt가
+  선 대본"이라 최신 하나뿐이고, `practice_risk_snapshots` 쪽은 "그 진입이 열렸을 때"라 같은 attempt
+  안에서도 진입마다 다른 값을 가질 수 있다(전환 전후로 만들어진 진입이 섞이므로). 해석 규칙은 §3-A.
 
 ## 9. 대본 파일
 

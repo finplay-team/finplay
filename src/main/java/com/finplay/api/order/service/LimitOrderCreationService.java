@@ -14,6 +14,7 @@ import com.finplay.api.market.domain.Market;
 import com.finplay.api.market.service.InstrumentService;
 import com.finplay.api.order.domain.Order;
 import com.finplay.api.order.domain.OrderSide;
+import com.finplay.api.order.domain.OrderType;
 import com.finplay.api.order.dto.request.LimitOrderCreateRequest;
 import com.finplay.api.order.dto.response.LimitOrderResponse;
 import com.finplay.api.order.repository.OrderRepository;
@@ -51,7 +52,7 @@ public class LimitOrderCreationService {
 		validateLimitPrice(request.limitPrice());
 		validateMinOrderAmount(request.quantity(), request.limitPrice(), instrument);
 		Optional<PracticeOrderAttributionDto> practiceAttribution = practiceOrderAttributionPort
-			.lockForOrder(userId, instrument);
+			.lockForOrder(userId, instrument, OrderType.LIMIT);
 
 		return request.side() == OrderSide.SELL
 			? createSellOrder(userId, idempotencyKey, requestHash, request, instrument, practiceAttribution)

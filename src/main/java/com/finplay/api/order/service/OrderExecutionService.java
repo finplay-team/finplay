@@ -72,7 +72,7 @@ public class OrderExecutionService {
 		Instrument instrument = getValidatedInstrument(request.market(), request.instrumentId());
 		validateQuantityFormat(request.market(), request.quantity());
 		Optional<PracticeOrderAttributionDto> practiceAttribution = practiceOrderAttributionPort
-			.lockForOrder(userId, instrument);
+			.lockForOrder(userId, instrument, OrderType.MARKET);
 
 		// 계좌 선조회를 제거했다 — 매수·매도 모두 각자 계좌를 잠가 조회한다(호출 시점·인자만 다름, 이슈 #224).
 		return request.side() == OrderSide.SELL

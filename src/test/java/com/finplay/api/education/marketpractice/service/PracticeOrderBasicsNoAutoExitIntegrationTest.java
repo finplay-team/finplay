@@ -25,8 +25,10 @@ import com.finplay.api.market.repository.InstrumentRepository;
 import com.finplay.api.order.domain.ExitPlan;
 import com.finplay.api.order.domain.ExitPlanStatus;
 import com.finplay.api.order.domain.OrderSide;
+import com.finplay.api.order.dto.request.LimitOrderCreateRequest;
 import com.finplay.api.order.dto.request.OrderCreateRequest;
 import com.finplay.api.order.repository.ExitPlanRepository;
+import com.finplay.api.order.service.LimitOrderService;
 import com.finplay.api.order.service.OrderService;
 import com.finplay.api.order.service.TradeService;
 import com.finplay.api.portfolio.domain.Holding;
@@ -72,6 +74,10 @@ class PracticeOrderBasicsNoAutoExitIntegrationTest {
 	private static final BigDecimal DEFAULT_TAKE_PROFIT = new BigDecimal("105000.00000000");
 	private static final BigDecimal ORDER_BASICS_HIGH = new BigDecimal("112000.00000000");
 	private static final BigDecimal ORDER_BASICS_LOW = new BigDecimal("88000.00000000");
+	// 049 ORDERBASICS-015 게이트를 통과시키는 지정가 왕복 — PracticeAttemptScriptAdvanceIntegrationTest와
+	// 같은 시각·가격이다(매수는 12번째 가상 분 92,946.6원, 매도는 13번째 가상 분 90,291.8원에서 처음 체결).
+	private static final BigDecimal LIMIT_BUY_PRICE = new BigDecimal("95000");
+	private static final BigDecimal LIMIT_SELL_PRICE = new BigDecimal("90000");
 	// 041 대조군은 기존 OCO 통합 테스트와 같은 자리(2막-a 루머 0분)에 세운다.
 	private static final BigDecimal STORY_ENTRY_PRICE = new BigDecimal("10180.00000000");
 	// 진행 계산이 한 tick에 소비하는 상한이다(PracticeScenarioProgressService.MAX_TICK_GAP_SECONDS).
@@ -95,6 +101,8 @@ class PracticeOrderBasicsNoAutoExitIntegrationTest {
 	private HoldingRepository holdingRepository;
 	@Autowired
 	private OrderService orderService;
+	@Autowired
+	private LimitOrderService limitOrderService;
 	@Autowired
 	private TradeService tradeService;
 	@Autowired
@@ -219,8 +227,12 @@ class PracticeOrderBasicsNoAutoExitIntegrationTest {
 	}
 
 	// 진입별 대조 배열의 근거인 entrySequence와 프리셋 확정이 예약 부재와 무관하게 그대로인지 본다.
+	//
+	// 049 ORDERBASICS-015 — 프리셋 선택은 시장가·지정가 왕복을 "둘 다" 마쳐야 열린다(4번 게이트). 그래서
+	// 프리셋을 고르기 전에 지정가 왕복(진입 2개째)까지 마쳐야 하고, 이 테스트가 실제로 보려는 진입은
+	// 세 번째가 된다.
 	@Test
-	void secondEntryInAnOrderBasicsRunGetsSequenceTwoWithTheChosenPresetAndStillNoExitPlan() {
+	void thirdEntryInAnOrderBasicsRunGetsSequenceThreeWithTheChosenPresetAndStillNoExitPlan() {
 		Fixture fixture = orderBasicsRun("ob-reentry");
 
 		clock.set(BASE_NOW.plusSeconds(1));
@@ -228,16 +240,37 @@ class PracticeOrderBasicsNoAutoExitIntegrationTest {
 		clock.set(BASE_NOW.plusSeconds(2));
 		sell(fixture);
 
+		// 지정가 왕복 — 049 ORDERBASICS-015 게이트를 통과시킨다.
+		clock.set(BASE_NOW.plusSeconds(3));
+		limitOrder(fixture, OrderSide.BUY, LIMIT_BUY_PRICE);
+		clock.set(BASE_NOW.plusSeconds(33));
+		chartService.tick(fixture.userId(), Market.CRYPTO);
+		clock.set(BASE_NOW.plusSeconds(39));
+		chartService.tick(fixture.userId(), Market.CRYPTO);
+		assertThat(tradeService.netFilledQuantity(fixture.attemptId(), 1L)).isEqualByComparingTo(QUANTITY);
+		clock.set(BASE_NOW.plusSeconds(40));
+		limitOrder(fixture, OrderSide.SELL, LIMIT_SELL_PRICE);
+		clock.set(BASE_NOW.plusSeconds(42));
+		chartService.tick(fixture.userId(), Market.CRYPTO);
+		assertThat(tradeService.netFilledQuantity(fixture.attemptId(), 1L)).isEqualByComparingTo(BigDecimal.ZERO);
+		assertThat(marketRoundTripCompleted(fixture)).isTrue();
+
 		// 포지션이 정리됐으므로 프리셋을 고를 수 있다 — 고른 값이 다음 진입의 기준선에 확정되어야 한다.
 		attemptService.selectExitPreset(fixture.userId(), Market.CRYPTO, ExitPreset.RELAXED);
-		clock.set(BASE_NOW.plusSeconds(3));
+		clock.set(BASE_NOW.plusSeconds(43));
 		buy(fixture);
 
-		PracticeRiskSnapshot second = latestSnapshot(fixture);
-		assertThat(second.getEntrySequence()).isEqualTo(2);
-		assertThat(second.getExitPreset()).isEqualTo(ExitPreset.RELAXED);
-		assertThat(riskSnapshotRepository.countByAttemptIdAndRunNumber(fixture.attemptId(), 1L)).isEqualTo(2L);
+		PracticeRiskSnapshot third = latestSnapshot(fixture);
+		assertThat(third.getEntrySequence()).isEqualTo(3);
+		assertThat(third.getExitPreset()).isEqualTo(ExitPreset.RELAXED);
+		assertThat(riskSnapshotRepository.countByAttemptIdAndRunNumber(fixture.attemptId(), 1L)).isEqualTo(3L);
 		assertThat(exitPlans(fixture)).isEmpty();
+	}
+
+	private void limitOrder(Fixture fixture, OrderSide side, BigDecimal limitPrice) {
+		limitOrderService.createLimitOrder(
+			fixture.userId(), "ob-reentry-limit-" + UUID.randomUUID(),
+			new LimitOrderCreateRequest(Market.CRYPTO, fixture.instrumentId(), side, QUANTITY, limitPrice));
 	}
 
 	private void tickRounds(Fixture fixture) {

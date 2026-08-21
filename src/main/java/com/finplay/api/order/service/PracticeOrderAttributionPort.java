@@ -3,13 +3,19 @@ package com.finplay.api.order.service;
 
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.order.domain.Order;
+import com.finplay.api.order.domain.OrderType;
 import com.finplay.api.order.domain.Trade;
 import java.time.LocalDateTime;
 import java.util.Optional;
 
 public interface PracticeOrderAttributionPort {
 
-	Optional<PracticeOrderAttributionDto> lockForOrder(Long userId, Instrument instrument);
+	/**
+	 * @param orderType 이 주문의 체결 방식(시장가·지정가). 구현이 049 ORDERBASICS-015 단계 순서 게이트
+	 *                  판정에 쓴다 — 대본을 쓰는 튜토리얼 실행에서 시장가 왕복을 마치기 전 지정가를 걸면
+	 *                  {@code PRACTICE_STAGE_LOCKED}로 거부한다.
+	 */
+	Optional<PracticeOrderAttributionDto> lockForOrder(Long userId, Instrument instrument, OrderType orderType);
 
 	PracticeOrderFillContextDto lockForFill(
 		PracticeOrderFillAttributionDto attribution, LocalDateTime pricedAt);

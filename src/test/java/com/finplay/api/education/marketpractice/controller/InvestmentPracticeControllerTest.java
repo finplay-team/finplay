@@ -248,11 +248,13 @@ class InvestmentPracticeControllerTest {
 				new PracticeEntryResponse(1, "CAUTIOUS", "MARKET", LocalDateTime.of(2026, 8, 20, 11, 0),
 					new BigDecimal("10000.00000000"), new BigDecimal("1"), new BigDecimal("9800.00000000"),
 					new BigDecimal("10300.00000000"), new BigDecimal("9750.00000000"), new BigDecimal("1"),
-					LocalDateTime.of(2026, 8, 20, 11, 10), "STOP_LOSS", -260L, -2108L),
+					LocalDateTime.of(2026, 8, 20, 11, 10), "STOP_LOSS", -260L, -2108L,
+					"CRYPTO_ORDER_BASICS_V1"),
 				new PracticeEntryResponse(2, "BALANCED", "LIMIT", LocalDateTime.of(2026, 8, 20, 11, 20),
 					new BigDecimal("8700.00000000"), new BigDecimal("1"), new BigDecimal("8439.00000000"),
 					new BigDecimal("9135.00000000"), new BigDecimal("9135.00000000"), new BigDecimal("1"),
-					LocalDateTime.of(2026, 8, 20, 11, 40), "TAKE_PROFIT", 422L, -807L)),
+					LocalDateTime.of(2026, 8, 20, 11, 40), "TAKE_PROFIT", 422L, -807L,
+					"CRYPTO_STORY_V1")),
 			new PracticeStageProgressResponse(true, true, true));
 		when(investmentPracticeQueryService.getProgress(eq(USER_ID), eq(Market.CRYPTO))).thenReturn(response);
 
@@ -277,6 +279,10 @@ class InvestmentPracticeControllerTest {
 			// 저 진입은 지정가"를 구분해 그리는 근거다.
 			.andExpect(jsonPath("$.entries[0].buyOrderType").value("MARKET"))
 			.andExpect(jsonPath("$.entries[1].buyOrderType").value("LIMIT"))
+			// 049 ORDERBASICS-023 — 진입마다 대본 식별자가 따로 나간다. 같은 run 안에서도 진입별로 다를 수
+			// 있다(전환 전후 진입이 섞이므로).
+			.andExpect(jsonPath("$.entries[0].scenarioScriptId").value("CRYPTO_ORDER_BASICS_V1"))
+			.andExpect(jsonPath("$.entries[1].scenarioScriptId").value("CRYPTO_STORY_V1"))
 			.andExpect(jsonPath("$.tutorialStageProgress.marketBuySellCompleted").value(true))
 			.andExpect(jsonPath("$.tutorialStageProgress.limitBuySellCompleted").value(true))
 			.andExpect(jsonPath("$.tutorialStageProgress.exitPresetSelected").value(true));

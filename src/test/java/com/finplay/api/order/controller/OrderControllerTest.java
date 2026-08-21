@@ -502,6 +502,26 @@ class OrderControllerTest {
 			any(LimitOrderCreateRequest.class));
 	}
 
+	// 049 ORDERBASICS-015 — 단계 순서를 건너뛴 지정가 주문은 409 + PRACTICE_STAGE_LOCKED로 거부된다.
+	@Test
+	void createLimitOrderReturnsStageLockedWhenServiceRejectsSkippedStage() throws Exception {
+		stubAuthenticatedUser();
+		when(limitOrderService.createLimitOrder(eq(USER_ID), eq(IDEMPOTENCY_KEY), any(LimitOrderCreateRequest.class)))
+			.thenThrow(new BusinessException(ErrorCode.PRACTICE_STAGE_LOCKED));
+
+		mockMvc.perform(post("/api/orders/limit")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
+			.header("Idempotency-Key", IDEMPOTENCY_KEY)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(VALID_LIMIT_BODY))
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.error.code").value("PRACTICE_STAGE_LOCKED"))
+			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
+
+		verify(limitOrderService).createLimitOrder(eq(USER_ID), eq(IDEMPOTENCY_KEY),
+			any(LimitOrderCreateRequest.class));
+	}
+
 	@Test
 	void createLimitOrderRejectsMissingAuthenticationWithoutCallingService() throws Exception {
 		mockMvc.perform(post("/api/orders/limit")

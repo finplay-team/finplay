@@ -73,7 +73,7 @@
 - 예약 부재가 기존 경로에 무해하다는 것은 spec §비즈니스 규칙에 전수 확인 결과가 있다. **그 조사를
   반복하지 말고** 위 두 통합 테스트로 실제 동작만 고정해라.
 
-## 3. 대본 가격 안내 범위를 차트 응답에 싣는다
+## 3. 대본 가격 안내 범위를 차트 응답에 싣는다 ✅
 
 - `market.service`에 순수 계산 함수 추가(plan §5의 일반식). 상수 1,000을 박지 않는다.
 - `PracticeTutorialChartResponse`에 `priceGuideRange` 추가. 판정식은 `script.events().isEmpty()` 하나.
@@ -87,7 +87,7 @@
 
 ---
 
-## 4. 단계 순서 강제를 넣는다 (409)
+## 4. 단계 순서 강제를 넣는다 (409) ✅
 
 - `ErrorCode`에 `PRACTICE_STAGE_LOCKED(CONFLICT, "앞 단계를 먼저 마쳐야 합니다.")` 추가 +
   `ErrorCodeTest` 표에 행 추가.
@@ -107,7 +107,7 @@
 
 ---
 
-## 5. 2단계 → 3단계 전환 엔드포인트
+## 5. 2단계 → 3단계 전환 엔드포인트 ✅
 
 - `POST /api/education/practice/attempts/{market}/advance-script` + 서비스.
   attempt 잠금 → 거부 조건 5가지 → PENDING 지정가·예약 정리 → `scenario_script_id` 교체 +
@@ -129,7 +129,39 @@
 
 ---
 
-## 6. 미체결 → 취소 → 재접수 → 체결 통합 시나리오 + 문서 갱신
+## 5-A. 완료 대조 배열이 진입마다 대본 식별자를 싣는다 (ORDERBASICS-023, 2026-08-21 사용자 결정, 이슈 #512) ✅
+
+5번(전환 엔드포인트, `scenario_script_id` 교체)이 끝나야 같은 run 안에 서로 다른 대본의 진입이 실제로
+생긴다. 그 뒤에 한다. plan §3-A가 상세 설계다.
+
+- `V55__add_scenario_script_id_to_practice_risk_snapshots.sql`(**잠정 번호** — `origin/dev`의
+  최고 마이그레이션 번호를 머지 직전에 다시 확인한다, tasks 2번과 같은 경고). `practice_risk_snapshots`에
+  `scenario_script_id VARCHAR(32) NULL` 추가. 추가만 하는 nullable 컬럼이라 파괴적 변경이 아니다.
+- `PracticeRiskSnapshot`에 원본 컬럼 매핑만 추가한다(평범한 getter). **NULL 해석 로직은 엔티티에 두지
+  않는다** — 판정에 필요한 `attempt.usesScenarioScript()`를 얻으려면 `attempt`를 지연 로딩해야 하는데,
+  호출자(`PracticeEntryComparisonService`)가 이미 `attempt`를 인자로 갖고 있다.
+- `PracticeAttemptOrderAttributionService.createRiskSnapshotOnBuyFill`의 `PracticeRiskSnapshot.create(...)`
+  호출에 `attempt.scenarioScriptId()`를 인자로 더한다. 그 시점에 `attempt`가 이미 `findByIdForUpdate`로
+  완전히 로드돼 있어 추가 조회가 없다.
+- `PracticeEntryResponse`에 `String scenarioScriptId` 필드를 추가한다.
+- `PracticeEntryComparisonService.toEntry`에 해석을 둔다(`exitPreset`과 같은 자리, 같은 패턴) —
+  `!attempt.usesScenarioScript()`면 `null`, 스냅샷 값이 `NULL`이면 `CRYPTO_STORY_V1`(049 이전 진입),
+  그 외는 스냅샷 값 그대로.
+- `ai/api-routes.md`·`docs/api/education.md`의 완료 대조 배열(`entries[]`) 계약에 `scenarioScriptId`
+  필드를 더한다(CLAUDE.md 규칙 7, 같은 커밋).
+
+**검증**
+- `@DataJpaTest`: 새 컬럼 왕복 저장·조회.
+- 단위(`PracticeEntryComparisonService`): 2단계 진입 스냅샷 → `CRYPTO_ORDER_BASICS_V1`, 3단계 진입 →
+  `CRYPTO_STORY_V1`, 컬럼이 `NULL`인 049 이전 스냅샷(대본 사용 attempt) → `CRYPTO_STORY_V1`로 해석,
+  대본을 쓰지 않는 실행(생성기 버전 1)의 진입 → `null`.
+- **통합**: 시장가 왕복(2단계 진입 1개, `scenario_script_id = CRYPTO_ORDER_BASICS_V1`) →
+  `advance-script` → 3단계에서 매수(진입 2개, `scenario_script_id = CRYPTO_STORY_V1`) → `entries[]`
+  두 건이 각각 다른 `scenarioScriptId`를 싣는지 확인.
+
+---
+
+## 6. 미체결 → 취소 → 재접수 → 체결 통합 시나리오 + 문서 갱신 ✅
 
 - **통합 테스트 1개**로 spec의 핵심 장면을 끝까지 돌린다(ORDERBASICS-012·013·014).
   시장가 왕복 → 범위 밖(130,000원) 지정가 매도 접수 성공 → 여러 tick 미체결 유지 → 취소 성공 →
@@ -154,8 +186,10 @@
 ## 미결 — 구현 전에 사용자에게 확인할 것
 
 - [ ] **대본 종료(실제 8분) 후 미체결 주문의 회복 수단.** 지금 설계는 "재시작뿐"이다. spec §잔여 위험 1번.
-- [ ] **완료 화면이 두 대본을 섞는 문제.** `entries[]`·`tradeResult`가 run 전체 집계라 2단계 진입
-      (10만원대)과 3단계 진입(1만원대)이 한 배열에 들어간다. spec §미결 2번.
+- [x] ~~**완료 화면이 두 대본을 섞는 문제.** `entries[]`·`tradeResult`가 run 전체 집계라 2단계 진입
+      (10만원대)과 3단계 진입(1만원대)이 한 배열에 들어간다. spec §미결 2번.~~ —
+      **결정됨(2026-08-21, 사용자).** `entries[]`는 5-A로 해결(진입마다 `scenarioScriptId`를 싣는다).
+      `tradeResult`(실행 세대 요약, 진입별이 아님)는 이번 결정의 대상이 아니다 — 계속 run 전체 합이다.
 - [ ] **화면 게이팅(2단계는 시장가·지정가만, 3단계는 손절·익절만 활성) — 프론트 합의 필요.**
       서버는 판정(#503)과 거부(4번 항목)까지만 제공한다.
 - [ ] **`advance-script`를 누가 언제 호출하는가**(사용자 버튼 vs 조건 충족 시 자동) — 프론트 합의 필요.

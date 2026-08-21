@@ -103,6 +103,24 @@ public class PracticeOrderSettlementService {
 		}
 	}
 
+	/**
+	 * 2단계 → 3단계 전환(049 ORDERBASICS-018) 정리 — 현재 실행 세대의 PENDING 지정가 주문을 개별
+	 * 취소한다.
+	 *
+	 * <p>재시작 정리({@code PracticeRunRestartOrderService.cleanupCurrentRun})와 달리 run을 올리지도
+	 * 계좌를 리셋하지도 않는다. 호출부가 이미 순보유수량 0을 확인한 뒤에만 이 메서드를 부르므로
+	 * PENDING SELL은 존재할 수 없다(매도 예약은 보유 수량에서만 나오고, 그 수량이 0이면 예약할
+	 * availableQuantity도 0이다) — 남는 것은 PENDING BUY뿐이다. 개별 주문 취소
+	 * ({@code LimitOrderCancelService})가 order → account → holding 잠금 순서를 이미 지키므로 그대로
+	 * 재사용한다.
+	 */
+	@Transactional
+	public void cancelCurrentRunPendingLimitOrders(Long userId, Long attemptId, long runNumber) {
+		for (Long orderId : orderRepository.findPendingPracticeRunOrderIds(attemptId, runNumber)) {
+			limitOrderCancelService.cancelOrder(userId, orderId);
+		}
+	}
+
 	private boolean isTriggered(Order order, BigDecimal price) {
 		return order.getSide() == OrderSide.BUY
 			? order.getLimitPrice().compareTo(price) >= 0

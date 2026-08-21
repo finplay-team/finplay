@@ -1,6 +1,7 @@
 // 튜토리얼 attempt의 실행 세대별 최초 매수 체결가와 교육용 손절·익절 가격을 보존하는 불변 엔티티
 package com.finplay.api.education.marketpractice.domain;
 
+import com.finplay.api.market.domain.TutorialScenarioScriptId;
 import com.finplay.api.order.domain.Trade;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -61,6 +62,13 @@ public class PracticeRiskSnapshot {
 	@Column(name = "exit_preset", length = 20)
 	private ExitPreset exitPreset;
 
+	// 이 진입이 열릴 때 attempt가 쓰던 대본 식별자(049 ORDERBASICS-023). NULL 해석은 여기 두지 않는다 —
+	// attempt가 지연 로딩이라 필요한 attempt.usesScenarioScript()는 호출자가 이미 인자로 갖고 있어
+	// PracticeEntryComparisonService.toEntry가 해석한다(plan.md §3-A).
+	@Enumerated(EnumType.STRING)
+	@Column(name = "scenario_script_id", length = 32)
+	private TutorialScenarioScriptId scenarioScriptId;
+
 	@Column(name = "created_at", nullable = false)
 	private LocalDateTime createdAt;
 
@@ -73,6 +81,7 @@ public class PracticeRiskSnapshot {
 		BigDecimal entryPrice,
 		BigDecimal stopLossPrice,
 		BigDecimal takeProfitPrice,
+		TutorialScenarioScriptId scenarioScriptId,
 		LocalDateTime createdAt) {
 		this.attempt = attempt;
 		this.runNumber = runNumber;
@@ -82,6 +91,7 @@ public class PracticeRiskSnapshot {
 		this.entryPrice = entryPrice;
 		this.stopLossPrice = stopLossPrice;
 		this.takeProfitPrice = takeProfitPrice;
+		this.scenarioScriptId = scenarioScriptId;
 		this.createdAt = createdAt;
 	}
 
@@ -94,12 +104,13 @@ public class PracticeRiskSnapshot {
 		BigDecimal entryPrice,
 		BigDecimal stopLossPrice,
 		BigDecimal takeProfitPrice,
+		TutorialScenarioScriptId scenarioScriptId,
 		LocalDateTime createdAt) {
 		if (entrySequence < FIRST_ENTRY_SEQUENCE) {
 			throw new IllegalArgumentException("진입 순번은 1 이상이어야 합니다.");
 		}
 		return new PracticeRiskSnapshot(
 			attempt, runNumber, entrySequence, exitPreset, buyTrade, entryPrice, stopLossPrice, takeProfitPrice,
-			createdAt);
+			scenarioScriptId, createdAt);
 	}
 }

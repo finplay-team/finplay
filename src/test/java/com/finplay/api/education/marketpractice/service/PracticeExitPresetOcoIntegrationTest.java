@@ -17,11 +17,13 @@ import com.finplay.api.education.marketpractice.domain.ExitPreset;
 import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
 import com.finplay.api.education.marketpractice.domain.PracticeRiskSnapshot;
 import com.finplay.api.education.marketpractice.dto.response.PracticeAttemptResponse;
+import com.finplay.api.education.marketpractice.dto.response.PracticeEntryResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeStageProgressResponse;
 import com.finplay.api.education.marketpractice.repository.PracticeAttemptRepository;
 import com.finplay.api.education.marketpractice.repository.PracticeRiskSnapshotRepository;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
+import com.finplay.api.market.domain.TutorialScenarioScriptId;
 import com.finplay.api.market.repository.InstrumentRepository;
 import com.finplay.api.order.domain.ExitPlan;
 import com.finplay.api.order.domain.ExitPlanStatus;
@@ -75,6 +77,9 @@ class PracticeExitPresetOcoIntegrationTest {
 	private static final BigDecimal RELAXED_STOP_LOSS_FACTOR = new BigDecimal("0.95");
 	private static final BigDecimal RELAXED_TAKE_PROFIT_FACTOR = new BigDecimal("1.08");
 	private static final int PRICE_SCALE = 8;
+	// 049 ORDERBASICS-015 워밍업(시장가·지정가 왕복 + 전환)이 43초까지 시계를 쓰므로, 게이트 워밍업이
+	// 필요한 테스트의 "실제" 서사는 이 시각부터 시작한다.
+	private static final LocalDateTime NARRATIVE_START = BASE_NOW.plusSeconds(50);
 
 	@Autowired
 	private UserRepository userRepository;
@@ -99,6 +104,8 @@ class PracticeExitPresetOcoIntegrationTest {
 	@Autowired
 	private PracticeAttemptRestartService restartService;
 	@Autowired
+	private PracticeAttemptScriptAdvanceService scriptAdvanceService;
+	@Autowired
 	private TradeService tradeService;
 	@Autowired
 	private LimitOrderService limitOrderService;
@@ -116,14 +123,17 @@ class PracticeExitPresetOcoIntegrationTest {
 
 	@Test
 	void stopLossFillKeepsTheRunLedgerConsistentAndLetsTheUserReenterAndRestart() {
-		Fixture fixture = tutorialRunAtRumorStage("oco-stop");
+		// 049 ORDERBASICS-015 — 프리셋 재선택은 시장가·지정가 왕복을 모두 요구한다. 이 테스트의 핵심
+		// 검증(OCO 원장 일관성·재진입·재시작)과 무관한 전제 조건이므로 서사가 시작되기 전에 미리
+		// 마친다 — 그래서 이 실행의 "진짜" 첫 진입은 entrySequence 3이다(워밍업 시장가 1·지정가 1).
+		Fixture fixture = tutorialRunAtRumorStageAfterBothRoundTrips("oco-stop");
 
 		// 매수 — 같은 트랜잭션에서 기준선과 예약이 함께 생긴다(EXITPRESET-012).
-		clock.set(BASE_NOW.plusSeconds(1));
+		clock.set(NARRATIVE_START.plusSeconds(1));
 		buy(fixture);
 
 		PracticeRiskSnapshot firstEntry = latestSnapshot(fixture);
-		assertThat(firstEntry.getEntrySequence()).isEqualTo(1);
+		assertThat(firstEntry.getEntrySequence()).isEqualTo(3);
 		assertThat(firstEntry.getExitPreset()).isEqualTo(ExitPreset.BALANCED);
 		assertThat(firstEntry.getEntryPrice()).isEqualByComparingTo(ENTRY_PRICE);
 		assertThat(firstEntry.getStopLossPrice()).isEqualByComparingTo(BALANCED_STOP_LOSS);
@@ -133,13 +143,14 @@ class PracticeExitPresetOcoIntegrationTest {
 		// 예약 기준가는 대본 canonical price다 — 엔진 기본 경로의 사인파 항시 시세가 아니다.
 		assertThat(reservation.getBaselinePrice()).isEqualByComparingTo(ENTRY_PRICE);
 		assertThat(reservedQuantity(fixture)).isEqualByComparingTo(QUANTITY);
-		// 보유 중에는 프리셋을 바꿀 수 없다(EXITPRESET-003).
+		// 보유 중에는 프리셋을 바꿀 수 없다(EXITPRESET-003). 왕복은 이미 마쳤으므로(위 워밍업) 049
+		// 게이트를 통과해 이 순수한 보유 중 잠금(STEP_LOCKED)만 드러난다.
 		assertThatThrownBy(() -> attemptService.selectExitPreset(fixture.userId(), Market.CRYPTO, ExitPreset.RELAXED))
 			.isInstanceOfSatisfying(BusinessException.class, exception -> assertThat(exception.getErrorCode())
 				.isEqualTo(ErrorCode.PRACTICE_STEP_LOCKED));
 
 		// tick — 루머 구간을 23초 흘려 6번째 분에서 손절선을 지난다.
-		clock.set(BASE_NOW.plusSeconds(23));
+		clock.set(NARRATIVE_START.plusSeconds(23));
 		chartService.tick(fixture.userId(), Market.CRYPTO);
 
 		ExitPlan filled = onlyExitPlan(fixture);
@@ -158,11 +169,11 @@ class PracticeExitPresetOcoIntegrationTest {
 		assertThat(afterStop.selectedExitPreset()).isEqualTo("RELAXED");
 
 		// 재매수 — 새 진입이라 새 기준선과 새 예약이 바뀐 프리셋으로 생긴다(EXITPRESET-017).
-		clock.set(BASE_NOW.plusSeconds(30));
+		clock.set(NARRATIVE_START.plusSeconds(30));
 		buy(fixture);
 
 		PracticeRiskSnapshot secondEntry = latestSnapshot(fixture);
-		assertThat(secondEntry.getEntrySequence()).isEqualTo(2);
+		assertThat(secondEntry.getEntrySequence()).isEqualTo(4);
 		assertThat(secondEntry.getExitPreset()).isEqualTo(ExitPreset.RELAXED);
 
 		// PR #487 리뷰 권장 1 — 예약이 "생겼는지"만이 아니라 그 손절·익절가가 바뀐 프리셋을 실제로 반영하는지
@@ -183,7 +194,7 @@ class PracticeExitPresetOcoIntegrationTest {
 			.isNotEqualByComparingTo(expectedPrice(reEntryPrice, BALANCED_STOP_LOSS_FACTOR));
 
 		// 재시작 — 예약 취소가 주문 취소보다 먼저라 보상 매도가 성공한다(EXITPRESET-015).
-		clock.set(BASE_NOW.plusSeconds(40));
+		clock.set(NARRATIVE_START.plusSeconds(40));
 		PracticeAttemptResponse restarted = restartService.restart(fixture.userId(), Market.CRYPTO);
 		assertThat(restarted.runNumber()).isEqualTo(2L);
 		assertThat(exitPlanRepository.findPendingPracticeRunExitPlanIds(fixture.attemptId(), 1L)).isEmpty();
@@ -195,6 +206,11 @@ class PracticeExitPresetOcoIntegrationTest {
 	 * 확인한다. 그 매도는 {@code ExitPlanFillService}가 {@code OrderType.MARKET}으로 만들기 때문에,
 	 * 원장의 주문 유형만 보는 구현은 여기서만 틀린다 — 단위 테스트는 mock이라 전부 초록인 채로 통과한다.
 	 */
+	// 049 ORDERBASICS-015 — 이 테스트의 핵심(이슈 #503, 예약 발동 매도는 시장가 왕복으로 세지 않는다)과
+	// 프리셋 선택은 무관하다. 049 게이트가 프리셋 선택에 시장가·지정가 왕복을 요구하게 되면서, 이 실행
+	// 안에서(왕복을 마치지 않은 채) 프리셋을 선택하는 흐름은 더 이상 성립하지 않는다 — 그래서 프리셋
+	// 선택 관련 부분은 들어내고 시장가 단계 판정만 남긴다. exitPresetSelected의 단조 증가 동작은
+	// PracticeStageProgressCalculationServiceTest(단위)가 이미 검증한다.
 	@Test
 	void stopLossDoesNotCompleteTheMarketStageButAManualSellDoes() {
 		Fixture fixture = tutorialRunAtRumorStage("oco-stage");
@@ -202,8 +218,6 @@ class PracticeExitPresetOcoIntegrationTest {
 		clock.set(BASE_NOW.plusSeconds(1));
 		buy(fixture);
 		assertThat(stageProgress(fixture).marketBuySellCompleted()).isFalse();
-		// 기본 프리셋으로 들어온 진입은 "프리셋을 배웠다"가 아니다 — 고른 적이 없다.
-		assertThat(stageProgress(fixture).exitPresetSelected()).isFalse();
 
 		// tick — 손절이 발동해 포지션이 청산된다. 원장에는 MARKET 매도가 남는다.
 		clock.set(BASE_NOW.plusSeconds(23));
@@ -212,20 +226,12 @@ class PracticeExitPresetOcoIntegrationTest {
 		assertThat(onlyExitPlan(fixture).getTriggeredOrder().getOrderType()).isEqualTo(OrderType.MARKET);
 		assertThat(stageProgress(fixture).marketBuySellCompleted()).isFalse();
 
-		// 프리셋을 직접 고르면 그 순간 프리셋 단계가 열린다. **여기서 RELAXED 대신 BALANCED를 골라도
-		// 결과가 같아야 한다** — 기본값과 명시 선택을 snapshot으로 구분하려던 판정은 세 보기 중
-		// "보통"에서만 재진입 없이 통과시키는 구멍이 있었다(리뷰 지적).
-		attemptService.selectExitPreset(fixture.userId(), Market.CRYPTO, ExitPreset.RELAXED);
-		assertThat(stageProgress(fixture).exitPresetSelected()).isTrue();
 		clock.set(BASE_NOW.plusSeconds(30));
 		buy(fixture);
-		// 진입 뒤에도 유지되고, 다음 진입을 준비하며 프리셋을 또 바꿔도 되잠기지 않는다.
-		assertThat(stageProgress(fixture).exitPresetSelected()).isTrue();
 
 		// 직접 시장가로 팔아야 그제야 시장가 단계가 통과된다.
 		clock.set(BASE_NOW.plusSeconds(31));
-		orderService.createOrder(fixture.userId(), "stage-sell-" + UUID.randomUUID(),
-			new OrderCreateRequest(Market.CRYPTO, fixture.instrumentId(), OrderSide.SELL, "MARKET", QUANTITY));
+		sell(fixture);
 
 		PracticeStageProgressResponse progress = stageProgress(fixture);
 		assertThat(progress.marketBuySellCompleted()).isTrue();
@@ -270,7 +276,16 @@ class PracticeExitPresetOcoIntegrationTest {
 	void aLimitRoundTripCompletesTheLimitStageAndTagsTheEntry() {
 		Fixture fixture = tutorialRunAtRumorStage("limit-stage");
 
+		// 049 ORDERBASICS-015 — 지정가는 시장가 왕복을 마쳐야 열린다. 시장가 주문은 커서를 움직이지
+		// 않으므로(오직 tick만 커서를 민다) 아래 루머 구간 분별 가격 전제에 영향이 없다. 그래서 이
+		// 워밍업 진입(entrySequence 1)이 먼저 생기고, 이 테스트가 보려는 지정가 진입은 entrySequence 2다.
 		clock.set(BASE_NOW.plusSeconds(1));
+		buy(fixture);
+		clock.set(BASE_NOW.plusSeconds(2));
+		sell(fixture);
+		assertThat(stageProgress(fixture).marketBuySellCompleted()).isTrue();
+
+		clock.set(BASE_NOW.plusSeconds(3));
 		limitOrder(fixture, OrderSide.BUY, new BigDecimal("10000"));
 		assertThat(stageProgress(fixture).limitBuySellCompleted()).isFalse();
 
@@ -281,11 +296,12 @@ class PracticeExitPresetOcoIntegrationTest {
 		// 매수만으로는 왕복이 아니다.
 		assertThat(stageProgress(fixture).limitBuySellCompleted()).isFalse();
 
-		// 진입이 지정가로 열렸다는 것이 완료 대조 배열에 남는다.
+		// 진입이 지정가로 열렸다는 것이 완료 대조 배열에 남는다 — 워밍업 시장가 진입(1) 다음의
+		// 두 번째 진입이다.
 		PracticeAttempt attempt = attemptRepository.findById(fixture.attemptId()).orElseThrow();
-		assertThat(practiceEntryComparisonService.findCurrentRunEntries(attempt, null))
-			.singleElement()
-			.satisfies(entry -> assertThat(entry.buyOrderType()).isEqualTo("LIMIT"));
+		List<PracticeEntryResponse> entries = practiceEntryComparisonService.findCurrentRunEntries(attempt, null);
+		assertThat(entries).hasSize(2);
+		assertThat(entries.get(1).buyOrderType()).isEqualTo("LIMIT");
 
 		// 지정가 매도 접수 — 전량이 자동 예약에 잡혀 있어도 접수된다(042 EXITPRESET-016).
 		limitOrder(fixture, OrderSide.SELL, new BigDecimal("9700"));
@@ -295,8 +311,8 @@ class PracticeExitPresetOcoIntegrationTest {
 		assertThat(tradeService.netFilledQuantity(fixture.attemptId(), 1L)).isEqualByComparingTo(BigDecimal.ZERO);
 		PracticeStageProgressResponse progress = stageProgress(fixture);
 		assertThat(progress.limitBuySellCompleted()).isTrue();
-		// 시장가는 한 번도 쓰지 않았다 — 지정가 왕복이 시장가 단계까지 열어 주지 않는다.
-		assertThat(progress.marketBuySellCompleted()).isFalse();
+		// 워밍업에서 이미 시장가 왕복도 마쳤다.
+		assertThat(progress.marketBuySellCompleted()).isTrue();
 	}
 
 	private void limitOrder(Fixture fixture, OrderSide side, BigDecimal limitPrice) {
@@ -357,9 +373,13 @@ class PracticeExitPresetOcoIntegrationTest {
 			.orElse(BigDecimal.ZERO);
 	}
 
-	// 대기 구간을 이미 지나 2막-a 루머 0분에 서 있는 실행을 만든다 — 이 테스트의 대상은 대본 저작이 아니라
-	// 예약 원장이므로 커서를 직접 세운다.
-	private Fixture tutorialRunAtRumorStage(String scenario) {
+	private void sell(Fixture fixture) {
+		orderService.createOrder(fixture.userId(), "oco-sell-" + UUID.randomUUID(),
+			new OrderCreateRequest(Market.CRYPTO, fixture.instrumentId(), OrderSide.SELL, "MARKET", QUANTITY));
+	}
+
+	// 종목 선택만 마친 실행을 만든다 — 049 tasks 5번 이후 진입 대본은 2단계(CRYPTO_ORDER_BASICS_V1)다.
+	private Fixture newTutorialRun(String scenario) {
 		String suffix = UUID.randomUUID().toString().substring(0, 8);
 		User user = userRepository.saveAndFlush(User.create(
 			scenario + "-" + suffix + "@finplay.com", "hash", scenario + "-" + suffix, BASE_NOW));
@@ -372,10 +392,66 @@ class PracticeExitPresetOcoIntegrationTest {
 
 		attemptService.ensureAttempt(user.getId(), Market.CRYPTO);
 		attemptService.selectInstrument(user.getId(), Market.CRYPTO, instrument.getId());
-		PracticeAttempt attempt = attemptRepository.findByUserIdAndMarket(user.getId(), Market.CRYPTO).orElseThrow();
+		return new Fixture(user.getId(), account.getId(), instrument.getId(),
+			attemptRepository.findByUserIdAndMarket(user.getId(), Market.CRYPTO).orElseThrow().getId());
+	}
+
+	// 대기 구간을 이미 지나 2막-a 루머 0분에 서 있는 실행을 만든다 — 이 테스트의 대상은 대본 저작이 아니라
+	// 예약 원장이므로 커서를 직접 세운다.
+	//
+	// 049 tasks 5번 이후 진입 대본은 2단계(CRYPTO_ORDER_BASICS_V1)로 열린다. 이 테스트가 검증하는 041
+	// 대본 전용 구간(ACT2_RUMOR)에 서려면 041(CRYPTO_STORY_V1)로 먼저 전환해야 한다 — 전환 엔드포인트가
+	// 쓰는 것과 같은 엔티티 메서드를 그대로 쓴다.
+	private Fixture tutorialRunAtRumorStage(String scenario) {
+		Fixture fixture = newTutorialRun(scenario);
+		PracticeAttempt attempt = attemptRepository.findById(fixture.attemptId()).orElseThrow();
+		attempt.advanceScenarioScript(TutorialScenarioScriptId.CRYPTO_STORY_V1, BASE_NOW);
 		attempt.startScenarioProgress("ACT2_RUMOR", ENTRY_PRICE, BASE_NOW);
 		attemptRepository.saveAndFlush(attempt);
-		return new Fixture(user.getId(), account.getId(), instrument.getId(), attempt.getId());
+		return fixture;
+	}
+
+	/**
+	 * 049 ORDERBASICS-015 — 이 테스트가 실제로 검증하려는 것(OCO 원장 일관성·재진입·재시작)과 무관한
+	 * 전제 조건인 시장가·지정가 왕복을 미리 마친 뒤 041 대본 2막-a 루머로 전환한다. 왕복은 진입 대본
+	 * (2단계 ORDER_BASICS)에서 이뤄지므로 — 시장가 주문은 커서를 움직이지 않고, 지정가 왕복의 tick도
+	 * ORDER_BASICS 구간에서만 소비된다 — 전환 뒤 041 루머 구간의 분별 가격 전제(클래스 상단 주석)는
+	 * 그대로 유지된다. 전환은 실제 전환 서비스(scriptAdvanceService)를 그대로 써서 워밍업이 게이트를
+	 * 실제로 통과시키는지까지 검증한다.
+	 */
+	private Fixture tutorialRunAtRumorStageAfterBothRoundTrips(String scenario) {
+		Fixture fixture = newTutorialRun(scenario);
+		PracticeAttempt onOrderBasics = attemptRepository.findById(fixture.attemptId()).orElseThrow();
+		onOrderBasics.startScenarioProgress("ORDER_BASICS", new BigDecimal("100000.00000000"), BASE_NOW);
+		attemptRepository.saveAndFlush(onOrderBasics);
+
+		clock.set(BASE_NOW.plusSeconds(1));
+		buy(fixture);
+		clock.set(BASE_NOW.plusSeconds(2));
+		sell(fixture);
+
+		// 매수는 12번째 가상 분(36초, 92,946.6원)에서, 매도는 13번째 가상 분(39초, 90,291.8원)에서
+		// 처음 체결된다(049 PracticeAttemptScriptAdvanceIntegrationTest와 같은 시각·가격).
+		clock.set(BASE_NOW.plusSeconds(3));
+		limitOrder(fixture, OrderSide.BUY, new BigDecimal("95000"));
+		clock.set(BASE_NOW.plusSeconds(33));
+		chartService.tick(fixture.userId(), Market.CRYPTO);
+		clock.set(BASE_NOW.plusSeconds(39));
+		chartService.tick(fixture.userId(), Market.CRYPTO);
+		clock.set(BASE_NOW.plusSeconds(40));
+		limitOrder(fixture, OrderSide.SELL, new BigDecimal("90000"));
+		clock.set(BASE_NOW.plusSeconds(42));
+		chartService.tick(fixture.userId(), Market.CRYPTO);
+		assertThat(tradeService.netFilledQuantity(fixture.attemptId(), 1L)).isEqualByComparingTo(BigDecimal.ZERO);
+
+		clock.set(BASE_NOW.plusSeconds(43));
+		scriptAdvanceService.advanceScript(fixture.userId(), Market.CRYPTO);
+
+		PracticeAttempt attempt = attemptRepository.findById(fixture.attemptId()).orElseThrow();
+		assertThat(attempt.scenarioScriptId()).isEqualTo(TutorialScenarioScriptId.CRYPTO_STORY_V1);
+		attempt.startScenarioProgress("ACT2_RUMOR", ENTRY_PRICE, NARRATIVE_START);
+		attemptRepository.saveAndFlush(attempt);
+		return fixture;
 	}
 
 	private record Fixture(Long userId, Long accountId, Long instrumentId, Long attemptId) {

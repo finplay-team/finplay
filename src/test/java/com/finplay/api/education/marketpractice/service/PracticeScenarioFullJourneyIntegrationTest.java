@@ -109,7 +109,7 @@ class PracticeScenarioFullJourneyIntegrationTest {
 	@Test
 	void cautiousRunStopsInTheRumorThenReentersTakesProfitInActThreeAndCompletesWithTwoEntries() {
 		Fixture fixture = tutorialRun("full-journey");
-		attemptService.selectExitPreset(fixture.userId(), Market.CRYPTO, ExitPreset.CAUTIOUS);
+		setExitPreset(fixture, ExitPreset.CAUTIOUS);
 
 		// --- 0막 대기: 매수하지 않으면 대본이 진행하지 않고 사건도 열리지 않는다 ---
 		tick(fixture);
@@ -172,7 +172,7 @@ class PracticeScenarioFullJourneyIntegrationTest {
 		assertThat(reentryIdle.revealedEvents()).hasSize(3);
 
 		// --- 재매수: 포지션이 없으니 프리셋을 다시 고를 수 있다(EXITPRESET-003) ---
-		attemptService.selectExitPreset(fixture.userId(), Market.CRYPTO, ExitPreset.BALANCED);
+		setExitPreset(fixture, ExitPreset.BALANCED);
 		buy(fixture);
 		assertThat(snapshot(fixture, 2).getExitPreset()).isEqualTo(ExitPreset.BALANCED);
 
@@ -240,7 +240,7 @@ class PracticeScenarioFullJourneyIntegrationTest {
 	@Test
 	void balancedRunSurvivesTheRumorAndOnlyStopsInTheConfirmedDive() {
 		Fixture fixture = tutorialRun("balanced-branch");
-		attemptService.selectExitPreset(fixture.userId(), Market.CRYPTO, ExitPreset.BALANCED);
+		setExitPreset(fixture, ExitPreset.BALANCED);
 
 		tick(fixture);
 		buy(fixture);
@@ -290,6 +290,20 @@ class PracticeScenarioFullJourneyIntegrationTest {
 			new OrderCreateRequest(Market.CRYPTO, fixture.instrumentId(), OrderSide.BUY, "MARKET", QUANTITY));
 	}
 
+	/**
+	 * 049 ORDERBASICS-015 — {@code PracticeAttemptService.selectExitPreset}은 이제 시장가·지정가 왕복을
+	 * 요구한다. 이 테스트들의 대상은 그 게이트가 아니라 "프리셋에 따라 손절·익절 분기가 실제로 갈리는가"
+	 * (041)이므로, 왕복 전제를 만드는 워밍업 주문을 끼워 넣는 대신 엔티티를 직접 조작해 프리셋만 정한다.
+	 * 워밍업 주문을 끼워 넣으면 이 실행의 "첫 매도"({@code TradeService.summarizePracticeRun}이
+	 * 반환하는 {@code firstSellTrade}) 자체가 바뀌어 손절 원인 대조(sellCause)가 통째로 어긋난다.
+	 */
+	private void setExitPreset(Fixture fixture, ExitPreset preset) {
+		PracticeAttempt attempt = attemptRepository.findByUserIdAndMarket(fixture.userId(), Market.CRYPTO)
+			.orElseThrow();
+		attempt.selectExitPreset(preset, now);
+		attemptRepository.saveAndFlush(attempt);
+	}
+
 	private void observe(Fixture fixture, Long holdingId) {
 		observationService.createObservation(
 			fixture.userId(), new PracticeHoldingObservationCreateRequest(holdingId));
@@ -324,6 +338,13 @@ class PracticeScenarioFullJourneyIntegrationTest {
 		attemptService.ensureAttempt(user.getId(), Market.CRYPTO);
 		attemptService.selectInstrument(user.getId(), Market.CRYPTO, instrument.getId());
 		PracticeAttempt attempt = attemptRepository.findByUserIdAndMarket(user.getId(), Market.CRYPTO).orElseThrow();
+		// 049 tasks 5번 이후 진입 대본은 2단계(CRYPTO_ORDER_BASICS_V1)로 열린다. 이 테스트가 검증하는
+		// 것은 041 대본(사건 공개·OCO 손절익절)의 동작이므로 041로 전환한다 — 전환 엔드포인트가 쓰는
+		// 것과 같은 엔티티 메서드를 그대로 쓴다. 커서 다섯 컬럼은 건드리지 않으므로(모두 null) "첫 tick이
+		// 첫 구간 0분으로 초기화한다"는 이 테스트의 전제는 그대로 유지된다.
+		attempt.advanceScenarioScript(
+			com.finplay.api.market.domain.TutorialScenarioScriptId.CRYPTO_STORY_V1, BASE_NOW);
+		attemptRepository.saveAndFlush(attempt);
 		return new Fixture(user.getId(), account.getId(), instrument.getId(), attempt.getId());
 	}
 
