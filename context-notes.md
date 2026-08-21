@@ -1256,8 +1256,10 @@ ADR-0021을 읽지 않는다(`ai/context-router.md`의 "엔티티/스키마 변�
   이 함정을 안 밟은 이유는 반환형이 `void`였기 때문이다.
 - **`INSERT IGNORE`는 이 커밋으로 저장소에서 사라졌다.**
 - **tick ↔ 체결 정산 잠금 순서는 뒤집히지 않는다(확인함).** 이슈가 함께 지목한 우려인데, `practice_
-  attempts`를 잠그는 트랜잭션을 전수로 보면 **전부 attempt를 order·account·tutorial account보다 먼저
-  잠근다.** 보조 인덱스로 잠그는 경로(tick·진입·종목선택·재시작·대본전환·복기·`lockForOrder`)는 모두
+  attempts`를 잠그는 트랜잭션을 전수로 보면 **그 전부가 attempt를 order·account·tutorial account보다 먼저
+  잠근다.** (attempt를 아예 잡지 않는 트랜잭션도 있다 — `LimitOrderCancelService`는 order → account →
+  tutorial account 순으로만 잠근다. 그런 트랜잭션은 attempt를 축으로 하는 사이클을 만들 수 없어 논거에
+  영향이 없다.) 보조 인덱스로 잠그는 경로(tick·진입·종목선택·재시작·대본전환·복기·`lockForOrder`)는 모두
   그것이 그 트랜잭션의 **첫** attempt 잠금이고, PK로 잠그는 경로(`lockForFill`·`createRiskSnapshotOn
   BuyFill`)는 체결 트랜잭션의 첫 잠금이거나 이미 보조 인덱스로 같은 행을 잠근 뒤다. 즉 "clustered를
   쥔 채 secondary를 기다리는" 트랜잭션이 없어 순환이 만들어지지 않는다. 보조 인덱스 레코드를 쥔 채
