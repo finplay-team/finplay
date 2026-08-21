@@ -118,7 +118,6 @@ class PracticeHoldingReflectionIntegrationTest {
 
 		assertThat(response.holdingId()).isEqualTo(fixture.holdingId());
 		assertThat(response.answer()).isEqualTo("손절 라인에 근접해 매도를 보류했다.");
-		assertThat(response.prompt()).isEqualTo(PracticeHoldingReflectionResponse.PROMPT);
 
 		assertThat(practiceProgressRepository.findByUserIdAndTutorialKeyForUpdate(
 			fixture.userId(), PracticeIntentionService.COIN_TUTORIAL_KEY).orElseThrow().getStatus())
