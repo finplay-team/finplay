@@ -29,6 +29,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -62,13 +63,39 @@ public class PracticeAttemptService {
 	private final Clock clock;
 	private final SecureRandom secureRandom = new SecureRandom();
 
-	@Transactional
+	/**
+	 * 튜토리얼 진입의 멱등 get-or-create다.
+	 *
+	 * <p><b>잠금을 먼저 잡고, 없을 때만 만든다(이슈 #491).</b> 예전에는 순서가 반대여서 매 진입마다
+	 * {@code INSERT IGNORE}를 먼저 쏘고 같은 행을 {@code FOR UPDATE}로 다시 잠갔는데, 중복 키 검사가
+	 * 유니크 인덱스 레코드에 남긴 공유 잠금(S)을 곧바로 배타 잠금(X)으로 승격하는 모양이라 같은 사용자·
+	 * 시장의 동시 진입 2건이 서로의 S를 기다리는 교착이 됐다. 잠금 조회를 앞에 두면 흔한 경로(행이 이미
+	 * 있는 경우)가 X 하나로 끝나 승격 자체가 없고, 진입마다 나가던 쓰기 한 번도 사라진다.
+	 *
+	 * <p><b>READ COMMITTED인 이유는 행이 아직 없는 첫 진입 때문이다.</b> REPEATABLE READ에서는 아무 행도
+	 * 맞히지 못한 {@code FOR UPDATE}가 갭 잠금을 잡고, 동시 진입 2건이 각자 갭을 잡은 뒤 서로의 INSERT를
+	 * 기다리는 <b>다른</b> 교착이 된다. READ COMMITTED는 갭 잠금을 쓰지 않아 이 경로가 아예 생기지 않는다.
+	 * 이 트랜잭션의 정확성은 스냅숏 격리가 아니라 명시적 비관 잠금이 담당하므로 낮춰도 잃는 것이 없다 —
+	 * ADR-0028이 체결 경로에 같은 판단을 적용했고, 여기서 읽는 값들은 모두 한 번씩만 읽는다.
+	 *
+	 * <p>{@code inserted}는 "이 트랜잭션이 행을 만들었는가"이며 잠금 조회가 비어 있었는지로만 판정한다 —
+	 * {@code insertIfAbsent}의 affected rows로 판정하면 안 되는 이유는 그 메서드 주석에 있다.
+	 */
+	@Transactional(isolation = Isolation.READ_COMMITTED)
 	public PracticeAttemptResponse ensureAttempt(Long userId, Market market) {
 		String tutorialKey = resolveTutorialKey(market);
 		LocalDateTime now = LocalDateTime.now(clock);
-		boolean inserted = practiceAttemptRepository.insertIfAbsent(userId, market.name(), now) == 1;
-		PracticeAttempt attempt = practiceAttemptRepository.findByUserIdAndMarketForUpdate(userId, market)
-			.orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_ERROR));
+		PracticeAttempt existing = practiceAttemptRepository.findByUserIdAndMarketForUpdate(userId, market)
+			.orElse(null);
+		boolean inserted = existing == null;
+		PracticeAttempt attempt = existing;
+		if (inserted) {
+			practiceAttemptRepository.insertIfAbsent(userId, market.name(), now);
+			// 같은 순간 다른 트랜잭션이 먼저 만들었다면 위 INSERT는 아무것도 하지 않고, 이 조회가 그 행을
+			// 잠근 채 돌려준다. 그 경우 아래 completion 분기는 attempt.status로 갈리므로 이중 전환이 없다.
+			attempt = practiceAttemptRepository.findByUserIdAndMarketForUpdate(userId, market)
+				.orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_ERROR));
+		}
 		// PracticeAttempt 행 잠금이 이미 사용자·시장 조합을 직렬화하므로, 같은 트랜잭션 안에서 튜토리얼 계좌도
 		// 함께 get-or-create한다(TUTORIAL-CASH-ISOL-001, 설계 판단 — 계좌 생성 시점). 그 결과를 응답에도 그대로
 		// 실어 보낸다(TUTORIAL-CASH-ISOL-011).

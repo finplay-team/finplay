@@ -110,7 +110,6 @@ class PracticeAttemptServiceTest {
 		Instrument instrument = tutorialInstrument(Market.STOCK, true);
 		attempt.selectInstrument(instrument, NOW.minusMinutes(3), NOW.toLocalDate(), 123L, (short)1, null,
 			NOW.minusMinutes(3));
-		when(practiceAttemptRepository.insertIfAbsent(USER_ID, Market.STOCK.name(), NOW)).thenReturn(0);
 		when(practiceAttemptRepository.findByUserIdAndMarket(USER_ID, Market.STOCK))
 			.thenReturn(Optional.of(attempt));
 		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.STOCK))
@@ -144,7 +143,6 @@ class PracticeAttemptServiceTest {
 		Instrument instrument = tutorialInstrument(Market.STOCK, true);
 		attempt.selectInstrument(instrument, NOW.minusMinutes(3), NOW.toLocalDate(), 123L, (short)1, null,
 			NOW.minusMinutes(3));
-		when(practiceAttemptRepository.insertIfAbsent(USER_ID, Market.STOCK.name(), NOW)).thenReturn(0);
 		when(practiceAttemptRepository.findByUserIdAndMarket(USER_ID, Market.STOCK))
 			.thenReturn(Optional.of(attempt));
 		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.STOCK))
@@ -171,7 +169,6 @@ class PracticeAttemptServiceTest {
 			NOW.minusDays(2).toLocalDate(), 456L, (short)1, null, NOW.minusDays(2));
 		ReflectionTestUtils.setField(attempt, "status", PracticeAttemptStatus.COMPLETED);
 		ReflectionTestUtils.setField(attempt, "completedAt", NOW.minusDays(1));
-		when(practiceAttemptRepository.insertIfAbsent(USER_ID, Market.CRYPTO.name(), NOW)).thenReturn(0);
 		when(practiceAttemptRepository.findByUserIdAndMarket(USER_ID, Market.CRYPTO))
 			.thenReturn(Optional.of(attempt));
 		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
@@ -200,7 +197,6 @@ class PracticeAttemptServiceTest {
 			NOW.minusMinutes(10));
 		ReflectionTestUtils.setField(attempt, "status", status);
 		PracticeCompletion completion = mock(PracticeCompletion.class);
-		when(practiceAttemptRepository.insertIfAbsent(USER_ID, Market.STOCK.name(), NOW)).thenReturn(0);
 		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.STOCK))
 			.thenReturn(Optional.of(attempt));
 		when(practiceCompletionRepository.findByUserIdAndTutorialKey(USER_ID, "INVESTMENT_PRACTICE_V1"))
@@ -361,9 +357,9 @@ class PracticeAttemptServiceTest {
 		when(completion.getReflection()).thenReturn(reflection);
 		when(completion.getCompletedAt()).thenReturn(NOW.minusDays(1));
 		when(completion.getId()).thenReturn(77L);
-		when(practiceAttemptRepository.insertIfAbsent(USER_ID, Market.CRYPTO.name(), NOW)).thenReturn(1);
+		// 이번 트랜잭션이 행을 만드는 경우다 — 첫 잠금 조회는 비어 있고 INSERT 뒤 조회가 행을 준다(이슈 #491).
 		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
-			.thenReturn(Optional.of(attempt));
+			.thenReturn(Optional.empty(), Optional.of(attempt));
 		when(practiceCompletionRepository.findByUserIdAndTutorialKey(USER_ID, "COIN_PRACTICE_V1"))
 			.thenReturn(Optional.of(completion));
 		when(practiceRiskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(ATTEMPT_ID, 1L))

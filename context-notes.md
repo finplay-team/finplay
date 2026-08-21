@@ -1239,12 +1239,22 @@ ADR-0021을 읽지 않는다(`ai/context-router.md`의 "엔티티/스키마 변�
 - **격리수준을 낮추는 방식(ADR-0028)으로는 안 고쳐진다.** 리포트의 `locks rec but not gap`이 근거다 —
   갭 락이 아니라 레코드 락이라 READ COMMITTED로 내려도 그대로 남는다. ADR-0028을 이 이슈에 그대로
   복사하지 않은 이유가 이것이다.
-- **핵심은 "S는 공유라 둘이 동시에 쥘 수 있다"는 것이다.** `ON DUPLICATE KEY UPDATE`는 같은 자리에서
-  배타 잠금(X)을 잡아 두 트랜잭션이 그 구문에서 직렬화되므로 승격할 S가 애초에 없다. 어느 인덱스
-  레코드에 잠금이 놓이는지와 무관하게 성립한다.
-- **새 패턴이 아니다.** `PracticeProgressRepository.insertIfAbsent`가 같은 insert→FOR UPDATE 패턴에
-  이미 `ON DUPLICATE KEY UPDATE id = id`를 쓰고 있었다. `practice_attempts`만 `INSERT IGNORE`로 남아
-  있던 예외였고, 이 커밋으로 저장소에서 `INSERT IGNORE`는 사라졌다.
+- **핵심은 "S는 공유라 둘이 동시에 쥘 수 있다"는 것이다.** 그래서 고친 것은 구문이 아니라 **순서**다 —
+  잠금 조회를 앞에 두고 행이 없을 때만 INSERT한다. 흔한 경로(행이 이미 있음)가 X 하나로 끝나 승격
+  자체가 사라지고, 진입마다 나가던 쓰기도 없어진다. 남은 경합 구간(행이 없어 둘 다 INSERT로 가는
+  첫 진입)에서는 `ON DUPLICATE KEY UPDATE`가 처음부터 X를 잡아 거기서도 승격이 생기지 않는다.
+- **`READ COMMITTED`는 이 순서 변경이 요구하는 짝이다.** REPEATABLE READ에서는 아무 행도 맞히지 못한
+  `FOR UPDATE`가 갭 잠금을 잡아, 첫 진입 2건이 각자 갭을 잡고 서로의 INSERT를 기다리는 **다른** 교착이
+  생긴다. 순서만 바꾸고 격리수준을 그대로 뒀으면 교착을 옮기기만 했을 것이다.
+- **함정 하나를 실제로 밟았다.** 처음에는 순서를 그대로 두고 구문만 `ON DUPLICATE KEY UPDATE`로 바꿨는데,
+  MySQL Connector/J가 기본값(`useAffectedRows=false`, CLIENT_FOUND_ROWS)에서 **변경된 행이 아니라 일치한
+  행**을 돌려준다. `INSERT IGNORE`가 중복에 0을 주던 자리에서 ODKU는 1을 준다 — `inserted` 판정이 항상
+  참이 되어 기존 행까지 완료 replay로 전환됐고, `LegacyPracticeCompletionAttemptCompatibilityIntegration
+  Test`가 잡았다(`expected IN_PROGRESS but was COMPLETED`). **`insertIfAbsent`의 반환값을 "이번에
+  만들었는가"로 읽으면 안 된다.** 그래서 반환형을 `void`로 바꿔 그 오독 자체를 막았고, 판정은 잠금
+  조회가 비어 있었는지로만 한다. `PracticeProgressRepository.insertIfAbsent`가 이미 ODKU를 쓰면서도
+  이 함정을 안 밟은 이유는 반환형이 `void`였기 때문이다.
+- **`INSERT IGNORE`는 이 커밋으로 저장소에서 사라졌다.**
 - **tick ↔ 체결 정산 잠금 순서는 뒤집히지 않는다(확인함).** 이슈가 함께 지목한 우려인데, `practice_
   attempts`를 잠그는 트랜잭션을 전수로 보면 **전부 attempt를 order·account·tutorial account보다 먼저
   잠근다.** 보조 인덱스로 잠그는 경로(tick·진입·종목선택·재시작·대본전환·복기·`lockForOrder`)는 모두
