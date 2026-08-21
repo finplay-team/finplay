@@ -48,8 +48,9 @@ FinPlay 백엔드 API 서버. Spring Boot 4.1 / Java 17 / Gradle (`build.gradle`
 
 ## 아키텍처
 
-- 레이어드: `controller → service → repository`, 도메인별 패키지 (`com.finplay.api.<도메인>`)
-- 상세: `ai/adr/0002-architecture.md`
+- 레이어드: `controller → service → repository`, 도메인별 패키지 (`com.finplay.api.domain.<도메인>`)
+- 전역 공통(예외 처리, 공통 응답, 설정 등 특정 도메인에 속하지 않는 것)은 `com.finplay.api.global`에 둔다. 도메인 패키지에 전역 코드를 섞지 않는다.
+- 상세: `ai/adr/0002-architecture.md`, `ai/adr/0029-domain-global-package-split.md`
 
 ## 문서 지도
 

@@ -4,22 +4,28 @@
 
 ## 패키지 구조
 
-- 최상위는 도메인 기준 (ADR-0002 — 레이어 기준 최상위 구조 금지). 도메인 안에서는 계층 하위 패키지로 나눈다.
+- 최상위는 도메인 기준 (ADR-0002 — 레이어 기준 최상위 구조 금지). 도메인 패키지는 `domain` 아래, 전역 공통은 `global`에 둔다 (ADR-0029). 도메인 안에서는 계층 하위 패키지로 나눈다.
 
 ```
 com.finplay.api
-├── order
-│   ├── controller/OrderController.java
-│   ├── service/OrderService.java
-│   ├── repository/OrderRepository.java
-│   ├── domain/Order.java            # 엔티티
-│   └── dto/
-│       ├── request/OrderCreateRequest.java
-│       └── response/OrderResponse.java
-└── common                           # 전역 예외 처리, 오류 응답, 공통 설정만
+├── domain
+│   └── order
+│       ├── controller/OrderController.java
+│       ├── service/OrderService.java
+│       ├── repository/OrderRepository.java
+│       ├── entity/Order.java            # 엔티티
+│       └── dto/
+│           ├── request/OrderCreateRequest.java
+│           └── response/OrderResponse.java
+└── global
+    ├── exception/BusinessException.java, ErrorCode.java, ErrorResponse.java, GlobalExceptionHandler.java
+    ├── config/ClockConfig.java, QuerydslConfig.java
+    └── filter/RequestIdFilter.java
 ```
 
-- `common`에는 전역 예외·오류 응답·공통 설정만 둔다. `CommonService`, `Manager`, `Helper` 같은 이름으로 책임을 숨기지 않는다 (PRD C-002).
+- 엔티티 패키지명은 `entity`다 (ADR-0029) — `domain.<도메인>.domain`처럼 "domain"이 겹치는 이름을 쓰지 않는다.
+- `global`도 역할별 하위 패키지로 나눈다 — 예외 처리는 `exception`, 전역 설정(`@Configuration`)은 `config`, 서블릿 필터는 `filter` (ADR-0029). 전역 코드가 늘어도 `global` 바로 아래에 파일을 평평하게 쌓지 않는다.
+- `global`에는 전역 예외·오류 응답·공통 설정만 둔다. `CommonService`, `Manager`, `Helper` 같은 이름으로 책임을 숨기지 않는다 (PRD C-002). 특정 도메인에서만 쓰는 설정(예: `auth`의 보안 설정)은 `global`이 아니라 해당 도메인 패키지 안에 둔다.
 
 ## 네이밍
 
