@@ -137,8 +137,10 @@ SQL로 바꿔 어느 트랜잭션에서 호출돼도 안전하게 만드는 것)
   때는, 지금 계좌 락이 이 데드락을 부수적으로 막아주는 효과가 있었다는 점(`docs/loadtest/holdings-
   insert-deadlock-result.md` "해석" 참고)을 함께 고려해야 한다.
 - **(이슈 #491, PR #521) 이 ADR의 두 수단이 적용된 지점이 하나씩 늘었다.** §결정 1의 `READ_COMMITTED`는
-  네 번째로 `PracticeAttemptService.ensureAttempt`에, §결정 2의 1회 재시도는 두 번째로
-  `PracticeAttemptEntryService.ensureAttempt`에 적용됐다. 위 §결정 절의 "세 곳에만"·"시장가 매수 경로에만"은
+  네 번째로 `PracticeAttemptService.ensureAttempt`에, §결정 2의 1회 재시도는
+  `PracticeAttemptDeadlockRetryService`가 감싸는 **사용자 요청 세 개**(진입·재시작·tick)에 적용됐다.
+  세 경로를 고른 기준은 §결정 2와 같다 — 실패하면 사용자에게 재시도 수단이 전혀 없는 경로인가.
+  종목 선택·프리셋 선택은 같은 버튼을 다시 누르면 되므로 제외했다. 위 §결정 절의 "세 곳에만"·"시장가 매수 경로에만"은
   **작성 시점의 목록이지 상한이 아니다** — 같은 판정 기준(정확성을 명시적 비관 락이 담당하는 트랜잭션인가 /
   사용자에게 다른 재시도 수단이 없는 경로인가)을 만족하면 늘어난다. 다만 #491의 교착은 **형태가 다르다** —
   이 ADR이 다룬 것은 갭 락 경합이지만 #491은 유니크 인덱스 레코드의 S→X 승격이라(`SHOW ENGINE INNODB

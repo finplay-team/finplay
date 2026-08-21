@@ -44,7 +44,7 @@ class PracticeAttemptEntryConcurrencyIntegrationTest {
 	private PracticeAttemptService practiceAttemptService;
 	// 컨트롤러가 실제로 쓰는 진입 경로다 — 재시도 경계까지 포함한 배선을 실제 트랜잭션 위에서 검증한다.
 	@Autowired
-	private PracticeAttemptEntryService practiceAttemptEntryService;
+	private PracticeAttemptDeadlockRetryService practiceAttemptDeadlockRetryService;
 	@Autowired
 	private UserRepository userRepository;
 	@Autowired
@@ -102,7 +102,7 @@ class PracticeAttemptEntryConcurrencyIntegrationTest {
 		}
 	}
 
-	// 위 두 테스트는 서비스를 직접 부르므로 컨트롤러가 실제로 쓰는 배선(PracticeAttemptEntryService)을
+	// 위 두 테스트는 서비스를 직접 부르므로 컨트롤러가 실제로 쓰는 배선(PracticeAttemptDeadlockRetryService)을
 	// 한 번도 지나지 않는다. 이 수정의 핵심 전제가 "재시도 경계에 @Transactional이 없어 재시도가 트랜잭션
 	// 밖에서 돈다"인데, 누가 그 빈에 @Transactional을 붙이면 재시도가 rollback-only 트랜잭션 안에서 돌아
 	// 조용히 무력화된다. 그래서 운영 경로도 실제 트랜잭션 위에서 한 번 통과시킨다.
@@ -112,7 +112,7 @@ class PracticeAttemptEntryConcurrencyIntegrationTest {
 			Long userId = createUser("entry-race-wiring-" + round);
 
 			List<Throwable> failures = runConcurrently(
-				userId, () -> practiceAttemptEntryService.ensureAttempt(userId, Market.CRYPTO));
+				userId, () -> practiceAttemptDeadlockRetryService.ensureAttempt(userId, Market.CRYPTO));
 
 			assertThat(failures).as("round %d — 운영 배선 동시 진입", round).isEmpty();
 			assertThat(attemptRowCount(userId)).isEqualTo(1L);
