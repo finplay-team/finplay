@@ -15,7 +15,7 @@ import com.finplay.api.common.BusinessException;
 import com.finplay.api.common.ErrorCode;
 import com.finplay.api.education.marketpractice.dto.response.ExitPresetResponse;
 import com.finplay.api.education.marketpractice.dto.response.PracticeAttemptResponse;
-import com.finplay.api.education.marketpractice.service.PracticeAttemptRestartService;
+import com.finplay.api.education.marketpractice.service.PracticeAttemptDeadlockRetryService;
 import com.finplay.api.market.domain.Market;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -35,8 +35,9 @@ class PracticeAttemptRestartControllerTest {
 
 	@Autowired
 	private MockMvc mockMvc;
+	// 컨트롤러는 교착 재시도 경계만 주입받는다 (이슈 #491).
 	@MockitoBean
-	private PracticeAttemptRestartService restartService;
+	private PracticeAttemptDeadlockRetryService retryService;
 	@MockitoBean
 	private JwtTokenProvider jwtTokenProvider;
 
@@ -45,7 +46,7 @@ class PracticeAttemptRestartControllerTest {
 		mockMvc.perform(post("/api/education/practice/attempts/STOCK/restart"))
 			.andExpect(status().isUnauthorized())
 			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"));
-		verifyNoInteractions(restartService);
+		verifyNoInteractions(retryService);
 	}
 
 	@Test
@@ -55,7 +56,7 @@ class PracticeAttemptRestartControllerTest {
 			11L, "CRYPTO", 2L, "ACTIVE", "SELECTING_INSTRUMENT", null, null, null, null, null,
 			10_000_000L, 10_000_000L, 0L,
 			"BALANCED", false, ExitPresetResponse.all());
-		when(restartService.restart(USER_ID, Market.CRYPTO)).thenReturn(response);
+		when(retryService.restart(USER_ID, Market.CRYPTO)).thenReturn(response);
 
 		mockMvc.perform(post("/api/education/practice/attempts/CRYPTO/restart")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN))
@@ -68,7 +69,7 @@ class PracticeAttemptRestartControllerTest {
 			.andExpect(jsonPath("$.tutorialCashBalance").value(10_000_000))
 			.andExpect(jsonPath("$.tutorialAvailableCash").value(10_000_000))
 			.andExpect(jsonPath("$.tutorialRealizedPnl").value(0));
-		verify(restartService).restart(USER_ID, Market.CRYPTO);
+		verify(retryService).restart(USER_ID, Market.CRYPTO);
 	}
 
 	@Test
@@ -78,7 +79,7 @@ class PracticeAttemptRestartControllerTest {
 			11L, "CRYPTO", 3L, "ACTIVE", "SELECTING_INSTRUMENT", null, null, null, null, null,
 			10_000_000L, 10_000_000L, 0L,
 			"BALANCED", false, ExitPresetResponse.all());
-		when(restartService.restart(USER_ID, Market.CRYPTO)).thenReturn(response);
+		when(retryService.restart(USER_ID, Market.CRYPTO)).thenReturn(response);
 
 		mockMvc.perform(post("/api/education/practice/attempts/CRYPTO/restart")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN))
@@ -87,7 +88,7 @@ class PracticeAttemptRestartControllerTest {
 			.andExpect(jsonPath("$.mode").value("ACTIVE"))
 			.andExpect(jsonPath("$.status").value("SELECTING_INSTRUMENT"))
 			.andExpect(jsonPath("$.completedAt").doesNotExist());
-		verify(restartService).restart(USER_ID, Market.CRYPTO);
+		verify(retryService).restart(USER_ID, Market.CRYPTO);
 	}
 
 	@Test
@@ -97,13 +98,13 @@ class PracticeAttemptRestartControllerTest {
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN))
 			.andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
-		verifyNoInteractions(restartService);
+		verifyNoInteractions(retryService);
 	}
 
 	@Test
 	void restartMapsEvidenceMismatchToConflict() throws Exception {
 		authenticate();
-		when(restartService.restart(USER_ID, Market.STOCK))
+		when(retryService.restart(USER_ID, Market.STOCK))
 			.thenThrow(new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING));
 
 		mockMvc.perform(post("/api/education/practice/attempts/STOCK/restart")

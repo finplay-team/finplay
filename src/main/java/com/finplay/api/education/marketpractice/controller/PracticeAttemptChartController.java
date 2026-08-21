@@ -4,6 +4,7 @@ package com.finplay.api.education.marketpractice.controller;
 import com.finplay.api.auth.token.AuthenticatedUser;
 import com.finplay.api.education.marketpractice.dto.response.PracticeTutorialChartResponse;
 import com.finplay.api.education.marketpractice.service.PracticeAttemptChartService;
+import com.finplay.api.education.marketpractice.service.PracticeAttemptDeadlockRetryService;
 import com.finplay.api.market.domain.Market;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -20,6 +21,9 @@ import org.springframework.web.bind.annotation.RestController;
 public class PracticeAttemptChartController {
 
 	private final PracticeAttemptChartService practiceAttemptChartService;
+	// tick만 재시도 경계를 거친다 (이슈 #491) — 3초마다 폴링되는 쓰기 경로이고 실패하면 화면이 멎는다.
+	// getChart는 부수효과 없는 순수 조회라 잠금을 잡지 않으므로 거치지 않는다.
+	private final PracticeAttemptDeadlockRetryService practiceAttemptDeadlockRetryService;
 
 	@GetMapping("/{market}/chart")
 	public ResponseEntity<PracticeTutorialChartResponse> getChart(
@@ -36,6 +40,6 @@ public class PracticeAttemptChartController {
 		AuthenticatedUser principal,
 		@PathVariable
 		Market market) {
-		return ResponseEntity.ok(practiceAttemptChartService.tick(principal.userId(), market));
+		return ResponseEntity.ok(practiceAttemptDeadlockRetryService.tick(principal.userId(), market));
 	}
 }

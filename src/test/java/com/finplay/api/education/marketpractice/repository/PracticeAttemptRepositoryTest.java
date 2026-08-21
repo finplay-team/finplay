@@ -11,6 +11,7 @@ import com.finplay.api.auth.domain.User;
 import com.finplay.api.auth.repository.UserRepository;
 import com.finplay.api.education.marketpractice.domain.ExitPreset;
 import com.finplay.api.education.marketpractice.domain.PracticeAttempt;
+import com.finplay.api.education.marketpractice.domain.PracticeAttemptStatus;
 import com.finplay.api.education.marketpractice.domain.PracticeRiskSnapshot;
 import com.finplay.api.market.domain.Instrument;
 import com.finplay.api.market.domain.Market;
@@ -74,6 +75,9 @@ class PracticeAttemptRepositoryTest {
 	private EntityManager entityManager;
 
 	@Autowired
+	private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
+	@Autowired
 	private EntityManagerFactory entityManagerFactory;
 
 	private User user;
@@ -89,6 +93,48 @@ class PracticeAttemptRepositoryTest {
 		instrument = instrumentRepository.saveAndFlush(Instrument.create(
 			Market.CRYPTO, "ATTEMPT-CRYPTO", "attempt 테스트 코인", BigDecimal.ONE, 5_000L, true, NOW));
 		attempt = practiceAttemptRepository.saveAndFlush(PracticeAttempt.create(user.getId(), Market.CRYPTO, NOW));
+	}
+
+	// 이슈 #491 — insertIfAbsent가 ON DUPLICATE KEY UPDATE라 "중복이면 기존 행을 한 글자도 바꾸지 않는다"가
+	// 성립해야 한다. 이 PR이 실제로 회귀했던 지점이 정확히 이 구문의 semantics다(자매 리포지터리의
+	// PracticeRepositoryTest.insertIfAbsentPreservesExistingCompletedStatusAndTimestamps와 같은 형태).
+	@Test
+	@DisplayName("insertIfAbsent는 행이 이미 있으면 기존 값·타임스탬프를 그대로 둔다")
+	void insertIfAbsentPreservesExistingRow() {
+		jdbcTemplate.update("""
+			UPDATE practice_attempts SET run_number = 7, created_at = ?, updated_at = ?
+			WHERE user_id = ? AND market = 'CRYPTO'
+			""", NOW.minusDays(2), NOW.minusDays(1), user.getId());
+
+		practiceAttemptRepository.insertIfAbsent(user.getId(), Market.CRYPTO.name(), NOW.plusDays(1));
+		entityManager.flush();
+		entityManager.clear();
+
+		java.util.Map<String, Object> row = jdbcTemplate.queryForMap("""
+			SELECT run_number, status, created_at, updated_at FROM practice_attempts
+			WHERE user_id = ? AND market = 'CRYPTO'
+			""", user.getId());
+		assertThat(row.get("run_number")).isEqualTo(7L);
+		assertThat(row.get("status")).isEqualTo("SELECTING_INSTRUMENT");
+		assertThat(row.get("created_at")).isEqualTo(NOW.minusDays(2));
+		assertThat(row.get("updated_at")).isEqualTo(NOW.minusDays(1));
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT COUNT(*) FROM practice_attempts WHERE user_id = ? AND market = 'CRYPTO'",
+			Long.class, user.getId())).isEqualTo(1L);
+	}
+
+	@Test
+	@DisplayName("insertIfAbsent는 행이 없으면 run 1·종목 미선택 상태로 만든다")
+	void insertIfAbsentCreatesRowWhenAbsent() {
+		practiceAttemptRepository.insertIfAbsent(user.getId(), Market.STOCK.name(), NOW);
+		entityManager.flush();
+		entityManager.clear();
+
+		PracticeAttempt created = practiceAttemptRepository
+			.findByUserIdAndMarket(user.getId(), Market.STOCK).orElseThrow();
+		assertThat(created.getRunNumber()).isEqualTo(1L);
+		assertThat(created.getStatus()).isEqualTo(PracticeAttemptStatus.SELECTING_INSTRUMENT);
+		assertThat(created.getInstrument()).isNull();
 	}
 
 	@Test

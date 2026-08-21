@@ -3,7 +3,9 @@ package com.finplay.api.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -110,7 +112,6 @@ class PracticeAttemptServiceTest {
 		Instrument instrument = tutorialInstrument(Market.STOCK, true);
 		attempt.selectInstrument(instrument, NOW.minusMinutes(3), NOW.toLocalDate(), 123L, (short)1, null,
 			NOW.minusMinutes(3));
-		when(practiceAttemptRepository.insertIfAbsent(USER_ID, Market.STOCK.name(), NOW)).thenReturn(0);
 		when(practiceAttemptRepository.findByUserIdAndMarket(USER_ID, Market.STOCK))
 			.thenReturn(Optional.of(attempt));
 		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.STOCK))
@@ -133,6 +134,10 @@ class PracticeAttemptServiceTest {
 		verify(practiceAttemptRepository, never()).save(org.mockito.ArgumentMatchers.any());
 		verify(tutorialAccountService)
 			.getOrCreateForUpdate(USER_ID, com.finplay.api.account.domain.Market.STOCK, NOW);
+		// 이슈 #491 — 행이 이미 있으면 INSERT가 아예 나가지 않아야 한다. 무조건 INSERT가 되살아나면
+		// 교착이 그대로 돌아오므로 여기서 잡는다.
+		verify(practiceAttemptRepository, never()).insertIfAbsent(anyLong(), anyString(), any());
+
 	}
 
 	// TUTORIAL-CASH-ISOL-011 — 이미 매매로 값이 바뀐 튜토리얼 계좌(신규 생성이 아닌 재진입)를 다시 조회하면
@@ -144,7 +149,6 @@ class PracticeAttemptServiceTest {
 		Instrument instrument = tutorialInstrument(Market.STOCK, true);
 		attempt.selectInstrument(instrument, NOW.minusMinutes(3), NOW.toLocalDate(), 123L, (short)1, null,
 			NOW.minusMinutes(3));
-		when(practiceAttemptRepository.insertIfAbsent(USER_ID, Market.STOCK.name(), NOW)).thenReturn(0);
 		when(practiceAttemptRepository.findByUserIdAndMarket(USER_ID, Market.STOCK))
 			.thenReturn(Optional.of(attempt));
 		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.STOCK))
@@ -162,6 +166,10 @@ class PracticeAttemptServiceTest {
 		assertThat(response.tutorialCashBalance()).isEqualTo(8_000_000L);
 		assertThat(response.tutorialAvailableCash()).isEqualTo(7_500_000L); // 800만원 - 예약 50만원
 		assertThat(response.tutorialRealizedPnl()).isEqualTo(300_000L);
+		// 이슈 #491 — 행이 이미 있으면 INSERT가 아예 나가지 않아야 한다. 무조건 INSERT가 되살아나면
+		// 교착이 그대로 돌아오므로 여기서 잡는다.
+		verify(practiceAttemptRepository, never()).insertIfAbsent(anyLong(), anyString(), any());
+
 	}
 
 	@Test
@@ -171,7 +179,6 @@ class PracticeAttemptServiceTest {
 			NOW.minusDays(2).toLocalDate(), 456L, (short)1, null, NOW.minusDays(2));
 		ReflectionTestUtils.setField(attempt, "status", PracticeAttemptStatus.COMPLETED);
 		ReflectionTestUtils.setField(attempt, "completedAt", NOW.minusDays(1));
-		when(practiceAttemptRepository.insertIfAbsent(USER_ID, Market.CRYPTO.name(), NOW)).thenReturn(0);
 		when(practiceAttemptRepository.findByUserIdAndMarket(USER_ID, Market.CRYPTO))
 			.thenReturn(Optional.of(attempt));
 		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
@@ -200,7 +207,6 @@ class PracticeAttemptServiceTest {
 			NOW.minusMinutes(10));
 		ReflectionTestUtils.setField(attempt, "status", status);
 		PracticeCompletion completion = mock(PracticeCompletion.class);
-		when(practiceAttemptRepository.insertIfAbsent(USER_ID, Market.STOCK.name(), NOW)).thenReturn(0);
 		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.STOCK))
 			.thenReturn(Optional.of(attempt));
 		when(practiceCompletionRepository.findByUserIdAndTutorialKey(USER_ID, "INVESTMENT_PRACTICE_V1"))
@@ -361,9 +367,9 @@ class PracticeAttemptServiceTest {
 		when(completion.getReflection()).thenReturn(reflection);
 		when(completion.getCompletedAt()).thenReturn(NOW.minusDays(1));
 		when(completion.getId()).thenReturn(77L);
-		when(practiceAttemptRepository.insertIfAbsent(USER_ID, Market.CRYPTO.name(), NOW)).thenReturn(1);
+		// 이번 트랜잭션이 행을 만드는 경우다 — 첫 잠금 조회는 비어 있고 INSERT 뒤 조회가 행을 준다(이슈 #491).
 		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
-			.thenReturn(Optional.of(attempt));
+			.thenReturn(Optional.empty(), Optional.of(attempt));
 		when(practiceCompletionRepository.findByUserIdAndTutorialKey(USER_ID, "COIN_PRACTICE_V1"))
 			.thenReturn(Optional.of(completion));
 		when(practiceRiskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(ATTEMPT_ID, 1L))
