@@ -171,6 +171,57 @@ class PracticeExitPlanReservationServiceTest {
 	}
 
 	/**
+	 * 052 EXITFREE-025 — 대기 구간 탈출 판정이 쓰는 조회. <b>예약 경로가 열리지 않는 실행은 그냥
+	 * 통과시킨다</b>(legacy·2단계 대본). 걸 수단이 없는 사용자를 대본 앞에 세워 두면 그 튜토리얼은 거기서
+	 * 끝난다. 판정은 {@code pathRejection} 하나를 공유하므로 "열리는 경로"와 "기다리는 경로"가 어긋날 수 없다.
+	 */
+	@Test
+	void runsWithoutTheUserDrivenPathNeverWaitForAReservation() {
+		assertThat(service.entryReservationSatisfied(legacyAttempt())).isTrue();
+		assertThat(service.entryReservationSatisfied(scriptAttempt(TutorialScenarioScriptId.CRYPTO_ORDER_BASICS_V1)))
+			.isTrue();
+		// 원장을 읽지도 않는다 — 판정이 대본 식별자 하나로 끝난다.
+		verifyNoInteractions(practiceRiskSnapshotRepository, practiceExitPlanQueryService);
+	}
+
+	/**
+	 * 3단계 대본은 <b>그 진입에</b> 예약이 있어야 통과한다. 판정이 실행 단위였다면 손절당한 뒤 다시 산
+	 * 사용자가 예약 없이 3막으로 출발한다.
+	 *
+	 * <p>취소한 예약도 통과다 — {@code existsEntryReservation}이 상태를 묻지 않는다(리포지터리 파생 쿼리에
+	 * status 조건이 없다). write-once가 재생성을 막으므로 취소를 이유로 여기서도 막으면 그 사용자에게 남는
+	 * 길이 하나도 없다.
+	 */
+	@Test
+	void theStoryScriptWaitsForTheReservationOfTheCurrentEntry() {
+		PracticeAttempt attempt = storyAttempt();
+		// stub 안에서 stub하지 않는다 — Mockito가 UnfinishedStubbingException으로 터진다(heldWithSnapshot과 동일).
+		PracticeRiskSnapshot secondEntry = snapshot(2);
+		when(practiceRiskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(ATTEMPT_ID, 1L))
+			.thenReturn(Optional.of(secondEntry));
+		when(practiceExitPlanQueryService.existsEntryReservation(
+			ATTEMPT_ID, 1L, ExitPlanPracticeOriginDto.auditRequestHash(ATTEMPT_ID, 1L, 1))).thenReturn(true);
+
+		// 1번 진입에만 예약이 있다 — 팔고 다시 산 2번 진입은 자기 몫의 예약을 걸어야 한다.
+		assertThat(service.entryReservationSatisfied(attempt)).isFalse();
+
+		when(practiceExitPlanQueryService.existsEntryReservation(
+			ATTEMPT_ID, 1L, ExitPlanPracticeOriginDto.auditRequestHash(ATTEMPT_ID, 1L, 2))).thenReturn(true);
+		assertThat(service.entryReservationSatisfied(attempt)).isTrue();
+	}
+
+	// 보유는 있는데 기준선이 없는 깨진 원장에서는 예약 생성도 PRACTICE_EVIDENCE_MISSING으로 거부되므로,
+	// 여기서까지 막으면 나갈 문이 하나도 없다. 042 동작(보유만으로 진행)으로 열어 두고 원장 파손을 드러내는
+	// 일은 생성 경로에 맡긴다.
+	@Test
+	void aBrokenLedgerWithoutAnEntryBaselineDoesNotTrapTheUser() {
+		when(practiceRiskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(ATTEMPT_ID, 1L))
+			.thenReturn(Optional.empty());
+
+		assertThat(service.entryReservationSatisfied(storyAttempt())).isTrue();
+	}
+
+	/**
 	 * 052 EXITFREE-022 — 다음에 권하는 쪽은 <b>먼저 겪은 쪽의 반대</b>다. 순서는 대본이 손절 먼저로
 	 * 고정하지만 좁은 익절 폭을 건 사용자는 익절이 먼저 닿으므로, "손절 → 익절"로 하드코딩하지 않는다.
 	 */

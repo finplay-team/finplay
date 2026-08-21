@@ -99,35 +99,35 @@
       "impactStartMinute": 2,
       "impactMinutes": 6,
       "revealDelayMinutes": 4,
-      "headline": "[연습] 알파코인, 해외 거래소 신규 상장 논의가 진행 중이라는 소식이 전해졌습니다."
+      "headline": "[연습] 알파코인이 해외 거래소 한 곳의 신규 상장 심사 대상에 올랐습니다."
     },
     {
       "stageId": "ACT2_RUMOR",
       "impactStartMinute": 1,
       "impactMinutes": 6,
       "revealDelayMinutes": 4,
-      "headline": "[연습] 알파코인 협력 채굴장 일부가 가동을 멈췄다는 이야기가 돌고 있습니다."
+      "headline": "[연습] 알파코인 협력 채굴장 한 곳이 가동을 멈춘 것으로 확인됐습니다."
     },
     {
       "stageId": "ACT2_CONFIRM",
       "impactStartMinute": 1,
       "impactMinutes": 6,
       "revealDelayMinutes": 4,
-      "headline": "[연습] 알파코인 협력 채굴장의 가동 중단이 사실로 확인됐습니다."
+      "headline": "[연습] 가동을 멈춘 알파코인 협력 채굴장이 전체의 절반으로 늘었습니다."
     },
     {
       "stageId": "ACT3_REBOUND",
       "impactStartMinute": 3,
       "impactMinutes": 6,
       "revealDelayMinutes": 4,
-      "headline": "[연습] 알파코인 협력 채굴장이 단계적으로 가동을 재개했다고 알려졌습니다."
+      "headline": "[연습] 멈췄던 알파코인 협력 채굴장이 순차적으로 가동을 재개했습니다."
     },
     {
       "stageId": "ACT4_CRASH",
       "impactStartMinute": 2,
       "impactMinutes": 6,
       "revealDelayMinutes": 4,
-      "headline": "[연습] 알파코인 채굴장 재가동 물량이 당초 알려진 규모에 못 미친다는 이야기가 나옵니다."
+      "headline": "[연습] 재개된 알파코인 협력 채굴장의 가동률이 중단 전의 절반에 그쳤습니다."
     }
   ]
 }

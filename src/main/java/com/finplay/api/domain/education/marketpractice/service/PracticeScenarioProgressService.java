@@ -33,6 +33,7 @@ public class PracticeScenarioProgressService {
 	private final PracticeAttemptCanonicalPriceService canonicalPriceService;
 	private final PracticeOrderSettlementService practiceOrderSettlementService;
 	private final TradeService tradeService;
+	private final PracticeExitPlanReservationService practiceExitPlanReservationService;
 
 	/**
 	 * 호출자가 이미 attempt를 비관 잠금한 트랜잭션 안에서만 부른다(현재 호출부는 {@code POST .../tick}).
@@ -60,10 +61,10 @@ public class PracticeScenarioProgressService {
 		long gapSeconds = Math.max(0L, Duration.between(base, now).getSeconds());
 		boolean clamped = gapSeconds > MAX_TICK_GAP_SECONDS;
 		boolean enteredAnyMinute = traverse(attempt, script, now, clamped ? MAX_TICK_GAP_SECONDS : gapSeconds);
-		// 순회가 끝난 자리가 대기 구간인데 보유가 있으면 이번 tick 안에서 나간다. 대기 구간 끝에 닿아 0으로
-		// 되감는 지점에서 체결되면 그때 남은 delta가 0이라 순회의 while 조건이 먼저 끝나기 때문이다
-		// (041 4~5번 2차 리뷰가 "6번이 scenarioProgressing을 싣기 시작하면 화면에 보인다"고 넘긴 항목).
-		boolean leftIdleLoop = leaveIdleLoopIfHolding(attempt, script, now);
+		// 순회가 끝난 자리가 대기 구간인데 나갈 조건이 갖춰졌으면 이번 tick 안에서 나간다. 대기 구간 끝에
+		// 닿아 0으로 되감는 지점에서 체결되면 그때 남은 delta가 0이라 순회의 while 조건이 먼저 끝나기
+		// 때문이다(041 4~5번 2차 리뷰가 "6번이 scenarioProgressing을 싣기 시작하면 화면에 보인다"고 넘긴 항목).
+		boolean leftIdleLoop = leaveIdleLoopIfReady(attempt, script, now);
 		if (!enteredAnyMinute && !leftIdleLoop) {
 			// 한 가상 분도 새로 진입하지 않은 tick(대본이 끝난 뒤, 같은 초의 재요청, 3초 미만 간격)도 정산은
 			// 한다 — 생성기 버전 1은 tick마다 무조건 settleCurrentRun을 불렀고 그 보장을 잃으면 안 된다.
@@ -80,26 +81,27 @@ public class PracticeScenarioProgressService {
 	private void start(PracticeAttempt attempt, TutorialScenarioScript script, LocalDateTime now) {
 		BigDecimal openPrice = canonicalPriceService.canonicalPrice(attempt, now);
 		attempt.startScenarioProgress(script.firstStage().id(), openPrice, now);
-		// 초기화 tick에도 이미 보유가 있으면 대기 구간에 세워 두지 않는다 — 종목 선택 직후 매수하고 첫
-		// tick을 부른 사용자가 여기 해당하며, 미루면 화면이 한 사이클 동안 "대기 중"으로 보인다
-		// (PR #494 QA 참고 3). 이동은 시간을 소비하지 않으므로 delta가 없는 이 tick에서 해도 대본이 앞서지 않는다.
-		if (!leaveIdleLoopIfHolding(attempt, script, now)) {
+		// 초기화 tick에도 나갈 조건이 이미 갖춰져 있으면 대기 구간에 세워 두지 않는다 — 종목 선택 직후
+		// 매수·예약하고 첫 tick을 부른 사용자가 여기 해당하며, 미루면 화면이 한 사이클 동안 "대기 중"으로
+		// 보인다(PR #494 QA 참고 3). 이동은 시간을 소비하지 않으므로 delta가 없는 이 tick에서 해도 대본이
+		// 앞서지 않는다.
+		if (!leaveIdleLoopIfReady(attempt, script, now)) {
 			settle(attempt, now, openPrice);
 		}
 	}
 
 	/**
-	 * <b>한 tick이 끝났을 때 보유 중이면 커서는 대기 구간에 있지 않다</b> — 표 2행을 tick 경계에서도 지키는
-	 * 마지막 방어다. 이동한 경우 {@link #exitIdleLoop}가 새 커서 가격으로 정산까지 마치므로 호출부는
-	 * 폴백 정산을 생략한다.
+	 * <b>한 tick이 끝났을 때 {@link #readyToLeaveIdleLoop}가 참이면 커서는 대기 구간에 있지 않다</b> — 표
+	 * 2행을 tick 경계에서도 지키는 마지막 방어다. 이동한 경우 {@link #exitIdleLoop}가 새 커서 가격으로
+	 * 정산까지 마치므로 호출부는 폴백 정산을 생략한다.
 	 *
-	 * @return 실제로 대기 구간을 벗어났으면 {@code true}. 대기 구간이 아니거나 미보유거나 나갈 진행 구간이
-	 *     없으면 {@code false}
+	 * @return 실제로 대기 구간을 벗어났으면 {@code true}. 대기 구간이 아니거나 나갈 조건이 아직 갖춰지지
+	 *     않았거나 나갈 진행 구간이 없으면 {@code false}
 	 */
-	private boolean leaveIdleLoopIfHolding(
+	private boolean leaveIdleLoopIfReady(
 		PracticeAttempt attempt, TutorialScenarioScript script, LocalDateTime now) {
 		TutorialScenarioStage stage = script.stage(attempt.getScenarioStageId());
-		if (stage.kind() != TutorialScenarioStageKind.LOOP || netQuantity(attempt).signum() <= 0) {
+		if (stage.kind() != TutorialScenarioStageKind.LOOP || !readyToLeaveIdleLoop(attempt, netQuantity(attempt))) {
 			return false;
 		}
 		return exitIdleLoop(attempt, script, stage, now, 0L) >= 0L;
@@ -115,10 +117,10 @@ public class PracticeScenarioProgressService {
 			// 구간 길이가 0이면 이 순회가 끝나지 않는다 — 로더의 `minutes > 0` 기동 검증이 그것을 막는다.
 			long stageSeconds = (long)stage.minutes() * SECONDS_PER_VIRTUAL_MINUTE;
 
-			// 표 2행 — 대기 구간에서 보유가 생기면 시간을 소비하지 않고 다음 진행 구간의 0분으로 이동한다.
-			// 이 전이가 없으면 사용자는 매수해도 0막을 영원히 돌고, 042의 도달 부등식이 가정한 진입 배율도
-			// 무너진다.
-			if (stage.kind() == TutorialScenarioStageKind.LOOP && netQuantity.signum() > 0) {
+			// 표 2행 — 대기 구간에서 보유가 생기고 그 진입에 예약이 걸리면 시간을 소비하지 않고 다음 진행
+			// 구간의 0분으로 이동한다. 이 전이가 없으면 사용자는 매수해도 0막을 영원히 돌고, 042의 도달
+			// 부등식이 가정한 진입 배율도 무너진다.
+			if (stage.kind() == TutorialScenarioStageKind.LOOP && readyToLeaveIdleLoop(attempt, netQuantity)) {
 				long truncated = exitIdleLoop(attempt, script, stage, now, remaining);
 				if (truncated < 0) {
 					break;
@@ -157,7 +159,7 @@ public class PracticeScenarioProgressService {
 				enterMinute(attempt, stage.id(), elapsed, now, remaining - consumed);
 				entered = true;
 				netQuantity = netQuantity(attempt);
-				if (stage.kind() == TutorialScenarioStageKind.LOOP && netQuantity.signum() > 0) {
+				if (stage.kind() == TutorialScenarioStageKind.LOOP && readyToLeaveIdleLoop(attempt, netQuantity)) {
 					leftLoopEarly = true;
 					break;
 				}
@@ -244,6 +246,25 @@ public class PracticeScenarioProgressService {
 	// 산출식이며, holdings 행의 수량이 아니라 **현재 실행 세대**의 순량이다.
 	private BigDecimal netQuantity(PracticeAttempt attempt) {
 		return tradeService.netFilledQuantity(attempt.getId(), attempt.getRunNumber());
+	}
+
+	/**
+	 * 표 2행의 탈출 조건. <b>052 EXITFREE-025로 "보유가 있다"에서 "보유가 있고 그 진입에 예약이 걸려 있다"로
+	 * 좁혔다.</b>
+	 *
+	 * <p>042는 매수 체결 순간 서버가 예약을 대신 걸어 "보유가 생겼다 = 예약이 걸렸다"가 항상 함께
+	 * 성립했으므로 보유만 보면 됐다. 052 EXITFREE-020이 예약을 거는 주체를 사용자로 옮기면서 그 등식이
+	 * 깨졌고, 매수 직후 곧바로 1막이 출발해 <b>사용자가 예약 폼을 채우는 동안 이야기가 흘러간다</b> —
+	 * 느린 사용자는 예약을 걸기도 전에 하락 구간을 맞는다. 규칙을 미리 걸어 보라고 만든 화면이므로 순서는
+	 * 사고 → 규칙 → 이야기 시작이어야 한다.
+	 *
+	 * <p><b>보유부터 본다.</b> 미보유면 예약 조회를 아예 하지 않아 대기 구간을 그냥 도는 tick이 원장을 더
+	 * 읽지 않는다. 예약 판정 자체(어느 실행이 기다리고 어느 실행이 그냥 지나가는가, 깨진 원장의 처리)는
+	 * {@link PracticeExitPlanReservationService#entryReservationSatisfied}가 단독으로 쥔다 — 여기에 조건을
+	 * 한 겹 더 두면 "예약을 걸 수 있는 실행"과 "예약을 기다리는 실행"이 갈릴 수 있다.
+	 */
+	private boolean readyToLeaveIdleLoop(PracticeAttempt attempt, BigDecimal netQuantity) {
+		return netQuantity.signum() > 0 && practiceExitPlanReservationService.entryReservationSatisfied(attempt);
 	}
 
 	// 체결 원장이 비어 있으면(보유는 있는데 이번 실행 체결이 없는 이례적 상태) 자르지 않는다.

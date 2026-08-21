@@ -9,6 +9,8 @@
 | — | orchestrator | `./gradlew build` | CLAUDE.md 규칙 4(완료 선언 전 전체 빌드) |
 | — | implementer | `.\gradlew.bat spotlessApply compileJava compileTestJava` + `test --tests`(예약 서비스·attempt controller·귀속 서비스·진행 조회 등 unit/slice 전부 통과) | spec.md 2차 EXITFREE-020~022, plan.md §2차 API 설계, 042 EXITPRESET-012·014·015·016, 049 ORDERBASICS-022 |
 | — | implementer | `.\gradlew.bat test --tests PracticeStageProgressCalculationServiceTest`(통과) — `exitPresetSelected` 판정을 예약 존재까지 확장 | 프론트 세션이 드러낸 결함(화면이 `exit-rates`를 부르지 않는다), TUTORIAL-STAGE-001, EXITFREE-011 |
+| — | implementer | `.\gradlew.bat compileJava compileTestJava` + `test --tests`(진행 계산·예약 서비스·차트 서비스 49건 전부 통과) 후 `spotlessApply` — 대기 구간 탈출 조건에 "그 진입의 예약" 추가 | 제품 오너 실사용 피드백(예약 폼을 채우는 동안 이야기가 흘러간다), 신설 EXITFREE-025, 041 상태 전이표 2행, 042 EXITPRESET-020, ADR-0002 |
+| — | implementer | `gradlew.bat test --tests com.finplay.api.domain.market.service.TutorialScenarioScriptIntegrityTest`(5건 통과, 로더 기동 검증 포함) — 3단계 대본 사건 문안 5개를 사실 보도체로 교체(가격 배열·타이밍 필드 무변경) | 튜터 지적("뉴스가 아니라 찌라시") → 제품 오너 확정("루머는 빼자"), 041 plan §문안 작성 규칙, SCENARIO-017·018 |
 
 ## 모니터링 (사람용 요약)
 
@@ -107,6 +109,28 @@
   파생하므로 재시작 초기화가 **코드 없이** 성립한다(run이 오르면 이전 세대 행이 조회 범위에서 빠진다).
   041 잔여 위험 4의 "갱신·초기화 지점 누락"을 구조적으로 피하는 방법이다. 마이그레이션 없음.
 
+- **대기 구간은 이제 예약을 기다린다 (EXITFREE-025 신설).** 예약 주체를 사용자로 옮기면서 041 상태 전이표
+  2행의 전제("보유가 생겼다 = 예약이 걸렸다")가 깨져, 매수 직후 대본이 곧바로 출발해 **예약 폼을 채우는
+  동안 이야기가 흘러가고 있었다.** 탈출 조건을 "보유가 있고 그 진입에 예약이 걸려 있다"로 좁혔고, 판정은
+  write-once와 같은 조회를 재사용한다. **교착을 만들지 않는 것이 이 변경의 가장 큰 위험이었다** — 예약
+  경로가 열리지 않는 실행(legacy·2단계 대본)과 기준선 없는 깨진 원장은 기다리지 않고 통과시키고, 취소한
+  예약도 상태 무관 조회라 통과한다. 041 파일은 고치지 않고 052 spec에 요구사항으로 얹었다.
+
+- **사건 문안 다섯을 전언체에서 사실 보도체로 다시 썼다.** 튜터가 2막 첫 문안("가동을 멈췄다는 이야기가
+  돌고 있습니다")을 "뉴스가 아니라 찌라시"로 지적했고 제품 오너가 "루머는 빼자"로 확정했다 — 출처 없는
+  전언을 뉴스 자리에 올리면 금융 서비스의 신뢰도 문제가 된다.
+- **단순 치환이 아니라 강도를 높이는 구조로 바꿨다.** 루머를 사실로 바꾸면 2막의 두 사건이 같은 말의
+  반복이 되어 서사가 죽는다. 2막 첫 사건을 **범위가 한정된 사실**(협력 채굴장 **한 곳** 중단 확인)로,
+  확정 사건을 **그 사실의 확대**(멈춘 곳이 **전체의 절반**으로 증가)로 적어 2막-b 속임수 반등이 여전히
+  "생각보다 별일 아니었나" 구간으로 읽히게 했다. 4막은 집계된 수치(가동률이 중단 전의 절반)다.
+  **오히려 교훈이 세진다** — 확인된 사실만 나왔는데도 가격이 오르내리므로 "뉴스를 읽으면 방향을 알 수
+  있다"는 오해가 더 확실히 깨진다.
+- **바꾼 것은 `headline` 문자열 5개뿐이다.** `ratios`·`minutes`·`stageId`·`impactStartMinute`·
+  `impactMinutes`·`revealDelayMinutes`를 한 글자도 건드리지 않았으므로(`git diff --numstat` 5/5)
+  대본 도달성 검증(`ExitPresetScenarioReachabilityTest`)을 다시 돌릴 필요가 없다. `[연습]` 접두는
+  전부 유지했다(SCENARIO-017·018). 구간 id `ACT2_RUMOR`는 041 이후 코드·문서가 리터럴로 들고 있어
+  그대로 두었다 — 이제 이름과 문안의 성격이 어긋나지만, 개명은 문안 교체보다 훨씬 넓은 변경이다.
+
 ## 남은 것
 
 - **`ai/prd.md` §3 행은 추가했지만 PR 번호가 비어 있다** (CLAUDE.md 규칙 10). `EXITFREE-001~013·020~022`
@@ -118,6 +142,10 @@
   정리한다.
 - **제안 C(EXITFREE-030·031) 미착수.** tick 응답이 이번 tick에 무엇을 체결했는지 돌려주는 부분은 이번
   범위가 아니다. 지금은 화면이 진행 조회의 `exitExperience`·`entries[]`로 사후에만 알 수 있다.
+- **EXITFREE-025의 통합 검증이 남았다.** 예약을 **취소한** 사용자가 대기 구간을 계속 나갈 수 있다는 것과
+  재시작 직후 새 실행에서 다시 예약을 걸어야 나간다는 것은 지금 단위 테스트(모킹된 조회)와 조회 조건
+  (상태 무관·run 범위)의 정적 확인까지만 고정돼 있다. 실제 원장으로 도는 통합 회귀는 tester 몫이다.
+
 - **통합 테스트를 이 세션에서 돌리지 못했다.** Testcontainers는 이 하네스에 Docker가 없고(agent-mistakes
   2026-07-27), `bootRun`이 떠 있어 전체 `build`도 금지였다. unit·slice만 실행했다.
 - **프론트 타입의 옵셔널·폴백 제거.** 계약상 항상 non-null이지만 백엔드 배포 전이라 남겨 뒀다. 배포 확인

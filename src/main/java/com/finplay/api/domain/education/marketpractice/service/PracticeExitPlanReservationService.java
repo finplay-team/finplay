@@ -122,6 +122,38 @@ public class PracticeExitPlanReservationService {
 	}
 
 	/**
+	 * 052 EXITFREE-025 — <b>지금 든 진입에 예약이 걸려 있는가.</b> 3단계 대본의 대기 구간 탈출 판정
+	 * ({@link PracticeScenarioProgressService})이 이 값을 쓴다. 취소된 예약도 참이다 —
+	 * {@code existsEntryReservation}이 상태를 묻지 않는다.
+	 *
+	 * <p><b>왜 여기 있는가.</b> "그 진입에 예약이 걸렸는가"는 {@link #load}의 write-once 판정과 <b>같은
+	 * 질문</b>이다. 진행 계산이 판정을 따로 두면 화면이 "예약됨"으로 그린 상태에서 대본이 안 움직이거나 그
+	 * 반대가 된다.
+	 *
+	 * <p><b>두 자리에서 참을 준다 — 막다른 길을 만들지 않기 위해서다.</b>
+	 * <ul>
+	 *   <li>사용자 주도 예약 경로가 <b>열리지 않는 실행</b>(대본을 쓰지 않는 legacy·2단계 대본). legacy는 042
+	 *       그대로 매수 체결이 자동으로 걸고 2단계는 예약 자체를 두지 않으므로, 여기서 예약을 기다리게 하면
+	 *       걸 수단이 없는 사용자가 대본 앞에 영영 갇힌다. 판정은 {@link #pathRejection} <b>하나</b>를
+	 *       공유하므로 "예약을 걸 수 있는 실행"과 "예약을 기다리는 실행"이 어긋날 수 없다.</li>
+	 *   <li>보유가 있는데 <b>기준선(snapshot)이 없는</b> 깨진 원장. 그 상태에서는 {@link #load}가
+	 *       {@code PRACTICE_EVIDENCE_MISSING}으로 예약 생성까지 거부하므로 여기서도 막으면 나갈 문이 없다.
+	 *       042 동작(보유만으로 진행)으로 열어 두고, 깨진 원장을 드러내는 일은 예약 생성 경로에 맡긴다.</li>
+	 * </ul>
+	 */
+	@Transactional(readOnly = true)
+	public boolean entryReservationSatisfied(PracticeAttempt attempt) {
+		if (pathRejection(attempt) != null) {
+			return true;
+		}
+		return practiceRiskSnapshotRepository
+			.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(attempt.getId(), attempt.getRunNumber())
+			.map(snapshot -> practiceExitPlanQueryService.existsEntryReservation(
+				attempt.getId(), attempt.getRunNumber(), entryRequestHash(attempt, snapshot)))
+			.orElse(true);
+	}
+
+	/**
 	 * 생성 가능 여부를 한 번에 판정하고 생성에 필요한 값까지 함께 들고 나온다. {@code rejection}이
 	 * {@code null}이면 생성 가능이다.
 	 *
@@ -169,8 +201,7 @@ public class PracticeExitPlanReservationService {
 		//
 		// **개수를 세는 판정으로 대신하지 않는다.** 예약 없이 지나간 진입이 하나라도 있으면 "예약 수 <
 		// 진입 순번"이 남아 이미 예약한 진입에서 재생성이 조용히 다시 열린다.
-		String requestHash = ExitPlanPracticeOriginDto.auditRequestHash(
-			attempt.getId(), attempt.getRunNumber(), snapshot.getEntrySequence());
+		String requestHash = entryRequestHash(attempt, snapshot);
 		if (practiceExitPlanQueryService.existsEntryReservation(
 			attempt.getId(), attempt.getRunNumber(), requestHash)) {
 			return ReservationState.rejected(summary, ErrorCode.EXIT_PLAN_ALREADY_EXISTS);
@@ -194,6 +225,13 @@ public class PracticeExitPlanReservationService {
 			return ErrorCode.PRACTICE_STEP_LOCKED;
 		}
 		return scriptId == TutorialScenarioScriptId.CRYPTO_ORDER_BASICS_V1 ? ErrorCode.PRACTICE_STAGE_LOCKED : null;
+	}
+
+	// 그 진입을 가리키는 감사 해시. 자동 예약(042)·사용자 주도 예약(052 EXITFREE-020)·대기 구간 탈출
+	// 판정(052 EXITFREE-025)이 **같은 값**을 쓴다 — 식이 갈리면 같은 진입의 예약을 서로 못 알아본다.
+	private static String entryRequestHash(PracticeAttempt attempt, PracticeRiskSnapshot snapshot) {
+		return ExitPlanPracticeOriginDto.auditRequestHash(
+			attempt.getId(), attempt.getRunNumber(), snapshot.getEntrySequence());
 	}
 
 	private Holding requireHolding(PracticeAttempt attempt) {
