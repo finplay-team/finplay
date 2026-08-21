@@ -1040,6 +1040,7 @@ Base URL: `/api` (버전 프리픽스 없음 — 2026-07-23 확정, `docs/conven
 | 500 | INTERNAL_ERROR | 서버 내부 오류 |
 | 502 | OAUTH_PROVIDER_ERROR | OAuth 공급자 장애·타임아웃·비정상 응답 |
 | 502 | MARKET_DATA_PROVIDER_ERROR | 외부 시세 공급자 조회 실패 (빗썸 캔들 REST 장애·타임아웃·파싱 불가 — MKT-008) |
+| 502 | RANKING_STORE_UNAVAILABLE | Redis 연결 장애로 랭킹 조회 불가 — RankingService가 잡아 200 + status(UNAVAILABLE)로 흡수하므로 클라이언트에 그대로 노출되지는 않는다 (이슈 #288) |
 
 위 표는 **2026-08-04 기준 `com.finplay.api.common.ErrorCode` enum 전체(26개)와 1:1로 일치한다.** 코드가 정본이며, 새 오류 코드를 추가하면 이 표도 같은 커밋에서 갱신한다. 엔드포인트별로 어떤 코드가 나오는지는 `docs/api/`(도메인별 파일)가 정본이다.
 
