@@ -4,6 +4,7 @@ package com.finplay.api.market.feed;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -48,10 +49,26 @@ class BithumbFeedSimulatorTest {
 		eth = Instrument.create(Market.CRYPTO, "ETH", "이더리움", BigDecimal.ONE, 1000, true, FIXED_NOW);
 	}
 
+	// 이슈 #490 — 샌드박스 종목이 대상에서 빠지는 것을 조회 선택으로 고정한다. 실제 필터링은 쿼리가
+	// 하므로(InstrumentRepositoryTest가 검증) 여기서는 "샌드박스를 거르는 조회를 쓰는가"만 본다 —
+	// 예전 조회로 되돌리면 이 테스트가 잡는다.
+	@Test
+	@DisplayName("샌드박스를 거르지 않는 옛 조회는 쓰지 않는다")
+	void emitTicksUsesSandboxExcludingQueryOnly() {
+		when(instrumentRepository.findByMarketAndTradableTrueAndTutorialSampleFalseOrderByIdAsc(Market.CRYPTO))
+			.thenReturn(List.of(btc));
+
+		simulator.emitTicks();
+
+		verify(instrumentRepository).findByMarketAndTradableTrueAndTutorialSampleFalseOrderByIdAsc(Market.CRYPTO);
+		verify(instrumentRepository, never()).findByMarketAndTradableTrueOrderByIdAsc(any(Market.class));
+		verify(fakeBithumbFeedClient, times(1)).emitTick(eq("BTC"), any(BigDecimal.class), eq(FIXED_NOW));
+	}
+
 	@Test
 	@DisplayName("시딩된 코인 종목마다 emitTick이 정확히 1회씩 호출된다")
 	void emitTicksCallsEmitTickOnceForEachSeededCryptoInstrument() {
-		when(instrumentRepository.findByMarketAndTradableTrueOrderByIdAsc(Market.CRYPTO))
+		when(instrumentRepository.findByMarketAndTradableTrueAndTutorialSampleFalseOrderByIdAsc(Market.CRYPTO))
 			.thenReturn(List.of(btc, eth));
 
 		simulator.emitTicks();
@@ -63,7 +80,8 @@ class BithumbFeedSimulatorTest {
 	@Test
 	@DisplayName("종목이 없으면 emitTick을 호출하지 않는다")
 	void emitTicksDoesNothingWhenNoCryptoInstrumentsSeeded() {
-		when(instrumentRepository.findByMarketAndTradableTrueOrderByIdAsc(Market.CRYPTO)).thenReturn(List.of());
+		when(instrumentRepository.findByMarketAndTradableTrueAndTutorialSampleFalseOrderByIdAsc(Market.CRYPTO))
+			.thenReturn(List.of());
 
 		simulator.emitTicks();
 
@@ -73,7 +91,7 @@ class BithumbFeedSimulatorTest {
 	@Test
 	@DisplayName("같은 종목의 두 번째 틱은 첫 번째 가격에서 ±0.5% 범위 안에서만 변한다(랜덤워크가 이전 값을 기억)")
 	void secondTickWalksFromPreviousPriceWithinHalfPercent() {
-		when(instrumentRepository.findByMarketAndTradableTrueOrderByIdAsc(Market.CRYPTO))
+		when(instrumentRepository.findByMarketAndTradableTrueAndTutorialSampleFalseOrderByIdAsc(Market.CRYPTO))
 			.thenReturn(List.of(btc));
 
 		simulator.emitTicks();
