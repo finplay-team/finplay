@@ -11,14 +11,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.finplay.api.domain.auth.config.SecurityConfig;
 import com.finplay.api.domain.auth.token.AuthenticatedUser;
 import com.finplay.api.domain.auth.token.JwtTokenProvider;
-import com.finplay.api.global.exception.BusinessException;
-import com.finplay.api.global.exception.ErrorCode;
-import com.finplay.api.domain.education.marketpractice.entity.ExitPreset;
 import com.finplay.api.domain.education.marketpractice.dto.response.ExitPresetResponse;
 import com.finplay.api.domain.education.marketpractice.dto.response.PracticeAttemptResponse;
+import com.finplay.api.domain.education.marketpractice.entity.ExitPreset;
 import com.finplay.api.domain.education.marketpractice.service.PracticeAttemptDeadlockRetryService;
 import com.finplay.api.domain.education.marketpractice.service.PracticeAttemptService;
 import com.finplay.api.domain.market.entity.Market;
+import com.finplay.api.global.exception.BusinessException;
+import com.finplay.api.global.exception.ErrorCode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Optional;

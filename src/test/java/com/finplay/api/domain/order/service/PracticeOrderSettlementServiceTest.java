@@ -21,8 +21,8 @@ import com.finplay.api.domain.order.repository.OrderRepository;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
-import org.mockito.InOrder;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 class PracticeOrderSettlementServiceTest {

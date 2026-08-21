@@ -1,9 +1,9 @@
 // OAuth 공급자를 선택하고 state와 인가 URI 생성을 조합한다.
 package com.finplay.api.domain.auth.service;
 
-import com.finplay.api.domain.auth.oauth.provider.OAuthAuthorizationProvider;
 import com.finplay.api.domain.auth.oauth.OAuthAuthorizationResult;
 import com.finplay.api.domain.auth.oauth.OAuthProviderName;
+import com.finplay.api.domain.auth.oauth.provider.OAuthAuthorizationProvider;
 import com.finplay.api.domain.auth.oauth.state.OAuthPurpose;
 import com.finplay.api.domain.auth.oauth.state.OAuthStateGenerator;
 import com.finplay.api.global.exception.BusinessException;

@@ -1,8 +1,8 @@
 // 시장별 실현손익 전체 랭킹을 조회하는 컨트롤러
 package com.finplay.api.domain.ranking.controller;
 
-import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.auth.token.AuthenticatedUser;
+import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.ranking.dto.response.MyRankingResponse;
 import com.finplay.api.domain.ranking.dto.response.RankingListResponse;
 import com.finplay.api.domain.ranking.service.RankingService;

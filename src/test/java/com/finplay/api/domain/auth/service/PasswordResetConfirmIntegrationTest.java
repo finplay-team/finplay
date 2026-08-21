@@ -10,17 +10,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.finplay.api.TestcontainersConfiguration;
 import com.finplay.api.domain.account.entity.Account;
-import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.account.repository.AccountRepository;
 import com.finplay.api.domain.account.service.AccountService;
+import com.finplay.api.domain.auth.email.FakeEmailSender;
 import com.finplay.api.domain.auth.entity.PasswordResetVerification;
 import com.finplay.api.domain.auth.entity.SocialAccount;
 import com.finplay.api.domain.auth.entity.User;
-import com.finplay.api.domain.auth.email.FakeEmailSender;
 import com.finplay.api.domain.auth.oauth.OAuthProviderName;
 import com.finplay.api.domain.auth.repository.PasswordResetVerificationRepository;
 import com.finplay.api.domain.auth.repository.SocialAccountRepository;
 import com.finplay.api.domain.auth.repository.UserRepository;
+import com.finplay.api.domain.market.entity.Market;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;

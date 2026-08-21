@@ -3,25 +3,22 @@ package com.finplay.api.domain.auth.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finplay.api.TestcontainersConfiguration;
+import com.finplay.api.domain.auth.entity.RefreshToken;
+import com.finplay.api.domain.auth.entity.User;
+import jakarta.persistence.EntityManager;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.util.HexFormat;
 import java.util.List;
-
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.util.ReflectionTestUtils;
-
-import com.finplay.api.TestcontainersConfiguration;
-import com.finplay.api.domain.auth.entity.RefreshToken;
-import com.finplay.api.domain.auth.entity.User;
-
-import jakarta.persistence.EntityManager;
 
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)

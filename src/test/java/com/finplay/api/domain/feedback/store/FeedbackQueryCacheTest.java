@@ -16,9 +16,9 @@ import static org.mockito.Mockito.when;
 
 import com.finplay.api.domain.feedback.config.FeedbackNewsProperties;
 import com.finplay.api.domain.feedback.config.FeedbackQueryCacheProperties;
+import com.finplay.api.domain.feedback.dto.response.BriefingNewsItem;
 import com.finplay.api.domain.feedback.entity.MarketNewsItemType;
 import com.finplay.api.domain.feedback.entity.NewsSummaryScope;
-import com.finplay.api.domain.feedback.dto.response.BriefingNewsItem;
 import com.finplay.api.global.lock.RedisLock;
 import java.time.Clock;
 import java.time.Duration;

@@ -8,12 +8,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.finplay.api.domain.auth.token.AuthenticatedUser;
+import com.finplay.api.domain.auth.token.JwtTokenProvider;
+import com.finplay.api.global.exception.ErrorCode;
+import com.finplay.api.global.filter.RequestIdFilter;
+import com.jayway.jsonpath.JsonPath;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.Map;
-
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -32,12 +36,6 @@ import org.springframework.test.web.servlet.RequestBuilder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
-
-import com.finplay.api.domain.auth.token.AuthenticatedUser;
-import com.finplay.api.domain.auth.token.JwtTokenProvider;
-import com.finplay.api.global.exception.ErrorCode;
-import com.finplay.api.global.filter.RequestIdFilter;
-import com.jayway.jsonpath.JsonPath;
 
 // /test/protected는 프로덕션 화이트리스트에 없으므로 anyRequest().authenticated()에 걸린다.
 // 테스트 편의로 SecurityConfig의 공개 경로를 넓히지 않는다.

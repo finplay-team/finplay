@@ -1,8 +1,6 @@
 // 매도 직후 피드백 조회 API의 인증·직렬화·오류 매핑 계약을 검증하는 WebMvc 슬라이스 테스트다.
 package com.finplay.api.domain.feedback.controller;
 
-import com.finplay.api.domain.feedback.service.PostSellFeedbackService;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -14,11 +12,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.finplay.api.domain.auth.config.SecurityConfig;
 import com.finplay.api.domain.auth.token.AuthenticatedUser;
 import com.finplay.api.domain.auth.token.JwtTokenProvider;
-import com.finplay.api.global.exception.BusinessException;
-import com.finplay.api.global.exception.ErrorCode;
-import com.finplay.api.domain.feedback.entity.HoldHighBasis;
-import com.finplay.api.domain.feedback.entity.MarketNewsItemType;
-import com.finplay.api.domain.feedback.entity.PostSellFeedbackStatus;
 import com.finplay.api.domain.feedback.dto.response.CounterfactualScenario;
 import com.finplay.api.domain.feedback.dto.response.Counterfactuals;
 import com.finplay.api.domain.feedback.dto.response.HeldPriceMoveItem;
@@ -26,6 +19,12 @@ import com.finplay.api.domain.feedback.dto.response.NewsItem;
 import com.finplay.api.domain.feedback.dto.response.PeerComparison;
 import com.finplay.api.domain.feedback.dto.response.PostSellFeedbackResponse;
 import com.finplay.api.domain.feedback.dto.response.PostSellFlow;
+import com.finplay.api.domain.feedback.entity.HoldHighBasis;
+import com.finplay.api.domain.feedback.entity.MarketNewsItemType;
+import com.finplay.api.domain.feedback.entity.PostSellFeedbackStatus;
+import com.finplay.api.domain.feedback.service.PostSellFeedbackService;
+import com.finplay.api.global.exception.BusinessException;
+import com.finplay.api.global.exception.ErrorCode;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;

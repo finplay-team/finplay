@@ -1,9 +1,9 @@
 // 새 이메일 재인증·중복·발송 제한 판정, 인증번호 발송과 확인 시 검증·소비를 담당하는 서비스
 package com.finplay.api.domain.auth.service;
 
+import com.finplay.api.domain.auth.email.EmailSender;
 import com.finplay.api.domain.auth.entity.EmailChangeVerification;
 import com.finplay.api.domain.auth.entity.User;
-import com.finplay.api.domain.auth.email.EmailSender;
 import com.finplay.api.domain.auth.repository.EmailChangeVerificationRepository;
 import com.finplay.api.domain.auth.repository.ReauthTokenRepository;
 import com.finplay.api.domain.auth.repository.SocialAccountRepository;

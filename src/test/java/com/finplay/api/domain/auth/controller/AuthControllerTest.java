@@ -15,11 +15,19 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.finplay.api.domain.auth.config.SecurityConfig;
+import com.finplay.api.domain.auth.dto.response.MemberResponse;
+import com.finplay.api.domain.auth.dto.response.TokenResponse;
+import com.finplay.api.domain.auth.entity.SignupMethod;
+import com.finplay.api.domain.auth.service.AuthService;
+import com.finplay.api.domain.auth.token.AuthenticatedUser;
+import com.finplay.api.domain.auth.token.JwtTokenProvider;
+import com.finplay.api.global.exception.BusinessException;
+import com.finplay.api.global.exception.ErrorCode;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Stream;
-
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -32,17 +40,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
-
-import com.finplay.api.domain.auth.config.SecurityConfig;
-import com.finplay.api.domain.auth.entity.SignupMethod;
-import com.finplay.api.domain.auth.dto.response.MemberResponse;
-import com.finplay.api.domain.auth.dto.response.TokenResponse;
-import com.finplay.api.domain.auth.service.AuthService;
-import com.finplay.api.domain.auth.token.AuthenticatedUser;
-import com.finplay.api.domain.auth.token.JwtTokenProvider;
-import com.finplay.api.global.exception.BusinessException;
-import com.finplay.api.global.exception.ErrorCode;
-
 import tools.jackson.databind.ObjectMapper;
 
 // 대상 경로가 공개 화이트리스트에 있으므로 실제 Security 체인을 태워 화이트리스트 계약까지 함께 검증한다.

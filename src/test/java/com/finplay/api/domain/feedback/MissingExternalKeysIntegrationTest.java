@@ -1,8 +1,6 @@
 // 외부 API 키 4종이 하나도 없는 조합에서 기동·수집이 성립하는지 한자리에서 고정하는 통합 테스트다.
 package com.finplay.api.domain.feedback;
 
-import com.finplay.api.domain.feedback.service.NewsCollectionService;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
@@ -12,6 +10,7 @@ import com.finplay.api.domain.feedback.collector.FakeDisclosureCollector;
 import com.finplay.api.domain.feedback.collector.FakeNewsCollector;
 import com.finplay.api.domain.feedback.collector.NewsCollector;
 import com.finplay.api.domain.feedback.repository.MarketNewsItemRepository;
+import com.finplay.api.domain.feedback.service.NewsCollectionService;
 import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.market.service.InstrumentService;
 import org.junit.jupiter.api.DisplayName;

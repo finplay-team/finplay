@@ -2,10 +2,10 @@
 package com.finplay.api.domain.portfolio.service;
 
 import com.finplay.api.domain.account.entity.Account;
-import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.account.service.AccountService;
-import com.finplay.api.domain.portfolio.entity.Holding;
+import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.portfolio.dto.response.HoldingListItemResponse;
+import com.finplay.api.domain.portfolio.entity.Holding;
 import com.finplay.api.domain.portfolio.repository.HoldingRepository;
 import java.util.List;
 import java.util.Optional;

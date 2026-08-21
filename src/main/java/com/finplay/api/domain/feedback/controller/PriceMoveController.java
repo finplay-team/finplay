@@ -1,9 +1,8 @@
 // 종목별 변동 원인 카드 목록 조회 요청을 처리하는 컨트롤러
 package com.finplay.api.domain.feedback.controller;
 
-import com.finplay.api.domain.feedback.service.PriceMoveQueryService;
-
 import com.finplay.api.domain.feedback.dto.response.PriceMoveListResponse;
+import com.finplay.api.domain.feedback.service.PriceMoveQueryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;

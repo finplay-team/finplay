@@ -1,8 +1,8 @@
 // 시장별 보유 종목 목록 조회를 담당하는 컨트롤러
 package com.finplay.api.domain.portfolio.controller;
 
-import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.auth.token.AuthenticatedUser;
+import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.portfolio.dto.response.HoldingListItemResponse;
 import com.finplay.api.domain.portfolio.service.HoldingService;
 import java.util.List;

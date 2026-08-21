@@ -12,13 +12,13 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.finplay.api.domain.feedback.config.FeedbackCryptoProperties;
+import com.finplay.api.domain.feedback.dto.response.PriceMoveListResponse;
 import com.finplay.api.domain.feedback.entity.FeedbackContentStatus;
 import com.finplay.api.domain.feedback.entity.MarketNewsItem;
 import com.finplay.api.domain.feedback.entity.MarketNewsItemType;
 import com.finplay.api.domain.feedback.entity.NarrativeSource;
 import com.finplay.api.domain.feedback.entity.PriceMoveEvent;
 import com.finplay.api.domain.feedback.entity.PriceMoveEventSource;
-import com.finplay.api.domain.feedback.dto.response.PriceMoveListResponse;
 import com.finplay.api.domain.feedback.repository.PriceMoveEventRepository;
 import com.finplay.api.domain.feedback.repository.PriceMoveEventSourceRepository;
 import com.finplay.api.domain.market.entity.Instrument;

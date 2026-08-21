@@ -16,12 +16,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.auth.config.SecurityConfig;
 import com.finplay.api.domain.auth.token.AuthenticatedUser;
 import com.finplay.api.domain.auth.token.JwtTokenProvider;
-import com.finplay.api.global.exception.BusinessException;
-import com.finplay.api.global.exception.ErrorCode;
+import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.order.dto.request.LimitOrderCreateRequest;
 import com.finplay.api.domain.order.dto.request.LimitOrderUpdateRequest;
 import com.finplay.api.domain.order.dto.request.OrderCreateRequest;
@@ -33,6 +31,8 @@ import com.finplay.api.domain.order.service.LimitOrderCancelService;
 import com.finplay.api.domain.order.service.LimitOrderModifyService;
 import com.finplay.api.domain.order.service.LimitOrderService;
 import com.finplay.api.domain.order.service.OrderService;
+import com.finplay.api.global.exception.BusinessException;
+import com.finplay.api.global.exception.ErrorCode;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;

@@ -1,13 +1,13 @@
 // 인증 사용자의 거래 가능 종목 즐겨찾기 조회·등록·해제를 처리하는 서비스(#193: 인메모리 저장으로 전환)
 package com.finplay.api.domain.favorite.service;
 
-import com.finplay.api.global.exception.BusinessException;
-import com.finplay.api.global.exception.ErrorCode;
-import com.finplay.api.domain.favorite.model.Favorite;
 import com.finplay.api.domain.favorite.dto.response.FavoriteListResponse;
 import com.finplay.api.domain.favorite.dto.response.FavoriteResponse;
+import com.finplay.api.domain.favorite.model.Favorite;
 import com.finplay.api.domain.market.entity.Instrument;
 import com.finplay.api.domain.market.service.InstrumentService;
+import com.finplay.api.global.exception.BusinessException;
+import com.finplay.api.global.exception.ErrorCode;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Comparator;

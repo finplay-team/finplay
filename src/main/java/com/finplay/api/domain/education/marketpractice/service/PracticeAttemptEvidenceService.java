@@ -1,8 +1,6 @@
 // favorite·intention 없이 현재 attempt/run의 snapshot·주문 원장·holding을 재해석하는 서비스
 package com.finplay.api.domain.education.marketpractice.service;
 
-import com.finplay.api.global.exception.BusinessException;
-import com.finplay.api.global.exception.ErrorCode;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeAttempt;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeRiskSnapshot;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeSellCause;
@@ -12,6 +10,8 @@ import com.finplay.api.domain.order.service.PracticeExitPlanQueryService;
 import com.finplay.api.domain.order.service.PracticeRunTradeSummaryDto;
 import com.finplay.api.domain.order.service.TradeService;
 import com.finplay.api.domain.portfolio.service.HoldingService;
+import com.finplay.api.global.exception.BusinessException;
+import com.finplay.api.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

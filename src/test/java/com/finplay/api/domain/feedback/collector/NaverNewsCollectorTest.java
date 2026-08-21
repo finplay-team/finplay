@@ -1,9 +1,6 @@
 // 네이버 뉴스 검색 응답 매핑·제목 세척·발행일자 무필터·호출 실패 흡수를 MockRestServiceServer로 검증한다.
 package com.finplay.api.domain.feedback.collector;
 
-import com.finplay.api.domain.feedback.service.NewsSearchQueryBuilder;
-import com.finplay.api.domain.feedback.service.NewsTitleFilter;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
@@ -12,6 +9,8 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.finplay.api.domain.feedback.config.NaverSearchProperties;
+import com.finplay.api.domain.feedback.service.NewsSearchQueryBuilder;
+import com.finplay.api.domain.feedback.service.NewsTitleFilter;
 import com.finplay.api.domain.market.entity.Instrument;
 import com.finplay.api.domain.market.entity.Market;
 import java.lang.reflect.RecordComponent;

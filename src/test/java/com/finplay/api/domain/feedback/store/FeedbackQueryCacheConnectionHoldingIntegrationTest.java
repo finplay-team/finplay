@@ -1,12 +1,6 @@
 // 캐시 락 대기 동안 JDBC 커넥션을 쥐는지 대조한다 — 조회를 통째로 @Transactional로 감싼 테스트 전용 래퍼(대조군)와 지금 구조(방어군)를 같은 조건에서 비교한다 (PR #257 남은 위험 1).
 package com.finplay.api.domain.feedback.store;
 
-import com.finplay.api.domain.feedback.service.InstrumentNewsQueryService;
-import com.finplay.api.domain.feedback.service.MarketBriefingService;
-import com.finplay.api.domain.feedback.service.MarketBriefingPromptDto;
-import com.finplay.api.domain.feedback.service.NarrativeService;
-import com.finplay.api.domain.feedback.service.NarrativeResultDto;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -15,6 +9,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.finplay.api.TestcontainersConfiguration;
+import com.finplay.api.domain.feedback.dto.response.InstrumentNewsResponse;
+import com.finplay.api.domain.feedback.dto.response.MarketBriefingResponse;
 import com.finplay.api.domain.feedback.entity.FeedbackContentStatus;
 import com.finplay.api.domain.feedback.entity.InstrumentNewsSummary;
 import com.finplay.api.domain.feedback.entity.MarketBriefing;
@@ -22,18 +18,21 @@ import com.finplay.api.domain.feedback.entity.MarketNewsItem;
 import com.finplay.api.domain.feedback.entity.MarketNewsItemType;
 import com.finplay.api.domain.feedback.entity.NarrativeSource;
 import com.finplay.api.domain.feedback.entity.NewsSummaryScope;
-import com.finplay.api.domain.feedback.dto.response.InstrumentNewsResponse;
-import com.finplay.api.domain.feedback.dto.response.MarketBriefingResponse;
 import com.finplay.api.domain.feedback.repository.InstrumentNewsSummaryRepository;
 import com.finplay.api.domain.feedback.repository.MarketBriefingRepository;
 import com.finplay.api.domain.feedback.repository.MarketNewsItemRepository;
-import com.finplay.api.global.lock.RedisLock;
+import com.finplay.api.domain.feedback.service.InstrumentNewsQueryService;
+import com.finplay.api.domain.feedback.service.MarketBriefingPromptDto;
+import com.finplay.api.domain.feedback.service.MarketBriefingService;
+import com.finplay.api.domain.feedback.service.NarrativeResultDto;
+import com.finplay.api.domain.feedback.service.NarrativeService;
 import com.finplay.api.domain.market.entity.Instrument;
 import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.market.entity.StockReplaySession;
 import com.finplay.api.domain.market.repository.InstrumentRepository;
 import com.finplay.api.domain.market.repository.StockReplaySessionRepository;
 import com.finplay.api.domain.market.service.InstrumentService;
+import com.finplay.api.global.lock.RedisLock;
 import com.zaxxer.hikari.HikariDataSource;
 import java.math.BigDecimal;
 import java.time.Clock;

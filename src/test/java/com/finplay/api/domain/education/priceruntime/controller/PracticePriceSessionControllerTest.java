@@ -14,12 +14,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.finplay.api.domain.auth.config.SecurityConfig;
 import com.finplay.api.domain.auth.token.AuthenticatedUser;
 import com.finplay.api.domain.auth.token.JwtTokenProvider;
-import com.finplay.api.global.exception.BusinessException;
-import com.finplay.api.global.exception.ErrorCode;
-import com.finplay.api.domain.education.priceruntime.entity.PracticePriceSessionStatus;
 import com.finplay.api.domain.education.priceruntime.dto.response.PracticePriceSessionResponse;
+import com.finplay.api.domain.education.priceruntime.entity.PracticePriceSessionStatus;
 import com.finplay.api.domain.education.priceruntime.service.PracticePriceSessionService;
 import com.finplay.api.domain.education.priceruntime.service.PracticePriceTickService;
+import com.finplay.api.global.exception.BusinessException;
+import com.finplay.api.global.exception.ErrorCode;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Optional;

@@ -1,15 +1,10 @@
 // 조회 캐시 배선 대조 테스트 두 갈래(enabled=true/false)가 공유하는 픽스처와 시나리오 — 시나리오를 여기 한 벌만 두어 두 갈래가 갈리지 않게 한다.
 package com.finplay.api.domain.feedback.store;
 
-import com.finplay.api.domain.feedback.service.InstrumentNewsQueryService;
-import com.finplay.api.domain.feedback.service.MarketBriefingService;
-
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mockingDetails;
 
 import com.finplay.api.TestcontainersConfiguration;
-import com.finplay.api.global.config.TestClock;
-import com.finplay.api.global.config.TestClockConfig;
 import com.finplay.api.domain.feedback.entity.InstrumentNewsSummary;
 import com.finplay.api.domain.feedback.entity.MarketBriefing;
 import com.finplay.api.domain.feedback.entity.MarketNewsItem;
@@ -19,12 +14,16 @@ import com.finplay.api.domain.feedback.entity.NewsSummaryScope;
 import com.finplay.api.domain.feedback.repository.InstrumentNewsSummaryRepository;
 import com.finplay.api.domain.feedback.repository.MarketBriefingRepository;
 import com.finplay.api.domain.feedback.repository.MarketNewsItemRepository;
+import com.finplay.api.domain.feedback.service.InstrumentNewsQueryService;
+import com.finplay.api.domain.feedback.service.MarketBriefingService;
 import com.finplay.api.domain.market.entity.Instrument;
 import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.market.entity.StockReplaySession;
 import com.finplay.api.domain.market.repository.InstrumentRepository;
 import com.finplay.api.domain.market.repository.StockReplaySessionRepository;
 import com.finplay.api.domain.market.service.InstrumentService;
+import com.finplay.api.global.config.TestClock;
+import com.finplay.api.global.config.TestClockConfig;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;

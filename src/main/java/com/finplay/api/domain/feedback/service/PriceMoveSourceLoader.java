@@ -1,9 +1,9 @@
 // 변동 카드들의 근거 기사를 한 번에 읽어 카드 id로 묶는 조회 전용 컴포넌트
 package com.finplay.api.domain.feedback.service;
 
+import com.finplay.api.domain.feedback.dto.response.NewsItem;
 import com.finplay.api.domain.feedback.entity.PriceMoveEvent;
 import com.finplay.api.domain.feedback.entity.PriceMoveEventSource;
-import com.finplay.api.domain.feedback.dto.response.NewsItem;
 import com.finplay.api.domain.feedback.repository.PriceMoveEventSourceRepository;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;

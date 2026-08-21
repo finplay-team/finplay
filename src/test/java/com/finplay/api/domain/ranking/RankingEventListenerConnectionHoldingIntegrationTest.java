@@ -9,11 +9,11 @@ import static org.mockito.Mockito.reset;
 
 import com.finplay.api.TestcontainersConfiguration;
 import com.finplay.api.domain.account.entity.Account;
-import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.account.event.RealizedPnlUpdatedEvent;
 import com.finplay.api.domain.account.repository.AccountRepository;
 import com.finplay.api.domain.auth.entity.User;
 import com.finplay.api.domain.auth.repository.UserRepository;
+import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.ranking.store.RankingStore;
 import com.zaxxer.hikari.HikariDataSource;
 import java.time.LocalDateTime;

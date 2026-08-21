@@ -1,9 +1,8 @@
 // 시장 단위 개장 전 브리핑 조회 요청을 처리하는 컨트롤러
 package com.finplay.api.domain.feedback.controller;
 
-import com.finplay.api.domain.feedback.service.MarketBriefingService;
-
 import com.finplay.api.domain.feedback.dto.response.MarketBriefingResponse;
+import com.finplay.api.domain.feedback.service.MarketBriefingService;
 import com.finplay.api.domain.market.entity.Market;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;

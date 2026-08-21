@@ -1,11 +1,11 @@
 // 사용자·시장별 튜토리얼 계좌의 get-or-create·리셋을 담당하는 서비스
 package com.finplay.api.domain.account.service;
 
-import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.account.entity.TutorialAccount;
 import com.finplay.api.domain.account.repository.TutorialAccountRepository;
 import com.finplay.api.domain.auth.entity.User;
 import com.finplay.api.domain.auth.service.UserQueryService;
+import com.finplay.api.domain.market.entity.Market;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;

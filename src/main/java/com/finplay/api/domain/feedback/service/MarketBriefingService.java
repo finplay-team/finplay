@@ -2,12 +2,12 @@
 package com.finplay.api.domain.feedback.service;
 
 import com.finplay.api.domain.feedback.config.FeedbackNewsProperties;
+import com.finplay.api.domain.feedback.dto.response.BriefingNewsItem;
+import com.finplay.api.domain.feedback.dto.response.MarketBriefingResponse;
 import com.finplay.api.domain.feedback.entity.FeedbackContentStatus;
 import com.finplay.api.domain.feedback.entity.MarketBriefing;
 import com.finplay.api.domain.feedback.entity.MarketNewsItem;
 import com.finplay.api.domain.feedback.entity.MarketNewsItemType;
-import com.finplay.api.domain.feedback.dto.response.BriefingNewsItem;
-import com.finplay.api.domain.feedback.dto.response.MarketBriefingResponse;
 import com.finplay.api.domain.feedback.repository.MarketBriefingRepository;
 import com.finplay.api.domain.feedback.repository.MarketNewsItemRepository;
 import com.finplay.api.domain.feedback.store.FeedbackQueryCache;

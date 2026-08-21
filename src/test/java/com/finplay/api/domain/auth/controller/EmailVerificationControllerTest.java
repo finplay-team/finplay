@@ -12,8 +12,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.finplay.api.domain.auth.config.SecurityConfig;
-import com.finplay.api.domain.auth.service.EmailVerificationService;
 import com.finplay.api.domain.auth.dto.response.SignupTokenResponse;
+import com.finplay.api.domain.auth.service.EmailVerificationService;
 import com.finplay.api.domain.auth.token.JwtTokenProvider;
 import com.finplay.api.global.exception.BusinessException;
 import com.finplay.api.global.exception.ErrorCode;

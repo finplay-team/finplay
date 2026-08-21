@@ -5,9 +5,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finplay.api.domain.account.entity.Account;
-import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.auth.entity.User;
 import com.finplay.api.domain.market.entity.Instrument;
+import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.market.entity.StockReplaySession;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;

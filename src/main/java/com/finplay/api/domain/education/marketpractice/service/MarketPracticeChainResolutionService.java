@@ -1,10 +1,8 @@
 // 시장가/지정가 매매 기반 실습 2단계의 favorite -> intention -> buyTrade -> holding evidence chain을 해석하는 서비스
 package com.finplay.api.domain.education.marketpractice.service;
 
-import com.finplay.api.global.exception.BusinessException;
-import com.finplay.api.global.exception.ErrorCode;
-import com.finplay.api.domain.education.model.PracticeIntention;
 import com.finplay.api.domain.education.marketpractice.repository.PracticeMarketObservationRepository;
+import com.finplay.api.domain.education.model.PracticeIntention;
 import com.finplay.api.domain.education.repository.PracticeIntentionRepository;
 import com.finplay.api.domain.education.service.PracticeIntentionService;
 import com.finplay.api.domain.favorite.dto.response.FavoriteResponse;
@@ -15,6 +13,8 @@ import com.finplay.api.domain.market.service.InstrumentService;
 import com.finplay.api.domain.order.entity.Trade;
 import com.finplay.api.domain.order.service.TradeService;
 import com.finplay.api.domain.portfolio.service.HoldingService;
+import com.finplay.api.global.exception.BusinessException;
+import com.finplay.api.global.exception.ErrorCode;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;

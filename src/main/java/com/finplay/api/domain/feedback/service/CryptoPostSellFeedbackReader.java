@@ -1,10 +1,6 @@
 // 코인 매도 회고의 파생 사실·반사실·집단 비교를 조립하는 컴포넌트 (spec §FEED-012, 이슈 #275).
 package com.finplay.api.domain.feedback.service;
 
-import com.finplay.api.global.exception.BusinessException;
-import com.finplay.api.global.exception.ErrorCode;
-import com.finplay.api.domain.feedback.entity.HoldHighBasis;
-import com.finplay.api.domain.feedback.entity.PostSellFeedbackStatus;
 import com.finplay.api.domain.feedback.dto.response.CounterfactualScenario;
 import com.finplay.api.domain.feedback.dto.response.Counterfactuals;
 import com.finplay.api.domain.feedback.dto.response.HeldPriceMoveItem;
@@ -12,12 +8,16 @@ import com.finplay.api.domain.feedback.dto.response.NewsItem;
 import com.finplay.api.domain.feedback.dto.response.PeerComparison;
 import com.finplay.api.domain.feedback.dto.response.PostSellFeedbackResponse;
 import com.finplay.api.domain.feedback.dto.response.PostSellFlow;
+import com.finplay.api.domain.feedback.entity.HoldHighBasis;
+import com.finplay.api.domain.feedback.entity.PostSellFeedbackStatus;
 import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.market.service.CandleInterval;
 import com.finplay.api.domain.market.service.CandleQueryService;
 import com.finplay.api.domain.market.service.CryptoCandleDto;
 import com.finplay.api.domain.order.entity.Trade;
 import com.finplay.api.domain.portfolio.service.SellAllocationSummaryDto;
+import com.finplay.api.global.exception.BusinessException;
+import com.finplay.api.global.exception.ErrorCode;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;

@@ -1,12 +1,11 @@
 // 프로필이 NewsCollector 구현을 가르는지, 그리고 prod 빈이 실제로 조립되는지 보증하는 회귀 테스트.
 package com.finplay.api.domain.feedback.collector;
 
-import com.finplay.api.domain.feedback.service.NewsSearchQueryBuilder;
-import com.finplay.api.domain.feedback.service.NewsTitleFilter;
-
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finplay.api.domain.feedback.config.NaverSearchProperties;
+import com.finplay.api.domain.feedback.service.NewsSearchQueryBuilder;
+import com.finplay.api.domain.feedback.service.NewsTitleFilter;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;

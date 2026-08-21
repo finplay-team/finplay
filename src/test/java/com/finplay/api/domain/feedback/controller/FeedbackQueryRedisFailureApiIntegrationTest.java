@@ -9,8 +9,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.finplay.api.TestcontainersConfiguration;
 import com.finplay.api.domain.auth.token.AuthenticatedUser;
 import com.finplay.api.domain.auth.token.JwtTokenProvider;
-import com.finplay.api.global.config.TestClock;
-import com.finplay.api.global.config.TestClockConfig;
 import com.finplay.api.domain.feedback.entity.InstrumentNewsSummary;
 import com.finplay.api.domain.feedback.entity.MarketBriefing;
 import com.finplay.api.domain.feedback.entity.MarketNewsItem;
@@ -25,6 +23,8 @@ import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.market.entity.StockReplaySession;
 import com.finplay.api.domain.market.repository.StockReplaySessionRepository;
 import com.finplay.api.domain.market.service.InstrumentService;
+import com.finplay.api.global.config.TestClock;
+import com.finplay.api.global.config.TestClockConfig;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;

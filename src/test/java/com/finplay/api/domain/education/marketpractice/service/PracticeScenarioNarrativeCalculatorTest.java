@@ -1,12 +1,12 @@
 // 대본 커서에서 파생하는 막·진행 여부·원인 상태와 사건 공개 게이트를 실제 대본으로 검증한다.
 package com.finplay.api.domain.education.marketpractice.service;
 
-import com.finplay.api.domain.market.entity.TutorialScenarioScriptId;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finplay.api.domain.education.marketpractice.entity.PracticeAttempt;
 import com.finplay.api.domain.market.entity.Instrument;
 import com.finplay.api.domain.market.entity.Market;
+import com.finplay.api.domain.market.entity.TutorialScenarioScriptId;
 import com.finplay.api.domain.market.service.TutorialPriceGenerator;
 import com.finplay.api.domain.market.service.TutorialScenarioScript;
 import com.finplay.api.domain.market.service.TutorialScenarioScriptLoader;

@@ -9,10 +9,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.auth.config.SecurityConfig;
 import com.finplay.api.domain.auth.token.AuthenticatedUser;
 import com.finplay.api.domain.auth.token.JwtTokenProvider;
+import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.portfolio.dto.response.HoldingListItemResponse;
 import com.finplay.api.domain.portfolio.service.HoldingService;
 import java.math.BigDecimal;

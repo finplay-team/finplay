@@ -1,10 +1,6 @@
 // 코인 배치가 실제로 갱신했을 때만 조회 캐시를 지우고, 건너뛴 실행 뒤에는 캐시가 남는지 실 Redis·MySQL로 검증한다 (tasks.md 항목 5, ADR-0015 §3).
 package com.finplay.api.domain.feedback.store;
 
-import com.finplay.api.domain.feedback.service.InstrumentNewsSummaryService;
-import com.finplay.api.domain.feedback.service.NarrativeService;
-import com.finplay.api.domain.feedback.service.NarrativeResultDto;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.clearInvocations;
@@ -12,6 +8,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.finplay.api.domain.feedback.dto.response.InstrumentNewsResponse;
+import com.finplay.api.domain.feedback.dto.response.MarketBriefingResponse;
 import com.finplay.api.domain.feedback.entity.FeedbackContentStatus;
 import com.finplay.api.domain.feedback.entity.InstrumentNewsSummary;
 import com.finplay.api.domain.feedback.entity.MarketBriefing;
@@ -19,8 +17,9 @@ import com.finplay.api.domain.feedback.entity.MarketNewsItem;
 import com.finplay.api.domain.feedback.entity.MarketNewsItemType;
 import com.finplay.api.domain.feedback.entity.NarrativeSource;
 import com.finplay.api.domain.feedback.entity.NewsSummaryScope;
-import com.finplay.api.domain.feedback.dto.response.InstrumentNewsResponse;
-import com.finplay.api.domain.feedback.dto.response.MarketBriefingResponse;
+import com.finplay.api.domain.feedback.service.InstrumentNewsSummaryService;
+import com.finplay.api.domain.feedback.service.NarrativeResultDto;
+import com.finplay.api.domain.feedback.service.NarrativeService;
 import com.finplay.api.domain.market.entity.Market;
 import java.time.LocalDateTime;
 import java.time.LocalTime;

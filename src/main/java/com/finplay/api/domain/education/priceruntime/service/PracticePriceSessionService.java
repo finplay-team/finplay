@@ -1,11 +1,9 @@
 // 코인 튜토리얼 가상 가격 세션의 생성·조회를 담당하는 서비스
 package com.finplay.api.domain.education.priceruntime.service;
 
-import com.finplay.api.global.exception.BusinessException;
-import com.finplay.api.global.exception.ErrorCode;
+import com.finplay.api.domain.education.priceruntime.dto.response.PracticePriceSessionResponse;
 import com.finplay.api.domain.education.priceruntime.entity.PracticePriceSession;
 import com.finplay.api.domain.education.priceruntime.entity.PracticePriceSessionStatus;
-import com.finplay.api.domain.education.priceruntime.dto.response.PracticePriceSessionResponse;
 import com.finplay.api.domain.education.priceruntime.repository.PracticePriceSessionRepository;
 import com.finplay.api.domain.market.entity.Instrument;
 import com.finplay.api.domain.market.entity.Market;
@@ -13,6 +11,8 @@ import com.finplay.api.domain.market.service.InstrumentService;
 import com.finplay.api.domain.market.service.PriceQueryService;
 import com.finplay.api.domain.market.service.PriceQuoteDto;
 import com.finplay.api.domain.market.service.PriceStatus;
+import com.finplay.api.global.exception.BusinessException;
+import com.finplay.api.global.exception.ErrorCode;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.security.SecureRandom;

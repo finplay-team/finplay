@@ -1,9 +1,9 @@
 // 주문 내역 커서 페이지네이션의 커서 문자열을 파싱·인코딩하는 값 객체
 package com.finplay.api.domain.order.service;
 
+import com.finplay.api.domain.order.entity.Order;
 import com.finplay.api.global.exception.BusinessException;
 import com.finplay.api.global.exception.ErrorCode;
-import com.finplay.api.domain.order.entity.Order;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;

@@ -4,8 +4,6 @@ package com.finplay.api.domain.market.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finplay.api.TestcontainersConfiguration;
-import com.finplay.api.global.config.TestClock;
-import com.finplay.api.global.config.TestClockConfig;
 import com.finplay.api.domain.market.entity.ImportStatus;
 import com.finplay.api.domain.market.entity.Instrument;
 import com.finplay.api.domain.market.entity.Market;
@@ -15,6 +13,8 @@ import com.finplay.api.domain.market.repository.InstrumentRepository;
 import com.finplay.api.domain.market.repository.MarketDataImportRepository;
 import com.finplay.api.domain.market.repository.StockCandleRepository;
 import com.finplay.api.domain.market.repository.StockDailyCandleRepository;
+import com.finplay.api.global.config.TestClock;
+import com.finplay.api.global.config.TestClockConfig;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;

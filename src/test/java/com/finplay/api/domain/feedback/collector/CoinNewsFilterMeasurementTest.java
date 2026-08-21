@@ -1,12 +1,11 @@
 // 코인 뉴스 제목 필터 후보를 같은 데이터로 대조하는 측정기 (이슈 #179 1단계) — 외부 호출 없이 덤프만 읽는다.
 package com.finplay.api.domain.feedback.collector;
 
-import com.finplay.api.domain.feedback.service.NewsTitleFilter;
-
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.finplay.api.domain.feedback.service.NewsTitleFilter;
 import com.finplay.api.domain.market.entity.Instrument;
 import com.finplay.api.domain.market.entity.Market;
 import java.io.IOException;

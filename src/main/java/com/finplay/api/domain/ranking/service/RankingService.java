@@ -2,13 +2,13 @@
 package com.finplay.api.domain.ranking.service;
 
 import com.finplay.api.domain.account.entity.Account;
-import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.account.service.AccountService;
+import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.order.service.TradeService;
-import com.finplay.api.domain.ranking.entity.RankingStatus;
 import com.finplay.api.domain.ranking.dto.response.MyRankingResponse;
 import com.finplay.api.domain.ranking.dto.response.RankingListItemResponse;
 import com.finplay.api.domain.ranking.dto.response.RankingListResponse;
+import com.finplay.api.domain.ranking.entity.RankingStatus;
 import com.finplay.api.domain.ranking.store.RankingEntryDto;
 import com.finplay.api.domain.ranking.store.RankingStore;
 import com.finplay.api.global.exception.BusinessException;

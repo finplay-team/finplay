@@ -6,7 +6,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finplay.api.TestcontainersConfiguration;
 import com.finplay.api.domain.account.entity.Account;
-import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.account.repository.AccountRepository;
 import com.finplay.api.domain.auth.entity.User;
 import com.finplay.api.domain.auth.repository.UserRepository;
@@ -14,6 +13,7 @@ import com.finplay.api.domain.education.marketpractice.entity.PracticeBoundary;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeEvidenceType;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeMarketObservation;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeMarketReflection;
+import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.market.repository.InstrumentRepository;
 import com.finplay.api.domain.portfolio.entity.Holding;
 import com.finplay.api.domain.portfolio.repository.HoldingRepository;

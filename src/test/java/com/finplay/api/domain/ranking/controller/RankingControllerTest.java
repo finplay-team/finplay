@@ -10,14 +10,14 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.auth.config.SecurityConfig;
 import com.finplay.api.domain.auth.token.AuthenticatedUser;
 import com.finplay.api.domain.auth.token.JwtTokenProvider;
-import com.finplay.api.domain.ranking.entity.RankingStatus;
+import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.ranking.dto.response.MyRankingResponse;
 import com.finplay.api.domain.ranking.dto.response.RankingListItemResponse;
 import com.finplay.api.domain.ranking.dto.response.RankingListResponse;
+import com.finplay.api.domain.ranking.entity.RankingStatus;
 import com.finplay.api.domain.ranking.service.RankingService;
 import java.util.List;
 import java.util.Optional;

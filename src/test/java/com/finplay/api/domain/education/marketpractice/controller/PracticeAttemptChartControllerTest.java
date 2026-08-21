@@ -16,8 +16,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.finplay.api.domain.auth.config.SecurityConfig;
 import com.finplay.api.domain.auth.token.AuthenticatedUser;
 import com.finplay.api.domain.auth.token.JwtTokenProvider;
-import com.finplay.api.global.exception.BusinessException;
-import com.finplay.api.global.exception.ErrorCode;
 import com.finplay.api.domain.education.marketpractice.dto.response.PracticeScenarioEventResponse;
 import com.finplay.api.domain.education.marketpractice.dto.response.PracticeTutorialCandleResponse;
 import com.finplay.api.domain.education.marketpractice.dto.response.PracticeTutorialChartResponse;
@@ -25,6 +23,8 @@ import com.finplay.api.domain.education.marketpractice.dto.response.PriceGuideRa
 import com.finplay.api.domain.education.marketpractice.service.PracticeAttemptChartService;
 import com.finplay.api.domain.education.marketpractice.service.PracticeAttemptDeadlockRetryService;
 import com.finplay.api.domain.market.entity.Market;
+import com.finplay.api.global.exception.BusinessException;
+import com.finplay.api.global.exception.ErrorCode;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;

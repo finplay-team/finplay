@@ -6,8 +6,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.finplay.api.global.exception.BusinessException;
-import com.finplay.api.global.exception.ErrorCode;
 import com.finplay.api.domain.education.synthetic.dto.response.SyntheticPriceSeriesResponse;
 import com.finplay.api.domain.market.entity.Instrument;
 import com.finplay.api.domain.market.entity.Market;
@@ -15,6 +13,8 @@ import com.finplay.api.domain.market.service.InstrumentService;
 import com.finplay.api.domain.market.service.PriceQueryService;
 import com.finplay.api.domain.market.service.PriceQuoteDto;
 import com.finplay.api.domain.market.service.PriceStatus;
+import com.finplay.api.global.exception.BusinessException;
+import com.finplay.api.global.exception.ErrorCode;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;

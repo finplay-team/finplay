@@ -1,6 +1,7 @@
 // 프론트(S3)와 API의 오리진이 갈라지면서 필요해진 CORS 허용 정책을 정의한다 (ADR-0022)
 package com.finplay.api.domain.auth.config;
 
+import com.finplay.api.global.filter.RequestIdFilter;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -9,8 +10,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-
-import com.finplay.api.global.filter.RequestIdFilter;
 
 @Configuration
 public class CorsConfig {

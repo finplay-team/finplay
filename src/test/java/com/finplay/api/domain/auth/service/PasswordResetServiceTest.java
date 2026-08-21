@@ -8,14 +8,14 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.finplay.api.domain.auth.email.EmailSender;
 import com.finplay.api.domain.auth.entity.PasswordResetVerification;
 import com.finplay.api.domain.auth.entity.User;
-import com.finplay.api.domain.auth.email.EmailSender;
 import com.finplay.api.domain.auth.repository.PasswordResetVerificationRepository;
 import com.finplay.api.domain.auth.repository.UserRepository;
 import com.finplay.api.domain.auth.verification.VerificationCodePolicy;

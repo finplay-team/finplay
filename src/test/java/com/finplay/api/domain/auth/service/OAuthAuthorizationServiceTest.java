@@ -5,11 +5,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 
-import com.finplay.api.domain.auth.oauth.provider.FakeOAuthAuthorizationProvider;
-import com.finplay.api.domain.auth.oauth.exchange.FakeOAuthGrantStore;
-import com.finplay.api.domain.auth.oauth.provider.OAuthAuthorizationProvider;
 import com.finplay.api.domain.auth.oauth.OAuthAuthorizationResult;
 import com.finplay.api.domain.auth.oauth.OAuthProviderName;
+import com.finplay.api.domain.auth.oauth.exchange.FakeOAuthGrantStore;
+import com.finplay.api.domain.auth.oauth.provider.FakeOAuthAuthorizationProvider;
+import com.finplay.api.domain.auth.oauth.provider.OAuthAuthorizationProvider;
 import com.finplay.api.domain.auth.oauth.state.OAuthPurpose;
 import com.finplay.api.domain.auth.oauth.state.OAuthStateGenerator;
 import com.finplay.api.global.exception.BusinessException;

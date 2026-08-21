@@ -1,12 +1,12 @@
 // 본인의 시장별 투자일기(매수·매도 회고 병합) 목록을 커서 페이지네이션으로 조회하는 컨트롤러
 package com.finplay.api.domain.journal.controller;
 
-import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.auth.token.AuthenticatedUser;
-import com.finplay.api.global.exception.BusinessException;
-import com.finplay.api.global.exception.ErrorCode;
 import com.finplay.api.domain.journal.dto.response.JournalListResponse;
 import com.finplay.api.domain.journal.service.JournalService;
+import com.finplay.api.domain.market.entity.Market;
+import com.finplay.api.global.exception.BusinessException;
+import com.finplay.api.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;

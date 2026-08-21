@@ -3,8 +3,8 @@ package com.finplay.api.domain.market.dto.sse;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.market.dto.sse.MarketSnapshotEvent.InstrumentPriceSnapshot;
+import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.market.service.PriceStatus;
 import com.finplay.api.domain.market.service.StockMarketStatus;
 import java.math.BigDecimal;

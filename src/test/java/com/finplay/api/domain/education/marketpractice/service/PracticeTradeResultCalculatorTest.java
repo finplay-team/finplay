@@ -4,8 +4,8 @@ package com.finplay.api.domain.education.marketpractice.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
-import com.finplay.api.domain.education.marketpractice.entity.PracticeSellCause;
 import com.finplay.api.domain.education.marketpractice.dto.response.PracticeTradeResultResponse;
+import com.finplay.api.domain.education.marketpractice.entity.PracticeSellCause;
 import java.math.BigDecimal;
 import org.junit.jupiter.api.Test;
 

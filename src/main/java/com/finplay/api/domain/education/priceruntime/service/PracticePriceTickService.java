@@ -1,13 +1,13 @@
 // 코인 튜토리얼 가상 가격 세션의 next-tick 진행만 담당하는 서비스(이슈 #319 코멘트 2안 — 세션 생성·조회 서비스와 분리)
 package com.finplay.api.domain.education.priceruntime.service;
 
-import com.finplay.api.global.exception.BusinessException;
-import com.finplay.api.global.exception.ErrorCode;
+import com.finplay.api.domain.education.priceruntime.dto.response.PracticePriceSessionResponse;
 import com.finplay.api.domain.education.priceruntime.entity.PracticePriceSession;
 import com.finplay.api.domain.education.priceruntime.entity.PracticePriceSessionStatus;
-import com.finplay.api.domain.education.priceruntime.dto.response.PracticePriceSessionResponse;
 import com.finplay.api.domain.education.priceruntime.event.PracticePriceTickAdvancedEvent;
 import com.finplay.api.domain.education.priceruntime.repository.PracticePriceSessionRepository;
+import com.finplay.api.global.exception.BusinessException;
+import com.finplay.api.global.exception.ErrorCode;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;

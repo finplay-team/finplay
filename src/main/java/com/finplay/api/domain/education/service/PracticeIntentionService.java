@@ -1,19 +1,19 @@
 // 실습 진행(DB)을 잠그고 그 트랜잭션 안에서 즐겨찾기(in-memory) 락까지 이어 잡아 매수 전 투자 의도를 기록하는 서비스
 package com.finplay.api.domain.education.service;
 
-import com.finplay.api.global.exception.BusinessException;
-import com.finplay.api.global.exception.ErrorCode;
-import com.finplay.api.domain.education.model.PracticeIntention;
-import com.finplay.api.domain.education.entity.PracticeProgress;
-import com.finplay.api.domain.education.entity.PracticeProgressStatus;
 import com.finplay.api.domain.education.dto.request.PracticeIntentionCreateRequest;
 import com.finplay.api.domain.education.dto.response.PracticeIntentionResponse;
+import com.finplay.api.domain.education.entity.PracticeProgress;
+import com.finplay.api.domain.education.entity.PracticeProgressStatus;
+import com.finplay.api.domain.education.model.PracticeIntention;
 import com.finplay.api.domain.education.repository.PracticeIntentionRepository;
 import com.finplay.api.domain.education.repository.PracticeProgressRepository;
 import com.finplay.api.domain.favorite.service.FavoriteService;
 import com.finplay.api.domain.market.entity.Instrument;
 import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.market.service.InstrumentService;
+import com.finplay.api.global.exception.BusinessException;
+import com.finplay.api.global.exception.ErrorCode;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
