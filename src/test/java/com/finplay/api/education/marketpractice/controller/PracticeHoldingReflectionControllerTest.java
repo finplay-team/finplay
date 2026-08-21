@@ -52,7 +52,7 @@ class PracticeHoldingReflectionControllerTest {
 		when(practiceHoldingReflectionService.createReflection(eq(USER_ID),
 			any(PracticeHoldingReflectionCreateRequest.class)))
 			.thenReturn(new PracticeHoldingReflectionResponse(
-				30L, 10L, PracticeHoldingReflectionResponse.PROMPT, "손절 라인에 가까워서 팔지 않기로 했다.",
+				30L, 10L, "손절 라인에 가까워서 팔지 않기로 했다.",
 				LocalDateTime.of(2026, 8, 10, 10, 0), true));
 
 		mockMvc.perform(post("/api/education/practice/holding-reflections")
@@ -61,7 +61,8 @@ class PracticeHoldingReflectionControllerTest {
 			.andExpect(status().isCreated())
 			.andExpect(jsonPath("$.reflectionId").value(30))
 			.andExpect(jsonPath("$.holdingId").value(10))
-			.andExpect(jsonPath("$.prompt").value(PracticeHoldingReflectionResponse.PROMPT))
+			// 이슈 #432 — prompt 필드는 폐기됐다. 응답에 아예 나오지 않아야 한다.
+			.andExpect(jsonPath("$.prompt").doesNotExist())
 			.andExpect(jsonPath("$.answer").value("손절 라인에 가까워서 팔지 않기로 했다."))
 			.andExpect(jsonPath("$.createdAt").value("2026-08-10T10:00:00"))
 			.andExpect(jsonPath("$.rewardGranted").value(true));

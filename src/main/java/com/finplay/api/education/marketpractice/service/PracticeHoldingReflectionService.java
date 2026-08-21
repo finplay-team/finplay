@@ -39,6 +39,26 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class PracticeHoldingReflectionService {
 
+	// 저장된 복기가 어느 세대 질문에 답한 것인지 표시하는 값이며, practice_market_reflections.prompt_version에
+	// 영속된다. **버전 1이 가리키는 원문은 아래 문구다** (이슈 #432 — API 응답 필드로 내려보내던 것을 폐기하고
+	// 원본은 여기 주석으로만 남긴다. 프론트가 이 값을 렌더링하지 않고 자체 문구를 쓰고 있어 사용자에게 닿는
+	// 경로가 없었고, 문구 하나 고치자고 백엔드를 배포해야 하는 비용만 남아 있었다).
+	//
+	//   "방금 판 이유가 무엇인가요? 화면에 표시된 손절선·익절선과 비교해서, 지금 돌아보면 그 판단이 어땠는지
+	//    한 줄로 적어 보세요."
+	//
+	// 이 단계가 전량 매도 이후에 열리고(031 SANDBOX-006) 손절·익절선을 사용자가 아니라 서버가 자동
+	// 고정한다는(039 TUTORIAL-FLOW-008) 전제를 반영한 문구다.
+	//
+	// **버전을 올릴 책임은 이제 프론트에 있다.** 문구 소유권이 클라이언트로 넘어갔으므로 서버에는 문구를
+	// 바꿀 계기가 없다 — 그대로 두면 이 값이 영영 1로 굳어 "어느 세대 질문에 답한 기록인가"를 복원한다는
+	// prompt_version 컬럼의 존재 이유가 사라진다. 그래서 문구를 바꾸는 프론트 PR이 이 상수도 함께 올리도록
+	// 교차 레포 규칙을 두고, 프론트의 REFLECTION_QUESTION 선언부에 같은 메모를 남겼다
+	// (finplay-frontend: src/components/tutorial/AttemptTutorialFlow.tsx).
+	//
+	// OCO 경로(POST /api/education/practice/reflections)는 사용자가 exit plan을 직접 계획하는 별도 흐름이라
+	// 3차 MVP에서 구현될 때도 prompt 필드를 그대로 간다 — 두 경로를 한꺼번에 정리하지 않는다(아직 구현체가
+	// 없어 PracticeReflectionResponse 클래스 자체가 존재하지 않는다).
 	private static final short PROMPT_VERSION = 1;
 	// 샘플 종목 chain 4단계 evidence의 매도 유효 기한(031/plan.md "4. 5분 타이머" anchor는
 	// buyTrade.executedAt, InvestmentPracticeQueryService.isWithinSaleDeadline과 동일 정책).
