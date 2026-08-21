@@ -30,7 +30,8 @@ public interface PracticeAttemptRepository extends JpaRepository<PracticeAttempt
 	// 그 구간에서도 승격이 생기지 않는다.
 	//
 	// PracticeProgressRepository.insertIfAbsent가 같은 insert→FOR UPDATE 패턴에 이미 쓰고 있는 구문과
-	// 같다. `user_id = user_id`는 값을 바꾸지 않는 대입이라 updated_at을 건드리지 않는다.
+	// 같다(대입 대상도 `id = id`로 맞춘다 — 값을 바꾸지 않는 대입이라 기존 행의 어떤 컬럼도, updated_at도
+	// 건드리지 않는다. 중복 판정에 쓰이는 유니크 인덱스 밖의 컬럼을 고르는 편이 덜 놀랍다).
 	//
 	// **반환값을 두지 않는 것이 이 구문의 조건이다.** MySQL Connector/J는 기본값(`useAffectedRows=false`,
 	// 즉 CLIENT_FOUND_ROWS)에서 변경된 행이 아니라 **일치한 행**을 돌려주므로, ON DUPLICATE KEY UPDATE는
@@ -43,7 +44,7 @@ public interface PracticeAttemptRepository extends JpaRepository<PracticeAttempt
 		INSERT INTO practice_attempts
 			(user_id, market, run_number, status, created_at, updated_at)
 		VALUES (:userId, :market, 1, 'SELECTING_INSTRUMENT', :now, :now)
-		ON DUPLICATE KEY UPDATE user_id = user_id
+		ON DUPLICATE KEY UPDATE id = id
 		""", nativeQuery = true)
 	void insertIfAbsent(
 		@Param("userId")

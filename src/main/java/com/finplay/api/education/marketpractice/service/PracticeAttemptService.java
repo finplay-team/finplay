@@ -78,6 +78,12 @@ public class PracticeAttemptService {
 	 * 이 트랜잭션의 정확성은 스냅숏 격리가 아니라 명시적 비관 잠금이 담당하므로 낮춰도 잃는 것이 없다 —
 	 * ADR-0028이 체결 경로에 같은 판단을 적용했고, 여기서 읽는 값들은 모두 한 번씩만 읽는다.
 	 *
+	 * <p><b>이 메서드는 반드시 트랜잭션 시작점이어야 한다.</b> 이미 열린 트랜잭션에 {@code REQUIRED}로
+	 * 합류하면 Spring이 안쪽 격리수준 선언을 조용히 무시하므로({@code validateExistingTransaction} 기본값이
+	 * {@code false}다) 위의 갭 잠금 교착이 그대로 돌아온다. PR #514가 실제로 이 함정에 걸렸고 ADR-0028
+	 * §정정이 그 사고를 기록했다. 현재 호출부는 {@link PracticeAttemptEntryService} 하나뿐이고 그쪽은
+	 * 트랜잭션을 열지 않는다 — 새 호출부를 만들 때 이 전제를 함께 확인해야 한다.
+	 *
 	 * <p>{@code inserted}는 "이 트랜잭션이 행을 만들었는가"이며 잠금 조회가 비어 있었는지로만 판정한다 —
 	 * {@code insertIfAbsent}의 affected rows로 판정하면 안 되는 이유는 그 메서드 주석에 있다.
 	 */
