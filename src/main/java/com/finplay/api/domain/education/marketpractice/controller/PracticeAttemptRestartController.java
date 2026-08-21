@@ -3,7 +3,7 @@ package com.finplay.api.domain.education.marketpractice.controller;
 
 import com.finplay.api.domain.auth.token.AuthenticatedUser;
 import com.finplay.api.domain.education.marketpractice.dto.response.PracticeAttemptResponse;
-import com.finplay.api.domain.education.marketpractice.service.PracticeAttemptRestartService;
+import com.finplay.api.domain.education.marketpractice.service.PracticeAttemptDeadlockRetryService;
 import com.finplay.api.domain.market.entity.Market;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -18,7 +18,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class PracticeAttemptRestartController {
 
-	private final PracticeAttemptRestartService practiceAttemptRestartService;
+	// 재시작은 실패하면 버튼이 먹히지 않고 사용자에게 다른 재시도 수단이 없다 — 교착 재시도 경계를
+	// 거친다 (이슈 #491).
+	private final PracticeAttemptDeadlockRetryService practiceAttemptDeadlockRetryService;
 
 	@PostMapping("/{market}/restart")
 	public ResponseEntity<PracticeAttemptResponse> restart(
@@ -26,6 +28,6 @@ public class PracticeAttemptRestartController {
 		AuthenticatedUser principal,
 		@PathVariable
 		Market market) {
-		return ResponseEntity.ok(practiceAttemptRestartService.restart(principal.userId(), market));
+		return ResponseEntity.ok(practiceAttemptDeadlockRetryService.restart(principal.userId(), market));
 	}
 }

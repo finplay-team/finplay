@@ -23,6 +23,7 @@ import com.finplay.api.domain.education.marketpractice.dto.response.PracticeTuto
 import com.finplay.api.domain.education.marketpractice.dto.response.PracticeTutorialChartResponse;
 import com.finplay.api.domain.education.marketpractice.dto.response.PriceGuideRangeResponse;
 import com.finplay.api.domain.education.marketpractice.service.PracticeAttemptChartService;
+import com.finplay.api.domain.education.marketpractice.service.PracticeAttemptDeadlockRetryService;
 import com.finplay.api.domain.market.entity.Market;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -49,6 +50,9 @@ class PracticeAttemptChartControllerTest {
 	private MockMvc mockMvc;
 	@MockitoBean
 	private PracticeAttemptChartService chartService;
+	// tick만 교착 재시도 경계를 거친다 (이슈 #491) — getChart는 여전히 chartService를 직접 부른다.
+	@MockitoBean
+	private PracticeAttemptDeadlockRetryService retryService;
 	@MockitoBean
 	private JwtTokenProvider jwtTokenProvider;
 
@@ -83,13 +87,13 @@ class PracticeAttemptChartControllerTest {
 	@Test
 	void tickDelegatesExplicitSettlementAndReturnsChartJson() throws Exception {
 		authenticate();
-		when(chartService.tick(USER_ID, Market.STOCK)).thenReturn(chartResponse());
+		when(retryService.tick(USER_ID, Market.STOCK)).thenReturn(chartResponse());
 
 		mockMvc.perform(post("/api/education/practice/attempts/STOCK/tick")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.candles.length()").value(30));
-		verify(chartService).tick(USER_ID, Market.STOCK);
+		verify(retryService).tick(USER_ID, Market.STOCK);
 	}
 
 	@Test
@@ -107,7 +111,7 @@ class PracticeAttemptChartControllerTest {
 	@Test
 	void tickMapsCompletedAttemptToConflict() throws Exception {
 		authenticate();
-		when(chartService.tick(USER_ID, Market.CRYPTO))
+		when(retryService.tick(USER_ID, Market.CRYPTO))
 			.thenThrow(new BusinessException(ErrorCode.PRACTICE_ALREADY_COMPLETED));
 
 		mockMvc.perform(post("/api/education/practice/attempts/CRYPTO/tick")

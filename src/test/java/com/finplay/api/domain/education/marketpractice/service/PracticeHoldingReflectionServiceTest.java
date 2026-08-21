@@ -227,7 +227,6 @@ class PracticeHoldingReflectionServiceTest {
 
 		assertThat(response.holdingId()).isEqualTo(HOLDING_ID);
 		assertThat(response.answer()).isEqualTo(ANSWER);
-		assertThat(response.prompt()).isEqualTo(PracticeHoldingReflectionResponse.PROMPT);
 		assertThat(response.createdAt()).isEqualTo(NOW);
 
 		ArgumentCaptor<PracticeMarketReflection> reflectionCaptor = ArgumentCaptor

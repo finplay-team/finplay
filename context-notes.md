@@ -1228,3 +1228,65 @@ ADR-0021을 읽지 않는다(`ai/context-router.md`의 "엔티티/스키마 변�
   순보유수량만 보고, 재시작·매도 접수의 예약 취소는 빈 목록 순회라 no-op이며, `PracticeSellCause.from`
   은 예약 없는 매도를 이미 `MANUAL`로 다룬다(STOCK 튜토리얼이 그 선례다). 전수 확인 표는 spec 049
   §비즈니스 규칙에 남겼다 — 다음 사람이 같은 조사를 반복하지 않도록.
+
+## 2026-08-21 — 튜토리얼 진입 교착의 원인을 확정하고 INSERT 구문으로 고쳤다 (이슈 #491)
+
+- **원인은 추정이 아니라 확인됐다.** 이슈는 "INSERT IGNORE 뒤 같은 키를 FOR UPDATE로 재잠그는 패턴"을
+  추정으로 적어 두었고 `SHOW ENGINE INNODB STATUS`를 못 봤다고 남겼다. `PracticeAttemptEntryConcurrency
+  IntegrationTest`(기존 행 + 동시 2건, 10라운드)로 결정적으로 재현한 뒤 root 커넥션으로 교착 리포트를
+  떴다 — **두 트랜잭션이 `uk_practice_attempts_user_market`의 같은 레코드에 `lock mode S`를 HOLD한 채
+  서로 `lock_mode X locks rec but not gap`을 WAIT**했다. 추정이 정확히 맞았다.
+- **격리수준을 낮추는 방식(ADR-0028)으로는 안 고쳐진다.** 리포트의 `locks rec but not gap`이 근거다 —
+  갭 락이 아니라 레코드 락이라 READ COMMITTED로 내려도 그대로 남는다. ADR-0028을 이 이슈에 그대로
+  복사하지 않은 이유가 이것이다.
+- **핵심은 "S는 공유라 둘이 동시에 쥘 수 있다"는 것이다.** 그래서 고친 것은 구문이 아니라 **순서**다 —
+  잠금 조회를 앞에 두고 행이 없을 때만 INSERT한다. 흔한 경로(행이 이미 있음)가 X 하나로 끝나 승격
+  자체가 사라지고, 진입마다 나가던 쓰기도 없어진다. 남은 경합 구간(행이 없어 둘 다 INSERT로 가는
+  첫 진입)에서는 `ON DUPLICATE KEY UPDATE`가 처음부터 X를 잡아 거기서도 승격이 생기지 않는다.
+- **`READ COMMITTED`는 이 순서 변경이 요구하는 짝이다.** REPEATABLE READ에서는 아무 행도 맞히지 못한
+  `FOR UPDATE`가 갭 잠금을 잡아, 첫 진입 2건이 각자 갭을 잡고 서로의 INSERT를 기다리는 **다른** 교착이
+  생긴다. 순서만 바꾸고 격리수준을 그대로 뒀으면 교착을 옮기기만 했을 것이다.
+- **함정 하나를 실제로 밟았다.** 처음에는 순서를 그대로 두고 구문만 `ON DUPLICATE KEY UPDATE`로 바꿨는데,
+  MySQL Connector/J가 기본값(`useAffectedRows=false`, CLIENT_FOUND_ROWS)에서 **변경된 행이 아니라 일치한
+  행**을 돌려준다. `INSERT IGNORE`가 중복에 0을 주던 자리에서 ODKU는 1을 준다 — `inserted` 판정이 항상
+  참이 되어 기존 행까지 완료 replay로 전환됐고, `LegacyPracticeCompletionAttemptCompatibilityIntegration
+  Test`가 잡았다(`expected IN_PROGRESS but was COMPLETED`). **`insertIfAbsent`의 반환값을 "이번에
+  만들었는가"로 읽으면 안 된다.** 그래서 반환형을 `void`로 바꿔 그 오독 자체를 막았고, 판정은 잠금
+  조회가 비어 있었는지로만 한다. `PracticeProgressRepository.insertIfAbsent`가 이미 ODKU를 쓰면서도
+  이 함정을 안 밟은 이유는 반환형이 `void`였기 때문이다.
+- **`INSERT IGNORE`는 이 커밋으로 저장소에서 사라졌다.**
+- **tick ↔ 체결 정산 잠금 순서는 뒤집히지 않는다(확인함).** 이슈가 함께 지목한 우려인데, `practice_
+  attempts`를 잠그는 트랜잭션을 전수로 보면 **그 전부가 attempt를 order·account·tutorial account보다 먼저
+  잠근다.** (attempt를 아예 잡지 않는 트랜잭션도 있다 — `LimitOrderCancelService`는 order → account →
+  tutorial account 순으로만 잠근다. 그런 트랜잭션은 attempt를 축으로 하는 사이클을 만들 수 없어 논거에
+  영향이 없다.) 보조 인덱스로 잠그는 경로(tick·진입·종목선택·재시작·대본전환·복기·`lockForOrder`)는 모두
+  그것이 그 트랜잭션의 **첫** attempt 잠금이고, PK로 잠그는 경로(`lockForFill`·`createRiskSnapshotOn
+  BuyFill`)는 체결 트랜잭션의 첫 잠금이거나 이미 보조 인덱스로 같은 행을 잠근 뒤다. 즉 "clustered를
+  쥔 채 secondary를 기다리는" 트랜잭션이 없어 순환이 만들어지지 않는다. 보조 인덱스 레코드를 쥔 채
+  같은 레코드를 기다리던 유일한 코드가 바로 이 이슈의 `ensureAttempt`였다.
+- **재시도는 원인 수정이 아니라 그물이다.** 이슈 완료조건 2를 위해 `PracticeAttemptDeadlockRetryService`가
+  **진입·재시작·tick 세 경로**를 1회씩 재시도한다. 트랜잭션 밖이어야 해서(롤백된 트랜잭션 안에서 다시
+  부르면 rollback-only) 별도 빈으로 나눴고, 이는 ADR-0028이 `OrderService` → `OrderExecutionService`로
+  나눈 구조와 같다. 세 경로를 고른 기준은 "실패하면 사용자에게 재시도 수단이 전혀 없는가"이고, 종목
+  선택·프리셋 선택은 같은 버튼을 다시 누르면 되므로 뺐다.
+
+## 2026-08-21 — 재시작 ↔ tick 교착은 재현하지 못했다 (이슈 #491 두 번째 재현 경로)
+
+- **이슈 코멘트가 등록한 두 번째 경로다.** 프론트가 재시작과 tick 폴링이 겹치는 상황에서 8~32회 관측했다고
+  적혀 있고(진입 2회보다 훨씬 잦다), 그래서 이슈 범위가 "진입 동시 호출"에서 "`practice_attempts` 잠금
+  경로 전반"으로 넓어졌다.
+- **재현에 실패했다.** 재시작↔tick(같은 사용자), 진입↔재시작↔tick 3중, 사용자 간 교차 — 세 형태를 각
+  8라운드씩, 생성기 버전 1·2 양쪽으로 돌렸고 **수정 전 코드에서도 24라운드 전부 통과**했다
+  (`PracticeAttemptRestartTickConcurrencyIntegrationTest`).
+- **코드 분석도 같은 곳을 가리킨다.** 재시작과 tick은 **둘 다 attempt를 가장 먼저 잠근다.** 같은 사용자면
+  그 지점에서 완전히 직렬화되므로 뒤쪽 자원 순서가 뒤집혀 있어도(재시작 보유→튜토리얼계좌, tick
+  튜토리얼계좌→보유) 순환이 만들어지지 않고, 다른 사용자면 주문·계좌·보유·튜토리얼계좌가 전부 사용자별
+  행이라 겹치는 자원이 없다. 이슈 코멘트의 잠금 순서 전수 조사도 같은 결론이었고, 그 조사 역시 재시작↔tick의
+  교착 쌍을 특정하지 못했다.
+- **가장 그럴듯한 해석은 그것이 진입 교착이었다는 것이다.** 튜토리얼 화면은 마운트할 때 진입을 부르고
+  재시작 직후에도 다시 부르므로, 사용자 눈에는 "재시작하다 터졌다"로 보이지만 실제로 겹친 것은 진입 두
+  건일 수 있다. 이슈 본문에 붙은 두 스택이 **모두 `ensureAttempt`를 가리킨다**는 것도 이 해석과 맞는다.
+  **다만 이건 추론이고 재시작 시나리오의 교착 쌍을 직접 본 것이 아니다.**
+- **그래서 재현 못 한 경로에도 그물은 뒀다.** "재현하지 못했다"는 "발생하지 않는다"가 아니고, 프론트에는
+  실제 관측 기록이 있다. 테스트 세 개도 남겼다 — 재현에는 실패했지만 "이 조합은 교착하지 않는다"를
+  고정하는 회귀 테스트로는 값이 있고, 나중에 누가 잠금 순서를 바꿔 실제로 순환을 만들면 그때 잡힌다.
