@@ -1,5 +1,5 @@
 // 실제 KIS Open API 호출 없이 종목별 고정 분봉 리스트를 반환하는 테스트 전용 KisHistoricalCandleClient 구현 (ADR-0003)
-package com.finplay.api.market.service;
+package com.finplay.api.domain.market.service;
 
 import java.time.LocalDate;
 import java.util.HashMap;
