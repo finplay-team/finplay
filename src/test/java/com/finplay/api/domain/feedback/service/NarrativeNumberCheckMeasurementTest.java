@@ -25,6 +25,11 @@ import org.junit.jupiter.params.provider.MethodSource;
  * {@code 012} §후검증 표 5줄 37개 그대로이며, 지금 운영 검증기와도 같은 판정을 낸다는 것을
  * {@link #todaysValidatorReproducesTheFrozenBaseline()}이 함께 확인한다.
  *
+ * <p><b>그 걱정은 결과적으로 기우였다 — 얼려 두길 잘한 것과는 별개다.</b> 숫자 대조는 {@code NarrativeValidator}
+ * 안이 아니라 별도 클래스({@link NarrativeNumberValidator})로 갔고(053 plan §결정 A), 그래서 운영 검증기의
+ * 판정이 무변경이라 ①의 0/12가 운영 클래스에서도 그대로 재현된다. 얼린 목록은 <b>그대로 둔다</b> — 대조군을
+ * 구현과 무관하게 고정해 두는 것이 이 하네스의 값이기 때문이다.
+ *
  * <p><b>②는 고쳐야 할 결함이 아니다.</b> 반사실을 서술에서 뺀 것은 {@code 012} §왜 반사실은 AI 문장에 넣지
  * 않는가의 <b>제품 판단</b>이고, 6/6 차단은 그 판단이 코드에서 지켜지고 있다는 뜻이다. 반사실 해금은 이
  * spec에서 분리했으므로 <b>구현 후에도 6/6이 유지되는 것이 정상</b>이다 (2026-08-23 범위 축소).
@@ -91,6 +96,10 @@ class NarrativeNumberCheckMeasurementTest {
 
 	private final NarrativeValidator validator = new NarrativeValidator();
 
+	// FEED-014로 더해진 새 축. 표현 축과 <b>별도 클래스</b>라 위 validator의 판정은 이 축이 생겨도 그대로다 —
+	// 그것이 ①의 0/12 대조군이 구현 후에도 살아 있는 이유다 (053 plan §결정 A).
+	private final NarrativeNumberValidator numberValidator = new NarrativeNumberValidator();
+
 	static Stream<HallucinationCase> hallucinations() {
 		return HALLUCINATIONS.stream();
 	}
@@ -149,6 +158,17 @@ class NarrativeNumberCheckMeasurementTest {
 			.isEmpty();
 	}
 
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("hallucinations")
+	@DisplayName("측정 ① — 새 검증기는 숫자 환각 12건을 전량 적발한다 (기존 0 / 12 → 새 12 / 12)")
+	void numberValidatorDetectsEveryHallucination(HallucinationCase testCase) {
+		String prompt = builder.postSellPrompt(specPostSell());
+
+		assertThat(numberValidator.validate(testCase.narrative(), prompt).detectedExpressions())
+			.as("적발돼야 한다(틀린 값 %s는 프롬프트에 없다): %s", testCase.wrong(), testCase.narrative())
+			.isNotEmpty();
+	}
+
 	// ---------- 측정 ② 참인 문장 차단율 ----------
 
 	@ParameterizedTest(name = "[{0}]")
@@ -160,14 +180,39 @@ class NarrativeNumberCheckMeasurementTest {
 			.isNotEmpty();
 	}
 
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("counterfactuals")
+	@DisplayName("측정 ② — 새 축이 켜져도 6 / 6 그대로다. 표현 축이 여전히 잡고, 숫자 축도 따로 잡는다")
+	void numberValidatorKeepsBlockingEveryCounterfactual(String narrative) {
+		String prompt = builder.postSellPrompt(specPostSell());
+
+		// 표현 축은 무변경이다 — 이 spec은 ②의 6/6을 <b>바꾸지 않는 것이 정상</b>이다 (2026-08-23 범위 축소).
+		assertThat(validator.validateCardOrPostSell(narrative).detectedExpressions())
+			.as("가정법 어미에 계속 걸려야 한다: %s", narrative)
+			.isNotEmpty();
+		// 숫자 축도 독립적으로 잡는다 — 반사실 두 값(-1.17%·+1.11%)이 프롬프트에 없기 때문이다.
+		assertThat(numberValidator.validate(narrative, prompt).detectedExpressions())
+			.as("반사실 수익률이 출처 없는 수치여야 한다: %s", narrative)
+			.isNotEmpty();
+	}
+
 	// ---------- 얼린 목록이 오늘의 운영 검증기와 같은 판정을 낸다 ----------
 
+	/**
+	 * <b>이 테스트는 이제 FEED-016의 증거다</b> — 숫자 대조를 더하면서 표현 축이 한 글자도 움직이지
+	 * 않았다는 것을, 2026-08-22에 얼린 목록과 오늘의 운영 검증기가 같은 판정을 낸다는 사실로 보인다.
+	 *
+	 * <p><b>구현 전의 예고("FEED-014가 숫자 대조를 더하면 첫 번째 단정이 깨진다")는 빗나갔다.</b> 그 예고는
+	 * 숫자 대조가 {@code NarrativeValidator} 안으로 들어간다는 전제 위에 있었는데, 실제로는 별도 클래스
+	 * ({@link NarrativeNumberValidator})로 뺐다 (053 plan §결정 A). {@code validateCardOrPostSell}의 판정이
+	 * 무변경이라 <b>①의 0/12 대조군이 구현 후에도 운영 클래스에서 그대로 재현된다.</b>
+	 *
+	 * <p>새 검증기 쪽 12/12는 {@link #numberValidatorDetectsEveryHallucination}이 따로 잰다. 얼린 목록
+	 * ({@link #LEGACY_RULES})은 그대로 둔다 — ①의 0/12 대조군이 거기 있다.
+	 */
 	@Test
-	@DisplayName("오늘의 NarrativeValidator도 얼린 대조군과 같은 판정을 낸다 — 대조군이 지어낸 값이 아님을 보인다")
+	@DisplayName("오늘의 NarrativeValidator도 얼린 대조군과 같은 판정을 낸다 — 표현 축이 한 글자도 안 움직였다 (FEED-016)")
 	void todaysValidatorReproducesTheFrozenBaseline() {
-		// FEED-014가 숫자 대조를 더하면 아래 첫 번째 단정이 깨진다(운영 검증기가 12건을 적발하기 시작한다).
-		// 그때 이 테스트는 삭제하지 않고 "새 검증기는 12건을 전부 적발한다"로 뒤집는다 — 얼린 목록 쪽은
-		// 그대로 남아 0/12 대조가 유지된다. 두 번째 단정(반사실 6/6)은 구현 후에도 그대로다.
 		for (HallucinationCase testCase : HALLUCINATIONS) {
 			assertThat(validator.validateCardOrPostSell(testCase.narrative()).detectedExpressions())
 				.as("숫자 환각: %s", testCase.narrative())
@@ -183,21 +228,46 @@ class NarrativeNumberCheckMeasurementTest {
 	// ---------- 발표용 표 ----------
 
 	@Test
-	@DisplayName("측정 결과표를 출력한다 — spec §측정 ①②의 표를 그대로 채운다")
+	@DisplayName("측정 결과표를 출력한다 — spec §측정 ①②의 두 열(기존·새 검증기)을 함께 채운다")
 	void printsTheMeasurementTable() {
-		long detected = HALLUCINATIONS.stream().filter(c -> !legacyDetect(c.narrative()).isEmpty()).count();
-		long blocked = COUNTERFACTUALS.stream().filter(n -> !legacyDetect(n).isEmpty()).count();
+		String prompt = builder.postSellPrompt(specPostSell());
 
-		StringBuilder report = new StringBuilder("\n[spec 053 측정 ①② — 기존 검증기 대조군]\n");
-		report.append("① 숫자 환각 적발  : ").append(detected).append(" / ").append(HALLUCINATIONS.size()).append('\n');
-		report.append("② 가정법 문장 차단: ").append(blocked).append(" / ").append(COUNTERFACTUALS.size()).append('\n');
+		long legacyDetected = HALLUCINATIONS.stream().filter(c -> !legacyDetect(c.narrative()).isEmpty()).count();
+		long legacyBlocked = COUNTERFACTUALS.stream().filter(n -> !legacyDetect(n).isEmpty()).count();
+		long numberDetected = HALLUCINATIONS.stream()
+			.filter(c -> !numberValidator.validate(c.narrative(), prompt).detectedExpressions().isEmpty())
+			.count();
+		// ②의 새 검증기 열은 운영 경로 그대로 두 축을 합쳐 센다 — 매도 회고는 표현 축과 숫자 축을 함께 받는다.
+		long numberBlocked = COUNTERFACTUALS.stream().filter(n -> !bothAxesDetect(n, prompt).isEmpty()).count();
+
+		StringBuilder report = new StringBuilder("\n[spec 053 측정 ①② — 기존 검증기 / 새 검증기]\n");
+		report.append("① 숫자 환각 적발  : ").append(legacyDetected).append(" / ").append(HALLUCINATIONS.size())
+			.append("   →   ").append(numberDetected).append(" / ").append(HALLUCINATIONS.size()).append('\n');
+		for (HallucinationCase testCase : HALLUCINATIONS) {
+			report.append("   적발 사유 ")
+				.append(numberValidator.validate(testCase.narrative(), prompt).detectedExpressions())
+				.append(" ← ").append(testCase.narrative()).append('\n');
+		}
+		report.append("② 가정법 문장 차단: ").append(legacyBlocked).append(" / ").append(COUNTERFACTUALS.size())
+			.append("   →   ").append(numberBlocked).append(" / ").append(COUNTERFACTUALS.size())
+			.append("  (변화 없음이 정상 — 의도된 동작이지 성과가 아니다)\n");
 		for (String narrative : COUNTERFACTUALS) {
-			report.append("   차단 사유 ").append(legacyDetect(narrative)).append(" ← ").append(narrative).append('\n');
+			report.append("   차단 사유 ").append(bothAxesDetect(narrative, prompt))
+				.append(" ← ").append(narrative).append('\n');
 		}
 		System.out.println(report);
 
-		assertThat(detected).isZero();
-		assertThat(blocked).isEqualTo(COUNTERFACTUALS.size());
+		assertThat(legacyDetected).isZero();
+		assertThat(numberDetected).isEqualTo(HALLUCINATIONS.size());
+		assertThat(legacyBlocked).isEqualTo(COUNTERFACTUALS.size());
+		assertThat(numberBlocked).isEqualTo(COUNTERFACTUALS.size());
+	}
+
+	// NarrativeService가 매도 회고에 적용하는 순서 그대로다 — 표현이 앞, 숫자가 뒤.
+	private List<String> bothAxesDetect(String narrative, String prompt) {
+		List<String> detected = new ArrayList<>(validator.validateCardOrPostSell(narrative).detectedExpressions());
+		detected.addAll(numberValidator.validate(narrative, prompt).detectedExpressions());
+		return detected;
 	}
 
 	// 2026-08-22 시점 NarrativeValidator.detect와 같은 구현이다 — 부분 문자열 대조뿐이고 숫자 규칙이 없다.

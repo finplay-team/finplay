@@ -29,7 +29,7 @@
 
   완료 판정 — 위 통합 테스트가 전부 통과하고, `NarrativeValidatorTest`가 **수정 없이** 통과한다(FEED-016).
 
-- [ ] **3. 템플릿 폴백 문장이 새 축을 통과하는지 교차 검사** (spec §완료 조건)
+- [x] **3. 템플릿 폴백 문장이 새 축을 통과하는지 교차 검사** (spec §완료 조건)
 
   `NarrativeTemplateBuilderTest`에 `postSellTemplate` × `postSellPrompt` 교차 검사를 더한다 — 같은 입력으로 두 문자열을 만들어 숫자 대조에 넣는다. 극값 없음 · `DAILY` 극값 · `multiDayHold` 세 갈래를 모두 건다(시각 표기가 갈리는 자리다).
 
@@ -37,7 +37,7 @@
 
   완료 판정 — 폴백 문장이 스스로 위반이 아니므로 대체 경로가 성립한다.
 
-- [ ] **4. 측정 ①의 "새 검증기" 열을 채우고 `measurement.md`를 갱신한다** (spec §측정)
+- [x] **4. 측정 ①의 "새 검증기" 열을 채우고 `measurement.md`를 갱신한다** (spec §측정)
 
   `NarrativeNumberCheckMeasurementTest`에 새 검증기 단정을 더한다 — 주입 12건을 `NarrativeNumberValidator`로 재고 **12/12**를 단정하며, `printsTheMeasurementTable`이 기존 열과 새 열을 함께 출력하게 한다. ②는 **6/6 유지**를 단정한다(반사실 두 값이 프롬프트에 없어 새 축으로도 걸린다).
 
