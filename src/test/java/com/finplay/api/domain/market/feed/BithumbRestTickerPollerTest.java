@@ -69,7 +69,7 @@ class BithumbRestTickerPollerTest {
 	}
 
 	private void givenCryptoInstruments(String... symbols) {
-		when(instrumentRepository.findByMarketAndTradableTrueOrderByIdAsc(Market.CRYPTO))
+		when(instrumentRepository.findByMarketAndTradableTrueAndTutorialSampleFalseOrderByIdAsc(Market.CRYPTO))
 			.thenReturn(List.of(symbols).stream().map(BithumbRestTickerPollerTest::crypto).toList());
 	}
 
@@ -97,10 +97,29 @@ class BithumbRestTickerPollerTest {
 		server.verify();
 	}
 
+	// 이슈 #528 — markets에 샌드박스 종목이 실려 나가지 않는 것을 조회 선택으로 고정한다. 실제 필터링은 쿼리가
+	// 하므로(InstrumentRepositoryTest가 검증) 여기서는 "샌드박스를 거르는 조회를 쓰는가"만 본다 — 옛 조회로
+	// 되돌리면 이 테스트가 잡는다.
+	@Test
+	@DisplayName("샌드박스를 거르지 않는 옛 조회로는 markets를 만들지 않는다")
+	void pollTickersUsesSandboxExcludingQueryOnly() {
+		givenCryptoInstruments("BTC");
+		server.expect(requestTo(Matchers.startsWith(ENDPOINT)))
+			.andExpect(queryParam("markets", "KRW-BTC"))
+			.andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
+
+		poller.pollTickers();
+
+		server.verify();
+		verify(instrumentRepository).findByMarketAndTradableTrueAndTutorialSampleFalseOrderByIdAsc(Market.CRYPTO);
+		verify(instrumentRepository, never()).findByMarketAndTradableTrueOrderByIdAsc(any(Market.class));
+	}
+
 	@Test
 	@DisplayName("코인 종목이 하나도 없으면 HTTP 호출 자체를 하지 않는다")
 	void pollTickersDoesNotCallHttpWhenNoCryptoInstruments() {
-		when(instrumentRepository.findByMarketAndTradableTrueOrderByIdAsc(Market.CRYPTO)).thenReturn(List.of());
+		when(instrumentRepository.findByMarketAndTradableTrueAndTutorialSampleFalseOrderByIdAsc(Market.CRYPTO))
+			.thenReturn(List.of());
 
 		poller.pollTickers();
 
@@ -216,6 +235,23 @@ class BithumbRestTickerPollerTest {
 		givenCryptoInstruments("BTC");
 		server.expect(requestTo(Matchers.startsWith(ENDPOINT)))
 			.andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
+
+		assertThatCode(() -> poller.pollTickers()).doesNotThrowAnyException();
+
+		verifyNoInteractions(priceStore);
+	}
+
+	// 2026-08-22 실측 응답을 그대로 고정한다 (이슈 #528). 빗썸은 미등록 market 코드가 하나라도 섞이면
+	// **상태코드 200에 배열이 아닌 error 객체**를 돌려주고, 같이 요청한 정상 심볼의 시세도 주지 않는다. 상태코드
+	// 가드(onStatus)로는 걸러지지 않고 역직렬화 단계에서 터진다 — 샌드박스 종목이 markets에 섞여 있던 동안
+	// 이 폴러가 조용히 매 회차 실패한 경로가 이것이다.
+	@Test
+	@DisplayName("상태코드 200이라도 본문이 빗썸 error 봉투면 예외를 전파하지 않고 recordObservation도 호출하지 않는다")
+	void pollTickersSwallowsBithumbErrorEnvelopeReturnedWithOkStatus() {
+		givenCryptoInstruments("BTC");
+		server.expect(requestTo(Matchers.startsWith(ENDPOINT)))
+			.andRespond(withSuccess("{\"error\":{\"name\":404,\"message\":\"Code not found\"}}",
+				MediaType.APPLICATION_JSON));
 
 		assertThatCode(() -> poller.pollTickers()).doesNotThrowAnyException();
 

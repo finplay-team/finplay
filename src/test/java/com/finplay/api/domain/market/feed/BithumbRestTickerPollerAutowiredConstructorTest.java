@@ -78,7 +78,7 @@ class BithumbRestTickerPollerAutowiredConstructorTest {
 	@Test
 	@DisplayName("@Autowired 생성자(RestClient.builder() 직접 호출)로 만든 폴러가 실제 HTTP 응답을 정상 파싱한다")
 	void autowiredConstructorParsesRealHttpResponseThroughDirectRestClientBuilder() {
-		when(instrumentRepository.findByMarketAndTradableTrueOrderByIdAsc(Market.CRYPTO))
+		when(instrumentRepository.findByMarketAndTradableTrueAndTutorialSampleFalseOrderByIdAsc(Market.CRYPTO))
 			.thenReturn(
 				List.of(Instrument.create(Market.CRYPTO, "BTC", "비트코인", BigDecimal.ONE, 1000, true, FIXED_NOW)));
 		Clock clock = Clock.fixed(FIXED_NOW.toInstant(ZoneOffset.UTC), ZoneOffset.UTC);
@@ -94,7 +94,7 @@ class BithumbRestTickerPollerAutowiredConstructorTest {
 	@Test
 	@DisplayName("@Autowired 생성자로 만든 폴러도 존재하지 않는 경로(404)면 예외를 전파하지 않는다")
 	void autowiredConstructorSwallowsNotFoundWithoutRecordingObservation() {
-		when(instrumentRepository.findByMarketAndTradableTrueOrderByIdAsc(Market.CRYPTO))
+		when(instrumentRepository.findByMarketAndTradableTrueAndTutorialSampleFalseOrderByIdAsc(Market.CRYPTO))
 			.thenReturn(
 				List.of(Instrument.create(Market.CRYPTO, "BTC", "비트코인", BigDecimal.ONE, 1000, true, FIXED_NOW)));
 		Clock clock = Clock.fixed(FIXED_NOW.toInstant(ZoneOffset.UTC), ZoneOffset.UTC);
