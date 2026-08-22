@@ -9,6 +9,7 @@ import com.finplay.api.domain.ranking.store.RankingEntryDto;
 import com.finplay.api.domain.ranking.store.RankingStore;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -25,8 +26,12 @@ import org.springframework.stereotype.Service;
 // 트랜잭션 안에서 끝내므로, 그 사이의 Redis 왕복 동안 DB 커넥션을 쥐지 않는다. @Scheduled 메서드에
 // @Transactional을 겹칠 때 생기는 프록시·self-invocation 혼선도 피한다.
 //
-// 분산 락은 두지 않는다 — 재구성은 멱등이고(같은 원장 → 같은 결과, 임시 키 교체라 중간 상태가 없다) 현재
-// 단일 인스턴스 전제다. 다중 인스턴스로 전환하면 임시 키 충돌·중복 부하를 재검토한다(plan.md 별도 절).
+// 시장 단위 분산 락을 둔다(RankingRebuildLock, 이슈 #539) — ADR-0021 §결정 7이 확정한 블루-그린 배포는 전환
+// 이후에도 이전 색 인스턴스를 다음 배포까지 내리지 않아, 배포와 배포 사이 대부분의 시간 동안 두 인스턴스가
+// 같은 Redis를 보며 함께 떠 있다. 재구성이 멱등이라는 것(같은 원장 → 같은 결과)은 그대로지만, 임시 키
+// ranking:{market}:rebuild가 인스턴스별로 분리돼 있지 않아 두 인스턴스가 같은 시장을 동시에 재구성하면 한쪽의
+// DEL이 다른 쪽이 ZADD로 채우던 내용을 지울 수 있다 — 그 상태로 먼저 끝난 쪽이 RENAME하면 매도 이력이 있는
+// 계좌 일부가 랭킹에서 빠진 채로 서비스되고, 다음 재구성(최대 24시간 뒤)까지 알아챌 방법이 없다.
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -35,6 +40,7 @@ public class RankingRebuildService {
 	private final TradeService tradeService;
 	private final AccountService accountService;
 	private final RankingStore rankingStore;
+	private final RankingRebuildLock rankingRebuildLock;
 
 	// 기동 완료 시점 1회 재구성 — Redis가 비어 있는 채로 서비스가 뜨는 것을 막는다.
 	// BithumbFeedLifecycle과 같은 훅이며, 주기 배치와 완전히 같은 rebuildAll() 경로를 탄다.
@@ -89,19 +95,28 @@ public class RankingRebuildService {
 	// account 도메인이 ranking의 상수에 의존하게 되고(ADR-0002 도메인 경계 역행), 다른 호출자에게도 이
 	// 사정이 딸려 간다. 반대로 여기서 나누면 두 청크 크기의 정본이 RankingStore 한 곳으로 남는다.
 	public void rebuild(Market market) {
-		List<Long> accountIds = tradeService.getSoldAccountIds(market);
-		List<RankingEntryDto> entries = new ArrayList<>(accountIds.size());
-		for (int start = 0; start < accountIds.size(); start += RankingStore.REBUILD_CHUNK_SIZE) {
-			int end = Math.min(start + RankingStore.REBUILD_CHUNK_SIZE, accountIds.size());
-			for (Account account : accountService.getAccountsByIds(accountIds.subList(start, end))) {
-				entries.add(new RankingEntryDto(account.getId(), account.getRealizedPnl()));
-			}
+		Optional<String> lockToken = rankingRebuildLock.tryLock(market);
+		if (lockToken.isEmpty()) {
+			log.info("랭킹 재구성 락을 얻지 못해 이번 실행을 건너뜁니다(다른 인스턴스가 이미 처리 중) - market={}", market);
+			return;
 		}
-		// replaceAll은 예외를 삼키므로 반환값이 유일한 성공 판정 근거다. 실패한 tick에서 "완료" INFO를 남기면
-		// 로그만 보는 사람이 실패를 성공으로 읽는다(PR #284 QA 지적). 실패 사유·스택트레이스는 replaceAll이
-		// ERROR로 이미 남기므로 여기서 다시 찍지 않는다.
-		if (rankingStore.replaceAll(market, entries)) {
-			log.info("랭킹 재구성 완료. market={}, 대상 계좌 수={}", market, entries.size());
+		try {
+			List<Long> accountIds = tradeService.getSoldAccountIds(market);
+			List<RankingEntryDto> entries = new ArrayList<>(accountIds.size());
+			for (int start = 0; start < accountIds.size(); start += RankingStore.REBUILD_CHUNK_SIZE) {
+				int end = Math.min(start + RankingStore.REBUILD_CHUNK_SIZE, accountIds.size());
+				for (Account account : accountService.getAccountsByIds(accountIds.subList(start, end))) {
+					entries.add(new RankingEntryDto(account.getId(), account.getRealizedPnl()));
+				}
+			}
+			// replaceAll은 예외를 삼키므로 반환값이 유일한 성공 판정 근거다. 실패한 tick에서 "완료" INFO를 남기면
+			// 로그만 보는 사람이 실패를 성공으로 읽는다(PR #284 QA 지적). 실패 사유·스택트레이스는 replaceAll이
+			// ERROR로 이미 남기므로 여기서 다시 찍지 않는다.
+			if (rankingStore.replaceAll(market, entries)) {
+				log.info("랭킹 재구성 완료. market={}, 대상 계좌 수={}", market, entries.size());
+			}
+		} finally {
+			rankingRebuildLock.unlock(market, lockToken.get());
 		}
 	}
 }
