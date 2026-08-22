@@ -2,8 +2,74 @@
 
 AI 에이전트가 실제로 저지르고 재현·확인된 실수만 기록한다. **추측성 예방 규칙 금지** — 실제 발생하지 않은 것은 적지 않는다. 구현 시작 전 이 파일을 읽고, 같은 실수를 재현·확인하면 행을 추가한다.
 
+## 공유 작업 폴더 규칙
+
+**이 절은 새 규칙이 아니라 아래 표에서 뽑아 모은 것이다.** 각 항목 끝의 날짜가 근거 행이며, 근거 없는
+항목은 넣지 않는다(파일 규칙). 이 저장소는 한 클론에서 여러 세션이 동시에 도는 일이 잦아 같은 사고가
+반복됐으므로, 표를 다 읽기 전에 이것부터 본다.
+
+1. **브랜치를 바꾸지 않는다.** `git checkout`·`git switch`·`git restore`로 작업 트리를 갈아치우면 다른
+   세션이 편집 중인 파일이 그 자리에서 사라진다. 다른 브랜치가 필요하면 **worktree를 만들어 그 안에서만**
+   작업한다 — 이 저장소는 이미 `.claude/worktrees/` 아래에서 그렇게 운용되고 있다.
+   ```bash
+   git worktree add .claude/worktrees/<작업이름> <브랜치>
+   ```
+   다른 브랜치·커밋의 **내용만** 보면 되는 경우는 worktree도 만들지 말고 `git show <ref>:<path>`를 쓴다.
+   (2026-08-04 · 2026-08-19 · 2026-08-20, `ai/parallel-agents.md`)
+
+2. **Gradle을 돌리기 전에 다른 빌드가 도는지 확인한다.**
+   ```bash
+   powershell -NoProfile -Command "Get-Process java -ErrorAction SilentlyContinue | Select-Object Id,StartTime"
+   ```
+   같은 폴더에서 빌드가 겹치면 서로를 깨뜨린다. **worktree가 갈려 있으면 `build/`가 달라 그 충돌은 나지
+   않지만, 메모리는 폴더와 무관하게 공유된다** — `FreePhysicalMemory`가 아니라
+   `(Get-CimInstance Win32_OperatingSystem).FreeVirtualMemory`를 봐야 데몬 기동 실패를 예측할 수 있다.
+   (2026-07-25 · 2026-07-30 · 2026-08-10 · 2026-08-21)
+
+3. **`:test FAILED`인데 `<failure>`가 0건이면 코드 문제가 아니다.** 특히
+   `NoSuchFileException: build/test-results/test/binary/in-progress-results-generic.bin`은 빌드 충돌이다.
+   **그냥 재실행하지 않는다** — 재실행이 다른 세션 빌드까지 죽인다. 복구는
+   `./gradlew --stop` → java 프로세스가 실제로 사라진 것 확인 → 단독 재실행 순서로만 한다.
+   (2026-07-26 · 2026-08-09 · 2026-08-10)
+
+4. **백그라운드 빌드를 중단해도 Gradle 데몬은 계속 돈다.** 명령을 취소한 것과 빌드가 멈춘 것은 다르다.
+   `--stop`은 바쁜 데몬에 종료 *요청*만 보내고 즉시 반환하므로 **프로세스 종료까지 확인**한다. 확인 없이 새
+   빌드를 띄우면 3번 증상이 그대로 재현된다. (2026-07-26 · 2026-08-10)
+
+5. **전체 `./gradlew build`를 습관적으로 돌리지 않는다.** 이 머신에서 완주시키는 용도로 쓰지 않는다 — Bash
+   도구(Git Bash)는 Testcontainers가 Docker 소켓을 못 찾아 전량 실패하고, PowerShell 도구는 소켓은 붙지만
+   전체 스위트에서 메모리 부족으로 죽는다. (2026-08-11 · 2026-08-20 · 2026-08-21)
+
+   검증은 아래 순서로 한다.
+
+   1. **항상 돌린다 (싸고, 전체 범위를 본다).**
+      ```bash
+      ./gradlew compileJava compileTestJava spotlessJavaCheck spotbugsMain spotbugsTest
+      ```
+      `spotlessJavaCheck`와 `spotbugs*`는 부분 실행이 아니라 **원래 트리 전체를 검사하는 태스크**다 —
+      `/feature` 마무리 게이트 3개 중 둘을 이것으로 그대로 재현한다.
+   2. **변경에 영향받는 테스트만** `--tests` 필터로 돌린다.
+   3. **전체 `build`는 조건부로만 시도한다.** 경쟁하는 `java` 프로세스가 없고 `FreeVirtualMemory`에 여유가
+      있을 때만이다. **"일단 돌려 보고 실패하면 CI에 맡긴다"는 하지 않는다** — 이 머신에서 실패는 빠르지
+      않고(20~50분 지연·OOM) 그 사이 다른 세션 빌드까지 말린다. 실패 비용을 매번 먼저 치르는 셈이다.
+
+   **부분 검증이 대신하지 못하는 것은 커버리지 40% 하나다** — 전체 테스트 실행이 필요하다. 이건 PR의 CI에
+   맡기고, **PR 본문 "빌드 검증 SHA" 칸에는 실제로 돌린 것만 적는다.** 전체 빌드를 안 돌렸으면 SHA를 적지
+   말고 무엇을 돌렸는지 실측대로 쓴다 — 안 한 검증에 체크하면 리뷰어가 통과한 게이트를 오해한다.
+
+6. **내 변경과 충돌해 보이는 남의 변경을 되돌리지 않는다.** 혼자 작업하는 것이 아니다. 이상하면 되돌리지
+   말고 보고한다. `git add`에는 **경로를 명시**하고 `git add -A`·`git commit -a`를 쓰지 않는다 — 다른 세션의
+   작업물이 내 커밋에 통째로 딸려 들어간다. 커밋 전 `git branch --show-current`로 자기 브랜치인지 확인한다.
+   (2026-08-19)
+
+**파일 내용이 예상과 다르면 코드가 손상됐다고 가정하기 전에 `git branch --show-current`·`git status`부터
+확인한다.** 손실이 아니라 다른 세션이 브랜치를 옮긴 것일 수 있다 (2026-08-20).
+
+## 실수 로그
+
 | 날짜 | 실수 | 증상 | 수정 | 재발 방지 |
 |---|---|---|---|---|
+| 2026-08-23 | spec 053 초안을 쓴 세션이 **존재하지 않는 문서 절을 근거로 인용**했다 — `handoff.md`와 `spec.md`가 `012` §설계 판단 "5. 재미있는 자기모순 하나"를 spec의 핵심 전제("반사실이 후검증에 걸려 막힌 사고다")의 근거로 들었다. handoff 머리말은 "아래 사실은 전부 코드·운영 응답으로 직접 확인한 것이고 추측이 아니다"라고 적혀 있었다 | spec 012에는 `설계 판단`이라는 절이 **없다**(그 이름을 쓰는 것은 spec 047이다). "재미있는 자기모순"이라는 표현도 저장소에서 053 폴더 밖에는 나오지 않는다. **실제 근거인 `012` §왜 반사실은 AI 문장에 넣지 않는가는 정반대를 말한다** — 반사실을 뺀 것은 검증기 때문이 아니라 제품 판단이고 가정법 금지는 그 판단과 정렬돼 있다. 인용이 틀린 채로 요구사항(`FEED-015`)·측정 시나리오·발표 문구까지 그 위에 세워졌고, **구현 착수 직전에 사용자가 원문을 짚어 잡았다** | spec 053에서 `FEED-015`를 범위 제외로 옮기고 이슈 #531로 분리했다. `handoff.md`에 정정 블록을 넣어 인용이 실재하지 않는다는 것과 실제 근거를 남겼고, 함께 적혀 있던 "중간 발표에서도 같은 표현으로 공개했다"는 저장소로 확인되지 않아 **미검증**으로 표시했다 | **다른 문서의 절을 근거로 인용할 때는 그 절이 실재하는지 `grep`으로 확인한다.** 절 이름은 비슷한 다른 spec의 것을 기억으로 옮겨 적기 쉽다(047 §설계 판단 → 012로). **인수인계 문서의 "직접 확인했고 추측이 아니다"라는 자기 선언을 검증 없이 신뢰하지 않는다** — 그 문장이 있는 문서일수록 인용을 대조한다. spec의 전제를 이루는 인용은 **착수 전에 원문을 열어 읽는다**, 요약이나 재인용으로 대신하지 않는다 |
 | 2026-08-21 | 049 tester 세션이 클래스 2개(단위 1 + `@SpringBootTest` 통합 1)만 `--tests` 필터로 실행했는데도 Gradle 데몬 기동 자체가 반복적으로 실패해, 처음엔 "메모리를 조금 더 줄이면 되겠지"로 여기고 `-Xmx512m`→`-Xmx384m`→`-XX:+UseSerialGC`까지 낮춰가며 재시도했다 — 실제로는 병목이 물리 메모리가 아니었다 | `Native memory allocation (mmap) failed`·`Could not reserve enough space for object heap`가 반복됐다. `Get-CimInstance Win32_OperatingSystem`으로 확인한 `FreePhysicalMemory`는 0.7~1.4GB로 낮지만 버틸 만해 보였는데, **`FreeVirtualMemory`(커밋 가능한 남은 가상 메모리, RAM+페이지파일 총합 기준)는 226~460MB로 훨씬 심각했다** — Gradle 데몬 JVM은 `-Dorg.gradle.jvmargs`로 힙을 줄여도 데몬 자체의 고정 기본 힙(`-Xms256m -Xmx512m`)으로 먼저 뜨려다 그 단계에서부터 죽는다. `Get-Process`로 확인해도 경합하는 `GradleWorkerMain`·`GradleDaemon`은 하나도 없었다 — 원인은 이 세션과 동시에 떠 있던 다른 세션들의 `claude` 프로세스(8개 안팎, 세션당 수백MB) + IDE(`idea64` 2.7GB) + Docker Desktop 백엔드 + 브라우저·Slack·Discord 등 **평상시 상주 프로세스들의 누적 커밋 사용량**이었다 | 이번 세션에서는 회복되지 않아 빌드 검증을 완료하지 못한 채 정적 코드 검토(시그니처 대조)로 대체하고 환경 문제로 보고했다 | **Gradle 데몬 기동이 반복 실패하면 힙 크기를 더 줄이기 전에 `(Get-CimInstance Win32_OperatingSystem).FreeVirtualMemory`부터 확인한다.** `FreePhysicalMemory`만 보고 "그래도 여유가 있다"고 판단하지 않는다 — 실제 실패 원인은 커밋 한도(가상 메모리)이지 물리 메모리가 아닐 수 있다. `Get-Process`로 경합하는 `GradleWorkerMain`/`GradleDaemon`이 안 보이면 원인을 코드나 테스트 클래스 수로 돌리지 말고, 같은 호스트의 다른 세션·IDE·Docker Desktop 등 상주 프로세스 총합을 의심한다. `-Dorg.gradle.jvmargs`는 데몬 자신의 기동 힙을 줄이지 못한다는 것도 함께 기억한다 |
 | 2026-08-20 | 전체 `./gradlew build`의 `:test`가 `Java heap space`로 죽는 것을 2026-08-11 행처럼 "이 로컬 머신의 한계"로만 여기고 넘어갈 뻔했다 (PR #482) | 로컬뿐 아니라 **GitHub Actions 러너(ubuntu-latest)에서도 동일 시그니처로 재현**됐다(run 32284448720, `Could not complete execution for Gradle Test Executor 1 > Java heap space`, 13분 29초 만에 실패). `./gradlew test -I`로 확인한 실제 설정은 `maxParallelForks=1`·`maxHeapSize=null`(JVM 에르고노믹 기본값, 16GB 호스트에서 약 4GB)·`forkEvery=0`(재시작 없음) — 테스트 클래스 465개(약 3046건)를 워커 하나가 재시작 없이 전부 처리하며 `@SpringBootTest`류 조합마다 스프링 테스트 컨텍스트 캐시가 쌓여 스위트 막판에 힙을 넘긴다 | `build.gradle`의 `tasks.withType(Test)`에 `maxHeapSize = '4g'`·`forkEvery = 100`을 추가. 같은 워크스페이스에서 전체 `./gradlew build`가 7분 9초 만에 `BUILD SUCCESSFUL`(커버리지 검증 포함)로 완주하는 것을 확인했다 | **"이 머신의 한계"로 결론 내리기 전에 CI(다른 하드웨어)에서도 재현되는지 먼저 확인한다.** 로컬·CI 양쪽에서 나면 머신 문제가 아니라 설정(`maxHeapSize`/`forkEvery`/`maxParallelForks`) 문제일 가능성이 높다 — `./gradlew test -I <init-script>`로 실제 적용 중인 Test 태스크 설정값을 추측 없이 확인할 수 있다 |
 | 2026-08-19 | 같은 클론에서 두 세션을 동시에 돌려, 문서 세션이 `git checkout dev` → `git add -A` → 커밋을 하는 동안 구현 세션의 작업물이 그 커밋에 함께 담기고 추적 중이던 파일의 미커밋 수정이 사라졌다 | 구현 세션이 만든 신규 파일 15개가 `docs: spec 041·042에 047·#463 관계 기록` 커밋에 섞여 들어갔고, `PracticeAttempt.java` 등 이미 추적되던 4개 파일의 수정은 브랜치 전환 과정에서 통째로 유실됐다. 구현 세션은 자기 브랜치가 아니라 문서 세션의 브랜치 위에 서 있었다 | `git reflog`로 경위를 확인하고 `git reset --soft HEAD~1`로 커밋을 풀어 문서 5개만 다시 커밋했다. 유실된 수정은 다시 작성했다 | **한 클론에서 두 세션을 동시에 돌리지 않는다.** 병렬 작업은 `git worktree`로 디렉터리를 나눈다(`ai/parallel-agents.md`). 부득이 공유한다면 각 세션은 `git add`에 경로를 명시하고 `git add -A`·`git commit -a`를 쓰지 않으며, 커밋 전 `git branch --show-current`로 자기 브랜치인지 확인한다 |

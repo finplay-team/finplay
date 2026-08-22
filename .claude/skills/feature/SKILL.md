@@ -40,8 +40,11 @@ description: spec 폴더 하나를 받아 구현→테스트 루프를 돌리고
 
 ## 마무리 — 모든 항목 완료 후
 
-5. `.\gradlew.bat build` 실행 (전체 게이트: Spotless + SpotBugs + 커버리지 40%). 실패하면 원인 항목의 implementer 세션을 재개해 수정 후 재실행.
-   - 통과하면 그 시점의 `git rev-parse HEAD`를 기록해 둔다. PR 본문의 **빌드 검증 SHA**에 적어야 `/review-pr`이 build를 재실행하지 않는다 (아래 8번 보고에 포함).
+5. 검증 실행. **전체 `build`를 습관적으로 돌리지 않는다** — 이 머신은 완주시키지 못한다 (`ai/agent-mistakes.md` §공유 작업 폴더 규칙 5).
+   - **항상**: `.\gradlew.bat compileJava compileTestJava spotlessJavaCheck spotbugsMain spotbugsTest` + 이번 spec에 영향받는 테스트를 `--tests` 필터로. `spotlessJavaCheck`·`spotbugs*`는 트리 전체를 보는 태스크라 **전체 게이트 3개 중 둘을 그대로 재현한다.**
+   - **조건부로만** 전체 `.\gradlew.bat build`를 시도한다 — 경쟁하는 `java` 프로세스가 없고 `FreeVirtualMemory`에 여유가 있을 때. "돌려 보고 실패하면 CI" 방식은 쓰지 않는다(실패가 20~50분 지연·OOM이고 다른 세션 빌드까지 말린다).
+   - 실패하면 원인 항목의 implementer 세션을 재개해 수정 후 재실행.
+   - **전체 `build`를 통과시켰을 때만** 그 시점의 `git rev-parse HEAD`를 기록해 PR 본문의 **빌드 검증 SHA**에 적는다 — 그래야 `/review-pr`이 build를 재실행하지 않는다. **돌리지 않았으면 SHA를 적지 말고 실제로 돌린 태스크를 실측대로 쓴다.** 그 경우 커버리지 40%는 검증되지 않은 채 남고 **PR의 CI가 유일한 전체 게이트**가 된다 (아래 8번 보고에 포함).
 6. **reviewer** 서브에이전트 투입 — **항상 새 세션** + **리뷰 모드** 명시 (범위: 이번 spec의 전체 diff, `git diff dev...HEAD`).
    - `RESULT: 차단 N건`에서 N > 0 → 차단 내역을 첨부해 해당 항목의 implementer 세션을 재개해 수정 후 5번부터 재실행. [권장]은 기록만 하고 진행.
 7. **planner** 서브에이전트 투입 — **동기화 모드** 명시 → `ai/api-routes.md`(라우트 목록)·`docs/api/`의 해당 도메인 파일(계약 상세) 갱신분이 있으면 `docs: ...` 커밋.
