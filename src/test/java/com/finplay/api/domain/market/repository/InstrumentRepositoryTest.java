@@ -144,6 +144,28 @@ class InstrumentRepositoryTest {
 				"SANDBOX_COIN_1", "SANDBOX_COIN_2", "SANDBOX_COIN_3");
 	}
 
+	// 이슈 #490 — BithumbFeedSimulator가 훑는 조회다. 샌드박스 코인이 빠지는지, 실제 코인은 그대로
+	// 남는지를 실제 시드로 확인한다.
+	@Test
+	void tradableNonSandboxCryptoQueryExcludesSandboxInstruments() {
+		List<Instrument> targets = repository
+			.findByMarketAndTradableTrueAndTutorialSampleFalseOrderByIdAsc(Market.CRYPTO);
+
+		assertThat(targets).isNotEmpty();
+		assertThat(targets).allSatisfy(instrument -> {
+			assertThat(instrument.isTutorialSample()).isFalse();
+			assertThat(instrument.isTradable()).isTrue();
+			assertThat(instrument.getMarket()).isEqualTo(Market.CRYPTO);
+		});
+		assertThat(targets).extracting(Instrument::getSymbol)
+			.doesNotContain("SANDBOX_COIN_1", "SANDBOX_COIN_2", "SANDBOX_COIN_3");
+
+		// 이 차이가 이슈 #490의 내용 그 자체다 — 예전 조회에는 샌드박스 코인이 들어 있었다.
+		assertThat(repository.findByMarketAndTradableTrueOrderByIdAsc(Market.CRYPTO))
+			.extracting(Instrument::getSymbol)
+			.contains("SANDBOX_COIN_1");
+	}
+
 	@Test
 	void databaseRejectsDuplicateSymbolEvenAcrossDifferentMarkets() {
 		// 005930(삼성전자, STOCK)은 시드에 이미 존재한다. 다른 시장(CRYPTO)에서 같은 symbol을 넣어도

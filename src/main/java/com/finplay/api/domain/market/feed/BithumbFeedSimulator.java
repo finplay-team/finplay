@@ -43,10 +43,25 @@ public class BithumbFeedSimulator {
 
 	private final Map<String, BigDecimal> lastPrices = new ConcurrentHashMap<>();
 
+	/**
+	 * 합성 틱을 발행한다. <b>샌드박스(튜토리얼) 종목은 대상이 아니다</b> (이슈 #490).
+	 *
+	 * <p>예전에는 {@code findByMarketAndTradableTrueOrderByIdAsc}로 훑어 {@code SANDBOX_COIN_1}까지
+	 * 포함됐다 — 그 종목도 {@code market=CRYPTO}·{@code tradable=true}(V32 시드)이기 때문이다. 결과로
+	 * {@code price:crypto:SANDBOX_COIN_1}이 3초마다 무의미한 값으로 갱신되고 그 값으로 가격 이벤트가
+	 * 발행됐다. PR #487 QA에서 튜토리얼 OCO 예약이 tick을 한 번도 부르지 않았는데 2~3초 만에 익절
+	 * 체결되는 것이 3회 재현된 원인이 이것이다.
+	 *
+	 * <p><b>소비 측 방어는 그대로 둔다.</b> 생산 측을 막았다고 소비 측 불변식을 풀면, 다른 경로로 오염된
+	 * 값이 들어올 때 다시 열린다(이슈 §완료 조건 4번).
+	 *
+	 * <p>{@code InstrumentService.getRealInstrumentEntities}를 재사용하지 않은 이유는 그쪽이 tradable을
+	 * 보지 않기 때문이다 — 그대로 쓰면 거래 불가 종목에까지 틱이 나가 회귀가 된다.
+	 */
 	@Scheduled(fixedRate = EMIT_INTERVAL_MS)
 	public void emitTicks() {
 		List<Instrument> cryptoInstruments = instrumentRepository
-			.findByMarketAndTradableTrueOrderByIdAsc(Market.CRYPTO);
+			.findByMarketAndTradableTrueAndTutorialSampleFalseOrderByIdAsc(Market.CRYPTO);
 		LocalDateTime now = LocalDateTime.now(clock);
 		for (Instrument instrument : cryptoInstruments) {
 			String symbol = instrument.getSymbol();
