@@ -172,8 +172,8 @@ class TradeAllocationInsertLockContentionIntegrationTest {
 
 		int totalSuccess = measurements.stream().mapToInt(DuplicateKeyMeasurement::successCount).sum();
 		int totalDeadlocks = measurements.stream().mapToInt(DuplicateKeyMeasurement::deadlockCount).sum();
-		int totalConstraintViolations =
-			measurements.stream().mapToInt(DuplicateKeyMeasurement::constraintViolationCount).sum();
+		int totalConstraintViolations = measurements.stream()
+			.mapToInt(DuplicateKeyMeasurement::constraintViolationCount).sum();
 		int totalOtherFailures = measurements.stream().mapToInt(DuplicateKeyMeasurement::otherFailureCount).sum();
 
 		log.info(
@@ -397,7 +397,8 @@ class TradeAllocationInsertLockContentionIntegrationTest {
 					}
 				}
 			}
-			return new DuplicateKeyMeasurement(successCount, deadlockCount, constraintViolationCount, otherFailureCount);
+			return new DuplicateKeyMeasurement(successCount, deadlockCount, constraintViolationCount,
+				otherFailureCount);
 		} finally {
 			executor.shutdownNow();
 			assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
