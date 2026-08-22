@@ -202,9 +202,10 @@ class TradeAllocationInsertLockContentionIntegrationTest {
 
 			for (Long exitPlanId : exitPlanIds) {
 				ExitPlanStatus status = exitPlanRepository.findById(exitPlanId).orElseThrow().getStatus();
-				if (status != ExitPlanStatus.FILLED_TAKE_PROFIT) {
-					log.warn("exitPlanId={} 최종 상태가 FILLED_TAKE_PROFIT이 아니다: {}", exitPlanId, status);
-				}
+				// ExitPlanFillService.fillIfPending에는 조용히 빠져나가는 return이 세 군데 있다(plan 없음 /
+				// !isPending() / triggeredType == null) — 이 중 하나라도 걸리면 trade_allocations에 INSERT가
+				// 일어나지 않은 채 데드락 0건이 통과할 수 있으므로 로그가 아니라 어서션으로 막는다.
+				assertThat(status).isEqualTo(ExitPlanStatus.FILLED_TAKE_PROFIT);
 			}
 			return new Measurement(elapsedMs, deadlockCount, otherFailureCount);
 		} finally {
