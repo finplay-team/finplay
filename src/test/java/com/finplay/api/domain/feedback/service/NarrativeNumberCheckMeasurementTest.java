@@ -59,6 +59,9 @@ class NarrativeNumberCheckMeasurementTest {
 	private static final List<String> JUDGEMENT = List.of("버티", "놓치", "실수", "잘못", "다행", "기회를", "았다면", "었다면", "였다면",
 		"했다면", "렸다면");
 
+	// 수 토큰에 쓰이는 문자들. 정규식을 쓰지 않는 이유는 이 상수 하나면 충분해서다.
+	private static final String NUMBER_CHARS = "+-0123456789,.";
+
 	private static final List<String> LEGACY_RULES = Stream
 		.of(CAUSATION, RECOMMENDATION, PREDICTION, ADVICE, JUDGEMENT).flatMap(List::stream).toList();
 
@@ -164,9 +167,11 @@ class NarrativeNumberCheckMeasurementTest {
 	void numberValidatorDetectsEveryHallucination(HallucinationCase testCase) {
 		String prompt = builder.postSellPrompt(specPostSell());
 
+		// isNotEmpty만으로는 부족하다 — 케이스를 하나 바꿨을 때 "의도한 틀린 값이 아니라 옆에 있던 다른 수
+		// 때문에 잡혔다"가 되어도 12/12가 그대로 나온다. 적발 목록에 틀린 값의 수 부분이 들어 있는지까지 본다.
 		assertThat(numberValidator.validate(testCase.narrative(), prompt).detectedExpressions())
-			.as("적발돼야 한다(틀린 값 %s는 프롬프트에 없다): %s", testCase.wrong(), testCase.narrative())
-			.isNotEmpty();
+			.as("의도한 틀린 값 %s 때문에 적발돼야 한다: %s", testCase.wrong(), testCase.narrative())
+			.contains(numberPartOf(testCase.wrong()));
 	}
 
 	// ---------- 측정 ② 참인 문장 차단율 ----------
@@ -268,6 +273,19 @@ class NarrativeNumberCheckMeasurementTest {
 		List<String> detected = new ArrayList<>(validator.validateCardOrPostSell(narrative).detectedExpressions());
 		detected.addAll(numberValidator.validate(narrative, prompt).detectedExpressions());
 		return detected;
+	}
+
+	// 틀린 값 표기(`-152,070원`·`+2.17%`·`110분`)에서 수 부분만 떼어 낸다 — 적발 목록에는 단위·조사가 없는
+	// 토큰이 담기므로 그대로 비교할 수 없다.
+	private static String numberPartOf(String wrong) {
+		int end = 0;
+		while (end < wrong.length() && NUMBER_CHARS.indexOf(wrong.charAt(end)) >= 0) {
+			end++;
+		}
+		if (end == 0) {
+			throw new IllegalArgumentException("틀린 값에 수가 없다: " + wrong);
+		}
+		return wrong.substring(0, end);
 	}
 
 	// 2026-08-22 시점 NarrativeValidator.detect와 같은 구현이다 — 부분 문자열 대조뿐이고 숫자 규칙이 없다.

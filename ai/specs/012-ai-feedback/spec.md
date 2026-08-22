@@ -279,7 +279,8 @@ feedback/
                NarrativeService           파트별 서술 확정 경로 (생성 → 검증 → 폴백)
                NarrativeGenerator         LLM 호출 (완성된 프롬프트 문자열만 받는다)
                NarrativePromptBuilder     파트별 프롬프트 조립 (§LLM 프롬프트)
-               NarrativeValidator         후검증 — 적발된 표현 목록 반환 (§후검증)
+               NarrativeValidator         후검증(표현 축) — 적발된 표현 목록 반환 (§후검증)
+               NarrativeNumberValidator   후검증(숫자 축) — 매도 회고 전용, 출처 없는 수치 반환 (§후검증, spec 053)
                NarrativeTemplateBuilder   템플릿 문장 조립 (§템플릿 문장)
                NewsSearchQueryBuilder     종목별 검색 질의어 조립 (순수 계산, 코인 보정은 FEED-001)
                NewsTitleFilter            같은 시장 다른 종목명이 든 제목 제외 (순수 계산, FEED-001)
@@ -345,7 +346,7 @@ DTO는 `dto/response/` 하위에 둔다(`docs/conventions.md`, 이 spec에는 �
 
 **프롬프트와 템플릿 문장을 `NarrativeGenerator` 밖에 둔다.** `NarrativePromptBuilder`가 시스템 프롬프트 1종 + 파트별 사용자 프롬프트 4종 + 재생성 프롬프트 1종을 조립하고, `NarrativeGenerator`는 **완성된 문자열만 받아 호출**한다. `NarrativeTemplateBuilder`는 §템플릿 문장의 3종(장중 카드·시가 갭·매도 회고)을 수치로 조립한다. 프로바이더를 바꿔도 프롬프트가 딸려 가지 않게 하려는 것이며, ADR-0011의 "교체는 starter 의존성과 `feedback.llm.*` 설정 변경으로 끝난다"와 같은 의도다. 둘 다 외부 의존이 없어 단위 테스트로 문자열을 직접 단정할 수 있다.
 
-**서술 확정 경로는 `NarrativeService` 하나가 담는다.** 위 넷을 주입받아 파트별로 §후검증의 흐름을 실행한다 — 요약·브리핑은 2단계(생성 → 검증 → 적발 시 재생성 1회 → 그래도 걸리면 서술 없음 + `NONE`), 카드·매도 회고는 1단계(생성 → 검증 → 걸리면 템플릿, 재생성 없음)다. **뒤 이슈의 조회·배치 서비스는 이 서비스 하나만 주입하면 되고 생성기·검증기를 직접 알 필요가 없다.**
+**서술 확정 경로는 `NarrativeService` 하나가 담는다.** 위 다섯을 주입받아 파트별로 §후검증의 흐름을 실행한다 — 요약·브리핑은 2단계(생성 → 검증 → 적발 시 재생성 1회 → 그래도 걸리면 서술 없음 + `NONE`), 카드·매도 회고는 1단계(생성 → 검증 → 걸리면 템플릿, 재생성 없음)다. **뒤 이슈의 조회·배치 서비스는 이 서비스 하나만 주입하면 되고 생성기·검증기를 직접 알 필요가 없다.**
 
 **이 경로를 `NarrativeValidator`에 두지 않은 이유** — 템플릿 폴백은 이미 만들어 둔 문장을 고르는 국소적 동작이지만 재생성은 프로바이더를 다시 부르는 다른 층위라, 검증기가 `NarrativeGenerator`를 주입받는 순간 "검증만 하는 클래스"가 아니게 된다.
 
