@@ -168,6 +168,35 @@ class NarrativeNumberValidatorTest {
 		assertThat(validator.validate("09:30~14:40 동안 보유했습니다.", SPEC_PROMPT).passed()).isTrue();
 	}
 
+	/**
+	 * <b>허용 집합에는 위치 정보가 없다 — 알려진 한계다</b> (PR #538 리뷰 지적).
+	 *
+	 * <p>이 축은 "프롬프트에 그 수가 있었나"만 보고 <b>어느 필드에서 왔는지는 기억하지 않는다.</b> 그래서
+	 * 서로 다른 필드의 값을 맞바꿔 쓰면 <b>모든 수가 출처를 갖는 채로 문장 전체가 거짓</b>이 된다. 손익의
+	 * 방향이 뒤집히므로 하이픈 오탐보다 결과가 크다.
+	 *
+	 * <p>막으려면 대조가 값이 아니라 {@code (필드, 값)} 쌍이 되어야 하는데, 그러려면 서술의 어느 수가 어느
+	 * 필드를 가리키는지 <b>"매수는·매도는" 같은 표현을 읽어야</b> 한다 — 053이 벗어나려던 자리로 되돌아간다.
+	 * 그래서 고치지 않고 여기에 못박는다. 다음 사람이 이것을 버그로 오해하고 규칙을 더하지 않게 한다.
+	 *
+	 * <p>한 줄로 줄이면 이 축은 <b>"이 수가 어디서 왔나"를 보장하고 "이 수를 맞게 썼나"는 보장하지 않는다.</b>
+	 */
+	@Test
+	@DisplayName("서로 다른 필드의 값을 맞바꿔 써도 통과한다 — 값 주머니에 위치 정보가 없다 (알려진 한계)")
+	void swappedFieldValuesPassBecauseTheAllowedSetHasNoPositions() {
+		// 실제는 70,000원에 매수해 68,500원에 매도했다. 아래 문장은 정반대인데 두 수 모두 프롬프트에 있다.
+		assertThat(validator.validate("매수는 68,500원에, 매도는 70,000원에 이뤄졌습니다.", SPEC_PROMPT).passed())
+			.isTrue();
+
+		// 극값 대비 비율도 같은 형태로 새어 나간다 (실제는 최고가 대비 3.25% 낮고 최저가 대비 0.59% 높다).
+		assertThat(validator.validate("매도가는 보유 중 최고가보다 0.59% 낮았습니다.", SPEC_PROMPT).passed())
+			.isTrue();
+
+		// 대조가 값 단위라는 것 자체는 정상 동작이다 — 프롬프트에 없는 수는 그대로 걸린다.
+		assertThat(validator.validate("매수는 68,400원에 이뤄졌습니다.", SPEC_PROMPT).detectedExpressions())
+			.containsExactly("68,400");
+	}
+
 	// ---------- 확인 4: 경계 ----------
 
 	@ParameterizedTest
