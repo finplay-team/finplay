@@ -85,7 +85,7 @@ class BithumbWebSocketFeedClientTest {
 	@Test
 	@DisplayName("연결 성공 시 PriceStore에 CONNECTED 상태를 저장하고 ticker·transaction 두 구독 메시지를 전송하며 since 워터마크를 심는다")
 	void afterConnectionEstablishedSavesConnectedStatusAndSubscribesBothChannels() throws Exception {
-		when(instrumentRepository.findByMarketAndTradableTrueOrderByIdAsc(Market.CRYPTO))
+		when(instrumentRepository.findByMarketAndTradableTrueAndTutorialSampleFalseOrderByIdAsc(Market.CRYPTO))
 			.thenReturn(List.of(
 				Instrument.create(Market.CRYPTO, "BTC", "비트코인", BigDecimal.ONE, 1000, true, LocalDateTime.now())));
 
@@ -100,7 +100,7 @@ class BithumbWebSocketFeedClientTest {
 	@Test
 	@DisplayName("구독 메시지 중 첫 번째는 ticker, 두 번째는 transaction 타입이며 tickTypes가 없다")
 	void subscribeSendsTickerThenTransactionWithDistinctPayloadShapes() throws Exception {
-		when(instrumentRepository.findByMarketAndTradableTrueOrderByIdAsc(Market.CRYPTO))
+		when(instrumentRepository.findByMarketAndTradableTrueAndTutorialSampleFalseOrderByIdAsc(Market.CRYPTO))
 			.thenReturn(List.of(
 				Instrument.create(Market.CRYPTO, "BTC", "비트코인", BigDecimal.ONE, 1000, true, LocalDateTime.now())));
 		ArgumentCaptor<TextMessage> messageCaptor = ArgumentCaptor.forClass(TextMessage.class);
@@ -111,6 +111,28 @@ class BithumbWebSocketFeedClientTest {
 		List<TextMessage> sent = messageCaptor.getAllValues();
 		assertThat(sent.get(0).getPayload()).contains("\"type\":\"ticker\"").contains("\"tickTypes\"");
 		assertThat(sent.get(1).getPayload()).contains("\"type\":\"transaction\"").doesNotContain("tickTypes");
+	}
+
+	// 이슈 #528 — 구독 목록에 샌드박스 종목이 섞이지 않는 것을 조회 선택으로 고정한다. 실제 필터링은 쿼리가
+	// 하므로(InstrumentRepositoryTest가 검증) 여기서는 "샌드박스를 거르는 조회를 쓰는가"만 본다.
+	// 조회를 통째로 옛것으로 되돌리면 이 파일의 다른 테스트들이 먼저 깨진다 — **이 테스트만 고유하게 막는 것은
+	// 새 조회와 옛 조회를 함께 부르는 구현**이고, 그게 아래 never() 단정의 몫이다.
+	// 심볼 표기(`{symbol}_KRW`)를 구독 페이로드에서 단정하는 곳도 이 테스트뿐이다.
+	@Test
+	@DisplayName("샌드박스를 거르지 않는 옛 조회로는 구독 목록을 만들지 않는다")
+	void subscribeUsesSandboxExcludingQueryOnly() throws Exception {
+		when(instrumentRepository.findByMarketAndTradableTrueAndTutorialSampleFalseOrderByIdAsc(Market.CRYPTO))
+			.thenReturn(List.of(
+				Instrument.create(Market.CRYPTO, "BTC", "비트코인", BigDecimal.ONE, 1000, true, LocalDateTime.now())));
+		ArgumentCaptor<TextMessage> messageCaptor = ArgumentCaptor.forClass(TextMessage.class);
+
+		client.afterConnectionEstablished(session);
+
+		verify(instrumentRepository).findByMarketAndTradableTrueAndTutorialSampleFalseOrderByIdAsc(Market.CRYPTO);
+		verify(instrumentRepository, never()).findByMarketAndTradableTrueOrderByIdAsc(any(Market.class));
+		verify(session, times(2)).sendMessage(messageCaptor.capture());
+		assertThat(messageCaptor.getAllValues()).allSatisfy(
+			message -> assertThat(message.getPayload()).contains("BTC_KRW"));
 	}
 
 	@Test
@@ -201,7 +223,8 @@ class BithumbWebSocketFeedClientTest {
 	@Test
 	@DisplayName("stop() 호출 후에는 세션이 종료되고 isConnected가 false를 반환한다")
 	void stopClosesSessionAndMarksDisconnected() throws Exception {
-		when(instrumentRepository.findByMarketAndTradableTrueOrderByIdAsc(Market.CRYPTO)).thenReturn(List.of());
+		when(instrumentRepository.findByMarketAndTradableTrueAndTutorialSampleFalseOrderByIdAsc(Market.CRYPTO))
+			.thenReturn(List.of());
 		when(session.isOpen()).thenReturn(true);
 		client.afterConnectionEstablished(session);
 
@@ -217,7 +240,8 @@ class BithumbWebSocketFeedClientTest {
 	@Test
 	@DisplayName("종료 시 상태 기록이 Redis 장애로 실패해도 stop()은 예외 없이 끝난다 (PR #296 재리뷰 참고사항)")
 	void stopDoesNotPropagateWhenSavingDisconnectedStatusFails() throws Exception {
-		when(instrumentRepository.findByMarketAndTradableTrueOrderByIdAsc(Market.CRYPTO)).thenReturn(List.of());
+		when(instrumentRepository.findByMarketAndTradableTrueAndTutorialSampleFalseOrderByIdAsc(Market.CRYPTO))
+			.thenReturn(List.of());
 		when(session.isOpen()).thenReturn(true);
 		client.afterConnectionEstablished(session);
 		doThrow(new RedisConnectionFailureException("Unable to connect to Redis"))
@@ -263,7 +287,8 @@ class BithumbWebSocketFeedClientTest {
 	@DisplayName("재연결 실패가 반복되면 지연이 5초→10초로 2배가 되고, 연결에 성공하면 다시 5초로 리셋된다")
 	void reconnectDelayDoublesOnRepeatedFailureAndResetsAfterSuccessfulConnection() {
 		stubSuccessfulConnectAttempt();
-		when(instrumentRepository.findByMarketAndTradableTrueOrderByIdAsc(Market.CRYPTO)).thenReturn(List.of());
+		when(instrumentRepository.findByMarketAndTradableTrueAndTutorialSampleFalseOrderByIdAsc(Market.CRYPTO))
+			.thenReturn(List.of());
 		client.start();
 
 		client.afterConnectionClosed(session, CloseStatus.NORMAL);
@@ -313,7 +338,8 @@ class BithumbWebSocketFeedClientTest {
 	@DisplayName("구독 전송이 실패하면 연결상태가 DISCONNECTED로 남고 재연결이 예약된다 (PR #110 리뷰 권장사항)")
 	void subscribeFailureMarksDisconnectedAndSchedulesReconnect() throws Exception {
 		stubSuccessfulConnectAttempt();
-		when(instrumentRepository.findByMarketAndTradableTrueOrderByIdAsc(Market.CRYPTO)).thenReturn(List.of());
+		when(instrumentRepository.findByMarketAndTradableTrueAndTutorialSampleFalseOrderByIdAsc(Market.CRYPTO))
+			.thenReturn(List.of());
 		when(session.isOpen()).thenReturn(true);
 		doThrow(new IOException("전송 실패")).when(session).sendMessage(any(TextMessage.class));
 		client.start();

@@ -144,8 +144,10 @@ class InstrumentRepositoryTest {
 				"SANDBOX_COIN_1", "SANDBOX_COIN_2", "SANDBOX_COIN_3");
 	}
 
-	// 이슈 #490 — BithumbFeedSimulator가 훑는 조회다. 샌드박스 코인이 빠지는지, 실제 코인은 그대로
-	// 남는지를 실제 시드로 확인한다.
+	// 이슈 #490·#528 — 코인 시세 진입점 셋(BithumbFeedSimulator·BithumbRestTickerPoller·
+	// BithumbWebSocketFeedClient)이 모두 훑는 조회다. 샌드박스 코인이 빠지는지, 실제 코인은 그대로 남는지를
+	// 실제 시드로 확인한다. 저쪽 세 컴포넌트의 단위 테스트는 "이 조회를 고르는가"만 보고 실제 필터링 의미는
+	// 여기가 책임진다.
 	@Test
 	void tradableNonSandboxCryptoQueryExcludesSandboxInstruments() {
 		List<Instrument> targets = repository
@@ -160,7 +162,7 @@ class InstrumentRepositoryTest {
 		assertThat(targets).extracting(Instrument::getSymbol)
 			.doesNotContain("SANDBOX_COIN_1", "SANDBOX_COIN_2", "SANDBOX_COIN_3");
 
-		// 이 차이가 이슈 #490의 내용 그 자체다 — 예전 조회에는 샌드박스 코인이 들어 있었다.
+		// 이 차이가 이슈 #490·#528의 내용 그 자체다 — 예전 조회에는 샌드박스 코인이 들어 있었다.
 		assertThat(repository.findByMarketAndTradableTrueOrderByIdAsc(Market.CRYPTO))
 			.extracting(Instrument::getSymbol)
 			.contains("SANDBOX_COIN_1");

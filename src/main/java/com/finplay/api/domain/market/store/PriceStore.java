@@ -120,11 +120,16 @@ public class PriceStore {
 		return value == null ? FeedConnectionStatus.DISCONNECTED : FeedConnectionStatus.valueOf(value);
 	}
 
-	// 주어진 시각이 10초를 초과하면 stale(유효하지 않음)로 판정한다. 판정 기준 시각은 관측 시각(observedAt)이다
-	// (PRICE-REST-001, ai/specs/034-crypto-price-rest-backup) — 호출자가 CryptoPriceDto.observedAt()을 넘겨야
-	// REST 폴링이 신선도를 유지하는 효과가 실제로 반영된다. 표시·체결 판정(PriceQueryService)은 036 이후 이
-	// 메서드를 더 이상 호출하지 않는다 — 지금은 isPriceAvailable() 경유로 CryptoPriceSnapshotService(변동 카드
-	// 재료 신뢰도 게이트, PRICE-NOSTALE-004)만 이 stale 개념을 쓴다.
+	// 주어진 시각이 10초를 초과하면 stale(유효하지 않음)로 판정한다. 표시·체결 판정(PriceQueryService)은 036
+	// 이후 이 메서드를 더 이상 호출하지 않는다 — 지금은 isPriceAvailable() 경유로 CryptoPriceSnapshotService
+	// (변동 카드 재료 신뢰도 게이트, PRICE-NOSTALE-004)만 이 stale 개념을 쓴다.
+	//
+	// **판정 기준 시각은 체결 시각(receivedAt)이다.** 2026-08-23 정정(이슈 #536) — 그전까지 이 자리에 "기준은
+	// 관측 시각(observedAt)이며 호출자가 CryptoPriceDto.observedAt()을 넘겨야 REST 폴링 효과가 반영된다"고
+	// 적혀 있었으나, 실제 호출자인 isPriceAvailable()·getLatestPrices()는 둘 다 receivedAt을 넘긴다. 즉 REST
+	// 폴링은 stale 판정에 영향을 주지 않는다. 남은 유일한 소비자가 "마지막 체결이 방금 있었는가"로 재료를
+	// 거르는 신뢰도 게이트라 현재 동작을 정본으로 인정하고 주석을 현실에 맞췄다 — 관측 시각 기준으로 되돌릴
+	// 필요가 생기면 그때 별도로 판단한다(PRICE-REST-001의 원래 의도는 그쪽이었다).
 	public boolean isStale(LocalDateTime observedAt) {
 		Duration elapsed = Duration.between(observedAt, LocalDateTime.now(clock));
 		return elapsed.compareTo(STALE_THRESHOLD) > 0;
