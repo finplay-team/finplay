@@ -33,6 +33,11 @@ class NarrativeTemplateBuilderTest {
 
 	private final NarrativeValidator validator = new NarrativeValidator();
 
+	// 숫자 축 교차 검사용 (spec 053). 프롬프트도 실제 조립기로 만들어 같은 입력의 두 문자열을 맞대 본다.
+	private final NarrativeNumberValidator numberValidator = new NarrativeNumberValidator();
+
+	private final NarrativePromptBuilder promptBuilder = new NarrativePromptBuilder();
+
 	// ---------- 골든 마스터 ----------
 
 	@Test
@@ -296,6 +301,62 @@ class NarrativeTemplateBuilderTest {
 					.isEmpty();
 				assertThat(result.passed()).isTrue();
 			});
+	}
+
+	// ---------- 확인 2-2: 폴백 문장이 숫자 후검증도 통과한다 (spec 053 §완료 조건) ----------
+
+	// 같은 입력으로 템플릿과 프롬프트를 함께 만들어 대조한다. 폴백 문장이 스스로 위반이면 대체 경로가
+	// 성립하지 않으므로, 시각 표기가 갈리는 네 갈래를 모두 건다 — 표기가 하나만 어긋나도 매도 회고가
+	// 템플릿으로 떨어진 뒤 그 템플릿마저 위반이 되는 자리다.
+	static Stream<PostSellPromptDto> everyPostSellShape() {
+		return Stream.of(
+			fixturePostSell("-0.0217", "70800", LocalTime.of(11, 5)),
+			fixturePostSell("0.0305", "72500", LocalTime.of(13, 41)),
+			fixturePostSell("0", "70000", LocalTime.of(9, 30)),
+			// 극값 없음 — 셋째 문장이 통째로 빠진다.
+			fixturePostSell("-0.0217", null, null),
+			fixturePostSell("0.0305", null, null),
+			// DAILY 극값 — "8월 3일 종가"로 적힌다. multiDayHold라 매수·매도 줄도 날짜가 붙는다.
+			multiDayPostSell(HoldHighBasis.DAILY, TRADING_DATE.atTime(23, 59)),
+			// MINUTE + multiDayHold — "8월 3일 11:05"로 날짜와 시·분이 함께 붙는다.
+			multiDayPostSell(HoldHighBasis.MINUTE, TRADING_DATE.atTime(11, 5)));
+	}
+
+	@ParameterizedTest(name = "[{index}]")
+	@MethodSource("everyPostSellShape")
+	@DisplayName("매도 회고 템플릿 문장의 수치가 전부 같은 입력의 프롬프트에서 온다 — 폴백이 스스로 위반이 아니다")
+	void postSellTemplateNumbersAllComeFromTheSamePrompt(PostSellPromptDto input) {
+		String template = builder.postSellTemplate(input);
+		String prompt = promptBuilder.postSellPrompt(input);
+
+		NarrativeValidationDto result = numberValidator.validate(template, prompt);
+
+		assertThat(result.detectedExpressions())
+			.as("출처 없는 수치: %s (문장: %s)", result.detectedExpressions(), template)
+			.isEmpty();
+	}
+
+	/**
+	 * <b>카드를 위 교차 검사에 넣지 않는 이유를 반대 방향으로 고정한다 — "아직 안 걸었다"가 아니라
+	 * "걸면 깨진다"이다.</b>
+	 *
+	 * <p>카드 프롬프트는 구간을 {@code 구간: 09:32 ~ 09:37}로만 주고 <b>구간 길이(분)를 주지 않는다.</b>
+	 * 그런데 카드 템플릿은 {@code 5분간}이라고 쓴다 — {@code 5}가 프롬프트 어디에도 없다. 카드에 숫자
+	 * 대조를 걸면 <b>폴백 문장 자체가 위반</b>이 되어 대체 경로가 성립하지 않는다 (053 plan §결정 B).
+	 *
+	 * <p>다음 사람이 "카드도 걸자"고 되돌리면 이 테스트가 먼저 깨진다. 되돌리려면 프롬프트에 구간 길이를
+	 * 넣는 것이 먼저이고, 그것은 골든 마스터를 고치는 별개의 판단이다.
+	 */
+	@Test
+	@DisplayName("카드 템플릿의 `5분간`은 카드 프롬프트에 없다 — 그래서 카드에는 숫자 대조를 걸지 않는다")
+	void priceMoveTemplateWouldFailTheNumberCheckWhichIsWhyTheCardIsExcluded() {
+		PriceMovePromptDto input = fixtureCard(false, LocalTime.of(9, 32), LocalTime.of(9, 37), "0.0210", 2);
+		String template = builder.priceMoveTemplate(input);
+		String prompt = promptBuilder.priceMovePrompt(input);
+
+		assertThat(template).contains("5분간");
+		assertThat(prompt).doesNotContain("5분");
+		assertThat(numberValidator.validate(template, prompt).detectedExpressions()).containsExactly("5");
 	}
 
 	// ---------- 확인 3: holdHighPrice가 null이면 셋째 문장이 빠진다 ----------
