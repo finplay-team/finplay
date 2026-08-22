@@ -106,13 +106,10 @@ public class KisDailyCandleClientImpl implements KisDailyCandleClient {
 				terminatedEarly = true;
 				break;
 			}
-			LocalDate nextCursorEnd = earliestInPage.minusDays(1);
-			if (!nextCursorEnd.isBefore(cursorEnd)) {
-				log.warn("KIS 일봉 페이징이 더 이상 진행되지 않아 중단합니다 (symbol={}, from={}, to={})", symbol, from, to);
-				terminatedEarly = true;
-				break;
-			}
-			cursorEnd = nextCursorEnd;
+			// earliestInPage는 항상 cursorEnd 이하이므로(초기값이 cursorEnd이고 그보다 이른 날짜가 나올 때만
+			// 감소), earliestInPage.minusDays(1)은 항상 cursorEnd보다 하루 이상 이르다 — 커서 정체 가드가
+			// 필요 없다(이슈 #510, 도달 불가능한 방어 코드로 확인).
+			cursorEnd = earliestInPage.minusDays(1);
 		}
 		// 요청 구간의 시작(from)에 닿지 못하고 **진짜로 페이지 상한을 다 써서** 끝난 경우에만 경고한다 — 위 세 break
 		// 중 하나로 끝난 경우(정상 종료·목표 도달·커서 정체, 각자 이유가 다르거나 이미 자체 로그가 있음)는 페이지
