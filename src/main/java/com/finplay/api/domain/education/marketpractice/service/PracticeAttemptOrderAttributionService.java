@@ -195,6 +195,15 @@ public class PracticeAttemptOrderAttributionService implements PracticeOrderAttr
 	 * <p><b>모르면 막는다.</b> attempt가 없거나 예약이 지난 실행 세대의 것이면 참을 준다 — 042가 세운
 	 * 생명주기를 밖에서 깨뜨리지 않는 쪽이 안전하고, 지난 세대의 PENDING 예약은 재시작이 이미 정리한다
 	 * (EXITPRESET-015)이라 사용자가 마주칠 자리가 아니다.
+	 *
+	 * <p><b>생성 게이트의 {@code market == CRYPTO} 조건은 여기 없어도 된다</b>(이슈 #527 리뷰 2라운드
+	 * 참고 2). 튜토리얼 attempt에 귀속된 exit_plan이 <b>CRYPTO에만 존재하기</b> 때문이다 — 자동 생성은 위
+	 * {@code createRiskSnapshotOnBuyFill}의 CRYPTO 분기에서만 일어나고, 사용자 주도 생성은 대본이 있는
+	 * 실행에서만 열리는데({@code PracticeExitPlanReservationService.pathRejection}) STOCK에는 대본도 OCO
+	 * 경로도 없다(042 EXITPRESET-018). 그래서 이 판정이 STOCK attempt를 마주칠 자리가 아직 없다.
+	 * <b>STOCK에 대본·OCO 경로가 생기면(041 SCENARIO-024) 그 PR이 이 전제를 다시 확인해야 한다.</b>
+	 * 지금 시장 조건을 미리 넣지 않는 이유는, 도달 불가한 분기를 위해 이 메서드의 기본값("모르면 막는다")을
+	 * 반대 방향으로 느슨하게 만드는 변경이라 그 자체가 위험을 새로 들이기 때문이다.
 	 */
 	@Transactional(readOnly = true)
 	@Override

@@ -22,6 +22,7 @@ import com.finplay.api.domain.market.entity.Instrument;
 import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.market.entity.TutorialScenarioScriptId;
 import com.finplay.api.domain.market.repository.InstrumentRepository;
+import com.finplay.api.domain.market.service.TutorialPriceGenerator;
 import com.finplay.api.domain.order.dto.request.LimitOrderCreateRequest;
 import com.finplay.api.domain.order.dto.request.OrderCreateRequest;
 import com.finplay.api.domain.order.entity.ExitPlan;
@@ -401,6 +402,68 @@ class PracticeExitPresetOcoIntegrationTest {
 			attemptRepository.findById(fixture.attemptId()).orElseThrow())).isTrue();
 	}
 
+	/**
+	 * 이슈 #527 리뷰 2라운드 권장 1 — <b>여전히 막혀야 하는 쪽</b>을 실제 MySQL로 고정한다. 취소 차단이
+	 * 사용자 주도 예약만 열어 주는지는 {@code managesAutomaticExitPlans}의 <b>코드 조회 기반 판정</b>에
+	 * 달려 있는데, 단위 테스트는 그 판정을 Mockito 스텁으로 대신해서 <b>어떤 attempt 행이 자동 예약
+	 * 실행으로 읽히는지</b>를 한 번도 확인하지 않는다.
+	 *
+	 * <p><b>API로는 재현할 수 없다.</b> 052가 자동 예약을 걷어낸 뒤로 대본 실행에서는 자동 예약이 새로
+	 * 생기지 않아 이 상태를 만들 표면이 남아 있지 않다. 그래서 더더욱 테스트로 고정한다 — API로 만들 수
+	 * 없는 상태일수록 조용히 깨져도 아무도 모른다.
+	 */
+	@Test
+	void anAutomaticReservationOnALegacyRunStaysUncancellable() {
+		Fixture fixture = legacyTutorialRun("oco-legacy");
+
+		// 대본을 쓰지 않는 실행은 042 그대로 매수 체결이 자동으로 예약을 건다(EXITFREE-020의 "두 경로가
+		// 공존하지 않는다"의 반대쪽).
+		clock.set(BASE_NOW.plusSeconds(1));
+		buy(fixture);
+
+		ExitPlan automatic = onlyExitPlan(fixture);
+		assertThat(automatic.getStatus()).isEqualTo(ExitPlanStatus.PENDING);
+
+		assertThatThrownBy(() -> exitPlanService.cancel(fixture.userId(), automatic.getId()))
+			.isInstanceOfSatisfying(BusinessException.class, exception -> assertThat(exception.getErrorCode())
+				.isEqualTo(ErrorCode.EXIT_PLAN_TUTORIAL_INSTRUMENT_NOT_ALLOWED));
+
+		// 거부는 상태를 바꾸지 않는다 — 예약도 예약 수량도 그대로다.
+		assertThat(onlyExitPlan(fixture).getStatus()).isEqualTo(ExitPlanStatus.PENDING);
+		assertThat(reservedQuantity(fixture)).isEqualByComparingTo(QUANTITY);
+	}
+
+	/**
+	 * 이슈 #527 리뷰 2라운드 권장 1 — 지난 실행 세대에 귀속된 예약도 여전히 막힌다(<b>모르면 막는다</b>).
+	 *
+	 * <p><b>이 상태는 정상 경로로 만들어지지 않는다.</b> 재시작은 현재 세대의 PENDING 예약을 먼저 취소하고
+	 * 수량을 반환하므로(042 EXITPRESET-015) "지난 세대의 PENDING 예약"이 남지 않는다. 그래서 실행 세대만
+	 * 앞으로 미는 합성 픽스처를 쓴다 — {@code restart()}를 쓰면 대본 식별자·생성기 버전까지 함께 지워져
+	 * legacy 판정이 대신 참이 되고, 이 테스트가 <b>세대 비교 절이 아니라 대본 절을 고정</b>하게 된다.
+	 * {@link ReflectionTestUtils}로 {@code runNumber}만 옮기는 것은 이 저장소가 legacy 행을 만들 때 이미
+	 * 쓰는 방식이다({@code PracticeEntryComparisonServiceTest}).
+	 */
+	@Test
+	void aReservationFromAPastRunGenerationStaysUncancellable() {
+		Fixture fixture = tutorialRunAtRumorStage("oco-pastrun");
+
+		clock.set(BASE_NOW.plusSeconds(1));
+		buy(fixture);
+		reserve(fixture, "3", "5");
+		Long planId = onlyExitPlan(fixture).getId();
+
+		PracticeAttempt attempt = attemptRepository.findById(fixture.attemptId()).orElseThrow();
+		ReflectionTestUtils.setField(attempt, "runNumber", 2L);
+		attemptRepository.saveAndFlush(attempt);
+
+		clock.set(BASE_NOW.plusSeconds(2));
+		assertThatThrownBy(() -> exitPlanService.cancel(fixture.userId(), planId))
+			.isInstanceOfSatisfying(BusinessException.class, exception -> assertThat(exception.getErrorCode())
+				.isEqualTo(ErrorCode.EXIT_PLAN_TUTORIAL_INSTRUMENT_NOT_ALLOWED));
+
+		assertThat(onlyExitPlan(fixture).getStatus()).isEqualTo(ExitPlanStatus.PENDING);
+	}
+
 	private static BigDecimal expectedPrice(BigDecimal entryPrice, BigDecimal factor) {
 		return entryPrice.multiply(factor).setScale(PRICE_SCALE, RoundingMode.HALF_UP);
 	}
@@ -457,6 +520,25 @@ class PracticeExitPresetOcoIntegrationTest {
 		attemptService.selectInstrument(user.getId(), Market.CRYPTO, instrument.getId());
 		return new Fixture(user.getId(), account.getId(), instrument.getId(),
 			attemptRepository.findByUserIdAndMarket(user.getId(), Market.CRYPTO).orElseThrow().getId());
+	}
+
+	/**
+	 * 대본을 쓰지 않는 <b>legacy 실행</b>(생성기 버전 1)을 만든다 — 이 실행에서만 매수 체결이 042 그대로
+	 * 자동 예약을 건다.
+	 *
+	 * <p><b>팩토리로는 만들 수 없다.</b> {@code PracticeAttemptService.generatorVersionFor}가 대본이 저작된
+	 * CRYPTO에 항상 버전 2를 주므로, 지금 프로덕션 경로로는 이 모양의 행이 새로 생기지 않는다(049 배포
+	 * 시점에 진행 중이던 실행만 여기에 해당한다). 그래서 이 저장소가 legacy 행을 만들 때 이미 쓰는 방식인
+	 * {@link ReflectionTestUtils}를 그대로 따라({@code PracticeEntryComparisonServiceTest}) 두 컬럼만
+	 * 되돌린다 — 새로 만들 수 없는 상태라고 검증을 빼면 그 경로는 조용히 깨진다.
+	 */
+	private Fixture legacyTutorialRun(String scenario) {
+		Fixture fixture = newTutorialRun(scenario);
+		PracticeAttempt attempt = attemptRepository.findById(fixture.attemptId()).orElseThrow();
+		ReflectionTestUtils.setField(attempt, "generatorVersion", TutorialPriceGenerator.VERSION_1);
+		ReflectionTestUtils.setField(attempt, "scenarioScriptId", null);
+		attemptRepository.saveAndFlush(attempt);
+		return fixture;
 	}
 
 	// 대기 구간을 이미 지나 2막-a 루머 0분에 서 있는 실행을 만든다 — 이 테스트의 대상은 대본 저작이 아니라

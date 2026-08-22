@@ -12,6 +12,7 @@
 | — | implementer | `.\gradlew.bat compileJava compileTestJava` + `test --tests`(진행 계산·예약 서비스·차트 서비스 49건 전부 통과) 후 `spotlessApply` — 대기 구간 탈출 조건에 "그 진입의 예약" 추가 | 제품 오너 실사용 피드백(예약 폼을 채우는 동안 이야기가 흘러간다), 신설 EXITFREE-025, 041 상태 전이표 2행, 042 EXITPRESET-020, ADR-0002 |
 | — | implementer | `gradlew.bat test --tests com.finplay.api.domain.market.service.TutorialScenarioScriptIntegrityTest`(5건 통과, 로더 기동 검증 포함) — 3단계 대본 사건 문안 5개를 사실 보도체로 교체(가격 배열·타이밍 필드 무변경) | 튜터 지적("뉴스가 아니라 찌라시") → 제품 오너 확정("루머는 빼자"), 041 plan §문안 작성 규칙, SCENARIO-017·018 |
 | — | implementer | `gradlew.bat spotlessApply compileJava compileTestJava` + `test --tests`(ExitPlanServiceTest 31·ErrorCodeTest 8·PracticeExitPlanReservationServiceTest 12·PracticeExitPresetOcoIntegrationTest 6·ExitPlanGeneralPathIntegrationTest 7·PracticeOrderBasicsNoAutoExitIntegrationTest 7 전부 통과) — PR #527 리뷰 지적 4건 반영 | PR #527 리뷰(차단 1·권장 2·참고 1), 042 EXITPRESET-016 / 이슈 #477, 052 EXITFREE-020·025, 021 RISK-OCO-014, ADR-0002(도메인 간 참조는 service 레이어로) |
+| — | implementer | `gradlew.bat spotlessApply compileTestJava` + `test --tests PracticeExitPresetOcoIntegrationTest`(8건 통과) + 역-검증 2회(가드 절을 하나씩 지운 변형 실행) — PR #527 2라운드 리뷰 권장 1·참고 2 반영 | PR #527 2라운드 리뷰(차단 0·권장 1·참고 2), ADR-0003(mock만으로 검증을 끝내지 않는다), 042 EXITPRESET-015·018, 052 EXITFREE-020 |
 
 ## 모니터링 (사람용 요약)
 
@@ -21,6 +22,21 @@
   (판정 근거는 자동 생성을 결정하는 술어 그대로 — 대본을 쓰지 않는 실행인가). ② `EXIT_PLAN_ALREADY_EXISTS`
   메시지를 상태 중립 문구로 바꿨다. ③ 취소된 행이 write-once를 막는 것을 실제 MySQL로 고정하는 통합
   테스트를 추가했다. ④ 패키지 재편 때 문자열 안이라 안 잡힌 Javadoc FQCN 2곳을 고쳤다.
+
+- **취소 차단의 "여전히 막혀야 하는 쪽"을 실제 MySQL로 고정했다 (2라운드 권장 1).** 사용자 주도 예약이
+  취소되는 것만 통합 테스트에 있었고, 반대 방향(042 자동 예약·지난 실행 세대 예약은 여전히 막힌다)은
+  Mockito 스텁 분기로만 검증되고 있었다 — `managesAutomaticExitPlans`의 **코드 조회 기반 판정** 자체는
+  한 번도 실제 원장으로 확인되지 않았다. `PracticeExitPresetOcoIntegrationTest`에 두 건을 추가했다
+  (legacy 실행의 자동 예약 / 지난 세대에 귀속된 예약, 둘 다 409로 거부되고 상태·예약수량이 그대로).
+  052가 자동 예약을 걷어낸 뒤로 이 상태는 **API로는 만들 수 없어서** 픽스처를 합성으로 만들었고
+  (`ReflectionTestUtils` — 이 저장소의 legacy 행 생성 선례), 그 이유를 테스트 javadoc에 남겼다.
+  **역-검증했다** — 가드의 두 절을 하나씩 지운 변형을 각각 돌려 legacy 케이스는 대본 절을, 지난 세대
+  케이스는 세대 비교 절을 정확히 하나씩 고정한다는 것을 확인했다(각 변형에서 해당 1건만 실패).
+- **`managesAutomaticExitPlans`에 market 조건은 넣지 않고 전제를 주석으로 남겼다 (2라운드 참고 2).**
+  생성 게이트에는 `market == CRYPTO`가 있지만, 튜토리얼 attempt에 귀속된 exit_plan은 애초에 CRYPTO에만
+  존재한다 — 자동 생성이 CRYPTO 분기 안이고 사용자 주도 생성은 대본이 있어야 열리는데 STOCK에는 대본도
+  OCO 경로도 없다. 조건을 미리 넣으면 도달 불가한 분기를 위해 이 메서드의 기본값("모르면 막는다")을
+  느슨하게 만드는 변경이 된다. STOCK 대본·OCO가 생기는 PR이 이 전제를 다시 확인하도록 주석에 적었다.
 
 - **범위.** 제품 오너가 시간 압박으로 1차 범위를 제안 A(프리셋 → 자유 입력)로 좁혔다. 제안 B(손절·익절
   각 1회 겪기 보장)와 C(체험 직후 반사실 모달)는 spec에 2차로 적어 두고 착수하지 않았다.
