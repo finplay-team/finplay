@@ -11,7 +11,7 @@
 
 ---
 
-- [ ] **1. `NarrativeNumberValidator` 신설 + 단위 테스트** (FEED-014의 판정 규칙)
+- [x] **1. `NarrativeNumberValidator` 신설 + 단위 테스트** (FEED-014의 판정 규칙)
 
   `src/main/java/com/finplay/api/domain/feedback/service/NarrativeNumberValidator.java`를 만든다. 첫 줄에 한 줄 한국어 주석(CLAUDE.md 규칙 6). 입력은 `(서술, 프롬프트)`이고 반환은 기존 `NarrativeValidationDto`다 — 새 DTO를 만들지 않는다. 추출 정규식·`BigDecimal` 정규화·부호 규칙·콜론 분리는 plan.md §결정 C 그대로다. **이 항목에서는 아무도 이 클래스를 부르지 않는다** — 배선은 항목 2다.
 
