@@ -383,8 +383,8 @@ erDiagram
     }
     trade_allocations {
         bigint id PK
-        bigint sell_trade_id FK
-        bigint holding_lot_id FK
+        bigint sell_trade_id FK "UK(sell_trade_id, holding_lot_id)"
+        bigint holding_lot_id FK "UK(sell_trade_id, holding_lot_id)"
         decimal allocated_quantity
         bigint allocated_cost
         bigint allocated_buy_fee
