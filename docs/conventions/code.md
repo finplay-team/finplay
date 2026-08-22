@@ -4,22 +4,28 @@
 
 ## 패키지 구조
 
-- 최상위는 도메인 기준 (ADR-0002 — 레이어 기준 최상위 구조 금지). 도메인 안에서는 계층 하위 패키지로 나눈다.
+- 최상위는 도메인 기준 (ADR-0002 — 레이어 기준 최상위 구조 금지). 도메인 패키지는 `domain` 아래, 전역 공통은 `global`에 둔다 (ADR-0029). 도메인 안에서는 계층 하위 패키지로 나눈다.
 
 ```
 com.finplay.api
-├── order
-│   ├── controller/OrderController.java
-│   ├── service/OrderService.java
-│   ├── repository/OrderRepository.java
-│   ├── domain/Order.java            # 엔티티
-│   └── dto/
-│       ├── request/OrderCreateRequest.java
-│       └── response/OrderResponse.java
-└── common                           # 전역 예외 처리, 오류 응답, 공통 설정만
+├── domain
+│   └── order
+│       ├── controller/OrderController.java
+│       ├── service/OrderService.java
+│       ├── repository/OrderRepository.java
+│       ├── entity/Order.java            # 엔티티
+│       └── dto/
+│           ├── request/OrderCreateRequest.java
+│           └── response/OrderResponse.java
+└── global
+    ├── exception/BusinessException.java, ErrorCode.java, ErrorResponse.java, GlobalExceptionHandler.java
+    ├── config/ClockConfig.java, QuerydslConfig.java
+    └── filter/RequestIdFilter.java
 ```
 
-- `common`에는 전역 예외·오류 응답·공통 설정만 둔다. `CommonService`, `Manager`, `Helper` 같은 이름으로 책임을 숨기지 않는다 (PRD C-002).
+- 엔티티 패키지명은 `entity`다 (ADR-0029) — `domain.<도메인>.domain`처럼 "domain"이 겹치는 이름을 쓰지 않는다.
+- `global`도 역할별 하위 패키지로 나눈다 — 예외 처리는 `exception`, 전역 설정(`@Configuration`)은 `config`, 서블릿 필터는 `filter` (ADR-0029). 전역 코드가 늘어도 `global` 바로 아래에 파일을 평평하게 쌓지 않는다.
+- `global`에는 전역 예외·오류 응답·공통 설정만 둔다. `CommonService`, `Manager`, `Helper` 같은 이름으로 책임을 숨기지 않는다 (PRD C-002). 특정 도메인에서만 쓰는 설정(예: `auth`의 보안 설정)은 `global`이 아니라 해당 도메인 패키지 안에 둔다.
 
 ## 네이밍
 
@@ -28,6 +34,7 @@ com.finplay.api
 - 상수: 매직 넘버·문자열·기간은 `private static final` 필드로 빼고 UPPER_SNAKE_CASE로 짓는다.
 - boolean 변수·필드는 `is~`/`has~` (`isDeleted`, `hasStock`), 시간 필드는 `LocalDateTime` + `xxxAt` (`createdAt`, `filledAt`).
 - wildcard import(`import foo.*`)를 쓰지 않는다.
+- import 순서는 static import 블록(최상단, 별도 그룹) → 나머지는 출처 구분 없는 단일 알파벳 그룹이다. `spotlessApply`(`build.gradle`의 `importOrder()`)가 강제하며 어기면 `spotlessCheck`가 빌드를 막는다 (이슈 #525).
 
 ## DTO 규칙
 
@@ -140,7 +147,7 @@ com.finplay.api
 ## 기타
 
 - 새 소스 파일 첫 줄에 한국어 한 줄 주석으로 역할 명시.
-- 포맷은 Spotless가 **NAVER 자바 스타일**(`config/naver-eclipse-formatter.xml`)로 강제한다 (2026-07-23 팀 노션 확정, palantir에서 교체). 커밋 전 `./gradlew spotlessApply`. IDE에 [NAVER IntelliJ formatter](https://naver.github.io/hackday-conventions-java/)를 설정하면 저장 시점부터 일치한다.
+- 포맷은 Spotless가 **NAVER 자바 스타일**(`config/naver-eclipse-formatter.xml`)로 강제한다 (2026-07-23 팀 노션 확정, palantir에서 교체). 커밋 전 `./gradlew spotlessApply`. IDE에 [NAVER IntelliJ formatter](https://naver.github.io/hackday-conventions-java/)를 설정하면 저장 시점부터 일치한다. **IntelliJ의 `Editor > Code Style > Java > Imports` 레이아웃도 그룹 사이 빈 줄 없는 단일 그룹으로 맞춘다** — 기본 레이아웃(그룹 사이 빈 줄)로 저장·Optimize Imports를 쓰면 매번 `spotlessApply`와 어긋난다 (이슈 #525).
 - 정적 분석은 `./gradlew build`가 강제한다 — SpotBugs(버그 패턴) + JaCoCo 라인 커버리지 40% 게이트(경량 시작값, 지표 보고 상향). 오탐 제외는 `config/spotbugs/exclude.xml`에 재현 확인된 것만 추가.
 
 ## 시크릿

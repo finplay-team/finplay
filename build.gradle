@@ -223,5 +223,10 @@ spotless {
 		// NAVER 자바 스타일 (팀 노션 확정) — 빌드 게이트는 Spotless로 유지하고 스타일만 교체
 		eclipse().configFile('config/naver-eclipse-formatter.xml')
 		removeUnusedImports()
+		// 이슈 #525 — domain/global 패키지 재편(PR #523)으로 entity 등 하위 패키지명이 바뀌면서 알파벳
+		// 순서가 뒤집힌 import가 대량으로 남았는데, 이 규칙이 없어 spotlessApply로도 안 잡혔다.
+		// static import는 그대로 최상단 별도 블록으로 분리되고, 나머지는 인자 없는 단일 그룹이라
+		// 기존 스타일(패키지 출처 구분 없이 완전 알파벳순)을 그대로 유지한다.
+		importOrder()
 	}
 }
