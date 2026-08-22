@@ -15,15 +15,21 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
 /**
- * <b>구현 전에 먼저 만든다.</b> spec 053 §측정 ①②의 값은 "새 검증기가 더 잡는다"가 아니라
+ * <b>구현 전에 먼저 만든다.</b> spec 053 §측정 ①의 값은 "새 검증기가 더 잡는다"가 아니라
  * <b>"기존 검증기가 0건이었다"</b>에 있는데, 구현한 뒤에 재면 그 0건을 다시 만들어 낼 수 없다.
- * 그래서 이 클래스는 FEED-014~017 구현보다 앞선 커밋에 들어간다.
+ * 그래서 이 클래스는 FEED-014 구현보다 앞선 커밋에 들어간다.
  *
  * <p><b>기존 검증기의 목록을 여기에 얼려 둔다</b>({@link #LEGACY_RULES}). {@code NarrativeValidator}를 직접
- * 부르지 않는 이유는 FEED-015가 가정법 어미 다섯을 그 목록에서 뺄 예정이기 때문이다 — 운영 클래스를 부르면
- * 구현 커밋에서 대조군 수치가 함께 움직여 <b>비교 자체가 사라진다.</b> 얼린 목록은 2026-08-22 시점의
+ * 부르지 않는 이유는 FEED-014가 그 클래스에 숫자 대조를 더할 예정이기 때문이다 — 운영 클래스를 부르면
+ * 구현 커밋에서 ①의 <b>0/12가 함께 움직여 비교 자체가 사라진다.</b> 얼린 목록은 2026-08-22 시점의
  * {@code 012} §후검증 표 5줄 37개 그대로이며, 지금 운영 검증기와도 같은 판정을 낸다는 것을
  * {@link #todaysValidatorReproducesTheFrozenBaseline()}이 함께 확인한다.
+ *
+ * <p><b>②는 고쳐야 할 결함이 아니다.</b> 반사실을 서술에서 뺀 것은 {@code 012} §왜 반사실은 AI 문장에 넣지
+ * 않는가의 <b>제품 판단</b>이고, 6/6 차단은 그 판단이 코드에서 지켜지고 있다는 뜻이다. 반사실 해금은 이
+ * spec에서 분리했으므로 <b>구현 후에도 6/6이 유지되는 것이 정상</b>이다 (2026-08-23 범위 축소).
+ * 게다가 이 여섯 문장은 <b>운영에서 발생한 적이 없다</b> — 반사실이 프롬프트에 들어간 적이 없어 모델이 쓸
+ * 재료를 받은 적이 없는, 순수한 합성 입력이다. ①의 열두 건은 운영에서 실제로 나올 수 있어 성격이 다르다.
  *
  * <p><b>수치는 전부 문서에서 왔다.</b> 프롬프트 고정값은 {@code 012} §LLM 프롬프트의 매도 회고 예시(삼성전자
  * 09:30 매수 → 14:40 매도)이고, 반사실 두 값(-1.17%·+1.11%)은 같은 spec §왜 반사실은 AI 문장에 넣지 않는가의
@@ -121,11 +127,12 @@ class NarrativeNumberCheckMeasurementTest {
 	}
 
 	@Test
-	@DisplayName("반사실 두 값(-1.17%·+1.11%)은 지금 프롬프트에 없다 — FEED-015가 넣기 전의 상태다")
+	@DisplayName("반사실 두 값(-1.17%·+1.11%)은 프롬프트에 없다 — ②의 6건이 합성 입력인 이유다")
 	void counterfactualRatesAreNotInThePromptYet() {
 		String prompt = builder.postSellPrompt(specPostSell());
 
-		// 이 단정이 깨지는 날이 곧 FEED-015가 들어온 날이다. 그때 ②의 새 검증기 열을 채운다.
+		// 모델은 이 두 수치를 받은 적이 없다. 그래서 ②의 여섯 문장은 운영에서 나온 적이 없는 합성 입력이고,
+		// 새 검증기 기준으로도 "출처 없는 숫자"라 6/6 차단이 그대로 유지된다.
 		assertThat(prompt).doesNotContain("-1.17%").doesNotContain("+1.11%");
 		// 반대로 두 시나리오의 가격은 이미 프롬프트에 있다 — 없는 것은 "그때 팔았다면 얼마"라는 수익률뿐이다.
 		assertThat(prompt).contains("69,200원").contains("70,800원");
@@ -146,7 +153,7 @@ class NarrativeNumberCheckMeasurementTest {
 
 	@ParameterizedTest(name = "[{0}]")
 	@MethodSource("counterfactuals")
-	@DisplayName("측정 ② — 기존 검증기는 서버가 계산한 반사실 6건을 전량 차단한다")
+	@DisplayName("측정 ② — 반사실을 문장으로 옮긴 6건은 전량 차단된다 (의도된 동작, 합성 입력)")
 	void legacyValidatorBlocksEveryCounterfactual(String narrative) {
 		assertThat(legacyDetect(narrative))
 			.as("가정법 어미에 걸려야 한다: %s", narrative)
@@ -158,8 +165,9 @@ class NarrativeNumberCheckMeasurementTest {
 	@Test
 	@DisplayName("오늘의 NarrativeValidator도 얼린 대조군과 같은 판정을 낸다 — 대조군이 지어낸 값이 아님을 보인다")
 	void todaysValidatorReproducesTheFrozenBaseline() {
-		// FEED-015가 가정법 어미를 빼면 아래 두 번째 단정이 깨진다. 그때 이 테스트는 삭제하는 것이 아니라
-		// "새 검증기는 반사실을 통과시킨다"로 뒤집는다 — 얼린 목록 쪽(측정 ①②)은 그대로 남아 비교가 유지된다.
+		// FEED-014가 숫자 대조를 더하면 아래 첫 번째 단정이 깨진다(운영 검증기가 12건을 적발하기 시작한다).
+		// 그때 이 테스트는 삭제하지 않고 "새 검증기는 12건을 전부 적발한다"로 뒤집는다 — 얼린 목록 쪽은
+		// 그대로 남아 0/12 대조가 유지된다. 두 번째 단정(반사실 6/6)은 구현 후에도 그대로다.
 		for (HallucinationCase testCase : HALLUCINATIONS) {
 			assertThat(validator.validateCardOrPostSell(testCase.narrative()).detectedExpressions())
 				.as("숫자 환각: %s", testCase.narrative())
@@ -182,7 +190,7 @@ class NarrativeNumberCheckMeasurementTest {
 
 		StringBuilder report = new StringBuilder("\n[spec 053 측정 ①② — 기존 검증기 대조군]\n");
 		report.append("① 숫자 환각 적발  : ").append(detected).append(" / ").append(HALLUCINATIONS.size()).append('\n');
-		report.append("② 참인 문장 차단  : ").append(blocked).append(" / ").append(COUNTERFACTUALS.size()).append('\n');
+		report.append("② 가정법 문장 차단: ").append(blocked).append(" / ").append(COUNTERFACTUALS.size()).append('\n');
 		for (String narrative : COUNTERFACTUALS) {
 			report.append("   차단 사유 ").append(legacyDetect(narrative)).append(" ← ").append(narrative).append('\n');
 		}
