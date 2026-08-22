@@ -2,6 +2,7 @@
 package com.finplay.api.domain.portfolio.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finplay.api.TestcontainersConfiguration;
 import com.finplay.api.domain.account.entity.Account;
@@ -31,6 +32,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
+import org.springframework.dao.DataIntegrityViolationException;
 
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -104,6 +106,19 @@ class TradeAllocationRepositoryTest {
 
 		assertThat(tradeAllocationRepository.sumAllocatedCostByHoldingLotId(lot.getId())).isEqualTo(700_000L);
 		assertThat(tradeAllocationRepository.sumAllocatedBuyFeeByHoldingLotId(lot.getId())).isEqualTo(100L);
+	}
+
+	@Test
+	@DisplayName("같은 매도 체결이 같은 lot에 두 번 배분되면 유니크 제약 위반이다")
+	void rejectsDuplicateAllocationForSameSellTradeAndHoldingLot() {
+		HoldingLot lot = createLot(BigDecimal.valueOf(10));
+		Trade sellTrade = createSellTrade(BigDecimal.valueOf(10));
+		tradeAllocationRepository.saveAndFlush(
+			TradeAllocation.create(sellTrade, lot, BigDecimal.valueOf(6), 420_000L, 60L, NOW));
+
+		assertThatThrownBy(() -> tradeAllocationRepository.saveAndFlush(
+			TradeAllocation.create(sellTrade, lot, BigDecimal.valueOf(4), 280_000L, 40L, NOW)))
+			.isInstanceOf(DataIntegrityViolationException.class);
 	}
 
 	private HoldingLot createLot(BigDecimal quantity) {
