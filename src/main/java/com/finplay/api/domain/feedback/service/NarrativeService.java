@@ -2,6 +2,8 @@
 package com.finplay.api.domain.feedback.service;
 
 import com.finplay.api.domain.feedback.config.FeedbackLlmProperties;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,6 +25,11 @@ import org.springframework.stereotype.Service;
  *
  * <p>이 경로를 {@code NarrativeValidator}에 두지 않은 이유는 §C-6에 있다 — 템플릿 폴백은 이미 만들어 둔
  * 문장을 고르는 국소적 동작이지만 재생성은 프로바이더를 다시 부르는 다른 층위다.
+ *
+ * <p><b>후검증 축이 둘이다</b> (spec 053). 표현 대조({@link NarrativeValidator})는 네 파트 전부에 걸리고,
+ * 숫자 대조({@link NarrativeNumberValidator})는 <b>매도 회고에만</b> 걸린다. 두 축을 합치는 자리는 이
+ * 클래스 한 곳뿐이며, 적발 목록을 이어 붙여 <b>기존 폴백 분기 하나</b>에 그대로 넘긴다 — 위반 시 동작이
+ * 축마다 갈리면 조용히 드리프트한다 (FEED-017).
  */
 @Slf4j
 @Service
@@ -35,20 +42,36 @@ public class NarrativeService {
 
 	private final NarrativeValidator validator;
 
+	private final NarrativeNumberValidator numberValidator;
+
 	private final NarrativeTemplateBuilder templateBuilder;
 
 	private final FeedbackLlmProperties properties;
 
-	/** 변동 원인 카드 (1단계). 실패·적발 시 §템플릿 문장의 장중 카드 또는 시가 갭 문장으로 대체된다. */
+	/**
+	 * 변동 원인 카드 (1단계). 실패·적발 시 §템플릿 문장의 장중 카드 또는 시가 갭 문장으로 대체된다.
+	 *
+	 * <p>숫자 대조를 걸지 않는다({@code numberSourcePrompt}가 {@code null}). 판단이 아니라 필수다 — 카드
+	 * 프롬프트는 구간을 {@code 09:32 ~ 09:37}로만 주고 <b>구간 길이(분)를 주지 않는데</b> 카드 템플릿 문장은
+	 * {@code 5분간}이라고 쓴다. 카드에 축을 걸면 <b>폴백 문장 자체가 위반</b>이 되어 대체 경로가 성립하지
+	 * 않는다 (053 plan §결정 B).
+	 */
 	public NarrativeResultDto resolvePriceMoveNarrative(PriceMovePromptDto input) {
 		return resolveWithTemplateFallback(
-			"변동 카드", promptBuilder.priceMovePrompt(input), templateBuilder.priceMoveTemplate(input));
+			"변동 카드", promptBuilder.priceMovePrompt(input), templateBuilder.priceMoveTemplate(input), null);
 	}
 
-	/** 매도 직후 회고 (1단계). {@code narrativeStatus}가 항상 {@code READY}인 근거가 이 폴백이다. */
+	/**
+	 * 매도 직후 회고 (1단계). {@code narrativeStatus}가 항상 {@code READY}인 근거가 이 폴백이다.
+	 *
+	 * <p>숫자 대조의 허용 집합은 <b>자기 사용자 프롬프트 문자열 그대로</b>다 (053 spec §결정 2). DTO가 넘긴
+	 * 값만 따로 모으면 프롬프트와 허용 집합을 두 곳에서 동기화해야 하는데, 프롬프트 하나에서 만들면 프롬프트를
+	 * 고치는 것만으로 허용 집합이 따라온다.
+	 */
 	public NarrativeResultDto resolvePostSellNarrative(PostSellPromptDto input) {
+		String userPrompt = promptBuilder.postSellPrompt(input);
 		return resolveWithTemplateFallback(
-			"매도 회고", promptBuilder.postSellPrompt(input), templateBuilder.postSellTemplate(input));
+			"매도 회고", userPrompt, templateBuilder.postSellTemplate(input), userPrompt);
 	}
 
 	/** 종목 뉴스 요약 (2단계). 템플릿이 없어 끝까지 걸리면 {@code NONE}이다. */
@@ -62,19 +85,32 @@ public class NarrativeService {
 	}
 
 	// 생성 실패와 후검증 적발이 같은 분기로 수렴한다 — 호출부 입장에서 둘 다 "LLM 문장을 쓸 수 없다"로 같다.
-	private NarrativeResultDto resolveWithTemplateFallback(String part, String userPrompt, String template) {
+	//
+	// numberSourcePrompt가 null이면 숫자 대조를 건너뛴다. 파트별로 메서드를 복제하지 않는 이유는 FEED-017이다 —
+	// 생성 실패·적발·폴백·로그가 두 파트에서 같은 코드여야 다음 사람이 한쪽만 고쳐 갈리는 일이 없다.
+	private NarrativeResultDto resolveWithTemplateFallback(
+		String part, String userPrompt, String template, String numberSourcePrompt) {
 		Optional<String> generated = generator.generate(promptBuilder.systemPrompt(), userPrompt);
 		if (generated.isPresent()) {
-			NarrativeValidationDto validation = validator.validateCardOrPostSell(generated.get());
-			if (validation.passed()) {
+			List<String> detected = detect(generated.get(), numberSourcePrompt);
+			if (detected.isEmpty()) {
 				return NarrativeResultDto.llm(generated.get());
 			}
 			// TEMPLATE 비율이 30%를 넘으면 목록이 아니라 프롬프트를 손본다 (spec §후검증). 그 판단의 근거 로그다.
-			log.info("{} 서술이 후검증에 걸려 템플릿으로 대체한다. 적발={}", part, validation.detectedExpressions());
+			log.info("{} 서술이 후검증에 걸려 템플릿으로 대체한다. 적발={}", part, detected);
 		} else {
 			log.debug("{} 서술 생성이 실패해 템플릿으로 대체한다.", part);
 		}
 		return NarrativeResultDto.template(template);
+	}
+
+	// 두 축의 적발 목록을 이어 붙인다. 표현이 앞, 숫자가 뒤인 순서를 고정해 로그가 재현 가능하게 둔다.
+	private List<String> detect(String narrative, String numberSourcePrompt) {
+		List<String> detected = new ArrayList<>(validator.validateCardOrPostSell(narrative).detectedExpressions());
+		if (numberSourcePrompt != null) {
+			detected.addAll(numberValidator.validate(narrative, numberSourcePrompt).detectedExpressions());
+		}
+		return detected;
 	}
 
 	private NarrativeResultDto resolveWithRegeneration(String part, String userPrompt) {

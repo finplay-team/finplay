@@ -4,6 +4,10 @@ package com.finplay.api.domain.feedback.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.finplay.api.domain.feedback.config.FeedbackLlmProperties;
 import com.finplay.api.domain.feedback.entity.HoldHighBasis;
 import com.finplay.api.domain.feedback.entity.NarrativeSource;
@@ -18,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.slf4j.LoggerFactory;
 
 /**
  * 생성기만 Fake로 바꾸고 프롬프트 조립·후검증·템플릿은 <b>실제 구현을 그대로 붙인다</b>. mock으로 다 막으면
@@ -38,6 +43,14 @@ class NarrativeServiceTest {
 
 	// 카드 5줄에만 있는 `판단·훈수`에 걸리는 서술 — 요약이었다면 통과했을 문장이다.
 	private static final String CARD_DIRTY = "하락 이후에도 3시간이나 버티는 모습이었습니다.";
+
+	// 숫자 축에만 걸리는 서술 (053). 금지 표현이 하나도 없고, `20`은 매도 회고 프롬프트의 `14:20`에서 오지만
+	// `69,500`은 어디에도 없다 — 프롬프트가 주는 값은 68,500(매도가)·70,800(최고가)이다.
+	private static final String NUMBER_HALLUCINATED = "20일 이동평균선은 69,500원이었습니다.";
+
+	// 두 축에 동시에 걸리는 서술. 글자 순서로는 숫자가 앞, 표현(`버티`)이 뒤인 것이 의도다 —
+	// 적발 목록이 등장 순서가 아니라 축 순서(표현 → 숫자)로 이어 붙는지 갈라 보는 자리다.
+	private static final String BOTH_AXES_DIRTY = "69,500원까지 버티는 모습이었습니다.";
 
 	private static final String CARD_TEMPLATE = "09:32부터 5분간 2.10% 상승했습니다. 같은 시간대에 기사 2건이 있었습니다.";
 
@@ -233,6 +246,96 @@ class NarrativeServiceTest {
 		assertThat(card.source()).isEqualTo(NarrativeSource.TEMPLATE);
 		assertThat(summary.source()).isEqualTo(NarrativeSource.LLM);
 		assertThat(summary.narrative()).isEqualTo(CARD_DIRTY);
+	}
+
+	// ---------- 확인 4: 숫자 대조는 매도 회고에만 걸린다 (053 FEED-014, plan §결정 B) ----------
+
+	/**
+	 * 분기가 살아 있는지를 <b>mock 호출 횟수가 아니라 결과로</b> 확인한다 (053 plan §결정 B). 같은 문장을
+	 * 두 파트에 넣어 매도 회고만 떨어지는지 보는 것이라, 내부에서 검증기를 몇 번 부르는지와 무관하게
+	 * 관측 가능한 계약이 깨지면 여기서 갈린다.
+	 */
+	@Test
+	@DisplayName("출처 없는 수치가 든 같은 문장이 매도 회고에서는 TEMPLATE, 변동 카드에서는 LLM이다")
+	void unsourcedNumberFallsBackOnPostSellButNotOnPriceMoveCard() {
+		NarrativeResultDto postSell = service(new FakeNarrativeGenerator().enqueue(NUMBER_HALLUCINATED), 1)
+			.resolvePostSellNarrative(postSell());
+		NarrativeResultDto card = service(new FakeNarrativeGenerator().enqueue(NUMBER_HALLUCINATED), 1)
+			.resolvePriceMoveNarrative(priceMove());
+
+		assertThat(postSell.source()).isEqualTo(NarrativeSource.TEMPLATE);
+		assertThat(postSell.narrative()).isEqualTo(POST_SELL_TEMPLATE);
+
+		// 카드에 축을 걸면 카드 템플릿의 `5분간`이 프롬프트에 없어 폴백 문장 자체가 위반이 된다.
+		assertThat(card.source()).isEqualTo(NarrativeSource.LLM);
+		assertThat(card.narrative()).isEqualTo(NUMBER_HALLUCINATED);
+	}
+
+	@Test
+	@DisplayName("프롬프트가 준 수치만 쓴 매도 회고 서술은 그대로 LLM이다 — 새 축이 정상 서술을 떨어뜨리지 않는다")
+	void postSellKeepsLlmWhenEveryNumberComesFromThePrompt() {
+		// 시각·가격·수량·수익률·실현손익을 전부 프롬프트 표기 그대로 옮긴 문장이다. 콜론 분리가 깨지면
+		// 여기서 09·30·14·40이 통째로 출처 없는 수치가 되어 매도 회고가 전부 템플릿으로 떨어진다.
+		String narrative = "09시 30분에 70,000원에 10주를 매수한 뒤 14시 40분에 68,500원에 매도해 "
+			+ "수익률 -2.17%, 실현손익 -15,207원이었습니다.";
+		FakeNarrativeGenerator generator = new FakeNarrativeGenerator().enqueue(narrative);
+
+		NarrativeResultDto result = service(generator, 1).resolvePostSellNarrative(postSell());
+
+		assertThat(result.source()).isEqualTo(NarrativeSource.LLM);
+		assertThat(result.narrative()).isEqualTo(narrative);
+	}
+
+	/**
+	 * FEED-017의 증거 — 축이 둘이 돼도 <b>폴백 분기는 하나</b>다.
+	 *
+	 * <p>적발 목록이 로그 한 줄에 이어 붙고(표현이 앞, 숫자가 뒤), 대체가 한 번만 일어난다. 분기가 축마다
+	 * 갈리면 로그가 두 줄이 되거나 순서가 글자 등장 순서(`69,500` → `버티`)로 뒤집힌다.
+	 */
+	@Test
+	@DisplayName("두 축에 동시에 걸리면 적발 목록이 표현 → 숫자 순으로 한 줄에 이어 붙고 폴백은 한 번이다")
+	void bothAxesAreReportedInOneLogLineWithExpressionsFirst() {
+		FakeNarrativeGenerator generator = new FakeNarrativeGenerator().enqueue(BOTH_AXES_DIRTY);
+		NarrativeService service = service(generator, 1);
+
+		List<ILoggingEvent> logs = capturingLogs(() -> service.resolvePostSellNarrative(postSell()));
+
+		List<String> fallbackLogs = logs.stream()
+			.map(ILoggingEvent::getFormattedMessage)
+			.filter(message -> message.contains("후검증에 걸려"))
+			.toList();
+		assertThat(fallbackLogs).containsExactly("매도 회고 서술이 후검증에 걸려 템플릿으로 대체한다. 적발=[버티, 69,500]");
+		assertThat(generator.callCount()).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("숫자 축에만 걸려도 로그·폴백 경로가 표현 축과 한 글자도 다르지 않다")
+	void numberOnlyDetectionUsesTheSameLogAndFallbackPath() {
+		FakeNarrativeGenerator generator = new FakeNarrativeGenerator().enqueue(NUMBER_HALLUCINATED);
+		NarrativeService service = service(generator, 1);
+
+		List<ILoggingEvent> logs = capturingLogs(() -> service.resolvePostSellNarrative(postSell()));
+
+		assertThat(logs)
+			.extracting(ILoggingEvent::getFormattedMessage)
+			.contains("매도 회고 서술이 후검증에 걸려 템플릿으로 대체한다. 적발=[69,500]");
+	}
+
+	@Test
+	@DisplayName("요약·브리핑은 숫자 대조를 받지 않는다 — 출처 없는 수치가 있어도 LLM이다 (FEED-017)")
+	void summaryAndBriefingAreUntouchedByTheNumberAxis() {
+		FakeNarrativeGenerator summaryGenerator = new FakeNarrativeGenerator().enqueue(NUMBER_HALLUCINATED);
+		FakeNarrativeGenerator briefingGenerator = new FakeNarrativeGenerator().enqueue(NUMBER_HALLUCINATED);
+
+		NarrativeResultDto summary = service(summaryGenerator, 1).resolveNewsSummaryNarrative(newsSummary());
+		NarrativeResultDto briefing = service(briefingGenerator, 1).resolveMarketBriefingNarrative(briefing());
+
+		// 두 파트는 프롬프트가 기사 제목만 주고 수치를 주지 않아 대조할 집합 자체가 없다 (spec §비즈니스 규칙).
+		assertThat(summary.source()).isEqualTo(NarrativeSource.LLM);
+		assertThat(summary.narrative()).isEqualTo(NUMBER_HALLUCINATED);
+		assertThat(summaryGenerator.callCount()).isEqualTo(1);
+		assertThat(briefing.source()).isEqualTo(NarrativeSource.LLM);
+		assertThat(briefingGenerator.callCount()).isEqualTo(1);
 	}
 
 	// ---------- ⑥ + 확인 3: 생성 실패와 후검증 적발이 같은 분기로 수렴 ----------
@@ -475,8 +578,28 @@ class NarrativeServiceTest {
 			generator,
 			new NarrativePromptBuilder(),
 			new NarrativeValidator(),
+			new NarrativeNumberValidator(),
 			new NarrativeTemplateBuilder(),
 			new FeedbackLlmProperties("gpt-5.4-mini", 20, 1024, maxRegeneration, 3, 3));
+	}
+
+	// 두 축의 적발 목록이 어떻게 합쳐지는지는 로그가 유일한 외부 관찰점이다 — 합친 목록을 반환하지 않고
+	// 폴백 분기 하나로 흘려보내는 것이 FEED-017의 요구라서다 (RankingRebuildServiceTest와 같은 방식).
+	private static List<ILoggingEvent> capturingLogs(Runnable action) {
+		Logger logger = (Logger)LoggerFactory.getLogger(NarrativeService.class);
+		ListAppender<ILoggingEvent> appender = new ListAppender<>();
+		appender.start();
+		Level originalLevel = logger.getLevel();
+		logger.setLevel(Level.DEBUG);
+		logger.addAppender(appender);
+		try {
+			action.run();
+			return List.copyOf(appender.list);
+		} finally {
+			logger.detachAppender(appender);
+			logger.setLevel(originalLevel);
+			appender.stop();
+		}
 	}
 
 	private static int countOccurrences(String text, String token) {

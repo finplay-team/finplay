@@ -4,6 +4,8 @@
 | 시각 | 에이전트 | 실행 명령 | 근거 |
 |---|---|---|---|
 | 00:41 | implementer | `.\gradlew.bat compileJava spotlessJavaCheck spotbugsMain` | plan.md §결정 A·C, spec.md §결정 1·2, ADR-0002 |
+| 01:05 | implementer | `.\gradlew.bat compileJava compileTestJava spotlessJavaCheck spotbugsMain` | plan.md §결정 B, spec.md FEED-014·FEED-017 |
 
 ## 모니터링 (사람용 요약)
 - 00:41 — 항목 1의 `NarrativeNumberValidator` 신설(아직 호출부 없음), 컴파일·포맷·SpotBugs 통과. 단위 테스트는 tester 담당으로 남김.
+- 01:05 — 항목 2 배선: `resolveWithTemplateFallback`에 `numberSourcePrompt`를 더해 숫자 대조를 매도 회고에만 걸었고(카드는 null), 폴백 분기·로그는 하나로 유지.

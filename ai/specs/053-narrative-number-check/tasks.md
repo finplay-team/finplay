@@ -19,7 +19,7 @@
 
   완료 판정 — spec §결정 1의 판정 표 6행이 전부 표대로 나오고, 프롬프트 수치 집합이 사용자 프롬프트 문자열 하나에서만 만들어진다.
 
-- [ ] **2. `NarrativeService` 배선 — 숫자 대조를 매도 회고에만 건다** (FEED-014의 적용 범위 + FEED-017)
+- [x] **2. `NarrativeService` 배선 — 숫자 대조를 매도 회고에만 건다** (FEED-014의 적용 범위 + FEED-017)
 
   `resolveWithTemplateFallback`에 네 번째 인자 `numberSourcePrompt`를 더해 카드는 `null`, 매도 회고는 자기 `userPrompt`를 넘긴다(plan.md §결정 B). 두 검증 결과의 적발 목록은 이어 붙여 **기존 로그 한 줄**에 그대로 넘기고 폴백 분기는 하나로 유지한다.
 
