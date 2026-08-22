@@ -16,6 +16,10 @@ import org.springframework.util.StringUtils;
  * <p><b>판정만 한다.</b> 적발 후 무엇으로 대체할지(템플릿 · 재생성 · {@code NONE})는 {@code NarrativeService}가
  * 정하며, 그래서 이 클래스는 {@code NarrativeGenerator}를 주입받지 않는다 — 템플릿 폴백은 이미 만들어 둔
  * 문장을 고르는 국소적 동작이지만 재생성은 프로바이더를 다시 부르는 다른 층위다 (spec §C-6).
+ *
+ * <p><b>이 클래스가 맡는 것은 표현 축뿐이다.</b> 매도 회고에는 서술의 수치를 프롬프트 수치 집합과 대조하는
+ * 축이 하나 더 걸리며, 그것은 {@link NarrativeNumberValidator}에 있다 (spec 012 §후검증 · spec 053).
+ * 아래 목록과 판정은 그 축이 생기면서도 <b>한 글자도 움직이지 않았다</b> (053 §FEED-016).
  */
 @Component
 public class NarrativeValidator {
@@ -58,6 +62,7 @@ public class NarrativeValidator {
 
 	// 37개 표현이 전부 리터럴 부분 문자열이라 정규식을 쓰지 않는다 — 메타문자가 하나도 없어 표현력이
 	// 같고, 정규식으로 두면 어간으로 일반화(`매도하(세요)?`)하고 싶은 유혹이 구조적으로 열린다.
+	// 이 전제는 표현 축에만 해당한다 — 숫자 대조는 정규식이 있어야 성립해 NarrativeNumberValidator에 있다.
 	private NarrativeValidationDto detect(String narrative, List<String> rules) {
 		if (!StringUtils.hasText(narrative)) {
 			// 서술이 없는 것은 위반이 아니다. 생성 실패는 호출부가 NarrativeGenerator의 반환값으로 먼저 가린다.
