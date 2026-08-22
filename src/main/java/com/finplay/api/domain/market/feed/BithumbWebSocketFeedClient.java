@@ -173,8 +173,13 @@ public class BithumbWebSocketFeedClient extends TextWebSocketHandler implements 
 	// 않는다(plan.md "구독" 절).
 	private void subscribe(WebSocketSession target) {
 		try {
+			// 샌드박스(튜토리얼) 종목을 구독 목록에서 뺀다 (이슈 #528). 2026-08-22 실측으로는 이쪽이
+			// REST 폴러만큼 급하지 않다 — 빗썸 웹소켓은 미등록 심볼이 섞인 구독도 "Filter Registered
+			// Successfully"로 받고 실제 심볼의 틱을 그대로 보내 준다. 그래도 존재하지 않는 심볼을 계속
+			// 구독 요청으로 실어 보낼 이유가 없고, 두 진입점의 조회 조건이 갈려 있으면 다음 사람이
+			// "왜 여긴 다르지"를 다시 파야 한다.
 			List<String> plainSymbols = instrumentRepository
-				.findByMarketAndTradableTrueOrderByIdAsc(Market.CRYPTO)
+				.findByMarketAndTradableTrueAndTutorialSampleFalseOrderByIdAsc(Market.CRYPTO)
 				.stream()
 				.map(Instrument::getSymbol)
 				.toList();
