@@ -255,30 +255,6 @@ class SellAllocationQueryServiceTest {
 			.containsExactly(earliest.getExecutedAt(), middle.getExecutedAt(), later.getExecutedAt());
 	}
 
-	// 중복이 실제로 들어오는 경로는 "한 매수 체결의 lot이 여럿"이 아니다 — holding_lots에 UNIQUE(buy_trade_id)
-	// (V10 uk_holding_lots_buy_trade)가 걸려 있어 그쪽은 스키마가 이미 막는다. 열려 있는 쪽은
-	// trade_allocations로, (sell_trade_id, holding_lot_id)에 UNIQUE가 없어 같은 lot이 한 매도에 두 번
-	// 배분될 수 있다. 그 경로로 중복을 만들어 LinkedHashSet 제거가 실제로 걸리는지 본다.
-	//
-	// 중복 제거가 순서를 무너뜨려서도 안 된다 — 첫 등장(가장 이른 lot)의 자리를 지켜야 프롬프트의 일기 순서와
-	// 서술의 시간 축이 같다(§FEED-013 결정 4).
-	@Test
-	@DisplayName("같은 lot이 한 매도에 두 번 배분돼도 매수 체결은 한 번만, 가장 이른 자리에 나온다")
-	void deduplicatesBuyTradesWhileKeepingTheEarliestPosition() {
-		Trade sellTrade = saveSellTrade(new BigDecimal("9"));
-		HoldingLot earliest = saveLot(firstSession, LocalTime.of(9, 30), new BigDecimal("3"));
-		HoldingLot later = saveLot(firstSession, LocalTime.of(11, 0), new BigDecimal("3"));
-		saveAllocation(sellTrade, earliest, new BigDecimal("2"), 140_000L, 21L);
-		saveAllocation(sellTrade, later, new BigDecimal("3"), 210_000L, 31L);
-		// 같은 lot에 대한 두 번째 배분 — 스키마가 막지 않는다.
-		saveAllocation(sellTrade, earliest, new BigDecimal("1"), 70_000L, 10L);
-
-		assertThat(sellAllocationQueryService.getAllocatedBuyTrades(sellTrade.getId()))
-			.containsExactly(
-				new AllocatedBuyTradeDto(earliest.getBuyTrade().getId(), earliest.getExecutedAt()),
-				new AllocatedBuyTradeDto(later.getBuyTrade().getId(), later.getExecutedAt()));
-	}
-
 	@Test
 	@DisplayName("다른 매도 체결에 배분된 매수 체결은 섞이지 않는다")
 	void returnsOnlyTheRequestedSellTradesBuyTrades() {

@@ -8,11 +8,8 @@ import com.finplay.api.domain.portfolio.repository.TradeAllocationRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -86,13 +83,11 @@ public class SellAllocationQueryService {
 	 * {@code lot.executedAt}으로 정렬하므로 <b>정렬 키를 값으로 함께 내보내는 것뿐</b>이고 조회도 조인도 늘지
 	 * 않는다. 그래서 순서와 값이 같은 출처를 갖는다 — 따로 읽으면 둘이 어긋날 수 있다.
 	 *
-	 * <p><b>순서를 유지한 채 중복을 제거한다.</b> 중복이 생기는 자리는 {@code holding_lots}가 아니라
-	 * {@code trade_allocations}다 — lot ↔ 매수 체결은 {@code uk_holding_lots_buy_trade}(V10)가 1:1로 강제하지만,
-	 * 배분 테이블에는 {@code (sell_trade_id, holding_lot_id)} 유니크가 없어 <b>같은 lot이 한 매도에 두 번 배분될 수
-	 * 있다</b>(2026-08-16 tester 실측 — 반대 방향 픽스처는 유니크 위반으로 만들어지지도 않는다). 같은 일기를 두 번
-	 * 실을 이유가 없으므로 제거는 그대로 필요하다. 정렬은
-	 * {@code findAllBySellTradeIdOrderByLotExecutedAtAscLotIdAsc}가 이미 lot 체결시각 오름차순으로 준 것을 그대로
-	 * 따른다 — 서술의 시간 축(FEED-007의 "가장 이른 {@code executed_at}")과 일기 순서가 같아진다.
+	 * <p><b>같은 매수 체결이 두 번 나올 수 없다.</b> lot ↔ 매수 체결은 {@code uk_holding_lots_buy_trade}(V10)가
+	 * 1:1로 강제하고, (매도 체결, lot)도 {@code uk_trade_allocations_sell_trade_holding_lot}(V57)이 1:1로
+	 * 강제한다 — 한 매도가 같은 lot을 두 번 배분받을 수 없으므로 그 lot의 매수 체결도 이 목록에 두 번 나올 수
+	 * 없다. 정렬은 {@code findAllBySellTradeIdOrderByLotExecutedAtAscLotIdAsc}가 이미 lot 체결시각 오름차순으로
+	 * 준 것을 그대로 따른다 — 서술의 시간 축(FEED-007의 "가장 이른 {@code executed_at}")과 일기 순서가 같아진다.
 	 *
 	 * <p><b>{@link SellAllocationSummaryDto}에 필드를 더하지 않고 조회 경로를 따로 둔다</b>(§C-6). 기존 소비자의
 	 * DTO 모양을 바꾸지 않는 쪽이 안전하다.
@@ -103,21 +98,16 @@ public class SellAllocationQueryService {
 	 * 같은 뜻이 된다.
 	 *
 	 * @param sellTradeId 매도 체결 id. 소유권 검증은 호출부(체결 조회)가 이미 끝냈다고 본다
-	 * @return 매수 시각 오름차순 매수 체결 (중복 없음). 배분이 없으면 빈 목록
+	 * @return 매수 시각 오름차순 매수 체결. 배분이 없으면 빈 목록
 	 */
 	@Transactional(readOnly = true)
 	public List<AllocatedBuyTradeDto> getAllocatedBuyTrades(Long sellTradeId) {
-		Map<Long, LocalDateTime> executedAtByBuyTradeId = new LinkedHashMap<>();
-		for (TradeAllocation allocation : tradeAllocationRepository
-			.findAllBySellTradeIdOrderByLotExecutedAtAscLotIdAsc(sellTradeId)) {
-			HoldingLot lot = allocation.getHoldingLot();
-			// 같은 매수 체결이 다시 나오면 첫 등장(가장 이른 lot)의 자리와 시각을 지킨다.
-			executedAtByBuyTradeId.putIfAbsent(lot.getBuyTrade().getId(), lot.getExecutedAt());
-		}
-
-		return executedAtByBuyTradeId.entrySet()
+		return tradeAllocationRepository.findAllBySellTradeIdOrderByLotExecutedAtAscLotIdAsc(sellTradeId)
 			.stream()
-			.map(entry -> new AllocatedBuyTradeDto(entry.getKey(), entry.getValue()))
+			.map(allocation -> {
+				HoldingLot lot = allocation.getHoldingLot();
+				return new AllocatedBuyTradeDto(lot.getBuyTrade().getId(), lot.getExecutedAt());
+			})
 			.toList();
 	}
 
