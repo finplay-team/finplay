@@ -11,6 +11,7 @@ import com.finplay.api.domain.account.entity.Account;
 import com.finplay.api.domain.auth.entity.User;
 import com.finplay.api.domain.education.marketpractice.dto.response.InvestmentPracticeResponse;
 import com.finplay.api.domain.education.marketpractice.dto.response.PracticeStepResponse;
+import com.finplay.api.domain.education.marketpractice.entity.ExitRates;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeAttempt;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeAttemptStatus;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeCompletion;
@@ -69,13 +70,16 @@ class InvestmentPracticeQueryServiceTest {
 		PracticeEntryComparisonService.class);
 	private final PracticeStageProgressCalculationService practiceStageProgressCalculationService = mock(
 		PracticeStageProgressCalculationService.class);
+	// 052 EXITFREE-020·021 — 예약 판정. 이 테스트들의 대상이 아니므로 stubNoHolding에서 "없음"으로 둔다.
+	private final PracticeExitPlanReservationService practiceExitPlanReservationService = mock(
+		PracticeExitPlanReservationService.class);
 	private final Clock clock = Clock.fixed(NOW.atZone(ZoneId.systemDefault()).toInstant(), ZoneId.systemDefault());
 
 	private final InvestmentPracticeQueryService service = new InvestmentPracticeQueryService(
 		favoriteService, practiceAttemptRepository, practiceRiskSnapshotRepository, practiceAttemptEvidenceService,
 		tradeService, chainResolutionService, referencePriceCalculator, practiceMarketObservationRepository,
 		canonicalPriceService, practiceEntryComparisonService, practiceStageProgressCalculationService,
-		practiceCompletionRepository, clock);
+		practiceExitPlanReservationService, practiceCompletionRepository, clock);
 
 	// 프리셋 잠금 판정이 매 응답에서 순보유수량을 읽는다(042 EXITPRESET-003). 이 테스트들의 대상은 잠금이
 	// 아니므로 기본을 "미보유"로 두고, 잠금을 보는 테스트만 따로 덮어쓴다.
@@ -85,6 +89,9 @@ class InvestmentPracticeQueryServiceTest {
 		// 041 6번의 진입별 대조는 attempt 경로에서만 얹히고 이 테스트들의 대상이 아니다 — 기본을 "없음"으로
 		// 둔다. 배열의 내용은 PracticeEntryComparisonServiceTest와 통합 테스트가 본다.
 		when(practiceEntryComparisonService.findCurrentRunEntries(any(), any())).thenReturn(List.of());
+		// 052 — 예약 세 값도 attempt 경로에서만 얹힌다. 내용은 PracticeExitPlanReservationServiceTest와
+		// 통합 테스트가 본다.
+		when(practiceExitPlanReservationService.view(any())).thenReturn(PracticeExitPlanViewDto.none());
 	}
 
 	@Test
@@ -699,6 +706,8 @@ class InvestmentPracticeQueryServiceTest {
 		Instrument sampleInstrument = mock(Instrument.class);
 		when(sampleInstrument.getId()).thenReturn(100L);
 		PracticeAttempt attempt = mock(PracticeAttempt.class);
+		// 052 — 응답 조립이 이 값을 읽는다. mock은 null을 주므로 미선택 실행의 기본값을 명시한다.
+		when(attempt.effectiveExitRates()).thenReturn(ExitRates.DEFAULT);
 		when(attempt.getId()).thenReturn(7L);
 		when(attempt.getRunNumber()).thenReturn(1L);
 		when(attempt.getMarket()).thenReturn(Market.STOCK);
@@ -711,6 +720,7 @@ class InvestmentPracticeQueryServiceTest {
 		when(buyTrade.getId()).thenReturn(30L);
 		when(buyTrade.getExecutedAt()).thenReturn(buyExecutedAt);
 		PracticeRiskSnapshot snapshot = mock(PracticeRiskSnapshot.class);
+		when(snapshot.appliedExitRates()).thenReturn(ExitRates.DEFAULT);
 		when(snapshot.getBuyTrade()).thenReturn(buyTrade);
 		when(snapshot.getCreatedAt()).thenReturn(buyExecutedAt);
 		when(practiceRiskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(7L, 1L))
@@ -767,6 +777,7 @@ class InvestmentPracticeQueryServiceTest {
 	private static PracticeAttempt attempt(
 		Long attemptId, long runNumber, PracticeAttemptStatus status, Instrument instrument) {
 		PracticeAttempt attempt = mock(PracticeAttempt.class);
+		when(attempt.effectiveExitRates()).thenReturn(ExitRates.DEFAULT);
 		when(attempt.getId()).thenReturn(attemptId);
 		when(attempt.getMarket()).thenReturn(Market.STOCK);
 		when(attempt.getRunNumber()).thenReturn(runNumber);
@@ -780,6 +791,7 @@ class InvestmentPracticeQueryServiceTest {
 		when(buyTrade.getId()).thenReturn(buyTradeId);
 		when(buyTrade.getExecutedAt()).thenReturn(buyExecutedAt);
 		PracticeRiskSnapshot snapshot = mock(PracticeRiskSnapshot.class);
+		when(snapshot.appliedExitRates()).thenReturn(ExitRates.DEFAULT);
 		when(snapshot.getBuyTrade()).thenReturn(buyTrade);
 		when(snapshot.getEntryPrice()).thenReturn(new BigDecimal("100.00000000"));
 		when(snapshot.getStopLossPrice()).thenReturn(new BigDecimal("97.00000000"));

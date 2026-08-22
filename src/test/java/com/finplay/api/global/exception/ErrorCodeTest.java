@@ -119,7 +119,7 @@ class ErrorCodeTest {
 	@Test
 	void exitPlanErrorsKeepPublicDefaultMessages() {
 		assertThat(ErrorCode.EXIT_PLAN_ALREADY_EXISTS.getDefaultMessage())
-			.isEqualTo("이미 대기 중인 손절·익절 예약이 있습니다.");
+			.isEqualTo("이미 손절·익절 예약이 있어 다시 걸 수 없습니다.");
 		assertThat(ErrorCode.EXIT_PLAN_TUTORIAL_INSTRUMENT_NOT_ALLOWED.getDefaultMessage())
 			.isEqualTo("샌드박스 종목은 일반 리스크관리 OCO를 지원하지 않습니다.");
 		assertThat(ErrorCode.EXIT_PLAN_INVALID_PRICE_RANGE.getDefaultMessage())

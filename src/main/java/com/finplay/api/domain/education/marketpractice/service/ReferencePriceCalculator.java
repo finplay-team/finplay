@@ -2,6 +2,7 @@
 package com.finplay.api.domain.education.marketpractice.service;
 
 import com.finplay.api.domain.education.marketpractice.entity.ExitPreset;
+import com.finplay.api.domain.education.marketpractice.entity.ExitRates;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.math.RoundingMode;
@@ -99,7 +100,20 @@ public class ReferencePriceCalculator {
 	 * 보이는 기준선(snapshot)과 실제로 체결되는 기준선({@code exit_plan_conditions})이 어긋나지 않는다.
 	 */
 	public ReferencePriceLines calculateFromPreset(BigDecimal entryPrice, ExitPreset preset) {
-		ExitPreset applied = preset == null ? ExitPreset.DEFAULT : preset;
+		return calculateFromRates(entryPrice, ExitRates.of(preset == null ? ExitPreset.DEFAULT : preset));
+	}
+
+	/**
+	 * 052 — 자유 입력된 손절·익절 비율을 진입 체결가에 적용해 기준선을 계산한다.
+	 * {@link #calculateFromPreset}이 이제 이 메서드의 얇은 껍데기이므로 <b>프리셋 경로와 자유 입력 경로가
+	 * 같은 산출식·같은 반올림을 쓴다</b> — 갈라 두면 프리셋과 같은 값을 손으로 입력한 사용자가 scale 9
+	 * 이하 자리에서 다른 기준선을 받는다.
+	 *
+	 * <p>체결가를 먼저 scale 8로 정규화하는 이유와, 042 5번(자동 예약)에 같은 값을 넘겨야 하는 이유는
+	 * {@link #calculateFromPreset} 위 문단에 그대로 적용된다.
+	 */
+	public ReferencePriceLines calculateFromRates(BigDecimal entryPrice, ExitRates rates) {
+		ExitRates applied = rates == null ? ExitRates.DEFAULT : rates;
 		BigDecimal normalizedEntryPrice = normalizeEntryPrice(entryPrice);
 		return calculateFromPercent(normalizedEntryPrice, applied.stopLossRate(), applied.takeProfitRate())
 			.orElseThrow(() -> new IllegalArgumentException("진입 체결가 없이 손절·익절 기준선을 계산할 수 없습니다."));

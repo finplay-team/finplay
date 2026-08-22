@@ -2,7 +2,7 @@
 package com.finplay.api.domain.education.marketpractice.service;
 
 import com.finplay.api.domain.education.marketpractice.dto.response.PracticeStageProgressResponse;
-import com.finplay.api.domain.education.marketpractice.entity.ExitPreset;
+import com.finplay.api.domain.education.marketpractice.entity.ExitRates;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeAttempt;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeAttemptStatus;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeRiskSnapshot;
@@ -10,7 +10,6 @@ import com.finplay.api.domain.education.marketpractice.repository.PracticeAttemp
 import com.finplay.api.domain.education.marketpractice.repository.PracticeRiskSnapshotRepository;
 import com.finplay.api.domain.market.entity.Instrument;
 import com.finplay.api.domain.market.entity.Market;
-import com.finplay.api.domain.market.entity.TutorialScenarioScriptId;
 import com.finplay.api.domain.order.entity.Order;
 import com.finplay.api.domain.order.entity.OrderSide;
 import com.finplay.api.domain.order.entity.OrderType;
@@ -29,12 +28,8 @@ import com.finplay.api.domain.portfolio.service.HoldingService;
 import com.finplay.api.global.exception.BusinessException;
 import com.finplay.api.global.exception.ErrorCode;
 import java.math.BigDecimal;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.LocalDateTime;
-import java.util.HexFormat;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -139,17 +134,17 @@ public class PracticeAttemptOrderAttributionService implements PracticeOrderAttr
 			return;
 		}
 
-		// 미선택이면 기본 프리셋으로 확정한다 — 이 시점에 값이 정해져야 그 뒤 프리셋을 바꿔도 이미 만들어진
-		// 진입의 기준선이 흔들리지 않는다(042 EXITPRESET-002·003).
-		ExitPreset preset = attempt.getExitPreset() == null ? ExitPreset.DEFAULT : attempt.getExitPreset();
-		ReferencePriceLines lines = referencePriceCalculator.calculateFromPreset(trade.getPrice(), preset);
+		// 미선택이면 기본 비율(손절 3·익절 5)로 확정한다 — 이 시점에 값이 정해져야 그 뒤 기준을 바꿔도 이미
+		// 만들어진 진입의 기준선이 흔들리지 않는다(042 EXITPRESET-002·003, 052가 그대로 승계).
+		ExitRates rates = attempt.effectiveExitRates();
+		ReferencePriceLines lines = referencePriceCalculator.calculateFromRates(trade.getPrice(), rates);
 		int entrySequence = Math.toIntExact(practiceRiskSnapshotRepository
 			.countByAttemptIdAndRunNumber(attempt.getId(), attempt.getRunNumber())) + 1;
 		practiceRiskSnapshotRepository.save(PracticeRiskSnapshot.create(
 			attempt,
 			attempt.getRunNumber(),
 			entrySequence,
-			preset,
+			rates,
 			trade,
 			// calculateFromPreset이 체결가를 scale 8로 먼저 정규화하고 그 값으로 두 선을 만든다. 저장되는
 			// entry_price도 같은 값이어야 화면의 세 숫자가 같은 기준 위에 선다.
@@ -164,29 +159,62 @@ public class PracticeAttemptOrderAttributionService implements PracticeOrderAttr
 		// STOCK은 snapshot(참조선)까지만이다(EXITPRESET-018) — 실제 거래 화면에서도 OCO는 코인 전용이고
 		// 주식은 OCO 경로 자체가 없다.
 		if (attempt.getMarket() == Market.CRYPTO && automaticExitPlanAllowed(attempt)) {
-			createAutomaticExitPlan(attempt, trade, preset, entrySequence, createdAt);
+			createAutomaticExitPlan(attempt, trade, rates, entrySequence, createdAt);
 		}
 	}
 
 	/**
-	 * 2단계 대본(주문 방법 학습) 실행에서만 자동 손절·익절 예약을 건너뛴다(049 ORDERBASICS-022).
+	 * <b>대본을 쓰는 실행에서는 자동 손절·익절 예약을 만들지 않는다</b>(052 EXITFREE-020이 042
+	 * EXITPRESET-004·012를 뒤집는다). 049 ORDERBASICS-022가 2단계 대본에 대해 이미 내린 결정을 대본 전체로
+	 * 넓힌 것이며, 판정 기준이 "특정 대본인가"에서 <b>"대본을 쓰는가"</b>로 바뀌었다.
+	 *
+	 * <p><b>왜 뒤집는가.</b> 실전 화면의 순서는 매수 → 보유 → 매도 화면에서 예약매도를 건다이고, 이
+	 * 튜토리얼이 가르치려는 것이 바로 그 행위다. 매수 체결 순간 서버가 대신 걸어 버리면 사용자가 걸 것이
+	 * 남지 않아 "내가 손절선을 정해 둔다"는 경험 자체가 사라진다. 사용자 주도 생성은
+	 * {@code PracticeExitPlanReservationService}가 받는다.
 	 *
 	 * <p><b>위험 기준선(snapshot)은 위에서 그대로 만든다.</b> 건너뛰는 것은 예약뿐이다 — 기준선까지
 	 * 빼면 {@code PracticeAttemptEvidenceService.requireCurrentRun}이 {@code PRACTICE_EVIDENCE_MISSING}으로
 	 * 던져 관찰·복기가 통째로 깨지고 진입별 대조 배열도 빈다.
 	 *
-	 * <p><b>왜 예약을 만들지 않는가.</b> 손절·익절은 3단계에서 배우는 것이라 아직 배우지 않은 기능이
-	 * 2단계에서 몰래 작동하는 것이 이상했고, ±12%를 가상 20분에 도는 이 대본에서 기본 프리셋은
-	 * <b>매수 6~9초 만에 발동한다.</b> 그러면 "매수·매도를 직접 눌러 본다"는 학습 목표가 사라지고,
-	 * 자동 청산된 매도는 왕복으로 세지 않으므로(#503) 다음 단계가 영영 열리지 않는다.
-	 *
-	 * <p><b>판정은 이 run의 대본 하나로만 한다.</b> 단계 진행 상태로 가르면 판정이 순환하고 같은 run 안에서
-	 * 예약이 생겼다 안 생겼다 한다. 대본을 쓰지 않는 실행(생성기 버전 1)은 {@code null}이라 예전대로
-	 * 예약이 생긴다. <b>2단계 대본이 늘어나면 이 판정도 함께 늘려야 한다</b> — 빠뜨리면 그 대본에서
-	 * 예약이 조용히 되살아난다.
+	 * <p><b>대본 식별자 하나로만 가른다</b>(052 spec §EXITFREE-020). 단계 진행 상태로 가르면 판정이
+	 * 순환하고 같은 run 안에서 예약이 생겼다 안 생겼다 한다. 대본을 쓰지 않는 실행(생성기 버전 1·legacy)은
+	 * {@code null}이라 042 그대로 자동으로 생긴다 — 그 실행에는 사용자 주도 경로가 열리지 않으므로 두 경로가
+	 * 공존하지 않는다. <b>대본이 늘어나도 이 판정은 더 늘릴 것이 없다</b> — 049가 주석으로 남겼던 함정
+	 * ("2단계 대본이 늘어나면 판정도 늘려야 한다")이 이 형태에서는 사라진다.
 	 */
 	private boolean automaticExitPlanAllowed(PracticeAttempt attempt) {
-		return attempt.scenarioScriptId() != TutorialScenarioScriptId.CRYPTO_ORDER_BASICS_V1;
+		return attempt.scenarioScriptId() == null;
+	}
+
+	/**
+	 * 취소 차단 판정을 <b>생성 판정과 같은 파일·같은 술어로 답한다</b>(이슈 #527 리뷰 1번). 자동으로
+	 * 만들었는가와 사용자가 취소할 수 있는가는 같은 질문의 앞뒤이며, 두 곳에 두면 대본이 늘어날 때 한쪽만
+	 * 고쳐져 "만들어지지도 않은 예약을 자동 예약이라며 못 지우는" 상태가 된다.
+	 *
+	 * <p><b>모르면 막는다.</b> attempt가 없거나 예약이 지난 실행 세대의 것이면 참을 준다 — 042가 세운
+	 * 생명주기를 밖에서 깨뜨리지 않는 쪽이 안전하고, 지난 세대의 PENDING 예약은 재시작이 이미 정리한다
+	 * (EXITPRESET-015)이라 사용자가 마주칠 자리가 아니다.
+	 *
+	 * <p><b>생성 게이트의 {@code market == CRYPTO} 조건은 여기 없어도 된다</b>(이슈 #527 리뷰 2라운드
+	 * 참고 2). 튜토리얼 attempt에 귀속된 exit_plan이 <b>CRYPTO에만 존재하기</b> 때문이다 — 자동 생성은 위
+	 * {@code createRiskSnapshotOnBuyFill}의 CRYPTO 분기에서만 일어나고, 사용자 주도 생성은 대본이 있는
+	 * 실행에서만 열리는데({@code PracticeExitPlanReservationService.pathRejection}) STOCK에는 대본도 OCO
+	 * 경로도 없다(042 EXITPRESET-018). 그래서 이 판정이 STOCK attempt를 마주칠 자리가 아직 없다.
+	 * <b>STOCK에 대본·OCO 경로가 생기면(041 SCENARIO-024) 그 PR이 이 전제를 다시 확인해야 한다.</b>
+	 * 지금 시장 조건을 미리 넣지 않는 이유는, 도달 불가한 분기를 위해 이 메서드의 기본값("모르면 막는다")을
+	 * 반대 방향으로 느슨하게 만드는 변경이라 그 자체가 위험을 새로 들이기 때문이다.
+	 */
+	@Transactional(readOnly = true)
+	@Override
+	public boolean managesAutomaticExitPlans(Long practiceAttemptId, Long practiceAttemptRunNumber) {
+		if (practiceAttemptId == null || practiceAttemptRunNumber == null) {
+			return true;
+		}
+		return practiceAttemptRepository.findById(practiceAttemptId)
+			.map(attempt -> attempt.getRunNumber() != practiceAttemptRunNumber
+				|| automaticExitPlanAllowed(attempt))
+			.orElse(true);
 	}
 
 	/**
@@ -200,7 +228,7 @@ public class PracticeAttemptOrderAttributionService implements PracticeOrderAttr
 	 * 만들지 않는다. <b>나중에 누군가 이 차단을 엔진으로 옮기면 042가 통째로 깨진다.</b>
 	 */
 	private void createAutomaticExitPlan(
-		PracticeAttempt attempt, Trade trade, ExitPreset preset, int entrySequence, LocalDateTime createdAt) {
+		PracticeAttempt attempt, Trade trade, ExitRates rates, int entrySequence, LocalDateTime createdAt) {
 		Long holdingId = holdingService
 			.findHoldingId(attempt.getUserId(), attempt.getMarket(), attempt.getInstrument().getId())
 			.orElseThrow(() -> new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING));
@@ -210,31 +238,18 @@ public class PracticeAttemptOrderAttributionService implements PracticeOrderAttr
 		// 값을 넘겨야 화면 기준선과 실제 체결선이 scale 9 이하 자리에서 갈리지 않는다(042 tasks 5번).
 		ExitPriceInputDto priceInput = ExitPriceInputDto.ofPercent(
 			referencePriceCalculator.normalizeEntryPrice(trade.getPrice()),
-			preset.stopLossRate(),
-			preset.takeProfitRate());
+			rates.stopLossRate(),
+			rates.takeProfitRate());
 		exitPlanCreationService.create(ExitPlanCreateCommandDto.practice(
 			trade.getAccount().getUser(),
 			holding,
 			trade.getQuantity(),
 			priceInput,
-			requestHash(attempt, entrySequence),
+			ExitPlanPracticeOriginDto.auditRequestHash(attempt.getId(), attempt.getRunNumber(), entrySequence),
 			new ExitPlanPracticeOriginDto(
 				attempt.getId(),
 				attempt.getRunNumber(),
 				canonicalPriceService.canonicalPrice(attempt, createdAt))));
-	}
-
-	// exit_plans.request_hash가 CHAR(64)라 SHA-256 hex를 넣는다. **멱등키가 아니다** — 그 컬럼에 UNIQUE가
-	// 없고 엔진도 읽지 않는다. 실제 중복 방어는 엔진 4단계의 validateNoPendingPlan과, attempt를 잠근
-	// 트랜잭션 안에서 entry_sequence를 산출하는 직렬화다. 이 값은 감사용 snapshot이다.
-	private String requestHash(PracticeAttempt attempt, int entrySequence) {
-		String source = attempt.getId() + ":" + attempt.getRunNumber() + ":" + entrySequence;
-		try {
-			return HexFormat.of()
-				.formatHex(MessageDigest.getInstance("SHA-256").digest(source.getBytes(StandardCharsets.UTF_8)));
-		} catch (NoSuchAlgorithmException ex) {
-			throw new IllegalStateException("SHA-256을 사용할 수 없습니다.", ex);
-		}
 	}
 
 	// 042 EXITPRESET-003의 프리셋 잠금, 041의 대기 구간 탈출 판정과 같은 산출식을 쓴다 — 현재 실행 세대의

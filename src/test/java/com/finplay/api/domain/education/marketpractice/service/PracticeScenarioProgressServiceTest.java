@@ -42,13 +42,18 @@ class PracticeScenarioProgressServiceTest {
 		mock(PracticeAttemptRepository.class),
 		new TutorialPriceGenerator(),
 		new TutorialScenarioScriptLoader(new ObjectMapper()));
+	private final PracticeExitPlanReservationService exitPlanReservationService = mock(
+		PracticeExitPlanReservationService.class);
 	private final PracticeScenarioProgressService service = new PracticeScenarioProgressService(
-		canonicalPriceService, settlementService, tradeService);
+		canonicalPriceService, settlementService, tradeService, exitPlanReservationService);
 
 	@BeforeEach
 	void setUp() {
 		holdNothing();
 		when(tradeService.findLatestPracticeRunBuyExecutedAt(anyLong(), anyLong())).thenReturn(Optional.empty());
+		// 052 EXITFREE-025 — 대기 구간 탈출은 이제 "보유 + 그 진입의 예약"을 함께 요구한다. 예약을 다루지
+		// 않는 항목들은 예약이 걸린 사용자를 기본값으로 둔다 — 그래야 검증 대상(순회·정산·clamp)만 남는다.
+		when(exitPlanReservationService.entryReservationSatisfied(any(PracticeAttempt.class))).thenReturn(true);
 	}
 
 	@Test
@@ -145,6 +150,102 @@ class PracticeScenarioProgressServiceTest {
 
 		assertThat(attempt.getScenarioStageId()).isEqualTo("ACT3_REBOUND");
 		assertThat(attempt.getScenarioStageElapsedSeconds()).isZero();
+	}
+
+	/**
+	 * 052 EXITFREE-025 — <b>매수만으로는 이야기가 시작되지 않는다.</b> 042는 매수 체결 순간 서버가 예약을
+	 * 대신 걸어 "보유 = 예약"이 늘 함께였지만, 052가 예약을 사용자에게 넘기면서 그 등식이 깨졌다. 이 방어가
+	 * 없으면 예약 폼을 채우는 동안 1막이 먼저 출발하고 느린 사용자는 규칙을 걸기도 전에 하락을 맞는다.
+	 */
+	@Test
+	void idleLoopHoldsTheStoryUntilTheEntryHasAReservation() {
+		PracticeAttempt attempt = startedAt("IDLE_ENTRY", 15L, ANCHOR);
+		holdQuantity("3");
+		when(exitPlanReservationService.entryReservationSatisfied(any(PracticeAttempt.class))).thenReturn(false);
+
+		service.advance(attempt, ANCHOR.plusSeconds(3));
+
+		assertThat(attempt.getScenarioStageId()).isEqualTo("IDLE_ENTRY");
+		// 대기 구간은 계속 돈다 — 시간이 멈추면 그 사이 접수한 지정가·예약이 영영 정산되지 않는다.
+		assertThat(attempt.getScenarioStageElapsedSeconds()).isEqualTo(18L);
+		verify(settlementService, times(1))
+			.settleCurrentRun(eq(ATTEMPT_ID), eq(1L), any(LocalDateTime.class), any(BigDecimal.class));
+	}
+
+	// 예약을 건 다음 tick에서 출발한다 — 판정이 tick마다 다시 이뤄져야 사용자가 폼을 채우는 데 걸린 시간이
+	// 이야기를 밀지 않는다.
+	@Test
+	void theStoryStartsOnTheFirstTickAfterTheReservationIsCreated() {
+		PracticeAttempt attempt = startedAt("IDLE_ENTRY", 15L, ANCHOR);
+		holdQuantity("3");
+		// **한 tick 안에서도 판정은 여러 번 일어난다**(순회 진입 전 1회 + 가상 분마다 1회). 연속 반환값으로
+		// 스텁하면 같은 tick의 두 번째 호출이 true가 되어 첫 tick에서 이미 나가 버린다 — tick 사이에 다시
+		// 스텁해야 "예약이 생긴 시점"을 정확히 가른다.
+		when(exitPlanReservationService.entryReservationSatisfied(any(PracticeAttempt.class))).thenReturn(false);
+		when(tradeService.findLatestPracticeRunBuyExecutedAt(ATTEMPT_ID, 1L))
+			.thenReturn(Optional.of(ANCHOR.plusSeconds(1)));
+
+		service.advance(attempt, ANCHOR.plusSeconds(3));
+		assertThat(attempt.getScenarioStageId()).isEqualTo("IDLE_ENTRY");
+
+		when(exitPlanReservationService.entryReservationSatisfied(any(PracticeAttempt.class))).thenReturn(true);
+		service.advance(attempt, ANCHOR.plusSeconds(6));
+
+		assertThat(attempt.getScenarioStageId()).isEqualTo("ACT1_RISE");
+		// 탈출 후 소비하는 시간의 기준점은 여전히 **매수 체결 시각**이라, 예약을 늦게 건 사용자는 이번 tick
+		// 간격(3초 = 1 가상 분)만큼 1막 안쪽에서 시작한다. 간격은 clamp(30초)로 이미 묶여 있어 이야기를
+		// 건너뛰지 않는다.
+		assertThat(attempt.getScenarioStageElapsedSeconds()).isEqualTo(3L);
+	}
+
+	// 재진입 대기도 같은 규칙이다 — 한쪽만 막으면 3막이 예약 없이 출발한다.
+	@Test
+	void reentryIdleLoopAlsoWaitsForTheReservation() {
+		PracticeAttempt attempt = startedAt("IDLE_REENTRY", 9L, ANCHOR);
+		holdQuantity("2");
+		when(exitPlanReservationService.entryReservationSatisfied(any(PracticeAttempt.class))).thenReturn(false);
+
+		service.advance(attempt, ANCHOR.plusSeconds(3));
+
+		assertThat(attempt.getScenarioStageId()).isEqualTo("IDLE_REENTRY");
+	}
+
+	// 초기화 tick(커서가 아직 없는 첫 tick)도 같은 조건을 쓴다 — 여기만 빠지면 종목 선택 직후 매수한
+	// 사용자가 예약 없이 1막으로 출발한다.
+	@Test
+	void firstTickStaysInTheIdleLoopWhenTheEntryHasNoReservation() {
+		PracticeAttempt attempt = scenarioAttempt();
+		holdQuantity("0.5");
+		when(exitPlanReservationService.entryReservationSatisfied(any(PracticeAttempt.class))).thenReturn(false);
+
+		service.advance(attempt, ANCHOR);
+
+		assertThat(attempt.getScenarioStageId()).isEqualTo("IDLE_ENTRY");
+	}
+
+	/**
+	 * <b>교착 점검 — 예약 없이 직접 팔아 버린 사용자.</b> 보유가 0이 되면 대기 구간에 그대로 남고(이건 052
+	 * 이전과 같다), 다시 사서 그 진입에 예약을 걸면 진행한다. 예약 판정은 진입 단위라 새 진입이 새 몫으로
+	 * 한 번 더 열린다 — 막다른 길이 아니다.
+	 */
+	@Test
+	void sellingWithoutAReservationLeavesTheUserInTheIdleLoopAndRebuyingResumesTheStory() {
+		PracticeAttempt attempt = startedAt("IDLE_ENTRY", 15L, ANCHOR);
+		holdNothing();
+		when(exitPlanReservationService.entryReservationSatisfied(any(PracticeAttempt.class))).thenReturn(false);
+
+		service.advance(attempt, ANCHOR.plusSeconds(3));
+		assertThat(attempt.getScenarioStageId()).isEqualTo("IDLE_ENTRY");
+		// 미보유일 때는 예약을 묻지도 않는다 — 팔고 나온 사용자의 tick이 원장을 더 읽을 이유가 없다.
+		verify(exitPlanReservationService, never()).entryReservationSatisfied(any(PracticeAttempt.class));
+
+		holdQuantity("1");
+		when(exitPlanReservationService.entryReservationSatisfied(any(PracticeAttempt.class))).thenReturn(true);
+		when(tradeService.findLatestPracticeRunBuyExecutedAt(ATTEMPT_ID, 1L))
+			.thenReturn(Optional.of(ANCHOR.plusSeconds(6)));
+
+		service.advance(attempt, ANCHOR.plusSeconds(6));
+		assertThat(attempt.getScenarioStageId()).isEqualTo("ACT1_RISE");
 	}
 
 	// 대기 탈출 시 남은 delta를 전부 이월하면 매수 직후 첫 화면이 1막 한참 뒤가 되어 가격이 튄다.

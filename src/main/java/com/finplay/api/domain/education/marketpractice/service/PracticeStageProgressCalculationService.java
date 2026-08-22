@@ -15,9 +15,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 이슈 #503. <b>어떤 것도 저장하지 않는다</b> — 체결 원장과 예약 발동 이력, 그리고 attempt에 이미
- * 실려 있는 프리셋 선택값만 읽는다. <b>세 값의 근거가 같지 않다</b> — 왕복 둘은 체결 원장에서 나오고
- * 프리셋은 {@code attempt.exit_preset}에서 나온다.
+ * 이슈 #503. <b>어떤 것도 저장하지 않는다</b> — 체결 원장과 예약 원장, 그리고 attempt에 이미 실려 있는
+ * 손절·익절 기준값만 읽는다. <b>세 값의 근거가 같지 않다</b> — 왕복 둘은 체결 원장에서 나오고, 기준 단계는
+ * attempt의 비율 컬럼과 (052 2차부터) 그 실행의 예약 존재 여부에서 나온다.
  *
  * <p><b>판정만 하고 강제하지 않는다.</b> 잘못된 순서의 주문을 거부하는 것은 주문 생성 경로에 새 검증을
  * 넣는 일이라 이 서비스의 범위가 아니다. 사용자가 API를 직접 불러 순서를 건너뛸 수는 있지만 이것은 보안이
@@ -52,9 +52,43 @@ public class PracticeStageProgressCalculationService {
 		return new PracticeStageProgressResponse(
 			roundTripCompleted(fills, triggeredSellOrderIds, OrderType.MARKET),
 			roundTripCompleted(fills, triggeredSellOrderIds, OrderType.LIMIT),
-			// 이 실행에서 프리셋을 직접 골랐는가. 재시작이 attempt.exitPreset을 지우므로 실행 안에서
-			// 단조롭게 증가한다 — 한 번 통과한 단계가 드롭다운 조작만으로 되잠기지 않는다.
-			attempt.getExitPreset() != null);
+			exitStandardChosen(attempt));
+	}
+
+	/**
+	 * 이 실행에서 손절·익절 기준을 <b>직접 정한 적이 있는가</b>(5단계 중 4단계, TUTORIAL-STAGE-001).
+	 *
+	 * <p><b>이 판정은 두 번 넓어졌고, 두 번 다 화면에서 입력 경로가 사라졌기 때문이다.</b> 좁히기 쉬운
+	 * 자리라 이유를 남긴다 — 판정 근거를 "지금 화면이 부르는 API"에 맞추면 화면이 바뀔 때마다 이 단계가
+	 * 조용히 영영 미완으로 남는다.
+	 *
+	 * <ol>
+	 * <li><b>052 1차</b> — 프리셋 택1이 자유 입력으로 바뀌면서 {@code exit_preset}만 보던 판정이
+	 * {@code exit_stop_loss_rate}까지 보게 됐다({@code attempt.exitRatesSelected()}).</li>
+	 * <li><b>052 2차(EXITFREE-020)</b> — 예약을 거는 주체가 서버에서 사용자로 바뀌면서 3단계 화면이
+	 * {@code PUT .../exit-rates}를 아예 부르지 않게 됐다. 사용자는 <b>예약 요청 본문에</b> 비율을 적고,
+	 * 그 값은 attempt 컬럼이 아니라 예약 자체에 남는다. 그래서 <b>예약을 만든 적이 있으면</b> 그것도
+	 * "기준을 정했다"로 센다.</li>
+	 * </ol>
+	 *
+	 * <p><b>실행 안에서 단조 증가한다.</b> 두 근거 모두 지워지지 않는다 — 비율 컬럼은 다시 정해도 non-null로
+	 * 남고, 예약 행은 취소·체결돼도 상태만 바뀌지 사라지지 않는다(그래서 상태를 묻지 않는다). 예약을 걸었다
+	 * 취소했다고 이미 연 단계가 되잠기면 화면이 사용자 눈앞에서 되감긴다. 재시작은 두 컬럼을 지우고 실행
+	 * 세대를 올려 이전 예약을 조회 범위에서 빼므로 <b>초기화만 정확히</b> 성립한다.
+	 *
+	 * <p><b>대본을 쓰지 않는 실행의 예약은 근거로 세지 않는다.</b> 그쪽은 042 그대로 매수 체결이 서버가
+	 * 자동으로 거는 예약이라, 사용자가 아무것도 고르지 않아도 행이 생긴다 — 그것으로 통과시키면
+	 * TUTORIAL-STAGE-001이 배제한 "고른 값으로 진입까지 했는가"류의 오판이 그대로 되살아난다. 대본 실행에는
+	 * 자동 예약이 아예 없으므로(EXITFREE-020) 거기 있는 예약은 전부 사용자가 만든 것이다.
+	 */
+	private boolean exitStandardChosen(PracticeAttempt attempt) {
+		if (attempt.exitRatesSelected()) {
+			return true;
+		}
+		if (attempt.scenarioScriptId() == null) {
+			return false;
+		}
+		return practiceExitPlanQueryService.existsRunReservation(attempt.getId(), attempt.getRunNumber());
 	}
 
 	/**

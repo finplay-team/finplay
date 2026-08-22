@@ -2,6 +2,7 @@
 package com.finplay.api.domain.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finplay.api.TestcontainersConfiguration;
 import com.finplay.api.domain.account.entity.Account;
@@ -12,6 +13,7 @@ import com.finplay.api.domain.education.marketpractice.dto.request.PracticeHoldi
 import com.finplay.api.domain.education.marketpractice.dto.request.PracticeHoldingReflectionCreateRequest;
 import com.finplay.api.domain.education.marketpractice.dto.response.InvestmentPracticeResponse;
 import com.finplay.api.domain.education.marketpractice.entity.ExitPreset;
+import com.finplay.api.domain.education.marketpractice.entity.ExitRates;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeAttempt;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeRiskSnapshot;
 import com.finplay.api.domain.education.marketpractice.repository.PracticeAttemptRepository;
@@ -33,6 +35,8 @@ import com.finplay.api.domain.portfolio.entity.Holding;
 import com.finplay.api.domain.portfolio.repository.HoldingRepository;
 import com.finplay.api.global.config.TestClock;
 import com.finplay.api.global.config.TestClockConfig;
+import com.finplay.api.global.exception.BusinessException;
+import com.finplay.api.global.exception.ErrorCode;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -56,8 +60,9 @@ import org.springframework.transaction.annotation.Transactional;
  * {@code PracticeAttemptEvidenceService.requireCurrentRun}이 {@code PRACTICE_EVIDENCE_MISSING}으로 던져
  * 그 실행의 관찰·복기가 통째로 깨진다 — 예약 개수만 세는 테스트는 그 상태를 초록으로 통과시킨다.
  *
- * <p><b>대조군이 반드시 있어야 한다.</b> 3단계(041) 실행에서 예약이 여전히 생기는지 함께 보지 않으면
- * 예약 생성을 통째로 없앤 구현도 초록이다.
+ * <p><b>대조군이 반드시 있어야 한다.</b> 3단계(041) 실행에서 예약이 만들어지는지 함께 보지 않으면
+ * 예약 생성을 통째로 없앤 구현도 초록이다. <b>052 EXITFREE-020 이후 그 대조군은 "매수가 자동으로
+ * 만든다"가 아니라 "사용자가 직접 걸면 만들어진다"로 바뀌었다.</b>
  */
 @SpringBootTest
 @Import({TestcontainersConfiguration.class, TestClockConfig.class})
@@ -118,6 +123,8 @@ class PracticeOrderBasicsNoAutoExitIntegrationTest {
 	@Autowired
 	private InvestmentPracticeQueryService queryService;
 	@Autowired
+	private PracticeExitPlanReservationService exitPlanReservationService;
+	@Autowired
 	private TestClock clock;
 
 	@BeforeEach
@@ -146,20 +153,80 @@ class PracticeOrderBasicsNoAutoExitIntegrationTest {
 		assertThat(tradeService.netFilledQuantity(fixture.attemptId(), 1L)).isEqualByComparingTo(QUANTITY);
 	}
 
-	// **대조군.** 이 테스트가 없으면 예약 생성을 통째로 없앤 구현도 위 테스트를 통과한다.
+	/**
+	 * <b>대조군.</b> 이 테스트가 없으면 예약 경로를 통째로 없앤 구현도 위 테스트를 통과한다.
+	 *
+	 * <p><b>052 EXITFREE-020으로 대조군의 내용이 바뀌었다.</b> 3단계 대본 실행도 이제 매수 체결로는 예약을
+	 * 만들지 않는다 — 사용자가 직접 걸어야 생긴다. 그래서 "매수만으로는 안 생긴다"와 "사용자가 걸면
+	 * 생긴다"를 한 테스트에서 함께 단언한다. 앞쪽만 두면 예약 경로를 없앤 구현이 초록이고, 뒤쪽만 두면
+	 * 자동 예약이 되살아난 구현이 초록이다.
+	 */
 	@Test
-	void storyScriptBuyStillCreatesItsAutomaticExitPlan() {
+	void storyScriptBuyCreatesNoAutomaticExitPlanButTheUserCanReserveOneDirectly() {
 		Fixture fixture = storyRun("ob-control");
 
 		clock.set(BASE_NOW.plusSeconds(1));
 		buy(fixture);
 
 		assertThat(latestSnapshot(fixture).getEntrySequence()).isEqualTo(1);
+		// 052 EXITFREE-020 — 매수 체결은 기준선까지만 만든다.
+		assertThat(exitPlans(fixture)).isEmpty();
+		assertThat(reservedQuantity(fixture)).isEqualByComparingTo(BigDecimal.ZERO);
+
+		// 사용자가 직접 건다 — 프리셋에 없던 조합(손절 2 + 익절 8)으로도 걸린다.
+		clock.set(BASE_NOW.plusSeconds(2));
+		exitPlanReservationService.create(
+			fixture.userId(), Market.CRYPTO, ExitRates.of(new BigDecimal("2"), new BigDecimal("8")));
+
 		assertThat(exitPlans(fixture)).singleElement().satisfies(plan -> {
 			assertThat(plan.getStatus()).isEqualTo(ExitPlanStatus.PENDING);
+			// 예약 기준가는 대본 canonical price다 — 엔진 기본 경로의 사인파 항시 시세가 아니다.
 			assertThat(plan.getBaselinePrice()).isEqualByComparingTo(STORY_ENTRY_PRICE);
+			// 진입가는 그 진입의 체결가이고 두 선은 019 공식 그대로다.
+			assertThat(plan.getEntryPrice()).isEqualByComparingTo(STORY_ENTRY_PRICE);
+			assertThat(plan.getStopLossPrice())
+				.isEqualByComparingTo(STORY_ENTRY_PRICE.multiply(new BigDecimal("0.98")));
+			assertThat(plan.getTakeProfitPrice())
+				.isEqualByComparingTo(STORY_ENTRY_PRICE.multiply(new BigDecimal("1.08")));
+			// 042 EXITPRESET-005 승계 — 사용자 주도 예약도 실행 세대에 귀속된다.
+			assertThat(plan.getPracticeAttemptRunNumber()).isEqualTo(1L);
 		});
 		assertThat(reservedQuantity(fixture)).isEqualByComparingTo(QUANTITY);
+
+		// write-once — 같은 진입에서 두 번째 생성은 거부된다.
+		assertThatThrownBy(() -> exitPlanReservationService.create(
+			fixture.userId(), Market.CRYPTO, ExitRates.of(new BigDecimal("5"), new BigDecimal("3"))))
+			.isInstanceOfSatisfying(BusinessException.class, exception -> assertThat(exception.getErrorCode())
+				.isEqualTo(ErrorCode.EXIT_PLAN_ALREADY_EXISTS));
+	}
+
+	// 2단계 대본에서는 사용자 주도 예약도 열리지 않는다(049 ORDERBASICS-022를 052가 그대로 승계) —
+	// 자동만 끄고 수동을 열어 두면 그 대본에서 예약이 다른 문으로 되살아난다.
+	@Test
+	void orderBasicsRunRejectsAUserDrivenReservationToo() {
+		Fixture fixture = orderBasicsRun("ob-manual-blocked");
+
+		clock.set(BASE_NOW.plusSeconds(1));
+		buy(fixture);
+
+		assertThatThrownBy(() -> exitPlanReservationService.create(
+			fixture.userId(), Market.CRYPTO, ExitRates.of(new BigDecimal("3"), new BigDecimal("5"))))
+			.isInstanceOfSatisfying(BusinessException.class, exception -> assertThat(exception.getErrorCode())
+				.isEqualTo(ErrorCode.PRACTICE_STAGE_LOCKED));
+		assertThat(exitPlans(fixture)).isEmpty();
+	}
+
+	// 보유가 없으면 예약할 대상이 없다 — 매수 전 예약 시도는 거부된다(052 EXITFREE-020).
+	@Test
+	void storyScriptRejectsAReservationWhileNothingIsHeld() {
+		Fixture fixture = storyRun("ob-nothing-held");
+
+		clock.set(BASE_NOW.plusSeconds(1));
+		assertThatThrownBy(() -> exitPlanReservationService.create(
+			fixture.userId(), Market.CRYPTO, ExitRates.of(new BigDecimal("3"), new BigDecimal("5"))))
+			.isInstanceOfSatisfying(BusinessException.class, exception -> assertThat(exception.getErrorCode())
+				.isEqualTo(ErrorCode.PRACTICE_STEP_LOCKED));
+		assertThat(exitPlans(fixture)).isEmpty();
 	}
 
 	/**

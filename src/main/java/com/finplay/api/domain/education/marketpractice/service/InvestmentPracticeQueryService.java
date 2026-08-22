@@ -71,6 +71,8 @@ public class InvestmentPracticeQueryService {
 	private final PracticeAttemptCanonicalPriceService canonicalPriceService;
 	private final PracticeEntryComparisonService practiceEntryComparisonService;
 	private final PracticeStageProgressCalculationService practiceStageProgressCalculationService;
+	// 052 EXITFREE-020·021 — 예약 가능 여부·현재 예약·겪음 상태. 판정을 이 클래스가 다시 쓰지 않고 그대로 얹는다.
+	private final PracticeExitPlanReservationService practiceExitPlanReservationService;
 	private final PracticeCompletionRepository practiceCompletionRepository;
 	private final Clock clock;
 
@@ -149,6 +151,9 @@ public class InvestmentPracticeQueryService {
 				.calculate(attempt, canonicalPriceService.script(attempt))
 				.revealedEvents()
 			: List.of();
+		// 052 EXITFREE-020·021 — 예약 가능 여부·현재 예약·겪음 상태. 판정은 POST .../exit-plan이 쓰는 것과
+		// 같은 산출식이라 화면이 연 버튼과 서버의 거부가 갈리지 않는다.
+		PracticeExitPlanViewDto exitPlanView = practiceExitPlanReservationService.view(attempt);
 		return new InvestmentPracticeResponse(
 			response.tutorialKey(),
 			response.status(),
@@ -160,7 +165,10 @@ public class InvestmentPracticeQueryService {
 			revealedEvents,
 			priceAfterSell,
 			practiceEntryComparisonService.findCurrentRunEntries(attempt, priceAfterSell),
-			practiceStageProgressCalculationService.calculate(attempt));
+			practiceStageProgressCalculationService.calculate(attempt),
+			exitPlanView.creatable(),
+			exitPlanView.pendingExitPlan(),
+			exitPlanView.experience());
 	}
 
 	private InvestmentPracticeResponse attachReplayAttempt(

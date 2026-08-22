@@ -263,9 +263,15 @@ class PracticeAttemptOrderAttributionServiceTest {
 		verifyNoInteractions(exitPlanCreationService);
 	}
 
-	// 대조군 — 3단계 대본 실행에서는 예약이 그대로 생긴다. 이게 없으면 예약을 통째로 없앤 구현도 초록이다.
+	/**
+	 * 052 EXITFREE-020 — <b>3단계 대본 실행도 이제 자동 예약을 만들지 않는다.</b> 042 EXITPRESET-012를
+	 * 뒤집은 자리이며, 예약은 사용자가 {@code POST .../exit-plan}으로 직접 건다.
+	 *
+	 * <p>여기서도 <b>기준선은 그대로 만든다</b> — 기준선까지 빠지면 관찰·복기가 통째로 깨진다. 그래서 위
+	 * 2단계 테스트와 같은 형태로 "예약이 없다"와 "기준선이 있다"를 함께 단언한다.
+	 */
 	@Test
-	void createRiskSnapshotOnBuyFillStillCreatesTheExitPlanForTheStoryScript() {
+	void createRiskSnapshotOnBuyFillNoLongerCreatesTheExitPlanForTheStoryScript() {
 		Instrument instrument = tutorialInstrument();
 		PracticeAttempt attempt = scriptAttempt(instrument, TutorialScenarioScriptId.CRYPTO_STORY_V1);
 		Order order = attributedBuyOrder(instrument);
@@ -273,14 +279,13 @@ class PracticeAttemptOrderAttributionServiceTest {
 		when(practiceAttemptRepository.findByIdForUpdate(ATTEMPT_ID)).thenReturn(Optional.of(attempt));
 		when(practiceRiskSnapshotRepository.countByAttemptIdAndRunNumber(ATTEMPT_ID, 1L)).thenReturn(0L);
 		when(tradeService.netFilledQuantity(ATTEMPT_ID, 1L)).thenReturn(trade.getQuantity());
-		when(holdingService.findHoldingId(USER_ID, Market.CRYPTO, INSTRUMENT_ID)).thenReturn(Optional.of(77L));
-		when(holdingService.findHoldingForOwner(USER_ID, 77L)).thenReturn(Optional.of(mock(Holding.class)));
-		when(canonicalPriceService.canonicalPrice(attempt, NOW)).thenReturn(new BigDecimal("10180.00000000"));
 
 		service.createRiskSnapshotOnBuyFill(order, trade, NOW);
 
-		verify(practiceRiskSnapshotRepository).save(org.mockito.ArgumentMatchers.any());
-		verify(exitPlanCreationService).create(org.mockito.ArgumentMatchers.any());
+		ArgumentCaptor<PracticeRiskSnapshot> snapshotCaptor = ArgumentCaptor.forClass(PracticeRiskSnapshot.class);
+		verify(practiceRiskSnapshotRepository).save(snapshotCaptor.capture());
+		assertThat(snapshotCaptor.getValue().getStopLossPrice()).isEqualByComparingTo("9874.60000000");
+		verifyNoInteractions(exitPlanCreationService);
 	}
 
 	// 대본 식별자가 null인 실행(생성기 버전 1)도 예전대로 예약이 생긴다 — 위 두 테스트가 각각 고정한다.

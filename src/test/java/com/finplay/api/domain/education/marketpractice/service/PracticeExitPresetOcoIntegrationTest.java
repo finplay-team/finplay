@@ -1,4 +1,4 @@
-// 자동 OCO 예약이 tick에서 체결된 뒤 실행 세대 원장·재진입·재시작이 이어지는지 실제 MySQL로 검증한다.
+// 사용자가 건 OCO 예약이 tick에서 체결된 뒤 실행 세대 원장·재진입·재시작이 이어지는지 실제 MySQL로 검증한다.
 package com.finplay.api.domain.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -13,6 +13,7 @@ import com.finplay.api.domain.education.marketpractice.dto.response.PracticeAtte
 import com.finplay.api.domain.education.marketpractice.dto.response.PracticeEntryResponse;
 import com.finplay.api.domain.education.marketpractice.dto.response.PracticeStageProgressResponse;
 import com.finplay.api.domain.education.marketpractice.entity.ExitPreset;
+import com.finplay.api.domain.education.marketpractice.entity.ExitRates;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeAttempt;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeRiskSnapshot;
 import com.finplay.api.domain.education.marketpractice.repository.PracticeAttemptRepository;
@@ -21,6 +22,7 @@ import com.finplay.api.domain.market.entity.Instrument;
 import com.finplay.api.domain.market.entity.Market;
 import com.finplay.api.domain.market.entity.TutorialScenarioScriptId;
 import com.finplay.api.domain.market.repository.InstrumentRepository;
+import com.finplay.api.domain.market.service.TutorialPriceGenerator;
 import com.finplay.api.domain.order.dto.request.LimitOrderCreateRequest;
 import com.finplay.api.domain.order.dto.request.OrderCreateRequest;
 import com.finplay.api.domain.order.entity.ExitPlan;
@@ -29,6 +31,7 @@ import com.finplay.api.domain.order.entity.OrderSide;
 import com.finplay.api.domain.order.entity.OrderStatus;
 import com.finplay.api.domain.order.entity.OrderType;
 import com.finplay.api.domain.order.repository.ExitPlanRepository;
+import com.finplay.api.domain.order.service.ExitPlanService;
 import com.finplay.api.domain.order.service.LimitOrderService;
 import com.finplay.api.domain.order.service.OrderService;
 import com.finplay.api.domain.order.service.TradeService;
@@ -114,6 +117,10 @@ class PracticeExitPresetOcoIntegrationTest {
 	@Autowired
 	private PracticeEntryComparisonService practiceEntryComparisonService;
 	@Autowired
+	private PracticeExitPlanReservationService exitPlanReservationService;
+	@Autowired
+	private ExitPlanService exitPlanService;
+	@Autowired
 	private TestClock clock;
 
 	@BeforeEach
@@ -128,9 +135,13 @@ class PracticeExitPresetOcoIntegrationTest {
 		// 마친다 — 그래서 이 실행의 "진짜" 첫 진입은 entrySequence 3이다(워밍업 시장가 1·지정가 1).
 		Fixture fixture = tutorialRunAtRumorStageAfterBothRoundTrips("oco-stop");
 
-		// 매수 — 같은 트랜잭션에서 기준선과 예약이 함께 생긴다(EXITPRESET-012).
+		// 매수 — 기준선만 생긴다. **052 EXITFREE-020으로 자동 예약이 사라졌다**(042 EXITPRESET-012를
+		// 뒤집었다) — 예약은 아래에서 사용자가 직접 건다.
 		clock.set(NARRATIVE_START.plusSeconds(1));
 		buy(fixture);
+		assertThat(exitPlanRepository
+			.findByPracticeAttemptIdAndPracticeAttemptRunNumber(fixture.attemptId(), 1L)).isEmpty();
+		reserve(fixture, "3", "5");
 
 		PracticeRiskSnapshot firstEntry = latestSnapshot(fixture);
 		assertThat(firstEntry.getEntrySequence()).isEqualTo(3);
@@ -168,16 +179,18 @@ class PracticeExitPresetOcoIntegrationTest {
 		assertThat(afterStop.exitPresetLocked()).isFalse();
 		assertThat(afterStop.selectedExitPreset()).isEqualTo("RELAXED");
 
-		// 재매수 — 새 진입이라 새 기준선과 새 예약이 바뀐 프리셋으로 생긴다(EXITPRESET-017).
+		// 재매수 — 새 진입이라 새 기준선이 바뀐 프리셋으로 생기고(EXITPRESET-017), 그 진입 몫으로 예약을
+		// 다시 한 번 걸 수 있다(052 write-once는 진입 단위다).
 		clock.set(NARRATIVE_START.plusSeconds(30));
 		buy(fixture);
+		reserve(fixture, "5", "8");
 
 		PracticeRiskSnapshot secondEntry = latestSnapshot(fixture);
 		assertThat(secondEntry.getEntrySequence()).isEqualTo(4);
 		assertThat(secondEntry.getExitPreset()).isEqualTo(ExitPreset.RELAXED);
 
-		// PR #487 리뷰 권장 1 — 예약이 "생겼는지"만이 아니라 그 손절·익절가가 바뀐 프리셋을 실제로 반영하는지
-		// 본다. 개수만 세면 프리셋이 BALANCED로 굳어 있어도 통과한다(042 tasks 8번의 완료 조건).
+		// PR #487 리뷰 권장 1 — 예약이 "생겼는지"만이 아니라 그 손절·익절가가 사용자가 정한 비율을 실제로
+		// 반영하는지 본다. 개수만 세면 비율이 3/5로 굳어 있어도 통과한다.
 		List<Long> reReservedIds = exitPlanRepository.findPendingPracticeRunExitPlanIds(fixture.attemptId(), 1L);
 		assertThat(reReservedIds).hasSize(1);
 		ExitPlan reReserved = exitPlanRepository.findById(reReservedIds.get(0)).orElseThrow();
@@ -217,6 +230,7 @@ class PracticeExitPresetOcoIntegrationTest {
 
 		clock.set(BASE_NOW.plusSeconds(1));
 		buy(fixture);
+		reserve(fixture, "3", "5");
 		assertThat(stageProgress(fixture).marketBuySellCompleted()).isFalse();
 
 		// tick — 손절이 발동해 포지션이 청산된다. 원장에는 MARKET 매도가 남는다.
@@ -303,7 +317,10 @@ class PracticeExitPresetOcoIntegrationTest {
 		assertThat(entries).hasSize(2);
 		assertThat(entries.get(1).buyOrderType()).isEqualTo("LIMIT");
 
-		// 지정가 매도 접수 — 전량이 자동 예약에 잡혀 있어도 접수된다(042 EXITPRESET-016).
+		// 지정가 매도 접수 — 전량이 예약에 잡혀 있어도 접수된다(042 EXITPRESET-016). 052로 예약을 거는
+		// 주체가 사용자로 바뀌었을 뿐, 접수가 막히지 않아야 한다는 성질은 그대로다.
+		reserve(fixture, "3", "5");
+		assertThat(reservedQuantity(fixture)).isEqualByComparingTo(QUANTITY);
 		limitOrder(fixture, OrderSide.SELL, new BigDecimal("9700"));
 		clock.set(BASE_NOW.plusSeconds(18));
 		chartService.tick(fixture.userId(), Market.CRYPTO);
@@ -334,6 +351,7 @@ class PracticeExitPresetOcoIntegrationTest {
 
 		clock.set(BASE_NOW.plusSeconds(1));
 		buy(fixture);
+		reserve(fixture, "3", "5");
 		assertThat(reservedQuantity(fixture)).isEqualByComparingTo(QUANTITY);
 
 		clock.set(BASE_NOW.plusSeconds(2));
@@ -345,8 +363,116 @@ class PracticeExitPresetOcoIntegrationTest {
 		assertThat(onlyExitPlan(fixture).getStatus()).isEqualTo(ExitPlanStatus.CANCELLED);
 	}
 
+	/**
+	 * 이슈 #527 리뷰 1·3번. 두 가지를 <b>실제 MySQL로</b> 고정한다.
+	 *
+	 * <ul>
+	 *   <li>사용자가 직접 건 예약은 {@code DELETE /api/exit-plans/{id}}의 호출부로 취소된다 — 042 자동 예약만
+	 *       막던 차단이 052의 사용자 주도 예약까지 막으면, write-once와 겹쳐 한 번 걸면 체결될 때까지 풀 수
+	 *       없는 상태가 된다.</li>
+	 *   <li>취소된 행도 write-once를 그대로 막는다 — mock 단위 테스트는 이 판정을 스텁으로 대신해서
+	 *       {@code existsByPracticeAttemptIdAndPracticeAttemptRunNumberAndRequestHash}에 status 조건이 없다는
+	 *       것을 <b>실제 쿼리로</b> 확인하지 못한다.</li>
+	 * </ul>
+	 */
+	@Test
+	void aUserReservationIsCancellableAndTheCancelledRowStillBlocksTheSameEntry() {
+		Fixture fixture = tutorialRunAtRumorStage("oco-cancel");
+
+		clock.set(BASE_NOW.plusSeconds(1));
+		buy(fixture);
+		reserve(fixture, "3", "5");
+		Long planId = onlyExitPlan(fixture).getId();
+		assertThat(reservedQuantity(fixture)).isEqualByComparingTo(QUANTITY);
+
+		clock.set(BASE_NOW.plusSeconds(2));
+		exitPlanService.cancel(fixture.userId(), planId);
+
+		assertThat(onlyExitPlan(fixture).getStatus()).isEqualTo(ExitPlanStatus.CANCELLED);
+		assertThat(reservedQuantity(fixture)).isEqualByComparingTo(BigDecimal.ZERO);
+
+		// write-once — 취소한 뒤 같은 진입에서 더 넓은 선으로 다시 거는 것은 거부한다(052 EXITFREE-020).
+		assertThatThrownBy(() -> reserve(fixture, "5", "8"))
+			.isInstanceOfSatisfying(BusinessException.class, exception -> assertThat(exception.getErrorCode())
+				.isEqualTo(ErrorCode.EXIT_PLAN_ALREADY_EXISTS));
+
+		// EXITFREE-025 — 취소해도 예약 이력이 남아 대기 구간을 통과시킨다. 여기서 거짓이 되면 재생성도
+		// 막힌 사용자가 대본 앞에 갇힌다(막다른 길).
+		assertThat(exitPlanReservationService.entryReservationSatisfied(
+			attemptRepository.findById(fixture.attemptId()).orElseThrow())).isTrue();
+	}
+
+	/**
+	 * 이슈 #527 리뷰 2라운드 권장 1 — <b>여전히 막혀야 하는 쪽</b>을 실제 MySQL로 고정한다. 취소 차단이
+	 * 사용자 주도 예약만 열어 주는지는 {@code managesAutomaticExitPlans}의 <b>코드 조회 기반 판정</b>에
+	 * 달려 있는데, 단위 테스트는 그 판정을 Mockito 스텁으로 대신해서 <b>어떤 attempt 행이 자동 예약
+	 * 실행으로 읽히는지</b>를 한 번도 확인하지 않는다.
+	 *
+	 * <p><b>API로는 재현할 수 없다.</b> 052가 자동 예약을 걷어낸 뒤로 대본 실행에서는 자동 예약이 새로
+	 * 생기지 않아 이 상태를 만들 표면이 남아 있지 않다. 그래서 더더욱 테스트로 고정한다 — API로 만들 수
+	 * 없는 상태일수록 조용히 깨져도 아무도 모른다.
+	 */
+	@Test
+	void anAutomaticReservationOnALegacyRunStaysUncancellable() {
+		Fixture fixture = legacyTutorialRun("oco-legacy");
+
+		// 대본을 쓰지 않는 실행은 042 그대로 매수 체결이 자동으로 예약을 건다(EXITFREE-020의 "두 경로가
+		// 공존하지 않는다"의 반대쪽).
+		clock.set(BASE_NOW.plusSeconds(1));
+		buy(fixture);
+
+		ExitPlan automatic = onlyExitPlan(fixture);
+		assertThat(automatic.getStatus()).isEqualTo(ExitPlanStatus.PENDING);
+
+		assertThatThrownBy(() -> exitPlanService.cancel(fixture.userId(), automatic.getId()))
+			.isInstanceOfSatisfying(BusinessException.class, exception -> assertThat(exception.getErrorCode())
+				.isEqualTo(ErrorCode.EXIT_PLAN_TUTORIAL_INSTRUMENT_NOT_ALLOWED));
+
+		// 거부는 상태를 바꾸지 않는다 — 예약도 예약 수량도 그대로다.
+		assertThat(onlyExitPlan(fixture).getStatus()).isEqualTo(ExitPlanStatus.PENDING);
+		assertThat(reservedQuantity(fixture)).isEqualByComparingTo(QUANTITY);
+	}
+
+	/**
+	 * 이슈 #527 리뷰 2라운드 권장 1 — 지난 실행 세대에 귀속된 예약도 여전히 막힌다(<b>모르면 막는다</b>).
+	 *
+	 * <p><b>이 상태는 정상 경로로 만들어지지 않는다.</b> 재시작은 현재 세대의 PENDING 예약을 먼저 취소하고
+	 * 수량을 반환하므로(042 EXITPRESET-015) "지난 세대의 PENDING 예약"이 남지 않는다. 그래서 실행 세대만
+	 * 앞으로 미는 합성 픽스처를 쓴다 — {@code restart()}를 쓰면 대본 식별자·생성기 버전까지 함께 지워져
+	 * legacy 판정이 대신 참이 되고, 이 테스트가 <b>세대 비교 절이 아니라 대본 절을 고정</b>하게 된다.
+	 * {@link ReflectionTestUtils}로 {@code runNumber}만 옮기는 것은 이 저장소가 legacy 행을 만들 때 이미
+	 * 쓰는 방식이다({@code PracticeEntryComparisonServiceTest}).
+	 */
+	@Test
+	void aReservationFromAPastRunGenerationStaysUncancellable() {
+		Fixture fixture = tutorialRunAtRumorStage("oco-pastrun");
+
+		clock.set(BASE_NOW.plusSeconds(1));
+		buy(fixture);
+		reserve(fixture, "3", "5");
+		Long planId = onlyExitPlan(fixture).getId();
+
+		PracticeAttempt attempt = attemptRepository.findById(fixture.attemptId()).orElseThrow();
+		ReflectionTestUtils.setField(attempt, "runNumber", 2L);
+		attemptRepository.saveAndFlush(attempt);
+
+		clock.set(BASE_NOW.plusSeconds(2));
+		assertThatThrownBy(() -> exitPlanService.cancel(fixture.userId(), planId))
+			.isInstanceOfSatisfying(BusinessException.class, exception -> assertThat(exception.getErrorCode())
+				.isEqualTo(ErrorCode.EXIT_PLAN_TUTORIAL_INSTRUMENT_NOT_ALLOWED));
+
+		assertThat(onlyExitPlan(fixture).getStatus()).isEqualTo(ExitPlanStatus.PENDING);
+	}
+
 	private static BigDecimal expectedPrice(BigDecimal entryPrice, BigDecimal factor) {
 		return entryPrice.multiply(factor).setScale(PRICE_SCALE, RoundingMode.HALF_UP);
+	}
+
+	// 052 EXITFREE-020 — 사용자가 직접 거는 예약. 042에서는 이 자리를 매수 체결이 대신했다.
+	private void reserve(Fixture fixture, String stopLossRate, String takeProfitRate) {
+		exitPlanReservationService.create(
+			fixture.userId(), Market.CRYPTO,
+			ExitRates.of(new BigDecimal(stopLossRate), new BigDecimal(takeProfitRate)));
 	}
 
 	private void buy(Fixture fixture) {
@@ -394,6 +520,25 @@ class PracticeExitPresetOcoIntegrationTest {
 		attemptService.selectInstrument(user.getId(), Market.CRYPTO, instrument.getId());
 		return new Fixture(user.getId(), account.getId(), instrument.getId(),
 			attemptRepository.findByUserIdAndMarket(user.getId(), Market.CRYPTO).orElseThrow().getId());
+	}
+
+	/**
+	 * 대본을 쓰지 않는 <b>legacy 실행</b>(생성기 버전 1)을 만든다 — 이 실행에서만 매수 체결이 042 그대로
+	 * 자동 예약을 건다.
+	 *
+	 * <p><b>팩토리로는 만들 수 없다.</b> {@code PracticeAttemptService.generatorVersionFor}가 대본이 저작된
+	 * CRYPTO에 항상 버전 2를 주므로, 지금 프로덕션 경로로는 이 모양의 행이 새로 생기지 않는다(049 배포
+	 * 시점에 진행 중이던 실행만 여기에 해당한다). 그래서 이 저장소가 legacy 행을 만들 때 이미 쓰는 방식인
+	 * {@link ReflectionTestUtils}를 그대로 따라({@code PracticeEntryComparisonServiceTest}) 두 컬럼만
+	 * 되돌린다 — 새로 만들 수 없는 상태라고 검증을 빼면 그 경로는 조용히 깨진다.
+	 */
+	private Fixture legacyTutorialRun(String scenario) {
+		Fixture fixture = newTutorialRun(scenario);
+		PracticeAttempt attempt = attemptRepository.findById(fixture.attemptId()).orElseThrow();
+		ReflectionTestUtils.setField(attempt, "generatorVersion", TutorialPriceGenerator.VERSION_1);
+		ReflectionTestUtils.setField(attempt, "scenarioScriptId", null);
+		attemptRepository.saveAndFlush(attempt);
+		return fixture;
 	}
 
 	// 대기 구간을 이미 지나 2막-a 루머 0분에 서 있는 실행을 만든다 — 이 테스트의 대상은 대본 저작이 아니라

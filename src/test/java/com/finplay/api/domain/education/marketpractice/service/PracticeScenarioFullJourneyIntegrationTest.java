@@ -14,6 +14,7 @@ import com.finplay.api.domain.education.marketpractice.dto.response.InvestmentPr
 import com.finplay.api.domain.education.marketpractice.dto.response.PracticeEntryResponse;
 import com.finplay.api.domain.education.marketpractice.dto.response.PracticeTutorialChartResponse;
 import com.finplay.api.domain.education.marketpractice.entity.ExitPreset;
+import com.finplay.api.domain.education.marketpractice.entity.ExitRates;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeAttempt;
 import com.finplay.api.domain.education.marketpractice.entity.PracticeRiskSnapshot;
 import com.finplay.api.domain.education.marketpractice.repository.PracticeAttemptRepository;
@@ -96,6 +97,8 @@ class PracticeScenarioFullJourneyIntegrationTest {
 	@Autowired
 	private PracticeHoldingReflectionService reflectionService;
 	@Autowired
+	private PracticeExitPlanReservationService exitPlanReservationService;
+	@Autowired
 	private TestClock clock;
 
 	private LocalDateTime now = BASE_NOW;
@@ -120,7 +123,11 @@ class PracticeScenarioFullJourneyIntegrationTest {
 		assertThat(idle.revealedEvents()).isEmpty();
 
 		// --- 매수 → 1막 ---
+		// 052 EXITFREE-020 — 매수는 기준선만 만들고 예약은 사용자가 직접 건다. 비율은 고른 프리셋과 같은
+		// 값(CAUTIOUS = 손절 2·익절 3)이라 아래 대본 분기 전제가 그대로 유지된다.
 		buy(fixture);
+		assertThat(plans(fixture)).isEmpty();
+		reserve(fixture, "2", "3");
 		PracticeRiskSnapshot firstEntry = snapshot(fixture, 1);
 		assertThat(firstEntry.getExitPreset()).isEqualTo(ExitPreset.CAUTIOUS);
 
@@ -174,6 +181,7 @@ class PracticeScenarioFullJourneyIntegrationTest {
 		// --- 재매수: 포지션이 없으니 프리셋을 다시 고를 수 있다(EXITPRESET-003) ---
 		setExitPreset(fixture, ExitPreset.BALANCED);
 		buy(fixture);
+		reserve(fixture, "3", "5");
 		assertThat(snapshot(fixture, 2).getExitPreset()).isEqualTo(ExitPreset.BALANCED);
 
 		// --- 3막 익절 ---
@@ -244,6 +252,7 @@ class PracticeScenarioFullJourneyIntegrationTest {
 
 		tick(fixture);
 		buy(fixture);
+		reserve(fixture, "3", "5");
 		tickUntil(fixture, () -> plans(fixture).get(0).getStatus() == ExitPlanStatus.FILLED_STOP_LOSS);
 
 		InvestmentPracticeResponse afterStop = queryService.getProgress(fixture.userId(), Market.CRYPTO);
@@ -253,6 +262,13 @@ class PracticeScenarioFullJourneyIntegrationTest {
 		assertThat(stopped.sellPrice()).isLessThan(RUMOR_LOW);
 		// 손절선 자체도 루머 저점 아래에 있다(같은 진입가에서 두 프리셋이 갈리는 근거).
 		assertThat(stopped.stopLossPrice()).isLessThan(RUMOR_LOW);
+	}
+
+	// 052 EXITFREE-020 — 사용자가 직접 거는 예약. 042에서는 이 자리를 매수 체결이 대신했다.
+	private void reserve(Fixture fixture, String stopLossRate, String takeProfitRate) {
+		exitPlanReservationService.create(
+			fixture.userId(), Market.CRYPTO,
+			ExitRates.of(new BigDecimal(stopLossRate), new BigDecimal(takeProfitRate)));
 	}
 
 	private PracticeTutorialChartResponse tick(Fixture fixture) {
