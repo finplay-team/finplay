@@ -114,8 +114,10 @@ class BithumbWebSocketFeedClientTest {
 	}
 
 	// 이슈 #528 — 구독 목록에 샌드박스 종목이 섞이지 않는 것을 조회 선택으로 고정한다. 실제 필터링은 쿼리가
-	// 하므로(InstrumentRepositoryTest가 검증) 여기서는 "샌드박스를 거르는 조회를 쓰는가"만 본다 — 옛 조회로
-	// 되돌리면 이 테스트가 잡는다.
+	// 하므로(InstrumentRepositoryTest가 검증) 여기서는 "샌드박스를 거르는 조회를 쓰는가"만 본다.
+	// 조회를 통째로 옛것으로 되돌리면 이 파일의 다른 테스트들이 먼저 깨진다 — **이 테스트만 고유하게 막는 것은
+	// 새 조회와 옛 조회를 함께 부르는 구현**이고, 그게 아래 never() 단정의 몫이다.
+	// 심볼 표기(`{symbol}_KRW`)를 구독 페이로드에서 단정하는 곳도 이 테스트뿐이다.
 	@Test
 	@DisplayName("샌드박스를 거르지 않는 옛 조회로는 구독 목록을 만들지 않는다")
 	void subscribeUsesSandboxExcludingQueryOnly() throws Exception {

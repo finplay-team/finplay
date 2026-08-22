@@ -13,6 +13,8 @@ public interface InstrumentRepository extends JpaRepository<Instrument, Long> {
 
 	List<Instrument> findByMarketOrderByIdAsc(Market market);
 
+	// 프로덕션 호출부는 이제 없다 (이슈 #490·#528에서 아래 조회로 전부 옮겼다). 지우지 말 것 — 통합 테스트
+	// 픽스처와 "샌드박스를 거르지 않는 옛 조회로 되돌아가지 않았는가"를 보는 회귀 가드가 이 메서드를 쓴다.
 	List<Instrument> findByMarketAndTradableTrueOrderByIdAsc(Market market);
 
 	// 샌드박스 튜토리얼 종목을 배치 수집 대상에서 제외한다 (035-stock-collector-reliability COLLECT-STAB-002)
