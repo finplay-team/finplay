@@ -89,6 +89,18 @@ class NarrativePromptBuilderTest {
 			"- **회고 문장을 그대로 옮기지 않는다.**");
 	}
 
+	/**
+	 * 숫자 후검증({@code NarrativeNumberValidator})의 허용 집합을 <b>사용자 프롬프트 하나</b>에서만 만드는
+	 * 것이 성립하려면 시스템 프롬프트에 숫자가 없어야 한다 (053 plan §결정 C). 지금은 없어 합쳐도 결과가
+	 * 같지만, 앞으로 숫자가 생긴다면 그것은 모델에게 인용하라고 준 값이 아니라 <b>지시문</b>이라 자동으로
+	 * 허용되면 안 된다. 그래서 "없다"를 단정으로 못박아 누가 숫자를 넣으면 그 자리에서 다시 판단하게 한다.
+	 */
+	@Test
+	@DisplayName("시스템 프롬프트에는 숫자가 하나도 없다 — 허용 집합이 사용자 프롬프트 하나로 성립하는 전제")
+	void systemPromptContainsNoDigits() {
+		assertThat(builder.systemPrompt()).doesNotContainPattern("\\d");
+	}
+
 	// ---------- 파트별 골든 마스터 ----------
 
 	@Test
