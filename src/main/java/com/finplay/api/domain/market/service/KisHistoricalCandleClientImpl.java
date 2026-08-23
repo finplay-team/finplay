@@ -98,12 +98,10 @@ public class KisHistoricalCandleClientImpl implements KisHistoricalCandleClient 
 			if (!earliestInPage.isAfter(MARKET_OPEN_TIME)) {
 				break;
 			}
-			LocalTime nextCursor = earliestInPage.minusMinutes(1);
-			if (!nextCursor.isBefore(cursor)) {
-				log.warn("KIS 분봉 페이징이 더 이상 진행되지 않아 중단합니다 (symbol={}, tradingDate={})", symbol, tradingDate);
-				break;
-			}
-			cursor = nextCursor;
+			// earliestInPage는 항상 cursor 이하이므로(초기값이 cursor이고 그보다 이른 시각이 나올 때만 감소),
+			// earliestInPage.minusMinutes(1)은 항상 cursor보다 1분 이상 이르다 — 커서 정체 가드가 필요 없다
+			// (이슈 #510, 도달 불가능한 방어 코드로 확인).
+			cursor = earliestInPage.minusMinutes(1);
 		}
 		return collected.values().stream()
 			.filter(candle -> !candle.candleTime().isBefore(MARKET_OPEN_TIME)
