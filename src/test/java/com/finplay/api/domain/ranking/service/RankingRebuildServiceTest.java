@@ -232,7 +232,7 @@ class RankingRebuildServiceTest {
 	}
 
 	// 위 테스트는 실행 자체가 건너뛰는지만 본다 — 그 판단이 조용히 삼켜지지 않고 운영에서 관찰 가능한지는
-	// 로그로 고정한다(다른 인스턴스가 처리 중이라는 원인까지 남아야 운영이 오탐과 구분할 수 있다).
+	// 로그로 고정한다.
 	@Test
 	@DisplayName("락을 얻지 못하면 어느 시장에서 건너뛰었는지 INFO로 남긴다")
 	void rebuildLogsWhichMarketWasSkippedWhenLockIsNotAcquired() {
@@ -243,6 +243,22 @@ class RankingRebuildServiceTest {
 		assertThat(logs)
 			.extracting(ILoggingEvent::getFormattedMessage)
 			.anyMatch(message -> message.contains("건너뜁니다") && message.contains("STOCK"));
+	}
+
+	// PR #540 리뷰 권장사항 — tryLock이 빈 값을 돌려주는 원인은 둘이다(다른 인스턴스가 처리 중이거나 Redis
+	// 자체가 예외를 던짐). Redis 장애면 두 인스턴스 모두 이 로그를 남기고 실제로는 아무도 재구성하지 않는데,
+	// 로그가 "다른 인스턴스가 처리 중"으로 원인을 단정하면 운영자가 오탐으로 오해한다. 두 원인을 함께 언급하는
+	// CryptoPriceMoveWatcher.watchOne과 같은 문구인지 고정한다.
+	@Test
+	@DisplayName("스킵 로그는 원인을 한쪽으로 단정하지 않고 다른 인스턴스 처리 중·Redis 장애 둘 다 언급한다")
+	void rebuildSkipLogDoesNotAssertASingleCause() {
+		when(rankingRebuildLock.tryLock(Market.STOCK)).thenReturn(Optional.empty());
+
+		List<ILoggingEvent> logs = capturingLogs(() -> rankingRebuildService.rebuild(Market.STOCK));
+
+		assertThat(logs)
+			.extracting(ILoggingEvent::getFormattedMessage)
+			.anyMatch(message -> message.contains("다른 인스턴스가 처리 중이거나 Redis 문제로"));
 	}
 
 	// 락 범위는 시장 단위다 — 한 시장에서 락을 얻지 못해도 다른 시장은 그대로 재구성된다.

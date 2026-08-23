@@ -98,7 +98,14 @@ public class RankingRebuildService {
 	public void rebuild(Market market) {
 		Optional<String> lockToken = rankingRebuildLock.tryLock(market);
 		if (lockToken.isEmpty()) {
-			log.info("랭킹 재구성 락을 얻지 못해 이번 실행을 건너뜁니다(다른 인스턴스가 이미 처리 중) - market={}", market);
+			// 원인을 한쪽으로 단정하지 않는다 — 다른 인스턴스가 이미 처리 중이거나 Redis 자체가 예외를 던졌을(장애)
+			// 수도 있다(RankingRebuildLock.tryLock javadoc). Redis 장애면 두 인스턴스 모두 이 로그를 남기고 실제로는
+			// 아무도 재구성하지 않는데, 원인을 단정하면 로그만 보는 사람이 "한쪽이 처리했겠지"로 잘못 읽는다
+			// (PR #540 리뷰 권장사항, CryptoPriceMoveWatcher.watchOne과 같은 문구).
+			log.info(
+				"랭킹 재구성 락을 얻지 못해 이번 실행을 건너뜁니다(다른 인스턴스가 처리 중이거나 Redis 문제로 락을 "
+					+ "얻지 못함) - market={}",
+				market);
 			return;
 		}
 		try {
