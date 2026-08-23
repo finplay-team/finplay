@@ -10,6 +10,7 @@ import com.finplay.api.domain.portfolio.repository.HoldingLotRepository;
 import com.finplay.api.domain.portfolio.repository.HoldingRepository;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -57,5 +58,13 @@ public class PortfolioBuyService {
 			now);
 		holdingLotRepository.save(holdingLot);
 		return holding;
+	}
+
+	// 지정가 체결 청크가 참조하는 계좌 목록 + 단일 종목으로 "이미 존재하는" holding을 한 번에 잠근다
+	// (054-limit-order-fill-bulk-lock 호출부: LimitOrderFillService.fillBatch). 신규 생성(첫 매수) 대상은
+	// 결과에 나타나지 않는다 — 호출부가 인메모리 맵으로 별도 처리한다. 다른 도메인 서비스가 HoldingRepository를
+	// 직접 주입하지 않게 한다(ADR-0002).
+	public List<Holding> findHoldingsForUpdate(List<Long> accountIds, Long instrumentId) {
+		return holdingRepository.findByAccountIdInAndInstrumentIdForUpdate(accountIds, instrumentId);
 	}
 }

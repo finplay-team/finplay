@@ -22,8 +22,12 @@ import com.finplay.api.global.exception.ErrorCode;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -70,11 +74,65 @@ public class LimitOrderFillService {
 	// 없다고 보므로, 예외 이후에도 같은 영속성 컨텍스트로 나머지 건을 계속 처리하는 건 검증되지 않은 위험을
 	// 감수하는 것이다(ADR-0025 §결정 3의 선택 이유).
 	// ADR-0028 — holdings 신규 생성 INSERT 데드락 완화를 위해 READ COMMITTED로 좁혀 적용한다.
+	// 054-limit-order-fill-bulk-lock — 청크 안의 주문마다 order→account→holding을 개별 왕복하는 대신
+	// 세 단계를 벌크 FOR UPDATE 조회로 한 번씩만 묶는다(plan.md "4"). 처리(체결) 순서 자체는 원래 orderIds
+	// 순서(requestedAt asc, id asc, LMT-002 계약)를 그대로 따른다 — 벌크 락을 위한 ID 오름차순 정렬은 잠그는
+	// 쿼리에만 적용된다.
 	@Transactional(isolation = Isolation.READ_COMMITTED)
 	public void fillBatch(List<Long> orderIds) {
 		LocalDateTime pricedAt = LocalDateTime.now(clock);
+
+		// 1) order 벌크 락 — ID 오름차순으로 잠그되, 처리 순서(orderIds 원래 순서)는 별도로 보존한다.
+		List<Long> sortedOrderIds = orderIds.stream().sorted().toList();
+		Map<Long, Order> ordersById = orderRepository.findByIdInForUpdate(sortedOrderIds).stream()
+			.collect(Collectors.toMap(Order::getId, Function.identity()));
+
+		// PENDING 대상만 추려 계좌·holding 벌크 조회 범위를 좁힌다. 존재하지 않는 ID는 여기서 걸러지지 않는다 —
+		// 처리 루프(아래)가 명시적으로 예외를 던져야 기존 원자성 테스트의 메시지·전체 롤백이 유지된다.
+		List<Order> pendingOrders = orderIds.stream()
+			.map(ordersById::get)
+			.filter(order -> order != null && order.getStatus() == OrderStatus.PENDING)
+			.toList();
+
+		Map<Long, Account> accountsById;
+		Map<Long, Holding> holdingsByAccountId;
+		if (pendingOrders.isEmpty()) {
+			accountsById = Map.of();
+			holdingsByAccountId = new HashMap<>();
+		} else {
+			// 2) account 벌크 락 — 계좌 ID 오름차순. 다른 도메인 repository를 직접 주입하지 않도록 AccountService만
+			// 거친다(ADR-0002).
+			List<Long> accountIds = pendingOrders.stream()
+				.map(order -> order.getAccount().getId())
+				.distinct()
+				.sorted()
+				.toList();
+			accountsById = accountService.getAccountsByIdsForUpdate(accountIds).stream()
+				.collect(Collectors.toMap(Account::getId, Function.identity()));
+
+			// 3) holding 벌크 락(기존 행만) — 청크는 항상 단일 종목이므로 instrumentId 하나로 충분하다(plan.md
+			// "배경"). PortfolioBuyService만 거쳐 HoldingRepository를 직접 주입하지 않는다(ADR-0002).
+			Long instrumentId = pendingOrders.get(0).getInstrument().getId();
+			holdingsByAccountId = new HashMap<>(portfolioBuyService.findHoldingsForUpdate(accountIds, instrumentId)
+				.stream()
+				.collect(Collectors.toMap(holding -> holding.getAccount().getId(), Function.identity())));
+			// holdingsByAccountId는 가변 맵이다 — 아래 루프에서 신규 생성된 holding을 즉시 반영해야 같은 청크의
+			// 다음 주문이 같은 (계좌, 종목) 조합이면 재사용한다(위험 요소 2, uk_holdings_account_instrument 방지).
+		}
+
+		// 4) 원래 처리 순서(requestedAt asc, id asc)로 순회 — 여기서 order→account→holding 맵을 조회해 쓴다.
 		for (Long orderId : orderIds) {
-			fillOnePending(orderId, pricedAt);
+			Order order = ordersById.get(orderId);
+			if (order == null) {
+				// 벌크 조회가 조용히 빠뜨린 존재하지 않는 ID 처리 — 기존 findByIdForUpdate의 orElseThrow와 동일한
+				// 예외 타입·메시지. @Transactional이 청크 전체를 롤백한다(ADR-0025 §결정 3, 변경 없음).
+				throw new IllegalStateException("체결 대상 주문을 찾을 수 없습니다. orderId=" + orderId);
+			}
+			if (order.getStatus() != OrderStatus.PENDING) {
+				continue;
+			}
+			Account account = accountsById.get(order.getAccount().getId());
+			fillOnePendingWithLockedResources(order, account, holdingsByAccountId, pricedAt);
 		}
 	}
 
@@ -175,6 +233,111 @@ public class LimitOrderFillService {
 
 		order.markFilled();
 		// 커밋 이후(after-commit)에만 랭킹에 반영되도록 이벤트만 발행한다 — 기존 시장가 매도와 동일 훅 재사용.
+		eventPublisher.publishEvent(new RealizedPnlUpdatedEvent(account.getId()));
+	}
+
+	// fillBatch(청크 벌크 락) 전용 — order·account는 이미 fillBatch가 벌크 락으로 잠근 것을 그대로 받는다.
+	// attempt 귀속 preflight(findPracticeFillAttribution)는 054-limit-order-fill-bulk-lock 범위 제외 대로
+	// 벌크화하지 않고 주문별로 그대로 남긴다 — fillBatch 후보는 findPendingLimitOrdersToFill이 이미
+	// practiceAttemptId is null로 걸러낸 것들이라 이 조회는 항상 빈 결과로 짧게 끝난다(PK 조건 인덱스 조회).
+	private void fillOnePendingWithLockedResources(
+		Order order, Account account, Map<Long, Holding> holdingsByAccountId, LocalDateTime pricedAt) {
+		Optional<PracticeOrderFillContextDto> practiceContext = orderRepository
+			.findPracticeFillAttribution(order.getId())
+			.map(attribution -> practiceOrderAttributionPort.lockForFill(attribution, pricedAt));
+		if (practiceContext.isPresent() && !practiceContext.get().currentRun()) {
+			throw new BusinessException(ErrorCode.PRACTICE_STEP_LOCKED);
+		}
+		BigDecimal limitPrice = order.getLimitPrice();
+		BigDecimal executionPrice = practiceContext
+			.map(PracticeOrderFillContextDto::canonicalPrice)
+			.orElse(limitPrice);
+		if (practiceContext.isPresent() && !isTriggered(order, executionPrice)) {
+			return;
+		}
+
+		BigDecimal quantity = order.getQuantity();
+		LimitOrderFeeCalculator.Reservation reserved = LimitOrderFeeCalculator.calculate(quantity, limitPrice);
+		LimitOrderFeeCalculator.Reservation execution = LimitOrderFeeCalculator.calculate(quantity, executionPrice);
+		long amount = execution.amount();
+		long fee = execution.fee();
+
+		if (order.getSide() == OrderSide.SELL) {
+			fillSellWithLockedHolding(
+				order, account, holdingsByAccountId, quantity, executionPrice, amount, fee, pricedAt);
+		} else {
+			fillBuyWithLockedHolding(
+				order, account, holdingsByAccountId, quantity, executionPrice, amount, fee, reserved.total(),
+				practiceContext.isPresent(), pricedAt);
+		}
+	}
+
+	// fillBuy(단건 경로)와 동일한 현금·Trade·lot 반영 로직이지만, holding을 PortfolioBuyService 내부에서 다시
+	// 조회·잠그지 않고 fillBatch가 이미 벌크 락으로 확보한(또는 아직 저장 전인 신규) holding을 그대로 넘긴다
+	// (위험 요소 3). 반환된 holding은 호출부의 holdingsByAccountId에 즉시 반영돼야 한다(위험 요소 2).
+	private void fillBuyWithLockedHolding(
+		Order order, Account account, Map<Long, Holding> holdingsByAccountId, BigDecimal quantity,
+		BigDecimal executionPrice, long amount, long fee, long reservedCash, boolean canonicalPracticeFill,
+		LocalDateTime now) {
+		Instrument instrument = order.getInstrument();
+
+		if (instrument.isTutorialSample()) {
+			TutorialAccount tutorialAccount = tutorialAccountService
+				.getOrCreateForUpdate(account.getUser().getId(), account.getMarket(), now);
+			if (canonicalPracticeFill) {
+				tutorialAccount.releaseReservedCash(reservedCash);
+				tutorialAccount.deductCash(amount + fee);
+			} else {
+				tutorialAccount.confirmReservedCash(amount + fee);
+			}
+		} else {
+			if (canonicalPracticeFill) {
+				account.releaseReservedCash(reservedCash);
+				account.deductCash(amount + fee);
+			} else {
+				account.confirmReservedCash(amount + fee);
+			}
+		}
+
+		Trade trade = Trade.of(
+			order, account, instrument, null, order.getSide(), executionPrice, quantity, amount, fee, null, now, now);
+		tradeRepository.save(trade);
+
+		Holding holding = holdingsByAccountId.get(account.getId());
+		if (holding == null) {
+			holding = Holding.create(account, instrument, now);
+		}
+		Holding saved = portfolioBuyService
+			.applyBuyTrade(account, instrument, trade, quantity, executionPrice, fee, now, holding);
+		holdingsByAccountId.put(account.getId(), saved);
+
+		order.markFilled();
+		practiceOrderAttributionPort.createRiskSnapshotOnBuyFill(order, trade, now);
+	}
+
+	// fillSell(단건 경로)와 동일한 Trade·FIFO lot 반영 로직이지만, holding을 portfolioSellService.
+	// getHoldingForUpdate로 다시 조회·잠그지 않고 fillBatch가 이미 벌크 락으로 확보한 holding을 그대로 쓴다.
+	// SELL은 신규 생성이 없으므로 맵에 없으면 실제로 없는 것 — getHoldingForUpdate와 동일한 예외 메시지를 던진다.
+	private void fillSellWithLockedHolding(
+		Order order, Account account, Map<Long, Holding> holdingsByAccountId, BigDecimal quantity,
+		BigDecimal executionPrice, long amount, long fee, LocalDateTime now) {
+		Instrument instrument = order.getInstrument();
+
+		Holding holding = holdingsByAccountId.get(account.getId());
+		if (holding == null) {
+			throw new IllegalStateException(
+				"체결 대상 holding을 찾을 수 없습니다. accountId=" + account.getId() + ", instrumentId=" + instrument.getId());
+		}
+		holding.releaseReservedQuantity(quantity);
+
+		Trade trade = Trade.of(
+			order, account, instrument, null, order.getSide(), executionPrice, quantity, amount, fee, null, now, now);
+		tradeRepository.save(trade);
+
+		SellAllocationDto allocation = portfolioSellService.applySellTrade(holding, trade, quantity, now);
+		portfolioSellService.finalizeSellRealizedPnl(account, trade, amount, fee, allocation, now);
+
+		order.markFilled();
 		eventPublisher.publishEvent(new RealizedPnlUpdatedEvent(account.getId()));
 	}
 

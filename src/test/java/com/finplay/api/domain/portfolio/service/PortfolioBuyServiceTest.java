@@ -20,6 +20,7 @@ import com.finplay.api.domain.portfolio.repository.HoldingLotRepository;
 import com.finplay.api.domain.portfolio.repository.HoldingRepository;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -158,6 +159,25 @@ class PortfolioBuyServiceTest {
 		assertThat(result).isSameAs(newHolding);
 		assertThat(result.getQuantity()).isEqualByComparingTo("10");
 		assertThat(result.getAveragePrice()).isEqualByComparingTo("50000");
+	}
+
+	@Test
+	void findHoldingsForUpdateDelegatesToRepositoryBulkLockQueryWithoutExtraCall() {
+		// 054-limit-order-fill-bulk-lock: LimitOrderFillService.fillBatch가 HoldingRepository를 직접 주입하지
+		// 않고 이 래퍼만 거치도록 강제하는 ADR-0002 준수용 위임 메서드다 — 별도 가공 없이 그대로 위임하는지만 본다.
+		Account account = testAccount();
+		org.springframework.test.util.ReflectionTestUtils.setField(account, "id", 10L);
+		Instrument instrument = testInstrument();
+		Holding existingHolding = Holding.create(account, instrument, EARLIER);
+		List<Long> accountIds = List.of(account.getId(), 999L);
+		when(holdingRepository.findByAccountIdInAndInstrumentIdForUpdate(accountIds, instrument.getId()))
+			.thenReturn(List.of(existingHolding));
+
+		List<Holding> result = service.findHoldingsForUpdate(accountIds, instrument.getId());
+
+		assertThat(result).containsExactly(existingHolding);
+		verify(holdingRepository).findByAccountIdInAndInstrumentIdForUpdate(accountIds, instrument.getId());
+		verify(holdingRepository, never()).findByAccountIdAndInstrumentIdForUpdate(account.getId(), instrument.getId());
 	}
 
 	private static Account testAccount() {
