@@ -132,6 +132,11 @@ public class LimitOrderFillService {
 				continue;
 			}
 			Account account = accountsById.get(order.getAccount().getId());
+			if (account == null) {
+				// order→account는 FK로 항상 존재해야 하지만, order 누락과 같은 이유로 방어적으로 명시 예외를
+				// 던진다(리뷰 권장 반영) — null을 그대로 넘기면 이후 로직에서 원인 불명 NPE로 이어진다.
+				throw new IllegalStateException("체결 대상 계좌를 찾을 수 없습니다. accountId=" + order.getAccount().getId());
+			}
 			fillOnePendingWithLockedResources(order, account, holdingsByAccountId, pricedAt);
 		}
 	}
