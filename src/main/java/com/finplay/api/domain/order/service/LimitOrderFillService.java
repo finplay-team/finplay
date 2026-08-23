@@ -25,11 +25,13 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class LimitOrderFillService {
@@ -82,6 +84,8 @@ public class LimitOrderFillService {
 	// 주문을 취소했다면 대기 후 order FOR UPDATE의 PENDING 재확인에서 no-op 되므로 과거 run을 체결하지 않는다.
 	// 일반 주문은 preflight가 비어 기존 order → account → holding 잠금 순서를 그대로 사용한다.
 	private void fillOnePending(Long orderId, LocalDateTime pricedAt) {
+		// TEMP(#501 사전 측정, 머지 금지) — 락 구간과 체결 구간 소요시간을 나눠서 로그로 남긴다.
+		long phaseBenchmarkStart = System.nanoTime();
 		Optional<PracticeOrderFillContextDto> practiceContext = orderRepository.findPracticeFillAttribution(orderId)
 			.map(attribution -> practiceOrderAttributionPort.lockForFill(attribution, pricedAt));
 		Order order = orderRepository.findByIdForUpdate(orderId)
@@ -101,6 +105,7 @@ public class LimitOrderFillService {
 		}
 
 		Account account = accountService.getAccountByIdForUpdate(order.getAccount().getId());
+		long phaseBenchmarkAfterLocks = System.nanoTime();
 
 		BigDecimal quantity = order.getQuantity();
 		LimitOrderFeeCalculator.Reservation reserved = LimitOrderFeeCalculator.calculate(quantity, limitPrice);
@@ -115,6 +120,10 @@ public class LimitOrderFillService {
 				order, account, quantity, executionPrice, amount, fee, reserved.total(), practiceContext.isPresent(),
 				pricedAt);
 		}
+		long phaseBenchmarkEnd = System.nanoTime();
+		log.info(
+			"[PHASE-BENCHMARK] orderId={} lockNanos={} writeNanos={}",
+			orderId, phaseBenchmarkAfterLocks - phaseBenchmarkStart, phaseBenchmarkEnd - phaseBenchmarkAfterLocks);
 	}
 
 	private void fillBuy(
