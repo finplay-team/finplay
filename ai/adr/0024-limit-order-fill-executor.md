@@ -110,3 +110,4 @@
 - `order.limit-fill-executor.partition-count`(8)·`queue-capacity-per-partition`(200)은 운영 트래픽 실측이 아니라 동시성·백프레셔·배치 원자성 테스트로 확인한 추정치다(ADR-0015 §후속과 같은 종류의 부채). 운영 배포 후 파티션별 큐 점유율·드롭 발생률(§결정 2의 WARN 로그)을 보고 조정한다.
 - §결정 5(다중 인스턴스 중복 감수)는 재검토 대상이다 — 재검토 조건은 §결정 5 마지막 문단에 명시했다.
 - 메시지 브로커 기반 영속 큐로 §결정 3의 유실 가능성 자체를 없애는 전환은 이 ADR의 범위 밖이며, 필요성이 확인되면 별도 ADR로 검토한다.
+- **(이슈 #501, `ai/specs/054-limit-order-fill-bulk-lock`)** 이 실행기(§결정 1·2)가 만든 파티션 워커 "안"에서, 청크 내부 처리 방식이 한 차례 더 최적화됐다. `LimitOrderFillService.fillBatch`가 청크 안의 주문마다 order→account→holding을 개별 `FOR UPDATE` 조회로 왕복하던 것을, 청크당 벌크 `FOR UPDATE` 조회 3회(order·account·holding 각 1회)로 묶었다. 종목별 파티셔닝(§결정 1)·백프레셔(§결정 2)·인스턴스 종료 유실(§결정 3)·다중 인스턴스 중복 감수(§결정 5)는 이 변경과 무관하게 그대로다 — 바뀐 건 §결정 4가 위임한 `fillBatch` 내부 구현뿐이다. 계좌 15개 풀·단일 종목·단일 가격 지정가 500건 재현 조건(§맥락이 원래 재현한 것과 같은 규모)에서 처리 시간이 중앙값 기준 2,099ms → 1,434ms로 약 31.7% 줄었다(`docs/loadtest/limit-order-fill-batch-bulk-lock-benchmark-result.md`).
