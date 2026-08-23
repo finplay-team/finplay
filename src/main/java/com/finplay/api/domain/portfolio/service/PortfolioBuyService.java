@@ -22,8 +22,9 @@ public class PortfolioBuyService {
 
 	// holdings row를 잠근 뒤 갱신한다(시장가·지정가 매수 체결 공통 호출부, 이슈 #224) — 신규 종목 첫 매수(row 없음)는
 	// 호출부가 이미 잡은 account 락만으로 동시 생성 경합을 막는다(spec.md 확정된 설계 결정 10번, 방어적 유니크
-	// 제약 catch 없음).
-	public void applyBuyTrade(
+	// 제약 catch 없음). 단건 호출부(시장가 매수·지정가 단건 체결)는 이 시그니처를 그대로 쓴다 — 내부에서
+	// holding을 직접 조회·잠근 뒤 아래 오버로드로 위임한다(054-limit-order-fill-bulk-lock).
+	public Holding applyBuyTrade(
 		Account account,
 		Instrument instrument,
 		Trade buyTrade,
@@ -34,11 +35,27 @@ public class PortfolioBuyService {
 		Holding holding = holdingRepository
 			.findByAccountIdAndInstrumentIdForUpdate(account.getId(), instrument.getId())
 			.orElseGet(() -> Holding.create(account, instrument, now));
+		return applyBuyTrade(account, instrument, buyTrade, quantity, price, fee, now, holding);
+	}
+
+	// 호출부가 이미 잠갔거나(기존 holding) 아직 저장 전인 신규 Holding을 그대로 받아 저장한다(청크 벌크 락
+	// 호출부, 054-limit-order-fill-bulk-lock) — 이 메서드 자체는 holdingRepository를 조회하지 않는다. 중복
+	// SELECT를 피하는 것이 이 오버로드를 추가하는 이유다.
+	public Holding applyBuyTrade(
+		Account account,
+		Instrument instrument,
+		Trade buyTrade,
+		BigDecimal quantity,
+		BigDecimal price,
+		long fee,
+		LocalDateTime now,
+		Holding holding) {
 		holding.applyBuy(quantity, price, now);
 		holdingRepository.save(holding);
 
 		HoldingLot holdingLot = HoldingLot.create(holding, buyTrade, quantity, price, fee, buyTrade.getExecutedAt(),
 			now);
 		holdingLotRepository.save(holdingLot);
+		return holding;
 	}
 }

@@ -2,6 +2,7 @@
 package com.finplay.api.domain.portfolio.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -123,6 +124,40 @@ class PortfolioBuyServiceTest {
 		// lot은 이번 체결 수량만 반영한다 (누적 보유수량이 아님)
 		assertThat(savedLot.getOriginalQuantity()).isEqualByComparingTo("2");
 		assertThat(savedLot.getRemainingQuantity()).isEqualByComparingTo("2");
+	}
+
+	@Test
+	void applyBuyTradeWithLockedHoldingSavesWithoutSeparateLookupForExistingHolding() {
+		Account account = testAccount();
+		Instrument instrument = testInstrument();
+		Holding lockedHolding = Holding.create(account, instrument, EARLIER);
+		lockedHolding.applyBuy(new BigDecimal("1"), new BigDecimal("1"), EARLIER);
+		Trade trade = testTrade(account, instrument, new BigDecimal("2"), new BigDecimal("2"));
+
+		Holding result = service.applyBuyTrade(
+			account, instrument, trade, new BigDecimal("2"), new BigDecimal("2"), 10L, NOW, lockedHolding);
+
+		verify(holdingRepository, never()).findByAccountIdAndInstrumentIdForUpdate(account.getId(), instrument.getId());
+		verify(holdingRepository).save(lockedHolding);
+		assertThat(result).isSameAs(lockedHolding);
+		assertThat(result.getQuantity()).isEqualByComparingTo("3");
+	}
+
+	@Test
+	void applyBuyTradeWithLockedHoldingSavesNewlyCreatedHoldingWithoutSeparateLookup() {
+		Account account = testAccount();
+		Instrument instrument = testInstrument();
+		Holding newHolding = Holding.create(account, instrument, NOW);
+		Trade trade = testTrade(account, instrument, new BigDecimal("50000"), new BigDecimal("10"));
+
+		Holding result = service.applyBuyTrade(
+			account, instrument, trade, new BigDecimal("10"), new BigDecimal("50000"), 75L, NOW, newHolding);
+
+		verify(holdingRepository, never()).findByAccountIdAndInstrumentIdForUpdate(account.getId(), instrument.getId());
+		verify(holdingRepository).save(newHolding);
+		assertThat(result).isSameAs(newHolding);
+		assertThat(result.getQuantity()).isEqualByComparingTo("10");
+		assertThat(result.getAveragePrice()).isEqualByComparingTo("50000");
 	}
 
 	private static Account testAccount() {
