@@ -128,4 +128,21 @@ class AccountRepositoryTest {
 
 		assertThat(result).isEmpty();
 	}
+
+	// 054-limit-order-fill-bulk-lock: setUp에서 stockAccount를 먼저 저장하므로 항상 id가 더 작다(auto-increment).
+	@Test
+	void findByIdInForUpdateReturnsAccountsInAscendingIdOrderRegardlessOfInputOrder() {
+		List<Account> result = accountRepository
+			.findByIdInForUpdate(List.of(cryptoAccount.getId(), stockAccount.getId()));
+
+		assertThat(result).extracting(Account::getId)
+			.containsExactly(stockAccount.getId(), cryptoAccount.getId());
+	}
+
+	@Test
+	void findByIdInForUpdateSilentlyDropsNonExistentIds() {
+		List<Account> result = accountRepository.findByIdInForUpdate(List.of(stockAccount.getId(), 999_999L));
+
+		assertThat(result).extracting(Account::getId).containsExactly(stockAccount.getId());
+	}
 }
