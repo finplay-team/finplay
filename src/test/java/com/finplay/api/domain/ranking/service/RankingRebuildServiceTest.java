@@ -4,6 +4,7 @@ package com.finplay.api.domain.ranking.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
@@ -27,6 +28,9 @@ import com.finplay.api.domain.ranking.store.RankingStore;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -53,9 +57,19 @@ class RankingRebuildServiceTest {
 	private final TradeService tradeService = mock(TradeService.class);
 	private final AccountService accountService = mock(AccountService.class);
 	private final RankingStore rankingStore = mock(RankingStore.class);
+	private final RankingRebuildLock rankingRebuildLock = mock(RankingRebuildLock.class);
 
 	private final RankingRebuildService rankingRebuildService = new RankingRebuildService(tradeService, accountService,
-		rankingStore);
+		rankingStore, rankingRebuildLock);
+
+	// 이 클래스의 관심사는 락 자체(RankingRebuildLockTest·RankingRebuildLockConcurrencyIntegrationTest 몫)가
+	// 아니라 락을 얻었을 때의 위임 순서·score 출처·예외 격리다. 그래서 기본적으로는 항상 락을 얻는다고
+	// 가정하고, 락을 얻지 못했을 때의 동작만 별도 테스트(rebuildSkipsWhenLockIsNotAcquired 등)에서 개별
+	// 스텁으로 뒤집는다.
+	@BeforeEach
+	void stubLockAlwaysSucceeds() {
+		when(rankingRebuildLock.tryLock(any())).thenAnswer(invocation -> Optional.of(UUID.randomUUID().toString()));
+	}
 
 	@Test
 	@DisplayName("매도 이력 계좌 조회 → 계좌 배치 조회 → ZSET 전체 교체 순서로 위임한다")
@@ -203,6 +217,97 @@ class RankingRebuildServiceTest {
 		verify(rankingStore, never()).replaceAll(eq(Market.STOCK), anyList());
 	}
 
+	// 이슈 #539 — 블루-그린 두 인스턴스가 같은 시장을 동시에 재구성하지 못하게 막는 락. 다른 인스턴스가 이미
+	// 이 시장을 처리 중이면(tryLock이 빈 값) DB·Redis 어느 쪽도 건드리지 않고 조용히 건너뛴다.
+	@Test
+	@DisplayName("락을 얻지 못하면 그 시장의 재구성을 건너뛰고 DB·Redis 어느 쪽도 호출하지 않는다")
+	void rebuildSkipsWhenLockIsNotAcquired() {
+		when(rankingRebuildLock.tryLock(Market.STOCK)).thenReturn(Optional.empty());
+
+		rankingRebuildService.rebuild(Market.STOCK);
+
+		verify(tradeService, never()).getSoldAccountIds(Market.STOCK);
+		verify(accountService, never()).getAccountsByIds(anyList());
+		verify(rankingStore, never()).replaceAll(eq(Market.STOCK), anyList());
+	}
+
+	// 위 테스트는 실행 자체가 건너뛰는지만 본다 — 그 판단이 조용히 삼켜지지 않고 운영에서 관찰 가능한지는
+	// 로그로 고정한다.
+	@Test
+	@DisplayName("락을 얻지 못하면 어느 시장에서 건너뛰었는지 INFO로 남긴다")
+	void rebuildLogsWhichMarketWasSkippedWhenLockIsNotAcquired() {
+		when(rankingRebuildLock.tryLock(Market.STOCK)).thenReturn(Optional.empty());
+
+		List<ILoggingEvent> logs = capturingLogs(() -> rankingRebuildService.rebuild(Market.STOCK));
+
+		assertThat(logs)
+			.extracting(ILoggingEvent::getFormattedMessage)
+			.anyMatch(message -> message.contains("건너뜁니다") && message.contains("STOCK"));
+	}
+
+	// PR #540 리뷰 권장사항 — tryLock이 빈 값을 돌려주는 원인은 둘이다(다른 인스턴스가 처리 중이거나 Redis
+	// 자체가 예외를 던짐). Redis 장애면 두 인스턴스 모두 이 로그를 남기고 실제로는 아무도 재구성하지 않는데,
+	// 로그가 "다른 인스턴스가 처리 중"으로 원인을 단정하면 운영자가 오탐으로 오해한다. 두 원인을 함께 언급하는
+	// CryptoPriceMoveWatcher.watchOne과 같은 문구인지 고정한다.
+	@Test
+	@DisplayName("스킵 로그는 원인을 한쪽으로 단정하지 않고 다른 인스턴스 처리 중·Redis 장애 둘 다 언급한다")
+	void rebuildSkipLogDoesNotAssertASingleCause() {
+		when(rankingRebuildLock.tryLock(Market.STOCK)).thenReturn(Optional.empty());
+
+		List<ILoggingEvent> logs = capturingLogs(() -> rankingRebuildService.rebuild(Market.STOCK));
+
+		assertThat(logs)
+			.extracting(ILoggingEvent::getFormattedMessage)
+			.anyMatch(message -> message.contains("다른 인스턴스가 처리 중이거나 Redis 문제로"));
+	}
+
+	// 락 범위는 시장 단위다 — 한 시장에서 락을 얻지 못해도 다른 시장은 그대로 재구성된다.
+	@Test
+	@DisplayName("한 시장이 락 경합으로 건너뛰어도 다른 시장 재구성은 막지 않는다")
+	void rebuildAllSkipsOnlyTheMarketThatFailsToAcquireTheLock() {
+		Market locked = Market.values()[0];
+		stubEmptyForAllMarkets();
+		when(rankingRebuildLock.tryLock(locked)).thenReturn(Optional.empty());
+
+		rankingRebuildService.rebuildAll();
+
+		verify(rankingStore, never()).replaceAll(eq(locked), anyList());
+		for (Market market : Market.values()) {
+			if (market != locked) {
+				verify(rankingStore, times(1)).replaceAll(market, List.of());
+			}
+		}
+	}
+
+	// tryLock이 반환한 토큰을 그대로 unlock에 넘긴다 — 다른 토큰을 넘기면 RedisLock의 check-then-delete가
+	// 항상 NOT_HELD로 실패해 락이 TTL 동안 계속 잠긴 채로 남는다.
+	@Test
+	@DisplayName("재구성이 끝나면 tryLock이 돌려준 토큰으로 같은 시장의 락을 해제한다")
+	void rebuildUnlocksWithTheTokenReturnedByTryLock() {
+		String token = "held-token";
+		when(rankingRebuildLock.tryLock(Market.STOCK)).thenReturn(Optional.of(token));
+		when(tradeService.getSoldAccountIds(Market.STOCK)).thenReturn(List.of());
+
+		rankingRebuildService.rebuild(Market.STOCK);
+
+		verify(rankingRebuildLock).unlock(Market.STOCK, token);
+	}
+
+	// 락 해제는 finally에 있어야 한다 — 그렇지 않으면 DB 조회 실패가 락을 TTL 동안 계속 잠긴 채로 남겨, 다음
+	// 재구성 기회(기동 또는 익일 04:20)까지 그 시장은 재구성될 수 없다.
+	@Test
+	@DisplayName("재구성 도중 예외가 나도 락을 해제한다")
+	void rebuildUnlocksEvenWhenReconstructionFails() {
+		String token = "held-token";
+		when(rankingRebuildLock.tryLock(Market.STOCK)).thenReturn(Optional.of(token));
+		when(tradeService.getSoldAccountIds(Market.STOCK)).thenThrow(new DataAccessResourceFailureException("DB 장애"));
+
+		assertThatThrownBy(() -> rankingRebuildService.rebuild(Market.STOCK))
+			.isInstanceOf(DataAccessResourceFailureException.class);
+
+		verify(rankingRebuildLock).unlock(Market.STOCK, token);
+	}
+
 	// 기동 훅과 주기 배치가 같은 rebuildAll() 경로를 탄다 — 한쪽만 고쳐 두 트리거가 갈리는 것을 막는다.
 	@Test
 	@DisplayName("기동 훅과 주기 배치가 같은 재구성 경로를 탄다")
@@ -316,6 +421,23 @@ class RankingRebuildServiceTest {
 		assertThat(logs)
 			.extracting(ILoggingEvent::getFormattedMessage)
 			.anyMatch(message -> message.contains("랭킹 재구성 완료") && message.contains("대상 계좌 수=1"));
+	}
+
+	// PR #540 리뷰 권장사항 — 락 TTL 마진이 계좌 수 증가로 줄어드는 것을 사고 전에 보려면 완료 로그에 소요
+	// 시간이 실려야 한다. 값 자체(0ms 이상)를 단정하지 않는 이유는 System.nanoTime() 기반 실측이라 CI 머신
+	// 속도에 따라 요동치기 때문이다 — 필드가 실제로 로그에 실리는지만 고정한다.
+	@Test
+	@DisplayName("완료 INFO에 소요 시간(ms)을 함께 남긴다")
+	void rebuildLogsElapsedMillisecondsOnCompletion() {
+		when(tradeService.getSoldAccountIds(Market.STOCK)).thenReturn(List.of(1L));
+		when(accountService.getAccountsByIds(List.of(1L))).thenReturn(List.of(account(1L, 5_000L, 10L, "alpha")));
+		when(rankingStore.replaceAll(eq(Market.STOCK), anyList())).thenReturn(true);
+
+		List<ILoggingEvent> logs = capturingLogs(() -> rankingRebuildService.rebuild(Market.STOCK));
+
+		assertThat(logs)
+			.extracting(ILoggingEvent::getFormattedMessage)
+			.anyMatch(message -> message.contains("랭킹 재구성 완료") && message.matches(".*소요=\\d+ms.*"));
 	}
 
 	// 로그가 성공/실패 구분의 유일한 외부 관찰점이라 로거에 임시 appender를 붙인다 (CryptoWatchLockTest와 같은 방식).
