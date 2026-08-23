@@ -407,6 +407,23 @@ class RankingRebuildServiceTest {
 			.anyMatch(message -> message.contains("랭킹 재구성 완료") && message.contains("대상 계좌 수=1"));
 	}
 
+	// PR #540 리뷰 권장사항 — 락 TTL 마진이 계좌 수 증가로 줄어드는 것을 사고 전에 보려면 완료 로그에 소요
+	// 시간이 실려야 한다. 값 자체(0ms 이상)를 단정하지 않는 이유는 System.nanoTime() 기반 실측이라 CI 머신
+	// 속도에 따라 요동치기 때문이다 — 필드가 실제로 로그에 실리는지만 고정한다.
+	@Test
+	@DisplayName("완료 INFO에 소요 시간(ms)을 함께 남긴다")
+	void rebuildLogsElapsedMillisecondsOnCompletion() {
+		when(tradeService.getSoldAccountIds(Market.STOCK)).thenReturn(List.of(1L));
+		when(accountService.getAccountsByIds(List.of(1L))).thenReturn(List.of(account(1L, 5_000L, 10L, "alpha")));
+		when(rankingStore.replaceAll(eq(Market.STOCK), anyList())).thenReturn(true);
+
+		List<ILoggingEvent> logs = capturingLogs(() -> rankingRebuildService.rebuild(Market.STOCK));
+
+		assertThat(logs)
+			.extracting(ILoggingEvent::getFormattedMessage)
+			.anyMatch(message -> message.contains("랭킹 재구성 완료") && message.matches(".*소요=\\d+ms.*"));
+	}
+
 	// 로그가 성공/실패 구분의 유일한 외부 관찰점이라 로거에 임시 appender를 붙인다 (CryptoWatchLockTest와 같은 방식).
 	private static List<ILoggingEvent> capturingLogs(Runnable action) {
 		Logger logger = (Logger)LoggerFactory.getLogger(RankingRebuildService.class);

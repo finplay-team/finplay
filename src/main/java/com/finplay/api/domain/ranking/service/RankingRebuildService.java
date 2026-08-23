@@ -102,6 +102,11 @@ public class RankingRebuildService {
 			return;
 		}
 		try {
+			// 소요 시간은 System.nanoTime()으로 잰다 — PeerStatsBatchService와 같은 이유다: Clock으로 재면
+			// 통합 테스트가 항상 0으로 통과한다. 이 값은 PR 리뷰 권장사항(#540)으로 추가했다 — 락 TTL(600초) 마진이
+			// 계좌 수 증가로 줄어드는 것을, 실제로 소진돼 unlock의 NOT_HELD WARN이 울리기 전에 완료 로그만으로
+			// 미리 볼 수 있다.
+			long startedNanos = System.nanoTime();
 			List<Long> accountIds = tradeService.getSoldAccountIds(market);
 			List<RankingEntryDto> entries = new ArrayList<>(accountIds.size());
 			for (int start = 0; start < accountIds.size(); start += RankingStore.REBUILD_CHUNK_SIZE) {
@@ -114,10 +119,14 @@ public class RankingRebuildService {
 			// 로그만 보는 사람이 실패를 성공으로 읽는다(PR #284 QA 지적). 실패 사유·스택트레이스는 replaceAll이
 			// ERROR로 이미 남기므로 여기서 다시 찍지 않는다.
 			if (rankingStore.replaceAll(market, entries)) {
-				log.info("랭킹 재구성 완료. market={}, 대상 계좌 수={}", market, entries.size());
+				log.info("랭킹 재구성 완료. market={}, 대상 계좌 수={}, 소요={}ms", market, entries.size(), elapsedMillis(startedNanos));
 			}
 		} finally {
 			rankingRebuildLock.unlock(market, lockToken.get());
 		}
+	}
+
+	private long elapsedMillis(long startedNanos) {
+		return (System.nanoTime() - startedNanos) / 1_000_000L;
 	}
 }
