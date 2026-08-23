@@ -126,7 +126,8 @@ public class RankingRebuildService {
 			// 로그만 보는 사람이 실패를 성공으로 읽는다(PR #284 QA 지적). 실패 사유·스택트레이스는 replaceAll이
 			// ERROR로 이미 남기므로 여기서 다시 찍지 않는다.
 			if (rankingStore.replaceAll(market, entries)) {
-				log.info("랭킹 재구성 완료. market={}, 대상 계좌 수={}, 소요={}ms", market, entries.size(), elapsedMillis(startedNanos));
+				log.info("랭킹 재구성 완료. market={}, 대상 계좌 수={}, 소요={}ms", market, entries.size(),
+					elapsedMillis(startedNanos));
 			}
 		} finally {
 			rankingRebuildLock.unlock(market, lockToken.get());
