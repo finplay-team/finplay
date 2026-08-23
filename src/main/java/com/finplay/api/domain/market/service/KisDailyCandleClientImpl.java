@@ -83,9 +83,9 @@ public class KisDailyCandleClientImpl implements KisDailyCandleClient {
 		requireCredentials();
 		Map<LocalDate, RawDailyCandleDto> collected = new LinkedHashMap<>();
 		LocalDate cursorEnd = to;
-		// 루프가 break로 끝나면(목표 도달·빈 응답·커서 정체) 이 값이 true가 된다. for 조건(page < 상한)이 자연히
-		// 거짓이 돼 끝나는 경우에만 false로 남아, "정말로 페이지 상한을 다 써버린 경우"만 구분할 수 있다
-		// (재리뷰 지적 — 빈 응답으로 인한 정상 종료를 상한 도달로 오인하던 문제를 고친다).
+		// 루프가 break로 끝나면(목표 도달·빈 응답) 이 값이 true가 된다. for 조건(page < 상한)이 자연히 거짓이 돼
+		// 끝나는 경우에만 false로 남아, "정말로 페이지 상한을 다 써버린 경우"만 구분할 수 있다 (재리뷰 지적 —
+		// 빈 응답으로 인한 정상 종료를 상한 도달로 오인하던 문제를 고친다).
 		boolean terminatedEarly = false;
 		for (int page = 0; page < MAX_PAGES_PER_SYMBOL; page++) {
 			List<RawDailyCandleDto> rows = requestPage(symbol, from, cursorEnd);
@@ -111,11 +111,11 @@ public class KisDailyCandleClientImpl implements KisDailyCandleClient {
 			// 필요 없다(이슈 #510, 도달 불가능한 방어 코드로 확인).
 			cursorEnd = earliestInPage.minusDays(1);
 		}
-		// 요청 구간의 시작(from)에 닿지 못하고 **진짜로 페이지 상한을 다 써서** 끝난 경우에만 경고한다 — 위 세 break
-		// 중 하나로 끝난 경우(정상 종료·목표 도달·커서 정체, 각자 이유가 다르거나 이미 자체 로그가 있음)는 페이지
-		// 상한과 무관하므로 제외한다. StockDailyCandleCollector의 다음 실행은 "가장 최근 저장 거래일 다음날"부터만
-		// 다시 조회하므로(plan.md "결정 1"), 진짜 상한에 막힌 구간은 자동으로 다시 채워지지 않는다 — 운영자가
-		// 알아챌 수 있도록 경고만 남긴다(STOCK-DAILY-002 리뷰 지적).
+		// 요청 구간의 시작(from)에 닿지 못하고 **진짜로 페이지 상한을 다 써서** 끝난 경우에만 경고한다 — 위 두 break
+		// 중 하나로 끝난 경우(정상 종료·목표 도달, 이유가 서로 다르다)는 페이지 상한과 무관하므로 제외한다.
+		// StockDailyCandleCollector의 다음 실행은 "가장 최근 저장 거래일 다음날"부터만 다시 조회하므로(plan.md
+		// "결정 1"), 진짜 상한에 막힌 구간은 자동으로 다시 채워지지 않는다 — 운영자가 알아챌 수 있도록 경고만
+		// 남긴다(STOCK-DAILY-002 리뷰 지적).
 		if (!terminatedEarly && !collected.isEmpty()) {
 			LocalDate earliestCollected = collected.keySet().stream().min(Comparator.naturalOrder()).orElseThrow();
 			log.warn(
