@@ -15,6 +15,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.finplay.api.domain.account.entity.Account;
 import com.finplay.api.domain.account.service.AccountService;
 import com.finplay.api.domain.auth.entity.User;
@@ -40,6 +44,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -220,6 +225,33 @@ class OrderServiceTest {
 		assertThatThrownBy(() -> orderService.createOrder(USER_ID, IDEMPOTENCY_KEY, sampleRequest()))
 			.isSameAs(deadlock);
 		verify(orderExecutionService, times(2)).execute(any(), anyString(), anyString(), any());
+	}
+
+	@Test
+	void createOrderLogsErrorWhenRetryAlsoFailsAfterDeadlock() {
+		when(orderRepository.findByUserIdAndIdempotencyKey(USER_ID, IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
+		CannotAcquireLockException deadlock = new CannotAcquireLockException(
+			"Deadlock found when trying to get lock; try restarting transaction");
+		when(orderExecutionService.execute(any(), anyString(), anyString(), any())).thenThrow(deadlock);
+
+		List<ILoggingEvent> logs = capturingLogs(() -> assertThatThrownBy(
+			() -> orderService.createOrder(USER_ID, IDEMPOTENCY_KEY, sampleRequest()))
+			.isSameAs(deadlock));
+
+		assertThat(logs).hasSize(2);
+		assertThat(logs.get(0).getLevel()).isEqualTo(Level.WARN);
+		// 이슈 #542 완료 조건 1번(userId·idempotencyKey를 포함해 log.error로 남긴다)을 메시지 문구뿐
+		// 아니라 실제 인자값과 첨부된 예외까지 확인한다 — 인자를 빼먹어도 문구만 보는 검증은 통과하기 때문이다.
+		assertThat(logs.get(1)).satisfies(event -> {
+			assertThat(event.getLevel()).isEqualTo(Level.ERROR);
+			assertThat(event.getFormattedMessage())
+				.contains("재시도까지 데드락으로 실패했습니다")
+				.contains("userId=" + USER_ID)
+				.contains("idempotencyKey=" + IDEMPOTENCY_KEY);
+			assertThat(event.getThrowableProxy()).isNotNull();
+			assertThat(event.getThrowableProxy().getClassName()).isEqualTo(CannotAcquireLockException.class.getName());
+			assertThat(event.getThrowableProxy().getMessage()).isEqualTo(deadlock.getMessage());
+		});
 	}
 
 	// PR #514 리뷰 권장사항 2번 — 재시도 호출도 원래 catch(DataIntegrityViolationException)와 같은 멱등키
@@ -637,6 +669,23 @@ class OrderServiceTest {
 			return java.util.HexFormat.of().formatHex(hashBytes);
 		} catch (java.security.NoSuchAlgorithmException e) {
 			throw new IllegalStateException("SHA-256 알고리즘을 사용할 수 없습니다.", e);
+		}
+	}
+
+	private static List<ILoggingEvent> capturingLogs(Runnable action) {
+		Logger logger = (Logger)LoggerFactory.getLogger(OrderService.class);
+		ListAppender<ILoggingEvent> appender = new ListAppender<>();
+		appender.start();
+		Level originalLevel = logger.getLevel();
+		logger.setLevel(Level.DEBUG);
+		logger.addAppender(appender);
+		try {
+			action.run();
+			return List.copyOf(appender.list);
+		} finally {
+			logger.detachAppender(appender);
+			logger.setLevel(originalLevel);
+			appender.stop();
 		}
 	}
 }
