@@ -55,6 +55,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -130,6 +131,11 @@ class RankingIntegrationTest {
 	// JournalIntegrationTest가 같은 이유로 쓰는 명시적 정리 방식을 따른다(agent-mistakes.md 2026-07-30).
 	private final List<Long> createdAccountIds = new ArrayList<>();
 	private final List<Long> createdUserIds = new ArrayList<>();
+	// 튜토리얼 샘플 종목 매도 시나리오(PR #550 리뷰 권장 2, 이슈 #549)에서만 새 Instrument를 커밋한다 — 클래스
+	// 상단 주석의 "새 Instrument를 커밋하지 않는다" 원칙에 대한 유일한 예외이며, TutorialSandboxSellCashIsolation
+	// IntegrationTest와 같은 방식(추적 후 tearDown에서 삭제)으로 InstrumentRepositoryTest의 절대개수 단정을
+	// 건드리지 않는다.
+	private final List<Long> createdInstrumentIds = new ArrayList<>();
 
 	@BeforeEach
 	void setUp() {
@@ -144,8 +150,9 @@ class RankingIntegrationTest {
 		cleanCommittedLedger();
 	}
 
-	// 이 테스트가 만든 계좌에 딸린 원장을 FK 자식 → 부모 순서로 지운다. 종목(instruments)은 시드 데이터를
-	// 그대로 쓰므로 건드리지 않는다 — 지우는 기준은 "이 클래스가 만든 계좌"다.
+	// 이 테스트가 만든 계좌에 딸린 원장을 FK 자식 → 부모 순서로 지운다. 종목(instruments)은 대부분 시드 데이터를
+	// 그대로 쓰므로 건드리지 않고, 튜토리얼 샘플 종목 시나리오가 직접 커밋한 것만 createdInstrumentIds로
+	// 추적해 따로 지운다 — 지우는 기준은 "이 클래스가 만든 계좌"다.
 	//
 	// trades를 참조하는 FK 중 trade_feedbacks(V13)·buy_trade_journals(V15)·sell_trade_journals(V17)는 지우지
 	// 않는다. 이 클래스가 그 행을 만들지 않기 때문이다 — 이 클래스에서 저널이나 매도 피드백을 만들게 되면
@@ -166,9 +173,20 @@ class RankingIntegrationTest {
 		// 두 블록의 조건을 분리해 둔다(계좌 id 기준 삭제와 중복 실행되지 않는다).
 		if (!createdUserIds.isEmpty()) {
 			String userIdIn = createdUserIds.stream().map(String::valueOf).collect(Collectors.joining(","));
+			// 튜토리얼 샘플 종목을 매수하면 tutorial_accounts 행이 자동 생성된다(TutorialAccountService.
+			// getOrCreateForUpdate) — users를 지우기 전에 먼저 지우지 않으면 fk_tutorial_accounts_user 위반으로
+			// 실패한다(agent-mistakes.md 동일 패턴).
+			jdbcTemplate.update("delete from tutorial_accounts where user_id in (" + userIdIn + ")");
 			jdbcTemplate.update("delete from accounts where user_id in (" + userIdIn + ")");
 			jdbcTemplate.update("delete from users where id in (" + userIdIn + ")");
 			createdUserIds.clear();
+		}
+		if (!createdInstrumentIds.isEmpty()) {
+			String instrumentIdIn = createdInstrumentIds.stream()
+				.map(String::valueOf)
+				.collect(Collectors.joining(","));
+			jdbcTemplate.update("delete from instruments where id in (" + instrumentIdIn + ")");
+			createdInstrumentIds.clear();
 		}
 	}
 
@@ -455,6 +473,31 @@ class RankingIntegrationTest {
 			.andExpect(jsonPath("$.nickname").value(user.getNickname()));
 	}
 
+	// 시나리오 10(PR #550 리뷰 권장 2, 이슈 #549) — 튜토리얼 샘플 종목만 매도해본 계좌는 실제 매도 이력이
+	// 없으므로 ZSET 멤버로도, 랭킹 목록에도 오르지 않아야 한다. 이전에는 매도 4곳(시장가·지정가
+	// 단건·fillBatch·OCO) 전부가 튜토리얼 매도에도 RealizedPnlUpdatedEvent를 무조건 발행해 실제로
+	// 이 계좌가 랭킹에 떴다 — 이 시나리오는 그 증상을 실제 HTTP 응답으로 고정한다(단위 테스트는
+	// 이벤트 미발행이라는 메커니즘까지만 고정한다).
+	@Test
+	void sellingOnlyTutorialSampleInstrumentLeavesAccountOutOfRankingList() throws Exception {
+		User user = createUser("rank-tutorial-only");
+		Account account = createAccount(user);
+		String accessToken = issueAccessToken(user);
+		Instrument instrument = createTutorialSampleCryptoInstrument("rank-tutorial-only");
+		seedCryptoPrice(instrument, new BigDecimal("50000000"));
+
+		performOrder(accessToken, buyRequest(instrument.getId(), "0.02"))
+			.andExpect(status().isCreated());
+
+		seedCryptoPrice(instrument, new BigDecimal("80000000"));
+		performOrder(accessToken, sellRequest(instrument.getId(), "0.01"))
+			.andExpect(status().isCreated());
+
+		assertThat(scoreOf("CRYPTO", account.getId())).isNull();
+		RankingListResponse rankings = getRankings(accessToken, "CRYPTO", 50);
+		assertThat(rankings.content()).noneMatch(item -> item.nickname().equals(user.getNickname()));
+	}
+
 	private MyRankingResponse getMyRanking(String accessToken, String market) throws Exception {
 		String body = mockMvc.perform(get("/api/rankings/me")
 			.param("market", market)
@@ -525,6 +568,19 @@ class RankingIntegrationTest {
 		List<Instrument> cryptos = instrumentRepository.findByMarketAndTradableTrueOrderByIdAsc(Market.CRYPTO);
 		assertThat(cryptos).isNotEmpty();
 		return cryptos.get(0);
+	}
+
+	// 튜토리얼 샘플 종목 시나리오(PR #550 리뷰 권장 2, 이슈 #549) 전용 — tutorialSample=true·tradable=true인 신규
+	// CRYPTO 종목을 만들고 createdInstrumentIds로 추적한다(TutorialSandboxSellCashIsolationIntegrationTest의
+	// fixture 관례와 동일). minOrderAmount는 0으로 두어 최소주문금액 제약이 이 시나리오의 관심사가 아니게 한다.
+	private Instrument createTutorialSampleCryptoInstrument(String scenario) {
+		Instrument instrument = Instrument.create(
+			Market.CRYPTO, "T" + UUID.randomUUID().toString().replace("-", "").substring(0, 8), scenario,
+			BigDecimal.ONE, 0L, true, LocalDateTime.now(clock));
+		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
+		instrumentRepository.saveAndFlush(instrument);
+		createdInstrumentIds.add(instrument.getId());
+		return instrument;
 	}
 
 	// 현재 clock 시각으로 틱을 저장한다 — PriceStore.isStale은 10초 임계값으로 판정하므로 항상 최신 시각을 써야 한다.

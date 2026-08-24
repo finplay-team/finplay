@@ -538,6 +538,34 @@ class LimitOrderFillServiceTest {
 		verifyNoInteractions(tradeRepository, portfolioSellService, eventPublisher);
 	}
 
+	@Test
+	void fillBatchDoesNotPublishRealizedPnlUpdatedEventWhenSellInstrumentIsTutorialSample() {
+		// PR #550 리뷰 권장 1 — fillSell(단건 경로)뿐 아니라 fillBatch의 벌크 락 경로
+		// (fillSellWithLockedHolding)도 같은 가드가 있는지 확인한다(이슈 #549).
+		Instrument instrument = cryptoInstrument();
+		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
+		Account account = account();
+		Holding holding = Holding.create(account, instrument, NOW.minusDays(1));
+		holding.applyBuy(new BigDecimal("1"), new BigDecimal("900000"), NOW.minusDays(1));
+		holding.reserveQuantity(new BigDecimal("0.1"));
+		Order order = limitPendingOrder(account, instrument, OrderSide.SELL, "0.1", "1000000");
+		ReflectionTestUtils.setField(order, "id", 106L);
+		when(orderRepository.findByIdInForUpdate(List.of(106L))).thenReturn(List.of(order));
+		when(accountService.getAccountsByIdsForUpdate(List.of(10L))).thenReturn(List.of(account));
+		when(portfolioBuyService.findExistingHoldingsForChunkUpdate(List.of(10L), instrument.getId()))
+			.thenReturn(List.of(holding));
+		SellAllocationDto allocation = new SellAllocationDto(90_000L, 40L);
+		when(portfolioSellService.applySellTrade(eq(holding), any(Trade.class), eq(new BigDecimal("0.1")), eq(NOW)))
+			.thenReturn(allocation);
+		when(portfolioSellService.finalizeSellRealizedPnl(eq(account), any(Trade.class), eq(100_000L), eq(50L),
+			eq(allocation), eq(NOW))).thenReturn(0L);
+
+		service.fillBatch(List.of(106L));
+
+		assertThat(order.getStatus()).isEqualTo(OrderStatus.FILLED);
+		verifyNoInteractions(eventPublisher);
+	}
+
 	private static Order limitPendingOrder(
 		Account account, Instrument instrument, OrderSide side, String quantity, String limitPrice) {
 		Order order = Order.createLimitPending(
