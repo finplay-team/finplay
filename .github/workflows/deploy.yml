@@ -223,6 +223,10 @@ jobs:
           set -e
           cd /home/ec2-user/finplay
           aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $REGISTRY
+          # 이미지 태그가 커밋 SHA라 매 배포마다 쌓인다. blue/green 컨테이너가 쓰는 이미지는
+          # prune -a가 건드리지 않으므로(정지된 컨테이너도 참조로 잡힘) 매 배포마다 돌려도 안전하다
+          # (2026-08-24 디스크 100% 실측 — deploy/cd-runbook.md 오진표 참고).
+          docker image prune -af || true
           # .env는 이 한 줄만 치환한다 — 다른 시크릿 값은 건드리지 않는다. .env의 정본은 EC2다.
           sed -i "s|^APP_IMAGE_${IDLE_UPPER}=.*|APP_IMAGE_${IDLE_UPPER}=$IMAGE|" .env
           docker compose -f compose.bluegreen.yaml up -d app-$IDLE

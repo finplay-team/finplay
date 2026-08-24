@@ -124,6 +124,7 @@ IaC를 쓰지 않으므로 **이 절이 사실상 유일한 정본이다** (ADR-
 | `docker ps`는 `(healthy)`인데 호스트 `curl :8080`이 실패 | **앱 컨테이너는 호스트에 포트를 열지 않는다**(설계). 호스트에서 부르면 앱 상태와 무관하게 실패한다 (2026-08-11 실측, `ai/agent-mistakes.md`) | `docker exec <앱컨테이너> curl -fsS http://localhost:8080/actuator/health` |
 | SSM 명령이 `DeliveryTimedOut`으로 끝난다 | SSM Agent가 죽었거나 인스턴스 프로파일에 `AmazonSSMManagedInstanceCore`가 없다. 네트워크가 아니다 | Fleet Manager 목록에 인스턴스가 보이는지 |
 | OIDC 단계에서 `Not authorized to perform sts:AssumeRoleWithWebIdentity` | 신뢰 정책의 `sub`가 실제 브랜치와 다르다. `refs/heads/dev`로 못박았으므로 **다른 브랜치에서 돌린 워크플로우는 반드시 여기서 막힌다**(의도된 동작) | 역할 신뢰 정책의 `sub` 값 |
+| SSM 명령이 `docker: failed to register layer: ... no space left on device`로 실패 | **EC2 로컬 디스크가 꽉 찼다.** 이미지 태그가 커밋 SHA라 매 배포마다 쌓이는데 EC2에 정리 단계가 없었다(2026-08-24 실측, 루트 볼륨 30G 중 100% 사용). PR #543 머지 배포에서 처음 터졌다 — 그 PR 자체의 문제가 아니라 누적된 결과다 | `df -h` / `docker system df -v`. `docker image prune -af`로 정리(blue/green이 참조 중인 이미지는 정지된 컨테이너도 참조로 잡혀 안전). 이후 배포부터는 워크플로우가 매번 자동으로 정리한다 |
 
 ## 첫 구축 후 확인할 것 (아직 아무것도 실행하지 않았다)
 
