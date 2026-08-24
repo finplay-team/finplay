@@ -113,9 +113,10 @@ public class LimitOrderFillService {
 			// 3) holding 벌크 락(기존 행만) — 청크는 항상 단일 종목이므로 instrumentId 하나로 충분하다(plan.md
 			// "배경"). PortfolioBuyService만 거쳐 HoldingRepository를 직접 주입하지 않는다(ADR-0002).
 			Long instrumentId = pendingOrders.get(0).getInstrument().getId();
-			holdingsByAccountId = new HashMap<>(portfolioBuyService.findHoldingsForUpdate(accountIds, instrumentId)
-				.stream()
-				.collect(Collectors.toMap(holding -> holding.getAccount().getId(), Function.identity())));
+			holdingsByAccountId = new HashMap<>(
+				portfolioBuyService.findExistingHoldingsForChunkUpdate(accountIds, instrumentId)
+					.stream()
+					.collect(Collectors.toMap(holding -> holding.getAccount().getId(), Function.identity())));
 			// holdingsByAccountId는 가변 맵이다 — 아래 루프에서 신규 생성된 holding을 즉시 반영해야 같은 청크의
 			// 다음 주문이 같은 (계좌, 종목) 조합이면 재사용한다(위험 요소 2, uk_holdings_account_instrument 방지).
 		}

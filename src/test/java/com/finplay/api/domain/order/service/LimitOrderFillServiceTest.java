@@ -328,7 +328,7 @@ class LimitOrderFillServiceTest {
 	// ADR-0025 — fillBatch(List<Long>)는 청크 안 각 주문에 fillIfPending과 동일한 체결 로직을 순서대로
 	// 적용한다. 054-limit-order-fill-bulk-lock부터는 order→account→holding을 개별 왕복이 아니라 벌크 FOR
 	// UPDATE 조회로 묶으므로, 여기서는 벌크 조회 3종(findByIdInForUpdate·getAccountsByIdsForUpdate·
-	// findHoldingsForUpdate)을 스텁한다. 청크 원자적 롤백(한 건 실패 시 전체 롤백)은 실제 DB 커밋이 필요해
+	// findExistingHoldingsForChunkUpdate)을 스텁한다. 청크 원자적 롤백(한 건 실패 시 전체 롤백)은 실제 DB 커밋이 필요해
 	// LimitOrderFillBatchAtomicityIntegrationTest가 맡는다.
 	@Test
 	void fillBatchFillsEachOrderInGivenOrder() {
@@ -344,7 +344,8 @@ class LimitOrderFillServiceTest {
 		account.reserveCash(100_050L + 200_100L);
 		when(orderRepository.findByIdInForUpdate(List.of(101L, 102L))).thenReturn(List.of(first, second));
 		when(accountService.getAccountsByIdsForUpdate(List.of(10L))).thenReturn(List.of(account));
-		when(portfolioBuyService.findHoldingsForUpdate(List.of(10L), instrument.getId())).thenReturn(List.of());
+		when(portfolioBuyService.findExistingHoldingsForChunkUpdate(List.of(10L), instrument.getId()))
+			.thenReturn(List.of());
 		when(portfolioBuyService.applyBuyTrade(
 			eq(account), eq(instrument), any(Trade.class), any(BigDecimal.class), eq(new BigDecimal("1000000")),
 			anyLong(), eq(NOW), any(Holding.class)))
@@ -385,7 +386,8 @@ class LimitOrderFillServiceTest {
 		ReflectionTestUtils.setField(order, "id", 101L);
 		when(orderRepository.findByIdInForUpdate(List.of(101L))).thenReturn(List.of(order));
 		when(accountService.getAccountsByIdsForUpdate(List.of(10L))).thenReturn(List.of(account));
-		when(portfolioBuyService.findHoldingsForUpdate(List.of(10L), instrument.getId())).thenReturn(List.of());
+		when(portfolioBuyService.findExistingHoldingsForChunkUpdate(List.of(10L), instrument.getId()))
+			.thenReturn(List.of());
 		when(portfolioBuyService.applyBuyTrade(
 			eq(account), eq(instrument), any(Trade.class), eq(new BigDecimal("0.1")), eq(new BigDecimal("1000000")),
 			eq(50L), eq(NOW), any(Holding.class)))
@@ -396,7 +398,7 @@ class LimitOrderFillServiceTest {
 		InOrder bulkLockOrder = inOrder(orderRepository, accountService, portfolioBuyService);
 		bulkLockOrder.verify(orderRepository).findByIdInForUpdate(List.of(101L));
 		bulkLockOrder.verify(accountService).getAccountsByIdsForUpdate(List.of(10L));
-		bulkLockOrder.verify(portfolioBuyService).findHoldingsForUpdate(List.of(10L), instrument.getId());
+		bulkLockOrder.verify(portfolioBuyService).findExistingHoldingsForChunkUpdate(List.of(10L), instrument.getId());
 		assertThat(order.getStatus()).isEqualTo(OrderStatus.FILLED);
 	}
 
@@ -417,7 +419,8 @@ class LimitOrderFillServiceTest {
 		ReflectionTestUtils.setField(order102, "id", 102L);
 		when(orderRepository.findByIdInForUpdate(List.of(101L, 102L))).thenReturn(List.of(order101, order102));
 		when(accountService.getAccountsByIdsForUpdate(List.of(10L))).thenReturn(List.of(account));
-		when(portfolioBuyService.findHoldingsForUpdate(List.of(10L), instrument.getId())).thenReturn(List.of());
+		when(portfolioBuyService.findExistingHoldingsForChunkUpdate(List.of(10L), instrument.getId()))
+			.thenReturn(List.of());
 		// 실제 PortfolioBuyService.applyBuyTrade(..., holding)처럼 넘겨받은 holding 인스턴스를 그대로
 		// 반환한다(저장 시뮬레이션) — 맵 재사용 여부를 인스턴스 동일성으로 검증할 수 있게 한다.
 		when(portfolioBuyService.applyBuyTrade(
@@ -474,7 +477,8 @@ class LimitOrderFillServiceTest {
 		ReflectionTestUtils.setField(order, "id", 104L);
 		when(orderRepository.findByIdInForUpdate(List.of(104L))).thenReturn(List.of(order));
 		when(accountService.getAccountsByIdsForUpdate(List.of(10L))).thenReturn(List.of(account));
-		when(portfolioBuyService.findHoldingsForUpdate(List.of(10L), instrument.getId())).thenReturn(List.of());
+		when(portfolioBuyService.findExistingHoldingsForChunkUpdate(List.of(10L), instrument.getId()))
+			.thenReturn(List.of());
 
 		assertThatThrownBy(() -> service.fillBatch(List.of(104L)))
 			.isInstanceOf(IllegalStateException.class)

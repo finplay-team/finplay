@@ -162,7 +162,7 @@ class PortfolioBuyServiceTest {
 	}
 
 	@Test
-	void findHoldingsForUpdateDelegatesToRepositoryBulkLockQueryWithoutExtraCall() {
+	void findExistingHoldingsForChunkUpdateDelegatesToRepositoryBulkLockQueryWithoutExtraCall() {
 		// 054-limit-order-fill-bulk-lock: LimitOrderFillService.fillBatch가 HoldingRepository를 직접 주입하지
 		// 않고 이 래퍼만 거치도록 강제하는 ADR-0002 준수용 위임 메서드다 — 별도 가공 없이 그대로 위임하는지만 본다.
 		Account account = testAccount();
@@ -173,7 +173,7 @@ class PortfolioBuyServiceTest {
 		when(holdingRepository.findByAccountIdInAndInstrumentIdForUpdate(accountIds, instrument.getId()))
 			.thenReturn(List.of(existingHolding));
 
-		List<Holding> result = service.findHoldingsForUpdate(accountIds, instrument.getId());
+		List<Holding> result = service.findExistingHoldingsForChunkUpdate(accountIds, instrument.getId());
 
 		assertThat(result).containsExactly(existingHolding);
 		verify(holdingRepository).findByAccountIdInAndInstrumentIdForUpdate(accountIds, instrument.getId());

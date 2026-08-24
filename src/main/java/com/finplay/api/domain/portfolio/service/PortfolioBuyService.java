@@ -61,10 +61,11 @@ public class PortfolioBuyService {
 	}
 
 	// 지정가 체결 청크가 참조하는 계좌 목록 + 단일 종목으로 "이미 존재하는" holding을 한 번에 잠근다
-	// (054-limit-order-fill-bulk-lock 호출부: LimitOrderFillService.fillBatch). 신규 생성(첫 매수) 대상은
-	// 결과에 나타나지 않는다 — 호출부가 인메모리 맵으로 별도 처리한다. 다른 도메인 서비스가 HoldingRepository를
-	// 직접 주입하지 않게 한다(ADR-0002).
-	public List<Holding> findHoldingsForUpdate(List<Long> accountIds, Long instrumentId) {
+	// (054-limit-order-fill-bulk-lock 호출부: LimitOrderFillService.fillBatch) — BUY·SELL 양쪽 청크가 공용으로
+	// 쓴다. 매수 전용 서비스에 있지만 메서드 이름에 "Buy"를 넣지 않은 이유가 이것이다(PR #545 리뷰 권장사항
+	// 5번). 신규 생성(첫 매수) 대상은 결과에 나타나지 않는다 — 호출부가 인메모리 맵으로 별도 처리한다. 다른
+	// 도메인 서비스가 HoldingRepository를 직접 주입하지 않게 한다(ADR-0002).
+	public List<Holding> findExistingHoldingsForChunkUpdate(List<Long> accountIds, Long instrumentId) {
 		return holdingRepository.findByAccountIdInAndInstrumentIdForUpdate(accountIds, instrumentId);
 	}
 }
