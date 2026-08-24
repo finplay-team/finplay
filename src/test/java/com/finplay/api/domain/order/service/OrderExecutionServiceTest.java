@@ -508,6 +508,9 @@ class OrderExecutionServiceTest {
 		verify(tradeRepository).save(tradeCaptor.capture());
 		// realizedPnl = (30000 - 4) - (20000 + 3) = 9993
 		assertThat(tradeCaptor.getValue().getRealizedPnl()).isEqualTo(9993L);
+		// 이슈 #549 — 튜토리얼 샘플 종목 매도는 account.realizedPnl을 안 바꾸므로 랭킹 갱신 이벤트도 발행하지
+		// 않는다. 그렇지 않으면 RankingService.refreshScore가 실제 매도 이력 없는 계좌를 랭킹에 올려버린다.
+		verifyNoInteractions(eventPublisher);
 	}
 
 	@Test

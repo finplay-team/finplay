@@ -166,7 +166,10 @@ public class ExitPlanFillService {
 		portfolioSellService.finalizeSellRealizedPnl(account, trade, amount, fee, allocation, now);
 
 		// 커밋 이후(after-commit)에만 랭킹에 반영되도록 이벤트만 발행한다 — 기존 시장가·지정가 매도와 동일 훅 재사용.
-		eventPublisher.publishEvent(new RealizedPnlUpdatedEvent(account.getId()));
+		// 튜토리얼 샘플 종목 매도는 이벤트를 발행하지 않는다(fillSell과 동일 이유, 이슈 #549).
+		if (!instrument.isTutorialSample()) {
+			eventPublisher.publishEvent(new RealizedPnlUpdatedEvent(account.getId()));
+		}
 		return order;
 	}
 

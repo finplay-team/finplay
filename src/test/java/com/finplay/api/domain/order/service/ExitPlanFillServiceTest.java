@@ -102,6 +102,17 @@ class ExitPlanFillServiceTest {
 	}
 
 	@Test
+	void fillIfPendingDoesNotPublishRealizedPnlUpdatedEventWhenInstrumentIsTutorialSample() {
+		// 이슈 #549 — 튜토리얼 샘플 종목의 OCO 자동 매도는 실제 매도 이력 없는 계좌를 랭킹에 올리게 되므로 이벤트를 발행하지 않는다.
+		ReflectionTestUtils.setField(plan.getInstrument(), "tutorialSample", true);
+
+		service.fillIfPending(PLAN_ID, TAKE_PROFIT_PRICE);
+
+		assertThat(plan.getStatus()).isEqualTo(ExitPlanStatus.FILLED_TAKE_PROFIT);
+		verifyNoInteractions(eventPublisher);
+	}
+
+	@Test
 	@DisplayName("currentPrice가 손절가 이하이면 FILLED_STOP_LOSS로 전이하고 반대(TAKE_PROFIT) 조건을 자동 취소한다")
 	void fillIfPendingFillsStopLossAndCancelsOppositeConditionWhenPriceMeetsOrFallsBelowStopLoss() {
 		service.fillIfPending(PLAN_ID, STOP_LOSS_PRICE);

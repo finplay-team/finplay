@@ -284,6 +284,31 @@ class LimitOrderFillServiceTest {
 	}
 
 	@Test
+	void fillIfPendingSellDoesNotPublishRealizedPnlUpdatedEventWhenInstrumentIsTutorialSample() {
+		// 이슈 #549 — 튜토리얼 샘플 종목 지정가 매도는 실제 매도 이력 없는 계좌를 랭킹에 올리게 되므로 이벤트를 발행하지 않는다.
+		Instrument instrument = cryptoInstrument();
+		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
+		Account account = account();
+		Holding holding = Holding.create(account, instrument, NOW.minusDays(1));
+		holding.applyBuy(new BigDecimal("1"), new BigDecimal("900000"), NOW.minusDays(1));
+		holding.reserveQuantity(new BigDecimal("0.1"));
+		Order order = limitPendingOrder(account, instrument, OrderSide.SELL, "0.1", "1000000");
+		when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+		when(accountService.getAccountByIdForUpdate(account.getId())).thenReturn(account);
+		when(portfolioSellService.getHoldingForUpdate(account, instrument)).thenReturn(holding);
+		SellAllocationDto allocation = new SellAllocationDto(90_000L, 40L);
+		when(portfolioSellService.applySellTrade(eq(holding), any(Trade.class), eq(new BigDecimal("0.1")), eq(NOW)))
+			.thenReturn(allocation);
+		when(portfolioSellService.finalizeSellRealizedPnl(eq(account), any(Trade.class), eq(100_000L), eq(50L),
+			eq(allocation), eq(NOW))).thenReturn(0L);
+
+		service.fillIfPending(order.getId());
+
+		assertThat(order.getStatus()).isEqualTo(OrderStatus.FILLED);
+		verifyNoInteractions(eventPublisher);
+	}
+
+	@Test
 	void fillIfPendingSecondCallDoesNotDuplicateFirstCallSideEffectsOnSameOrder() {
 		// 같은 주문 인스턴스에 fillIfPending을 연속 두 번 호출한다(중복 이벤트 도착 시나리오).
 		// 두 번째 호출 시점에는 order가 이미 FILLED이므로, 현금·거래 저장·매수 반영이 두 번째에는 전혀 일어나지
