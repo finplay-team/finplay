@@ -1,0 +1,463 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1030" width="1200" height="1030" font-family="'Malgun Gothic','맑은 고딕','Apple SD Gothic Neo','Noto Sans KR',sans-serif">
+  <defs>
+    <filter id="cardShadow" x="-12%" y="-8%" width="124%" height="122%">
+      <feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#12203A" flood-opacity="0.09"/>
+    </filter>
+    <linearGradient id="ruleGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#E8A33D"/>
+      <stop offset="55%" stop-color="#1F8FA6"/>
+      <stop offset="100%" stop-color="#1F8FA6"/>
+    </linearGradient>
+    <linearGradient id="bannerGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#152848"/>
+      <stop offset="100%" stop-color="#0F1B31"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 배경 -->
+  <rect x="0" y="0" width="1200" height="1030" fill="#F4F6F9"/>
+
+  <!-- ============ 헤더 ============ -->
+  <rect x="0" y="0" width="1200" height="140" fill="#12203A"/>
+  <rect x="0" y="135" width="1200" height="5" fill="url(#ruleGrad)"/>
+
+  <!-- 헤더 장식: 체결 틱 캔들 -->
+  <g stroke-linecap="round">
+    <g stroke="#4C6690" stroke-width="2.5" opacity="0.9">
+      <line x1="912" y1="78" x2="912" y2="106"/>
+      <line x1="972" y1="74" x2="972" y2="100"/>
+      <line x1="1032" y1="52" x2="1032" y2="84"/>
+      <line x1="1092" y1="38" x2="1092" y2="70"/>
+    </g>
+    <g stroke="#E8A33D" stroke-width="2.5" opacity="0.85">
+      <line x1="942" y1="70" x2="942" y2="100"/>
+      <line x1="1002" y1="60" x2="1002" y2="94"/>
+      <line x1="1062" y1="46" x2="1062" y2="80"/>
+      <line x1="1122" y1="32" x2="1122" y2="62"/>
+    </g>
+    <rect x="906" y="84" width="12" height="18" rx="2" fill="#4C6690" opacity="0.9"/>
+    <rect x="966" y="82" width="12" height="14" rx="2" fill="#4C6690" opacity="0.9"/>
+    <rect x="1026" y="60" width="12" height="18" rx="2" fill="#4C6690" opacity="0.9"/>
+    <rect x="1086" y="44" width="12" height="20" rx="2" fill="#4C6690" opacity="0.9"/>
+    <rect x="936" y="76" width="12" height="20" rx="2" fill="#E8A33D" opacity="0.85"/>
+    <rect x="996" y="68" width="12" height="22" rx="2" fill="#E8A33D" opacity="0.85"/>
+    <rect x="1056" y="54" width="12" height="20" rx="2" fill="#E8A33D" opacity="0.85"/>
+    <rect x="1116" y="38" width="12" height="16" rx="2" fill="#E8A33D" opacity="0.85"/>
+  </g>
+
+  <text x="40" y="66" font-size="34" font-weight="700" fill="#FFFFFF">FinPlay 성능·정합성 개선 한눈에 보기</text>
+  <text x="40" y="100" font-size="16" fill="#A9BBD4">측정한 것만 적었고, 재지 않은 것은 성과로 쓰지 않았습니다</text>
+
+  <!-- ============ 카드 1 : 성능 ============ -->
+  <g>
+    <rect x="40" y="176" width="356" height="664" rx="16" fill="#FFFFFF" stroke="#E4E9F1" stroke-width="1" filter="url(#cardShadow)"/>
+    <path d="M40,192 A16,16 0 0 1 56,176 H380 A16,16 0 0 1 396,192 Z" fill="#E8A33D"/>
+
+    <circle cx="84" cy="218" r="17" fill="#E8A33D"/>
+    <text x="84" y="224" font-size="17" font-weight="700" fill="#FFFFFF" text-anchor="middle">1</text>
+    <text x="114" y="214" font-size="19" font-weight="700" fill="#12203A">성능 개선</text>
+    <text x="114" y="236" font-size="13" fill="#6B7C96">조회 경로의 중복 호출 제거</text>
+
+    <rect x="62" y="252" width="312" height="240" rx="14" fill="#EAEFF6"/>
+    <text x="84" y="296" font-size="11.5" fill="#6B7C96">요약 원본 DB 조회</text>
+    <line x1="310" y1="313" x2="310" y2="453" stroke="#12203A" stroke-width="1" opacity="0.2" stroke-dasharray="3 5"/>
+    <text x="84" y="344" font-size="12" fill="#8494AB">이전</text>
+    <rect x="110" y="318" width="200" height="44" rx="3" fill="#B9C6D8"/>
+    <text x="318" y="345" font-size="15" font-weight="700" fill="#12203A">200건</text>
+    <text x="84" y="430" font-size="12" fill="#8494AB">현재</text>
+    <rect x="110" y="404" width="3" height="44" rx="1.5" fill="#1F8FA6"/>
+    <text x="121" y="431" font-size="15" font-weight="700" fill="#1F8FA6">1건</text>
+    <line x1="152" y1="426" x2="304" y2="426" stroke="#12203A" stroke-width="1" opacity="0.22" stroke-dasharray="3 5"/>
+    <text x="84" y="474" font-size="10" fill="#8494AB">막대 길이는 실제 호출 건수 비율</text>
+
+    <!-- 문제 / 개선 -->
+    <rect x="62" y="509" width="42" height="22" rx="7" fill="#E7ECF3"/>
+    <text x="83" y="524.5" font-size="12.5" font-weight="700" fill="#4A5D78" text-anchor="middle">문제</text>
+    <text x="114" y="523" font-size="12.5" fill="#33465F">화면을 열 때마다 LLM을 부르고<tspan x="114" dy="18">같은 DB 행을 사람 수만큼 읽었습니다</tspan></text>
+
+    <rect x="62" y="555" width="42" height="22" rx="7" fill="#FBEEDA"/>
+    <text x="83" y="570.5" font-size="12.5" font-weight="700" fill="#B0761E" text-anchor="middle">개선</text>
+    <text x="114" y="569" font-size="12.5" fill="#33465F">생성은 배치로 옮기고,<tspan x="114" dy="18">조회는 Redis 캐시와 분산 락으로</tspan></text>
+
+    <line x1="62" y1="606" x2="374" y2="606" stroke="#E3E9F1" stroke-width="1.5"/>
+
+    <!-- 결과 3행 -->
+    <circle cx="76" cy="642" r="9" fill="#E8A33D"/>
+    <g stroke="#FFFFFF" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="76" y1="637.5" x2="76" y2="646"/>
+      <polyline points="72.5,642.5 76,646.5 79.5,642.5"/>
+    </g>
+    <text x="92" y="632" font-size="11.5" fill="#7A8AA3">요약 원본 DB 조회</text>
+    <text x="92" y="654" font-size="16.5" font-weight="700" fill="#12203A">200건 → 1건</text>
+    <line x1="62" y1="662" x2="374" y2="662" stroke="#EEF2F7" stroke-width="1"/>
+
+    <circle cx="76" cy="690" r="9" fill="#E8A33D"/>
+    <g stroke="#FFFFFF" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="76" y1="685.5" x2="76" y2="694"/>
+      <polyline points="72.5,690.5 76,694.5 79.5,690.5"/>
+    </g>
+    <text x="92" y="680" font-size="11.5" fill="#7A8AA3">응답시간 p95</text>
+    <text x="92" y="702" font-size="16.5" font-weight="700" fill="#12203A">896ms → 499ms</text>
+    <rect x="303" y="682" width="71" height="24" rx="12" fill="#FBEEDA"/>
+    <text x="338.5" y="699" font-size="12" font-weight="700" fill="#B0761E" text-anchor="middle">44% 감소</text>
+    <line x1="62" y1="710" x2="374" y2="710" stroke="#EEF2F7" stroke-width="1"/>
+
+    <circle cx="76" cy="738" r="9" fill="#E8A33D"/>
+    <g stroke="#FFFFFF" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="76" y1="733.5" x2="76" y2="742"/>
+      <polyline points="72.5,738.5 76,742.5 79.5,738.5"/>
+    </g>
+    <text x="92" y="728" font-size="11.5" fill="#7A8AA3">외부 시세 API 호출</text>
+    <text x="92" y="750" font-size="16.5" font-weight="700" fill="#12203A">30건 → 0건</text>
+    <rect x="296" y="730" width="78" height="24" rx="12" fill="#FBEEDA"/>
+    <text x="335" y="747" font-size="12" font-weight="700" fill="#B0761E" text-anchor="middle">100% 절감</text>
+
+    <!-- 결론 -->
+    <path d="M40,774 H396 V824 A16,16 0 0 1 380,840 H56 A16,16 0 0 1 40,824 Z" fill="#F5F8FC"/>
+    <line x1="40" y1="774" x2="396" y2="774" stroke="#E7EDF5" stroke-width="1"/>
+    <circle cx="74" cy="806" r="10" fill="#E8A33D"/>
+    <polyline points="69,806 72.5,810 79,802" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="92" y="811" font-size="12.5" font-weight="700" fill="#24344C">사용자가 늘어도 원본 호출은 늘지 않습니다</text>
+  </g>
+
+  <!-- ============ 카드 2 : 신뢰성 ============ -->
+  <g>
+    <rect x="422" y="176" width="356" height="664" rx="16" fill="#FFFFFF" stroke="#E4E9F1" stroke-width="1" filter="url(#cardShadow)"/>
+    <path d="M422,192 A16,16 0 0 1 438,176 H762 A16,16 0 0 1 778,192 Z" fill="#1F8FA6"/>
+
+    <circle cx="466" cy="218" r="17" fill="#1F8FA6"/>
+    <text x="466" y="224" font-size="17" font-weight="700" fill="#FFFFFF" text-anchor="middle">2</text>
+    <text x="496" y="214" font-size="19" font-weight="700" fill="#12203A">신뢰성 개선</text>
+    <text x="496" y="236" font-size="13" fill="#6B7C96">장애와 한계를 직접 재봄</text>
+
+    <rect x="444" y="252" width="312" height="240" rx="14" fill="#EAEFF6"/>
+    <text x="466" y="288" font-size="11.5" fill="#6B7C96">동시 접속자 대비 p95 응답시간</text>
+    <line x1="490" y1="371" x2="730" y2="371" stroke="#12203A" stroke-width="1" opacity="0.09"/>
+    <line x1="490" y1="306" x2="730" y2="306" stroke="#12203A" stroke-width="1" opacity="0.09"/>
+    <path d="M490,428.98 L586,428.98 C637.84,426.98 692.56,386.99 730,308.08 L730,436 L586,436 Z" fill="#C0453A" opacity="0.09"/>
+    <line x1="586" y1="306" x2="586" y2="436" stroke="#12203A" stroke-width="1" opacity="0.2" stroke-dasharray="3 4"/>
+    <path d="M490,428.98 L586,428.98 C637.84,426.98 692.56,386.99 730,308.08" fill="none" stroke="#1F8FA6" stroke-width="3" stroke-linecap="round"/>
+    <line x1="490" y1="436" x2="730" y2="436" stroke="#12203A" stroke-width="1" opacity="0.3"/>
+    <line x1="490" y1="306" x2="490" y2="436" stroke="#12203A" stroke-width="1" opacity="0.3"/>
+    <circle cx="586" cy="428.98" r="5.5" fill="#1F8FA6" stroke="#FFFFFF" stroke-width="2.5"/>
+    <circle cx="730" cy="308.08" r="5.5" fill="#C0453A" stroke="#FFFFFF" stroke-width="2.5"/>
+    <text x="578" y="418" font-size="10.5" font-weight="700" fill="#1F8FA6" text-anchor="end">200명 · 54ms</text>
+    <text x="736" y="298" font-size="10.5" font-weight="700" fill="#C0453A" text-anchor="end">500명 · 984ms</text>
+    <text x="484" y="310" font-size="9.5" fill="#8494AB" text-anchor="end">1000</text>
+    <text x="484" y="375" font-size="9.5" fill="#8494AB" text-anchor="end">500</text>
+    <text x="484" y="440" font-size="9.5" fill="#8494AB" text-anchor="end">0</text>
+    <text x="490" y="452" font-size="9.5" fill="#8494AB" text-anchor="middle">0</text>
+    <text x="586" y="452" font-size="9.5" fill="#8494AB" text-anchor="middle">200</text>
+    <text x="730" y="452" font-size="9.5" fill="#8494AB" text-anchor="middle">500</text>
+    <text x="730" y="470" font-size="9.5" fill="#8494AB" text-anchor="end">동시 접속자(명) / p95(ms)</text>
+
+    <rect x="444" y="509" width="42" height="22" rx="7" fill="#E7ECF3"/>
+    <text x="465" y="524.5" font-size="12.5" font-weight="700" fill="#4A5D78" text-anchor="middle">문제</text>
+    <text x="496" y="523" font-size="12.5" fill="#33465F">LLM 응답 3초를 기다리는 동안<tspan x="496" dy="18">DB 커넥션을 쥐고 있었습니다</tspan></text>
+
+    <rect x="444" y="555" width="42" height="22" rx="7" fill="#DFEEF2"/>
+    <text x="465" y="570.5" font-size="12.5" font-weight="700" fill="#146A7C" text-anchor="middle">개선</text>
+    <text x="496" y="569" font-size="12.5" fill="#33465F">대기를 트랜잭션 밖으로 빼고<tspan x="496" dy="18">커넥션 풀을 10에서 20으로</tspan></text>
+
+    <line x1="444" y1="606" x2="756" y2="606" stroke="#E3E9F1" stroke-width="1.5"/>
+
+    <circle cx="458" cy="642" r="9" fill="#1F8FA6"/>
+    <g stroke="#FFFFFF" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="458" y1="637.5" x2="458" y2="646"/>
+      <polyline points="454.5,642.5 458,646.5 461.5,642.5"/>
+    </g>
+    <text x="474" y="632" font-size="11.5" fill="#7A8AA3">커넥션 점유 시간</text>
+    <text x="474" y="654" font-size="16.5" font-weight="700" fill="#12203A">3초 → 수십 ms</text>
+    <line x1="444" y1="662" x2="756" y2="662" stroke="#EEF2F7" stroke-width="1"/>
+
+    <circle cx="458" cy="690" r="9" fill="#1F8FA6"/>
+    <polyline points="454.2,690.2 457,693.2 461.8,687" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="474" y="680" font-size="11.5" fill="#7A8AA3">Redis 61초 정지 중</text>
+    <text x="474" y="702" font-size="16.5" font-weight="700" fill="#12203A">6,668 요청</text>
+    <rect x="680" y="682" width="76" height="24" rx="12" fill="#DFEEF2"/>
+    <text x="718" y="699" font-size="12" font-weight="700" fill="#146A7C" text-anchor="middle">에러율 0%</text>
+    <line x1="444" y1="710" x2="756" y2="710" stroke="#EEF2F7" stroke-width="1"/>
+
+    <circle cx="458" cy="738" r="9" fill="#1F8FA6"/>
+    <g stroke="#FFFFFF" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="458" y1="733.5" x2="458" y2="742"/>
+      <polyline points="454.5,738.5 458,742.5 461.5,738.5"/>
+    </g>
+    <text x="474" y="728" font-size="11.5" fill="#7A8AA3">체결 중 시세 수신 지연</text>
+    <text x="474" y="750" font-size="16.5" font-weight="700" fill="#12203A">973ms → 2~6ms</text>
+
+    <path d="M422,774 H778 V824 A16,16 0 0 1 762,840 H438 A16,16 0 0 1 422,824 Z" fill="#F5F8FC"/>
+    <line x1="422" y1="774" x2="778" y2="774" stroke="#E7EDF5" stroke-width="1"/>
+    <circle cx="456" cy="806" r="10" fill="#1F8FA6"/>
+    <polyline points="451,806 454.5,810 461,802" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="474" y="800" font-size="12.5" font-weight="700" fill="#24344C">한계도 같이 쟀습니다<tspan x="474" dy="18" font-weight="400" fill="#4A5D78">500 VU에서 p95 54ms → 984ms</tspan></text>
+  </g>
+
+  <!-- ============ 카드 3 : 정합성 ============ -->
+  <g>
+    <rect x="804" y="176" width="356" height="664" rx="16" fill="#FFFFFF" stroke="#E4E9F1" stroke-width="1" filter="url(#cardShadow)"/>
+    <path d="M804,192 A16,16 0 0 1 820,176 H1144 A16,16 0 0 1 1160,192 Z" fill="#2C4670"/>
+
+    <circle cx="848" cy="218" r="17" fill="#2C4670"/>
+    <text x="848" y="224" font-size="17" font-weight="700" fill="#FFFFFF" text-anchor="middle">3</text>
+    <text x="878" y="214" font-size="19" font-weight="700" fill="#12203A">정합성 개선</text>
+    <text x="878" y="236" font-size="13" fill="#6B7C96">성능 테스트가 못 보는 결함</text>
+
+    <rect x="826" y="252" width="312" height="240" rx="14" fill="#EAEFF6"/>
+    <text x="848" y="288" font-size="11.5" fill="#6B7C96">요청 대비 결말 유출</text>
+    <text x="850" y="316" font-size="12" font-weight="700" fill="#12203A">현재 구조</text>
+    <text x="994" y="316" font-size="12" font-weight="700" fill="#12203A">되돌린 브랜치</text>
+    <circle cx="854" cy="336" r="4.5" fill="#1F8FA6"/>
+    <circle cx="868" cy="336" r="4.5" fill="#1F8FA6"/>
+    <circle cx="882" cy="336" r="4.5" fill="#1F8FA6"/>
+    <circle cx="896" cy="336" r="4.5" fill="#1F8FA6"/>
+    <circle cx="910" cy="336" r="4.5" fill="#1F8FA6"/>
+    <circle cx="924" cy="336" r="4.5" fill="#1F8FA6"/>
+    <circle cx="938" cy="336" r="4.5" fill="#1F8FA6"/>
+    <circle cx="952" cy="336" r="4.5" fill="#1F8FA6"/>
+    <circle cx="966" cy="336" r="4.5" fill="#1F8FA6"/>
+    <circle cx="854" cy="350" r="4.5" fill="#1F8FA6"/>
+    <circle cx="868" cy="350" r="4.5" fill="#1F8FA6"/>
+    <circle cx="882" cy="350" r="4.5" fill="#1F8FA6"/>
+    <circle cx="896" cy="350" r="4.5" fill="#1F8FA6"/>
+    <circle cx="910" cy="350" r="4.5" fill="#1F8FA6"/>
+    <circle cx="924" cy="350" r="4.5" fill="#1F8FA6"/>
+    <circle cx="938" cy="350" r="4.5" fill="#1F8FA6"/>
+    <circle cx="952" cy="350" r="4.5" fill="#1F8FA6"/>
+    <circle cx="966" cy="350" r="4.5" fill="#1F8FA6"/>
+    <circle cx="854" cy="364" r="4.5" fill="#1F8FA6"/>
+    <circle cx="868" cy="364" r="4.5" fill="#1F8FA6"/>
+    <circle cx="882" cy="364" r="4.5" fill="#1F8FA6"/>
+    <circle cx="896" cy="364" r="4.5" fill="#1F8FA6"/>
+    <circle cx="910" cy="364" r="4.5" fill="#1F8FA6"/>
+    <circle cx="924" cy="364" r="4.5" fill="#1F8FA6"/>
+    <circle cx="938" cy="364" r="4.5" fill="#1F8FA6"/>
+    <circle cx="952" cy="364" r="4.5" fill="#1F8FA6"/>
+    <circle cx="966" cy="364" r="4.5" fill="#1F8FA6"/>
+    <circle cx="854" cy="378" r="4.5" fill="#1F8FA6"/>
+    <circle cx="868" cy="378" r="4.5" fill="#1F8FA6"/>
+    <circle cx="882" cy="378" r="4.5" fill="#1F8FA6"/>
+    <circle cx="896" cy="378" r="4.5" fill="#1F8FA6"/>
+    <circle cx="910" cy="378" r="4.5" fill="#1F8FA6"/>
+    <circle cx="924" cy="378" r="4.5" fill="#1F8FA6"/>
+    <circle cx="938" cy="378" r="4.5" fill="#1F8FA6"/>
+    <circle cx="952" cy="378" r="4.5" fill="#1F8FA6"/>
+    <circle cx="966" cy="378" r="4.5" fill="#1F8FA6"/>
+    <circle cx="854" cy="392" r="4.5" fill="#1F8FA6"/>
+    <circle cx="868" cy="392" r="4.5" fill="#1F8FA6"/>
+    <circle cx="882" cy="392" r="4.5" fill="#1F8FA6"/>
+    <circle cx="896" cy="392" r="4.5" fill="#1F8FA6"/>
+    <circle cx="910" cy="392" r="4.5" fill="#1F8FA6"/>
+    <circle cx="924" cy="392" r="4.5" fill="#1F8FA6"/>
+    <circle cx="938" cy="392" r="4.5" fill="#1F8FA6"/>
+    <circle cx="952" cy="392" r="4.5" fill="#1F8FA6"/>
+    <circle cx="966" cy="392" r="4.5" fill="#1F8FA6"/>
+    <circle cx="854" cy="406" r="4.5" fill="#1F8FA6"/>
+    <circle cx="868" cy="406" r="4.5" fill="#1F8FA6"/>
+    <circle cx="882" cy="406" r="4.5" fill="#1F8FA6"/>
+    <circle cx="896" cy="406" r="4.5" fill="#1F8FA6"/>
+    <circle cx="910" cy="406" r="4.5" fill="#1F8FA6"/>
+    <circle cx="924" cy="406" r="4.5" fill="#1F8FA6"/>
+    <circle cx="938" cy="406" r="4.5" fill="#1F8FA6"/>
+    <circle cx="952" cy="406" r="4.5" fill="#1F8FA6"/>
+    <circle cx="966" cy="406" r="4.5" fill="#1F8FA6"/>
+    <circle cx="854" cy="420" r="4.5" fill="#1F8FA6"/>
+    <circle cx="868" cy="420" r="4.5" fill="#1F8FA6"/>
+    <circle cx="882" cy="420" r="4.5" fill="#1F8FA6"/>
+    <circle cx="896" cy="420" r="4.5" fill="#1F8FA6"/>
+    <circle cx="910" cy="420" r="4.5" fill="#1F8FA6"/>
+    <circle cx="924" cy="420" r="4.5" fill="#1F8FA6"/>
+    <circle cx="938" cy="420" r="4.5" fill="#1F8FA6"/>
+    <circle cx="952" cy="420" r="4.5" fill="#1F8FA6"/>
+    <circle cx="966" cy="420" r="4.5" fill="#1F8FA6"/>
+    <circle cx="854" cy="434" r="4.5" fill="#1F8FA6"/>
+    <circle cx="868" cy="434" r="4.5" fill="#1F8FA6"/>
+    <circle cx="882" cy="434" r="4.5" fill="#1F8FA6"/>
+    <circle cx="896" cy="434" r="4.5" fill="#1F8FA6"/>
+    <circle cx="910" cy="434" r="4.5" fill="#1F8FA6"/>
+    <circle cx="924" cy="434" r="4.5" fill="#1F8FA6"/>
+    <circle cx="938" cy="434" r="4.5" fill="#1F8FA6"/>
+    <circle cx="952" cy="434" r="4.5" fill="#1F8FA6"/>
+    <circle cx="966" cy="434" r="4.5" fill="#1F8FA6"/>
+    <circle cx="854" cy="448" r="4.5" fill="#1F8FA6"/>
+    <circle cx="868" cy="448" r="4.5" fill="#1F8FA6"/>
+    <circle cx="882" cy="448" r="4.5" fill="#1F8FA6"/>
+    <circle cx="896" cy="448" r="4.5" fill="#1F8FA6"/>
+    <circle cx="910" cy="448" r="4.5" fill="#1F8FA6"/>
+    <circle cx="924" cy="448" r="4.5" fill="#1F8FA6"/>
+    <circle cx="938" cy="448" r="4.5" fill="#1F8FA6"/>
+    <circle cx="952" cy="448" r="4.5" fill="#1F8FA6"/>
+    <circle cx="966" cy="448" r="4.5" fill="#1F8FA6"/>
+    <circle cx="854" cy="462" r="4.5" fill="#1F8FA6"/>
+    <circle cx="868" cy="462" r="4.5" fill="#1F8FA6"/>
+    <circle cx="882" cy="462" r="4.5" fill="#1F8FA6"/>
+    <circle cx="896" cy="462" r="4.5" fill="#1F8FA6"/>
+    <circle cx="910" cy="462" r="4.5" fill="#1F8FA6"/>
+    <circle cx="924" cy="462" r="4.5" fill="#1F8FA6"/>
+    <circle cx="938" cy="462" r="4.5" fill="#1F8FA6"/>
+    <circle cx="952" cy="462" r="4.5" fill="#1F8FA6"/>
+    <circle cx="966" cy="462" r="4.5" fill="#1F8FA6"/>
+    <circle cx="998" cy="336" r="4.5" fill="#C0453A"/>
+    <circle cx="1012" cy="336" r="4.5" fill="#C0453A"/>
+    <circle cx="1026" cy="336" r="4.5" fill="#C0453A"/>
+    <circle cx="1040" cy="336" r="4.5" fill="#C0453A"/>
+    <circle cx="1054" cy="336" r="4.5" fill="#C0453A"/>
+    <circle cx="1068" cy="336" r="4.5" fill="#C0453A"/>
+    <circle cx="1082" cy="336" r="4.5" fill="#C0453A"/>
+    <circle cx="1096" cy="336" r="4.5" fill="#C0453A"/>
+    <circle cx="1110" cy="336" r="4.5" fill="#C0453A"/>
+    <circle cx="998" cy="350" r="4.5" fill="#C0453A"/>
+    <circle cx="1012" cy="350" r="4.5" fill="#C0453A"/>
+    <circle cx="1026" cy="350" r="4.5" fill="#C0453A"/>
+    <circle cx="1040" cy="350" r="4.5" fill="#C0453A"/>
+    <circle cx="1054" cy="350" r="4.5" fill="#C0453A"/>
+    <circle cx="1068" cy="350" r="4.5" fill="#C0453A"/>
+    <circle cx="1082" cy="350" r="4.5" fill="#C0453A"/>
+    <circle cx="1096" cy="350" r="4.5" fill="#C0453A"/>
+    <circle cx="1110" cy="350" r="4.5" fill="#C0453A"/>
+    <circle cx="998" cy="364" r="4.5" fill="#C0453A"/>
+    <circle cx="1012" cy="364" r="4.5" fill="#C0453A"/>
+    <circle cx="1026" cy="364" r="4.5" fill="#C0453A"/>
+    <circle cx="1040" cy="364" r="4.5" fill="#C0453A"/>
+    <circle cx="1054" cy="364" r="4.5" fill="#C0453A"/>
+    <circle cx="1068" cy="364" r="4.5" fill="#C0453A"/>
+    <circle cx="1082" cy="364" r="4.5" fill="#C0453A"/>
+    <circle cx="1096" cy="364" r="4.5" fill="#C0453A"/>
+    <circle cx="1110" cy="364" r="4.5" fill="#C0453A"/>
+    <circle cx="998" cy="378" r="4.5" fill="#C0453A"/>
+    <circle cx="1012" cy="378" r="4.5" fill="#C0453A"/>
+    <circle cx="1026" cy="378" r="4.5" fill="#C0453A"/>
+    <circle cx="1040" cy="378" r="4.5" fill="#C0453A"/>
+    <circle cx="1054" cy="378" r="4.5" fill="#C0453A"/>
+    <circle cx="1068" cy="378" r="4.5" fill="#C0453A"/>
+    <circle cx="1082" cy="378" r="4.5" fill="#C0453A"/>
+    <circle cx="1096" cy="378" r="4.5" fill="#C0453A"/>
+    <circle cx="1110" cy="378" r="4.5" fill="#C0453A"/>
+    <circle cx="998" cy="392" r="4.5" fill="#C0453A"/>
+    <circle cx="1012" cy="392" r="4.5" fill="#C0453A"/>
+    <circle cx="1026" cy="392" r="4.5" fill="#C0453A"/>
+    <circle cx="1040" cy="392" r="4.5" fill="#C0453A"/>
+    <circle cx="1054" cy="392" r="4.5" fill="#C0453A"/>
+    <circle cx="1068" cy="392" r="4.5" fill="#C0453A"/>
+    <circle cx="1082" cy="392" r="4.5" fill="#C0453A"/>
+    <circle cx="1096" cy="392" r="4.5" fill="#C0453A"/>
+    <circle cx="1110" cy="392" r="4.5" fill="#C0453A"/>
+    <circle cx="998" cy="406" r="4.5" fill="#C0453A"/>
+    <circle cx="1012" cy="406" r="4.5" fill="#C0453A"/>
+    <circle cx="1026" cy="406" r="4.5" fill="#C0453A"/>
+    <circle cx="1040" cy="406" r="4.5" fill="#C0453A"/>
+    <circle cx="1054" cy="406" r="4.5" fill="#C0453A"/>
+    <circle cx="1068" cy="406" r="4.5" fill="#C0453A"/>
+    <circle cx="1082" cy="406" r="4.5" fill="#C0453A"/>
+    <circle cx="1096" cy="406" r="4.5" fill="#C0453A"/>
+    <circle cx="1110" cy="406" r="4.5" fill="#C0453A"/>
+    <circle cx="998" cy="420" r="4.5" fill="#C0453A"/>
+    <circle cx="1012" cy="420" r="4.5" fill="#C0453A"/>
+    <circle cx="1026" cy="420" r="4.5" fill="#C0453A"/>
+    <circle cx="1040" cy="420" r="4.5" fill="#C0453A"/>
+    <circle cx="1054" cy="420" r="4.5" fill="#C0453A"/>
+    <circle cx="1068" cy="420" r="4.5" fill="#C0453A"/>
+    <circle cx="1082" cy="420" r="4.5" fill="#C0453A"/>
+    <circle cx="1096" cy="420" r="4.5" fill="#C0453A"/>
+    <circle cx="1110" cy="420" r="4.5" fill="#C0453A"/>
+    <circle cx="998" cy="434" r="4.5" fill="#C0453A"/>
+    <circle cx="1012" cy="434" r="4.5" fill="#C0453A"/>
+    <circle cx="1026" cy="434" r="4.5" fill="#C0453A"/>
+    <circle cx="1040" cy="434" r="4.5" fill="#C0453A"/>
+    <circle cx="1054" cy="434" r="4.5" fill="#C0453A"/>
+    <circle cx="1068" cy="434" r="4.5" fill="#C0453A"/>
+    <circle cx="1082" cy="434" r="4.5" fill="#C0453A"/>
+    <circle cx="1096" cy="434" r="4.5" fill="#C0453A"/>
+    <circle cx="1110" cy="434" r="4.5" fill="#C0453A"/>
+    <circle cx="998" cy="448" r="4.5" fill="#C0453A"/>
+    <circle cx="1012" cy="448" r="4.5" fill="#C0453A"/>
+    <circle cx="1026" cy="448" r="4.5" fill="#C0453A"/>
+    <circle cx="1040" cy="448" r="4.5" fill="#C0453A"/>
+    <circle cx="1054" cy="448" r="4.5" fill="#C0453A"/>
+    <circle cx="1068" cy="448" r="4.5" fill="#C0453A"/>
+    <circle cx="1082" cy="448" r="4.5" fill="#C0453A"/>
+    <circle cx="1096" cy="448" r="4.5" fill="#C0453A"/>
+    <circle cx="1110" cy="448" r="4.5" fill="#C0453A"/>
+    <circle cx="998" cy="462" r="4.5" fill="#C0453A"/>
+    <circle cx="1012" cy="462" r="4.5" fill="#C0453A"/>
+    <circle cx="1026" cy="462" r="4.5" fill="#C0453A"/>
+    <circle cx="1040" cy="462" r="4.5" fill="#C0453A"/>
+    <circle cx="1054" cy="462" r="4.5" fill="#C0453A"/>
+    <circle cx="1068" cy="462" r="4.5" fill="#C0453A"/>
+    <circle cx="1082" cy="462" r="4.5" fill="#C0453A"/>
+    <circle cx="1096" cy="462" r="4.5" fill="#C0453A"/>
+    <circle cx="1110" cy="462" r="4.5" fill="#C0453A"/>
+
+    <rect x="826" y="509" width="42" height="22" rx="7" fill="#E7ECF3"/>
+    <text x="847" y="524.5" font-size="12.5" font-weight="700" fill="#4A5D78" text-anchor="middle">문제</text>
+    <text x="878" y="523" font-size="12.5" fill="#33465F">요약 한 문장이 그날 결말을<tspan x="878" dy="18">미리 알려주고 있었습니다</tspan></text>
+
+    <rect x="826" y="555" width="42" height="22" rx="7" fill="#E4EAF4"/>
+    <text x="847" y="570.5" font-size="12.5" font-weight="700" fill="#2C4670" text-anchor="middle">개선</text>
+    <text x="878" y="569" font-size="12.5" fill="#33465F">요약을 시간 범위로 나누고<tspan x="878" dy="18">캐시 키에 그 범위를 넣었습니다</tspan></text>
+
+    <line x1="826" y1="606" x2="1138" y2="606" stroke="#E3E9F1" stroke-width="1.5"/>
+
+    <circle cx="840" cy="642" r="9" fill="#2C4670"/>
+    <polyline points="836.2,642.2 839,645.2 843.8,639" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="856" y="632" font-size="11.5" fill="#7A8AA3">현재 구조</text>
+    <text x="856" y="654" font-size="16.5" font-weight="700" fill="#12203A">8,609 요청</text>
+    <rect x="1069" y="634" width="69" height="24" rx="12" fill="#DFEEF2"/>
+    <text x="1103.5" y="651" font-size="12" font-weight="700" fill="#146A7C" text-anchor="middle">유출 0건</text>
+    <line x1="826" y1="662" x2="1138" y2="662" stroke="#EEF2F7" stroke-width="1"/>
+
+    <circle cx="840" cy="690" r="9" fill="#E8A33D"/>
+    <line x1="840" y1="685" x2="840" y2="691" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round"/>
+    <circle cx="840" cy="694.5" r="1.3" fill="#FFFFFF"/>
+    <text x="856" y="680" font-size="11.5" fill="#7A8AA3">되돌린 브랜치</text>
+    <text x="856" y="702" font-size="16.5" font-weight="700" fill="#12203A">8,547건</text>
+    <rect x="1064" y="682" width="74" height="24" rx="12" fill="#FBEEDA"/>
+    <text x="1101" y="699" font-size="12" font-weight="700" fill="#B0761E" text-anchor="middle">전량 유출</text>
+    <line x1="826" y1="710" x2="1138" y2="710" stroke="#EEF2F7" stroke-width="1"/>
+
+    <circle cx="840" cy="738" r="9" fill="#2C4670"/>
+    <polyline points="836.2,738.2 839,741.2 843.8,735" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="856" y="728" font-size="11.5" fill="#7A8AA3">튜토리얼 성과 격리</text>
+    <text x="856" y="750" font-size="16.5" font-weight="700" fill="#12203A">4개 응답</text>
+    <rect x="1069" y="730" width="69" height="24" rx="12" fill="#DFEEF2"/>
+    <text x="1103.5" y="747" font-size="12" font-weight="700" fill="#146A7C" text-anchor="middle">오염 0건</text>
+
+    <path d="M804,774 H1160 V824 A16,16 0 0 1 1144,840 H820 A16,16 0 0 1 804,824 Z" fill="#F5F8FC"/>
+    <line x1="804" y1="774" x2="1160" y2="774" stroke="#E7EDF5" stroke-width="1"/>
+    <circle cx="838" cy="806" r="10" fill="#2C4670"/>
+    <polyline points="833,806 836.5,810 843,802" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="856" y="800" font-size="12.5" font-weight="700" fill="#24344C">그 브랜치도 p95 85.1ms · 에러율 0%로<tspan x="856" dy="18" font-weight="400" fill="#4A5D78">성능 임계는 통과했습니다</tspan></text>
+  </g>
+
+  <!-- ============ 요약 배너 ============ -->
+  <rect x="40" y="870" width="1120" height="120" rx="18" fill="url(#bannerGrad)"/>
+
+  <!-- 표적에 꽂힌 화살 -->
+  <circle cx="110" cy="928" r="42" fill="none" stroke="#3E5A85" stroke-width="4"/>
+  <circle cx="110" cy="928" r="28" fill="none" stroke="#5A7AA8" stroke-width="4"/>
+  <circle cx="110" cy="928" r="14" fill="#E8A33D"/>
+  <line x1="121" y1="919" x2="160" y2="880" stroke="#F0F3F8" stroke-width="4" stroke-linecap="round"/>
+  <polygon points="110,928 126.3,921.7 116.3,911.7" fill="#F0F3F8"/>
+  <polygon points="160,880 148,878 154,884" fill="#F0F3F8"/>
+  <polygon points="160,880 162,892 156,886" fill="#F0F3F8"/>
+
+  <text x="200" y="928" font-size="27" font-weight="700" fill="#FFFFFF">덜 부르고 · 오래 견디고 · 틀리지 않게</text>
+  <text x="200" y="956" font-size="15" fill="#A9BBD4">성능 · 신뢰성 · 정합성을 각각 수치로 확인했습니다</text>
+
+  <!-- 미니 아이콘 3종 -->
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M932,928 A18,18 0 0 1 968,928" stroke="#8FA6C4" stroke-width="3"/>
+    <line x1="950" y1="928" x2="963" y2="917" stroke="#E8A33D" stroke-width="3"/>
+    <path d="M1040,902 L1058,910 L1058,924 Q1058,936 1040,943 Q1022,936 1022,924 L1022,910 Z" stroke="#8FA6C4" stroke-width="3"/>
+    <polyline points="1032,921 1038,928 1050,914" stroke="#1F8FA6" stroke-width="3"/>
+    <circle cx="1126" cy="916" r="14" stroke="#8FA6C4" stroke-width="3"/>
+    <line x1="1136" y1="926" x2="1146" y2="936" stroke="#8FA6C4" stroke-width="3"/>
+    <line x1="1120" y1="918" x2="1120" y2="910" stroke="#E8A33D" stroke-width="3"/>
+    <line x1="1127" y1="918" x2="1127" y2="906" stroke="#E8A33D" stroke-width="3"/>
+    <line x1="1134" y1="918" x2="1134" y2="913" stroke="#E8A33D" stroke-width="3"/>
+  </g>
+  <circle cx="950" cy="928" r="3.5" fill="#8FA6C4"/>
+  <text x="950" y="964" font-size="12" font-weight="700" fill="#C4D2E5" text-anchor="middle">성능</text>
+  <text x="1040" y="964" font-size="12" font-weight="700" fill="#C4D2E5" text-anchor="middle">신뢰성</text>
+  <text x="1130" y="964" font-size="12" font-weight="700" fill="#C4D2E5" text-anchor="middle">정합성</text>
+</svg>
