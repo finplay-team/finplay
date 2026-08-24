@@ -71,6 +71,13 @@ public class AccountService {
 			.orElseThrow(() -> new IllegalStateException("체결 대상 계좌를 찾을 수 없습니다. accountId=" + accountId));
 	}
 
+	// 지정가 체결 청크가 필요로 하는 계좌 전체를 한 번에 잠근다(054-limit-order-fill-bulk-lock 호출부:
+	// LimitOrderFillService.fillBatch). 다른 도메인 서비스가 AccountRepository를 직접 주입하지 않게 한다(ADR-0002).
+	@Transactional
+	public List<Account> getAccountsByIdsForUpdate(List<Long> accountIds) {
+		return accountRepository.findByIdInForUpdate(accountIds);
+	}
+
 	// 랭킹 점수 갱신(RankingService.refreshScore)이 존재하지 않을 수도 있는 accountId를 조회할 때 쓴다.
 	@Transactional(readOnly = true)
 	public Optional<Account> findByIdOrEmpty(Long accountId) {

@@ -325,4 +325,25 @@ class AccountServiceTest {
 			.isInstanceOf(BusinessException.class)
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode()).isEqualTo(ErrorCode.NOT_FOUND));
 	}
+
+	@Test
+	void getAccountsByIdsForUpdateDelegatesToRepositoryBulkLockQuery() {
+		// 054-limit-order-fill-bulk-lock: LimitOrderFillService.fillBatch가 AccountRepository를 직접 주입하지
+		// 않고 이 래퍼만 거치도록 강제하는 ADR-0002 준수용 위임 메서드다 — 별도 가공 없이 그대로 위임하는지만 본다.
+		AccountRepository accountRepository = mock(AccountRepository.class);
+		HoldingValuationService holdingValuationService = mock(HoldingValuationService.class);
+		Clock fixedClock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
+		AccountService accountService = new AccountService(accountRepository, holdingValuationService, fixedClock);
+		User user = User.create("user@finplay.com", "password-hash", "finplayer",
+			LocalDateTime.ofInstant(FIXED_INSTANT, ZoneOffset.UTC));
+		Account account = Account.create(user, Market.STOCK,
+			LocalDateTime.ofInstant(FIXED_INSTANT, ZoneOffset.UTC));
+		List<Long> requestedIds = List.of(10L, 20L);
+		when(accountRepository.findByIdInForUpdate(requestedIds)).thenReturn(List.of(account));
+
+		List<Account> result = accountService.getAccountsByIdsForUpdate(requestedIds);
+
+		assertThat(result).containsExactly(account);
+		verify(accountRepository).findByIdInForUpdate(requestedIds);
+	}
 }

@@ -40,4 +40,13 @@ public interface HoldingRepository extends JpaRepository<Holding, Long> {
 	Optional<Holding> findByAccountIdAndInstrumentIdForUpdate(@Param("accountId")
 	Long accountId, @Param("instrumentId")
 	Long instrumentId);
+
+	// 청크가 참조하는 계좌 목록 + 청크가 공유하는 단일 종목으로 "이미 존재하는" holding만 한 번에 잠근다
+	// (054-limit-order-fill-bulk-lock). 신규 생성(첫 매수) 대상은 이 쿼리에 나타나지 않는다 — 호출부가 인메모리
+	// 맵으로 별도 처리한다. ID 오름차순은 방어적 고정이다(청크가 항상 단일 종목이라 실제 충돌 대상은 없다).
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("SELECT h FROM Holding h WHERE h.account.id IN :accountIds AND h.instrument.id = :instrumentId ORDER BY h.id ASC")
+	List<Holding> findByAccountIdInAndInstrumentIdForUpdate(@Param("accountIds")
+	List<Long> accountIds, @Param("instrumentId")
+	Long instrumentId);
 }

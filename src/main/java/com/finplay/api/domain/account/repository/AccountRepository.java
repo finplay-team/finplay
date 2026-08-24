@@ -41,4 +41,12 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
 	@Query("SELECT a FROM Account a WHERE a.id = :id")
 	Optional<Account> findByIdForUpdate(@Param("id")
 	Long id);
+
+	// 청크가 필요로 하는 계좌 전체를 한 번에 잠근다(054-limit-order-fill-bulk-lock). 계좌 ID 오름차순 고정이
+	// 필수다 — Account는 종목에 묶이지 않으므로(한 계좌가 여러 종목을 보유), 서로 다른 종목의 청크(=서로 다른
+	// 파티션 워커)가 같은 계좌를 동시에 필요로 할 수 있다. 정렬 없이 잠그면 ABBA 데드락 위험이 있다.
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("SELECT a FROM Account a WHERE a.id IN :ids ORDER BY a.id ASC")
+	List<Account> findByIdInForUpdate(@Param("ids")
+	List<Long> ids);
 }

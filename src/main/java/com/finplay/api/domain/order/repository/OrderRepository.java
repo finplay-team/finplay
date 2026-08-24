@@ -126,4 +126,12 @@ public interface OrderRepository extends JpaRepository<Order, Long>, OrderReposi
 		Long attemptId,
 		@Param("runNumber")
 		long runNumber);
+
+	// 청크 전체를 한 번에 잠근다(054-limit-order-fill-bulk-lock). ID 오름차순으로 반환해 서로 다른 종목의
+	// 청크(=서로 다른 파티션 워커)가 겹치는 자원을 다른 순서로 잠그는 상황을 예방한다. 존재하지 않는 ID는
+	// 결과 집합에서 조용히 빠진다(findByIdForUpdate와 달리 그 자리에서 예외를 던지지 않는다).
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("SELECT o FROM Order o WHERE o.id IN :ids ORDER BY o.id ASC")
+	List<Order> findByIdInForUpdate(@Param("ids")
+	List<Long> ids);
 }

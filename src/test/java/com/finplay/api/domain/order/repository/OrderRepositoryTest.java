@@ -637,4 +637,29 @@ class OrderRepositoryTest {
 				tuple(cancelled.getId(), com.finplay.api.domain.order.entity.OrderStatus.CANCELLED),
 				tuple(filled.getId(), com.finplay.api.domain.order.entity.OrderStatus.FILLED));
 	}
+
+	@Test
+	@DisplayName("054-limit-order-fill-bulk-lock: 벌크 락 조회는 입력 순서와 무관하게 ID 오름차순으로 반환한다")
+	void findByIdInForUpdateReturnsOrdersInAscendingIdOrderRegardlessOfInputOrder() {
+		Order first = createOrder(owner, ownerAccount, NOW);
+		Order second = createOrder(owner, ownerAccount, NOW.plusMinutes(1));
+		Order third = createOrder(owner, ownerAccount, NOW.plusMinutes(2));
+
+		List<Order> result = orderRepository
+			.findByIdInForUpdate(List.of(third.getId(), first.getId(), second.getId()));
+
+		assertThat(result).extracting(Order::getId)
+			.containsExactly(first.getId(), second.getId(), third.getId());
+	}
+
+	@Test
+	@DisplayName("054-limit-order-fill-bulk-lock: 존재하지 않는 ID는 예외 없이 결과에서 조용히 빠진다")
+	void findByIdInForUpdateSilentlyDropsNonExistentIds() {
+		Order existing = createOrder(owner, ownerAccount, NOW);
+
+		List<Order> result = orderRepository.findByIdInForUpdate(List.of(existing.getId(), 999_999L));
+
+		assertThat(result).extracting(Order::getId).containsExactly(existing.getId());
+	}
+
 }

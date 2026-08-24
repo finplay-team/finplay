@@ -220,4 +220,43 @@ class HoldingRepositoryTest {
 
 		assertThat(result).isEmpty();
 	}
+
+	@Test
+	@DisplayName("054-limit-order-fill-bulk-lock: 계좌 목록 벌크 락 조회는 입력 순서와 무관하게 holding ID 오름차순으로 반환한다")
+	void findByAccountIdInAndInstrumentIdForUpdateReturnsHoldingsInAscendingIdOrder() {
+		User other = userRepository.saveAndFlush(
+			User.create("holding-bulk-other@finplay.com", "hash", "bulkother", NOW));
+		Account otherAccount = accountRepository.saveAndFlush(Account.create(other, Market.STOCK, NOW));
+
+		Holding ownerHolding = Holding.create(ownerAccount, instrument, NOW);
+		ownerHolding.applyBuy(BigDecimal.TEN, new BigDecimal("50000"), NOW);
+		holdingRepository.saveAndFlush(ownerHolding);
+
+		Holding otherHolding = Holding.create(otherAccount, instrument, NOW);
+		otherHolding.applyBuy(BigDecimal.TEN, new BigDecimal("50000"), NOW);
+		holdingRepository.saveAndFlush(otherHolding);
+
+		List<Holding> result = holdingRepository.findByAccountIdInAndInstrumentIdForUpdate(
+			List.of(otherAccount.getId(), ownerAccount.getId()), instrument.getId());
+
+		assertThat(result).extracting(Holding::getId)
+			.containsExactly(ownerHolding.getId(), otherHolding.getId());
+	}
+
+	@Test
+	@DisplayName("054-limit-order-fill-bulk-lock: 계좌 목록에 보유가 없는 계좌가 섞여 있어도 예외 없이 조용히 빠진다")
+	void findByAccountIdInAndInstrumentIdForUpdateSilentlyDropsAccountsWithoutHolding() {
+		User other = userRepository.saveAndFlush(
+			User.create("holding-bulk-empty@finplay.com", "hash", "bulkempty", NOW));
+		Account otherAccount = accountRepository.saveAndFlush(Account.create(other, Market.STOCK, NOW));
+
+		Holding ownerHolding = Holding.create(ownerAccount, instrument, NOW);
+		ownerHolding.applyBuy(BigDecimal.TEN, new BigDecimal("50000"), NOW);
+		holdingRepository.saveAndFlush(ownerHolding);
+
+		List<Holding> result = holdingRepository.findByAccountIdInAndInstrumentIdForUpdate(
+			List.of(ownerAccount.getId(), otherAccount.getId()), instrument.getId());
+
+		assertThat(result).extracting(Holding::getId).containsExactly(ownerHolding.getId());
+	}
 }

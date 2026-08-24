@@ -4,6 +4,7 @@ package com.finplay.api.domain.order.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
@@ -324,14 +325,16 @@ class LimitOrderFillServiceTest {
 		verifyNoInteractions(tradeRepository, portfolioBuyService, portfolioSellService, eventPublisher);
 	}
 
-	// ADR-0025 — fillBatch(List<Long>)는 청크 안 각 주문에 fillIfPending과 동일한 체결 로직(fillOnePending)을
-	// 순서대로 적용한다. 단위 테스트에서는 목만으로 검증 가능한 "순서대로 처리한다"만 본다 — 청크 원자적
-	// 롤백(한 건 실패 시 전체 롤백)은 실제 DB 커밋이 필요해 LimitOrderFillBatchAtomicityIntegrationTest가 맡는다.
+	// ADR-0025 — fillBatch(List<Long>)는 청크 안 각 주문에 fillIfPending과 동일한 체결 로직을 순서대로
+	// 적용한다. 054-limit-order-fill-bulk-lock부터는 order→account→holding을 개별 왕복이 아니라 벌크 FOR
+	// UPDATE 조회로 묶으므로, 여기서는 벌크 조회 3종(findByIdInForUpdate·getAccountsByIdsForUpdate·
+	// findExistingHoldingsForChunkUpdate)을 스텁한다. 청크 원자적 롤백(한 건 실패 시 전체 롤백)은 실제 DB 커밋이 필요해
+	// LimitOrderFillBatchAtomicityIntegrationTest가 맡는다.
 	@Test
 	void fillBatchFillsEachOrderInGivenOrder() {
 		// account()는 항상 id=10L을 부여하므로(테스트 헬퍼 관례), 두 주문에 서로 다른 Account 인스턴스를 쓰면
-		// getAccountByIdForUpdate(10L) 스텁이 나중 것으로 덮어써져 첫 주문도 두 번째 계좌를 참조하게 된다 —
-		// 하나의 계좌를 공유하고 두 주문의 예약 합계를 누적해서 이 문제를 피한다.
+		// getAccountsByIdsForUpdate(List.of(10L)) 스텁이 나중 것으로 덮어써져 첫 주문도 두 번째 계좌를 참조하게
+		// 된다 — 하나의 계좌를 공유하고 두 주문의 예약 합계를 누적해서 이 문제를 피한다.
 		Instrument instrument = cryptoInstrument();
 		Account account = account();
 		Order first = limitPendingOrder(account, instrument, OrderSide.BUY, "0.1", "1000000");
@@ -339,32 +342,175 @@ class LimitOrderFillServiceTest {
 		ReflectionTestUtils.setField(first, "id", 101L);
 		ReflectionTestUtils.setField(second, "id", 102L);
 		account.reserveCash(100_050L + 200_100L);
-		when(orderRepository.findByIdForUpdate(101L)).thenReturn(Optional.of(first));
-		when(orderRepository.findByIdForUpdate(102L)).thenReturn(Optional.of(second));
-		when(accountService.getAccountByIdForUpdate(account.getId())).thenReturn(account);
+		when(orderRepository.findByIdInForUpdate(List.of(101L, 102L))).thenReturn(List.of(first, second));
+		when(accountService.getAccountsByIdsForUpdate(List.of(10L))).thenReturn(List.of(account));
+		when(portfolioBuyService.findExistingHoldingsForChunkUpdate(List.of(10L), instrument.getId()))
+			.thenReturn(List.of());
+		when(portfolioBuyService.applyBuyTrade(
+			eq(account), eq(instrument), any(Trade.class), any(BigDecimal.class), eq(new BigDecimal("1000000")),
+			anyLong(), eq(NOW), any(Holding.class)))
+			.thenAnswer(invocation -> invocation.getArgument(7));
 
 		service.fillBatch(List.of(101L, 102L));
 
-		InOrder order = inOrder(orderRepository);
-		order.verify(orderRepository).findByIdForUpdate(101L);
-		order.verify(orderRepository).findByIdForUpdate(102L);
 		assertThat(first.getStatus()).isEqualTo(OrderStatus.FILLED);
 		assertThat(second.getStatus()).isEqualTo(OrderStatus.FILLED);
 	}
 
 	@Test
 	void fillBatchSkipsOrderThatIsNoLongerPending() {
+		// PENDING이 아닌 주문만 있는 청크는 계좌·holding 벌크 조회 자체를 생략한다(fillBatch의
+		// pendingOrders.isEmpty() 분기) — account·holding 관련 협력자를 전혀 건드리지 않아야 한다.
 		Instrument instrument = cryptoInstrument();
 		Account account = account();
 		Order alreadyFilled = limitPendingOrder(account, instrument, OrderSide.BUY, "0.1", "1000000");
 		alreadyFilled.markFilled();
 		ReflectionTestUtils.setField(alreadyFilled, "id", 103L);
-		when(orderRepository.findByIdForUpdate(103L)).thenReturn(Optional.of(alreadyFilled));
+		when(orderRepository.findByIdInForUpdate(List.of(103L))).thenReturn(List.of(alreadyFilled));
 
 		service.fillBatch(List.of(103L));
 
-		verify(accountService, never()).getAccountByIdForUpdate(any());
+		verify(accountService, never()).getAccountsByIdsForUpdate(any());
 		verifyNoInteractions(tradeRepository, portfolioBuyService, portfolioSellService, eventPublisher);
+	}
+
+	@Test
+	void fillBatchLocksBulkResourcesInOrderAccountHoldingSequence() {
+		// plan.md "4": 벌크 락은 order→account→holding 순서로 걸려야 한다(위험 요소 1·3). 각 단계는 AccountService·
+		// PortfolioBuyService만 거쳐 호출한다(ADR-0002 — LimitOrderFillService가 AccountRepository·
+		// HoldingRepository를 직접 주입하지 않는다).
+		Instrument instrument = cryptoInstrument();
+		Account account = account();
+		account.reserveCash(100_050L);
+		Order order = limitPendingOrder(account, instrument, OrderSide.BUY, "0.1", "1000000");
+		ReflectionTestUtils.setField(order, "id", 101L);
+		when(orderRepository.findByIdInForUpdate(List.of(101L))).thenReturn(List.of(order));
+		when(accountService.getAccountsByIdsForUpdate(List.of(10L))).thenReturn(List.of(account));
+		when(portfolioBuyService.findExistingHoldingsForChunkUpdate(List.of(10L), instrument.getId()))
+			.thenReturn(List.of());
+		when(portfolioBuyService.applyBuyTrade(
+			eq(account), eq(instrument), any(Trade.class), eq(new BigDecimal("0.1")), eq(new BigDecimal("1000000")),
+			eq(50L), eq(NOW), any(Holding.class)))
+			.thenAnswer(invocation -> invocation.getArgument(7));
+
+		service.fillBatch(List.of(101L));
+
+		InOrder bulkLockOrder = inOrder(orderRepository, accountService, portfolioBuyService);
+		bulkLockOrder.verify(orderRepository).findByIdInForUpdate(List.of(101L));
+		bulkLockOrder.verify(accountService).getAccountsByIdsForUpdate(List.of(10L));
+		bulkLockOrder.verify(portfolioBuyService).findExistingHoldingsForChunkUpdate(List.of(10L), instrument.getId());
+		assertThat(order.getStatus()).isEqualTo(OrderStatus.FILLED);
+	}
+
+	@Test
+	@SuppressWarnings("unchecked")
+	void fillBatchLocksOrderIdsAscendingButProcessesGivenSequenceAndReusesHoldingCreatedInSameChunk() {
+		// spec.md 비즈니스 규칙: 벌크 락을 위한 ID 오름차순 정렬은 잠그는 쿼리에만 적용되고, 실제 체결 처리
+		// 순서는 fillBatch에 전달된 원래 순서(requestedAt asc, id asc, LMT-002 계약)를 그대로 따라야 한다.
+		// 또한 같은 청크·같은 계좌·같은 신규 종목에 매수가 2건 걸려 있으면(위험 요소 2) 먼저 처리된 주문이 만든
+		// holding을 나중 주문이 재사용해야 한다(두 번째 Holding.create + INSERT가 없어야 uk_holdings_account_
+		// instrument 위반을 피한다).
+		Instrument instrument = cryptoInstrument();
+		Account account = account();
+		account.reserveCash(200_100L + 100_050L);
+		Order order101 = limitPendingOrder(account, instrument, OrderSide.BUY, "0.1", "1000000");
+		ReflectionTestUtils.setField(order101, "id", 101L);
+		Order order102 = limitPendingOrder(account, instrument, OrderSide.BUY, "0.2", "1000000");
+		ReflectionTestUtils.setField(order102, "id", 102L);
+		when(orderRepository.findByIdInForUpdate(List.of(101L, 102L))).thenReturn(List.of(order101, order102));
+		when(accountService.getAccountsByIdsForUpdate(List.of(10L))).thenReturn(List.of(account));
+		when(portfolioBuyService.findExistingHoldingsForChunkUpdate(List.of(10L), instrument.getId()))
+			.thenReturn(List.of());
+		// 실제 PortfolioBuyService.applyBuyTrade(..., holding)처럼 넘겨받은 holding 인스턴스를 그대로
+		// 반환한다(저장 시뮬레이션) — 맵 재사용 여부를 인스턴스 동일성으로 검증할 수 있게 한다.
+		when(portfolioBuyService.applyBuyTrade(
+			eq(account), eq(instrument), any(Trade.class), any(BigDecimal.class), eq(new BigDecimal("1000000")),
+			anyLong(), eq(NOW), any(Holding.class)))
+			.thenAnswer(invocation -> invocation.getArgument(7));
+
+		// 처리 순서를 102 → 101로 뒤집어 전달한다 — 락 쿼리의 오름차순 정렬과 처리 순서가 다르다는 것을
+		// 드러내기 위해서다.
+		service.fillBatch(List.of(102L, 101L));
+
+		ArgumentCaptor<List<Long>> lockIdsCaptor = ArgumentCaptor.forClass(List.class);
+		verify(orderRepository).findByIdInForUpdate(lockIdsCaptor.capture());
+		assertThat(lockIdsCaptor.getValue()).containsExactly(101L, 102L); // 락 쿼리는 항상 ID 오름차순
+
+		ArgumentCaptor<Trade> tradeCaptor = ArgumentCaptor.forClass(Trade.class);
+		verify(tradeRepository, org.mockito.Mockito.times(2)).save(tradeCaptor.capture());
+		List<Trade> savedTrades = tradeCaptor.getAllValues();
+		assertThat(savedTrades.get(0).getQuantity()).isEqualByComparingTo("0.2"); // 102가 먼저 체결(처리 순서 보존)
+		assertThat(savedTrades.get(1).getQuantity()).isEqualByComparingTo("0.1"); // 101이 나중 체결
+
+		ArgumentCaptor<Holding> holdingCaptor = ArgumentCaptor.forClass(Holding.class);
+		verify(portfolioBuyService, org.mockito.Mockito.times(2)).applyBuyTrade(
+			eq(account), eq(instrument), any(Trade.class), any(BigDecimal.class), eq(new BigDecimal("1000000")),
+			anyLong(), eq(NOW), holdingCaptor.capture());
+		List<Holding> holdingsPassedIn = holdingCaptor.getAllValues();
+		assertThat(holdingsPassedIn.get(1)).isSameAs(holdingsPassedIn.get(0)); // 두 번째 호출이 첫 호출의 holding을 재사용
+
+		assertThat(order101.getStatus()).isEqualTo(OrderStatus.FILLED);
+		assertThat(order102.getStatus()).isEqualTo(OrderStatus.FILLED);
+	}
+
+	@Test
+	void fillBatchThrowsSameMessageAsFindByIdForUpdateWhenBulkOrderLockOmitsRequestedId() {
+		// spec.md 비즈니스 규칙: 벌크 조회가 조용히 빠뜨린 존재하지 않는 orderId는 처리 루프가 직접 예외를
+		// 던져야 한다 — 단건 경로(findByIdForUpdate의 orElseThrow)와 동일한 타입·메시지여야 기존
+		// LimitOrderFillBatchAtomicityIntegrationTest의 "청크 전체 롤백" 시나리오가 그대로 성립한다.
+		when(orderRepository.findByIdInForUpdate(List.of(999L))).thenReturn(List.of());
+
+		assertThatThrownBy(() -> service.fillBatch(List.of(999L)))
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessage("체결 대상 주문을 찾을 수 없습니다. orderId=999");
+
+		verifyNoInteractions(accountService, tradeRepository, portfolioBuyService, portfolioSellService);
+	}
+
+	@Test
+	void fillBatchThrowsExplicitExceptionWhenBulkAccountLockOmitsOrdersAccount() {
+		// order→account는 FK로 항상 존재해야 하지만(0aea48b9 방어 가드, PR #545 리뷰 권장사항 3번), 벌크
+		// 계좌 조회가 그 계좌를 조용히 빠뜨리면 null을 그대로 넘기지 않고 명시 예외를 던져야 한다 — 형제 가드인
+		// order 누락(위 테스트)·SELL holding 누락(아래 테스트)과 대칭을 이룬다.
+		Instrument instrument = cryptoInstrument();
+		Account account = account();
+		Order order = limitPendingOrder(account, instrument, OrderSide.BUY, "0.1", "1000000");
+		ReflectionTestUtils.setField(order, "id", 105L);
+		when(orderRepository.findByIdInForUpdate(List.of(105L))).thenReturn(List.of(order));
+		when(accountService.getAccountsByIdsForUpdate(List.of(10L))).thenReturn(List.of());
+		when(portfolioBuyService.findExistingHoldingsForChunkUpdate(List.of(10L), instrument.getId()))
+			.thenReturn(List.of());
+
+		assertThatThrownBy(() -> service.fillBatch(List.of(105L)))
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessage("체결 대상 계좌를 찾을 수 없습니다. accountId=" + account.getId());
+
+		verify(portfolioBuyService, never())
+			.applyBuyTrade(any(), any(), any(), any(), any(), anyLong(), any());
+		verify(portfolioBuyService, never())
+			.applyBuyTrade(any(), any(), any(), any(), any(), anyLong(), any(), any());
+		verifyNoInteractions(tradeRepository, portfolioSellService);
+	}
+
+	@Test
+	void fillBatchThrowsSameMessageAsGetHoldingForUpdateWhenSellHoldingMissingFromBulkMap() {
+		// SELL은 신규 생성이 없으므로 holdingsByAccountId 맵에 없으면 실제로 holding이 없는 것이다 —
+		// PortfolioSellService.getHoldingForUpdate(단건 경로)와 동일한 메시지의 예외를 던져야 한다.
+		Instrument instrument = cryptoInstrument();
+		Account account = account();
+		Order order = limitPendingOrder(account, instrument, OrderSide.SELL, "0.1", "1000000");
+		ReflectionTestUtils.setField(order, "id", 104L);
+		when(orderRepository.findByIdInForUpdate(List.of(104L))).thenReturn(List.of(order));
+		when(accountService.getAccountsByIdsForUpdate(List.of(10L))).thenReturn(List.of(account));
+		when(portfolioBuyService.findExistingHoldingsForChunkUpdate(List.of(10L), instrument.getId()))
+			.thenReturn(List.of());
+
+		assertThatThrownBy(() -> service.fillBatch(List.of(104L)))
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessage(
+				"체결 대상 holding을 찾을 수 없습니다. accountId=" + account.getId() + ", instrumentId=" + instrument.getId());
+
+		verifyNoInteractions(tradeRepository, portfolioSellService, eventPublisher);
 	}
 
 	private static Order limitPendingOrder(

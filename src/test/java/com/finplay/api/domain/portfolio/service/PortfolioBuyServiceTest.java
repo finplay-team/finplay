@@ -2,6 +2,7 @@
 package com.finplay.api.domain.portfolio.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -19,6 +20,7 @@ import com.finplay.api.domain.portfolio.repository.HoldingLotRepository;
 import com.finplay.api.domain.portfolio.repository.HoldingRepository;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -123,6 +125,59 @@ class PortfolioBuyServiceTest {
 		// lot은 이번 체결 수량만 반영한다 (누적 보유수량이 아님)
 		assertThat(savedLot.getOriginalQuantity()).isEqualByComparingTo("2");
 		assertThat(savedLot.getRemainingQuantity()).isEqualByComparingTo("2");
+	}
+
+	@Test
+	void applyBuyTradeWithLockedHoldingSavesWithoutSeparateLookupForExistingHolding() {
+		Account account = testAccount();
+		Instrument instrument = testInstrument();
+		Holding lockedHolding = Holding.create(account, instrument, EARLIER);
+		lockedHolding.applyBuy(new BigDecimal("1"), new BigDecimal("1"), EARLIER);
+		Trade trade = testTrade(account, instrument, new BigDecimal("2"), new BigDecimal("2"));
+
+		Holding result = service.applyBuyTrade(
+			account, instrument, trade, new BigDecimal("2"), new BigDecimal("2"), 10L, NOW, lockedHolding);
+
+		verify(holdingRepository, never()).findByAccountIdAndInstrumentIdForUpdate(account.getId(), instrument.getId());
+		verify(holdingRepository).save(lockedHolding);
+		assertThat(result).isSameAs(lockedHolding);
+		assertThat(result.getQuantity()).isEqualByComparingTo("3");
+	}
+
+	@Test
+	void applyBuyTradeWithLockedHoldingSavesNewlyCreatedHoldingWithoutSeparateLookup() {
+		Account account = testAccount();
+		Instrument instrument = testInstrument();
+		Holding newHolding = Holding.create(account, instrument, NOW);
+		Trade trade = testTrade(account, instrument, new BigDecimal("50000"), new BigDecimal("10"));
+
+		Holding result = service.applyBuyTrade(
+			account, instrument, trade, new BigDecimal("10"), new BigDecimal("50000"), 75L, NOW, newHolding);
+
+		verify(holdingRepository, never()).findByAccountIdAndInstrumentIdForUpdate(account.getId(), instrument.getId());
+		verify(holdingRepository).save(newHolding);
+		assertThat(result).isSameAs(newHolding);
+		assertThat(result.getQuantity()).isEqualByComparingTo("10");
+		assertThat(result.getAveragePrice()).isEqualByComparingTo("50000");
+	}
+
+	@Test
+	void findExistingHoldingsForChunkUpdateDelegatesToRepositoryBulkLockQueryWithoutExtraCall() {
+		// 054-limit-order-fill-bulk-lock: LimitOrderFillService.fillBatch가 HoldingRepository를 직접 주입하지
+		// 않고 이 래퍼만 거치도록 강제하는 ADR-0002 준수용 위임 메서드다 — 별도 가공 없이 그대로 위임하는지만 본다.
+		Account account = testAccount();
+		org.springframework.test.util.ReflectionTestUtils.setField(account, "id", 10L);
+		Instrument instrument = testInstrument();
+		Holding existingHolding = Holding.create(account, instrument, EARLIER);
+		List<Long> accountIds = List.of(account.getId(), 999L);
+		when(holdingRepository.findByAccountIdInAndInstrumentIdForUpdate(accountIds, instrument.getId()))
+			.thenReturn(List.of(existingHolding));
+
+		List<Holding> result = service.findExistingHoldingsForChunkUpdate(accountIds, instrument.getId());
+
+		assertThat(result).containsExactly(existingHolding);
+		verify(holdingRepository).findByAccountIdInAndInstrumentIdForUpdate(accountIds, instrument.getId());
+		verify(holdingRepository, never()).findByAccountIdAndInstrumentIdForUpdate(account.getId(), instrument.getId());
 	}
 
 	private static Account testAccount() {
