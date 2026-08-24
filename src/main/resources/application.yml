@@ -2,13 +2,382 @@
 spring:
   application:
     name: finplay-api
+  # 블루-그린 전환 순간의 graceful shutdown 유예 (server.shutdown: graceful, 아래 server: 참고).
+  # compose.bluegreen.yaml의 stop_grace_period(30s)보다 짧게 잡는다.
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+  data:
+    # Redis 명령 타임아웃. **Lettuce 기본값은 60초**이고 지정하지 않으면 그 값이 그대로 쓰인다 — Redis가 RST 없이
+    # 블랙홀이 되는 단절(보안그룹 변경·노드 장애)에서 명령 하나가 60초 동안 호출 스레드를 물고, 요청당 몇 배가
+    # 되면 톰캣 스레드 풀이 차서 Redis와 무관한 API까지 멎는다. 요약·브리핑 조회가 Redis를 타기 시작하면서
+    # (이슈 #245) 그 노출이 사용자 조회 경로까지 넓어져 명시한다.
+    #
+    # **2초를 고른 근거는 오탐의 대가가 소비자마다 다르기 때문이다.** 이 값은 전역이라 아래 넷에 모두 걸린다.
+    #   PriceStore        시세·연결상태. 예외를 삼키지 않아 오탐이 주문·시세 조회의 오류로 그대로 보인다 —
+    #                     여기가 하한을 정한다. 정상 명령이 1ms 안팎이라 2초는 GC 정지·순간 지연에 10배 이상 여유다
+    #   RankingStore      랭킹 조회 실패. 화면 일부가 비지만 원장과 무관하다
+    #   CryptoWatchLock   삼키고 그 틱을 건너뛴다 (fail-closed, ADR-0014) — 오탐 비용이 가장 싸다
+    #   FeedbackQueryCache 삼키고 DB로 직행한다 (fail-open, ADR-0015 §6) — 느려질 뿐 실패하지 않는다
+    #
+    # 더 짧게 잡으면 PriceStore 쪽 오탐이 사용자에게 보이고, 더 길게 잡으면 위 블랙홀 시나리오의 스레드 점유가
+    # 그만큼 길어진다. 캐시 전용 LettuceClientConfiguration으로 이 캐시에만 짧은 값을 주는 선택지도 있었으나,
+    # 같은 타입 빈을 하나 더 만드는 방식이라 이 저장소가 실제로 겪은 NoUniqueBeanDefinitionException 함정을
+    # 다시 부른다(ai/agent-mistakes.md 2026-08-04). 전역 한 값으로 두고 근거를 여기 남긴다.
+    redis:
+      timeout: 2s
+      connect-timeout: 2s
   jpa:
     hibernate:
       ddl-auto: validate # 스키마 변경은 Flyway로만 (ADR-0004)
     open-in-view: false
+  datasource:
+    hikari:
+      # 매도 체결 요청 하나가 원 트랜잭션의 커넥션과 RankingEventListener.refreshScore(REQUIRES_NEW)의 새
+      # 커넥션을 동시에 점유한다(이슈 #270) — @TransactionalEventListener(AFTER_COMMIT) 콜백은 원 트랜잭션의
+      # 커넥션이 풀에 반납되기 전에 실행되므로, REQUIRES_NEW가 그 반납 전에 새 커넥션을 하나 더 연다. Spring
+      # Boot 기본 풀(10)을 그대로 두면 동시 매도 요청 5건만으로 풀이 소진돼 뒤따르는 요청이 connection-timeout
+      # (기본 30초)만큼 대기할 수 있다. "요청당 최대 2커넥션" 전제로 기존 동시성 여유(10)를 유지하려면 풀을
+      # 20으로 둔다. MySQL 컨테이너(compose.yaml)는 max_connections 기본값(151)을 그대로 쓰므로 여유가 있다.
+      #
+      # 이 계산은 1차 범위의 단일 인스턴스 전제(ai/prd.md)에서만 유효하다. ADR-0014가 예고한 다중 인스턴스
+      # 전환이 실제로 이뤄지면 "인스턴스 수 × 20"이 운영 DB의 max_connections를 넘지 않는지 그때 다시
+      # 검토해야 한다(PR #272 리뷰 권장 사항).
+      maximum-pool-size: 20
+  servlet:
+    multipart:
+      # 커뮤니티 게시물 첨부 이미지(COM-006, 최대 5MB) 1차 방어선. 초과 시 Spring이 던지는
+      # MaxUploadSizeExceededException을 GlobalExceptionHandler가 400 VALIDATION_ERROR로 매핑한다.
+      max-file-size: 5MB
+      max-request-size: 6MB
+  mvc:
+    async:
+      # SSE(/api/stocks/stream) 연결이 장시간 유지돼야 하므로 컨테이너 async 타임아웃을 두지 않는다.
+      # 연결 생존 확인은 SseEmitterRegistry의 20초 heartbeat가 담당한다 (이슈 #18).
+      request-timeout: -1
+  ai:
+    # Spring AI 2.0의 OpenAI 스타터는 chat 말고도 embedding·image·moderation·audio 모델 빈을 전부 자동 등록한다.
+    # 이 기능(spec 012)이 쓰는 것은 chat 하나뿐이므로 나머지를 끈다 — 안 쓰는 빈이 줄기도 하지만, 더 중요한 이유는
+    # openAiSdkAudioSpeechModel이 기동 시점에 API 키를 요구해 키 없이는 컨텍스트가 아예 안 뜨기 때문이다
+    # (openai-java-core의 "At least one of apiKey... must be set", 2026-08-03 실측).
+    model:
+      embedding: none
+      image: none
+      moderation: none
+      audio:
+        speech: none
+        transcription: none
+    openai:
+      # 키가 없어도 기동해야 한다 (ADR-0011 — LLM 실패는 정상 경로다). SDK가 빈 문자열을 거부하므로 자리표시자를
+      # 기본값으로 둔다. 실제 호출 여부는 NarrativeGenerator가 키 존재를 보고 판단하며, 없으면 호출하지 않고
+      # 즉시 실패를 반환해 템플릿으로 폴백한다 (spec §실패 처리).
+      api-key: ${OPENAI_API_KEY:not-configured}
+      # LLM 호출 타임아웃. 값의 정본은 feedback.llm.timeout-seconds 하나이고 여기서는 참조만 한다.
+      #
+      # 이 자리에 있는 이유가 있다. Spring AI 2.0에서 타임아웃은 요청 단위 옵션이 아니라 클라이언트 단위 값이다 —
+      # OpenAiChatAutoConfiguration이 이 프로퍼티(OpenAiCommonProperties)로 OpenAIClient를 한 번 만들고,
+      # OpenAiChatModel은 그 클라이언트를 final 필드로 들고 있어 요청마다 준 OpenAiChatOptions.timeout을 보지 않는다.
+      # OpenAiHttpClientBuilderCustomizer로 okhttp 쪽을 덮어써도 SpringAiOpenAiHttpClient.newCall이 요청마다
+      # RequestOptions의 타임아웃으로 다시 덮어쓴다(2026-08-03 바이트코드 확인). 그래서 모델·최대 토큰만
+      # NarrativeGenerator가 요청 단위로 넘기고 타임아웃은 이 경로로 넘긴다.
+      # 참고로 spring.ai.openai.chat.timeout은 바인딩은 되지만 클라이언트 생성에 쓰이지 않아 효과가 없다.
+      timeout: ${feedback.llm.timeout-seconds}s
+  task:
+    scheduling:
+      # 코드베이스 전체의 @Scheduled 메서드는 17개다 — 기존 5개에 뉴스·공시 수집 2개, 개장 전 배치 1개,
+      # 코인 요약·브리핑 배치 1개, 장 마감 집단 비교 배치 1개, 코인 가격 스냅샷 기록 1개, 코인 변동 감시 1개,
+      # 코인 집단 비교 배치 1개, 랭킹 재구성 배치 1개, 빗썸 연결상태 재기록 1개,
+      # 빗썸 REST ticker 폴링 1개, 주식 수집 당일 재시도 1개가 더해졌다.
+      #   기존 5   SseEmitterRegistry heartbeat · StockPriceStreamService · KisHistoricalCandleCollector
+      #            StockReplaySessionScheduler · BithumbFeedSimulator
+      #   신설 2   NewsCollectionService.collectNews · NewsCollectionService.collectDisclosures (spec 012 FEED-001)
+      #   신설 1   FeedbackBatchService.runPreMarketBatch (spec 012 FEED-004)
+      #   신설 1   CryptoFeedbackBatchService.refreshCryptoFeedback (spec 012 FEED-008·009)
+      #   신설 1   PeerStatsBatchService.runPeerStatsBatch (spec 012 FEED-010·011, 이슈 #212)
+      #   신설 1   CryptoPriceSnapshotService.recordSnapshots (spec 012 §코인 가격 스냅샷, 이슈 #225)
+      #   신설 1   CryptoPriceMoveWatcher.watch (spec 012 §탐지 알고리즘(코인), 이슈 #225)
+      #   신설 1   PeerStatsBatchService.runCryptoPeerStatsBatch (spec 012 §FEED-012, 이슈 #275)
+      #   신설 1   RankingRebuildService.rebuildOnSchedule (spec 014 랭킹 재구성, 이슈 #279)
+      #   신설 1   BithumbFeedStatusReconciler.reconcileConnectionStatus (이슈 #299)
+      #   신설 1   BithumbRestTickerPoller.pollTickers (spec 034 PRICE-REST-002, 이슈 #369)
+      #   신설 1   KisHistoricalCandleCollector.retryPendingInstruments (spec 035, 이슈 #370)
+      #   합계 17
+      # 시뮬레이터는 @Profile("!prod") + matchIfMissing=true라 별도 설정 없이 기본 활성이며, 이전 주석은 이걸
+      # 빠뜨리고 4로 세고 있었다 (이슈 #125). 위 17개가 전부 동시에 한 프로필에서 뜨는 것은 아니다 —
+      # 시뮬레이터(BithumbFeedSimulator)와 폴러(BithumbRestTickerPoller)는 프로필이 갈리는 반면(이슈 #369),
+      # retryPendingInstruments(이슈 #370)는 프로필과 무관하게 항상 뜬다.
+      #   기본(local, crypto-real 없음) — 시뮬레이터 O, 폴러 X, 재시도 O → 16개
+      #   crypto-real                  — 시뮬레이터 X, 폴러 O, 재시도 O → 16개
+      #   prod                         — 시뮬레이터 X, 폴러 O, 재시도 O(이슈 #369부터, 이전엔 폴러가 없어 15개였다) → 16개
+      # 세 프로필 모두 실제 필요 스레드는 16개로 같다. 풀을 18로 두어 스레드 둘을 여유로 남긴다(이슈 #369
+      # 이전에도 prod는 16 대 실제 15로 여유 1개를 유지하고 있었다 — 이슈 #476로 코인 SSE 연결상태 push
+      # 스케줄이 없어지며 여유가 하나 더 늘었다).
+      # 풀은 앱 전역 단일 풀이라 소유 도메인과 무관하게 전부 센다 — price-snapshot-cron이 market 소유라고
+      # 빼지 않는다. spec 012의 스케줄 8개(§C-1)가 이슈 #275의 crypto-peer-stats까지 전부 들어온 뒤, spec 014의
+      # 랭킹 재구성 배치(이슈 #279)와 이슈 #299의 빗썸 연결상태 재기록, 이슈 #369의 REST ticker 폴링, 이슈
+      # #370의 주식 수집 당일 재시도가 더해져 18까지 늘었다가, 이슈 #476이 spec 028의 코인 SSE 연결상태
+      # push(이슈 #286)를 제거하며 다시 17이 됐다.
+      # 풀이 부족하면 개장 시간대에 SSE heartbeat와 매분 가격 push가 밀린다. 이 숫자는 @Scheduled를 추가할
+      # 때마다 함께 올려야 한다 —
+      # NewsCollectionIntegrationTest.schedulingPoolIsLargeEnoughForEveryScheduledTask가 전체 빌드에서 검증한다.
+      # 전용 TaskScheduler 분리는 작업 수가 적어 이번 범위에서는 채택하지 않는다 (PR #90/#94 리뷰, plan.md 참고).
+      pool:
+        size: 18
 
 # 인증 spec(PRD 태스크 2) 구현 시 사용. 시크릿은 환경변수로만 주입.
 jwt:
   secret: ${JWT_SECRET}
   access-token-expiration-ms: 3600000 # 1시간
   refresh-token-expiration-ms: 1209600000 # 14일
+
+# 실제 OAuth 공급자 설정. 실제 구현이 활성화되는 prod·oauth-real 프로필에서 환경변수로 주입한다.
+oauth:
+  state-cookie-secure: ${OAUTH_STATE_COOKIE_SECURE:true}
+  state-secret: ${OAUTH_STATE_SECRET}
+  # 로그인 callback 성공 시 1회용 교환 코드를 실어 리다이렉트할 프론트 주소. 실제 토큰은 여기 노출되지 않는다.
+  login-redirect-uri: ${OAUTH_LOGIN_REDIRECT_URI}
+  # 재인증 callback 성공 시 1회용 교환 코드를 실어 리다이렉트할 프론트(재인증 팝업) 주소. 실제 reauthToken은
+  # 여기 노출되지 않는다 — 로그인 콜백 라우트와는 별도 프론트 경로일 수 있어 값을 공유하지 않는다.
+  reauth-redirect-uri: ${OAUTH_REAUTH_REDIRECT_URI}
+  kakao:
+    client-id: ${KAKAO_CLIENT_ID}
+    client-secret: ${KAKAO_CLIENT_SECRET}
+    redirect-uri: ${KAKAO_REDIRECT_URI}
+  naver:
+    client-id: ${NAVER_CLIENT_ID}
+    client-secret: ${NAVER_CLIENT_SECRET}
+    redirect-uri: ${NAVER_REDIRECT_URI}
+
+# 한국투자증권(KIS) Open API 키 — 과거 분봉 수집 배치(KisHistoricalCandleCollector)가 사용한다(MKT-005).
+# 값이 없어도 애플리케이션 기동·./gradlew build는 성공하며, 없으면 수집이 실패해 그날 재생세션이 FAILED가 될 뿐이다.
+kis:
+  app-key: ${KIS_APP_KEY:}
+  app-secret: ${KIS_APP_SECRET:}
+  # 조회 API(주식일별분봉조회)·토큰 발급 공통 기본 URL. 모의투자 도메인 사용은 한국투자증권 고객센터에 문의해 문제없다는
+  # 답변을 받았다(2026-07-30) — 실전투자 앱키를 발급받기 전까지 로컬·배포 공통으로 이 도메인을 쓴다. 실전투자 앱키로
+  # 전환하면 KIS_BASE_URL 값만 바꾸면 된다.
+  base-url: ${KIS_BASE_URL:https://openapivts.koreainvestment.com:29443}
+
+# 빗썸 공개 캔들 REST 조회 타임아웃 (MKT-008). 인증·API Key 불필요한 공개 API — 무한 대기로 요청 스레드를 붙잡지 않도록 짧게 잡는다.
+bithumb:
+  candle:
+    connect-timeout-ms: ${BITHUMB_CANDLE_CONNECT_TIMEOUT_MS:2000}
+    read-timeout-ms: ${BITHUMB_CANDLE_READ_TIMEOUT_MS:3000}
+  feed:
+    # 빗썸 공개 ticker REST 조회 타임아웃 (이슈 #107). 위 candle과 같은 공개 API·같은 목적이라 형태를 맞춘다.
+    # 이 값을 읽는 BithumbRestTickerPoller는 prod·crypto-real 프로필에서만 생성되므로(이슈 #369) 기본 실행에는
+    # 영향이 없다.
+    ticker:
+      connect-timeout-ms: ${BITHUMB_TICKER_CONNECT_TIMEOUT_MS:2000}
+      read-timeout-ms: ${BITHUMB_TICKER_READ_TIMEOUT_MS:3000}
+
+# 지정가 체결 비동기 실행기(LimitOrderFillExecutorRouter, ADR-0024). enabled·partition-count·
+# queue-capacity-per-partition의 정본은 ai/adr/0024-limit-order-fill-executor.md이고, batch-size의
+# 정본은 ai/adr/0025-limit-order-fill-batch-commit.md다. LimitOrderFillExecutorProperties가 같은
+# 값을 @DefaultValue로 갖는다.
+order:
+  limit-fill-executor:
+    # 운영 킬 스위치. false면 LimitOrderTriggerListener가 실행기를 거치지 않고 기존처럼 피드 스레드에서
+    # 순차 동기 처리한다 — 재배포 없이 되돌릴 수단이다.
+    enabled: true
+    # 종목별 체결을 직렬화하는 단일 스레드 실행기(파티션) 개수. 같은 종목은 항상 같은 파티션으로만
+    # 라우팅되므로 종목 내부 순서(requestedAt asc, id asc)는 이 값과 무관하게 보존되고, 이 값은 서로 다른
+    # 종목 간 병렬도만 결정한다. 1 미만이면 기동 실패.
+    partition-count: 8
+    # 파티션 하나(단일 스레드)가 처리 대기할 수 있는 체결 작업(청크) 수 상한. 가득 차면 새 작업은
+    # 버려진다 — 주문은 여전히 PENDING이라 다음 가격 틱이 다시 후보로 집어낸다. 1 미만이면 기동 실패.
+    queue-capacity-per-partition: 200
+    # 파티션 워커가 체결 후보를 몇 건씩 묶어 트랜잭션 1개로 처리할지(ADR-0025). 청크 안의 한 건이 실패하면
+    # 청크 전체가 롤백되고 나머지는 PENDING으로 남아 다음 가격 틱이 재시도한다. 1 미만이면 기동 실패.
+    batch-size: 50
+
+# 코인 가격 스냅샷(CryptoPriceSnapshotService, spec 012 §코인 가격 스냅샷, 이슈 #225). 값의 정본은
+# ai/specs/012-ai-feedback/spec.md §C-1(크론)·§코인 가격 스냅샷(보관 기간)이고 MarketCryptoProperties가
+# 같은 값을 @DefaultValue로 갖는다. 선언부에 zone = "Asia/Seoul"을 반드시 함께 붙인다.
+market:
+  crypto:
+    price-snapshot-cron: "0 * * * * *" # 매 분 정각
+    # σ 계산 조회 창이자 Redis 스냅샷 보관 기간(시간). feedback.crypto.sigma-lookback-hours(§C-7, 이슈 #225의
+    # 다음 항목이 신설)와 반드시 같은 값을 유지한다 — 어긋나면 조회 창과 보관 창이 갈려 표본이 조용히 달라진다.
+    sigma-lookback-hours: 24
+  stock:
+    # 주식 분봉 수집 배치(KisHistoricalCandleCollector)의 거래일 단위 Redis 락 TTL(초). 정본은
+    # ai/specs/035-stock-collector-reliability/plan.md §락 설계 세부 — 정상 실행 소요시간의 수 배 여유를
+    # 두면서도 프로세스가 죽어 finally를 못 도는 최후의 경우 하루 종일 잠기지 않게 하는 값이다(COLLECT-STAB-001).
+    collect-lock-ttl-seconds: 600
+    # 정규 08:10 배치 이후 당일 재시도 크론(COLLECT-STAB-003). 08:15부터 10:45까지 15분 간격 9회 — 근거는
+    # ai/specs/035-stock-collector-reliability/plan.md §재시도 스케줄 근거.
+    retry-cron: "0 15,30,45 8-10 * * MON-FRI"
+
+# 네이버 뉴스 검색 API 키 — 뉴스 수집기(spec 012 FEED-001)가 사용한다. 키 경로의 정본은 spec §C-7이다.
+# kis 블록과 같은 형태로 yml에는 빈 기본값 플레이스홀더만 두고 실제 값은 환경변수로만 주입한다 (conventions.md).
+# 값이 없어도 기동·./gradlew build는 성공한다 — 실제 수집기 대신 Fake가 붙어 빈 목록을 반환할 뿐이다(§실패 처리).
+#
+# 위 oauth.naver가 쓰는 NAVER_CLIENT_ID·NAVER_CLIENT_SECRET과 다른 애플리케이션의 키다. 검색 API용을 따로
+# 발급받으므로 재사용하면 검색과 로그인 중 하나가 조용히 깨진다 (spec §외부 API 호출 상세).
+naver-search:
+  client-id: ${NAVER_SEARCH_CLIENT_ID:}
+  client-secret: ${NAVER_SEARCH_CLIENT_SECRET:}
+
+# OpenDART 공시검색 API 키 — 공시 수집기(spec 012 FEED-001)가 사용한다. 위 naver-search와 같은 방침이며,
+# 값이 없으면 공시 없이 뉴스만으로 진행한다(§실패 처리). 공시는 주식만 해당한다.
+dart:
+  api-key: ${DART_API_KEY:}
+
+# AI 서술 생성(spec 012)의 LLM 호출 설정. 값의 정본은 ai/specs/012-ai-feedback/spec.md §C-7이며 코드에 상수로
+# 박지 않는다 (ADR-0011). 프로바이더 교체는 build.gradle의 starter 의존성과 이 블록 변경으로 끝난다.
+# API 키는 이 블록이 아니라 위 spring.ai.openai.api-key로 주입한다 (시크릿은 yml에 적지 않는다, conventions.md).
+#
+# 이 블록은 지우면 안 된다. FeedbackLlmProperties가 같은 값을 @DefaultValue로 갖고 있지만 그것은 바인딩 시점
+# 기본값이지 Environment의 값이 아니라서, 위 spring.ai.openai.timeout의 ${feedback.llm.timeout-seconds}
+# 플레이스홀더(기본값 없음)를 채우지 못한다. 실제로 이 블록을 지우고 @SpringBootTest를 돌리면
+# ConfigurationPropertiesBindException → DurationStyle 변환 실패로 컨텍스트가 기동하지 않는다(2026-08-03 실측).
+# 값이 record와 여기 두 곳에 있는 것은 §C-7이 "application.yml에 기본값을 두고"로 정한 결과이며,
+# 튜닝은 이 블록만 고치면 되도록 한 것이다(§튜닝).
+feedback:
+  # 개장 전 배치 크론. 정본은 spec §C-1이고 FeedbackBatchProperties가 같은 값을 @DefaultValue로 갖는다.
+  # 재생세션 확정 배치(StockReplaySessionScheduler, 08:40)와 같은 시각에 두면 실행 순서가 보장되지 않아
+  # 세션이 아직 PREPARING인 채 배치가 돌고 매일 조용히 0건이 된다(FEED-004). 5분 뒤에 둔 이유다.
+  # 선언부에 zone = "Asia/Seoul"을 반드시 함께 붙인다 — 배포 JVM 기본이 UTC라 빠뜨리면 KST 17:45에 돈다.
+  batch:
+    cron: "0 45 8 * * MON-FRI" # 주식 카드·요약·브리핑
+    # 코인 요약·브리핑 갱신. 코인은 24시간 거래라 '개장 전'이라는 고정 시점이 없어 매시 갱신으로 대신한다
+    # (FEED-008·FEED-009). 이 선언부에도 zone = "Asia/Seoul"이 붙는다.
+    crypto-cron: "0 5 * * * *" # 매시 05분
+    # 장 마감 집단 비교 확정 집계 (FEED-010·011, 이슈 #212). 15:30 장 마감보다 2분 뒤라 그 시각의 마지막
+    # 체결이 반영될 여유를 준다. 이 선언부에도 zone = "Asia/Seoul"이 붙는다.
+    peer-stats-cron: "0 32 15 * * MON-FRI" # 장 마감 15:32
+    # 코인 변동 감시 (CryptoPriceMoveWatcher, 이슈 #225). market.crypto.price-snapshot-cron(매 분 정각)과
+    # 초를 30초 어긋내 — 같은 시각이면 실행 순서가 보장되지 않아 감시가 그 분의 스냅샷을 못 볼 수 있다(§C-1).
+    # 이 선언부에도 zone = "Asia/Seoul"이 붙는다.
+    crypto-watch-cron: "30 * * * * *" # 매 분 30초
+    # 코인 집단 비교 확정 집계 (§FEED-012 결정 3, 이슈 #275). 코인은 장 마감이 없어 하루가 끝나는 시점이
+    # 자정이므로 매일 00:05에 전날 KST 하루치 카드를 집계한다. 00:00 정각이 아닌 것은 자정 경계의 체결·분봉이
+    # 반영될 여유를 주기 위해서다(§C-1). 이 선언부에도 zone = "Asia/Seoul"이 붙는다.
+    crypto-peer-stats-cron: "0 5 0 * * *" # 매일 00:05, 전날 KST 카드
+  llm:
+    model: gpt-5.4-mini
+    timeout-seconds: 20
+    max-tokens: 1024 # 4차에 512에서 올렸다 — 일기가 실린 6~8문장이 잘려 나가면 후검증을 그대로 통과한다(§FEED-013 결정 5)
+    max-regeneration: 1 # 요약·브리핑 후검증 재생성 횟수
+    max-narrative-retry: 3 # 매도 회고 서술 재생성 누적 재시도 상한 (흐름·집단 사유)
+    max-journal-regeneration: 3 # 매도 회고 서술 재생성 누적 상한 (투자일기 사유). 위와 따로 센다(§FEED-013 결정 3)
+  # 매도 회고 프롬프트에 실을 투자일기의 건수·본문 길이 상한. 값의 정본은 spec §C-7이고
+  # FeedbackJournalProperties가 같은 값을 @DefaultValue로 갖는다. 두 곳이 갈리면 드리프트 테스트가 잡는다.
+  journal:
+    max-buy-journals: 3 # 프롬프트에 넣을 매수 회고 수 상한 (매수 시각 오름차순)
+    max-journal-chars: 500 # 일기 1건의 본문 절단 길이. 원본 상한은 5000자다
+  # 변동 구간 탐지(PriceMoveDetector)의 임계치·구간. 값의 정본은 spec §C-7이고 FeedbackDetectionProperties가
+  # 같은 값을 @DefaultValue로 갖는다. 실데이터로 검증한 뒤 조정할 대상이며(§튜닝) 조정은 이 블록만 고친다 —
+  # 코드에는 상수가 없다. 두 곳이 갈리면 드리프트 테스트가 잡는다.
+  detection:
+    z-score-k: 2.5 # 후보 판정 계수. score = |cum| / (σ * √W)가 이 값 이상이면 후보다
+    window-minutes: 5 # 누적 수익률 구간 W
+    merge-window-minutes: 5 # 피크 병합 반경. 같은 급변이 인접 분마다 후보로 잡히는 것을 접는다
+    max-intraday-cards: 2 # 종목·거래일당 장중 카드 수
+    opening-gap-threshold: 0.01 # 시가 갭 최소 절댓값(1%). detectionScore의 분모이기도 하다
+  # 뉴스·공시 상시 수집 크론. 값의 정본은 spec §C-1이고 FeedbackNewsProperties가 같은 값을 @DefaultValue로 갖는다.
+  # @Scheduled는 record가 아니라 Environment에서 읽으므로 실제 스케줄을 결정하는 것은 이 블록이다.
+  # 선언부에 zone = "Asia/Seoul"을 반드시 함께 붙인다 — 배포 JVM 기본 타임존이 UTC라 빠뜨리면 예외도 로그도 없이
+  # 엉뚱한 시각에 돈다(§C-1).
+  news:
+    # 뉴스는 장중이 아니라 종일 돈다. 전장 구간(§C-2)이 약 17.5시간이라 장중만 돌리면 그 대부분이 영영
+    # 수집되지 않고, 저녁·야간 기사가 다음 날 아침 브리핑의 주재료다(FEED-001).
+    collect-cron: "0 0/30 * * * *" # 24시간 30분 간격
+    disclosure-cron: "0 0/30 8-20 * * MON-FRI" # 공시는 주식만
+    # 근거 매칭(NewsMatcher)이 쓰는 값. 정본은 spec §C-2(근거창)·§뉴스 매칭 범위(상한·절단)이고 크론과 달리
+    # Environment가 아니라 record 빈으로 읽는다 — 그래도 §C-7 방침대로 양쪽에 값을 둔다.
+    match-before-minutes: 30 # 주식 장중 카드 근거 탐색 (이전)
+    match-after-minutes: 5 # 주식 장중 카드 근거 탐색 (이후)
+    max-sources-per-card: 5 # 카드 1건에 붙일 최대 근거 수
+    # 목록 상한 3종. 정본은 §C-7이고 절단 규칙은 §뉴스 매칭 범위다. 1 미만이면 기동이 실패한다 —
+    # 0이면 items가 통째로 비고 요약 프롬프트에 기사가 안 실리는데 상태값은 READY라 화면만 조용히 빈다.
+    max-items-per-news-list: 50 # Part C 목록 응답 상한
+    max-items-per-briefing: 30 # Part D 목록 응답 상한
+    max-items-per-summary: 30 # 요약·브리핑 LLM 입력 기사 수 상한
+  # 코인 변동 감시(CryptoPriceMoveWatcher, 이슈 #225)의 임계치·구간·근거창. 값의 정본은 spec §C-7이고
+  # FeedbackCryptoProperties가 같은 값을 @DefaultValue로 갖는다. z-score-k는 여기 두지 않고
+  # feedback.detection.z-score-k를 그대로 쓴다 — 주식·코인이 같은 계수를 공유하는 것이 §C-7의 확정 방침이다.
+  crypto:
+    cooldown-minutes: 30 # 종목당 카드 생성 후 다음 카드까지의 최소 간격
+    daily-limit: 6 # 종목·거래일(KST)당 카드 수 상한
+    rolling-window-minutes: 5 # σ 표본 구간 폭(분). 겹치지 않는 구간으로 자른다(§탐지 알고리즘(코인))
+    # σ 계산 조회 창(시간). market.crypto.sigma-lookback-hours와 항상 같은 값을 유지한다 — 어긋나면 조회
+    # 창과 Redis 보관 창이 갈려 표본이 조용히 달라진다.
+    sigma-lookback-hours: 24
+    min-sample-count: 100 # σ 계산 최소 표본. 미만이면 카드 미생성
+    match-before-minutes: 35 # 코인 카드 근거 탐색(이전). 이후는 0 — §뉴스 매칭 범위
+    watch-lock-ttl-seconds: 45 # 종목 단위 Redis 락 TTL. feedback.llm.timeout-seconds(20)의 약 2배(ADR-0014, PR #254)
+  # 요약·브리핑 조회 캐시(FeedbackQueryCache, 이슈 #245). 값의 정본은 ADR-0015이고 FeedbackQueryCacheProperties가
+  # 같은 값을 @DefaultValue로 갖는다. 아래 세 숫자는 실측이 아니라 추정이다 — 조회 원본이 인덱스로 덮인 단일
+  # 행·구간 조회라 수 ms라는 전제이며, 다중 인스턴스 배포 후 실제 대기 발생률을 보고 조정한다(ADR-0015 §후속).
+  query-cache:
+    # 운영 킬 스위치. false면 Redis를 아예 접촉하지 않고 DB로 직행한다 — 이미 검증된 기존 경로라 새 캐시 계층을
+    # 재배포 없이 즉시 되돌릴 수 있다.
+    enabled: true
+    lock-ttl-millis: 1000 # 만료 쏠림 방어 락 TTL. 1 미만이면 기동 실패 — 락이 영구히 획득 실패가 된다
+    # 락을 못 얻었을 때 캐시가 채워지길 기다리는 최대 시간. 0은 "대기 없이 즉시 DB 직행"이라 유효한 값이다.
+    # 이 값이 원본 소요보다 짧으면 대기가 전부 타임아웃돼 방어가 무력해진다.
+    wait-millis: 300
+    poll-millis: 20 # 대기 중 캐시 재확인 간격. 1 미만이면 기동 실패 — 0이면 바쁜 대기가 된다
+
+# 랭킹 ZSET 재구성 배치(RankingRebuildService, spec 014 이슈 #279). Redis 유실 복구와 정기 교정을 겸한다.
+# 값의 정본은 ai/specs/014-ranking/plan.md "Decision Gate 확정"이며 @Scheduled는 record가 아니라
+# Environment에서 읽으므로 실제 스케줄을 결정하는 것은 이 블록이다(@ConfigurationProperties record를 따로
+# 두지 않는 이유 — 값이 크론 하나뿐이라 record를 만들면 같은 값이 두 곳에 생기는 관리 부담만 는다).
+#
+# 04:20을 고른 근거: 이 파일의 기존 크론은 market.crypto.price-snapshot-cron "0 * * * * *"(매 분 정각),
+# feedback.batch.cron "0 45 8 * * MON-FRI", crypto-cron "0 5 * * * *"(매시 05분),
+# peer-stats-cron "0 32 15 * * MON-FRI", crypto-watch-cron "30 * * * * *"(매 분 30초),
+# crypto-peer-stats-cron "0 5 0 * * *"(매일 00:05), news.collect-cron "0 0/30 * * * *",
+# news.disclosure-cron "0 0/30 8-20 * * MON-FRI"이다. 04:20은 이 중 하루·매시·평일 단위 배치 어느 것과도
+# 같은 분에 걸리지 않는다(매시 05분·30분 간격 계열과 분이 다르다). 매 분 계열(정각 "0 * * * * *"·30초
+# "30 * * * * *")과는 어떤 시각을 골라도 겹치므로 회피 대상이 아니다 — 둘 다 가격 스냅샷·변동 감시라
+# 랭킹 ZSET을 건드리지 않고 작업도 경량이라 같은 분에 돌아도 무관하다.
+# 새벽이라 조회 트래픽이 가장 적어 RENAME 교체 순간의 영향도 가장 작다.
+#
+# 선언부에 zone = "Asia/Seoul"을 반드시 함께 붙인다 — 배포 JVM 기본 타임존이 UTC라 빠뜨리면 예외도 로그도
+# 없이 KST 13:20에 돈다(위 feedback 블록들이 반복해서 경고하는 실수다).
+ranking:
+  rebuild:
+    cron: "0 20 4 * * *" # 매일 04:20 KST
+    # 시장 단위 재구성 중복 실행 방지 락의 TTL(초, 이슈 #539). ADR-0021 §5(전환은 파이프라인이 상태를 읽어서
+    # 정한다)·§6(헬스체크 실패 시 이전 색으로 되돌린다)이 함께 확정한 블루-그린 배포는 전환 이후에도 이전 색
+    # 인스턴스를 다음 배포까지 내리지 않아, 배포와 배포 사이 대부분의 시간 동안 두 인스턴스가 같은 Redis를
+    # 보며 함께 뜬다 — 락이 없으면 두 인스턴스가 같은 시장을 동시에 재구성하다 한쪽의
+    # DEL이 다른 쪽의 ZADD를 지워 매도 이력 계좌 일부가 랭킹에서 조용히 빠질 수 있다.
+    # market.stock.collect-lock-ttl-seconds(COLLECT-STAB-001)와 같은 논리로 600을 그대로 가져왔다 — 정상
+    # 실행은 수 초~수십 초로 추정되고, 600초는 프로세스가 죽어 finally를 못 도는 최후의 경우에도 다음 재구성
+    # 기회(기동 또는 익일 04:20) 전까지만 잠기게 하는 안전 마진이다. 이 값은 랭킹 데이터의 실시간 신선도와
+    # 무관하다 — 실시간 갱신은 RankingEventListener가 매도 체결 커밋 직후 개별 계좌 점수를 바로 갱신하는 별도
+    # 경로이고, 이 배치는 Redis 유실 복구·정기 정합성 교정만 담당한다.
+    lock-ttl-seconds: 600
+
+# 커뮤니티 게시물 첨부 이미지(COM-006, 이슈 #248) 저장 위치. 시크릿이 아니므로 yml에 기본값을 둔다
+# (conventions.md "시크릿" 절 대상 아님). 로컬 실행 디렉터리 기준 상대 경로가 기본값이며, 운영 배포 시
+# COMMUNITY_IMAGE_STORAGE_DIR 환경변수로 절대 경로를 덮어쓴다. 이 프로젝트는 객체 스토리지 인프라가 없어
+# 로컬 파일시스템 저장을 채택했다(ai/specs/022-community-enhancement/plan.md "Decision Gate 확정").
+finplay:
+  community:
+    image-storage:
+      base-directory: ${COMMUNITY_IMAGE_STORAGE_DIR:./data/community-images}
+  cors:
+    # 프론트가 S3에서 서빙되면서 API와 오리진이 갈라진다 (ADR-0022). 콤마로 여러 개를 둘 수 있고,
+    # A(S3 단독) → B(CloudFront) 전환기에는 둘을 함께 허용한다 — 이 값이 환경변수이기 때문에 그 전환에
+    # 백엔드 코드 배포가 필요 없다. 이것이 환경변수로 뺀 주된 이유다.
+    # 기본값은 로컬 Vite dev 서버다. 로컬은 vite.config.ts의 프록시로 동일 오리진이라 실제로는 쓰이지
+    # 않지만, 프록시를 끄고 붙여 보는 경우를 위해 열어 둔다.
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+
+# ALB가 TLS를 끝내고 앱 컨테이너에는 평문 HTTP로 넘어온다. nginx가 있던 시절에는 nginx가
+# X-Forwarded-Proto를 https로 강제 주입해 줬지만, ADR-0022로 nginx가 사라진 뒤로는 ALB가 넣는
+# X-Forwarded-* 를 Spring이 직접 해석해야 한다. 없으면 앱이 요청을 http로 인식해 OAuth 리다이렉트 URL
+# 생성과 Secure 쿠키 발급이 틀어진다.
+#
+# graceful shutdown — 블루-그린 전환 순간 진행 중이던 요청을 끊지 않기 위해서다(ADR-0021 §후속,
+# 이슈 #332). compose.bluegreen.yaml의 stop_grace_period(30s)보다 짧게 잡는다 — 이 타임아웃이
+# 끝나기 전에 SIGKILL이 오면 graceful이 무의미해진다. SSE(/api/stocks/stream 등)처럼 계속 열려
+# 있는 연결은 이 유예로 기다려 주지 않는다 — 전환 순간 끊기는 것 자체는 정상이고 브라우저 재연결로
+# 흡수한다(체크리스트 Phase 6에서 실측 대상).
+server:
+  forward-headers-strategy: framework
+  shutdown: graceful

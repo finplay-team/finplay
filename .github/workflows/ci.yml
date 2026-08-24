@@ -1,0 +1,89 @@
+# PR마다 전체 빌드·테스트·포맷 검사를 자동으로 실행하는 CI 게이트 (ai/specs/010-deployment)
+name: CI
+
+on:
+  pull_request:
+    branches: [dev, main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # fetch-depth: 0 — 아래 마이그레이션 번호 검사가 origin/<base>와 merge-base 기반 diff를
+      # 계산하려면 전체 히스토리가 필요하다 (기본 얕은 클론은 커밋 1개뿐이라 실패한다).
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 문서만 바뀐 PR은 아래 Gradle 스텝을 건너뛴다 — 워크플로우 자체는 항상 실행되어
+      # 브랜치 보호 규칙의 required status check로 쓸 수 있게 한다 (paths-ignore로 워크플로우
+      # 자체를 안 띄우면 required check 미충족으로 머지가 막힐 수 있다).
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          predicate-quantifier: every
+          filters: |
+            code:
+              - '**/*'
+              - '!docs/**'
+              - '!**/*.md'
+
+      # 이슈 #394 재발 방지 — 리뷰·승인을 거친 PR #381이 머지 시점엔 몰랐던 마이그레이션 번호
+      # 역전(V36이 이미 프로덕션에 적용된 V37보다 낮음)으로 배포를 반복 실패시켰다. Flyway
+      # out-of-order=false(기본값) validate는 배포 시점에야 컨테이너를 죽이며 실패하고, 원인도
+      # 남기지 않는다 — 이 검사로 PR 단계에서 먼저 잡는다. base 브랜치 재확인이므로 base가
+      # 그 사이 움직이면(다른 PR이 새 마이그레이션을 먼저 머지하면) 재실행이 필요할 수 있다 —
+      # 완벽한 안전망은 아니지만 지금의 "검사 없음" 상태보다는 훨씬 낫다.
+      - name: 마이그레이션 번호 역전 검사 (base보다 낮은 번호의 신규 마이그레이션 차단)
+        run: |
+          git fetch origin "${{ github.base_ref }}" --quiet
+          BASE="origin/${{ github.base_ref }}"
+          MIGRATION_DIR="src/main/resources/db/migration"
+
+          # || true — 이 스텝의 셸은 bash -eo pipefail입니다(Actions 기본). grep이 무매치로 exit 1을
+          # 내면 대입문 자체가 실패해, 아래 폴백 줄에 닿기 전에 스텝이 죽습니다 (PR #493 리뷰).
+          MAX_BASE=$(git ls-tree -r --name-only "$BASE" -- "$MIGRATION_DIR" \
+            | grep -oE '/V[0-9]+__' | grep -oE '[0-9]+' | sort -n | tail -1 || true)
+          MAX_BASE=${MAX_BASE:-0}
+          echo "$BASE 최고 마이그레이션 번호: V$MAX_BASE"
+
+          NEW_FILES=$(git diff --name-only --diff-filter=A "$BASE...HEAD" -- "$MIGRATION_DIR" || true)
+          if [ -z "$NEW_FILES" ]; then
+            echo "이 PR이 추가한 신규 마이그레이션 없음 — 통과"
+            exit 0
+          fi
+
+          FAILED=0
+          # 한 줄씩 읽습니다 — 공백이 든 파일명이 워드 스플리팅으로 쪼개지지 않게 합니다.
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            # NUM의 || true도 같은 이유입니다. 마이그레이션 디렉터리에는 V{N}__ 규칙과 무관한
+            # 파일(Flyway 콜백 afterMigrate.sql 등)이 들어올 수 있고, 그때 조용히 죽는 대신
+            # 그 파일만 건너뛰어야 합니다.
+            NUM=$(basename "$f" | grep -oE '^V[0-9]+' | grep -oE '[0-9]+' || true)
+            if [ -z "$NUM" ]; then
+              echo "번호 없는 파일 — 검사 대상 아님: $f"
+              continue
+            fi
+            echo "신규 마이그레이션: $f (V$NUM)"
+            if [ "$NUM" -le "$MAX_BASE" ]; then
+              echo "::error file=$f::V$NUM이 ${{ github.base_ref }}에 이미 있는 최고 번호(V$MAX_BASE) 이하입니다. 다른 PR이 먼저 그 번호대를 차지했을 가능성이 높습니다 — 다음 빈 번호(V$((MAX_BASE + 1)))로 리네임하세요."
+              FAILED=1
+            fi
+          done <<< "$NEW_FILES"
+
+          if [ "$FAILED" -eq 1 ]; then
+            exit 1
+          fi
+          echo "통과 — 신규 마이그레이션 전부 V$MAX_BASE보다 큽니다."
+
+      - uses: actions/setup-java@v4
+        if: steps.filter.outputs.code == 'true'
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # 시크릿 불필요 — @SpringBootTest용 더미 시크릿은 build.gradle의 Test 태스크가 직접 주입한다.
+      - name: Gradle build (테스트·포맷검사·커버리지 포함)
+        if: steps.filter.outputs.code == 'true'
+        run: ./gradlew build

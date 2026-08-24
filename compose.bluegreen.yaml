@@ -1,0 +1,55 @@
+# 블루-그린 무중단 배포 스택 (ADR-0020). blue(8081)·green(8082) 두 스택을 EC2 한 대에서 동시에
+# 띄워 두고, ALB의 두 타깃 그룹이 그 포트를 각각 가리키게 한 뒤 리스너 기본 작업을 전환한다.
+# 프론트는 S3에서 독립 배포되므로 nginx가 없다 (ADR-0022 — 이슈 #108 A안·동일 오리진 서빙 폐기).
+# 앱 컨테이너가 각 색의 호스트 포트를 직접 열고, ALB가 그 포트로 바로 붙는다.
+# compose.deploy.yaml(단일 스택)과 달리 mysql·redis는 처음부터 없다 — RDS·ElastiCache를 쓴다.
+# 이미지는 CD 파이프라인(러너)이 ECR에 올린 것을 그대로 pull한다 — EC2에서 빌드하지 않는다
+# (ADR-0021 §맥락 — 두 색이 서로 다른 빌드가 되면 롤백 대상을 이름으로 지목할 수 없다).
+# .env의 APP_IMAGE_BLUE·APP_IMAGE_GREEN은 파이프라인이 갱신한다. 사람이 손으로 고치지 않는다.
+# 실행: docker compose -f compose.bluegreen.yaml up -d app-blue
+#       (처음엔 blue만 띄운다. green은 다음 배포 때 STEP 2~4에서 띄운다 — 체크리스트 Phase 6 참고)
+name: finplay-bluegreen
+
+x-app-common: &app-common
+  env_file:
+    - .env
+  environment:
+    SPRING_PROFILES_ACTIVE: prod
+    # 컨테이너에 TZ가 없으면 기반 이미지(eclipse-temurin) 기본값인 UTC로 JVM이 뜬다. 이 저장소 코드
+    # 곳곳(CryptoFeedbackBatchService 등)이 "@Scheduled의 zone을 빠뜨리면 배포 JVM 기본 타임존이 UTC라
+    # 9시간 밀린다"고 경고해 왔는데, zone은 다 명시돼 있었음에도 실제로 market_data_imports.collected_at이
+    # 9시간(정확히 UTC 오프셋만큼) 밀려 기록되는 현상이 실측됐다(이슈 #370). @Scheduled(zone=...)는 JVM
+    # 기본 타임존과 무관하게 정확히 발동하지만, LocalDateTime을 DB에 쓰는 경로가 JDBC 드라이버의 세션
+    # 타임존(JDBC URL의 serverTimezone=Asia/Seoul)과 JVM 기본 타임존(UTC) 사이에서 변환되면 정확히 이만큼
+    # 어긋난다 — 컨테이너 자체의 TZ를 맞춰 이 클래스의 문제를 원천 차단한다.
+    TZ: Asia/Seoul
+    # t4g.small(2GB)에 app 2벌이 함께 뜬다 — JVM 기본값(컨테이너 메모리의 25~50%)에 맡기면 한쪽이
+    # 다른 쪽을 밀어낼 수 있어 힙을 명시적으로 눌러 둔다. 첫 전환 때 `docker stats`로 실사용량을
+    # 보고 조정한다.
+    JAVA_TOOL_OPTIONS: "-Xmx384m -Xss512k"
+  healthcheck:
+    test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health"]
+    interval: 10s
+    timeout: 5s
+    retries: 6
+    start_period: 90s
+  restart: unless-stopped
+  # graceful shutdown(server.shutdown: graceful, application.yml)의 타임아웃보다 길게 잡는다 —
+  # 짧으면 graceful이 끝나기 전에 SIGKILL이 와서 무의미해진다.
+  stop_grace_period: 30s
+
+services:
+  app-blue:
+    <<: *app-common
+    image: ${APP_IMAGE_BLUE}
+    container_name: finplay-app-blue
+    # 외부 진입점이 ALB로 바뀌면서 호스트 포트를 직접 연다 (ADR-0022 — nginx 제거로 대체).
+    ports:
+      - "8081:8080"
+
+  app-green:
+    <<: *app-common
+    image: ${APP_IMAGE_GREEN}
+    container_name: finplay-app-green
+    ports:
+      - "8082:8080"

@@ -1,0 +1,15 @@
+# @SpringBootTest 전체 컨텍스트에서 "외부 호출·합성 틱을 내는 로컬 전용 컴포넌트"를 비활성화하는 전용 설정 파일.
+# 대상 2종 — BithumbFeedSimulator(이슈 #104, !prod 전용, 합성 랜덤 틱)와 BithumbRestTickerPoller(이슈 #107,
+# crypto-real 프로필 전용, 실제 빗썸 ticker REST를 3초마다 호출). 후자를 끄지 않으면 @ActiveProfiles("crypto-real")
+# 통합 테스트가 외부 네트워크에 의존하게 된다 (PRD C-005 위반).
+# 파일명은 시뮬레이터 하나만 끄던 시절 그대로다 — build.gradle이 이 이름을 참조하므로 바꾸지 않는다.
+# build.gradle test 태스크의 spring.config.additional-location으로만 로드된다 — 파일명이 application*.yml이
+# 아니므로 src/main/resources/application.yml과 "첫 번째로 발견된 파일만 로드" 충돌이 없고, ConfigDataEnvironment
+# PostProcessor(SpringApplication 부트스트랩)만 이 위치를 해석하므로 ApplicationContextRunner 기반 슬라이스
+# 테스트(BithumbFeedSimulatorConditionalTest)에는 영향을 주지 않는다(PR #110 리뷰 후속 수정).
+bithumb:
+  feed:
+    simulate:
+      enabled: false
+    ticker:
+      enabled: false

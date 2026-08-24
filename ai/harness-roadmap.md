@@ -1,0 +1,76 @@
+# 하네스 고도화 로드맵 — GitHub Issue 트리거 CI 하네스
+
+> **이 문서는 "에이전트 실행 자동화"이고, "배포 자동화(CD)"와는 다른 축이다.** 배포 파이프라인은 [ADR-0021](adr/0021-continuous-deployment.md)이 정본이며 이 로드맵의 단계와 무관하게 진행된다. 아래 "자동 머지 금지"는 두 축 모두에서 유지된다.
+
+> 출처: 2026-07-23 튜터 피드백. 아직 **미착수** — Codex API 기반 PR 자동 리뷰를 시도했으나 리뷰 3중화 부담으로 당일 철회했다 (ADR-0007 폐기 참조).
+> 착수 시 이 문서를 근거로 새 ADR을 작성하고, 구현은 아래 단계 체크리스트를 따른다.
+>
+> **2026-07-24 추가**: PR CI(빌드·포맷 검사·PR 제목 검사 워크플로우)도 튜터 피드백("CI는 배포 단계에")으로 제거했다. 그 전까지 빌드 게이트는 로컬 `./gradlew build`(PR 작성자 의무)다.
+>
+> **재도입 시점 확정**: 최소 CI(전체 build·테스트 + docs-only 스킵)는 **`ai/specs/010-deployment`에서 첫 배포 직전에** 재도입한다. 이 문서가 다루는 "이슈 트리거 CI 하네스"는 그보다 뒤의 별도 단계이며, 010과 혼동하지 않는다 — 010은 빌드 게이트, 이 문서는 에이전트 실행 자동화다.
+
+## 목표 구조
+
+현재(ADR-0005, ADR-0009)는 사람이 Claude Code 또는 Codex 로컬 세션에서 `feature`, `review-pr`을 실행하는 반자동이다. 다음 단계는 GitHub Actions 러너에서 에이전트가 실행되는 완전 자동 흐름이다.
+
+```
+① 이슈 등록 + 라벨(agent) 부착
+   → Actions 러너에서 에이전트 실행
+   → 이슈 내용 기반 수정/개발 방향 2~3안을 이슈 코멘트로 제시
+② 사용자가 코멘트로 방향 선택 (예: "@claude 2안으로 구현해줘")
+   → 러너 재실행, 브랜치 생성 → 선택된 방향으로 구현 → 커밋 → PR 오픈 (PR 본문에 Closes #이슈번호)
+③ 사람이 PR 검토 → 머지 결정 (자동 머지 금지 — ADR-0005의 원칙 유지)
+```
+
+**③단계는 의도적으로 완전 수동이다(2026-08-10 확정, 이슈 #317).** PR이 열린 뒤 사람이 남기는 리뷰(코멘트·`CHANGES_REQUESTED` 등)를 감지해 자동으로 재수정하는 경로는 만들지 않는다 — ADR-0016도 "PR 댓글로 재수정을 트리거하는 것"을 이미 한 번 범위 밖으로 뺐고(§범위 밖), 이슈 #317에서 다시 검토한 결과도 같은 결론이었다. `@claude`를 PR 리뷰·PR 댓글에 남겨도 하네스는 반응하지 않는다(`agent.yml`의 `on:`이 `issues`·`issue_comment`만 구독하고, `verify-actor`가 PR에 달린 `issue_comment`를 의도적으로 걸러낸다 — ADR-0013). 리뷰 지적은 팀원이나 로컬 Claude Code/Codex 세션이 직접 반영해 같은 PR에 재푸시한다(`docs/conventions/team.md` "작은 루프").
+
+기존 하네스가 그대로 얹혀지는 구조다 — Claude용 `CLAUDE.md`·`.claude/`, Codex용 `AGENTS.md`·`.agents/`·`.codex/`, 공통 `docs/`가 커밋돼 있어 선택한 러너도 로컬과 동일한 규칙·라우터·리뷰 기준을 쓴다.
+
+## 구현 단계 (착수 시 체크)
+
+- [x] 이슈→구현 자동화 ADR 작성 — 인증 방식 결정 포함 → [ADR-0013](adr/0013-issue-triggered-agent-harness.md) (`CLAUDE_CODE_OAUTH_TOKEN`, 팀장 개인 Max 구독)
+- [x] `claude-code-action` 워크플로우 추가 (`.github/workflows/agent.yml`, PR #232)
+  - 트리거 1: 이슈에 `agent` 라벨 → 방향 제시 코멘트만 작성 (코드 수정 금지 프롬프트)
+  - 트리거 2: 이슈 댓글(PR 댓글 제외)의 `@claude` 멘션 — 멘션한 사람과 이슈를 연 사람 둘 다 팀 멤버일 때만 → 구현 + PR 오픈 + 자체 리뷰 후 조건부 승인
+- [ ] 러너 환경 확인 — `ubuntu-latest`는 Docker 기본 제공이라 Testcontainers 빌드 가능. 명령은 `./gradlew` (Windows 표기 `.\gradlew.bat` 아님)
+- [x] 이슈 템플릿에 라벨 안내 추가
+- [x] PR 자체 리뷰에서 차단 발견 시 같은 PR 브랜치에서 자동 수정 1라운드 추가 → [ADR-0016](adr/0016-review-gate-auto-fix-round.md) (#292)
+- [ ] 지표 수집 스크립트 추가 (아래 "지표") + 주 1회 실행 (수동 또는 cron 워크플로우)
+- [ ] 테스트 이슈 1건으로 전체 흐름 검증 (①→②→③) — 조건부 승인이 실제로 붙는지, PR 작성자가 `claude[bot]`로 찍히는지(Claude GitHub App 설치 확인, PR #232 리뷰) 함께 확인한다
+
+### 인증 트레이드오프 (ADR-0007에서 결정)
+
+| 방식 | 장점 | 단점 |
+|---|---|---|
+| `ANTHROPIC_API_KEY` 시크릿 | 팀 공용, 한도 독립 | 실행마다 API 토큰 비용 (ADR-0005가 이것 때문에 보류) |
+| `CLAUDE_CODE_OAUTH_TOKEN` (`claude setup-token`, Pro/Max 구독) | 추가 비용 없음 | 개인 구독의 사용량 한도를 소모 — 팀 공용 시 토큰 소유자 한도가 병목 |
+
+## 지표 — 하네스 가치의 정량 측정
+
+측정 항목 3개.
+
+1. **이슈 등록 → PR 오픈 평균 시간**
+2. **이슈 등록 → 머지 평균 시간**
+3. **주당 처리 이슈 수 / 배포(머지) 수**
+
+수집 방법 — `gh` CLI로 타임스탬프를 뽑아 계산한다.
+
+```bash
+# 머지된 PR과 연결 이슈 목록 (PR의 createdAt/mergedAt 확보)
+gh pr list --state merged --limit 100 \
+  --json number,createdAt,mergedAt,closingIssuesReferences
+
+# 연결 이슈의 등록 시각
+gh issue view <이슈번호> --json number,createdAt
+
+# 계산: (PR createdAt - 이슈 createdAt) = 이슈→PR,
+#       (mergedAt - 이슈 createdAt) = 이슈→머지. 주 단위 집계.
+```
+
+### 베이스라인 규칙 (중요)
+
+"하네스 있을 때/없을 때" 비교가 목적이므로 **CI 하네스 도입 전 데이터가 베이스라인이다.**
+
+- 지금(로컬 하네스 단계)부터 모든 작업을 이슈 → 브랜치 → PR 흐름으로 진행해 타임스탬프를 남긴다.
+- CI 하네스 도입 시점을 기록하고, 도입 전/후 주 단위로 위 3개 지표를 비교한다.
+- 이슈에 `harness:local` / `harness:ci` 라벨을 붙여 어느 방식으로 처리됐는지 구분한다.

@@ -1,0 +1,26 @@
+# 로컬에서 코인 캔들·현재가를 둘 다 실제 빗썸 데이터로 전환하는 프로필 (이슈 #107).
+# 켜는 방법: SPRING_PROFILES_ACTIVE=local,crypto-real ./gradlew bootRun
+# 켜면 — 캔들은 BithumbRestCandleProvider(실제 빗썸 REST), 현재가는 BithumbRestTickerPoller(실제 ticker REST 3초 폴링).
+#        아래 simulate.enabled=false로 BithumbFeedSimulator 빈 자체가 생성되지 않는다.
+# 안 켜면(기본) — 캔들은 FakeCryptoCandleProvider(빈 배열), 현재가는 BithumbFeedSimulator의 합성 랜덤 틱.
+# 이 프로필 하나로 캔들·현재가가 함께 바뀐다 — 한쪽만 실데이터가 되면 차트와 주문창 현재가의 자릿수가 어긋난다.
+bithumb:
+  feed:
+    simulate:
+      enabled: false
+
+# 스케줄러 풀 크기는 여기서 따로 올리지 않는다. 이 프로필은 시뮬레이터가 꺼지고 BithumbRestTickerPoller가
+# 켜지며, KisHistoricalCandleCollector.retryPendingInstruments(이슈 #370)는 프로필과 무관하게 항상 뜬다 —
+# @Scheduled 개수가 기본 프로필과 같이 16개이고, application.yml의 pool size(18, 여유 2 포함)가 그대로 맞다.
+# 지금은 16이다 (기본 5 + 뉴스·공시 수집 2 + 개장 전 배치 1 + 코인 요약·브리핑 배치 1 + 장 마감
+# 집단 비교 배치 1 + 코인 가격 스냅샷 기록 1 + 코인 변동 감시 1 + 코인 집단 비교 배치 1 + 랭킹 재구성 배치 1 +
+# 빗썸 연결상태 재기록 1 + BithumbRestTickerPoller 폴링 1 + 주식 수집 당일
+# 재시도 1, 세부 근거는 application.yml의 목록 참고). 개수를 단정하는 자리가 여기와 application.yml
+# 둘이므로 스케줄을 더하거나 빼는 이슈는 두 곳을 함께 갱신한다 — 한쪽만 고치면 다음 이슈가 어느 쪽을 근거로 셀지 갈린다.
+# (이전에는 기본값이 4였고 이 파일이 5로 올려 닫았는데, 그 4라는 수가 시뮬레이터를 빠뜨린 계산이었다 — 이슈 #125.
+#  그 뒤로도 여러 이슈가 이 주석을 13에서 갱신하지 않고 지나가 실제 값(16)과 어긋나 있었다 — 이슈 #369에서 정정.
+#  이슈 #370에서 재시도 스케줄이 더해져 17로 다시 갱신했다. 이슈 #476에서 코인 SSE 연결상태 push 스케줄이
+#  제거돼 다시 16으로 내려갔다.)
+# 이슈 #369부터는 BithumbRestTickerPoller가 prod 프로필에서도 뜬다(이전엔 이 프로필에서만 켜졌다) — 그래서
+# prod의 @Scheduled 개수도 이 프로필과 나란히 16이다.
+# 폴러가 스레드를 못 잡아 3초 주기가 밀리면 PriceStore의 10초 stale 기준을 넘겨 409 PRICE_UNAVAILABLE이 뜬다.

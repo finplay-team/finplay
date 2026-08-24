@@ -1,0 +1,121 @@
+// 매도 체결 1건의 FIFO 배분·lot을 읽어 회고용 수치로 요약하는 읽기 전용 서비스
+package com.finplay.api.domain.portfolio.service;
+
+import com.finplay.api.domain.order.entity.Trade;
+import com.finplay.api.domain.portfolio.entity.HoldingLot;
+import com.finplay.api.domain.portfolio.entity.TradeAllocation;
+import com.finplay.api.domain.portfolio.repository.TradeAllocationRepository;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * spec 012 §C-6이 {@code portfolio}에 요구한 "배분·lot 조회"다 — {@code feedback}의 매도 회고(FEED-007)가 쓴다.
+ * 집단 비교의 모집단 재구성은 {@code plan.md} 7번이 이 패키지에 따로 더한다.
+ *
+ * <p><b>쓰지 않는다.</b> 원장(주문·체결·계좌·보유·lot·배분)은 이 spec의 어떤 코드도 바꾸지 않는다 — 매도 회고가
+ * 쓰는 테이블은 {@code trade_feedbacks} 하나뿐이다.
+ */
+@Service
+@RequiredArgsConstructor
+public class SellAllocationQueryService {
+
+	// Holding.averagePrice와 같은 정밀도. 단가 컬럼(holding_lots.unit_cost·trades.price)의 scale이 8이다.
+	private static final int BUY_PRICE_SCALE = 8;
+
+	private final TradeAllocationRepository tradeAllocationRepository;
+
+	/**
+	 * 매도 체결 1건의 배분을 요약한다.
+	 *
+	 * @param sellTradeId 매도 체결 id. 소유권 검증은 호출부(체결 조회)가 이미 끝냈다고 본다
+	 * @return 가중평균 매수단가·가장 이른 매수 시각·배분 합계와 lot별 원본 거래일
+	 * @throws IllegalStateException 배분이 0건이면 원장 불일치다 — 매도 체결은 항상 lot을 소비하며
+	 *     ({@code PortfolioSellService.applySellTrade}) 잔여수량이 남으면 그 자리에서 이미 거부된다. 여기서
+	 *     빈 요약을 돌려주면 매수단가가 0으로 나누어지거나 조용히 {@code null}이 된다
+	 */
+	@Transactional(readOnly = true)
+	public SellAllocationSummaryDto getSellAllocationSummary(Long sellTradeId) {
+		List<TradeAllocation> allocations = tradeAllocationRepository
+			.findAllBySellTradeIdOrderByLotExecutedAtAscLotIdAsc(sellTradeId);
+		if (allocations.isEmpty()) {
+			throw new IllegalStateException("매도 체결에 배분된 lot이 없습니다. sellTradeId=" + sellTradeId);
+		}
+
+		long allocatedCost = 0L;
+		long allocatedBuyFee = 0L;
+		BigDecimal allocatedQuantity = BigDecimal.ZERO;
+		List<LocalDate> buySourceTradingDates = new ArrayList<>();
+
+		for (TradeAllocation allocation : allocations) {
+			allocatedCost += allocation.getAllocatedCost();
+			allocatedBuyFee += allocation.getAllocatedBuyFee();
+			allocatedQuantity = allocatedQuantity.add(allocation.getAllocatedQuantity());
+			buySourceTradingDates.add(sourceTradingDateOf(allocation.getHoldingLot()));
+		}
+
+		// 정렬이 lot 체결시각 오름차순이라 첫 배분의 lot이 가장 이른 매수다 (FEED-007 — 가장 이른 executed_at).
+		HoldingLot earliestLot = allocations.get(0).getHoldingLot();
+		BigDecimal buyPrice = BigDecimal.valueOf(allocatedCost)
+			.divide(allocatedQuantity, BUY_PRICE_SCALE, RoundingMode.HALF_UP);
+
+		return new SellAllocationSummaryDto(
+			buyPrice,
+			earliestLot.getExecutedAt(),
+			sourceTradingDateOf(earliestLot),
+			allocatedCost,
+			allocatedBuyFee,
+			allocatedQuantity,
+			buySourceTradingDates);
+	}
+
+	/**
+	 * 매도 체결 1건에 배분된 <b>매수 체결의 id와 체결시각</b>을 매수 시각 오름차순으로 돌려준다 (spec 012 §C-6 ·
+	 * §FEED-013 결정 4). {@code feedback}의 투자일기 반영(4차)이 id로는 매수 회고를 읽고, 시각으로는 프롬프트의
+	 * 일기 줄머리(`- 매수 09:30:`)를 적는다.
+	 *
+	 * <p><b>시각은 이미 이 쿼리 안에 있다.</b> {@code findAllBySellTradeIdOrderByLotExecutedAtAscLotIdAsc}가
+	 * {@code lot.executedAt}으로 정렬하므로 <b>정렬 키를 값으로 함께 내보내는 것뿐</b>이고 조회도 조인도 늘지
+	 * 않는다. 그래서 순서와 값이 같은 출처를 갖는다 — 따로 읽으면 둘이 어긋날 수 있다.
+	 *
+	 * <p><b>같은 매수 체결이 두 번 나올 수 없다.</b> lot ↔ 매수 체결은 {@code uk_holding_lots_buy_trade}(V10)가
+	 * 1:1로 강제하고, (매도 체결, lot)도 {@code uk_trade_allocations_sell_trade_holding_lot}(V57)이 1:1로
+	 * 강제한다 — 한 매도가 같은 lot을 두 번 배분받을 수 없으므로 그 lot의 매수 체결도 이 목록에 두 번 나올 수
+	 * 없다. 정렬은 {@code findAllBySellTradeIdOrderByLotExecutedAtAscLotIdAsc}가 이미 lot 체결시각 오름차순으로
+	 * 준 것을 그대로 따른다 — 서술의 시간 축(FEED-007의 "가장 이른 {@code executed_at}")과 일기 순서가 같아진다.
+	 *
+	 * <p><b>{@link SellAllocationSummaryDto}에 필드를 더하지 않고 조회 경로를 따로 둔다</b>(§C-6). 기존 소비자의
+	 * DTO 모양을 바꾸지 않는 쪽이 안전하다.
+	 *
+	 * <p><b>배분이 0건이어도 예외를 던지지 않는다.</b> {@link #getSellAllocationSummary}는 원장 불일치를 드러내려고
+	 * {@link IllegalStateException}을 던지지만, 이 메서드는 그 요약이 이미 성공한 뒤에만 불리므로 0건이 나올 수
+	 * 없다. 만약 나온다면 <b>서술 재료가 없는 것일 뿐 조회를 죽일 이유가 아니다</b> — 일기가 하나도 없는 상태와
+	 * 같은 뜻이 된다.
+	 *
+	 * @param sellTradeId 매도 체결 id. 소유권 검증은 호출부(체결 조회)가 이미 끝냈다고 본다
+	 * @return 매수 시각 오름차순 매수 체결. 배분이 없으면 빈 목록
+	 */
+	@Transactional(readOnly = true)
+	public List<AllocatedBuyTradeDto> getAllocatedBuyTrades(Long sellTradeId) {
+		return tradeAllocationRepository.findAllBySellTradeIdOrderByLotExecutedAtAscLotIdAsc(sellTradeId)
+			.stream()
+			.map(allocation -> {
+				HoldingLot lot = allocation.getHoldingLot();
+				return new AllocatedBuyTradeDto(lot.getBuyTrade().getId(), lot.getExecutedAt());
+			})
+			.toList();
+	}
+
+	// 코인 체결은 재생세션이 없어 null이다 (Trade가 그것을 강제한다).
+	private LocalDate sourceTradingDateOf(HoldingLot lot) {
+		Trade buyTrade = lot.getBuyTrade();
+		return buyTrade.getStockReplaySession() == null
+			? null
+			: buyTrade.getStockReplaySession().getSourceTradingDate();
+	}
+}

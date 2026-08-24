@@ -1,0 +1,38 @@
+{
+  "version": 2,
+  "market": "CRYPTO",
+  "basePrice": 10000.00000000,
+  "stages": [
+    {
+      "id": "IDLE",
+      "act": null,
+      "kind": "LOOP",
+      "minutes": 3,
+      "ratios": [
+        1.0,
+        1.01,
+        1.0
+      ]
+    },
+    {
+      "id": "ACT1",
+      "act": "ACT1",
+      "kind": "PROGRESS",
+      "minutes": 3,
+      "ratios": [
+        1.0,
+        1.02,
+        1.03
+      ]
+    }
+  ],
+  "events": [
+    {
+      "stageId": "ACT1",
+      "impactStartMinute": 2,
+      "impactMinutes": 2,
+      "revealDelayMinutes": 1,
+      "headline": "[연습] 예시 문안입니다."
+    }
+  ]
+}

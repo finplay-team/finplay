@@ -1,0 +1,27 @@
+# @SpringBootTest 전체 컨텍스트에서 spec 035(주식 수집 배치 안정성)의 당일 재시도 크론을 등록되지 않게 만드는 전용 설정 파일.
+#
+# 왜 필요한가. @SpringBootTest는 컨텍스트를 통째로 띄우므로 테스트 실행 중 크론이 실제로 등록된다.
+# market.stock.retry-cron 기본값(08:15/30/45, 09:15/30/45, 10:15/30/45 — 9개 지점, COLLECT-STAB-003)에
+# 전체 빌드가 걸치면 KisHistoricalCandleCollector.retryPendingInstruments()가 실제로 KIS를 호출하며 공유
+# Testcontainers MySQL·Redis에 의도하지 않은 데이터·락이 생긴다. 정규 08:10 배치(collect())는 크론이
+# 문자열 리터럴로 하드코딩돼 있어 같은 방식으로 끌 수 없다 — 이 파일은 재시도 크론만 다룬다(PR #374 리뷰
+# 권장사항, 기존 08:10 사각지대는 이 spec 범위 밖).
+#
+# "-"는 Spring의 Scheduled.CRON_DISABLED다. ScheduledAnnotationBeanPostProcessor가 플레이스홀더를 먼저
+# 해석한 뒤 이 값이면 트리거를 아예 등록하지 않는다. 값을 "먼 미래 크론"으로 두는 방법과 달리 트리거가 아예
+# 생기지 않으므로 "등록된 크론 트리거가 비어 있다"를 단정할 수 있다.
+#
+# 크론 값의 정본은 ai/specs/035-stock-collector-reliability/plan.md이며 이 파일은 그 값을 바꾸는 것이
+# 아니라 테스트에서만 무력화한다. 드리프트 단정은 여기 영향을 받지 않는 yml 전용 형태
+# (ConfigDataApplicationContextInitializer)로 둔다 — MarketStockPropertiesTest가 그 자리다.
+#
+# 적재 경로는 다른 disabled-for-tests 파일들과 같다. build.gradle test 태스크의
+# spring.config.additional-location으로만 로드되며, 파일명이 application*.yml이 아니라 application.yml과
+# "첫 번째로 발견된 파일만 로드" 충돌이 없고, 이 위치는 ConfigDataEnvironmentPostProcessor(SpringApplication
+# 부트스트랩, 즉 @SpringBootTest)만 해석하므로 ApplicationContextRunner 기반 슬라이스 테스트에는 영향이 없다.
+#
+# 재시도 로직 테스트는 크론이 아니라 retryPendingInstruments()를 직접 호출하므로 이 파일과 무관하게 그대로
+# 돈다(StockCollectionLockConcurrencyIntegrationTest).
+market:
+  stock:
+    retry-cron: "-"

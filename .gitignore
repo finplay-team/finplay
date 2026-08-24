@@ -41,3 +41,21 @@ out/
 
 ### Serena (도구 캐시) ###
 .serena/
+
+### graphify (코드 지식 그래프 산출물 — graph.json이 20MB대라 커밋하지 않는다) ###
+graphify-out/
+
+### 배포 스택 (nginx가 서빙할 프론트 빌드 산출물 — finplay-frontend에서 복사해 온다) ###
+/frontend-dist/
+/frontend-dist-blue/
+/frontend-dist-green/
+
+### 코인 뉴스 측정 산출물 (이슈 #179)
+tools/coin-news-measure/out/
+
+### JVM 치명 오류 덤프 (워커 크래시 시 저장소 루트에 생긴다 — PATH·USERNAME 등 로컬 환경이 통째로 들어 있다)
+hs_err_pid*.log
+replay_pid*.log
+
+### 커뮤니티 게시물 이미지 로컬 저장 디렉터리 (COM-006, 이슈 #248)
+/data/

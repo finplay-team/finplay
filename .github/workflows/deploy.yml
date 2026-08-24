@@ -1,0 +1,428 @@
+# dev 머지 시 블루-그린 무중단 배포를 수행하는 CD 파이프라인 (ADR-0021, 이슈 #345·#356)
+name: Deploy
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "재배포할 커밋 SHA (비우면 현재 dev HEAD). workflow_dispatch는 반드시 dev 브랜치에서 실행한다 — OIDC 신뢰 정책이 ref:refs/heads/dev로 한정돼 있어 다른 브랜치에서 실행하면 AssumeRoleWithWebIdentity에서 막힌다."
+        required: false
+
+# 백엔드 push와 향후 다른 트리거가 겹치면 유휴 색을 서로 덮어쓸 수 있어 직렬화한다.
+# cancel-in-progress: true로 두면 전환 도중 취소되어 두 색이 어긋난 상태로 남을 수 있어 쓰지 않는다.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  id-token: write # AWS OIDC
+  contents: read
+
+jobs:
+  deploy:
+    # EC2가 t4g.small(Graviton/arm64)이라 x86 러너에서 만든 이미지는 exec format error로 죽는다.
+    # 이 러너의 실제 가용성은 아직 미확인 — 큐에 안 잡히면 ubuntu-latest + QEMU 크로스빌드로 대체한다.
+    runs-on: ubuntu-24.04-arm
+    steps:
+      # image_tag는 이후 ECR 태그·.env sed 치환·원격 셸 명령에 그대로 쓰인다 — checkout보다 먼저,
+      # 커밋 SHA 형식인지부터 검증해 특수문자 섞인 입력이 원격 스크립트를 깨뜨리는 것을 막는다.
+      #
+      # ${{ }} 표현식은 셸이 스크립트를 실행하기 전에 GitHub이 텍스트로 먼저 치환한다 — run: 블록
+      # 안에 직접 보간하면 image_tag에 $(...) 같은 커맨드 치환을 넣었을 때 정규식 검사도 거치기 전에
+      # 그 서브셸이 먼저 실행된다(이 job은 id-token: write 권한을 이미 가지고 있다). env:로 값을
+      # 전달하고 셸에서는 변수로만 참조해 텍스트 치환이 아니라 값 대입이 되게 한다.
+      - name: image_tag 입력 형식 검증
+        if: inputs.image_tag != ''
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          if ! [[ "$IMAGE_TAG" =~ ^[0-9a-f]{7,40}$ ]]; then
+            echo "::error::image_tag는 커밋 SHA(7~40자 소문자 hex) 형식만 허용한다: '$IMAGE_TAG'"
+            exit 1
+          fi
+
+      # fetch-depth: 0 — 아래 마이그레이션 번호 역전 감지가 직전 dev 커밋(github.event.before)의
+      # 트리를 읽어야 한다. 기본 얕은 클론은 커밋 1개뿐이라 그 커밋이 없다.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.image_tag || github.sha }}
+          fetch-depth: 0
+
+      # 이슈 #449 — 2026-08-18 dev 배포가 두 번 연속 실패한(PR #446·#436) 원인은 PR 간 머지
+      # 순서였다. ci.yml의 번호 역전 검사는 PR 시점의 origin/dev만 보므로, 그 뒤 다른 PR이 더
+      # 높은 번호를 먼저 머지하면 낮은 번호가 검사를 통과한 채로 들어온다 — #446의 V42는 머지
+      # 시점에 그 검사를 정상 통과하고도 배포를 깨뜨렸다.
+      #
+      # 이 스텝은 예방이 아니라 사후 감지다(이미 머지됐다). 얻는 것은 둘이다. ① 원인을 이름으로
+      # 알려 준다 — 이번엔 SSM stdout을 직접 파야 `Detected resolved migration not applied to
+      # database: 42`를 찾을 수 있었다. ② 10분짜리 빌드·ECR push·SSM 왕복 전에 멈춘다. Flyway가
+      # 어차피 validate에서 죽는 상태이므로, 여기서 막는다고 배포되던 것이 안 되는 것은 아니다.
+      - name: 마이그레이션 번호 역전 사후 감지 (이 푸시 직전 dev 최고 번호와 대조)
+        if: github.event_name == 'push'
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          MIGRATION_DIR="src/main/resources/db/migration"
+
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            echo "::notice::직전 dev 커밋($BEFORE)을 확인할 수 없어 번호 역전 감지를 건너뛴다"
+            exit 0
+          fi
+
+          # || true — 이 스텝의 셸은 bash -eo pipefail이다(Actions 기본). grep이 무매치로 exit 1을
+          # 내면 대입문 자체가 실패해 아래 폴백 줄에 닿기 전에 스텝이 죽는다 (PR #493 리뷰에서 재현).
+          MAX_BEFORE=$(git ls-tree -r --name-only "$BEFORE" -- "$MIGRATION_DIR" | grep -oE '/V[0-9]+__' | grep -oE '[0-9]+' | sort -n | tail -1 || true)
+          MAX_BEFORE=${MAX_BEFORE:-0}
+          echo "직전 dev($BEFORE) 최고 마이그레이션 번호: V$MAX_BEFORE"
+
+          NEW_FILES=$(git diff --name-only --diff-filter=AR "$BEFORE" "$GITHUB_SHA" -- "$MIGRATION_DIR" || true)
+          if [ -z "$NEW_FILES" ]; then
+            echo "이 푸시가 추가한 신규 마이그레이션 없음 — 통과"
+            exit 0
+          fi
+
+          INVERTED=""
+          # 한 줄씩 읽는다 — 공백이 든 파일명이 워드 스플리팅으로 쪼개지지 않게 한다.
+          # NUM의 || true도 위와 같은 이유다. 마이그레이션 디렉터리에는 V{N}__ 규칙과 무관한
+          # 파일(Flyway 콜백 afterMigrate.sql, README 등)이 들어올 수 있고, 그때 조용히 죽는 대신
+          # 그 파일만 건너뛰어야 한다.
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            NUM=$(basename "$f" | grep -oE '^V[0-9]+' | grep -oE '[0-9]+' || true)
+            if [ -z "$NUM" ]; then
+              echo "번호 없는 파일 — 검사 대상 아님: $f"
+              continue
+            fi
+            echo "이 푸시가 추가한 마이그레이션: $f (V$NUM)"
+            if [ "$NUM" -le "$MAX_BEFORE" ]; then
+              echo "::error file=$f::V$NUM이 직전 dev 최고 번호(V$MAX_BEFORE) 이하다 — 이 상태로 배포하면 Flyway가 validate에서 'Detected resolved migration not applied to database: $NUM'으로 멈춘다. 리뷰 대기 중 다른 PR이 먼저 그 번호대를 차지한 경우다."
+              INVERTED="$INVERTED $f(V$NUM)"
+            fi
+          done <<< "$NEW_FILES"
+
+          if [ -n "$INVERTED" ]; then
+            {
+              echo "## ❌ 마이그레이션 번호 역전 — 배포를 시작하기 전에 멈췄다"
+              echo ""
+              echo "이 푸시가 들여온 마이그레이션이 직전 \`dev\` 최고 번호(\`V$MAX_BEFORE\`) 이하다:$INVERTED"
+              echo ""
+              echo "운영 DB는 이미 \`V$MAX_BEFORE\`까지 올라가 있으므로, 배포해도 Flyway가 \`validate\`에서 멈추고 컨테이너가 unhealthy로 죽는다(라이브 색은 그대로 유지된다)."
+              echo ""
+              echo "복구 절차는 \`ai/adr/0027-unapplied-migration-rename-exception.md\` — 그 마이그레이션이 **어떤 환경에도 적용된 적 없음**을 확인한 뒤 다음 빈 번호(\`V$((MAX_BEFORE + 1))\` 이상)로 리네임한다. 재발 방지는 이슈 #449."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "통과 — 이 푸시의 신규 마이그레이션 전부 V$MAX_BEFORE보다 크다."
+
+      - name: 배포할 이미지 태그 결정
+        id: image
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          TAG="$IMAGE_TAG"
+          if [ -z "$TAG" ]; then
+            TAG="${{ github.sha }}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "배포 대상 커밋: $TAG"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: bootJar 빌드
+        run: ./gradlew bootJar --no-daemon
+
+      - name: AWS 자격 증명 (OIDC — 장기 액세스 키 없음)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: ECR 로그인
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: 런타임 이미지 빌드 · ECR push (태그 = 커밋 SHA, latest 미사용)
+        env:
+          REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+          TAG: ${{ steps.image.outputs.tag }}
+        run: |
+          IMAGE="$REGISTRY/$REPOSITORY:$TAG"
+          docker build -f Dockerfile.runtime -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "이미지 push 완료: $IMAGE"
+
+      # 라이브 색은 ALB 리스너의 현재 기본 작업에서 읽는다 — 사람이 입력하지 않는다 (ADR-0021 §결정 5).
+      # 입력을 받으면 그 값이 틀렸을 때 라이브 색을 재기동하게 되고, 그것이 이 ADR이 지목한 가장 나쁜 실패다.
+      #
+      # 리스너 기본 작업은 blue·green 두 타깃 그룹을 가중치(weight)로 나눠 담는 단일 forward
+      # 액션이다(둘 다 항상 리스너에 붙어 있다) — 리스너가 한 번에 타깃 그룹 하나만 가리키게 하면,
+      # 트래픽을 안 받는 색은 ALB에서 완전히 분리돼 "사용되지 않음" 상태로 남고 ALB가 그 색을
+      # 헬스체크하지 않는다. 그러면 5-9의 "전환 전 ALB 헬스체크 대기"가 영원히 통과할 수 없는
+      # 상태(대상이 확인되기도 전에 이미 붙어 있어야 하는 순환)가 된다 — 2026-08-13 첫 실행에서
+      # 실제로 겪은 실패다. 가중치 0인 타깃 그룹도 ALB는 계속 헬스체크하므로, 전환은 "리스너를
+      # 다른 타깃 그룹으로 바꾸는 것"이 아니라 "가중치를 뒤집는 것"이 된다.
+      - name: 라이브 색 판별 (ALB 리스너 조회)
+        id: live-color
+        run: |
+          FORWARD_JSON=$(aws elbv2 describe-listeners \
+            --listener-arns "${{ vars.ALB_LISTENER_ARN }}" \
+            --query 'Listeners[0].DefaultActions[0].ForwardConfig.TargetGroups' --output json)
+          TG_COUNT=$(echo "$FORWARD_JSON" | jq 'length')
+
+          # blue·green 둘 다 리스너에 가중치로 붙어 있어야 한다. 하나뿐이면(예: 예전 단일 TG
+          # 기본 작업으로 되돌아간 상태) 판별 불가로 보고 실패시킨다 — 조용히 한쪽을 고르지 않는다.
+          if [ "$TG_COUNT" -ne 2 ]; then
+            echo "::error::리스너 기본 작업이 가중치 전달(2개 타깃 그룹) 구성이 아니다 — 라이브 색을 판별할 수 없다"
+            exit 1
+          fi
+
+          BLUE_WEIGHT=$(echo "$FORWARD_JSON" | jq -r --arg tg "${{ vars.TG_BLUE_ARN }}" '.[] | select(.TargetGroupArn==$tg) | .Weight')
+          GREEN_WEIGHT=$(echo "$FORWARD_JSON" | jq -r --arg tg "${{ vars.TG_GREEN_ARN }}" '.[] | select(.TargetGroupArn==$tg) | .Weight')
+
+          if [ -z "$BLUE_WEIGHT" ] || [ -z "$GREEN_WEIGHT" ]; then
+            echo "::error::리스너의 타깃 그룹이 TG_BLUE_ARN·TG_GREEN_ARN과 일치하지 않는다"
+            exit 1
+          fi
+          if [ "$BLUE_WEIGHT" = "$GREEN_WEIGHT" ]; then
+            echo "::error::blue·green 가중치가 같다(전환 도중이거나 설정 오류일 수 있음) — 라이브 색을 판별할 수 없다"
+            exit 1
+          fi
+
+          if [ "$BLUE_WEIGHT" -gt "$GREEN_WEIGHT" ]; then
+            LIVE=blue; LIVE_TG="${{ vars.TG_BLUE_ARN }}"; IDLE=green; IDLE_TG="${{ vars.TG_GREEN_ARN }}"
+          else
+            LIVE=green; LIVE_TG="${{ vars.TG_GREEN_ARN }}"; IDLE=blue; IDLE_TG="${{ vars.TG_BLUE_ARN }}"
+          fi
+
+          echo "live=$LIVE" >> "$GITHUB_OUTPUT"
+          echo "idle=$IDLE" >> "$GITHUB_OUTPUT"
+          echo "live_tg=$LIVE_TG" >> "$GITHUB_OUTPUT"
+          echo "idle_tg=$IDLE_TG" >> "$GITHUB_OUTPUT"
+          echo "라이브 색: $LIVE(가중치 $BLUE_WEIGHT/$GREEN_WEIGHT 중) / 이번 배포 대상(유휴 색): $IDLE"
+
+      # 유휴 색을 SSM Send Command로 기동한다. SSH 인바운드를 열지 않기 위해서다 (ADR-0021 §결정 3).
+      # 컨테이너 헬스체크 대기까지 같은 원격 스크립트 안에서 수행한다 — 앱 컨테이너는 호스트에 포트를
+      # 열지 않으므로(설계) 러너에서 직접 curl로 확인할 수 없다(ai/agent-mistakes.md 2026-08-11 오진 사례).
+      - name: 유휴 색 기동 + 컨테이너 헬스체크 대기 (SSM)
+        id: ssm-deploy
+        run: |
+          IDLE="${{ steps.live-color.outputs.idle }}"
+          IDLE_UPPER=$(echo "$IDLE" | tr '[:lower:]' '[:upper:]')
+          IMAGE="${{ steps.ecr-login.outputs.registry }}/${{ vars.ECR_REPOSITORY }}:${{ steps.image.outputs.tag }}"
+          AWS_REGION="${{ vars.AWS_REGION }}"
+          REGISTRY="${{ steps.ecr-login.outputs.registry }}"
+
+          cat > deploy-remote.sh <<SCRIPT
+          set -e
+          cd /home/ec2-user/finplay
+          aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $REGISTRY
+          # 이미지 태그가 커밋 SHA라 매 배포마다 쌓인다. blue/green 컨테이너가 쓰는 이미지는
+          # prune -a가 건드리지 않으므로(정지된 컨테이너도 참조로 잡힘) 매 배포마다 돌려도 안전하다
+          # (2026-08-24 디스크 100% 실측 — deploy/cd-runbook.md 오진표 참고).
+          docker image prune -af || true
+          # .env는 이 한 줄만 치환한다 — 다른 시크릿 값은 건드리지 않는다. .env의 정본은 EC2다.
+          sed -i "s|^APP_IMAGE_${IDLE_UPPER}=.*|APP_IMAGE_${IDLE_UPPER}=$IMAGE|" .env
+          docker compose -f compose.bluegreen.yaml up -d app-$IDLE
+
+          for i in \$(seq 1 36); do
+            STATUS=\$(docker inspect --format '{{.State.Health.Status}}' finplay-app-$IDLE 2>/dev/null || echo starting)
+            echo "컨테이너 헬스체크: \$STATUS (\$i/36)"
+            if [ "\$STATUS" = "healthy" ]; then
+              echo "컨테이너 healthy"
+              exit 0
+            fi
+            if [ "\$STATUS" = "unhealthy" ]; then
+              echo "컨테이너 unhealthy로 판정됨"
+              echo "--- 예외 요약 (docker logs finplay-app-$IDLE) ---"
+              docker logs finplay-app-$IDLE 2>&1 | grep -A 40 -E "APPLICATION FAILED TO START|Error creating bean|Caused by:|FlywayValidateException|Detected resolved migration" | tail -c 2000 || true
+              exit 1
+            fi
+            sleep 5
+          done
+          echo "타임아웃 — 3분 안에 healthy가 되지 않았다"
+          echo "--- 예외 요약 (docker logs finplay-app-$IDLE) ---"
+          docker logs finplay-app-$IDLE 2>&1 | grep -A 40 -E "APPLICATION FAILED TO START|Error creating bean|Caused by:|FlywayValidateException|Detected resolved migration" | tail -c 2000 || true
+          exit 1
+          SCRIPT
+
+          jq -n --rawfile script deploy-remote.sh '{commands: ($script | rtrimstr("\n") | split("\n"))}' > ssm-params.json
+
+          CMD_ID=$(aws ssm send-command \
+            --instance-ids "${{ vars.EC2_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --parameters file://ssm-params.json \
+            --query 'Command.CommandId' --output text)
+          echo "command_id=$CMD_ID" >> "$GITHUB_OUTPUT"
+          echo "SSM 명령 전송됨: $CMD_ID"
+
+      - name: SSM 명령 결과 대기 · 판독
+        id: ssm-wait
+        run: |
+          CMD_ID="${{ steps.ssm-deploy.outputs.command_id }}"
+          INSTANCE_ID="${{ vars.EC2_INSTANCE_ID }}"
+          STATUS="Pending"
+
+          for i in $(seq 1 50); do
+            sleep 5
+            STATUS=$(aws ssm get-command-invocation \
+              --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" \
+              --query Status --output text 2>/dev/null || echo Pending)
+            echo "SSM 명령 상태: $STATUS ($i/50)"
+            if [ "$STATUS" != "Pending" ] && [ "$STATUS" != "InProgress" ] && [ "$STATUS" != "Delayed" ]; then
+              break
+            fi
+          done
+
+          echo "SSM 명령 최종 상태: $STATUS"
+
+          # 실패 진단은 이 출력이 유일한 창구다 — 반드시 로그에 남긴다.
+          echo "--- stdout ---"
+          aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" \
+            --query StandardOutputContent --output text | tee ssm-stdout.txt
+          echo "--- stderr ---"
+          aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" \
+            --query StandardErrorContent --output text | tee ssm-stderr.txt
+
+          # 이슈 #449 — Flyway validate 실패는 워크플로에서 "컨테이너 unhealthy"로만 보이고,
+          # 원인 문장은 위 stdout 안에 묻힌다. 2026-08-18 배포 실패 때 원인을 찾는 데 시간이
+          # 걸린 자리가 정확히 여기다. 서명이 보이면 이름을 붙여 준다.
+          if grep -qE "Detected resolved migration not applied to database|FlywayValidateException|Migrations have failed validation" ssm-stdout.txt ssm-stderr.txt; then
+            # || true — grep이 무매치면 대입문이 실패해(bash -eo pipefail) 아래 폴백과 ::error::,
+            # job summary가 통째로 건너뛰어진다. 이 if에 들어온 이유가 다른 서명일 수 있으므로
+            # 무매치는 정상 경로다 (PR #493 리뷰에서 재현).
+            DETAIL=$(grep -hoE "Detected resolved migration not applied to database: [0-9]+" ssm-stdout.txt ssm-stderr.txt | head -1 || true)
+            DETAIL=${DETAIL:-"Flyway validate 실패 (자세한 문장은 위 stdout 참고)"}
+            echo "::error::원인은 Flyway 마이그레이션이다 — $DETAIL. 앱 코드가 아니라 마이그레이션 번호·체크섬 문제다."
+            {
+              echo "## ❌ 배포 실패 원인: Flyway validate"
+              echo ""
+              echo "\`$DETAIL\`"
+              echo ""
+              echo "운영 DB에 적용된 이력과 저장소의 마이그레이션 파일이 어긋났다는 뜻이다. 앱 코드가 아니라 \`src/main/resources/db/migration\`부터 본다."
+              echo ""
+              echo "- 번호 역전(이미 적용된 번호보다 낮은 마이그레이션이 들어온 경우)이면 복구 절차는 \`ai/adr/0027-unapplied-migration-rename-exception.md\`"
+              echo "- 라이브 색은 전환하지 않았으므로 서비스는 이전 버전으로 계속 떠 있다"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [ "$STATUS" != "Success" ]; then
+            echo "::error::SSM 명령 실패 — 라이브 색은 건드리지 않았다"
+            exit 1
+          fi
+
+      # ALB 타깃 헬스는 컨테이너 헬스체크와 별개다 — 둘 다 통과해야 전환한다.
+      - name: ALB 타깃 헬스 대기
+        run: |
+          IDLE_TG="${{ steps.live-color.outputs.idle_tg }}"
+          for i in $(seq 1 24); do
+            STATE=$(aws elbv2 describe-target-health \
+              --target-group-arn "$IDLE_TG" \
+              --query 'TargetHealthDescriptions[0].TargetHealth.State' --output text)
+            echo "ALB 타깃 상태: $STATE ($i/24)"
+            if [ "$STATE" = "healthy" ]; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::타임아웃 — ALB 타깃이 healthy가 되지 않았다"
+          exit 1
+
+      # 헬스체크 실패 시 여기까지 오지 않는다 — 전환하지 않고 새 색만 정리한다 (ADR-0021 §결정 6).
+      # steps.live-color.outcome 가드: 라이브 색 판별 자체가 실패했으면(빌드 실패 등 이전 단계 실패 포함)
+      # 유휴 색이 무엇인지 모르므로 이 단계를 건너뛴다.
+      - name: 실패 시 유휴 색 정리 (라이브는 건드리지 않는다)
+        if: failure() && steps.live-color.outcome == 'success'
+        run: |
+          IDLE="${{ steps.live-color.outputs.idle }}"
+          echo "cd /home/ec2-user/finplay && docker compose -f compose.bluegreen.yaml stop app-$IDLE || true" > stop-remote.sh
+          jq -n --rawfile script stop-remote.sh '{commands: ($script | rtrimstr("\n") | split("\n"))}' > stop-params.json
+          aws ssm send-command \
+            --instance-ids "${{ vars.EC2_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --parameters file://stop-params.json \
+            --query 'Command.CommandId' --output text
+
+      # 전환은 리스너를 다른 타깃 그룹으로 바꾸는 게 아니라 가중치를 뒤집는 것이다(위 라이브 색
+      # 판별 주석 참고) — blue·green 둘 다 계속 리스너에 남아 ALB가 양쪽을 헬스체크한다.
+      - name: 리스너 전환
+        id: switch
+        run: |
+          jq -n \
+            --arg idle_tg "${{ steps.live-color.outputs.idle_tg }}" \
+            --arg live_tg "${{ steps.live-color.outputs.live_tg }}" \
+            '[{
+              Type: "forward",
+              ForwardConfig: {
+                TargetGroups: [
+                  {TargetGroupArn: $idle_tg, Weight: 100},
+                  {TargetGroupArn: $live_tg, Weight: 0}
+                ]
+              }
+            }]' > switch-actions.json
+
+          aws elbv2 modify-listener \
+            --listener-arn "${{ vars.ALB_LISTENER_ARN }}" \
+            --default-actions file://switch-actions.json
+          echo "전환 완료: ${{ steps.live-color.outputs.live }} → ${{ steps.live-color.outputs.idle }}"
+
+      # "자동 롤백"은 직전 색으로 되돌리는 것으로 좁게 정의한다 — 그 이상은 사람이 workflow_dispatch로
+      # 과거 SHA를 지정해 재실행하는 수동 경로다 (ADR-0021 §결정 6).
+      - name: 전환 후 타깃 상태 재확인 (실패 시 이전 색으로 복구 + 유휴 색 정리)
+        run: |
+          sleep 15
+          STATE=$(aws elbv2 describe-target-health \
+            --target-group-arn "${{ steps.live-color.outputs.idle_tg }}" \
+            --query 'TargetHealthDescriptions[0].TargetHealth.State' --output text)
+          echo "전환 후 상태: $STATE"
+          if [ "$STATE" != "healthy" ]; then
+            echo "::error::전환 후 unhealthy — 이전 색(${{ steps.live-color.outputs.live }})으로 되돌린다"
+
+            jq -n \
+              --arg idle_tg "${{ steps.live-color.outputs.idle_tg }}" \
+              --arg live_tg "${{ steps.live-color.outputs.live_tg }}" \
+              '[{
+                Type: "forward",
+                ForwardConfig: {
+                  TargetGroups: [
+                    {TargetGroupArn: $live_tg, Weight: 100},
+                    {TargetGroupArn: $idle_tg, Weight: 0}
+                  ]
+                }
+              }]' > revert-actions.json
+
+            aws elbv2 modify-listener \
+              --listener-arn "${{ vars.ALB_LISTENER_ARN }}" \
+              --default-actions file://revert-actions.json
+
+            # 리스너를 되돌렸으니 방금 승격됐던 컨테이너는 더 이상 트래픽을 받지 않는다. 그래도 계속
+            # 띄워 두면 전환 전 실패 경로(정리함)와 정리 방식이 비대칭이 되므로 여기서도 내린다.
+            IDLE="${{ steps.live-color.outputs.idle }}"
+            echo "cd /home/ec2-user/finplay && docker compose -f compose.bluegreen.yaml stop app-$IDLE || true" > stop-remote.sh
+            jq -n --rawfile script stop-remote.sh '{commands: ($script | rtrimstr("\n") | split("\n"))}' > stop-params.json
+            aws ssm send-command \
+              --instance-ids "${{ vars.EC2_INSTANCE_ID }}" \
+              --document-name "AWS-RunShellScript" \
+              --parameters file://stop-params.json \
+              --query 'Command.CommandId' --output text
+
+            exit 1
+          fi
+          # 이전 색 컨테이너는 여기서 내리지 않는다 — 다음 배포까지 롤백 경로로 남긴다.
+
+      - name: 배포 요약
+        if: always()
+        run: |
+          {
+            echo "### 배포 결과"
+            echo "- 배포 커밋: \`${{ steps.image.outputs.tag }}\`"
+            echo "- 이전 라이브 색: \`${{ steps.live-color.outputs.live || '판별 실패' }}\`"
+            echo "- 이번 배포 대상 색: \`${{ steps.live-color.outputs.idle || '판별 실패' }}\`"
+            echo "- 워크플로우 결과: \`${{ job.status }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

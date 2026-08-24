@@ -12,11 +12,19 @@ description: PR 하나를 서브에이전트들로 병렬 리뷰하고 결과를
 1. `gh pr view <번호>`로 PR 제목/설명 확인, `gh pr checkout <번호>`로 체크아웃. (원격이 없거나 번호 미지정이면 현재 브랜치 vs dev 로컬 diff로 대체한다.)
 2. 서브에이전트 **병렬** 투입. packet은 최소로: PR 번호, diff 범위(`git diff dev...HEAD`), 관련 spec 경로만 전달한다. 대화 히스토리나 PR 논의 요약은 전달하지 않는다.
    - **reviewer (리뷰 모드)** — 범위: `git diff dev...HEAD`. 컨벤션/ADR/문서 동기화/테스트 누락 점검.
-   - **tester (빌드 검증)** — `.\gradlew.bat build` 실행 + 실패 분석 (테스트 작성은 지시하지 않는다).
+   - **tester (빌드 검증)** — 아래 순서로 판정한다. 테스트 작성은 지시하지 않는다.
+     1. **문서만 변경된 PR이면 생략한다.** `git diff --name-only dev...HEAD`가 전부 `docs/`·`*.md`·`.claude/`면 build를 돌리지 않고 reviewer만 투입한다.
+     2. **CI가 있으면 `gh pr checks <번호>`로 결과를 판독한다** (010-deployment 이후). build를 재실행하지 않는다 — 실패 시 로그를 읽어 원인만 분석한다.
+     3. **CI가 없으면**(현재) 아래 3개가 모두 참일 때만 생략하고 `/feature` 마무리 build 결과를 인용한다. 하나라도 어긋나면 `.\gradlew.bat build`를 실행한다.
+        - PR 본문의 **빌드 검증 SHA** == 현재 `git rev-parse HEAD`
+        - 그 build가 통과로 보고됨
+        - `git merge-base dev HEAD`가 그 build 시점과 동일 (이후 dev가 움직이지 않음)
+     - 리뷰 지적으로 새 커밋이 생기면 위 조건이 깨지므로 다시 판정한다.
    - **reviewer (QA 모드)** — 변경에 controller/API가 포함된 경우에만, 리뷰 모드와 별도 인스턴스로 투입. 해당 spec 폴더 경로를 전달.
 3. 결과 종합. 판정 기준.
    - 승인 의견: 리뷰 모드 차단 0건 AND 빌드 통과 AND QA FAIL 0건
    - 수정 요청 의견: 그 외
+   - 빌드를 생략했다면 근거를 함께 적는다 — "문서 전용 PR", "CI 통과(런 링크)", "`/feature` build 통과 SHA 인용" 중 무엇인지. **돌리지 않은 검증을 통과했다고 적지 않는다** (PRD C-005).
 4. 게시한다.
    ```
    gh pr review <번호> --comment --body "<종합 리뷰>"

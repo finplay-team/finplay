@@ -1,0 +1,232 @@
+plugins {
+	id 'java'
+	id 'jacoco'
+	id 'org.springframework.boot' version '4.1.0'
+	id 'io.spring.dependency-management' version '1.1.7'
+	id 'com.diffplug.spotless' version '8.0.0'
+	id 'com.github.spotbugs' version '6.5.9'
+}
+
+group = 'com.finplay'
+version = '0.0.1-SNAPSHOT'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(17)
+	}
+}
+
+// plain jar(비실행용)를 끈다 — build/libs에 bootJar 하나만 남아야 CD 런타임 이미지
+// (Dockerfile.runtime)의 `COPY build/libs/*.jar app.jar`가 어느 jar가 복사되는지
+// 알파벳 순서에 기대지 않고 항상 유일하게 정해진다.
+tasks.named('jar') {
+	enabled = false
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+	implementation 'org.springframework.boot:spring-boot-starter-websocket'
+	implementation 'org.springframework.boot:spring-boot-restclient'
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+	implementation 'org.springframework.security:spring-security-crypto'
+	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.0'
+	implementation 'io.jsonwebtoken:jjwt-api:0.13.0'
+	implementation 'org.springframework.boot:spring-boot-starter-flyway'
+	// Spring AI 2.0.0 이상만 Boot 4.x를 지원한다 (ADR-0011). 1.x는 Boot 3.x 전용이라 컨텍스트가 기동하지 않는다.
+	implementation 'org.springframework.ai:spring-ai-starter-model-openai:2.0.0'
+	implementation 'org.flywaydb:flyway-mysql'
+	// AWS SDK v2(software.amazon.awssdk) — v1(com.amazonaws:aws-java-sdk-*)은 유지보수 모드라 신규 도입 대상이 아니다
+	// (ai/specs/022-community-enhancement/plan.md "COM-006 후속"). BOM 2.51.4는 구현 시점(2026-08-11)
+	// Maven Central 최신 안정판이며 Boot 4.1/Java 17과 충돌이 없다.
+	implementation platform('software.amazon.awssdk:bom:2.51.4')
+	implementation 'software.amazon.awssdk:s3'
+	implementation 'com.querydsl:querydsl-jpa:5.1.0:jakarta'
+	annotationProcessor 'com.querydsl:querydsl-apt:5.1.0:jakarta'
+	annotationProcessor 'jakarta.annotation:jakarta.annotation-api'
+	annotationProcessor 'jakarta.persistence:jakarta.persistence-api'
+	compileOnly 'org.projectlombok:lombok'
+	developmentOnly 'org.springframework.boot:spring-boot-docker-compose'
+	runtimeOnly 'com.mysql:mysql-connector-j'
+	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.13.0'
+	runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.13.0'
+	annotationProcessor 'org.projectlombok:lombok'
+	testImplementation 'org.springframework.boot:spring-boot-starter-actuator-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-security-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-validation-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+	// spring-boot-testcontainers는 @ServiceConnection 전용이었고 이슈 #119에서 그 방식을 버려 미참조가 됐다.
+	// 남겨 두면 컨테이너를 다시 @Bean으로 노출하는 경로가 열려 있어 #119가 재발할 수 있으므로 제거한다
+	// (제거하면 @ServiceConnection 사용 시 컴파일이 실패해 구조적 방어선이 된다).
+	testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+	testImplementation 'org.testcontainers:testcontainers-mysql'
+	testCompileOnly 'org.projectlombok:lombok'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+	testAnnotationProcessor 'org.projectlombok:lombok'
+}
+
+tasks.withType(Test).configureEach {
+	useJUnitPlatform()
+	// 전체 컨텍스트를 띄우는 @SpringBootTest용 더미 시크릿 (test 태스크 런타임에만 존재, 프로덕션 fail-fast 유지)
+	environment 'EMAIL_VERIFICATION_SECRET', 'test-email-verification-secret'
+	environment 'JWT_SECRET', 'test-jwt-secret-that-is-at-least-32-bytes'
+	environment 'OAUTH_STATE_SECRET', 'test-oauth-state-secret-that-is-at-least-32-bytes'
+	environment 'OAUTH_LOGIN_REDIRECT_URI', 'https://www.finplay.site/oauth/callback'
+	environment 'OAUTH_REAUTH_REDIRECT_URI', 'https://www.finplay.site/oauth/reauth-callback'
+	environment 'PASSWORD_RESET_SECRET', 'test-password-reset-secret-that-is-at-least-32-bytes'
+	// BithumbFeedSimulator(이슈 #104, !prod 전용)를 @SpringBootTest 전체 컨텍스트에서 비활성화한다.
+	// @ConditionalOnProperty는 컨텍스트 refresh 중 빈 정의 스캔 단계(ConfigurationClassPostProcessor)에서
+	// 평가되는데, @DynamicPropertySource를 @Import된 설정 클래스에 두면 수집되지 않고(PR #110 리뷰), 대안으로
+	// 시도한 DynamicPropertyRegistrar 빈도 그 프로퍼티를 finishBeanFactoryInitialization 단계(빈 정의 스캔보다
+	// 늦음, preInstantiateSingletons 이전)에서만 등록해 조건 평가 시점보다 늦다(spring-test-7.0.8 바이트코드로
+	// 재확인, 회귀 테스트로 실제 실패 재현함). bithumb.feed.simulate.enabled 자체를 JVM 시스템 프로퍼티로 두면
+	// @SpringBootTest뿐 아니라 이 프로퍼티의 matchIfMissing 기본 동작을 검증하는 순수 ApplicationContextRunner
+	// 슬라이스 테스트(BithumbFeedSimulatorConditionalTest, 부트 설정 로딩을 거치지 않고 StandardEnvironment의
+	// systemProperties를 그대로 봄)까지 오염시켜 "프로퍼티 미설정 시 기본값" 케이스가 거짓으로 깨진다. 대신
+	// spring.config.additional-location으로 이 프로퍼티 하나만 담은 별도 파일을 가리킨다 — 이 위치는
+	// ConfigDataEnvironmentPostProcessor(SpringApplication 부트스트랩, 즉 @SpringBootTest)만 해석하므로
+	// ApplicationContextRunner에는 영향이 없다.
+	//
+	// 같은 경로에 spec 012의 배치·수집 크론을 끄는 파일을 하나 더 얹는다(쉼표로 나열하면 순서대로 적재된다).
+	// @SpringBootTest가 컨텍스트를 통째로 띄우는 동안 스케줄이 실제로 등록되므로, 평일 배치·수집 시각에 전체
+	// 빌드가 걸치면 공유 Testcontainers MySQL에 의도하지 않은 데이터가 생긴다. 파일을 합치지 않고 나눈 것은
+	// 끄는 이유가 다르기 때문이다 — 위는 외부 호출·합성 틱, 아래는 시각에 묶인 배치다.
+	//
+	// 셋째로 spec 014의 랭킹 재구성 크론(매일 04:20 KST)을 끄는 파일을 얹는다. 시각에 묶인 배치라는 점은
+	// 위와 같지만 소유 spec이 다르고, 파괴력도 한 단계 크다 — MySQL에 행을 더하는 것이 아니라 공유 Redis의
+	// ranking:{market} 키를 RENAME으로 통째로 교체하므로, 04:20에 걸친 빌드에서 RankingIntegrationTest의
+	// 개수 단정이 그 순간 무너진다(그 클래스는 AFTER_COMMIT 검증 때문에 @Transactional로 롤백할 수 없다).
+	//
+	// 넷째로 이슈 #299의 빗썸 연결상태 재기록 크론(15초 주기)을 끄는 파일을 얹는다. 합성 틱을 내지 않고
+	// Fake·WebSocket 두 BithumbFeedClient 구현 모두에 적용된다는 점에서 첫째 파일과 끄는 이유가 달라
+	// 별도 파일로 둔다 — 끄지 않으면 feed:crypto:status 키를 DISCONNECTED로 두고 단정하는 통합 테스트들이
+	// 백그라운드 재기록과 타이밍이 겹쳐 간헐적으로 실패한다.
+	//
+	// 다섯째로 spec 035의 주식 수집 당일 재시도 크론(08:15~10:45, 15분 간격 9회)을 끄는 파일을 얹는다
+	// (이슈 #370, PR #374 리뷰 권장). 정규 08:10 배치(collect())는 크론이 문자열 리터럴로 하드코딩돼 있어
+	// 같은 방식으로 끌 수 없다 — 이 파일은 재시도 크론만 다룬다.
+	systemProperty 'spring.config.additional-location',
+		'classpath:/bithumb-feed-simulator-disabled-for-tests.yml,' +
+			'classpath:/feedback-schedules-disabled-for-tests.yml,' +
+			'classpath:/ranking-rebuild-schedule-disabled-for-tests.yml,' +
+			'classpath:/bithumb-feed-reconciler-disabled-for-tests.yml,' +
+			'classpath:/market-stock-retry-schedule-disabled-for-tests.yml'
+	// 테스트 DB 커넥션 타임아웃을 Hikari 기본값 30초에서 10초로 줄인다 (이슈 #119 완화책).
+	// 공유 Testcontainers MySQL이 실행 중 교체되면 그 전에 만들어진 컨텍스트는 옛 포트를 물고 있어 반드시 실패하는데,
+	// 기본값이면 테스트 1건마다 30초를 헛되이 기다린다 — 실측에서 9건 실패에 4분 30초가 이 대기에만 쓰였다.
+	//
+	// 처음에 5초로 잡았다가 PR #127 리뷰 지적으로 10초로 올렸다. agent-mistakes.md(2026-07-30)에 같은 실패
+	// 시그니처가 "호스트 리소스 경합으로 지연되다 결국 성공"한 사례로 남아 있고, 이 팀은 여러 워크트리에서
+	// 병렬로 build를 돌린다(ai/parallel-agents.md). 5초는 그런 케이스를 새 오탐 실패로 바꿀 여지가 있다.
+	// 10초는 정상 접속(로컬 컨테이너 수십 ms) 대비 200배 이상 여유이면서 낭비 대기를 3분의 1로 줄인다.
+	//
+	// 경합이 심한 환경에서 오탐이 관찰되면 build.gradle을 고치지 말고 프로퍼티로 올린다:
+	//   ./gradlew test -PtestDbConnectionTimeoutMs=30000
+	systemProperty 'spring.datasource.hikari.connection-timeout',
+		(findProperty('testDbConnectionTimeoutMs') ?: '10000')
+	// 캐시된 컨텍스트가 놀면서 커넥션을 붙잡고 있지 않게 한다 (이슈 #134).
+	// Boot 기본값은 minimumIdle = maximumPoolSize = 10이라, 테스트 한 클래스가 끝나 컨텍스트가 캐시에
+	// 들어앉은 뒤에도 그 풀이 커넥션 10개를 계속 쥔다. 실측으로 최대 동시 접속 276개가 나왔고 MySQL
+	// 기본 한도 151을 크게 넘겨 컨테이너에 --max-connections=1000을 걸어 둔 상태였다(PR #133).
+	//
+	// minimum-idle=0이면 유휴 커넥션이 idle-timeout 뒤에 반납된다. maximum-pool-size는 기본값 10 그대로라
+	// **동시성 테스트는 여전히 커넥션 10개까지 실제로 동시에 쓸 수 있다** — 이슈 #121이 우려한 "풀을 좁히면
+	// 동시 실행이 안 돼 검증이 무력해진다"에 해당하지 않는다. 줄이는 것은 노는 동안의 보유량뿐이다.
+	// idle-timeout 10초는 Hikari가 허용하는 하한이다(그보다 작으면 경고 후 기본값으로 되돌린다).
+	systemProperty 'spring.datasource.hikari.minimum-idle',
+		(findProperty('testDbMinimumIdle') ?: '0')
+	systemProperty 'spring.datasource.hikari.idle-timeout',
+		(findProperty('testDbIdleTimeoutMs') ?: '10000')
+	// 테스트 컨텍스트가 몇 갈래로 갈라지는지 재는 스위치 (이슈 #134). 평소에는 꺼 둔다 — 로그가 수십 MB로 불어난다.
+	//   ./gradlew test --rerun-tasks -PmeasureContexts=true
+	// 컨텍스트 캐시 미스마다 MergedContextConfiguration 키 전문이 찍히므로 "무엇이 갈래를 만들었는지"를
+	// 추측이 아니라 키 대조로 알 수 있다. 전후 비교는 반드시 같은 스위치로 잰다.
+	if (findProperty('measureContexts') == 'true') {
+		systemProperty 'logging.level.org.springframework.test.context.cache', 'DEBUG'
+		testLogging.showStandardStreams = true
+	}
+	// 테스트 워커 JVM 힙 부족으로 전체 스위트 막판(리포트 생성 직전)에 죽는 문제 (agent-mistakes.md
+	// 2026-08-11 행 — 로컬에서 `OutOfMemoryError`가 연쇄 발생. PR #482 CI run 32284448720에서
+	// GitHub Actions 러너(ubuntu-latest)에서도 동일 시그니처 `Java heap space`로 재현 — 이전엔
+	// "이 로컬 머신의 한계"로 오진했으나 원인은 머신이 아니라 이 설정 자체였다). maxParallelForks
+	// 기본값 1·forkEvery 기본값 0을 `./gradlew test -I`로 직접 확인했다 — 테스트 클래스 465개
+	// (약 3046건)를 JVM 하나가 재시작 없이 전부 처리하는데, maxHeapSize를 지정하지 않으면 JVM
+	// 에르고노믹 기본값(호스트 총 메모리의 1/4, 16GB 머신에서 약 4GB)에 묶인다. 클래스마다 다른
+	// @SpringBootTest/@DataJpaTest/@WebMvcTest 조합이 스프링 테스트 컨텍스트 캐시에 계속 쌓이며
+	// 스위트 끝 무렵 그 한도를 넘겨 `Could not complete execution for Gradle Test Executor N >
+	// Java heap space`로 죽는다 — 개별 테스트 실패가 아니라 워커 프로세스 자체의 메모리 고갈이라
+	// 실패 테스트 이름이 하나도 안 남는 것이 특징이다.
+	maxHeapSize = '4g'
+	// 100클래스마다 워커를 재시작해 누적된 컨텍스트 캐시를 주기적으로 비운다. 0(재시작 없음)이면
+	// 힙을 아무리 키워도 스위트가 더 자라면 같은 자리에서 다시 죽는다.
+	forkEvery = 100
+	finalizedBy tasks.jacocoTestReport
+}
+
+jacocoTestReport {
+	dependsOn test
+	reports {
+		xml.required = true
+		html.required = true
+	}
+}
+
+// 커버리지 게이트: 라인 커버리지 40% 미만이면 빌드 실패 (진입점 클래스 제외). 초기 경량 시작값 — 지표 보고 상향 예정.
+jacocoTestCoverageVerification {
+	dependsOn test
+	classDirectories.setFrom(
+		files(classDirectories.files.collect { fileTree(dir: it, exclude: '**/*Application*') })
+	)
+	violationRules {
+		rule {
+			limit {
+				counter = 'LINE'
+				value = 'COVEREDRATIO'
+				minimum = 0.40
+			}
+		}
+	}
+}
+
+// 정적 버그 탐지 (SpotBugs). 테스트 코드는 분석 대상에서 제외.
+spotbugs {
+	excludeFilter = file('config/spotbugs/exclude.xml')
+}
+
+spotbugsMain {
+	reports {
+		html {
+			required = true
+		}
+	}
+}
+
+spotbugsTest {
+	enabled = false
+}
+
+check {
+	dependsOn jacocoTestCoverageVerification
+}
+
+spotless {
+	java {
+		target 'src/**/*.java'
+		// NAVER 자바 스타일 (팀 노션 확정) — 빌드 게이트는 Spotless로 유지하고 스타일만 교체
+		eclipse().configFile('config/naver-eclipse-formatter.xml')
+		removeUnusedImports()
+		// 이슈 #525 — domain/global 패키지 재편(PR #523)으로 entity 등 하위 패키지명이 바뀌면서 알파벳
+		// 순서가 뒤집힌 import가 대량으로 남았는데, 이 규칙이 없어 spotlessApply로도 안 잡혔다.
+		// static import는 그대로 최상단 별도 블록으로 분리되고, 나머지는 인자 없는 단일 그룹이라
+		// 기존 스타일(패키지 출처 구분 없이 완전 알파벳순)을 그대로 유지한다.
+		importOrder()
+	}
+}

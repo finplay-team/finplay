@@ -4,3 +4,40 @@ spring:
     url: ${DB_URL} # 예: jdbc:mysql://<host>:3306/finplay
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
+  data:
+    # Redis도 DB와 같은 fail-fast 규칙을 적용한다 (이슈 #125). 기본값을 두지 않는 이유는 실패 방식 때문이다 —
+    # Spring 기본값 localhost:6379를 그대로 두면 컨테이너 안에서 localhost가 앱 자신이라 연결되지 않는데,
+    # 기동은 성공하고 코인 시세 기능만 런타임에 조용히 죽는다. 값이 없으면 기동 단계에서 드러나게 한다.
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
+
+# 이메일 발송(Resend) — 운영 프로필의 ResendEmailSender만 사용한다. 값은 환경변수로 주입.
+# 이 설정은 prod 프로필에서만 로드되므로 로컬·테스트는 RESEND_API_KEY·EMAIL_FROM 없이 기동한다.
+resend:
+  api-key: ${RESEND_API_KEY}
+email:
+  from: ${EMAIL_FROM}
+
+# 모의투자 도메인은 초당 호출 허용량이 낮아 분봉 수집(16종목 x 최대 10페이지)을 연달아 호출하면
+# EGW00201(초당 거래건수를 초과하였습니다)로 전 종목이 실패한다(application-local.yml과 동일 근거, 2026-07-30
+# 실측). 운영 kis.base-url도 현재 배포 구성상 모의투자 도메인이라(이슈 #370) 로컬에서만 있던 이 보호장치가
+# 운영에는 빠져 있었다 — 로컬에서 이미 검증된 600ms를 그대로 적용한다.
+kis:
+  request-interval-ms: 600
+
+finplay:
+  community:
+    image-storage:
+      # 커뮤니티 첨부 이미지 저장소를 S3로 전환(이슈 #330) — 버킷 이름은 시크릿이 아니지만
+      # 기존 fail-fast 관례(DB_URL 등)를 그대로 따라 기본값 없이 참조한다. 자격 증명·리전은
+      # SDK 기본 체인(EC2 IAM 인스턴스 프로파일, AWS_REGION)에 맡긴다 — 커스텀 키를 추가하지 않는다.
+      s3:
+        bucket: ${COMMUNITY_S3_BUCKET}
+  cors:
+    # DB_URL·REDIS_HOST와 같은 fail-fast 규칙이다 — 기본값을 두지 않는다 (ADR-0022 §결정 2).
+    # 이유도 REDIS_HOST와 같다. 값이 틀리면 앱은 정상 기동하고 브라우저에서만 전 API가 막혀
+    # "화면은 뜨는데 아무것도 안 되는" 형태가 되므로, 누락은 기동 단계에서 드러나게 한다.
+    # 값 예시(A 단계): http://finplay-frontend.s3-website.ap-northeast-2.amazonaws.com
+    # 값 예시(B 단계): https://www.finplay.site
+    allowed-origins: ${CORS_ALLOWED_ORIGINS}
