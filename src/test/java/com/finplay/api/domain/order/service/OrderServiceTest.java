@@ -240,9 +240,17 @@ class OrderServiceTest {
 
 		assertThat(logs).hasSize(2);
 		assertThat(logs.get(0).getLevel()).isEqualTo(Level.WARN);
+		// 이슈 #542 완료 조건 1번(userId·idempotencyKey를 포함해 log.error로 남긴다)을 메시지 문구뿐
+		// 아니라 실제 인자값과 첨부된 예외까지 확인한다 — 인자를 빼먹어도 문구만 보는 검증은 통과하기 때문이다.
 		assertThat(logs.get(1)).satisfies(event -> {
 			assertThat(event.getLevel()).isEqualTo(Level.ERROR);
-			assertThat(event.getFormattedMessage()).contains("재시도까지 데드락으로 실패했습니다");
+			assertThat(event.getFormattedMessage())
+				.contains("재시도까지 데드락으로 실패했습니다")
+				.contains("userId=" + USER_ID)
+				.contains("idempotencyKey=" + IDEMPOTENCY_KEY);
+			assertThat(event.getThrowableProxy()).isNotNull();
+			assertThat(event.getThrowableProxy().getClassName()).isEqualTo(CannotAcquireLockException.class.getName());
+			assertThat(event.getThrowableProxy().getMessage()).isEqualTo(deadlock.getMessage());
 		});
 	}
 
