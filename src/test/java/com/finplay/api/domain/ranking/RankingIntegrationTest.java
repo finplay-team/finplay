@@ -480,16 +480,18 @@ class RankingIntegrationTest {
 	// 이벤트 미발행이라는 메커니즘까지만 고정한다).
 	@Test
 	void sellingOnlyTutorialSampleInstrumentLeavesAccountOutOfRankingList() throws Exception {
+		// PR #550 2차 리뷰 권장 1 — 튜토리얼 샘플 종목은 PriceQueryService가 PriceStore를 우회하고
+		// TutorialSampleInstrumentPriceService의 결정적 사인파 기준가(CRYPTO 10,000 부근 ±3%)로 체결가를
+		// 정한다(SANDBOX-002). seedCryptoPrice로 시세를 심어도 이 종목에는 적용되지 않으므로 여기서는 부르지
+		// 않는다 — 이 시나리오의 관심사는 실현손익 액수가 아니라 매도 이력 자체의 랭킹 노출 여부다.
 		User user = createUser("rank-tutorial-only");
 		Account account = createAccount(user);
 		String accessToken = issueAccessToken(user);
 		Instrument instrument = createTutorialSampleCryptoInstrument("rank-tutorial-only");
-		seedCryptoPrice(instrument, new BigDecimal("50000000"));
 
 		performOrder(accessToken, buyRequest(instrument.getId(), "0.02"))
 			.andExpect(status().isCreated());
 
-		seedCryptoPrice(instrument, new BigDecimal("80000000"));
 		performOrder(accessToken, sellRequest(instrument.getId(), "0.01"))
 			.andExpect(status().isCreated());
 
