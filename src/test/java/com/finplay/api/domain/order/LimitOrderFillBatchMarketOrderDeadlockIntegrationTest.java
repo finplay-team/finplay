@@ -1,6 +1,9 @@
 // 054-limit-order-fill-bulk-lock 위험 요소 1 확장 검증 — 지정가 청크의 벌크 FOR UPDATE(계좌 ID 오름차순)가
 // 진행되는 도중에, 그 계좌 중 일부를 시장가 주문(OrderExecutionService, spec.md 범위 제외라 여전히 개별
-// SELECT ... FOR UPDATE)이 동시에 잠그려 하면 CannotAcquireLockException(데드락)이 나는지 확인한다.
+// SELECT ... FOR UPDATE)이 동시에 잠그려 하면 CannotAcquireLockException(데드락)이 나는지 확인한다. 시장가도
+// 지정가 청크와 같은 종목을 사서 계좌뿐 아니라 holding 행까지 겹치게 한다(PR #545 리뷰 권장사항 6번) — 종목을
+// 다르게 두면 겹치는 자원이 계좌 하나뿐이라 진짜 데드락(순환 대기)이 성립할 수 없고 lock-wait 지연으로만
+// 실패할 수 있는 약한 테스트가 된다.
 // LimitOrderFillBatchCrossInstrumentChunkDeadlockIntegrationTest·LimitOrderFillAccountLockContentionIntegrationTest의
 // CountDownLatch/ExecutorService/REPEAT=5 패턴을 그대로 따른다.
 package com.finplay.api.domain.order;
@@ -105,10 +108,11 @@ class LimitOrderFillBatchMarketOrderDeadlockIntegrationTest {
 		}
 	}
 
-	// 계좌 ACCOUNT_COUNT개를 만들고 전부 종목 A(지정가 청크)에 PENDING 매수를 걸어둔다. 그중 뒤쪽 절반은 종목
-	// B(시장가)에도 매수를 낸다 — fillBatch(종목 A 청크 전체, 계좌 ID 오름차순 벌크 락)와 시장가 주문(겹치는
-	// 계좌만, 각자 개별 SELECT ... FOR UPDATE)을 같은 래치로 동시 출발시켜, 벌크 락 진행 도중 개별 락이
-	// 끼어들어도 CannotAcquireLockException 없이 둘 다 끝나는지 확인한다.
+	// 계좌 ACCOUNT_COUNT개를 만들고 전부 종목 A(지정가 청크)에 PENDING 매수를 걸어둔다. 그중 뒤쪽 절반은 같은
+	// 종목 A에 시장가 매수도 낸다 — 계좌뿐 아니라 holding 행까지 겹쳐야 진짜 경합이다. fillBatch(종목 A 청크
+	// 전체, 계좌 ID 오름차순 벌크 락)와 시장가 주문(겹치는 계좌만, 각자 개별 SELECT ... FOR UPDATE)을 같은
+	// 래치로 동시 출발시켜, 벌크 락 진행 도중 개별 락이 끼어들어도 CannotAcquireLockException 없이 둘 다
+	// 끝나는지 확인한다.
 	private void runOnceAndAssertNoDeadlock() throws Exception {
 		List<Account> accounts = new ArrayList<>();
 		for (int i = 0; i < ACCOUNT_COUNT; i++) {
@@ -116,9 +120,8 @@ class LimitOrderFillBatchMarketOrderDeadlockIntegrationTest {
 			accounts.add(createAccount(user));
 		}
 		Instrument instrumentA = createCryptoInstrument("BLKA");
-		Instrument instrumentB = createCryptoInstrument("BLKB");
 		BigDecimal marketPrice = new BigDecimal("1000000");
-		priceStore.saveTick(instrumentB.getSymbol(), marketPrice, LocalDateTime.now(clock));
+		priceStore.saveTick(instrumentA.getSymbol(), marketPrice, LocalDateTime.now(clock));
 
 		List<Long> chunkOrderIds = new ArrayList<>();
 		for (Account account : accounts) {
@@ -144,7 +147,7 @@ class LimitOrderFillBatchMarketOrderDeadlockIntegrationTest {
 					return orderService.createOrder(
 						account.getUser().getId(), "idem-blk-market-" + UUID.randomUUID(),
 						new OrderCreateRequest(
-							Market.CRYPTO, instrumentB.getId(), OrderSide.BUY, "MARKET", new BigDecimal("0.01")));
+							Market.CRYPTO, instrumentA.getId(), OrderSide.BUY, "MARKET", new BigDecimal("0.01")));
 				}));
 			}
 
@@ -175,7 +178,7 @@ class LimitOrderFillBatchMarketOrderDeadlockIntegrationTest {
 	}
 
 	// 최소주문금액(5,000)을 넉넉히 넘기면서 계좌 기본 현금(10,000,000) 안에서 지정가·시장가 몫을 함께 예약해도
-	// 여유가 있도록 수량·가격을 고정한다(건당 예약 약 10,005원 × 2종목).
+	// 여유가 있도록 수량·가격을 고정한다(같은 종목에 건당 예약 약 10,005원 × 2건).
 	private Long createPendingLimitBuy(Account account, Instrument instrument) {
 		BigDecimal quantity = new BigDecimal("0.01");
 		BigDecimal limitPrice = new BigDecimal("1000000");

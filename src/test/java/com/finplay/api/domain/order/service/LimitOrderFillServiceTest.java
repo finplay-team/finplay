@@ -468,6 +468,31 @@ class LimitOrderFillServiceTest {
 	}
 
 	@Test
+	void fillBatchThrowsExplicitExceptionWhenBulkAccountLockOmitsOrdersAccount() {
+		// order→account는 FK로 항상 존재해야 하지만(0aea48b9 방어 가드, PR #545 리뷰 권장사항 3번), 벌크
+		// 계좌 조회가 그 계좌를 조용히 빠뜨리면 null을 그대로 넘기지 않고 명시 예외를 던져야 한다 — 형제 가드인
+		// order 누락(위 테스트)·SELL holding 누락(아래 테스트)과 대칭을 이룬다.
+		Instrument instrument = cryptoInstrument();
+		Account account = account();
+		Order order = limitPendingOrder(account, instrument, OrderSide.BUY, "0.1", "1000000");
+		ReflectionTestUtils.setField(order, "id", 105L);
+		when(orderRepository.findByIdInForUpdate(List.of(105L))).thenReturn(List.of(order));
+		when(accountService.getAccountsByIdsForUpdate(List.of(10L))).thenReturn(List.of());
+		when(portfolioBuyService.findExistingHoldingsForChunkUpdate(List.of(10L), instrument.getId()))
+			.thenReturn(List.of());
+
+		assertThatThrownBy(() -> service.fillBatch(List.of(105L)))
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessage("체결 대상 계좌를 찾을 수 없습니다. accountId=" + account.getId());
+
+		verify(portfolioBuyService, never())
+			.applyBuyTrade(any(), any(), any(), any(), any(), anyLong(), any());
+		verify(portfolioBuyService, never())
+			.applyBuyTrade(any(), any(), any(), any(), any(), anyLong(), any(), any());
+		verifyNoInteractions(tradeRepository, portfolioSellService);
+	}
+
+	@Test
 	void fillBatchThrowsSameMessageAsGetHoldingForUpdateWhenSellHoldingMissingFromBulkMap() {
 		// SELL은 신규 생성이 없으므로 holdingsByAccountId 맵에 없으면 실제로 holding이 없는 것이다 —
 		// PortfolioSellService.getHoldingForUpdate(단건 경로)와 동일한 메시지의 예외를 던져야 한다.
