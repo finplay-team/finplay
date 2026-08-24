@@ -239,7 +239,11 @@ public class LimitOrderFillService {
 
 		order.markFilled();
 		// 커밋 이후(after-commit)에만 랭킹에 반영되도록 이벤트만 발행한다 — 기존 시장가 매도와 동일 훅 재사용.
-		eventPublisher.publishEvent(new RealizedPnlUpdatedEvent(account.getId()));
+		// 튜토리얼 샘플 종목 매도는 finalizeSellRealizedPnl이 account.realizedPnl을 안 바꾸므로(spec 033
+		// SANDBOX-EXCL-004) 이벤트도 발행하지 않는다 — 안 그러면 실제 매도 이력 없는 계좌가 랭킹에 오른다(이슈 #549).
+		if (!instrument.isTutorialSample()) {
+			eventPublisher.publishEvent(new RealizedPnlUpdatedEvent(account.getId()));
+		}
 	}
 
 	// fillBatch(청크 벌크 락) 전용 — order·account는 이미 fillBatch가 벌크 락으로 잠근 것을 그대로 받는다.
@@ -344,7 +348,10 @@ public class LimitOrderFillService {
 		portfolioSellService.finalizeSellRealizedPnl(account, trade, amount, fee, allocation, now);
 
 		order.markFilled();
-		eventPublisher.publishEvent(new RealizedPnlUpdatedEvent(account.getId()));
+		// 튜토리얼 샘플 종목 매도는 이벤트를 발행하지 않는다(fillSell과 동일 이유, 이슈 #549).
+		if (!instrument.isTutorialSample()) {
+			eventPublisher.publishEvent(new RealizedPnlUpdatedEvent(account.getId()));
+		}
 	}
 
 	private boolean isTriggered(Order order, BigDecimal canonicalPrice) {

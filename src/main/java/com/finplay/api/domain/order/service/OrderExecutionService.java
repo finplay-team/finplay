@@ -203,8 +203,13 @@ public class OrderExecutionService {
 			tutorialAccount.addRealizedPnl(realizedPnl);
 		}
 		// 커밋 이후(after-commit)에만 랭킹에 반영되도록 이벤트만 발행한다 — 손익값을 싣지 않고 이벤트 처리 시점에
-		// DB에서 최신 realizedPnl을 다시 조회한다(동시성 경합 Decision Gate, plan.md).
-		eventPublisher.publishEvent(new RealizedPnlUpdatedEvent(account.getId()));
+		// DB에서 최신 realizedPnl을 다시 조회한다(동시성 경합 Decision Gate, plan.md). 튜토리얼 샘플 종목
+		// 매도는 위 분기에서 account.realizedPnl 자체를 안 바꾸므로(spec 033 SANDBOX-EXCL-004) 이벤트도 발행하지
+		// 않는다 — 안 그러면 RankingService.refreshScore가 실제 매도 이력 없는 계좌를 랭킹 ZSET에 올려버린다
+		// (이슈 #549).
+		if (!instrument.isTutorialSample()) {
+			eventPublisher.publishEvent(new RealizedPnlUpdatedEvent(account.getId()));
+		}
 
 		return OrderResponse.of(order, trade);
 	}
