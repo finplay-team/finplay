@@ -1,4 +1,3 @@
-// KST(Asia/Seoul) 기준 주입 가능한 Clock 빈을 제공하는 공용 설정
 package com.finplay.api.global.config;
 
 import java.time.Clock;
