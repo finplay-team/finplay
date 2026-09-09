@@ -1,4 +1,3 @@
-// 종목별로 수집한 뉴스·공시 1건을 영속하는 엔티티 — 네 파트(카드 근거·매도 회고·요약·브리핑)가 이 테이블 하나를 공유한다.
 package com.finplay.api.domain.feedback.entity;
 
 import com.finplay.api.domain.market.entity.Instrument;
@@ -18,17 +17,6 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-/**
- * <b>기사 본문을 담는 컬럼이 없다.</b> 제목·언론사·원문 URL·발행시각까지만 저장하고 본문은 AI 입력으로만 쓰고
- * 버린다 (spec §정책 전제 — 저작권). 네이버 API가 주는 요약 스니펫도 저장하지 않는다.
- *
- * <p>{@code createdAt}은 발행 시각이 아니라 <b>수집 시각</b>이다 (§데이터 모델). 요약 재생성 판정이 이 값을
- * 직전 {@code generated_at}과 비교하므로(FEED-008) {@code publishedAt}과 하나로 합치지 않는다 — 수집이 30분
- * 주기라 10:03 발행 기사가 10:30에 저장되고, 발행 시각으로 비교하면 그 기사가 영영 요약에 들어가지 못한다.
- *
- * <p>유니크는 {@code (instrument_id, url)}이다. {@code url} 단독이 아닌 이유와 접두 길이를 두지 않는 이유는
- * §C-8·§데이터 모델에 있다.
- */
 @Entity
 @Table(name = "market_news_items")
 @Getter
@@ -79,10 +67,6 @@ public class MarketNewsItem {
 		this.createdAt = createdAt;
 	}
 
-	/**
-	 * @param publishedAt 기사 발행 시각. 공시는 접수일자만 있어 {@code 00:00:00}이다 (§C-3)
-	 * @param now         <b>수집 시각</b>이다. 발행 시각을 넣지 않는다
-	 */
 	public static MarketNewsItem create(
 		Instrument instrument,
 		MarketNewsItemType type,
