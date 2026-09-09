@@ -1,4 +1,3 @@
-// 지정가 주문 1건을 취소(예약 해제)하는 서비스 — 잠금 순서 order → account → (SELL만) holding(plan.md)
 package com.finplay.api.domain.order.service;
 
 import com.finplay.api.domain.account.entity.Account;
@@ -30,8 +29,6 @@ public class LimitOrderCancelService {
 	private final PortfolioSellService portfolioSellService;
 	private final Clock clock;
 
-	// plan.md "취소 흐름" — order(자기 자신) → account → (SELL만) holding 순으로 잠근다.
-	// 검증 순서는 반드시 존재(404) → 소유(403) → 상태(409)여야 한다(spec.md LMT-003).
 	@Transactional
 	public void cancelOrder(Long userId, Long orderId) {
 		Order order = orderRepository.findByIdForUpdate(orderId)
@@ -52,16 +49,12 @@ public class LimitOrderCancelService {
 
 		BigDecimal quantity = order.getQuantity();
 		BigDecimal limitPrice = order.getLimitPrice();
-		// 생성·체결 시 예약과 동일 계산(spec.md) — 체결가가 항상 지정가로 고정되므로 예약액과 항상 정확히 일치한다.
 		LimitOrderFeeCalculator.Reservation reservation = LimitOrderFeeCalculator.calculate(quantity, limitPrice);
 
 		if (order.getSide() == OrderSide.SELL) {
-			// SELL만 holding을 잠근다(잠금 순서 order → account → holding). BUY는 holding을 잠그지 않는다(plan.md).
 			Holding holding = portfolioSellService.getHoldingForUpdate(account, order.getInstrument());
 			holding.releaseReservedQuantity(quantity);
 		} else if (order.getInstrument().isTutorialSample()) {
-			// 샌드박스(튜토리얼) 종목의 지정가 매수 취소는 실제 Account 대신 튜토리얼 계좌의 예약을
-			// 해제한다(047 TUTORIAL-CASH-ISOL-002 — 생성 시점에 이미 그 계좌에 예약이 걸려 있다).
 			TutorialAccount tutorialAccount = tutorialAccountService.getOrCreateForUpdate(
 				account.getUser().getId(), account.getMarket(), LocalDateTime.now(clock));
 			tutorialAccount.releaseReservedCash(reservation.total());

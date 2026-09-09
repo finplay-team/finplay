@@ -1,4 +1,3 @@
-// 주문 요청 원장의 영속을 담당하는 JPA 리포지터리
 package com.finplay.api.domain.order.repository;
 
 import com.finplay.api.domain.order.entity.Order;
@@ -21,18 +20,13 @@ public interface OrderRepository extends JpaRepository<Order, Long>, OrderReposi
 		Long userId, @Param("idempotencyKey")
 		String idempotencyKey);
 
-	// 테스트 정리(cleanup) 전용 — 계좌 하나의 주문만 좁혀 가져온다. findAll() 전체 스캔을 피한다
-	// (HoldingRepository.findByAccountId와 같은 이유).
 	List<Order> findByAccountId(Long accountId);
 
-	// 지정가 체결 시 주문 락(015-limit-order LMT-002, 중복 체결 이벤트 방지)
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("SELECT o FROM Order o WHERE o.id = :id")
 	Optional<Order> findByIdForUpdate(@Param("id")
 	Long id);
 
-	// attempt 귀속 지정가 체결의 잠금 순서를 attempt → order로 고정하기 위한 비잠금 preflight 조회다.
-	// 조회 직후 attempt를 먼저 잠그며, 그 사이 restart가 주문을 취소하면 후속 FOR UPDATE 상태 재확인에서 no-op 된다.
 	@Query("""
 		select new com.finplay.api.domain.order.service.PracticeOrderFillAttributionDto(
 			o.practiceAttemptId, o.practiceAttemptRunNumber, o.user.id, o.instrument.id)
@@ -42,7 +36,6 @@ public interface OrderRepository extends JpaRepository<Order, Long>, OrderReposi
 	Optional<PracticeOrderFillAttributionDto> findPracticeFillAttribution(@Param("id")
 	Long id);
 
-	// 재시작은 attempt를 먼저 잠근 호출부에서 현재 실행 세대 주문 전체를 ID 순서로 잠근다.
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("""
 		select o from Order o
@@ -56,9 +49,6 @@ public interface OrderRepository extends JpaRepository<Order, Long>, OrderReposi
 		@Param("runNumber")
 		long runNumber);
 
-	// 튜토리얼 attempt 전용 주문 조회(GET .../attempts/{market}/orders, 043) — 잠금 없는 순수 조회.
-	// findPracticeRunOrdersForUpdate(재시작 정리용, 039)와 조건은 동일하되 FOR UPDATE를 걸지 않고
-	// instrument를 fetch join한다(OrderListItemResponse가 instrument.market을 읽으므로).
 	@Query("""
 		select o from Order o
 		join fetch o.instrument
@@ -72,9 +62,6 @@ public interface OrderRepository extends JpaRepository<Order, Long>, OrderReposi
 		@Param("runNumber")
 		long runNumber);
 
-	// 가격 갱신 시 체결 후보 지정가 주문 조회(015-limit-order LMT-002) — idx_orders_limit_fill 인덱스 활용
-	// practicePriceSessionId is null 조건으로 교육 세션 주문을 제외한다(030 역방향 오염 차단 — 실제 빗썸 시세 tick이
-	// 교육 주문을 체결하지 않는다). 교육 주문은 전용 이벤트(PracticeOrderSettlementService)로만 체결한다.
 	@Query("""
 		select o from Order o
 		where o.instrument.id = :instrumentId and o.status = com.finplay.api.domain.order.entity.OrderStatus.PENDING
@@ -89,12 +76,8 @@ public interface OrderRepository extends JpaRepository<Order, Long>, OrderReposi
 	Long instrumentId, @Param("price")
 	BigDecimal price);
 
-	// 교육 지정가 생성 시 세션당 PENDING 1건 상한 검증용(030 COIN-PRICE-RUNTIME-006). 호출부가 세션을
-	// 먼저 비관 잠금해 동시 생성을 직렬화하므로 이 조회 자체는 락을 걸지 않는다(plan.md "트랜잭션·잠금·이벤트").
 	boolean existsByPracticePriceSessionIdAndStatus(Long practicePriceSessionId, OrderStatus status);
 
-	// tick 체결·마지막 tick 취소 대상 세션 PENDING 주문을 id 오름차순 단일 FOR UPDATE로 일괄 잠근다
-	// (plan.md 잠금 순서 practice_price_session → order(id ASC) → account → holding).
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("""
 		select o from Order o
@@ -127,9 +110,6 @@ public interface OrderRepository extends JpaRepository<Order, Long>, OrderReposi
 		@Param("runNumber")
 		long runNumber);
 
-	// 청크 전체를 한 번에 잠근다(054-limit-order-fill-bulk-lock). ID 오름차순으로 반환해 서로 다른 종목의
-	// 청크(=서로 다른 파티션 워커)가 겹치는 자원을 다른 순서로 잠그는 상황을 예방한다. 존재하지 않는 ID는
-	// 결과 집합에서 조용히 빠진다(findByIdForUpdate와 달리 그 자리에서 예외를 던지지 않는다).
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("SELECT o FROM Order o WHERE o.id IN :ids ORDER BY o.id ASC")
 	List<Order> findByIdInForUpdate(@Param("ids")

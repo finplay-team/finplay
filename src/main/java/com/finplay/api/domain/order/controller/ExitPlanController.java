@@ -1,4 +1,3 @@
-// OCO 손절·익절 예약 생성·취소를 담당하는 컨트롤러 (021-general-risk-management-oco, 이번 이슈는 일반 경로만)
 package com.finplay.api.domain.order.controller;
 
 import com.finplay.api.domain.auth.token.AuthenticatedUser;
@@ -33,7 +32,6 @@ public class ExitPlanController {
 
 	private final ExitPlanService exitPlanService;
 
-	// intentionId를 지정하는 교육 경로는 아직 지원하지 않는다(#348 범위는 일반 경로만, service가 400으로 거부한다).
 	@PostMapping
 	public ResponseEntity<ExitPlanResponse> createExitPlan(
 		@AuthenticationPrincipal
@@ -46,7 +44,6 @@ public class ExitPlanController {
 		return ResponseEntity.status(HttpStatus.CREATED).body(response);
 	}
 
-	// status 생략 시 PENDING 기본값(021 plan.md "응답 계약"). 본인 소유 예약만 조회, 경로(일반/교육) 무관.
 	@GetMapping
 	public ResponseEntity<ExitPlanListResponse> getMyExitPlans(
 		@AuthenticationPrincipal

@@ -1,4 +1,3 @@
-// 주문의 체결 결과를 영속하는 불변 원장 엔티티
 package com.finplay.api.domain.order.entity;
 
 import com.finplay.api.domain.account.entity.Account;

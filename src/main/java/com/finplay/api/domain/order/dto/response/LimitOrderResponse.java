@@ -1,4 +1,3 @@
-// 코인 지정가 매수·매도 주문 생성 결과(PENDING 상태)를 노출하는 응답 DTO
 package com.finplay.api.domain.order.dto.response;
 
 import com.finplay.api.domain.order.entity.Order;

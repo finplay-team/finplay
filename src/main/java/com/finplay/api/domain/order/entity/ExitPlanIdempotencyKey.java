@@ -1,4 +1,3 @@
-// OCO 예약 생성 요청의 Idempotency-Key와 request hash를 최초 결과 plan에 매핑해 영속하는 엔티티
 package com.finplay.api.domain.order.entity;
 
 import com.finplay.api.domain.auth.entity.User;
@@ -30,7 +29,6 @@ public class ExitPlanIdempotencyKey {
 	@JoinColumn(name = "user_id", nullable = false)
 	private User user;
 
-	// 항상 UUID.toString() lowercase canonical 값을 저장한다 (016 plan).
 	@Column(name = "idempotency_key", nullable = false, length = 36)
 	private String idempotencyKey;
 

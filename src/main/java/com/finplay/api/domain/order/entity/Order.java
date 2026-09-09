@@ -1,4 +1,3 @@
-// 회원의 매수/매도 주문 요청과 멱등성 정보를 영속하는 엔티티
 package com.finplay.api.domain.order.entity;
 
 import com.finplay.api.domain.account.entity.Account;
@@ -61,11 +60,9 @@ public class Order {
 	@Column(name = "limit_price", precision = 18, scale = 8)
 	private BigDecimal limitPrice;
 
-	// null이면 실제 가격 주문, non-null이면 교육 전용 가상 가격 세션에 귀속된 주문이다(030 COIN-PRICE-RUNTIME-006).
 	@Column(name = "practice_price_session_id")
 	private Long practicePriceSessionId;
 
-	// 두 값이 함께 null이면 일반 주문, 함께 non-null이면 해당 튜토리얼 attempt 실행 세대에 귀속된 주문이다.
 	@Column(name = "practice_attempt_id")
 	private Long practiceAttemptId;
 
@@ -226,8 +223,6 @@ public class Order {
 			requestedAt);
 	}
 
-	// 교육 전용 지정가 BUY 생성 — side를 서버가 BUY로 고정하고 practicePriceSessionId를 기록한다
-	// (030 COIN-PRICE-RUNTIME-006, PracticeLimitOrderCreationService 전용).
 	public static Order createPracticeLimitPendingBuy(
 		User user,
 		Account account,
