@@ -1,4 +1,3 @@
-// 매도 투자일기 수정 성공 응답 DTO
 package com.finplay.api.domain.journal.dto.response;
 
 import com.finplay.api.domain.journal.entity.SellTradeJournal;

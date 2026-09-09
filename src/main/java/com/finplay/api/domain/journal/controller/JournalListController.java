@@ -1,4 +1,3 @@
-// 본인의 시장별 투자일기(매수·매도 회고 병합) 목록을 커서 페이지네이션으로 조회하는 컨트롤러
 package com.finplay.api.domain.journal.controller;
 
 import com.finplay.api.domain.auth.token.AuthenticatedUser;

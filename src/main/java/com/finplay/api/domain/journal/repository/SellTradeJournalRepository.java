@@ -1,4 +1,3 @@
-// 매도 체결별 매도 회고 영속을 담당하는 JPA 리포지터리
 package com.finplay.api.domain.journal.repository;
 
 import com.finplay.api.domain.journal.entity.SellTradeJournal;

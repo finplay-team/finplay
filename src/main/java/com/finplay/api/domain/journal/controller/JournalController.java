@@ -1,4 +1,3 @@
-// 매수 체결에 대한 투자일기 작성 요청을 처리하는 컨트롤러
 package com.finplay.api.domain.journal.controller;
 
 import com.finplay.api.domain.auth.token.AuthenticatedUser;

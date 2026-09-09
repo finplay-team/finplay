@@ -1,4 +1,3 @@
-// 매수 체결 1건에 작성된 투자일기를 영속하는 엔티티
 package com.finplay.api.domain.journal.entity;
 
 import com.finplay.api.domain.order.entity.Trade;

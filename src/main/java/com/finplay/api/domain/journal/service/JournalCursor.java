@@ -1,4 +1,3 @@
-// 투자일기 목록 커서 페이지네이션의 커서 문자열을 파싱·인코딩하는 값 객체
 package com.finplay.api.domain.journal.service;
 
 import com.finplay.api.global.exception.BusinessException;
@@ -13,7 +12,7 @@ public record JournalCursor(LocalDateTime createdAt, Long tradeId) {
 
 	public static JournalCursor parse(String raw) {
 		if (raw == null || raw.isBlank()) {
-			return null; // 커서 없음 = 첫 페이지
+			return null;
 		}
 		int separatorIndex = raw.lastIndexOf('_');
 		if (separatorIndex <= 0 || separatorIndex == raw.length() - 1) {
