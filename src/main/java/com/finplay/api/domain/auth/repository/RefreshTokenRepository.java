@@ -1,4 +1,3 @@
-// Refresh Token 엔티티의 영속을 담당하는 JPA 리포지터리
 package com.finplay.api.domain.auth.repository;
 
 import com.finplay.api.domain.auth.entity.RefreshToken;
@@ -25,7 +24,6 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, Long
 	Long id, @Param("now")
 	LocalDateTime now);
 
-	// 이메일 변경 확인 성공 시 회원의 기존 활성 Refresh Token을 전부 폐기한다 — 만료 여부와 무관하게 이력을 남긴다.
 	@Modifying
 	@Query("""
 		UPDATE RefreshToken refreshToken

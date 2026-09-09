@@ -1,4 +1,3 @@
-// 다른 도메인에 인증 사용자 엔티티 조회 경계를 제공하는 서비스
 package com.finplay.api.domain.auth.service;
 
 import com.finplay.api.domain.auth.entity.User;

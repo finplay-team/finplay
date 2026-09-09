@@ -1,4 +1,3 @@
-// 이메일 회원가입·로그인·토큰 재발급 요청을 인증 서비스로 전달하고 JWT 응답을 반환하는 컨트롤러
 package com.finplay.api.domain.auth.controller;
 
 import com.finplay.api.domain.auth.dto.request.LoginRequest;
@@ -43,7 +42,6 @@ public class AuthController {
 	@PostMapping("/login")
 	public ResponseEntity<TokenResponse> login(@Valid @RequestBody
 	LoginRequest request) {
-		// 로그인은 리소스 생성이 아니므로 201이 아니라 200이다.
 		TokenResponse response = authService.login(request.email(), request.password());
 		return ResponseEntity.ok(response);
 	}
@@ -92,7 +90,6 @@ public class AuthController {
 		AuthenticatedUser principal,
 		@Valid @RequestBody
 		PasswordChangeRequest request) {
-		// 기존 Refresh Token이 전부 폐기되므로 요청한 기기가 쓸 새 토큰 쌍을 그대로 반환한다.
 		TokenResponse response = authService.changePassword(
 			principal.userId(), request.currentPassword(), request.newPassword());
 		return ResponseEntity.ok(response);

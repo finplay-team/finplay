@@ -1,4 +1,3 @@
-// 실제 발송 없이 마지막 발송 내역을 메모리에 보관하는 로컬·테스트용 EmailSender 구현
 package com.finplay.api.domain.auth.email;
 
 import java.util.ArrayList;
@@ -27,7 +26,6 @@ public class FakeEmailSender implements EmailSender {
 		log.info("[FakeEmailSender] 비밀번호 재설정 인증번호 발송 (실제 발송 안 함) to={} code={}", toEmail, code);
 	}
 
-	// 테스트가 마지막으로 발송된 인증번호를 검증할 수 있게 한다.
 	public SentEmail getLastSentEmail() {
 		synchronized (sentEmails) {
 			return sentEmails.isEmpty() ? null : sentEmails.get(sentEmails.size() - 1);

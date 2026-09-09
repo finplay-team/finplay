@@ -1,4 +1,3 @@
-// 운영 프로필에서만 등록되어 Resend HTTP API로 인증번호 이메일을 발송하는 EmailSender 구현 (RestClient 사용)
 package com.finplay.api.domain.auth.email;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -57,7 +56,6 @@ public class ResendEmailSender implements EmailSender {
 		return "<p>FinPlay 이메일 인증번호는 <strong>" + code + "</strong> 입니다. 5분 안에 입력해 주세요.</p>";
 	}
 
-	// 본인이 요청하지 않은 재설정 시도를 수신자가 알아채도록 용도와 무시 안내를 본문에 함께 넣는다.
 	private String buildPasswordResetHtml(String code) {
 		return "<p>FinPlay <strong>비밀번호 재설정</strong> 인증번호는 <strong>" + code + "</strong> 입니다."
 			+ " 5분 안에 입력해 주세요.</p>"
@@ -65,7 +63,6 @@ public class ResendEmailSender implements EmailSender {
 			+ " 인증번호를 입력하지 않으면 비밀번호는 변경되지 않으며, 인증번호를 다른 사람에게 알려주지 마세요.</p>";
 	}
 
-	// Resend 발송 API 요청 본문.
 	private record ResendEmailRequest(String from, String to, String subject, String html) {
 	}
 }

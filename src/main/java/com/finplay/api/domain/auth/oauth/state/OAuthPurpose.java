@@ -1,4 +1,3 @@
-// OAuth 인가 요청의 목적(로그인/재인증)을 나타내는 열거형
 package com.finplay.api.domain.auth.oauth.state;
 
 import java.util.Arrays;

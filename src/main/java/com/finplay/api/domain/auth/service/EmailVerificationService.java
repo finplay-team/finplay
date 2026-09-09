@@ -1,4 +1,3 @@
-// 인증번호 발송 제한 판정·생성·HMAC 저장·이전 코드 무효화·발송을 담당하는 서비스
 package com.finplay.api.domain.auth.service;
 
 import com.finplay.api.domain.auth.dto.response.SignupTokenResponse;
@@ -34,7 +33,6 @@ public class EmailVerificationService {
 	private final EmailSender emailSender;
 	private final Clock clock;
 	private final VerificationCodePolicy codePolicy;
-	// 가입 인증 토큰(SIGNUP_TOKEN) 생성 전용 — 인증번호 생성은 codePolicy가 담당한다.
 	private final SecureRandom secureRandom = new SecureRandom();
 	private final VerificationCodeHasher codeHasher;
 
@@ -54,7 +52,6 @@ public class EmailVerificationService {
 		this.codeHasher = new VerificationCodeHasher(emailVerificationSecret);
 	}
 
-	// 인증번호를 생성·저장하고 대상 이메일로 발송한다. 이전 미확인 코드는 만료 처리해 유효한 코드는 항상 최대 1개다.
 	@Transactional
 	public void sendVerificationCode(String email) {
 		if (userRepository.existsByEmail(email)) {
@@ -62,7 +59,6 @@ public class EmailVerificationService {
 		}
 
 		LocalDateTime now = LocalDateTime.now(clock);
-		// 발송 제한은 대상 이메일 주소 단위로 집계한다.
 		codePolicy.checkSendRateLimit(
 			now, since -> emailVerificationRepository.countByEmailAndCreatedAtAfter(email, since));
 		expirePreviousCodes(email, now);
@@ -72,11 +68,9 @@ public class EmailVerificationService {
 			email, codeHasher.hmac(code), codePolicy.expiresAt(now), now);
 		emailVerificationRepository.save(verification);
 
-		// 발송은 저장 이후에 한다. 발송 실패 시 트랜잭션이 롤백되어 저장·이전 코드 만료가 함께 되돌려진다.
 		emailSender.sendVerificationCode(email, code);
 	}
 
-	// BusinessException에도 시도 횟수와 만료 상태가 커밋되어 무차별 대입을 차단한다.
 	@Transactional(noRollbackFor = BusinessException.class)
 	public SignupTokenResponse confirmVerificationCode(String email, String code) {
 		LocalDateTime now = LocalDateTime.now(clock);

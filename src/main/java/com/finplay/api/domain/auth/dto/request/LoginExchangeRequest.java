@@ -1,4 +1,3 @@
-// OAuth 로그인 콜백이 발급한 1회용 교환 코드로 실제 토큰을 요청하는 DTO
 package com.finplay.api.domain.auth.dto.request;
 
 import jakarta.validation.constraints.NotBlank;

@@ -1,4 +1,3 @@
-// 로컬·테스트 프로필에서 외부 통신 없이 결정적인 OAuth 사용자 정보를 반환한다.
 package com.finplay.api.domain.auth.oauth.provider;
 
 import com.finplay.api.domain.auth.oauth.OAuthProviderName;

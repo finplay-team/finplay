@@ -1,4 +1,3 @@
-// 이메일 회원가입에 필요한 사용자 입력과 약관 동의를 검증하는 요청 DTO
 package com.finplay.api.domain.auth.dto.request;
 
 import jakarta.validation.constraints.AssertTrue;

@@ -1,10 +1,8 @@
-// 닉네임 변경 요청의 새 닉네임과 재인증 증명(현재 비밀번호 또는 재인증 토큰)을 담는 요청 DTO
 package com.finplay.api.domain.auth.dto.request;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
-// currentPassword·reauthToken 중 무엇이 필수인지는 서버가 조회한 실제 가입 방식으로 판별하므로 둘 다 선택 필드로 둔다.
 public record NicknameUpdateRequest(
 	@NotBlank(message = "닉네임은 필수입니다.") @Size(max = 50, message = "닉네임은 최대 50자까지 입력할 수 있습니다.")
 	String nickname,

@@ -1,4 +1,3 @@
-// 인증은 됐으나 권한이 없는 요청을 403 공통 오류 포맷으로 직접 직렬화해 응답하는 핸들러
 package com.finplay.api.domain.auth.config;
 
 import com.finplay.api.global.exception.ErrorCode;
@@ -24,7 +23,6 @@ public class RestAccessDeniedHandler implements AccessDeniedHandler {
 		HttpServletRequest request,
 		HttpServletResponse response,
 		AccessDeniedException accessDeniedException) throws IOException {
-		// 필터체인에서 발생한 인가 실패도 GlobalExceptionHandler에 도달하지 않으므로 여기서 직접 쓴다.
 		ErrorResponse body = ErrorResponse.of(
 			ErrorCode.FORBIDDEN,
 			ErrorCode.FORBIDDEN.getDefaultMessage(),

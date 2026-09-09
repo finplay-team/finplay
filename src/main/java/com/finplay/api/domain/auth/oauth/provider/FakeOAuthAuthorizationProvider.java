@@ -1,4 +1,3 @@
-// 로컬·테스트 프로필에서 외부 통신 없이 가짜 OAuth callback URI를 생성한다.
 package com.finplay.api.domain.auth.oauth.provider;
 
 import com.finplay.api.domain.auth.oauth.OAuthProviderName;

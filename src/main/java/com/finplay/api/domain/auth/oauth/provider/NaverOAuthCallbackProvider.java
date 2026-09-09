@@ -1,4 +1,3 @@
-// 실제 네이버 OAuth 인가 코드를 사용자 식별자와 이메일로 교환한다.
 package com.finplay.api.domain.auth.oauth.provider;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;

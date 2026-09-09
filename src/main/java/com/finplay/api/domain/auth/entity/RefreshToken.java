@@ -1,4 +1,3 @@
-// Refresh JWT의 SHA-256 해시와 폐기 상태를 영속하는 인증 엔티티
 package com.finplay.api.domain.auth.entity;
 
 import jakarta.persistence.Column;

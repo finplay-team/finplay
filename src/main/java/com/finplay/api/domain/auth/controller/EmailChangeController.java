@@ -1,4 +1,3 @@
-// 인증 사용자의 새 이메일 변경 인증번호 발송·확인 요청을 받는 컨트롤러
 package com.finplay.api.domain.auth.controller;
 
 import com.finplay.api.domain.auth.dto.request.EmailChangeConfirmRequest;
@@ -25,7 +24,6 @@ public class EmailChangeController {
 	private final EmailChangeService emailChangeService;
 	private final AuthService authService;
 
-	// 재인증 증명(현재 비밀번호 또는 reauthToken)을 검증한 뒤 새 이메일로 인증번호를 발송한다. 성공 시 202, 본문 없음.
 	@PostMapping
 	public ResponseEntity<Void> requestEmailChange(
 		@AuthenticationPrincipal
@@ -37,7 +35,6 @@ public class EmailChangeController {
 		return ResponseEntity.status(HttpStatus.ACCEPTED).build();
 	}
 
-	// 새 이메일로 발송된 인증번호를 확인하고 성공 시 users.email을 원자적으로 변경한다. 재인증 증명은 다시 요구하지 않는다.
 	@PostMapping("/confirm")
 	public ResponseEntity<MemberResponse> confirmEmailChange(
 		@AuthenticationPrincipal

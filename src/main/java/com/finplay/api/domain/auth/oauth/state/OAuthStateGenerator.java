@@ -1,4 +1,3 @@
-// OAuth state에 목적·사용자 ID·난수·만료시각을 HMAC-SHA-256으로 서명해 생성하고 검증한다.
 package com.finplay.api.domain.auth.oauth.state;
 
 import com.finplay.api.global.exception.BusinessException;
@@ -27,7 +26,6 @@ public class OAuthStateGenerator {
 	private static final String PART_SEPARATOR_REGEX = "\\.";
 	private static final int STATE_PART_COUNT = 2;
 	private static final int PAYLOAD_FIELD_COUNT = 4;
-	// state 자체 만료시각의 유효기간. oauth_state 쿠키 maxAge(OAuthStateCookieFactory)와 같은 값을 재사용한다.
 	private static final Duration STATE_TTL = Duration.ofMinutes(10);
 	private static final Base64.Encoder BASE64_URL_ENCODER = Base64.getUrlEncoder().withoutPadding();
 	private static final Base64.Decoder BASE64_URL_DECODER = Base64.getUrlDecoder();
@@ -36,7 +34,6 @@ public class OAuthStateGenerator {
 	private final byte[] hmacKey;
 	private final Clock clock;
 
-	// 생성자가 여러 개라 Spring이 후보를 고를 수 없으므로 주입 대상을 명시한다.
 	@Autowired
 	public OAuthStateGenerator(
 		@Value("${oauth.state-secret}")
@@ -45,7 +42,6 @@ public class OAuthStateGenerator {
 		this(new SecureRandom(), stateSecret, clock);
 	}
 
-	// 기존 호출부(OAuthCallbackServiceTest·OAuthAuthorizationControllerTest 등) 전용 — 시스템 클럭을 쓴다.
 	public OAuthStateGenerator(String stateSecret) {
 		this(new SecureRandom(), stateSecret, Clock.systemDefaultZone());
 	}
@@ -54,7 +50,6 @@ public class OAuthStateGenerator {
 		this(secureRandom, stateSecret, Clock.systemDefaultZone());
 	}
 
-	// 고정 시각 테스트 전용 — TTL 경계를 결정론적으로 검증할 때만 쓴다.
 	OAuthStateGenerator(SecureRandom secureRandom, String stateSecret, Clock clock) {
 		this.secureRandom = secureRandom;
 		this.hmacKey = stateSecret.getBytes(StandardCharsets.UTF_8);

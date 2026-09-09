@@ -1,4 +1,3 @@
-// OAuth 공급자 경로 값을 지원 공급자 enum으로 해석한다.
 package com.finplay.api.domain.auth.oauth;
 
 import java.util.Arrays;

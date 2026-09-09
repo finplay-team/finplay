@@ -1,4 +1,3 @@
-// 실제 OAuth 공급자 호출에 유한 연결·응답 timeout을 적용한 RestClient를 만든다.
 package com.finplay.api.domain.auth.oauth;
 
 import java.time.Duration;

@@ -1,4 +1,3 @@
-// 운영 프로필에서 네이버 OAuth 인가 URI를 생성한다.
 package com.finplay.api.domain.auth.oauth.provider;
 
 import com.finplay.api.domain.auth.oauth.OAuthProviderName;
