@@ -1,4 +1,3 @@
-// seed·version·종목·run·분 인덱스만으로 29+1 OHLC와 canonical 가격을 재현하는 순수 생성기
 package com.finplay.api.domain.market.service;
 
 import com.finplay.api.domain.market.entity.Market;
@@ -12,7 +11,6 @@ import org.springframework.stereotype.Service;
 public class TutorialPriceGenerator {
 
 	public static final short VERSION_1 = 1;
-	// 대본 파일의 version과 같은 값이다 — 대본이 곧 이 버전의 입력이다(041 plan §생성기 버전 2).
 	public static final short VERSION_2 = 2;
 	private static final int HISTORY_CANDLE_COUNT = 29;
 	private static final int PRICE_SCALE = 8;
@@ -55,21 +53,11 @@ public class TutorialPriceGenerator {
 		return currentMinutePrice(basePrice(input.market()), mixSeed(input), publishedMinute);
 	}
 
-	// 과거 29개 완결 일봉은 대본 대상이 아니다 — 039의 배경 정보이고 사건과 무관하므로 버전 2도 같은 seed
-	// 생성 방식을 그대로 쓴다(041 plan §대본 설계). 버전 2는 진행 중 1봉만 대본에서 만들어 붙인다.
-	//
-	// **package-private이다.** 이 경로는 시장별 기준가 상수를 쓰므로, 대본 실행이 실수로 이쪽을 부르면
-	// 과거봉만 1만원대에 머무른 차트가 나오면서도 기능은 정상 동작해 조용히 넘어간다. 버전 검사로 막지 않는
-	// 이유는 회귀 오라클(TutorialPriceGeneratorTest)이 버전 2 입력을 일부러 이 경로에 넣어 두 갈래가 같은
-	// 값을 내는지 대조하기 때문이다 — mixSeed가 generatorVersion을 섞어 버전 1 입력으로 대체할 수 없다.
-	// 다른 도메인은 대본을 받는 오버로드만 볼 수 있으면 된다.
 	List<TutorialPriceCandleDto> generateHistory(TutorialPriceGenerationInput input) {
 		validateInput(input);
 		return generateHistory(input, basePrice(input.market()));
 	}
 
-	// 버전 2의 과거 봉은 **대본의 기준가**로 만든다. 진행 중 봉만 대본 기준가를 쓰면 기준가 10만원짜리
-	// 대본에서 과거 봉만 1만원대에 머물러 차트가 두 동강 난다(049 plan §1의 경고).
 	public List<TutorialPriceCandleDto> generateHistory(
 		TutorialPriceGenerationInput input, TutorialScenarioScript script) {
 		validateInput(input);
@@ -88,8 +76,6 @@ public class TutorialPriceGenerator {
 		return candles;
 	}
 
-	// 생성기 버전 2는 벽시계가 아니라 대본 위치에서 가격이 나온다 — 가상 분에 해당하는 시각이 존재하지 않으므로
-	// 버전 1의 publishedMinute 진입점을 쓸 수 없다(041 plan §`order` 인터페이스 변경).
 	public BigDecimal canonicalPrice(
 		TutorialPriceGenerationInput input, TutorialScenarioScript script, TutorialScenarioCursor cursor) {
 		validateInput(input);
@@ -135,7 +121,6 @@ public class TutorialPriceGenerator {
 		return basePrice.multiply(factor).setScale(PRICE_SCALE, RoundingMode.HALF_UP);
 	}
 
-	// 생성기 버전 1 전용 기준가다. 버전 2는 대본 파일의 basePrice를 쓴다(049 ORDERBASICS-003).
 	private BigDecimal basePrice(Market market) {
 		return market == Market.STOCK ? STOCK_BASE_PRICE : CRYPTO_BASE_PRICE;
 	}

@@ -1,4 +1,3 @@
-// KIS 과거 분봉 수집 시도 이력(성공·부분성공·전체실패·중복스킵)을 표현하는 엔티티. stock_candles 저장 성공 여부와 무관하게 남는다.
 package com.finplay.api.domain.market.entity;
 
 import jakarta.persistence.Column;
@@ -54,7 +53,6 @@ public class MarketDataImport {
 		this.failureReason = failureReason;
 	}
 
-	// 상태별 nullable 제약이 없어(spec.md에 별도 규칙 없음) 단순 팩토리 하나로 둔다 — 상태별 분리는 실제로 필요해질 때(YAGNI).
 	public static MarketDataImport create(
 		String source, LocalDate sourceTradingDate, LocalDateTime collectedAt, ImportStatus status,
 		String failureReason) {

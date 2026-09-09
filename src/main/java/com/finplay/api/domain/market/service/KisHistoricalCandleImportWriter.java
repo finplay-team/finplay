@@ -1,4 +1,3 @@
-// KisHistoricalCandleCollector의 수집 결과 저장과 실패 이력 기록만을 담당하는 트랜잭션 경계 전용 컴포넌트
 package com.finplay.api.domain.market.service;
 
 import com.finplay.api.domain.market.entity.ImportStatus;
@@ -15,9 +14,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
-// KisHistoricalCandleCollector.collect()는 종목별 KIS HTTP 호출(collectInstrument)을 모두 끝낸 뒤에만 이 컴포넌트를
-// 호출한다 — DB 저장(persist)과 실패 이력 기록(recordFailedImport)만 트랜잭션으로 감싸 외부 HTTP 호출 동안 DB 커넥션을
-// 점유하지 않는다(PR #94 리뷰 권장사항 ②).
 @Component
 @RequiredArgsConstructor
 @Slf4j
@@ -47,9 +43,6 @@ class KisHistoricalCandleImportWriter {
 		if (failedOutcomes.isEmpty()) {
 			status = ImportStatus.SUCCESS;
 		} else if (succeededOutcomes.isEmpty()) {
-			// 대상 종목 전부가 실패(구조 오류든 종목별 조회 실패든)라면 "부분" 성공이 아니라 사실상 전체 실패다 —
-			// StockCandle은 어차피 하나도 저장되지 않으므로(succeededOutcomes가 비어 있음) PARTIAL_SUCCESS로 표시하지
-			// 않는다.
 			status = ImportStatus.FAILED;
 			failureReason = summarizeFailures(failedOutcomes);
 		} else {
@@ -59,8 +52,6 @@ class KisHistoricalCandleImportWriter {
 		marketDataImportRepository.save(
 			MarketDataImport.create(DATA_SOURCE, tradingDate, collectedAt, status, failureReason));
 
-		// 종목별 부분 실패는 market_data_imports를 직접 조회해야만 알 수 있었다 — 로그로도 검색 가능하게 남긴다
-		// (COLLECT-STAB-004). 전체 실패(FAILED)와 부분 실패(PARTIAL_SUCCESS)는 심각도가 다르므로 레벨을 구분한다.
 		if (status == ImportStatus.FAILED) {
 			log.error("주식 분봉 수집이 {}로 끝났습니다 (tradingDate={}, failureReason={})", status, tradingDate,
 				failureReason);
@@ -70,8 +61,6 @@ class KisHistoricalCandleImportWriter {
 		}
 	}
 
-	// FAILED 이력 저장 전용 — 호출부(collect())의 예외가 JPA 트랜잭션 도중 발생했다면 그 세션이 rollback-only가 되어
-	// 같은 트랜잭션에서 이력 저장을 시도하면 실패할 수 있다(PR #94 리뷰 권장사항 ④). 항상 새 트랜잭션에서 저장한다.
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	void recordFailedImport(LocalDate tradingDate, LocalDateTime collectedAt, String failureReason) {
 		marketDataImportRepository.save(MarketDataImport.create(

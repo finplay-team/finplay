@@ -1,4 +1,3 @@
-// StockReplayService가 계산한 종목별 현재가·원본 거래일·시장상태를 다음 계층(StockPriceProvider)에 전달한다.
 package com.finplay.api.domain.market.service;
 
 import com.finplay.api.domain.market.entity.StockReplaySession;

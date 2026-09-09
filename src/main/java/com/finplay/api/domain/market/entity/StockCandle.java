@@ -1,4 +1,3 @@
-// 주식 종목의 1분봉 OHLCV 정본을 표현하는 엔티티
 package com.finplay.api.domain.market.entity;
 
 import jakarta.persistence.Column;

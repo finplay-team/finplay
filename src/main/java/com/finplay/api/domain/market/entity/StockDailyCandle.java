@@ -1,4 +1,3 @@
-// 주식 종목의 일봉(장기 아카이브) OHLCV 정본을 표현하는 엔티티 — 1분봉(StockCandle)과 달리 candle_time이 없다
 package com.finplay.api.domain.market.entity;
 
 import jakarta.persistence.Column;
@@ -31,7 +30,6 @@ public class StockDailyCandle {
 	@JoinColumn(name = "instrument_id", nullable = false)
 	private Instrument instrument;
 
-	// 실제 달력 거래일 — 재생의 source_trading_date와 무관하다 (spec 050 데이터 모델).
 	@Column(name = "trading_date", nullable = false)
 	private LocalDate tradingDate;
 

@@ -1,14 +1,8 @@
-// 대본 위치(구간·구간 내 분)를 기준가 배율로 읽어 canonical 가격으로 바꾸는 순수 변환기
 package com.finplay.api.domain.market.service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 
-// 가격을 절대값이 아니라 기준가 대비 배율로 적었기 때문에(041 plan §대본 설계) 기준가는 호출자가 넘긴다.
-// 기준가는 **대본 파일의 basePrice**다(049 ORDERBASICS-003) — 대본마다 다르므로 생성기 상수가 아니다.
-// 생성기 버전 1만 시장별 상수를 쓰며 그것은 TutorialPriceGenerator가 소유한다.
-// 상태가 없는 순수 변환이라 빈으로 만들지 않는다 — 진입점이 이 클래스에 의존하면 생성기 버전 1만 쓰는
-// 기존 호출부까지 대본 로더를 함께 들고 다녀야 한다.
 public final class TutorialScenarioPriceGenerator {
 
 	private static final int PRICE_SCALE = 8;

@@ -1,4 +1,3 @@
-// CryptoCandleProvider가 반환하는 코인 1분봉 데이터 — sourceTradingDate 개념이 없고, volume은 소수 수량이라 BigDecimal이다.
 package com.finplay.api.domain.market.service;
 
 import java.math.BigDecimal;

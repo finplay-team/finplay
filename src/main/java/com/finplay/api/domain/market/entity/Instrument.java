@@ -1,4 +1,3 @@
-// 시장별 거래 종목의 심볼·호가단위·최소주문금액·거래가능 여부를 표현하는 엔티티
 package com.finplay.api.domain.market.entity;
 
 import jakarta.persistence.Column;

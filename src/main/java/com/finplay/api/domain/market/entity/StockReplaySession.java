@@ -1,4 +1,3 @@
-// 오늘 재생할 원본 거래일과 준비상태(PREPARING·READY·FAILED)를 표현하는 엔티티. OPEN·CLOSED는 저장하지 않는다.
 package com.finplay.api.domain.market.entity;
 
 import jakarta.persistence.Column;
@@ -59,14 +58,12 @@ public class StockReplaySession {
 		this.createdAt = createdAt;
 	}
 
-	// PREPARING: source_trading_date는 후보 거래일을 아직 고르지 못했으면 NULL, 검증 중이면 값을 가질 수 있다. resolved_at·failure_reason은 항상 NULL.
 	public static StockReplaySession preparing(
 		LocalDate serviceDate, LocalDate sourceTradingDate, LocalDateTime createdAt) {
 		return new StockReplaySession(
 			serviceDate, sourceTradingDate, PreparationStatus.PREPARING, null, null, createdAt);
 	}
 
-	// READY: source_trading_date·resolved_at는 필수, failure_reason은 항상 NULL.
 	public static StockReplaySession ready(
 		LocalDate serviceDate, LocalDate sourceTradingDate, LocalDateTime resolvedAt, LocalDateTime createdAt) {
 		if (sourceTradingDate == null) {
@@ -79,7 +76,6 @@ public class StockReplaySession {
 			serviceDate, sourceTradingDate, PreparationStatus.READY, resolvedAt, null, createdAt);
 	}
 
-	// FAILED: resolved_at·failure_reason은 필수. source_trading_date는 데이터를 찾지 못했으면 NULL, 특정 거래일 준비 중 실패했으면 값을 가질 수 있다 — 둘 다 허용.
 	public static StockReplaySession failed(
 		LocalDate serviceDate,
 		LocalDate sourceTradingDate,
@@ -96,8 +92,6 @@ public class StockReplaySession {
 			serviceDate, sourceTradingDate, PreparationStatus.FAILED, resolvedAt, failureReason, createdAt);
 	}
 
-	// PREPARING 상태의 세션을 READY로 전환한다 (StockReplaySessionScheduler 전용). PREPARING이 아니면 거부한다 —
-	// 이미 확정된 세션의 원본 거래일을 장중에 바꾸지 않기 위함이다(spec.md MKT-002).
 	public void resolveReady(LocalDate sourceTradingDate, LocalDateTime resolvedAt) {
 		if (this.preparationStatus != PreparationStatus.PREPARING) {
 			throw new IllegalStateException("PREPARING 상태에서만 READY로 전환할 수 있습니다.");
@@ -113,8 +107,6 @@ public class StockReplaySession {
 		this.resolvedAt = resolvedAt;
 	}
 
-	// PREPARING 상태의 세션을 FAILED로 전환한다 (StockReplaySessionScheduler 전용). sourceTradingDate는 준비할 데이터
-	// 자체를 찾지 못했으면 NULL, 특정 거래일을 준비하다 실패했으면 값을 가질 수 있다 — 둘 다 허용.
 	public void resolveFailed(LocalDate sourceTradingDate, LocalDateTime resolvedAt, String failureReason) {
 		if (this.preparationStatus != PreparationStatus.PREPARING) {
 			throw new IllegalStateException("PREPARING 상태에서만 FAILED로 전환할 수 있습니다.");

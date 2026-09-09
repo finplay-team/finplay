@@ -1,4 +1,3 @@
-// 실제 빗썸 REST 연결 없이 심볼·interval별 코인 캔들(1분·일·주·월봉)을 미리 채워 반환하거나 장애를 시뮬레이션하는 테스트·로컬용 CryptoCandleProvider 구현
 package com.finplay.api.domain.market.service;
 
 import com.finplay.api.global.exception.BusinessException;
@@ -36,24 +35,20 @@ public class FakeCryptoCandleProvider implements CryptoCandleProvider {
 			.toList();
 	}
 
-	// 테스트 전용: 심볼의 1분봉 목록(시각 오름차순, 진행 중 분봉 포함 여부는 호출자가 결정)을 미리 채운다(기존 호출부 호환용, 1m 시드).
 	public void setCandles(String symbol, List<CryptoCandleDto> candles) {
 		setCandles(symbol, CandleInterval.ONE_MINUTE, candles);
 	}
 
-	// 테스트 전용: 심볼·interval별 캔들 목록(시각 오름차순)을 미리 채운다.
 	public void setCandles(String symbol, CandleInterval interval, List<CryptoCandleDto> candles) {
 		candlesByIntervalAndSymbol
 			.computeIfAbsent(interval, key -> new HashMap<>())
 			.put(symbol, new ArrayList<>(candles));
 	}
 
-	// 테스트 전용: 이후 조회를 MARKET_DATA_PROVIDER_ERROR로 실패시켜 빗썸 REST 장애를 시뮬레이션한다.
 	public void simulateFailure() {
 		failing = true;
 	}
 
-	// 테스트 전용: 장애 시뮬레이션을 해제한다.
 	public void reset() {
 		failing = false;
 	}
