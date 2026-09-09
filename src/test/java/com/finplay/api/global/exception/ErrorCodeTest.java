@@ -1,4 +1,3 @@
-// ErrorCode enum의 코드 ↔ HTTP 상태 매핑이 PRD §5 공통 오류표와 일치하는지 검증하는 단위 테스트
 package com.finplay.api.global.exception;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -63,7 +62,6 @@ class ErrorCodeTest {
 			Map.entry(ErrorCode.MARKET_DATA_PROVIDER_ERROR, HttpStatus.BAD_GATEWAY),
 			Map.entry(ErrorCode.RANKING_STORE_UNAVAILABLE, HttpStatus.SERVICE_UNAVAILABLE));
 
-		// PRD와 OAuth spec에 정의된 코드를 하나도 빠짐없이 순회하며 상태를 대조한다.
 		assertThat(expected).hasSize(ErrorCode.values().length);
 		for (ErrorCode code : ErrorCode.values()) {
 			assertThat(code.getHttpStatus())
@@ -132,8 +130,6 @@ class ErrorCodeTest {
 
 	@Test
 	void tutorialInsufficientCashIsADistinctCodeFromInsufficientCash() {
-		// TUTORIAL-CASH-ISOL-005: 튜토리얼 계좌 현금 부족은 실제 계좌의 INSUFFICIENT_CASH와 별개 코드여야
-		// 한다 — 코드·메시지 모두 실제 계좌 부족과 구별돼야 클라이언트가 안내 문구를 분기할 수 있다.
 		assertThat(ErrorCode.TUTORIAL_INSUFFICIENT_CASH).isNotEqualTo(ErrorCode.INSUFFICIENT_CASH);
 		assertThat(ErrorCode.TUTORIAL_INSUFFICIENT_CASH.getDefaultMessage())
 			.isNotEqualTo(ErrorCode.INSUFFICIENT_CASH.getDefaultMessage())
