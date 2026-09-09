@@ -1,4 +1,3 @@
-// 가변 Clock + 실 MySQL로 코인 매시 배치의 재생성 판정·UPSERT·최신 1행 조회와 원장 불변을 검증한다.
 package com.finplay.api.domain.feedback.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -42,23 +41,12 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
 
-// 완료 조건 배치 ⑨~⑬이 이 파일의 목표다. 오케스트레이션(격리·대상)은 CryptoFeedbackBatchServiceTest가,
-// 판정과 저장 인자는 각 서비스의 단위 테스트가 맡는다.
-//
-// 여기서만 볼 수 있는 것은 셋이다 — UPSERT가 실제로 하루 1행을 유지하는지(유니크 제약 위에서), 자정을
-// 넘겨도 조회가 비지 않는지, 그리고 반복 실행·반복 조회에서 LLM 호출 수가 어떻게 변하는지다.
-//
-// NarrativeService를 mock으로 두는 것은 호출 횟수를 세기 위해서다. 실제 LLM은 어차피 부르지 않지만
-// (api-key가 not-configured) 호출 횟수는 이 mock으로만 셀 수 있다.
-//
-// 공유 컨테이너를 더럽히지 않도록 클래스 트랜잭션으로 감싼다 (PriceMoveQueryGateIntegrationTest 선례).
 @SpringBootTest
 @Transactional
 @Import({TestcontainersConfiguration.class,
 	TestClockConfig.class})
 class CryptoFeedbackBatchIntegrationTest {
 
-	// 배치가 23:05에 한 번 돌고, 자정을 넘긴 다음 00:05에 다시 도는 시나리오가 이 파일의 축이다.
 	private static final LocalDate DAY_ONE = LocalDate.of(2026, 8, 6);
 	private static final LocalDate DAY_TWO = LocalDate.of(2026, 8, 7);
 	private static final LocalDateTime LATE_NIGHT_RUN = LocalDateTime.of(DAY_ONE, LocalTime.of(23, 5));
@@ -66,14 +54,11 @@ class CryptoFeedbackBatchIntegrationTest {
 
 	private static final String CRYPTO_SYMBOL = "BTC";
 
-	// 배치 실행 전후로 행이 변하면 안 되는 원장 테이블
 	private static final List<String> LEDGER_TABLES = List.of("orders", "trades", "accounts", "holdings",
 		"holding_lots", "trade_allocations");
 
-	// 코인 배치가 읽기만 해야 하는 테이블
 	private static final List<String> READ_ONLY_TABLES = List.of("instruments", "market_news_items");
 
-	// 코인 배치가 건드리지 않아야 하는 다른 피드백 테이블 (카드·매도 회고·집단 비교는 다른 경로 소유다)
 	private static final List<String> OTHER_FEEDBACK_TABLES = List.of("price_move_events",
 		"price_move_event_sources", "trade_feedbacks", "price_move_peer_stats");
 
@@ -114,14 +99,6 @@ class CryptoFeedbackBatchIntegrationTest {
 
 	private Instrument coin;
 
-	// 조회 캐시(#245)가 켜진 뒤 필요해진 격리 훅이다. 이 클래스는 @Transactional이라 DB는 롤백되지만 공유
-	// Testcontainers Redis는 롤백되지 않는데, crypto-briefing-text는 **종목 구성요소가 없는 전역 단일 키**라
-	// 어느 테스트가 남긴 값이든 다음 테스트가 그대로 읽는다(TTL 최대 60분).
-	//
-	// 지금 초록인 것은 모든 조회 앞에 성공한 배치가 있어 evict가 먼저 키를 날리기 때문이고, 그건 "배치가 먼저
-	// 돌고 반드시 성공한다"는 우연한 순서에 기댄 것이다 — 캐시된 문자열을 그대로 단정하는 자리가 있어 그 전제가
-	// 깨지면 조용히 다른 값을 본다. @AfterEach가 아니라 @BeforeEach인 이유는 앞 테스트가 정리에 실패해도
-	// 이번 테스트가 항상 빈 캐시에서 시작하게 하기 위해서다.
 	@BeforeEach
 	void clearQueryCache() {
 		FeedbackQueryCacheTestKeys.clear(redisTemplate);
@@ -172,13 +149,7 @@ class CryptoFeedbackBatchIntegrationTest {
 		return counts;
 	}
 
-	// --- 배치 ⑩·⑪ 자정 직후 (같은 설계의 앞뒷면) ---
 
-	// "직전 생성"을 오늘 행이 아니라 generated_at 최신 행으로 잡은 판단을 실제로 재현한다. 오늘 행 기준이면
-	// 날짜가 바뀌었다는 이유만으로 새 기사 없이도 LLM을 한 번 부른다 — 내용이 같은 요약을 다시 만드는 것이다.
-	//
-	// 두 조건이 동시에 성립해야 그 설계가 성립한다. ⑩만 지키고 ⑪이 깨지면 자정~00:05에 화면이 비고,
-	// ⑪만 지키고 ⑩이 깨지면 매일 자정마다 전 종목 LLM 호출이 한 번씩 늘어난다.
 	@Test
 	@DisplayName("자정을 넘겨도 새 기사가 없으면 LLM을 부르지 않고, 그때도 조회는 어제 요약으로 채워진다")
 	void skipsTheLlmAfterMidnightWhileTheQueryStillServesYesterdaysSummary() {
@@ -190,17 +161,14 @@ class CryptoFeedbackBatchIntegrationTest {
 		assertThat(summaries()).singleElement()
 			.extracting(InstrumentNewsSummary::getOriginTradeDate).isEqualTo(DAY_ONE);
 
-		// 자정을 넘겨 다시 돈다. 그 사이 수집된 기사는 없다.
 		mutableClock.set(AFTER_MIDNIGHT_RUN);
 		cryptoFeedbackBatchService.refreshCryptoFeedback();
 
-		// 배치 ⑩ — 새 기사가 없으니 LLM 호출이 늘지 않고 오늘 행도 생기지 않는다.
 		verify(narrativeService, times(1)).resolveNewsSummaryNarrative(any());
 		assertThat(summaries()).hasSize(1);
 		assertThat(summaries()).singleElement()
 			.extracting(InstrumentNewsSummary::getOriginTradeDate).isEqualTo(DAY_ONE);
 
-		// 배치 ⑪ — 그런데도 조회는 비지 않는다. "오늘 날짜 행"으로 찾았다면 여기서 EMPTY가 된다.
 		InstrumentNewsResponse response = instrumentNewsQueryService.getInstrumentNews(coin.getId());
 		assertThat(response.summaryStatus()).isEqualTo(FeedbackContentStatus.READY);
 		assertThat(response.summary()).isEqualTo("최근 24시간 기사가 이어졌습니다.");
@@ -221,12 +189,9 @@ class CryptoFeedbackBatchIntegrationTest {
 		MarketBriefingResponse response = marketBriefingService.getBriefing(Market.CRYPTO);
 		assertThat(response.status()).isEqualTo(FeedbackContentStatus.READY);
 		assertThat(response.summary()).isEqualTo("최근 24시간 코인 기사가 이어졌습니다.");
-		// 저장된 행의 origin_trade_date는 배치 실행 날짜라 응답에 내리지 않는다 (§C-9).
 		assertThat(response.originTradeDate()).isNull();
 	}
 
-	// 판정 기준이 published_at이면 이 기사는 영원히 요약에 못 들어간다 — 발행은 직전 생성보다 이른데
-	// 수집만 늦기 때문이다. created_at 기준이면 정확히 한 번 잡힌다.
 	@Test
 	@DisplayName("발행은 이르고 수집만 늦은 기사도 다음 배치에서 정확히 한 번 반영된다")
 	void regeneratesForAnArticlePublishedEarlyButCollectedLate() {
@@ -235,7 +200,6 @@ class CryptoFeedbackBatchIntegrationTest {
 		cryptoFeedbackBatchService.refreshCryptoFeedback();
 		verify(narrativeService, times(1)).resolveNewsSummaryNarrative(any());
 
-		// 23:03 발행인데 23:30에 수집됐다 — 직전 생성(23:05)보다 발행은 이르고 수집은 늦다.
 		saveNews("늦게 수집된 기사",
 			LocalDateTime.of(DAY_ONE, LocalTime.of(23, 3)), LocalDateTime.of(DAY_ONE, LocalTime.of(23, 30)));
 		mutableClock.set(LocalDateTime.of(DAY_ONE, LocalTime.of(23, 59)));
@@ -244,7 +208,6 @@ class CryptoFeedbackBatchIntegrationTest {
 		verify(narrativeService, times(2)).resolveNewsSummaryNarrative(any());
 	}
 
-	// --- 배치 ⑫ UPSERT로 하루 1행 ---
 
 	@Test
 	@DisplayName("같은 날 여러 번 돌아도 요약·브리핑이 하루 1행이고 generated_at만 갱신된다")
@@ -262,7 +225,6 @@ class CryptoFeedbackBatchIntegrationTest {
 
 		assertThat(summaries()).hasSize(1);
 		assertThat(cryptoBriefings()).hasSize(1);
-		// 새 행이 아니라 같은 행이다 — 새로 만들면 유니크에 걸려 그 시각 갱신이 통째로 실패한다.
 		assertThat(summaries().get(0).getId()).isEqualTo(firstSummaryId);
 		assertThat(cryptoBriefings().get(0).getId()).isEqualTo(firstBriefingId);
 		assertThat(summaries().get(0).getGeneratedAt())
@@ -270,7 +232,6 @@ class CryptoFeedbackBatchIntegrationTest {
 		assertThat(summaries().get(0).getOriginTradeDate()).isEqualTo(DAY_ONE);
 	}
 
-	// 날짜가 바뀌고 새 기사도 있으면 그때는 새 행이다 — 하루 1행이지 전체 1행이 아니다.
 	@Test
 	@DisplayName("날짜가 바뀌고 새 기사가 있으면 그날의 행이 새로 생기고 어제 행은 남는다")
 	void createsANewRowForTheNextDayWithoutRemovingYesterdays() {
@@ -286,12 +247,10 @@ class CryptoFeedbackBatchIntegrationTest {
 		assertThat(summaries()).hasSize(2);
 		assertThat(summaries()).extracting(InstrumentNewsSummary::getOriginTradeDate)
 			.containsExactlyInAnyOrder(DAY_ONE, DAY_TWO);
-		// 조회는 그중 generated_at 최신 행을 본다.
 		assertThat(instrumentNewsQueryService.getInstrumentNews(coin.getId()).summaryStatus())
 			.isEqualTo(FeedbackContentStatus.READY);
 	}
 
-	// --- 배치 ⑬ 한 범위만 쓴다 ---
 
 	@Test
 	@DisplayName("코인 배치가 ROLLING_24H 행만 만들고 주식의 두 범위를 쓰지 않는다")
@@ -306,9 +265,7 @@ class CryptoFeedbackBatchIntegrationTest {
 			.containsOnly(NewsSummaryScope.ROLLING_24H);
 	}
 
-	// --- 배치 ⑨ 조회는 생성하지 않는다 ---
 
-	// GET이 LLM을 부르면 갱신 직후 동시 요청이 전부 호출하고 그 순간의 첫 사용자가 최대 40초를 기다린다.
 	@Test
 	@DisplayName("조회를 반복해도 LLM 호출이 늘지 않고 행도 늘지 않는다")
 	void neverCallsTheLlmOrWritesWhileQueryingRepeatedly() {
@@ -329,7 +286,6 @@ class CryptoFeedbackBatchIntegrationTest {
 		assertThat(marketBriefingRepository.count()).isEqualTo(briefingRowsAfterBatch);
 	}
 
-	// --- 공통 조건 원장 불변 (코인 배치에서도 재확인한다) ---
 
 	@Test
 	@DisplayName("코인 배치가 요약·브리핑 두 테이블 밖에 쓰지 않는다")
@@ -342,7 +298,6 @@ class CryptoFeedbackBatchIntegrationTest {
 
 		cryptoFeedbackBatchService.refreshCryptoFeedback();
 
-		// 배치가 실제로 쓰기를 했는데도 나머지가 그대로여야 의미가 있다.
 		assertThat(summaries()).isNotEmpty();
 		assertThat(cryptoBriefings()).isNotEmpty();
 		assertThat(rowCounts(LEDGER_TABLES)).isEqualTo(ledgerBefore);

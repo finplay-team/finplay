@@ -1,4 +1,3 @@
-// 뒤 이슈(#4~#6)의 테스트가 딛고 설 FakeNarrativeGenerator의 계약을 고정하는 단위 테스트.
 package com.finplay.api.domain.feedback.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -7,7 +6,6 @@ import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-// Fake가 조용히 틀리면 그 위에 쌓는 NarrativeService 테스트(호출 횟수·재생성 프롬프트 단정)가 통째로 거짓이 된다.
 class FakeNarrativeGeneratorTest {
 
 	@Test
@@ -44,7 +42,6 @@ class FakeNarrativeGeneratorTest {
 		Optional<String> result = generator.generate("시스템", "사용자");
 
 		assertThat(result).isEmpty();
-		// 상한 초과 호출을 단정하려면(§완료 조건 "max-regeneration + 1을 넘지 않는다") 응답이 떨어진 뒤에도 세어야 한다.
 		assertThat(generator.callCount()).isEqualTo(1);
 	}
 

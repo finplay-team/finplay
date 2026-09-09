@@ -1,4 +1,3 @@
-// 실제 인증 필터·MySQL 원장으로 코인 매도 회고가 200이고 원장·주식 경로가 그대로인지 종단 검증한다.
 package com.finplay.api.domain.feedback.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -67,16 +66,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.transaction.annotation.Transactional;
 
-// tasks-275.md 5번 항목이다 — 이슈 #275 완료 조건의 2단계 첫 항목(코인 체결이 400이 아니라 200)과 공통 3건
-// (주식 경로 불변·원장 불변·LLM 폴백)을 한 파일에서 고정한다.
-//
-// **실제 LLM을 부르지 않는다**(ADR-0011·PRD C-005). FakeNarrativeGenerator를 @Primary로 얹어 실패를 시나리오로
-// 고정한다. 코인 봉도 FakeCryptoCandleProvider가 준다 — 빗썸 REST를 부르지 않는다.
-//
-// 주식 경로 회귀는 이 파일이 아니라 **기존 PostSellFeedback* 통합 테스트를 수정 없이 실행해** 확인한다.
-// 여기에 주식 케이스를 복제하면 그 파일들과 같은 것을 두 곳에서 단정하게 된다.
-//
-// 공유 컨테이너를 더럽히지 않도록 클래스 트랜잭션으로 감싼다 (PostSellFeedbackIntegrationTest 선례).
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
@@ -87,7 +76,6 @@ class CryptoPostSellFeedbackE2eIntegrationTest {
 
 	private static final String PATH = "/api/ai/post-sell/{tradeId}";
 
-	// 코인 전용 심볼 — V7 시드·다른 테스트와 UNIQUE(symbol)로 부딪히지 않게 이 파일 전용 이름을 쓴다.
 	private static final String SYMBOL = "E2E275";
 
 	private static final LocalDate SELL_DATE = LocalDate.of(2026, 8, 5);
@@ -95,30 +83,24 @@ class CryptoPostSellFeedbackE2eIntegrationTest {
 	private static final LocalDateTime BUY_AT = LocalDateTime.of(SELL_DATE, LocalTime.of(9, 0));
 	private static final LocalDateTime SELL_AT = LocalDateTime.of(SELL_DATE, LocalTime.of(12, 0));
 
-	// 보유 구간 안의 코인 변동 카드. reveal_time이 NULL이라 노출 게이트가 없다(§C-9).
 	private static final LocalDateTime CARD_AT = LocalDateTime.of(SELL_DATE, LocalTime.of(10, 30));
 
-	// §C-5 게이트가 열린 뒤 조회 — 매도 다음 날 09:00이다.
 	static final LocalDateTime VIEW_AT = LocalDateTime.of(SELL_DATE.plusDays(1), LocalTime.of(9, 0));
 
 	private static final BigDecimal QUANTITY = new BigDecimal("10");
 	private static final BigDecimal BUY_PRICE = new BigDecimal("70000");
 	private static final BigDecimal SELL_PRICE = new BigDecimal("68500");
 
-	// 매수원가 700,000 + 매수수수료 105 = 700,105. 매도 685,000 − 코인 수수료 342 → 실현손익 −15,447.
 	private static final long ALLOCATED_COST = 700_000L;
 	private static final long ALLOCATED_BUY_FEE = 105L;
 	private static final long SELL_FEE = 342L;
 	private static final long REALIZED_PNL = -15_447L;
 
-	// 조회 전후로 행이 변하면 안 되는 원장 테이블 (PeerStatsBatchServiceIntegrationTest와 같은 목록이다)
 	private static final List<String> LEDGER_TABLES = List.of("orders", "trades", "accounts", "holdings",
 		"holding_lots", "trade_allocations");
 
-	// 이 조회가 읽기만 해야 하는 테이블
 	private static final List<String> READ_ONLY_TABLES = List.of("instruments", "market_news_items");
 
-	// 같은 feedback 도메인이지만 이 조회의 산출물이 아닌 테이블 — 쓰기는 trade_feedbacks 하나뿐이다(FEED-007).
 	private static final List<String> OTHER_FEEDBACK_TABLES = List.of("price_move_events",
 		"price_move_event_sources", "instrument_news_summaries", "market_briefings", "price_move_peer_stats");
 
@@ -185,10 +167,8 @@ class CryptoPostSellFeedbackE2eIntegrationTest {
 	void setUp() {
 		fakeNarrativeGenerator.reset();
 		cryptoCandleProvider.reset();
-		// 매도일 일봉 — 게이트가 열린 뒤 종가·반사실이 실제로 채워지게 한다.
 		cryptoCandleProvider.setCandles(SYMBOL, CandleInterval.ONE_DAY, List.of(candle(
 			SELL_DATE.atStartOfDay(), "69200")));
-		// 보유 구간의 1분봉 — 극값이 실제 값으로 채워지게 한다(보유 180분이라 200봉 상한 안이다).
 		cryptoCandleProvider.setCandles(SYMBOL, CandleInterval.ONE_MINUTE, List.of(
 			candle(BUY_AT, "70000"),
 			candle(CARD_AT, "70800"),
@@ -201,7 +181,6 @@ class CryptoPostSellFeedbackE2eIntegrationTest {
 		accessToken = jwtTokenProvider.issue(owner.getId(), owner.getRole()).accessToken();
 	}
 
-	// --- 2단계 완료 조건 1·2 — 400이 아니라 200이고 원장 수치가 주식과 같은 계산이다 ---
 
 	@Test
 	@DisplayName("코인 매도 체결 조회가 400이 아니라 200이고 원장 수치가 채워진다")
@@ -212,30 +191,21 @@ class CryptoPostSellFeedbackE2eIntegrationTest {
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.tradeId").value(sellTrade.getId()))
 			.andExpect(jsonPath("$.symbol").value(SYMBOL))
-			// 배분 가중평균 매수단가·매도가·수량·수수료·실현손익 — 주식과 같은 계산이다.
 			.andExpect(jsonPath("$.buyPrice").value(70000.00000000))
 			.andExpect(jsonPath("$.sellPrice").value(68500))
 			.andExpect(jsonPath("$.quantity").value(10))
 			.andExpect(jsonPath("$.fee").value(SELL_FEE))
 			.andExpect(jsonPath("$.realizedPnl").value(REALIZED_PNL))
-			// returnRate = −15,447 ÷ (700,000 + 105) = −0.0221 (scale 4 HALF_UP).
 			.andExpect(jsonPath("$.returnRate").value(-0.0221))
-			// 보유기간 = 09:00 → 12:00.
 			.andExpect(jsonPath("$.holdingMinutes").value(180))
-			// 코인은 재생일이 없어 시간축이 언제나 연속이다(§FEED-012 결정 0).
 			.andExpect(jsonPath("$.sameSessionCompleted").value(true))
-			// 체결 시각 그대로다 — 원본 거래일로 갈아 끼우는 변환이 없다.
 			.andExpect(jsonPath("$.buyAt").value("2026-08-05T09:00:00"))
 			.andExpect(jsonPath("$.sellAt").value("2026-08-05T12:00:00"))
-			// 보유 180분이라 1분봉 정밀도다(§FEED-012 결정 4).
 			.andExpect(jsonPath("$.holdHighBasis").value("MINUTE"))
 			.andExpect(jsonPath("$.holdHighPrice").value(70800));
 	}
 
-	// --- 2단계 완료 조건 3 — 보유 구간 코인 카드가 노출 게이트 없이 들어온다 ---
 
-	// 코인 카드는 reveal_time이 NULL이다. 주식이 쓰는 노출 게이트를 코인에도 적용하면 NULL이 조건에서 탈락해
-	// priceMoves가 항상 빈 배열이 되는데, 예외도 로그도 남지 않는다.
 	@Test
 	@DisplayName("보유 구간의 코인 변동 카드가 노출 게이트 없이 priceMoves에 들어온다")
 	void includesHeldCryptoPriceMoveWithoutARevealGate() throws Exception {
@@ -247,15 +217,12 @@ class CryptoPostSellFeedbackE2eIntegrationTest {
 			.andExpect(jsonPath("$.priceMoves.length()").value(1))
 			.andExpect(jsonPath("$.priceMoves[0].id").value(card.getId()))
 			.andExpect(jsonPath("$.priceMoves[0].windowEnd").value("2026-08-05T10:30:00"))
-			// minutesAfterBuy = 09:00 → 10:30, minutesBeforeSell = 10:30 → 12:00.
 			.andExpect(jsonPath("$.priceMoves[0].minutesAfterBuy").value(90))
 			.andExpect(jsonPath("$.priceMoves[0].minutesBeforeSell").value(90))
-			// 근거 기사는 세 조회 경로가 공유하는 로더가 채운다 — 코인 경로에서 그 값을 단언하는 유일한 자리다.
 			.andExpect(jsonPath("$.priceMoves[0].sources.length()").value(1))
 			.andExpect(jsonPath("$.priceMoves[0].sources[0].title").value("대형 거래소 상장 소식"));
 	}
 
-	// --- 공통 조건 — LLM 폴백 (ADR-0011) ---
 
 	@Test
 	@DisplayName("코인 체결도 LLM 실패 시 템플릿 문장으로 대체되고 narrativeStatus는 READY·source는 TEMPLATE이다")
@@ -268,14 +235,10 @@ class CryptoPostSellFeedbackE2eIntegrationTest {
 		assertThat(fakeNarrativeGenerator.callCount()).isEqualTo(1);
 		assertThat(response.narrativeStatus()).isEqualTo(PostSellFeedbackStatus.READY);
 		assertThat(response.narrativeSource()).isEqualTo(NarrativeSource.TEMPLATE);
-		// 상수 READY만 보면 공허하다 — 실제로 문장이 채워졌는지가 이 보장의 내용이다.
 		assertThat(response.narrative()).isNotBlank();
 	}
 
-	// --- 공통 조건 — 원장 불변 ---
 
-	// 행 수만 보면 값이 바뀐 UPDATE(계좌 잔액·lot 잔여수량)를 놓치므로 값 비교를 더한다
-	// (ai/agent-mistakes.md 2026-08-04 "원장 불변 행 수 스냅샷" 행).
 	@Test
 	@DisplayName("코인 회고 조회는 trade_feedbacks에만 1행을 쓰고 원장·읽기 전용·다른 피드백 테이블은 그대로다")
 	void neverWritesOutsideTradeFeedbacks() {
@@ -292,7 +255,6 @@ class CryptoPostSellFeedbackE2eIntegrationTest {
 		PostSellFeedbackResponse response = postSellFeedbackService.getPostSellFeedback(
 			owner.getId(), sellTrade.getId());
 
-		// 실제로 쓰기가 일어났는데도(서술 1행) 나머지가 그대로여야 의미가 있다.
 		assertThat(response.narrative()).isNotBlank();
 		assertThat(feedbackRowCount()).isEqualTo(feedbacksBefore + 1);
 		assertThat(rowCounts(LEDGER_TABLES)).isEqualTo(ledgerBefore);
@@ -302,7 +264,6 @@ class CryptoPostSellFeedbackE2eIntegrationTest {
 		assertThat(mutableLedgerValues()).isEqualTo(mutableLedgerBefore);
 	}
 
-	// --- 픽스처 ---
 
 	private MockHttpServletRequestBuilder authorized(MockHttpServletRequestBuilder builder) {
 		return builder.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken);
@@ -315,8 +276,6 @@ class CryptoPostSellFeedbackE2eIntegrationTest {
 			price, new BigDecimal("1.5"));
 	}
 
-	// 근거 기사를 함께 심는다 — priceMoves[].sources는 세 조회 경로가 공유하는 PriceMoveSourceLoader가
-	// 채우는 값인데(PR #281), 기사를 심지 않으면 로더가 통째로 비어도 이 테스트가 통과한다.
 	private PriceMoveEvent givenHeldCryptoCard() {
 		PriceMoveEvent card = priceMoveEventRepository.saveAndFlush(PriceMoveEvent.createCrypto(
 			coin, CARD_AT, new BigDecimal("0.021000"), new BigDecimal("3.2500"),
@@ -345,7 +304,6 @@ class CryptoPostSellFeedbackE2eIntegrationTest {
 		return sell;
 	}
 
-	// 코인 체결이라 재생세션이 null이다 — Trade.of가 코인에 세션을 주면 거부한다.
 	private Trade saveTrade(
 		Account account, OrderSide side, BigDecimal price, long amount, long fee, Long realizedPnl,
 		LocalDateTime executedAt) {
@@ -367,7 +325,6 @@ class CryptoPostSellFeedbackE2eIntegrationTest {
 		return jdbcTemplate.queryForMap("SELECT * FROM trades WHERE id = ?", sellTrade.getId());
 	}
 
-	/** 원장에서 값이 바뀔 수 있는 자리 — 계좌 잔액과 lot 잔여수량이다. 행 수 비교로는 UPDATE가 잡히지 않는다. */
 	private List<Map<String, Object>> mutableLedgerValues() {
 		entityManager.flush();
 		List<Map<String, Object>> rows = new ArrayList<>(
@@ -388,14 +345,12 @@ class CryptoPostSellFeedbackE2eIntegrationTest {
 	@TestConfiguration
 	static class CryptoE2eTestConfig {
 
-		// §C-5 게이트가 열린 뒤 조회 — 매도 후 흐름·반사실이 READY인 상태를 본다.
 		@Bean
 		@Primary
 		Clock fixedClock() {
 			return Clock.fixed(VIEW_AT.atZone(KST).toInstant(), KST);
 		}
 
-		// 실제 OpenAI를 부르지 않는다 (ADR-0011·PRD C-005).
 		@Bean
 		@Primary
 		FakeNarrativeGenerator fakeNarrativeGenerator() {

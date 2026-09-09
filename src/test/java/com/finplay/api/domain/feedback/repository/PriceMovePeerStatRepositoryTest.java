@@ -1,4 +1,3 @@
-// 실제 MySQL에서 price_move_peer_stats의 UNIQUE(price_move_event_id, service_date)와 median_minutes_to_sell NULL 허용을 검증하는 JPA 슬라이스 테스트다.
 package com.finplay.api.domain.feedback.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -47,7 +46,6 @@ class PriceMovePeerStatRepositoryTest {
 	private JdbcTemplate jdbcTemplate;
 
 	private static final LocalDate ORIGIN_TRADE_DATE = LocalDate.of(2026, 8, 3);
-	// 같은 원본 거래일이 두 번 재생된 상황 — 카드 행은 재사용되고 집계만 서비스 날짜별로 쌓인다 (§C-9).
 	private static final LocalDate FIRST_SERVICE_DATE = LocalDate.of(2026, 8, 4);
 	private static final LocalDate SECOND_SERVICE_DATE = LocalDate.of(2026, 8, 11);
 	private static final LocalDateTime AGGREGATED_AT = LocalDateTime.of(2026, 8, 4, 15, 40, 0);
@@ -57,7 +55,6 @@ class PriceMovePeerStatRepositoryTest {
 
 	@BeforeEach
 	void setUp() {
-		// V7 시드(005930 등)와 겹치지 않는 테스트 전용 심볼을 사용한다 — UNIQUE(symbol) 충돌 방지.
 		instrument = instrumentRepository.save(Instrument.create(
 			Market.STOCK, "PEER001", "테스트종목", new BigDecimal("100"), 70000, true, LocalDateTime.now()));
 		event = priceMoveEventRepository.save(newEvent(LocalTime.of(9, 0)));
@@ -84,7 +81,6 @@ class PriceMovePeerStatRepositoryTest {
 			priceMoveEvent, serviceDate, 12, 5, medianMinutesToSell, AGGREGATED_AT);
 	}
 
-	// --- 검증 ② 같은 카드라도 service_date가 다르면 공존하고, 같으면 유니크에 걸린다 ---
 
 	@Test
 	@DisplayName("같은 카드라도 서비스 날짜가 다르면 집계 2행이 공존한다 — 재재생 시 첫날 집계가 덮이지 않는다")
@@ -97,7 +93,6 @@ class PriceMovePeerStatRepositoryTest {
 		assertThat(all).hasSize(2);
 		assertThat(all).extracting(PriceMovePeerStat::getServiceDate)
 			.containsExactlyInAnyOrder(FIRST_SERVICE_DATE, SECOND_SERVICE_DATE);
-		// 첫날 집계가 그대로 남아 있어야 첫날 매도자가 남의 날 통계를 보지 않는다.
 		assertThat(all).extracting(PriceMovePeerStat::getMedianMinutesToSell)
 			.containsExactlyInAnyOrder(18, 24);
 	}
@@ -113,11 +108,7 @@ class PriceMovePeerStatRepositoryTest {
 			.isInstanceOf(DataIntegrityViolationException.class);
 	}
 
-	// --- findByPriceMoveEventIdAndServiceDate (이슈 #212 4번 항목) ---
 
-	// tasks.md 4번의 함정 — 같은 카드를 한 서비스 날짜에서만 집계하는 픽스처로는 서비스 날짜 없이
-	// UNIQUE(price_move_event_id) 단독으로 잘못 짠 조회도 초록이다. §C-9 재재생 시나리오대로 같은 카드에 두
-	// 서비스 날짜 행을 함께 넣고, 조회가 그 체결의 서비스 날짜 행만 돌려주는지 본다.
 	@Test
 	@DisplayName("같은 카드가 두 서비스 날짜에 행을 가져도 조회는 그 서비스 날짜 행만 돌려준다")
 	void findsOnlyTheStatRowForTheRequestedServiceDateWhenTheSameCardHasRowsOnTwoServiceDates() {
@@ -130,8 +121,6 @@ class PriceMovePeerStatRepositoryTest {
 
 		assertThat(found.getServiceDate()).isEqualTo(SECOND_SERVICE_DATE);
 		assertThat(found.getMedianMinutesToSell()).isEqualTo(24);
-		// 서비스 날짜를 무시하는 조회(findByPriceMoveEventId 첫 행)였다면 첫날 값(18)이 새어 나왔을 것이다 —
-		// 두 값이 실제로 다른 픽스처라 이 뮤테이션이 걸린다.
 		assertThat(found.getMedianMinutesToSell()).isNotEqualTo(18);
 	}
 
@@ -172,13 +161,10 @@ class PriceMovePeerStatRepositoryTest {
 		assertThat(priceMovePeerStatRepository.count()).isEqualTo(2);
 	}
 
-	// --- 검증 ③ median_minutes_to_sell이 NULL인 행(전원 미매도)이 저장된다 ---
 
 	@Test
 	@DisplayName("median_minutes_to_sell이 NULL인 행(보유자 전원 미매도)이 저장된다 — 0이 아니라 NULL인 것이 의도다")
 	void statRowWithNullMedianIsPersistedWhenNobodySold() {
-		// validate는 NULL 허용 여부를 검사하지 않는다. 컬럼이 NOT NULL이면 이 행 자체가 저장되지 않고,
-		// 그러면 배치가 "전원 미매도"를 0분으로 왜곡해 기록할 수밖에 없다 (§C-8).
 		Long id = priceMovePeerStatRepository.saveAndFlush(
 			PriceMovePeerStat.create(event, FIRST_SERVICE_DATE, 7, 0, null, AGGREGATED_AT)).getId();
 
@@ -187,7 +173,6 @@ class PriceMovePeerStatRepositoryTest {
 		assertThat(found.getMedianMinutesToSell()).isNull();
 		assertThat(found.getHolderCount()).isEqualTo(7);
 		assertThat(found.getSoldWithin30MinCount()).isZero();
-		// 엔티티가 아니라 실제 컬럼이 NULL인지까지 확인한다 (0으로 저장되면 "전원 미매도"와 "즉시 매도"가 섞인다).
 		Map<String, Object> row = jdbcTemplate.queryForMap(
 			"select median_minutes_to_sell, sold_within_30min_count from price_move_peer_stats where id = ?", id);
 		assertThat(row.get("median_minutes_to_sell")).isNull();
@@ -206,7 +191,6 @@ class PriceMovePeerStatRepositoryTest {
 		assertThat(found.getMedianMinutesToSell()).isNull();
 	}
 
-	// --- 매핑 ---
 
 	@Test
 	@DisplayName("저장한 집계를 다시 읽으면 카드 참조와 집계값이 그대로 복원된다")
@@ -226,7 +210,6 @@ class PriceMovePeerStatRepositoryTest {
 	@Test
 	@DisplayName("집계 테이블에 회원 식별자 컬럼이 없다")
 	void statTableHasNoMemberIdentifierColumn() {
-		// 집계 결과만 저장한다 (§데이터 모델). 회원 축 컬럼이 생기면 개인 행동이 전 회원 공유 테이블에 남는다.
 		List<String> columns = jdbcTemplate.queryForList(
 			"select column_name from information_schema.columns "
 				+ "where table_schema = database() and table_name = 'price_move_peer_stats'",

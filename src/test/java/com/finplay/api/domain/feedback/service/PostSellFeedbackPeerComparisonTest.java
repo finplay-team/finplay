@@ -1,4 +1,3 @@
-// peerComparison 상태 판정(NO_EVENT·NOT_YET·INSUFFICIENT_SAMPLE·READY)과 지표 계산을 검증하는 단위 테스트다.
 package com.finplay.api.domain.feedback.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -41,13 +40,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
-/**
- * tasks.md 012 이슈 #212 4번 항목 — 정본은 spec.md §C-4·§반사실·집단 비교 계산이다.
- *
- * <p>판정 순서는 {@code NO_EVENT}(카드 0건) → {@code NOT_YET}(카드는 있지만 확정 집계 행 없음) →
- * {@code INSUFFICIENT_SAMPLE}({@code holderCount < 5}) → {@code READY}다. 경계(5명/4명)는 두 픽스처를 모두 두어
- * {@code <}/{@code <=} 뒤바뀜을 잡는다.
- */
 class PostSellFeedbackPeerComparisonTest {
 
 	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
@@ -62,7 +54,6 @@ class PostSellFeedbackPeerComparisonTest {
 	private static final LocalTime BUY_TIME = LocalTime.of(9, 30);
 	private static final LocalTime CARD_WINDOW_START = LocalTime.of(9, 45);
 	private static final LocalTime CARD_WINDOW_END = LocalTime.of(9, 50);
-	// yourMinutesToSell = 14:40 − 09:50 = 290분. 계산과 무관한 다른 픽스처의 값들과 겹치지 않는 값으로 고른다.
 	private static final LocalTime SELL_TIME = LocalTime.of(14, 40);
 
 	private final StockReplayService stockReplayService = mock(StockReplayService.class);
@@ -74,8 +65,6 @@ class PostSellFeedbackPeerComparisonTest {
 
 	private final PriceMovePeerStatRepository priceMovePeerStatRepository = mock(PriceMovePeerStatRepository.class);
 
-	// 검증(404·403·400)과 배분 조회는 PostSellFeedbackContextReader로 옮겨 갔다(이슈 #282) — 이 파일은 이미
-	// 검증을 마친 (trade, allocation)을 주식 조립에 그대로 넘겨 집단 비교만 본다.
 	private final StockPostSellFeedbackReader stockPostSellFeedbackReader = new StockPostSellFeedbackReader(
 		stockReplayService,
 		priceMoveEventRepository,
@@ -87,7 +76,6 @@ class PostSellFeedbackPeerComparisonTest {
 
 	private SellAllocationSummaryDto allocation;
 
-	// --- 판정 순서 1: NO_EVENT (1순위) ---
 
 	@Test
 	@DisplayName("보유 구간에 카드가 0건이면 NO_EVENT이고 priceMoveId를 포함한 전 필드가 null이다")
@@ -102,29 +90,23 @@ class PostSellFeedbackPeerComparisonTest {
 		assertThat(peerComparison.holderCount()).isNull();
 		assertThat(peerComparison.soldWithin30MinRate()).isNull();
 		assertThat(peerComparison.medianMinutesToSell()).isNull();
-		// yourMinutesToSell도 null이다 — 기준 카드 자체가 없어 잴 대상이 없다.
 		assertThat(peerComparison.yourMinutesToSell()).isNull();
 	}
 
-	// --- 판정 순서 2: NOT_YET (카드는 있지만 확정 집계 행이 없다) ---
 
 	@Test
 	@DisplayName("카드는 있지만 확정 집계 행이 없으면 NOT_YET이고 priceMoveId조차 채우지 않는다")
 	void statusIsNotYetWhenTheCardExistsButNoConfirmedStatRowYet() {
 		givenSameSessionSell();
 		givenCard(card());
-		// 리포지토리를 stub하지 않으면 Mockito 기본값 Optional.empty()다 — 확정 집계 행이 없는 상태를 그대로 뜻한다.
 
 		PeerComparison peerComparison = read().peerComparison();
 
 		assertThat(peerComparison.status()).isEqualTo(PostSellFeedbackStatus.NOT_YET);
-		// 기준 카드를 이미 알고 있어도(반사실 atFirstMoveAfterBuy와 같은 카드) priceMoveId를 채우지 않는다 — 배치가
-		// 돌아 판정이 바뀌는 순간 값 → null로 사라지는 조합이 생기지 않게 한다.
 		assertThat(peerComparison.priceMoveId()).isNull();
 		assertThat(peerComparison.yourMinutesToSell()).isNull();
 	}
 
-	// --- 함정: INSUFFICIENT_SAMPLE 경계 (holderCount 4 vs 5) ---
 
 	@Test
 	@DisplayName("holderCount=4(경계 미달)면 INSUFFICIENT_SAMPLE이고 모집단 지표 3종이 null, yourMinutesToSell만 채운다")
@@ -141,7 +123,6 @@ class PostSellFeedbackPeerComparisonTest {
 		assertThat(peerComparison.holderCount()).isNull();
 		assertThat(peerComparison.soldWithin30MinRate()).isNull();
 		assertThat(peerComparison.medianMinutesToSell()).isNull();
-		// yourMinutesToSell은 모집단 통계가 아니라 본인 값이라 표본 부족이어도 채운다.
 		assertThat(peerComparison.yourMinutesToSell()).isEqualTo(290);
 	}
 
@@ -161,14 +142,12 @@ class PostSellFeedbackPeerComparisonTest {
 		assertThat(peerComparison.yourMinutesToSell()).isEqualTo(290);
 	}
 
-	// --- soldWithin30MinRate = soldWithin30MinCount ÷ holderCount ---
 
 	@Test
 	@DisplayName("soldWithin30MinRate는 나누어지지 않는 값(2/7)에서도 scale 4 HALF_UP으로 정확히 나온다")
 	void computesSoldWithin30MinRateAsAnExactDivisionNotAnIntegerTruncation() {
 		givenSameSessionSell();
 		givenCard(card());
-		// 2 ÷ 7 = 0.285714285714... → scale 4 HALF_UP = 0.2857. 정수 나눗셈(2/7=0)으로 잘못 구현하면 0이 나온다.
 		givenConfirmedStat(PriceMovePeerStat.create(
 			card(), SELL_SERVICE_DATE, 7, 2, 12, LocalDateTime.of(SELL_SERVICE_DATE, LocalTime.of(15, 40))));
 
@@ -176,11 +155,9 @@ class PostSellFeedbackPeerComparisonTest {
 
 		assertThat(peerComparison.status()).isEqualTo(PostSellFeedbackStatus.READY);
 		assertThat(peerComparison.soldWithin30MinRate()).isEqualTo(new BigDecimal("0.2857"));
-		// 정수 나눗셈 구현이 내는 답 — 두 답이 갈리는 픽스처임을 남긴다.
 		assertThat(peerComparison.soldWithin30MinRate()).isNotEqualTo(BigDecimal.ZERO);
 	}
 
-	// --- yourMinutesToSell = 매도시각 − 카드 windowEnd ---
 
 	@Test
 	@DisplayName("yourMinutesToSell은 매도시각 − 카드 windowEnd(분)와 정확히 같다")
@@ -192,11 +169,9 @@ class PostSellFeedbackPeerComparisonTest {
 
 		PeerComparison peerComparison = read().peerComparison();
 
-		// 매도 14:40 − windowEnd 09:50 = 290분.
 		assertThat(peerComparison.yourMinutesToSell()).isEqualTo(290);
 	}
 
-	// --- 회원 식별자 부재 ---
 
 	@Test
 	@DisplayName("PeerComparison 응답 필드 어디에도 회원 식별자가 없다")
@@ -211,7 +186,6 @@ class PostSellFeedbackPeerComparisonTest {
 			|| name.toLowerCase().contains("nickname"));
 	}
 
-	// --- 픽스처 ---
 
 	private PostSellFeedbackResponse read() {
 		return stockPostSellFeedbackReader.read(trade, allocation);

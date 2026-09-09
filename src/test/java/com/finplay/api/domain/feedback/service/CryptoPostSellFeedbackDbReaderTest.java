@@ -1,4 +1,3 @@
-// 코인 회고의 DB 조회 둘(트랜잭션 B 카드 조회 · C 집단 비교)을 리포지터리 mock으로 검증하는 단위 테스트다.
 package com.finplay.api.domain.feedback.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -45,12 +44,6 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.annotation.Transactional;
 
-// tasks-282.md 2번 항목 — spec §FEED-012 결정 5의 트랜잭션 B·C다. 값·규칙의 정본은 §C-9(카드 구간 파생)·§C-4
-// (집단 비교 판정)이고, 이 파일이 보는 것은 CryptoPostSellFeedbackReader에서 떼어 낸 조회 둘뿐이다.
-//
-// 두 관심사를 갈라 둔 것이 이 파일의 존재 이유다 — REST/극값 계산은 CryptoPostSellFeedbackReaderTest가 보고,
-// 여기서는 리포지터리 호출 인자와 매핑만 본다. 실제 쿼리 실행과 저장·조회 키 정합은 슬라이스·통합 테스트가
-// 따로 본다(PriceMoveEventRepositoryTest·CryptoPeerStatsBatchIntegrationTest, ADR-0003).
 class CryptoPostSellFeedbackDbReaderTest {
 
 	private static final String SYMBOL = "BTC";
@@ -60,19 +53,14 @@ class CryptoPostSellFeedbackDbReaderTest {
 
 	private static final LocalDate SELL_DATE = LocalDate.of(2026, 8, 5);
 
-	// 매수·매도 시각에 소수 초를 붙인다 — 정시 픽스처는 onMinuteBoundary가 있든 없든 같은 답을 내서 조회 경계가
-	// 분으로 내려가는지를 검증하지 못한다(PostSellArithmetic.onMinuteBoundary의 경고).
 	private static final LocalDateTime BUY_AT = LocalDateTime.of(
 		SELL_DATE.minusDays(1), LocalTime.of(23, 1, 17, 400_000_000));
 
 	private static final LocalDateTime SELL_AT = LocalDateTime.of(SELL_DATE, LocalTime.of(2, 20, 41, 100_000_000));
 
-	// 카드 시각은 정시다 — occurred_at은 탐지 주기에 맞춰 정시로 저장된다.
 	private static final LocalDateTime FIRST_CARD_AT = LocalDateTime.of(SELL_DATE, LocalTime.of(0, 30));
 	private static final LocalDateTime SECOND_CARD_AT = LocalDateTime.of(SELL_DATE, LocalTime.of(1, 40));
 
-	// rolling-window-minutes = 5. windowStart가 이 값만큼 앞이어야 목록 조회(PriceMoveItem.ofCrypto)와 같은
-	// 구간으로 보인다.
 	private final FeedbackCryptoProperties cryptoProperties = new FeedbackCryptoProperties(30, 6, 5, 24, 100, 35, 45);
 
 	private final PriceMoveEventRepository priceMoveEventRepository = mock(PriceMoveEventRepository.class);
@@ -88,11 +76,7 @@ class CryptoPostSellFeedbackDbReaderTest {
 		priceMovePeerStatRepository,
 		cryptoProperties);
 
-	// --- 트랜잭션 B: 카드 조회 (§C-9) ---
 
-	// 조회 축이 주식과 다르다 — 주식은 (origin_trade_date, window_end)이고 코인은 occurred_at 하나다. 구간을 분으로
-	// 내리지 않으면 매수 분과 같은 분에 탐지된 카드가 하한 밖으로 밀린다. 리포지터리가 mock이라 구간 필터가 실제로
-	// 돌지 않으므로, 넘긴 인자를 직접 잡아 보는 것이 이 자리의 유일한 검증 수단이다.
 	@Test
 	@DisplayName("카드 조회 구간을 분으로 내려 넘기고 코인 축(instrumentId · CRYPTO · occurredAt)으로 찾는다")
 	void floorsTheHoldWindowToTheMinuteWhenLookingUpCards() {
@@ -119,13 +103,9 @@ class CryptoPostSellFeedbackDbReaderTest {
 		List<HeldPriceMoveItem> priceMoves = dbReader.findHeldPriceMoves(cryptoSellTrade(), BUY_AT, SELL_AT);
 
 		assertThat(priceMoves).isEmpty();
-		// 코인 카드는 근거 기사가 없으면 생성되지 않고 수집이 30분 주기라 0건이 오히려 흔한 경우다 — 그때마다
-		// 빈 id 목록으로 기사 테이블을 한 번 더 때리지 않는다.
 		verifyNoInteractions(priceMoveEventSourceRepository);
 	}
 
-	// windowStart는 저장 컬럼이 아니라 파생값이다(§C-9) — 목록 조회와 같은 규칙(occurredAt − rolling-window)을
-	// 쓰지 않으면 같은 카드가 화면마다 다른 구간으로 보인다.
 	@Test
 	@DisplayName("windowStart를 occurredAt − rolling-window-minutes로 파생하고 두 간격을 분으로 채운다")
 	void derivesTheWindowStartFromTheRollingWindowAndFillsBothGaps() {
@@ -141,7 +121,6 @@ class CryptoPostSellFeedbackDbReaderTest {
 		assertThat(item.windowStart()).isEqualTo(FIRST_CARD_AT.minusMinutes(5));
 		assertThat(item.changeRate()).isEqualByComparingTo("0.021");
 		assertThat(item.narrative()).isEqualTo("첫 카드");
-		// 23:01 → 00:30 = 89분, 00:30 → 02:20 = 110분. 체결의 소수 초는 두 값 어디에도 새어 들어오지 않는다.
 		assertThat(item.minutesAfterBuy()).isEqualTo(89);
 		assertThat(item.minutesBeforeSell()).isEqualTo(110);
 		assertThat(item.sources()).isEmpty();
@@ -164,7 +143,6 @@ class CryptoPostSellFeedbackDbReaderTest {
 		assertThat(priceMoves.get(1).sources()).isEmpty();
 	}
 
-	// --- 트랜잭션 C: 집단 비교 (§C-4 · §FEED-012 결정 3) ---
 
 	@Test
 	@DisplayName("카드가 0건이면 집계 행을 보지도 않고 NO_EVENT다")
@@ -174,13 +152,9 @@ class CryptoPostSellFeedbackDbReaderTest {
 		assertThat(peerComparison.status()).isEqualTo(PostSellFeedbackStatus.NO_EVENT);
 		assertThat(peerComparison.priceMoveId()).isNull();
 		assertThat(peerComparison.yourMinutesToSell()).isNull();
-		// 행 존재만 보는 구현이면 이 흔한 경우가 영원히 NOT_YET이 된다 — NO_EVENT가 1순위인 이유다.
 		verifyNoInteractions(priceMovePeerStatRepository);
 	}
 
-	// 조회 키가 주식과 다르다 — 코인 체결에는 서비스 날짜가 없어(stockReplaySession이 null이다) 그 카드
-	// occurred_at의 KST 날짜를 쓴다. 매수일(08-04)과 카드 날짜(08-05)를 다르게 둬, 체결·매수 날짜를 쓴 구현이면
-	// 여기서 갈리게 한다.
 	@Test
 	@DisplayName("기준 카드는 첫 카드이고 조회 키가 그 카드 windowEnd의 KST 날짜다")
 	void looksUpTheStatByTheFirstCardAndTheKstDateOfThatCard() {
@@ -210,13 +184,10 @@ class CryptoPostSellFeedbackDbReaderTest {
 		PeerComparison peerComparison = dbReader.buildPeerComparison(List.of(heldCard(FIRST_CARD_ID, FIRST_CARD_AT)));
 
 		assertThat(peerComparison.status()).isEqualTo(PostSellFeedbackStatus.NOT_YET);
-		// 배치가 돌아 판정이 바뀌는 순간 같은 체결의 priceMoveId가 값 → null로 사라지는 조합을 막는다.
 		assertThat(peerComparison.priceMoveId()).isNull();
 		assertThat(peerComparison.yourMinutesToSell()).isNull();
 	}
 
-	// 판정 경계(holderCount 5명/4명)와 비율 계산은 주식과 공유하는 PostSellArithmetic의 몫이고
-	// PostSellFeedbackPeerComparisonTest가 이미 고정한다 — 여기서는 코인 경로가 그 판정에 무엇을 넘기는지만 본다.
 	@Test
 	@DisplayName("확정 집계 행이 있으면 READY이고 yourMinutesToSell이 기준 카드의 minutesBeforeSell이다")
 	void returnsReadyWithYourMinutesToSellTakenFromTheFirstCard() {
@@ -230,16 +201,10 @@ class CryptoPostSellFeedbackDbReaderTest {
 		assertThat(peerComparison.holderCount()).isEqualTo(10);
 		assertThat(peerComparison.soldWithin30MinRate()).isEqualByComparingTo("0.3000");
 		assertThat(peerComparison.medianMinutesToSell()).isEqualTo(18);
-		// 매도시각 − 카드시각을 다시 재지 않고 카드가 이미 갖고 있는 값을 쓴다 — 두 곳이 갈리면 같은 응답 안에서
-		// 카드 간격과 집단 비교 간격이 어긋난다.
 		assertThat(peerComparison.yourMinutesToSell()).isEqualTo(110);
 	}
 
-	// --- 트랜잭션 경계 (구조 단정) ---
 
-	// 이 빈이 존재하는 이유가 애노테이션 두 개다(§FEED-012 결정 5). 조회 둘을 조립 리더로 되돌리면 자기호출이 되어
-	// 프록시를 타지 않고, 조립 메서드에 애노테이션을 붙이면 그 사이의 REST 4종이 다시 트랜잭션 안에 갇힌다.
-	// 어느 쪽도 테스트가 붉어지지 않으므로 구조를 단정으로 고정한다.
 	@Test
 	@DisplayName("조회 두 메서드에 각각 @Transactional(readOnly = true)가 붙어 있다")
 	void wrapsEachQueryInItsOwnReadOnlyTransaction() throws Exception {
@@ -254,7 +219,6 @@ class CryptoPostSellFeedbackDbReaderTest {
 			.satisfies(annotation -> assertThat(annotation.readOnly()).isTrue());
 	}
 
-	// --- 픽스처 ---
 
 	private void givenCards(PriceMoveEvent... events) {
 		when(priceMoveEventRepository.findByInstrumentIdAndMarketAndOccurredAtBetweenOrderByOccurredAtAscIdAsc(
@@ -281,7 +245,6 @@ class CryptoPostSellFeedbackDbReaderTest {
 		return PriceMoveEventSource.of(event, news);
 	}
 
-	// buildPeerComparison은 카드 record만 보므로 findHeldPriceMoves를 거치지 않고 직접 만든다.
 	private static HeldPriceMoveItem heldCard(Long id, LocalDateTime windowEnd) {
 		return new HeldPriceMoveItem(
 			id,
@@ -300,7 +263,6 @@ class CryptoPostSellFeedbackDbReaderTest {
 			SELL_DATE.plusDays(1).atStartOfDay());
 	}
 
-	// 코인 체결에는 재생세션이 없다 (Trade가 그것을 강제한다).
 	private static Trade cryptoSellTrade() {
 		Instrument instrument = cryptoInstrument();
 		User user = User.create("crypto-trader@finplay.com", "password-hash", "ctrader", SELL_AT);

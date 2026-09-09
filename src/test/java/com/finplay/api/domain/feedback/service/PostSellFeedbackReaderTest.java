@@ -1,4 +1,3 @@
-// 매도 직후 피드백 오케스트레이터의 컨텍스트 로드 → 시장 분기 → 조립 위임과 예외 전파를 검증하는 단위 테스트다.
 package com.finplay.api.domain.feedback.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -36,14 +35,6 @@ import org.mockito.InOrder;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.annotation.Transactional;
 
-// tasks-282.md 1번 항목이 이 파일에 남긴 책임은 **오케스트레이션뿐**이다 — 검증 순서·배분 조회는
-// PostSellFeedbackContextReaderTest가, 주식 조립은 StockPostSellFeedbackReaderTest가, 코인 조립은
-// CryptoPostSellFeedbackReaderTest가 본다. 401·404·403·400의 HTTP 매핑은 PostSellFeedbackControllerTest가,
-// 서술 생성·재사용은 PostSellFeedbackServiceTest가, 종단은 PostSellFeedbackIntegrationTest가 맡는다.
-//
-// **이 클래스에 @Transactional이 없어야 한다는 결정(spec §FEED-012 결정 5)**은 아래 리플렉션 단정이 지킨다 —
-// mock 위에서는 프록시가 붙지 않아 동작으로는 드러나지 않지만, 애노테이션 자체는 볼 수 있다. 실제로 트랜잭션이
-// 열리지 않는다는 사실은 tasks-282.md 3번 항목의 통합 테스트가 실제 DB로 고정한다.
 class PostSellFeedbackReaderTest {
 
 	private static final Long USER_ID = 1L;
@@ -66,7 +57,6 @@ class PostSellFeedbackReaderTest {
 	private final PostSellFeedbackReader postSellFeedbackReader = new PostSellFeedbackReader(
 		postSellFeedbackContextReader, stockPostSellFeedbackReader, cryptoPostSellFeedbackReader);
 
-	// --- 시장 분기 ---
 
 	@Test
 	@DisplayName("주식 매도 체결은 주식 조립에 위임하고 그 응답을 그대로 돌려준다")
@@ -79,15 +69,11 @@ class PostSellFeedbackReaderTest {
 
 		PostSellFeedbackResponse response = postSellFeedbackReader.read(USER_ID, SELL_TRADE_ID);
 
-		// 컨텍스트가 읽어 온 그 인스턴스를 그대로 넘긴다 — 조립이 다른 체결을 보면 응답 전체가 남의 값이 된다.
 		verify(stockPostSellFeedbackReader).read(trade, allocation);
 		assertThat(response).isSameAs(assembled);
-		// 코인 경로로 새지 않는다.
 		verifyNoInteractions(cryptoPostSellFeedbackReader);
 	}
 
-	// 이슈 #275가 이 자리를 뒤집었다 — 코인 매도 체결은 더 이상 400이 아니라 200이고, 조립은 코인 전담
-	// 컴포넌트가 맡는다(§FEED-012).
 	@Test
 	@DisplayName("코인 매도 체결은 400이 아니라 코인 조립에 위임하고 그 응답을 그대로 돌려준다")
 	void delegatesCryptoSellTradeToTheCryptoReaderInsteadOfRejectingIt() {
@@ -101,11 +87,9 @@ class PostSellFeedbackReaderTest {
 
 		verify(cryptoPostSellFeedbackReader).read(cryptoTrade, allocation);
 		assertThat(response).isSameAs(assembled);
-		// 주식 조립 경로로 새지 않는다 — 코인에는 재생세션이 없어 그쪽으로 가면 그 자리에서 터진다.
 		verifyNoInteractions(stockPostSellFeedbackReader);
 	}
 
-	// --- 위임 순서 ---
 
 	@Test
 	@DisplayName("컨텍스트를 그 회원·체결 id로 먼저 읽고 그 뒤에 조립에 넘긴다")
@@ -121,10 +105,7 @@ class PostSellFeedbackReaderTest {
 		inOrder.verify(stockPostSellFeedbackReader).read(trade, allocation);
 	}
 
-	// --- 예외 전파 ---
 
-	// 검증은 전부 컨텍스트 로드가 마쳤다(404 → 403 → 400). 오케스트레이터가 할 일은 그것을 삼키지 않고
-	// 그대로 흘리면서 **조립을 시작하지 않는 것**이다 — 조립을 먼저 부르면 남의 체결로도 캔들·LLM이 한 번 돈다.
 	@ParameterizedTest
 	@EnumSource(value = ErrorCode.class, names = {"NOT_FOUND", "FORBIDDEN", "VALIDATION_ERROR"})
 	@DisplayName("컨텍스트 로드가 던진 404·403·400을 그대로 전파하고 조립을 시작하지 않는다")
@@ -139,11 +120,7 @@ class PostSellFeedbackReaderTest {
 		verifyNoInteractions(stockPostSellFeedbackReader, cryptoPostSellFeedbackReader);
 	}
 
-	// --- 트랜잭션 경계 ---
 
-	// 편의로 애노테이션을 붙이는 회귀는 동작으로 드러나지 않는다 — 값은 그대로이고 커넥션을 오래 쥘 뿐이다.
-	// 오케스트레이터가 트랜잭션을 열면 REQUIRED 전파로 코인 경로의 빗썸 REST 4종이 그 안으로 딸려 들어간다
-	// (spec §FEED-012 결정 5). CryptoPostSellFeedbackReader·PostSellFeedbackService가 같은 이유로 같은 단정을 갖는다.
 	@Test
 	@DisplayName("PostSellFeedbackReader에는 클래스·read 어디에도 @Transactional이 없다")
 	void neverWrapsTheOrchestrationInATransaction() throws Exception {
@@ -155,17 +132,12 @@ class PostSellFeedbackReaderTest {
 		assertThat(read.getAnnotation(jakarta.transaction.Transactional.class)).isNull();
 	}
 
-	// --- 픽스처 ---
 
 	private void givenContext(Trade trade, SellAllocationSummaryDto allocation) {
 		when(postSellFeedbackContextReader.loadContext(USER_ID, SELL_TRADE_ID))
 			.thenReturn(new PostSellFeedbackContext(trade, allocation));
 	}
 
-	/**
-	 * 조립 리더가 돌려준 응답을 오케스트레이터가 <b>그대로</b> 흘리는지만 보는 표식이다 — 값의 내용은 각
-	 * 조립 리더의 전담 테스트가 본다. 필드를 채우지 않는 이유가 그것이다.
-	 */
 	private static PostSellFeedbackResponse assembledResponse() {
 		return new PostSellFeedbackResponse(
 			SELL_TRADE_ID, INSTRUMENT_ID, "005930", "삼성전자", null, null, null, null, null, 0L, null, null, null,
@@ -195,7 +167,6 @@ class PostSellFeedbackReaderTest {
 			new BigDecimal("68500"), 685_000L, 102L, -15_207L);
 	}
 
-	// 코인 체결에는 재생세션이 없다 (Trade가 그것을 강제한다).
 	private static Trade cryptoSellTrade() {
 		Instrument instrument = Instrument.create(
 			Market.CRYPTO, "BTC", "비트코인", new BigDecimal("1"), 5_000L, true,

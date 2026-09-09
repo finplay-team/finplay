@@ -1,4 +1,3 @@
-// 고정 Clock + Testcontainers(MySQL·Redis)로 코인 변동 감시(CryptoPriceMoveWatcher)의 종단을 검증한다 — 카드 생성과 원장 불변.
 package com.finplay.api.domain.feedback.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -44,38 +43,22 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
 
-// tasks.md 3번 항목의 완료 조건("5분 전 가격을 실제로 꺼낸다", 근거 매칭·서술·저장까지 실 협력자로 종단 확인)과
-// 8개 이슈 공통 조건(원장 불변, 이 배치가 맡는 몫)이 이 파일의 목표다. σ 표본의 정확한 수치·자정 케이스·
-// 쿨다운·일일 상한의 경계는 CryptoPriceMoveWatcherTest(단위)가 mock으로 이미 정밀하게 본다 — 여기서는 Redis
-// 스냅샷 → σ 계산 → MySQL 근거 매칭 → 카드 저장까지 실제 컨테이너로 한 번 이어지는지만 본다(ADR-0003).
-//
-// LLM은 부르지 않는다 — application.yml의 api-key가 "not-configured"라 NarrativeService가 §템플릿 문장으로
-// 폴백한다(FeedbackBatchIntegrationTest와 같은 전제).
 @SpringBootTest
 @Transactional
 @Import({TestcontainersConfiguration.class, TestClockConfig.class})
 class CryptoPriceMoveWatcherIntegrationTest {
 
-	// 배치 실행 시각 — 자정과 무관한 평범한 시각이다. 자정 케이스는 단위 테스트가 정밀하게 본다.
 	private static final LocalDateTime NOW = LocalDateTime.of(2026, 8, 5, 10, 0);
 
 	private static final String SYMBOL = "MOVEWATCH";
 
-	// 종목별 실패 격리 테스트 전용 두 번째 종목.
 	private static final String SYMBOL2 = "MOVEWATCH2";
 
-	// 배치 실행 전후로 행이 변하면 안 되는 원장 테이블 (다른 원장 불변 테스트와 같은 목록).
 	private static final List<String> LEDGER_TABLES = List.of("orders", "trades", "accounts", "holdings",
 		"holding_lots", "trade_allocations");
 
-	// 이 배치가 읽기만 해야 하는 테이블. market_news_items는 첫 매칭이 성공해 온디맨드 수집(ADR-0017)이
-	// 트리거되지 않는 시나리오에서만 읽기 전용이다 — 이 상수를 쓰는 테스트가 사전에 givenMatchingNews()로
-	// 근거를 채워 온디맨드 경로를 타지 않게 하는지 확인하고 재사용해야 한다.
 	private static final List<String> READ_ONLY_TABLES = List.of("instruments", "market_news_items");
 
-	// tasks-285.md 4번 항목 — 온디맨드 수집(ADR-0017)을 실 협력자로 종단 검증하려고 NewsCollector만 mock으로
-	// 갈아끼운다. FakeNewsCollector는 빈 목록이 계약이라 저장 경로를 태울 수 없다(NewsCollectionIntegrationTest
-	// 선례와 같은 이유).
 	@MockitoBean
 	private NewsCollector newsCollector;
 
@@ -109,7 +92,6 @@ class CryptoPriceMoveWatcherIntegrationTest {
 	@Autowired
 	private EntityManager entityManager;
 
-	// 전역 Clock 빈을 대신하는 공용 테스트 시계 (TestClockConfig). 기준 시각은 @BeforeEach에서 세운다.
 	@Autowired
 	private TestClock clock;
 
@@ -128,13 +110,10 @@ class CryptoPriceMoveWatcherIntegrationTest {
 		redisTemplate.delete("price:crypto:" + SYMBOL2 + ":snapshots");
 	}
 
-	// min-sample-count(기본 100) 세그먼트를 실제로 채우는 5분 간격 스냅샷 101개 — ago 0~5분은 점프 이후,
-	// 그 뒤(ago 5~500분)는 점프 이전이다. "5분 전 가격을 실제로 꺼내 쓴다"(완료 조건 1)가 이 픽스처의 핵심이다.
 	private void givenEnoughSnapshotsWithARecentJump() {
 		givenEnoughSnapshotsWithARecentJump(SYMBOL);
 	}
 
-	// 종목별 실패 격리 테스트가 두 번째 종목에도 같은 점프 픽스처를 채우려고 심볼을 매개변수로 뺀 버전.
 	private void givenEnoughSnapshotsWithARecentJump(String symbol) {
 		BigDecimal past = BigDecimal.valueOf(100);
 		BigDecimal now = BigDecimal.valueOf(100 * Math.exp(0.12));
@@ -160,14 +139,11 @@ class CryptoPriceMoveWatcherIntegrationTest {
 			Market.CRYPTO, SYMBOL2, "테스트코인2", BigDecimal.ONE, 5000L, true, NOW));
 	}
 
-	// 온디맨드 수집이 돌려줄 근거 기사 — publishedAt은 crypto.match-before-minutes(35) 안쪽인 5분 전으로 둔다.
 	private static CollectedNewsDto onDemandNews(String urlKey) {
 		return new CollectedNewsDto(
 			"온디맨드 급등 기사", "테스트경제", "https://news.example.com/on-demand/" + urlKey, NOW.minusMinutes(5));
 	}
 
-	// newsCollector mock stub의 argThat 매칭에 쓴다 — 여러 종목이 섞이는 테스트(중복 방지·실패 격리)에서
-	// 특정 종목에만 스텁을 건다.
 	private static boolean matchesInstrumentId(Instrument candidate, Long instrumentId) {
 		return candidate != null && instrumentId.equals(candidate.getId());
 	}
@@ -199,7 +175,6 @@ class CryptoPriceMoveWatcherIntegrationTest {
 	@DisplayName("근거 기사가 없으면 변동이 있어도 카드가 생성되지 않는다")
 	void createsNoCardWhenNoMatchingEvidenceExists() {
 		givenEnoughSnapshotsWithARecentJump();
-		// 근거 기사를 만들지 않는다.
 
 		cryptoPriceMoveWatcher.watch();
 
@@ -219,15 +194,12 @@ class CryptoPriceMoveWatcherIntegrationTest {
 
 		cryptoPriceMoveWatcher.watch();
 
-		// 실제로 쓰기가 일어났는데도 나머지가 그대로여야 의미가 있다.
 		assertThat(priceMoveEventRepository.count()).isGreaterThan(cardsBefore);
 		assertThat(priceMoveEventSourceRepository.count()).isGreaterThan(sourcesBefore);
 		assertThat(rowCounts(LEDGER_TABLES)).isEqualTo(ledgerBefore);
 		assertThat(rowCounts(READ_ONLY_TABLES)).isEqualTo(readOnlyBefore);
 	}
 
-	// tasks-285.md 4번 항목 — 이하 다섯 테스트가 이슈 #285의 완료 조건(카드 생성 성공률 상승·중복 방지·
-	// 종목별 실패 격리)을 실 협력자(NewsCollector mock + 실제 MySQL/Redis)로 종단 검증한다.
 
 	@Test
 	@DisplayName("근거 기사가 DB에 없어도 온디맨드 수집(ADR-0017) 후 카드가 생성된다 — 카드 생성 성공률 상승")
@@ -236,7 +208,6 @@ class CryptoPriceMoveWatcherIntegrationTest {
 		CollectedNewsDto article = onDemandNews("success");
 		when(newsCollector.collect(argThat(i -> matchesInstrumentId(i, instrument.getId())), any()))
 			.thenReturn(List.of(article));
-		// 근거 기사를 사전에 저장하지 않는다 — givenMatchingNews() 호출 없음.
 
 		cryptoPriceMoveWatcher.watch();
 
@@ -264,7 +235,6 @@ class CryptoPriceMoveWatcherIntegrationTest {
 		cryptoPriceMoveWatcher.watch();
 
 		assertThat(priceMoveEventRepository.findAll()).isEmpty();
-		// 완전히 건너뛴 것이 아니라 "찾아봤지만 없었다"임을 구분한다.
 		verify(newsCollector, times(1)).collect(argThat(i -> matchesInstrumentId(i, instrument.getId())), any());
 	}
 
@@ -277,7 +247,6 @@ class CryptoPriceMoveWatcherIntegrationTest {
 			.thenReturn(List.of(article));
 
 		cryptoPriceMoveWatcher.watch();
-		// 같은 newsCollector 스텁을 유지한 채 30분 배치(collectNews)를 이어서 호출한다.
 		newsCollectionService.collectNews();
 
 		List<MarketNewsItem> savedForUrl = marketNewsItemRepository.findAll().stream()
@@ -293,15 +262,12 @@ class CryptoPriceMoveWatcherIntegrationTest {
 		givenEnoughSnapshotsWithARecentJump(SYMBOL);
 		Instrument secondInstrument = givenSecondCryptoInstrument();
 		givenEnoughSnapshotsWithARecentJump(SYMBOL2);
-		// 건강한 종목(instrument)은 근거 기사를 미리 저장해 둬 첫 매칭에서 바로 카드가 만들어지고 온디맨드
-		// 수집을 아예 타지 않는다 — 실패 종목(secondInstrument)만 온디맨드 수집 경로를 태운다.
 		givenMatchingNews();
 		when(newsCollector.collect(argThat(i -> matchesInstrumentId(i, secondInstrument.getId())), any()))
 			.thenThrow(new RuntimeException("네이버 검색 API 실패"));
 
 		assertThatCode(() -> cryptoPriceMoveWatcher.watch()).doesNotThrowAnyException();
 
-		// 실패한 종목도 온디맨드 수집 시도(스냅샷 조회·매칭 시도의 다음 단계)는 있었다.
 		verify(newsCollector, times(1))
 			.collect(argThat(i -> matchesInstrumentId(i, secondInstrument.getId())), any());
 		List<PriceMoveEvent> cards = priceMoveEventRepository.findAll();
@@ -316,7 +282,6 @@ class CryptoPriceMoveWatcherIntegrationTest {
 		CollectedNewsDto article = onDemandNews("ledger");
 		when(newsCollector.collect(argThat(i -> matchesInstrumentId(i, instrument.getId())), any()))
 			.thenReturn(List.of(article));
-		// 근거 기사를 사전에 저장하지 않는다 — 온디맨드 수집이 실제로 market_news_items에 쓰는 경로를 태운다.
 
 		Map<String, Long> ledgerBefore = rowCounts(LEDGER_TABLES);
 		long newsBefore = marketNewsItemRepository.count();

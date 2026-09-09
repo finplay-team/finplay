@@ -1,4 +1,3 @@
-// feedback.detection.* 프로퍼티가 설정 없이도 spec 012 §C-7 기본값으로 바인딩되는지 검증한다.
 package com.finplay.api.domain.feedback.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -8,14 +7,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
-// FeedbackLlmPropertiesTest와 같은 짝의 앞쪽이다 — 여기서는 record의 @DefaultValue만 본다.
-// application.yml 쪽 키 경로는 FeedbackDetectionPropertiesYamlTest가 맡는다.
-//
-// 기대값의 정본은 ai/specs/012-ai-feedback/spec.md §C-7이다. 구현 파일이 아니라 spec에서 값을
-// 가져와야 record와 yml이 함께 틀어지는 드리프트가 잡힌다.
 class FeedbackDetectionPropertiesTest {
 
-	// §C-7 feedback.detection 블록
 	private static final double SPEC_Z_SCORE_K = 2.5;
 
 	private static final int SPEC_WINDOW_MINUTES = 5;
@@ -95,9 +88,6 @@ class FeedbackDetectionPropertiesTest {
 			.run(context -> assertThat(context).hasFailed());
 	}
 
-	// 아래 셋은 예외도 로그도 없이 결과가 사라지거나 배치를 죽이는 값이라 record가 기동 시점에 막는다.
-	// window-minutes=0이면 cum이 전부 0이라 장중 카드가 매일 0건이 되고, max-intraday-cards=0이면
-	// 후보를 아무리 찾아도 채택이 0건이며, opening-gap-threshold=0은 detectionScore의 분모다.
 	@Test
 	@DisplayName("window-minutes가 1 미만이면 기동이 실패한다")
 	void failsWhenWindowMinutesIsBelowOne() {

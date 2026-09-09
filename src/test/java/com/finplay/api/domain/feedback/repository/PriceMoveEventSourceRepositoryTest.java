@@ -1,4 +1,3 @@
-// 실제 MySQL에서 price_move_event_sources의 양쪽 FK 저장과 UNIQUE(price_move_event_id, market_news_item_id)를 검증하는 JPA 슬라이스 테스트다.
 package com.finplay.api.domain.feedback.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -54,7 +53,6 @@ class PriceMoveEventSourceRepositoryTest {
 
 	@BeforeEach
 	void setUp() {
-		// V7 시드(005930 등)와 겹치지 않는 테스트 전용 심볼을 사용한다 — UNIQUE(symbol) 충돌 방지.
 		instrument = instrumentRepository.save(Instrument.create(
 			Market.STOCK, "SRC001", "테스트종목A", new BigDecimal("100"), 70000, true, LocalDateTime.now()));
 		event = priceMoveEventRepository.save(newEvent(LocalTime.of(9, 0)));

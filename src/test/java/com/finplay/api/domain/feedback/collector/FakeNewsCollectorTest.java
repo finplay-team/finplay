@@ -1,4 +1,3 @@
-// 로컬·테스트용 FakeNewsCollector가 외부 호출 없이 항상 빈 목록을 돌려주는지 검증한다.
 package com.finplay.api.domain.feedback.collector;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -11,9 +10,6 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-// tasks.md 3번의 검증 ④ — Fake는 빈 목록을 준다. spec §실패 처리의 "키 없음 → Fake가 빈 목록. 기동·테스트 정상"이
-// 성립하는 근거이고, 동시에 "가짜 기사를 지어내지 않는다"를 고정한다. 더미 기사를 돌려주면 로컬 화면에 실제로
-// 없었던 사건이 근거로 붙는다.
 class FakeNewsCollectorTest {
 
 	private final FakeNewsCollector collector = new FakeNewsCollector();

@@ -1,4 +1,3 @@
-// feedback.llm.* 프로퍼티가 설정 없이도 spec 012 §C-7 기본값으로 바인딩되는지 검증한다.
 package com.finplay.api.domain.feedback.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -29,8 +28,6 @@ class FeedbackLlmPropertiesTest {
 		});
 	}
 
-	// 덮어쓰는 값은 전부 §C-7 기본값과 달라야 한다 — 같으면 바인딩이 아예 안 돼도 기본값에 가려 통과한다.
-	// max-tokens가 4차에 1024가 됐으므로 여기서는 2048을 쓴다.
 	@Test
 	@DisplayName("feedback.llm.* 케밥케이스 키를 주면 여섯 값이 모두 덮어써진다")
 	void bindsEveryPropertyFromKebabCaseKeys() {

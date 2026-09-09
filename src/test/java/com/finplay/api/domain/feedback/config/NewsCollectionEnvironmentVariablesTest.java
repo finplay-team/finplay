@@ -1,4 +1,3 @@
-// 뉴스·공시 수집 환경변수 4종이 .env.example·compose.deploy.yaml·application.yml에 spec 012대로 선언됐는지 검증한다.
 package com.finplay.api.domain.feedback.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -12,21 +11,14 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
 
-// 이슈 #167 완료 조건 "(기동) .env.example·compose.deploy.yaml에 신설 환경변수 4종"을 단정한다.
-// 이름의 정본은 spec.md §외부 API 호출 상세이고, 자격증명 키 경로는 §C-7이다.
-//
-// 프로퍼티 바인딩 테스트(NewsCollectionPropertiesTest·NewsCollectionPropertiesIntegrationTest)는 yml 키 경로까지만
-// 본다. 그 키를 채울 환경변수 이름이 빠지거나 로그인용 이름과 겹쳐도 바인딩은 빈 값으로 통과하므로 여기서 따로 본다.
 class NewsCollectionEnvironmentVariablesTest {
 
-	// §외부 API 호출 상세 — 이번 이슈가 신설하는 환경변수 4종
 	private static final List<String> NEW_ENV_VARIABLES = List.of(
 		"NAVER_SEARCH_CLIENT_ID",
 		"NAVER_SEARCH_CLIENT_SECRET",
 		"DART_API_KEY",
 		"OPENAI_API_KEY");
 
-	// §외부 API 호출 상세 — 네이버 OAuth 로그인이 이미 쓰고 있어 재사용하면 안 되는 이름
 	private static final List<String> OAUTH_LOGIN_ENV_VARIABLES = List.of(
 		"NAVER_CLIENT_ID", "NAVER_CLIENT_SECRET");
 
@@ -42,7 +34,6 @@ class NewsCollectionEnvironmentVariablesTest {
 		}
 	}
 
-	// 검색 키가 로그인 키를 대체해 버리면(이름 재사용·기존 항목 치환) 검색과 로그인 중 하나가 조용히 깨진다.
 	@Test
 	@DisplayName(".env.example이 OAuth 로그인용 네이버 키 2종을 그대로 유지한다")
 	void envExampleKeepsOauthLoginNaverVariablesSeparate() throws IOException {
@@ -55,7 +46,6 @@ class NewsCollectionEnvironmentVariablesTest {
 		}
 	}
 
-	// conventions.md 시크릿 규칙 — .env.example에는 이름만 적고 실제 값을 적지 않는다.
 	@Test
 	@DisplayName(".env.example의 신설 환경변수 4종에 실제 값이 적혀 있지 않다")
 	void envExampleCarriesNoSecretValue() throws IOException {
@@ -68,7 +58,6 @@ class NewsCollectionEnvironmentVariablesTest {
 		}
 	}
 
-	// compose.deploy.yaml의 app 서비스는 .env를 통째로 넘긴다. 이 경로가 4종의 유일한 전달 통로다.
 	@Test
 	@DisplayName("compose.deploy.yaml의 app 서비스가 env_file로 .env를 통째로 넘긴다")
 	void composeDeployPassesEnvFileToApp() throws IOException {
@@ -78,8 +67,6 @@ class NewsCollectionEnvironmentVariablesTest {
 		assertThat(lines).contains("- .env");
 	}
 
-	// environment 블록은 env_file보다 우선한다. 4종 중 하나라도 여기에 이름이 다시 적히면 .env 값이 무시돼
-	// 배포에서만 키가 비는데, 로컬·테스트는 키 없이도 정상이라 끝까지 드러나지 않는다.
 	@Test
 	@DisplayName("compose.deploy.yaml의 environment 블록이 신설 환경변수 4종을 다시 적지 않는다")
 	void composeDeployDoesNotOverrideNewEnvironmentVariables() throws IOException {
@@ -92,7 +79,6 @@ class NewsCollectionEnvironmentVariablesTest {
 		}
 	}
 
-	// §C-7의 키 경로가 §외부 API 호출 상세의 환경변수 이름으로 채워지는지 — 두 문서를 잇는 지점이다.
 	@Test
 	@DisplayName("application.yml의 자격증명 3종 키가 신설 환경변수 이름을 참조한다")
 	void applicationYmlBindsCredentialKeysToNewEnvironmentVariables() throws IOException {
@@ -103,7 +89,6 @@ class NewsCollectionEnvironmentVariablesTest {
 		assertThat(lines).contains("api-key: ${DART_API_KEY:}");
 	}
 
-	// 로그인 쪽 참조가 그대로 남아 있어야 "별개 환경변수"가 성립한다.
 	@Test
 	@DisplayName("application.yml의 oauth.naver가 여전히 로그인용 환경변수를 참조한다")
 	void applicationYmlKeepsOauthNaverBoundToLoginEnvironmentVariables() throws IOException {

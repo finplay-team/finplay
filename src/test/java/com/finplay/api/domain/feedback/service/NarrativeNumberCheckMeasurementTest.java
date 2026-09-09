@@ -1,4 +1,3 @@
-// spec 053 §측정 ①② — 숫자 환각 적발률과 참인 문장 차단율을 재는 하네스이자, 구현 전 기존 검증기의 대조군.
 package com.finplay.api.domain.feedback.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -14,38 +13,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
-/**
- * <b>구현 전에 먼저 만든다.</b> spec 053 §측정 ①의 값은 "새 검증기가 더 잡는다"가 아니라
- * <b>"기존 검증기가 0건이었다"</b>에 있는데, 구현한 뒤에 재면 그 0건을 다시 만들어 낼 수 없다.
- * 그래서 이 클래스는 FEED-014 구현보다 앞선 커밋에 들어간다.
- *
- * <p><b>기존 검증기의 목록을 여기에 얼려 둔다</b>({@link #LEGACY_RULES}). {@code NarrativeValidator}를 직접
- * 부르지 않는 이유는 FEED-014가 그 클래스에 숫자 대조를 더할 예정이기 때문이다 — 운영 클래스를 부르면
- * 구현 커밋에서 ①의 <b>0/12가 함께 움직여 비교 자체가 사라진다.</b> 얼린 목록은 2026-08-22 시점의
- * {@code 012} §후검증 표 5줄 37개 그대로이며, 지금 운영 검증기와도 같은 판정을 낸다는 것을
- * {@link #todaysValidatorReproducesTheFrozenBaseline()}이 함께 확인한다.
- *
- * <p><b>그 걱정은 결과적으로 기우였다 — 얼려 두길 잘한 것과는 별개다.</b> 숫자 대조는 {@code NarrativeValidator}
- * 안이 아니라 별도 클래스({@link NarrativeNumberValidator})로 갔고(053 plan §결정 A), 그래서 운영 검증기의
- * 판정이 무변경이라 ①의 0/12가 운영 클래스에서도 그대로 재현된다. 얼린 목록은 <b>그대로 둔다</b> — 대조군을
- * 구현과 무관하게 고정해 두는 것이 이 하네스의 값이기 때문이다.
- *
- * <p><b>②는 고쳐야 할 결함이 아니다.</b> 반사실을 서술에서 뺀 것은 {@code 012} §왜 반사실은 AI 문장에 넣지
- * 않는가의 <b>제품 판단</b>이고, 6/6 차단은 그 판단이 코드에서 지켜지고 있다는 뜻이다. 반사실 해금은 이
- * spec에서 분리했으므로 <b>구현 후에도 6/6이 유지되는 것이 정상</b>이다 (2026-08-23 범위 축소).
- * 게다가 이 여섯 문장은 <b>운영에서 발생한 적이 없다</b> — 반사실이 프롬프트에 들어간 적이 없어 모델이 쓸
- * 재료를 받은 적이 없는, 순수한 합성 입력이다. ①의 열두 건은 운영에서 실제로 나올 수 있어 성격이 다르다.
- *
- * <p><b>수치는 전부 문서에서 왔다.</b> 프롬프트 고정값은 {@code 012} §LLM 프롬프트의 매도 회고 예시(삼성전자
- * 09:30 매수 → 14:40 매도)이고, 반사실 두 값(-1.17%·+1.11%)은 같은 spec §왜 반사실은 AI 문장에 넣지 않는가의
- * 표에 적힌 값이다. 지어낸 수치가 하나도 없어야 발표에서 이 표를 근거로 쓸 수 있다.
- *
- * <p><b>LLM을 부르지 않는다.</b> ①②는 서술을 고정 문자열로 주입하는 측정이라 실호출이 없다(§측정 전에 확인할
- * 것). 실호출이 필요한 ③④는 이 클래스에 넣지 않는다.
- */
 class NarrativeNumberCheckMeasurementTest {
 
-	// ---------- 얼린 대조군: 2026-08-22 시점의 §후검증 표 5줄 37개 ----------
 
 	private static final List<String> CAUSATION = List.of("때문에", "영향으로", "여파로", "덕분에", "로 인해", "탓에");
 
@@ -59,17 +28,14 @@ class NarrativeNumberCheckMeasurementTest {
 	private static final List<String> JUDGEMENT = List.of("버티", "놓치", "실수", "잘못", "다행", "기회를", "았다면", "었다면", "였다면",
 		"했다면", "렸다면");
 
-	// 수 토큰에 쓰이는 문자들. 정규식을 쓰지 않는 이유는 이 상수 하나면 충분해서다.
 	private static final String NUMBER_CHARS = "+-0123456789,.";
 
 	private static final List<String> LEGACY_RULES = Stream
 		.of(CAUSATION, RECOMMENDATION, PREDICTION, ADVICE, JUDGEMENT).flatMap(List::stream).toList();
 
-	// ---------- 프롬프트 고정값: 012 §LLM 프롬프트의 매도 회고 예시 ----------
 
 	private static final LocalDate TRADING_DATE = LocalDate.of(2026, 8, 3);
 
-	// ---------- ① 숫자 환각 12건 (자릿수 3 · 부호 3 · 반올림 3 · 출처 없음 3) ----------
 
 	private static final List<HallucinationCase> HALLUCINATIONS = List.of(
 		new HallucinationCase("자릿수", "수익률은 -21.7%였습니다.", "-21.7%", "-2.17%"),
@@ -85,7 +51,6 @@ class NarrativeNumberCheckMeasurementTest {
 		new HallucinationCase("출처 없음", "거래량은 직전 5거래일 평균의 2.4배였습니다.", "2.4배", "프롬프트에 없음"),
 		new HallucinationCase("출처 없음", "장중 고점 대비 5.12% 낮은 가격에 매도했습니다.", "5.12%", "프롬프트에 없음"));
 
-	// ---------- ② 서버가 계산한 참인 반사실 6건 (가정법 어미 다섯을 모두 덮는다) ----------
 
 	private static final List<String> COUNTERFACTUALS = List.of(
 		"마감까지 보유했다면 수익률은 -1.17%였습니다.",
@@ -99,8 +64,6 @@ class NarrativeNumberCheckMeasurementTest {
 
 	private final NarrativeValidator validator = new NarrativeValidator();
 
-	// FEED-014로 더해진 새 축. 표현 축과 <b>별도 클래스</b>라 위 validator의 판정은 이 축이 생겨도 그대로다 —
-	// 그것이 ①의 0/12 대조군이 구현 후에도 살아 있는 이유다 (053 plan §결정 A).
 	private final NarrativeNumberValidator numberValidator = new NarrativeNumberValidator();
 
 	static Stream<HallucinationCase> hallucinations() {
@@ -111,7 +74,6 @@ class NarrativeNumberCheckMeasurementTest {
 		return COUNTERFACTUALS.stream();
 	}
 
-	// ---------- 하네스의 전제 ----------
 
 	@Test
 	@DisplayName("얼린 대조군이 §후검증 표 5줄 37개 그대로다 — 이 숫자가 흔들리면 ①②의 0건·6건이 무의미해진다")
@@ -130,7 +92,6 @@ class NarrativeNumberCheckMeasurementTest {
 	void injectedNumbersAreAbsentFromThePromptButTheTrueOnesArePresent(HallucinationCase testCase) {
 		String prompt = builder.postSellPrompt(specPostSell());
 
-		// 틀린 값이 프롬프트에 이미 있으면 그것은 환각이 아니라 정상 인용이라, 새 검증기도 잡지 않는 것이 맞다.
 		assertThat(prompt).as("틀린 값이 프롬프트에 있으면 안 된다: %s", testCase.wrong())
 			.doesNotContain(testCase.wrong());
 		if (!"프롬프트에 없음".equals(testCase.actual())) {
@@ -143,14 +104,10 @@ class NarrativeNumberCheckMeasurementTest {
 	void counterfactualRatesAreNotInThePromptYet() {
 		String prompt = builder.postSellPrompt(specPostSell());
 
-		// 모델은 이 두 수치를 받은 적이 없다. 그래서 ②의 여섯 문장은 운영에서 나온 적이 없는 합성 입력이고,
-		// 새 검증기 기준으로도 "출처 없는 숫자"라 6/6 차단이 그대로 유지된다.
 		assertThat(prompt).doesNotContain("-1.17%").doesNotContain("+1.11%");
-		// 반대로 두 시나리오의 가격은 이미 프롬프트에 있다 — 없는 것은 "그때 팔았다면 얼마"라는 수익률뿐이다.
 		assertThat(prompt).contains("69,200원").contains("70,800원");
 	}
 
-	// ---------- 측정 ① 숫자 환각 적발률 ----------
 
 	@ParameterizedTest(name = "[{0}]")
 	@MethodSource("hallucinations")
@@ -167,14 +124,11 @@ class NarrativeNumberCheckMeasurementTest {
 	void numberValidatorDetectsEveryHallucination(HallucinationCase testCase) {
 		String prompt = builder.postSellPrompt(specPostSell());
 
-		// isNotEmpty만으로는 부족하다 — 케이스를 하나 바꿨을 때 "의도한 틀린 값이 아니라 옆에 있던 다른 수
-		// 때문에 잡혔다"가 되어도 12/12가 그대로 나온다. 적발 목록에 틀린 값의 수 부분이 들어 있는지까지 본다.
 		assertThat(numberValidator.validate(testCase.narrative(), prompt).detectedExpressions())
 			.as("의도한 틀린 값 %s 때문에 적발돼야 한다: %s", testCase.wrong(), testCase.narrative())
 			.contains(numberPartOf(testCase.wrong()));
 	}
 
-	// ---------- 측정 ② 참인 문장 차단율 ----------
 
 	@ParameterizedTest(name = "[{0}]")
 	@MethodSource("counterfactuals")
@@ -191,30 +145,15 @@ class NarrativeNumberCheckMeasurementTest {
 	void numberValidatorKeepsBlockingEveryCounterfactual(String narrative) {
 		String prompt = builder.postSellPrompt(specPostSell());
 
-		// 표현 축은 무변경이다 — 이 spec은 ②의 6/6을 <b>바꾸지 않는 것이 정상</b>이다 (2026-08-23 범위 축소).
 		assertThat(validator.validateCardOrPostSell(narrative).detectedExpressions())
 			.as("가정법 어미에 계속 걸려야 한다: %s", narrative)
 			.isNotEmpty();
-		// 숫자 축도 독립적으로 잡는다 — 반사실 두 값(-1.17%·+1.11%)이 프롬프트에 없기 때문이다.
 		assertThat(numberValidator.validate(narrative, prompt).detectedExpressions())
 			.as("반사실 수익률이 출처 없는 수치여야 한다: %s", narrative)
 			.isNotEmpty();
 	}
 
-	// ---------- 얼린 목록이 오늘의 운영 검증기와 같은 판정을 낸다 ----------
 
-	/**
-	 * <b>이 테스트는 이제 FEED-016의 증거다</b> — 숫자 대조를 더하면서 표현 축이 한 글자도 움직이지
-	 * 않았다는 것을, 2026-08-22에 얼린 목록과 오늘의 운영 검증기가 같은 판정을 낸다는 사실로 보인다.
-	 *
-	 * <p><b>구현 전의 예고("FEED-014가 숫자 대조를 더하면 첫 번째 단정이 깨진다")는 빗나갔다.</b> 그 예고는
-	 * 숫자 대조가 {@code NarrativeValidator} 안으로 들어간다는 전제 위에 있었는데, 실제로는 별도 클래스
-	 * ({@link NarrativeNumberValidator})로 뺐다 (053 plan §결정 A). {@code validateCardOrPostSell}의 판정이
-	 * 무변경이라 <b>①의 0/12 대조군이 구현 후에도 운영 클래스에서 그대로 재현된다.</b>
-	 *
-	 * <p>새 검증기 쪽 12/12는 {@link #numberValidatorDetectsEveryHallucination}이 따로 잰다. 얼린 목록
-	 * ({@link #LEGACY_RULES})은 그대로 둔다 — ①의 0/12 대조군이 거기 있다.
-	 */
 	@Test
 	@DisplayName("오늘의 NarrativeValidator도 얼린 대조군과 같은 판정을 낸다 — 표현 축이 한 글자도 안 움직였다 (FEED-016)")
 	void todaysValidatorReproducesTheFrozenBaseline() {
@@ -230,7 +169,6 @@ class NarrativeNumberCheckMeasurementTest {
 		}
 	}
 
-	// ---------- 발표용 표 ----------
 
 	@Test
 	@DisplayName("측정 결과표를 출력한다 — spec §측정 ①②의 두 열(기존·새 검증기)을 함께 채운다")
@@ -242,7 +180,6 @@ class NarrativeNumberCheckMeasurementTest {
 		long numberDetected = HALLUCINATIONS.stream()
 			.filter(c -> !numberValidator.validate(c.narrative(), prompt).detectedExpressions().isEmpty())
 			.count();
-		// ②의 새 검증기 열은 운영 경로 그대로 두 축을 합쳐 센다 — 매도 회고는 표현 축과 숫자 축을 함께 받는다.
 		long numberBlocked = COUNTERFACTUALS.stream().filter(n -> !bothAxesDetect(n, prompt).isEmpty()).count();
 
 		StringBuilder report = new StringBuilder("\n[spec 053 측정 ①② — 기존 검증기 / 새 검증기]\n");
@@ -268,15 +205,12 @@ class NarrativeNumberCheckMeasurementTest {
 		assertThat(numberBlocked).isEqualTo(COUNTERFACTUALS.size());
 	}
 
-	// NarrativeService가 매도 회고에 적용하는 순서 그대로다 — 표현이 앞, 숫자가 뒤.
 	private List<String> bothAxesDetect(String narrative, String prompt) {
 		List<String> detected = new ArrayList<>(validator.validateCardOrPostSell(narrative).detectedExpressions());
 		detected.addAll(numberValidator.validate(narrative, prompt).detectedExpressions());
 		return detected;
 	}
 
-	// 틀린 값 표기(`-152,070원`·`+2.17%`·`110분`)에서 수 부분만 떼어 낸다 — 적발 목록에는 단위·조사가 없는
-	// 토큰이 담기므로 그대로 비교할 수 없다.
 	private static String numberPartOf(String wrong) {
 		int end = 0;
 		while (end < wrong.length() && NUMBER_CHARS.indexOf(wrong.charAt(end)) >= 0) {
@@ -288,7 +222,6 @@ class NarrativeNumberCheckMeasurementTest {
 		return wrong.substring(0, end);
 	}
 
-	// 2026-08-22 시점 NarrativeValidator.detect와 같은 구현이다 — 부분 문자열 대조뿐이고 숫자 규칙이 없다.
 	private static List<String> legacyDetect(String narrative) {
 		List<String> detected = new ArrayList<>();
 		for (String expression : LEGACY_RULES) {
@@ -299,7 +232,6 @@ class NarrativeNumberCheckMeasurementTest {
 		return detected;
 	}
 
-	// 012 §LLM 프롬프트의 매도 회고 예시 그대로다. NarrativePromptBuilderTest의 골든 마스터가 같은 값을 쓴다.
 	private PostSellPromptDto specPostSell() {
 		return new PostSellPromptDto(
 			"삼성전자", TRADING_DATE.atTime(9, 30), bd("70000"), TRADING_DATE.atTime(14, 40), bd("68500"),
@@ -317,7 +249,6 @@ class NarrativeNumberCheckMeasurementTest {
 		return new BigDecimal(value);
 	}
 
-	/** 주입 케이스 1건 — 어떤 갈래로 어떤 값을 어떻게 틀렸는지까지 담아 실패 메시지에서 바로 읽히게 한다. */
 	private record HallucinationCase(String kind, String narrative, String wrong, String actual) {
 
 		@Override

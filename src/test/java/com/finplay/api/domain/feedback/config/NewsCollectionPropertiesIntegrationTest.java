@@ -1,5 +1,3 @@
-// application.yml의 feedback.news·naver-search·dart 블록이 실제 스프링 컨텍스트에서 spec 012 값·키 경로로
-// 바인딩되는지 검증하는 통합 테스트다.
 package com.finplay.api.domain.feedback.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -12,14 +10,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.core.env.Environment;
 
-// 단위 테스트(NewsCollectionPropertiesTest)는 record의 @DefaultValue만 확인하므로, application.yml의 키가
-// 잘못된 위치·이름으로 들어가도 기본값에 가려 통과한다. 여기서는 기동 컨텍스트의 Environment에 키가 그
-// 경로로 실제 존재하는지까지 단정한다 — FeedbackLlmPropertiesIntegrationTest와 같은 의도다.
-//
-// 다만 크론 2종은 여기서 보지 않는다. build.gradle의 spring.config.additional-location이 얹는
-// feedback-schedules-disabled-for-tests.yml이 @SpringBootTest 컨텍스트에서 크론을 "-"로 덮기 때문이다 —
-// 테스트 실행 중 배치·수집 스케줄이 실제로 등록되는 것을 막으려는 것이고, 그 대신 §C-1 드리프트 단정은
-// 그 파일이 닿지 않는 NewsCollectionPropertiesYamlTest로 옮겼다. 단정을 없앤 것이 아니라 축을 옮긴 것이다.
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest
 class NewsCollectionPropertiesIntegrationTest {
@@ -44,8 +34,6 @@ class NewsCollectionPropertiesIntegrationTest {
 		this.environment = environment;
 	}
 
-	// 근거 매칭 3키(이슈 #180 항목 3)는 크론과 달리 Environment가 아니라 record 빈으로 읽지만, §C-7이
-	// "yml과 @DefaultValue 양쪽에 값을 둔다"로 정했으므로 두 곳이 갈리지 않는지 여기서 대조한다.
 	@Test
 	@DisplayName("application.yml에 feedback.news 근거 매칭 3키가 §C-7 값으로 실제 존재한다")
 	void applicationYmlDeclaresEveryFeedbackNewsMatchingKey() {
@@ -62,8 +50,6 @@ class NewsCollectionPropertiesIntegrationTest {
 		assertThat(newsProperties.maxSourcesPerCard()).isEqualTo(5);
 	}
 
-	// 시크릿이라 값 자체는 단정하지 않는다(환경마다 다르다). 대신 §C-7이 확정한 키 경로가 Environment에
-	// 실제 존재하고, record 빈이 그 경로에서 값을 받아 오는지를 본다 — 키 경로가 갈리면 여기서 깨진다.
 	@Test
 	@DisplayName("application.yml에 §C-7의 자격증명 3종 키 경로가 존재하고 record 빈이 그 값을 받는다")
 	void applicationYmlDeclaresEveryCredentialKeyPath() {
