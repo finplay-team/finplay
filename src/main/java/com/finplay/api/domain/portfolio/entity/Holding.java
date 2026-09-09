@@ -1,4 +1,3 @@
-// 계좌·종목별 현재 보유수량과 평균단가를 영속하는 엔티티
 package com.finplay.api.domain.portfolio.entity;
 
 import com.finplay.api.domain.account.entity.Account;

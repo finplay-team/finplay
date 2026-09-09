@@ -1,4 +1,3 @@
-// 시장별 보유 종목 목록 조회 결과 한 건을 노출하는 응답 DTO
 package com.finplay.api.domain.portfolio.dto.response;
 
 import com.finplay.api.domain.portfolio.entity.Holding;

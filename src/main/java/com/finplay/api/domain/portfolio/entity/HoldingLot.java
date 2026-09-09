@@ -1,4 +1,3 @@
-// 매수 체결 1건이 만드는 FIFO 매수 lot을 영속하는 엔티티
 package com.finplay.api.domain.portfolio.entity;
 
 import com.finplay.api.domain.order.entity.Trade;
