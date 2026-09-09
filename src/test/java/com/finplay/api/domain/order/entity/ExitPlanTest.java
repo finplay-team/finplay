@@ -1,4 +1,3 @@
-// ExitPlan 정적 팩토리의 경로별 불변식(교육 경로 3필드 필수, PRICE/PERCENT rate snapshot 강제)을 검증하는 단위 테스트다.
 package com.finplay.api.domain.order.entity;
 
 import static org.assertj.core.api.Assertions.assertThat;

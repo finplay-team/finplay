@@ -1,6 +1,3 @@
-// ExitPlanCreationService.create()의 실제 트랜잭션(holding 잠금→예약→exit_plans·exit_plan_conditions 저장)을
-// 실제 Spring 컨텍스트(Testcontainers MySQL)로 검증하는 통합 테스트다. 021은 아직 controller가 없어(#348에서
-// 추가 예정) 서비스 메서드를 직접 호출한다 — ADR-0003 "핵심 시나리오 통합 테스트 1개".
 package com.finplay.api.domain.order.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -82,8 +79,6 @@ class ExitPlanCreationServiceIntegrationTest {
 		redisTemplate.delete("feed:crypto:status");
 	}
 
-	// 시나리오: 실제 holding을 보유한 계좌가 PRICE 방식 OCO 생성을 요청하면, 한 트랜잭션 안에서
-	// holding.reservedQuantity가 늘고 exit_plans 1행·exit_plan_conditions 2행(손절·익절)이 실제로 커밋된다.
 	@Test
 	@Transactional
 	void createPersistsReservationAndPlanConditionsInOneTransaction() {

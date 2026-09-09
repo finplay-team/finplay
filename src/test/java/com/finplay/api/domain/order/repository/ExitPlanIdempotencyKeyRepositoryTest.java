@@ -1,4 +1,3 @@
-// V35가 만든 exit_plan_idempotency_keys의 (user_id, idempotency_key) unique와 key-first 조회를 검증하는 슬라이스 테스트다 (021 plan "멱등성").
 package com.finplay.api.domain.order.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -124,7 +123,6 @@ class ExitPlanIdempotencyKeyRepositoryTest {
 		return userRepository.saveAndFlush(User.create("epk-" + suffix + "@finplay.com", "hash", "epk-" + suffix, NOW));
 	}
 
-	// accounts에 UNIQUE(user_id, market)가 있어 사용자당 CRYPTO 계좌는 한 번만 만든다.
 	private Account createAccount(User owner) {
 		return accountRepository.saveAndFlush(
 			Account.create(owner, Market.CRYPTO, NOW));

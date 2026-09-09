@@ -1,4 +1,3 @@
-// 매수·매도 파이프라인(이슈 #13·#41)으로 생성한 실제 원장 데이터를 GET /api/trades로 검증하는 통합 테스트다.
 package com.finplay.api.domain.order.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -44,16 +43,12 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.transaction.annotation.Transactional;
 
-// 이 테스트도 HoldingIntegrationTest(이슈 #52)·AccountSummaryIntegrationTest(이슈 #81, agent-mistakes.md 2026-07-30 항목)와
-// 동일하게 instruments·stock_replay_sessions 테이블에 saveAndFlush로 실제 커밋을 남기는 조합이므로, `./gradlew build` 전체
-// 실행에서 InstrumentRepositoryTest 등의 절대개수 단정을 깨뜨리지 않도록 `@Transactional`로 각 테스트 종료 시 롤백시킨다.
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
 @Import({TestcontainersConfiguration.class, TestClockConfig.class})
 class TradeIntegrationTest {
 
-	// 2026-07-29는 수요일이고 holidays-2026.txt에도 없어 재생세션만 READY면 개장 상태로 계산된다.
 	private static final LocalDate TRADING_DATE = LocalDate.of(2026, 7, 29);
 	private static final LocalDateTime BASE_NOW = LocalDateTime.of(2026, 7, 29, 10, 0, 0);
 	private static final LocalTime FIRST_CANDLE_TIME = LocalTime.of(9, 59);
@@ -109,12 +104,10 @@ class TradeIntegrationTest {
 		createCandle(instrument, SECOND_CANDLE_TIME, new BigDecimal("80000"));
 		createCandle(instrument, THIRD_CANDLE_TIME, new BigDecimal("100000"));
 
-		// 매수1: 10:00 시각 → 09:59 분봉(60000) 체결가, 매수2: 10:01 시각 → 10:00 분봉(80000) 체결가.
 		OrderResponse buy1 = orderService.createOrder(user.getId(), "trd-buy-1", buyRequest(instrument.getId(), "10"));
 		clock.set(BASE_NOW.plusMinutes(1));
 		OrderResponse buy2 = orderService.createOrder(user.getId(), "trd-buy-2", buyRequest(instrument.getId(), "10"));
 
-		// 매도: 10:02 시각 → 10:01 분봉(100000) 체결가, 5주만 매도(FIFO로 매수1 lot 일부 소진).
 		clock.set(BASE_NOW.plusMinutes(2));
 		OrderResponse sell = orderService.createOrder(user.getId(), "trd-sell-1", sellRequest(instrument.getId(), "5"));
 		assertThat(sell.realizedPnl()).isNotNull();
@@ -127,7 +120,6 @@ class TradeIntegrationTest {
 			.andExpect(jsonPath("$.content.length()").value(3))
 			.andExpect(jsonPath("$.hasNext").value(false))
 			.andExpect(jsonPath("$.nextCursor").doesNotExist())
-			// 최신순: 매도(10:02) → 매수2(10:01) → 매수1(10:00).
 			.andExpect(jsonPath("$.content[0].tradeId").value(sell.tradeId()))
 			.andExpect(jsonPath("$.content[0].side").value("SELL"))
 			.andExpect(jsonPath("$.content[0].quantity").value(5))
@@ -151,7 +143,6 @@ class TradeIntegrationTest {
 		Instrument instrument = createStockInstrument("TPAGE");
 		createCandle(instrument, FIRST_CANDLE_TIME, new BigDecimal("60000"));
 
-		// 5건의 매수를 서로 다른 시각(분 단위 전진)에 체결시켜 executedAt이 모두 달라지게 한다.
 		for (int i = 1; i <= 5; i++) {
 			clock.set(BASE_NOW.plusMinutes(i));
 			orderService.createOrder(user.getId(), "trd-page-buy-" + i,
@@ -229,7 +220,6 @@ class TradeIntegrationTest {
 			.andExpect(jsonPath("$.nextCursor").doesNotExist());
 	}
 
-	// limit보다 데이터가 많을 때 nextCursor를 따라 끝까지 페이지를 넘기며 tradeId를 최신순 그대로 수집한다.
 	private List<Long> collectAllTradeIdsByCursor(String accessToken, String market, int limit) throws Exception {
 		List<Long> ids = new ArrayList<>();
 		String cursor = null;
@@ -237,7 +227,7 @@ class TradeIntegrationTest {
 		int pageCount = 0;
 		while (hasNext) {
 			pageCount++;
-			assertThat(pageCount).isLessThanOrEqualTo(20); // 무한루프 방지 안전장치.
+			assertThat(pageCount).isLessThanOrEqualTo(20);
 
 			MockHttpServletRequestBuilder request = get("/api/trades")
 				.param("market", market)
@@ -258,7 +248,6 @@ class TradeIntegrationTest {
 		return ids;
 	}
 
-	// 커서 없이 한 번에 큰 limit으로 조회해 전체 tradeId를 최신순 그대로 수집한다(페이지 결과와 비교하는 기준선).
 	private List<Long> collectSinglePageTradeIds(String accessToken, String market, int limit) throws Exception {
 		String body = mockMvc.perform(get("/api/trades")
 			.param("market", market)

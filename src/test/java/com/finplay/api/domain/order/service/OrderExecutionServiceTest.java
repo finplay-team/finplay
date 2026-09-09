@@ -1,4 +1,3 @@
-// 시장가 매수·매도 주문의 검증·수수료 계산·현금증감·실현손익·실패 시 무흔적을 검증하는 단위 테스트다.
 package com.finplay.api.domain.order.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -101,7 +100,6 @@ class OrderExecutionServiceTest {
 		Instrument instrument = stockInstrument();
 		Account account = account(Market.STOCK);
 		User user = testUser();
-		// rawAmount = 10000.33 * 3 = 30000.99 → 원단위 내림 30000, 수수료 30000*0.00015=4.5 → 내림 4 (나눠떨어지지 않음)
 		stubHappyPath(instrument, account, user, new BigDecimal("10000.33"));
 		OrderCreateRequest request = buyRequest(Market.STOCK, instrument.getId(), "3");
 
@@ -128,7 +126,6 @@ class OrderExecutionServiceTest {
 		Instrument instrument = cryptoInstrument(5_000L);
 		Account account = account(Market.CRYPTO);
 		User user = testUser();
-		// rawAmount = 133330 * 0.1 = 13333.0, 수수료 13333*0.0005=6.6665 → 내림 6 (나눠떨어지지 않음)
 		stubHappyPath(instrument, account, user, new BigDecimal("133330"));
 		OrderCreateRequest request = buyRequest(Market.CRYPTO, instrument.getId(), "0.1");
 
@@ -142,9 +139,6 @@ class OrderExecutionServiceTest {
 		assertThat(tradeCaptor.getValue().getStockReplaySession()).isNull();
 	}
 
-	// 036-remove-crypto-stale-status 회귀(구 PRICE-REST-004 승계) — PriceQueryService.getOrderExecutionPrice가
-	// 관측 시각이 오래된(과거 032 시절엔 STALE) AVAILABLE quote를 돌려줘도, OrderExecutionService는 status를
-	// 따로 판단하지 않고 그 가격 그대로 체결까지 진행해야 한다(경과 시간과 무관하게 항상 AVAILABLE만 받는다).
 	@Test
 	void createOrderExecutesCryptoMarketBuyToCompletionRegardlessOfExecutionPriceObservationAge() {
 		Instrument instrument = cryptoInstrument(5_000L);
@@ -161,7 +155,6 @@ class OrderExecutionServiceTest {
 
 		OrderResponse response = orderExecutionService.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, request);
 
-		// rawAmount = 133330 * 0.1 = 13333.0, 수수료 13333*0.0005=6.6665 → 내림 6
 		assertThat(response.amount()).isEqualTo(13333L);
 		assertThat(response.fee()).isEqualTo(6L);
 		assertThat(account.getCashBalance()).isEqualTo(10_000_000L - 13339L);
@@ -171,8 +164,6 @@ class OrderExecutionServiceTest {
 
 	@Test
 	void createOrderBuyDeductsFromTutorialAccountOnlyWhenInstrumentIsTutorialSample() {
-		// spec 047 TUTORIAL-CASH-ISOL-002: 샌드박스 종목 매수의 현금 차감은 실제 Account가 아니라
-		// 같은 사용자·시장의 튜토리얼 계좌에서 일어난다.
 		Instrument instrument = stockInstrument();
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
 		Account account = account(Market.STOCK);
@@ -187,25 +178,20 @@ class OrderExecutionServiceTest {
 
 		orderExecutionService.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, request);
 
-		// cashRequired = amount(30000) + fee(4) = 30004
-		assertThat(account.getCashBalance()).isEqualTo(10_000_000L); // 실제 계좌 현금은 전혀 변하지 않는다
+		assertThat(account.getCashBalance()).isEqualTo(10_000_000L);
 		assertThat(account.getReservedCash()).isZero();
-		assertThat(tutorialAccount.getCashBalance()).isEqualTo(10_000_000L - 30004L); // 튜토리얼 계좌에서만 차감
+		assertThat(tutorialAccount.getCashBalance()).isEqualTo(10_000_000L - 30004L);
 	}
 
 	@Test
 	void createOrderBuyThrowsTutorialInsufficientCashRegardlessOfRealAccountBalanceAndLeavesBothAccountsUntouched() {
-		// 047 TUTORIAL-CASH-ISOL-002·005: 샌드박스 매수는 실제 계좌 잔고가 넉넉해도 튜토리얼 계좌 잔고만
-		// 보고 거부해야 하고, 오류 코드도 실제 계좌 부족(INSUFFICIENT_CASH)과 구분되는 TUTORIAL_INSUFFICIENT_CASH여야 한다.
 		Instrument instrument = stockInstrument();
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
 		Account account = account(Market.STOCK);
-		account.addCash(50_000_000L); // 실제 계좌는 넉넉하다(6천만원) — 그래도 거부돼야 한다.
+		account.addCash(50_000_000L);
 		User user = testUser();
 		TutorialAccount tutorialAccount = TutorialAccount.create(
-			user, Market.STOCK, NOW); // 기본 1000만원
-		// amount = 12,000,000 * 1 = 12,000,000, fee = floor(12,000,000*0.00015) = 1800
-		// cashRequired = 12,001,800 > 튜토리얼 계좌 잔고 10,000,000 (실제 계좌 잔고 60,000,000과는 무관)
+			user, Market.STOCK, NOW);
 		stubHappyPath(instrument, account, user, new BigDecimal("12000000"));
 		when(tutorialAccountService.getOrCreateForUpdate(USER_ID, Market.STOCK,
 			NOW))
@@ -217,8 +203,8 @@ class OrderExecutionServiceTest {
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
 				.isEqualTo(ErrorCode.TUTORIAL_INSUFFICIENT_CASH));
 
-		assertThat(account.getCashBalance()).isEqualTo(60_000_000L); // 실제 계좌 현금 불변
-		assertThat(tutorialAccount.getCashBalance()).isEqualTo(10_000_000L); // 튜토리얼 계좌도 차감되지 않음
+		assertThat(account.getCashBalance()).isEqualTo(60_000_000L);
+		assertThat(tutorialAccount.getCashBalance()).isEqualTo(10_000_000L);
 		verify(orderRepository, never()).save(any());
 		verify(tradeRepository, never()).save(any());
 	}
@@ -274,7 +260,7 @@ class OrderExecutionServiceTest {
 
 		orderExecutionService.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, request);
 
-		verifyNoInteractions(tutorialAccountService); // 047 회귀 방지: 실제 종목 매수는 튜토리얼 계좌를 전혀 조회하지 않는다
+		verifyNoInteractions(tutorialAccountService);
 	}
 
 	@Test
@@ -288,7 +274,6 @@ class OrderExecutionServiceTest {
 
 	@Test
 	void createOrderThrowsUnsupportedOrderTypeWhenSideIsSellAndOrderTypeIsNotMarket() {
-		// 설계 노트 2: orderType 검증은 side 무관하게 최상단에서 공유된다.
 		OrderCreateRequest request = new OrderCreateRequest(
 			Market.STOCK, 1L, OrderSide.SELL, "LIMIT", new BigDecimal("1"));
 
@@ -340,7 +325,6 @@ class OrderExecutionServiceTest {
 	void createOrderThrowsValidationErrorWhenCryptoOrderAmountBelowMinimumOnBuy() {
 		Instrument instrument = cryptoInstrument(5_000L);
 		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
-		// rawAmount = 40000 * 0.1 = 4000 < 5000 최소 주문금액
 		when(priceQueryService.getOrderExecutionPrice(instrument))
 			.thenReturn(executionPrice(new BigDecimal("40000"), null));
 		OrderCreateRequest request = buyRequest(Market.CRYPTO, instrument.getId(), "0.1");
@@ -360,8 +344,6 @@ class OrderExecutionServiceTest {
 
 	@Test
 	void createOrderThrowsInstrumentNotTradableWhenInstrumentIsNotTradable() {
-		// 이슈 #339 PR #341 리뷰 차단사항 — 031이 tradable=false 종목을 처음 만들면서 이 경로의 검증
-		// 빈틈이 실제로 열렸다(즐겨찾기는 이미 막혀 있었으나 일반 주문 경로는 검증이 없었음).
 		Instrument instrument = Instrument.create(
 			Market.STOCK, "005930", "삼성전자", new BigDecimal("100"), 0L, false, NOW);
 		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
@@ -409,7 +391,6 @@ class OrderExecutionServiceTest {
 		Instrument instrument = stockInstrument();
 		Account account = account(Market.STOCK);
 		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
-		// amount = 50,000,000 * 1 > 계좌 기본 현금 10,000,000
 		when(priceQueryService.getOrderExecutionPrice(instrument))
 			.thenReturn(executionPrice(new BigDecimal("50000000"), mock(StockReplaySession.class)));
 		when(accountService.getAccountForUpdate(USER_ID, Market.STOCK))
@@ -418,19 +399,15 @@ class OrderExecutionServiceTest {
 
 		assertBusinessExceptionAndNoSideEffects(request, ErrorCode.INSUFFICIENT_CASH);
 		assertThat(account.getCashBalance()).isEqualTo(10_000_000L);
-		verifyNoInteractions(tutorialAccountService); // 047 회귀 방지: 실제 종목 매수는 튜토리얼 계좌를 전혀 조회하지 않는다
+		verifyNoInteractions(tutorialAccountService);
 	}
 
 	@Test
 	void createOrderThrowsInsufficientCashWhenAvailableCashBelowAmountPlusFeeEvenIfCashBalanceSuffices() {
-		// 이슈 #224 회귀 테스트 — 현금 검증이 cashBalance만 보고 지정가 매수 예약분(reservedCash)을
-		// 반영하지 않으면, cashBalance는 충분한데 availableCash는 부족한 이 케이스에서 거부에 실패한다.
 		Instrument instrument = stockInstrument();
 		Account account = account(Market.STOCK);
 		account.reserveCash(9_950_000L);
 		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
-		// amount = 100000 * 1 = 100000, 수수료 floor(100000*0.00015)=15 → cashRequired=100115
-		// cashBalance(10,000,000) >= cashRequired지만 availableCash(10,000,000-9,950,000=50,000) < cashRequired
 		when(priceQueryService.getOrderExecutionPrice(instrument))
 			.thenReturn(executionPrice(new BigDecimal("100000"), mock(StockReplaySession.class)));
 		when(accountService.getAccountForUpdate(USER_ID, Market.STOCK))
@@ -448,7 +425,6 @@ class OrderExecutionServiceTest {
 		Holding holding = mock(Holding.class);
 		User user = testUser();
 		BigDecimal quantity = new BigDecimal("3");
-		// price 10000 * 3 = amount 30000, fee = floor(30000*0.00015)=4
 		stubSellHappyPath(instrument, account, user, new BigDecimal("10000"));
 		when(portfolioSellService.getHoldingForUpdateOrThrow(account, instrument, quantity)).thenReturn(holding);
 		when(portfolioSellService.applySellTrade(eq(holding), any(Trade.class), eq(quantity), eq(NOW)))
@@ -459,7 +435,6 @@ class OrderExecutionServiceTest {
 
 		assertThat(response.amount()).isEqualTo(30000L);
 		assertThat(response.fee()).isEqualTo(4L);
-		// realizedPnl = (30000 - 4) - (20000 + 3) = 9993
 		assertThat(account.getRealizedPnl()).isEqualTo(9993L);
 		assertThat(account.getCashBalance()).isEqualTo(10_000_000L + 30000L - 4L);
 
@@ -475,9 +450,6 @@ class OrderExecutionServiceTest {
 
 	@Test
 	void createOrderSellCreditsTutorialAccountAndLeavesRealAccountCashAndRealizedPnlUnchangedWhenInstrumentIsTutorialSample() {
-		// spec 047 TUTORIAL-CASH-ISOL-003(033 SANDBOX-EXCL-004·006 대체): 샌드박스 종목 시장가 매도는 실제
-		// Account.cashBalance·realizedPnl을 전혀 증가시키지 않는다 — 대신 같은 사용자·시장의 튜토리얼 계좌
-		// 현금·realizedPnl이 갱신된다. trade.realizedPnl(원장 값)은 종목 종류와 무관하게 항상 채워진다.
 		Instrument instrument = stockInstrument();
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
 		Account account = account(Market.STOCK);
@@ -486,7 +458,6 @@ class OrderExecutionServiceTest {
 		TutorialAccount tutorialAccount = TutorialAccount.create(
 			user, Market.STOCK, NOW);
 		BigDecimal quantity = new BigDecimal("3");
-		// price 10000 * 3 = amount 30000, fee = floor(30000*0.00015)=4
 		stubSellHappyPath(instrument, account, user, new BigDecimal("10000"));
 		when(portfolioSellService.getHoldingForUpdateOrThrow(account, instrument, quantity)).thenReturn(holding);
 		when(portfolioSellService.applySellTrade(eq(holding), any(Trade.class), eq(quantity), eq(NOW)))
@@ -499,26 +470,20 @@ class OrderExecutionServiceTest {
 		orderExecutionService.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, request);
 
 		assertThat(account.getRealizedPnl()).isEqualTo(0L);
-		// 실제 Account 현금은 이슈 #450 재발 방지 핵심 전제대로 전혀 변하지 않는다.
 		assertThat(account.getCashBalance()).isEqualTo(10_000_000L);
-		// 튜토리얼 계좌만 매도 대금·실현손익을 반영한다.
 		assertThat(tutorialAccount.getCashBalance()).isEqualTo(10_000_000L + 30000L - 4L);
 		assertThat(tutorialAccount.getRealizedPnl()).isEqualTo(9993L);
 		ArgumentCaptor<Trade> tradeCaptor = ArgumentCaptor.forClass(Trade.class);
 		verify(tradeRepository).save(tradeCaptor.capture());
-		// realizedPnl = (30000 - 4) - (20000 + 3) = 9993
 		assertThat(tradeCaptor.getValue().getRealizedPnl()).isEqualTo(9993L);
-		// 이슈 #549 — 튜토리얼 샘플 종목 매도는 account.realizedPnl을 안 바꾸므로 랭킹 갱신 이벤트도 발행하지
-		// 않는다. 그렇지 않으면 RankingService.refreshScore가 실제 매도 이력 없는 계좌를 랭킹에 올려버린다.
 		verifyNoInteractions(eventPublisher);
 	}
 
 	@Test
 	void createOrderSellPublishesRealizedPnlUpdatedEventAfterAddingRealizedPnl() {
-		// 랭킹 갱신(after-commit 리스너)이 반응할 수 있도록 SELL 체결 시 이벤트가 정확히 1회 발행되는지 검증한다.
 		Instrument instrument = stockInstrument();
 		Account account = account(Market.STOCK);
-		ReflectionTestUtils.setField(account, "id", 42L); // id 미설정 시 기대값·실제값 모두 null이라 단정이 무의미해짐(PR #196 리뷰 지적)
+		ReflectionTestUtils.setField(account, "id", 42L);
 		Holding holding = mock(Holding.class);
 		User user = testUser();
 		BigDecimal quantity = new BigDecimal("3");
@@ -537,7 +502,6 @@ class OrderExecutionServiceTest {
 
 	@Test
 	void createOrderBuyDoesNotPublishRealizedPnlUpdatedEvent() {
-		// 매수는 realizedPnl을 갱신하지 않으므로 랭킹 갱신 이벤트를 발행하지 않아야 한다.
 		Instrument instrument = stockInstrument();
 		Account account = account(Market.STOCK);
 		User user = testUser();
@@ -551,8 +515,6 @@ class OrderExecutionServiceTest {
 
 	@Test
 	void createOrderSellAggregatesMultipleLotAllocationsIntoSingleRealizedPnl() {
-		// PortfolioSellService가 여러 lot을 소비한 결과(합산된 원가·수수료)를 그대로 넘겨도
-		// OrderExecutionService는 매도 1건 단위로 정확히 한 번만 realizedPnl을 계산해야 한다.
 		Instrument instrument = stockInstrument();
 		Account account = account(Market.STOCK);
 		Holding holding = mock(Holding.class);
@@ -560,29 +522,24 @@ class OrderExecutionServiceTest {
 		BigDecimal quantity = new BigDecimal("8");
 		stubSellHappyPath(instrument, account, user, new BigDecimal("300"));
 		when(portfolioSellService.getHoldingForUpdateOrThrow(account, instrument, quantity)).thenReturn(holding);
-		// lot1 전량(500원가+15수수료) + lot2 부분(600원가+18수수료) 합산 결과라고 가정
 		when(portfolioSellService.applySellTrade(eq(holding), any(Trade.class), eq(quantity), eq(NOW)))
 			.thenReturn(new SellAllocationDto(500L + 600L, 15L + 18L));
 		OrderCreateRequest request = sellRequest(Market.STOCK, instrument.getId(), "8");
 
 		OrderResponse response = orderExecutionService.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, request);
 
-		// amount = 300*8=2400, fee=floor(2400*0.00015)=0
 		assertThat(response.amount()).isEqualTo(2400L);
 		assertThat(response.fee()).isEqualTo(0L);
-		// realizedPnl = (2400 - 0) - (1100 + 33) = 1267
 		assertThat(account.getRealizedPnl()).isEqualTo(1267L);
 	}
 
 	@Test
 	void createOrderSellAbsorbsRoundingRemainderExactlyInRealizedPnlFormula() {
-		// 원 단위 잔여 처리 경계값: 나눠떨어지지 않는 금액이어도 long 뺄셈만으로 정확히 계산되는지 확인한다.
 		Instrument instrument = cryptoInstrument(0L);
 		Account account = account(Market.CRYPTO);
 		Holding holding = mock(Holding.class);
 		User user = testUser();
 		BigDecimal quantity = new BigDecimal("0.1");
-		// price 133330 * 0.1 = 13333.0, fee = floor(13333*0.0005)=6
 		stubSellHappyPath(instrument, account, user, new BigDecimal("133330"));
 		when(portfolioSellService.getHoldingForUpdateOrThrow(account, instrument, quantity)).thenReturn(holding);
 		when(portfolioSellService.applySellTrade(eq(holding), any(Trade.class), eq(quantity), eq(NOW)))
@@ -593,13 +550,11 @@ class OrderExecutionServiceTest {
 
 		assertThat(response.amount()).isEqualTo(13333L);
 		assertThat(response.fee()).isEqualTo(6L);
-		// realizedPnl = (13333 - 6) - (10001 + 7) = 3319
 		assertThat(account.getRealizedPnl()).isEqualTo(3319L);
 	}
 
 	@Test
 	void createOrderThrowsValidationErrorWhenCryptoOrderAmountBelowMinimumOnSell() {
-		// 최소주문금액 검증은 BUY·SELL 공유 로직(priceOrder)이지만 회귀 방지를 위해 SELL 경로도 명시적으로 검증한다.
 		Instrument instrument = cryptoInstrument(5_000L);
 		Account account = account(Market.CRYPTO);
 		Holding holding = mock(Holding.class);
@@ -608,7 +563,6 @@ class OrderExecutionServiceTest {
 		when(accountService.getAccountForUpdate(USER_ID, Market.CRYPTO))
 			.thenReturn(account);
 		when(portfolioSellService.getHoldingForUpdateOrThrow(account, instrument, quantity)).thenReturn(holding);
-		// rawAmount = 40000 * 0.1 = 4000 < 5000 최소 주문금액
 		when(priceQueryService.getOrderExecutionPrice(instrument))
 			.thenReturn(executionPrice(new BigDecimal("40000"), null));
 		OrderCreateRequest request = sellRequest(Market.CRYPTO, instrument.getId(), "0.1");
@@ -636,7 +590,6 @@ class OrderExecutionServiceTest {
 			.isInstanceOf(BusinessException.class)
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode()).isEqualTo(ErrorCode.INSUFFICIENT_QTY));
 
-		// 설계 노트 2: 계좌 락 이후 보유수량 검증이 가격조회보다 먼저 일어나므로 시세 조회조차 발생하지 않는다.
 		verifyNoInteractions(priceQueryService, userQueryService, orderRepository, tradeRepository,
 			portfolioBuyService);
 		verify(portfolioSellService, never())
@@ -647,15 +600,11 @@ class OrderExecutionServiceTest {
 
 	@Test
 	void createOrderSellRejectsOverSellWhenReservedQuantityMakesAvailableQuantityInsufficient() {
-		// spec.md: 지정가로 예약된 수량은 시장가 매도로 초과 매도할 수 없다. availableQuantity(=quantity-reservedQuantity)
-		// 기준 검증 자체는 PortfolioSellServiceTest.getHoldingForUpdateOrThrow...가 실물 Holding으로 증명한다 —
-		// 여기서는 그 결과(INSUFFICIENT_QTY)를 OrderExecutionService가 그대로 전파하며 가격조회·저장을 하지 않는지 확인한다.
 		Instrument instrument = stockInstrument();
 		Account account = account(Market.STOCK);
 		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
 		when(accountService.getAccountForUpdate(USER_ID, Market.STOCK))
 			.thenReturn(account);
-		// 보유 5주 중 3주가 다른 지정가 매도로 이미 예약된 상태(availableQuantity=2) — 3주 시장가 매도는 거부돼야 한다.
 		when(portfolioSellService.getHoldingForUpdateOrThrow(account, instrument, new BigDecimal("3")))
 			.thenThrow(new BusinessException(ErrorCode.INSUFFICIENT_QTY));
 		OrderCreateRequest request = sellRequest(Market.STOCK, instrument.getId(), "3");
@@ -672,8 +621,6 @@ class OrderExecutionServiceTest {
 
 	@Test
 	void createOrderSellDeactivatesHoldingWhenFullQuantitySold() {
-		// PortfolioSellService의 실제 FIFO·원가 계산은 PortfolioSellServiceTest가 검증한다.
-		// 여기서는 OrderExecutionService가 전량 매도 시에도 실제 Holding 상태 변화를 그대로 전달하는지만 확인한다.
 		Instrument instrument = stockInstrument();
 		Account account = account(Market.STOCK);
 		Holding holding = Holding.create(account, instrument, NOW.minusDays(1));
@@ -695,8 +642,6 @@ class OrderExecutionServiceTest {
 		assertThat(holding.isActive()).isFalse();
 	}
 
-	// getMyOrders 관련 테스트는 OrderService에 그대로 남아 있으므로(변경 없음) 이 클래스로 옮기지 않는다.
-	// OrderService 자체의 슬림 테스트(createOrder 위임·getMyOrders)는 이슈 #22 항목 3에서 새로 작성된다.
 
 	private void assertBusinessExceptionAndNoSideEffects(OrderCreateRequest request, ErrorCode expectedErrorCode) {
 		assertThatThrownBy(() -> orderExecutionService.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, request))
@@ -708,7 +653,6 @@ class OrderExecutionServiceTest {
 	}
 
 	private void stubHappyPath(Instrument instrument, Account account, User user, BigDecimal price) {
-		// 매수도 매도와 동일하게 계좌를 락으로 조회한다(015-limit-order 시장가 매수 경로 락 보강, 이슈 #224).
 		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
 		StockReplaySession session = instrument.getMarket() == Market.STOCK ? mock(StockReplaySession.class) : null;
 		when(priceQueryService.getOrderExecutionPrice(instrument)).thenReturn(executionPrice(price, session));
@@ -719,8 +663,6 @@ class OrderExecutionServiceTest {
 	}
 
 	private void stubSellHappyPath(Instrument instrument, Account account, User user, BigDecimal price) {
-		// 매도·매수 모두 계좌를 락으로 조회한다(015-limit-order 항목5·이슈 #224) — stubHappyPath와 별도 메서드로
-		// 유지하는 이유는 SELL 전용 파라미터(holding 스텁 등) 확장 여지 때문이며, 스텁 대상 메서드 자체는 동일하다.
 		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
 		StockReplaySession session = instrument.getMarket() == Market.STOCK ? mock(StockReplaySession.class) : null;
 		when(priceQueryService.getOrderExecutionPrice(instrument)).thenReturn(executionPrice(price, session));

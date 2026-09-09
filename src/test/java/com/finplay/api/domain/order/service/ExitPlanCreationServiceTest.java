@@ -1,4 +1,3 @@
-// 두 경로가 공유하는 OCO 생성 엔진의 검증 순서·예약·저장을 검증하는 단위 테스트다 (021 plan.md "일반 경로 검증 순서" 3~9단계).
 package com.finplay.api.domain.order.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -81,14 +80,13 @@ class ExitPlanCreationServiceTest {
 	void validatesExistingPendingPlanBeforeAvailableQuantityToAvoidMaskingTheRealCause() {
 		when(portfolioSellService.getHoldingForUpdateForExitPlanCreation(account, instrument)).thenReturn(holding);
 		when(exitPlanRepository.existsByHoldingIdAndStatus(holding.getId(), ExitPlanStatus.PENDING)).thenReturn(true);
-		ExitPlanCreateCommandDto command = generalCommand(new BigDecimal("100.00000000")); // 수량도 부족하지만
+		ExitPlanCreateCommandDto command = generalCommand(new BigDecimal("100.00000000"));
 
 		assertThatThrownBy(() -> service.create(command))
 			.isInstanceOf(BusinessException.class)
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
 				.isEqualTo(ErrorCode.EXIT_PLAN_ALREADY_EXISTS));
 
-		// 4단계에서 이미 거부됐으므로 가격 계산·시세 조회·저장에 도달하지 않는다.
 		verifyNoInteractions(exitPricePolicy, priceQueryService, exitPlanConditionRepository);
 		verify(exitPlanRepository, never()).save(any());
 	}

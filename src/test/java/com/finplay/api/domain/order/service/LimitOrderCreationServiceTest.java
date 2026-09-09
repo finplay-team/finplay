@@ -1,4 +1,3 @@
-// 코인 지정가 매수·매도 생성의 검증·예약·PENDING 저장을 검증하는 단위 테스트다.
 package com.finplay.api.domain.order.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -78,9 +77,8 @@ class LimitOrderCreationServiceTest {
 
 		LimitOrderResponse response = service.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, request);
 
-		// amount = 0.1 * 1,000,000 = 100,000, fee = floor(100,000*0.0005) = 50
 		assertThat(account.getReservedCash()).isEqualTo(100_050L);
-		assertThat(account.getCashBalance()).isEqualTo(10_000_000L); // 예약만 하고 실제 차감은 없다
+		assertThat(account.getCashBalance()).isEqualTo(10_000_000L);
 		assertThat(response.status()).isEqualTo("PENDING");
 		assertThat(response.orderType()).isEqualTo("LIMIT");
 		ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
@@ -109,8 +107,6 @@ class LimitOrderCreationServiceTest {
 
 		service.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, buyRequest("0.1", "1000000"));
 
-		// 047 TUTORIAL-CASH-ISOL-002: 샌드박스 종목의 지정가 매수 예약은 튜토리얼 계좌만 움직이고
-		// 실제 Account.reservedCash는 전혀 변하지 않는다. amount = 0.1*1,000,000=100,000, fee=50.
 		assertThat(tutorialAccount.getReservedCash()).isEqualTo(100_050L);
 		assertThat(account.getReservedCash()).isZero();
 		ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
@@ -125,12 +121,11 @@ class LimitOrderCreationServiceTest {
 
 	@Test
 	void createLimitBuyForTutorialSampleThrowsTutorialInsufficientCashRegardlessOfRealAccountBalance() {
-		// 047 TUTORIAL-CASH-ISOL-005: 실제 계좌 잔고가 충분해도 튜토리얼 계좌 잔고만 보고 거부해야 한다.
 		Instrument instrument = cryptoInstrument(5_000L);
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
 		Account account = account();
-		account.addCash(100_000_000L); // 실제 계좌는 넉넉하다(1억 1천만원) — 그래도 거부돼야 한다.
-		TutorialAccount tutorialAccount = tutorialAccount(); // 기본 1000만원
+		account.addCash(100_000_000L);
+		TutorialAccount tutorialAccount = tutorialAccount();
 		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
 		when(practiceOrderAttributionPort.lockForOrder(USER_ID, instrument, OrderType.LIMIT))
 			.thenReturn(Optional.empty());
@@ -139,7 +134,6 @@ class LimitOrderCreationServiceTest {
 		when(tutorialAccountService.getOrCreateForUpdate(USER_ID, Market.CRYPTO,
 			NOW))
 			.thenReturn(tutorialAccount);
-		// amount = 1 * 15,000,000 = 15,000,000 + fee 7,500 > 튜토리얼 계좌 잔고 10,000,000
 		LimitOrderCreateRequest request = buyRequest("1", "15000000");
 
 		assertThatThrownBy(() -> service.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, request))
@@ -185,7 +179,6 @@ class LimitOrderCreationServiceTest {
 		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
 		when(accountService.getAccountForUpdate(USER_ID, Market.CRYPTO))
 			.thenReturn(account);
-		// amount = 1 * 50,000,000,000 > 계좌 기본 현금 10,000,000
 		LimitOrderCreateRequest request = buyRequest("1", "50000000000");
 
 		assertThatThrownBy(() -> service.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, request))
@@ -239,14 +232,12 @@ class LimitOrderCreationServiceTest {
 
 	@Test
 	void createLimitOrderCreatesPendingOrderEvenWhenBuyLimitPriceAlreadyMeetsImmediateFillCondition() {
-		// LMT-001은 즉시체결 조건을 판정하지 않는다 — 생성은 항상 PENDING이고 체결은 LMT-002(가격 갱신 트리거)에서만 일어난다.
 		Instrument instrument = cryptoInstrument(5_000L);
 		Account account = account();
 		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
 		when(accountService.getAccountForUpdate(USER_ID, Market.CRYPTO))
 			.thenReturn(account);
 		when(userQueryService.getUser(USER_ID)).thenReturn(testUser());
-		// 지정가가 매우 높아 "즉시체결" 조건을 충족한다고 볼 수 있는 상황이어도 거부하지 않는다.
 		LimitOrderCreateRequest request = buyRequest("0.001", "9000000");
 
 		LimitOrderResponse response = service.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, request);
@@ -321,7 +312,6 @@ class LimitOrderCreationServiceTest {
 	void createLimitOrderThrowsValidationErrorWhenOrderAmountBelowMinimum() {
 		Instrument instrument = cryptoInstrument(5_000L);
 		when(instrumentService.getInstrumentEntity(instrument.getId())).thenReturn(instrument);
-		// rawAmount = 0.0001 * 1000 = 0.1 < 5000 최소 주문금액
 		LimitOrderCreateRequest request = buyRequest("0.0001", "1000");
 
 		assertThatThrownBy(() -> service.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, request))

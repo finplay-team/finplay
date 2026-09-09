@@ -1,4 +1,3 @@
-// LimitOrderService의 멱등성 오케스트레이션(createLimitOrder)을 검증하는 단위 테스트다.
 package com.finplay.api.domain.order.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -155,7 +154,6 @@ class LimitOrderServiceTest {
 			new BigDecimal("70000000"));
 	}
 
-	// LimitOrderService.calculateRequestHash(private)와 동일한 형식·알고리즘으로 테스트용 해시를 재현한다.
 	private static String requestHashOf(LimitOrderCreateRequest request) {
 		String raw = "%s:%d:%s:%s:%s".formatted(
 			request.market().name(),

@@ -1,5 +1,3 @@
-// POST/DELETE /api/exit-plans 일반 경로(intentionId 생략) 생성→취소 전체 흐름을 컨트롤러 경유로 검증하는 통합
-// 테스트다(021 plan.md "테스트 계획" — 일반 경로 전체 흐름, 예약 반환 검증). ADR-0003 "핵심 시나리오 통합 테스트 1개".
 package com.finplay.api.domain.order;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -88,8 +86,6 @@ class ExitPlanGeneralPathIntegrationTest {
 		redisTemplate.delete("feed:crypto:status");
 	}
 
-	// 시나리오: 코인 holding 보유자가 PRICE 방식 OCO를 생성하면 holding.reservedQuantity가 요청 수량만큼 늘고,
-	// 그 예약을 취소하면 정확히 그만큼 원복되며 plan 상태는 CANCELLED로 종결된다(021 plan.md "정확히 한 번 규칙").
 	@Test
 	void createThenCancelReservesAndFullyReleasesReservedQuantity() throws Exception {
 		User user = createUser("exit-plan-general");
@@ -138,7 +134,6 @@ class ExitPlanGeneralPathIntegrationTest {
 		assertThat(cancelledPlan.getClosedAt()).isNotNull();
 	}
 
-	// 이미 대기 중인 예약이 있는 holding에 두 번째 생성을 시도하면 흔적 없이 409로 거부된다(021 RISK-OCO-004).
 	@Test
 	void createRejectsSecondPendingPlanOnSameHoldingWithoutLeavingTraces() throws Exception {
 		User user = createUser("exit-plan-dup");
@@ -173,13 +168,12 @@ class ExitPlanGeneralPathIntegrationTest {
 
 		List<ExitPlan> plansOnHolding = exitPlanRepository.findByUserIdAndStatusOrderByIdDesc(
 			user.getId(), ExitPlanStatus.PENDING);
-		assertThat(plansOnHolding).hasSize(1); // 두 번째 시도는 흔적을 남기지 않았다.
+		assertThat(plansOnHolding).hasSize(1);
 
 		Holding afterSecondAttempt = holdingRepository.findById(holding.getId()).orElseThrow();
-		assertThat(afterSecondAttempt.getReservedQuantity()).isEqualByComparingTo("1.00000000"); // 최초 예약만 유지된다.
+		assertThat(afterSecondAttempt.getReservedQuantity()).isEqualByComparingTo("1.00000000");
 	}
 
-	// 주식 holding으로 일반 경로 OCO 생성을 시도하면 400으로 거부되고 흔적을 남기지 않는다(021 RISK-OCO-006).
 	@Test
 	void createRejectsStockHoldingWithoutReservingOrPersistingAnything() throws Exception {
 		User user = createUser("exit-plan-stock");
@@ -212,8 +206,6 @@ class ExitPlanGeneralPathIntegrationTest {
 			.isEmpty();
 	}
 
-	// 샌드박스 종목(투자 실습 튜토리얼 전용) holding으로 일반 경로 OCO 생성을 시도하면 409로 거부되고 흔적을
-	// 남기지 않는다(이슈 #461, 047 spec TUTORIAL-CASH-ISOL-010 1안).
 	@Test
 	void createRejectsTutorialSampleInstrumentHoldingWithoutReservingOrPersistingAnything() throws Exception {
 		User user = createUser("exit-plan-tutorial-sample");
@@ -245,9 +237,6 @@ class ExitPlanGeneralPathIntegrationTest {
 			.isEmpty();
 	}
 
-	// 시나리오: PERCENT 방식(holding.averagePrice 대비 손절률·익절률)으로 생성해도 PRICE와 동일하게 예약이 걸리고,
-	// GET 목록 조회에 holdingId·exitPriceType·rate가 그대로 노출되며, 취소 시 예약이 정확히 반환된다(021 plan.md
-	// "테스트 계획" — 일반 경로 전체 흐름 PRICE·PERCENT 각각, 목록 조회).
 	@Test
 	void createWithPercentThenListThenCancelReflectsRateAndReleasesReservation() throws Exception {
 		User user = createUser("exit-plan-percent");
@@ -295,9 +284,6 @@ class ExitPlanGeneralPathIntegrationTest {
 			.isEqualTo(ExitPlanStatus.CANCELLED);
 	}
 
-	// holding당 PENDING 1건 불변식은 "지금 걸린 게 없어야 한다"는 뜻이지 "다시는 걸 수 없다"는 뜻이 아니다 — 첫
-	// plan이 취소로 종결된 뒤 같은 holding에 새 PENDING plan 생성이 성공해야 한다(021 spec.md 비즈니스 규칙,
-	// plan.md "테스트 계획" 재생성 허용 회귀 방지).
 	@Test
 	void createSucceedsAgainOnSameHoldingAfterPriorPlanIsCancelled() throws Exception {
 		User user = createUser("exit-plan-regen");
@@ -343,8 +329,6 @@ class ExitPlanGeneralPathIntegrationTest {
 		assertThat(afterSecondCreate.getReservedQuantity()).isEqualByComparingTo("1.00000000");
 	}
 
-	// 같은 Idempotency-Key로 재요청하면 재조회 폴백이 최초 응답을 그대로 재현하고 두 번째 plan을 만들지 않는다
-	// (021 RISK-OCO-013, plan.md "멱등성" 일반 경로 1번).
 	@Test
 	void replayingSameIdempotencyKeyReturnsIdenticalResponseWithoutCreatingSecondPlan() throws Exception {
 		User user = createUser("exit-plan-idem");
@@ -387,7 +371,7 @@ class ExitPlanGeneralPathIntegrationTest {
 			.hasSize(1);
 
 		Holding afterReplay = holdingRepository.findById(holding.getId()).orElseThrow();
-		assertThat(afterReplay.getReservedQuantity()).isEqualByComparingTo("1.00000000"); // 재시도로 이중 예약되지 않는다.
+		assertThat(afterReplay.getReservedQuantity()).isEqualByComparingTo("1.00000000");
 	}
 
 	private Instrument firstCryptoInstrument() {
@@ -396,8 +380,6 @@ class ExitPlanGeneralPathIntegrationTest {
 		return cryptos.get(0);
 	}
 
-	// tutorialSample=true·tradable=true인 신규 CRYPTO 종목을 만든다(TutorialSandboxSellCashIsolationIntegrationTest의
-	// fixture 관례와 동일).
 	private Instrument createTutorialSampleCryptoInstrument() {
 		Instrument instrument = Instrument.create(
 			Market.CRYPTO, "T" + UUID.randomUUID().toString().replace("-", "").substring(0, 8), "샌드박스코인",

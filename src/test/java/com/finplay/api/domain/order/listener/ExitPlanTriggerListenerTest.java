@@ -1,4 +1,3 @@
-// ExitPlanTriggerListener의 미등록 심볼 무시·건별 예외 격리·리스너 자체 예외 비전파를 검증하는 단위 테스트다.
 package com.finplay.api.domain.order.listener;
 
 import static org.assertj.core.api.Assertions.assertThatCode;

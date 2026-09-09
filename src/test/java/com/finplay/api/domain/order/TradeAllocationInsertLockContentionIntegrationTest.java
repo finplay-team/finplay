@@ -1,6 +1,3 @@
-// OCO 손절·익절이 여러 계좌·종목에서 동시에 트리거될 때 trade_allocations의 새 유니크 제약(V57)이 INSERT
-// 데드락을 일으키는지 측정한다 — 서로 다른 (sell_trade_id, holding_lot_id) 키의 동시 INSERT(인접 auto-increment
-// 값의 갭 락 경합)와, 같은 키의 동시 INSERT(유니크 인덱스 경합) 두 시나리오를 모두 다룬다
 package com.finplay.api.domain.order;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -63,14 +60,6 @@ import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
-// V57(trade_allocations UNIQUE(sell_trade_id, holding_lot_id)) 추가 이후 걱정한 시나리오를 그대로
-// 재현한다 — 서로 다른 계좌·종목의 OCO 익절이 거의 동시에 트리거되면, ExitPlanFillService.fillIfPending이
-// 기본 @Transactional(REPEATABLE READ, ADR-0028의 READ COMMITTED 완화 대상이 아니다)로 각자 holding을 잠그고
-// trade_allocations에 INSERT한다. 이 INSERT들의 (sell_trade_id, holding_lot_id) 값은 서로 다르지만, trades·
-// holding_lots 양쪽 다 전역 AUTO_INCREMENT라 거의 동시에 커밋되는 이 시나리오에서는 값이 서로 인접한다 — 이
-// 조건이 홀딩 INSERT 데드락(ADR-0028)과 같은 종류의 갭 락 경합을 trade_allocations 쪽에서도 일으키는지가
-// 관심사다. LimitOrderFillAccountLockContentionIntegrationTest의 ready/start 동시 실행·데드락 계수 패턴을
-// 그대로 재사용한다.
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
 class TradeAllocationInsertLockContentionIntegrationTest {
@@ -136,7 +125,6 @@ class TradeAllocationInsertLockContentionIntegrationTest {
 
 	@Test
 	void concurrentExitPlanFillsAcrossDifferentHoldingsDoNotDeadlockOnTradeAllocationsInsert() throws Exception {
-		// 워밍업 1회 — JIT·커넥션 풀 초기화 비용이 첫 실측에 섞이지 않도록 결과는 버린다.
 		runScenario("warmup");
 
 		List<Measurement> measurements = new ArrayList<>();
@@ -158,9 +146,6 @@ class TradeAllocationInsertLockContentionIntegrationTest {
 		assertThat(totalOtherFailures).isZero();
 	}
 
-	// V57의 관심사는 "서로 다른 키의 동시 INSERT가 갭 락으로 데드락 나는가"였다(위 테스트). 이 테스트는 그
-	// 반대쪽 — 리뷰에서 관찰(조치 불필요)로 남긴 "같은 키 동시 INSERT"는 다룬다: 여러 트랜잭션이 동시에 같은
-	// (sell_trade_id, holding_lot_id)의 첫 행을 놓고 경합하면 InnoDB가 데드락 없이 하나만 통과시키는지 확인한다.
 	@Test
 	void concurrentDuplicateKeyInsertsOnTradeAllocationsFailCleanlyWithoutDeadlock() throws Exception {
 		runDuplicateKeyScenario("dupwarmup");
@@ -185,7 +170,6 @@ class TradeAllocationInsertLockContentionIntegrationTest {
 		assertThat(totalOtherFailures).isZero();
 	}
 
-	// 서로 다른 계좌 CONCURRENCY개에 각각 종목 1개씩 보유·OCO 익절 예약을 걸어두고 전부 동시에 트리거한다.
 	private Measurement runScenario(String scenario) throws Exception {
 		List<Long> exitPlanIds = new ArrayList<>();
 		BigDecimal takeProfitPrice = new BigDecimal("110000");
@@ -218,8 +202,6 @@ class TradeAllocationInsertLockContentionIntegrationTest {
 		return created.id();
 	}
 
-	// ready/start 래치로 모든 스레드를 동시에 출발시키고, start 이후 전부 완료(성공이든 실패든)될 때까지의
-	// 벽시계 시간을 잰다. 개별 건의 데드락·실패로 측정 자체가 끊기지 않도록 future마다 개별 try/catch한다.
 	private Measurement runConcurrentlyAndMeasure(List<Long> exitPlanIds, BigDecimal triggerPrice) throws Exception {
 		CountDownLatch ready = new CountDownLatch(exitPlanIds.size());
 		CountDownLatch start = new CountDownLatch(1);
@@ -256,9 +238,6 @@ class TradeAllocationInsertLockContentionIntegrationTest {
 
 			for (Long exitPlanId : exitPlanIds) {
 				ExitPlanStatus status = exitPlanRepository.findById(exitPlanId).orElseThrow().getStatus();
-				// ExitPlanFillService.fillIfPending에는 조용히 빠져나가는 return이 세 군데 있다(plan 없음 /
-				// !isPending() / triggeredType == null) — 이 중 하나라도 걸리면 trade_allocations에 INSERT가
-				// 일어나지 않은 채 데드락 0건이 통과할 수 있으므로 로그가 아니라 어서션으로 막는다.
 				assertThat(status).isEqualTo(ExitPlanStatus.FILLED_TAKE_PROFIT);
 			}
 			return new Measurement(elapsedMs, deadlockCount, otherFailureCount);
@@ -319,9 +298,6 @@ class TradeAllocationInsertLockContentionIntegrationTest {
 	private record AllocationKey(Long sellTradeId, Long holdingLotId) {
 	}
 
-	// BUY 체결로 lot을 만든 뒤, applySellTrade를 거치지 않고 sell Trade만 직접 저장해 아직 아무 TradeAllocation도
-	// 없는 (sellTradeId, holdingLotId) 키를 준비한다 — 여러 스레드가 이 키에 대한 첫 INSERT를 동시에 경합하도록
-	// 하기 위함이다.
 	private AllocationKey fabricateAllocatableSellTradeAndLot(String scenario) {
 		User user = createUser(scenario);
 		Account account = createAccount(user);
@@ -353,9 +329,6 @@ class TradeAllocationInsertLockContentionIntegrationTest {
 		return new AllocationKey(sellTrade.getId(), lotId);
 	}
 
-	// ready/start 래치로 CONCURRENCY개 스레드가 같은 (sellTradeId, holdingLotId) 키에 대한 첫 INSERT를 동시에
-	// 시도하게 한다. 정확히 하나만 성공해야 하며, 나머지는 유니크 제약 위반으로 깔끔히 실패해야 한다 — 데드락으로
-	// 실패하면 안 된다는 것이 이 테스트의 핵심 관심사다.
 	private DuplicateKeyMeasurement runDuplicateKeyScenario(String scenario) throws Exception {
 		AllocationKey key = fabricateAllocatableSellTradeAndLot(scenario);
 

@@ -1,6 +1,3 @@
-// 054-limit-order-fill-bulk-lock 위험 요소 2 — 같은 계좌가 같은 청크·같은 신규 종목에 지정가 매수를 2건 이상
-// 걸어둔 경우, holding 벌크 preflight가 스냅숏이 아니라 청크 내에서 즉시 갱신되는 가변 맵이라 두 번째 INSERT를
-// 시도하지 않는지(uk_holdings_account_instrument 유니크 제약 위반 없음) Testcontainers로 검증한다.
 package com.finplay.api.domain.order.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -63,7 +60,6 @@ class LimitOrderFillBatchDuplicateHoldingIntegrationTest {
 	void fillBatchMergesTwoNewBuyOrdersOfSameAccountAndInstrumentIntoOneHolding() {
 		User user = createUser("dup-holding");
 		Account account = createAccount(user);
-		// holding이 아직 없는 신규 종목이어야 위험 요소 2(같은 청크 안 중복 INSERT 시도)가 재현된다.
 		Instrument instrument = createCryptoInstrument("DUPHOLD");
 		BigDecimal limitPrice = new BigDecimal("100000");
 		BigDecimal firstQuantity = new BigDecimal("0.1");
@@ -72,9 +68,6 @@ class LimitOrderFillBatchDuplicateHoldingIntegrationTest {
 		Long first = createLimitOrder(user, instrument, limitPrice, firstQuantity, "dup-holding-1");
 		Long second = createLimitOrder(user, instrument, limitPrice, secondQuantity, "dup-holding-2");
 
-		// 같은 청크(fillBatch 호출 1번) 안에 두 주문을 함께 넣는다 — 청크 시작 시 holding 벌크 조회는 아직
-		// 존재하지 않는 이 holding을 빈 결과로 돌려주므로, 맵을 즉시 갱신하지 않으면 두 번째 처리가 다시
-		// Holding.create()를 시도해 uk_holdings_account_instrument 유니크 제약을 위반한다.
 		assertThatCode(() -> limitOrderFillService.fillBatch(List.of(first, second))).doesNotThrowAnyException();
 
 		assertThat(orderRepository.findById(first).orElseThrow().getStatus()).isEqualTo(OrderStatus.FILLED);

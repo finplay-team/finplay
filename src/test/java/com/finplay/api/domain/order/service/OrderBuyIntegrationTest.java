@@ -1,4 +1,3 @@
-// 시장가 매수 성공(주문·체결·현금차감·holding·lot 원자 저장)·현금부족(무흔적)·재매수(평균단가 재계산) 핵심 시나리오를 실제 MySQL 트랜잭션으로 검증하는 통합 테스트다.
 package com.finplay.api.domain.order.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -50,7 +49,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 @Import({TestcontainersConfiguration.class, TestClockConfig.class})
 class OrderBuyIntegrationTest {
 
-	// 2026-07-29는 수요일이고 holidays-2026.txt에도 없어 재생세션만 READY면 개장 상태로 계산된다.
 	private static final LocalDate TRADING_DATE = LocalDate.of(2026, 7, 29);
 	private static final LocalDateTime BASE_NOW = LocalDateTime.of(2026, 7, 29, 10, 0, 0);
 	private static final LocalTime FIRST_CANDLE_TIME = LocalTime.of(9, 59);
@@ -132,7 +130,6 @@ class OrderBuyIntegrationTest {
 		OrderResponse response = orderService.createOrder(
 			user.getId(), "idem-buy-success", buyRequest(instrument.getId(), "10"));
 
-		// price=70000, quantity=10 → amount=700000, fee=700000*0.00015=105(내림 전 정확히 105)
 		assertThat(response.amount()).isEqualTo(700_000L);
 		assertThat(response.fee()).isEqualTo(105L);
 
@@ -205,7 +202,6 @@ class OrderBuyIntegrationTest {
 		User user = createUser("buy-insufficient");
 		Account account = createAccount(user);
 		Instrument instrument = createStockInstrument("BUYNG");
-		// 계좌 기본 현금 10,000,000보다 큰 체결금액이 되도록 고가 분봉을 준비한다.
 		createCandle(instrument, FIRST_CANDLE_TIME, new BigDecimal("50000000"));
 		long ordersBefore = orderRepository.count();
 		long tradesBefore = tradeRepository.count();
@@ -235,16 +231,13 @@ class OrderBuyIntegrationTest {
 		createCandle(instrument, FIRST_CANDLE_TIME, new BigDecimal("60000"));
 		createCandle(instrument, SECOND_CANDLE_TIME, new BigDecimal("80000"));
 
-		// 첫 매수: 10:00 시각 → 09:59에 마감된 분봉(60000)이 체결가
 		orderService.createOrder(user.getId(), "idem-rebuy-1", buyRequest(instrument.getId(), "10"));
-		// 두 번째 매수: 10:01로 시각을 이동 → 10:00에 마감된 분봉(80000)이 체결가
 		clock.set(BASE_NOW.plusMinutes(1));
 		orderService.createOrder(user.getId(), "idem-rebuy-2", buyRequest(instrument.getId(), "10"));
 
 		Holding holding = holdingRepository
 			.findByAccountIdAndInstrumentId(account.getId(), instrument.getId())
 			.orElseThrow();
-		// 평균단가 = (10*60000 + 10*80000) / 20 = 70000
 		assertThat(holding.getQuantity()).isEqualByComparingTo("20");
 		assertThat(holding.getAveragePrice()).isEqualByComparingTo("70000");
 

@@ -1,4 +1,3 @@
-// ExitPlanService(일반 경로 오케스트레이터)의 필드 조합 검증·소유권/시장 검증·멱등성 판정을 검증하는 단위 테스트다.
 package com.finplay.api.domain.order.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -403,8 +402,6 @@ class ExitPlanServiceTest {
 		Long otherUserId = 999L;
 		Holding holding = holdingWithMarket(Market.CRYPTO);
 		ExitPlan plan = generalPlan(holding);
-		// USER_ID(요청자) 소유 plan은 존재하지만, 다른 사용자(otherUserId)로 조회하면 리포지토리는 그 사용자
-		// 소유 plan만 검색하므로 응답에 섞여 들어오지 않는다는 것을 검증한다.
 		when(exitPlanRepository.findByUserIdAndStatusOrderByIdDesc(USER_ID, ExitPlanStatus.PENDING))
 			.thenReturn(List.of(plan));
 		when(exitPlanRepository.findByUserIdAndStatusOrderByIdDesc(otherUserId, ExitPlanStatus.PENDING))
@@ -417,8 +414,6 @@ class ExitPlanServiceTest {
 		verify(exitPlanRepository, times(0)).findByUserIdAndStatusOrderByIdDesc(USER_ID, ExitPlanStatus.PENDING);
 	}
 
-	// PR #487 리뷰 지적 — list의 튜토리얼 제외 필터와 cancel의 튜토리얼 거부에 테스트가 없었다.
-	// 두 동작 모두 042 5번이 요구하는 안전장치라 회귀를 잡을 단위 테스트를 남긴다.
 	@Test
 	void listExcludesTutorialSamplePlanSoRealTradingScreenHasNoGhostReservation() {
 		Holding tutorialHolding = holdingWithMarket(Market.CRYPTO);
@@ -459,7 +454,6 @@ class ExitPlanServiceTest {
 		verifyNoInteractions(exitPlanCancelService);
 	}
 
-	// 042 자동 예약은 지금도 막힌다 — 재시작 경로가 관리하는 예약이라 밖에서 풀면 기준선 없는 보유가 남는다.
 	@Test
 	void cancelThrowsTutorialInstrumentNotAllowedWhenTheAutomaticPathManagesThatRun() {
 		ExitPlan automaticPlan = practiceAttributedTutorialPlan();
@@ -475,7 +469,6 @@ class ExitPlanServiceTest {
 		verifyNoInteractions(exitPlanCancelService);
 	}
 
-	// 052 EXITFREE-020 — 사용자가 직접 건 예약은 취소된다. 막으면 write-once와 겹쳐 풀 방법이 사라진다.
 	@Test
 	void cancelDelegatesToEngineWhenTheUserCreatedTheTutorialReservation() {
 		ExitPlan userDrivenPlan = practiceAttributedTutorialPlan();
@@ -535,7 +528,6 @@ class ExitPlanServiceTest {
 		return generalPlan(tutorialHolding);
 	}
 
-	// 튜토리얼 예약은 attempt·실행 세대에 귀속된다 — 그 귀속이 자동/사용자 주도를 가르는 유일한 단서다.
 	private static ExitPlan practiceAttributedTutorialPlan() {
 		ExitPlan plan = tutorialPlan();
 		ReflectionTestUtils.setField(plan, "practiceAttemptId", PRACTICE_ATTEMPT_ID);

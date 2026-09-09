@@ -1,4 +1,3 @@
-// PracticeOrderSettlementService.settleOnTick의 세션 PENDING 주문 일괄 잠금·체결 판정·마지막 tick 취소를 검증하는 단위 테스트다.
 package com.finplay.api.domain.order.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -77,8 +76,6 @@ class PracticeOrderSettlementServiceTest {
 			.thenReturn(List.of(fillsAtLastTick.getId(), staysPending.getId()), List.of(staysPending.getId()));
 		when(orderRepository.findById(fillsAtLastTick.getId())).thenReturn(java.util.Optional.of(fillsAtLastTick));
 		when(orderRepository.findById(staysPending.getId())).thenReturn(java.util.Optional.of(staysPending));
-		// fillIfPending은 실제 서비스에서 같은 영속성 컨텍스트의 엔티티를 체결 확정한다 — 단위 테스트에서는
-		// 호출 시 markFilled()를 직접 실행해 이후 getStatus() 판정이 그 결과를 반영하도록 흉내낸다.
 		doAnswer(invocation -> {
 			fillsAtLastTick.markFilled();
 			return null;
@@ -90,7 +87,7 @@ class PracticeOrderSettlementServiceTest {
 		verify(limitOrderCancelService).cancelOrder(USER_ID, staysPending.getId());
 		verify(limitOrderCancelService, never()).cancelOrder(eq(USER_ID), eq(fillsAtLastTick.getId()));
 		assertThat(fillsAtLastTick.getStatus()).isEqualTo(OrderStatus.FILLED);
-		assertThat(staysPending.getStatus()).isEqualTo(OrderStatus.PENDING); // 취소는 별도 서비스가 상태를 바꾼다(mock)
+		assertThat(staysPending.getStatus()).isEqualTo(OrderStatus.PENDING);
 	}
 
 	@Test
@@ -102,10 +99,6 @@ class PracticeOrderSettlementServiceTest {
 		verify(orderRepository, org.mockito.Mockito.times(1)).findPendingIdsBySessionId(SESSION_ID);
 	}
 
-	// PR #514 재리뷰 권장사항 — 취소 판정을 위해 findPendingIdsBySessionId를 다시 부르지 않고 체결 판정
-	// 단계에서 이미 읽어둔 pendingOrderIds를 재사용한다. 재조회했다면 advanceTick이 READ COMMITTED가 된
-	// 뒤로 이 틱 처리 도중 같은 세션에 새로 커밋된 지정가 주문까지 취소 대상에 끼어들 수 있었다 — 이
-	// 테스트는 그 재조회 자체가 사라졌음을(정확히 1회만 호출됨) 검증해 그 경로를 원천적으로 막는다.
 	@Test
 	void settleOnTickCancelLoopReusesInitiallyFetchedIdsInsteadOfRequeryingSoLaterCommittedOrdersAreUnaffected() {
 		Order staysPending = practiceOrder(6L, "9000");
@@ -128,8 +121,6 @@ class PracticeOrderSettlementServiceTest {
 		verify(limitOrderFillService).fillIfPending(2L, NOW);
 	}
 
-	// 042 EXITPRESET-014 — 지정가 → OCO 순서를 고정한다. 튜토리얼 흐름에서 둘이 동시에 걸리는 경우는
-	// 없지만, 순서가 정해져 있어야 나중에 겹칠 때 결과가 결정적이다.
 	@Test
 	void settleCurrentRunFillsLimitOrdersBeforeExitPlansWithTheSameCanonicalPrice() {
 		BigDecimal canonicalPrice = new BigDecimal("9750.00000000");

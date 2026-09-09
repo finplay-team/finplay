@@ -1,4 +1,3 @@
-// 시장가 매수 주문 생성 API의 인증, 검증, 응답 계약을 검증하는 WebMvc 슬라이스 테스트다.
 package com.finplay.api.domain.order.controller;
 
 import static org.hamcrest.Matchers.nullValue;
@@ -502,7 +501,6 @@ class OrderControllerTest {
 			any(LimitOrderCreateRequest.class));
 	}
 
-	// 049 ORDERBASICS-015 — 단계 순서를 건너뛴 지정가 주문은 409 + PRACTICE_STAGE_LOCKED로 거부된다.
 	@Test
 	void createLimitOrderReturnsStageLockedWhenServiceRejectsSkippedStage() throws Exception {
 		stubAuthenticatedUser();
@@ -555,7 +553,6 @@ class OrderControllerTest {
 			.andExpect(jsonPath("$.content[0].orderType").value("MARKET"))
 			.andExpect(jsonPath("$.content[0].status").value("FILLED"))
 			.andExpect(jsonPath("$.content[0].quantity").value(10))
-			// PR #237 리뷰 차단 반영: 시장가 주문은 limitPrice가 없다 — 필드 자체는 존재하고 값만 null임을 고정한다.
 			.andExpect(jsonPath("$.content[0].limitPrice").value(nullValue()))
 			.andExpect(jsonPath("$.content[0].requestedAt").value("2026-07-29T09:00:00"))
 			.andExpect(jsonPath("$.content[0].practiceAttemptId").value(nullValue()))
@@ -719,7 +716,6 @@ class OrderControllerTest {
 			.andExpect(jsonPath("$.content[0].orderType").value("LIMIT"))
 			.andExpect(jsonPath("$.content[0].status").value("PENDING"))
 			.andExpect(jsonPath("$.content[0].quantity").value(1))
-			// PR #237 리뷰 차단 반영: 미체결 목록에서 지정가를 확인할 수 있어야 한다.
 			.andExpect(jsonPath("$.content[0].limitPrice").value(70000000))
 			.andExpect(jsonPath("$.content[0].requestedAt").value("2026-08-06T09:00:00"))
 			.andExpect(jsonPath("$.content[0].practiceAttemptId").value(91))

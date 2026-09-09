@@ -1,7 +1,3 @@
-// 054-limit-order-fill-bulk-lock 완료 조건 — 개선 전후 처리 시간 실측 비교. ADR-0024가 원래 재현했던 조건과
-// 같은 규모(계좌 15개 풀, 단일 종목·단일 가격 지정가 500건)로 fillBatch를 batch-size(50) 단위 청크로 나눠
-// 호출한 총 소요시간을 측정한다. CI 게이트가 아니라 수동 실측용이라 성능 임계값을 assert하지 않고 결과를
-// 로그로만 남긴다 — 결과는 docs/loadtest/limit-order-fill-batch-bulk-lock-benchmark-result.md에 기록한다.
 package com.finplay.api.domain.order.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -36,12 +32,8 @@ import org.springframework.context.annotation.Import;
 @Import(TestcontainersConfiguration.class)
 class LimitOrderFillBulkLockAccountPoolBenchmarkTest {
 
-	// ai/adr/0024-limit-order-fill-executor.md가 재현에 쓴 조건과 같은 규모("계좌 15개 풀 조건에서 가격 하나에
-	// 지정가 500건").
 	private static final int ACCOUNT_POOL_SIZE = 15;
 	private static final int ORDER_COUNT = 500;
-	// order.limit-fill-executor.batch-size 기본값(application.yml) — 실제 파티션 워커가 청크를 나누는 단위와
-	// 맞춰야 "적용 전/후" 비교가 실제 운영 조건을 반영한다.
 	private static final int CHUNK_SIZE = 50;
 
 	private static final LocalDateTime NOW = LocalDateTime.of(2026, 8, 24, 12, 0, 0);

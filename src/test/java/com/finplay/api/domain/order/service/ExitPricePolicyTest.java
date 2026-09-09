@@ -1,4 +1,3 @@
-// 019 계산·반올림·범위·정밀도 규칙을 고정하는 ExitPricePolicy 단위 테스트다 (021 이슈 #347 엔진 골격).
 package com.finplay.api.domain.order.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -40,7 +39,6 @@ class ExitPricePolicyTest {
 
 		ExitPriceLinesDto lines = exitPricePolicy.resolve(input);
 
-		// stopLoss = 100000 * (1 - 0.05) = 95000, takeProfit = 100000 * (1 + 0.10) = 110000
 		assertThat(lines.stopLossPrice()).isEqualByComparingTo("95000.00000000");
 		assertThat(lines.takeProfitPrice()).isEqualByComparingTo("110000.00000000");
 	}
@@ -48,7 +46,6 @@ class ExitPricePolicyTest {
 	@Test
 	@DisplayName("소수점 4자리 rate도 중간 반올림 없이 최종 한 번만 scale 8 HALF_UP으로 반올림된다")
 	void resolvesPercentModeWithFractionalRateRoundingOnlyOnce() {
-		// entryPrice=333333.33333333, rate=1.2345% -> stopLoss = entry * (1 - 0.012345)
 		BigDecimal entryPrice = new BigDecimal("333333.33333333");
 		ExitPriceInputDto input = ExitPriceInputDto.ofPercent(
 			entryPrice, new BigDecimal("1.2345"), new BigDecimal("2.3456"));
@@ -68,8 +65,6 @@ class ExitPricePolicyTest {
 	@Test
 	@DisplayName("아주 작은 rate가 반올림되어 stopLossPrice == entryPrice가 되는 경계는 409로 거부된다")
 	void rejectsWhenTinyRateRoundsStopLossPriceToEqualEntryPrice() {
-		// entryPrice=0.001, rate=0.0001% -> delta = 0.001 * 0.000001 = 0.000000001(=1e-9)
-		// stopLoss_raw = 0.000999999, scale 8 HALF_UP 반올림 시 9번째 자리(9)가 올림되어 0.00100000 = entryPrice와 같아진다.
 		BigDecimal entryPrice = new BigDecimal("0.001");
 		ExitPriceInputDto input = ExitPriceInputDto.ofPercent(
 			entryPrice, new BigDecimal("0.0001"), new BigDecimal("10"));
@@ -116,7 +111,6 @@ class ExitPricePolicyTest {
 	@Test
 	@DisplayName("정수부 10자리를 초과하는 stopLossPrice는 DECIMAL(18,8) 상한 위반으로 409 거부된다")
 	void rejectsWhenStopLossPriceIntegerPartExceedsTenDigits() {
-		// 정수부 11자리(10,000,000,000)는 DECIMAL(18,8) 상한(정수부 10자리)을 초과한다.
 		BigDecimal entryPrice = new BigDecimal("20000000000");
 		ExitPriceInputDto input = ExitPriceInputDto.ofPrice(
 			entryPrice, new BigDecimal("10000000000"), new BigDecimal("30000000000"));

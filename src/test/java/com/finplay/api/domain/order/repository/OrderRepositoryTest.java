@@ -1,4 +1,3 @@
-// 계좌 단위 커서 조회·idempotencyKey 조회 쿼리 메서드를 검증하는 슬라이스 테스트 (ai/specs/018-order-list-pagination)
 package com.finplay.api.domain.order.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -82,7 +81,6 @@ class OrderRepositoryTest {
 			String.valueOf(hashChar).repeat(64), requestedAt));
 	}
 
-	// LMT-004(이슈 #235): 미체결(PENDING) 지정가 주문을 생성한다.
 	private Order createPendingOrder(User user, Account account, LocalDateTime requestedAt) {
 		idempotencySequence++;
 		char hashChar = (char)('a' + idempotencySequence);
@@ -151,9 +149,6 @@ class OrderRepositoryTest {
 		assertThat(result).extracting(Order::getId).containsExactly(ownerOrder.getId());
 	}
 
-	// 포트폴리오 화면(체결·주문 내역)에 튜토리얼 샌드박스 종목 주문이 섞여 나오던 누출 수정 —
-	// 033-exclude-tutorial-sandbox-data(SANDBOX-EXCL-001)와 동일 원칙을 GET /api/orders,
-	// GET /api/orders/pending에도 적용한다.
 	@Test
 	@DisplayName("샌드박스 종목 주문은 제외하고 실제 종목 주문만 커서 조회한다")
 	void findByAccountIdWithCursorExcludesSandboxInstrumentOrders() {
@@ -344,8 +339,8 @@ class OrderRepositoryTest {
 	@DisplayName("PENDING 상태로만 필터링해 FILLED·CANCELLED 주문을 제외한다 (LMT-004, 이슈 #235)")
 	void findByAccountIdAndStatusWithCursorFiltersOnlyMatchingStatus() {
 		Order pendingOrder = createPendingOrder(owner, ownerAccount, NOW);
-		createOrder(owner, ownerAccount, NOW.minusMinutes(1)); // FILLED
-		createCancelledOrder(owner, ownerAccount, NOW.minusMinutes(2)); // CANCELLED
+		createOrder(owner, ownerAccount, NOW.minusMinutes(1));
+		createCancelledOrder(owner, ownerAccount, NOW.minusMinutes(2));
 
 		List<Order> result = orderRepository.findByAccountIdAndStatusWithCursor(
 			ownerAccount.getId(), com.finplay.api.domain.order.entity.OrderStatus.PENDING, null, null, 10);
@@ -410,15 +405,11 @@ class OrderRepositoryTest {
 	@Test
 	@DisplayName("커서로 연속 조회한 PENDING 결과가 커서 없이 조회한 전체 결과와 중복·누락 없이 일치한다 (LMT-004, 이슈 #235)")
 	void findByAccountIdAndStatusWithCursorPaginatesWithoutDuplicatesOrGaps() {
-		// 페이지 경계를 동시각 위에 떨어뜨려 커서 WHERE 절의 동점 분기
-		// (requestedAt = cursor AND id < cursorId)까지 실행시킨다 (PR #237 리뷰).
-		// 정렬 결과는 NOW, NOW-1m, sameTimeSecond, sameTimeFirst, oldest 순이고 limit 3이 동점 쌍을 가른다.
 		createPendingOrder(owner, ownerAccount, NOW);
 		createPendingOrder(owner, ownerAccount, NOW.minusMinutes(1));
 		Order sameTimeFirst = createPendingOrder(owner, ownerAccount, NOW.minusMinutes(2));
 		Order sameTimeSecond = createPendingOrder(owner, ownerAccount, NOW.minusMinutes(2));
 		Order oldest = createPendingOrder(owner, ownerAccount, NOW.minusMinutes(4));
-		// 미체결 목록에 섞이면 안 되는 FILLED·CANCELLED 주문도 함께 만든다.
 		createOrder(owner, ownerAccount, NOW);
 		createCancelledOrder(owner, ownerAccount, NOW);
 
@@ -429,14 +420,12 @@ class OrderRepositoryTest {
 		List<Order> firstPage = orderRepository.findByAccountIdAndStatusWithCursor(
 			ownerAccount.getId(), com.finplay.api.domain.order.entity.OrderStatus.PENDING, null, null, 3);
 		Order lastOfFirstPage = firstPage.get(firstPage.size() - 1);
-		// 경계가 실제로 동점 위에 있는지 못박는다 — 픽스처가 흔들리면 동점 분기가 다시 죽는다.
 		assertThat(lastOfFirstPage.getId()).isEqualTo(sameTimeSecond.getId());
 		assertThat(sameTimeFirst.getRequestedAt()).isEqualTo(lastOfFirstPage.getRequestedAt());
 
 		List<Order> secondPage = orderRepository.findByAccountIdAndStatusWithCursor(
 			ownerAccount.getId(), com.finplay.api.domain.order.entity.OrderStatus.PENDING,
 			lastOfFirstPage.getRequestedAt(), lastOfFirstPage.getId(), 3);
-		// 동점 분기가 없으면 같은 시각의 sameTimeFirst가 통째로 누락된다.
 		assertThat(secondPage).extracting(Order::getId)
 			.containsExactly(sameTimeFirst.getId(), oldest.getId());
 
@@ -461,7 +450,6 @@ class OrderRepositoryTest {
 			.containsExactly(instrument.getSymbol());
 	}
 
-	// 이 이름의 idempotency 접두사는 030의 practice 전용 주문을 다른 테스트의 지정가 주문과 겹치지 않게 구분한다.
 	private Order createPracticePendingOrder(
 		User user, Account account, BigDecimal limitPrice, Long practicePriceSessionId, String idempotencySuffix) {
 		return orderRepository.saveAndFlush(Order.createPracticeLimitPendingBuy(
@@ -469,9 +457,6 @@ class OrderRepositoryTest {
 			"practice-idem-" + idempotencySuffix, "q".repeat(64), NOW));
 	}
 
-	// orders.practice_price_session_id는 practice_price_sessions(id) FK다(V30) — 존재하는 세션 행이 있어야 한다.
-	// 같은 owner·instrument로 여러 세션을 만들어야 하므로 ACTIVE 유일 제약(UNIQUE user_id,instrument_id,active_slot)에
-	// 걸리지 않게 생성 직후 바로 완료 처리한다 — 이 테스트는 세션 상태가 아니라 주문 FK·조회만 검증한다.
 	private Long createPracticeSession(long seed) {
 		PracticePriceSession session = practicePriceSessionRepository.saveAndFlush(
 			PracticePriceSession.create(
@@ -515,7 +500,7 @@ class OrderRepositoryTest {
 		Order cancelled = createPracticePendingOrder(owner, ownerAccount, BigDecimal.valueOf(70_000), sessionId, "3");
 		cancelled.cancel();
 		orderRepository.saveAndFlush(cancelled);
-		createPracticePendingOrder(owner, ownerAccount, BigDecimal.valueOf(70_000), otherSessionId, "4"); // 다른 세션
+		createPracticePendingOrder(owner, ownerAccount, BigDecimal.valueOf(70_000), otherSessionId, "4");
 
 		boolean result = orderRepository.existsByPracticePriceSessionIdAndStatus(
 			sessionId, com.finplay.api.domain.order.entity.OrderStatus.PENDING);
@@ -543,9 +528,6 @@ class OrderRepositoryTest {
 		assertThat(result).extracting(Order::getId).doesNotContain(otherSession.getId());
 	}
 
-	// 튜토리얼 attempt 전용 주문 조회(043) — 다른 run/attempt/일반 주문 제외, 정렬, fetch join 검증.
-	// orders.practice_attempt_id는 practice_attempts(id) FK다(V38) — 존재하는 attempt 행이 있어야 한다.
-	// uk_practice_attempts_user_market(user_id, market) 유일 제약 때문에 "다른 attempt"는 다른 market으로 만든다.
 	private Long createPracticeAttempt(Market market) {
 		return practiceAttemptRepository.saveAndFlush(
 			com.finplay.api.domain.education.marketpractice.entity.PracticeAttempt.create(owner.getId(), market, NOW))
@@ -581,9 +563,9 @@ class OrderRepositoryTest {
 
 		Order currentRunOrder1 = createPracticeRunPendingOrder(attemptId, 2L, "1");
 		Order currentRunOrder2 = createPracticeRunFilledOrder(attemptId, 2L, "2");
-		createPracticeRunFilledOrder(attemptId, 1L, "3"); // 같은 attempt의 이전 run
-		createPracticeRunFilledOrder(otherAttemptId, 2L, "4"); // 다른 attempt, 같은 run 번호
-		createOrder(owner, ownerAccount, NOW); // 일반 주문(practiceAttemptId=null)
+		createPracticeRunFilledOrder(attemptId, 1L, "3");
+		createPracticeRunFilledOrder(otherAttemptId, 2L, "4");
+		createOrder(owner, ownerAccount, NOW);
 
 		List<Order> result = orderRepository.findPracticeRunOrders(attemptId, 2L);
 
@@ -614,9 +596,6 @@ class OrderRepositoryTest {
 			.containsExactly(instrument.getSymbol());
 	}
 
-	// 이슈 #441: 043 spec의 완료 조건 — "체결·취소된 뒤에는 같은 주문이 각각 FILLED·CANCELLED 상태로 계속 보인다".
-	// 이 쿼리는 status로 필터링하지 않으므로 세 상태가 그대로 노출돼야 한다. 기존 케이스는 PENDING·FILLED만
-	// 다뤄 CANCELLED가 비어 있었다.
 	@Test
 	@DisplayName("취소된 주문도 CANCELLED 상태 그대로 현재 attempt·run 조회 결과에 남는다 (043, 이슈 #441)")
 	void findPracticeRunOrdersKeepsCancelledOrdersWithCancelledStatus() {

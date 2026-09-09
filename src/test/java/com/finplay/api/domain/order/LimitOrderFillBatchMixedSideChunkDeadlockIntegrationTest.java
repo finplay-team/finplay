@@ -1,10 +1,3 @@
-// 054-limit-order-fill-bulk-lock 위험 요소 1 확장 검증 — 기존
-// LimitOrderFillBatchCrossInstrumentChunkDeadlockIntegrationTest는 BUY 주문만 써서 계좌 벌크 락(오름차순)의
-// 데드락 방어를 확인했다. SELL이 섞인 청크도 같은 방어(계좌 ID 오름차순 벌크 락)가 그대로 적용되는지 확인한다
-// — 청크 X는 BUY만, 청크 Y는 전량 SELL로 구성해 fillBatch의 BUY/SELL 두 처리 경로
-// (fillBuyWithLockedHolding·fillSellWithLockedHolding)가 서로 다른 종목의 청크에서 동시에 얽힌 상태에서도
-// 데드락이 없는지 본다. SELL은 매도할 holding이 미리 있어야 하므로, 동시 실행 전에 각 계좌마다 같은 종목을
-// 지정가 매수 + fillBatch(단건)로 먼저 채워둔다.
 package com.finplay.api.domain.order;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -48,7 +41,6 @@ import org.springframework.context.annotation.Import;
 class LimitOrderFillBatchMixedSideChunkDeadlockIntegrationTest {
 
 	private static final LocalDateTime NOW = LocalDateTime.of(2026, 8, 24, 12, 0, 0);
-	// 겹치는 계좌 수 — 두 청크가 같은 계좌 전부를 공유하게 해 계좌 락 경합을 최대화한다.
 	private static final int ACCOUNT_COUNT = 6;
 	private static final int REPEAT = 5;
 
@@ -77,10 +69,6 @@ class LimitOrderFillBatchMixedSideChunkDeadlockIntegrationTest {
 		}
 	}
 
-	// 계좌 ACCOUNT_COUNT개를 만들고, 종목 Y는 먼저 지정가 매수 + fillBatch(단건)로 holding을 채워둔다. 그 뒤
-	// 계좌마다 종목 X에 PENDING 지정가 매수(청크 X), 종목 Y에 PENDING 지정가 매도(청크 Y, 방금 채운 holding
-	// 전량)를 건다. 두 청크를 서로 반대 순서(오름차순 vs 내림차순)로 넘겨 실제 락 획득 순서가 fillBatch 내부
-	// 정렬에만 의존하도록 만든다 — 호출부 순서에 우연히 맞물려 데드락이 안 나는 거짓 양성을 막는다.
 	private void runOnceAndAssertNoDeadlock() throws Exception {
 		List<Account> accounts = new ArrayList<>();
 		for (int i = 0; i < ACCOUNT_COUNT; i++) {
@@ -148,7 +136,6 @@ class LimitOrderFillBatchMixedSideChunkDeadlockIntegrationTest {
 		}
 	}
 
-	// 매도 대상 holding을 동시 실행 전에 미리 채운다 — 지정가 매수 후 fillBatch(단건)로 즉시 체결해 holding을 만든다.
 	private void seedHolding(Account account, Instrument instrument, BigDecimal quantity) {
 		BigDecimal seedPrice = new BigDecimal("1000000");
 		LimitOrderResponse seed = limitOrderService.createLimitOrder(
@@ -157,8 +144,6 @@ class LimitOrderFillBatchMixedSideChunkDeadlockIntegrationTest {
 		limitOrderFillService.fillBatch(List.of(seed.orderId()));
 	}
 
-	// 최소주문금액(5,000)을 넉넉히 넘기면서 계좌 기본 현금(10,000,000) 안에서 seed 매수 + 청크 X 매수 몫을
-	// 함께 예약해도 여유가 있도록 수량·가격을 고정한다.
 	private Long createPendingLimitBuy(Account account, Instrument instrument) {
 		BigDecimal quantity = new BigDecimal("0.01");
 		BigDecimal limitPrice = new BigDecimal("1000000");
@@ -168,7 +153,6 @@ class LimitOrderFillBatchMixedSideChunkDeadlockIntegrationTest {
 		return created.orderId();
 	}
 
-	// seedHolding이 채워둔 수량 전량을 매도한다 — availableQuantity와 정확히 일치시켜 예약 검증을 통과시킨다.
 	private Long createPendingLimitSell(Account account, Instrument instrument, BigDecimal quantity) {
 		BigDecimal limitPrice = new BigDecimal("900000");
 		LimitOrderResponse created = limitOrderService.createLimitOrder(

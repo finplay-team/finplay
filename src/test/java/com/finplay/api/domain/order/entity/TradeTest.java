@@ -1,4 +1,3 @@
-// Trade의 실현손익 채우기 메서드를 검증하는 순수 단위 테스트다.
 package com.finplay.api.domain.order.entity;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -71,8 +70,6 @@ class TradeTest {
 			.hasMessage("코인 체결에는 재생세션을 지정할 수 없습니다.");
 	}
 
-	// 이슈 #339: PriceQueryService.getOrderExecutionPrice가 튜토리얼 샘플 종목에 대해 의도적으로
-	// replaySession=null을 반환하는데, 이 불변식이 실제 종목에만 성립하도록 범위를 좁혔는지 확인한다.
 
 	@Test
 	void rejectsRealStockTradeWithoutReplaySession() {

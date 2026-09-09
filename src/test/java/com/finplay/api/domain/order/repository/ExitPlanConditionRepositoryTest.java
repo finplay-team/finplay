@@ -1,4 +1,3 @@
-// V35가 만든 exit_plan_conditions의 (exit_plan_id, condition_type) unique와 조회 메서드를 검증하는 슬라이스 테스트다 (021 plan "데이터 모델").
 package com.finplay.api.domain.order.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;

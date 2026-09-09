@@ -1,4 +1,3 @@
-// LimitOrderCancelService.cancelOrder의 예약 반환·검증 순서(존재→소유→상태)를 검증하는 단위 테스트다.
 package com.finplay.api.domain.order.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -55,7 +54,6 @@ class LimitOrderCancelServiceTest {
 	void cancelOrderReleasesReservedCashWhenSideIsBuy() {
 		Instrument instrument = cryptoInstrument();
 		Account account = account();
-		// quantity=0.1 * limitPrice=1,000,000 => amount=100,000, fee=floor(100,000*0.0005)=50
 		account.reserveCash(100_050L);
 		Order order = limitPendingOrder(owner(), account, instrument, OrderSide.BUY, "0.1", "1000000");
 		when(orderRepository.findByIdForUpdate(ORDER_ID)).thenReturn(Optional.of(order));
@@ -65,19 +63,16 @@ class LimitOrderCancelServiceTest {
 
 		assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
 		assertThat(account.getReservedCash()).isZero();
-		assertThat(account.getCashBalance()).isEqualTo(10_000_000L); // 실제 현금은 불변
+		assertThat(account.getCashBalance()).isEqualTo(10_000_000L);
 		verifyNoInteractions(portfolioSellService);
 	}
 
 	@Test
 	void cancelOrderForTutorialSampleReleasesReservedCashInTutorialAccountOnlyWhenSideIsBuy() {
-		// 047 TUTORIAL-CASH-ISOL-002: 샌드박스 종목의 지정가 매수 취소는 튜토리얼 계좌의 예약만 해제하고
-		// 실제 Account.reservedCash·cashBalance는 전혀 변하지 않는다.
 		Instrument instrument = cryptoInstrument();
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
 		Account account = account();
 		TutorialAccount tutorialAccount = tutorialAccount();
-		// quantity=0.1 * limitPrice=1,000,000 => amount=100,000, fee=50, total=100,050 (생성 시점 예약을 재현)
 		tutorialAccount.reserveCash(100_050L);
 		Order order = limitPendingOrder(owner(), account, instrument, OrderSide.BUY, "0.1", "1000000");
 		when(orderRepository.findByIdForUpdate(ORDER_ID)).thenReturn(Optional.of(order));
@@ -89,8 +84,8 @@ class LimitOrderCancelServiceTest {
 
 		assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
 		assertThat(tutorialAccount.getReservedCash()).isZero();
-		assertThat(account.getReservedCash()).isZero(); // 실제 계좌는 예약된 적이 없다
-		assertThat(account.getCashBalance()).isEqualTo(10_000_000L); // 실제 계좌 현금은 전혀 변하지 않는다
+		assertThat(account.getReservedCash()).isZero();
+		assertThat(account.getCashBalance()).isEqualTo(10_000_000L);
 		verifyNoInteractions(portfolioSellService);
 	}
 
@@ -110,7 +105,7 @@ class LimitOrderCancelServiceTest {
 
 		assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
 		assertThat(holding.getReservedQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
-		assertThat(holding.getQuantity()).isEqualByComparingTo("1"); // 실제 보유수량은 불변
+		assertThat(holding.getQuantity()).isEqualByComparingTo("1");
 		verify(portfolioSellService).getHoldingForUpdate(account, instrument);
 	}
 
@@ -138,7 +133,7 @@ class LimitOrderCancelServiceTest {
 			.extracting(ex -> ((BusinessException)ex).getErrorCode())
 			.isEqualTo(ErrorCode.FORBIDDEN);
 
-		assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING); // 취소되지 않는다
+		assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
 		verifyNoInteractions(accountService, portfolioSellService);
 	}
 
@@ -176,8 +171,6 @@ class LimitOrderCancelServiceTest {
 
 	@Test
 	void cancelOrderChecksOwnershipBeforeStatusSoNonOwnerOfAlreadyCancelledOrderGetsForbidden() {
-		// 검증 순서(존재→소유→상태) 준수 확인: 이미 CANCELLED된 주문이라도 소유자가 아니면
-		// ORDER_ALREADY_CANCELLED가 아니라 FORBIDDEN이 먼저 나와야 한다(spec.md "검증 순서" — 상태를 오류 코드로 흘리지 않음).
 		Instrument instrument = cryptoInstrument();
 		Account account = account();
 		Order order = limitPendingOrder(owner(), account, instrument, OrderSide.BUY, "0.1", "1000000");
@@ -194,7 +187,6 @@ class LimitOrderCancelServiceTest {
 
 	@Test
 	void cancelOrderDoesNotLockAccountWhenOwnershipCheckFailsBeforeStatusCheck() {
-		// 검증 순서 확인 — 소유 검증 실패 시 이후 단계(account 락)를 아예 시도하지 않는다.
 		Instrument instrument = cryptoInstrument();
 		Account account = account();
 		Order order = limitPendingOrder(owner(), account, instrument, OrderSide.BUY, "0.1", "1000000");

@@ -1,4 +1,3 @@
-// ExitPlanCancelService.cancel의 존재→소유→상태 검증 순서와 예약 반환·조건 종결을 검증하는 단위 테스트다.
 package com.finplay.api.domain.order.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -83,7 +82,6 @@ class ExitPlanCancelServiceTest {
 
 	@Test
 	void cancelThrowsExitPlanNotFoundWhenRequesterIsNotOwner() {
-		// findByIdAndUserId 자체가 소유자 조건을 포함하므로 타인 소유는 존재를 숨겨 같은 404다(021 spec, 존재 은닉).
 		when(exitPlanRepository.findByIdAndUserId(PLAN_ID, OTHER_USER_ID)).thenReturn(Optional.empty());
 
 		assertThatThrownBy(() -> service.cancel(OTHER_USER_ID, PLAN_ID))
@@ -97,7 +95,7 @@ class ExitPlanCancelServiceTest {
 	void cancelThrowsExitPlanNotPendingWhenPlanIsAlreadyTerminal() {
 		Holding holding = holdingWithReservation();
 		ExitPlan plan = pendingPlan(holding);
-		plan.cancel(NOW.minusMinutes(1)); // 이미 CANCELLED로 종결된 plan
+		plan.cancel(NOW.minusMinutes(1));
 		when(exitPlanRepository.findByIdAndUserId(PLAN_ID, OWNER_USER_ID)).thenReturn(Optional.of(plan));
 		when(portfolioSellService.getHoldingForUpdate(holding.getAccount(), plan.getInstrument())).thenReturn(holding);
 		when(exitPlanRepository.findByIdForUpdate(PLAN_ID)).thenReturn(Optional.of(plan));
@@ -107,8 +105,6 @@ class ExitPlanCancelServiceTest {
 			.extracting(ex -> ((BusinessException)ex).getErrorCode())
 			.isEqualTo(ErrorCode.EXIT_PLAN_NOT_PENDING);
 		verifyNoInteractions(exitPlanConditionRepository);
-		// 이미 종결된 plan을 다시 취소하려는 시도는 예약을 건드리지 않는다 — 원래 취소 시점에 이미 반환됐어야 할
-		// 예약이 이 실패 경로에서 중복 해제되지 않는다.
 		assertThat(holding.getReservedQuantity()).isEqualByComparingTo(new BigDecimal("1"));
 	}
 

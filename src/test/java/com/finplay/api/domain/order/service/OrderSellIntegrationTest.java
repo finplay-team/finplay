@@ -1,4 +1,3 @@
-// 시장가 매도의 FIFO lot 배분·실현손익 계산·보유수량 초과 거부(무흔적)·전량매도 비활성화 핵심 시나리오를 실제 MySQL 트랜잭션으로 검증하는 통합 테스트다.
 package com.finplay.api.domain.order.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -53,7 +52,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 @Import({TestcontainersConfiguration.class, TestClockConfig.class})
 class OrderSellIntegrationTest {
 
-	// 2026-07-29는 수요일이고 holidays-2026.txt에도 없어 재생세션만 READY면 개장 상태로 계산된다.
 	private static final LocalDate TRADING_DATE = LocalDate.of(2026, 7, 29);
 	private static final LocalDateTime BASE_NOW = LocalDateTime.of(2026, 7, 29, 10, 0, 0);
 	private static final LocalTime FIRST_CANDLE_TIME = LocalTime.of(9, 59);
@@ -138,7 +136,6 @@ class OrderSellIntegrationTest {
 		createCandle(instrument, SECOND_CANDLE_TIME, new BigDecimal("80000"));
 		createCandle(instrument, THIRD_CANDLE_TIME, new BigDecimal("100000"));
 
-		// 매수1: 10:00 시각 → 09:59 분봉(60000) 체결가, 매수2: 10:01 시각 → 10:00 분봉(80000) 체결가
 		orderService.createOrder(user.getId(), "idem-fifo-buy-1", buyRequest(instrument.getId(), "10"));
 		clock.set(BASE_NOW.plusMinutes(1));
 		orderService.createOrder(user.getId(), "idem-fifo-buy-2", buyRequest(instrument.getId(), "10"));
@@ -152,23 +149,18 @@ class OrderSellIntegrationTest {
 		assertThat(earliestLot.getUnitCost()).isEqualByComparingTo("60000");
 		assertThat(laterLot.getUnitCost()).isEqualByComparingTo("80000");
 
-		// 매도: 10:02 시각 → 10:01 분봉(100000) 체결가, 5주만 매도(먼저 산 lot의 일부만 소진)
 		clock.set(BASE_NOW.plusMinutes(2));
 		OrderResponse response = orderService.createOrder(
 			user.getId(), "idem-fifo-sell", sellRequest(instrument.getId(), "5"));
 
-		// amount=100000*5=500000, fee=floor(500000*0.00015)=75
 		assertThat(response.amount()).isEqualTo(500_000L);
 		assertThat(response.fee()).isEqualTo(75L);
-		// 배분원가=60000*5=300000, 배분매수수수료=floor(90*5/10)=45 (매수1 fee=floor(600000*0.00015)=90)
-		// realizedPnl = (500000-75) - (300000+45) = 199880
 		assertThat(response.realizedPnl()).isEqualTo(199_880L);
 		assertThat(stockReplaySessionIdOf(response.tradeId()))
 			.isEqualTo(stockReplaySessionRepository.findByServiceDate(TRADING_DATE).orElseThrow().getId());
 
 		HoldingLot reloadedEarliestLot = holdingLotRepository.findById(earliestLot.getId()).orElseThrow();
 		HoldingLot reloadedLaterLot = holdingLotRepository.findById(laterLot.getId()).orElseThrow();
-		// FIFO 순서 검증: 먼저 산 lot만 차감되고, 나중 lot은 손대지 않는다.
 		assertThat(reloadedEarliestLot.getRemainingQuantity()).isEqualByComparingTo("5");
 		assertThat(reloadedLaterLot.getRemainingQuantity()).isEqualByComparingTo("10");
 
@@ -184,7 +176,6 @@ class OrderSellIntegrationTest {
 		assertThat(allocation.getAllocatedCost()).isEqualTo(300_000L);
 		assertThat(allocation.getAllocatedBuyFee()).isEqualTo(45L);
 
-		// 비즈니스 규칙: 매수 lot의 (최초수량 - 배분수량 합계) = 잔여수량이 항상 성립해야 한다.
 		assertLotQuantityInvariant(earliestLot.getId());
 		assertLotQuantityInvariant(laterLot.getId());
 
@@ -263,18 +254,12 @@ class OrderSellIntegrationTest {
 		HoldingLot lot2 = lots.get(1);
 		long cashBeforeSell = accountRepository.findById(account.getId()).orElseThrow().getCashBalance();
 
-		// 매도 15주 → lot1(10주) 전량 소진 + lot2(10주 중 5주) 부분 소진, 하나의 매도가 두 lot을 소비한다.
 		clock.set(BASE_NOW.plusMinutes(2));
 		OrderResponse response = orderService.createOrder(
 			user.getId(), "idem-multi-sell", sellRequest(instrument.getId(), "15"));
 
-		// amount=100000*15=1500000, fee=floor(1500000*0.00015)=225
 		assertThat(response.amount()).isEqualTo(1_500_000L);
 		assertThat(response.fee()).isEqualTo(225L);
-		// lot1 전량소진 배분: cost=600000(=buyTrade.amount), buyFee=90(=lot.buyFee, 최초 배분이므로 누적 0 차감)
-		// lot2 부분소진(5/10) 배분: cost=floor(80000*5)=400000, buyFee=floor(120*5/10)=60
-		// totalAllocatedCost=1000000, totalAllocatedBuyFee=150
-		// realizedPnl = (1500000-225) - (1000000+150) = 499625
 		assertThat(response.realizedPnl()).isEqualTo(499_625L);
 
 		HoldingLot reloadedLot1 = holdingLotRepository.findById(lot1.getId()).orElseThrow();
@@ -301,7 +286,6 @@ class OrderSellIntegrationTest {
 		assertThat(lot2Allocation.getAllocatedCost()).isEqualTo(400_000L);
 		assertThat(lot2Allocation.getAllocatedBuyFee()).isEqualTo(60L);
 
-		// 비즈니스 규칙: 매수 lot의 (최초수량 - 배분수량 합계) = 잔여수량이 항상 성립해야 한다(두 lot 모두).
 		assertLotQuantityInvariant(lot1.getId());
 		assertLotQuantityInvariant(lot2.getId());
 
@@ -336,7 +320,6 @@ class OrderSellIntegrationTest {
 		long cashBefore = accountBefore.getCashBalance();
 		long realizedPnlBefore = accountBefore.getRealizedPnl();
 
-		// 보유수량(10)보다 많은 11주 매도 시도 → 409 INSUFFICIENT_QTY, 어떤 테이블에도 흔적을 남기지 않는다.
 		clock.set(BASE_NOW.plusMinutes(1));
 		assertThatThrownBy(() -> orderService.createOrder(
 			user.getId(), "idem-over-sell", sellRequest(instrument.getId(), "11")))
@@ -375,7 +358,6 @@ class OrderSellIntegrationTest {
 			.orElseThrow();
 		HoldingLot lot = holdingLotsFor(holding).get(0);
 
-		// 전량(10주) 매도 → holding 잔량 0, isActive=false, lot 잔여수량도 0
 		clock.set(BASE_NOW.plusMinutes(1));
 		orderService.createOrder(user.getId(), "idem-full-sell", sellRequest(instrument.getId(), "10"));
 
@@ -386,12 +368,9 @@ class OrderSellIntegrationTest {
 		HoldingLot reloadedLot = holdingLotRepository.findById(lot.getId()).orElseThrow();
 		assertThat(reloadedLot.getRemainingQuantity()).isEqualByComparingTo("0");
 
-		// 비즈니스 규칙: 매수 lot의 (최초수량 - 배분수량 합계) = 잔여수량이 항상 성립해야 한다(전량 소진 케이스).
 		assertLotQuantityInvariant(lot.getId());
 	}
 
-	// 매수 lot의 (최초수량 - 해당 lot에 대한 배분수량 합계) = 잔여수량 관계를 실제 DB 상태로 검증한다
-	// (spec.md 비즈니스 규칙 "lot의 잔여수량은 배분 합계와 항상 일치해야 한다").
 	private void assertLotQuantityInvariant(Long holdingLotId) {
 		HoldingLot lot = holdingLotRepository.findById(holdingLotId).orElseThrow();
 		BigDecimal allocatedSum = tradeAllocationRepository

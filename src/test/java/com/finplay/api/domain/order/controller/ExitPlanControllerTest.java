@@ -1,4 +1,3 @@
-// OCO 손절·익절 예약 생성·취소 API의 인증, 요청 검증, 예외 매핑을 검증하는 WebMvc 슬라이스 테스트다.
 package com.finplay.api.domain.order.controller;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -163,9 +162,6 @@ class ExitPlanControllerTest {
 		verifyNoInteractions(exitPlanService);
 	}
 
-	// PR #368 리뷰 차단 2: PERCENT 모드의 원본 stopLossRate/takeProfitRate는 계산된 가격이 아니라 그 자체가
-	// exit_plans.take_profit_rate DECIMAL(8,4)(정수부 4자리) 컬럼에 저장된다 — @Digits 없이는 이 400이 저장
-	// 시점 DataIntegrityViolationException(500)으로 샜다.
 	@Test
 	void createExitPlanRejectsOversizedTakeProfitRateWithoutCallingService() throws Exception {
 		stubAuthenticatedUser();
@@ -184,7 +180,6 @@ class ExitPlanControllerTest {
 		verifyNoInteractions(exitPlanService);
 	}
 
-	// exit_plans.stop_loss_rate DECIMAL(7,4)(정수부 3자리) 기준 — 같은 시나리오를 손절률 쪽에서도 확인한다.
 	@Test
 	void createExitPlanRejectsOversizedStopLossRateWithoutCallingService() throws Exception {
 		stubAuthenticatedUser();
@@ -205,7 +200,6 @@ class ExitPlanControllerTest {
 
 	@Test
 	void createExitPlanReturnsValidationErrorWhenServiceRejectsIntentionIdPresent() throws Exception {
-		// intentionId를 지정하는 교육 경로는 이 이슈 범위 밖 — 서비스가 400으로 거부한다(컨트롤러는 그대로 전달만 한다).
 		stubAuthenticatedUser();
 		when(exitPlanService.create(eq(USER_ID), eq(IDEMPOTENCY_KEY), any(ExitPlanCreateRequest.class)))
 			.thenThrow(new BusinessException(ErrorCode.VALIDATION_ERROR, "intentionId를 지정하는 교육 경로는 아직 지원하지 않습니다."));

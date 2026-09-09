@@ -1,4 +1,3 @@
-// TradeListResponse의 컬렉션 방어적 복사(List.copyOf)가 실제로 동작하는지 검증하는 단위 테스트다.
 package com.finplay.api.domain.order.dto.response;
 
 import static org.assertj.core.api.Assertions.assertThat;

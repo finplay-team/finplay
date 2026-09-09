@@ -1,5 +1,3 @@
-// 054-limit-order-fill-bulk-lock 추가 검증 — fillBatch(청크 벌크 락)와 LimitOrderCancelService(단건 락)가
-// 같은 PENDING 주문을 동시에 다툴 때 데드락 없이 완료되고, 최종 상태가 FILLED/CANCELLED 중 하나로만 확정되는지 검증한다.
 package com.finplay.api.domain.order;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -47,7 +45,6 @@ class LimitOrderFillBatchCancelRaceIntegrationTest {
 
 	private static final Logger log = LoggerFactory.getLogger(LimitOrderFillBatchCancelRaceIntegrationTest.class);
 	private static final LocalDateTime NOW = LocalDateTime.of(2026, 8, 24, 12, 0, 0);
-	// fillBatch 청크 안에 경합 대상 주문 외에 다른 계좌 주문도 섞어 벌크 락(order→account→holding) 경로를 그대로 탄다.
 	private static final int CHUNK_SIZE = 4;
 	private static final int REPEAT = 10;
 
@@ -89,8 +86,6 @@ class LimitOrderFillBatchCancelRaceIntegrationTest {
 			REPEAT, fillWinCount, cancelWinCount);
 	}
 
-	// PENDING 지정가 매수 주문 하나(경합 대상)와, 같은 종목의 다른 계좌 주문 (CHUNK_SIZE - 1)건을 청크로 묶어
-	// fillBatch를 호출하는 스레드와, 경합 대상 주문만 취소하는 스레드를 ready/start 래치로 동시에 출발시킨다.
 	private RaceOutcome runOnceAndAssertConsistentFinalState() throws Exception {
 		User contestedUser = createUser("race-contested");
 		Account contestedAccount = createAccount(contestedUser);
@@ -122,8 +117,6 @@ class LimitOrderFillBatchCancelRaceIntegrationTest {
 			assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
 			start.countDown();
 
-			// fillBatch는 경합 대상 주문이 취소로 먼저 상태가 바뀌어도 그 건만 skip하고 나머지는 정상 체결해야
-			// 한다 — 데드락은 물론 어떤 예외도 던지지 않아야 한다.
 			assertCompletesWithoutException(fillFuture, "fillBatch");
 			Throwable cancelFailure = cancelFuture.get(15, TimeUnit.SECONDS);
 
@@ -135,11 +128,9 @@ class LimitOrderFillBatchCancelRaceIntegrationTest {
 
 			OrderStatus finalStatus = orderRepository.findById(contestedOrderId).orElseThrow().getStatus();
 			if (cancelFailure == null) {
-				// cancel이 이겼다 — order.cancel() 후 fillBatch는 PENDING이 아님을 보고 skip해야 한다.
 				assertThat(finalStatus).isEqualTo(OrderStatus.CANCELLED);
 				return RaceOutcome.CANCEL_WON;
 			}
-			// fill이 이겼다 — cancel은 데드락이 아니라 "이미 체결됨" 비즈니스 예외로만 실패해야 한다.
 			assertThat(cancelFailure).isInstanceOf(BusinessException.class);
 			assertThat(((BusinessException)cancelFailure).getErrorCode()).isEqualTo(ErrorCode.ORDER_ALREADY_FILLED);
 			assertThat(finalStatus).isEqualTo(OrderStatus.FILLED);
@@ -176,7 +167,6 @@ class LimitOrderFillBatchCancelRaceIntegrationTest {
 		FILL_WON, CANCEL_WON
 	}
 
-	// 최소주문금액(5,000)을 넉넉히 넘기면서 계좌 기본 현금(10,000,000) 안에서 여유 있게 예약되도록 수량·가격을 고정한다.
 	private Long createPendingLimitBuy(Account account, Instrument instrument) {
 		BigDecimal quantity = new BigDecimal("0.01");
 		BigDecimal limitPrice = new BigDecimal("1000000");
