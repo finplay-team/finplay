@@ -21,7 +21,6 @@ public record MarketSnapshotEvent(
 		prices = List.copyOf(prices);
 	}
 
-
 	public record InstrumentPriceSnapshot(String symbol, BigDecimal price, LocalDateTime sourceTime,
 		PriceStatus status) {
 

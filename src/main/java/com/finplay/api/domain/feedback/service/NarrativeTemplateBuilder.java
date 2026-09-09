@@ -43,7 +43,6 @@ public class NarrativeTemplateBuilder {
 		return base + " 보유 중 최고가는 %s의 %s이었습니다.".formatted(moment, money(input.holdHighPrice()));
 	}
 
-
 	private String absolutePercent(BigDecimal rate) {
 		return toPercent(rate).abs().toPlainString() + "%";
 	}
