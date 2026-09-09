@@ -1,4 +1,3 @@
-// 회원의 시장별 모의투자 잔고와 손익을 영속하는 계좌 엔티티
 package com.finplay.api.domain.account.entity;
 
 import com.finplay.api.domain.auth.entity.User;

@@ -1,4 +1,3 @@
-// 사용자·시장별 튜토리얼(샌드박스) 전용 현금·실현손익을 영속하는 계좌 엔티티
 package com.finplay.api.domain.account.entity;
 
 import com.finplay.api.domain.auth.entity.User;
@@ -110,7 +109,6 @@ public class TutorialAccount {
 		this.realizedPnl += amount;
 	}
 
-	// 재시작 훅(TUTORIAL-CASH-ISOL-006) — 현금·예약 현금·실현손익을 같은 타이밍에 초기값으로 되돌린다.
 	public void reset(LocalDateTime now) {
 		this.cashBalance = INITIAL_CASH;
 		this.reservedCash = 0L;

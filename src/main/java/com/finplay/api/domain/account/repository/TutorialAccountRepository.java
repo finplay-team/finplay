@@ -1,4 +1,3 @@
-// 사용자·시장별 튜토리얼 계좌 영속과 비관 잠금 조회를 담당하는 JPA 리포지터리
 package com.finplay.api.domain.account.repository;
 
 import com.finplay.api.domain.account.entity.TutorialAccount;
@@ -14,7 +13,6 @@ public interface TutorialAccountRepository extends JpaRepository<TutorialAccount
 
 	Optional<TutorialAccount> findByUserIdAndMarket(Long userId, Market market);
 
-	// 튜토리얼 계좌 get-or-create·리셋 시 동시 매수·매도 경합을 직렬화하기 위한 계좌 락
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("SELECT ta FROM TutorialAccount ta WHERE ta.user.id = :userId AND ta.market = :market")
 	Optional<TutorialAccount> findByUserIdAndMarketForUpdate(@Param("userId")

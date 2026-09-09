@@ -1,4 +1,3 @@
-// 계좌 요약 조회를 담당하는 컨트롤러
 package com.finplay.api.domain.account.controller;
 
 import com.finplay.api.domain.account.dto.response.AccountSummaryResponse;
