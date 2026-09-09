@@ -1,4 +1,3 @@
-// 인증 사용자의 관심목록 항목들을 감싸 반환하는 응답 DTO
 package com.finplay.api.domain.watchlist.dto.response;
 
 import com.finplay.api.domain.watchlist.entity.WatchlistItem;

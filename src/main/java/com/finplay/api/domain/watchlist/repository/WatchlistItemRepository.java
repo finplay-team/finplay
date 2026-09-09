@@ -1,4 +1,3 @@
-// 관심목록 항목의 저장·조회를 담당하는 리포지토리
 package com.finplay.api.domain.watchlist.repository;
 
 import com.finplay.api.domain.market.entity.Market;
@@ -11,7 +10,6 @@ import org.springframework.data.repository.query.Param;
 
 public interface WatchlistItemRepository extends JpaRepository<WatchlistItem, Long> {
 
-	// 응답 매핑이 instrument의 필드 4개를 전부 읽으므로 JOIN FETCH로 N+1을 막는다 (HoldingRepository 선례).
 	@Query("SELECT w FROM WatchlistItem w JOIN FETCH w.instrument WHERE w.userId = :userId "
 		+ "ORDER BY w.createdAt DESC, w.id DESC")
 	List<WatchlistItem> findByUserIdOrderByCreatedAtDescIdDesc(@Param("userId")

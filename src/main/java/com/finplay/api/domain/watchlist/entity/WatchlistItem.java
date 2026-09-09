@@ -1,4 +1,3 @@
-// 사용자가 관심목록에 등록한 종목 한 건을 표현하는 엔티티
 package com.finplay.api.domain.watchlist.entity;
 
 import com.finplay.api.domain.market.entity.Instrument;
