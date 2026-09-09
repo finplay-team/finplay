@@ -1,4 +1,3 @@
-// 매수 파이프라인(이슈 #13)으로 생성한 실제 주문 데이터를 GET /api/orders 조회 서비스(market 필수·커서 페이지네이션)로 검증하는 통합 테스트다.
 package com.finplay.api.domain.order.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -41,14 +40,11 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.transaction.annotation.Transactional;
 
-// AccountSummaryIntegrationTest(2026-07-30 agent-mistakes.md 항목)와 동일하게 instruments·stock_replay_sessions에
-// saveAndFlush로 실제 커밋을 남기므로 @Transactional로 각 테스트 종료 시 롤백시켜 다른 테스트의 절대개수 단정을 지킨다.
 @SpringBootTest
 @Transactional
 @Import({TestcontainersConfiguration.class, TestClockConfig.class})
 class OrderListIntegrationTest {
 
-	// 2026-07-29는 수요일이고 holidays-2026.txt에도 없어 재생세션만 READY면 개장 상태로 계산된다.
 	private static final LocalDate TRADING_DATE = LocalDate.of(2026, 7, 29);
 	private static final LocalDateTime BASE_NOW = LocalDateTime.of(2026, 7, 29, 10, 0, 0);
 	private static final LocalTime FIRST_CANDLE_TIME = LocalTime.of(9, 59);
@@ -101,13 +97,11 @@ class OrderListIntegrationTest {
 		createCandle(instrument, FIRST_CANDLE_TIME, new BigDecimal("70000"));
 		createCandle(instrument, SECOND_CANDLE_TIME, new BigDecimal("80000"));
 
-		// 10:00 시각 → 09:59 분봉(70000)이 체결가. owner 첫 주문, other 주문 순으로 같은 시각에 생성한다.
 		orderService.createOrder(
 			owner.getId(), "list-owner-idem-1", buyRequest(Market.STOCK, instrument.getId(), "10"));
 		orderService.createOrder(
 			other.getId(), "list-other-idem-1", buyRequest(Market.STOCK, instrument.getId(), "5"));
 
-		// 10:01로 시각을 이동 → 10:00 분봉(80000)이 체결가. owner 두 번째(최신) 주문.
 		clock.set(BASE_NOW.plusMinutes(1));
 		orderService.createOrder(
 			owner.getId(), "list-owner-idem-2", buyRequest(Market.STOCK, instrument.getId(), "20"));
@@ -132,14 +126,12 @@ class OrderListIntegrationTest {
 		assertThat(latest.orderType()).isEqualTo("MARKET");
 		assertThat(latest.status()).isEqualTo("FILLED");
 
-		// other 사용자의 주문은 owner 조회 결과에 포함되지 않는다.
 		List<OrderListItemResponse> otherResult = orderService.getMyOrders(
 			other.getId(), Market.STOCK, null, 100).content();
 		assertThat(otherResult).hasSize(1);
 		assertThat(otherResult.get(0).quantity()).isEqualByComparingTo("5");
 		assertThat(result).noneMatch(item -> item.orderId().equals(otherResult.get(0).orderId()));
 
-		// 체결 전용 필드(tradeId·price·amount·fee·executedAt)는 OrderListItemResponse에 애초에 존재하지 않는다(타입 계약).
 	}
 
 	@Test
@@ -185,10 +177,6 @@ class OrderListIntegrationTest {
 		assertThat(cryptoResult.content().get(0).instrumentId()).isEqualTo(cryptoInstrument.getId());
 	}
 
-	// PR #380(spec 036) 리뷰 권장 반영 — STALE 판정 제거가 실제 Redis(PriceStore)·DB로 체결까지 이어지는지
-	// 확인하는 핵심 시나리오 통합 테스트(ADR-0003). OrderExecutionServiceTest는 협력자를 전부 mock한 단위
-	// 테스트라 이 경로를 실측하지 못한다 — 관측 시각을 3시간 전으로 찍고 clock을 앞으로 돌린 뒤에도 실제
-	// 주문 서비스가 그 마지막 가격으로 체결하는지를 여기서 검증한다.
 	@Test
 	void createOrderFillsCryptoOrderEvenWhenLastObservationIsHoursOld() {
 		User user = createUser("list-old-obs");
@@ -209,11 +197,6 @@ class OrderListIntegrationTest {
 		assertThat(result.content().get(0).status()).isEqualTo("FILLED");
 	}
 
-	// PR #237 리뷰 차단 반영 커버리지 공백 보완: LimitOrderPendingListIntegrationTest는 getMyPendingOrders(지정가만)
-	// 경로에서만 limitPrice 실측값을 검증했고, 이 클래스의 기존 테스트들은 시장가 주문만 만들어 limitPrice를 전혀
-	// 단정하지 않았다. GET /api/orders(getMyOrders)는 시장가·지정가가 섞여 나오는 유일한 경로이므로, 실제 DB에
-	// 저장된 시장가 주문의 limitPrice가 null로, 지정가 주문(미체결)의 limitPrice가 실제 걸어둔 값으로 나오는지를
-	// 여기서 함께 검증한다(mock이 아니라 OrderListItemResponse.from(Order)가 실제 엔티티를 그대로 반영하는지 확인).
 	@Test
 	void getMyOrdersExposesLimitPriceForLimitOrdersAndNullForMarketOrders() {
 		User user = createUser("list-limitprice");
@@ -221,11 +204,9 @@ class OrderListIntegrationTest {
 		Instrument cryptoInstrument = createCryptoInstrument("LPRICE");
 		seedCryptoPrice(cryptoInstrument, new BigDecimal("50000000"));
 
-		// 시장가 매수 — 즉시 체결되며 Order.limitPrice는 애초에 저장되지 않는다.
 		orderService.createOrder(user.getId(), "list-limitprice-market",
 			buyRequest(Market.CRYPTO, cryptoInstrument.getId(), "0.01"));
 
-		// 지정가 매수 — 미체결 상태로 남아 걸어둔 가격이 그대로 노출돼야 한다.
 		BigDecimal limitPrice = new BigDecimal("10000000");
 		limitOrderService.createLimitOrder(user.getId(), "list-limitprice-limit",
 			new LimitOrderCreateRequest(
@@ -257,7 +238,6 @@ class OrderListIntegrationTest {
 		Instrument instrument = createStockInstrument("PAGE");
 		createCandle(instrument, FIRST_CANDLE_TIME, new BigDecimal("60000"));
 
-		// 5건의 매수를 서로 다른 시각(분 단위 전진)에 체결시켜 requestedAt이 모두 달라지게 한다.
 		for (int i = 1; i <= 5; i++) {
 			clock.set(BASE_NOW.plusMinutes(i));
 			orderService.createOrder(user.getId(), "list-page-buy-" + i,
@@ -276,7 +256,6 @@ class OrderListIntegrationTest {
 	@Test
 	void getMyOrdersRejectsWhenAccountForRequestedMarketDoesNotExist() {
 		User user = createUser("list-no-crypto-acct");
-		// STOCK 계좌만 만들고 CRYPTO 계좌는 만들지 않는다 — 존재하지 않는 계좌의 market으로 조회하는 시나리오.
 		createAccount(user, Market.STOCK);
 
 		assertThatThrownBy(() -> orderService.getMyOrders(
@@ -286,8 +265,6 @@ class OrderListIntegrationTest {
 				exception -> assertThat(((BusinessException)exception).getErrorCode()).isEqualTo(ErrorCode.NOT_FOUND));
 	}
 
-	// limit보다 데이터가 많을 때 nextCursor를 따라 끝까지 페이지를 넘기며 orderId를 최신순 그대로 수집한다.
-	// 마지막으로 fetch한 페이지는 hasNext=false·nextCursor=null이어야 한다(루프를 빠져나오는 조건 자체가 이를 보장).
 	private List<Long> collectAllOrderIdsByCursor(Long userId, com.finplay.api.domain.market.entity.Market market,
 		int limit) {
 		List<Long> ids = new ArrayList<>();
@@ -296,7 +273,7 @@ class OrderListIntegrationTest {
 		int pageCount = 0;
 		while (hasNext) {
 			pageCount++;
-			assertThat(pageCount).isLessThanOrEqualTo(20); // 무한루프 방지 안전장치.
+			assertThat(pageCount).isLessThanOrEqualTo(20);
 
 			OrderListResponse page = orderService.getMyOrders(userId, market, cursor, limit);
 			page.content().forEach(item -> ids.add(item.orderId()));
@@ -310,7 +287,6 @@ class OrderListIntegrationTest {
 		return ids;
 	}
 
-	// 커서 없이 한 번에 큰 limit으로 조회해 전체 orderId를 최신순 그대로 수집한다(페이지 결과와 비교하는 기준선).
 	private List<Long> collectSinglePageOrderIds(Long userId, com.finplay.api.domain.market.entity.Market market,
 		int limit) {
 		OrderListResponse page = orderService.getMyOrders(userId, market, null, limit);
@@ -347,7 +323,6 @@ class OrderListIntegrationTest {
 			instrument, TRADING_DATE, candleTime, price, price, price, price, 0L, "TEST", BASE_NOW));
 	}
 
-	// 현재 clock 시각에 맞춰 최신 틱을 저장한다 — PriceStore.isStale은 10초 임계값으로 판정하므로 항상 현재 시각을 써야 한다.
 	private void seedCryptoPrice(Instrument instrument, BigDecimal price) {
 		priceStore.saveTick(instrument.getSymbol(), price, LocalDateTime.now(clock));
 	}
@@ -356,8 +331,6 @@ class OrderListIntegrationTest {
 		return scenario + "-" + UUID.randomUUID().toString().replace("-", "") + "@finplay.com";
 	}
 
-	// nickname 컬럼은 VARCHAR(50)(V2 마이그레이션)이라 UUID 전체(32자)를 붙이면 시나리오명이 길 때 초과한다
-	// (예: "list-no-crypto-acct" 20자 + "-" + 32자 = 53자 → MysqlDataTruncation). 8자로 줄여 여유를 둔다.
 	private static String uniqueNickname(String scenario) {
 		return scenario + "-" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
 	}

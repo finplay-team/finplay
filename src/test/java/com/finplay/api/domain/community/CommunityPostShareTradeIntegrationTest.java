@@ -1,4 +1,3 @@
-// 실 DB 위에서 매매 카드 공유 게시물 생성·조회 핵심 시나리오를 검증하는 Testcontainers 통합 테스트다.
 package com.finplay.api.domain.community;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -45,10 +44,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.transaction.annotation.Transactional;
 
-// spec 046 완료 조건 4개(코인·주식 각 1건, 소유권 403, 매수체결 400, imageId+sharedTradeId 동시 지정 400)를
-// 여기서 함께 본다. 클래스 트랜잭션으로 감싸 각 테스트가 끝나면 자동 롤백된다(선례: CryptoPostSellFeedbackGate
-// IntegrationTest) — 이 파일은 트랜잭션 경계 자체를 검증하지 않으므로 PostSellFeedbackBoundaryIntegrationTest처럼
-// @Transactional을 뺄 이유가 없다.
 @SpringBootTest
 @Transactional
 @Import(TestcontainersConfiguration.class)
@@ -130,8 +125,6 @@ class CommunityPostShareTradeIntegrationTest {
 		assertThat(response.sharedTrade().realizedPnl()).isEqualTo(REALIZED_PNL);
 		assertThat(response.sharedTrade().returnRate()).isEqualByComparingTo(expectedReturnRate());
 
-		// 다른 사용자(otherUserId)가 조회해도 같은 값이 보인다 — sharedTrade 계산의 userId는 뷰어가 아니라
-		// 게시물 작성자다(TRADESHARE-002).
 		CommunityPostResponse reloaded = communityPostService.getPost(response.postId(), otherUserId);
 		assertThat(reloaded.sharedTrade()).isNotNull();
 		assertThat(reloaded.sharedTrade().returnRate()).isEqualByComparingTo(expectedReturnRate());
@@ -184,7 +177,6 @@ class CommunityPostShareTradeIntegrationTest {
 	void createPostFailsWithValidationErrorWhenImageAndSharedTradeAreBothProvided() {
 		Trade sellTrade = givenOwnCryptoSellTrade(ownerId);
 
-		// 충돌 검증이 이미지 조회보다 먼저라 존재하지 않는 imageId로도 재현된다(구현 순서에 대한 실제 통합 근거).
 		assertThatThrownBy(() -> communityPostService.createPost(
 			ownerId, "title", "content", null, 999_999L, sellTrade.getId()))
 			.isInstanceOf(BusinessException.class)
@@ -192,13 +184,10 @@ class CommunityPostShareTradeIntegrationTest {
 			.isEqualTo(ErrorCode.VALIDATION_ERROR);
 	}
 
-	// realizedPnl ÷ (배분된 매수원가 합 + 배분된 매수수수료 합), scale 4 HALF_UP — PostSellArithmetic과 같은 식.
 	private static BigDecimal expectedReturnRate() {
 		BigDecimal buyBasis = BUY_PRICE.multiply(QUANTITY).add(BigDecimal.valueOf(BUY_FEE));
 		return BigDecimal.valueOf(REALIZED_PNL).divide(buyBasis, 4, RoundingMode.HALF_UP);
 	}
-
-	// --- 픽스처 ---
 
 	private Trade givenOwnStockSellTrade(Long userId) {
 		User owner = userRepository.findById(userId).orElseThrow();

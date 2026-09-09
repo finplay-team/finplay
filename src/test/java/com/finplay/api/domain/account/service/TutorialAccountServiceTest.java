@@ -1,4 +1,3 @@
-// 튜토리얼 계좌의 get-or-create·리셋(현금·예약 현금·realizedPnl 동시 초기화)을 검증하는 단위 테스트다.
 package com.finplay.api.domain.account.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

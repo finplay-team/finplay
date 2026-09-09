@@ -1,4 +1,3 @@
-// OAuth 인가 컨트롤러의 redirect와 state 쿠키 및 오류 응답 계약을 검증한다.
 package com.finplay.api.domain.auth.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -39,7 +38,6 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-// 대상 경로가 공개 화이트리스트에 있으므로 실제 Security 체인을 태워 화이트리스트 계약까지 함께 검증한다.
 @WebMvcTest(OAuthAuthorizationController.class)
 @Import({OAuthStateCookieFactory.class, SecurityConfig.class})
 @TestPropertySource(properties = "oauth.state-cookie-secure=false")
@@ -154,7 +152,6 @@ class OAuthAuthorizationControllerTest {
 			"test-oauth-state-secret-that-is-at-least-32-bytes");
 		given(jwtTokenProvider.parseAccessToken("valid-access-token"))
 			.willReturn(Optional.of(new AuthenticatedUser(userId, "USER")));
-		// eq(userId)로 인자를 고정해 controller가 principal.userId() 이외의 값을 넘기면 스터빙이 매치되지 않아 실패한다.
 		given(authorizationService.authorizeForReauth(eq("kakao"), eq(userId)))
 			.willAnswer(invocation -> {
 				String state = realStateGenerator.generate(OAuthPurpose.REAUTH, userId);

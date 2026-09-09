@@ -1,4 +1,3 @@
-// User의 이메일·비밀번호 변경 메서드를 검증하는 순수 단위 테스트다.
 package com.finplay.api.domain.auth.entity;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -40,7 +39,6 @@ class UserTest {
 
 	@Test
 	void hasPasswordIsFalseForOAuthOnlySentinelBecauseThereIsNoPasswordToReset() {
-		// OAuth 가입자는 password_hash가 NULL이 아니라 자리표시자다 — NULL 검사만으로는 걸러지지 않는다.
 		User oauthUser = User.createOAuthOnly("oauth@finplay.com", "oauth-user", NOW);
 
 		assertThat(oauthUser.getPasswordHash()).isNotNull();
@@ -67,12 +65,10 @@ class UserTest {
 		User oauthUser = User.createOAuthOnly("oauth-placeholder@finplay.com", "oauth-placeholder-user", NOW);
 		User emailUser = User.create("email@finplay.com", "encoded-password-hash", "email-user", NOW);
 
-		// 두 회원 모두 password_hash가 NULL이 아니다 — 구분은 hasPassword()로만 된다.
 		assertThat(oauthUser.getPasswordHash()).isNotNull();
 		assertThat(emailUser.getPasswordHash()).isNotNull();
 		assertThat(oauthUser.hasPassword()).isFalse();
 		assertThat(emailUser.hasPassword()).isTrue();
-		// 자리표시자는 어떤 실제 해시와도 같지 않다.
 		assertThat(oauthUser.getPasswordHash()).isNotEqualTo(emailUser.getPasswordHash());
 	}
 

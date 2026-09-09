@@ -1,4 +1,3 @@
-// 실제 인증 필터와 MySQL을 연결해 댓글 삭제 핵심 시나리오(본인 삭제·타인 금지·미존재·비로그인)를 검증하는 통합 테스트다.
 package com.finplay.api.domain.community;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -51,8 +50,6 @@ class CommentDeleteIntegrationTest {
 
 	@BeforeEach
 	void cleanDatabaseInForeignKeySafeOrder() {
-		// V31: parent_comment_id FK가 ON DELETE RESTRICT라 단일 "delete from post_comments"는
-		// 다른 테스트 컨텍스트가 남긴 부모+자식이 섞여 있으면 행 처리 순서 미보장으로 실패할 수 있다(이슈 #277).
 		jdbcTemplate.update("delete from post_comments where parent_comment_id is not null");
 		jdbcTemplate.update("delete from post_comments");
 		jdbcTemplate.update("delete from community_posts");
@@ -72,7 +69,6 @@ class CommentDeleteIntegrationTest {
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
 			.andExpect(status().isNoContent());
 
-		// 이슈 #277: 최상위 댓글은 하드 삭제가 아니라 tombstone된다 — 행은 남고 표시만 바뀐다.
 		PostComment tombstoned = commentRepository.findById(commentId).orElseThrow();
 		assertThat(tombstoned.isTombstoned()).isTrue();
 	}

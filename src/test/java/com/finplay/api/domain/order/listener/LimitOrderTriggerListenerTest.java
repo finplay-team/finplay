@@ -1,4 +1,3 @@
-// LimitOrderTriggerListener의 종목 조회 관용 처리·후보 순회·실행기 위임(ADR-0024)·건별 예외 격리를 검증하는 단위 테스트다.
 package com.finplay.api.domain.order.listener;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -43,19 +42,14 @@ class LimitOrderTriggerListenerTest {
 	private final LimitOrderFillService limitOrderFillService = mock(LimitOrderFillService.class);
 	private final LimitOrderFillExecutorRouter limitOrderFillExecutorRouter = mock(LimitOrderFillExecutorRouter.class);
 
-	// order.limit-fill-executor.enabled=false(폴백) 경로를 검증하는 리스너 — 실행기를 아예 거치지 않고 이
-	// 스레드에서 그대로 순차 동기 처리해야 한다(ADR-0024, 킬 스위치).
 	private final LimitOrderTriggerListener syncFallbackListener = new LimitOrderTriggerListener(
 		instrumentService, orderRepository, limitOrderFillService, limitOrderFillExecutorRouter,
 		new LimitOrderFillExecutorProperties(false, 8, 200, 50));
 
-	// enabled=true(기본값) 경로를 검증하는 리스너 — batchSize(50)가 후보 건수(2건)보다 커서 청크 하나로
-	// 묶인다. 후보를 라우터에 위임만 하고 이 스레드에서 fillBatch를 직접 부르지 않아야 한다.
 	private final LimitOrderTriggerListener asyncListener = new LimitOrderTriggerListener(
 		instrumentService, orderRepository, limitOrderFillService, limitOrderFillExecutorRouter,
 		new LimitOrderFillExecutorProperties(true, 8, 200, 50));
 
-	// ADR-0025 청크 분할 자체를 검증하는 리스너 — batchSize=1로 후보 1건마다 청크(=submit 1건)가 갈리게 만든다.
 	private final LimitOrderTriggerListener singleOrderBatchListener = new LimitOrderTriggerListener(
 		instrumentService, orderRepository, limitOrderFillService, limitOrderFillExecutorRouter,
 		new LimitOrderFillExecutorProperties(true, 8, 200, 1));
@@ -71,7 +65,6 @@ class LimitOrderTriggerListenerTest {
 
 		syncFallbackListener.onPriceUpdated(new CryptoPriceUpdatedEvent("BTC", price, NOW, NOW));
 
-		// 실행기를 아예 거치지 않는다 — 킬 스위치가 폴백(기존 동기 순차) 동작을 그대로 재현함을 못박는다.
 		verifyNoInteractions(limitOrderFillExecutorRouter);
 		InOrder order = inOrder(limitOrderFillService);
 		order.verify(limitOrderFillService).fillIfPending(10L);
@@ -89,22 +82,16 @@ class LimitOrderTriggerListenerTest {
 
 		asyncListener.onPriceUpdated(new CryptoPriceUpdatedEvent("BTC", price, NOW, NOW));
 
-		// 실행기에 위임만 하고 이 스레드(피드 스레드)에서 직접 체결을 부르지 않는다 — 이번 개선의 핵심.
 		verifyNoInteractions(limitOrderFillService);
-		// batchSize(50)가 후보 건수(2건)보다 커서 청크 하나 = submit 1건으로 묶인다(ADR-0025).
 		ArgumentCaptor<Runnable> taskCaptor = ArgumentCaptor.forClass(Runnable.class);
 		verify(limitOrderFillExecutorRouter, times(1)).submit(eq(1L), taskCaptor.capture());
 
-		// 실제 파티션 스레드 대신 캡처한 작업을 이 자리에서 실행해 보면(라우터 자체는 목이므로 진짜 스레드가
-		// 개입하지 않는다) 청크 안 orderId 순서 그대로 fillBatch에 위임됨을 확인할 수 있다.
 		taskCaptor.getValue().run();
 		verify(limitOrderFillService).fillBatch(List.of(10L, 20L));
 	}
 
 	@Test
 	void onPriceUpdatedSubmitsOneChunkPerCandidateWhenBatchSizeIsOne() {
-		// ADR-0025 청크 분할 자체를 검증한다 — batchSize=1이면 후보 2건이 각자 별도 청크(=submit 별도 호출)로
-		// 나뉘어야 한다.
 		Instrument instrument = cryptoInstrument(1L);
 		when(instrumentService.findEntityByMarketAndSymbol(Market.CRYPTO, "BTC")).thenReturn(Optional.of(instrument));
 		Order first = candidateOrder(10L);
@@ -128,8 +115,6 @@ class LimitOrderTriggerListenerTest {
 
 	@Test
 	void submittedTaskSwallowsExceptionFromFillBatchWhenExecutorEnabled() {
-		// 파티션 전용 스레드에서 fillBatch가 던진 예외가 그 스레드 밖으로 전파되면 안 된다(ADR-0024 §결정 4를
-		// 청크 단위로 그대로 유지, ADR-0025 §결정 3) — 캡처한 작업을 직접 실행해 예외가 삼켜지는지 확인한다.
 		Instrument instrument = cryptoInstrument(1L);
 		when(instrumentService.findEntityByMarketAndSymbol(Market.CRYPTO, "BTC")).thenReturn(Optional.of(instrument));
 		Order failing = candidateOrder(10L);

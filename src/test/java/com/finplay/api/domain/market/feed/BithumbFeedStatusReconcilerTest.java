@@ -1,4 +1,3 @@
-// 목 BithumbFeedClient·PriceStore로 BithumbFeedStatusReconciler의 재기록 조건을 검증하는 단위 테스트
 package com.finplay.api.domain.market.feed;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -47,7 +46,6 @@ class BithumbFeedStatusReconcilerTest {
 		verify(priceStore, never()).saveConnectionStatus(FeedConnectionStatus.CONNECTED);
 	}
 
-	// fail-closed(MKT-004) 유지 — 클라이언트가 끊겨 있으면 Redis 상태를 손대지 않는다.
 	@Test
 	void doesNotTouchStoreWhenClientIsNotConnected() {
 		when(bithumbFeedClient.isConnected()).thenReturn(false);

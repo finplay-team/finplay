@@ -1,4 +1,3 @@
-// 목 BithumbFeedClient로 BithumbFeedLifecycle의 시작·종료 호출을 검증하는 단위 테스트
 package com.finplay.api.domain.market.feed;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -29,9 +28,6 @@ class BithumbFeedLifecycleTest {
 		verifyNoMoreInteractions(bithumbFeedClient);
 	}
 
-	// 이슈 #288: FakeBithumbFeedClient.start()는 PriceStore.saveConnectionStatus로 Redis를 동기 호출한다 —
-	// Redis가 죽어 있으면 이 예외가 ApplicationReadyEvent 리스너까지 전파돼 애플리케이션 기동 자체가 실패한다.
-	// 캐시성 의존(Redis) 하나 때문에 전체 기동이 막히면 안 되므로, startFeed는 이 예외를 삼키고 로그만 남긴다.
 	@Test
 	void startFeedDoesNotPropagateWhenClientStartFailsSoApplicationStartupIsNotBlocked() {
 		BithumbFeedLifecycle lifecycle = new BithumbFeedLifecycle(bithumbFeedClient);

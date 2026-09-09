@@ -1,5 +1,3 @@
-// 카드 생성이 취소되면(근거 매칭 0건) 카드가 저장되지 않고, 반대로 구독자가 0명이어도 카드 생성 자체는
-// 정상 성공함을 확인한다.
 package com.finplay.api.domain.feedback.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -33,7 +31,6 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
 
-// LLM은 부르지 않는다(CryptoPriceMoveWatcherIntegrationTest와 같은 전제).
 @SpringBootTest
 @Transactional
 @Import({TestcontainersConfiguration.class, TestClockConfig.class})
@@ -83,7 +80,6 @@ class CryptoPriceMoveCardPushCancelledOrUnsubscribedIntegrationTest {
 		redisTemplate.delete("price:crypto:" + UNSUBSCRIBED_SYMBOL + ":snapshots");
 	}
 
-	// CryptoPriceMoveWatcherIntegrationTest와 같은 픽스처.
 	private void givenEnoughSnapshotsWithARecentJump(String symbol) {
 		BigDecimal past = BigDecimal.valueOf(100);
 		BigDecimal now = BigDecimal.valueOf(100 * Math.exp(0.12));
@@ -100,7 +96,6 @@ class CryptoPriceMoveCardPushCancelledOrUnsubscribedIntegrationTest {
 		instrumentRepository.saveAndFlush(Instrument.create(
 			Market.CRYPTO, CANCELLED_SYMBOL, "테스트코인", BigDecimal.ONE, 5000L, true, NOW));
 		givenEnoughSnapshotsWithARecentJump(CANCELLED_SYMBOL);
-		// 근거 기사를 저장하지 않는다 — NewsCollector mock은 기본적으로 빈 목록을 반환해 온디맨드 수집도 실패한다.
 
 		cryptoPriceMoveWatcher.watch();
 

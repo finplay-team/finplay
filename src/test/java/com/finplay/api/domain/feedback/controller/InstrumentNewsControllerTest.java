@@ -1,4 +1,3 @@
-// 종목 뉴스 목록·요약 조회 API의 인증·직렬화·오류 매핑 계약을 검증하는 WebMvc 슬라이스 테스트다.
 package com.finplay.api.domain.feedback.controller;
 
 import static org.mockito.Mockito.verify;
@@ -34,9 +33,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
-// 계약의 정본은 docs/api/feedback.md의 "종목 뉴스 목록·요약 조회" 행이고, 상태값은 spec 012 §C-4다.
-// 게이트·범위·상태값 판정이 실제 데이터 위에서 성립하는지는 InstrumentNewsQueryGateIntegrationTest가,
-// 판정 순서 자체는 InstrumentNewsQueryServiceTest가 맡는다 — 여기서는 직렬화 형태와 인증·오류 매핑만 본다.
 @WebMvcTest(InstrumentNewsController.class)
 @Import(SecurityConfig.class)
 class InstrumentNewsControllerTest {
@@ -57,8 +53,6 @@ class InstrumentNewsControllerTest {
 
 	@MockitoBean
 	private JwtTokenProvider jwtTokenProvider;
-
-	// --- API 계약 ① 인증 없이 호출하면 401 ---
 
 	@Test
 	@DisplayName("토큰 없이 호출하면 401이고 서비스를 부르지 않는다")
@@ -82,8 +76,6 @@ class InstrumentNewsControllerTest {
 
 		verifyNoInteractions(instrumentNewsQueryService);
 	}
-
-	// --- 응답 형태 ---
 
 	@Test
 	@DisplayName("READY 응답이 계약대로 직렬화된다 — 다섯 값의 items와 요약 문장")
@@ -109,7 +101,6 @@ class InstrumentNewsControllerTest {
 			.andExpect(jsonPath("$.items[0].publisher").value("hankyung.com"))
 			.andExpect(jsonPath("$.items[0].url").value("https://news.example.test/1"))
 			.andExpect(jsonPath("$.items[0].publishedAt").value("2026-07-28T18:40:00"))
-			// 공시는 published_at이 접수일 00:00:00이다 (§C-3·§C-8).
 			.andExpect(jsonPath("$.items[1].type").value("DISCLOSURE"))
 			.andExpect(jsonPath("$.items[1].publisher").value("DART"))
 			.andExpect(jsonPath("$.items[1].publishedAt").value("2026-07-28T00:00:00"));
@@ -117,7 +108,6 @@ class InstrumentNewsControllerTest {
 		verify(instrumentNewsQueryService).getInstrumentNews(INSTRUMENT_ID);
 	}
 
-	// §정책 전제(저작권) — 항목은 제목·언론사·원문 URL·발행시각·종류까지만 나간다.
 	@Test
 	@DisplayName("items 항목에 본문·요약 필드가 없다")
 	void neverExposesArticleBodyOrSnippet() throws Exception {
@@ -132,12 +122,9 @@ class InstrumentNewsControllerTest {
 			.andExpect(jsonPath("$.items[0].description").doesNotExist())
 			.andExpect(jsonPath("$.items[0].body").doesNotExist())
 			.andExpect(jsonPath("$.items[0].length()").value(5))
-			// 상태 판정에 쓰는 내부 값이 새면 클라이언트가 아직 열리지 않은 기사의 존재를 역산할 수 있다.
 			.andExpect(jsonPath("$.narrativeSource").doesNotExist())
 			.andExpect(jsonPath("$.generatedAt").doesNotExist());
 	}
-
-	// --- 상태값별 200 (FEED-008 — 비어 있는 것은 오류가 아니다) ---
 
 	@Test
 	@DisplayName("개장 전이면 NOT_YET이고 originTradeDate는 채워지며 200이다")
@@ -156,7 +143,6 @@ class InstrumentNewsControllerTest {
 			.andExpect(jsonPath("$.items.length()").value(0));
 	}
 
-	// 재생세션 미준비는 어떤 거래일을 재생 중인지 자체가 확정되지 않아 날짜까지 null이다 (§C-4 1번).
 	@Test
 	@DisplayName("재생세션 미준비면 originTradeDate까지 null이고 200이다")
 	void returnsOkWithNullTradeDateWhenTheReplaySessionIsNotReady() throws Exception {
@@ -187,7 +173,6 @@ class InstrumentNewsControllerTest {
 			.andExpect(jsonPath("$.items.length()").value(0));
 	}
 
-	// 상태값 ④ — 행은 있는데 서술이 없다. EMPTY와 달리 items가 채워지는 것이 이 상태의 표식이다.
 	@Test
 	@DisplayName("UNAVAILABLE이면 summary는 null이지만 items는 채워지고 200이다")
 	void returnsOkWithFilledItemsWhenTheNarrativeIsUnavailable() throws Exception {
@@ -203,8 +188,6 @@ class InstrumentNewsControllerTest {
 			.andExpect(jsonPath("$.summary").doesNotExist())
 			.andExpect(jsonPath("$.items.length()").value(1));
 	}
-
-	// --- 오류 매핑 ---
 
 	@Test
 	@DisplayName("없는 종목이면 404 NOT_FOUND 공통 오류 형식이다")

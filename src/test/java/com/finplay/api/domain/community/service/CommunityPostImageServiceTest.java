@@ -1,4 +1,3 @@
-// 게시물 첨부 이미지 업로드·다운로드의 형식·크기 검증과 저장 흐름을 검증하는 단위 테스트다.
 package com.finplay.api.domain.community.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -77,8 +76,6 @@ class CommunityPostImageServiceTest {
 		User uploader = User.create("uploader@finplay.com", "hash", "uploader", LocalDateTime.now(CLOCK));
 		ReflectionTestUtils.setField(uploader, "id", 42L);
 		when(userQueryService.getUser(42L)).thenReturn(uploader);
-		// 원본 파일명에 경로 구분자·상위 디렉터리 세그먼트를 넣어도 storedFilename은 contentType 기반
-		// 확장자로만 결정돼야 한다 — 원본 파일명이 저장 경로 조립에 쓰이지 않음을 고정한다.
 		MockMultipartFile file = new MockMultipartFile(
 			"image", "a.b/../c", "image/png", "content".getBytes());
 		when(repository.save(any(CommunityPostImage.class))).thenAnswer(invocation -> {

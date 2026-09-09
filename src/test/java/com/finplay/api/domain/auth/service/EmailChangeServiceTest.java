@@ -1,4 +1,3 @@
-// 이메일 변경 인증번호 발송 서비스의 재인증 판별·중복 검사·발송 제한·이전 코드 무효화를 검증하는 단위 테스트 (ADR-0003)
 package com.finplay.api.domain.auth.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -54,7 +53,6 @@ class EmailChangeServiceTest {
 	private static final String CURRENT_PASSWORD = "raw-current-password";
 	private static final String PASSWORD_HASH = "hashed-current-password";
 	private static final String REAUTH_TOKEN = "reauth-token-value";
-	// Clock.fixed로 고정한 기준 시각. 발송 제한 임계값(60초·1시간·하루)이 이 값 기준으로 계산된다.
 	private static final Instant FIXED_INSTANT = Instant.parse("2026-07-25T10:30:00Z");
 	private static final LocalDateTime NOW = LocalDateTime.ofInstant(FIXED_INSTANT, ZoneOffset.UTC);
 
@@ -278,12 +276,10 @@ class EmailChangeServiceTest {
 			.findByUserIdAndNewEmailAndConsumedAtIsNullAndExpiresAtAfter(USER_ID, NEW_EMAIL, NOW))
 			.thenReturn(List.of(previous));
 
-		// 만료 처리 전에는 아직 유효(만료 시각이 기준 시각 이후).
 		assertThat(previous.getExpiresAt()).isEqualTo(NOW.plusMinutes(3));
 
 		service.requestEmailChange(USER_ID, NEW_EMAIL, CURRENT_PASSWORD, null);
 
-		// expire(now)가 호출되어 만료 시각이 기준 시각으로 당겨진다 = 즉시 무효화.
 		assertThat(previous.getExpiresAt()).isEqualTo(NOW);
 	}
 
@@ -424,7 +420,6 @@ class EmailChangeServiceTest {
 		}
 	}
 
-	// 서비스의 private hmac(code)와 동일한 계산으로 테스트 픽스처의 codeHash를 만든다.
 	private static String hmac(String code) {
 		try {
 			Mac mac = Mac.getInstance("HmacSHA256");

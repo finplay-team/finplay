@@ -1,4 +1,3 @@
-// 관심목록 등록·조회·해제와 중복 등록 예외 변환의 성공·실패 분기를 검증하는 단위 테스트다.
 package com.finplay.api.domain.watchlist.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

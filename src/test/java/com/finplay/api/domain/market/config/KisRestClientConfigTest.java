@@ -1,5 +1,3 @@
-// kisRestClient() 빈이 RestClient.builder()를 직접 호출해 실제 로컬 HTTP 서버 응답을 Jackson 3으로
-// 정상 파싱하는지 검증한다 — 공유 RestClient.Builder DI로 되돌아가는 회귀를 잡는다 (PR #377 리뷰 2라운드 권장②).
 package com.finplay.api.domain.market.config;
 
 import static org.assertj.core.api.Assertions.assertThat;

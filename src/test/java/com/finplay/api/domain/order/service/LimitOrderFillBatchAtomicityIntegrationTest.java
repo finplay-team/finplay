@@ -1,6 +1,3 @@
-// ADR-0025의 핵심 결정 — 청크(batchSize) 하나가 트랜잭션 1개라는 것이 실제 DB 커밋·롤백 수준에서
-// 지켜지는지 증명하는 통합 테스트다. 목(mock) 기반 단위 테스트로는 @Transactional의 실제 롤백을 관찰할 수
-// 없어 Testcontainers로 검증한다(ADR-0003 "핵심 시나리오는 Testcontainers 통합 테스트").
 package com.finplay.api.domain.order.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -35,8 +32,6 @@ class LimitOrderFillBatchAtomicityIntegrationTest {
 
 	private static final LocalDateTime NOW = LocalDateTime.of(2026, 8, 13, 12, 0, 0);
 
-	// 실제 DB에 존재할 수 없는 id — findByIdForUpdate가 반드시 빈 Optional을 반환해 IllegalStateException을
-	// 던지게 만든다(LimitOrderFillService.fillOnePending).
 	private static final Long NONEXISTENT_ORDER_ID = Long.MAX_VALUE;
 
 	@Autowired
@@ -89,13 +84,10 @@ class LimitOrderFillBatchAtomicityIntegrationTest {
 		Long valid1 = createLimitOrder(user, instrument, limitPrice, quantity, "batch-fail-1");
 		Long valid2 = createLimitOrder(user, instrument, limitPrice, quantity, "batch-fail-2");
 
-		// valid1이 청크 안에서 먼저 처리돼(=이미 FILLED로 갱신됐지만 아직 커밋 전) 그다음 항목에서 실패한다.
 		assertThatThrownBy(() -> limitOrderFillService.fillBatch(List.of(valid1, NONEXISTENT_ORDER_ID, valid2)))
 			.isInstanceOf(IllegalStateException.class)
 			.hasMessageContaining("체결 대상 주문을 찾을 수 없습니다");
 
-		// 청크 전체가 롤백돼 valid1도 되돌아가 PENDING으로 남아야 한다 — "1건 실패해도 나머지엔 영향 없음"이
-		// 아니라 "청크 단위로 원자적"이라는 ADR-0025의 선택을 그대로 증명한다.
 		assertThat(orderRepository.findById(valid1).orElseThrow().getStatus()).isEqualTo(OrderStatus.PENDING);
 		assertThat(orderRepository.findById(valid2).orElseThrow().getStatus()).isEqualTo(OrderStatus.PENDING);
 	}

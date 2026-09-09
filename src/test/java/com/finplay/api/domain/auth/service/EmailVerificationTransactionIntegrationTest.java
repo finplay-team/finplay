@@ -1,4 +1,3 @@
-// 이메일 인증 실패 상태가 실제 MySQL 트랜잭션에서 커밋되는지를 검증하는 통합 테스트(ADR-0003)
 package com.finplay.api.domain.auth.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

@@ -1,4 +1,3 @@
-// 이슈 #420 회귀: 샘플 종목을 전량 매도한 뒤에도 관찰이 계속 저장되고 복기 완료까지 이어지는지 실제 MySQL로 검증하는 통합 테스트
 package com.finplay.api.domain.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -34,9 +33,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.transaction.annotation.Transactional;
 
-// PracticeAttemptCompletionFlowIntegrationTest와 같은 관례다 — 샘플 종목의 canonical 가격은 attempt seed에서
-// 순수 계산되므로 Redis를 쓰지 않고, JPA(MySQL) 쓰기는 클래스 @Transactional 롤백으로 정리된다(별도 @AfterEach
-// raw JdbcTemplate 정리가 필요한 경우는 트랜잭션 밖에서 도는 동시성 테스트뿐이다).
 @SpringBootTest
 @Import({TestcontainersConfiguration.class, TestClockConfig.class})
 @Transactional
@@ -72,10 +68,6 @@ class PracticeObservationAfterSellIntegrationTest {
 	@Autowired
 	private EntityManager entityManager;
 
-	/**
-	 * 이슈 #420: 매수 → (관찰 없이) 전량 시장가 매도 → 매도 이후 관찰 3회로 evidence B(3회 + 2분 범위) 충족 → 복기 저장으로 완료까지 이어지는지 검증한다.
-	 * 026 spec.md "비즈니스 규칙"이 관찰을 "holding이 존재하는 한 언제든 호출 가능하며 매도로 수량이 0이 되어도 계속 호출 가능"으로 못박았고 031 spec.md가 그 원칙을 그대로 상속하므로, 매도는 이 경로 어디에서도 차단 사유가 되어서는 안 된다.
-	 */
 	@Test
 	void observationsAfterFullSellStillSatisfyEvidenceAndCompleteTutorial() {
 		Fixture fixture = createFixture();
@@ -89,9 +81,6 @@ class PracticeObservationAfterSellIntegrationTest {
 			.findByAccountIdAndInstrumentId(fixture.accountId(), fixture.instrumentId())
 			.orElseThrow();
 
-		// 매수와 매도 사이에 관찰을 일부러 하나도 넣지 않는다 — 실제 사용자 흐름(매수 직후 자동 관찰 1회)과 다르지만, 그 관찰을 두면 evidence가 매도 전에 붙어버릴 수 있어 이 테스트가 회귀를 못 잡는다.
-		// attempt price seed가 userId에서 파생돼 실행마다 가격 계열이 달라지므로 매수 직후 관찰이 evidence A(경계 접근)를 바로 충족하는 실행이 실제로 나왔다(이 테스트의 최초 버전이 그 자리에서 flaky하게 실패했다).
-		// evidence가 오직 매도 이후에만 존재하는 상태를 만들어야 매도 이후 관찰을 배제하는 필터가 하나라도 되살아나면 반드시 깨진다 — 되돌리지 말 것.
 		clock.set(BASE_NOW.plusSeconds(12));
 		orderService.createOrder(fixture.userId(), idempotency("sell"),
 			marketOrder(fixture.instrumentId(), OrderSide.SELL, QUANTITY));
@@ -99,7 +88,6 @@ class PracticeObservationAfterSellIntegrationTest {
 		assertThat(soldOut.getId()).isEqualTo(holding.getId());
 		assertThat(soldOut.getQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
 
-		// 매도 이후 관찰 3회. 이 호출들이 409 PRACTICE_STEP_LOCKED로 막히면 이슈 #420 회귀다.
 		clock.set(BASE_NOW.plusSeconds(30));
 		observationService.createObservation(
 			fixture.userId(), new PracticeHoldingObservationCreateRequest(holding.getId()));
@@ -110,13 +98,11 @@ class PracticeObservationAfterSellIntegrationTest {
 		PracticeHoldingObservationResponse qualifying = observationService.createObservation(
 			fixture.userId(), new PracticeHoldingObservationCreateRequest(holding.getId()));
 
-		// 3회 + 최초~최종 2분 범위를 채웠으므로 evidence가 붙는다. 판정은 A를 먼저 보므로 seed에 따라 CLOSER_TO_BOUNDARY가 붙을 수 있고, A가 미충족이면 B(TIMED_REPETITION)가 반드시 붙는다 — 특정 값으로 못박지 않는다.
 		assertThat(qualifying.evidenceType()).isNotNull();
 		assertThat(observationRepository
 			.findByUserIdAndHoldingIdOrderByObservedAtAsc(fixture.userId(), holding.getId()))
 			.hasSize(3);
 
-		// 진행 조회의 3단계 evidence — InvestmentPracticeQueryService가 매도 이후 관찰을 배제하면 여기서 null이 되어 깨진다.
 		InvestmentPracticeResponse afterObservations = queryService.getProgress(fixture.userId(), MARKET);
 		assertThat(afterObservations.steps().get(2).status()).isEqualTo("COMPLETED");
 		PracticeEvidenceResponse observationEvidence = afterObservations.steps().get(2).evidence();
@@ -127,7 +113,6 @@ class PracticeObservationAfterSellIntegrationTest {
 		Account beforeReward = refreshedAccount(fixture.userId());
 		long cashBeforeReward = beforeReward.getCashBalance();
 
-		// 매도가 매수 체결 + 5분 안에 있었으므로 복기 저장이 완료를 확정해야 한다.
 		clock.set(BASE_NOW.plusSeconds(160));
 		reflectionService.createReflection(fixture.userId(),
 			new PracticeHoldingReflectionCreateRequest(holding.getId(), "전량 매도 뒤 관찰로 evidence를 채우고 복기합니다."));

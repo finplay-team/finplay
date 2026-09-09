@@ -1,4 +1,3 @@
-// 고정 Clock + Testcontainers로 코인 매도 회고의 KST 자정 게이트 전이를 실제 원장 위에서 검증한다.
 package com.finplay.api.domain.feedback.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -43,12 +42,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.transaction.annotation.Transactional;
 
-// tasks-275.md 4번 항목의 통합 몫이다 — 분기 케이스는 CryptoPostSellFeedbackReaderTest가 mock으로 보고,
-// 이 파일은 그 판정이 실제 컨텍스트의 Clock 빈·실제 원장 위에서도 같은지를 게이트 하나로 확인한다(ADR-0003 —
-// mock만으로 검증을 끝내지 않는다).
-//
-// 주식 게이트 테스트(PostSellFeedbackGateIntegrationTest)는 수정하지 않는다. 코인 게이트는 15:30 장 마감이
-// 아니라 KST 자정이고 기준도 "오늘"이 아니라 그 체결의 날짜라, 같은 파일에 두면 두 규칙이 섞여 읽힌다.
 @SpringBootTest
 @Transactional
 @Import({TestcontainersConfiguration.class, TestClockConfig.class})
@@ -61,7 +54,6 @@ class CryptoPostSellFeedbackGateIntegrationTest {
 	private static final LocalDateTime BUY_AT = LocalDateTime.of(SELL_DATE, LocalTime.of(9, 0));
 	private static final LocalDateTime SELL_AT = LocalDateTime.of(SELL_DATE, LocalTime.of(12, 0));
 
-	// §C-5 — 게이트는 (매도 체결 KST 날짜 + 1일) 00:00에 열린다.
 	private static final LocalDateTime GATE_OPENS_AT = SELL_DATE.plusDays(1).atStartOfDay();
 
 	private static final BigDecimal QUANTITY = new BigDecimal("10");
@@ -105,8 +97,6 @@ class CryptoPostSellFeedbackGateIntegrationTest {
 	@BeforeEach
 	void setUp() {
 		cryptoCandleProvider.reset();
-		// 매도일 일봉을 심어 둔다 — 게이트가 열린 뒤 값이 실제로 채워지는 것까지 봐야 "상태만 바뀌고 내용은 빈"
-		// 구현과 구분된다.
 		cryptoCandleProvider.setCandles(SYMBOL, CandleInterval.ONE_DAY, List.of(new CryptoCandleDto(
 			SELL_DATE.atStartOfDay(), new BigDecimal("69200"), new BigDecimal("71000"),
 			new BigDecimal("67000"), new BigDecimal("69200"), new BigDecimal("1.5"))));
@@ -119,7 +109,6 @@ class CryptoPostSellFeedbackGateIntegrationTest {
 	void opensAtTheNextMidnightAndStaysOpenOnLaterDays() {
 		Trade sellTrade = givenOwnCryptoSellTrade();
 
-		// 직전 — 매도 당일 23:59.
 		clock.set(GATE_OPENS_AT.minusMinutes(1));
 		PostSellFeedbackResponse beforeGate = read(sellTrade);
 		assertThat(beforeGate.postSellFlow().status()).isEqualTo(PostSellFeedbackStatus.NOT_YET);
@@ -127,7 +116,6 @@ class CryptoPostSellFeedbackGateIntegrationTest {
 		assertThat(beforeGate.counterfactuals().status()).isEqualTo(PostSellFeedbackStatus.NOT_YET);
 		assertThat(beforeGate.counterfactuals().atClose()).isNull();
 
-		// 직후 — 다음 날 00:00 정각.
 		clock.set(GATE_OPENS_AT);
 		PostSellFeedbackResponse atGate = read(sellTrade);
 		assertThat(atGate.postSellFlow().status()).isEqualTo(PostSellFeedbackStatus.READY);
@@ -137,7 +125,6 @@ class CryptoPostSellFeedbackGateIntegrationTest {
 		assertThat(atGate.counterfactuals().status()).isEqualTo(PostSellFeedbackStatus.READY);
 		assertThat(atGate.counterfactuals().atClose().price()).isEqualByComparingTo("69200");
 
-		// 이틀 뒤 — 기준이 "오늘 자정"이면 여기서 NOT_YET으로 되돌아간다.
 		clock.set(GATE_OPENS_AT.plusDays(2).plusHours(9));
 		PostSellFeedbackResponse daysLater = read(sellTrade);
 		assertThat(daysLater.postSellFlow().status())
@@ -146,8 +133,6 @@ class CryptoPostSellFeedbackGateIntegrationTest {
 		assertThat(daysLater.postSellFlow().closePrice()).isEqualByComparingTo("69200");
 		assertThat(daysLater.counterfactuals().status()).isEqualTo(PostSellFeedbackStatus.READY);
 	}
-
-	// --- 픽스처 ---
 
 	private PostSellFeedbackResponse read(Trade sellTrade) {
 		return postSellFeedbackReader.read(sellTrade.getAccount().getUser().getId(), sellTrade.getId());

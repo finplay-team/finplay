@@ -1,4 +1,3 @@
-// 시장별 보유 종목 목록 조회 서비스의 매핑·경계 케이스를 검증하는 단위 테스트다.
 package com.finplay.api.domain.portfolio.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -58,7 +57,6 @@ class HoldingServiceTest {
 			12_000L, 2_000L, BigDecimal.valueOf(0.2000));
 		HoldingValuationDto unavailableValuation = new HoldingValuationDto(
 			BigDecimal.ONE, BigDecimal.valueOf(500_000), 500_000L, PriceStatus.UNAVAILABLE, null, null, null, null);
-		// HoldingService.getHoldings는 배치 경로(evaluateHoldings)를 사용한다 (PR #97 리뷰 권장사항 배치화).
 		when(holdingValuationService.evaluateHoldings(List.of(availableHolding, unavailableHolding)))
 			.thenReturn(List.of(availableValuation, unavailableValuation));
 
@@ -125,9 +123,6 @@ class HoldingServiceTest {
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode()).isEqualTo(ErrorCode.NOT_FOUND));
 	}
 
-	// 아래는 026-market-order-practice-tutorial 2단계 chain 해석이 쓰는 findHoldingId(owner·instrument 일치
-	// holding id만 반환, market.domain.Market -> account.domain.Market 변환)를 검증한다.
-
 	@Test
 	void findHoldingIdReturnsHoldingIdWhenOwnerAndInstrumentMatch() {
 		AccountService accountService = mock(AccountService.class);
@@ -193,9 +188,6 @@ class HoldingServiceTest {
 		org.mockito.Mockito.verify(accountService).getAccountFor(1L, Market.CRYPTO);
 		org.mockito.Mockito.verify(accountService, org.mockito.Mockito.never()).getAccountFor(1L, Market.STOCK);
 	}
-
-	// 아래는 026-market-order-practice-tutorial 3단계 관찰 API가 쓰는 findHoldingForOwner(holdingId로 조회하되
-	// 계좌 소유자가 본인이 아니면 존재를 숨겨 빈 값을 반환)를 검증한다.
 
 	@Test
 	void findHoldingForOwnerReturnsHoldingWhenOwnerMatches() {

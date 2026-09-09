@@ -1,4 +1,3 @@
-// 사용자·시장별 튜토리얼 계좌 조회·잠금·유일성 제약을 실제 MySQL에서 검증하는 JPA 슬라이스 테스트다.
 package com.finplay.api.domain.account.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;

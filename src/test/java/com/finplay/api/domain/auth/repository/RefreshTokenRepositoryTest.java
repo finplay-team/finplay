@@ -1,4 +1,3 @@
-// Refresh Token 해시 조회와 활성 토큰의 원자적 단일 폐기를 실제 MySQL로 검증하는 슬라이스 테스트다.
 package com.finplay.api.domain.auth.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -106,7 +105,6 @@ class RefreshTokenRepositoryTest {
 		ReflectionTestUtils.setField(alreadyRevoked, "revokedAt", NOW.minusHours(1));
 		refreshTokenRepository.save(alreadyRevoked);
 
-		// 이미 만료됐지만 아직 폐기되지 않은 토큰 — 만료 여부는 조건이 아니므로 폐기 대상에 포함되어야 한다.
 		RefreshToken expiredNotRevoked = refreshTokenRepository.save(
 			RefreshToken.create(user, sha256("bulk-expired-not-revoked"), NOW.minusDays(1), NOW.minusDays(15)));
 

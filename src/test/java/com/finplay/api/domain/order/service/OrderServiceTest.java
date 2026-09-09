@@ -1,4 +1,3 @@
-// OrderService의 멱등성 오케스트레이션(createOrder)과 내 주문 목록 조회(getMyOrders) 매핑을 검증하는 단위 테스트다.
 package com.finplay.api.domain.order.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -183,7 +182,6 @@ class OrderServiceTest {
 
 	@Test
 	void createOrderRethrowsUnrelatedUniqueConstraintViolationWithoutMaskingItAsIdempotencyConflict() {
-		// PR #93 리뷰 권장사항: holdings 등 다른 유니크 제약 위반까지 멱등키 충돌로 잘못 판단하면 안 된다.
 		when(orderRepository.findByUserIdAndIdempotencyKey(USER_ID, IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
 		DataIntegrityViolationException holdingsConstraintViolation = new DataIntegrityViolationException(
 			"Duplicate entry '10-42' for key 'holdings.uk_holdings_account_instrument'");
@@ -193,11 +191,9 @@ class OrderServiceTest {
 		assertThatThrownBy(() -> orderService.createOrder(USER_ID, IDEMPOTENCY_KEY, sampleRequest()))
 			.isSameAs(holdingsConstraintViolation);
 
-		// 원인이 다른 제약이므로 재조회(멱등키 폴백)를 시도하지 않는다 — findByUserIdAndIdempotencyKey는 선제 조회 1회만 호출됨.
 		verify(orderRepository, times(1)).findByUserIdAndIdempotencyKey(USER_ID, IDEMPOTENCY_KEY);
 	}
 
-	// ADR-0028 — 데드락 1회 재시도(PR #514 리뷰 권장사항 1번).
 	@Test
 	void createOrderRetriesOnceAndReturnsResultWhenDeadlockThenSucceeds() {
 		when(orderRepository.findByUserIdAndIdempotencyKey(USER_ID, IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
@@ -240,8 +236,6 @@ class OrderServiceTest {
 
 		assertThat(logs).hasSize(2);
 		assertThat(logs.get(0).getLevel()).isEqualTo(Level.WARN);
-		// 이슈 #542 완료 조건 1번(userId·idempotencyKey를 포함해 log.error로 남긴다)을 메시지 문구뿐
-		// 아니라 실제 인자값과 첨부된 예외까지 확인한다 — 인자를 빼먹어도 문구만 보는 검증은 통과하기 때문이다.
 		assertThat(logs.get(1)).satisfies(event -> {
 			assertThat(event.getLevel()).isEqualTo(Level.ERROR);
 			assertThat(event.getFormattedMessage())
@@ -254,10 +248,6 @@ class OrderServiceTest {
 		});
 	}
 
-	// PR #514 리뷰 권장사항 2번 — 재시도 호출도 원래 catch(DataIntegrityViolationException)와 같은 멱등키
-	// 충돌 폴백을 타야 한다. 이 테스트는 executeWithIdempotencyFallback으로 재시도 호출을 감싸기 전에는
-	// 실패했다(재시도에서 던진 DataIntegrityViolationException이 그대로 전파돼 IDEMPOTENCY_CONFLICT
-	// 대신 원인 예외가 노출됨).
 	@Test
 	void createOrderFallsBackToReplayWhenRetryAfterDeadlockHitsIdempotencyConflict() {
 		Instrument instrument = stockInstrument();
@@ -389,7 +379,6 @@ class OrderServiceTest {
 			USER_ID, Market.STOCK, null, limit);
 
 		assertThat(response.hasNext()).isTrue();
-		// 다음 페이지 있음(3건 조회) 시 nextCursor는 반환 페이지(limit=2건)의 마지막 항목인 order2 기준이어야 한다 — 초과 조회된 order3 기준이면 버그.
 		assertThat(response.nextCursor()).isEqualTo(OrderCursor.encode(order2));
 		assertThat(response.content()).hasSize(2);
 	}
@@ -477,7 +466,6 @@ class OrderServiceTest {
 
 		orderService.getMyPendingOrders(USER_ID, Market.CRYPTO, null, 20);
 
-		// PENDING 고정 필터로 리포지토리가 호출됐는지 검증 — 다른 상태값이 전달되면 목록에 체결·취소 주문이 섞인다.
 		verify(orderRepository).findByAccountIdAndStatusWithCursor(10L, OrderStatus.PENDING, null, null, 21);
 	}
 
@@ -518,7 +506,6 @@ class OrderServiceTest {
 			USER_ID, Market.CRYPTO, null, limit);
 
 		assertThat(response.hasNext()).isTrue();
-		// 다음 페이지 있음(3건 조회) 시 nextCursor는 반환 페이지(limit=2건)의 마지막 항목인 order2 기준이어야 한다.
 		assertThat(response.nextCursor()).isEqualTo(OrderCursor.encode(order2));
 		assertThat(response.content()).hasSize(2);
 	}
@@ -555,7 +542,6 @@ class OrderServiceTest {
 			.findByAccountIdAndStatusWithCursor(any(), any(), any(), any(), anyInt());
 	}
 
-	// 043 — getPracticeRunOrders(attempt 전용 조회)의 매핑·빈 결과 검증.
 	@Test
 	void getPracticeRunOrdersMapsRepositoryOrdersToOrderListItemResponseFields() {
 		Instrument instrument = cryptoInstrument();
@@ -655,7 +641,6 @@ class OrderServiceTest {
 		return new OrderCreateRequest(Market.STOCK, 42L, OrderSide.BUY, "MARKET", new BigDecimal("3"));
 	}
 
-	// OrderService.calculateRequestHash(private)와 동일한 형식·알고리즘으로 테스트용 해시를 재현한다.
 	private static String requestHashOf(OrderCreateRequest request) {
 		String raw = "%s:%d:%s:%s:%s".formatted(
 			request.market().name(),

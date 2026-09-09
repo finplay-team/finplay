@@ -1,4 +1,3 @@
-// 저작된 CRYPTO 대본이 041 plan의 구간 배분·극값·사건 배치를 만족하는지 파일을 읽어 판정한다.
 package com.finplay.api.domain.market.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -9,10 +8,6 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
-// 이 테스트는 대본 자체의 성질만 본다 — 구간 배분·극값·사건 배치·무귀속 분 비율이다.
-// 프리셋 손절·익절선이 걸린 도달 부등식은 042가 프리셋을 상수로 확정하면서
-// ExitPresetScenarioReachabilityTest로 옮겼다(tasks §교차 순서 4번). 같은 조건을 두 곳에서 검사하지 않으며,
-// 그쪽이 여기서 정한 극값(예: 2막 루머 저점)을 대본에서 읽어 판정한다.
 class TutorialScenarioScriptIntegrityTest {
 
 	private final TutorialScenarioScript script = new TutorialScenarioScriptLoader(new ObjectMapper())
@@ -70,8 +65,6 @@ class TutorialScenarioScriptIntegrityTest {
 		assertThat(script.events())
 			.extracting(TutorialScenarioEvent::stageId)
 			.doesNotContain("ACT2_FAKEOUT", "IDLE_ENTRY", "IDLE_REENTRY");
-		// SCENARIO-006c — 대표 경로가 구간을 다 지나기 전에 공개 시점이 와야 한다. 배율은 도달 부등식이
-		// 잠그고 있으므로 이 조건은 영향 시작 시점과 공개 지연으로만 맞춘다.
 		assertThat(script.events()).allSatisfy(event -> assertThat(event.revealMinute())
 			.as("%s 공개 시점", event.stageId())
 			.isLessThan(script.stage(event.stageId()).minutes()));

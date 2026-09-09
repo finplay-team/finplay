@@ -1,4 +1,3 @@
-// OAuth 공급자 이름 해석과 공급자별 인가 URI 계약을 검증한다.
 package com.finplay.api.domain.auth.oauth.provider;
 
 import static org.assertj.core.api.Assertions.assertThat;

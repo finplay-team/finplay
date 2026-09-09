@@ -1,4 +1,3 @@
-// NarrativeValidator의 금지 표현 37개와 파트별 비대칭 적용이 spec §후검증 표와 일치하는지 검증하는 단위 테스트.
 package com.finplay.api.domain.feedback.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -14,16 +13,8 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
-/**
- * 아래 다섯 목록은 spec §후검증 표를 <b>그대로 옮긴 것</b>이며 구현의 private 목록을 읽어 온 것이 아니다.
- * 이 중복이 곧 검증 수단이다 — 구현이 표에서 하나라도 빠지거나 늘어나면 여기서 갈린다.
- *
- * <p>통과·차단의 경계 자체가 완료 조건이라(§완료 조건 §문구) 목록을 넓히지도 좁히지도 않는다.
- * 어간으로 일반화하면(`매도하(세요)?`) "매도했습니다 통과"가 곧바로 깨진다.
- */
 class NarrativeValidatorTest {
 
-	// spec §후검증 표의 다섯 줄. 줄 순서·줄 안의 표현 순서까지 표 그대로다 — 적발 목록의 순서가 이 순서를 따른다.
 	private static final List<String> CAUSATION = List.of("때문에", "영향으로", "여파로", "덕분에", "로 인해", "탓에");
 
 	private static final List<String> RECOMMENDATION = List.of("매수하세요", "매도하세요", "사야", "팔아야", "추천", "주목할", "유망",
@@ -36,13 +27,11 @@ class NarrativeValidatorTest {
 	private static final List<String> JUDGEMENT = List.of("버티", "놓치", "실수", "잘못", "다행", "기회를", "았다면", "었다면", "였다면",
 		"했다면", "렸다면");
 
-	// 요약·브리핑에 적용하는 4줄 (26개)과 카드·매도 회고에 적용하는 5줄 (37개).
 	private static final List<String> FOUR_RULES = Stream.of(CAUSATION, RECOMMENDATION, PREDICTION, ADVICE)
 		.flatMap(List::stream).toList();
 
 	private static final List<String> FIVE_RULES = Stream.of(FOUR_RULES, JUDGEMENT).flatMap(List::stream).toList();
 
-	// 금지 표현이 하나도 없는 운반 문장. 표현을 이 문장에 끼워 넣어 한 개씩 격리 검사한다.
 	private static final String CARRIER_PREFIX = "이 서술에는 ";
 
 	private static final String CARRIER_SUFFIX = " 라는 대목이 있습니다.";
@@ -55,8 +44,6 @@ class NarrativeValidatorTest {
 			JUDGEMENT.stream().map(expression -> Arguments.of(expression, true)));
 	}
 
-	// ---------- 확인 1: 37개 전수 대조 ----------
-
 	@Test
 	@DisplayName("spec §후검증 표가 5줄 37개이고 줄별 개수가 6·8·7·5·11이다")
 	void specTableHasThirtySevenExpressions() {
@@ -64,8 +51,6 @@ class NarrativeValidatorTest {
 		assertThat(RECOMMENDATION).hasSize(8);
 		assertThat(PREDICTION).hasSize(7);
 		assertThat(ADVICE).hasSize(5);
-		// 가정법 어미가 셋에서 다섯으로 늘었다 — `했다면`·`렸다면`이 빠져 있어 spec 자신의 예시를
-		// 못 잡던 모순을 메웠다 (spec §후검증, 2026-08-03).
 		assertThat(JUDGEMENT).hasSize(11);
 		assertThat(FIVE_RULES).hasSize(37).doesNotHaveDuplicates();
 		assertThat(FOUR_RULES).hasSize(26);
@@ -78,7 +63,6 @@ class NarrativeValidatorTest {
 
 		NarrativeValidationDto result = validator.validateCardOrPostSell(narrative);
 
-		// 하나가 빠지면 개수에서, 다른 것으로 바뀌면 내용에서, 목록 순서가 흐트러지면 순서에서 갈린다.
 		assertThat(result.detectedExpressions()).containsExactlyElementsOf(FIVE_RULES);
 		assertThat(result.passed()).isFalse();
 	}
@@ -106,8 +90,6 @@ class NarrativeValidatorTest {
 		assertThat(result.passed()).isFalse();
 	}
 
-	// ---------- 확인 2: 파트별 비대칭 ----------
-
 	@ParameterizedTest(name = "[{0}] 판단·훈수={1}")
 	@MethodSource("everyForbiddenExpression")
 	@DisplayName("판단·훈수 11개만 요약에서 통과하고 나머지 26개는 요약에서도 적발된다")
@@ -117,7 +99,6 @@ class NarrativeValidatorTest {
 		NarrativeValidationDto result = validator.validateSummaryOrBriefing(narrative);
 
 		if (judgement) {
-			// 요약에는 템플릿이 없어 걸리면 기능이 통째로 사라진다 — 그래서 이 11개는 요약에서 통과해야 한다.
 			assertThat(result.passed()).as("요약에서 통과해야 한다: %s", expression).isTrue();
 		} else {
 			assertThat(result.detectedExpressions()).as("요약에서도 적발돼야 한다: %s", expression).contains(expression);
@@ -133,12 +114,9 @@ class NarrativeValidatorTest {
 		assertThat(validator.validateSummaryOrBriefing(carrier).passed()).isTrue();
 	}
 
-	// ---------- 확인 3: 적발 목록의 내용과 순서 ----------
-
 	@Test
 	@DisplayName("여러 표현이 걸리면 등장 순서가 아니라 §후검증 표 순서로 담긴다")
 	void detectedExpressionsFollowTableOrderNotAppearanceOrder() {
-		// 등장 순서는 버티 → 기대됩니다 → 때문에 (표 순서의 역순)다.
 		String narrative = "버티는 모습이었습니다. 기대됩니다. 실적 때문에 움직였습니다.";
 
 		NarrativeValidationDto result = validator.validateCardOrPostSell(narrative);
@@ -165,7 +143,6 @@ class NarrativeValidatorTest {
 	void nestedExpressionsAreBothReported() {
 		NarrativeValidationDto result = validator.validateSummaryOrBriefing("지금 매수하세요.");
 
-		// 6번의 재생성 프롬프트가 이 목록을 그대로 쓴다. 하나로 뭉뚱그리면 모델에게 주는 정보가 줄어든다.
 		assertThat(result.detectedExpressions()).containsExactly("매수하세요", "하세요");
 	}
 
@@ -177,14 +154,11 @@ class NarrativeValidatorTest {
 		assertThat(result.detectedExpressions()).isUnmodifiable();
 	}
 
-	// ---------- 확인 4: §완료 조건 §문구 1~5번째 ----------
-
 	@Test
 	@DisplayName("문구 1 — 금지 표현 5줄이 §후검증 파트별 적용 표대로 동작한다")
 	void condition1PartTableIsApplied() {
 		String judgementOnly = "그 뒤에도 계속 버티는 흐름이었습니다.";
 
-		// 카드·매도 회고는 5줄 전부, 요약·브리핑은 판단·훈수를 뺀 4줄.
 		assertThat(validator.validateCardOrPostSell(judgementOnly).detectedExpressions()).containsExactly("버티");
 		assertThat(validator.validateSummaryOrBriefing(judgementOnly).passed()).isTrue();
 	}
@@ -207,7 +181,6 @@ class NarrativeValidatorTest {
 		String narrative = "여러 기업이 신규 사업 기회를 언급한 기사들이 있었습니다.";
 
 		assertThat(validator.validateSummaryOrBriefing(narrative).passed()).isTrue();
-		// 같은 문장이 카드에서는 걸린다 — 이 차이가 이 항목의 핵심이다.
 		assertThat(validator.validateCardOrPostSell(narrative).detectedExpressions()).containsExactly("기회를");
 	}
 
@@ -218,7 +191,6 @@ class NarrativeValidatorTest {
 
 		NarrativeValidationDto result = validator.validateSummaryOrBriefing(narrative);
 
-		// C-004의 "조언하지 않는다"가 요약에서 사라지면 안 된다.
 		assertThat(result.passed()).isFalse();
 		assertThat(result.detectedExpressions()).containsExactly("하세요");
 	}
@@ -230,7 +202,6 @@ class NarrativeValidatorTest {
 		"09:32부터 5분간 2.10% 상승했습니다. 같은 시간대에 기사 2건이 있었습니다."})
 	@DisplayName("문구 5 — \"매도했습니다\" 같은 서술형과 템플릿 문장은 양쪽 파트에서 모두 통과한다")
 	void condition5PlainNarrationPasses(String narrative) {
-		// 템플릿 문장이 후검증에 걸리면 폴백 자체가 성립하지 않는다 (§템플릿 문장).
 		assertThat(validator.validateCardOrPostSell(narrative).passed()).isTrue();
 		assertThat(validator.validateSummaryOrBriefing(narrative).passed()).isTrue();
 	}
@@ -241,8 +212,6 @@ class NarrativeValidatorTest {
 	void verbStemsAreNotGeneralized(String narration) {
 		assertThat(validator.validateCardOrPostSell(narration).passed()).isTrue();
 	}
-
-	// ---------- 목록을 넓히지 않았는지 (근접 표현은 통과) ----------
 
 	@ParameterizedTest
 	@ValueSource(strings = {
@@ -257,19 +226,12 @@ class NarrativeValidatorTest {
 		assertThat(validator.validateCardOrPostSell(narrative).passed()).isTrue();
 	}
 
-	// ---------- 가정법 어미: spec 모순을 메운 뒤의 동작 ----------
-
 	@ParameterizedTest
 	@ValueSource(strings = {"더 기다렸다면 달랐을 수 있습니다", "그대로 보유했다면 어땠을지 모릅니다"})
 	@DisplayName("spec 자신의 예시인 \"기다렸다면\"·\"보유했다면\"이 이제 매도 회고에서 적발된다")
 	void previouslyEscapingConditionalEndingsAreNowCaught(String narrative) {
-		// 이 테스트는 원래 "지금은 통과한다"를 문서화하던 자리였다. spec §후검증 목록에 `했다면`·`렸다면`을
-		// 추가하면서 뒤집었다 — 목록에 `았다면`·`었다면`·`였다면`만 있던 동안은 초성이 달라(렸·했) 부분
-		// 문자열로 겹치지 않아 빠져나갔고, spec 본문과 api-contracts 문구 제약이 둘 다 "더 기다렸다면"을
-		// 막아야 할 대표 예로 드는 것과 어긋났다.
 		assertThat(validator.validateCardOrPostSell(narrative).passed()).isFalse();
 
-		// 요약·브리핑에는 판단·훈수를 적용하지 않으므로 여전히 통과한다 — 비대칭은 그대로다.
 		assertThat(validator.validateSummaryOrBriefing(narrative).passed()).isTrue();
 	}
 
@@ -288,8 +250,6 @@ class NarrativeValidatorTest {
 		assertThat(validator.validateCardOrPostSell(narration).passed()).isTrue();
 	}
 
-	// ---------- 빈 서술과 열거형 ----------
-
 	@ParameterizedTest
 	@NullSource
 	@ValueSource(strings = {"", "   ", "\n\t "})
@@ -302,7 +262,6 @@ class NarrativeValidatorTest {
 	@Test
 	@DisplayName("NarrativeSource는 §C-4 표기 그대로 LLM·TEMPLATE·NONE 셋이다")
 	void narrativeSourceKeepsSpecNames() {
-		// #2가 @Enumerated(STRING)으로 재사용하므로 이름을 바꾸면 저장된 문자열과 어긋난다 (§C-8).
 		assertThat(NarrativeSource.values())
 			.extracting(Enum::name)
 			.containsExactly("LLM", "TEMPLATE", "NONE");

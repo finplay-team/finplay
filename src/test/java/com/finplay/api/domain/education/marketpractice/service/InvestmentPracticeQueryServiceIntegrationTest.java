@@ -1,6 +1,3 @@
-// 미착수 -> 즐겨찾기만 -> chain 완결(관찰 전) -> 관찰(evidence 충족) -> 복기 완료까지 실제로 진행시키며 각
-// 단계에서 GET /api/education/practice 판정표(spec.md, api-contracts.md "실습 진행 조회 (market 기준)")와
-// 일치하는 응답을 받는지 실제 MySQL 트랜잭션으로 검증하는 통합 테스트다.
 package com.finplay.api.domain.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -107,7 +104,6 @@ class InvestmentPracticeQueryServiceIntegrationTest {
 		priceStore.saveConnectionStatus(FeedConnectionStatus.CONNECTED);
 		priceStore.saveTick(symbol, ENTRY_PRICE, BASE_NOW);
 
-		// 1) favorite도 없음 -> NOT_STARTED, currentStep=1.
 		InvestmentPracticeResponse notStarted = investmentPracticeQueryService.getProgress(
 			user.getId(), Market.CRYPTO);
 		assertThat(notStarted.status()).isEqualTo("NOT_STARTED");
@@ -118,7 +114,6 @@ class InvestmentPracticeQueryServiceIntegrationTest {
 		assertThat(notStarted.steps().get(1).locked()).isTrue();
 		assertThat(notStarted.steps().get(2).locked()).isTrue();
 
-		// 2) favorite만 있음 -> IN_PROGRESS, currentStep=2.
 		favoriteService.createFavorite(user.getId(), instrument.getId());
 		InvestmentPracticeResponse favoriteOnly = investmentPracticeQueryService.getProgress(
 			user.getId(), Market.CRYPTO);
@@ -133,7 +128,6 @@ class InvestmentPracticeQueryServiceIntegrationTest {
 		assertThat(favoriteOnly.steps().get(2).status()).isEqualTo("NOT_STARTED");
 		assertThat(favoriteOnly.steps().get(2).locked()).isTrue();
 
-		// 3) chain 완결(관찰 전) -> IN_PROGRESS, currentStep=3, 3단계 observation 필드만 null.
 		clock.set(BASE_NOW.plusSeconds(1));
 		practiceIntentionService.createIntention(user.getId(),
 			new PracticeIntentionCreateRequest(instrument.getId(), QUANTITY, STOP_LOSS, TAKE_PROFIT));
@@ -163,7 +157,6 @@ class InvestmentPracticeQueryServiceIntegrationTest {
 		assertThat(step3NoObs.evidence().observationId()).isNull();
 		assertThat(step3NoObs.evidence().evidenceType()).isNull();
 
-		// 4) qualifying observation 생성 -> IN_PROGRESS, currentStep=3, 3단계 observation 필드까지 채워짐.
 		priceStore.saveTick(symbol, new BigDecimal("95000"), BASE_NOW.plusMinutes(1));
 		practiceHoldingObservationService.createObservation(
 			user.getId(), new PracticeHoldingObservationCreateRequest(holding.getId()));
@@ -178,7 +171,6 @@ class InvestmentPracticeQueryServiceIntegrationTest {
 		assertThat(step3WithObs.evidence().evidenceType()).isEqualTo("CLOSER_TO_BOUNDARY");
 		assertThat(step3WithObs.evidence().reflectionId()).isNull();
 
-		// 5) 복기 저장 -> COMPLETED, currentStep=null, 1·2·3단계 전부 COMPLETED, evidence 공유.
 		practiceHoldingReflectionService.createReflection(user.getId(),
 			new PracticeHoldingReflectionCreateRequest(holding.getId(), "손절 라인 근처였지만 계획대로 유지했다."));
 
@@ -199,9 +191,6 @@ class InvestmentPracticeQueryServiceIntegrationTest {
 			assertThat(step.evidence().reflectionId()).isNotNull();
 		}
 
-		// 6) 완료 후 favorite를 삭제해도 COMPLETED가 유지된다 — favorite·intention·buyTrade 필드만 null이
-		// 되고 holdingId·observation·reflection은 그대로 유지된다(재시작 유실과 동일한 경로, spec.md
-		// "재시작 유실과 완료 불변").
 		favoriteService.deleteFavorite(user.getId(), instrument.getId());
 
 		InvestmentPracticeResponse completedAfterFavoriteDeleted = investmentPracticeQueryService.getProgress(
@@ -219,9 +208,6 @@ class InvestmentPracticeQueryServiceIntegrationTest {
 
 	@Test
 	void getProgressReflectsChainResolutionQualifyingObservationPriorityAmongTwoCompletedChains() {
-		// MarketPracticeChainResolutionService.resolve()의 qualifying-observation 우선순위가 실제 GET 응답에
-		// 반영되는지 확인한다: chainA는 buyTradeExecutedAt이 더 이르지만 관찰이 없고, chainB는 더 늦지만
-		// qualifying observation이 있다 — resolve()는 chainB를 최우선으로 골라야 한다.
 		User user = userRepository.saveAndFlush(
 			User.create(uniqueEmail("priority"), "password-hash", uniqueNickname("priority"), BASE_NOW));
 		Account account = accountRepository.saveAndFlush(
@@ -230,7 +216,6 @@ class InvestmentPracticeQueryServiceIntegrationTest {
 		ChainFixture chainA = buildFilledChainAndHolding(user, account, "prio-a", 0);
 		ChainFixture chainB = buildFilledChainAndHolding(user, account, "prio-b", 10);
 
-		// chainB의 holding에만 qualifying observation을 만든다.
 		priceStore.saveTick(chainB.symbol(), new BigDecimal("95000"), BASE_NOW.plusSeconds(20));
 		practiceHoldingObservationService.createObservation(
 			user.getId(), new PracticeHoldingObservationCreateRequest(chainB.holdingId()));
@@ -242,7 +227,6 @@ class InvestmentPracticeQueryServiceIntegrationTest {
 		assertThat(response.currentStep()).isEqualTo(3);
 		PracticeStepResponse step2 = response.steps().get(1);
 		PracticeStepResponse step3 = response.steps().get(2);
-		// chainA(더 이른 buyTradeExecutedAt)가 아니라 chainB(qualifying observation 보유)의 holding이 선택된다.
 		assertThat(step2.evidence().holdingId()).isEqualTo(chainB.holdingId());
 		assertThat(step2.evidence().holdingId()).isNotEqualTo(chainA.holdingId());
 		assertThat(step3.evidence().observationId()).isNotNull();
@@ -252,11 +236,6 @@ class InvestmentPracticeQueryServiceIntegrationTest {
 	private record ChainFixture(Long holdingId, String symbol) {
 	}
 
-	/**
-	 * favorite -> intention(절대 가격 손절·익절) -> 코인 시장가 매수 FILLED -> holding 순으로 chain을 완성한다.
-	 * PracticeHoldingObservationIntegrationTest의 다중 chain 픽스처 패턴과 동일하게 baseOffsetSeconds로 chain마다
-	 * 시각을 겹치지 않게 벌린다.
-	 */
 	private ChainFixture buildFilledChainAndHolding(
 		User user, Account account, String scenario, long baseOffsetSeconds) {
 		String symbol = "PRI" + shortRandom();

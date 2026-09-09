@@ -1,4 +1,3 @@
-// 계좌별 활성 보유 조회 쿼리 메서드를 검증하는 슬라이스 테스트 (ai/specs/006-portfolio-query, 이슈 #81)
 package com.finplay.api.domain.portfolio.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -128,7 +127,6 @@ class HoldingRepositoryTest {
 		Instrument symbolA = instrumentRepository.saveAndFlush(
 			Instrument.create(Market.STOCK, "TESTA", "테스트종목A", BigDecimal.valueOf(100), 10_000L, true, NOW));
 
-		// 삽입 순서를 심볼 오름차순과 반대로 만든다: TEST01(instrument, setUp) > TESTC > TESTA.
 		Holding holdingC = Holding.create(ownerAccount, symbolC, NOW);
 		holdingC.applyBuy(BigDecimal.TEN, new BigDecimal("50000"), NOW);
 		holdingRepository.saveAndFlush(holdingC);

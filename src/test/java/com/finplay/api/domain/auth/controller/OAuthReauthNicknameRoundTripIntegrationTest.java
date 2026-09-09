@@ -1,4 +1,3 @@
-// Fake OAuth 재인증 인가→콜백 302→reauth-exchange→닉네임 변경까지 전체 왕복을 실제 MySQL·HTTP로 검증한다.
 package com.finplay.api.domain.auth.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -72,7 +71,6 @@ class OAuthReauthNicknameRoundTripIntegrationTest {
 			SocialAccount.create(user, OAuthProviderName.KAKAO, FAKE_PROVIDER_USER_ID, now));
 		String accessToken = jwtTokenProvider.issue(user.getId(), user.getRole()).accessToken();
 
-		// 1. 인가 시작 — REAUTH purpose는 인증된 사용자만 부를 수 있다.
 		MvcResult authorizeResult = mockMvc.perform(get("/api/auth/oauth/kakao/authorize")
 			.param("purpose", "reauth")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
@@ -82,7 +80,6 @@ class OAuthReauthNicknameRoundTripIntegrationTest {
 		String authorizationUri = JsonPath.read(
 			authorizeResult.getResponse().getContentAsString(), "$.authorizationUri");
 
-		// Fake 인가 URI 자체가 이미 code·state를 실은 콜백 주소다(FakeOAuthAuthorizationProvider).
 		MvcResult callbackResult = mockMvc.perform(get(URI.create(authorizationUri)))
 			.andExpect(status().isFound())
 			.andExpect(header().string(HttpHeaders.LOCATION,
@@ -91,7 +88,6 @@ class OAuthReauthNicknameRoundTripIntegrationTest {
 		String exchangeCode = extractQueryParam(
 			callbackResult.getResponse().getHeader(HttpHeaders.LOCATION), "code");
 
-		// 3. 콜백이 실어 보낸 1회용 교환 코드를 실제 reauthToken으로 바꾼다.
 		MvcResult exchangeResult = mockMvc.perform(post("/api/auth/oauth/reauth-exchange")
 			.contentType(MediaType.APPLICATION_JSON)
 			.content("{\"code\":\"" + exchangeCode + "\"}"))
@@ -101,7 +97,6 @@ class OAuthReauthNicknameRoundTripIntegrationTest {
 		String reauthToken = JsonPath.read(
 			exchangeResult.getResponse().getContentAsString(), "$.reauthToken");
 
-		// 4. 그 reauthToken으로 닉네임을 바꾼다.
 		String newNickname = uniqueNickname();
 		mockMvc.perform(patch("/api/auth/me/nickname")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)

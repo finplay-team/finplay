@@ -1,4 +1,3 @@
-// V35가 만든 세 테이블의 컬럼 타입·NULL 허용 여부와 unique·FK 구성을 information_schema로 직접 대조하는 슬라이스 테스트다.
 package com.finplay.api.domain.order.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -15,14 +14,6 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-/**
- * <b>왜 엔티티가 아니라 스키마를 보는가.</b> {@code ddl-auto=validate}는 컬럼 존재와 타입만 검사하고 NULL 허용 여부,
- * DECIMAL 정밀도, unique·FK 구성은 보지 않는다. 이 클래스가 021 plan.md "데이터 모델" 표를 물리 스키마에 고정한다.
- * (엔티티 ↔ V35 정합성 자체는 이 테스트 컨텍스트가 {@code validate}로 기동하는 것으로 확인된다 — 매핑이 어긋나면
- * 컨텍스트 로딩 단계에서 실패한다.)
- *
- * <p>컬럼이 조용히 추가·변경되면 먼저 깨지도록 <b>맵 전체를 비교</b>한다.
- */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import(TestcontainersConfiguration.class)
@@ -120,10 +111,6 @@ class ExitPlanSchemaConstraintsTest {
 	}
 
 	@Test
-	// 클래스 javadoc이 선언한 대로 맵 전체를 비교한다 — 여분 인덱스가 조용히 생기는 것까지 잡는다.
-	// idx_exit_plans_practice_attempt_run_status는 042 6번의 "현재 실행 세대의 PENDING 예약" 조회용이고,
-	// 선두 컬럼이 practice_attempt_id라 fk_exit_plans_practice_attempt가 이 인덱스를 그대로 쓴다. FK 이름의
-	// 단일 컬럼 인덱스가 목록에 없는 것이 인덱스를 FK보다 먼저 만든 이유다(다른 FK 넷에는 그 인덱스가 있다).
 	@DisplayName("exit_plans의 인덱스 구성이 확정 스키마와 일치한다 — 튜토리얼 귀속 FK는 복합 인덱스를 재사용한다")
 	void exitPlansIndexesMatchPlannedLookups() {
 		assertThat(allIndexesOf("exit_plans")).isEqualTo(expected(
@@ -172,7 +159,6 @@ class ExitPlanSchemaConstraintsTest {
 			"exit_plan_id", "exit_plans"));
 	}
 
-	/** 컬럼명 → {@code IS_NULLABLE}("NO"면 NOT NULL). */
 	private Map<String, String> nullabilityOf(String table) {
 		Map<String, String> columns = new LinkedHashMap<>();
 		jdbcTemplate.query(
@@ -185,7 +171,6 @@ class ExitPlanSchemaConstraintsTest {
 		return columns;
 	}
 
-	/** 컬럼명 → {@code COLUMN_TYPE}(예 {@code decimal(18,8)}). */
 	private Map<String, String> columnTypesOf(String table) {
 		Map<String, String> columns = new LinkedHashMap<>();
 		jdbcTemplate.query(
@@ -198,12 +183,10 @@ class ExitPlanSchemaConstraintsTest {
 		return columns;
 	}
 
-	/** unique 인덱스명 → 컬럼 목록(순서 유지). */
 	private Map<String, String> uniqueIndexesOf(String table) {
 		return indexesOf(table, true);
 	}
 
-	/** 모든 인덱스명 → 컬럼 목록(순서 유지). */
 	private Map<String, String> allIndexesOf(String table) {
 		return indexesOf(table, false);
 	}
@@ -223,7 +206,6 @@ class ExitPlanSchemaConstraintsTest {
 		return indexes;
 	}
 
-	/** FK 컬럼명 → 참조 테이블명. */
 	private Map<String, String> foreignKeysOf(String table) {
 		Map<String, String> foreignKeys = new LinkedHashMap<>();
 		jdbcTemplate.query(

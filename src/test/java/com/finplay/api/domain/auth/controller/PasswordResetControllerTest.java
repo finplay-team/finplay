@@ -1,4 +1,3 @@
-// 비밀번호 재설정 발송(202)·확인(204) 컨트롤러의 응답·요청 검증·서비스 예외 매핑과 공개 경로 계약을 검증하는 @WebMvcTest 슬라이스 테스트 (ADR-0003)
 package com.finplay.api.domain.auth.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -29,7 +28,6 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-// 대상 경로가 공개 화이트리스트에 있으므로 실제 Security 체인을 태워 화이트리스트 계약까지 함께 검증한다.
 @WebMvcTest(PasswordResetController.class)
 @Import(SecurityConfig.class)
 class PasswordResetControllerTest {
@@ -137,7 +135,6 @@ class PasswordResetControllerTest {
 		verify(passwordResetService).sendResetCode(maxLengthEmail);
 	}
 
-	// 로컬파트는 64자를 넘으면 @Email 자체에 걸리므로, @Size 경계만 건드리려면 도메인 라벨(각 63자 이하)을 늘려 길이를 맞춘다.
 	private static String emailOfLength(int totalLength) {
 		String prefix = "a@";
 		int domainLength = totalLength - prefix.length();
@@ -205,7 +202,6 @@ class PasswordResetControllerTest {
 			.andExpect(status().isNoContent())
 			.andExpect(content().string(""));
 
-		// 새 토큰 쌍을 응답에 담지 않는다(D4) — 본문이 비어 있음을 위에서 확인한다.
 		verify(authService).confirmPasswordReset("user@finplay.com", "123456", "newSecret123");
 	}
 
@@ -267,7 +263,6 @@ class PasswordResetControllerTest {
 		"{\"email\":\"user@finplay.com\",\"code\":\"123456\",\"newPassword\":null}",
 		"{\"email\":\"user@finplay.com\",\"code\":\"123456\",\"newPassword\":\"\"}",
 		"{\"email\":\"user@finplay.com\",\"code\":\"123456\",\"newPassword\":\"       \"}",
-		// 7자 — 최소 길이 바로 아래.
 		"{\"email\":\"user@finplay.com\",\"code\":\"123456\",\"newPassword\":\"short12\"}"
 	})
 	void confirmReturnsValidationErrorOnInvalidNewPassword(String body) throws Exception {
@@ -367,7 +362,6 @@ class PasswordResetControllerTest {
 	@Test
 	@DisplayName("확인: 검증 실패 응답 본문에 제출한 인증번호·새 비밀번호가 어떤 형태로도 담기지 않는다")
 	void confirmErrorBodyDoesNotEchoSubmittedCodeOrPassword() throws Exception {
-		// 새 비밀번호만 7자로 어긋난 요청 — code는 유효하지만 응답에 되비쳐서는 안 된다.
 		String body = confirmBody("user@finplay.com", "654321", "leaked7");
 
 		String responseBody = mockMvc.perform(post(CONFIRM_PATH)

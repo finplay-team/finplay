@@ -1,4 +1,3 @@
-// OAuthLoginExchangeStore가 토큰을 코드로 감싸 저장하고, 소비 시 1회용으로 지우는지 mock Redis로 검증하는 단위 테스트다.
 package com.finplay.api.domain.auth.oauth.exchange;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -38,7 +37,6 @@ class OAuthLoginExchangeStoreTest {
 		String first = store.issue(TOKENS);
 		String second = store.issue(TOKENS);
 
-		// 같은 코드가 나오면 서로 다른 로그인 응답이 뒤섞여 나갈 수 있다 — 발급마다 고유해야 한다.
 		assertThat(first).isNotEqualTo(second);
 		verify(valueOperations).set(
 			eq("auth:oauth-login-exchange:v1:" + first),

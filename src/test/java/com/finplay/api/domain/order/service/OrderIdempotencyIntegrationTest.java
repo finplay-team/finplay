@@ -1,4 +1,3 @@
-// 동일 Idempotency-Key 재요청 응답 재현·다른 본문 409·서로 다른 사용자 간 무간섭을 실제 MySQL 트랜잭션으로 검증하는 통합 테스트다.
 package com.finplay.api.domain.order.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -42,7 +41,6 @@ import org.springframework.context.annotation.Import;
 @Import({TestcontainersConfiguration.class, TestClockConfig.class})
 class OrderIdempotencyIntegrationTest {
 
-	// 2026-07-29는 수요일이고 holidays-2026.txt에도 없어 재생세션만 READY면 개장 상태로 계산된다.
 	private static final LocalDate TRADING_DATE = LocalDate.of(2026, 7, 29);
 	private static final LocalDateTime BASE_NOW = LocalDateTime.of(2026, 7, 29, 10, 0, 0);
 	private static final LocalTime FIRST_CANDLE_TIME = LocalTime.of(9, 59);
@@ -185,8 +183,6 @@ class OrderIdempotencyIntegrationTest {
 		assertThat(tradeRepository.findById(responseB.tradeId())).isPresent();
 	}
 
-	// DB에서 재조회한 quantity/price는 컬럼 scale(DECIMAL(20,8))이 적용돼 최초 응답의 BigDecimal과
-	// equals()가 아닌 isEqualByComparingTo() 기준으로만 같다 — record 전체 equals 대신 필드별로 비교한다.
 	private void assertReplayIsIdenticalToFirstResponse(OrderResponse replay, OrderResponse first) {
 		assertThat(replay.orderId()).isEqualTo(first.orderId());
 		assertThat(replay.market()).isEqualTo(first.market());

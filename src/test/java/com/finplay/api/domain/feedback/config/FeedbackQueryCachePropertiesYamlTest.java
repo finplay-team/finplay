@@ -1,4 +1,3 @@
-// application.yml의 feedback.query-cache 블록이 ADR-0015의 키 경로·값 그대로 존재하는지 검증한다.
 package com.finplay.api.domain.feedback.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -9,16 +8,8 @@ import org.springframework.boot.test.context.ConfigDataApplicationContextInitial
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.core.env.Environment;
 
-// FeedbackCryptoPropertiesYamlTest와 같은 짝이다 — FeedbackQueryCachePropertiesTest는 record의 @DefaultValue만
-// 보므로, application.yml의 키가 잘못된 위치·이름으로 들어가도 기본값에 가려 통과한다. yml이 항상 이기므로
-// 두 곳이 갈리면 실제 동작값은 yml 쪽이고 record의 @DefaultValue는 죽은 값이 된다 — 특히 enabled는 운영
-// 킬 스위치라, 키 경로가 틀리면 "false로 내렸는데 캐시가 계속 켜져 있는" 상태가 조용히 생긴다.
-//
-// ConfigDataApplicationContextInitializer가 SpringApplication 부트스트랩과 같은 방식으로 application.yml만
-// Environment에 얹어 준다 — Docker 없는 환경에서도 돈다.
 class FeedbackQueryCachePropertiesYamlTest {
 
-	// ADR-0015. 문자열로 두는 것은 yml에 적힌 표기 그대로를 비교하기 위해서다.
 	private static final String ADR_ENABLED = "true";
 
 	private static final String ADR_LOCK_TTL_MILLIS = "1000";

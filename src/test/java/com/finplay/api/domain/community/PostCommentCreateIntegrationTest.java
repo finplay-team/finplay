@@ -1,4 +1,3 @@
-// 실제 인증 필터와 MySQL을 연결해 댓글 생성 핵심 시나리오와 실패 시 DB 불변을 검증하는 통합 테스트다.
 package com.finplay.api.domain.community;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -51,8 +50,6 @@ class PostCommentCreateIntegrationTest {
 
 	@BeforeEach
 	void cleanDatabaseInForeignKeySafeOrder() {
-		// V31: parent_comment_id FK가 ON DELETE RESTRICT라 단일 "delete from post_comments"는
-		// 다른 테스트 컨텍스트가 남긴 부모+자식이 섞여 있으면 행 처리 순서 미보장으로 실패할 수 있다(이슈 #277).
 		jdbcTemplate.update("delete from post_comments where parent_comment_id is not null");
 		jdbcTemplate.update("delete from post_comments");
 		jdbcTemplate.update("delete from community_posts");

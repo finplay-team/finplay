@@ -1,4 +1,3 @@
-// StockReplaySession의 preparing/ready/failed 정적 팩토리가 상태별 nullable 규칙(spec.md 비즈니스 규칙)을 강제하는지 검증하는 순수 단위 테스트다.
 package com.finplay.api.domain.market.entity;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -15,9 +14,6 @@ class StockReplaySessionTest {
 	private static final LocalDateTime CREATED_AT = LocalDateTime.of(2026, 7, 28, 8, 0, 0);
 	private static final LocalDateTime RESOLVED_AT = LocalDateTime.of(2026, 7, 28, 8, 55, 0);
 
-	// preparing()은 resolvedAt·failureReason을 파라미터로 받지 않는다 — "PREPARING+resolved_at 존재",
-	// "PREPARING+failure_reason 존재"는 팩토리 시그니처상 호출 자체가 불가능해 구조적으로 거부된다.
-	// 대신 어떤 sourceTradingDate로 호출해도 두 필드가 항상 NULL로 고정되는지를 검증한다.
 	@Test
 	void preparingAllowsNullSourceTradingDateAndAlwaysLeavesResolvedAtAndFailureReasonNull() {
 		StockReplaySession session = StockReplaySession.preparing(SERVICE_DATE, null, CREATED_AT);
@@ -50,8 +46,6 @@ class StockReplaySessionTest {
 			.isInstanceOf(IllegalArgumentException.class);
 	}
 
-	// ready()도 failureReason 파라미터가 없다 — "READY+failure_reason 존재"는 호출 자체가 불가능하다.
-	// 필수값(sourceTradingDate·resolvedAt)을 채운 정상 호출에서 failureReason이 항상 NULL임을 확인한다.
 	@Test
 	void readyWithRequiredFieldsSucceedsAndLeavesFailureReasonNull() {
 		StockReplaySession session = StockReplaySession.ready(SERVICE_DATE, SOURCE_TRADING_DATE, RESOLVED_AT,
@@ -104,9 +98,6 @@ class StockReplaySessionTest {
 		assertThat(session.getResolvedAt()).isEqualTo(RESOLVED_AT);
 		assertThat(session.getFailureReason()).isEqualTo("검증 실패");
 	}
-
-	// --- resolveReady/resolveFailed (StockReplaySessionScheduler 전용 인스턴스 메서드) ---
-	// 정적 팩토리 ready()/failed()와 같은 nullable 규칙을 PREPARING 세션의 상태 전환에서도 강제하는지 검증한다.
 
 	@Test
 	void resolveReadyTransitionsPreparingSessionToReadyWithGivenSourceTradingDateAndResolvedAt() {

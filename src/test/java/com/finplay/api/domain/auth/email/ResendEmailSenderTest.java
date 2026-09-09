@@ -1,4 +1,3 @@
-// ResendEmailSender가 Resend /emails API로 보내는 요청의 URL·헤더·본문 구성을 MockRestServiceServer로 검증하는 단위 테스트
 package com.finplay.api.domain.auth.email;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -58,7 +57,6 @@ class ResendEmailSenderTest {
 			.andExpect(jsonPath("$.to").value("reset@example.com"))
 			.andExpect(jsonPath("$.subject").value("[FinPlay] 비밀번호 재설정 인증번호"))
 			.andExpect(jsonPath("$.html").value(containsString("654321")))
-			// 수신자가 용도를 알아보고, 본인이 요청하지 않았을 때 무엇을 해야 하는지 알 수 있어야 한다.
 			.andExpect(jsonPath("$.html").value(containsString("비밀번호 재설정")))
 			.andExpect(jsonPath("$.html").value(containsString("요청하지 않았다면")))
 			.andExpect(jsonPath("$.html").value(containsString("다른 사람에게 알려주지 마세요")))
@@ -72,7 +70,6 @@ class ResendEmailSenderTest {
 	@Test
 	@DisplayName("가입 인증 메일과 재설정 메일은 제목·본문이 서로 달라 수신자가 용도를 구분할 수 있다")
 	void verificationAndPasswordResetMailsDifferInSubjectAndBody() {
-		// 두 메일이 같은 문구를 쓰면 재설정 시도를 눈치챌 수 없다 — 제목이 같아지면 이 수정이 무의미해진다.
 		RestClient.Builder builder = RestClient.builder();
 		MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
 		ResendEmailSender emailSender = new ResendEmailSender(builder, "test-api-key", "no-reply@finplay.com");

@@ -1,4 +1,3 @@
-// bithumb.feed.simulate.enabled 프로퍼티·prod 프로필에 따른 BithumbFeedSimulator 빈 생성 여부를 검증하는 슬라이스 테스트
 package com.finplay.api.domain.market.feed;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -13,7 +12,6 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 class BithumbFeedSimulatorConditionalTest {
 
-	// FakeBithumbFeedClient가 PriceStore를 필요로 하므로 최소 의존 빈을 함께 등록한다.
 	private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
 		.withBean(InstrumentRepository.class, () -> mock(InstrumentRepository.class))
 		.withBean(PriceStore.class, () -> mock(PriceStore.class))

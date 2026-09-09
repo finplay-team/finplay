@@ -1,4 +1,3 @@
-// 개장 전 브리핑 조회 API의 인증·market 파라미터 검증·직렬화·오류 매핑 계약을 검증하는 WebMvc 슬라이스 테스트다.
 package com.finplay.api.domain.feedback.controller;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -33,12 +32,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
-// 계약의 정본은 docs/api/feedback.md의 "개장 전 브리핑 조회" 행이고, 상태값은 spec 012 §C-4다.
-// 게이트·범위·상한은 MarketBriefingQueryGateIntegrationTest가, 판정 순서는 MarketBriefingServiceTest가 맡는다.
-//
-// market 400은 컨트롤러에 검증 코드가 없고 GlobalExceptionHandler에 맡겨져 있다 — 그래서 "핸들러가 실제로
-// 그 예외를 400 VALIDATION_ERROR로 매핑하는가"가 여기서만 확인된다. 서비스 시그니처가 Market이라
-// 컴파일만으로는 아무것도 보장되지 않는다.
 @WebMvcTest(MarketBriefingController.class)
 @Import(SecurityConfig.class)
 class MarketBriefingControllerTest {
@@ -58,8 +51,6 @@ class MarketBriefingControllerTest {
 
 	@MockitoBean
 	private JwtTokenProvider jwtTokenProvider;
-
-	// --- 인증 (배정 건수에 넣지 않지만 이 엔드포인트에도 적용된다) ---
 
 	@Test
 	@DisplayName("토큰 없이 호출하면 401이고 서비스를 부르지 않는다")
@@ -84,8 +75,6 @@ class MarketBriefingControllerTest {
 
 		verifyNoInteractions(marketBriefingService);
 	}
-
-	// --- API 계약 market이 없거나 허용 값 밖이면 400 (완료 조건) ---
 
 	@Test
 	@DisplayName("market 파라미터가 없으면 400 VALIDATION_ERROR이고 서비스를 부르지 않는다")
@@ -112,8 +101,6 @@ class MarketBriefingControllerTest {
 		verifyNoInteractions(marketBriefingService);
 	}
 
-	// 스프링의 문자열→열거형 변환은 대소문자를 구분한다. 관대해지는 회귀(대소문자 무시 변환기 추가 등)가
-	// 들어오면 계약이 조용히 넓어지므로 여기서 고정한다.
 	@Test
 	@DisplayName("소문자 stock도 400이다 — 열거형 리터럴만 허용한다")
 	void rejectsLowercaseMarketValueWithBadRequest() throws Exception {
@@ -152,10 +139,6 @@ class MarketBriefingControllerTest {
 		verify(marketBriefingService).getBriefing(Market.CRYPTO);
 	}
 
-	// --- 응답 형태 ---
-
-	// Part D 항목은 NewsItem의 다섯 값에 종목 3종을 평평하게 더한 여덟 값이다 (§C-6). 중첩으로 감싸면
-	// JSON 모양이 계약과 달라지므로 필드 개수까지 단정한다.
 	@Test
 	@DisplayName("READY 응답이 계약대로 직렬화된다 — items 항목이 평평한 여덟 값이다")
 	void serializesReadyResponseAccordingToTheContract() throws Exception {
@@ -184,7 +167,6 @@ class MarketBriefingControllerTest {
 			.andExpect(jsonPath("$.items[0].url").value("https://news.example.test/1"))
 			.andExpect(jsonPath("$.items[0].publishedAt").value("2026-07-28T18:40:00"))
 			.andExpect(jsonPath("$.items[0].length()").value(8))
-			// 종목을 중첩 필드로 감싸는 회귀는 이 단정에서 걸린다.
 			.andExpect(jsonPath("$.items[0].instrument").doesNotExist())
 			.andExpect(jsonPath("$.items[1].type").value("DISCLOSURE"))
 			.andExpect(jsonPath("$.items[1].publisher").value("DART"))
@@ -210,9 +192,6 @@ class MarketBriefingControllerTest {
 			.andExpect(jsonPath("$.generatedAt").doesNotExist());
 	}
 
-	// --- 상태값별 200 (FEED-009 — 비어 있는 것은 오류가 아니다) ---
-
-	// Part C는 같은 상황에서 NOT_YET이다. 두 API가 갈리는 유일한 자리라 계약 층에서도 고정한다.
 	@Test
 	@DisplayName("재생세션 미준비면 EMPTY이고 originTradeDate가 null이며 200이다")
 	void returnsOkWithEmptyAndNullTradeDateWhenTheSessionIsNotReady() throws Exception {

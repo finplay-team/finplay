@@ -1,4 +1,3 @@
-// 실제 MySQL에 카드를 확정 저장해 유니크 축(탐지 ⑦)과 저장된 reveal_time(게이트 ③④⑤)을 검증한다.
 package com.finplay.api.domain.feedback.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -40,18 +39,11 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-// PriceMoveCardServiceTest는 writer가 mock이라 "무엇을 넘겼는가"까지만 볼 수 있다. 유니크 축이 실제로
-// event_type을 포함하는지, 저장된 reveal_time이 TIME 컬럼에 그 값으로 남는지는 실 MySQL에서만 드러난다.
-//
-// NewsMatcher와 PriceMoveCardService는 슬라이스가 올리지 않으므로 직접 생성한다 — 리포지토리 3종은 실
-// 컨테이너에 붙은 진짜 빈이고, PriceMoveCardWriter는 @Import로 올려 실제 프록시를 쓴다. 외부 호출인
-// NarrativeService만 mock이다(PRD C-005 — 실제 LLM을 부르는 테스트를 만들지 않는다).
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({TestcontainersConfiguration.class, PriceMoveCardWriter.class})
 class PriceMoveCardConfirmationTest {
 
-	// 2026-07-28(화). 직전 거래일은 바로 전날 2026-07-27(월)이다.
 	private static final LocalDate ORIGIN_TRADE_DATE = LocalDate.of(2026, 7, 28);
 
 	private static final LocalDate PREVIOUS_TRADE_DATE = LocalDate.of(2026, 7, 27);
@@ -84,12 +76,10 @@ class PriceMoveCardConfirmationTest {
 
 	@BeforeEach
 	void setUp() {
-		// V7 시드(005930 등)와 겹치지 않는 테스트 전용 심볼 — UNIQUE(symbol) 충돌 방지.
 		instrument = instrumentRepository.save(Instrument.create(
 			Market.STOCK, "CARD001", "테스트종목A", new BigDecimal("100"), 70000, true, LocalDateTime.now()));
 		NewsMatcher newsMatcher = new NewsMatcher(
 			marketNewsItemRepository,
-			// §C-7 기본값
 			new FeedbackNewsProperties(
 				"0 0/30 * * * *", "0 0/30 8-20 * * MON-FRI", 30, 5, 5, 50, 30, 30),
 			new FeedbackCryptoProperties(30, 6, 5, 24, 100, 35, 30),
@@ -137,10 +127,6 @@ class PriceMoveCardConfirmationTest {
 		return service.confirmStockCard(instrument, ORIGIN_TRADE_DATE, detection);
 	}
 
-	// --- 탐지 ⑦ 유니크 축 ---
-
-	// W=5라 장중 첫 후보의 windowStart는 09:00이고, 첫 분봉이 09:00인 날 갭 카드의 windowStart도 09:00이다.
-	// 두 값을 정확히 같게 잡아야 축 검증이 성립한다 — 다르게 잡으면 event_type이 유니크에 없어도 통과한다.
 	@Test
 	@DisplayName("windowStart가 똑같이 09:00인 장중 첫 후보와 시가 갭 카드가 같은 날 함께 저장된다")
 	void intradayFirstCandidateAndOpeningGapCardAreBothStoredForTheSameDayAndWindowStart() {
@@ -148,7 +134,6 @@ class PriceMoveCardConfirmationTest {
 		saveNews("장중 기사", LocalDateTime.of(ORIGIN_TRADE_DATE, LocalTime.of(9, 2)));
 		PriceMoveDetectionDto gap = openingGap(LocalTime.of(9, 0));
 		PriceMoveDetectionDto firstIntraday = intraday(LocalTime.of(9, 5));
-		// 픽스처 전제 — 두 카드의 windowStart가 실제로 같은 값이어야 이 테스트가 축을 검증한다.
 		assertThat(gap.windowStart()).isEqualTo(firstIntraday.windowStart()).isEqualTo(LocalTime.of(9, 0));
 
 		assertThat(confirm(gap)).isPresent();
@@ -161,7 +146,6 @@ class PriceMoveCardConfirmationTest {
 			.containsExactlyInAnyOrder(PriceMoveEventType.OPENING_GAP, PriceMoveEventType.INTRADAY);
 	}
 
-	// 파인더에서 eventType을 빼면 갭 카드 하나 때문에 장중 첫 후보가 "이미 있다"로 판정되어 조용히 사라진다.
 	@Test
 	@DisplayName("중복 판정은 종류별로 갈린다 — 갭 카드가 있어도 같은 windowStart의 장중은 false다")
 	void existsFinderDistinguishesEventTypeAtTheSameWindowStart() {
@@ -178,8 +162,6 @@ class PriceMoveCardConfirmationTest {
 			.isFalse();
 	}
 
-	// --- 게이트 ③④⑤ — 저장된 값 ---
-
 	@Test
 	@DisplayName("③ 첫 분봉이 09:03인 갭 카드의 reveal_time이 09:00으로 저장된다")
 	void storesOpeningGapRevealTimeClampedToMarketOpen() {
@@ -188,7 +170,6 @@ class PriceMoveCardConfirmationTest {
 		PriceMoveEvent card = confirm(openingGap(LocalTime.of(9, 3))).orElseThrow();
 
 		assertThat(reloadRevealTime(card)).isEqualTo(LocalTime.of(9, 0));
-		// 클램프가 없으면 18:40, +1분을 더하면 09:04다 — 세 값이 모두 다른 픽스처다.
 		assertThat(reloadRevealTime(card))
 			.isNotEqualTo(LocalTime.of(18, 40))
 			.isNotEqualTo(LocalTime.of(9, 4));
@@ -217,7 +198,6 @@ class PriceMoveCardConfirmationTest {
 		assertThat(reloadRevealTime(card)).isNotEqualTo(LocalTime.of(11, 26));
 	}
 
-	// reveal_time은 TIME 컬럼이라 날짜가 붙지 않는다 (§노출 판정 — 재재생 때문에 절대 시각으로 저장하지 않는다).
 	@Test
 	@DisplayName("reveal_time은 날짜 없이 TIME 값으로 저장된다")
 	void storesRevealTimeAsATimeValueWithoutADate() {
@@ -229,8 +209,6 @@ class PriceMoveCardConfirmationTest {
 		assertThat(revealTimes).containsExactly("11:26:00");
 	}
 
-	// --- 중복 실행 (§실패 처리) ---
-
 	@Test
 	@DisplayName("같은 인자로 두 번 확정하면 두 번째는 empty()이고 행은 1건, 첫 서술이 그대로 남는다")
 	void secondConfirmationOfTheSameCardIsANoOp() {
@@ -238,7 +216,6 @@ class PriceMoveCardConfirmationTest {
 		PriceMoveDetectionDto detection = intraday(LocalTime.of(11, 25));
 		PriceMoveEvent first = confirm(detection).orElseThrow();
 
-		// 두 번째 실행에서 LLM이 다른 문장을 주더라도 카드가 덮어써지지 않아야 한다.
 		when(narrativeService.resolvePriceMoveNarrative(any()))
 			.thenReturn(NarrativeResultDto.template("덮어쓰면 안 되는 문장"));
 
@@ -247,12 +224,8 @@ class PriceMoveCardConfirmationTest {
 		PriceMoveEvent stored = priceMoveEventRepository.findById(first.getId()).orElseThrow();
 		assertThat(stored.getNarrative()).isEqualTo("반도체 업황 우려로 움직였습니다.");
 		assertThat(stored.getNarrativeSource()).isEqualTo(NarrativeSource.LLM);
-		// 두 번째 호출에서는 서술 생성 자체가 없어야 한다 — 두 번 확정했지만 LLM 경로는 첫 번째 1회뿐이다.
-		// (스텁을 다시 걸어 둔 "덮어쓰면 안 되는 문장"이 쓰이지 않았다는 것이 위 단정과 짝이다.)
 		verify(narrativeService, times(1)).resolvePriceMoveNarrative(any());
 	}
-
-	// --- 근거 연결 ---
 
 	@Test
 	@DisplayName("근거 연결이 카드와 함께 저장되고 개수는 NewsMatcher가 준 만큼이다")

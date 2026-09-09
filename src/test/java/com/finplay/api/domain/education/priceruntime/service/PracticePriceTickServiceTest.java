@@ -1,4 +1,3 @@
-// 코인 가상 가격 세션 next-tick 진행 서비스의 소유권·상태·tick 순서 검증을 mock으로 검증하는 단위 테스트다.
 package com.finplay.api.domain.education.priceruntime.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -160,8 +159,6 @@ class PracticePriceTickServiceTest {
 		assertThat(response.currentPrice()).isEqualByComparingTo(expectedPrice);
 		assertThat(response.status()).isEqualTo(PracticePriceSessionStatus.COMPLETED);
 		assertThat(response.completedAt()).isEqualTo(LocalDateTime.now(clock));
-		// lastTick=true 이벤트가 먼저 발행되고(같은 트랜잭션에서 리스너가 동기 체결·취소를 끝낸 뒤) 세션이
-		// COMPLETED로 전이한다 — 이 테스트는 mock이라 리스너가 실제로 붙지 않으므로 이벤트 페이로드만 검증한다.
 		ArgumentCaptor<PracticePriceTickAdvancedEvent> eventCaptor = ArgumentCaptor
 			.forClass(PracticePriceTickAdvancedEvent.class);
 		verify(eventPublisher).publishEvent(eventCaptor.capture());

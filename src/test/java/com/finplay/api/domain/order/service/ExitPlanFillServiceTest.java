@@ -1,4 +1,3 @@
-// ExitPlanFillService.fillIfPending의 트리거 방향 판정·잠금 순서·정확히 한 번 규칙·반대 조건 자동 취소를 검증하는 단위 테스트다.
 package com.finplay.api.domain.order.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -103,7 +102,6 @@ class ExitPlanFillServiceTest {
 
 	@Test
 	void fillIfPendingDoesNotPublishRealizedPnlUpdatedEventWhenInstrumentIsTutorialSample() {
-		// 이슈 #549 — 튜토리얼 샘플 종목의 OCO 자동 매도는 실제 매도 이력 없는 계좌를 랭킹에 올리게 되므로 이벤트를 발행하지 않는다.
 		ReflectionTestUtils.setField(plan.getInstrument(), "tutorialSample", true);
 
 		service.fillIfPending(PLAN_ID, TAKE_PROFIT_PRICE);

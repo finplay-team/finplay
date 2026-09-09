@@ -1,4 +1,3 @@
-// TradeListItemResponse.from(Trade)의 필드 매핑을 실제 Trade 인스턴스로 검증하는 단위 테스트다.
 package com.finplay.api.domain.order.dto.response;
 
 import static org.assertj.core.api.Assertions.assertThat;

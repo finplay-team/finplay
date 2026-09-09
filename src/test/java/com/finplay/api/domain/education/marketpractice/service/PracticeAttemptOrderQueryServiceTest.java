@@ -1,4 +1,3 @@
-// PracticeAttemptOrderQueryService의 attempt 조회 위임과 attempt 없음 빈 목록 처리를 검증하는 단위 테스트다.
 package com.finplay.api.domain.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

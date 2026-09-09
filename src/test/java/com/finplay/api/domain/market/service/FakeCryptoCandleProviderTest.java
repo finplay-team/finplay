@@ -1,4 +1,3 @@
-// 자동 테스트에서 실제 빗썸 REST 대신 쓰는 FakeCryptoCandleProvider의 필터링·장애 시뮬레이션을 검증한다 (MKT-008)
 package com.finplay.api.domain.market.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -79,8 +78,6 @@ class FakeCryptoCandleProviderTest {
 		assertThat(provider.getCandles("BTC", CandleInterval.ONE_MINUTE, null, null)).hasSize(1);
 	}
 
-	// --- 회귀: 기존 setCandles(symbol, candles)는 여전히 1분봉 시드로만 동작한다 ---
-
 	@Test
 	void legacySetCandlesWithoutIntervalSeedsOnlyOneMinuteBucket() {
 		FakeCryptoCandleProvider provider = new FakeCryptoCandleProvider();
@@ -91,8 +88,6 @@ class FakeCryptoCandleProviderTest {
 		assertThat(provider.getCandles("BTC", CandleInterval.ONE_WEEK, null, null)).isEmpty();
 		assertThat(provider.getCandles("BTC", CandleInterval.ONE_MONTH, null, null)).isEmpty();
 	}
-
-	// --- interval별 시드가 서로 섞이지 않는다 ---
 
 	@Test
 	void setCandlesWithIntervalKeepsEachIntervalsSeedIndependent() {

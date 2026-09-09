@@ -1,4 +1,3 @@
-// NewsMatcher.matchCrypto가 spec 012 §C-2 근거창(코인)·§C-3 공시 미매칭을 어떤 질의 인자로 묻는지 검증한다.
 package com.finplay.api.domain.feedback.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -22,15 +21,8 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-// NewsMatcherTest(주식)와 짝이다 — 여기서는 "어떤 구간을 어떤 종류로 묻는가"와 "절단 규칙"만 본다.
-// 근거창의 양끝 포함 여부와 공시가 실제로 새어 들어오지 않는지는 실 DB가 필요하므로
-// NewsMatcherCryptoMatchingWindowTest가 맡는다 — mock으로 끝내지 않는다(ADR-0003).
-//
-// 기대값의 정본은 spec.md다 — 근거창은 §C-2, 공시 미매칭은 §C-3 "코인 | 공시 없음", 절단은 §뉴스 매칭 범위,
-// 값은 §C-7이다.
 class NewsMatcherCryptoTest {
 
-	// §C-7 feedback.crypto 기본값
 	private static final int SPEC_MATCH_BEFORE_MINUTES = 35;
 
 	private static final int SPEC_MAX_SOURCES_PER_CARD = 5;
@@ -44,7 +36,6 @@ class NewsMatcherCryptoTest {
 	private NewsMatcher matcher(int cryptoMatchBeforeMinutes, int maxSources) {
 		return new NewsMatcher(
 			marketNewsItemRepository,
-			// 근거 매칭과 무관한 나머지 값은 §C-7 feedback.news 기본값을 그대로 둔다.
 			new FeedbackNewsProperties(
 				"0 0/30 * * * *", "0 0/30 8-20 * * MON-FRI", 30, 5, maxSources, 50, 30, 30),
 			new FeedbackCryptoProperties(30, 6, 5, 24, 100, cryptoMatchBeforeMinutes, 30),
@@ -72,8 +63,6 @@ class NewsMatcherCryptoTest {
 		return items.stream().map(MarketNewsItem::getTitle).toList();
 	}
 
-	// --- 근거창(코인) — §C-2 [occurredAt - match-before-minutes, occurredAt] ---
-
 	@Test
 	@DisplayName("코인 근거창은 [occurredAt - match-before-minutes, occurredAt]을 NEWS 종류로만 묻는다")
 	void matchCryptoQueriesNewsOnlyWithinTheConfiguredWindowEndingAtOccurredAt() {
@@ -86,7 +75,6 @@ class NewsMatcherCryptoTest {
 			OCCURRED_AT);
 	}
 
-	// 이후 방향은 0이다 — 상한이 occurredAt 그 자체를 넘지 않는다는 것을 별도로 단정한다.
 	@Test
 	@DisplayName("근거창 상한은 항상 occurredAt이다 — 이후 방향은 열지 않는다")
 	void matchCryptoUpperBoundIsAlwaysOccurredAt() {
@@ -96,7 +84,6 @@ class NewsMatcherCryptoTest {
 			any(), any(), any(), org.mockito.ArgumentMatchers.eq(OCCURRED_AT));
 	}
 
-	// 근거창 폭이 코드 상수가 아니라 feedback.crypto.match-before-minutes에서 온다는 것을 단정한다.
 	@Test
 	@DisplayName("근거창 이전 폭은 feedback.crypto.match-before-minutes를 따른다 — 코드 상수가 아니다")
 	void matchCryptoWindowWidthComesFromConfiguration() {
@@ -106,8 +93,6 @@ class NewsMatcherCryptoTest {
 			INSTRUMENT_ID, MarketNewsItemType.NEWS, OCCURRED_AT.minusMinutes(10), OCCURRED_AT);
 	}
 
-	// --- 공시 미매칭 (§C-3 "코인 | 공시 없음") ---
-
 	@Test
 	@DisplayName("코인 근거 매칭은 공시 질의를 아예 부르지 않는다")
 	void matchCryptoNeverQueriesDisclosures() {
@@ -115,8 +100,6 @@ class NewsMatcherCryptoTest {
 
 		verify(marketNewsItemRepository, never()).findDisclosuresReceivedOn(any(), any(), any());
 	}
-
-	// --- 절단 (§뉴스 매칭 범위, feedback.news.max-sources-per-card 재사용) ---
 
 	@Test
 	@DisplayName("근거가 max-sources-per-card를 넘으면 occurredAt에 가까운 순으로 자른다")

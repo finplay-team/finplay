@@ -1,4 +1,3 @@
-// 튜토리얼 attempt 전용 주문 조회 API의 인증, 시장 검증, JSON 응답 계약을 검증한다.
 package com.finplay.api.domain.education.marketpractice.controller;
 
 import static org.mockito.Mockito.verify;

@@ -1,4 +1,3 @@
-// 고정 Clock + Testcontainers로 코인 집단 비교 확정 집계 배치(runCryptoPeerStatsBatch)의 종단과 조회 키 정합을 검증한다.
 package com.finplay.api.domain.feedback.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -49,30 +48,18 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.transaction.annotation.Transactional;
 
-// tasks-275.md 3번 항목이다. 검증 대상은 PeerStatsBatchService.runCryptoPeerStatsBatch(§FEED-012 결정 3)와,
-// 그것이 저장한 행을 CryptoPostSellFeedbackReader.buildPeerComparison이 실제로 찾는가다.
-//
-// PeerStatsBatchServiceIntegrationTest(주식)와 같은 픽스처 자산을 쓰지만 코인 케이스를 그 파일에 넣지 않는다 —
-// 거기는 setUp에서 재생세션을 준비하고 있어 "코인은 세션을 보지 않는다"를 같은 파일에서 보이기 어렵다.
-// 그 파일은 이 항목에서 수정하지 않는다(주식 회귀는 그 파일이 그대로 통과하는 것으로 확인한다).
-//
-// LLM은 부르지 않는다 — 이 배치도, 아래에서 부르는 PostSellFeedbackReader도 서술을 만들지 않는다.
 @SpringBootTest
 @Transactional
 @Import({TestcontainersConfiguration.class, TestClockConfig.class})
 class CryptoPeerStatsBatchIntegrationTest {
 
-	// 카드가 발생한 날(집계 대상)과 배치가 도는 날이 다르다 — 이 파일의 거의 모든 단정이 이 차이 위에 있다.
 	private static final LocalDate CARD_DATE = LocalDate.of(2026, 8, 5);
 	private static final LocalDate BATCH_RUN_DATE = CARD_DATE.plusDays(1);
 
-	// 배치 실행 시각 — §C-1의 크론대로 전날이 끝난 직후인 다음 날 00:05다.
 	private static final LocalDateTime BATCH_AT = LocalDateTime.of(BATCH_RUN_DATE, LocalTime.of(0, 5));
 
-	// 기준 카드의 occurred_at. 코인 카드는 window_start/window_end가 NULL이고 이 값이 곧 T이자 windowEnd다(§C-9).
 	private static final LocalDateTime CARD_AT = LocalDateTime.of(CARD_DATE, LocalTime.of(14, 0));
 
-	// 조회자의 보유 구간 — 카드(14:00)를 감싼다. 매도는 카드보다 60분 뒤다.
 	private static final LocalDateTime BUY_AT = LocalDateTime.of(CARD_DATE, LocalTime.of(9, 0));
 	private static final LocalDateTime SELL_AT = LocalDateTime.of(CARD_DATE, LocalTime.of(15, 0));
 
@@ -115,7 +102,6 @@ class CryptoPeerStatsBatchIntegrationTest {
 	@Autowired
 	private PriceMovePeerStatRepository priceMovePeerStatRepository;
 
-	// 전역 Clock 빈을 대신하는 공용 테스트 시계 (TestClockConfig).
 	@Autowired
 	private TestClock clock;
 
@@ -125,22 +111,15 @@ class CryptoPeerStatsBatchIntegrationTest {
 
 	@BeforeEach
 	void setUp() {
-		// 배치가 "전날"을 계산하는 기준이자, 아래 조회에서 §C-5 게이트를 판정하는 기준이다.
 		clock.set(BATCH_AT);
 		coin = instrumentRepository.saveAndFlush(Instrument.create(
 			Market.CRYPTO, "BTC275", "테스트코인275", BigDecimal.valueOf(1), 5_000L, true, CARD_AT));
 	}
 
-	// --- service_date 규칙 (이 항목의 핵심 1) ---
-
-	// 함정 재현 — 배치는 자정을 넘겨 돌기 때문에 "실행일"과 "카드 날짜"가 다르다. 두 날짜가 같은 픽스처를 쓰면
-	// LocalDate.now(clock)을 저장하는 잘못된 구현도 초록이 되므로, 여기서는 반드시 하루 어긋난 시각으로 돌린다.
 	@Test
 	@DisplayName("service_date가 배치 실행일이 아니라 카드 occurred_at의 KST 날짜로 저장된다")
 	void storesServiceDateFromTheCardOccurredAtNotTheBatchRunDate() {
 		PriceMoveEvent card = givenCryptoCard(CARD_AT);
-		// T = 14:00. 10·30분 후 매도(30분 내), 45·100분 후(30분 밖), 1명 미매도 →
-		// holderCount=5, soldWithin30MinCount=2, minutesToSell=[10,30,45,100] → median=(30+45)/2=37.
 		givenHolderWhoSellsAfter(10);
 		givenHolderWhoSellsAfter(30);
 		givenHolderWhoSellsAfter(45);
@@ -158,30 +137,17 @@ class CryptoPeerStatsBatchIntegrationTest {
 			.isEqualTo(CARD_DATE)
 			.isNotEqualTo(BATCH_RUN_DATE);
 
-		// T가 occurredAt 그대로여야 나오는 값들이다 — T를 다른 시각으로 잡으면 세 지표가 조용히 달라진다.
 		assertThat(stat.getHolderCount()).isEqualTo(5);
 		assertThat(stat.getSoldWithin30MinCount()).isEqualTo(2);
 		assertThat(stat.getMedianMinutesToSell()).isEqualTo(37);
 	}
 
-	// 불변식 고정(이슈 #407): 모집단 쪽은 Duration.between(T, 매도).toMinutes()로 절대 시각 차를 절삭하고, 본인 값은
-	// PostSellArithmetic.minutesBetween이 양 끝을 분으로 내린 뒤 뺀다. 이 둘은 <b>T가 분 경계일 때만</b> 항상
-	// 같은 값을 낸다 — T에 초가 붙으면 매도 초가 그보다 작은 경우(매도 시각의 약 절반)에 1분 어긋난다.
-	//
-	// 그래서 CryptoPriceMoveWatcher가 occurred_at을 분 경계로 내려 저장한다. 여기서는 그 전제 위에서 매도 시각에
-	// 초가 붙어도 두 규칙이 갈리지 않음을 못박는다 — 기존 픽스처는 매도까지 정확히 정시라 이 축이 비어 있었다.
-	//
-	// 다만 이 테스트는 저장 경로의 회귀를 잡지 못한다. givenCryptoCard가 카드를 리포지터리로 직접 넣고 CARD_AT이
-	// 이미 분 경계라, 워처의 절삭을 되돌려도 여기는 초록으로 남는다 — 그쪽 회귀는 CryptoPriceMoveWatcherTest가
-	// 맡는다. 이 자리가 고정하는 것은 "T가 분 경계이면 두 규칙이 일치한다"는 하류 불변식이다 (PR #412 리뷰).
 	@Test
 	@DisplayName("T가 분 경계면 매도 시각에 초가 붙어도 30분 경계와 중앙값이 본인 값과 같은 규칙으로 나온다")
 	void secondsInTheSellTimeDoNotShiftTheBoundaryWhenTIsOnTheMinute() {
 		givenCryptoCard(CARD_AT);
-		// 30분 경계 양옆을 초 단위로 스친다 — 29분 40초는 29분, 30분 20초는 30분이라 둘 다 "30분 내"다.
 		givenHolderWhoSellsAt(CARD_AT.plusMinutes(30).plusSeconds(20));
 		givenHolderWhoSellsAt(CARD_AT.plusMinutes(29).plusSeconds(40));
-		// 31분 20초는 31분이라 경계 밖이다.
 		givenHolderWhoSellsAt(CARD_AT.plusMinutes(31).plusSeconds(20));
 		givenHolderWhoSellsAt(CARD_AT.plusMinutes(45).plusSeconds(59));
 		givenHolderWhoNeverSells();
@@ -193,26 +159,19 @@ class CryptoPeerStatsBatchIntegrationTest {
 		assertThat(stat.getSoldWithin30MinCount())
 			.as("T에 초가 붙어 있었다면 29분 40초 매도가 28분으로 밀려 경계 판정이 달라진다")
 			.isEqualTo(2);
-		// minutesToSell = [30, 29, 31, 45] → 정렬 [29,30,31,45] → median=(30+31)/2=30
 		assertThat(stat.getMedianMinutesToSell()).isEqualTo(30);
 	}
 
-	// --- 조회 키 정합 (이 항목의 핵심 2) ---
-
-	// 저장 키(배치)와 조회 키(리더)가 어긋나도 컴파일·실행이 모두 성공하고 status만 조용히 NOT_YET으로 굳는다.
-	// 두 규칙을 각각 단정하는 것으로는 못 잡는다 — 실제로 저장한 행을 실제 조회 경로가 찾아내는지를 봐야 한다.
 	@Test
 	@DisplayName("배치가 저장한 행을 코인 조회 경로가 찾아 peerComparison이 NOT_YET에서 벗어난다")
 	void readerFindsTheRowStoredByTheCryptoBatch() {
 		PriceMoveEvent card = givenCryptoCard(CARD_AT);
 		Trade sellTrade = givenOwnSellTradeCoveringTheCard();
-		// 조회자 본인을 포함해 5명이어야 INSUFFICIENT_SAMPLE이 아니라 READY까지 간다(§C-4, 최소 표본 5).
 		givenHolderWhoSellsAfter(10);
 		givenHolderWhoSellsAfter(30);
 		givenHolderWhoSellsAfter(45);
 		givenHolderWhoNeverSells();
 
-		// 배치 전에는 행이 없어 NOT_YET이다 — 아래 단정이 "원래부터 READY였다"가 아님을 여기서 못박는다.
 		PeerComparison beforeBatch = readOwnFeedback(sellTrade).peerComparison();
 		assertThat(beforeBatch.status()).isEqualTo(PostSellFeedbackStatus.NOT_YET);
 
@@ -222,11 +181,8 @@ class CryptoPeerStatsBatchIntegrationTest {
 		assertThat(afterBatch.status()).isEqualTo(PostSellFeedbackStatus.READY);
 		assertThat(afterBatch.priceMoveId()).isEqualTo(card.getId());
 		assertThat(afterBatch.holderCount()).isEqualTo(5);
-		// yourMinutesToSell = 매도(15:00) − 카드(14:00).
 		assertThat(afterBatch.yourMinutesToSell()).isEqualTo(60);
 	}
-
-	// --- 대상 범위 ---
 
 	@Test
 	@DisplayName("전날 KST 하루 안의 코인 카드만 집계하고 그제·당일 카드는 제외한다")
@@ -234,10 +190,8 @@ class CryptoPeerStatsBatchIntegrationTest {
 		PriceMoveEvent dayBeforeYesterday = givenCryptoCard(CARD_AT.minusDays(1));
 		PriceMoveEvent firstInstant = givenCryptoCard(CARD_DATE.atStartOfDay());
 		PriceMoveEvent middle = givenCryptoCard(CARD_AT);
-		// DATETIME(6)이 담을 수 있는 그날의 마지막 값 — 이 카드가 빠지면 자정 직전 카드가 매일 조용히 사라진다.
 		PriceMoveEvent lastInstant = givenCryptoCard(
 			BATCH_RUN_DATE.atStartOfDay().minusNanos(1_000L));
-		// 배치가 도는 그 시각(00:05)보다 앞선 당일 카드다 — "오늘"까지 긁으면 여기서 걸린다.
 		PriceMoveEvent today = givenCryptoCard(LocalDateTime.of(BATCH_RUN_DATE, LocalTime.of(0, 2)));
 		givenHolderWhoSellsAfter(10);
 
@@ -249,8 +203,6 @@ class CryptoPeerStatsBatchIntegrationTest {
 			.doesNotContain(dayBeforeYesterday.getId(), today.getId());
 	}
 
-	// 경계 카드의 service_date도 각자의 occurred_at 날짜여야 한다 — 하나의 targetDate를 모든 행에 쓰는 구현이면
-	// 위 범위 테스트는 통과하지만 이 단정에서 갈린다.
 	@Test
 	@DisplayName("카드마다 자기 occurred_at의 날짜가 service_date가 된다")
 	void usesEachCardsOwnOccurredAtDateAsItsServiceDate() {
@@ -265,10 +217,6 @@ class CryptoPeerStatsBatchIntegrationTest {
 			.containsOnly(CARD_DATE);
 	}
 
-	// --- 재생세션 독립 ---
-
-	// 주식 진입점은 첫 줄에서 세션 READY를 확인하고 아니면 0건으로 끝난다. 코인에 그 확인이 섞이면 재생이
-	// 준비되지 않은 날 코인 집계가 통째로 사라지는데, 예외도 로그도 실패도 없다.
 	@Test
 	@DisplayName("재생세션이 READY가 아니어도 코인 배치는 정상 집계한다")
 	void aggregatesEvenWhenTheReplaySessionIsNotReady() {
@@ -293,8 +241,6 @@ class CryptoPeerStatsBatchIntegrationTest {
 		assertThat(priceMovePeerStatRepository.findAll()).hasSize(1);
 	}
 
-	// --- 중복 ---
-
 	@Test
 	@DisplayName("같은 날 두 번 실행해도 확정 집계가 중복 저장되지 않는다")
 	void doesNotDuplicateWhenRunTwiceOnTheSameDay() {
@@ -314,10 +260,6 @@ class CryptoPeerStatsBatchIntegrationTest {
 			.isEqualTo(firstRunIds);
 	}
 
-	// --- 주식 회귀 ---
-
-	// 두 진입점이 한 클래스에 있어 대상 조회를 잘못 넓히기 쉽다. 주식 카드는 occurred_at이 NULL이라 시장 조건이
-	// 빠져도 걸리지 않지만, 그 사실 자체가 이 단정 없이는 확인되지 않는다.
 	@Test
 	@DisplayName("코인 배치는 주식 카드에 대한 확정 집계를 만들지 않는다")
 	void neverAggregatesStockCards() {
@@ -339,8 +281,6 @@ class CryptoPeerStatsBatchIntegrationTest {
 			.doesNotContain(stockCard.getId());
 	}
 
-	// --- 픽스처 ---
-
 	private PostSellFeedbackResponse readOwnFeedback(Trade sellTrade) {
 		return postSellFeedbackReader.read(sellTrade.getAccount().getUser().getId(), sellTrade.getId());
 	}
@@ -351,12 +291,6 @@ class CryptoPeerStatsBatchIntegrationTest {
 			"코인 테스트 카드", NarrativeSource.TEMPLATE, occurredAt));
 	}
 
-	/**
-	 * 조회 경로에서 쓸 "본인 매도 체결"을 만든다 — 보유 구간이 {@link #CARD_AT}를 감싸므로 조회 응답의
-	 * {@code priceMoves}에 그 카드가 들어오고, 그 카드가 곧 집단 비교의 기준 카드가 된다.
-	 *
-	 * <p>이 보유자도 T 시점 모집단의 한 명이다(매수는 T 이전, 매도는 T 이후).
-	 */
 	private Trade givenOwnSellTradeCoveringTheCard() {
 		Holding holding = createHolding();
 		HoldingLot lot = createBuyLot(holding, BigDecimal.valueOf(10), BUY_AT);
@@ -365,7 +299,6 @@ class CryptoPeerStatsBatchIntegrationTest {
 		return sellTrade;
 	}
 
-	// T 시점 이전에 사서, T + minutesAfterT 뒤에 파는 보유자 1명을 만든다.
 	private void givenHolderWhoSellsAfter(int minutesAfterT) {
 		Holding holding = createHolding();
 		HoldingLot lot = createBuyLot(holding, BigDecimal.valueOf(10), CARD_AT.minusHours(3));
@@ -374,7 +307,6 @@ class CryptoPeerStatsBatchIntegrationTest {
 		allocate(sellTrade, lot, BigDecimal.valueOf(10));
 	}
 
-	// T 시점 이전에 사서 정확히 그 시각에 파는 보유자 1명을 만든다 — 초 단위 경계를 재는 테스트용이다.
 	private void givenHolderWhoSellsAt(LocalDateTime sellAt) {
 		Holding holding = createHolding();
 		HoldingLot lot = createBuyLot(holding, BigDecimal.valueOf(10), CARD_AT.minusHours(3));
@@ -382,7 +314,6 @@ class CryptoPeerStatsBatchIntegrationTest {
 		allocate(sellTrade, lot, BigDecimal.valueOf(10));
 	}
 
-	// T 시점 이전에 사서 계속 보유 중인(미매도) 보유자 1명을 만든다.
 	private void givenHolderWhoNeverSells() {
 		Holding holding = createHolding();
 		createBuyLot(holding, BigDecimal.valueOf(10), CARD_AT.minusHours(3));
@@ -397,7 +328,6 @@ class CryptoPeerStatsBatchIntegrationTest {
 		return holdingRepository.saveAndFlush(Holding.create(account, coin, CARD_AT));
 	}
 
-	// 코인 체결이라 stockReplaySession이 null이다 — Trade.of가 코인에 세션을 주면 거부한다.
 	private HoldingLot createBuyLot(Holding holding, BigDecimal quantity, LocalDateTime executedAt) {
 		Order order = orderRepository.saveAndFlush(Order.create(
 			holding.getAccount().getUser(), holding.getAccount(), coin, OrderSide.BUY, OrderType.MARKET,

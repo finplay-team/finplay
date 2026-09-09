@@ -1,4 +1,3 @@
-// 이메일 변경 인증번호 발송 컨트롤러의 202 응답·검증 오류·인증·서비스 예외 매핑을 검증하는 @WebMvcTest 슬라이스 테스트 (ADR-0003)
 package com.finplay.api.domain.auth.controller;
 
 import static org.mockito.ArgumentMatchers.eq;
@@ -39,7 +38,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.ObjectMapper;
 
-// 대상 경로가 공개 화이트리스트에 없어 실제 Security 체인을 태워 Bearer 인증 계약까지 함께 검증한다.
 @WebMvcTest(EmailChangeController.class)
 @Import(SecurityConfig.class)
 class EmailChangeControllerTest {

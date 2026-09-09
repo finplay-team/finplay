@@ -1,4 +1,3 @@
-// 현재 실행 세대 evidence 해석이 최신 진입과 첫 진입 스냅샷을 각각 어디에 쓰는지 검증한다.
 package com.finplay.api.domain.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

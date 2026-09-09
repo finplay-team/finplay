@@ -1,4 +1,3 @@
-// EvidenceJudgmentService의 evidence A(경계 접근)·B(2분 3회 관찰) 판정과 우선순위를 검증하는 단위 테스트다.
 package com.finplay.api.domain.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -27,8 +26,6 @@ class EvidenceJudgmentServiceTest {
 		return PracticeMarketObservation.create(
 			1L, mock(Holding.class), 100L, new BigDecimal("95"), false, null, null, observedAt);
 	}
-
-	// --- Evidence A: 경계 접근 ---
 
 	@Test
 	void judgeBoundaryEvidenceReturnsCloserToStopLossWhenCurrentPriceMovedNearerToStopLoss() {
@@ -62,7 +59,6 @@ class EvidenceJudgmentServiceTest {
 
 	@Test
 	void judgeBoundaryEvidenceReturnsNotCloserWhenCurrentDistanceEqualsBaselineDistance() {
-		// currentPrice == entryPrice(baseline과 동일 지점)이면 "더 가까워짐"이 아니라 동일 거리이므로 미충족이다.
 		BoundaryEvidenceResult result = service.judgeBoundaryEvidence(
 			ENTRY_PRICE, REFERENCE_STOP_LOSS, REFERENCE_TAKE_PROFIT, ENTRY_PRICE);
 
@@ -72,11 +68,6 @@ class EvidenceJudgmentServiceTest {
 
 	@Test
 	void judgeBoundaryEvidencePrefersStopLossWhenCurrentDistancesToBothBoundariesAreEqual() {
-		// 두 경계까지의 거리가 정확히 같은 지점(refSL·refTP의 중간점)에서는 STOP_LOSS 쪽 로직이 currentDistance를
-		// 결정하는지 직접 확인한다. 이 지점은 baseline 이하이거나 같아 실제 evidence를 충족하지는 않지만(수학적으로
-		// baselineDistance <= halfRange가 항상 성립해 "더 가까워짐"이 될 수 없다), 동률 시 STOP_LOSS를 우선하는
-		// tie-break 자체는 이 결과로 검증할 수 없다 — 대신 judgeObservationEvidence 우선순위 테스트에서
-		// STOP_LOSS 쪽이 가까운 실제 케이스로 closerBoundary 필드를 검증한다.
 		BigDecimal midpoint = REFERENCE_STOP_LOSS.add(REFERENCE_TAKE_PROFIT).divide(new BigDecimal("2"));
 
 		BoundaryEvidenceResult result = service.judgeBoundaryEvidence(
@@ -85,8 +76,6 @@ class EvidenceJudgmentServiceTest {
 		assertThat(result.closerToBoundary()).isFalse();
 		assertThat(result.evidenceType()).isNull();
 	}
-
-	// --- Evidence B: 2분 이상 범위 3회 관찰 ---
 
 	@Test
 	void judgeTimedRepetitionReturnsEmptyWhenNoExistingObservations() {
@@ -146,8 +135,6 @@ class EvidenceJudgmentServiceTest {
 
 	@Test
 	void judgeTimedRepetitionUsesLatestExistingObservationWhenItIsAfterNewObservedAt() {
-		// newObservedAt이 항상 가장 늦다는 전제를 벗어난 입력이지만, 코드가 existing 중 new보다 늦은 값을 실제로
-		// 놓치지 않는지(전제 위반 시 latest 계산 로직 자체) 확인한다.
 		List<PracticeMarketObservation> existing = List.of(observationAt(T0), observationAt(T0.plusMinutes(5)));
 		LocalDateTime newObservedAt = T0.plusSeconds(1);
 
@@ -155,8 +142,6 @@ class EvidenceJudgmentServiceTest {
 
 		assertThat(result).contains(PracticeEvidenceType.TIMED_REPETITION);
 	}
-
-	// --- 우선순위: A가 충족되면 B는 판정하지 않는다 ---
 
 	@Test
 	void judgeObservationEvidenceReturnsBoundaryEvidenceWhenBothAAndBWouldBeSatisfied() {
@@ -197,8 +182,6 @@ class EvidenceJudgmentServiceTest {
 		assertThat(result.evidenceType()).isNull();
 	}
 
-	// --- Evidence C(FINAL_EVENT)는 이 경로에 존재하지 않는다 ---
-
 	@Test
 	void practiceEvidenceTypeEnumHasNoFinalEventValueAndOnlyDefinesAAndB() {
 		assertThat(PracticeEvidenceType.values())
@@ -207,7 +190,6 @@ class EvidenceJudgmentServiceTest {
 
 	@Test
 	void judgeObservationEvidenceNeverReturnsAnEvidenceTypeOtherThanClosestToBoundaryOrTimedRepetition() {
-		// A/B 모두 미충족인 경로를 포함해, 서비스가 반환하는 evidenceType은 null 또는 두 enum 값 중 하나뿐이다.
 		List<PracticeMarketObservation> existing = List.of();
 		LocalDateTime newObservedAt = T0;
 

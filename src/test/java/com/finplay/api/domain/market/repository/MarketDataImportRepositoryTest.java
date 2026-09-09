@@ -1,4 +1,3 @@
-// 실제 MySQL에서 market_data_imports 저장·조회와 source_trading_date 기준 조회를 검증하는 JPA 슬라이스 테스트다.
 package com.finplay.api.domain.market.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -77,7 +76,6 @@ class MarketDataImportRepositoryTest {
 		marketDataImportRepository.save(
 			MarketDataImport.create(
 				"KIS_HISTORICAL", SOURCE_TRADING_DATE, COLLECTED_AT.plusMinutes(5), ImportStatus.SUCCESS, null));
-		// 다른 거래일 — 결과에서 제외되어야 함
 		marketDataImportRepository.save(
 			MarketDataImport.create(
 				"KIS_HISTORICAL", OTHER_SOURCE_TRADING_DATE, COLLECTED_AT, ImportStatus.SUCCESS, null));

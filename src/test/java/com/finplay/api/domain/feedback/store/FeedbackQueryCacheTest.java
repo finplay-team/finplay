@@ -1,4 +1,3 @@
-// FeedbackQueryCache의 키 조립·TTL 경계·음성 결과 미저장·킬 스위치·fail-open·Redis 장애 흡수를 Clock.fixed와 mock Redis로 검증하는 단위 테스트다 (ADR-0015).
 package com.finplay.api.domain.feedback.store;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -35,12 +34,6 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import tools.jackson.databind.ObjectMapper;
 
-// tasks.md 항목 2 — TTL 경계는 "지금"의 함수라 Clock.fixed 없이는 단정할 수 없고, 저장 여부·저장 안 함은 Redis
-// 호출 유무가 유일한 관찰점이라 mock으로 본다. 실제 Redis에서의 상호 배제·TTL 만료는 RedisLockIntegrationTest가
-// 이미 맡고 있으므로 여기서 다시 보지 않는다(항목 6·7이 실제 Redis로 캐시 경로를 통합 검증한다).
-//
-// 기대 키를 리터럴로 적는다 — 구현의 상수를 참조해 만들면 접두사가 바뀌어도 테스트가 함께 따라가 아무것도
-// 고정하지 못한다. 키는 Redis에 남는 외부 계약이라 바뀌면 여기가 깨져야 한다.
 class FeedbackQueryCacheTest {
 
 	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
@@ -51,7 +44,6 @@ class FeedbackQueryCacheTest {
 
 	private static final String LOCK_TOKEN = "lock-token";
 
-	// 절단 상한 기본값(§C-7 feedback.news.max-items-per-briefing).
 	private static final int MAX_ITEMS_PER_BRIEFING = 30;
 
 	private static final String CRYPTO_SUMMARY_KEY = "feedback:query-cache:v1:crypto-summary:7";
@@ -75,8 +67,6 @@ class FeedbackQueryCacheTest {
 
 	private final RedisLock redisLock = mock(RedisLock.class);
 
-	// Boot가 주는 것과 같은 종류(Jackson 3)의 진짜 매퍼를 쓴다 — 직렬화를 mock으로 흉내 내면 왕복이 실제로
-	// 되는지(BriefingNewsItem.publishedAt 포함)를 이 테스트가 전혀 보지 못한다.
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
 	private static final BriefingNewsItem ITEM = new BriefingNewsItem(
@@ -96,7 +86,6 @@ class FeedbackQueryCacheTest {
 		return Clock.fixed(now.atZone(KST).toInstant(), KST);
 	}
 
-	// 대부분의 테스트가 쓰는 조립 — 캐시가 켜져 있고 락은 항상 획득된다(락 경합 자체는 아래 fail-open 테스트가 본다).
 	private FeedbackQueryCache cacheAt(LocalDateTime now) {
 		return cacheAt(now, MAX_ITEMS_PER_BRIEFING);
 	}
@@ -107,8 +96,6 @@ class FeedbackQueryCacheTest {
 		return new FeedbackQueryCache(redisTemplate, redisLock, objectMapper, clockAt(now), properties(true),
 			newsProperties(maxItemsPerBriefing));
 	}
-
-	// ── TTL 경계 ──────────────────────────────────────────────────────────────────────
 
 	@Test
 	@DisplayName("코인 요약 TTL은 다음 정시 05분까지다 — 10:03이면 2분")
@@ -122,8 +109,6 @@ class FeedbackQueryCacheTest {
 		verify(redisLock).unlock(CRYPTO_SUMMARY_LOCK_KEY, LOCK_TOKEN);
 	}
 
-	// 05분을 이미 지났으면 이번 시각의 05분이 아니라 다음 시각의 05분이다 — 여기서 잘못 계산하면 TTL이 음수가
-	// 되어 저장이 통째로 건너뛰어지고, 캐시가 켜져 있는데 적중률이 0인 상태가 로그 한 줄로만 남는다.
 	@Test
 	@DisplayName("코인 요약 TTL은 05분을 지난 시각이면 다음 시각 05분으로 넘어간다 — 10:07이면 58분, 정각 10:05면 60분")
 	void cryptoSummaryTtlRollsToTheNextHourWhenNowIsAtOrPastFiveMinutes() {
@@ -169,9 +154,6 @@ class FeedbackQueryCacheTest {
 		verify(valueOperations).set(STOCK_BRIEFING_TEXT_KEY, "브리핑 본문", Duration.ofHours(25));
 	}
 
-	// items만 만료가 다르다 — 텍스트는 배치가 만들면 그날 안 바뀌지만 이 목록은 market_news_items에서 재구성되고
-	// 그 테이블은 feedback.news.collect-cron이 30분마다 계속 쓴다. 익일 09:00까지 잡아 두면 뒤늦게 색인된 전장
-	// 기사가 그때까지 목록에 안 나오는데 예외도 로그도 없다(PR 리뷰 [권장 2]).
 	@Test
 	@DisplayName("주식 브리핑 items의 TTL은 익일 개장이 아니라 다음 수집 실행까지다 — 08:00이면 08:30")
 	void stockBriefingItemsExpireAtTheNextNewsCollectionRun() {
@@ -183,7 +165,6 @@ class FeedbackQueryCacheTest {
 			.set(eq(STOCK_BRIEFING_ITEMS_KEY), anyString(), eq(Duration.ofMinutes(30)));
 	}
 
-	// 주기를 리터럴로 다시 적지 않고 설정된 크론에서 얻는지 본다 — 크론을 바꾸면 TTL도 함께 따라와야 한다.
 	@Test
 	@DisplayName("수집 크론을 10분 간격으로 바꾸면 items TTL도 그 주기를 따른다")
 	void stockBriefingItemsTtlFollowsTheConfiguredCollectCron() {
@@ -210,8 +191,6 @@ class FeedbackQueryCacheTest {
 		verify(valueOperations).set(CRYPTO_BRIEFING_TEXT_KEY, "코인 브리핑", Duration.ofMinutes(2));
 	}
 
-	// 정상 경로에서는 15:30 이후에 scope가 FULL이라 이 상태가 되지 않는다. 경계 계산이 틀어져 만료가 과거가
-	// 되었을 때 음수 TTL로 Redis 명령 오류를 내지 않고 저장만 건너뛰는지를 고정한다.
 	@Test
 	@DisplayName("TTL이 이미 과거면 저장하지 않고 로더 결과만 반환한다")
 	void doesNotStoreWhenTheComputedTtlIsNotPositive() {
@@ -224,10 +203,6 @@ class FeedbackQueryCacheTest {
 		verify(valueOperations, never()).set(anyString(), anyString(), any(Duration.class));
 	}
 
-	// ── 절단 상한이 키에 들어간다 ─────────────────────────────────────────────────────
-
-	// 캐시하는 값이 절단 **후** 목록이라, 상한을 바꿔도 키가 같으면 옛 길이 목록이 TTL(최대 익일 09:00)까지
-	// 그대로 나간다 — 예외도 로그도 없이 화면 목록 길이만 틀린다. 키가 갈리는 것이 유일한 방어다.
 	@Test
 	@DisplayName("브리핑 items 키에 절단 상한이 들어가 max-items-per-briefing을 바꾸면 다른 키가 된다")
 	void stockBriefingItemsKeyIncludesTheTruncationLimitSoChangingItSplitsTheKey() {
@@ -244,8 +219,6 @@ class FeedbackQueryCacheTest {
 				"feedback:query-cache:v1:stock-briefing-items:2026-08-05:10");
 	}
 
-	// ── 음성 결과는 캐시하지 않는다 ───────────────────────────────────────────────────
-
 	@Test
 	@DisplayName("로더가 '없음'을 반환하면 저장하지 않는다")
 	void doesNotStoreWhenTheLoaderReturnsEmpty() {
@@ -255,7 +228,6 @@ class FeedbackQueryCacheTest {
 
 		assertThat(result).isEmpty();
 		verify(valueOperations, never()).set(anyString(), anyString(), any(Duration.class));
-		// 저장하지 않아도 락은 반드시 푼다 — 안 그러면 다음 요청들이 TTL 동안 전부 대기한다.
 		verify(redisLock).unlock(anyString(), eq(LOCK_TOKEN));
 	}
 
@@ -269,8 +241,6 @@ class FeedbackQueryCacheTest {
 		assertThat(result).isEmpty();
 		verify(valueOperations, never()).set(anyString(), anyString(), any(Duration.class));
 	}
-
-	// ── 캐시 적중 ─────────────────────────────────────────────────────────────────────
 
 	@Test
 	@DisplayName("캐시에 값이 있으면 로더도 락도 건드리지 않고 그 값을 반환한다")
@@ -307,7 +277,6 @@ class FeedbackQueryCacheTest {
 		assertThat(result).containsExactly(ITEM);
 	}
 
-	// 형식이 바뀐 옛 값이 남은 경우다. 예외를 던져 조회를 실패시키면 배포 직후 전 사용자가 500을 본다.
 	@Test
 	@DisplayName("역직렬화할 수 없는 값이 남아 있으면 캐시 미스로 취급해 로더 결과를 낸다")
 	void treatsAnUndecodableCachedValueAsAMiss() {
@@ -319,8 +288,6 @@ class FeedbackQueryCacheTest {
 		assertThat(result).containsExactly(ITEM);
 		verify(valueOperations).set(eq(STOCK_BRIEFING_ITEMS_KEY), anyString(), any(Duration.class));
 	}
-
-	// ── 킬 스위치 ─────────────────────────────────────────────────────────────────────
 
 	@Test
 	@DisplayName("enabled=false면 조회가 Redis도 락도 전혀 접촉하지 않고 로더 결과를 그대로 낸다")
@@ -353,8 +320,6 @@ class FeedbackQueryCacheTest {
 		verifyNoInteractions(untouchedTemplate);
 	}
 
-	// ── 무효화 ────────────────────────────────────────────────────────────────────────
-
 	@Test
 	@DisplayName("enabled=true면 무효화가 해당 코인 키를 지운다")
 	void evictDeletesTheCryptoKeys() {
@@ -366,8 +331,6 @@ class FeedbackQueryCacheTest {
 		verify(redisTemplate).delete(CRYPTO_SUMMARY_KEY);
 		verify(redisTemplate).delete(CRYPTO_BRIEFING_TEXT_KEY);
 	}
-
-	// ── Redis 장애 ────────────────────────────────────────────────────────────────────
 
 	@Test
 	@DisplayName("Redis 읽기·쓰기가 예외를 던져도 로더 결과가 그대로 나오고 예외가 새지 않는다")
@@ -391,9 +354,6 @@ class FeedbackQueryCacheTest {
 		assertThatCode(() -> cache.evictCryptoSummaryText(INSTRUMENT_ID)).doesNotThrowAnyException();
 	}
 
-	// ── 락을 얻지 못했을 때 ───────────────────────────────────────────────────────────
-
-	// 대기 중 락 보유자가 채운 값을 보면 원본을 부르지 않는다 — 이것이 쏠림 방어의 본체다.
 	@Test
 	@DisplayName("대기 중 락 보유자가 채운 값이 보이면 그 값을 쓰고 로더를 부르지 않는다")
 	void usesTheValueTheLockHolderWroteDuringTheWait() {
@@ -410,15 +370,12 @@ class FeedbackQueryCacheTest {
 		assertThat(result).contains("락 보유자가 채운 값");
 	}
 
-	// fail-open이 캐시에 쓰면, 늦게 깨어난 이 로더의 옛 값이 락 보유자가 이미 채운 새 값을 덮어쓴다.
-	// 락 없는 쓰기라 그 덮어쓰기는 어떤 순서 보장도 받지 못한다 — 그래서 이 경로는 반드시 읽기 전용이다.
 	@Test
 	@DisplayName("대기가 타임아웃되면 로더 결과를 반환하되 캐시에 쓰지 않는다(fail-open)")
 	void failOpenReturnsTheLoaderResultWithoutWritingToTheCache() {
 		when(redisTemplate.opsForValue()).thenReturn(valueOperations);
 		when(redisLock.tryLock(anyString(), any(Duration.class))).thenReturn(Optional.empty());
 		when(valueOperations.get(CRYPTO_SUMMARY_KEY)).thenReturn(null);
-		// 대기를 짧게 잡아 테스트가 기본값 300ms를 기다리지 않게 한다 — 검증 대상은 시간이 아니라 "쓰지 않는다"다.
 		FeedbackQueryCache cache = new FeedbackQueryCache(redisTemplate, redisLock, objectMapper,
 			clockAt(LocalDateTime.of(2026, 8, 5, 10, 3)),
 			new FeedbackQueryCacheProperties(true, 1000, 40, 10), newsProperties(MAX_ITEMS_PER_BRIEFING));
@@ -427,23 +384,14 @@ class FeedbackQueryCacheTest {
 
 		assertThat(result).contains("원본 요약");
 		verify(valueOperations, never()).set(anyString(), anyString(), any(Duration.class));
-		// 얻지도 못한 락을 풀면 남의 락을 건드리는 것이다 — RedisLock이 토큰으로 막지만 애초에 부르지 않아야 한다.
 		verify(redisLock, never()).unlock(anyString(), anyString());
 	}
 
-	/*
-	 * 대기 루프 안에서 Redis가 불건전해지는 경로다. skipsTheWaitEntirelyWhenRedisIsDown(통합)이 보는 것은
-	 * **첫 읽기** 시점의 불건전이라 이 분기를 지나가지 않는다 — 그쪽은 락을 시도하기도 전에 빠져나간다.
-	 *
-	 * 여기서 갈리는 것은 소요뿐이다. 이 분기가 없어도 결국 타임아웃 뒤 같은 답(로더 결과)을 내므로
-	 * "정답이 나온다"로는 두 구현이 구분되지 않는다. 그래서 wait-millis를 3초로 크게 잡고 1초 미만을 단정한다.
-	 */
 	@Test
 	@DisplayName("대기 도중 Redis가 불건전해지면 남은 wait-millis를 태우지 않고 즉시 원본으로 내려간다")
 	void leavesTheWaitImmediatelyWhenRedisTurnsUnhealthyMidWait() {
 		when(redisTemplate.opsForValue()).thenReturn(valueOperations);
 		when(redisLock.tryLock(anyString(), any(Duration.class))).thenReturn(Optional.empty());
-		// 첫 읽기는 정상적인 미스(null), 대기 루프 안의 두 번째 읽기부터 장애다.
 		when(valueOperations.get(CRYPTO_SUMMARY_KEY))
 			.thenReturn(null)
 			.thenThrow(new RuntimeException("Redis 장애"));
@@ -461,15 +409,6 @@ class FeedbackQueryCacheTest {
 			.isLessThan(1000L);
 	}
 
-	/*
-	 * 요청 스레드가 취소된 상황이다. 계속 폴링하는 것이 더 나쁘므로 즉시 원본으로 내려가되,
-	 * **인터럽트 상태를 복원해야 한다** — 복원을 빠뜨리면 취소 신호가 이 메서드에서 소멸해 위쪽(서블릿 컨테이너·
-	 * 상위 실행자)이 취소를 영영 알지 못한다. 결과값만 보면 복원한 구현과 안 한 구현이 똑같으므로
-	 * isInterrupted를 직접 단정한다.
-	 *
-	 * Thread.interrupted()로 읽으면서 동시에 플래그를 지운다 — 남겨 두면 같은 스레드에서 도는 뒤 테스트들이
-	 * 엉뚱하게 InterruptedException을 맞는다.
-	 */
 	@Test
 	@DisplayName("대기 중 인터럽트되면 원본으로 내려가면서 인터럽트 상태를 복원한다")
 	void restoresTheInterruptFlagWhenTheWaitIsInterrupted() {
@@ -491,11 +430,9 @@ class FeedbackQueryCacheTest {
 
 		assertThat(result).as("취소돼도 응답은 준다").contains("원본 요약");
 		assertThat(stillInterrupted).as("인터럽트 상태를 삼키면 취소 신호가 여기서 사라진다").isTrue();
-		// 인터럽트로 빠져나온 경로도 fail-open이므로 캐시에 쓰지 않는다.
 		verify(valueOperations, never()).set(anyString(), anyString(), any(Duration.class));
 	}
 
-	// 로더 예외가 락을 TTL까지 붙잡고 있으면, 그 사이 같은 키의 모든 요청이 대기 후 fail-open으로 DB에 직행한다.
 	@Test
 	@DisplayName("로더가 예외를 던져도 락은 풀린다(예외 자체는 호출부로 전파된다)")
 	void unlocksEvenWhenTheLoaderThrows() {

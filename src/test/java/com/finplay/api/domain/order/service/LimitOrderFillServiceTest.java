@@ -1,4 +1,3 @@
-// LimitOrderFillService.fillIfPending의 BUY/SELL 체결·중복 이벤트 no-op을 검증하는 단위 테스트다.
 package com.finplay.api.domain.order.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -70,7 +69,6 @@ class LimitOrderFillServiceTest {
 	void fillIfPendingFillsBuyOrderConfirmsReservedCashAndAppliesBuyTrade() {
 		Instrument instrument = cryptoInstrument();
 		Account account = account();
-		// quantity=0.1 * limitPrice=1,000,000 => amount=100,000, fee=floor(100,000*0.0005)=50
 		account.reserveCash(100_050L);
 		Order order = limitPendingOrder(account, instrument, OrderSide.BUY, "0.1", "1000000");
 		when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
@@ -159,15 +157,11 @@ class LimitOrderFillServiceTest {
 
 	@Test
 	void fillIfPendingBuyConfirmsReservedCashInTutorialAccountOnlyWhenInstrumentIsTutorialSample() {
-		// 047 TUTORIAL-CASH-ISOL-002: 샌드박스 종목 지정가 매수 체결은 실제 Account가 아니라 같은 사용자·
-		// 시장의 튜토리얼 계좌에서 예약을 확정(confirmReservedCash)한다 — 실제 Account.cashBalance·
-		// reservedCash는 전혀 변하지 않는다.
 		Instrument instrument = cryptoInstrument();
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
 		Account account = account();
 		TutorialAccount tutorialAccount = tutorialAccount();
-		// quantity=0.1 * limitPrice=1,000,000 => amount=100,000, fee=floor(100,000*0.0005)=50
-		tutorialAccount.reserveCash(100_050L); // 생성 시점(LimitOrderCreationService)에 이미 예약된 상태를 재현
+		tutorialAccount.reserveCash(100_050L);
 		Order order = limitPendingOrder(account, instrument, OrderSide.BUY, "0.1", "1000000");
 		when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
 		when(accountService.getAccountByIdForUpdate(account.getId())).thenReturn(account);
@@ -179,15 +173,12 @@ class LimitOrderFillServiceTest {
 		assertThat(order.getStatus()).isEqualTo(OrderStatus.FILLED);
 		assertThat(tutorialAccount.getReservedCash()).isZero();
 		assertThat(tutorialAccount.getCashBalance()).isEqualTo(10_000_000L - 100_050L);
-		assertThat(account.getReservedCash()).isZero(); // 실제 계좌는 예약된 적이 없다
-		assertThat(account.getCashBalance()).isEqualTo(10_000_000L); // 실제 계좌 현금은 전혀 변하지 않는다
+		assertThat(account.getReservedCash()).isZero();
+		assertThat(account.getCashBalance()).isEqualTo(10_000_000L);
 	}
 
 	@Test
 	void fillIfPendingBuyForAttributedTutorialSampleReleasesAndDeductsInTutorialAccountOnly() {
-		// 047 TUTORIAL-CASH-ISOL-002: canonicalPracticeFill(attempt 귀속 체결) 분기도 튜토리얼 계좌만
-		// 움직여야 한다 — fillIfPendingLocksAttemptBeforeAttributedOrder(실제 계좌 경로)와 동일한 수치를
-		// 튜토리얼 계좌 기준으로 검증한다.
 		Instrument instrument = cryptoInstrument();
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
 		Account account = account();
@@ -206,7 +197,6 @@ class LimitOrderFillServiceTest {
 
 		service.fillIfPending(order.getId());
 
-		// executionPrice=900,000, amount=0.1*900,000=90,000, fee=floor(90,000*0.0005)=45
 		assertThat(tutorialAccount.getReservedCash()).isZero();
 		assertThat(tutorialAccount.getCashBalance()).isEqualTo(10_000_000L - 90_045L);
 		assertThat(account.getReservedCash()).isZero();
@@ -224,13 +214,11 @@ class LimitOrderFillServiceTest {
 
 		service.fillIfPending(order.getId());
 
-		verifyNoInteractions(tutorialAccountService); // 047 회귀 방지: 실제 종목 체결은 튜토리얼 계좌를 전혀 조회하지 않는다
+		verifyNoInteractions(tutorialAccountService);
 	}
 
 	@Test
 	void fillIfPendingFillsBuyOrderWhenNoExistingHoldingForNewInstrument() {
-		// 신규 종목 첫 매수: LimitOrderFillService는 holding을 조회·잠그지 않고 전량 PortfolioBuyService에
-		// 위임한다(holding 신규 생성은 PortfolioBuyService.applyBuyTrade 내부의 orElseGet이 처리, plan.md).
 		Instrument instrument = cryptoInstrument();
 		Account account = account();
 		account.reserveCash(100_050L);
@@ -285,7 +273,6 @@ class LimitOrderFillServiceTest {
 
 	@Test
 	void fillIfPendingSellDoesNotPublishRealizedPnlUpdatedEventWhenInstrumentIsTutorialSample() {
-		// 이슈 #549 — 튜토리얼 샘플 종목 지정가 매도는 실제 매도 이력 없는 계좌를 랭킹에 올리게 되므로 이벤트를 발행하지 않는다.
 		Instrument instrument = cryptoInstrument();
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
 		Account account = account();
@@ -310,9 +297,6 @@ class LimitOrderFillServiceTest {
 
 	@Test
 	void fillIfPendingSecondCallDoesNotDuplicateFirstCallSideEffectsOnSameOrder() {
-		// 같은 주문 인스턴스에 fillIfPending을 연속 두 번 호출한다(중복 이벤트 도착 시나리오).
-		// 두 번째 호출 시점에는 order가 이미 FILLED이므로, 현금·거래 저장·매수 반영이 두 번째에는 전혀 일어나지
-		// 않아야 한다(완료조건 "동시 체결 경합" — 예약 이중 반환·중복 체결 방지).
 		Instrument instrument = cryptoInstrument();
 		Account account = account();
 		account.reserveCash(100_050L);
@@ -332,7 +316,6 @@ class LimitOrderFillServiceTest {
 		verify(tradeRepository, org.mockito.Mockito.times(1)).save(any(Trade.class));
 		verify(portfolioBuyService, org.mockito.Mockito.times(1)).applyBuyTrade(
 			any(), any(), any(), any(), any(), org.mockito.ArgumentMatchers.anyLong(), any());
-		// 두 번째 호출에서는 계좌 락 재획득 자체가 일어나지 않는다(order 상태를 먼저 확인하고 즉시 반환).
 		verify(accountService, org.mockito.Mockito.times(1)).getAccountByIdForUpdate(account.getId());
 	}
 
@@ -350,16 +333,8 @@ class LimitOrderFillServiceTest {
 		verifyNoInteractions(tradeRepository, portfolioBuyService, portfolioSellService, eventPublisher);
 	}
 
-	// ADR-0025 — fillBatch(List<Long>)는 청크 안 각 주문에 fillIfPending과 동일한 체결 로직을 순서대로
-	// 적용한다. 054-limit-order-fill-bulk-lock부터는 order→account→holding을 개별 왕복이 아니라 벌크 FOR
-	// UPDATE 조회로 묶으므로, 여기서는 벌크 조회 3종(findByIdInForUpdate·getAccountsByIdsForUpdate·
-	// findExistingHoldingsForChunkUpdate)을 스텁한다. 청크 원자적 롤백(한 건 실패 시 전체 롤백)은 실제 DB 커밋이 필요해
-	// LimitOrderFillBatchAtomicityIntegrationTest가 맡는다.
 	@Test
 	void fillBatchFillsEachOrderInGivenOrder() {
-		// account()는 항상 id=10L을 부여하므로(테스트 헬퍼 관례), 두 주문에 서로 다른 Account 인스턴스를 쓰면
-		// getAccountsByIdsForUpdate(List.of(10L)) 스텁이 나중 것으로 덮어써져 첫 주문도 두 번째 계좌를 참조하게
-		// 된다 — 하나의 계좌를 공유하고 두 주문의 예약 합계를 누적해서 이 문제를 피한다.
 		Instrument instrument = cryptoInstrument();
 		Account account = account();
 		Order first = limitPendingOrder(account, instrument, OrderSide.BUY, "0.1", "1000000");
@@ -384,8 +359,6 @@ class LimitOrderFillServiceTest {
 
 	@Test
 	void fillBatchSkipsOrderThatIsNoLongerPending() {
-		// PENDING이 아닌 주문만 있는 청크는 계좌·holding 벌크 조회 자체를 생략한다(fillBatch의
-		// pendingOrders.isEmpty() 분기) — account·holding 관련 협력자를 전혀 건드리지 않아야 한다.
 		Instrument instrument = cryptoInstrument();
 		Account account = account();
 		Order alreadyFilled = limitPendingOrder(account, instrument, OrderSide.BUY, "0.1", "1000000");
@@ -401,9 +374,6 @@ class LimitOrderFillServiceTest {
 
 	@Test
 	void fillBatchLocksBulkResourcesInOrderAccountHoldingSequence() {
-		// plan.md "4": 벌크 락은 order→account→holding 순서로 걸려야 한다(위험 요소 1·3). 각 단계는 AccountService·
-		// PortfolioBuyService만 거쳐 호출한다(ADR-0002 — LimitOrderFillService가 AccountRepository·
-		// HoldingRepository를 직접 주입하지 않는다).
 		Instrument instrument = cryptoInstrument();
 		Account account = account();
 		account.reserveCash(100_050L);
@@ -430,11 +400,6 @@ class LimitOrderFillServiceTest {
 	@Test
 	@SuppressWarnings("unchecked")
 	void fillBatchLocksOrderIdsAscendingButProcessesGivenSequenceAndReusesHoldingCreatedInSameChunk() {
-		// spec.md 비즈니스 규칙: 벌크 락을 위한 ID 오름차순 정렬은 잠그는 쿼리에만 적용되고, 실제 체결 처리
-		// 순서는 fillBatch에 전달된 원래 순서(requestedAt asc, id asc, LMT-002 계약)를 그대로 따라야 한다.
-		// 또한 같은 청크·같은 계좌·같은 신규 종목에 매수가 2건 걸려 있으면(위험 요소 2) 먼저 처리된 주문이 만든
-		// holding을 나중 주문이 재사용해야 한다(두 번째 Holding.create + INSERT가 없어야 uk_holdings_account_
-		// instrument 위반을 피한다).
 		Instrument instrument = cryptoInstrument();
 		Account account = account();
 		account.reserveCash(200_100L + 100_050L);
@@ -446,33 +411,29 @@ class LimitOrderFillServiceTest {
 		when(accountService.getAccountsByIdsForUpdate(List.of(10L))).thenReturn(List.of(account));
 		when(portfolioBuyService.findExistingHoldingsForChunkUpdate(List.of(10L), instrument.getId()))
 			.thenReturn(List.of());
-		// 실제 PortfolioBuyService.applyBuyTrade(..., holding)처럼 넘겨받은 holding 인스턴스를 그대로
-		// 반환한다(저장 시뮬레이션) — 맵 재사용 여부를 인스턴스 동일성으로 검증할 수 있게 한다.
 		when(portfolioBuyService.applyBuyTrade(
 			eq(account), eq(instrument), any(Trade.class), any(BigDecimal.class), eq(new BigDecimal("1000000")),
 			anyLong(), eq(NOW), any(Holding.class)))
 			.thenAnswer(invocation -> invocation.getArgument(7));
 
-		// 처리 순서를 102 → 101로 뒤집어 전달한다 — 락 쿼리의 오름차순 정렬과 처리 순서가 다르다는 것을
-		// 드러내기 위해서다.
 		service.fillBatch(List.of(102L, 101L));
 
 		ArgumentCaptor<List<Long>> lockIdsCaptor = ArgumentCaptor.forClass(List.class);
 		verify(orderRepository).findByIdInForUpdate(lockIdsCaptor.capture());
-		assertThat(lockIdsCaptor.getValue()).containsExactly(101L, 102L); // 락 쿼리는 항상 ID 오름차순
+		assertThat(lockIdsCaptor.getValue()).containsExactly(101L, 102L);
 
 		ArgumentCaptor<Trade> tradeCaptor = ArgumentCaptor.forClass(Trade.class);
 		verify(tradeRepository, org.mockito.Mockito.times(2)).save(tradeCaptor.capture());
 		List<Trade> savedTrades = tradeCaptor.getAllValues();
-		assertThat(savedTrades.get(0).getQuantity()).isEqualByComparingTo("0.2"); // 102가 먼저 체결(처리 순서 보존)
-		assertThat(savedTrades.get(1).getQuantity()).isEqualByComparingTo("0.1"); // 101이 나중 체결
+		assertThat(savedTrades.get(0).getQuantity()).isEqualByComparingTo("0.2");
+		assertThat(savedTrades.get(1).getQuantity()).isEqualByComparingTo("0.1");
 
 		ArgumentCaptor<Holding> holdingCaptor = ArgumentCaptor.forClass(Holding.class);
 		verify(portfolioBuyService, org.mockito.Mockito.times(2)).applyBuyTrade(
 			eq(account), eq(instrument), any(Trade.class), any(BigDecimal.class), eq(new BigDecimal("1000000")),
 			anyLong(), eq(NOW), holdingCaptor.capture());
 		List<Holding> holdingsPassedIn = holdingCaptor.getAllValues();
-		assertThat(holdingsPassedIn.get(1)).isSameAs(holdingsPassedIn.get(0)); // 두 번째 호출이 첫 호출의 holding을 재사용
+		assertThat(holdingsPassedIn.get(1)).isSameAs(holdingsPassedIn.get(0));
 
 		assertThat(order101.getStatus()).isEqualTo(OrderStatus.FILLED);
 		assertThat(order102.getStatus()).isEqualTo(OrderStatus.FILLED);
@@ -480,9 +441,6 @@ class LimitOrderFillServiceTest {
 
 	@Test
 	void fillBatchThrowsSameMessageAsFindByIdForUpdateWhenBulkOrderLockOmitsRequestedId() {
-		// spec.md 비즈니스 규칙: 벌크 조회가 조용히 빠뜨린 존재하지 않는 orderId는 처리 루프가 직접 예외를
-		// 던져야 한다 — 단건 경로(findByIdForUpdate의 orElseThrow)와 동일한 타입·메시지여야 기존
-		// LimitOrderFillBatchAtomicityIntegrationTest의 "청크 전체 롤백" 시나리오가 그대로 성립한다.
 		when(orderRepository.findByIdInForUpdate(List.of(999L))).thenReturn(List.of());
 
 		assertThatThrownBy(() -> service.fillBatch(List.of(999L)))
@@ -494,9 +452,6 @@ class LimitOrderFillServiceTest {
 
 	@Test
 	void fillBatchThrowsExplicitExceptionWhenBulkAccountLockOmitsOrdersAccount() {
-		// order→account는 FK로 항상 존재해야 하지만(0aea48b9 방어 가드, PR #545 리뷰 권장사항 3번), 벌크
-		// 계좌 조회가 그 계좌를 조용히 빠뜨리면 null을 그대로 넘기지 않고 명시 예외를 던져야 한다 — 형제 가드인
-		// order 누락(위 테스트)·SELL holding 누락(아래 테스트)과 대칭을 이룬다.
 		Instrument instrument = cryptoInstrument();
 		Account account = account();
 		Order order = limitPendingOrder(account, instrument, OrderSide.BUY, "0.1", "1000000");
@@ -519,8 +474,6 @@ class LimitOrderFillServiceTest {
 
 	@Test
 	void fillBatchThrowsSameMessageAsGetHoldingForUpdateWhenSellHoldingMissingFromBulkMap() {
-		// SELL은 신규 생성이 없으므로 holdingsByAccountId 맵에 없으면 실제로 holding이 없는 것이다 —
-		// PortfolioSellService.getHoldingForUpdate(단건 경로)와 동일한 메시지의 예외를 던져야 한다.
 		Instrument instrument = cryptoInstrument();
 		Account account = account();
 		Order order = limitPendingOrder(account, instrument, OrderSide.SELL, "0.1", "1000000");
@@ -540,8 +493,6 @@ class LimitOrderFillServiceTest {
 
 	@Test
 	void fillBatchDoesNotPublishRealizedPnlUpdatedEventWhenSellInstrumentIsTutorialSample() {
-		// PR #550 리뷰 권장 1 — fillSell(단건 경로)뿐 아니라 fillBatch의 벌크 락 경로
-		// (fillSellWithLockedHolding)도 같은 가드가 있는지 확인한다(이슈 #549).
 		Instrument instrument = cryptoInstrument();
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
 		Account account = account();

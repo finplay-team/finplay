@@ -1,4 +1,3 @@
-// 실제 인증 필터와 MySQL을 연결해 게시글 수정 핵심 시나리오를 검증하는 통합 테스트다.
 package com.finplay.api.domain.community;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -56,8 +55,6 @@ class CommunityPostUpdateIntegrationTest {
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
 
-	// 이 클래스가 생성한 종목(symbol 접두사 SYM)만 정리한다 — InstrumentRepositoryTest의 개수 단정을 깨지 않기 위해
-	// (CommunityPostInstrumentTagIntegrationTest와 동일한 패턴).
 	@AfterEach
 	void removeInstrumentsCreatedByThisTestClass() {
 		jdbcTemplate.update("delete from community_posts where instrument_id in "

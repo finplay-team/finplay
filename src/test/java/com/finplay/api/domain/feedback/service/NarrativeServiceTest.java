@@ -1,4 +1,3 @@
-// NarrativeService의 1단계(템플릿 폴백)·2단계(재생성) 경로와 호출 횟수 상한을 검증하는 단위 테스트.
 package com.finplay.api.domain.feedback.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -24,32 +23,18 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.LoggerFactory;
 
-/**
- * 생성기만 Fake로 바꾸고 프롬프트 조립·후검증·템플릿은 <b>실제 구현을 그대로 붙인다</b>. mock으로 다 막으면
- * "재생성 프롬프트에 적발 표현이 들어갔는가"(§완료 조건 문구 7번째)를 단정할 수 없고, 후검증 목록이 바뀔 때
- * 이 경로가 함께 흔들리는 것을 잡지 못한다 (ADR-0003: mock만으로 검증을 끝내지 않는다).
- *
- * <p>ADR-0011대로 실제 LLM은 호출하지 않는다 — {@code FakeNarrativeGenerator}가 응답을 시나리오로 고정한다.
- */
 class NarrativeServiceTest {
 
 	private static final LocalDate TRADING_DATE = LocalDate.of(2026, 8, 3);
 
-	// 후검증을 통과하는 서술. 금지 표현이 하나도 없다.
 	private static final String CLEAN_NARRATIVE = "09:32부터 5분간 2.10% 상승했습니다. 같은 시간대에 기사 2건이 있었습니다.";
 
-	// 요약 4줄에 걸리는 서술. 경제 기사 제목의 `전망`을 그대로 옮긴 전형적인 실패다 (spec §후검증).
 	private static final String SUMMARY_DIRTY = "업황 전망을 다룬 기사입니다. 실적 개선이 기대됩니다.";
 
-	// 카드 5줄에만 있는 `판단·훈수`에 걸리는 서술 — 요약이었다면 통과했을 문장이다.
 	private static final String CARD_DIRTY = "하락 이후에도 3시간이나 버티는 모습이었습니다.";
 
-	// 숫자 축에만 걸리는 서술 (053). 금지 표현이 하나도 없고, `20`은 매도 회고 프롬프트의 `14:20`에서 오지만
-	// `69,500`은 어디에도 없다 — 프롬프트가 주는 값은 68,500(매도가)·70,800(최고가)이다.
 	private static final String NUMBER_HALLUCINATED = "20일 이동평균선은 69,500원이었습니다.";
 
-	// 두 축에 동시에 걸리는 서술. 글자 순서로는 숫자가 앞, 표현(`버티`)이 뒤인 것이 의도다 —
-	// 적발 목록이 등장 순서가 아니라 축 순서(표현 → 숫자)로 이어 붙는지 갈라 보는 자리다.
 	private static final String BOTH_AXES_DIRTY = "69,500원까지 버티는 모습이었습니다.";
 
 	private static final String CARD_TEMPLATE = "09:32부터 5분간 2.10% 상승했습니다. 같은 시간대에 기사 2건이 있었습니다.";
@@ -57,8 +42,6 @@ class NarrativeServiceTest {
 	private static final String POST_SELL_TEMPLATE = "70,000원에 매수해 68,500원에 매도했습니다. 수익률은 -2.17%입니다. 보유 중 최고가는 11:05의 70,800원이었습니다.";
 
 	private static final String REGENERATION_MARKER = "직전 출력이 아래 금지 표현에 걸려 폐기됐다:";
-
-	// ---------- ① 1차 적발 → 2차 통과 ----------
 
 	@Test
 	@DisplayName("① 요약이 1차에 걸려도 재생성 1회로 통과하면 LLM이 된다 — 기사 제목의 전망 때문에 기능이 사라지지 않는다")
@@ -89,8 +72,6 @@ class NarrativeServiceTest {
 		assertThat(generator.callCount()).isEqualTo(2);
 	}
 
-	// ---------- ② 2차도 적발되면 서술 없음 + NONE ----------
-
 	@Test
 	@DisplayName("② 재생성 후에도 걸리면 서술 없음 + NONE이다")
 	void summaryEndsWithNoneWhenRegenerationAlsoFails() {
@@ -107,15 +88,12 @@ class NarrativeServiceTest {
 		assertThat(generator.callCount()).isEqualTo(2);
 	}
 
-	// ---------- ③ 호출 횟수가 max-regeneration + 1을 넘지 않는다 (프로퍼티를 실제로 읽는가) ----------
-
 	@ParameterizedTest(name = "max-regeneration={0} → 호출 {1}회")
 	@CsvSource({"0, 1", "1, 2", "2, 3", "3, 4"})
 	@DisplayName("③ 생성 호출 수가 max-regeneration + 1을 정확히 따라간다 — 상수로 박으면 여기서 갈린다")
 	void generationCallCountFollowsTheMaxRegenerationProperty(int maxRegeneration, int expectedCalls) {
 		FakeNarrativeGenerator generator = new FakeNarrativeGenerator();
 		for (int i = 0; i < expectedCalls + 2; i++) {
-			// 넉넉히 넣어 둔다 — 큐가 먼저 마르면 생성 실패로 빠져나가 횟수 검증이 무의미해진다.
 			generator.enqueue(SUMMARY_DIRTY);
 		}
 		NarrativeService service = service(generator, maxRegeneration);
@@ -140,8 +118,6 @@ class NarrativeServiceTest {
 		assertThat(result.source()).isEqualTo(NarrativeSource.NONE);
 	}
 
-	// ---------- 확인 2: 1단계에서 재생성이 절대 일어나지 않는다 ----------
-
 	@ParameterizedTest(name = "max-regeneration={0}")
 	@ValueSource(ints = {0, 1, 2, 5})
 	@DisplayName("카드는 적발돼도 max-regeneration과 무관하게 호출이 항상 1회다")
@@ -153,7 +129,6 @@ class NarrativeServiceTest {
 
 		NarrativeResultDto result = service.resolvePriceMoveNarrative(priceMove());
 
-		// 대체할 문장이 있으므로 재시도할 이유가 없다 (spec §후검증). 결과만 보면 정상이라 호출 수를 세야 잡힌다.
 		assertThat(generator.callCount()).isEqualTo(1);
 		assertThat(generator.userPrompts()).noneMatch(prompt -> prompt.contains(REGENERATION_MARKER));
 		assertThat(result.source()).isEqualTo(NarrativeSource.TEMPLATE);
@@ -188,8 +163,6 @@ class NarrativeServiceTest {
 		assertThat(result.narrative()).isEqualTo(CLEAN_NARRATIVE);
 	}
 
-	// ---------- ⑤ 카드·매도 회고는 적발 시 템플릿 문장 + TEMPLATE ----------
-
 	@Test
 	@DisplayName("⑤ 카드가 적발되면 §템플릿 문장의 장중 카드 문장으로 대체된다")
 	void priceMoveFallsBackToTheSpecTemplateSentence() {
@@ -217,9 +190,6 @@ class NarrativeServiceTest {
 	@Test
 	@DisplayName("sameSessionCompleted=false인 매도 회고도 예외 없이 서술이 나온다 — 생성 성공·실패 양쪽 다")
 	void postSellWithoutHoldExtremesResolvesWithoutException() {
-		// 보유 구간 극값 6필드가 전부 null인 입력이다. 프롬프트 조립은 생성기 밖이라 여기서 NPE가 나면
-		// Optional 폴백에 걸리지 않고 매도 회고 조회가 500이 된다 — "narrativeStatus는 항상 READY"(§C-4)가
-		// 깨지는 자리다. 템플릿 폴백 경로와 LLM 성공 경로를 모두 확인한다.
 		NarrativeResultDto generated = service(new FakeNarrativeGenerator().enqueue("정상 서술입니다."), 1)
 			.resolvePostSellNarrative(multiSessionPostSell());
 
@@ -229,7 +199,6 @@ class NarrativeServiceTest {
 		NarrativeResultDto fallback = service(new FakeNarrativeGenerator().enqueueFailure(), 1)
 			.resolvePostSellNarrative(multiSessionPostSell());
 
-		// 극값이 없으면 템플릿도 셋째 문장을 빼고 두 문장만 만든다 (§템플릿 문장).
 		assertThat(fallback.source()).isEqualTo(NarrativeSource.TEMPLATE);
 		assertThat(fallback.hasNarrative()).isTrue();
 		assertThat(fallback.narrative()).doesNotContain("보유 중 최고가");
@@ -248,13 +217,6 @@ class NarrativeServiceTest {
 		assertThat(summary.narrative()).isEqualTo(CARD_DIRTY);
 	}
 
-	// ---------- 확인 4: 숫자 대조는 매도 회고에만 걸린다 (053 FEED-014, plan §결정 B) ----------
-
-	/**
-	 * 분기가 살아 있는지를 <b>mock 호출 횟수가 아니라 결과로</b> 확인한다 (053 plan §결정 B). 같은 문장을
-	 * 두 파트에 넣어 매도 회고만 떨어지는지 보는 것이라, 내부에서 검증기를 몇 번 부르는지와 무관하게
-	 * 관측 가능한 계약이 깨지면 여기서 갈린다.
-	 */
 	@Test
 	@DisplayName("출처 없는 수치가 든 같은 문장이 매도 회고에서는 TEMPLATE, 변동 카드에서는 LLM이다")
 	void unsourcedNumberFallsBackOnPostSellButNotOnPriceMoveCard() {
@@ -266,7 +228,6 @@ class NarrativeServiceTest {
 		assertThat(postSell.source()).isEqualTo(NarrativeSource.TEMPLATE);
 		assertThat(postSell.narrative()).isEqualTo(POST_SELL_TEMPLATE);
 
-		// 카드에 축을 걸면 카드 템플릿의 `5분간`이 프롬프트에 없어 폴백 문장 자체가 위반이 된다.
 		assertThat(card.source()).isEqualTo(NarrativeSource.LLM);
 		assertThat(card.narrative()).isEqualTo(NUMBER_HALLUCINATED);
 	}
@@ -274,8 +235,6 @@ class NarrativeServiceTest {
 	@Test
 	@DisplayName("프롬프트가 준 수치만 쓴 매도 회고 서술은 그대로 LLM이다 — 새 축이 정상 서술을 떨어뜨리지 않는다")
 	void postSellKeepsLlmWhenEveryNumberComesFromThePrompt() {
-		// 시각·가격·수량·수익률·실현손익을 전부 프롬프트 표기 그대로 옮긴 문장이다. 콜론 분리가 깨지면
-		// 여기서 09·30·14·40이 통째로 출처 없는 수치가 되어 매도 회고가 전부 템플릿으로 떨어진다.
 		String narrative = "09시 30분에 70,000원에 10주를 매수한 뒤 14시 40분에 68,500원에 매도해 "
 			+ "수익률 -2.17%, 실현손익 -15,207원이었습니다.";
 		FakeNarrativeGenerator generator = new FakeNarrativeGenerator().enqueue(narrative);
@@ -286,12 +245,6 @@ class NarrativeServiceTest {
 		assertThat(result.narrative()).isEqualTo(narrative);
 	}
 
-	/**
-	 * FEED-017의 증거 — 축이 둘이 돼도 <b>폴백 분기는 하나</b>다.
-	 *
-	 * <p>적발 목록이 로그 한 줄에 이어 붙고(표현이 앞, 숫자가 뒤), 대체가 한 번만 일어난다. 분기가 축마다
-	 * 갈리면 로그가 두 줄이 되거나 순서가 글자 등장 순서(`69,500` → `버티`)로 뒤집힌다.
-	 */
 	@Test
 	@DisplayName("두 축에 동시에 걸리면 적발 목록이 표현 → 숫자 순으로 한 줄에 이어 붙고 폴백은 한 번이다")
 	void bothAxesAreReportedInOneLogLineWithExpressionsFirst() {
@@ -330,15 +283,12 @@ class NarrativeServiceTest {
 		NarrativeResultDto summary = service(summaryGenerator, 1).resolveNewsSummaryNarrative(newsSummary());
 		NarrativeResultDto briefing = service(briefingGenerator, 1).resolveMarketBriefingNarrative(briefing());
 
-		// 두 파트는 프롬프트가 기사 제목만 주고 수치를 주지 않아 대조할 집합 자체가 없다 (spec §비즈니스 규칙).
 		assertThat(summary.source()).isEqualTo(NarrativeSource.LLM);
 		assertThat(summary.narrative()).isEqualTo(NUMBER_HALLUCINATED);
 		assertThat(summaryGenerator.callCount()).isEqualTo(1);
 		assertThat(briefing.source()).isEqualTo(NarrativeSource.LLM);
 		assertThat(briefingGenerator.callCount()).isEqualTo(1);
 	}
-
-	// ---------- ⑥ + 확인 3: 생성 실패와 후검증 적발이 같은 분기로 수렴 ----------
 
 	@Test
 	@DisplayName("⑥ 키가 없어 생성이 실패해도 카드는 템플릿으로 200 경로가 유지된다")
@@ -374,7 +324,6 @@ class NarrativeServiceTest {
 		NarrativeResultDto afterDetection = service(new FakeNarrativeGenerator().enqueue(CARD_DIRTY), 1)
 			.resolvePriceMoveNarrative(priceMove());
 
-		// 호출부가 두 경우를 구분할 수 있으면 §실패 처리 표의 "그 카드만 템플릿"이 두 갈래가 된다.
 		assertThat(afterFailure).isEqualTo(afterDetection);
 	}
 
@@ -389,7 +338,6 @@ class NarrativeServiceTest {
 
 		NarrativeResultDto result = service.resolveNewsSummaryNarrative(newsSummary());
 
-		// 키 없음·타임아웃은 다시 불러도 같은 이유로 실패한다 (spec §실패 처리, 2026-08-03 추가).
 		assertThat(generator.callCount()).isEqualTo(1);
 		assertThat(result.source()).isEqualTo(NarrativeSource.NONE);
 		assertThat(result.narrative()).isNull();
@@ -423,8 +371,6 @@ class NarrativeServiceTest {
 		assertThat(afterFailure.source()).isEqualTo(NarrativeSource.NONE);
 	}
 
-	// ---------- ④ 재생성 프롬프트에 1차 적발 표현이 그대로 들어간다 ----------
-
 	@Test
 	@DisplayName("④ 2차 호출의 사용자 프롬프트에 1차 적발 표현이 전부 그대로 들어 있다")
 	void regenerationPromptCarriesEveryDetectedExpression() {
@@ -437,7 +383,6 @@ class NarrativeServiceTest {
 
 		String second = generator.userPrompts().get(1);
 		assertThat(second).contains(REGENERATION_MARKER);
-		// SUMMARY_DIRTY는 `전망`과 `기대됩니다` 둘에 걸린다 — 하나만 넘기면 2차도 남은 하나를 다시 쓴다.
 		assertThat(second).contains("직전 출력이 아래 금지 표현에 걸려 폐기됐다: 전망, 기대됩니다");
 		assertThat(second).doesNotContain("{적발된 표현들}");
 	}
@@ -471,12 +416,9 @@ class NarrativeServiceTest {
 		assertThat(generator.callCount()).isEqualTo(3);
 		String third = generator.userPrompts().get(2);
 		assertThat(third).startsWith(generator.userPrompts().get(0));
-		// 누적하면 기사 목록이 중복되고 프롬프트가 계속 길어진다.
 		assertThat(countOccurrences(third, REGENERATION_MARKER)).isEqualTo(1);
 		assertThat(generator.userPrompts().get(1)).isEqualTo(third);
 	}
-
-	// ---------- ⑤(확인 5) NarrativeResultDto의 불변식 ----------
 
 	@Test
 	@DisplayName("정적 팩토리 셋이 source와 narrative를 일관되게 짝지어 만든다")
@@ -517,16 +459,12 @@ class NarrativeServiceTest {
 				assertThat(result.narrative()).isNotBlank();
 			}
 		}
-		// 카드·매도 회고는 NONE이 될 수 없다 — 템플릿이 있기 때문이다 (§C-4).
 		assertThat(results.subList(0, 3)).noneMatch(result -> result.source() == NarrativeSource.NONE);
 	}
 
 	@Test
 	@DisplayName("정규 생성자가 모순 조합을 거부한다 — NONE에 서술이 있거나 LLM·TEMPLATE에 서술이 없으면 실패한다")
 	void canonicalConstructorEnforcesTheInvariant() {
-		// 이 테스트는 원래 "정규 생성자가 모순 조합을 막지 못한다"를 문서화하던 자리였다. compact 생성자에
-		// 검사를 넣으면서 뒤집었다 — 정적 팩토리를 쓰는 규율만으로는 이 클래스를 처음 보는 다음 이슈
-		// 구현자에게 불변식이 전달되지 않고, #5가 NONE → summary=NULL → UNAVAILABLE 매핑을 이 짝 위에 얹는다.
 		assertThatThrownBy(() -> new NarrativeResultDto("문장", NarrativeSource.NONE))
 			.isInstanceOf(IllegalArgumentException.class);
 		assertThatThrownBy(() -> new NarrativeResultDto(null, NarrativeSource.LLM))
@@ -547,8 +485,6 @@ class NarrativeServiceTest {
 		assertThat(new NarrativeResultDto(null, NarrativeSource.NONE).hasNarrative()).isFalse();
 	}
 
-	// 회고 규칙 두 줄을 네 파트 공통 블록에 둔 것이 결정 6이다 — 파트마다 다른 시스템 프롬프트가 나가면
-	// 규칙의 위치가 갈리고, 일기를 넘기지 않는 파트에서 무해하다는 근거도 함께 사라진다.
 	@Test
 	@DisplayName("네 파트가 회고 규칙 두 줄을 담은 같은 시스템 프롬프트로 호출된다 (§FEED-013 결정 6)")
 	void everyPartIsCalledWithTheSameSystemPromptCarryingTheJournalRules() {
@@ -571,8 +507,6 @@ class NarrativeServiceTest {
 			.contains("- **회고 문장을 그대로 옮기지 않는다.**");
 	}
 
-	// ---------- 픽스처 ----------
-
 	private NarrativeService service(NarrativeGenerator generator, int maxRegeneration) {
 		return new NarrativeService(
 			generator,
@@ -583,8 +517,6 @@ class NarrativeServiceTest {
 			new FeedbackLlmProperties("gpt-5.4-mini", 20, 1024, maxRegeneration, 3, 3));
 	}
 
-	// 두 축의 적발 목록이 어떻게 합쳐지는지는 로그가 유일한 외부 관찰점이다 — 합친 목록을 반환하지 않고
-	// 폴백 분기 하나로 흘려보내는 것이 FEED-017의 요구라서다 (RankingRebuildServiceTest와 같은 방식).
 	private static List<ILoggingEvent> capturingLogs(Runnable action) {
 		Logger logger = (Logger)LoggerFactory.getLogger(NarrativeService.class);
 		ListAppender<ILoggingEvent> appender = new ListAppender<>();
@@ -622,8 +554,6 @@ class NarrativeServiceTest {
 
 	private PostSellPromptDto postSell() {
 		return new PostSellPromptDto(
-			// 시각은 이슈 #275로 LocalDateTime이 됐다 — 주식 픽스처라 같은 원본 거래일에 붙이고
-			// multiDayHold=false·MINUTE이라 문장이 이전과 같다.
 			"삼성전자", TRADING_DATE.atTime(9, 30), new BigDecimal("70000"), TRADING_DATE.atTime(14, 40),
 			new BigDecimal("68500"),
 			new BigDecimal("10"), new BigDecimal("-0.0217"), -15207L, new BigDecimal("70800"),
@@ -632,8 +562,6 @@ class NarrativeServiceTest {
 			null, null, List.of(), null, null, null, null, null, null, false, HoldHighBasis.MINUTE, List.of(), null);
 	}
 
-	// sameSessionCompleted=false — 보유 구간 극값 6필드가 전부 null이다 (spec §파생 사실 계산).
-	// 위 postSell()이 극값을 항상 채우고 있어 이 경로가 한 번도 돌지 않았다.
 	private PostSellPromptDto multiSessionPostSell() {
 		return new PostSellPromptDto(
 			"삼성전자", TRADING_DATE.atTime(9, 30), new BigDecimal("70000"), TRADING_DATE.atTime(14, 40),

@@ -1,4 +1,3 @@
-// 게시물 좋아요 표시·취소 서비스의 멱등 처리, 본인 게시물 허용, 예외 전파를 검증하는 단위 테스트다.
 package com.finplay.api.domain.community.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -92,7 +91,6 @@ class CommunityPostLikeServiceTest {
 		verify(communityPostRepository, never()).incrementLikeCount(any());
 	}
 
-	// 본인 게시물에도 좋아요를 허용한다(spec 045 비즈니스 규칙) — 별도 차단 로직이 없음을 확인하는 회귀.
 	@Test
 	void likePostSucceedsWhenAuthenticatedUserIsThePostAuthor() {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
@@ -108,8 +106,6 @@ class CommunityPostLikeServiceTest {
 		verify(communityPostRepository).incrementLikeCount(7L);
 	}
 
-	// 게시물 행 락을 트랜잭션 첫 문장으로 잡는다(PR #442 2차 리뷰) — 락보다 먼저 좋아요 존재를 조회하면
-	// 동시 요청이 락 없이 갈라지므로, 호출 순서 자체를 단위 레벨에서 고정한다.
 	@Test
 	void likePostAcquiresPostRowLockBeforeReadingLikeExistence() {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));

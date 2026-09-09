@@ -1,4 +1,3 @@
-// OrderCursor의 파싱·인코딩·왕복 변환을 검증하는 순수 단위 테스트다.
 package com.finplay.api.domain.order.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

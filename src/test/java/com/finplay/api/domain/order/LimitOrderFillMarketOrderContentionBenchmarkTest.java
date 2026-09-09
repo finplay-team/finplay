@@ -1,10 +1,3 @@
-// 054-limit-order-fill-bulk-lock 추가 실측 — 같은 계좌를 지정가 청크(벌크 락)와 시장가 주문이 동시에 건드릴 때
-// 시장가 주문 자체의 완료 소요시간이 벌크 락 적용 전후로 얼마나 달라지는지 잰다. 순차 락(적용 전)에서는 원래
-// 처리 순서(requestedAt asc, id asc)상 맨 마지막 계좌가 반복문 끝에 가서야 잠기므로 시장가 주문이 락을
-// 선점할 여지가 있고, 벌크 락(적용 후)에서는 청크 시작과 동시에 그 계좌도 즉시 잠긴다는 이론을 검증한다.
-// CountDownLatch/ExecutorService 구조는 LimitOrderFillBatchMarketOrderDeadlockIntegrationTest를 그대로 따른다.
-// CI 게이트가 아니라 수동 실측용이라 성능 임계값을 assert하지 않고 결과를 로그로만 남긴다 — 결과는
-// docs/loadtest/limit-order-fill-market-order-contention-benchmark-result.md에 기록한다.
 package com.finplay.api.domain.order;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -57,7 +50,6 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 class LimitOrderFillMarketOrderContentionBenchmarkTest {
 
 	private static final LocalDateTime NOW = LocalDateTime.of(2026, 8, 24, 12, 0, 0);
-	// LimitOrderFillBulkLockAccountPoolBenchmarkTest와 같은 계좌풀 규모.
 	private static final int ACCOUNT_COUNT = 15;
 	private static final int REPEAT = 5;
 
@@ -118,11 +110,6 @@ class LimitOrderFillMarketOrderContentionBenchmarkTest {
 			median(chunkTotalMillis), median(marketOrderMillis));
 	}
 
-	// 계좌 ACCOUNT_COUNT개를 만들고 전부 종목 A(지정가 청크)에 PENDING 매수를 건다. 원래 처리 순서
-	// (requestedAt asc, id asc, 여기서는 chunkOrderIds에 담긴 생성 순서와 동일)상 맨 마지막 주문의 계좌만 종목
-	// B(시장가) 대상으로 삼는다 — 순차 락 방식에서 이 계좌는 반복문 거의 끝에 가서야 잠기고, 벌크 락 방식에서는
-	// 청크 시작과 동시에 잠긴다. fillBatch(청크 전체)와 그 계좌를 대상으로 한 시장가 주문 생성을 같은 래치로
-	// 동시 출발시켜, 시장가 주문 스레드의 시작~완료 소요시간(nanoTime)을 잰다.
 	private long[] runOnceAndMeasure(int rep) throws Exception {
 		List<Account> accounts = new ArrayList<>();
 		for (int i = 0; i < ACCOUNT_COUNT; i++) {
@@ -138,7 +125,6 @@ class LimitOrderFillMarketOrderContentionBenchmarkTest {
 		for (Account account : accounts) {
 			chunkOrderIds.add(createPendingLimitBuy(account, instrumentA));
 		}
-		// chunkOrderIds는 계좌 생성 순서 그대로 쌓였으므로 마지막 원소의 계좌가 원래 처리 순서상 맨 마지막이다.
 		Account lastProcessedAccount = accounts.get(ACCOUNT_COUNT - 1);
 
 		CountDownLatch ready = new CountDownLatch(2);
@@ -195,8 +181,6 @@ class LimitOrderFillMarketOrderContentionBenchmarkTest {
 		return sorted.get(sorted.size() / 2);
 	}
 
-	// 최소주문금액(5,000)을 넉넉히 넘기면서 계좌 기본 현금(10,000,000) 안에서 지정가·시장가 몫을 함께 예약해도
-	// 여유가 있도록 수량·가격을 고정한다(건당 예약 약 10,005원 × 2종목).
 	private Long createPendingLimitBuy(Account account, Instrument instrument) {
 		BigDecimal quantity = new BigDecimal("0.01");
 		BigDecimal limitPrice = new BigDecimal("1000000");

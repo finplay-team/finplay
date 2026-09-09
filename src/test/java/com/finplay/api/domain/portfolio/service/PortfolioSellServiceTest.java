@@ -1,4 +1,3 @@
-// FIFO lot 소비·원 단위 잔여 처리·보유수량 검증 규칙을 검증하는 단위 테스트다.
 package com.finplay.api.domain.portfolio.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -50,9 +49,6 @@ class PortfolioSellServiceTest {
 	private final PortfolioSellService service = new PortfolioSellService(holdingRepository, holdingLotRepository,
 		tradeAllocationRepository, tutorialAccountService);
 
-	// getHoldingOrThrow(availableQuantity 미검증 구버전)는 015-limit-order 항목5에서 유일 호출부(시장가 매도)가
-	// getHoldingForUpdateOrThrow로 대체되며 프로덕션 코드에서 완전히 제거됐다 — 이 테스트들도 함께 제거한다.
-
 	@Test
 	void getHoldingForUpdateOrThrowThrowsInsufficientQtyWhenHoldingDoesNotExist() {
 		Account account = testAccount();
@@ -68,8 +64,6 @@ class PortfolioSellServiceTest {
 
 	@Test
 	void getHoldingForUpdateOrThrowThrowsInsufficientQtyWhenAvailableQuantityIsLessThanRequired() {
-		// 다른 지정가 매도로 이미 일부가 예약된 경우(availableQuantity = quantity - reservedQuantity)를 검증한다
-		// (spec.md: 기존 시장가 SELL도 예약 원장을 반영해 예약된 수량을 중복 매도할 수 없다).
 		Account account = testAccount();
 		Instrument instrument = testInstrument();
 		Holding holding = Holding.create(account, instrument, EARLIER);
@@ -78,7 +72,6 @@ class PortfolioSellServiceTest {
 		when(holdingRepository.findByAccountIdAndInstrumentIdForUpdate(account.getId(), instrument.getId()))
 			.thenReturn(Optional.of(holding));
 
-		// availableQuantity = 5 - 4 = 1 < 요청 2
 		assertThatThrownBy(() -> service.getHoldingForUpdateOrThrow(account, instrument, new BigDecimal("2")))
 			.isInstanceOf(BusinessException.class)
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
@@ -114,7 +107,6 @@ class PortfolioSellServiceTest {
 
 	@Test
 	void getHoldingForUpdateThrowsIllegalStateExceptionWhenHoldingNotFound() {
-		// 015-limit-order LMT-002: 예약된 holding이 없는 상태는 원장 불변식 위반이라 방어적으로 예외를 던진다.
 		Account account = testAccount();
 		Instrument instrument = testInstrument();
 		when(holdingRepository.findByAccountIdAndInstrumentIdForUpdate(account.getId(), instrument.getId()))
@@ -136,21 +128,15 @@ class PortfolioSellServiceTest {
 
 		long realizedPnl = service.finalizeSellRealizedPnl(account, sellTrade, 1500L, 4L, allocation, NOW);
 
-		// realizedPnl = (매도금액 - 매도수수료) - (배분원가 + 배분매수수수료) = (1500-4) - (1000+30) = 466
 		assertThat(realizedPnl).isEqualTo(466L);
 		assertThat(sellTrade.getRealizedPnl()).isEqualTo(466L);
 		assertThat(account.getCashBalance()).isEqualTo(cashBeforeSell + 1500L - 4L);
 		assertThat(account.getRealizedPnl()).isEqualTo(realizedPnlBeforeSell + 466L);
-		// 047 회귀 방지: 실제 종목 매도는 튜토리얼 계좌를 전혀 조회·갱신하지 않는다.
 		verifyNoInteractions(tutorialAccountService);
 	}
 
 	@Test
 	void finalizeSellRealizedPnlCreditsTutorialAccountAndLeavesRealAccountCashAndRealizedPnlUnchangedWhenInstrumentIsTutorialSample() {
-		// spec 047 TUTORIAL-CASH-ISOL-003(033 SANDBOX-EXCL-006 대체): 샌드박스 종목 매도는 실제
-		// Account.cashBalance·realizedPnl을 전혀 증가시키지 않는다 — 대신 같은 사용자·시장의 튜토리얼 계좌
-		// 현금·realizedPnl이 같은 트랜잭션에서 갱신된다. trade.realizedPnl(원장 값)은 033의 원칙대로 종목
-		// 종류와 무관하게 항상 채워진다.
 		Account account = testAccount();
 		Instrument instrument = testInstrument();
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
@@ -170,10 +156,8 @@ class PortfolioSellServiceTest {
 
 		assertThat(realizedPnl).isEqualTo(466L);
 		assertThat(sellTrade.getRealizedPnl()).isEqualTo(466L);
-		// 실제 Account는 현금·실현손익 모두 전혀 변하지 않는다(047의 핵심 전제 — 이슈 #450 재발 방지).
 		assertThat(account.getCashBalance()).isEqualTo(cashBeforeSell);
 		assertThat(account.getRealizedPnl()).isEqualTo(realizedPnlBeforeSell);
-		// 튜토리얼 계좌만 매도 대금·실현손익을 반영한다.
 		assertThat(tutorialAccount.getCashBalance()).isEqualTo(tutorialCashBeforeSell + 1500L - 4L);
 		assertThat(tutorialAccount.getRealizedPnl()).isEqualTo(466L);
 	}
@@ -231,14 +215,11 @@ class PortfolioSellServiceTest {
 		Trade sellTrade = testTrade(account, instrument, OrderSide.SELL, new BigDecimal("300"),
 			new BigDecimal("8"), 2400L, 7L, NOW);
 
-		// 8주 매도: lot1(5주 전량) + lot2(3주 부분) 소비 — lot2는 마지막 배분이 아니므로 비례 FLOOR
 		SellAllocationDto result = service.applySellTrade(holding, sellTrade, new BigDecimal("8"), NOW);
 
 		assertThat(lot1.getRemainingQuantity()).isEqualByComparingTo("0");
 		assertThat(lot2.getRemainingQuantity()).isEqualByComparingTo("2");
 
-		// lot1: 전량 소진 → allocatedCost=500(=buyTrade.amount-0), allocatedBuyFee=15
-		// lot2: 3/5 비례 FLOOR → cost = floor(200*3)=600, fee = floor(30*3/5)=18
 		assertThat(result.totalAllocatedCost()).isEqualTo(500L + 600L);
 		assertThat(result.totalAllocatedBuyFee()).isEqualTo(15L + 18L);
 
@@ -273,13 +254,11 @@ class PortfolioSellServiceTest {
 		Trade sellTrade = testTrade(account, instrument, OrderSide.SELL, new BigDecimal("300"),
 			new BigDecimal("4"), 1200L, 4L, NOW);
 
-		// 부분 매도(4/10) — 비례 FLOOR: cost = floor(300*4)=1200, fee = floor(100*4/10)=40
 		SellAllocationDto result = service.applySellTrade(holding, sellTrade, new BigDecimal("4"), NOW);
 
 		assertThat(lot.getRemainingQuantity()).isEqualByComparingTo("6");
 		assertThat(result.totalAllocatedCost()).isEqualTo(1200L);
 		assertThat(result.totalAllocatedBuyFee()).isEqualTo(40L);
-		// 마지막 배분이 아니므로 SUM 조회 없이 곧바로 배분이 저장된다
 		verify(tradeAllocationRepository).save(Mockito.any(TradeAllocation.class));
 		Mockito.verify(tradeAllocationRepository, Mockito.never()).sumAllocatedCostByHoldingLotId(Mockito.anyLong());
 		Mockito.verify(tradeAllocationRepository, Mockito.never())
@@ -288,15 +267,13 @@ class PortfolioSellServiceTest {
 
 	@Test
 	void applySellTradeAbsorbsRoundingRemainderExactlyOnLastAllocationOfLot() {
-		// 원 단위 잔여 처리 경계값: buyFee=100, originalQuantity=3인 lot을 두 번에 걸쳐(1주+1주) 부분 소비했다고 가정하고
-		// 마지막 1주(=lot 소진)를 매도할 때 누적 낙전(100 - 66 = 34)이 정확히 흡수되는지 검증한다.
 		Account account = testAccount();
 		Instrument instrument = testInstrument();
 		Holding holding = testHolding(account, instrument, new BigDecimal("1"));
 		Trade buyTrade = testTrade(account, instrument, OrderSide.BUY, new BigDecimal("10"),
 			new BigDecimal("3"), 30L, 100L, EARLIER);
 		HoldingLot lot = buildLot(1L, holding, buyTrade, new BigDecimal("3"), new BigDecimal("10"), 100L, EARLIER);
-		lot.consume(new BigDecimal("2")); // 이전 두 번의 부분 매도로 이미 2주가 소비된 상태(잔여 1주)
+		lot.consume(new BigDecimal("2"));
 		when(holdingLotRepository.findByHoldingIdAndRemainingQuantityGreaterThanOrderByExecutedAtAscIdAsc(
 			holding.getId(), BigDecimal.ZERO)).thenReturn(List.of(lot));
 		when(tradeAllocationRepository.sumAllocatedCostByHoldingLotId(1L)).thenReturn(20L);
@@ -307,18 +284,12 @@ class PortfolioSellServiceTest {
 		SellAllocationDto result = service.applySellTrade(holding, sellTrade, new BigDecimal("1"), NOW);
 
 		assertThat(lot.getRemainingQuantity()).isEqualByComparingTo("0");
-		// allocatedCost = buyTrade.amount(30) - previousCost(20) = 10
-		// allocatedBuyFee = lot.buyFee(100) - previousBuyFee(66) = 34
 		assertThat(result.totalAllocatedCost()).isEqualTo(10L);
 		assertThat(result.totalAllocatedBuyFee()).isEqualTo(34L);
 	}
 
 	@Test
 	void applySellTradeAccumulatesRoundingAcrossMultiplePartialSellsAndAbsorbsRemainderOnFinalSell() {
-		// 여러 번(서로 다른 매도 트랜잭션)에 걸쳐 같은 lot(수량 10)을 3+3+4로 나눠 매도하는 케이스.
-		// 앞의 두 번(3+3)은 비례식 FLOOR로 낙전(반올림 손실)이 발생하고, lot이 정확히 소진되는
-		// 세 번째(마지막) 배분에서 "buyTrade.amount/lot.buyFee - 누적 배분값"으로 그 낙전이
-		// 정확히 흡수되어 3번의 배분 합이 buyTrade.amount·lot.buyFee와 원 단위까지 일치하는지 검증한다.
 		Account account = testAccount();
 		Instrument instrument = testInstrument();
 		Holding holding = testHolding(account, instrument, new BigDecimal("10"));
@@ -329,7 +300,6 @@ class PortfolioSellServiceTest {
 		when(holdingLotRepository.findByHoldingIdAndRemainingQuantityGreaterThanOrderByExecutedAtAscIdAsc(
 			holding.getId(), BigDecimal.ZERO)).thenReturn(List.of(lot));
 
-		// 1번째 매도: 3주 (부분 소비, 마지막 아님) — cost=floor(33.33333333*3)=99, fee=floor(100*3/10)=30
 		Trade sellTrade1 = testTrade(account, instrument, OrderSide.SELL, new BigDecimal("40"),
 			new BigDecimal("3"), 120L, 1L, NOW);
 		SellAllocationDto result1 = service.applySellTrade(holding, sellTrade1, new BigDecimal("3"), NOW);
@@ -337,7 +307,6 @@ class PortfolioSellServiceTest {
 		assertThat(result1.totalAllocatedCost()).isEqualTo(99L);
 		assertThat(result1.totalAllocatedBuyFee()).isEqualTo(30L);
 
-		// 2번째 매도: 3주 (여전히 부분 소비, 마지막 아님) — cost=floor(33.33333333*3)=99, fee=floor(100*3/10)=30
 		Trade sellTrade2 = testTrade(account, instrument, OrderSide.SELL, new BigDecimal("40"),
 			new BigDecimal("3"), 120L, 1L, NOW);
 		SellAllocationDto result2 = service.applySellTrade(holding, sellTrade2, new BigDecimal("3"), NOW);
@@ -345,25 +314,19 @@ class PortfolioSellServiceTest {
 		assertThat(result2.totalAllocatedCost()).isEqualTo(99L);
 		assertThat(result2.totalAllocatedBuyFee()).isEqualTo(30L);
 
-		// 실제 저장소라면 이 시점까지 배분된 누적값을 SUM으로 돌려줄 것이다 — 앞의 두 실제 호출 결과를
-		// 그대로 이어붙여 mock에 반영한다(손으로 계산한 값이 아니라 실제 호출 결과를 체이닝).
 		long previousCost = result1.totalAllocatedCost() + result2.totalAllocatedCost();
 		long previousBuyFee = result1.totalAllocatedBuyFee() + result2.totalAllocatedBuyFee();
 		when(tradeAllocationRepository.sumAllocatedCostByHoldingLotId(1L)).thenReturn(previousCost);
 		when(tradeAllocationRepository.sumAllocatedBuyFeeByHoldingLotId(1L)).thenReturn(previousBuyFee);
 
-		// 3번째 매도: 4주 (lot 정확히 소진) — 누적 낙전이 이번 배분에 정확히 흡수되어야 한다
 		Trade sellTrade3 = testTrade(account, instrument, OrderSide.SELL, new BigDecimal("40"),
 			new BigDecimal("4"), 160L, 2L, NOW);
 		SellAllocationDto result3 = service.applySellTrade(holding, sellTrade3, new BigDecimal("4"), NOW);
 
 		assertThat(lot.getRemainingQuantity()).isEqualByComparingTo("0");
-		// 비례식이었다면 floor(33.33333333*4)=133, floor(100*4/10)=40이었겠지만, 마지막 배분이므로
-		// "진짜 총액/총수수료 - 누적 배분값"으로 정확히 맞춰진다(133이 아니라 135, 40이 아니라 41).
 		assertThat(result3.totalAllocatedCost()).isEqualTo(buyTrade.getAmount() - previousCost);
 		assertThat(result3.totalAllocatedBuyFee()).isEqualTo(lot.getBuyFee() - previousBuyFee);
 
-		// 3번의 배분을 모두 더하면 lot 단위로 buyTrade.amount·buyFee와 원 단위까지 정확히 일치해야 한다
 		long totalCostAcrossThreeSells = result1.totalAllocatedCost() + result2.totalAllocatedCost()
 			+ result3.totalAllocatedCost();
 		long totalBuyFeeAcrossThreeSells = result1.totalAllocatedBuyFee() + result2.totalAllocatedBuyFee()

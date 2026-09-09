@@ -1,4 +1,3 @@
-// TradeService.getMyTrades의 커서 페이지네이션 판정과 체결 내역 매핑을 검증하는 단위 테스트다.
 package com.finplay.api.domain.order.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -79,7 +78,6 @@ class TradeServiceTest {
 		TradeListResponse response = tradeService.getMyTrades(USER_ID, Market.STOCK, null, limit);
 
 		assertThat(response.hasNext()).isTrue();
-		// 다음 페이지 있음(3건 조회) 시 nextCursor는 반환 페이지(limit=2건)의 마지막 항목인 trade2 기준이어야 한다 — 초과 조회된 trade3 기준이면 버그.
 		assertThat(response.nextCursor()).isEqualTo(TradeCursor.encode(trade2));
 		assertThat(response.content()).hasSize(2);
 	}
@@ -174,10 +172,6 @@ class TradeServiceTest {
 				.isEqualTo(ErrorCode.FORBIDDEN));
 	}
 
-	// 아래 3개는 랭킹 재구성·status 판정이 쓰는 위임(이슈 #279)이다. 위임 자체는 얇지만 이 테스트가 지키는 건
-	// 위임 코드가 아니라 **인자로 넘기는 OrderSide.SELL**이다 — 여기가 BUY로 바뀌거나 realized_pnl 기반 조회로
-	// 갈아타면 랭킹 대상 집합이 통째로 달라지는데, repository 슬라이스 테스트는 자기 인자를 스스로 넘기므로
-	// 그 회귀를 잡지 못한다. ArgumentCaptor 대신 eq()로 stub해 "SELL로 부르지 않으면 기본값이 반환된다"로 드러낸다.
 	@Test
 	void getSoldAccountIdsQueriesSellSideOnlyForRequestedMarket() {
 		when(tradeRepository.findDistinctAccountIdsBySideAndMarket(OrderSide.SELL, Market.CRYPTO))
@@ -216,14 +210,9 @@ class TradeServiceTest {
 			.existsBySideAndAccountMarketAndInstrument_TutorialSampleFalse(eq(OrderSide.BUY), any());
 	}
 
-	// 아래는 026-market-order-practice-tutorial 2단계 chain 해석이 쓰는
-	// findEarliestFilledBuyTradeMatching(수량 정규화 비교 + 가장 이른 체결 선택)을 검증한다.
-
 	@Test
 	void findEarliestFilledBuyTradeMatchingMatchesQuantityRegardlessOfScale() {
 		LocalDateTime after = NOW.minusDays(1);
-		// intention.quantity()는 "0.1", 실제 체결 수량은 scale이 다른 "0.10000000" — BigDecimal.compareTo 기준
-		// 정규화 비교로 같은 값으로 인정돼야 한다(020의 scale 무관 규칙).
 		Trade differentScaleTrade = buyTrade(1L, NOW.minusHours(1), new BigDecimal("0.10000000"));
 		when(tradeRepository.findByAccount_User_IdAndInstrument_IdAndSideAndExecutedAtAfterOrderByExecutedAtAscIdAsc(
 			USER_ID, 100L, OrderSide.BUY, after))
@@ -266,9 +255,6 @@ class TradeServiceTest {
 	@Test
 	void findEarliestFilledBuyTradeMatchingPicksFirstQuantityMatchInRepositoryOrder() {
 		LocalDateTime after = NOW.minusDays(1);
-		// repository는 executedAt ASC, id ASC로 이미 정렬해 반환한다는 계약이다(쿼리 메서드명). 서비스는 그
-		// 순서를 유지한 채 수량이 일치하는 첫 항목을 고른다 — 앞선 수량 불일치 항목을 건너뛰고 더 이른
-		// 매칭 항목(id=20)을 골라야 하며 그 뒤 나오는 또 다른 매칭 항목(id=30)을 고르면 버그다.
 		Trade nonMatching = buyTrade(10L, NOW.minusHours(3), new BigDecimal("5"));
 		Trade earliestMatching = buyTrade(20L, NOW.minusHours(2), new BigDecimal("3"));
 		Trade laterMatching = buyTrade(30L, NOW.minusHours(1), new BigDecimal("3"));
@@ -283,16 +269,9 @@ class TradeServiceTest {
 		assertThat(result.get()).isSameAs(earliestMatching);
 	}
 
-	// 아래는 이슈 #339 tasks.md 6번 통합 테스트 작업 중 발견한 회귀 수정 — 샘플 종목 chain 재도전용
-	// findLatestFilledBuyTradeMatching(수량 정규화 비교 + 가장 최신 체결 선택, findEarliestFilledBuyTradeMatching과
-	// 대칭)을 검증한다.
-
 	@Test
 	void findLatestFilledBuyTradeMatchingPicksLastQuantityMatchInRepositoryOrder() {
 		LocalDateTime after = NOW.minusDays(1);
-		// repository는 executedAt ASC, id ASC로 이미 정렬해 반환한다 — 서비스는 그 순서에서 수량이 일치하는
-		// 마지막(가장 최신) 항목을 골라야 한다. earliestMatching(id=20)이 아니라 laterMatching(id=30)이 선택돼야
-		// 만료된 샘플 chain의 최초 매수가 아니라 재도전 매수를 anchor로 쓸 수 있다.
 		Trade nonMatching = buyTrade(10L, NOW.minusHours(3), new BigDecimal("5"));
 		Trade earliestMatching = buyTrade(20L, NOW.minusHours(2), new BigDecimal("3"));
 		Trade laterMatching = buyTrade(30L, NOW.minusHours(1), new BigDecimal("3"));
@@ -336,16 +315,9 @@ class TradeServiceTest {
 		assertThat(result).isEmpty();
 	}
 
-	// 아래는 031-tutorial-sandbox-instruments 매도 chain 해석이 쓰는
-	// findEarliestFilledSellTradeAfter(수량 무관 + buyTrade 이후 가장 이른 체결 선택)을 검증한다.
-
 	@Test
 	void findEarliestFilledSellTradeAfterPicksEarliestSellTradeInRepositoryOrderRegardlessOfQuantity() {
 		LocalDateTime after = NOW.minusHours(1);
-		// repository는 executedAt ASC, id ASC로 이미 정렬해 반환한다는 계약이다(쿼리 메서드명). 서비스는 그
-		// 순서의 첫 항목을 그대로 골라야 하며, buyTrade 수량(예: 3)과 다른 수량(부분 매도, 1)도 그대로
-		// 채택돼야 한다 — 수량 일치를 요구하는 findEarliestFilledBuyTradeMatching과 달리 이 메서드는 수량
-		// 비교 로직 자체가 없어야 한다.
 		Trade earliestSell = sellTrade(20L, NOW.minusMinutes(50), new BigDecimal("1"));
 		Trade laterSell = sellTrade(30L, NOW.minusMinutes(10), new BigDecimal("3"));
 		when(tradeRepository.findByAccount_User_IdAndInstrument_IdAndSideAndExecutedAtAfterOrderByExecutedAtAscIdAsc(
@@ -379,18 +351,12 @@ class TradeServiceTest {
 
 		tradeService.findEarliestFilledSellTradeAfter(USER_ID, 100L, after);
 
-		// 매수 이전 SELL을 무시하는 경계(after=buyTrade.executedAt)를 그대로 넘기는지, SELL로 조회하지(BUY로
-		// 잘못 부르지 않는지) 확인한다. PENDING/CANCELLED 상태는 별도로 걸러낼 필요가 없다 — trades 테이블은
-		// 체결 결과만 영속하므로(TradeRepository 41행 주석, Trade 엔티티에 status 필드 자체가 없음) 이 조회
-		// 결과는 이미 전부 FILLED 체결이다.
 		verify(tradeRepository).findByAccount_User_IdAndInstrument_IdAndSideAndExecutedAtAfterOrderByExecutedAtAscIdAsc(
 			USER_ID, 100L, OrderSide.SELL, after);
 		verify(tradeRepository, never())
 			.findByAccount_User_IdAndInstrument_IdAndSideAndExecutedAtAfterOrderByExecutedAtAscIdAsc(
 				USER_ID, 100L, OrderSide.BUY, after);
 	}
-
-	// 030 holding 관찰 세션 역추적(이슈 #321)이 쓰는 위임 — buyTradeId로 practicePriceSessionId를 조회한다.
 
 	@Test
 	void findPracticePriceSessionIdReturnsSessionIdFromRepository() {
@@ -423,14 +389,8 @@ class TradeServiceTest {
 			USER_ID, 100L, OrderSide.BUY, after);
 	}
 
-	// 아래는 이슈 #421에서 summarizePracticeRun이 수량 합계에 더해 집계하게 된 이번 실행 매매 결과 —
-	// 가중평균 체결가, 원장 실현손익 합, 수익률 분모(soldBuyBasis) 역산을 검증한다.
-
 	@Test
 	void summarizePracticeRunReturnsBuyTradePriceItselfWhenThereIsExactlyOneBuy() {
-		// 매수 체결이 1건이면 나눗셈이 원래 단가를 그대로 돌려줘야 practice_risk_snapshots.entry_price와 어긋나지
-		// 않는다(같은 scale 8) — 여기서 반올림이 끼면 진행 조회의 buyPrice가 riskSnapshot.entryPrice와 미세하게
-		// 달라져 화면 두 곳이 다른 매수가를 보여준다.
 		BigDecimal price = new BigDecimal("10932.45600000");
 		when(tradeRepository.findFilledPracticeRunTrades(77L, 2L))
 			.thenReturn(List.of(practiceTrade(1L, OrderSide.BUY, price, new BigDecimal("3.00000000"),
@@ -447,9 +407,6 @@ class TradeServiceTest {
 
 	@Test
 	void summarizePracticeRunWeightsAveragePricesByQuantityNotByTradeCount() {
-		// BUY 100원 1주 + 130원 3주. 수량 가중평균은 122.5이고 단순 산술평균이면 115다 — 두 값이 갈라지는
-		// 입력이라야 "가중"이 실제로 걸려 있는지 확인할 수 있다.
-		// SELL도 마찬가지로 200원 1주 + 240원 3주 → 230, 산술평균이면 220이다.
 		when(tradeRepository.findFilledPracticeRunTrades(77L, 1L)).thenReturn(List.of(
 			practiceTrade(1L, OrderSide.BUY, new BigDecimal("100"), new BigDecimal("1"), 100L, 0L, null),
 			practiceTrade(2L, OrderSide.BUY, new BigDecimal("130"), new BigDecimal("3"), 390L, 0L, null),
@@ -467,8 +424,6 @@ class TradeServiceTest {
 
 	@Test
 	void summarizePracticeRunSumsRealizedPnlAndInvertsSoldBuyBasisFromLedgerAmounts() {
-		// soldBuyBasis는 trade_allocations를 다시 읽지 않고 (amount - fee) - realizedPnl로 역산한다.
-		// sell1: (110000 - 16) - 9984 = 100000, sell2: (55000 - 8) - 4992 = 50000 → 합 150000.
 		when(tradeRepository.findFilledPracticeRunTrades(77L, 3L)).thenReturn(List.of(
 			practiceTrade(1L, OrderSide.BUY, new BigDecimal("100"), new BigDecimal("1500"), 150_000L, 22L, null),
 			practiceTrade(2L, OrderSide.SELL, new BigDecimal("110"), new BigDecimal("1000"), 110_000L, 16L, 9_984L),
@@ -491,7 +446,6 @@ class TradeServiceTest {
 		assertThat(summary.buyQuantity()).isEqualByComparingTo(new BigDecimal("10"));
 		assertThat(summary.sellQuantity()).isEqualByComparingTo(new BigDecimal("4"));
 		assertThat(summary.remainingQuantity()).isEqualByComparingTo(new BigDecimal("6"));
-		// 부분 매도라도 매도 평균가는 팔린 체결만 보고, 매수 평균가는 매수 체결만 본다 — 섞이면 안 된다.
 		assertThat(summary.averageBuyPrice()).isEqualByComparingTo(new BigDecimal("100"));
 		assertThat(summary.averageSellPrice()).isEqualByComparingTo(new BigDecimal("120"));
 		assertThat(summary.realizedPnl()).isEqualTo(80L);
@@ -514,8 +468,6 @@ class TradeServiceTest {
 
 	@Test
 	void summarizePracticeRunDropsBothPnlFieldsWhenAnySellHasNoLedgerRealizedPnl() {
-		// realized_pnl이 아직 채워지지 않은 SELL이 하나라도 섞이면 합계는 "덜 더해진 값"이라 노출하면 안 된다.
-		// 반쪽 손익을 그대로 내보내면 화면 금액이 조용히 틀린다. 매도 평균가는 원장 단가라 그대로 남는다.
 		when(tradeRepository.findFilledPracticeRunTrades(77L, 1L)).thenReturn(List.of(
 			practiceTrade(1L, OrderSide.BUY, new BigDecimal("100"), new BigDecimal("10"), 1_000L, 0L, null),
 			practiceTrade(2L, OrderSide.SELL, new BigDecimal("120"), new BigDecimal("4"), 480L, 0L, 80L),
@@ -559,12 +511,8 @@ class TradeServiceTest {
 		assertThat(summary.firstSellTrade()).isSameAs(earlierSell);
 	}
 
-	// summarizePracticeRun 전용 — attempt·run 귀속은 repository 쿼리가 걸러주므로 여기서는 side·단가·수량·
-	// 금액·수수료·실현손익만 지정한 체결을 만든다.
-	// 041 SCENARIO-019b — 진입별 대조 배열은 같은 실행 세대의 체결을 진입 매수 체결 id로 쪼갠 합을 쓴다.
 	@Test
 	void summarizePracticeRunEntriesSplitsTheLedgerAtEachEntryBuyTrade() {
-		// 1번 진입: 100원 10주 매수 → 97원 10주 손절. 2번 진입: 90원 10주 매수 → 105원 10주 익절.
 		when(tradeRepository.findFilledPracticeRunTrades(77L, 1L)).thenReturn(List.of(
 			practiceTrade(1L, OrderSide.BUY, new BigDecimal("100"), new BigDecimal("10"), 1_000L, 0L, null),
 			practiceTrade(2L, OrderSide.SELL, new BigDecimal("97"), new BigDecimal("10"), 970L, 0L, -30L),
@@ -585,7 +533,6 @@ class TradeServiceTest {
 		assertThat(entries.get(1).firstSellTrade().getId()).isEqualTo(4L);
 	}
 
-	// 마지막 진입은 상한이 없다 — 그 뒤 체결(부분 매도의 나머지 등)이 통째로 빠지면 금액이 틀린다.
 	@Test
 	void summarizePracticeRunEntriesGivesEveryLaterTradeToTheLastEntry() {
 		when(tradeRepository.findFilledPracticeRunTrades(77L, 1L)).thenReturn(List.of(
@@ -598,12 +545,9 @@ class TradeServiceTest {
 		assertThat(entries).hasSize(1);
 		assertThat(entries.get(0).sellQuantity()).isEqualByComparingTo(new BigDecimal("10"));
 		assertThat(entries.get(0).realizedPnl()).isEqualTo(260L);
-		// 진입 안에서도 첫 매도를 쓴다 — 실행 전체(tradeResult)와 같은 규칙을 진입 범위로 좁힌 것이다.
 		assertThat(entries.get(0).firstSellTrade().getId()).isEqualTo(2L);
 	}
 
-	// 첫 진입 매수보다 이른 체결이 어디에도 속하지 않고 사라지면 진입별 합과 실행 전체 합이 예외도 로그도
-	// 없이 갈린다 — 첫 진입에 하한을 두지 않아 구간이 원장을 빠짐없이 나눈다.
 	@Test
 	void summarizePracticeRunEntriesGivesEveryEarlierTradeToTheFirstEntry() {
 		when(tradeRepository.findFilledPracticeRunTrades(77L, 1L)).thenReturn(List.of(
@@ -618,7 +562,6 @@ class TradeServiceTest {
 		assertThat(entries.get(0).realizedPnl()).isEqualTo(-10L);
 	}
 
-	// 경계가 오름차순이 아니면 구간이 겹치거나 비어 금액이 조용히 틀린다 — 계약으로만 두지 않고 막는다.
 	@Test
 	void summarizePracticeRunEntriesRejectsBoundariesThatAreNotAscending() {
 		assertThatThrownBy(() -> tradeService.summarizePracticeRunEntries(77L, 1L, List.of(3L, 1L)))
@@ -626,7 +569,6 @@ class TradeServiceTest {
 		verify(tradeRepository, never()).findFilledPracticeRunTrades(77L, 1L);
 	}
 
-	// 매수 전에는 진입 자체가 없다 — 원장을 읽지 않고 빈 목록을 돌려준다.
 	@Test
 	void summarizePracticeRunEntriesReadsNothingWhenThereIsNoEntry() {
 		assertThat(tradeService.summarizePracticeRunEntries(77L, 1L, List.of())).isEmpty();
@@ -656,7 +598,6 @@ class TradeServiceTest {
 		return trade;
 	}
 
-	// getOwnedTrade 전용 — 소유자(user.id)를 직접 지정해 본인/타인 판정을 검증하기 위한 체결을 만든다.
 	private static Trade tradeOwnedBy(Long tradeId, Long ownerUserId, LocalDateTime executedAt) {
 		User owner = testUser();
 		ReflectionTestUtils.setField(owner, "id", ownerUserId);

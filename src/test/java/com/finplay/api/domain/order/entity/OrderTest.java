@@ -1,4 +1,3 @@
-// Order의 지정가 생성 팩토리·체결 확정 메서드를 검증하는 순수 단위 테스트다.
 package com.finplay.api.domain.order.entity;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -93,7 +92,7 @@ class OrderTest {
 
 		assertThat(order.getQuantity()).isEqualByComparingTo(BigDecimal.valueOf(2));
 		assertThat(order.getLimitPrice()).isEqualByComparingTo(BigDecimal.valueOf(80_000_000));
-		assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING); // 상태는 그대로 유지된다
+		assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
 	}
 
 	@Test
@@ -103,7 +102,7 @@ class OrderTest {
 
 		assertThatThrownBy(() -> order.modify(BigDecimal.valueOf(2), BigDecimal.valueOf(80_000_000)))
 			.isInstanceOf(IllegalStateException.class);
-		assertThat(order.getQuantity()).isEqualByComparingTo(BigDecimal.valueOf(1)); // 값이 바뀌지 않는다
+		assertThat(order.getQuantity()).isEqualByComparingTo(BigDecimal.valueOf(1));
 		assertThat(order.getLimitPrice()).isEqualByComparingTo(BigDecimal.valueOf(70_000_000));
 	}
 

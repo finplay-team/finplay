@@ -1,4 +1,3 @@
-// 실제 MySQL에서 stock_daily_candles 저장·조회와 UNIQUE(instrument_id, trading_date) 제약을 검증하는 JPA 슬라이스 테스트다.
 package com.finplay.api.domain.market.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -40,7 +39,6 @@ class StockDailyCandleRepositoryTest {
 
 	@BeforeEach
 	void setUp() {
-		// V7 시드(005930 등)와 겹치지 않는 테스트 전용 심볼을 사용한다 — UNIQUE(symbol) 충돌 방지.
 		instrumentA = instrumentRepository.save(Instrument.create(
 			Market.STOCK, "DTEST001", "일봉테스트종목A", new BigDecimal("100"), 70000, true, LocalDateTime.now()));
 		instrumentB = instrumentRepository.save(Instrument.create(
@@ -79,8 +77,6 @@ class StockDailyCandleRepositoryTest {
 		assertThat(candle.getCollectedAt()).isNotNull();
 	}
 
-	// --- UNIQUE(instrument_id, trading_date) ---
-
 	@Test
 	void databaseRejectsDuplicateInstrumentAndTradingDate() {
 		stockDailyCandleRepository.saveAndFlush(newCandle(instrumentA, TRADING_DATE, "71200"));
@@ -109,8 +105,6 @@ class StockDailyCandleRepositoryTest {
 		assertThat(stockDailyCandleRepository.saveAndFlush(otherInstrument).getId()).isNotNull();
 	}
 
-	// --- 종목별 최신 거래일 조회(findFirstByInstrumentIdOrderByTradingDateDesc) ---
-
 	@Test
 	void findFirstByInstrumentIdOrderByTradingDateDescReturnsTheMostRecentTradingDate() {
 		LocalDate day1 = LocalDate.of(2026, 7, 20);
@@ -131,7 +125,6 @@ class StockDailyCandleRepositoryTest {
 	@Test
 	void findFirstByInstrumentIdOrderByTradingDateDescIgnoresOtherInstrumentsLaterDate() {
 		stockDailyCandleRepository.save(newCandle(instrumentA, TRADING_DATE, "71200"));
-		// 다른 종목이 더 늦은 거래일을 갖고 있어도 instrumentA의 최신 거래일이 나와야 한다.
 		stockDailyCandleRepository.save(newCandle(instrumentB, OTHER_TRADING_DATE, "99000"));
 
 		Optional<StockDailyCandle> latest = stockDailyCandleRepository
@@ -148,8 +141,6 @@ class StockDailyCandleRepositoryTest {
 
 		assertThat(latest).isEmpty();
 	}
-
-	// --- 기간 조회 정렬(findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAsc) ---
 
 	@Test
 	void findByTradingDateBetweenReturnsCandlesOrderedByTradingDateAscending() {

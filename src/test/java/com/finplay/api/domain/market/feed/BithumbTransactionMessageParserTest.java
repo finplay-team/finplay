@@ -1,4 +1,3 @@
-// 고정된 샘플 페이로드로 BithumbTransactionMessageParser의 파싱 결과·다건 처리·무시 규칙·예외 무전파를 검증하는 @JsonTest다.
 package com.finplay.api.domain.market.feed;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -16,7 +15,6 @@ import tools.jackson.databind.ObjectMapper;
 @JsonTest
 class BithumbTransactionMessageParserTest {
 
-	// 실제 운영 코드가 쓰는 것과 같은, Boot의 JacksonAutoConfiguration이 구성한 빈을 주입받는다 (ADR-0003 — 직렬화·역직렬화는 슬라이스에서 실제로 확인).
 	@Autowired
 	private ObjectMapper objectMapper;
 

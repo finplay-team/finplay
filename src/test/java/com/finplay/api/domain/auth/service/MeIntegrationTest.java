@@ -1,4 +1,3 @@
-// 실제 MySQL에서 내 정보 조회의 가입 방식 판별·회원 간 격리·민감 필드 미노출을 검증하는 통합 테스트다.
 package com.finplay.api.domain.auth.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

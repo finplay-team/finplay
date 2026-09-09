@@ -1,4 +1,3 @@
-// HoldingLotRepository의 FIFO 미소진 lot 조회 쿼리를 검증하는 슬라이스 테스트다.
 package com.finplay.api.domain.portfolio.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;

@@ -1,4 +1,3 @@
-// 036 튜토리얼 attempt의 두 시장 완료·보상·재시작 세대 격리를 실제 MySQL로 검증하는 통합 테스트
 package com.finplay.api.domain.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -123,8 +122,6 @@ class PracticeAttemptCompletionFlowIntegrationTest {
 			.isEqualByComparingTo(buy.price().multiply(new BigDecimal("0.97")).setScale(8, RoundingMode.HALF_UP));
 		assertThat(afterBuy.attempt().riskSnapshot().takeProfitPrice())
 			.isEqualByComparingTo(buy.price().multiply(new BigDecimal("1.05")).setScale(8, RoundingMode.HALF_UP));
-		// 이슈 #421: 매도 전에는 buyPrice만 채워지고, 매수 체결이 1건이므로 riskSnapshot.entryPrice와 정확히
-		// 같아야 한다 — 두 값이 갈라지면 같은 화면에서 매수가가 두 개로 보인다.
 		PracticeTradeResultResponse beforeSellResult = buyEvidence.tradeResult();
 		assertThat(beforeSellResult).isNotNull();
 		assertThat(beforeSellResult.buyPrice()).isEqualByComparingTo(afterBuy.attempt().riskSnapshot().entryPrice());
@@ -148,9 +145,6 @@ class PracticeAttemptCompletionFlowIntegrationTest {
 		assertThat(sellEvidence.buyQuantity()).isEqualByComparingTo(buyQuantity);
 		assertThat(sellEvidence.sellQuantity()).isEqualByComparingTo(sellQuantity);
 		assertThat(sellEvidence.remainingQuantity()).isEqualByComparingTo(buyQuantity.subtract(sellQuantity));
-		// 이슈 #421: 부분 매도 직후 tradeResult가 원장 값과 일치해야 한다. attempt 가격 seed가 userId에서
-		// 파생돼 실행마다 가격 계열이 달라지므로 가격을 하드코딩하지 않고 주문 응답이 돌려준 체결 원장과의
-		// 관계로만 단정한다.
 		assertTradeResultMatchesLedger(
 			sellEvidence.tradeResult(), buy, sell, afterPartialSell.attempt().riskSnapshot());
 
@@ -173,7 +167,6 @@ class PracticeAttemptCompletionFlowIntegrationTest {
 		assertThat(completedEvidence.buyQuantity()).isEqualByComparingTo(buyQuantity);
 		assertThat(completedEvidence.sellQuantity()).isEqualByComparingTo(sellQuantity);
 		assertThat(completedEvidence.remainingQuantity()).isEqualByComparingTo(buyQuantity.subtract(sellQuantity));
-		// 완료 REPLAY 재조회도 같은 값을 그대로 돌려준다(api-contracts.md 039 TUTORIAL-FLOW-013).
 		assertTradeResultMatchesLedger(
 			completedEvidence.tradeResult(), buy, sell, completed.attempt().riskSnapshot());
 
@@ -182,42 +175,30 @@ class PracticeAttemptCompletionFlowIntegrationTest {
 		long completionCount = completionRepository.count();
 		long reflectionCount = reflectionRepository.count();
 		long observationCount = observationRepository.count();
-		// rewarded는 이후 restart()가 재사용할 수 있는 영속성 컨텍스트에 attach된 엔티티다 — 원시값으로
-		// 미리 뽑아두지 않으면 restart의 account 변경이 이 참조에도 그대로 반영돼(같은 세션 identity map)
-		// "이전 값"이 오염된다.
 		long cashBeforeRestart = rewarded.getCashBalance();
 		Long attemptId = attemptRepository.findByUserIdAndMarket(fixture.userId(), market).orElseThrow().getId();
 		PracticeAttemptResponse replayEnsure = practiceAttemptService.ensureAttempt(fixture.userId(), market);
 		PracticeAttemptResponse replayRestart = practiceAttemptRestartService.restart(fixture.userId(), market);
 
-		// ensureAttempt는 완료된 attempt를 여전히 REPLAY로 유지한다(TUTORIAL-RESTART-002, 요구사항 불변).
 		assertThat(replayEnsure.mode()).isEqualTo("REPLAY");
-		// restart는 이제 완료된 attempt도 실제로 정리·재시작한다(TUTORIAL-RESTART-001).
 		assertThat(replayRestart.mode()).isEqualTo("ACTIVE");
 		assertThat(replayRestart.status()).isEqualTo("SELECTING_INSTRUMENT");
 		assertThat(replayRestart.runNumber()).isEqualTo(2);
 		assertThat(replayRestart.instrumentId()).isNull();
 		assertThat(replayRestart.riskSnapshot()).isNull();
-		// 재시작은 completion/reflection/observation evidence는 건드리지 않는다.
 		assertThat(completionRepository.count()).isEqualTo(completionCount);
 		assertThat(reflectionRepository.count()).isEqualTo(reflectionCount);
 		assertThat(observationRepository.count()).isEqualTo(observationCount);
-		// 재시작 시점에 남아 있던 보유 잔량(매수-매도)은 정리 로직이 보상 매도 주문·체결 1건으로 청산한다.
 		com.finplay.api.domain.order.entity.Order compensatingOrder = orderRepository
 			.findByUserIdAndIdempotencyKey(fixture.userId(), "practice-restart:" + attemptId + ":1")
 			.orElseThrow();
 		assertThat(tradeRepository.findByOrderId(compensatingOrder.getId())).isPresent();
 		assertThat(orderRepository.count()).isEqualTo(orderCount + 1);
 		assertThat(tradeRepository.count()).isEqualTo(tradeCount + 1);
-		// 보상매도는 튜토리얼 종목 매도이므로 PortfolioSellService.finalizeSellRealizedPnl이 같은 사용자·
-		// 시장의 튜토리얼 계좌만 갱신한다(047 TUTORIAL-CASH-ISOL-003) — 실제 Account.cashBalance는 전혀
-		// 변하지 않는다.
 		Account replayed = refreshedAccount(fixture.userId(), market);
 		assertThat(replayed.getCashBalance()).isEqualTo(cashBeforeRestart);
 	}
 
-	// 041 SCENARIO-014, 이슈 #472: 시간 제한 폐지의 실제 강제 지점은 복기 저장이다. 생성기 버전 2 실행은
-	// 매수 후 한 시간이 지나 매도해도 409로 막히지 않고, 진행 조회의 마감 값도 내려가지 않는다.
 	@Test
 	void scenarioRunCompletesWithoutTimeGateEvenWhenSaleHappensLongAfterTheOldFiveMinuteDeadline() {
 		Market market = Market.CRYPTO;
@@ -234,7 +215,6 @@ class PracticeAttemptCompletionFlowIntegrationTest {
 			.orElseThrow();
 		createQualifyingObservations(fixture.userId(), holding.getId(), BASE_NOW.plusSeconds(12));
 
-		// 옛 마감(매수 + 5분)을 한참 넘긴 시각에 매도한다.
 		clock.set(BASE_NOW.plusHours(1));
 		orderService.createOrder(fixture.userId(), idempotency("late-sell"),
 			marketOrder(market, fixture.instrumentId(), OrderSide.SELL, quantity));
@@ -252,8 +232,6 @@ class PracticeAttemptCompletionFlowIntegrationTest {
 		assertThat(completed.steps()).hasSize(4).allSatisfy(step -> assertThat(step.status()).isEqualTo("COMPLETED"));
 	}
 
-	// 이슈 #426: 완료한 시장을 040 재시작으로 다시 진행하면 진행 조회가 예전 완료 응답이 아니라 현재 실행의
-	// evidence를 돌려줘야 한다. 최초 완료 기록은 남아 있으므로 rewardAmount·completedAt은 그대로 유지된다.
 	@Test
 	void restartedRunAfterCompletionReportsCurrentRunEvidenceAndKeepsFirstCompletionReward() {
 		Market market = Market.CRYPTO;
@@ -270,7 +248,6 @@ class PracticeAttemptCompletionFlowIntegrationTest {
 			.orElseThrow();
 		createQualifyingObservations(fixture.userId(), holding.getId(), BASE_NOW.plusSeconds(12));
 		clock.set(BASE_NOW.plusSeconds(150));
-		// 부분 매도로 완료한다 — 남은 잔량은 재시작 정리가 보상 매도로 청산한다(039 재시작 규칙, 위 테스트와 동일).
 		orderService.createOrder(fixture.userId(), idempotency("first-sell"),
 			marketOrder(market, fixture.instrumentId(), OrderSide.SELL, new BigDecimal("1.00000000")));
 		clock.set(BASE_NOW.plusSeconds(160));
@@ -289,7 +266,6 @@ class PracticeAttemptCompletionFlowIntegrationTest {
 		PracticeAttemptResponse restarted = practiceAttemptRestartService.restart(fixture.userId(), market);
 		assertThat(restarted.runNumber()).isEqualTo(2);
 
-		// 재시작 직후(종목 선택 전)에도 진행 조회는 완료 응답이 아니라 현재 실행 상태를 돌려준다.
 		InvestmentPracticeResponse selecting = queryService.getProgress(fixture.userId(), market);
 		assertThat(selecting.status()).isEqualTo("IN_PROGRESS");
 		assertThat(selecting.attempt().status()).isEqualTo("SELECTING_INSTRUMENT");
@@ -316,17 +292,12 @@ class PracticeAttemptCompletionFlowIntegrationTest {
 		assertThat(evidence.buyQuantity()).isEqualByComparingTo(quantity);
 		assertThat(evidence.sellQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
 		assertThat(evidence.remainingQuantity()).isEqualByComparingTo(quantity);
-		// 041 SCENARIO-014: 대본을 쓰는 CRYPTO 실행은 마감이 없다 — 이 값이 null이어야 프론트가 남은 시간
-		// 표시를 숨긴다(이슈 #472).
 		assertThat(evidence.saleDeadlineAt()).isNull();
-		// 이전 실행의 매도·관찰은 현재 실행 evidence가 아니다.
 		assertThat(evidence.sellTradeId()).isNull();
 		assertThat(evidence.observationId()).isNull();
-		// 현재 실행에는 아직 qualifying 관찰이 없으므로 4단계는 잠긴 미착수다(039 attempt 경로 계약).
 		assertThat(restartedProgress.steps().get(3).status()).isEqualTo("NOT_STARTED");
 		assertThat(restartedProgress.steps().get(3).locked()).isTrue();
 
-		// 040: 재시작해 다시 진행 중이어도 최초 완료 기록과 이미 받은 보상은 그대로다(재지급도 없다).
 		assertThat(restartedProgress.rewardAmount()).isEqualTo(COMPLETION_REWARD);
 		assertThat(restartedProgress.completedAt()).isEqualTo(firstCompletedAt);
 		assertThat(completionRepository.count()).isEqualTo(completionCount);
@@ -401,9 +372,6 @@ class PracticeAttemptCompletionFlowIntegrationTest {
 		assertThat(evidence.remainingQuantity()).isEqualByComparingTo(new BigDecimal("1.00000000"));
 	}
 
-	// 이슈 #421: 부분 매도 뒤 잔량까지 전량 매도하면 SELL 체결이 2건이 된다. 이 경우 sellPrice가 특정 체결
-	// 1건의 가격이 아니라 수량 가중평균이어야 하고, realizedPnl·수익률 분모도 두 체결의 합이어야 한다.
-	// 기존 파라미터 테스트는 매도 1건 흐름이라 "가중"이 걸려 있는지를 드러내지 못해 별도 시나리오로 둔다.
 	@Test
 	void fullSellAfterPartialSellReportsQuantityWeightedSellPriceAndSummedLedgerPnl() {
 		Market market = Market.STOCK;
@@ -446,8 +414,6 @@ class PracticeAttemptCompletionFlowIntegrationTest {
 		assertThat(expectedBasis).isPositive();
 		assertThat(tradeResult.returnRate()).isEqualByComparingTo(
 			BigDecimal.valueOf(expectedRealizedPnl).divide(BigDecimal.valueOf(expectedBasis), 4, RoundingMode.HALF_UP));
-		// 매도 단가로 손익을 다시 계산한 값과는 수수료만큼 달라야 한다 — realizedPnl이 수수료 차감 후 순손익이라는
-		// 계약(api-contracts.md)이 실제로 지켜지는지 확인한다.
 		assertThat(firstSell.fee() + secondSell.fee()).isPositive();
 		assertThat(afterFullSell.steps().get(3).evidence().remainingQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
 		assertThat(tradeResult.sellVerdict()).isIn("ABOVE_TAKE_PROFIT", "BELOW_STOP_LOSS", "BETWEEN_LINES");
@@ -455,8 +421,6 @@ class PracticeAttemptCompletionFlowIntegrationTest {
 			.isEqualTo(expectedVerdict(tradeResult.sellPrice(), afterFullSell.attempt().riskSnapshot()));
 	}
 
-	// tradeResult 다섯 필드를 매수·매도 주문 응답(=체결 원장)에서 그대로 유도해 비교한다. 매수 1건·매도 1건
-	// 흐름 전용이다.
 	private static void assertTradeResultMatchesLedger(
 		PracticeTradeResultResponse tradeResult,
 		OrderResponse buy,
@@ -475,8 +439,6 @@ class PracticeAttemptCompletionFlowIntegrationTest {
 		assertThat(tradeResult.sellVerdict()).isEqualTo(expectedVerdict(tradeResult.sellPrice(), riskSnapshot));
 	}
 
-	// 서버 판정 규칙(양 끝 포함, 익절선 우선)의 기대값을 스냅샷 기준선에서 유도한다 — 가격 계열이 seed에 따라
-	// 달라지므로 특정 판정값을 고정할 수 없다. 경계 자체의 세부 규칙은 PracticeTradeResultCalculatorTest가 본다.
 	private static String expectedVerdict(BigDecimal sellPrice, PracticeRiskSnapshotResponse riskSnapshot) {
 		if (sellPrice.compareTo(riskSnapshot.takeProfitPrice()) >= 0) {
 			return "ABOVE_TAKE_PROFIT";

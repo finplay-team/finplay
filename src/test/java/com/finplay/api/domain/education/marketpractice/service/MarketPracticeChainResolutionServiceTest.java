@@ -1,4 +1,3 @@
-// MarketPracticeChainResolutionService의 favorite -> intention -> buyTrade -> holding chain 해석을 검증하는 단위 테스트다.
 package com.finplay.api.domain.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -56,8 +55,6 @@ class MarketPracticeChainResolutionServiceTest {
 		practiceMarketObservationRepository, instrumentService);
 
 	{
-		// 이 테스트 파일의 대다수 케이스는 026(실제 종목) chain을 다루므로, 별도 스텁이 없는 instrumentId는
-		// 기본으로 실제 종목(isTutorialSample=false)을 반환하게 해 기존 회귀 테스트를 그대로 유지한다.
 		when(instrumentService.getInstrumentEntity(org.mockito.ArgumentMatchers.anyLong()))
 			.thenReturn(stockInstrument());
 	}
@@ -98,9 +95,6 @@ class MarketPracticeChainResolutionServiceTest {
 		FavoriteResponse favorite = favorite(10L, 100L, "STOCK", NOW.minusDays(3));
 		when(favoriteService.getFavorites(USER_ID)).thenReturn(new FavoriteListResponse(List.of(favorite)));
 
-		// intention.quantity()는 0.1, buyTrade 조회 결과는 scale이 다른 값(0.10000000)이어도 정규화 비교는
-		// tradeService.findEarliestFilledBuyTradeMatching 내부 책임이다 — 이 서비스는 그 값을 있는 그대로
-		// 전달만 하는지를 검증한다(정규화 비교 자체의 단위 테스트는 TradeServiceTest가 담당).
 		PracticeIntention intention = intention(20L, 100L, new BigDecimal("0.1"), NOW.minusDays(2));
 		when(practiceIntentionRepository.findByUserId(USER_ID)).thenReturn(List.of(intention));
 
@@ -169,10 +163,6 @@ class MarketPracticeChainResolutionServiceTest {
 
 	@Test
 	void resolveSelectsChainWithQualifyingObservationOverEarlierBuyTradeExecutedAtChain() {
-		// resolveSelectsChainWithEarliestBuyTradeExecutedAtAmongMultipleCompletedFavoriteChains의 픽스처를
-		// 뒤집는다 — favoriteB/earlierTrade(instrument 200)가 buyTradeExecutedAt이 더 이르지만, 이번에는
-		// favoriteA/laterTrade(instrument 100)의 holding에 qualifying observation(evidenceType non-null)을
-		// 붙인다. qualifying observation이 있는 chain은 buyTradeExecutedAt 순서와 무관하게 최우선이어야 한다.
 		FavoriteResponse favoriteA = favorite(10L, 100L, "STOCK", NOW.minusDays(10));
 		FavoriteResponse favoriteB = favorite(11L, 200L, "STOCK", NOW.minusDays(9));
 		when(favoriteService.getFavorites(USER_ID)).thenReturn(new FavoriteListResponse(List.of(favoriteA, favoriteB)));
@@ -193,7 +183,6 @@ class MarketPracticeChainResolutionServiceTest {
 		when(holdingService.findHoldingId(USER_ID, Market.STOCK, 100L)).thenReturn(Optional.of(40L));
 		when(holdingService.findHoldingId(USER_ID, Market.STOCK, 200L)).thenReturn(Optional.of(41L));
 
-		// holding 40(favoriteA/instrument 100, buyTradeExecutedAt이 더 늦음)에만 qualifying observation을 둔다.
 		PracticeMarketObservation qualifyingObservation = mock(PracticeMarketObservation.class);
 		when(qualifyingObservation.getEvidenceType()).thenReturn(PracticeEvidenceType.CLOSER_TO_BOUNDARY);
 		when(practiceMarketObservationRepository.findByUserIdAndHoldingIdOrderByObservedAtAsc(USER_ID, 40L))
@@ -211,10 +200,6 @@ class MarketPracticeChainResolutionServiceTest {
 
 	@Test
 	void resolveFallsBackToBuyTradeExecutedAtAscWhenNoChainHasQualifyingObservation() {
-		// 두 chain 모두 qualifying observation이 없으면(관찰 자체가 없거나 evidenceType이 전부 null) 기존
-		// 우선순위(buyTradeExecutedAt ASC)로 폴백한다 —
-		// resolveSelectsChainWithEarliestBuyTradeExecutedAtAmongMultipleCompletedFavoriteChains와 동일한 결과를
-		// qualifying-observation 조회 경로를 명시적으로 거친 뒤에도 유지하는지 검증한다.
 		FavoriteResponse favoriteA = favorite(10L, 100L, "STOCK", NOW.minusDays(10));
 		FavoriteResponse favoriteB = favorite(11L, 200L, "STOCK", NOW.minusDays(9));
 		when(favoriteService.getFavorites(USER_ID)).thenReturn(new FavoriteListResponse(List.of(favoriteA, favoriteB)));
@@ -235,7 +220,6 @@ class MarketPracticeChainResolutionServiceTest {
 		when(holdingService.findHoldingId(USER_ID, Market.STOCK, 100L)).thenReturn(Optional.of(40L));
 		when(holdingService.findHoldingId(USER_ID, Market.STOCK, 200L)).thenReturn(Optional.of(41L));
 
-		// 관찰이 존재하지만(예: A 미충족 관찰) evidenceType이 non-null인 건이 하나도 없다 — qualifying 아님.
 		PracticeMarketObservation nonQualifyingObservation = mock(PracticeMarketObservation.class);
 		when(nonQualifyingObservation.getEvidenceType()).thenReturn(null);
 		when(practiceMarketObservationRepository.findByUserIdAndHoldingIdOrderByObservedAtAsc(USER_ID, 40L))
@@ -252,10 +236,6 @@ class MarketPracticeChainResolutionServiceTest {
 
 	@Test
 	void resolveForInstrumentReturnsRequestedInstrumentChainEvenWhenAnotherChainWouldWinResolve() {
-		// resolve()라면 buyTradeExecutedAt이 더 이른 favoriteB(instrument 200)를 우선순위로 고른다
-		// (resolveSelectsChainWithEarliestBuyTradeExecutedAtAmongMultipleCompletedFavoriteChains와 동일 픽스처).
-		// resolveForInstrument(instrumentId=100)는 그 우선순위와 무관하게 요청받은 instrument 100의 chain만
-		// 반환해야 한다 — PR #300 리뷰가 지적한 "다른 종목이 뽑혀 정상 holding이 오탐 409를 받는" 버그의 회귀 테스트.
 		FavoriteResponse favoriteA = favorite(10L, 100L, "STOCK", NOW.minusDays(10));
 		FavoriteResponse favoriteB = favorite(11L, 200L, "STOCK", NOW.minusDays(9));
 		when(favoriteService.getFavorites(USER_ID)).thenReturn(new FavoriteListResponse(List.of(favoriteA, favoriteB)));
@@ -327,7 +307,6 @@ class MarketPracticeChainResolutionServiceTest {
 
 		Optional<ResolvedPracticeChainDto> result = service.resolve(USER_ID, PracticeIntentionService.TUTORIAL_KEY);
 
-		// buyTradeExecutedAt이 같으면 favorite.createdAt 오름차순으로 더 이른 쪽(earlierFavorite, id=11)을 고른다.
 		assertThat(result).isPresent();
 		assertThat(result.get().favoriteId()).isEqualTo(11L);
 	}
@@ -361,7 +340,6 @@ class MarketPracticeChainResolutionServiceTest {
 		PracticeIntention intention = intention(20L, 100L, new BigDecimal("3"), NOW.minusDays(1));
 		when(practiceIntentionRepository.findByUserId(USER_ID)).thenReturn(List.of(intention));
 
-		// 수량 불일치·미체결 등으로 tradeService가 후보를 찾지 못한 경우를 빈 Optional로 표현한다.
 		when(tradeService.findEarliestFilledBuyTradeMatching(
 			USER_ID, 100L, intention.quantity(), intention.createdAt()))
 			.thenReturn(Optional.empty());
@@ -384,7 +362,6 @@ class MarketPracticeChainResolutionServiceTest {
 			USER_ID, 100L, intention.quantity(), intention.createdAt()))
 			.thenReturn(Optional.of(trade));
 
-		// owner·instrument 불일치를 포함해 holding이 없는 경우는 holdingService가 이미 빈 값으로 표현한다.
 		when(holdingService.findHoldingId(USER_ID, Market.STOCK, 100L)).thenReturn(Optional.empty());
 
 		Optional<ResolvedPracticeChainDto> result = service.resolve(USER_ID, PracticeIntentionService.TUTORIAL_KEY);
@@ -438,9 +415,6 @@ class MarketPracticeChainResolutionServiceTest {
 		assertThat(result.get().favoriteId()).isEqualTo(11L);
 	}
 
-	// 아래는 031-tutorial-sandbox-instruments 매도 chain 해석(resolveForFavorite이 tradeService.
-	// findEarliestFilledSellTradeAfter를 buyTrade.executedAt 이후로 조회해 DTO에 채우는 부분)을 검증한다.
-
 	@Test
 	void resolveFillsNullSellFieldsWhenNoSellTradeExistsAfterBuyTrade() {
 		FavoriteResponse favorite = favorite(10L, 100L, "STOCK", NOW.minusDays(3));
@@ -455,8 +429,6 @@ class MarketPracticeChainResolutionServiceTest {
 			.thenReturn(Optional.of(buyTrade));
 		when(holdingService.findHoldingId(USER_ID, Market.STOCK, 100L)).thenReturn(Optional.of(40L));
 
-		// 매도 체결이 아직 없는 경우(findEarliestFilledSellTradeAfter가 빈 값) — chain 자체는 buyTrade·holding
-		// 만으로 완성되므로 여전히 반환되지만, 신규 매도 필드 2개는 null이어야 한다.
 		when(tradeService.findEarliestFilledSellTradeAfter(USER_ID, 100L, buyTrade.getExecutedAt()))
 			.thenReturn(Optional.empty());
 
@@ -481,9 +453,6 @@ class MarketPracticeChainResolutionServiceTest {
 			.thenReturn(Optional.of(buyTrade));
 		when(holdingService.findHoldingId(USER_ID, Market.STOCK, 100L)).thenReturn(Optional.of(40L));
 
-		// TradeService.findEarliestFilledSellTradeAfter가 이미 "buyTrade.executedAt 이후 여러 매도 중 가장
-		// 이른 것"을 골라 반환한다는 계약이다(그 선택 로직 자체는 TradeServiceTest가 검증). 이 서비스는 그
-		// 결과를 그대로 DTO에 옮기고, 경계값(after)으로 buyTrade.executedAt을 정확히 넘기는지만 책임진다.
 		Trade earliestSellAfterBuy = sellTrade(50L, NOW.minusHours(2));
 		when(tradeService.findEarliestFilledSellTradeAfter(USER_ID, 100L, buyTrade.getExecutedAt()))
 			.thenReturn(Optional.of(earliestSellAfterBuy));
@@ -496,10 +465,6 @@ class MarketPracticeChainResolutionServiceTest {
 		verify(tradeService).findEarliestFilledSellTradeAfter(USER_ID, 100L, buyTrade.getExecutedAt());
 	}
 
-	// 이슈 #339 tasks.md 6번 통합 테스트 작업 중 발견한 회귀 수정 — 샘플 종목 chain은 만료 후 재도전이 가능해야
-	// 하므로(spec.md SANDBOX-007) buyTrade anchor를 "가장 최신"으로 고른다. 실제 종목 chain은 026의 anti-gaming
-	// 규칙(가장 이른 체결 고정)을 그대로 유지한다.
-
 	@Test
 	void resolvePicksLatestFilledBuyTradeForTutorialSampleInstrumentToAllowRetryAfterExpiry() {
 		FavoriteResponse favorite = favorite(10L, 100L, "STOCK", NOW.minusDays(3));
@@ -509,7 +474,6 @@ class MarketPracticeChainResolutionServiceTest {
 		PracticeIntention intention = intention(20L, 100L, new BigDecimal("3"), NOW.minusDays(2));
 		when(practiceIntentionRepository.findByUserId(USER_ID)).thenReturn(List.of(intention));
 
-		// 첫 매수(만료된 chain의 anchor)와 재도전 매수 둘 다 존재한다 — 샘플 chain은 최신(재도전) 쪽을 골라야 한다.
 		Trade expiredBuyTrade = buyTrade(30L, new BigDecimal("100"), new BigDecimal("3"), NOW.minusHours(1));
 		Trade retryBuyTrade = buyTrade(31L, new BigDecimal("105"), new BigDecimal("3"), NOW.minusMinutes(1));
 		when(tradeService.findLatestFilledBuyTradeMatching(
@@ -527,7 +491,6 @@ class MarketPracticeChainResolutionServiceTest {
 
 	@Test
 	void resolvePicksEarliestFilledBuyTradeForRealInstrumentEvenWhenLaterMatchExists() {
-		// 026의 anti-gaming 회귀 확인 — 샘플 종목이 아니면 여전히 가장 이른 매수를 고정 선택한다.
 		FavoriteResponse favorite = favorite(10L, 100L, "STOCK", NOW.minusDays(3));
 		when(favoriteService.getFavorites(USER_ID)).thenReturn(new FavoriteListResponse(List.of(favorite)));
 		when(instrumentService.getInstrumentEntity(100L)).thenReturn(stockInstrument());

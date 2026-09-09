@@ -1,4 +1,3 @@
-// 종목 목록 조회 API의 인증, 시장 필터링, 검증 실패, 응답 DTO 계약을 검증하는 WebMvc 슬라이스 테스트다.
 package com.finplay.api.domain.market.controller;
 
 import static org.mockito.ArgumentMatchers.eq;
@@ -275,8 +274,6 @@ class InstrumentControllerTest {
 	@Test
 	void getPriceReturnsAvailableStatusWithLastKnownPriceForCryptoInstrumentWhenObservationIsHoursOld()
 		throws Exception {
-		// 036-remove-crypto-stale-status: 연결이 살아있고 수신 이력이 있으면, 관측 시각이 몇 시간 지나도
-		// (과거 032 시절엔 STALE) 여전히 409가 아니라 200 + status=AVAILABLE이다.
 		authenticate();
 		LocalDateTime sourceTime = LocalDateTime.of(2026, 7, 28, 6, 30, 0);
 		when(priceQueryService.getPrice(17L)).thenReturn(
@@ -347,7 +344,6 @@ class InstrumentControllerTest {
 
 	@Test
 	void getCandlesReturnsOkWithEmptyEnvelopeForOneDayIntervalNoLongerRejected() throws Exception {
-		// 이슈 #143(013) 1단계: 1d는 더 이상 400이 아니다. 048: 응답은 항상 봉투(content/nextCursor/hasNext)다.
 		authenticate();
 		when(candleQueryService.getCandles(1L, "1d", null, null, null))
 			.thenReturn(CandleListResponse.of(List.of(), null, false));
@@ -376,7 +372,6 @@ class InstrumentControllerTest {
 
 	@Test
 	void getCandlesReturnsOkWithEmptyEnvelopeForUppercaseOneMonthIntervalNoLongerRejected() throws Exception {
-		// "1M"(월봉)이 "1m"(분봉)과 구분되는 별개의 유효 interval로 처리됨을 API 계약 수준에서 고정한다.
 		authenticate();
 		when(candleQueryService.getCandles(1L, "1M", null, null, null))
 			.thenReturn(CandleListResponse.of(List.of(), null, false));
@@ -390,7 +385,6 @@ class InstrumentControllerTest {
 
 	@Test
 	void getCandlesReturnsCommonValidationErrorForUppercaseDIntervalVariant() throws Exception {
-		// "1D"는 spec상 여전히 400이어야 한다(대소문자 미정규화) — 서비스가 던진 VALIDATION_ERROR를 그대로 매핑하는지 확인한다.
 		authenticate();
 		when(candleQueryService.getCandles(eq(1L), eq("1D"), isNull(), isNull(), isNull()))
 			.thenThrow(new BusinessException(ErrorCode.VALIDATION_ERROR, "지원하지 않는 캔들 간격입니다."));
@@ -419,7 +413,6 @@ class InstrumentControllerTest {
 
 	@Test
 	void getCandlesRejectsMissingAuthenticationForOneDayIntervalWithoutCallingService() throws Exception {
-		// 401 유지 회귀: 새 interval 값에서도 인증 실패가 여전히 서비스 호출 전에 막혀야 한다.
 		mockMvc.perform(get("/api/instruments/{instrumentId}/candles", 1L).param("interval", "1d"))
 			.andExpect(status().isUnauthorized())
 			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
@@ -430,8 +423,6 @@ class InstrumentControllerTest {
 
 	@Test
 	void getCandlesReturnsCommonValidationErrorWhenIntervalParamIsMissing() throws Exception {
-		// interval은 필수 쿼리 파라미터다 — 누락 시 MissingServletRequestParameterException을
-		// GlobalExceptionHandler가 400 VALIDATION_ERROR로 매핑하는지 고정한다.
 		authenticate();
 
 		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}/candles", 1L)))
@@ -445,8 +436,6 @@ class InstrumentControllerTest {
 
 	@Test
 	void getCandlesReturnsCommonValidationErrorWhenFromIsNotIsoFormat() throws Exception {
-		// from이 ISO-8601 LocalDateTime 형식이 아니면 MethodArgumentTypeMismatchException을
-		// GlobalExceptionHandler가 400 VALIDATION_ERROR로 매핑하는지 고정한다.
 		authenticate();
 
 		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}/candles", 1L)
@@ -527,8 +516,6 @@ class InstrumentControllerTest {
 
 	@Test
 	void getCandlesReturnsCommonValidationErrorForCryptoInstrumentIdIsNoLongerRejectedByDefault() throws Exception {
-		// 회귀 고정(MKT-008, 이슈 #20): 예전에는 코인 instrumentId를 서비스에 묻기도 전에 400으로 거부했다.
-		// 이제는 서비스에 위임하고 서비스가 반환한 대로 응답한다 — 여기서는 정상 200 코인 캔들 계약을 검증한다.
 		authenticate();
 		when(candleQueryService.getCandles(17L, "1m", null, null, null)).thenReturn(CandleListResponse.of(List.of(
 			new CandleResponse(LocalDateTime.of(2026, 7, 30, 11, 43), new BigDecimal("95000000"),
@@ -541,7 +528,6 @@ class InstrumentControllerTest {
 			.andExpect(jsonPath("$.content.length()").value(1))
 			.andExpect(jsonPath("$.content[0].sourceTime").value("2026-07-30T11:43:00"))
 			.andExpect(jsonPath("$.content[0].close").value(95050000))
-			// 코인 volume은 소수 수량이다 — long이었다면 0으로 잘렸을 값이 그대로 노출돼야 한다.
 			.andExpect(jsonPath("$.content[0].volume").value(0.26725783))
 			.andExpect(jsonPath("$.content[0].sourceTradingDate").doesNotExist());
 
@@ -565,8 +551,6 @@ class InstrumentControllerTest {
 
 	@Test
 	void getCandlesReturnsBadGatewayWhenBithumbCandleProviderFails() throws Exception {
-		// MKT-008: 빗썸 캔들 조회 실패(타임아웃·비정상 상태코드·파싱 불가)는 502 MARKET_DATA_PROVIDER_ERROR다 —
-		// 빈 배열 200으로 성공을 위장하지 않는다. 048: 커서 도입으로 새 오류 코드가 생기지 않는다(CANDLE-PAGE-011).
 		authenticate();
 		when(candleQueryService.getCandles(17L, "1m", null, null, null))
 			.thenThrow(new BusinessException(ErrorCode.MARKET_DATA_PROVIDER_ERROR));
@@ -582,7 +566,6 @@ class InstrumentControllerTest {
 
 	@Test
 	void getCandlesReturnsEmptyEnvelopeWithOkStatusWhenReplaySessionNotReadyOrNoCandleRevealedYet() throws Exception {
-		// 재생세션 미준비·아직 공개된 분봉이 없는 경우에도 가격 API(409 PRICE_UNAVAILABLE)와 달리 예외 없이 200 + 빈 봉투여야 한다.
 		authenticate();
 		when(candleQueryService.getCandles(1L, "1m", null, null, null))
 			.thenReturn(CandleListResponse.of(List.of(), null, false));
@@ -594,13 +577,8 @@ class InstrumentControllerTest {
 		verify(candleQueryService).getCandles(1L, "1m", null, null, null);
 	}
 
-	// =====================================================================================
-	// 커서 페이지네이션(048, CANDLE-PAGE-001~012·025·026) — @WebMvcTest 계약 검증
-	// =====================================================================================
-
 	@Test
 	void getCandlesReturnsNextCursorEqualToOldestContentCandleSourceTimeAsExactString() throws Exception {
-		// nextCursor는 content의 가장 오래된 봉(content[0])의 sourceTime과 정확히 같은 문자열이어야 한다(CANDLE-PAGE-001).
 		authenticate();
 		LocalDateTime oldest = LocalDateTime.of(2026, 7, 22, 9, 0);
 		when(candleQueryService.getCandles(1L, "1d", null, null, null)).thenReturn(CandleListResponse.of(
@@ -619,7 +597,6 @@ class InstrumentControllerTest {
 
 	@Test
 	void getCandlesReturnsCommonValidationErrorForInvalidCursorFormat() throws Exception {
-		// CANDLE-PAGE-009: ISO-8601 LocalDateTime으로 파싱되지 않는 cursor는 400 VALIDATION_ERROR다.
 		authenticate();
 		when(candleQueryService.getCandles(1L, "1m", null, null, "not-a-valid-cursor"))
 			.thenThrow(new BusinessException(ErrorCode.VALIDATION_ERROR, "cursor 형식이 올바르지 않습니다."));
@@ -637,7 +614,6 @@ class InstrumentControllerTest {
 
 	@Test
 	void getCandlesReturnsCommonValidationErrorForUnsupportedIntervalEvenWithValidCursor() throws Exception {
-		// 검증 순서(CANDLE-PAGE-010): 잘못된 interval은 커서가 유효해도 여전히 400이다.
 		authenticate();
 		String cursor = "2026-07-22T09:00:00";
 		when(candleQueryService.getCandles(eq(1L), eq("5m"), isNull(), isNull(), eq(cursor)))
@@ -656,7 +632,6 @@ class InstrumentControllerTest {
 
 	@Test
 	void getCandlesReturnsCommonNotFoundErrorFormatForMissingInstrumentEvenWithInvalidCursorFormat() throws Exception {
-		// 검증 순서(CANDLE-PAGE-010): 없는 종목은 종목 존재(404) 판정이 커서 형식 검증(400)보다 먼저이므로 여전히 404다.
 		authenticate();
 		when(candleQueryService.getCandles(999L, "1m", null, null, "not-a-valid-cursor"))
 			.thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
@@ -674,7 +649,6 @@ class InstrumentControllerTest {
 
 	@Test
 	void getCandlesReturnsBadGatewayWhenBithumbCandleProviderFailsEvenWithCursor() throws Exception {
-		// 코인 외부 조회 실패는 커서 유무와 무관하게 502다 — 커서 도입이 새 오류 경로를 만들지 않는다.
 		authenticate();
 		String cursor = "2026-07-30T11:43:00";
 		when(candleQueryService.getCandles(17L, "1m", null, null, cursor))
@@ -693,7 +667,6 @@ class InstrumentControllerTest {
 
 	@Test
 	void getCandlesRejectsMissingAuthenticationWithCursorParamWithoutCallingService() throws Exception {
-		// 인증 실패는 커서 유무와 무관하게 여전히 401이고 서비스는 호출되지 않는다.
 		mockMvc.perform(get("/api/instruments/{instrumentId}/candles", 1L)
 			.param("interval", "1m")
 			.param("cursor", "2026-07-22T09:00:00"))
@@ -706,7 +679,6 @@ class InstrumentControllerTest {
 
 	@Test
 	void getCandlesReturnsOkWithHasNextFalseForStockOneMinuteWithCursor() throws Exception {
-		// CANDLE-PAGE-026: 주식 1m은 cursor를 받아도(400이 아니다) 항상 hasNext=false·nextCursor=null이다.
 		authenticate();
 		String cursor = "2026-07-27T09:00:00";
 		when(candleQueryService.getCandles(1L, "1m", null, null, cursor)).thenReturn(CandleListResponse.of(

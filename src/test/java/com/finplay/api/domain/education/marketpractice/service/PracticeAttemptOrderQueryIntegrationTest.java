@@ -1,4 +1,3 @@
-// 튜토리얼 attempt 전용 주문 조회(043)의 PENDING→FILLED→재시작 흐름과 기존 샌드박스 제외 회귀를 실제 MySQL로 검증한다.
 package com.finplay.api.domain.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -39,7 +38,6 @@ import org.springframework.test.util.ReflectionTestUtils;
 class PracticeAttemptOrderQueryIntegrationTest {
 
 	private static final LocalDateTime NOW = LocalDateTime.of(2036, 8, 18, 10, 0);
-	// CRYPTO_BASE_PRICE(10000) * factor[0.90, 1.10] 범위(TutorialPriceGenerator) 밖의 값이라 항상 즉시 체결된다.
 	private static final BigDecimal LIMIT_PRICE = new BigDecimal("20000");
 	private static final BigDecimal QUANTITY = new BigDecimal("0.5");
 
@@ -75,9 +73,6 @@ class PracticeAttemptOrderQueryIntegrationTest {
 				"DELETE FROM practice_risk_snapshots WHERE attempt_id IN "
 					+ "(SELECT id FROM practice_attempts WHERE user_id = ?)",
 				userId);
-			// 047 이후 이 테스트가 쓰는 attempt 흐름(ensureAttempt·restart)이 항상 튜토리얼 계좌를 get-or-create해
-			// tutorial_accounts 행을 남긴다(047 tasks.md 8번, 이슈 #450 회귀 확인 중 발견) — 047 이전에 작성된 이
-			// 정리 루프에는 없었고, 빠뜨리면 사용자 삭제 시 fk_tutorial_accounts_user 위반으로 실패한다.
 			jdbcTemplate.update("DELETE FROM tutorial_accounts WHERE user_id = ?", userId);
 		}
 		for (Long accountId : accountIds) {
@@ -91,8 +86,6 @@ class PracticeAttemptOrderQueryIntegrationTest {
 				accountId);
 			jdbcTemplate.update("DELETE FROM trades WHERE account_id = ?", accountId);
 			jdbcTemplate.update("DELETE FROM orders WHERE account_id = ?", accountId);
-			// 042 5번부터 튜토리얼 매수가 OCO 예약을 함께 만들므로 holdings보다 exit_plans를 먼저 지운다
-			// (fk_exit_plans_holding).
 			jdbcTemplate.update(
 				"DELETE FROM exit_plan_conditions WHERE exit_plan_id IN "
 					+ "(SELECT id FROM exit_plans WHERE holding_id IN "
@@ -113,7 +106,6 @@ class PracticeAttemptOrderQueryIntegrationTest {
 		instrumentIds.clear();
 	}
 
-	// 완료 조건: attempt가 없는 사용자·시장 조합은 오류 없이 빈 목록을 반환한다.
 	@Test
 	void returnsEmptyListWhenAttemptDoesNotExist() {
 		User user = user("no-attempt");
@@ -121,8 +113,6 @@ class PracticeAttemptOrderQueryIntegrationTest {
 		assertThat(orderQueryService.getCurrentRunOrders(user.getId(), Market.CRYPTO)).isEmpty();
 	}
 
-	// 완료 조건 전체를 관통하는 시나리오: 지정가 매수 생성 → PENDING 노출(+ 기존 조회 회귀 없음) → tick 체결 →
-	// FILLED 노출(+ 기존 조회 회귀 없음) → 재시작 → 이전 run 주문 제외(새 run은 빈 목록).
 	@Test
 	void limitBuyOrderIsVisibleThroughPendingAndFilledThenExcludedAfterRestartWithoutSandboxRegression() {
 		Fixture fixture = selectedFixture("order-query", Market.CRYPTO);
@@ -140,7 +130,6 @@ class PracticeAttemptOrderQueryIntegrationTest {
 			assertThat(item.practiceAttemptId()).isEqualTo(fixture.attempt().getId());
 			assertThat(item.practiceAttemptRunNumber()).isEqualTo(1L);
 		});
-		// TUTORIAL-ORDER-004 / SANDBOX-EXCL(033) 회귀: 이 시점에도 기존 두 조회는 샘플 종목 주문을 노출하지 않는다.
 		assertThat(orderService.getMyOrders(
 			fixture.user().getId(), Market.CRYPTO, null, 100).content())
 			.isEmpty();

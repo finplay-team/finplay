@@ -1,4 +1,3 @@
-// Redis가 응답하지 못하는 상태에서 요약 조회·브리핑 조회가 HTTP 200과 정상 응답 본문을 내는지 종단(컨트롤러→서비스→캐시)으로 검증한다 (이슈 #245 완료 조건, ADR-0015 §6).
 package com.finplay.api.domain.feedback.controller;
 
 import static org.mockito.Mockito.when;
@@ -43,24 +42,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * 이슈 #245 완료 조건이 <b>"Redis가 죽어도 조회가 200이다"</b>라고 문자 그대로 요구한다. 그 문장을 그대로
- * 확인하는 자리다 — 컨트롤러부터 캐시까지 실제로 이어 붙인 뒤 Redis만 죽인다.
- *
- * <p><b>이미 있는 두 테스트와 역할이 다르다.</b> {@code InstrumentNewsControllerTest}·
- * {@code MarketBriefingControllerTest}는 {@code @WebMvcTest} 슬라이스라 서비스가 mock이고 캐시가 아예 없으며,
- * {@code FeedbackQueryCacheBoundaryIntegrationTest}는 실제로 닿지 못하는 Redis를 쓰지만 <b>서비스 레벨</b>이라
- * HTTP 상태 코드를 찍지 않는다. "정상 반환 → 200"은 앞의 것이, "예외가 새지 않는다"는 뒤의 것이 각각 보증하고
- * 그 둘을 합치면 200이 나오지만, <b>완료 조건이 요구하는 것은 합성 논증이 아니라 실제 200이다.</b>
- *
- * <p><b>Redis를 죽이는 방법으로 {@code StringRedisTemplate}을 예외를 던지는 mock으로 바꾼다.</b> 경계 테스트의
- * 닫힌 포트 방식은 별도로 조립한 캐시에만 걸 수 있어 스프링 빈을 타는 이 경로에는 쓸 수 없다. 던지는 예외는
- * 드라이버가 접속 실패에 실제로 쓰는 {@code RedisConnectionFailureException}이며, {@code FeedbackQueryCache}가
- * 이를 {@code RuntimeException}으로 삼켜 캐시 미스로 취급하는지가 검증 대상이다.
- *
- * <p><b>200만 보고 끝내지 않는다.</b> 200인데 상태값이 {@code UNAVAILABLE}이거나 {@code items}가 비면 사용자에게는
- * 그것도 장애다 — 상태값·서술·목록까지 본문 전체를 단정한다.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
@@ -75,7 +56,6 @@ class FeedbackQueryRedisFailureApiIntegrationTest {
 
 	private static final LocalDate SERVICE_DATE = LocalDate.of(2026, 8, 6);
 
-	// 10:00 — 09:00 게이트는 열렸고 15:30 전이라 주식 요약 scope는 PRE_MARKET이다.
 	private static final LocalDateTime NOW = LocalDateTime.of(SERVICE_DATE, LocalTime.of(10, 0));
 
 	private static final String NEWS_PATH = "/api/instruments/{instrumentId}/news";
@@ -110,7 +90,6 @@ class FeedbackQueryRedisFailureApiIntegrationTest {
 	@Autowired
 	private MarketBriefingRepository marketBriefingRepository;
 
-	// 전역 Clock 빈을 대신하는 공용 테스트 시계 (TestClockConfig). 기준 시각은 @BeforeEach에서 세운다.
 	@Autowired
 	private TestClock clock;
 
@@ -157,7 +136,6 @@ class FeedbackQueryRedisFailureApiIntegrationTest {
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.originTradeDate").value(ORIGIN_TRADE_DATE.toString()))
 			.andExpect(jsonPath("$.summaryScope").value("PRE_MARKET"))
-			// 200인데 UNAVAILABLE이면 사용자에게는 그것도 장애다 — 캐시 장애는 미스일 뿐이어야 한다.
 			.andExpect(jsonPath("$.summaryStatus").value("READY"))
 			.andExpect(jsonPath("$.summary").value(SUMMARY_TEXT))
 			.andExpect(jsonPath("$.items.length()").value(1))
@@ -177,8 +155,6 @@ class FeedbackQueryRedisFailureApiIntegrationTest {
 			.andExpect(jsonPath("$.items[0].title").value(NEWS_TITLE));
 	}
 
-	// 같은 요청을 반복해도 계속 200이다 — 캐시가 비어 있으니 매번 미스이고, 그 미스가 누적돼 예외로 바뀌는
-	// 경로가 없어야 한다(락 획득 실패가 쌓여 터지는 형태를 배제한다).
 	@Test
 	@DisplayName("Redis가 죽은 채로 같은 조회를 반복해도 계속 200이다")
 	void repeatedQueriesKeepReturningTwoHundredWhileRedisStaysDown() throws Exception {

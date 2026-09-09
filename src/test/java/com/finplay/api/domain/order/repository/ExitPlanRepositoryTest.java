@@ -1,4 +1,3 @@
-// V35가 만든 exit_plans의 FK·nullable 조합과 (user_id, intention_instance_key) unique, 조회 메서드를 검증하는 슬라이스 테스트다 (021 plan "데이터 모델").
 package com.finplay.api.domain.order.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -317,8 +316,6 @@ class ExitPlanRepositoryTest {
 		assertThat(result).extracting(ExitPlan::getId).containsExactly(plan.getId());
 	}
 
-	// 경계 비교가 `=`가 아니라 `<=`·`>=`임을 잠근다 — 위 두 테스트는 정확히 일치하는 값만 쓰므로 쿼리가
-	// 등호 비교로 바뀌어도 통과한다. 이슈 #382의 "경계 비교" 항목은 이 두 케이스까지 있어야 닫힌다.
 	@Test
 	@DisplayName("findPendingExitPlansToFill은 현재가가 익절가를 넘어서도 익절 방향 후보로 반환한다 (이슈 #382)")
 	void findPendingExitPlansToFillReturnsCandidateWhenPriceAboveTakeProfitPrice() {
@@ -390,10 +387,6 @@ class ExitPlanRepositoryTest {
 	@Test
 	@DisplayName("findPendingExitPlansToFill은 reservedAt 오름차순, 동시각이면 id 오름차순으로 여러 후보를 정렬한다 (PR #371 리뷰 권장)")
 	void findPendingExitPlansToFillSortedByReservedAtThenIdAscending() {
-		// holding당 PENDING 1건 불변식은 앱 계층 검증이라 리포지터리 테스트는 우회해 같은 holding에 여러 PENDING plan을 직접 저장한다.
-		// reservedAt이 가장 이른 plan을 일부러 가장 나중에 저장한다(= id가 가장 크다) — 저장 순서와 예약 시각 순서를
-		// 어긋나게 두지 않으면 `order by reservedAt asc, id asc`와 `order by id asc`가 같은 결과를 내 정렬 조건을
-		// 검증하지 못한다 (이슈 #382).
 		ExitPlan sameTimeFirst = exitPlanRepository.saveAndFlush(generalPlanAt(holding, hash("b"), NOW));
 		ExitPlan sameTimeSecond = exitPlanRepository.saveAndFlush(generalPlanAt(holding, hash("c"), NOW));
 		ExitPlan older = exitPlanRepository.saveAndFlush(generalPlanAt(holding, hash("a"), NOW.minusMinutes(10)));
@@ -405,9 +398,6 @@ class ExitPlanRepositoryTest {
 		assertThat(older.getId()).isGreaterThan(sameTimeSecond.getId());
 	}
 
-	// PR #487 리뷰 QA 차단 회귀 — 이 조건이 빠지면 BithumbFeedSimulator가 SANDBOX_COIN_1에 3초마다 넣는
-	// 합성 틱이 튜토리얼 예약을 tick 없이 즉시 체결시킨다. 튜토리얼 예약은 대본 canonical 가격을 넘기는
-	// PracticeOrderSettlementService.settleCurrentRun만 체결해야 한다(042 EXITPRESET-013·014).
 	@Test
 	@DisplayName("findPendingExitPlansToFill은 튜토리얼 실행 세대에 귀속된 예약을 실시간 가격 후보에서 제외한다")
 	void findPendingExitPlansToFillExcludesPracticeAttributedPlan() {
@@ -443,8 +433,6 @@ class ExitPlanRepositoryTest {
 		assertThat(result).extracting(ExitPlan::getId).containsExactly(generalPlan.getId());
 	}
 
-	// 튜토리얼 자동 예약은 실행 세대에 귀속된다(042 EXITPRESET-015) — tick 정산 대상 선별과 재시작 정리가
-	// 이 두 컬럼으로 이뤄진다. 값을 채우는 것은 042 5번이라 여기서는 스키마와 매핑만 잠근다.
 	@Test
 	@DisplayName("튜토리얼 귀속 컬럼이 함께 채워진 예약은 저장되고 재조회된다")
 	void savesPlanWithPracticeAttemptAttribution() {
@@ -618,7 +606,6 @@ class ExitPlanRepositoryTest {
 		return holdingRepository.saveAndFlush(created);
 	}
 
-	// request_hash는 CHAR(64) — SHA-256 hex 길이를 그대로 맞춘 더미 값을 만든다.
 	private static String hash(String seed) {
 		return (seed.repeat(64)).substring(0, 64);
 	}

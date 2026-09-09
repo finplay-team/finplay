@@ -1,4 +1,3 @@
-// holding 관찰 세션 가격원 파사드의 fallback·owner·instrument 검증 분기를 mock으로 검증하는 단위 테스트다.
 package com.finplay.api.domain.education.priceruntime.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

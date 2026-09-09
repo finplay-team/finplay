@@ -1,7 +1,3 @@
-// 054-limit-order-fill-bulk-lock 위험 요소 1 — 서로 다른 종목(=서로 다른 파티션 워커)의 청크 두 개가 겹치는
-// 계좌 집합을 동시에 벌크 락으로 잠글 때, 계좌 ID 오름차순 고정이 없으면 ABBA 데드락이 날 수 있다. fillBatch가
-// 두 청크 모두 계좌 ID 오름차순으로 잠그는지 실제 동시 실행으로 검증한다. LimitOrderFillAccountLockContentionIntegrationTest
-// 의 ready/start 래치 패턴을 참고했다.
 package com.finplay.api.domain.order;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -45,7 +41,6 @@ import org.springframework.context.annotation.Import;
 class LimitOrderFillBatchCrossInstrumentChunkDeadlockIntegrationTest {
 
 	private static final LocalDateTime NOW = LocalDateTime.of(2026, 8, 24, 12, 0, 0);
-	// 겹치는 계좌 수 — 두 청크가 같은 계좌 전부를 공유하게 해 계좌 락 경합을 최대화한다.
 	private static final int ACCOUNT_COUNT = 6;
 	private static final int REPEAT = 5;
 
@@ -74,9 +69,6 @@ class LimitOrderFillBatchCrossInstrumentChunkDeadlockIntegrationTest {
 		}
 	}
 
-	// 계좌 ACCOUNT_COUNT개를 만들고, 각 계좌마다 서로 다른 종목 X·Y에 PENDING 지정가 매수를 하나씩 걸어둔다.
-	// 두 청크(종목 X 전체, 종목 Y 전체)를 서로 반대 순서(내림차순 vs 오름차순)로 넘겨 실제 락 획득 순서가
-	// fillBatch 내부 정렬에만 의존하도록 만든다 — 호출부 순서에 우연히 맞물려 데드락이 안 나는 거짓 양성을 막는다.
 	private void runOnceAndAssertNoDeadlock() throws Exception {
 		List<Account> accounts = new ArrayList<>();
 		for (int i = 0; i < ACCOUNT_COUNT; i++) {
@@ -92,8 +84,6 @@ class LimitOrderFillBatchCrossInstrumentChunkDeadlockIntegrationTest {
 			chunkXOrderIds.add(createPendingLimitBuy(account, instrumentX));
 			chunkYOrderIds.add(createPendingLimitBuy(account, instrumentY));
 		}
-		// 계좌 ID 오름차순으로 만들어진 accounts 리스트를 그대로 쓴 X와, 반대로 뒤집은 순서로 청크를 넘기는 Y —
-		// fillBatch 호출 인자 순서와 무관하게 내부에서 계좌 ID 오름차순으로 잠가야 데드락이 나지 않는다.
 		List<Long> reversedChunkYOrderIds = new ArrayList<>(chunkYOrderIds);
 		Collections.reverse(reversedChunkYOrderIds);
 
@@ -141,8 +131,6 @@ class LimitOrderFillBatchCrossInstrumentChunkDeadlockIntegrationTest {
 		}
 	}
 
-	// 최소주문금액(5,000)을 넉넉히 넘기면서 계좌 기본 현금(10,000,000) 안에서 두 종목 몫을 함께 예약해도
-	// 여유가 있도록 수량·가격을 고정한다(건당 예약 약 10,005원 × 2종목).
 	private Long createPendingLimitBuy(Account account, Instrument instrument) {
 		BigDecimal quantity = new BigDecimal("0.01");
 		BigDecimal limitPrice = new BigDecimal("1000000");

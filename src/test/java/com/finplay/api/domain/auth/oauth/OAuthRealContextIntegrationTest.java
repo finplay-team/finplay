@@ -1,4 +1,3 @@
-// 실제 애플리케이션 oauth-real 조립에서 RestClient와 실공급자 빈 구성을 통합 검증한다.
 package com.finplay.api.domain.auth.oauth;
 
 import static org.assertj.core.api.Assertions.assertThat;

@@ -1,4 +1,3 @@
-// attempt 실행 세대 재시작 시 예약 취소, 순체결 집계와 보상 매도 원장 생성을 검증한다.
 package com.finplay.api.domain.order.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -67,8 +66,6 @@ class PracticeRunRestartOrderServiceTest {
 	@Test
 	void cleanupCurrentRunCancelsPendingBuyAndSellAndReturnsReservationsExactlyOnce() {
 		Fixture fixture = fixture();
-		// PR #452 리뷰 차단 1번: validateInstrument가 이 메서드 도달 전 isTutorialSample()을 강제하므로,
-		// PENDING 지정가 매수 예약은 실제 Account가 아니라 튜토리얼 계좌에 걸려 있어야 한다.
 		when(tutorialAccountService.getOrCreateForUpdate(
 			USER_ID, Market.CRYPTO, NOW))
 			.thenReturn(fixture.tutorialAccount());
@@ -90,7 +87,6 @@ class PracticeRunRestartOrderServiceTest {
 		assertThat(fixture.account().getReservedCash()).isZero();
 		assertThat(fixture.holding().getReservedQuantity()).isEqualByComparingTo(BigDecimal.ZERO);
 		verifyNoInteractions(priceQueryService);
-		// TUTORIAL-CASH-ISOL-006: 순체결수량 0 즉시 반환 경로도 재시작마다 튜토리얼 계좌를 리셋해야 한다.
 		verify(tutorialAccountService, times(2))
 			.resetForUpdate(USER_ID, Market.CRYPTO, NOW);
 	}
@@ -128,8 +124,6 @@ class PracticeRunRestartOrderServiceTest {
 		verify(portfolioSellService).applySellTrade(fixture.holding(), auditTrade, new BigDecimal("1.5"), NOW);
 		verify(portfolioSellService).finalizeSellRealizedPnl(
 			fixture.account(), auditTrade, 150_000L, 75L, allocation, NOW);
-		// TUTORIAL-CASH-ISOL-006: 보상매도가 튜토리얼 계좌에 반영된 뒤(finalizeSellRealizedPnl) 리셋이
-		// 마지막에 호출돼야 한다 — 순서가 바뀌면 보상매도 증가분이 리셋 이후에 남아 초기값(1000만원)을 넘어선다.
 		verify(tutorialAccountService)
 			.resetForUpdate(USER_ID, Market.CRYPTO, NOW);
 		InOrder order = inOrder(portfolioSellService, tutorialAccountService);
@@ -149,7 +143,6 @@ class PracticeRunRestartOrderServiceTest {
 		verify(orderRepository, never()).save(any());
 		verify(tradeRepository, never()).save(any());
 		verifyNoInteractions(priceQueryService, portfolioSellService);
-		// TUTORIAL-CASH-ISOL-006: 보상매도가 없어도(순체결수량 0) 리셋은 여전히 일어나야 한다.
 		verify(tutorialAccountService)
 			.resetForUpdate(USER_ID, Market.CRYPTO, NOW);
 	}
@@ -167,12 +160,9 @@ class PracticeRunRestartOrderServiceTest {
 		verify(orderRepository, never()).save(any());
 		verify(tradeRepository, never()).save(any());
 		verifyNoInteractions(priceQueryService);
-		// TUTORIAL-CASH-ISOL-006: 정리 자체가 실패(BusinessException)하면 재시작이 완료된 게 아니므로
-		// 튜토리얼 계좌 리셋도 일어나지 않아야 한다.
 		verifyNoInteractions(tutorialAccountService);
 	}
 
-	// 실제 종목이 정리 대상으로 넘어오면 계좌·holding에 손대기 전에 막는다 — 이 방어선이 이슈 #433 수정의 전제다.
 	@Test
 	void cleanupCurrentRunRejectsRealInstrumentBeforeTouchingAccountOrHolding() {
 		Fixture fixture = fixture();
@@ -199,15 +189,10 @@ class PracticeRunRestartOrderServiceTest {
 
 		verifyNoInteractions(tradeRepository, accountService, instrumentService, priceQueryService,
 			portfolioSellService);
-		// TUTORIAL-CASH-ISOL-006: 종목 미선택(instrumentId == null) 즉시 반환 경로도 리셋 대상이다.
 		verify(tutorialAccountService)
 			.resetForUpdate(USER_ID, Market.CRYPTO, NOW);
 	}
 
-	// 이슈 #440: instrumentId == null인데 현재 attempt·run에 귀속된 주문이 남아 있으면 409로 막는다.
-	// PR #434가 legacy 실제 종목 재시작을 허용한 뒤로 이 분기가 유일한 안전망이 됐는데, 위
-	// cleanupCurrentRunWithoutInstrumentAllowsOnlyEmptyOrderSet은 주문이 비어 있는 경우만 다뤄
-	// "주문이 남아 있으면 막힌다" 쪽이 비어 있었다.
 	@Test
 	void cleanupCurrentRunWithoutInstrumentRejectsWhenOrdersExist() {
 		Fixture fixture = fixture();
@@ -221,7 +206,6 @@ class PracticeRunRestartOrderServiceTest {
 			.isInstanceOfSatisfying(BusinessException.class,
 				exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.PRACTICE_EVIDENCE_MISSING));
 
-		// 막힌 뒤에는 계좌·holding·원장 어느 쪽도 건드리지 않고, 튜토리얼 계좌 리셋도 일어나지 않아야 한다.
 		assertThat(leftover.getStatus()).isEqualTo(OrderStatus.PENDING);
 		verify(orderRepository, never()).save(any());
 		verifyNoInteractions(tradeRepository, accountService, instrumentService, priceQueryService,

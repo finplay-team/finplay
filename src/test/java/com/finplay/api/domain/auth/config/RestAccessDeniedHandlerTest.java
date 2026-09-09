@@ -1,4 +1,3 @@
-// 인가 실패 핸들러가 403 공통 오류를 완결된 바이트 응답으로 기록하는지 검증하는 단위 테스트다.
 package com.finplay.api.domain.auth.config;
 
 import static org.assertj.core.api.Assertions.assertThat;

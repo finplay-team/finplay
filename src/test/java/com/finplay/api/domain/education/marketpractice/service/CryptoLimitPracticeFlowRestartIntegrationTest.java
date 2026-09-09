@@ -1,4 +1,3 @@
-// 코인 즐겨찾기부터 가상 가격 세션 tick 체결·복기·완료까지와 Spring Context 재생성 전후 상태를 실제 MySQL로 검증한다.
 package com.finplay.api.domain.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -62,12 +61,8 @@ class CryptoLimitPracticeFlowRestartIntegrationTest {
 
 	private static final LocalDateTime BASE_NOW = LocalDateTime.of(2033, 3, 13, 10, 0);
 	private static final BigDecimal QUANTITY = new BigDecimal("0.1");
-	// startPrice는 새로 만든(가격 피드에 없는) 종목이라 항상 PracticePriceSessionService의 fallback anchor다.
 	private static final BigDecimal FALLBACK_START_PRICE = new BigDecimal("10000.00000000");
-	// tick당 ±1%만 움직이므로(030 생성기 계약) startPrice의 1.5배는 tick 1에서 항상 즉시 체결된다.
 	private static final BigDecimal LIMIT_PRICE = new BigDecimal("15000");
-	// entryPrice(=LIMIT_PRICE)를 기준으로 대칭 7,000원 거리 — tick 1 직후 currentPrice(9,900~10,100 범위)는
-	// 항상 STOP_LOSS(8,000)에 훨씬 가까워 CLOSER_TO_BOUNDARY 판정이 seed와 무관하게 성립한다.
 	private static final BigDecimal STOP_LOSS = new BigDecimal("8000");
 	private static final BigDecimal TAKE_PROFIT = new BigDecimal("22000");
 
@@ -120,10 +115,7 @@ class CryptoLimitPracticeFlowRestartIntegrationTest {
 	}
 
 	@AfterEach
-	void clearFixtureLists() {
-		// 각 테스트 메서드 사이에 Spring Context가 재생성되므로(재기동 검증), 필드에 남은 id는 새 컨텍스트에서도
-		// 유효한 DB 값이며 다음 메서드에서 그대로 재사용된다. 여기서는 정리할 인메모리 상태가 없다.
-	}
+	void clearFixtureLists() {}
 
 	@AfterAll
 	void cleanUpAllFixtures() {
@@ -193,9 +185,6 @@ class CryptoLimitPracticeFlowRestartIntegrationTest {
 		});
 	}
 
-	// 즐겨찾기 → 의도 → 가상 가격 세션 생성 → 교육 지정가 BUY → tick 1 진행·체결까지 실제 API 경로로 수행한다.
-	// 같은 종목의 일반 주문·다른 사용자 세션 주문이 이 tick으로 건드려지지 않음도 함께 확인한다
-	// (이슈 #313 완료 조건, 030/plan.md "트랜잭션·잠금·이벤트").
 	private FlowFixture createFilledLimitBuyChain(String scenario) {
 		User user = userRepository.saveAndFlush(User.create(
 			scenario + "-" + shortRandom() + "@finplay.com", "password-hash",
@@ -209,7 +198,6 @@ class CryptoLimitPracticeFlowRestartIntegrationTest {
 		createdAccountIds.add(account.getId());
 		createdInstrumentIds.add(instrument.getId());
 
-		// 격리 확인용: 다른 사용자의 같은 종목 세션 주문.
 		User otherUser = userRepository.saveAndFlush(User.create(
 			scenario + "-other-" + shortRandom() + "@finplay.com", "password-hash",
 			scenario + "-other-" + shortRandom(), BASE_NOW));
@@ -250,9 +238,6 @@ class CryptoLimitPracticeFlowRestartIntegrationTest {
 			user.getId(), UUID.randomUUID().toString(),
 			new LimitOrderCreateRequest(Market.CRYPTO, instrument.getId(), OrderSide.BUY, QUANTITY, LIMIT_PRICE));
 
-		// 실습 세션 tick은 인메모리 세션 상태만 진행시킬 뿐 실제 PriceStore(Redis)의 코인 가격·연결상태는 건드리지
-		// 않아야 한다(이슈 #313 완료 조건). 이 심볼은 실제 시세 피드가 절대 채우지 않는 실습 전용 종목이므로,
-		// tick 전후로 항상 조회 결과가 없어야 한다.
 		FeedConnectionStatus statusBeforeTick = priceStore.getConnectionStatus();
 		assertThat(priceStore.getLatestPrice(symbol))
 			.as("실습 세션 tick 전에도 실제 PriceStore에는 이 실습 전용 심볼의 가격이 없다")
@@ -289,13 +274,6 @@ class CryptoLimitPracticeFlowRestartIntegrationTest {
 	}
 
 	private void cleanUpCommittedFixtures() {
-		// FK 순서: practice_market_observations/reflections/completions/progresses/tutorial_accounts → holdings
-		// (사용자 루프, holdings보다 먼저) → orders/holdings/accounts(계좌 루프) → practice_price_sessions(orders가
-		// 참조하므로 orders 삭제 뒤, 사용자 루프) → instruments → users. 역순이면 "부모 행 삭제 불가" 제약 위반으로
-		// 실패한다. tutorial_accounts는 047 이후 이 클래스가 쓰는 coin-practice 세션 매수 경로(createSessionBuyOrder)가
-		// 샌드박스 종목(instrument.isTutorialSample()=true, 이 클래스가 쓰는 시드 종목이 여기 해당)이면 튜토리얼
-		// 계좌를 get-or-create하면서(047 tasks.md 8번, 이슈 #450 회귀 확인 중 발견) 새로 생기는 행이라 047 이전에
-		// 작성된 이 정리 루프에는 없었다 — 빠뜨리면 사용자 삭제 시 fk_tutorial_accounts_user 위반으로 실패한다.
 		for (Long userId : createdUserIds) {
 			jdbcTemplate.update("DELETE FROM practice_completions WHERE user_id = ?", userId);
 			jdbcTemplate.update("DELETE FROM practice_market_reflections WHERE user_id = ?", userId);

@@ -1,4 +1,3 @@
-// OAuth callback의 provider 해석, state 검증, 공급자 호출 순서를 단위 테스트한다.
 package com.finplay.api.domain.auth.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

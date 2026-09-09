@@ -1,4 +1,3 @@
-// 같은 게시물에 동시 좋아요·취소 요청이 몰릴 때 500·좋아요 수 오염이 없는지 실제 MySQL과 스레드로 검증하는 통합 테스트다.
 package com.finplay.api.domain.community;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -26,8 +25,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-// @Transactional을 붙이지 않는다 — 붙이면 테스트 스레드의 트랜잭션이 커밋되지 않아 작업 스레드가 게시물·사용자를
-// 보지 못하고, 작업 스레드들이 각자 트랜잭션을 열어야 동시성 자체가 재현되기 때문이다.
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
 class CommunityPostLikeConcurrencyIntegrationTest {
@@ -48,7 +45,6 @@ class CommunityPostLikeConcurrencyIntegrationTest {
 
 	private final List<Long> createdPostIds = new ArrayList<>();
 
-	// 이 클래스가 만든 게시물만 지운다 — 다른 통합 테스트가 남긴 행까지 건드리지 않기 위해서다.
 	@AfterEach
 	void removeDataCreatedByThisTestClass() {
 		for (Long postId : createdPostIds) {
@@ -106,8 +102,6 @@ class CommunityPostLikeConcurrencyIntegrationTest {
 		assertThat(countLikeRows(postId)).isEqualTo(likerCount);
 	}
 
-	// 모든 스레드가 준비된 뒤 시작 래치를 한 번에 풀어 실제 동시 요청을 만든다. 각 스레드에서 던져진 예외는
-	// 삼키지 않고 모아 반환한다 — "500이 나지 않는다"를 단언으로 확인해야 하기 때문이다.
 	private List<Throwable> runConcurrently(int threadCount, IntConsumer action) throws InterruptedException {
 		List<Throwable> failures = new CopyOnWriteArrayList<>();
 		CountDownLatch ready = new CountDownLatch(threadCount);
@@ -129,7 +123,6 @@ class CommunityPostLikeConcurrencyIntegrationTest {
 			assertThat(ready.await(AWAIT_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
 			start.countDown();
 			pool.shutdown();
-			// 락 대기·데드락으로 스레드가 멈추면 테스트가 영원히 걸리지 않도록 타임아웃을 실패로 처리한다.
 			assertThat(pool.awaitTermination(AWAIT_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
 		} finally {
 			pool.shutdownNow();

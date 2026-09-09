@@ -1,5 +1,3 @@
-// 목 WebSocketSession·PriceStore·InstrumentRepository로 BithumbWebSocketFeedClient의 콜백 기반 생명주기(연결·종료·메시지 수신)와
-// 재연결 지수 백오프·구독 실패 처리(목 StandardWebSocketClient·ScheduledExecutorService)를 검증하는 단위 테스트
 package com.finplay.api.domain.market.feed;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -62,9 +60,6 @@ class BithumbWebSocketFeedClientTest {
 	private final Clock clock = Clock.fixed(
 		LocalDateTime.of(2026, 8, 6, 15, 37, 0).atZone(ZoneId.of("Asia/Seoul")).toInstant(), ZoneId.of("Asia/Seoul"));
 
-	// 재연결 경로(끊김→DISCONNECTED→재연결 예약, MKT-004)를 목으로 검증하기 위해 생성자로 주입한다(PR #110 리뷰
-	// 권장사항 — 필드 초기화자 하드코딩이면 이 경로를 mock으로 검증할 수 없었다). start()를 호출하지 않는 테스트에서는
-	// 스텁 없이 그대로 둔다.
 	@Mock
 	private StandardWebSocketClient webSocketClient;
 
@@ -75,8 +70,6 @@ class BithumbWebSocketFeedClientTest {
 
 	@BeforeEach
 	void setUp() {
-		// 실제 운영 코드가 쓰는 것과 동일한 Jackson 3(tools.jackson) 계열 ObjectMapper를 그대로 사용한다 — 구독 메시지 직렬화·ticker
-		// 메시지 역직렬화 모두 실제 동작으로 검증하기 위함(mock ObjectMapper stubbing으로 대체하지 않음).
 		client = new BithumbWebSocketFeedClient(
 			instrumentRepository, priceStore, candleStore, new ObjectMapper(), webSocketClient, reconnectExecutor,
 			clock);
@@ -92,7 +85,6 @@ class BithumbWebSocketFeedClientTest {
 		client.afterConnectionEstablished(session);
 
 		verify(priceStore, times(1)).saveConnectionStatus(FeedConnectionStatus.CONNECTED);
-		// ticker + transaction 두 건 — 연결을 추가로 열지 않고 같은 세션에 순서대로 보낸다(이슈 #242 실측).
 		verify(session, times(2)).sendMessage(any(TextMessage.class));
 		verify(candleStore, times(1)).touchSince("BTC", LocalDateTime.now(clock));
 	}
@@ -113,11 +105,6 @@ class BithumbWebSocketFeedClientTest {
 		assertThat(sent.get(1).getPayload()).contains("\"type\":\"transaction\"").doesNotContain("tickTypes");
 	}
 
-	// 이슈 #528 — 구독 목록에 샌드박스 종목이 섞이지 않는 것을 조회 선택으로 고정한다. 실제 필터링은 쿼리가
-	// 하므로(InstrumentRepositoryTest가 검증) 여기서는 "샌드박스를 거르는 조회를 쓰는가"만 본다.
-	// 조회를 통째로 옛것으로 되돌리면 이 파일의 다른 테스트들이 먼저 깨진다 — **이 테스트만 고유하게 막는 것은
-	// 새 조회와 옛 조회를 함께 부르는 구현**이고, 그게 아래 never() 단정의 몫이다.
-	// 심볼 표기(`{symbol}_KRW`)를 구독 페이로드에서 단정하는 곳도 이 테스트뿐이다.
 	@Test
 	@DisplayName("샌드박스를 거르지 않는 옛 조회로는 구독 목록을 만들지 않는다")
 	void subscribeUsesSandboxExcludingQueryOnly() throws Exception {
@@ -235,8 +222,6 @@ class BithumbWebSocketFeedClientTest {
 		assertThat(client.isConnected()).isFalse();
 	}
 
-	// PR #296 재리뷰 참고사항: stop()도 onDisconnected()와 같은 이유로 Redis 장애에 견고해야 한다 — 감싸지
-	// 않으면 @PreDestroy 훅(BithumbFeedLifecycle.stopFeed) 밖으로 예외가 새 애플리케이션 종료를 방해할 수 있다.
 	@Test
 	@DisplayName("종료 시 상태 기록이 Redis 장애로 실패해도 stop()은 예외 없이 끝난다 (PR #296 재리뷰 참고사항)")
 	void stopDoesNotPropagateWhenSavingDisconnectedStatusFails() throws Exception {
@@ -301,9 +286,6 @@ class BithumbWebSocketFeedClientTest {
 		assertThat(delayCaptor.getAllValues()).containsExactly(5L, 10L, 5L);
 	}
 
-	// PR #296 리뷰 권장사항 1번: Redis 장애 중에는 priceStore.saveConnectionStatus(DISCONNECTED)가 예외를
-	// 던진다. onDisconnected() 안에서 감싸지 않으면 바로 다음 줄의 scheduleReconnect()가 실행되지 못해,
-	// WebSocket 연결 자체와 무관한 Redis 장애 때문에 재연결이 영구히 멈춘다 — 이 테스트가 그 회귀를 막는다.
 	@Test
 	@DisplayName("연결 종료 시 상태 기록이 Redis 장애로 실패해도 재연결은 그대로 예약된다 (PR #296 리뷰 권장사항)")
 	void afterConnectionClosedStillSchedulesReconnectWhenSavingDisconnectedStatusFails() {
@@ -318,8 +300,6 @@ class BithumbWebSocketFeedClientTest {
 		verify(reconnectExecutor, times(1)).schedule(any(Runnable.class), eq(5L), eq(TimeUnit.SECONDS));
 	}
 
-	// connect()의 .exceptionally도 같은 onDisconnected()를 거친다 — 초기 연결 시도 자체가 실패하는 경로에서도
-	// 같은 회귀가 재현될 수 있어 별도로 확인한다.
 	@Test
 	@DisplayName("초기 연결 실패 시 상태 기록이 Redis 장애로 실패해도 재연결은 그대로 예약된다 (PR #296 리뷰 권장사항)")
 	void connectExceptionallyStillSchedulesReconnectWhenSavingDisconnectedStatusFails() {

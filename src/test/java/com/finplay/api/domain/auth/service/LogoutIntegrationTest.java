@@ -1,4 +1,3 @@
-// 실제 MySQL에서 Refresh Token 로그아웃의 폐기 상태와 사용자·세션 소유권을 검증하는 통합 테스트다.
 package com.finplay.api.domain.auth.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

@@ -1,4 +1,3 @@
-// 실습 3단계 자유 복기 생성 API의 인증·검증·응답·오류 계약을 검증하는 WebMvc 테스트다.
 package com.finplay.api.domain.education.marketpractice.controller;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -61,7 +60,6 @@ class PracticeHoldingReflectionControllerTest {
 			.andExpect(status().isCreated())
 			.andExpect(jsonPath("$.reflectionId").value(30))
 			.andExpect(jsonPath("$.holdingId").value(10))
-			// 이슈 #432 — prompt 필드는 폐기됐다. 응답에 아예 나오지 않아야 한다.
 			.andExpect(jsonPath("$.prompt").doesNotExist())
 			.andExpect(jsonPath("$.answer").value("손절 라인에 가까워서 팔지 않기로 했다."))
 			.andExpect(jsonPath("$.createdAt").value("2026-08-10T10:00:00"))

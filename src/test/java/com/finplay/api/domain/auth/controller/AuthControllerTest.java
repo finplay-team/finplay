@@ -1,4 +1,3 @@
-// 회원가입·로그인·토큰 재발급 응답과 입력 검증, 비즈니스 오류 계약을 검증하는 WebMvc 슬라이스 테스트다.
 package com.finplay.api.domain.auth.controller;
 
 import static org.hamcrest.Matchers.containsString;
@@ -42,7 +41,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.ObjectMapper;
 
-// 대상 경로가 공개 화이트리스트에 있으므로 실제 Security 체인을 태워 화이트리스트 계약까지 함께 검증한다.
 @WebMvcTest(AuthController.class)
 @Import(SecurityConfig.class)
 class AuthControllerTest {
@@ -199,8 +197,6 @@ class AuthControllerTest {
 
 	@Test
 	void loginPassesShortPasswordToServiceInsteadOfRejectingItAsBadRequest() throws Exception {
-		// LoginRequest.password에 min을 두지 않은 것은 의도된 설계다(계획 HTTP 계약 표).
-		// min을 붙이면 짧은 입력만 400, 나머지는 401로 갈려 응답이 저장된 자격증명의 힌트가 된다.
 		when(authService.login(EMAIL, SHORT_PASSWORD))
 			.thenThrow(new BusinessException(ErrorCode.UNAUTHORIZED));
 
@@ -371,7 +367,6 @@ class AuthControllerTest {
 			.andExpect(jsonPath("$.email").value(EMAIL))
 			.andExpect(jsonPath("$.nickname").value(NICKNAME))
 			.andExpect(jsonPath("$.signupMethod").value("EMAIL"))
-			// 민감 필드가 어떤 이름으로도 새지 않도록 응답 키 집합 자체를 4개로 고정한다.
 			.andExpect(jsonPath("$.*", hasSize(4)));
 
 		verify(authService).getMe(USER_ID);
@@ -447,7 +442,6 @@ class AuthControllerTest {
 			.andExpect(jsonPath("$.email").value(EMAIL))
 			.andExpect(jsonPath("$.nickname").value(NEW_NICKNAME))
 			.andExpect(jsonPath("$.signupMethod").value("EMAIL"))
-			// 재인증 증명·비밀번호 해시가 어떤 이름으로도 새지 않도록 응답 키 집합을 4개로 고정한다.
 			.andExpect(jsonPath("$.*", hasSize(4)))
 			.andExpect(jsonPath("$.currentPassword").doesNotExist())
 			.andExpect(jsonPath("$.reauthToken").doesNotExist())
@@ -576,7 +570,6 @@ class AuthControllerTest {
 			.andExpect(jsonPath("$.refreshToken").value("reissued-refresh-token"))
 			.andExpect(jsonPath("$.accessTokenExpiresInSeconds").value(3600))
 			.andExpect(jsonPath("$.refreshTokenExpiresInSeconds").value(1_209_600))
-			// 비밀번호 관련 값이 어떤 이름으로도 새지 않도록 응답 키 집합 자체를 4개로 고정한다.
 			.andExpect(jsonPath("$.*", hasSize(4)))
 			.andExpect(jsonPath("$.currentPassword").doesNotExist())
 			.andExpect(jsonPath("$.newPassword").doesNotExist())
@@ -625,8 +618,6 @@ class AuthControllerTest {
 
 	@Test
 	void updatePasswordPassesShortCurrentPasswordToServiceInsteadOfRejectingItAsBadRequest() throws Exception {
-		// D1 — currentPassword에 min을 두지 않은 것은 의도된 설계다.
-		// min을 붙이면 짧은 입력만 400이 되어 "정책상 존재할 수 없는 비밀번호"라는 정보가 응답 코드로 샌다.
 		stubValidAccessToken();
 		when(authService.changePassword(USER_ID, SHORT_PASSWORD, NEW_PASSWORD))
 			.thenThrow(new BusinessException(ErrorCode.REAUTHENTICATION_FAILED));

@@ -1,4 +1,3 @@
-// PriceMoveItem의 ofCrypto 팩토리가 §C-9대로 구간을 계산하는지 검증하는 순수 단위 테스트다.
 package com.finplay.api.domain.feedback.dto.response;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -45,8 +44,6 @@ class PriceMoveItemTest {
 		assertThat(item.windowStart()).isEqualTo(LocalDateTime.of(2026, 8, 5, 14, 25, 0));
 	}
 
-	// rolling-window-minutes 값이 바뀌어도(§C-7 운영 중 변경) 조회 시점 값을 그대로 빼는지 — 5로 하드코딩돼
-	// 있으면 이 케이스가 어긋난다.
 	@Test
 	@DisplayName("rollingWindowMinutes가 다른 값이어도 그 값만큼 정확히 뺀다")
 	void subtractsWhateverRollingWindowMinutesIsPassedIn() {
@@ -58,8 +55,6 @@ class PriceMoveItemTest {
 		assertThat(item.windowStart()).isEqualTo(LocalDateTime.of(2026, 8, 5, 14, 20, 0));
 	}
 
-	// §C-9의 자정 함정 — occurred_at이 00:03이면 windowStart가 전날 23:58로 날짜가 넘어간다. 이 계산이
-	// LocalDateTime끼리의 뺄셈이라 TIME 전용 계산과 달리 날짜가 자연히 따라온다.
 	@Test
 	@DisplayName("occurredAt이 자정 직후여도 windowStart가 전날로 정확히 넘어간다")
 	void carriesWindowStartAcrossMidnightCorrectly() {

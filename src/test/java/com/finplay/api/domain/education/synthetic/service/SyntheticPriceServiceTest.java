@@ -1,4 +1,3 @@
-// 튜토리얼 합성 시세 생성의 성공 경로(틱 수·변동폭·clamp)와 가격 조회 실패 시 fallback 시작가 사용을 검증하는 단위 테스트다.
 package com.finplay.api.domain.education.synthetic.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -57,7 +56,6 @@ class SyntheticPriceServiceTest {
 			BigDecimal previous = prices.get(i - 1);
 			BigDecimal current = prices.get(i);
 			assertThat(current).isGreaterThanOrEqualTo(floor);
-			// 틱당 변동폭은 이전 값 대비 -1%~+1% 이내여야 하며, floor clamp가 적용된 경우는 예외로 허용한다.
 			if (current.compareTo(floor) > 0) {
 				BigDecimal ratio = current.divide(previous, 6, java.math.RoundingMode.HALF_UP);
 				assertThat(ratio.doubleValue()).isBetween(0.98, 1.02);
@@ -75,8 +73,6 @@ class SyntheticPriceServiceTest {
 		assertThat(result.prices().get(0)).isEqualByComparingTo(BigDecimal.valueOf(10_000));
 	}
 
-	// 036-remove-crypto-stale-status 회귀 — 관측 시각이 오래돼도(과거엔 STALE) AVAILABLE이면 fallback이 아니라
-	// 실시세를 시작가로 쓴다.
 	@Test
 	void generateSeriesUsesRealPriceEvenWhenObservationIsHoursOldButStatusIsAvailable() {
 		when(priceQueryService.getPriceQuote(instrument))

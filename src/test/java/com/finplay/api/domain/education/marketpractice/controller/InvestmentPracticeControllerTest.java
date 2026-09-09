@@ -1,4 +1,3 @@
-// 실습 진행 조회 API(GET /api/education/practice)의 인증·검증·응답 매핑을 검증하는 WebMvc 테스트다.
 package com.finplay.api.domain.education.marketpractice.controller;
 
 import static org.hamcrest.Matchers.containsString;
@@ -86,7 +85,6 @@ class InvestmentPracticeControllerTest {
 	@Test
 	void getProgressReturnsServiceResponseVerbatimWhenCompleted() throws Exception {
 		authenticate();
-		// 이슈 #421: 매도가 끝난 evidence는 tradeResult 다섯 필드가 모두 채워진 채로 직렬화돼야 한다.
 		PracticeTradeResultResponse tradeResult = new PracticeTradeResultResponse(
 			new BigDecimal("10000.00000000"), new BigDecimal("10500.00000000"), 4_985L, new BigDecimal("0.0500"),
 			"ABOVE_TAKE_PROFIT", "MANUAL");
@@ -168,7 +166,6 @@ class InvestmentPracticeControllerTest {
 			.andExpect(jsonPath("$.completedAt").doesNotExist())
 			.andExpect(jsonPath("$.steps[0].locked").value(false))
 			.andExpect(jsonPath("$.steps[0].evidence.favoriteId").doesNotExist())
-			// 이슈 #421: 빈 evidence(잠긴 단계·legacy chain)에서는 tradeResult 객체 자체가 없어야 한다.
 			.andExpect(jsonPath("$.steps[0].evidence.tradeResult").doesNotExist())
 			.andExpect(jsonPath("$.steps[1].locked").value(true))
 			.andExpect(jsonPath("$.steps[2].locked").value(true));
@@ -177,8 +174,6 @@ class InvestmentPracticeControllerTest {
 	@Test
 	void getProgressSerializesTradeResultWithOnlyBuyPriceWhileAwaitingSale() throws Exception {
 		authenticate();
-		// 매도 전(AWAITING_SALE)에는 tradeResult 객체는 나가되 buyPrice만 값이 있고 나머지 넷은 null이다 —
-		// 객체가 통째로 null인 legacy·빈 evidence와 구분돼야 프론트가 "매수는 했고 아직 안 팔았다"를 안다.
 		PracticeTradeResultResponse awaitingSale = new PracticeTradeResultResponse(
 			new BigDecimal("10000.00000000"), null, null, null, null, "MANUAL");
 		PracticeEvidenceResponse evidence = new PracticeEvidenceResponse(
@@ -206,7 +201,6 @@ class InvestmentPracticeControllerTest {
 			.andExpect(jsonPath("$.steps[3].evidence.tradeResult.realizedPnl").doesNotExist())
 			.andExpect(jsonPath("$.steps[3].evidence.tradeResult.returnRate").doesNotExist())
 			.andExpect(jsonPath("$.steps[3].evidence.tradeResult.sellVerdict").doesNotExist())
-			// 1단계의 빈 evidence는 같은 응답 안에서도 tradeResult가 없어야 한다.
 			.andExpect(jsonPath("$.steps[0].evidence.tradeResult").doesNotExist());
 	}
 
@@ -235,8 +229,6 @@ class InvestmentPracticeControllerTest {
 			.andExpect(jsonPath("$.steps[2].locked").value(true));
 	}
 
-	// 041 6번 — 진입별 대조 배열이 실제 JSON으로 나가는지 본다. 계산은 서비스가 하지만 **재조립 경로가
-	// chart와 달라**(withEntryComparison이 응답을 통째로 다시 만든다) 여기서 한 번 더 계약을 고정한다.
 	@Test
 	void getProgressSerializesPerEntryComparisonWithRevealedEventsAndPriceAfterSell() throws Exception {
 		authenticate();
@@ -270,7 +262,6 @@ class InvestmentPracticeControllerTest {
 			.andExpect(jsonPath("$.revealedEvents.length()").value(1))
 			.andExpect(jsonPath("$.revealedEvents[0].stage").value("ACT1"))
 			.andExpect(jsonPath("$.entries.length()").value(2))
-			// 재진입한 실행의 두 매도가 각각 보인다 — 실행 전체 요약은 첫 매도만 가리킨다.
 			.andExpect(jsonPath("$.entries[0].entrySequence").value(1))
 			.andExpect(jsonPath("$.entries[0].exitPreset").value("CAUTIOUS"))
 			.andExpect(jsonPath("$.entries[0].sellCause").value("STOP_LOSS"))
@@ -279,12 +270,8 @@ class InvestmentPracticeControllerTest {
 			.andExpect(jsonPath("$.entries[1].entrySequence").value(2))
 			.andExpect(jsonPath("$.entries[1].sellCause").value("TAKE_PROFIT"))
 			.andExpect(jsonPath("$.entries[1].unrealizedPnlIfHeld").value(-807))
-			// 이슈 #503 — 진입마다 매수의 주문 유형이 따로 나간다. 완료 화면이 "이 진입은 시장가,
-			// 저 진입은 지정가"를 구분해 그리는 근거다.
 			.andExpect(jsonPath("$.entries[0].buyOrderType").value("MARKET"))
 			.andExpect(jsonPath("$.entries[1].buyOrderType").value("LIMIT"))
-			// 049 ORDERBASICS-023 — 진입마다 대본 식별자가 따로 나간다. 같은 run 안에서도 진입별로 다를 수
-			// 있다(전환 전후 진입이 섞이므로).
 			.andExpect(jsonPath("$.entries[0].scenarioScriptId").value("CRYPTO_ORDER_BASICS_V1"))
 			.andExpect(jsonPath("$.entries[1].scenarioScriptId").value("CRYPTO_STORY_V1"))
 			.andExpect(jsonPath("$.tutorialStageProgress.marketBuySellCompleted").value(true))
@@ -292,7 +279,6 @@ class InvestmentPracticeControllerTest {
 			.andExpect(jsonPath("$.tutorialStageProgress.exitPresetSelected").value(true));
 	}
 
-	// SCENARIO-015 — 공개 전 구간의 진행 조회에도 문안·개수·자리표시자가 남지 않는다.
 	@Test
 	void getProgressCarriesNoTraceOfUnrevealedEvents() throws Exception {
 		authenticate();
@@ -309,14 +295,12 @@ class InvestmentPracticeControllerTest {
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.revealedEvents.length()").value(0))
 			.andExpect(jsonPath("$.entries.length()").value(0))
-			// 시장가만 마친 진행 중 화면 — 지정가·프리셋 단계는 아직 잠겨 있어야 한다.
 			.andExpect(jsonPath("$.tutorialStageProgress.marketBuySellCompleted").value(true))
 			.andExpect(jsonPath("$.tutorialStageProgress.limitBuySellCompleted").value(false))
 			.andExpect(jsonPath("$.tutorialStageProgress.exitPresetSelected").value(false))
 			.andExpect(content().string(not(containsString("[연습]"))));
 	}
 
-	// legacy chain 경로는 편의 생성자를 쓴다 — 세 필드가 "이 경로에는 없다"로 나가는지 고정한다.
 	@Test
 	void getProgressLeavesComparisonFieldsEmptyForLegacyChainResponses() throws Exception {
 		authenticate();
@@ -333,8 +317,6 @@ class InvestmentPracticeControllerTest {
 			.andExpect(jsonPath("$.entries.length()").value(0))
 			.andExpect(jsonPath("$.revealedEvents.length()").value(0))
 			.andExpect(jsonPath("$.priceAfterSell").doesNotExist())
-			// 이슈 #503 — attempt가 없는 경로도 `null`이 아니라 세 값 모두 false인 객체로 나간다.
-			// 짧은 생성자가 채우는 값이라 여기서만 계약이 고정된다(다른 두 테스트는 값을 채워 stub한다).
 			.andExpect(jsonPath("$.tutorialStageProgress").exists())
 			.andExpect(jsonPath("$.tutorialStageProgress.marketBuySellCompleted").value(false))
 			.andExpect(jsonPath("$.tutorialStageProgress.limitBuySellCompleted").value(false))

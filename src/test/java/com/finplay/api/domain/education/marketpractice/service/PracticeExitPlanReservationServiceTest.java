@@ -1,4 +1,3 @@
-// 사용자 주도 손절·익절 예약의 거부 판정과 진행 조회용 예약 상태 산출을 검증한다 (052 EXITFREE-020·021·022).
 package com.finplay.api.domain.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -46,15 +45,6 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 
-/**
- * 이 서비스가 지키는 것은 "언제 예약을 만들 수 있는가" 하나이고, 그 판정이 <b>진행 조회의
- * {@code exitPlanCreatable}과 같은 산출식</b>이라는 것이 계약의 핵심이다. 그래서 거부 케이스마다
- * {@code create}가 던지는 것과 {@code view}가 {@code creatable=false}를 주는 것을 함께 단언한다 — 한쪽만
- * 보면 화면이 연 버튼이 서버에서 409로 거부되는 상태를 놓친다.
- *
- * <p>원장이 얽히는 부분(예약 수량·tick 체결·재시작 정리)은 통합 테스트가 정본이다
- * ({@code PracticeExitPresetOcoIntegrationTest}·{@code PracticeOrderBasicsNoAutoExitIntegrationTest}).
- */
 class PracticeExitPlanReservationServiceTest {
 
 	private static final long USER_ID = 7L;
@@ -92,24 +82,19 @@ class PracticeExitPlanReservationServiceTest {
 		ArgumentCaptor<ExitPlanCreateCommandDto> captor = ArgumentCaptor.forClass(ExitPlanCreateCommandDto.class);
 		verify(exitPlanCreationService).create(captor.capture());
 		ExitPlanCreateCommandDto command = captor.getValue();
-		// 042 자동 예약과 같은 경로다 — attempt·실행 세대 귀속이 붙어야 tick 정산·재시작 정리가 이 예약을 본다.
 		assertThat(command.isPracticePath()).isTrue();
 		assertThat(command.practiceOrigin().attemptId()).isEqualTo(ATTEMPT_ID);
 		assertThat(command.practiceOrigin().runNumber()).isEqualTo(1L);
-		// 기준가는 대본 canonical price다 — 엔진 기본 경로의 사인파 항시 시세가 아니다.
 		assertThat(command.practiceOrigin().baselinePrice()).isEqualByComparingTo(ENTRY_PRICE);
-		// 진입가는 그 진입의 체결가(snapshot)이고 수량은 실행 세대의 보유 전량이다.
 		assertThat(command.priceInput().exitPriceType()).isEqualTo(ExitPriceType.PERCENT);
 		assertThat(command.priceInput().entryPrice()).isEqualByComparingTo(ENTRY_PRICE);
 		assertThat(command.priceInput().stopLossRate()).isEqualByComparingTo("2");
 		assertThat(command.priceInput().takeProfitRate()).isEqualByComparingTo("8");
 		assertThat(command.quantity()).isEqualByComparingTo(HELD);
-		// 감사 해시는 자동 예약과 같은 식이라 write-once 판정이 두 경로를 함께 본다.
 		assertThat(command.requestHash())
 			.isEqualTo(ExitPlanPracticeOriginDto.auditRequestHash(ATTEMPT_ID, 1L, 1));
 	}
 
-	// 예약할 대상이 없으면 거부한다 — 매수 전에 예약을 걸면 무엇을 팔지가 정해지지 않는다.
 	@Test
 	void rejectsWhenNothingIsHeldInTheCurrentRun() {
 		PracticeAttempt attempt = storyAttempt();
@@ -120,11 +105,6 @@ class PracticeExitPlanReservationServiceTest {
 		assertRejected(attempt, ErrorCode.PRACTICE_STEP_LOCKED);
 	}
 
-	/**
-	 * write-once — <b>취소된 예약도 센다.</b> 취소 후 더 낮은 선으로 다시 거는 것이 042 EXITPRESET-003이
-	 * 막은 "손절선 슬금슬금 내리기"를 다른 문으로 되살리기 때문이다. 그래서 PENDING이 하나도 없는 상태로
-	 * 고정한 뒤에도 거부돼야 한다 — PENDING만 보는 구현은 여기서만 틀린다.
-	 */
 	@Test
 	void rejectsASecondReservationForTheSameEntryEvenAfterItWasCancelled() {
 		PracticeAttempt attempt = storyAttempt();
@@ -137,7 +117,6 @@ class PracticeExitPlanReservationServiceTest {
 		assertRejected(attempt, ErrorCode.EXIT_PLAN_ALREADY_EXISTS);
 	}
 
-	// 진입이 새로 열리면 그 진입 몫으로 다시 한 번 열린다 — 판정이 진입 단위라는 뜻이다.
 	@Test
 	void allowsAReservationAgainForANewEntry() {
 		PracticeAttempt attempt = storyAttempt();
@@ -150,8 +129,6 @@ class PracticeExitPlanReservationServiceTest {
 		assertThat(service.view(attempt).creatable()).isTrue();
 	}
 
-	// 대본을 쓰지 않는 실행은 042 그대로 매수 체결이 자동으로 건다 — 두 경로가 공존하면 진입 하나에 예약이
-	// 둘 생겨 042 EXITPRESET-020이 깨진다.
 	@Test
 	void rejectsRunsThatStillGetTheAutomaticReservation() {
 		PracticeAttempt attempt = legacyAttempt();
@@ -160,8 +137,6 @@ class PracticeExitPlanReservationServiceTest {
 		assertRejected(attempt, ErrorCode.PRACTICE_STEP_LOCKED);
 	}
 
-	// 2단계 대본은 예약 자체를 두지 않는 자리다(049 ORDERBASICS-022) — 자동만 끄고 수동을 열어 두면
-	// 그 대본에서 예약이 다른 문으로 되살아난다.
 	@Test
 	void rejectsTheOrderBasicsScript() {
 		PracticeAttempt attempt = scriptAttempt(TutorialScenarioScriptId.CRYPTO_ORDER_BASICS_V1);
@@ -170,39 +145,23 @@ class PracticeExitPlanReservationServiceTest {
 		assertRejected(attempt, ErrorCode.PRACTICE_STAGE_LOCKED);
 	}
 
-	/**
-	 * 052 EXITFREE-025 — 대기 구간 탈출 판정이 쓰는 조회. <b>예약 경로가 열리지 않는 실행은 그냥
-	 * 통과시킨다</b>(legacy·2단계 대본). 걸 수단이 없는 사용자를 대본 앞에 세워 두면 그 튜토리얼은 거기서
-	 * 끝난다. 판정은 {@code pathRejection} 하나를 공유하므로 "열리는 경로"와 "기다리는 경로"가 어긋날 수 없다.
-	 */
 	@Test
 	void runsWithoutTheUserDrivenPathNeverWaitForAReservation() {
 		assertThat(service.entryReservationSatisfied(legacyAttempt())).isTrue();
 		assertThat(service.entryReservationSatisfied(scriptAttempt(TutorialScenarioScriptId.CRYPTO_ORDER_BASICS_V1)))
 			.isTrue();
-		// 원장을 읽지도 않는다 — 판정이 대본 식별자 하나로 끝난다.
 		verifyNoInteractions(practiceRiskSnapshotRepository, practiceExitPlanQueryService);
 	}
 
-	/**
-	 * 3단계 대본은 <b>그 진입에</b> 예약이 있어야 통과한다. 판정이 실행 단위였다면 손절당한 뒤 다시 산
-	 * 사용자가 예약 없이 3막으로 출발한다.
-	 *
-	 * <p>취소한 예약도 통과다 — {@code existsEntryReservation}이 상태를 묻지 않는다(리포지터리 파생 쿼리에
-	 * status 조건이 없다). write-once가 재생성을 막으므로 취소를 이유로 여기서도 막으면 그 사용자에게 남는
-	 * 길이 하나도 없다.
-	 */
 	@Test
 	void theStoryScriptWaitsForTheReservationOfTheCurrentEntry() {
 		PracticeAttempt attempt = storyAttempt();
-		// stub 안에서 stub하지 않는다 — Mockito가 UnfinishedStubbingException으로 터진다(heldWithSnapshot과 동일).
 		PracticeRiskSnapshot secondEntry = snapshot(2);
 		when(practiceRiskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(ATTEMPT_ID, 1L))
 			.thenReturn(Optional.of(secondEntry));
 		when(practiceExitPlanQueryService.existsEntryReservation(
 			ATTEMPT_ID, 1L, ExitPlanPracticeOriginDto.auditRequestHash(ATTEMPT_ID, 1L, 1))).thenReturn(true);
 
-		// 1번 진입에만 예약이 있다 — 팔고 다시 산 2번 진입은 자기 몫의 예약을 걸어야 한다.
 		assertThat(service.entryReservationSatisfied(attempt)).isFalse();
 
 		when(practiceExitPlanQueryService.existsEntryReservation(
@@ -210,9 +169,6 @@ class PracticeExitPlanReservationServiceTest {
 		assertThat(service.entryReservationSatisfied(attempt)).isTrue();
 	}
 
-	// 보유는 있는데 기준선이 없는 깨진 원장에서는 예약 생성도 PRACTICE_EVIDENCE_MISSING으로 거부되므로,
-	// 여기서까지 막으면 나갈 문이 하나도 없다. 042 동작(보유만으로 진행)으로 열어 두고 원장 파손을 드러내는
-	// 일은 생성 경로에 맡긴다.
 	@Test
 	void aBrokenLedgerWithoutAnEntryBaselineDoesNotTrapTheUser() {
 		when(practiceRiskSnapshotRepository.findTopByAttemptIdAndRunNumberOrderByEntrySequenceDesc(ATTEMPT_ID, 1L))
@@ -221,14 +177,9 @@ class PracticeExitPlanReservationServiceTest {
 		assertThat(service.entryReservationSatisfied(storyAttempt())).isTrue();
 	}
 
-	/**
-	 * 052 EXITFREE-022 — 다음에 권하는 쪽은 <b>먼저 겪은 쪽의 반대</b>다. 순서는 대본이 손절 먼저로
-	 * 고정하지만 좁은 익절 폭을 건 사용자는 익절이 먼저 닿으므로, "손절 → 익절"로 하드코딩하지 않는다.
-	 */
 	@Test
 	void recommendsTheOppositeOfWhicheverWasExperiencedFirst() {
 		PracticeAttempt attempt = storyAttempt();
-		// 겪음 판정은 예약을 지금 걸 수 있는지와 무관하다 — 손절로 청산돼 보유가 없는 상태에서도 나온다.
 		when(tradeService.netFilledQuantity(ATTEMPT_ID, 1L)).thenReturn(BigDecimal.ZERO);
 
 		when(practiceExitPlanQueryService.summarizeCurrentRun(ATTEMPT_ID, 1L))
@@ -255,7 +206,6 @@ class PracticeExitPlanReservationServiceTest {
 		assertThat(service.view(attempt).experience().recommendedNext()).isNull();
 	}
 
-	// 화면이 취소 버튼을 그리려면 exitPlanId가 필요하다 — 예약 목록 API를 따로 부르지 않게 함께 싣는다.
 	@Test
 	void exposesThePendingReservationWithTheIdNeededToCancelIt() {
 		PracticeAttempt attempt = storyAttempt();
@@ -278,7 +228,6 @@ class PracticeExitPlanReservationServiceTest {
 		});
 	}
 
-	// 종목을 아직 고르지 않은 실행은 판정할 것이 없다 — 원장을 읽지 않고 "없음"을 준다.
 	@Test
 	void viewReturnsTheEmptyStateBeforeAnInstrumentIsChosen() {
 		PracticeAttempt attempt = PracticeAttempt.create(USER_ID, Market.CRYPTO, NOW.minusHours(1));
@@ -292,7 +241,6 @@ class PracticeExitPlanReservationServiceTest {
 		verifyNoInteractions(practiceExitPlanQueryService);
 	}
 
-	/** 거부는 {@code create}의 예외와 {@code view.creatable()==false}가 <b>함께</b> 성립해야 한다. */
 	private void assertRejected(PracticeAttempt attempt, ErrorCode expected) {
 		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
 			.thenReturn(Optional.of(attempt));
@@ -306,8 +254,6 @@ class PracticeExitPlanReservationServiceTest {
 	}
 
 	private void heldWithSnapshot(PracticeAttempt attempt, int entrySequence) {
-		// **stub 안에서 stub하지 않는다** — Mockito가 UnfinishedStubbingException으로 터진다. 스냅샷 mock을
-		// 먼저 완성해 두고 바깥 when에 값으로만 넘긴다.
 		PracticeRiskSnapshot snapshot = snapshot(entrySequence);
 		when(practiceAttemptRepository.findByUserIdAndMarketForUpdate(USER_ID, Market.CRYPTO))
 			.thenReturn(Optional.of(attempt));

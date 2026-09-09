@@ -1,5 +1,3 @@
-// StockDailyCandleCollector의 08:25 KST 배치가 빈 구간 계산(최초·정상·재실행·부분 보유)·종목 단위 실패 격리·
-// 락 미획득 시 조용히 스킵하는지를 검증하는 단위 테스트 (tasks.md 4번)
 package com.finplay.api.domain.market.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -34,7 +32,6 @@ import org.springframework.test.util.ReflectionTestUtils;
 class StockDailyCandleCollectorTest {
 
 	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
-	// 2026-07-30(목) 08:25 KST — 직전 영업일은 주말·공휴일 없이 2026-07-29(수).
 	private static final LocalDateTime WEEKDAY_RUN_AT = LocalDateTime.of(2026, 7, 30, 8, 25, 0);
 	private static final LocalDate TARGET_END_DATE = LocalDate.of(2026, 7, 29);
 	private static final String SYMBOL = "005930";
@@ -45,7 +42,6 @@ class StockDailyCandleCollectorTest {
 	private final StockDailyCandleImportWriter importWriter = new StockDailyCandleImportWriter(
 		stockDailyCandleRepository, marketDataImportRepository);
 
-	// 기본적으로 항상 락 획득에 성공한다 — 락 자체의 동작(못 얻으면 조용히 스킵)은 별도 테스트에서 재구성한다.
 	private final StockCollectionLock stockCollectionLock = mock(StockCollectionLock.class);
 
 	{
@@ -81,11 +77,8 @@ class StockDailyCandleCollectorTest {
 			fixedClock(WEEKDAY_RUN_AT), new BusinessDayCalendar(), stockCollectionLock);
 	}
 
-	// --- 빈 구간 계산 4케이스(결정 1, plan.md) ---
-
 	@Test
 	void collectRequestsFullThreeYearRangeWhenInstrumentHasNoStoredDailyCandleYet() {
-		// "최초" — 저장된 일봉이 전혀 없으면 3년 전 ~ 직전 영업일 전체를 요청한다.
 		Instrument instrument = stockInstrument(1L, SYMBOL);
 		when(instrumentRepository.findByMarketAndTutorialSampleFalseOrderByIdAsc(Market.STOCK))
 			.thenReturn(List.of(instrument));
@@ -112,7 +105,6 @@ class StockDailyCandleCollectorTest {
 
 	@Test
 	void collectRequestsOnlyFromDayAfterLatestStoredTradingDateWhenAlreadyMostlyUpToDate() {
-		// "정상(증분)" — 최신 저장 거래일이 어제(TARGET_END_DATE - 1)면 그 다음날(=TARGET_END_DATE)부터만 요청한다.
 		Instrument instrument = stockInstrument(1L, SYMBOL);
 		LocalDate latestStored = TARGET_END_DATE.minusDays(1);
 		when(instrumentRepository.findByMarketAndTutorialSampleFalseOrderByIdAsc(Market.STOCK))
@@ -134,7 +126,6 @@ class StockDailyCandleCollectorTest {
 
 	@Test
 	void collectSkipsKisCallWhenLatestStoredTradingDateAlreadyEqualsTargetEndDate() {
-		// "재실행" — 이미 targetEndDate까지 저장돼 있으면 채울 구간이 없어 KIS를 호출하지 않는다.
 		Instrument instrument = stockInstrument(1L, SYMBOL);
 		when(instrumentRepository.findByMarketAndTutorialSampleFalseOrderByIdAsc(Market.STOCK))
 			.thenReturn(List.of(instrument));
@@ -157,8 +148,6 @@ class StockDailyCandleCollectorTest {
 
 	@Test
 	void collectRequestsOnlyRemainingPartialRangeWhenInstrumentHasRecentPartialHistory() {
-		// "부분 보유" — 최신 저장 거래일이 3년 시작점보다 훨씬 최근(예: 중간에 상장·수집 시작한 종목)이면
-		// 3년 전체를 다시 요청하지 않고 그 다음날부터만 요청한다.
 		Instrument instrument = stockInstrument(1L, SYMBOL);
 		LocalDate latestStored = TARGET_END_DATE.minusDays(30);
 		LocalDate expectedRangeStart = TARGET_END_DATE.minusDays(29);
@@ -176,11 +165,8 @@ class StockDailyCandleCollectorTest {
 		collector.collect();
 
 		verify(client).fetchDailyCandles(SYMBOL, expectedRangeStart, TARGET_END_DATE);
-		// 3년 전체 구간으로는 절대 요청하지 않아야 한다.
 		verify(client, never()).fetchDailyCandles(eq(SYMBOL), eq(TARGET_END_DATE.minusYears(3)), any());
 	}
-
-	// --- 종목 단위 실패 격리 ---
 
 	@Test
 	void collectSkipsOnlyInstrumentWhoseKisCallThrowsAndStillSavesTheOtherInstrument() {
@@ -213,8 +199,6 @@ class StockDailyCandleCollectorTest {
 		assertThat(savedImport.getStatus()).isEqualTo(ImportStatus.PARTIAL_SUCCESS);
 		assertThat(savedImport.getFailureReason()).contains("000660");
 	}
-
-	// --- StockCollectionLock 재사용에 따른 락 처리 ---
 
 	@Test
 	void collectSkipsEntirelyWithoutCallingKisOrRecordingImportWhenLockIsNotAcquired() {

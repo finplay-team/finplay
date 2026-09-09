@@ -1,4 +1,3 @@
-// market 파라미터 유무에 따라 올바른 Repository 메서드로 위임하는지, 거래 가능 여부·샌드박스 샘플 종목 판별이 올바르게 동작하는지 검증하는 단위 테스트다.
 package com.finplay.api.domain.market.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -114,8 +113,6 @@ class InstrumentServiceTest {
 		verifyNoMoreInteractions(instrumentRepository);
 	}
 
-	// 회귀: 커뮤니티 종목 태그(COM-004)는 tradable=true인 튜토리얼 샘플 종목도 거부해야 한다(spec 031
-	// SANDBOX-001). tradable=true만으로는 태그를 허용하면 안 되고 isTutorialSample도 함께 봐야 한다.
 	@Test
 	void getTradableInstrumentEntityThrowsValidationErrorWhenInstrumentIsTutorialSampleEvenIfTradable() {
 		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
@@ -132,8 +129,6 @@ class InstrumentServiceTest {
 		verifyNoMoreInteractions(instrumentRepository);
 	}
 
-	// 회귀: 외부 수집·AI 피드백 배치의 시장 단위 순회는 샌드박스 샘플 종목을 빼고 돌아야 한다(이슈 #406).
-	// 두 메서드가 같은 파인더를 부르면 구분 자체가 사라지므로, 어느 파인더를 부르는지까지 단정한다.
 	@Test
 	void getRealInstrumentEntitiesExcludesTutorialSampleInstruments() {
 		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
@@ -150,8 +145,6 @@ class InstrumentServiceTest {
 		verifyNoMoreInteractions(instrumentRepository);
 	}
 
-	// 반대 방향 회귀 — 종목 목록(GET /api/instruments)은 샌드박스 종목을 계속 보여줘야 한다
-	// (031 SANDBOX-001). 위 메서드로 합치면 튜토리얼 진입 자체가 막힌다.
 	@Test
 	void getInstrumentEntitiesStillIncludesTutorialSampleInstruments() {
 		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);

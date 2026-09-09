@@ -1,4 +1,3 @@
-// 인증번호 발송 서비스의 제한 판정·HMAC 저장(원문 미저장)·이전 코드 무효화를 검증하는 단위 테스트 (ADR-0003)
 package com.finplay.api.domain.auth.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -40,7 +39,6 @@ class EmailVerificationServiceTest {
 
 	private static final String SECRET = "unit-test-hmac-secret";
 	private static final String EMAIL = "user@finplay.com";
-	// Clock.fixed로 고정한 기준 시각. 발송 제한 임계값(60초·1시간·하루)이 이 값 기준으로 계산된다.
 	private static final Instant FIXED_INSTANT = Instant.parse("2026-07-25T10:30:00Z");
 	private static final LocalDateTime NOW = LocalDateTime.ofInstant(FIXED_INSTANT, ZoneOffset.UTC);
 
@@ -77,13 +75,10 @@ class EmailVerificationServiceTest {
 		String sentCode = sentCodeCaptor.getValue();
 		EmailVerification saved = savedCaptor.getValue();
 
-		// 발송된 코드는 6자리 숫자.
 		assertThat(sentCode).matches("\\d{6}");
-		// 저장된 해시는 원문 코드와 달라야 하고(원문 미저장), 실제 HMAC-SHA-256(hex 64자) 결과여야 한다.
 		assertThat(saved.getCodeHash()).isNotEqualTo(sentCode);
 		assertThat(saved.getCodeHash()).hasSize(64);
 		assertThat(saved.getCodeHash()).isEqualTo(expectedHmac(sentCode));
-		// TTL·시각이 고정 Clock 기준으로 설정된다.
 		assertThat(saved.getExpiresAt()).isEqualTo(NOW.plusMinutes(5));
 		assertThat(saved.getLastSentAt()).isEqualTo(NOW);
 		assertThat(saved.getCreatedAt()).isEqualTo(NOW);
@@ -123,7 +118,6 @@ class EmailVerificationServiceTest {
 	@DisplayName("최근 1시간 발송이 5회 이상이면 TOO_MANY_REQUESTS(429)를 던진다")
 	void throwsTooManyRequestsWhenHourlyLimitReached() {
 		when(userRepository.existsByEmail(EMAIL)).thenReturn(false);
-		// 60초 창은 0, 1시간 창이 한도(5)에 도달.
 		when(emailVerificationRepository.countByEmailAndCreatedAtAfter(EMAIL, NOW.minusSeconds(60)))
 			.thenReturn(0L);
 		when(emailVerificationRepository.countByEmailAndCreatedAtAfter(EMAIL, NOW.minusHours(1)))
@@ -141,7 +135,6 @@ class EmailVerificationServiceTest {
 	@DisplayName("최근 하루 발송이 10회 이상이면 TOO_MANY_REQUESTS(429)를 던진다")
 	void throwsTooManyRequestsWhenDailyLimitReached() {
 		when(userRepository.existsByEmail(EMAIL)).thenReturn(false);
-		// 60초·1시간 창은 0, 하루 창이 한도(10)에 도달.
 		when(emailVerificationRepository.countByEmailAndCreatedAtAfter(EMAIL, NOW.minusSeconds(60)))
 			.thenReturn(0L);
 		when(emailVerificationRepository.countByEmailAndCreatedAtAfter(EMAIL, NOW.minusHours(1)))
@@ -183,12 +176,10 @@ class EmailVerificationServiceTest {
 		when(emailVerificationRepository.findByEmailAndVerifiedAtIsNullAndExpiresAtAfter(EMAIL, NOW))
 			.thenReturn(List.of(previous));
 
-		// 만료 처리 전에는 아직 유효(만료 시각이 기준 시각 이후).
 		assertThat(previous.getExpiresAt()).isEqualTo(NOW.plusMinutes(10));
 
 		service.sendVerificationCode(EMAIL);
 
-		// expire(now)가 호출되어 만료 시각이 기준 시각으로 당겨진다 = 즉시 무효화.
 		assertThat(previous.getExpiresAt()).isEqualTo(NOW);
 	}
 

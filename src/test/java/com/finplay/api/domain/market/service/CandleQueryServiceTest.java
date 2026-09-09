@@ -1,4 +1,3 @@
-// 캔들 API 요청 검증 순서(interval → instrumentId 존재 → 시장 판정 → 커서/from/to)와 커서 페이지네이션(048)을 검증하는 단위 테스트
 package com.finplay.api.domain.market.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -89,11 +88,8 @@ class CandleQueryServiceTest {
 		verifyNoInteractions(cryptoCandleProvider);
 	}
 
-	// --- 주식: 이번 변경(instrumentId 조회를 from/to 검증보다 먼저)으로 순서가 뒤바뀐 회귀 확인 ---
-
 	@Test
 	void getCandlesRejectsStockFromAfterToAfterLookingUpInstrumentButBeforeTouchingProvider() {
-		// 순서 변경 회귀 확인: instrumentId 조회가 먼저 일어나므로 이제 instrumentRepository는 호출된다.
 		LocalDateTime from = LocalDateTime.of(2026, 7, 27, 10, 0);
 		LocalDateTime to = LocalDateTime.of(2026, 7, 27, 9, 0);
 		when(instrumentRepository.findById(STOCK_INSTRUMENT_ID)).thenReturn(Optional.of(stockInstrument()));
@@ -110,8 +106,6 @@ class CandleQueryServiceTest {
 
 	@Test
 	void getCandlesRejectsWhenFromTimeIsAfterToTimeEvenIfFromDateIsEarlier() {
-		// 리뷰 확정(PR #87 QA FAIL 옵션 c): from>to 판정은 날짜가 아니라 시각(LocalTime)만 비교한다(주식 한정).
-		// 날짜만 보면 from(07-22)이 to(07-23)보다 이르지만, 시각은 09:01 > 09:00이므로 400이어야 한다.
 		LocalDateTime from = LocalDateTime.of(2026, 7, 22, 9, 1);
 		LocalDateTime to = LocalDateTime.of(2026, 7, 23, 9, 0);
 		when(instrumentRepository.findById(STOCK_INSTRUMENT_ID)).thenReturn(Optional.of(stockInstrument()));
@@ -127,7 +121,6 @@ class CandleQueryServiceTest {
 
 	@Test
 	void getCandlesAllowsFromLaterByDateThanToWhenFromTimeIsNotAfterToTime() {
-		// 날짜만 보면 from(07-23)이 to(07-22)보다 늦지만, 시각은 09:00 <= 09:01이므로 통과해야 한다(날짜 성분은 무시).
 		LocalDateTime from = LocalDateTime.of(2026, 7, 23, 9, 0);
 		LocalDateTime to = LocalDateTime.of(2026, 7, 22, 9, 1);
 		when(instrumentRepository.findById(STOCK_INSTRUMENT_ID)).thenReturn(Optional.of(stockInstrument()));
@@ -170,7 +163,6 @@ class CandleQueryServiceTest {
 		assertThat(candle.high()).isEqualByComparingTo("70500");
 		assertThat(candle.low()).isEqualByComparingTo("69900");
 		assertThat(candle.close()).isEqualByComparingTo("70200");
-		// 회귀 확인(MKT-008): volume이 long→BigDecimal로 넓어진 뒤에도 주식 정수 거래량 값은 그대로다.
 		assertThat(candle.volume()).isEqualByComparingTo(BigDecimal.valueOf(12345L));
 	}
 
@@ -187,12 +179,8 @@ class CandleQueryServiceTest {
 		verify(stockPriceProvider).getCandles(STOCK_INSTRUMENT_ID, CandleInterval.ONE_MINUTE, from, to);
 	}
 
-	// --- 주식 집계(1d·1w·1M, 이슈 #143): from>to 판정은 날짜 성분만 비교하고 시각 성분은 무시한다 ---
-
 	@Test
 	void getCandlesRejectsStockAggregatedFromAfterToByDateEvenWhenFromTimeIsEarlier() {
-		// 1m의 시각(LocalTime) 전용 비교 로직이 집계 interval에 잘못 재사용되면, 09:00 < 10:00이므로 통과해버린다.
-		// 날짜 기준으로는 from(07-28)이 to(07-27)보다 늦으므로 거부되어야 한다.
 		LocalDateTime from = LocalDateTime.of(2026, 7, 28, 9, 0);
 		LocalDateTime to = LocalDateTime.of(2026, 7, 27, 10, 0);
 		when(instrumentRepository.findById(STOCK_INSTRUMENT_ID)).thenReturn(Optional.of(stockInstrument()));
@@ -208,7 +196,6 @@ class CandleQueryServiceTest {
 
 	@Test
 	void getCandlesAllowsStockAggregatedFromAndToOnSameDateRegardlessOfTimeComponent() {
-		// 같은 날짜(07-27)이면 시각 성분(from 23:59 > to 00:00)과 무관하게 통과해야 한다 — 집계 interval은 날짜만 본다.
 		LocalDateTime from = LocalDateTime.of(2026, 7, 27, 23, 59);
 		LocalDateTime to = LocalDateTime.of(2026, 7, 27, 0, 0);
 		when(instrumentRepository.findById(STOCK_INSTRUMENT_ID)).thenReturn(Optional.of(stockInstrument()));
@@ -270,7 +257,6 @@ class CandleQueryServiceTest {
 
 	@Test
 	void getCandlesRejectsUppercaseDIntervalVariantBeforeTouchingRepositoryOrProvider() {
-		// "1D"는 spec상 "1d"의 대소문자 변형으로 여전히 거부되어야 한다(대소문자 미정규화).
 		assertThatThrownBy(() -> service.getCandles(STOCK_INSTRUMENT_ID, "1D", null, null, null))
 			.isInstanceOf(BusinessException.class)
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode())
@@ -293,8 +279,6 @@ class CandleQueryServiceTest {
 		verifyNoInteractions(cryptoCandleProvider);
 	}
 
-	// --- 코인(MKT-008, 이슈 #20): 기존 "코인이면 400" 거부 제거 + CryptoCandleProvider 위임 ---
-
 	@Test
 	void getCandlesNoLongerRejectsCryptoInstrumentAndDelegatesToCryptoCandleProvider() {
 		when(instrumentRepository.findById(CRYPTO_INSTRUMENT_ID)).thenReturn(Optional.of(cryptoInstrument()));
@@ -314,7 +298,6 @@ class CandleQueryServiceTest {
 		assertThat(candle.high()).isEqualByComparingTo("95100000");
 		assertThat(candle.low()).isEqualByComparingTo("94900000");
 		assertThat(candle.close()).isEqualByComparingTo("95050000");
-		// 코인 volume은 소수 수량이므로 잘리지 않고 그대로 전달돼야 한다.
 		assertThat(candle.volume()).isEqualByComparingTo("0.26725783");
 		verify(cryptoCandleProvider).getCandles("BTC", CandleInterval.ONE_MINUTE, null, null);
 		verifyNoInteractions(stockPriceProvider);
@@ -348,9 +331,6 @@ class CandleQueryServiceTest {
 
 	@Test
 	void getCandlesAllowsCryptoFromWithEarlierDateEvenWhenTimeOfDayIsLater() {
-		// 코인은 날짜를 포함한 전체 시각(LocalDateTime)으로 from>to를 비교한다(주식은 LocalTime만).
-		// from이 시각만 보면 to보다 늦어 보이지만(20:00 > 08:00), 날짜가 하루 이르므로 전체 시각으로는 from < to다 — 통과해야 한다.
-		// 주식의 LocalTime 전용 비교 로직이 코인에 잘못 재사용되면 이 케이스가 거짓으로 400이 된다.
 		LocalDateTime from = LocalDateTime.of(2026, 7, 30, 20, 0);
 		LocalDateTime to = LocalDateTime.of(2026, 7, 31, 8, 0);
 		when(instrumentRepository.findById(CRYPTO_INSTRUMENT_ID)).thenReturn(Optional.of(cryptoInstrument()));
@@ -364,8 +344,6 @@ class CandleQueryServiceTest {
 
 	@Test
 	void getCandlesRejectsCryptoFromWithLaterDateEvenWhenTimeOfDayIsEarlier() {
-		// from이 시각만 보면 to보다 일러 보이지만(08:00 < 20:00), 날짜가 하루 늦으므로 전체 시각으로는 from > to다 — 거부해야 한다.
-		// 주식의 LocalTime 전용 비교 로직이 코인에 잘못 재사용되면 이 케이스가 거짓으로 통과된다.
 		LocalDateTime from = LocalDateTime.of(2026, 7, 31, 8, 0);
 		LocalDateTime to = LocalDateTime.of(2026, 7, 30, 20, 0);
 		when(instrumentRepository.findById(CRYPTO_INSTRUMENT_ID)).thenReturn(Optional.of(cryptoInstrument()));
@@ -390,12 +368,8 @@ class CandleQueryServiceTest {
 		assertThat(response.content()).isEmpty();
 	}
 
-	// --- 코인 캔들 경로와 현재가(PriceStore/PriceQueryService) 경로의 독립성 ---
-
 	@Test
 	void getCandlesForCryptoDoesNotTouchAnyPriceRelatedComponent() {
-		// CandleQueryService는 PriceStore·PriceQueryService에 대한 의존성 자체가 없다 — 코인 캔들 조회가
-		// 현재가 조회 경로(Redis)에 전혀 관여하지 않음을 provider 상호작용만으로 고정한다.
 		when(instrumentRepository.findById(CRYPTO_INSTRUMENT_ID)).thenReturn(Optional.of(cryptoInstrument()));
 		when(cryptoCandleProvider.getCandles(any(), any(), any(), any())).thenReturn(List.of());
 
@@ -406,7 +380,6 @@ class CandleQueryServiceTest {
 
 	@Test
 	void cryptoCandleProviderFailureDoesNotPreventFutureStockCandleQueries() {
-		// 빗썸 캔들 Provider가 실패해도(예: 502) 같은 CandleQueryService 인스턴스로 이어지는 주식 캔들 조회는 영향받지 않는다.
 		when(instrumentRepository.findById(CRYPTO_INSTRUMENT_ID)).thenReturn(Optional.of(cryptoInstrument()));
 		when(cryptoCandleProvider.getCandles(any(), any(), any(), any()))
 			.thenThrow(new BusinessException(ErrorCode.MARKET_DATA_PROVIDER_ERROR));
@@ -427,18 +400,12 @@ class CandleQueryServiceTest {
 
 	@Test
 	void getCandlesRejectsCryptoInstrumentIsNoLongerThrownForValidRequest() {
-		// 회귀 고정: 이슈 #17에서 추가된 "코인이면 400 VALIDATION_ERROR" 거부가 이슈 #20에서 제거됐다 —
-		// 유효한 코인 요청은 더 이상 어떤 경우에도 즉시 VALIDATION_ERROR가 되지 않는다.
 		when(instrumentRepository.findById(CRYPTO_INSTRUMENT_ID)).thenReturn(Optional.of(cryptoInstrument()));
 		when(cryptoCandleProvider.getCandles(any(), any(), any(), any())).thenReturn(List.of());
 
 		assertThat(service.getCandles(CRYPTO_INSTRUMENT_ID, "1m", null, null, null)).isNotNull();
 		verify(stockPriceProvider, never()).getCandles(any(), any(), any(), any());
 	}
-
-	// =====================================================================================
-	// 커서 페이지네이션(048, CANDLE-PAGE-001~012·025·026) — plan §7·§12-1
-	// =====================================================================================
 
 	@Test
 	void getCandlesRejectsInvalidCursorFormatWithValidationError() {
@@ -456,7 +423,6 @@ class CandleQueryServiceTest {
 
 	@Test
 	void getCandlesRejectsUnsupportedIntervalBeforeCursorValidationEvenWithInvalidCursor() {
-		// 검증 순서(CANDLE-PAGE-010): interval(400)이 커서보다 먼저 판정되므로 잘못된 커서와 무관하게 여전히 400이다.
 		assertThatThrownBy(
 			() -> service.getCandles(STOCK_INSTRUMENT_ID, "5m", null, null, "also-not-a-cursor"))
 			.isInstanceOf(BusinessException.class)
@@ -468,7 +434,6 @@ class CandleQueryServiceTest {
 
 	@Test
 	void getCandlesThrowsNotFoundForMissingInstrumentEvenWithInvalidCursorFormat() {
-		// 검증 순서(CANDLE-PAGE-010): instrumentId 존재(404)가 커서 형식 검증(400)보다 먼저다.
 		when(instrumentRepository.findById(999L)).thenReturn(Optional.empty());
 
 		assertThatThrownBy(
@@ -483,8 +448,6 @@ class CandleQueryServiceTest {
 
 	@Test
 	void getCandlesOverridesCryptoToWithCursorMinusOneMinuteIgnoringOriginalTo() {
-		// cursorApplies 판정: 코인은 커서가 있으면 항상 적용된다. cursor+to가 함께 오면 to는 무시되고
-		// cursor-1분이 상한이 된다(CANDLE-PAGE-012).
 		when(instrumentRepository.findById(CRYPTO_INSTRUMENT_ID)).thenReturn(Optional.of(cryptoInstrument()));
 		LocalDateTime from = LocalDateTime.of(2026, 7, 20, 0, 0);
 		LocalDateTime ignoredTo = LocalDateTime.of(2026, 7, 25, 0, 0);
@@ -502,7 +465,6 @@ class CandleQueryServiceTest {
 
 	@Test
 	void getCandlesOverridesStockAggregatedToWithCursorMinusOneMinute() {
-		// cursorApplies 판정: 집계봉(1d·1w·1M)도 커서가 있으면 항상 적용된다(주식·코인 공통, CANDLE-PAGE-024).
 		when(instrumentRepository.findById(STOCK_INSTRUMENT_ID)).thenReturn(Optional.of(stockInstrument()));
 		LocalDateTime cursor = LocalDateTime.of(2026, 7, 28, 0, 0);
 		LocalDateTime expectedTo = cursor.minusMinutes(1);
@@ -519,8 +481,6 @@ class CandleQueryServiceTest {
 
 	@Test
 	void getCandlesDoesNotApplyCursorForStockOneMinuteAndPassesOriginalToUnchanged() {
-		// cursorApplies 판정: 주식 1m은 제외된다(CANDLE-PAGE-025·026, plan §10). 커서가 형식은 유효해도
-		// to는 원래 값(여기서는 null) 그대로 provider에 전달돼야 한다 — 봉 조회 자체가 한 글자도 바뀌지 않는다.
 		when(instrumentRepository.findById(STOCK_INSTRUMENT_ID)).thenReturn(Optional.of(stockInstrument()));
 		when(stockPriceProvider.getCandles(STOCK_INSTRUMENT_ID, CandleInterval.ONE_MINUTE, null, null))
 			.thenReturn(List.of());
@@ -533,7 +493,6 @@ class CandleQueryServiceTest {
 
 	@Test
 	void getCandlesSetsHasNextTrueAndNextCursorToOldestCandleWhenContentIsFullPage() {
-		// hasNext/nextCursor 규칙: content.size()==200 → hasNext=true, nextCursor=content.get(0).sourceTime() 인코딩.
 		when(instrumentRepository.findById(CRYPTO_INSTRUMENT_ID)).thenReturn(Optional.of(cryptoInstrument()));
 		LocalDateTime oldest = LocalDateTime.of(2026, 7, 1, 0, 0);
 		List<CryptoCandleDto> fullPage = ascendingCryptoCandles(200, oldest);
@@ -549,7 +508,6 @@ class CandleQueryServiceTest {
 
 	@Test
 	void getCandlesSetsHasNextFalseAndNextCursorNullWhenContentIsUnderFullPage() {
-		// hasNext/nextCursor 규칙: 200개 미만이면 hasNext=false·nextCursor=null.
 		when(instrumentRepository.findById(CRYPTO_INSTRUMENT_ID)).thenReturn(Optional.of(cryptoInstrument()));
 		LocalDateTime oldest = LocalDateTime.of(2026, 7, 1, 0, 0);
 		List<CryptoCandleDto> partialPage = ascendingCryptoCandles(5, oldest);
@@ -565,7 +523,6 @@ class CandleQueryServiceTest {
 
 	@Test
 	void getCandlesForcesHasNextFalseAndNextCursorNullForStockOneMinuteEvenWithFullPage() {
-		// CANDLE-PAGE-026: 주식 1m은 200개가 꽉 차도 hasNext=false·nextCursor=null이 강제된다(유일한 예외).
 		when(instrumentRepository.findById(STOCK_INSTRUMENT_ID)).thenReturn(Optional.of(stockInstrument()));
 		LocalDate tradingDate = LocalDate.of(2026, 7, 27);
 		List<StockCandleDto> fullPage = ascendingStockCandles(200, tradingDate, LocalTime.of(9, 0));
@@ -581,7 +538,6 @@ class CandleQueryServiceTest {
 
 	@Test
 	void getCandlesReturns200WithHasNextFalseForStockOneMinuteWhenCursorIsGiven() {
-		// tasks.md 명시 케이스: 주식 1m + 커서 → 200, hasNext=false (WebMvc 계약과 동일한 서비스 레벨 확인).
 		when(instrumentRepository.findById(STOCK_INSTRUMENT_ID)).thenReturn(Optional.of(stockInstrument()));
 		when(stockPriceProvider.getCandles(STOCK_INSTRUMENT_ID, CandleInterval.ONE_MINUTE, null, null))
 			.thenReturn(List.of());
@@ -595,11 +551,8 @@ class CandleQueryServiceTest {
 
 	@Test
 	void getCandlesReturnsEmptyEnvelopeWithoutCallingCryptoProviderWhenFromIsAfterNormalizedCursorUpperBound() {
-		// D-1(plan §5): cursorApplies && from이 정규화된 상한(cursor-1분)보다 뒤면 provider를 부르지 않고
-		// 빈 봉투를 즉시 반환한다(400이 아니라 정상 200).
 		when(instrumentRepository.findById(CRYPTO_INSTRUMENT_ID)).thenReturn(Optional.of(cryptoInstrument()));
 		LocalDateTime cursor = LocalDateTime.of(2026, 7, 30, 9, 0);
-		// effectiveTo = cursor - 1분 = 08:59. from = 09:00 > 08:59 → 하한 역전.
 		LocalDateTime from = LocalDateTime.of(2026, 7, 30, 9, 0);
 
 		CandleListResponse response = service.getCandles(CRYPTO_INSTRUMENT_ID, "1m", from, null, cursor.toString());
@@ -612,10 +565,8 @@ class CandleQueryServiceTest {
 
 	@Test
 	void getCandlesReturnsEmptyEnvelopeWithoutCallingStockProviderWhenFromIsAfterNormalizedCursorUpperBoundForAggregated() {
-		// D-1이 주식 집계 경로(날짜 성분 비교)에서도 동일하게 동작하는지 확인한다.
 		when(instrumentRepository.findById(STOCK_INSTRUMENT_ID)).thenReturn(Optional.of(stockInstrument()));
 		LocalDateTime cursor = LocalDateTime.of(2026, 7, 28, 0, 0);
-		// effectiveTo = cursor - 1분 = 2026-07-27T23:59 (날짜 2026-07-27). from 날짜(2026-07-28)가 더 늦다 → 역전.
 		LocalDateTime from = LocalDateTime.of(2026, 7, 28, 0, 0);
 
 		CandleListResponse response = service.getCandles(STOCK_INSTRUMENT_ID, "1d", from, null, cursor.toString());
@@ -628,7 +579,6 @@ class CandleQueryServiceTest {
 
 	@Test
 	void getCandlesDoesNotEarlyReturnWhenFromEqualsNormalizedCursorUpperBound() {
-		// from == effectiveTo(cursor-1분)는 역전이 아니다(isAfter는 초과만 판정) — provider가 정상 호출돼야 한다.
 		when(instrumentRepository.findById(CRYPTO_INSTRUMENT_ID)).thenReturn(Optional.of(cryptoInstrument()));
 		LocalDateTime cursor = LocalDateTime.of(2026, 7, 30, 9, 0);
 		LocalDateTime from = cursor.minusMinutes(1);

@@ -1,5 +1,3 @@
-// OAuth callback의 성공(LOGIN·REAUTH 302 리다이렉트)·검증 오류 응답과 state 만료 쿠키, login-exchange·
-// reauth-exchange 교환 HTTP 계약을 검증한다.
 package com.finplay.api.domain.auth.controller;
 
 import static org.hamcrest.Matchers.containsString;
@@ -54,8 +52,6 @@ class OAuthCallbackControllerTest {
 	private static final String CODE = "authorization-code";
 	private static final String STATE = "state-value_123";
 
-	// Boot가 만드는 @Autowired 대상이 아니라 이 슬라이스 컨텍스트에 없는 tools.jackson 빈이다 — 다른 테스트들과
-	// 같이 직접 만든다(WatchlistIntegrationTest 등).
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
 	@Autowired

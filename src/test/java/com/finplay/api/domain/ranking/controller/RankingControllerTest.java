@@ -1,4 +1,3 @@
-// 전체 랭킹 조회 API의 인증, 검증, 응답 계약을 검증하는 WebMvc 슬라이스 테스트다.
 package com.finplay.api.domain.ranking.controller;
 
 import static org.mockito.ArgumentMatchers.eq;
@@ -77,16 +76,6 @@ class RankingControllerTest {
 		verify(rankingService).getRankings(Market.STOCK, null);
 	}
 
-	// 이슈 #279의 직렬화 계약을 따로 못박는다. 위 테스트의 jsonPath(...).value("READY")는 값만 보므로,
-	// 두 가지가 확인되지 않은 채 남는다.
-	//
-	// 1) enum이 **문자열로** 나가는지. RankingStatus에 @JsonValue가 붙거나 전역 Jackson 설정이
-	//    WRITE_ENUMS_USING_INDEX로 바뀌면 응답이 0/1이 되어 클라이언트 파싱이 통째로 깨지는데,
-	//    그건 자바 타입 시그니처에는 드러나지 않는다. isString()으로 타입 자체를 고정한다.
-	// 2) status가 **wrapper에만** 있고 항목에는 없는지. api-contracts.md가 "항목은 rank·nickname·realizedPnl
-	//    3개 필드로 고정"이라고 못박은 부분이라, 항목에 status가 새로 새어 나오면 계약 위반이다.
-	//
-	// 기존 필드가 이름·타입 그대로인지도 여기서 함께 본다(하위 호환 — 필드 추가만 있었다는 확인).
 	@Test
 	void getRankingsSerializesStatusAsStringOnTheWrapperOnly() throws Exception {
 		stubAuthenticatedUser();
@@ -100,15 +89,12 @@ class RankingControllerTest {
 			.andExpect(jsonPath("$.status").isString())
 			.andExpect(jsonPath("$.market").isString())
 			.andExpect(jsonPath("$.content").isArray())
-			// 항목에는 status가 없어야 한다 — 응답 전체의 성질이라 wrapper에만 둔다는 계약이다.
 			.andExpect(jsonPath("$.content[0].status").doesNotExist())
 			.andExpect(jsonPath("$.content[0].rank").isNumber())
 			.andExpect(jsonPath("$.content[0].nickname").isString())
 			.andExpect(jsonPath("$.content[0].realizedPnl").isNumber());
 	}
 
-	// 내 랭킹도 같은 직렬화 계약을 따른다. rank는 null일 때 필드가 사라지는(doesNotExist) 기존 동작이
-	// status 추가 이후에도 그대로인지 함께 확인한다 — 하위 호환의 실체다.
 	@Test
 	void getMyRankingSerializesStatusAsStringAndKeepsLegacyFieldTypes() throws Exception {
 		stubAuthenticatedUser();
@@ -143,7 +129,6 @@ class RankingControllerTest {
 		verify(rankingService).getRankings(Market.CRYPTO, null);
 	}
 
-	// 이슈 #279: 유실 상태여도 오류가 아니라 200 + status로 알린다. 기존 필드(market·content)도 그대로다.
 	@Test
 	void getRankingsReturnsOkWithRebuildingStatusWhenAggregationIsLost() throws Exception {
 		stubAuthenticatedUser();
@@ -159,9 +144,6 @@ class RankingControllerTest {
 			.andExpect(jsonPath("$.content").isEmpty());
 	}
 
-	// 이슈 #288: Redis 연결 장애도 500이 아니라 200 + status(UNAVAILABLE)다. 이 컨트롤러 테스트는 서비스가
-	// 이미 변환한 응답을 그대로 직렬화만 하지만, 그 값이 500으로 튀지 않고 정상적으로 200 계약을 타는지는
-	// 컨트롤러 레벨에서 확인해야 한다 — GlobalExceptionHandler 캐치올로 새는 회귀가 여기서 잡힌다.
 	@Test
 	void getRankingsReturnsOkWithUnavailableStatusWhenRedisConnectionFails() throws Exception {
 		stubAuthenticatedUser();
@@ -206,7 +188,6 @@ class RankingControllerTest {
 		verify(rankingService).getRankings(Market.STOCK, null);
 	}
 
-	// limit=0은 400이 아니라 그대로 서비스에 전달된다 — 서비스가 10으로 클램핑한다(GET /api/trades와의 차이).
 	@Test
 	void getRankingsReturnsOkAndPassesZeroLimitToServiceWithoutRejecting() throws Exception {
 		stubAuthenticatedUser();
@@ -222,7 +203,6 @@ class RankingControllerTest {
 		verify(rankingService).getRankings(Market.STOCK, 0);
 	}
 
-	// limit=-1도 400이 아니라 그대로 서비스에 전달된다 — 서비스가 10으로 클램핑한다.
 	@Test
 	void getRankingsReturnsOkAndPassesNegativeLimitToServiceWithoutRejecting() throws Exception {
 		stubAuthenticatedUser();
@@ -238,7 +218,6 @@ class RankingControllerTest {
 		verify(rankingService).getRankings(Market.STOCK, -1);
 	}
 
-	// limit=51도 400이 아니라 그대로 서비스에 전달된다 — 서비스가 50으로 클램핑한다.
 	@Test
 	void getRankingsReturnsOkAndPassesLimitAboveMaximumToServiceWithoutRejecting() throws Exception {
 		stubAuthenticatedUser();
@@ -292,7 +271,6 @@ class RankingControllerTest {
 		verifyNoInteractions(rankingService);
 	}
 
-	// RANK-002: 매도 이력이 없으면 rank가 null인 200 응답 필드 계약을 검증한다 — 오류가 아니다.
 	@Test
 	void getMyRankingReturnsOkWithNullRankWhenNoSellHistory() throws Exception {
 		stubAuthenticatedUser();
@@ -312,8 +290,6 @@ class RankingControllerTest {
 		verify(rankingService).getMyRanking(USER_ID, Market.STOCK);
 	}
 
-	// 이슈 #279: rank가 null인 같은 형태의 응답이라도 status가 REBUILDING이면 "매도 이력 없음"이 아니라
-	// "집계 준비 중"이다. 이 구별이 클라이언트가 판별 가능해야 하는 지점이다(위 READY 케이스와 짝).
 	@Test
 	void getMyRankingReturnsOkWithRebuildingStatusWhenAggregationIsLost() throws Exception {
 		stubAuthenticatedUser();
@@ -330,7 +306,6 @@ class RankingControllerTest {
 			.andExpect(jsonPath("$.nickname").value("투자왕"));
 	}
 
-	// RANK-002: 매도 이력이 있으면 rank·nickname·realizedPnl·market 필드 계약을 정상 값으로 검증한다.
 	@Test
 	void getMyRankingReturnsOkWithEveryResponseFieldWhenSellHistoryExists() throws Exception {
 		stubAuthenticatedUser();
@@ -350,7 +325,6 @@ class RankingControllerTest {
 		verify(rankingService).getMyRanking(USER_ID, Market.CRYPTO);
 	}
 
-	// 이슈 #288: 내 랭킹도 Redis 연결 장애 시 500이 아니라 200 + status(UNAVAILABLE) + rank:null이다.
 	@Test
 	void getMyRankingReturnsOkWithUnavailableStatusWhenRedisConnectionFails() throws Exception {
 		stubAuthenticatedUser();

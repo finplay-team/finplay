@@ -1,4 +1,3 @@
-// 실제 MySQL·Redis와 인증번호 흐름으로 회원가입의 원자성과 영속 결과를 검증하는 통합 테스트다.
 package com.finplay.api.domain.auth.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

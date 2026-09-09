@@ -1,4 +1,3 @@
-// 세 조회 경로가 공유하는 PriceMoveSourceLoader의 카드별 묶기·순서 보존을 검증하는 단위 테스트
 package com.finplay.api.domain.feedback.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -25,9 +24,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
-// 이 로더는 PriceMoveQueryService·PostSellFeedbackReader·CryptoPostSellFeedbackReader 세 곳이 공유하므로
-// 회귀 지점을 한 곳으로 모아 둔다 (PR #281 리뷰). 세 호출부 테스트도 실제 인스턴스를 태우지만 그쪽 단정은
-// 각자의 응답 조립이라 "카드별로 갈리는가 · 순서가 보존되는가"가 직접 드러나지 않는다.
 class PriceMoveSourceLoaderTest {
 
 	private static final LocalDateTime NOW = LocalDateTime.of(2026, 8, 5, 15, 0, 0);
@@ -74,8 +70,6 @@ class PriceMoveSourceLoaderTest {
 	@Test
 	@DisplayName("같은 카드의 기사 2건이 리포지토리가 준 순서 그대로 한 목록에 담긴다")
 	void keepsTheRepositoryOrderWithinOneCard() {
-		// 정렬 규칙은 이 클래스가 아니라 리포지토리 질의(publishedAt 내림차순 + id 오름차순)에 있다 — 여기서
-		// 확인하는 것은 LinkedHashMap·ArrayList가 그 순서를 뒤집지 않는다는 것뿐이다.
 		PriceMoveEvent event = event(1L);
 		when(priceMoveEventSourceRepository.findAllByPriceMoveEventIdIn(anyList()))
 			.thenReturn(List.of(sourceOf(event, "먼저 온 기사"), sourceOf(event, "나중에 온 기사")));
@@ -99,7 +93,6 @@ class PriceMoveSourceLoaderTest {
 
 		assertThat(sources.get(1L)).extracting(NewsItem::title).containsExactly("1번 카드 기사");
 		assertThat(sources.get(2L)).extracting(NewsItem::title).containsExactly("2번 카드 기사");
-		// 호출부가 getOrDefault(id, List.of())로 읽으므로 빈 목록을 만들어 두지 않는다.
 		assertThat(sources).doesNotContainKey(3L);
 	}
 }

@@ -1,4 +1,3 @@
-// 공개 경로 화이트리스트와 Bearer 인증 경계, 401 공통 오류 포맷을 검증하는 WebMvc 슬라이스 테스트다.
 package com.finplay.api.domain.auth.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -37,8 +36,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-// /test/protected는 프로덕션 화이트리스트에 없으므로 anyRequest().authenticated()에 걸린다.
-// 테스트 편의로 SecurityConfig의 공개 경로를 넓히지 않는다.
 @WebMvcTest(controllers = SecurityConfigTest.ProtectedTestController.class)
 @Import({
 	SecurityConfigTest.ProtectedTestController.class,
@@ -65,7 +62,6 @@ class SecurityConfigTest {
 
 	@Test
 	void rejectsProtectedPathWithExpiredTokenAsUnauthorized() throws Exception {
-		// 애플리케이션 Clock(FIXED_INSTANT) 기준으로 이미 만료되도록 발급 시각을 앞당긴다.
 		Instant issuedBeforeExpiration = FIXED_INSTANT.minusMillis(ACCESS_TOKEN_EXPIRATION_MS).minusSeconds(1);
 		String expiredToken = providerAt(issuedBeforeExpiration).issue(USER_ID, "USER").accessToken();
 
@@ -100,7 +96,6 @@ class SecurityConfigTest {
 
 	@Test
 	void rejectsNonHealthActuatorEndpointWithoutToken() throws Exception {
-		// 화이트리스트는 GET /actuator/health 하나뿐이다. 나머지 actuator 경로는 보호 대상이어야 한다.
 		expectUnauthorizedWithRequestId(get("/actuator/info"));
 		expectUnauthorizedWithRequestId(get("/actuator/env"));
 		expectUnauthorizedWithRequestId(post("/actuator/health"));
@@ -136,8 +131,6 @@ class SecurityConfigTest {
 			.andExpect(jsonPath("$.authorities[0]").value("ROLE_USER"));
 	}
 
-	// 이 슬라이스에는 auth 컨트롤러가 없으므로 공개 경로는 401이 아니라 404(NOT_FOUND)로 끝나야 한다.
-	// 401이면 화이트리스트가 깨진 것이고, 404면 Security를 통과해 디스패처까지 도달했다는 뜻이다.
 	@ParameterizedTest(name = "{0}")
 	@ValueSource(strings = {
 		"/api/auth/signup",
@@ -145,7 +138,6 @@ class SecurityConfigTest {
 		"/api/auth/email-verifications",
 		"/api/auth/email-verifications/confirm",
 		"/api/auth/password-resets",
-		// PathPatternRequestMatcher는 접두 매칭이 아니라 /confirm이 별도 항목이어야 한다.
 		"/api/auth/password-resets/confirm",
 		"/api/auth/oauth/login-exchange"
 	})
@@ -178,7 +170,6 @@ class SecurityConfigTest {
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty())
 			.andReturn();
 
-		// D2 회귀 방지 — RequestIdFilter가 Security 체인보다 먼저 실행되어야 헤더와 본문 requestId가 같아진다.
 		String headerRequestId = result.getResponse().getHeader(RequestIdFilter.REQUEST_ID_HEADER);
 		String bodyRequestId = JsonPath.read(result.getResponse().getContentAsString(), "$.error.requestId");
 		assertThat(headerRequestId).isNotBlank();

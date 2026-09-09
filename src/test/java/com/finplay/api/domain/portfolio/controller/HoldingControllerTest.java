@@ -1,4 +1,3 @@
-// 시장별 보유 종목 목록 조회 API의 인증, 검증, 응답 계약을 검증하는 WebMvc 슬라이스 테스트다.
 package com.finplay.api.domain.portfolio.controller;
 
 import static org.hamcrest.Matchers.nullValue;
@@ -111,9 +110,6 @@ class HoldingControllerTest {
 			.andExpect(jsonPath("$[0].quantity").value(0.5))
 			.andExpect(jsonPath("$[0].reservedQuantity").value(0.1))
 			.andExpect(jsonPath("$[0].averagePrice").value(50000000))
-			// PR #97 리뷰 권장사항 2: doesNotExist()는 값이 null이어도 통과해 "필드 자체가 없음"과
-			// "필드가 null로 존재함"을 구분하지 못한다. value(nullValue())는 필드가 없으면 PathNotFound로
-			// 실패해 "필드가 존재하고 값이 null"이라는 계약을 실제로 고정한다.
 			.andExpect(jsonPath("$[0].currentPrice").value(nullValue()))
 			.andExpect(jsonPath("$[0].evaluationAmount").value(nullValue()))
 			.andExpect(jsonPath("$[0].unrealizedPnl").value(nullValue()))

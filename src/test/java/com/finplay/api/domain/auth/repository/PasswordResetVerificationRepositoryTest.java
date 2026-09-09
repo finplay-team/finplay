@@ -1,4 +1,3 @@
-// password_reset_verifications 저장(발송 행·거부 행)·거부 행 포함 집계·거부 행 제외 무효화 대상 조회를 실제 MySQL로 검증하는 슬라이스 테스트다.
 package com.finplay.api.domain.auth.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -64,7 +63,6 @@ class PasswordResetVerificationRepositoryTest {
 	void countByEmailAndCreatedAtAfterIncludesRejectedRows() {
 		String email = "reset-count-rejected@finplay.com";
 
-		// 발송 성공 1건 + 거부(404·409) 2건 — 결정 D4에 따라 셋 다 집계 대상이다.
 		passwordResetVerificationRepository
 			.save(PasswordResetVerification.create(email, "hash", NOW.plusMinutes(5), NOW.plusSeconds(1)));
 		passwordResetVerificationRepository
@@ -84,14 +82,10 @@ class PasswordResetVerificationRepositoryTest {
 		String email = "reset-count@finplay.com";
 		String otherEmail = "reset-count-other@finplay.com";
 
-		// 기준 시각 이전 — 제외.
 		passwordResetVerificationRepository.save(PasswordResetVerification.createRejected(email, NOW.minusSeconds(1)));
-		// 기준 시각과 동일 — after이므로 경계값은 제외.
 		passwordResetVerificationRepository.save(PasswordResetVerification.createRejected(email, NOW));
-		// 기준 시각 이후 2건 — 포함.
 		passwordResetVerificationRepository.save(PasswordResetVerification.createRejected(email, NOW.plusSeconds(1)));
 		passwordResetVerificationRepository.save(PasswordResetVerification.createRejected(email, NOW.plusMinutes(10)));
-		// 다른 이메일 — 제외 (제한은 이메일 단위다).
 		passwordResetVerificationRepository
 			.save(PasswordResetVerification.createRejected(otherEmail, NOW.plusMinutes(10)));
 		passwordResetVerificationRepository.flush();
@@ -107,26 +101,20 @@ class PasswordResetVerificationRepositoryTest {
 		String email = "reset-find@finplay.com";
 		String otherEmail = "reset-find-other@finplay.com";
 
-		// 매칭: 실제 발송 + 미소비 + 유효.
 		PasswordResetVerification matching = PasswordResetVerification.create(email, "hash", NOW.plusMinutes(5), NOW);
 		passwordResetVerificationRepository.save(matching);
 
-		// 제외: 거부 행 — code_hash가 NULL이라 무효화할 코드가 없다.
 		passwordResetVerificationRepository.save(PasswordResetVerification.createRejected(email, NOW));
 
-		// 제외: 이미 만료.
 		passwordResetVerificationRepository
 			.save(PasswordResetVerification.create(email, "hash", NOW.minusMinutes(1), NOW));
 
-		// 제외: 경계값 — expires_at이 기준 시각과 정확히 같으면 after가 아니다.
 		passwordResetVerificationRepository.save(PasswordResetVerification.create(email, "hash", NOW, NOW));
 
-		// 제외: 이미 소비됨.
 		PasswordResetVerification consumed = PasswordResetVerification.create(email, "hash", NOW.plusMinutes(5), NOW);
 		ReflectionTestUtils.setField(consumed, "consumedAt", NOW.minusMinutes(1));
 		passwordResetVerificationRepository.save(consumed);
 
-		// 제외: 다른 이메일.
 		passwordResetVerificationRepository
 			.save(PasswordResetVerification.create(otherEmail, "hash", NOW.plusMinutes(5), NOW));
 		passwordResetVerificationRepository.flush();
@@ -148,7 +136,6 @@ class PasswordResetVerificationRepositoryTest {
 			.save(PasswordResetVerification.create(email, "hash-previous", NOW.plusMinutes(5), NOW));
 		passwordResetVerificationRepository.flush();
 
-		// 재발송 흐름: 이전 유효 행을 찾아 즉시 만료시키고 새 행을 저장한다.
 		List<PasswordResetVerification> targets = passwordResetVerificationRepository
 			.findByEmailAndCodeHashIsNotNullAndConsumedAtIsNullAndExpiresAtAfter(email, resendAt);
 		assertThat(targets).extracting(PasswordResetVerification::getId).containsExactly(previous.getId());
@@ -189,15 +176,12 @@ class PasswordResetVerificationRepositoryTest {
 	void findFirstByEmailAndCodeHashIsNotNullOrderByCreatedAtDescSkipsNewerRejectedRow() {
 		String email = "reset-confirm-skip@finplay.com";
 
-		// 발송 행이 먼저 생기고,
 		PasswordResetVerification sent = passwordResetVerificationRepository
 			.save(PasswordResetVerification.create(email, "hash-sent", NOW.plusMinutes(5), NOW));
-		// 그 뒤에 거부 행 2건이 더 최신 시각으로 쌓인다 (미가입·소셜 전용 거부, #115 D6).
 		passwordResetVerificationRepository.save(PasswordResetVerification.createRejected(email, NOW.plusMinutes(1)));
 		passwordResetVerificationRepository.save(PasswordResetVerification.createRejected(email, NOW.plusMinutes(2)));
 		passwordResetVerificationRepository.flush();
 
-		// 이 테스트가 의미를 가지려면 created_at 최신 행이 반드시 거부 행이어야 한다 — 배치가 어긋나면 여기서 먼저 깨진다.
 		PasswordResetVerification newestRow = passwordResetVerificationRepository.findAll()
 			.stream()
 			.filter(row -> email.equals(row.getEmail()))
@@ -210,7 +194,6 @@ class PasswordResetVerificationRepositoryTest {
 			.orElseThrow();
 
 		assertThat(found.getId()).isEqualTo(sent.getId());
-		// code_hash·expires_at이 NULL인 거부 행을 집으면 후속 검증 단계에서 NPE가 난다 (D2).
 		assertThat(found.getCodeHash()).isEqualTo("hash-sent");
 		assertThat(found.getExpiresAt()).isEqualTo(NOW.plusMinutes(5));
 	}

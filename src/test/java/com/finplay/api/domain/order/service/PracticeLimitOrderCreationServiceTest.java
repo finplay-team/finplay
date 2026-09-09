@@ -1,4 +1,3 @@
-// PracticeLimitOrderCreationService.createSessionBuyOrder의 BUY 고정·세션 PENDING 1건 상한·검증 재사용을 검증하는 단위 테스트다.
 package com.finplay.api.domain.order.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -58,8 +57,6 @@ class PracticeLimitOrderCreationServiceTest {
 
 	@Test
 	void createSessionBuyOrderReservesCashInTutorialAccountOnlyAndCreatesPendingBuyOrderWithSessionId() {
-		// 047 TUTORIAL-CASH-ISOL-002: 샌드박스 종목 세션 매수는 현금 예약이 튜토리얼 계좌에서만 일어나고
-		// 실제 Account.reservedCash는 전혀 변하지 않는다.
 		Instrument instrument = cryptoInstrument(5_000L);
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
 		Account account = account();
@@ -77,9 +74,8 @@ class PracticeLimitOrderCreationServiceTest {
 		LimitOrderResponse response = service.createSessionBuyOrder(
 			USER_ID, SESSION_ID, INSTRUMENT_ID, new BigDecimal("0.1"), new BigDecimal("1000000"));
 
-		// amount = 0.1 * 1,000,000 = 100,000, fee = floor(100,000*0.0005) = 50
 		assertThat(tutorialAccount.getReservedCash()).isEqualTo(100_050L);
-		assertThat(account.getReservedCash()).isZero(); // 실제 계좌는 전혀 예약되지 않는다
+		assertThat(account.getReservedCash()).isZero();
 		assertThat(account.getCashBalance()).isEqualTo(10_000_000L);
 		assertThat(response.side()).isEqualTo("BUY");
 		assertThat(response.status()).isEqualTo("PENDING");
@@ -124,10 +120,7 @@ class PracticeLimitOrderCreationServiceTest {
 
 	@Test
 	void createSessionBuyOrderForRealInstrumentReservesCashInRealAccountOnly() {
-		// 이슈 #450 후속 회귀: 030 코인 연습 세션은 샌드박스 종목뿐 아니라 실제 종목(BTC 등)도 다룬다 — 이
-		// 경우 현금 예약은 실제 Account에서만 일어나야, 체결·취소(LimitOrderFillService.fillBuy·
-		// LimitOrderCancelService.cancelOrder, 둘 다 isTutorialSample()로만 분기)와 예약 계좌가 일치한다.
-		Instrument instrument = cryptoInstrument(5_000L); // tutorialSample 기본값 false
+		Instrument instrument = cryptoInstrument(5_000L);
 		Account account = account();
 		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID)).thenReturn(instrument);
 		when(orderRepository.existsByPracticePriceSessionIdAndStatus(SESSION_ID, OrderStatus.PENDING))
@@ -139,7 +132,6 @@ class PracticeLimitOrderCreationServiceTest {
 		LimitOrderResponse response = service.createSessionBuyOrder(
 			USER_ID, SESSION_ID, INSTRUMENT_ID, new BigDecimal("0.1"), new BigDecimal("1000000"));
 
-		// amount = 0.1 * 1,000,000 = 100,000, fee = floor(100,000*0.0005) = 50
 		assertThat(account.getReservedCash()).isEqualTo(100_050L);
 		assertThat(response.side()).isEqualTo("BUY");
 		verifyNoInteractions(tutorialAccountService);
@@ -147,8 +139,8 @@ class PracticeLimitOrderCreationServiceTest {
 
 	@Test
 	void createSessionBuyOrderForRealInstrumentThrowsInsufficientCashWhenRealAccountBalanceInsufficient() {
-		Instrument instrument = cryptoInstrument(5_000L); // tutorialSample 기본값 false
-		Account account = account(); // 기본 1000만원
+		Instrument instrument = cryptoInstrument(5_000L);
+		Account account = account();
 		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID)).thenReturn(instrument);
 		when(orderRepository.existsByPracticePriceSessionIdAndStatus(SESSION_ID, OrderStatus.PENDING))
 			.thenReturn(false);
@@ -184,13 +176,11 @@ class PracticeLimitOrderCreationServiceTest {
 
 	@Test
 	void createSessionBuyOrderThrowsTutorialInsufficientCashRegardlessOfRealAccountBalance() {
-		// 047 TUTORIAL-CASH-ISOL-002·005: 샌드박스 종목은 튜토리얼 계좌 잔고만 보고 거부해야 하며, 오류
-		// 코드도 실제 계좌 부족(INSUFFICIENT_CASH)과 구분되는 TUTORIAL_INSUFFICIENT_CASH여야 한다.
 		Instrument instrument = cryptoInstrument(5_000L);
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
 		Account account = account();
-		account.addCash(100_000_000L); // 실제 계좌는 넉넉하다 — 그래도 거부돼야 한다.
-		TutorialAccount tutorialAccount = tutorialAccount(); // 기본 1000만원
+		account.addCash(100_000_000L);
+		TutorialAccount tutorialAccount = tutorialAccount();
 		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID)).thenReturn(instrument);
 		when(orderRepository.existsByPracticePriceSessionIdAndStatus(SESSION_ID, OrderStatus.PENDING))
 			.thenReturn(false);
@@ -257,7 +247,6 @@ class PracticeLimitOrderCreationServiceTest {
 	void createSessionBuyOrderThrowsValidationErrorWhenOrderAmountBelowMinimum() {
 		Instrument instrument = cryptoInstrument(5_000L);
 		when(instrumentService.getInstrumentEntity(INSTRUMENT_ID)).thenReturn(instrument);
-		// rawAmount = 0.0001 * 1000 = 0.1 < 5000 최소 주문금액
 		assertThatThrownBy(() -> service.createSessionBuyOrder(
 			USER_ID, SESSION_ID, INSTRUMENT_ID, new BigDecimal("0.0001"), new BigDecimal("1000")))
 			.isInstanceOfSatisfying(BusinessException.class,

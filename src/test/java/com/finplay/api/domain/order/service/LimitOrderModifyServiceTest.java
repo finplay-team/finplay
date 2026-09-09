@@ -1,4 +1,3 @@
-// LimitOrderModifyService.modifyOrder의 예약 재계산 순서·부분 갱신 합성·검증 순서(존재→소유→상태→형식)를 검증하는 단위 테스트다.
 package com.finplay.api.domain.order.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -68,8 +67,6 @@ class LimitOrderModifyServiceTest {
 
 		service.modifyOrder(OWNER_USER_ID, ORDER_ID, request);
 
-		// old: quantity=0.1 * limitPrice=1,000,000 => amount=100,000, fee=floor(100,000*0.0005)=50, total=100,050
-		// new: quantity=0.2 * limitPrice=2,000,000 => amount=400,000, fee=floor(400,000*0.0005)=200, total=400,200
 		InOrder inOrder = inOrder(account);
 		inOrder.verify(account).releaseReservedCash(100_050L);
 		inOrder.verify(account).reserveCash(400_200L);
@@ -78,13 +75,10 @@ class LimitOrderModifyServiceTest {
 
 	@Test
 	void modifyOrderBuyForTutorialSampleReleasesOldReservationThenReservesNewInTutorialAccountOnly() {
-		// 047 TUTORIAL-CASH-ISOL-002: 샌드박스 종목의 지정가 매수 재예약은 튜토리얼 계좌에서만 일어나고
-		// 실제 Account.reservedCash·cashBalance는 전혀 변하지 않는다.
 		Instrument instrument = cryptoInstrument();
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
 		Account account = account();
 		TutorialAccount tutorialAccount = tutorialAccount();
-		// old: quantity=0.1 * limitPrice=1,000,000 => total=100,050 (생성 시점에 이미 예약된 상태를 재현)
 		tutorialAccount.reserveCash(100_050L);
 		Order order = limitPendingOrder(owner(), account, instrument, OrderSide.BUY, "0.1", "1000000");
 		when(orderRepository.findByIdForUpdate(ORDER_ID)).thenReturn(Optional.of(order));
@@ -95,7 +89,6 @@ class LimitOrderModifyServiceTest {
 
 		service.modifyOrder(OWNER_USER_ID, ORDER_ID, request);
 
-		// new: quantity=0.2 * limitPrice=2,000,000 => amount=400,000, fee=200, total=400,200
 		assertThat(tutorialAccount.getReservedCash()).isEqualTo(400_200L);
 		assertThat(account.getReservedCash()).isZero();
 		assertThat(account.getCashBalance()).isEqualTo(10_000_000L);
@@ -105,19 +98,17 @@ class LimitOrderModifyServiceTest {
 
 	@Test
 	void modifyOrderBuyForTutorialSampleThrowsTutorialInsufficientCashRegardlessOfRealAccountBalanceAndNeverReReserves() {
-		// 047 TUTORIAL-CASH-ISOL-005: 실제 계좌 잔고가 넉넉해도 튜토리얼 계좌 잔고만 보고 거부해야 한다.
 		Instrument instrument = cryptoInstrument();
 		ReflectionTestUtils.setField(instrument, "tutorialSample", true);
 		Account account = account();
-		account.addCash(100_000_000L); // 실제 계좌는 넉넉하다 — 그래도 거부돼야 한다.
-		TutorialAccount tutorialAccount = tutorialAccount(); // 기본 1000만원
-		tutorialAccount.reserveCash(100_050L); // 기존 예약(해제 대상)
+		account.addCash(100_000_000L);
+		TutorialAccount tutorialAccount = tutorialAccount();
+		tutorialAccount.reserveCash(100_050L);
 		Order order = limitPendingOrder(owner(), account, instrument, OrderSide.BUY, "0.1", "1000000");
 		when(orderRepository.findByIdForUpdate(ORDER_ID)).thenReturn(Optional.of(order));
 		when(accountService.getAccountByIdForUpdate(ACCOUNT_ID)).thenReturn(account);
 		when(tutorialAccountService.getOrCreateForUpdate(OWNER_USER_ID, Market.CRYPTO, NOW))
 			.thenReturn(tutorialAccount);
-		// new: quantity=1 * limitPrice=15,000,000 => total=15,007,500 > 튜토리얼 계좌 가용 현금 10,000,000
 		LimitOrderUpdateRequest request = new LimitOrderUpdateRequest(new BigDecimal("15000000"), new BigDecimal("1"));
 
 		assertThatThrownBy(() -> service.modifyOrder(OWNER_USER_ID, ORDER_ID, request))
@@ -125,9 +116,9 @@ class LimitOrderModifyServiceTest {
 			.extracting(ex -> ((BusinessException)ex).getErrorCode())
 			.isEqualTo(ErrorCode.TUTORIAL_INSUFFICIENT_CASH);
 
-		assertThat(tutorialAccount.getReservedCash()).isZero(); // 해제는 이미 수행됨, 재예약은 실패해 반영 안 됨
+		assertThat(tutorialAccount.getReservedCash()).isZero();
 		assertThat(account.getReservedCash()).isZero();
-		assertThat(account.getCashBalance()).isEqualTo(110_000_000L); // 실제 계좌 현금 불변
+		assertThat(account.getCashBalance()).isEqualTo(110_000_000L);
 	}
 
 	@Test
@@ -153,7 +144,6 @@ class LimitOrderModifyServiceTest {
 	void modifyOrderKeepsExistingQuantityWhenOnlyLimitPriceProvidedForBuy() {
 		Instrument instrument = cryptoInstrument();
 		Account account = account();
-		// quantity=0.1 * limitPrice=1,000,000 => amount=100,000, fee=50, total=100,050
 		account.reserveCash(100_050L);
 		Order order = limitPendingOrder(owner(), account, instrument, OrderSide.BUY, "0.1", "1000000");
 		when(orderRepository.findByIdForUpdate(ORDER_ID)).thenReturn(Optional.of(order));
@@ -162,15 +152,14 @@ class LimitOrderModifyServiceTest {
 
 		LimitOrderResponse response = service.modifyOrder(OWNER_USER_ID, ORDER_ID, request);
 
-		// new: quantity=0.1(기존값 유지) * limitPrice=2,000,000 => amount=200,000, fee=100, total=200,100
 		assertThat(order.getQuantity()).isEqualByComparingTo("0.1");
 		assertThat(order.getLimitPrice()).isEqualByComparingTo("2000000");
 		assertThat(account.getReservedCash()).isEqualTo(200_100L);
-		assertThat(account.getCashBalance()).isEqualTo(10_000_000L); // 실제 현금은 불변
+		assertThat(account.getCashBalance()).isEqualTo(10_000_000L);
 		assertThat(response.status()).isEqualTo("PENDING");
 		assertThat(response.quantity()).isEqualByComparingTo("0.1");
 		assertThat(response.limitPrice()).isEqualByComparingTo("2000000");
-		assertThat(response.requestedAt()).isEqualTo(NOW); // requestedAt은 정렬 위치 유지를 위해 불변
+		assertThat(response.requestedAt()).isEqualTo(NOW);
 	}
 
 	@Test
@@ -185,7 +174,6 @@ class LimitOrderModifyServiceTest {
 
 		LimitOrderResponse response = service.modifyOrder(OWNER_USER_ID, ORDER_ID, request);
 
-		// new: quantity=0.3 * limitPrice=1,000,000(기존값 유지) => amount=300,000, fee=150, total=300,150
 		assertThat(order.getQuantity()).isEqualByComparingTo("0.3");
 		assertThat(order.getLimitPrice()).isEqualByComparingTo("1000000");
 		assertThat(account.getReservedCash()).isEqualTo(300_150L);
@@ -209,9 +197,9 @@ class LimitOrderModifyServiceTest {
 		LimitOrderResponse response = service.modifyOrder(OWNER_USER_ID, ORDER_ID, request);
 
 		assertThat(order.getQuantity()).isEqualByComparingTo("0.4");
-		assertThat(order.getLimitPrice()).isEqualByComparingTo("1000000"); // 기존값 유지
+		assertThat(order.getLimitPrice()).isEqualByComparingTo("1000000");
 		assertThat(holding.getReservedQuantity()).isEqualByComparingTo("0.4");
-		assertThat(holding.getQuantity()).isEqualByComparingTo("2"); // 실제 보유수량은 불변
+		assertThat(holding.getQuantity()).isEqualByComparingTo("2");
 		assertThat(response.quantity()).isEqualByComparingTo("0.4");
 	}
 
@@ -253,7 +241,7 @@ class LimitOrderModifyServiceTest {
 			.extracting(ex -> ((BusinessException)ex).getErrorCode())
 			.isEqualTo(ErrorCode.FORBIDDEN);
 
-		assertThat(order.getLimitPrice()).isEqualByComparingTo("1000000"); // 수정되지 않는다
+		assertThat(order.getLimitPrice()).isEqualByComparingTo("1000000");
 		verifyNoInteractions(accountService, portfolioSellService);
 	}
 
@@ -293,8 +281,6 @@ class LimitOrderModifyServiceTest {
 
 	@Test
 	void modifyOrderChecksOwnershipBeforeStatusSoNonOwnerOfAlreadyCancelledOrderGetsForbidden() {
-		// 검증 순서(존재→소유→상태→형식) 준수 확인: 이미 CANCELLED된 주문이라도 소유자가 아니면
-		// ORDER_ALREADY_CANCELLED가 아니라 FORBIDDEN이 먼저 나와야 한다.
 		Instrument instrument = cryptoInstrument();
 		Account account = account();
 		Order order = limitPendingOrder(owner(), account, instrument, OrderSide.BUY, "0.1", "1000000");
@@ -312,8 +298,6 @@ class LimitOrderModifyServiceTest {
 
 	@Test
 	void modifyOrderChecksStatusBeforeFormatSoAlreadyFilledOrderWithInvalidQuantityStillGetsOrderAlreadyFilled() {
-		// 검증 순서 확인: 상태(409) 검증이 형식(400) 재검증보다 먼저다 — 이미 FILLED인 주문에
-		// 형식상 잘못된 요청(quantity<=0)을 보내도 VALIDATION_ERROR가 아니라 ORDER_ALREADY_FILLED가 나와야 한다.
 		Instrument instrument = cryptoInstrument();
 		Account account = account();
 		Order order = limitPendingOrder(owner(), account, instrument, OrderSide.BUY, "0.1", "1000000");
@@ -379,11 +363,10 @@ class LimitOrderModifyServiceTest {
 
 	@Test
 	void modifyOrderThrowsValidationErrorWhenFinalAmountBelowMinOrderAmount() {
-		Instrument instrument = cryptoInstrument(); // minOrderAmount = 5,000
+		Instrument instrument = cryptoInstrument();
 		Account account = account();
 		Order order = limitPendingOrder(owner(), account, instrument, OrderSide.BUY, "0.1", "1000000");
 		when(orderRepository.findByIdForUpdate(ORDER_ID)).thenReturn(Optional.of(order));
-		// 0.001 * 1,000 = 1 < 5,000
 		LimitOrderUpdateRequest request = new LimitOrderUpdateRequest(new BigDecimal("1000"), new BigDecimal("0.001"));
 
 		assertThatThrownBy(() -> service.modifyOrder(OWNER_USER_ID, ORDER_ID, request))
@@ -410,8 +393,8 @@ class LimitOrderModifyServiceTest {
 			.extracting(ex -> ((BusinessException)ex).getErrorCode())
 			.isEqualTo(ErrorCode.INSUFFICIENT_CASH);
 
-		verify(account).releaseReservedCash(100_050L); // 해제는 이미 수행됨
-		verify(account, never()).reserveCash(anyLong()); // 재예약은 실패해 호출되지 않는다
+		verify(account).releaseReservedCash(100_050L);
+		verify(account, never()).reserveCash(anyLong());
 	}
 
 	@Test
@@ -431,8 +414,8 @@ class LimitOrderModifyServiceTest {
 			.extracting(ex -> ((BusinessException)ex).getErrorCode())
 			.isEqualTo(ErrorCode.INSUFFICIENT_QTY);
 
-		verify(holding).releaseReservedQuantity(new BigDecimal("1")); // 해제는 이미 수행됨
-		verify(holding, never()).reserveQuantity(org.mockito.ArgumentMatchers.any()); // 재예약은 실패해 호출되지 않는다
+		verify(holding).releaseReservedQuantity(new BigDecimal("1"));
+		verify(holding, never()).reserveQuantity(org.mockito.ArgumentMatchers.any());
 	}
 
 	private static Order limitPendingOrder(

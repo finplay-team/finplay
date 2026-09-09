@@ -1,4 +1,3 @@
-// CryptoWatchLock이 실제 Redis(Testcontainers)에서 락을 걸고 풀며, 다른 토큰으로는 안 풀리고, TTL 경과 후 자동 해제되는지 검증한다 (ADR-0014)
 package com.finplay.api.domain.feedback.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -14,9 +13,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
-// tasks-244.md 항목 2 — SET NX PX 획득과 Lua check-then-delete 해제의 원자성, TTL 자동 만료는 mock으로 흉내 내면
-// 검증이 아니라 동어반복이 된다. CryptoWatchLockTest(단위)는 응답 매핑·예외 처리만 mock으로 보고, 여기서는 실제
-// Redis(compose.yaml과 같은 redis:7.4, TestcontainersConfiguration의 공유 싱글턴)로 세 가지를 확인한다.
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest
 class CryptoWatchLockIntegrationTest {

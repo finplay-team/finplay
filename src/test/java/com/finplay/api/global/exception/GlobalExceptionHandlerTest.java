@@ -1,4 +1,3 @@
-// 전역 예외 핸들러가 예외를 공통 오류 포맷·상태·requestId로 변환하는지 검증하는 @WebMvcTest 슬라이스 테스트
 package com.finplay.api.global.exception;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -28,8 +27,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-// /test/**는 프로덕션 화이트리스트에 없고 넣어서도 안 되므로, 이 슬라이스에서만 Security 자동설정을 끈다.
-// addFilters = false는 RequestIdFilter까지 꺼서 requestId 단언이 깨지므로 쓰지 않는다.
 @WebMvcTest(controllers = GlobalExceptionHandlerTest.TestController.class, excludeAutoConfiguration = {
 	ServletWebSecurityAutoConfiguration.class,
 	SecurityFilterAutoConfiguration.class
@@ -138,7 +135,6 @@ class GlobalExceptionHandlerTest {
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty())
 			.andReturn();
 
-		// 원본 예외 메시지(내부 정보)와 스택트레이스 흔적이 응답 본문에 새어나가지 않아야 한다.
 		String body = result.getResponse().getContentAsString();
 		assertThat(body).doesNotContain("top-secret-internal-detail");
 		assertThat(body).doesNotContain("java.lang.IllegalStateException");
@@ -160,27 +156,19 @@ class GlobalExceptionHandlerTest {
 
 		@PostMapping("/test/validate")
 		void validate(@Valid @RequestBody
-		TestRequest request) {
-			// 검증 통과 시 아무 것도 하지 않는다. 검증 실패 경로만 테스트한다.
-		}
+		TestRequest request) {}
 
 		@org.springframework.web.bind.annotation.GetMapping("/test/required-param")
 		void requiredParam(@RequestParam
-		String q) {
-			// 필수 파라미터 누락 시 MissingServletRequestParameterException이 발생한다.
-		}
+		String q) {}
 
 		@org.springframework.web.bind.annotation.GetMapping("/test/min-param")
 		void minParam(@RequestParam @Min(1)
-		int page) {
-			// @Min 위반 시 ConstraintViolationException이 발생한다.
-		}
+		int page) {}
 
 		@org.springframework.web.bind.annotation.GetMapping("/test/enum-param")
 		void enumParam(@RequestParam(required = false)
-		ProbeStatus status) {
-			// 알 수 없는 값이면 MethodArgumentTypeMismatchException이 발생한다.
-		}
+		ProbeStatus status) {}
 	}
 
 	enum ProbeStatus {

@@ -1,4 +1,3 @@
-// 튜토리얼 attempt 재시작의 완료 replay, 실행 세대 증가와 선택 상태 초기화를 검증한다.
 package com.finplay.api.domain.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -48,9 +47,6 @@ class PracticeAttemptRestartServiceTest {
 		attemptRepository, riskSnapshotRepository, orderRestartService, canonicalPriceService,
 		tutorialAccountService, Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC));
 
-	// cleanupCurrentRun(TUTORIAL-CASH-ISOL-006)이 같은 트랜잭션 안에서 이미 튜토리얼 계좌를 리셋했다고
-	// 가정하고, restart()는 그 결과를 다시 조회(getOrCreateForUpdate)해 응답에 싣는다 — 리셋 직후 값
-	// (1000만원/1000만원/0원)을 반환하도록 스텁한다.
 	private TutorialAccount resetTutorialAccountStub() {
 		TutorialAccount account = mock(TutorialAccount.class);
 		when(account.getCashBalance()).thenReturn(10_000_000L);
@@ -78,7 +74,6 @@ class PracticeAttemptRestartServiceTest {
 		assertThat(response.instrumentId()).isNull();
 		assertThat(response.anchorAt()).isNull();
 		assertThat(response.tutorialDate()).isNull();
-		// TUTORIAL-CASH-ISOL-011 — 재시작 응답이 리셋 직후 값(1000만원/1000만원/0원)을 정확히 반영한다.
 		assertThat(response.tutorialCashBalance()).isEqualTo(10_000_000L);
 		assertThat(response.tutorialAvailableCash()).isEqualTo(10_000_000L);
 		assertThat(response.tutorialRealizedPnl()).isEqualTo(0L);
@@ -91,9 +86,6 @@ class PracticeAttemptRestartServiceTest {
 		assertThat(commandCaptor.getValue().restartedAt()).isEqualTo(NOW);
 	}
 
-	// restart()는 cleanupCurrentRun(mock) 이후 getOrCreateForUpdate로 재조회한 결과를 그대로 싣는다는 배선을
-	// 검증한다 — cleanupCurrentRun 내부에서 실제로 resetForUpdate가 호출되는지는 이 서비스가 mock으로 격리한
-	// 협력자이므로 이 단위 테스트로는 검증할 수 없고, TutorialAccountServiceTest·통합 테스트가 담당한다.
 	@Test
 	void restartQueriesTutorialAccountAfterCleanupDelegatesToOrderRestartService() {
 		PracticeAttempt attempt = selectedAttempt();
@@ -171,7 +163,6 @@ class PracticeAttemptRestartServiceTest {
 		verify(orderRestartService).cleanupCurrentRun(commandCaptor.capture());
 		assertThat(commandCaptor.getValue().attemptId()).isEqualTo(ATTEMPT_ID);
 		assertThat(commandCaptor.getValue().runNumber()).isEqualTo(1L);
-		// 실제 종목을 정리 대상으로 넘기지 않으므로 보상 매도가 실제 holding에 찍힐 수 없다.
 		assertThat(commandCaptor.getValue().instrumentId()).isNull();
 		assertThat(commandCaptor.getValue().canonicalPrice()).isNull();
 		verifyNoInteractions(canonicalPriceService);
@@ -199,7 +190,6 @@ class PracticeAttemptRestartServiceTest {
 		return attempt;
 	}
 
-	// V32 샌드박스 종목 도입 이전에 실제 종목으로 완료해 진입 시 실제 종목이 심어진 replay attempt다 (이슈 #433).
 	private static PracticeAttempt legacyCompletedReplayAttempt() {
 		PracticeAttempt attempt = newAttempt();
 		Instrument realInstrument = Instrument.create(

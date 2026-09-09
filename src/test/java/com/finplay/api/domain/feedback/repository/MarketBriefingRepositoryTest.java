@@ -1,4 +1,3 @@
-// 실제 MySQL에서 market_briefings의 UNIQUE(market, origin_trade_date)와 summary NULL 허용을 검증하는 JPA 슬라이스 테스트다.
 package com.finplay.api.domain.feedback.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -42,8 +41,6 @@ class MarketBriefingRepositoryTest {
 		return MarketBriefing.create(market, originTradeDate, SUMMARY, NarrativeSource.LLM, GENERATED_AT);
 	}
 
-	// --- 검증 ③ 같은 (시장, 거래일) 2건째가 유니크에 걸린다 ---
-
 	@Test
 	@DisplayName("같은 (시장, 거래일) 브리핑 2건째는 유니크 제약에 걸린다 — 이 제약이 UPSERT를 성립시킨다")
 	void databaseRejectsDuplicateMarketAndTradeDate() {
@@ -55,10 +52,6 @@ class MarketBriefingRepositoryTest {
 			.isInstanceOf(DataIntegrityViolationException.class);
 	}
 
-	// --- 생성 쪽 중복 판정 (이슈 #188 항목 4) ---
-	//
-	// 주식은 UPSERT가 아니라 "존재 시 건너뜀"이라 이 파인더가 배치 ⑤의 앞선 방어선이다. 축이 유니크와
-	// 어긋나면 재실행 때마다 LLM을 다시 부르고 결과를 유니크가 버린다 — 조용히 비용만 늘고 행은 그대로다.
 	@Test
 	@DisplayName("existsByMarketAndOriginTradeDate가 유니크와 같은 두 축으로만 참이 된다")
 	void existsByMarketAndOriginTradeDateMatchesTheUniqueAxis() {
@@ -73,8 +66,6 @@ class MarketBriefingRepositoryTest {
 			.as("시장이 다르면 별개 행이다 — 여기가 참이면 코인 브리핑이 영영 생기지 않는다")
 			.isFalse();
 	}
-
-	// --- 코인 조회 파인더 (이슈 #188 항목 7 — 배치 ⑪) ---
 
 	@Test
 	@DisplayName("findFirstByMarketOrderByGeneratedAtDesc가 날짜가 달라도 최신 행을 준다")
@@ -92,7 +83,6 @@ class MarketBriefingRepositoryTest {
 			.isEqualTo("오늘 00시 05분 브리핑");
 	}
 
-	// 시장 조건이 빠지면 코인 조회가 주식 브리핑 문장을 그대로 내려 준다.
 	@Test
 	@DisplayName("findFirstByMarket…은 다른 시장의 행을 주지 않는다")
 	void latestBriefingFinderFiltersByMarket() {
@@ -124,13 +114,9 @@ class MarketBriefingRepositoryTest {
 		assertThat(marketBriefingRepository.count()).isEqualTo(2);
 	}
 
-	// --- 검증 ④ summary가 NULL이고 narrative_source가 NONE인 행이 저장된다 ---
-
 	@Test
 	@DisplayName("summary가 NULL이고 narrative_source가 NONE인 브리핑이 저장된다")
 	void briefingRowWithNullSummaryAndNoneSourceIsPersisted() {
-		// 브리핑은 저장된 행만으로 EMPTY와 UNAVAILABLE이 구분되지 않는다(둘 다 summary=null) — 조회가
-		// items 개수와 행 존재 여부로 판정하므로 이 행 자체가 저장되어야 한다 (§C-4).
 		Long id = marketBriefingRepository.saveAndFlush(MarketBriefing.create(
 			Market.STOCK, ORIGIN_TRADE_DATE, null, NarrativeSource.NONE, GENERATED_AT)).getId();
 
@@ -144,8 +130,6 @@ class MarketBriefingRepositoryTest {
 		assertThat(row.get("narrative_source")).isEqualTo("NONE");
 	}
 
-	// --- 매핑 ---
-
 	@Test
 	@DisplayName("저장한 브리핑을 다시 읽으면 시장·거래일·생성 시각이 그대로 복원된다")
 	void savedBriefingRoundTripsAllFields() {
@@ -154,7 +138,6 @@ class MarketBriefingRepositoryTest {
 		MarketBriefing found = marketBriefingRepository.findById(id).orElseThrow();
 
 		assertThat(found.getMarket()).isEqualTo(Market.CRYPTO);
-		// 코인 브리핑도 origin_trade_date를 비우지 않는다 — 배치 실행 시점의 KST 날짜다 (§C-9).
 		assertThat(found.getOriginTradeDate()).isEqualTo(ORIGIN_TRADE_DATE);
 		assertThat(found.getSummary()).isEqualTo(SUMMARY);
 		assertThat(found.getGeneratedAt()).isEqualTo(GENERATED_AT);
@@ -163,7 +146,6 @@ class MarketBriefingRepositoryTest {
 	@Test
 	@DisplayName("market과 narrative_source가 이름 문자열로 저장된다")
 	void enumColumnsStoreTheirNamesAsStrings() {
-		// ORDINAL로 매핑되면 VARCHAR(20)에 "0"이 들어가도 MySQL은 조용히 받는다. 실제 저장 문자열을 확인한다.
 		marketBriefingRepository.saveAndFlush(newBriefing(Market.CRYPTO, ORIGIN_TRADE_DATE));
 
 		Map<String, Object> row = jdbcTemplate.queryForMap("select market, narrative_source from market_briefings");
@@ -187,8 +169,6 @@ class MarketBriefingRepositoryTest {
 	@Test
 	@DisplayName("origin_trade_date를 비우면 저장 자체가 실패한다")
 	void originTradeDateCannotBeNull() {
-		// INSERT가 실제로 DB까지 나가 MySQL의 NOT NULL에 걸린다 — spring-boot-starter-validation이 있어
-		// Hibernate가 check_nullability를 끄기 때문이다. 이 단정은 V13의 컬럼 속성까지 닿는다.
 		MarketBriefing withoutDate = MarketBriefing.create(
 			Market.CRYPTO, null, SUMMARY, NarrativeSource.LLM, GENERATED_AT);
 

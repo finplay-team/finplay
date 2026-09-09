@@ -1,4 +1,3 @@
-// 새 토큰 발급 실패 시 기존 Refresh Token 폐기가 실제 MySQL 트랜잭션에서 롤백되는지 검증하는 통합 테스트다.
 package com.finplay.api.domain.auth.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

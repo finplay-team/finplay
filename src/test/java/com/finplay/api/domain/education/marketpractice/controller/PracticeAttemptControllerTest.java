@@ -1,4 +1,3 @@
-// 튜토리얼 attempt 진입·종목 선택 API의 인증, JSON 계약, 입력 검증과 오류 매핑을 검증한다.
 package com.finplay.api.domain.education.marketpractice.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -59,11 +58,9 @@ class PracticeAttemptControllerTest {
 	@MockitoBean
 	private PracticeAttemptService practiceAttemptService;
 
-	// 진입은 재시도 경계(PracticeAttemptDeadlockRetryService)를 거친다 (이슈 #491).
 	@MockitoBean
 	private PracticeAttemptDeadlockRetryService practiceAttemptDeadlockRetryService;
 
-	// 052 EXITFREE-020 — 사용자 주도 예약 생성.
 	@MockitoBean
 	private PracticeExitPlanReservationService practiceExitPlanReservationService;
 
@@ -148,8 +145,6 @@ class PracticeAttemptControllerTest {
 			.andExpect(jsonPath("$.instrumentId").value(21))
 			.andExpect(jsonPath("$.anchorAt").value("2026-08-14T12:00:00"))
 			.andExpect(jsonPath("$.tutorialDate").value("2026-08-14"))
-			// TUTORIAL-CASH-ISOL-011 범위는 진입·재시작 응답 한정 — 종목 선택 응답은 튜토리얼 계좌를
-			// 다시 조회하지 않으므로 세 필드 모두 0을 반환하는 것이 설계 의도다(api-contracts.md 명시).
 			.andExpect(jsonPath("$.tutorialCashBalance").value(0))
 			.andExpect(jsonPath("$.tutorialAvailableCash").value(0))
 			.andExpect(jsonPath("$.tutorialRealizedPnl").value(0));
@@ -187,7 +182,6 @@ class PracticeAttemptControllerTest {
 		verifyNoInteractions(practiceAttemptService);
 	}
 
-	// 042 EXITPRESET-003 — 정의 밖 문자열은 Jackson이 열거형으로 못 바꿔 400 VALIDATION_ERROR가 된다.
 	@Test
 	void selectExitPresetReturnsUpdatedAttempt() throws Exception {
 		authenticate();
@@ -259,8 +253,6 @@ class PracticeAttemptControllerTest {
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
 	}
 
-	// --- 052 EXITFREE-020: POST .../exit-plan ---
-
 	@Test
 	void createExitPlanRejectsMissingAuthentication() throws Exception {
 		mockMvc.perform(post("/api/education/practice/attempts/CRYPTO/exit-plan")
@@ -272,10 +264,6 @@ class PracticeAttemptControllerTest {
 		verifyNoInteractions(practiceExitPlanReservationService);
 	}
 
-	/**
-	 * 201이어야 한다 — 이 경로는 자연 멱등이 아니라 <b>진입당 한 번만</b> 성공하는 생성이다
-	 * (052 EXITFREE-020 write-once). 200으로 내리면 화면이 재시도해도 되는 요청으로 오해한다.
-	 */
 	@Test
 	void createExitPlanReturnsCreatedWithTheReservationJson() throws Exception {
 		authenticate();
@@ -291,10 +279,6 @@ class PracticeAttemptControllerTest {
 			.andExpect(jsonPath("$.status").value("PENDING"))
 			.andExpect(jsonPath("$.stopLossPrice").value(9700.00000000))
 			.andExpect(jsonPath("$.takeProfitPrice").value(10500.00000000))
-			// **가격·비율은 JSON 문자열이 아니라 숫자로 나간다.** 이 저장소는 Jackson을 손대지 않아
-			// BigDecimal이 기본대로 숫자로 직렬화된다 — 문자열로 바뀌면 클라이언트가 그대로 계산할 때
-			// 문자열 연결이 되어 금액 표시가 통째로 깨진다. 문서의 jsonc 예시가 따옴표를 쓰는 것은
-			// scale을 보이려는 표기일 뿐 전송 형식이 아니므로, 그 오해를 여기서 고정한다.
 			.andExpect(jsonPath("$.stopLossPrice").isNumber())
 			.andExpect(jsonPath("$.takeProfitPrice").isNumber())
 			.andExpect(jsonPath("$.entryPrice").isNumber())
@@ -303,15 +287,10 @@ class PracticeAttemptControllerTest {
 
 		ArgumentCaptor<ExitRates> captor = ArgumentCaptor.forClass(ExitRates.class);
 		verify(practiceExitPlanReservationService).create(eq(USER_ID), eq(Market.CRYPTO), captor.capture());
-		// 프리셋 3개 어디에도 없는 조합이 그대로 서비스에 전달된다 — 컨트롤러가 프리셋으로 환원하지 않는다.
 		assertThat(captor.getValue().stopLossRate()).isEqualByComparingTo("2.5");
 		assertThat(captor.getValue().takeProfitRate()).isEqualByComparingTo("7.5");
 	}
 
-	/**
-	 * 검증은 {@code PUT .../exit-rates}와 <b>같은 요청 DTO</b>가 한다 — 구간·소수 자릿수 규칙이 두 경로에서
-	 * 갈리면 화면이 입력할 수 있는 값이 한쪽에서만 400이 된다.
-	 */
 	@ParameterizedTest
 	@ValueSource(strings = {
 		"{\"stopLossRate\":1.9,\"takeProfitRate\":5}",
@@ -335,8 +314,6 @@ class PracticeAttemptControllerTest {
 		verifyNoInteractions(practiceExitPlanReservationService);
 	}
 
-	// 경계 4값은 통과한다 — 프리셋 3종(2/3·3/5·5/8)이 전부 이 구간의 경계·내부 값이라 배제하면 예전에
-	// 고를 수 있던 기준을 고를 수 없게 된다(052 EXITFREE-002).
 	@ParameterizedTest
 	@ValueSource(strings = {
 		"{\"stopLossRate\":2,\"takeProfitRate\":3}",
@@ -355,7 +332,6 @@ class PracticeAttemptControllerTest {
 			.andExpect(status().isCreated());
 	}
 
-	// 오류 코드를 새로 만들지 않았다 — 전부 기존 집합이며 409로 나간다(052 plan §오류 응답).
 	@ParameterizedTest
 	@EnumSource(value = ErrorCode.class, names = {
 		"EXIT_PLAN_ALREADY_EXISTS", "PRACTICE_STEP_LOCKED", "PRACTICE_STAGE_LOCKED", "PRACTICE_ALREADY_COMPLETED"})

@@ -1,4 +1,3 @@
-// 실제 Redis(Testcontainers)로 코인 시세 저장·조회·stale 판정·주문 가능 여부를 검증하는 통합 테스트 (ADR-0003)
 package com.finplay.api.domain.market.store;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -32,9 +31,6 @@ class PriceStoreIntegrationTest {
 	@Autowired
 	private ApplicationEventPublisher eventPublisher;
 
-	// BithumbFeedLifecycle이 ApplicationReadyEvent에서 STATUS_KEY를 CONNECTED로 1회 설정하므로(이슈 #104), 공유
-	// 컨텍스트에서 이 클래스의 테스트가 먼저 실행되면 fail-closed 기본값(DISCONNECTED) 전제가 흔들릴 수 있다 —
-	// 테스트 시작 전에도 명시적으로 지워 순서와 무관하게 만든다(PR #110 리뷰 참고사항).
 	@BeforeEach
 	void deleteConnectionStatusBeforeEachTest() {
 		redisTemplate.delete(STATUS_KEY);
@@ -152,9 +148,6 @@ class PriceStoreIntegrationTest {
 		assertThat(priceStore.isPriceAvailable("BTC_NO_STATUS_YET")).isFalse();
 	}
 
-	// PR 리뷰 [권장] 후속 수정 — 실제 Redis로 recordObservation의 부트스트랩이 getLatestPrice의 반환 자체를
-	// 바꾸는지 끝까지 확인한다(034-crypto-price-rest-backup). 단위 테스트(PriceStoreTest)는 mock이라 putAll이
-	// 이후 get 호출에 반영되지 않으므로, 여기서만 "받은 적 없음 → 값이 생김"이라는 실제 상태 변화를 검증할 수 있다.
 	@Test
 	void recordObservationOnNeverObservedSymbolMakesGetLatestPriceReturnPresent() {
 		PriceStore priceStore = priceStoreAt(FIXED_NOW);
@@ -165,13 +158,9 @@ class PriceStoreIntegrationTest {
 
 		CryptoPriceDto result = priceStore.getLatestPrice("BTC_OBS_BOOTSTRAP").orElseThrow();
 		assertThat(result.price()).isEqualByComparingTo("100");
-		// 딱 한 번, receivedAt이 observedAt과 같은 값으로 부트스트랩된다 — 그래야 이 심볼이 "받은 적 없음"
-		// 상태를 벗어나 이후 REST 신선도 유지의 효과를 실제로 본다.
 		assertThat(result.receivedAt()).isEqualTo(FIXED_NOW);
 		assertThat(result.observedAt()).isEqualTo(FIXED_NOW);
 	}
-
-	// 아래부터는 spec 012 §코인 가격 스냅샷(이슈 #225) — 실제 Redis Sorted Set에 적재·조회되는지 검증한다.
 
 	@Test
 	void recordSnapshotThenGetSnapshotsReturnsStoredPriceAndTimeInAscendingOrder() {
@@ -179,7 +168,6 @@ class PriceStoreIntegrationTest {
 		LocalDateTime older = FIXED_NOW.minusMinutes(10);
 		LocalDateTime newer = FIXED_NOW.minusMinutes(5);
 
-		// 저장 순서를 뒤집어도(newer 먼저) 조회 결과는 시각 오름차순이어야 한다.
 		priceStore.recordSnapshot("BTC_SNAPSHOT", newer, new BigDecimal("200"), Duration.ofHours(24));
 		priceStore.recordSnapshot("BTC_SNAPSHOT", older, new BigDecimal("100"), Duration.ofHours(24));
 
@@ -202,9 +190,6 @@ class PriceStoreIntegrationTest {
 		assertThat(snapshots).isEmpty();
 	}
 
-	// 가지치기 — retention(sigma-lookback-hours)을 넘은 원소는 기록할 때마다 실제로 제거된다
-	// (tasks.md 항목 1 함정). mock으로는 removeRangeByScore 호출 여부만 보이지만, 여기서는 제거된 원소가
-	// 실제로 조회에서 빠지는지까지 확인한다.
 	@Test
 	void recordSnapshotActuallyPrunesElementsOlderThanRetentionFromRealRedis() {
 		PriceStore priceStore = priceStoreAt(FIXED_NOW);
@@ -213,7 +198,6 @@ class PriceStoreIntegrationTest {
 		LocalDateTime recent = FIXED_NOW.minusHours(1);
 
 		priceStore.recordSnapshot("BTC_PRUNE", old, new BigDecimal("100"), retention);
-		// recent 기록 시 cutoff = recent - 24h = FIXED_NOW - 25h 이므로, old(FIXED_NOW - 30h)는 제거 대상이다.
 		priceStore.recordSnapshot("BTC_PRUNE", recent, new BigDecimal("200"), retention);
 
 		List<PriceSnapshotDto> snapshots = priceStore.getSnapshots(

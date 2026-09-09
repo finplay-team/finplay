@@ -1,4 +1,3 @@
-// PriceMoveQueryService의 코인 분기("최근 24시간" 조회, FEED-006)를 mock 의존성으로 검증하는 단위 테스트다.
 package com.finplay.api.domain.feedback.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -34,9 +33,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
-// 노출 게이트(§C-5의 revealTime 비교)와 재생세션 판정은 이 분기가 아예 참조하지 않는다는 것이 spec §C-5
-// "카드(코인) — 없음"이다 — 그래서 stockReplayService에 대한 verifyNoInteractions가 이 파일의 핵심 단정이다.
-// 실제 24시간 경계·정렬은 실 DB 위에서만 의미가 있어 PriceMoveEventRepositoryTest가 맡는다(ADR-0003).
 class PriceMoveQueryServiceTest {
 
 	private static final Long INSTRUMENT_ID = 42L;
@@ -92,8 +88,6 @@ class PriceMoveQueryServiceTest {
 		assertThat(response).isEqualTo(PriceMoveListResponse.of(null, List.of()));
 	}
 
-	// 코인에는 재생세션도 '개장 전'도 없으므로 NOT_YET이 성립하지 않는다 (§C-4의 "코인에는 이 값이 없다"와
-	// 같은 결). 카드가 0건이면 아직이 아니라 그냥 없는 것이다 — Issue #280.
 	@Test
 	@DisplayName("코인 종목은 카드가 0건이어도 status가 NOT_YET이 아니라 EMPTY다")
 	void reportsEmptyRatherThanNotYetForCryptoWithoutCards() {
@@ -147,15 +141,12 @@ class PriceMoveQueryServiceTest {
 		assertThat(response.moves()).singleElement().satisfies(move -> {
 			assertThat(move.id()).isEqualTo(7L);
 			assertThat(move.windowEnd()).isEqualTo(occurredAt);
-			// rolling-window-minutes=5 — ofCrypto의 windowStart 계산이 그대로 서비스 응답에 실리는지 본다.
 			assertThat(move.windowStart()).isEqualTo(occurredAt.minusMinutes(5));
 			assertThat(move.sources()).hasSize(1);
 			assertThat(move.sources().get(0).title()).isEqualTo("대형 거래소 상장");
 		});
 	}
 
-	// §C-5 "카드(코인) — 없음" — 코인 분기는 노출 게이트를 아예 참조하지 않는다. 재생세션 판정(주식 게이트가
-	// 쓰는 것)을 부르면 이 단정이 깨진다.
 	@Test
 	@DisplayName("코인 분기는 재생세션(주식 노출 게이트)을 전혀 참조하지 않는다")
 	void neverConsultsStockReplaySessionForCryptoInstrument() {

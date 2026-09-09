@@ -1,4 +1,3 @@
-// Fake 사용자 정보로 OAuth 신규·기존 로그인과 실패·롤백을 실제 MySQL에서 통합 검증한다.
 package com.finplay.api.domain.auth.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

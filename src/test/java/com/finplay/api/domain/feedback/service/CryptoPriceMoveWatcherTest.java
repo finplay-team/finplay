@@ -1,4 +1,3 @@
-// CryptoPriceMoveWatcher가 spec 012 §탐지 알고리즘(코인)의 의사코드·함정을 그대로 지키는지 검증한다.
 package com.finplay.api.domain.feedback.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -37,18 +36,10 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 
-// 외부 협력자(스냅샷 조회·근거 매칭·서술·저장·쿨다운/일일상한 조회)를 전부 mock으로 갈아끼우고 순수 오케스트레이션과
-// σ 계산만 이 클래스에서 본다(ADR-0003의 "서비스 비즈니스 로직 → 단위"). σ 표본이 실제로 겹치지 않는 구간으로
-// 만들어지는지는 mock 검증만으론 부족하므로, 겹치지 않는 구성일 때만 나오는 정확한 수치를 손으로(독립적으로)
-// 계산해 대조한다 — PriceMoveDetectorTest와 같은 방침이다.
-//
-// 기대값의 정본은 spec.md §탐지 알고리즘(코인)이고 임계치는 §C-7이다.
 class CryptoPriceMoveWatcherTest {
 
 	private static final LocalDateTime NOW = LocalDateTime.of(2026, 8, 5, 10, 0);
 
-	// 이 클래스는 CryptoWatchLock을 mock으로 갈아끼우므로 TTL이 결과에 영향을 주지 않는다 — §C-7 기본값(45)과
-	// 다른 것은 의도적이며, 기본값 단정은 FeedbackCryptoPropertiesTest 몫이다.
 	private static final int IRRELEVANT_WATCH_LOCK_TTL_SECONDS = 30;
 
 	private final InstrumentService instrumentService = mock(InstrumentService.class);
@@ -65,9 +56,6 @@ class CryptoPriceMoveWatcherTest {
 
 	private final NarrativeService narrativeService = mock(NarrativeService.class);
 
-	// 이 클래스는 락 통합(이슈 #244) 자체를 검증 대상으로 삼지 않는다 — 항상 획득에 성공하도록 고정해 기존
-	// 오케스트레이션·σ 계산 시나리오가 락 유무와 무관하게 그대로 성립함을 유지한다. 락 자체의 동작은
-	// CryptoWatchLockTest·전용 동시성 통합 테스트가 다룬다.
 	private final CryptoWatchLock cryptoWatchLock = alwaysSucceedingLock();
 
 	private static CryptoWatchLock alwaysSucceedingLock() {
@@ -102,7 +90,6 @@ class CryptoPriceMoveWatcherTest {
 	}
 
 	private static FeedbackDetectionProperties detectionProperties(double zScoreK) {
-		// §탐지 알고리즘(코인)은 z-score-k만 재사용한다 — 나머지 값은 이 클래스가 안 쓴다.
 		return new FeedbackDetectionProperties(zScoreK, 5, 5, 2, new BigDecimal("0.01"));
 	}
 
@@ -120,7 +107,6 @@ class CryptoPriceMoveWatcherTest {
 			cryptoProperties, detectionProps, clock);
 	}
 
-	// 기본 배선 — 카드 생성을 막지 않는 협력자 응답. 각 테스트가 필요한 부분만 덮어쓴다.
 	private void stubNoCooldownNoLimit() {
 		when(priceMoveEventRepository.findFirstByInstrumentIdAndMarketOrderByOccurredAtDesc(any(), any()))
 			.thenReturn(Optional.empty());
@@ -139,15 +125,10 @@ class CryptoPriceMoveWatcherTest {
 		when(instrumentService.getRealInstrumentEntities(Market.CRYPTO)).thenReturn(List.of(instruments));
 	}
 
-	// --- σ 표본 — rolling-window-minutes 간격의 "겹치지 않는" 구간으로만 만든다 (§탐지 알고리즘(코인)) ---
-
 	@Nested
 	@DisplayName("σ 표본은 겹치지 않는 구간으로만 만들어진다")
 	class NonOverlappingSample {
 
-		// sigma-lookback-hours=1·rolling-window-minutes=5이면 겹치지 않는 구간은 정확히 12개뿐이다.
-		// 매 분 슬라이딩이었다면(1분 간격 스냅샷이 61개나 있어 최대 56개 표본을 만들 수 있다) min-sample-count=13도
-		// 넘겼을 것이다 — 겹치지 않는 구성이라 정확히 12개에서 막혀 카드가 생기지 않는다.
 		@Test
 		@DisplayName("1분 간격 스냅샷이 충분해도 표본은 세그먼트 수(12개)를 넘지 못해 min-sample-count에 막힌다")
 		void samplePlateausAtSegmentCountEvenWithDenseOneMinuteSnapshots() {
@@ -160,22 +141,17 @@ class CryptoPriceMoveWatcherTest {
 			givenInstruments(INSTRUMENT);
 			stubNoCooldownNoLimit();
 
-			// minSampleCount=13 — 겹치지 않는 구간(12개)보다 딱 하나 많다. 슬라이딩이었다면(최대 56개) 통과했을 값이다.
 			watcher(properties(30, 6, 5, 1, 13, 35), detectionProperties(2.5), fixedClockAt(NOW)).watch();
 
 			verify(priceMoveCardWriter, never()).persist(any(), any());
 			verify(newsMatcher, never()).matchCrypto(any(), any());
 		}
 
-		// 겹치지 않는 구성일 때만 나오는 정확한 수치를 손으로 다시 계산해 대조한다(스크래치패드 시뮬레이터, 값은
-		// CryptoPriceMoveWatcherTest 클래스 주석의 방침과 같다). 매 분 슬라이딩으로 계산했다면 detectionScore가
-		// 3.4754가 되어(56개 표본, 그중 5개가 0.12) 이 단정과 달라진다 — 반대 값도 함께 확인해 어긋남을 못박는다.
 		@Test
 		@DisplayName("겹치지 않는 구성으로 계산한 정확한 σ·changeRate·detectionScore로 카드를 만든다")
 		void computesExactNonOverlappingSigmaAndScore() {
 			double p = 100.0;
 			double q = 100.0 * Math.exp(0.12);
-			// ago 0~4분은 점프 이후(q), ago 5~60분은 점프 이전(p) — 점프는 ago 4·5 사이 단 한 번이다.
 			List<PriceSnapshotDto> denseOneMinuteSnapshots = new ArrayList<>();
 			for (int agoMinutes = 0; agoMinutes <= 60; agoMinutes++) {
 				denseOneMinuteSnapshots.add(snapshot(NOW.minusMinutes(agoMinutes), agoMinutes < 5 ? q : p));
@@ -186,10 +162,6 @@ class CryptoPriceMoveWatcherTest {
 			stubNoCooldownNoLimit();
 			stubOneMatchedSource(NOW);
 
-			// 겹치지 않는 12개 구간(각 5분): i=0(ago0~5)만 ln(q/p)=0.12, 나머지 11개는 0이다.
-			// mean=0.01, Σ(x-mean)^2=11*0.01^2+0.11^2=0.0132, σ=sqrt(0.0132/11)=0.034641016...
-			// score=0.12/σ=3.464101615... → scale 4 HALF_UP = 3.4641
-			// changeRate=expm1(0.12)=0.127496851... → scale 6 HALF_UP = 0.127497
 			watcher(properties(30, 6, 5, 1, 12, 35), detectionProperties(2.5), fixedClockAt(NOW)).watch();
 
 			ArgumentCaptor<PriceMoveEvent> captor = ArgumentCaptor.forClass(PriceMoveEvent.class);
@@ -197,16 +169,12 @@ class CryptoPriceMoveWatcherTest {
 			PriceMoveEvent card = captor.getValue();
 			assertThat(card.getChangeRate()).isEqualByComparingTo("0.127497");
 			assertThat(card.getDetectionScore()).isEqualByComparingTo("3.4641");
-			// 슬라이딩이었다면 나왔을 값과 다르다는 것도 함께 못박는다 — 우연히 같은 값이 나와 이 단정이
-			// 무력화되지 않게 한다.
 			assertThat(card.getDetectionScore()).isNotEqualByComparingTo("3.4754");
 		}
 
-		// 각 구간도 양 끝 스냅샷이 있을 때만 표본으로 만든다 — 한쪽이라도 없으면 그 구간은 건너뛴다.
 		@Test
 		@DisplayName("구간 한쪽 끝 스냅샷이 없으면 그 구간은 표본에서 빠진다")
 		void skipsSegmentsMissingEitherEndpoint() {
-			// ago 0·5(최근 구간)만 있고 나머지 세그먼트 경계(10,15,...,60)는 전부 없다 — 표본은 1개뿐이다.
 			List<PriceSnapshotDto> sparse = List.of(snapshot(NOW, 110), snapshot(NOW.minusMinutes(5), 100));
 			when(cryptoPriceSnapshotService.getSnapshots(eq("BTC"), any(), any())).thenReturn(sparse);
 			givenInstruments(INSTRUMENT);
@@ -217,8 +185,6 @@ class CryptoPriceMoveWatcherTest {
 			verify(priceMoveCardWriter, never()).persist(any(), any());
 		}
 	}
-
-	// --- lookback 경계 — 조회 창을 [now - sigma-lookback-hours, now]로 정확히 요청한다 ---
 
 	@Nested
 	@DisplayName("lookback 경계")
@@ -237,8 +203,6 @@ class CryptoPriceMoveWatcherTest {
 		}
 	}
 
-	// --- 표본 부족(기동 직후)과 σ=0(가격 불변) — 둘 다 조용히 종료하지만 원인이 다르다 ---
-
 	@Nested
 	@DisplayName("표본 부족과 σ=0을 구분한다")
 	class InsufficientSampleVsZeroSigma {
@@ -246,7 +210,6 @@ class CryptoPriceMoveWatcherTest {
 		@Test
 		@DisplayName("표본이 min-sample-count 미만이면(기동 직후) 예외 없이 카드를 만들지 않는다")
 		void skipsSilentlyWhenSampleCountIsBelowMinimum() {
-			// ago 0,5,10,15만 있고 그 뒤(20~60)는 없다 — 겹치지 않는 구간 3개(0-5,5-10,10-15)만 만들어진다.
 			List<PriceSnapshotDto> partial = List.of(
 				snapshot(NOW, 110),
 				snapshot(NOW.minusMinutes(5), 105),
@@ -256,7 +219,6 @@ class CryptoPriceMoveWatcherTest {
 			givenInstruments(INSTRUMENT);
 			stubNoCooldownNoLimit();
 
-			// minSampleCount=12인데 표본은 3개뿐이다.
 			watcher(properties(30, 6, 5, 1, 12, 35), detectionProperties(2.5), fixedClockAt(NOW)).watch();
 
 			verify(priceMoveCardWriter, never()).persist(any(), any());
@@ -274,15 +236,12 @@ class CryptoPriceMoveWatcherTest {
 			givenInstruments(INSTRUMENT);
 			stubNoCooldownNoLimit();
 
-			// minSampleCount=12 — 표본 12개를 정확히 채우지만 전부 동일가라 σ=0이다.
 			watcher(properties(30, 6, 5, 1, 12, 35), detectionProperties(2.5), fixedClockAt(NOW)).watch();
 
 			verify(priceMoveCardWriter, never()).persist(any(), any());
 			verify(newsMatcher, never()).matchCrypto(any(), any());
 		}
 	}
-
-	// --- |r5| / σ24 < k 종료 ---
 
 	@Nested
 	@DisplayName("z-score-k 미달 종료")
@@ -304,7 +263,6 @@ class CryptoPriceMoveWatcherTest {
 			givenInstruments(INSTRUMENT);
 			stubNoCooldownNoLimit();
 
-			// 이 픽스처의 score는 약 3.4641이다(위 계산 참고). k=10으로 두면 항상 미달이다.
 			watcher(properties(30, 6, 5, 1, 12, 35), detectionProperties(10.0), fixedClockAt(NOW)).watch();
 
 			verify(priceMoveCardWriter, never()).persist(any(), any());
@@ -325,8 +283,6 @@ class CryptoPriceMoveWatcherTest {
 			verify(priceMoveCardWriter).persist(any(), any());
 		}
 	}
-
-	// --- 쿨다운 ---
 
 	@Nested
 	@DisplayName("쿨다운")
@@ -354,7 +310,6 @@ class CryptoPriceMoveWatcherTest {
 			when(priceMoveEventRepository.countByInstrumentIdAndMarketAndOriginTradeDate(any(), any(), any()))
 				.thenReturn(0L);
 
-			// cooldown-minutes=30인데 마지막 카드가 29분 전이다 — 쿨다운 이내다.
 			watcher(properties(30, 6, 5, 1, 12, 35), detectionProperties(2.5), fixedClockAt(NOW)).watch();
 
 			verify(priceMoveCardWriter, never()).persist(any(), any());
@@ -381,8 +336,6 @@ class CryptoPriceMoveWatcherTest {
 		}
 	}
 
-	// --- 일일 상한 ---
-
 	@Nested
 	@DisplayName("일일 상한")
 	class DailyLimit {
@@ -406,7 +359,6 @@ class CryptoPriceMoveWatcherTest {
 			when(priceMoveEventRepository.countByInstrumentIdAndMarketAndOriginTradeDate(
 				INSTRUMENT.getId(), Market.CRYPTO, NOW.toLocalDate())).thenReturn(6L);
 
-			// daily-limit=6이고 오늘 이미 6건이다.
 			watcher(properties(30, 6, 5, 1, 12, 35), detectionProperties(2.5), fixedClockAt(NOW)).watch();
 
 			verify(priceMoveCardWriter, never()).persist(any(), any());
@@ -427,8 +379,6 @@ class CryptoPriceMoveWatcherTest {
 			verify(priceMoveCardWriter).persist(any(), any());
 		}
 	}
-
-	// --- 근거 매칭 0건이면 카드 미생성 ---
 
 	@Nested
 	@DisplayName("근거 매칭")
@@ -472,8 +422,6 @@ class CryptoPriceMoveWatcherTest {
 			verify(newsCollectionService, never()).collectForInstrument(any());
 		}
 	}
-
-	// --- 온디맨드 수집 — 첫 매칭이 비면 수집 후 1회만 재매칭한다 (ADR-0017, tasks-285.md 항목 3) ---
 
 	@Nested
 	@DisplayName("온디맨드 수집")
@@ -521,8 +469,6 @@ class CryptoPriceMoveWatcherTest {
 		}
 	}
 
-	// --- 코인 감시 락 획득 실패 — 근거 매칭·서술·저장 전부 스킵 (ADR-0014, tasks-244.md 항목 3) ---
-
 	@Nested
 	@DisplayName("코인 감시 락 획득 실패")
 	class WatchLockAcquisitionFailure {
@@ -536,7 +482,6 @@ class CryptoPriceMoveWatcherTest {
 			}
 			when(cryptoPriceSnapshotService.getSnapshots(eq("BTC"), any(), any())).thenReturn(fixture);
 			givenInstruments(INSTRUMENT);
-			// 다른 인스턴스가 이미 이 종목을 처리 중인 상황을 흉내낸다 — z-score 게이트는 통과했지만 락을 못 얻는다.
 			when(cryptoWatchLock.tryLock(INSTRUMENT.getId())).thenReturn(Optional.empty());
 
 			watcher(properties(30, 6, 5, 1, 12, 35), detectionProperties(2.5), fixedClockAt(NOW)).watch();
@@ -549,12 +494,9 @@ class CryptoPriceMoveWatcherTest {
 			verify(newsCollectionService, never()).collectForInstrument(any());
 			verify(narrativeService, never()).resolvePriceMoveNarrative(any());
 			verify(priceMoveCardWriter, never()).persist(any(), any());
-			// 획득하지 못한 락은 해제할 대상이 없다 — unlock이 호출되면 안 된다.
 			verify(cryptoWatchLock, never()).unlock(any(), any());
 		}
 	}
-
-	// --- 락 해제 보장 — 정상 종료·예외 어느 경로든 finally에서 반드시 unlock된다 (PR #254 리뷰 [권장 4]) ---
 
 	@Nested
 	@DisplayName("락 해제 보장")
@@ -582,8 +524,6 @@ class CryptoPriceMoveWatcherTest {
 			verify(cryptoWatchLock).unlock(INSTRUMENT.getId(), "test-lock-token");
 		}
 
-		// finally 블록이 예외 경로도 커버하는지 — 락 획득 이후 아무 지점에서나 예외가 나도 unlock은 호출돼야
-		// 한다. watch()의 종목별 try/catch(FailureIsolation)가 이 예외를 삼키므로 배치 자체는 죽지 않는다.
 		@Test
 		@DisplayName("근거 매칭이 예외를 던져도 finally에서 unlock이 호출된다")
 		void unlocksEvenWhenNewsMatcherThrowsAfterLockIsAcquired() {
@@ -601,8 +541,6 @@ class CryptoPriceMoveWatcherTest {
 			verify(cryptoWatchLock).unlock(INSTRUMENT.getId(), "test-lock-token");
 		}
 
-		// 첫 매칭이 비어 온디맨드 수집을 시도하는데 그 수집 자체가 예외를 던지는 경로 — finally의 unlock은
-		// 여전히 호출돼야 한다.
 		@Test
 		@DisplayName("온디맨드 수집이 예외를 던져도 finally에서 unlock이 호출된다")
 		void unlocksEvenWhenOnDemandCollectionThrows() {
@@ -621,8 +559,6 @@ class CryptoPriceMoveWatcherTest {
 			verify(cryptoWatchLock).unlock(INSTRUMENT.getId(), "test-lock-token");
 		}
 	}
-
-	// --- 종목 하나 실패해도 나머지는 계속한다 ---
 
 	@Nested
 	@DisplayName("종목별 실패 격리")
@@ -646,8 +582,6 @@ class CryptoPriceMoveWatcherTest {
 			verify(cryptoPriceSnapshotService).getSnapshots(eq("XRP"), any(), any());
 		}
 	}
-
-	// --- 함정 — 자정을 넘긴 카드 (§C-9) ---
 
 	@Nested
 	@DisplayName("자정을 넘긴 카드")
@@ -676,14 +610,10 @@ class CryptoPriceMoveWatcherTest {
 			verify(priceMoveCardWriter).persist(captor.capture(), any());
 			PriceMoveEvent card = captor.getValue();
 			assertThat(card.getOccurredAt()).isEqualTo(JUST_AFTER_MIDNIGHT);
-			// 구간이 시작된 전날(8/3)이 아니라 탐지 시각의 날짜(8/4)다 — 자정 직후 카드가 전날 몫으로 새지 않는다.
 			assertThat(card.getOriginTradeDate()).isEqualTo(java.time.LocalDate.of(2026, 8, 4));
 			assertThat(card.getOriginTradeDate()).isNotEqualTo(java.time.LocalDate.of(2026, 8, 3));
 		}
 
-		// lookback 시작(now - sigma-lookback-hours)이 전날로 넘어가도 windowStart <= windowEnd가 그대로
-		// 유지되는지 — LocalDateTime 뺄셈은 자정과 무관하게 항상 시간 순서를 지킨다. 여기서는 실제로 넘어간
-		// 값(전날 23시)이 그대로 협력자에 전달되는지를 못박아 회귀를 잡는다.
 		@Test
 		@DisplayName("lookback 시작이 전날로 넘어가도 now보다 항상 앞선 시각으로 정확히 전달된다")
 		void lookbackStartCrossesMidnightButStaysBeforeNow() {
@@ -699,8 +629,6 @@ class CryptoPriceMoveWatcherTest {
 			assertThat(expectedLookbackStart).isBefore(JUST_AFTER_MIDNIGHT);
 		}
 
-		// windowStart(LocalTime)가 windowEnd(LocalTime)보다 커지는(23:58 > 00:03) 상황에서도 프롬프트의
-		// windowMinutes는 별도로 넘겨 구간 길이를 다시 계산하지 않는다는 설계를 지킨다(PriceMovePromptDto 주석).
 		@Test
 		@DisplayName("자정을 넘겨도 프롬프트의 windowMinutes가 절대 시각 차가 아니라 설정값 그대로 전달된다")
 		void promptCarriesConfiguredWindowMinutesAcrossMidnight() {
@@ -728,8 +656,6 @@ class CryptoPriceMoveWatcherTest {
 		}
 	}
 
-	// changeRate·detectionScore의 스케일이 실제로 컬럼 정의(§C-8)와 같은지 — 반올림 규칙이 다르면 저장 단계에서
-	// 값이 조용히 달라진다.
 	@Test
 	@DisplayName("저장되는 changeRate·detectionScore는 각각 scale 6·4로 HALF_UP 반올림된다")
 	void roundsChangeRateAndDetectionScoreToTheirColumnScales() {
@@ -752,21 +678,12 @@ class CryptoPriceMoveWatcherTest {
 		assertThat(card.getChangeRate().setScale(6, RoundingMode.HALF_UP)).isEqualTo(card.getChangeRate());
 	}
 
-	// 회귀(이슈 #407): 감시 크론이 "30 * * * * *"라 운영의 now는 항상 HH:mm:30.xxxxxx이고 컬럼이 DATETIME(6)라
-	// 그 초가 그대로 저장됐다. 그런데 이 값을 읽는 두 계산이 규칙이 달라 — 본인 값은 양 끝을 분으로 내린 뒤 빼고
-	// (PostSellArithmetic.minutesBetween), 모집단 중앙값은 절대 시각 차를 절삭한다(HolderPopulationQueryService)
-	// — 매도 초가 30 미만이면 같은 화면의 두 숫자가 항상 1분 어긋났다.
-	//
-	// 기존 픽스처가 전부 정시(NOW = 10:00)라 이 부류는 구조적으로 잡히지 않는다. 그래서 여기서만 초를 붙인다.
 	@Nested
 	@DisplayName("카드 시각의 분 경계 정렬")
 	class OccurredAtMinuteBoundary {
 
 		private static final LocalDateTime CRON_NOW = LocalDateTime.of(2026, 8, 5, 10, 0, 30, 123_456_000);
 
-		// 다른 중첩 클래스의 픽스처와 달리 스냅샷을 CRON_NOW 기준으로 만든다. 정시 픽스처를 그대로 쓰면
-		// nearest(09:55:30)가 09:55와 09:56 사이 동률이 되어 급등 구간의 어느 쪽을 집는지가 갈리고, 탐지 자체가
-		// 성립하지 않아 이 테스트가 "저장 시각"이 아니라 "탐지 성립"을 재게 된다.
 		private List<PriceSnapshotDto> jumpFixture() {
 			List<PriceSnapshotDto> fixture = new ArrayList<>();
 			for (int agoMinutes = 0; agoMinutes <= 60; agoMinutes++) {
@@ -790,7 +707,6 @@ class CryptoPriceMoveWatcherTest {
 			verify(priceMoveCardWriter).persist(captor.capture(), any());
 			PriceMoveEvent card = captor.getValue();
 			assertThat(card.getOccurredAt()).isEqualTo(LocalDateTime.of(2026, 8, 5, 10, 0, 0));
-			// createdAt까지 함께 내리면 "언제 탐지됐는가"라는 다른 사실이 사라진다 — 절삭 대상은 occurredAt뿐이다.
 			assertThat(card.getCreatedAt()).isEqualTo(CRON_NOW);
 		}
 	}

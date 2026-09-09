@@ -1,4 +1,3 @@
-// 댓글 생성 서비스의 연관관계, 고정 시각, 실패 시 부수 효과를 검증하는 단위 테스트다.
 package com.finplay.api.domain.community.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -192,7 +191,6 @@ class PostCommentServiceTest {
 		verify(commentRepository, never()).save(any());
 	}
 
-	// 이슈 #277 / PR #331 리뷰 참고 사항 #2: tombstone된 부모에는 새 대댓글을 남길 수 없다.
 	@Test
 	void createCommentThrowsValidationErrorWhenParentCommentIsTombstoned() {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
@@ -214,7 +212,6 @@ class PostCommentServiceTest {
 		verify(commentRepository, never()).save(any());
 	}
 
-	// 대조 케이스: tombstone되지 않은 정상 부모에는 여전히 답글을 남길 수 있어야 한다.
 	@Test
 	void createCommentSavesReplyWhenParentCommentIsNotTombstoned() {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
@@ -237,8 +234,6 @@ class PostCommentServiceTest {
 		verify(commentRepository).save(any(PostComment.class));
 	}
 
-	// 이슈 #277: 최상위 댓글(parentComment == null)은 하드 삭제 대신 tombstone된다 — 자식을 가질 수 있는
-	// 위치이므로 실제로 지우면 자식이 부모를 잃는다. delete()는 호출되지 않아야 한다.
 	@Test
 	void deleteCommentTombstonesTopLevelCommentInsteadOfHardDeletingWhenAuthenticatedUserIsAuthor() {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
@@ -255,7 +250,6 @@ class PostCommentServiceTest {
 		verify(commentRepository, never()).delete(any());
 	}
 
-	// 대댓글(parentComment != null)은 더 하위 자식이 없으므로 기존처럼 하드 삭제를 유지한다.
 	@Test
 	void deleteCommentHardDeletesReplyWhenAuthenticatedUserIsAuthor() {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
@@ -291,7 +285,6 @@ class PostCommentServiceTest {
 		verify(commentRepository, never()).delete(any());
 	}
 
-	// 소유권 규칙 회귀 — 대댓글도 타인이 삭제를 시도하면 403이며, tombstone 도입으로 이 검증이 약해지지 않았는지 확인.
 	@Test
 	void deleteCommentThrowsForbiddenAndDoesNotDeleteReplyWhenAuthenticatedUserIsNotAuthor() {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));

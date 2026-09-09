@@ -1,4 +1,3 @@
-// 가입 인증(EMAIL_VERIFICATION_SECRET)과 비밀번호 재설정(PASSWORD_RESET_SECRET)의 HMAC 시크릿 분리를 고정하는 가드 테스트 (#121 D8)
 package com.finplay.api.domain.auth.verification;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -28,8 +27,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-// 공통화(VerificationCodeHasher) 이후에도 두 경로가 서로 다른 시크릿을 소유하는지 확인한다.
-// 배선이 뒤바뀌면 한쪽 시크릿으로 만든 인증번호가 다른 쪽 확인 경로에서 통과해 버리므로 여기서 잡는다.
 @ExtendWith(MockitoExtension.class)
 class VerificationSecretIsolationTest {
 
@@ -62,7 +59,6 @@ class VerificationSecretIsolationTest {
 	void setUp() {
 		Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
 		VerificationCodePolicy codePolicy = new VerificationCodePolicy();
-		// 프로덕션과 같은 배선 — 가입 인증은 EMAIL_VERIFICATION_SECRET, 재설정은 PASSWORD_RESET_SECRET을 받는다.
 		emailVerificationService = new EmailVerificationService(
 			userRepository, emailVerificationRepository, emailSender, clock, codePolicy, EMAIL_VERIFICATION_SECRET);
 		passwordResetService = new PasswordResetService(
@@ -91,7 +87,6 @@ class VerificationSecretIsolationTest {
 			.extracting(ex -> ((BusinessException)ex).getErrorCode())
 			.isEqualTo(ErrorCode.EMAIL_VERIFICATION_FAILED);
 
-		// 해시 대조 분기까지 도달했다는 증거 — 만료·소비 같은 앞선 분기에서 걸린 것이 아니다.
 		assertThat(verification.getAttemptCount()).isEqualTo(1);
 		assertThat(verification.getVerifiedAt()).isNull();
 	}

@@ -1,4 +1,3 @@
-// feedback.news.*·naver-search.*·dart.* 프로퍼티가 spec 012 §C-1·§C-7대로 바인딩되는지 검증한다.
 package com.finplay.api.domain.feedback.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -9,18 +8,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.scheduling.support.CronExpression;
 
-// 기대값의 정본은 ai/specs/012-ai-feedback/spec.md다 — 크론 2종은 §C-1 표, 자격증명 3종의 키 경로와
-// "시크릿에는 @DefaultValue를 두지 않는다"는 §C-7이다. 구현 파일이 아니라 spec에서 값을 가져와야
-// record와 yml이 함께 틀어지는 드리프트가 잡힌다.
 class NewsCollectionPropertiesTest {
 
-	// §C-1 뉴스 수집 크론 (24시간 30분 간격)
 	private static final String SPEC_COLLECT_CRON = "0 0/30 * * * *";
 
-	// §C-1 공시 수집 크론
 	private static final String SPEC_DISCLOSURE_CRON = "0 0/30 8-20 * * MON-FRI";
 
-	// §C-7 목록 상한 3종. Part C와 Part D의 값이 다른 것이 정상이다 — 브리핑은 시장 전체가 대상이다.
 	private static final int SPEC_MAX_ITEMS_PER_NEWS_LIST = 50;
 
 	private static final int SPEC_MAX_ITEMS_PER_BRIEFING = 30;
@@ -73,8 +66,6 @@ class NewsCollectionPropertiesTest {
 			});
 	}
 
-	// 값이 문자열이라 오타가 나도 바인딩은 통과하고, 실제 실패는 @Scheduled가 붙는 5번 항목의 기동 시점으로
-	// 미뤄진다. 기본값이 파싱 가능한 표현식인지는 여기서 미리 확정한다.
 	@Test
 	@DisplayName("§C-1 크론 2종 기본값이 실제로 파싱 가능한 cron 표현식이다")
 	void specCronDefaultsAreParsableCronExpressions() {
@@ -87,8 +78,6 @@ class NewsCollectionPropertiesTest {
 				.doesNotThrowAnyException();
 		});
 	}
-
-	// --- 근거 매칭 3키 (이슈 #180 항목 3) — §C-2 근거창·§뉴스 매칭 범위 상한 ---
 
 	@Test
 	@DisplayName("feedback.news 설정을 하나도 주지 않아도 §C-7 근거 매칭 3키가 기본값으로 바인딩된다")
@@ -123,7 +112,6 @@ class NewsCollectionPropertiesTest {
 			});
 	}
 
-	// 잘못된 값이 예외도 로그도 없이 "근거 0건 → 카드 미생성"으로 나타나므로 기동 시점에 막는다(FEED-003).
 	@Test
 	@DisplayName("근거창 폭이 음수이면 기동이 실패한다 — 근거창이 항상 비는 상태로 굳지 않는다")
 	void failsWhenMatchWindowWidthIsNegative() {
@@ -151,12 +139,6 @@ class NewsCollectionPropertiesTest {
 				.isInstanceOf(IllegalArgumentException.class)
 				.hasMessageContaining("max-sources-per-card"));
 	}
-
-	// --- 목록 상한 3키 (이슈 #188 항목 1) — §C-7 feedback.news 블록 ---
-	//
-	// 이 축은 record의 @DefaultValue만 본다. yml 쪽 키 경로는 NewsCollectionPropertiesYamlTest가 맡는다.
-	// 두 축이 모두 있어야 "record와 yml이 함께 틀어지는" 드리프트와 "yml 키만 잘못된 경로에 들어간"
-	// 드리프트가 각각 잡힌다.
 
 	@Test
 	@DisplayName("feedback.news 설정을 하나도 주지 않아도 §C-7 목록 상한 3키가 기본값으로 바인딩된다")
@@ -192,9 +174,6 @@ class NewsCollectionPropertiesTest {
 			});
 	}
 
-	// 세 값 모두 0이면 목록이 통째로 비거나 요약 프롬프트에 기사가 하나도 실리지 않는데, 상태값은 그대로
-	// READY라 예외도 로그도 남지 않고 화면만 조용히 빈다(FEED-008). 그래서 기동 시점에 막는다.
-	// 메시지에 키 이름이 들어가야 세 값 중 어느 것이 걸렸는지 로그만 보고 알 수 있다.
 	@Test
 	@DisplayName("max-items-per-news-list가 1 미만이면 기동이 실패한다")
 	void failsWhenMaxItemsPerNewsListIsBelowOne() {
@@ -234,7 +213,6 @@ class NewsCollectionPropertiesTest {
 				.hasMessageContaining("max-items-per-summary"));
 	}
 
-	// §C-7 — 자격증명 3종은 시크릿이라 @DefaultValue를 붙이지 않는다. 코드에 값이 박히면 이 테스트가 깨진다.
 	@Test
 	@DisplayName("자격증명 3종은 설정이 없으면 비어 있다 — 시크릿 기본값이 코드에 박히지 않는다")
 	void credentialsHaveNoBakedInDefaultValue() {
@@ -248,8 +226,6 @@ class NewsCollectionPropertiesTest {
 		});
 	}
 
-	// §C-7이 확정한 키 경로는 feedback.* 밖 최상위다. naver-search 프리픽스를 naver로 되돌리거나
-	// feedback 아래로 옮기면 이 테스트가 먼저 깨진다.
 	@Test
 	@DisplayName("§C-7이 정한 최상위 키 경로로 자격증명 3종이 바인딩된다")
 	void bindsCredentialsFromTopLevelKeyPaths() {
@@ -268,8 +244,6 @@ class NewsCollectionPropertiesTest {
 			});
 	}
 
-	// §외부 API 호출 상세 — 검색 키는 OAuth 로그인 키와 별개 애플리케이션의 값이다. oauth.naver 쪽 키를
-	// 아무리 채워도 검색 프로퍼티는 비어 있어야 한다. 프리픽스를 naver로 바꾸는 순간 이 테스트가 깨진다.
 	@Test
 	@DisplayName("oauth.naver 키를 채워도 네이버 검색 자격증명은 채워지지 않는다")
 	void doesNotReuseOauthNaverCredentials() {

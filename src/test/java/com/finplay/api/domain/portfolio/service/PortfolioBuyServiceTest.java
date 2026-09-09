@@ -1,4 +1,3 @@
-// 매수 체결 결과의 holding·lot 반영 규칙(가중평균 재계산 포함)을 검증하는 단위 테스트다.
 package com.finplay.api.domain.portfolio.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -71,7 +70,6 @@ class PortfolioBuyServiceTest {
 		verify(holdingRepository).save(holdingCaptor.capture());
 		Holding savedHolding = holdingCaptor.getValue();
 		assertThat(savedHolding).isSameAs(existingHolding);
-		// (1주 * 1원 + 2주 * 2원) / 3주 = 5/3 → scale=8, HALF_UP
 		assertThat(savedHolding.getAveragePrice()).isEqualByComparingTo("1.66666667");
 		assertThat(savedHolding.getQuantity()).isEqualByComparingTo("3");
 		assertThat(savedHolding.isActive()).isTrue();
@@ -122,7 +120,6 @@ class PortfolioBuyServiceTest {
 		ArgumentCaptor<HoldingLot> lotCaptor = ArgumentCaptor.forClass(HoldingLot.class);
 		verify(holdingLotRepository).save(lotCaptor.capture());
 		HoldingLot savedLot = lotCaptor.getValue();
-		// lot은 이번 체결 수량만 반영한다 (누적 보유수량이 아님)
 		assertThat(savedLot.getOriginalQuantity()).isEqualByComparingTo("2");
 		assertThat(savedLot.getRemainingQuantity()).isEqualByComparingTo("2");
 	}
@@ -163,8 +160,6 @@ class PortfolioBuyServiceTest {
 
 	@Test
 	void findExistingHoldingsForChunkUpdateDelegatesToRepositoryBulkLockQueryWithoutExtraCall() {
-		// 054-limit-order-fill-bulk-lock: LimitOrderFillService.fillBatch가 HoldingRepository를 직접 주입하지
-		// 않고 이 래퍼만 거치도록 강제하는 ADR-0002 준수용 위임 메서드다 — 별도 가공 없이 그대로 위임하는지만 본다.
 		Account account = testAccount();
 		org.springframework.test.util.ReflectionTestUtils.setField(account, "id", 10L);
 		Instrument instrument = testInstrument();

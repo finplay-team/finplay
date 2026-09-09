@@ -1,4 +1,3 @@
-// 테스트 트랜잭션 없이 실제 HTTP 요청으로 OCO 생성을 돌려 open-in-view=false 경계를 지키는 회귀 테스트다.
 package com.finplay.api.domain.order;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -37,16 +36,6 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 
-/**
- * PR #368 리뷰 차단 1: {@code ExitPlanGeneralPathIntegrationTest}는 클래스에 {@code @Transactional}이 있어
- * 테스트 트랜잭션이 요청 전체를 감싼다 — {@code HoldingService.findHoldingForOwner}가 자신의 {@code
- * @Transactional(readOnly = true)}를 잃고 인라인돼도 세션이 테스트 트랜잭션 덕에 여전히 열려 있어 {@code
- * holding.getInstrument()} 접근이 통과해버린다. 운영은 {@code spring.jpa.open-in-view: false}라 실제로는 각
- * HTTP 요청이 자기 트랜잭션 안에서만 세션을 연다.
- *
- * <p>**이 클래스에 {@code @Transactional}이 없는 것이 존재 이유다** — {@code
- * PostSellFeedbackBoundaryIntegrationTest}와 같은 선례를 따른다. 커밋한 행은 {@code @AfterEach}가 직접 지운다.
- */
 @SpringBootTest
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)
@@ -82,8 +71,6 @@ class ExitPlanGeneralPathOsivBoundaryIntegrationTest {
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
 
-	// saveTick으로 저장한 "price:crypto:{symbol}" 키를 @AfterEach에서 지우려면 심볼을 기억해야 한다(테스트가
-	// cryptos.get(0)의 실제 심볼을 실행 시점에야 알 수 있다) — AccountSummaryIntegrationTest 등 기존 관례.
 	private String cryptoPriceKeyToCleanUp;
 
 	@BeforeEach
@@ -91,11 +78,6 @@ class ExitPlanGeneralPathOsivBoundaryIntegrationTest {
 		priceStore.saveConnectionStatus(FeedConnectionStatus.CONNECTED);
 	}
 
-	// 커밋한 행을 FK 역순으로 지운다 — instrument는 이 테스트가 만들지 않은 기존 종목을 재사용하므로 지우지 않는다.
-	// price:crypto:{symbol} 키도 반드시 지운다 — 지우지 않으면 이 테스트가 심어둔 receivedAt이 다른 테스트가
-	// 같은(공유) 첫 코인 종목에 실제 Clock.now()로 찍는 이후 tick보다 미래로 남아, PriceStore.saveTick의
-	// "과거 틱은 무시" 가드에 걸려 그 테스트의 CryptoPriceUpdatedEvent가 발행되지 않는다(실제로 재현: 이 키를
-	// 지우지 않은 채로 두면 LimitOrderFillIntegrationTest가 PENDING에 멈춰 FILLED 단정에서 실패한다).
 	@AfterEach
 	void tearDown() {
 		if (cryptoPriceKeyToCleanUp != null) {
@@ -116,9 +98,6 @@ class ExitPlanGeneralPathOsivBoundaryIntegrationTest {
 		jdbcTemplate.update("delete from users where email = ?", EMAIL);
 	}
 
-	// HoldingService.findHoldingForOwner의 @Transactional이 사라지거나 instrument를 즉시 로딩하지 않으면,
-	// 테스트 트랜잭션이 없는 이 흐름에서 holding.getInstrument().getMarket() 접근이
-	// LazyInitializationException으로 터져 500 INTERNAL_ERROR가 된다(PR #368 리뷰 차단 1 재현).
 	@Test
 	@DisplayName("테스트 트랜잭션 없이도 holding 조회→시장 검증→생성이 통과한다 — instrument LAZY 접근이 세션 밖에서 안전하다")
 	void createExitPlanSucceedsWithoutATestTransactionWrappingTheLazyInstrumentAccess() throws Exception {

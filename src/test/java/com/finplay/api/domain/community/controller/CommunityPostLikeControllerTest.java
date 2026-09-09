@@ -1,4 +1,3 @@
-// 게시물 좋아요 표시·취소 API의 인증, 상태코드 분기(201/200/204), 예외 응답 계약을 검증하는 WebMvc 슬라이스 테스트다.
 package com.finplay.api.domain.community.controller;
 
 import static org.mockito.Mockito.doNothing;
@@ -115,7 +114,6 @@ class CommunityPostLikeControllerTest {
 		verify(service).unlikePost(9L, USER_ID);
 	}
 
-	// 좋아요한 적 없는 상태에서 취소를 요청해도 서비스는 예외 없이 반환하고(멱등, no-op), 컨트롤러는 동일하게 204를 준다.
 	@Test
 	void unlikePostReturns204WhenNoLikeExistedToCancel() throws Exception {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))

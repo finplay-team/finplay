@@ -1,4 +1,3 @@
-// PasswordResetVerification의 발송 행·거부 행 생성과 즉시 무효화 동작을 검증하는 순수 단위 테스트다.
 package com.finplay.api.domain.auth.entity;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -49,7 +48,6 @@ class PasswordResetVerificationTest {
 		verification.expire(NOW.plusSeconds(70));
 
 		assertThat(verification.getExpiresAt()).isEqualTo(NOW.plusSeconds(70));
-		// expires_at > now 조건에서 빠지려면 만료 시각이 기준 시각보다 뒤여서는 안 된다.
 		assertThat(verification.getExpiresAt()).isBeforeOrEqualTo(NOW.plusSeconds(70));
 	}
 
@@ -91,7 +89,6 @@ class PasswordResetVerificationTest {
 		assertThat(verification.getExpiresAt()).isEqualTo(NOW.plusMinutes(5));
 		assertThat(verification.getLastSentAt()).isEqualTo(NOW);
 		assertThat(verification.getCreatedAt()).isEqualTo(NOW);
-		// 시도 횟수 증가만으로 인증번호가 소비되거나 만료되면 안 된다.
 		assertThat(verification.getConsumedAt()).isNull();
 	}
 

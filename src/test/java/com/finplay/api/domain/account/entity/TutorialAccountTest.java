@@ -1,4 +1,3 @@
-// TutorialAccount의 현금·예약·실현손익 증감과 재시작 리셋을 검증하는 순수 단위 테스트다.
 package com.finplay.api.domain.account.entity;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -201,8 +200,6 @@ class TutorialAccountTest {
 
 	@Test
 	void resetSimultaneouslyClearsCashReservationAndPnlInOneCall() {
-		// 재시작 시나리오: 잔고 소진 + 예약 + 손익 발생 상태에서 reset() 한 번으로 세 값이 모두
-		// 동시에 초기화되는지 확인한다(TUTORIAL-CASH-ISOL-006 — "거래 내역 자체가 리셋된다").
 		TutorialAccount account = TutorialAccount.create(testUser(), Market.CRYPTO, NOW);
 		account.deductCash(6_000_000L);
 		account.reserveCash(1_000_000L);

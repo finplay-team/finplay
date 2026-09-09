@@ -1,4 +1,3 @@
-// 실제 인증 필터와 MySQL을 연결해 게시글 단건 조회 핵심 시나리오를 검증하는 통합 테스트다.
 package com.finplay.api.domain.community;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;

@@ -1,4 +1,3 @@
-// 실제 인증 필터와 MySQL을 연결해 게시글 종목 태그(COM-004) 핵심 시나리오를 검증하는 통합 테스트다.
 package com.finplay.api.domain.community;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -60,17 +59,12 @@ class CommunityPostInstrumentTagIntegrationTest {
 
 	@BeforeEach
 	void removePostsPersistedByOtherIntegrationTests() {
-		// V31: parent_comment_id FK가 ON DELETE RESTRICT라 단일 "delete from post_comments"는
-		// 다른 테스트 컨텍스트가 남긴 부모+자식이 섞여 있으면 행 처리 순서 미보장으로 실패할 수 있다(이슈 #277).
 		jdbcTemplate.update("delete from post_comments where parent_comment_id is not null");
 		jdbcTemplate.update("delete from post_comments");
 		jdbcTemplate.update("delete from community_posts");
 		jdbcTemplate.update("delete from instruments where symbol like 'SYM%'");
 	}
 
-	// 이 클래스가 생성한 종목(symbol 접두사 SYM)만 정리한다 — 시드 데이터는 건드리지 않는다.
-	// @BeforeEach는 다음 테스트 실행 전에만 청소하므로, 스위트의 마지막 테스트 뒤에도 정리되도록 @AfterEach를 둔다
-	// (InstrumentRepositoryTest가 공유 Testcontainers에서 정확한 종목 개수를 기대하기 때문).
 	@AfterEach
 	void removeInstrumentsCreatedByThisTestClass() {
 		jdbcTemplate.update("delete from community_posts");

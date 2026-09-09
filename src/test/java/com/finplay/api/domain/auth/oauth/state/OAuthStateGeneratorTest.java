@@ -1,4 +1,3 @@
-// OAuth state 생성기의 서명 페이로드 형식과 검증 왕복 계약을 검증한다.
 package com.finplay.api.domain.auth.oauth.state;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -26,7 +25,6 @@ import org.junit.jupiter.params.provider.MethodSource;
 class OAuthStateGeneratorTest {
 
 	private static final String SECRET = "test-oauth-state-secret-that-is-at-least-32-bytes";
-	// 실제 STATE_TTL(OAuthStateGenerator, 10분)과 같은 값 — 만료 경계 테스트가 실제 유효기간을 근거로 삼는다.
 	private static final Duration STATE_TTL = Duration.ofMinutes(10);
 	private static final Instant ISSUED_AT = Instant.parse("2026-01-01T00:00:00Z");
 

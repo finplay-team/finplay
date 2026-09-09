@@ -1,10 +1,3 @@
-// PR #452 리뷰 권장 1번: 047 배포 이전 코드로 생성돼 실제 계좌에 현금이 예약된 채로 남아 있는 샌드박스
-// 지정가 매수 PENDING 주문이, 047 배포 이후(V46 적용 완료·isTutorialSample 분기 코드 적용 완료) 체결·취소될
-// 때 실제로 깨지는지를 실제 서비스·MySQL(Testcontainers)로 검증한다. V46은 이제 배포 시점에 이미 존재하는
-// 이런 주문을 정리한다(같은 커밋에서 추가된 후속 정리 로직, TutorialAccountBackfillMigrationTest 참고) —
-// 이 테스트는 그 정리 로직이 없다면 어떤 실패가 나는지를 문서화하는 역할이다. 무언가 다른 경로로(예: 배포
-// 중 구 코드 인스턴스가 만든 주문처럼 V46 적용 이후 새로 유입된 레거시 형태의 주문) 정리되지 않은 채 남으면
-// 이 테스트가 재현하는 실패가 여전히 그대로 발생한다.
 package com.finplay.api.domain.order;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -42,7 +35,6 @@ import org.springframework.test.util.ReflectionTestUtils;
 class TutorialLegacyPendingOrderPostMigrationIntegrationTest {
 
 	private static final LocalDateTime NOW = LocalDateTime.of(2026, 8, 18, 10, 0, 0);
-	// 수량 0.1 * 지정가 1,000,000 = 100,000, 수수료 floor(100,000*0.0005) = 50, 총 예약액 100,050.
 	private static final long RESERVED_CASH = 100_050L;
 
 	@Autowired
@@ -93,8 +85,6 @@ class TutorialLegacyPendingOrderPostMigrationIntegrationTest {
 			.isInstanceOf(IllegalStateException.class)
 			.hasMessageContaining("튜토리얼 계좌에서 예약된 금액보다 큰 금액을 확정할 수 없습니다");
 
-		// 체결이 예외로 중단되며 트랜잭션 전체가 롤백된다 — 실제 계좌 예약은 풀리지 않고 그대로 남는다
-		// (권장 1번이 우려한 "예약이 영구히 묶인다"는 상태 그 자체).
 		assertThat(accountRepository.findById(account.getId()).orElseThrow().getReservedCash())
 			.isEqualTo(RESERVED_CASH);
 		assertThat(orderRepository.findById(legacyOrder.getId()).orElseThrow().getStatus().name())
@@ -118,9 +108,6 @@ class TutorialLegacyPendingOrderPostMigrationIntegrationTest {
 			.isEqualTo("PENDING");
 	}
 
-	// 047 배포 이전 PracticeLimitOrderCreationService/LimitOrderCreationService가 실제 Account에
-	// reserveCash를 걸고 만든 PENDING 지정가 매수 주문을 그대로 재현한다 — 생성 서비스를 거치지 않고
-	// 계좌·주문을 직접 심어, tutorial_accounts 행이 아직 하나도 없는 배포 직후 상태를 흉내낸다.
 	private Order seedLegacyPendingBuyOrder(User user, Account account, Instrument instrument) {
 		account.reserveCash(RESERVED_CASH);
 		accountRepository.saveAndFlush(account);

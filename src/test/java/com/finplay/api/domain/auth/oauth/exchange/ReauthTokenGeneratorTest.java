@@ -1,4 +1,3 @@
-// 재인증 토큰 원문 생성기의 바이트 길이·인코딩 형식·유일성을 단위 테스트한다.
 package com.finplay.api.domain.auth.oauth.exchange;
 
 import static org.assertj.core.api.Assertions.assertThat;

@@ -1,4 +1,3 @@
-// 카카오 callback 공급자의 token·사용자 HTTP 계약과 오류 정규화를 Mock HTTP로 검증한다.
 package com.finplay.api.domain.auth.oauth.provider;
 
 import static org.assertj.core.api.Assertions.assertThat;

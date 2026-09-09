@@ -1,4 +1,3 @@
-// RankingService.refreshScore가 예외를 던져도 리스너 밖으로 전파되지 않는지 검증하는 단위 테스트다.
 package com.finplay.api.domain.ranking.listener;
 
 import static org.assertj.core.api.Assertions.assertThatCode;

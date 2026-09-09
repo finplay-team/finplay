@@ -1,4 +1,3 @@
-// 실제 MySQL에서 stock_candles 저장·조회와 UNIQUE(instrument_id, trading_date, candle_time) 제약을 검증하는 JPA 슬라이스 테스트다.
 package com.finplay.api.domain.market.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -42,7 +41,6 @@ class StockCandleRepositoryTest {
 
 	@BeforeEach
 	void setUp() {
-		// V7 시드(005930 등)와 겹치지 않는 테스트 전용 심볼을 사용한다 — UNIQUE(symbol) 충돌 방지.
 		instrumentA = instrumentRepository.save(Instrument.create(
 			Market.STOCK, "TEST001", "테스트종목A", new BigDecimal("100"), 70000, true, LocalDateTime.now()));
 		instrumentB = instrumentRepository.save(Instrument.create(
@@ -111,9 +109,7 @@ class StockCandleRepositoryTest {
 		stockCandleRepository.save(newCandle(instrumentA, TRADING_DATE, LocalTime.of(9, 2), "71400"));
 		stockCandleRepository.save(newCandle(instrumentA, TRADING_DATE, LocalTime.of(9, 0), "71200"));
 		stockCandleRepository.save(newCandle(instrumentA, TRADING_DATE, LocalTime.of(9, 1), "71300"));
-		// 다른 거래일 — 결과에서 제외되어야 함
 		stockCandleRepository.save(newCandle(instrumentA, OTHER_TRADING_DATE, LocalTime.of(9, 0), "80000"));
-		// 다른 종목, 같은 거래일 — 결과에서 제외되어야 함
 		stockCandleRepository.save(newCandle(instrumentB, TRADING_DATE, LocalTime.of(9, 0), "90000"));
 
 		List<StockCandle> candles = stockCandleRepository.findByInstrumentIdAndTradingDateOrderByCandleTimeAsc(
@@ -167,7 +163,6 @@ class StockCandleRepositoryTest {
 		stockCandleRepository.save(newCandle(instrumentA, TRADING_DATE, LocalTime.of(9, 1), "71300"));
 		stockCandleRepository.save(newCandle(instrumentA, TRADING_DATE, LocalTime.of(9, 2), "71400"));
 
-		// 09:01:30 시점에는 아직 09:02 분봉이 마감되지 않았으므로 09:01 분봉이 "마감된 최신 분봉"이어야 한다.
 		Optional<StockCandle> latestAsOf = stockCandleRepository
 			.findFirstByInstrumentIdAndTradingDateAndCandleTimeLessThanEqualOrderByCandleTimeDesc(
 				instrumentA.getId(), TRADING_DATE, LocalTime.of(9, 1, 30));
@@ -201,10 +196,6 @@ class StockCandleRepositoryTest {
 		assertThat(exact.get().getCandleTime()).isEqualTo(LocalTime.of(9, 1));
 	}
 
-	// --- 직전 거래일 마지막 분봉 조회(findFirstByInstrumentIdAndTradingDateOrderByCandleTimeDesc, 이슈 #180) ---
-
-	// 마지막 분봉을 15:30이 아닌 시각에 둔다 — 리터럴 15:30으로 찾는 구현이 통과하지 못하게 하는 것이
-	// 이 파인더를 신설한 이유다(spec 012 §C-2-1).
 	@Test
 	void findFirstByCandleTimeDescReturnsTheLastCandleOfTheDayEvenWhenItIsNotAtHalfPastThree() {
 		stockCandleRepository.save(newCandle(instrumentA, TRADING_DATE, LocalTime.of(9, 0), "71200"));
@@ -233,7 +224,6 @@ class StockCandleRepositoryTest {
 	@Test
 	void findFirstByCandleTimeDescDoesNotLookAtOtherInstrumentsLaterCandle() {
 		stockCandleRepository.save(newCandle(instrumentA, TRADING_DATE, LocalTime.of(9, 0), "71200"));
-		// 다른 종목이 더 늦은 분봉을 갖고 있어도 instrumentA의 마지막 분봉이 나와야 한다.
 		stockCandleRepository.save(newCandle(instrumentB, TRADING_DATE, LocalTime.of(15, 29), "99000"));
 
 		Optional<StockCandle> last = stockCandleRepository
@@ -243,16 +233,12 @@ class StockCandleRepositoryTest {
 		assertThat(last.get().getCandleTime()).isEqualTo(LocalTime.of(9, 0));
 	}
 
-	// --- 캔들 API 시각 범위 조회(findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc) ---
-
 	@Test
 	void findByCandleTimeBetweenReturnsOnlyCandlesWithinRangeOrderedByTimeAscending() {
 		stockCandleRepository.save(newCandle(instrumentA, TRADING_DATE, LocalTime.of(9, 2), "71400"));
 		stockCandleRepository.save(newCandle(instrumentA, TRADING_DATE, LocalTime.of(9, 0), "71200"));
 		stockCandleRepository.save(newCandle(instrumentA, TRADING_DATE, LocalTime.of(9, 1), "71300"));
-		// 범위 밖(이전) — 결과에서 제외되어야 함
 		stockCandleRepository.save(newCandle(instrumentA, TRADING_DATE, LocalTime.of(8, 59), "71100"));
-		// 범위 밖(이후) — 결과에서 제외되어야 함
 		stockCandleRepository.save(newCandle(instrumentA, TRADING_DATE, LocalTime.of(9, 3), "71500"));
 
 		List<StockCandle> candles = stockCandleRepository
@@ -282,10 +268,6 @@ class StockCandleRepositoryTest {
 		stockCandleRepository.save(newCandle(instrumentA, OTHER_TRADING_DATE, LocalTime.of(9, 0), "80000"));
 		stockCandleRepository.save(newCandle(instrumentB, TRADING_DATE, LocalTime.of(9, 0), "90000"));
 
-		// LocalTime.MAX(23:59:59.999999999)는 MySQL TIME(0) 컬럼 바인딩 시 드라이버가 반올림해 00:00:00으로
-		// 넘어가 버리는 것을 확인했다(진단용 프로브로 재현) — 실제 운영 코드(StockReplayService.getRevealedCandles)는
-		// requestedEnd(LocalTime.MAX)를 항상 공개 컷오프 값으로 치환하므로 이 값을 그대로 바인딩하지 않는다.
-		// 여기서는 하루 범위를 안전하게 표현하는 23:59:59를 상한으로 사용한다.
 		List<StockCandle> candles = stockCandleRepository
 			.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
 				instrumentA.getId(), TRADING_DATE, LocalTime.MIN, LocalTime.of(23, 59, 59));
@@ -305,8 +287,6 @@ class StockCandleRepositoryTest {
 		assertThat(candles).isEmpty();
 	}
 
-	// --- StockReplaySessionScheduler 전용 조회(existsByTradingDate) ---
-
 	@Test
 	void existsByTradingDateReturnsTrueWhenAnyInstrumentHasACandleOnThatDate() {
 		stockCandleRepository.save(newCandle(instrumentA, TRADING_DATE, LocalTime.of(9, 0), "71200"));
@@ -316,7 +296,6 @@ class StockCandleRepositoryTest {
 
 	@Test
 	void existsByTradingDateIsTrueRegardlessOfWhichInstrumentHoldsTheCandle() {
-		// 종목 무관 조회임을 확인 — instrumentB에만 저장된 캔들로도 true여야 한다.
 		stockCandleRepository.save(newCandle(instrumentB, TRADING_DATE, LocalTime.of(9, 0), "90000"));
 
 		assertThat(stockCandleRepository.existsByTradingDate(TRADING_DATE)).isTrue();
@@ -328,8 +307,6 @@ class StockCandleRepositoryTest {
 
 		assertThat(stockCandleRepository.existsByTradingDate(TRADING_DATE)).isFalse();
 	}
-
-	// --- 집계 캔들(1d·1w·1M) 전용 거래일 범위 조회(findByInstrumentIdAndTradingDateBetweenOrderByTradingDateAscCandleTimeAsc, 이슈 #143) ---
 
 	@Test
 	void findByTradingDateBetweenReturnsCandlesAcrossMultipleTradingDatesOrderedByDateThenTimeAscending() {
@@ -366,9 +343,6 @@ class StockCandleRepositoryTest {
 
 	@Test
 	void findByTradingDateBetweenExcludesDatesOutsideRangeIncludingAFutureTradingDateBeyondTo() {
-		// 방어 케이스(spec.md "공개 상한 — 미공개 데이터 유출 금지") — 재생거래일 이후로 잘못 저장된 미래
-		// trading_date 행이 실제로 있어도, to 상한을 넘는 한 이 쿼리는 그 행을 절대 반환하지 않아야 한다.
-		// StockReplayService가 to를 재생거래일로 클램프하는 것과는 별개로 쿼리 자체의 범위 필터링을 실제 MySQL로 검증한다.
 		LocalDate from = LocalDate.of(2026, 7, 20);
 		LocalDate to = LocalDate.of(2026, 7, 22);
 		LocalDate beforeRange = LocalDate.of(2026, 7, 19);
@@ -399,8 +373,6 @@ class StockCandleRepositoryTest {
 		assertThat(candles).allMatch(c -> c.getInstrument().getId().equals(instrumentA.getId()));
 	}
 
-	// --- KisHistoricalCandleCollector 전용 조회(existsByInstrumentIdAndTradingDate) ---
-
 	@Test
 	void existsByInstrumentIdAndTradingDateReturnsTrueWhenThatInstrumentHasACandleOnThatDate() {
 		stockCandleRepository.save(newCandle(instrumentA, TRADING_DATE, LocalTime.of(9, 0), "71200"));
@@ -411,7 +383,6 @@ class StockCandleRepositoryTest {
 
 	@Test
 	void existsByInstrumentIdAndTradingDateReturnsFalseWhenOnlyAnotherInstrumentHasACandleOnThatDate() {
-		// 종목 단위 조회임을 확인 — instrumentB에만 저장된 캔들은 instrumentA 조회에 영향을 주면 안 된다.
 		stockCandleRepository.save(newCandle(instrumentB, TRADING_DATE, LocalTime.of(9, 0), "90000"));
 
 		assertThat(stockCandleRepository.existsByInstrumentIdAndTradingDate(instrumentA.getId(), TRADING_DATE))
@@ -425,9 +396,6 @@ class StockCandleRepositoryTest {
 		assertThat(stockCandleRepository.existsByInstrumentIdAndTradingDate(instrumentA.getId(), TRADING_DATE))
 			.isFalse();
 	}
-
-	// --- 집계 조회 하한 좁히기 전용 DISTINCT 거래일 조회
-	// (findDistinctTradingDateByInstrumentIdAndTradingDateBetweenOrderByTradingDateDesc, 이슈 #155) ---
 
 	@Test
 	void findDistinctTradingDateDedupesMultipleCandlesOnTheSameTradingDate() {
