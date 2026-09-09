@@ -18,7 +18,7 @@ FinPlay 백엔드 API 서버. Spring Boot 4.1 / Java 17 / Gradle(`build.gradle`,
 - 아키텍처와 코드 컨벤션은 `ai/adr/0002-architecture.md`, `docs/conventions/code.md`를 따른다. 브랜치·커밋·PR 형식은 `docs/conventions/git.md`, 이슈·리뷰 운영은 `docs/conventions/team.md`를 따른다.
 - 테스트 수준은 `ai/adr/0003-testing-strategy.md`를 따른다. Mock 성공을 실제 DB·외부 API 검증으로 표현하지 않는다.
 - 엔티티/스키마 변경은 `ai/adr/0004-flyway-migrations.md`에 따라 새 Flyway 마이그레이션을 추가한다. 머지된 마이그레이션은 수정하지 않는다. **파괴적 변경(컬럼·테이블 삭제, 이름 변경, 타입 축소, NOT NULL 승격)은 한 배포에 담지 않고 두 배포로 나눈다** — 자동 배포의 롤백은 앱만 되돌리고 스키마는 되돌리지 않는다 (ADR-0021 §결정 7).
-- 새 Java 소스 파일은 클래스명만으로 책임이 드러나면 첫 줄 역할 주석을 강제하지 않는다. 이름만으로 파악하기 어려운 경우에만 한 줄 한국어 주석으로 보충한다. 주석 작성 전반의 기준(유지·축약·삭제 대상)은 `docs/conventions/code.md`의 "주석 작성 원칙"이 정본이다.
+- Java 소스에는 주석을 작성·유지하지 않는다(`//`, 블록, Javadoc 전부). 정본은 `docs/conventions/code.md`의 "주석 작성 원칙".
 - controller를 추가·변경하면 `ai/api-routes.md`(라우트 목록)와 `docs/api/`의 해당 도메인 파일(계약 상세)을 같은 작업에서 함께 동기화한다.
 - 요구사항 ID의 구현 상태를 바꾸면(미착수 → 완료, 새 엔드포인트 제공 등) `ai/prd.md` §3 "구현 현황" 행도 같은 작업에서 갱신하고 근거 칸에 PR 번호를 적는다. 기능 제공 범위가 그대로인 리팩터링·테스트·문서 변경은 대상이 아니다.
 
