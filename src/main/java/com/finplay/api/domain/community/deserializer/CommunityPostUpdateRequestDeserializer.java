@@ -1,4 +1,3 @@
-// CommunityPostUpdateRequest 전용 역직렬화기 — instrumentId 키의 부재와 명시적 null을 구분하기 위해 JsonNode를 직접 읽는다
 package com.finplay.api.domain.community.deserializer;
 
 import com.finplay.api.domain.community.dto.request.CommunityPostUpdateRequest;

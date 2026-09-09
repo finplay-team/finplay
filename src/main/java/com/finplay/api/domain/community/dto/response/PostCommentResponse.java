@@ -1,4 +1,3 @@
-// 생성된 커뮤니티 게시글 댓글의 공개 필드만 반환하는 응답 DTO
 package com.finplay.api.domain.community.dto.response;
 
 import com.finplay.api.domain.community.entity.PostComment;

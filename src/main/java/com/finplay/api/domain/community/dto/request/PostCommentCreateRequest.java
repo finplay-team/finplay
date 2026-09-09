@@ -1,4 +1,3 @@
-// 커뮤니티 게시글 댓글 생성 요청의 본문과 입력 제한을 정의하는 DTO
 package com.finplay.api.domain.community.dto.request;
 
 import jakarta.validation.constraints.NotBlank;

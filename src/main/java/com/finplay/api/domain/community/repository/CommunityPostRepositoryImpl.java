@@ -1,4 +1,3 @@
-// 게시물 목록을 작성자와 함께 최신순으로 페이지네이션 조회하는 QueryDSL 구현체
 package com.finplay.api.domain.community.repository;
 
 import com.finplay.api.domain.auth.entity.QUser;

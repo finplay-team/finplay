@@ -1,4 +1,3 @@
-// 게시글과 인증 사용자를 연결해 커뮤니티 댓글을 생성하는 서비스
 package com.finplay.api.domain.community.service;
 
 import com.finplay.api.domain.auth.entity.User;

@@ -1,4 +1,3 @@
-// 회원이 게시물에 표시한 좋아요(회원×게시물 유일)를 표현하는 엔티티
 package com.finplay.api.domain.community.entity;
 
 import com.finplay.api.domain.auth.entity.User;
