@@ -1,4 +1,3 @@
-// 실제 MySQL로 이메일 변경 확인의 성공·재사용·5회초과·만료·재발송무효화·타인요청격리·동시경합 롤백·Refresh Token 폐기를 검증하는 통합 테스트다.
 package com.finplay.api.domain.auth.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -178,7 +177,6 @@ class EmailChangeConfirmIntegrationTest {
 		String newEmail = uniqueEmail("confirm-resend-invalidated-target");
 		String firstCode = sendCode(user.getId(), newEmail);
 		EmailChangeVerification firstRow = latestRow(user.getId(), newEmail);
-		// 60초 재발송 간격 판정은 created_at 기준이므로, 실제 대기 대신 created_at을 뒤로 당겨 창을 지난 것처럼 만든다.
 		jdbcTemplate.update(
 			"update email_change_verifications set created_at = ? where id = ?",
 			LocalDateTime.now(clock).minusSeconds(61),
@@ -211,7 +209,6 @@ class EmailChangeConfirmIntegrationTest {
 		assertThat(userRepository.findById(owner.getId()).orElseThrow().getEmail()).isEqualTo(owner.getEmail());
 		assertThat(userRepository.findById(attacker.getId()).orElseThrow().getEmail()).isEqualTo(attacker.getEmail());
 
-		// 타인의 실패한 시도가 소유자의 인증번호를 소비하지 않았음을 증명 — 소유자는 여전히 같은 코드로 성공해야 한다.
 		MemberResponse response = authService.confirmEmailChange(owner.getId(), newEmail, code);
 		assertThat(response.email()).isEqualTo(newEmail);
 	}
@@ -246,11 +243,8 @@ class EmailChangeConfirmIntegrationTest {
 		assertThat(userRepository.findById(user.getId()).orElseThrow().getEmail()).isEqualTo(user.getEmail());
 	}
 
-	// D2의 가장 중요한 검증 대상: EmailChangeConflictException(depth 0)이 BusinessException에 대한
-	// noRollbackFor(depth 1)보다 우선 매칭되어 인증번호 소비·Refresh Token 폐기가 함께 롤백되는지 확인한다.
 	@Test
 	void confirmEmailChangeConflictWithAlreadyTakenEmailRollsBackConsumptionAndTokenRevocationAtomically() {
-		// 두 회원 모두 아직 아무도 확정하지 않은 같은 새 이메일로 각자 유효한 인증번호를 발급받는다 — 발송 단계는 둘 다 성공해야 한다.
 		User winner = persistEmailUser("confirm-conflict-winner");
 		User loser = persistEmailUser("confirm-conflict-loser");
 		String targetEmail = uniqueEmail("confirm-conflict-target");
@@ -258,10 +252,8 @@ class EmailChangeConfirmIntegrationTest {
 		String loserCode = sendCode(loser.getId(), targetEmail);
 		TokenResponse loserLoginTokens = authService.login(loser.getEmail(), PASSWORD);
 
-		// 승자가 먼저 확인에 성공해 targetEmail을 선점한다.
 		authService.confirmEmailChange(winner.getId(), targetEmail, winnerCode);
 
-		// 패자는 자신의 유효한 인증번호로 확인하지만, saveAndFlush 시점에 유니크 제약과 충돌해 409로 전체 롤백돼야 한다.
 		BusinessException failure = catchThrowableOfType(
 			BusinessException.class,
 			() -> authService.confirmEmailChange(loser.getId(), targetEmail, loserCode));
@@ -310,7 +302,6 @@ class EmailChangeConfirmIntegrationTest {
 		authService.confirmEmailChange(user.getId(), newEmail, code);
 		assertThat(snapshotAccounts(user.getId())).isEqualTo(accountsBefore);
 
-		// 재사용 실패(확인 실패) 경로도 계좌를 건드리지 않는다.
 		catchThrowableOfType(
 			BusinessException.class,
 			() -> authService.confirmEmailChange(user.getId(), newEmail, code));
@@ -347,10 +338,6 @@ class EmailChangeConfirmIntegrationTest {
 		return sentEmail.code();
 	}
 
-	// 확인 대상 최신 행을 상태 단정용으로 읽는다. 확인 경로의 조회 쿼리
-	// (findFirstByUserIdAndNewEmailOrderByCreatedAtDesc)는 @Lock(PESSIMISTIC_WRITE)이라 트랜잭션 밖에서 부르면
-	// MySQL이 read-only 트랜잭션의 SELECT ... FOR UPDATE를 거부한다. 그래서 id는 jdbcTemplate으로 집고
-	// 잠금 없는 findById로 읽는다 (PR #120의 PasswordResetConfirmIntegrationTest와 같은 방식).
 	private EmailChangeVerification latestRow(Long userId, String newEmail) {
 		Long id = jdbcTemplate.queryForObject(
 			"select id from email_change_verifications"

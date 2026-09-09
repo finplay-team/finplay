@@ -1,4 +1,3 @@
-// Fake callback 공급자의 지원 범위와 결정적 fixture 및 인가 실패 계약을 단위 테스트한다.
 package com.finplay.api.domain.auth.oauth.provider;
 
 import static org.assertj.core.api.Assertions.assertThat;

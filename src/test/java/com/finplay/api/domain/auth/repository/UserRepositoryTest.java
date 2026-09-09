@@ -1,4 +1,3 @@
-// users 테이블의 UNIQUE(email·nickname) 제약과 existsByEmail 실동작을 검증하는 슬라이스 테스트 (ADR-0003)
 package com.finplay.api.domain.auth.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;

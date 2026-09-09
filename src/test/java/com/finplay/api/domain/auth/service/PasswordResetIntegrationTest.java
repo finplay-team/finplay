@@ -1,4 +1,3 @@
-// 실제 MySQL로 비밀번호 재설정 발송의 원문 미저장·거부 행 커밋 후 429·발송 실패 동반 롤백·회원 자산 불변을 검증하는 통합 테스트다.
 package com.finplay.api.domain.auth.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -44,7 +43,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 @Import(TestcontainersConfiguration.class)
 class PasswordResetIntegrationTest {
 
-	// build.gradle의 test 태스크가 주입하는 값과 같아야 저장된 해시를 테스트가 재현할 수 있다.
 	private static final String SECRET = "test-password-reset-secret-that-is-at-least-32-bytes";
 	private static final String PASSWORD = "password123";
 
@@ -78,7 +76,6 @@ class PasswordResetIntegrationTest {
 	@Autowired
 	private Clock clock;
 
-	// 발송 실패 롤백을 재현하려면 예외를 던질 수 있어야 한다. 기본 동작은 실제 FakeEmailSender에 위임된다.
 	@MockitoSpyBean
 	private FakeEmailSender fakeEmailSender;
 
@@ -104,7 +101,6 @@ class PasswordResetIntegrationTest {
 		assertThat(stored.getLastSentAt()).isNotNull();
 		assertThat(stored.getConsumedAt()).isNull();
 
-		// 컬럼 단위가 아니라 행 전체를 문자열로 훑어 원문이 어느 컬럼에도 새지 않았음을 확인한다.
 		List<String> rowDumps = jdbcTemplate.queryForList(
 			"select concat_ws('|', id, email, code_hash, attempt_count, expires_at, last_sent_at, consumed_at,"
 				+ " created_at) from password_reset_verifications where email = ?",
@@ -122,7 +118,6 @@ class PasswordResetIntegrationTest {
 			BusinessException.class, () -> passwordResetService.sendResetCode(unknownEmail));
 		assertThat(notFound.getErrorCode()).isEqualTo(ErrorCode.NOT_FOUND);
 
-		// noRollbackFor가 없으면 예외와 함께 이 행이 사라져 열거 시도를 세지 못한다.
 		PasswordResetVerification rejected = onlyRowFor(unknownEmail);
 		assertThat(rejected.getCodeHash()).isNull();
 		assertThat(rejected.getExpiresAt()).isNull();
@@ -132,7 +127,6 @@ class PasswordResetIntegrationTest {
 			BusinessException.class, () -> passwordResetService.sendResetCode(unknownEmail));
 		assertThat(blocked.getErrorCode()).isEqualTo(ErrorCode.TOO_MANY_REQUESTS);
 
-		// 429는 행을 남기지 않으므로 거부 행 하나만 그대로다.
 		assertThat(passwordResetVerificationRepository.countByEmailAndCreatedAtAfter(
 			unknownEmail, LocalDateTime.now(clock).minusDays(1))).isEqualTo(1);
 		assertThat(fakeEmailSender.getSentEmails()).isEmpty();
@@ -143,8 +137,6 @@ class PasswordResetIntegrationTest {
 	void commitsRejectedRowForSocialOnlyAccountAndBlocksFollowUpRequest() {
 		User socialOnly = persistSocialOnlyUser("reset-social");
 
-		// 프로덕션 형태 확인 — 실제 OAuth 가입 경로로 만들어졌고(social_accounts 행 존재),
-		// password_hash는 NULL이 아니지만 재설정할 비밀번호는 없다. 자리표시자 값 자체는 User만 안다.
 		assertThat(socialAccountRepository.findByUserId(socialOnly.getId())).isPresent();
 		assertThat(socialOnly.getPasswordHash()).isNotNull();
 		assertThat(socialOnly.hasPassword()).isFalse();
@@ -168,7 +160,6 @@ class PasswordResetIntegrationTest {
 	void rollsBackSavedRowAndPreviousCodeExpiryWhenSendingFails() {
 		User user = persistEmailUser("reset-rollback");
 		LocalDateTime now = LocalDateTime.now(clock);
-		// 발송 제한(60초)에 걸리지 않도록 2분 전에 만들어진, 아직 유효한 이전 코드를 심는다.
 		PasswordResetVerification previous = passwordResetVerificationRepository.saveAndFlush(
 			PasswordResetVerification.create(user.getEmail(), hmac("111111"), now.plusMinutes(3), now.minusMinutes(2)));
 		LocalDateTime previousExpiresAt = previous.getExpiresAt();
@@ -180,12 +171,9 @@ class PasswordResetIntegrationTest {
 			() -> passwordResetService.sendResetCode(user.getEmail())))
 			.hasMessage("메일 발송 실패");
 
-		// 새 행이 커밋되지 않았어야 한다 — 이전 행 하나만 남는다.
 		List<PasswordResetVerification> rows = rowsFor(user.getEmail());
 		assertThat(rows).hasSize(1);
 		assertThat(rows.get(0).getId()).isEqualTo(previous.getId());
-		// 이전 코드 무효화도 함께 되돌아가 만료 시각이 그대로여야 한다.
-		// DATETIME(6)은 마이크로초로 반올림되므로 1ms 허용 오차로 비교한다 — 무효화되면 2분 이상 당겨지므로 검증력은 유지된다.
 		assertThat(rows.get(0).getExpiresAt()).isCloseTo(previousExpiresAt, within(1, ChronoUnit.MILLIS));
 		assertThat(rows.get(0).getCodeHash()).isEqualTo(hmac("111111"));
 	}
@@ -217,7 +205,6 @@ class PasswordResetIntegrationTest {
 			RefreshToken.create(user, "refresh-token-hash-" + UUID.randomUUID(), now.plusDays(14), now));
 		String storedPasswordHash = user.getPasswordHash();
 
-		// 시나리오에 필요한 회원은 스냅샷 이전에 모두 만들어 둔다 — 이후 증감은 전부 재설정 발송 탓이어야 한다.
 		User socialOnly = persistSocialOnlyUser("reset-invariant-social");
 		User failing = persistEmailUser("reset-invariant-failing");
 
@@ -225,21 +212,16 @@ class PasswordResetIntegrationTest {
 		long accountCount = countAccountsOf(user.getId());
 		long refreshTokenCount = refreshTokenRepository.count();
 
-		// 성공 경로.
 		passwordResetService.sendResetCode(user.getEmail());
-		// 404 경로.
 		catchThrowableOfType(BusinessException.class,
 			() -> passwordResetService.sendResetCode(uniqueEmail("reset-invariant-unknown")));
-		// 409 경로.
 		catchThrowableOfType(BusinessException.class,
 			() -> passwordResetService.sendResetCode(socialOnly.getEmail()));
-		// 발송 실패 경로 — 60초 제한을 피하려고 아직 요청이 없는 다른 회원을 쓴다.
 		doThrow(new IllegalStateException("메일 발송 실패"))
 			.when(fakeEmailSender).sendPasswordResetCode(any(), any());
 		catchThrowableOfType(IllegalStateException.class,
 			() -> passwordResetService.sendResetCode(failing.getEmail()));
 
-		// 네 경로 어디서도 회원·계좌·Refresh Token은 한 행도 늘거나 줄지 않는다.
 		assertThat(userRepository.count()).isEqualTo(userCount);
 		assertThat(countAccountsOf(user.getId())).isEqualTo(accountCount);
 		assertThat(refreshTokenRepository.count()).isEqualTo(refreshTokenCount);
@@ -293,9 +275,6 @@ class PasswordResetIntegrationTest {
 		return user;
 	}
 
-	// 소셜 전용 회원은 손으로 만들지 않고 실제 OAuth 가입 경로를 태운다.
-	// 직접 User.create(email, null, ...)로 만들면 프로덕션에 없는 형태(password_hash NULL)가 되어
-	// 409 분기가 도달 불가여도 테스트가 통과한다 — 실제로 그렇게 결함을 놓친 적이 있다.
 	private User persistSocialOnlyUser(String scenario) {
 		OAuthUserDto oauthUser = new OAuthUserDto(
 			"provider-" + scenario + "-" + UUID.randomUUID().toString().replace("-", ""),

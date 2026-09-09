@@ -1,4 +1,3 @@
-// reauth_tokens 저장과 token_hash UNIQUE·user_id FK 제약을 실제 MySQL로 검증하는 슬라이스 테스트다.
 package com.finplay.api.domain.auth.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;

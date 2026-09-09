@@ -1,4 +1,3 @@
-// EmailChangeVerification의 시도 횟수 증가·소비 처리 메서드를 검증하는 순수 단위 테스트다.
 package com.finplay.api.domain.auth.entity;
 
 import static org.assertj.core.api.Assertions.assertThat;

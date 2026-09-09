@@ -1,4 +1,3 @@
-// 실행 프로필에 따라 Fake 또는 실제 OAuth 공급자 빈만 활성화되는지 검증한다.
 package com.finplay.api.domain.auth.oauth.provider;
 
 import static org.assertj.core.api.Assertions.assertThat;

@@ -1,4 +1,3 @@
-// 로그인부터 Refresh Token 회전·재사용 거부·동시 소비까지 실제 MySQL로 검증하는 통합 테스트다.
 package com.finplay.api.domain.auth.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

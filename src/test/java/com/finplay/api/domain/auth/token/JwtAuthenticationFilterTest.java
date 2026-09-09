@@ -1,4 +1,3 @@
-// ASYNC 디스패치에서도 SecurityContext를 채우는지 검증하는 필터 단위 테스트 (이슈 #359)
 package com.finplay.api.domain.auth.token;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -40,8 +39,6 @@ class JwtAuthenticationFilterTest {
 
 	@Test
 	void doesNotSkipAsyncDispatch() {
-		// OncePerRequestFilter 기본값(true)을 그대로 두면 SSE emitter의 completeWithError()가 유발하는
-		// ASYNC 재디스패치에서 이 필터가 건너뛰어져 SecurityContext가 비고, AuthorizationFilter가 거부한다 (#359).
 		assertThat(filter.shouldNotFilterAsyncDispatch()).isFalse();
 	}
 

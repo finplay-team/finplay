@@ -1,4 +1,3 @@
-// OAuth 전용 nickname의 SecureRandom 바이트 길이와 비식별 형식을 단위 테스트한다.
 package com.finplay.api.domain.auth.oauth;
 
 import static org.assertj.core.api.Assertions.assertThat;

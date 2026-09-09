@@ -1,4 +1,3 @@
-// Fake EmailSender와 Testcontainers MySQL로 이메일 변경 인증번호 발송의 성공·실패 흐름과 기존 데이터 불변을 검증하는 통합 테스트다.
 package com.finplay.api.domain.auth.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -154,7 +153,6 @@ class EmailChangeIntegrationTest {
 		LocalDateTime now = LocalDateTime.now(clock);
 		reauthTokenRepository.saveAndFlush(
 			ReauthToken.create(user, sha256(rawReauthToken), now.plusMinutes(5), now));
-		// 사전에 한 번 소비해 "이미 소비된 토큰" 상태를 만든다. @Modifying 쿼리는 트랜잭션이 필요해 TransactionTemplate으로 감싼다.
 		TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
 		int firstConsume = transactionTemplate.execute(status -> reauthTokenRepository
 			.consumeIfValidForUser(sha256(rawReauthToken), user.getId(), now));
@@ -215,7 +213,6 @@ class EmailChangeIntegrationTest {
 
 		emailChangeService.requestEmailChange(user.getId(), newEmail, PASSWORD, null);
 		var firstRow = findByUser(user.getId()).get(0);
-		// 60초 재발송 간격 판정은 created_at 기준이므로, 실제 대기 대신 저장된 created_at을 뒤로 당겨 창을 지난 것처럼 만든다.
 		jdbcTemplate.update(
 			"update email_change_verifications set created_at = ? where id = ?",
 			LocalDateTime.now(clock).minusSeconds(61),

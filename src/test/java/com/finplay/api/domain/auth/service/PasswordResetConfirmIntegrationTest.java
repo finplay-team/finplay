@@ -1,5 +1,3 @@
-// 실제 MySQL과 HTTP 경로로 비밀번호 재설정 확인의 성공·재사용·5회초과·만료·재발송무효화·타인격리와
-// 검증 실패 시 attempt_count 증가 커밋·전 기기 로그아웃·회원 자산 불변을 검증하는 통합 테스트다.
 package com.finplay.api.domain.auth.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -48,7 +46,6 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
-// @Transactional을 붙이지 않는다 — 이 테스트의 핵심이 "예외가 나가고도 커밋되는가"라서 롤백시키면 검증 자체가 사라진다.
 @SpringBootTest
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)
@@ -110,12 +107,10 @@ class PasswordResetConfirmIntegrationTest {
 			.contentType(MediaType.APPLICATION_JSON)
 			.content(confirmBody(user.getEmail(), code, NEW_PASSWORD)))
 			.andExpect(status().isNoContent())
-			// 새 토큰 쌍을 응답에 담지 않는다 — 재설정은 자동 로그인이 아니다.
 			.andExpect(content().string(""));
 
 		assertThat(passwordHashOf(user.getId())).isNotEqualTo(storedHash);
 		assertThat(passwordEncoder.matches(NEW_PASSWORD, passwordHashOf(user.getId()))).isTrue();
-		// 소비·해시 교체가 함께 커밋됐다.
 		assertThat(latestSentRow(user.getEmail()).getConsumedAt()).isNotNull();
 
 		login(user.getEmail(), NEW_PASSWORD).andExpect(status().isOk())
@@ -142,7 +137,6 @@ class PasswordResetConfirmIntegrationTest {
 	@Test
 	@DisplayName("인증번호를 틀리면 400이 나가고도 attempt_count 증가는 DB에 커밋되며 password_hash는 그대로다")
 	void wrongCodeCommitsAttemptCountIncrementWhileLeavingPasswordUnchanged() throws Exception {
-		// noRollbackFor가 빠지면 증가분이 예외와 함께 되돌아가 5회 제한에 영원히 도달하지 못한다(무제한 대입).
 		User user = persistEmailUser("confirm-attempt-commit");
 		String storedHash = passwordHashOf(user.getId());
 		String code = sendCode(user.getEmail());
@@ -154,7 +148,6 @@ class PasswordResetConfirmIntegrationTest {
 		confirmExpectingError(user.getEmail(), wrongCode, NEW_PASSWORD, 400, "EMAIL_VERIFICATION_FAILED");
 		assertThat(attemptCountOf(user.getEmail())).isEqualTo(2);
 
-		// 실패 경로에서는 소비·교체가 하나도 일어나지 않는다.
 		assertThat(consumedAtOf(user.getEmail())).isNull();
 		assertThat(passwordHashOf(user.getId())).isEqualTo(storedHash);
 		login(user.getEmail(), PASSWORD).andExpect(status().isOk());
@@ -173,10 +166,8 @@ class PasswordResetConfirmIntegrationTest {
 			assertThat(attemptCountOf(user.getEmail())).isEqualTo(attempt);
 		}
 
-		// 6번째는 정답을 보내도 한도 판정이 먼저다.
 		confirmExpectingError(user.getEmail(), code, NEW_PASSWORD, 429, "TOO_MANY_REQUESTS");
 		assertThat(attemptCountOf(user.getEmail())).isEqualTo(6);
-		// 무효화도 커밋되어야 다음 요청부터 막힌다.
 		assertThat(latestSentRow(user.getEmail()).getExpiresAt()).isBeforeOrEqualTo(LocalDateTime.now(clock));
 
 		confirmExpectingError(user.getEmail(), code, NEW_PASSWORD, 400, "EMAIL_VERIFICATION_FAILED");
@@ -189,8 +180,6 @@ class PasswordResetConfirmIntegrationTest {
 	@Test
 	@DisplayName("동시에 들어온 오답 5건이 시도 1회로 뭉개지지 않고 각각 attempt_count에 반영된다")
 	void concurrentWrongCodeAttemptsAreEachCountedInsteadOfCollapsingIntoOne() throws Exception {
-		// 회귀 대상 — 잠금 없이 읽으면 동시 요청이 같은 attempt_count를 읽고 같은 값 + 1을 써서 N건이 1회로 계산된다.
-		// QA는 수정 전 코드에서 이 시나리오의 실측값으로 1을 얻었다. 그러면 5회 제한에 영원히 도달하지 못한다.
 		User user = persistEmailUser("confirm-concurrent-count");
 		String storedHash = passwordHashOf(user.getId());
 		String code = sendCode(user.getEmail());
@@ -198,7 +187,6 @@ class PasswordResetConfirmIntegrationTest {
 
 		List<Integer> statuses = fireConcurrentConfirms(user.getEmail(), wrongCodeFor(code), concurrency);
 
-		// 5건 모두 한도 안이므로 전부 400이고, 유실 없이 정확히 5회로 세어져야 한다.
 		assertThat(statuses).hasSize(concurrency).containsOnly(400);
 		assertThat(attemptCountOf(user.getEmail())).isEqualTo(concurrency);
 		assertThat(consumedAtOf(user.getEmail())).isNull();
@@ -214,15 +202,11 @@ class PasswordResetConfirmIntegrationTest {
 
 		List<Integer> statuses = fireConcurrentConfirms(user.getEmail(), wrongCodeFor(code), 6);
 
-		// 행 잠금으로 직렬화되면 순서는 하나뿐이다 — 1~5번째는 한도 안의 오답이라 400,
-		// 6번째는 attempt_count가 5에 도달해 코드를 대조해 보지도 못하고 429 + 즉시 무효화다.
-		// 잠금이 없으면 6건이 같은 값을 읽어 전부 400이 되고 429가 한 건도 나오지 않는다.
 		assertThat(statuses).filteredOn(status -> status == 400).hasSize(5);
 		assertThat(statuses).filteredOn(status -> status == 429).hasSize(1);
 		assertThat(attemptCountOf(user.getEmail())).isEqualTo(6);
 		assertThat(latestSentRow(user.getEmail()).getExpiresAt()).isBeforeOrEqualTo(LocalDateTime.now(clock));
 
-		// 무효화 이후에는 정답도 통하지 않는다.
 		confirmExpectingError(user.getEmail(), code, NEW_PASSWORD, 400, "EMAIL_VERIFICATION_FAILED");
 		assertThat(passwordHashOf(user.getId())).isEqualTo(storedHash);
 		login(user.getEmail(), PASSWORD).andExpect(status().isOk());
@@ -231,15 +215,12 @@ class PasswordResetConfirmIntegrationTest {
 	@Test
 	@DisplayName("한도를 크게 넘긴 동시 버스트에서도 코드가 무효화된 채로 끝나고 정답이 거부된다")
 	void largeConcurrentBurstStillEndsWithTheCodeInvalidated() throws Exception {
-		// 6건을 넘는 버스트의 꼬리 응답은 429일 수도 400일 수도 있다 — now가 행 잠금을 잡기 전에 찍히기 때문이다.
-		// 그래서 개수 대신 "한도에 도달했고 인증번호가 죽었다"는 최종 상태만 단정한다.
 		User user = persistEmailUser("confirm-concurrent-burst");
 		String storedHash = passwordHashOf(user.getId());
 		String code = sendCode(user.getEmail());
 
 		List<Integer> statuses = fireConcurrentConfirms(user.getEmail(), wrongCodeFor(code), 8);
 
-		// 잠금이 없으면 8건이 시도 1~2회로 뭉개져 한도에 닿지 못하고 429가 하나도 나오지 않는다.
 		assertThat(statuses).contains(429);
 		assertThat(statuses).allMatch(status -> status == 400 || status == 429);
 		assertThat(attemptCountOf(user.getEmail())).isGreaterThanOrEqualTo(6);
@@ -252,8 +233,6 @@ class PasswordResetConfirmIntegrationTest {
 	@Test
 	@DisplayName("확인 대상 조회는 앞선 트랜잭션이 커밋할 때까지 다음 읽기를 막아 읽기-판정-증가를 직렬화한다")
 	void lockedLookupBlocksConcurrentReadUntilTheFirstTransactionCommits() throws Exception {
-		// 위 두 동시성 테스트가 기대는 메커니즘을 직접 관찰한다.
-		// 조회에서 행 잠금이 빠지면 두 번째 읽기가 즉시 끝나 같은 값을 보고, 아래 await 단정이 먼저 깨진다.
 		User user = persistEmailUser("confirm-lock-serializes");
 		sendCode(user.getEmail());
 		String email = user.getEmail();
@@ -283,14 +262,12 @@ class PasswordResetConfirmIntegrationTest {
 				return observed;
 			}));
 
-			// 첫 트랜잭션이 아직 커밋하지 않았으므로 두 번째 읽기는 끝나 있으면 안 된다.
 			assertThat(secondFinishedReading.await(1, TimeUnit.SECONDS))
 				.as("잠금이 없으면 두 번째 트랜잭션이 곧바로 같은 행을 읽어 증가분이 유실된다")
 				.isFalse();
 
 			releaseFirst.countDown();
 			first.get(30, TimeUnit.SECONDS);
-			// 잠금이 풀린 뒤에야 읽으므로 첫 트랜잭션의 결과(1)를 보고 2를 쓴다.
 			assertThat(second.get(30, TimeUnit.SECONDS)).isEqualTo(1);
 		} finally {
 			releaseFirst.countDown();
@@ -320,7 +297,6 @@ class PasswordResetConfirmIntegrationTest {
 	void codeInvalidatedByResendIsRejectedWhileTheNewCodeStillWorks() throws Exception {
 		User user = persistEmailUser("confirm-resend");
 		String firstCode = sendCode(user.getEmail());
-		// 60초 재발송 간격은 created_at 기준이라, 실제 대기 대신 이전 행을 뒤로 당겨 창을 지난 것처럼 만든다.
 		jdbcTemplate.update(
 			"update password_reset_verifications set created_at = ? where email = ?",
 			LocalDateTime.now(clock).minusSeconds(61), user.getEmail());
@@ -338,11 +314,9 @@ class PasswordResetConfirmIntegrationTest {
 	void newerRejectedRowDoesNotShadowTheSentRow() throws Exception {
 		User user = persistEmailUser("confirm-rejected-shadow");
 		String code = sendCode(user.getEmail());
-		// #115가 남기는 거부 행(code_hash·expires_at NULL)을 발송 행보다 뒤 시각으로 끼워 넣는다.
 		passwordResetVerificationRepository.saveAndFlush(PasswordResetVerification
 			.createRejected(user.getEmail(), LocalDateTime.now(clock).plusMinutes(1)));
 
-		// 조회에서 거부 행을 집으면 여기서 NPE(500)가 난다.
 		confirmExpectingNoContent(user.getEmail(), code, NEW_PASSWORD);
 
 		login(user.getEmail(), NEW_PASSWORD).andExpect(status().isOk());
@@ -357,7 +331,6 @@ class PasswordResetConfirmIntegrationTest {
 		String attackerHash = passwordHashOf(attacker.getId());
 		String ownerCode = sendCode(owner.getEmail());
 
-		// 공격자 이메일 + 소유자 인증번호 — 공격자에게는 발송 행이 없어 400이다.
 		confirmExpectingError(attacker.getEmail(), ownerCode, NEW_PASSWORD, 400, "EMAIL_VERIFICATION_FAILED");
 
 		assertThat(passwordHashOf(owner.getId())).isEqualTo(ownerHash);
@@ -365,7 +338,6 @@ class PasswordResetConfirmIntegrationTest {
 		login(owner.getEmail(), PASSWORD).andExpect(status().isOk());
 		login(attacker.getEmail(), PASSWORD).andExpect(status().isOk());
 
-		// 타인의 시도가 소유자의 인증번호를 소비하지도, 시도 횟수를 깎지도 않았다.
 		assertThat(attemptCountOf(owner.getEmail())).isZero();
 		confirmExpectingNoContent(owner.getEmail(), ownerCode, NEW_PASSWORD);
 		assertThat(passwordHashOf(attacker.getId())).isEqualTo(attackerHash);
@@ -375,8 +347,6 @@ class PasswordResetConfirmIntegrationTest {
 	@DisplayName("확인에 성공하면 확인 전 발급한 모든 Refresh Token이 폐기되어 /refresh가 401이다 — 전 기기 로그아웃")
 	void successRevokesEveryRefreshTokenIssuedBeforeConfirm() throws Exception {
 		User user = persistEmailUser("confirm-revoke");
-		// 갱신은 토큰을 회전(기존 행 폐기)시키므로, 사전 확인용 세션을 따로 두고 검증 대상 두 개는 확인 전까지 쓰지 않는다.
-		// 검증 대상을 미리 갱신해 보면 그 401이 회전 때문인지 재설정 때문인지 구분되지 않는다.
 		String probeDeviceToken = loginAndExtractRefreshToken(user.getEmail());
 		refresh(probeDeviceToken).andExpect(status().isOk());
 
@@ -391,7 +361,6 @@ class PasswordResetConfirmIntegrationTest {
 			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"));
 		refresh(secondDeviceToken).andExpect(status().isUnauthorized())
 			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"));
-		// 재로그인은 새 비밀번호로만 가능하다.
 		login(user.getEmail(), NEW_PASSWORD).andExpect(status().isOk());
 	}
 
@@ -410,7 +379,6 @@ class PasswordResetConfirmIntegrationTest {
 	@Test
 	@DisplayName("성공·실패 어느 경로에서도 이메일·닉네임·social_accounts·계좌·잔액·주문·체결이 변하지 않는다")
 	void confirmNeverTouchesProfileSocialLinkAccountsOrLedger() throws Exception {
-		// 비밀번호가 있으면서 OAuth 연결도 가진 회원이라 social_accounts 불변을 함께 볼 수 있다.
 		User user = persistEmailUserWithSocialLink("confirm-invariance");
 		SocialAccount linkBefore = socialAccountRepository.findByUserId(user.getId()).orElseThrow();
 		List<AccountSnapshot> accountsBefore = snapshotAccounts(user.getId());
@@ -422,11 +390,9 @@ class PasswordResetConfirmIntegrationTest {
 		long holdingsBefore = countRows("holdings");
 		String code = sendCode(user.getEmail());
 
-		// 실패 경로.
 		confirmExpectingError(user.getEmail(), wrongCodeFor(code), NEW_PASSWORD, 400, "EMAIL_VERIFICATION_FAILED");
 		assertInvariants(user, linkBefore, accountsBefore, ordersBefore, tradesBefore, holdingsBefore);
 
-		// 성공 경로.
 		confirmExpectingNoContent(user.getEmail(), code, NEW_PASSWORD);
 		assertInvariants(user, linkBefore, accountsBefore, ordersBefore, tradesBefore, holdingsBefore);
 	}
@@ -460,7 +426,6 @@ class PasswordResetConfirmIntegrationTest {
 			.content("{\"email\":\"" + email + "\"}"))
 			.andExpect(status().isAccepted());
 
-		// 다른 시나리오의 발송이 섞여 있어도 이 이메일의 마지막 코드를 집는다.
 		List<FakeEmailSender.SentEmail> sent = fakeEmailSender.getSentEmails().stream()
 			.filter(candidate -> candidate.toEmail().equals(email))
 			.toList();
@@ -489,8 +454,6 @@ class PasswordResetConfirmIntegrationTest {
 		}
 	}
 
-	// 같은 이메일·같은 코드로 동시에 확인 요청을 쏘고 각 응답 상태를 모은다.
-	// 커넥션 풀 기본값(10)을 넘기지 않도록 동시 요청 수는 여유를 두고 잡는다.
 	private List<Integer> fireConcurrentConfirms(String email, String code, int count) throws Exception {
 		ExecutorService pool = Executors.newFixedThreadPool(count);
 		CountDownLatch startGate = new CountDownLatch(1);
@@ -498,7 +461,6 @@ class PasswordResetConfirmIntegrationTest {
 			List<Future<Integer>> futures = new ArrayList<>();
 			for (int i = 0; i < count; i++) {
 				futures.add(pool.submit(() -> {
-					// 모든 스레드가 준비된 뒤 동시에 출발해야 겹침이 최대가 된다.
 					startGate.await();
 					return mockMvc.perform(post(CONFIRM_PATH)
 						.contentType(MediaType.APPLICATION_JSON)
@@ -559,7 +521,6 @@ class PasswordResetConfirmIntegrationTest {
 		return extractJsonString(body, "refreshToken");
 	}
 
-	// 응답 스키마 검증은 다른 테스트가 하므로 여기서는 토큰 값만 꺼낸다.
 	private static String extractJsonString(String json, String field) {
 		String marker = "\"" + field + "\":\"";
 		int start = json.indexOf(marker);
@@ -572,7 +533,6 @@ class PasswordResetConfirmIntegrationTest {
 		return "{\"email\":\"" + email + "\",\"code\":\"" + code + "\",\"newPassword\":\"" + newPassword + "\"}";
 	}
 
-	// 영속성 컨텍스트 캐시를 우회해 실제 커밋된 값을 읽는다.
 	private String passwordHashOf(Long userId) {
 		return jdbcTemplate.queryForObject("select password_hash from users where id = ?", String.class, userId);
 	}
@@ -618,7 +578,6 @@ class PasswordResetConfirmIntegrationTest {
 		return user;
 	}
 
-	// 비밀번호도 있고 OAuth 연결도 있는 회원 — 재설정 대상이면서 social_accounts 불변을 관찰할 수 있다.
 	private User persistEmailUserWithSocialLink(String scenario) {
 		User user = persistEmailUser(scenario);
 		socialAccountRepository.saveAndFlush(SocialAccount.create(

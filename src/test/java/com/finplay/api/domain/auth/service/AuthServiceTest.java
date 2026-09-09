@@ -1,4 +1,3 @@
-// 회원가입·로그인·토큰 회전 서비스의 검증 분기와 저장 대상 상태를 검증하는 단위 테스트다.
 package com.finplay.api.domain.auth.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -298,7 +297,6 @@ class AuthServiceTest {
 
 	@Test
 	void loginFailsWithUnauthorizedWhenUserHasNoPasswordHash() {
-		// 소셜 전용 가입자는 passwordHash가 null이다. 비밀번호 대조 전에 걸러져야 한다.
 		when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(existingUser(null)));
 
 		assertLoginFailsWithUnauthorized(RAW_PASSWORD);
@@ -306,7 +304,6 @@ class AuthServiceTest {
 
 	@Test
 	void loginFailureIsIndistinguishableRegardlessOfCause() {
-		// D7 — 원인별로 응답이 갈리면 이메일 존재 여부가 노출된다. 세 원인의 ErrorCode가 같아야 한다.
 		when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.empty());
 		ErrorCode emailNotFound = captureLoginErrorCode(RAW_PASSWORD);
 
@@ -323,7 +320,6 @@ class AuthServiceTest {
 
 	@Test
 	void loginDoesNotRevokeExistingRefreshTokens() {
-		// D9 — 로그인은 refresh_tokens에 행을 추가만 한다. 기존 토큰 삭제·폐기 호출이 있으면 안 된다.
 		User user = existingUser(passwordEncoder.encode(RAW_PASSWORD));
 		when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(user));
 		when(jwtTokenProvider.issue(7L, "USER")).thenReturn(new IssuedTokenPair(
@@ -750,7 +746,6 @@ class AuthServiceTest {
 		assertThat(response.signupMethod()).isEqualTo(SignupMethod.KAKAO);
 		assertThat(user.getNickname()).isEqualTo(NEW_NICKNAME);
 
-		// 원문이 아니라 해시로 소비돼야 한다.
 		verify(reauthTokenRepository).consumeIfValidForUser(sha256(RAW_REAUTH_TOKEN), 7L, NOW);
 		verify(reauthTokenRepository, never()).consumeIfValidForUser(RAW_REAUTH_TOKEN, 7L, NOW);
 		verify(userRepository).saveAndFlush(user);
@@ -884,7 +879,6 @@ class AuthServiceTest {
 
 		var response = authService.changePassword(7L, RAW_PASSWORD, NEW_PASSWORD);
 
-		// 저장되는 값은 원문이 아니라 새 비밀번호로 대조되는 해시여야 한다.
 		assertThat(user.getPasswordHash()).isNotEqualTo(originalHash);
 		assertThat(user.getPasswordHash()).isNotEqualTo(NEW_PASSWORD);
 		assertThat(passwordEncoder.matches(NEW_PASSWORD, user.getPasswordHash())).isTrue();
@@ -916,8 +910,6 @@ class AuthServiceTest {
 
 	@Test
 	void changePasswordRevokesAllRefreshTokensBeforeIssuingNewPair() {
-		// D5 — RefreshToken은 IDENTITY라 save가 즉시 INSERT된다.
-		// 발급이 먼저면 revokedAt IS NULL 조건에 방금 만든 행까지 걸려 요청 기기도 로그아웃된다.
 		stubEmailUser();
 		stubSaveAndFlushReturningArgument();
 		stubIssuedRotatedTokenPair();
@@ -957,7 +949,6 @@ class AuthServiceTest {
 
 	@Test
 	void changePasswordFailsWithReauthenticationFailedWhenWrongCurrentPasswordEqualsNewPassword() {
-		// D3 — 동일 여부 검사가 대조보다 먼저면 현재 비밀번호를 모르는 요청자도 400 분기를 관찰할 수 있다.
 		User user = stubEmailUser();
 		String originalHash = user.getPasswordHash();
 
@@ -995,14 +986,12 @@ class AuthServiceTest {
 
 	@Test
 	void changePasswordFailsWithValidationErrorForOAuthOnlyUserBeforeComparingPassword() {
-		// D2·D3 — sentinel 해시는 어떤 원문과도 일치하지 않는다. 대조가 먼저였다면 403이 나온다.
 		User user = stubOAuthOnlyUser();
 
 		BusinessException exception = captureChangePasswordFailure(RAW_PASSWORD, NEW_PASSWORD);
 
 		assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.VALIDATION_ERROR);
 		assertThat(exception.getMessage()).isEqualTo("OAuth 전용 회원은 비밀번호를 변경할 수 없습니다.");
-		// 해시가 교체됐다면 hasPassword()가 true로 바뀐다 — 자리표시자 값을 알 필요 없이 미변경을 확인한다.
 		assertThat(user.hasPassword()).isFalse();
 		assertThat(user.getUpdatedAt()).isEqualTo(NOW.minusDays(1));
 		verifyChangePasswordChangedNothing();
@@ -1028,13 +1017,11 @@ class AuthServiceTest {
 
 		authService.confirmPasswordReset(EMAIL, VERIFICATION_CODE, NEW_PASSWORD);
 
-		// 저장되는 값은 원문이 아니라 새 비밀번호로 대조되는 해시여야 한다.
 		assertThat(user.getPasswordHash()).isNotEqualTo(originalHash);
 		assertThat(user.getPasswordHash()).isNotEqualTo(NEW_PASSWORD);
 		assertThat(passwordEncoder.matches(NEW_PASSWORD, user.getPasswordHash())).isTrue();
 		assertThat(passwordEncoder.matches(RAW_PASSWORD, user.getPasswordHash())).isFalse();
 		assertThat(user.getUpdatedAt()).isEqualTo(NOW);
-		// 이메일·닉네임은 재설정 대상이 아니다.
 		assertThat(user.getEmail()).isEqualTo(EMAIL);
 		assertThat(user.getNickname()).isEqualTo(NICKNAME);
 
@@ -1045,8 +1032,6 @@ class AuthServiceTest {
 
 	@Test
 	void confirmPasswordResetIssuesNoTokenPairSoEveryDeviceIsLoggedOut() {
-		// D4 — #114의 changePassword와 의도적으로 다르다. 비로그인 흐름이라 발급할 대상 세션이 없다.
-		// 누군가 #114를 참고해 issueTokenPair를 끼워 넣으면 여기서 깨져야 한다.
 		stubPasswordResetTarget();
 		stubSaveAndFlushReturningArgument();
 
@@ -1054,15 +1039,12 @@ class AuthServiceTest {
 
 		verifyNoInteractions(jwtTokenProvider);
 		verify(refreshTokenRepository, never()).save(any());
-		// 폐기 외에는 RefreshToken 저장소를 건드리지 않는다.
 		verify(refreshTokenRepository).revokeAllActiveByUserId(7L, NOW);
 		verifyNoMoreInteractions(refreshTokenRepository);
 	}
 
 	@Test
 	void confirmPasswordResetValidatesConsumesPersistsThenRevokesInThatOrder() {
-		// 소비·교체·폐기 순서가 어긋나면 부분 성공 상태가 만들어질 수 있다 (D3).
-		// saveAndFlush가 revokeAllActiveByUserId(벌크 UPDATE)보다 먼저여야 flush 순서가 모호해지지 않는다.
 		stubPasswordResetTarget();
 		stubSaveAndFlushReturningArgument();
 
@@ -1077,7 +1059,6 @@ class AuthServiceTest {
 
 	@Test
 	void confirmPasswordResetChangesHashOnlyAfterValidationSucceeds() {
-		// changePassword가 validateAndConsumeCode보다 먼저 호출되면 검증 실패에도 해시가 바뀐다.
 		User user = existingUser(passwordEncoder.encode(RAW_PASSWORD));
 		String originalHash = user.getPasswordHash();
 		when(passwordResetService.validateAndConsumeCode(EMAIL, VERIFICATION_CODE)).thenAnswer(invocation -> {
@@ -1104,7 +1085,6 @@ class AuthServiceTest {
 			.extracting(ex -> ((BusinessException)ex).getErrorCode())
 			.isEqualTo(ErrorCode.EMAIL_VERIFICATION_FAILED);
 
-		// 검증이 던지면 그 뒤 단계는 하나도 실행되지 않는다 — 부분 성공이 없다.
 		assertThat(user.getPasswordHash()).isEqualTo(originalHash);
 		verify(userRepository, never()).saveAndFlush(any());
 		verifyNoInteractions(refreshTokenRepository, jwtTokenProvider);
@@ -1126,7 +1106,6 @@ class AuthServiceTest {
 
 	@Test
 	void confirmPasswordResetDoesNotLookUpUserItselfOrTouchUnrelatedCollaborators() {
-		// 재설정 대상 회원은 PasswordResetService가 확정해 넘긴다 — AuthService가 다시 조회하지 않는다 (D1).
 		stubPasswordResetTarget();
 		stubSaveAndFlushReturningArgument();
 
@@ -1154,7 +1133,6 @@ class AuthServiceTest {
 		return authService.getMe(7L).signupMethod();
 	}
 
-	// 재설정 대상 회원은 PasswordResetService가 확정해 반환한다 — AuthService는 그 결과를 그대로 쓴다.
 	private User stubPasswordResetTarget() {
 		User user = existingUser(passwordEncoder.encode(RAW_PASSWORD));
 		when(passwordResetService.validateAndConsumeCode(EMAIL, VERIFICATION_CODE)).thenReturn(user);
@@ -1168,8 +1146,6 @@ class AuthServiceTest {
 		return user;
 	}
 
-	// 프로덕션의 OAuth 전용 회원과 같은 팩토리로 만든다 — 자리표시자 값은 User만 안다.
-	// password_hash를 NULL로 두면 프로덕션에 존재하지 않는 형태가 되어, PR #118처럼 결함을 가릴 수 있다.
 	private User stubOAuthUser(OAuthProviderName provider) {
 		User user = User.createOAuthOnly(EMAIL, NICKNAME, NOW.minusDays(1));
 		ReflectionTestUtils.setField(user, "id", 7L);
@@ -1257,7 +1233,6 @@ class AuthServiceTest {
 	private void assertLoginFailsWithUnauthorized(String password) {
 		assertThat(captureLoginErrorCode(password)).isEqualTo(ErrorCode.UNAUTHORIZED);
 
-		// 실패 경로에서는 토큰이 발급되거나 저장되지 않아야 한다.
 		verifyNoInteractions(jwtTokenProvider);
 		verify(refreshTokenRepository, never()).save(any());
 	}

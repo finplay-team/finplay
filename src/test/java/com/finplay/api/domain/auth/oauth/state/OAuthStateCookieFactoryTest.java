@@ -1,4 +1,3 @@
-// OAuth state 쿠키의 값과 callback 경로별 보안 속성 계약을 검증한다.
 package com.finplay.api.domain.auth.oauth.state;
 
 import static org.assertj.core.api.Assertions.assertThat;

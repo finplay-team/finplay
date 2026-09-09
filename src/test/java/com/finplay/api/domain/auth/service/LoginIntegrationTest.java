@@ -1,4 +1,3 @@
-// 실제 MySQL에 가입한 회원이 같은 자격증명으로 로그인하고 Refresh Token이 해시로만 남는지 검증하는 통합 테스트다.
 package com.finplay.api.domain.auth.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -78,7 +77,6 @@ class LoginIntegrationTest {
 
 		TokenResponse loginTokens = authService.login(email, PASSWORD);
 
-		// 가입 1행 + 로그인 1행. 로그인은 행을 추가만 하고 기존 행을 지우지 않는다.
 		assertThat(refreshTokenRepository.count()).isEqualTo(rowsBeforeSignup + 2);
 
 		String signupTokenHash = sha256(signupTokens.refreshToken());
@@ -88,7 +86,6 @@ class LoginIntegrationTest {
 			.contains(signupTokenHash, loginTokenHash)
 			.doesNotContain(signupTokens.refreshToken(), loginTokens.refreshToken());
 
-		// D9 — 로그인이 기존 Refresh Token을 폐기하지 않는다. 해시가 이 회원의 행을 식별한다(subject에 회원 id가 들어간다).
 		assertThat(refreshTokenRepository.findAll())
 			.filteredOn(token -> token.getTokenHash().equals(signupTokenHash)
 				|| token.getTokenHash().equals(loginTokenHash))
@@ -134,7 +131,6 @@ class LoginIntegrationTest {
 
 		assertThat(jwtTokenProvider.parseAccessToken(response.accessToken()))
 			.contains(new AuthenticatedUser(user.getId(), "USER"));
-		// Refresh Token으로는 보호 API에 접근할 수 없다 (D5).
 		assertThat(jwtTokenProvider.parseAccessToken(response.refreshToken())).isEmpty();
 	}
 

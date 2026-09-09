@@ -1,4 +1,3 @@
-// 회원가입 비밀번호 계약과 실제 암호화 설정의 호환성을 검증한다.
 package com.finplay.api.domain.auth.config;
 
 import static org.assertj.core.api.Assertions.assertThat;

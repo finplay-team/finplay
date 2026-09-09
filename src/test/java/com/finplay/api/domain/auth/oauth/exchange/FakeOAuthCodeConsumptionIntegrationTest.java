@@ -1,4 +1,3 @@
-// Fake OAuth code의 state 결합·단일 소비·동시 원자성과 특수 fixture를 통합 검증한다.
 package com.finplay.api.domain.auth.oauth.exchange;
 
 import static org.assertj.core.api.Assertions.assertThat;

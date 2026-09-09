@@ -1,4 +1,3 @@
-// OAuth 인가 서비스의 provider 선택과 state 전달 및 오류 계약을 검증한다.
 package com.finplay.api.domain.auth.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

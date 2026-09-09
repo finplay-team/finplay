@@ -1,4 +1,3 @@
-// FakeEmailSender가 발송 내역을 메모리에 정확히 기록·누적·초기화하는지 검증하는 단위 테스트
 package com.finplay.api.domain.auth.email;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -43,7 +42,6 @@ class FakeEmailSenderTest {
 	@Test
 	@DisplayName("sendPasswordResetCode 호출 시에도 대상 이메일과 코드가 마지막 발송 내역으로 기록된다")
 	void sendPasswordResetCodeRecordsRecipientAndCode() {
-		// 재설정 통합 테스트가 이 경로로 코드를 꺼내 쓴다 — 기록되지 않으면 그쪽이 통째로 못 돈다.
 		emailSender.sendPasswordResetCode("reset@example.com", "654321");
 
 		SentEmail last = emailSender.getLastSentEmail();

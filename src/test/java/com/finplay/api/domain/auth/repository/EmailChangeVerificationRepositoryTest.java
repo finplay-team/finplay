@@ -1,4 +1,3 @@
-// email_change_verifications 저장·FK 제약·기간별 집계·무효화 대상 조회 쿼리를 실제 MySQL로 검증하는 슬라이스 테스트다.
 package com.finplay.api.domain.auth.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -69,15 +68,11 @@ class EmailChangeVerificationRepositoryTest {
 		User user = saveUser("change-count@finplay.com", "change-count-user");
 		User otherUser = saveUser("change-count-other@finplay.com", "change-count-other-user");
 
-		// 기준 시각(NOW) 이전 1건 — 제외.
 		emailChangeVerificationRepository
 			.save(newVerification(user, "a@finplay.com", NOW.minusSeconds(1)));
-		// 기준 시각과 정확히 같은 시각 — after이므로 경계값은 제외.
 		emailChangeVerificationRepository.save(newVerification(user, "b@finplay.com", NOW));
-		// 기준 시각 이후 2건 — 포함.
 		emailChangeVerificationRepository.save(newVerification(user, "c@finplay.com", NOW.plusSeconds(1)));
 		emailChangeVerificationRepository.save(newVerification(user, "d@finplay.com", NOW.plusMinutes(10)));
-		// 다른 회원의 행 — 제외.
 		emailChangeVerificationRepository
 			.save(newVerification(otherUser, "e@finplay.com", NOW.plusMinutes(10)));
 		emailChangeVerificationRepository.flush();
@@ -94,26 +89,21 @@ class EmailChangeVerificationRepositoryTest {
 		User otherUser = saveUser("change-find-other@finplay.com", "change-find-other-user");
 		String targetEmail = "target@finplay.com";
 
-		// 매칭: 같은 회원 + 같은 새 이메일 + 미소비 + 유효.
 		EmailChangeVerification matching = EmailChangeVerification
 			.create(user, targetEmail, "hash", NOW.plusMinutes(5), NOW);
 		emailChangeVerificationRepository.save(matching);
 
-		// 제외: 다른 새 이메일.
 		emailChangeVerificationRepository
 			.save(EmailChangeVerification.create(user, "other-email@finplay.com", "hash", NOW.plusMinutes(5), NOW));
 
-		// 제외: 이미 만료(expires_at이 NOW 이전).
 		emailChangeVerificationRepository
 			.save(EmailChangeVerification.create(user, targetEmail, "hash", NOW.minusMinutes(1), NOW));
 
-		// 제외: 이미 소비됨(consumed_at 존재).
 		EmailChangeVerification consumed = EmailChangeVerification
 			.create(user, targetEmail, "hash", NOW.plusMinutes(5), NOW);
 		ReflectionTestUtils.setField(consumed, "consumedAt", NOW.minusMinutes(1));
 		emailChangeVerificationRepository.save(consumed);
 
-		// 제외: 다른 회원.
 		emailChangeVerificationRepository
 			.save(EmailChangeVerification.create(otherUser, targetEmail, "hash", NOW.plusMinutes(5), NOW));
 		emailChangeVerificationRepository.flush();
@@ -137,7 +127,6 @@ class EmailChangeVerificationRepositoryTest {
 			.create(user, targetEmail, "hash-latest", NOW.plusMinutes(5), NOW);
 		emailChangeVerificationRepository.save(oldest);
 		emailChangeVerificationRepository.save(latest);
-		// 다른 새 이메일 — 제외.
 		emailChangeVerificationRepository
 			.save(EmailChangeVerification.create(user, "other@finplay.com", "hash-other", NOW.plusMinutes(5), NOW));
 		emailChangeVerificationRepository.flush();
@@ -156,7 +145,6 @@ class EmailChangeVerificationRepositoryTest {
 		User otherUser = saveUser("change-stranger@finplay.com", "change-stranger-user");
 		String targetEmail = "shared-target@finplay.com";
 
-		// 다른 회원이 더 최신에 같은 새 이메일로 발송한 행 — 본인 조회 결과에 포함되면 안 된다.
 		emailChangeVerificationRepository
 			.save(EmailChangeVerification.create(otherUser, targetEmail, "hash-stranger", NOW.plusMinutes(5), NOW));
 		emailChangeVerificationRepository.flush();
@@ -168,7 +156,6 @@ class EmailChangeVerificationRepositoryTest {
 	}
 
 	private static EmailChangeVerification newVerification(User user, String newEmail, LocalDateTime createdAt) {
-		// createdAt = now 파라미터 (엔티티가 생성 시각을 팩토리 인자로 받음). expires_at은 집계 테스트에 무관.
 		return EmailChangeVerification.create(user, newEmail, "code-hash", createdAt.plusMinutes(5), createdAt);
 	}
 

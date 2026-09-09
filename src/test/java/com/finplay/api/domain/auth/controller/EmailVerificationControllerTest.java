@@ -1,4 +1,3 @@
-// 인증번호 발송 컨트롤러의 202 응답·검증 오류·서비스 예외 매핑을 검증하는 @WebMvcTest 슬라이스 테스트 (ADR-0003)
 package com.finplay.api.domain.auth.controller;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -26,7 +25,6 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-// 대상 경로가 공개 화이트리스트에 있으므로 실제 Security 체인을 태워 화이트리스트 계약까지 함께 검증한다.
 @WebMvcTest(EmailVerificationController.class)
 @Import(SecurityConfig.class)
 class EmailVerificationControllerTest {

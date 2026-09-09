@@ -1,4 +1,3 @@
-// JWT 발급 결과의 클레임·만료 시간과 Access·Refresh Token 파싱 결과를 검증하는 단위 테스트다.
 package com.finplay.api.domain.auth.token;
 
 import static org.assertj.core.api.Assertions.assertThat;

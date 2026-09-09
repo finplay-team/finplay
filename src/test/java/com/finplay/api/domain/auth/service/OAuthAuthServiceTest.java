@@ -1,4 +1,3 @@
-// OAuth 로그인 검증·기존/신규 분기·nickname 재시도와 저장 상호작용을 단위 테스트한다.
 package com.finplay.api.domain.auth.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -184,8 +183,6 @@ class OAuthAuthServiceTest {
 	void oauthOnlyPasswordAlwaysFailsRegularLoginAsUnauthorized() {
 		User oauthOnly = user("oauth@example.com", "oauth-only");
 		given(users.findByEmail("oauth@example.com")).willReturn(Optional.of(oauthOnly));
-		// 자리표시자 값을 테스트가 알 필요 없이, 저장된 값 자체를 원문 비밀번호로 되보낸다.
-		// 자리표시자가 어떤 원문과도 대조되지 않아야 하므로 이 최악의 추측도 실패해야 한다.
 		String guessedRawPassword = oauthOnly.getPasswordHash();
 
 		assertThatThrownBy(() -> service.login("oauth@example.com", guessedRawPassword))
@@ -225,7 +222,6 @@ class OAuthAuthServiceTest {
 				ErrorCode.OAUTH_EMAIL_REQUIRED));
 	}
 
-	// 프로덕션의 OAuth 가입 경로와 같은 팩토리로 만든다 — 자리표시자 값은 User만 안다.
 	private static User user(String email, String nickname) {
 		User user = User.createOAuthOnly(email, nickname, NOW.minusDays(1));
 		ReflectionTestUtils.setField(user, "id", 7L);

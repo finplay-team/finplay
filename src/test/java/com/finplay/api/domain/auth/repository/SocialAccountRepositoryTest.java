@@ -1,4 +1,3 @@
-// social_accounts의 MySQL 매핑·복합 유일성·회원 FK와 조회 쿼리를 검증한다.
 package com.finplay.api.domain.auth.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;

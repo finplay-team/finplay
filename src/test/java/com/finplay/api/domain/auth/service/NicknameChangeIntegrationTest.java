@@ -1,4 +1,3 @@
-// 실제 MySQL에서 재인증 기반 닉네임 변경이 닉네임만 바꾸고 이메일·계좌·시드머니·잔액을 그대로 두는지 검증하는 통합 테스트다.
 package com.finplay.api.domain.auth.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -95,7 +94,6 @@ class NicknameChangeIntegrationTest {
 		assertThat(userRepository.findById(user.getId()).orElseThrow().getNickname())
 			.isEqualTo(newNickname);
 
-		// 같은 토큰을 다시 쓰면 이미 소비돼 거부된다.
 		String rejectedNickname = uniqueNickname("oauth-reused");
 		BusinessException failure = catchThrowableOfType(
 			BusinessException.class,
@@ -119,7 +117,6 @@ class NicknameChangeIntegrationTest {
 		ReauthTokenResponse issued = authService.reauthenticate(
 			user.getId(), OAuthProviderName.KAKAO, oauthUser);
 
-		// 이미 다른 회원이 쓰는 닉네임이라 저장 단계에서 실패해야 한다 — 이때 토큰 소비도 함께 롤백된다.
 		BusinessException firstFailure = catchThrowableOfType(
 			BusinessException.class,
 			() -> authService.changeNickname(
@@ -128,7 +125,6 @@ class NicknameChangeIntegrationTest {
 		assertThat(userRepository.findById(user.getId()).orElseThrow().getNickname())
 			.isEqualTo(user.getNickname());
 
-		// 같은 토큰이 아직 유효해야(롤백 증명) 새 닉네임으로 재시도가 성공한다.
 		String newNickname = uniqueNickname("oauth-rollback-changed");
 		MemberResponse response = authService.changeNickname(
 			user.getId(), newNickname, null, issued.reauthToken());

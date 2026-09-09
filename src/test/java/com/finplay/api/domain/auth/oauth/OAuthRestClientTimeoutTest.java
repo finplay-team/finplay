@@ -1,4 +1,3 @@
-// 짧은 OAuth HTTP timeout이 지연 응답을 공급자 오류로 정규화하는지 검증한다.
 package com.finplay.api.domain.auth.oauth;
 
 import static org.assertj.core.api.Assertions.assertThat;
