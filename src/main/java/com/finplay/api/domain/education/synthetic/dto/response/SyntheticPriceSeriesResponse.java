@@ -1,4 +1,3 @@
-// 튜토리얼 전용 합성 시세 시계열 응답
 package com.finplay.api.domain.education.synthetic.dto.response;
 
 import java.math.BigDecimal;

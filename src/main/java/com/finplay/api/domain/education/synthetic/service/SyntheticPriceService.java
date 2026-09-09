@@ -1,4 +1,3 @@
-// 튜토리얼 참고용 합성 랜덤워크 시세를 요청마다 즉석 생성하는 서비스(저장소 없음)
 package com.finplay.api.domain.education.synthetic.service;
 
 import com.finplay.api.domain.education.synthetic.dto.response.SyntheticPriceSeriesResponse;
@@ -20,16 +19,10 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class SyntheticPriceService {
 
-	// 5분 / 3초 = 100틱 (시작가를 첫 틱으로 포함)
 	private static final int TICK_COUNT = 100;
 	private static final int TICK_SECONDS = 3;
-	// 실제 현재가 조회가 실패했을 때(PRICE_UNAVAILABLE 등)의 fallback 시작가.
-	// 이 종목의 실제 마지막 종가를 별도로 저장·조회하는 저장소가 없고, 합성 시세 자체가
-	// 실제 판정에 쓰이지 않는 튜토리얼 참고용 차트이므로 임의의 고정 기본값을 사용한다.
 	private static final BigDecimal FALLBACK_START_PRICE = BigDecimal.valueOf(10_000);
-	// 틱당 변동폭: 이전 값 대비 -1%~+1% 균등분포
 	private static final double TICK_CHANGE_RATIO = 0.01;
-	// 시작가의 50% 미만으로는 떨어지지 않도록 clamp
 	private static final BigDecimal MIN_PRICE_RATIO = BigDecimal.valueOf(0.5);
 
 	private final InstrumentService instrumentService;

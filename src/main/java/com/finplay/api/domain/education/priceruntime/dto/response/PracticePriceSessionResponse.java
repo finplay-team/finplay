@@ -1,4 +1,3 @@
-// 코인 가상 가격 세션 상태 응답 — seed는 서버 내부 재현 정보라 노출하지 않는다
 package com.finplay.api.domain.education.priceruntime.dto.response;
 
 import com.finplay.api.domain.education.priceruntime.entity.PracticePriceSession;

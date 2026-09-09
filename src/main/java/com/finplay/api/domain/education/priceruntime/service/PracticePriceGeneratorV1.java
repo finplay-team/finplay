@@ -1,4 +1,3 @@
-// 코인 튜토리얼 가상 가격 세션의 결정적 v1 생성기 — seed·tick으로 다음 가격을 계산하는 순수 함수(plan.md "생성기·가격 anchor" 계약, 변경 금지)
 package com.finplay.api.domain.education.priceruntime.service;
 
 import java.math.BigDecimal;
@@ -24,7 +23,6 @@ public final class PracticePriceGeneratorV1 {
 
 	private PracticePriceGeneratorV1() {}
 
-	// tick n(1..99)의 가격을 계산한다. previousPrice는 tick n-1의 가격, startPrice는 세션 anchor다.
 	public static BigDecimal nextPrice(long seed, int tick, BigDecimal previousPrice, BigDecimal startPrice) {
 		BigInteger unsignedValue = digestToUnsignedLong(seed, tick);
 		BigInteger units = unsignedValue.mod(MODULUS).subtract(UNITS_OFFSET);

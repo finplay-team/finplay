@@ -1,4 +1,3 @@
-// 시장가/지정가 매매 기반 실습 3단계의 자유 복기 1건(튜토리얼당 1회 완료)을 영속하는 엔티티
 package com.finplay.api.domain.education.marketpractice.entity;
 
 import com.finplay.api.domain.portfolio.entity.Holding;

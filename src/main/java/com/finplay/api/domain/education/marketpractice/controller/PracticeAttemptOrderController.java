@@ -1,4 +1,3 @@
-// 인증 사용자의 현재 튜토리얼 attempt·run 주문 목록 조회를 처리하는 컨트롤러
 package com.finplay.api.domain.education.marketpractice.controller;
 
 import com.finplay.api.domain.auth.token.AuthenticatedUser;
