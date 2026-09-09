@@ -1,4 +1,3 @@
-// 관심목록 등록→목록 조회→해제→목록 제외와 MySQL 영속화를 실제 인증·MockMvc로 검증하는 통합 테스트다.
 package com.finplay.api.domain.watchlist;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -174,8 +173,6 @@ class WatchlistIntegrationTest {
 			.content(objectMapper.writeValueAsString(new WatchlistItemCreateRequestBody(instrument.getId()))))
 			.andExpect(status().isCreated());
 
-		// 영속성 컨텍스트(1차 캐시)를 비워 이후 조회가 실제 MySQL 테이블을 다시 읽도록 강제한다.
-		// 이는 애플리케이션 서버가 재시작되어 메모리 상태가 사라진 뒤 새 요청이 들어온 상황과 동등하다.
 		entityManager.clear();
 
 		List<WatchlistItem> reloaded = watchlistItemRepository.findByUserIdOrderByCreatedAtDescIdDesc(user.getId());
@@ -210,8 +207,6 @@ class WatchlistIntegrationTest {
 			NOW));
 	}
 
-	// V7 마이그레이션 시드 데이터(기존 심볼)를 그대로 사용한다 — 매 테스트 실행마다 새 종목을 만들면
-	// uk_instruments_symbol unique 제약과 충돌할 수 있어 실제 서비스가 참조하는 시드 종목을 조회해 재사용한다.
 	private Instrument seedInstrument(Market market, String symbol) {
 		return instrumentRepository.findByMarketAndSymbol(market, symbol)
 			.orElseThrow(() -> new IllegalStateException(

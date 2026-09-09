@@ -1,4 +1,3 @@
-// 관심목록 항목의 unique 제약·market 필터·정렬을 실제 MySQL에서 검증하는 JPA 슬라이스 테스트다.
 package com.finplay.api.domain.watchlist.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
