@@ -1,4 +1,3 @@
-// JournalService.createBuyJournal·createSellJournal·updateSellJournal·updateBuyJournal의 검증 순서·저장 인자·예외 변환을 검증하는 단위 테스트다.
 package com.finplay.api.domain.journal.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -144,8 +143,6 @@ class JournalServiceTest {
 		verify(buyTradeJournalRepository, never()).saveAndFlush(any());
 	}
 
-	// 검증 순서 확인 — 타인 소유의 매도 체결은 getOwnedTrade 단계에서 403으로 끝나야 한다.
-	// side 검사(400)까지 도달하면 이 테스트가 실패해 검증 순서 위반을 드러낸다.
 	@Test
 	void createBuyJournalReturnsForbiddenNotValidationErrorForOtherUsersSellTrade() {
 		when(tradeService.getOwnedTrade(USER_ID, BUY_TRADE_ID)).thenThrow(new BusinessException(ErrorCode.FORBIDDEN));
@@ -253,8 +250,6 @@ class JournalServiceTest {
 		verify(sellTradeJournalRepository, never()).saveAndFlush(any());
 	}
 
-	// 검증 순서 확인 — 타인 소유의 매수 체결은 getOwnedTrade 단계에서 403으로 끝나야 한다.
-	// side 검사(400)까지 도달하면 이 테스트가 실패해 검증 순서 위반을 드러낸다.
 	@Test
 	void createSellJournalReturnsForbiddenNotValidationErrorForOtherUsersBuyTrade() {
 		when(tradeService.getOwnedTrade(USER_ID, SELL_TRADE_ID))
@@ -328,8 +323,6 @@ class JournalServiceTest {
 		verify(sellTradeJournalRepository, never()).findBySellTradeId(any());
 	}
 
-	// 검증 순서 확인 — 타인 소유의 매수 체결은 getOwnedTrade 단계에서 403으로 끝나야 한다.
-	// side 검사(400)나 회고 조회(404)까지 도달하면 이 테스트가 실패해 검증 순서 위반을 드러낸다.
 	@Test
 	void updateSellJournalReturnsForbiddenNotValidationErrorForOtherUsersBuyTrade() {
 		when(tradeService.getOwnedTrade(USER_ID, SELL_TRADE_ID))
@@ -357,9 +350,6 @@ class JournalServiceTest {
 		verify(sellTradeJournalRepository, never()).findBySellTradeId(any());
 	}
 
-	// 체결이 없는 404(getOwnedTrade 단계)와 회고가 없는 404(findBySellTradeId 단계)는
-	// 같은 ErrorCode.NOT_FOUND를 쓰지만 트리거 지점이 다르다 — 바로 위 트레이드 미존재 테스트와 대비해서 본다.
-	// 이 테스트는 본인 소유의 매도 체결까지는 통과했는데 회고가 없어서 실패하는 경로를 확인한다.
 	@Test
 	void updateSellJournalThrowsNotFoundWhenJournalDoesNotExistEvenThoughTradeIsOwnedSellTrade() {
 		Trade trade = sellTrade(SELL_TRADE_ID);
@@ -445,8 +435,6 @@ class JournalServiceTest {
 		verify(buyTradeJournalRepository, never()).findByBuyTradeId(any());
 	}
 
-	// 검증 순서 확인 — 타인 소유의 매도 체결은 getOwnedTrade 단계에서 403으로 끝나야 한다.
-	// side 검사(400)나 회고 조회(404)까지 도달하면 이 테스트가 실패해 검증 순서 위반을 드러낸다.
 	@Test
 	void updateBuyJournalReturnsForbiddenNotValidationErrorForOtherUsersSellTrade() {
 		when(tradeService.getOwnedTrade(USER_ID, BUY_TRADE_ID)).thenThrow(new BusinessException(ErrorCode.FORBIDDEN));
@@ -473,9 +461,6 @@ class JournalServiceTest {
 		verify(buyTradeJournalRepository, never()).findByBuyTradeId(any());
 	}
 
-	// 체결이 없는 404(getOwnedTrade 단계)와 회고가 없는 404(findByBuyTradeId 단계)는
-	// 같은 ErrorCode.NOT_FOUND를 쓰지만 트리거 지점이 다르다 — 바로 위 트레이드 미존재 테스트와 대비해서 본다.
-	// 이 테스트는 본인 소유의 매수 체결까지는 통과했는데 회고가 없어서 실패하는 경로를 확인한다.
 	@Test
 	void updateBuyJournalThrowsNotFoundWhenJournalDoesNotExistEvenThoughTradeIsOwnedBuyTrade() {
 		Trade trade = buyTrade(BUY_TRADE_ID);
@@ -556,7 +541,6 @@ class JournalServiceTest {
 		Account account = accountWithId(ACCOUNT_ID);
 		when(accountService.getAccountFor(USER_ID, Market.STOCK)).thenReturn(account);
 
-		// 매수(체결 ID 5)와 매도(체결 ID 7)가 같은 시각에 작성됨 — 체결 ID가 더 큰 매도가 먼저 와야 한다.
 		BuyTradeJournal buyAtSameInstant = BuyTradeJournal.of(buyTrade(5L), "매수 회고", NOW);
 		SellTradeJournal sellAtSameInstant = SellTradeJournal.of(sellTrade(7L), "매도 회고", NOW);
 
@@ -659,10 +643,6 @@ class JournalServiceTest {
 		assertThat(buyTradeIdCaptor.getValue()).isEqualTo(sellTradeIdCaptor.getValue());
 	}
 
-	// --- spec 012 §C-6 조회 경로 (4차 §FEED-013) ---
-	//
-	// 일기가 없는 것이 정상 상태라 404가 아니다.
-	// 소유권 검증(getOwnedTrade)을 부르지 않는 것도 계약이므로 tradeService 무호출까지 단정한다(§C-6).
 
 	@Test
 	void findSellJournalContentReturnsEmptyWhenSellJournalDoesNotExist() {
@@ -682,7 +662,6 @@ class JournalServiceTest {
 			.contains(new JournalContentDto(SELL_TRADE_ID, "손절 기준을 못 지켰다. 다음엔 지킨다.", NOW.plusDays(1)));
 	}
 
-	// 빈 목록은 "배분된 매수 체결이 없다"는 정상 입력이다. 여기서 걸러내지 않으면 `in ()`이 DB까지 나간다.
 	@Test
 	void findBuyJournalContentsReturnsEmptyWithoutQueryingWhenBuyTradeIdsAreEmpty() {
 		assertThat(journalService.findBuyJournalContents(List.of())).isEmpty();
@@ -690,8 +669,6 @@ class JournalServiceTest {
 		verify(buyTradeJournalRepository, never()).findAllByBuyTradeIdIn(any());
 	}
 
-	// 일기가 있는 체결만 담기므로 입력 id 수와 결과 수가 다른 것이 정상이다 — 여기서 빈 자리를 채우거나
-	// 예외를 던지면 "일기를 아직 안 쓴 매수"가 서술 경로를 죽인다.
 	@Test
 	void findBuyJournalContentsReturnsOnlyTheTradesThatHaveAJournal() {
 		BuyTradeJournal journal = BuyTradeJournal.of(buyTrade(BUY_TRADE_ID), "실적 발표 전 분할 매수.", NOW);

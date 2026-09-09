@@ -1,4 +1,3 @@
-// 투자일기 목록 조회 API의 인증, 검증, 응답 계약을 검증하는 WebMvc 슬라이스 테스트다.
 package com.finplay.api.domain.journal.controller;
 
 import static org.mockito.ArgumentMatchers.any;

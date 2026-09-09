@@ -1,4 +1,3 @@
-// sell_trade_journals의 UNIQUE(sell_trade_id)·FK(trades) 제약과 existsBySellTradeId 쿼리를 검증하는 JPA 슬라이스 테스트다.
 package com.finplay.api.domain.journal.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -79,7 +78,6 @@ class SellTradeJournalRepositoryTest {
 			.saveAndFlush(User.create("sell-journal-owner@finplay.com", "hash", "selljournalowner", NOW));
 		account = accountRepository.saveAndFlush(
 			Account.create(user, Market.STOCK, NOW));
-		// V7 시드와 겹치지 않는 테스트 전용 심볼을 사용한다 — UNIQUE(symbol) 충돌 방지.
 		instrument = instrumentRepository.saveAndFlush(
 			Instrument.create(Market.STOCK, "SJR01", "테스트종목", BigDecimal.valueOf(100), 10_000L, true, NOW));
 		session = stockReplaySessionRepository.saveAndFlush(
@@ -113,7 +111,6 @@ class SellTradeJournalRepositoryTest {
 			NOW));
 	}
 
-	// 033-exclude-tutorial-sandbox-data(SANDBOX-EXCL-002) 테스트 전용: 지정한 종목으로 매도 체결을 만든다.
 	private Trade createSellTradeWithInstrument(Instrument tradeInstrument) {
 		sequence++;
 		Order order = orderRepository.saveAndFlush(Order.create(
@@ -168,7 +165,6 @@ class SellTradeJournalRepositoryTest {
 			NOW));
 	}
 
-	// --- ① 같은 sell_trade_id로 2건 저장 시 유니크 위반 ---
 
 	@Test
 	@DisplayName("같은 매도 체결에 매도 회고 2건째는 유니크 제약에 걸린다")
@@ -182,7 +178,6 @@ class SellTradeJournalRepositoryTest {
 			.isInstanceOf(DataIntegrityViolationException.class);
 	}
 
-	// --- ② 서로 다른 체결 2건은 공존 ---
 
 	@Test
 	@DisplayName("서로 다른 매도 체결의 매도 회고는 각각 공존한다")
@@ -196,7 +191,6 @@ class SellTradeJournalRepositoryTest {
 		assertThat(sellTradeJournalRepository.count()).isEqualTo(2);
 	}
 
-	// --- ③ existsBySellTradeId가 저장 전후로 false→true ---
 
 	@Test
 	@DisplayName("매도 회고를 저장하기 전에는 존재하지 않고, 저장한 뒤에는 존재한다")
@@ -210,7 +204,6 @@ class SellTradeJournalRepositoryTest {
 		assertThat(sellTradeJournalRepository.existsBySellTradeId(sellTrade.getId())).isTrue();
 	}
 
-	// --- ④ 존재하지 않는 trades.id를 참조하면 FK 위반 ---
 
 	@Test
 	@DisplayName("존재하지 않는 체결 ID를 참조하는 매도 회고는 외래키 제약에 걸린다")
@@ -223,7 +216,6 @@ class SellTradeJournalRepositoryTest {
 			.isInstanceOf(DataIntegrityViolationException.class);
 	}
 
-	// --- ⑤ findBySellTradeId가 부재 시 empty, 존재 시 값을 반환 ---
 
 	@Test
 	@DisplayName("매도 회고가 없는 체결은 findBySellTradeId가 empty를 반환한다")
@@ -246,7 +238,6 @@ class SellTradeJournalRepositoryTest {
 			.isEqualTo(saved.getId());
 	}
 
-	// --- ⑥ updateContent 후 flush하면 content·updated_at만 바뀌고 나머지는 그대로 ---
 
 	@Test
 	@DisplayName("updateContent 호출 후 flush하면 content와 updated_at만 바뀌고 created_at·sell_trade_id·id는 그대로다")
@@ -271,7 +262,6 @@ class SellTradeJournalRepositoryTest {
 		assertThat(reloaded.getCreatedAt()).isEqualTo(NOW);
 	}
 
-	// --- ⑦ findByAccountIdWithCursor: 다른 계좌 회고 미포함 ---
 
 	@Test
 	@DisplayName("커서 조회는 다른 계좌의 매도 회고를 포함하지 않는다")
@@ -293,7 +283,6 @@ class SellTradeJournalRepositoryTest {
 		assertThat(result).extracting(SellTradeJournal::getId).containsExactly(ownerJournal.getId());
 	}
 
-	// --- ⑧ 커서 이전 항목만 반환 + createdAt 동점 시 체결 ID 내림차순 ---
 
 	@Test
 	@DisplayName("커서보다 이전(createdAt이 더 작거나 같은 createdAt에서 체결 ID가 더 작은) 항목만 반환한다")
@@ -328,9 +317,7 @@ class SellTradeJournalRepositoryTest {
 			.containsExactly(third.getId(), second.getId(), first.getId());
 	}
 
-	// --- ⑨ fetchSize(limit) 준수 ---
 
-	// --- ⑩ 033-exclude-tutorial-sandbox-data(SANDBOX-EXCL-002): 샌드박스 종목 매도 회고 제외 ---
 
 	@Test
 	@DisplayName("튜토리얼 샌드박스 종목 매도 체결의 회고는 커서 조회 결과에서 제외된다")

@@ -1,4 +1,3 @@
-// 매수 투자일기 작성 API의 순차·동시 중복 거부와 원장 불변을 실제 MySQL 트랜잭션으로 검증하는 통합 테스트다.
 package com.finplay.api.domain.journal;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -57,15 +56,11 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 
-// @Transactional을 붙이지 않는다 — 동시 중복 시나리오에서 각 스레드의 커밋 결과를 실제로 관찰해야 하기 때문이다
-// (EmailChangeConcurrencyIntegrationTest와 동일한 이유). 픽스처(체결)는 mock이 아니라 실제 매수·매도 파이프라인
-// (OrderService.createOrder)으로 만든다 — TradeIntegrationTest·OrderBuyIntegrationTest 선례를 따른다.
 @SpringBootTest
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, TestClockConfig.class})
 class JournalIntegrationTest {
 
-	// 2026-07-29는 수요일이고 holidays-2026.txt에도 없어 재생세션만 READY면 개장 상태로 계산된다 (기존 선례 그대로).
 	private static final LocalDate TRADING_DATE = LocalDate.of(2026, 7, 29);
 	private static final LocalDateTime BASE_NOW = LocalDateTime.of(2026, 7, 29, 10, 0, 0);
 	private static final LocalTime FIRST_CANDLE_TIME = LocalTime.of(9, 59);
@@ -123,10 +118,6 @@ class JournalIntegrationTest {
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
 
-	// 이 테스트 인스턴스(JUnit5 기본 PER_METHOD라 메서드마다 새 인스턴스)가 실제로 커밋한 종목 id와
-	// stock_replay_sessions 신규 생성 여부를 추적한다 — @AfterEach에서 이 테스트가 만든 것만 지우기 위함이다.
-	// @Transactional로 통째 롤백하지 못하는 이유는 동시 중복 시나리오가 여러 스레드의 실제 커밋 결과를 봐야 하기
-	// 때문이다(주석 위 설명). 대신 데이터를 남기지 않도록 명시적으로 정리한다(agent-mistakes.md 2026-07-30 재발 방지).
 	private final List<Long> createdInstrumentIds = new ArrayList<>();
 	private boolean createdReplaySessionByThisTest = false;
 
@@ -142,12 +133,9 @@ class JournalIntegrationTest {
 
 	@AfterEach
 	void tearDown() {
-		// 1. buy_trade_journals·sell_trade_journals — 이 통합 테스트 클래스만 실제로 커밋하는 테이블이라 통째로 비워도 안전하다.
 		jdbcTemplate.update("delete from buy_trade_journals");
 		jdbcTemplate.update("delete from sell_trade_journals");
 
-		// 2. 이 테스트가 만든 종목에 딸린 원장 행을 FK 자식→부모 순서로 지운 뒤 종목·분봉을 지운다.
-		//    (trade_allocations → holding_lots → holdings → trades → orders → stock_candles → instruments)
 		for (Long instrumentId : createdInstrumentIds) {
 			jdbcTemplate.update(
 				"delete from trade_allocations where sell_trade_id in (select id from trades where instrument_id = ?)",
@@ -162,8 +150,6 @@ class JournalIntegrationTest {
 			jdbcTemplate.update("delete from instruments where id = ?", instrumentId);
 		}
 
-		// 3. stock_replay_sessions — 이 테스트가 새로 만든 경우에만 지운다. 이미 있어 재사용한 세션은
-		//    다른 스위트가 쓸 수 있으므로 건드리지 않는다.
 		if (createdReplaySessionByThisTest) {
 			jdbcTemplate.update("delete from stock_replay_sessions where service_date = ?", TRADING_DATE);
 		}
@@ -222,8 +208,6 @@ class JournalIntegrationTest {
 
 		List<Integer> statuses = fireConcurrentJournalRequests(buyTradeId, accessToken, 2);
 
-		// 잠금이 없으면 두 요청 모두 existsByBuyTradeId=false를 보고 둘 다 저장을 시도하는데,
-		// UNIQUE(buy_trade_id) 제약이 한 건만 통과시키고 나머지는 DataIntegrityViolationException → 409로 변환된다.
 		assertThat(statuses).hasSize(2).containsExactlyInAnyOrder(201, 409);
 		assertThat(journalCountFor(buyTradeId)).isEqualTo(1L);
 		assertThat(captureLedger(account.getId())).isEqualTo(before);
@@ -353,8 +337,6 @@ class JournalIntegrationTest {
 
 		List<Integer> statuses = fireConcurrentSellJournalRequests(sellTradeId, accessToken, 2);
 
-		// 잠금이 없으면 두 요청 모두 existsBySellTradeId=false를 보고 둘 다 저장을 시도하는데,
-		// UNIQUE(sell_trade_id) 제약이 한 건만 통과시키고 나머지는 DataIntegrityViolationException → 409로 변환된다.
 		assertThat(statuses).hasSize(2).containsExactlyInAnyOrder(201, 409);
 		assertThat(sellJournalCountFor(sellTradeId)).isEqualTo(1L);
 		assertThat(captureLedger(account.getId())).isEqualTo(before);
@@ -530,8 +512,6 @@ class JournalIntegrationTest {
 		assertThat(captureLedger(account.getId())).isEqualTo(before);
 	}
 
-	// 회고를 아직 쓰지 않은 매도 체결에 PATCH를 보내면 upsert로 새 회고를 만들지 않고 404여야 한다
-	// (spec.md "수정 요청으로 새 회고를 만들지 않는다(upsert 금지)").
 	@Test
 	void updateUnwrittenSellJournalReturns404AndDoesNotCreateRowUpsert() throws Exception {
 		User user = createUser("ujour-unwritten");
@@ -688,8 +668,6 @@ class JournalIntegrationTest {
 		assertThat(captureLedger(account.getId())).isEqualTo(before);
 	}
 
-	// 아직 매수 회고를 쓰지 않은 매수 체결에 PATCH를 보내면 upsert로 새 회고를 만들지 않고 404여야 한다
-	// (spec.md "수정 요청으로 새 회고를 만들지 않는다(upsert 금지)").
 	@Test
 	void updateUnwrittenBuyJournalReturns404AndDoesNotCreateRowUpsert() throws Exception {
 		User user = createUser("ubjour-unwritten");
@@ -771,10 +749,6 @@ class JournalIntegrationTest {
 		assertThat(captureLedger(account.getId())).isEqualTo(before);
 	}
 
-	// 잠금 없음 회귀 ① 매도한 적 없는 매수 체결은 위 updateBuyJournalReturns200... 테스트가 이미 검증한다.
-	// 아래 두 테스트는 잠금 없음 회귀 ②·③ — 005-order-sell 매도 경로를 실제로 태워 만든 배분·전량 매도 lot에
-	// 대해서도 매수 회고 수정이 여전히 200임을 확인한다 (005-order-sell spec의 "첫 매도 배분 발생 시 잠금" 규칙이
-	// 2026-08-04 이슈 #197로 철회됐다는 것을 고정하는 회귀 방어선. holding_lots·trade_allocations 값도 그대로임을 함께 본다).
 	@Test
 	void updateBuyJournalSucceedsWhenLotHasPartialSellAllocationRegressionNoLock() throws Exception {
 		User user = createUser("ubjour-partial");
@@ -829,7 +803,6 @@ class JournalIntegrationTest {
 		assertThat(captureLedger(account.getId())).isEqualTo(before);
 	}
 
-	// 같은 체결에 동시에 투자일기 작성 요청을 쏘고 각 응답 상태를 모은다 (EmailChangeConcurrencyIntegrationTest 선례).
 	private List<Integer> fireConcurrentJournalRequests(Long buyTradeId, String accessToken, int count)
 		throws Exception {
 
@@ -862,7 +835,6 @@ class JournalIntegrationTest {
 		}
 	}
 
-	// 같은 체결에 동시에 매도 회고 작성 요청을 쏘고 각 응답 상태를 모은다 (fireConcurrentJournalRequests와 대칭).
 	private List<Integer> fireConcurrentSellJournalRequests(Long sellTradeId, String accessToken, int count)
 		throws Exception {
 
@@ -931,7 +903,6 @@ class JournalIntegrationTest {
 		return "{\"content\":\"" + content + "\"}";
 	}
 
-	// 매수 파이프라인만 태워 체결 1건을 만든다(주문가는 09:59에 마감된 분봉).
 	private Long createBuyTrade(User user, String instrumentPrefix) {
 		Instrument instrument = createStockInstrument(instrumentPrefix);
 		createCandle(instrument, FIRST_CANDLE_TIME, new BigDecimal("60000"));
@@ -940,7 +911,6 @@ class JournalIntegrationTest {
 		return response.tradeId();
 	}
 
-	// 매수 후 매도까지 태워 매도 체결 1건을 만든다 (TradeIntegrationTest 선례와 동일한 시각 전진 방식).
 	private Long createBuyThenSellTrade(User user, String instrumentPrefix) {
 		Instrument instrument = createStockInstrument(instrumentPrefix);
 		createCandle(instrument, FIRST_CANDLE_TIME, new BigDecimal("60000"));
@@ -956,8 +926,6 @@ class JournalIntegrationTest {
 		return sell.tradeId();
 	}
 
-	// createBuyThenSellTrade와 같은 매수 → 매도 파이프라인을 태우되, 교차 검증(매수 체결에 sell-journal,
-	// 한 종목의 매수·매도 각각에 회고 작성)에 필요한 매수 체결 id도 함께 반환한다.
 	private TradePair createBuyThenSellTradePair(User user, String instrumentPrefix) {
 		Instrument instrument = createStockInstrument(instrumentPrefix);
 		createCandle(instrument, FIRST_CANDLE_TIME, new BigDecimal("60000"));
@@ -973,8 +941,6 @@ class JournalIntegrationTest {
 		return new TradePair(buy.tradeId(), sell.tradeId());
 	}
 
-	// createBuyThenSellTradePair와 같은 매수 → 매도 파이프라인을 태우되, 매수 수량 전부를 매도해 잠금 없음 회귀
-	// 테스트(③ 전량 매도된 매수 체결)에서 remaining_quantity=0인 lot을 만든다.
 	private TradePair createBuyThenFullySellTradePair(User user, String instrumentPrefix) {
 		Instrument instrument = createStockInstrument(instrumentPrefix);
 		createCandle(instrument, FIRST_CANDLE_TIME, new BigDecimal("60000"));
@@ -1036,8 +1002,6 @@ class JournalIntegrationTest {
 		return scenario + "-" + UUID.randomUUID().toString().replace("-", "");
 	}
 
-	// buy_trade_journals에서 특정 체결에 실제 저장된 행 수를 잰다 — 다른 테스트 메서드가 같은 테이블에 남긴
-	// 행과 섞이지 않도록 buy_trade_id로 스코프를 좁힌다.
 	private long journalCountFor(Long buyTradeId) {
 		Long count = jdbcTemplate.queryForObject(
 			"select count(*) from buy_trade_journals where buy_trade_id = ?", Long.class, buyTradeId);
@@ -1049,14 +1013,11 @@ class JournalIntegrationTest {
 		return count == null ? 0L : count;
 	}
 
-	// buy_trade_journals에 실제 저장된 본문을 읽는다 (수정 성공·거부 후 본문이 의도대로 바뀌었는지/그대로인지 확인용).
 	private String journalContentFor(Long buyTradeId) {
 		return jdbcTemplate.queryForObject(
 			"select content from buy_trade_journals where buy_trade_id = ?", String.class, buyTradeId);
 	}
 
-	// buy_trade_journals에 실제 저장된 [created_at, updated_at]을 읽는다 (수정 후 updated_at이 created_at보다
-	// 이후인지 DB 값으로 직접 확인하기 위함 — 응답 JSON만으로는 같은 클록 소스를 재확인하는 셈이라 DB 값도 함께 본다).
 	private LocalDateTime[] journalTimestampsFor(Long buyTradeId) {
 		return jdbcTemplate.queryForObject(
 			"select created_at, updated_at from buy_trade_journals where buy_trade_id = ?",
@@ -1065,14 +1026,11 @@ class JournalIntegrationTest {
 			buyTradeId);
 	}
 
-	// 특정 매수 체결이 만든 holding_lot의 remaining_quantity를 읽는다 — 매수 회고 수정이 잠금 없이도 lot을
-	// 건드리지 않는지 확인하는 회귀 검증용 (spec.md "holding_lots·trade_allocations를 읽지도 않는다").
 	private BigDecimal remainingQuantityForBuyTrade(Long buyTradeId) {
 		return jdbcTemplate.queryForObject(
 			"select remaining_quantity from holding_lots where buy_trade_id = ?", BigDecimal.class, buyTradeId);
 	}
 
-	// 특정 매수 체결이 만든 holding_lot에 걸린 trade_allocations의 배분 수량 합을 읽는다 (위와 같은 회귀 검증용).
 	private BigDecimal totalAllocatedQuantityForBuyTrade(Long buyTradeId) {
 		BigDecimal sum = jdbcTemplate.queryForObject(
 			"select coalesce(sum(ta.allocated_quantity), 0) from trade_allocations ta "
@@ -1081,7 +1039,6 @@ class JournalIntegrationTest {
 		return sum == null ? BigDecimal.ZERO : sum;
 	}
 
-	// 특정 매수 체결이 만든 holding_lot에 걸린 trade_allocations 행 수를 잰다 (위와 같은 회귀 검증용).
 	private long allocationCountForBuyTrade(Long buyTradeId) {
 		Long count = jdbcTemplate.queryForObject(
 			"select count(*) from trade_allocations ta join holding_lots hl on ta.holding_lot_id = hl.id "
@@ -1090,7 +1047,6 @@ class JournalIntegrationTest {
 		return count == null ? 0L : count;
 	}
 
-	// sell_trade_journals에서 특정 체결에 실제 저장된 행 수를 잰다 (journalCountFor와 대칭).
 	private long sellJournalCountFor(Long sellTradeId) {
 		Long count = jdbcTemplate.queryForObject(
 			"select count(*) from sell_trade_journals where sell_trade_id = ?", Long.class, sellTradeId);
@@ -1102,14 +1058,11 @@ class JournalIntegrationTest {
 		return count == null ? 0L : count;
 	}
 
-	// sell_trade_journals에 실제 저장된 본문을 읽는다 (수정 성공·거부 후 본문이 의도대로 바뀌었는지/그대로인지 확인용).
 	private String sellJournalContentFor(Long sellTradeId) {
 		return jdbcTemplate.queryForObject(
 			"select content from sell_trade_journals where sell_trade_id = ?", String.class, sellTradeId);
 	}
 
-	// sell_trade_journals에 실제 저장된 [created_at, updated_at]을 읽는다 (수정 후 updated_at이 created_at보다
-	// 이후인지 DB 값으로 직접 확인하기 위함 — 응답 JSON만으로는 같은 클록 소스를 재확인하는 셈이라 DB 값도 함께 본다).
 	private LocalDateTime[] sellJournalTimestampsFor(Long sellTradeId) {
 		return jdbcTemplate.queryForObject(
 			"select created_at, updated_at from sell_trade_journals where sell_trade_id = ?",
@@ -1118,8 +1071,6 @@ class JournalIntegrationTest {
 			sellTradeId);
 	}
 
-	// orders·trades·holdings·holding_lots·trade_allocations(전역 행 수)와 요청 계좌의 현금·실현손익을 한 번에 담는다.
-	// 투자일기 작성 성공·실패 어느 경로에서도 이 값들이 그대로여야 한다(spec.md 비즈니스 규칙 — 원장은 읽기 전용).
 	private LedgerSnapshot captureLedger(Long accountId) {
 		Account account = accountRepository.findById(accountId).orElseThrow();
 		return new LedgerSnapshot(
