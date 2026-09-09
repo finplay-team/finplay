@@ -1,4 +1,3 @@
-// 회원의 시장별 초기 계좌 생성·조회 상태를 검증하는 단위 테스트다.
 package com.finplay.api.domain.account.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -166,10 +165,6 @@ class AccountServiceTest {
 		verify(accountRepository).findAllByIdInFetchUser(ids);
 	}
 
-	// 랭킹 재구성(이슈 #279)이 쓰는 배치 조회. getAccountsWithUser와 달리 User를 fetch join하지 않는다는 것이
-	// 이 메서드가 따로 존재하는 유일한 이유다 — 재구성은 닉네임을 쓰지 않고 (id, realizedPnl)만 필요하다.
-	// fetch join 버전으로 갈아타면 계좌 수만큼 users 조인이 붙어도 결과가 같아 조용히 통과하므로,
-	// findAllByIdInFetchUser를 부르지 않았다는 것까지 단정한다.
 	@Test
 	void getAccountsByIdsDelegatesToFindAllByIdWithoutFetchingUser() {
 		AccountRepository accountRepository = mock(AccountRepository.class);
@@ -231,9 +226,6 @@ class AccountServiceTest {
 
 	@Test
 	void getAccountSummaryIncludesCostBasisForUnavailablePricedHoldingsWithoutPnlContribution() {
-		// PR #96 리뷰 차단 반영: 시세 무효(휴장 등) 보유는 evaluationAmount 대신 costBasis를
-		// holdingsValue에 반영하고 unrealizedPnl에는 기여하지 않는다(휴장 시간대 전종목 UNAVAILABLE로
-		// holdingsValue=0·수익률 대폭 마이너스가 되는 오류 재현·수정, plan.md "이슈 #81" 절 참고).
 		AccountRepository accountRepository = mock(AccountRepository.class);
 		HoldingValuationService holdingValuationService = mock(HoldingValuationService.class);
 		Clock fixedClock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
@@ -254,9 +246,9 @@ class AccountServiceTest {
 
 		AccountSummaryResponse result = accountService.getAccountSummary(1L, Market.CRYPTO);
 
-		long expectedHoldingsValue = 15_000L + 500_000L; // available.evaluationAmount + unavailable.costBasis
+		long expectedHoldingsValue = 15_000L + 500_000L;
 		assertThat(result.holdingsValue()).isEqualTo(expectedHoldingsValue);
-		assertThat(result.unrealizedPnl()).isEqualTo(5_000L); // unavailable은 0 기여
+		assertThat(result.unrealizedPnl()).isEqualTo(5_000L);
 		assertThat(result.totalValue()).isEqualTo(account.getCashBalance() + expectedHoldingsValue);
 	}
 
@@ -328,8 +320,6 @@ class AccountServiceTest {
 
 	@Test
 	void getAccountsByIdsForUpdateDelegatesToRepositoryBulkLockQuery() {
-		// 054-limit-order-fill-bulk-lock: LimitOrderFillService.fillBatch가 AccountRepository를 직접 주입하지
-		// 않고 이 래퍼만 거치도록 강제하는 ADR-0002 준수용 위임 메서드다 — 별도 가공 없이 그대로 위임하는지만 본다.
 		AccountRepository accountRepository = mock(AccountRepository.class);
 		HoldingValuationService holdingValuationService = mock(HoldingValuationService.class);
 		Clock fixedClock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);

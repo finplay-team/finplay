@@ -1,4 +1,3 @@
-// Account의 현금 차감 메서드를 검증하는 순수 단위 테스트다.
 package com.finplay.api.domain.account.entity;
 
 import static org.assertj.core.api.Assertions.assertThat;

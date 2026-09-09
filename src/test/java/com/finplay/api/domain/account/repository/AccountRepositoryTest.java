@@ -1,4 +1,3 @@
-// 사용자·시장별 계좌 단건 조회 쿼리를 실제 MySQL에서 검증하는 JPA 슬라이스 테스트다.
 package com.finplay.api.domain.account.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -129,7 +128,6 @@ class AccountRepositoryTest {
 		assertThat(result).isEmpty();
 	}
 
-	// 054-limit-order-fill-bulk-lock: setUp에서 stockAccount를 먼저 저장하므로 항상 id가 더 작다(auto-increment).
 	@Test
 	void findByIdInForUpdateReturnsAccountsInAscendingIdOrderRegardlessOfInputOrder() {
 		List<Account> result = accountRepository
