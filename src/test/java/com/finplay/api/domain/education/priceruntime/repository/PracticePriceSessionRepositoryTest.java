@@ -1,4 +1,3 @@
-// V29 마이그레이션이 만든 practice_price_sessions의 ACTIVE unique 제약(generated column)과 조회 메서드를 검증하는 슬라이스 테스트다.
 package com.finplay.api.domain.education.priceruntime.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;

@@ -1,4 +1,3 @@
-// 실습 의도 생성의 잠금 순서(progress DB → favorite in-memory)와 성공·실패 분기를 검증하는 단위 테스트다.
 package com.finplay.api.domain.education.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

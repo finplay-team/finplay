@@ -1,4 +1,3 @@
-// 프리셋 세 개와 052 자유 입력 구간 전체의 손절·익절선이 041 대본에서 실제로 닿는지 판정한다 (EXITPRESET-010).
 package com.finplay.api.domain.education.marketpractice.entity;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -19,18 +18,6 @@ import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
-/**
- * 041 plan §프리셋 도달 조건 검증의 부등식 전부를 여기서 판정한다. 프리셋 수치나 대본 배율 중 하나만 바뀌어도
- * 깨지도록 <b>양쪽을 리터럴 없이 읽는다</b> — 프리셋은 {@link ExitPreset} 상수에서, 배율은 대본 파일에서.
- *
- * <p><b>같은 조건을 두 곳에서 검사하지 않는다.</b> 041 1번이 이 부등식을 {@code TutorialScenarioScriptIntegrityTest}에
- * 프리셋 리터럴로 넣어 두고 "042의 상수가 들어오면 옮긴다"고 적어 뒀다. 판정 주체가 프리셋이므로
- * {@code market} 패키지 테스트가 {@code education}의 열거형을 참조하는 대신 이쪽으로 옮겨 왔고, 저쪽에는
- * 대본 내부 성질(구간 배분·극값·사건 배치·무귀속 &gt; 귀속)만 남겼다.
- *
- * <p>기준선을 직접 곱하지 않고 {@link ReferencePriceCalculator}로 계산하는 이유는, 실제 사용자가 겪는 선이
- * 그 계산기가 만든 선이기 때문이다. 배율을 진입가 자리에 넣으면 결과도 같은 배율 단위가 된다.
- */
 class ExitPresetScenarioReachabilityTest {
 
 	private final TutorialScenarioScript script = new TutorialScenarioScriptLoader(new ObjectMapper())
@@ -39,8 +26,6 @@ class ExitPresetScenarioReachabilityTest {
 
 	@Test
 	void firstActNeverReachesTheNarrowestTakeProfitLine() {
-		// 1막에서 익절이 터지면 2막 손절 학습을 통째로 못 한다. 가장 좁은 익절률이 +3%인 이상
-		// 1막은 3%보다 크게 오를 수 없다 — 1막 고점 1.018은 이 부등식의 결과다.
 		forEachPreset(preset -> assertThat(takeProfitLow(preset))
 			.as("%s 익절선", preset)
 			.isGreaterThan(high("ACT1_RISE")));
@@ -48,10 +33,6 @@ class ExitPresetScenarioReachabilityTest {
 
 	@Test
 	void rumorLowSeparatesCautiousFromTheOtherPresets() {
-		// 좁게 잡은 사용자만 소문 단계에서 털려 나간다. 세 손절선 구간이 겹치지 않아야 진입가 편차가 아니라
-		// 고른 프리셋이 결과를 정한다 — 여유가 0.3%p뿐이라 이 대본에서 가장 깨지기 쉬운 조건이다.
-		// 루머 저점(0.975)도 리터럴로 적지 않고 대본에서 읽는다 — 적어 두면 대본이 바뀐 뒤에도 옛 값 기준으로
-		// 통과해 버린다. 그 저점이 계획대로 0.975인지는 041의 대본 극값 테스트가 본다.
 		BigDecimal rumorLow = low("ACT2_RUMOR");
 		assertThat(stopLossLow(ExitPreset.CAUTIOUS)).isGreaterThan(rumorLow);
 		assertThat(stopLossHigh(ExitPreset.BALANCED)).isLessThan(rumorLow);
@@ -64,8 +45,6 @@ class ExitPresetScenarioReachabilityTest {
 	void cautiousStopsOutAfterTheRumorHeadlineOpens() {
 		List<BigDecimal> ratios = script.stage("ACT2_RUMOR").ratios();
 		BigDecimal widestCautiousLine = stopLossHigh(ExitPreset.CAUTIOUS);
-		// 손절선에 닿는 분을 못 찾아도 인덱스를 넘겨 죽지 않게 한다 — 그 경우는 "루머에서 CAUTIOUS가 털린다"가
-		// 무너진 것이므로 스택트레이스가 아니라 단언 실패로 보여야 원인이 바로 읽힌다.
 		int stopOutMinute = 0;
 		while (stopOutMinute < ratios.size() && ratios.get(stopOutMinute).compareTo(widestCautiousLine) > 0) {
 			stopOutMinute++;
@@ -79,8 +58,6 @@ class ExitPresetScenarioReachabilityTest {
 		assertThat(stopOutMinute).isGreaterThanOrEqualTo(rumor.revealMinute());
 	}
 
-	// 이름을 내용과 맞춘다 — 첫 단언은 "아무도 구제되지 않는다"가 아니라 반등 고점이 세 손절선 위로 올라온다는
-	// 것이고(속임수처럼 보이는 이유), 실제로 아무 일도 일어나지 않게 하는 것은 두 번째 단언이다.
 	@Test
 	void fakeoutReboundClimbsBackAboveEveryStopLineButReachesNoTakeProfitLine() {
 		forEachPreset(preset -> {
@@ -108,9 +85,6 @@ class ExitPresetScenarioReachabilityTest {
 		});
 	}
 
-	// SCENARIO-004·006 상한 — 4막 하락폭이 익절한 사용자가 놓친 상승분보다 커야 "익절이 옳았다"가 결과로
-	// 증명된다. 이 조건이 없으면 4막만 얕게 손보는 수정이 아무 테스트도 깨지 않고 통과한다
-	// (041 plan §잔여 위험: "4막을 얕게 만드는 수정은 단독으로 하면 안 된다").
 	@Test
 	void fourthActFallsFurtherThanTheUpsideMissedByTakingProfit() {
 		BigDecimal crashDrop = BigDecimal.ONE.subtract(
@@ -126,23 +100,6 @@ class ExitPresetScenarioReachabilityTest {
 		});
 	}
 
-	// ---------------------------------------------------------------------------------------------
-	// 052 — 자유 입력 구간 전수 도달성
-	//
-	// **여기부터가 이 클래스에서 가장 중요한 검증이다.** 위 단언들은 프리셋 셋(2·3·5 / 3·5·8)이라는 점
-	// 세 개에 대해서만 도달성을 고정한다. 052가 그 자리를 자유 입력으로 바꾸면서 검증해야 할 것이 점
-	// 세 개가 아니라 **구간 [2,5]·[3,8] 전체**가 됐다 — 사용자가 고를 수 있는데 대본이 영영 닿지 않는
-	// 값이 하나라도 있으면 그 사용자는 이 튜토리얼이 가르치려는 것("손절과 익절을 실제로 겪어 본다")을
-	// 못 배우고 끝난다.
-	//
-	// 0.1%p 간격 전수(손절 31개 × 익절 51개 = 1581조합)를 **가능한 모든 진입 분**에 대해 훑는다. 진입가는
-	// 대기 구간의 어느 분에서나 잡힐 수 있으므로 진입 배율을 하나로 고정하면 안 된다 — 이 대본의 대기
-	// 구간은 ±0.2% 범위로 흔들린다.
-	//
-	// 가격 경로는 041의 전이 규칙을 그대로 쓴다: **대기 구간에서 매수하면 시간을 소비하지 않고 다음 진행
-	// 구간의 0분으로 점프한다.** 그래서 진입 이후 경로는 그 대기 구간의 남은 분이 아니라 다음 PROGRESS
-	// 구간부터다.
-	// ---------------------------------------------------------------------------------------------
 
 	private static final BigDecimal RATE_STEP = new BigDecimal("0.1");
 
@@ -170,15 +127,10 @@ class ExitPresetScenarioReachabilityTest {
 		});
 	}
 
-	/** 손절이 먼저 닿았는가, 익절이 먼저 닿았는가, 둘 다 못 닿고 대본이 끝났는가. */
 	private enum Reached {
 		STOP_LOSS, TAKE_PROFIT, NEITHER
 	}
 
-	/**
-	 * 진입 이후 경로를 분 단위로 걸으며 <b>먼저</b> 닿는 선을 판정한다. 두 선이 같은 분에 함께 걸리는 일은
-	 * 이 대본에 없지만, 있다면 손절을 먼저 본다 — 실제 tick 정산도 하락을 먼저 판정한다.
-	 */
 	private Reached firstLineReached(
 		BigDecimal entryRatio, BigDecimal stopLossRate, BigDecimal takeProfitRate, List<BigDecimal> path) {
 		ReferencePriceLines lines = calculator.calculateFromRates(
@@ -194,11 +146,6 @@ class ExitPresetScenarioReachabilityTest {
 		return Reached.NEITHER;
 	}
 
-	/**
-	 * 대기 구간 {@code waitStageId}에서 매수한 뒤 실제로 겪는 배율 경로. 041의 "대기 구간 매수는 다음 진행
-	 * 구간 0분으로 점프한다"를 그대로 따라 그 구간의 남은 분은 넣지 않고, 그 뒤 구간은 대기·진행 구분 없이
-	 * 대본 순서대로 이어 붙인다.
-	 */
 	private List<BigDecimal> pathAfterEntryIn(String waitStageId) {
 		List<TutorialScenarioStage> stages = script.stages();
 		int start = 0;
@@ -244,7 +191,6 @@ class ExitPresetScenarioReachabilityTest {
 		return calculator.calculateFromPreset(entryRatio, preset).referenceTakeProfitPrice();
 	}
 
-	/** 1막 진입자의 손절선 구간 하단(가장 낮은 진입 배율에서 나온 선). */
 	private BigDecimal stopLossLow(ExitPreset preset) {
 		return stopLossLine(preset, low("IDLE_ENTRY"));
 	}

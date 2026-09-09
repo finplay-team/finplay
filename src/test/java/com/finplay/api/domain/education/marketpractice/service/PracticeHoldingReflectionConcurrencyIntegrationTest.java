@@ -1,6 +1,3 @@
-// 완결된 chain에서 같은 사용자의 동시 복기 요청 2건이 practice_progresses 잠금으로 직렬화되어 한 건만
-// 성공하고(practice_market_reflections/practice_completions 각 정확히 1행), 나머지는 409
-// PRACTICE_ALREADY_COMPLETED로 거부되며 아무것도 추가로 저장하지 않음을 실제 MySQL로 검증한다.
 package com.finplay.api.domain.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -121,8 +118,6 @@ class PracticeHoldingReflectionConcurrencyIntegrationTest {
 		holding = holdingRepository.findByAccountIdAndInstrumentId(account.getId(), instrument.getId())
 			.orElseThrow();
 
-		// evidence A(경계 접근)를 만족시키는 관찰 1건을 미리 쌓아, 두 스레드 모두 evidence 검증은 통과하고
-		// practice_progresses 잠금에서만 갈리게 한다.
 		priceStore.saveTick(symbol, new BigDecimal("95000"), BASE_NOW.plusMinutes(1));
 		practiceHoldingObservationService.createObservation(
 			user.getId(), new PracticeHoldingObservationCreateRequest(holding.getId()));

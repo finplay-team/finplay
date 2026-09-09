@@ -1,4 +1,3 @@
-// next-tick 진행의 비관 잠금 경합·tick 99 완료 전이·종료 후 거부를 실제 MySQL로 검증하는 통합 테스트다.
 package com.finplay.api.domain.education.priceruntime.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -36,9 +35,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-// LimitOrderConcurrencyIntegrationTest와 동일하게 @Transactional을 클래스에 두지 않는다 — runConcurrently가
-// 두 스레드에서 각각 advanceTick(@Transactional)을 실제 별개 커넥션으로 실행해야 PESSIMISTIC_WRITE 락 경합을
-// 실측할 수 있다.
 @SpringBootTest
 @Import({TestcontainersConfiguration.class, TestClockConfig.class})
 class PracticePriceTickConcurrencyIntegrationTest {
@@ -68,9 +64,6 @@ class PracticePriceTickConcurrencyIntegrationTest {
 		clock.set(NOW);
 	}
 
-	// createUser/createCryptoInstrument는 @Transactional 없이(동시성 검증을 위해, 클래스 상단 주석 참고) 실제
-	// 커밋한다. 정리하지 않으면 education 패키지가 market 패키지보다 알파벳순으로 먼저 실행돼 InstrumentRepositoryTest의
-	// "정확히 28건" 단정을 깨뜨린다(PracticeHoldingReflectionConcurrencyIntegrationTest와 동일 근거).
 	@AfterEach
 	void cleanUp() {
 		jdbcTemplate.update("DELETE FROM practice_price_sessions WHERE user_id = ?", createdUserId);
@@ -78,10 +71,6 @@ class PracticePriceTickConcurrencyIntegrationTest {
 		jdbcTemplate.update("DELETE FROM users WHERE id = ?", createdUserId);
 	}
 
-	// 같은 세션에 두 스레드가 동시에 expectedTick=1로 advanceTick을 호출한다. 소유자 스코프 비관 잠금
-	// (findByIdAndUserIdForUpdate)이 두 요청을 직렬화하므로, 먼저 커밋한 쪽은 currentTick=1로 성공하고 나중
-	// 쪽은 갱신된 currentTick(=1)을 보고 expectedTick(=1)이 currentTick+1(=2)과 달라 409
-	// PRACTICE_PRICE_TICK_CONFLICT로 실패해야 한다 — 데드락·타임아웃 없이 완료됨이 그 자체로 잠금이 안전하다는 증거다.
 	@Test
 	void concurrentAdvanceTickRequestsForSameExpectedTickResultInExactlyOneWinner() throws Exception {
 		User user = createUser("tick-race");
@@ -126,9 +115,6 @@ class PracticePriceTickConcurrencyIntegrationTest {
 		assertThat(afterRace.getStatus()).isEqualTo(PracticePriceSessionStatus.ACTIVE);
 	}
 
-	// tick 1부터 99까지 순차 진행한 뒤 세션이 COMPLETED로 전이하고 completedAt이 고정 Clock 값과 일치하는지,
-	// 그 이후 next-tick 요청이 PRACTICE_PRICE_SESSION_CLOSED로 거부되는지 검증한다. 재조회
-	// (getSession→verifyPriceSeriesConsistency)로 저장된 currentPrice가 생성기 재계산과 일치함도 함께 확인한다.
 	@Test
 	void advancingAllTicksToNinetyNineCompletesSessionAndRejectsFurtherTicks() {
 		User user = createUser("tick-complete");
@@ -161,9 +147,6 @@ class PracticePriceTickConcurrencyIntegrationTest {
 					.isEqualTo(ErrorCode.PRACTICE_PRICE_SESSION_CLOSED));
 	}
 
-	// LimitOrderConcurrencyIntegrationTest의 runConcurrently 관례를 재사용한다 — 두 액션을 준비 완료(ready) 후
-	// 동시에 출발(start)시켜 실제 락 경합을 재현하고, 어느 쪽이든 예상치 못한 예외(데드락 등)를 던지면 그대로
-	// 전파해 테스트를 실패시킨다.
 	private void runConcurrently(ThrowingRunnable actionA, ThrowingRunnable actionB) throws Exception {
 		CountDownLatch ready = new CountDownLatch(2);
 		CountDownLatch start = new CountDownLatch(1);

@@ -1,5 +1,3 @@
-// tick 진행이 같은 세션의 교육 지정가 주문만 체결·취소하고, 일반 주문·타 세션·타 사용자 주문은
-// 건드리지 않음을 실제 MySQL로 검증하는 통합 테스트다 (030 COIN-PRICE-RUNTIME-007/008/011).
 package com.finplay.api.domain.education.priceruntime.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -43,9 +41,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 class PracticeLimitOrderTickIntegrationTest {
 
 	private static final LocalDateTime NOW = LocalDateTime.of(2026, 8, 11, 10, 0);
-	// 30,000원은 BTC 세션의 어떤 tick 가격보다도 항상 높다(±1%/tick, startPrice=10,000) — tick 1에서 즉시 체결된다.
 	private static final BigDecimal ALWAYS_FILLS_LIMIT_PRICE = new BigDecimal("30000");
-	// 4,000원은 ETH 세션의 하한(startPrice*0.5=5,000)보다 낮아 100틱 동안 절대 체결되지 않는다.
 	private static final BigDecimal NEVER_FILLS_LIMIT_PRICE = new BigDecimal("4000");
 	private static final BigDecimal START_PRICE = new BigDecimal("10000.00000000");
 
@@ -99,9 +95,6 @@ class PracticeLimitOrderTickIntegrationTest {
 		jdbcTemplate.update("DELETE FROM users WHERE id IN (?, ?)", userAId, userCId);
 	}
 
-	// 시나리오: 같은 사용자가 BTC 세션(즉시 체결 지정가)과 ETH 세션(끝까지 미체결 지정가)을 각각 tick 1..99까지
-	// 진행한다. 함께 존재하는 일반 지정가 주문과 다른 사용자의 BTC 세션 주문은 어느 tick에서도 건드려지지 않아야
-	// 하고, ETH 세션은 tick 99에서 "체결 판정 → 잔여 취소·예약 반환 → 세션 COMPLETED 전이" 순서를 지켜야 한다.
 	@Test
 	void tickAdvancesFillOnlySameSessionOrdersAndCancelUnfilledOrdersExactlyAtLastTick() {
 		User userA = createUser("tick-e2e-a");
@@ -164,8 +157,6 @@ class PracticeLimitOrderTickIntegrationTest {
 			.satisfies(h -> assertThat(h.getQuantity()).isEqualByComparingTo(BigDecimal.ONE));
 
 		Account accountAfter = accountRepository.findById(accountA.getId()).orElseThrow();
-		// orderA 체결(amount=30,000, fee=15) 확정 + orderB 취소(amount=8,000, fee=4) 예약 반환 후,
-		// normalOrder의 예약(amount=30,000, fee=15)만 reservedCash로 남는다.
 		assertThat(accountAfter.getReservedCash()).isEqualTo(30_015L);
 		assertThat(accountAfter.getCashBalance()).isEqualTo(10_000_000L - 30_015L);
 	}

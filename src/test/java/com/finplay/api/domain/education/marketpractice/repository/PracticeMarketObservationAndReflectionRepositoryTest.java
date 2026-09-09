@@ -1,4 +1,3 @@
-// V27 마이그레이션이 만든 practice_market_observations/practice_market_reflections의 FK·UNIQUE·nullable 제약을 검증하는 슬라이스 테스트다.
 package com.finplay.api.domain.education.marketpractice.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -62,8 +61,6 @@ class PracticeMarketObservationAndReflectionRepositoryTest {
 		user = userRepository.saveAndFlush(
 			User.create("market-practice-repo@finplay.com", "hash", "market-practice-repo", NOW));
 		Account account = accountRepository.saveAndFlush(Account.create(user, Market.STOCK, NOW));
-		// V7 마이그레이션 시드 데이터가 "005930" 등 실제 종목 심볼을 이미 선점하고 있어(uk_instruments_symbol),
-		// 충돌하지 않는 테스트 전용 심볼을 쓴다.
 		com.finplay.api.domain.market.entity.Instrument instrument = instrumentRepository.saveAndFlush(
 			com.finplay.api.domain.market.entity.Instrument.create(
 				Market.STOCK, "MKTPRAC1", "실습전용종목", new BigDecimal("100"), 0L,

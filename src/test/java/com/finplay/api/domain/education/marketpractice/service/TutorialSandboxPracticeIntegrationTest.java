@@ -1,6 +1,3 @@
-// 031-tutorial-sandbox-instruments: 샘플 종목 4단계 전체 흐름 + 5분 만료 + 실제 종목 회귀를 실제 시세 피드가
-// 전혀 없는 상태(빗썸 poller 미기동, 주식 재생세션 미시딩)에서 검증하는 통합 테스트다. 이슈 #339의 직접
-// 회귀 테스트(샘플 종목은 실제 시세 인프라 없이도 항상 진행 가능)이기도 하다.
 package com.finplay.api.domain.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -49,19 +46,12 @@ import org.springframework.context.annotation.Import;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
-// 이 클래스의 @Transactional은 JPA(MySQL) 쓰기만 테스트 종료 시 롤백한다(PracticeHoldingReflectionIntegrationTest와
-// 동일 관례) — favorite·intention(ADR-0012 in-memory)은 롤백 대상이 아니지만 매 테스트가 새 userId를 쓰므로
-// 서로 오염되지 않는다. Redis(price:crypto:*)도 롤백 대상이 아니라 @AfterEach에서 별도로 지운다.
 @SpringBootTest
 @Import({TestcontainersConfiguration.class, TestClockConfig.class})
 @Transactional
 class TutorialSandboxPracticeIntegrationTest {
 
 	private static final LocalDateTime BASE_NOW = LocalDateTime.of(2026, 8, 12, 10, 0, 0);
-	// SANDBOX-002·003 대상은 STOCK·CRYPTO 공통이다. STOCK 샘플 종목의 재생세션 필수 불변조건 예외 처리는
-	// TradeTest(allowsTutorialSampleStockTradeWithoutReplaySession 등)가 단위로 이미 커버하므로, 이 클래스의
-	// 샘플 종목 시나리오(1~3)는 중복을 피해 CRYPTO 샘플 종목(SANDBOX_COIN_1)으로만 진행한다 — PriceQueryService
-	// 분기·5분 만료 판정 로직 자체는 market과 무관하므로 커버리지 목적은 동일하다.
 	private static final BigDecimal SAMPLE_QUANTITY = new BigDecimal("1");
 	private static final BigDecimal SAMPLE_SELL_QUANTITY = new BigDecimal("0.6");
 	private static final BigDecimal SAMPLE_STOP_LOSS = new BigDecimal("8000");
@@ -117,14 +107,10 @@ class TutorialSandboxPracticeIntegrationTest {
 		priceKeysToCleanUp.forEach(redisTemplate::delete);
 	}
 
-	// 시나리오 1: 샘플 종목(SANDBOX_STK_1, tradable=true) 즐겨찾기 -> 의도 -> 시장가 매수(장 시간·시세 무관하게
-	// 성공, SANDBOX-002·003) -> evidence B(시간 분산 관찰 3회) -> 5분 이내 시장가 매도 -> 복기 -> GET에서
-	// steps 4개 전부 COMPLETED. 빗썸 poller·주식 재생세션이 전혀 없는 상태에서 진행한다(이슈 #339 회귀).
 	@Test
 	void sampleInstrumentChainCompletesAllFourStepsWithBuySellWithinFiveMinutes() {
 		SampleChainFixture fixture = buildSampleCryptoChainUpToHolding("sandbox-happy");
 
-		// evidence B: 관찰 3건 + 최초~최후 간격 2분 이상.
 		clock.set(BASE_NOW.plusSeconds(12));
 		practiceHoldingObservationService.createObservation(
 			fixture.userId(), new PracticeHoldingObservationCreateRequest(fixture.holdingId()));
@@ -135,7 +121,6 @@ class TutorialSandboxPracticeIntegrationTest {
 		practiceHoldingObservationService.createObservation(
 			fixture.userId(), new PracticeHoldingObservationCreateRequest(fixture.holdingId()));
 
-		// 매수(buyTrade.executedAt = BASE_NOW+2s) 후 5분 이내(+150s)에 시장가 매도(부분 매도, 전량 아님).
 		clock.set(BASE_NOW.plusSeconds(150));
 		orderService.createOrder(fixture.userId(), "sandbox-happy-sell-" + UUID.randomUUID(),
 			new OrderCreateRequest(Market.CRYPTO, fixture.instrumentId(), OrderSide.SELL, "MARKET",
@@ -163,8 +148,6 @@ class TutorialSandboxPracticeIntegrationTest {
 		assertThat(stepFour.evidence().saleDeadlineAt()).isNotNull();
 	}
 
-	// 시나리오 2: 샘플 종목 매수 후 매도 없이 5분을 넘기면 holding-reflections가 409
-	// PRACTICE_SANDBOX_TIME_EXPIRED를 반환하고, GET 응답의 4번째 step은 EXPIRED다(SANDBOX-007·008).
 	@Test
 	void sampleInstrumentChainExpiresAndReflectionIsRejectedWhenNoSaleWithinFiveMinutes() {
 		SampleChainFixture fixture = buildSampleCryptoChainUpToHolding("sandbox-expired");
@@ -179,7 +162,6 @@ class TutorialSandboxPracticeIntegrationTest {
 		practiceHoldingObservationService.createObservation(
 			fixture.userId(), new PracticeHoldingObservationCreateRequest(fixture.holdingId()));
 
-		// buyTrade.executedAt(BASE_NOW+2s) + 5분(300s) = BASE_NOW+302s. 매도 없이 1초 초과한 시점으로 이동.
 		clock.set(BASE_NOW.plusSeconds(303));
 
 		InvestmentPracticeResponse progressBeforeReflection = investmentPracticeQueryService.getProgress(
@@ -199,12 +181,6 @@ class TutorialSandboxPracticeIntegrationTest {
 			.noneSatisfy(completion -> assertThat(completion.getUserId()).isEqualTo(fixture.userId()));
 	}
 
-	// 시나리오 3(SANDBOX-007 "만료된 chain은 재시도 가능하다"): 만료된 chain에서 같은 종목·같은 intention으로
-	// 다시 매수(새 buyTrade)한 뒤 그 매수로부터 5분 이내에 매도하면 처음부터 4단계를 다시 완료할 수 있다.
-	// (구현 노트: 이 테스트를 작성하는 과정에서 MarketPracticeChainResolutionService.resolveForFavorite가
-	// 원래 instrumentId당 "가장 이른" 매수 체결만 고정 선택해 재도전이 막히는 회귀를 발견했고, 샘플 종목
-	// chain에서만 가장 최신 매수를 anchor로 쓰도록 수정했다 — TradeService.findLatestFilledBuyTradeMatching,
-	// 실제 종목 chain의 026 anti-gaming 규칙(가장 이른 체결 고정)은 그대로 유지된다.)
 	@Test
 	void sampleInstrumentChainCanRetryFromScratchAfterExpiryWithNewBuy() {
 		SampleChainFixture fixture = buildSampleCryptoChainUpToHolding("sandbox-retry");
@@ -219,14 +195,12 @@ class TutorialSandboxPracticeIntegrationTest {
 		practiceHoldingObservationService.createObservation(
 			fixture.userId(), new PracticeHoldingObservationCreateRequest(fixture.holdingId()));
 
-		// 매도 없이 5분 초과 -> 최초 chain 만료 확정.
 		clock.set(BASE_NOW.plusSeconds(303));
 		assertThatThrownBy(() -> practiceHoldingReflectionService.createReflection(
 			fixture.userId(), new PracticeHoldingReflectionCreateRequest(fixture.holdingId(), "만료 확인.")))
 			.isInstanceOfSatisfying(BusinessException.class,
 				exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.PRACTICE_SANDBOX_TIME_EXPIRED));
 
-		// 같은 종목·같은(기존) intention으로 재매수(새 buyTrade, anchor 갱신) -> 새 anchor로부터 5분 이내에 매도.
 		clock.set(BASE_NOW.plusSeconds(310));
 		orderService.createOrder(fixture.userId(), "sandbox-retry-rebuy-" + UUID.randomUUID(),
 			new OrderCreateRequest(Market.CRYPTO, fixture.instrumentId(), OrderSide.BUY, "MARKET", SAMPLE_QUANTITY));
@@ -253,9 +227,6 @@ class TutorialSandboxPracticeIntegrationTest {
 			step -> assertThat(step.status()).isEqualTo("COMPLETED"));
 	}
 
-	// 시나리오 4: 실제 종목(is_tutorial_sample=false)의 회귀 확인. (a) PriceStore에 틱이 없으면 여전히
-	// PRICE_UNAVAILABLE을 던진다(SANDBOX-002가 실제 종목에는 적용되지 않음). (b) 026의 기존 3단계 완료
-	// 흐름(evidence B + 자유 복기)이 이 spec 이후에도 완전히 동일하게 성공하고 steps.length==3을 유지한다.
 	@Test
 	void realInstrumentPriceQueryStillThrowsUnavailableWithoutFeedAndThreeStepFlowStillCompletes() {
 		User user = userRepository.saveAndFlush(
@@ -269,12 +240,10 @@ class TutorialSandboxPracticeIntegrationTest {
 		priceKeysToCleanUp.add("price:crypto:" + symbol);
 		priceStore.saveConnectionStatus(FeedConnectionStatus.CONNECTED);
 
-		// (a) 실제 종목은 샘플 종목과 달리 시세 틱이 없으면 여전히 PRICE_UNAVAILABLE이어야 한다(회귀 없음).
 		assertThatThrownBy(() -> priceQueryService.getPrice(instrument.getId()))
 			.isInstanceOfSatisfying(BusinessException.class,
 				exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.PRICE_UNAVAILABLE));
 
-		// (b) 026의 3단계 완료 흐름은 이 spec 이후에도 그대로 성공해야 한다.
 		priceStore.saveTick(symbol, CRYPTO_ENTRY_PRICE, BASE_NOW);
 		favoriteService.createFavorite(user.getId(), instrument.getId());
 
@@ -304,7 +273,6 @@ class TutorialSandboxPracticeIntegrationTest {
 		practiceHoldingObservationService.createObservation(
 			user.getId(), new PracticeHoldingObservationCreateRequest(holding.getId()));
 
-		// 실제 종목 chain은 매도 없이도(4단계 자체가 없으므로) 3단계에서 곧바로 복기로 완료된다.
 		PracticeHoldingReflectionResponse reflection = practiceHoldingReflectionService.createReflection(
 			user.getId(), new PracticeHoldingReflectionCreateRequest(holding.getId(), "매도 없이 3단계에서 완료."));
 		assertThat(reflection.holdingId()).isEqualTo(holding.getId());
@@ -315,8 +283,6 @@ class TutorialSandboxPracticeIntegrationTest {
 		assertThat(progress.steps()).allSatisfy(step -> assertThat(step.status()).isEqualTo("COMPLETED"));
 	}
 
-	// 시나리오 5: 시장별 2·3번째 샘플 종목(tradable=false)은 목록에는 노출되지만 즐겨찾기 대상에서는 026이
-	// 이미 상속한 "존재하지 않거나 비활성 종목" 배제 규칙(INSTRUMENT_NOT_TRADABLE)으로 그대로 거부된다.
 	@Test
 	void nonTradableSampleInstrumentsAreRejectedFromFavorites() {
 		User user = userRepository.saveAndFlush(
@@ -348,11 +314,6 @@ class TutorialSandboxPracticeIntegrationTest {
 	private record SampleChainFixture(Long userId, Long holdingId, Long instrumentId) {
 	}
 
-	/**
-	 * favorite -> intention -> 샘플 종목(SANDBOX_COIN_1) 시장가 매수 FILLED -> holding까지 완결한다. 빗썸
-	 * poller·PriceStore 틱을 전혀 준비하지 않는다 — 샘플 종목은 PriceQueryService 분기로 이 인프라를 완전히
-	 * 우회하기 때문이다(이슈 #339의 직접 회귀 지점).
-	 */
 	private SampleChainFixture buildSampleCryptoChainUpToHolding(String scenario) {
 		User user = userRepository.saveAndFlush(
 			User.create(uniqueEmail(scenario), "password-hash", uniqueNickname(scenario), BASE_NOW));

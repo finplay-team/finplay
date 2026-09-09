@@ -1,4 +1,3 @@
-// 코인 가상 가격 세션 귀속 교육 지정가 BUY 주문 생성 API의 인증·검증·응답·오류 매핑 계약을 검증하는 WebMvc 테스트다.
 package com.finplay.api.domain.education.priceruntime.controller;
 
 import static org.mockito.ArgumentMatchers.any;

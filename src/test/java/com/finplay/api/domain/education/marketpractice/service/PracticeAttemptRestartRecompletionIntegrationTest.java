@@ -1,4 +1,3 @@
-// 040 완료 attempt 재시작 후 재완료가 보상·evidence 3종 불변을 지키는지 실제 MySQL로 검증하는 통합 테스트
 package com.finplay.api.domain.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -111,7 +110,6 @@ class PracticeAttemptRestartRecompletionIntegrationTest {
 		Market market = Market.STOCK;
 		Fixture fixture = createFixture(market, "recomplete");
 
-		// 1) 최초 완료 → 보상 지급 확인 (완료 호출 직전 잔고 대비 정확히 500만원 증가)
 		RunOutcome firstRun = completeCurrentRun(fixture, market, "최초 실행 복기");
 		assertThat(firstRun.response().rewardGranted()).isTrue();
 		assertThat(firstRun.response().reflectionId()).isNotNull();
@@ -124,23 +122,19 @@ class PracticeAttemptRestartRecompletionIntegrationTest {
 		LocalDateTime firstCompletedAt = attemptRepository.findById(fixture.attemptId())
 			.orElseThrow().getCompletedAt();
 
-		// 2) 재시작(POST .../restart)
 		clock.set(LocalDateTime.now(clock).plusSeconds(300));
 		PracticeAttemptResponse restarted = practiceAttemptRestartService.restart(fixture.userId(), market);
 		assertThat(restarted.status()).isEqualTo("SELECTING_INSTRUMENT");
 		assertThat(restarted.runNumber()).isEqualTo(2L);
 
-		// 3) 재완료 — 완료 호출 직전 잔고와 동일해야 한다(보상 미지급)
 		RunOutcome secondRun = completeCurrentRun(fixture, market, "재시작 후 두 번째 실행 복기");
 		assertThat(secondRun.response().rewardGranted()).isFalse();
 		assertThat(secondRun.response().reflectionId()).isNull();
 		assertThat(secondRun.response().answer()).isEqualTo("재시작 후 두 번째 실행 복기");
 
-		// 4) 계좌 현금 불변 확인
 		Account afterRecompletion = refreshedAccount(fixture.userId(), market);
 		assertThat(afterRecompletion.getCashBalance()).isEqualTo(secondRun.cashBeforeCompletion());
 
-		// 5) practice_completions/practice_market_reflections/practice_progresses row count 불변 확인
 		assertThat(completionRepository.count()).isEqualTo(completionCountAfterFirst);
 		assertThat(reflectionRepository.count()).isEqualTo(reflectionCountAfterFirst);
 		assertThat(progressRepository.count()).isEqualTo(progressCountAfterFirst);
@@ -153,10 +147,6 @@ class PracticeAttemptRestartRecompletionIntegrationTest {
 
 	@Test
 	void legacyPreDeploymentCompletionRestartsAndRecompletesWithoutBackfillOrReward() {
-		// TUTORIAL-RESTART-004: 이 기능 배포 이전에 이미 완료한 사용자를 흉내 내기 위해 practice_completions·
-		// practice_progresses·practice_market_reflections을 attempt 없이 직접 seed한다(새 마이그레이션 없음,
-		// 기존 스키마 그대로). 이후 ensureAttempt로 attempt가 지연 생성(reconcileCompletedReplay)된 뒤에도
-		// 재시작·재완료 시 보상이 지급되지 않아야 "백필 없이 정확한 소급 판정"이 성립한다.
 		Market market = Market.STOCK;
 		String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 8);
 		LocalDateTime legacyCompletedAt = BASE_NOW.minusDays(30);
@@ -221,10 +211,6 @@ class PracticeAttemptRestartRecompletionIntegrationTest {
 		practiceAttemptRestartService.restart(fixture.userId(), market);
 		Holding secondRunHolding = buildSecondRunEvidence(fixture, market);
 		Account beforeRace = refreshedAccount(fixture.userId(), market);
-		// completionRepository.count()/reflectionRepository.count()는 공유 Testcontainers MySQL(ADR-0003)
-		// 전역 행 수다 — 다른 통합 테스트 클래스가 커밋한 행까지 포함되므로 절대값을 단정하면 전체 빌드
-		// 실행 순서에 따라 깨진다(ai/agent-mistakes.md 2026-07-30/08-04/08-10 행과 같은 부류). 경합 전후의
-		// 델타(증가량 0)만 단정한다.
 		long completionCountBeforeRace = completionRepository.count();
 		long reflectionCountBeforeRace = reflectionRepository.count();
 
@@ -324,8 +310,6 @@ class PracticeAttemptRestartRecompletionIntegrationTest {
 	}
 
 	private Account refreshedAccount(Long userId, Market market) {
-		// 클래스 레벨 @Transactional을 쓰지 않으므로(twoConcurrentRecompletionRequestsGrantRewardZeroAdditionalTimes가
-		// 별도 스레드·트랜잭션을 실행해야 한다) 각 서비스 호출은 이미 커밋된 상태다 — 새로 조회하면 그대로 최신값이다.
 		return accountRepository.findByUserIdAndMarket(
 			userId, Market.valueOf(market.name())).orElseThrow();
 	}

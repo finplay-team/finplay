@@ -1,4 +1,3 @@
-// 재시도 경계가 진입·재시작·tick 각각에서 교착을 1회만 삼키고 그 밖의 예외·2차 실패는 그대로 전파하는지 검증한다
 package com.finplay.api.domain.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -58,7 +57,6 @@ class PracticeAttemptDeadlockRetryServiceTest {
 		verify(practiceAttemptService, times(2)).ensureAttempt(USER_ID, Market.CRYPTO);
 	}
 
-	// 이슈 #491 코멘트가 두 번째 재현 경로로 등록한 조합이다. 재현하지는 못했지만 그물은 여기에도 둔다.
 	@Test
 	void retriesRestartOnceWhenFirstCallDeadlocks() {
 		PracticeAttemptResponse response = attemptResponse();
@@ -81,7 +79,6 @@ class PracticeAttemptDeadlockRetryServiceTest {
 		verify(practiceAttemptChartService, times(2)).tick(USER_ID, Market.CRYPTO);
 	}
 
-	// 재시도는 1회다 — 두 번째도 교착이면 원인을 감추지 않고 그대로 전파한다(ADR-0028 §결정 2와 같은 방침).
 	@Test
 	void propagatesWhenRetryAlsoDeadlocks() {
 		when(practiceAttemptService.ensureAttempt(USER_ID, Market.CRYPTO)).thenThrow(deadlock());
@@ -100,7 +97,6 @@ class PracticeAttemptDeadlockRetryServiceTest {
 		verify(practiceAttemptChartService, times(2)).tick(USER_ID, Market.CRYPTO);
 	}
 
-	// 교착이 아닌 비즈니스 예외까지 재시도로 가리지 않는다 — 세 경로 모두 409를 그대로 통과시켜야 한다.
 	@Test
 	void doesNotRetryBusinessException() {
 		when(practiceAttemptService.ensureAttempt(USER_ID, Market.CRYPTO))

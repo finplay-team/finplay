@@ -1,5 +1,3 @@
-// 실습 의도 생성과 즐겨찾기 삭제가 같은 사용자 단위 인메모리 락(FavoriteService#withFavoriteLock)을 두고
-// 실제로 직렬화되는지 순수 멀티스레드로 검증한다(#193: DB 비관 잠금 기반 통합 테스트에서 전환).
 package com.finplay.api.domain.education.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -67,7 +65,6 @@ class PracticeIntentionFavoriteLockTest {
 		CountDownLatch releaseDelete = new CountDownLatch(1);
 		ExecutorService executor = Executors.newFixedThreadPool(2);
 		try {
-			// delete 스레드가 사용자 락을 쥔 채 유지하도록, 락 내부에서 실제 삭제를 수행한 뒤 대기시킨다.
 			Future<Void> delete = executor.submit(() -> {
 				favoriteService.withFavoriteLock(USER_ID, INSTRUMENT_ID, () -> {
 					favoriteService.deleteFavorite(USER_ID, INSTRUMENT_ID);
@@ -80,7 +77,6 @@ class PracticeIntentionFavoriteLockTest {
 			assertThat(deleteHoldsLock.await(5, TimeUnit.SECONDS)).isTrue();
 
 			Future<Object> intention = executor.submit(this::createIntentionCapturingErrorCode);
-			// intention은 delete가 같은 사용자 락을 쥐고 있는 동안 완료될 수 없어야 한다.
 			assertThatThrownBy(() -> intention.get(300, TimeUnit.MILLISECONDS))
 				.isInstanceOf(TimeoutException.class);
 
@@ -115,7 +111,6 @@ class PracticeIntentionFavoriteLockTest {
 				favoriteService.deleteFavorite(USER_ID, INSTRUMENT_ID);
 				return null;
 			});
-			// delete는 intention이 같은 사용자 락을 쥐고 있는 동안 완료될 수 없어야 한다.
 			assertThatThrownBy(() -> delete.get(300, TimeUnit.MILLISECONDS))
 				.isInstanceOf(TimeoutException.class);
 

@@ -1,4 +1,3 @@
-// PracticeTickFillListener가 tick 이벤트를 동기 처리로 위임하고 예외를 삼키지 않음을 검증하는 단위 테스트다.
 package com.finplay.api.domain.education.priceruntime.listener;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;

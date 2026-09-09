@@ -1,5 +1,3 @@
-// 실습 진행(practice_progresses, DB) 행의 최초 생성·완료 상태 보존을 실제 MySQL 비관 잠금으로 검증한다.
-// 즐겨찾기(in-memory) 관련 동시성은 #193 이후 PracticeIntentionFavoriteLockTest(순수 멀티스레드 단위 테스트)로 이전했다.
 package com.finplay.api.domain.education.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -112,8 +110,6 @@ class PracticeIntentionConcurrencyIntegrationTest {
 
 	@Test
 	void missingFavoriteFailsWithPracticeStepLockedAndLeavesNoProgressRowBehind() {
-		// favorite을 등록하지 않은 채 최초 intention을 시도한다 — insertIfAbsent가 같은 트랜잭션 안에서
-		// progress 행을 만들지만, favorite 확인 실패로 트랜잭션 전체가 롤백돼 실제 DB에 행이 남지 않아야 한다.
 		assertThatThrownBy(() -> intentionService.createIntention(user.getId(), request()))
 			.isInstanceOfSatisfying(BusinessException.class,
 				exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.PRACTICE_STEP_LOCKED));

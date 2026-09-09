@@ -1,4 +1,3 @@
-// 샘플 주문의 attempt 귀속과 최초 매수 위험 스냅샷 가격 계산·불변성을 검증한다.
 package com.finplay.api.domain.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -89,7 +88,6 @@ class PracticeAttemptOrderAttributionServiceTest {
 		verifyNoInteractions(practiceAttemptRepository, practiceRiskSnapshotRepository);
 	}
 
-	// 049 ORDERBASICS-015 게이트 규칙표.
 	@Test
 	void lockForOrderAlwaysAllowsMarketOrderEvenWhenStageIsLocked() {
 		Instrument instrument = tutorialInstrument();
@@ -133,8 +131,6 @@ class PracticeAttemptOrderAttributionServiceTest {
 		assertThat(result).isPresent();
 	}
 
-	// 대본을 쓰지 않는 실행(생성기 버전 1)은 왕복 여부와 무관하게 지정가도 항상 통과한다 — 게이트 판정
-	// 서비스를 아예 부르지 않는다.
 	@Test
 	void lockForOrderAllowsLimitOrderForNonScenarioScriptAttempt() {
 		Instrument instrument = tutorialInstrument();
@@ -175,7 +171,6 @@ class PracticeAttemptOrderAttributionServiceTest {
 		Trade trade = buyTrade(order, instrument, new BigDecimal("100.123456785"));
 		when(practiceAttemptRepository.findByIdForUpdate(ATTEMPT_ID)).thenReturn(Optional.of(attempt));
 		when(practiceRiskSnapshotRepository.countByAttemptIdAndRunNumber(ATTEMPT_ID, 1L)).thenReturn(0L, 1L);
-		// 첫 호출은 직전 보유 0(= 이번 체결분만), 두 번째는 이미 들고 있는 상태에서의 추가 매수다.
 		when(tradeService.netFilledQuantity(ATTEMPT_ID, 1L))
 			.thenReturn(trade.getQuantity(), trade.getQuantity().add(trade.getQuantity()));
 		when(holdingService.findHoldingId(USER_ID, Market.CRYPTO, INSTRUMENT_ID)).thenReturn(Optional.of(77L));
@@ -194,13 +189,9 @@ class PracticeAttemptOrderAttributionServiceTest {
 		assertThat(snapshot.getRunNumber()).isEqualTo(1L);
 		assertThat(snapshot.getBuyTrade()).isSameAs(trade);
 		assertThat(snapshot.getCreatedAt()).isEqualTo(NOW);
-		// 미선택 사용자도 기본 프리셋이 확정된다(EXITPRESET-002) — 값이 여기서 정해져야 뒤에 프리셋을
-		// 바꿔도 이미 만들어진 진입의 기준선이 흔들리지 않는다.
 		assertThat(snapshot.getExitPreset()).isEqualTo(ExitPreset.BALANCED);
 		assertThat(snapshot.getEntrySequence()).isEqualTo(1);
 
-		// 042 5번 — CRYPTO는 같은 트랜잭션에서 예약까지 만든다. 진입당 1회 가드가 두 번째 호출을 막으므로
-		// 예약도 한 번만 생긴다(엔진의 validateNoPendingPlan 409로 매수가 통째로 실패하는 것을 예방한다).
 		ArgumentCaptor<ExitPlanCreateCommandDto> commandCaptor = ArgumentCaptor
 			.forClass(ExitPlanCreateCommandDto.class);
 		verify(exitPlanCreationService).create(commandCaptor.capture());
@@ -208,9 +199,7 @@ class PracticeAttemptOrderAttributionServiceTest {
 		assertThat(command.isPracticePath()).isTrue();
 		assertThat(command.practiceOrigin().attemptId()).isEqualTo(ATTEMPT_ID);
 		assertThat(command.practiceOrigin().runNumber()).isEqualTo(1L);
-		// 대본 canonical price가 baseline이다 — 엔진 기본 경로의 사인파 항시 시세가 아니다.
 		assertThat(command.practiceOrigin().baselinePrice()).isEqualByComparingTo("100.00000000");
-		// 예약에 넘기는 체결가도 snapshot과 같은 scale 8 값이어야 화면 기준선과 실제 체결선이 갈리지 않는다.
 		assertThat(command.priceInput().entryPrice()).isEqualByComparingTo("100.12345679");
 		assertThat(command.priceInput().stopLossRate()).isEqualByComparingTo("3");
 		assertThat(command.priceInput().takeProfitRate()).isEqualByComparingTo("5");
@@ -233,13 +222,6 @@ class PracticeAttemptOrderAttributionServiceTest {
 		verifyNoInteractions(practiceRiskSnapshotRepository);
 	}
 
-	/**
-	 * 049 ORDERBASICS-022 — 2단계 대본 실행은 <b>기준선은 만들고 예약만 건너뛴다.</b>
-	 *
-	 * <p>기준선까지 빠지면 {@code PracticeAttemptEvidenceService.requireCurrentRun}이
-	 * {@code PRACTICE_EVIDENCE_MISSING}으로 던져 그 실행의 관찰·복기가 통째로 깨진다. 그래서 "예약이 없다"와
-	 * "기준선이 있다"를 한 테스트에서 함께 단언한다.
-	 */
 	@Test
 	void createRiskSnapshotOnBuyFillSkipsOnlyTheExitPlanForTheOrderBasicsScript() {
 		Instrument instrument = tutorialInstrument();
@@ -263,13 +245,6 @@ class PracticeAttemptOrderAttributionServiceTest {
 		verifyNoInteractions(exitPlanCreationService);
 	}
 
-	/**
-	 * 052 EXITFREE-020 — <b>3단계 대본 실행도 이제 자동 예약을 만들지 않는다.</b> 042 EXITPRESET-012를
-	 * 뒤집은 자리이며, 예약은 사용자가 {@code POST .../exit-plan}으로 직접 건다.
-	 *
-	 * <p>여기서도 <b>기준선은 그대로 만든다</b> — 기준선까지 빠지면 관찰·복기가 통째로 깨진다. 그래서 위
-	 * 2단계 테스트와 같은 형태로 "예약이 없다"와 "기준선이 있다"를 함께 단언한다.
-	 */
 	@Test
 	void createRiskSnapshotOnBuyFillNoLongerCreatesTheExitPlanForTheStoryScript() {
 		Instrument instrument = tutorialInstrument();
@@ -288,7 +263,6 @@ class PracticeAttemptOrderAttributionServiceTest {
 		verifyNoInteractions(exitPlanCreationService);
 	}
 
-	// 대본 식별자가 null인 실행(생성기 버전 1)도 예전대로 예약이 생긴다 — 위 두 테스트가 각각 고정한다.
 	private static PracticeAttempt scriptAttempt(Instrument instrument, TutorialScenarioScriptId scriptId) {
 		PracticeAttempt attempt = PracticeAttempt.create(USER_ID, Market.CRYPTO, NOW.minusHours(1));
 		ReflectionTestUtils.setField(attempt, "id", ATTEMPT_ID);

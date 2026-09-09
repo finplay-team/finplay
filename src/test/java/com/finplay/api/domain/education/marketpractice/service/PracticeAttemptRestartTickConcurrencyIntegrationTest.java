@@ -1,5 +1,3 @@
-// 재시작·tick·진입이 같은 사용자에게 동시에 들어와도 교착으로 500이 새지 않는지 실제 MySQL로 검증한다
-// (이슈 #491의 두 번째 재현 경로 — 프론트가 8~32회 관측한 재시작 ↔ tick 폴링 조합).
 package com.finplay.api.domain.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -44,7 +42,6 @@ import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 
-// @Transactional을 붙이지 않는다 — 작업 스레드가 각자 트랜잭션을 열어야 교착 자체가 재현된다.
 @SpringBootTest
 @Import({TestcontainersConfiguration.class, TestClockConfig.class})
 class PracticeAttemptRestartTickConcurrencyIntegrationTest {
@@ -87,7 +84,6 @@ class PracticeAttemptRestartTickConcurrencyIntegrationTest {
 		clock.set(BASE_NOW);
 	}
 
-	// 이 클래스가 만든 행만 지운다.
 	@AfterEach
 	void cleanUp() {
 		for (Long accountId : accountIds) {
@@ -122,13 +118,6 @@ class PracticeAttemptRestartTickConcurrencyIntegrationTest {
 		instrumentIds.clear();
 	}
 
-	/**
-	 * 이슈 #491 코멘트가 등록한 두 번째 재현 경로다. 재시작은 attempt → 주문 → 계좌 → 보유 → 튜토리얼 계좌
-	 * 순으로, tick은 attempt → 주문 → 계좌 → 튜토리얼 계좌 → 보유 순으로 잠근다 — 뒤쪽 두 자원의 순서가
-	 * 서로 뒤집혀 있어 교착 후보로 지목됐다. 둘 다 attempt를 <b>가장 먼저</b> 잠그므로 같은 사용자에 대해서는
-	 * 그 지점에서 직렬화되어야 하고, 그렇다면 뒤집힌 순서가 실제 순환을 만들지 못한다는 것이 이 테스트가
-	 * 고정하려는 것이다.
-	 */
 	@Test
 	void concurrentRestartAndTickNeverDeadlock() throws Exception {
 		for (int round = 0; round < ROUNDS; round++) {
@@ -142,10 +131,6 @@ class PracticeAttemptRestartTickConcurrencyIntegrationTest {
 		}
 	}
 
-	/**
-	 * 프론트가 실제로 관측한 조합에 더 가깝다 — 튜토리얼 화면은 마운트할 때 진입을 부르고, 3초마다 tick을
-	 * 폴링하며, 사용자가 재시작을 누른다. 셋이 겹치는 순간을 그대로 만든다.
-	 */
 	@Test
 	void concurrentEntryRestartAndTickNeverDeadlock() throws Exception {
 		for (int round = 0; round < ROUNDS; round++) {
@@ -160,12 +145,6 @@ class PracticeAttemptRestartTickConcurrencyIntegrationTest {
 		}
 	}
 
-	/**
-	 * 서로 다른 사용자가 같은 샘플 종목으로 동시에 움직이는 경우다. 이슈 #491 코멘트의 4번 발견(기존 행을
-	 * 만난 {@code INSERT IGNORE}가 PRIMARY supremum에 X next-key 잠금을 잡아 <b>표 단위</b>로 직렬화된다)이
-	 * 사용자를 건너 얽히는 통로였으므로, 진입이 더 이상 무조건 INSERT하지 않게 된 지금 그 통로가 닫혔는지
-	 * 함께 확인한다.
-	 */
 	@Test
 	void concurrentActivityAcrossDifferentUsersNeverDeadlocks() throws Exception {
 		for (int round = 0; round < ROUNDS; round++) {
@@ -182,8 +161,6 @@ class PracticeAttemptRestartTickConcurrencyIntegrationTest {
 		}
 	}
 
-	// 교착만 실패로 본다. 재시작·tick이 서로를 앞질러 BusinessException(예: 이미 다음 run이라 정산할 것이
-	// 없음)으로 끝나는 것은 정상이며, 이 이슈가 막으려는 것은 500으로 새는 CannotAcquireLockException이다.
 	private void assertNoDeadlock(List<Throwable> failures, String description) {
 		List<Throwable> deadlocks = failures.stream()
 			.filter(failure -> failure instanceof CannotAcquireLockException)
@@ -225,8 +202,6 @@ class PracticeAttemptRestartTickConcurrencyIntegrationTest {
 		return failures;
 	}
 
-	// 재시작이 정리할 것과 tick이 정산할 것이 둘 다 있는 상태를 만든다 — 현재 run에 귀속된 PENDING 지정가
-	// 주문과 보유가 있어야 두 경로가 주문·계좌·보유·튜토리얼 계좌까지 실제로 내려간다.
 	private Fixture fixture(String scenario) {
 		String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 8);
 		User user = userRepository.saveAndFlush(User.create(
@@ -243,9 +218,6 @@ class PracticeAttemptRestartTickConcurrencyIntegrationTest {
 		instrumentRepository.saveAndFlush(instrument);
 		instrumentIds.add(instrument.getId());
 
-		// **대본 실행(생성기 버전 2)으로 만든다.** 프론트가 교착을 관측한 CRYPTO 튜토리얼이 이 경로이고,
-		// 버전 1과 달리 tick이 PracticeScenarioProgressService.advance로 들어가 건너뛴 가상 분마다 순차
-		// 정산한다 — 한 tick이 잡는 잠금이 훨씬 많아 재시작과 겹칠 창이 그만큼 넓다.
 		PracticeAttempt attempt = PracticeAttempt.create(user.getId(), Market.CRYPTO, BASE_NOW.minusHours(1));
 		attempt.selectInstrument(
 			instrument, BASE_NOW.minusMinutes(10), BASE_NOW.toLocalDate(), 123L,
@@ -255,7 +227,6 @@ class PracticeAttemptRestartTickConcurrencyIntegrationTest {
 
 		Holding holding = Holding.create(account, instrument, BASE_NOW);
 		holding.applyBuy(new BigDecimal("1"), BigDecimal.valueOf(900_000), BASE_NOW);
-		// 아래 SELL PENDING 주문이 잡아 둔 예약이다 — 재시작의 정리 경로가 이 예약을 되돌린다.
 		holding.reserveQuantity(new BigDecimal("0.5"));
 		holdingRepository.saveAndFlush(holding);
 

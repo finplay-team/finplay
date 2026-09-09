@@ -1,4 +1,3 @@
-// 실습 3단계 가격 관찰 생성 API의 인증·검증·응답·오류 계약을 검증하는 WebMvc 테스트다.
 package com.finplay.api.domain.education.marketpractice.controller;
 
 import static org.mockito.ArgumentMatchers.any;

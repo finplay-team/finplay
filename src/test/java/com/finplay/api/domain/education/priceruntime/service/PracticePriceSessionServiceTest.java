@@ -1,4 +1,3 @@
-// 코인 가상 가격 세션 생성·조회 서비스의 소유권·상태·anchor fallback·재현성 검증을 mock으로 검증하는 단위 테스트다.
 package com.finplay.api.domain.education.priceruntime.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -157,8 +156,6 @@ class PracticePriceSessionServiceTest {
 		assertThat(response.currentPrice()).isEqualByComparingTo("10000.00000000");
 	}
 
-	// 036-remove-crypto-stale-status 회귀 — 관측 시각이 오래돼도(과거엔 STALE) AVAILABLE이면 fallback anchor(10000)가
-	// 아니라 실시세를 anchor로 쓴다.
 	@Test
 	void createSessionUsesRealPriceAsAnchorEvenWhenObservationIsHoursOldButStatusIsAvailable() {
 		Instrument crypto = cryptoInstrument(true);
@@ -228,9 +225,6 @@ class PracticePriceSessionServiceTest {
 		assertThat(response.currentPrice()).isEqualByComparingTo("10000.00000000");
 	}
 
-	// verifyPriceSeriesConsistency 방어 로직이 실제로 발동하는지 확인한다. 저장된 currentTick(=1)까지 v1
-	// 생성기를 재실행하면 seed=12345 tick=1의 값은 10092.29000000(plan.md 계약대로 독립 재계산한 값)인데,
-	// 리플렉션으로 currentPrice를 다른 값으로 조작해 저장 데이터 손상을 흉내낸다.
 	@Test
 	void getSessionThrowsInternalErrorWhenStoredCurrentPriceDoesNotMatchRegeneratedSeries() throws Exception {
 		PracticePriceSession session = PracticePriceSession.create(

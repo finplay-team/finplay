@@ -1,4 +1,3 @@
-// 기존 completion 사용자의 완료 attempt 지연 생성·동시 ensure·차트 replay 호환성을 실제 MySQL로 검증한다.
 package com.finplay.api.domain.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -116,12 +115,6 @@ class LegacyPracticeCompletionAttemptCompatibilityIntegrationTest {
 		assertThat(after.completedAt()).isEqualTo(before.completedAt());
 		assertThat(after.rewardAmount()).isEqualTo(before.rewardAmount());
 		assertThat(after.steps()).isEqualTo(before.steps());
-		// tutorialCashBalance·tutorialAvailableCash·tutorialRealizedPnl은 진입·재시작 응답에만 실제 값을 싣는다
-		// (047 TUTORIAL-CASH-ISOL-011, plan.md "API 설계" — PracticeAttemptResponse.from(attempt, snapshot)
-		// 2-인자 오버로드는 진입·재시작이 아닌 호출부용으로 항상 0을 채운다). getProgress가 감싸는 attempt 응답은
-		// 이 2-인자 경로를 쓰므로 ensureAttempt(진입) 응답과 세 필드가 항상 다르다 — 이 spec 이전(그 필드가 없던
-		// 시절)에는 완전 동일 비교가 성립했지만, 필드 추가 이후에는 의도적으로 달라지는 부분이라 그 셋을 제외하고
-		// 나머지 필드만 비교한다.
 		assertThat(after.attempt()).usingRecursiveComparison()
 			.ignoringFields("tutorialCashBalance", "tutorialAvailableCash", "tutorialRealizedPnl")
 			.isEqualTo(ensured);
@@ -173,8 +166,6 @@ class LegacyPracticeCompletionAttemptCompatibilityIntegrationTest {
 
 	@Test
 	void ensureReturnsCurrentInProgressStateWhenCompletionCoexistsWithNonCompletedAttemptWithoutChangingPendingReservation() {
-		// TUTORIAL-RESTART-003: completion evidence가 있어도 attempt가 COMPLETED가 아니면(재시작 후 진행 중)
-		// 더 이상 데이터 정합성 오류로 취급하지 않고 attempt의 현재 상태를 그대로 반환한다.
 		String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 8);
 		User user = userRepository.saveAndFlush(User.create(
 			"reconcile-" + suffix + "@finplay.com", "password-hash", "reconcile-" + suffix,

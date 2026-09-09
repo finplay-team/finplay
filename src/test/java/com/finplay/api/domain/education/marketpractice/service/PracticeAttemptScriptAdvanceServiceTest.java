@@ -1,4 +1,3 @@
-// 2단계 → 3단계 대본 전환 서비스의 거부 조건 5가지와 성공 경로(정리 호출 순서 포함)를 검증하는 단위 테스트
 package com.finplay.api.domain.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -90,7 +89,6 @@ class PracticeAttemptScriptAdvanceServiceTest {
 	void rejectsWhenStageProgressIsIncomplete() {
 		PracticeAttempt attempt = orderBasicsAttempt();
 		stub(attempt);
-		// 시장가 왕복은 마쳤지만 지정가 왕복은 아직이다.
 		when(stageProgressCalculationService.calculate(attempt))
 			.thenReturn(new PracticeStageProgressResponse(true, false, false));
 
@@ -114,8 +112,6 @@ class PracticeAttemptScriptAdvanceServiceTest {
 		verifyNoInteractions(orderSettlementService);
 	}
 
-	// 다섯 거부 조건을 전부 통과하면 예약·지정가 정리(순서: exitPlan → 지정가)가 먼저 불리고, 대본이
-	// CRYPTO_STORY_V1로 바뀌며 커서가 지워진다. run·튜토리얼 계좌는 이 서비스가 손대지 않는다(plan §3).
 	@Test
 	void advancesScriptAndCancelsExitPlansBeforeLimitOrdersWhenAllConditionsPass() {
 		PracticeAttempt attempt = orderBasicsAttempt();

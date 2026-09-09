@@ -1,5 +1,3 @@
-// 실습 진행(practice_progresses) 스키마와 MySQL upsert를 검증하는 슬라이스 테스트다.
-// practice_intentions은 #193(ADR-0012)에 따라 인메모리로 전환되고 테이블 자체가 V19 마이그레이션으로 삭제되어 제외한다.
 package com.finplay.api.domain.education.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -93,7 +91,6 @@ class PracticeRepositoryTest {
 		assertThat(rows).extracting(row -> row.get("tutorial_key"))
 			.containsExactlyInAnyOrder(PracticeIntentionService.TUTORIAL_KEY,
 				PracticeIntentionService.COIN_TUTORIAL_KEY);
-		// 주식 key만 COMPLETED로 갱신했으므로 코인 key 행은 독립적으로 IN_PROGRESS를 유지해야 한다(회귀 없음).
 		Map<String, String> statusByKey = new HashMap<>();
 		rows.forEach(row -> statusByKey.put((String)row.get("tutorial_key"), (String)row.get("status")));
 		assertThat(statusByKey.get(PracticeIntentionService.TUTORIAL_KEY)).isEqualTo("COMPLETED");

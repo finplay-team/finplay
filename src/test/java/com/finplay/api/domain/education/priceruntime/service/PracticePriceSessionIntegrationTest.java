@@ -1,5 +1,3 @@
-// 실제 코인 종목·MySQL·Redis(PriceStore)를 사용해 가격 세션 생성·조회의 anchor 분기와 중복 생성 거부를
-// 검증하는 통합 테스트다.
 package com.finplay.api.domain.education.priceruntime.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -33,8 +31,6 @@ import org.springframework.context.annotation.Import;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
-// @Transactional은 JPA(MySQL) 쓰기만 롤백한다(PracticeHoldingObservationIntegrationTest와 동일 관례).
-// Redis(price:crypto:*)는 롤백 대상이 아니라 @AfterEach에서 별도로 지운다.
 @SpringBootTest
 @Import({TestcontainersConfiguration.class, TestClockConfig.class})
 @Transactional

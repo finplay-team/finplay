@@ -1,4 +1,3 @@
-// 튜토리얼 attempt·위험 스냅샷·주문 실행 귀속의 MySQL 영속 제약과 잠금 쿼리를 검증한다.
 package com.finplay.api.domain.education.marketpractice.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -96,9 +95,6 @@ class PracticeAttemptRepositoryTest {
 		attempt = practiceAttemptRepository.saveAndFlush(PracticeAttempt.create(user.getId(), Market.CRYPTO, NOW));
 	}
 
-	// 이슈 #491 — insertIfAbsent가 ON DUPLICATE KEY UPDATE라 "중복이면 기존 행을 한 글자도 바꾸지 않는다"가
-	// 성립해야 한다. 이 PR이 실제로 회귀했던 지점이 정확히 이 구문의 semantics다(자매 리포지터리의
-	// PracticeRepositoryTest.insertIfAbsentPreservesExistingCompletedStatusAndTimestamps와 같은 형태).
 	@Test
 	@DisplayName("insertIfAbsent는 행이 이미 있으면 기존 값·타임스탬프를 그대로 둔다")
 	void insertIfAbsentPreservesExistingRow() {
@@ -164,8 +160,6 @@ class PracticeAttemptRepositoryTest {
 		assertThat(result.get().getRunNumber()).isEqualTo(1L);
 	}
 
-	// 기존 UNIQUE(attempt_id, run_number)는 삭제됐다. 같은 진입 순번의 중복을 막는 것은 이제
-	// uk_practice_risk_snapshots_attempt_run_seq다 — 보호 범위가 같은지 확인한다.
 	@Test
 	@DisplayName("같은 attempt·실행 세대·진입 순번에는 위험 스냅샷 하나만 저장된다")
 	void savingDuplicateEntrySequenceRiskSnapshotFailsWithUniqueConstraint() {
@@ -177,7 +171,6 @@ class PracticeAttemptRepositoryTest {
 			.isInstanceOf(DataIntegrityViolationException.class);
 	}
 
-	// 이 PR이 여는 것 — 재진입(손절 후 재매수)의 전제다.
 	@Test
 	@DisplayName("같은 실행 세대라도 진입 순번이 다르면 위험 스냅샷을 여럿 저장할 수 있다")
 	void savingMultipleEntriesInSameRunSucceedsWhenEntrySequenceDiffers() {
@@ -215,9 +208,6 @@ class PracticeAttemptRepositoryTest {
 		assertThat(reloaded.getEntrySequence()).isEqualTo(PracticeRiskSnapshot.FIRST_ENTRY_SEQUENCE);
 	}
 
-	// 재진입이 도입되기 전이라 한 실행 세대의 진입은 아직 하나뿐이다(기존 UNIQUE가 둘째를 막는다).
-	// 여기서는 두 조회가 같은 행을 가리키는 회귀만 잠근다 — 진입이 여럿일 때 갈라지는 것은
-	// 기존 UNIQUE를 삭제한 뒤에야 검증할 수 있다.
 	@Test
 	@DisplayName("진입이 하나면 최신 진입 조회와 첫 진입 조회가 같은 스냅샷을 돌려준다")
 	void latestAndFirstEntryLookupsReturnSameSnapshotWhenSingleEntry() {
@@ -262,8 +252,6 @@ class PracticeAttemptRepositoryTest {
 			.countByAttemptIdAndRunNumber(attempt.getId(), attempt.getRunNumber())).isZero();
 	}
 
-	// 대본 위치는 벽시계에서 파생할 수 없다 — 대기 구간은 되감기고 재진입은 점프하므로 단조가 아니다.
-	// 재기동 후에도 같은 위치가 나와야 하므로(041 SCENARIO-002) 영속과 재조회를 함께 확인한다.
 	@Test
 	@DisplayName("대본 위치와 진행 중 봉 3값이 영속되고 재조회된다")
 	void scenarioProgressColumnsRoundTrip() {
@@ -318,7 +306,6 @@ class PracticeAttemptRepositoryTest {
 			.isInstanceOf(DataIntegrityViolationException.class);
 	}
 
-	// 대본 식별자는 커서만큼 내구적이어야 한다 — 재기동·재조회 뒤에도 같은 대본을 봐야 가격이 이어진다.
 	@Test
 	@DisplayName("대본 식별자가 영속되고 재조회된다")
 	void scenarioScriptIdColumnRoundTrips() {
@@ -332,11 +319,6 @@ class PracticeAttemptRepositoryTest {
 		assertThat(readScriptIdColumn()).isEqualTo("CRYPTO_ORDER_BASICS_V1");
 	}
 
-	/**
-	 * <b>파생 접근자로는 이 회귀를 잡을 수 없다.</b> {@code restart()}가 {@code generatorVersion}도 함께
-	 * 지우므로, 컬럼에 값이 그대로 남아 있어도 {@code scenarioScriptId()}는 {@code null}을 돌려준다.
-	 * 컬럼이 안 지워지면 재시작한 사용자가 다음 종목 선택에서 이전 대본을 물려받으므로 DB 값을 직접 읽는다.
-	 */
 	@Test
 	@DisplayName("재시작하면 대본 식별자 컬럼이 DB에서 NULL이 된다")
 	void restartNullsTheScenarioScriptIdColumnInTheDatabase() {
@@ -351,7 +333,6 @@ class PracticeAttemptRepositoryTest {
 		assertThat(readScriptIdColumn()).isNull();
 	}
 
-	// 049 배포 순간 진행 중이던 행이다 — 백필하지 않기로 했으므로 이 조합이 실제로 DB에 남는다.
 	@Test
 	@DisplayName("버전 2 + 식별자 NULL 행은 041 대본으로 읽힌다")
 	void scriptRunWithNullScriptIdColumnReadsAsTheStoryScript() {
@@ -371,8 +352,6 @@ class PracticeAttemptRepositoryTest {
 		assertThat(reloaded.scenarioScriptId()).isEqualTo(TutorialScenarioScriptId.CRYPTO_STORY_V1);
 	}
 
-	// 열거형 이름이 곧 컬럼 값이다(VARCHAR(32)). 넘치는 이름을 더하면 그 대본을 쓰는 실행만 저장에서
-	// 터지므로, 이름 길이를 스키마 폭과 함께 고정한다.
 	@Test
 	@DisplayName("모든 대본 식별자 이름이 VARCHAR(32) 안에 들어간다")
 	void everyScriptIdNameFitsTheColumnWidth() {
@@ -461,15 +440,6 @@ class PracticeAttemptRepositoryTest {
 		assertThat(saved.getPracticeAttemptRunNumber()).isNull();
 	}
 
-	/**
-	 * 진입 대조 조회가 매수 체결과 <b>그 주문까지</b> 쿼리 한 번으로 읽는지 본다(이슈 #503).
-	 *
-	 * <p>{@code buyOrderType}이 {@code snapshot.getBuyTrade().getOrder().getOrderType()}이라
-	 * {@code @EntityGraph}가 빠지면 진입 하나마다 조회가 두 번씩 붙는다. 그런데 <b>그래프가 조용히
-	 * 무시돼도 기능은 그대로 동작해서</b> 다른 어떤 테스트도 이것을 잡지 못한다 — 유일한 호출부의
-	 * 단위 테스트는 리포지터리를 mock하고, 통합 테스트는 같은 트랜잭션이라 이미 1차 캐시에 올라와 있다.
-	 * {@code BuyTradeJournalRepositoryTest}의 Statistics 선례를 따른다.
-	 */
 	@Test
 	@DisplayName("진입 대조 조회는 매수 체결과 그 주문까지 쿼리 1회로 읽는다")
 	void findByAttemptIdAndRunNumberOrderByEntrySequenceAscFetchesBuyTradeAndItsOrderInOneQuery() {
@@ -524,11 +494,6 @@ class PracticeAttemptRepositoryTest {
 			NOW));
 	}
 
-	// 프리셋은 실행 세대의 선택값이고 snapshot의 프리셋은 그 진입에 확정된 값이다. 둘 다 nullable이며
-	// null은 "미선택"으로 기본 프리셋과 같게 해석한다(042 EXITPRESET-002) — 그래서 백필하지 않는다.
-	//
-	// 세 값을 전부 실제로 저장한다. 하나만 넣으면 열거형에 값을 더하고 V51의 CHECK를 빠뜨린 변경이 런타임에야
-	// 드러난다 — 값 집합을 스키마에서도 막기로 한 이상 그 대가를 테스트가 치러야 한다.
 	@ParameterizedTest
 	@EnumSource(ExitPreset.class)
 	@DisplayName("attempt와 위험 스냅샷의 프리셋이 값마다 영속되고 재조회된다")
@@ -551,10 +516,6 @@ class PracticeAttemptRepositoryTest {
 	@DisplayName("프리셋을 고르지 않은 attempt와 기능 도입 전 스냅샷은 프리셋이 NULL인 채로 저장된다")
 	void unselectedExitPresetStaysNull() {
 		Trade buyTrade = createBuyTrade("exit-preset-null-order");
-		// 042 4번부터 새로 만드는 스냅샷은 미선택 사용자도 기본 프리셋으로 채워지고, 052부터는 비율 두
-		// 컬럼까지 팩토리가 항상 채운다. NULL이 남는 것은 기능 도입 전에 만들어진 행뿐이라 **팩토리로는
-		// 그 상태를 만들 수 없다** — 그 행이 계속 읽히는지 확인하려고 여기서만 네이티브 UPDATE로 비운다.
-		// V56의 CHECK는 "둘 다 NULL이거나 둘 다 양수"라 세 컬럼을 함께 비우는 것이 제약을 통과한다.
 		PracticeRiskSnapshot savedSnapshot = practiceRiskSnapshotRepository.saveAndFlush(
 			createRiskSnapshot(buyTrade, NOW.plusSeconds(1)));
 		entityManager.createNativeQuery(
@@ -567,13 +528,9 @@ class PracticeAttemptRepositoryTest {
 		assertThat(practiceAttemptRepository.findById(attempt.getId()).orElseThrow().getExitPreset()).isNull();
 		PracticeRiskSnapshot reloaded = practiceRiskSnapshotRepository.findById(savedSnapshot.getId()).orElseThrow();
 		assertThat(reloaded.getExitPreset()).isNull();
-		// 052 — 세 컬럼이 모두 빈 도입 전 행도 읽히며, 기본값(−3%·+5%)으로 해석된다(EXITPRESET-002 승계).
 		assertThat(reloaded.appliedExitRates()).isEqualTo(ExitRates.DEFAULT);
 	}
 
-	// 열거형 밖의 값은 엔티티로는 만들 수 없으므로 네이티브 UPDATE로 스키마를 직접 찌른다. V51이 CHECK를
-	// 두 테이블에 하나씩 만들었으므로 양쪽을 다 찌른다 — 한쪽만 보면 snapshot 쪽 CHECK를 빠뜨린 수정이
-	// 초록으로 통과한다. 제약 이름까지 확인해 FK 같은 다른 이유로 실패한 것을 통과로 세지 않는다.
 	@Test
 	@DisplayName("정의 밖 프리셋 식별자는 attempt·스냅샷 양쪽에서 DB check constraint가 거부한다")
 	void unknownExitPresetFailsWithCheckConstraint() {
@@ -614,8 +571,6 @@ class PracticeAttemptRepositoryTest {
 			createdAt);
 	}
 
-	// 049 ORDERBASICS-023 — 진입이 열릴 때 대본 식별자를 스냅샷에 고정한다. 컬럼이 실제로 왕복하는지는
-	// 서비스 단위 테스트가 아니라 여기서만 잡힌다(mock 리포지터리는 컬럼 매핑을 검증하지 않는다).
 	@Test
 	@DisplayName("위험 스냅샷의 대본 식별자 컬럼이 영속되고 재조회된다")
 	void scenarioScriptIdColumnRoundTripsOnRiskSnapshot() {

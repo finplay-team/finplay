@@ -1,4 +1,3 @@
-// PracticeLimitOrderService.createOrder의 세션 소유권·상태·종목 일치 검증과 order 공개 서비스 위임을 검증하는 단위 테스트다.
 package com.finplay.api.domain.education.priceruntime.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -116,7 +115,6 @@ class PracticeLimitOrderServiceTest {
 		PracticePriceSession session = activeSession();
 		BigDecimal lastPrice = PracticePriceGeneratorV1.nextPrice(SEED, 1, START_PRICE, START_PRICE);
 		session.advance(1, lastPrice);
-		// 테스트 목적상 tick 1에서 바로 완료 처리한다 — complete()는 ACTIVE 상태만 요구하고 tick 값을 검증하지 않는다.
 		session.complete(NOW);
 		return session;
 	}

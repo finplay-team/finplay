@@ -1,4 +1,3 @@
-// 튜토리얼 차트 GET의 무부수효과와 명시적 tick의 지정가 정산·완료 잠금을 검증한다.
 package com.finplay.api.domain.education.marketpractice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -101,8 +100,6 @@ class PracticeAttemptChartServiceTest {
 			org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
 	}
 
-	// 041 5번 — 생성기 버전 2는 진행 계산이 커서를 밀면서 분마다 정산한다. 여기서 settleCurrentRun을 한 번
-	// 더 부르면 같은 tick의 마지막 분이 두 번 판정된다.
 	@Test
 	void tickDelegatesToScenarioProgressForVersionTwoAttemptsInsteadOfSettlingOnce() {
 		PracticeAttempt attempt = scenarioAttempt();
@@ -115,7 +112,6 @@ class PracticeAttemptChartServiceTest {
 		verifyNoInteractions(settlementService);
 	}
 
-	// GET chart는 순수 조회다 — 진행 계산을 부르지 않으므로 tick 없이 새로고침해도 대본이 진행하지 않는다.
 	@Test
 	void getChartDoesNotAdvanceTheScenarioCursor() {
 		PracticeAttempt attempt = scenarioAttempt();
@@ -130,8 +126,6 @@ class PracticeAttemptChartServiceTest {
 		verifyNoInteractions(progressService, settlementService);
 	}
 
-	// 진행 중 봉의 고가·저가는 attempt에 누적된 값을 그대로 쓴다 — 대본 위치가 단조가 아니라 지나온 경로를
-	// 되접어 만들 수 없다(041 plan §데이터 모델).
 	@Test
 	void scenarioChartUsesPersistedCandleExtremes() {
 		PracticeAttempt attempt = scenarioAttempt();
@@ -145,7 +139,6 @@ class PracticeAttemptChartServiceTest {
 		assertThat(response.candles().get(29).low()).isEqualByComparingTo(new BigDecimal("8000.00000000"));
 	}
 
-	// 049 tasks 3번 검증 — 2단계 대본(사건 없음)은 안내 범위가 나가야 한다.
 	@Test
 	void getChartExposesPriceGuideRangeForOrderBasicsScenarioScript() {
 		PracticeAttempt attempt = orderBasicsAttempt();
@@ -158,8 +151,6 @@ class PracticeAttemptChartServiceTest {
 		assertThat(response.priceGuideRange().high()).isEqualByComparingTo(new BigDecimal("110000.00000000"));
 	}
 
-	// 049 tasks 3번 검증 — 041 대본(사건 있음)은 안내 범위가 null이어야 한다. 이 단정이 SCENARIO-015·020을
-	// 지킨다 — 안내 범위가 나가면 4막 폭락의 저점(7900대)이 사건 공개 전에 노출된다.
 	@Test
 	void getChartLeavesPriceGuideRangeNullForStoryScenarioScriptWithEvents() {
 		PracticeAttempt attempt = scenarioAttempt();
@@ -170,8 +161,6 @@ class PracticeAttemptChartServiceTest {
 		assertThat(response.priceGuideRange()).isNull();
 	}
 
-	// scenarioScriptId를 null로 두면 파생 접근자가 CRYPTO_STORY_V1(041 대본, events 있음)로 해석한다
-	// (PracticeAttempt.scenarioScriptId() 하위 호환 규칙, 049 tasks 2번).
 	private static PracticeAttempt scenarioAttempt() {
 		PracticeAttempt attempt = attempt(TutorialPriceGenerator.VERSION_2, null);
 		attempt.startScenarioProgress("ACT1_RISE", new BigDecimal("10000.00000000"), NOW.minusSeconds(3));
@@ -179,7 +168,6 @@ class PracticeAttemptChartServiceTest {
 		return attempt;
 	}
 
-	// 049 tasks 3번 — 2단계 대본(CRYPTO_ORDER_BASICS_V1)은 events가 비어 있어 안내 범위가 나가야 한다.
 	private static PracticeAttempt orderBasicsAttempt() {
 		PracticeAttempt attempt = attempt(TutorialPriceGenerator.VERSION_2,
 			TutorialScenarioScriptId.CRYPTO_ORDER_BASICS_V1);

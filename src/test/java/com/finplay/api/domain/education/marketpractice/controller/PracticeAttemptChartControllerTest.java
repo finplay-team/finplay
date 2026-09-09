@@ -1,4 +1,3 @@
-// 튜토리얼 차트 조회·tick API의 인증, JSON 계약과 잠금 오류 매핑을 검증한다.
 package com.finplay.api.domain.education.marketpractice.controller;
 
 import static org.hamcrest.Matchers.containsString;
@@ -50,7 +49,6 @@ class PracticeAttemptChartControllerTest {
 	private MockMvc mockMvc;
 	@MockitoBean
 	private PracticeAttemptChartService chartService;
-	// tick만 교착 재시도 경계를 거친다 (이슈 #491) — getChart는 여전히 chartService를 직접 부른다.
 	@MockitoBean
 	private PracticeAttemptDeadlockRetryService retryService;
 	@MockitoBean
@@ -120,8 +118,6 @@ class PracticeAttemptChartControllerTest {
 			.andExpect(jsonPath("$.error.code").value("PRACTICE_ALREADY_COMPLETED"));
 	}
 
-	// 041 SCENARIO-015 — 공개 전 구간의 응답에는 문안뿐 아니라 **개수·자리표시자도** 없어야 한다. 빈 배열은
-	// 사건이 없는 구간과 아직 열리지 않은 구간에서 똑같이 나가므로 둘을 구분할 수 없다(SCENARIO-016).
 	@Test
 	void chartJsonCarriesNoTraceOfUnrevealedEvents() throws Exception {
 		authenticate();
@@ -153,12 +149,10 @@ class PracticeAttemptChartControllerTest {
 			.andExpect(jsonPath("$.revealedEvents.length()").value(2))
 			.andExpect(jsonPath("$.revealedEvents[0].stage").value("ACT1"))
 			.andExpect(jsonPath("$.revealedEvents[0].headline").value("[연습] 첫 소식"))
-			// 마지막 항목이 가장 최근 공개다 — 시각 필드가 없으므로 순서가 유일한 시간 정보다.
 			.andExpect(jsonPath("$.revealedEvents[1].headline").value("[연습] 두 번째 소식"))
 			.andExpect(jsonPath("$.revealedEvents[0].length()").value(2));
 	}
 
-	// 생성기 버전 1(대본 없음) attempt는 네 필드가 비어 나간다 — 클라이언트가 scenarioStage로 분기한다.
 	@Test
 	void chartJsonLeavesScenarioFieldsNullForNonScriptAttempts() throws Exception {
 		authenticate();
@@ -173,7 +167,6 @@ class PracticeAttemptChartControllerTest {
 			.andExpect(jsonPath("$.revealedEvents.length()").value(0));
 	}
 
-	// 049 tasks 3번 검증 — priceGuideRange가 있을 때 low·high가 그대로 직렬화된다.
 	@Test
 	void chartJsonExposesPriceGuideRangeWhenScriptHasNoEvents() throws Exception {
 		authenticate();
@@ -188,8 +181,6 @@ class PracticeAttemptChartControllerTest {
 			.andExpect(jsonPath("$.priceGuideRange.high").value(110000.00000000));
 	}
 
-	// 049 tasks 3번 검증 — priceGuideRange가 null일 때 필드가 null로 나가고(SCENARIO-015·020), 041 실행의
-	// 차트 응답 어디에도 4막 폭락 저점(7900대)이 사전 노출되지 않는다(블랙박스 관점).
 	@Test
 	void chartJsonLeavesPriceGuideRangeNullAndNeverLeaksActFourCrashPrice() throws Exception {
 		authenticate();
