@@ -1,4 +1,3 @@
-// 29개 완결 일봉과 현재 일봉 및 canonical close를 함께 반환하는 생성 결과
 package com.finplay.api.domain.market.service;
 
 import java.math.BigDecimal;

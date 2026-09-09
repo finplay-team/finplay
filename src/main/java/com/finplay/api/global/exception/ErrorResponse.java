@@ -1,4 +1,3 @@
-// 오류 응답을 {"error":{code,message,requestId}} 포맷으로 직렬화하는 record
 package com.finplay.api.global.exception;
 
 public record ErrorResponse(ErrorBody error) {

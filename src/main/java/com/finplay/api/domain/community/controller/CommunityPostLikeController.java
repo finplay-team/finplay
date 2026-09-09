@@ -1,4 +1,3 @@
-// 게시물 좋아요 표시·취소 요청을 인증 사용자와 함께 서비스로 전달하는 컨트롤러
 package com.finplay.api.domain.community.controller;
 
 import com.finplay.api.domain.auth.token.AuthenticatedUser;

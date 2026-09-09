@@ -1,4 +1,3 @@
-// 튜토리얼 샘플 종목의 결정적 사인파 가격을 계산해 실제 시세 인프라(StockPriceProvider·PriceStore)를 완전히 우회하는 서비스
 package com.finplay.api.domain.market.service;
 
 import com.finplay.api.domain.market.entity.Instrument;
@@ -23,12 +22,10 @@ public class TutorialSampleInstrumentPriceService {
 
 	private final Clock clock;
 
-	// 항상 PriceStatus.AVAILABLE — 샘플 종목은 절대 UNAVAILABLE을 반환하지 않는다 (SANDBOX-002)
 	public PriceQuoteDto getPriceQuote(Instrument instrument) {
 		return new PriceQuoteDto(calculatePrice(instrument), LocalDateTime.now(clock), PriceStatus.AVAILABLE, null);
 	}
 
-	// (instrument, now)만으로 결정되는 순수 함수 — 저장 상태 없이 재기동·다중 인스턴스에서도 같은 값을 재현한다
 	private BigDecimal calculatePrice(Instrument instrument) {
 		BigDecimal basePrice = instrument.getMarket() == Market.STOCK ? STOCK_BASE_PRICE : CRYPTO_BASE_PRICE;
 		double phase = (instrument.getId() % 7) * (Math.PI / 7);

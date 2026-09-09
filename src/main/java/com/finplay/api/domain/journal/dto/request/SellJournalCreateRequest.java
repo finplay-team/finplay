@@ -1,4 +1,3 @@
-// 매도 투자일기 작성에 필요한 본문을 검증하는 요청 DTO
 package com.finplay.api.domain.journal.dto.request;
 
 import jakarta.validation.constraints.NotBlank;

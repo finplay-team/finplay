@@ -1,4 +1,3 @@
-// 인증 사용자의 투자 실습 사전 의도 생성 요청을 처리하는 컨트롤러
 package com.finplay.api.domain.education.controller;
 
 import com.finplay.api.domain.auth.token.AuthenticatedUser;

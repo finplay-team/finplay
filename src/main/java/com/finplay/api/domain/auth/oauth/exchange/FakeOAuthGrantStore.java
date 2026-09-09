@@ -1,4 +1,3 @@
-// 로컬·테스트 Fake OAuth의 일회용 인가 code와 state 조합을 메모리에서 발급·소비한다.
 package com.finplay.api.domain.auth.oauth.exchange;
 
 import com.finplay.api.domain.auth.oauth.OAuthProviderName;

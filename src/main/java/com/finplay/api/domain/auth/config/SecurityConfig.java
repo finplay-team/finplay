@@ -1,4 +1,3 @@
-// 공개 경로 화이트리스트와 Bearer 인증 필터, 401·403 공통 응답을 묶는 Spring Security 설정
 package com.finplay.api.domain.auth.config;
 
 import com.finplay.api.domain.auth.token.JwtAuthenticationFilter;
@@ -32,10 +31,7 @@ public class SecurityConfig {
 		"/api/auth/email-verifications/confirm",
 		"/api/auth/password-resets",
 		"/api/auth/password-resets/confirm",
-		// OAuth 로그인 callback이 302로 넘긴 1회용 교환 코드를 토큰으로 바꾼다 — 아직 로그인 전이라 인증이 없다.
 		"/api/auth/oauth/login-exchange",
-		// OAuth 재인증 callback이 302로 넘긴 1회용 교환 코드를 reauthToken으로 바꾼다 — spec 039
-		// OAUTH-REAUTH-004가 공개 엔드포인트로 정한 것이며, 코드 자체가 1회용·TTL 60초라 인증 없이도 안전하다.
 		"/api/auth/oauth/reauth-exchange"
 	};
 
@@ -47,7 +43,6 @@ public class SecurityConfig {
 		"/v3/api-docs/**"
 	};
 
-	// purpose가 없거나 login인 authorize만 공개다. 그 밖의 값(reauth 포함)은 anyRequest로 떨어져 인증을 요구한다.
 	private static final RequestMatcher OAUTH_LOGIN_AUTHORIZE_MATCHER = new AndRequestMatcher(
 		PathPatternRequestMatcher.withDefaults()
 			.matcher(HttpMethod.GET, "/api/auth/oauth/*/authorize"),
@@ -58,10 +53,7 @@ public class SecurityConfig {
 
 	@Bean
 	public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-		// 필터는 빈으로 등록하지 않는다. Filter 빈은 서블릿 컨테이너에 자동 등록되어 Security 체인 밖에서도 실행된다.
 		http
-			// CorsConfig의 CorsConfigurationSource 빈을 쓴다. 이 설정이 CorsFilter를 체인 맨 앞에 놓으므로
-			// preflight(OPTIONS)는 JwtAuthenticationFilter와 인가 규칙에 닿기 전에 응답된다 (ADR-0022).
 			.cors(Customizer.withDefaults())
 			.csrf(AbstractHttpConfigurer::disable)
 			.formLogin(AbstractHttpConfigurer::disable)

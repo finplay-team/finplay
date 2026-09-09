@@ -1,4 +1,3 @@
-// 커뮤니티 게시물에 첨부되는 이미지(업로더·연결 게시물·저장 정보)를 표현하는 엔티티
 package com.finplay.api.domain.community.entity;
 
 import com.finplay.api.domain.auth.entity.User;

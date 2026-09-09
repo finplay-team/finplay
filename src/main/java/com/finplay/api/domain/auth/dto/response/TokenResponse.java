@@ -1,4 +1,3 @@
-// 회원가입 성공 시 Access·Refresh JWT와 만료 초를 반환하는 응답 DTO
 package com.finplay.api.domain.auth.dto.response;
 
 import com.finplay.api.domain.auth.token.IssuedTokenPair;

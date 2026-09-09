@@ -1,4 +1,3 @@
-// 투자 실습 사전 의도 생성 입력과 수량·가격 정밀도 검증을 정의하는 요청 DTO
 package com.finplay.api.domain.education.dto.request;
 
 import jakarta.validation.constraints.Digits;

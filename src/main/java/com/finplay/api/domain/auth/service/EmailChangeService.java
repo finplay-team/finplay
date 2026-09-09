@@ -1,4 +1,3 @@
-// 새 이메일 재인증·중복·발송 제한 판정, 인증번호 발송과 확인 시 검증·소비를 담당하는 서비스
 package com.finplay.api.domain.auth.service;
 
 import com.finplay.api.domain.auth.email.EmailSender;
@@ -60,7 +59,6 @@ public class EmailChangeService {
 		this.codeHasher = new VerificationCodeHasher(emailVerificationSecret);
 	}
 
-	// 재인증 증명(비밀번호/reauthToken) → 새 이메일 중복 → 발송 제한 순서로 판정한 뒤 인증번호를 발송한다.
 	@Transactional
 	public void requestEmailChange(Long userId, String newEmail, String currentPassword, String reauthToken) {
 		User user = userRepository.findById(userId)
@@ -73,7 +71,6 @@ public class EmailChangeService {
 		}
 
 		LocalDateTime now = LocalDateTime.now(clock);
-		// 발송 제한은 대상 이메일과 무관하게 회원(userId) 단위로 합산한다.
 		codePolicy.checkSendRateLimit(
 			now, since -> emailChangeVerificationRepository.countByUserIdAndCreatedAtAfter(userId, since));
 		expirePreviousCodes(userId, newEmail, now);
@@ -83,12 +80,9 @@ public class EmailChangeService {
 			user, newEmail, codeHasher.hmac(code), codePolicy.expiresAt(now), now);
 		emailChangeVerificationRepository.save(verification);
 
-		// 발송은 저장 이후에 한다. 발송 실패 시 트랜잭션이 롤백되어 저장·이전 코드 만료·토큰 소비가 함께 되돌려진다.
 		emailSender.sendVerificationCode(newEmail, code);
 	}
 
-	// D1: 조회 → 소비 상태 → 만료 → 시도 횟수 초과 → 코드 일치 순으로 검증하고 성공 시 소비 처리한다.
-	// 트랜잭션 경계는 갖지 않는다 — 호출자인 AuthService.confirmEmailChange의 트랜잭션 안에서 실행된다.
 	public void validateAndConsumeCode(Long userId, String newEmail, String code) {
 		LocalDateTime now = LocalDateTime.now(clock);
 		EmailChangeVerification verification = emailChangeVerificationRepository
@@ -111,7 +105,6 @@ public class EmailChangeService {
 		verification.consume(now);
 	}
 
-	// EMAIL 회원은 현재 비밀번호, OAuth 전용 회원은 reauthToken으로 재인증한다. 실패 사유는 구분하지 않고 403으로 통일한다.
 	private void verifyReauthProof(User user, String currentPassword, String reauthToken) {
 		boolean isEmailMember = socialAccountRepository.findByUserId(user.getId()).isEmpty();
 		if (isEmailMember) {
@@ -132,7 +125,6 @@ public class EmailChangeService {
 		}
 	}
 
-	// 재발송 시 같은 회원·같은 새 이메일의 이전 인증번호를 즉시 무효화한다.
 	private void expirePreviousCodes(Long userId, String newEmail, LocalDateTime now) {
 		List<EmailChangeVerification> previous = emailChangeVerificationRepository
 			.findByUserIdAndNewEmailAndConsumedAtIsNullAndExpiresAtAfter(userId, newEmail, now);

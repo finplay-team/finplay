@@ -1,4 +1,3 @@
-// 교육 attempt 재시작 정리에 필요한 스칼라 값만 order 경계로 전달하는 명령 DTO
 package com.finplay.api.domain.order.service;
 
 import com.finplay.api.domain.market.entity.Market;

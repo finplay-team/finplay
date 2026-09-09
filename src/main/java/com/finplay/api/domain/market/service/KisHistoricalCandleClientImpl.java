@@ -1,4 +1,3 @@
-// KIS Open API 과거 1분봉 조회(REST, 주식일별분봉조회)의 유일한 HTTP 구현체 — 인증 토큰 캐싱과 120건 상한 페이징을 이 클래스 안에만 둔다.
 package com.finplay.api.domain.market.service;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -28,12 +27,6 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.util.UriComponentsBuilder;
 
-// output2의 개별 필드명(stck_cntg_hour·stck_oprc·stck_hgpr·stck_lwpr·stck_prpr·cntg_vol)과 분봉 timestamp 기준(구간
-// 시작/종료)은 실제 KIS 응답으로 확인하지 못했다(Decision Gate, spec.md·plan.md 참고) — KIS 다른 시세 API의 명명 관례를
-// 따른 최선 추정으로 구현했다. 이 매핑은 toRawMinuteCandleDto 메서드 한 곳에만 있으므로, 외부 스모크로 실제 응답을 확인한
-// 뒤에는 이 지점만 교정하면 된다. 페이징 방향(역방향 — FID_INPUT_HOUR_1을 조회 상한 시각으로 보고 그 이전 데이터를
-// 반환한다고 가정, 응답의 가장 이른 시각-1분을 다음 호출의 상한으로 삼아 09:00에 도달할 때까지 반복)도 같은 이유로
-// requestPage/fetchMinuteCandles 안에만 격리했다.
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -52,9 +45,7 @@ public class KisHistoricalCandleClientImpl implements KisHistoricalCandleClient 
 	private static final String HEADER_CUSTOMER_TYPE = "custtype";
 	private static final LocalTime MARKET_OPEN_TIME = LocalTime.of(9, 0);
 	private static final LocalTime MARKET_CLOSE_TIME = LocalTime.of(15, 30);
-	// 09:00~15:30(390분)을 한 번에 최대 120건씩 역방향으로 당겨오면 약 4회면 충분하다 — 이상 응답으로 인한 무한루프를 막는 안전 상한.
 	private static final int MAX_PAGES_PER_SYMBOL = 10;
-	// 초당 호출 제한 응답의 KIS 오류 코드 — 이 코드만 재시도 대상으로 삼는다.
 	private static final String RATE_LIMIT_ERROR_CODE = "EGW00201";
 	private static final int MAX_RATE_LIMIT_RETRIES = 5;
 	private static final long MIN_RATE_LIMIT_BACKOFF_MS = 400L;
@@ -62,14 +53,9 @@ public class KisHistoricalCandleClientImpl implements KisHistoricalCandleClient 
 	private static final DateTimeFormatter CANDLE_TIME_FORMAT = DateTimeFormatter.ofPattern("HHmmss");
 	private static final DateTimeFormatter TOKEN_EXPIRY_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
-	// 실제 KIS 토큰 유효기간은 약 24시간이라고 확인됐다 — 응답에 만료시각이 없거나 파싱 실패 시의 안전 기본값(여유를 둔 값).
 	private static final Duration DEFAULT_TOKEN_TTL = Duration.ofHours(23);
-	// 만료 임박 시 재사용 대신 미리 재발급해 호출 도중 토큰이 끊기는 것을 방지하는 안전 여유.
 	private static final Duration TOKEN_EXPIRY_SAFETY_MARGIN = Duration.ofMinutes(5);
 
-	// 타임아웃이 적용된 완성된 RestClient를 그대로 주입받는다 — 빌드 로직은 KisRestClientConfig가 담당(SpotBugs EI_EXPOSE_REP2 회피).
-	// @Qualifier로 이름 매칭을 명시한다 — 컨텍스트에 RestClient 빈이 하나뿐이라 타입 매칭만으로도 우연히 동작하지만,
-	// 두 번째 RestClient 빈이 추가되면 이름 매칭 없이는 NoUniqueBeanDefinitionException으로 기동이 깨진다(PR #94 리뷰 권장).
 	@Qualifier("kisRestClient")
 	private final RestClient restClient;
 	private final Clock clock;
@@ -98,9 +84,6 @@ public class KisHistoricalCandleClientImpl implements KisHistoricalCandleClient 
 			if (!earliestInPage.isAfter(MARKET_OPEN_TIME)) {
 				break;
 			}
-			// earliestInPage는 항상 cursor 이하이므로(초기값이 cursor이고 그보다 이른 시각이 나올 때만 감소),
-			// earliestInPage.minusMinutes(1)은 항상 cursor보다 1분 이상 이르다 — 커서 정체 가드가 필요 없다
-			// (이슈 #510, 도달 불가능한 방어 코드로 확인).
 			cursor = earliestInPage.minusMinutes(1);
 		}
 		return collected.values().stream()
@@ -110,8 +93,6 @@ public class KisHistoricalCandleClientImpl implements KisHistoricalCandleClient 
 			.toList();
 	}
 
-	// 모의투자 도메인의 초당 호출 제한(EGW00201)을 넘지 않도록 요청 사이에 간격을 둔다. kis.request-interval-ms가
-	// 0이면(기본값) 대기하지 않으므로 실전투자 기준의 기존 동작이 그대로 유지된다.
 	private void throttleBeforeRequest() {
 		long intervalMs = properties.requestIntervalMs();
 		if (intervalMs <= 0) {
@@ -125,10 +106,6 @@ public class KisHistoricalCandleClientImpl implements KisHistoricalCandleClient 
 		}
 	}
 
-	// 초당 호출 제한(EGW00201)은 하드 쿼터가 아니라 간헐적으로 걸린다 — 600ms 간격으로 12회 연속 호출했을 때
-	// 성공률이 약 67%였다(2026-07-30 실측, 2회 성공 후 1회 실패가 반복). 수집기는 페이지 1건만 실패해도 그 종목
-	// 전체를 실패로 처리하므로, 종목당 3~4페이지가 모두 성공할 확률이 0.67^3 ≈ 30%에 그친다. 그래서 이 오류만
-	// 골라 재시도한다. 다른 오류(인증 실패·도메인 불일치 등)는 재시도해도 달라지지 않으므로 그대로 던진다.
 	private List<RawMinuteCandleDto> requestPage(String symbol, LocalDate tradingDate, LocalTime cursor) {
 		RestClientResponseException lastRateLimitError = null;
 		for (int attempt = 0; attempt <= MAX_RATE_LIMIT_RETRIES; attempt++) {
@@ -152,7 +129,6 @@ public class KisHistoricalCandleClientImpl implements KisHistoricalCandleClient 
 		return ex.getResponseBodyAsString().contains(RATE_LIMIT_ERROR_CODE);
 	}
 
-	// 재시도 간 대기는 호출 간격의 배수로 늘린다 — 간격 설정이 0이면 최소 대기값을 쓴다.
 	private void backOffAfterRateLimit(int attempt) {
 		long base = Math.max(properties.requestIntervalMs(), MIN_RATE_LIMIT_BACKOFF_MS);
 		try {
@@ -218,7 +194,6 @@ public class KisHistoricalCandleClientImpl implements KisHistoricalCandleClient 
 			&& now.isBefore(cachedAccessTokenExpiry.minus(TOKEN_EXPIRY_SAFETY_MARGIN));
 	}
 
-	// 이중 검사 락(double-checked locking) — 동시 호출 시 토큰 발급 요청이 중복으로 나가지 않게 한다.
 	private synchronized String issueAccessToken(Instant now) {
 		if (isTokenValid(now)) {
 			return cachedAccessToken;

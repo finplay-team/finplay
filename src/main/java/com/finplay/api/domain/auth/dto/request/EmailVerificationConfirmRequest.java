@@ -1,4 +1,3 @@
-// 이메일 인증번호 확인 요청의 이메일과 6자리 코드를 검증하는 DTO.
 package com.finplay.api.domain.auth.dto.request;
 
 import jakarta.validation.constraints.Email;

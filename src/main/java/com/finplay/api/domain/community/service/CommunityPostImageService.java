@@ -1,4 +1,3 @@
-// 커뮤니티 게시물 첨부 이미지의 업로드·다운로드를 담당하는 서비스
 package com.finplay.api.domain.community.service;
 
 import com.finplay.api.domain.auth.entity.User;
@@ -29,8 +28,6 @@ public class CommunityPostImageService {
 
 	private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of("image/jpeg", "image/png", "image/webp");
 
-	// 확장자는 클라이언트가 보낸 원본 파일명이 아니라 서버가 검증한 contentType에서만 결정한다 — 원본
-	// 파일명을 그대로 쓰면 그 값이 저장 경로 조립에 들어가 경로 조작 여지가 생긴다(PR #269 리뷰).
 	private static final Map<String, String> EXTENSION_BY_CONTENT_TYPE = Map.of(
 		"image/jpeg", ".jpg", "image/png", ".png", "image/webp", ".webp");
 
@@ -62,8 +59,6 @@ public class CommunityPostImageService {
 	public CommunityPostImageFileResponse loadImageFile(Long authenticatedUserId, Long imageId) {
 		CommunityPostImage image = communityPostImageRepository.findById(imageId)
 			.orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
-		// 게시물에 연결된(공개) 이미지는 누구나 볼 수 있지만, 아직 게시되지 않은(post_id IS NULL) 이미지는
-		// 업로더 본인만 볼 수 있다 — 존재를 숨기기 위해 403이 아니라 404로 거부한다(PR #269 리뷰).
 		if (!image.isAssigned() && !image.getUploader().getId().equals(authenticatedUserId)) {
 			throw new BusinessException(ErrorCode.NOT_FOUND);
 		}
@@ -92,8 +87,6 @@ public class CommunityPostImageService {
 		}
 		String storedFilename = image.getStoredFilename();
 		communityPostImageRepository.delete(image);
-		// 물리 파일 삭제는 되돌릴 수 없으므로 이 DB 트랜잭션이 실제로 커밋된 뒤에만 수행한다 — 여기서 바로
-		// 지우면 이후 롤백 시 DB 행은 살아있고 파일만 사라진 상태가 된다(PR #269 리뷰).
 		eventPublisher.publishEvent(new CommunityPostImageDeletedEvent(storedFilename));
 	}
 }

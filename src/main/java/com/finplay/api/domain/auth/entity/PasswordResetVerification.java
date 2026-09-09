@@ -1,4 +1,3 @@
-// 비밀번호 재설정 인증번호의 발송 상태와 거부된 요청 이력을 저장하는 엔티티 (원문 미저장, 해시만 보관)
 package com.finplay.api.domain.auth.entity;
 
 import jakarta.persistence.Column;
@@ -25,7 +24,6 @@ public class PasswordResetVerification {
 	@Column(nullable = false)
 	private String email;
 
-	// 발송하지 않은 거부 행(미가입·소셜 전용)은 NULL이다.
 	@Column(name = "code_hash")
 	private String codeHash;
 
@@ -59,12 +57,10 @@ public class PasswordResetVerification {
 		return new PasswordResetVerification(email, codeHash, expiresAt, now, now);
 	}
 
-	// 미가입·소셜 전용 계정으로 거부된 요청도 발송 제한 집계 대상이라 행만 남긴다 — 발송하지 않았으므로 코드·만료·발송시각은 없다.
 	public static PasswordResetVerification createRejected(String email, LocalDateTime now) {
 		return new PasswordResetVerification(email, null, null, null, now);
 	}
 
-	// 재발송 시 같은 이메일의 이전 인증번호를 즉시 무효화한다 — 유효한 인증번호는 항상 최대 1개.
 	public void expire(LocalDateTime now) {
 		this.expiresAt = now;
 	}

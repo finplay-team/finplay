@@ -1,4 +1,3 @@
-// 실습 3단계 각 단계의 잠금 상태와 무관하게 항상 채워지는 evidence 객체(필드는 조건 미충족 시 null)를 담는 응답 DTO
 package com.finplay.api.domain.education.marketpractice.dto.response;
 
 import java.math.BigDecimal;
@@ -25,18 +24,14 @@ public record PracticeEvidenceResponse(
 	BigDecimal buyQuantity,
 	BigDecimal sellQuantity,
 	BigDecimal remainingQuantity,
-	// 이슈 #421. 영속 attempt 경로의 evidence에서만 채우고 legacy chain·잠긴 단계에서는 객체 자체가 null이다
-	// — 수량 세 필드가 legacy에서 null인 것과 같은 기준이다.
 	PracticeTradeResultResponse tradeResult) {
 
-	/** 잠긴 단계·아무 증거도 없는 단계에 쓰는 모두 null인 evidence 객체(spec MKT-PRACTICE-008). */
 	public static PracticeEvidenceResponse empty() {
 		return new PracticeEvidenceResponse(
 			null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
 			null, null, null, null);
 	}
 
-	/** 1단계(즐겨찾기)만 완료됐을 때 쓰는, favorite 쌍만 채워진 evidence 객체. */
 	public static PracticeEvidenceResponse favoriteOnly(Long favoriteId, LocalDateTime favoriteCreatedAt) {
 		return new PracticeEvidenceResponse(
 			favoriteId, favoriteCreatedAt, null, null, null, null, null, null, null, null, null, null, null, null,

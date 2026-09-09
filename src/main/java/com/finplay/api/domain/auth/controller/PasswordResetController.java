@@ -1,4 +1,3 @@
-// 비밀번호 재설정 인증번호 발송·확인 요청을 받는 컨트롤러 (비인증 공개 경로)
 package com.finplay.api.domain.auth.controller;
 
 import com.finplay.api.domain.auth.dto.request.PasswordResetConfirmRequest;
@@ -22,7 +21,6 @@ public class PasswordResetController {
 	private final PasswordResetService passwordResetService;
 	private final AuthService authService;
 
-	// 가입 이메일로 재설정 인증번호를 발송한다. 발송 제한·대상 회원 판정을 통과하면 202로 응답하며 본문은 없다.
 	@PostMapping
 	public ResponseEntity<Void> sendResetCode(
 		@Valid @RequestBody
@@ -31,8 +29,6 @@ public class PasswordResetController {
 		return ResponseEntity.status(HttpStatus.ACCEPTED).build();
 	}
 
-	// 인증번호와 새 비밀번호를 한 요청으로 받아 즉시 적용한다.
-	// 비로그인 흐름이라 새 토큰 쌍을 발급하지 않고 전 기기를 로그아웃시키므로 응답 본문이 없다.
 	@PostMapping("/confirm")
 	public ResponseEntity<Void> confirmReset(
 		@Valid @RequestBody

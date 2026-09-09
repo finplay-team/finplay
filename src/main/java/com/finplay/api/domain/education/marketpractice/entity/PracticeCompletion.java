@@ -1,4 +1,3 @@
-// 시장가/지정가 매매 기반 실습 튜토리얼의 완료 판정 1건(튜토리얼당 1회)을 영속하는 엔티티
 package com.finplay.api.domain.education.marketpractice.entity;
 
 import jakarta.persistence.Column;

@@ -1,4 +1,3 @@
-// 인증 사용자의 관심목록 등록·조회·해제 요청을 처리하는 컨트롤러
 package com.finplay.api.domain.watchlist.controller;
 
 import com.finplay.api.domain.auth.token.AuthenticatedUser;

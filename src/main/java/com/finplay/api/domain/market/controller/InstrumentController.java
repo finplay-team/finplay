@@ -1,4 +1,3 @@
-// 시장 필터 종목 목록 조회 요청을 처리하는 컨트롤러
 package com.finplay.api.domain.market.controller;
 
 import com.finplay.api.domain.market.dto.response.CandleListResponse;
@@ -52,8 +51,6 @@ public class InstrumentController {
 		LocalDateTime from,
 		@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
 		LocalDateTime to,
-		// cursor는 @DateTimeFormat을 붙이지 않는다 — 바인더 단계 파싱 실패가 interval 400·종목 404보다 먼저
-		// 터져 검증 순서(CANDLE-PAGE-010)를 깬다. 형식 검증은 서비스의 CandleCursor.parse가 담당한다(plan §3).
 		@RequestParam(required = false)
 		String cursor) {
 		return ResponseEntity.ok(candleQueryService.getCandles(instrumentId, interval, from, to, cursor));

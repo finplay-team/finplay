@@ -1,4 +1,3 @@
-// 매수 투자일기 작성 성공 응답 DTO
 package com.finplay.api.domain.journal.dto.response;
 
 import com.finplay.api.domain.journal.entity.BuyTradeJournal;

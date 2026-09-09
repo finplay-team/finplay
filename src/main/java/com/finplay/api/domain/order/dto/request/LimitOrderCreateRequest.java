@@ -1,4 +1,3 @@
-// 코인 지정가 매수·매도 주문 생성 요청 DTO
 package com.finplay.api.domain.order.dto.request;
 
 import com.finplay.api.domain.market.entity.Market;

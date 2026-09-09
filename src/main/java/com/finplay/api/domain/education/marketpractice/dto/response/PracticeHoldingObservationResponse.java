@@ -1,4 +1,3 @@
-// 저장된 실습 3단계 가격 관찰 1건의 판정 결과를 반환하는 응답 DTO
 package com.finplay.api.domain.education.marketpractice.dto.response;
 
 import com.finplay.api.domain.education.marketpractice.entity.PracticeMarketObservation;

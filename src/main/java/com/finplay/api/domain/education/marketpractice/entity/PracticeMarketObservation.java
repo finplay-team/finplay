@@ -1,4 +1,3 @@
-// 시장가/지정가 매매 기반 실습 3단계의 가격 관찰 1건을 영속하는 엔티티
 package com.finplay.api.domain.education.marketpractice.entity;
 
 import com.finplay.api.domain.portfolio.entity.Holding;
@@ -36,7 +35,6 @@ public class PracticeMarketObservation {
 	@JoinColumn(name = "holding_id", nullable = false)
 	private Holding holding;
 
-	// 조회 편의를 위한 비정규화 컬럼(holding에서 유도 가능, plan.md "데이터 모델")
 	@Column(name = "instrument_id", nullable = false)
 	private Long instrumentId;
 

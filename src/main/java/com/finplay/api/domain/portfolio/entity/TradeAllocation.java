@@ -1,4 +1,3 @@
-// 매도 체결이 FIFO로 소비한 매수 lot별 배분 내역을 영속하는 엔티티
 package com.finplay.api.domain.portfolio.entity;
 
 import com.finplay.api.domain.order.entity.Trade;

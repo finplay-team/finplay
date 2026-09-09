@@ -1,4 +1,3 @@
-// 이메일 인증번호 발송·확인 상태를 저장하는 엔티티 (원문 미저장, 해시만 보관)
 package com.finplay.api.domain.auth.entity;
 
 import jakarta.persistence.Column;
@@ -66,7 +65,6 @@ public class EmailVerification {
 		return new EmailVerification(email, codeHash, expiresAt, now);
 	}
 
-	// 재발송 시 이전 미확인 인증번호를 즉시 무효화한다 — 유효한 인증번호는 항상 최대 1개.
 	public void expire(LocalDateTime now) {
 		this.expiresAt = now;
 	}

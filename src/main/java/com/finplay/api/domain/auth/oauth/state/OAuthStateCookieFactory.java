@@ -1,4 +1,3 @@
-// OAuth state를 callback 경로에 한정된 10분 보안 쿠키로 만든다.
 package com.finplay.api.domain.auth.oauth.state;
 
 import com.finplay.api.domain.auth.oauth.OAuthProviderName;

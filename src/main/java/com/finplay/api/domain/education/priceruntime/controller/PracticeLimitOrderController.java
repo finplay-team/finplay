@@ -1,4 +1,3 @@
-// 인증 사용자의 코인 가상 가격 세션 귀속 교육 지정가 BUY 주문 생성 요청을 처리하는 컨트롤러
 package com.finplay.api.domain.education.priceruntime.controller;
 
 import com.finplay.api.domain.auth.token.AuthenticatedUser;

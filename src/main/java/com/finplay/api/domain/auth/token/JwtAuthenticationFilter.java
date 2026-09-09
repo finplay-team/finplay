@@ -1,4 +1,3 @@
-// Authorization Bearer 헤더의 Access Token을 파싱해 SecurityContext에 인증 주체를 채우는 필터
 package com.finplay.api.domain.auth.token;
 
 import jakarta.servlet.FilterChain;
@@ -25,9 +24,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 		this.jwtTokenProvider = jwtTokenProvider;
 	}
 
-	// SSE emitter가 completeWithError()로 완료되면 서블릿 컨테이너가 같은 요청에 ASYNC 재디스패치를 일으키는데,
-	// 이 필터가 기본값(true)대로 그 디스패치를 건너뛰면 SecurityContext가 비어 AuthorizationFilter가 거부한다
-	// (이슈 #359). STATELESS라 매 디스패치마다 Authorization 헤더에서 다시 인증해도 비용이 작다.
 	@Override
 	protected boolean shouldNotFilterAsyncDispatch() {
 		return false;
@@ -37,8 +33,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 	protected void doFilterInternal(
 		HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
 		throws ServletException, IOException {
-		// 토큰이 없거나 잘못되었어도 여기서 응답을 만들지 않는다. 인증을 비운 채 통과시키면
-		// 보호 경로는 AuthorizationFilter가 거부하고, 공개 경로는 정상 처리된다.
 		resolveBearerToken(request)
 			.flatMap(jwtTokenProvider::parseAccessToken)
 			.ifPresent(this::authenticate);

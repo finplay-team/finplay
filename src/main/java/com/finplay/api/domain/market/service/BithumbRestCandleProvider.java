@@ -1,4 +1,3 @@
-// 빗썸 공개 캔들 REST API(GET /v1/candles/{minutes/1|days|weeks|months})를 요청 시점에 호출해 코인 1분·일·주·월봉을 중계하는 CryptoCandleProvider 구현 — 저장·캐시 없음
 package com.finplay.api.domain.market.service;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -33,16 +32,12 @@ public class BithumbRestCandleProvider implements CryptoCandleProvider {
 
 	private static final String DEFAULT_CANDLE_BASE_URL = "https://api.bithumb.com/v1/candles";
 	private static final String KRW_MARKET_PREFIX = "KRW-";
-	// 빗썸 캔들 API의 count 상한 (MKT-008) — from·to 범위가 이를 넘으면 to 기준 최신 count개로 캡한다.
 	private static final int MAX_COUNT = 200;
 
 	private final RestClient restClient;
 	private final Clock clock;
-	// mock 서버 기반 회귀 테스트가 실제 엔드포인트를 로컬 서버로 바꿔치기할 수 있도록 외부화한다 — PR #377 리뷰 권장②.
 	private final String candleBaseUrl;
 
-	// RestClient.Builder를 DI로 받지 않고 RestClient.builder()를 직접 호출하는 이유는 ADR-0023 참고
-	// (BithumbRestTickerPoller와 동일한 Jackson 2/3 공존 위험, PR #377 리뷰 권장①).
 	@Autowired
 	public BithumbRestCandleProvider(
 		Clock clock,
@@ -55,13 +50,10 @@ public class BithumbRestCandleProvider implements CryptoCandleProvider {
 		this(applyTimeouts(RestClient.builder(), connectTimeoutMs, readTimeoutMs).build(), clock, candleBaseUrl);
 	}
 
-	// 테스트 전용: MockRestServiceServer로 이미 구성된 RestClient를 직접 주입한다 (타임아웃 팩토리를 거치지 않는다).
 	BithumbRestCandleProvider(RestClient restClient, Clock clock) {
 		this(restClient, clock, DEFAULT_CANDLE_BASE_URL);
 	}
 
-	// 테스트 전용: @Autowired 생성자 경로(RestClient.builder() 직접 호출)를 실제 로컬 서버로 검증할 때
-	// base URL까지 함께 바꿔치기한다.
 	BithumbRestCandleProvider(RestClient restClient, Clock clock, String candleBaseUrl) {
 		this.restClient = restClient;
 		this.clock = clock;
@@ -77,12 +69,10 @@ public class BithumbRestCandleProvider implements CryptoCandleProvider {
 
 		List<BithumbCandleItem> descending = fetchCandles(resolveEndpoint(interval), market, toParam, count);
 		List<BithumbCandleItem> ascending = new ArrayList<>(descending);
-		// 빗썸 응답은 최신→과거 내림차순이므로 시각 오름차순으로 뒤집는다 (주식 캔들과 동일한 정렬 계약).
 		Collections.reverse(ascending);
 		return ascending.stream().map(this::toDto).toList();
 	}
 
-	// interval별 빗썸 캔들 엔드포인트 (1m은 minutes/1을 그대로 유지). 서버는 빗썸 봉의 버킷 경계를 재계산하지 않는다.
 	private String resolveEndpoint(CandleInterval interval) {
 		return switch (interval) {
 			case ONE_MINUTE -> candleBaseUrl + "/minutes/1";
@@ -92,9 +82,6 @@ public class BithumbRestCandleProvider implements CryptoCandleProvider {
 		};
 	}
 
-	// from·to → to+count 변환 (plan.md "코인 캔들 설계" 표). from만 있으면 지금(clock) 기준, 둘 다 있으면 from~to 기준으로
-	// interval 단위 개수를 세되 양 끝을 포함하도록 +1 하고 MAX_COUNT로 캡한다. 주·월은 각각 그 주 월요일·그 달 1일로
-	// 정렬한 뒤 단위를 센다(빗썸의 주·월봉 버킷 경계와 맞추기 위함, 실제 응답 버킷 자체는 재계산하지 않는다).
 	private int resolveCount(CandleInterval interval, LocalDateTime from, LocalDateTime to) {
 		if (from == null) {
 			return MAX_COUNT;
@@ -117,12 +104,6 @@ public class BithumbRestCandleProvider implements CryptoCandleProvider {
 		return (int)Math.min(MAX_COUNT, Math.max(1, units));
 	}
 
-	// 빗썸 to 파라미터는 UTC가 아니라 candle_date_time_kst와 그대로 비교되는 KST 값이다(PR #164 리뷰(pcb2002)에서
-	// 실제 빗썸 API로 재현 확인 — KST→UTC로 변환해 보내면 9시간 밀린 엉뚱한 구간이 반환된다). 그래서 변환 없이
-	// 원본 KST LocalDateTime을 그대로 쓴다. 그리고 to는 그 정확한 경계 시각을 배제(exclusive)한다(이슈 #157
-	// 외부 스모크로 실측 확인 — to와 정확히 같은 시각에 시작하는 봉이 응답에서 빠짐). 우리 API의 to는 항상
-	// 포함(inclusive)이므로 1초를 더해 보낸다. 빗썸 최소 봉 간격(1분)보다 훨씬 작은 보정값이라 다음 봉을
-	// 끌어오지 않으면서 경계 봉만 포함시킨다 — interval별 분기가 필요 없다(1m·1d·1w·1M 공통).
 	private String resolveToParam(LocalDateTime to) {
 		if (to == null) {
 			return null;
@@ -174,9 +155,7 @@ public class BithumbRestCandleProvider implements CryptoCandleProvider {
 				item.opening_price(),
 				item.high_price(),
 				item.low_price(),
-				// 빗썸은 종가를 trade_price로 부른다 — 이름에 속아 현재가로 해석하지 않는다.
 				item.trade_price(),
-				// candle_acc_trade_volume(코인 수량)을 volume으로 매핑한다. candle_acc_trade_price(거래대금)와 혼동하지 않는다.
 				item.candle_acc_trade_volume());
 		} catch (RuntimeException ex) {
 			throw providerError();

@@ -1,4 +1,3 @@
-// 길이 제한 없이 비밀번호를 SHA-256으로 사전 해시한 뒤 BCrypt로 보호하는 인코더
 package com.finplay.api.domain.auth.crypto;
 
 import java.nio.charset.StandardCharsets;

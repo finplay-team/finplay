@@ -1,4 +1,3 @@
-// QueryDSL 동적 쿼리 작성에 쓰는 JPAQueryFactory 빈을 제공하는 공용 설정
 package com.finplay.api.global.config;
 
 import com.querydsl.jpa.impl.JPAQueryFactory;

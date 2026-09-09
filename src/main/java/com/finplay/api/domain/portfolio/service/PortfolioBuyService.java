@@ -1,4 +1,3 @@
-// 매수 체결 결과를 보유(holding)·매수 lot에 반영하는 서비스
 package com.finplay.api.domain.portfolio.service;
 
 import com.finplay.api.domain.account.entity.Account;
@@ -21,10 +20,6 @@ public class PortfolioBuyService {
 	private final HoldingRepository holdingRepository;
 	private final HoldingLotRepository holdingLotRepository;
 
-	// holdings row를 잠근 뒤 갱신한다(시장가·지정가 매수 체결 공통 호출부, 이슈 #224) — 신규 종목 첫 매수(row 없음)는
-	// 호출부가 이미 잡은 account 락만으로 동시 생성 경합을 막는다(spec.md 확정된 설계 결정 10번, 방어적 유니크
-	// 제약 catch 없음). 단건 호출부(시장가 매수·지정가 단건 체결)는 이 시그니처를 그대로 쓴다 — 내부에서
-	// holding을 직접 조회·잠근 뒤 아래 오버로드로 위임한다(054-limit-order-fill-bulk-lock).
 	public Holding applyBuyTrade(
 		Account account,
 		Instrument instrument,
@@ -39,9 +34,6 @@ public class PortfolioBuyService {
 		return applyBuyTrade(account, instrument, buyTrade, quantity, price, fee, now, holding);
 	}
 
-	// 호출부가 이미 잠갔거나(기존 holding) 아직 저장 전인 신규 Holding을 그대로 받아 저장한다(청크 벌크 락
-	// 호출부, 054-limit-order-fill-bulk-lock) — 이 메서드 자체는 holdingRepository를 조회하지 않는다. 중복
-	// SELECT를 피하는 것이 이 오버로드를 추가하는 이유다.
 	public Holding applyBuyTrade(
 		Account account,
 		Instrument instrument,
@@ -60,11 +52,6 @@ public class PortfolioBuyService {
 		return holding;
 	}
 
-	// 지정가 체결 청크가 참조하는 계좌 목록 + 단일 종목으로 "이미 존재하는" holding을 한 번에 잠근다
-	// (054-limit-order-fill-bulk-lock 호출부: LimitOrderFillService.fillBatch) — BUY·SELL 양쪽 청크가 공용으로
-	// 쓴다. 매수 전용 서비스에 있지만 메서드 이름에 "Buy"를 넣지 않은 이유가 이것이다(PR #545 리뷰 권장사항
-	// 5번). 신규 생성(첫 매수) 대상은 결과에 나타나지 않는다 — 호출부가 인메모리 맵으로 별도 처리한다. 다른
-	// 도메인 서비스가 HoldingRepository를 직접 주입하지 않게 한다(ADR-0002).
 	public List<Holding> findExistingHoldingsForChunkUpdate(List<Long> accountIds, Long instrumentId) {
 		return holdingRepository.findByAccountIdInAndInstrumentIdForUpdate(accountIds, instrumentId);
 	}

@@ -1,4 +1,3 @@
-// 사용자·종목별 코인 튜토리얼 가상 가격 세션(seed·진행 위치·현재가)을 표현하는 엔티티
 package com.finplay.api.domain.education.priceruntime.entity;
 
 import jakarta.persistence.Column;
@@ -21,7 +20,6 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class PracticePriceSession {
 
-	// 100개 tick(0..99) 계약의 마지막 tick — 도달 시 세션을 COMPLETED로 전이한다 (spec COIN-PRICE-RUNTIME-005).
 	private static final int MAX_TICK = 99;
 
 	@Id
@@ -41,8 +39,6 @@ public class PracticePriceSession {
 	@Column(nullable = false)
 	private long seed;
 
-	// SMALLINT(V29 migration)와 타입을 맞춘다 — int로 두면 Hibernate ddl-auto: validate가 스키마 검증에서
-	// 실패한다(SMALLINT vs INTEGER 불일치, ADR-0004).
 	@Column(name = "generator_version", nullable = false)
 	private short generatorVersion;
 
@@ -79,7 +75,6 @@ public class PracticePriceSession {
 		this.createdAt = createdAt;
 	}
 
-	// 생성 직후 tick 0, currentPrice=startPrice, status=ACTIVE로 항상 유효한 상태로 만든다 (spec COIN-PRICE-RUNTIME-002).
 	public static PracticePriceSession create(
 		Long userId,
 		Long instrumentId,
@@ -90,10 +85,6 @@ public class PracticePriceSession {
 		return new PracticePriceSession(userId, instrumentId, seed, generatorVersion, startPrice, createdAt);
 	}
 
-	// expectedTick으로 한 tick 진행한다(tick·가격만 갱신, 상태 전이는 하지 않는다). 방어적 검증만 하며
-	// 사용자향 409 매핑은 호출 전 service가 담당한다(Order.cancel() 패턴, plan.md "트랜잭션·잠금·이벤트").
-	// tick 99 완료 전이는 이 메서드가 하지 않는다 — service가 이벤트 발행으로 체결·취소를 먼저 끝낸 뒤 complete()를
-	// 별도 호출해야 "체결 판정 → 잔여 취소·예약 반환 → 세션 COMPLETED 전이" 순서가 지켜진다(plan.md).
 	public void advance(int expectedTick, BigDecimal nextPrice) {
 		if (this.status != PracticePriceSessionStatus.ACTIVE) {
 			throw new IllegalStateException("ACTIVE 상태의 세션만 진행할 수 있습니다.");
@@ -105,7 +96,6 @@ public class PracticePriceSession {
 		this.currentPrice = nextPrice;
 	}
 
-	// tick 99 도달 후 체결·취소·예약 반환이 끝난 뒤 호출해 세션을 COMPLETED로 전이한다(plan.md).
 	public void complete(LocalDateTime now) {
 		if (this.status != PracticePriceSessionStatus.ACTIVE) {
 			throw new IllegalStateException("ACTIVE 상태의 세션만 완료할 수 있습니다.");

@@ -1,4 +1,3 @@
-// 코인 가상 가격 세션에 귀속된 교육 전용 지정가 BUY 주문 생성 요청 — side는 입력받지 않고 서버가 BUY로 고정한다
 package com.finplay.api.domain.education.priceruntime.dto.request;
 
 import jakarta.validation.constraints.NotNull;

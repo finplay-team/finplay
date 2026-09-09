@@ -1,4 +1,3 @@
-// 실제 favorite·intention·buyTrade·holding·관찰·복기 리소스를 조회해 3단계 실습 진행 상태를 계산하는 순수 조회 서비스
 package com.finplay.api.domain.education.marketpractice.service;
 
 import com.finplay.api.domain.education.marketpractice.dto.response.InvestmentPracticeResponse;
@@ -34,13 +33,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * ai/specs/026-market-order-practice-tutorial 이슈 #305 "GET /api/education/practice" 완료 조건의 상태
- * 계산표(1~5)를 그대로 구현한다. 어떤 것도 쓰지 않는 순수 조회이며, 완료 이후에는 {@code practice_completions}→
- * {@code practice_market_reflections}가 가리키는 holding의 chain·qualifying observation을 다시 조회할 뿐
- * favorite·intention(인메모리)이 유실돼도 completion 판정 자체는 흔들리지 않는다(spec.md "재시작 유실과 완료
- * 불변").
- */
 @Service
 @RequiredArgsConstructor
 public class InvestmentPracticeQueryService {
@@ -48,16 +40,9 @@ public class InvestmentPracticeQueryService {
 	private static final String STATUS_COMPLETED = "COMPLETED";
 	private static final String STATUS_IN_PROGRESS = "IN_PROGRESS";
 	private static final String STATUS_NOT_STARTED = "NOT_STARTED";
-	// 샘플 종목 chain(4단계)에서만 등장하는 상태 — 매수 후 5분 이내에 매도 evidence가 없으면 만료된다
-	// (plan.md "3. 매도 단계 API 설계" GET 4단계 응답 표).
 	private static final String STATUS_EXPIRED = "EXPIRED";
-	// 4단계가 STATUS_NOT_STARTED(잠긴 미착수)를 재사용하면 locked=false와 조합될 때 "지금 매도해야 하는
-	// 실행 가능한 단계"를 "아직 진입 전"으로 오인시켜 프론트엔드가 CTA를 숨길 위험이 있다(tester 지적,
-	// PR #340 이후 정정). 매도 대기(잠기지 않음, 5분 이내)만을 가리키는 별도 상태값을 쓴다.
 	private static final String STATUS_AWAITING_SALE = "AWAITING_SALE";
 	private static final long SALE_DEADLINE_MINUTES = 5;
-	// PracticeHoldingReflectionService.TUTORIAL_COMPLETION_REWARD_AMOUNT와 동일 금액(이슈 #343) — 완료
-	// 응답에서만 노출하고 그 외 상태는 null이다.
 	private static final long TUTORIAL_COMPLETION_REWARD_AMOUNT = 5_000_000L;
 
 	private final FavoriteService favoriteService;
@@ -71,7 +56,6 @@ public class InvestmentPracticeQueryService {
 	private final PracticeAttemptCanonicalPriceService canonicalPriceService;
 	private final PracticeEntryComparisonService practiceEntryComparisonService;
 	private final PracticeStageProgressCalculationService practiceStageProgressCalculationService;
-	// 052 EXITFREE-020·021 — 예약 가능 여부·현재 예약·겪음 상태. 판정을 이 클래스가 다시 쓰지 않고 그대로 얹는다.
 	private final PracticeExitPlanReservationService practiceExitPlanReservationService;
 	private final PracticeCompletionRepository practiceCompletionRepository;
 	private final Clock clock;
@@ -83,14 +67,7 @@ public class InvestmentPracticeQueryService {
 		Optional<PracticeCompletion> completion = practiceCompletionRepository
 			.findByUserIdAndTutorialKey(userId, tutorialKey);
 		Optional<PracticeAttempt> attempt = practiceAttemptRepository.findByUserIdAndMarket(userId, market);
-		// 이슈 #426: attempt가 있으면 완료 기록보다 attempt를 먼저 본다.
-		// 예전 첫 분기는 "완료 기록이 있고 attempt가 COMPLETED가 아님"을 무조건 예전 완료 응답으로 돌려보냈다.
-		// 040(완료 후 재시작)이 허용한 재시작 직후 attempt가 그 조건에 걸려 살아 있는 실행의 evidence가 사라졌다.
-		// attempt가 아예 없는 legacy 026 chain 완료자만 아래 완료 기록 폴백을 탄다.
-		// 완료 기록 행은 그대로 남아 completedAt·rewardAmount로 계속 노출되고 보상 재지급도 막는다(040 비즈니스 규칙).
 		if (attempt.isPresent()) {
-			// 041 6번 — attempt 경로의 세 응답 모두 진입별 대조와 공개된 사건을 함께 싣는다. 한 곳만 얹으면
-			// 진행 중 화면과 완료 화면이 서로 다른 이야기를 하게 된다.
 			if (attempt.get().getStatus() == PracticeAttemptStatus.COMPLETED) {
 				PracticeCompletion completed = completion
 					.orElseThrow(() -> new BusinessException(ErrorCode.PRACTICE_EVIDENCE_MISSING));
@@ -130,19 +107,9 @@ public class InvestmentPracticeQueryService {
 		return buildNotStartedResponse(tutorialKey);
 	}
 
-	/**
-	 * 041 SCENARIO-019b·020·021 — 진입별 대조 배열과 공개된 사건, "안 팔았다면"의 기준 가격을 얹는다.
-	 * 이슈 #503에서 튜토리얼 단계 진행 판정({@code tutorialStageProgress})도 같은 자리에서 얹는다 — attempt
-	 * 경로의 세 응답(진행 중·완료·완료 replay)이 모두 여기를 지나므로 한 곳만 고치면 세 화면이 갈리지 않는다.
-	 *
-	 * <p><b>진입 배열은 대본 여부와 무관하게 채운다.</b> 재진입은 042가 시장을 가리지 않고 열었으므로
-	 * 버전 1 실행에도 진입이 둘 생길 수 있고, "첫 매도만 보인다"는 결함도 그쪽에 똑같이 있다. 대본이 없으면
-	 * {@code priceAfterSell}이 {@code null}이라 {@code unrealizedPnlIfHeld}만 비어 나간다.
-	 */
 	private InvestmentPracticeResponse withEntryComparison(
 		InvestmentPracticeResponse response, PracticeAttempt attempt) {
 		if (attempt.getInstrument() == null) {
-			// 종목 미선택은 진입도 단계 진행도 있을 수 없다 — 짧은 생성자가 둘 다 빈 값으로 채운다.
 			return response;
 		}
 		BigDecimal priceAfterSell = canonicalPriceService.postSellComparisonPrice(attempt);
@@ -151,8 +118,6 @@ public class InvestmentPracticeQueryService {
 				.calculate(attempt, canonicalPriceService.script(attempt))
 				.revealedEvents()
 			: List.of();
-		// 052 EXITFREE-020·021 — 예약 가능 여부·현재 예약·겪음 상태. 판정은 POST .../exit-plan이 쓰는 것과
-		// 같은 산출식이라 화면이 연 버튼과 서버의 거부가 갈리지 않는다.
 		PracticeExitPlanViewDto exitPlanView = practiceExitPlanReservationService.view(attempt);
 		return new InvestmentPracticeResponse(
 			response.tutorialKey(),
@@ -183,16 +148,12 @@ public class InvestmentPracticeQueryService {
 			PracticeAttemptResponse.from(attempt, null, exitPresetLocked(attempt)));
 	}
 
-	// 이슈 #426: completion은 "이 사용자·market이 예전에 한 번 완료했는가"만 뜻하며 nullable이다.
-	// 재시작해 다시 진행 중이어도 최초 완료 시각과 이미 받은 보상 금액은 계속 노출한다(040 — 재완료는 보상 재지급 없음).
-	// 한 번도 완료한 적이 없으면 지금까지와 동일하게 completedAt·rewardAmount 둘 다 null이다.
 	private InvestmentPracticeResponse buildActiveAttemptResponse(
 		Long userId, String tutorialKey, PracticeAttempt attempt, PracticeCompletion completion) {
 		LocalDateTime completedAt = completion == null ? null : completion.getCompletedAt();
 		Long rewardAmount = completion == null ? null : TUTORIAL_COMPLETION_REWARD_AMOUNT;
 		PracticeAttemptResponse attemptResponse;
 		if (attempt.getInstrument() == null) {
-			// 종목 미선택이면 보유가 있을 수 없어 조회 없이 false다.
 			attemptResponse = PracticeAttemptResponse.from(attempt, null, false);
 			List<PracticeStepResponse> steps = List.of(
 				new PracticeStepResponse(1, STATUS_IN_PROGRESS, false, PracticeEvidenceResponse.empty()),
@@ -281,10 +242,6 @@ public class InvestmentPracticeQueryService {
 			PracticeAttemptResponse.from(attempt, resolved.riskSnapshot(), exitPresetLocked(attempt)));
 	}
 
-	// 현재 run 귀속 판정(risk snapshot 생성 시각 이후)만 남긴다. 매도 체결 이후 관찰을 배제하던 필터는
-	// 제거했다 — 026 spec.md "비즈니스 규칙"이 관찰·복기를 "매도 여부와 무관하게" 허용하도록 못박았고 031은
-	// 이 원칙을 그대로 상속한다. 배제하면 매도 후에 채운 evidence가 3·4단계 진행 조회에서 사라져 복기가
-	// 영구히 409 PRACTICE_EVIDENCE_MISSING이 된다(이슈 #420, 프로덕션 재현).
 	private List<PracticeMarketObservation> currentRunObservations(
 		Long userId, ResolvedPracticeAttemptEvidenceDto resolved) {
 		return practiceMarketObservationRepository
@@ -295,11 +252,6 @@ public class InvestmentPracticeQueryService {
 			.toList();
 	}
 
-	// SCENARIO-014로 시간 제한을 폐지했다 — 생성기 버전 2 attempt는 마감이 없으므로 saleDeadlineAt을 null로
-	// 내리고, 그 결과 isWithinSaleDeadline의 null 가드가 4단계 상태를 EXPIRED로 만들지 않는다. 버전 1 attempt와
-	// legacy chain은 기존 값을 그대로 유지한다(041 plan §시간 게이트 제거).
-	// 042 EXITPRESET-003 — 프리셋 잠금 기준은 "지금 들고 있는가"다. 041의 대기 구간 탈출 판정과 같은
-	// 산출식(TradeService.netFilledQuantity)을 쓴다 — **현재 실행 세대의** 순량이다.
 	private boolean exitPresetLocked(PracticeAttempt attempt) {
 		if (attempt.getInstrument() == null) {
 			return false;
@@ -341,7 +293,6 @@ public class InvestmentPracticeQueryService {
 			resolved.buyQuantity(),
 			resolved.sellQuantity(),
 			resolved.remainingQuantity(),
-			// 이슈 #421: 매도 전이면 매도가·손익·판정이 null인 객체가 나가고 매수가만 채워진다.
 			PracticeTradeResultCalculator.calculate(
 				resolved.averageBuyPrice(),
 				resolved.averageSellPrice(),
@@ -352,9 +303,6 @@ public class InvestmentPracticeQueryService {
 				resolved.sellCause()));
 	}
 
-	// 완료 조건 1: practice_completions 행이 있으면 COMPLETED, 1·2·3단계 전부 COMPLETED. evidence는
-	// completion -> reflection -> holding 관계에서 chain·qualifying observation을 재조회해 채우되, favorite·
-	// intention이 유실됐으면(재시작) 해당 필드만 null로 남긴다(id·시각 쌍 규칙만 유지, 지시사항).
 	private InvestmentPracticeResponse buildCompletedResponse(
 		Long userId, String tutorialKey, PracticeCompletion completion) {
 		PracticeMarketReflection reflection = completion.getReflection();
@@ -404,8 +352,6 @@ public class InvestmentPracticeQueryService {
 				TUTORIAL_COMPLETION_REWARD_AMOUNT, null);
 		}
 
-		// 샘플 종목 chain은 4단계(매도·복기)까지 완료돼야 practice_completions가 생기므로(4단계
-		// evidence(a)·(b) 모두 필요), 완료 응답도 4단계로 확장해 매도 evidence를 노출한다.
 		PracticeEvidenceResponse stepFourEvidence = new PracticeEvidenceResponse(
 			evidence.favoriteId(), evidence.favoriteCreatedAt(), evidence.intentionId(), evidence.intentionCreatedAt(),
 			evidence.buyTradeId(), evidence.buyTradeExecutedAt(), evidence.holdingId(),
@@ -431,9 +377,6 @@ public class InvestmentPracticeQueryService {
 			TUTORIAL_COMPLETION_REWARD_AMOUNT, null);
 	}
 
-	// 완료 조건 2·3: 완료되지 않았지만 유효 chain이 있으면 1·2단계는 COMPLETED, 3단계는 IN_PROGRESS다. chain에
-	// qualifying observation이 있으면(조건 2) 3단계 evidence에 observation까지 채우고, 없으면(조건 3) chain만
-	// 채운다.
 	private InvestmentPracticeResponse buildChainResponse(
 		Long userId, String tutorialKey, ResolvedPracticeChainDto chain) {
 		Optional<ReferencePriceLines> referenceLines = referencePriceCalculator.calculate(chain);
@@ -502,7 +445,6 @@ public class InvestmentPracticeQueryService {
 			return new InvestmentPracticeResponse(tutorialKey, STATUS_IN_PROGRESS, 3, steps, null, null, null);
 		}
 
-		// 샘플 종목 chain: 4단계(매도·복기) 확장(plan.md "GET /api/education/practice 4단계 응답").
 		LocalDateTime saleDeadlineAt = chain.buyTradeExecutedAt() == null
 			? null
 			: chain.buyTradeExecutedAt().plusMinutes(SALE_DEADLINE_MINUTES);
@@ -539,13 +481,6 @@ public class InvestmentPracticeQueryService {
 		return new InvestmentPracticeResponse(tutorialKey, STATUS_IN_PROGRESS, 4, steps, null, null, null);
 	}
 
-	// 4단계(매도·복기) evidence 판정. (a) 매도 체결이 buyTrade.executedAt + 5분 이내여야 IN_PROGRESS(복기 대기),
-	// 매도가 아직 없으면 그 5분 창이 지나기 전까지 AWAITING_SALE(잠기지 않음, 매도 유도), 매도 없이 5분을
-	// 넘기거나 매도 자체가 5분을 넘겨 체결됐으면 EXPIRED다(plan.md "4. 5분 타이머"). 완료
-	// (practice_completions)는 buildCompletedResponse가 담당하므로 이 메서드는 COMPLETED를 반환하지 않는다.
-	// STATUS_NOT_STARTED를 쓰지 않는 이유: 이 API의 다른 모든 NOT_STARTED는 locked=true와 짝을 이루는데,
-	// 4단계는 locked=false(지금 매도해야 하는 단계)이므로 같은 이름을 쓰면 프론트엔드가 기존 관례대로
-	// CTA를 숨기는 오작동 위험이 있다(tester 지적, 이슈 #339).
 	private String resolveStepFourStatus(ResolvedPracticeChainDto chain, LocalDateTime saleDeadlineAt) {
 		if (chain.sellTradeId() != null) {
 			return isWithinSaleDeadline(chain.sellTradeExecutedAt(), saleDeadlineAt)
@@ -556,14 +491,10 @@ public class InvestmentPracticeQueryService {
 		return isWithinSaleDeadline(now, saleDeadlineAt) ? STATUS_AWAITING_SALE : STATUS_EXPIRED;
 	}
 
-	// 경계값 포함(정확히 5분 시점 포함) — "!isAfter"로 5분 초과만 만료로 다룬다(plan.md 4번 "5분 경계값").
 	private boolean isWithinSaleDeadline(LocalDateTime at, LocalDateTime saleDeadlineAt) {
 		return saleDeadlineAt == null || !at.isAfter(saleDeadlineAt);
 	}
 
-	// 완료 조건 4: 유효 chain이 없지만 해당 market에 본인 favorite이 1개 이상이면 1단계만 COMPLETED다. 여러
-	// favorite이 있으면 가장 이른 것을 대표로 쓴다(chain 해석이 모든 favorite에 대해 이미 실패했으므로 특정
-	// favorite을 우선할 근거가 favorite.createdAt ASC뿐이다).
 	private InvestmentPracticeResponse buildFavoriteOnlyResponse(
 		String tutorialKey, List<FavoriteResponse> marketFavorites) {
 		FavoriteResponse earliestFavorite = marketFavorites.stream()
@@ -579,7 +510,6 @@ public class InvestmentPracticeQueryService {
 		return new InvestmentPracticeResponse(tutorialKey, STATUS_IN_PROGRESS, 2, steps, null, null, null);
 	}
 
-	// 완료 조건 5: favorite조차 없으면 전부 미착수다.
 	private InvestmentPracticeResponse buildNotStartedResponse(String tutorialKey) {
 		List<PracticeStepResponse> steps = List.of(
 			new PracticeStepResponse(1, STATUS_NOT_STARTED, false, PracticeEvidenceResponse.empty()),
@@ -588,7 +518,6 @@ public class InvestmentPracticeQueryService {
 		return new InvestmentPracticeResponse(tutorialKey, STATUS_NOT_STARTED, 1, steps, null, null, null);
 	}
 
-	// PracticeHoldingObservationService.resolveTutorialKey와 동일 패턴(이 spec 전체가 공유하는 관례).
 	private String resolveTutorialKey(Market market) {
 		return switch (market) {
 			case STOCK -> PracticeIntentionService.TUTORIAL_KEY;

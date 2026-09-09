@@ -1,4 +1,3 @@
-// 손절·익절을 한 쌍으로 묶은 OCO 청산 예약(일반·교육 경로 공통)을 영속하는 엔티티
 package com.finplay.api.domain.order.entity;
 
 import com.finplay.api.domain.auth.entity.User;
@@ -36,16 +35,13 @@ public class ExitPlan {
 	@JoinColumn(name = "user_id", nullable = false)
 	private User user;
 
-	// 두 경로 모두 항상 실제 holding에 결합된다 — 교육 경로도 chain에서 유도한 holding을 저장한다.
 	@ManyToOne(fetch = FetchType.LAZY, optional = false)
 	@JoinColumn(name = "holding_id", nullable = false)
 	private Holding holding;
 
-	// 응답·evidence용 숫자 snapshot. FK·unique가 아니며 일반 경로는 항상 null이다.
 	@Column(name = "intention_id")
 	private Long intentionId;
 
-	// 교육 경로만 사용하는 내부 UUID identity. 일반 경로는 항상 null이다.
 	@Column(name = "intention_instance_key", length = 36, columnDefinition = "CHAR(36)")
 	private String intentionInstanceKey;
 
@@ -60,7 +56,6 @@ public class ExitPlan {
 	@Column(nullable = false, precision = 30, scale = 8)
 	private BigDecimal quantity;
 
-	// 교육 경로는 buyTrade.entryPrice, 일반 경로는 생성 시점 holding.averagePrice snapshot이다.
 	@Column(name = "entry_price", nullable = false, precision = 18, scale = 8)
 	private BigDecimal entryPrice;
 
@@ -100,7 +95,6 @@ public class ExitPlan {
 	@JoinColumn(name = "triggered_order_id")
 	private Order triggeredOrder;
 
-	// 021은 코인만 다루므로 항상 null이다. 주식 확장 시 016이 이 FK를 다시 사용한다.
 	@ManyToOne(fetch = FetchType.LAZY)
 	@JoinColumn(name = "replay_session_id")
 	private StockReplaySession replaySession;
@@ -108,10 +102,6 @@ public class ExitPlan {
 	@Column(name = "request_hash", nullable = false, length = 64, columnDefinition = "CHAR(64)")
 	private String requestHash;
 
-	// 두 값이 함께 null이면 일반 경로 예약, 함께 non-null이면 해당 튜토리얼 attempt 실행 세대에 귀속된
-	// 자동 예약이다. orders의 같은 이름 두 컬럼과 같은 규칙이며(042 plan §데이터 모델), 값을 채우는 것은
-	// 자동 예약 생성(042 tasks 5번)이다. ExitPlanEducationalOriginDto는 이 경로에 쓰지 않는다 —
-	// intentionId를 필수로 요구하는데 039가 사전 의도를 없애 줄 값이 없다.
 	@Column(name = "practice_attempt_id")
 	private Long practiceAttemptId;
 
@@ -156,10 +146,6 @@ public class ExitPlan {
 		this.requestHash = requestHash;
 	}
 
-	// 019의 tagged union 불변식 — PERCENT만 원본 rate를 snapshot하고 PRICE는 rate 컬럼을 비운다.
-	// 요청 필드 조합 검증(stopLoss·takeProfit 포함)은 호출부 정책이 400으로 먼저 걸러낸다.
-	// 생성자가 아니라 정적 팩토리에서 호출한다 — 생성자에서 예외를 던지면 SpotBugs CT_CONSTRUCTOR_THROW가 잡는다
-	// (Trade.of의 validateStockReplaySession과 같은 형태).
 	private static void validateRateSnapshot(
 		ExitPriceType exitPriceType, BigDecimal stopLossRate, BigDecimal takeProfitRate) {
 		if (exitPriceType == ExitPriceType.PERCENT && (stopLossRate == null || takeProfitRate == null)) {
@@ -170,7 +156,6 @@ public class ExitPlan {
 		}
 	}
 
-	// 일반 경로(intentionId 생략) 생성 — intentionId·intentionInstanceKey·buyTrade는 항상 null이다.
 	public static ExitPlan createGeneral(
 		User user,
 		Holding holding,
@@ -207,9 +192,6 @@ public class ExitPlan {
 			reservedAt);
 	}
 
-	// 튜토리얼 자동 예약(042 EXITPRESET-005) 생성 — intentionId 없이 attempt·실행 세대로 귀속한다.
-	// 두 귀속 값을 여기서 검증하는 것은 Order.createForPracticeAttempt와 대칭을 맞추기 위해서다. 두지 않으면
-	// 이 불변식을 지키는 것이 DB CHECK 하나뿐이고, 위반이 트랜잭션 커밋 시점에야 드러난다(PR #471 리뷰).
 	public static ExitPlan createPractice(
 		User user,
 		Holding holding,
@@ -254,7 +236,6 @@ public class ExitPlan {
 		return plan;
 	}
 
-	// 교육 경로(intentionId 지정) 생성 — 016 chain 검증이 확정한 intention·매수 체결 snapshot을 함께 저장한다.
 	public static ExitPlan createEducational(
 		User user,
 		Holding holding,
@@ -301,9 +282,6 @@ public class ExitPlan {
 		return this.status == ExitPlanStatus.PENDING;
 	}
 
-	// 사용자 취소(021 plan.md "잠금 순서" — holding을 먼저 잠근 뒤 이 plan을 잠그고 호출한다). 호출부(서비스 계층)가
-	// 이미 PENDING 여부를 409로 검증한 뒤 부르므로, 여기서의 예외는 원장 불변식이 깨진 방어적 상황이다
-	// (Order.cancel과 같은 형태).
 	public void cancel(LocalDateTime closedAt) {
 		if (this.status != ExitPlanStatus.PENDING) {
 			throw new IllegalStateException("PENDING 상태의 예약만 취소할 수 있습니다.");
@@ -312,9 +290,6 @@ public class ExitPlan {
 		this.closedAt = closedAt;
 	}
 
-	// 가격 트리거 체결(021 plan.md "트리거·취소·잠금 순서" — holding을 먼저 잠근 뒤 이 plan을 잠그고 호출한다).
-	// 호출부(ExitPlanFillService)가 이미 PENDING 여부를 재확인한 뒤 부르므로, 여기서의 예외는 cancel()과 같이
-	// 원장 불변식이 깨진 방어적 상황이다.
 	public void fillTakeProfit(Order triggeredOrder, LocalDateTime closedAt) {
 		fill(ExitPlanStatus.FILLED_TAKE_PROFIT, triggeredOrder, closedAt);
 	}

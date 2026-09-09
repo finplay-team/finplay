@@ -1,4 +1,3 @@
-// 튜토리얼 attempt의 현재 실행 세대에 선택할 샘플 종목 ID를 받는 요청 DTO
 package com.finplay.api.domain.education.marketpractice.dto.request;
 
 import jakarta.validation.constraints.NotNull;

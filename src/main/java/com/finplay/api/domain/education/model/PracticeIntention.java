@@ -1,4 +1,3 @@
-// 매수 전에 기록한 투자 실습의 수량과 손절·익절 의도를 표현하는 인메모리 불변 값 객체(#193: JPA 엔티티에서 전환)
 package com.finplay.api.domain.education.model;
 
 import java.math.BigDecimal;

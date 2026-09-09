@@ -1,4 +1,3 @@
-// 관심목록에 등록할 종목 식별자를 검증하는 요청 DTO
 package com.finplay.api.domain.watchlist.dto.request;
 
 import jakarta.validation.constraints.NotNull;

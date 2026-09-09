@@ -1,4 +1,3 @@
-// 체결 내역 목록 항목 한 건을 노출하는 응답 DTO(체결 정보 전용)
 package com.finplay.api.domain.order.dto.response;
 
 import com.finplay.api.domain.order.entity.Trade;

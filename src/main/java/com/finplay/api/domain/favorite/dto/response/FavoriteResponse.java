@@ -1,4 +1,3 @@
-// 등록된 즐겨찾기의 종목 정보와 등록 시각을 반환하는 응답 DTO
 package com.finplay.api.domain.favorite.dto.response;
 
 import com.finplay.api.domain.favorite.model.Favorite;

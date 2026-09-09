@@ -1,4 +1,3 @@
-// 지정가 주문 1건을 수정(해제 후 재예약)하는 서비스 — 잠금 순서 order → account → (SELL만) holding(plan.md)
 package com.finplay.api.domain.order.service;
 
 import com.finplay.api.domain.account.entity.Account;
@@ -33,9 +32,6 @@ public class LimitOrderModifyService {
 	private final PortfolioSellService portfolioSellService;
 	private final Clock clock;
 
-	// plan.md "수정 흐름" — 0.요청 형식(400) → 1.order 락+존재(404) → 2.소유(403) → 3.상태(409)
-	// → 4.최종값 합성 → 5.형식·최소주문금액 재검증 → 6.account 락
-	// → 7~9.BUY/SELL 해제→재예약(재예약 실패 시 트랜잭션 롤백으로 해제도 취소됨) → 10.order.modify() → 11.응답.
 	@Transactional
 	public LimitOrderResponse modifyOrder(Long userId, Long orderId, LimitOrderUpdateRequest request) {
 		if (request.limitPrice() == null && request.quantity() == null) {
@@ -66,7 +62,6 @@ public class LimitOrderModifyService {
 		Account account = accountService.getAccountByIdForUpdate(order.getAccount().getId());
 
 		if (order.getSide() == OrderSide.SELL) {
-			// SELL만 holding을 잠근다(잠금 순서 order → account → holding). BUY는 holding을 잠그지 않는다(plan.md).
 			Holding holding = portfolioSellService.getHoldingForUpdate(account, order.getInstrument());
 			holding.releaseReservedQuantity(order.getQuantity());
 			if (holding.getAvailableQuantity().compareTo(finalQuantity) < 0) {
@@ -78,9 +73,6 @@ public class LimitOrderModifyService {
 				order.getQuantity(), order.getLimitPrice());
 			LimitOrderFeeCalculator.Reservation newReservation = LimitOrderFeeCalculator.calculate(
 				finalQuantity, finalLimitPrice);
-			// 샌드박스(튜토리얼) 종목의 지정가 매수 재예약은 실제 Account 대신 튜토리얼 계좌를 대상으로
-			// 한다(047 TUTORIAL-CASH-ISOL-002·005) — 생성 시점(LimitOrderCreationService 등)에 이미
-			// 그 계좌에 예약이 걸려 있으므로, 수정도 같은 계좌에서 해제·재예약해야 일관된다.
 			if (order.getInstrument().isTutorialSample()) {
 				TutorialAccount tutorialAccount = tutorialAccountService.getOrCreateForUpdate(
 					account.getUser().getId(), account.getMarket(), LocalDateTime.now(clock));
@@ -102,7 +94,6 @@ public class LimitOrderModifyService {
 		return LimitOrderResponse.from(order);
 	}
 
-	// LMT-001 생성 시 검증과 동일 규칙(LimitOrderCreationService) — 최종 합성값 기준으로 재적용한다.
 	private void validateQuantityFormat(BigDecimal quantity) {
 		if (quantity.compareTo(BigDecimal.ZERO) <= 0) {
 			throw new BusinessException(ErrorCode.VALIDATION_ERROR, "수량은 0보다 커야 합니다.");

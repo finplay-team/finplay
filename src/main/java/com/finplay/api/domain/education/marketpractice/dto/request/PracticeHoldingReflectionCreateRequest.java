@@ -1,4 +1,3 @@
-// 실습 3단계 자유 복기 생성 요청의 holdingId·answer 검증을 정의하는 요청 DTO
 package com.finplay.api.domain.education.marketpractice.dto.request;
 
 import jakarta.validation.constraints.NotBlank;

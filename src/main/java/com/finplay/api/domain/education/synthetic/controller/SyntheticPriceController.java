@@ -1,4 +1,3 @@
-// 인증 사용자의 튜토리얼 전용 합성 시세 조회 요청을 처리하는 컨트롤러
 package com.finplay.api.domain.education.synthetic.controller;
 
 import com.finplay.api.domain.auth.token.AuthenticatedUser;

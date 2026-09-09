@@ -1,4 +1,3 @@
-// 투자 실습 진행 행의 원자 생성과 비관 잠금 조회를 담당하는 JPA 리포지토리
 package com.finplay.api.domain.education.repository;
 
 import com.finplay.api.domain.education.entity.PracticeProgress;

@@ -1,4 +1,3 @@
-// 인증 사용자의 관심목록 등록·조회·해제를 처리하는 서비스
 package com.finplay.api.domain.watchlist.service;
 
 import com.finplay.api.domain.market.entity.Instrument;

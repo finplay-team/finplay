@@ -1,4 +1,3 @@
-// OAuth 공급자를 선택하고 state와 인가 URI 생성을 조합한다.
 package com.finplay.api.domain.auth.service;
 
 import com.finplay.api.domain.auth.oauth.OAuthAuthorizationResult;

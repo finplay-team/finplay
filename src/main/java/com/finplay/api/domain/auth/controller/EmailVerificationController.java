@@ -1,4 +1,3 @@
-// 이메일 인증번호 발송 요청을 받는 컨트롤러
 package com.finplay.api.domain.auth.controller;
 
 import com.finplay.api.domain.auth.dto.request.EmailVerificationConfirmRequest;
@@ -21,7 +20,6 @@ public class EmailVerificationController {
 
 	private final EmailVerificationService emailVerificationService;
 
-	// 인증번호를 발송한다. 발송 제한 통과 시 202로 응답하며 본문은 없다.
 	@PostMapping
 	public ResponseEntity<Void> sendVerificationCode(
 		@Valid @RequestBody

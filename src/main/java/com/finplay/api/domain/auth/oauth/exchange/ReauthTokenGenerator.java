@@ -1,4 +1,3 @@
-// 재인증 토큰 원문을 32바이트 SecureRandom 난수의 URL-safe Base64로 생성한다.
 package com.finplay.api.domain.auth.oauth.exchange;
 
 import java.security.SecureRandom;

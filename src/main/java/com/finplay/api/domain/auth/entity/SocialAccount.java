@@ -1,4 +1,3 @@
-// OAuth 공급자 사용자 식별자와 FinPlay 회원의 연결을 영속한다.
 package com.finplay.api.domain.auth.entity;
 
 import com.finplay.api.domain.auth.oauth.OAuthProviderName;

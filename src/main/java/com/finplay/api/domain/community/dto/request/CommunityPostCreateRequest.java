@@ -1,4 +1,3 @@
-// 커뮤니티 게시글 생성에 필요한 제목과 본문을 검증하는 요청 DTO
 package com.finplay.api.domain.community.dto.request;
 
 import jakarta.validation.constraints.NotBlank;

@@ -1,4 +1,3 @@
-// 인증 사용자의 즐겨찾기 조회·등록·해제 요청을 처리하는 컨트롤러
 package com.finplay.api.domain.favorite.controller;
 
 import com.finplay.api.domain.auth.token.AuthenticatedUser;

@@ -1,4 +1,3 @@
-// attempt 선잠금 뒤 현재 실행 주문·예약·보유를 원자 정리하고 보상 매도 원장을 남기는 order 서비스
 package com.finplay.api.domain.order.service;
 
 import com.finplay.api.domain.account.entity.Account;
@@ -48,7 +47,6 @@ public class PracticeRunRestartOrderService {
 
 	@Transactional
 	public void cleanupCurrentRun(PracticeRunRestartCommand command) {
-		// 호출부가 attempt를 선잠금한 상태다. 이후 현재 run 주문을 한 번에 ID 오름차순으로 잠근다.
 		List<Order> orders = orderRepository.findPracticeRunOrdersForUpdate(
 			command.attemptId(), command.runNumber());
 		if (command.instrumentId() == null) {
@@ -67,9 +65,6 @@ public class PracticeRunRestartOrderService {
 			command.userId(), command.market());
 		validateOrderAccounts(account, orders);
 
-		// 042 EXITPRESET-015 — **예약 취소가 주문 취소보다 먼저다.** 예약 수량이 남아 있으면 아래 보상 매도가
-		// availableQuantity 부족으로 실패한다. 취소 서비스가 flush 후 holding을 detach하므로, 이 호출 뒤에
-		// holding을 처음 잡는 아래 순서를 지켜야 낡은 인스턴스를 재사용하지 않는다.
 		practiceOrderSettlementService.cancelCurrentRunExitPlans(
 			command.userId(), command.attemptId(), command.runNumber());
 
@@ -93,13 +88,9 @@ public class PracticeRunRestartOrderService {
 		}
 
 		createCompensatingSell(command, account, instrument, holding, netFilledQuantity);
-		// 보상매도(튜토리얼 종목이면 튜토리얼 계좌 현금·realizedPnl 증가, 직전 항목에서 완료)가 반영된 뒤
-		// 절대값 리셋을 마지막에 걸어, 그 증가분까지 포함해 정확히 초기값으로 되돌린다(TUTORIAL-CASH-ISOL-006).
 		resetTutorialAccount(command);
 	}
 
-	// 재시작마다 그 사용자·시장의 튜토리얼 계좌를 현금 1000만원·예약 현금 0원·realizedPnl 0원으로 초기화한다.
-	// cleanupCurrentRun의 모든 성공 경로(주문 미선택/순체결수량 0/보상매도 완료) 끝에서 호출된다.
 	private void resetTutorialAccount(PracticeRunRestartCommand command) {
 		tutorialAccountService.resetForUpdate(
 			command.userId(),
@@ -132,10 +123,6 @@ public class PracticeRunRestartOrderService {
 				}
 				holding.releaseReservedQuantity(order.getQuantity());
 			} else {
-				// validateInstrument가 이 메서드 도달 전 instrument.isTutorialSample()을 이미 강제하므로,
-				// 여기 도달하는 지정가 매수 PENDING 예약은 전부 튜토리얼 계좌에 걸려 있다(PR #452 리뷰 차단 1번 —
-				// PracticeLimitOrderCreationService/LimitOrderCreationService가 샌드박스 매수 예약을 튜토리얼
-				// 계좌로 옮긴 것과 짝이 맞아야 한다).
 				if (tutorialAccount == null) {
 					tutorialAccount = tutorialAccountService.getOrCreateForUpdate(
 						command.userId(), command.market(),

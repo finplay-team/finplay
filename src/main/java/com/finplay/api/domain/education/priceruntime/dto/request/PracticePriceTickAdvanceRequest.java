@@ -1,4 +1,3 @@
-// 코인 가상 가격 세션의 next-tick 진행 요청
 package com.finplay.api.domain.education.priceruntime.dto.request;
 
 import jakarta.validation.constraints.NotNull;

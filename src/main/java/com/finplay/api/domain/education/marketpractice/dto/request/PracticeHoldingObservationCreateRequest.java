@@ -1,4 +1,3 @@
-// 실습 3단계 가격 관찰 생성 요청의 holdingId 검증을 정의하는 요청 DTO
 package com.finplay.api.domain.education.marketpractice.dto.request;
 
 import jakarta.validation.constraints.NotNull;

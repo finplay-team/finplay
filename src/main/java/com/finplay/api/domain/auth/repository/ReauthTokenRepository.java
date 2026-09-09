@@ -1,4 +1,3 @@
-// 재인증 토큰 엔티티의 영속을 담당하는 JPA 리포지터리
 package com.finplay.api.domain.auth.repository;
 
 import com.finplay.api.domain.auth.entity.ReauthToken;
@@ -10,7 +9,6 @@ import org.springframework.data.repository.query.Param;
 
 public interface ReauthTokenRepository extends JpaRepository<ReauthToken, Long> {
 
-	// 소유자·미소비·미만료를 같은 WHERE 절에서 판정하는 원자적 1회 소비 (영향받은 행 수로 성공 판정, TOCTOU 방지).
 	@Modifying
 	@Query("""
 		UPDATE ReauthToken reauthToken

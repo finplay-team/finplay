@@ -1,4 +1,3 @@
-// 계좌 단위 매도 회고를 커서 페이지네이션으로 조회하는 QueryDSL 구현체
 package com.finplay.api.domain.journal.repository;
 
 import com.finplay.api.domain.journal.entity.QSellTradeJournal;
@@ -22,7 +21,6 @@ public class SellTradeJournalRepositoryImpl implements SellTradeJournalRepositor
 		Long accountId, LocalDateTime cursorCreatedAt, Long cursorTradeId, int fetchSize) {
 		QSellTradeJournal journal = QSellTradeJournal.sellTradeJournal;
 
-		// 033-exclude-tutorial-sandbox-data(SANDBOX-EXCL-002): 튜토리얼 샌드박스 종목 매도 회고는 제외한다.
 		BooleanBuilder condition = new BooleanBuilder(
 			journal.sellTrade.account.id.eq(accountId).and(journal.sellTrade.instrument.tutorialSample.eq(false)));
 		if (cursorCreatedAt != null && cursorTradeId != null) {

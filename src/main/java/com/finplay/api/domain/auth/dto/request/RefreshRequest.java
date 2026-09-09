@@ -1,4 +1,3 @@
-// JWT 재발급 요청의 리프레시 토큰을 검증하는 요청 DTO
 package com.finplay.api.domain.auth.dto.request;
 
 import jakarta.validation.constraints.NotBlank;

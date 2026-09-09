@@ -1,10 +1,8 @@
-// ranking.rebuild.* 프로퍼티(RankingRebuildProperties)를 빈으로 등록하는 ranking 도메인 설정 클래스.
 package com.finplay.api.domain.ranking.config;
 
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
-// record 기반 @ConfigurationProperties는 명시적으로 등록해야 빈이 된다 (MarketStockConfig와 같은 방식).
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(RankingRebuildProperties.class)
 public class RankingRebuildConfig {}

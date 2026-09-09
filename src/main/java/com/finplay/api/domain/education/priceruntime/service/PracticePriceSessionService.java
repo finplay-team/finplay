@@ -1,4 +1,3 @@
-// 코인 튜토리얼 가상 가격 세션의 생성·조회를 담당하는 서비스
 package com.finplay.api.domain.education.priceruntime.service;
 
 import com.finplay.api.domain.education.priceruntime.dto.response.PracticePriceSessionResponse;
@@ -27,7 +26,6 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class PracticePriceSessionService {
 
-	// 실제 유효 현재가 조회가 실패했을 때(PRICE_UNAVAILABLE 등) 쓰는 fallback anchor (spec COIN-PRICE-RUNTIME-003).
 	private static final BigDecimal FALLBACK_START_PRICE = new BigDecimal("10000.00000000");
 	private static final int PRICE_SCALE = 8;
 
@@ -35,8 +33,6 @@ public class PracticePriceSessionService {
 	private final PriceQueryService priceQueryService;
 	private final PracticePriceSessionRepository practicePriceSessionRepository;
 	private final Clock clock;
-	// seed는 서버 CSPRNG로 생성한다(plan.md). Spring 빈으로 주입하지 않고 자체 소유한다 — 외부에 노출하지 않으므로
-	// EI_EXPOSE_REP2 대상이 아니다.
 	private final SecureRandom secureRandom = new SecureRandom();
 
 	@Transactional
@@ -79,8 +75,6 @@ public class PracticePriceSessionService {
 		return FALLBACK_START_PRICE;
 	}
 
-	// 재기동 후에도 저장된 currentPrice가 seed·startPrice로부터 재현 가능해야 한다 (plan.md "데이터 모델").
-	// 불일치는 저장 데이터 손상이므로 클라이언트 입력 오류가 아니라 내부 오류로 취급한다.
 	private void verifyPriceSeriesConsistency(PracticePriceSession session) {
 		BigDecimal regenerated = session.getStartPrice();
 		for (int tick = 1; tick <= session.getCurrentTick(); tick++) {

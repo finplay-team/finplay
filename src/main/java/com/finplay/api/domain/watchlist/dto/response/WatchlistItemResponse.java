@@ -1,4 +1,3 @@
-// 관심목록에 등록된 종목 한 건의 정보를 반환하는 응답 DTO
 package com.finplay.api.domain.watchlist.dto.response;
 
 import com.finplay.api.domain.watchlist.entity.WatchlistItem;

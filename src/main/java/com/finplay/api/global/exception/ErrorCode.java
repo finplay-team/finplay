@@ -1,4 +1,3 @@
-// PRD §5 공통 오류표의 코드·HTTP 상태·기본 메시지를 정의하는 열거형
 package com.finplay.api.global.exception;
 
 import org.springframework.http.HttpStatus;

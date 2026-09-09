@@ -1,4 +1,3 @@
-// 인증번호 발송 요청 본문 — 대상 이메일만 받는다
 package com.finplay.api.domain.auth.dto.request;
 
 import jakarta.validation.constraints.Email;

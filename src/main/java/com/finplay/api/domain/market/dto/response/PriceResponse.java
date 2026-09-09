@@ -1,4 +1,3 @@
-// 종목의 유효한 최신 가격만 노출하는 응답 DTO
 package com.finplay.api.domain.market.dto.response;
 
 import com.finplay.api.domain.market.service.PriceQuoteDto;

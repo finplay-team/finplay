@@ -1,4 +1,3 @@
-// 인증 사용자의 실습 3단계 가격 관찰 생성 요청을 처리하는 컨트롤러
 package com.finplay.api.domain.education.marketpractice.controller;
 
 import com.finplay.api.domain.auth.token.AuthenticatedUser;
