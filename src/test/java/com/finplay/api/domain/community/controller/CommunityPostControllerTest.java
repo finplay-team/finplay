@@ -1,4 +1,3 @@
-// 게시글 생성 API의 인증, 검증, 응답 계약을 검증하는 WebMvc 슬라이스 테스트다.
 package com.finplay.api.domain.community.controller;
 
 import static org.mockito.Mockito.doThrow;
@@ -217,7 +216,6 @@ class CommunityPostControllerTest {
 		verify(service).createPost(USER_ID, "title", "content", null, 5L, null);
 	}
 
-	// TRADESHARE-001·002 — sharedTradeId를 서비스에 그대로 전달하고, 응답의 sharedTrade 객체를 노출한다.
 	@Test
 	void createPostPassesSharedTradeIdToServiceAndReturnsSharedTradeFieldsWhenProvided() throws Exception {
 		LocalDateTime now = LocalDateTime.of(2026, 7, 27, 12, 0);
@@ -249,7 +247,6 @@ class CommunityPostControllerTest {
 		verify(service).createPost(USER_ID, "title", "content", null, null, 77L);
 	}
 
-	// TRADESHARE-004 — 컨트롤러는 판단하지 않는다. 서비스가 던진 400을 그대로 전달만 한다.
 	@Test
 	void createPostReturnsCommonValidationErrorWhenServiceRejectsSimultaneousImageAndSharedTrade() throws Exception {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
@@ -386,7 +383,6 @@ class CommunityPostControllerTest {
 		verify(service).getPost(73L, USER_ID);
 	}
 
-	// TRADESHARE-002 — 단건 조회 응답에 sharedTrade가 실린다(없으면 null).
 	@Test
 	void getPostReturnsSharedTradeFieldsWhenPostHasSharedTrade() throws Exception {
 		LocalDateTime createdAt = LocalDateTime.of(2026, 7, 26, 10, 30);

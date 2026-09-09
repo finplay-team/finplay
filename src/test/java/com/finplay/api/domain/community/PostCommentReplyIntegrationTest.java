@@ -1,5 +1,3 @@
-// 실제 인증 필터와 MySQL을 연결해 대댓글 중첩 조회, 2단계 제한, 소유권 삭제(자식 하드 삭제)를 검증하는 통합 테스트다.
-// 부모 댓글 삭제 시 tombstone 전환(이슈 #277) 시나리오는 PostCommentTombstoneDeleteIntegrationTest에서 다룬다.
 package com.finplay.api.domain.community;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -57,8 +55,6 @@ class PostCommentReplyIntegrationTest {
 
 	@BeforeEach
 	void cleanDatabaseInForeignKeySafeOrder() {
-		// V31: parent_comment_id FK가 ON DELETE RESTRICT라 자식(대댓글)을 먼저 지우지 않으면
-		// 단일 DELETE 문 안에서 부모가 먼저 처리될 경우 제약 위반이 날 수 있다(이슈 #277).
 		jdbcTemplate.update("delete from post_comments where parent_comment_id is not null");
 		jdbcTemplate.update("delete from post_comments");
 		jdbcTemplate.update("delete from community_posts");
@@ -162,10 +158,6 @@ class PostCommentReplyIntegrationTest {
 
 	@Test
 	void deletingParentCommentTombstonesItInsteadOfRemovingItAndKeepsChildReplies() throws Exception {
-		// 이슈 #277: V25의 ON DELETE CASCADE(부모 삭제 시 자식도 함께 삭제)는 tombstone 전환으로
-		// 대체됐다 — 전체 시나리오(응답 content/authorNickname 치환 등)는
-		// PostCommentTombstoneDeleteIntegrationTest에서 검증하고, 여기서는 자식이 더 이상 CASCADE로
-		// 사라지지 않는다는 회귀만 확인한다.
 		User author = createUser("cascade-author");
 		CommunityPost post = postRepository.saveAndFlush(
 			CommunityPost.create(author, "title", "post", null, NOW));

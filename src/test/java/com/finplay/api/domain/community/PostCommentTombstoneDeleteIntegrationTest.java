@@ -1,4 +1,3 @@
-// 실제 인증 필터와 MySQL을 연결해 부모 댓글 삭제 tombstone 전환(이슈 #277)의 핵심 시나리오를 검증하는 통합 테스트다.
 package com.finplay.api.domain.community;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -56,8 +55,6 @@ class PostCommentTombstoneDeleteIntegrationTest {
 
 	@BeforeEach
 	void cleanDatabaseInForeignKeySafeOrder() {
-		// V31: parent_comment_id FK가 ON DELETE RESTRICT라 자식(대댓글)을 먼저 지우지 않으면
-		// 단일 DELETE 문 안에서 부모가 먼저 처리될 경우 제약 위반이 날 수 있다(이슈 #277).
 		jdbcTemplate.update("delete from post_comments where parent_comment_id is not null");
 		jdbcTemplate.update("delete from post_comments");
 		jdbcTemplate.update("delete from community_posts");
@@ -177,8 +174,6 @@ class PostCommentTombstoneDeleteIntegrationTest {
 		assertThat(commentRepository.findById(replyId)).isPresent();
 	}
 
-	// 이슈 #277 / PR #331 리뷰 참고 사항 #2: 부모 댓글을 tombstone한 뒤 그 부모로 대댓글을 시도하면
-	// 400이며, 재조회 응답에도 새 대댓글이 반영되지 않아야 한다(글타래가 계속 자라지 않는다).
 	@Test
 	void replyingToTombstonedParentReturns400AndDoesNotAppearOnReQuery() throws Exception {
 		User author = createUser("tomb-reply-block");

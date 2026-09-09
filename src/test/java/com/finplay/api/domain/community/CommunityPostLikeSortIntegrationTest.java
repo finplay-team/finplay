@@ -1,4 +1,3 @@
-// 실제 인증 필터와 MySQL을 연결해 게시물 좋아요 표시·취소와 인기순 정렬 핵심 시나리오를 검증하는 통합 테스트다.
 package com.finplay.api.domain.community;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -61,19 +60,12 @@ class CommunityPostLikeSortIntegrationTest {
 
 	@BeforeEach
 	void removePostsPersistedByOtherIntegrationTests() {
-		// V31: parent_comment_id FK가 ON DELETE RESTRICT라 단일 "delete from post_comments"는
-		// 다른 테스트 컨텍스트가 남긴 부모+자식이 섞여 있으면 행 처리 순서 미보장으로 실패할 수 있다(이슈 #277).
 		jdbcTemplate.update("delete from post_comments where parent_comment_id is not null");
 		jdbcTemplate.update("delete from post_comments");
-		// community_post_likes.post_id는 community_posts에 ON DELETE CASCADE라 community_posts를
-		// 지우면 함께 지워지지만, 정리 순서를 명시적으로 남겨 의도를 드러낸다.
 		jdbcTemplate.update("delete from community_post_likes");
 		jdbcTemplate.update("delete from community_posts");
 	}
 
-	// 이 클래스가 생성한 종목(symbol 접두사 SYM)만 정리한다 — InstrumentRepositoryTest가 공유
-	// Testcontainers에서 정확한 종목 개수를 기대하므로 스위트의 마지막 테스트 뒤에도 정리되게 @AfterEach를 둔다
-	// (CommunityPostInstrumentTagIntegrationTest와 동일 패턴).
 	@AfterEach
 	void removeInstrumentsCreatedByThisTestClass() {
 		jdbcTemplate.update("delete from community_post_likes");
@@ -254,7 +246,6 @@ class CommunityPostLikeSortIntegrationTest {
 		CommunityPost newer = postRepository.saveAndFlush(
 			CommunityPost.create(author, "newer", "content", null, base));
 		String likerToken = jwtTokenProvider.issue(liker.getId(), liker.getRole()).accessToken();
-		// 좋아요를 더 받아도 sort 생략(기본 latest)에는 영향이 없어야 한다(회귀 확인).
 		likePost(older.getId(), likerToken);
 		String accessToken = jwtTokenProvider.issue(author.getId(), author.getRole()).accessToken();
 

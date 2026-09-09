@@ -1,4 +1,3 @@
-// PostComment 생성 시 부모 댓글(parentComment) 반영과 isReply() 판정을 검증하는 단위 테스트다.
 package com.finplay.api.domain.community.entity;
 
 import static org.assertj.core.api.Assertions.assertThat;

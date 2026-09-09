@@ -1,4 +1,3 @@
-// CommunityPost 생성·수정 시 종목 태그(instrument)가 올바르게 반영되는지 검증하는 단위 테스트다.
 package com.finplay.api.domain.community.entity;
 
 import static org.assertj.core.api.Assertions.assertThat;

@@ -1,4 +1,3 @@
-// 실제 MySQL에서 게시글 영속화와 작성자 외래 키 제약을 검증하는 JPA 슬라이스 테스트다.
 package com.finplay.api.domain.community.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -66,8 +65,6 @@ class CommunityPostRepositoryTest {
 
 	@BeforeEach
 	void removePostsPersistedByOtherTestContexts() {
-		// V31: parent_comment_id FK가 ON DELETE RESTRICT라 단일 "delete from post_comments"는
-		// 다른 테스트 컨텍스트가 남긴 부모+자식이 섞여 있으면 행 처리 순서 미보장으로 실패할 수 있다(이슈 #277).
 		jdbcTemplate.update("delete from post_comments where parent_comment_id is not null");
 		jdbcTemplate.update("delete from post_comments");
 		jdbcTemplate.update("delete from community_post_images");
@@ -418,7 +415,6 @@ class CommunityPostRepositoryTest {
 		assertThat(found.getLikeCount()).isEqualTo(1L);
 	}
 
-	// like_count > 0 하한 가드(PR #442 2차 리뷰) — 가드가 없으면 이 호출이 like_count를 -1로 내린다.
 	@Test
 	void decrementLikeCountLeavesZeroUntouchedInsteadOfGoingNegative() {
 		User author = userRepository.saveAndFlush(User.create("decrzero@finplay.com", "hash", "decrzero", NOW));
@@ -430,8 +426,6 @@ class CommunityPostRepositoryTest {
 		assertThat(found.getLikeCount()).isZero();
 	}
 
-	// 좋아요 표시·취소가 락 획득 순서를 통일하려고 쓰는 조회다(PR #442 2차 리뷰). @EntityGraph를 붙이지 않아
-	// findById와 달리 연관을 즉시 로딩하지 않는다.
 	@Test
 	void findByIdForUpdateReturnsPostAndEmptyForMissingId() {
 		User author = userRepository.saveAndFlush(User.create("lock@finplay.com", "hash", "locker", NOW));

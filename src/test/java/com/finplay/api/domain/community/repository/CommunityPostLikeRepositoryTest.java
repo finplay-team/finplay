@@ -1,4 +1,3 @@
-// 실제 MySQL에서 게시물 좋아요의 유니크 제약, 존재·단건·배치 조회, 게시물 삭제 시 연쇄 삭제를 검증하는 JPA 슬라이스 테스트다.
 package com.finplay.api.domain.community.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -155,8 +154,6 @@ class CommunityPostLikeRepositoryTest {
 		assertThat(likedPostIds).isEmpty();
 	}
 
-	// N+1 방지 근거: 여러 게시물의 좋아요 여부를 게시물마다 따로 쿼리하지 않고, findLikedPostIds
-	// 하나의 IN 쿼리로 해결한다는 것을 실제 준비된 SQL 문 개수로 증명한다(spec 045 plan.md).
 	@Test
 	void findLikedPostIdsExecutesExactlyOneQueryRegardlessOfPostIdCount() {
 		User author = userRepository.saveAndFlush(
@@ -188,8 +185,6 @@ class CommunityPostLikeRepositoryTest {
 		CommunityPost post = postRepository.saveAndFlush(CommunityPost.create(author, "title", "content", null, NOW));
 		CommunityPostLike like = repository.saveAndFlush(CommunityPostLike.create(post, liker, NOW));
 
-		// FK의 ON DELETE CASCADE(V41)를 검증하는 게 목적이므로, JPA delete()로 영속성 컨텍스트 내
-		// 연관 엔티티(cascade 설정 없음)까지 얽히게 하지 않고 DB 레벨 삭제를 직접 실행한다.
 		jdbcTemplate.update("delete from community_posts where id = ?", post.getId());
 		entityManager.clear();
 

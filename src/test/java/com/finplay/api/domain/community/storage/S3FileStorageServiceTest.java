@@ -1,4 +1,3 @@
-// S3FileStorageService의 저장·조회·삭제와 예외 변환 계약을 검증하는 단위 테스트 (S3Client mock)
 package com.finplay.api.domain.community.storage;
 
 import static org.assertj.core.api.Assertions.assertThat;

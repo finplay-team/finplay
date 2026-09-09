@@ -1,4 +1,3 @@
-// 댓글 생성 API의 인증, 입력 검증, 서비스 위임과 응답 계약을 검증하는 WebMvc 슬라이스 테스트다.
 package com.finplay.api.domain.community.controller;
 
 import static org.mockito.Mockito.verify;
@@ -161,8 +160,6 @@ class PostCommentControllerTest {
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
 	}
 
-	// 이슈 #277 / PR #331 리뷰 참고 사항 #2: tombstone된 부모에 답글을 시도하면 서비스가 던진
-	// VALIDATION_ERROR가 그대로 400 응답으로 매핑돼야 한다.
 	@Test
 	void createCommentReturns400WhenServiceRejectsReplyToTombstonedParent() throws Exception {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
@@ -269,9 +266,6 @@ class PostCommentControllerTest {
 		verify(service).getComments(7L);
 	}
 
-	// 이슈 #277: tombstone된 부모 댓글은 content·authorNickname이 치환된 값으로 노출되고, replies·
-	// parentCommentId 등 나머지 필드는 tombstone 여부와 무관하게 그대로 전달돼야 한다(서비스 계층에서 이미
-	// 치환된 PostCommentResponse를 컨트롤러가 그대로 직렬화하는지 확인).
 	@Test
 	void getCommentsReturns200WithTombstonedParentContentAndAuthorReplacedWhileRepliesAndParentCommentIdAreUnaffected()
 		throws Exception {

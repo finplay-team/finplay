@@ -1,5 +1,3 @@
-// V26 마이그레이션(community_post_images)의 FK·UNIQUE·CASCADE 제약을 순수 JDBC로 검증하는 슬라이스 테스트다.
-// CommunityPostImage 엔티티가 아직 없으므로 JdbcTemplate만 사용한다(tasks.md COM-006 항목 1).
 package com.finplay.api.domain.community.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -40,8 +38,6 @@ class CommunityPostImageMigrationTest {
 
 	@BeforeEach
 	void cleanSharedTablesInForeignKeySafeOrder() {
-		// V31: parent_comment_id FK가 ON DELETE RESTRICT라 단일 "delete from post_comments"는
-		// 다른 테스트 컨텍스트가 남긴 부모+자식이 섞여 있으면 행 처리 순서 미보장으로 실패할 수 있다(이슈 #277).
 		jdbcTemplate.update("delete from community_post_images");
 		jdbcTemplate.update("delete from post_comments where parent_comment_id is not null");
 		jdbcTemplate.update("delete from post_comments");

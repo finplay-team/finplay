@@ -1,4 +1,3 @@
-// 인증 사용자 기반 게시글 생성 규칙과 저장 실패 경계를 검증하는 단위 테스트다.
 package com.finplay.api.domain.community.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -151,8 +150,6 @@ class CommunityPostServiceTest {
 		InOrder inOrder = Mockito.inOrder(repository, image);
 		inOrder.verify(repository).save(any(CommunityPost.class));
 		inOrder.verify(image).assignToPost(postCaptor.getValue());
-		// 소유 측(assignToPost)만 갱신되고 저장된 게시물의 역방향 image 필드가 동기화되지 않으면
-		// 생성 응답의 imageId/imageUrl이 null로 나가는 회귀(양방향 동기화 누락)를 잡는 단정.
 		assertThat(response.imageId()).isEqualTo(5L);
 		assertThat(response.imageUrl()).isEqualTo(CommunityPostImageResponse.toImageUrl(5L));
 	}
@@ -198,7 +195,6 @@ class CommunityPostServiceTest {
 		verify(repository, never()).save(any());
 	}
 
-	// TRADESHARE-004 — 이미지와 매매 카드를 동시에 주면 400이고, DB 조회 전에 거른다.
 	@Test
 	void createPostFailsWithValidationErrorAndDoesNotCallAnyCollaboratorWhenImageAndSharedTradeAreBothProvided() {
 		assertThatThrownBy(() -> service.createPost(42L, "title", "content", null, 5L, 77L))
@@ -208,8 +204,6 @@ class CommunityPostServiceTest {
 		verifyNoInteractions(userQueryService, communityPostImageService, postSellFeedbackService, repository);
 	}
 
-	// TRADESHARE-001·002·003 — 소유권·side=SELL 검증은 postSellFeedbackService에 위임하고, 그 결과를 응답에도
-	// 그대로 재사용한다(같은 계산을 두 번 하지 않는다).
 	@Test
 	void createPostAttachesSharedTradeAndIncludesSummaryInResponseWhenSharedTradeIdProvided() {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
@@ -257,8 +251,6 @@ class CommunityPostServiceTest {
 		verify(repository, never()).save(any());
 	}
 
-	// 신규 게시물은 방금 저장돼 좋아요 행이 있을 수 없지만, 특수 분기 없이 동일한 조회 경로를 태우는
-	// 설계(spec 045 plan.md)를 그대로 검증한다 — 저장된 postId로 좋아요 여부를 조회해 응답에 반영한다.
 	@Test
 	void createPostReturnsLikedByMeFalseWithoutQueryingLikeStateForBrandNewPost() {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
@@ -273,7 +265,6 @@ class CommunityPostServiceTest {
 
 		assertThat(response.likeCount()).isEqualTo(0L);
 		assertThat(response.likedByMe()).isFalse();
-		// 방금 만든 게시물은 좋아요가 있을 수 없다 — 조회 자체를 생략한다(리뷰 참고).
 		verifyNoInteractions(communityPostLikeRepository);
 	}
 
@@ -342,7 +333,6 @@ class CommunityPostServiceTest {
 		assertThat(response.likedByMe()).isFalse();
 	}
 
-	// TRADESHARE-002 — 조회 시점의 userId는 뷰어가 아니라 게시물 작성자다(다른 사용자가 봐도 403이 나지 않는다).
 	@Test
 	void getPostIncludesSharedTradeSummaryWhenPostHasSharedTradeId() {
 		User author = User.create("reader@finplay.com", "hash", "reader", LocalDateTime.now(CLOCK));
@@ -357,7 +347,6 @@ class CommunityPostServiceTest {
 			new BigDecimal("10"), -15_207L, new BigDecimal("-0.0217"));
 		when(postSellFeedbackService.getTradeShareSummary(42L, 77L)).thenReturn(summary);
 
-		// 뷰어(999L)는 작성자(42L)와 다르지만 sharedTrade 계산은 작성자 id로 재사용해 403이 나지 않는다.
 		CommunityPostResponse response = service.getPost(73L, 999L);
 
 		assertThat(response.sharedTrade()).isSameAs(summary);
@@ -603,8 +592,6 @@ class CommunityPostServiceTest {
 		assertThat(response.totalPages()).isEqualTo(0);
 	}
 
-	// N+1 방지 회귀: 게시물마다 existsByPost_IdAndUser_Id를 따로 호출하지 않고 findLikedPostIds
-	// 배치 조회 한 번으로 여러 게시물의 likedByMe를 정확히 매핑하는지 확인한다(spec 045 plan.md).
 	@Test
 	void getPostsMapsLikedByMeUsingSingleBatchQueryAcrossMultiplePosts() {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));
@@ -651,8 +638,6 @@ class CommunityPostServiceTest {
 		verify(repository).delete(post);
 	}
 
-	// V31에서 parent_comment_id FK가 RESTRICT로 바뀌어 자식(대댓글)을 부모보다 먼저 지워야 한다 —
-	// 순서가 뒤바뀌면 실제 DB에서 FK 위반이 나므로(이슈 #277 회귀), 두 삭제 호출의 순서까지 검증한다.
 	@Test
 	void deletePostDeletesChildCommentsBeforeParentCommentsBeforePostWhenPostHasComments() {
 		User author = User.create("author@finplay.com", "hash", "author", LocalDateTime.now(CLOCK));

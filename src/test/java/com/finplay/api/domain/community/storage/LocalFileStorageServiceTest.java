@@ -1,4 +1,3 @@
-// LocalFileStorageService의 저장·조회·삭제 왕복을 검증하는 단위 테스트
 package com.finplay.api.domain.community.storage;
 
 import static org.assertj.core.api.Assertions.assertThat;

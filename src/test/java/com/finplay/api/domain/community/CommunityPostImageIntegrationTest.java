@@ -1,4 +1,3 @@
-// 실제 인증 필터와 MySQL, 로컬 파일시스템 저장을 연결해 게시물 첨부 이미지(COM-006) 핵심 시나리오를 검증하는 통합 테스트다.
 package com.finplay.api.domain.community;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -44,7 +43,6 @@ class CommunityPostImageIntegrationTest {
 
 	private static final LocalDateTime NOW = LocalDateTime.of(2026, 8, 7, 12, 0);
 
-	// 실제 프로젝트 디렉터리(./data/community-images)를 오염시키지 않도록 각 이미지 저장 위치를 임시 디렉터리로 덮어쓴다.
 	@TempDir
 	static Path imageStorageDirectory;
 
@@ -75,8 +73,6 @@ class CommunityPostImageIntegrationTest {
 
 	@BeforeEach
 	void cleanDatabaseInForeignKeySafeOrder() {
-		// V31: parent_comment_id FK가 ON DELETE RESTRICT라 단일 "delete from post_comments"는
-		// 다른 테스트 컨텍스트가 남긴 부모+자식이 섞여 있으면 행 처리 순서 미보장으로 실패할 수 있다(이슈 #277).
 		jdbcTemplate.update("delete from post_comments where parent_comment_id is not null");
 		jdbcTemplate.update("delete from post_comments");
 		jdbcTemplate.update("delete from community_post_images");
@@ -134,9 +130,6 @@ class CommunityPostImageIntegrationTest {
 			.andExpect(status().isOk())
 			.andReturn().getResponse().getContentAsByteArray();
 
-		// SoftAssertions로 묶는다 — 생성 응답의 imageId 필드가 다시 비어지는 회귀가 있어도(CommunityPost.attachImage
-		// 양방향 동기화 누락, 4de53f3에서 수정됨), 단건 조회·다운로드까지 이어지는 나머지 시나리오 검증이
-		// 모두 실행되고 각각 별도로 보고되도록 한다.
 		org.assertj.core.api.SoftAssertions softly = new org.assertj.core.api.SoftAssertions();
 		softly.assertThat(createJson.hasNonNull("imageId") ? createJson.get("imageId").asLong() : null)
 			.as("POST /api/community/posts 응답의 imageId (plan.md COM-006 API 설계 표 3번째 행 계약)")
@@ -169,9 +162,6 @@ class CommunityPostImageIntegrationTest {
 		assertThat(imageRepository.count()).isZero();
 	}
 
-	// 5MB 초과 업로드(MaxUploadSizeExceededException 매핑) 검증은 실제 서블릿 컨테이너의 멀티파트 크기 제한을
-	// 거쳐야 한다 — MockMvc는 파트를 메모리에서 직접 구성해 컨테이너 레벨 크기 검증을 우회하므로 이 클래스(MOCK 환경)로는
-	// 재현되지 않는다(아래 CommunityPostImageUploadSizeLimitIntegrationTest에서 실제 포트로 검증, ai/agent-mistakes.md 후보 기록 대상).
 
 	@Test
 	void deletingPostWithImageRemovesDatabaseRowAndPhysicalFile() throws Exception {
