@@ -1,4 +1,3 @@
-// 매수·매도 파이프라인(이슈 #13·#41)으로 생성한 실제 원장·시세 데이터를 GET /api/holdings로 검증하는 통합 테스트다.
 package com.finplay.api.domain.portfolio.service;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -40,19 +39,12 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
-// 이 테스트는 InstrumentRepositoryTest·StockReplaySessionRepositoryTest처럼 공유 MySQL 컨테이너(ADR-0003)에서
-// 종목·재생세션 전체 개수·유니크 제약을 단정하는 슬라이스 테스트와 같은 테이블(instruments·stock_replay_sessions)에
-// saveAndFlush로 실제 커밋을 남긴다. AccountSummaryIntegrationTest(이슈 #81, agent-mistakes.md 2026-07-30 항목)에서
-// 이 조합이 `./gradlew build` 전체 실행 시 다른 클래스의 절대개수 단정을 깨뜨리는 것이 재현·확인됐으므로, 이 클래스도
-// 동일 근거로 `@Transactional`을 붙여 각 테스트 종료 시 자동 롤백시킨다. MockMvc 호출은 테스트 메서드와 같은 스레드에서
-// 동기 실행되어 같은 트랜잭션에 참여하므로 6개 값 검증 자체는 약화되지 않는다(다만 실제 커밋 경계 검증은 대상 밖).
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
 @Import({TestcontainersConfiguration.class, TestClockConfig.class})
 class HoldingIntegrationTest {
 
-	// 2026-07-29는 수요일이고 holidays-2026.txt에도 없어 재생세션만 READY면 개장 상태로 계산된다.
 	private static final LocalDate TRADING_DATE = LocalDate.of(2026, 7, 29);
 	private static final LocalDateTime BASE_NOW = LocalDateTime.of(2026, 7, 29, 10, 0, 0);
 	private static final LocalTime FIRST_CANDLE_TIME = LocalTime.of(9, 59);
@@ -111,11 +103,9 @@ class HoldingIntegrationTest {
 		createCandle(remaining, FIRST_CANDLE_TIME, new BigDecimal("70000"));
 		createCandle(remaining, SECOND_CANDLE_TIME, new BigDecimal("90000"));
 
-		// 매수 둘 다 10:00 시각 → 09:59 분봉이 체결가.
 		orderService.createOrder(user.getId(), "holding-buy-sold", buyRequest(sold.getId(), "10"));
 		orderService.createOrder(user.getId(), "holding-buy-remaining", buyRequest(remaining.getId(), "5"));
 
-		// 10:01로 시각 이동 → 10:00 분봉이 체결가·최신 시세가 된다. sold 종목만 전량 매도.
 		clock.set(BASE_NOW.plusMinutes(1));
 		orderService.createOrder(user.getId(), "holding-sell-sold", sellRequest(sold.getId(), "10"));
 
@@ -140,11 +130,6 @@ class HoldingIntegrationTest {
 			.andExpect(jsonPath("$[0].priceStatus").value("AVAILABLE"));
 	}
 
-	// PR #97 리뷰 권장사항 3: 시세 무효(UNAVAILABLE) 종목의 "4개 필드 null + priceStatus=UNAVAILABLE" 정책이
-	// 통합 레벨에서 한 번도 실행되지 않았다. 매수는 반드시 유효한 시세가 있어야 가능하므로(PriceQueryService),
-	// 분봉을 아예 만들지 않은 종목은 정상 매수 흐름으로는 재현할 수 없다 — 대신 HoldingRepository로 holding을
-	// 직접 심어 "매수 이후 해당 종목의 분봉이 전혀 없는" 상태를 재현한다(StockReplayService.getCurrentPrice는
-	// 분봉이 없으면 세션이 READY여도 UNAVAILABLE을 반환한다).
 	@Test
 	void instrumentWithoutAnyCandleReturnsUnavailableWhileOtherHoldingStaysAvailable() throws Exception {
 		User user = createUser("hld-badpx");
@@ -155,8 +140,6 @@ class HoldingIntegrationTest {
 		createCandle(available, FIRST_CANDLE_TIME, new BigDecimal("60000"));
 		orderService.createOrder(user.getId(), "holding-badpx-buy", buyRequest(available.getId(), "10"));
 
-		// 분봉을 전혀 만들지 않은 종목 — 정상 매수는 시세 유효성 검증(PriceQueryService.getPrice)을 통과해야
-		// 하므로 이 종목은 주문 파이프라인을 거치지 않고 holding을 직접 저장해 "매수 이후 시세가 사라진" 상태를 재현한다.
 		Instrument priceless = createStockInstrument("HOLDBADPX");
 		Holding holding = Holding.create(account, priceless, BASE_NOW);
 		holding.applyBuy(BigDecimal.valueOf(7), new BigDecimal("55000"), BASE_NOW);
@@ -172,7 +155,6 @@ class HoldingIntegrationTest {
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.length()").value(2))
-			// ORDER BY symbol ASC: "HOLDAVAIL..." < "HOLDBADPX..." (다섯째 글자 'A' < 'B')
 			.andExpect(jsonPath("$[0].holdingId").value(availableHoldingId))
 			.andExpect(jsonPath("$[0].instrumentId").value(available.getId()))
 			.andExpect(jsonPath("$[0].currentPrice").value(60000))

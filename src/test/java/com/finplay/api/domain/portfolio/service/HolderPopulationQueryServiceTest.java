@@ -1,4 +1,3 @@
-// HolderPopulationQueryService의 시점 T 모집단 재구성이 lot·배분 기반으로 정확히 동작하는지 검증하는 슬라이스 테스트다.
 package com.finplay.api.domain.portfolio.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -126,25 +125,21 @@ class HolderPopulationQueryServiceTest {
 	@Test
 	@DisplayName("포함·매도전제외·매수전제외 세 갈래가 섞인 여러 회원의 모집단 크기를 정확히 센다")
 	void countsMultipleMembersAcrossAllThreeBranches() {
-		// 포함 — T 이전 매수, T 이후 전량 매도(함정 케이스: holdings에는 지금 없음)
 		Holding soldAfterT = createHolding();
 		HoldingLot lotA = createBuyLot(soldAfterT, BigDecimal.valueOf(7), T.minusHours(3));
 		allocate(createSellTrade(soldAfterT.getAccount(), BigDecimal.valueOf(7), T.plusMinutes(30)),
 			lotA, BigDecimal.valueOf(7));
 
-		// 포함 — T 이전 매수, T 이전에 일부만 매도해 T 시점에 잔량 보유
 		Holding partialHolder = createHolding();
 		HoldingLot lotB = createBuyLot(partialHolder, BigDecimal.valueOf(20), T.minusHours(2));
 		allocate(createSellTrade(partialHolder.getAccount(), BigDecimal.valueOf(5), T.minusHours(1)),
 			lotB, BigDecimal.valueOf(5));
 
-		// 제외 — T 이전에 이미 전량 매도
 		Holding soldBeforeT = createHolding();
 		HoldingLot lotC = createBuyLot(soldBeforeT, BigDecimal.valueOf(10), T.minusHours(3));
 		allocate(createSellTrade(soldBeforeT.getAccount(), BigDecimal.valueOf(10), T.minusHours(1)),
 			lotC, BigDecimal.valueOf(10));
 
-		// 제외 — T 이후에 매수 시작
 		Holding boughtAfterT = createHolding();
 		createBuyLot(boughtAfterT, BigDecimal.valueOf(15), T.plusHours(1));
 
@@ -162,7 +157,6 @@ class HolderPopulationQueryServiceTest {
 		int before = holderPopulationQueryService.countHoldersAtTime(instrument.getId(), T);
 		assertThat(before).isEqualTo(1);
 
-		// trade_allocations에 기록을 남기지 않고 remaining_quantity만 임의로 줄인다 (실제 매도가 아님)
 		lot.consume(BigDecimal.valueOf(9));
 		holdingLotRepository.saveAndFlush(lot);
 
@@ -183,19 +177,16 @@ class HolderPopulationQueryServiceTest {
 	@Test
 	@DisplayName("populationSnapshotAtTime의 holderCount·minutesToSell이 개별 메서드 호출 결과와 일치한다")
 	void populationSnapshotMatchesSeparateCalls() {
-		// 포함 — 30분 내 매도
 		Holding soldWithin30Min = createHolding();
 		HoldingLot lotA = createBuyLot(soldWithin30Min, BigDecimal.valueOf(10), T.minusHours(1));
 		allocate(createSellTrade(soldWithin30Min.getAccount(), BigDecimal.valueOf(10), T.plusMinutes(10)),
 			lotA, BigDecimal.valueOf(10));
 
-		// 포함 — 30분 후 매도
 		Holding soldAfter30Min = createHolding();
 		HoldingLot lotB = createBuyLot(soldAfter30Min, BigDecimal.valueOf(5), T.minusHours(1));
 		allocate(createSellTrade(soldAfter30Min.getAccount(), BigDecimal.valueOf(5), T.plusHours(2)),
 			lotB, BigDecimal.valueOf(5));
 
-		// 포함 — 미매도
 		Holding notSold = createHolding();
 		createBuyLot(notSold, BigDecimal.valueOf(3), T.minusHours(1));
 
@@ -244,8 +235,6 @@ class HolderPopulationQueryServiceTest {
 	}
 
 	private void allocate(Trade sellTrade, HoldingLot lot, BigDecimal quantity) {
-		// 실제 배분과 함께 remaining_quantity도 줄인다 — 그래야 "현재 상태" 기반(buggy) 구현과
-		// lot·배분 재구성 구현의 결과가 실제로 달라지는 픽스처가 된다.
 		lot.consume(quantity);
 		holdingLotRepository.saveAndFlush(lot);
 		tradeAllocationRepository.saveAndFlush(
