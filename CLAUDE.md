@@ -19,8 +19,8 @@ FinPlay 백엔드 API 서버. Spring Boot 4.1 / Java 17 / Gradle (`build.gradle`
 2. **ADR 위반 금지.** 기존 ADR과 어긋나는 구현이 필요하면 구현하지 말고 새 ADR 초안을 제안한다. ADR은 수정하지 않고 새 번호로 대체(superseded)한다.
 3. **테스트 전략 준수.** `ai/adr/0003-testing-strategy.md` 기준. 서비스 로직은 단위 테스트, Repository 쿼리는 `@DataJpaTest`, API 계약은 `@WebMvcTest`, 핵심 시나리오는 Testcontainers 통합 테스트. mock만으로 검증을 끝내지 않는다.
 4. **완료 선언 전 검증을 돌린다.** 원칙은 `./gradlew build`이고 실패하면 고치고 재실행한다. **단, 이 머신에서는 전체 `build`를 습관적으로 돌리지 않는다** — Bash 도구는 Testcontainers가 Docker 소켓을 못 찾아 전량 실패하고 PowerShell 도구는 전체 스위트에서 메모리 부족으로 죽는다(재현 3회). 대신 `compileJava compileTestJava spotlessJavaCheck spotbugsMain spotbugsTest`(트리 전체를 보는 태스크라 게이트 3개 중 둘을 그대로 재현한다) + 변경에 영향받는 테스트를 `--tests` 필터로 돌리고, 전체 `build`는 머신이 한가할 때만 시도한다. **대신하지 못하는 것은 커버리지 40% 하나이며 PR의 CI가 본다.** 절차와 근거는 `ai/agent-mistakes.md` §공유 작업 폴더 규칙 5.
-5. **컨벤션은 3개 문서로 나뉘어 있다.** 코드는 `docs/conventions/code.md`(레이어 구조, 네이밍, API 응답 포맷, 예외 처리, 리뷰 체크 질문), 브랜치·커밋·PR은 `docs/conventions/git.md`, 이슈·리뷰 운영은 `docs/conventions/team.md`를 따른다.
-6. **새 소스 파일 첫 줄에 한 줄 한국어 주석**으로 파일 역할을 적는다 (`// 주문 생성/조회를 담당하는 서비스`).
+5. **컨벤션은 3개 문서로 나뉘어 있다.** 코드는 `docs/conventions/code.md`(레이어 구조, 네이밍, API 응답 포맷, 예외 처리, 주석 작성 원칙, 리뷰 체크 질문), 브랜치·커밋·PR은 `docs/conventions/git.md`, 이슈·리뷰 운영은 `docs/conventions/team.md`를 따른다.
+6. **새 Java 파일 첫 줄 역할 주석은 클래스명만으로 책임이 드러나지 않을 때만 둔다.** 주석 작성 전반의 기준(유지·축약·삭제 대상)은 `docs/conventions/code.md`의 "주석 작성 원칙"이 정본이다.
 7. **controller를 추가/변경하면 `ai/api-routes.md`(라우트 목록)와 `docs/api/`의 해당 도메인 파일(계약 상세)을 같은 커밋에서 함께 갱신한다.**
 8. **스키마 변경은 Flyway 마이그레이션으로만.** 엔티티 변경 시 `db/migration/V{N}__*.sql` 동반 필수, 머지된 마이그레이션 수정 금지 (ADR-0004). **파괴적 변경(컬럼·테이블 삭제, 이름 변경, 타입 축소, NOT NULL 승격)은 한 배포에 담지 않고 두 배포로 나눈다** — 자동 배포의 롤백은 앱만 되돌리고 스키마는 되돌리지 않기 때문이다 (ADR-0021 §결정 7).
 9. **구현 시작 전 `ai/agent-mistakes.md`를 읽는다.** 하네스/빌드 관련 실수를 재현·확인하면 같은 파일에 기록한다 (재현된 실수만, 추측 금지).
