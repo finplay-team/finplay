@@ -253,7 +253,6 @@ class PracticeAttemptControllerTest {
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
 	}
 
-
 	@Test
 	void createExitPlanRejectsMissingAuthentication() throws Exception {
 		mockMvc.perform(post("/api/education/practice/attempts/CRYPTO/exit-plan")

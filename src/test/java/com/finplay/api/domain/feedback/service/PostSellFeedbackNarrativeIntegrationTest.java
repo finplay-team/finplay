@@ -172,7 +172,6 @@ class PostSellFeedbackNarrativeIntegrationTest {
 		allocate(sellTrade, saveLot(tradeSession, BUY_TIME));
 	}
 
-
 	@Test
 	@DisplayName("최초 조회에서 서술을 만들어 저장하고 재조회에서는 LLM을 다시 부르지 않는다")
 	void generatesOnFirstQueryAndReusesTheStoredNarrativeAfterwards() {
@@ -203,7 +202,6 @@ class PostSellFeedbackNarrativeIntegrationTest {
 				assertThat(feedback.getGeneratedAt()).isEqualTo(VIEW_AT);
 			});
 	}
-
 
 	@Test
 	@DisplayName("LLM이 실패하면 템플릿 문장으로 채워지고 narrativeStatus는 READY·source는 TEMPLATE이다")
@@ -260,7 +258,6 @@ class PostSellFeedbackNarrativeIntegrationTest {
 		assertThat(response.narrativeSource()).isEqualTo(NarrativeSource.TEMPLATE);
 	}
 
-
 	@Test
 	@DisplayName("peerComparison이 READY인 조회도 trade_feedbacks에만 1행을 쓰고 나머지는 그대로다")
 	void neverWritesOutsideTradeFeedbacksWhenPeerComparisonIsReady() {
@@ -310,7 +307,6 @@ class PostSellFeedbackNarrativeIntegrationTest {
 		assertThat(mutableLedgerValues()).isEqualTo(mutableLedgerBefore);
 	}
 
-
 	@Test
 	@DisplayName("기존 행을 못 본 상태로 두 번째 저장이 시도돼도 예외 없이 서술이 내려간다")
 	void absorbsTheUniqueViolationWhenTheExistingRowIsNotSeen() {
@@ -325,7 +321,6 @@ class PostSellFeedbackNarrativeIntegrationTest {
 		assertThat(response.narrativeStatus()).isEqualTo(PostSellFeedbackStatus.READY);
 		assertThat(fakeNarrativeGenerator.callCount()).isEqualTo(2);
 	}
-
 
 	private PostSellFeedbackResponse getPostSellFeedback() {
 		return postSellFeedbackService.getPostSellFeedback(owner.getId(), sellTrade.getId());

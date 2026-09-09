@@ -85,7 +85,6 @@ class NewsMatcherCryptoMatchingWindowTest {
 			.toList();
 	}
 
-
 	@Test
 	@DisplayName("코인 근거창은 occurredAt-35분·occurredAt 정각을 포함하고 그 밖 1분은 제외한다")
 	void matchCryptoWindowIncludesBothBoundaryMinutesAndExcludesTheMinutesOutside() {
@@ -106,7 +105,6 @@ class NewsMatcherCryptoMatchingWindowTest {
 		assertThat(matchedTitles()).isEmpty();
 	}
 
-
 	@Test
 	@DisplayName("코인 근거창 안에 있는 공시조차 붙이지 않는다")
 	void matchCryptoNeverMatchesDisclosureEvenWhenItsPublishedAtSitsInsideTheWindow() {
@@ -123,7 +121,6 @@ class NewsMatcherCryptoMatchingWindowTest {
 
 		assertThat(matchedTitles()).containsExactly("근거창 안 뉴스");
 	}
-
 
 	@Test
 	@DisplayName("근거가 상한을 넘으면 occurredAt에 가까운 순으로 5건만 남는다")

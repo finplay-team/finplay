@@ -181,7 +181,6 @@ class CryptoPostSellFeedbackE2eIntegrationTest {
 		accessToken = jwtTokenProvider.issue(owner.getId(), owner.getRole()).accessToken();
 	}
 
-
 	@Test
 	@DisplayName("코인 매도 체결 조회가 400이 아니라 200이고 원장 수치가 채워진다")
 	void returnsOkWithLedgerNumbersForACryptoSellTrade() throws Exception {
@@ -205,7 +204,6 @@ class CryptoPostSellFeedbackE2eIntegrationTest {
 			.andExpect(jsonPath("$.holdHighPrice").value(70800));
 	}
 
-
 	@Test
 	@DisplayName("보유 구간의 코인 변동 카드가 노출 게이트 없이 priceMoves에 들어온다")
 	void includesHeldCryptoPriceMoveWithoutARevealGate() throws Exception {
@@ -223,7 +221,6 @@ class CryptoPostSellFeedbackE2eIntegrationTest {
 			.andExpect(jsonPath("$.priceMoves[0].sources[0].title").value("대형 거래소 상장 소식"));
 	}
 
-
 	@Test
 	@DisplayName("코인 체결도 LLM 실패 시 템플릿 문장으로 대체되고 narrativeStatus는 READY·source는 TEMPLATE이다")
 	void fallsBackToTheTemplateSentenceForCryptoTrades() {
@@ -237,7 +234,6 @@ class CryptoPostSellFeedbackE2eIntegrationTest {
 		assertThat(response.narrativeSource()).isEqualTo(NarrativeSource.TEMPLATE);
 		assertThat(response.narrative()).isNotBlank();
 	}
-
 
 	@Test
 	@DisplayName("코인 회고 조회는 trade_feedbacks에만 1행을 쓰고 원장·읽기 전용·다른 피드백 테이블은 그대로다")
@@ -263,7 +259,6 @@ class CryptoPostSellFeedbackE2eIntegrationTest {
 		assertThat(tradeRow()).isEqualTo(tradeRowBefore);
 		assertThat(mutableLedgerValues()).isEqualTo(mutableLedgerBefore);
 	}
-
 
 	private MockHttpServletRequestBuilder authorized(MockHttpServletRequestBuilder builder) {
 		return builder.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken);

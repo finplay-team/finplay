@@ -134,7 +134,6 @@ class CryptoPostSellFeedbackGateIntegrationTest {
 		assertThat(daysLater.counterfactuals().status()).isEqualTo(PostSellFeedbackStatus.READY);
 	}
 
-
 	private PostSellFeedbackResponse read(Trade sellTrade) {
 		return postSellFeedbackReader.read(sellTrade.getAccount().getUser().getId(), sellTrade.getId());
 	}

@@ -127,7 +127,6 @@ class PriceMoveCardConfirmationTest {
 		return service.confirmStockCard(instrument, ORIGIN_TRADE_DATE, detection);
 	}
 
-
 	@Test
 	@DisplayName("windowStart가 똑같이 09:00인 장중 첫 후보와 시가 갭 카드가 같은 날 함께 저장된다")
 	void intradayFirstCandidateAndOpeningGapCardAreBothStoredForTheSameDayAndWindowStart() {
@@ -162,7 +161,6 @@ class PriceMoveCardConfirmationTest {
 				instrument.getId(), ORIGIN_TRADE_DATE, PriceMoveEventType.INTRADAY, LocalTime.of(9, 0)))
 			.isFalse();
 	}
-
 
 	@Test
 	@DisplayName("③ 첫 분봉이 09:03인 갭 카드의 reveal_time이 09:00으로 저장된다")
@@ -211,7 +209,6 @@ class PriceMoveCardConfirmationTest {
 		assertThat(revealTimes).containsExactly("11:26:00");
 	}
 
-
 	@Test
 	@DisplayName("같은 인자로 두 번 확정하면 두 번째는 empty()이고 행은 1건, 첫 서술이 그대로 남는다")
 	void secondConfirmationOfTheSameCardIsANoOp() {
@@ -229,7 +226,6 @@ class PriceMoveCardConfirmationTest {
 		assertThat(stored.getNarrativeSource()).isEqualTo(NarrativeSource.LLM);
 		verify(narrativeService, times(1)).resolvePriceMoveNarrative(any());
 	}
-
 
 	@Test
 	@DisplayName("근거 연결이 카드와 함께 저장되고 개수는 NewsMatcher가 준 만큼이다")

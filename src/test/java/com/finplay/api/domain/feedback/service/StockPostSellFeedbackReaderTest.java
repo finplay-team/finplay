@@ -63,7 +63,6 @@ class StockPostSellFeedbackReaderTest {
 		priceMovePeerStatRepository,
 		Clock.fixed(SELL_SERVICE_DATE.atTime(SELL_TIME).atZone(KST).toInstant(), KST));
 
-
 	@Test
 	@DisplayName("원장 수치를 계약 예시 그대로 돌려준다 — returnRate는 scale 4 HALF_UP이다")
 	void returnsLedgerNumbersExactlyAsTheContractExample() {
@@ -99,7 +98,6 @@ class StockPostSellFeedbackReaderTest {
 		assertThat(response.returnRate()).isEqualTo(new BigDecimal("-0.0909"));
 		assertThat(response.returnRate()).isNotEqualTo(new BigDecimal("-0.1000"));
 	}
-
 
 	@Test
 	@DisplayName("buyAt은 배분된 두 lot 중 가장 이른 시각이고 날짜는 원본 거래일이다")
@@ -153,7 +151,6 @@ class StockPostSellFeedbackReaderTest {
 		assertThat(response.holdingMinutes()).isEqualTo(1750);
 	}
 
-
 	@Test
 	@DisplayName("배분 lot이 전부 매도와 같은 원본 거래일이면 sameSessionCompleted=true다")
 	void sameSessionCompletedIsTrueWhenEveryAllocatedLotSharesTheSellOriginTradeDate() {
@@ -205,7 +202,6 @@ class StockPostSellFeedbackReaderTest {
 		verifyNoInteractions(stockReplayService, priceMoveEventRepository, priceMoveEventSourceRepository);
 	}
 
-
 	@Test
 	@DisplayName("AI 서술 셋은 계약의 필드 집합을 유지한 채 null이다 — 서술은 이 트랜잭션 밖에서 얹는다")
 	void leavesTheNarrativeTripleNull() {
@@ -219,7 +215,6 @@ class StockPostSellFeedbackReaderTest {
 		assertThat(response.narrativeSource()).isNull();
 		assertThat(response.narrativeStatus()).isNull();
 	}
-
 
 	private PostSellFeedbackResponse read(Trade trade, SellAllocationSummaryDto allocation) {
 		return stockPostSellFeedbackReader.read(trade, allocation);

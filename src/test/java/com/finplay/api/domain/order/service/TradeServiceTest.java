@@ -210,7 +210,6 @@ class TradeServiceTest {
 			.existsBySideAndAccountMarketAndInstrument_TutorialSampleFalse(eq(OrderSide.BUY), any());
 	}
 
-
 	@Test
 	void findEarliestFilledBuyTradeMatchingMatchesQuantityRegardlessOfScale() {
 		LocalDateTime after = NOW.minusDays(1);
@@ -270,7 +269,6 @@ class TradeServiceTest {
 		assertThat(result.get()).isSameAs(earliestMatching);
 	}
 
-
 	@Test
 	void findLatestFilledBuyTradeMatchingPicksLastQuantityMatchInRepositoryOrder() {
 		LocalDateTime after = NOW.minusDays(1);
@@ -317,7 +315,6 @@ class TradeServiceTest {
 		assertThat(result).isEmpty();
 	}
 
-
 	@Test
 	void findEarliestFilledSellTradeAfterPicksEarliestSellTradeInRepositoryOrderRegardlessOfQuantity() {
 		LocalDateTime after = NOW.minusHours(1);
@@ -361,7 +358,6 @@ class TradeServiceTest {
 				USER_ID, 100L, OrderSide.BUY, after);
 	}
 
-
 	@Test
 	void findPracticePriceSessionIdReturnsSessionIdFromRepository() {
 		when(tradeRepository.findPracticePriceSessionIdByTradeId(30L)).thenReturn(Optional.of(7L));
@@ -392,7 +388,6 @@ class TradeServiceTest {
 		verify(tradeRepository).findByAccount_User_IdAndInstrument_IdAndSideAndExecutedAtAfterOrderByExecutedAtAscIdAsc(
 			USER_ID, 100L, OrderSide.BUY, after);
 	}
-
 
 	@Test
 	void summarizePracticeRunReturnsBuyTradePriceItselfWhenThereIsExactlyOneBuy() {

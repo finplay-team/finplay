@@ -37,7 +37,6 @@ class NarrativeNumberValidatorTest {
 
 	private final NarrativeNumberValidator validator = new NarrativeNumberValidator();
 
-
 	static Stream<Arguments> specDecisionTable() {
 		return Stream.of(
 			Arguments.of("15,207원 손실이었습니다.", true, "부호를 말로 옮긴 것뿐이다"),
@@ -67,7 +66,6 @@ class NarrativeNumberValidatorTest {
 		assertThat(validator.validate("+15,207원이었습니다.", SPEC_PROMPT).detectedExpressions())
 			.containsExactly("+15,207");
 	}
-
 
 	@Test
 	@DisplayName("천 단위 구분자는 세 자리 묶음으로만 붙어 꼬리 쉼표를 삼키지 않는다")
@@ -106,7 +104,6 @@ class NarrativeNumberValidatorTest {
 		assertThat(validator.validate("-2.170%였습니다.", SPEC_PROMPT).passed()).isTrue();
 	}
 
-
 	@Test
 	@DisplayName("프롬프트의 `09:30`은 09와 30 두 수로 들어와 \"09시 30분에 매수했습니다\"가 통과한다")
 	void colonSplitsTimeIntoTwoNumbersSoNormalNarrativePasses() {
@@ -140,7 +137,6 @@ class NarrativeNumberValidatorTest {
 			.containsExactly("68,400");
 	}
 
-
 	@ParameterizedTest
 	@NullSource
 	@EmptySource
@@ -169,7 +165,6 @@ class NarrativeNumberValidatorTest {
 
 		assertThat(result.detectedExpressions()).containsExactly("09", "30", "70,000");
 	}
-
 
 	@Test
 	@DisplayName("적발 목록은 등장 순서를 따르고 같은 토큰을 한 번만 담는다")

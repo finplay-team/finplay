@@ -136,7 +136,6 @@ class RankingStoreTest {
 		assertThat(score).isNull();
 	}
 
-
 	@Test
 	void topNThrowsRankingStoreUnavailableWhenRedisConnectionFails() {
 		RankingStore rankingStore = rankingStore();

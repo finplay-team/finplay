@@ -106,7 +106,6 @@ class PostSellFeedbackCounterfactualReturnRateTest {
 		assertThat(counterfactuals.atFirstMoveAfterBuy().returnRate()).isNotEqualTo(new BigDecimal("1.3330"));
 	}
 
-
 	private PostSellFeedbackResponse getPostSellFeedbackAt(LocalDateTime now) {
 		StockPostSellFeedbackReader reader = new StockPostSellFeedbackReader(
 			stockReplayService, priceMoveEventRepository,

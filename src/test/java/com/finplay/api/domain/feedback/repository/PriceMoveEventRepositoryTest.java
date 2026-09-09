@@ -102,7 +102,6 @@ class PriceMoveEventRepositoryTest {
 			NOW);
 	}
 
-
 	@Test
 	@DisplayName("주식 형태 행은 TIME 두 개를 채우고 occurred_at이 NULL인 채로 복원된다")
 	void stockShapedEventRoundTripsWithWindowTimesAndNullOccurredAt() {
@@ -142,7 +141,6 @@ class PriceMoveEventRepositoryTest {
 		assertThat(found.getOriginTradeDate()).isEqualTo(LocalDate.of(2026, 8, 4));
 		assertThat(found.getOriginTradeDate()).isNotEqualTo(ORIGIN_TRADE_DATE);
 	}
-
 
 	@Test
 	@DisplayName("createStock은 market=STOCK과 occurred_at NULL을 강제한다 — 호출자가 코인 형태를 섞을 수 없다")
@@ -248,7 +246,6 @@ class PriceMoveEventRepositoryTest {
 		assertThat(priceMoveEventRepository.findById(id).orElseThrow().getNarrative()).isEqualTo(longNarrative);
 	}
 
-
 	@Test
 	@DisplayName("window_start가 09:00으로 같아도 event_type이 다르면 장중 카드와 시가 갭 카드가 공존한다")
 	void intradayAndOpeningGapCardsCoexistAtTheSameWindowStart() {
@@ -290,7 +287,6 @@ class PriceMoveEventRepositoryTest {
 
 		assertThat(priceMoveEventRepository.count()).isEqualTo(2);
 	}
-
 
 	private static final LocalTime HOLD_FROM = LocalTime.of(9, 30);
 	private static final LocalTime HOLD_TO = LocalTime.of(14, 40);
@@ -400,7 +396,6 @@ class PriceMoveEventRepositoryTest {
 			.containsExactly(earlier.getId(), gap.getId(), intraday.getId());
 	}
 
-
 	@Test
 	@DisplayName("findFirst는 이 종목·시장의 occurred_at 최댓값(가장 최근 카드)만 돌려준다")
 	void findFirstByInstrumentIdAndMarketReturnsTheMostRecentCryptoCardOnly() {
@@ -472,7 +467,6 @@ class PriceMoveEventRepositoryTest {
 		assertThat(priceMoveEventRepository.countByInstrumentIdAndMarketAndOriginTradeDate(
 			crypto.getId(), Market.CRYPTO, LocalDate.of(2026, 8, 4))).isEqualTo(1);
 	}
-
 
 	private static final LocalDateTime QUERY_NOW = LocalDateTime.of(2026, 8, 5, 15, 0, 0);
 

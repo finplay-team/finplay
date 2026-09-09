@@ -66,7 +66,6 @@ class MarketNewsItemRepositoryTest {
 			instrument, MarketNewsItemType.NEWS, "반도체 업황 둔화", "테스트경제", url, PUBLISHED_AT, COLLECTED_AT);
 	}
 
-
 	@Test
 	@DisplayName("같은 기사 URL이라도 종목이 다르면 두 건 모두 저장된다 (url 단독 유니크였다면 실패)")
 	void sameArticleUrlIsStoredForEachInstrumentSeparately() {
@@ -80,7 +79,6 @@ class MarketNewsItemRepositoryTest {
 			.containsExactlyInAnyOrder(instrumentA.getId(), instrumentB.getId());
 		assertThat(all).extracting(MarketNewsItem::getUrl).containsOnly(URL);
 	}
-
 
 	@Test
 	@DisplayName("앞 191자가 같고 쿼리 파라미터만 다른 URL 2건이 같은 종목에 모두 저장된다 (접두 유니크였다면 실패)")
@@ -99,7 +97,6 @@ class MarketNewsItemRepositoryTest {
 		assertThat(marketNewsItemRepository.findAll()).extracting(MarketNewsItem::getUrl)
 			.containsExactlyInAnyOrder(urlWithNaverParam, urlWithDaumParam);
 	}
-
 
 	@Test
 	@DisplayName("같은 종목에 완전히 같은 URL 2건째는 유니크 제약에 걸린다")
@@ -120,7 +117,6 @@ class MarketNewsItemRepositoryTest {
 
 		assertThat(marketNewsItemRepository.count()).isEqualTo(2);
 	}
-
 
 	@Test
 	@DisplayName("저장한 뉴스를 다시 읽으면 발행 시각과 수집 시각이 각각 보존된다")
@@ -180,7 +176,6 @@ class MarketNewsItemRepositoryTest {
 
 		assertThat(types).containsExactly("DISCLOSURE");
 	}
-
 
 	private static final LocalDate ORIGIN_TRADE_DATE = LocalDate.of(2026, 7, 28);
 	private static final LocalDate PREVIOUS_TRADE_DATE = LocalDate.of(2026, 7, 27);
@@ -269,7 +264,6 @@ class MarketNewsItemRepositoryTest {
 			.isEmpty();
 	}
 
-
 	private Instrument savedCrypto() {
 		return instrumentRepository.save(Instrument.create(
 			Market.CRYPTO, "NEWSBTC", "테스트코인", new BigDecimal("1"), 5000, true, LocalDateTime.now()));
@@ -326,7 +320,6 @@ class MarketNewsItemRepositoryTest {
 			.extracting(item -> item.getInstrument().getName())
 			.isEqualTo("테스트종목A");
 	}
-
 
 	private void saveWithCollectedAt(
 		Instrument instrument, String title, LocalDateTime publishedAt, LocalDateTime collectedAt) {
@@ -419,7 +412,6 @@ class MarketNewsItemRepositoryTest {
 		assertThat(found).extracting(MarketNewsItem::getTitle)
 			.containsExactlyInAnyOrder("A D-1 공시", "B D-1 공시");
 	}
-
 
 	private Instrument savedSandboxStock() {
 		Instrument sandbox = Instrument.create(

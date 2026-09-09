@@ -77,7 +77,6 @@ class StockDailyCandleRepositoryTest {
 		assertThat(candle.getCollectedAt()).isNotNull();
 	}
 
-
 	@Test
 	void databaseRejectsDuplicateInstrumentAndTradingDate() {
 		stockDailyCandleRepository.saveAndFlush(newCandle(instrumentA, TRADING_DATE, "71200"));
@@ -105,7 +104,6 @@ class StockDailyCandleRepositoryTest {
 
 		assertThat(stockDailyCandleRepository.saveAndFlush(otherInstrument).getId()).isNotNull();
 	}
-
 
 	@Test
 	void findFirstByInstrumentIdOrderByTradingDateDescReturnsTheMostRecentTradingDate() {
@@ -143,7 +141,6 @@ class StockDailyCandleRepositoryTest {
 
 		assertThat(latest).isEmpty();
 	}
-
 
 	@Test
 	void findByTradingDateBetweenReturnsCandlesOrderedByTradingDateAscending() {

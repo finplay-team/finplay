@@ -155,7 +155,6 @@ class PostSellFeedbackGateIntegrationTest {
 			TradeAllocation.create(sellTrade, lot, new BigDecimal("10"), 700_000L, 105L, NOW));
 	}
 
-
 	@Test
 	@DisplayName("같은 서비스 날짜 11:40 조회에서는 revealTime 11:55 카드가 감춰진다")
 	void hidesACardWhoseRevealTimeHasNotPassedOnTheServiceDateOfTheTrade() {
@@ -208,7 +207,6 @@ class PostSellFeedbackGateIntegrationTest {
 			.contains("장 초반 기사");
 	}
 
-
 	@Test
 	@DisplayName("카드 간격은 windowEnd 기준이고 windowStart 동률은 id로 가르며 근거는 발행시각 내림차순이다")
 	void computesIntervalsFromWindowEndAndKeepsContractOrdering() {
@@ -234,7 +232,6 @@ class PostSellFeedbackGateIntegrationTest {
 			.extracting(NewsItem::title)
 			.containsExactly("늦은 기사", "10:15 기사");
 	}
-
 
 	@Test
 	@DisplayName("실제 분봉에서 극값을 close로 고르고 보유 구간 밖 분봉은 쓰지 않는다")
@@ -283,7 +280,6 @@ class PostSellFeedbackGateIntegrationTest {
 		assertThat(response.sellPrice()).isEqualByComparingTo(SELL_PRICE);
 		assertThat(response.holdingMinutes()).isEqualTo(120);
 	}
-
 
 	@Test
 	@DisplayName("게이트 직전 15:29:59에는 매도 후 흐름·반사실이 NOT_YET이고 매도 이후 분봉 값이 새지 않는다")
@@ -360,7 +356,6 @@ class PostSellFeedbackGateIntegrationTest {
 		assertThat(response.counterfactuals().atClose()).isNull();
 		assertThat(response.counterfactuals().atHoldHigh()).isNull();
 	}
-
 
 	private void saveFullDayCandles() {
 		saveCandle(BUY_TIME, "69500", "70000", "69000");

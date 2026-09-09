@@ -86,7 +86,6 @@ class CryptoPostSellFeedbackReaderTest {
 		when(cryptoPostSellFeedbackDbReader.buildPeerComparison(any())).thenReturn(PEER_COMPARISON);
 	}
 
-
 	@Test
 	@DisplayName("게이트 직전(매도일 23:59)이면 매도 후 흐름·반사실이 NOT_YET이고 가격 필드가 비어 있다")
 	void keepsPostSellBlocksNotYetBeforeTheMidnightGate() {
@@ -135,7 +134,6 @@ class CryptoPostSellFeedbackReaderTest {
 			.isEqualTo(PostSellFeedbackStatus.READY);
 		assertThat(response.counterfactuals().status()).isEqualTo(PostSellFeedbackStatus.READY);
 	}
-
 
 	@Test
 	@DisplayName("보유 199분이면 holdHighBasis가 MINUTE이고 극값이 1분봉 close에서 나온다")
@@ -197,7 +195,6 @@ class CryptoPostSellFeedbackReaderTest {
 		assertThat(response.postSellFlow().closePrice()).isEqualByComparingTo("90000");
 	}
 
-
 	@Test
 	@DisplayName("같은 날 안에서 199분 초과 보유면 극값·비율·atHoldHigh가 전부 null이고 오류가 아니다")
 	void leavesExtremesNullWhenNoDailyCandleFallsInsideTheHold() {
@@ -218,7 +215,6 @@ class CryptoPostSellFeedbackReaderTest {
 		assertThat(response.counterfactuals().atHoldHigh()).isNull();
 		assertThat(response.counterfactuals().status()).isEqualTo(PostSellFeedbackStatus.READY);
 	}
-
 
 	@Test
 	@DisplayName("1분봉이 없으면 postSellHighPrice·postSellHighAt이 일봉으로 채워지지 않고 null이다")
@@ -265,7 +261,6 @@ class CryptoPostSellFeedbackReaderTest {
 			.isEqualTo(LocalDateTime.of(SELL_DATE, LocalTime.of(0, 30)));
 	}
 
-
 	@Test
 	@DisplayName("atClose가 매도일 일봉 close이고 closeAt·at이 그 일자 23:59다")
 	void usesTheSellDayDailyCloseWithADayEndLabel() {
@@ -298,7 +293,6 @@ class CryptoPostSellFeedbackReaderTest {
 		assertThat(response.counterfactuals().atClose()).isNull();
 	}
 
-
 	@Test
 	@DisplayName("sameSessionCompleted가 항상 true이고 buyAt·sellAt이 체결 시각 그대로다")
 	void alwaysReportsSameSessionCompletedWithRawExecutionTimes() {
@@ -311,7 +305,6 @@ class CryptoPostSellFeedbackReaderTest {
 		assertThat(response.buyAt()).isEqualTo(BUY_AT_199);
 		assertThat(response.sellAt()).isEqualTo(SELL_AT);
 	}
-
 
 	@Test
 	@DisplayName("반사실 returnRate가 코인 요율 0.0005로 계산된다 — 주식 0.00015 결과와 다르다")
@@ -328,7 +321,6 @@ class CryptoPostSellFeedbackReaderTest {
 
 		assertThat(response.counterfactuals().atHoldHigh().returnRate()).isEqualByComparingTo("0.0108");
 	}
-
 
 	@Test
 	@DisplayName("보유 구간 이전 봉이 섞여 와도 극값·sellVsHighRate·atHoldHigh에 들어가지 않는다")
@@ -367,7 +359,6 @@ class CryptoPostSellFeedbackReaderTest {
 		assertThat(response.holdHighPrice()).isEqualByComparingTo("99999");
 	}
 
-
 	@Test
 	@DisplayName("공급자 장애(MARKET_DATA_PROVIDER_ERROR)면 가격만 비고 status는 게이트대로 READY다")
 	void absorbsProviderFailuresIntoNullPricesWithoutFailingTheWholeRead() {
@@ -401,7 +392,6 @@ class CryptoPostSellFeedbackReaderTest {
 				.isEqualTo(ErrorCode.VALIDATION_ERROR));
 	}
 
-
 	@Test
 	@DisplayName("카드 조회 → 캔들 REST → 집단 비교 순서로 부르고 REST 구간이 DB 조회 둘 사이에 들어간다")
 	void readsCardsBeforeTheRestCallsAndPeerComparisonAfterThem() {
@@ -432,7 +422,6 @@ class CryptoPostSellFeedbackReaderTest {
 		assertThat(read.getAnnotation(Transactional.class)).isNull();
 		assertThat(read.getAnnotation(jakarta.transaction.Transactional.class)).isNull();
 	}
-
 
 	private PostSellFeedbackResponse read(LocalDateTime now, LocalDateTime buyAt) {
 		return read(now, buyAt, SELL_AT);

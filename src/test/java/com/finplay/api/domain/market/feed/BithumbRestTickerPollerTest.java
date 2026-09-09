@@ -78,7 +78,6 @@ class BithumbRestTickerPollerTest {
 			""".formatted(market, tradePrice);
 	}
 
-
 	@Test
 	@DisplayName("코인 종목 전체를 KRW-{symbol} 콤마 결합으로 묶어 ticker를 정확히 1회 호출한다")
 	void pollTickersCallsTickerEndpointOnceWithCommaJoinedKrwMarkets() {
@@ -120,7 +119,6 @@ class BithumbRestTickerPollerTest {
 		verifyNoInteractions(priceStore);
 	}
 
-
 	@Test
 	@DisplayName("응답 항목마다 KRW- 접두사를 뗀 심볼과 trade_price로 PriceStore.recordObservation을 호출한다")
 	void pollTickersRecordsObservationPerItemWithStrippedSymbolAndTradePrice() {
@@ -138,7 +136,6 @@ class BithumbRestTickerPollerTest {
 		assertThat(priceCaptor.getAllValues().get(1)).isEqualByComparingTo("4567000.5");
 		verifyNoMoreInteractions(priceStore);
 	}
-
 
 	@Test
 	@DisplayName("trade_price가 없는 항목만 건너뛰고 나머지는 정상 관측한다")
@@ -168,7 +165,6 @@ class BithumbRestTickerPollerTest {
 		verify(priceStore).recordObservation(eq("ETH"), any(BigDecimal.class), eq(FIXED_NOW));
 		verifyNoMoreInteractions(priceStore);
 	}
-
 
 	@Test
 	@DisplayName("5xx 응답이면 예외를 전파하지 않고 recordObservation도 호출하지 않는다")

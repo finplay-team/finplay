@@ -163,7 +163,6 @@ class PostSellFeedbackRegenerationIntegrationTest {
 			TradeAllocation.create(sellTrade, lot, new BigDecimal("10"), 700_000L, 105L, VIEW_AT));
 	}
 
-
 	@Test
 	@DisplayName("카드 0건(NO_EVENT)이어도 게이트 통과 후 첫 조회에서 재생성되고 두 번째 조회에서는 재생성되지 않는다")
 	void regeneratesOnceAfterTheGateOpensEvenWithoutAnyCard() {
@@ -221,7 +220,6 @@ class PostSellFeedbackRegenerationIntegrationTest {
 			.contains("69,200원");
 	}
 
-
 	@Test
 	@DisplayName("재생성 실패가 누적 상한을 넘지 않고 기존 서술과 narrative_finalized=false가 유지된다")
 	void neverExceedsTheCumulativeRetryLimit() {
@@ -255,7 +253,6 @@ class PostSellFeedbackRegenerationIntegrationTest {
 			.containsEntry("narrative_finalized", false);
 	}
 
-
 	@Test
 	@DisplayName("집단 비교가 NOT_YET이면 재생성하지 않고 최초 서술을 그대로 재사용한다")
 	void neverRegeneratesWhilePeerComparisonIsNotYet() {
@@ -272,7 +269,6 @@ class PostSellFeedbackRegenerationIntegrationTest {
 			.containsEntry("regeneration_attempts", 0)
 			.containsEntry("narrative_finalized", false);
 	}
-
 
 	private PostSellFeedbackResponse getPostSellFeedback() {
 		return postSellFeedbackService.getPostSellFeedback(owner.getId(), sellTrade.getId());

@@ -27,7 +27,6 @@ class EvidenceJudgmentServiceTest {
 			1L, mock(Holding.class), 100L, new BigDecimal("95"), false, null, null, observedAt);
 	}
 
-
 	@Test
 	void judgeBoundaryEvidenceReturnsCloserToStopLossWhenCurrentPriceMovedNearerToStopLoss() {
 		BoundaryEvidenceResult result = service.judgeBoundaryEvidence(
@@ -77,7 +76,6 @@ class EvidenceJudgmentServiceTest {
 		assertThat(result.closerToBoundary()).isFalse();
 		assertThat(result.evidenceType()).isNull();
 	}
-
 
 	@Test
 	void judgeTimedRepetitionReturnsEmptyWhenNoExistingObservations() {
@@ -145,7 +143,6 @@ class EvidenceJudgmentServiceTest {
 		assertThat(result).contains(PracticeEvidenceType.TIMED_REPETITION);
 	}
 
-
 	@Test
 	void judgeObservationEvidenceReturnsBoundaryEvidenceWhenBothAAndBWouldBeSatisfied() {
 		List<PracticeMarketObservation> existing = List.of(observationAt(T0), observationAt(T0.plusMinutes(3)));
@@ -184,7 +181,6 @@ class EvidenceJudgmentServiceTest {
 		assertThat(result.closerBoundary()).isNull();
 		assertThat(result.evidenceType()).isNull();
 	}
-
 
 	@Test
 	void practiceEvidenceTypeEnumHasNoFinalEventValueAndOnlyDefinesAAndB() {

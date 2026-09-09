@@ -88,7 +88,6 @@ class CandleQueryServiceTest {
 		verifyNoInteractions(cryptoCandleProvider);
 	}
 
-
 	@Test
 	void getCandlesRejectsStockFromAfterToAfterLookingUpInstrumentButBeforeTouchingProvider() {
 		LocalDateTime from = LocalDateTime.of(2026, 7, 27, 10, 0);
@@ -179,7 +178,6 @@ class CandleQueryServiceTest {
 
 		verify(stockPriceProvider).getCandles(STOCK_INSTRUMENT_ID, CandleInterval.ONE_MINUTE, from, to);
 	}
-
 
 	@Test
 	void getCandlesRejectsStockAggregatedFromAfterToByDateEvenWhenFromTimeIsEarlier() {
@@ -281,7 +279,6 @@ class CandleQueryServiceTest {
 		verifyNoInteractions(cryptoCandleProvider);
 	}
 
-
 	@Test
 	void getCandlesNoLongerRejectsCryptoInstrumentAndDelegatesToCryptoCandleProvider() {
 		when(instrumentRepository.findById(CRYPTO_INSTRUMENT_ID)).thenReturn(Optional.of(cryptoInstrument()));
@@ -371,7 +368,6 @@ class CandleQueryServiceTest {
 		assertThat(response.content()).isEmpty();
 	}
 
-
 	@Test
 	void getCandlesForCryptoDoesNotTouchAnyPriceRelatedComponent() {
 		when(instrumentRepository.findById(CRYPTO_INSTRUMENT_ID)).thenReturn(Optional.of(cryptoInstrument()));
@@ -410,7 +406,6 @@ class CandleQueryServiceTest {
 		assertThat(service.getCandles(CRYPTO_INSTRUMENT_ID, "1m", null, null, null)).isNotNull();
 		verify(stockPriceProvider, never()).getCandles(any(), any(), any(), any());
 	}
-
 
 	@Test
 	void getCandlesRejectsInvalidCursorFormatWithValidationError() {

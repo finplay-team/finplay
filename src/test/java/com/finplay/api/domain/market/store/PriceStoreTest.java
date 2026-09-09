@@ -111,7 +111,6 @@ class PriceStoreTest {
 		assertThat(result).isEmpty();
 	}
 
-
 	@Test
 	void saveTickPublishesEventWhenNoExistingTickForSymbol() {
 		PriceStore priceStore = priceStore();
@@ -190,7 +189,6 @@ class PriceStoreTest {
 		assertThat(ethEvent.price()).isEqualByComparingTo("3000000");
 		assertThat(ethEvent.receivedAt()).isEqualTo(ethReceivedAt);
 	}
-
 
 	@Test
 	void recordObservationUpdatesObservedAtOnlyWhenPriceUnchanged() {
@@ -274,7 +272,6 @@ class PriceStoreTest {
 		assertThat(lastFields.get("receivedAt")).isEqualTo(tradeReceivedAt.toString());
 	}
 
-
 	@Test
 	void recordObservationDoesNotPublishEventWhenOnlyObservedAtChanges() {
 		PriceStore priceStore = priceStore();
@@ -302,7 +299,6 @@ class PriceStoreTest {
 		assertThat(event.receivedAt()).isEqualTo(existingReceivedAt);
 	}
 
-
 	@Test
 	void recordObservationBootstrapsReceivedAtAndPublishesEventWhenSymbolHasNeverBeenObserved() {
 		PriceStore priceStore = priceStore();
@@ -328,7 +324,6 @@ class PriceStoreTest {
 		assertThat(event.observedAt()).isEqualTo(NOW);
 	}
 
-
 	@Test
 	void saveTickOverwritesBootstrappedReceivedAtWhenRealTickArrivesLater() {
 		PriceStore priceStore = priceStore();
@@ -350,7 +345,6 @@ class PriceStoreTest {
 		assertThat(lastFields.get("price")).isEqualTo("105");
 		assertThat(lastFields.get("receivedAt")).isEqualTo(realReceivedAt.toString());
 	}
-
 
 	@Test
 	void recordSnapshotAddsMemberWithEpochMillisScoreAndPriceEncodedInMember() {

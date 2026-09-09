@@ -52,7 +52,6 @@ class MarketBriefingControllerTest {
 	@MockitoBean
 	private JwtTokenProvider jwtTokenProvider;
 
-
 	@Test
 	@DisplayName("토큰 없이 호출하면 401이고 서비스를 부르지 않는다")
 	void rejectsMissingAuthenticationWithoutCallingService() throws Exception {
@@ -76,7 +75,6 @@ class MarketBriefingControllerTest {
 
 		verifyNoInteractions(marketBriefingService);
 	}
-
 
 	@Test
 	@DisplayName("market 파라미터가 없으면 400 VALIDATION_ERROR이고 서비스를 부르지 않는다")
@@ -141,7 +139,6 @@ class MarketBriefingControllerTest {
 		verify(marketBriefingService).getBriefing(Market.CRYPTO);
 	}
 
-
 	@Test
 	@DisplayName("READY 응답이 계약대로 직렬화된다 — items 항목이 평평한 여덟 값이다")
 	void serializesReadyResponseAccordingToTheContract() throws Exception {
@@ -194,7 +191,6 @@ class MarketBriefingControllerTest {
 			.andExpect(jsonPath("$.narrativeSource").doesNotExist())
 			.andExpect(jsonPath("$.generatedAt").doesNotExist());
 	}
-
 
 	@Test
 	@DisplayName("재생세션 미준비면 EMPTY이고 originTradeDate가 null이며 200이다")

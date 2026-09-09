@@ -49,7 +49,6 @@ class PortfolioSellServiceTest {
 	private final PortfolioSellService service = new PortfolioSellService(holdingRepository, holdingLotRepository,
 		tradeAllocationRepository, tutorialAccountService);
 
-
 	@Test
 	void getHoldingForUpdateOrThrowThrowsInsufficientQtyWhenHoldingDoesNotExist() {
 		Account account = testAccount();

@@ -98,8 +98,7 @@ class CommunityPostImageUploadSizeLimitIntegrationTest {
 		} catch (HttpClientErrorException e) {
 			assertThat(HttpStatus.valueOf(e.getStatusCode().value())).isEqualTo(HttpStatus.BAD_REQUEST);
 			assertThat(e.getResponseBodyAsString()).contains("VALIDATION_ERROR");
-		} catch (ResourceAccessException e) {
-		}
+		} catch (ResourceAccessException e) {}
 		assertThat(imageRepository.count()).isZero();
 	}
 

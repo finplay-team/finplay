@@ -41,7 +41,6 @@ class FeedbackQueryCacheEnabledWiringIntegrationTest extends FeedbackQueryCacheW
 	@Autowired
 	private Clock clock;
 
-
 	@Test
 	@DisplayName("주식 요약 조회를 3번 해도 요약 행은 1번만 읽는다")
 	void readsTheStockSummaryRowOnlyOnceForThreeQueries() {
@@ -66,7 +65,6 @@ class FeedbackQueryCacheEnabledWiringIntegrationTest extends FeedbackQueryCacheW
 		assertThat(cryptoBriefingTextCallsOnASecondQuery()).isZero();
 	}
 
-
 	@Test
 	@DisplayName("주식 요약의 items 수집은 캐시를 켜도 조회마다 3번 그대로다(§C-5 노출 게이트)")
 	void keepsCollectingStockSummaryItemsOnEveryQuery() {
@@ -78,7 +76,6 @@ class FeedbackQueryCacheEnabledWiringIntegrationTest extends FeedbackQueryCacheW
 	void keepsCollectingCryptoBriefingItemsOnEveryQuery() {
 		assertThat(cryptoBriefingItemCallsOnASecondQuery()).isEqualTo(1);
 	}
-
 
 	@Test
 	@DisplayName("캐시에 저장된 items가 Boot ObjectMapper로 그대로 왕복해 적중 응답이 미적중 응답과 완전히 같다")
@@ -107,7 +104,6 @@ class FeedbackQueryCacheEnabledWiringIntegrationTest extends FeedbackQueryCacheW
 				LocalDateTime.of(PREVIOUS_TRADE_DATE, LocalTime.of(23, 59, 59)),
 				LocalDateTime.of(PREVIOUS_TRADE_DATE, LocalTime.of(18, 7, 33)));
 	}
-
 
 	@Test
 	@DisplayName("Redis가 죽어 있으면 wait-millis를 다 채우지 않고 즉시 원본으로 내려간다")
@@ -140,7 +136,6 @@ class FeedbackQueryCacheEnabledWiringIntegrationTest extends FeedbackQueryCacheW
 			return socket.getLocalPort();
 		}
 	}
-
 
 	@Test
 	@DisplayName("주식 브리핑 조회가 텍스트·items 두 키를 남기고 items 키에 절단 상한이 들어간다")

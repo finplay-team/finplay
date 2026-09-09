@@ -142,7 +142,6 @@ class PostSellFeedbackPeerComparisonGateIntegrationTest {
 		allocate(sellTrade, saveLot(tradeSession, BUY_TIME));
 	}
 
-
 	@Test
 	@DisplayName("보유 구간에 카드가 있어도 확정 집계 행이 없으면 peerComparison=NOT_YET이라 게이트가 닫힌 채고 재생성이 일어나지 않는다")
 	void keepsTheGateClosedWhenTheCardExistsButNoConfirmedStatRowYet() {
@@ -161,7 +160,6 @@ class PostSellFeedbackPeerComparisonGateIntegrationTest {
 			.get()
 			.satisfies(feedback -> assertThat(feedback.isNarrativeFinalized()).isFalse());
 	}
-
 
 	@Test
 	@DisplayName("보유 구간에 카드가 0건이면 peerComparison=NO_EVENT이고 게이트가 코드 수정 없이 열려 서술이 1회 재생성된다")
@@ -185,7 +183,6 @@ class PostSellFeedbackPeerComparisonGateIntegrationTest {
 				assertThat(feedback.isNarrativeFinalized()).isTrue();
 			});
 	}
-
 
 	private PostSellFeedbackResponse getPostSellFeedback() {
 		return postSellFeedbackService.getPostSellFeedback(owner.getId(), sellTrade.getId());

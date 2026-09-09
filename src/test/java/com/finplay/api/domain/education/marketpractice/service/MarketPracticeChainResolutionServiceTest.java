@@ -415,7 +415,6 @@ class MarketPracticeChainResolutionServiceTest {
 		assertThat(result.get().favoriteId()).isEqualTo(11L);
 	}
 
-
 	@Test
 	void resolveFillsNullSellFieldsWhenNoSellTradeExistsAfterBuyTrade() {
 		FavoriteResponse favorite = favorite(10L, 100L, "STOCK", NOW.minusDays(3));
@@ -465,7 +464,6 @@ class MarketPracticeChainResolutionServiceTest {
 		assertThat(result.get().sellTradeExecutedAt()).isEqualTo(earliestSellAfterBuy.getExecutedAt());
 		verify(tradeService).findEarliestFilledSellTradeAfter(USER_ID, 100L, buyTrade.getExecutedAt());
 	}
-
 
 	@Test
 	void resolvePicksLatestFilledBuyTradeForTutorialSampleInstrumentToAllowRetryAfterExpiry() {

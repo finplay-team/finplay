@@ -76,7 +76,6 @@ class PostSellFeedbackPeerComparisonTest {
 
 	private SellAllocationSummaryDto allocation;
 
-
 	@Test
 	@DisplayName("보유 구간에 카드가 0건이면 NO_EVENT이고 priceMoveId를 포함한 전 필드가 null이다")
 	void statusIsNoEventWithoutAnyFieldWhenNoCardExistsInTheHeldWindow() {
@@ -93,7 +92,6 @@ class PostSellFeedbackPeerComparisonTest {
 		assertThat(peerComparison.yourMinutesToSell()).isNull();
 	}
 
-
 	@Test
 	@DisplayName("카드는 있지만 확정 집계 행이 없으면 NOT_YET이고 priceMoveId조차 채우지 않는다")
 	void statusIsNotYetWhenTheCardExistsButNoConfirmedStatRowYet() {
@@ -106,7 +104,6 @@ class PostSellFeedbackPeerComparisonTest {
 		assertThat(peerComparison.priceMoveId()).isNull();
 		assertThat(peerComparison.yourMinutesToSell()).isNull();
 	}
-
 
 	@Test
 	@DisplayName("holderCount=4(경계 미달)면 INSUFFICIENT_SAMPLE이고 모집단 지표 3종이 null, yourMinutesToSell만 채운다")
@@ -142,7 +139,6 @@ class PostSellFeedbackPeerComparisonTest {
 		assertThat(peerComparison.yourMinutesToSell()).isEqualTo(290);
 	}
 
-
 	@Test
 	@DisplayName("soldWithin30MinRate는 나누어지지 않는 값(2/7)에서도 scale 4 HALF_UP으로 정확히 나온다")
 	void computesSoldWithin30MinRateAsAnExactDivisionNotAnIntegerTruncation() {
@@ -158,7 +154,6 @@ class PostSellFeedbackPeerComparisonTest {
 		assertThat(peerComparison.soldWithin30MinRate()).isNotEqualTo(BigDecimal.ZERO);
 	}
 
-
 	@Test
 	@DisplayName("yourMinutesToSell은 매도시각 − 카드 windowEnd(분)와 정확히 같다")
 	void yourMinutesToSellMatchesSellAtMinusCardWindowEnd() {
@@ -172,7 +167,6 @@ class PostSellFeedbackPeerComparisonTest {
 		assertThat(peerComparison.yourMinutesToSell()).isEqualTo(290);
 	}
 
-
 	@Test
 	@DisplayName("PeerComparison 응답 필드 어디에도 회원 식별자가 없다")
 	void peerComparisonHasNoMemberIdentifierField() {
@@ -185,7 +179,6 @@ class PostSellFeedbackPeerComparisonTest {
 			|| name.toLowerCase().contains("account")
 			|| name.toLowerCase().contains("nickname"));
 	}
-
 
 	private PostSellFeedbackResponse read() {
 		return stockPostSellFeedbackReader.read(trade, allocation);

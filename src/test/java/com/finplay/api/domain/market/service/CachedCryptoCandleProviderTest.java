@@ -211,7 +211,6 @@ class CachedCryptoCandleProviderTest {
 			.getCandles("BTC", CandleInterval.ONE_MINUTE, NOW.minusMinutes(199), NOW);
 	}
 
-
 	@Test
 	@DisplayName("커서 위치 1 (C ≤ S): 전량 빗썸 위임, 캐시 조회 자체를 건너뛴다")
 	void cursorPositionCLessThanOrEqualSinceDelegatesEntireRangeAndSkipsCache() {
@@ -307,7 +306,6 @@ class CachedCryptoCandleProviderTest {
 		verify(delegate, times(1)).getCandles("BTC", CandleInterval.ONE_MINUTE, from, since.minusMinutes(1));
 		verify(delegate, times(1)).getCandles("BTC", CandleInterval.ONE_MINUTE, since, to);
 	}
-
 
 	@Test
 	@DisplayName("D-2 ⓐ: 캐시가 성긴 200분 창 → 보충 위임이 1회 호출되고 최종 결과가 200개다")

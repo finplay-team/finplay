@@ -115,8 +115,7 @@ class CryptoLimitPracticeFlowRestartIntegrationTest {
 	}
 
 	@AfterEach
-	void clearFixtureLists() {
-	}
+	void clearFixtureLists() {}
 
 	@AfterAll
 	void cleanUpAllFixtures() {

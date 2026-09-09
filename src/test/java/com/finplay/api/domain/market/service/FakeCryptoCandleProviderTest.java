@@ -78,7 +78,6 @@ class FakeCryptoCandleProviderTest {
 		assertThat(provider.getCandles("BTC", CandleInterval.ONE_MINUTE, null, null)).hasSize(1);
 	}
 
-
 	@Test
 	void legacySetCandlesWithoutIntervalSeedsOnlyOneMinuteBucket() {
 		FakeCryptoCandleProvider provider = new FakeCryptoCandleProvider();
@@ -89,7 +88,6 @@ class FakeCryptoCandleProviderTest {
 		assertThat(provider.getCandles("BTC", CandleInterval.ONE_WEEK, null, null)).isEmpty();
 		assertThat(provider.getCandles("BTC", CandleInterval.ONE_MONTH, null, null)).isEmpty();
 	}
-
 
 	@Test
 	void setCandlesWithIntervalKeepsEachIntervalsSeedIndependent() {

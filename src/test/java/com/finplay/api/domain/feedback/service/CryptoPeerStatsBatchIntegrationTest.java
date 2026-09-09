@@ -116,7 +116,6 @@ class CryptoPeerStatsBatchIntegrationTest {
 			Market.CRYPTO, "BTC275", "테스트코인275", BigDecimal.valueOf(1), 5_000L, true, CARD_AT));
 	}
 
-
 	@Test
 	@DisplayName("service_date가 배치 실행일이 아니라 카드 occurred_at의 KST 날짜로 저장된다")
 	void storesServiceDateFromTheCardOccurredAtNotTheBatchRunDate() {
@@ -163,7 +162,6 @@ class CryptoPeerStatsBatchIntegrationTest {
 		assertThat(stat.getMedianMinutesToSell()).isEqualTo(30);
 	}
 
-
 	@Test
 	@DisplayName("배치가 저장한 행을 코인 조회 경로가 찾아 peerComparison이 NOT_YET에서 벗어난다")
 	void readerFindsTheRowStoredByTheCryptoBatch() {
@@ -185,7 +183,6 @@ class CryptoPeerStatsBatchIntegrationTest {
 		assertThat(afterBatch.holderCount()).isEqualTo(5);
 		assertThat(afterBatch.yourMinutesToSell()).isEqualTo(60);
 	}
-
 
 	@Test
 	@DisplayName("전날 KST 하루 안의 코인 카드만 집계하고 그제·당일 카드는 제외한다")
@@ -220,7 +217,6 @@ class CryptoPeerStatsBatchIntegrationTest {
 			.containsOnly(CARD_DATE);
 	}
 
-
 	@Test
 	@DisplayName("재생세션이 READY가 아니어도 코인 배치는 정상 집계한다")
 	void aggregatesEvenWhenTheReplaySessionIsNotReady() {
@@ -245,7 +241,6 @@ class CryptoPeerStatsBatchIntegrationTest {
 		assertThat(priceMovePeerStatRepository.findAll()).hasSize(1);
 	}
 
-
 	@Test
 	@DisplayName("같은 날 두 번 실행해도 확정 집계가 중복 저장되지 않는다")
 	void doesNotDuplicateWhenRunTwiceOnTheSameDay() {
@@ -264,7 +259,6 @@ class CryptoPeerStatsBatchIntegrationTest {
 			.extracting(PriceMovePeerStat::getId)
 			.isEqualTo(firstRunIds);
 	}
-
 
 	@Test
 	@DisplayName("코인 배치는 주식 카드에 대한 확정 집계를 만들지 않는다")
@@ -286,7 +280,6 @@ class CryptoPeerStatsBatchIntegrationTest {
 			.containsExactly(cryptoCard.getId())
 			.doesNotContain(stockCard.getId());
 	}
-
 
 	private PostSellFeedbackResponse readOwnFeedback(Trade sellTrade) {
 		return postSellFeedbackReader.read(sellTrade.getAccount().getUser().getId(), sellTrade.getId());

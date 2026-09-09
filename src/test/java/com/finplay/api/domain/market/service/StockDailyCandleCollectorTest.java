@@ -77,7 +77,6 @@ class StockDailyCandleCollectorTest {
 			fixedClock(WEEKDAY_RUN_AT), new BusinessDayCalendar(), stockCollectionLock);
 	}
 
-
 	@Test
 	void collectRequestsFullThreeYearRangeWhenInstrumentHasNoStoredDailyCandleYet() {
 		Instrument instrument = stockInstrument(1L, SYMBOL);
@@ -169,7 +168,6 @@ class StockDailyCandleCollectorTest {
 		verify(client, never()).fetchDailyCandles(eq(SYMBOL), eq(TARGET_END_DATE.minusYears(3)), any());
 	}
 
-
 	@Test
 	void collectSkipsOnlyInstrumentWhoseKisCallThrowsAndStillSavesTheOtherInstrument() {
 		Instrument healthyInstrument = stockInstrument(1L, "005930");
@@ -201,7 +199,6 @@ class StockDailyCandleCollectorTest {
 		assertThat(savedImport.getStatus()).isEqualTo(ImportStatus.PARTIAL_SUCCESS);
 		assertThat(savedImport.getFailureReason()).contains("000660");
 	}
-
 
 	@Test
 	void collectSkipsEntirelyWithoutCallingKisOrRecordingImportWhenLockIsNotAcquired() {

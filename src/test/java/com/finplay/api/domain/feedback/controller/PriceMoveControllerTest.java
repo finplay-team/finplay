@@ -56,7 +56,6 @@ class PriceMoveControllerTest {
 	@MockitoBean
 	private JwtTokenProvider jwtTokenProvider;
 
-
 	@Test
 	@DisplayName("토큰 없이 호출하면 401이고 서비스를 부르지 않는다")
 	void rejectsMissingAuthenticationWithoutCallingService() throws Exception {
@@ -79,7 +78,6 @@ class PriceMoveControllerTest {
 
 		verifyNoInteractions(priceMoveQueryService);
 	}
-
 
 	@Test
 	@DisplayName("카드가 0건이면 originTradeDate는 있고 moves는 빈 배열이며 200이다")
@@ -136,7 +134,6 @@ class PriceMoveControllerTest {
 		assertThat(emptyJson).contains("\"status\":\"EMPTY\"");
 	}
 
-
 	private static final long CRYPTO_INSTRUMENT_ID = 2L;
 
 	@Test
@@ -185,7 +182,6 @@ class PriceMoveControllerTest {
 			.andExpect(jsonPath("$.moves[0].windowEnd").value("2026-08-05T14:30:00"))
 			.andExpect(jsonPath("$.moves[0].sources[0].title").value("대형 거래소 상장"));
 	}
-
 
 	@Test
 	@DisplayName("카드 응답이 계약대로 직렬화된다 — 구간에 날짜가 붙고 근거는 네 값뿐이다")
@@ -243,7 +239,6 @@ class PriceMoveControllerTest {
 			.andExpect(jsonPath("$.moves[0].sources[0].body").doesNotExist())
 			.andExpect(jsonPath("$.moves[0].sources[0].length()").value(5));
 	}
-
 
 	@Test
 	@DisplayName("없는 종목이면 404 NOT_FOUND 공통 오류 형식이다")

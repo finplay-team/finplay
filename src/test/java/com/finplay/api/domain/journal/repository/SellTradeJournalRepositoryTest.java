@@ -165,7 +165,6 @@ class SellTradeJournalRepositoryTest {
 			NOW));
 	}
 
-
 	@Test
 	@DisplayName("같은 매도 체결에 매도 회고 2건째는 유니크 제약에 걸린다")
 	void databaseRejectsSecondJournalForTheSameSellTrade() {
@@ -177,7 +176,6 @@ class SellTradeJournalRepositoryTest {
 		assertThatThrownBy(() -> sellTradeJournalRepository.saveAndFlush(duplicate))
 			.isInstanceOf(DataIntegrityViolationException.class);
 	}
-
 
 	@Test
 	@DisplayName("서로 다른 매도 체결의 매도 회고는 각각 공존한다")
@@ -191,7 +189,6 @@ class SellTradeJournalRepositoryTest {
 		assertThat(sellTradeJournalRepository.count()).isEqualTo(2);
 	}
 
-
 	@Test
 	@DisplayName("매도 회고를 저장하기 전에는 존재하지 않고, 저장한 뒤에는 존재한다")
 	void existsBySellTradeIdTogglesFromFalseToTrueAfterSave() {
@@ -204,7 +201,6 @@ class SellTradeJournalRepositoryTest {
 		assertThat(sellTradeJournalRepository.existsBySellTradeId(sellTrade.getId())).isTrue();
 	}
 
-
 	@Test
 	@DisplayName("존재하지 않는 체결 ID를 참조하는 매도 회고는 외래키 제약에 걸린다")
 	void databaseRejectsJournalReferencingNonExistentTrade() {
@@ -215,7 +211,6 @@ class SellTradeJournalRepositoryTest {
 		assertThatThrownBy(() -> sellTradeJournalRepository.saveAndFlush(journal))
 			.isInstanceOf(DataIntegrityViolationException.class);
 	}
-
 
 	@Test
 	@DisplayName("매도 회고가 없는 체결은 findBySellTradeId가 empty를 반환한다")
@@ -237,7 +232,6 @@ class SellTradeJournalRepositoryTest {
 			.extracting(SellTradeJournal::getId)
 			.isEqualTo(saved.getId());
 	}
-
 
 	@Test
 	@DisplayName("updateContent 호출 후 flush하면 content와 updated_at만 바뀌고 created_at·sell_trade_id·id는 그대로다")
@@ -262,7 +256,6 @@ class SellTradeJournalRepositoryTest {
 		assertThat(reloaded.getCreatedAt()).isEqualTo(NOW);
 	}
 
-
 	@Test
 	@DisplayName("커서 조회는 다른 계좌의 매도 회고를 포함하지 않는다")
 	void findByAccountIdWithCursorExcludesOtherAccountJournals() {
@@ -282,7 +275,6 @@ class SellTradeJournalRepositoryTest {
 
 		assertThat(result).extracting(SellTradeJournal::getId).containsExactly(ownerJournal.getId());
 	}
-
 
 	@Test
 	@DisplayName("커서보다 이전(createdAt이 더 작거나 같은 createdAt에서 체결 ID가 더 작은) 항목만 반환한다")
@@ -316,8 +308,6 @@ class SellTradeJournalRepositoryTest {
 		assertThat(result).extracting(SellTradeJournal::getId)
 			.containsExactly(third.getId(), second.getId(), first.getId());
 	}
-
-
 
 	@Test
 	@DisplayName("튜토리얼 샌드박스 종목 매도 체결의 회고는 커서 조회 결과에서 제외된다")

@@ -173,7 +173,6 @@ class MarketBriefingQueryGateIntegrationTest {
 		return captor.getValue().items().stream().map(NewsSourceDto::title).toList();
 	}
 
-
 	@Test
 	@DisplayName("개장 전 08:41에 두 API를 모두 호출해도 어느 쪽에서도 전장 기사가 나오지 않는다")
 	void neitherApiExposesPreMarketArticlesBeforeMarketOpen() {
@@ -209,7 +208,6 @@ class MarketBriefingQueryGateIntegrationTest {
 		assertThat(newsTitles(instrumentNewsQueryService.getInstrumentNews(samsung.getId())))
 			.containsExactly("전일 저녁 기사");
 	}
-
 
 	@Test
 	@DisplayName("items가 max-items-per-briefing으로 잘리고 공시 2건은 남으며 발행시각 내림차순이다")
@@ -259,7 +257,6 @@ class MarketBriefingQueryGateIntegrationTest {
 				org.assertj.core.groups.Tuple.tuple("005930", "삼성전자", "삼성 기사"));
 	}
 
-
 	@Test
 	@DisplayName("장중에 조회해도 브리핑 items에 장중 기사가 한 건도 없다")
 	void neverIncludesIntradayArticlesInTheBriefing() {
@@ -292,7 +289,6 @@ class MarketBriefingQueryGateIntegrationTest {
 
 		assertThat(briefingTitles(briefing())).containsExactly("전일 저녁 기사");
 	}
-
 
 	@Test
 	@DisplayName("D 접수 공시가 브리핑과 개장 직후 Part C 목록에 나오지 않는다")
@@ -343,7 +339,6 @@ class MarketBriefingQueryGateIntegrationTest {
 			.as("전장 요약 입력")
 			.contains("D-1 접수 공시");
 	}
-
 
 	@Test
 	@DisplayName("세션 미준비 조회는 EMPTY이고 originTradeDate가 null이다 — NOT_YET이 아니다")

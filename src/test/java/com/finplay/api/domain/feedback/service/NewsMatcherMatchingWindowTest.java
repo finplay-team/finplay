@@ -123,7 +123,6 @@ class NewsMatcherMatchingWindowTest {
 			.toList();
 	}
 
-
 	@Test
 	@DisplayName("시가 갭 근거는 rcept_dt=D-1 공시만 붙이고 rcept_dt=D 공시는 붙이지 않는다")
 	void openingGapTakesOnlyTheDisclosureReceivedOnThePreviousTradingDate() {
@@ -171,7 +170,6 @@ class NewsMatcherMatchingWindowTest {
 		assertThat(matchedTitles(TUESDAY, intraday(LocalTime.of(10, 0)))).containsExactly("근거창 안 뉴스");
 	}
 
-
 	@Test
 	@DisplayName("장중 근거창은 -30분·+5분 정각을 포함하고 -31분·+6분은 제외한다")
 	void intradayWindowIncludesBothBoundaryMinutesAndExcludesTheMinutesOutside() {
@@ -198,7 +196,6 @@ class NewsMatcherMatchingWindowTest {
 		assertThat(matchedTitles(MONDAY, openingGap()))
 			.containsExactly("월 09:00 정각", "일 저녁", "토 오후", "금 저녁", "금 15:30 정각");
 	}
-
 
 	@Test
 	@DisplayName("근거가 상한을 넘으면 이벤트에 가까운 순으로 5건만 남는다")

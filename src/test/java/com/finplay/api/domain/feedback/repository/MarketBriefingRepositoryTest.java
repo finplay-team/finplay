@@ -41,7 +41,6 @@ class MarketBriefingRepositoryTest {
 		return MarketBriefing.create(market, originTradeDate, SUMMARY, NarrativeSource.LLM, GENERATED_AT);
 	}
 
-
 	@Test
 	@DisplayName("같은 (시장, 거래일) 브리핑 2건째는 유니크 제약에 걸린다 — 이 제약이 UPSERT를 성립시킨다")
 	void databaseRejectsDuplicateMarketAndTradeDate() {
@@ -67,7 +66,6 @@ class MarketBriefingRepositoryTest {
 			.as("시장이 다르면 별개 행이다 — 여기가 참이면 코인 브리핑이 영영 생기지 않는다")
 			.isFalse();
 	}
-
 
 	@Test
 	@DisplayName("findFirstByMarketOrderByGeneratedAtDesc가 날짜가 달라도 최신 행을 준다")
@@ -116,7 +114,6 @@ class MarketBriefingRepositoryTest {
 		assertThat(marketBriefingRepository.count()).isEqualTo(2);
 	}
 
-
 	@Test
 	@DisplayName("summary가 NULL이고 narrative_source가 NONE인 브리핑이 저장된다")
 	void briefingRowWithNullSummaryAndNoneSourceIsPersisted() {
@@ -132,7 +129,6 @@ class MarketBriefingRepositoryTest {
 		assertThat(row.get("summary")).isNull();
 		assertThat(row.get("narrative_source")).isEqualTo("NONE");
 	}
-
 
 	@Test
 	@DisplayName("저장한 브리핑을 다시 읽으면 시장·거래일·생성 시각이 그대로 복원된다")

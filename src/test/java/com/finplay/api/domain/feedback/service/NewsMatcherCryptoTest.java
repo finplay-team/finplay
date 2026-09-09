@@ -63,7 +63,6 @@ class NewsMatcherCryptoTest {
 		return items.stream().map(MarketNewsItem::getTitle).toList();
 	}
 
-
 	@Test
 	@DisplayName("코인 근거창은 [occurredAt - match-before-minutes, occurredAt]을 NEWS 종류로만 묻는다")
 	void matchCryptoQueriesNewsOnlyWithinTheConfiguredWindowEndingAtOccurredAt() {
@@ -94,7 +93,6 @@ class NewsMatcherCryptoTest {
 			INSTRUMENT_ID, MarketNewsItemType.NEWS, OCCURRED_AT.minusMinutes(10), OCCURRED_AT);
 	}
 
-
 	@Test
 	@DisplayName("코인 근거 매칭은 공시 질의를 아예 부르지 않는다")
 	void matchCryptoNeverQueriesDisclosures() {
@@ -102,7 +100,6 @@ class NewsMatcherCryptoTest {
 
 		verify(marketNewsItemRepository, never()).findDisclosuresReceivedOn(any(), any(), any());
 	}
-
 
 	@Test
 	@DisplayName("근거가 max-sources-per-card를 넘으면 occurredAt에 가까운 순으로 자른다")

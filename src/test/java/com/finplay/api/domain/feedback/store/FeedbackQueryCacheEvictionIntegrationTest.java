@@ -56,7 +56,6 @@ class FeedbackQueryCacheEvictionIntegrationTest extends FeedbackQueryCacheWiring
 			.thenReturn(NarrativeResultDto.llm(FIRST_TEXT));
 	}
 
-
 	private void saveCryptoNewsCollectedAt(String title, LocalTime publishedAt, LocalTime collectedAt) {
 		marketNewsItemRepository.save(MarketNewsItem.create(
 			crypto, MarketNewsItemType.NEWS, title, "테스트경제",
@@ -84,7 +83,6 @@ class FeedbackQueryCacheEvictionIntegrationTest extends FeedbackQueryCacheWiring
 	private MarketBriefingResponse queryCryptoBriefing() {
 		return marketBriefingService.getBriefing(Market.CRYPTO);
 	}
-
 
 	@Test
 	@DisplayName("코인 요약: 조회 → 배치 갱신 → 재조회에서 새 서술이 나온다")
@@ -118,7 +116,6 @@ class FeedbackQueryCacheEvictionIntegrationTest extends FeedbackQueryCacheWiring
 		assertThat(queryCryptoBriefing().summary()).isEqualTo(SECOND_TEXT);
 	}
 
-
 	@Test
 	@DisplayName("코인 요약: 새 기사가 없어 건너뛴 배치 뒤에도 캐시가 남아 원본이 다시 불리지 않는다")
 	void cryptoSummaryCacheSurvivesABatchRunThatSkippedTheRefresh() {
@@ -147,7 +144,6 @@ class FeedbackQueryCacheEvictionIntegrationTest extends FeedbackQueryCacheWiring
 		assertThat(queryCryptoBriefing().summary()).isEqualTo(FIRST_TEXT);
 		verify(marketBriefingRepository, never()).findFirstByMarketOrderByGeneratedAtDescIdDesc(any());
 	}
-
 
 	@Test
 	@DisplayName("요약 행이 없는 상태로 조회한 뒤 배치가 행을 만들면 그다음 조회가 새 값을 본다")
@@ -180,7 +176,6 @@ class FeedbackQueryCacheEvictionIntegrationTest extends FeedbackQueryCacheWiring
 		assertThat(afterBatch.status()).isEqualTo(FeedbackContentStatus.READY);
 		assertThat(afterBatch.summary()).isEqualTo(FIRST_TEXT);
 	}
-
 
 	@Test
 	@DisplayName("주식 브리핑 생성 경로가 돈 뒤에도 주식 조회 캐시는 그대로 남는다")

@@ -643,7 +643,6 @@ class JournalServiceTest {
 		assertThat(buyTradeIdCaptor.getValue()).isEqualTo(sellTradeIdCaptor.getValue());
 	}
 
-
 	@Test
 	void findSellJournalContentReturnsEmptyWhenSellJournalDoesNotExist() {
 		when(sellTradeJournalRepository.findBySellTradeId(SELL_TRADE_ID)).thenReturn(Optional.empty());

@@ -148,7 +148,6 @@ class PriceMoveQueryGateIntegrationTest {
 		return priceMoveQueryService.getPriceMoves(instrument.getId()).moves();
 	}
 
-
 	@Test
 	@DisplayName("11:30에는 revealTime 11:26 카드만 보이고 14:10 카드는 안 보인다")
 	void hidesCardsWhoseRevealTimeHasNotPassedYet() {
@@ -174,7 +173,6 @@ class PriceMoveQueryGateIntegrationTest {
 		mutableClock.set(LocalDateTime.of(SECOND_REPLAY_DATE, LocalTime.of(11, 26, 0)));
 		assertThat(queryMoves()).hasSize(1);
 	}
-
 
 	@Test
 	@DisplayName("두 번째 재생일 오전 10:00에 오후 카드가 보이지 않는다")
@@ -232,7 +230,6 @@ class PriceMoveQueryGateIntegrationTest {
 		});
 	}
 
-
 	@Test
 	@DisplayName("전일 18:40 기사를 근거로 만든 갭 카드가 09:01 조회에 나오고 발행시각이 그대로 실린다")
 	void showsOpeningGapCardRightAfterMarketOpenWithItsPreviousEveningSource() {
@@ -259,7 +256,6 @@ class PriceMoveQueryGateIntegrationTest {
 			assertThat(move.sources()).extracting(NewsItem::title).containsExactly("전일 저녁 기사");
 		});
 	}
-
 
 	@Test
 	@DisplayName("카드가 0건이면 originTradeDate는 있고 moves는 빈 배열이며 status는 EMPTY다")
@@ -330,7 +326,6 @@ class PriceMoveQueryGateIntegrationTest {
 		assertThat(stockResponse).isNotEqualTo(cryptoResponse);
 	}
 
-
 	private static final List<String> LEDGER_TABLES = List.of("orders", "trades", "accounts", "holdings",
 		"holding_lots", "trade_allocations");
 
@@ -366,7 +361,6 @@ class PriceMoveQueryGateIntegrationTest {
 		}
 		return counts;
 	}
-
 
 	@Test
 	@DisplayName("windowStart가 똑같이 09:00인 갭·장중 카드가 저장 순서(id)대로 내려온다")

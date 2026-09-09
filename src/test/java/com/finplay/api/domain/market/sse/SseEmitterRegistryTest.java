@@ -170,7 +170,6 @@ class SseEmitterRegistryTest {
 		assertThat(registry.getEmitters(Market.CRYPTO)).isEmpty();
 	}
 
-
 	@Test
 	void activatingAfterSendSnapshotFailsInsertsAnAlreadyDeadEmitterIntoTheBroadcastSet() throws IOException {
 		SseEmitterRegistry registry = new SseEmitterRegistry();

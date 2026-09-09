@@ -97,7 +97,6 @@ class StockPriceStreamServiceTest {
 		when(instrumentRepository.findByMarketOrderByIdAsc(Market.STOCK)).thenReturn(instruments);
 	}
 
-
 	@Test
 	void buildSnapshotIncludesAllSixteenStockInstrumentsIncludingTheOneWithoutPrice() {
 		List<Instrument> instruments = sixteenStockInstruments();
@@ -143,7 +142,6 @@ class StockPriceStreamServiceTest {
 		assertThat(only.sourceTime()).isEqualTo(lastCloseTime);
 	}
 
-
 	@Test
 	void sendSnapshotSendsEventNamedSnapshotWithoutIdToTheGivenEmitterOnly() throws Exception {
 		Instrument instrument = stockInstrument(1, "SYM1");
@@ -162,7 +160,6 @@ class StockPriceStreamServiceTest {
 		assertThat(sent).contains("event:snapshot");
 		assertThat(sent).doesNotContain("id:");
 	}
-
 
 	@Test
 	void publishScheduledUpdatesSendsPriceEventWithIdOnlyForNewlyRevealedPrice() throws Exception {
@@ -221,7 +218,6 @@ class StockPriceStreamServiceTest {
 		verify(sseEmitterRegistry, never()).getEmitters(any());
 	}
 
-
 	@Test
 	void publishScheduledUpdatesSendsStatusEventOnceWhenMarketStatusChangesAndSuppressesWhenUnchanged()
 		throws Exception {
@@ -247,7 +243,6 @@ class StockPriceStreamServiceTest {
 
 		assertThat(handler.getSentEvents()).hasSize(eventsAfterFirstChange);
 	}
-
 
 	@Test
 	void publishScheduledUpdatesBroadcastsPriceEventToEveryRegisteredEmitterForStock() throws Exception {
@@ -297,7 +292,6 @@ class StockPriceStreamServiceTest {
 		assertThat(failingHandler.isCompleteWithErrorCalled()).isTrue();
 		assertThat(joinSentTextEvents(healthyHandler)).contains("event:price");
 	}
-
 
 	@Test
 	void createEmitterDelegatesToRegistryCreateEmitterForStockMarket() {

@@ -76,7 +76,6 @@ class CryptoPostSellFeedbackDbReaderTest {
 		priceMovePeerStatRepository,
 		cryptoProperties);
 
-
 	@Test
 	@DisplayName("카드 조회 구간을 분으로 내려 넘기고 코인 축(instrumentId · CRYPTO · occurredAt)으로 찾는다")
 	void floorsTheHoldWindowToTheMinuteWhenLookingUpCards() {
@@ -143,7 +142,6 @@ class CryptoPostSellFeedbackDbReaderTest {
 		assertThat(priceMoves.get(1).sources()).isEmpty();
 	}
 
-
 	@Test
 	@DisplayName("카드가 0건이면 집계 행을 보지도 않고 NO_EVENT다")
 	void returnsNoEventWithoutTouchingTheStatTableWhenThereIsNoCard() {
@@ -204,7 +202,6 @@ class CryptoPostSellFeedbackDbReaderTest {
 		assertThat(peerComparison.yourMinutesToSell()).isEqualTo(110);
 	}
 
-
 	@Test
 	@DisplayName("조회 두 메서드에 각각 @Transactional(readOnly = true)가 붙어 있다")
 	void wrapsEachQueryInItsOwnReadOnlyTransaction() throws Exception {
@@ -218,7 +215,6 @@ class CryptoPostSellFeedbackDbReaderTest {
 		assertThat(buildPeerComparison.getAnnotation(Transactional.class)).isNotNull()
 			.satisfies(annotation -> assertThat(annotation.readOnly()).isTrue());
 	}
-
 
 	private void givenCards(PriceMoveEvent... events) {
 		when(priceMoveEventRepository.findByInstrumentIdAndMarketAndOccurredAtBetweenOrderByOccurredAtAscIdAsc(

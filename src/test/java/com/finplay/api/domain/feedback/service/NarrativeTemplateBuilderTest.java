@@ -29,7 +29,6 @@ class NarrativeTemplateBuilderTest {
 
 	private final NarrativePromptBuilder promptBuilder = new NarrativePromptBuilder();
 
-
 	@Test
 	@DisplayName("장중 카드 템플릿이 §템플릿 문장 표대로 조립된다")
 	void intradayCardTemplateMatchesSpecTable() {
@@ -90,7 +89,6 @@ class NarrativeTemplateBuilderTest {
 			.doesNotContain("불안해 정리했습니다");
 	}
 
-
 	static Stream<String> everyTemplateSentence() {
 		NarrativeTemplateBuilder builder = new NarrativeTemplateBuilder();
 		return Stream.of(
@@ -137,7 +135,6 @@ class NarrativeTemplateBuilderTest {
 			.doesNotContain("했다면", "렸다면", "았다면", "었다면", "였다면");
 		assertThat(postSell).doesNotContain("매도하세요", "하세요");
 	}
-
 
 	@Test
 	@DisplayName("부호 1 — 장중 상승은 절댓값 + 상승, 부호 문자가 붙지 않는다")
@@ -221,7 +218,6 @@ class NarrativeTemplateBuilderTest {
 			.contains("수익률은 +0.00%입니다");
 	}
 
-
 	@Test
 	@DisplayName("holdHighBasis=DAILY면 셋째 문장이 시·분 없이 \"M월 d일 종가\"로 적힌다")
 	void postSellTemplateWritesDailyExtremeAsAClosingPrice() {
@@ -268,7 +264,6 @@ class NarrativeTemplateBuilderTest {
 			});
 	}
 
-
 	static Stream<PostSellPromptDto> everyPostSellShape() {
 		return Stream.of(
 			fixturePostSell("-0.0217", "70800", LocalTime.of(11, 5)),
@@ -306,7 +301,6 @@ class NarrativeTemplateBuilderTest {
 		assertThat(numberValidator.validate(template, prompt).detectedExpressions()).containsExactly("5");
 	}
 
-
 	@Test
 	@DisplayName("sameSessionCompleted=false면 셋째 문장이 통째로 빠지고 앞 두 문장은 그대로다")
 	void postSellTemplateDropsThirdSentenceWhenHoldHighIsAbsent() {
@@ -337,7 +331,6 @@ class NarrativeTemplateBuilderTest {
 		assertThat(template).isNotBlank();
 		assertThat(validator.validateCardOrPostSell(template).passed()).isTrue();
 	}
-
 
 	@ParameterizedTest
 	@CsvSource({
@@ -416,7 +409,6 @@ class NarrativeTemplateBuilderTest {
 
 		assertThat(template).contains(expected);
 	}
-
 
 	private static BigDecimal rate(String value) {
 		return new BigDecimal(value);

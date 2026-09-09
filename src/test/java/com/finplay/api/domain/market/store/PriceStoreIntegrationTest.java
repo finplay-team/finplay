@@ -162,7 +162,6 @@ class PriceStoreIntegrationTest {
 		assertThat(result.observedAt()).isEqualTo(FIXED_NOW);
 	}
 
-
 	@Test
 	void recordSnapshotThenGetSnapshotsReturnsStoredPriceAndTimeInAscendingOrder() {
 		PriceStore priceStore = priceStoreAt(FIXED_NOW);

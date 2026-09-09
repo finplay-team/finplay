@@ -90,7 +90,6 @@ class TradeFeedbackWriterTest {
 		assertThat(captor.getValue().getJournalRegenerations()).isZero();
 	}
 
-
 	@Test
 	@DisplayName("흐름·집단 사유만 성립하면 확정하고 regeneration_attempts만 올린다")
 	void finalizesAndCountsOnlyTheGateCounterWhenOnlyTheGateReasonHolds() {

@@ -218,7 +218,6 @@ class PostSellFeedbackIntegrationTest {
 			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
 	}
 
-
 	@Test
 	@DisplayName("토큰 없이 호출하면 401이다")
 	void returnsUnauthorizedWithoutToken() throws Exception {
@@ -226,7 +225,6 @@ class PostSellFeedbackIntegrationTest {
 			.andExpect(status().isUnauthorized())
 			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"));
 	}
-
 
 	private StockReplaySession saveSession(LocalDate serviceDate, LocalDate sourceTradingDate) {
 		LocalDateTime resolvedAt = LocalDateTime.of(serviceDate, LocalTime.of(8, 40));

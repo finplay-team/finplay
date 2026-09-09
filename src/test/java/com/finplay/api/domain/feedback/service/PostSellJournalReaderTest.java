@@ -48,7 +48,6 @@ class PostSellJournalReaderTest {
 
 	private final SellAllocationQueryService sellAllocationQueryService = mock(SellAllocationQueryService.class);
 
-
 	@Test
 	@DisplayName("일기가 하나도 없으면 빈 묶음이고 지문이 null이다")
 	void returnsEmptyDigestWithNullFingerprintWhenNoJournalExists() {
@@ -94,7 +93,6 @@ class PostSellJournalReaderTest {
 		assertThat(digest.fingerprint()).isNotNull();
 	}
 
-
 	@Test
 	@DisplayName("매수 회고는 배분 조회가 준 매수 시각 오름차순 그대로 실린다 — 일괄 조회 순서를 따르지 않는다")
 	void ordersBuyJournalsByAllocationOrderNotByLookupOrder() {
@@ -136,7 +134,6 @@ class PostSellJournalReaderTest {
 			.extracting(JournalDigestDto.BuyJournalLine::buyAt)
 			.containsExactly(FIRST_BUY_AT, SECOND_BUY_AT);
 	}
-
 
 	@Test
 	@DisplayName("상한은 일기가 실제로 있는 매수 체결만 세서 적용한다 — 앞 3건에 일기가 없으면 뒤 2건이 실린다")
@@ -202,7 +199,6 @@ class PostSellJournalReaderTest {
 			.containsExactly(FIRST_BUY_TRADE_ID, SECOND_BUY_TRADE_ID, THIRD_BUY_TRADE_ID);
 	}
 
-
 	@Test
 	@DisplayName("본문이 max-journal-chars를 넘으면 매도·매수 회고 모두 그 길이에서 잘린다")
 	void truncatesBothSellAndBuyContentAtTheConfiguredLimit() {
@@ -230,7 +226,6 @@ class PostSellJournalReaderTest {
 		assertThat(digest.buyJournals().get(0).content()).isEqualTo(BUY_CONTENT);
 	}
 
-
 	@Test
 	@DisplayName("본문의 개행은 공백 하나로 접혀 한 줄이 된다 — CRLF도 같다")
 	void foldsEveryLineBreakInTheContentIntoASingleSpace() {
@@ -255,7 +250,6 @@ class PostSellJournalReaderTest {
 
 		assertThat(digest.sellJournalContent()).isEqualTo("첫 줄입니다. 두 번째").hasSize(12);
 	}
-
 
 	@Test
 	@DisplayName("본문에 사실 줄을 지어 넣어도 조립된 프롬프트에서 독립된 줄로 서지 않는다")
@@ -285,7 +279,6 @@ class PostSellJournalReaderTest {
 
 		assertThat(prompt.lines().filter(header::equals)).hasSize(1);
 	}
-
 
 	@Test
 	@DisplayName("같은 입력이면 같은 지문이다 — 나노초가 0인 시각과 아닌 시각이 섞여도 그렇다")
@@ -359,7 +352,6 @@ class PostSellJournalReaderTest {
 		assertThat(after.buyJournals()).hasSize(1);
 		assertThat(after.fingerprint()).isEqualTo(before);
 	}
-
 
 	private static PostSellPromptDto promptInput(JournalDigestDto digest) {
 		return new PostSellPromptDto(

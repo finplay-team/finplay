@@ -79,7 +79,6 @@ class StockReplayServiceTest {
 		return BigDecimal.valueOf(value);
 	}
 
-
 	@Test
 	void getMarketStatusReturnsClosedWhenNoSessionRowExists() {
 		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY)).thenReturn(Optional.empty());
@@ -161,7 +160,6 @@ class StockReplayServiceTest {
 
 		assertThat(service.getMarketStatus()).isEqualTo(StockMarketStatus.CLOSED);
 	}
-
 
 	@Test
 	void getCurrentPriceReturnsFirstCandleOpenDuringFirstCandleWindow() {
@@ -302,7 +300,6 @@ class StockReplayServiceTest {
 		assertThat(dto.replaySession()).isNull();
 	}
 
-
 	@Test
 	void getCurrentPricesComputesReadySessionAndMarketStatusOnlyOnceForMultipleInstruments() {
 		Long secondInstrumentId = 2L;
@@ -423,7 +420,6 @@ class StockReplayServiceTest {
 
 		assertThat(single).isEqualTo(batchFirst);
 	}
-
 
 	private static final LocalDate FALLBACK_TRADING_DATE = LocalDate.of(2026, 7, 24);
 	private static final LocalDate FRIDAY_BEFORE_SATURDAY = LocalDate.of(2026, 7, 31);
@@ -612,7 +608,6 @@ class StockReplayServiceTest {
 		assertThat(dto.replaySession()).isNull();
 	}
 
-
 	@Test
 	void getRevealedCandlesReturnsEmptyListWhenNoReadySession() {
 		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY)).thenReturn(Optional.empty());
@@ -756,7 +751,6 @@ class StockReplayServiceTest {
 		verify(stockCandleRepository).findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
 			INSTRUMENT_ID, WEEKDAY, LocalTime.of(9, 1), LocalTime.of(9, 4));
 	}
-
 
 	@Test
 	void getRevealedAggregatedCandlesReturnsEmptyListWhenNoReadySession() {
@@ -983,7 +977,6 @@ class StockReplayServiceTest {
 				INSTRUMENT_ID, WEEKDAY.minusDays(400), WEEKDAY.minusDays(1));
 	}
 
-
 	@Test
 	void getRevealedAggregatedCandlesExcludesLeadingPartialWeekBucketButIncludesNextCompleteWeekWhenFromFallsMidWeek() {
 		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
@@ -1054,7 +1047,6 @@ class StockReplayServiceTest {
 		assertThat(result).hasSize(1);
 		assertThat(result.get(0).tradingDate()).isEqualTo(LocalDate.of(2026, 6, 1));
 	}
-
 
 	private static List<LocalDate> consecutiveDaysDescending(LocalDate mostRecentInclusive, int count) {
 		List<LocalDate> dates = new ArrayList<>();
@@ -1189,7 +1181,6 @@ class StockReplayServiceTest {
 		assertThat(result.get(0).tradingDate()).isEqualTo(firstOfMonthFrom);
 	}
 
-
 	@Test
 	void getRevealedAggregatedCandlesNarrowRangeStartQueryEndMovesToTheDayBeforeTheCursorDate() {
 		when(stockReplaySessionRepository.findByServiceDate(WEEKDAY))
@@ -1307,7 +1298,6 @@ class StockReplayServiceTest {
 			.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
 				any(), eq(WEEKDAY), any(), any());
 	}
-
 
 	@Test
 	void getRevealedCandlesFallsBackToLastReplayedTradingDayOnWeekendWhenNoSessionRowExists() {
@@ -1557,7 +1547,6 @@ class StockReplayServiceTest {
 			.findByInstrumentIdAndTradingDateAndCandleTimeBetweenOrderByCandleTimeAsc(
 				eq(INSTRUMENT_ID), eq(FALLBACK_TRADING_DATE), any(), any());
 	}
-
 
 	private static final LocalDate TUESDAY_AFTER_HOLIDAY = LocalDate.of(2026, 8, 18);
 	private static final LocalDate FRIDAY_BEFORE_HOLIDAY = LocalDate.of(2026, 8, 14);

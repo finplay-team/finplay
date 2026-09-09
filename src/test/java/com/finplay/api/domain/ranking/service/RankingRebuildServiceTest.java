@@ -308,7 +308,6 @@ class RankingRebuildServiceTest {
 		assertThat(next).isEqualTo(LocalDateTime.of(2026, 8, 9, 4, 20));
 	}
 
-
 	@Test
 	@DisplayName("계좌 배치 조회를 ZADD와 같은 청크 크기로 나눠 부르고 순서를 보존한다")
 	void rebuildSplitsAccountLookupIntoChunksOfTheSameSizeAsZadd() {

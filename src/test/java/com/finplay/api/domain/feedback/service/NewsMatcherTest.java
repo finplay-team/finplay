@@ -111,7 +111,6 @@ class NewsMatcherTest {
 		return items.stream().map(MarketNewsItem::getTitle).toList();
 	}
 
-
 	@Test
 	@DisplayName("장중은 [windowEnd - 30분, windowEnd + 5분]을 NEWS 종류로만 묻는다")
 	void intradayQueriesNewsOnlyWithinTheConfiguredWindowAroundWindowEnd() {
@@ -144,7 +143,6 @@ class NewsMatcherTest {
 			LocalDateTime.of(TUESDAY, LocalTime.of(9, 50)),
 			LocalDateTime.of(TUESDAY, LocalTime.of(10, 1)));
 	}
-
 
 	@Test
 	@DisplayName("시가 갭 뉴스 구간은 [직전 영업일 15:30, D 09:00]이고 월요일이면 금요일이 하한이다")
@@ -186,7 +184,6 @@ class NewsMatcherTest {
 			any(),
 			eq(LocalDateTime.of(TUESDAY, LocalTime.of(9, 0))));
 	}
-
 
 	@Test
 	@DisplayName("시가 갭은 전장 뉴스가 상한을 채워도 D-1 공시를 먼저 남긴다")
@@ -234,7 +231,6 @@ class NewsMatcherTest {
 			LocalDateTime.of(FRIDAY_BEFORE_MONDAY, LocalTime.of(20, 0)).toString(),
 			LocalDateTime.of(FRIDAY_BEFORE_MONDAY, LocalTime.of(18, 0)).toString());
 	}
-
 
 	@Test
 	@DisplayName("이벤트 시각과 가까운 순으로 정렬해 max-sources-per-card만큼만 남긴다")

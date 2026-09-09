@@ -100,7 +100,6 @@ class ExitPresetScenarioReachabilityTest {
 		});
 	}
 
-
 	private static final BigDecimal RATE_STEP = new BigDecimal("0.1");
 
 	@Test

@@ -87,7 +87,6 @@ class KisDailyCandleClientImplTest {
 		return "{\"output2\":[" + String.join(",", rows) + "]}";
 	}
 
-
 	@Test
 	void fetchDailyCandlesMapsOutput2FieldsAndAlwaysRequestsAdjustedPrice() {
 		RestClient.Builder builder = newBuilder();
@@ -115,7 +114,6 @@ class KisDailyCandleClientImplTest {
 		assertThat(candle.volume()).isEqualTo(123456L);
 		server.verify();
 	}
-
 
 	@Test
 	void fetchDailyCandlesStitchesMultiplePagesUntilReachingFromDate() {
@@ -173,7 +171,6 @@ class KisDailyCandleClientImplTest {
 		assertThat(candles).isEmpty();
 		server.verify();
 	}
-
 
 	@Test
 	void fetchDailyCandlesStopsAfterTwelvePagesEvenWhenFromDateIsNotYetReached() {
@@ -273,7 +270,6 @@ class KisDailyCandleClientImplTest {
 			appender.stop();
 		}
 	}
-
 
 	@Test
 	void fetchDailyCandlesDiscardsRowWithNonPositivePriceButKeepsValidRowInSamePage() {
@@ -419,7 +415,6 @@ class KisDailyCandleClientImplTest {
 		assertThat(candles.get(0).tradingDate()).isEqualTo(from);
 		server.verify();
 	}
-
 
 	@Test
 	void fetchDailyCandlesRetriesWhenKisRejectsWithPerSecondRateLimit() {

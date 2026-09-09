@@ -162,7 +162,6 @@ class CommunityPostImageIntegrationTest {
 		assertThat(imageRepository.count()).isZero();
 	}
 
-
 	@Test
 	void deletingPostWithImageRemovesDatabaseRowAndPhysicalFile() throws Exception {
 		User author = createUser("delete-author");

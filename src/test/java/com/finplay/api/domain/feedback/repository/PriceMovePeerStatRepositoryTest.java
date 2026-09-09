@@ -81,7 +81,6 @@ class PriceMovePeerStatRepositoryTest {
 			priceMoveEvent, serviceDate, 12, 5, medianMinutesToSell, AGGREGATED_AT);
 	}
 
-
 	@Test
 	@DisplayName("같은 카드라도 서비스 날짜가 다르면 집계 2행이 공존한다 — 재재생 시 첫날 집계가 덮이지 않는다")
 	void statsForTheSameCardCoexistAcrossDifferentServiceDates() {
@@ -107,7 +106,6 @@ class PriceMovePeerStatRepositoryTest {
 		assertThatThrownBy(() -> priceMovePeerStatRepository.saveAndFlush(duplicate))
 			.isInstanceOf(DataIntegrityViolationException.class);
 	}
-
 
 	@Test
 	@DisplayName("같은 카드가 두 서비스 날짜에 행을 가져도 조회는 그 서비스 날짜 행만 돌려준다")
@@ -161,7 +159,6 @@ class PriceMovePeerStatRepositoryTest {
 		assertThat(priceMovePeerStatRepository.count()).isEqualTo(2);
 	}
 
-
 	@Test
 	@DisplayName("median_minutes_to_sell이 NULL인 행(보유자 전원 미매도)이 저장된다 — 0이 아니라 NULL인 것이 의도다")
 	void statRowWithNullMedianIsPersistedWhenNobodySold() {
@@ -190,7 +187,6 @@ class PriceMovePeerStatRepositoryTest {
 		assertThat(found.getHolderCount()).isZero();
 		assertThat(found.getMedianMinutesToSell()).isNull();
 	}
-
 
 	@Test
 	@DisplayName("저장한 집계를 다시 읽으면 카드 참조와 집계값이 그대로 복원된다")

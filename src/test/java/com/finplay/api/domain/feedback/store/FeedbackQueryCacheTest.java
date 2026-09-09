@@ -97,7 +97,6 @@ class FeedbackQueryCacheTest {
 			newsProperties(maxItemsPerBriefing));
 	}
 
-
 	@Test
 	@DisplayName("코인 요약 TTL은 다음 정시 05분까지다 — 10:03이면 2분")
 	void cryptoSummaryTextExpiresAtTheNextHourlyFiveMinuteMark() {
@@ -204,7 +203,6 @@ class FeedbackQueryCacheTest {
 		verify(valueOperations, never()).set(anyString(), anyString(), any(Duration.class));
 	}
 
-
 	@Test
 	@DisplayName("브리핑 items 키에 절단 상한이 들어가 max-items-per-briefing을 바꾸면 다른 키가 된다")
 	void stockBriefingItemsKeyIncludesTheTruncationLimitSoChangingItSplitsTheKey() {
@@ -220,7 +218,6 @@ class FeedbackQueryCacheTest {
 				"feedback:query-cache:v1:stock-briefing-items:2026-08-05:30",
 				"feedback:query-cache:v1:stock-briefing-items:2026-08-05:10");
 	}
-
 
 	@Test
 	@DisplayName("로더가 '없음'을 반환하면 저장하지 않는다")
@@ -244,7 +241,6 @@ class FeedbackQueryCacheTest {
 		assertThat(result).isEmpty();
 		verify(valueOperations, never()).set(anyString(), anyString(), any(Duration.class));
 	}
-
 
 	@Test
 	@DisplayName("캐시에 값이 있으면 로더도 락도 건드리지 않고 그 값을 반환한다")
@@ -293,7 +289,6 @@ class FeedbackQueryCacheTest {
 		verify(valueOperations).set(eq(STOCK_BRIEFING_ITEMS_KEY), anyString(), any(Duration.class));
 	}
 
-
 	@Test
 	@DisplayName("enabled=false면 조회가 Redis도 락도 전혀 접촉하지 않고 로더 결과를 그대로 낸다")
 	void disabledSkipsRedisAndTheLockEntirely() {
@@ -325,7 +320,6 @@ class FeedbackQueryCacheTest {
 		verifyNoInteractions(untouchedTemplate);
 	}
 
-
 	@Test
 	@DisplayName("enabled=true면 무효화가 해당 코인 키를 지운다")
 	void evictDeletesTheCryptoKeys() {
@@ -337,7 +331,6 @@ class FeedbackQueryCacheTest {
 		verify(redisTemplate).delete(CRYPTO_SUMMARY_KEY);
 		verify(redisTemplate).delete(CRYPTO_BRIEFING_TEXT_KEY);
 	}
-
 
 	@Test
 	@DisplayName("Redis 읽기·쓰기가 예외를 던져도 로더 결과가 그대로 나오고 예외가 새지 않는다")
@@ -360,7 +353,6 @@ class FeedbackQueryCacheTest {
 
 		assertThatCode(() -> cache.evictCryptoSummaryText(INSTRUMENT_ID)).doesNotThrowAnyException();
 	}
-
 
 	@Test
 	@DisplayName("대기 중 락 보유자가 채운 값이 보이면 그 값을 쓰고 로더를 부르지 않는다")

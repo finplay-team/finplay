@@ -642,7 +642,6 @@ class OrderExecutionServiceTest {
 		assertThat(holding.isActive()).isFalse();
 	}
 
-
 	private void assertBusinessExceptionAndNoSideEffects(OrderCreateRequest request, ErrorCode expectedErrorCode) {
 		assertThatThrownBy(() -> orderExecutionService.execute(USER_ID, IDEMPOTENCY_KEY, REQUEST_HASH, request))
 			.isInstanceOf(BusinessException.class)

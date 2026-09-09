@@ -101,7 +101,6 @@ class PostSellFeedbackServiceTest {
 		when(postSellJournalReader.read(SELL_TRADE_ID)).thenReturn(JournalDigestDto.empty());
 	}
 
-
 	@Test
 	@DisplayName("기존 서술이 없으면 만들어 저장하고 응답에 실는다 — narrativeStatus는 READY다")
 	void createsAndStoresTheNarrativeOnTheFirstQuery() {
@@ -117,7 +116,6 @@ class PostSellFeedbackServiceTest {
 		verify(tradeFeedbackWriter).create(
 			eq(USER_ID), eq(SELL_TRADE_ID), eq(NarrativeResultDto.llm(LLM_NARRATIVE)), isNull(), eq(NOW));
 	}
-
 
 	@Test
 	@DisplayName("기존 서술이 있으면 그것을 쓰고 LLM을 부르지 않으며 저장하지도 않는다")
@@ -151,7 +149,6 @@ class PostSellFeedbackServiceTest {
 		assertThat(second.narrative()).isEqualTo(first.narrative());
 		assertThat(second.narrativeSource()).isEqualTo(first.narrativeSource());
 	}
-
 
 	@Test
 	@DisplayName("LLM이 실패해 템플릿으로 대체돼도 narrativeStatus가 READY이고 서술이 비지 않는다")
@@ -192,7 +189,6 @@ class PostSellFeedbackServiceTest {
 		assertThat(response.counterfactuals()).isEqualTo(facts.counterfactuals());
 		assertThat(response.peerComparison()).isEqualTo(facts.peerComparison());
 	}
-
 
 	@Test
 	@DisplayName("동시 삽입으로 UNIQUE(trade_id)가 충돌해도 500이 아니라 방금 만든 문장으로 200이다")
@@ -245,7 +241,6 @@ class PostSellFeedbackServiceTest {
 			.isInstanceOf(IllegalStateException.class);
 	}
 
-
 	@Test
 	@DisplayName("reader가 404·403·400으로 거부하면 LLM을 부르지 않고 저장도 하지 않는다")
 	void neverGeneratesANarrativeWhenTheReaderRejectsTheRequest() {
@@ -259,7 +254,6 @@ class PostSellFeedbackServiceTest {
 
 		verifyNoInteractions(narrativeService, tradeFeedbackWriter, tradeFeedbackRepository);
 	}
-
 
 	@Test
 	@DisplayName("프롬프트에 수치·파생 사실·카드가 실리고 반사실은 애초에 자리가 없으며 집단 비교는 null이다")
@@ -342,7 +336,6 @@ class PostSellFeedbackServiceTest {
 		assertThat(captor.getValue().priceMoves()).isEmpty();
 	}
 
-
 	@Test
 	@DisplayName("게이트가 열리면 첫 조회에서 재생성하고 성공 저장을 부른다")
 	void regeneratesOnceWhenTheGateIsOpen() {
@@ -415,7 +408,6 @@ class PostSellFeedbackServiceTest {
 		verifyNoInteractions(narrativeService, tradeFeedbackWriter);
 	}
 
-
 	@Test
 	@DisplayName("재생성이 템플릿으로 폴백하면 기존 서술을 유지하고 실패만 누적한다")
 	void keepsTheStoredNarrativeWhenRegenerationFallsBackToTheTemplate() {
@@ -482,7 +474,6 @@ class PostSellFeedbackServiceTest {
 		assertThat(captor.getValue().closePrice()).isEqualByComparingTo("69200");
 		assertThat(captor.getValue().sellToCloseRate()).isEqualByComparingTo("0.0102");
 	}
-
 
 	@Test
 	@DisplayName("최초 생성에서 이번 프롬프트에 실린 일기의 지문을 함께 저장한다")
@@ -641,7 +632,6 @@ class PostSellFeedbackServiceTest {
 		verify(tradeFeedbackWriter, never()).applyRegenerated(any(), any(), any(), any(), any());
 	}
 
-
 	@Test
 	@DisplayName("일기 사유로 상한을 다 쓴 체결도 게이트가 열리면 흐름·집단 사유로 재생성한다")
 	void stillRegeneratesForTheGateReasonAfterTheJournalLimitIsExhausted() {
@@ -671,7 +661,6 @@ class PostSellFeedbackServiceTest {
 		verify(tradeFeedbackWriter).applyRegenerated(
 			eq(SELL_TRADE_ID), any(), eq(CURRENT_FINGERPRINT), eq(JOURNAL_REASON_ONLY), eq(NOW));
 	}
-
 
 	@Test
 	@DisplayName("두 사유가 동시에 성립해도 생성기를 정확히 1회 부르고 사유 둘을 함께 넘긴다")
@@ -703,7 +692,6 @@ class PostSellFeedbackServiceTest {
 		verify(narrativeService, times(1)).resolvePostSellNarrative(any());
 		verify(tradeFeedbackWriter).recordFailedRegeneration(SELL_TRADE_ID, BOTH_REASONS);
 	}
-
 
 	@Test
 	@DisplayName("PostSellFeedbackService에는 클래스·메서드 어디에도 @Transactional이 없다")
@@ -745,7 +733,6 @@ class PostSellFeedbackServiceTest {
 		assertThat(response.returnRate()).isEqualByComparingTo("-0.0217");
 		verifyNoInteractions(postSellFeedbackReader);
 	}
-
 
 	private void givenFacts(PostSellFeedbackResponse facts) {
 		when(postSellFeedbackReader.read(USER_ID, SELL_TRADE_ID)).thenReturn(facts);

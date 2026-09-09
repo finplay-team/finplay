@@ -54,7 +54,6 @@ class InstrumentNewsControllerTest {
 	@MockitoBean
 	private JwtTokenProvider jwtTokenProvider;
 
-
 	@Test
 	@DisplayName("토큰 없이 호출하면 401이고 서비스를 부르지 않는다")
 	void rejectsMissingAuthenticationWithoutCallingService() throws Exception {
@@ -77,7 +76,6 @@ class InstrumentNewsControllerTest {
 
 		verifyNoInteractions(instrumentNewsQueryService);
 	}
-
 
 	@Test
 	@DisplayName("READY 응답이 계약대로 직렬화된다 — 다섯 값의 items와 요약 문장")
@@ -127,7 +125,6 @@ class InstrumentNewsControllerTest {
 			.andExpect(jsonPath("$.narrativeSource").doesNotExist())
 			.andExpect(jsonPath("$.generatedAt").doesNotExist());
 	}
-
 
 	@Test
 	@DisplayName("개장 전이면 NOT_YET이고 originTradeDate는 채워지며 200이다")
@@ -191,7 +188,6 @@ class InstrumentNewsControllerTest {
 			.andExpect(jsonPath("$.summary").doesNotExist())
 			.andExpect(jsonPath("$.items.length()").value(1));
 	}
-
 
 	@Test
 	@DisplayName("없는 종목이면 404 NOT_FOUND 공통 오류 형식이다")

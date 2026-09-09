@@ -196,7 +196,6 @@ class StockCandleRepositoryTest {
 		assertThat(exact.get().getCandleTime()).isEqualTo(LocalTime.of(9, 1));
 	}
 
-
 	@Test
 	void findFirstByCandleTimeDescReturnsTheLastCandleOfTheDayEvenWhenItIsNotAtHalfPastThree() {
 		stockCandleRepository.save(newCandle(instrumentA, TRADING_DATE, LocalTime.of(9, 0), "71200"));
@@ -233,7 +232,6 @@ class StockCandleRepositoryTest {
 		assertThat(last).isPresent();
 		assertThat(last.get().getCandleTime()).isEqualTo(LocalTime.of(9, 0));
 	}
-
 
 	@Test
 	void findByCandleTimeBetweenReturnsOnlyCandlesWithinRangeOrderedByTimeAscending() {
@@ -289,7 +287,6 @@ class StockCandleRepositoryTest {
 		assertThat(candles).isEmpty();
 	}
 
-
 	@Test
 	void existsByTradingDateReturnsTrueWhenAnyInstrumentHasACandleOnThatDate() {
 		stockCandleRepository.save(newCandle(instrumentA, TRADING_DATE, LocalTime.of(9, 0), "71200"));
@@ -310,7 +307,6 @@ class StockCandleRepositoryTest {
 
 		assertThat(stockCandleRepository.existsByTradingDate(TRADING_DATE)).isFalse();
 	}
-
 
 	@Test
 	void findByTradingDateBetweenReturnsCandlesAcrossMultipleTradingDatesOrderedByDateThenTimeAscending() {
@@ -377,7 +373,6 @@ class StockCandleRepositoryTest {
 		assertThat(candles).allMatch(c -> c.getInstrument().getId().equals(instrumentA.getId()));
 	}
 
-
 	@Test
 	void existsByInstrumentIdAndTradingDateReturnsTrueWhenThatInstrumentHasACandleOnThatDate() {
 		stockCandleRepository.save(newCandle(instrumentA, TRADING_DATE, LocalTime.of(9, 0), "71200"));
@@ -401,7 +396,6 @@ class StockCandleRepositoryTest {
 		assertThat(stockCandleRepository.existsByInstrumentIdAndTradingDate(instrumentA.getId(), TRADING_DATE))
 			.isFalse();
 	}
-
 
 	@Test
 	void findDistinctTradingDateDedupesMultipleCandlesOnTheSameTradingDate() {

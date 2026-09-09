@@ -63,7 +63,6 @@ class PostSellFeedbackControllerTest {
 	@MockitoBean
 	private JwtTokenProvider jwtTokenProvider;
 
-
 	@Test
 	@DisplayName("토큰 없이 호출하면 401이고 서비스를 부르지 않는다")
 	void rejectsMissingAuthenticationWithoutCallingService() throws Exception {
@@ -86,7 +85,6 @@ class PostSellFeedbackControllerTest {
 
 		verifyNoInteractions(postSellFeedbackService);
 	}
-
 
 	@Test
 	@DisplayName("tradeId가 없으면 404 NOT_FOUND 공통 오류 형식이다")
@@ -137,7 +135,6 @@ class PostSellFeedbackControllerTest {
 
 		verifyNoInteractions(postSellFeedbackService);
 	}
-
 
 	@Test
 	@DisplayName("원장 수치가 계약대로 직렬화된다 — buyAt·sellAt은 원본 거래일 날짜가 붙은 시각이다")
@@ -202,7 +199,6 @@ class PostSellFeedbackControllerTest {
 			.andExpect(jsonPath("$.narrativeStatus").isEmpty())
 			.andExpect(jsonPath("$.length()").value(CONTRACT_FIELD_COUNT));
 	}
-
 
 	@Test
 	@DisplayName("매도 후 흐름·반사실·집단 비교가 계약 필드 집합대로 직렬화된다 — priceMoveId·narrativeSource·buyAt·sellAt 포함")
@@ -340,7 +336,6 @@ class PostSellFeedbackControllerTest {
 			null,
 			null);
 	}
-
 
 	@Test
 	@DisplayName("peerComparison.status=NO_EVENT면 priceMoveId를 포함한 전 필드가 null로 직렬화된다")

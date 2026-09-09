@@ -181,7 +181,6 @@ class PostSellFeedbackJournalIntegrationTest {
 			TradeAllocation.create(sellTrade, lot, new BigDecimal("10"), 700_000L, 105L, VIEW_AT));
 	}
 
-
 	@Test
 	@DisplayName("일기 없이 최초 조회한 뒤 회고를 쓰면 재조회에서 서술이 다시 만들어지고 지문이 NULL에서 값으로 바뀐다")
 	void regeneratesAfterAJournalIsWrittenFollowingTheFirstQuery() {
@@ -247,7 +246,6 @@ class PostSellFeedbackJournalIntegrationTest {
 				value -> assertThat(value).as("수정된 일기의 지문이 저장된다").isNotEqualTo(firstFingerprint));
 	}
 
-
 	@Test
 	@DisplayName("narrative_finalized=true인 체결도 일기를 쓰면 재생성되고 확정 상태와 흐름·집단 카운터는 그대로다")
 	void regeneratesForTheJournalReasonEvenAfterTheNarrativeWasFinalized() {
@@ -279,7 +277,6 @@ class PostSellFeedbackJournalIntegrationTest {
 			.containsEntry("regeneration_attempts", 1)
 			.containsEntry("journal_regenerations", 1);
 	}
-
 
 	@Test
 	@DisplayName("일기 사유 재생성이 누적 상한을 넘지 않고 기존 서술과 지문이 유지된다")
@@ -317,7 +314,6 @@ class PostSellFeedbackJournalIntegrationTest {
 			.containsEntry("journal_fingerprint", null);
 	}
 
-
 	@Test
 	@DisplayName("같은 종목을 매매한 다른 회원의 회고는 프롬프트에 실리지 않는다")
 	void neverPutsAnotherMembersJournalIntoThePrompt() {
@@ -335,7 +331,6 @@ class PostSellFeedbackJournalIntegrationTest {
 				assertThat(prompt).doesNotContain(OTHER_MEMBER_BUY_JOURNAL);
 			});
 	}
-
 
 	@Test
 	@DisplayName("재생성이 일어나는 조회 전후로 두 일기 테이블의 값과 updated_at이 그대로이고 원장도 변하지 않는다")
@@ -364,7 +359,6 @@ class PostSellFeedbackJournalIntegrationTest {
 		assertThat(mutableLedgerValues()).isEqualTo(mutableLedgerBefore);
 	}
 
-
 	@Test
 	@DisplayName("일기의 지시문에 흔들린 권유 문장은 후검증에 걸려 템플릿으로 대체되고 200·READY가 유지된다")
 	void fallsBackToTheTemplateWhenTheGeneratedNarrativeTurnsIntoARecommendation() {
@@ -381,7 +375,6 @@ class PostSellFeedbackJournalIntegrationTest {
 		assertThat(row).containsEntry("narrative_source", NarrativeSource.TEMPLATE.name());
 		assertThat((String)row.get("journal_fingerprint")).hasSize(64);
 	}
-
 
 	private PostSellFeedbackResponse getPostSellFeedback() {
 		return postSellFeedbackService.getPostSellFeedback(owner.getId(), sellTrade.getId());

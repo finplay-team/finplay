@@ -309,7 +309,6 @@ class RankingRebuildIntegrationTest {
 		assertThat(snapshotLedgerOf(accountId)).as("원복되지 않았다: %s", restore).isEqualTo(baseline);
 	}
 
-
 	private SoldAccount sellForNaturalPnl(String scenario, BigDecimal sellPrice) throws Exception {
 		User user = createUser(scenario);
 		Account account = createAccount(user);
@@ -368,7 +367,6 @@ class RankingRebuildIntegrationTest {
 
 	private record SoldAccount(Long accountId, String nickname, String accessToken) {
 	}
-
 
 	private RankingListResponse getRankings(String accessToken) throws Exception {
 		String body = mockMvc.perform(get("/api/rankings")

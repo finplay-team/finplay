@@ -200,7 +200,6 @@ class PriceQueryServiceTest {
 		verifyNoInteractions(priceStore);
 	}
 
-
 	@Test
 	void getPriceQuoteReturnsAvailableQuoteWhenStockProviderHasPriceWithoutThrowing() {
 		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
@@ -284,7 +283,6 @@ class PriceQueryServiceTest {
 		assertThat(result.status()).isEqualTo(PriceStatus.UNAVAILABLE);
 		verify(priceStore, never()).getLatestPrice(any());
 	}
-
 
 	@Test
 	void getPriceQuoteReturnsAvailableQuoteWithLastKnownPriceEvenThoughObservedLongAgo() {
@@ -370,7 +368,6 @@ class PriceQueryServiceTest {
 		assertThat(result.stockReplaySession()).isNull();
 	}
 
-
 	@Test
 	void getPriceQuoteReturnsAvailableWhenObservedAtIsFreshEvenThoughReceivedAtIsStale() {
 		InstrumentRepository instrumentRepository = mock(InstrumentRepository.class);
@@ -414,7 +411,6 @@ class PriceQueryServiceTest {
 		assertThat(result.priceQuote().price()).isEqualByComparingTo("50000000");
 		assertThat(result.stockReplaySession()).isNull();
 	}
-
 
 	@Test
 	void getOrderExecutionPriceStillThrowsPriceUnavailableWhenCryptoConnectionIsDisconnected() {
@@ -480,7 +476,6 @@ class PriceQueryServiceTest {
 			.isInstanceOf(BusinessException.class)
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode()).isEqualTo(ErrorCode.PRICE_UNAVAILABLE));
 	}
-
 
 	@Test
 	void getPriceQuotesForStockDelegatesToProviderBatchMethodOnceAndPreservesOrder() {
@@ -552,7 +547,6 @@ class PriceQueryServiceTest {
 		verify(priceStore, times(1)).getConnectionStatus();
 		verify(priceStore, never()).isPriceAvailable(any());
 	}
-
 
 	@Test
 	void getPriceQuotesReturnsAvailableQuoteWithLastKnownPriceEvenThoughObservedLongAgo() {
@@ -641,7 +635,6 @@ class PriceQueryServiceTest {
 			.isInstanceOf(IllegalArgumentException.class);
 		verifyNoInteractions(stockPriceProvider, priceStore);
 	}
-
 
 	@Test
 	void getPriceQuoteForTutorialSampleInstrumentDelegatesToSampleServiceWithoutTouchingRealProviders() {

@@ -123,7 +123,6 @@ class HoldingServiceTest {
 			.satisfies(ex -> assertThat(((BusinessException)ex).getErrorCode()).isEqualTo(ErrorCode.NOT_FOUND));
 	}
 
-
 	@Test
 	void findHoldingIdReturnsHoldingIdWhenOwnerAndInstrumentMatch() {
 		AccountService accountService = mock(AccountService.class);
@@ -189,7 +188,6 @@ class HoldingServiceTest {
 		org.mockito.Mockito.verify(accountService).getAccountFor(1L, Market.CRYPTO);
 		org.mockito.Mockito.verify(accountService, org.mockito.Mockito.never()).getAccountFor(1L, Market.STOCK);
 	}
-
 
 	@Test
 	void findHoldingForOwnerReturnsHoldingWhenOwnerMatches() {

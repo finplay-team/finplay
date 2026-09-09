@@ -159,7 +159,6 @@ class FeedbackQueryCacheBoundaryIntegrationTest {
 			LocalDateTime.of(SERVICE_DATE, LocalTime.of(8, 0))));
 	}
 
-
 	private void saveNews(Instrument instrument, String title, LocalDateTime publishedAt) {
 		marketNewsItemRepository.save(MarketNewsItem.create(
 			instrument, MarketNewsItemType.NEWS, title, "테스트경제",
@@ -180,7 +179,6 @@ class FeedbackQueryCacheBoundaryIntegrationTest {
 	private String cryptoSummaryKey() {
 		return "feedback:query-cache:v1:crypto-summary:" + crypto.getId();
 	}
-
 
 	@Test
 	@DisplayName("15:29와 15:31의 두 조회가 같은 종목·같은 거래일인데도 서로 다른 요약을 본다")
@@ -207,7 +205,6 @@ class FeedbackQueryCacheBoundaryIntegrationTest {
 			.isEqualTo(FULL_TEXT);
 	}
 
-
 	@Test
 	@DisplayName("코인 요약 키의 실제 TTL이 다음 정시 05분을 넘지 않는다 — 10:03이면 120초 이하, 10:07이면 3480초 이하")
 	void cryptoSummaryKeyNeverOutlivesTheNextHourlyBatchMark() {
@@ -228,7 +225,6 @@ class FeedbackQueryCacheBoundaryIntegrationTest {
 		assertThat(justBeforeTheMark).isPositive().isLessThanOrEqualTo(120L);
 		assertThat(justAfterTheMark).isPositive().isLessThanOrEqualTo(3480L);
 	}
-
 
 	@Test
 	@DisplayName("Redis에 닿지 못해도 요약 조회·브리핑 조회가 예외 없이 정상 응답 본문을 낸다")
@@ -282,7 +278,6 @@ class FeedbackQueryCacheBoundaryIntegrationTest {
 			return socket.getLocalPort();
 		}
 	}
-
 
 	@Test
 	@DisplayName("요약 조회·브리핑 조회 전후로 주문·체결·계좌·잔액·보유·손익이 변하지 않는다")

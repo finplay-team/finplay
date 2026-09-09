@@ -44,7 +44,6 @@ class NarrativeValidatorTest {
 			JUDGEMENT.stream().map(expression -> Arguments.of(expression, true)));
 	}
 
-
 	@Test
 	@DisplayName("spec §후검증 표가 5줄 37개이고 줄별 개수가 6·8·7·5·11이다")
 	void specTableHasThirtySevenExpressions() {
@@ -91,7 +90,6 @@ class NarrativeValidatorTest {
 		assertThat(result.passed()).isFalse();
 	}
 
-
 	@ParameterizedTest(name = "[{0}] 판단·훈수={1}")
 	@MethodSource("everyForbiddenExpression")
 	@DisplayName("판단·훈수 11개만 요약에서 통과하고 나머지 26개는 요약에서도 적발된다")
@@ -115,7 +113,6 @@ class NarrativeValidatorTest {
 		assertThat(validator.validateCardOrPostSell(carrier).passed()).isTrue();
 		assertThat(validator.validateSummaryOrBriefing(carrier).passed()).isTrue();
 	}
-
 
 	@Test
 	@DisplayName("여러 표현이 걸리면 등장 순서가 아니라 §후검증 표 순서로 담긴다")
@@ -156,7 +153,6 @@ class NarrativeValidatorTest {
 
 		assertThat(result.detectedExpressions()).isUnmodifiable();
 	}
-
 
 	@Test
 	@DisplayName("문구 1 — 금지 표현 5줄이 §후검증 파트별 적용 표대로 동작한다")
@@ -217,7 +213,6 @@ class NarrativeValidatorTest {
 		assertThat(validator.validateCardOrPostSell(narration).passed()).isTrue();
 	}
 
-
 	@ParameterizedTest
 	@ValueSource(strings = {
 		"주가가 오를까 지켜본 기사였습니다.",
@@ -230,7 +225,6 @@ class NarrativeValidatorTest {
 	void nearMissExpressionsPass(String narrative) {
 		assertThat(validator.validateCardOrPostSell(narrative).passed()).isTrue();
 	}
-
 
 	@ParameterizedTest
 	@ValueSource(strings = {"더 기다렸다면 달랐을 수 있습니다", "그대로 보유했다면 어땠을지 모릅니다"})
@@ -255,7 +249,6 @@ class NarrativeValidatorTest {
 	void addedConditionalEndingsDoNotCatchPlainPastTense(String narration) {
 		assertThat(validator.validateCardOrPostSell(narration).passed()).isTrue();
 	}
-
 
 	@ParameterizedTest
 	@NullSource

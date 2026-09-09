@@ -156,23 +156,19 @@ class GlobalExceptionHandlerTest {
 
 		@PostMapping("/test/validate")
 		void validate(@Valid @RequestBody
-		TestRequest request) {
-		}
+		TestRequest request) {}
 
 		@org.springframework.web.bind.annotation.GetMapping("/test/required-param")
 		void requiredParam(@RequestParam
-		String q) {
-		}
+		String q) {}
 
 		@org.springframework.web.bind.annotation.GetMapping("/test/min-param")
 		void minParam(@RequestParam @Min(1)
-		int page) {
-		}
+		int page) {}
 
 		@org.springframework.web.bind.annotation.GetMapping("/test/enum-param")
 		void enumParam(@RequestParam(required = false)
-		ProbeStatus status) {
-		}
+		ProbeStatus status) {}
 	}
 
 	enum ProbeStatus {

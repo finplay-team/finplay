@@ -159,7 +159,6 @@ abstract class FeedbackQueryCacheWiringSupport {
 			LocalDateTime.of(SERVICE_DATE, LocalTime.of(9, 5))));
 	}
 
-
 	protected int stockSummaryRowCallsAcrossThreeQueries() {
 		saveStockNews("전일 저녁 기사", LocalDateTime.of(PREVIOUS_TRADE_DATE, LocalTime.of(18, 0)));
 		saveStockSummary("전장 기사가 이어졌습니다.");

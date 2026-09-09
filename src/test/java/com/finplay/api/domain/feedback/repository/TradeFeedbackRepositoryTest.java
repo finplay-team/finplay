@@ -114,7 +114,6 @@ class TradeFeedbackRepositoryTest {
 			NOW));
 	}
 
-
 	@Test
 	@DisplayName("같은 체결에 피드백 2건째는 유니크 제약에 걸린다 — 체결 1건당 1행이다")
 	void databaseRejectsSecondFeedbackForTheSameTrade() {
@@ -140,7 +139,6 @@ class TradeFeedbackRepositoryTest {
 
 		assertThat(tradeFeedbackRepository.count()).isEqualTo(2);
 	}
-
 
 	@Test
 	@DisplayName("팩토리로 만든 피드백은 실제 컬럼에서 narrative_finalized=false, regeneration_attempts=0이다")
@@ -193,7 +191,6 @@ class TradeFeedbackRepositoryTest {
 
 		assertThat(tradeFeedbackRepository.findById(id).orElseThrow().getNarrative()).isEqualTo(longNarrative);
 	}
-
 
 	@Test
 	@DisplayName("피드백을 저장해도 참조한 체결 원장 행이 한 컬럼도 변하지 않는다")

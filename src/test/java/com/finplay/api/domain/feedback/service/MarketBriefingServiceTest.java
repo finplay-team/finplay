@@ -308,7 +308,6 @@ class MarketBriefingServiceTest {
 			clock.set(LocalDateTime.of(SERVICE_DATE, time));
 		}
 
-
 		@Test
 		@DisplayName("세션 미준비 + 개장 전이면 EMPTY이고 originTradeDate까지 null이다 — 1번이 2번보다 앞")
 		void putsSessionNotReadyBeforeTheBeforeOpenCheck() {
@@ -439,7 +438,6 @@ class MarketBriefingServiceTest {
 			assertThat(response.originTradeDate()).isEqualTo(ORIGIN_TRADE_DATE);
 		}
 
-
 		@Test
 		@DisplayName("조회 items는 max-items-per-briefing으로 자른다 — 생성의 LLM 입력 상한이 아니다")
 		void truncatesResponseItemsWithTheBriefingLimitNotTheSummaryLimit() {
@@ -497,7 +495,6 @@ class MarketBriefingServiceTest {
 				});
 		}
 
-
 		@Test
 		@DisplayName("장중에 조회해도 구간 상한이 09:00에서 넓어지지 않는다")
 		void neverWidensTheWindowBeyondMarketOpenDuringTradingHours() {
@@ -525,7 +522,6 @@ class MarketBriefingServiceTest {
 			verify(marketNewsItemRepository, never()).findMarketDisclosuresReceivedOn(
 				any(), eq(ORIGIN_TRADE_DATE.atStartOfDay()), any());
 		}
-
 
 		@Test
 		@DisplayName("코인 시장은 주식 게이트를 타지 않고 기사가 0건이면 EMPTY다")

@@ -46,7 +46,6 @@ class RedisLockTest {
 			.thenThrow(new RuntimeException("Redis 장애"));
 	}
 
-
 	@Test
 	@DisplayName("스크립트가 1을 반환하면 RELEASED다")
 	void unlockReturnsReleasedWhenTheScriptDeletedTheKey() {
@@ -95,7 +94,6 @@ class RedisLockTest {
 		});
 	}
 
-
 	@Test
 	@DisplayName("setIfAbsent가 성공하면 토큰을 주고, 시도마다 토큰이 다르다")
 	void tryLockReturnsAFreshTokenOnEachSuccess() {
@@ -128,7 +126,6 @@ class RedisLockTest {
 
 		assertThat(redisLock.tryLock(KEY, Duration.ofSeconds(1))).isEmpty();
 	}
-
 
 	@Test
 	@DisplayName("키가 있으면 보유 중이고 없으면 아니다")

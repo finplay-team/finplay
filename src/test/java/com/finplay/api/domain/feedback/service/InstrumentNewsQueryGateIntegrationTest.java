@@ -131,7 +131,6 @@ class InstrumentNewsQueryGateIntegrationTest {
 		return response.items().stream().map(NewsItem::title).toList();
 	}
 
-
 	@Test
 	@DisplayName("items가 max-items-per-news-list로 잘리고 공시 2건은 남으며 발행시각 내림차순이다")
 	void truncatesToTheConfiguredLimitKeepingDisclosuresAndSortingByPublishedAtDescending() {
@@ -160,7 +159,6 @@ class InstrumentNewsQueryGateIntegrationTest {
 			.contains("전장 뉴스 " + (newsCount - 1))
 			.doesNotContain("전장 뉴스 0");
 	}
-
 
 	@Test
 	@DisplayName("전장 하한 이전과 원본 거래일 이후의 기사가 목록에 섞이지 않는다")
@@ -197,7 +195,6 @@ class InstrumentNewsQueryGateIntegrationTest {
 		assertThat(titles(query())).containsExactly("장중 기사");
 	}
 
-
 	@Test
 	@DisplayName("재생 시각을 지난 기사만 보이고 시계를 옮기면 그 다음 기사가 열린다")
 	void revealsArticlesExactlyAsTheReplayClockPassesThem() {
@@ -226,7 +223,6 @@ class InstrumentNewsQueryGateIntegrationTest {
 		assertThat(titles(query()))
 			.containsExactly("당일 새벽 기사", "전일 저녁 기사", "D-1 공시");
 	}
-
 
 	@Test
 	@DisplayName("장중 조회는 PRE_MARKET 문장을 주고 FULL 문장을 절대 노출하지 않는다")
@@ -262,7 +258,6 @@ class InstrumentNewsQueryGateIntegrationTest {
 		assertThat(afterClose.summaryScope()).isEqualTo(NewsSummaryScope.FULL);
 		assertThat(afterClose.summary()).isEqualTo("오후에 급락한 뒤 낙폭을 줄였습니다.");
 	}
-
 
 	@Test
 	@DisplayName("상태값 ② 재생세션이 없으면 NOT_YET이고 originTradeDate가 null이다")

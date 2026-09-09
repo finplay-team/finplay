@@ -57,7 +57,6 @@ class PostSellFeedbackReaderTest {
 	private final PostSellFeedbackReader postSellFeedbackReader = new PostSellFeedbackReader(
 		postSellFeedbackContextReader, stockPostSellFeedbackReader, cryptoPostSellFeedbackReader);
 
-
 	@Test
 	@DisplayName("주식 매도 체결은 주식 조립에 위임하고 그 응답을 그대로 돌려준다")
 	void delegatesStockSellTradeToTheStockReader() {
@@ -90,7 +89,6 @@ class PostSellFeedbackReaderTest {
 		verifyNoInteractions(stockPostSellFeedbackReader);
 	}
 
-
 	@Test
 	@DisplayName("컨텍스트를 그 회원·체결 id로 먼저 읽고 그 뒤에 조립에 넘긴다")
 	void loadsTheContextBeforeAssembling() {
@@ -104,7 +102,6 @@ class PostSellFeedbackReaderTest {
 		inOrder.verify(postSellFeedbackContextReader).loadContext(USER_ID, SELL_TRADE_ID);
 		inOrder.verify(stockPostSellFeedbackReader).read(trade, allocation);
 	}
-
 
 	@ParameterizedTest
 	@EnumSource(value = ErrorCode.class, names = {"NOT_FOUND", "FORBIDDEN", "VALIDATION_ERROR"})
@@ -120,7 +117,6 @@ class PostSellFeedbackReaderTest {
 		verifyNoInteractions(stockPostSellFeedbackReader, cryptoPostSellFeedbackReader);
 	}
 
-
 	@Test
 	@DisplayName("PostSellFeedbackReader에는 클래스·read 어디에도 @Transactional이 없다")
 	void neverWrapsTheOrchestrationInATransaction() throws Exception {
@@ -131,7 +127,6 @@ class PostSellFeedbackReaderTest {
 		assertThat(read.getAnnotation(Transactional.class)).isNull();
 		assertThat(read.getAnnotation(jakarta.transaction.Transactional.class)).isNull();
 	}
-
 
 	private void givenContext(Trade trade, SellAllocationSummaryDto allocation) {
 		when(postSellFeedbackContextReader.loadContext(USER_ID, SELL_TRADE_ID))

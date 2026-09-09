@@ -196,7 +196,6 @@ class FeedbackQueryCacheConnectionHoldingIntegrationTest {
 		return dataSource.unwrap(HikariDataSource.class).getHikariPoolMXBean().getActiveConnections();
 	}
 
-
 	@Test
 	@DisplayName("[트랜잭션 밖] 앰비언트 트랜잭션 없이 조회해도 지연 로딩 예외 없이 완전한 응답이 나온다")
 	void queriesCompleteOutsideAnyAmbientTransaction() {
@@ -257,7 +256,6 @@ class FeedbackQueryCacheConnectionHoldingIntegrationTest {
 			.allSatisfy(item -> assertThat(item.instrumentName()).isNotBlank());
 	}
 
-
 	@Test
 	@DisplayName("[방어군] 캐시 대기 중인 조회 4건이 커넥션을 0개 쥐고, 그 사이 들어온 다섯 번째 조회도 정상이다")
 	void waitingQueriesHoldNoConnectionSoAnotherQueryStillGetsThrough() throws Exception {
@@ -274,7 +272,6 @@ class FeedbackQueryCacheConnectionHoldingIntegrationTest {
 				assertThat(response.summary()).isEqualTo(SUMMARY_TEXT);
 			});
 	}
-
 
 	@Test
 	@DisplayName("[대조군] 조회를 통째로 @Transactional로 감싸면 대기 4건이 풀을 채우고 다섯 번째 조회가 커넥션을 못 얻는다")

@@ -1,6 +1,5 @@
 package com.finplay.api.global.config;
 
-import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import org.springframework.boot.test.context.TestConfiguration;

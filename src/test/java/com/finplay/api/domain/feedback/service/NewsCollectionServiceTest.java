@@ -241,7 +241,6 @@ class NewsCollectionServiceTest {
 		assertThat(repositoryFields).containsExactly("MarketNewsItemRepository");
 	}
 
-
 	@Test
 	@DisplayName("한 종목 저장이 터져도 다음 시장까지 수집이 계속된다")
 	void keepsCollectingOtherInstrumentsWhenOneSaveThrows() {
@@ -320,7 +319,6 @@ class NewsCollectionServiceTest {
 			.extracting(MarketNewsItem::getCreatedAt)
 			.containsExactly(firstSave, laterSave);
 	}
-
 
 	@Test
 	@DisplayName("뉴스·공시 수집은 샌드박스 종목을 제외한 목록으로만 돈다")

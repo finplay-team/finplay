@@ -174,7 +174,6 @@ class BuyTradeJournalRepositoryTest {
 			NOW));
 	}
 
-
 	@Test
 	@DisplayName("같은 매수 체결에 투자일기 2건째는 유니크 제약에 걸린다")
 	void databaseRejectsSecondJournalForTheSameBuyTrade() {
@@ -186,7 +185,6 @@ class BuyTradeJournalRepositoryTest {
 		assertThatThrownBy(() -> buyTradeJournalRepository.saveAndFlush(duplicate))
 			.isInstanceOf(DataIntegrityViolationException.class);
 	}
-
 
 	@Test
 	@DisplayName("서로 다른 매수 체결의 투자일기는 각각 공존한다")
@@ -200,7 +198,6 @@ class BuyTradeJournalRepositoryTest {
 		assertThat(buyTradeJournalRepository.count()).isEqualTo(2);
 	}
 
-
 	@Test
 	@DisplayName("투자일기를 저장하기 전에는 존재하지 않고, 저장한 뒤에는 존재한다")
 	void existsByBuyTradeIdTogglesFromFalseToTrueAfterSave() {
@@ -213,7 +210,6 @@ class BuyTradeJournalRepositoryTest {
 		assertThat(buyTradeJournalRepository.existsByBuyTradeId(buyTrade.getId())).isTrue();
 	}
 
-
 	@Test
 	@DisplayName("존재하지 않는 체결 ID를 참조하는 투자일기는 외래키 제약에 걸린다")
 	void databaseRejectsJournalReferencingNonExistentTrade() {
@@ -224,7 +220,6 @@ class BuyTradeJournalRepositoryTest {
 		assertThatThrownBy(() -> buyTradeJournalRepository.saveAndFlush(journal))
 			.isInstanceOf(DataIntegrityViolationException.class);
 	}
-
 
 	@Test
 	@DisplayName("매수 투자일기가 없는 체결은 findByBuyTradeId가 empty를 반환한다")
@@ -246,7 +241,6 @@ class BuyTradeJournalRepositoryTest {
 			.extracting(BuyTradeJournal::getId)
 			.isEqualTo(saved.getId());
 	}
-
 
 	@Test
 	@DisplayName("updateContent 호출 후 flush하면 content와 updated_at만 바뀌고 created_at·buy_trade_id·id는 그대로다")
@@ -271,7 +265,6 @@ class BuyTradeJournalRepositoryTest {
 		assertThat(reloaded.getCreatedAt()).isEqualTo(NOW);
 	}
 
-
 	@Test
 	@DisplayName("updated_at을 null로 저장하려는 시도는 NOT NULL 제약에 걸린다")
 	void databaseRejectsNullUpdatedAt() {
@@ -285,7 +278,6 @@ class BuyTradeJournalRepositoryTest {
 			NOW))
 			.isInstanceOf(DataIntegrityViolationException.class);
 	}
-
 
 	@Test
 	@DisplayName("커서 조회는 다른 계좌의 매수 투자일기를 포함하지 않는다")
@@ -305,7 +297,6 @@ class BuyTradeJournalRepositoryTest {
 
 		assertThat(result).extracting(BuyTradeJournal::getId).containsExactly(ownerJournal.getId());
 	}
-
 
 	@Test
 	@DisplayName("커서보다 이전(createdAt이 더 작거나 같은 createdAt에서 체결 ID가 더 작은) 항목만 반환한다")
@@ -339,8 +330,6 @@ class BuyTradeJournalRepositoryTest {
 			.containsExactly(third.getId(), second.getId(), first.getId());
 	}
 
-
-
 	@Test
 	@DisplayName("튜토리얼 샌드박스 종목 매수 체결의 회고는 커서 조회 결과에서 제외된다")
 	void findByAccountIdWithCursorExcludesTutorialSampleInstrumentJournals() {
@@ -359,7 +348,6 @@ class BuyTradeJournalRepositoryTest {
 
 		assertThat(result).extracting(BuyTradeJournal::getId).containsExactly(realJournal.getId());
 	}
-
 
 	@Test
 	@DisplayName("findAllByBuyTradeIdIn은 일기가 있는 매수 체결만 돌려준다 — 없는 id가 섞여도 예외가 아니다")

@@ -577,7 +577,6 @@ class InstrumentControllerTest {
 		verify(candleQueryService).getCandles(1L, "1m", null, null, null);
 	}
 
-
 	@Test
 	void getCandlesReturnsNextCursorEqualToOldestContentCandleSourceTimeAsExactString() throws Exception {
 		authenticate();

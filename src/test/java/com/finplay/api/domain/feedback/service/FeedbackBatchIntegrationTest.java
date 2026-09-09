@@ -123,7 +123,6 @@ class FeedbackBatchIntegrationTest {
 			.findFirst()
 			.orElseThrow();
 
-
 		saveCandle(PREVIOUS_TRADE_DATE, LocalTime.of(15, 27), PREVIOUS_CLOSE, PREVIOUS_CLOSE);
 		for (int minute = 0; minute < CLOSES.length; minute++) {
 			BigDecimal close = BigDecimal.valueOf(CLOSES[minute]);

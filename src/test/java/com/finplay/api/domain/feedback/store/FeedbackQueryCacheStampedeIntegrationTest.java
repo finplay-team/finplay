@@ -111,7 +111,6 @@ class FeedbackQueryCacheStampedeIntegrationTest {
 		assertThat(cacheProperties.waitMillis()).isGreaterThanOrEqualTo(5000L);
 	}
 
-
 	@Test
 	@DisplayName("[대조군: 락 무력화, 캐시는 켬] 동시 요청 4건이 전부 원본에 들어가 원본이 4회 불린다")
 	void withoutRealMutualExclusionEveryConcurrentRequestReachesTheLoader() throws Exception {
@@ -134,7 +133,6 @@ class FeedbackQueryCacheStampedeIntegrationTest {
 		assertThat(results).allSatisfy(result -> assertThat(result).contains(ORIGIN_TEXT));
 	}
 
-
 	@Test
 	@DisplayName("[방어군: 진짜 Redis 락, 캐시도 켬] 같은 동시 요청 4건에서 원본은 1회만 불린다")
 	void realRedisLockLetsExactlyOneConcurrentRequestReachTheLoader() throws Exception {
@@ -156,7 +154,6 @@ class FeedbackQueryCacheStampedeIntegrationTest {
 		assertThat(results).allSatisfy(result -> assertThat(result).contains(ORIGIN_TEXT));
 		assertThat(redisTemplate.opsForValue().get(summaryKey(DEFENDED_INSTRUMENT_ID))).isEqualTo(ORIGIN_TEXT);
 	}
-
 
 	@Test
 	@DisplayName("[조기 이탈] 음성 결과에서 동시 4건이 wait-millis를 태우지 않고 곧바로 원본으로 내려간다")
@@ -184,7 +181,6 @@ class FeedbackQueryCacheStampedeIntegrationTest {
 			.hasValue(THREAD_COUNT);
 		assertThat(redisTemplate.hasKey(summaryKey(NEGATIVE_RESULT_INSTRUMENT_ID))).isFalse();
 	}
-
 
 	@Test
 	@DisplayName("[보조] 캐시를 미리 채워 두면 동시 요청 4건에서 원본이 한 번도 불리지 않는다")

@@ -84,7 +84,6 @@ class PostSellFeedbackDerivedFactsTest {
 
 	private SellAllocationSummaryDto allocation;
 
-
 	@Test
 	@DisplayName("극값은 분봉 close로 고른다 — high·low가 더 극단인 봉이 있어도 그 값을 쓰지 않는다")
 	void picksHoldExtremesFromCandleCloseNotHighOrLow() {
@@ -183,7 +182,6 @@ class PostSellFeedbackDerivedFactsTest {
 		verify(stockReplayService).getFullDayCandles(INSTRUMENT_ID, ORIGIN_TRADE_DATE);
 	}
 
-
 	@Test
 	@DisplayName("카드 간격은 windowEnd 기준이다 — 11:20~11:25 카드가 매수 115분 뒤·매도 195분 전이다")
 	void computesCardIntervalsFromWindowEnd() {
@@ -247,7 +245,6 @@ class PostSellFeedbackDerivedFactsTest {
 			.extracting(NewsItem::title)
 			.containsExactly("오후 기사");
 	}
-
 
 	@Test
 	@DisplayName("매수가 기사보다 앞서면 buyToNewsMinutes가 양수다 — 09:30 매수·11:15 기사면 105다")
@@ -324,7 +321,6 @@ class PostSellFeedbackDerivedFactsTest {
 		assertThat(response.buyToNewsMinutes()).isEqualTo(105);
 	}
 
-
 	@Test
 	@DisplayName("초가 붙은 체결시각에서도 계약 예시의 분 단위 값 넷이 그대로 나온다")
 	void reproducesContractMinuteValuesFromSubSecondExecutionTimes() {
@@ -386,7 +382,6 @@ class PostSellFeedbackDerivedFactsTest {
 		assertThat(response.buyToNewsMinutes()).isNotEqualTo(-30);
 	}
 
-
 	@Test
 	@DisplayName("과거 서비스 날짜의 체결이면 게이트 상한이 그날 끝이다 — 오늘 벽시계가 아니다")
 	void usesEndOfDayCutoffForATradeFromAPastServiceDate() {
@@ -425,7 +420,6 @@ class PostSellFeedbackDerivedFactsTest {
 		verifyNoInteractions(priceMoveEventRepository, priceMoveEventSourceRepository);
 	}
 
-
 	@Test
 	@DisplayName("sameSessionCompleted=false면 파생 사실이 전부 null·priceMoves는 []이고 분봉·카드를 읽지 않는다")
 	void skipsAllDerivedFactsWhenTheTradeSpansMultipleOriginTradeDates() {
@@ -446,7 +440,6 @@ class PostSellFeedbackDerivedFactsTest {
 		assertThat(response.priceMoves()).isEmpty();
 		verifyNoInteractions(stockReplayService, priceMoveEventRepository, priceMoveEventSourceRepository);
 	}
-
 
 	private PostSellFeedbackResponse getPostSellFeedback() {
 		return stockPostSellFeedbackReader.read(trade, allocation);

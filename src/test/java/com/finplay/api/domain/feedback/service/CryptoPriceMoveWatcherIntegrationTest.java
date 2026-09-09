@@ -200,7 +200,6 @@ class CryptoPriceMoveWatcherIntegrationTest {
 		assertThat(rowCounts(READ_ONLY_TABLES)).isEqualTo(readOnlyBefore);
 	}
 
-
 	@Test
 	@DisplayName("근거 기사가 DB에 없어도 온디맨드 수집(ADR-0017) 후 카드가 생성된다 — 카드 생성 성공률 상승")
 	void createsCardViaOnDemandCollectionWhenNoEvidenceExistsBeforehand() {

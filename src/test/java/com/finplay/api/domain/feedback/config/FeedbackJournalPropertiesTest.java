@@ -66,7 +66,6 @@ class FeedbackJournalPropertiesTest {
 			.run(context -> assertThat(context).hasFailed());
 	}
 
-
 	@Test
 	@DisplayName("max-buy-journals가 1 미만이면 기동이 실패한다 — 0도 음수도 막는다")
 	void failsWhenMaxBuyJournalsIsBelowOne() {

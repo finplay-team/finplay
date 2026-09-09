@@ -244,7 +244,6 @@ class RankingServiceTest {
 		assertThat(response).isEqualTo(new MyRankingResponse("STOCK", RankingStatus.READY, 3, "alice", 50_000L));
 	}
 
-
 	@Test
 	void getRankingsReportsRebuildingWhenZsetIsEmptyButSellHistoryExists() {
 		when(rankingStore.topN(Market.STOCK, 11)).thenReturn(List.of());
@@ -383,7 +382,6 @@ class RankingServiceTest {
 			.as("ZSET score가 없으면 DB 값을 대신 싣지 않는다 — rank와 다른 출처의 값을 섞지 않는 원칙")
 			.isZero();
 	}
-
 
 	@Test
 	void getRankingsReturnsUnavailableWhenTopNThrowsUnavailableException() {

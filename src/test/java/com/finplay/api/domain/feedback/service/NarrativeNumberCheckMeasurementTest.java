@@ -15,7 +15,6 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 class NarrativeNumberCheckMeasurementTest {
 
-
 	private static final List<String> CAUSATION = List.of("때문에", "영향으로", "여파로", "덕분에", "로 인해", "탓에");
 
 	private static final List<String> RECOMMENDATION = List.of("매수하세요", "매도하세요", "사야", "팔아야", "추천", "주목할", "유망",
@@ -33,9 +32,7 @@ class NarrativeNumberCheckMeasurementTest {
 	private static final List<String> LEGACY_RULES = Stream
 		.of(CAUSATION, RECOMMENDATION, PREDICTION, ADVICE, JUDGEMENT).flatMap(List::stream).toList();
 
-
 	private static final LocalDate TRADING_DATE = LocalDate.of(2026, 8, 3);
-
 
 	private static final List<HallucinationCase> HALLUCINATIONS = List.of(
 		new HallucinationCase("자릿수", "수익률은 -21.7%였습니다.", "-21.7%", "-2.17%"),
@@ -50,7 +47,6 @@ class NarrativeNumberCheckMeasurementTest {
 		new HallucinationCase("출처 없음", "20일 이동평균선은 69,500원이었습니다.", "69,500원", "프롬프트에 없음"),
 		new HallucinationCase("출처 없음", "거래량은 직전 5거래일 평균의 2.4배였습니다.", "2.4배", "프롬프트에 없음"),
 		new HallucinationCase("출처 없음", "장중 고점 대비 5.12% 낮은 가격에 매도했습니다.", "5.12%", "프롬프트에 없음"));
-
 
 	private static final List<String> COUNTERFACTUALS = List.of(
 		"마감까지 보유했다면 수익률은 -1.17%였습니다.",
@@ -73,7 +69,6 @@ class NarrativeNumberCheckMeasurementTest {
 	static Stream<String> counterfactuals() {
 		return COUNTERFACTUALS.stream();
 	}
-
 
 	@Test
 	@DisplayName("얼린 대조군이 §후검증 표 5줄 37개 그대로다 — 이 숫자가 흔들리면 ①②의 0건·6건이 무의미해진다")
@@ -108,7 +103,6 @@ class NarrativeNumberCheckMeasurementTest {
 		assertThat(prompt).contains("69,200원").contains("70,800원");
 	}
 
-
 	@ParameterizedTest(name = "[{0}]")
 	@MethodSource("hallucinations")
 	@DisplayName("측정 ① — 기존 검증기는 숫자 환각 12건을 한 건도 적발하지 못한다")
@@ -128,7 +122,6 @@ class NarrativeNumberCheckMeasurementTest {
 			.as("의도한 틀린 값 %s 때문에 적발돼야 한다: %s", testCase.wrong(), testCase.narrative())
 			.contains(numberPartOf(testCase.wrong()));
 	}
-
 
 	@ParameterizedTest(name = "[{0}]")
 	@MethodSource("counterfactuals")
@@ -153,7 +146,6 @@ class NarrativeNumberCheckMeasurementTest {
 			.isNotEmpty();
 	}
 
-
 	@Test
 	@DisplayName("오늘의 NarrativeValidator도 얼린 대조군과 같은 판정을 낸다 — 표현 축이 한 글자도 안 움직였다 (FEED-016)")
 	void todaysValidatorReproducesTheFrozenBaseline() {
@@ -168,7 +160,6 @@ class NarrativeNumberCheckMeasurementTest {
 				.isEqualTo(legacyDetect(narrative));
 		}
 	}
-
 
 	@Test
 	@DisplayName("측정 결과표를 출력한다 — spec §측정 ①②의 두 열(기존·새 검증기)을 함께 채운다")

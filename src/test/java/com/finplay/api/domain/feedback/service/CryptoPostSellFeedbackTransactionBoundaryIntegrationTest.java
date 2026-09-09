@@ -238,7 +238,6 @@ class CryptoPostSellFeedbackTransactionBoundaryIntegrationTest {
 		assertThat(response.peerComparison().status()).isEqualTo(PostSellFeedbackStatus.NOT_YET);
 	}
 
-
 	private static CryptoCandleDto candle(LocalDateTime sourceTime, String close) {
 		BigDecimal price = new BigDecimal(close);
 		return new CryptoCandleDto(

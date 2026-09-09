@@ -62,7 +62,6 @@ class InstrumentNewsSummaryRepositoryTest {
 			instrument, originTradeDate, scope, SUMMARY, NarrativeSource.LLM, GENERATED_AT);
 	}
 
-
 	@Test
 	@DisplayName("같은 종목·거래일에 PRE_MARKET과 FULL 요약 2건이 공존한다")
 	void preMarketAndFullSummariesCoexistForTheSameInstrumentAndTradeDate() {
@@ -76,7 +75,6 @@ class InstrumentNewsSummaryRepositoryTest {
 		assertThat(all).extracting(InstrumentNewsSummary::getScope)
 			.containsExactlyInAnyOrder(NewsSummaryScope.PRE_MARKET, NewsSummaryScope.FULL);
 	}
-
 
 	@Test
 	@DisplayName("같은 (종목, 거래일, scope) 2건째는 유니크 제약에 걸린다 — 이 제약이 UPSERT를 성립시킨다")
@@ -178,7 +176,6 @@ class InstrumentNewsSummaryRepositoryTest {
 		assertThat(instrumentNewsSummaryRepository.count()).isEqualTo(2);
 	}
 
-
 	@Test
 	@DisplayName("summary가 NULL이고 narrative_source가 NONE인 행이 저장된다 — 조회가 UNAVAILABLE을 내려면 이 행이 남아야 한다")
 	void summaryRowWithNullTextAndNoneSourceIsPersisted() {
@@ -195,7 +192,6 @@ class InstrumentNewsSummaryRepositoryTest {
 		assertThat(row.get("summary")).isNull();
 		assertThat(row.get("narrative_source")).isEqualTo("NONE");
 	}
-
 
 	@Test
 	@DisplayName("코인 요약은 ROLLING_24H로 저장되고 origin_trade_date가 채워진다")

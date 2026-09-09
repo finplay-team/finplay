@@ -52,7 +52,6 @@ class PostSellFeedbackContextReaderTest {
 	private final PostSellFeedbackContextReader postSellFeedbackContextReader = new PostSellFeedbackContextReader(
 		tradeService, sellAllocationQueryService);
 
-
 	@Test
 	@DisplayName("본인 매도 체결이면 그 체결과 배분 요약을 한 묶음으로 돌려준다")
 	void returnsTheOwnedSellTradeWithItsAllocationSummary() {
@@ -79,7 +78,6 @@ class PostSellFeedbackContextReaderTest {
 		assertThat(context.trade()).isSameAs(cryptoTrade);
 		verify(sellAllocationQueryService).getSellAllocationSummary(SELL_TRADE_ID);
 	}
-
 
 	@Test
 	@DisplayName("매수 체결이면 400 VALIDATION_ERROR이고 배분을 읽지 않는다")
@@ -135,7 +133,6 @@ class PostSellFeedbackContextReaderTest {
 		inOrder.verify(tradeService).getOwnedTrade(USER_ID, SELL_TRADE_ID);
 		inOrder.verify(sellAllocationQueryService).getSellAllocationSummary(SELL_TRADE_ID);
 	}
-
 
 	private void givenOwnedTrade(Trade trade) {
 		when(tradeService.getOwnedTrade(USER_ID, SELL_TRADE_ID)).thenReturn(trade);

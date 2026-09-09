@@ -85,7 +85,6 @@ class FeedbackBatchScheduleTest {
 		assertThat(cryptoBatchSchedule().cron()).isNotEqualTo(batchSchedule().cron());
 	}
 
-
 	@Test
 	@DisplayName("코인 가격 스냅샷 배치에 zone = \"Asia/Seoul\"이 붙어 있다")
 	void priceSnapshotScheduleDeclaresSeoulZone() throws NoSuchMethodException {

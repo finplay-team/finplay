@@ -494,7 +494,6 @@ class InstrumentNewsSummaryServiceTest {
 			verify(instrumentNewsSummaryRepository, never()).save(any());
 		}
 
-
 		@Test
 		@DisplayName("갱신에 성공하면 그 종목의 조회 캐시를 지운다")
 		void evictsTheQueryCacheOfThatInstrumentWhenTheRefreshActuallyStored() {

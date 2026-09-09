@@ -67,7 +67,6 @@ class BithumbRestCandleProviderTest {
 			""".formatted(kstTime, kstTime, open, high, low, tradePrice, accTradePrice, accVolume);
 	}
 
-
 	@Test
 	void getCandlesConvertsInstrumentSymbolToKrwMarketCode() {
 		BithumbRestCandleProvider provider = providerAt(LocalDateTime.of(2026, 7, 30, 11, 43));
@@ -80,7 +79,6 @@ class BithumbRestCandleProviderTest {
 
 		server.verify();
 	}
-
 
 	@Test
 	void getCandlesReversesBithumbDescendingResponseToAscendingOrder() {
@@ -114,7 +112,6 @@ class BithumbRestCandleProviderTest {
 		assertThat(result.get(result.size() - 1).sourceTime()).isEqualTo(LocalDateTime.of(2026, 7, 30, 11, 43));
 	}
 
-
 	@Test
 	void getCandlesMapsFieldsWithoutConfusingVolumeAndTradeAmount() {
 		BithumbRestCandleProvider provider = providerAt(LocalDateTime.of(2026, 7, 30, 11, 43));
@@ -144,7 +141,6 @@ class BithumbRestCandleProviderTest {
 
 		assertThat(candle.volume()).isEqualByComparingTo("0.26725783");
 	}
-
 
 	@Test
 	void getCandlesSendsCountTwoHundredWithoutToParamWhenFromAndToAreBothOmitted() {
@@ -222,7 +218,6 @@ class BithumbRestCandleProviderTest {
 		server.verify();
 	}
 
-
 	@Test
 	void getCandlesCallsDaysEndpointForOneDayInterval() {
 		BithumbRestCandleProvider provider = providerAt(LocalDateTime.of(2026, 7, 30, 11, 43));
@@ -258,7 +253,6 @@ class BithumbRestCandleProviderTest {
 
 		server.verify();
 	}
-
 
 	@Test
 	void getCandlesComputesWeekCountByAligningBothEndsToMondayAcrossWeekBoundary() {
@@ -348,7 +342,6 @@ class BithumbRestCandleProviderTest {
 		server.verify();
 	}
 
-
 	@Test
 	void getCandlesShiftsToParamByOneSecondForDayIntervalToIncludeTodaysBoundaryCandle() {
 		BithumbRestCandleProvider provider = providerAt(LocalDateTime.of(2026, 8, 3, 11, 43));
@@ -391,7 +384,6 @@ class BithumbRestCandleProviderTest {
 		server.verify();
 	}
 
-
 	@Test
 	void getCandlesParsesDayCandleIgnoringPeriodOnlyFieldsWithoutExposingThem() {
 		BithumbRestCandleProvider provider = providerAt(LocalDateTime.of(2026, 7, 30, 11, 43));
@@ -425,7 +417,6 @@ class BithumbRestCandleProviderTest {
 		assertThat(candle.sourceTime()).isEqualTo(LocalDateTime.of(2026, 7, 30, 0, 0));
 	}
 
-
 	@Test
 	void getCandlesAlwaysRefetchesFromHttpAcrossRepeatedCallsInsteadOfCaching() {
 		BithumbRestCandleProvider provider = providerAt(LocalDateTime.of(2026, 7, 30, 11, 43));
@@ -437,7 +428,6 @@ class BithumbRestCandleProviderTest {
 
 		server.verify();
 	}
-
 
 	@Test
 	void getCandlesThrowsProviderErrorOnConnectionFailureInsteadOfReturningEmptyList() {

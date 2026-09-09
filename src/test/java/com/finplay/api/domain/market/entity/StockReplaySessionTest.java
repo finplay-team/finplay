@@ -99,7 +99,6 @@ class StockReplaySessionTest {
 		assertThat(session.getFailureReason()).isEqualTo("검증 실패");
 	}
 
-
 	@Test
 	void resolveReadyTransitionsPreparingSessionToReadyWithGivenSourceTradingDateAndResolvedAt() {
 		StockReplaySession session = StockReplaySession.preparing(SERVICE_DATE, null, CREATED_AT);

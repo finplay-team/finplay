@@ -79,7 +79,6 @@ class NewsCollectionPropertiesTest {
 		});
 	}
 
-
 	@Test
 	@DisplayName("feedback.news 설정을 하나도 주지 않아도 §C-7 근거 매칭 3키가 기본값으로 바인딩된다")
 	void bindsSpecMatchingDefaultsWhenNoFeedbackNewsPropertyIsGiven() {
@@ -140,7 +139,6 @@ class NewsCollectionPropertiesTest {
 				.isInstanceOf(IllegalArgumentException.class)
 				.hasMessageContaining("max-sources-per-card"));
 	}
-
 
 	@Test
 	@DisplayName("feedback.news 설정을 하나도 주지 않아도 §C-7 목록 상한 3키가 기본값으로 바인딩된다")

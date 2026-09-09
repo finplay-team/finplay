@@ -66,7 +66,6 @@ class FeedbackBatchPropertiesTest {
 			});
 	}
 
-
 	@Test
 	@DisplayName("feedback.batch 설정을 주지 않아도 §C-1 코인 크론으로 바인딩된다")
 	void bindsSpecCryptoCronDefaultWhenNoFeedbackBatchPropertyIsGiven() {
@@ -120,7 +119,6 @@ class FeedbackBatchPropertiesTest {
 					.isEqualTo(SPEC_CRYPTO_CRON);
 			});
 	}
-
 
 	private static final String SPEC_CRYPTO_WATCH_CRON = "30 * * * * *";
 
@@ -197,7 +195,6 @@ class FeedbackBatchPropertiesTest {
 					.isEqualTo(SPEC_CRYPTO_WATCH_CRON);
 			});
 	}
-
 
 	private static final String SPEC_CRYPTO_PEER_STATS_CRON = "0 5 0 * * *";
 

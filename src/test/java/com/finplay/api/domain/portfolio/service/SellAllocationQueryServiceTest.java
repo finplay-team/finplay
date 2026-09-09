@@ -104,7 +104,6 @@ class SellAllocationQueryServiceTest {
 		sellSession = saveSession(SELL_SERVICE_DATE, ORIGIN_TRADE_DATE);
 	}
 
-
 	@Test
 	@DisplayName("배분은 lot 체결시각 오름차순 + lot id 오름차순으로 읽는다 — 저장 순서가 체결 순서와 달라도 그렇다")
 	void readsAllocationsOrderedByLotExecutedAtThenLotId() {
@@ -151,7 +150,6 @@ class SellAllocationQueryServiceTest {
 			.isEqualTo(LocalDateTime.of(FIRST_SERVICE_DATE, LocalTime.of(9, 30)));
 	}
 
-
 	@Test
 	@DisplayName("두 lot에 배분된 매도의 요약 — 가중평균 매수단가·가장 이른 매수 시각·lot별 원본 거래일")
 	void summarizesTwoLotAllocationWithWeightedAveragePriceAndEarliestBuy() {
@@ -193,7 +191,6 @@ class SellAllocationQueryServiceTest {
 			.isInstanceOf(IllegalStateException.class)
 			.hasMessageContaining(String.valueOf(sellTrade.getId()));
 	}
-
 
 	@Test
 	@DisplayName("배분된 매수 체결을 매수 시각 오름차순으로 돌려준다 — 저장 순서가 체결 순서와 달라도 그렇다")
@@ -240,7 +237,6 @@ class SellAllocationQueryServiceTest {
 
 		assertThat(sellAllocationQueryService.getAllocatedBuyTrades(sellTrade.getId())).isEmpty();
 	}
-
 
 	private StockReplaySession saveSession(LocalDate serviceDate, LocalDate sourceTradingDate) {
 		LocalDateTime resolvedAt = LocalDateTime.of(serviceDate, LocalTime.of(8, 40));

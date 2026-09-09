@@ -140,7 +140,6 @@ class HoldingValuationServiceTest {
 		assertThat(result.returnRate()).isEqualByComparingTo("0");
 	}
 
-
 	@Test
 	void evaluateHoldingsCallsPriceQueryServiceBatchMethodOnceInsteadOfPerHolding() {
 		Instrument firstInstrument = testInstrument();

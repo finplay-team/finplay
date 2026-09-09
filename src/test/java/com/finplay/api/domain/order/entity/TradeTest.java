@@ -70,7 +70,6 @@ class TradeTest {
 			.hasMessage("코인 체결에는 재생세션을 지정할 수 없습니다.");
 	}
 
-
 	@Test
 	void rejectsRealStockTradeWithoutReplaySession() {
 		TradeFixture fixture = fixture(Market.STOCK);

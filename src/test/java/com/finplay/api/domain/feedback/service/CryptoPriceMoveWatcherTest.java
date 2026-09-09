@@ -125,7 +125,6 @@ class CryptoPriceMoveWatcherTest {
 		when(instrumentService.getRealInstrumentEntities(Market.CRYPTO)).thenReturn(List.of(instruments));
 	}
 
-
 	@Nested
 	@DisplayName("σ 표본은 겹치지 않는 구간으로만 만들어진다")
 	class NonOverlappingSample {
@@ -187,7 +186,6 @@ class CryptoPriceMoveWatcherTest {
 		}
 	}
 
-
 	@Nested
 	@DisplayName("lookback 경계")
 	class Lookback {
@@ -204,7 +202,6 @@ class CryptoPriceMoveWatcherTest {
 			verify(cryptoPriceSnapshotService).getSnapshots("BTC", NOW.minusHours(24), NOW);
 		}
 	}
-
 
 	@Nested
 	@DisplayName("표본 부족과 σ=0을 구분한다")
@@ -246,7 +243,6 @@ class CryptoPriceMoveWatcherTest {
 		}
 	}
 
-
 	@Nested
 	@DisplayName("z-score-k 미달 종료")
 	class ZScoreThreshold {
@@ -287,7 +283,6 @@ class CryptoPriceMoveWatcherTest {
 			verify(priceMoveCardWriter).persist(any(), any());
 		}
 	}
-
 
 	@Nested
 	@DisplayName("쿨다운")
@@ -341,7 +336,6 @@ class CryptoPriceMoveWatcherTest {
 		}
 	}
 
-
 	@Nested
 	@DisplayName("일일 상한")
 	class DailyLimit {
@@ -386,7 +380,6 @@ class CryptoPriceMoveWatcherTest {
 		}
 	}
 
-
 	@Nested
 	@DisplayName("근거 매칭")
 	class Evidence {
@@ -429,7 +422,6 @@ class CryptoPriceMoveWatcherTest {
 			verify(newsCollectionService, never()).collectForInstrument(any());
 		}
 	}
-
 
 	@Nested
 	@DisplayName("온디맨드 수집")
@@ -477,7 +469,6 @@ class CryptoPriceMoveWatcherTest {
 		}
 	}
 
-
 	@Nested
 	@DisplayName("코인 감시 락 획득 실패")
 	class WatchLockAcquisitionFailure {
@@ -506,7 +497,6 @@ class CryptoPriceMoveWatcherTest {
 			verify(cryptoWatchLock, never()).unlock(any(), any());
 		}
 	}
-
 
 	@Nested
 	@DisplayName("락 해제 보장")
@@ -570,7 +560,6 @@ class CryptoPriceMoveWatcherTest {
 		}
 	}
 
-
 	@Nested
 	@DisplayName("종목별 실패 격리")
 	class FailureIsolation {
@@ -593,7 +582,6 @@ class CryptoPriceMoveWatcherTest {
 			verify(cryptoPriceSnapshotService).getSnapshots(eq("XRP"), any(), any());
 		}
 	}
-
 
 	@Nested
 	@DisplayName("자정을 넘긴 카드")

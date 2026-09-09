@@ -189,7 +189,6 @@ class CommunityPostShareTradeIntegrationTest {
 		return BigDecimal.valueOf(REALIZED_PNL).divide(buyBasis, 4, RoundingMode.HALF_UP);
 	}
 
-
 	private Trade givenOwnStockSellTrade(Long userId) {
 		User owner = userRepository.findById(userId).orElseThrow();
 		Account account = accountRepository.saveAndFlush(

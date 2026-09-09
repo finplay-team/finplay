@@ -76,7 +76,6 @@ class PostSellFeedbackPostSellFlowTest {
 
 	private SellAllocationSummaryDto allocation;
 
-
 	@Test
 	@DisplayName("게이트 직전(15:29:59)에는 매도 후 흐름·반사실이 NOT_YET이고 가격 필드가 전부 빈다")
 	void leavesPostSellFlowAndCounterfactualsNotYetJustBeforeMarketClose() {
@@ -142,7 +141,6 @@ class PostSellFeedbackPostSellFlowTest {
 		assertThat(afterGate.postSellFlow().postSellHighPrice()).isEqualByComparingTo("99000");
 	}
 
-
 	@Test
 	@DisplayName("전날 매도 건을 다음 날 오전 10:00에 조회해도 READY를 유지한다")
 	void keepsReadyWhenAYesterdayTradeIsViewedDuringTheNextTradingSession() {
@@ -159,7 +157,6 @@ class PostSellFeedbackPostSellFlowTest {
 		assertThat(response.counterfactuals().status()).isEqualTo(PostSellFeedbackStatus.READY);
 		assertThat(response.postSellFlow().closePrice()).isEqualByComparingTo("69200");
 	}
-
 
 	@Test
 	@DisplayName("closePrice·closeAt과 atClose가 그 거래일 마지막 분봉(15:27)의 close다 — 리터럴 15:30이 아니다")
@@ -180,7 +177,6 @@ class PostSellFeedbackPostSellFlowTest {
 		assertThat(response.counterfactuals().atClose().at())
 			.isEqualTo(LocalDateTime.of(ORIGIN_TRADE_DATE, LAST_CANDLE_TIME));
 	}
-
 
 	@Test
 	@DisplayName("게이트가 열렸고 분봉이 0건이면 status는 READY이고 값만 null이다")
@@ -203,7 +199,6 @@ class PostSellFeedbackPostSellFlowTest {
 		assertThat(response.counterfactuals().atFirstMoveAfterBuy()).isNull();
 	}
 
-
 	@Test
 	@DisplayName("sellToCloseRate는 (종가 − 매도가) ÷ 매도가다 — 종가가 높으면 양수이고 sellVsHighRate와 부호가 갈린다")
 	void computesSellToCloseRateAgainstTheSellPriceNotTheClosePrice() {
@@ -219,7 +214,6 @@ class PostSellFeedbackPostSellFlowTest {
 		assertThat(response.postSellFlow().sellToCloseRate().signum())
 			.isNotEqualTo(response.sellVsHighRate().signum());
 	}
-
 
 	@Test
 	@DisplayName("매도 분봉이 그날 최고 종가여도 postSellHigh에 잡히지 않는다 — 경계가 배타다")
@@ -260,7 +254,6 @@ class PostSellFeedbackPostSellFlowTest {
 		assertThat(response.postSellFlow().postSellHighPrice()).isNull();
 		assertThat(response.postSellFlow().postSellHighAt()).isNull();
 	}
-
 
 	@Test
 	@DisplayName("atHoldHigh는 보유 구간 최고가와 같은 값·같은 시각이고 atFirstMoveAfterBuy는 첫 카드 windowEnd 분봉이다")
@@ -307,7 +300,6 @@ class PostSellFeedbackPostSellFlowTest {
 		assertThat(counterfactuals.atFirstMoveAfterBuy()).isNull();
 	}
 
-
 	@Test
 	@DisplayName("반사실 3종의 returnRate가 수수료를 다시 계산해 api-contracts.md 예시 값 그대로 나온다 — peerComparison은 여전히 NOT_YET이다")
 	void computesCounterfactualReturnRatesMatchingTheContractExampleWhilePeerComparisonStaysForTheNextItem() {
@@ -330,7 +322,6 @@ class PostSellFeedbackPostSellFlowTest {
 		assertThat(response.priceMoves()).isNotEmpty();
 	}
 
-
 	@Test
 	@DisplayName("sameSessionCompleted=false면 매도 후 흐름·반사실·집단 비교가 필드 자체로 null이다")
 	void leavesThePostSellBlocksThemselvesNullWhenTheTradeSpansMultipleOriginTradeDates() {
@@ -344,7 +335,6 @@ class PostSellFeedbackPostSellFlowTest {
 		assertThat(response.counterfactuals()).isNull();
 		assertThat(response.peerComparison()).isNull();
 	}
-
 
 	private PostSellFeedbackResponse getPostSellFeedbackAt(LocalDateTime now) {
 		StockPostSellFeedbackReader reader = new StockPostSellFeedbackReader(

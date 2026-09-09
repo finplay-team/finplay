@@ -149,7 +149,6 @@ class CryptoFeedbackBatchIntegrationTest {
 		return counts;
 	}
 
-
 	@Test
 	@DisplayName("자정을 넘겨도 새 기사가 없으면 LLM을 부르지 않고, 그때도 조회는 어제 요약으로 채워진다")
 	void skipsTheLlmAfterMidnightWhileTheQueryStillServesYesterdaysSummary() {
@@ -208,7 +207,6 @@ class CryptoFeedbackBatchIntegrationTest {
 		verify(narrativeService, times(2)).resolveNewsSummaryNarrative(any());
 	}
 
-
 	@Test
 	@DisplayName("같은 날 여러 번 돌아도 요약·브리핑이 하루 1행이고 generated_at만 갱신된다")
 	void keepsExactlyOneRowPerDayWhileUpdatingGeneratedAt() {
@@ -251,7 +249,6 @@ class CryptoFeedbackBatchIntegrationTest {
 			.isEqualTo(FeedbackContentStatus.READY);
 	}
 
-
 	@Test
 	@DisplayName("코인 배치가 ROLLING_24H 행만 만들고 주식의 두 범위를 쓰지 않는다")
 	void writesOnlyRollingScopeRows() {
@@ -264,7 +261,6 @@ class CryptoFeedbackBatchIntegrationTest {
 		assertThat(summaries()).extracting(InstrumentNewsSummary::getScope)
 			.containsOnly(NewsSummaryScope.ROLLING_24H);
 	}
-
 
 	@Test
 	@DisplayName("조회를 반복해도 LLM 호출이 늘지 않고 행도 늘지 않는다")
@@ -285,7 +281,6 @@ class CryptoFeedbackBatchIntegrationTest {
 		assertThat(instrumentNewsSummaryRepository.count()).isEqualTo(summaryRowsAfterBatch);
 		assertThat(marketBriefingRepository.count()).isEqualTo(briefingRowsAfterBatch);
 	}
-
 
 	@Test
 	@DisplayName("코인 배치가 요약·브리핑 두 테이블 밖에 쓰지 않는다")
