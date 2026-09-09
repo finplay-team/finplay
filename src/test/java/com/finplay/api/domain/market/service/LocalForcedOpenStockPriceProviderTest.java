@@ -1,4 +1,3 @@
-// force-market-open 플래그와 재생세션 준비상태 조합에 따른 시장상태 덮어쓰기·위임 동작을 검증하는 단위 테스트
 package com.finplay.api.domain.market.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -24,7 +23,6 @@ import org.junit.jupiter.api.Test;
 class LocalForcedOpenStockPriceProviderTest {
 
 	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
-	// 2026-07-29(수) 22:00 — 평일이지만 장외 시간이라 재생세션이 READY여도 실제 판정은 CLOSED다.
 	private static final LocalDate SERVICE_DATE = LocalDate.of(2026, 7, 29);
 	private static final LocalDateTime AFTER_HOURS = LocalDateTime.of(SERVICE_DATE, LocalTime.of(22, 0));
 	private static final Long INSTRUMENT_ID = 1L;
@@ -38,7 +36,6 @@ class LocalForcedOpenStockPriceProviderTest {
 		when(delegate.getMarketStatus()).thenReturn(StockMarketStatus.CLOSED);
 
 		assertThat(provider(false).getMarketStatus()).isEqualTo(StockMarketStatus.CLOSED);
-		// 플래그가 꺼져 있으면 세션을 조회하지도 않는다 — "데이터는 READY인데 시장은 CLOSED"인 정직한 상태가 유지된다.
 		verifyNoInteractions(stockReplaySessionRepository);
 	}
 
@@ -88,7 +85,6 @@ class LocalForcedOpenStockPriceProviderTest {
 		assertThat(provider.getCurrentPrice(INSTRUMENT_ID)).isSameAs(price);
 		assertThat(provider.getCurrentPrices(List.of(INSTRUMENT_ID))).containsExactly(price);
 		assertThat(provider.getCandles(INSTRUMENT_ID, CandleInterval.ONE_MINUTE, null, null)).isEmpty();
-		// 시세·캔들 경로는 시장상태와 무관하게 그대로 위임되어야 한다 — 데코레이터가 값을 만들어 내지 않는다.
 		verify(delegate).getCurrentPrice(INSTRUMENT_ID);
 		verify(delegate).getCurrentPrices(any());
 		verify(delegate).getCandles(INSTRUMENT_ID, CandleInterval.ONE_MINUTE, null, null);
@@ -109,12 +105,6 @@ class LocalForcedOpenStockPriceProviderTest {
 		assertThat(result.replaySession()).isSameAs(session);
 	}
 
-	// spec 038(QUOTE-HOLD-005) — 장 마감 후 폴백 시세는 sessionReady=false·replaySession=null을 유지해 체결 경로에
-	// 구조적으로 도달하지 못한다. 강제 OPEN 데코레이터가 이 불변식을 깨면 안 된다: forceOpenWhenReady(73~80행)는
-	// !quote.sessionReady()면 그대로 반환하므로, 폴백 시세(오늘 세션이 준비되지 않았다는 사실 자체는 참이다)는
-	// forceMarketOpen=true여도 절대 OPEN으로 바뀌지 않아야 한다. StockReplayService.buildFallbackPrice가 실제로
-	// 만드는 DTO 형태(sessionReady=false, marketStatus=CLOSED, sourceTradingDate=폴백 거래일, replaySession=null)를
-	// 그대로 재현해 검증한다.
 	@Test
 	void getCurrentPriceDoesNotForceFallbackQuoteOpenBecauseSessionIsNotReady() {
 		LocalDate fallbackTradingDate = SERVICE_DATE.minusDays(5);
@@ -131,8 +121,6 @@ class LocalForcedOpenStockPriceProviderTest {
 		assertThat(result.replaySession()).isNull();
 	}
 
-	// 배치 경로(getCurrentPrices)에서도 같은 불변식이 지켜지는지 확인한다 — HoldingValuationService 등 다건 호출
-	// 소비자가 주말·휴장 폴백이 섞인 목록을 받아도 폴백분만은 절대 OPEN으로 바뀌지 않아야 한다.
 	@Test
 	void getCurrentPricesDoesNotForceFallbackQuotesOpenWhileStillForcingReadyClosedQuotes() {
 		StockReplaySession readySessionInList = readySession();

@@ -1,4 +1,3 @@
-// snapshot 구성(16종 전체·가격없음 포함)과 매분 price·status 이벤트 push 규칙(id는 price에만, 변경분만 전송)을 검증하는 단위 테스트다.
 package com.finplay.api.domain.market.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -49,8 +48,6 @@ class StockPriceStreamServiceTest {
 	private final StockPriceStreamService service = new StockPriceStreamService(
 		instrumentRepository, priceQueryService, stockPriceProvider, sseEmitterRegistry, clock, transactionTemplate);
 
-	// 실제 트랜잭션 없이 콜백을 그 자리에서 바로 실행하는 TransactionTemplate 스텁 — publishScheduledUpdates()가
-	// transactionTemplate.execute(...)로 DB 조회를 감싸므로, 단위 테스트에서도 그 콜백이 실행돼야 조회 로직이 동작한다.
 	private static TransactionTemplate stubTransactionTemplate() {
 		TransactionTemplate template = mock(TransactionTemplate.class);
 		when(template.execute(any())).thenAnswer(invocation -> {
@@ -67,7 +64,6 @@ class StockPriceStreamServiceTest {
 		return instrument;
 	}
 
-	// 16개 중 마지막 하나만 가격 없음(UNAVAILABLE)으로 구성한다.
 	private static List<Instrument> sixteenStockInstruments() {
 		return IntStream.rangeClosed(1, 16)
 			.mapToObj(i -> stockInstrument(i, "SYM" + i))
@@ -82,9 +78,6 @@ class StockPriceStreamServiceTest {
 		return new PriceQuoteDto(null, null, PriceStatus.UNAVAILABLE, SOURCE_TRADING_DATE);
 	}
 
-	// SseEventBuilder.build()이 만드는 Set은 원소를 그대로 String으로 담지 않고, id·event 등 헤더 텍스트를
-	// ResponseBodyEmitter.DataWithMediaType(String, TEXT_PLAIN)으로 감싸 보관한다(실제 JSON data 페이로드는
-	// DataWithMediaType(Object, APPLICATION_JSON)) — 두 경우 모두 언랩한 뒤 문자열인 것만 이어붙인다.
 	private static String joinSentTextEvents(SseEmitterTestHandler handler) {
 		return handler.getSentEvents().stream()
 			.map(StockPriceStreamServiceTest::unwrapData)
@@ -104,7 +97,6 @@ class StockPriceStreamServiceTest {
 		when(instrumentRepository.findByMarketOrderByIdAsc(Market.STOCK)).thenReturn(instruments);
 	}
 
-	// ---------- buildSnapshot ----------
 
 	@Test
 	void buildSnapshotIncludesAllSixteenStockInstrumentsIncludingTheOneWithoutPrice() {
@@ -135,7 +127,6 @@ class StockPriceStreamServiceTest {
 
 	@Test
 	void buildSnapshotKeepsLastValidPriceEvenWhenMarketStatusIsClosed() {
-		// 장 마감 후에도 마지막 유효가격이 UNAVAILABLE로 뒤바뀌지 않아야 한다 — marketStatus는 종목별 가격과 독립적이어야 한다.
 		Instrument instrument = stockInstrument(1, "SYM1");
 		stubInstruments(List.of(instrument));
 		when(stockPriceProvider.getMarketStatus()).thenReturn(StockMarketStatus.CLOSED);
@@ -152,7 +143,6 @@ class StockPriceStreamServiceTest {
 		assertThat(only.sourceTime()).isEqualTo(lastCloseTime);
 	}
 
-	// ---------- sendSnapshot ----------
 
 	@Test
 	void sendSnapshotSendsEventNamedSnapshotWithoutIdToTheGivenEmitterOnly() throws Exception {
@@ -173,21 +163,18 @@ class StockPriceStreamServiceTest {
 		assertThat(sent).doesNotContain("id:");
 	}
 
-	// ---------- publishScheduledUpdates: price 이벤트 ----------
 
 	@Test
 	void publishScheduledUpdatesSendsPriceEventWithIdOnlyForNewlyRevealedPrice() throws Exception {
 		Instrument instrument = stockInstrument(1, "SYM1");
 		stubInstruments(List.of(instrument));
 		when(stockPriceProvider.getMarketStatus()).thenReturn(StockMarketStatus.OPEN);
-		// 기동 시점 기준선 — 아직 가격 없음.
 		when(priceQueryService.getPriceQuote(instrument)).thenReturn(unavailableQuote());
 		service.initializeBaseline();
 		SseEmitter emitter = new SseEmitter();
 		SseEmitterTestHandler handler = new SseEmitterTestHandler();
 		handler.attachTo(emitter);
 		when(sseEmitterRegistry.getEmitters(Market.STOCK)).thenReturn(List.of(emitter));
-		// 이번 분에 새로 가격이 공개됨.
 		LocalDateTime revealedAt = LocalDateTime.of(SOURCE_TRADING_DATE, LocalTime.of(9, 5));
 		when(priceQueryService.getPriceQuote(instrument))
 			.thenReturn(availableQuote(new BigDecimal("71000"), revealedAt));
@@ -213,7 +200,6 @@ class StockPriceStreamServiceTest {
 		handler.attachTo(emitter);
 		when(sseEmitterRegistry.getEmitters(Market.STOCK)).thenReturn(List.of(emitter));
 
-		// 같은 sourceTime의 가격이 반복 조회되어도(신규 공개 아님) 이벤트를 다시 보내지 않는다.
 		service.publishScheduledUpdates();
 
 		assertThat(handler.getSentEvents()).isEmpty();
@@ -222,8 +208,6 @@ class StockPriceStreamServiceTest {
 
 	@Test
 	void publishScheduledUpdatesDoesNotFireFalseEventOnFirstRunRightAfterStartupBaseline() throws Exception {
-		// @PostConstruct 기준선이 없다면(초기 lastKnownQuotes 비어있음) 첫 스케줄 실행에서 이미 있던 가격도 "신규 공개"로 오판한다.
-		// initializeBaseline()이 이를 막는지 확인한다.
 		Instrument instrument = stockInstrument(1, "SYM1");
 		stubInstruments(List.of(instrument));
 		when(stockPriceProvider.getMarketStatus()).thenReturn(StockMarketStatus.CLOSED);
@@ -237,7 +221,6 @@ class StockPriceStreamServiceTest {
 		verify(sseEmitterRegistry, never()).getEmitters(any());
 	}
 
-	// ---------- publishScheduledUpdates: status 이벤트 ----------
 
 	@Test
 	void publishScheduledUpdatesSendsStatusEventOnceWhenMarketStatusChangesAndSuppressesWhenUnchanged()
@@ -260,13 +243,11 @@ class StockPriceStreamServiceTest {
 		assertThat(sentAfterFirstChange).doesNotContain("id:");
 
 		int eventsAfterFirstChange = handler.getSentEvents().size();
-		// marketStatus가 그대로 CLOSED이면 두 번째 호출에서는 추가로 전송하지 않는다.
 		service.publishScheduledUpdates();
 
 		assertThat(handler.getSentEvents()).hasSize(eventsAfterFirstChange);
 	}
 
-	// ---------- publishScheduledUpdates: 다중 emitter ----------
 
 	@Test
 	void publishScheduledUpdatesBroadcastsPriceEventToEveryRegisteredEmitterForStock() throws Exception {
@@ -317,7 +298,6 @@ class StockPriceStreamServiceTest {
 		assertThat(joinSentTextEvents(healthyHandler)).contains("event:price");
 	}
 
-	// ---------- createEmitter/activate: 락 제거 검증 ----------
 
 	@Test
 	void createEmitterDelegatesToRegistryCreateEmitterForStockMarket() {
@@ -338,9 +318,6 @@ class StockPriceStreamServiceTest {
 		verify(sseEmitterRegistry).activate(Market.STOCK, emitter);
 	}
 
-	// createEmitter()/activate()로 등록 절차가 나뉜 뒤에는 더 이상 공유 락이 없다 — 매분 broadcast가 느린 전송으로
-	// 한창 진행 중이어도(getEmitters 응답을 일부러 지연) 새 구독의 createEmitter() 호출은 그 broadcast가 끝나길
-	// 기다리지 않고 즉시 반환돼야 한다. (구 설계는 이 시나리오에서 새 구독 등록까지 함께 멈췄다 — PR #94 후속 리뷰.)
 	@Test
 	void createEmitterDoesNotWaitForInFlightScheduledBroadcastToFinish() throws Exception {
 		Instrument instrument = stockInstrument(1, "SYM1");
@@ -348,7 +325,6 @@ class StockPriceStreamServiceTest {
 		when(stockPriceProvider.getMarketStatus()).thenReturn(StockMarketStatus.OPEN);
 		when(priceQueryService.getPriceQuote(instrument)).thenReturn(unavailableQuote());
 		service.initializeBaseline();
-		// 이번 분에 새로 가격이 공개돼 publishScheduledUpdates가 실제로 broadcast(emitter 전송)를 수행하게 한다.
 		LocalDateTime revealedAt = LocalDateTime.of(SOURCE_TRADING_DATE, LocalTime.of(9, 5));
 		when(priceQueryService.getPriceQuote(instrument)).thenReturn(availableQuote(new BigDecimal("71000"),
 			revealedAt));
@@ -380,7 +356,6 @@ class StockPriceStreamServiceTest {
 
 		Thread subscriber = new Thread(service::createEmitter, "subscriber");
 		subscriber.start();
-		// broadcast가 아직 releaseBroadcast를 기다리는 중인데도, createEmitter()는 락 없이 곧바로 끝나야 한다.
 		subscriber.join(2000);
 
 		assertThat(events).contains("createEmitterCalled");

@@ -1,4 +1,3 @@
-// 실제 MySQL에서 stock_replay_sessions 저장·조회와 UNIQUE(service_date) 제약을 검증하는 JPA 슬라이스 테스트다.
 package com.finplay.api.domain.market.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -32,7 +31,6 @@ class StockReplaySessionRepositoryTest {
 	private static final LocalDateTime CREATED_AT = LocalDateTime.of(2026, 7, 28, 8, 0, 0);
 	private static final LocalDateTime RESOLVED_AT = LocalDateTime.of(2026, 7, 28, 8, 55, 0);
 
-	// 폴백 세션 조회(QUOTE-HOLD-003) 전용 픽스처 날짜 — 위 SERVICE_DATE 계열과 겹치지 않게 별도 구간을 쓴다.
 	private static final LocalDate FALLBACK_TODAY = LocalDate.of(2026, 8, 3);
 	private static final LocalDate FALLBACK_FAILED_DATE = LocalDate.of(2026, 8, 2);
 	private static final LocalDate FALLBACK_CANDIDATE_DATE = LocalDate.of(2026, 8, 1);
@@ -144,8 +142,6 @@ class StockReplaySessionRepositoryTest {
 		assertThat(fallback).isEmpty();
 	}
 
-	// QUOTE-HOLD-006: 폴백 탐색에 날짜 상한이 없다 — 유일한 READY 후보가 몇 달 전이고, 그보다 가까운 세션은
-	// PREPARING(아직 READY가 아님)뿐이어도 그 먼 과거 READY 세션을 찾아내야 한다.
 	@Test
 	void findFirstByServiceDateBeforeAndPreparationStatusOrderByServiceDateDescFindsCandidateWithNoUpperBoundOnHowFarBack() {
 		stockReplaySessionRepository.save(StockReplaySession.ready(

@@ -1,5 +1,3 @@
-// @Autowired 생성자 경로(RestClient.builder() 직접 호출)를 실제 로컬 HTTP 서버로 검증한다 — 이 경로가
-// 공유 RestClient.Builder DI로 되돌아가는 회귀를 잡기 위한 테스트다 (PR #377 리뷰 권장②, 이슈 #376).
 package com.finplay.api.domain.market.feed;
 
 import static org.mockito.ArgumentMatchers.eq;
@@ -98,7 +96,6 @@ class BithumbRestTickerPollerAutowiredConstructorTest {
 			.thenReturn(
 				List.of(Instrument.create(Market.CRYPTO, "BTC", "비트코인", BigDecimal.ONE, 1000, true, FIXED_NOW)));
 		Clock clock = Clock.fixed(FIXED_NOW.toInstant(ZoneOffset.UTC), ZoneOffset.UTC);
-		// /v1/ticker 컨텍스트가 prefix 매칭이라 그 아래 경로는 그대로 잡힌다 — 등록되지 않은 별도 경로로 404를 유도한다.
 		BithumbRestTickerPoller poller = new BithumbRestTickerPoller(
 			instrumentRepository, priceStore, clock, 2000L, 3000L, serverBaseUrl + "/no-such-endpoint");
 

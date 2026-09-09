@@ -1,4 +1,3 @@
-// Mock HTTP로 BithumbRestTickerPoller의 markets 조합·trade_price 매핑·부분 이상 항목 skip·장애 시 무전파를 검증한다 (이슈 #107 ⑫, #369)
 package com.finplay.api.domain.market.feed;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -73,14 +72,12 @@ class BithumbRestTickerPollerTest {
 			.thenReturn(List.of(symbols).stream().map(BithumbRestTickerPollerTest::crypto).toList());
 	}
 
-	// 실제 응답에는 우리가 안 쓰는 필드가 더 많다 — @JsonIgnoreProperties(ignoreUnknown=true)까지 함께 고정한다.
 	private static String tickerItem(String market, String tradePrice) {
 		return """
 			{"market": "%s", "trade_price": %s, "opening_price": 1, "high_price": 2, "acc_trade_volume": 3}
 			""".formatted(market, tradePrice);
 	}
 
-	// --- 요청 조합: 코인 전체를 콤마로 묶어 1회만 호출 ---
 
 	@Test
 	@DisplayName("코인 종목 전체를 KRW-{symbol} 콤마 결합으로 묶어 ticker를 정확히 1회 호출한다")
@@ -93,14 +90,9 @@ class BithumbRestTickerPollerTest {
 
 		poller.pollTickers();
 
-		// 기대는 once()가 기본이므로 2회 호출되면 verify가 아니라 호출 시점에 AssertionError로 드러난다.
 		server.verify();
 	}
 
-	// 이슈 #528 — markets에 샌드박스 종목이 실려 나가지 않는 것을 조회 선택으로 고정한다. 실제 필터링은 쿼리가
-	// 하므로(InstrumentRepositoryTest가 검증) 여기서는 "샌드박스를 거르는 조회를 쓰는가"만 본다.
-	// 조회를 통째로 옛것으로 되돌리면 이 파일의 다른 테스트들이 먼저 깨진다 — **이 테스트만 고유하게 막는 것은
-	// 새 조회와 옛 조회를 함께 부르는 구현**이고, 그게 아래 never() 단정의 몫이다.
 	@Test
 	@DisplayName("샌드박스를 거르지 않는 옛 조회로는 markets를 만들지 않는다")
 	void pollTickersUsesSandboxExcludingQueryOnly() {
@@ -124,12 +116,10 @@ class BithumbRestTickerPollerTest {
 
 		poller.pollTickers();
 
-		// 기대를 하나도 등록하지 않았으므로, 호출이 있었다면 그 시점에 실패한다.
 		server.verify();
 		verifyNoInteractions(priceStore);
 	}
 
-	// --- 응답 매핑: KRW- 접두사 제거 + trade_price 그대로, PriceStore.recordObservation으로 전달 ---
 
 	@Test
 	@DisplayName("응답 항목마다 KRW- 접두사를 뗀 심볼과 trade_price로 PriceStore.recordObservation을 호출한다")
@@ -146,11 +136,9 @@ class BithumbRestTickerPollerTest {
 		verify(priceStore).recordObservation(eq("ETH"), priceCaptor.capture(), eq(FIXED_NOW));
 		assertThat(priceCaptor.getAllValues().get(0)).isEqualByComparingTo("91234000");
 		assertThat(priceCaptor.getAllValues().get(1)).isEqualByComparingTo("4567000.5");
-		// PriceStore의 다른 메서드(연결상태·과거틱 가드 등)는 건드리지 않는다 — recordObservation만 호출된다.
 		verifyNoMoreInteractions(priceStore);
 	}
 
-	// --- 부분 이상 항목: 그 항목만 건너뛴다 ---
 
 	@Test
 	@DisplayName("trade_price가 없는 항목만 건너뛰고 나머지는 정상 관측한다")
@@ -181,7 +169,6 @@ class BithumbRestTickerPollerTest {
 		verifyNoMoreInteractions(priceStore);
 	}
 
-	// --- 장애 처리: 예외를 밖으로 던지지 않고 그 회차를 건너뛴다 (스케줄러가 죽으면 안 된다) ---
 
 	@Test
 	@DisplayName("5xx 응답이면 예외를 전파하지 않고 recordObservation도 호출하지 않는다")
@@ -242,13 +229,6 @@ class BithumbRestTickerPollerTest {
 		verifyNoInteractions(priceStore);
 	}
 
-	// 2026-08-22 실측 응답을 그대로 고정한다 (이슈 #528). 빗썸은 미등록 market 코드가 하나라도 섞이면
-	// **상태코드 200에 배열이 아닌 error 객체**를 돌려주고, 같이 요청한 정상 심볼의 시세도 주지 않는다. 상태코드
-	// 가드(onStatus)로는 걸러지지 않고 역직렬화 단계에서 터진다 — 샌드박스 종목이 markets에 섞여 있던 동안
-	// 이 폴러가 조용히 매 회차 실패한 경로가 이것이다.
-	// 심볼 둘을 요청해 두는 것은 **부분 성공이 없다**는 것이 이 장애의 핵심이기 때문이다 — 미등록 코드 하나가
-	// 배치 전체를 버리게 만든다. 그 구조 자체는 이 PR이 바꾸지 않았고(범위 밖), 지금은 목록에서 미등록 코드가
-	// 빠졌을 뿐이다.
 	@Test
 	@DisplayName("상태코드 200이라도 본문이 빗썸 error 봉투면 요청에 실린 정상 심볼까지 하나도 관측되지 않는다")
 	void pollTickersSwallowsBithumbErrorEnvelopeReturnedWithOkStatus() {

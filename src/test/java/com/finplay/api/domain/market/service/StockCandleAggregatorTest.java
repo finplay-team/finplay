@@ -1,4 +1,3 @@
-// StockCandleAggregator의 버킷 키·OHLCV 산출·경계 규칙을 검증하는 순수 단위 테스트(이슈 #143)
 package com.finplay.api.domain.market.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -59,7 +58,6 @@ class StockCandleAggregatorTest {
 	@Test
 	@DisplayName("같은 주에 속한 여러 거래일의 분봉이 하나의 1w 버킷(그 주 월요일)으로 묶인다")
 	void weeklyBucketMergesMultipleTradingDatesInSameWeek() {
-		// 2024-01-15(월)~01-19(금)은 같은 ISO 주.
 		List<StockCandleDto> minuteCandles = List.of(
 			minuteCandle(LocalDate.of(2024, 1, 15), LocalTime.of(9, 0), 100, 105, 99, 102, 10),
 			minuteCandle(LocalDate.of(2024, 1, 17), LocalTime.of(9, 0), 150, 160, 145, 155, 20),
@@ -74,7 +72,6 @@ class StockCandleAggregatorTest {
 	@Test
 	@DisplayName("1w 버킷의 시작은 토요일·일요일이 아니라 그 주의 월요일이다")
 	void weekBucketStartsOnMondayNotSaturdayOrSunday() {
-		// 2024-01-13(토)·01-14(일)이 속한 주의 월요일은 2024-01-08.
 		List<StockCandleDto> minuteCandles = List.of(
 			minuteCandle(LocalDate.of(2024, 1, 13), LocalTime.of(9, 0), 100, 105, 99, 102, 10),
 			minuteCandle(LocalDate.of(2024, 1, 14), LocalTime.of(9, 0), 110, 115, 109, 112, 20));
@@ -101,7 +98,6 @@ class StockCandleAggregatorTest {
 	@Test
 	@DisplayName("같은 ISO 주에 속하지만 서로 다른 달인 거래일은 1w에서는 하나로, 1M에서는 별개 버킷으로 갈린다")
 	void weekBoundaryCanSpanTwoMonthsWhileMonthBoundarySeparatesThem() {
-		// 2024-01-29(월)~02-02(금)은 같은 ISO 주지만 1월·2월에 걸쳐 있다.
 		List<StockCandleDto> minuteCandles = List.of(
 			minuteCandle(LocalDate.of(2024, 1, 29), LocalTime.of(9, 0), 100, 105, 99, 102, 10),
 			minuteCandle(LocalDate.of(2024, 2, 2), LocalTime.of(9, 0), 200, 210, 190, 205, 30));
@@ -153,7 +149,6 @@ class StockCandleAggregatorTest {
 	@Test
 	@DisplayName("거래일이 없는 주는 결과에 나타나지 않는다")
 	void weeksWithNoTradingDayAreAbsentFromResult() {
-		// 1주차(01-08 월요일 버킷), 2주차(01-15) 건너뛰고 3주차(01-22 월요일 버킷)만 데이터 존재.
 		List<StockCandleDto> minuteCandles = List.of(
 			minuteCandle(LocalDate.of(2024, 1, 9), LocalTime.of(9, 0), 100, 105, 99, 102, 10),
 			minuteCandle(LocalDate.of(2024, 1, 23), LocalTime.of(9, 0), 200, 210, 190, 205, 30));
@@ -169,7 +164,6 @@ class StockCandleAggregatorTest {
 	@Test
 	@DisplayName("거래일이 없는 달은 결과에 나타나지 않는다")
 	void monthsWithNoTradingDayAreAbsentFromResult() {
-		// 1월·3월에만 데이터, 2월은 건너뜀.
 		List<StockCandleDto> minuteCandles = List.of(
 			minuteCandle(LocalDate.of(2024, 1, 10), LocalTime.of(9, 0), 100, 105, 99, 102, 10),
 			minuteCandle(LocalDate.of(2024, 3, 10), LocalTime.of(9, 0), 200, 210, 190, 205, 30));

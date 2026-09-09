@@ -1,4 +1,3 @@
-// 실제 Redis(Testcontainers)로 FakeBithumbFeedClient의 틱 주입·연결 끊김·재연결 흐름을 검증하는 통합 테스트 (ADR-0003)
 package com.finplay.api.domain.market.feed;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -75,7 +74,6 @@ class FakeBithumbFeedClientIntegrationTest {
 
 	@Test
 	void simulateReconnectAloneDoesNotRestoreAvailabilityUntilNewTickArrives() {
-		// T0 시점: 연결 후 신선한 틱 수신 → 이용 가능
 		PriceStore priceStoreAtT0 = priceStoreAt(FIXED_NOW);
 		FakeBithumbFeedClient feedClient = new FakeBithumbFeedClient(priceStoreAtT0);
 
@@ -90,12 +88,10 @@ class FakeBithumbFeedClientIntegrationTest {
 		assertThat(feedClient.isConnected()).isTrue();
 		assertThat(priceStoreAtT0.getConnectionStatus()).isEqualTo(FeedConnectionStatus.CONNECTED);
 
-		// T1 시점(T0 + 15초): 재연결 후에도 새 틱 없이 시간이 흐르면 기존 틱이 stale해져 여전히 이용 불가
 		LocalDateTime t1 = FIXED_NOW.plusSeconds(15);
 		PriceStore priceStoreAtT1 = priceStoreAt(t1);
 		assertThat(priceStoreAtT1.isPriceAvailable("ETH_RECONNECT")).isFalse();
 
-		// 새 틱이 도착해야만 이용 가능 상태로 복귀한다
 		feedClient.emitTick("ETH_RECONNECT", new BigDecimal("3100000"), t1);
 
 		assertThat(priceStoreAtT1.isPriceAvailable("ETH_RECONNECT")).isTrue();

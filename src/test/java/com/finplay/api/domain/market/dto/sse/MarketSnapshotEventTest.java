@@ -1,4 +1,3 @@
-// MarketSnapshotEvent의 JSON 직렬화 계약(sourceTime/emittedAt/sourceTradingDate 필드 구분, 코인은 sourceTradingDate 생략)을 검증하는 @JsonTest다.
 package com.finplay.api.domain.market.dto.sse;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -20,7 +19,6 @@ import tools.jackson.databind.ObjectMapper;
 @JsonTest
 class MarketSnapshotEventTest {
 
-	// 실제 SSE 전송이 쓰는 것과 같은, Boot의 JacksonAutoConfiguration이 구성한 빈을 주입받는다 (ADR-0003 — 직렬화는 슬라이스에서 실제로 확인).
 	@Autowired
 	private ObjectMapper objectMapper;
 
@@ -46,7 +44,6 @@ class MarketSnapshotEventTest {
 		assertThat(json.get("prices").get(0).get("price").asInt()).isEqualTo(70100);
 		assertThat(json.get("prices").get(0).get("sourceTime").asString()).isEqualTo("2026-07-28T09:01:00");
 		assertThat(json.get("prices").get(0).get("status").asString()).isEqualTo("AVAILABLE");
-		// 가격 없는 종목도 배열에서 빠지지 않고 price·sourceTime=null로 명시적으로 포함된다 (배열은 배제되지 않음, JsonInclude는 최상위 필드에만 적용).
 		assertThat(json.get("prices").get(1).get("symbol").asString()).isEqualTo("000660");
 		assertThat(json.get("prices").get(1).get("price").isNull()).isTrue();
 		assertThat(json.get("prices").get(1).get("sourceTime").isNull()).isTrue();
@@ -55,8 +52,6 @@ class MarketSnapshotEventTest {
 
 	@Test
 	void serializesCryptoSnapshotOmitsSourceTradingDateFieldEntirely() {
-		// 코인은 marketStatus(OPEN 고정)는 갖되 sourceTradingDate 개념이 없다 — null이면 클래스 레벨
-		// @JsonInclude(NON_NULL)로 필드 자체가 생략되는지 확인한다 (marketStatus는 값이 있어 계속 노출됨과 대비).
 		LocalDateTime emittedAt = LocalDateTime.of(2026, 7, 28, 10, 0, 5);
 		MarketSnapshotEvent event = new MarketSnapshotEvent(
 			Market.CRYPTO, null, StockMarketStatus.OPEN, emittedAt,

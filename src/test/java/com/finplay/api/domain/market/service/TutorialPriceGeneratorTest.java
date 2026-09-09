@@ -1,4 +1,3 @@
-// attempt seed·run 기반 튜토리얼 가격 생성기의 고정 벡터와 OHLC 불변성을 검증한다.
 package com.finplay.api.domain.market.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -19,8 +18,6 @@ class TutorialPriceGeneratorTest {
 		(short)1, 123_456_789L, 42L, 3L, Market.CRYPTO, LocalDate.of(2026, 8, 14));
 	private static final TutorialPriceGenerationInput SCENARIO_INPUT = new TutorialPriceGenerationInput(
 		TutorialPriceGenerator.VERSION_2, 123_456_789L, 42L, 3L, Market.CRYPTO, LocalDate.of(2026, 8, 14));
-	// 049 이전 버전 2가 쓰던 상수다. 041 대본의 basePrice가 이 값과 한 자리도 달라지면 진행 중이던
-	// 사용자의 가격이 바뀌므로, 회귀 고정은 이 리터럴을 기준으로 판정한다.
 	private static final BigDecimal PRE_SCRIPT_CRYPTO_BASE_PRICE = new BigDecimal("10000.00000000");
 	private final TutorialPriceGenerator generator = new TutorialPriceGenerator();
 	private final TutorialScenarioScriptLoader loader = new TutorialScenarioScriptLoader(new ObjectMapper());
@@ -90,8 +87,6 @@ class TutorialPriceGeneratorTest {
 		assertThat(generator.canonicalPrice(otherSeed, 17L)).isNotEqualByComparingTo(first);
 	}
 
-	// 생성기 버전 2는 대본 위치에서만 가격이 나온다. 두 진입점이 서로의 입력을 받으면 조용히 다른 가격을
-	// 내는 대신 즉시 실패해야 한다.
 	@Test
 	void wallClockEntryPointRejectsVersionTwoInput() {
 		assertThatThrownBy(() -> generator.canonicalPrice(SCENARIO_INPUT, 7L))
@@ -132,8 +127,6 @@ class TutorialPriceGeneratorTest {
 			.hasMessageContaining("다른 대본");
 	}
 
-	// 049 1번이 기준가를 생성기 상수에서 대본 파일 필드로 옮겼다. 그 이동이 041 대본 위에 서 있던 실행의
-	// 가격을 한 자리라도 바꾸면 진행 중이던 사용자의 평가손익·체결가가 통째로 어긋난다.
 	@Test
 	void storyScriptCanonicalPriceIsUnchangedAcrossAllOneHundredTwentyScriptPositions() {
 		assertThat(generator.canonicalPrice(SCENARIO_INPUT, script, new TutorialScenarioCursor("IDLE_ENTRY", 0)))
@@ -156,8 +149,6 @@ class TutorialPriceGeneratorTest {
 		assertThat(positions).isEqualTo(120);
 	}
 
-	// 과거 29봉도 같은 갈래를 탄다. 041 대본의 기준가가 옛 상수와 같으므로 두 경로의 결과는 봉 하나
-	// 값 하나까지 동일해야 한다 — 다르면 041 실행의 차트 배경이 조용히 바뀐 것이다.
 	@Test
 	void storyScriptHistoryIsIdenticalToThePreScriptBasePricePath() {
 		List<TutorialPriceCandleDto> history = generator.generateHistory(SCENARIO_INPUT, script);
@@ -179,8 +170,6 @@ class TutorialPriceGeneratorTest {
 			false));
 	}
 
-	// **이 테스트가 없으면 generateHistory의 대본 갈래가 조용히 빠져도 아무도 모른다.** 빠지면 2단계 차트는
-	// 과거 29봉이 1만원대, 진행 중 봉이 10만원대가 되어 한 화면에서 두 동강 난다(049 plan §1).
 	@Test
 	void orderBasicsScriptHistoryFollowsItsOwnBasePriceInsteadOfTheMarketConstant() {
 		List<TutorialPriceCandleDto> history = generator.generateHistory(SCENARIO_INPUT, orderBasicsScript);
@@ -194,7 +183,6 @@ class TutorialPriceGeneratorTest {
 				.as("%s 고가", candle.date())
 				.isLessThan(new BigDecimal("120000"));
 		});
-		// 시장 상수(10,000원)로 만든 봉과 자릿수가 다르다는 것을 값으로 못박는다.
 		assertThat(history).isNotEqualTo(generator.generateHistory(SCENARIO_INPUT));
 		assertThat(history.get(0).open()).isEqualByComparingTo("108516.88000000");
 	}

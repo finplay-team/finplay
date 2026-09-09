@@ -1,5 +1,3 @@
-// @Autowired 생성자 경로(RestClient.builder() 직접 호출)를 실제 로컬 HTTP 서버로 검증한다 — 이 경로가
-// 공유 RestClient.Builder DI로 되돌아가는 회귀를 잡기 위한 테스트다 (PR #377 리뷰 2라운드 권장①).
 package com.finplay.api.domain.market.service;
 
 import static org.assertj.core.api.Assertions.assertThat;

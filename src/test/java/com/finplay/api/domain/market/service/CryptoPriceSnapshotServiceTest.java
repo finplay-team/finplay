@@ -1,4 +1,3 @@
-// mock(InstrumentService·PriceStore)으로 CryptoPriceSnapshotService의 스냅샷 기록 스킵·위임을 검증하는 단위 테스트다.
 package com.finplay.api.domain.market.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -40,8 +39,6 @@ class CryptoPriceSnapshotServiceTest {
 		return Instrument.create(Market.CRYPTO, symbol, symbol, BigDecimal.ONE, 1000L, true, NOW);
 	}
 
-	// 함정 검증 — isPriceAvailable=false면 그 심볼은 건너뛴다(tasks.md 항목 1). 동결된 최신 틱이 쌓이면
-	// σ가 0에 수렴했다가 복구 첫 틱에서 허위 카드가 무더기로 생성되므로, 기록 자체를 호출하지 않는지 확인한다.
 	@Test
 	void recordSnapshotsSkipsSymbolWhenPriceIsNotAvailable() {
 		when(instrumentService.getInstrumentEntities(Market.CRYPTO)).thenReturn(List.of(crypto("BTC")));
@@ -65,7 +62,6 @@ class CryptoPriceSnapshotServiceTest {
 		verify(priceStore).recordSnapshot("BTC", NOW, new BigDecimal("50000000"), Duration.ofHours(24));
 	}
 
-	// 여러 종목 중 일부만 가용하면 가용한 종목만 기록되고 불가용 종목은 조회조차 하지 않는다.
 	@Test
 	void recordSnapshotsHandlesMixedAvailabilityAcrossMultipleSymbolsIndependently() {
 		when(instrumentService.getInstrumentEntities(Market.CRYPTO))
@@ -82,7 +78,6 @@ class CryptoPriceSnapshotServiceTest {
 		verify(priceStore, never()).recordSnapshot(eq("ETH"), any(), any(), any());
 	}
 
-	// isPriceAvailable=true인데 그 사이 최신 틱이 사라진(드문) 경우에도 예외 없이 그냥 건너뛴다.
 	@Test
 	void recordSnapshotsSkipsSymbolWhenLatestPriceIsEmptyDespiteAvailable() {
 		when(instrumentService.getInstrumentEntities(Market.CRYPTO)).thenReturn(List.of(crypto("BTC")));

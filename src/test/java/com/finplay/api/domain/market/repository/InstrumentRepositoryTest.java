@@ -1,4 +1,3 @@
-// 실제 MySQL에서 종목 시드 데이터와 symbol UNIQUE 제약을 검증하는 JPA 슬라이스 테스트다.
 package com.finplay.api.domain.market.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -76,15 +75,12 @@ class InstrumentRepositoryTest {
 
 		List<Instrument> tradableCryptos = repository.findByMarketAndTradableTrueOrderByIdAsc(Market.CRYPTO);
 
-		// 실제 코인 12개(전부 tradable) + 샘플 코인 중 tradable=true인 SANDBOX_COIN_1 1개 = 13개.
 		assertThat(tradableCryptos).hasSize(13);
 		assertThat(tradableCryptos).extracting(Instrument::getSymbol).doesNotContain("DELISTED");
 	}
 
 	@Test
 	void findByMarketAndTutorialSampleFalseOrderByIdAscExcludesTutorialSampleInstruments() {
-		// 035-stock-collector-reliability COLLECT-STAB-002 — 수집 배치가 이 메서드로만 종목을 조회하면 샌드박스
-		// 종목(SANDBOX_STK_1~3, V32 시드)이 애초에 대상에 포함되지 않는다.
 		List<Instrument> nonSampleStocks = repository.findByMarketAndTutorialSampleFalseOrderByIdAsc(Market.STOCK);
 
 		assertThat(nonSampleStocks).hasSize(16);
@@ -144,10 +140,6 @@ class InstrumentRepositoryTest {
 				"SANDBOX_COIN_1", "SANDBOX_COIN_2", "SANDBOX_COIN_3");
 	}
 
-	// 이슈 #490·#528 — 코인 시세 진입점 셋(BithumbFeedSimulator·BithumbRestTickerPoller·
-	// BithumbWebSocketFeedClient)이 모두 훑는 조회다. 샌드박스 코인이 빠지는지, 실제 코인은 그대로 남는지를
-	// 실제 시드로 확인한다. 저쪽 세 컴포넌트의 단위 테스트는 "이 조회를 고르는가"만 보고 실제 필터링 의미는
-	// 여기가 책임진다.
 	@Test
 	void tradableNonSandboxCryptoQueryExcludesSandboxInstruments() {
 		List<Instrument> targets = repository
@@ -162,7 +154,6 @@ class InstrumentRepositoryTest {
 		assertThat(targets).extracting(Instrument::getSymbol)
 			.doesNotContain("SANDBOX_COIN_1", "SANDBOX_COIN_2", "SANDBOX_COIN_3");
 
-		// 이 차이가 이슈 #490·#528의 내용 그 자체다 — 예전 조회에는 샌드박스 코인이 들어 있었다.
 		assertThat(repository.findByMarketAndTradableTrueOrderByIdAsc(Market.CRYPTO))
 			.extracting(Instrument::getSymbol)
 			.contains("SANDBOX_COIN_1");
@@ -170,8 +161,6 @@ class InstrumentRepositoryTest {
 
 	@Test
 	void databaseRejectsDuplicateSymbolEvenAcrossDifferentMarkets() {
-		// 005930(삼성전자, STOCK)은 시드에 이미 존재한다. 다른 시장(CRYPTO)에서 같은 symbol을 넣어도
-		// UNIQUE 제약이 market과 무관하게 symbol 단독으로 걸려있는지 검증한다.
 		assertThatThrownBy(() -> jdbcTemplate.update(
 			"insert into instruments"
 				+ "(market, symbol, name, tick_size, min_order_amount, tradable, created_at) "

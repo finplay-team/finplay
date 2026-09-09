@@ -1,4 +1,3 @@
-// MarketPriceEvent의 JSON 직렬화 계약(sourceTime/emittedAt/sourceTradingDate 필드 구분, 코인은 sourceTradingDate 생략)을 검증하는 @JsonTest다.
 package com.finplay.api.domain.market.dto.sse;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -17,7 +16,6 @@ import tools.jackson.databind.ObjectMapper;
 @JsonTest
 class MarketPriceEventTest {
 
-	// 실제 SSE 전송이 쓰는 것과 같은, Boot의 JacksonAutoConfiguration이 구성한 빈을 주입받는다 (ADR-0003 — 직렬화는 슬라이스에서 실제로 확인).
 	@Autowired
 	private ObjectMapper objectMapper;
 
@@ -35,7 +33,6 @@ class MarketPriceEventTest {
 		assertThat(json.get("market").asString()).isEqualTo("STOCK");
 		assertThat(json.get("symbol").asString()).isEqualTo("005930");
 		assertThat(json.get("price").asInt()).isEqualTo(70100);
-		// sourceTime(원천 가격 시각)과 emittedAt(서버 전송 시각)이 서로 다른 값으로 각자의 필드에 들어가야 한다.
 		assertThat(json.get("sourceTime").asString()).isEqualTo("2026-07-28T09:01:00");
 		assertThat(json.get("emittedAt").asString()).isEqualTo("2026-07-28T09:01:03");
 		assertThat(json.get("sourceTradingDate").asString()).isEqualTo("2026-07-24");

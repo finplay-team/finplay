@@ -1,4 +1,3 @@
-// 빗썸 공개 캔들 REST 응답의 정렬 반전·필드 매핑·count 산출·장애 정규화를 Mock HTTP로 검증한다 (MKT-008, 이슈 #20)
 package com.finplay.api.domain.market.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -68,7 +67,6 @@ class BithumbRestCandleProviderTest {
 			""".formatted(kstTime, kstTime, open, high, low, tradePrice, accTradePrice, accVolume);
 	}
 
-	// --- 심볼 변환 ---
 
 	@Test
 	void getCandlesConvertsInstrumentSymbolToKrwMarketCode() {
@@ -83,12 +81,10 @@ class BithumbRestCandleProviderTest {
 		server.verify();
 	}
 
-	// --- 정렬 반전 + 진행 중 분봉 포함(주식과 반대) ---
 
 	@Test
 	void getCandlesReversesBithumbDescendingResponseToAscendingOrder() {
 		BithumbRestCandleProvider provider = providerAt(LocalDateTime.of(2026, 7, 30, 11, 43));
-		// 빗썸은 최신→과거로 내려준다: 11:43(가장 최신), 11:42, 11:41 순.
 		String body = "[" + candleItem("2026-07-30T11:43:00", "100", "110", "90", "105", "1", "1000")
 			+ "," + candleItem("2026-07-30T11:42:00", "95", "100", "85", "100", "1", "1000")
 			+ "," + candleItem("2026-07-30T11:41:00", "90", "95", "80", "95", "1", "1000")
@@ -106,8 +102,6 @@ class BithumbRestCandleProviderTest {
 
 	@Test
 	void getCandlesIncludesTheMostRecentInProgressCandleUnlikeStock() {
-		// 코인은 주식과 반대로 진행 중(아직 마감하지 않은) 분봉을 걸러내지 않는다 — 빗썸이 돌려준 가장 최신 항목이
-		// 그대로 결과에 남아 있어야 한다(StockReplayService의 공개 컷오프 로직을 재사용하지 않음).
 		BithumbRestCandleProvider provider = providerAt(LocalDateTime.of(2026, 7, 30, 11, 43, 6));
 		String body = "[" + candleItem("2026-07-30T11:43:00", "100", "110", "90", "105", "1", "1000")
 			+ "," + candleItem("2026-07-30T11:42:00", "95", "100", "85", "100", "1", "1000")
@@ -120,7 +114,6 @@ class BithumbRestCandleProviderTest {
 		assertThat(result.get(result.size() - 1).sourceTime()).isEqualTo(LocalDateTime.of(2026, 7, 30, 11, 43));
 	}
 
-	// --- 필드 매핑: 거래대금(candle_acc_trade_price)과 수량(candle_acc_trade_volume) 혼동 없음 ---
 
 	@Test
 	void getCandlesMapsFieldsWithoutConfusingVolumeAndTradeAmount() {
@@ -135,9 +128,7 @@ class BithumbRestCandleProviderTest {
 		assertThat(candle.open()).isEqualByComparingTo("95000000");
 		assertThat(candle.high()).isEqualByComparingTo("95100000");
 		assertThat(candle.low()).isEqualByComparingTo("94900000");
-		// trade_price(종가) - 이름에 속아 현재가로 해석하지 않는다.
 		assertThat(candle.close()).isEqualByComparingTo("95050000");
-		// candle_acc_trade_volume(수량)이 volume이어야 한다 — candle_acc_trade_price(거래대금)와 섞이면 안 된다.
 		assertThat(candle.volume()).isEqualByComparingTo("0.12345678");
 		assertThat(candle.volume()).isNotEqualByComparingTo("12345678901.23");
 	}
@@ -154,7 +145,6 @@ class BithumbRestCandleProviderTest {
 		assertThat(candle.volume()).isEqualByComparingTo("0.26725783");
 	}
 
-	// --- from·to → to+count 변환 ---
 
 	@Test
 	void getCandlesSendsCountTwoHundredWithoutToParamWhenFromAndToAreBothOmitted() {
@@ -176,7 +166,6 @@ class BithumbRestCandleProviderTest {
 
 		server.expect(requestTo(startsWith(ENDPOINT)))
 			.andExpect(queryParam("count", "200"))
-			// 빗썸 to는 변환 없이 KST 그대로 비교되는 값이다. 경계 배제(exclusive)를 상쇄하기 위해 +1초.
 			.andExpect(queryParam("to", "2026-07-30T09:30:01"))
 			.andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
 
@@ -192,7 +181,6 @@ class BithumbRestCandleProviderTest {
 		LocalDateTime from = now.minusMinutes(50);
 
 		server.expect(requestTo(startsWith(ENDPOINT)))
-			// now~from 50분 + 1(양 끝 포함) = 51
 			.andExpect(queryParam("count", "51"))
 			.andExpect(noToParam())
 			.andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
@@ -209,9 +197,7 @@ class BithumbRestCandleProviderTest {
 		LocalDateTime to = LocalDateTime.of(2026, 7, 30, 9, 10);
 
 		server.expect(requestTo(startsWith(ENDPOINT)))
-			// from~to 10분 + 1 = 11
 			.andExpect(queryParam("count", "11"))
-			// 빗썸 to는 변환 없이 KST 그대로. 경계 배제 상쇄를 위한 +1초
 			.andExpect(queryParam("to", "2026-07-30T09:10:01"))
 			.andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
 
@@ -225,11 +211,9 @@ class BithumbRestCandleProviderTest {
 		BithumbRestCandleProvider provider = providerAt(LocalDateTime.of(2026, 7, 30, 11, 43));
 		LocalDateTime from = LocalDateTime.of(2026, 7, 30, 0, 0);
 		LocalDateTime to = LocalDateTime.of(2026, 7, 30, 9, 0);
-		// from~to = 540분 + 1 = 541분 -> 200분 초과이므로 200으로 캡
 
 		server.expect(requestTo(startsWith(ENDPOINT)))
 			.andExpect(queryParam("count", "200"))
-			// 빗썸 to는 변환 없이 KST 그대로. 경계 배제 상쇄를 위한 +1초
 			.andExpect(queryParam("to", "2026-07-30T09:00:01"))
 			.andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
 
@@ -238,7 +222,6 @@ class BithumbRestCandleProviderTest {
 		server.verify();
 	}
 
-	// --- interval별 엔드포인트 분기 ---
 
 	@Test
 	void getCandlesCallsDaysEndpointForOneDayInterval() {
@@ -276,13 +259,10 @@ class BithumbRestCandleProviderTest {
 		server.verify();
 	}
 
-	// --- count 산출: 주·월봉은 양 끝을 월요일·1일로 정렬 후 단위 차이 + 1 ---
 
 	@Test
 	void getCandlesComputesWeekCountByAligningBothEndsToMondayAcrossWeekBoundary() {
 		BithumbRestCandleProvider provider = providerAt(LocalDateTime.of(2026, 7, 30, 11, 43));
-		// from=수(2026-07-29, 그 주 월요일 2026-07-27) ~ to=수(2026-08-05, 그 주 월요일 2026-08-03)
-		// 월요일 정렬 기준으로 1주 차이 -> count = 1 + 1 = 2
 		LocalDateTime from = LocalDateTime.of(2026, 7, 29, 0, 0);
 		LocalDateTime to = LocalDateTime.of(2026, 8, 5, 0, 0);
 
@@ -298,7 +278,6 @@ class BithumbRestCandleProviderTest {
 	@Test
 	void getCandlesComputesWeekCountAsOneWhenBothEndsFallInSameIsoWeek() {
 		BithumbRestCandleProvider provider = providerAt(LocalDateTime.of(2026, 7, 30, 11, 43));
-		// 2026-07-27(월) ~ 2026-08-02(일)은 같은 ISO 주 -> count = 0 + 1 = 1
 		LocalDateTime from = LocalDateTime.of(2026, 7, 27, 0, 0);
 		LocalDateTime to = LocalDateTime.of(2026, 8, 2, 0, 0);
 
@@ -314,7 +293,6 @@ class BithumbRestCandleProviderTest {
 	@Test
 	void getCandlesComputesMonthCountByAligningBothEndsToFirstDayAcrossMonthBoundary() {
 		BithumbRestCandleProvider provider = providerAt(LocalDateTime.of(2026, 7, 30, 11, 43));
-		// from=2026-07-15(1일 정렬: 2026-07-01) ~ to=2026-09-03(1일 정렬: 2026-09-01) -> 2개월 차이 -> count = 2 + 1 = 3
 		LocalDateTime from = LocalDateTime.of(2026, 7, 15, 0, 0);
 		LocalDateTime to = LocalDateTime.of(2026, 9, 3, 0, 0);
 
@@ -330,7 +308,6 @@ class BithumbRestCandleProviderTest {
 	@Test
 	void getCandlesCapsWeekCountAtTwoHundredWhenRangeExceedsTwoHundredWeeks() {
 		BithumbRestCandleProvider provider = providerAt(LocalDateTime.of(2026, 7, 30, 11, 43));
-		// 2020-01-01 ~ 2026-07-30 : 200주(약 3.8년)를 훌쩍 넘는 범위
 		LocalDateTime from = LocalDateTime.of(2020, 1, 1, 0, 0);
 		LocalDateTime to = LocalDateTime.of(2026, 7, 30, 0, 0);
 
@@ -346,7 +323,6 @@ class BithumbRestCandleProviderTest {
 	@Test
 	void getCandlesCapsMonthCountAtTwoHundredWhenRangeExceedsTwoHundredMonths() {
 		BithumbRestCandleProvider provider = providerAt(LocalDateTime.of(2026, 7, 30, 11, 43));
-		// 2005-01-01 ~ 2026-07-30 : 200개월(약 16.7년)을 훌쩍 넘는 범위
 		LocalDateTime from = LocalDateTime.of(2005, 1, 1, 0, 0);
 		LocalDateTime to = LocalDateTime.of(2026, 7, 30, 0, 0);
 
@@ -372,13 +348,10 @@ class BithumbRestCandleProviderTest {
 		server.verify();
 	}
 
-	// --- to 경계 포함(inclusive) 보정: 빗썸은 to와 정확히 같은 시각의 봉을 배제한다(이슈 #157) ---
 
 	@Test
 	void getCandlesShiftsToParamByOneSecondForDayIntervalToIncludeTodaysBoundaryCandle() {
 		BithumbRestCandleProvider provider = providerAt(LocalDateTime.of(2026, 8, 3, 11, 43));
-		// to=2026-08-03T00:00:00(오늘 일봉의 시작 시각과 정확히 같음)을 그대로 보내면 빗썸이 오늘 봉을 배제한다.
-		// 빗썸 to는 변환 없이 KST 그대로 비교되는 값이므로, resolveToParam이 +1초만 더해 그대로 보낸다.
 		LocalDateTime to = LocalDateTime.of(2026, 8, 3, 0, 0);
 
 		server.expect(requestTo(startsWith(DAY_ENDPOINT)))
@@ -418,7 +391,6 @@ class BithumbRestCandleProviderTest {
 		server.verify();
 	}
 
-	// --- 일/주/월봉 전용 필드가 섞여도 파싱이 깨지지 않고, 그 필드들은 응답에 노출되지 않는다 ---
 
 	@Test
 	void getCandlesParsesDayCandleIgnoringPeriodOnlyFieldsWithoutExposingThem() {
@@ -450,11 +422,9 @@ class BithumbRestCandleProviderTest {
 		assertThat(candle.low()).isEqualByComparingTo("90");
 		assertThat(candle.close()).isEqualByComparingTo("110");
 		assertThat(candle.volume()).isEqualByComparingTo("4.5");
-		// candle_date_time_kst를 보정 없이 그대로 sourceTime으로 매핑한다 (일봉 경계를 서버가 재계산하지 않음).
 		assertThat(candle.sourceTime()).isEqualTo(LocalDateTime.of(2026, 7, 30, 0, 0));
 	}
 
-	// --- 저장·캐시 없음: 동일 호출을 반복해도 항상 HTTP로 새로 조회한다 ---
 
 	@Test
 	void getCandlesAlwaysRefetchesFromHttpAcrossRepeatedCallsInsteadOfCaching() {
@@ -468,7 +438,6 @@ class BithumbRestCandleProviderTest {
 		server.verify();
 	}
 
-	// --- 장애 처리: 빈 배열 200으로 위장하지 않고 502 MARKET_DATA_PROVIDER_ERROR ---
 
 	@Test
 	void getCandlesThrowsProviderErrorOnConnectionFailureInsteadOfReturningEmptyList() {

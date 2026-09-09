@@ -1,4 +1,3 @@
-// 대본 위치를 가격으로 바꾸는 생성기 버전 2의 고정 벡터와 경계 처리를 검증한다.
 package com.finplay.api.domain.market.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -18,7 +17,6 @@ class TutorialScenarioPriceGeneratorTest {
 	private final TutorialScenarioScript script = new TutorialScenarioScriptLoader(new ObjectMapper())
 		.script(TutorialScenarioScriptId.CRYPTO_STORY_V1);
 
-	// 대본 배율이 바뀌면 이 벡터가 깨진다. 각 구간의 시작·극값 지점을 대표로 골랐다.
 	@ParameterizedTest
 	@CsvSource({
 		"IDLE_ENTRY, 0, 10000.00000000",

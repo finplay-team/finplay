@@ -1,4 +1,3 @@
-// 목 InstrumentRepository·FakeBithumbFeedClient로 BithumbFeedSimulator의 틱 발행·랜덤워크를 검증하는 단위 테스트
 package com.finplay.api.domain.market.feed;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -49,9 +48,6 @@ class BithumbFeedSimulatorTest {
 		eth = Instrument.create(Market.CRYPTO, "ETH", "이더리움", BigDecimal.ONE, 1000, true, FIXED_NOW);
 	}
 
-	// 이슈 #490 — 샌드박스 종목이 대상에서 빠지는 것을 조회 선택으로 고정한다. 실제 필터링은 쿼리가
-	// 하므로(InstrumentRepositoryTest가 검증) 여기서는 "샌드박스를 거르는 조회를 쓰는가"만 본다 —
-	// 예전 조회로 되돌리면 이 테스트가 잡는다.
 	@Test
 	@DisplayName("샌드박스를 거르지 않는 옛 조회는 쓰지 않는다")
 	void emitTicksUsesSandboxExcludingQueryOnly() {

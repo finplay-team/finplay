@@ -1,4 +1,3 @@
-// 튜토리얼 샘플 종목 결정적 사인파 가격 공식(TutorialSampleInstrumentPriceService)의 결정성·범위·시장별 basePrice 분기를 검증하는 단위 테스트다.
 package com.finplay.api.domain.market.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -33,9 +32,6 @@ class TutorialSampleInstrumentPriceServiceTest {
 
 	@Test
 	void returnsDifferentPriceWhenClockInstantChangesEnoughToMoveThePhase() {
-		// id=1 → phase = (1%7)*(π/7) = π/7. epochSeconds=0에서는 rate ∝ sin(π/7),
-		// epochSeconds=45(주기 180의 1/4)에서는 rate ∝ sin(π/2 + π/7) = cos(π/7) — π/7 ≠ π/4+kπ이므로
-		// sin(π/7) ≠ cos(π/7)이 항상 성립해 두 시각의 가격이 반드시 달라진다(우연한 일치가 아님).
 		Instrument instrument = sampleInstrument(Market.STOCK, 1L);
 		Clock clockA = Clock.fixed(Instant.ofEpochSecond(0), ZoneOffset.UTC);
 		Clock clockB = Clock.fixed(Instant.ofEpochSecond(45), ZoneOffset.UTC);
@@ -80,8 +76,6 @@ class TutorialSampleInstrumentPriceServiceTest {
 		BigDecimal stockPrice = service.getPriceQuote(stock).price();
 		BigDecimal cryptoPrice = service.getPriceQuote(crypto).price();
 
-		// STOCK basePrice(50,000)·CRYPTO basePrice(10,000)는 ±3% 변동 범위가 겹치지 않으므로
-		// 같은 시각·같은 id여도 값이 크게 달라야 한다(서로 다른 basePrice를 쓴다는 증거).
 		assertThat(stockPrice).isGreaterThan(new BigDecimal("48500.00000000"));
 		assertThat(cryptoPrice).isLessThan(new BigDecimal("10300.00000000"));
 		assertThat(stockPrice).isGreaterThan(cryptoPrice.multiply(BigDecimal.valueOf(2)));
