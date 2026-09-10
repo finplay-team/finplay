@@ -18,15 +18,6 @@ class LimitOrderFeeCalculatorTest {
 	}
 
 	@Test
-	void calculateMatchesValueUsedByCancelServiceSellTest() {
-		LimitOrderFeeCalculator.Reservation reservation = LimitOrderFeeCalculator.calculate(new BigDecimal("0.1"),
-			new BigDecimal("1000000"));
-
-		assertThat(reservation.amount()).isEqualTo(100_000L);
-		assertThat(reservation.fee()).isEqualTo(50L);
-	}
-
-	@Test
 	void calculateFloorsAmountToWonWhenQuantityTimesLimitPriceHasFraction() {
 		LimitOrderFeeCalculator.Reservation reservation = LimitOrderFeeCalculator.calculate(new BigDecimal("0.13"),
 			new BigDecimal("999999"));

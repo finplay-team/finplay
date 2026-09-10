@@ -530,23 +530,6 @@ class JournalControllerTest {
 	}
 
 	@Test
-	void updateSellJournalReturnsNotFoundWhenServiceRejectsMissingJournal() throws Exception {
-		stubAuthenticatedUser();
-		when(journalService.updateSellJournal(eq(USER_ID), eq(SELL_TRADE_ID), any()))
-			.thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
-
-		mockMvc.perform(patch("/api/trades/{sellTradeId}/sell-journal", SELL_TRADE_ID)
-			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
-			.contentType(MediaType.APPLICATION_JSON)
-			.content(VALID_UPDATE_BODY))
-			.andExpect(status().isNotFound())
-			.andExpect(jsonPath("$.error.code").value("NOT_FOUND"))
-			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
-
-		verify(journalService).updateSellJournal(eq(USER_ID), eq(SELL_TRADE_ID), any());
-	}
-
-	@Test
 	void updateSellJournalReturnsBadRequestWhenServiceRejectsNonSellTrade() throws Exception {
 		stubAuthenticatedUser();
 		when(journalService.updateSellJournal(eq(USER_ID), eq(SELL_TRADE_ID), any()))
@@ -681,23 +664,6 @@ class JournalControllerTest {
 
 	@Test
 	void updateBuyJournalReturnsNotFoundWhenServiceRejectsMissingTrade() throws Exception {
-		stubAuthenticatedUser();
-		when(journalService.updateBuyJournal(eq(USER_ID), eq(BUY_TRADE_ID), any()))
-			.thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
-
-		mockMvc.perform(patch("/api/trades/{buyTradeId}/journal", BUY_TRADE_ID)
-			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN)
-			.contentType(MediaType.APPLICATION_JSON)
-			.content(VALID_BUY_UPDATE_BODY))
-			.andExpect(status().isNotFound())
-			.andExpect(jsonPath("$.error.code").value("NOT_FOUND"))
-			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
-
-		verify(journalService).updateBuyJournal(eq(USER_ID), eq(BUY_TRADE_ID), any());
-	}
-
-	@Test
-	void updateBuyJournalReturnsNotFoundWhenServiceRejectsMissingJournal() throws Exception {
 		stubAuthenticatedUser();
 		when(journalService.updateBuyJournal(eq(USER_ID), eq(BUY_TRADE_ID), any()))
 			.thenThrow(new BusinessException(ErrorCode.NOT_FOUND));
