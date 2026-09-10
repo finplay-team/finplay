@@ -34,20 +34,16 @@ import com.finplay.api.domain.portfolio.repository.HoldingLotRepository;
 import com.finplay.api.domain.portfolio.repository.HoldingRepository;
 import com.finplay.api.domain.portfolio.repository.TradeAllocationRepository;
 import java.math.BigDecimal;
-import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.ZoneId;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
 import org.springframework.transaction.annotation.Transactional;
 
 @SpringBootTest
@@ -55,8 +51,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Import({TestcontainersConfiguration.class,
 	PostSellFeedbackPeerComparisonGateIntegrationTest.GateTestConfig.class})
 class PostSellFeedbackPeerComparisonGateIntegrationTest {
-
-	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
 	private static final LocalDate ORIGIN_TRADE_DATE = LocalDate.of(2026, 7, 29);
 	private static final LocalDate TRADE_SERVICE_DATE = LocalDate.of(2032, 8, 4);
@@ -251,18 +245,11 @@ class PostSellFeedbackPeerComparisonGateIntegrationTest {
 	}
 
 	@TestConfiguration
-	static class GateTestConfig {
+	static class GateTestConfig extends FeedbackFixedClockTestConfig {
 
-		@Bean
-		@Primary
-		Clock fixedClock() {
-			return Clock.fixed(VIEW_AT.atZone(KST).toInstant(), KST);
-		}
-
-		@Bean
-		@Primary
-		FakeNarrativeGenerator fakeNarrativeGenerator() {
-			return new FakeNarrativeGenerator();
+		@Override
+		protected LocalDateTime viewAt() {
+			return VIEW_AT;
 		}
 	}
 }

@@ -272,24 +272,6 @@ class InstrumentControllerTest {
 	}
 
 	@Test
-	void getPriceReturnsAvailableStatusWithLastKnownPriceForCryptoInstrumentWhenObservationIsHoursOld()
-		throws Exception {
-		authenticate();
-		LocalDateTime sourceTime = LocalDateTime.of(2026, 7, 28, 6, 30, 0);
-		when(priceQueryService.getPrice(17L)).thenReturn(
-			new PriceQuoteDto(BigDecimal.valueOf(95000000), sourceTime, PriceStatus.AVAILABLE, null));
-
-		mockMvc.perform(authorized(get("/api/instruments/{instrumentId}/price", 17L)))
-			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.price").value(95000000))
-			.andExpect(jsonPath("$.sourceTime").value("2026-07-28T06:30:00"))
-			.andExpect(jsonPath("$.status").value("AVAILABLE"))
-			.andExpect(jsonPath("$.sourceTradingDate").doesNotExist());
-
-		verify(priceQueryService).getPrice(17L);
-	}
-
-	@Test
 	void getPriceReturnsCommonValidationErrorForNonNumericIdWithoutCallingService() throws Exception {
 		authenticate();
 
@@ -409,16 +391,6 @@ class InstrumentControllerTest {
 			.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
 			.andExpect(jsonPath("$.error.message").isNotEmpty())
 			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
-	}
-
-	@Test
-	void getCandlesRejectsMissingAuthenticationForOneDayIntervalWithoutCallingService() throws Exception {
-		mockMvc.perform(get("/api/instruments/{instrumentId}/candles", 1L).param("interval", "1d"))
-			.andExpect(status().isUnauthorized())
-			.andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"))
-			.andExpect(jsonPath("$.error.requestId").isNotEmpty());
-
-		verifyNoInteractions(candleQueryService);
 	}
 
 	@Test

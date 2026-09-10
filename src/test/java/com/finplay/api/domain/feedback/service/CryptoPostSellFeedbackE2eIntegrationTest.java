@@ -41,11 +41,9 @@ import com.finplay.api.domain.portfolio.repository.HoldingRepository;
 import com.finplay.api.domain.portfolio.repository.TradeAllocationRepository;
 import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
-import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -57,9 +55,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpHeaders;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
@@ -71,8 +67,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 @Import({TestcontainersConfiguration.class, CryptoPostSellFeedbackE2eIntegrationTest.CryptoE2eTestConfig.class})
 class CryptoPostSellFeedbackE2eIntegrationTest {
-
-	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
 	private static final String PATH = "/api/ai/post-sell/{tradeId}";
 
@@ -338,18 +332,11 @@ class CryptoPostSellFeedbackE2eIntegrationTest {
 	}
 
 	@TestConfiguration
-	static class CryptoE2eTestConfig {
+	static class CryptoE2eTestConfig extends FeedbackFixedClockTestConfig {
 
-		@Bean
-		@Primary
-		Clock fixedClock() {
-			return Clock.fixed(VIEW_AT.atZone(KST).toInstant(), KST);
-		}
-
-		@Bean
-		@Primary
-		FakeNarrativeGenerator fakeNarrativeGenerator() {
-			return new FakeNarrativeGenerator();
+		@Override
+		protected LocalDateTime viewAt() {
+			return VIEW_AT;
 		}
 	}
 }

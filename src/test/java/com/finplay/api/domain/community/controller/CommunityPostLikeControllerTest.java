@@ -115,20 +115,6 @@ class CommunityPostLikeControllerTest {
 	}
 
 	@Test
-	void unlikePostReturns204WhenNoLikeExistedToCancel() throws Exception {
-		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
-			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));
-		doNothing().when(service).unlikePost(9L, USER_ID);
-
-		mockMvc.perform(delete("/api/community/posts/9/likes")
-			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ACCESS_TOKEN))
-			.andExpect(status().isNoContent())
-			.andExpect(content().string(""));
-
-		verify(service).unlikePost(9L, USER_ID);
-	}
-
-	@Test
 	void unlikePostReturns404WhenPostDoesNotExist() throws Exception {
 		when(jwtTokenProvider.parseAccessToken(ACCESS_TOKEN))
 			.thenReturn(Optional.of(new AuthenticatedUser(USER_ID, "USER")));

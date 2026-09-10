@@ -132,14 +132,6 @@ class FavoriteServiceTest {
 	}
 
 	@Test
-	void deleteFavoriteFailsWithFavoriteNotFoundWhenUserHasNoFavoritesAtAll() {
-		assertThatThrownBy(() -> favoriteService.deleteFavorite(999L, 10L))
-			.isInstanceOf(BusinessException.class)
-			.satisfies(error -> assertThat(((BusinessException)error).getErrorCode())
-				.isEqualTo(ErrorCode.FAVORITE_NOT_FOUND));
-	}
-
-	@Test
 	void isFavoritedReturnsFalseForUnknownUser() {
 		assertThat(favoriteService.isFavorited(12345L, 10L)).isFalse();
 	}

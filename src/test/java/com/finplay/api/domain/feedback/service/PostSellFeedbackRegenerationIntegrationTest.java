@@ -37,11 +37,9 @@ import com.finplay.api.domain.portfolio.repository.HoldingRepository;
 import com.finplay.api.domain.portfolio.repository.TradeAllocationRepository;
 import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
-import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.ZoneId;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -49,9 +47,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -60,8 +56,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Import({TestcontainersConfiguration.class,
 	PostSellFeedbackRegenerationIntegrationTest.RegenerationTestConfig.class})
 class PostSellFeedbackRegenerationIntegrationTest {
-
-	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
 	private static final LocalDate ORIGIN_TRADE_DATE = LocalDate.of(2026, 7, 29);
 	private static final LocalDate TRADE_SERVICE_DATE = LocalDate.of(2031, 8, 4);
@@ -321,18 +315,11 @@ class PostSellFeedbackRegenerationIntegrationTest {
 	}
 
 	@TestConfiguration
-	static class RegenerationTestConfig {
+	static class RegenerationTestConfig extends FeedbackFixedClockTestConfig {
 
-		@Bean
-		@Primary
-		Clock fixedClock() {
-			return Clock.fixed(VIEW_AT.atZone(KST).toInstant(), KST);
-		}
-
-		@Bean
-		@Primary
-		FakeNarrativeGenerator fakeNarrativeGenerator() {
-			return new FakeNarrativeGenerator();
+		@Override
+		protected LocalDateTime viewAt() {
+			return VIEW_AT;
 		}
 	}
 }

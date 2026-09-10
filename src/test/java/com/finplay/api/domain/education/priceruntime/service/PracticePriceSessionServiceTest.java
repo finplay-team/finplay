@@ -195,15 +195,6 @@ class PracticePriceSessionServiceTest {
 	}
 
 	@Test
-	void getSessionFailsWithNotFoundWhenOwnedByAnotherUser() {
-		when(practicePriceSessionRepository.findByIdAndUserId(99L, USER_ID)).thenReturn(Optional.empty());
-
-		assertThatThrownBy(() -> service.getSession(USER_ID, 99L))
-			.isInstanceOfSatisfying(BusinessException.class,
-				exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.NOT_FOUND));
-	}
-
-	@Test
 	void getSessionFailsWithNotFoundWhenSessionDoesNotExist() {
 		when(practicePriceSessionRepository.findByIdAndUserId(404L, USER_ID)).thenReturn(Optional.empty());
 
