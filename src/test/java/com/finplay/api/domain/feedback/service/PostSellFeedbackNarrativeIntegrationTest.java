@@ -38,11 +38,9 @@ import com.finplay.api.domain.portfolio.repository.HoldingRepository;
 import com.finplay.api.domain.portfolio.repository.TradeAllocationRepository;
 import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
-import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -54,9 +52,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.annotation.Transactional;
@@ -65,8 +61,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 @Import({TestcontainersConfiguration.class, PostSellFeedbackNarrativeIntegrationTest.NarrativeTestConfig.class})
 class PostSellFeedbackNarrativeIntegrationTest {
-
-	private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
 	private static final LocalDate ORIGIN_TRADE_DATE = LocalDate.of(2026, 7, 29);
 	private static final LocalDate OTHER_ORIGIN_TRADE_DATE = LocalDate.of(2026, 7, 30);
@@ -402,18 +396,11 @@ class PostSellFeedbackNarrativeIntegrationTest {
 	}
 
 	@TestConfiguration
-	static class NarrativeTestConfig {
+	static class NarrativeTestConfig extends FeedbackFixedClockTestConfig {
 
-		@Bean
-		@Primary
-		Clock fixedClock() {
-			return Clock.fixed(VIEW_AT.atZone(KST).toInstant(), KST);
-		}
-
-		@Bean
-		@Primary
-		FakeNarrativeGenerator fakeNarrativeGenerator() {
-			return new FakeNarrativeGenerator();
+		@Override
+		protected LocalDateTime viewAt() {
+			return VIEW_AT;
 		}
 	}
 }
